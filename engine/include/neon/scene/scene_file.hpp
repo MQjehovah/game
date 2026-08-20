@@ -118,9 +118,10 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
 
 // Instantiate a whole scene into `world`. Prefabs expand via `prefs`; every
 // component goes through `reg`. Effective components apply in alphabetical
-// order (std::map order, deterministic). Returns the created entity count, or
-// an error; on error all entities created by this call are destroyed
-// (transactional).
+// order (std::map order, deterministic). An entity's `name` field produces a
+// SceneName; an explicit prefab or instance `name` component overrides that
+// field value. Returns the created entity count, or an error; on error all
+// entities created by this call are destroyed (transactional).
 core::Result<int> Instantiate(ecs::World& world, const SceneFile& scene,
                               const PrefabLibrary& prefs, const ComponentRegistry& reg);
 

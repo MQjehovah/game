@@ -1,6 +1,7 @@
 #include "neon/scene/scene_file.hpp"
 
 #include <algorithm>
+#include <utility>
 
 #include "neon/assets/asset_manager.hpp"
 #include "neon/core/log.hpp"
@@ -8,15 +9,21 @@
 namespace neon::scene {
 namespace {
 
-bool HasUnknown(const core::Json& data, const std::vector<std::string>& allowed,
-                const std::string& comp, std::string* err) {
+// Validates that a component's JSON data is an object with no unknown fields.
+// Non-object data fails (defense-in-depth: input paths also enforce objects).
+bool CheckComponentShape(const core::Json& data, const std::vector<std::string>& allowed,
+                         const std::string& comp, std::string* err) {
+    if (!data.IsObject()) {
+        if (err) *err = "component '" + comp + "' must be a JSON object";
+        return false;
+    }
     for (const auto& [key, val] : data.Members()) {
         if (std::find(allowed.begin(), allowed.end(), key) == allowed.end()) {
             if (err) *err = "component '" + comp + "' has unknown field '" + key + "'";
-            return true;
+            return false;
         }
     }
-    return false;
+    return true;
 }
 
 bool RequireNumber(const core::Json& data, const char* key, const std::string& comp,
@@ -170,6 +177,18 @@ core::Json SceneFile::ToJson() const {
 
 // --- PrefabLibrary -----------------------------------------------------------
 
+// Rejects a prefab component map whose values are not all JSON objects.
+core::Status ValidatePrefabComponents(const core::Json& map, const std::string& name) {
+    if (!map.IsObject())
+        return core::Status::Err("scene: prefab '" + name + "' component map must be a JSON object");
+    for (const auto& [cname, cdata] : map.Members()) {
+        if (!cdata.IsObject())
+            return core::Status::Err("scene: prefab '" + name + "' component '" + cname +
+                                     "' must be a JSON object");
+    }
+    return core::Status::Ok(true);
+}
+
 core::Status PrefabLibrary::Add(const std::string& name, const std::string& jsonText) {
     if (name.empty()) return core::Status::Err("scene: prefab name must not be empty");
     std::string perr;
@@ -181,8 +200,18 @@ core::Status PrefabLibrary::Add(const std::string& name, const std::string& json
     if (const core::Json* comps = root.Get("components")) {
         if (!comps->IsObject())
             return core::Status::Err("scene: prefab '" + name + "' 'components' must be a JSON object");
+        for (const auto& kv : root.Members()) {
+            if (kv.first != "components")
+                return core::Status::Err("scene: prefab '" + name +
+                                         "' has unknown top-level key '" + kv.first +
+                                         "' (expected only 'components')");
+        }
+        core::Status s = ValidatePrefabComponents(*comps, name);
+        if (!s.Ok()) return s;
         prefs_[name] = *comps;
     } else {
+        core::Status s = ValidatePrefabComponents(root, name);
+        if (!s.Ok()) return s;
         prefs_[name] = root;
     }
     return core::Status::Ok(true);
@@ -219,7 +248,7 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
     reg.Register("transform",
                  [](ecs::World& world, ecs::Entity ent, const core::Json& data,
                     const core::Json&, std::string* err) {
-                     if (HasUnknown(data, {"pos", "rot", "scale"}, "transform", err)) return false;
+                     if (!CheckComponentShape(data, {"pos", "rot", "scale"}, "transform", err)) return false;
                      SceneTransform t;
                      if (!ReadVec3(data, "pos", "transform", t.pos, err)) return false;
                      if (!ReadQuat(data, "rot", "transform", t.rot, err)) return false;
@@ -231,7 +260,7 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
     reg.Register("mesh",
                  [assets](ecs::World& world, ecs::Entity ent, const core::Json& data,
                           const core::Json&, std::string* err) {
-                     if (HasUnknown(data,
+                     if (!CheckComponentShape(data,
                                     {"meshKey", "material", "metallic", "roughness", "colorHex"},
                                     "mesh", err))
                          return false;
@@ -256,7 +285,7 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                              if (err) *err = "component 'mesh' field 'material' must be an object";
                              return false;
                          }
-                         if (HasUnknown(*mat, {"metallic", "roughness", "colorHex"},
+                         if (!CheckComponentShape(*mat, {"metallic", "roughness", "colorHex"},
                                         "mesh.material", err))
                              return false;
                          if (!RequireNumber(*mat, "metallic", "mesh.material", m.metallic, err))
@@ -288,7 +317,7 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
     reg.Register("health",
                  [](ecs::World& world, ecs::Entity ent, const core::Json& data,
                     const core::Json&, std::string* err) {
-                     if (HasUnknown(data, {"hp", "maxHp"}, "health", err)) return false;
+                     if (!CheckComponentShape(data, {"hp", "maxHp"}, "health", err)) return false;
                      const core::Json* hp = data.Get("hp");
                      const core::Json* maxHp = data.Get("maxHp");
                      if (!hp || !hp->IsNumber() || !maxHp || !maxHp->IsNumber()) {
@@ -305,7 +334,7 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
     reg.Register("script",
                  [](ecs::World& world, ecs::Entity ent, const core::Json& data,
                     const core::Json&, std::string* err) {
-                     if (HasUnknown(data, {"backend", "path", "vars"}, "script", err)) return false;
+                     if (!CheckComponentShape(data, {"backend", "path", "vars"}, "script", err)) return false;
                      SceneScript s;
                      if (const core::Json* b = data.Get("backend")) {
                          if (!b->IsString()) {
@@ -335,7 +364,7 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
     reg.Register("behaviorTree",
                  [](ecs::World& world, ecs::Entity ent, const core::Json& data,
                     const core::Json&, std::string* err) {
-                     if (HasUnknown(data, {"tree"}, "behaviorTree", err)) return false;
+                     if (!CheckComponentShape(data, {"tree"}, "behaviorTree", err)) return false;
                      const core::Json* tree = data.Get("tree");
                      if (!tree || !tree->IsString()) {
                          if (err) *err = "component 'behaviorTree' requires a 'tree' string";
@@ -350,7 +379,7 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
     reg.Register("name",
                  [](ecs::World& world, ecs::Entity ent, const core::Json& data,
                     const core::Json&, std::string* err) {
-                     if (HasUnknown(data, {"name"}, "name", err)) return false;
+                     if (!CheckComponentShape(data, {"name"}, "name", err)) return false;
                      const core::Json* n = data.Get("name");
                      if (!n || !n->IsString()) {
                          if (err) *err = "component 'name' requires a 'name' string";

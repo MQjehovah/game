@@ -294,6 +294,7 @@ TEST(SceneInstantiateTransactional) {
     CHECK_EQ(world.EntityCount(), 0u);                       // rolled back
     CHECK_EQ(world.ViewAll<scene::SceneTransform>().Size(), 0u);
     CHECK_EQ(world.ViewAll<scene::SceneHealth>().Size(), 0u);
+    CHECK_EQ(world.ViewAll<scene::SceneName>().Size(), 0u);  // auto-added name cleared
 }
 
 // ---------------------------------------------------------------------------
@@ -381,4 +382,93 @@ TEST(SceneMeshKeyPrefixValidation) {
     ecs::World world2;
     auto badInst = scene::Instantiate(world2, badRes.Value(), prefs, reg);
     CHECK(!badInst.Ok());
+}
+
+// ---------------------------------------------------------------------------
+// Prefab rejects non-object component values; stray top-level keys rejected
+// ---------------------------------------------------------------------------
+
+TEST(ScenePrefabRejectsNonObjectComponent) {
+    scene::PrefabLibrary prefs;
+    // "components" wrapper form
+    CHECK(!prefs.Add("bad1", R"({"components": {"transform": 5}})").Ok());
+    CHECK(!prefs.Has("bad1"));
+    // bare component-map form
+    CHECK(!prefs.Add("bad2", R"({"transform": 5})").Ok());
+    CHECK(!prefs.Has("bad2"));
+    // stray top-level key next to "components" (catches "Components" typos)
+    CHECK(!prefs.Add("bad3", R"({"Components": {}, "components": {}})").Ok());
+    CHECK(!prefs.Has("bad3"));
+
+    // A scene referencing a prefab that failed to load errors cleanly.
+    auto res = scene::SceneFile::Parse(R"({
+        "entities": [
+            {"prefab": "bad1", "components": {"transform": {"pos": [0,0,0]}}}
+        ]
+    })");
+    CHECK(res.Ok());
+    scene::ComponentRegistry reg;
+    scene::RegisterBuiltinComponents(reg);
+    ecs::World world;
+    auto inst = scene::Instantiate(world, res.Value(), prefs, reg);
+    CHECK(!inst.Ok());
+    CHECK(!inst.Error().empty());
+    CHECK_EQ(world.EntityCount(), 0u);
+}
+
+// ---------------------------------------------------------------------------
+// behaviorTree + mesh defaults
+// ---------------------------------------------------------------------------
+
+TEST(SceneBehaviorTreeComponent) {
+    auto res = scene::SceneFile::Parse(R"({
+        "entities": [
+            {"components": {
+                "transform": {"pos": [0,0,0]},
+                "behaviorTree": {"tree": "bt:wolf_ai"}
+            }}
+        ]
+    })");
+    CHECK(res.Ok());
+
+    scene::ComponentRegistry reg;
+    scene::RegisterBuiltinComponents(reg);
+    ecs::World world;
+    scene::PrefabLibrary prefs;
+    auto inst = scene::Instantiate(world, res.Value(), prefs, reg);
+    CHECK(inst.Ok());
+
+    auto view = world.ViewAll<scene::SceneBehaviorTree>();
+    CHECK_EQ(view.Size(), 1u);
+    ecs::Entity ent = world.EntityAt<scene::SceneBehaviorTree>(0);
+    const scene::SceneBehaviorTree* bt = world.Get<scene::SceneBehaviorTree>(ent);
+    CHECK(bt != nullptr);
+    CHECK_EQ(bt->treeJson, std::string("bt:wolf_ai"));
+}
+
+TEST(SceneMeshDefaults) {
+    auto res = scene::SceneFile::Parse(R"({
+        "entities": [
+            {"components": {
+                "transform": {"pos": [0,0,0]},
+                "mesh": {"meshKey": "obj:assets/cube.obj"}
+            }}
+        ]
+    })");
+    CHECK(res.Ok());
+
+    scene::ComponentRegistry reg;
+    scene::RegisterBuiltinComponents(reg);
+    ecs::World world;
+    scene::PrefabLibrary prefs;
+    auto inst = scene::Instantiate(world, res.Value(), prefs, reg);
+    CHECK(inst.Ok());
+
+    auto view = world.ViewAll<scene::SceneMesh>();
+    CHECK_EQ(view.Size(), 1u);
+    ecs::Entity ent = world.EntityAt<scene::SceneMesh>(0);
+    const scene::SceneMesh* m = world.Get<scene::SceneMesh>(ent);
+    CHECK(m != nullptr);
+    CHECK_NEAR(m->metallic, 0.0, 1e-6);
+    CHECK_NEAR(m->roughness, 1.0, 1e-6);
 }
