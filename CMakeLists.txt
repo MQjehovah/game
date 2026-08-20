@@ -21,6 +21,7 @@ set(ENGINE_CORE_SOURCES
   engine/src/ecs/world.cpp
   engine/src/core/json.cpp
   engine/src/core/serialize.cpp
+  engine/src/core/pack.cpp
   engine/src/gfx/color.cpp
   engine/src/gfx/font.cpp
   engine/src/gfx/mesh.cpp
@@ -126,7 +127,7 @@ target_link_libraries(neon_editor PRIVATE neon_engine neon_imgui)
 # Tests
 # ---------------------------------------------------------------------------
 enable_testing()
-add_executable(neon_tests tests/test_main.cpp tests/test_serialize.cpp)
+add_executable(neon_tests tests/test_main.cpp tests/test_serialize.cpp tests/test_pack.cpp)
 target_link_libraries(neon_tests PRIVATE neon_engine)
 add_test(NAME unit COMMAND neon_tests)
 
