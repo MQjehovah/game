@@ -5,6 +5,7 @@
 
 #include "neon/neon.hpp"
 #include "neon/core/pack.hpp"
+#include "neon/core/serialize.hpp"
 #include "helpers.hpp"
 
 using namespace neon;
@@ -21,12 +22,63 @@ std::vector<uint8_t> ToBytes(const std::string& s) {
     return std::vector<uint8_t>(s.begin(), s.end());
 }
 
+// Big-endian field accessors used to hand-craft corrupted pack streams.
+uint32_t GetU32At(const std::vector<uint8_t>& b, size_t pos) {
+    return (static_cast<uint32_t>(b[pos]) << 24) | (static_cast<uint32_t>(b[pos + 1]) << 16) |
+           (static_cast<uint32_t>(b[pos + 2]) << 8) | static_cast<uint32_t>(b[pos + 3]);
+}
+
+uint64_t GetU64At(const std::vector<uint8_t>& b, size_t pos) {
+    uint64_t v = 0;
+    for (size_t i = 0; i < 8; ++i) v = (v << 8) | b[pos + i];
+    return v;
+}
+
+void PutU32At(std::vector<uint8_t>& b, size_t pos, uint32_t v) {
+    b[pos + 0] = static_cast<uint8_t>(v >> 24);
+    b[pos + 1] = static_cast<uint8_t>(v >> 16);
+    b[pos + 2] = static_cast<uint8_t>(v >> 8);
+    b[pos + 3] = static_cast<uint8_t>(v & 0xFFu);
+}
+
+void PutU64At(std::vector<uint8_t>& b, size_t pos, uint64_t v) {
+    for (int i = 0; i < 8; ++i) b[pos + i] = static_cast<uint8_t>(v >> (56 - 8 * i));
+}
+
+// Rewrites the index CRC field for a pack whose index occupies
+// bytes[16, 16 + indexLen). Lets tests mutate the index while keeping the CRC
+// internally consistent, so the failure under test is the specific corruption.
+void PatchIndexCrc(std::vector<uint8_t>& bytes, size_t indexLen) {
+    const uint32_t crc = core::Crc32(bytes.data() + 16, indexLen);
+    PutU32At(bytes, 12, crc);
+}
+
+// Field offsets within a pack produced from a single AddFile entry.
+struct SingleEntryLayout {
+    size_t offPos = 0;    // block offset (u64)
+    size_t compPos = 0;   // compressed size (u32)
+    size_t methodPos = 0; // compression method (u8)
+    size_t indexLen = 0;  // bytes of the index (fileCount + entry)
+};
+
+SingleEntryLayout LayoutOf(const std::vector<uint8_t>& bytes) {
+    SingleEntryLayout l;
+    const size_t entryStart = 16 + 4; // header + fileCount
+    const uint32_t pathLen = GetU32At(bytes, entryStart);
+    const size_t tailPos = entryStart + 4 + pathLen;
+    l.offPos = tailPos;
+    l.compPos = tailPos + 8;
+    l.methodPos = tailPos + 20; // offset(8)+comp(4)+raw(4)+crc(4) precedes it
+    l.indexLen = 4 + (4 + pathLen + 21);
+    return l;
+}
+
 } // namespace
 
 TEST(PackRoundTrip) {
     core::PackWriter w;
-    CHECK(w.AddFile("a.txt", ToBytes(kTextA)));
-    CHECK(w.AddFile(kDirPath, ToBytes(kTextC)));
+    CHECK(w.AddFile("a.txt", ToBytes(kTextA)).Ok());
+    CHECK(w.AddFile(kDirPath, ToBytes(kTextC)).Ok());
 
     std::vector<uint8_t> bytes = w.Build();
 
@@ -55,7 +107,7 @@ TEST(PackRoundTrip) {
 
 TEST(PackMissingFileNotFound) {
     core::PackWriter w;
-    CHECK(w.AddFile("a.txt", ToBytes("x")));
+    CHECK(w.AddFile("a.txt", ToBytes("x")).Ok());
     std::vector<uint8_t> bytes = w.Build();
     core::PackReader r(bytes);
     CHECK(r.Valid());
@@ -67,8 +119,8 @@ TEST(PackMissingFileNotFound) {
 
 TEST(PackCorruptedBlockDetected) {
     core::PackWriter w;
-    CHECK(w.AddFile("a.txt", ToBytes("aaaa")));
-    CHECK(w.AddFile(kDirPath, ToBytes("cccccccccccccccc")));
+    CHECK(w.AddFile("a.txt", ToBytes("aaaa")).Ok());
+    CHECK(w.AddFile(kDirPath, ToBytes("cccccccccccccccc")).Ok());
     std::vector<uint8_t> bytes = w.Build();
     CHECK(!bytes.empty());
     if (bytes.empty()) return;
@@ -84,8 +136,8 @@ TEST(PackCorruptedBlockDetected) {
 
 TEST(PackCorruptedIndexRejected) {
     core::PackWriter w;
-    CHECK(w.AddFile("a.txt", ToBytes("abc")));
-    CHECK(w.AddFile(kDirPath, ToBytes("xyz")));
+    CHECK(w.AddFile("a.txt", ToBytes("abc")).Ok());
+    CHECK(w.AddFile(kDirPath, ToBytes("xyz")).Ok());
     std::vector<uint8_t> bytes = w.Build();
     // A valid pack always carries the fileCount field right after the 16-byte
     // header; corrupting it must invalidate the index CRC.
@@ -98,9 +150,30 @@ TEST(PackCorruptedIndexRejected) {
     CHECK(!r.Error().empty());
 }
 
+TEST(PackWrongVersionRejected) {
+    core::PackWriter w;
+    CHECK(w.AddFile("a.txt", ToBytes("x")).Ok());
+    std::vector<uint8_t> bytes = w.Build();
+    bytes[8] = 0; bytes[9] = 0; bytes[10] = 0; bytes[11] = 2; // version 2
+
+    core::PackReader r(bytes);
+    CHECK(!r.Valid());
+    CHECK(r.Error().find("version") != std::string::npos);
+}
+
+TEST(PackTooShortRejected) {
+    std::vector<uint8_t> none;
+    core::PackReader empty(none);
+    CHECK(!empty.Valid());
+
+    std::vector<uint8_t> shortBuf(15, 0); // one byte short of the 16-byte header
+    core::PackReader tooShort(shortBuf);
+    CHECK(!tooShort.Valid());
+}
+
 TEST(PackWrongMagicRejected) {
     core::PackWriter w;
-    CHECK(w.AddFile("a.txt", ToBytes("x")));
+    CHECK(w.AddFile("a.txt", ToBytes("x")).Ok());
     std::vector<uint8_t> bytes = w.Build();
     CHECK(!bytes.empty());
     if (bytes.empty()) return;
@@ -112,11 +185,25 @@ TEST(PackWrongMagicRejected) {
 
 TEST(PackTruncatedRejected) {
     core::PackWriter w;
-    CHECK(w.AddFile("a.txt", ToBytes("payload-payload")));
+    CHECK(w.AddFile("a.txt", ToBytes("payload-payload")).Ok());
     std::vector<uint8_t> bytes = w.Build();
     CHECK(bytes.size() >= 20u);
     if (bytes.size() < 20u) return;
     bytes.resize(bytes.size() - 2); // cut into the last data block
+
+    core::PackReader r(bytes);
+    CHECK(!r.Valid());
+}
+
+TEST(PackTruncatedIndexRejected) {
+    core::PackWriter w;
+    CHECK(w.AddFile("a.txt", ToBytes("payload")).Ok());
+    std::vector<uint8_t> bytes = w.Build();
+    // Cut inside the first index entry: the pathLen field survives but the
+    // path bytes do not, so pathLen exceeds the remaining buffer.
+    CHECK(bytes.size() >= 24u);
+    if (bytes.size() < 24u) return;
+    bytes.resize(24); // header(16) + fileCount(4) + pathLen(4)
 
     core::PackReader r(bytes);
     CHECK(!r.Valid());
@@ -135,8 +222,8 @@ TEST(PackEmptyPack) {
 
 TEST(PackDuplicatePathRejected) {
     core::PackWriter w;
-    CHECK(w.AddFile("dup.txt", ToBytes("first")));
-    CHECK(!w.AddFile("dup.txt", ToBytes("second")));
+    CHECK(w.AddFile("dup.txt", ToBytes("first")).Ok());
+    CHECK(!w.AddFile("dup.txt", ToBytes("second")).Ok());
     std::vector<uint8_t> bytes = w.Build();
     core::PackReader r(bytes);
     CHECK(r.Valid());
@@ -148,12 +235,12 @@ TEST(PackDuplicatePathRejected) {
 
 TEST(PackEmptyPathRejected) {
     core::PackWriter w;
-    CHECK(!w.AddFile("", ToBytes("data")));
+    CHECK(!w.AddFile("", ToBytes("data")).Ok());
 }
 
 TEST(PackEmptyFileRoundTrip) {
     core::PackWriter w;
-    CHECK(w.AddFile("empty.bin", {}));
+    CHECK(w.AddFile("empty.bin", {}).Ok());
     std::vector<uint8_t> bytes = w.Build();
     core::PackReader r(bytes);
     CHECK(r.Valid());
@@ -167,9 +254,9 @@ TEST(PackUtf8PathsRoundTrip) {
     const std::string p1 = "场景/map/平原.txt";
     const std::string p2 = "データ/キャラクター.png";
     const std::string p3 = "emoji/🎮.bin";
-    CHECK(w.AddFile(p1, ToBytes("one")));
-    CHECK(w.AddFile(p2, ToBytes("two")));
-    CHECK(w.AddFile(p3, ToBytes("three")));
+    CHECK(w.AddFile(p1, ToBytes("one")).Ok());
+    CHECK(w.AddFile(p2, ToBytes("two")).Ok());
+    CHECK(w.AddFile(p3, ToBytes("three")).Ok());
 
     std::vector<uint8_t> bytes = w.Build();
     core::PackReader r(bytes);
@@ -202,9 +289,9 @@ TEST(PackImplausibleCountRejected) {
 
 TEST(PackInsertionOrderIndependent) {
     core::PackWriter w;
-    CHECK(w.AddFile("z.txt", ToBytes("1")));
-    CHECK(w.AddFile("m.txt", ToBytes("2")));
-    CHECK(w.AddFile("a.txt", ToBytes("3")));
+    CHECK(w.AddFile("z.txt", ToBytes("1")).Ok());
+    CHECK(w.AddFile("m.txt", ToBytes("2")).Ok());
+    CHECK(w.AddFile("a.txt", ToBytes("3")).Ok());
     std::vector<uint8_t> bytes = w.Build();
     core::PackReader r(bytes);
     CHECK(r.Valid());
@@ -217,6 +304,28 @@ TEST(PackInsertionOrderIndependent) {
     }
 }
 
+TEST(PackDeterministicBuild) {
+    const std::vector<uint8_t> a = ToBytes("alpha");
+    const std::vector<uint8_t> b = ToBytes("beta beta");
+    const std::vector<uint8_t> c = ToBytes("子目录 content");
+
+    core::PackWriter w1;
+    CHECK(w1.AddFile("z.txt", a).Ok());
+    CHECK(w1.AddFile("a.txt", b).Ok());
+    CHECK(w1.AddFile("m/子/x.png", c).Ok());
+    std::vector<uint8_t> first = w1.Build();
+
+    core::PackWriter w2; // different insertion order, same content
+    CHECK(w2.AddFile("m/子/x.png", c).Ok());
+    CHECK(w2.AddFile("a.txt", b).Ok());
+    CHECK(w2.AddFile("z.txt", a).Ok());
+    std::vector<uint8_t> second = w2.Build();
+
+    CHECK(first == second);
+    // Rebuilding the same writer is also stable.
+    CHECK(w1.Build() == first);
+}
+
 TEST(PackLargeFileRoundTrip) {
     core::PackWriter w;
     const size_t n = 256 * 1024;
@@ -226,7 +335,7 @@ TEST(PackLargeFileRoundTrip) {
         state = state * 1664525u + 1013904223u;
         big[i] = static_cast<uint8_t>(state >> 24);
     }
-    CHECK(w.AddFile("big.bin", big));
+    CHECK(w.AddFile("big.bin", big).Ok());
     std::vector<uint8_t> bytes = w.Build();
     core::PackReader r(bytes);
     CHECK(r.Valid());
@@ -234,4 +343,57 @@ TEST(PackLargeFileRoundTrip) {
     CHECK(res.Ok());
     CHECK_EQ(res.Value().size(), n);
     CHECK(res.Value() == big);
+}
+
+TEST(PackIndexCrcValidBlockOutOfBounds) {
+    // Index CRC is valid, but the block offset points past the end of the pack:
+    // must be rejected at construction, no crash.
+    core::PackWriter w;
+    CHECK(w.AddFile("a.bin", ToBytes("hello")).Ok());
+    std::vector<uint8_t> bytes = w.Build();
+
+    const SingleEntryLayout layout = LayoutOf(bytes);
+    PutU64At(bytes, layout.offPos, static_cast<uint64_t>(bytes.size()) + 100);
+    PatchIndexCrc(bytes, layout.indexLen);
+
+    core::PackReader r(bytes);
+    CHECK(!r.Valid());
+}
+
+TEST(PackIndexCrcValidSizeMismatch) {
+    // Index CRC is valid and the block stays in bounds, but compSize != rawSize
+    // for a stored entry: construction passes, Read must report the mismatch.
+    core::PackWriter w;
+    CHECK(w.AddFile("a.bin", ToBytes("hello")).Ok());
+    std::vector<uint8_t> bytes = w.Build();
+
+    const SingleEntryLayout layout = LayoutOf(bytes);
+    const uint64_t blockOffset = GetU64At(bytes, layout.offPos);
+    PutU32At(bytes, layout.compPos, 7); // compSize 7 vs rawSize 5
+    bytes.resize(static_cast<size_t>(blockOffset) + 7, 0); // keep the block in bounds
+    PatchIndexCrc(bytes, layout.indexLen);
+
+    core::PackReader r(bytes);
+    CHECK(r.Valid());
+    core::Result<std::vector<uint8_t>> res = r.Read("a.bin");
+    CHECK(!res.Ok());
+    CHECK(res.Error().find("size mismatch") != std::string::npos);
+}
+
+TEST(PackIndexCrcValidUnsupportedMethod) {
+    // Index CRC is valid, but the entry claims an unknown compression method:
+    // construction passes, Read must report it as unsupported.
+    core::PackWriter w;
+    CHECK(w.AddFile("a.bin", ToBytes("hello")).Ok());
+    std::vector<uint8_t> bytes = w.Build();
+
+    const SingleEntryLayout layout = LayoutOf(bytes);
+    bytes[layout.methodPos] = 7;
+    PatchIndexCrc(bytes, layout.indexLen);
+
+    core::PackReader r(bytes);
+    CHECK(r.Valid());
+    core::Result<std::vector<uint8_t>> res = r.Read("a.bin");
+    CHECK(!res.Ok());
+    CHECK(res.Error().find("unsupported compression") != std::string::npos);
 }

@@ -48,9 +48,10 @@ public:
     PackWriter() = default;
 
     // Registers an entry under `virtualPath` (an arbitrary string key stored
-    // verbatim). Returns false and ignores the entry when the path is empty or
-    // duplicates an existing path; never throws.
-    bool AddFile(const std::string& virtualPath, const std::vector<uint8_t>& data);
+    // verbatim). Returns Err and ignores the entry when the path is empty,
+    // duplicates an existing path, or when the path/blob exceeds UINT32_MAX
+    // bytes (the per-entry size fields are u32). Never throws.
+    core::Status AddFile(const std::string& virtualPath, const std::vector<uint8_t>& data);
 
     // Serializes the pack: paths are sorted, the index CRC is stamped, and each
     // entry's data block is appended in that order. Deterministic for the same

@@ -58,12 +58,19 @@ uint64_t GetU64(const uint8_t* p) {
 
 } // namespace
 
-bool PackWriter::AddFile(const std::string& virtualPath, const std::vector<uint8_t>& data) {
-    if (virtualPath.empty()) return false;
+core::Status PackWriter::AddFile(const std::string& virtualPath, const std::vector<uint8_t>& data) {
+    if (virtualPath.empty()) return core::Status::Err("pack: empty path");
+    if (virtualPath.size() > UINT32_MAX)
+        return core::Status::Err("pack: path too long: " + virtualPath);
     for (const Entry& e : entries_)
-        if (e.path == virtualPath) return false;
+        if (e.path == virtualPath)
+            return core::Status::Err("pack: duplicate path: " + virtualPath);
+    // The per-entry size field is u32; a blob that does not fit would otherwise
+    // be silently truncated into a corrupt pack, so reject it up front.
+    if (data.size() > UINT32_MAX)
+        return core::Status::Err("pack: file too large to pack: " + virtualPath);
     entries_.push_back({virtualPath, data});
-    return true;
+    return core::Status::Ok(true);
 }
 
 std::vector<uint8_t> PackWriter::Build() const {
@@ -79,10 +86,12 @@ std::vector<uint8_t> PackWriter::Build() const {
     PutU32(buf, 0); // index CRC placeholder, patched below
     PutU32(buf, static_cast<uint32_t>(sorted.size()));
 
-    size_t blockStart = kPackHeaderBytes + 4; // past the fileCount field
+    // u64 accumulator: a pack whose index exceeds 4 GiB (64-bit builds) must
+    // not overflow a 32-bit size_t before the u64 offset path starts.
+    uint64_t blockStart = kPackHeaderBytes + 4; // past the fileCount field
     for (const Entry& e : sorted) blockStart += 4 + e.path.size() + kEntryTailBytes;
 
-    uint64_t offset = static_cast<uint64_t>(blockStart);
+    uint64_t offset = blockStart;
     for (const Entry& e : sorted) {
         assert(e.path.size() <= UINT32_MAX && e.data.size() <= UINT32_MAX);
         PutU32(buf, static_cast<uint32_t>(e.path.size()));
