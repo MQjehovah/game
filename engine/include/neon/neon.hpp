@@ -36,6 +36,7 @@
 #include "neon/ui/ui.hpp"
 #include "neon/assets/asset_manager.hpp"
 #include "neon/scene/scene.hpp"
+#include "neon/scene/scene_file.hpp"
 #include "neon/script/script.hpp"
 #include "neon/script/gamevars.hpp"
 #include "neon/script/blackboard.hpp"
