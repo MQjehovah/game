@@ -368,20 +368,23 @@ GltfAsset AssetManager::LoadGLTF(const std::string& path) {
                     readAccessor(n->GetInt(), &nrmBase, nrmStride, nrmCount);
                 if (const core::Json* t = attrs->Get("TEXCOORD_0"))
                     readAccessor(t->GetInt(), &uvBase, uvStride, uvCount);
+                int jCount = 0;
                 if (const core::Json* j = attrs->Get("JOINTS_0")) {
                     const uint8_t* jBase = nullptr;
-                    int jStride = 0, jCount = 0;
+                    int jStride = 0;
                     if (readAccessor(j->GetInt(), &jBase, jStride, jCount)) {
                         const core::Json* jacc = accessors ? accessors->At(j->GetInt()) : nullptr;
-                        int jct = jacc ? jacc->Get("componentType")->GetInt(0) : 0;
-                        rm.jointIds.resize(static_cast<size_t>(jCount) * 4);
+                        const core::Json* jctNode = jacc ? jacc->Get("componentType") : nullptr;
+                        int jct = jctNode ? jctNode->GetInt(0) : 0;
                         if (jct == 5121) {
+                            rm.jointIds.resize(static_cast<size_t>(jCount) * 4);
                             for (int v = 0; v < jCount; ++v) {
                                 const uint8_t* src = jBase + v * jStride;
                                 for (int c = 0; c < 4; ++c)
                                     rm.jointIds[static_cast<size_t>(v) * 4 + c] = src[c];
                             }
                         } else if (jct == 5123) {
+                            rm.jointIds.resize(static_cast<size_t>(jCount) * 4);
                             for (int v = 0; v < jCount; ++v) {
                                 const uint16_t* src =
                                     reinterpret_cast<const uint16_t*>(jBase + v * jStride);
@@ -391,9 +394,10 @@ GltfAsset AssetManager::LoadGLTF(const std::string& path) {
                         }
                     }
                 }
+                int wCount = 0;
                 if (const core::Json* w = attrs->Get("WEIGHTS_0")) {
                     const uint8_t* wBase = nullptr;
-                    int wStride = 0, wCount = 0;
+                    int wStride = 0;
                     if (readAccessor(w->GetInt(), &wBase, wStride, wCount)) {
                         rm.jointWeights.resize(static_cast<size_t>(wCount) * 4);
                         for (int v = 0; v < wCount; ++v) {
@@ -404,7 +408,16 @@ GltfAsset AssetManager::LoadGLTF(const std::string& path) {
                         }
                     }
                 }
-                rm.skinned = !rm.jointIds.empty() && !rm.jointWeights.empty();
+                if (!rm.jointIds.empty() && !rm.jointWeights.empty()) {
+                    if (jCount == posCount && wCount == posCount) {
+                        rm.skinned = true;
+                    } else {
+                        rm.jointIds.clear();
+                        rm.jointWeights.clear();
+                        NEON_LOG_WARN("GLTF: JOINTS_0/WEIGHTS_0 count (%d/%d) != POSITION count (%d)",
+                                      jCount, wCount, posCount);
+                    }
+                }
                 if (!posBase || posCount == 0) continue;
                 rm.verts.resize(static_cast<size_t>(posCount));
                 for (int v = 0; v < posCount; ++v) {
@@ -514,8 +527,15 @@ GltfAsset AssetManager::LoadGLTF(const std::string& path) {
             if (!s) continue;
             gfx::Skin skin;
             if (const core::Json* joints = s->Get("joints")) {
-                for (size_t j = 0; j < joints->Size(); ++j)
-                    skin.joints.push_back(static_cast<uint32_t>(joints->At(j)->GetInt(-1)));
+                for (size_t j = 0; j < joints->Size(); ++j) {
+                    int nodeIdx = joints->At(j)->GetInt(-1);
+                    if (nodeIdx < 0 || nodeIdx >= static_cast<int>(nodes.size())) {
+                        NEON_LOG_WARN("GLTF: skin %zu joint %zu index %d out of node range; using 0",
+                                      si, j, nodeIdx);
+                        nodeIdx = 0;
+                    }
+                    skin.joints.push_back(static_cast<uint32_t>(nodeIdx));
+                }
             }
             if (const core::Json* ibm = s->Get("inverseBindMatrices")) {
                 const uint8_t* ibmBase = nullptr;

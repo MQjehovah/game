@@ -143,6 +143,178 @@ const char* kGltfStatic = R"({
   "buffers": [{"byteLength": 42, "uri": "scene.bin"}]
 })";
 
+// Same vertex/skin data as SkinnedBin but JOINTS_0 stored as u8 (5121):
+//   positions 0-35, joints 36-47 (12 bytes), weights 48-95, indices 96-101,
+//   inverseBindMatrices 102-229. Total 230 bytes.
+std::vector<uint8_t> SkinnedBinU8() {
+    std::vector<uint8_t> out;
+    const float kPos[3][3] = {{0, 0, 0}, {1, 0, 0}, {0, 1, 0}};
+    for (int i = 0; i < 3; ++i)
+        for (int c = 0; c < 3; ++c) AppendF32(out, kPos[i][c]);
+    const uint8_t kJoints[3][4] = {{0, 1, 0, 1}, {1, 0, 1, 0}, {0, 0, 1, 1}};
+    for (int i = 0; i < 3; ++i)
+        for (int c = 0; c < 4; ++c) AppendBytes(out, &kJoints[i][c], 1);
+    const float kWeights[3][4] = {{0.5f, 0.5f, 0, 0}, {1, 0, 0, 0}, {0.25f, 0.25f, 0.25f, 0.25f}};
+    for (int i = 0; i < 3; ++i)
+        for (int c = 0; c < 4; ++c) AppendF32(out, kWeights[i][c]);
+    AppendU16(out, 0);
+    AppendU16(out, 1);
+    AppendU16(out, 2);
+    const float kMat0[16] = {2, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    const float kMat1[16] = {3, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    AppendBytes(out, kMat0, sizeof(kMat0));
+    AppendBytes(out, kMat1, sizeof(kMat1));
+    return out;
+}
+
+const char* kGltfSkinnedU8 = R"({
+  "asset": {"version": "2.0"},
+  "scene": 0,
+  "scenes": [{"nodes": [0]}],
+  "nodes": [
+    {"skin": 0, "mesh": 0},
+    {},
+    {}
+  ],
+  "skins": [{"joints": [1, 2], "inverseBindMatrices": 4}],
+  "meshes": [
+    {"primitives": [{"attributes": {"POSITION": 0, "JOINTS_0": 1, "WEIGHTS_0": 2}, "indices": 3}]}
+  ],
+  "accessors": [
+    {"bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3"},
+    {"bufferView": 1, "componentType": 5121, "count": 3, "type": "VEC4"},
+    {"bufferView": 2, "componentType": 5126, "count": 3, "type": "VEC4"},
+    {"bufferView": 3, "componentType": 5123, "count": 3, "type": "SCALAR"},
+    {"bufferView": 4, "componentType": 5126, "count": 2, "type": "MAT4"}
+  ],
+  "bufferViews": [
+    {"buffer": 0, "byteOffset": 0, "byteLength": 36},
+    {"buffer": 0, "byteOffset": 36, "byteLength": 12},
+    {"buffer": 0, "byteOffset": 48, "byteLength": 48},
+    {"buffer": 0, "byteOffset": 96, "byteLength": 6},
+    {"buffer": 0, "byteOffset": 102, "byteLength": 128}
+  ],
+  "buffers": [{"byteLength": 230, "uri": "scene.bin"}]
+})";
+
+// JOINTS_0 present but WEIGHTS_0 missing entirely (SkinnedBin data, unused
+// WEIGHTS accessor stays in the file but is not referenced by the primitive).
+const char* kGltfSkinnedJointsOnly = R"({
+  "asset": {"version": "2.0"},
+  "scene": 0,
+  "scenes": [{"nodes": [0]}],
+  "nodes": [
+    {"skin": 0, "mesh": 0},
+    {},
+    {}
+  ],
+  "skins": [{"joints": [1, 2], "inverseBindMatrices": 4}],
+  "meshes": [
+    {"primitives": [{"attributes": {"POSITION": 0, "JOINTS_0": 1}, "indices": 3}]}
+  ],
+  "accessors": [
+    {"bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3"},
+    {"bufferView": 1, "componentType": 5123, "count": 3, "type": "VEC4"},
+    {"bufferView": 2, "componentType": 5126, "count": 3, "type": "VEC4"},
+    {"bufferView": 3, "componentType": 5123, "count": 3, "type": "SCALAR"},
+    {"bufferView": 4, "componentType": 5126, "count": 2, "type": "MAT4"}
+  ],
+  "bufferViews": [
+    {"buffer": 0, "byteOffset": 0, "byteLength": 36},
+    {"buffer": 0, "byteOffset": 36, "byteLength": 24},
+    {"buffer": 0, "byteOffset": 60, "byteLength": 48},
+    {"buffer": 0, "byteOffset": 108, "byteLength": 6},
+    {"buffer": 0, "byteOffset": 114, "byteLength": 128}
+  ],
+  "buffers": [{"byteLength": 242, "uri": "scene.bin"}]
+})";
+
+// JOINTS_0 accessor uses an invalid component type (5126 float) instead of
+// 5121/5123; joint data must be dropped and the mesh left unskinned.
+const char* kGltfSkinnedWrongJointsType = R"({
+  "asset": {"version": "2.0"},
+  "scene": 0,
+  "scenes": [{"nodes": [0]}],
+  "nodes": [
+    {"skin": 0, "mesh": 0},
+    {},
+    {}
+  ],
+  "skins": [{"joints": [1, 2], "inverseBindMatrices": 4}],
+  "meshes": [
+    {"primitives": [{"attributes": {"POSITION": 0, "JOINTS_0": 1, "WEIGHTS_0": 2}, "indices": 3}]}
+  ],
+  "accessors": [
+    {"bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3"},
+    {"bufferView": 1, "componentType": 5126, "count": 3, "type": "VEC4"},
+    {"bufferView": 2, "componentType": 5126, "count": 3, "type": "VEC4"},
+    {"bufferView": 3, "componentType": 5123, "count": 3, "type": "SCALAR"},
+    {"bufferView": 4, "componentType": 5126, "count": 2, "type": "MAT4"}
+  ],
+  "bufferViews": [
+    {"buffer": 0, "byteOffset": 0, "byteLength": 36},
+    {"buffer": 0, "byteOffset": 36, "byteLength": 24},
+    {"buffer": 0, "byteOffset": 60, "byteLength": 48},
+    {"buffer": 0, "byteOffset": 108, "byteLength": 6},
+    {"buffer": 0, "byteOffset": 114, "byteLength": 128}
+  ],
+  "buffers": [{"byteLength": 242, "uri": "scene.bin"}]
+})";
+
+// JOINTS_0 count (2) does not match the POSITION count (3): joints at 36-51,
+// weights at 52-99, indices at 100-105, inverseBindMatrices at 106-233.
+// Total 234 bytes.
+std::vector<uint8_t> SkinnedBinCountMismatch() {
+    std::vector<uint8_t> out;
+    const float kPos[3][3] = {{0, 0, 0}, {1, 0, 0}, {0, 1, 0}};
+    for (int i = 0; i < 3; ++i)
+        for (int c = 0; c < 3; ++c) AppendF32(out, kPos[i][c]);
+    const uint16_t kJoints[2][4] = {{0, 1, 0, 1}, {1, 0, 1, 0}};
+    for (int i = 0; i < 2; ++i)
+        for (int c = 0; c < 4; ++c) AppendU16(out, kJoints[i][c]);
+    const float kWeights[3][4] = {{0.5f, 0.5f, 0, 0}, {1, 0, 0, 0}, {0.25f, 0.25f, 0.25f, 0.25f}};
+    for (int i = 0; i < 3; ++i)
+        for (int c = 0; c < 4; ++c) AppendF32(out, kWeights[i][c]);
+    AppendU16(out, 0);
+    AppendU16(out, 1);
+    AppendU16(out, 2);
+    const float kMat0[16] = {2, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    const float kMat1[16] = {3, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    AppendBytes(out, kMat0, sizeof(kMat0));
+    AppendBytes(out, kMat1, sizeof(kMat1));
+    return out;
+}
+
+const char* kGltfSkinnedCountMismatch = R"({
+  "asset": {"version": "2.0"},
+  "scene": 0,
+  "scenes": [{"nodes": [0]}],
+  "nodes": [
+    {"skin": 0, "mesh": 0},
+    {},
+    {}
+  ],
+  "skins": [{"joints": [1, 2], "inverseBindMatrices": 4}],
+  "meshes": [
+    {"primitives": [{"attributes": {"POSITION": 0, "JOINTS_0": 1, "WEIGHTS_0": 2}, "indices": 3}]}
+  ],
+  "accessors": [
+    {"bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3"},
+    {"bufferView": 1, "componentType": 5123, "count": 2, "type": "VEC4"},
+    {"bufferView": 2, "componentType": 5126, "count": 3, "type": "VEC4"},
+    {"bufferView": 3, "componentType": 5123, "count": 3, "type": "SCALAR"},
+    {"bufferView": 4, "componentType": 5126, "count": 2, "type": "MAT4"}
+  ],
+  "bufferViews": [
+    {"buffer": 0, "byteOffset": 0, "byteLength": 36},
+    {"buffer": 0, "byteOffset": 36, "byteLength": 16},
+    {"buffer": 0, "byteOffset": 52, "byteLength": 48},
+    {"buffer": 0, "byteOffset": 100, "byteLength": 6},
+    {"buffer": 0, "byteOffset": 106, "byteLength": 128}
+  ],
+  "buffers": [{"byteLength": 234, "uri": "scene.bin"}]
+})";
+
 } // namespace
 
 // JOINTS_0/WEIGHTS_0 are extracted per vertex (4 components each) and the mesh
@@ -258,4 +430,99 @@ TEST(GltfSkinMalformedMissingInverseBind) {
     CHECK(mesh.Skinned());
     CHECK_EQ(mesh.CpuJointIds().size(), 12u);
     CHECK_EQ(mesh.CpuJointWeights().size(), 12u);
+}
+
+// JOINTS_0 stored as u8 (5121) must be widened to the same per-vertex values.
+TEST(GltfSkinJointsU8) {
+    test::TempDir tmp;
+    std::vector<uint8_t> bin = SkinnedBinU8();
+    CHECK(test::WriteFileAll(tmp.Str() + "/scene.bin", bin.data(), bin.size()));
+    CHECK(test::WriteFileAll(tmp.Str() + "/scene.gltf", std::string(kGltfSkinnedU8)));
+
+    test::HeadlessAssetFixture fix;
+    assets::GltfAsset asset = fix.assets.LoadGLTF(tmp.Str() + "/scene.gltf");
+    CHECK(asset.Valid());
+    CHECK_EQ(asset.nodes.size(), 1u);
+    if (asset.nodes.size() != 1u) return;
+
+    const gfx::Mesh& mesh = asset.nodes[0].mesh;
+    CHECK(mesh.Valid());
+    CHECK(mesh.Skinned());
+    const std::vector<uint16_t>& joints = mesh.CpuJointIds();
+    const std::vector<float>& weights = mesh.CpuJointWeights();
+    CHECK_EQ(joints.size(), 12u);
+    CHECK_EQ(weights.size(), 12u);
+    if (joints.size() != 12u || weights.size() != 12u) return;
+    const uint16_t kJoints[3][4] = {{0, 1, 0, 1}, {1, 0, 1, 0}, {0, 0, 1, 1}};
+    const float kWeights[3][4] = {{0.5f, 0.5f, 0, 0}, {1, 0, 0, 0}, {0.25f, 0.25f, 0.25f, 0.25f}};
+    for (int v = 0; v < 3; ++v) {
+        for (int c = 0; c < 4; ++c) {
+            CHECK_EQ(joints[static_cast<size_t>(v) * 4 + c], kJoints[v][c]);
+            CHECK_NEAR(weights[static_cast<size_t>(v) * 4 + c], kWeights[v][c], 1e-6);
+        }
+    }
+}
+
+// JOINTS_0 without WEIGHTS_0 must not produce a skinned mesh.
+TEST(GltfSkinJointsWithoutWeightsNotSkinned) {
+    test::TempDir tmp;
+    std::vector<uint8_t> bin = SkinnedBin();
+    CHECK(test::WriteFileAll(tmp.Str() + "/scene.bin", bin.data(), bin.size()));
+    CHECK(test::WriteFileAll(tmp.Str() + "/scene.gltf", std::string(kGltfSkinnedJointsOnly)));
+
+    test::HeadlessAssetFixture fix;
+    assets::GltfAsset asset = fix.assets.LoadGLTF(tmp.Str() + "/scene.gltf");
+    CHECK(asset.Valid());
+    CHECK_EQ(asset.nodes.size(), 1u);
+    if (asset.nodes.size() != 1u) return;
+
+    const gfx::Mesh& mesh = asset.nodes[0].mesh;
+    CHECK(mesh.Valid());
+    CHECK(!mesh.Skinned());
+    CHECK(mesh.CpuJointIds().empty());
+    CHECK(mesh.CpuJointWeights().empty());
+    CHECK_EQ(mesh.CpuVerts().size(), 3u);
+}
+
+// JOINTS_0 with a non-spec component type (5126 float) must be dropped: mesh
+// stays unskinned, no crash.
+TEST(GltfSkinWrongJointsComponentTypeNotSkinned) {
+    test::TempDir tmp;
+    std::vector<uint8_t> bin = SkinnedBin();
+    CHECK(test::WriteFileAll(tmp.Str() + "/scene.bin", bin.data(), bin.size()));
+    CHECK(test::WriteFileAll(tmp.Str() + "/scene.gltf", std::string(kGltfSkinnedWrongJointsType)));
+
+    test::HeadlessAssetFixture fix;
+    assets::GltfAsset asset = fix.assets.LoadGLTF(tmp.Str() + "/scene.gltf");
+    CHECK(asset.Valid());
+    CHECK_EQ(asset.nodes.size(), 1u);
+    if (asset.nodes.size() != 1u) return;
+
+    const gfx::Mesh& mesh = asset.nodes[0].mesh;
+    CHECK(mesh.Valid());
+    CHECK(!mesh.Skinned());
+    CHECK(mesh.CpuJointIds().empty());
+    CHECK_EQ(mesh.CpuVerts().size(), 3u);
+}
+
+// JOINTS_0 count != POSITION count must not mark the mesh skinned (prevents
+// T3.3 out-of-bounds vertex attribute reads).
+TEST(GltfSkinCountMismatchNotSkinned) {
+    test::TempDir tmp;
+    std::vector<uint8_t> bin = SkinnedBinCountMismatch();
+    CHECK(test::WriteFileAll(tmp.Str() + "/scene.bin", bin.data(), bin.size()));
+    CHECK(test::WriteFileAll(tmp.Str() + "/scene.gltf", std::string(kGltfSkinnedCountMismatch)));
+
+    test::HeadlessAssetFixture fix;
+    assets::GltfAsset asset = fix.assets.LoadGLTF(tmp.Str() + "/scene.gltf");
+    CHECK(asset.Valid());
+    CHECK_EQ(asset.nodes.size(), 1u);
+    if (asset.nodes.size() != 1u) return;
+
+    const gfx::Mesh& mesh = asset.nodes[0].mesh;
+    CHECK(mesh.Valid());
+    CHECK(!mesh.Skinned());
+    CHECK(mesh.CpuJointIds().empty());
+    CHECK(mesh.CpuJointWeights().empty());
+    CHECK_EQ(mesh.CpuVerts().size(), 3u);
 }
