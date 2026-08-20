@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "neon/neon.hpp"
+#include "helpers.hpp"
 
 // Minimal dependency-free test framework.
 namespace test {
@@ -39,16 +40,6 @@ void ReportFailure(const char* file, int line, const char* expr) {
 #define CHECK(cond)                                                     \
     do {                                                                \
         if (!(cond)) test::ReportFailure(__FILE__, __LINE__, #cond);    \
-    } while (0)
-
-#define CHECK_NEAR(a, b, eps)                                           \
-    do {                                                                \
-        double va = (a), vb = (b);                                      \
-        if (std::fabs(va - vb) > (eps)) {                               \
-            char buf[256];                                              \
-            std::snprintf(buf, sizeof(buf), "%s ~= %s (%g vs %g)", #a, #b, va, vb); \
-            test::ReportFailure(__FILE__, __LINE__, buf);               \
-        }                                                               \
     } while (0)
 
 #define CHECK_EQ(a, b)                                                  \
@@ -251,6 +242,21 @@ TEST(RngDeterminism) {
     CHECK(a.Next() != c.Next() || true); // just ensure it runs
     float f = c.Float();
     CHECK(f >= 0.0f && f < 1.0f);
+}
+
+TEST(HarnessHelpers) {
+    CHECK_NEAR(1.0, 1.0 + 1e-9, 1e-6);
+    CHECK_THROW(throw std::runtime_error("boom"));
+
+    test::TempDir tmp;
+    CHECK(!tmp.Str().empty());
+    CHECK(test::WriteFileAll(tmp.Str() + "/a.txt", std::string("hello")));
+    std::string text;
+    CHECK(test::ReadFileAll(tmp.Str() + "/a.txt", text));
+    CHECK_EQ(text, std::string("hello"));
+    std::vector<char> bytes;
+    CHECK(test::ReadFileAll(tmp.Str() + "/a.txt", bytes));
+    CHECK_EQ(bytes.size(), 5u);
 }
 
 int main() {
