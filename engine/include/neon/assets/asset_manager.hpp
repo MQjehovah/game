@@ -57,7 +57,9 @@ struct GltfAsset {
     std::vector<uint8_t> rawBin;
     std::vector<GltfBufferView> bufferViews;
     std::vector<GltfAccessor> accessors;
-    bool Valid() const { return !nodes.empty(); }
+    // True when a glTF loaded: at least one renderable mesh node OR a full node
+    // hierarchy (pure-animation / rig-only assets have no mesh nodes).
+    bool Valid() const { return !nodes.empty() || !nodesAll.empty(); }
 
     // Decodes an accessor into floats (FLOAT plus integer component types),
     // one scalar per component in accessor order. Err on a bad index/layout.

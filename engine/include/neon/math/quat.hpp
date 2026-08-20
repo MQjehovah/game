@@ -81,4 +81,43 @@ inline Quat Slerp(const Quat& a, const Quat& b, float t) {
             a.z * wa + bb.z * wb, a.w * wa + bb.w * wb};
 }
 
+// Extracts the rotation part of a row-major T*R*S matrix as a unit quaternion
+// (Shepperd's method). Row lengths (scale) are normalized away; reflection or
+// shear matrices yield the closest rotation. Round-trips with Quat::ToMat4
+// for pure rotation matrices.
+inline Quat Mat4ToQuat(const Mat4& m) {
+    auto row = [&](int r) {
+        return Vec3{m.m[r * 4 + 0], m.m[r * 4 + 1], m.m[r * 4 + 2]}.Normalized();
+    };
+    Vec3 r0 = row(0), r1 = row(1), r2 = row(2);
+    float trace = r0.x + r1.y + r2.z;
+    Quat q;
+    if (trace > 0.0f) {
+        float s = std::sqrt(trace + 1.0f) * 2.0f;
+        q.w = 0.25f * s;
+        q.x = (r2.y - r1.z) / s;
+        q.y = (r0.z - r2.x) / s;
+        q.z = (r1.x - r0.y) / s;
+    } else if (r0.x > r1.y && r0.x > r2.z) {
+        float s = std::sqrt(1.0f + r0.x - r1.y - r2.z) * 2.0f;
+        q.w = (r2.y - r1.z) / s;
+        q.x = 0.25f * s;
+        q.y = (r0.y + r1.x) / s;
+        q.z = (r2.x + r0.z) / s;
+    } else if (r1.y > r2.z) {
+        float s = std::sqrt(1.0f + r1.y - r0.x - r2.z) * 2.0f;
+        q.w = (r0.z - r2.x) / s;
+        q.x = (r0.y + r1.x) / s;
+        q.y = 0.25f * s;
+        q.z = (r1.z + r2.y) / s;
+    } else {
+        float s = std::sqrt(1.0f + r2.z - r0.x - r1.y) * 2.0f;
+        q.w = (r1.x - r0.y) / s;
+        q.x = (r2.x + r0.z) / s;
+        q.y = (r1.z + r2.y) / s;
+        q.z = 0.25f * s;
+    }
+    return q.Normalized();
+}
+
 } // namespace neon::math

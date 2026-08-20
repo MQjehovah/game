@@ -92,7 +92,8 @@ void Pose::Resize(size_t boneCount) {
 }
 
 void Pose::Lerp(const Pose& a, const Pose& b, float alpha) {
-    size_t n = std::min(a.t.size(), b.t.size());
+    size_t n = std::min({a.t.size(), a.r.size(), a.s.size(),
+                         b.t.size(), b.r.size(), b.s.size()});
     t.resize(n);
     r.resize(n);
     s.resize(n);
@@ -158,16 +159,14 @@ void AnimationClip::Sample(float t, Pose& out) const {
         } else if (t >= tr.times.back()) {
             key = static_cast<int>(tr.times.size()) - 1;
         } else {
-            for (size_t k = 0; k + 1 < tr.times.size(); ++k) {
-                if (t >= tr.times[k] && t < tr.times[k + 1]) {
-                    key = static_cast<int>(k);
-                    next = static_cast<int>(k) + 1;
-                    float span = tr.times[k + 1] - tr.times[k];
-                    u = span > 0.0f ? (t - tr.times[k]) / span : 0.0f;
-                    break;
-                }
-            }
-            if (key < 0) key = static_cast<int>(tr.times.size()) - 1;
+            // times is sorted; binary search the first index with times[i] > t
+            // so an exact key lands on the segment starting there (STEP jumps
+            // to the key's value, matching the previous scan semantics).
+            auto it = std::upper_bound(tr.times.begin(), tr.times.end(), t);
+            key = static_cast<int>(it - tr.times.begin()) - 1;
+            next = key + 1;
+            float span = tr.times[static_cast<size_t>(next)] - tr.times[static_cast<size_t>(key)];
+            u = span > 0.0f ? (t - tr.times[static_cast<size_t>(key)]) / span : 0.0f;
         }
         if (key < 0) continue;
         if (!tr.translations.empty())
@@ -242,12 +241,20 @@ void AnimationStateMachine::Update(float dt) {
             if (it == params_.end() || it->second < tr.threshold) continue;
             int to = FindState(tr.to);
             if (to < 0 || to == current_) continue;
-            previous_ = current_;
-            previousTime_ = currentTime_;
-            current_ = to;
-            currentTime_ = 0.0f;
-            blendAlpha_ = 0.0f;
-            blendDuration_ = tr.duration > 0.0f ? tr.duration : 1.0f;
+            if (tr.duration <= 0.0f) {
+                // Zero-duration transition: hard switch, no cross-fade.
+                current_ = to;
+                currentTime_ = 0.0f;
+                previous_ = -1;
+                blendAlpha_ = 1.0f;
+            } else {
+                previous_ = current_;
+                previousTime_ = currentTime_;
+                current_ = to;
+                currentTime_ = 0.0f;
+                blendAlpha_ = 0.0f;
+                blendDuration_ = tr.duration;
+            }
             break;
         }
     }

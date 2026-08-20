@@ -130,6 +130,91 @@ anim::AnimationClip MakeConstantClip(const std::string& name, float x) {
     return c;
 }
 
+// 3 positions + 3 u16 indices (42 bytes), no skin data.
+std::vector<uint8_t> TriangleBin() {
+    std::vector<uint8_t> out;
+    const float kPos[3][3] = {{0, 0, 0}, {1, 0, 0}, {0, 1, 0}};
+    for (int i = 0; i < 3; ++i)
+        for (int c = 0; c < 3; ++c) AppendF32(out, kPos[i][c]);
+    AppendU16(out, 0);
+    AppendU16(out, 1);
+    AppendU16(out, 2);
+    return out;
+}
+
+// Matrix-form node fixture: T(1,2,3) * RotY(90) stored column-major as glTF
+// requires. In row-major engine convention the intended matrix A is
+//   [ 0  0  1 | 1 ]
+//   [ 0  1  0 | 2 ]
+//   [-1  0  0 | 3 ]
+// so A == T(1,2,3) * RotY(90deg). The JSON array is A flattened column-major.
+const char* kGltfMatrix = R"({
+  "asset": {"version": "2.0"},
+  "scene": 0,
+  "scenes": [{"nodes": [0]}],
+  "nodes": [
+    {"mesh": 0, "matrix": [0, 0, -1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 2, 3, 1]}
+  ],
+  "meshes": [
+    {"primitives": [{"attributes": {"POSITION": 0}, "indices": 1}]}
+  ],
+  "accessors": [
+    {"bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3"},
+    {"bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR"}
+  ],
+  "bufferViews": [
+    {"buffer": 0, "byteOffset": 0, "byteLength": 36},
+    {"buffer": 0, "byteOffset": 36, "byteLength": 6}
+  ],
+  "buffers": [{"byteLength": 42, "uri": "scene.bin"}]
+})";
+
+// Pure-animation fixture: no "meshes" key at all. Nodes 0->1, a skin over
+// joint node 1, and one "idle" animation with a LINEAR translation channel on
+// node 1 (keys 0 -> (10,0,0)). Layout (96 bytes):
+//   0   identity inverseBindMatrices (MAT4)
+//   64  input times [0,1]
+//   72  LINEAR output VEC3 (0,0,0),(10,0,0)
+std::vector<uint8_t> AnimationOnlyBin() {
+    std::vector<uint8_t> out;
+    float ident[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    for (int i = 0; i < 16; ++i) AppendF32(out, ident[i]);
+    AppendF32(out, 0.0f);
+    AppendF32(out, 1.0f);
+    const float kLin[6] = {0, 0, 0, 10, 0, 0};
+    for (int i = 0; i < 6; ++i) AppendF32(out, kLin[i]);
+    return out;
+}
+
+const char* kGltfAnimationOnly = R"({
+  "asset": {"version": "2.0"},
+  "scene": 0,
+  "scenes": [{"nodes": [0]}],
+  "nodes": [
+    {"children": [1]},
+    {"name": "jointA"}
+  ],
+  "skins": [{"joints": [1], "inverseBindMatrices": 0}],
+  "animations": [
+    {
+      "name": "idle",
+      "samplers": [{"input": 1, "output": 2, "interpolation": "LINEAR"}],
+      "channels": [{"sampler": 0, "target": {"node": 1, "path": "translation"}}]
+    }
+  ],
+  "accessors": [
+    {"bufferView": 0, "componentType": 5126, "count": 1, "type": "MAT4"},
+    {"bufferView": 1, "componentType": 5126, "count": 2, "type": "SCALAR"},
+    {"bufferView": 2, "componentType": 5126, "count": 2, "type": "VEC3"}
+  ],
+  "bufferViews": [
+    {"buffer": 0, "byteOffset": 0, "byteLength": 64},
+    {"buffer": 0, "byteOffset": 64, "byteLength": 8},
+    {"buffer": 0, "byteOffset": 72, "byteLength": 24}
+  ],
+  "buffers": [{"byteLength": 96, "uri": "scene.bin"}]
+})";
+
 } // namespace
 
 // 2-bone chain (root at origin, child at +1 X, both identity rotation):
@@ -512,4 +597,188 @@ TEST(AnimEdgeCases) {
     p.Resize(1);
     clip.Sample(1.0f, p);
     CHECK_NEAR(p.t[0].x, 0.0, 1e-6);
+}
+
+// Mat4ToQuat must recover the same rotation (not its conjugate) for
+// non-self-inverse rotations: Mat4ToQuat(q.ToMat4()).ToMat4() ~= q.ToMat4().
+TEST(Mat4ToQuatRoundTrip) {
+    math::Quat rotations[] = {
+        math::Quat::Identity(),
+        math::Quat::FromAxisAngle({0, 1, 0}, math::kHalfPi),           // 90 deg Y
+        math::Quat::FromAxisAngle({0, 0, 1}, 30.0f * math::kDegToRad), // 30 deg Z
+        math::Quat::FromAxisAngle({1, 0, 0}, 45.0f * math::kDegToRad), // 45 deg X
+    };
+    for (const math::Quat& q : rotations) {
+        math::Mat4 m = q.ToMat4();
+        math::Quat rec = math::Mat4ToQuat(m);
+        float dot = q.x * rec.x + q.y * rec.y + q.z * rec.z + q.w * rec.w;
+        CHECK_NEAR(std::fabs(dot), 1.0, 1e-4); // same rotation, sign-insensitive
+        math::Mat4 rr = rec.ToMat4();
+        for (int i = 0; i < 16; ++i) CHECK_NEAR(rr.m[i], m.m[i], 1e-4);
+    }
+}
+
+// A matrix-form glTF node must decompose into the correct local TRS: for
+// T(1,2,3)*RotY(90) the quaternion is (0, sin45, 0, cos45) and translation
+// (1,2,3). A conjugated/transposed read would yield RotY(-90) or lose the
+// translation.
+TEST(GltfMatrixNodeDecomposesTrs) {
+    test::TempDir tmp;
+    std::vector<uint8_t> bin = TriangleBin();
+    CHECK(test::WriteFileAll(tmp.Str() + "/scene.bin", bin.data(), bin.size()));
+    CHECK(test::WriteFileAll(tmp.Str() + "/scene.gltf", std::string(kGltfMatrix)));
+
+    test::HeadlessAssetFixture fix;
+    assets::GltfAsset asset = fix.assets.LoadGLTF(tmp.Str() + "/scene.gltf");
+    CHECK(asset.Valid());
+    CHECK_EQ(asset.nodesAll.size(), 1u);
+    if (asset.nodesAll.size() != 1u) return;
+
+    const assets::GltfNode& n = asset.nodesAll[0];
+    CHECK_NEAR(n.t.x, 1.0, 1e-5);
+    CHECK_NEAR(n.t.y, 2.0, 1e-5);
+    CHECK_NEAR(n.t.z, 3.0, 1e-5);
+    CHECK_NEAR(n.r.x, 0.0, 1e-5);
+    CHECK_NEAR(n.r.y, 0.70710678, 1e-4);
+    CHECK_NEAR(n.r.z, 0.0, 1e-5);
+    CHECK_NEAR(n.r.w, 0.70710678, 1e-4);
+    CHECK_NEAR(n.s.x, 1.0, 1e-5);
+    CHECK_NEAR(n.s.y, 1.0, 1e-5);
+    CHECK_NEAR(n.s.z, 1.0, 1e-5);
+
+    // The node's stored transform is the intended row-major matrix; the
+    // rotation block round-trips through Mat4ToQuat (translation is discarded
+    // by the quaternion).
+    const math::Mat4& m = asset.nodes[0].transform;
+    math::Mat4 rr = math::Mat4ToQuat(m).ToMat4();
+    for (int r = 0; r < 3; ++r) {
+        for (int c = 0; c < 3; ++c) CHECK_NEAR(rr.m[r * 4 + c], m.m[r * 4 + c], 1e-4);
+    }
+}
+
+// The mesh render path for a matrix-form node must use the (transposed) engine
+// convention: T(1,2,3)*RotY(90) maps +Z to +X and the origin to (1,2,3).
+TEST(GltfMatrixMeshNodeTransform) {
+    test::TempDir tmp;
+    std::vector<uint8_t> bin = TriangleBin();
+    CHECK(test::WriteFileAll(tmp.Str() + "/scene.bin", bin.data(), bin.size()));
+    CHECK(test::WriteFileAll(tmp.Str() + "/scene.gltf", std::string(kGltfMatrix)));
+
+    test::HeadlessAssetFixture fix;
+    assets::GltfAsset asset = fix.assets.LoadGLTF(tmp.Str() + "/scene.gltf");
+    CHECK(asset.Valid());
+    CHECK_EQ(asset.nodes.size(), 1u);
+    if (asset.nodes.size() != 1u) return;
+
+    const math::Mat4& m = asset.nodes[0].transform;
+    math::Vec3 p = m.TransformPoint({0, 0, 0});
+    CHECK_NEAR(p.x, 1.0, 1e-5);
+    CHECK_NEAR(p.y, 2.0, 1e-5);
+    CHECK_NEAR(p.z, 3.0, 1e-5);
+    math::Vec3 f = m.TransformDir({0, 0, 1}); // RotY(90) * +Z = +X
+    CHECK_NEAR(f.x, 1.0, 1e-5);
+    CHECK_NEAR(f.y, 0.0, 1e-5);
+    CHECK_NEAR(f.z, 0.0, 1e-5);
+    math::Vec3 x = m.TransformDir({1, 0, 0}); // RotY(90) * +X = -Z
+    CHECK_NEAR(x.x, 0.0, 1e-5);
+    CHECK_NEAR(x.y, 0.0, 1e-5);
+    CHECK_NEAR(x.z, -1.0, 1e-5);
+}
+
+// A transition with zero duration is an instant switch, not a 1s blend.
+TEST(AnimStateMachineInstantTransition) {
+    anim::AnimationClip idle = MakeConstantClip("idle", 0.0f);
+    anim::AnimationClip run = MakeConstantClip("run", 10.0f);
+
+    anim::AnimationStateMachine sm;
+    sm.AddState("idle", &idle);
+    sm.AddState("run", &run);
+    sm.AddTransition("idle", "run", "speed", 5.0f, 0.0f);
+    sm.SetBoneCount(1);
+    sm.Play("idle");
+    sm.SetParam("speed", 10.0f);
+    sm.Update(0.f);
+    CHECK_EQ(sm.CurrentState(), std::string("run"));
+    CHECK_NEAR(sm.ResultPose().t[0].x, 10.0, 1e-5);
+    sm.Update(0.5f);
+    CHECK_NEAR(sm.ResultPose().t[0].x, 10.0, 1e-5);
+}
+
+// A glTF with no mesh primitives (pure animation / rig asset) must load and
+// still import into clips.
+TEST(GltfAnimationOnlyLoads) {
+    test::TempDir tmp;
+    std::vector<uint8_t> bin = AnimationOnlyBin();
+    CHECK(test::WriteFileAll(tmp.Str() + "/scene.bin", bin.data(), bin.size()));
+    CHECK(test::WriteFileAll(tmp.Str() + "/scene.gltf", std::string(kGltfAnimationOnly)));
+
+    test::HeadlessAssetFixture fix;
+    assets::GltfAsset asset = fix.assets.LoadGLTF(tmp.Str() + "/scene.gltf");
+    CHECK(asset.Valid());
+    CHECK(asset.nodes.empty()); // no mesh nodes
+    CHECK_EQ(asset.nodesAll.size(), 2u);
+    if (asset.nodesAll.size() != 2u) return;
+    CHECK_EQ(asset.skins.size(), 1u);
+    CHECK_EQ(asset.nodesAll[1].parent, 0);
+
+    std::string jsonText;
+    CHECK(test::ReadFileAll(tmp.Str() + "/scene.gltf", jsonText));
+    core::Result<anim::AnimSet> r = anim::ImportGltf(jsonText, asset, 0);
+    CHECK(r.Ok());
+    if (!r.Ok()) return;
+    CHECK_EQ(r.Value().clips.size(), 1u);
+    if (r.Value().clips.size() != 1u) return;
+    CHECK_EQ(r.Value().clips[0].name, std::string("idle"));
+    anim::Pose pose = r.Value().skeleton.BindPose();
+    r.Value().clips[0].Sample(0.5f, pose);
+    CHECK_NEAR(pose.t[1].x, 5.0, 1e-5);
+}
+
+// Cubic spline with a non-unit key span (dt=2): tangent terms scale by dt, so
+// the midpoint of [0,10] with out=5/in=-5 lands at 7.5 (dt=1 gives 6.25).
+TEST(AnimClipCubicSplineNonUnitDt) {
+    anim::AnimationClip clip;
+    clip.duration = 2.f;
+    anim::Track tr;
+    tr.interp = anim::Interp::CubicSpline;
+    tr.bone = 0;
+    tr.times = {0.f, 2.f};
+    tr.translations = {
+        {0, 0, 0}, {0, 0, 0}, {5, 0, 0},
+        {-5, 0, 0}, {10, 0, 0}, {0, 0, 0}
+    };
+    clip.tracks.push_back(std::move(tr));
+
+    anim::Pose p;
+    p.Resize(1);
+    clip.Sample(1.0f, p); // u = 0.5, dt = 2
+    CHECK_NEAR(p.t[0].x, 7.5, 1e-4);
+    clip.Sample(0.5f, p); // u = 0.25, dt = 2
+    CHECK_NEAR(p.t[0].x, 3.4375, 1e-4);
+}
+
+// Cubic spline rotations are re-normalized after per-component hermite: with
+// oversized tangents the raw interpolation is off-unit, the result must still
+// be a unit Y-axis rotation.
+TEST(AnimClipCubicSplineRotationNormalized) {
+    anim::AnimationClip clip;
+    clip.duration = 1.f;
+    anim::Track tr;
+    tr.interp = anim::Interp::CubicSpline;
+    tr.bone = 0;
+    tr.times = {0.f, 1.f};
+    tr.rotations = {
+        {0, 1.0f, 0, 1.0f},         {0, 0, 0, 1}, {0, 2.0f, 0, 2.0f},
+        {0, -2.0f, 0, 2.0f},        {0, 0.7071f, 0, 0.7071f}, {0, -1.0f, 0, 1.0f}
+    };
+    clip.tracks.push_back(std::move(tr));
+
+    anim::Pose p;
+    p.Resize(1);
+    clip.Sample(0.5f, p);
+    float len = std::sqrt(p.r[0].x * p.r[0].x + p.r[0].y * p.r[0].y +
+                          p.r[0].z * p.r[0].z + p.r[0].w * p.r[0].w);
+    CHECK_NEAR(len, 1.0, 1e-4);
+    CHECK_NEAR(p.r[0].x, 0.0, 1e-5);
+    CHECK_NEAR(p.r[0].z, 0.0, 1e-5);
 }

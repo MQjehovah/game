@@ -104,44 +104,6 @@ bool ResolveGltfAccessor(const std::vector<uint8_t>& bin,
     return true;
 }
 
-// Decomposes a row-major T*R*S matrix into a unit quaternion (scale baked into
-// the row lengths is normalized away; mirror/shear decompositions are not
-// handled and yield the closest rotation).
-math::Quat Mat4ToQuat(const math::Mat4& m) {
-    auto row = [&](int r) {
-        return math::Vec3{m.m[r * 4 + 0], m.m[r * 4 + 1], m.m[r * 4 + 2]}.Normalized();
-    };
-    math::Vec3 r0 = row(0), r1 = row(1), r2 = row(2);
-    float trace = r0.x + r1.y + r2.z;
-    math::Quat q;
-    if (trace > 0.0f) {
-        float s = std::sqrt(trace + 1.0f) * 2.0f;
-        q.w = 0.25f * s;
-        q.x = (r1.z - r2.y) / s;
-        q.y = (r2.x - r0.z) / s;
-        q.z = (r0.y - r1.x) / s;
-    } else if (r0.x > r1.y && r0.x > r2.z) {
-        float s = std::sqrt(1.0f + r0.x - r1.y - r2.z) * 2.0f;
-        q.w = (r1.z - r2.y) / s;
-        q.x = 0.25f * s;
-        q.y = (r0.y + r1.x) / s;
-        q.z = (r2.x + r0.z) / s;
-    } else if (r1.y > r2.z) {
-        float s = std::sqrt(1.0f + r1.y - r0.x - r2.z) * 2.0f;
-        q.w = (r2.x - r0.z) / s;
-        q.x = (r0.y + r1.x) / s;
-        q.y = 0.25f * s;
-        q.z = (r1.z + r2.y) / s;
-    } else {
-        float s = std::sqrt(1.0f + r2.z - r0.x - r1.y) * 2.0f;
-        q.w = (r0.y - r1.x) / s;
-        q.x = (r2.x + r0.z) / s;
-        q.y = (r1.z + r2.y) / s;
-        q.z = 0.25f * s;
-    }
-    return q.Normalized();
-}
-
 } // namespace
 
 core::Result<std::vector<float>> GltfAsset::ReadAccessorFloats(int accessorIndex) const {
@@ -573,10 +535,6 @@ GltfAsset AssetManager::LoadGLTF(const std::string& path) {
             }
         }
     }
-    if (rawMeshes.empty()) {
-        NEON_LOG_ERROR("GLTF: no meshes parsed from '%s'", path.c_str());
-        return {};
-    }
 
     // Nodes.
     struct NodeInfo {
@@ -600,16 +558,19 @@ GltfAsset AssetManager::LoadGLTF(const std::string& path) {
             if (const core::Json* skinNode = n->Get("skin")) info.skin = skinNode->GetInt(-1);
             if (const core::Json* matrix = n->Get("matrix")) {
                 if (matrix->Size() == 16) {
+                    // glTF stores the node matrix column-major; transpose into
+                    // the engine's row-major convention so stored matrices are
+                    // correct transforms in this engine.
                     for (int r = 0; r < 4; ++r) {
                         for (int c = 0; c < 4; ++c) {
                             info.transform.m[r * 4 + c] =
-                                static_cast<float>(matrix->At(r * 4 + c)->GetNumber());
+                                static_cast<float>(matrix->At(c * 4 + r)->GetNumber());
                         }
                     }
                     // Decompose T*R*S so the skeleton can build per-bone TRS.
                     info.translation = {info.transform.m[3], info.transform.m[7],
                                         info.transform.m[11]};
-                    info.rotation = Mat4ToQuat(info.transform);
+                    info.rotation = math::Mat4ToQuat(info.transform);
                     math::Mat4 rts = info.transform;
                     rts.m[3] = rts.m[7] = rts.m[11] = 0.0f;
                     math::Vec3 s{std::sqrt(rts.m[0] * rts.m[0] + rts.m[1] * rts.m[1] +
