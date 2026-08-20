@@ -632,6 +632,17 @@ void EditorApp::RunUISmokeTest() {
               "imported entity resolves glTF mesh");
     }
 
+    // --- Editor config round-trip: save then load the project dir ---
+    {
+        const std::string cfgDir = GetTempDir() + "/cfg_proj";
+        const std::string cfgPrev = projectDir_;
+        projectDir_ = cfgDir;
+        SaveEditorConfig();
+        LoadEditorConfig();
+        check(projectDir_ == cfgDir, "editor config project dir round-trips");
+        projectDir_ = cfgPrev;
+    }
+
     // --- Export → load round-trip (temp project dir; no repo pollution) ---
     const size_t exportCount = entities_.size();
     const std::string oldProjectDir = projectDir_;
@@ -698,7 +709,7 @@ core::Status EditorApp::ExportScene() {
     for (const SceneEntity& e : entities_) {
         auto res = scene::SceneFile::MakeEntity(e.name, e.pos, e.rot, e.scale,
                                                 ExportMeshKey(e.meshKey), e.metallic,
-                                                e.roughness);
+                                                e.roughness, e.tint);
         if (!res.Ok()) {
             NEON_LOG_ERROR("Editor: export aborted: %s", res.Error().c_str());
             return core::Status::Err("editor: " + res.Error());

@@ -1,6 +1,7 @@
 #include "neon/scene/scene_file.hpp"
 
 #include <algorithm>
+#include <cstdio>
 #include <utility>
 
 #include "neon/assets/asset_manager.hpp"
@@ -120,6 +121,20 @@ core::Json MakeQuat(const math::Quat& q) {
     return j;
 }
 
+// Format a float color as the "#RRGGBB" string the mesh factory reads into
+// SceneMesh::colorHex. Matches ImGui's float→byte conversion (v * 255 + 0.5).
+std::string MakeColorHex(const gfx::Color& c) {
+    auto byte = [](float v) {
+        int i = static_cast<int>(v * 255.0f + 0.5f);
+        if (i < 0) i = 0;
+        if (i > 255) i = 255;
+        return i;
+    };
+    char buf[8];
+    std::snprintf(buf, sizeof(buf), "#%02X%02X%02X", byte(c.r), byte(c.g), byte(c.b));
+    return std::string(buf);
+}
+
 } // namespace
 
 // --- SceneFile ---------------------------------------------------------------
@@ -202,7 +217,8 @@ core::Result<core::Json> SceneFile::MakeEntity(const std::string& name,
                                                const math::Vec3& scale,
                                                const std::string& meshKey,
                                                float metallic,
-                                               float roughness) {
+                                               float roughness,
+                                               const gfx::Color& color) {
     if (name.empty())
         return core::Result<core::Json>::Err("scene: exported entity name must not be empty");
     if (meshKey.empty())
@@ -220,6 +236,7 @@ core::Result<core::Json> SceneFile::MakeEntity(const std::string& name,
     core::Json mat = MakeObject();
     mat.object_["metallic"] = MakeNumber(metallic);
     mat.object_["roughness"] = MakeNumber(roughness);
+    mat.object_["colorHex"] = MakeString(MakeColorHex(color));
 
     core::Json mesh = MakeObject();
     mesh.object_["meshKey"] = MakeString(meshKey);

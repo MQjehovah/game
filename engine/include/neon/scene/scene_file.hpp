@@ -8,6 +8,7 @@
 #include "neon/core/json.hpp"
 #include "neon/core/result.hpp"
 #include "neon/ecs/world.hpp"
+#include "neon/gfx/color.hpp"
 #include "neon/math/quat.hpp"
 #include "neon/math/vec3.hpp"
 
@@ -52,14 +53,20 @@ struct SceneFile {
     // from raw editor-like data. The meshKey is stored verbatim: the caller
     // chooses a key the runtime can resolve (e.g. "obj:..." / "gltf:..." for
     // file-backed meshes; short keys like "terrain"/"cube" imply procedural
-    // primitives). Empty name or meshKey returns an error.
+    // primitives). NOTE: the built-in mesh factory validates meshKey prefixes
+    // only when an AssetManager is registered, so exported scenes that use
+    // short procedural keys require runtime-side procedural mesh resolution
+    // (T2.9 playtest / T4.7 packager) — this helper does not resolve them.
+    // `color` becomes the mesh material's colorHex ("#RRGGBB"). Empty name or
+    // meshKey returns an error.
     static core::Result<core::Json> MakeEntity(const std::string& name,
                                                const math::Vec3& pos,
                                                const math::Quat& rot,
                                                const math::Vec3& scale,
                                                const std::string& meshKey,
                                                float metallic = 0.0f,
-                                               float roughness = 1.0f);
+                                               float roughness = 1.0f,
+                                               const gfx::Color& color = gfx::Color::White);
 };
 
 // Prefab library: registers prefab component templates parsed from JSON text

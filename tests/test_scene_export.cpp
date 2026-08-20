@@ -36,7 +36,8 @@ core::Json MakeSceneRoot(const std::vector<core::Json>& entities) {
 TEST(SceneMakeEntityStructure) {
     auto res = scene::SceneFile::MakeEntity("Cube", {1.5f, 2.0f, -3.0f},
                                             math::Quat{0.0f, 0.5f, 0.0f, 0.866f}, {2, 2, 2},
-                                            "gltf:assets/cube.gltf", 0.3f, 0.7f);
+                                            "gltf:assets/cube.gltf", 0.3f, 0.7f,
+                                            gfx::Color{1.0f, 0.0f, 0.0f});
     CHECK(res.Ok());
     const core::Json& e = res.Value();
     CHECK(e.IsObject());
@@ -73,6 +74,7 @@ TEST(SceneMakeEntityStructure) {
     CHECK(mat != nullptr && mat->IsObject());
     CHECK_NEAR(mat->Get("metallic")->GetNumber(), 0.3, 1e-6);
     CHECK_NEAR(mat->Get("roughness")->GetNumber(), 0.7, 1e-6);
+    CHECK_EQ(mat->Get("colorHex")->GetString(), std::string("#FF0000")); // tint -> #RRGGBB
 }
 
 TEST(SceneMakeEntityErrors) {
@@ -94,15 +96,17 @@ TEST(SceneExportRoundTrip) {
     // Editor-like entities with mixed mesh keys: procedural short keys and
     // file-backed "obj:"/"gltf:" keys (as the editor export produces).
     auto r1 = scene::SceneFile::MakeEntity("地面", {0, 0, 0}, {}, {1, 1, 1}, "terrain",
-                                           0.0f, 0.9f);
+                                           0.0f, 0.9f, gfx::Color::White);
     auto r2 = scene::SceneFile::MakeEntity(
         "头盔", {3, 0.9f, -2}, math::Quat::FromEuler(0, 1.0f, 0), {1, 1, 1},
-        "gltf:assets/models/DamagedHelmet/DamagedHelmet.gltf", 1.0f, 0.2f);
+        "gltf:assets/models/DamagedHelmet/DamagedHelmet.gltf", 1.0f, 0.2f,
+        gfx::Color{1.0f, 0.0f, 0.0f});
     auto r3 = scene::SceneFile::MakeEntity(
         "松树", {-5, 0, -3}, {}, {1.6f, 1.6f, 1.6f},
-        "obj:assets/kenney_nature/Models/OBJ format/tree_pineTallA.obj", 0.0f, 0.8f);
+        "obj:assets/kenney_nature/Models/OBJ format/tree_pineTallA.obj", 0.0f, 0.8f,
+        gfx::Color::White);
     auto r4 = scene::SceneFile::MakeEntity("方块", {-3, 0.6f, 1}, {}, {1, 1, 1}, "cube",
-                                           0.5f, 0.3f);
+                                           0.5f, 0.3f, gfx::Color{0.0f, 0.0f, 1.0f});
     CHECK(r1.Ok() && r2.Ok() && r3.Ok() && r4.Ok());
 
     std::vector<core::Json> entities;
@@ -123,6 +127,19 @@ TEST(SceneExportRoundTrip) {
     CHECK_EQ(sf.entities[3].name, std::string("方块"));
     // No "name" component: entity name is the top-level field only.
     CHECK(FindComp(sf.entities[0], "name") == nullptr);
+    // Color round-trips into material.colorHex at the JSON level.
+    const scene::ComponentDef* mat1 = FindComp(sf.entities[0], "mesh");
+    CHECK(mat1 != nullptr);
+    CHECK_EQ(mat1->data.Get("material")->Get("colorHex")->GetString(),
+             std::string("#FFFFFF"));
+    const scene::ComponentDef* mat2 = FindComp(sf.entities[1], "mesh");
+    CHECK(mat2 != nullptr);
+    CHECK_EQ(mat2->data.Get("material")->Get("colorHex")->GetString(),
+             std::string("#FF0000"));
+    const scene::ComponentDef* mat4 = FindComp(sf.entities[3], "mesh");
+    CHECK(mat4 != nullptr);
+    CHECK_EQ(mat4->data.Get("material")->Get("colorHex")->GetString(),
+             std::string("#0000FF"));
 
     scene::ComponentRegistry reg;
     scene::RegisterBuiltinComponents(reg); // no assets: any meshKey accepted
@@ -161,6 +178,7 @@ TEST(SceneExportRoundTrip) {
     CHECK_EQ(m1->meshKey, std::string("terrain"));
     CHECK_NEAR(m1->metallic, 0.0, 1e-6);
     CHECK_NEAR(m1->roughness, 0.9, 1e-6);
+    CHECK_EQ(m1->colorHex, std::string("#FFFFFF"));
 
     const scene::SceneName* n2 = world.Get<scene::SceneName>(e2);
     CHECK(n2 != nullptr && n2->name == "头盔");
@@ -168,10 +186,16 @@ TEST(SceneExportRoundTrip) {
     CHECK_NEAR(t2->pos.x, 3.0, 1e-6);
     CHECK_NEAR(t2->pos.y, 0.9, 1e-6);
     CHECK_NEAR(t2->pos.z, -2.0, 1e-6);
+    // Non-identity FromEuler rotation round-trips onto the instantiated quat.
+    CHECK_NEAR(t2->rot.y, std::sin(0.5), 1e-4);
+    CHECK_NEAR(t2->rot.w, std::cos(0.5), 1e-4);
+    CHECK_NEAR(t2->rot.x, 0.0, 1e-4);
+    CHECK_NEAR(t2->rot.z, 0.0, 1e-4);
     const scene::SceneMesh* m2 = world.Get<scene::SceneMesh>(e2);
     CHECK_EQ(m2->meshKey, std::string("gltf:assets/models/DamagedHelmet/DamagedHelmet.gltf"));
     CHECK_NEAR(m2->metallic, 1.0, 1e-6);
     CHECK_NEAR(m2->roughness, 0.2, 1e-6);
+    CHECK_EQ(m2->colorHex, std::string("#FF0000"));
 
     const scene::SceneName* n3 = world.Get<scene::SceneName>(e3);
     CHECK(n3 != nullptr && n3->name == "松树");
@@ -183,6 +207,7 @@ TEST(SceneExportRoundTrip) {
     CHECK_EQ(m3->meshKey,
              std::string("obj:assets/kenney_nature/Models/OBJ format/tree_pineTallA.obj"));
     CHECK_NEAR(m3->roughness, 0.8, 1e-6);
+    CHECK_EQ(m3->colorHex, std::string("#FFFFFF"));
 
     const scene::SceneName* n4 = world.Get<scene::SceneName>(e4);
     CHECK(n4 != nullptr && n4->name == "方块");
@@ -192,6 +217,7 @@ TEST(SceneExportRoundTrip) {
     CHECK_EQ(m4->meshKey, std::string("cube"));
     CHECK_NEAR(m4->metallic, 0.5, 1e-6);
     CHECK_NEAR(m4->roughness, 0.3, 1e-6);
+    CHECK_EQ(m4->colorHex, std::string("#0000FF"));
 }
 
 // ---------------------------------------------------------------------------
@@ -201,7 +227,8 @@ TEST(SceneExportRoundTrip) {
 
 TEST(SceneExportFileRoundTrip) {
     auto r1 = scene::SceneFile::MakeEntity("Hero", {1, 2, 3}, math::Quat{0, 0, 0, 1}, {1, 1, 1},
-                                           "gltf:assets/hero.gltf", 0.4f, 0.6f);
+                                           "gltf:assets/hero.gltf", 0.4f, 0.6f,
+                                           gfx::Color{0.0f, 1.0f, 0.0f});
     auto r2 = scene::SceneFile::MakeEntity("Ground", {0, 0, 0}, {}, {10, 1, 10},
                                            "obj:assets/ground.obj", 0.0f, 1.0f);
     CHECK(r1.Ok() && r2.Ok());
@@ -229,6 +256,8 @@ TEST(SceneExportFileRoundTrip) {
     const scene::ComponentDef* mesh = FindComp(parsed.Value().entities[0], "mesh");
     CHECK(mesh != nullptr);
     CHECK_NEAR(mesh->data.Get("material")->Get("metallic")->GetNumber(), 0.4, 1e-6);
+    CHECK_EQ(mesh->data.Get("material")->Get("colorHex")->GetString(),
+             std::string("#00FF00"));
 
     scene::ComponentRegistry reg;
     scene::RegisterBuiltinComponents(reg);
@@ -238,4 +267,8 @@ TEST(SceneExportFileRoundTrip) {
     CHECK(inst.Ok());
     CHECK_EQ(inst.Value(), 2);
     CHECK_EQ(world.ViewAll<scene::SceneTransform>().Size(), 2u);
+    ecs::Entity hero = world.EntityAt<scene::SceneTransform>(0);
+    const scene::SceneMesh* hm = world.Get<scene::SceneMesh>(hero);
+    CHECK(hm != nullptr);
+    CHECK_EQ(hm->colorHex, std::string("#00FF00"));
 }
