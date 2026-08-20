@@ -5,6 +5,9 @@
 #include <unordered_set>
 #include <utility>
 
+#include "neon/core/log.hpp"
+#include "neon/core/rng.hpp"
+
 extern "C" {
 #include "lua.h"
 #include "lauxlib.h"
@@ -26,31 +29,34 @@ struct NativeFn {
     void* user = nullptr;
 };
 
-// Opens only the deterministic subset of the standard libraries. io, os,
-// package, and debug are intentionally omitted, and dofile/loadfile (arbitrary
-// file read + execute) are stripped from the base library.
-void OpenRestrictedLibraries(lua_State* L) {
-    static const struct {
-        const char* name;
-        lua_CFunction open;
-    } kLibraries[] = {
-        {LUA_GNAME, luaopen_base},
-        {LUA_COLIBNAME, luaopen_coroutine},
-        {LUA_TABLIBNAME, luaopen_table},
-        {LUA_STRLIBNAME, luaopen_string},
-        {LUA_MATHLIBNAME, luaopen_math},
-        {LUA_UTF8LIBNAME, luaopen_utf8},
-    };
-    for (const auto& lib : kLibraries) {
-        luaL_requiref(L, lib.name, lib.open, 1);
-        lua_pop(L, 1);
-    }
-    // luaopen_base exposes dofile/loadfile, which read and execute arbitrary
-    // files. Close them for determinism; T2.4's sandbox task decides on `load`.
-    lua_pushnil(L);
-    lua_setglobal(L, "dofile");
-    lua_pushnil(L);
-    lua_setglobal(L, "loadfile");
+// Fixed seed for every fresh host (never wall time). Matches core::Rng's own
+// default so an unseeded host and an explicit SetRngSeed(kDefaultRngSeed)
+// produce identical streams.
+constexpr uint64_t kDefaultRngSeed = 0x9E3779B97F4A7C15ull;
+
+// 53-bit double in [0, 1) from the top bits of a single xorshift64* draw.
+// Bit-exact across hosts with the same seed.
+double RngFloat01(uint64_t rv) {
+    return static_cast<double>(rv >> 11) * (1.0 / 9007199254740992.0);
+}
+
+// Pushes a uniformly chosen integer in [low, up] (inclusive), mirroring Lua's
+// math.random semantics: the one already-drawn value is projected onto the
+// span. The full 64-bit span (low=INT64_MIN, up=INT64_MAX) cannot be expressed
+// as span+1, so it returns the raw draw.
+int PushRandomInt(lua_State* L, uint64_t rv, lua_Integer low, lua_Integer up) {
+    if (low > up) return luaL_error(L, "bad argument #1 to 'random' (interval is empty)");
+    lua_Unsigned span = static_cast<lua_Unsigned>(up) - static_cast<lua_Unsigned>(low);
+    lua_Unsigned r = (span == static_cast<lua_Unsigned>(~0ull)) ? rv : rv % (span + 1);
+    lua_pushinteger(L, static_cast<lua_Integer>(static_cast<lua_Unsigned>(low) + r));
+    return 1;
+}
+
+// Pushes a closure whose single upvalue is the LuaHost (lightuserdata), so the
+// sandbox functions can reach the host's RNG / sim clock.
+void PushHostClosure(lua_State* L, LuaHost* self, lua_CFunction fn) {
+    lua_pushlightuserdata(L, self);
+    lua_pushcclosure(L, fn, 1);
 }
 
 // Extracts the line number from a Lua error message of the form
@@ -192,7 +198,65 @@ struct LuaHost::Impl {
     std::vector<int> frameArgCounts;
     bool nativeErrorPending = false;
     std::string nativeErrorMessage;
+    core::Rng rng;          // sandbox RNG; reseeded by SetRngSeed / NMath.Seed
+    double simClock = 0.0;  // engine-injected simulated time (NMath.Time)
 };
+
+// Opens the restricted standard library, then applies the deterministic
+// sandbox. io, os, and package are never opened (require stays nil). math.random
+// /randomseed and the NMath.* API are backed by the host's core::Rng, NMath.Time
+// returns the engine-injected sim clock, print routes to core::Log, and
+// dofile/loadfile/collectgarbage are nilled.
+void LuaHost::OpenSandboxedLibraries(lua_State* L, LuaHost* self) {
+    static const struct {
+        const char* name;
+        lua_CFunction open;
+    } kLibraries[] = {
+        {LUA_GNAME, luaopen_base},
+        {LUA_COLIBNAME, luaopen_coroutine},
+        {LUA_TABLIBNAME, luaopen_table},
+        {LUA_STRLIBNAME, luaopen_string},
+        {LUA_MATHLIBNAME, luaopen_math},
+        {LUA_UTF8LIBNAME, luaopen_utf8},
+    };
+    for (const auto& lib : kLibraries) {
+        luaL_requiref(L, lib.name, lib.open, 1);
+        lua_pop(L, 1);
+    }
+
+    // File load/execute and GC control are outside the deterministic core.
+    lua_pushnil(L);
+    lua_setglobal(L, "dofile");
+    lua_pushnil(L);
+    lua_setglobal(L, "loadfile");
+    lua_pushnil(L);
+    lua_setglobal(L, "collectgarbage");
+
+    // print -> engine log (a contained side effect instead of raw stdout).
+    PushHostClosure(L, self, &LuaHost::Print);
+    lua_setglobal(L, "print");
+
+    // math.random/randomseed -> host RNG (deterministic, host-seeded).
+    lua_getglobal(L, LUA_MATHLIBNAME);
+    PushHostClosure(L, self, &LuaHost::MathRandom);
+    lua_setfield(L, -2, "random");
+    PushHostClosure(L, self, &LuaHost::MathRandomSeed);
+    lua_setfield(L, -2, "randomseed");
+    lua_pop(L, 1);
+
+    // NMath: the canonical deterministic API. Unlike the stdlib math.random
+    // legacy surface, its contract is stable across Lua versions.
+    lua_newtable(L);
+    PushHostClosure(L, self, &LuaHost::NMathRandom);
+    lua_setfield(L, -2, "Random");
+    PushHostClosure(L, self, &LuaHost::NMathRandomRange);
+    lua_setfield(L, -2, "RandomRange");
+    PushHostClosure(L, self, &LuaHost::NMathSeed);
+    lua_setfield(L, -2, "Seed");
+    PushHostClosure(L, self, &LuaHost::NMathTime);
+    lua_setfield(L, -2, "Time");
+    lua_setglobal(L, "NMath");
+}
 
 LuaHost::LuaHost() : impl_(std::make_unique<Impl>()) {}
 
@@ -203,7 +267,11 @@ bool LuaHost::Init() {
     lua_State* L = luaL_newstate();
     if (!L) return false; // never leaks: nothing has been allocated yet
     impl_->L = L;
-    OpenRestrictedLibraries(L);
+    // A fresh state starts with a fresh, fixed-seed RNG and a zero clock, so a
+    // re-initialized host behaves like a newly created one.
+    impl_->rng = core::Rng(kDefaultRngSeed);
+    impl_->simClock = 0.0;
+    OpenSandboxedLibraries(L, this);
     return true;
 }
 
@@ -407,6 +475,117 @@ bool LuaHost::HasFunction(const std::string& fn) const {
     bool isFunction = lua_isfunction(impl_->L, -1) != 0;
     lua_pop(impl_->L, 1);
     return isFunction;
+}
+
+void LuaHost::SetRngSeed(uint64_t seed) { impl_->rng = core::Rng(seed); }
+
+void LuaHost::SetSimClock(double seconds) { impl_->simClock = seconds; }
+
+// math.random(): [0,1); math.random(n): integer [1,n]; math.random(m,n):
+// integer [m,n]; math.random(0): full random integer. Mirrors Lua 5.4's
+// calling conventions exactly, backed by the host RNG (deterministic).
+int LuaHost::MathRandom(lua_State* L) {
+    LuaHost* self = static_cast<LuaHost*>(lua_touserdata(L, lua_upvalueindex(1)));
+    if (!self) return luaL_error(L, "invalid sandbox closure");
+    uint64_t rv = self->impl_->rng.Next(); // always one draw per call, like stock Lua
+    switch (lua_gettop(L)) {
+        case 0:
+            lua_pushnumber(L, RngFloat01(rv));
+            return 1;
+        case 1: {
+            lua_Integer up = luaL_checkinteger(L, 1);
+            if (up == 0) {
+                lua_pushinteger(L, static_cast<lua_Integer>(rv));
+                return 1;
+            }
+            return PushRandomInt(L, rv, 1, up);
+        }
+        case 2: {
+            lua_Integer low = luaL_checkinteger(L, 1);
+            lua_Integer up = luaL_checkinteger(L, 2);
+            return PushRandomInt(L, rv, low, up);
+        }
+        default:
+            return luaL_error(L, "wrong number of arguments");
+    }
+}
+
+// math.randomseed(x) reseeds the host RNG deterministically. With no argument,
+// stock Lua 5.4 reseeds from wall time; the sandbox reseeds from the fixed
+// default constant instead, keeping every stream reproducible.
+int LuaHost::MathRandomSeed(lua_State* L) {
+    LuaHost* self = static_cast<LuaHost*>(lua_touserdata(L, lua_upvalueindex(1)));
+    if (!self) return luaL_error(L, "invalid sandbox closure");
+    lua_Integer seed = lua_gettop(L) >= 1
+        ? luaL_checkinteger(L, 1)
+        : static_cast<lua_Integer>(kDefaultRngSeed);
+    self->impl_->rng = core::Rng(static_cast<uint64_t>(seed));
+    lua_pushinteger(L, seed);
+    return 1;
+}
+
+// NMath.Random shares the host RNG with math.random, so mixing both in one
+// stream stays deterministic.
+int LuaHost::NMathRandom(lua_State* L) { return MathRandom(L); }
+
+int LuaHost::NMathRandomRange(lua_State* L) {
+    LuaHost* self = static_cast<LuaHost*>(lua_touserdata(L, lua_upvalueindex(1)));
+    if (!self) return luaL_error(L, "invalid sandbox closure");
+    uint64_t rv = self->impl_->rng.Next();
+    switch (lua_gettop(L)) {
+        case 1: {
+            lua_Integer up = luaL_checkinteger(L, 1);
+            return PushRandomInt(L, rv, 1, up);
+        }
+        case 2: {
+            lua_Integer low = luaL_checkinteger(L, 1);
+            lua_Integer up = luaL_checkinteger(L, 2);
+            return PushRandomInt(L, rv, low, up);
+        }
+        default:
+            return luaL_error(L, "RandomRange expects 1 or 2 arguments");
+    }
+}
+
+int LuaHost::NMathSeed(lua_State* L) {
+    LuaHost* self = static_cast<LuaHost*>(lua_touserdata(L, lua_upvalueindex(1)));
+    if (!self) return luaL_error(L, "invalid sandbox closure");
+    lua_Integer seed = lua_gettop(L) >= 1
+        ? luaL_checkinteger(L, 1)
+        : static_cast<lua_Integer>(kDefaultRngSeed);
+    self->impl_->rng = core::Rng(static_cast<uint64_t>(seed));
+    return 0;
+}
+
+int LuaHost::NMathTime(lua_State* L) {
+    LuaHost* self = static_cast<LuaHost*>(lua_touserdata(L, lua_upvalueindex(1)));
+    if (!self) return luaL_error(L, "invalid sandbox closure");
+    lua_pushnumber(L, self->impl_->simClock);
+    return 1;
+}
+
+// print(...) -> core::Log(Info). Arguments are tostring'd and tab-joined on the
+// Lua stack (lua_concat never raises for strings), so no nontrivial C++ local
+// is alive across the raising luaL_tolstring conversions.
+int LuaHost::Print(lua_State* L) {
+    LuaHost* self = static_cast<LuaHost*>(lua_touserdata(L, lua_upvalueindex(1)));
+    if (!self) return luaL_error(L, "invalid sandbox closure");
+    int n = lua_gettop(L);
+    if (n > 0) {
+        int count = 0;
+        for (int i = 1; i <= n; ++i) {
+            luaL_tolstring(L, i, nullptr); // pushes tostring(value at i)
+            if (i > 1) lua_pushliteral(L, "\t");
+            count += (i > 1 ? 2 : 1);
+        }
+        lua_concat(L, count);
+        const char* msg = lua_tostring(L, -1);
+        core::Log(core::LogLevel::Info, "%s", msg ? msg : "");
+        lua_pop(L, 1);
+    } else {
+        core::Log(core::LogLevel::Info, "");
+    }
+    return 0;
 }
 
 } // namespace neon::script

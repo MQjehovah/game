@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <utility>
@@ -143,6 +144,16 @@ public:
     // True if the global `fn` currently names a callable function. Useful for
     // event dispatch ("does an onUpdate handler exist?").
     virtual bool HasFunction(const std::string& fn) const = 0;
+
+    // Seed the host's deterministic random number generator (math.random /
+    // NMath.Random). Two hosts seeded identically produce identical streams;
+    // the default seed is a fixed constant, never wall time. Init() resets the
+    // RNG to that default.
+    virtual void SetRngSeed(uint64_t seed) = 0;
+
+    // Pin the simulated clock reported by NMath.Time() (and future os.clock).
+    // The default is 0; script time is always engine-injected, never wall time.
+    virtual void SetSimClock(double seconds) = 0;
 };
 
 // Factory: creates the engine's Lua-backed host (implemented in
