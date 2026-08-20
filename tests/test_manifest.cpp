@@ -77,6 +77,8 @@ TEST(ManifestInvalidWindow) {
     CHECK(!scene::GameManifest::Load(R"({"startScene": "s", "window": {"h": 0}})").Ok());
     CHECK(!scene::GameManifest::Load(R"({"startScene": "s", "window": {"h": -1}})").Ok());
     CHECK(!scene::GameManifest::Load(R"({"startScene": "s", "window": {"w": "1280"}})").Ok());
+    CHECK(!scene::GameManifest::Load(R"({"startScene": "s", "window": {"w": 640.5}})").Ok());
+    CHECK(!scene::GameManifest::Load(R"({"startScene": "s", "window": {"h": 8.25}})").Ok());
     CHECK(!scene::GameManifest::Load(R"({"startScene": "s", "window": 5})").Ok());
 }
 

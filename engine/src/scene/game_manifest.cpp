@@ -72,13 +72,15 @@ core::Result<GameManifest> GameManifest::Load(const std::string& jsonText) {
         if (!CheckKeys(*win, {"w", "h", "title"}, "manifest 'window'", &perr))
             return core::Result<GameManifest>::Err(perr);
         if (const core::Json* w = win->Get("w")) {
-            if (!w->IsNumber() || w->GetInt() <= 0)
+            if (!w->IsNumber() || w->GetNumber() != static_cast<double>(w->GetInt()) ||
+                w->GetInt() <= 0)
                 return core::Result<GameManifest>::Err(
                     "manifest: 'window.w' must be a positive integer");
             m.window.w = w->GetInt();
         }
         if (const core::Json* h = win->Get("h")) {
-            if (!h->IsNumber() || h->GetInt() <= 0)
+            if (!h->IsNumber() || h->GetNumber() != static_cast<double>(h->GetInt()) ||
+                h->GetInt() <= 0)
                 return core::Result<GameManifest>::Err(
                     "manifest: 'window.h' must be a positive integer");
             m.window.h = h->GetInt();
