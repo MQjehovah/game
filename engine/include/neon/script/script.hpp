@@ -1,27 +1,30 @@
 #pragma once
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "neon/core/result.hpp"
 
 namespace neon::script {
 
-// Details of the most recent script failure. `line` is the source line where
-// the error occurred, or 0 when the host could not determine one.
-struct ScriptError {
-    std::string message;
-    int line = 0;
-};
+struct Value;
+struct TableValue;
 
 // A scalar value exchanged between the engine and a script host.
 struct Value {
-    enum class Type { Nil, Number, String, Bool };
+    enum class Type { Nil, Number, String, Bool, Table };
 
     Type type = Type::Nil;
     double number = 0.0;
     std::string str;
     bool boolean = false;
+
+    // Lua-style table (Type::Table). `array` is the 1-based sequence (index i
+    // lives at array[i-1]); `fields` holds string-keyed entries. Nil array
+    // entries are dropped when pushed to Lua (rawseti with nil removes the
+    // key), which matches how JSON null behaves in Lua.
+    std::shared_ptr<TableValue> table;
 
     static Value Nil() { return Value{}; }
     static Value Num(double n) {
@@ -42,6 +45,26 @@ struct Value {
         v.boolean = b;
         return v;
     }
+    static Value Tbl() {
+        Value v;
+        v.type = Type::Table;
+        v.table = std::make_shared<TableValue>();
+        return v;
+    }
+};
+
+// Shared payload of a table-typed Value. Defined after Value so its
+// std::vector<Value> members see a complete type.
+struct TableValue {
+    std::vector<Value> array;
+    std::vector<std::pair<std::string, Value>> fields;
+};
+
+// Details of the most recent script failure. `line` is the source line where
+// the error occurred, or 0 when the host could not determine one.
+struct ScriptError {
+    std::string message;
+    int line = 0;
 };
 
 // A native (C++) function callable from scripts. `host` is the calling host:
@@ -93,6 +116,12 @@ public:
     // the host's thread; inside it, ArgCount/GetArg read its arguments and
     // SetError raises a script error at the call boundary.
     virtual void Register(const std::string& name, NativeFunction fn, void* user = nullptr) = 0;
+
+    // Register a native function as `tableName.fieldName`, creating the table
+    // when it does not exist yet (used for namespaced APIs like Json.Parse).
+    // Identical semantics to Register otherwise.
+    virtual void RegisterField(const std::string& tableName, const std::string& fieldName,
+                               NativeFunction fn, void* user = nullptr) = 0;
 
     // Number of arguments passed to the currently executing native function.
     // Valid only inside a native call; returns 0 outside one.

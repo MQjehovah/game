@@ -37,3 +37,5 @@
 #include "neon/assets/asset_manager.hpp"
 #include "neon/scene/scene.hpp"
 #include "neon/script/script.hpp"
+#include "neon/script/gamevars.hpp"
+#include "neon/script/bindings.hpp"

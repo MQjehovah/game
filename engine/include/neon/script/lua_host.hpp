@@ -32,6 +32,8 @@ public:
     void SetGlobal(const std::string& name, const Value& v) override;
     core::Result<Value> GetGlobal(const std::string& name) override;
     void Register(const std::string& name, NativeFunction fn, void* user) override;
+    void RegisterField(const std::string& tableName, const std::string& fieldName,
+                       NativeFunction fn, void* user) override;
     int ArgCount() const override;
     Value GetArg(int index) const override;
     void SetError(const std::string& message) override;

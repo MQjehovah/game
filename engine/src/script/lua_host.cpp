@@ -75,6 +75,19 @@ void PushValue(lua_State* L, const Value& v) {
         case Value::Type::Number: lua_pushnumber(L, v.number); break;
         case Value::Type::String: lua_pushlstring(L, v.str.data(), v.str.size()); break;
         case Value::Type::Bool: lua_pushboolean(L, v.boolean ? 1 : 0); break;
+        case Value::Type::Table: {
+            lua_newtable(L);
+            if (!v.table) break;
+            for (size_t i = 0; i < v.table->array.size(); ++i) {
+                PushValue(L, v.table->array[i]);
+                lua_rawseti(L, -2, static_cast<int>(i) + 1);
+            }
+            for (const auto& kv : v.table->fields) {
+                PushValue(L, kv.second);
+                lua_setfield(L, -2, kv.first.c_str());
+            }
+            break;
+        }
     }
 }
 
@@ -86,6 +99,29 @@ Value PopValue(lua_State* L, int index) {
         size_t len = 0;
         const char* s = lua_tolstring(L, index, &len);
         return Value::Str(std::string(s ? s : "", len));
+    }
+    if (lua_istable(L, index)) {
+        Value v = Value::Tbl();
+        int absIndex = lua_absindex(L, index);
+        // Sequence part: contiguous indices 1..rawlen (the # operator).
+        lua_Unsigned seq = lua_rawlen(L, absIndex);
+        for (lua_Unsigned i = 1; i <= seq; ++i) {
+            lua_rawgeti(L, absIndex, static_cast<lua_Integer>(i));
+            v.table->array.push_back(PopValue(L, -1));
+            lua_pop(L, 1);
+        }
+        // Remaining string-keyed entries (hash part). Keys that Lua reports as
+        // numbers are skipped: they are integer keys, not field names.
+        lua_pushnil(L);
+        while (lua_next(L, absIndex) != 0) {
+            if (lua_isstring(L, -2) && !lua_isnumber(L, -2)) {
+                size_t len = 0;
+                const char* s = lua_tolstring(L, -2, &len);
+                v.table->fields.emplace_back(std::string(s ? s : "", len), PopValue(L, -1));
+            }
+            lua_pop(L, 1); // value; the key stays for the next lua_next
+        }
+        return v;
     }
     return Value::Nil();
 }
@@ -266,6 +302,27 @@ void LuaHost::Register(const std::string& name, NativeFunction fn, void* user) {
     lua_pushlstring(impl_->L, name.data(), name.size());
     lua_pushcclosure(impl_->L, &LuaHost::NativeCallClosure, 2);
     lua_setglobal(impl_->L, name.c_str());
+}
+
+void LuaHost::RegisterField(const std::string& tableName, const std::string& fieldName,
+                            NativeFunction fn, void* user) {
+    if (!impl_->L) return;
+    // Look up the closure by its fully qualified name so fields of different
+    // tables cannot collide (the closure's name upvalue is the dotted key).
+    const std::string fullName = tableName + "." + fieldName;
+    impl_->nativeFns[fullName] = NativeFn{fn, user};
+    lua_getglobal(impl_->L, tableName.c_str());
+    if (!lua_istable(impl_->L, -1)) {
+        lua_pop(impl_->L, 1);
+        lua_newtable(impl_->L);
+        lua_pushvalue(impl_->L, -1);
+        lua_setglobal(impl_->L, tableName.c_str());
+    }
+    lua_pushlightuserdata(impl_->L, this);
+    lua_pushlstring(impl_->L, fullName.data(), fullName.size());
+    lua_pushcclosure(impl_->L, &LuaHost::NativeCallClosure, 2);
+    lua_setfield(impl_->L, -2, fieldName.c_str());
+    lua_pop(impl_->L, 1);
 }
 
 int LuaHost::ArgCount() const {

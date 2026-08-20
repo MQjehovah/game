@@ -35,6 +35,8 @@ set(ENGINE_CORE_SOURCES
   engine/src/scene/scene_manager.cpp
   engine/src/script/lua_host.cpp
   engine/src/script/script_manager.cpp
+  engine/src/script/gamevars.cpp
+  engine/src/script/bindings.cpp
   engine/src/ui/ui.cpp
   engine/src/ui/system.cpp
 )
@@ -195,7 +197,7 @@ target_link_libraries(neon_editor PRIVATE neon_engine neon_imgui)
 enable_testing()
 add_executable(neon_tests tests/test_main.cpp tests/test_serialize.cpp tests/test_pack.cpp
   tests/test_physics.cpp tests/test_obj.cpp tests/test_gltf.cpp tests/test_json.cpp
-  tests/test_script.cpp)
+  tests/test_script.cpp tests/test_script_bindings.cpp)
 target_link_libraries(neon_tests PRIVATE neon_engine)
 add_test(NAME unit COMMAND neon_tests)
 # ctest runs the binary from the build dir by default; run it from the source
