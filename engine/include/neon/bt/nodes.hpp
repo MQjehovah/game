@@ -44,13 +44,13 @@ class Condition : public Node {};
 // All children must succeed; stops at the first Failure or Running.
 class SequenceNode : public Composite {
 public:
-    Status Tick(Context& ctx) override;
+    Status Tick(Context& ctx) const override;
 };
 
 // First success wins; falls through on Failure.
 class SelectorNode : public Composite {
 public:
-    Status Tick(Context& ctx) override;
+    Status Tick(Context& ctx) const override;
 };
 
 // Selector that evaluates children in a shuffled order. The shuffle is seeded
@@ -58,7 +58,7 @@ public:
 // evaluate in the same order.
 class RandomSelectorNode : public Composite {
 public:
-    Status Tick(Context& ctx) override;
+    Status Tick(Context& ctx) const override;
 };
 
 // Ticks every child each evaluation. Succeeds once `threshold` children have
@@ -67,7 +67,7 @@ public:
 class ParallelNode : public Composite {
 public:
     void SetThreshold(int t) { threshold_ = t; }
-    Status Tick(Context& ctx) override;
+    Status Tick(Context& ctx) const override;
 
 private:
     int threshold_ = -1; // <= 0 -> require all children
@@ -80,27 +80,29 @@ private:
 // Flips Success <-> Failure; Running passes through.
 class InvertNode : public Decorator {
 public:
-    Status Tick(Context& ctx) override;
+    Status Tick(Context& ctx) const override;
 };
 
-// After the child succeeds, blocks it for `seconds` (counted in ctx.dt).
-// While blocked the node returns Failure without ticking the child.
+// After the child succeeds, blocks it for `seconds` (counted in ctx.dt via the
+// entity's Context timer). While blocked the node returns Failure without
+// ticking the child. The cooldown is tracked per entity in Context, so one
+// CooldownNode instance serves many entities independently.
 class CooldownNode : public Decorator {
 public:
     void SetSeconds(float s) { seconds_ = s; }
-    Status Tick(Context& ctx) override;
+    Status Tick(Context& ctx) const override;
 
 private:
     float seconds_ = 0.f;  // <= 0 disables the cooldown
-    float remaining_ = 0.f;
 };
 
-// Re-ticks the child up to `count` times per evaluation. A child Failure
-// short-circuits; `count` 0 means "until failure".
+// Re-ticks the child `count` times within a single Tick (must be >= 1;
+// validated at load). A child Failure or Running short-circuits. Stateless:
+// the loop finishes within one Tick, so no per-entity state is needed.
 class RepeatNode : public Decorator {
 public:
     void SetCount(int c) { count_ = c; }
-    Status Tick(Context& ctx) override;
+    Status Tick(Context& ctx) const override;
 
 private:
     int count_ = 0;
@@ -109,7 +111,7 @@ private:
 // Success once the child fails; Running while the child keeps succeeding.
 class UntilFailNode : public Decorator {
 public:
-    Status Tick(Context& ctx) override;
+    Status Tick(Context& ctx) const override;
 };
 
 // Writes key = value to the entity's blackboard, then succeeds.
@@ -117,7 +119,7 @@ class BlackboardSetNode : public Node {
 public:
     void SetKey(const std::string& k) { key_ = k; }
     void SetValue(const script::Value& v) { value_ = v; }
-    Status Tick(Context& ctx) override;
+    Status Tick(Context& ctx) const override;
 
 private:
     std::string key_;
@@ -132,7 +134,7 @@ private:
 class MoveToNode : public Behavior {
 public:
     void SetSpeed(float s) { speed_ = s; }
-    Status Tick(Context& ctx) override;
+    Status Tick(Context& ctx) const override;
 
 private:
     float speed_ = 0.f;
@@ -140,13 +142,13 @@ private:
 
 class AttackNode : public Behavior {
 public:
-    Status Tick(Context& ctx) override;
+    Status Tick(Context& ctx) const override;
 };
 
 class DialogueNode : public Behavior {
 public:
     void SetText(const std::string& t) { text_ = t; }
-    Status Tick(Context& ctx) override;
+    Status Tick(Context& ctx) const override;
 
 private:
     std::string text_;
@@ -155,27 +157,28 @@ private:
 class SpawnNode : public Behavior {
 public:
     void SetKind(const std::string& k) { kind_ = k; }
-    Status Tick(Context& ctx) override;
+    Status Tick(Context& ctx) const override;
 
 private:
     std::string kind_;
 };
 
-// Accumulates ctx.dt in node state; Running until the requested time elapses.
+// Accumulates ctx.dt in the entity's Context timer; Running until the
+// requested time elapses. Per-entity state lives in Context, so one WaitNode
+// instance serves many entities independently.
 class WaitNode : public Behavior {
 public:
     void SetSeconds(float s) { seconds_ = s; }
-    Status Tick(Context& ctx) override;
+    Status Tick(Context& ctx) const override;
 
 private:
     float seconds_ = 0.f;
-    float elapsed_ = 0.f;
 };
 
 class PlaySfxNode : public Behavior {
 public:
     void SetName(const std::string& n) { name_ = n; }
-    Status Tick(Context& ctx) override;
+    Status Tick(Context& ctx) const override;
 
 private:
     std::string name_;
@@ -185,7 +188,7 @@ private:
 class RunScriptNode : public Behavior {
 public:
     void SetScript(const std::string& s) { script_ = s; }
-    Status Tick(Context& ctx) override;
+    Status Tick(Context& ctx) const override;
 
 private:
     std::string script_;
@@ -200,7 +203,7 @@ private:
 class InRangeNode : public Condition {
 public:
     void SetDistance(float d) { distance_ = d; }
-    Status Tick(Context& ctx) override;
+    Status Tick(Context& ctx) const override;
 
 private:
     float distance_ = 0.f;
@@ -208,7 +211,7 @@ private:
 
 class HasTargetNode : public Condition {
 public:
-    Status Tick(Context& ctx) override;
+    Status Tick(Context& ctx) const override;
 };
 
 // True when gameVars (or the blackboard) key "quest_<quest>" equals `state`.
@@ -216,7 +219,7 @@ class QuestStateNode : public Condition {
 public:
     void SetQuest(const std::string& q) { quest_ = q; }
     void SetState(const std::string& s) { state_ = s; }
-    Status Tick(Context& ctx) override;
+    Status Tick(Context& ctx) const override;
 
 private:
     std::string quest_;
@@ -227,7 +230,7 @@ private:
 class HealthBelowNode : public Condition {
 public:
     void SetPct(double p) { pct_ = p; }
-    Status Tick(Context& ctx) override;
+    Status Tick(Context& ctx) const override;
 
 private:
     double pct_ = 100.0;
@@ -238,7 +241,7 @@ public:
     void SetKey(const std::string& k) { key_ = k; }
     void SetOp(const std::string& o) { op_ = o; }
     void SetValue(const script::Value& v) { value_ = v; }
-    Status Tick(Context& ctx) override;
+    Status Tick(Context& ctx) const override;
 
 private:
     std::string key_;
@@ -251,7 +254,7 @@ public:
     void SetKey(const std::string& k) { key_ = k; }
     void SetOp(const std::string& o) { op_ = o; }
     void SetValue(const script::Value& v) { value_ = v; }
-    Status Tick(Context& ctx) override;
+    Status Tick(Context& ctx) const override;
 
 private:
     std::string key_;
@@ -263,7 +266,7 @@ private:
 class ScriptBoolNode : public Condition {
 public:
     void SetScript(const std::string& s) { script_ = s; }
-    Status Tick(Context& ctx) override;
+    Status Tick(Context& ctx) const override;
 
 private:
     std::string script_;

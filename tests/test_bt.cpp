@@ -104,13 +104,21 @@ TEST(BtWaitAccumulatesDt) {
     std::string err;
     CHECK(tree.LoadText(R"({"root":{"type":"wait","args":{"seconds":1.0}}})", &err));
 
+    // The same tree instance ticks two entities; timers are per-entity in the
+    // Context, so entity 2 starts fresh and entity 1's progress is preserved.
     bt::Context ctx(gv, nullptr);
+    ctx.entity = 1;
     ctx.dt = 0.3f;
-    CHECK(tree.Tick(ctx) == bt::Status::Running);
-    CHECK(tree.Tick(ctx) == bt::Status::Running);
-    CHECK(tree.Tick(ctx) == bt::Status::Running);
-    ctx.dt = 0.2f; // total 1.1 >= 1.0
+    CHECK(tree.Tick(ctx) == bt::Status::Running); // entity 1: 0.3
+    CHECK(tree.Tick(ctx) == bt::Status::Running); // entity 1: 0.6
+
+    ctx.entity = 2; // unaffected by entity 1's timer
+    ctx.dt = 1.0f;
     CHECK(tree.Tick(ctx) == bt::Status::Success);
+
+    ctx.entity = 1; // resumes at 0.6, not 0.0
+    ctx.dt = 0.5f;
+    CHECK(tree.Tick(ctx) == bt::Status::Success); // 0.6 + 0.5 >= 1.0
 }
 
 // ---------------------------------------------------------------------------
@@ -145,21 +153,30 @@ TEST(BtCooldownBlocksChild) {
     CHECK(tree.LoadText(R"({"root":{"type":"cooldown","args":{"seconds":1.0},"child":{
         "type":"move_to","args":{"speed":1}}}})", &err));
 
+    // Same tree instance, two entities: the cooldown timer is per entity in
+    // the Context, so entity 2 is not blocked by entity 1's cooldown.
     bt::Context ctx(gv, nullptr);
     int moves = 0;
     ctx.moveTo = [&](uint64_t, float) { ++moves; return true; };
 
+    ctx.entity = 1;
     ctx.dt = 0.5f;
-    CHECK(tree.Tick(ctx) == bt::Status::Success); // child runs
+    CHECK(tree.Tick(ctx) == bt::Status::Success); // entity 1 runs child
     CHECK_EQ(moves, 1);
 
     ctx.dt = 0.5f;
-    CHECK(tree.Tick(ctx) == bt::Status::Failure); // on cooldown, child blocked
+    CHECK(tree.Tick(ctx) == bt::Status::Failure); // entity 1 on cooldown
     CHECK_EQ(moves, 1);
 
-    ctx.dt = 0.5f; // cooldown elapsed
+    ctx.entity = 2; // independent cooldown: child runs immediately
+    ctx.dt = 0.5f;
     CHECK(tree.Tick(ctx) == bt::Status::Success);
     CHECK_EQ(moves, 2);
+
+    ctx.entity = 1; // remaining cooldown (0.5s) consumed by a 0.5s tick
+    ctx.dt = 0.5f;
+    CHECK(tree.Tick(ctx) == bt::Status::Success);
+    CHECK_EQ(moves, 3);
 }
 
 // ---------------------------------------------------------------------------
@@ -484,4 +501,218 @@ TEST(BtScriptBool) {
 
     ctx.callScript = nullptr;
     CHECK(tree.Tick(ctx) == bt::Status::Failure);
+}
+
+// ---------------------------------------------------------------------------
+// Load-time validation
+// ---------------------------------------------------------------------------
+
+TEST(BtLoadValidationThreshold) {
+    script::GameVars gv;
+    std::string err;
+
+    bt::BehaviorTree t;
+    CHECK(!t.LoadText(R"({"root":{"type":"parallel","args":{"threshold":0},"children":[
+        {"type":"attack"}]}})", &err));
+    CHECK(!err.empty());
+
+    err.clear();
+    bt::BehaviorTree t2;
+    CHECK(!t2.LoadText(R"({"root":{"type":"parallel","args":{"threshold":3},"children":[
+        {"type":"attack"},{"type":"attack"}]}})", &err));
+    CHECK(!err.empty());
+}
+
+TEST(BtLoadValidationStructure) {
+    script::GameVars gv;
+    std::string err;
+
+    // "children" with the wrong JSON type
+    bt::BehaviorTree t1;
+    CHECK(!t1.LoadText(R"({"root":{"type":"sequence","children":5}})", &err));
+    CHECK(!err.empty());
+
+    // "child" with the wrong JSON type
+    err.clear();
+    bt::BehaviorTree t2;
+    CHECK(!t2.LoadText(R"({"root":{"type":"invert","child":5}})", &err));
+    CHECK(!err.empty());
+
+    // "args" with the wrong JSON type
+    err.clear();
+    bt::BehaviorTree t3;
+    CHECK(!t3.LoadText(R"({"root":{"type":"wait","args":42}})", &err));
+    CHECK(!err.empty());
+
+    // empty composites are config errors
+    err.clear();
+    bt::BehaviorTree t4;
+    CHECK(!t4.LoadText(R"({"root":{"type":"parallel","children":[]}})", &err));
+    CHECK(!err.empty());
+
+    err.clear();
+    bt::BehaviorTree t5;
+    CHECK(!t5.LoadText(R"({"root":{"type":"sequence"}})", &err));
+    CHECK(!err.empty());
+
+    err.clear();
+    bt::BehaviorTree t6;
+    CHECK(!t6.LoadText(R"({"root":{"type":"selector","children":[]}})", &err));
+    CHECK(!err.empty());
+}
+
+TEST(BtLoadValidationDeepNesting) {
+    script::GameVars gv;
+    std::string err;
+
+    // 300 nested invert decorators, deeper than the 256-level cap.
+    std::string deep;
+    for (int i = 0; i < 300; ++i) deep += R"({"type":"invert","child":)";
+    deep += R"({"type":"wait","args":{"seconds":0}})";
+    for (int i = 0; i < 300; ++i) deep += "}";
+    const std::string json = R"({"root":)" + deep + "}";
+
+    bt::BehaviorTree t;
+    CHECK(!t.LoadText(json, &err));
+    CHECK(!err.empty());
+}
+
+TEST(BtLoadValidationOpsAndCount) {
+    script::GameVars gv;
+    std::string err;
+
+    // invalid op on blackboard_cmp
+    bt::BehaviorTree t1;
+    CHECK(!t1.LoadText(R"({"root":{"type":"blackboard_cmp","args":{"key":"x","op":"~~~","value":1}}})", &err));
+    CHECK(!err.empty());
+
+    // invalid op on gamevar_cmp
+    err.clear();
+    bt::BehaviorTree t2;
+    CHECK(!t2.LoadText(R"({"root":{"type":"gamevar_cmp","args":{"key":"x","op":"~~","value":1}}})", &err));
+    CHECK(!err.empty());
+
+    // negative repeat count
+    err.clear();
+    bt::BehaviorTree t3;
+    CHECK(!t3.LoadText(R"({"root":{"type":"repeat","args":{"count":-1},"child":{
+        "type":"wait","args":{"seconds":0}}}})", &err));
+    CHECK(!err.empty());
+
+    // repeat without a count
+    err.clear();
+    bt::BehaviorTree t4;
+    CHECK(!t4.LoadText(R"({"root":{"type":"repeat","child":{"type":"wait","args":{"seconds":0}}}})", &err));
+    CHECK(!err.empty());
+}
+
+TEST(BtLoadValidationCategoryMismatch) {
+    script::GameVars gv;
+    std::string err;
+
+    // type "condition" but name maps to a composite -> load error
+    bt::BehaviorTree t1;
+    CHECK(!t1.LoadText(R"({"root":{"type":"condition","name":"sequence","children":[
+        {"type":"attack"}]}})", &err));
+    CHECK(!err.empty());
+
+    // type "action" but name maps to a condition -> load error
+    err.clear();
+    bt::BehaviorTree t2;
+    CHECK(!t2.LoadText(R"({"root":{"type":"action","name":"in_range","args":{"distance":5}}})", &err));
+    CHECK(!err.empty());
+}
+
+// ---------------------------------------------------------------------------
+// Minor: table values, transactional load, blackboard scoping, shuffle variety
+// ---------------------------------------------------------------------------
+
+TEST(BtBlackboardSetTableValue) {
+    script::GameVars gv;
+    script::Blackboard bb;
+    bt::BehaviorTree tree;
+    std::string err;
+    CHECK(tree.LoadText(R"({"root":{"type":"blackboard_set","args":{
+        "key":"stats","value":{"hp":10,"mp":5}}}})", &err));
+
+    bt::Context ctx(gv, &bb);
+    ctx.entity = 1;
+    CHECK(tree.Tick(ctx) == bt::Status::Success);
+
+    script::Value v = bb.Get(1, "stats");
+    CHECK(v.type == script::Value::Type::Table);
+    CHECK(v.table != nullptr);
+    bool foundHp = false, foundMp = false;
+    for (const auto& kv : v.table->fields) {
+        if (kv.first == "hp") { foundHp = true; CHECK_EQ(kv.second.number, 10.0); }
+        if (kv.first == "mp") { foundMp = true; CHECK_EQ(kv.second.number, 5.0); }
+    }
+    CHECK(foundHp);
+    CHECK(foundMp);
+
+    // array value round-trips through JsonToValue
+    bt::BehaviorTree arr;
+    CHECK(arr.LoadText(R"({"root":{"type":"blackboard_set","args":{
+        "key":"tags","value":[1,2,3]}}})", &err));
+    CHECK(arr.Tick(ctx) == bt::Status::Success);
+    script::Value tags = bb.Get(1, "tags");
+    CHECK(tags.type == script::Value::Type::Table);
+    CHECK(tags.table != nullptr);
+    CHECK_EQ(tags.table->array.size(), 3u);
+}
+
+TEST(BtLoadIsTransactional) {
+    script::GameVars gv;
+    bt::BehaviorTree tree;
+    std::string err;
+
+    CHECK(tree.LoadText(R"({"root":{"type":"wait","args":{"seconds":0.5}}})", &err));
+    CHECK(tree.Valid());
+
+    // A failed load must not clobber the previously loaded tree.
+    CHECK(!tree.LoadText(R"({"root":{"type":"teleport"}})", &err));
+    CHECK(!tree.LoadText(R"({"root":{"type":"parallel","args":{"threshold":9},"children":[
+        {"type":"attack"}]}})", &err));
+    CHECK(tree.Valid());
+
+    bt::Context ctx(gv, nullptr);
+    ctx.dt = 0.6f;
+    CHECK(tree.Tick(ctx) == bt::Status::Success);
+}
+
+TEST(BtBlackboardEntityScoping) {
+    script::GameVars gv;
+    script::Blackboard bb;
+    bb.Set(10, "hp", script::Value::Num(50));
+    CHECK_EQ(bb.Get(10, "hp").number, 50.0);
+    CHECK(bb.Has(10, "hp"));
+    CHECK(!bb.Has(11, "hp"));
+    CHECK(bb.Get(11, "hp").type == script::Value::Type::Nil);
+}
+
+TEST(BtRandomSelectorShufflesAndVariesPerEntity) {
+    script::GameVars gv;
+    bt::BehaviorTree tree;
+    std::string err;
+    CHECK(tree.LoadText(R"({"root":{"type":"random_selector","children":[
+        {"type":"in_range","name":"a","args":{"distance":1}},
+        {"type":"in_range","name":"b","args":{"distance":2}},
+        {"type":"in_range","name":"c","args":{"distance":3}}
+    ]}})", &err));
+
+    std::vector<float> natural = {1.f, 2.f, 3.f};
+
+    std::vector<float> orderA;
+    bt::Context ctxA(gv, nullptr);
+    ctxA.entity = 99;
+    ctxA.inRange = [&](uint64_t, float d) { orderA.push_back(d); return false; };
+    CHECK(tree.Tick(ctxA) == bt::Status::Failure);
+    CHECK(orderA != natural); // actually shuffled, not natural order
+
+    std::vector<float> orderB;
+    bt::Context ctxB(gv, nullptr);
+    ctxB.entity = 7;
+    ctxB.inRange = [&](uint64_t, float d) { orderB.push_back(d); return false; };
+    CHECK(tree.Tick(ctxB) == bt::Status::Failure);
+    CHECK(orderB != orderA); // different entities -> different orders
 }

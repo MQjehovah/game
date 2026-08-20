@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <functional>
+#include <map>
 #include <memory>
 #include <string>
 
@@ -26,16 +27,24 @@ class Node {
 public:
     virtual ~Node() = default;
 
-    // Evaluate the node once against the runtime context.
-    virtual Status Tick(Context& ctx) = 0;
+    // Evaluate the node once against the runtime context. Nodes are immutable
+    // tree definitions: Tick is const, and all time-varying per-entity state
+    // lives in Context (see Context::timers).
+    virtual Status Tick(Context& ctx) const = 0;
 
     // Human-readable name for editor/debug. Defaults to the JSON `name`,
-    // falling back to the node's `type` string.
+    // falling back to the node's `type` string. Not necessarily unique.
     const std::string& Name() const { return name_; }
     void SetName(const std::string& name) { name_ = name; }
 
+    // Stable identifier unique within one loaded tree (an index path from the
+    // root, e.g. "0/1/child"). Keys per-entity runtime state in Context.
+    const std::string& Id() const { return id_; }
+    void SetId(const std::string& id) { id_ = id; }
+
 protected:
     std::string name_;
+    std::string id_;
 };
 
 using NodePtr = std::unique_ptr<Node>;
@@ -52,6 +61,14 @@ struct Context {
     script::Blackboard* blackboard = nullptr;
     uint64_t entity = 0;
     float dt = 0.f;
+
+    // Runtime state owned by the caller, keyed by entity then node id. All
+    // time-varying per-entity state (wait/cooldown timers) lives here so a
+    // single BehaviorTree definition can be shared across entities. A slot is
+    // created with value 0 on first access.
+    std::map<uint64_t, std::map<std::string, float>> timers;
+    // Accessor for the entity's timer slot for `id` (created with 0 if new).
+    float& Timer(uint64_t ent, const std::string& id);
 
     // Gameplay hooks. Optional: when a node needs a hook that is not set it
     // fails gracefully instead of crashing.
@@ -98,16 +115,26 @@ bool CompareValues(const script::Value& a, const script::Value& b, const std::st
 script::Value JsonToValue(const core::Json& j);
 
 // A loadable, tickable behavior tree. Trees are data: load once from JSON,
-// then Tick per entity/frame. BehaviorTree is movable but not copyable.
+// then Tick per entity/frame. A loaded tree is an immutable definition that is
+// shareable across entities: nodes hold no per-entity state, and every
+// time-varying value (timers, etc.) lives in the caller-provided Context, so
+// one BehaviorTree instance can Tick many entities concurrently or interleaved
+// without cross-contamination. BehaviorTree is movable but not copyable.
 class BehaviorTree {
 public:
     // Build the tree from a JSON DOM containing a "root" node. Returns false
     // and fills `error` on a structural error (missing root, unknown node
-    // type, missing required child).
+    // type, wrong-typed children/child/args, empty composite, parallel
+    // threshold out of range, invalid op/count, category/name mismatch, or
+    // nesting beyond the depth cap). A failed load leaves any previously
+    // loaded tree intact (transactional).
     bool Load(const core::Json& json, std::string* error = nullptr);
+    // Parse `text` as JSON and load it. Named LoadText (not LoadString)
+    // because Win32's <windows.h> defines LoadString as a macro that would
+    // rewrite the call site.
     bool LoadText(const std::string& text, std::string* error = nullptr);
 
-    Status Tick(Context& ctx);
+    Status Tick(Context& ctx) const;
     bool Valid() const { return root_ != nullptr; }
 
 private:
