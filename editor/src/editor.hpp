@@ -66,6 +66,9 @@ private:
     void SaveScene();
     void LoadScene(const std::string& path);
     void AddEntity(const std::string& meshKey);
+    core::Status ExportScene();
+    void LoadEditorConfig();
+    void SaveEditorConfig();
     void RunUISmokeTest();
 
     gfx::Renderer renderer_;
@@ -77,6 +80,10 @@ private:
     std::vector<SceneEntity> entities_;
     int selected_ = -1;
     bool playing_ = false;
+
+    // Project directory: exported scenes are written to <projectDir>/scenes/.
+    std::string projectDir_{"."};
+    char projectDirBuf_[4096]{};
 
     float yaw_ = 0.7f;
     float pitch_ = 0.35f;

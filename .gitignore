@@ -5,6 +5,8 @@ build/
 *.pdb
 *.ilk
 neon_rush_save.dat
+neon_editor_config.json
+scenes/
 .vs/
 .vscode/
 CMakeUserPresets.json

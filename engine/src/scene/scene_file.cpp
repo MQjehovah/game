@@ -99,6 +99,27 @@ core::Json MakeString(const std::string& s) {
     return j;
 }
 
+core::Json MakeNumber(double v) {
+    core::Json j;
+    j.type_ = core::Json::Type::Number;
+    j.number_ = v;
+    return j;
+}
+
+core::Json MakeVec3(const math::Vec3& v) {
+    core::Json j;
+    j.type_ = core::Json::Type::Array;
+    j.array_ = {MakeNumber(v.x), MakeNumber(v.y), MakeNumber(v.z)};
+    return j;
+}
+
+core::Json MakeQuat(const math::Quat& q) {
+    core::Json j;
+    j.type_ = core::Json::Type::Array;
+    j.array_ = {MakeNumber(q.x), MakeNumber(q.y), MakeNumber(q.z), MakeNumber(q.w)};
+    return j;
+}
+
 } // namespace
 
 // --- SceneFile ---------------------------------------------------------------
@@ -173,6 +194,43 @@ core::Json SceneFile::ToJson() const {
     root.object_["entities"] = std::move(arr);
     if (gameVars.IsObject()) root.object_["gameVars"] = gameVars;
     return root;
+}
+
+core::Result<core::Json> SceneFile::MakeEntity(const std::string& name,
+                                               const math::Vec3& pos,
+                                               const math::Quat& rot,
+                                               const math::Vec3& scale,
+                                               const std::string& meshKey,
+                                               float metallic,
+                                               float roughness) {
+    if (name.empty())
+        return core::Result<core::Json>::Err("scene: exported entity name must not be empty");
+    if (meshKey.empty())
+        return core::Result<core::Json>::Err("scene: exported entity '" + name +
+                                             "' has an empty meshKey");
+
+    core::Json e = MakeObject();
+    e.object_["name"] = MakeString(name);
+
+    core::Json tf = MakeObject();
+    tf.object_["pos"] = MakeVec3(pos);
+    tf.object_["rot"] = MakeQuat(rot);
+    tf.object_["scale"] = MakeVec3(scale);
+
+    core::Json mat = MakeObject();
+    mat.object_["metallic"] = MakeNumber(metallic);
+    mat.object_["roughness"] = MakeNumber(roughness);
+
+    core::Json mesh = MakeObject();
+    mesh.object_["meshKey"] = MakeString(meshKey);
+    mesh.object_["material"] = std::move(mat);
+
+    core::Json comps = MakeObject();
+    comps.object_["transform"] = std::move(tf);
+    comps.object_["mesh"] = std::move(mesh);
+
+    e.object_["components"] = std::move(comps);
+    return core::Result<core::Json>::Ok(std::move(e));
 }
 
 // --- PrefabLibrary -----------------------------------------------------------

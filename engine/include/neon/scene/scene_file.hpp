@@ -47,6 +47,19 @@ struct SceneFile {
     // Re-serialize the parsed scene back to a JSON DOM (instance level; prefab
     // references are preserved, not expanded).
     core::Json ToJson() const;
+
+    // Build a single entity's JSON ({"name", "components": {transform, mesh}})
+    // from raw editor-like data. The meshKey is stored verbatim: the caller
+    // chooses a key the runtime can resolve (e.g. "obj:..." / "gltf:..." for
+    // file-backed meshes; short keys like "terrain"/"cube" imply procedural
+    // primitives). Empty name or meshKey returns an error.
+    static core::Result<core::Json> MakeEntity(const std::string& name,
+                                               const math::Vec3& pos,
+                                               const math::Quat& rot,
+                                               const math::Vec3& scale,
+                                               const std::string& meshKey,
+                                               float metallic = 0.0f,
+                                               float roughness = 1.0f);
 };
 
 // Prefab library: registers prefab component templates parsed from JSON text

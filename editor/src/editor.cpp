@@ -1,10 +1,23 @@
 #include "editor.hpp"
 
 #include <algorithm>
+#include <cerrno>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <sstream>
+
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <direct.h>
+#include <windows.h>
+#else
+#include <sys/stat.h>
+#endif
 
 #include "font_data.hpp"
 
@@ -21,6 +34,63 @@ namespace {
 std::string DirName(const std::string& path) {
     size_t pos = path.find_last_of("/\\");
     return pos == std::string::npos ? std::string(".") : path.substr(0, pos + 1);
+}
+
+// Map an editor mesh key to the runtime-loadable key written into an exported
+// scene. File-backed built-ins resolve to their asset paths; procedural
+// primitives ("terrain", "cube") and already-prefixed keys ("obj:", "gltf:")
+// pass through verbatim.
+std::string ExportMeshKey(const std::string& key) {
+    if (key == "helmet") return "gltf:assets/models/DamagedHelmet/DamagedHelmet.gltf";
+    if (key == "tree") return "obj:assets/kenney_nature/Models/OBJ format/tree_pineTallA.obj";
+    return key;
+}
+
+bool MakeDir(const std::string& path) {
+#if defined(_WIN32)
+    return _mkdir(path.c_str()) == 0 || errno == EEXIST;
+#else
+    return ::mkdir(path.c_str(), 0777) == 0 || errno == EEXIST;
+#endif
+}
+
+// Create every missing path component (accepts '/' and '\' separators).
+bool EnsureDirs(const std::string& path) {
+    std::string acc;
+    size_t i = 0;
+    while (i < path.size()) {
+        size_t next = path.find_first_of("/\\", i);
+        if (next == std::string::npos) next = path.size();
+        std::string comp = path.substr(i, next - i);
+        i = next + 1;
+        if (!acc.empty() && !comp.empty()) {
+            acc += "/" + comp;
+        } else if (acc.empty()) {
+            acc = comp;
+        } else {
+            continue; // duplicate separator; keep going
+        }
+        if (acc.empty() || acc == ".") continue;
+        // A Windows drive root like "C:" already exists; skip creation.
+        if (acc.size() == 2 && acc[1] == ':') continue;
+        if (!MakeDir(acc)) return false;
+    }
+    return true;
+}
+
+std::string GetTempDir() {
+#if defined(_WIN32)
+    char buf[MAX_PATH];
+    DWORD n = GetTempPathA(MAX_PATH, buf);
+    if (n == 0 || n >= MAX_PATH) return ".";
+    std::string dir(buf);
+    while (!dir.empty() && (dir.back() == '\\' || dir.back() == '/')) dir.pop_back();
+    return dir.empty() ? "." : dir;
+#else
+    const char* t = std::getenv("TMPDIR");
+    if (t && *t) return t;
+    return "/tmp";
+#endif
 }
 
 gfx::Mesh MakeTerrain(gfx::Renderer& renderer) {
@@ -81,11 +151,14 @@ bool EditorApp::OnCreate() {
     BuildCustomUIDemo();
     InitToolPanels();
 
-    NEON_LOG_INFO("NeonEditor ready (%zu entities)", entities_.size());
+    LoadEditorConfig();
+    NEON_LOG_INFO("NeonEditor ready (%zu entities), project dir '%s'", entities_.size(),
+                  projectDir_.c_str());
     return true;
 }
 
 void EditorApp::OnShutdown() {
+    SaveEditorConfig();
     gfx::ImGuiNeon_Shutdown();
     renderer_.Shutdown();
 }
@@ -380,6 +453,20 @@ void EditorApp::BuildImGuiUI() {
             ImGui::MenuItem("ImGui Demo", nullptr, &showImGuiDemo_);
             ImGui::EndMenu();
         }
+        if (ImGui::BeginMenu("项目")) {
+            ImGui::TextUnformatted("项目目录");
+            if (ImGui::InputText("##project_dir", projectDirBuf_, sizeof(projectDirBuf_),
+                                 ImGuiInputTextFlags_EnterReturnsTrue)) {
+                projectDir_ = projectDirBuf_;
+                if (projectDir_.empty()) projectDir_ = ".";
+                SaveEditorConfig();
+            }
+            ImGui::TextDisabled("导出场景写入 %s/scenes/exported_scene.json",
+                                projectDir_.c_str());
+            ImGui::Separator();
+            if (ImGui::MenuItem("导出游戏场景")) ExportScene();
+            ImGui::EndMenu();
+        }
         if (ImGui::BeginMenu("帮助")) {
             ImGui::MenuItem("关于", nullptr, false, false);
             ImGui::EndMenu();
@@ -464,6 +551,8 @@ void EditorApp::BuildImGuiUI() {
         ImGui::SameLine();
         if (ImGui::Button(playing_ ? "停止" : "播放")) playing_ = !playing_;
         ImGui::SameLine();
+        if (ImGui::Button("导出场景")) ExportScene();
+        ImGui::SameLine();
         ImGui::Text("实体 %zu", entities_.size());
     }
     ImGui::End();
@@ -543,6 +632,30 @@ void EditorApp::RunUISmokeTest() {
               "imported entity resolves glTF mesh");
     }
 
+    // --- Export → load round-trip (temp project dir; no repo pollution) ---
+    const size_t exportCount = entities_.size();
+    const std::string oldProjectDir = projectDir_;
+    projectDir_ = GetTempDir();
+    core::Status exportStatus = ExportScene();
+    projectDir_ = oldProjectDir;
+    check(exportStatus.Ok(), "export scene writes componentized JSON");
+    if (exportStatus.Ok()) {
+        std::string exportedPath = GetTempDir() + "/scenes/exported_scene.json";
+        std::ifstream fin(exportedPath);
+        std::stringstream fss;
+        fss << fin.rdbuf();
+        auto parsed = scene::SceneFile::Parse(fss.str());
+        check(parsed.Ok(), "exported scene parses with SceneFile::Parse");
+        if (parsed.Ok()) {
+            check(parsed.Value().entities.size() == exportCount,
+                  "exported scene contains every editor entity");
+            if (!parsed.Value().entities.empty()) {
+                check(parsed.Value().entities[0].name == entities_[0].name,
+                      "exported entity name matches editor entity");
+            }
+        }
+    }
+
     NEON_LOG_INFO("EDITOR-UI-SMOKE: all checks done");
 }
 
@@ -571,6 +684,78 @@ void EditorApp::AddEntity(const std::string& meshKey) {
         ApplyMaterialParams(e);
         entities_.push_back(std::move(e));
         selected_ = static_cast<int>(entities_.size()) - 1;
+    }
+}
+
+core::Status EditorApp::ExportScene() {
+    if (entities_.empty())
+        return core::Status::Err("editor: nothing to export (scene is empty)");
+
+    core::Json root;
+    root.type_ = core::Json::Type::Object;
+    core::Json arr;
+    arr.type_ = core::Json::Type::Array;
+    for (const SceneEntity& e : entities_) {
+        auto res = scene::SceneFile::MakeEntity(e.name, e.pos, e.rot, e.scale,
+                                                ExportMeshKey(e.meshKey), e.metallic,
+                                                e.roughness);
+        if (!res.Ok()) {
+            NEON_LOG_ERROR("Editor: export aborted: %s", res.Error().c_str());
+            return core::Status::Err("editor: " + res.Error());
+        }
+        arr.array_.push_back(res.Value());
+    }
+    root.object_["entities"] = std::move(arr);
+
+    std::string base = projectDir_.empty() ? "." : projectDir_;
+    std::string scenesDir = base + "/scenes";
+    if (!EnsureDirs(scenesDir)) {
+        NEON_LOG_ERROR("Editor: cannot create export directory '%s'", scenesDir.c_str());
+        return core::Status::Err("editor: cannot create export directory '" + scenesDir + "'");
+    }
+    std::string path = scenesDir + "/exported_scene.json";
+    std::string json = core::JsonWriter::Write(root);
+    if (std::ofstream out(path); out.is_open()) {
+        out << json;
+        NEON_LOG_INFO("Editor: exported scene (%zu entities) -> %s", entities_.size(),
+                      path.c_str());
+        return core::Status::Ok(true);
+    }
+    NEON_LOG_ERROR("Editor: cannot write '%s'", path.c_str());
+    return core::Status::Err("editor: cannot write '" + path + "'");
+}
+
+void EditorApp::LoadEditorConfig() {
+    projectDir_ = ".";
+    std::ifstream in("neon_editor_config.json");
+    if (in.is_open()) {
+        std::stringstream ss;
+        ss << in.rdbuf();
+        std::string err;
+        core::Json root = core::Json::Parse(ss.str(), &err);
+        if (root.IsObject()) {
+            if (const core::Json* p = root.Get("projectDir")) projectDir_ = p->GetString();
+        }
+    }
+    if (projectDir_.empty()) projectDir_ = ".";
+    std::strncpy(projectDirBuf_, projectDir_.c_str(), sizeof(projectDirBuf_) - 1);
+    projectDirBuf_[sizeof(projectDirBuf_) - 1] = '\0';
+}
+
+void EditorApp::SaveEditorConfig() {
+    if (projectDir_.empty()) projectDir_ = ".";
+    core::Json root;
+    root.type_ = core::Json::Type::Object;
+    core::Json p;
+    p.type_ = core::Json::Type::String;
+    p.string_ = projectDir_;
+    root.object_["projectDir"] = p;
+    std::string json = core::JsonWriter::Write(root);
+    if (std::ofstream out("neon_editor_config.json"); out.is_open()) {
+        out << json;
+        NEON_LOG_INFO("Editor: config saved (project dir '%s')", projectDir_.c_str());
+    } else {
+        NEON_LOG_WARN("Editor: cannot write editor config");
     }
 }
 
