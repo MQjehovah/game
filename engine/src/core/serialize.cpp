@@ -1,6 +1,9 @@
 #include "neon/core/serialize.hpp"
 
+#include <array>
+#include <cassert>
 #include <cstring>
+#include <utility>
 
 namespace neon::core {
 namespace {
@@ -11,22 +14,24 @@ const uint32_t kCrcPoly = 0xEDB88320u;
 // 4-byte length prefix used for strings and byte buffers.
 constexpr size_t kLenBytes = 4;
 
+// Table-driven CRC-32 lookup table. Initialized once at first use by the
+// compiler (thread-safe C++11 magic static); const, so no mutable global state.
+const std::array<uint32_t, 256> kCrcTable = [] {
+    std::array<uint32_t, 256> table{};
+    for (uint32_t i = 0; i < 256; ++i) {
+        uint32_t c = i;
+        for (int k = 0; k < 8; ++k) c = (c & 1u) ? (kCrcPoly ^ (c >> 1)) : (c >> 1);
+        table[i] = c;
+    }
+    return table;
+}();
+
 } // namespace
 
 uint32_t Crc32(const void* data, size_t size) {
-    static uint32_t table[256];
-    static bool init = false;
-    if (!init) {
-        for (uint32_t i = 0; i < 256; ++i) {
-            uint32_t c = i;
-            for (int k = 0; k < 8; ++k) c = (c & 1u) ? (kCrcPoly ^ (c >> 1)) : (c >> 1);
-            table[i] = c;
-        }
-        init = true;
-    }
     const uint8_t* p = static_cast<const uint8_t*>(data);
     uint32_t crc = 0xFFFFFFFFu;
-    for (size_t i = 0; i < size; ++i) crc = table[(crc ^ p[i]) & 0xFFu] ^ (crc >> 8);
+    for (size_t i = 0; i < size; ++i) crc = kCrcTable[(crc ^ p[i]) & 0xFFu] ^ (crc >> 8);
     return crc ^ 0xFFFFFFFFu;
 }
 
@@ -52,6 +57,8 @@ void Serializer::WriteU32(uint32_t v) {
                     static_cast<uint8_t>(v >> 8), static_cast<uint8_t>(v & 0xFFu)};
     WriteRaw(b, sizeof(b));
 }
+
+void Serializer::WriteI32(int32_t v) { WriteU32(static_cast<uint32_t>(v)); }
 
 void Serializer::WriteU64(uint64_t v) {
     uint8_t b[8];
@@ -82,12 +89,12 @@ void Serializer::WriteBytes(const std::vector<uint8_t>& bytes) {
 }
 
 void Serializer::WriteVersion(uint32_t version) {
-    // The version field lives right after the fixed header, so the reader can
-    // reach it without decoding the payload. Multiple calls simply overwrite.
-    if (buf_.size() < kHeaderBytes + kLenBytes) buf_.resize(kHeaderBytes + kLenBytes);
+    // Contract: must be the first write. In debug builds assert that nothing
+    // else has been written yet so we never silently overwrite payload data.
+    assert(buf_.size() == kHeaderBytes);
     uint8_t b[4] = {static_cast<uint8_t>(version >> 24), static_cast<uint8_t>(version >> 16),
                     static_cast<uint8_t>(version >> 8), static_cast<uint8_t>(version & 0xFFu)};
-    std::memcpy(&buf_[kHeaderBytes], b, kLenBytes);
+    WriteRaw(b, kLenBytes);
 }
 
 void Serializer::Finalize() {

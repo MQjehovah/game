@@ -45,7 +45,7 @@ public:
     void WriteU16(uint16_t v);
     void WriteU32(uint32_t v);
     void WriteU64(uint64_t v);
-    void WriteI32(int32_t v) { WriteU32(static_cast<uint32_t>(v)); }
+    void WriteI32(int32_t v);
     void WriteF32(float v);
     void WriteF64(double v);
 
@@ -53,8 +53,10 @@ public:
     void WriteString(const std::string& str);
     void WriteBytes(const std::vector<uint8_t>& bytes);
 
-    // Marks the current write position as the format version, so an older
-    // reader can reject buffers it does not understand.
+    // Must be the FIRST write on a fresh Serializer: the version field always
+    // lives right after the fixed 8-byte header so a reader can reach it
+    // without decoding the payload. Calling it after any other write would
+    // silently overwrite data; a debug build asserts against that.
     void WriteVersion(uint32_t version);
 
     // Stamps the header (magic + CRC32) after all payload writes are done.
@@ -74,6 +76,9 @@ private:
 
 // Reading wrapper over an existing byte buffer with a forward cursor. Reading
 // past the end returns Err instead of reading garbage.
+//
+// The reader holds a reference to the buffer: the referenced buffer must
+// outlive the Deserializer.
 class Deserializer {
 public:
     explicit Deserializer(const std::vector<uint8_t>& buffer);
