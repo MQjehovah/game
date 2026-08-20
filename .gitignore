@@ -1,0 +1,10 @@
+build/
+*.o
+*.obj
+*.exe
+*.pdb
+*.ilk
+neon_rush_save.dat
+.vs/
+.vscode/
+CMakeUserPresets.json

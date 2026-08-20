@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            generator: "Visual Studio 17 2022"
+          - os: ubuntu-24.04
+            generator: "Unix Makefiles"
+            deps: "sudo apt-get update && sudo apt-get install -y libx11-dev libgl1-mesa-dev"
+          - os: macos-14
+            generator: "Unix Makefiles"
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: ${{ matrix.deps }}
+
+      - name: Configure
+        run: >
+          cmake -S . -B build
+          -G "${{ matrix.generator }}"
+          -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release -j 2
+
+      - name: Run unit tests
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Smoke test (Windows)
+        if: runner.os == 'Windows'
+        run: .\build\Release\neon_rush.exe --smoke-test 240

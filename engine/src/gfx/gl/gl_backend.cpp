@@ -1,0 +1,662 @@
+#include "neon/gfx/backend.hpp"
+
+#include <algorithm>
+#include <cstring>
+#include <unordered_map>
+#include <vector>
+
+#include "neon/core/log.hpp"
+#include "neon/gfx/color.hpp"
+#include "neon/gfx/gl/gl_loader.hpp"
+
+namespace neon::gfx {
+namespace {
+
+namespace glc {
+constexpr gl::GLenum Triangles = 0x0004;
+constexpr gl::GLenum Lines = 0x0001;
+constexpr gl::GLenum UnsignedShort = 0x1403;
+constexpr gl::GLenum Float = 0x1406;
+constexpr gl::GLenum Texture2D = 0x0DE1;
+constexpr gl::GLenum Rgba = 0x1908;
+constexpr gl::GLenum Rgba8 = 0x8058;
+constexpr gl::GLenum UnsignedByte = 0x1401;
+constexpr gl::GLenum ArrayBuffer = 0x8892;
+constexpr gl::GLenum ElementArrayBuffer = 0x8893;
+constexpr gl::GLenum StaticDraw = 0x88E4;
+constexpr gl::GLenum DynamicDraw = 0x88E8;
+constexpr gl::GLenum FragmentShader = 0x8B30;
+constexpr gl::GLenum VertexShader = 0x8B31;
+constexpr gl::GLenum CompileStatus = 0x8B81;
+constexpr gl::GLenum LinkStatus = 0x8B82;
+constexpr gl::GLenum InfoLogLength = 0x8B84;
+constexpr gl::GLenum Texture0 = 0x84C0;
+constexpr gl::GLenum TextureMinFilter = 0x2801;
+constexpr gl::GLenum TextureMagFilter = 0x2800;
+constexpr gl::GLenum TextureWrapS = 0x2802;
+constexpr gl::GLenum TextureWrapT = 0x2803;
+constexpr gl::GLenum ClampToEdge = 0x812F;
+constexpr gl::GLenum Linear = 0x2601;
+constexpr gl::GLenum Nearest = 0x2600;
+constexpr gl::GLenum LinearMipmapLinear = 0x2703;
+constexpr gl::GLenum Blend = 0x0BE2;
+constexpr gl::GLenum SrcAlpha = 0x0302;
+constexpr gl::GLenum One = 0x0001;
+constexpr gl::GLenum OneMinusSrcAlpha = 0x0303;
+constexpr gl::GLenum DepthTest = 0x0B71;
+constexpr gl::GLenum CullFace = 0x0B44;
+constexpr gl::GLenum Back = 0x0405;
+constexpr gl::GLenum Front = 0x0404;
+constexpr gl::GLenum CCW = 0x0901;
+constexpr gl::GLenum ColorBufferBit = 0x00004000;
+constexpr gl::GLenum DepthBufferBit = 0x00000100;
+constexpr gl::GLenum Version = 0x1F02;
+constexpr gl::GLenum RendererStr = 0x1F01;
+constexpr gl::GLenum NoError = 0;
+constexpr gl::GLenum Framebuffer = 0x8D40;
+constexpr gl::GLenum DepthAttachment = 0x8D00;
+constexpr gl::GLenum DepthComponent24 = 0x81A6;
+constexpr gl::GLenum ColorAttachment0 = 0x8CE0;
+constexpr gl::GLenum None = 0;
+constexpr gl::GLenum TextureCompareMode = 0x884C;
+constexpr gl::GLenum CompareRefToTexture = 0x884E;
+constexpr gl::GLenum TextureCompareFunc = 0x884D;
+constexpr gl::GLenum Lequal = 0x0203;
+constexpr gl::GLenum ScissorTest = 0x0C11;
+} // namespace glc
+
+void CheckError(const char* where) {
+    gl::GLenum err = gl::GetGL().GetError();
+    if (err != 0) NEON_LOG_ERROR("GL error 0x%X at %s", err, where);
+}
+
+struct Program {
+    gl::GLuint id = 0;
+    std::unordered_map<std::string, gl::GLint> uniforms;
+};
+
+struct GLMesh {
+    gl::GLuint vao = 0;
+    gl::GLuint vbo = 0;
+    gl::GLuint ibo = 0;
+    uint32_t indexCount = 0;
+};
+
+struct GLTexture {
+    gl::GLuint id = 0;
+    int width = 0;
+    int height = 0;
+};
+
+struct GLRenderTarget {
+    gl::GLuint fbo = 0;
+    gl::GLuint colorTex = 0;
+    gl::GLuint depthTex = 0;
+    uint32_t colorTextureHandle = 0;
+    uint32_t textureHandle = 0;
+    int width = 0;
+    int height = 0;
+};
+
+class OpenGLBackend : public IRenderBackend {
+public:
+    ~OpenGLBackend() override { Shutdown(); }
+
+    bool Init(platform::IWindow* window) override {
+        window_ = window;
+        if (!window_ || !window_->MakeGLContextCurrent()) return false;
+        if (!gl::LoadGLFunctions()) return false;
+
+        auto& g = gl::GetGL();
+        const char* version = reinterpret_cast<const char*>(g.GetString(glc::Version));
+        const char* renderer = reinterpret_cast<const char*>(g.GetString(glc::RendererStr));
+        NEON_LOG_INFO("GL backend: %s (%s)", version ? version : "?", renderer ? renderer : "?");
+
+        unsigned char whitePx[4] = {255, 255, 255, 255};
+        TextureDesc whiteDesc;
+        whiteDesc.width = 1;
+        whiteDesc.height = 1;
+        whiteDesc.rgba = whitePx;
+        whiteTex_ = CreateTexture(whiteDesc);
+
+        g.GenVertexArrays(1, &linesVao_);
+        g.GenBuffers(1, &linesVbo_);
+        g.GenBuffers(1, &linesEbo_);
+        g.BindVertexArray(linesVao_);
+        g.BindBuffer(glc::ArrayBuffer, linesVbo_);
+        g.EnableVertexAttribArray(0);
+        g.VertexAttribPointer(0, 3, glc::Float, 0, 28, nullptr);
+        g.EnableVertexAttribArray(1);
+        g.VertexAttribPointer(1, 4, glc::Float, 0, 28, reinterpret_cast<const void*>(12));
+
+        g.GenVertexArrays(1, &uiVao_);
+        g.GenBuffers(1, &uiVbo_);
+        g.GenBuffers(1, &uiEbo_);
+        g.GenBuffers(1, &instanceVbo_);
+        g.BindVertexArray(uiVao_);
+        g.BindBuffer(glc::ArrayBuffer, uiVbo_);
+        g.EnableVertexAttribArray(0);
+        g.VertexAttribPointer(0, 2, glc::Float, 0, 32, nullptr);
+        g.EnableVertexAttribArray(1);
+        g.VertexAttribPointer(1, 2, glc::Float, 0, 32, reinterpret_cast<const void*>(8));
+        g.EnableVertexAttribArray(2);
+        g.VertexAttribPointer(2, 4, glc::Float, 0, 32, reinterpret_cast<const void*>(16));
+        g.BindVertexArray(0);
+
+        g.Enable(glc::DepthTest);
+        g.DepthFunc(0x0201); // GL_LEQUAL
+        g.FrontFace(glc::CCW);
+
+        // Self-test: clear to red and read back one pixel.
+        g.ClearColor(1.0f, 0.0f, 0.0f, 1.0f);
+        g.Clear(glc::ColorBufferBit);
+        uint8_t probe[4] = {0, 0, 0, 0};
+        g.ReadPixels(0, 0, 1, 1, glc::Rgba, glc::UnsignedByte, probe);
+        gl::GLenum err = g.GetError();
+        NEON_LOG_INFO("GL self-test: pixel=%u,%u,%u,%u err=%u", probe[0], probe[1], probe[2], probe[3], err);
+        gl::GLint depthBits = 0;
+        g.GetIntegerv(0x0D56, &depthBits); // GL_DEPTH_BITS
+        // Verify the depth buffer actually clears to the requested value.
+        // Some drivers report depth bits but clear to 0, breaking GL_LESS.
+        g.ClearDepth(1.0f);
+        g.Clear(glc::DepthBufferBit);
+        float depthValue = -1.0f;
+        g.ReadPixels(0, 0, 1, 1, 0x1902, 0x1406, &depthValue); // GL_DEPTH_COMPONENT, GL_FLOAT
+        depthUsable_ = depthBits >= 16 && depthValue > 0.9f;
+        NEON_LOG_INFO("GL depth bits=%d value-after-clear=%.3f err=%u", depthBits, depthValue,
+                      g.GetError());
+        NEON_LOG_INFO("GL depth %s", depthUsable_ ? "usable" : "BROKEN - using painter's order");
+        glReady_ = true;
+        return true;
+    }
+
+    void Shutdown() override {
+        if (!window_) return;
+        auto& g = gl::GetGL();
+        if (!glReady_) {
+            window_ = nullptr;
+            return;
+        }
+        for (auto& [id, mesh] : meshes_) {
+            g.DeleteBuffers(1, &mesh.vbo);
+            g.DeleteBuffers(1, &mesh.ibo);
+            g.DeleteVertexArrays(1, &mesh.vao);
+        }
+        meshes_.clear();
+        for (auto& [id, tex] : textures_) g.DeleteTextures(1, &tex.id);
+        textures_.clear();
+        for (auto& [id, rt] : renderTargets_) {
+            g.DeleteFramebuffers(1, &rt.fbo);
+            g.DeleteTextures(1, &rt.depthTex);
+        }
+        renderTargets_.clear();
+        for (auto& [id, prog] : shaders_) g.DeleteProgram(prog.id);
+        shaders_.clear();
+        if (whiteTex_.Valid()) {
+            DestroyTexture(whiteTex_);
+            whiteTex_ = {};
+        }
+        g.DeleteVertexArrays(1, &linesVao_);
+        g.DeleteBuffers(1, &linesVbo_);
+        g.DeleteBuffers(1, &linesEbo_);
+        g.DeleteVertexArrays(1, &uiVao_);
+        g.DeleteBuffers(1, &uiVbo_);
+        g.DeleteBuffers(1, &uiEbo_);
+        g.DeleteBuffers(1, &instanceVbo_);
+        window_ = nullptr;
+    }
+
+    const char* Name() const override { return "OpenGL 3.3"; }
+
+    RenderTargetHandle CreateRenderTarget(int width, int height) override {
+        auto& g = gl::GetGL();
+        GLRenderTarget rt;
+        rt.width = width;
+        rt.height = height;
+        g.GenFramebuffers(1, &rt.fbo);
+        g.BindFramebuffer(glc::Framebuffer, rt.fbo);
+        // Color texture: encodes light-space depth for shadow sampling.
+        g.GenTextures(1, &rt.colorTex);
+        g.BindTexture(glc::Texture2D, rt.colorTex);
+        g.TexImage2D(glc::Texture2D, 0, glc::Rgba8, width, height, 0, glc::Rgba,
+                     glc::UnsignedByte, nullptr);
+        g.TexParameteri(glc::Texture2D, glc::TextureMinFilter, glc::Nearest);
+        g.TexParameteri(glc::Texture2D, glc::TextureMagFilter, glc::Nearest);
+        g.TexParameteri(glc::Texture2D, glc::TextureWrapS, glc::ClampToEdge);
+        g.TexParameteri(glc::Texture2D, glc::TextureWrapT, glc::ClampToEdge);
+        g.FramebufferTexture2D(glc::Framebuffer, glc::ColorAttachment0, glc::Texture2D,
+                               rt.colorTex, 0);
+        (void)glc::DepthAttachment;
+        (void)glc::DepthComponent24;
+        g.DrawBuffer(glc::ColorAttachment0);
+        g.ReadBuffer(glc::ColorAttachment0);
+        gl::GLenum status = g.CheckFramebufferStatus(glc::Framebuffer);
+        if (status != 0x8CD5) { // GL_FRAMEBUFFER_COMPLETE
+            NEON_LOG_ERROR("GL: render target incomplete, status=0x%X", status);
+            g.DeleteFramebuffers(1, &rt.fbo);
+            g.DeleteTextures(1, &rt.colorTex);
+            g.BindFramebuffer(glc::Framebuffer, 0);
+            return {};
+        }
+        g.BindFramebuffer(glc::Framebuffer, 0);
+        rt.colorTextureHandle = ++nextTextureId_;
+        textures_[rt.colorTextureHandle] = GLTexture{rt.colorTex, width, height};
+        rt.textureHandle = ++nextTextureId_;
+        textures_[rt.textureHandle] = GLTexture{rt.depthTex, width, height};
+        renderTargets_[++nextRenderTargetId_] = rt;
+        return {nextRenderTargetId_};
+    }
+
+    void DestroyRenderTarget(RenderTargetHandle target) override {
+        auto it = renderTargets_.find(target.id);
+        if (it == renderTargets_.end()) return;
+        auto& g = gl::GetGL();
+        g.DeleteFramebuffers(1, &it->second.fbo);
+        g.DeleteTextures(1, &it->second.colorTex);
+        renderTargets_.erase(it);
+    }
+
+    void BindRenderTarget(RenderTargetHandle target) override {
+        auto it = renderTargets_.find(target.id);
+        if (it == renderTargets_.end()) return;
+        currentFBO_ = it->second.fbo;
+        auto& g = gl::GetGL();
+        g.BindFramebuffer(glc::Framebuffer, it->second.fbo);
+        g.Viewport(0, 0, it->second.width, it->second.height);
+    }
+
+    void BindDefaultTarget() override {
+        currentFBO_ = 0;
+        auto& g = gl::GetGL();
+        g.BindFramebuffer(glc::Framebuffer, 0);
+        if (window_) g.Viewport(0, 0, window_->Width(), window_->Height());
+    }
+
+    TextureHandle RenderTargetDepthTexture(RenderTargetHandle target) const override {
+        auto it = renderTargets_.find(target.id);
+        return it != renderTargets_.end() ? TextureHandle{it->second.textureHandle}
+                                          : TextureHandle{};
+    }
+
+    TextureHandle RenderTargetColorTexture(RenderTargetHandle target) const override {
+        auto it = renderTargets_.find(target.id);
+        return it != renderTargets_.end() ? TextureHandle{it->second.colorTextureHandle}
+                                          : TextureHandle{};
+    }
+
+    ShaderHandle CreateShader(const char* vertexSource, const char* fragmentSource,
+                              const char* debugName) override {
+        auto& g = gl::GetGL();
+        gl::GLuint vs = CompileShader(glc::VertexShader, vertexSource, debugName);
+        if (!vs) return {};
+        gl::GLuint fs = CompileShader(glc::FragmentShader, fragmentSource, debugName);
+        if (!fs) {
+            g.DeleteShader(vs);
+            return {};
+        }
+        gl::GLuint program = g.CreateProgram();
+        g.AttachShader(program, vs);
+        g.AttachShader(program, fs);
+        g.LinkProgram(program);
+        g.DeleteShader(vs);
+        g.DeleteShader(fs);
+
+        gl::GLint status = 0;
+        g.GetProgramiv(program, glc::LinkStatus, &status);
+        if (status == 0) {
+            gl::GLint len = 0;
+            g.GetProgramiv(program, glc::InfoLogLength, &len);
+            std::vector<char> log(std::max(len, 1));
+            g.GetProgramInfoLog(program, static_cast<gl::GLsizei>(log.size()), nullptr, log.data());
+            NEON_LOG_ERROR("GL: failed to link shader '%s': %s", debugName, log.data());
+            g.DeleteProgram(program);
+            return {};
+        }
+
+        Program prog;
+        prog.id = program;
+        shaders_[++nextShaderId_] = prog;
+        return {nextShaderId_};
+    }
+
+    void DestroyShader(ShaderHandle shader) override {
+        auto it = shaders_.find(shader.id);
+        if (it == shaders_.end()) return;
+        gl::GetGL().DeleteProgram(it->second.id);
+        shaders_.erase(it);
+    }
+
+    TextureHandle CreateTexture(const TextureDesc& desc) override {
+        auto& g = gl::GetGL();
+        gl::GLuint id = 0;
+        g.GenTextures(1, &id);
+        g.BindTexture(glc::Texture2D, id);
+        g.TexParameteri(glc::Texture2D, glc::TextureWrapS, glc::ClampToEdge);
+        g.TexParameteri(glc::Texture2D, glc::TextureWrapT, glc::ClampToEdge);
+        g.TexParameteri(glc::Texture2D, glc::TextureMinFilter,
+                        desc.filter == Filter::Nearest ? glc::Nearest : glc::Linear);
+        g.TexParameteri(glc::Texture2D, glc::TextureMagFilter,
+                        desc.filter == Filter::Nearest ? glc::Nearest : glc::Linear);
+
+        // Allocate immutable storage (loaded from the ICD via wglGetProcAddress,
+        // avoiding the legacy opengl32 glTexImage2D stub) and upload the base level.
+        int levels = 1;
+        if (desc.mipmaps) {
+            int maxDim = std::max(desc.width, desc.height);
+            while (maxDim > 1) {
+                maxDim >>= 1;
+                ++levels;
+            }
+        }
+        g.TexStorage2D(glc::Texture2D, levels, glc::Rgba8, desc.width, desc.height);
+        CheckError("CreateTexture.TexStorage2D");
+        g.TexSubImage2D(glc::Texture2D, 0, 0, 0, desc.width, desc.height, glc::Rgba,
+                        glc::UnsignedByte, desc.rgba);
+        CheckError("CreateTexture.TexSubImage2D");
+        if (desc.mipmaps) {
+            g.GenerateMipmap(glc::Texture2D);
+        }
+        g.BindTexture(glc::Texture2D, 0);
+        textures_[++nextTextureId_] = GLTexture{id, desc.width, desc.height};
+        return {nextTextureId_};
+    }
+
+    void DestroyTexture(TextureHandle texture) override {
+        auto it = textures_.find(texture.id);
+        if (it == textures_.end()) return;
+        gl::GetGL().DeleteTextures(1, &it->second.id);
+        textures_.erase(it);
+    }
+
+    MeshHandle CreateMesh(const void* vertices, uint32_t vertexCount,
+                          const uint16_t* indices, uint32_t indexCount) override {
+        auto& g = gl::GetGL();
+        GLMesh mesh;
+        g.GenVertexArrays(1, &mesh.vao);
+        g.GenBuffers(1, &mesh.vbo);
+        g.GenBuffers(1, &mesh.ibo);
+        g.BindVertexArray(mesh.vao);
+        g.BindBuffer(glc::ArrayBuffer, mesh.vbo);
+        g.BufferData(glc::ArrayBuffer, static_cast<gl::GLsizeiptr>(vertexCount * 48),
+                     vertices, glc::StaticDraw);
+        g.EnableVertexAttribArray(0);
+        g.VertexAttribPointer(0, 3, glc::Float, 0, 48, nullptr);
+        g.EnableVertexAttribArray(1);
+        g.VertexAttribPointer(1, 3, glc::Float, 0, 48, reinterpret_cast<const void*>(12));
+        g.EnableVertexAttribArray(2);
+        g.VertexAttribPointer(2, 2, glc::Float, 0, 48, reinterpret_cast<const void*>(24));
+        g.EnableVertexAttribArray(3);
+        g.VertexAttribPointer(3, 4, glc::Float, 0, 48, reinterpret_cast<const void*>(32));
+        g.BindBuffer(glc::ElementArrayBuffer, mesh.ibo);
+        g.BufferData(glc::ElementArrayBuffer, static_cast<gl::GLsizeiptr>(indexCount * 2),
+                     indices, glc::StaticDraw);
+        g.BindVertexArray(0);
+        mesh.indexCount = indexCount;
+        meshes_[mesh.vao] = mesh;
+        return {mesh.vao, mesh.vbo, mesh.ibo, mesh.indexCount};
+    }
+
+    void DestroyMesh(const MeshHandle& mesh) override {
+        auto it = meshes_.find(mesh.vao);
+        if (it == meshes_.end()) return;
+        auto& g = gl::GetGL();
+        g.DeleteBuffers(1, &it->second.vbo);
+        g.DeleteBuffers(1, &it->second.ibo);
+        g.DeleteVertexArrays(1, &it->second.vao);
+        meshes_.erase(it);
+    }
+
+    void SetBlendMode(BlendMode mode) override {
+        auto& g = gl::GetGL();
+        if (mode == BlendMode::Opaque) {
+            g.Disable(glc::Blend);
+        } else {
+            g.Enable(glc::Blend);
+            if (mode == BlendMode::Additive) {
+                g.BlendFunc(glc::SrcAlpha, glc::One);
+            } else if (mode == BlendMode::Premultiplied) {
+                g.BlendFunc(glc::One, glc::OneMinusSrcAlpha);
+            } else {
+                g.BlendFunc(glc::SrcAlpha, glc::OneMinusSrcAlpha);
+            }
+        }
+    }
+
+    void SetDepthTest(bool enabled, bool write) override {
+        auto& g = gl::GetGL();
+        if (enabled) g.Enable(glc::DepthTest);
+        else g.Disable(glc::DepthTest);
+        g.DepthMask(write ? 1 : 0);
+    }
+
+    void SetCullMode(CullMode mode) override {
+        auto& g = gl::GetGL();
+        if (mode == CullMode::None) {
+            g.Disable(glc::CullFace);
+        } else {
+            g.Enable(glc::CullFace);
+            g.CullFace(mode == CullMode::Back ? glc::Back : glc::Front);
+        }
+    }
+
+    void SetViewport(int width, int height) override {
+        gl::GetGL().Viewport(0, 0, width, height);
+    }
+
+    void SetScissor(int x, int y, int width, int height, bool enabled) override {
+        auto& g = gl::GetGL();
+        if (!enabled) {
+            g.Disable(glc::ScissorTest);
+            return;
+        }
+        g.Enable(glc::ScissorTest);
+        int winH = window_ ? window_->Height() : height;
+        g.Scissor(x, winH - (y + height), width, height);
+    }
+
+    void Clear(const Color& color, float depth) override {
+        auto& g = gl::GetGL();
+        g.ClearColor(color.r, color.g, color.b, color.a);
+        g.ClearDepth(depth);
+        g.Clear(glc::ColorBufferBit | glc::DepthBufferBit);
+        CheckError("Clear");
+    }
+
+    void UseShader(ShaderHandle shader) override {
+        currentShader_ = shader;
+        const Program& prog = GetProgram(shader);
+        if (prog.id == 0) NEON_LOG_ERROR("GL: UseShader with invalid program (handle %u)", shader.id);
+        gl::GetGL().UseProgram(prog.id);
+        gl::GLenum err = gl::GetGL().GetError();
+        if (err) {
+            gl::GLint link = 0;
+            gl::GetGL().GetProgramiv(prog.id, glc::LinkStatus, &link);
+            NEON_LOG_ERROR("GL: UseShader err=0x%X program=%u link=%d", err, prog.id, link);
+        }
+    }
+
+    void SetUniformMat4(const char* name, const math::Mat4& value) override {
+        gl::GLint loc = GetUniformLocation(currentShader_, name);
+        // Mat4 is row-major; GL expects column-major with transpose=GL_FALSE.
+        if (loc >= 0) gl::GetGL().UniformMatrix4fv(loc, 1, 1, value.Data());
+        CheckError(name);
+    }
+
+    void SetUniformVec4(const char* name, const math::Vec4& value) override {
+        gl::GLint loc = GetUniformLocation(currentShader_, name);
+        if (loc >= 0) gl::GetGL().Uniform4f(loc, value.x, value.y, value.z, value.w);
+        CheckError(name);
+    }
+
+    void SetUniformVec3(const char* name, const math::Vec3& value) override {
+        gl::GLint loc = GetUniformLocation(currentShader_, name);
+        if (loc >= 0) gl::GetGL().Uniform3f(loc, value.x, value.y, value.z);
+        CheckError(name);
+    }
+
+    void SetUniformFloat(const char* name, float value) override {
+        gl::GLint loc = GetUniformLocation(currentShader_, name);
+        if (loc >= 0) gl::GetGL().Uniform1f(loc, value);
+        CheckError(name);
+    }
+
+    void SetUniformVec2(const char* name, const math::Vec2& value) override {
+        gl::GLint loc = GetUniformLocation(currentShader_, name);
+        if (loc >= 0) gl::GetGL().Uniform2f(loc, value.x, value.y);
+        CheckError(name);
+    }
+
+    void SetUniformInt(const char* name, int value) override {
+        gl::GLint loc = GetUniformLocation(currentShader_, name);
+        if (loc >= 0) gl::GetGL().Uniform1i(loc, value);
+        CheckError(name);
+    }
+
+    void BindTexture(int slot, TextureHandle texture) override {
+        auto& g = gl::GetGL();
+        g.ActiveTexture(glc::Texture0 + static_cast<gl::GLenum>(slot));
+        auto it = textures_.find(texture.id);
+        g.BindTexture(glc::Texture2D, it != textures_.end() ? it->second.id : 0);
+    }
+
+    void DrawMesh(const MeshHandle& mesh) override {
+        auto it = meshes_.find(mesh.vao);
+        if (it == meshes_.end()) return;
+        auto& g = gl::GetGL();
+        g.BindVertexArray(it->second.vao);
+        g.DrawElements(glc::Triangles, static_cast<gl::GLsizei>(it->second.indexCount),
+                       glc::UnsignedShort, nullptr);
+        CheckError("DrawMesh");
+        g.BindVertexArray(0);
+    }
+
+    void DrawMeshInstanced(const MeshHandle& mesh, const math::Mat4* models,
+                           uint32_t count) override {
+        auto it = meshes_.find(mesh.vao);
+        if (it == meshes_.end() || !models || count == 0) return;
+        auto& g = gl::GetGL();
+        g.BindVertexArray(it->second.vao);
+        g.BindBuffer(glc::ArrayBuffer, instanceVbo_);
+        g.BufferData(glc::ArrayBuffer, static_cast<gl::GLsizeiptr>(count * 64), models,
+                     glc::DynamicDraw);
+        for (int i = 0; i < 4; ++i) {
+            g.EnableVertexAttribArray(4 + i);
+            g.VertexAttribPointer(4 + i, 4, glc::Float, 0, 64,
+                                  reinterpret_cast<const void*>(i * 16));
+            g.VertexAttribDivisor(4 + i, 1);
+        }
+        g.DrawElementsInstanced(glc::Triangles, static_cast<gl::GLsizei>(it->second.indexCount),
+                                glc::UnsignedShort, nullptr, static_cast<gl::GLsizei>(count));
+        for (int i = 0; i < 4; ++i) g.DisableVertexAttribArray(4 + i);
+        g.BindVertexArray(0);
+    }
+
+    void DrawPrimitives(const void* vertices, uint32_t vertexCount, uint32_t stride,
+                        const uint16_t* indices, uint32_t indexCount,
+                        PrimitiveTopology topology) override {
+        auto& g = gl::GetGL();
+        const bool isLines = stride == 28;
+        g.BindVertexArray(isLines ? linesVao_ : uiVao_);
+        g.BindBuffer(glc::ArrayBuffer, isLines ? linesVbo_ : uiVbo_);
+        g.BufferData(glc::ArrayBuffer, static_cast<gl::GLsizeiptr>(vertexCount * stride),
+                     vertices, glc::DynamicDraw);
+        if (indices && indexCount > 0) {
+            g.BindBuffer(glc::ElementArrayBuffer, isLines ? linesEbo_ : uiEbo_);
+            g.BufferData(glc::ElementArrayBuffer, static_cast<gl::GLsizeiptr>(indexCount * 2),
+                         indices, glc::DynamicDraw);
+            g.DrawElements(topology == PrimitiveTopology::Lines ? glc::Lines : glc::Triangles,
+                           static_cast<gl::GLsizei>(indexCount), glc::UnsignedShort, nullptr);
+        } else {
+            g.DrawArrays(topology == PrimitiveTopology::Lines ? glc::Lines : glc::Triangles,
+                         0, static_cast<gl::GLsizei>(vertexCount));
+        }
+        CheckError("DrawPrimitives");
+        g.BindVertexArray(0);
+    }
+
+    void BeginFrame() override {}
+    void EndFrame() override { if (window_) window_->SwapBuffers(); }
+    bool DepthAvailable() const override { return depthUsable_; }
+    void CaptureFrame(int width, int height, void* rgba) override {
+        auto& g = gl::GetGL();
+        if (!rgba) return;
+        g.ReadPixels(0, 0, width, height, glc::Rgba, glc::UnsignedByte, rgba);
+        // OpenGL rows are bottom-up; flip to top-down.
+        auto* bytes = static_cast<uint8_t*>(rgba);
+        size_t rowBytes = static_cast<size_t>(width) * 4;
+        std::vector<uint8_t> temp(rowBytes);
+        for (int y = 0; y < height / 2; ++y) {
+            uint8_t* top = bytes + static_cast<size_t>(y) * rowBytes;
+            uint8_t* bottom = bytes + static_cast<size_t>(height - 1 - y) * rowBytes;
+            std::memcpy(temp.data(), top, rowBytes);
+            std::memcpy(top, bottom, rowBytes);
+            std::memcpy(bottom, temp.data(), rowBytes);
+        }
+    }
+    void ReadCurrentTargetPixel(int x, int y, unsigned char* rgba) override {
+        if (!rgba) return;
+        gl::GetGL().ReadPixels(x, y, 1, 1, glc::Rgba, glc::UnsignedByte, rgba);
+    }
+
+private:
+    gl::GLuint CompileShader(gl::GLenum type, const char* source, const char* debugName) {
+        auto& g = gl::GetGL();
+        gl::GLuint shader = g.CreateShader(type);
+        const char* sources[] = {source};
+        g.ShaderSource(shader, 1, sources, nullptr);
+        g.CompileShader(shader);
+        gl::GLint status = 0;
+        g.GetShaderiv(shader, glc::CompileStatus, &status);
+        if (status == 0) {
+            gl::GLint len = 0;
+            g.GetShaderiv(shader, glc::InfoLogLength, &len);
+            std::vector<char> log(std::max(len, 1));
+            g.GetShaderInfoLog(shader, static_cast<gl::GLsizei>(log.size()), nullptr, log.data());
+            NEON_LOG_ERROR("GL: failed to compile %s shader '%s': %s",
+                           type == glc::VertexShader ? "vertex" : "fragment", debugName, log.data());
+            g.DeleteShader(shader);
+            return 0;
+        }
+        return shader;
+    }
+
+    const Program& GetProgram(ShaderHandle shader) {
+        auto it = shaders_.find(shader.id);
+        return it != shaders_.end() ? it->second : dummyProgram_;
+    }
+
+    gl::GLint GetUniformLocation(ShaderHandle shader, const char* name) {
+        Program& prog = const_cast<Program&>(GetProgram(shader));
+        auto it = prog.uniforms.find(name);
+        if (it != prog.uniforms.end()) return it->second;
+        gl::GLint loc = gl::GetGL().GetUniformLocation(prog.id, name);
+        prog.uniforms.emplace(name, loc);
+        return loc;
+    }
+
+    platform::IWindow* window_ = nullptr;
+    TextureHandle whiteTex_;
+    ShaderHandle currentShader_;
+    Program dummyProgram_;
+    gl::GLuint linesVao_ = 0, linesVbo_ = 0, linesEbo_ = 0;
+    gl::GLuint uiVao_ = 0, uiVbo_ = 0, uiEbo_ = 0;
+    gl::GLuint instanceVbo_ = 0;
+    std::unordered_map<uint32_t, Program> shaders_;
+    std::unordered_map<uint32_t, GLMesh> meshes_;
+    std::unordered_map<uint32_t, GLTexture> textures_;
+    std::unordered_map<uint32_t, GLRenderTarget> renderTargets_;
+    uint32_t nextShaderId_ = 0;
+    uint32_t nextRenderTargetId_ = 0;
+    uint32_t nextTextureId_ = 0;
+    bool glReady_ = false;
+    bool depthUsable_ = false;
+    gl::GLuint currentFBO_ = 0;
+};
+
+} // namespace
+
+std::unique_ptr<IRenderBackend> CreateOpenGLBackend() {
+    return std::make_unique<OpenGLBackend>();
+}
+
+} // namespace neon::gfx

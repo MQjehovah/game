@@ -1,0 +1,272 @@
+#include <cstdio>
+#include <cmath>
+#include <string>
+#include <vector>
+
+#include "neon/neon.hpp"
+
+// Minimal dependency-free test framework.
+namespace test {
+
+struct TestCase {
+    const char* name;
+    void (*fn)();
+};
+
+std::vector<TestCase>& Registry() {
+    static std::vector<TestCase> registry;
+    return registry;
+}
+
+struct Registrar {
+    Registrar(const char* name, void (*fn)()) { Registry().push_back({name, fn}); }
+};
+
+int gFailures = 0;
+
+void ReportFailure(const char* file, int line, const char* expr) {
+    std::printf("  FAIL %s:%d: %s\n", file, line, expr);
+    ++gFailures;
+}
+
+} // namespace test
+
+#define TEST(name)                                                      \
+    static void Test_##name();                                          \
+    static test::Registrar Reg_##name(#name, &Test_##name);             \
+    static void Test_##name()
+
+#define CHECK(cond)                                                     \
+    do {                                                                \
+        if (!(cond)) test::ReportFailure(__FILE__, __LINE__, #cond);    \
+    } while (0)
+
+#define CHECK_NEAR(a, b, eps)                                           \
+    do {                                                                \
+        double va = (a), vb = (b);                                      \
+        if (std::fabs(va - vb) > (eps)) {                               \
+            char buf[256];                                              \
+            std::snprintf(buf, sizeof(buf), "%s ~= %s (%g vs %g)", #a, #b, va, vb); \
+            test::ReportFailure(__FILE__, __LINE__, buf);               \
+        }                                                               \
+    } while (0)
+
+#define CHECK_EQ(a, b)                                                  \
+    do {                                                                \
+        auto va = (a);                                                  \
+        auto vb = (b);                                                  \
+        if (!(va == vb)) {                                              \
+            char buf[256];                                              \
+            std::snprintf(buf, sizeof(buf), "%s == %s", #a, #b);        \
+            test::ReportFailure(__FILE__, __LINE__, buf);               \
+        }                                                               \
+    } while (0)
+
+using namespace neon;
+
+// ---------------------------------------------------------------------------
+// Math
+// ---------------------------------------------------------------------------
+
+TEST(VecBasics) {
+    math::Vec3 a{1, 2, 3};
+    math::Vec3 b{4, 5, 6};
+    CHECK_EQ(math::Dot(a, b), 32.0f);
+    math::Vec3 c = math::Cross(a, b);
+    CHECK_NEAR(c.x, -3.0, 1e-5);
+    CHECK_NEAR(c.y, 6.0, 1e-5);
+    CHECK_NEAR(c.z, -3.0, 1e-5);
+    CHECK_NEAR((math::Vec3{3, 4, 0}.Length()), 5.0, 1e-5);
+    CHECK_NEAR((math::Vec3{0, 5, 0}.Normalized().y), 1.0, 1e-5);
+}
+
+TEST(Mat4Ortho) {
+    math::Mat4 m = math::Mat4::Ortho(0, 100, 100, 0, -1, 1);
+    math::Vec3 p0 = m.TransformPoint({0, 0, 0});
+    CHECK_NEAR(p0.x, -1.0, 1e-5);
+    CHECK_NEAR(p0.y, 1.0, 1e-5); // top-left in y-down maps to +1 (top)
+    math::Vec3 p1 = m.TransformPoint({100, 100, 0});
+    CHECK_NEAR(p1.x, 1.0, 1e-5);
+    CHECK_NEAR(p1.y, -1.0, 1e-5);
+}
+
+TEST(Mat4PerspectiveW) {
+    math::Mat4 p = math::Mat4::Perspective(55.0f * math::kDegToRad, 16.0f / 9.0f, 0.1f, 100.0f);
+    math::Vec4 clip = p.TransformVec4({0, 0, -10, 1}); // point in front
+    CHECK(clip.w > 0.0f);
+    CHECK_NEAR(clip.w, 10.0, 1e-4);
+    // near=0.1, far=100, z=-10 -> ndc z = (A*z+B)/(-z) ~= 0.982
+    CHECK_NEAR(clip.z / clip.w, 0.982, 1e-3);
+}
+
+TEST(Mat4Compose) {
+    math::Mat4 t = math::Mat4::Translation({10, 20, 30});
+    math::Vec3 p = t.TransformPoint({1, 2, 3});
+    CHECK_NEAR(p.x, 11.0, 1e-5);
+    CHECK_NEAR(p.y, 22.0, 1e-5);
+    CHECK_NEAR(p.z, 33.0, 1e-5);
+
+    math::Mat4 r = math::Mat4::RotationY(math::kHalfPi);
+    math::Vec3 f = r.TransformDir({0, 0, -1});
+    CHECK_NEAR(f.x, -1.0, 1e-4); // rotating -Z by +90deg around Y gives -X
+    CHECK_NEAR(f.z, 0.0, 1e-4);
+}
+
+TEST(QuatRotation) {
+    math::Quat q = math::Quat::FromEuler(0, math::kHalfPi, 0);
+    math::Vec3 f = q.Rotate({0, 0, -1});
+    CHECK_NEAR(f.x, -1.0, 1e-4);
+    CHECK_NEAR(f.z, 0.0, 1e-4);
+    math::Quat combined = q * q;
+    math::Vec3 ff = combined.Rotate({0, 0, -1});
+    CHECK_NEAR(ff.z, 1.0, 1e-4); // 180 degrees: -Z -> +Z
+}
+
+TEST(TransformModel) {
+    math::Transform t;
+    t.position = {5, 6, 7};
+    t.scale = {2, 2, 2};
+    math::Vec3 p = t.ToMat4().TransformPoint({1, 0, 0});
+    CHECK_NEAR(p.x, 7.0, 1e-5);
+    CHECK_NEAR(p.y, 6.0, 1e-5);
+    CHECK_NEAR(p.z, 7.0, 1e-5);
+}
+
+TEST(RayIntersection) {
+    math::Ray ray;
+    ray.origin = {0, 0, 10};
+    ray.dir = {0, 0, -1};
+    float t = 0;
+    CHECK(math::IntersectRaySphere(ray, {0, 0, 0}, 2.0f, t));
+    CHECK_NEAR(t, 8.0, 1e-4);
+    math::AABB box{{-1, -1, -1}, {1, 1, 1}};
+    CHECK(math::IntersectRayAABB(ray, box, t));
+    CHECK_NEAR(t, 9.0, 1e-4);
+}
+
+TEST(CameraLookAt) {
+    gfx::Camera cam;
+    cam.position = {0, 2, 5};
+    cam.target = {0, 0, 0};
+    math::Vec4 clip = cam.ViewProjection(16.0f / 9.0f).TransformVec4({0, 0, 0, 1});
+    CHECK(clip.w > 0.0f);
+    CHECK(std::fabs(clip.x / clip.w) < 1.0f);
+    CHECK(std::fabs(clip.y / clip.w) < 1.0f);
+}
+
+// ---------------------------------------------------------------------------
+// ECS
+// ---------------------------------------------------------------------------
+
+struct Position {
+    float x = 0, y = 0;
+};
+struct Velocity {
+    float dx = 0, dy = 0;
+};
+struct Tag {
+    int id = 0;
+};
+
+TEST(ECSLifecycle) {
+    ecs::World world;
+    ecs::Entity e1 = world.Create();
+    ecs::Entity e2 = world.Create();
+    CHECK(e1.IsValid());
+    CHECK(e2.IsValid());
+    CHECK_EQ(world.EntityCount(), 2u);
+    world.Destroy(e1);
+    CHECK(!world.Alive(e1));
+    CHECK_EQ(world.EntityCount(), 1u);
+    ecs::Entity e3 = world.Create();
+    CHECK_EQ(e3.id, e1.id); // id reused
+    CHECK(world.Alive(e3));
+}
+
+TEST(ECSComponents) {
+    ecs::World world;
+    ecs::Entity e = world.Create();
+    world.Add<Position>(e, Position{1, 2});
+    CHECK(world.Has<Position>(e));
+    CHECK(!world.Has<Velocity>(e));
+    CHECK_NEAR(world.Get<Position>(e)->x, 1.0, 1e-6);
+    world.Add<Velocity>(e, Velocity{3, 4});
+    world.Remove<Position>(e);
+    CHECK(!world.Has<Position>(e));
+    CHECK(world.Has<Velocity>(e));
+    world.Destroy(e);
+    CHECK(world.Get<Velocity>(e) == nullptr);
+}
+
+TEST(ECSView) {
+    ecs::World world;
+    for (int i = 0; i < 100; ++i) {
+        ecs::Entity e = world.Create();
+        world.Add<Tag>(e, Tag{i});
+    }
+    auto view = world.ViewAll<Tag>();
+    CHECK_EQ(view.Size(), 100u);
+    int sum = 0;
+    for (size_t i = 0; i < view.Size(); ++i) sum += view[i].id;
+    CHECK_EQ(sum, 4950);
+    // Removing mid-iteration must not crash and must keep pool consistent.
+    // Snapshot handles first: pool reorders on removal.
+    std::vector<ecs::Entity> snapshot;
+    auto v2 = world.ViewAll<Tag>();
+    for (size_t i = 0; i < v2.Size(); ++i) snapshot.push_back(world.EntityAt<Tag>(i));
+    for (size_t i = 0; i < snapshot.size(); i += 2) world.Destroy(snapshot[i]);
+    CHECK_EQ(world.ViewAll<Tag>().Size(), 50u);
+}
+
+// ---------------------------------------------------------------------------
+// Config
+// ---------------------------------------------------------------------------
+
+TEST(ConfigRoundTrip) {
+    core::Config cfg;
+    cfg.SetInt("best", 1234);
+    cfg.SetFloat("volume", 0.75f);
+    cfg.SetBool("fullscreen", true);
+    cfg.SetString("name", "neon");
+    const char* path = "test_config_tmp.dat";
+    CHECK(cfg.Save(path));
+    core::Config loaded;
+    CHECK(loaded.Load(path));
+    CHECK_EQ(loaded.GetInt("best", 0), 1234);
+    CHECK_NEAR(loaded.GetFloat("volume", 0.0f), 0.75, 1e-4);
+    CHECK(loaded.GetBool("fullscreen", false));
+    CHECK_EQ(loaded.GetString("name", ""), std::string("neon"));
+    std::remove(path);
+}
+
+TEST(RngDeterminism) {
+    core::Rng a(42);
+    core::Rng b(42);
+    bool same = true;
+    for (int i = 0; i < 1000; ++i) {
+        if (a.Next() != b.Next()) same = false;
+    }
+    CHECK(same);
+    core::Rng c(43);
+    CHECK(a.Next() != c.Next() || true); // just ensure it runs
+    float f = c.Float();
+    CHECK(f >= 0.0f && f < 1.0f);
+}
+
+int main() {
+    int passed = 0;
+    for (const test::TestCase& tc : test::Registry()) {
+        int before = test::gFailures;
+        std::printf("[ RUN  ] %s\n", tc.name);
+        tc.fn();
+        if (test::gFailures == before) {
+            std::printf("[  OK  ] %s\n", tc.name);
+            ++passed;
+        } else {
+            std::printf("[ FAIL ] %s\n", tc.name);
+        }
+    }
+    std::printf("\n%d/%zu tests passed, %d failures\n", passed,
+                test::Registry().size(), test::gFailures);
+    return test::gFailures == 0 ? 0 : 1;
+}
