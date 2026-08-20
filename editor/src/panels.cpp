@@ -471,6 +471,10 @@ void EditorApp::BuildViewportPanel() {
 
         ImGui::TextColored(ImVec4(0.65f, 0.85f, 1.0f, 1.0f),
                            "右键旋转 | 中键平移 | 滚轮缩放 | 左键拾取");
+        if (playtestActive_) {
+            ImGui::SameLine();
+            ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.5f, 1.0f), "试玩中 (F5 停止)");
+        }
         ImGui::TextDisabled("实体 %zu | 目标 (%.1f, %.1f, %.1f) | 距离 %.1f",
                             entities_.size(), camTarget_.x, camTarget_.y, camTarget_.z,
                             camDist_);

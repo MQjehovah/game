@@ -189,6 +189,7 @@ void EditorApp::SetupScene() {
 
 void EditorApp::OnUpdate(float dt) {
     UpdateViewport(dt);
+    if (playtestActive_ && playtest_) playtest_->Tick(dt);
     gfx::ImGuiNeon_NewFrame(*Input(), pendingText_, dt);
     pendingText_.clear();
     ImGui::NewFrame();
@@ -208,12 +209,25 @@ void EditorApp::OnUpdate(float dt) {
         showLog_ = true;
     }
     if (smokeMode_ && TimeRef().frameIndex == 30) RunUISmokeTest();
-    if (playing_) {
-        for (SceneEntity& e : entities_) {
-            if (e.meshKey == "helmet") {
-                e.rot = math::Quat::FromEuler(0, TimeRef().elapsed * 0.8f, 0);
-            }
-        }
+
+    // Play/Stop smoke: start a playtest at frame 60, verify it ticks, stop at
+    // the last frame (119; OnUpdate never runs at 120). Kept at "Play/Stop
+    // doesn't crash the editor" level; the real script/BT verification lives
+    // in tests/test_game_runtime.cpp.
+    if (smokeMode_ && TimeRef().frameIndex == 60) StartPlaytest();
+    if (smokeMode_ && TimeRef().frameIndex == 90) {
+        const bool ok = playtestActive_ && playtest_ && playtest_->Running();
+        NEON_LOG_INFO("EDITOR-PLAYTEST-SMOKE: [%s] playtest active (entities=%zu)",
+                      ok ? "PASS" : "FAIL", ok ? playtest_->EntityCount() : 0u);
+        if (!ok) smokeFailed_ = true;
+    }
+    if (smokeMode_ && TimeRef().frameIndex == 119) { // last OnUpdate before exit
+        const bool wasActive = playtestActive_ && playtest_;
+        StopPlaytest();
+        const bool clean = !playtest_ && !playtestActive_;
+        NEON_LOG_INFO("EDITOR-PLAYTEST-SMOKE: [%s] playtest stopped cleanly (was %s)",
+                      clean ? "PASS" : "FAIL", wasActive ? "active" : "inactive");
+        if (!wasActive || !clean) smokeFailed_ = true;
     }
 }
 
@@ -233,23 +247,29 @@ void EditorApp::OnRender() {
     renderer_.SetCamera(cam, aspect);
     renderer_.SetDirectionalLight({-0.4f, -1.0f, -0.3f}, {1.0f, 0.95f, 0.85f}, 0.3f);
 
-    for (const SceneEntity& e : entities_) {
-        math::Mat4 model = math::Mat4::Translation(e.pos) * e.rot.ToMat4() *
-                           math::Mat4::Scale(e.scale);
-        renderer_.DrawMesh(e.mesh, e.material, model);
-    }
-    static bool dbg = false;
-    if (!dbg && smokeMode_) {
-        dbg = true;
-        NEON_LOG_INFO("EDITOR-DRAW: entities=%zu drawCalls=%u", entities_.size(),
-                      renderer_.Stats().drawCalls);
-    }
-    if (selected_ >= 0 && selected_ < static_cast<int>(entities_.size())) {
-        const SceneEntity& e = entities_[static_cast<size_t>(selected_)];
-        math::Mat4 model = math::Mat4::Translation(e.pos) * e.rot.ToMat4() *
-                           math::Mat4::Scale(e.scale);
-        math::AABB world = math::TransformAABB(e.mesh.Bounds(), model);
-        renderer_.DrawBox(world, gfx::Color{0.3f, 0.8f, 1.0f, 1.0f});
+    if (playtestActive_ && playtest_) {
+        // Play mode: the viewport renders the runtime's world (a snapshot of
+        // the scene taken at Play). The editor scene is untouched.
+        playtest_->Draw(renderer_, cam);
+    } else {
+        for (const SceneEntity& e : entities_) {
+            math::Mat4 model = math::Mat4::Translation(e.pos) * e.rot.ToMat4() *
+                               math::Mat4::Scale(e.scale);
+            renderer_.DrawMesh(e.mesh, e.material, model);
+        }
+        static bool dbg = false;
+        if (!dbg && smokeMode_) {
+            dbg = true;
+            NEON_LOG_INFO("EDITOR-DRAW: entities=%zu drawCalls=%u", entities_.size(),
+                          renderer_.Stats().drawCalls);
+        }
+        if (selected_ >= 0 && selected_ < static_cast<int>(entities_.size())) {
+            const SceneEntity& e = entities_[static_cast<size_t>(selected_)];
+            math::Mat4 model = math::Mat4::Translation(e.pos) * e.rot.ToMat4() *
+                               math::Mat4::Scale(e.scale);
+            math::AABB world = math::TransformAABB(e.mesh.Bounds(), model);
+            renderer_.DrawBox(world, gfx::Color{0.3f, 0.8f, 1.0f, 1.0f});
+        }
     }
 
     if (showCustomUIDemo_) ui_.Draw(renderer_);
@@ -270,6 +290,9 @@ void EditorApp::OnRender() {
 }
 
 void EditorApp::OnEvent(const platform::InputEvent& event) {
+    if (event.type == platform::InputEvent::Type::KeyDown && event.key == platform::Key::F5) {
+        TogglePlaytest();
+    }
     if (event.type == platform::InputEvent::Type::TextInput) {
         if (!gfx::ImGuiNeon_WantCaptureKeyboard()) ui_.TextInput(event.text);
         pendingText_ += event.text;
@@ -308,7 +331,9 @@ void EditorApp::UpdateViewport(float dt) {
         }
         float wheel = input->WheelDelta();
         if (std::fabs(wheel) > 0.01f) camDist_ = math::Clamp(camDist_ - wheel * 1.2f, 3.0f, 60.0f);
-        if (input->MousePressed(platform::MouseButton::Left)) {
+        // Play mode keeps camera navigation but not scene editing: left-click
+        // picking would mutate the editor scene selection mid-playtest.
+        if (input->MousePressed(platform::MouseButton::Left) && !playtestActive_) {
             float aspect = static_cast<float>(renderer_.ScreenWidth()) / renderer_.ScreenHeight();
             gfx::Camera cam;
             cam.position = camTarget_ + math::Vec3{std::sin(yaw_) * std::cos(pitch_),
@@ -549,7 +574,7 @@ void EditorApp::BuildImGuiUI() {
             }
         }
         ImGui::SameLine();
-        if (ImGui::Button(playing_ ? "停止" : "播放")) playing_ = !playing_;
+        if (ImGui::Button(playtestActive_ ? "■ 停止试玩" : "▶ 试玩")) TogglePlaytest();
         ImGui::SameLine();
         if (ImGui::Button("导出场景")) ExportScene();
         ImGui::SameLine();
@@ -698,10 +723,9 @@ void EditorApp::AddEntity(const std::string& meshKey) {
     }
 }
 
-core::Status EditorApp::ExportScene() {
+core::Result<core::Json> EditorApp::BuildPlaySceneJson() {
     if (entities_.empty())
-        return core::Status::Err("editor: nothing to export (scene is empty)");
-
+        return core::Result<core::Json>::Err("editor: scene is empty");
     core::Json root;
     root.type_ = core::Json::Type::Object;
     core::Json arr;
@@ -711,12 +735,67 @@ core::Status EditorApp::ExportScene() {
                                                 ExportMeshKey(e.meshKey), e.metallic,
                                                 e.roughness, e.tint);
         if (!res.Ok()) {
-            NEON_LOG_ERROR("Editor: export aborted: %s", res.Error().c_str());
-            return core::Status::Err("editor: " + res.Error());
+            return core::Result<core::Json>::Err("editor: " + res.Error());
         }
         arr.array_.push_back(res.Value());
     }
     root.object_["entities"] = std::move(arr);
+    return core::Result<core::Json>::Ok(std::move(root));
+}
+
+void EditorApp::StartPlaytest() {
+    StopPlaytest(); // restart semantics: a fresh snapshot each time
+    if (entities_.empty()) {
+        NEON_LOG_WARN("Editor: nothing to play (scene is empty)");
+        return;
+    }
+    auto root = BuildPlaySceneJson();
+    if (!root.Ok()) {
+        NEON_LOG_ERROR("Editor: cannot build play scene: %s", root.Error().c_str());
+        return;
+    }
+    std::string json = core::JsonWriter::Write(root.Value());
+
+    scene::GameRuntimeConfig cfg;
+    cfg.assets = &assetMgr_;
+    cfg.scriptBaseDir = projectDir_.empty() ? "." : projectDir_;
+
+    playtest_ = std::make_unique<scene::GameRuntime>();
+    core::Status st = playtest_->Start(json, cfg);
+    if (!st.Ok()) {
+        NEON_LOG_ERROR("Editor: playtest failed to start: %s", st.Error().c_str());
+        playtest_.reset();
+        return;
+    }
+    playtestActive_ = true;
+    NEON_LOG_INFO("Editor: playtest started (%zu entities, %zu scripts, %zu trees)",
+                  playtest_->EntityCount(), playtest_->ScriptCount(),
+                  playtest_->BehaviorTreeCount());
+}
+
+void EditorApp::StopPlaytest() {
+    if (!playtest_) return;
+    playtest_->Stop();
+    playtest_.reset();
+    playtestActive_ = false;
+    NEON_LOG_INFO("Editor: playtest stopped");
+}
+
+void EditorApp::TogglePlaytest() {
+    if (playtestActive_) {
+        StopPlaytest();
+    } else {
+        StartPlaytest();
+    }
+}
+
+core::Status EditorApp::ExportScene() {
+    auto rootRes = BuildPlaySceneJson();
+    if (!rootRes.Ok()) {
+        NEON_LOG_ERROR("Editor: export aborted: %s", rootRes.Error().c_str());
+        return core::Status::Err(rootRes.Error());
+    }
+    core::Json root = rootRes.Value();
 
     std::string base = projectDir_.empty() ? "." : projectDir_;
     std::string scenesDir = base + "/scenes";

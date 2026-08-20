@@ -1,11 +1,13 @@
 #pragma once
 
 #include <functional>
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "neon/core/log.hpp"
 #include "neon/neon.hpp"
+#include "neon/scene/game_runtime.hpp"
 #include "neon/ui/system.hpp"
 #include "imgui.h"
 
@@ -71,6 +73,13 @@ private:
     void SaveEditorConfig();
     void RunUISmokeTest();
 
+    // In-editor playtest (F5): a GameRuntime snapshot of the editor scene runs
+    // in the viewport while the editor scene stays untouched.
+    void TogglePlaytest();
+    void StartPlaytest();
+    void StopPlaytest();
+    core::Result<core::Json> BuildPlaySceneJson();
+
     gfx::Renderer renderer_;
     assets::AssetManager assetMgr_;
     ui::UIManager ui_;
@@ -79,7 +88,8 @@ private:
 
     std::vector<SceneEntity> entities_;
     int selected_ = -1;
-    bool playing_ = false;
+    bool playtestActive_ = false;
+    std::unique_ptr<scene::GameRuntime> playtest_; // non-null while playtesting
 
     // Project directory: exported scenes are written to <projectDir>/scenes/.
     std::string projectDir_{"."};
