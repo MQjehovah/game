@@ -152,16 +152,25 @@ set(LUA_SOURCES
 
 add_library(neon_lua STATIC ${LUA_SOURCES})
 target_include_directories(neon_lua PUBLIC third_party/lua)
-# The bundled sources are strict C; keep the C compiler happy and silence the
-# -Wpedantic noise around Lua's own macros. -Wno-cast-function-type covers
-# MinGW's -fpermissive-style default cast warnings in loadlib.
+# Lua ships strict-C sources; pin gnu99 so glibc exposes gmtime_r/localtime_r
+# (used by loslib.c) and silence the -Wpedantic noise around Lua's macros.
+# -Wno-cast-function-type covers MinGW's FARPROC-style cast warnings.
+set_target_properties(neon_lua PROPERTIES
+  C_STANDARD 99
+  C_STANDARD_REQUIRED ON
+  C_EXTENSIONS ON
+)
 if(MSVC)
   target_compile_options(neon_lua PRIVATE /W3)
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
   target_compile_options(neon_lua PRIVATE -Wall -Wextra -Wno-cast-function-type)
 endif()
-if(NOT WIN32)
+if(APPLE)
+  target_compile_definitions(neon_lua PRIVATE LUA_USE_MACOSX)
+elseif(UNIX)
   target_compile_definitions(neon_lua PRIVATE LUA_USE_LINUX)
+  # loadlib.c needs dlopen/dlsym; lmathlib.c needs libm.
+  target_link_libraries(neon_lua PRIVATE m dl)
 endif()
 
 # ---------------------------------------------------------------------------
