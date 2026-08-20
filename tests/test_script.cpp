@@ -47,6 +47,27 @@ script::Value NativeFail(script::IScriptHost& host, void* /*user*/) {
     return script::Value::Nil();
 }
 
+script::Value NativeInner(script::IScriptHost& host, void* /*user*/) {
+    CHECK_EQ(host.ArgCount(), 1);
+    return script::Value::Num(host.GetArg(0).number * 10.0);
+}
+
+script::Value NativeOuter(script::IScriptHost& host, void* /*user*/) {
+    CHECK_EQ(host.ArgCount(), 2);
+    auto inner = host.Call("inner", {host.GetArg(1)});
+    CHECK(inner.Ok());
+    CHECK_EQ(host.ArgCount(), 2); // outer frame intact after the nested call
+    return script::Value::Num(host.GetArg(0).number + inner.Value().number);
+}
+
+script::Value NativeGreet(script::IScriptHost& host, void* /*user*/) {
+    return script::Value::Str(std::string("h\xC3\xA9llo \xE4\xB8\x96\xE7\x95\x8C \xF0\x9F\x8E\xAE"));
+}
+
+script::Value NativeThrows(script::IScriptHost& host, void* /*user*/) {
+    throw std::runtime_error("native boom");
+}
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -256,5 +277,73 @@ TEST(ScriptNativeSetError) {
     CHECK(!res.Ok());
     CHECK(!host->LastError().message.empty());
     CHECK(host->LastError().message.find("kaboom") != std::string::npos);
+    host->Shutdown();
+}
+
+// A native function may re-enter the host from inside a call; each frame must
+// observe its own ArgCount/GetArg (nested frame stack).
+TEST(ScriptNativeReentrantCall) {
+    auto host = MakeHost();
+    host->Register("inner", &NativeInner);
+    host->Register("outer", &NativeOuter);
+    CHECK(host->Load("return outer(3, 4)"));
+    auto res = host->Run();
+    CHECK(res.Ok());
+    CHECK_EQ(res.Value().number, 43.0); // 3 + (4 * 10)
+    host->Shutdown();
+}
+
+// SetError surfaces through the host's Call() path as well as Run().
+TEST(ScriptNativeSetErrorThroughCall) {
+    auto host = MakeHost();
+    host->Register("boom", &NativeFail);
+    auto res = host->Call("boom", {});
+    CHECK(!res.Ok());
+    CHECK(!host->LastError().message.empty());
+    CHECK(host->LastError().message.find("kaboom") != std::string::npos);
+    host->Shutdown();
+}
+
+// A native function may return a string; its bytes round-trip untouched.
+TEST(ScriptNativeStringReturn) {
+    auto host = MakeHost();
+    host->Register("greet", &NativeGreet);
+    CHECK(host->Load("return greet()"));
+    auto res = host->Run();
+    CHECK(res.Ok());
+    CHECK(res.Value().type == script::Value::Type::String);
+    CHECK_EQ(res.Value().str,
+             std::string("h\xC3\xA9llo \xE4\xB8\x96\xE7\x95\x8C \xF0\x9F\x8E\xAE"));
+    host->Shutdown();
+}
+
+// ArgCount/GetArg outside any native call are safe no-ops.
+TEST(ScriptNativeArgQueriesOutsideCall) {
+    auto host = MakeHost();
+    CHECK_EQ(host->ArgCount(), 0);
+    CHECK(host->GetArg(0).type == script::Value::Type::Nil);
+    CHECK(host->GetArg(3).type == script::Value::Type::Nil);
+    host->Shutdown();
+}
+
+// Register before Init must not crash (accepted as a no-op).
+TEST(ScriptNativeRegisterBeforeInit) {
+    auto host = script::CreateLuaHost();
+    host->Register("double_it", &NativeDoubleIt);
+    CHECK(host->Init());
+    CHECK(!host->HasFunction("double_it")); // the pre-Init registration is dropped
+    host->Shutdown();
+}
+
+// A throwing native function is contained and surfaces as a script error
+// rather than unwinding through Lua's setjmp frames.
+TEST(ScriptNativeExceptionContained) {
+    auto host = MakeHost();
+    host->Register("explode", &NativeThrows);
+    CHECK(host->Load("return explode()"));
+    auto res = host->Run();
+    CHECK(!res.Ok());
+    CHECK(!host->LastError().message.empty());
+    CHECK(host->LastError().message.find("native boom") != std::string::npos);
     host->Shutdown();
 }

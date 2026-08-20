@@ -10,9 +10,10 @@ namespace neon::script {
 // Lua 5.4 implementation of IScriptHost. Lua internals live behind a PIMPL so
 // no Lua headers leak into the engine's public interface.
 //
-// The host opens a restricted standard library (base, table, string, math,
-// utf8, coroutine); io, os, and package are intentionally NOT opened to keep
-// script behavior deterministic (a full sandbox is a later task).
+// The host opens a restricted standard library (base with dofile/loadfile
+// removed, table, string, math, utf8, coroutine); io, os, and package are
+// intentionally NOT opened to keep script behavior deterministic (a full
+// sandbox is a later task).
 //
 // Single-threaded: not safe to share across threads.
 class LuaHost : public IScriptHost {

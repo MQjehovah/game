@@ -1,5 +1,6 @@
 #include "neon/script/lua_host.hpp"
 
+#include <exception>
 #include <unordered_map>
 #include <utility>
 
@@ -25,7 +26,8 @@ struct NativeFn {
 };
 
 // Opens only the deterministic subset of the standard libraries. io, os,
-// package, and debug are intentionally omitted.
+// package, and debug are intentionally omitted, and dofile/loadfile (arbitrary
+// file read + execute) are stripped from the base library.
 void OpenRestrictedLibraries(lua_State* L) {
     static const struct {
         const char* name;
@@ -42,6 +44,12 @@ void OpenRestrictedLibraries(lua_State* L) {
         luaL_requiref(L, lib.name, lib.open, 1);
         lua_pop(L, 1);
     }
+    // luaopen_base exposes dofile/loadfile, which read and execute arbitrary
+    // files. Close them for determinism; T2.4's sandbox task decides on `load`.
+    lua_pushnil(L);
+    lua_setglobal(L, "dofile");
+    lua_pushnil(L);
+    lua_setglobal(L, "loadfile");
 }
 
 // Extracts the line number from a Lua error message of the form
@@ -133,28 +141,58 @@ core::Result<Value> LuaHost::Fail(const std::string& message, int line) {
 // a lightuserdata pointing to the LuaHost, [2] is the registered name (string).
 // While `fn` runs, the script arguments sit at stack indices 1..n, which is
 // what ArgCount/GetArg read via the recorded frame count.
+//
+// Error discipline: this closure is a C++ function called from Lua's C code,
+// and lua_error() longjmps back through Lua's setjmp frames, skipping C++
+// destructors. lua_error() must therefore only be called when no nontrivial
+// C++ local (a Value holding a string, a std::string) is alive. The fn call
+// and its result therefore live in the inner scope below (the result is
+// destroyed before any raise), and the error message is pushed straight from
+// the Impl field, never copied into a local. C++ exceptions from `fn` are
+// caught and funneled through the same path so they never cross Lua's setjmp
+// frames (which would leave the state permanently corrupt).
 int LuaHost::NativeCallClosure(lua_State* L) {
     LuaHost* self = static_cast<LuaHost*>(lua_touserdata(L, lua_upvalueindex(1)));
     const char* name = lua_tostring(L, lua_upvalueindex(2));
     if (!self || !name) return luaL_error(L, "invalid native function registration");
-    auto it = self->impl_->nativeFns.find(name);
-    if (it == self->impl_->nativeFns.end())
-        return luaL_error(L, "native function '%s' is not registered", name);
 
-    const NativeFn& nf = it->second;
-    if (nf.fn == nullptr) return luaL_error(L, "native function '%s' has no implementation", name);
-    self->impl_->frameArgCounts.push_back(lua_gettop(L));
-    Value result = nf.fn(*self, nf.user);
-    self->impl_->frameArgCounts.pop_back();
-
-    if (self->impl_->nativeErrorPending) {
-        self->impl_->nativeErrorPending = false;
-        std::string message = std::move(self->impl_->nativeErrorMessage);
-        lua_pushlstring(L, message.data(), message.size());
-        return lua_error(L);
+    // Copy the registration into a trivially destructible local so nothing
+    // non-trivial stays alive across the lua_error below.
+    NativeFn nf;
+    {
+        auto it = self->impl_->nativeFns.find(name);
+        if (it == self->impl_->nativeFns.end())
+            return luaL_error(L, "native function '%s' is not registered", name);
+        nf = it->second;
     }
-    PushValue(L, result);
-    return 1;
+    if (nf.fn == nullptr) return luaL_error(L, "native function '%s' has no implementation", name);
+
+    self->impl_->frameArgCounts.push_back(lua_gettop(L));
+    {
+        Value result;
+        try {
+            result = nf.fn(*self, nf.user);
+        } catch (const std::exception& e) {
+            self->impl_->lastError = {e.what(), 0};
+            self->impl_->nativeErrorMessage = e.what();
+            self->impl_->nativeErrorPending = true;
+        } catch (...) {
+            const char* kMessage = "native function threw a non-std exception";
+            self->impl_->lastError = {kMessage, 0};
+            self->impl_->nativeErrorMessage = kMessage;
+            self->impl_->nativeErrorPending = true;
+        }
+        if (!self->impl_->nativeErrorPending) {
+            self->impl_->frameArgCounts.pop_back();
+            PushValue(L, result); // no raise on this path; `result` is destroyed after return
+            return 1;
+        }
+    } // `result` (and any string it held) is destroyed here, before the raise
+    self->impl_->frameArgCounts.pop_back();
+    self->impl_->nativeErrorPending = false;
+    lua_pushlstring(L, self->impl_->nativeErrorMessage.data(),
+                    self->impl_->nativeErrorMessage.size());
+    return lua_error(L);
 }
 
 bool LuaHost::Load(const std::string& source) {

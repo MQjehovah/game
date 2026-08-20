@@ -47,6 +47,11 @@ struct Value {
 // A native (C++) function callable from scripts. `host` is the calling host:
 // the implementation can read its arguments with ArgCount/GetArg and return a
 // Value. `user` is the opaque pointer supplied at registration time.
+//
+// Implementations must not let C++ exceptions escape. The host catches them
+// (a caught exception surfaces as a script error), but unwinding through
+// Lua's setjmp-based frames is undefined behavior, so treat the call as
+// exception-free C++.
 class IScriptHost;
 using NativeFunction = Value (*)(IScriptHost& host, void* user);
 
