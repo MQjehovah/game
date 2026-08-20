@@ -18,6 +18,35 @@ std::unique_ptr<script::IScriptHost> MakeHost() {
     return host;
 }
 
+// --- Native function fixtures -------------------------------------------------
+
+script::Value NativeDoubleIt(script::IScriptHost& host, void* /*user*/) {
+    script::Value v = host.GetArg(0);
+    if (v.type != script::Value::Type::Number) return script::Value::Nil();
+    return script::Value::Num(v.number * 2.0);
+}
+
+script::Value NativeTripleIt(script::IScriptHost& host, void* /*user*/) {
+    script::Value v = host.GetArg(0);
+    if (v.type != script::Value::Type::Number) return script::Value::Nil();
+    return script::Value::Num(v.number * 3.0);
+}
+
+script::Value NativeSum(script::IScriptHost& host, void* /*user*/) {
+    CHECK_EQ(host.ArgCount(), 2);
+    return script::Value::Num(host.GetArg(0).number + host.GetArg(1).number);
+}
+
+script::Value NativeScale(script::IScriptHost& host, void* user) {
+    double factor = *static_cast<const double*>(user);
+    return script::Value::Num(host.GetArg(0).number * factor);
+}
+
+script::Value NativeFail(script::IScriptHost& host, void* /*user*/) {
+    host.SetError("native failure: kaboom");
+    return script::Value::Nil();
+}
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -162,5 +191,70 @@ TEST(ScriptMissingGlobalIsNil) {
     auto res = host->GetGlobal("definitely_not_defined");
     CHECK(res.Ok());
     CHECK(res.Value().type == script::Value::Type::Nil);
+    host->Shutdown();
+}
+
+// A registered native function is callable both from a Lua chunk and through
+// the host's Call() path.
+TEST(ScriptNativeRegisterAndCall) {
+    auto host = MakeHost();
+    host->Register("double_it", &NativeDoubleIt);
+
+    CHECK(host->Load("return double_it(21)"));
+    auto res = host->Run();
+    CHECK(res.Ok());
+    CHECK(res.Value().type == script::Value::Type::Number);
+    CHECK_EQ(res.Value().number, 42.0);
+
+    auto res2 = host->Call("double_it", {script::Value::Num(10)});
+    CHECK(res2.Ok());
+    CHECK_EQ(res2.Value().number, 20.0);
+    host->Shutdown();
+}
+
+// Inside a native call, ArgCount/GetArg expose the script arguments.
+TEST(ScriptNativeArgCountGetArg) {
+    auto host = MakeHost();
+    host->Register("sum", &NativeSum);
+    CHECK(host->Load("return sum(3, 4)"));
+    auto res = host->Run();
+    CHECK(res.Ok());
+    CHECK_EQ(res.Value().number, 7.0);
+    host->Shutdown();
+}
+
+// The user pointer passed to Register reaches the native function.
+TEST(ScriptNativeUserParam) {
+    auto host = MakeHost();
+    const double kFactor = 2.5;
+    host->Register("scale", &NativeScale, const_cast<double*>(&kFactor));
+    CHECK(host->Load("return scale(4)"));
+    auto res = host->Run();
+    CHECK(res.Ok());
+    CHECK_EQ(res.Value().number, 10.0);
+    host->Shutdown();
+}
+
+// Re-registering a name replaces the previous native function.
+TEST(ScriptNativeRegisterOverwrites) {
+    auto host = MakeHost();
+    host->Register("scale", &NativeDoubleIt);
+    host->Register("scale", &NativeTripleIt);
+    CHECK(host->Load("return scale(5)"));
+    auto res = host->Run();
+    CHECK(res.Ok());
+    CHECK_EQ(res.Value().number, 15.0);
+    host->Shutdown();
+}
+
+// A native function that calls SetError fails the script call.
+TEST(ScriptNativeSetError) {
+    auto host = MakeHost();
+    host->Register("boom", &NativeFail);
+    CHECK(host->Load("return boom()"));
+    auto res = host->Run();
+    CHECK(!res.Ok());
+    CHECK(!host->LastError().message.empty());
+    CHECK(host->LastError().message.find("kaboom") != std::string::npos);
     host->Shutdown();
 }

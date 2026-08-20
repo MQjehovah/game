@@ -3,6 +3,8 @@
 
 #include "neon/script/script.hpp"
 
+struct lua_State; // forward declaration only; Lua headers stay out of the public interface
+
 namespace neon::script {
 
 // Lua 5.4 implementation of IScriptHost. Lua internals live behind a PIMPL so
@@ -28,10 +30,15 @@ public:
     core::Result<Value> Call(const std::string& fn, const std::vector<Value>& args) override;
     void SetGlobal(const std::string& name, const Value& v) override;
     core::Result<Value> GetGlobal(const std::string& name) override;
+    void Register(const std::string& name, NativeFunction fn, void* user) override;
+    int ArgCount() const override;
+    Value GetArg(int index) const override;
+    void SetError(const std::string& message) override;
     const ScriptError& LastError() const override;
     bool HasFunction(const std::string& fn) const override;
 
 private:
+    static int NativeCallClosure(lua_State* L);
     void CaptureError();
     core::Result<Value> Fail(const std::string& message, int line = 0);
 

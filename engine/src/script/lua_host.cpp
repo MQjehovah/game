@@ -1,5 +1,8 @@
 #include "neon/script/lua_host.hpp"
 
+#include <unordered_map>
+#include <utility>
+
 extern "C" {
 #include "lua.h"
 #include "lauxlib.h"
@@ -14,6 +17,12 @@ const void* kChunkKey() {
     static char key = 0;
     return &key;
 }
+
+// A registered native function plus its opaque user pointer.
+struct NativeFn {
+    NativeFunction fn = nullptr;
+    void* user = nullptr;
+};
 
 // Opens only the deterministic subset of the standard libraries. io, os,
 // package, and debug are intentionally omitted.
@@ -79,6 +88,10 @@ struct LuaHost::Impl {
     lua_State* L = nullptr;
     bool hasChunk = false;
     ScriptError lastError;
+    std::unordered_map<std::string, NativeFn> nativeFns;
+    std::vector<int> frameArgCounts;
+    bool nativeErrorPending = false;
+    std::string nativeErrorMessage;
 };
 
 LuaHost::LuaHost() : impl_(std::make_unique<Impl>()) {}
@@ -116,6 +129,34 @@ core::Result<Value> LuaHost::Fail(const std::string& message, int line) {
     return core::Result<Value>::Err(message);
 }
 
+// Lua-side entry point for every registered native function. Upvalues: [1] is
+// a lightuserdata pointing to the LuaHost, [2] is the registered name (string).
+// While `fn` runs, the script arguments sit at stack indices 1..n, which is
+// what ArgCount/GetArg read via the recorded frame count.
+int LuaHost::NativeCallClosure(lua_State* L) {
+    LuaHost* self = static_cast<LuaHost*>(lua_touserdata(L, lua_upvalueindex(1)));
+    const char* name = lua_tostring(L, lua_upvalueindex(2));
+    if (!self || !name) return luaL_error(L, "invalid native function registration");
+    auto it = self->impl_->nativeFns.find(name);
+    if (it == self->impl_->nativeFns.end())
+        return luaL_error(L, "native function '%s' is not registered", name);
+
+    const NativeFn& nf = it->second;
+    if (nf.fn == nullptr) return luaL_error(L, "native function '%s' has no implementation", name);
+    self->impl_->frameArgCounts.push_back(lua_gettop(L));
+    Value result = nf.fn(*self, nf.user);
+    self->impl_->frameArgCounts.pop_back();
+
+    if (self->impl_->nativeErrorPending) {
+        self->impl_->nativeErrorPending = false;
+        std::string message = std::move(self->impl_->nativeErrorMessage);
+        lua_pushlstring(L, message.data(), message.size());
+        return lua_error(L);
+    }
+    PushValue(L, result);
+    return 1;
+}
+
 bool LuaHost::Load(const std::string& source) {
     if (!impl_->L) return false;
     if (luaL_loadbuffer(impl_->L, source.data(), source.size(), "[neon]") != LUA_OK) {
@@ -138,12 +179,14 @@ core::Result<Value> LuaHost::Run() {
     if (!impl_->hasChunk) return Fail("no script chunk loaded");
     lua_pushlightuserdata(impl_->L, const_cast<void*>(kChunkKey()));
     lua_rawget(impl_->L, LUA_REGISTRYINDEX);
-    if (lua_pcall(impl_->L, 0, 0, 0) != LUA_OK) {
+    if (lua_pcall(impl_->L, 0, 1, 0) != LUA_OK) {
         CaptureError();
         return Fail(impl_->lastError.message, impl_->lastError.line);
     }
+    Value result = PopValue(impl_->L, -1);
+    lua_pop(impl_->L, 1);
     impl_->lastError = {};
-    return core::Result<Value>::Ok(Value::Nil());
+    return core::Result<Value>::Ok(result);
 }
 
 core::Result<Value> LuaHost::Call(const std::string& fn, const std::vector<Value>& args) {
@@ -176,6 +219,33 @@ core::Result<Value> LuaHost::GetGlobal(const std::string& name) {
     Value v = PopValue(impl_->L, -1);
     lua_pop(impl_->L, 1);
     return core::Result<Value>::Ok(v);
+}
+
+void LuaHost::Register(const std::string& name, NativeFunction fn, void* user) {
+    if (!impl_->L) return;
+    impl_->nativeFns[name] = NativeFn{fn, user};
+    lua_pushlightuserdata(impl_->L, this);
+    lua_pushlstring(impl_->L, name.data(), name.size());
+    lua_pushcclosure(impl_->L, &LuaHost::NativeCallClosure, 2);
+    lua_setglobal(impl_->L, name.c_str());
+}
+
+int LuaHost::ArgCount() const {
+    if (impl_->frameArgCounts.empty()) return 0;
+    return impl_->frameArgCounts.back();
+}
+
+Value LuaHost::GetArg(int index) const {
+    if (impl_->frameArgCounts.empty()) return Value::Nil();
+    int argCount = impl_->frameArgCounts.back();
+    if (index < 0 || index >= argCount) return Value::Nil();
+    return PopValue(impl_->L, index + 1); // Lua arguments start at stack index 1
+}
+
+void LuaHost::SetError(const std::string& message) {
+    impl_->nativeErrorPending = true;
+    impl_->nativeErrorMessage = message;
+    impl_->lastError = {message, 0};
 }
 
 const ScriptError& LuaHost::LastError() const { return impl_->lastError; }

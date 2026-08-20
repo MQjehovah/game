@@ -44,6 +44,12 @@ struct Value {
     }
 };
 
+// A native (C++) function callable from scripts. `host` is the calling host:
+// the implementation can read its arguments with ArgCount/GetArg and return a
+// Value. `user` is the opaque pointer supplied at registration time.
+class IScriptHost;
+using NativeFunction = Value (*)(IScriptHost& host, void* user);
+
 // Backend-agnostic interface for executing embedded scripts. A host is
 // single-threaded: all calls must originate from the same thread.
 class IScriptHost {
@@ -76,6 +82,25 @@ public:
     // Read/write a global variable. Missing globals read back as Nil.
     virtual void SetGlobal(const std::string& name, const Value& v) = 0;
     virtual core::Result<Value> GetGlobal(const std::string& name) = 0;
+
+    // Register a native function under a global name so scripts can call it.
+    // Overwrites any previous registration with the same name. `fn` runs on
+    // the host's thread; inside it, ArgCount/GetArg read its arguments and
+    // SetError raises a script error at the call boundary.
+    virtual void Register(const std::string& name, NativeFunction fn, void* user = nullptr) = 0;
+
+    // Number of arguments passed to the currently executing native function.
+    // Valid only inside a native call; returns 0 outside one.
+    virtual int ArgCount() const = 0;
+
+    // The index-th argument (0-based) of the currently executing native
+    // function. Returns Nil when called outside a native call or with an
+    // out-of-range index.
+    virtual Value GetArg(int index) const = 0;
+
+    // Signal an error from inside a native function. The host raises it at the
+    // script call boundary and records it in LastError.
+    virtual void SetError(const std::string& message) = 0;
 
     // Details of the most recent Load/Run/Call error. Valid until the next
     // script operation clears it.
