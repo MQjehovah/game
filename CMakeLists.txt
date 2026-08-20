@@ -14,6 +14,7 @@ endif()
 # ---------------------------------------------------------------------------
 set(ENGINE_CORE_SOURCES
   engine/src/assets/asset_manager.cpp
+  engine/src/anim/anim.cpp
   engine/src/audio/audio.cpp
   engine/src/core/app.cpp
   engine/src/core/config.cpp
@@ -203,7 +204,7 @@ add_executable(neon_tests tests/test_main.cpp tests/test_serialize.cpp tests/tes
   tests/test_physics.cpp tests/test_obj.cpp tests/test_gltf.cpp tests/test_json.cpp
   tests/test_script.cpp tests/test_script_bindings.cpp tests/test_script_determinism.cpp
   tests/test_bt.cpp tests/test_scene_file.cpp tests/test_scene_export.cpp tests/test_manifest.cpp
-  tests/test_game_runtime.cpp tests/test_gltf_skin.cpp)
+  tests/test_game_runtime.cpp tests/test_gltf_skin.cpp tests/test_anim.cpp)
 target_link_libraries(neon_tests PRIVATE neon_engine)
 add_test(NAME unit COMMAND neon_tests)
 # ctest runs the binary from the build dir by default; run it from the source

@@ -54,7 +54,125 @@ struct FaceIndex {
     FaceIndex(int v_, int t_, int n_) : v(v_), t(t_), n(n_) {}
 };
 
+struct GltfAccessorLayout {
+    const uint8_t* base = nullptr;
+    int stride = 0;
+    int count = 0;
+};
+
+int GltfComponentSize(int ct) {
+    switch (ct) {
+        case 5120: case 5121: return 1;
+        case 5122: case 5123: return 2;
+        case 5125: case 5126: return 4;
+        default: return 0;
+    }
+}
+
+int GltfComponentCount(const std::string& t) {
+    if (t == "SCALAR") return 1;
+    if (t == "VEC2") return 2;
+    if (t == "VEC3") return 3;
+    if (t == "VEC4") return 4;
+    if (t == "MAT4") return 16;
+    return 0;
+}
+
+// Resolves an accessor against the parsed buffer views / binary into a
+// contiguous-window descriptor honoring bufferView byteStride and accessor
+// byteOffset. Shared by the mesh importer and GltfAsset::ReadAccessorFloats.
+bool ResolveGltfAccessor(const std::vector<uint8_t>& bin,
+                         const std::vector<assets::GltfBufferView>& views,
+                         const std::vector<assets::GltfAccessor>& accs,
+                         int index, GltfAccessorLayout& out) {
+    if (index < 0 || index >= static_cast<int>(accs.size())) return false;
+    const assets::GltfAccessor& acc = accs[static_cast<size_t>(index)];
+    if (acc.bufferView < 0 || acc.bufferView >= static_cast<int>(views.size())) return false;
+    const assets::GltfBufferView& view = views[static_cast<size_t>(acc.bufferView)];
+    int compSize = GltfComponentSize(acc.componentType);
+    int compCount = GltfComponentCount(acc.type);
+    if (compSize == 0 || compCount == 0 || acc.count < 0) return false;
+    int stride = view.byteStride != 0 ? view.byteStride : compSize * compCount;
+    if (stride <= 0) return false;
+    int64_t base = static_cast<int64_t>(view.byteOffset) + acc.byteOffset;
+    int64_t lastElementEnd = base + static_cast<int64_t>(stride) * (acc.count - 1) +
+                             compSize * compCount;
+    if (base < 0 || lastElementEnd > static_cast<int64_t>(bin.size())) return false;
+    out.base = bin.data() + base;
+    out.stride = stride;
+    out.count = acc.count;
+    return true;
+}
+
+// Decomposes a row-major T*R*S matrix into a unit quaternion (scale baked into
+// the row lengths is normalized away; mirror/shear decompositions are not
+// handled and yield the closest rotation).
+math::Quat Mat4ToQuat(const math::Mat4& m) {
+    auto row = [&](int r) {
+        return math::Vec3{m.m[r * 4 + 0], m.m[r * 4 + 1], m.m[r * 4 + 2]}.Normalized();
+    };
+    math::Vec3 r0 = row(0), r1 = row(1), r2 = row(2);
+    float trace = r0.x + r1.y + r2.z;
+    math::Quat q;
+    if (trace > 0.0f) {
+        float s = std::sqrt(trace + 1.0f) * 2.0f;
+        q.w = 0.25f * s;
+        q.x = (r1.z - r2.y) / s;
+        q.y = (r2.x - r0.z) / s;
+        q.z = (r0.y - r1.x) / s;
+    } else if (r0.x > r1.y && r0.x > r2.z) {
+        float s = std::sqrt(1.0f + r0.x - r1.y - r2.z) * 2.0f;
+        q.w = (r1.z - r2.y) / s;
+        q.x = 0.25f * s;
+        q.y = (r0.y + r1.x) / s;
+        q.z = (r2.x + r0.z) / s;
+    } else if (r1.y > r2.z) {
+        float s = std::sqrt(1.0f + r1.y - r0.x - r2.z) * 2.0f;
+        q.w = (r2.x - r0.z) / s;
+        q.x = (r0.y + r1.x) / s;
+        q.y = 0.25f * s;
+        q.z = (r1.z + r2.y) / s;
+    } else {
+        float s = std::sqrt(1.0f + r2.z - r0.x - r1.y) * 2.0f;
+        q.w = (r0.y - r1.x) / s;
+        q.x = (r2.x + r0.z) / s;
+        q.y = (r1.z + r2.y) / s;
+        q.z = 0.25f * s;
+    }
+    return q.Normalized();
+}
+
 } // namespace
+
+core::Result<std::vector<float>> GltfAsset::ReadAccessorFloats(int accessorIndex) const {
+    GltfAccessorLayout layout;
+    if (!ResolveGltfAccessor(rawBin, bufferViews, accessors, accessorIndex, layout))
+        return core::Result<std::vector<float>>::Err("gltf: cannot resolve accessor");
+    const GltfAccessor& acc = accessors[static_cast<size_t>(accessorIndex)];
+    int comps = GltfComponentCount(acc.type);
+    if (comps == 0)
+        return core::Result<std::vector<float>>::Err("gltf: unsupported accessor type");
+    std::vector<float> out(static_cast<size_t>(layout.count) * static_cast<size_t>(comps));
+    const uint8_t* base = layout.base;
+    for (int i = 0; i < layout.count; ++i) {
+        const uint8_t* src = base + static_cast<size_t>(i) * layout.stride;
+        for (int c = 0; c < comps; ++c) {
+            float v = 0.0f;
+            switch (acc.componentType) {
+                case 5120: v = static_cast<float>(static_cast<int8_t>(src[c])); break;
+                case 5121: v = static_cast<float>(src[c]); break;
+                case 5122: v = static_cast<float>(reinterpret_cast<const int16_t*>(src)[c]); break;
+                case 5123: v = static_cast<float>(reinterpret_cast<const uint16_t*>(src)[c]); break;
+                case 5125: v = static_cast<float>(reinterpret_cast<const uint32_t*>(src)[c]); break;
+                case 5126: v = reinterpret_cast<const float*>(src)[c]; break;
+                default:
+                    return core::Result<std::vector<float>>::Err("gltf: unsupported component type");
+            }
+            out[static_cast<size_t>(i) * static_cast<size_t>(comps) + static_cast<size_t>(c)] = v;
+        }
+    }
+    return core::Result<std::vector<float>>::Ok(std::move(out));
+}
 
 gfx::Texture AssetManager::LoadTexture(const std::string& path) {
     auto cached = textures_.find(path);
@@ -231,47 +349,43 @@ GltfAsset AssetManager::LoadGLTF(const std::string& path) {
         return {};
     }
 
-    const core::Json* bufferViews = root.Get("bufferViews");
-    const core::Json* accessors = root.Get("accessors");
-    auto componentSize = [](int ct) {
-        switch (ct) {
-            case 5120: case 5121: return 1;
-            case 5122: case 5123: return 2;
-            case 5125: case 5126: return 4;
-            default: return 0;
+    // Parse bufferViews / accessors into plain structs shared by the mesh
+    // importer below and GltfAsset::ReadAccessorFloats (animation samplers).
+    std::vector<GltfBufferView> parsedViews;
+    if (const core::Json* bvs = root.Get("bufferViews")) {
+        for (size_t i = 0; i < bvs->Size(); ++i) {
+            const core::Json* v = bvs->At(i);
+            if (!v) continue;
+            GltfBufferView bv;
+            bv.buffer = v->Get("buffer") ? v->Get("buffer")->GetInt(0) : 0;
+            bv.byteOffset = v->Get("byteOffset") ? v->Get("byteOffset")->GetInt(0) : 0;
+            bv.byteLength = v->Get("byteLength") ? v->Get("byteLength")->GetInt(0) : 0;
+            bv.byteStride = v->Get("byteStride") ? v->Get("byteStride")->GetInt(0) : 0;
+            parsedViews.push_back(bv);
         }
-    };
-    auto componentCount = [](const std::string& t) {
-        if (t == "SCALAR") return 1;
-        if (t == "VEC2") return 2;
-        if (t == "VEC3") return 3;
-        if (t == "VEC4") return 4;
-        if (t == "MAT4") return 16;
-        return 0;
-    };
+    }
+    std::vector<GltfAccessor> parsedAccessors;
+    if (const core::Json* accs = root.Get("accessors")) {
+        for (size_t i = 0; i < accs->Size(); ++i) {
+            const core::Json* a = accs->At(i);
+            if (!a) continue;
+            GltfAccessor ga;
+            ga.bufferView = a->Get("bufferView") ? a->Get("bufferView")->GetInt(-1) : -1;
+            ga.byteOffset = a->Get("byteOffset") ? a->Get("byteOffset")->GetInt(0) : 0;
+            ga.componentType = a->Get("componentType") ? a->Get("componentType")->GetInt(0) : 0;
+            ga.count = a->Get("count") ? a->Get("count")->GetInt(0) : 0;
+            ga.type = a->Get("type") ? a->Get("type")->GetString() : std::string();
+            parsedAccessors.push_back(ga);
+        }
+    }
     auto readAccessor = [&](int accessorIndex, const uint8_t** outBase, int& outStride,
                             int& outCount) -> bool {
-        const core::Json* acc = accessors ? accessors->At(accessorIndex) : nullptr;
-        if (!acc) return false;
-        const core::Json* bvNode = acc->Get("bufferView");
-        const core::Json* ctNode = acc->Get("componentType");
-        const core::Json* countNode = acc->Get("count");
-        const core::Json* typeNode = acc->Get("type");
-        int bv = bvNode ? bvNode->GetInt(-1) : -1;
-        int ct = ctNode ? ctNode->GetInt(0) : 0;
-        outCount = countNode ? countNode->GetInt(0) : 0;
-        std::string type = typeNode ? typeNode->GetString() : std::string();
-        if (bv < 0 || ct == 0) return false;
-        const core::Json* view = bufferViews ? bufferViews->At(bv) : nullptr;
-        if (!view) return false;
-        const core::Json* voNode = view->Get("byteOffset");
-        const core::Json* aoNode = acc->Get("byteOffset");
-        int viewOffset = voNode ? voNode->GetInt(0) : 0;
-        int accOffset = aoNode ? aoNode->GetInt(0) : 0;
-        int stride = componentSize(ct) * componentCount(type);
-        if (view->Get("byteStride")) stride = view->Get("byteStride")->GetInt(stride);
-        *outBase = bin.data() + viewOffset + accOffset;
-        outStride = stride;
+        GltfAccessorLayout layout;
+        if (!ResolveGltfAccessor(bin, parsedViews, parsedAccessors, accessorIndex, layout))
+            return false;
+        *outBase = layout.base;
+        outStride = layout.stride;
+        outCount = layout.count;
         return true;
     };
 
@@ -373,9 +487,10 @@ GltfAsset AssetManager::LoadGLTF(const std::string& path) {
                     const uint8_t* jBase = nullptr;
                     int jStride = 0;
                     if (readAccessor(j->GetInt(), &jBase, jStride, jCount)) {
-                        const core::Json* jacc = accessors ? accessors->At(j->GetInt()) : nullptr;
-                        const core::Json* jctNode = jacc ? jacc->Get("componentType") : nullptr;
-                        int jct = jctNode ? jctNode->GetInt(0) : 0;
+                        int jidx = j->GetInt();
+                        int jct = (jidx >= 0 && jidx < static_cast<int>(parsedAccessors.size()))
+                                      ? parsedAccessors[static_cast<size_t>(jidx)].componentType
+                                      : 0;
                         if (jct == 5121) {
                             rm.jointIds.resize(static_cast<size_t>(jCount) * 4);
                             for (int v = 0; v < jCount; ++v) {
@@ -469,6 +584,10 @@ GltfAsset AssetManager::LoadGLTF(const std::string& path) {
         int skin = -1;
         math::Mat4 transform;
         std::vector<int> children;
+        math::Vec3 translation{0, 0, 0};
+        math::Quat rotation{};
+        math::Vec3 scale{1, 1, 1};
+        std::string name;
     };
     std::vector<NodeInfo> nodes;
     if (const core::Json* nodesJson = root.Get("nodes")) {
@@ -476,6 +595,7 @@ GltfAsset AssetManager::LoadGLTF(const std::string& path) {
         for (size_t i = 0; i < nodesJson->Size(); ++i) {
             const core::Json* n = nodesJson->At(i);
             NodeInfo& info = nodes[i];
+            if (const core::Json* nameNode = n->Get("name")) info.name = nameNode->GetString();
             if (const core::Json* meshNode = n->Get("mesh")) info.mesh = meshNode->GetInt(-1);
             if (const core::Json* skinNode = n->Get("skin")) info.skin = skinNode->GetInt(-1);
             if (const core::Json* matrix = n->Get("matrix")) {
@@ -486,28 +606,39 @@ GltfAsset AssetManager::LoadGLTF(const std::string& path) {
                                 static_cast<float>(matrix->At(r * 4 + c)->GetNumber());
                         }
                     }
+                    // Decompose T*R*S so the skeleton can build per-bone TRS.
+                    info.translation = {info.transform.m[3], info.transform.m[7],
+                                        info.transform.m[11]};
+                    info.rotation = Mat4ToQuat(info.transform);
+                    math::Mat4 rts = info.transform;
+                    rts.m[3] = rts.m[7] = rts.m[11] = 0.0f;
+                    math::Vec3 s{std::sqrt(rts.m[0] * rts.m[0] + rts.m[1] * rts.m[1] +
+                                           rts.m[2] * rts.m[2]),
+                                 std::sqrt(rts.m[4] * rts.m[4] + rts.m[5] * rts.m[5] +
+                                           rts.m[6] * rts.m[6]),
+                                 std::sqrt(rts.m[8] * rts.m[8] + rts.m[9] * rts.m[9] +
+                                           rts.m[10] * rts.m[10])};
+                    info.scale = s;
                 }
             } else {
-                math::Vec3 t{0, 0, 0};
-                math::Vec3 s{1, 1, 1};
-                math::Quat r{};
                 if (const core::Json* translation = n->Get("translation")) {
-                    t = {static_cast<float>(translation->At(0)->GetNumber()),
-                         static_cast<float>(translation->At(1)->GetNumber()),
-                         static_cast<float>(translation->At(2)->GetNumber())};
+                    info.translation = {static_cast<float>(translation->At(0)->GetNumber()),
+                                        static_cast<float>(translation->At(1)->GetNumber()),
+                                        static_cast<float>(translation->At(2)->GetNumber())};
                 }
                 if (const core::Json* scale = n->Get("scale")) {
-                    s = {static_cast<float>(scale->At(0)->GetNumber()),
-                         static_cast<float>(scale->At(1)->GetNumber()),
-                         static_cast<float>(scale->At(2)->GetNumber())};
+                    info.scale = {static_cast<float>(scale->At(0)->GetNumber()),
+                                  static_cast<float>(scale->At(1)->GetNumber()),
+                                  static_cast<float>(scale->At(2)->GetNumber())};
                 }
                 if (const core::Json* rotation = n->Get("rotation")) {
-                    r = {static_cast<float>(rotation->At(0)->GetNumber()),
-                         static_cast<float>(rotation->At(1)->GetNumber()),
-                         static_cast<float>(rotation->At(2)->GetNumber()),
-                         static_cast<float>(rotation->At(3)->GetNumber())};
+                    info.rotation = {static_cast<float>(rotation->At(0)->GetNumber()),
+                                     static_cast<float>(rotation->At(1)->GetNumber()),
+                                     static_cast<float>(rotation->At(2)->GetNumber()),
+                                     static_cast<float>(rotation->At(3)->GetNumber())};
                 }
-                info.transform = math::Mat4::Translation(t) * r.ToMat4() * math::Mat4::Scale(s);
+                info.transform = math::Mat4::Translation(info.translation) * info.rotation.ToMat4() *
+                                 math::Mat4::Scale(info.scale);
             }
             if (const core::Json* children = n->Get("children")) {
                 for (size_t c = 0; c < children->Size(); ++c) {
@@ -556,7 +687,30 @@ GltfAsset AssetManager::LoadGLTF(const std::string& path) {
     }
 
     GltfAsset out;
+    out.rawBin = std::move(bin);
+    out.bufferViews = std::move(parsedViews);
+    out.accessors = std::move(parsedAccessors);
     out.skins = std::move(skins);
+
+    // Full node table: every glTF node (mesh, joint, or transform-only) with
+    // its local TRS and parent, indexed by glTF node index. Skins reference
+    // joints and animation channels reference targets by that index.
+    out.nodesAll.resize(nodes.size());
+    for (size_t i = 0; i < nodes.size(); ++i) {
+        GltfNode& gn = out.nodesAll[static_cast<size_t>(i)];
+        gn.t = nodes[i].translation;
+        gn.r = nodes[i].rotation;
+        gn.s = nodes[i].scale;
+        gn.name = nodes[i].name;
+        gn.parent = -1;
+    }
+    for (size_t i = 0; i < nodes.size(); ++i) {
+        for (int child : nodes[i].children) {
+            if (child >= 0 && child < static_cast<int>(nodes.size()))
+                out.nodesAll[static_cast<size_t>(child)].parent = static_cast<int>(i);
+        }
+    }
+
     std::function<void(int, const math::Mat4&)> visit = [&](int idx, const math::Mat4& parent) {
         if (idx < 0 || idx >= static_cast<int>(nodes.size())) return;
         const NodeInfo& n = nodes[static_cast<size_t>(idx)];

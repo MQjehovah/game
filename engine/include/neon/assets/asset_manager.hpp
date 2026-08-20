@@ -1,23 +1,67 @@
 #pragma once
+#include <cstdint>
 #include <map>
 #include <string>
+#include <vector>
+#include "neon/core/result.hpp"
 #include "neon/gfx/font.hpp"
 #include "neon/gfx/mesh.hpp"
 #include "neon/gfx/renderer.hpp"
 #include "neon/gfx/texture.hpp"
+#include "neon/math/quat.hpp"
 
 namespace neon::assets {
 
+// Full glTF scene-graph node (every node in the glTF "nodes" array: mesh
+// nodes, joints, and transform-only nodes), in glTF node index order. Skins
+// reference joints and animation channels reference targets by raw glTF node
+// index, so this table lets the animator address any node directly.
 struct GltfNode {
+    int parent = -1;
+    math::Vec3 t{0, 0, 0};
+    math::Quat r{0, 0, 0, 1};
+    math::Vec3 s{1, 1, 1};
+    std::string name;
+};
+
+// A mesh-bearing node as exposed to the renderer (accumulated world transform
+// plus the uploaded GPU mesh and its material).
+struct GltfMeshNode {
     math::Mat4 transform;
     gfx::Mesh mesh;
     gfx::Material material;
 };
 
+// Raw glTF buffer layout (bufferViews / accessors arrays), kept alongside the
+// binary buffer so accessor data can be decoded after load (e.g. animation
+// sampler times/values).
+struct GltfBufferView {
+    int buffer = 0;
+    int byteOffset = 0;
+    int byteLength = 0;
+    int byteStride = 0; // 0 = tightly packed
+};
+
+struct GltfAccessor {
+    int bufferView = -1;
+    int byteOffset = 0;
+    int componentType = 0;
+    int count = 0;
+    std::string type; // SCALAR/VEC2/VEC3/VEC4/MAT4
+};
+
 struct GltfAsset {
-    std::vector<GltfNode> nodes;
+    std::vector<GltfMeshNode> nodes;
+    std::vector<GltfNode> nodesAll;
     std::vector<gfx::Skin> skins;
+    std::vector<uint8_t> rawBin;
+    std::vector<GltfBufferView> bufferViews;
+    std::vector<GltfAccessor> accessors;
     bool Valid() const { return !nodes.empty(); }
+
+    // Decodes an accessor into floats (FLOAT plus integer component types),
+    // one scalar per component in accessor order. Err on a bad index/layout.
+    core::Result<std::vector<float>> ReadAccessorFloats(int accessorIndex) const;
 };
 
 // Aggregate statistics for the editor "resource" panel.

@@ -35,6 +35,7 @@
 #include "neon/physics/physics.hpp"
 #include "neon/ui/ui.hpp"
 #include "neon/assets/asset_manager.hpp"
+#include "neon/anim/anim.hpp"
 #include "neon/scene/scene.hpp"
 #include "neon/scene/scene_file.hpp"
 #include "neon/scene/game_manifest.hpp"

@@ -818,7 +818,7 @@ void GameScene::Draw(gfx::Renderer& renderer) {
                                logs_.data(), static_cast<uint32_t>(logs_.size()));
 
     // DamagedHelmet - real glTF model with PBR textures (CC-BY 4.0, Khronos).
-    for (const assets::GltfNode& node : app_.helmet_.nodes) {
+    for (const assets::GltfMeshNode& node : app_.helmet_.nodes) {
         math::Mat4 display = math::Mat4::Translation({8.0f, 0.9f, -5.0f}) *
                              math::Mat4::RotationY(-0.6f) * node.transform;
         renderer.DrawMesh(node.mesh, node.material, display);
