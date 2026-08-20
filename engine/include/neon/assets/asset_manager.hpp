@@ -16,6 +16,7 @@ struct GltfNode {
 
 struct GltfAsset {
     std::vector<GltfNode> nodes;
+    std::vector<gfx::Skin> skins;
     bool Valid() const { return !nodes.empty(); }
 };
 

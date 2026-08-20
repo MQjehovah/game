@@ -19,6 +19,13 @@ struct Vertex3D {
     math::Vec4 color{1.0f, 1.0f, 1.0f, 1.0f};
 };
 
+// Engine skin definition (CPU side): the joint chain of a glTF skin, expressed
+// as glTF node indices, plus one inverse-bind matrix per joint.
+struct Skin {
+    std::vector<uint32_t> joints;
+    std::vector<math::Mat4> inverseBind;
+};
+
 struct MeshData {
     MeshHandle handle;
     math::AABB bounds;
@@ -26,6 +33,11 @@ struct MeshData {
     uint32_t triangleCount = 0;
     std::vector<Vertex3D> cpuVerts;
     std::vector<uint16_t> cpuIndices;
+    // Skinned-mesh CPU data: 4 joints + 4 weights per vertex, tightly packed.
+    bool skinned = false;
+    int skinIndex = -1;
+    std::vector<uint16_t> cpuJointIds;
+    std::vector<float> cpuJointWeights;
 };
 
 class Mesh {
@@ -71,6 +83,26 @@ public:
     const std::vector<uint16_t>& CpuIndices() const {
         static const std::vector<uint16_t> kEmpty;
         return data_ ? data_->cpuIndices : kEmpty;
+    }
+    bool Skinned() const { return data_ ? data_->skinned : false; }
+    int SkinIndex() const { return data_ ? data_->skinIndex : -1; }
+    const std::vector<uint16_t>& CpuJointIds() const {
+        static const std::vector<uint16_t> kEmpty;
+        return data_ ? data_->cpuJointIds : kEmpty;
+    }
+    const std::vector<float>& CpuJointWeights() const {
+        static const std::vector<float> kEmpty;
+        return data_ ? data_->cpuJointWeights : kEmpty;
+    }
+    // Attaches skinned per-vertex data (4 joints + 4 weights per vertex) to a
+    // mesh already built from geometry. Flags the mesh as skinned.
+    void AttachSkinData(std::vector<uint16_t> jointIds, std::vector<float> jointWeights,
+                        int skinIndex = -1) {
+        if (!data_) return;
+        data_->cpuJointIds = std::move(jointIds);
+        data_->cpuJointWeights = std::move(jointWeights);
+        data_->skinIndex = skinIndex;
+        data_->skinned = !data_->cpuJointIds.empty();
     }
 
 private:

@@ -336,6 +336,9 @@ GltfAsset AssetManager::LoadGLTF(const std::string& path) {
         std::vector<gfx::Vertex3D> verts;
         std::vector<uint16_t> indices;
         gfx::Material material;
+        std::vector<uint16_t> jointIds;   // 4 per vertex
+        std::vector<float> jointWeights;  // 4 per vertex
+        bool skinned = false;
     };
     std::vector<RawMesh> rawMeshes;
     if (const core::Json* meshes = root.Get("meshes")) {
@@ -365,6 +368,43 @@ GltfAsset AssetManager::LoadGLTF(const std::string& path) {
                     readAccessor(n->GetInt(), &nrmBase, nrmStride, nrmCount);
                 if (const core::Json* t = attrs->Get("TEXCOORD_0"))
                     readAccessor(t->GetInt(), &uvBase, uvStride, uvCount);
+                if (const core::Json* j = attrs->Get("JOINTS_0")) {
+                    const uint8_t* jBase = nullptr;
+                    int jStride = 0, jCount = 0;
+                    if (readAccessor(j->GetInt(), &jBase, jStride, jCount)) {
+                        const core::Json* jacc = accessors ? accessors->At(j->GetInt()) : nullptr;
+                        int jct = jacc ? jacc->Get("componentType")->GetInt(0) : 0;
+                        rm.jointIds.resize(static_cast<size_t>(jCount) * 4);
+                        if (jct == 5121) {
+                            for (int v = 0; v < jCount; ++v) {
+                                const uint8_t* src = jBase + v * jStride;
+                                for (int c = 0; c < 4; ++c)
+                                    rm.jointIds[static_cast<size_t>(v) * 4 + c] = src[c];
+                            }
+                        } else if (jct == 5123) {
+                            for (int v = 0; v < jCount; ++v) {
+                                const uint16_t* src =
+                                    reinterpret_cast<const uint16_t*>(jBase + v * jStride);
+                                for (int c = 0; c < 4; ++c)
+                                    rm.jointIds[static_cast<size_t>(v) * 4 + c] = src[c];
+                            }
+                        }
+                    }
+                }
+                if (const core::Json* w = attrs->Get("WEIGHTS_0")) {
+                    const uint8_t* wBase = nullptr;
+                    int wStride = 0, wCount = 0;
+                    if (readAccessor(w->GetInt(), &wBase, wStride, wCount)) {
+                        rm.jointWeights.resize(static_cast<size_t>(wCount) * 4);
+                        for (int v = 0; v < wCount; ++v) {
+                            const float* src =
+                                reinterpret_cast<const float*>(wBase + v * wStride);
+                            for (int c = 0; c < 4; ++c)
+                                rm.jointWeights[static_cast<size_t>(v) * 4 + c] = src[c];
+                        }
+                    }
+                }
+                rm.skinned = !rm.jointIds.empty() && !rm.jointWeights.empty();
                 if (!posBase || posCount == 0) continue;
                 rm.verts.resize(static_cast<size_t>(posCount));
                 for (int v = 0; v < posCount; ++v) {
@@ -413,6 +453,7 @@ GltfAsset AssetManager::LoadGLTF(const std::string& path) {
     // Nodes.
     struct NodeInfo {
         int mesh = -1;
+        int skin = -1;
         math::Mat4 transform;
         std::vector<int> children;
     };
@@ -423,6 +464,7 @@ GltfAsset AssetManager::LoadGLTF(const std::string& path) {
             const core::Json* n = nodesJson->At(i);
             NodeInfo& info = nodes[i];
             if (const core::Json* meshNode = n->Get("mesh")) info.mesh = meshNode->GetInt(-1);
+            if (const core::Json* skinNode = n->Get("skin")) info.skin = skinNode->GetInt(-1);
             if (const core::Json* matrix = n->Get("matrix")) {
                 if (matrix->Size() == 16) {
                     for (int r = 0; r < 4; ++r) {
@@ -462,7 +504,39 @@ GltfAsset AssetManager::LoadGLTF(const std::string& path) {
         }
     }
 
+    // Skins: joint node chains + one inverse-bind matrix per joint. A skin whose
+    // inverseBindMatrices accessor is missing or unreadable keeps its joints and
+    // an empty inverseBind list (consumers must handle the mismatch gracefully).
+    std::vector<gfx::Skin> skins;
+    if (const core::Json* skinsJson = root.Get("skins")) {
+        for (size_t si = 0; si < skinsJson->Size(); ++si) {
+            const core::Json* s = skinsJson->At(si);
+            if (!s) continue;
+            gfx::Skin skin;
+            if (const core::Json* joints = s->Get("joints")) {
+                for (size_t j = 0; j < joints->Size(); ++j)
+                    skin.joints.push_back(static_cast<uint32_t>(joints->At(j)->GetInt(-1)));
+            }
+            if (const core::Json* ibm = s->Get("inverseBindMatrices")) {
+                const uint8_t* ibmBase = nullptr;
+                int ibmStride = 0, ibmCount = 0;
+                if (readAccessor(ibm->GetInt(), &ibmBase, ibmStride, ibmCount)) {
+                    skin.inverseBind.resize(static_cast<size_t>(ibmCount));
+                    for (int m = 0; m < ibmCount; ++m) {
+                        const float* src =
+                            reinterpret_cast<const float*>(ibmBase + m * ibmStride);
+                        math::Mat4 mat;
+                        for (int c = 0; c < 16; ++c) mat.m[c] = src[c];
+                        skin.inverseBind[static_cast<size_t>(m)] = mat;
+                    }
+                }
+            }
+            skins.push_back(std::move(skin));
+        }
+    }
+
     GltfAsset out;
+    out.skins = std::move(skins);
     std::function<void(int, const math::Mat4&)> visit = [&](int idx, const math::Mat4& parent) {
         if (idx < 0 || idx >= static_cast<int>(nodes.size())) return;
         const NodeInfo& n = nodes[static_cast<size_t>(idx)];
@@ -474,7 +548,11 @@ GltfAsset AssetManager::LoadGLTF(const std::string& path) {
                                                        rm.indices.data(),
                                                        static_cast<uint32_t>(rm.indices.size()),
                                                        "gltf");
-            if (mesh.Valid()) out.nodes.push_back({world, mesh, rm.material});
+            if (mesh.Valid()) {
+                if (rm.skinned)
+                    mesh.AttachSkinData(rm.jointIds, rm.jointWeights, n.skin);
+                out.nodes.push_back({world, mesh, rm.material});
+            }
         }
         for (int child : n.children) visit(child, world);
     };
