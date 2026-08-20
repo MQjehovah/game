@@ -36,3 +36,4 @@
 #include "neon/ui/ui.hpp"
 #include "neon/assets/asset_manager.hpp"
 #include "neon/scene/scene.hpp"
+#include "neon/script/script.hpp"
