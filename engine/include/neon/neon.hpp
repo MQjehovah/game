@@ -38,4 +38,7 @@
 #include "neon/scene/scene.hpp"
 #include "neon/script/script.hpp"
 #include "neon/script/gamevars.hpp"
+#include "neon/script/blackboard.hpp"
 #include "neon/script/bindings.hpp"
+#include "neon/bt/behavior_tree.hpp"
+#include "neon/bt/nodes.hpp"
