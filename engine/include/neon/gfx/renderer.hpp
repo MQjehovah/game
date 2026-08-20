@@ -29,6 +29,12 @@ public:
     bool Init(platform::IWindow* window);
     void Shutdown();
 
+    // Headless hook used by unit tests and tooling: installs a backend
+    // directly, bypassing window/GL-context creation so the CPU-side asset
+    // pipeline (mesh/texture upload via CreateMesh/CreateTexture) can run
+    // without a GPU. Takes ownership; InitBuiltinResources is not run.
+    void AttachBackendForTesting(std::unique_ptr<IRenderBackend> backend);
+
     IRenderBackend* Backend() { return backend_.get(); }
 
     // Frame

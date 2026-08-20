@@ -127,7 +127,8 @@ target_link_libraries(neon_editor PRIVATE neon_engine neon_imgui)
 # Tests
 # ---------------------------------------------------------------------------
 enable_testing()
-add_executable(neon_tests tests/test_main.cpp tests/test_serialize.cpp tests/test_pack.cpp)
+add_executable(neon_tests tests/test_main.cpp tests/test_serialize.cpp tests/test_pack.cpp
+  tests/test_physics.cpp tests/test_obj.cpp tests/test_gltf.cpp tests/test_json.cpp)
 target_link_libraries(neon_tests PRIVATE neon_engine)
 add_test(NAME unit COMMAND neon_tests)
 

@@ -256,10 +256,11 @@ GltfAsset AssetManager::LoadGLTF(const std::string& path) {
         const core::Json* bvNode = acc->Get("bufferView");
         const core::Json* ctNode = acc->Get("componentType");
         const core::Json* countNode = acc->Get("count");
+        const core::Json* typeNode = acc->Get("type");
         int bv = bvNode ? bvNode->GetInt(-1) : -1;
         int ct = ctNode ? ctNode->GetInt(0) : 0;
         outCount = countNode ? countNode->GetInt(0) : 0;
-        std::string type = acc->Get("type")->GetString();
+        std::string type = typeNode ? typeNode->GetString() : std::string();
         if (bv < 0 || ct == 0) return false;
         const core::Json* view = bufferViews ? bufferViews->At(bv) : nullptr;
         if (!view) return false;
@@ -279,7 +280,8 @@ GltfAsset AssetManager::LoadGLTF(const std::string& path) {
     if (const core::Json* texs = root.Get("textures")) {
         const core::Json* images = root.Get("images");
         for (size_t i = 0; i < texs->Size(); ++i) {
-            int src = texs->At(i)->Get("source")->GetInt(-1);
+            int src = -1;
+            if (const core::Json* srcNode = texs->At(i)->Get("source")) src = srcNode->GetInt(-1);
             std::string uri;
             if (images && src >= 0 && images->At(src) && images->At(src)->Get("uri")) {
                 uri = images->At(src)->Get("uri")->GetString();
@@ -345,7 +347,8 @@ GltfAsset AssetManager::LoadGLTF(const std::string& path) {
                 const core::Json* attrs = prim->Get("attributes");
                 if (!attrs) continue;
                 RawMesh rm;
-                int matIdx = prim->Get("material")->GetInt(-1);
+                int matIdx = -1;
+                if (const core::Json* matNode = prim->Get("material")) matIdx = matNode->GetInt(-1);
                 rm.material = matIdx >= 0 && matIdx < static_cast<int>(materials.size())
                                   ? materials[matIdx]
                                   : gfx::Material::Lit({}, gfx::Color::White);
@@ -419,7 +422,7 @@ GltfAsset AssetManager::LoadGLTF(const std::string& path) {
         for (size_t i = 0; i < nodesJson->Size(); ++i) {
             const core::Json* n = nodesJson->At(i);
             NodeInfo& info = nodes[i];
-            info.mesh = n->Get("mesh")->GetInt(-1);
+            if (const core::Json* meshNode = n->Get("mesh")) info.mesh = meshNode->GetInt(-1);
             if (const core::Json* matrix = n->Get("matrix")) {
                 if (matrix->Size() == 16) {
                     for (int r = 0; r < 4; ++r) {

@@ -350,6 +350,10 @@ bool Renderer::Init(platform::IWindow* window) {
     return true;
 }
 
+void Renderer::AttachBackendForTesting(std::unique_ptr<IRenderBackend> backend) {
+    backend_ = std::move(backend);
+}
+
 void Renderer::Shutdown() {
     if (!backend_) return;
     if (litShader_.Valid()) backend_->DestroyShader(litShader_);
