@@ -121,6 +121,21 @@ TEST(ObjNegativeIndices) {
     CHECK_NEAR(mesh.CpuVerts()[2].pos.x, 1.0, 1e-6);
 }
 
+// Loading a missing OBJ must report failure gracefully: the returned invalid
+// mesh must not crash any accessor (CpuVerts/CpuIndices/Handle/Bounds/Name).
+TEST(ObjMissingFileReturnsInvalidMesh) {
+    test::HeadlessAssetFixture fix;
+    gfx::Mesh mesh = fix.assets.LoadMeshOBJ("neon_missing_test_obj.obj");
+    CHECK(!mesh.Valid());
+    CHECK(mesh.CpuVerts().empty());
+    CHECK(mesh.CpuIndices().empty());
+    CHECK_EQ(mesh.TriangleCount(), 0u);
+    CHECK_EQ(mesh.Name(), std::string());
+    CHECK(!mesh.Handle().Valid());
+    CHECK_NEAR(mesh.Bounds().min.x, 0.0, 1e-9);
+    CHECK_NEAR(mesh.Bounds().max.x, 0.0, 1e-9);
+}
+
 // Real Kenney asset: mtllib + two usemtl groups (grass / colorRed), CRLF line
 // endings and scientific-notation floats. Verifies both MTL colors appear in
 // the imported vertex data.

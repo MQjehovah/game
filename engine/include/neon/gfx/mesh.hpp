@@ -49,12 +49,29 @@ public:
                                const std::string& name = "mesh");
 
     bool Valid() const { return data_ && data_->handle.Valid(); }
-    const MeshHandle& Handle() const { return data_->handle; }
-    const math::AABB& Bounds() const { return data_->bounds; }
-    const std::string& Name() const { return data_->name; }
+    // Accessors are null-safe: an invalid (default-constructed) mesh returns
+    // empty/invalid values instead of crashing, mirroring TriangleCount().
+    const MeshHandle& Handle() const {
+        static const MeshHandle kInvalid;
+        return data_ ? data_->handle : kInvalid;
+    }
+    const math::AABB& Bounds() const {
+        static const math::AABB kEmpty;
+        return data_ ? data_->bounds : kEmpty;
+    }
+    const std::string& Name() const {
+        static const std::string kEmpty;
+        return data_ ? data_->name : kEmpty;
+    }
     uint32_t TriangleCount() const { return data_ ? data_->triangleCount : 0; }
-    const std::vector<Vertex3D>& CpuVerts() const { return data_->cpuVerts; }
-    const std::vector<uint16_t>& CpuIndices() const { return data_->cpuIndices; }
+    const std::vector<Vertex3D>& CpuVerts() const {
+        static const std::vector<Vertex3D> kEmpty;
+        return data_ ? data_->cpuVerts : kEmpty;
+    }
+    const std::vector<uint16_t>& CpuIndices() const {
+        static const std::vector<uint16_t> kEmpty;
+        return data_ ? data_->cpuIndices : kEmpty;
+    }
 
 private:
     std::shared_ptr<MeshData> data_;

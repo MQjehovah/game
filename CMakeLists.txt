@@ -131,6 +131,10 @@ add_executable(neon_tests tests/test_main.cpp tests/test_serialize.cpp tests/tes
   tests/test_physics.cpp tests/test_obj.cpp tests/test_gltf.cpp tests/test_json.cpp)
 target_link_libraries(neon_tests PRIVATE neon_engine)
 add_test(NAME unit COMMAND neon_tests)
+# ctest runs the binary from the build dir by default; run it from the source
+# root so tests that load repo-relative assets (assets/...) resolve identically
+# to ./build/neon_tests.exe invoked from the repo root.
+set_tests_properties(unit PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
 if(NOT WIN32)
   find_package(Threads REQUIRED)
