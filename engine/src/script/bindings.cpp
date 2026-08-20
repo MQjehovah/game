@@ -1,7 +1,7 @@
 #include "neon/script/bindings.hpp"
 
+#include <cmath>
 #include <cstdint>
-#include <utility>
 
 #include "neon/core/json.hpp"
 
@@ -9,6 +9,16 @@ namespace neon::script {
 namespace {
 
 constexpr float kRayMaxDist = 100000.0f;
+
+// Lua numbers are doubles; casting one directly to uint32_t is UB for
+// negative, NaN, or >= 2^32 values. Range-check first; anything out of range
+// maps to 0 (an invalid entity id).
+uint32_t SafeU32FromNumber(double n) {
+    if (std::isfinite(n) && n >= 0.0 && n < 4294967296.0) {
+        return static_cast<uint32_t>(n);
+    }
+    return 0;
+}
 
 // Entity handles are small Lua tables { id = <int>, gen = <int> }.
 Value EntityToValue(const ecs::Entity& e) {
@@ -19,7 +29,8 @@ Value EntityToValue(const ecs::Entity& e) {
 }
 
 // Rebuilds an entity from a Lua table; an invalid entity (missing id, wrong
-// type, or no table at all) comes back as an all-zero, invalid handle.
+// type, out-of-range id, or no table at all) comes back as an all-zero,
+// invalid handle.
 ecs::Entity EntityFromValue(const Value& v) {
     if (v.type != Value::Type::Table || !v.table) return {};
     ecs::Entity e;
@@ -27,13 +38,13 @@ ecs::Entity EntityFromValue(const Value& v) {
     for (const auto& kv : v.table->fields) {
         if (kv.second.type != Value::Type::Number) continue;
         if (kv.first == "id") {
-            e.id = static_cast<uint32_t>(kv.second.number);
+            e.id = SafeU32FromNumber(kv.second.number);
             hasId = true;
         } else if (kv.first == "gen") {
-            e.generation = static_cast<uint32_t>(kv.second.number);
+            e.generation = SafeU32FromNumber(kv.second.number);
         }
     }
-    if (!hasId) return {};
+    if (!hasId || e.id == 0) return {};
     return e;
 }
 

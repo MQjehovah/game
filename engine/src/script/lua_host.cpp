@@ -2,6 +2,7 @@
 
 #include <exception>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 
 extern "C" {
@@ -69,21 +70,48 @@ int ParseLineNumber(const std::string& message) {
     return 0;
 }
 
-void PushValue(lua_State* L, const Value& v) {
+// Recursion budget for Lua table conversion. Deeper structures are truncated
+// (their offending entry converts to nil) instead of overflowing the C++
+// stack. Mirrors the depth used by test_json.cpp's JsonDeepNesting.
+constexpr int kMaxConversionDepth = 1000;
+
+void PushValueImpl(lua_State* L, const Value& v, int depth, std::unordered_set<const void*>& seen);
+Value PopValueImpl(lua_State* L, int index, int depth, std::unordered_set<const void*>& seen);
+
+void PushValueImpl(lua_State* L, const Value& v, int depth, std::unordered_set<const void*>& seen) {
     switch (v.type) {
         case Value::Type::Nil: lua_pushnil(L); break;
         case Value::Type::Number: lua_pushnumber(L, v.number); break;
         case Value::Type::String: lua_pushlstring(L, v.str.data(), v.str.size()); break;
         case Value::Type::Bool: lua_pushboolean(L, v.boolean ? 1 : 0); break;
         case Value::Type::Table: {
+            if (!v.table) {
+                lua_newtable(L);
+                break;
+            }
+            // Cycle guard: reaching the same TableValue twice in one conversion
+            // (a self-reference, or a shared subtree) truncates to nil. Depth
+            // budget caps long chains. Both early-outs push nil so the caller's
+            // rawseti/setfield still consumes exactly one value.
+            const void* ptr = v.table.get();
+            if (depth >= kMaxConversionDepth || !seen.insert(ptr).second) {
+                lua_pushnil(L);
+                break;
+            }
+            // lua_newtable/setfield/rawseti push without growing the Lua stack
+            // (the release build compiles the overflow check out), so ensure
+            // room for this level's table plus a transient key before pushing.
+            if (!lua_checkstack(L, 2)) {
+                lua_pushnil(L);
+                break;
+            }
             lua_newtable(L);
-            if (!v.table) break;
             for (size_t i = 0; i < v.table->array.size(); ++i) {
-                PushValue(L, v.table->array[i]);
+                PushValueImpl(L, v.table->array[i], depth + 1, seen);
                 lua_rawseti(L, -2, static_cast<int>(i) + 1);
             }
             for (const auto& kv : v.table->fields) {
-                PushValue(L, kv.second);
+                PushValueImpl(L, kv.second, depth + 1, seen);
                 lua_setfield(L, -2, kv.first.c_str());
             }
             break;
@@ -91,7 +119,7 @@ void PushValue(lua_State* L, const Value& v) {
     }
 }
 
-Value PopValue(lua_State* L, int index) {
+Value PopValueImpl(lua_State* L, int index, int depth, std::unordered_set<const void*>& seen) {
     if (lua_isnil(L, index)) return Value::Nil();
     if (lua_isboolean(L, index)) return Value::Bool(lua_toboolean(L, index) != 0);
     if (lua_isnumber(L, index)) return Value::Num(lua_tonumber(L, index));
@@ -101,13 +129,23 @@ Value PopValue(lua_State* L, int index) {
         return Value::Str(std::string(s ? s : "", len));
     }
     if (lua_istable(L, index)) {
+        // Cycle guard via the table's stable Lua object pointer (lua_topointer)
+        // plus the shared depth budget. Either condition yields nil and stops
+        // recursing; no values are pushed on these paths, so the caller's
+        // lua_pop keeps the stack balanced.
+        const void* ptr = lua_topointer(L, index);
+        if (depth >= kMaxConversionDepth || !seen.insert(ptr).second) return Value::Nil();
+        // lua_next/pushnil push without growing the Lua stack (the release
+        // build compiles the overflow check out); each recursion level holds a
+        // key+value pair, so reserve two slots before iterating.
+        if (!lua_checkstack(L, 2)) return Value::Nil();
         Value v = Value::Tbl();
         int absIndex = lua_absindex(L, index);
         // Sequence part: contiguous indices 1..rawlen (the # operator).
         lua_Unsigned seq = lua_rawlen(L, absIndex);
         for (lua_Unsigned i = 1; i <= seq; ++i) {
             lua_rawgeti(L, absIndex, static_cast<lua_Integer>(i));
-            v.table->array.push_back(PopValue(L, -1));
+            v.table->array.push_back(PopValueImpl(L, -1, depth + 1, seen));
             lua_pop(L, 1);
         }
         // Remaining string-keyed entries (hash part). Keys that Lua reports as
@@ -117,13 +155,31 @@ Value PopValue(lua_State* L, int index) {
             if (lua_isstring(L, -2) && !lua_isnumber(L, -2)) {
                 size_t len = 0;
                 const char* s = lua_tolstring(L, -2, &len);
-                v.table->fields.emplace_back(std::string(s ? s : "", len), PopValue(L, -1));
+                v.table->fields.emplace_back(std::string(s ? s : "", len),
+                                             PopValueImpl(L, -1, depth + 1, seen));
             }
             lua_pop(L, 1); // value; the key stays for the next lua_next
         }
         return v;
     }
     return Value::Nil();
+}
+
+void PushValue(lua_State* L, const Value& v) {
+    // Reserve enough Lua stack for the whole recursion up front so the
+    // per-level checks above are cheap no-ops instead of repeated reallocations.
+    if (!lua_checkstack(L, kMaxConversionDepth * 2 + 32)) {
+        lua_pushnil(L);
+        return;
+    }
+    std::unordered_set<const void*> seen;
+    PushValueImpl(L, v, 0, seen);
+}
+
+Value PopValue(lua_State* L, int index) {
+    if (!lua_checkstack(L, kMaxConversionDepth * 2 + 32)) return Value::Nil();
+    std::unordered_set<const void*> seen;
+    return PopValueImpl(L, index, 0, seen);
 }
 
 } // namespace

@@ -9,6 +9,10 @@ namespace neon::script {
 // Standalone global key-value store shared by scripts and the behavior tree
 // engine (T2.5). Deliberately dependency-light: it does not know about
 // IScriptHost or any runtime, so it can be unit-tested directly.
+//
+// Not thread-safe: one instance belongs to one thread (the script host is
+// single-threaded). Table-typed Values share their payload via shared_ptr, so
+// copying a Value aliases the same table rather than deep-copying it.
 class GameVars {
 public:
     // Value stored under `name`, or Nil when the key is missing.

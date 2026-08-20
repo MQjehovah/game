@@ -38,6 +38,39 @@ bool RunScript(script::IScriptHost& host, const std::string& source) {
     return host.Load(source) && host.Run().Ok();
 }
 
+// Native fixtures for table round-trip / cycle / overwrite tests.
+
+// Returns a plain table { x = 3, y = 4 }.
+script::Value NativeMakePoint(script::IScriptHost& host, void* /*user*/) {
+    (void)host;
+    script::Value p = script::Value::Tbl();
+    p.table->fields.emplace_back("x", script::Value::Num(3));
+    p.table->fields.emplace_back("y", script::Value::Num(4));
+    return p;
+}
+
+// Ignores its argument and returns a fixed number; used to prove a
+// RegisterField overwrite takes effect.
+script::Value NativeJsonOverride(script::IScriptHost& host, void* /*user*/) {
+    (void)host;
+    return script::Value::Num(99);
+}
+
+// Returns a self-referential Value::Table: the "self" field's table payload is
+// the very same TableValue as the outer one. The conversion guard must stop at
+// the cycle instead of recursing forever. (The shared_ptr cycle keeps the
+// TableValue alive for the process lifetime; a single small object.)
+script::Value NativeMakeCyclic(script::IScriptHost& host, void* /*user*/) {
+    (void)host;
+    script::Value v = script::Value::Tbl();
+    script::Value inner;
+    inner.type = script::Value::Type::Table;
+    inner.table = v.table; // same TableValue: v.table -> fields[0].second.table == v.table
+    v.table->fields.emplace_back("self", inner);
+    v.table->fields.emplace_back("leaf", script::Value::Num(7));
+    return v;
+}
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -200,4 +233,126 @@ SetPosition(e, {x=9, y=9, z=9})
 )";
     CHECK(RunScript(*host, src));
     host->Shutdown();
+}
+
+// ---------------------------------------------------------------------------
+// Robustness: recursion guards + safe number->id casts
+// ---------------------------------------------------------------------------
+
+// A cyclic Lua table passed to a binding must not recurse forever.
+TEST(ScriptBindingsCyclicTableNoCrash) {
+    Bindings b;
+    const char* src = R"(
+local t = {x=1}
+t.self = t
+SetVar("cyc", t)
+local got = GetVar("cyc")
+assert(type(got) == "table")
+assert(got.x == 1)
+assert(got.self == nil)
+)";
+    CHECK(RunScript(*b.host, src));
+}
+
+// A deeply nested Lua table is truncated at the depth budget instead of
+// overflowing the C++ stack.
+TEST(ScriptBindingsDeepTableNoCrash) {
+    Bindings b;
+    const char* src = R"(
+local deep = {x=1}
+for i=1,5000 do deep = {nested=deep} end
+SetVar("deep", deep)
+local got = GetVar("deep")
+assert(type(got) == "table")
+)";
+    CHECK(RunScript(*b.host, src));
+}
+
+// A native fn returning a self-referential Value::Table is cycle-guarded.
+TEST(ScriptBindingsCyclicNativeTableNoCrash) {
+    Bindings b;
+    b.host->Register("MakeCyclic", &NativeMakeCyclic);
+    const char* src = R"(
+local c = MakeCyclic()
+assert(type(c) == "table")
+assert(c.self == nil)
+assert(c.leaf == 7)
+)";
+    CHECK(RunScript(*b.host, src));
+}
+
+// Out-of-range / negative ids must be rejected, not UB-cast, and yield nil.
+TEST(ScriptBindingsEntityBadIdGraceful) {
+    Bindings b;
+    const char* src = R"(
+local e1 = {id=1e30, gen=0}
+assert(GetPosition(e1) == nil)
+Despawn(e1)
+SetPosition(e1, {x=1, y=1, z=1})
+local e2 = {id=-5, gen=0}
+assert(GetPosition(e2) == nil)
+)";
+    CHECK(RunScript(*b.host, src));
+}
+
+// ---------------------------------------------------------------------------
+// Cheap behavioral coverage
+// ---------------------------------------------------------------------------
+
+TEST(ScriptBindingsRaycastMissFalse) {
+    Bindings b; // empty physics world: no bodies to hit
+    const char* src = R"(
+assert(Raycast({x=0, y=5, z=0}, {x=0, y=-1, z=0}) == false)
+)";
+    CHECK(RunScript(*b.host, src));
+}
+
+TEST(ScriptBindingsJsonInvalidNil) {
+    Bindings b;
+    const char* src = R"(
+assert(Json.Parse('{"a":}') == nil)
+)";
+    CHECK(RunScript(*b.host, src));
+}
+
+// Tables round-trip through the host Call path: native returns a table, both
+// Lua and C++ read its fields.
+TEST(ScriptBindingsCallTableRoundTrip) {
+    Bindings b;
+    b.host->Register("MakePoint", &NativeMakePoint);
+
+    const char* src = R"(
+local p = MakePoint()
+assert(p.x == 3 and p.y == 4)
+)";
+    CHECK(RunScript(*b.host, src));
+
+    auto res = b.host->Call("MakePoint", {});
+    CHECK(res.Ok());
+    CHECK(res.Value().type == script::Value::Type::Table);
+    if (res.Ok() && res.Value().type == script::Value::Type::Table) {
+        CHECK_EQ(res.Value().table->fields.size(), 2u);
+    }
+}
+
+// Re-registering a field replaces the previous native function.
+TEST(ScriptBindingsRegisterFieldOverwrite) {
+    Bindings b;
+    b.host->RegisterField("Json", "Parse", &NativeJsonOverride, &b.ctx);
+    const char* src = R"(
+assert(Json.Parse("anything") == 99)
+)";
+    CHECK(RunScript(*b.host, src));
+}
+
+// GetVar/SetVar store and return table values.
+TEST(ScriptBindingsVarTableValue) {
+    Bindings b;
+    const char* src = R"(
+SetVar("inv", {a=1, b=2})
+local v = GetVar("inv")
+assert(type(v) == "table")
+assert(v.a == 1 and v.b == 2)
+)";
+    CHECK(RunScript(*b.host, src));
 }
