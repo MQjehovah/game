@@ -6,53 +6,6 @@
 #include "neon/neon.hpp"
 #include "helpers.hpp"
 
-// Minimal dependency-free test framework.
-namespace test {
-
-struct TestCase {
-    const char* name;
-    void (*fn)();
-};
-
-std::vector<TestCase>& Registry() {
-    static std::vector<TestCase> registry;
-    return registry;
-}
-
-struct Registrar {
-    Registrar(const char* name, void (*fn)()) { Registry().push_back({name, fn}); }
-};
-
-int gFailures = 0;
-
-void ReportFailure(const char* file, int line, const char* expr) {
-    std::printf("  FAIL %s:%d: %s\n", file, line, expr);
-    ++gFailures;
-}
-
-} // namespace test
-
-#define TEST(name)                                                      \
-    static void Test_##name();                                          \
-    static test::Registrar Reg_##name(#name, &Test_##name);             \
-    static void Test_##name()
-
-#define CHECK(cond)                                                     \
-    do {                                                                \
-        if (!(cond)) test::ReportFailure(__FILE__, __LINE__, #cond);    \
-    } while (0)
-
-#define CHECK_EQ(a, b)                                                  \
-    do {                                                                \
-        auto va = (a);                                                  \
-        auto vb = (b);                                                  \
-        if (!(va == vb)) {                                              \
-            char buf[256];                                              \
-            std::snprintf(buf, sizeof(buf), "%s == %s", #a, #b);        \
-            test::ReportFailure(__FILE__, __LINE__, buf);               \
-        }                                                               \
-    } while (0)
-
 using namespace neon;
 
 // ---------------------------------------------------------------------------
@@ -259,12 +212,40 @@ TEST(HarnessHelpers) {
     CHECK_EQ(bytes.size(), 5u);
 }
 
+TEST(HarnessFailurePaths) {
+    const int before = test::gFailures;
+
+    CHECK_NEAR(1.0, 1.0001, 1e-6); // fails: diff > eps
+    CHECK_EQ(test::gFailures, before + 1);
+
+    CHECK_THROW((void)0);          // fails: nothing thrown
+    CHECK_EQ(test::gFailures, before + 2);
+
+    CHECK_NEAR(0.0 / 0.0, 1.0, 1e-6); // fails: NaN operand
+    CHECK_EQ(test::gFailures, before + 3);
+
+    CHECK_NEAR(1.0, 1.0, -1e-6);   // passes: |eps| used as tolerance
+    std::string text;
+    CHECK(!test::ReadFileAll("neon_missing_test_file.bin", text));
+    CHECK_EQ(test::gFailures, before + 3);
+
+    test::gFailures = before;      // restore so the suite reports 0 failures
+}
+
 int main() {
     int passed = 0;
     for (const test::TestCase& tc : test::Registry()) {
         int before = test::gFailures;
         std::printf("[ RUN  ] %s\n", tc.name);
-        tc.fn();
+        try {
+            tc.fn();
+        } catch (const std::exception& e) {
+            char buf[256];
+            std::snprintf(buf, sizeof(buf), "%s threw: %s", tc.name, e.what());
+            test::ReportFailure(__FILE__, __LINE__, buf);
+        } catch (...) {
+            test::ReportFailure(__FILE__, __LINE__, "unexpected non-std exception");
+        }
         if (test::gFailures == before) {
             std::printf("[  OK  ] %s\n", tc.name);
             ++passed;
