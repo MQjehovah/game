@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.15)
-project(NeonEngine VERSION 0.1.0 LANGUAGES CXX)
+project(NeonEngine VERSION 0.1.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -110,6 +110,58 @@ if(MSVC)
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
   target_compile_options(neon_imgui PRIVATE -Wall -Wextra
     -finput-charset=UTF-8 -fexec-charset=UTF-8)
+endif()
+
+# ---------------------------------------------------------------------------
+# Lua 5.4 scripting runtime (optional module; only scripting targets link it)
+# ---------------------------------------------------------------------------
+set(LUA_SOURCES
+  third_party/lua/lapi.c
+  third_party/lua/lauxlib.c
+  third_party/lua/lbaselib.c
+  third_party/lua/lcode.c
+  third_party/lua/lcorolib.c
+  third_party/lua/lctype.c
+  third_party/lua/ldblib.c
+  third_party/lua/ldebug.c
+  third_party/lua/ldo.c
+  third_party/lua/ldump.c
+  third_party/lua/lfunc.c
+  third_party/lua/lgc.c
+  third_party/lua/linit.c
+  third_party/lua/liolib.c
+  third_party/lua/llex.c
+  third_party/lua/lmathlib.c
+  third_party/lua/lmem.c
+  third_party/lua/loadlib.c
+  third_party/lua/lobject.c
+  third_party/lua/lopcodes.c
+  third_party/lua/loslib.c
+  third_party/lua/lparser.c
+  third_party/lua/lstate.c
+  third_party/lua/lstring.c
+  third_party/lua/lstrlib.c
+  third_party/lua/ltable.c
+  third_party/lua/ltablib.c
+  third_party/lua/ltm.c
+  third_party/lua/lundump.c
+  third_party/lua/lutf8lib.c
+  third_party/lua/lvm.c
+  third_party/lua/lzio.c
+)
+
+add_library(neon_lua STATIC ${LUA_SOURCES})
+target_include_directories(neon_lua PUBLIC third_party/lua)
+# The bundled sources are strict C; keep the C compiler happy and silence the
+# -Wpedantic noise around Lua's own macros. -Wno-cast-function-type covers
+# MinGW's -fpermissive-style default cast warnings in loadlib.
+if(MSVC)
+  target_compile_options(neon_lua PRIVATE /W3)
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(neon_lua PRIVATE -Wall -Wextra -Wno-cast-function-type)
+endif()
+if(NOT WIN32)
+  target_compile_definitions(neon_lua PRIVATE LUA_USE_LINUX)
 endif()
 
 # ---------------------------------------------------------------------------
