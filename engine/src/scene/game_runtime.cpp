@@ -1,5 +1,6 @@
 #include "neon/scene/game_runtime.hpp"
 
+#include <algorithm>
 #include <cstdint>
 #include <fstream>
 #include <iterator>
@@ -81,7 +82,7 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     host_->SetRngSeed(cfg_.rngSeed ? cfg_.rngSeed : 1u); // 0 aliases seed 1
     host_->SetSimClock(0.0);
 
-    scriptSources_.clear();
+    loadedScripts_.clear();
     scriptFailed_.clear();
 
     AttachScripts();
@@ -89,7 +90,7 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     BuildDrawList();
 
     running_ = true;
-    simTime_ = 0.0f;
+    simTime_ = 0.0;
     NEON_LOG_INFO("runtime: started (%zu entities, %zu scripts, %zu trees, %zu draws)",
                   EntityCount(), ScriptCount(), BehaviorTreeCount(), draws_.size());
     return core::Status::Ok(true);
@@ -99,7 +100,7 @@ void GameRuntime::Stop() {
     scripts_.clear();
     trees_.clear();
     draws_.clear();
-    scriptSources_.clear();
+    loadedScripts_.clear();
     scriptFailed_.clear();
     if (host_) {
         host_->Shutdown();
@@ -109,7 +110,7 @@ void GameRuntime::Stop() {
     physics_.Clear();
     scriptCtx_ = script::ScriptContext{};
     running_ = false;
-    simTime_ = 0.0f;
+    simTime_ = 0.0;
 }
 
 void GameRuntime::AttachScripts() {
@@ -121,7 +122,7 @@ void GameRuntime::AttachScripts() {
         if (!s || s->backend != "lua") continue;
 
         const std::string full = FullScriptPath(s->path);
-        if (scriptFailed_[full]) {
+        if (scriptFailed_.count(full)) {
             NEON_LOG_WARN("runtime: skipping script '%s' (previous load failed)", full.c_str());
             continue;
         }
@@ -129,32 +130,54 @@ void GameRuntime::AttachScripts() {
         // Load + run the chunk once per unique path (defines the global
         // functions); a missing file / syntax error skips every entity that
         // references it without failing the whole runtime.
-        if (scriptSources_.find(full) == scriptSources_.end()) {
+        if (!loadedScripts_.count(full)) {
             std::string source = ReadScript(full);
             if (source.empty()) {
                 NEON_LOG_ERROR("runtime: cannot read script '%s' (skipped)", full.c_str());
-                scriptFailed_[full] = true;
+                scriptFailed_.insert(full);
                 continue;
             }
             if (!host_->Load(source)) {
                 NEON_LOG_ERROR("runtime: script '%s' failed to compile: %s (skipped)",
                                full.c_str(), host_->LastError().message.c_str());
-                scriptFailed_[full] = true;
+                scriptFailed_.insert(full);
                 continue;
             }
             if (!host_->Run().Ok()) {
                 NEON_LOG_ERROR("runtime: script '%s' failed to run: %s (skipped)",
                                full.c_str(), host_->LastError().message.c_str());
-                scriptFailed_[full] = true;
+                scriptFailed_.insert(full);
                 continue;
             }
-            scriptSources_[full] = std::move(source);
+            loadedScripts_.insert(full);
         }
 
         scripts_.push_back({ent, s->path});
-        if (host_->HasFunction("on_start")) {
-            host_->Call("on_start", {EntityToValue(ent)});
+        ScriptInst& inst = scripts_.back();
+
+        // Per-entity script vars become Lua globals so on_start/on_update can
+        // read them (e.g. `aggro`). Globals persist, so across entities the
+        // last-set value wins for all of them (documented single-host caveat).
+        if (s->vars.IsObject()) {
+            for (const auto& kv : s->vars.Members()) {
+                host_->SetGlobal(kv.first, bt::JsonToValue(kv.second));
+            }
         }
+
+        if (host_->HasFunction("on_start")) {
+            CallEntityFunction("on_start", inst, {EntityToValue(ent)});
+        }
+    }
+}
+
+void GameRuntime::CallEntityFunction(const char* fn, ScriptInst& inst,
+                                     const std::vector<script::Value>& args) {
+    if (!host_) return;
+    auto res = host_->Call(fn, args);
+    if (!res.Ok() && !inst.errorLogged) {
+        inst.errorLogged = true;
+        NEON_LOG_ERROR("runtime: script '%s' %s() failed: %s", inst.path.c_str(), fn,
+                       host_->LastError().message.c_str());
     }
 }
 
@@ -236,7 +259,12 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera) {
         float aspect = static_cast<float>(renderer.ScreenWidth()) / renderer.ScreenHeight();
         renderer.SetCamera(camera, aspect);
     }
+    size_t dead = 0;
     for (DrawItem& item : draws_) {
+        if (!world_.Alive(item.ent)) {
+            ++dead; // scripts can Despawn entities mid-playtest
+            continue;
+        }
         if (!item.resolved) ResolveDrawItem(item, renderer);
         if (!item.resolved || item.failed) continue;
         const SceneTransform* t = world_.Get<SceneTransform>(item.ent);
@@ -244,6 +272,12 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera) {
         math::Mat4 model =
             math::Mat4::Translation(t->pos) * t->rot.ToMat4() * math::Mat4::Scale(t->scale);
         renderer.DrawMesh(item.mesh, item.mat, model);
+    }
+    // Compact when a fifth of the draw list belongs to dead entities.
+    if (dead && dead * 5 > draws_.size()) {
+        draws_.erase(std::remove_if(draws_.begin(), draws_.end(),
+                                    [this](const DrawItem& i) { return !world_.Alive(i.ent); }),
+                     draws_.end());
     }
 }
 
@@ -253,21 +287,32 @@ void GameRuntime::Tick(float dt) {
     if (host_) {
         host_->SetSimClock(simTime_);
         if (host_->HasFunction("on_update")) {
-            for (const ScriptInst& inst : scripts_) {
+            for (ScriptInst& inst : scripts_) {
                 if (!world_.Alive(inst.ent)) continue;
-                auto res = host_->Call("on_update", {EntityToValue(inst.ent), script::Value::Num(dt)});
-                (void)res; // script errors are logged by the host, never fatal
+                CallEntityFunction("on_update", inst,
+                                   {EntityToValue(inst.ent), script::Value::Num(dt)});
             }
         }
     }
 
+    size_t deadTrees = 0;
     for (BtInst& inst : trees_) {
+        if (!world_.Alive(inst.ent)) {
+            ++deadTrees; // scripts can Despawn entities mid-playtest
+            continue;
+        }
         bt::Context ctx(scriptCtx_.gameVars, &inst.board);
         ctx.entity = EntityKey(inst.ent);
         ctx.dt = dt;
         ctx.timers.swap(inst.timers); // carry over accumulated wait/cooldown state
         inst.tree->Tick(ctx);
         ctx.timers.swap(inst.timers); // persist it for the next tick
+    }
+    // Compact when a fifth of the trees belong to dead entities.
+    if (deadTrees && deadTrees * 5 > trees_.size()) {
+        trees_.erase(std::remove_if(trees_.begin(), trees_.end(),
+                                    [this](const BtInst& i) { return !world_.Alive(i.ent); }),
+                     trees_.end());
     }
 
     physics_.Step(dt, math::Vec3{0.0f, kGravityY, 0.0f});

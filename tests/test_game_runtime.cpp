@@ -224,3 +224,118 @@ TEST(GameRuntimeDrawUnknownKeyWarnsNoCrash) {
     runtime.Draw(fix.renderer, cam); // unknown prefix: warn + skip, no crash
     runtime.Tick(1.0f / 60.0f);
 }
+
+// ---------------------------------------------------------------------------
+// Single-host semantics (review fixes): global shadowing, script vars, logging
+// ---------------------------------------------------------------------------
+
+// All scripts share one Lua host, so a later-loaded script's on_update shadows
+// the earlier one for EVERY entity. This test pins that documented behavior.
+TEST(GameRuntimeScriptGlobalShadowing) {
+    const char* scene = R"({
+      "entities": [
+        {"name": "A", "components": {"transform": {"pos": [0,0,0]},
+          "script": {"backend": "lua", "path": "a.lua"}}},
+        {"name": "B", "components": {"transform": {"pos": [1,0,0]},
+          "script": {"backend": "lua", "path": "b.lua"}}}
+      ]
+    })";
+    const char* luaA = R"(
+      function on_update(e, dt)
+        SetVar("shadow_mark", "A")
+      end
+    )";
+    const char* luaB = R"(
+      function on_update(e, dt)
+        local key = "tick_" .. string.format("%d", e.id)
+        local c = GetVar(key)
+        if c == nil then c = 0 end
+        SetVar(key, c + 1)
+      end
+    )";
+    scene::GameRuntime runtime;
+    scene::GameRuntimeConfig cfg;
+    cfg.readScript = [&](const std::string& p) {
+        if (p == "a.lua") return std::string(luaA);
+        if (p == "b.lua") return std::string(luaB);
+        return std::string();
+    };
+    CHECK(runtime.Start(scene, cfg).Ok());
+    CHECK_EQ(runtime.ScriptCount(), 2u);
+
+    std::vector<ecs::Entity> scriptEnts;
+    {
+        auto view = runtime.World().ViewAll<scene::SceneScript>();
+        for (size_t i = 0; i < view.Size(); ++i) {
+            scriptEnts.push_back(runtime.World().EntityAt<scene::SceneScript>(i));
+        }
+    }
+    CHECK_EQ(scriptEnts.size(), 2u);
+    if (scriptEnts.size() != 2u) return;
+
+    for (int i = 0; i < 10; ++i) runtime.Tick(1.0f / 60.0f);
+
+    // scriptB loaded last: its on_update runs for BOTH entities. Entity A's
+    // script (shadow_mark) never ran, and both entities' counters advanced
+    // under scriptB's function.
+    CHECK(runtime.GameVars().Get("shadow_mark").type == script::Value::Type::Nil);
+    for (const ecs::Entity& e : scriptEnts) {
+        const std::string key = "tick_" + std::to_string(e.id);
+        CHECK(runtime.GameVars().Get(key).type == script::Value::Type::Number);
+        CHECK_EQ(runtime.GameVars().Get(key).number, 10.0);
+    }
+}
+
+// Per-entity SceneScript.vars are set as Lua globals before on_start/on_update.
+TEST(GameRuntimeScriptVarsAsGlobals) {
+    const char* scene = R"({
+      "entities": [
+        {"name": "Miner", "components": {
+          "transform": {"pos": [0,0,0]},
+          "script": {"backend": "lua", "path": "miner.lua", "vars": {"factor": 3}}
+        }}
+      ]
+    })";
+    const char* lua = R"(
+      function on_update(e, dt)
+        local g = GetVar("gold")
+        if g == nil then g = 0 end
+        SetVar("gold", g + factor)
+      end
+    )";
+    scene::GameRuntime runtime;
+    scene::GameRuntimeConfig cfg;
+    cfg.readScript = [&](const std::string&) { return std::string(lua); };
+    CHECK(runtime.Start(scene, cfg).Ok());
+    CHECK_EQ(runtime.ScriptCount(), 1u);
+    for (int i = 0; i < 10; ++i) runtime.Tick(1.0f / 60.0f);
+    CHECK_EQ(runtime.GameVars().Get("gold").number, 30.0); // 10 ticks * factor 3
+}
+
+// A failing on_update is logged once per script instance, not every tick.
+TEST(GameRuntimeScriptErrorLoggedOnce) {
+    const char* scene = R"({
+      "entities": [
+        {"name": "Boom", "components": {"transform": {"pos": [0,0,0]},
+          "script": {"backend": "lua", "path": "boom.lua"}}}
+      ]
+    })";
+    const char* lua = R"(
+      function on_update(e, dt)
+        local x = GetVar("missing")
+        local y = x + 1 -- nil + 1 -> runtime error
+      end
+    )";
+    scene::GameRuntime runtime;
+    scene::GameRuntimeConfig cfg;
+    cfg.readScript = [&](const std::string&) { return std::string(lua); };
+    CHECK(runtime.Start(scene, cfg).Ok());
+
+    for (int i = 0; i < 20; ++i) runtime.Tick(1.0f / 60.0f); // 20 failing ticks
+
+    size_t logged = 0;
+    for (const core::LogEntry& entry : core::GetRecentLogs(100)) {
+        if (entry.text.find("on_update() failed") != std::string::npos) ++logged;
+    }
+    CHECK_EQ(logged, 1u); // throttled: first failure only
+}

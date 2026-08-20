@@ -90,6 +90,7 @@ private:
     int selected_ = -1;
     bool playtestActive_ = false;
     std::unique_ptr<scene::GameRuntime> playtest_; // non-null while playtesting
+    bool f5Pressed_ = false; // edge-trigger: Win32 repeats KeyDown while held
 
     // Project directory: exported scenes are written to <projectDir>/scenes/.
     std::string projectDir_{"."};

@@ -4,6 +4,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -43,10 +44,25 @@ struct GameRuntimeConfig {
 // (T4.7). Lifecycle: Start(sceneJson, cfg) -> Tick/Draw... -> Stop(); Start
 // again after Stop starts a fresh world.
 //
-// One Lua host serves the whole runtime: every SceneScript with backend "lua"
-// is loaded once per unique path, then on_start(ent) runs at Start and
-// on_update(ent, dt) runs every Tick for each entity carrying the script.
-// GameVars is shared by scripts and behavior trees (single global store).
+// SCRIPTING MODEL — one Lua host serves the whole runtime. Every SceneScript
+// with backend "lua" is loaded once per unique path, then on_start(ent) runs at
+// Start and on_update(ent, dt) runs every Tick for each entity carrying the
+// script. GameVars is shared by scripts and behavior trees (single global
+// store).
+//
+// GLOBAL NAMESPACE SHARING (important): because there is exactly one host, all
+// scripts share one global Lua namespace. Two scripts that define the same
+// global (e.g. both define `on_update`) collide: the last-loaded script's
+// function wins and runs for EVERY entity, even ones carrying the earlier
+// script. Per-entity `script.vars` are also set as globals and therefore
+// overwrite each other across entities. Keep scene scripts distinct, or extend
+// the runtime with per-entity hosts/namespacing before relying on per-entity
+// script identity.
+//
+// PHYSICS: `physics_.Step` runs every Tick, but the built-in scene registry has
+// no collider component yet, so the world steps with zero bodies (inert).
+// Rigidbody/spawn-body wiring is a later task; this note keeps downstream
+// consumers (T4.7 neon_game, T6.3) from assuming physics is already live.
 class GameRuntime {
 public:
     core::Status Start(const std::string& sceneJson, GameRuntimeConfig cfg);
@@ -63,7 +79,7 @@ public:
     size_t ScriptCount() const { return scripts_.size(); }
     size_t BehaviorTreeCount() const { return trees_.size(); }
     size_t DrawCount() const { return draws_.size(); }
-    float SimTime() const { return simTime_; }
+    double SimTime() const { return simTime_; }
 
     // Observability for tests/debug: the per-entity blackboard value the
     // behavior tree of `ent` wrote under `key` (Nil when the entity has no
@@ -73,7 +89,8 @@ public:
 private:
     struct ScriptInst {
         ecs::Entity ent;
-        std::string path;
+        std::string path; // used for error logging; source is loaded once per path
+        bool errorLogged = false; // one log per script instance per Start
     };
     struct BtInst {
         ecs::Entity ent;
@@ -98,6 +115,10 @@ private:
     void AttachTrees();
     void BuildDrawList();
     void ResolveDrawItem(DrawItem& item, gfx::Renderer& renderer);
+    // Invokes a script global function and logs the first failure of a script
+    // instance (throttled per Start); failures never abort the runtime.
+    void CallEntityFunction(const char* fn, ScriptInst& inst,
+                            const std::vector<script::Value>& args);
     std::string ReadScript(const std::string& path) const;
     std::string FullScriptPath(const std::string& path) const;
 
@@ -108,11 +129,11 @@ private:
     std::vector<ScriptInst> scripts_;
     std::vector<BtInst> trees_;
     std::vector<DrawItem> draws_;
-    std::map<std::string, std::string> scriptSources_; // resolved path -> source (loaded once)
-    std::map<std::string, bool> scriptFailed_;         // resolved path -> failed (skip later)
+    std::set<std::string> loadedScripts_; // resolved paths whose chunk ran (presence only)
+    std::set<std::string> scriptFailed_;  // resolved paths that failed (skip later)
     GameRuntimeConfig cfg_;
     bool running_ = false;
-    float simTime_ = 0.f;
+    double simTime_ = 0.0;
 };
 
 } // namespace neon::scene

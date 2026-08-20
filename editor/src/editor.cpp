@@ -290,8 +290,16 @@ void EditorApp::OnRender() {
 }
 
 void EditorApp::OnEvent(const platform::InputEvent& event) {
-    if (event.type == platform::InputEvent::Type::KeyDown && event.key == platform::Key::F5) {
-        TogglePlaytest();
+    // F5 toggles playtest on the KeyDown edge only (Win32 auto-repeats KeyDown
+    // while held, which would otherwise oscillate Play/Stop), and never while
+    // ImGui owns the keyboard (e.g. typing in a text field).
+    if (event.key == platform::Key::F5) {
+        if (event.type == platform::InputEvent::Type::KeyDown) {
+            if (!f5Pressed_ && !gfx::ImGuiNeon_WantCaptureKeyboard()) TogglePlaytest();
+            f5Pressed_ = true;
+        } else if (event.type == platform::InputEvent::Type::KeyUp) {
+            f5Pressed_ = false;
+        }
     }
     if (event.type == platform::InputEvent::Type::TextInput) {
         if (!gfx::ImGuiNeon_WantCaptureKeyboard()) ui_.TextInput(event.text);
