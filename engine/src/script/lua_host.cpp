@@ -40,10 +40,14 @@ double RngFloat01(uint64_t rv) {
     return static_cast<double>(rv >> 11) * (1.0 / 9007199254740992.0);
 }
 
-// Pushes a uniformly chosen integer in [low, up] (inclusive), mirroring Lua's
-// math.random semantics: the one already-drawn value is projected onto the
-// span. The full 64-bit span (low=INT64_MIN, up=INT64_MAX) cannot be expressed
-// as span+1, so it returns the raw draw.
+// Pushes a uniformly chosen integer in [low, up] (inclusive). Deliberate engine
+// design decision: the one already-drawn value is projected onto the span with
+// modulo, so every call consumes exactly one RNG draw. This is deterministic
+// and identical across engine peers with the same seed, but it is NOT
+// bit-reproducible with stock Lua's math.random(m,n), which uses rejection
+// sampling and consumes a variable number of draws. The full 64-bit span
+// (low=INT64_MIN, up=INT64_MAX) cannot be expressed as span+1, so it returns
+// the raw draw.
 int PushRandomInt(lua_State* L, uint64_t rv, lua_Integer low, lua_Integer up) {
     if (low > up) return luaL_error(L, "bad argument #1 to 'random' (interval is empty)");
     lua_Unsigned span = static_cast<lua_Unsigned>(up) - static_cast<lua_Unsigned>(low);
@@ -57,6 +61,18 @@ int PushRandomInt(lua_State* L, uint64_t rv, lua_Integer low, lua_Integer up) {
 void PushHostClosure(lua_State* L, LuaHost* self, lua_CFunction fn) {
     lua_pushlightuserdata(L, self);
     lua_pushcclosure(L, fn, 1);
+}
+
+// core::Log can throw (log-buffer allocation in GetRecentLogs, user-supplied
+// sinks). It is called from inside Lua closures, where an uncaught C++
+// exception would unwind through Lua's setjmp frames and corrupt the state;
+// swallow it so print degrades to a silent no-op. Mirrors the NativeCallClosure
+// exception discipline.
+void SafeLog(const char* msg) {
+    try {
+        core::Log(core::LogLevel::Info, "%s", msg);
+    } catch (...) {
+    }
 }
 
 // Extracts the line number from a Lua error message of the form
@@ -245,7 +261,10 @@ void LuaHost::OpenSandboxedLibraries(lua_State* L, LuaHost* self) {
     lua_pop(L, 1);
 
     // NMath: the canonical deterministic API. Unlike the stdlib math.random
-    // legacy surface, its contract is stable across Lua versions.
+    // legacy surface, its contract is stable across Lua versions. Both math.*
+    // and NMath.* share one host RNG and use the engine's fixed one-draw-per-call
+    // modulo sampling (see PushRandomInt); streams are reproducible across engine
+    // peers, not bit-identical to stock Lua.
     lua_newtable(L);
     PushHostClosure(L, self, &LuaHost::NMathRandom);
     lua_setfield(L, -2, "Random");
@@ -482,8 +501,11 @@ void LuaHost::SetRngSeed(uint64_t seed) { impl_->rng = core::Rng(seed); }
 void LuaHost::SetSimClock(double seconds) { impl_->simClock = seconds; }
 
 // math.random(): [0,1); math.random(n): integer [1,n]; math.random(m,n):
-// integer [m,n]; math.random(0): full random integer. Mirrors Lua 5.4's
-// calling conventions exactly, backed by the host RNG (deterministic).
+// integer [m,n]; math.random(0): full random integer. Matches Lua 5.4's calling
+// conventions (arity, ranges, "interval is empty" error) but the integer path
+// uses the engine's fixed one-draw-per-call modulo sampling, so streams are
+// deterministic across engine peers yet not bit-identical to stock Lua's
+// math.random(m,n).
 int LuaHost::MathRandom(lua_State* L) {
     LuaHost* self = static_cast<LuaHost*>(lua_touserdata(L, lua_upvalueindex(1)));
     if (!self) return luaL_error(L, "invalid sandbox closure");
@@ -512,7 +534,10 @@ int LuaHost::MathRandom(lua_State* L) {
 
 // math.randomseed(x) reseeds the host RNG deterministically. With no argument,
 // stock Lua 5.4 reseeds from wall time; the sandbox reseeds from the fixed
-// default constant instead, keeping every stream reproducible.
+// default constant instead, keeping every stream reproducible. Documented
+// deviations from stock Lua 5.4: only the first argument is used (a second
+// seed argument is accepted and ignored) and one value is returned rather than
+// two, because the host RNG has a single 64-bit state.
 int LuaHost::MathRandomSeed(lua_State* L) {
     LuaHost* self = static_cast<LuaHost*>(lua_touserdata(L, lua_upvalueindex(1)));
     if (!self) return luaL_error(L, "invalid sandbox closure");
@@ -554,7 +579,10 @@ int LuaHost::NMathSeed(lua_State* L) {
         ? luaL_checkinteger(L, 1)
         : static_cast<lua_Integer>(kDefaultRngSeed);
     self->impl_->rng = core::Rng(static_cast<uint64_t>(seed));
-    return 0;
+    // Returns the applied seed, mirroring math.randomseed, so scripts can
+    // observe/replay the reseed value.
+    lua_pushinteger(L, seed);
+    return 1;
 }
 
 int LuaHost::NMathTime(lua_State* L) {
@@ -566,7 +594,9 @@ int LuaHost::NMathTime(lua_State* L) {
 
 // print(...) -> core::Log(Info). Arguments are tostring'd and tab-joined on the
 // Lua stack (lua_concat never raises for strings), so no nontrivial C++ local
-// is alive across the raising luaL_tolstring conversions.
+// is alive across the raising luaL_tolstring conversions. The log write itself
+// goes through SafeLog so an exception from core::Log (allocation, user sinks)
+// is contained instead of unwinding through Lua's setjmp frames.
 int LuaHost::Print(lua_State* L) {
     LuaHost* self = static_cast<LuaHost*>(lua_touserdata(L, lua_upvalueindex(1)));
     if (!self) return luaL_error(L, "invalid sandbox closure");
@@ -580,10 +610,10 @@ int LuaHost::Print(lua_State* L) {
         }
         lua_concat(L, count);
         const char* msg = lua_tostring(L, -1);
-        core::Log(core::LogLevel::Info, "%s", msg ? msg : "");
+        SafeLog(msg ? msg : "");
         lua_pop(L, 1);
     } else {
-        core::Log(core::LogLevel::Info, "");
+        SafeLog("");
     }
     return 0;
 }

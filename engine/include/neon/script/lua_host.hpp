@@ -14,9 +14,13 @@ namespace neon::script {
 //   * restricted standard library (base, table, string, math, utf8, coroutine);
 //     io, os, and package are NOT opened
 //   * math.random/randomseed + NMath.Random/RandomRange/Seed backed by a
-//     host-seeded core::Rng (xorshift64*), default seed a fixed constant
+//     host-seeded core::Rng (xorshift64*), default seed a fixed constant.
+//     Sampling is the engine's fixed one-draw-per-call modulo projection
+//     (reproducible across engine peers, not bit-identical to stock Lua).
+//     Seed 0 aliases seed 1 (core::Rng cannot store a zero state).
 //   * NMath.Time() reports the engine-injected simulated clock
 //   * dofile/loadfile/collectgarbage are nilled; print routes to core::Log
+//     (throws from core::Log are contained, never propagated into Lua)
 //
 // Single-threaded: not safe to share across threads.
 class LuaHost : public IScriptHost {
@@ -42,7 +46,7 @@ public:
     void SetError(const std::string& message) override;
     const ScriptError& LastError() const override;
     bool HasFunction(const std::string& fn) const override;
-    void SetRngSeed(uint64_t seed) override;
+    void SetRngSeed(uint64_t seed) override;  // seed 0 is treated as 1 (see class doc)
     void SetSimClock(double seconds) override;
 
 private:

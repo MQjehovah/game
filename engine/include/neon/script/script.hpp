@@ -149,6 +149,10 @@ public:
     // NMath.Random). Two hosts seeded identically produce identical streams;
     // the default seed is a fixed constant, never wall time. Init() resets the
     // RNG to that default.
+    //
+    // Seed 0 is treated as 1: core::Rng cannot store a zero state (an
+    // all-zeros xorshift state would lock the generator), so 0 aliases the
+    // seed-1 stream.
     virtual void SetRngSeed(uint64_t seed) = 0;
 
     // Pin the simulated clock reported by NMath.Time() (and future os.clock).

@@ -33,6 +33,17 @@ std::vector<double> DrawSequence(script::IScriptHost& host, const std::string& s
     return seq;
 }
 
+// Runs a chunk that stores a string in the global `out` and returns it. Used
+// where exact 64-bit integer draws must be compared losslessly (doubles would
+// round): tostring'd math.random(0) values compared as strings.
+std::string RunForString(script::IScriptHost& host, const std::string& source) {
+    if (!host.Load(source)) return {};
+    if (!host.Run().Ok()) return {};
+    auto res = host.GetGlobal("out");
+    if (!res.Ok() || res.Value().type != script::Value::Type::String) return {};
+    return res.Value().str;
+}
+
 // Exercises all three math.random calling conventions through one stream.
 const char* kMixedDrawScript = R"(
 math.randomseed(12345)
@@ -239,6 +250,170 @@ out = t
     a->Shutdown();
     b->Shutdown();
     c->Shutdown();
+}
+
+// The RNG stream continues across Load/Run cycles: a second chunk (no reseed)
+// keeps drawing where the first stopped, matching a single 100-draw chunk.
+TEST(DeterministicStreamContinuesAcrossLoadRun) {
+    const char* kFirst = R"(
+NMath.Seed(99)
+local t = {}
+for i = 1, 50 do t[i] = NMath.Random() end
+out = t
+)";
+    const char* kSecond = R"(
+local t = {}
+for i = 1, 50 do t[i] = NMath.Random() end
+out = t
+)";
+    const char* kFull = R"(
+NMath.Seed(99)
+local t = {}
+for i = 1, 100 do t[i] = NMath.Random() end
+out = t
+)";
+    auto a = MakeHost();
+    auto b = MakeHost();
+    auto first = DrawSequence(*a, kFirst);
+    auto second = DrawSequence(*a, kSecond);
+    first.insert(first.end(), second.begin(), second.end());
+    auto full = DrawSequence(*b, kFull);
+    CHECK_EQ(first.size(), 100u);
+    CHECK_EQ(full.size(), 100u);
+    CHECK(first == full);
+    a->Shutdown();
+    b->Shutdown();
+}
+
+// Seeding from C++ (SetRngSeed) is equivalent to the script-side NMath.Seed.
+TEST(DeterministicSetRngSeedEqualsScriptSeed) {
+    const char* kHostSeeded = R"(
+local t = {}
+for i = 1, 200 do
+  if i % 2 == 0 then t[i] = math.random(100) else t[i] = NMath.Random() end
+end
+out = t
+)";
+    const char* kScriptSeeded = R"(
+NMath.Seed(0xBEEF)
+local t = {}
+for i = 1, 200 do
+  if i % 2 == 0 then t[i] = math.random(100) else t[i] = NMath.Random() end
+end
+out = t
+)";
+    auto a = MakeHost();
+    auto b = MakeHost();
+    a->SetRngSeed(0xBEEF);
+    auto seqA = DrawSequence(*a, kHostSeeded);
+    auto seqB = DrawSequence(*b, kScriptSeeded);
+    CHECK_EQ(seqA.size(), 200u);
+    CHECK_EQ(seqB.size(), 200u);
+    CHECK(seqA == seqB);
+    a->Shutdown();
+    b->Shutdown();
+}
+
+// Reseeding mid-stream restarts from the new seed on both hosts identically.
+TEST(DeterministicMidStreamReseed) {
+    const char* kScript = R"(
+NMath.Seed(11)
+local t = {}
+for i = 1, 25 do t[i] = NMath.Random() end
+NMath.Seed(22)
+for i = 26, 50 do t[i] = NMath.Random() end
+out = t
+)";
+    auto a = MakeHost();
+    auto b = MakeHost();
+    auto seqA = DrawSequence(*a, kScript);
+    auto seqB = DrawSequence(*b, kScript);
+    CHECK_EQ(seqA.size(), 50u);
+    CHECK_EQ(seqB.size(), 50u);
+    CHECK(seqA == seqB);
+    a->Shutdown();
+    b->Shutdown();
+}
+
+// Shutdown + re-Init looks like a fresh host: RNG back to the default seed and
+// clock back to 0, even after a custom seed/clock were applied.
+TEST(DeterministicReinitResetsRngAndClock) {
+    auto a = MakeHost();
+    auto b = MakeHost();
+
+    a->SetRngSeed(2026);
+    a->SetSimClock(55.0);
+    CHECK(a->Load("out = NMath.Time()"));
+    CHECK(a->Run().Ok());
+    auto customClock = a->GetGlobal("out");
+    CHECK(customClock.Ok());
+    CHECK_EQ(customClock.Value().number, 55.0);
+
+    const char* kCustomDraws = R"(
+local t = {}
+for i = 1, 100 do t[i] = NMath.Random() end
+out = t
+)";
+    auto customSeq = DrawSequence(*a, kCustomDraws);
+
+    a->Shutdown();
+    CHECK(a->Init());
+
+    CHECK(a->Load("out = NMath.Time()"));
+    CHECK(a->Run().Ok());
+    auto resetClock = a->GetGlobal("out");
+    CHECK(resetClock.Ok());
+    CHECK_EQ(resetClock.Value().number, 0.0);
+
+    auto resetSeq = DrawSequence(*a, kCustomDraws);
+    auto freshSeq = DrawSequence(*b, kCustomDraws);
+    CHECK_EQ(resetSeq.size(), 100u);
+    CHECK_EQ(freshSeq.size(), 100u);
+    CHECK(resetSeq == freshSeq);  // default seed after re-init == default seed fresh host
+    CHECK(resetSeq != customSeq); // and differs from the pre-shutdown custom seed
+    a->Shutdown();
+    b->Shutdown();
+}
+
+// math.random(0) yields the full raw 64-bit draw; comparing tostring'd values
+// as strings (not doubles) pins low-bit exactness across hosts.
+TEST(DeterministicRandomZeroExactInt64) {
+    const char* kScript = R"(
+math.randomseed(4242)
+local t = {}
+for i = 1, 64 do t[i] = tostring(math.random(0)) end
+out = table.concat(t, ",")
+)";
+    auto a = MakeHost();
+    auto b = MakeHost();
+    std::string strA = RunForString(*a, kScript);
+    std::string strB = RunForString(*b, kScript);
+    CHECK(!strA.empty());
+    CHECK_EQ(strA, strB);
+    CHECK(strA.find(',') != std::string::npos); // sanity: 64 distinct positions joined
+    a->Shutdown();
+    b->Shutdown();
+}
+
+// core::Rng cannot store a zero state, so seed 0 is documented to alias seed 1.
+// Pin that behavior so the aliasing is a tested contract, not an accident.
+TEST(DeterministicZeroSeedAliasesOne) {
+    const char* kScript = R"(
+local t = {}
+for i = 1, 200 do t[i] = NMath.Random() end
+out = t
+)";
+    auto zero = MakeHost();
+    auto one = MakeHost();
+    zero->SetRngSeed(0);
+    one->SetRngSeed(1);
+    auto seqZero = DrawSequence(*zero, kScript);
+    auto seqOne = DrawSequence(*one, kScript);
+    CHECK_EQ(seqZero.size(), 200u);
+    CHECK_EQ(seqOne.size(), 200u);
+    CHECK(seqZero == seqOne);
+    zero->Shutdown();
+    one->Shutdown();
 }
 
 // print is routed to the engine log and never crashes.
