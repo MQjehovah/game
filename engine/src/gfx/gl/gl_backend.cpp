@@ -61,6 +61,7 @@ constexpr gl::GLenum DepthAttachment = 0x8D00;
 constexpr gl::GLenum DepthComponent24 = 0x81A6;
 constexpr gl::GLenum ColorAttachment0 = 0x8CE0;
 constexpr gl::GLenum None = 0;
+constexpr gl::GLenum Renderbuffer = 0x8D41;
 constexpr gl::GLenum TextureCompareMode = 0x884C;
 constexpr gl::GLenum CompareRefToTexture = 0x884E;
 constexpr gl::GLenum TextureCompareFunc = 0x884D;
@@ -98,6 +99,11 @@ struct GLRenderTarget {
     gl::GLuint fbo = 0;
     gl::GLuint colorTex = 0;
     gl::GLuint depthTex = 0;
+    // Depth renderbuffer attached to float (HDR) color targets so depth
+    // testing works inside the HDR FBO on drivers with a functional depth
+    // buffer. Zero for the color-encoded CSM/point-shadow targets (they rely
+    // on painter's order) and for the depth-texture targets.
+    gl::GLuint depthRbo = 0;
     uint32_t colorTextureHandle = 0;
     uint32_t textureHandle = 0;
     int width = 0;
@@ -198,6 +204,7 @@ public:
         for (auto& [id, rt] : renderTargets_) {
             g.DeleteFramebuffers(1, &rt.fbo);
             g.DeleteTextures(1, &rt.depthTex);
+            if (rt.depthRbo) g.DeleteRenderbuffers(1, &rt.depthRbo);
         }
         renderTargets_.clear();
         for (auto& [id, prog] : shaders_) g.DeleteProgram(prog.id);
@@ -245,8 +252,19 @@ public:
         g.TexParameteri(glc::Texture2D, glc::TextureWrapT, glc::ClampToEdge);
         g.FramebufferTexture2D(glc::Framebuffer, glc::ColorAttachment0, glc::Texture2D,
                                rt.colorTex, 0);
-        (void)glc::DepthAttachment;
-        (void)glc::DepthComponent24;
+        if (floatColor) {
+            // Half-float HDR target: attach a depth renderbuffer so the main
+            // pass keeps correct occlusion on drivers where the window depth
+            // buffer works (on broken-depth drivers the renderer disables
+            // depth testing anyway, so this attachment is inert there).
+            g.GenRenderbuffers(1, &rt.depthRbo);
+            g.BindRenderbuffer(glc::Renderbuffer, rt.depthRbo);
+            g.RenderbufferStorage(glc::Renderbuffer, glc::DepthComponent24, width, height);
+            g.FramebufferRenderbuffer(glc::Framebuffer, glc::DepthAttachment, glc::Renderbuffer,
+                                      rt.depthRbo);
+            NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
+                         "GL: float render target %dx%d (RGBA16F + depth RBO)", width, height);
+        }
         g.DrawBuffer(glc::ColorAttachment0);
         g.ReadBuffer(glc::ColorAttachment0);
         gl::GLenum status = g.CheckFramebufferStatus(glc::Framebuffer);
@@ -255,6 +273,7 @@ public:
                          "GL: render target incomplete, status=0x%X", status);
             g.DeleteFramebuffers(1, &rt.fbo);
             g.DeleteTextures(1, &rt.colorTex);
+            if (rt.depthRbo) g.DeleteRenderbuffers(1, &rt.depthRbo);
             g.BindFramebuffer(glc::Framebuffer, 0);
             return {};
         }
@@ -274,6 +293,7 @@ public:
         g.DeleteFramebuffers(1, &it->second.fbo);
         g.DeleteTextures(1, &it->second.colorTex);
         g.DeleteTextures(1, &it->second.depthTex);
+        if (it->second.depthRbo) g.DeleteRenderbuffers(1, &it->second.depthRbo);
         renderTargets_.erase(it);
     }
 

@@ -274,6 +274,11 @@ void EditorApp::OnRender() {
         }
     }
 
+    // End the 3D scene phase: composite the HDR frame to the backbuffer and
+    // bind the backbuffer so the tool UI (engine UI demo + ImGui) below renders
+    // crisp and unbloomed on top.
+    renderer_.EndScene();
+
     if (showCustomUIDemo_) ui_.Draw(renderer_);
     renderer_.Flush2D();
     gfx::ImGuiNeon_RenderDrawData(ImGui::GetDrawData());

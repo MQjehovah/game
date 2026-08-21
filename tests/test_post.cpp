@@ -146,3 +146,29 @@ TEST(BloomStateHeadless) {
     CHECK(fx.renderer.BloomEnabled());
     fx.renderer.EndFrame(); // no crash after toggling
 }
+
+// EndScene on the legacy (non-HDR) path must be a no-op: the NullBackend has no
+// float-target capability, so EndScene must not composite or crash, and the
+// whole frame (3D + 2D) still reaches the "backbuffer" exactly like before HDR.
+TEST(EndSceneLegacyPathNoop) {
+    test::HeadlessAssetFixture fx;
+    CHECK(!fx.renderer.HdrEnabled()); // no GL backend -> float path off
+
+    fx.renderer.BeginFrame({0.02f, 0.03f, 0.08f, 1.0f});
+    gfx::Mesh cube = gfx::Mesh::CreateCube(fx.renderer, 1, 1, 1, "endscene_test_cube");
+    fx.renderer.DrawMesh(cube, gfx::Material::Lit({}), math::Mat4::Identity());
+    // EndScene is a no-op here; 2D below must still draw fine on the backbuffer.
+    fx.renderer.EndScene();
+    fx.renderer.DrawRect({0, 0}, {10, 10}, gfx::Color{1, 1, 1, 1});
+    fx.renderer.EndFrame();
+
+    // Capture after EndScene must still return the final frame (composite is a
+    // no-op on the legacy path; CaptureFrame just flushes 2D + reads).
+    std::vector<uint8_t> pixels;
+    fx.renderer.BeginFrame({0, 0, 0, 1});
+    fx.renderer.EndScene();
+    fx.renderer.DrawRect({0, 0}, {10, 10}, gfx::Color{1, 1, 1, 1});
+    CHECK(fx.renderer.CaptureFrame(pixels));
+    CHECK(!pixels.empty());
+    fx.renderer.EndFrame();
+}

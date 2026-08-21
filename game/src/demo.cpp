@@ -968,11 +968,10 @@ void GameScene::Draw(gfx::Renderer& renderer) {
         }
     }
 
-    DrawNameplates(renderer);
-
     // Ground facing marker: a subtle chevron a few units ahead of the player,
     // oriented by the camera yaw and projected onto the terrain. It answers
-    // "which way am I facing" without obstructing gameplay.
+    // "which way am I facing" without obstructing gameplay. Drawn before
+    // EndScene so it stays a scene element (bloomed with the HDR image).
     if (pt) {
         math::Vec3 fwd{-std::sin(yaw_), 0.0f, -std::cos(yaw_)};
         math::Vec3 perp = math::Cross(fwd, math::Vec3::Up());
@@ -991,6 +990,11 @@ void GameScene::Draw(gfx::Renderer& renderer) {
         renderer.DrawLines(chevron, 6, math::Mat4::Identity());
     }
 
+    // End the 3D scene phase: composite the HDR frame (bloom) to the backbuffer
+    // and bind the backbuffer so every HUD draw below is crisp and unbloomed.
+    renderer.EndScene();
+
+    DrawNameplates(renderer);
     DrawMinimap(renderer);
     DrawHUD(renderer);
     DrawOverlays(renderer);

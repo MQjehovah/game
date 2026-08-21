@@ -1865,10 +1865,29 @@ void Renderer::CompositeSceneToBackbuffer() {
     Flush2D();
 }
 
+void Renderer::EndScene() {
+    if (!hdrEnabled_ || !hdrRT_.Valid()) return; // legacy: 2D already to backbuffer
+    if (!compositedThisFrame_) {
+        // Any 2D still queued at this point is scene content (billboards,
+        // particles, ground marker): flush it into the HDR target so it is
+        // bloomed with the scene, then composite to the backbuffer.
+        Flush2D();
+        CompositeSceneToBackbuffer();
+        compositedThisFrame_ = true;
+    }
+    // From here on every 2D flush goes straight to the backbuffer (unbloomed,
+    // on top of the composite): HUD/nameplates/minimap/editor UI.
+    backend_->BindDefaultTarget();
+}
+
 void Renderer::CompositeFrame() {
     if (!compositedThisFrame_) {
         CompositeSceneToBackbuffer();
         compositedThisFrame_ = true;
+    } else {
+        // EndScene already composited this frame; just draw any 2D the app
+        // pushed after EndScene (the HUD) onto the backbuffer.
+        Flush2D();
     }
 }
 

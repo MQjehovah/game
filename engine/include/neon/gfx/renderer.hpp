@@ -40,6 +40,16 @@ public:
     // Frame
     void BeginFrame(const Color& clearColor, float clearDepth = 1.0f);
     void EndFrame();
+    // Ends the 3D scene phase. In HDR mode this (a) runs bloom + composites the
+    // HDR target to the backbuffer and (b) binds the backbuffer so ALL
+    // subsequent 2D/HUD draws land there unbloomed and unclamped. Call it right
+    // after the last 3D/entity draw and before the HUD (nameplates, minimap,
+    // bars, overlays, editor UI). Mid-scene 2D drawn BEFORE EndScene (sky, the
+    // ground marker) stays in the HDR target and is bloomed, which is correct.
+    // In the legacy non-HDR path EndScene is a no-op (2D already draws straight
+    // to the backbuffer). Frames that never call EndScene keep the previous
+    // behaviour: EndFrame/CaptureFrame composite + flush everything at once.
+    void EndScene();
 
     // 3D camera
     void SetCamera(const Camera& camera, float aspect);
