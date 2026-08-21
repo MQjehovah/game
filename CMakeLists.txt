@@ -196,6 +196,7 @@ add_executable(neon_editor
   editor/src/main.cpp
   editor/src/editor.cpp
   editor/src/panels.cpp
+  editor/src/history.cpp
 )
 target_include_directories(neon_editor PRIVATE assets/generated third_party/stb)
 target_link_libraries(neon_editor PRIVATE neon_engine neon_imgui)
@@ -210,8 +211,11 @@ add_executable(neon_tests tests/test_main.cpp tests/test_serialize.cpp tests/tes
   tests/test_bt.cpp tests/test_scene_file.cpp tests/test_scene_export.cpp tests/test_manifest.cpp
   tests/test_game_runtime.cpp tests/test_gltf_skin.cpp tests/test_anim.cpp
   tests/test_skinned.cpp tests/test_shadow.cpp tests/test_log.cpp
-  tests/test_spatial.cpp tests/test_post.cpp tests/test_ibl.cpp)
+  tests/test_spatial.cpp tests/test_post.cpp tests/test_ibl.cpp tests/test_history.cpp
+  editor/src/history.cpp)
 target_link_libraries(neon_tests PRIVATE neon_engine)
+# test_history.cpp includes the editor's generic undo/redo stack header.
+target_include_directories(neon_tests PRIVATE editor/src)
 add_test(NAME unit COMMAND neon_tests)
 # ctest runs the binary from the build dir by default; run it from the source
 # root so tests that load repo-relative assets (assets/...) resolve identically

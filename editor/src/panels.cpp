@@ -7,6 +7,7 @@
 #include <direct.h>
 #endif
 
+#include "editor_history.hpp"
 #include "imgui_internal.h"
 #include "neon/gfx/imgui_neon.hpp"
 
@@ -219,29 +220,29 @@ void EditorApp::BuildScenePanel() {
         }
         ImGui::SameLine();
         if (ImGui::Button("复制") && selected_ >= 0) {
-            SceneEntity copy = entities_[static_cast<size_t>(selected_)];
-            copy.name += "_副本";
-            copy.pos.z += 0.5f;
-            entities_.push_back(std::move(copy));
+            history_.Push(std::make_unique<DuplicateEntityCommand>(
+                &entities_, static_cast<size_t>(selected_)));
             selected_ = static_cast<int>(entities_.size()) - 1;
         }
         ImGui::SameLine();
         if (ImGui::Button("删除") && selected_ >= 0 &&
             selected_ < static_cast<int>(entities_.size())) {
-            entities_.erase(entities_.begin() + selected_);
-            selected_ = std::min(selected_, static_cast<int>(entities_.size()) - 1);
+            history_.Push(std::make_unique<DeleteEntityCommand>(
+                &entities_, static_cast<size_t>(selected_)));
+            if (selected_ >= static_cast<int>(entities_.size()))
+                selected_ = static_cast<int>(entities_.size()) - 1;
         }
         ImGui::SameLine();
         if (ImGui::Button("↑") && selected_ > 0) {
-            std::swap(entities_[static_cast<size_t>(selected_)],
-                      entities_[static_cast<size_t>(selected_ - 1)]);
+            history_.Push(std::make_unique<ReorderEntityCommand>(
+                &entities_, static_cast<size_t>(selected_), static_cast<size_t>(selected_ - 1)));
             --selected_;
         }
         ImGui::SameLine();
         if (ImGui::Button("↓") && selected_ >= 0 &&
             selected_ < static_cast<int>(entities_.size()) - 1) {
-            std::swap(entities_[static_cast<size_t>(selected_)],
-                      entities_[static_cast<size_t>(selected_ + 1)]);
+            history_.Push(std::make_unique<ReorderEntityCommand>(
+                &entities_, static_cast<size_t>(selected_), static_cast<size_t>(selected_ + 1)));
             ++selected_;
         }
         ImGui::Separator();
@@ -383,26 +384,57 @@ void EditorApp::BuildInspectorPanel() {
         SceneEntity& e = entities_[static_cast<size_t>(selected_)];
         char buf[160];
         std::snprintf(buf, sizeof(buf), "%s", e.name.c_str());
-        if (ImGui::InputText("名称", buf, sizeof(buf))) e.name = buf;
+        // Every field edit routes through the undo/redo command stack; the old
+        // value is captured before the widget mutates the entity.
+        if (ImGui::InputText("名称", buf, sizeof(buf))) {
+            const std::string oldName = e.name;
+            e.name = buf;
+            history_.Push(std::make_unique<EditPropertyCommand<std::string>>(
+                &entities_, selected_, ApplyNameProp, oldName, e.name,
+                /*mergeable=*/false)); // one undo step per keystroke
+        }
         ImGui::TextDisabled("类型: %s", TypeLabel(e.meshKey).c_str());
         ImGui::Separator();
-        ImGui::DragFloat3("位置", &e.pos.x, 0.1f);
+        const math::Vec3 oldPos = e.pos;
+        if (ImGui::DragFloat3("位置", &e.pos.x, 0.1f)) {
+            history_.Push(std::make_unique<EditTransformCommand>(
+                &entities_, selected_, oldPos, e.rot, e.scale, e.pos, e.rot, e.scale,
+                EditTransformCommand::kPos));
+        }
         math::Vec3 euler = e.rot.ToMat4().TransformDir({0, 0, -1});
         float rotDeg = std::atan2(euler.x, euler.z) * math::kRadToDeg;
+        const math::Quat oldRot = e.rot;
         if (ImGui::DragFloat("旋转 Y", &rotDeg, 0.5f, -180.0f, 180.0f)) {
             e.rot = math::Quat::FromEuler(0, rotDeg * math::kDegToRad, 0);
+            history_.Push(std::make_unique<EditTransformCommand>(
+                &entities_, selected_, e.pos, oldRot, e.scale, e.pos, e.rot, e.scale,
+                EditTransformCommand::kRot));
         }
-        ImGui::DragFloat3("缩放", &e.scale.x, 0.05f, 0.05f, 50.0f);
+        const math::Vec3 oldScale = e.scale;
+        if (ImGui::DragFloat3("缩放", &e.scale.x, 0.05f, 0.05f, 50.0f)) {
+            history_.Push(std::make_unique<EditTransformCommand>(
+                &entities_, selected_, e.pos, e.rot, oldScale, e.pos, e.rot, e.scale,
+                EditTransformCommand::kScale));
+        }
+        const gfx::Color oldTint = e.tint;
         if (ImGui::ColorEdit3("颜色", &e.tint.r)) {
             e.material.tint = e.tint;
+            history_.Push(std::make_unique<EditPropertyCommand<gfx::Color>>(
+                &entities_, selected_, ApplyColorProp, oldTint, e.tint));
         }
         ImGui::Separator();
         ImGui::TextUnformatted("材质");
+        const float oldMetallic = e.metallic;
         if (ImGui::DragFloat("金属度", &e.metallic, 0.01f, 0.0f, 1.0f)) {
             e.material.metallic = e.metallic;
+            history_.Push(std::make_unique<EditPropertyCommand<float>>(
+                &entities_, selected_, ApplyMetallicProp, oldMetallic, e.metallic));
         }
+        const float oldRoughness = e.roughness;
         if (ImGui::DragFloat("粗糙度", &e.roughness, 0.01f, 0.0f, 1.0f)) {
             e.material.roughness = e.roughness;
+            history_.Push(std::make_unique<EditPropertyCommand<float>>(
+                &entities_, selected_, ApplyRoughnessProp, oldRoughness, e.roughness));
         }
         ImGui::Separator();
         ImGui::TextUnformatted("网格");

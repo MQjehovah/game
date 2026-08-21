@@ -11,6 +11,7 @@
 #include "neon/ui/system.hpp"
 #include "imgui.h"
 #include "ImGuizmo.h"
+#include "history.hpp"
 
 namespace neon::editor {
 
@@ -65,6 +66,7 @@ private:
     void DrawTransformGizmo();
     void RunGizmoDragSim();
     void ApplyMaterialParams(SceneEntity& e);
+    void ClampSelection();
     bool ResolveMesh(SceneEntity& e);
     void RefreshAssetDir();
     void ImportAssetPath(const std::string& path);
@@ -97,6 +99,11 @@ private:
     bool playtestActive_ = false;
     std::unique_ptr<scene::GameRuntime> playtest_; // non-null while playtesting
     bool f5Pressed_ = false; // edge-trigger: Win32 repeats KeyDown while held
+
+    // Undo/redo command stack. Every scene mutation (entity add/delete/
+    // duplicate/reorder, transform gizmo + inspector edits, material/name
+    // properties) is routed through it instead of mutating entities_ directly.
+    HistoryManager history_;
 
     // Project directory: exported scenes are written to <projectDir>/scenes/.
     std::string projectDir_{"."};
@@ -144,6 +151,13 @@ private:
     bool gizmoDragActive_ = false;   // ImGuizmo::IsUsing() after the last Manipulate
     bool gizmoDragSimulated_ = false; // the smoke frame's synthetic drag ran
     float gizmoRect_[4] = {0, 0, 0, 0}; // rect passed to ImGuizmo::SetRect (smoke)
+    // Transform values captured when a gizmo drag starts; the write-back pushes
+    // a MERGING EditTransformCommand per frame so one drag = one undo step that
+    // reverts to these ORIGINAL values.
+    bool gizmoDragOriginValid_ = false;
+    math::Vec3 gizmoDragOriginPos_{};
+    math::Vec3 gizmoDragOriginScale_{1, 1, 1};
+    math::Quat gizmoDragOriginRot_{};
 
     // Custom UI demo widget handles (engine widget system).
     ui::TreeView* demoTree_ = nullptr;

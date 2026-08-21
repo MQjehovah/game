@@ -19,6 +19,7 @@
 #include <sys/stat.h>
 #endif
 
+#include "editor_history.hpp"
 #include "font_data.hpp"
 
 #include "imgui_internal.h"
@@ -359,6 +360,28 @@ void EditorApp::OnRender() {
 }
 
 void EditorApp::OnEvent(const platform::InputEvent& event) {
+    // Ctrl+Z (undo) / Ctrl+Y or Ctrl+Shift+Z (redo) on the KeyDown edge only,
+    // and never while ImGui owns the keyboard (e.g. typing in the name field)
+    // -- same gating as the F5 playtest shortcut below.
+    if (event.type == platform::InputEvent::Type::KeyDown &&
+        !gfx::ImGuiNeon_WantCaptureKeyboard()) {
+        if (Input()->IsDown(platform::Key::Control)) {
+            if (event.key == platform::Key::Z) {
+                if (Input()->IsDown(platform::Key::Shift)) {
+                    history_.Redo();
+                } else {
+                    history_.Undo();
+                }
+                ClampSelection();
+                return;
+            }
+            if (event.key == platform::Key::Y) {
+                history_.Redo();
+                ClampSelection();
+                return;
+            }
+        }
+    }
     // F5 toggles playtest on the KeyDown edge only (Win32 auto-repeats KeyDown
     // while held, which would otherwise oscillate Play/Stop), and never while
     // ImGui owns the keyboard (e.g. typing in a text field).
@@ -524,18 +547,41 @@ void EditorApp::DrawTransformGizmo() {
     const int vtxBefore = dl->VtxBuffer.Size;
 
     // Manipulate reads ImGui's mouse state directly and mutates gizmoModel on
-    // drag; when it returns true the transform changed.
+    // drag; when it returns true the transform changed. The write-back is
+    // routed through the history command stack: the first frame of a drag
+    // records the ORIGINAL values, and every following frame pushes a
+    // MERGING EditTransformCommand, so one drag collapses into a single undo
+    // step that reverts to the pre-drag transform.
     if (ImGuizmo::Manipulate(view, proj, gizmoOp_, gizmoMode_, gizmoModel)) {
         math::Mat4 m;
         GizmoToMat4(gizmoModel, m);
         math::Vec3 pos, scale;
         math::Quat rot;
         DecomposeModel(m, pos, scale, rot);
-        e.pos = pos;
-        e.scale = scale;
-        e.rot = rot;
+        if (!(Vec3Eq(pos, e.pos) && Vec3Eq(scale, e.scale) && QuatEq(rot, e.rot))) {
+            if (!gizmoDragOriginValid_) {
+                gizmoDragOriginPos_ = e.pos;
+                gizmoDragOriginRot_ = e.rot;
+                gizmoDragOriginScale_ = e.scale;
+                gizmoDragOriginValid_ = true;
+            }
+            history_.Push(std::make_unique<EditTransformCommand>(
+                &entities_, selected_, gizmoDragOriginPos_, gizmoDragOriginRot_,
+                gizmoDragOriginScale_, pos, rot, scale, EditTransformCommand::kAll));
+        }
     }
     gizmoDragActive_ = ImGuizmo::IsUsing();
+    if (!gizmoDragActive_) {
+        // The drag just ended: seal the command it produced so a FUTURE drag of
+        // the same entity starts its own undo step (one drag = one undo step).
+        if (gizmoDragOriginValid_) {
+            if (EditTransformCommand* top =
+                    dynamic_cast<EditTransformCommand*>(history_.TopUndo())) {
+                if (top->Matches(selected_, EditTransformCommand::kAll)) top->Seal();
+            }
+        }
+        gizmoDragOriginValid_ = false;
+    }
 
     if (smokeMode_ && !gizmoDrawn_) {
         gizmoDrawn_ = true;
@@ -881,7 +927,8 @@ void EditorApp::BuildImGuiUI() {
         ImGui::SameLine();
         if (ImGui::Button("删除")) {
             if (selected_ >= 0 && selected_ < static_cast<int>(entities_.size())) {
-                entities_.erase(entities_.begin() + selected_);
+                history_.Push(std::make_unique<DeleteEntityCommand>(
+                    &entities_, static_cast<size_t>(selected_)));
                 selected_ = -1;
             }
         }
@@ -1007,31 +1054,111 @@ void EditorApp::RunUISmokeTest() {
         check(math::Distance(rot.Rotate({0, 0, -1}), q.Rotate({0, 0, -1})) < 1e-3f,
               "gizmo round-trip preserves rotation");
     }
-    // The write-back path must update the selected entity's transform.
-    if (selected_ >= 0 && selected_ < static_cast<int>(entities_.size())) {
-        SceneEntity& sel = entities_[static_cast<size_t>(selected_)];
-        const math::Vec3 posBefore = sel.pos;
-        const math::Vec3 scaleBefore = sel.scale;
-        const math::Quat rotBefore = sel.rot;
-        math::Mat4 model = math::Mat4::Translation(sel.pos) * sel.rot.ToMat4() *
-                           math::Mat4::Scale(sel.scale);
-        float gizmo[16];
-        Mat4ToGizmo(model, gizmo);
-        // Simulate a translate drag: nudge the translation column, read back.
-        gizmo[12] += 0.5f;
-        gizmo[13] -= 0.25f;
-        gizmo[14] += 0.125f;
-        math::Mat4 m;
-        GizmoToMat4(gizmo, m);
-        math::Vec3 p, s;
-        math::Quat q;
-        DecomposeModel(m, p, s, q);
-        sel.pos = p;
-        check(nearVec(sel.pos, posBefore + math::Vec3{0.5f, -0.25f, 0.125f}),
-              "gizmo drag write-back updates entity position");
-        sel.pos = posBefore;
-        sel.scale = scaleBefore;
-        sel.rot = rotBefore;
+    // --- Undo/redo: scene edits route through the history command stack ---
+    // Do -> undo -> redo on the real editor scene: push transform edits,
+    // verify the merge policy (consecutive same-field edits = one undo step)
+    // and the drag-end seal (the next drag = a new undo step), then drive
+    // Ctrl+Z / Ctrl+Y through the real keyboard event path.
+    {
+        const size_t idx = 0; // deterministic: the first scene entity
+        check(idx < entities_.size(), "undo/redo: smoke has an entity to edit");
+        if (idx < entities_.size()) {
+            SceneEntity& sel = entities_[idx];
+            const math::Vec3 orig = sel.pos;
+            const math::Vec3 step1 = orig + math::Vec3{0.5f, -0.25f, 0.125f};
+            const math::Vec3 step2 = step1 + math::Vec3{0.1f, 0.2f, 0.3f};
+            const math::Vec3 step3 = step2 + math::Vec3{0.2f, -0.3f, 0.4f};
+            const size_t depthBefore = history_.UndoDepth();
+
+            auto editPos = [&](const math::Vec3& from, const math::Vec3& to) {
+                history_.Push(std::make_unique<EditTransformCommand>(
+                    &entities_, static_cast<int>(idx), from, sel.rot, sel.scale, to, sel.rot,
+                    sel.scale, EditTransformCommand::kPos));
+            };
+
+            editPos(orig, step1);
+            check(nearVec(sel.pos, step1),
+                  "undo/redo: transform edit applies through the command stack");
+            editPos(step1, step2); // consecutive same-field edit coalesces
+            check(history_.UndoDepth() == depthBefore + 1,
+                  "undo/redo: consecutive same-field edits merge into one undo step");
+            check(nearVec(sel.pos, step2),
+                  "undo/redo: merged command holds the final value");
+
+            // Seal the top command (what the gizmo does when a drag ends): the
+            // next edit must open a fresh undo step.
+            if (EditTransformCommand* top =
+                    dynamic_cast<EditTransformCommand*>(history_.TopUndo())) {
+                top->Seal();
+            }
+            editPos(step2, step3);
+            check(history_.UndoDepth() == depthBefore + 2,
+                  "undo/redo: sealed command opens a new undo step");
+            check(nearVec(sel.pos, step3), "undo/redo: post-seal edit applies");
+
+            // Ctrl+Z / Ctrl+Y through the real keyboard event path.
+            auto shortcut = [this](platform::Key key, bool withCtrl) {
+                if (withCtrl) {
+                    platform::InputEvent ctrlDown;
+                    ctrlDown.type = platform::InputEvent::Type::KeyDown;
+                    ctrlDown.key = platform::Key::Control;
+                    Input()->HandleEvent(ctrlDown);
+                    OnEvent(ctrlDown);
+                }
+                platform::InputEvent press;
+                press.type = platform::InputEvent::Type::KeyDown;
+                press.key = key;
+                Input()->HandleEvent(press);
+                OnEvent(press);
+                if (withCtrl) {
+                    platform::InputEvent ctrlUp;
+                    ctrlUp.type = platform::InputEvent::Type::KeyUp;
+                    ctrlUp.key = platform::Key::Control;
+                    Input()->HandleEvent(ctrlUp);
+                    OnEvent(ctrlUp);
+                }
+            };
+            shortcut(platform::Key::Z, true);
+            check(nearVec(sel.pos, step2), "undo/redo: Ctrl+Z undoes the post-seal edit");
+            shortcut(platform::Key::Z, true);
+            check(nearVec(sel.pos, orig), "undo/redo: Ctrl+Z undoes the merged drag");
+            shortcut(platform::Key::Y, true);
+            check(nearVec(sel.pos, step2), "undo/redo: Ctrl+Y redoes the merged drag");
+            shortcut(platform::Key::Y, true);
+            check(nearVec(sel.pos, step3), "undo/redo: Ctrl+Y redoes the post-seal edit");
+            // Leave the scene as it was: undo everything we just did.
+            shortcut(platform::Key::Z, true);
+            shortcut(platform::Key::Z, true);
+            check(nearVec(sel.pos, orig),
+                  "undo/redo: restores the original transform");
+        }
+    }
+
+    // --- Add/delete index stability through the command stack ---
+    // add -> delete -> undo (restore) -> redo (delete again) must keep every
+    // other entity index valid: commands record the index + an entity copy and
+    // rely on LIFO undo / FIFO redo to execute against the exact layout they
+    // captured.
+    {
+        const size_t baseCount = entities_.size();
+        check(baseCount > 1, "undo/redo: index-stability smoke needs entities");
+        if (baseCount > 1) {
+            const size_t mid = 1;
+            const std::string nameAtMid = entities_[mid].name;
+            const SceneEntity sample = entities_[mid]; // valid-mesh stand-in
+            history_.Push(std::make_unique<AddEntityCommand>(&entities_, sample, mid));
+            check(entities_.size() == baseCount + 1 && entities_[mid].name == sample.name,
+                  "undo/redo: add inserts at the recorded index");
+            history_.Push(std::make_unique<DeleteEntityCommand>(&entities_, mid));
+            check(entities_.size() == baseCount && entities_[mid].name == nameAtMid,
+                  "undo/redo: delete removes the inserted entity (indices stable)");
+            history_.Undo();
+            check(entities_.size() == baseCount + 1 && entities_[mid].name == sample.name,
+                  "undo/redo: undo delete restores the entity at its recorded index");
+            history_.Redo();
+            check(entities_.size() == baseCount && entities_[mid].name == nameAtMid,
+                  "undo/redo: redo delete removes it again (indices stable)");
+        }
     }
 
     // --- Gizmo activation/drag (deterministic, drives ImGuizmo's input path) ---
@@ -1116,7 +1243,8 @@ void EditorApp::AddEntity(const std::string& meshKey) {
     }
     if (ResolveMesh(e)) {
         ApplyMaterialParams(e);
-        entities_.push_back(std::move(e));
+        const size_t insertAt = entities_.size();
+        history_.Push(std::make_unique<AddEntityCommand>(&entities_, e, insertAt));
         selected_ = static_cast<int>(entities_.size()) - 1;
     }
 }
@@ -1376,7 +1504,16 @@ void EditorApp::LoadScene(const std::string& path) {
     if (!loaded.empty()) {
         entities_ = std::move(loaded);
         selected_ = -1;
+        history_.Clear(); // undo history from the previous scene is invalid
         NEON_LOG_INFO("Scene loaded (%zu entities)", entities_.size());
+    }
+}
+
+void EditorApp::ClampSelection() {
+    if (entities_.empty()) {
+        selected_ = -1;
+    } else if (selected_ >= static_cast<int>(entities_.size())) {
+        selected_ = static_cast<int>(entities_.size()) - 1;
     }
 }
 
