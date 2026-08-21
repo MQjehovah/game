@@ -22,7 +22,7 @@ int main(int argc, char** argv) {
             neon::editor::pack::PackConfig cfg;
             cfg.projectDir = projectDir;
             cfg.outDir = outDir;
-            cfg.playerSource = "build/neon_rush.exe";
+            cfg.playerSource = "build/neon_game.exe";
             neon::editor::pack::PackageReport r = neon::editor::pack::PackProject(cfg);
             for (const std::string& e : r.errors) std::printf("PACK ERROR: %s\n", e.c_str());
             for (const std::string& w : r.warnings) std::printf("PACK WARN:  %s\n", w.c_str());

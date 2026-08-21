@@ -175,10 +175,14 @@ core::Result<PackBoot> BootPack(const std::string& packPath) {
 
 bool PlayerApp::OnCreate() {
     title_ = cfg_.manifest.title.empty() ? "Neon Game" : cfg_.manifest.title;
-    if (!LoadSceneJson()) return false;
+    if (!LoadSceneJson()) {
+        CleanupUnpackedDir();
+        return false;
+    }
 
     if (!renderer_.Init(Window())) {
         NEON_LOG_ERROR("Player: renderer init failed");
+        CleanupUnpackedDir();
         return false;
     }
     assetMgr_.Init(&renderer_);
@@ -199,6 +203,7 @@ bool PlayerApp::OnCreate() {
     core::Status st = runtime_.Start(sceneJson_, rcfg);
     if (!st.Ok()) {
         NEON_LOG_ERROR("Player: runtime start failed: %s", st.Error().c_str());
+        CleanupUnpackedDir();
         return false;
     }
     started_ = true;
@@ -207,6 +212,13 @@ bool PlayerApp::OnCreate() {
                  title_.c_str(), runtime_.EntityCount(), runtime_.ScriptCount(),
                  runtime_.BehaviorTreeCount(), runtime_.DrawCount());
     return true;
+}
+
+void PlayerApp::CleanupUnpackedDir() {
+    if (!cfg_.keep && !cfg_.unpackedDir.empty()) {
+        RemoveTree(cfg_.unpackedDir);
+        cfg_.unpackedDir.clear();
+    }
 }
 
 bool PlayerApp::LoadSceneJson() {
@@ -219,6 +231,12 @@ bool PlayerApp::LoadSceneJson() {
             scenePath.find('.') == std::string::npos) {
             scenePath = "scenes/" + scenePath + ".json";
         }
+    }
+    // Defense-in-depth: reject a startScene/--scene that could escape the
+    // unpacked dir (a hostile pack's manifest or a hand-typed override).
+    if (core::IsUnsafeRelPath(scenePath)) {
+        NEON_LOG_ERROR("Player: unsafe scene path '%s'", scenePath.c_str());
+        return false;
     }
     if (!ReadFileAll(cfg_.unpackedDir + "/" + scenePath, sceneJson_)) {
         NEON_LOG_ERROR("Player: cannot read scene '%s'", scenePath.c_str());
@@ -243,6 +261,11 @@ void PlayerApp::OnUpdate(float dt) {
 // Orbit camera around a focus point. Scripts control the focus through the
 // GameVar "cameraFocus" = {x,y,z} (data-driven framing); the default is the
 // world origin. Mouse drag orbits, wheel zooms.
+//
+// NOTE: this reads MouseDelta/WheelDelta every frame and scripts see the SAME
+// accumulated values via InputMouseX/Y (the input state only clears at
+// EndFrame), so the orbit camera and data-driven scripts double-consume mouse
+// input. See the PlayerApp class comment for the FPS-camera caveat.
 void PlayerApp::UpdateCamera(float dt) {
     math::Vec3 focus = focus_;
     script::Value f = runtime_.GameVars().Get("cameraFocus");
@@ -335,9 +358,7 @@ void PlayerApp::OnShutdown() {
         runtime_.Stop();
     }
     renderer_.Shutdown();
-    if (!cfg_.keep && !cfg_.unpackedDir.empty()) {
-        RemoveTree(cfg_.unpackedDir);
-    }
+    CleanupUnpackedDir();
 }
 
 // Logs every GameVar so the smoke-test verification can grep a concrete result

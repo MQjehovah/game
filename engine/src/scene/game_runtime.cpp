@@ -1,6 +1,7 @@
 #include "neon/scene/game_runtime.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdint>
 #include <fstream>
 #include <iterator>
@@ -8,8 +9,19 @@
 
 #include "neon/assets/asset_manager.hpp"
 #include "neon/core/log.hpp"
+#include "neon/core/pack.hpp"
 #include "neon/gfx/renderer.hpp"
 #include "neon/scene/scene_file.hpp"
+
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#else
+#include <dirent.h>
+#include <sys/stat.h>
+#endif
 
 namespace neon::scene {
 namespace {
@@ -46,6 +58,76 @@ gfx::Color ParseColorHex(const std::string& hex) {
             byte(hex[5], hex[6]) / 255.0f, 1.0f};
 }
 
+// Case-insensitive suffix match ("main.JSON" counts as a .json prefab).
+bool HasSuffix(const std::string& s, const std::string& suffix) {
+    if (s.size() < suffix.size()) return false;
+    for (size_t i = 0; i < suffix.size(); ++i) {
+        const char a = static_cast<char>(std::tolower(static_cast<unsigned char>(
+            s[s.size() - suffix.size() + i])));
+        const char b = static_cast<char>(std::tolower(static_cast<unsigned char>(suffix[i])));
+        if (a != b) return false;
+    }
+    return true;
+}
+
+// "a/b/c.json" -> "c" (the prefab registration name).
+std::string FileStem(const std::string& p) {
+    const size_t slash = p.find_last_of("/\\");
+    const std::string name = slash == std::string::npos ? p : p.substr(slash + 1);
+    const size_t dot = name.find_last_of('.');
+    return dot == std::string::npos ? name : name.substr(0, dot);
+}
+
+// Recursively lists every file under `absDir` (sorted, forward-slash relative
+// to `absDir`). Missing directories yield an empty list (not an error). Used to
+// load a packed game's prefabs/ tree from the unpacked directory.
+void ListFilesRecursive(const std::string& absDir, const std::string& prefix,
+                        std::vector<std::string>& out) {
+#if defined(_WIN32)
+    std::string pattern = absDir + "\\*";
+    WIN32_FIND_DATAA fd;
+    HANDLE h = FindFirstFileA(pattern.c_str(), &fd);
+    if (h == INVALID_HANDLE_VALUE) return;
+    std::vector<std::pair<std::string, bool>> entries; // name, isDir
+    do {
+        const std::string name = fd.cFileName;
+        if (name == "." || name == "..") continue;
+        entries.emplace_back(name, (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0);
+    } while (FindNextFileA(h, &fd));
+    FindClose(h);
+    std::sort(entries.begin(), entries.end());
+    for (const auto& e : entries) {
+        const std::string rel = prefix.empty() ? e.first : prefix + "/" + e.first;
+        if (e.second)
+            ListFilesRecursive(absDir + "/" + e.first, rel, out);
+        else
+            out.push_back(rel);
+    }
+#else
+    DIR* d = ::opendir(absDir.c_str());
+    if (!d) return;
+    std::vector<std::pair<std::string, bool>> entries;
+    struct dirent* e;
+    while ((e = ::readdir(d)) != nullptr) {
+        const std::string name = e->d_name;
+        if (name == "." || name == "..") continue;
+        const std::string full = absDir + "/" + name;
+        struct stat st;
+        if (::stat(full.c_str(), &st) != 0) continue;
+        entries.emplace_back(name, S_ISDIR(st.st_mode));
+    }
+    ::closedir(d);
+    std::sort(entries.begin(), entries.end());
+    for (const auto& e : entries) {
+        const std::string rel = prefix.empty() ? e.first : prefix + "/" + e.first;
+        if (e.second)
+            ListFilesRecursive(absDir + "/" + e.first, rel, out);
+        else
+            out.push_back(rel);
+    }
+#endif
+}
+
 } // namespace
 
 core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig cfg) {
@@ -57,13 +139,13 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     // Mesh keys are resolved lazily at Draw time (file-backed "obj:"/"gltf:"
     // plus procedural primitives), so instantiation validates structure but
     // not prefixes — a scene with an unresolvable key still plays headless.
+    // cfg_ must be assigned before LoadPrefabs/AttachScripts read it.
+    cfg_ = std::move(cfg);
     ComponentRegistry reg;
     RegisterBuiltinComponents(reg, /*assets=*/nullptr);
-    PrefabLibrary prefs;
-    auto inst = Instantiate(world_, parsed.Value(), prefs, reg);
+    LoadPrefabs(); // scene entities may reference prefabs by name (packed games)
+    auto inst = Instantiate(world_, parsed.Value(), prefs_, reg);
     if (!inst.Ok()) return core::Status::Err("runtime: " + inst.Error());
-
-    cfg_ = std::move(cfg);
 
     scriptCtx_.world = &world_;
     scriptCtx_.physics = &physics_;
@@ -111,6 +193,7 @@ void GameRuntime::Stop() {
     world_.Clear();
     physics_.Clear();
     scriptCtx_ = script::ScriptContext{};
+    prefs_ = PrefabLibrary{};
     running_ = false;
     simTime_ = 0.0;
 }
@@ -122,6 +205,14 @@ void GameRuntime::AttachScripts() {
         ecs::Entity ent = world_.EntityAt<SceneScript>(i);
         const SceneScript* s = world_.Get<SceneScript>(ent);
         if (!s || s->backend != "lua") continue;
+
+        // Defense-in-depth: a hand-crafted pack could reference ".." or an
+        // absolute path to read arbitrary local files. Reject such scripts.
+        if (neon::core::IsUnsafeRelPath(s->path)) {
+            NEON_LOG_CAT(neon::core::LogCategory::Script, neon::core::LogLevel::Warn,
+                         "runtime: skipping script '%s' (unsafe path)", s->path.c_str());
+            continue;
+        }
 
         const std::string full = FullScriptPath(s->path);
         if (scriptFailed_.count(full)) {
@@ -209,6 +300,15 @@ void GameRuntime::AttachTrees() {
                              "runtime: empty behavior tree reference 'bt:' (skipped)");
                 continue;
             }
+            // Defense-in-depth: reject names that could escape the base dir
+            // (a hostile "bt:../../secret" would otherwise read an arbitrary
+            // local file).
+            if (neon::core::IsUnsafeRelPath(name)) {
+                NEON_LOG_CAT(neon::core::LogCategory::Bt, neon::core::LogLevel::Error,
+                             "runtime: behavior tree '%s' has an unsafe name (skipped)",
+                             ref.c_str());
+                continue;
+            }
             treeText = ReadScript(FullScriptPath("behaviors/" + name + ".bt.json"));
             if (treeText.empty()) {
                 NEON_LOG_CAT(neon::core::LogCategory::Bt, neon::core::LogLevel::Error,
@@ -243,6 +343,37 @@ void GameRuntime::AttachTrees() {
         inst.ent = ent;
         inst.tree = std::move(tree);
         trees_.push_back(std::move(inst));
+    }
+}
+
+void GameRuntime::LoadPrefabs() {
+    prefs_ = PrefabLibrary{};
+    if (cfg_.scriptBaseDir.empty()) return; // disk-less hosts have no prefab tree
+    std::vector<std::string> files;
+    ListFilesRecursive(cfg_.scriptBaseDir + "/prefabs", "", files);
+    size_t loaded = 0;
+    for (const std::string& rel : files) {
+        if (!HasSuffix(rel, ".json")) continue;
+        const std::string name = FileStem(rel);
+        if (name.empty()) continue;
+        std::string text = ReadScript(FullScriptPath("prefabs/" + rel));
+        if (text.empty()) {
+            NEON_LOG_CAT(neon::core::LogCategory::Scene, neon::core::LogLevel::Warn,
+                         "runtime: prefab '%s' cannot be read (skipped)", rel.c_str());
+            continue;
+        }
+        core::Status st = prefs_.Add(name, text);
+        if (!st.Ok()) {
+            NEON_LOG_CAT(neon::core::LogCategory::Scene, neon::core::LogLevel::Warn,
+                         "runtime: prefab '%s' failed to load: %s (skipped)", rel.c_str(),
+                         st.Error().c_str());
+            continue;
+        }
+        ++loaded;
+    }
+    if (!files.empty()) {
+        NEON_LOG_CAT(neon::core::LogCategory::Scene, neon::core::LogLevel::Debug,
+                     "runtime: loaded %zu prefabs", loaded);
     }
 }
 

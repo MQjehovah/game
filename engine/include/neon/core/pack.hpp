@@ -104,6 +104,14 @@ private:
     std::string error_;
 };
 
+// True when a relative path could escape its base directory: it has a ".."
+// segment or is absolute (leading separator or a drive letter). Used to reject
+// hostile references (script paths, "bt:<name>", startScene overrides) that a
+// hand-crafted pack could use to read arbitrary local files. The packager
+// validates projects first; this is defense-in-depth at load time. An empty
+// path is NOT unsafe here (callers decide whether empty is valid).
+bool IsUnsafeRelPath(const std::string& path);
+
 // Expands every entry of `reader` under `destDir`: virtual paths use forward
 // slashes and map onto real subdirectories, which are created on demand. The
 // destination directory itself is created when missing. Returns Err on the

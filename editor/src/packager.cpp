@@ -625,8 +625,7 @@ std::vector<std::string> SortedKeys(const std::map<std::string, std::string>& m)
 const char kRunBat[] =
     "@echo off\r\n"
     "rem NeonEngine packaged game launcher (Windows).\r\n"
-    "rem NOTE: neon_game.exe is currently the neon_rush demo stand-in and does\r\n"
-    "rem NOT read game.pack yet; T4.7 ships the real data-driven player.\r\n"
+    "rem Runs game.pack with the generic data-driven neon_game player.\r\n"
     "cd /d \"%~dp0\"\r\n"
     "neon_game.exe --pack game.pack\r\n";
 
@@ -714,11 +713,10 @@ PackageReport PackProject(const PackConfig& cfg) {
 
     if (cfg.copyPlayer) {
         const std::string src =
-            cfg.playerSource.empty() ? std::string("build/neon_rush.exe") : cfg.playerSource;
+            cfg.playerSource.empty() ? std::string("build/neon_game.exe") : cfg.playerSource;
         if (!FileExists(src)) {
             r.warnings.push_back("player not copied: '" + src +
-                                 "' missing (T4.7 builds the real neon_game.exe; until then the "
-                                 "run script needs it)");
+                                 "' missing (build neon_game first; the run script needs it)");
         } else {
             std::vector<uint8_t> exeBytes;
             if (!ReadFileBytes(src, exeBytes)) {

@@ -1,0 +1,5 @@
+# The repo root .gitignore excludes any "scenes/" directory (the editor's
+# temp-scene pattern). This sample's scene must be committed for the CI
+# pack->unpack->run test, so re-include it here.
+!scenes/
+!scenes/main.json

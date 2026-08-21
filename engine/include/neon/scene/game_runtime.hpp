@@ -16,6 +16,7 @@
 #include "neon/gfx/mesh.hpp"
 #include "neon/physics/physics.hpp"
 #include "neon/platform/input.hpp"
+#include "neon/scene/scene_file.hpp"
 #include "neon/script/bindings.hpp"
 #include "neon/script/gamevars.hpp"
 #include "neon/script/script.hpp"
@@ -128,6 +129,10 @@ private:
 
     void AttachScripts();
     void AttachTrees();
+    // Loads every prefabs/*.json under cfg_.scriptBaseDir into prefs_ (no-op
+    // when the base dir is empty or the prefabs dir is absent). Scene entities
+    // can then reference prefabs by name, matching how packed games ship them.
+    void LoadPrefabs();
     void BuildDrawList();
     void ResolveDrawItem(DrawItem& item, gfx::Renderer& renderer);
     // Invokes a script global function and logs the first failure of a script
@@ -143,6 +148,7 @@ private:
     ecs::World world_;
     physics::World physics_;
     script::ScriptContext scriptCtx_; // owns the GameVars scripts + BT share
+    PrefabLibrary prefs_;             // prefabs loaded from <scriptBaseDir>/prefabs/
     std::unique_ptr<script::IScriptHost> host_; // one Lua host, deterministic RNG
     std::vector<ScriptInst> scripts_;
     std::vector<BtInst> trees_;

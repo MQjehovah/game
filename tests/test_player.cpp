@@ -5,9 +5,11 @@
 
 #include "neon/neon.hpp"
 #include "neon/core/pack.hpp"
+#include "neon/scene/game_manifest.hpp"
 #include "neon/scene/game_runtime.hpp"
 #include "neon/script/bindings.hpp"
 #include "helpers.hpp"
+#include "packager.hpp"
 
 using namespace neon;
 
@@ -367,4 +369,174 @@ TEST(PlayerUnpackInvalidReaderFails) {
     core::Status st = core::Unpack(bad, dst.Str());
     CHECK(!st.Ok());
     CHECK(!st.Error().empty());
+}
+
+// ---------------------------------------------------------------------------
+// Lua UTF-8 BOM + runtime traversal guards (review fixes)
+// ---------------------------------------------------------------------------
+
+// A BOM'd Lua source (the packager stores raw bytes, and Notepad/PowerShell
+// prepend a BOM) must load through GameRuntime::AttachScripts and run.
+TEST(PlayerRuntimeBomScriptRuns) {
+    const char* scene = R"({
+      "entities": [
+        {"name": "Counter", "components": {
+          "transform": {"pos": [0, 0, 0]},
+          "script": {"backend": "lua", "path": "ai.lua"}
+        }}
+      ]
+    })";
+    const char* lua =
+        "\xEF\xBB\xBF" // UTF-8 BOM
+        "function on_start(e)\n"
+        "  SetVar(\"started\", true)\n"
+        "end\n"
+        "function on_update(e, dt)\n"
+        "  local t = GetVar(\"ticks\")\n"
+        "  if t == nil then t = 0 end\n"
+        "  SetVar(\"ticks\", t + 1)\n"
+        "end\n";
+    scene::GameRuntime runtime;
+    scene::GameRuntimeConfig cfg;
+    cfg.readScript = [&](const std::string& p) {
+        return p == "ai.lua" ? std::string(lua) : std::string();
+    };
+    core::Status st = runtime.Start(scene, cfg);
+    CHECK(st.Ok());
+    CHECK_EQ(runtime.ScriptCount(), 1u);
+    CHECK(runtime.GameVars().Get("started").boolean);
+    for (int i = 0; i < 60; ++i) runtime.Tick(1.0f / 60.0f);
+    CHECK_EQ(runtime.GameVars().Get("ticks").number, 60.0);
+    runtime.Stop();
+}
+
+// A script path with ".." is rejected at load time (defense-in-depth): the
+// entity stays, the script is skipped, Start still succeeds.
+TEST(PlayerScriptUnsafePathSkipped) {
+    const char* scene = R"({
+      "entities": [
+        {"name": "Evil", "components": {
+          "transform": {"pos": [0, 0, 0]},
+          "script": {"backend": "lua", "path": "../evil.lua"}
+        }}
+      ]
+    })";
+    scene::GameRuntime runtime;
+    scene::GameRuntimeConfig cfg;
+    cfg.readScript = [](const std::string&) { return std::string("function on_update(e, dt) end"); };
+    core::Status st = runtime.Start(scene, cfg);
+    CHECK(st.Ok());
+    CHECK_EQ(runtime.ScriptCount(), 0u);
+    CHECK_EQ(runtime.EntityCount(), 1u);
+    runtime.Tick(1.0f / 60.0f); // must not crash
+}
+
+// A "bt:" name with ".." is rejected: no tree, Start still succeeds.
+TEST(PlayerBtUnsafeNameSkipped) {
+    const char* scene = R"({
+      "entities": [
+        {"name": "Evil", "components": {
+          "transform": {"pos": [0, 0, 0]},
+          "behaviorTree": {"tree": "bt:../../secret"}
+        }}
+      ]
+    })";
+    scene::GameRuntime runtime;
+    scene::GameRuntimeConfig cfg;
+    cfg.readScript = [](const std::string&) { return std::string("{\"root\":{\"type\":\"wait\"}}"); };
+    core::Status st = runtime.Start(scene, cfg);
+    CHECK(st.Ok());
+    CHECK_EQ(runtime.BehaviorTreeCount(), 0u);
+    runtime.Tick(1.0f / 60.0f);
+}
+
+// core::IsUnsafeRelPath rejects ".." / absolute forms and accepts clean ones.
+TEST(PlayerIsUnsafeRelPath) {
+    CHECK(core::IsUnsafeRelPath("../x.lua"));
+    CHECK(core::IsUnsafeRelPath("a/../../x.lua"));
+    CHECK(core::IsUnsafeRelPath("/etc/passwd"));
+    CHECK(core::IsUnsafeRelPath("C:/evil.lua"));
+    CHECK(core::IsUnsafeRelPath(".."));
+    CHECK(!core::IsUnsafeRelPath("scripts/ai.lua"));
+    CHECK(!core::IsUnsafeRelPath("cycle"));
+    CHECK(!core::IsUnsafeRelPath("a/b/c.lua"));
+    CHECK(!core::IsUnsafeRelPath(""));
+}
+
+// ---------------------------------------------------------------------------
+// Committed sample project: package -> unpack -> headless GameRuntime run.
+// The full "edit -> package -> run" loop, reproducible in CI. Reads
+// tests/data/neon_game_sample/ from the repo root (ctest runs there).
+// ---------------------------------------------------------------------------
+
+TEST(PlayerCommittedSamplePackUnpackRun) {
+    const std::string sample = "tests/data/neon_game_sample";
+
+    test::TempDir outTmp;
+    neon::editor::pack::PackConfig pcfg;
+    pcfg.projectDir = sample;
+    pcfg.outDir = outTmp.Str() + "/out";
+    pcfg.copyPlayer = false; // tests must not depend on the build tree
+    neon::editor::pack::PackageReport rep = neon::editor::pack::PackProject(pcfg);
+    if (!rep.ok)
+        for (const std::string& e : rep.errors) std::printf("  PACK ERROR: %s\n", e.c_str());
+    CHECK(rep.ok);
+    CHECK(rep.errors.empty());
+    CHECK_EQ(rep.fileCount, 5u); // game.json + scene + prefab + behavior + script
+
+    std::string packText;
+    CHECK(test::ReadFileAll(pcfg.outDir + "/game.pack", packText));
+    std::vector<uint8_t> packBytes(packText.begin(), packText.end());
+    core::PackReader reader(packBytes);
+    CHECK(reader.Valid());
+    CHECK(reader.Has("game.json"));
+    CHECK(reader.Has("scenes/main.json"));
+    CHECK(reader.Has("prefabs/pillar.json"));
+    CHECK(reader.Has("behaviors/cycle.bt.json"));
+    CHECK(reader.Has("scripts/ai.lua"));
+
+    test::TempDir runTmp;
+    CHECK(core::Unpack(reader, runTmp.Str()).Ok());
+
+    std::string manifestText;
+    CHECK(test::ReadFileAll(runTmp.Str() + "/game.json", manifestText));
+    auto manifest = scene::GameManifest::Load(manifestText);
+    CHECK(manifest.Ok());
+    if (!manifest.Ok()) return;
+    CHECK_EQ(manifest.Value().startScene, std::string("scenes/main.json"));
+
+    std::string sceneJson;
+    CHECK(test::ReadFileAll(runTmp.Str() + "/" + manifest.Value().startScene, sceneJson));
+
+    scene::GameRuntime runtime;
+    scene::GameRuntimeConfig rcfg;
+    rcfg.scriptBaseDir = runTmp.Str();
+    rcfg.assetBaseDir = runTmp.Str();
+    core::Status st = runtime.Start(sceneJson, rcfg);
+    if (!st.Ok()) std::printf("  RUNTIME ERROR: %s\n", st.Error().c_str());
+    CHECK(st.Ok());
+    // Ground + Pillar(prefab) + Spinner(script) + Beacon(behavior tree).
+    CHECK_EQ(runtime.EntityCount(), 4u);
+    CHECK_EQ(runtime.ScriptCount(), 1u);
+    CHECK_EQ(runtime.BehaviorTreeCount(), 1u);
+    CHECK(runtime.GameVars().Get("started").boolean);
+
+    for (int i = 0; i < 120; ++i) runtime.Tick(1.0f / 60.0f); // 2.0s
+    // The script ran: ticks incremented once per tick.
+    CHECK_EQ(runtime.GameVars().Get("ticks").number, 120.0);
+
+    // The bt:cycle named tree loaded from the unpacked behaviors/ and wrote
+    // its blackboard entry after the 0.5s wait.
+    ecs::Entity btEnt;
+    {
+        auto view = runtime.World().ViewAll<scene::SceneBehaviorTree>();
+        CHECK_EQ(view.Size(), 1u);
+        if (view.Size() == 1u) btEnt = runtime.World().EntityAt<scene::SceneBehaviorTree>(0);
+    }
+    CHECK(btEnt.IsValid());
+    script::Value done = runtime.EntityBlackboardValue(btEnt, "bt_done");
+    CHECK(done.type == script::Value::Type::Bool);
+    CHECK(done.boolean);
+
+    runtime.Stop();
 }

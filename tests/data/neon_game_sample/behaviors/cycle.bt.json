@@ -1,0 +1,11 @@
+{
+  "root": {
+    "type": "sequence",
+    "children": [
+      { "type": "wait", "args": { "seconds": 0.5 } },
+      { "type": "blackboard_set", "args": { "key": "bt_done", "value": true } },
+      { "type": "wait", "args": { "seconds": 0.5 } },
+      { "type": "blackboard_set", "args": { "key": "cycle", "value": true } }
+    ]
+  }
+}

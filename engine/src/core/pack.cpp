@@ -292,7 +292,13 @@ bool MakeParentDirs(const std::string& path) {
 // leading separator) or containing a ".." segment. Packs are produced by the
 // packager with normalized relative keys, so this is a defense-in-depth guard.
 bool UnsafeEntryPath(const std::string& p) {
-    if (p.empty()) return true;
+    return p.empty() || IsUnsafeRelPath(p);
+}
+
+} // namespace
+
+bool IsUnsafeRelPath(const std::string& p) {
+    if (p.empty()) return false;
     if (p[0] == '/' || p[0] == '\\') return true;
     if (p.size() >= 2 && p[1] == ':') return true;
     size_t start = 0;
@@ -305,8 +311,6 @@ bool UnsafeEntryPath(const std::string& p) {
     }
     return false;
 }
-
-} // namespace
 
 core::Status Unpack(const PackReader& reader, const std::string& destDir) {
     if (!reader.Valid()) return core::Status::Err("unpack: " + reader.Error());

@@ -781,7 +781,7 @@ void EditorApp::RunPackage() {
     pack::PackConfig cfg;
     cfg.projectDir = projectDir_;
     cfg.outDir = packOutDirBuf_;
-    cfg.playerSource = "build/neon_rush.exe";
+    cfg.playerSource = "build/neon_game.exe";
     packReport_ = pack::PackProject(cfg);
     packRan_ = true;
     if (packReport_.ok) {
@@ -839,8 +839,8 @@ void EditorApp::BuildPackagePanel() {
             ImGui::Separator();
         }
         ImGui::TextDisabled(
-            "注意: neon_game.exe 目前为 neon_rush 演示占位，不读取 game.pack。\n"
-            "T4.7 将提供真正的数据驱动播放器。");
+            "neon_game.exe 为数据驱动播放器（读取 game.pack）。\n"
+            "若尚未构建 neon_game，播放器复制会给出警告，打包仍会生成 game.pack 与 run.bat。");
     }
     ImGui::End();
 }

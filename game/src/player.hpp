@@ -46,6 +46,13 @@ struct PlayerConfig {
 // a focus point (world origin by default, overridable by a script via the
 // "cameraFocus" GameVar = {x,y,z}); mouse drag orbits, wheel zooms, Esc quits.
 // WASD does NOT move the camera: data-driven scripts read input themselves.
+//
+// NOTE (input double-consume): the orbit camera reads MouseDelta/WheelDelta
+// every frame, and scripts see the SAME accumulated values through the
+// InputMouseX/Y bindings — a script "consuming" the mouse does not hide it
+// from the camera (the input state only resets at EndFrame). A data-driven
+// game that needs exclusive mouse control (e.g. an FPS look script) will
+// require a capture/lock option on the player.
 class PlayerApp : public core::Application {
 public:
     explicit PlayerApp(PlayerConfig cfg) : cfg_(std::move(cfg)) {}
@@ -58,6 +65,10 @@ public:
 
 private:
     bool LoadSceneJson();
+    // Removes the unpacked pack dir unless --keep; safe to call repeatedly and
+    // on boot-failure paths (Application::Run does not call OnShutdown when
+    // OnCreate fails, so every OnCreate error path must clean up itself).
+    void CleanupUnpackedDir();
     void UpdateCamera(float dt);
     void DrawOverlay();
     void CaptureScreenshotIfDue();

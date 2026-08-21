@@ -134,6 +134,29 @@ TEST(ScriptUtf8RoundTrip) {
     host->Shutdown();
 }
 
+// A leading UTF-8 BOM (Notepad/PowerShell default) must not break Load: the
+// host strips it before compiling, and the defined functions stay callable.
+TEST(ScriptLoadBomTolerated) {
+    auto host = MakeHost();
+    const std::string source = std::string("\xEF\xBB\xBF", 3) +
+                               "function add(a, b) return a + b end\n";
+    CHECK(host->Load(source));
+    CHECK(host->Run().Ok());
+    CHECK(host->HasFunction("add"));
+    auto res = host->Call("add", {script::Value::Num(2), script::Value::Num(3)});
+    CHECK(res.Ok());
+    CHECK_EQ(res.Value().number, 5.0);
+    host->Shutdown();
+}
+
+// CheckSyntax (editor lint path) also tolerates a BOM'd source.
+TEST(ScriptCheckSyntaxBomTolerated) {
+    auto host = MakeHost();
+    const std::string source = std::string("\xEF\xBB\xBF", 3) + "function on_update(e, dt) end\n";
+    CHECK(host->CheckSyntax(source));
+    host->Shutdown();
+}
+
 // A syntax error is reported at Load time; Run then errors without crashing.
 TEST(ScriptSyntaxError) {
     auto host = MakeHost();

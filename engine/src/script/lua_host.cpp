@@ -97,6 +97,18 @@ int ParseLineNumber(const std::string& message) {
 // stack. Mirrors the depth used by test_json.cpp's JsonDeepNesting.
 constexpr int kMaxConversionDepth = 1000;
 
+// Strips a leading UTF-8 BOM (EF BB BF), which Windows editors and PowerShell
+// often prepend to saved files. luaL_loadbuffer does NOT skip a BOM and would
+// report "unexpected symbol near '<\239>'", so every load path (GameRuntime,
+// the editor's script panel, pack readers) tolerates BOM'd sources here.
+void StripUtf8Bom(std::string& s) {
+    if (s.size() >= 3 && static_cast<unsigned char>(s[0]) == 0xEF &&
+        static_cast<unsigned char>(s[1]) == 0xBB &&
+        static_cast<unsigned char>(s[2]) == 0xBF) {
+        s.erase(0, 3);
+    }
+}
+
 void PushValueImpl(lua_State* L, const Value& v, int depth, std::unordered_set<const void*>& seen);
 Value PopValueImpl(lua_State* L, int index, int depth, std::unordered_set<const void*>& seen);
 
@@ -376,7 +388,9 @@ int LuaHost::NativeCallClosure(lua_State* L) {
 
 bool LuaHost::Load(const std::string& source) {
     if (!impl_->L) return false;
-    if (luaL_loadbuffer(impl_->L, source.data(), source.size(), "[neon]") != LUA_OK) {
+    std::string src = source;
+    StripUtf8Bom(src);
+    if (luaL_loadbuffer(impl_->L, src.data(), src.size(), "[neon]") != LUA_OK) {
         CaptureError();
         impl_->hasChunk = false;
         return false;
@@ -393,7 +407,9 @@ bool LuaHost::Load(const std::string& source) {
 
 bool LuaHost::CheckSyntax(const std::string& source) {
     if (!impl_->L) return false;
-    if (luaL_loadbuffer(impl_->L, source.data(), source.size(), "[neon]") != LUA_OK) {
+    std::string src = source;
+    StripUtf8Bom(src);
+    if (luaL_loadbuffer(impl_->L, src.data(), src.size(), "[neon]") != LUA_OK) {
         CaptureError();
         return false;
     }

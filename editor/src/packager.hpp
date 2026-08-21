@@ -55,7 +55,7 @@ struct PackageReport {
 struct PackConfig {
     std::string projectDir;   // project root ("" = ".")
     std::string outDir;       // output directory ("" -> error)
-    std::string playerSource; // exe to copy as neon_game.exe ("" = "build/neon_rush.exe")
+    std::string playerSource; // exe to copy as neon_game.exe ("" = "build/neon_game.exe")
     bool copyPlayer = true;   // false skips the player copy (tests / CI)
     bool checkScriptSyntax = true; // run Lua CheckSyntax on every scripts/*.lua
 };

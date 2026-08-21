@@ -1,0 +1,5 @@
+{
+  "components": {
+    "mesh": { "meshKey": "cube", "material": { "colorHex": "#7a5a3a", "roughness": 0.6 } }
+  }
+}
