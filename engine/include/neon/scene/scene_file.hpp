@@ -58,6 +58,12 @@ struct SceneFile {
     // references are preserved, not expanded).
     core::Json ToJson() const;
 
+    // Asset references declared by the scene's mesh components: the base
+    // meshKey, every LOD level's meshKey and the PBR texture paths (albedo /
+    // metallic-roughness / AO / emissive, top-level and under "material").
+    // Used by the chunk streamer to fill a WorldChunk's preload list.
+    std::vector<std::string> MeshKeys() const;
+
     // Build a single entity's JSON ({"name", "components": {transform, mesh}})
     // from raw editor-like data. The meshKey is stored verbatim: the caller
     // chooses a key the runtime can resolve (e.g. "obj:..." / "gltf:..." for
@@ -187,7 +193,12 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
 // SceneName; an explicit prefab or instance `name` component overrides that
 // field value. Returns the created entity count, or an error; on error all
 // entities created by this call are destroyed (transactional).
+//
+// When `outEntities` is non-null it is cleared and filled with the created
+// entities in creation order (on success only) - the chunk streamer uses this
+// to track which entities a chunk owns for unload.
 core::Result<int> Instantiate(ecs::World& world, const SceneFile& scene,
-                              const PrefabLibrary& prefs, const ComponentRegistry& reg);
+                              const PrefabLibrary& prefs, const ComponentRegistry& reg,
+                              std::vector<ecs::Entity>* outEntities = nullptr);
 
 } // namespace neon::scene

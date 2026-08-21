@@ -42,6 +42,7 @@ set(ENGINE_CORE_SOURCES
   engine/src/scene/scene_manager.cpp
   engine/src/scene/game_manifest.cpp
   engine/src/scene/game_runtime.cpp
+  engine/src/scene/world_chunk.cpp
   engine/src/script/lua_host.cpp
   engine/src/script/script_manager.cpp
   engine/src/script/gamevars.cpp
@@ -269,6 +270,7 @@ add_executable(neon_tests tests/test_main.cpp tests/test_serialize.cpp tests/tes
   tests/test_audio.cpp
   tests/test_async.cpp
   tests/test_lod.cpp
+  tests/test_world_chunk.cpp
   editor/src/history.cpp editor/src/packager.cpp)
 target_link_libraries(neon_tests PRIVATE neon_engine)
 # test_history.cpp includes the editor's generic undo/redo stack header.

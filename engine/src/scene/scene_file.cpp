@@ -223,6 +223,32 @@ core::Json SceneFile::ToJson() const {
     return root;
 }
 
+std::vector<std::string> SceneFile::MeshKeys() const {
+    std::vector<std::string> keys;
+    const char* texFields[] = {"albedoTex", "mrTex", "aoTex", "emissiveTex"};
+    auto addString = [&keys](const core::Json* node) {
+        if (node && node->IsString() && !node->GetString().empty()) keys.push_back(node->GetString());
+    };
+    for (const EntityDef& e : entities) {
+        for (const ComponentDef& c : e.components) {
+            if (c.name != "mesh") continue;
+            addString(c.data.Get("meshKey"));
+            if (const core::Json* lod = c.data.Get("lod")) {
+                if (lod->IsArray()) {
+                    for (const core::Json& item : lod->Items()) addString(item.Get("meshKey"));
+                }
+            }
+            for (const char* f : texFields) addString(c.data.Get(f));
+            if (const core::Json* mat = c.data.Get("material")) {
+                if (mat->IsObject()) {
+                    for (const char* f : texFields) addString(mat->Get(f));
+                }
+            }
+        }
+    }
+    return keys;
+}
+
 core::Result<core::Json> SceneFile::MakeEntity(const std::string& name,
                                                const math::Vec3& pos,
                                                const math::Quat& rot,
@@ -597,9 +623,11 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
 // --- Instantiate -------------------------------------------------------------
 
 core::Result<int> Instantiate(ecs::World& world, const SceneFile& scene,
-                              const PrefabLibrary& prefs, const ComponentRegistry& reg) {
+                              const PrefabLibrary& prefs, const ComponentRegistry& reg,
+                              std::vector<ecs::Entity>* outEntities) {
     std::vector<ecs::Entity> created;
     created.reserve(scene.entities.size());
+    if (outEntities) outEntities->clear();
     const core::Json kNull;
 
     for (size_t i = 0; i < scene.entities.size(); ++i) {
@@ -658,6 +686,7 @@ core::Result<int> Instantiate(ecs::World& world, const SceneFile& scene,
         }
     }
 
+    if (outEntities) *outEntities = created;
     return core::Result<int>::Ok(static_cast<int>(created.size()));
 }
 
