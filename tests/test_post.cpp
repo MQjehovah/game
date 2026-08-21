@@ -1,4 +1,5 @@
 #include <cmath>
+#include <limits>
 #include <string>
 
 #include "neon/neon.hpp"
@@ -51,6 +52,28 @@ TEST(AcesFilmValues) {
     // in displayable [0,1].
     CHECK(std::isfinite(gfx::AcesFilm(1e4f)));
     CHECK(gfx::AcesFilm(1e4f) >= 0.0f && gfx::AcesFilm(1e4f) <= 1.0f);
+}
+
+TEST(AcesFilmNaNInfGuard) {
+    // Inf HDR (half-float overflow) is clamped to the half-float max before the
+    // curve -> finite, saturated output (never NaN). NaN maps to 0.
+    CHECK(std::isfinite(gfx::AcesFilm(std::numeric_limits<float>::infinity())));
+    CHECK_NEAR(gfx::AcesFilm(std::numeric_limits<float>::infinity()), 1.0f, 1e-6);
+    CHECK(std::isfinite(gfx::AcesFilm(-std::numeric_limits<float>::infinity())));
+    CHECK_NEAR(gfx::AcesFilm(std::numeric_limits<float>::quiet_NaN()), 0.0f, 1e-6);
+    CHECK(std::isfinite(gfx::AcesFilm(std::numeric_limits<float>::quiet_NaN())));
+    // The guard is a no-op for finite in-range values: boundary of the clamp.
+    CHECK_NEAR(gfx::AcesFilm(65504.0f), gfx::AcesFilm(1e6f), 1e-6); // both clamp to max
+    // Exposure path: NaN/Inf inputs through ToneMap stay finite too.
+    math::Vec3 bad = gfx::ToneMap(1.0f, {std::numeric_limits<float>::infinity(), 0.5f,
+                                         std::numeric_limits<float>::quiet_NaN()});
+    CHECK(std::isfinite(bad.x) && std::isfinite(bad.z));
+    CHECK_NEAR(bad.x, 1.0f, 1e-6);
+    CHECK_NEAR(bad.z, 0.0f, 1e-6);
+    CHECK_NEAR(bad.y, gfx::AcesFilm(0.5f), 1e-6); // untouched channel
+    // A huge-but-finite input stays within [0,1] without NaN (overflow check).
+    CHECK(std::isfinite(gfx::AcesFilm(3.4e38f)));
+    CHECK(gfx::AcesFilm(3.4e38f) >= 0.0f && gfx::AcesFilm(3.4e38f) <= 1.0f);
 }
 
 TEST(AcesFilmMonotonic) {

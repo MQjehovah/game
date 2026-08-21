@@ -1,5 +1,6 @@
 #pragma once
 #include <algorithm>
+#include <cmath>
 #include "neon/math/vec3.hpp"
 
 namespace neon::gfx {
@@ -59,7 +60,15 @@ inline math::Vec3 ClampLdr(const math::Vec3& color) {
 // monotonic rational curve that maps [0,inf) HDR into [0,1] with a soft knee
 // around mid-tones and no colour shift for neutral inputs. Exactly the curve
 // baked into kCompositeFragmentShader so the CPU math stays a faithful model.
+// The input is clamped to the half-float max BEFORE the curve so an Inf/NaN
+// HDR value (point-light overflow at near-zero distance, a shader NaN, ...)
+// cannot feed the rational curve (clamp(NaN) is undefined in GLSL -> flicker).
+// The CPU mirror additionally maps NaN inputs to 0. Finite in-range values are
+// unchanged.
+inline constexpr float kAcesHdrMax = 65504.0f; // half-float max (also baked into the shader)
 inline float AcesFilm(float x) {
+    if (std::isnan(x)) return 0.0f;
+    x = std::clamp(x, 0.0f, kAcesHdrMax);
     const float a = 2.51f, b = 0.03f, c = 2.43f, d = 0.59f, e = 0.14f;
     return std::clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0f, 1.0f);
 }
@@ -180,6 +189,10 @@ uniform int uBloomEnabled;
 uniform int uTonemapEnabled;
 vec3 ACESFilm(vec3 x) {
     float a = 2.51, b = 0.03, c = 2.43, d = 0.59, e = 0.14;
+    // Clamp the input to the half-float max before the curve: an Inf/NaN HDR
+    // value (overflow or a shader NaN) would otherwise reach clamp() below,
+    // which is undefined for NaN in GLSL (matches the CPU AcesFilm guard).
+    x = clamp(x, vec3(0.0), vec3(65504.0));
     return clamp((x * (a * x + b)) / (x * (c * x + d) + e), vec3(0.0), vec3(1.0));
 }
 void main() {
