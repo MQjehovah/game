@@ -19,7 +19,7 @@
 - [x] PBR 材质（metallic/roughness/法线贴图）。
 - [x] 网格实例化绘制（大量草/树/怪物）、视锥剔除。
 - [ ] IBL 环境光。
-- [ ] 后处理：HDR + Bloom、色调映射、MSAA。
+- [x] 后处理：HDR + Bloom、色调映射（ACES）、MSAA。
 - [ ] 地形：高度图 + 分块 LOD（四叉树），纹理 splatting。
 
 ## M2：角色与战斗

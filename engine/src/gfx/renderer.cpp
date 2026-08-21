@@ -731,6 +731,20 @@ void Renderer::InitBuiltinResources() {
     // flow and bloom is skipped.
     hdrEnabled_ = TestFloatTargetCapability();
 
+    // MSAA on the HDR scene target (Task 3.7): gated on the float path AND the
+    // multisample FBO + blit-resolve self-test. A failure (or --no-msaa) keeps
+    // the single-sample HDR target, so every fallback still composites.
+    if (hdrEnabled_ && msaaRequested_) {
+        msaaEnabled_ = TestMsaaCapability();
+        if (!msaaEnabled_) {
+            NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Warn,
+                         "Renderer: MSAA unavailable -> single-sample HDR path");
+        }
+    } else if (hdrEnabled_ && !msaaRequested_) {
+        NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
+                     "Renderer: MSAA disabled by flag -> single-sample HDR path");
+    }
+
     if (shadowsForcedOff_) {
         NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Warn,
                      "Renderer: CSM disabled by flag (--disable-fbo/--no-shadows)");
@@ -801,9 +815,10 @@ void Renderer::BeginFrame(const Color& clearColor, float clearDepth) {
     uiOffsetX_ = (static_cast<float>(screenW_) - static_cast<float>(kDesignWidth) * uiScale_) * 0.5f;
     EnsurePostTargets();
     if (hdrEnabled_ && hdrRT_.Valid()) {
-        // Scene + sky draw into the half-float HDR target; the final
-        // composite (bloom -> backbuffer) happens in EndFrame / CaptureFrame.
-        backend_->BindRenderTarget(hdrRT_);
+        // Scene + sky draw into the (multisample when MSAA is active) HDR
+        // target; the final composite (bloom -> backbuffer) happens in
+        // EndFrame / CaptureFrame after resolving the MSAA samples.
+        RebindMainTarget();
         backend_->SetViewport(screenW_, screenH_);
         backend_->Clear(clearColor, clearDepth);
     } else {
@@ -863,6 +878,24 @@ void Renderer::SetBloomEnabled(bool enabled) {
     if (!enabled)
         NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
                      "Renderer: bloom disabled");
+}
+
+void Renderer::SetExposure(float exposure) {
+    exposure_ = exposure;
+    NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
+                 "Renderer: composite exposure = %.3f", exposure_);
+}
+
+void Renderer::SetTonemapEnabled(bool enabled) {
+    tonemapEnabled_ = enabled;
+    NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
+                 "Renderer: tonemap %s", enabled ? "enabled" : "disabled (legacy clamp)");
+}
+
+void Renderer::SetMsaaEnabled(bool enabled) {
+    msaaRequested_ = enabled;
+    NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
+                 "Renderer: MSAA %s", enabled ? "requested" : "disabled by flag");
 }
 
 void Renderer::RunShadowPass() {
@@ -1671,6 +1704,17 @@ void Renderer::EnsurePostTargets() {
         hdrEnabled_ = false;
         return;
     }
+    if (msaaEnabled_) {
+        // MSAA scene target: resolves into hdrRT_ (the bloom source) before
+        // the bright pass. Only the HDR main target is multisampled.
+        hdrMsaaRT_ = backend_->CreateRenderTarget(screenW_, screenH_, true, msaaSamples_);
+        if (!hdrMsaaRT_.Valid()) {
+            NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Warn,
+                         "Renderer: MSAA target %dx%d (samples=%d) failed -> single-sample HDR",
+                         screenW_, screenH_, msaaSamples_);
+            msaaEnabled_ = false;
+        }
+    }
     bloomHalfA_ = backend_->CreateRenderTarget(hw, hh, true);
     bloomHalfB_ = backend_->CreateRenderTarget(hw, hh, true);
     bloomQuarterA_ = backend_->CreateRenderTarget(qw, qh, true);
@@ -1678,8 +1722,8 @@ void Renderer::EnsurePostTargets() {
     hdrW_ = screenW_;
     hdrH_ = screenH_;
     NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
-                 "Renderer: HDR target %dx%d (RGBA16F) + bloom %dx%d / %dx%d", screenW_, screenH_,
-                 hw, hh, qw, qh);
+                 "Renderer: HDR target %dx%d (RGBA16F%s) + bloom %dx%d / %dx%d", screenW_,
+                 screenH_, msaaEnabled_ ? ", MSAA" : "", hw, hh, qw, qh);
 }
 
 void Renderer::DestroyPostTargets() {
@@ -1687,6 +1731,7 @@ void Renderer::DestroyPostTargets() {
         if (t.Valid() && backend_) backend_->DestroyRenderTarget(t);
         t = {};
     };
+    destroy(hdrMsaaRT_);
     destroy(hdrRT_);
     destroy(bloomHalfA_);
     destroy(bloomHalfB_);
@@ -1735,9 +1780,66 @@ bool Renderer::TestFloatTargetCapability() {
     return true;
 }
 
+bool Renderer::TestMsaaCapability() {
+    if (!backend_ || !unlitShader_.Valid() || !probeQuadMesh_.Valid()) return false;
+    constexpr int kSize = 32;
+    // Try 4x first (the target sample count), then 2x for drivers that only
+    // handle lower counts; either way the resolved image must round-trip the
+    // drawn colour through the same FBO + blit path the frame uses.
+    const int attempts[2] = {4, 2};
+    for (int samples : attempts) {
+        RenderTargetHandle ms = backend_->CreateRenderTarget(kSize, kSize, true, samples);
+        RenderTargetHandle ss = backend_->CreateRenderTarget(kSize, kSize, true);
+        bool keep = false;
+        if (ms.Valid() && ss.Valid()) {
+            backend_->BindRenderTarget(ms);
+            backend_->Clear({0.0f, 0.0f, 0.0f, 1.0f}, 1.0f);
+            backend_->UseShader(unlitShader_);
+            backend_->SetUniformMat4("uMVP", math::Mat4::Identity());
+            backend_->SetUniformInt("uHasTexture", 0);
+            backend_->SetUniformVec4("uTint", {0.5f, 0.25f, 0.125f, 1.0f});
+            backend_->SetCullMode(CullMode::None);
+            backend_->SetDepthTest(false, false);
+            backend_->SetBlendMode(BlendMode::Opaque);
+            backend_->DrawMesh(probeQuadMesh_);
+            backend_->ResolveRenderTarget(ms, ss);
+            unsigned char px[4] = {0, 0, 0, 0};
+            backend_->BindRenderTarget(ss);
+            backend_->ReadCurrentTargetPixel(kSize / 2, kSize / 2, px);
+            // {0.5, 0.25, 0.125} must survive draw -> multisample -> blit ->
+            // byte readback as ~{128, 64, 32}; wide-but-specific ranges catch a
+            // dead FBO (zeros) and a clamped-to-1 target (255).
+            const bool ok = px[0] >= 110 && px[0] <= 150 && px[1] >= 48 && px[1] <= 80 &&
+                            px[2] >= 16 && px[2] <= 48;
+            NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
+                         "Renderer: MSAA %dx self-test: px=%u,%u,%u,%u -> %s", samples, px[0],
+                         px[1], px[2], px[3], ok ? "PASS" : "FAIL");
+            keep = ok;
+        }
+        backend_->DestroyRenderTarget(ss);
+        backend_->DestroyRenderTarget(ms);
+        backend_->BindDefaultTarget();
+        if (keep) {
+            msaaSamples_ = samples;
+            NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
+                         "Renderer: MSAA %dx HDR target self-test PASS", samples);
+            return true;
+        }
+        NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Warn,
+                     "Renderer: MSAA %dx HDR target self-test FAIL", samples);
+    }
+    return false;
+}
+
+void Renderer::ResolveMainTarget() {
+    if (msaaEnabled_ && hdrMsaaRT_.Valid() && hdrRT_.Valid()) {
+        backend_->ResolveRenderTarget(hdrMsaaRT_, hdrRT_);
+    }
+}
+
 void Renderer::RebindMainTarget() {
     if (hdrEnabled_ && hdrRT_.Valid()) {
-        backend_->BindRenderTarget(hdrRT_);
+        backend_->BindRenderTarget(msaaEnabled_ && hdrMsaaRT_.Valid() ? hdrMsaaRT_ : hdrRT_);
     } else {
         backend_->BindDefaultTarget();
     }
@@ -1852,6 +1954,8 @@ void Renderer::CompositeToBackbuffer() {
         backend_->SetUniformInt("uBloomEnabled", 0);
     }
     backend_->SetUniformInt("uBloom", 1);
+    backend_->SetUniformFloat("uExposure", exposure_);
+    backend_->SetUniformInt("uTonemapEnabled", tonemapEnabled_ ? 1 : 0);
     backend_->DrawMesh(postQuadMesh_);
 }
 
@@ -1860,6 +1964,9 @@ void Renderer::CompositeSceneToBackbuffer() {
         Flush2D();
         return;
     }
+    // The scene rendered into the (possibly multisample) HDR target; resolve
+    // into the single-sample bloom source before any pass samples it.
+    ResolveMainTarget();
     bloomRanThisFrame_ = RunBloom();
     CompositeToBackbuffer();
     Flush2D();
@@ -1895,9 +2002,11 @@ bool Renderer::CaptureBloomComparison(std::vector<uint8_t>& bloomOff,
                                       std::vector<uint8_t>& bloomOn) {
     if (!backend_ || !hdrEnabled_ || !hdrRT_.Valid()) return false;
     const bool savedBloom = bloomEnabled_;
-    // Both captures composite the same HDR target WITHOUT the 2D overlay, so
-    // the two buffers differ only by the bloom term; the HUD is flushed once
-    // at the end (it is drawn on top of the composite and is not bloomed).
+    // Both captures composite the same (resolved) HDR target WITHOUT the 2D
+    // overlay, so the two buffers differ only by the bloom term; the HUD is
+    // flushed once at the end (it is drawn on top of the composite and is not
+    // bloomed).
+    ResolveMainTarget();
     bloomEnabled_ = false;
     bloomRanThisFrame_ = false;
     CompositeToBackbuffer();
@@ -1908,6 +2017,28 @@ bool Renderer::CaptureBloomComparison(std::vector<uint8_t>& bloomOff,
     CompositeToBackbuffer();
     bloomOn.resize(static_cast<size_t>(screenW_) * screenH_ * 4);
     backend_->CaptureFrame(screenW_, screenH_, bloomOn.data());
+    compositedThisFrame_ = true;
+    Flush2D();
+    return true;
+}
+
+bool Renderer::CaptureTonemapComparison(std::vector<uint8_t>& clamped,
+                                        std::vector<uint8_t>& tonemapped) {
+    if (!backend_ || !hdrEnabled_ || !hdrRT_.Valid()) return false;
+    const bool savedTonemap = tonemapEnabled_;
+    // Same-frame diff of the tone-mapping operator: composite the SAME
+    // resolved HDR target twice, once with ACES+exposure and once with the
+    // T3.6 clamp reference. Bloom runs once so it is identical in both images.
+    ResolveMainTarget();
+    bloomRanThisFrame_ = RunBloom();
+    tonemapEnabled_ = false;
+    CompositeToBackbuffer();
+    clamped.resize(static_cast<size_t>(screenW_) * screenH_ * 4);
+    backend_->CaptureFrame(screenW_, screenH_, clamped.data());
+    tonemapEnabled_ = savedTonemap;
+    CompositeToBackbuffer();
+    tonemapped.resize(static_cast<size_t>(screenW_) * screenH_ * 4);
+    backend_->CaptureFrame(screenW_, screenH_, tonemapped.data());
     compositedThisFrame_ = true;
     Flush2D();
     return true;

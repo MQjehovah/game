@@ -16,10 +16,12 @@ namespace neon::gfx {
 //   3. downsample        half  -> quarter 2x2 box
 //   4. blur quarter (H+V)quarter <-> temp  5-tap separable Gaussian
 //   5. upsample-add      half' = half + up(quarter)
-//   6. composite         out  = clamp(hdr + up(half') * strength, 0, 1)
+//   6. composite         out  = ACES( (hdr + up(half') * strength) * exposure )
 //
-// T3.7 (tonemap) replaces step 6's hard clamp with a proper tone-mapping
-// operator; everything before the composite is unchanged.
+// T3.7 replaced the provisional clamp with the ACES fitted tonemapper
+// (Narkowicz); the legacy `min(c,1)` clamp is kept only as the uTonemapEnabled
+// == 0 reference branch used by the --tonemap-compare diff. Everything before
+// the composite is unchanged.
 
 // Only pixels brighter than this (HDR units) bloom. The scene already sums the
 // sun + point + player lights without clamping, so sun-lit surfaces exceed 1.0
@@ -44,17 +46,38 @@ inline math::Vec3 BrightPass(const math::Vec3& color, float threshold) {
             BrightPass(color.z, threshold)};
 }
 
-// LDR clamp used by the composite (provisional until T3.7 replaces it with a
-// real tonemapper; the backbuffer would clamp anyway, this just makes the
-// HDR->screen conversion explicit).
+// LDR clamp kept as the T3.6 reference conversion (the composite's
+// uTonemapEnabled == 0 branch). The backbuffer would clamp anyway; the --no-
+// tonemap / --tonemap-compare paths use it so the ACES diff isolates only the
+// tone-mapping operator.
 inline float ClampLdr(float value) { return std::min(value, 1.0f); }
 inline math::Vec3 ClampLdr(const math::Vec3& color) {
     return {ClampLdr(color.x), ClampLdr(color.y), ClampLdr(color.z)};
 }
 
-// Composite: hdr + bloom * strength, clamped to displayable range.
-inline math::Vec3 BloomCombine(const math::Vec3& hdr, const math::Vec3& bloom, float strength) {
-    return ClampLdr(hdr + bloom * strength);
+// ACES fitted tonemapper ("ACES Film" approximation, Narkowicz 2015): a
+// monotonic rational curve that maps [0,inf) HDR into [0,1] with a soft knee
+// around mid-tones and no colour shift for neutral inputs. Exactly the curve
+// baked into kCompositeFragmentShader so the CPU math stays a faithful model.
+inline float AcesFilm(float x) {
+    const float a = 2.51f, b = 0.03f, c = 2.43f, d = 0.59f, e = 0.14f;
+    return std::clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0f, 1.0f);
+}
+inline math::Vec3 AcesFilm(const math::Vec3& color) {
+    return {AcesFilm(color.x), AcesFilm(color.y), AcesFilm(color.z)};
+}
+
+// Exposure application: exposure multiplies the HDR input BEFORE the curve
+// (ACESFilm(color * exposure)); the composite shader does the same. exposure
+// == 1 is the identity (no darkening / no wash-out).
+inline math::Vec3 ToneMap(float exposure, const math::Vec3& hdr) {
+    return AcesFilm(hdr * exposure);
+}
+
+// Composite: hdr + bloom * strength, ACES tonemapped with exposure applied.
+inline math::Vec3 BloomCombine(const math::Vec3& hdr, const math::Vec3& bloom, float strength,
+                               float exposure = 1.0f) {
+    return ToneMap(exposure, hdr + bloom * strength);
 }
 
 // --- Built-in post-process shaders ------------------------------------------
@@ -139,10 +162,12 @@ void main() {
 }
 )";
 
-// Final composite: hdr + bloom * strength, clamped to [0,1] (T3.7 replaces the
-// clamp with a tonemapper). uBloomEnabled == 0 skips the bloom term so the
-// `--no-bloom` screenshot path still round-trips through the same HDR target
-// and only the bloom addition differs.
+// Final composite: (hdr + bloom * strength) ACES tonemapped with exposure.
+// uBloomEnabled == 0 skips the bloom term so the `--no-bloom` screenshot path
+// still round-trips through the same HDR target and only the bloom addition
+// differs. uTonemapEnabled == 0 uses the legacy clamp reference (T3.6
+// behaviour) so the `--tonemap-compare` / `--no-tonemap` diff isolates the
+// tonemapping operator; exposure only applies in the ACES branch.
 inline constexpr const char* kCompositeFragmentShader = R"(
 #version 330 core
 in vec2 vUV;
@@ -150,12 +175,22 @@ out vec4 FragColor;
 uniform sampler2D uHdr;
 uniform sampler2D uBloom;
 uniform float uStrength;
+uniform float uExposure;
 uniform int uBloomEnabled;
+uniform int uTonemapEnabled;
+vec3 ACESFilm(vec3 x) {
+    float a = 2.51, b = 0.03, c = 2.43, d = 0.59, e = 0.14;
+    return clamp((x * (a * x + b)) / (x * (c * x + d) + e), vec3(0.0), vec3(1.0));
+}
 void main() {
     vec3 hdr = texture(uHdr, vUV).rgb;
     vec3 c = hdr;
     if (uBloomEnabled != 0) c += texture(uBloom, vUV).rgb * uStrength;
-    FragColor = vec4(min(c, vec3(1.0)), 1.0);
+    if (uTonemapEnabled != 0) {
+        FragColor = vec4(ACESFilm(c * uExposure), 1.0);
+    } else {
+        FragColor = vec4(min(c, vec3(1.0)), 1.0);
+    }
 }
 )";
 

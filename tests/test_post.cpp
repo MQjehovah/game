@@ -8,7 +8,7 @@
 using namespace neon;
 
 // ---------------------------------------------------------------------------
-// Task 3.6: HDR + bloom post-processing.
+// Task 3.6: HDR + bloom post-processing. Task 3.7: ACES tonemap + MSAA.
 // ---------------------------------------------------------------------------
 
 // --- Pure bloom math (headless, no GL) --------------------------------------
@@ -32,26 +32,76 @@ TEST(BloomBrightPassVec3) {
 }
 
 TEST(BloomClampLdr) {
+    // The T3.6 clamp reference (composite's uTonemapEnabled == 0 branch).
     CHECK_NEAR(gfx::ClampLdr(0.5f), 0.5f, 1e-6);
     CHECK_NEAR(gfx::ClampLdr(1.0f), 1.0f, 1e-6);
     CHECK_NEAR(gfx::ClampLdr(1.5f), 1.0f, 1e-6); // HDR > 1 saturates to white
     CHECK_NEAR(gfx::ClampLdr(9.0f), 1.0f, 1e-6);
 }
 
+TEST(AcesFilmValues) {
+    // ACES fitted curve (Narkowicz): endpoints, mid-tones, and highlights.
+    CHECK_NEAR(gfx::AcesFilm(0.0f), 0.0f, 1e-6);        // black stays black
+    CHECK_NEAR(gfx::AcesFilm(0.5f), 0.616307f, 1e-4);   // mid-tone knee
+    CHECK_NEAR(gfx::AcesFilm(1.0f), 0.803797f, 1e-4);   // diffuse white
+    CHECK_NEAR(gfx::AcesFilm(2.0f), 0.914855f, 1e-4);   // highlights compress
+    CHECK_NEAR(gfx::AcesFilm(10.0f), 1.0f, 1e-6);       // saturates (curve peaks > 1)
+    CHECK_NEAR(gfx::AcesFilm(100.0f), 1.0f, 1e-6);
+    // Inputs above 1.0 never come back as NaN or inf, and the output is always
+    // in displayable [0,1].
+    CHECK(std::isfinite(gfx::AcesFilm(1e4f)));
+    CHECK(gfx::AcesFilm(1e4f) >= 0.0f && gfx::AcesFilm(1e4f) <= 1.0f);
+}
+
+TEST(AcesFilmMonotonic) {
+    // Monotonic non-decreasing over the whole range (no banding / no ringing).
+    const float xs[] = {0.0f, 0.25f, 0.5f, 0.75f, 1.0f, 1.5f, 2.0f, 4.0f, 8.0f, 100.0f};
+    for (int i = 1; i < 10; ++i) {
+        CHECK(gfx::AcesFilm(xs[i - 1]) <= gfx::AcesFilm(xs[i]));
+    }
+    // Neutral input stays neutral (no colour shift): ACES per-component on a
+    // grey pixel keeps all three channels equal.
+    math::Vec3 grey = gfx::AcesFilm({0.6f, 0.6f, 0.6f});
+    CHECK_NEAR(grey.x, grey.y, 1e-6);
+    CHECK_NEAR(grey.y, grey.z, 1e-6);
+}
+
+TEST(AcesFilmVec3) {
+    math::Vec3 c = gfx::AcesFilm({1.0f, 0.5f, 0.25f});
+    CHECK_NEAR(c.x, gfx::AcesFilm(1.0f), 1e-6);
+    CHECK_NEAR(c.y, gfx::AcesFilm(0.5f), 1e-6);
+    CHECK_NEAR(c.z, gfx::AcesFilm(0.25f), 1e-6);
+}
+
+TEST(ToneMapExposure) {
+    // Exposure multiplies the HDR input BEFORE the curve; 1.0 is identity.
+    math::Vec3 a = gfx::ToneMap(1.0f, {1.0f, 1.0f, 1.0f});
+    CHECK_NEAR(a.x, gfx::AcesFilm(1.0f), 1e-6);
+    // halving exposure moves the same pixel down the curve.
+    math::Vec3 b = gfx::ToneMap(0.5f, {2.0f, 2.0f, 2.0f});
+    CHECK_NEAR(b.x, gfx::AcesFilm(1.0f), 1e-6);
+    // exposure == 0 collapses to black.
+    math::Vec3 z = gfx::ToneMap(0.0f, {9.0f, 9.0f, 9.0f});
+    CHECK_NEAR(z.x, 0.0f, 1e-6);
+}
+
 TEST(BloomCombine) {
-    // Modest strength: bloom lifts a sub-1.0 pixel but stays in range.
+    // T3.7 composite: (hdr + bloom*strength) ACES tonemapped at exposure 1.
     math::Vec3 c = gfx::BloomCombine({0.5f, 0.5f, 0.5f}, {0.2f, 0.2f, 0.2f}, 0.35f);
-    CHECK_NEAR(c.x, 0.5f + 0.2f * 0.35f, 1e-5);
-    CHECK_NEAR(c.y, c.x, 1e-5);
-    // A pixel already clipped to 1.0 in HDR cannot get any brighter.
+    CHECK_NEAR(c.x, gfx::AcesFilm(0.5f + 0.2f * 0.35f), 1e-5); // 0.657761
+    CHECK_NEAR(c.y, c.x, 1e-5); // neutral stays neutral
+    // HDR above 1.0 compresses instead of clipping (no flat white wash).
     math::Vec3 clipped = gfx::BloomCombine({1.5f, 1.5f, 1.5f}, {0.2f, 0.2f, 0.2f}, 0.35f);
-    CHECK_NEAR(clipped.x, 1.0f, 1e-6);
-    CHECK_NEAR(clipped.y, 1.0f, 1e-6);
-    // No bloom (uBloomEnabled == 0 path): pure clamp of the HDR term.
+    CHECK_NEAR(clipped.x, gfx::AcesFilm(1.57f), 1e-5); // 0.883502 < 1
+    CHECK_NEAR(clipped.y, clipped.x, 1e-5);
+    // No bloom (uBloomEnabled == 0 path): pure tonemap of the HDR term.
     math::Vec3 noBloom = gfx::BloomCombine({1.4f, 0.7f, 0.3f}, {0.0f, 0.0f, 0.0f}, 0.35f);
-    CHECK_NEAR(noBloom.x, 1.0f, 1e-6);
-    CHECK_NEAR(noBloom.y, 0.7f, 1e-6);
-    CHECK_NEAR(noBloom.z, 0.3f, 1e-6);
+    CHECK_NEAR(noBloom.x, gfx::AcesFilm(1.4f), 1e-5); // 0.866080
+    CHECK_NEAR(noBloom.y, gfx::AcesFilm(0.7f), 1e-5); // 0.717383
+    CHECK_NEAR(noBloom.z, gfx::AcesFilm(0.3f), 1e-5); // 0.438492
+    // Exposure feeds through the combine (default 1.0 stays unchanged).
+    math::Vec3 e = gfx::BloomCombine({1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, 0.0f, 0.5f);
+    CHECK_NEAR(e.x, gfx::AcesFilm(0.5f), 1e-6);
 }
 
 TEST(BloomGaussianKernelNormalized) {
@@ -97,8 +147,14 @@ TEST(BloomShaderSourceTokens) {
     CHECK(composite.find("uBloom") != std::string::npos);
     CHECK(composite.find("uStrength") != std::string::npos);
     CHECK(composite.find("uBloomEnabled") != std::string::npos);
-    // Provisional T3.6 clamp; T3.7 replaces it with a tonemapper.
-    CHECK(composite.find("min(c, vec3(1.0))") != std::string::npos);
+    // T3.7 ACES tonemap: the curve + exposure live in the composite shader, and
+    // the legacy clamp is only the uTonemapEnabled == 0 reference branch.
+    CHECK(composite.find("uExposure") != std::string::npos);
+    CHECK(composite.find("uTonemapEnabled") != std::string::npos);
+    CHECK(composite.find("ACESFilm") != std::string::npos);
+    CHECK(composite.find("2.51") != std::string::npos);
+    CHECK(composite.find("2.43") != std::string::npos);
+    CHECK(composite.find("min(c, vec3(1.0))") != std::string::npos); // clamp reference kept
 
     const std::string vertex(gfx::kPostVertexShader);
     CHECK(vertex.find("layout(location = 0) in vec3 aPos") != std::string::npos);
@@ -171,4 +227,41 @@ TEST(EndSceneLegacyPathNoop) {
     CHECK(fx.renderer.CaptureFrame(pixels));
     CHECK(!pixels.empty());
     fx.renderer.EndFrame();
+}
+
+// --- T3.7 tonemap / MSAA state on the headless backend ----------------------
+// The ACES math is pure (tested above); the GPU side (composite uniforms, MSAA
+// FBO + resolve) is capability-gated like CSM: on the NullBackend the HDR
+// pipeline never engages, so requesting/setting these must be inert no-crash.
+
+TEST(TonemapAndMsaaStateHeadless) {
+    test::HeadlessAssetFixture fx;
+    CHECK(!fx.renderer.HdrEnabled());
+    CHECK(!fx.renderer.MsaaEnabled()); // no GL -> MSAA capability never tested
+    CHECK(fx.renderer.TonemapEnabled()); // default on
+    CHECK_NEAR(fx.renderer.Exposure(), 1.0f, 1e-6); // identity default
+
+    // User toggles round-trip without GL.
+    fx.renderer.SetExposure(1.5f);
+    CHECK_NEAR(fx.renderer.Exposure(), 1.5f, 1e-6);
+    fx.renderer.SetTonemapEnabled(false);
+    CHECK(!fx.renderer.TonemapEnabled());
+    fx.renderer.SetTonemapEnabled(true);
+    fx.renderer.SetMsaaEnabled(false);
+    fx.renderer.SetMsaaEnabled(true);
+
+    // A full frame with the toggles set must not crash (HDR stays inert).
+    fx.renderer.BeginFrame({0.02f, 0.03f, 0.08f, 1.0f});
+    gfx::Mesh cube = gfx::Mesh::CreateCube(fx.renderer, 1, 1, 1, "tonemap_msaa_test_cube");
+    fx.renderer.DrawMesh(cube, gfx::Material::Lit({}), math::Mat4::Identity());
+    fx.renderer.DrawSky();
+    fx.renderer.EndFrame();
+
+    // Same-frame tonemap comparison needs the HDR pipeline: off on NullBackend.
+    std::vector<uint8_t> clamped, tonemapped;
+    fx.renderer.BeginFrame({0, 0, 0, 1});
+    CHECK(!fx.renderer.CaptureTonemapComparison(clamped, tonemapped));
+    CHECK(clamped.empty() && tonemapped.empty());
+    fx.renderer.EndFrame();
+    CHECK(!fx.renderer.MsaaEnabled());
 }

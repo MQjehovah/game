@@ -60,11 +60,24 @@ public:
     // values above 1.0 survive between passes. Default (false) keeps the
     // established RGBA8 color-encoded-depth targets used by CSM / point
     // shadows untouched.
+    //
+    // samples > 0 creates a MULTISAMPLED target (samples per pixel, e.g. 4):
+    // the color + depth attachments become renderbuffers (no sampleable
+    // texture exists, so RenderTargetColorTexture returns an invalid handle)
+    // and the content is only readable after ResolveRenderTarget blits it into
+    // a matching single-sample target. Used for MSAA on the HDR main scene
+    // target; the shadow-map and bloom-pyramid targets stay single-sample.
     virtual RenderTargetHandle CreateRenderTarget(int width, int height,
-                                                  bool floatColor = false) = 0;
+                                                  bool floatColor = false,
+                                                  int samples = 0) = 0;
     virtual void DestroyRenderTarget(RenderTargetHandle target) = 0;
     virtual void BindRenderTarget(RenderTargetHandle target) = 0;
     virtual void BindDefaultTarget() = 0;
+    // Blits the color attachment of a multisample target (src) into a
+    // single-sample target (dst) of the same size (GL 3.3 glBlitFramebuffer).
+    // src may also be single-sample (an identity copy). No-op on backends
+    // without a resolve (NullBackend/Vulkan placeholder).
+    virtual void ResolveRenderTarget(RenderTargetHandle src, RenderTargetHandle dst) = 0;
     virtual TextureHandle RenderTargetColorTexture(RenderTargetHandle target) const = 0;
     virtual TextureHandle RenderTargetDepthTexture(RenderTargetHandle target) const = 0;
 

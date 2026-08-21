@@ -17,10 +17,11 @@ public:
     }
     void Shutdown() override {}
     const char* Name() const override { return "Vulkan (placeholder)"; }
-    RenderTargetHandle CreateRenderTarget(int, int, bool) override { return {}; }
+    RenderTargetHandle CreateRenderTarget(int, int, bool, int) override { return {}; }
     void DestroyRenderTarget(RenderTargetHandle) override {}
     void BindRenderTarget(RenderTargetHandle) override {}
     void BindDefaultTarget() override {}
+    void ResolveRenderTarget(RenderTargetHandle, RenderTargetHandle) override {}
     TextureHandle RenderTargetColorTexture(RenderTargetHandle) const override { return {}; }
     TextureHandle RenderTargetDepthTexture(RenderTargetHandle) const override { return {}; }
     RenderTargetHandle CreateDepthTarget(int, int) override { return {}; }

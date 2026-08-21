@@ -92,7 +92,8 @@ SparseSet 风格的 ECS：
 
 - 相机（透视 lookAt）、方向光 + 8 点光 + 玩家手电光、距离雾、天空渐变。
 - 内置 Shader：lit（Blinn-Phong）、unlit、UI、line。
-- **HDR + Bloom 后处理（T3.6）**：主场景渲染进窗口尺寸的 RGBA16F 离屏目标（`CreateRenderTarget(w,h,true)` 新增半浮点变体），`EndFrame` 先跑明亮度阈值（`max(color-1.0,0)`）→ 1/2、1/4 两级 5 tap 可分离高斯模糊金字塔 → 逐级上采样累加（渐进 bloom）→ 合成 `min(hdr + bloom*0.35, 1)` 到后备缓冲，最后再绘制 2D/HUD 覆盖层（UI 不被 bloom）。截图路径（`CaptureFrame`）先触发合成再 `glReadPixels`，读到的就是最终合成图像；`--bloom-compare <off> <on> <frame>` 在同一帧同一 HDR 目标上分别输出关/开 bloom 两张图用于验证。浮点目标能力启动自检（FBO 写入 + 字节回读），失败自动回退到原直绘后备缓冲流程；`--no-bloom` / `NEON_NO_BLOOM` 只关 bloom 项（HDR 路径保留）。色阶映射留待 T3.7（ACES）。
+- **HDR + Bloom 后处理（T3.6）**：主场景渲染进窗口尺寸的 RGBA16F 离屏目标（`CreateRenderTarget(w,h,true)` 新增半浮点变体），`EndFrame` 先跑明亮度阈值（`max(color-1.0,0)`）→ 1/2、1/4 两级 5 tap 可分离高斯模糊金字塔 → 逐级上采样累加（渐进 bloom）→ 合成到后备缓冲，最后再绘制 2D/HUD 覆盖层（UI 不被 bloom）。截图路径（`CaptureFrame`）先触发合成再 `glReadPixels`，读到的就是最终合成图像；`--bloom-compare <off> <on> <frame>` 在同一帧同一 HDR 目标上分别输出关/开 bloom 两张图用于验证。浮点目标能力启动自检（FBO 写入 + 字节回读），失败自动回退到原直绘后备缓冲流程；`--no-bloom` / `NEON_NO_BLOOM` 只关 bloom 项（HDR 路径保留）。
+- **色调映射 + MSAA（T3.7）**：合成 Shader 用 ACES 拟合曲线（Narkowicz）`clamp((x*(2.51x+0.03))/(x*(2.43x+0.59)+0.14),0,1)` 替换 T3.6 的 `min(c,1)` 钳制，作用在 `hdr + bloom*strength` 上并乘以曝光 `uExposure`（默认 1.0，`SetExposure`/`--exposure` 可调）；`--no-tonemap` 保留旧钳制分支，`--tonemap-compare <clamped> <aces> <frame>` 同帧输出两张图做差异验证。MSAA：`CreateRenderTarget(w,h,floatColor,samples)` 新增采样数参数，samples>0 时颜色+深度变为多重采样 renderbuffer（无采样纹理），`ResolveRenderTarget(src,dst)` 用 `glBlitFramebuffer` 解析到单采样目标；主场景渲染进 4x（失败回退 2x/单采样）MSAA HDR 目标，`CompositeSceneToBackbuffer` 先解析到单采样 HDR 目标再跑 bloom/合成。MSAA 能力自检（多重采样 FBO 完整性 + blit 回读）启动时执行，失败自动回退并记录日志；`--no-msaa` 强制单采样用于差异对比。阴影 FBO（CSM/点光）保持 RGBA8 单采样颜色编码深度不变，bloom 金字塔与后备缓冲 UI 均为单采样。
 - 2D 覆盖层使用设计分辨率 1280×720 等比缩放居中，输入坐标通过 `ScreenToUI` 换算。
 - 调试线框（`DrawBox/DrawSphere/DrawLines`）、截图（`glReadPixels`）。
 - 渲染统计（绘制调用/三角形/实例数），HUD 实时显示。

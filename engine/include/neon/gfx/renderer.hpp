@@ -98,6 +98,23 @@ public:
     // only by the bloom contribution).
     void SetBloomEnabled(bool enabled);
     bool BloomEnabled() const { return bloomEnabled_; }
+    // T3.7: the composite applies the ACES fitted tonemapper to
+    // ACES((hdr + bloom*strength) * exposure). exposure_ defaults to 1.0
+    // (identity); SetExposure lets the editor/T4.7 tune later. tonemapEnabled_
+    // keeps the T3.6 `min(c,1)` clamp as the --no-tonemap reference so the
+    // tonemap diff isolates only the operator.
+    void SetExposure(float exposure);
+    float Exposure() const { return exposure_; }
+    void SetTonemapEnabled(bool enabled);
+    bool TonemapEnabled() const { return tonemapEnabled_; }
+    // MSAA (Task 3.7): when requested AND the driver passes the multisample
+    // FBO + blit-resolve self-test, the HDR scene renders into a samples-per-
+    // pixel multisample target and EndScene/CompositeFrame resolve it into the
+    // single-sample bloom source. The bloom pyramid, shadow maps and backbuffer
+    // UI stay single-sample. Failing drivers fall back to the single-sample
+    // path with a log (and --no-msaa forces the fallback for diffing).
+    void SetMsaaEnabled(bool enabled);
+    bool MsaaEnabled() const { return msaaEnabled_; }
     // True when the HDR float-target pipeline is active (float RT works and
     // the window-sized target was created). False on drivers without
     // RGBA16F-FBO support: the renderer then draws straight to the backbuffer
@@ -168,6 +185,13 @@ public:
     // the bloom term differs). Returns false when the HDR pipeline is inactive.
     bool CaptureBloomComparison(std::vector<uint8_t>& bloomOff,
                                 std::vector<uint8_t>& bloomOn);
+    // T3.7 verification helper: same-frame ACES tonemap diff. Composites the
+    // current HDR frame twice - once with tonemapping disabled (T3.6 clamp
+    // reference) and once with ACES + exposure - capturing both from the SAME
+    // resolved HDR target. Bloom runs once so the two images differ only by
+    // the tone-mapping operator.
+    bool CaptureTonemapComparison(std::vector<uint8_t>& clamped,
+                                  std::vector<uint8_t>& tonemapped);
     float UIScale() const { return uiScale_; }
     int ScreenWidth() const { return screenW_; }
     int ScreenHeight() const { return screenH_; }
@@ -222,9 +246,15 @@ private:
     void EnsurePostTargets();
     void DestroyPostTargets();
     bool TestFloatTargetCapability();
+    // MSAA: multisample HDR render target + resolve self-test (4x then 2x).
+    bool TestMsaaCapability();
     // Binds whichever target the main scene renders into (the HDR float target
     // when active, else the default framebuffer).
     void RebindMainTarget();
+    // Resolves the MSAA HDR scene target into the single-sample bloom source
+    // (no-op when MSAA is inactive). Called before any pass that samples the
+    // HDR target: CompositeSceneToBackbuffer and the capture helpers.
+    void ResolveMainTarget();
     // Bloom pyramid (all fullscreen passes on RGBA16F targets). Ends with
     // bloomHalfA_ holding the accumulated bloom at half resolution.
     bool RunBloom();
@@ -280,7 +310,11 @@ private:
     bool pointShadowsActive_ = false;
 
     // HDR scene target (window size, RGBA16F) + the bloom pyramid targets.
+    // hdrMsaaRT_ is the 4x/2x multisample target the scene renders into when
+    // MSAA is active; hdrRT_ is the single-sample target the MSAA target is
+    // resolved into and the source the bloom pyramid + composite sample from.
     RenderTargetHandle hdrRT_;
+    RenderTargetHandle hdrMsaaRT_;
     RenderTargetHandle bloomHalfA_;    // 1/2 res: bright pass, then blurred, then accumulated
     RenderTargetHandle bloomHalfB_;    // 1/2 res scratch (blur ping-pong + upsample-add result)
     RenderTargetHandle bloomQuarterA_; // 1/4 res: downsample, then blurred
@@ -289,6 +323,11 @@ private:
     int hdrH_ = 0;
     bool hdrEnabled_ = false;
     bool bloomEnabled_ = true;
+    float exposure_ = 1.0f;
+    bool tonemapEnabled_ = true;
+    bool msaaRequested_ = true;
+    bool msaaEnabled_ = false;
+    int msaaSamples_ = 0;
     // True once RunBloom wrote the accumulated bloom into bloomHalfB_ this
     // frame (set by RunBloom, reset in BeginFrame); CompositeToBackbuffer only
     // adds the bloom term when it ran, so a failed shader/target never blends

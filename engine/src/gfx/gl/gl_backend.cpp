@@ -57,6 +57,8 @@ constexpr gl::GLenum Version = 0x1F02;
 constexpr gl::GLenum RendererStr = 0x1F01;
 constexpr gl::GLenum NoError = 0;
 constexpr gl::GLenum Framebuffer = 0x8D40;
+constexpr gl::GLenum ReadFramebuffer = 0x8CA8;
+constexpr gl::GLenum DrawFramebuffer = 0x8CA9;
 constexpr gl::GLenum DepthAttachment = 0x8D00;
 constexpr gl::GLenum DepthComponent24 = 0x81A6;
 constexpr gl::GLenum ColorAttachment0 = 0x8CE0;
@@ -98,16 +100,19 @@ struct GLTexture {
 struct GLRenderTarget {
     gl::GLuint fbo = 0;
     gl::GLuint colorTex = 0;
+    gl::GLuint colorRbo = 0;
     gl::GLuint depthTex = 0;
-    // Depth renderbuffer attached to float (HDR) color targets so depth
-    // testing works inside the HDR FBO on drivers with a functional depth
-    // buffer. Zero for the color-encoded CSM/point-shadow targets (they rely
-    // on painter's order) and for the depth-texture targets.
+    // Depth renderbuffer attached to float (HDR) color targets and to every
+    // multisample target so depth testing works inside the HDR FBO on drivers
+    // with a functional depth buffer. Zero for the color-encoded CSM/point-
+    // shadow targets (they rely on painter's order) and for the depth-texture
+    // targets.
     gl::GLuint depthRbo = 0;
     uint32_t colorTextureHandle = 0;
     uint32_t textureHandle = 0;
     int width = 0;
     int height = 0;
+    int samples = 0;
 };
 class OpenGLBackend : public IRenderBackend {
 public:
@@ -205,6 +210,8 @@ public:
             g.DeleteFramebuffers(1, &rt.fbo);
             g.DeleteTextures(1, &rt.depthTex);
             if (rt.depthRbo) g.DeleteRenderbuffers(1, &rt.depthRbo);
+            if (rt.colorRbo) g.DeleteRenderbuffers(1, &rt.colorRbo);
+            g.DeleteTextures(1, &rt.colorTex);
         }
         renderTargets_.clear();
         for (auto& [id, prog] : shaders_) g.DeleteProgram(prog.id);
@@ -225,65 +232,109 @@ public:
 
     const char* Name() const override { return "OpenGL 3.3"; }
 
-    RenderTargetHandle CreateRenderTarget(int width, int height, bool floatColor) override {
+    RenderTargetHandle CreateRenderTarget(int width, int height, bool floatColor,
+                                          int samples) override {
         auto& g = gl::GetGL();
         GLRenderTarget rt;
         rt.width = width;
         rt.height = height;
+        rt.samples = samples;
         g.GenFramebuffers(1, &rt.fbo);
         g.BindFramebuffer(glc::Framebuffer, rt.fbo);
-        // Color texture: RGBA8 encodes light-space depth for shadow sampling;
-        // the HDR + bloom pipeline requests a half-float (RGBA16F) attachment
-        // so HDR scene values above 1.0 survive between passes.
-        g.GenTextures(1, &rt.colorTex);
-        g.BindTexture(glc::Texture2D, rt.colorTex);
-        if (floatColor) {
-            g.TexImage2D(glc::Texture2D, 0, static_cast<gl::GLint>(glc::Rgba16f), width, height, 0,
-                         glc::Rgba, glc::HalfFloat, nullptr);
-            g.TexParameteri(glc::Texture2D, glc::TextureMinFilter, glc::Linear);
-            g.TexParameteri(glc::Texture2D, glc::TextureMagFilter, glc::Linear);
-        } else {
-            g.TexImage2D(glc::Texture2D, 0, static_cast<gl::GLint>(glc::Rgba8), width, height, 0,
-                         glc::Rgba, glc::UnsignedByte, nullptr);
-            g.TexParameteri(glc::Texture2D, glc::TextureMinFilter, glc::Nearest);
-            g.TexParameteri(glc::Texture2D, glc::TextureMagFilter, glc::Nearest);
-        }
-        g.TexParameteri(glc::Texture2D, glc::TextureWrapS, glc::ClampToEdge);
-        g.TexParameteri(glc::Texture2D, glc::TextureWrapT, glc::ClampToEdge);
-        g.FramebufferTexture2D(glc::Framebuffer, glc::ColorAttachment0, glc::Texture2D,
-                               rt.colorTex, 0);
-        if (floatColor) {
-            // Half-float HDR target: attach a depth renderbuffer so the main
-            // pass keeps correct occlusion on drivers where the window depth
-            // buffer works (on broken-depth drivers the renderer disables
-            // depth testing anyway, so this attachment is inert there).
+        if (samples > 0) {
+            // MSAA target: the color + depth attachments are multisample
+            // renderbuffers (no sampleable texture). Content is read back only
+            // after ResolveRenderTarget blits into a single-sample target.
+            g.GenRenderbuffers(1, &rt.colorRbo);
+            g.BindRenderbuffer(glc::Renderbuffer, rt.colorRbo);
+            g.RenderbufferStorageMultisample(glc::Renderbuffer, samples,
+                                             floatColor ? glc::Rgba16f : glc::Rgba8, width, height);
+            g.FramebufferRenderbuffer(glc::Framebuffer, glc::ColorAttachment0, glc::Renderbuffer,
+                                      rt.colorRbo);
             g.GenRenderbuffers(1, &rt.depthRbo);
             g.BindRenderbuffer(glc::Renderbuffer, rt.depthRbo);
-            g.RenderbufferStorage(glc::Renderbuffer, glc::DepthComponent24, width, height);
+            g.RenderbufferStorageMultisample(glc::Renderbuffer, samples, glc::DepthComponent24,
+                                             width, height);
             g.FramebufferRenderbuffer(glc::Framebuffer, glc::DepthAttachment, glc::Renderbuffer,
                                       rt.depthRbo);
-            NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
-                         "GL: float render target %dx%d (RGBA16F + depth RBO)", width, height);
+        } else {
+            // Color texture: RGBA8 encodes light-space depth for shadow
+            // sampling; the HDR + bloom pipeline requests a half-float
+            // (RGBA16F) attachment so HDR scene values above 1.0 survive
+            // between passes.
+            g.GenTextures(1, &rt.colorTex);
+            g.BindTexture(glc::Texture2D, rt.colorTex);
+            if (floatColor) {
+                g.TexImage2D(glc::Texture2D, 0, static_cast<gl::GLint>(glc::Rgba16f), width, height, 0,
+                             glc::Rgba, glc::HalfFloat, nullptr);
+                g.TexParameteri(glc::Texture2D, glc::TextureMinFilter, glc::Linear);
+                g.TexParameteri(glc::Texture2D, glc::TextureMagFilter, glc::Linear);
+            } else {
+                g.TexImage2D(glc::Texture2D, 0, static_cast<gl::GLint>(glc::Rgba8), width, height, 0,
+                             glc::Rgba, glc::UnsignedByte, nullptr);
+                g.TexParameteri(glc::Texture2D, glc::TextureMinFilter, glc::Nearest);
+                g.TexParameteri(glc::Texture2D, glc::TextureMagFilter, glc::Nearest);
+            }
+            g.TexParameteri(glc::Texture2D, glc::TextureWrapS, glc::ClampToEdge);
+            g.TexParameteri(glc::Texture2D, glc::TextureWrapT, glc::ClampToEdge);
+            g.FramebufferTexture2D(glc::Framebuffer, glc::ColorAttachment0, glc::Texture2D,
+                                   rt.colorTex, 0);
+            if (floatColor) {
+                // Half-float HDR target: attach a depth renderbuffer so the
+                // main pass keeps correct occlusion on drivers where the window
+                // depth buffer works (on broken-depth drivers the renderer
+                // disables depth testing anyway, so this attachment is inert).
+                g.GenRenderbuffers(1, &rt.depthRbo);
+                g.BindRenderbuffer(glc::Renderbuffer, rt.depthRbo);
+                g.RenderbufferStorage(glc::Renderbuffer, glc::DepthComponent24, width, height);
+                g.FramebufferRenderbuffer(glc::Framebuffer, glc::DepthAttachment, glc::Renderbuffer,
+                                          rt.depthRbo);
+                NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
+                             "GL: float render target %dx%d (RGBA16F + depth RBO)", width, height);
+            }
         }
         g.DrawBuffer(glc::ColorAttachment0);
         g.ReadBuffer(glc::ColorAttachment0);
         gl::GLenum status = g.CheckFramebufferStatus(glc::Framebuffer);
         if (status != 0x8CD5) { // GL_FRAMEBUFFER_COMPLETE
             NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Error,
-                         "GL: render target incomplete, status=0x%X", status);
+                         "GL: render target %dx%d (samples=%d) incomplete, status=0x%X", width,
+                         height, samples, status);
             g.DeleteFramebuffers(1, &rt.fbo);
             g.DeleteTextures(1, &rt.colorTex);
             if (rt.depthRbo) g.DeleteRenderbuffers(1, &rt.depthRbo);
+            if (rt.colorRbo) g.DeleteRenderbuffers(1, &rt.colorRbo);
             g.BindFramebuffer(glc::Framebuffer, 0);
             return {};
         }
         g.BindFramebuffer(glc::Framebuffer, 0);
-        rt.colorTextureHandle = ++nextTextureId_;
-        textures_[rt.colorTextureHandle] = GLTexture{rt.colorTex, width, height};
-        rt.textureHandle = ++nextTextureId_;
-        textures_[rt.textureHandle] = GLTexture{rt.depthTex, width, height};
+        if (rt.colorTex) {
+            rt.colorTextureHandle = ++nextTextureId_;
+            textures_[rt.colorTextureHandle] = GLTexture{rt.colorTex, width, height};
+            rt.textureHandle = ++nextTextureId_;
+            textures_[rt.textureHandle] = GLTexture{rt.depthTex, width, height};
+        }
         renderTargets_[++nextRenderTargetId_] = rt;
         return {nextRenderTargetId_};
+    }
+
+    void ResolveRenderTarget(RenderTargetHandle src, RenderTargetHandle dst) override {
+        auto srcIt = renderTargets_.find(src.id);
+        auto dstIt = renderTargets_.find(dst.id);
+        if (srcIt == renderTargets_.end() || dstIt == renderTargets_.end()) return;
+        auto& g = gl::GetGL();
+        // Blit the multisample color into the single-sample target (GL 3.3
+        // core glBlitFramebuffer); the depth attachment is not carried over
+        // (the resolved HDR target's depth is only used for occlusion checks
+        // during the main pass, never after resolve).
+        g.BindFramebuffer(glc::ReadFramebuffer, srcIt->second.fbo);
+        g.BindFramebuffer(glc::DrawFramebuffer, dstIt->second.fbo);
+        g.BlitFramebuffer(0, 0, srcIt->second.width, srcIt->second.height, 0, 0,
+                          dstIt->second.width, dstIt->second.height, glc::ColorBufferBit,
+                          glc::Nearest);
+        g.BindFramebuffer(glc::ReadFramebuffer, currentFBO_);
+        g.BindFramebuffer(glc::DrawFramebuffer, currentFBO_);
+        CheckError("ResolveRenderTarget");
     }
 
     void DestroyRenderTarget(RenderTargetHandle target) override {
@@ -294,6 +345,7 @@ public:
         g.DeleteTextures(1, &it->second.colorTex);
         g.DeleteTextures(1, &it->second.depthTex);
         if (it->second.depthRbo) g.DeleteRenderbuffers(1, &it->second.depthRbo);
+        if (it->second.colorRbo) g.DeleteRenderbuffers(1, &it->second.colorRbo);
         renderTargets_.erase(it);
     }
 

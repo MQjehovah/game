@@ -1232,6 +1232,9 @@ void GameScene::DrawOverlays(gfx::Renderer& renderer) {
 bool NeonApp::OnCreate() {
     if (disableShadows_) renderer_.SetShadowsEnabled(false);
     renderer_.SetBloomEnabled(bloomEnabled_);
+    renderer_.SetExposure(exposure_);
+    renderer_.SetTonemapEnabled(tonemapEnabled_);
+    renderer_.SetMsaaEnabled(msaaEnabled_);
     if (!renderer_.Init(Window())) {
         NEON_LOG_ERROR("Demo: renderer init failed");
         return false;
@@ -1318,6 +1321,23 @@ void NeonApp::OnRender() {
             NEON_LOG_WARN("Bloom compare skipped: HDR pipeline inactive");
         }
         bloomCompareDone_ = true;
+    }
+    if (!tonemapCompareDone_ && !tonemapCompareClamped_.empty() &&
+        TimeRef().frameIndex >= tonemapCompareFrame_) {
+        std::vector<uint8_t> clamped, aces;
+        if (renderer_.CaptureTonemapComparison(clamped, aces)) {
+            const int w = renderer_.ScreenWidth();
+            const int h = renderer_.ScreenHeight();
+            int okClamped = stbi_write_png(tonemapCompareClamped_.c_str(), w, h, 4, clamped.data(),
+                                           w * 4);
+            int okAces = stbi_write_png(tonemapCompareAces_.c_str(), w, h, 4, aces.data(), w * 4);
+            NEON_LOG_INFO("Tonemap compare: clamp=%s (%s) aces=%s (%s)",
+                          tonemapCompareClamped_.c_str(), okClamped ? "ok" : "failed",
+                          tonemapCompareAces_.c_str(), okAces ? "ok" : "failed");
+        } else {
+            NEON_LOG_WARN("Tonemap compare skipped: HDR pipeline inactive");
+        }
+        tonemapCompareDone_ = true;
     }
     renderer_.EndFrame();
 }

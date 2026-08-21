@@ -16,8 +16,13 @@ void PrintHelp() {
         "  --disable-fbo          force-disable CSM shadow maps (CPU projected shadows)\n"
         "  --no-shadows           alias for --disable-fbo\n"
         "  --no-bloom             disable the HDR bloom post-process (HDR still on)\n"
+        "  --no-tonemap           composite with the legacy clamp instead of ACES (for diffing)\n"
+        "  --no-msaa              force the single-sample HDR target (for diffing)\n"
+        "  --exposure <v>         composite exposure for ACES tonemapping (default 1.0)\n"
         "  --bloom-compare <off.png> <on.png> <frame>  write the SAME frame twice\n"
         "                         (bloom off then on) from one HDR target for diffing\n"
+        "  --tonemap-compare <clamped.png> <aces.png> <frame>  write the SAME frame twice\n"
+        "                         (legacy clamp then ACES tonemap) for diffing\n"
         "  --fullscreen           start in fullscreen\n"
         "  --log-level <level>    log filter: debug|info|warn|error (default debug)\n"
         "  --log-cat <n>:<level>  per-category override (repeatable, comma-separated,\n"
@@ -39,6 +44,11 @@ int main(int argc, char** argv) {
     uint64_t screenshotFrame = 0;
     std::string compareOff, compareOn;
     uint64_t compareFrame = 0;
+    std::string tonemapClamped, tonemapAces;
+    uint64_t tonemapFrame = 0;
+    float exposure = 1.0f;
+    bool disableTonemap = false;
+    bool disableMsaa = false;
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "--smoke-test") == 0 && i + 1 < argc) {
             smokeFrames = std::atoi(argv[++i]);
@@ -49,6 +59,16 @@ int main(int argc, char** argv) {
             compareOff = argv[++i];
             compareOn = argv[++i];
             compareFrame = static_cast<uint64_t>(std::atoll(argv[++i]));
+        } else if (std::strcmp(argv[i], "--tonemap-compare") == 0 && i + 3 < argc) {
+            tonemapClamped = argv[++i];
+            tonemapAces = argv[++i];
+            tonemapFrame = static_cast<uint64_t>(std::atoll(argv[++i]));
+        } else if (std::strcmp(argv[i], "--exposure") == 0 && i + 1 < argc) {
+            exposure = std::atof(argv[++i]);
+        } else if (std::strcmp(argv[i], "--no-tonemap") == 0) {
+            disableTonemap = true;
+        } else if (std::strcmp(argv[i], "--no-msaa") == 0) {
+            disableMsaa = true;
         } else if (std::strcmp(argv[i], "--no-audio") == 0) {
             noAudio = true;
         } else if (std::strcmp(argv[i], "--disable-fbo") == 0 ||
@@ -82,8 +102,12 @@ int main(int argc, char** argv) {
     }
     if (!screenshotPath.empty()) app.RequestScreenshot(screenshotPath, screenshotFrame);
     if (!compareOff.empty()) app.RequestBloomCompare(compareOff, compareOn, compareFrame);
+    if (!tonemapClamped.empty()) app.RequestTonemapCompare(tonemapClamped, tonemapAces, tonemapFrame);
     if (disableShadows) app.SetDisableShadows(true);
     if (disableBloom) app.SetBloomEnabled(false);
+    if (disableTonemap) app.SetTonemapEnabled(false);
+    if (disableMsaa) app.SetMsaaEnabled(false);
+    if (exposure != 1.0f) app.SetExposure(exposure);
     int result = app.Run(config);
     std::printf("NeonRealm exited with code %d\n", result);
     return result;

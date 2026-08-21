@@ -211,6 +211,9 @@ public:
     bool SmokeMode() const { return smokeMode_; }
     void SetDisableShadows(bool v) { disableShadows_ = v; }
     void SetBloomEnabled(bool v) { bloomEnabled_ = v; }
+    void SetExposure(float v) { exposure_ = v; }
+    void SetTonemapEnabled(bool v) { tonemapEnabled_ = v; }
+    void SetMsaaEnabled(bool v) { msaaEnabled_ = v; }
     void RequestScreenshot(const std::string& path, uint64_t frame) {
         screenshotPath_ = path;
         screenshotFrame_ = frame;
@@ -221,6 +224,15 @@ public:
         bloomCompareOff_ = offPath;
         bloomCompareOn_ = onPath;
         bloomCompareFrame_ = frame;
+    }
+    // T3.7 verification: capture the SAME frame twice (legacy clamp then ACES
+    // tonemap) from one resolved HDR target so the two PNGs differ only by the
+    // tone-mapping operator.
+    void RequestTonemapCompare(const std::string& clampedPath, const std::string& acesPath,
+                               uint64_t frame) {
+        tonemapCompareClamped_ = clampedPath;
+        tonemapCompareAces_ = acesPath;
+        tonemapCompareFrame_ = frame;
     }
 
 private:
@@ -251,12 +263,19 @@ private:
     bool smokeMode_ = false;
     bool disableShadows_ = false;
     bool bloomEnabled_ = true;
+    float exposure_ = 1.0f;
+    bool tonemapEnabled_ = true;
+    bool msaaEnabled_ = true;
     std::string screenshotPath_;
     uint64_t screenshotFrame_ = 0;
     std::string bloomCompareOff_;
     std::string bloomCompareOn_;
     uint64_t bloomCompareFrame_ = 0;
     bool bloomCompareDone_ = false;
+    std::string tonemapCompareClamped_;
+    std::string tonemapCompareAces_;
+    uint64_t tonemapCompareFrame_ = 0;
+    bool tonemapCompareDone_ = false;
 
     friend class TitleScene;
     friend class GameScene;
