@@ -19,6 +19,8 @@ void PrintHelp() {
         "  --no-tonemap           composite with the legacy clamp instead of ACES (for diffing)\n"
         "  --no-msaa              force the single-sample HDR target (for diffing)\n"
         "  --exposure <v>         composite exposure for ACES tonemapping (default 1.0)\n"
+        "  --ibl <0..1>           IBL environment lighting intensity (default 1.0);\n"
+        "                         0 keeps the legacy flat ambient (for diffing)\n"
         "  --bloom-compare <off.png> <on.png> <frame>  write the SAME frame twice\n"
         "                         (bloom off then on) from one HDR target for diffing\n"
         "  --tonemap-compare <clamped.png> <aces.png> <frame>  write the SAME frame twice\n"
@@ -49,6 +51,7 @@ int main(int argc, char** argv) {
     float exposure = 1.0f;
     bool disableTonemap = false;
     bool disableMsaa = false;
+    float iblStrength = 1.0f;
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "--smoke-test") == 0 && i + 1 < argc) {
             smokeFrames = std::atoi(argv[++i]);
@@ -65,6 +68,8 @@ int main(int argc, char** argv) {
             tonemapFrame = static_cast<uint64_t>(std::atoll(argv[++i]));
         } else if (std::strcmp(argv[i], "--exposure") == 0 && i + 1 < argc) {
             exposure = std::atof(argv[++i]);
+        } else if (std::strcmp(argv[i], "--ibl") == 0 && i + 1 < argc) {
+            iblStrength = std::atof(argv[++i]);
         } else if (std::strcmp(argv[i], "--no-tonemap") == 0) {
             disableTonemap = true;
         } else if (std::strcmp(argv[i], "--no-msaa") == 0) {
@@ -108,6 +113,7 @@ int main(int argc, char** argv) {
     if (disableTonemap) app.SetTonemapEnabled(false);
     if (disableMsaa) app.SetMsaaEnabled(false);
     if (exposure != 1.0f) app.SetExposure(exposure);
+    if (iblStrength != 1.0f) app.SetIblStrength(iblStrength);
     int result = app.Run(config);
     std::printf("NeonRealm exited with code %d\n", result);
     return result;

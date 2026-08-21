@@ -1,6 +1,7 @@
 #include "neon/gfx/renderer.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <cstdlib>
@@ -86,6 +87,11 @@ uniform float uRoughness;
 uniform vec3 uSunDir;
 uniform vec3 uSunColor;
 uniform float uAmbient;
+uniform sampler2D uIrradianceMap;
+uniform sampler2D uPrefilteredMap;
+uniform sampler2D uBrdfLUT;
+uniform float uIblStrength;
+uniform float uRoughnessMin;
 uniform vec3 uPointPos[8];
 uniform vec3 uPointColor[8];
 uniform float uPointRadius[8];
@@ -247,7 +253,21 @@ void main() {
     vec3 F = F_Schlick(vdh, f0);
     vec3 spec = D * G * F / (4.0 * ndl * ndv + 1e-3);
     vec3 kd = (1.0 - F) * (1.0 - metallic);
-    vec3 ambientLight = albedo.rgb * uAmbient;
+    // IBL environment ambient (Task 3.8): diffuse irradiance + prefiltered
+    // specular via the split-sum BRDF LUT. Both maps are baked from the sky
+    // gradient and, because that environment is a vertical gradient, sampled
+    // by direction.y only (see ibl.hpp). The legacy flat `uAmbient` fades out
+    // as uIblStrength -> 1, so `--ibl 0` reproduces the pre-IBL look exactly
+    // while the shadows/AO interplay below is unchanged (only the sun term is
+    // shadowed; ambient stays unshadowed so shadows read as dim, not black).
+    vec3 iblIrradiance = texture(uIrradianceMap, vec2(0.5, N.y * 0.5 + 0.5)).rgb;
+    vec3 iblDiffuse = kd * iblIrradiance * albedo.rgb * uIblStrength;
+    vec3 R = reflect(-V, N);
+    float roughU = clamp((roughness - uRoughnessMin) / (1.0 - uRoughnessMin), 0.0, 1.0);
+    vec3 prefiltered = texture(uPrefilteredMap, vec2(roughU, R.y * 0.5 + 0.5)).rgb;
+    vec2 brdf = texture(uBrdfLUT, vec2(ndv, roughness)).rg;
+    vec3 iblSpecular = prefiltered * (f0 * brdf.x + brdf.y) * uIblStrength;
+    vec3 ambientLight = iblDiffuse + iblSpecular + albedo.rgb * uAmbient * (1.0 - uIblStrength);
     if (uHasAO) ambientLight *= texture(uOcclusion, vUV).r;
     vec3 color = (kd * albedo.rgb + spec) * uSunColor * ndl + ambientLight;
     if (uHasEmissive) color += texture(uEmissive, vUV).rgb;
@@ -629,6 +649,9 @@ void Renderer::Shutdown() {
     }
     DestroyPostTargets();
     if (white_.Valid()) backend_->DestroyTexture(white_);
+    if (iblIrradianceTex_.Valid()) backend_->DestroyTexture(iblIrradianceTex_);
+    if (iblPrefilteredTex_.Valid()) backend_->DestroyTexture(iblPrefilteredTex_);
+    if (iblBrdfLutTex_.Valid()) backend_->DestroyTexture(iblBrdfLutTex_);
     backend_->Shutdown();
     backend_.reset();
 }
@@ -854,6 +877,91 @@ void Renderer::SetCamera(const Camera& camera, float aspect) {
 void Renderer::SetSky(const Color& top, const Color& horizon) {
     skyTop_ = top;
     skyHorizon_ = horizon;
+    // Lazy IBL recompute. The demo animates the sky every frame (a day/night
+    // cycle), so the environment is rebuilt only when the sky has actually
+    // moved by a cumulative epsilon AND enough SetSky calls have elapsed since
+    // the last rebuild - an animated sky then re-precomputes at most once every
+    // kIblRecomputeInterval frames (~20ms, logged) and a static sky never does.
+    // Re-enabling IBL (strength 0 -> >0) forces a rebuild via iblValid_.
+    if (iblStrength_ <= 0.0f) return;
+    ++iblFrameCounter_;
+    if (!iblValid_) {
+        RecomputeIbl(top, horizon);
+        return;
+    }
+    const float delta = std::max({
+        std::fabs(top.r - iblLastTop_.r),     std::fabs(top.g - iblLastTop_.g),
+        std::fabs(top.b - iblLastTop_.b),     std::fabs(horizon.r - iblLastHorizon_.r),
+        std::fabs(horizon.g - iblLastHorizon_.g), std::fabs(horizon.b - iblLastHorizon_.b),
+    });
+    iblAccumDelta_ += delta;
+    if (iblAccumDelta_ >= kIblSkyEpsilon &&
+        iblFrameCounter_ - iblLastRecomputeFrame_ >= kIblRecomputeInterval) {
+        RecomputeIbl(top, horizon);
+    }
+}
+
+void Renderer::SetIblStrength(float strength) {
+    strength = std::max(0.0f, std::min(1.0f, strength));
+    const bool wasZero = iblStrength_ <= 0.0f;
+    iblStrength_ = strength;
+    if (wasZero && strength > 0.0f) iblValid_ = false; // rebuild on next SetSky
+}
+
+void Renderer::RecomputeIbl(const Color& top, const Color& horizon) {
+    if (!backend_) return;
+    const auto start = std::chrono::steady_clock::now();
+
+    // BRDF LUT is a pure material term (roughness x NoV), independent of the
+    // sky - build and upload it once.
+    if (!iblBrdfLutReady_) {
+        const std::vector<uint8_t> lut = ibl::BuildBrdfLut();
+        if (!lut.empty()) {
+            if (iblBrdfLutTex_.Valid()) backend_->DestroyTexture(iblBrdfLutTex_);
+            TextureDesc desc;
+            desc.width = ibl::kBrdfLutSize;
+            desc.height = ibl::kBrdfLutSize;
+            desc.rgba = lut.data();
+            desc.filter = Filter::Linear;
+            iblBrdfLutTex_ = backend_->CreateTexture(desc);
+            iblBrdfLutReady_ = iblBrdfLutTex_.Valid();
+        }
+    }
+
+    // Sky-dependent maps: irradiance (diffuse) + prefiltered specular. Both are
+    // RGBA8: the sky gradient is an LDR environment (all texels <= 1) so the
+    // 8-bit upload loses nothing; a future HDR environment would need a
+    // float-texture path in the backend.
+    const std::vector<uint8_t> irr = ibl::BuildIrradianceMap(top, horizon, kIblGradientPower);
+    const std::vector<uint8_t> pf = ibl::BuildPrefilteredMap(top, horizon, kIblGradientPower);
+    if (iblIrradianceTex_.Valid()) backend_->DestroyTexture(iblIrradianceTex_);
+    if (iblPrefilteredTex_.Valid()) backend_->DestroyTexture(iblPrefilteredTex_);
+    TextureDesc irrDesc;
+    irrDesc.width = 1;
+    irrDesc.height = ibl::kEnvRows;
+    irrDesc.rgba = irr.data();
+    irrDesc.filter = Filter::Linear;
+    iblIrradianceTex_ = backend_->CreateTexture(irrDesc);
+    TextureDesc pfDesc;
+    pfDesc.width = ibl::kRoughnessCols;
+    pfDesc.height = ibl::kEnvRows;
+    pfDesc.rgba = pf.data();
+    pfDesc.filter = Filter::Linear;
+    iblPrefilteredTex_ = backend_->CreateTexture(pfDesc);
+
+    iblValid_ = iblIrradianceTex_.Valid() && iblPrefilteredTex_.Valid() && iblBrdfLutTex_.Valid();
+    iblLastTop_ = top;
+    iblLastHorizon_ = horizon;
+    iblAccumDelta_ = 0.0f;
+    iblLastRecomputeFrame_ = iblFrameCounter_;
+
+    const double ms =
+        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+    NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
+                 "Renderer: IBL environment recomputed (sky %.2f,%.2f,%.2f -> %.2f,%.2f,%.2f) in "
+                 "%.1f ms (%s)",
+                 top.r, top.g, top.b, horizon.r, horizon.g, horizon.b, ms,
+                 iblValid_ ? "ok" : "FAILED");
 }
 
 void Renderer::SetFog(const Color& color, float start, float end) {
@@ -1455,6 +1563,21 @@ void Renderer::ApplyMaterial(const Material& material, const math::Mat4& mvp,
                 if (li < psLightCount) backend_->BindTexture(slot, pointShadowDepthTex_[li][face]);
                 backend_->SetUniformInt(name.c_str(), slot);
             }
+        }
+
+        // IBL environment maps (texture units 20..22): irradiance, prefiltered
+        // specular, BRDF LUT. When no environment exists yet (IBL off, or
+        // recompute pending) the uniforms stay at their GLSL defaults
+        // (uIblStrength = 0) so the shader contributes no IBL term.
+        if (iblValid_) {
+            backend_->SetUniformFloat("uIblStrength", iblStrength_);
+            backend_->SetUniformFloat("uRoughnessMin", ibl::kRoughnessMin);
+            backend_->BindTexture(20, iblIrradianceTex_);
+            backend_->SetUniformInt("uIrradianceMap", 20);
+            backend_->BindTexture(21, iblPrefilteredTex_);
+            backend_->SetUniformInt("uPrefilteredMap", 21);
+            backend_->BindTexture(22, iblBrdfLutTex_);
+            backend_->SetUniformInt("uBrdfLUT", 22);
         }
     }
 }

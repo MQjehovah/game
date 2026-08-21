@@ -7,6 +7,7 @@
 #include "neon/gfx/camera.hpp"
 #include "neon/gfx/color.hpp"
 #include "neon/gfx/font.hpp"
+#include "neon/gfx/ibl.hpp"
 #include "neon/gfx/material.hpp"
 #include "neon/gfx/mesh.hpp"
 #include "neon/gfx/shader.hpp"
@@ -63,6 +64,21 @@ public:
     void SetDirectionalLight(const math::Vec3& direction, const Color& color, float ambientStrength);
     void SetPointLight(int index, const math::Vec3& position, const Color& color, float radius);
     void SetPlayerLight(const math::Vec3& position, const Color& color, float radius);
+
+    // IBL environment lighting (Task 3.8). SetSky procedurally generates a
+    // vertical-gradient environment and precomputes irradiance + prefiltered
+    // specular + the BRDF LUT on the CPU (gfx/ibl.hpp); the lit shader then
+    // samples them for the ambient term. SetIblStrength is the global intensity
+    // in [0,1]: 0 keeps the legacy flat `uAmbient` exactly (the `--ibl 0`
+    // reference), 1 replaces it with the full environment lighting. Because
+    // the demo animates the sky every frame, the environment is recomputed
+    // lazily (only when the sky moved enough AND at most once every ~20 SetSky
+    // calls) - see RecomputeIbl.
+    void SetIblStrength(float strength);
+    float IblStrength() const { return iblStrength_; }
+    // True once the IBL environment textures exist (first SetSky with a
+    // positive strength).
+    bool IblValid() const { return iblValid_; }
 
     // 3D drawing
     // Cascaded shadow mapping. When enabled, shadow casters are recorded
@@ -349,6 +365,30 @@ private:
     Color fogColor_{0.2f, 0.3f, 0.45f, 1.0f};
     float fogStart_ = 60.0f;
     float fogEnd_ = 200.0f;
+
+    // IBL environment (Task 3.8). ibl.cpp precomputes the three byte maps
+    // (irradiance 1x128, prefiltered 24x128, BRDF LUT 128x128) from the sky
+    // gradient; they upload as plain RGBA8 2D textures (units 20..22) and the
+    // lit shader samples them with the map conventions documented in ibl.hpp.
+    // The environment is recomputed from SetSky when the accumulated sky delta
+    // passes a small epsilon and at most once every kIblRecomputeInterval SetSky
+    // calls, so the animated day/night sky tracks smoothly without a per-frame
+    // hitch; the BRDF LUT is sky-independent and built once.
+    static constexpr float kIblGradientPower = 0.65f;
+    static constexpr float kIblSkyEpsilon = 0.008f;
+    static constexpr uint64_t kIblRecomputeInterval = 20;
+    TextureHandle iblIrradianceTex_;
+    TextureHandle iblPrefilteredTex_;
+    TextureHandle iblBrdfLutTex_;
+    bool iblValid_ = false;
+    bool iblBrdfLutReady_ = false;
+    float iblStrength_ = 1.0f;
+    Color iblLastTop_{};
+    Color iblLastHorizon_{};
+    float iblAccumDelta_ = 0.0f;
+    uint64_t iblFrameCounter_ = 0;
+    uint64_t iblLastRecomputeFrame_ = 0;
+    void RecomputeIbl(const Color& top, const Color& horizon);
 
     math::Vec3 sunDir_{-0.4f, -1.0f, -0.3f};
     Color sunColor_{1.0f, 0.95f, 0.85f, 1.0f};

@@ -214,6 +214,9 @@ public:
     void SetExposure(float v) { exposure_ = v; }
     void SetTonemapEnabled(bool v) { tonemapEnabled_ = v; }
     void SetMsaaEnabled(bool v) { msaaEnabled_ = v; }
+    // T3.8: global IBL intensity in [0,1]. 0 disables environment lighting and
+    // keeps the legacy flat ambient (the --ibl 0 reference), 1 is full IBL.
+    void SetIblStrength(float v) { iblStrength_ = v; }
     void RequestScreenshot(const std::string& path, uint64_t frame) {
         screenshotPath_ = path;
         screenshotFrame_ = frame;
@@ -266,6 +269,7 @@ private:
     float exposure_ = 1.0f;
     bool tonemapEnabled_ = true;
     bool msaaEnabled_ = true;
+    float iblStrength_ = 1.0f;
     std::string screenshotPath_;
     uint64_t screenshotFrame_ = 0;
     std::string bloomCompareOff_;

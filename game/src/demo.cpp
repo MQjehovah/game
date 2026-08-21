@@ -1235,6 +1235,7 @@ bool NeonApp::OnCreate() {
     renderer_.SetExposure(exposure_);
     renderer_.SetTonemapEnabled(tonemapEnabled_);
     renderer_.SetMsaaEnabled(msaaEnabled_);
+    renderer_.SetIblStrength(iblStrength_);
     if (!renderer_.Init(Window())) {
         NEON_LOG_ERROR("Demo: renderer init failed");
         return false;
