@@ -116,3 +116,122 @@ TEST(CsmNullBackendStaysDisabled) {
     fx.renderer.DrawSkinnedMesh(cube, gfx::Material::Lit({}), math::Mat4::Identity(), bones, 2);
     CHECK(!fx.renderer.ShadowsEnabled());
 }
+
+// ---------------------------------------------------------------------------
+// Point-light cubemap shadow math (pure, headless - no GL needed).
+// ---------------------------------------------------------------------------
+
+TEST(PointCubemapFaceSelection) {
+    float u = 0.0f, v = 0.0f;
+
+    // Cardinal axes: each picks its face and lands dead-center (uv 0.5,0.5).
+    CHECK_EQ(gfx::CubemapFaceAndUV({1, 0, 0}, u, v), 0);
+    CHECK_NEAR(u, 0.5, 1e-5);
+    CHECK_NEAR(v, 0.5, 1e-5);
+    CHECK_EQ(gfx::CubemapFaceAndUV({-1, 0, 0}, u, v), 1);
+    CHECK_NEAR(u, 0.5, 1e-5);
+    CHECK_EQ(gfx::CubemapFaceAndUV({0, 1, 0}, u, v), 2);
+    CHECK_NEAR(u, 0.5, 1e-5);
+    CHECK_EQ(gfx::CubemapFaceAndUV({0, -1, 0}, u, v), 3);
+    CHECK_NEAR(u, 0.5, 1e-5);
+    CHECK_EQ(gfx::CubemapFaceAndUV({0, 0, 1}, u, v), 4);
+    CHECK_NEAR(u, 0.5, 1e-5);
+    CHECK_EQ(gfx::CubemapFaceAndUV({0, 0, -1}, u, v), 5);
+    CHECK_NEAR(u, 0.5, 1e-5);
+
+    // Off-axis directions: verify the projected coordinates per face
+    // (GL cube-map spec convention: +X: u = -z/x, +Z: u = +x/z, etc).
+    math::Vec3 d1 = math::Vec3{1, 0, 0.5f}.Normalized(); // +X face
+    CHECK_EQ(gfx::CubemapFaceAndUV(d1, u, v), 0);
+    CHECK_NEAR(u, 0.5f - 0.25f, 1e-4); // -z/x * 0.5 + 0.5 = 0.25
+    CHECK_NEAR(v, 0.5, 1e-4);
+    math::Vec3 d2 = math::Vec3{1, 0, -0.5f}.Normalized(); // +X face
+    CHECK_EQ(gfx::CubemapFaceAndUV(d2, u, v), 0);
+    CHECK_NEAR(u, 0.75, 1e-4);
+    math::Vec3 d3 = math::Vec3{0.5f, 0, 1}.Normalized(); // +Z face
+    CHECK_EQ(gfx::CubemapFaceAndUV(d3, u, v), 4);
+    CHECK_NEAR(u, 0.75, 1e-4);
+    math::Vec3 d4 = math::Vec3{-0.5f, 0, 1}.Normalized(); // +Z face
+    CHECK_EQ(gfx::CubemapFaceAndUV(d4, u, v), 4);
+    CHECK_NEAR(u, 0.25, 1e-4);
+    math::Vec3 d5 = math::Vec3{0, 1, 0.5f}.Normalized(); // +Y face
+    CHECK_EQ(gfx::CubemapFaceAndUV(d5, u, v), 2);
+    CHECK_NEAR(v, 0.75, 1e-4); // z/y * 0.5 + 0.5
+    math::Vec3 d6 = math::Vec3{0, -1, 0.5f}.Normalized(); // -Y face
+    CHECK_EQ(gfx::CubemapFaceAndUV(d6, u, v), 3);
+    CHECK_NEAR(v, 0.25, 1e-4); // -z/|y| * 0.5 + 0.5
+}
+
+TEST(PointCubemapFaceProjectionMatchesRender) {
+    // A point that lies inside face f's 90-degree frustum must project to the
+    // same uv via the face view-projection as CubemapFaceAndUV computes from
+    // its direction. This is what guarantees the depth map rendered per face
+    // is sampled at the right texel in the lit shader.
+    const math::Vec3 lightPos = {1.5f, 2.0f, -0.5f};
+    const float nearZ = 0.1f;
+    const float farZ = 10.0f;
+    const math::Vec3 samples[6][4] = {
+        {{1, 0.3f, 0.2f}, {1, -0.4f, 0.1f}, {1, 0.2f, -0.5f}, {1, -0.1f, 0.4f}},   // +X
+        {{-1, 0.3f, 0.2f}, {-1, -0.4f, 0.1f}, {-1, 0.2f, -0.5f}, {-1, -0.1f, 0.4f}}, // -X
+        {{0.3f, 1, 0.2f}, {-0.4f, 1, 0.1f}, {0.2f, 1, -0.5f}, {-0.1f, 1, 0.4f}},    // +Y
+        {{0.3f, -1, 0.2f}, {-0.4f, -1, 0.1f}, {0.2f, -1, -0.5f}, {-0.1f, -1, 0.4f}}, // -Y
+        {{0.3f, 0.2f, 1}, {-0.4f, 0.1f, 1}, {0.2f, -0.5f, 1}, {-0.1f, 0.4f, 1}},     // +Z
+        {{0.3f, 0.2f, -1}, {-0.4f, 0.1f, -1}, {0.2f, -0.5f, -1}, {-0.1f, 0.4f, -1}},  // -Z
+    };
+    for (int face = 0; face < 6; ++face) {
+        const math::Mat4 vp = gfx::ComputePointLightFaceViewProj(lightPos, face, nearZ, farZ);
+        for (int s = 0; s < 4; ++s) {
+            const math::Vec3 dir = samples[face][s].Normalized();
+            const math::Vec3 world = lightPos + dir * 5.0f;
+            const math::Vec4 clip = vp.TransformVec4({world.x, world.y, world.z, 1.0f});
+            CHECK(clip.w > 0.0f);
+            const float uProj = clip.x / clip.w * 0.5f + 0.5f;
+            const float vProj = clip.y / clip.w * 0.5f + 0.5f;
+            float u = 0.0f, v = 0.0f;
+            CHECK_EQ(gfx::CubemapFaceAndUV(dir, u, v), face);
+            CHECK_NEAR(u, uProj, 1e-3);
+            CHECK_NEAR(v, vProj, 1e-3);
+            // The projected depth is inside the rendered range.
+            const float ndcZ = clip.z / clip.w;
+            CHECK(ndcZ >= -1.0f && ndcZ <= 1.0f);
+        }
+    }
+}
+
+TEST(PointLightShadowDepthCompare) {
+    // Stored depth is dist/range in [0,1]; a fragment is lit when the nearest
+    // stored surface is farther than itself (minus bias).
+    CHECK_NEAR(gfx::PointLightShadowFactor(0.5f, 4.0f, 10.0f, 0.01f), 1.0f, 1e-6);
+    CHECK_NEAR(gfx::PointLightShadowFactor(0.5f, 6.0f, 10.0f, 0.01f), 0.0f, 1e-6);
+    // Bias rescues a surface grazing the stored depth.
+    CHECK_NEAR(gfx::PointLightShadowFactor(0.5f, 5.2f, 10.0f, 0.1f), 1.0f, 1e-6);
+    CHECK_NEAR(gfx::PointLightShadowFactor(0.5f, 5.2f, 10.0f, 0.01f), 0.0f, 1e-6);
+    // Range <= 0 (disabled light) never shadows.
+    CHECK_NEAR(gfx::PointLightShadowFactor(0.2f, 1.0f, 0.0f, 0.01f), 1.0f, 1e-6);
+}
+
+TEST(PointShadowNullBackendStaysDisabled) {
+    test::HeadlessAssetFixture fx;
+    // Same capability gate as CSM: without a real backend the point-light
+    // shadow maps are never allocated and the flag stays off.
+    CHECK(!fx.renderer.PointShadowsEnabled());
+    CHECK(!fx.renderer.PointShadowMapActive());
+    CHECK_EQ(fx.renderer.PointShadowMapSize(), 512);
+
+    fx.renderer.SetPointLight(0, {0.0f, 1.3f, 0.0f}, {1.0f, 0.55f, 0.25f, 1.0f}, 11.0f);
+
+    // SetCamera triggers the (disabled) shadow passes; DrawMesh must not crash
+    // even though no point shadow resources exist.
+    gfx::Camera cam;
+    fx.renderer.SetCamera(cam, 16.0f / 9.0f);
+    gfx::Mesh cube = gfx::Mesh::CreateCube(fx.renderer, 1, 1, 1, "point_shadow_test_cube");
+    CHECK(cube.Valid());
+    fx.renderer.DrawMesh(cube, gfx::Material::Lit({}), math::Mat4::Identity());
+    CHECK(!fx.renderer.PointShadowsEnabled());
+    CHECK(!fx.renderer.PointShadowMapActive());
+
+    // Force-disabling shadows keeps the capability off.
+    fx.renderer.SetShadowsEnabled(false);
+    CHECK(!fx.renderer.ShadowsEnabled());
+    CHECK(!fx.renderer.PointShadowsEnabled());
+}

@@ -813,6 +813,11 @@ void GameScene::Draw(gfx::Renderer& renderer) {
     CTransform* pt = world_.Get<CTransform>(player_);
     if (pt) renderer.SetPlayerLight(pt->pos + math::Vec3{0, 1.6f, 0}, {0.25f, 0.55f, 1.0f}, 16.0f);
 
+    // Village torch / campfire: a static warm point light above the NPC. With
+    // point-light cubemap shadows (Task 3.5) its light casts a visible shadow
+    // of the NPC/player onto the flat village ground.
+    renderer.SetPointLight(0, {0.0f, 3.0f, -1.0f}, {1.6f, 0.95f, 0.5f, 1.0f}, 10.0f);
+
     const DemoAssets& assets = app_.Assets();
 
     math::Vec3 sunDir{-0.4f, -1.0f, -0.3f};

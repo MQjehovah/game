@@ -3,9 +3,11 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <cstdlib>
 
 #include "neon/core/log.hpp"
 #include "neon/gfx/csm.hpp"
+#include "neon/gfx/point_shadow.hpp"
 
 namespace neon::gfx {
 namespace {
@@ -102,6 +104,21 @@ uniform mat4 uLightVP[3];
 uniform vec4 uCascadeSplits;
 uniform vec2 uShadowTexel;
 uniform bool uShadowEnabled;
+uniform sampler2D uPointShadowMap0;
+uniform sampler2D uPointShadowMap1;
+uniform sampler2D uPointShadowMap2;
+uniform sampler2D uPointShadowMap3;
+uniform sampler2D uPointShadowMap4;
+uniform sampler2D uPointShadowMap5;
+uniform sampler2D uPointShadowMap6;
+uniform sampler2D uPointShadowMap7;
+uniform sampler2D uPointShadowMap8;
+uniform sampler2D uPointShadowMap9;
+uniform sampler2D uPointShadowMap10;
+uniform sampler2D uPointShadowMap11;
+uniform vec2 uPointShadowTexel;
+uniform bool uPointShadowEnabled;
+uniform int uPointShadowLightCount;
 float DecodeDepth(vec4 v) {
     return dot(v, vec4(1.0, 1.0 / 255.0, 1.0 / 65025.0, 1.0 / 16581375.0));
 }
@@ -138,6 +155,75 @@ float ShadowFactor(sampler2D sm, vec2 uv, float lightDepth) {
         }
     }
     return lit / 4.0;
+}
+// Maps the light->fragment direction to a cube face + uv. Same convention as
+// the CPU-side CubemapFaceAndUV (GL cube-map spec table 8.19), which is how
+// the 6 per-face shadow maps were rendered.
+vec2 PointCubemapFaceUV(vec3 dir, out int face) {
+    vec3 ad = abs(dir);
+    float ma = max(max(ad.x, ad.y), ad.z);
+    vec2 uv;
+    if (ad.x >= ad.y && ad.x >= ad.z) {
+        if (dir.x >= 0.0) { face = 0; uv = vec2(-dir.z, -dir.y); }
+        else              { face = 1; uv = vec2( dir.z, -dir.y); }
+    } else if (ad.y >= ad.x && ad.y >= ad.z) {
+        if (dir.y >= 0.0) { face = 2; uv = vec2( dir.x,  dir.z); }
+        else              { face = 3; uv = vec2( dir.x, -dir.z); }
+    } else {
+        if (dir.z >= 0.0) { face = 4; uv = vec2( dir.x, -dir.y); }
+        else              { face = 5; uv = vec2(-dir.x, -dir.y); }
+    }
+    return uv / ma * 0.5 + 0.5;
+}
+// Point-light shadow factor for one face map: manual depth compare + PCF. The
+// map stores linear dist/range, so the compared depth is current = dist/range.
+// Bias is the map's own per-texel depth gradient (like the CSM path) so sloped
+// receivers stay lit without peter-panning. taps=1 keeps secondary lights
+// cheap (4 fetches); taps=4 (2x2 PCF) is used for the primary point light.
+float PointShadowFactor(sampler2D sm, vec2 uv, float current, int taps) {
+    float d0 = DecodeDepth(texture(sm, uv));
+    float dx = DecodeDepth(texture(sm, uv + vec2(uPointShadowTexel.x, 0.0)));
+    float dy = DecodeDepth(texture(sm, uv + vec2(0.0, uPointShadowTexel.y)));
+    float slope = max(abs(dx - d0), abs(dy - d0));
+    float bias = clamp(0.003 + slope, 0.003, 0.03);
+    float lit = 0.0;
+    if (taps == 1) {
+        lit = d0 > current - bias ? 1.0 : 0.0;
+    } else {
+        for (int x = 0; x < 2; ++x) {
+            for (int y = 0; y < 2; ++y) {
+                vec2 off = (vec2(float(x), float(y)) - vec2(0.5)) * uPointShadowTexel;
+                lit += DecodeDepth(texture(sm, uv + off)) > current - bias ? 1.0 : 0.0;
+            }
+        }
+        lit /= 4.0;
+    }
+    return lit;
+}
+// Selects the 2D shadow map for (light, face) and applies PCF. The face index
+// is static per branch, so every sampler reference is constant-resolved.
+float PointShadowForLight(int light, vec3 worldPos, vec3 lightPos, float range) {
+    vec3 dir = worldPos - lightPos;
+    float dist = length(dir);
+    if (dist < 1e-4) return 1.0;
+    int face;
+    vec2 uv = PointCubemapFaceUV(dir / dist, face);
+    float current = dist / max(range, 1e-4);
+    int taps = light == 0 ? 4 : 1;
+    if (light == 0) {
+        if (face == 0) return PointShadowFactor(uPointShadowMap0, uv, current, taps);
+        if (face == 1) return PointShadowFactor(uPointShadowMap1, uv, current, taps);
+        if (face == 2) return PointShadowFactor(uPointShadowMap2, uv, current, taps);
+        if (face == 3) return PointShadowFactor(uPointShadowMap3, uv, current, taps);
+        if (face == 4) return PointShadowFactor(uPointShadowMap4, uv, current, taps);
+        return PointShadowFactor(uPointShadowMap5, uv, current, taps);
+    }
+    if (face == 0) return PointShadowFactor(uPointShadowMap6, uv, current, taps);
+    if (face == 1) return PointShadowFactor(uPointShadowMap7, uv, current, taps);
+    if (face == 2) return PointShadowFactor(uPointShadowMap8, uv, current, taps);
+    if (face == 3) return PointShadowFactor(uPointShadowMap9, uv, current, taps);
+    if (face == 4) return PointShadowFactor(uPointShadowMap10, uv, current, taps);
+    return PointShadowFactor(uPointShadowMap11, uv, current, taps);
 }
 void main() {
     vec4 albedo = uHasTexture ? texture(uAlbedo, vUV) : vec4(1.0);
@@ -180,7 +266,11 @@ void main() {
         vec3 pF = F_Schlick(pvdh, f0);
         vec3 pSpec = pD * pG * pF / (4.0 * pndl * ndv + 1e-3);
         vec3 pKd = (1.0 - pF) * (1.0 - metallic);
-        color += (pKd * albedo.rgb + pSpec) * uPointColor[i] * pndl * atten;
+        vec3 pContrib = (pKd * albedo.rgb + pSpec) * uPointColor[i] * pndl * atten;
+        if (uPointShadowEnabled && i < uPointShadowLightCount) {
+            pContrib *= PointShadowForLight(i, vWorldPos, uPointPos[i], uPointRadius[i]);
+        }
+        color += pContrib;
     }
     if (uPlayerLightEnabled) {
         vec3 toL = uPlayerLightPos - vWorldPos;
@@ -344,6 +434,72 @@ void main() {
 }
 )";
 
+// Point-light shadow variants. The depth is NOT gl_FragCoord.z: for a point
+// light the per-face map must store a single linear distance (dist from the
+// light) so the lit shader can compare it against the per-fragment distance in
+// every direction of that face. The vertex shaders therefore output the world
+// position and the fragment shader encodes length(worldPos - uLightPos)/range.
+const char* kPointShadowVertexShader = R"(
+#version 330 core
+layout(location = 0) in vec3 aPos;
+uniform mat4 uMVP;
+uniform mat4 uModel;
+out vec3 vWorldPos;
+void main() {
+    vWorldPos = (uModel * vec4(aPos, 1.0)).xyz;
+    gl_Position = uMVP * vec4(aPos, 1.0);
+}
+)";
+
+const char* kPointShadowInstancedVertexShader = R"(
+#version 330 core
+layout(location = 0) in vec3 aPos;
+layout(location = 4) in mat4 aInstance;
+uniform mat4 uMVP;
+out vec3 vWorldPos;
+void main() {
+    vWorldPos = (aInstance * vec4(aPos, 1.0)).xyz;
+    gl_Position = uMVP * aInstance * vec4(aPos, 1.0);
+}
+)";
+
+const char* kPointShadowSkinnedVertexShader = R"(
+#version 330 core
+layout(location = 0) in vec3 aPos;
+layout(location = 4) in vec4 aJointIds;
+layout(location = 5) in vec4 aWeights;
+uniform mat4 uBoneMatrices[64];
+uniform mat4 uMVP;
+uniform mat4 uModel;
+out vec3 vWorldPos;
+void main() {
+    mat4 skin = mat4(0.0);
+    for (int i = 0; i < 4; ++i) {
+        int id = int(aJointIds[i]);
+        if (id >= 0 && id < 64) skin += aWeights[i] * uBoneMatrices[id];
+    }
+    vWorldPos = (uModel * skin * vec4(aPos, 1.0)).xyz;
+    gl_Position = uMVP * skin * vec4(aPos, 1.0);
+}
+)";
+
+const char* kPointShadowFragmentShader = R"(
+#version 330 core
+in vec3 vWorldPos;
+out vec4 FragColor;
+uniform vec3 uLightPos;
+uniform float uLightRange;
+vec4 EncodeDepth(float d) {
+    vec4 bits = vec4(1.0, 255.0, 65025.0, 16581375.0) * d;
+    bits = fract(bits);
+    bits -= bits.yzww * vec4(1.0 / 255.0, 1.0 / 255.0, 1.0 / 255.0, 0.0);
+    return bits;
+}
+void main() {
+    FragColor = EncodeDepth(clamp(length(vWorldPos - uLightPos) / uLightRange, 0.0, 1.0));
+}
+)";
+
 const char* kUIVertexShader = R"(
 #version 330 core
 layout(location = 0) in vec2 aPos;
@@ -451,9 +607,18 @@ void Renderer::Shutdown() {
     if (depthShader_.Valid()) backend_->DestroyShader(depthShader_);
     if (depthInstancedShader_.Valid()) backend_->DestroyShader(depthInstancedShader_);
     if (depthSkinnedShader_.Valid()) backend_->DestroyShader(depthSkinnedShader_);
+    if (pointDepthShader_.Valid()) backend_->DestroyShader(pointDepthShader_);
+    if (pointDepthInstancedShader_.Valid()) backend_->DestroyShader(pointDepthInstancedShader_);
+    if (pointDepthSkinnedShader_.Valid()) backend_->DestroyShader(pointDepthSkinnedShader_);
     if (probeQuadMesh_.Valid()) backend_->DestroyMesh(probeQuadMesh_);
     for (int i = 0; i < kShadowCascades; ++i) {
         if (shadowRT_[i].Valid()) backend_->DestroyRenderTarget(shadowRT_[i]);
+    }
+    for (int li = 0; li < kShadowPointLights; ++li) {
+        for (int face = 0; face < 6; ++face) {
+            if (pointShadowRT_[li][face].Valid())
+                backend_->DestroyRenderTarget(pointShadowRT_[li][face]);
+        }
     }
     if (white_.Valid()) backend_->DestroyTexture(white_);
     backend_->Shutdown();
@@ -495,6 +660,20 @@ void Renderer::InitBuiltinResources() {
         backend_->CreateShader(kShadowInstancedVertexShader, kShadowFragmentShader, "shadow_inst");
     depthSkinnedShader_ =
         backend_->CreateShader(kShadowSkinnedVertexShader, kShadowFragmentShader, "shadow_skin");
+    pointDepthShader_ =
+        backend_->CreateShader(kPointShadowVertexShader, kPointShadowFragmentShader, "point_shadow");
+    pointDepthInstancedShader_ = backend_->CreateShader(kPointShadowInstancedVertexShader,
+                                                        kPointShadowFragmentShader,
+                                                        "point_shadow_inst");
+    pointDepthSkinnedShader_ = backend_->CreateShader(kPointShadowSkinnedVertexShader,
+                                                      kPointShadowFragmentShader,
+                                                      "point_shadow_skin");
+    NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
+                 "Renderer: point shadow shaders %s",
+                 (pointDepthShader_.Valid() && pointDepthInstancedShader_.Valid() &&
+                  pointDepthSkinnedShader_.Valid())
+                     ? "ok"
+                     : "FAILED");
 
     // NDC unit quad used by the FBO capability self-test.
     const Vertex3D quadVerts[4] = {
@@ -526,11 +705,47 @@ void Renderer::InitBuiltinResources() {
     NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
                  "Renderer: CSM shadow maps %dx%d x3 (%s)", shadowSize_, shadowSize_,
                  csmEnabled_ ? "ok" : "FAILED -> CPU projected shadows fallback");
+
+    // Point-light cubemap shadows reuse the same color-encoded-depth FBO path,
+    // so they engage only when the CSM capability self-test passed. Six 2D
+    // maps per light (layered cubemap FBOs are unreliable on the Intel driver);
+    // the lit shader picks the face from the fragment->light direction.
+    if (csmEnabled_) {
+        pointShadowsEnabled_ = true;
+        for (int li = 0; li < kShadowPointLights && pointShadowsEnabled_; ++li) {
+            for (int face = 0; face < 6; ++face) {
+                pointShadowRT_[li][face] =
+                    backend_->CreateRenderTarget(kPointShadowSize, kPointShadowSize);
+                pointShadowDepthTex_[li][face] =
+                    backend_->RenderTargetColorTexture(pointShadowRT_[li][face]);
+                if (!pointShadowRT_[li][face].Valid() || !pointShadowDepthTex_[li][face].Valid()) {
+                    NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Warn,
+                                 "Renderer: point light %d face %d shadow target failed", li, face);
+                    pointShadowsEnabled_ = false;
+                    break;
+                }
+            }
+        }
+        NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
+                     "Renderer: point light shadow maps %dx%d x%d lights (%s)",
+                     kPointShadowSize, kPointShadowSize, kShadowPointLights,
+                     pointShadowsEnabled_ ? "ok" : "FAILED");
+    } else {
+        pointShadowsEnabled_ = false;
+    }
+    // Diagnostic override (not public API): isolate the point-light shadow
+    // contribution for verification (screenshot diffs) without touching CSM.
+    if (pointShadowsEnabled_ && std::getenv("NEON_NO_POINT_SHADOWS")) {
+        NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Warn,
+                     "Renderer: point light shadows disabled by NEON_NO_POINT_SHADOWS");
+        pointShadowsEnabled_ = false;
+    }
 }
 
 void Renderer::BeginFrame(const Color& clearColor, float clearDepth) {
     stats_ = RenderStats{};
     csmActive_ = false;
+    pointShadowsActive_ = false;
     shadowPassRanThisFrame_ = false;
     screenW_ = window_ ? window_->Width() : screenW_;
     screenH_ = window_ ? window_->Height() : screenH_;
@@ -631,6 +846,8 @@ void Renderer::RunShadowPass() {
         backend_->SetDepthTest(false, false);
         DrawShadowCastersSorted(lightViewProj_[i]);
     }
+    // Point-light cubemap faces reuse the same caster list (cleared below).
+    RunPointShadowPass();
     backend_->BindDefaultTarget();
     shadowCasters_.clear();
     csmActive_ = true;
@@ -685,6 +902,104 @@ void Renderer::DrawShadowCaster(const ShadowDraw& draw, const math::Mat4& lightV
     } else {
         backend_->UseShader(depthShader_);
         backend_->SetUniformMat4("uMVP", lightVP * draw.model);
+        backend_->DrawMesh(draw.mesh);
+    }
+}
+
+void Renderer::RunPointShadowPass() {
+    if (!pointShadowsEnabled_) return;
+    pointShadowsActive_ = false;
+    const int lightCount = std::min(pointCount_, kShadowPointLights);
+    for (int li = 0; li < lightCount; ++li) {
+        if (pointRadius_[li] <= 0.0f) continue;
+        const float range = pointRadius_[li];
+        bool allFaces = true;
+        for (int face = 0; face < 6; ++face) {
+            if (!pointShadowRT_[li][face].Valid()) {
+                allFaces = false;
+                break;
+            }
+            pointLightViewProj_[li][face] =
+                ComputePointLightFaceViewProj(pointPos_[li], face, kPointShadowNear, range);
+        }
+        if (!allFaces) continue;
+        DrawPointShadowCastersSorted(li);
+        pointShadowsActive_ = true;
+    }
+}
+
+void Renderer::DrawPointShadowCastersSorted(int lightIndex) {
+    if (shadowCasters_.empty()) return;
+    const math::Vec3 lightPos = pointPos_[lightIndex];
+    const float range = pointRadius_[lightIndex];
+
+    // Color-encoded maps have no depth buffer, so draw casters far -> near from
+    // the light (last wins = nearest surface). Casters fully outside the
+    // light's sphere of influence cannot shadow anything the light reaches.
+    struct SortKey {
+        const ShadowDraw* draw;
+        float dist;
+    };
+    std::vector<SortKey> keys;
+    keys.reserve(shadowCasters_.size());
+    for (const ShadowDraw& draw : shadowCasters_) {
+        if (!draw.mesh.Valid()) continue;
+        math::Vec3 center;
+        if (!draw.models.empty()) {
+            for (const math::Mat4& m : draw.models) center += m.TransformPoint(draw.bounds.Center());
+            center = center * (1.0f / static_cast<float>(draw.models.size()));
+        } else {
+            center = draw.model.TransformPoint(draw.bounds.Center());
+        }
+        const math::Vec3 ext = draw.bounds.Extents();
+        const float boxRadius = ext.Length();
+        const float dist = (center - lightPos).Length();
+        if (dist - boxRadius > range) continue;
+        keys.push_back({&draw, dist});
+    }
+    std::sort(keys.begin(), keys.end(),
+              [](const SortKey& a, const SortKey& b) { return a.dist > b.dist; });
+
+    backend_->SetBlendMode(BlendMode::Opaque);
+    backend_->SetCullMode(CullMode::Back);
+    backend_->SetDepthTest(false, false);
+    for (int face = 0; face < 6; ++face) {
+        backend_->BindRenderTarget(pointShadowRT_[lightIndex][face]);
+        backend_->Clear({1.0f, 1.0f, 1.0f, 1.0f}, 1.0f);
+        for (const SortKey& k : keys)
+            DrawPointShadowCaster(*k.draw, pointLightViewProj_[lightIndex][face], lightPos, range);
+    }
+    backend_->BindDefaultTarget();
+}
+
+void Renderer::DrawPointShadowCaster(const ShadowDraw& draw, const math::Mat4& lightVP,
+                                     const math::Vec3& lightPos, float range) {
+    if (!draw.mesh.Valid()) return;
+    if (!draw.models.empty()) {
+        backend_->UseShader(pointDepthInstancedShader_);
+        backend_->SetUniformMat4("uMVP", lightVP);
+        backend_->SetUniformVec3("uLightPos", lightPos);
+        backend_->SetUniformFloat("uLightRange", range);
+        backend_->DrawMeshInstanced(draw.mesh, draw.models.data(),
+                                    static_cast<uint32_t>(draw.models.size()));
+    } else if (!draw.bones.empty()) {
+        backend_->UseShader(pointDepthSkinnedShader_);
+        std::vector<float> flat(static_cast<size_t>(draw.boneCount) * 16);
+        for (int i = 0; i < draw.boneCount; ++i)
+            std::memcpy(flat.data() + static_cast<size_t>(i) * 16,
+                        draw.bones[static_cast<size_t>(i)].Data(), 16 * sizeof(float));
+        backend_->SetUniformMat4Array("uBoneMatrices", flat.data(), draw.boneCount);
+        backend_->SetUniformMat4("uMVP", lightVP * draw.model);
+        backend_->SetUniformMat4("uModel", draw.model);
+        backend_->SetUniformVec3("uLightPos", lightPos);
+        backend_->SetUniformFloat("uLightRange", range);
+        backend_->DrawMesh(draw.mesh);
+    } else {
+        backend_->UseShader(pointDepthShader_);
+        backend_->SetUniformMat4("uMVP", lightVP * draw.model);
+        backend_->SetUniformMat4("uModel", draw.model);
+        backend_->SetUniformVec3("uLightPos", lightPos);
+        backend_->SetUniformFloat("uLightRange", range);
         backend_->DrawMesh(draw.mesh);
     }
 }
@@ -1018,6 +1333,26 @@ void Renderer::ApplyMaterial(const Material& material, const math::Mat4& mvp,
         backend_->SetUniformInt("uShadowMap1", 6);
         backend_->BindTexture(7, shadowDepthTex_[2]);
         backend_->SetUniformInt("uShadowMap2", 7);
+
+        // Point-light cubemap shadows: 2 lights x 6 faces on texture units
+        // 8..19. When the pass is inactive the uniforms are set to valid units
+        // anyway (harmless: the shader never samples them), so inactive lights
+        // only leave their units unbound.
+        const int psLightCount =
+            pointShadowsActive_ ? std::min(pointCount_, kShadowPointLights) : 0;
+        backend_->SetUniformInt("uPointShadowEnabled", pointShadowsActive_ ? 1 : 0);
+        backend_->SetUniformInt("uPointShadowLightCount", psLightCount);
+        backend_->SetUniformVec2("uPointShadowTexel",
+                                 {1.0f / static_cast<float>(kPointShadowSize),
+                                  1.0f / static_cast<float>(kPointShadowSize)});
+        for (int li = 0; li < kShadowPointLights; ++li) {
+            for (int face = 0; face < 6; ++face) {
+                const int slot = 8 + li * 6 + face;
+                const std::string name = "uPointShadowMap" + std::to_string(li * 6 + face);
+                if (li < psLightCount) backend_->BindTexture(slot, pointShadowDepthTex_[li][face]);
+                backend_->SetUniformInt(name.c_str(), slot);
+            }
+        }
     }
 }
 

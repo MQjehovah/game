@@ -67,6 +67,16 @@ public:
     bool ShadowMapActive() const { return csmActive_; }
     // Shadow map size in pixels per cascade.
     int ShadowMapSize() const { return shadowSize_; }
+    // Point-light (cubemap) shadows. Engage only when the CSM capability
+    // self-test passed (same FBO/color-encoded-depth path) and the scene has
+    // point lights; the lit shader shadows the first kShadowPointLights point
+    // lights by sampling a 6-face depth map computed from the fragment->light
+    // direction. Disabled by --no-shadows like CSM.
+    bool PointShadowsEnabled() const { return pointShadowsEnabled_; }
+    // True when a point-light shadow pass actually ran this frame.
+    bool PointShadowMapActive() const { return pointShadowsActive_; }
+    // Shadow map size in pixels per face.
+    int PointShadowMapSize() const { return kPointShadowSize; }
 
     void DrawMesh(const Mesh& mesh, const Material& material, const math::Mat4& model);
     // Skinned variant: binds the SKINNED lit program and uploads up to 64 bone
@@ -143,6 +153,13 @@ private:
     // CSM
     static constexpr int kShadowCascades = 3;
     static constexpr int kShadowMapSize = 1024;
+    // Point-light shadows: the first kShadowPointLights point lights each get 6
+    // faces (2D maps; layered cubemap FBOs are unreliable on the tested Intel
+    // driver). The lit shader computes the face + uv from the fragment->light
+    // direction and samples the matching 2D map.
+    static constexpr int kShadowPointLights = 2;
+    static constexpr int kPointShadowSize = 512;
+    static constexpr float kPointShadowNear = 0.1f;
     // One recorded shadow caster per 3D draw call. Exactly one of models/bones
     // is non-empty: plain meshes use neither, instanced use `models`,
     // skinned use `bones`. bounds is the mesh AABB in object space (used to
@@ -160,6 +177,11 @@ private:
     void DrawShadowCaster(const ShadowDraw& draw, const math::Mat4& lightVP);
     void DrawShadowCastersSorted(const math::Mat4& lightVP);
     bool TestDepthTargetCapability();
+    // Point-light cubemap shadows (see RunShadowPass).
+    void RunPointShadowPass();
+    void DrawPointShadowCastersSorted(int lightIndex);
+    void DrawPointShadowCaster(const ShadowDraw& draw, const math::Mat4& lightVP,
+                               const math::Vec3& lightPos, float range);
 
     std::unique_ptr<IRenderBackend> backend_;
 
@@ -173,6 +195,9 @@ private:
     ShaderHandle depthShader_;
     ShaderHandle depthInstancedShader_;
     ShaderHandle depthSkinnedShader_;
+    ShaderHandle pointDepthShader_;
+    ShaderHandle pointDepthInstancedShader_;
+    ShaderHandle pointDepthSkinnedShader_;
     TextureHandle white_;
     MeshHandle probeQuadMesh_;
     RenderTargetHandle shadowRT_[kShadowCascades];
@@ -185,6 +210,12 @@ private:
     bool shadowsForcedOff_ = false;
     bool shadowPassRanThisFrame_ = false;
     std::vector<ShadowDraw> shadowCasters_;
+
+    RenderTargetHandle pointShadowRT_[kShadowPointLights][6];
+    TextureHandle pointShadowDepthTex_[kShadowPointLights][6];
+    math::Mat4 pointLightViewProj_[kShadowPointLights][6];
+    bool pointShadowsEnabled_ = false;
+    bool pointShadowsActive_ = false;
 
     Camera camera_;
     math::Mat4 viewProj_;
