@@ -10,6 +10,7 @@
 #include "neon/scene/game_runtime.hpp"
 #include "neon/ui/system.hpp"
 #include "imgui.h"
+#include "ImGuizmo.h"
 
 namespace neon::editor {
 
@@ -61,6 +62,7 @@ private:
     void BuildInspectorPanel();
     void BuildLogPanel();
     void BuildViewportPanel();
+    void DrawTransformGizmo();
     void ApplyMaterialParams(SceneEntity& e);
     bool ResolveMesh(SceneEntity& e);
     void RefreshAssetDir();
@@ -81,6 +83,7 @@ private:
     void StartPlaytest();
     void StopPlaytest();
     core::Result<core::Json> BuildPlaySceneJson();
+    gfx::Camera OrbitCamera() const;
 
     gfx::Renderer renderer_;
     assets::AssetManager assetMgr_;
@@ -130,6 +133,11 @@ private:
     std::vector<core::LogEntry> logEntries_;
     int logFilter_ = 0; // 0 all, 1 info+, 2 warn+, 3 error
     bool logAutoScroll_ = true;
+
+    // Transform gizmo (ImGuizmo) state for the viewport.
+    ImGuizmo::OPERATION gizmoOp_ = ImGuizmo::TRANSLATE;
+    ImGuizmo::MODE gizmoMode_ = ImGuizmo::WORLD;
+    bool gizmoDrawn_ = false; // set the first time the gizmo renders (smoke)
 
     // Custom UI demo widget handles (engine widget system).
     ui::TreeView* demoTree_ = nullptr;

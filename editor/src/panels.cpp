@@ -478,6 +478,10 @@ void EditorApp::BuildViewportPanel() {
         ImGui::TextDisabled("实体 %zu | 目标 (%.1f, %.1f, %.1f) | 距离 %.1f",
                             entities_.size(), camTarget_.x, camTarget_.y, camTarget_.z,
                             camDist_);
+
+        // Transform gizmo for the selected entity (drawn into this window's
+        // draw list; interacts via ImGui's mouse state).
+        DrawTransformGizmo();
     }
     ImGui::End();
 }

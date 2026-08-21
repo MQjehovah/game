@@ -123,6 +123,57 @@ math::Ray ScreenRay(const gfx::Camera& cam, float aspect, const math::Vec2& desi
     return {cam.position, dir};
 }
 
+// ---------------------------------------------------------------------------
+// ImGuizmo matrix boundary.
+//
+// The engine's math::Mat4 is row-major storage: element (row, col) lives at
+// m[row * 4 + col] and translation at m[3]/m[7]/m[11]. ImGuizmo expects the
+// classic column-major float[16] layout used by OpenGL/glm (right/up/forward
+// basis in columns 0/1/2, translation at m[12]/m[13]/m[14]; see ImGuizmo.cpp's
+// matrix_t where v.right = m16[0..3], v.position = m16[12..15]). Converting
+// is therefore a transpose: element (r, c) -> gizmo index c*4 + r.
+void Mat4ToGizmo(const math::Mat4& m, float out[16]) {
+    for (int r = 0; r < 4; ++r) {
+        for (int c = 0; c < 4; ++c) out[c * 4 + r] = m.m[r * 4 + c];
+    }
+}
+
+void GizmoToMat4(const float in[16], math::Mat4& m) {
+    for (int r = 0; r < 4; ++r) {
+        for (int c = 0; c < 4; ++c) m.m[r * 4 + c] = in[c * 4 + r];
+    }
+}
+
+// Rebuild a SceneEntity's TRS from a decomposed row-major matrix. The engine
+// composes model matrices as T*R*S (column-vector convention: v' = M*v), so
+// scale is carried by the COLUMNS of the 3x3 block: column j = scale_j * R_j.
+// Translation is m[3]/m[7]/m[11]. This is the inverse of
+// Translation(pos) * rot.ToMat4() * Scale(scale).
+void DecomposeModel(const math::Mat4& m, math::Vec3& pos, math::Vec3& scale, math::Quat& rot) {
+    pos = {m.m[3], m.m[7], m.m[11]};
+    math::Vec3 col0{m.m[0], m.m[4], m.m[8]};
+    math::Vec3 col1{m.m[1], m.m[5], m.m[9]};
+    math::Vec3 col2{m.m[2], m.m[6], m.m[10]};
+    scale = {col0.Length(), col1.Length(), col2.Length()};
+    math::Vec3 r0 = col0.Normalized();
+    math::Vec3 r1 = col1.Normalized();
+    math::Vec3 r2 = col2.Normalized();
+    // A mirror (det < 0, e.g. a negative scale axis) must be folded into the
+    // scale so the extracted rotation stays proper (det +1) and recomposing
+    // T*R*S reproduces the source matrix exactly.
+    if (math::Dot(r0, math::Cross(r1, r2)) < 0.0f) {
+        r0 = -r0;
+        scale.x = -scale.x;
+    }
+    // Feed Mat4ToQuat a pure rotation matrix built from the normalized columns;
+    // Mat4ToQuat's row-based Shepperd extraction is exact on orthonormal rows.
+    math::Mat4 rotM;
+    rotM.m[0] = r0.x;  rotM.m[4] = r0.y;  rotM.m[8] = r0.z;
+    rotM.m[1] = r1.x;  rotM.m[5] = r1.y;  rotM.m[9] = r1.z;
+    rotM.m[2] = r2.x;  rotM.m[6] = r2.y;  rotM.m[10] = r2.z;
+    rot = math::Mat4ToQuat(rotM);
+}
+
 } // namespace
 
 bool EditorApp::OnCreate() {
@@ -318,6 +369,16 @@ void EditorApp::OnEvent(const platform::InputEvent& event) {
     }
 }
 
+gfx::Camera EditorApp::OrbitCamera() const {
+    gfx::Camera cam;
+    cam.position = camTarget_ + math::Vec3{std::sin(yaw_) * std::cos(pitch_),
+                                           std::sin(pitch_),
+                                           std::cos(yaw_) * std::cos(pitch_)} *
+                                    camDist_;
+    cam.target = camTarget_;
+    return cam;
+}
+
 void EditorApp::UpdateViewport(float dt) {
     platform::IInput* input = Input();
     math::Vec2 mp = renderer_.ScreenToUI(input->MousePos());
@@ -328,27 +389,37 @@ void EditorApp::UpdateViewport(float dt) {
                       mp.y >= viewportRect_.y && mp.y <= viewportRect_.y + viewportRect_.h;
 
     if (!overPanel && inViewport) {
-        if (input->MouseDown(platform::MouseButton::Right)) {
-            yaw_ += -input->MouseDelta().x * 0.005f;
-            pitch_ = math::Clamp(pitch_ + -input->MouseDelta().y * 0.005f, 0.05f, 1.4f);
+        // While the transform gizmo is hovered or being dragged the mouse
+        // belongs to it: camera orbit/pan and left-click picking must not run.
+        // UpdateViewport runs before the gizmo's Manipulate() each frame, so
+        // IsUsing()/IsOver() report the previous frame's gizmo state.
+        const bool gizmoBusy = ImGuizmo::IsUsing() || ImGuizmo::IsOver();
+        if (!gizmoBusy) {
+            if (input->MouseDown(platform::MouseButton::Right)) {
+                yaw_ += -input->MouseDelta().x * 0.005f;
+                pitch_ = math::Clamp(pitch_ + -input->MouseDelta().y * 0.005f, 0.05f, 1.4f);
+            }
+            if (input->MouseDown(platform::MouseButton::Middle)) {
+                math::Vec3 fwd = (camTarget_ + math::Vec3{0, 0, 0} -
+                                  (camTarget_ +
+                                   math::Vec3{std::sin(yaw_) * std::cos(pitch_),
+                                              std::sin(pitch_),
+                                              std::cos(yaw_) * std::cos(pitch_)} *
+                                       camDist_))
+                                     .Normalized();
+                math::Vec3 right = math::Cross(fwd, {0, 1, 0}).Normalized();
+                math::Vec3 upv = math::Cross(right, fwd);
+                camTarget_ -= right * input->MouseDelta().x * 0.02f;
+                camTarget_ += upv * input->MouseDelta().y * 0.02f;
+            }
+            float wheel = input->WheelDelta();
+            if (std::fabs(wheel) > 0.01f)
+                camDist_ = math::Clamp(camDist_ - wheel * 1.2f, 3.0f, 60.0f);
         }
-        if (input->MouseDown(platform::MouseButton::Middle)) {
-            math::Vec3 fwd = (camTarget_ + math::Vec3{0, 0, 0} -
-                              (camTarget_ + math::Vec3{std::sin(yaw_) * std::cos(pitch_),
-                                                       std::sin(pitch_),
-                                                       std::cos(yaw_) * std::cos(pitch_)} *
-                                   camDist_))
-                                 .Normalized();
-            math::Vec3 right = math::Cross(fwd, {0, 1, 0}).Normalized();
-            math::Vec3 upv = math::Cross(right, fwd);
-            camTarget_ -= right * input->MouseDelta().x * 0.02f;
-            camTarget_ += upv * input->MouseDelta().y * 0.02f;
-        }
-        float wheel = input->WheelDelta();
-        if (std::fabs(wheel) > 0.01f) camDist_ = math::Clamp(camDist_ - wheel * 1.2f, 3.0f, 60.0f);
         // Play mode keeps camera navigation but not scene editing: left-click
         // picking would mutate the editor scene selection mid-playtest.
-        if (input->MousePressed(platform::MouseButton::Left) && !playtestActive_) {
+        if (input->MousePressed(platform::MouseButton::Left) && !playtestActive_ &&
+            !gizmoBusy) {
             float aspect = static_cast<float>(renderer_.ScreenWidth()) / renderer_.ScreenHeight();
             gfx::Camera cam;
             cam.position = camTarget_ + math::Vec3{std::sin(yaw_) * std::cos(pitch_),
@@ -374,6 +445,63 @@ void EditorApp::UpdateViewport(float dt) {
         }
     }
     (void)dt;
+}
+
+void EditorApp::DrawTransformGizmo() {
+    if (playtestActive_ || selected_ < 0 || selected_ >= static_cast<int>(entities_.size())) {
+        return;
+    }
+    SceneEntity& e = entities_[static_cast<size_t>(selected_)];
+
+    // Draw the gizmo into the viewport window's draw list. The camera/projection
+    // are the same full-screen ones used to render the 3D scene (see OnRender),
+    // converted to ImGuizmo's column-major layout by Mat4ToGizmo.
+    ImGuizmo::SetOrthographic(false);
+    ImGuizmo::SetDrawlist(ImGui::GetWindowDrawList());
+    ImVec2 vpPos = ImGui::GetWindowPos();
+    ImVec2 vpSize = ImGui::GetWindowSize();
+    ImGuizmo::SetRect(vpPos.x, vpPos.y, vpSize.x, vpSize.y);
+
+    float aspect = static_cast<float>(renderer_.ScreenWidth()) / renderer_.ScreenHeight();
+    gfx::Camera cam = OrbitCamera();
+    float view[16], proj[16];
+    Mat4ToGizmo(cam.View(), view);
+    Mat4ToGizmo(cam.Projection(aspect), proj);
+
+    math::Mat4 model = math::Mat4::Translation(e.pos) * e.rot.ToMat4() *
+                       math::Mat4::Scale(e.scale);
+    float gizmoModel[16];
+    Mat4ToGizmo(model, gizmoModel);
+
+    // Smoke instrumentation: the gizmo must emit geometry into the viewport's
+    // draw list (not just run without crashing).
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    const int cmdsBefore = dl->CmdBuffer.Size;
+    const int vtxBefore = dl->VtxBuffer.Size;
+
+    // Manipulate reads ImGui's mouse state directly and mutates gizmoModel on
+    // drag; when it returns true the transform changed.
+    if (ImGuizmo::Manipulate(view, proj, gizmoOp_, gizmoMode_, gizmoModel)) {
+        math::Mat4 m;
+        GizmoToMat4(gizmoModel, m);
+        math::Vec3 pos, scale;
+        math::Quat rot;
+        DecomposeModel(m, pos, scale, rot);
+        e.pos = pos;
+        e.scale = scale;
+        e.rot = rot;
+    }
+
+    if (smokeMode_ && !gizmoDrawn_) {
+        gizmoDrawn_ = true;
+        const bool drewGeometry = dl->CmdBuffer.Size > cmdsBefore &&
+                                  dl->VtxBuffer.Size > vtxBefore;
+        NEON_LOG_INFO("EDITOR-GIZMO-SMOKE: [%s] gizmo drawn (op=%d mode=%d entity='%s' cmds+%d vtx+%d)",
+                      drewGeometry ? "PASS" : "FAIL", static_cast<int>(gizmoOp_),
+                      static_cast<int>(gizmoMode_), e.name.c_str(),
+                      dl->CmdBuffer.Size - cmdsBefore, dl->VtxBuffer.Size - vtxBefore);
+        if (!drewGeometry) smokeFailed_ = true;
+    }
 }
 
 void EditorApp::BuildCustomUIDemo() {
@@ -514,6 +642,14 @@ void EditorApp::BuildImGuiUI() {
         ImGui::EndMainMenuBar();
     }
 
+    // Transform-gizmo shortcuts: W/E/R switch the operation while an entity is
+    // selected (ignored while the user is typing text, e.g. the name field).
+    if (selected_ >= 0 && !ImGui::GetIO().WantTextInput) {
+        if (ImGui::IsKeyPressed(ImGuiKey_W)) gizmoOp_ = ImGuizmo::TRANSLATE;
+        if (ImGui::IsKeyPressed(ImGuiKey_E)) gizmoOp_ = ImGuizmo::ROTATE;
+        if (ImGui::IsKeyPressed(ImGuiKey_R)) gizmoOp_ = ImGuizmo::SCALE;
+    }
+
     // Docking layout: full-workspace dock space below the menu bar.
     const float menuH = ImGui::GetFrameHeight();
     const float toolH = 36.0f;
@@ -593,6 +729,24 @@ void EditorApp::BuildImGuiUI() {
         ImGui::SameLine();
         if (ImGui::Button("导出场景")) ExportScene();
         ImGui::SameLine();
+        ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
+        ImGui::SameLine();
+        // Gizmo operation (W/E/R) and mode toggle for the selected entity.
+        if (ImGui::Button(gizmoOp_ == ImGuizmo::TRANSLATE ? "[移动] W" : "移动 W"))
+            gizmoOp_ = ImGuizmo::TRANSLATE;
+        ImGui::SameLine();
+        if (ImGui::Button(gizmoOp_ == ImGuizmo::ROTATE ? "[旋转] E" : "旋转 E"))
+            gizmoOp_ = ImGuizmo::ROTATE;
+        ImGui::SameLine();
+        if (ImGui::Button(gizmoOp_ == ImGuizmo::SCALE ? "[缩放] R" : "缩放 R"))
+            gizmoOp_ = ImGuizmo::SCALE;
+        ImGui::SameLine();
+        if (ImGui::Button(gizmoMode_ == ImGuizmo::LOCAL ? "[本地]" : "本地"))
+            gizmoMode_ = ImGuizmo::LOCAL;
+        ImGui::SameLine();
+        if (ImGui::Button(gizmoMode_ == ImGuizmo::WORLD ? "[世界]" : "世界"))
+            gizmoMode_ = ImGuizmo::WORLD;
+        ImGui::SameLine();
         ImGui::Text("实体 %zu", entities_.size());
     }
     ImGui::End();
@@ -658,6 +812,60 @@ void EditorApp::RunUISmokeTest() {
     // --- Tool panels ---
     check(!core::GetRecentLogs(16).empty(), "log panel has engine log entries");
     check(!assetEntries_.empty(), "asset panel enumerated files");
+
+    // --- Transform gizmo ---
+    // The gizmo renders every frame while an entity is selected; verify the
+    // setup path ran and the matrix boundary (engine row-major Mat4 <-> ImGuizmo
+    // column-major float[16]) round-trips a synthetic TRS without drift.
+    check(gizmoDrawn_, "transform gizmo drawn in the viewport");
+    auto nearVec = [](const math::Vec3& a, const math::Vec3& b) {
+        return std::fabs(a.x - b.x) < 1e-4f && std::fabs(a.y - b.y) < 1e-4f &&
+               std::fabs(a.z - b.z) < 1e-4f;
+    };
+    {
+        math::Vec3 pos{1.25f, -2.5f, 3.75f};
+        math::Vec3 scale{2.0f, 0.5f, 1.5f};
+        math::Quat rot = math::Quat::FromEuler(0.4f, -0.7f, 0.2f);
+        math::Mat4 model = math::Mat4::Translation(pos) * rot.ToMat4() *
+                           math::Mat4::Scale(scale);
+        float gizmo[16];
+        Mat4ToGizmo(model, gizmo);
+        math::Mat4 back;
+        GizmoToMat4(gizmo, back);
+        math::Vec3 p, s;
+        math::Quat q;
+        DecomposeModel(back, p, s, q);
+        check(nearVec(p, pos), "gizmo round-trip preserves translation");
+        check(nearVec(s, scale), "gizmo round-trip preserves scale");
+        check(math::Distance(rot.Rotate({0, 0, -1}), q.Rotate({0, 0, -1})) < 1e-3f,
+              "gizmo round-trip preserves rotation");
+    }
+    // The write-back path must update the selected entity's transform.
+    if (selected_ >= 0 && selected_ < static_cast<int>(entities_.size())) {
+        SceneEntity& sel = entities_[static_cast<size_t>(selected_)];
+        const math::Vec3 posBefore = sel.pos;
+        const math::Vec3 scaleBefore = sel.scale;
+        const math::Quat rotBefore = sel.rot;
+        math::Mat4 model = math::Mat4::Translation(sel.pos) * sel.rot.ToMat4() *
+                           math::Mat4::Scale(sel.scale);
+        float gizmo[16];
+        Mat4ToGizmo(model, gizmo);
+        // Simulate a translate drag: nudge the translation column, read back.
+        gizmo[12] += 0.5f;
+        gizmo[13] -= 0.25f;
+        gizmo[14] += 0.125f;
+        math::Mat4 m;
+        GizmoToMat4(gizmo, m);
+        math::Vec3 p, s;
+        math::Quat q;
+        DecomposeModel(m, p, s, q);
+        sel.pos = p;
+        check(nearVec(sel.pos, posBefore + math::Vec3{0.5f, -0.25f, 0.125f}),
+              "gizmo drag write-back updates entity position");
+        sel.pos = posBefore;
+        sel.scale = scaleBefore;
+        sel.rot = rotBefore;
+    }
 
     assets::AssetStats stats = assetMgr_.Stats();
     check(stats.textures >= 4, "resource panel: PBR textures cached");

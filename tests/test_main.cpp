@@ -66,6 +66,65 @@ TEST(QuatRotation) {
     CHECK_NEAR(ff.z, 1.0, 1e-4); // 180 degrees: -Z -> +Z
 }
 
+// Gizmo write-back path: a T*R*S model matrix must decompose back into the
+// same translation / non-uniform scale / rotation used to build it. The engine
+// composes model matrices column-vector style (v' = M*v), so scale is carried
+// by the COLUMNS of the 3x3 block. This mirrors the editor's DecomposeModel.
+TEST(TRSDecomposeRoundTrip) {
+    struct Case {
+        math::Vec3 pos;
+        math::Vec3 scale;
+        float yaw, pitch, roll;
+    };
+    const Case cases[] = {
+        {{0, 0, 0}, {1, 1, 1}, 0, 0, 0},
+        {{1.25f, -2.5f, 3.75f}, {2.0f, 0.5f, 1.5f}, 0.4f, -0.7f, 0.2f},
+        {{-10.0f, 4.0f, 0.5f}, {0.25f, 3.0f, 1.0f}, 1.5f, 0.9f, -2.0f},
+        {{0.0f, 0.0f, 0.0f}, {-2.0f, 1.0f, 1.0f}, 0.0f, 0.0f, 0.0f}, // negative scale
+    };
+    for (const Case& c : cases) {
+        math::Mat4 model = math::Mat4::Translation(c.pos) *
+                           math::Quat::FromEuler(c.yaw, c.pitch, c.roll).ToMat4() *
+                           math::Mat4::Scale(c.scale);
+
+        // --- Decompose (mirrors editor DecomposeModel) ---
+        math::Vec3 pos{model.m[3], model.m[7], model.m[11]};
+        math::Vec3 col0{model.m[0], model.m[4], model.m[8]};
+        math::Vec3 col1{model.m[1], model.m[5], model.m[9]};
+        math::Vec3 col2{model.m[2], model.m[6], model.m[10]};
+        math::Vec3 scale{col0.Length(), col1.Length(), col2.Length()};
+        math::Vec3 r0 = col0.Normalized();
+        math::Vec3 r1 = col1.Normalized();
+        math::Vec3 r2 = col2.Normalized();
+        if (math::Dot(r0, math::Cross(r1, r2)) < 0.0f) {
+            r0 = -r0;
+            scale.x = -scale.x;
+        }
+        math::Mat4 rotM;
+        rotM.m[0] = r0.x;  rotM.m[4] = r0.y;  rotM.m[8] = r0.z;
+        rotM.m[1] = r1.x;  rotM.m[5] = r1.y;  rotM.m[9] = r1.z;
+        rotM.m[2] = r2.x;  rotM.m[6] = r2.y;  rotM.m[10] = r2.z;
+        math::Quat rot = math::Mat4ToQuat(rotM);
+
+        CHECK_NEAR(pos.x, c.pos.x, 1e-5);
+        CHECK_NEAR(pos.y, c.pos.y, 1e-5);
+        CHECK_NEAR(pos.z, c.pos.z, 1e-5);
+        CHECK_NEAR(scale.x, c.scale.x, 1e-5);
+        CHECK_NEAR(scale.y, c.scale.y, 1e-5);
+        CHECK_NEAR(scale.z, c.scale.z, 1e-5);
+
+        // Recompose must reproduce the source matrix (gizmo drag round-trip).
+        math::Mat4 rebuilt = math::Mat4::Translation(pos) * rot.ToMat4() *
+                             math::Mat4::Scale(scale);
+        for (int i = 0; i < 16; ++i) CHECK_NEAR(rebuilt.m[i], model.m[i], 1e-4);
+
+        math::Vec3 f = math::Quat::FromEuler(c.yaw, c.pitch, c.roll).Rotate({0, 0, -1});
+        CHECK_NEAR(math::Distance(rot.Rotate({0, 0, -1}), f), 0.0, 1e-4);
+        math::Vec3 u = math::Quat::FromEuler(c.yaw, c.pitch, c.roll).Rotate({0, 1, 0});
+        CHECK_NEAR(math::Distance(rot.Rotate({0, 1, 0}), u), 0.0, 1e-4);
+    }
+}
+
 TEST(TransformModel) {
     math::Transform t;
     t.position = {5, 6, 7};

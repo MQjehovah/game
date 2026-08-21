@@ -107,10 +107,12 @@ add_library(neon_imgui STATIC
   third_party/imgui/imgui_tables.cpp
   third_party/imgui/imgui_widgets.cpp
   third_party/imgui/imgui_demo.cpp
+  third_party/ImGuizmo/ImGuizmo.cpp
   engine/src/gfx/imgui_neon.cpp
 )
 target_include_directories(neon_imgui
   PUBLIC third_party/imgui
+  PUBLIC third_party/ImGuizmo
   PRIVATE engine/include
 )
 # Dear ImGui 1.92+ defaults to the FreeType rasterizer; use the bundled
