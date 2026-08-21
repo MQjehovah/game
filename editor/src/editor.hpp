@@ -63,6 +63,7 @@ private:
     void BuildLogPanel();
     void BuildViewportPanel();
     void DrawTransformGizmo();
+    void RunGizmoDragSim();
     void ApplyMaterialParams(SceneEntity& e);
     bool ResolveMesh(SceneEntity& e);
     void RefreshAssetDir();
@@ -137,7 +138,11 @@ private:
     // Transform gizmo (ImGuizmo) state for the viewport.
     ImGuizmo::OPERATION gizmoOp_ = ImGuizmo::TRANSLATE;
     ImGuizmo::MODE gizmoMode_ = ImGuizmo::WORLD;
-    bool gizmoDrawn_ = false; // set the first time the gizmo renders (smoke)
+    bool gizmoDrawn_ = false;    // set the first time the gizmo renders (smoke)
+    bool gizmoBeginFrame_ = false; // set every frame ImGuizmo::BeginFrame runs (smoke)
+    bool gizmoAltWindowSet_ = false; // set every frame the hover window is bound (smoke)
+    bool gizmoDragActive_ = false;   // ImGuizmo::IsUsing() after the last Manipulate
+    bool gizmoDragSimulated_ = false; // the smoke frame's synthetic drag ran
 
     // Custom UI demo widget handles (engine widget system).
     ui::TreeView* demoTree_ = nullptr;

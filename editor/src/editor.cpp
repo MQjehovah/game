@@ -392,8 +392,9 @@ void EditorApp::UpdateViewport(float dt) {
         // While the transform gizmo is hovered or being dragged the mouse
         // belongs to it: camera orbit/pan and left-click picking must not run.
         // UpdateViewport runs before the gizmo's Manipulate() each frame, so
-        // IsUsing()/IsOver() report the previous frame's gizmo state.
-        const bool gizmoBusy = ImGuizmo::IsUsing() || ImGuizmo::IsOver();
+        // gizmoDragActive_/IsOver() report the previous frame's gizmo state.
+        const bool gizmoBusy =
+            selected_ >= 0 && (gizmoDragActive_ || ImGuizmo::IsOver());
         if (!gizmoBusy) {
             if (input->MouseDown(platform::MouseButton::Right)) {
                 yaw_ += -input->MouseDelta().x * 0.005f;
@@ -448,19 +449,44 @@ void EditorApp::UpdateViewport(float dt) {
 }
 
 void EditorApp::DrawTransformGizmo() {
+    // ImGuizmo::BeginFrame() must run every frame before Manipulate(): it
+    // resets mbOverGizmoHotspot (ImGuizmo.cpp:1084) so a handle can re-arm for
+    // hover/activation each frame, and snapshots the last frame's hover for
+    // IsOver(). Without it the activation check `CanActivate() && type !=
+    // MT_NONE` can never fire again after the first hover.
+    ImGuizmo::BeginFrame();
+    gizmoBeginFrame_ = true;
+
     if (playtestActive_ || selected_ < 0 || selected_ >= static_cast<int>(entities_.size())) {
+        gizmoDragActive_ = false;
         return;
     }
     SceneEntity& e = entities_[static_cast<size_t>(selected_)];
 
-    // Draw the gizmo into the viewport window's draw list. The camera/projection
-    // are the same full-screen ones used to render the 3D scene (see OnRender),
-    // converted to ImGuizmo's column-major layout by Mat4ToGizmo.
+    // Draw the gizmo into the viewport window's draw list. Over a docked window
+    // the mouse is treated as hovering the DOCK HOST, not the 视口 window (the
+    // viewport is NoInputs, so ImGui's hover hit-test skips it and g.HoveredWindow
+    // becomes the host). For a docked leaf window ParentWindow IS the host
+    // (imgui.cpp:8009), so point ImGuizmo's hover check at it via
+    // SetAlternativeWindow; otherwise GetMoveType/GetRotateType/GetScaleType
+    // all bail on `!mbMouseOver` and the gizmo can never be grabbed.
+    ImGuiWindow* viewportWindow = ImGui::GetCurrentWindow();
+    ImGuiWindow* hoverWindow =
+        (viewportWindow && viewportWindow->ParentWindow) ? viewportWindow->ParentWindow
+                                                         : viewportWindow;
+    ImGuizmo::SetAlternativeWindow(hoverWindow);
+    gizmoAltWindowSet_ = hoverWindow != nullptr;
+
     ImGuizmo::SetOrthographic(false);
     ImGuizmo::SetDrawlist(ImGui::GetWindowDrawList());
-    ImVec2 vpPos = ImGui::GetWindowPos();
-    ImVec2 vpSize = ImGui::GetWindowSize();
-    ImGuizmo::SetRect(vpPos.x, vpPos.y, vpSize.x, vpSize.y);
+
+    // The 3D scene renders FULL-WINDOW (OnRender sets the camera with the full
+    // screen aspect; the viewport window is an overlay), so the gizmo rect must
+    // be the full window: this makes the gizmo sit on the entity exactly where
+    // the renderer drew it and where the picker looks. The viewport window's
+    // draw list still clips the gizmo to the visible viewport region.
+    ImGuizmo::SetRect(0.0f, 0.0f, static_cast<float>(renderer_.ScreenWidth()),
+                      static_cast<float>(renderer_.ScreenHeight()));
 
     float aspect = static_cast<float>(renderer_.ScreenWidth()) / renderer_.ScreenHeight();
     gfx::Camera cam = OrbitCamera();
@@ -491,6 +517,7 @@ void EditorApp::DrawTransformGizmo() {
         e.scale = scale;
         e.rot = rot;
     }
+    gizmoDragActive_ = ImGuizmo::IsUsing();
 
     if (smokeMode_ && !gizmoDrawn_) {
         gizmoDrawn_ = true;
@@ -502,6 +529,111 @@ void EditorApp::DrawTransformGizmo() {
                       dl->CmdBuffer.Size - cmdsBefore, dl->VtxBuffer.Size - vtxBefore);
         if (!drewGeometry) smokeFailed_ = true;
     }
+
+    // On the smoke frame, synthesize the full ImGuizmo input path (hover the
+    // dock host, press, drag, release) to verify the gizmo is actually
+    // grabbable. Runs here, inside the viewport window scope, because
+    // ImGuizmo::Manipulate needs a current window to draw into.
+    if (smokeMode_ && TimeRef().frameIndex == 30 && !gizmoDragSimulated_) {
+        gizmoDragSimulated_ = true;
+        RunGizmoDragSim();
+    }
+}
+
+void EditorApp::RunGizmoDragSim() {
+    auto report = [this](bool ok, const char* what) {
+        NEON_LOG_INFO("EDITOR-GIZMO-SMOKE: [%s] %s", ok ? "PASS" : "FAIL", what);
+        if (!ok) smokeFailed_ = true;
+    };
+    if (selected_ < 0 || selected_ >= static_cast<int>(entities_.size())) {
+        report(false, "drag sim needs a selected entity");
+        return;
+    }
+    SceneEntity& sel = entities_[static_cast<size_t>(selected_)];
+    math::Mat4 modelBefore = math::Mat4::Translation(sel.pos) * sel.rot.ToMat4() *
+                             math::Mat4::Scale(sel.scale);
+
+    ImGuiContext& ctx = *ImGui::GetCurrentContext();
+    ImGuiIO& io = ctx.IO;
+
+    // Preserve the real frame's input state; restored at the end.
+    const bool savedDown = io.MouseDown[0];
+    const float savedDur = io.MouseDownDuration[0];
+    const ImVec2 savedPos = io.MousePos;
+    const ImGuiID savedActive = ctx.ActiveId;
+    const ImGuiID savedHovered = ctx.HoveredId;
+    const ImGuiID savedHoveredPrev = ctx.HoveredIdPreviousFrame;
+    ImGuiWindow* savedHoveredWin = ctx.HoveredWindow;
+
+    float aspect = static_cast<float>(renderer_.ScreenWidth()) / renderer_.ScreenHeight();
+    gfx::Camera cam = OrbitCamera();
+    float view[16], proj[16];
+    Mat4ToGizmo(cam.View(), view);
+    Mat4ToGizmo(cam.Projection(aspect), proj);
+
+    // Screen position of the entity origin under the full-window rect (the
+    // same rect the gizmo now uses), in y-down ImGui pixels.
+    math::Mat4 vp = cam.ViewProjection(aspect);
+    math::Vec4 clip = vp.TransformVec4({sel.pos.x, sel.pos.y, sel.pos.z, 1.0f});
+    const float gx = (clip.x / clip.w * 0.5f + 0.5f) *
+                     static_cast<float>(renderer_.ScreenWidth());
+    const float gy = (0.5f - clip.y / clip.w * 0.5f) *
+                     static_cast<float>(renderer_.ScreenHeight());
+
+    // The docked leaf's parent IS the dock host ImGui reports as hovered; the
+    // same window SetAlternativeWindow points the gizmo at.
+    ImGuiWindow* vpWin = ImGui::FindWindowByName("视口");
+    ImGuiWindow* hostWin = (vpWin && vpWin->ParentWindow) ? vpWin->ParentWindow : vpWin;
+    report(hostWin != nullptr, "drag sim resolves the dock host window");
+    if (!hostWin) return;
+
+    // Clear hover/active so CanActivate() sees no other ImGui item.
+    ctx.HoveredWindow = hostWin;
+    ctx.ActiveId = 0;
+    ctx.HoveredId = 0;
+    ctx.HoveredIdPreviousFrame = 0;
+
+    float gizmoModel[16];
+    Mat4ToGizmo(modelBefore, gizmoModel);
+
+    // Press over the entity origin -> the screen-space translate handle.
+    io.MousePos = ImVec2(gx, gy);
+    io.MouseDown[0] = true;
+    io.MouseDownDuration[0] = 0.0f; // pressed this frame: IsMouseClicked fires
+    ImGuizmo::BeginFrame();
+    ImGuizmo::SetOrthographic(false);
+    ImGuizmo::SetDrawlist(ImGui::GetWindowDrawList());
+    ImGuizmo::SetRect(0.0f, 0.0f, static_cast<float>(renderer_.ScreenWidth()),
+                      static_cast<float>(renderer_.ScreenHeight()));
+    ImGuizmo::SetAlternativeWindow(hostWin);
+    ImGuizmo::Manipulate(view, proj, ImGuizmo::TRANSLATE, ImGuizmo::WORLD, gizmoModel);
+    report(ImGuizmo::IsUsing(), "gizmo activates on click over a handle");
+
+    // Drag: hold the button and move the mouse off the origin.
+    io.MouseDownDuration[0] = 0.1f;
+    io.MousePos = ImVec2(gx + 40.0f, gy);
+    const bool dragged = ImGuizmo::Manipulate(view, proj, ImGuizmo::TRANSLATE,
+                                              ImGuizmo::WORLD, gizmoModel);
+    report(ImGuizmo::IsUsing(), "gizmo stays active while dragging");
+    math::Mat4 m;
+    GizmoToMat4(gizmoModel, m);
+    report(dragged && (m.m[3] != modelBefore.m[3] || m.m[7] != modelBefore.m[7] ||
+                       m.m[11] != modelBefore.m[11]),
+           "gizmo drag moves the model matrix");
+
+    // Release.
+    io.MouseDown[0] = false;
+    ImGuizmo::Manipulate(view, proj, ImGuizmo::TRANSLATE, ImGuizmo::WORLD, gizmoModel);
+    report(!ImGuizmo::IsUsing(), "gizmo deactivates on release");
+
+    // Restore the frame's input state so the rest of the frame sees it as-is.
+    io.MouseDown[0] = savedDown;
+    io.MouseDownDuration[0] = savedDur;
+    io.MousePos = savedPos;
+    ctx.ActiveId = savedActive;
+    ctx.HoveredId = savedHovered;
+    ctx.HoveredIdPreviousFrame = savedHoveredPrev;
+    ctx.HoveredWindow = savedHoveredWin;
 }
 
 void EditorApp::BuildCustomUIDemo() {
@@ -818,6 +950,8 @@ void EditorApp::RunUISmokeTest() {
     // setup path ran and the matrix boundary (engine row-major Mat4 <-> ImGuizmo
     // column-major float[16]) round-trips a synthetic TRS without drift.
     check(gizmoDrawn_, "transform gizmo drawn in the viewport");
+    check(gizmoBeginFrame_, "ImGuizmo::BeginFrame called every frame");
+    check(gizmoAltWindowSet_, "gizmo hover bound to the dock host window");
     auto nearVec = [](const math::Vec3& a, const math::Vec3& b) {
         return std::fabs(a.x - b.x) < 1e-4f && std::fabs(a.y - b.y) < 1e-4f &&
                std::fabs(a.z - b.z) < 1e-4f;
@@ -866,6 +1000,14 @@ void EditorApp::RunUISmokeTest() {
         sel.scale = scaleBefore;
         sel.rot = rotBefore;
     }
+
+    // --- Gizmo activation/drag (deterministic, drives ImGuizmo's input path) ---
+    // A real pointer drag can't be automated headlessly, but the activation
+    // path is: RunGizmoDragSim() (called inside the viewport window scope on
+    // the smoke frame) synthesizes a hover over the dock host, a press on the
+    // entity's screen position, a drag, and a release, and verifies IsUsing()
+    // follows and the model matrix moves. Assert here that it ran.
+    check(gizmoDragSimulated_, "gizmo drag simulation ran");
 
     assets::AssetStats stats = assetMgr_.Stats();
     check(stats.textures >= 4, "resource panel: PBR textures cached");
