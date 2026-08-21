@@ -96,6 +96,30 @@ TEST(LogGlobalLevelGate) {
     }
 }
 
+TEST(LogPermissiveCategoryOverride) {
+    // Headline behavior: a per-category override that is MORE permissive than
+    // the global gate lets that category through while others stay suppressed.
+    core::SetLogLevel(core::LogLevel::Warn);
+    core::SetCategoryLogLevel(core::LogCategory::Gfx, core::LogLevel::Debug);
+
+    CaptureSink sink;
+    core::AddLogSink(&CaptureSink::OnEntry, &sink);
+
+    NEON_LOG_CAT(core::LogCategory::Gfx, core::LogLevel::Debug, "gfx debug passes");
+    NEON_LOG_DEBUG("core debug suppressed");
+
+    core::RemoveLogSink(&CaptureSink::OnEntry, &sink);
+    core::SetLogLevel(core::LogLevel::Debug);
+    core::SetCategoryLogLevel(core::LogCategory::Gfx, core::LogLevel::Debug);
+
+    CHECK_EQ(sink.entries.size(), 1u);
+    if (sink.entries.size() == 1) {
+        CHECK(sink.entries[0].category == core::LogCategory::Gfx);
+        CHECK(sink.entries[0].level == core::LogLevel::Debug);
+        CHECK(sink.entries[0].text.find("gfx debug passes") != std::string::npos);
+    }
+}
+
 TEST(LogBackwardCompat) {
     core::SetLogLevel(core::LogLevel::Debug);
     core::ClearLogs();

@@ -198,6 +198,7 @@ void LogImpl(LogLevel level, LogCategory category, const char* file, int line,
     char formatted[4096] = {};
     std::string framePrefix;
     std::string loc;
+    std::string fileOpenWarn;
     std::vector<LogSinkEntry> sinks;
     LogEntry entryCopy;
 
@@ -214,7 +215,12 @@ void LogImpl(LogLevel level, LogCategory category, const char* file, int line,
         entry.frame = g_frame;
         entryCopy = entry;
 
-        if (g_frame > 0) framePrefix = "[f" + std::to_string(g_frame) + "] ";
+        if (g_frame > 0) {
+            char frameBuf[32];
+            std::snprintf(frameBuf, sizeof(frameBuf), "[f%04llu] ",
+                          static_cast<unsigned long long>(g_frame));
+            framePrefix = frameBuf;
+        }
         if (!entry.file.empty()) {
             loc = entry.file;
             if (entry.line > 0) loc += ":" + std::to_string(entry.line);
@@ -250,13 +256,22 @@ void LogImpl(LogLevel level, LogCategory category, const char* file, int line,
         if (!g_filePath.empty()) {
             if (!g_fileStream.is_open() && !g_fileOpenFailed) {
                 g_fileStream.open(g_filePath.c_str(), std::ios::out | std::ios::app);
-                if (!g_fileStream.is_open()) g_fileOpenFailed = true;
+                if (!g_fileStream.is_open()) {
+                    g_fileOpenFailed = true;
+                    fileOpenWarn =
+                        "WARN [core] EnableFileLog: cannot open '" + g_filePath + "'";
+                }
             }
             if (g_fileStream.is_open()) {
                 g_fileStream << formatted << '\n';
                 g_fileStream.flush();
             }
         }
+    }
+
+    if (!fileOpenWarn.empty()) {
+        std::fprintf(stderr, "%s\n", fileOpenWarn.c_str());
+        std::fflush(stderr);
     }
 
     std::fprintf(stderr, "%s\n", formatted);

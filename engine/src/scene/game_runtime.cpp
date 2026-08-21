@@ -91,8 +91,9 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
 
     running_ = true;
     simTime_ = 0.0;
-    NEON_LOG_INFO("runtime: started (%zu entities, %zu scripts, %zu trees, %zu draws)",
-                  EntityCount(), ScriptCount(), BehaviorTreeCount(), draws_.size());
+    NEON_LOG_CAT(neon::core::LogCategory::Scene, neon::core::LogLevel::Info,
+                 "runtime: started (%zu entities, %zu scripts, %zu trees, %zu draws)",
+                 EntityCount(), ScriptCount(), BehaviorTreeCount(), draws_.size());
     return core::Status::Ok(true);
 }
 
@@ -123,7 +124,8 @@ void GameRuntime::AttachScripts() {
 
         const std::string full = FullScriptPath(s->path);
         if (scriptFailed_.count(full)) {
-            NEON_LOG_WARN("runtime: skipping script '%s' (previous load failed)", full.c_str());
+            NEON_LOG_CAT(neon::core::LogCategory::Script, neon::core::LogLevel::Warn,
+                         "runtime: skipping script '%s' (previous load failed)", full.c_str());
             continue;
         }
 
@@ -133,19 +135,22 @@ void GameRuntime::AttachScripts() {
         if (!loadedScripts_.count(full)) {
             std::string source = ReadScript(full);
             if (source.empty()) {
-                NEON_LOG_ERROR("runtime: cannot read script '%s' (skipped)", full.c_str());
+                NEON_LOG_CAT(neon::core::LogCategory::Script, neon::core::LogLevel::Error,
+                             "runtime: cannot read script '%s' (skipped)", full.c_str());
                 scriptFailed_.insert(full);
                 continue;
             }
             if (!host_->Load(source)) {
-                NEON_LOG_ERROR("runtime: script '%s' failed to compile: %s (skipped)",
-                               full.c_str(), host_->LastError().message.c_str());
+                NEON_LOG_CAT(neon::core::LogCategory::Script, neon::core::LogLevel::Error,
+                             "runtime: script '%s' failed to compile: %s (skipped)",
+                             full.c_str(), host_->LastError().message.c_str());
                 scriptFailed_.insert(full);
                 continue;
             }
             if (!host_->Run().Ok()) {
-                NEON_LOG_ERROR("runtime: script '%s' failed to run: %s (skipped)",
-                               full.c_str(), host_->LastError().message.c_str());
+                NEON_LOG_CAT(neon::core::LogCategory::Script, neon::core::LogLevel::Error,
+                             "runtime: script '%s' failed to run: %s (skipped)",
+                             full.c_str(), host_->LastError().message.c_str());
                 scriptFailed_.insert(full);
                 continue;
             }
@@ -176,8 +181,9 @@ void GameRuntime::CallEntityFunction(const char* fn, ScriptInst& inst,
     auto res = host_->Call(fn, args);
     if (!res.Ok() && !inst.errorLogged) {
         inst.errorLogged = true;
-        NEON_LOG_ERROR("runtime: script '%s' %s() failed: %s", inst.path.c_str(), fn,
-                       host_->LastError().message.c_str());
+        NEON_LOG_CAT(neon::core::LogCategory::Script, neon::core::LogLevel::Error,
+                     "runtime: script '%s' %s() failed: %s", inst.path.c_str(), fn,
+                     host_->LastError().message.c_str());
     }
 }
 
@@ -190,8 +196,9 @@ void GameRuntime::AttachTrees() {
         auto tree = std::make_unique<bt::BehaviorTree>();
         std::string err;
         if (!tree->LoadText(bt->treeJson, &err)) {
-            NEON_LOG_ERROR("runtime: entity behavior tree failed to load: %s (skipped)",
-                           err.c_str());
+            NEON_LOG_CAT(neon::core::LogCategory::Bt, neon::core::LogLevel::Error,
+                         "runtime: entity behavior tree failed to load: %s (skipped)",
+                         err.c_str());
             continue;
         }
         BtInst inst;
@@ -239,13 +246,15 @@ void GameRuntime::ResolveDrawItem(DrawItem& item, gfx::Renderer& renderer) {
         // render a large flat plane so playtest stays visually useful.
         mesh = gfx::Mesh::CreatePlane(renderer, 60.0f, 60.0f, 24, 24, "terrain");
     } else {
-        NEON_LOG_WARN("runtime: meshKey '%s' has no known loader/procedural prefix (skipped)",
-                      key.c_str());
+        NEON_LOG_CAT(neon::core::LogCategory::Scene, neon::core::LogLevel::Warn,
+                     "runtime: meshKey '%s' has no known loader/procedural prefix (skipped)",
+                     key.c_str());
         item.failed = true;
         return;
     }
     if (!mesh.Valid()) {
-        NEON_LOG_WARN("runtime: mesh '%s' failed to load (skipped)", key.c_str());
+        NEON_LOG_CAT(neon::core::LogCategory::Scene, neon::core::LogLevel::Warn,
+                     "runtime: mesh '%s' failed to load (skipped)", key.c_str());
         item.failed = true;
         return;
     }

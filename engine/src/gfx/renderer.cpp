@@ -421,7 +421,8 @@ bool Renderer::Init(platform::IWindow* window) {
     window_ = window;
     backend_ = CreateOpenGLBackend();
     if (!backend_ || !backend_->Init(window)) {
-        NEON_LOG_ERROR("Renderer: OpenGL backend initialization failed");
+        NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Error,
+                     "Renderer: OpenGL backend initialization failed");
         return false;
     }
     InitBuiltinResources();
@@ -478,8 +479,9 @@ void Renderer::InitBuiltinResources() {
         skinnedSrc.insert(versionEnd + 1, "#define SKINNED 1\n");
         skinnedLitShader_ =
             backend_->CreateShader(skinnedSrc.c_str(), kLitFragmentShader, "lit_skinned");
-        NEON_LOG_INFO("Renderer: skinned lit shader %s",
-                      skinnedLitShader_.Valid() ? "ok" : "FAILED");
+        NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
+                     "Renderer: skinned lit shader %s",
+                     skinnedLitShader_.Valid() ? "ok" : "FAILED");
     }
     unlitShader_ = backend_->CreateShader(kUnlitVertexShader, kUnlitFragmentShader, "unlit");
     uiShader_ = backend_->CreateShader(kUIVertexShader, kUIFragmentShader, "ui");
@@ -505,7 +507,8 @@ void Renderer::InitBuiltinResources() {
     probeQuadMesh_ = backend_->CreateMesh(quadVerts, 4, quadIndices, 6);
 
     if (shadowsForcedOff_) {
-        NEON_LOG_WARN("Renderer: CSM disabled by flag (--disable-fbo/--no-shadows)");
+        NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Warn,
+                     "Renderer: CSM disabled by flag (--disable-fbo/--no-shadows)");
         return;
     }
     depthAvailable_ = backend_->DepthAvailable();
@@ -513,14 +516,16 @@ void Renderer::InitBuiltinResources() {
         shadowRT_[i] = backend_->CreateRenderTarget(shadowSize_, shadowSize_);
         shadowDepthTex_[i] = backend_->RenderTargetColorTexture(shadowRT_[i]);
         if (!shadowRT_[i].Valid() || !shadowDepthTex_[i].Valid()) {
-            NEON_LOG_WARN("Renderer: cascade %d shadow target failed", i);
+            NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Warn,
+                         "Renderer: cascade %d shadow target failed", i);
             csmEnabled_ = false;
             return;
         }
     }
     csmEnabled_ = TestDepthTargetCapability();
-    NEON_LOG_INFO("Renderer: CSM shadow maps %dx%d x3 (%s)", shadowSize_, shadowSize_,
-                  csmEnabled_ ? "ok" : "FAILED -> CPU projected shadows fallback");
+    NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
+                 "Renderer: CSM shadow maps %dx%d x3 (%s)", shadowSize_, shadowSize_,
+                 csmEnabled_ ? "ok" : "FAILED -> CPU projected shadows fallback");
 }
 
 void Renderer::BeginFrame(const Color& clearColor, float clearDepth) {
@@ -711,13 +716,15 @@ bool Renderer::TestDepthTargetCapability() {
                                   static_cast<float>(px[2]) / 255.0f / 65025.0f +
                                   static_cast<float>(px[3]) / 255.0f / 16581375.0f;
             fboWrites = decoded > 0.1f && decoded < 0.99f;
-            NEON_LOG_INFO("Renderer: CSM FBO write self-test: px=%d,%d,%d,%d decoded=%.3f -> %s",
-                          px[0], px[1], px[2], px[3], decoded,
-                          fboWrites ? "PASS" : "FAIL");
+            NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
+                         "Renderer: CSM FBO write self-test: px=%d,%d,%d,%d decoded=%.3f -> %s",
+                         px[0], px[1], px[2], px[3], decoded,
+                         fboWrites ? "PASS" : "FAIL");
         }
     }
     if (!fboWrites) {
-        NEON_LOG_WARN(
+        NEON_LOG_CAT(
+            neon::core::LogCategory::Gfx, neon::core::LogLevel::Warn,
             "Renderer: FBO DrawElements does not write -> CSM disabled, CPU projected shadows");
         return false;
     }
@@ -760,15 +767,18 @@ bool Renderer::TestDepthTargetCapability() {
         backend_->ReadCurrentTargetPixel(kSize, kSize, postPx);
     }
     const bool backbufferIntact = refPx[0] > 200 && postPx[0] > 200 && postPx[0] >= refPx[0] - 32;
-    NEON_LOG_INFO("Renderer: CSM backbuffer integrity after FBO: ref=%d,%d,%d post=%d,%d,%d -> %s",
-                  refPx[0], refPx[1], refPx[2], postPx[0], postPx[1], postPx[2],
-                  backbufferIntact ? "PASS" : "FAIL");
+    NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
+                 "Renderer: CSM backbuffer integrity after FBO: ref=%d,%d,%d post=%d,%d,%d -> %s",
+                 refPx[0], refPx[1], refPx[2], postPx[0], postPx[1], postPx[2],
+                 backbufferIntact ? "PASS" : "FAIL");
     if (!backbufferIntact) {
-        NEON_LOG_WARN(
+        NEON_LOG_CAT(
+            neon::core::LogCategory::Gfx, neon::core::LogLevel::Warn,
             "Renderer: FBO usage corrupts backbuffer rendering -> CSM disabled, CPU projected shadows");
         return false;
     }
-    NEON_LOG_INFO("Renderer: CSM shadow-map self-test PASS");
+    NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
+                 "Renderer: CSM shadow-map self-test PASS");
     return true;
 }
 

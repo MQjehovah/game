@@ -70,7 +70,7 @@ void PushHostClosure(lua_State* L, LuaHost* self, lua_CFunction fn) {
 // exception discipline.
 void SafeLog(const char* msg) {
     try {
-        core::Log(core::LogLevel::Info, "%s", msg);
+        core::Log(core::LogLevel::Info, core::LogCategory::Script, nullptr, 0, "%s", msg);
     } catch (...) {
     }
 }

@@ -69,7 +69,9 @@ constexpr gl::GLenum DepthComponent = 0x1902;
 
 void CheckError(const char* where) {
     gl::GLenum err = gl::GetGL().GetError();
-    if (err != 0) NEON_LOG_ERROR("GL error 0x%X at %s", err, where);
+    if (err != 0)
+        NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Error,
+                     "GL error 0x%X at %s", err, where);
 }
 
 struct Program {
@@ -111,7 +113,8 @@ public:
         auto& g = gl::GetGL();
         const char* version = reinterpret_cast<const char*>(g.GetString(glc::Version));
         const char* renderer = reinterpret_cast<const char*>(g.GetString(glc::RendererStr));
-        NEON_LOG_INFO("GL backend: %s (%s)", version ? version : "?", renderer ? renderer : "?");
+        NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
+                     "GL backend: %s (%s)", version ? version : "?", renderer ? renderer : "?");
 
         unsigned char whitePx[4] = {255, 255, 255, 255};
         TextureDesc whiteDesc;
@@ -154,7 +157,9 @@ public:
         uint8_t probe[4] = {0, 0, 0, 0};
         g.ReadPixels(0, 0, 1, 1, glc::Rgba, glc::UnsignedByte, probe);
         gl::GLenum err = g.GetError();
-        NEON_LOG_INFO("GL self-test: pixel=%u,%u,%u,%u err=%u", probe[0], probe[1], probe[2], probe[3], err);
+        NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
+                     "GL self-test: pixel=%u,%u,%u,%u err=%u", probe[0], probe[1], probe[2], probe[3],
+                     err);
         gl::GLint depthBits = 0;
         g.GetIntegerv(0x0D56, &depthBits); // GL_DEPTH_BITS
         // Verify the depth buffer actually clears to the requested value.
@@ -164,9 +169,11 @@ public:
         float depthValue = -1.0f;
         g.ReadPixels(0, 0, 1, 1, 0x1902, 0x1406, &depthValue); // GL_DEPTH_COMPONENT, GL_FLOAT
         depthUsable_ = depthBits >= 16 && depthValue > 0.9f;
-        NEON_LOG_INFO("GL depth bits=%d value-after-clear=%.3f err=%u", depthBits, depthValue,
-                      g.GetError());
-        NEON_LOG_INFO("GL depth %s", depthUsable_ ? "usable" : "BROKEN - using painter's order");
+        NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
+                     "GL depth bits=%d value-after-clear=%.3f err=%u", depthBits, depthValue,
+                     g.GetError());
+        NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info, "GL depth %s",
+                     depthUsable_ ? "usable" : "BROKEN - using painter's order");
         glReady_ = true;
         return true;
     }
@@ -233,7 +240,8 @@ public:
         g.ReadBuffer(glc::ColorAttachment0);
         gl::GLenum status = g.CheckFramebufferStatus(glc::Framebuffer);
         if (status != 0x8CD5) { // GL_FRAMEBUFFER_COMPLETE
-            NEON_LOG_ERROR("GL: render target incomplete, status=0x%X", status);
+            NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Error,
+                         "GL: render target incomplete, status=0x%X", status);
             g.DeleteFramebuffers(1, &rt.fbo);
             g.DeleteTextures(1, &rt.colorTex);
             g.BindFramebuffer(glc::Framebuffer, 0);
@@ -281,7 +289,8 @@ public:
         g.ReadBuffer(glc::None);
         gl::GLenum status = g.CheckFramebufferStatus(glc::Framebuffer);
         if (status != 0x8CD5) { // GL_FRAMEBUFFER_COMPLETE
-            NEON_LOG_ERROR("GL: depth target incomplete, status=0x%X", status);
+            NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Error,
+                         "GL: depth target incomplete, status=0x%X", status);
             g.DeleteFramebuffers(1, &rt.fbo);
             g.DeleteTextures(1, &rt.depthTex);
             g.BindFramebuffer(glc::Framebuffer, 0);
@@ -381,7 +390,8 @@ public:
             g.GetProgramiv(program, glc::InfoLogLength, &len);
             std::vector<char> log(std::max(len, 1));
             g.GetProgramInfoLog(program, static_cast<gl::GLsizei>(log.size()), nullptr, log.data());
-            NEON_LOG_ERROR("GL: failed to link shader '%s': %s", debugName, log.data());
+            NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Error,
+                         "GL: failed to link shader '%s': %s", debugName, log.data());
             g.DeleteProgram(program);
             return {};
         }
@@ -567,13 +577,16 @@ public:
     void UseShader(ShaderHandle shader) override {
         currentShader_ = shader;
         const Program& prog = GetProgram(shader);
-        if (prog.id == 0) NEON_LOG_ERROR("GL: UseShader with invalid program (handle %u)", shader.id);
+        if (prog.id == 0)
+            NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Error,
+                         "GL: UseShader with invalid program (handle %u)", shader.id);
         gl::GetGL().UseProgram(prog.id);
         gl::GLenum err = gl::GetGL().GetError();
         if (err) {
             gl::GLint link = 0;
             gl::GetGL().GetProgramiv(prog.id, glc::LinkStatus, &link);
-            NEON_LOG_ERROR("GL: UseShader err=0x%X program=%u link=%d", err, prog.id, link);
+            NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Error,
+                         "GL: UseShader err=0x%X program=%u link=%d", err, prog.id, link);
         }
     }
 
@@ -589,11 +602,13 @@ public:
         gl::GLint loc = GetUniformLocation(currentShader_, name);
         if (loc >= 0) gl::GetGL().UniformMatrix4fv(loc, count, 1, values);
         else if (std::string(name) == "uBoneMatrices")
-            NEON_LOG_ERROR("GL: uBoneMatrices uniform not found in program %u",
-                           GetProgram(currentShader_).id);
+            NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Error,
+                         "GL: uBoneMatrices uniform not found in program %u",
+                         GetProgram(currentShader_).id);
         else
-            NEON_LOG_ERROR("GL: mat4-array uniform '%s' not found in program %u",
-                           name, GetProgram(currentShader_).id);
+            NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Error,
+                         "GL: mat4-array uniform '%s' not found in program %u",
+                         name, GetProgram(currentShader_).id);
         CheckError(name);
     }
 
@@ -727,7 +742,8 @@ private:
             g.GetShaderiv(shader, glc::InfoLogLength, &len);
             std::vector<char> log(std::max(len, 1));
             g.GetShaderInfoLog(shader, static_cast<gl::GLsizei>(log.size()), nullptr, log.data());
-            NEON_LOG_ERROR("GL: failed to compile %s shader '%s': %s",
+            NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Error,
+                         "GL: failed to compile %s shader '%s': %s",
                            type == glc::VertexShader ? "vertex" : "fragment", debugName, log.data());
             g.DeleteShader(shader);
             return 0;
