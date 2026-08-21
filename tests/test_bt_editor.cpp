@@ -373,6 +373,44 @@ TEST(BtGraphTreeIdOf) {
     CHECK_EQ(g.TreeIdOf(c), std::string("0/2"));
 }
 
+// The loader ids a decorator's child as "<parent>/child" (AttachChild), while a
+// composite's children get numeric indices. TreeIdOf must mirror both so the
+// playtest highlight resolves decorator children.
+TEST(BtGraphTreeIdOfDecoratorChild) {
+    btgraph::BtGraph g;
+    const std::string inv = g.AddNode("invert", math::Vec2{});
+    const std::string w = g.AddNode("wait", math::Vec2{});
+    g.SetParent(w, inv);
+    CHECK_EQ(g.TreeIdOf(inv), std::string("0"));
+    CHECK_EQ(g.TreeIdOf(w), std::string("0/child"));
+}
+
+// The runtime's activePath (Context::activePath) must map to the canvas node
+// via TreeIdOf for a tree that nests a composite under a decorator.
+TEST(BtGraphTreeIdOfMatchesRuntimeActivePath) {
+    btgraph::BtGraph g;
+    const std::string inv = g.AddNode("invert", math::Vec2{});
+    const std::string seq = g.AddNode("sequence", math::Vec2{});
+    const std::string w = g.AddNode("wait", math::Vec2{});
+    g.SetArg(w, "seconds", JNum(1.0));
+    g.SetParent(seq, inv);
+    g.SetParent(w, seq);
+
+    CHECK_EQ(g.TreeIdOf(inv), std::string("0"));
+    CHECK_EQ(g.TreeIdOf(seq), std::string("0/child")); // decorator child
+    CHECK_EQ(g.TreeIdOf(w), std::string("0/child/0")); // composite child under it
+
+    std::string err;
+    bt::BehaviorTree tree;
+    CHECK(tree.LoadText(g.Serialize(), &err));
+    script::GameVars gv;
+    bt::Context ctx(gv, nullptr);
+    ctx.dt = 0.1f;
+    CHECK(tree.Tick(ctx) == bt::Status::Running);
+    CHECK_EQ(ctx.activePath, std::string("0/child/0")); // deepest node that ran
+    CHECK_EQ(g.TreeIdOf(w), ctx.activePath);            // canvas node == running node
+}
+
 TEST(BtGraphMultipleRootsWrapInSequence) {
     btgraph::BtGraph g;
     g.AddNode("wait", math::Vec2{});

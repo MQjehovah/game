@@ -7,7 +7,6 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
-#include <iterator>
 #include <sstream>
 
 #if defined(_WIN32)
@@ -1350,48 +1349,56 @@ void EditorApp::RunUISmokeTest() {
         }
     }
 
-    // --- Behavior tree editor: canvas + model + save/load + undo ---
+    // --- Behavior tree editor: canvas + save/load + link path + undo ---
     {
         check(btCanvasDrawn_, "bt canvas renders the seeded tree");
         check(btGraph_.NodeCount() == 3u && btGraph_.LinkCount() == 2u,
               "bt panel seeded a 3-node linked tree");
 
-        // Model-level create/link/serialize -> save to a temp .bt.json ->
-        // load back -> assert identical (the graph->JSON->graph round-trip).
-        btgraph::BtGraph g;
-        const std::string r = g.AddNode("sequence", math::Vec2{});
-        const std::string c = g.AddNode("in_range", math::Vec2{});
-        const std::string a = g.AddNode("move_to", math::Vec2{});
-        core::Json d, s;
-        d.type_ = core::Json::Type::Number;
-        d.number_ = 8.0;
-        s.type_ = core::Json::Type::Number;
-        s.number_ = 3.0;
-        g.SetArg(c, "distance", d);
-        g.SetArg(a, "speed", s);
-        g.SetParent(c, r);
-        g.SetParent(a, r);
-        const std::string json = g.Serialize();
-
+        // Save/load through the editor's own panel functions (temp dir), not a
+        // raw file write: the whole point is that what the editor saves the
+        // editor (and the runtime) can read back.
         const std::string btPath = GetTempDir() + "/bt_smoke.bt.json";
-        {
-            std::ofstream out(btPath, std::ios::binary);
-            out << json;
+        const std::string savedJson = btGraph_.Serialize();
+        check(!savedJson.empty(), "bt smoke: tree serialized");
+        check(BtSaveToFile(btPath), "bt smoke: editor save writes .bt.json");
+        btGraph_ = btgraph::BtGraph{};
+        check(BtLoadFromFile(btPath), "bt smoke: editor load reads .bt.json back");
+        check(btGraph_.Serialize() == savedJson,
+              "bt smoke: editor save/load round-trip identical");
+
+        // The unloadable-tree guard: a lone empty composite must be refused.
+        btgraph::BtGraph solo;
+        solo.AddNode("sequence", math::Vec2{});
+        btGraph_ = std::move(solo);
+        check(!BtSaveToFile(btPath), "bt smoke: empty composite save refused");
+
+        // Canvas link path: select node A, Ctrl+click node B -> B is linked as
+        // A's child (exercises the real click handler, not the raw model).
+        btGraph_ = btgraph::BtGraph{};
+        const std::string a = btGraph_.AddNode("sequence", math::Vec2{20.f, 20.f});
+        const std::string b = btGraph_.AddNode("wait", math::Vec2{240.f, 240.f});
+        btSelected_ = a;
+        BtCanvasClick(math::Vec2{245.f, 245.f}, /*ctrl=*/true, /*shift=*/false);
+        check(btGraph_.LinkCount() == 1u, "bt smoke: ctrl+click creates a link");
+        if (btGraph_.LinkCount() == 1u) {
+            const btgraph::BtGraphLink& link = btGraph_.Links()[0];
+            check(link.parent == a && link.child == b,
+                  "bt smoke: ctrl+click links the clicked node under the selected");
         }
-        check(!json.empty(), "bt smoke: tree serialized");
-        std::string loadedText;
-        std::ifstream in(btPath, std::ios::binary);
-        loadedText.assign(std::istreambuf_iterator<char>(in),
-                          std::istreambuf_iterator<char>());
-        btgraph::BtGraph loaded;
-        check(loaded.FromTreeJson(core::Json::Parse(loadedText, nullptr)),
-              "bt smoke: saved .bt.json reloads");
-        check(loaded.Serialize() == json, "bt smoke: save/load round-trip identical");
+        {
+            core::Json tree = core::Json::Parse(btGraph_.Serialize(), nullptr);
+            const core::Json* root = tree.Get("root");
+            const core::Json* kids = root ? root->Get("children") : nullptr;
+            check(kids != nullptr && kids->Size() == 1u &&
+                      kids->At(0)->Get("type")->GetString() == std::string("wait"),
+                  "bt smoke: serialized tree nests the linked child");
+        }
 
         // Editor graph edits route through the undo stack: add -> undo -> redo.
         const size_t nodesBefore = btGraph_.NodeCount();
         const btgraph::BtGraph before = btGraph_;
-        const std::string nid = btGraph_.AddNode("wait", math::Vec2{0.f, 0.f});
+        const std::string nid = btGraph_.AddNode("in_range", math::Vec2{0.f, 0.f});
         BtPushSnapshot(before);
         check(!nid.empty() && btGraph_.NodeCount() == nodesBefore + 1,
               "bt smoke: canvas add node");

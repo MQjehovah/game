@@ -173,9 +173,11 @@ public:
     const std::vector<BtGraphLink>& Links() const { return links_; }
 
     // The serialized tree-path id of `id` mirroring bt::BehaviorTree's loader
-    // ids: the (single) root is "0", its children "0/0", "0/1", ... ("" when
-    // `id` is missing). Used to map the playtest runtime's activePath back to
-    // the canvas node.
+    // ids: the (single) root is "0"; a composite's children are "0/0", "0/1",
+    // ... while a decorator's child is the literal "0/child" (the loader ids a
+    // decorator's child as "<parent>/child", see AttachChild). ("" when `id` is
+    // missing.) Used to map the playtest runtime's activePath back to the
+    // canvas node.
     std::string TreeIdOf(const std::string& id) const {
         size_t idx = IndexOf(id);
         if (idx == static_cast<size_t>(-1)) return "";
@@ -200,6 +202,11 @@ public:
         for (size_t i = chain.size() - 1; i > 0; --i) {
             const BtGraphNode* parent = chain[i];
             const BtGraphNode* child = chain[i - 1];
+            if (bt::ChildCapacity(parent->type) == 1) {
+                // Decorator: the loader ids its single child as "<parent>/child".
+                path += "/child";
+                continue;
+            }
             int among = 0;
             for (const auto& l : links_)
                 if (l.parent == parent->id) {

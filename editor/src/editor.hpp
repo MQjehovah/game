@@ -112,6 +112,9 @@ private:
     void BtUpdatePlaytestHighlight();
     void BtRefreshBehaviorFiles();
     std::string BtBehaviorsDir() const;
+    // Canvas mouse handling, extracted so the smoke can drive the real link
+    // path: `cm` is a canvas-space point, ctrl/shift carry the modifier state.
+    void BtCanvasClick(const math::Vec2& cm, bool ctrl, bool shift);
     void BtParamNumber(const btgraph::BtGraphNode& n, const bt::ParamInfo& p);
     void BtParamString(const btgraph::BtGraphNode& n, const bt::ParamInfo& p);
     void BtParamBool(const btgraph::BtGraphNode& n, const bt::ParamInfo& p);
@@ -203,6 +206,7 @@ private:
     std::string btPendingType_; // armed palette node type (click canvas to place)
     std::string btActivePath_;  // playtest highlight: tree-path id of the running node
     std::vector<std::string> btBehaviorFiles_;
+    uint64_t btFilesRefreshFrame_ = 0; // throttle: refresh behaviors/ listing periodically
     bool btCanvasDrawn_ = false; // smoke: the BT canvas emitted geometry this frame
     // Canvas drag state.
     std::string btDragNode_;

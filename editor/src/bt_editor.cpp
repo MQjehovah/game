@@ -211,6 +211,31 @@ void EditorApp::BtNewTree() {
 }
 
 bool EditorApp::BtSaveToFile(const std::string& path) {
+    // The engine loader rejects empty composites ("sequence requires at least
+    // one child"), childless decorators and a missing root. Refuse to write a
+    // file the runtime cannot load, and say exactly which node is wrong. An
+    // alternative (auto-injecting a `wait` placeholder) would silently change
+    // the user's graph on save, so we prefer the explicit refusal.
+    if (btGraph_.Empty()) {
+        NEON_LOG_WARN("BtEditor: cannot save an empty tree (add a root node first)");
+        return false;
+    }
+    for (const auto& n : btGraph_.Nodes()) {
+        const int cap = bt::ChildCapacity(n.type);
+        if (cap != -1 && cap != 1) continue; // actions / conditions take no children
+        bool hasChild = false;
+        for (const auto& l : btGraph_.Links())
+            if (l.parent == n.id) {
+                hasChild = true;
+                break;
+            }
+        if (!hasChild) {
+            NEON_LOG_WARN("BtEditor: '%s' needs %s child before saving (fix or delete it)",
+                          n.type.c_str(), cap == 1 ? "exactly one" : "at least one");
+            return false;
+        }
+    }
+
     std::string dir = path;
     size_t slash = dir.find_last_of("/\\");
     if (slash == std::string::npos) dir = ".";
@@ -259,7 +284,10 @@ void EditorApp::BtUpdatePlaytestHighlight() {
 }
 
 void EditorApp::BuildBtPanel() {
-    if (!showBt_) return;
+    if (!showBt_) {
+        btPanelFocused_ = false; // panel closed: never route undo to a stale focus
+        return;
+    }
     BtUpdatePlaytestHighlight();
     // The panel hosts a full node canvas: never let a stale saved size (or the
     // auto-size feedback loop between the canvas child and the window) shrink
@@ -268,6 +296,7 @@ void EditorApp::BuildBtPanel() {
     ImGui::SetNextWindowSizeConstraints(ImVec2(720.0f, 360.0f),
                                         ImVec2(FLT_MAX, FLT_MAX));
     if (!ImGui::Begin("行为树", &showBt_)) {
+        btPanelFocused_ = false;
         ImGui::End();
         return;
     }
@@ -333,7 +362,13 @@ void EditorApp::BuildBtToolbar() {
     }
     ImGui::Separator();
 
-    BtRefreshBehaviorFiles();
+    // Throttle the behaviors/ directory scan: it runs on panel open and every
+    // ~1s of frames (60 @ 60fps), never per frame.
+    const uint64_t now = TimeRef().frameIndex;
+    if (now - btFilesRefreshFrame_ >= 60 || btBehaviorFiles_.empty()) {
+        BtRefreshBehaviorFiles();
+        btFilesRefreshFrame_ = now;
+    }
     if (!btBehaviorFiles_.empty()) {
         ImGui::TextDisabled("behaviors/");
         for (const auto& f : btBehaviorFiles_) {
@@ -454,40 +489,7 @@ void EditorApp::BuildBtCanvas() {
 
         const std::string hit = HitTest(btGraph_, cm);
         if (!btDragging_ && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-            if (!hit.empty()) {
-                btSelected_ = hit;
-                if (ImGui::GetIO().KeyCtrl) {
-                    // Ctrl+click on a second node: link selected -> hit.
-                    const btgraph::BtGraph before = btGraph_;
-                    if (btGraph_.SetParent(hit, btSelected_)) BtPushSnapshot(before);
-                } else if (ImGui::GetIO().KeyShift) {
-                    // Shift+click: detach the clicked node from its parent.
-                    const btgraph::BtGraph before = btGraph_;
-                    if (btGraph_.SetParent(hit, "")) BtPushSnapshot(before);
-                } else {
-                    // Begin a potential drag-move of the clicked node.
-                    btDragNode_ = hit;
-                    btDragStart_ = cm;
-                    if (const btgraph::BtGraphNode* hn = btGraph_.Find(hit))
-                        btNodeStartPos_ = hn->pos;
-                    btGraphBeforeDrag_ = btGraph_;
-                    btHasGraphBeforeDrag_ = true;
-                    btDragging_ = true;
-                }
-            } else {
-                if (!btPendingType_.empty()) {
-                    const btgraph::BtGraph before = btGraph_;
-                    const math::Vec2 p(Snap(cm.x - kNodeW * 0.5f), Snap(cm.y - kNodeH * 0.5f));
-                    const std::string id = btGraph_.AddNode(btPendingType_, p);
-                    if (!id.empty()) {
-                        btSelected_ = id;
-                        BtPushSnapshot(before);
-                    }
-                    btPendingType_.clear();
-                } else {
-                    btSelected_.clear();
-                }
-            }
+            BtCanvasClick(cm, ImGui::GetIO().KeyCtrl, ImGui::GetIO().KeyShift);
         }
 
         if (!btSelected_.empty() && ImGui::IsKeyPressed(ImGuiKey_Delete, false) &&
@@ -515,6 +517,53 @@ void EditorApp::BuildBtCanvas() {
             btHasGraphBeforeDrag_ = false;
             btDragging_ = false;
             btDragNode_.clear();
+        }
+    }
+}
+
+void EditorApp::BtCanvasClick(const math::Vec2& cm, bool ctrl, bool shift) {
+    const std::string hit = HitTest(btGraph_, cm);
+    if (!hit.empty()) {
+        if (ctrl) {
+            // Ctrl+click a second node: link the PREVIOUSLY selected node as
+            // the parent of the clicked one (select parent, ctrl-click child).
+            // `prev` must be captured BEFORE btSelected_ is overwritten below,
+            // otherwise this degenerates to SetParent(hit, hit) (self-parent,
+            // always rejected).
+            const std::string prev = btSelected_;
+            btSelected_ = hit;
+            if (!prev.empty() && prev != hit) {
+                const btgraph::BtGraph before = btGraph_;
+                if (btGraph_.SetParent(hit, prev)) BtPushSnapshot(before);
+            }
+        } else if (shift) {
+            // Shift+click: detach the clicked node from its parent.
+            const btgraph::BtGraph before = btGraph_;
+            btSelected_ = hit;
+            if (btGraph_.SetParent(hit, "")) BtPushSnapshot(before);
+        } else {
+            // Plain click: select and begin a potential drag-move.
+            btSelected_ = hit;
+            btDragNode_ = hit;
+            btDragStart_ = cm;
+            if (const btgraph::BtGraphNode* hn = btGraph_.Find(hit))
+                btNodeStartPos_ = hn->pos;
+            btGraphBeforeDrag_ = btGraph_;
+            btHasGraphBeforeDrag_ = true;
+            btDragging_ = true;
+        }
+    } else {
+        if (!btPendingType_.empty()) {
+            const btgraph::BtGraph before = btGraph_;
+            const math::Vec2 p(Snap(cm.x - kNodeW * 0.5f), Snap(cm.y - kNodeH * 0.5f));
+            const std::string id = btGraph_.AddNode(btPendingType_, p);
+            if (!id.empty()) {
+                btSelected_ = id;
+                BtPushSnapshot(before);
+            }
+            btPendingType_.clear();
+        } else {
+            btSelected_.clear();
         }
     }
 }
