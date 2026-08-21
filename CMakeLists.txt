@@ -200,6 +200,12 @@ add_executable(neon_editor
 )
 target_include_directories(neon_editor PRIVATE assets/generated third_party/stb)
 target_link_libraries(neon_editor PRIVATE neon_engine neon_imgui)
+if(MSVC)
+  target_compile_options(neon_editor PRIVATE /W4 /permissive- /utf-8)
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(neon_editor PRIVATE -Wall -Wextra
+    -finput-charset=UTF-8 -fexec-charset=UTF-8)
+endif()
 
 # ---------------------------------------------------------------------------
 # Tests
@@ -216,6 +222,12 @@ add_executable(neon_tests tests/test_main.cpp tests/test_serialize.cpp tests/tes
 target_link_libraries(neon_tests PRIVATE neon_engine)
 # test_history.cpp includes the editor's generic undo/redo stack header.
 target_include_directories(neon_tests PRIVATE editor/src)
+if(MSVC)
+  target_compile_options(neon_tests PRIVATE /W4 /permissive- /utf-8)
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(neon_tests PRIVATE -Wall -Wextra
+    -finput-charset=UTF-8 -fexec-charset=UTF-8)
+endif()
 add_test(NAME unit COMMAND neon_tests)
 # ctest runs the binary from the build dir by default; run it from the source
 # root so tests that load repo-relative assets (assets/...) resolve identically

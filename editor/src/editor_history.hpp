@@ -117,7 +117,7 @@ public:
                          const math::Quat& newRot, const math::Vec3& newScale,
                          int fields = kAll)
         : entities_(entities), index_(index), fields_(fields), origPos_(origPos),
-          origRot_(origRot), origScale_(origScale), curPos_(newPos), curRot_(newRot),
+          curPos_(newPos), origRot_(origRot), curRot_(newRot), origScale_(origScale),
           curScale_(newScale) {}
 
     void Apply() override {
@@ -135,6 +135,14 @@ public:
     bool Merge(const Command& incoming) override {
         const EditTransformCommand* other = dynamic_cast<const EditTransformCommand*>(&incoming);
         if (!other || !mergeable_ || other->index_ != index_ || other->fields_ != fields_)
+            return false;
+        // Value-chain guard (like EditPropertyCommand): only merge when the
+        // incoming ORIGINAL equals our CURRENT values, i.e. the edits form one
+        // continuous drag. A separate edit that starts from a different value
+        // (e.g. a programmatic set between two inspector drags) opens a new
+        // undo step instead of coalescing.
+        if (!Vec3Eq(other->origPos_, curPos_) || !QuatEq(other->origRot_, curRot_) ||
+            !Vec3Eq(other->origScale_, curScale_))
             return false;
         curPos_ = other->curPos_;
         curRot_ = other->curRot_;

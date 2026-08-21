@@ -548,10 +548,10 @@ void EditorApp::DrawTransformGizmo() {
 
     // Manipulate reads ImGui's mouse state directly and mutates gizmoModel on
     // drag; when it returns true the transform changed. The write-back is
-    // routed through the history command stack: the first frame of a drag
-    // records the ORIGINAL values, and every following frame pushes a
-    // MERGING EditTransformCommand, so one drag collapses into a single undo
-    // step that reverts to the pre-drag transform.
+    // routed through the history command stack: each changed frame pushes an
+    // EditTransformCommand whose ORIGINAL is the last applied value (a
+    // continuous merge chain), so frames within one drag collapse into a
+    // single undo step that reverts to the pre-drag transform.
     if (ImGuizmo::Manipulate(view, proj, gizmoOp_, gizmoMode_, gizmoModel)) {
         math::Mat4 m;
         GizmoToMat4(gizmoModel, m);
@@ -559,15 +559,10 @@ void EditorApp::DrawTransformGizmo() {
         math::Quat rot;
         DecomposeModel(m, pos, scale, rot);
         if (!(Vec3Eq(pos, e.pos) && Vec3Eq(scale, e.scale) && QuatEq(rot, e.rot))) {
-            if (!gizmoDragOriginValid_) {
-                gizmoDragOriginPos_ = e.pos;
-                gizmoDragOriginRot_ = e.rot;
-                gizmoDragOriginScale_ = e.scale;
-                gizmoDragOriginValid_ = true;
-            }
+            gizmoDragOriginValid_ = true;
             history_.Push(std::make_unique<EditTransformCommand>(
-                &entities_, selected_, gizmoDragOriginPos_, gizmoDragOriginRot_,
-                gizmoDragOriginScale_, pos, rot, scale, EditTransformCommand::kAll));
+                &entities_, selected_, e.pos, e.rot, e.scale, pos, rot, scale,
+                EditTransformCommand::kAll));
         }
     }
     gizmoDragActive_ = ImGuizmo::IsUsing();
@@ -1068,6 +1063,7 @@ void EditorApp::RunUISmokeTest() {
             const math::Vec3 step1 = orig + math::Vec3{0.5f, -0.25f, 0.125f};
             const math::Vec3 step2 = step1 + math::Vec3{0.1f, 0.2f, 0.3f};
             const math::Vec3 step3 = step2 + math::Vec3{0.2f, -0.3f, 0.4f};
+            const math::Vec3 step4 = step3 + math::Vec3{0.3f, 0.1f, -0.2f};
             const size_t depthBefore = history_.UndoDepth();
 
             auto editPos = [&](const math::Vec3& from, const math::Vec3& to) {
@@ -1079,22 +1075,30 @@ void EditorApp::RunUISmokeTest() {
             editPos(orig, step1);
             check(nearVec(sel.pos, step1),
                   "undo/redo: transform edit applies through the command stack");
-            editPos(step1, step2); // consecutive same-field edit coalesces
+            editPos(step1, step2); // continuous chain -> coalesces
             check(history_.UndoDepth() == depthBefore + 1,
                   "undo/redo: consecutive same-field edits merge into one undo step");
             check(nearVec(sel.pos, step2),
                   "undo/redo: merged command holds the final value");
 
+            // Value-chain guard: an edit whose ORIGINAL does not equal the last
+            // applied value (e.g. a programmatic set between two separate
+            // inspector drags) must NOT merge into the (unsealed) top step.
+            editPos(step1, step3);
+            check(history_.UndoDepth() == depthBefore + 2,
+                  "undo/redo: discontinuous chain opens its own undo step");
+            check(nearVec(sel.pos, step3), "undo/redo: discontinuous edit applies");
+
             // Seal the top command (what the gizmo does when a drag ends): the
-            // next edit must open a fresh undo step.
+            // next edit must open a fresh undo step too.
             if (EditTransformCommand* top =
                     dynamic_cast<EditTransformCommand*>(history_.TopUndo())) {
                 top->Seal();
             }
-            editPos(step2, step3);
-            check(history_.UndoDepth() == depthBefore + 2,
+            editPos(step3, step4);
+            check(history_.UndoDepth() == depthBefore + 3,
                   "undo/redo: sealed command opens a new undo step");
-            check(nearVec(sel.pos, step3), "undo/redo: post-seal edit applies");
+            check(nearVec(sel.pos, step4), "undo/redo: post-seal edit applies");
 
             // Ctrl+Z / Ctrl+Y through the real keyboard event path.
             auto shortcut = [this](platform::Key key, bool withCtrl) {
@@ -1119,14 +1123,21 @@ void EditorApp::RunUISmokeTest() {
                 }
             };
             shortcut(platform::Key::Z, true);
-            check(nearVec(sel.pos, step2), "undo/redo: Ctrl+Z undoes the post-seal edit");
+            check(nearVec(sel.pos, step3), "undo/redo: Ctrl+Z undoes the post-seal edit");
+            shortcut(platform::Key::Z, true);
+            check(nearVec(sel.pos, step1),
+                  "undo/redo: Ctrl+Z undoes the discontinuous edit");
             shortcut(platform::Key::Z, true);
             check(nearVec(sel.pos, orig), "undo/redo: Ctrl+Z undoes the merged drag");
             shortcut(platform::Key::Y, true);
             check(nearVec(sel.pos, step2), "undo/redo: Ctrl+Y redoes the merged drag");
             shortcut(platform::Key::Y, true);
-            check(nearVec(sel.pos, step3), "undo/redo: Ctrl+Y redoes the post-seal edit");
+            check(nearVec(sel.pos, step3),
+                  "undo/redo: Ctrl+Y redoes the discontinuous edit");
+            shortcut(platform::Key::Y, true);
+            check(nearVec(sel.pos, step4), "undo/redo: Ctrl+Y redoes the post-seal edit");
             // Leave the scene as it was: undo everything we just did.
+            shortcut(platform::Key::Z, true);
             shortcut(platform::Key::Z, true);
             shortcut(platform::Key::Z, true);
             check(nearVec(sel.pos, orig),

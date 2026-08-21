@@ -151,13 +151,10 @@ private:
     bool gizmoDragActive_ = false;   // ImGuizmo::IsUsing() after the last Manipulate
     bool gizmoDragSimulated_ = false; // the smoke frame's synthetic drag ran
     float gizmoRect_[4] = {0, 0, 0, 0}; // rect passed to ImGuizmo::SetRect (smoke)
-    // Transform values captured when a gizmo drag starts; the write-back pushes
-    // a MERGING EditTransformCommand per frame so one drag = one undo step that
-    // reverts to these ORIGINAL values.
+    // True while a gizmo drag is producing write-back deltas; the drag-end seal
+    // uses it to mark the finished drag command so the next drag opens its own
+    // undo step.
     bool gizmoDragOriginValid_ = false;
-    math::Vec3 gizmoDragOriginPos_{};
-    math::Vec3 gizmoDragOriginScale_{1, 1, 1};
-    math::Quat gizmoDragOriginRot_{};
 
     // Custom UI demo widget handles (engine widget system).
     ui::TreeView* demoTree_ = nullptr;
