@@ -141,7 +141,11 @@ private:
     ecs::Entity npc_;
     float yaw_ = 0.0f;
     float pitch_ = 0.35f;
-    float camDist_ = 9.0f;
+    float camDist_ = 7.5f;
+    // Smoothed character facing (radians, Y-rotation). Lerped toward the
+    // movement direction each frame so the player's orientation reads clearly
+    // in third-person instead of snapping (or freezing) while idle.
+    float facingYaw_ = 0.0f;
     gfx::Camera camera_;
     float shakeTime_ = 0.0f;
     float shakeMag_ = 0.0f;

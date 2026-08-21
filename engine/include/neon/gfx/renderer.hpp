@@ -121,6 +121,9 @@ public:
                   BlendMode blend = BlendMode::Alpha);
     void DrawRect(const math::Vec2& pos, const math::Vec2& size, const Color& color);
     void DrawRectOutline(const math::Rect2& rect, float thickness, const Color& color);
+    // Filled triangle in design units (same immediate-mode 2D buffer as quads).
+    void DrawTriangle2D(const math::Vec2& a, const math::Vec2& b, const math::Vec2& c,
+                        const Color& color);
     void DrawText(const Font& font, const std::string& text, const math::Vec2& pos, float size,
                   const Color& color, bool centerX = false, bool centerY = false);
     void DrawBillboard(const math::Vec3& worldPos, float size, const Color& color,

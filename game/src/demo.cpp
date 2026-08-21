@@ -229,28 +229,56 @@ void GameScene::SetupWorld() {
         world_.Add<CRigidBody>(e, CRigidBody{physics_.AddSphere(EncodeEntity(e), pos, 0.6f, true)});
     }
 
-    // Instanced scenery from Kenney (CC0) models.
+    // Instanced scenery from Kenney (CC0) models. Keep the village plaza and
+    // the spawn point clear so the play area stays open and readable.
+    const math::ExclusionZone exclusionZones[] = {
+        {0.0f, 0.0f, 26.0f}, // village plaza (NPC, flag, helmet, play space)
+        {0.0f, 4.0f, 6.0f},  // player spawn
+    };
+    const int kExclusionZoneCount = static_cast<int>(sizeof(exclusionZones) / sizeof(exclusionZones[0]));
+
+    // Each category enforces a minimum spacing from every already-placed prop
+    // (same or different category), so props never overlap or cluster on the
+    // flat ground the height rejection leaves behind. O(n^2) over <= ~200
+    // placements is fine and simpler than a spatial hash grid at this scale.
+    // Candidates are drawn in a fixed order (angle, radius, scale on
+    // acceptance) so the whole pass is reproducible run-to-run.
+    std::vector<math::Vec2> outPos;
     auto scatter = [&](const gfx::Mesh& mesh, std::vector<math::Mat4>& out, int count,
-                       float minR, float maxR, float minS, float maxS, float maxY) {
+                       float minR, float maxR, float minS, float maxS, float maxY,
+                       float minSpacing) {
         const math::AABB& b = mesh.Bounds();
         float baseY = -b.min.y;
         for (int i = 0; i < count; ++i) {
-            float a = rng_.Range(0.0f, math::kTwoPi);
-            float r = rng_.Range(minR, maxR);
-            math::Vec3 pos{std::cos(a) * r, 0.0f, std::sin(a) * r};
-            float groundY = TerrainHeight(pos.x, pos.z);
-            if (groundY > maxY) continue;
-            float s = rng_.Range(minS, maxS);
-            math::Mat4 m = math::Mat4::Translation({pos.x, groundY + baseY * s, pos.z}) *
-                           math::Mat4::RotationY(rng_.Range(0.0f, math::kTwoPi)) *
-                           math::Mat4::Scale({s, s, s});
-            out.push_back(m);
+            bool placed = false;
+            for (int attempt = 0; attempt < 64 && !placed; ++attempt) {
+                float a = rng_.Range(0.0f, math::kTwoPi);
+                float r = rng_.Range(minR, maxR);
+                math::Vec2 xz{std::cos(a) * r, std::sin(a) * r};
+                if (math::InExclusionZones(xz, exclusionZones, kExclusionZoneCount)) continue;
+                float groundY = TerrainHeight(xz.x, xz.y);
+                if (groundY > maxY) continue;
+                if (math::TooCloseToAny(xz, outPos.data(), static_cast<int>(outPos.size()),
+                                        minSpacing))
+                    continue;
+                float s = rng_.Range(minS, maxS);
+                math::Mat4 m = math::Mat4::Translation({xz.x, groundY + baseY * s, xz.y}) *
+                               math::Mat4::RotationY(rng_.Range(0.0f, math::kTwoPi)) *
+                               math::Mat4::Scale({s, s, s});
+                out.push_back(m);
+                outPos.push_back(xz);
+                placed = true;
+            }
         }
     };
-    scatter(app_.assets_.kenneyPine, pines_, 120, 16.0f, 96.0f, 2.2f, 4.2f, 8.0f);
-    scatter(app_.assets_.kenneyOak, oaks_, 45, 16.0f, 96.0f, 2.0f, 3.6f, 8.0f);
-    scatter(app_.assets_.kenneyRock, rocks_, 32, 14.0f, 96.0f, 0.5f, 1.5f, 6.0f);
-    scatter(app_.assets_.kenneyLog, logs_, 10, 4.0f, 30.0f, 0.8f, 1.4f, 3.0f);
+    scatter(app_.assets_.kenneyPine, pines_, 70, 26.0f, 96.0f, 2.2f, 3.6f, 8.0f, 3.2f);
+    scatter(app_.assets_.kenneyOak, oaks_, 28, 26.0f, 96.0f, 2.0f, 3.6f, 8.0f, 4.0f);
+    scatter(app_.assets_.kenneyRock, rocks_, 18, 26.0f, 96.0f, 0.5f, 1.5f, 6.0f, 2.6f);
+    scatter(app_.assets_.kenneyLog, logs_, 8, 12.0f, 42.0f, 0.8f, 1.4f, 3.0f, 3.0f);
+    NEON_LOG_CAT(neon::core::LogCategory::Game, neon::core::LogLevel::Info,
+                 "scenery placed: pines=%d oaks=%d rocks=%d logs=%d",
+                 static_cast<int>(pines_.size()), static_cast<int>(oaks_.size()),
+                 static_cast<int>(rocks_.size()), static_cast<int>(logs_.size()));
 
     // GPU-skinned demo flag rig: bone 0 = static pole (pins the bottom edge),
     // bone 1 = child rotating the top of the flag around the local Z axis.
@@ -489,7 +517,14 @@ void GameScene::UpdatePlayer(float dt) {
     if (input->Pressed(platform::Key::Space) && physics_.IsOnGround(rb->body)) vel.y = 8.0f;
     physics_.SetVelocity(rb->body, vel);
 
-    if (dir.LengthSq() > 0.01f) pt->rot = FaceDirection(dir);
+    // Smoothly turn the character toward the movement direction (camera-relative:
+    // pressing W faces "camera forward"). When idle the last facing is kept.
+    if (dir.LengthSq() > 0.01f) {
+        float target = std::atan2(dir.x, dir.z);
+        float diff = math::WrapAngle(target - facingYaw_);
+        facingYaw_ += math::Approach(diff, 0.0f, 12.0f * dt);
+        pt->rot = math::Quat::FromEuler(0.0f, facingYaw_, 0.0f);
+    }
 
     if (input->MousePressed(platform::MouseButton::Left) && player->attackCd <= 0.0f) {
         player->attackCd = 0.4f;
@@ -802,10 +837,11 @@ void GameScene::Draw(gfx::Renderer& renderer) {
                                   gfx::Color{0.22f, 0.48f, 0.8f, 1.0f}, dayFactor);
     gfx::Color horizon = gfx::Lerp(gfx::Color{0.06f, 0.09f, 0.18f, 1.0f},
                                    gfx::Color{0.55f, 0.7f, 0.88f, 1.0f}, dayFactor);
-    gfx::Color fog = gfx::Lerp(gfx::Color{0.04f, 0.06f, 0.12f, 1.0f},
-                               gfx::Color{0.42f, 0.55f, 0.72f, 1.0f}, dayFactor);
+    gfx::Color fog = horizon; // distant scenery fades into the horizon exactly
     renderer.SetSky(skyTop, horizon);
-    renderer.SetFog(fog, 120.0f, 260.0f);
+    // Fog spans the scenery ring (minR 12 .. maxR 96): props past ~45 units
+    // visibly soften toward the horizon color, the village stays crisp.
+    renderer.SetFog(fog, 45.0f, 170.0f);
     renderer.SetDirectionalLight({-0.4f, -1.0f, -0.3f},
                                  gfx::Color{1.0f, 0.92f, 0.78f, 1.0f}.Multiplied(dayFactor),
                                  0.16f + 0.18f * dayFactor);
@@ -933,6 +969,28 @@ void GameScene::Draw(gfx::Renderer& renderer) {
     }
 
     DrawNameplates(renderer);
+
+    // Ground facing marker: a subtle chevron a few units ahead of the player,
+    // oriented by the camera yaw and projected onto the terrain. It answers
+    // "which way am I facing" without obstructing gameplay.
+    if (pt) {
+        math::Vec3 fwd{-std::sin(yaw_), 0.0f, -std::cos(yaw_)};
+        math::Vec3 perp = math::Cross(fwd, math::Vec3::Up());
+        auto ground = [&](const math::Vec3& p) {
+            return math::Vec3{p.x, std::max(TerrainHeight(p.x, p.z), 0.1f) + 0.04f, p.z};
+        };
+        math::Vec3 base = ground(pt->pos + fwd * 2.1f);
+        math::Vec3 tip = ground(pt->pos + fwd * 3.6f);
+        math::Vec3 left = ground(base - perp * 0.55f);
+        math::Vec3 right = ground(base + perp * 0.55f);
+        const gfx::Color chevCol{0.45f, 0.9f, 1.0f, 0.4f};
+        gfx::Renderer::LineVertex chevron[6] = {
+            {left, chevCol},  {tip, chevCol}, {tip, chevCol},
+            {right, chevCol}, {left, chevCol}, {right, chevCol},
+        };
+        renderer.DrawLines(chevron, 6, math::Mat4::Identity());
+    }
+
     DrawMinimap(renderer);
     DrawHUD(renderer);
     DrawOverlays(renderer);
@@ -1059,7 +1117,20 @@ void GameScene::DrawMinimap(gfx::Renderer& renderer) {
     };
     CTransform* pt = world_.Get<CTransform>(player_);
     CTransform* nt = world_.Get<CTransform>(npc_);
-    if (pt) dot(pt->pos, gfx::Color{0.3f, 0.8f, 1.0f, 1.0f}, 5.0f);
+    if (pt) {
+        // Facing arrow (under the dot): a small triangle rotated by the camera
+        // yaw - movement is camera-relative, so the character faces "camera
+        // forward", which is exactly what the arrow points along.
+        float x = cx + pt->pos.x * scale;
+        float z = cy + pt->pos.z * scale;
+        if (x > cx - 92 && x < cx + 92 && z > cy - 92 && z < cy + 92) {
+            math::Vec2 tip, left, right;
+            math::FacingArrowPoints({x, z}, yaw_, 9.0f, 3.0f, tip, left, right);
+            renderer.DrawTriangle2D(left, right, tip,
+                                    gfx::Color{0.3f, 0.85f, 1.0f, 0.85f});
+        }
+        dot(pt->pos, gfx::Color{0.3f, 0.8f, 1.0f, 1.0f}, 5.0f);
+    }
     if (nt) dot(nt->pos, gfx::Color{0.4f, 1.0f, 0.5f, 1.0f}, 5.0f);
     auto mobs = world_.ViewAll<CEnemy>();
     for (size_t i = 0; i < mobs.Size(); ++i) {

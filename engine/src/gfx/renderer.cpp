@@ -1430,6 +1430,32 @@ void Renderer::DrawRectOutline(const math::Rect2& rect, float thickness, const C
     DrawRect({rect.x + rect.w - thickness, rect.y}, {thickness, rect.h}, color);
 }
 
+void Renderer::DrawTriangle2D(const math::Vec2& a, const math::Vec2& b, const math::Vec2& c,
+                              const Color& color) {
+    if (currentUITexture_.Valid() || currentUIBlend_ != BlendMode::Alpha) Flush2D();
+    if (uiVerts_.size() + 3 > kMaxUIVertices) Flush2D();
+    currentUITexture_ = {};
+    currentUIBlend_ = BlendMode::Alpha;
+
+    const math::Vec2 s[3] = {ToScreen(a), ToScreen(b), ToScreen(c)};
+    uint16_t base = static_cast<uint16_t>(uiVerts_.size());
+    for (int i = 0; i < 3; ++i) {
+        UIVertex v;
+        v.x = s[i].x;
+        v.y = s[i].y;
+        v.u = 0.0f;
+        v.v = 0.0f;
+        v.r = color.r;
+        v.g = color.g;
+        v.b = color.b;
+        v.a = color.a;
+        uiVerts_.push_back(v);
+    }
+    uiIndices_.push_back(base + 0);
+    uiIndices_.push_back(base + 1);
+    uiIndices_.push_back(base + 2);
+}
+
 void Renderer::DrawText(const Font& font, const std::string& text, const math::Vec2& pos, float size,
                         const Color& color, bool centerX, bool centerY) {
     if (!font.Valid() || text.empty()) return;

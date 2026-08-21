@@ -8,6 +8,7 @@
 #include "neon/math/mat4.hpp"
 #include "neon/math/quat.hpp"
 #include "neon/math/transform.hpp"
+#include "neon/math/spatial.hpp"
 
 #include "neon/core/log.hpp"
 #include "neon/core/time.hpp"
