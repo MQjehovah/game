@@ -16,6 +16,7 @@
 
 #include "editor.hpp"
 #include "history.hpp"
+#include "script_panel_model.hpp"
 
 namespace neon::editor {
 
@@ -192,6 +193,16 @@ inline void ApplyEmissiveIntensityProp(SceneEntity& e, const float& v) {
 }
 inline void ApplyNameProp(SceneEntity& e, const std::string& v) { e.name = v; }
 
+// Script component edit: attaches/replaces/clears the entity's script
+// (backend/path/vars) in one undo step. A detach is just an edit whose new
+// fields are all empty. Defined here (not in script_panel_model.hpp) because it
+// needs the full SceneEntity type.
+inline void ApplyScriptFields(SceneEntity& e, const SceneScriptFields& v) {
+    e.scriptBackend = v.backend;
+    e.scriptPath = v.path;
+    e.scriptVars = v.vars;
+}
+
 // A texture slot edit: the new path plus the texture handle already resolved
 // through the AssetManager (resolved at command-construction time in the
 // inspector, which has access to it). Empty path + invalid handle clears the
@@ -226,6 +237,9 @@ inline bool ValuesEqual(const TextureSlotValue& a, const TextureSlotValue& b) {
 }
 inline bool ValuesEqual(const gfx::Color& a, const gfx::Color& b) {
     return a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a;
+}
+inline bool ValuesEqual(const SceneScriptFields& a, const SceneScriptFields& b) {
+    return ScriptFieldsEqual(a, b);
 }
 } // namespace
 

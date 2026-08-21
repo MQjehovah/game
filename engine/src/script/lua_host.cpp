@@ -391,6 +391,17 @@ bool LuaHost::Load(const std::string& source) {
     return true;
 }
 
+bool LuaHost::CheckSyntax(const std::string& source) {
+    if (!impl_->L) return false;
+    if (luaL_loadbuffer(impl_->L, source.data(), source.size(), "[neon]") != LUA_OK) {
+        CaptureError();
+        return false;
+    }
+    impl_->lastError = {};
+    lua_pop(impl_->L, 1); // discard the compiled chunk: the loaded chunk is untouched
+    return true;
+}
+
 core::Result<Value> LuaHost::Run() {
     if (!impl_->L) return Fail("script host is not initialized");
     if (!impl_->hasChunk) return Fail("no script chunk loaded");

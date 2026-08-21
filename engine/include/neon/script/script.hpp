@@ -99,6 +99,13 @@ public:
     // previously loaded chunk, which is then executed by Run().
     virtual bool Load(const std::string& source) = 0;
 
+    // Validate `source` without executing or installing it. Returns true when
+    // the source is syntactically valid; on a syntax error records the message
+    // + line in LastError and returns false. Unlike Load, a successful check
+    // does NOT replace the previously loaded chunk, so a host can lint files
+    // (the editor's script panel) without disturbing a running script.
+    virtual bool CheckSyntax(const std::string& source) = 0;
+
     // Execute the chunk loaded by the last successful Load(). Errors when no
     // valid chunk is loaded or the chunk raises. Returns the chunk's value
     // (nil for most chunks).

@@ -61,6 +61,11 @@ struct SceneFile {
     // texture paths are optional PBR maps (albedo / metallic-roughness / AO /
     // emissive); empty strings are omitted from the JSON. Empty name or
     // meshKey returns an error.
+    //
+    // An optional script component is emitted when `scriptPath` is non-empty:
+    // {"backend": "lua", "path": <scriptPath>, "vars": <scriptVars>} (vars
+    // omitted when not a JSON object), matching the built-in `script` factory.
+    // `scriptBackend` defaults to "lua" when empty.
     static core::Result<core::Json> MakeEntity(const std::string& name,
                                                const math::Vec3& pos,
                                                const math::Quat& rot,
@@ -74,7 +79,10 @@ struct SceneFile {
                                                const std::string& aoTex = "",
                                                const std::string& emissiveTex = "",
                                                float ao = 1.0f,
-                                               float emissiveIntensity = 1.0f);
+                                               float emissiveIntensity = 1.0f,
+                                               const std::string& scriptPath = "",
+                                               const std::string& scriptBackend = "lua",
+                                               const core::Json& scriptVars = core::Json{});
 };
 
 // Prefab library: registers prefab component templates parsed from JSON text

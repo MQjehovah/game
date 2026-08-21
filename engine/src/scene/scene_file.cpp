@@ -236,7 +236,10 @@ core::Result<core::Json> SceneFile::MakeEntity(const std::string& name,
                                                const std::string& aoTex,
                                                const std::string& emissiveTex,
                                                float ao,
-                                               float emissiveIntensity) {
+                                               float emissiveIntensity,
+                                               const std::string& scriptPath,
+                                               const std::string& scriptBackend,
+                                               const core::Json& scriptVars) {
     if (name.empty())
         return core::Result<core::Json>::Err("scene: exported entity name must not be empty");
     if (meshKey.empty())
@@ -269,6 +272,16 @@ core::Result<core::Json> SceneFile::MakeEntity(const std::string& name,
     core::Json comps = MakeObject();
     comps.object_["transform"] = std::move(tf);
     comps.object_["mesh"] = std::move(mesh);
+
+    // Optional script component: emitted only when a path is attached, exactly
+    // matching the built-in `script` factory schema (backend/path/vars).
+    if (!scriptPath.empty()) {
+        core::Json script = MakeObject();
+        script.object_["backend"] = MakeString(scriptBackend.empty() ? "lua" : scriptBackend);
+        script.object_["path"] = MakeString(scriptPath);
+        if (scriptVars.IsObject()) script.object_["vars"] = scriptVars;
+        comps.object_["script"] = std::move(script);
+    }
 
     e.object_["components"] = std::move(comps);
     return core::Result<core::Json>::Ok(std::move(e));

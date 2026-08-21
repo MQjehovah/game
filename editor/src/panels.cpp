@@ -614,4 +614,153 @@ void EditorApp::BuildViewportPanel() {
     ImGui::End();
 }
 
+// Re-scan <projectDir>/scripts/ and run a syntax check on every *.lua. Reuses
+// one throwaway LuaHost across all checks (nothing ever runs, so a failed check
+// leaves the host fully usable for the next one).
+void EditorApp::RefreshScriptChecks() {
+    scriptFiles_.clear();
+    scriptChecks_.clear();
+    if (!scriptCheckHost_) {
+        scriptCheckHost_ = script::CreateLuaHost();
+        if (scriptCheckHost_) scriptCheckHost_->Init();
+    }
+    std::vector<std::string> files;
+    ListLuaFiles(ScriptsDir(projectDir_), "scripts", files);
+    const std::string base = projectDir_.empty() ? "." : projectDir_;
+    for (const std::string& rel : files) {
+        if (scriptCheckHost_) {
+            scriptChecks_.push_back(CheckScriptFile(*scriptCheckHost_, base, rel));
+        } else {
+            ScriptCheckResult failed;
+            failed.path = rel;
+            failed.ok = false;
+            failed.message = "脚本宿主不可用";
+            scriptChecks_.push_back(failed);
+        }
+        scriptFiles_.push_back(rel);
+    }
+    if (scriptAttachIndex_ >= static_cast<int>(scriptFiles_.size()))
+        scriptAttachIndex_ = static_cast<int>(scriptFiles_.size()) - 1;
+    if (scriptAttachIndex_ < 0 && !scriptFiles_.empty()) scriptAttachIndex_ = 0;
+}
+
+void EditorApp::BuildScriptPanel() {
+    if (!showScripts_) return;
+    if (ImGui::Begin("脚本", &showScripts_)) {
+        // Throttle the scripts/ scan + syntax checks: run on panel open and
+        // every ~1s of frames (60 @ 60fps), never per frame.
+        const uint64_t now = TimeRef().frameIndex;
+        if (now - scriptRefreshFrame_ >= 60 || scriptFiles_.empty()) {
+            RefreshScriptChecks();
+            scriptRefreshFrame_ = now;
+        }
+        if (ImGui::Button("刷新检查")) RefreshScriptChecks();
+        ImGui::SameLine();
+        ImGui::TextDisabled("项目: %s", projectDir_.c_str());
+        ImGui::Separator();
+
+        ImGui::BeginChild("##script_list", ImVec2(0, -150.0f), ImGuiChildFlags_Borders);
+        if (scriptFiles_.empty()) {
+            ImGui::TextDisabled("scripts/ 目录下没有 .lua 脚本");
+        }
+        for (size_t i = 0; i < scriptFiles_.size(); ++i) {
+            const ScriptCheckResult& r = scriptChecks_[i];
+            char label[320];
+            std::snprintf(label, sizeof(label), "%s##script_%zu", scriptFiles_[i].c_str(), i);
+            if (ImGui::Selectable(label, scriptAttachIndex_ == static_cast<int>(i)))
+                scriptAttachIndex_ = static_cast<int>(i);
+            if (r.ok) {
+                ImGui::SameLine();
+                ImGui::TextColored(ImVec4(0.4f, 0.9f, 0.5f, 1.0f), "✓ 语法通过");
+            } else {
+                ImGui::SameLine();
+                ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.4f, 1.0f), "✗ 错误 (行 %d): %s",
+                                   r.line, r.message.c_str());
+            }
+        }
+        ImGui::EndChild();
+        ImGui::Separator();
+
+        ImGui::TextUnformatted("附加到选中实体");
+        if (selected_ < 0 || selected_ >= static_cast<int>(entities_.size())) {
+            ImGui::TextDisabled("未选中实体");
+            ImGui::End();
+            return;
+        }
+        SceneEntity& e = entities_[static_cast<size_t>(selected_)];
+
+        // Sync the dropdown selection + vars buffer when the selected entity
+        // changes, so the panel always reflects the attached script (if any).
+        if (scriptSyncEntity_ != selected_) {
+            scriptSyncEntity_ = selected_;
+            scriptAttachIndex_ = -1;
+            for (size_t i = 0; i < scriptFiles_.size(); ++i)
+                if (scriptFiles_[i] == e.scriptPath) scriptAttachIndex_ = static_cast<int>(i);
+            if (scriptAttachIndex_ < 0 && !scriptFiles_.empty()) scriptAttachIndex_ = 0;
+            std::snprintf(scriptVarsBuf_, sizeof(scriptVarsBuf_), "%s",
+                          e.scriptVars.IsObject()
+                              ? core::JsonWriter::Write(e.scriptVars).c_str()
+                              : "{}");
+            scriptVarsError_.clear();
+        }
+
+        if (scriptFiles_.empty()) {
+            ImGui::TextDisabled("没有可附加的脚本");
+        } else {
+            std::vector<const char*> names;
+            names.reserve(scriptFiles_.size());
+            for (const auto& f : scriptFiles_) names.push_back(f.c_str());
+            ImGui::SetNextItemWidth(-1.0f);
+            ImGui::Combo("##script_attach", &scriptAttachIndex_, names.data(),
+                         static_cast<int>(names.size()));
+        }
+        ImGui::TextUnformatted("变量 (JSON)");
+        ImGui::SetNextItemWidth(-1.0f);
+        ImGui::InputTextMultiline("##script_vars", scriptVarsBuf_, sizeof(scriptVarsBuf_),
+                                  ImVec2(-1.0f, 88.0f));
+        if (!scriptVarsError_.empty())
+            ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.4f, 1.0f), "%s", scriptVarsError_.c_str());
+        if (!e.scriptPath.empty())
+            ImGui::TextDisabled("已附加: %s", e.scriptPath.c_str());
+
+        const bool haveScript = !scriptFiles_.empty() && scriptAttachIndex_ >= 0 &&
+                                scriptAttachIndex_ < static_cast<int>(scriptFiles_.size());
+        if (ImGui::Button("附加")) {
+            if (!haveScript) {
+                scriptVarsError_ = "没有可附加的脚本";
+            } else {
+                std::string perr;
+                core::Json parsed = core::Json::Parse(scriptVarsBuf_, &perr);
+                if (!perr.empty()) {
+                    scriptVarsError_ = "变量 JSON 无效: " + perr;
+                } else if (!parsed.IsNull() && !parsed.IsObject()) {
+                    scriptVarsError_ = "变量必须是 JSON 对象";
+                } else {
+                    const SceneScriptFields oldV{e.scriptBackend, e.scriptPath, e.scriptVars};
+                    const SceneScriptFields newV{
+                        "lua", scriptFiles_[static_cast<size_t>(scriptAttachIndex_)],
+                        parsed.IsNull() ? core::Json{} : parsed};
+                    history_.Push(std::make_unique<EditPropertyCommand<SceneScriptFields>>(
+                        &entities_, selected_, ApplyScriptFields, oldV, newV,
+                        /*mergeable=*/false)); // one click = one undo step
+                    std::snprintf(scriptVarsBuf_, sizeof(scriptVarsBuf_), "%s",
+                                  core::JsonWriter::Write(e.scriptVars).c_str());
+                    scriptVarsError_.clear();
+                }
+            }
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("分离") && !e.scriptPath.empty()) {
+            const SceneScriptFields oldV{e.scriptBackend, e.scriptPath, e.scriptVars};
+            const SceneScriptFields emptyV;
+            history_.Push(std::make_unique<EditPropertyCommand<SceneScriptFields>>(
+                &entities_, selected_, ApplyScriptFields, oldV, emptyV,
+                /*mergeable=*/false));
+            std::snprintf(scriptVarsBuf_, sizeof(scriptVarsBuf_), "{}");
+            scriptVarsError_.clear();
+        }
+    }
+    ImGui::End();
+}
+
 } // namespace neon::editor

@@ -34,6 +34,7 @@ public:
     bool Init() override;
     void Shutdown() override;
     bool Load(const std::string& source) override;
+    bool CheckSyntax(const std::string& source) override;
     core::Result<Value> Run() override;
     core::Result<Value> Call(const std::string& fn, const std::vector<Value>& args) override;
     void SetGlobal(const std::string& name, const Value& v) override;

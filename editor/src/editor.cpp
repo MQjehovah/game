@@ -273,6 +273,7 @@ void EditorApp::OnUpdate(float dt) {
         showResources_ = true;
         showLog_ = true;
         showBt_ = true;
+        showScripts_ = true;
         // Seed a small tree so the BT canvas renders real nodes on the smoke
         // frame (frame 30) and the smoke can assert the canvas drew geometry.
         btGraph_ = btgraph::BtGraph{};
@@ -843,6 +844,7 @@ void EditorApp::BuildImGuiUI() {
             ImGui::MenuItem("资源", nullptr, &showResources_);
             ImGui::MenuItem("日志", nullptr, &showLog_);
             ImGui::MenuItem("行为树", nullptr, &showBt_);
+            ImGui::MenuItem("脚本", nullptr, &showScripts_);
             ImGui::Separator();
             ImGui::MenuItem("引擎 UI 演示", nullptr, &showCustomUIDemo_);
             ImGui::MenuItem("ImGui Demo", nullptr, &showImGuiDemo_);
@@ -922,6 +924,8 @@ void EditorApp::BuildImGuiUI() {
             ImGui::DockBuilderDockWindow("资源", left);
             ImGui::DockBuilderDockWindow("属性", right);
             ImGui::DockBuilderDockWindow("日志", right);
+            ImGui::DockBuilderDockWindow("行为树", bottom);
+            ImGui::DockBuilderDockWindow("脚本", bottom);
             ImGui::DockBuilderDockWindow("视口", dockId);
             ImGui::DockBuilderFinish(dockId);
         }
@@ -985,6 +989,7 @@ void EditorApp::BuildImGuiUI() {
     BuildInspectorPanel();
     BuildLogPanel();
     BuildBtPanel();
+    BuildScriptPanel();
     BuildViewportPanel();
 
     if (showImGuiDemo_) ImGui::ShowDemoWindow(&showImGuiDemo_);
@@ -1410,6 +1415,99 @@ void EditorApp::RunUISmokeTest() {
         check(btGraph_.NodeCount() == nodesBefore, "bt smoke: graph left clean after undo");
     }
 
+    // --- Script panel: syntax check + attach/configure via command stack + export ---
+    // Point the project at a temp dir with one valid + one broken script, run
+    // the real check path, attach the valid script to a selected entity through
+    // the undo command, export, and assert the JSON carries the script
+    // component (the same flow the user drives in the 脚本 panel).
+    {
+        const std::string proj = GetTempDir() + "/script_smoke_proj";
+        EnsureDirs(proj + "/scripts");
+        {
+            std::ofstream out(proj + "/scripts/good.lua", std::ios::binary);
+            out << "function on_update(ent, dt)\n  Log('tick')\nend\n";
+        }
+        {
+            std::ofstream out(proj + "/scripts/broken.lua", std::ios::binary);
+            out << "function on_update(ent, dt)\n  this is not lua !!!\nend\n";
+        }
+        const std::string prevProj = projectDir_;
+        projectDir_ = proj;
+        RefreshScriptChecks();
+        check(!scriptFiles_.empty(), "script panel: project scripts enumerated");
+        bool sawGood = false, sawBroken = false, brokenHasLine = false;
+        for (size_t i = 0; i < scriptFiles_.size(); ++i) {
+            if (scriptFiles_[i] == "scripts/good.lua")
+                sawGood = scriptChecks_[i].ok && scriptChecks_[i].message.empty();
+            else if (scriptFiles_[i] == "scripts/broken.lua") {
+                sawBroken = !scriptChecks_[i].ok && !scriptChecks_[i].message.empty();
+                brokenHasLine = scriptChecks_[i].line > 0;
+            }
+        }
+        check(sawGood && sawBroken && brokenHasLine,
+              "script panel: syntax check passes valid and flags broken with a line");
+
+        if (selected_ >= 0 && selected_ < static_cast<int>(entities_.size())) {
+            const int idx = selected_;
+            SceneEntity& sel = entities_[static_cast<size_t>(idx)];
+            core::Json vars;
+            vars.type_ = core::Json::Type::Object;
+            core::Json speed;
+            speed.type_ = core::Json::Type::Number;
+            speed.number_ = 1.5;
+            vars.object_["speed"] = speed;
+            const SceneScriptFields oldV{sel.scriptBackend, sel.scriptPath, sel.scriptVars};
+            const SceneScriptFields newV{"lua", "scripts/good.lua", vars};
+            history_.Push(std::make_unique<EditPropertyCommand<SceneScriptFields>>(
+                &entities_, idx, ApplyScriptFields, oldV, newV, /*mergeable=*/false));
+            check(sel.scriptPath == "scripts/good.lua" && sel.scriptBackend == "lua" &&
+                      sel.scriptVars.IsObject() && sel.scriptVars.Get("speed")->GetNumber() == 1.5,
+                  "script panel: attach applies through the command stack");
+            history_.Undo();
+            check(sel.scriptPath.empty(),
+                  "script panel: undo detaches the script component");
+            history_.Redo();
+            check(sel.scriptPath == "scripts/good.lua",
+                  "script panel: redo re-attaches the script component");
+
+            // Export and assert the script component lands in the scene JSON
+            // (mirrors MakeEntity's script component + the T2.6 factory schema).
+            const std::string expProj = GetTempDir();
+            projectDir_ = expProj;
+            core::Status exp = ExportScene();
+            projectDir_ = prevProj;
+            check(exp.Ok(), "script panel: export with an attached script succeeds");
+            if (exp.Ok()) {
+                std::ifstream fin(expProj + "/scenes/exported_scene.json");
+                std::stringstream ss;
+                ss << fin.rdbuf();
+                auto parsed = scene::SceneFile::Parse(ss.str());
+                check(parsed.Ok(), "script panel: exported scene parses");
+                if (parsed.Ok() && static_cast<size_t>(idx) < parsed.Value().entities.size()) {
+                    const scene::ComponentDef* sc = nullptr;
+                    for (const auto& c : parsed.Value().entities[static_cast<size_t>(idx)].components) {
+                        if (c.name == "script") {
+                            sc = &c;
+                            break;
+                        }
+                    }
+                    const core::Json* backend = sc ? sc->data.Get("backend") : nullptr;
+                    const core::Json* path = sc ? sc->data.Get("path") : nullptr;
+                    const core::Json* vars = sc ? sc->data.Get("vars") : nullptr;
+                    check(sc != nullptr && backend != nullptr && path != nullptr &&
+                              vars != nullptr && backend->GetString() == "lua" &&
+                              path->GetString() == "scripts/good.lua" &&
+                              vars->Get("speed")->GetNumber() == 1.5,
+                          "script panel: exported JSON carries the script component");
+                }
+            }
+        }
+        projectDir_ = prevProj;
+        // Leave the script attached on the entity: it exercises the playtest
+        // path (a missing script file is skipped non-fatally by the runtime).
+        NEON_LOG_INFO("EDITOR-SCRIPT-SMOKE: script panel checks done");
+    }
+
     NEON_LOG_INFO("EDITOR-UI-SMOKE: all checks done");
 }
 
@@ -1454,7 +1552,8 @@ core::Result<core::Json> EditorApp::BuildPlaySceneJson() {
                                                 ExportMeshKey(e.meshKey), e.metallic,
                                                 e.roughness, e.tint, e.albedoTex, e.mrTex,
                                                 e.aoTex, e.emissiveTex, e.ao,
-                                                e.emissiveIntensity);
+                                                e.emissiveIntensity, e.scriptPath,
+                                                e.scriptBackend, e.scriptVars);
         if (!res.Ok()) {
             return core::Result<core::Json>::Err("editor: " + res.Error());
         }
@@ -1662,6 +1761,11 @@ void EditorApp::SaveScene() {
         obj.object_["mrTex"] = str(e.mrTex);
         obj.object_["aoTex"] = str(e.aoTex);
         obj.object_["emissiveTex"] = str(e.emissiveTex);
+        if (!e.scriptPath.empty()) {
+            obj.object_["scriptPath"] = str(e.scriptPath);
+            obj.object_["scriptBackend"] = str(e.scriptBackend);
+            if (e.scriptVars.IsObject()) obj.object_["scriptVars"] = e.scriptVars;
+        }
         arr.array_.push_back(obj);
     }
     root.object_["entities"] = arr;
@@ -1712,6 +1816,9 @@ void EditorApp::LoadScene(const std::string& path) {
         if (const core::Json* mt = j->Get("mrTex")) e.mrTex = mt->GetString();
         if (const core::Json* aot = j->Get("aoTex")) e.aoTex = aot->GetString();
         if (const core::Json* et = j->Get("emissiveTex")) e.emissiveTex = et->GetString();
+        if (const core::Json* sp = j->Get("scriptPath")) e.scriptPath = sp->GetString();
+        if (const core::Json* sb = j->Get("scriptBackend")) e.scriptBackend = sb->GetString();
+        if (const core::Json* sv = j->Get("scriptVars")) e.scriptVars = *sv;
         if (ResolveMesh(e)) {
             ApplyMaterialParams(e);
             loaded.push_back(std::move(e));

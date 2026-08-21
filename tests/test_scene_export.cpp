@@ -339,3 +339,77 @@ TEST(SceneMaterialTextureRoundTrip) {
     CHECK_NEAR(m->roughness, 0.4, 1e-6);
     CHECK_EQ(m->colorHex, std::string("#FFFFFF"));
 }
+
+// ---------------------------------------------------------------------------
+// Script component (T4.5): MakeEntity emits {"backend","path","vars"} when a
+// script is attached, and the round trip restores a SceneScript with them.
+// ---------------------------------------------------------------------------
+
+TEST(SceneMakeEntityScriptComponent) {
+    core::Json vars;
+    vars.type_ = core::Json::Type::Object;
+    core::Json aggro;
+    aggro.type_ = core::Json::Type::Number;
+    aggro.number_ = 10.0;
+    vars.object_["aggro"] = aggro;
+
+    // With an attached script: the entity JSON carries the script component.
+    auto res = scene::SceneFile::MakeEntity(
+        "狼", {0, 0, 0}, {}, {1, 1, 1}, "cube", 0.0f, 0.8f, gfx::Color::White,
+        "", "", "", "", 1.0f, 1.0f, "scripts/wolf.lua", "lua", vars);
+    CHECK(res.Ok());
+    const core::Json* comps = res.Value().Get("components");
+    CHECK(comps != nullptr);
+    const core::Json* script = comps->Get("script");
+    CHECK(script != nullptr && script->IsObject());
+    CHECK_EQ(script->Get("backend")->GetString(), std::string("lua"));
+    CHECK_EQ(script->Get("path")->GetString(), std::string("scripts/wolf.lua"));
+    CHECK_NEAR(script->Get("vars")->Get("aggro")->GetNumber(), 10.0, 1e-9);
+
+    // Without a script path: no script component is emitted.
+    auto none = scene::SceneFile::MakeEntity("方块", {0, 0, 0}, {}, {1, 1, 1}, "cube");
+    CHECK(none.Ok());
+    CHECK(none.Value().Get("components")->Get("script") == nullptr);
+
+    // An empty backend defaults to "lua" (the factory's contract).
+    auto defBackend = scene::SceneFile::MakeEntity("空", {0, 0, 0}, {}, {1, 1, 1}, "cube",
+                                                   0.0f, 0.8f, gfx::Color::White, "", "", "",
+                                                   "", 1.0f, 1.0f, "scripts/x.lua");
+    CHECK(defBackend.Ok());
+    CHECK_EQ(defBackend.Value().Get("components")->Get("script")->Get("backend")->GetString(),
+             std::string("lua"));
+    // A non-object vars value is omitted from the JSON (null default).
+    auto nullVars = scene::SceneFile::MakeEntity("零", {0, 0, 0}, {}, {1, 1, 1}, "cube",
+                                                 0.0f, 0.8f, gfx::Color::White, "", "", "",
+                                                 "", 1.0f, 1.0f, "scripts/y.lua", "lua");
+    CHECK(nullVars.Ok());
+    CHECK(nullVars.Value().Get("components")->Get("script")->Get("vars") == nullptr);
+
+    // Full round trip: export JSON -> Parse -> Instantiate -> SceneScript.
+    std::vector<core::Json> ents;
+    ents.push_back(res.Value());
+    std::string json = core::JsonWriter::Write(MakeSceneRoot(ents));
+    auto parsed = scene::SceneFile::Parse(json);
+    CHECK(parsed.Ok());
+    const scene::ComponentDef* sc = FindComp(parsed.Value().entities[0], "script");
+    CHECK(sc != nullptr);
+    CHECK_EQ(sc->data.Get("backend")->GetString(), std::string("lua"));
+    CHECK_EQ(sc->data.Get("path")->GetString(), std::string("scripts/wolf.lua"));
+
+    scene::ComponentRegistry reg;
+    scene::RegisterBuiltinComponents(reg);
+    ecs::World world;
+    scene::PrefabLibrary prefs;
+    auto inst = scene::Instantiate(world, parsed.Value(), prefs, reg);
+    CHECK(inst.Ok());
+    CHECK_EQ(inst.Value(), 1);
+    auto sview = world.ViewAll<scene::SceneScript>();
+    CHECK_EQ(sview.Size(), 1u);
+    ecs::Entity ent = world.EntityAt<scene::SceneScript>(0);
+    const scene::SceneScript* s = world.Get<scene::SceneScript>(ent);
+    CHECK(s != nullptr);
+    CHECK_EQ(s->backend, std::string("lua"));
+    CHECK_EQ(s->path, std::string("scripts/wolf.lua"));
+    CHECK(s->vars.IsObject());
+    CHECK_NEAR(s->vars.Get("aggro")->GetNumber(), 10.0, 1e-9);
+}

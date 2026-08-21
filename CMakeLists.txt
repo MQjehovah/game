@@ -219,7 +219,7 @@ add_executable(neon_tests tests/test_main.cpp tests/test_serialize.cpp tests/tes
   tests/test_game_runtime.cpp tests/test_gltf_skin.cpp tests/test_anim.cpp
   tests/test_skinned.cpp tests/test_shadow.cpp tests/test_log.cpp
   tests/test_spatial.cpp tests/test_post.cpp tests/test_ibl.cpp tests/test_history.cpp
-  tests/test_bt_editor.cpp
+  tests/test_bt_editor.cpp tests/test_script_panel.cpp
   editor/src/history.cpp)
 target_link_libraries(neon_tests PRIVATE neon_engine)
 # test_history.cpp includes the editor's generic undo/redo stack header.

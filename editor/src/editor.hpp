@@ -13,6 +13,7 @@
 #include "imgui.h"
 #include "ImGuizmo.h"
 #include "history.hpp"
+#include "script_panel_model.hpp"
 
 namespace neon::editor {
 
@@ -33,6 +34,12 @@ struct SceneEntity {
     std::string emissiveTex;
     float ao = 1.0f;               // AO strength (0 = ignore AO map, 1 = full)
     float emissiveIntensity = 1.0f;
+    // Script component (mirrors scene::SceneScript, T4.5): backend/path/vars.
+    // An empty scriptPath means no script is attached. scriptVars is a JSON
+    // object (or null when absent) written into the exported script component.
+    std::string scriptBackend;
+    std::string scriptPath;
+    core::Json scriptVars;
     gfx::Mesh mesh;
     gfx::Material material;
 };
@@ -119,6 +126,13 @@ private:
     void BtParamString(const btgraph::BtGraphNode& n, const bt::ParamInfo& p);
     void BtParamBool(const btgraph::BtGraphNode& n, const bt::ParamInfo& p);
     void BtParamJson(const btgraph::BtGraphNode& n, const bt::ParamInfo& p);
+
+    // Script panel (T4.5): docked 脚本 panel listing the project's scripts/
+    // with per-file syntax checks, plus attach/configure/detach for the
+    // selected entity. RefreshScriptChecks re-scans <projectDir>/scripts/ and
+    // re-runs CheckSyntax on each file (used by the panel and the smoke).
+    void BuildScriptPanel();
+    void RefreshScriptChecks();
 
     gfx::Renderer renderer_;
     assets::AssetManager assetMgr_;
@@ -218,8 +232,19 @@ private:
     btgraph::BtGraph btGraphBeforeDrag_;
     bool btHasGraphBeforeDrag_ = false;
     // Per-param drag origin: args snapshot captured when a slider drag began,
-    // so the undo step reverts to the pre-drag value (one drag = one step).
+    // so the undo step reverts to the pre-drag value (one drag = one undo step).
     std::map<std::string, btgraph::BtGraph> btArgDragOrigin_;
+
+    // Script panel (T4.5) state.
+    bool showScripts_ = false;
+    std::unique_ptr<script::IScriptHost> scriptCheckHost_; // throwaway host for syntax checks
+    std::vector<std::string> scriptFiles_;                 // project-relative "scripts/*.lua"
+    std::vector<ScriptCheckResult> scriptChecks_;          // parallel: per-file check results
+    uint64_t scriptRefreshFrame_ = 0; // throttle: refresh scripts/ listing + checks
+    int scriptAttachIndex_ = -1;      // dropdown/list selection into scriptFiles_
+    int scriptSyncEntity_ = -1;       // entity whose vars the buffer currently shows
+    char scriptVarsBuf_[4096]{};      // raw JSON vars editor
+    std::string scriptVarsError_;     // last vars-parse error (empty when valid)
 };
 
 } // namespace neon::editor
