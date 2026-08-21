@@ -50,6 +50,10 @@ int Application::Run(const platform::WindowConfig& config) {
 
         accumulator += frameTime;
         while (accumulator >= kFixedDt) {
+            // Logs during OnUpdate carry the current tick as their frame number
+            // (1-based tick counter). frameIndex itself is incremented after
+            // OnUpdate so readers see the same value as before.
+            SetLogFrame(TimeRef().frameIndex + 1);
             OnUpdate(kFixedDt);
             accumulator -= kFixedDt;
             TimeRef().elapsed += kFixedDt;

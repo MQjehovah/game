@@ -3,6 +3,7 @@
 #include <cstdio>
 
 #include "demo.hpp"
+#include "neon/core/config.hpp"
 
 namespace {
 
@@ -15,12 +16,17 @@ void PrintHelp() {
         "  --disable-fbo          force-disable CSM shadow maps (CPU projected shadows)\n"
         "  --no-shadows           alias for --disable-fbo\n"
         "  --fullscreen           start in fullscreen\n"
+        "  --log-level <level>    log filter: debug|info|warn|error (default debug)\n"
+        "  --log-cat <n>:<level>  per-category override (repeatable, comma-separated,\n"
+        "                         e.g. gfx:debug); names: core,gfx,audio,physics,scene,\n"
+        "                         script,bt,net,editor,game\n"
         "  --help                 show this help\n");
 }
 
 } // namespace
 
 int main(int argc, char** argv) {
+    neon::core::ApplyLogCli(argc, argv);
     int smokeFrames = 0;
     bool noAudio = false;
     bool fullscreen = false;

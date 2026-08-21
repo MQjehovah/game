@@ -27,4 +27,14 @@ private:
     std::map<std::string, std::string> kv_;
 };
 
+// Applies log-related command-line options found in argv[1..argc):
+//   --log-level <debug|info|warn|error>   global minimum level
+//   --log-cat <name>:<level>              per-category override; repeatable,
+//                                         and values may be comma-separated
+//                                         (e.g. "gfx:debug,audio:warn")
+// Unknown level names and malformed items print a warning to stderr and are
+// ignored; unknown category names map to Core (see CategoryFromName).
+// Matches the argv-scan style used by --smoke-test/--screenshot in main().
+void ApplyLogCli(int argc, char** argv);
+
 } // namespace neon::core

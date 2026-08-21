@@ -2,7 +2,10 @@
 
 #include <cstdlib>
 #include <cstdio>
+#include <cstring>
 #include <fstream>
+
+#include "neon/core/log.hpp"
 
 namespace neon::core {
 
@@ -70,5 +73,56 @@ void Config::SetFloat(const std::string& key, float v) {
 }
 void Config::SetBool(const std::string& key, bool v) { kv_[key] = v ? "true" : "false"; }
 void Config::SetString(const std::string& key, const std::string& v) { kv_[key] = v; }
+
+namespace {
+
+void ApplyLogCatItem(const std::string& item) {
+    const size_t colon = item.find(':');
+    if (colon == std::string::npos) {
+        std::fprintf(stderr, "neon: malformed --log-cat '%s' (expected name:level)\n",
+                     item.c_str());
+        return;
+    }
+    const std::string catName = item.substr(0, colon);
+    const std::string levelName = item.substr(colon + 1);
+    LogLevel level;
+    if (!LogLevelFromName(levelName, level)) {
+        std::fprintf(stderr,
+                     "neon: unknown log level '%s' in --log-cat "
+                     "(debug|info|warn|error)\n",
+                     levelName.c_str());
+        return;
+    }
+    SetCategoryLogLevel(CategoryFromName(catName), level);
+}
+
+} // namespace
+
+void ApplyLogCli(int argc, char** argv) {
+    for (int i = 1; i < argc; ++i) {
+        if (std::strcmp(argv[i], "--log-level") == 0 && i + 1 < argc) {
+            LogLevel level;
+            if (!LogLevelFromName(argv[i + 1], level)) {
+                std::fprintf(stderr,
+                             "neon: unknown --log-level '%s' (debug|info|warn|error)\n",
+                             argv[i + 1]);
+            } else {
+                SetLogLevel(level);
+            }
+            ++i;
+        } else if (std::strcmp(argv[i], "--log-cat") == 0 && i + 1 < argc) {
+            const std::string value = argv[i + 1];
+            for (size_t start = 0; start <= value.size();) {
+                const size_t comma = value.find(',', start);
+                const size_t end =
+                    comma == std::string::npos ? value.size() : comma;
+                ApplyLogCatItem(value.substr(start, end - start));
+                if (comma == std::string::npos) break;
+                start = comma + 1;
+            }
+            ++i;
+        }
+    }
+}
 
 } // namespace neon::core
