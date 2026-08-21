@@ -210,9 +210,17 @@ public:
     void SetSmokeMode(bool v) { smokeMode_ = v; }
     bool SmokeMode() const { return smokeMode_; }
     void SetDisableShadows(bool v) { disableShadows_ = v; }
+    void SetBloomEnabled(bool v) { bloomEnabled_ = v; }
     void RequestScreenshot(const std::string& path, uint64_t frame) {
         screenshotPath_ = path;
         screenshotFrame_ = frame;
+    }
+    // T3.6 verification: capture the SAME frame twice (bloom off then on) from
+    // one HDR target so the two PNGs differ only by the bloom contribution.
+    void RequestBloomCompare(const std::string& offPath, const std::string& onPath, uint64_t frame) {
+        bloomCompareOff_ = offPath;
+        bloomCompareOn_ = onPath;
+        bloomCompareFrame_ = frame;
     }
 
 private:
@@ -242,8 +250,13 @@ private:
     int bestScore_ = 0;
     bool smokeMode_ = false;
     bool disableShadows_ = false;
+    bool bloomEnabled_ = true;
     std::string screenshotPath_;
     uint64_t screenshotFrame_ = 0;
+    std::string bloomCompareOff_;
+    std::string bloomCompareOn_;
+    uint64_t bloomCompareFrame_ = 0;
+    bool bloomCompareDone_ = false;
 
     friend class TitleScene;
     friend class GameScene;

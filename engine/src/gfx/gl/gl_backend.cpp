@@ -21,7 +21,9 @@ constexpr gl::GLenum Float = 0x1406;
 constexpr gl::GLenum Texture2D = 0x0DE1;
 constexpr gl::GLenum Rgba = 0x1908;
 constexpr gl::GLenum Rgba8 = 0x8058;
+constexpr gl::GLenum Rgba16f = 0x881A;
 constexpr gl::GLenum UnsignedByte = 0x1401;
+constexpr gl::GLenum HalfFloat = 0x140B;
 constexpr gl::GLenum ArrayBuffer = 0x8892;
 constexpr gl::GLenum ElementArrayBuffer = 0x8893;
 constexpr gl::GLenum StaticDraw = 0x88E4;
@@ -216,20 +218,29 @@ public:
 
     const char* Name() const override { return "OpenGL 3.3"; }
 
-    RenderTargetHandle CreateRenderTarget(int width, int height) override {
+    RenderTargetHandle CreateRenderTarget(int width, int height, bool floatColor) override {
         auto& g = gl::GetGL();
         GLRenderTarget rt;
         rt.width = width;
         rt.height = height;
         g.GenFramebuffers(1, &rt.fbo);
         g.BindFramebuffer(glc::Framebuffer, rt.fbo);
-        // Color texture: encodes light-space depth for shadow sampling.
+        // Color texture: RGBA8 encodes light-space depth for shadow sampling;
+        // the HDR + bloom pipeline requests a half-float (RGBA16F) attachment
+        // so HDR scene values above 1.0 survive between passes.
         g.GenTextures(1, &rt.colorTex);
         g.BindTexture(glc::Texture2D, rt.colorTex);
-        g.TexImage2D(glc::Texture2D, 0, glc::Rgba8, width, height, 0, glc::Rgba,
-                     glc::UnsignedByte, nullptr);
-        g.TexParameteri(glc::Texture2D, glc::TextureMinFilter, glc::Nearest);
-        g.TexParameteri(glc::Texture2D, glc::TextureMagFilter, glc::Nearest);
+        if (floatColor) {
+            g.TexImage2D(glc::Texture2D, 0, static_cast<gl::GLint>(glc::Rgba16f), width, height, 0,
+                         glc::Rgba, glc::HalfFloat, nullptr);
+            g.TexParameteri(glc::Texture2D, glc::TextureMinFilter, glc::Linear);
+            g.TexParameteri(glc::Texture2D, glc::TextureMagFilter, glc::Linear);
+        } else {
+            g.TexImage2D(glc::Texture2D, 0, static_cast<gl::GLint>(glc::Rgba8), width, height, 0,
+                         glc::Rgba, glc::UnsignedByte, nullptr);
+            g.TexParameteri(glc::Texture2D, glc::TextureMinFilter, glc::Nearest);
+            g.TexParameteri(glc::Texture2D, glc::TextureMagFilter, glc::Nearest);
+        }
         g.TexParameteri(glc::Texture2D, glc::TextureWrapS, glc::ClampToEdge);
         g.TexParameteri(glc::Texture2D, glc::TextureWrapT, glc::ClampToEdge);
         g.FramebufferTexture2D(glc::Framebuffer, glc::ColorAttachment0, glc::Texture2D,

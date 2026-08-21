@@ -17,7 +17,7 @@ public:
     }
     void Shutdown() override {}
     const char* Name() const override { return "Vulkan (placeholder)"; }
-    RenderTargetHandle CreateRenderTarget(int, int) override { return {}; }
+    RenderTargetHandle CreateRenderTarget(int, int, bool) override { return {}; }
     void DestroyRenderTarget(RenderTargetHandle) override {}
     void BindRenderTarget(RenderTargetHandle) override {}
     void BindDefaultTarget() override {}

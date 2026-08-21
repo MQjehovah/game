@@ -23,7 +23,7 @@ public:
     void Shutdown() override {}
     const char* Name() const override { return "null"; }
 
-    neon::gfx::RenderTargetHandle CreateRenderTarget(int, int) override { return {1}; }
+    neon::gfx::RenderTargetHandle CreateRenderTarget(int, int, bool) override { return {1}; }
     void DestroyRenderTarget(neon::gfx::RenderTargetHandle) override {}
     void BindRenderTarget(neon::gfx::RenderTargetHandle) override {}
     void BindDefaultTarget() override {}

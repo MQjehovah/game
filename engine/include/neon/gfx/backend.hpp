@@ -55,7 +55,13 @@ public:
     virtual const char* Name() const = 0;
 
     // Resources
-    virtual RenderTargetHandle CreateRenderTarget(int width, int height) = 0;
+    // Color render target. When floatColor is true the color attachment is a
+    // half-float (RGBA16F) texture - used by the HDR + bloom post pipeline so
+    // values above 1.0 survive between passes. Default (false) keeps the
+    // established RGBA8 color-encoded-depth targets used by CSM / point
+    // shadows untouched.
+    virtual RenderTargetHandle CreateRenderTarget(int width, int height,
+                                                  bool floatColor = false) = 0;
     virtual void DestroyRenderTarget(RenderTargetHandle target) = 0;
     virtual void BindRenderTarget(RenderTargetHandle target) = 0;
     virtual void BindDefaultTarget() = 0;

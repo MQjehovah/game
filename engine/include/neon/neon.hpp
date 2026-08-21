@@ -31,6 +31,7 @@
 #include "neon/gfx/camera.hpp"
 #include "neon/gfx/csm.hpp"
 #include "neon/gfx/point_shadow.hpp"
+#include "neon/gfx/bloom.hpp"
 #include "neon/gfx/renderer.hpp"
 #include "neon/gfx/particles.hpp"
 

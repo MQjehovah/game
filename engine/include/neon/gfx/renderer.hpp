@@ -78,6 +78,22 @@ public:
     // Shadow map size in pixels per face.
     int PointShadowMapSize() const { return kPointShadowSize; }
 
+    // HDR + bloom post-processing (Task 3.6). When the backend supports
+    // half-float render targets (self-tested at init), the 3D scene renders
+    // into an RGBA16F target at window resolution and EndFrame runs a
+    // bright-pass -> blur pyramid -> composite to the backbuffer; the 2D/HUD
+    // overlay is then flushed on top. bloomEnabled_ is the user toggle
+    // (default on; --no-bloom / NEON_NO_BLOOM disable the bloom term while
+    // keeping the same HDR path, so bloom-on vs bloom-off screenshots diff
+    // only by the bloom contribution).
+    void SetBloomEnabled(bool enabled);
+    bool BloomEnabled() const { return bloomEnabled_; }
+    // True when the HDR float-target pipeline is active (float RT works and
+    // the window-sized target was created). False on drivers without
+    // RGBA16F-FBO support: the renderer then draws straight to the backbuffer
+    // exactly like before HDR existed.
+    bool HdrEnabled() const { return hdrEnabled_; }
+
     void DrawMesh(const Mesh& mesh, const Material& material, const math::Mat4& model);
     // Skinned variant: binds the SKINNED lit program and uploads up to 64 bone
     // matrices (from anim::Skeleton::ComputeBoneMatrices). The mesh must be
@@ -136,6 +152,12 @@ public:
     math::Vec2 ScreenToUI(const math::Vec2& screenPixels) const;
     // Copies the current back buffer (RGBA8, top-down) into out.
     bool CaptureFrame(std::vector<uint8_t>& out);
+    // T3.6 verification helper: composites the current HDR frame twice - once
+    // with bloom disabled and once with bloom enabled - and captures both from
+    // the SAME HDR target (identical game state, same composite shader, only
+    // the bloom term differs). Returns false when the HDR pipeline is inactive.
+    bool CaptureBloomComparison(std::vector<uint8_t>& bloomOff,
+                                std::vector<uint8_t>& bloomOn);
     float UIScale() const { return uiScale_; }
     int ScreenWidth() const { return screenW_; }
     int ScreenHeight() const { return screenH_; }
@@ -186,6 +208,25 @@ private:
     void DrawPointShadowCaster(const ShadowDraw& draw, const math::Mat4& lightVP,
                                const math::Vec3& lightPos, float range);
 
+    // HDR + bloom post-processing.
+    void EnsurePostTargets();
+    void DestroyPostTargets();
+    bool TestFloatTargetCapability();
+    // Binds whichever target the main scene renders into (the HDR float target
+    // when active, else the default framebuffer).
+    void RebindMainTarget();
+    // Bloom pyramid (all fullscreen passes on RGBA16F targets). Ends with
+    // bloomHalfA_ holding the accumulated bloom at half resolution.
+    bool RunBloom();
+    // Composite HDR (+ bloom) to the backbuffer with the composite shader.
+    void CompositeToBackbuffer();
+    // Runs bloom + composite + Flush2D unless the frame was already composited
+    // (CaptureFrame composited early so the screenshot is the final image).
+    void CompositeFrame();
+    // Bloom + composite + Flush2D unconditionally (no compositedThisFrame_
+    // latch); used by CompositeFrame and CaptureBloomComparison.
+    void CompositeSceneToBackbuffer();
+
     std::unique_ptr<IRenderBackend> backend_;
 
     ShaderHandle litShader_;
@@ -201,8 +242,16 @@ private:
     ShaderHandle pointDepthShader_;
     ShaderHandle pointDepthInstancedShader_;
     ShaderHandle pointDepthSkinnedShader_;
+    // Post-processing (HDR + bloom).
+    ShaderHandle brightPassShader_;
+    ShaderHandle blurShader_;
+    ShaderHandle downsampleShader_;
+    ShaderHandle upsampleAddShader_;
+    ShaderHandle compositeShader_;
     TextureHandle white_;
     MeshHandle probeQuadMesh_;
+    // Fullscreen NDC quad (uv 0..1) for the post passes.
+    MeshHandle postQuadMesh_;
     RenderTargetHandle shadowRT_[kShadowCascades];
     TextureHandle shadowDepthTex_[kShadowCascades];
     int shadowSize_ = kShadowMapSize;
@@ -219,6 +268,23 @@ private:
     math::Mat4 pointLightViewProj_[kShadowPointLights][6];
     bool pointShadowsEnabled_ = false;
     bool pointShadowsActive_ = false;
+
+    // HDR scene target (window size, RGBA16F) + the bloom pyramid targets.
+    RenderTargetHandle hdrRT_;
+    RenderTargetHandle bloomHalfA_;    // 1/2 res: bright pass, then blurred, then accumulated
+    RenderTargetHandle bloomHalfB_;    // 1/2 res scratch (blur ping-pong + upsample-add result)
+    RenderTargetHandle bloomQuarterA_; // 1/4 res: downsample, then blurred
+    RenderTargetHandle bloomQuarterB_; // 1/4 res scratch (blur ping-pong)
+    int hdrW_ = 0;
+    int hdrH_ = 0;
+    bool hdrEnabled_ = false;
+    bool bloomEnabled_ = true;
+    // True once RunBloom wrote the accumulated bloom into bloomHalfB_ this
+    // frame (set by RunBloom, reset in BeginFrame); CompositeToBackbuffer only
+    // adds the bloom term when it ran, so a failed shader/target never blends
+    // uninitialized content into the composite.
+    bool bloomRanThisFrame_ = false;
+    bool compositedThisFrame_ = false;
 
     Camera camera_;
     math::Mat4 viewProj_;

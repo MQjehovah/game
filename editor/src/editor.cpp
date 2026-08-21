@@ -127,6 +127,7 @@ math::Ray ScreenRay(const gfx::Camera& cam, float aspect, const math::Vec2& desi
 
 bool EditorApp::OnCreate() {
     if (disableShadows_) renderer_.SetShadowsEnabled(false);
+    renderer_.SetBloomEnabled(bloomEnabled_);
     if (!renderer_.Init(Window())) {
         NEON_LOG_ERROR("Editor: renderer init failed");
         return false;

@@ -92,6 +92,7 @@ SparseSet 风格的 ECS：
 
 - 相机（透视 lookAt）、方向光 + 8 点光 + 玩家手电光、距离雾、天空渐变。
 - 内置 Shader：lit（Blinn-Phong）、unlit、UI、line。
+- **HDR + Bloom 后处理（T3.6）**：主场景渲染进窗口尺寸的 RGBA16F 离屏目标（`CreateRenderTarget(w,h,true)` 新增半浮点变体），`EndFrame` 先跑明亮度阈值（`max(color-1.0,0)`）→ 1/2、1/4 两级 5 tap 可分离高斯模糊金字塔 → 逐级上采样累加（渐进 bloom）→ 合成 `min(hdr + bloom*0.35, 1)` 到后备缓冲，最后再绘制 2D/HUD 覆盖层（UI 不被 bloom）。截图路径（`CaptureFrame`）先触发合成再 `glReadPixels`，读到的就是最终合成图像；`--bloom-compare <off> <on> <frame>` 在同一帧同一 HDR 目标上分别输出关/开 bloom 两张图用于验证。浮点目标能力启动自检（FBO 写入 + 字节回读），失败自动回退到原直绘后备缓冲流程；`--no-bloom` / `NEON_NO_BLOOM` 只关 bloom 项（HDR 路径保留）。色阶映射留待 T3.7（ACES）。
 - 2D 覆盖层使用设计分辨率 1280×720 等比缩放居中，输入坐标通过 `ScreenToUI` 换算。
 - 调试线框（`DrawBox/DrawSphere/DrawLines`）、截图（`glReadPixels`）。
 - 渲染统计（绘制调用/三角形/实例数），HUD 实时显示。
@@ -151,11 +152,15 @@ PumpEvents → 平台事件 → IInput::HandleEvent
   └─ physics::World::Step
 OnRender：
   ├─ Renderer::BeginFrame（清屏）
-  ├─ DrawSky（渐变）
+  ├─ DrawSky（渐变）→ 全部 3D 绘制进入 HDR 浮点离屏目标
   ├─ Scene::Draw → SetCamera → DrawMesh（lit/unlit）
   ├─ 粒子公告板 / 调试线框
-  ├─ HUD（2D 批量 + 字体图集）
-  └─ Renderer::EndFrame（SwapBuffers）
+  ├─ HUD（2D 批量 + 字体图集，先入批量缓冲）
+  └─ Renderer::EndFrame
+      ├─ Bloom：bright→模糊金字塔→上采样累加（HDR 目标上）
+      ├─ 合成 min(hdr+bloom, 1) → 后备缓冲
+      ├─ 刷新 HUD 批量到后备缓冲
+      └─ SwapBuffers
 ```
 
 ## 5. 关键设计决策记录
@@ -172,6 +177,8 @@ OnRender：
 | UI 控件树使用相对坐标 + AbsolutePos 累加 | 子节点布局与父节点（窗口拖拽/移动）解耦；命中测试逐层换算 |
 | CJK 字形由 cjkSamples 显式收集 | 系统字体图集按码点烘焙，UI 新增中文必须同步加入采样串（demo/editor 各自维护） |
 | 投影阴影而非阴影贴图 | 实测该 Intel 驱动 FBO 的 VAO 渲染损坏（Clear 可写、DrawElements 不写）；CPU 投影零依赖、跨平台稳定 |
+| HDR 离屏 RGBA16F + 渐进 bloom | 主场景保留超 1.0 的亮部，后处理金字塔模糊后加回；浮点目标能力自检失败自动回退直绘后备缓冲 |
+| 截图先合成再回读 | `CaptureFrame` 在 HDR 目标上触发 bloom+合成到后备缓冲后 `glReadPixels`，截图即最终画面；`--bloom-compare` 同帧同 HDR 目标输出关/开对比 |
 | glTF/JSON 自研 | 控制解析细节（byteStride、代理对、UTF-8），无第三方 JSON 依赖 |
 | 平台后端按 OS 编译 | X11/Cocoa 无法在 Windows 验证，CI 矩阵分别编译 |
 | WinMM 音频 | 无外部依赖的最小实现；接口允许后续接 OpenAL/miniaudio |

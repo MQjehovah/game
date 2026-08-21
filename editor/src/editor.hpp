@@ -43,6 +43,7 @@ public:
 
     void SetSmokeMode(bool v) { smokeMode_ = v; }
     void SetDisableShadows(bool v) { disableShadows_ = v; }
+    void SetBloomEnabled(bool v) { bloomEnabled_ = v; }
     bool SmokeFailed() const { return smokeFailed_; }
     void RequestScreenshot(const std::string& path, uint64_t frame) {
         screenshotPath_ = path;
@@ -105,6 +106,7 @@ private:
     bool smokeMode_ = false;
     bool smokeFailed_ = false;
     bool disableShadows_ = false;
+    bool bloomEnabled_ = true;
     std::string screenshotPath_;
     uint64_t screenshotFrame_ = 0;
 

@@ -6,6 +6,7 @@
 #include <cstdlib>
 
 #include "neon/core/log.hpp"
+#include "neon/gfx/bloom.hpp"
 #include "neon/gfx/csm.hpp"
 #include "neon/gfx/point_shadow.hpp"
 
@@ -610,7 +611,13 @@ void Renderer::Shutdown() {
     if (pointDepthShader_.Valid()) backend_->DestroyShader(pointDepthShader_);
     if (pointDepthInstancedShader_.Valid()) backend_->DestroyShader(pointDepthInstancedShader_);
     if (pointDepthSkinnedShader_.Valid()) backend_->DestroyShader(pointDepthSkinnedShader_);
+    if (brightPassShader_.Valid()) backend_->DestroyShader(brightPassShader_);
+    if (blurShader_.Valid()) backend_->DestroyShader(blurShader_);
+    if (downsampleShader_.Valid()) backend_->DestroyShader(downsampleShader_);
+    if (upsampleAddShader_.Valid()) backend_->DestroyShader(upsampleAddShader_);
+    if (compositeShader_.Valid()) backend_->DestroyShader(compositeShader_);
     if (probeQuadMesh_.Valid()) backend_->DestroyMesh(probeQuadMesh_);
+    if (postQuadMesh_.Valid()) backend_->DestroyMesh(postQuadMesh_);
     for (int i = 0; i < kShadowCascades; ++i) {
         if (shadowRT_[i].Valid()) backend_->DestroyRenderTarget(shadowRT_[i]);
     }
@@ -620,6 +627,7 @@ void Renderer::Shutdown() {
                 backend_->DestroyRenderTarget(pointShadowRT_[li][face]);
         }
     }
+    DestroyPostTargets();
     if (white_.Valid()) backend_->DestroyTexture(white_);
     backend_->Shutdown();
     backend_.reset();
@@ -675,6 +683,29 @@ void Renderer::InitBuiltinResources() {
                      ? "ok"
                      : "FAILED");
 
+    // Post-processing shaders (HDR + bloom). Sources live in bloom.hpp so the
+    // pure math and the shader tokens are unit-testable headlessly.
+    brightPassShader_ =
+        backend_->CreateShader(kPostVertexShader, kBrightPassFragmentShader, "bloom_bright");
+    blurShader_ = backend_->CreateShader(kPostVertexShader, kBlurFragmentShader, "bloom_blur");
+    downsampleShader_ =
+        backend_->CreateShader(kPostVertexShader, kDownsampleFragmentShader, "bloom_downsample");
+    upsampleAddShader_ =
+        backend_->CreateShader(kPostVertexShader, kUpsampleAddFragmentShader, "bloom_upsample_add");
+    compositeShader_ =
+        backend_->CreateShader(kPostVertexShader, kCompositeFragmentShader, "bloom_composite");
+    NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
+                 "Renderer: bloom shaders %s",
+                 (brightPassShader_.Valid() && blurShader_.Valid() && downsampleShader_.Valid() &&
+                  upsampleAddShader_.Valid() && compositeShader_.Valid())
+                     ? "ok"
+                     : "FAILED");
+    if (std::getenv("NEON_NO_BLOOM")) {
+        NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Warn,
+                     "Renderer: bloom disabled by NEON_NO_BLOOM");
+        bloomEnabled_ = false;
+    }
+
     // NDC unit quad used by the FBO capability self-test.
     const Vertex3D quadVerts[4] = {
         {{-1, -1, 0}, {}, {}, {1, 1, 1, 1}, {0, 0, 0, 0}, {0, 0, 0, 0}},
@@ -684,6 +715,21 @@ void Renderer::InitBuiltinResources() {
     };
     const uint16_t quadIndices[6] = {0, 1, 2, 0, 2, 3};
     probeQuadMesh_ = backend_->CreateMesh(quadVerts, 4, quadIndices, 6);
+
+    // Fullscreen NDC quad with texture coordinates for the post passes.
+    const Vertex3D postVerts[4] = {
+        {{-1, -1, 0}, {}, {0, 0}, {1, 1, 1, 1}, {0, 0, 0, 0}, {0, 0, 0, 0}},
+        {{1, -1, 0}, {}, {1, 0}, {1, 1, 1, 1}, {0, 0, 0, 0}, {0, 0, 0, 0}},
+        {{1, 1, 0}, {}, {1, 1}, {1, 1, 1, 1}, {0, 0, 0, 0}, {0, 0, 0, 0}},
+        {{-1, 1, 0}, {}, {0, 1}, {1, 1, 1, 1}, {0, 0, 0, 0}, {0, 0, 0, 0}},
+    };
+    postQuadMesh_ = backend_->CreateMesh(postVerts, 4, quadIndices, 6);
+
+    // HDR float-target capability (independent of the shadow path, so
+    // --no-shadows still gets HDR + bloom). If the driver cannot render into a
+    // half-float FBO, the renderer falls back to the legacy direct-to-backbuffer
+    // flow and bloom is skipped.
+    hdrEnabled_ = TestFloatTargetCapability();
 
     if (shadowsForcedOff_) {
         NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Warn,
@@ -747,16 +793,28 @@ void Renderer::BeginFrame(const Color& clearColor, float clearDepth) {
     csmActive_ = false;
     pointShadowsActive_ = false;
     shadowPassRanThisFrame_ = false;
+    compositedThisFrame_ = false;
+    bloomRanThisFrame_ = false;
     screenW_ = window_ ? window_->Width() : screenW_;
     screenH_ = window_ ? window_->Height() : screenH_;
     uiScale_ = static_cast<float>(screenH_) / static_cast<float>(kDesignHeight);
     uiOffsetX_ = (static_cast<float>(screenW_) - static_cast<float>(kDesignWidth) * uiScale_) * 0.5f;
-    backend_->SetViewport(screenW_, screenH_);
-    backend_->Clear(clearColor, clearDepth);
+    EnsurePostTargets();
+    if (hdrEnabled_ && hdrRT_.Valid()) {
+        // Scene + sky draw into the half-float HDR target; the final
+        // composite (bloom -> backbuffer) happens in EndFrame / CaptureFrame.
+        backend_->BindRenderTarget(hdrRT_);
+        backend_->SetViewport(screenW_, screenH_);
+        backend_->Clear(clearColor, clearDepth);
+    } else {
+        backend_->BindDefaultTarget();
+        backend_->SetViewport(screenW_, screenH_);
+        backend_->Clear(clearColor, clearDepth);
+    }
 }
 
 void Renderer::EndFrame() {
-    Flush2D();
+    CompositeFrame();
     backend_->EndFrame();
 }
 
@@ -770,7 +828,12 @@ void Renderer::SetCamera(const Camera& camera, float aspect) {
     // Render the cascade shadow maps now: they are sampled by the main-pass
     // draws that follow this SetCamera. Uses the previous frame's recorded
     // casters (one frame of staleness, imperceptible) and the current camera.
-    if (csmEnabled_ && !shadowPassRanThisFrame_) RunShadowPass();
+    if (csmEnabled_ && !shadowPassRanThisFrame_) {
+        RunShadowPass();
+        // RunShadowPass ends with BindDefaultTarget (shadow FBOs unbound);
+        // route the main pass back into the HDR target when active.
+        RebindMainTarget();
+    }
 }
 
 void Renderer::SetSky(const Color& top, const Color& horizon) {
@@ -793,6 +856,13 @@ void Renderer::SetDirectionalLight(const math::Vec3& direction, const Color& col
 void Renderer::SetShadowsEnabled(bool enabled) {
     shadowsForcedOff_ = !enabled;
     if (!enabled) csmEnabled_ = false;
+}
+
+void Renderer::SetBloomEnabled(bool enabled) {
+    bloomEnabled_ = enabled;
+    if (!enabled)
+        NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
+                     "Renderer: bloom disabled");
 }
 
 void Renderer::RunShadowPass() {
@@ -1510,6 +1580,11 @@ math::Vec2 Renderer::ScreenToUI(const math::Vec2& screenPixels) const {
 
 bool Renderer::CaptureFrame(std::vector<uint8_t>& out) {
     if (!backend_) return false;
+    // The scene lives in the HDR target at this point; composite it (bloom +
+    // clamp) to the backbuffer first so the captured pixels are the FINAL
+    // rendered image, then flush any pending 2D on top. EndFrame will see
+    // compositedThisFrame_ and just swap.
+    CompositeFrame();
     out.resize(static_cast<size_t>(screenW_) * screenH_ * 4);
     backend_->CaptureFrame(screenW_, screenH_, out.data());
     return true;
@@ -1577,6 +1652,246 @@ void Renderer::Flush2D() {
     uiIndices_.clear();
     currentUITexture_ = {};
     currentUIBlend_ = BlendMode::Alpha;
+}
+
+void Renderer::EnsurePostTargets() {
+    if (!hdrEnabled_) return;
+    if (screenW_ <= 0 || screenH_ <= 0) return;
+    if (hdrRT_.Valid() && hdrW_ == screenW_ && hdrH_ == screenH_) return;
+    DestroyPostTargets();
+    const int hw = std::max(screenW_ / 2, 1);
+    const int hh = std::max(screenH_ / 2, 1);
+    const int qw = std::max(screenW_ / 4, 1);
+    const int qh = std::max(screenH_ / 4, 1);
+    hdrRT_ = backend_->CreateRenderTarget(screenW_, screenH_, true);
+    if (!hdrRT_.Valid()) {
+        NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Error,
+                     "Renderer: HDR target %dx%d creation failed -> HDR/bloom disabled", screenW_,
+                     screenH_);
+        hdrEnabled_ = false;
+        return;
+    }
+    bloomHalfA_ = backend_->CreateRenderTarget(hw, hh, true);
+    bloomHalfB_ = backend_->CreateRenderTarget(hw, hh, true);
+    bloomQuarterA_ = backend_->CreateRenderTarget(qw, qh, true);
+    bloomQuarterB_ = backend_->CreateRenderTarget(qw, qh, true);
+    hdrW_ = screenW_;
+    hdrH_ = screenH_;
+    NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
+                 "Renderer: HDR target %dx%d (RGBA16F) + bloom %dx%d / %dx%d", screenW_, screenH_,
+                 hw, hh, qw, qh);
+}
+
+void Renderer::DestroyPostTargets() {
+    auto destroy = [this](RenderTargetHandle& t) {
+        if (t.Valid() && backend_) backend_->DestroyRenderTarget(t);
+        t = {};
+    };
+    destroy(hdrRT_);
+    destroy(bloomHalfA_);
+    destroy(bloomHalfB_);
+    destroy(bloomQuarterA_);
+    destroy(bloomQuarterB_);
+    hdrW_ = 0;
+    hdrH_ = 0;
+}
+
+bool Renderer::TestFloatTargetCapability() {
+    if (!backend_ || !unlitShader_.Valid() || !probeQuadMesh_.Valid()) return false;
+    constexpr int kSize = 32;
+    RenderTargetHandle rt = backend_->CreateRenderTarget(kSize, kSize, true);
+    if (!rt.Valid()) {
+        NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Warn,
+                     "Renderer: HDR FBO self-test: float target failed -> HDR/bloom disabled");
+        return false;
+    }
+    backend_->BindRenderTarget(rt);
+    backend_->Clear({0.0f, 0.0f, 0.0f, 1.0f}, 1.0f);
+    backend_->UseShader(unlitShader_);
+    backend_->SetUniformMat4("uMVP", math::Mat4::Identity());
+    backend_->SetUniformInt("uHasTexture", 0);
+    backend_->SetUniformVec4("uTint", {0.5f, 0.25f, 0.125f, 1.0f});
+    backend_->SetCullMode(CullMode::None);
+    backend_->SetDepthTest(false, false);
+    backend_->SetBlendMode(BlendMode::Opaque);
+    backend_->DrawMesh(probeQuadMesh_);
+    unsigned char px[4] = {0, 0, 0, 0};
+    backend_->ReadCurrentTargetPixel(kSize / 2, kSize / 2, px);
+    backend_->DestroyRenderTarget(rt);
+    backend_->BindDefaultTarget();
+    // Drawn {0.5, 0.25, 0.125} must come back as ~{128, 64, 32} after the
+    // float->byte readback; wide-but-specific ranges catch both a non-writing
+    // FBO (zeros) and a clamped-to-1 target (255).
+    const bool ok = px[0] >= 110 && px[0] <= 150 && px[1] >= 48 && px[1] <= 80 && px[2] >= 16 &&
+                    px[2] <= 48;
+    NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
+                 "Renderer: HDR FBO self-test: px=%u,%u,%u,%u -> %s", px[0], px[1], px[2], px[3],
+                 ok ? "PASS" : "FAIL");
+    if (!ok) {
+        NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Warn,
+                     "Renderer: HDR float render target unusable -> HDR/bloom disabled");
+        return false;
+    }
+    return true;
+}
+
+void Renderer::RebindMainTarget() {
+    if (hdrEnabled_ && hdrRT_.Valid()) {
+        backend_->BindRenderTarget(hdrRT_);
+    } else {
+        backend_->BindDefaultTarget();
+    }
+}
+
+bool Renderer::RunBloom() {
+    if (!bloomEnabled_) return false;
+    if (!hdrRT_.Valid() || !bloomHalfA_.Valid() || !bloomHalfB_.Valid() ||
+        !bloomQuarterA_.Valid() || !bloomQuarterB_.Valid() || !postQuadMesh_.Valid()) {
+        return false;
+    }
+    if (!brightPassShader_.Valid() || !blurShader_.Valid() || !downsampleShader_.Valid() ||
+        !upsampleAddShader_.Valid()) {
+        NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Warn,
+                     "Renderer: bloom skipped - post shader missing");
+        return false;
+    }
+    const float halfTexelX = 1.0f / static_cast<float>(std::max(hdrW_ / 2, 1));
+    const float halfTexelY = 1.0f / static_cast<float>(std::max(hdrH_ / 2, 1));
+    const float quarterTexelX = 1.0f / static_cast<float>(std::max(hdrW_ / 4, 1));
+    const float quarterTexelY = 1.0f / static_cast<float>(std::max(hdrH_ / 4, 1));
+
+    auto fullscreen = [this](ShaderHandle shader) {
+        backend_->SetBlendMode(BlendMode::Opaque);
+        backend_->SetDepthTest(false, false);
+        backend_->SetCullMode(CullMode::None);
+        backend_->UseShader(shader);
+        backend_->SetUniformMat4("uMVP", math::Mat4::Identity());
+    };
+
+    // 1. Bright pass: HDR -> halfA (thresholded, only pixels above 1.0).
+    backend_->BindRenderTarget(bloomHalfA_);
+    fullscreen(brightPassShader_);
+    backend_->BindTexture(0, backend_->RenderTargetColorTexture(hdrRT_));
+    backend_->SetUniformInt("uTex", 0);
+    backend_->SetUniformFloat("uThreshold", kBloomThreshold);
+    backend_->DrawMesh(postQuadMesh_);
+
+    // 2. Blur the half-res bright (H then V), ping-ponging halfA/halfB.
+    backend_->BindRenderTarget(bloomHalfB_);
+    fullscreen(blurShader_);
+    backend_->BindTexture(0, backend_->RenderTargetColorTexture(bloomHalfA_));
+    backend_->SetUniformInt("uTex", 0);
+    backend_->SetUniformVec2("uTexelSize", {halfTexelX, halfTexelY});
+    backend_->SetUniformVec2("uDirection", {1.0f, 0.0f});
+    backend_->DrawMesh(postQuadMesh_);
+    backend_->BindRenderTarget(bloomHalfA_);
+    fullscreen(blurShader_);
+    backend_->BindTexture(0, backend_->RenderTargetColorTexture(bloomHalfB_));
+    backend_->SetUniformInt("uTex", 0);
+    backend_->SetUniformVec2("uTexelSize", {halfTexelX, halfTexelY});
+    backend_->SetUniformVec2("uDirection", {0.0f, 1.0f});
+    backend_->DrawMesh(postQuadMesh_);
+
+    // 3. Downsample: halfA -> quarterA (2x2 box).
+    backend_->BindRenderTarget(bloomQuarterA_);
+    fullscreen(downsampleShader_);
+    backend_->BindTexture(0, backend_->RenderTargetColorTexture(bloomHalfA_));
+    backend_->SetUniformInt("uTex", 0);
+    backend_->SetUniformVec2("uSrcTexelSize", {halfTexelX, halfTexelY});
+    backend_->DrawMesh(postQuadMesh_);
+
+    // 4. Blur the quarter-res level (H then V), ping-ponging quarterA/quarterB.
+    backend_->BindRenderTarget(bloomQuarterB_);
+    fullscreen(blurShader_);
+    backend_->BindTexture(0, backend_->RenderTargetColorTexture(bloomQuarterA_));
+    backend_->SetUniformInt("uTex", 0);
+    backend_->SetUniformVec2("uTexelSize", {quarterTexelX, quarterTexelY});
+    backend_->SetUniformVec2("uDirection", {1.0f, 0.0f});
+    backend_->DrawMesh(postQuadMesh_);
+    backend_->BindRenderTarget(bloomQuarterA_);
+    fullscreen(blurShader_);
+    backend_->BindTexture(0, backend_->RenderTargetColorTexture(bloomQuarterB_));
+    backend_->SetUniformInt("uTex", 0);
+    backend_->SetUniformVec2("uTexelSize", {quarterTexelX, quarterTexelY});
+    backend_->SetUniformVec2("uDirection", {0.0f, 1.0f});
+    backend_->DrawMesh(postQuadMesh_);
+
+    // 5. Upsample-add (progressive bloom): halfB = halfA + up(quarterA).
+    backend_->BindRenderTarget(bloomHalfB_);
+    fullscreen(upsampleAddShader_);
+    backend_->BindTexture(0, backend_->RenderTargetColorTexture(bloomHalfA_));
+    backend_->SetUniformInt("uHalf", 0);
+    backend_->BindTexture(1, backend_->RenderTargetColorTexture(bloomQuarterA_));
+    backend_->SetUniformInt("uQuarter", 1);
+    backend_->DrawMesh(postQuadMesh_);
+
+    bloomRanThisFrame_ = true;
+    return true;
+}
+
+void Renderer::CompositeToBackbuffer() {
+    if (!compositeShader_.Valid() || !postQuadMesh_.Valid() || !hdrRT_.Valid()) return;
+    backend_->BindDefaultTarget();
+    backend_->SetBlendMode(BlendMode::Opaque);
+    backend_->SetDepthTest(false, false);
+    backend_->SetCullMode(CullMode::None);
+    backend_->UseShader(compositeShader_);
+    backend_->SetUniformMat4("uMVP", math::Mat4::Identity());
+    backend_->BindTexture(0, backend_->RenderTargetColorTexture(hdrRT_));
+    backend_->SetUniformInt("uHdr", 0);
+    if (bloomRanThisFrame_ && bloomHalfB_.Valid()) {
+        backend_->BindTexture(1, backend_->RenderTargetColorTexture(bloomHalfB_));
+        backend_->SetUniformFloat("uStrength", kBloomStrength);
+        backend_->SetUniformInt("uBloomEnabled", 1);
+    } else {
+        // Bloom off / unavailable: bind the HDR texture on the bloom slot too
+        // (the program still references the sampler) and skip the term, so the
+        // `--no-bloom` image differs only by the bloom contribution.
+        backend_->BindTexture(1, backend_->RenderTargetColorTexture(hdrRT_));
+        backend_->SetUniformFloat("uStrength", kBloomStrength);
+        backend_->SetUniformInt("uBloomEnabled", 0);
+    }
+    backend_->SetUniformInt("uBloom", 1);
+    backend_->DrawMesh(postQuadMesh_);
+}
+
+void Renderer::CompositeSceneToBackbuffer() {
+    if (!hdrEnabled_ || !hdrRT_.Valid()) {
+        Flush2D();
+        return;
+    }
+    bloomRanThisFrame_ = RunBloom();
+    CompositeToBackbuffer();
+    Flush2D();
+}
+
+void Renderer::CompositeFrame() {
+    if (!compositedThisFrame_) {
+        CompositeSceneToBackbuffer();
+        compositedThisFrame_ = true;
+    }
+}
+
+bool Renderer::CaptureBloomComparison(std::vector<uint8_t>& bloomOff,
+                                      std::vector<uint8_t>& bloomOn) {
+    if (!backend_ || !hdrEnabled_ || !hdrRT_.Valid()) return false;
+    const bool savedBloom = bloomEnabled_;
+    // Both captures composite the same HDR target WITHOUT the 2D overlay, so
+    // the two buffers differ only by the bloom term; the HUD is flushed once
+    // at the end (it is drawn on top of the composite and is not bloomed).
+    bloomEnabled_ = false;
+    bloomRanThisFrame_ = false;
+    CompositeToBackbuffer();
+    bloomOff.resize(static_cast<size_t>(screenW_) * screenH_ * 4);
+    backend_->CaptureFrame(screenW_, screenH_, bloomOff.data());
+    bloomEnabled_ = savedBloom;
+    bloomRanThisFrame_ = RunBloom();
+    CompositeToBackbuffer();
+    bloomOn.resize(static_cast<size_t>(screenW_) * screenH_ * 4);
+    backend_->CaptureFrame(screenW_, screenH_, bloomOn.data());
+    compositedThisFrame_ = true;
+    Flush2D();
+    return true;
 }
 
 } // namespace neon::gfx

@@ -1227,6 +1227,7 @@ void GameScene::DrawOverlays(gfx::Renderer& renderer) {
 
 bool NeonApp::OnCreate() {
     if (disableShadows_) renderer_.SetShadowsEnabled(false);
+    renderer_.SetBloomEnabled(bloomEnabled_);
     if (!renderer_.Init(Window())) {
         NEON_LOG_ERROR("Demo: renderer init failed");
         return false;
@@ -1297,6 +1298,22 @@ void NeonApp::OnRender() {
             NEON_LOG_INFO("Screenshot: %s (%s)", screenshotPath_.c_str(), ok ? "ok" : "failed");
         }
         screenshotPath_.clear();
+    }
+    if (!bloomCompareDone_ && !bloomCompareOff_.empty() &&
+        TimeRef().frameIndex >= bloomCompareFrame_) {
+        std::vector<uint8_t> off, on;
+        if (renderer_.CaptureBloomComparison(off, on)) {
+            const int w = renderer_.ScreenWidth();
+            const int h = renderer_.ScreenHeight();
+            int okOff = stbi_write_png(bloomCompareOff_.c_str(), w, h, 4, off.data(), w * 4);
+            int okOn = stbi_write_png(bloomCompareOn_.c_str(), w, h, 4, on.data(), w * 4);
+            NEON_LOG_INFO("Bloom compare: off=%s (%s) on=%s (%s)", bloomCompareOff_.c_str(),
+                          okOff ? "ok" : "failed", bloomCompareOn_.c_str(),
+                          okOn ? "ok" : "failed");
+        } else {
+            NEON_LOG_WARN("Bloom compare skipped: HDR pipeline inactive");
+        }
+        bloomCompareDone_ = true;
     }
     renderer_.EndFrame();
 }
