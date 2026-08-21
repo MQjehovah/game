@@ -21,15 +21,19 @@ namespace {
 class RecordingBackend : public test::NullBackend {
 public:
     int boneArrayCalls = 0;
+    int mat4ArrayCalls = 0;
     std::string lastBoneName;
     int lastBoneCount = 0;
     std::vector<float> lastBoneValues;
 
     void SetUniformMat4Array(const char* name, const float* values, int count) override {
-        ++boneArrayCalls;
-        lastBoneName = name ? name : "";
-        lastBoneCount = count;
-        lastBoneValues.assign(values, values + static_cast<size_t>(count) * 16);
+        ++mat4ArrayCalls;
+        if (name && std::string(name) == "uBoneMatrices") {
+            ++boneArrayCalls;
+            lastBoneName = name;
+            lastBoneCount = count;
+            lastBoneValues.assign(values, values + static_cast<size_t>(count) * 16);
+        }
     }
 };
 

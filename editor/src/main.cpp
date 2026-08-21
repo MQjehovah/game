@@ -6,6 +6,7 @@
 
 int main(int argc, char** argv) {
     int smokeFrames = 0;
+    bool disableShadows = false;
     std::string screenshot;
     uint64_t screenshotFrame = 0;
     for (int i = 1; i < argc; ++i) {
@@ -14,10 +15,15 @@ int main(int argc, char** argv) {
         } else if (std::strcmp(argv[i], "--screenshot") == 0 && i + 2 < argc) {
             screenshot = argv[++i];
             screenshotFrame = static_cast<uint64_t>(std::atoll(argv[++i]));
+        } else if (std::strcmp(argv[i], "--disable-fbo") == 0 ||
+                   std::strcmp(argv[i], "--no-shadows") == 0) {
+            disableShadows = true;
         } else if (std::strcmp(argv[i], "--help") == 0) {
             std::printf("NeonEditor - NeonEngine scene editor\n"
                         "  --smoke-test <frames>  run N simulation frames then exit\n"
-                        "  --screenshot <path> <frame>  capture a PNG at frame N\n");
+                        "  --screenshot <path> <frame>  capture a PNG at frame N\n"
+                        "  --disable-fbo          force-disable CSM shadow maps\n"
+                        "  --no-shadows           alias for --disable-fbo\n");
             return 0;
         }
     }
@@ -37,6 +43,7 @@ int main(int argc, char** argv) {
         app.SetSmokeTestFrames(smokeFrames);
     }
     if (!screenshot.empty()) app.RequestScreenshot(screenshot, screenshotFrame);
+    if (disableShadows) app.SetDisableShadows(true);
     int code = app.Run(config);
     return app.SmokeFailed() ? 1 : code;
 }

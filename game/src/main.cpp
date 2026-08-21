@@ -12,6 +12,8 @@ void PrintHelp() {
         "Usage: neon_rush [options]\n"
         "  --smoke-test <frames>  run headless-ish for N simulation frames then exit\n"
         "  --no-audio             disable audio\n"
+        "  --disable-fbo          force-disable CSM shadow maps (CPU projected shadows)\n"
+        "  --no-shadows           alias for --disable-fbo\n"
         "  --fullscreen           start in fullscreen\n"
         "  --help                 show this help\n");
 }
@@ -22,6 +24,7 @@ int main(int argc, char** argv) {
     int smokeFrames = 0;
     bool noAudio = false;
     bool fullscreen = false;
+    bool disableShadows = false;
     std::string screenshotPath;
     uint64_t screenshotFrame = 0;
     for (int i = 1; i < argc; ++i) {
@@ -32,6 +35,9 @@ int main(int argc, char** argv) {
             screenshotFrame = static_cast<uint64_t>(std::atoll(argv[++i]));
         } else if (std::strcmp(argv[i], "--no-audio") == 0) {
             noAudio = true;
+        } else if (std::strcmp(argv[i], "--disable-fbo") == 0 ||
+                   std::strcmp(argv[i], "--no-shadows") == 0) {
+            disableShadows = true;
         } else if (std::strcmp(argv[i], "--fullscreen") == 0) {
             fullscreen = true;
         } else if (std::strcmp(argv[i], "--help") == 0) {
@@ -57,6 +63,7 @@ int main(int argc, char** argv) {
         app.SetSmokeTestFrames(smokeFrames);
     }
     if (!screenshotPath.empty()) app.RequestScreenshot(screenshotPath, screenshotFrame);
+    if (disableShadows) app.SetDisableShadows(true);
     int result = app.Run(config);
     std::printf("NeonRealm exited with code %d\n", result);
     return result;

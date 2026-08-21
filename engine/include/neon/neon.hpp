@@ -28,6 +28,7 @@
 #include "neon/gfx/material.hpp"
 #include "neon/gfx/font.hpp"
 #include "neon/gfx/camera.hpp"
+#include "neon/gfx/csm.hpp"
 #include "neon/gfx/renderer.hpp"
 #include "neon/gfx/particles.hpp"
 

@@ -42,6 +42,7 @@ public:
     void OnEvent(const platform::InputEvent& event) override;
 
     void SetSmokeMode(bool v) { smokeMode_ = v; }
+    void SetDisableShadows(bool v) { disableShadows_ = v; }
     bool SmokeFailed() const { return smokeFailed_; }
     void RequestScreenshot(const std::string& path, uint64_t frame) {
         screenshotPath_ = path;
@@ -103,6 +104,7 @@ private:
 
     bool smokeMode_ = false;
     bool smokeFailed_ = false;
+    bool disableShadows_ = false;
     std::string screenshotPath_;
     uint64_t screenshotFrame_ = 0;
 

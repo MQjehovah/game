@@ -205,6 +205,7 @@ public:
     assets::AssetManager& AssetMgr() { return assetMgr_; }
     void SetSmokeMode(bool v) { smokeMode_ = v; }
     bool SmokeMode() const { return smokeMode_; }
+    void SetDisableShadows(bool v) { disableShadows_ = v; }
     void RequestScreenshot(const std::string& path, uint64_t frame) {
         screenshotPath_ = path;
         screenshotFrame_ = frame;
@@ -236,6 +237,7 @@ private:
     core::Config save_;
     int bestScore_ = 0;
     bool smokeMode_ = false;
+    bool disableShadows_ = false;
     std::string screenshotPath_;
     uint64_t screenshotFrame_ = 0;
 

@@ -64,6 +64,7 @@ constexpr gl::GLenum CompareRefToTexture = 0x884E;
 constexpr gl::GLenum TextureCompareFunc = 0x884D;
 constexpr gl::GLenum Lequal = 0x0203;
 constexpr gl::GLenum ScissorTest = 0x0C11;
+constexpr gl::GLenum DepthComponent = 0x1902;
 } // namespace glc
 
 void CheckError(const char* where) {
@@ -98,7 +99,6 @@ struct GLRenderTarget {
     int width = 0;
     int height = 0;
 };
-
 class OpenGLBackend : public IRenderBackend {
 public:
     ~OpenGLBackend() override { Shutdown(); }
@@ -254,7 +254,75 @@ public:
         auto& g = gl::GetGL();
         g.DeleteFramebuffers(1, &it->second.fbo);
         g.DeleteTextures(1, &it->second.colorTex);
+        g.DeleteTextures(1, &it->second.depthTex);
         renderTargets_.erase(it);
+    }
+
+    RenderTargetHandle CreateDepthTarget(int width, int height) override {
+        auto& g = gl::GetGL();
+        GLRenderTarget rt;
+        rt.width = width;
+        rt.height = height;
+        g.GenFramebuffers(1, &rt.fbo);
+        g.BindFramebuffer(glc::Framebuffer, rt.fbo);
+        g.GenTextures(1, &rt.depthTex);
+        g.BindTexture(glc::Texture2D, rt.depthTex);
+        g.TexStorage2D(glc::Texture2D, 1, glc::DepthComponent24, width, height);
+        g.TexParameteri(glc::Texture2D, glc::TextureMinFilter, glc::Nearest);
+        g.TexParameteri(glc::Texture2D, glc::TextureMagFilter, glc::Nearest);
+        g.TexParameteri(glc::Texture2D, glc::TextureWrapS, glc::ClampToEdge);
+        g.TexParameteri(glc::Texture2D, glc::TextureWrapT, glc::ClampToEdge);
+        // Manual depth comparison in the shader; never enable hardware
+        // shadow comparison (raw depth is read back in the .r channel).
+        g.TexParameteri(glc::Texture2D, glc::TextureCompareMode, glc::None);
+        g.FramebufferTexture2D(glc::Framebuffer, glc::DepthAttachment, glc::Texture2D,
+                               rt.depthTex, 0);
+        g.DrawBuffer(glc::None);
+        g.ReadBuffer(glc::None);
+        gl::GLenum status = g.CheckFramebufferStatus(glc::Framebuffer);
+        if (status != 0x8CD5) { // GL_FRAMEBUFFER_COMPLETE
+            NEON_LOG_ERROR("GL: depth target incomplete, status=0x%X", status);
+            g.DeleteFramebuffers(1, &rt.fbo);
+            g.DeleteTextures(1, &rt.depthTex);
+            g.BindFramebuffer(glc::Framebuffer, 0);
+            return {};
+        }
+        g.BindFramebuffer(glc::Framebuffer, 0);
+        // Both the color/depth texture handles resolve to the same depth
+        // texture so BindShadowMap / RenderTargetDepthTexture work uniformly.
+        rt.colorTextureHandle = ++nextTextureId_;
+        textures_[rt.colorTextureHandle] = GLTexture{rt.depthTex, width, height};
+        rt.textureHandle = ++nextTextureId_;
+        textures_[rt.textureHandle] = GLTexture{rt.depthTex, width, height};
+        renderTargets_[++nextRenderTargetId_] = rt;
+        return {nextRenderTargetId_};
+    }
+
+    void BeginDepthPass(RenderTargetHandle target) override {
+        auto it = renderTargets_.find(target.id);
+        if (it == renderTargets_.end()) return;
+        currentFBO_ = it->second.fbo;
+        auto& g = gl::GetGL();
+        g.BindFramebuffer(glc::Framebuffer, it->second.fbo);
+        g.Viewport(0, 0, it->second.width, it->second.height);
+    }
+
+    void EndDepthPass() override { BindDefaultTarget(); }
+
+    void BindShadowMap(int slot, RenderTargetHandle target) override {
+        auto it = renderTargets_.find(target.id);
+        if (it == renderTargets_.end()) return;
+        auto& g = gl::GetGL();
+        g.ActiveTexture(glc::Texture0 + static_cast<gl::GLenum>(slot));
+        g.BindTexture(glc::Texture2D, it->second.depthTex);
+    }
+
+    bool ReadCurrentTargetDepth(int width, int height, float* out) override {
+        if (!out) return false;
+        auto& g = gl::GetGL();
+        gl::GLenum err = g.GetError();
+        g.ReadPixels(0, 0, width, height, glc::DepthComponent, glc::Float, out);
+        return g.GetError() == 0 && err == 0;
     }
 
     void BindRenderTarget(RenderTargetHandle target) override {
@@ -270,6 +338,10 @@ public:
         currentFBO_ = 0;
         auto& g = gl::GetGL();
         g.BindFramebuffer(glc::Framebuffer, 0);
+        // FBO setup switches the draw/read buffers to COLOR_ATTACHMENT0; restore
+        // them for the window's default framebuffer (double-buffered => GL_BACK).
+        g.DrawBuffer(glc::Back);
+        g.ReadBuffer(glc::Back);
         if (window_) g.Viewport(0, 0, window_->Width(), window_->Height());
     }
 
@@ -519,6 +591,9 @@ public:
         else if (std::string(name) == "uBoneMatrices")
             NEON_LOG_ERROR("GL: uBoneMatrices uniform not found in program %u",
                            GetProgram(currentShader_).id);
+        else
+            NEON_LOG_ERROR("GL: mat4-array uniform '%s' not found in program %u",
+                           name, GetProgram(currentShader_).id);
         CheckError(name);
     }
 

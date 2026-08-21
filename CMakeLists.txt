@@ -24,6 +24,7 @@ set(ENGINE_CORE_SOURCES
   engine/src/core/serialize.cpp
   engine/src/core/pack.cpp
   engine/src/gfx/color.cpp
+  engine/src/gfx/csm.cpp
   engine/src/gfx/font.cpp
   engine/src/gfx/mesh.cpp
   engine/src/gfx/particles.cpp
@@ -205,7 +206,7 @@ add_executable(neon_tests tests/test_main.cpp tests/test_serialize.cpp tests/tes
   tests/test_script.cpp tests/test_script_bindings.cpp tests/test_script_determinism.cpp
   tests/test_bt.cpp tests/test_scene_file.cpp tests/test_scene_export.cpp tests/test_manifest.cpp
   tests/test_game_runtime.cpp tests/test_gltf_skin.cpp tests/test_anim.cpp
-  tests/test_skinned.cpp)
+  tests/test_skinned.cpp tests/test_shadow.cpp)
 target_link_libraries(neon_tests PRIVATE neon_engine)
 add_test(NAME unit COMMAND neon_tests)
 # ctest runs the binary from the build dir by default; run it from the source

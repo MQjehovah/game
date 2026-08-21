@@ -55,15 +55,18 @@ public:
     void SetPlayerLight(const math::Vec3& position, const Color& color, float radius);
 
     // 3D drawing
-    // Directional-light shadow mapping. Call BeginShadowPass, draw every
-    // shadow-casting mesh with DrawShadow, then EndShadowPass before the
-    // main pass. Uses an offscreen depth FBO, independent of the (possibly
-    // broken) window depth buffer.
-    void BeginShadowPass(const math::Vec3& lightDir, const math::Vec3& center, float orthoSize);
-    void DrawShadow(const Mesh& mesh, const math::Mat4& model);
-    void EndShadowPass();
-    bool ShadowsEnabled() const { return shadowRT_.Valid(); }
-    TextureHandle ShadowColorTexture() const { return shadowColorTex_; }
+    // Cascaded shadow mapping. When enabled, shadow casters are recorded
+    // automatically from DrawMesh/DrawSkinnedMesh/DrawMeshInstanced, and the
+    // 3 cascade shadow maps are rendered inside SetCamera (before any main
+    // pass draws). CSM replaces the CPU projected-contact shadows; when it is
+    // unavailable (broken FBO/depth driver, or --disable-fbo) ShadowsEnabled()
+    // is false and the game falls back to DrawProjectedShadow.
+    void SetShadowsEnabled(bool enabled);
+    bool ShadowsEnabled() const { return csmEnabled_; }
+    // True when a shadow map pass actually ran this frame (maps are valid).
+    bool ShadowMapActive() const { return csmActive_; }
+    // Shadow map size in pixels per cascade.
+    int ShadowMapSize() const { return shadowSize_; }
 
     void DrawMesh(const Mesh& mesh, const Material& material, const math::Mat4& model);
     // Skinned variant: binds the SKINNED lit program and uploads up to 64 bone
@@ -74,7 +77,8 @@ public:
     void DrawMeshInstanced(const Mesh& mesh, const Material& material, const math::Mat4* models,
                            uint32_t count, bool frustumCull = true);
     // CPU-side projected shadow: projects the mesh onto the ground plane
-    // (y=0) along lightDir. Works without any depth buffer or FBO.
+    // (y=0) along lightDir. Works without any depth buffer or FBO. Used as the
+    // fallback when CSM is disabled.
     void DrawProjectedShadow(const Mesh& mesh, const math::Mat4& model,
                              const math::Vec3& lightDir, const Color& color);
 
@@ -136,6 +140,27 @@ private:
                          const Color& cd, const math::Vec2& uv0, const math::Vec2& uv1,
                          TextureHandle texture, BlendMode blend);
 
+    // CSM
+    static constexpr int kShadowCascades = 3;
+    static constexpr int kShadowMapSize = 1024;
+    // One recorded shadow caster per 3D draw call. Exactly one of models/bones
+    // is non-empty: plain meshes use neither, instanced use `models`,
+    // skinned use `bones`. bounds is the mesh AABB in object space (used to
+    // painter-sort casters since the color-encoded shadow pass has no depth
+    // buffer - the window/FBO depth path is broken on some Intel drivers).
+    struct ShadowDraw {
+        MeshHandle mesh;
+        math::Mat4 model;
+        std::vector<math::Mat4> models;
+        std::vector<math::Mat4> bones;
+        int boneCount = 0;
+        math::AABB bounds;
+    };
+    void RunShadowPass();
+    void DrawShadowCaster(const ShadowDraw& draw, const math::Mat4& lightVP);
+    void DrawShadowCastersSorted(const math::Mat4& lightVP);
+    bool TestDepthTargetCapability();
+
     std::unique_ptr<IRenderBackend> backend_;
 
     ShaderHandle litShader_;
@@ -146,15 +171,24 @@ private:
     ShaderHandle litInstancedShader_;
     ShaderHandle unlitInstancedShader_;
     ShaderHandle depthShader_;
+    ShaderHandle depthInstancedShader_;
+    ShaderHandle depthSkinnedShader_;
     TextureHandle white_;
-    RenderTargetHandle shadowRT_;
-    int shadowSize_ = 2048;
-    math::Mat4 shadowVP_;
-    TextureHandle shadowColorTex_;
-    bool shadowEnabled_ = false;
+    MeshHandle probeQuadMesh_;
+    RenderTargetHandle shadowRT_[kShadowCascades];
+    TextureHandle shadowDepthTex_[kShadowCascades];
+    int shadowSize_ = kShadowMapSize;
+    math::Mat4 lightViewProj_[kShadowCascades];
+    float cascadeSplits_[kShadowCascades + 1] = {0.1f, 20.0f, 60.0f, 100.0f};
+    bool csmEnabled_ = false;
+    bool csmActive_ = false;
+    bool shadowsForcedOff_ = false;
+    bool shadowPassRanThisFrame_ = false;
+    std::vector<ShadowDraw> shadowCasters_;
 
     Camera camera_;
     math::Mat4 viewProj_;
+    math::Mat4 view_;
     math::Vec3 camPos_;
     math::Frustum frustum_;
     bool frustumValid_ = false;

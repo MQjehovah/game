@@ -902,25 +902,29 @@ void GameScene::Draw(gfx::Renderer& renderer) {
     }
     particles_.Draw(renderer, assets.glow, 1.0f);
 
-    // 3. Projected shadows (CPU-side, drawn last as a translucent contact
-    // shadow / ambient occlusion pass).
-    gfx::Color shadowCol{0.02f, 0.02f, 0.04f, 0.45f};
-    if (pt) renderer.DrawProjectedShadow(assets.playerMesh, pt->Model(), -sunDir, shadowCol);
-    {
-        auto mobsS = world_.ViewAll<CEnemy>();
-        for (size_t i = 0; i < mobsS.Size(); ++i) {
-            ecs::Entity e = world_.EntityAt<CEnemy>(i);
-            CEnemy* ce = world_.Get<CEnemy>(e);
-            CTransform* et = world_.Get<CTransform>(e);
-            if (ce && et && !ce->dead) {
-                renderer.DrawProjectedShadow(assets.wolfMesh, et->Model(), -sunDir, shadowCol);
+    // 3. Shadows. CSM (cascaded shadow maps) replaces the CPU projected
+    // contact shadows when the driver's FBO/depth path works; otherwise the
+    // projected-shadow fallback stays (this Intel driver is known to corrupt
+    // VAO rendering into FBOs, which the renderer self-test detects).
+    if (!renderer.ShadowsEnabled()) {
+        gfx::Color shadowCol{0.02f, 0.02f, 0.04f, 0.45f};
+        if (pt) renderer.DrawProjectedShadow(assets.playerMesh, pt->Model(), -sunDir, shadowCol);
+        {
+            auto mobsS = world_.ViewAll<CEnemy>();
+            for (size_t i = 0; i < mobsS.Size(); ++i) {
+                ecs::Entity e = world_.EntityAt<CEnemy>(i);
+                CEnemy* ce = world_.Get<CEnemy>(e);
+                CTransform* et = world_.Get<CTransform>(e);
+                if (ce && et && !ce->dead) {
+                    renderer.DrawProjectedShadow(assets.wolfMesh, et->Model(), -sunDir, shadowCol);
+                }
             }
         }
-    }
-    CTransform* npcT = world_.Get<CTransform>(npc_);
-    if (npcT) renderer.DrawProjectedShadow(assets.playerMesh, npcT->Model(), -sunDir, shadowCol);
-    for (const math::Mat4& rock : rocks_) {
-        renderer.DrawProjectedShadow(assets.kenneyRock, rock, -sunDir, shadowCol);
+        CTransform* npcT = world_.Get<CTransform>(npc_);
+        if (npcT) renderer.DrawProjectedShadow(assets.playerMesh, npcT->Model(), -sunDir, shadowCol);
+        for (const math::Mat4& rock : rocks_) {
+            renderer.DrawProjectedShadow(assets.kenneyRock, rock, -sunDir, shadowCol);
+        }
     }
 
     DrawNameplates(renderer);
@@ -1146,6 +1150,7 @@ void GameScene::DrawOverlays(gfx::Renderer& renderer) {
 // ---------------------------------------------------------------------------
 
 bool NeonApp::OnCreate() {
+    if (disableShadows_) renderer_.SetShadowsEnabled(false);
     if (!renderer_.Init(Window())) {
         NEON_LOG_ERROR("Demo: renderer init failed");
         return false;

@@ -10,3 +10,6 @@ scenes/
 .vs/
 .vscode/
 CMakeUserPresets.json
+# Shadow-map / screenshot debug artifacts (throwaway diagnostics)
+*.raw
+*.png

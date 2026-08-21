@@ -62,6 +62,24 @@ public:
     virtual TextureHandle RenderTargetColorTexture(RenderTargetHandle target) const = 0;
     virtual TextureHandle RenderTargetDepthTexture(RenderTargetHandle target) const = 0;
 
+    // Shadow-map depth target: an FBO whose only attachment is a depth texture
+    // (no color buffer). Depth is written by the rasterizer; sample it with
+    // BindShadowMap and compare manually in the shader (no hardware shadow
+    // comparison is configured, so the raw depth comes back in .r).
+    virtual RenderTargetHandle CreateDepthTarget(int width, int height) = 0;
+    // Binds the depth target for the depth pre-pass (viewport set to its size).
+    virtual void BeginDepthPass(RenderTargetHandle target) = 0;
+    // Unbinds the depth target and restores the window framebuffer/viewport.
+    virtual void EndDepthPass() = 0;
+    // Binds the target's depth texture on a sampler slot for reading.
+    virtual void BindShadowMap(int slot, RenderTargetHandle target) = 0;
+    // Reads float depth (GL_DEPTH_COMPONENT, GL_FLOAT) for width*height pixels
+    // from the currently bound framebuffer. NOTE: the tested Intel driver
+    // returns garbage (zeros) for depth readbacks even when the attachment
+    // holds valid depth, so the renderer's capability self-test uses the color
+    // readback path instead. Kept for backends with reliable depth readback.
+    virtual bool ReadCurrentTargetDepth(int width, int height, float* out) = 0;
+
     virtual ShaderHandle CreateShader(const char* vertexSource, const char* fragmentSource,
                                       const char* debugName) = 0;
     virtual void DestroyShader(ShaderHandle shader) = 0;

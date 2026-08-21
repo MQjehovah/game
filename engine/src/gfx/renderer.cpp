@@ -5,6 +5,7 @@
 #include <cstring>
 
 #include "neon/core/log.hpp"
+#include "neon/gfx/csm.hpp"
 
 namespace neon::gfx {
 namespace {
@@ -26,11 +27,13 @@ uniform mat4 uBoneMatrices[64];
 uniform mat4 uMVP;
 uniform mat4 uModel;
 uniform mat4 uNormalMat;
+uniform mat4 uViewMatrix;
 uniform vec3 uCamPos;
 out vec3 vWorldPos;
 out vec3 vNormal;
 out vec2 vUV;
 out vec4 vColor;
+out float vViewZ;
 void main() {
 #ifdef SKINNED
     mat4 skin = mat4(0.0);
@@ -44,12 +47,14 @@ void main() {
     vNormal = (uNormalMat * n).xyz;
     vUV = aUV;
     vColor = aColor;
+    vViewZ = (uViewMatrix * vec4(vWorldPos, 1.0)).z;
     gl_Position = uMVP * p;
 #else
     vWorldPos = (uModel * vec4(aPos, 1.0)).xyz;
     vNormal = (uNormalMat * vec4(aNormal, 0.0)).xyz;
     vUV = aUV;
     vColor = aColor;
+    vViewZ = (uViewMatrix * vec4(vWorldPos, 1.0)).z;
     gl_Position = uMVP * vec4(aPos, 1.0);
 #endif
 }
@@ -61,6 +66,7 @@ in vec3 vWorldPos;
 in vec3 vNormal;
 in vec2 vUV;
 in vec4 vColor;
+in float vViewZ;
 out vec4 FragColor;
 uniform sampler2D uAlbedo;
 uniform sampler2D uMR;
@@ -89,8 +95,11 @@ uniform vec3 uFogColor;
 uniform float uFogStart;
 uniform float uFogEnd;
 uniform vec3 uCamPos;
-uniform sampler2D uShadowMap;
-uniform mat4 uShadowVP;
+uniform sampler2D uShadowMap0;
+uniform sampler2D uShadowMap1;
+uniform sampler2D uShadowMap2;
+uniform mat4 uLightVP[3];
+uniform vec4 uCascadeSplits;
 uniform vec2 uShadowTexel;
 uniform bool uShadowEnabled;
 float DecodeDepth(vec4 v) {
@@ -107,6 +116,28 @@ float G_Schlick(float ndl, float ndv, float a) {
 }
 vec3 F_Schlick(float vdh, vec3 f0) {
     return f0 + (1.0 - f0) * pow(1.0 - vdh, 5.0);
+}
+float ShadowFactor(sampler2D sm, vec2 uv, float lightDepth) {
+    // Bias scaled by the shadow map's own per-texel depth gradient. The map is
+    // stored at texel centers while the compared fragment depth is continuous,
+    // so on a sloped receiver the two differ by up to half a texel of depth;
+    // a bias of one gradient step (measured from the same map, so it tracks
+    // any surface orientation) keeps coplanar receivers lit without a large
+    // constant bias that would peter-pan shadows on the thin cascade boxes.
+    float d0 = DecodeDepth(texture(sm, uv));
+    float dx = DecodeDepth(texture(sm, uv + vec2(uShadowTexel.x, 0.0)));
+    float dy = DecodeDepth(texture(sm, uv + vec2(0.0, uShadowTexel.y)));
+    float slope = max(abs(dx - d0), abs(dy - d0));
+    float bias = clamp(0.002 + slope, 0.002, 0.02);
+
+    float lit = 0.0;
+    for (int x = 0; x < 2; ++x) {
+        for (int y = 0; y < 2; ++y) {
+            vec2 off = (vec2(float(x), float(y)) - vec2(0.5)) * uShadowTexel;
+            lit += DecodeDepth(texture(sm, uv + off)) > lightDepth - bias ? 1.0 : 0.0;
+        }
+    }
+    return lit / 4.0;
 }
 void main() {
     vec4 albedo = uHasTexture ? texture(uAlbedo, vUV) : vec4(1.0);
@@ -166,26 +197,26 @@ void main() {
 
     float shadow = 1.0;
     if (uShadowEnabled) {
-        vec4 sp = uShadowVP * vec4(vWorldPos, 1.0);
+        // Cascade selection by positive view-space depth (distance along the
+        // camera forward axis), matching the CPU-side split computation.
+        float viewDepth = -vViewZ;
+        int cascade = viewDepth < uCascadeSplits.x ? 0 : (viewDepth < uCascadeSplits.y ? 1 : 2);
+        vec4 sp;
+        if (cascade == 0) sp = uLightVP[0] * vec4(vWorldPos, 1.0);
+        else if (cascade == 1) sp = uLightVP[1] * vec4(vWorldPos, 1.0);
+        else sp = uLightVP[2] * vec4(vWorldPos, 1.0);
         vec3 ndc = sp.xyz / sp.w;
-        if (ndc.z > 0.0 && ndc.z < 1.0) {
+        if (ndc.x > -1.0 && ndc.x < 1.0 && ndc.y > -1.0 && ndc.y < 1.0 && ndc.z > -1.0 &&
+            ndc.z < 1.0) {
             vec3 sc = ndc * 0.5 + 0.5;
-            float bias = 0.003;
-            float s = 0.0;
-            for (int x = -1; x <= 1; ++x) {
-                for (int y = -1; y <= 1; ++y) {
-                    float lit =
-                        DecodeDepth(texture(uShadowMap, sc.xy + vec2(float(x), float(y)) * uShadowTexel)) >
-                                sc.z - bias
-                            ? 1.0
-                            : 0.0;
-                    s += lit;
-                }
-            }
-            shadow = s / 9.0;
+            if (cascade == 0) shadow = ShadowFactor(uShadowMap0, sc.xy, sc.z);
+            else if (cascade == 1) shadow = ShadowFactor(uShadowMap1, sc.xy, sc.z);
+            else shadow = ShadowFactor(uShadowMap2, sc.xy, sc.z);
         }
     }
-    color *= shadow;
+    // The sun term is shadowed; ambient/sky stays unshadowed so shadowed areas
+    // read as dim (not black) and match the CPU projected-shadow fallback look.
+    color = (color - ambientLight) * shadow + ambientLight;
     FragColor = vec4(color, albedo.a);
 }
 )";
@@ -227,16 +258,19 @@ layout(location = 2) in vec2 aUV;
 layout(location = 3) in vec4 aColor;
 layout(location = 4) in mat4 aInstance;
 uniform mat4 uMVP;
+uniform mat4 uViewMatrix;
 uniform vec3 uCamPos;
 out vec3 vWorldPos;
 out vec3 vNormal;
 out vec2 vUV;
 out vec4 vColor;
+out float vViewZ;
 void main() {
     vWorldPos = (aInstance * vec4(aPos, 1.0)).xyz;
     vNormal = mat3(aInstance) * aNormal;
     vUV = aUV;
     vColor = aColor;
+    vViewZ = (uViewMatrix * vec4(vWorldPos, 1.0)).z;
     gl_Position = uMVP * aInstance * vec4(aPos, 1.0);
 }
 )";
@@ -266,6 +300,36 @@ void main() {
 }
 )";
 
+const char* kShadowInstancedVertexShader = R"(
+#version 330 core
+layout(location = 0) in vec3 aPos;
+layout(location = 4) in mat4 aInstance;
+uniform mat4 uMVP;
+void main() {
+    gl_Position = uMVP * aInstance * vec4(aPos, 1.0);
+}
+)";
+
+const char* kShadowSkinnedVertexShader = R"(
+#version 330 core
+layout(location = 0) in vec3 aPos;
+layout(location = 4) in vec4 aJointIds;
+layout(location = 5) in vec4 aWeights;
+uniform mat4 uBoneMatrices[64];
+uniform mat4 uMVP;
+void main() {
+    mat4 skin = mat4(0.0);
+    for (int i = 0; i < 4; ++i) {
+        int id = int(aJointIds[i]);
+        if (id >= 0 && id < 64) skin += aWeights[i] * uBoneMatrices[id];
+    }
+    gl_Position = uMVP * skin * vec4(aPos, 1.0);
+}
+)";
+
+// Depth is packed into an RGBA8 color target (EncodeDepth) because the
+// window depth buffer AND FBO depth textures are broken on the tested Intel
+// driver while color FBO rendering works. 24 bits of precision is ample.
 const char* kShadowFragmentShader = R"(
 #version 330 core
 out vec4 FragColor;
@@ -384,7 +448,12 @@ void Renderer::Shutdown() {
     if (litInstancedShader_.Valid()) backend_->DestroyShader(litInstancedShader_);
     if (unlitInstancedShader_.Valid()) backend_->DestroyShader(unlitInstancedShader_);
     if (depthShader_.Valid()) backend_->DestroyShader(depthShader_);
-    if (shadowRT_.Valid()) backend_->DestroyRenderTarget(shadowRT_);
+    if (depthInstancedShader_.Valid()) backend_->DestroyShader(depthInstancedShader_);
+    if (depthSkinnedShader_.Valid()) backend_->DestroyShader(depthSkinnedShader_);
+    if (probeQuadMesh_.Valid()) backend_->DestroyMesh(probeQuadMesh_);
+    for (int i = 0; i < kShadowCascades; ++i) {
+        if (shadowRT_[i].Valid()) backend_->DestroyRenderTarget(shadowRT_[i]);
+    }
     if (white_.Valid()) backend_->DestroyTexture(white_);
     backend_->Shutdown();
     backend_.reset();
@@ -420,15 +489,44 @@ void Renderer::InitBuiltinResources() {
     unlitInstancedShader_ =
         backend_->CreateShader(kUnlitInstancedVertexShader, kUnlitFragmentShader, "unlit_instanced");
     depthShader_ = backend_->CreateShader(kShadowVertexShader, kShadowFragmentShader, "shadow");
-    shadowRT_ = backend_->CreateRenderTarget(shadowSize_, shadowSize_);
-    shadowColorTex_ = backend_->RenderTargetColorTexture(shadowRT_);
-    NEON_LOG_INFO("Renderer: shadow map %dx%d (%s)", shadowSize_, shadowSize_,
-                  shadowRT_.Valid() ? "ok" : "FAILED");
+    depthInstancedShader_ =
+        backend_->CreateShader(kShadowInstancedVertexShader, kShadowFragmentShader, "shadow_inst");
+    depthSkinnedShader_ =
+        backend_->CreateShader(kShadowSkinnedVertexShader, kShadowFragmentShader, "shadow_skin");
+
+    // NDC unit quad used by the FBO capability self-test.
+    const Vertex3D quadVerts[4] = {
+        {{-1, -1, 0}, {}, {}, {1, 1, 1, 1}, {0, 0, 0, 0}, {0, 0, 0, 0}},
+        {{1, -1, 0}, {}, {}, {1, 1, 1, 1}, {0, 0, 0, 0}, {0, 0, 0, 0}},
+        {{1, 1, 0}, {}, {}, {1, 1, 1, 1}, {0, 0, 0, 0}, {0, 0, 0, 0}},
+        {{-1, 1, 0}, {}, {}, {1, 1, 1, 1}, {0, 0, 0, 0}, {0, 0, 0, 0}},
+    };
+    const uint16_t quadIndices[6] = {0, 1, 2, 0, 2, 3};
+    probeQuadMesh_ = backend_->CreateMesh(quadVerts, 4, quadIndices, 6);
+
+    if (shadowsForcedOff_) {
+        NEON_LOG_WARN("Renderer: CSM disabled by flag (--disable-fbo/--no-shadows)");
+        return;
+    }
+    depthAvailable_ = backend_->DepthAvailable();
+    for (int i = 0; i < kShadowCascades; ++i) {
+        shadowRT_[i] = backend_->CreateRenderTarget(shadowSize_, shadowSize_);
+        shadowDepthTex_[i] = backend_->RenderTargetColorTexture(shadowRT_[i]);
+        if (!shadowRT_[i].Valid() || !shadowDepthTex_[i].Valid()) {
+            NEON_LOG_WARN("Renderer: cascade %d shadow target failed", i);
+            csmEnabled_ = false;
+            return;
+        }
+    }
+    csmEnabled_ = TestDepthTargetCapability();
+    NEON_LOG_INFO("Renderer: CSM shadow maps %dx%d x3 (%s)", shadowSize_, shadowSize_,
+                  csmEnabled_ ? "ok" : "FAILED -> CPU projected shadows fallback");
 }
 
 void Renderer::BeginFrame(const Color& clearColor, float clearDepth) {
     stats_ = RenderStats{};
-    shadowEnabled_ = false;
+    csmActive_ = false;
+    shadowPassRanThisFrame_ = false;
     screenW_ = window_ ? window_->Width() : screenW_;
     screenH_ = window_ ? window_->Height() : screenH_;
     uiScale_ = static_cast<float>(screenH_) / static_cast<float>(kDesignHeight);
@@ -445,9 +543,14 @@ void Renderer::EndFrame() {
 void Renderer::SetCamera(const Camera& camera, float aspect) {
     camera_ = camera;
     viewProj_ = camera.ViewProjection(aspect);
+    view_ = camera.View();
     camPos_ = camera.position;
     frustum_ = math::Frustum::FromViewProjection(viewProj_);
     frustumValid_ = true;
+    // Render the cascade shadow maps now: they are sampled by the main-pass
+    // draws that follow this SetCamera. Uses the previous frame's recorded
+    // casters (one frame of staleness, imperceptible) and the current camera.
+    if (csmEnabled_ && !shadowPassRanThisFrame_) RunShadowPass();
 }
 
 void Renderer::SetSky(const Color& top, const Color& horizon) {
@@ -467,39 +570,206 @@ void Renderer::SetDirectionalLight(const math::Vec3& direction, const Color& col
     ambient_ = ambientStrength;
 }
 
-void Renderer::BeginShadowPass(const math::Vec3& lightDir, const math::Vec3& center,
-                               float orthoSize) {
-    if (!shadowRT_.Valid()) return;
-    math::Vec3 lightPos = center + lightDir * orthoSize;
-    gfx::Camera lightCam;
-    lightCam.position = lightPos;
-    lightCam.target = center;
-    lightCam.up = {0, 1, 0};
-    math::Mat4 view = lightCam.View();
-    math::Mat4 proj = math::Mat4::Ortho(-orthoSize, orthoSize, -orthoSize, orthoSize, 0.1f,
-                                        orthoSize * 2.5f);
-    shadowVP_ = proj * view;
-
-    Flush2D();
-    backend_->BindRenderTarget(shadowRT_);
-    // Encode(1.0) = far depth: everything is lit by default.
-    backend_->Clear({1.0f, 1.0f, 1.0f, 1.0f}, 1.0f);
-    backend_->UseShader(depthShader_);
-    backend_->SetCullMode(CullMode::Back);
-    backend_->SetDepthTest(false, false); // depth buffer is broken on some drivers
-    backend_->SetBlendMode(BlendMode::Opaque);
+void Renderer::SetShadowsEnabled(bool enabled) {
+    shadowsForcedOff_ = !enabled;
+    if (!enabled) csmEnabled_ = false;
 }
 
-void Renderer::DrawShadow(const Mesh& mesh, const math::Mat4& model) {
-    if (!shadowRT_.Valid() || !mesh.Valid()) return;
-    backend_->SetUniformMat4("uMVP", shadowVP_ * model);
-    backend_->DrawMesh(mesh.Handle());
-}
+void Renderer::RunShadowPass() {
+    if (!csmEnabled_) return;
+    shadowPassRanThisFrame_ = true;
 
-void Renderer::EndShadowPass() {
-    if (!shadowRT_.Valid()) return;
+    ComputeCascadeSplits(camera_.nearPlane, camera_.farPlane, cascadeSplits_);
+    const float aspect = screenH_ > 0 ? static_cast<float>(screenW_) / static_cast<float>(screenH_)
+                                      : 16.0f / 9.0f;
+
+    // Union of all shadow-caster world AABBs: the cascade light frusta are
+    // tightened to it so a small scene fills the shadow maps instead of being
+    // squished into a corner.
+    math::AABB sceneBounds;
+    sceneBounds.min = {1e30f, 1e30f, 1e30f};
+    sceneBounds.max = {-1e30f, -1e30f, -1e30f};
+    bool hasScene = false;
+    for (const ShadowDraw& draw : shadowCasters_) {
+        if (!draw.mesh.Valid()) continue;
+        if (!draw.models.empty()) {
+            for (const math::Mat4& m : draw.models) {
+                sceneBounds.Expand(math::TransformAABB(draw.bounds, m).min);
+                sceneBounds.Expand(math::TransformAABB(draw.bounds, m).max);
+                hasScene = true;
+            }
+        } else {
+            math::AABB w = math::TransformAABB(draw.bounds, draw.model);
+            sceneBounds.Expand(w.min);
+            sceneBounds.Expand(w.max);
+            hasScene = true;
+        }
+    }
+    const math::AABB* scenePtr = hasScene ? &sceneBounds : nullptr;
+
+    for (int i = 0; i < kShadowCascades; ++i) {
+        lightViewProj_[i] =
+            ComputeCascadeLightViewProj(sunDir_, camera_, aspect, cascadeSplits_[i],
+                                        cascadeSplits_[i + 1], scenePtr);
+    }
+
+    for (int i = 0; i < kShadowCascades; ++i) {
+        if (!shadowRT_[i].Valid()) continue;
+        backend_->BindRenderTarget(shadowRT_[i]);
+        // Encoded far depth by default: anything not drawn is lit.
+        backend_->Clear({1.0f, 1.0f, 1.0f, 1.0f}, 1.0f);
+        backend_->SetBlendMode(BlendMode::Opaque);
+        backend_->SetCullMode(CullMode::Back);
+        // No depth buffer in the color-encoded map (the window/FBO depth path
+        // is broken on the tested Intel driver); painter's-order (far to near
+        // in light space) gives the correct nearest-surface per texel.
+        backend_->SetDepthTest(false, false);
+        DrawShadowCastersSorted(lightViewProj_[i]);
+    }
     backend_->BindDefaultTarget();
-    shadowEnabled_ = true;
+    shadowCasters_.clear();
+    csmActive_ = true;
+}
+
+void Renderer::DrawShadowCastersSorted(const math::Mat4& lightVP) {
+    if (shadowCasters_.empty()) return;
+    // Extract the light view (projection is ortho, translation-only per axis)
+    // to sort casters by their distance along the light direction.
+    const math::Mat4 lightView = lightVP;
+    struct SortKey {
+        const ShadowDraw* draw;
+        float lightZ;
+    };
+    std::vector<SortKey> keys;
+    keys.reserve(shadowCasters_.size());
+    for (const ShadowDraw& draw : shadowCasters_) {
+        math::Vec3 center;
+        if (!draw.models.empty()) {
+            for (const math::Mat4& m : draw.models) {
+                center += m.TransformPoint(draw.bounds.Center());
+            }
+            center = center * (1.0f / static_cast<float>(draw.models.size()));
+        } else {
+            center = draw.model.TransformPoint(draw.bounds.Center());
+        }
+        keys.push_back({&draw, lightView.TransformPoint(center).z});
+    }
+    // NDC z grows as light-space z goes negative (ortho slope is negative), so
+    // the farthest caster has the largest value; draw it first (last wins).
+    std::sort(keys.begin(), keys.end(),
+              [](const SortKey& a, const SortKey& b) { return a.lightZ > b.lightZ; });
+    for (const SortKey& k : keys) DrawShadowCaster(*k.draw, lightVP);
+}
+
+void Renderer::DrawShadowCaster(const ShadowDraw& draw, const math::Mat4& lightVP) {
+    if (!draw.mesh.Valid()) return;
+    if (!draw.models.empty()) {
+        backend_->UseShader(depthInstancedShader_);
+        backend_->SetUniformMat4("uMVP", lightVP);
+        backend_->DrawMeshInstanced(draw.mesh, draw.models.data(),
+                                    static_cast<uint32_t>(draw.models.size()));
+    } else if (!draw.bones.empty()) {
+        backend_->UseShader(depthSkinnedShader_);
+        std::vector<float> flat(static_cast<size_t>(draw.boneCount) * 16);
+        for (int i = 0; i < draw.boneCount; ++i)
+            std::memcpy(flat.data() + static_cast<size_t>(i) * 16,
+                        draw.bones[static_cast<size_t>(i)].Data(), 16 * sizeof(float));
+        backend_->SetUniformMat4Array("uBoneMatrices", flat.data(), draw.boneCount);
+        backend_->SetUniformMat4("uMVP", lightVP * draw.model);
+        backend_->DrawMesh(draw.mesh);
+    } else {
+        backend_->UseShader(depthShader_);
+        backend_->SetUniformMat4("uMVP", lightVP * draw.model);
+        backend_->DrawMesh(draw.mesh);
+    }
+}
+
+bool Renderer::TestDepthTargetCapability() {
+    if (!backend_ || !depthShader_.Valid() || !probeQuadMesh_.Valid()) return false;
+    constexpr int kSize = 64;
+
+    // --- Part A: DrawElements writes into a color FBO (encoded depth reaches
+    // the render target). Uses the color readback path, which is reliable even
+    // on the Intel driver whose GL_DEPTH readback returns garbage.
+    bool fboWrites = false;
+    {
+        RenderTargetHandle rt = backend_->CreateRenderTarget(kSize, kSize);
+        if (rt.Valid()) {
+            backend_->BindRenderTarget(rt);
+            backend_->Clear({1.0f, 1.0f, 1.0f, 1.0f}, 1.0f);
+            backend_->UseShader(depthShader_);
+            backend_->SetUniformMat4("uMVP", math::Mat4::Identity());
+            backend_->SetCullMode(CullMode::None);
+            backend_->SetDepthTest(false, false);
+            backend_->SetBlendMode(BlendMode::Opaque);
+            backend_->DrawMesh(probeQuadMesh_);
+            unsigned char px[4] = {0, 0, 0, 0};
+            backend_->ReadCurrentTargetPixel(kSize / 2, kSize / 2, px);
+            backend_->DestroyRenderTarget(rt);
+            const float decoded = static_cast<float>(px[0]) / 255.0f +
+                                  static_cast<float>(px[1]) / 255.0f / 255.0f +
+                                  static_cast<float>(px[2]) / 255.0f / 65025.0f +
+                                  static_cast<float>(px[3]) / 255.0f / 16581375.0f;
+            fboWrites = decoded > 0.1f && decoded < 0.99f;
+            NEON_LOG_INFO("Renderer: CSM FBO write self-test: px=%d,%d,%d,%d decoded=%.3f -> %s",
+                          px[0], px[1], px[2], px[3], decoded,
+                          fboWrites ? "PASS" : "FAIL");
+        }
+    }
+    if (!fboWrites) {
+        NEON_LOG_WARN(
+            "Renderer: FBO DrawElements does not write -> CSM disabled, CPU projected shadows");
+        return false;
+    }
+
+    // --- Part B: using an FBO must not corrupt later backbuffer VAO rendering
+    // (the documented Intel FBO/VAO defect). Draw a reference red quad into the
+    // backbuffer, exercise a 3-cascade pass, then redraw and confirm unchanged.
+    auto drawRedQuad = [&]() {
+        backend_->UseShader(unlitShader_);
+        backend_->SetUniformMat4("uMVP", math::Mat4::Identity());
+        backend_->SetUniformInt("uHasTexture", 0);
+        backend_->SetUniformVec4("uTint", {1.0f, 0.0f, 0.0f, 1.0f});
+        backend_->SetCullMode(CullMode::None);
+        backend_->SetDepthTest(false, false);
+        backend_->SetBlendMode(BlendMode::Opaque);
+        backend_->DrawMesh(probeQuadMesh_);
+    };
+    unsigned char refPx[4] = {0, 0, 0, 0};
+    unsigned char postPx[4] = {0, 0, 0, 0};
+    backend_->BindDefaultTarget();
+    drawRedQuad();
+    backend_->ReadCurrentTargetPixel(kSize, kSize, refPx);
+    {
+        RenderTargetHandle rt = backend_->CreateRenderTarget(kSize, kSize);
+        if (rt.Valid()) {
+            for (int c = 0; c < kShadowCascades; ++c) { // mimic the 3-cascade pass
+                backend_->BindRenderTarget(rt);
+                backend_->Clear({1.0f, 1.0f, 1.0f, 1.0f}, 1.0f);
+                backend_->UseShader(depthShader_);
+                backend_->SetUniformMat4("uMVP", math::Mat4::Identity());
+                backend_->SetCullMode(CullMode::None);
+                backend_->SetDepthTest(false, false);
+                backend_->SetBlendMode(BlendMode::Opaque);
+                backend_->DrawMesh(probeQuadMesh_);
+            }
+            backend_->DestroyRenderTarget(rt);
+        }
+        backend_->BindDefaultTarget();
+        drawRedQuad();
+        backend_->ReadCurrentTargetPixel(kSize, kSize, postPx);
+    }
+    const bool backbufferIntact = refPx[0] > 200 && postPx[0] > 200 && postPx[0] >= refPx[0] - 32;
+    NEON_LOG_INFO("Renderer: CSM backbuffer integrity after FBO: ref=%d,%d,%d post=%d,%d,%d -> %s",
+                  refPx[0], refPx[1], refPx[2], postPx[0], postPx[1], postPx[2],
+                  backbufferIntact ? "PASS" : "FAIL");
+    if (!backbufferIntact) {
+        NEON_LOG_WARN(
+            "Renderer: FBO usage corrupts backbuffer rendering -> CSM disabled, CPU projected shadows");
+        return false;
+    }
+    NEON_LOG_INFO("Renderer: CSM shadow-map self-test PASS");
+    return true;
 }
 
 void Renderer::SetPointLight(int index, const math::Vec3& position, const Color& color, float radius) {
@@ -554,6 +824,10 @@ void Renderer::DrawMesh(const Mesh& mesh, const Material& material, const math::
 
     if (frustumValid_ && !frustum_.Intersects(math::TransformAABB(mesh.Bounds(), model))) return;
 
+    if (csmEnabled_ && !material.transparent) {
+        shadowCasters_.push_back({mesh.Handle(), model, {}, {}, 0, mesh.Bounds()});
+    }
+
     ShaderHandle shader = material.shader.Valid() ? material.shader
                                                   : (material.lit ? litShader_ : unlitShader_);
     ApplyMaterial(material, viewProj_ * model, model, NormalMatrix(model), shader);
@@ -570,13 +844,18 @@ void Renderer::DrawSkinnedMesh(const Mesh& mesh, const Material& material,
 
     if (frustumValid_ && !frustum_.Intersects(math::TransformAABB(mesh.Bounds(), model))) return;
 
-    ShaderHandle shader = material.shader.Valid() ? material.shader : skinnedLitShader_;
-    ApplyMaterial(material, viewProj_ * model, model, NormalMatrix(model), shader);
-
     // Upload up to 64 bone matrices as one contiguous row-major array.
     int count = boneCount >= 0 ? std::min(boneCount, static_cast<int>(boneMatrices.size()))
                                : static_cast<int>(boneMatrices.size());
     count = std::min(count, 64);
+
+    if (csmEnabled_ && !material.transparent) {
+        shadowCasters_.push_back({mesh.Handle(), model, {}, boneMatrices, count, mesh.Bounds()});
+    }
+
+    ShaderHandle shader = material.shader.Valid() ? material.shader : skinnedLitShader_;
+    ApplyMaterial(material, viewProj_ * model, model, NormalMatrix(model), shader);
+
     if (count > 0) {
         std::vector<float> flat(static_cast<size_t>(count) * 16);
         for (int i = 0; i < count; ++i)
@@ -605,6 +884,11 @@ void Renderer::DrawMeshInstanced(const Mesh& mesh, const Material& material,
         visible.push_back(models[i]);
     }
     if (visible.empty()) return;
+
+    if (csmEnabled_ && !material.transparent) {
+        shadowCasters_.push_back(
+            {mesh.Handle(), math::Mat4::Identity(), visible, {}, 0, mesh.Bounds()});
+    }
 
     ShaderHandle shader = material.shader.Valid()
                               ? material.shader
@@ -704,19 +988,26 @@ void Renderer::ApplyMaterial(const Material& material, const math::Mat4& mvp,
         backend_->SetUniformVec3("uFogColor", {fogColor_.r, fogColor_.g, fogColor_.b});
         backend_->SetUniformFloat("uFogStart", fogStart_);
         backend_->SetUniformFloat("uFogEnd", fogEnd_);
-        backend_->SetUniformMat4("uShadowVP", shadowVP_);
-        backend_->SetUniformInt("uShadowMap", 1);
+        backend_->SetUniformMat4("uViewMatrix", view_);
+        {
+            float flatVP[3 * 16];
+            for (int i = 0; i < kShadowCascades; ++i)
+                std::memcpy(flatVP + i * 16, lightViewProj_[i].Data(), 16 * sizeof(float));
+            backend_->SetUniformMat4Array("uLightVP", flatVP, kShadowCascades);
+        }
+        backend_->SetUniformVec4("uCascadeSplits",
+                                 {cascadeSplits_[1], cascadeSplits_[2], cascadeSplits_[3],
+                                  cascadeSplits_[0]});
         backend_->SetUniformVec2("uShadowTexel",
                                  {1.0f / static_cast<float>(shadowSize_),
                                   1.0f / static_cast<float>(shadowSize_)});
-        backend_->SetUniformInt("uShadowEnabled", shadowEnabled_ ? 1 : 0);
-        backend_->BindTexture(1, shadowColorTex_);
-        static int debugOnce = 0;
-        if (debugOnce < 3) {
-            NEON_LOG_INFO("SHADOW-UNIFORM: enabled=%d tex=%u vp.m0=%.2f", shadowEnabled_ ? 1 : 0,
-                          shadowColorTex_.id, shadowVP_.m[0]);
-            ++debugOnce;
-        }
+        backend_->SetUniformInt("uShadowEnabled", csmActive_ ? 1 : 0);
+        backend_->BindTexture(5, shadowDepthTex_[0]);
+        backend_->SetUniformInt("uShadowMap0", 5);
+        backend_->BindTexture(6, shadowDepthTex_[1]);
+        backend_->SetUniformInt("uShadowMap1", 6);
+        backend_->BindTexture(7, shadowDepthTex_[2]);
+        backend_->SetUniformInt("uShadowMap2", 7);
     }
 }
 

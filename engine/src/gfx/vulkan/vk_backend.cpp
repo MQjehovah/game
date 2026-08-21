@@ -23,6 +23,11 @@ public:
     void BindDefaultTarget() override {}
     TextureHandle RenderTargetColorTexture(RenderTargetHandle) const override { return {}; }
     TextureHandle RenderTargetDepthTexture(RenderTargetHandle) const override { return {}; }
+    RenderTargetHandle CreateDepthTarget(int, int) override { return {}; }
+    void BeginDepthPass(RenderTargetHandle) override {}
+    void EndDepthPass() override {}
+    void BindShadowMap(int, RenderTargetHandle) override {}
+    bool ReadCurrentTargetDepth(int, int, float*) override { return false; }
     ShaderHandle CreateShader(const char*, const char*, const char*) override { return {}; }
     void DestroyShader(ShaderHandle) override {}
     TextureHandle CreateTexture(const TextureDesc&) override { return {}; }

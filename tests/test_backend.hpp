@@ -34,6 +34,12 @@ public:
         return {1};
     }
 
+    neon::gfx::RenderTargetHandle CreateDepthTarget(int, int) override { return {2}; }
+    void BeginDepthPass(neon::gfx::RenderTargetHandle) override {}
+    void EndDepthPass() override {}
+    void BindShadowMap(int, neon::gfx::RenderTargetHandle) override {}
+    bool ReadCurrentTargetDepth(int, int, float*) override { return false; }
+
     neon::gfx::ShaderHandle CreateShader(const char*, const char*, const char*) override {
         return {1};
     }
