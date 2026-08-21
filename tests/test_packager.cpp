@@ -296,3 +296,181 @@ TEST(PackagerMinimalProject) {
     CHECK(reader.Has("scenes/main.json"));
     CHECK(!reader.Has("assets/crate.obj"));
 }
+
+// ---------------------------------------------------------------------------
+// Code-review fixes: startScene content validation, prefab refs, script refs,
+// traversal containment, BOM tolerance.
+// ---------------------------------------------------------------------------
+
+// Gap 1: a startScene outside scenes/ (e.g. custom/main.json) must be validated
+// with the same per-entity pass — a missing prefab/mesh inside it is fatal and
+// packing fails closed, exactly like a scene under scenes/.
+TEST(PackagerStartSceneCustomPathValidated) {
+    test::TempDir tmp;
+    const std::string proj = tmp.Str();
+    CHECK(Mkdir(proj + "/custom"));
+    Write(proj + "/game.json",
+          "{\"startScene\": \"custom/main.json\", \"window\": {\"w\": 800, \"h\": 600}}");
+    Write(proj + "/custom/main.json",
+          R"({"entities": [{"name": "Ghost", "prefab": "ghost", "components": {
+             "transform": {"pos": [0,0,0], "rot": [0,0,0,1], "scale": [1,1,1]},
+             "mesh": {"meshKey": "obj:assets/nope.obj"}
+          }}]})");
+    PackConfig cfg = DefaultCfg(proj, proj + "/out");
+    PackageReport r = ValidateProject(cfg);
+    CHECK(!r.ok);
+    CHECK(AnyErrorContains(r, "ghost"));    // missing prefab reference
+    CHECK(AnyErrorContains(r, "nope.obj")); // missing mesh asset in the startScene
+
+    PackageReport p = PackProject(cfg);
+    CHECK(!p.ok);
+    std::string text;
+    CHECK(!test::ReadFileAll(cfg.outDir + "/game.pack", text));
+}
+
+// A startScene under scenes/ is still walked exactly once (dedupe against the
+// scenes loop) — a broken scene there reports a single error set.
+TEST(PackagerStartSceneUnderScenesNotDoubleWalked) {
+    test::TempDir tmp;
+    const std::string proj = tmp.Str();
+    BuildSampleProject(proj);
+    // Same missing mesh in the scene (which IS the startScene): the error must
+    // appear once, not twice (once from the scenes loop + once from startScene).
+    Write(proj + "/scenes/main.json",
+          R"({"entities": [{"name": "N", "components": {
+             "transform": {"pos": [0,0,0], "rot": [0,0,0,1], "scale": [1,1,1]},
+             "mesh": {"meshKey": "obj:assets/gone.obj"}
+          }}]})");
+    PackConfig cfg = DefaultCfg(proj, proj + "/out");
+    PackageReport r = ValidateProject(cfg);
+    CHECK(!r.ok);
+    size_t count = 0;
+    for (const std::string& e : r.errors)
+        if (e.find("gone.obj") != std::string::npos) ++count;
+    CHECK_EQ(count, 1u); // walked once: no duplicate errors
+}
+
+// Gap 2a: a prefab referencing a mesh OUTSIDE assets/ is validated AND the file
+// is collected into the pack (previously PACK OK but the entry was missing).
+TEST(PackagerPrefabMeshCollected) {
+    test::TempDir tmp;
+    const std::string proj = tmp.Str();
+    BuildSampleProject(proj);
+    CHECK(Mkdir(proj + "/models"));
+    Write(proj + "/prefabs/wolf.json",
+          R"({"components": {"health": {"hp": 50, "maxHp": 50},
+              "mesh": {"meshKey": "obj:models/crate.obj"}}})");
+    Write(proj + "/models/crate.obj", kObj);
+    PackConfig cfg = DefaultCfg(proj, proj + "/out");
+    PackageReport r = PackProject(cfg);
+    if (!r.ok)
+        for (const std::string& e : r.errors) std::printf("  PACK ERROR: %s\n", e.c_str());
+    CHECK(r.ok);
+    std::string text;
+    CHECK(test::ReadFileAll(cfg.outDir + "/game.pack", text));
+    core::PackReader reader(std::vector<uint8_t>(text.begin(), text.end()));
+    CHECK(reader.Valid());
+    CHECK(reader.Has("models/crate.obj"));
+}
+
+// A prefab referencing a MISSING mesh must fail validation (previously PACK OK).
+TEST(PackagerPrefabMissingMesh) {
+    test::TempDir tmp;
+    const std::string proj = tmp.Str();
+    BuildSampleProject(proj);
+    Write(proj + "/prefabs/wolf.json",
+          R"({"components": {"mesh": {"meshKey": "obj:models/gone.obj"}}})");
+    PackConfig cfg = DefaultCfg(proj, proj + "/out");
+    PackageReport r = ValidateProject(cfg);
+    CHECK(!r.ok);
+    CHECK(AnyErrorContains(r, "gone.obj"));
+}
+
+// Gap 2b: a scene-referenced script OUTSIDE scripts/ is collected into the pack
+// (previously it passed existence but was never packed).
+TEST(PackagerScriptOutsideScriptsCollected) {
+    test::TempDir tmp;
+    const std::string proj = tmp.Str();
+    BuildSampleProject(proj);
+    CHECK(Mkdir(proj + "/ai"));
+    Write(proj + "/ai/ai.lua", kLua);
+    Write(proj + "/scenes/main.json",
+          R"({"entities": [{"name": "N", "components": {
+             "transform": {"pos": [0,0,0], "rot": [0,0,0,1], "scale": [1,1,1]},
+             "script": {"backend": "lua", "path": "ai/ai.lua"}
+          }}]})");
+    PackConfig cfg = DefaultCfg(proj, proj + "/out");
+    PackageReport r = PackProject(cfg);
+    if (!r.ok)
+        for (const std::string& e : r.errors) std::printf("  PACK ERROR: %s\n", e.c_str());
+    CHECK(r.ok);
+    std::string text;
+    CHECK(test::ReadFileAll(cfg.outDir + "/game.pack", text));
+    core::PackReader reader(std::vector<uint8_t>(text.begin(), text.end()));
+    CHECK(reader.Valid());
+    CHECK(reader.Has("ai/ai.lua"));
+}
+
+// A referenced out-of-scripts script with a syntax error is also caught.
+TEST(PackagerScriptOutsideScriptsSyntaxError) {
+    test::TempDir tmp;
+    const std::string proj = tmp.Str();
+    BuildSampleProject(proj);
+    CHECK(Mkdir(proj + "/ai"));
+    Write(proj + "/ai/ai.lua", "this is not lua !!!");
+    Write(proj + "/scenes/main.json",
+          R"({"entities": [{"name": "N", "components": {
+             "transform": {"pos": [0,0,0], "rot": [0,0,0,1], "scale": [1,1,1]},
+             "script": {"backend": "lua", "path": "ai/ai.lua"}
+          }}]})");
+    PackConfig cfg = DefaultCfg(proj, proj + "/out");
+    PackageReport r = ValidateProject(cfg);
+    CHECK(!r.ok);
+    CHECK(AnyErrorContains(r, "ai/ai.lua"));
+    CHECK(AnyErrorContains(r, "syntax error"));
+}
+
+// `..` refs are rejected so nothing escapes the project directory.
+TEST(PackagerTraversalRejected) {
+    test::TempDir tmp;
+    const std::string proj = tmp.Str();
+    BuildSampleProject(proj);
+    Write(proj + "/scenes/main.json",
+          R"({"entities": [{"name": "N", "components": {
+             "transform": {"pos": [0,0,0], "rot": [0,0,0,1], "scale": [1,1,1]},
+             "mesh": {"meshKey": "obj:../secret.obj"},
+             "script": {"backend": "lua", "path": "../evil.lua"}
+          }}]})");
+    PackConfig cfg = DefaultCfg(proj, proj + "/out");
+    PackageReport r = ValidateProject(cfg);
+    CHECK(!r.ok);
+    bool meshTraversal = false;
+    bool scriptTraversal = false;
+    for (const std::string& e : r.errors) {
+        if (e.find("secret.obj") != std::string::npos) meshTraversal = true;
+        if (e.find("evil.lua") != std::string::npos) scriptTraversal = true;
+    }
+    CHECK(meshTraversal);
+    CHECK(scriptTraversal);
+}
+
+// A UTF-8 BOM in a scene file (Notepad/PowerShell default) no longer trips the
+// JSON parser into a cryptic "unexpected character" error.
+TEST(PackagerSceneBomTolerated) {
+    test::TempDir tmp;
+    const std::string proj = tmp.Str();
+    CHECK(Mkdir(proj + "/scenes"));
+    Write(proj + "/game.json", kManifest);
+    Write(proj + "/scenes/main.json",
+          std::string("\xEF\xBB\xBF", 3) +
+              R"({"entities": [{"name": "P", "components": {
+                 "transform": {"pos": [0,0,0], "rot": [0,0,0,1], "scale": [1,1,1]},
+                 "mesh": {"meshKey": "cube"}
+              }}]})");
+    PackConfig cfg = DefaultCfg(proj, proj + "/out");
+    PackageReport r = ValidateProject(cfg);
+    if (!r.ok)
+        for (const std::string& e : r.errors) std::printf("  PACK ERROR: %s\n", e.c_str());
+    CHECK(r.ok);
+    CHECK(r.errors.empty());
+}

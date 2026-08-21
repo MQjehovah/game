@@ -9,21 +9,30 @@
 //
 // Validation rules (see packager.cpp for details):
 //   * game.json exists and GameManifest::Load accepts it; startScene resolves
-//     to an existing file.
+//     to an existing file and its content is validated with the same per-entity
+//     pass as scenes/ (whatever path it lives at).
 //   * every scenes/*.json parses (SceneFile::Parse); entity prefab references
 //     resolve to prefabs/<name>.json; mesh "obj:"/"gltf:" keys and material
 //     texture slots resolve to existing files; script.path files exist; the
 //     behaviorTree "tree" (inline JSON, or "bt:<name>" -> behaviors/<name>.bt.json)
 //     loads via bt::BehaviorTree.
-//   * every prefabs/*.json and behaviors/*.bt.json parses.
-//   * every scripts/*.lua passes IScriptHost::CheckSyntax (when enabled).
+//   * every prefabs/*.json parses AND its component templates are walked for
+//     mesh/script/behaviorTree references (prefab-referenced assets and scripts
+//     are validated and collected, not just instance components); every
+//     behaviors/*.bt.json parses.
+//   * every scripts/*.lua plus every scene/prefab-referenced lua script passes
+//     IScriptHost::CheckSyntax (when enabled).
+//   * ".." path segments are rejected in asset/script/behaviorTree/startScene
+//     references so nothing can escape the project directory.
 // Fatal findings are collected into PackageReport::errors (packing is refused);
 // non-fatal notes go to ::warnings (packing still proceeds).
 //
 // Packed file set (virtual paths, forward slashes): game.json (the manifest,
-// re-serialized via GameManifest::ToJson), then every file under scenes/,
-// prefabs/, behaviors/, scripts/ and assets/, plus any asset referenced by a
-// scene that lives outside assets/ (e.g. an "obj:models/foo.obj" mesh key).
+// re-serialized via GameManifest::ToJson), every scenes/*.json, prefabs/*.json,
+// behaviors/*.bt.json and scripts/*.lua (extension match is case-insensitive),
+// every file under assets/, plus any asset or script referenced by a scene or
+// prefab that lives outside those directories (e.g. an "obj:models/foo.obj"
+// mesh key or a "shared/ai.lua" script path).
 
 #include <string>
 #include <vector>

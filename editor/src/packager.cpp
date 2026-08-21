@@ -1,6 +1,7 @@
 #include "packager.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cerrno>
 #include <cstdint>
 #include <cstdio>
@@ -8,6 +9,7 @@
 #include <fstream>
 #include <iterator>
 #include <map>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -166,10 +168,19 @@ void ListFilesRecursive(const std::string& absDir, const std::string& prefix,
 #endif
 }
 
+// Read a text file's bytes. A leading UTF-8 BOM (EF BB BF) is stripped so the
+// JSON/Lua parses below never trip on Notepad/PowerShell's default encoding.
+// The BOM is only removed for VALIDATION reads; the pack stores the raw file
+// bytes (store-only container), so T4.7's runtime must tolerate a BOM when it
+// parses packed text files.
 bool ReadFileText(const std::string& path, std::string& out) {
     std::ifstream in(path, std::ios::binary);
     if (!in.is_open()) return false;
     out.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+    if (out.size() >= 3 && static_cast<unsigned char>(out[0]) == 0xEF &&
+        static_cast<unsigned char>(out[1]) == 0xBB &&
+        static_cast<unsigned char>(out[2]) == 0xBF)
+        out.erase(0, 3);
     return !in.bad();
 }
 
@@ -193,9 +204,31 @@ bool WriteFileBytes(const std::string& path, const std::vector<uint8_t>& data) {
     return out.good();
 }
 
+// Case-insensitive suffix match (a "Main.JSON" scene is packed like
+// "main.json"; matching the case-insensitive conventions of ListLuaFiles).
 bool HasExt(const std::string& rel, const std::string& ext) {
     if (rel.size() < ext.size()) return false;
-    return rel.compare(rel.size() - ext.size(), ext.size(), ext) == 0;
+    const std::string tail = rel.substr(rel.size() - ext.size());
+    for (size_t i = 0; i < tail.size(); ++i) {
+        const char a = static_cast<char>(std::tolower(static_cast<unsigned char>(tail[i])));
+        const char b = static_cast<char>(std::tolower(static_cast<unsigned char>(ext[i])));
+        if (a != b) return false;
+    }
+    return true;
+}
+
+// True when `norm` (forward-slash normalized) contains a ".." path segment.
+// References with one could escape the project root, so they are rejected.
+bool ContainsTraversal(const std::string& norm) {
+    size_t start = 0;
+    while (start <= norm.size()) {
+        const size_t slash = norm.find('/', start);
+        const size_t end = (slash == std::string::npos) ? norm.size() : slash;
+        if (end - start == 2 && norm.compare(start, 2, "..") == 0) return true;
+        if (slash == std::string::npos) break;
+        start = slash + 1;
+    }
+    return false;
 }
 
 std::string BaseName(const std::string& p) {
@@ -245,14 +278,24 @@ struct ProjectContext {
     std::string projectDir;
     PackageReport report;
     std::map<std::string, std::string> packFiles;
-    std::string manifestText; // normalized game.json (GameManifest::ToJson)
+    std::string manifestText;        // normalized game.json (GameManifest::ToJson)
+    std::string manifestStartScene;  // startScene from game.json ("" when unparsed)
     bool manifestOk = false;
     bool syntaxCheck = true;
+    std::set<std::string> walkedScenes; // scene virtual paths already validated
+    std::map<std::string, std::string> scriptRefs; // lua scripts referenced by scenes/prefabs
+                                                   // (virtual path -> absolute path)
 };
 
 void CheckAssetRef(ProjectContext& pc, const std::string& ref) {
     if (ref.empty()) return;
-    std::string abs = ResolveRef(pc.projectDir, ref);
+    const std::string norm = Normalize(ref);
+    if (ContainsTraversal(norm)) {
+        pc.report.errors.push_back("asset reference '" + ref +
+                                   "' escapes the project directory (contains '..')");
+        return;
+    }
+    std::string abs = ResolveRef(pc.projectDir, norm);
     if (abs.empty()) {
         pc.report.errors.push_back("missing asset '" + ref + "'");
         return;
@@ -313,13 +356,27 @@ void ValidateScript(ProjectContext& pc, const std::string& where, const core::Js
     const core::Json* path = data.Get("path");
     if (!path || !path->IsString() || path->GetString().empty()) return; // inert component
     const std::string& rel = path->GetString();
-    if (!FileExists(pc.projectDir + "/" + rel))
+    if (ContainsTraversal(Normalize(rel))) {
+        pc.report.errors.push_back(where + ": script '" + rel +
+                                   "' escapes the project directory (contains '..')");
+        return;
+    }
+    std::string abs = ResolveRef(pc.projectDir, rel);
+    if (abs.empty()) {
         pc.report.errors.push_back(where + ": script '" + rel + "' not found");
+        return;
+    }
+    // Collect the referenced script into the pack even when it lives outside
+    // scripts/ (a scene or prefab may point anywhere under the project).
+    pc.packFiles[VirtualPathOf(rel)] = abs;
     const core::Json* backend = data.Get("backend");
     const std::string bk = (backend && backend->IsString()) ? backend->GetString() : "lua";
-    if (bk != "lua")
+    if (bk != "lua") {
         pc.report.warnings.push_back(where + ": script backend '" + bk +
                                      "' is not syntax-checked (only lua)");
+    } else {
+        pc.scriptRefs[VirtualPathOf(rel)] = abs;
+    }
 }
 
 void ValidateBehaviorTree(ProjectContext& pc, const std::string& where,
@@ -336,6 +393,11 @@ void ValidateBehaviorTree(ProjectContext& pc, const std::string& where,
     const std::string& t = tree->GetString();
     if (t.compare(0, 3, "bt:") == 0) {
         const std::string name = t.substr(3);
+        if (ContainsTraversal(Normalize(name))) {
+            pc.report.errors.push_back(where + ": behavior tree '" + t +
+                                       "' escapes the project directory (contains '..')");
+            return;
+        }
         const std::string file = pc.projectDir + "/behaviors/" + name + ".bt.json";
         if (!FileExists(file)) {
             pc.report.errors.push_back(where + ": behavior tree '" + t +
@@ -396,7 +458,7 @@ void ValidateInto(const PackConfig& cfg, ProjectContext& pc) {
     pc.syntaxCheck = cfg.checkScriptSyntax;
     PackageReport& r = pc.report;
 
-    // 1. Manifest (game.json) + startScene reference.
+    // 1. Manifest (game.json).
     const std::string manifestPath = pc.projectDir + "/game.json";
     if (!FileExists(manifestPath)) {
         r.errors.push_back("game.json not found in '" + pc.projectDir + "'");
@@ -412,12 +474,7 @@ void ValidateInto(const PackConfig& cfg, ProjectContext& pc) {
                 const scene::GameManifest& m = mres.Value();
                 pc.manifestText = core::JsonWriter::Write(m.ToJson());
                 pc.manifestOk = true;
-                const std::string startAbs = pc.projectDir + "/" + m.startScene;
-                if (!FileExists(startAbs)) {
-                    r.errors.push_back("startScene '" + m.startScene + "' not found");
-                } else {
-                    pc.packFiles[VirtualPathOf(m.startScene)] = startAbs;
-                }
+                pc.manifestStartScene = m.startScene;
             }
         }
     }
@@ -429,24 +486,71 @@ void ValidateInto(const PackConfig& cfg, ProjectContext& pc) {
         if (!HasExt(rel, ".json")) continue;
         pc.packFiles[rel] = pc.projectDir + "/" + rel;
         ValidateScene(pc, pc.projectDir + "/" + rel, rel);
+        pc.walkedScenes.insert(rel);
     }
     if (scenes.empty())
         r.warnings.push_back("no files under scenes/ (startScene may still reference one)");
 
-    // 3. Prefabs: parse every prefabs/*.json.
+    // 2b. startScene content: a startScene at an arbitrary path (e.g.
+    // custom/main.json) is validated + collected with the SAME per-entity pass
+    // as the scenes above. A startScene under scenes/ was already walked by the
+    // loop, so it is deduped here and never double-walked.
+    if (pc.manifestOk && !pc.manifestStartScene.empty()) {
+        const std::string startVp = VirtualPathOf(pc.manifestStartScene);
+        const std::string startAbs = pc.projectDir + "/" + pc.manifestStartScene;
+        if (ContainsTraversal(Normalize(pc.manifestStartScene))) {
+            r.errors.push_back("startScene '" + pc.manifestStartScene +
+                               "' escapes the project directory (contains '..')");
+        } else if (!FileExists(startAbs)) {
+            r.errors.push_back("startScene '" + pc.manifestStartScene + "' not found");
+        } else {
+            pc.packFiles[startVp] = startAbs;
+            if (!pc.walkedScenes.count(startVp)) {
+                ValidateScene(pc, startAbs, startVp);
+                pc.walkedScenes.insert(startVp);
+            }
+        }
+    }
+
+    // 3. Prefabs: parse every prefabs/*.json into one library, then walk each
+    // prefab's component templates with the same mesh/script/behaviorTree
+    // passes. Prefab-referenced assets/scripts are validated and collected too,
+    // not just instance components (a prefab mesh outside assets/ would
+    // otherwise ship an empty pack entry or a missing file silently).
+    scene::PrefabLibrary prefs;
     std::vector<std::string> prefabs;
     ListFilesRecursive(pc.projectDir + "/prefabs", "prefabs", prefabs);
-    for (const std::string& rel : prefabs) {
-        if (!HasExt(rel, ".json")) continue;
+    for (const auto& kv : prefabs) {
+        if (!HasExt(kv, ".json")) continue;
         std::string text;
-        if (!ReadFileText(pc.projectDir + "/" + rel, text)) {
-            r.errors.push_back("cannot read prefab '" + rel + "'");
+        if (!ReadFileText(pc.projectDir + "/" + kv, text)) {
+            r.errors.push_back("cannot read prefab '" + kv + "'");
             continue;
         }
-        scene::PrefabLibrary lib;
-        core::Status st = lib.Add(FileStem(rel), text);
-        if (!st.Ok()) r.errors.push_back("prefab '" + rel + "': " + st.Error());
-        pc.packFiles[rel] = pc.projectDir + "/" + rel;
+        core::Status st = prefs.Add(FileStem(kv), text);
+        if (!st.Ok()) r.errors.push_back("prefab '" + kv + "': " + st.Error());
+        pc.packFiles[kv] = pc.projectDir + "/" + kv;
+    }
+    // Walk each prefab's component templates with the same passes. Prefab-
+    // referenced assets/scripts are validated and collected too, not just
+    // instance components (a prefab mesh outside assets/ would otherwise ship
+    // an empty pack entry or a missing file silently).
+    std::set<std::string> walkedPrefabs;
+    for (const std::string& kv : prefabs) {
+        if (!HasExt(kv, ".json")) continue;
+        const std::string name = FileStem(kv);
+        if (!walkedPrefabs.insert(name).second) continue; // same-name prefab walked once
+        auto got = prefs.Get(name);
+        if (!got.Ok()) continue; // Add above already reported the failure
+        const std::string where = "prefab '" + name + "'";
+        for (const auto& comp : got.Value()->Members()) {
+            if (comp.first == "mesh")
+                ValidateMesh(pc, where, comp.second);
+            else if (comp.first == "script")
+                ValidateScript(pc, where, comp.second);
+            else if (comp.first == "behaviorTree")
+                ValidateBehaviorTree(pc, where, comp.second);
+        }
     }
 
     // 4. Behavior trees: parse every behaviors/*.bt.json.
@@ -466,24 +570,35 @@ void ValidateInto(const PackConfig& cfg, ProjectContext& pc) {
         pc.packFiles[rel] = pc.projectDir + "/" + rel;
     }
 
-    // 5. Scripts: enumerate scripts/*.lua (recursive, project-relative) and
-    // syntax-check every one when enabled. A scene-referenced script is always
-    // inside scripts/, so checking the whole directory covers all references.
+    // 5. Scripts: enumerate scripts/*.lua (recursive), plus every script a
+    // scene/prefab references (which may live outside scripts/), syntax-check
+    // each lua script when enabled and collect every one into the pack.
     std::vector<std::string> scripts;
     ListLuaFiles(pc.projectDir + "/scripts", "scripts", scripts);
     for (const std::string& rel : scripts) pc.packFiles[rel] = pc.projectDir + "/" + rel;
-    if (pc.syntaxCheck && !scripts.empty()) {
+
+    // Absolute path -> virtual path, deduped across the enumeration and the
+    // scene/prefab references (one host run; CheckSyntax is validation-only).
+    std::map<std::string, std::string> scriptsToCheck;
+    for (const std::string& rel : scripts) scriptsToCheck[pc.projectDir + "/" + rel] = rel;
+    for (const auto& kv : pc.scriptRefs) scriptsToCheck[kv.second] = kv.first;
+    if (pc.syntaxCheck && !scriptsToCheck.empty()) {
         auto host = script::CreateLuaHost();
         if (!host || !host->Init()) {
             r.warnings.push_back("script host unavailable; skipping Lua syntax checks");
         } else {
-            for (const std::string& rel : scripts) {
-                ScriptCheckResult res = CheckScriptFile(*host, pc.projectDir, rel);
-                if (!res.ok) {
+            for (const auto& kv : scriptsToCheck) {
+                std::string source;
+                if (!ReadFileText(kv.first, source)) {
+                    r.errors.push_back("script '" + kv.second + "' cannot be read");
+                    continue;
+                }
+                if (!host->CheckSyntax(source)) {
+                    const script::ScriptError& err = host->LastError();
                     char line[32];
-                    std::snprintf(line, sizeof(line), "%d", res.line);
-                    r.errors.push_back("script '" + rel + "' syntax error (line " + line +
-                                       "): " + res.message);
+                    std::snprintf(line, sizeof(line), "%d", err.line);
+                    r.errors.push_back("script '" + kv.second + "' syntax error (line " + line +
+                                       "): " + err.message);
                 }
             }
             host->Shutdown();
