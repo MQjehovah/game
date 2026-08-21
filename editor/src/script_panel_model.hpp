@@ -140,11 +140,14 @@ inline void ListLuaFiles(const std::string& dir, const std::string& prefix,
 #endif
 }
 
-// Read a text file's bytes (empty string when the file cannot be read).
-inline std::string ReadTextFile(const std::string& path) {
+// Read a text file's bytes. Returns false when the file cannot be opened; `out`
+// is left untouched. An empty file is a successful read (empty Lua source is
+// valid), so callers can distinguish "empty" from "unreadable".
+inline bool ReadTextFile(const std::string& path, std::string& out) {
     std::ifstream in(path, std::ios::binary);
-    if (!in.is_open()) return {};
-    return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+    if (!in.is_open()) return false;
+    out.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+    return true;
 }
 
 // Run a syntax check on one project script. `base` is the project directory and
@@ -155,12 +158,13 @@ inline ScriptCheckResult CheckScriptFile(script::IScriptHost& host, const std::s
                                          const std::string& relPath) {
     ScriptCheckResult r;
     r.path = relPath;
-    const std::string source = ReadTextFile(base + "/" + relPath);
-    if (source.empty()) {
+    std::string source;
+    if (!ReadTextFile(base + "/" + relPath, source)) {
         r.ok = false;
         r.message = "无法读取文件";
         return r;
     }
+    // An empty source is valid Lua (an empty chunk compiles fine).
     if (host.CheckSyntax(source)) {
         r.ok = true;
         r.message.clear();

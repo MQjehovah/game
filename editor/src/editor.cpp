@@ -238,7 +238,7 @@ void EditorApp::SetupScene() {
     add("tree", "松树A", {-5, 0, -3}, {1.6f, 1.6f, 1.6f}, gfx::Color::White);
     add("tree", "松树B", {5, 0, 4}, {1.2f, 1.2f, 1.2f}, gfx::Color::White);
     LoadScene("editor_scene.json");
-    selected_ = entities_.empty() ? -1 : 0;
+    SetSelection(entities_.empty() ? -1 : 0);
 }
 
 void EditorApp::OnUpdate(float dt) {
@@ -501,10 +501,15 @@ void EditorApp::UpdateViewport(float dt) {
                     picked = static_cast<int>(i);
                 }
             }
-            selected_ = picked;
+            SetSelection(picked);
         }
     }
     (void)dt;
+}
+
+void EditorApp::SetSelection(int index) {
+    selected_ = index;
+    scriptSyncEntity_ = -1; // script panel caches by index: force a re-sync
 }
 
 void EditorApp::DrawTransformGizmo() {
@@ -953,7 +958,7 @@ void EditorApp::BuildImGuiUI() {
             if (selected_ >= 0 && selected_ < static_cast<int>(entities_.size())) {
                 history_.Push(std::make_unique<DeleteEntityCommand>(
                     &entities_, static_cast<size_t>(selected_)));
-                selected_ = -1;
+                SetSelection(-1);
             }
         }
         ImGui::SameLine();
@@ -1508,6 +1513,79 @@ void EditorApp::RunUISmokeTest() {
         NEON_LOG_INFO("EDITOR-SCRIPT-SMOKE: script panel checks done");
     }
 
+    // --- Script panel sync invalidation on entity-list mutation (T4.5 review) ---
+    // The panel caches its dropdown + vars buffer by the selected INDEX. Any
+    // mutation that appends/removes/moves entities (or reselects after a load)
+    // must invalidate that cache, or the panel shows the PREVIOUS occupant's
+    // script and 附加 silently attaches it to the entity that now sits at the
+    // index. This reproduces the reported flow: select the last entity and sync
+    // the panel to a distinctive script, AddEntity (appends + reselects the new
+    // last), then verify the cache was invalidated and a fresh attach lands on
+    // the NEW entity, not the stale one.
+    {
+        const int last = static_cast<int>(entities_.size()) - 1;
+        check(last >= 0, "script sync: smoke has an entity to select");
+        if (last >= 0) {
+            SetSelection(last);
+            // Emulate the panel having synced to the last entity + a script
+            // attached to it (the stale state that must not leak forward).
+            SceneEntity& oldLast = entities_[static_cast<size_t>(last)];
+            core::Json staleVars;
+            staleVars.type_ = core::Json::Type::Object;
+            core::Json staleMarker;
+            staleMarker.type_ = core::Json::Type::Number;
+            staleMarker.number_ = 9.0;
+            staleVars.object_["stale"] = staleMarker;
+            const SceneScriptFields staleOld{oldLast.scriptBackend, oldLast.scriptPath,
+                                             oldLast.scriptVars};
+            const SceneScriptFields staleNew{"lua", "scripts/stale.lua", staleVars};
+            history_.Push(std::make_unique<EditPropertyCommand<SceneScriptFields>>(
+                &entities_, last, ApplyScriptFields, staleOld, staleNew,
+                /*mergeable=*/false));
+            check(oldLast.scriptPath == "scripts/stale.lua",
+                  "script sync: distinctive script attached to the last entity");
+            // The insert below may reallocate the vector, so keep the stale
+            // path by value (never hold a reference across AddEntity).
+            const std::string stalePath = oldLast.scriptPath;
+            scriptSyncEntity_ = last; // panel cache now points at the last index
+            scriptAttachIndex_ = 0;
+
+            const size_t countBefore = entities_.size();
+            AddEntity("cube"); // appends + reselects the new last entity
+            check(entities_.size() == countBefore + 1,
+                  "script sync: AddEntity appends a new entity");
+            check(selected_ == static_cast<int>(entities_.size()) - 1,
+                  "script sync: AddEntity selects the new last entity");
+            check(scriptSyncEntity_ == -1,
+                  "script sync: entity-list mutation invalidates the panel sync cache");
+
+            // Attach through the real command path: must land on the NEW entity.
+            const int freshIdx = static_cast<int>(entities_.size()) - 1;
+            SceneEntity& fresh = entities_[static_cast<size_t>(freshIdx)];
+            core::Json freshVars;
+            freshVars.type_ = core::Json::Type::Object;
+            core::Json freshMarker;
+            freshMarker.type_ = core::Json::Type::Number;
+            freshMarker.number_ = 3.0;
+            freshVars.object_["hp"] = freshMarker;
+            const SceneScriptFields freshOld{fresh.scriptBackend, fresh.scriptPath,
+                                             fresh.scriptVars};
+            const SceneScriptFields freshNew{"lua", "scripts/good.lua", freshVars};
+            history_.Push(std::make_unique<EditPropertyCommand<SceneScriptFields>>(
+                &entities_, freshIdx, ApplyScriptFields, freshOld, freshNew,
+                /*mergeable=*/false));
+            check(fresh.scriptPath == "scripts/good.lua" &&
+                      fresh.scriptVars.Get("hp")->GetNumber() == 3.0,
+                  "script sync: attach lands on the new entity");
+            check(entities_[static_cast<size_t>(last)].scriptPath == stalePath,
+                  "script sync: the previous entity keeps its own script (no stale attach)");
+            history_.Undo(); // leave the new cube script-less
+            check(fresh.scriptPath.empty(),
+                  "script sync: undo clears the new entity's script");
+        }
+        NEON_LOG_INFO("EDITOR-SCRIPT-SMOKE: sync invalidation checks done");
+    }
+
     NEON_LOG_INFO("EDITOR-UI-SMOKE: all checks done");
 }
 
@@ -1536,7 +1614,7 @@ void EditorApp::AddEntity(const std::string& meshKey) {
         ApplyMaterialParams(e);
         const size_t insertAt = entities_.size();
         history_.Push(std::make_unique<AddEntityCommand>(&entities_, e, insertAt));
-        selected_ = static_cast<int>(entities_.size()) - 1;
+        SetSelection(static_cast<int>(entities_.size()) - 1);
     }
 }
 
@@ -1826,13 +1904,17 @@ void EditorApp::LoadScene(const std::string& path) {
     }
     if (!loaded.empty()) {
         entities_ = std::move(loaded);
-        selected_ = -1;
+        SetSelection(-1);
         history_.Clear(); // undo history from the previous scene is invalid
         NEON_LOG_INFO("Scene loaded (%zu entities)", entities_.size());
     }
 }
 
 void EditorApp::ClampSelection() {
+    // Undo/redo can move entities under an unchanged selection index (e.g. a
+    // reorder), so invalidate the script panel's index-keyed sync cache
+    // unconditionally here, not only when the index changes.
+    scriptSyncEntity_ = -1;
     if (entities_.empty()) {
         selected_ = -1;
     } else if (selected_ >= static_cast<int>(entities_.size())) {

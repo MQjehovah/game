@@ -84,6 +84,11 @@ private:
     void ApplyMaterialParams(SceneEntity& e);
     void ClampSelection();
     bool ResolveMesh(SceneEntity& e);
+    // Reassign the selected entity index. Also invalidates the script panel's
+    // index-keyed sync cache (scriptSyncEntity_), so a mutation that shifts or
+    // reappoints the selection can never leave the 脚本 panel showing a stale
+    // entity's script (the panel re-syncs on the next frame it runs).
+    void SetSelection(int index);
     void RefreshAssetDir();
     void ImportAssetPath(const std::string& path);
     void ImportSelectedAsset();
@@ -243,8 +248,8 @@ private:
     uint64_t scriptRefreshFrame_ = 0; // throttle: refresh scripts/ listing + checks
     int scriptAttachIndex_ = -1;      // dropdown/list selection into scriptFiles_
     int scriptSyncEntity_ = -1;       // entity whose vars the buffer currently shows
-    char scriptVarsBuf_[4096]{};      // raw JSON vars editor
-    std::string scriptVarsError_;     // last vars-parse error (empty when valid)
+    char scriptVarsBuf_[32768]{};     // raw JSON vars editor (32 KB; truncation is detected)
+    std::string scriptVarsError_;     // last vars-parse / truncation message (empty when valid)
 };
 
 } // namespace neon::editor

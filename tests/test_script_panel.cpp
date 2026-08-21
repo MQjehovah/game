@@ -142,12 +142,18 @@ TEST(ScriptPanelCheckScriptFile) {
                              "function on_update(ent, dt)\n  Log('tick')\nend\n"));
     CHECK(test::WriteFileAll(base + "/scripts/broken.lua",
                              "function on_update(ent, dt)\n  this is not lua !!!\nend\n"));
+    // An empty .lua is VALID Lua (an empty chunk compiles), not a read error.
+    CHECK(test::WriteFileAll(base + "/scripts/empty.lua", std::string()));
 
     auto host = MakeHost();
     ScriptCheckResult good = CheckScriptFile(*host, base, "scripts/good.lua");
     CHECK(good.ok);
     CHECK(good.message.empty());
     CHECK_EQ(good.line, 0);
+
+    ScriptCheckResult empty = CheckScriptFile(*host, base, "scripts/empty.lua");
+    CHECK(empty.ok); // empty source must NOT be misreported as "无法读取文件"
+    CHECK(empty.message.empty());
 
     ScriptCheckResult broken = CheckScriptFile(*host, base, "scripts/broken.lua");
     CHECK(!broken.ok);

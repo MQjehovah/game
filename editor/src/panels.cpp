@@ -222,7 +222,7 @@ void EditorApp::BuildScenePanel() {
         if (ImGui::Button("复制") && selected_ >= 0) {
             history_.Push(std::make_unique<DuplicateEntityCommand>(
                 &entities_, static_cast<size_t>(selected_)));
-            selected_ = static_cast<int>(entities_.size()) - 1;
+            SetSelection(static_cast<int>(entities_.size()) - 1);
         }
         ImGui::SameLine();
         if (ImGui::Button("删除") && selected_ >= 0 &&
@@ -230,20 +230,20 @@ void EditorApp::BuildScenePanel() {
             history_.Push(std::make_unique<DeleteEntityCommand>(
                 &entities_, static_cast<size_t>(selected_)));
             if (selected_ >= static_cast<int>(entities_.size()))
-                selected_ = static_cast<int>(entities_.size()) - 1;
+                SetSelection(static_cast<int>(entities_.size()) - 1);
         }
         ImGui::SameLine();
         if (ImGui::Button("↑") && selected_ > 0) {
             history_.Push(std::make_unique<ReorderEntityCommand>(
                 &entities_, static_cast<size_t>(selected_), static_cast<size_t>(selected_ - 1)));
-            --selected_;
+            SetSelection(selected_ - 1);
         }
         ImGui::SameLine();
         if (ImGui::Button("↓") && selected_ >= 0 &&
             selected_ < static_cast<int>(entities_.size()) - 1) {
             history_.Push(std::make_unique<ReorderEntityCommand>(
                 &entities_, static_cast<size_t>(selected_), static_cast<size_t>(selected_ + 1)));
-            ++selected_;
+            SetSelection(selected_ + 1);
         }
         ImGui::Separator();
         ImGui::BeginChild("##scene_list", ImVec2(0, 0), ImGuiChildFlags_Borders);
@@ -252,7 +252,7 @@ void EditorApp::BuildScenePanel() {
             std::snprintf(label, sizeof(label), "%s##scene_%zu",
                           entities_[i].name.c_str(), i);
             if (ImGui::Selectable(label, selected_ == static_cast<int>(i))) {
-                selected_ = static_cast<int>(i);
+                SetSelection(static_cast<int>(i));
             }
         }
         ImGui::EndChild();
@@ -689,19 +689,36 @@ void EditorApp::BuildScriptPanel() {
         }
         SceneEntity& e = entities_[static_cast<size_t>(selected_)];
 
+        // Reload the vars editor from the entity's attached vars. Detects JSON
+        // larger than the buffer so a silent truncation surfaces a warning.
+        auto reloadVars = [&]() {
+            const std::string json = e.scriptVars.IsObject()
+                                         ? core::JsonWriter::Write(e.scriptVars)
+                                         : "{}";
+            const int n = std::snprintf(scriptVarsBuf_, sizeof(scriptVarsBuf_), "%s",
+                                        json.c_str());
+            if (static_cast<size_t>(n) >= sizeof(scriptVarsBuf_)) {
+                char warn[128];
+                std::snprintf(warn, sizeof(warn),
+                              "变量 JSON 过大 (%.1f KB)，已截断到缓冲区上限",
+                              static_cast<double>(sizeof(scriptVarsBuf_)) / 1024.0);
+                scriptVarsError_ = warn;
+            } else {
+                scriptVarsError_.clear();
+            }
+        };
+
         // Sync the dropdown selection + vars buffer when the selected entity
-        // changes, so the panel always reflects the attached script (if any).
+        // changes (SetSelection / list mutations reset scriptSyncEntity_ so an
+        // entity re-selected at the same index still re-syncs), so the panel
+        // always reflects the attached script (if any).
         if (scriptSyncEntity_ != selected_) {
             scriptSyncEntity_ = selected_;
             scriptAttachIndex_ = -1;
             for (size_t i = 0; i < scriptFiles_.size(); ++i)
                 if (scriptFiles_[i] == e.scriptPath) scriptAttachIndex_ = static_cast<int>(i);
             if (scriptAttachIndex_ < 0 && !scriptFiles_.empty()) scriptAttachIndex_ = 0;
-            std::snprintf(scriptVarsBuf_, sizeof(scriptVarsBuf_), "%s",
-                          e.scriptVars.IsObject()
-                              ? core::JsonWriter::Write(e.scriptVars).c_str()
-                              : "{}");
-            scriptVarsError_.clear();
+            reloadVars();
         }
 
         if (scriptFiles_.empty()) {
@@ -743,9 +760,7 @@ void EditorApp::BuildScriptPanel() {
                     history_.Push(std::make_unique<EditPropertyCommand<SceneScriptFields>>(
                         &entities_, selected_, ApplyScriptFields, oldV, newV,
                         /*mergeable=*/false)); // one click = one undo step
-                    std::snprintf(scriptVarsBuf_, sizeof(scriptVarsBuf_), "%s",
-                                  core::JsonWriter::Write(e.scriptVars).c_str());
-                    scriptVarsError_.clear();
+                    reloadVars();
                 }
             }
         }
@@ -756,8 +771,7 @@ void EditorApp::BuildScriptPanel() {
             history_.Push(std::make_unique<EditPropertyCommand<SceneScriptFields>>(
                 &entities_, selected_, ApplyScriptFields, oldV, emptyV,
                 /*mergeable=*/false));
-            std::snprintf(scriptVarsBuf_, sizeof(scriptVarsBuf_), "{}");
-            scriptVarsError_.clear();
+            reloadVars(); // e.scriptVars is now null -> buffer shows "{}"
         }
     }
     ImGui::End();
