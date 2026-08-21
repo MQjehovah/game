@@ -8,6 +8,7 @@
 #include "neon/core/log.hpp"
 #include "neon/gfx/color.hpp"
 #include "neon/gfx/gl/gl_loader.hpp"
+#include "neon/gfx/mesh.hpp"
 
 namespace neon::gfx {
 namespace {
@@ -371,22 +372,35 @@ public:
     MeshHandle CreateMesh(const void* vertices, uint32_t vertexCount,
                           const uint16_t* indices, uint32_t indexCount) override {
         auto& g = gl::GetGL();
+        constexpr gl::GLsizei kStride = static_cast<gl::GLsizei>(sizeof(Vertex3D));
         GLMesh mesh;
         g.GenVertexArrays(1, &mesh.vao);
         g.GenBuffers(1, &mesh.vbo);
         g.GenBuffers(1, &mesh.ibo);
         g.BindVertexArray(mesh.vao);
         g.BindBuffer(glc::ArrayBuffer, mesh.vbo);
-        g.BufferData(glc::ArrayBuffer, static_cast<gl::GLsizeiptr>(vertexCount * 48),
+        g.BufferData(glc::ArrayBuffer,
+                     static_cast<gl::GLsizeiptr>(vertexCount * static_cast<size_t>(kStride)),
                      vertices, glc::StaticDraw);
         g.EnableVertexAttribArray(0);
-        g.VertexAttribPointer(0, 3, glc::Float, 0, 48, nullptr);
+        g.VertexAttribPointer(0, 3, glc::Float, 0, kStride, nullptr);
         g.EnableVertexAttribArray(1);
-        g.VertexAttribPointer(1, 3, glc::Float, 0, 48, reinterpret_cast<const void*>(12));
+        g.VertexAttribPointer(1, 3, glc::Float, 0, kStride,
+                              reinterpret_cast<const void*>(offsetof(Vertex3D, normal)));
         g.EnableVertexAttribArray(2);
-        g.VertexAttribPointer(2, 2, glc::Float, 0, 48, reinterpret_cast<const void*>(24));
+        g.VertexAttribPointer(2, 2, glc::Float, 0, kStride,
+                              reinterpret_cast<const void*>(offsetof(Vertex3D, uv)));
         g.EnableVertexAttribArray(3);
-        g.VertexAttribPointer(3, 4, glc::Float, 0, 48, reinterpret_cast<const void*>(32));
+        g.VertexAttribPointer(3, 4, glc::Float, 0, kStride,
+                              reinterpret_cast<const void*>(offsetof(Vertex3D, color)));
+        // Skinning attributes are always bound: non-skinned meshes carry zeros,
+        // and only the skinned shader variant reads locations 4/5.
+        g.EnableVertexAttribArray(4);
+        g.VertexAttribPointer(4, 4, glc::Float, 0, kStride,
+                              reinterpret_cast<const void*>(offsetof(Vertex3D, j)));
+        g.EnableVertexAttribArray(5);
+        g.VertexAttribPointer(5, 4, glc::Float, 0, kStride,
+                              reinterpret_cast<const void*>(offsetof(Vertex3D, w)));
         g.BindBuffer(glc::ElementArrayBuffer, mesh.ibo);
         g.BufferData(glc::ElementArrayBuffer, static_cast<gl::GLsizeiptr>(indexCount * 2),
                      indices, glc::StaticDraw);
@@ -404,6 +418,22 @@ public:
         g.DeleteBuffers(1, &it->second.ibo);
         g.DeleteVertexArrays(1, &it->second.vao);
         meshes_.erase(it);
+    }
+
+    void UpdateMeshVertices(const MeshHandle& mesh, const void* vertices,
+                            uint32_t vertexCount) override {
+        if (!vertices) return;
+        auto it = meshes_.find(mesh.vao);
+        if (it == meshes_.end()) return;
+        auto& g = gl::GetGL();
+        g.BindVertexArray(it->second.vao);
+        g.BindBuffer(glc::ArrayBuffer, it->second.vbo);
+        g.BufferData(glc::ArrayBuffer,
+                     static_cast<gl::GLsizeiptr>(static_cast<size_t>(vertexCount) *
+                                                 sizeof(Vertex3D)),
+                     vertices, glc::StaticDraw);
+        g.BindVertexArray(0);
+        CheckError("UpdateMeshVertices");
     }
 
     void SetBlendMode(BlendMode mode) override {
@@ -479,6 +509,16 @@ public:
         gl::GLint loc = GetUniformLocation(currentShader_, name);
         // Mat4 is row-major; GL expects column-major with transpose=GL_FALSE.
         if (loc >= 0) gl::GetGL().UniformMatrix4fv(loc, 1, 1, value.Data());
+        CheckError(name);
+    }
+
+    void SetUniformMat4Array(const char* name, const float* values, int count) override {
+        if (!values || count <= 0) return;
+        gl::GLint loc = GetUniformLocation(currentShader_, name);
+        if (loc >= 0) gl::GetGL().UniformMatrix4fv(loc, count, 1, values);
+        else if (std::string(name) == "uBoneMatrices")
+            NEON_LOG_ERROR("GL: uBoneMatrices uniform not found in program %u",
+                           GetProgram(currentShader_).id);
         CheckError(name);
     }
 

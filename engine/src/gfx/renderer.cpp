@@ -18,6 +18,11 @@ layout(location = 0) in vec3 aPos;
 layout(location = 1) in vec3 aNormal;
 layout(location = 2) in vec2 aUV;
 layout(location = 3) in vec4 aColor;
+#ifdef SKINNED
+layout(location = 4) in vec4 aJointIds;
+layout(location = 5) in vec4 aWeights;
+uniform mat4 uBoneMatrices[64];
+#endif
 uniform mat4 uMVP;
 uniform mat4 uModel;
 uniform mat4 uNormalMat;
@@ -27,11 +32,26 @@ out vec3 vNormal;
 out vec2 vUV;
 out vec4 vColor;
 void main() {
+#ifdef SKINNED
+    mat4 skin = mat4(0.0);
+    for (int i = 0; i < 4; ++i) {
+        int id = int(aJointIds[i]);
+        if (id >= 0 && id < 64) skin += aWeights[i] * uBoneMatrices[id];
+    }
+    vec4 p = skin * vec4(aPos, 1.0);
+    vec4 n = skin * vec4(aNormal, 0.0);
+    vWorldPos = (uModel * p).xyz;
+    vNormal = (uNormalMat * n).xyz;
+    vUV = aUV;
+    vColor = aColor;
+    gl_Position = uMVP * p;
+#else
     vWorldPos = (uModel * vec4(aPos, 1.0)).xyz;
     vNormal = (uNormalMat * vec4(aNormal, 0.0)).xyz;
     vUV = aUV;
     vColor = aColor;
     gl_Position = uMVP * vec4(aPos, 1.0);
+#endif
 }
 )";
 
@@ -357,6 +377,7 @@ void Renderer::AttachBackendForTesting(std::unique_ptr<IRenderBackend> backend) 
 void Renderer::Shutdown() {
     if (!backend_) return;
     if (litShader_.Valid()) backend_->DestroyShader(litShader_);
+    if (skinnedLitShader_.Valid()) backend_->DestroyShader(skinnedLitShader_);
     if (unlitShader_.Valid()) backend_->DestroyShader(unlitShader_);
     if (uiShader_.Valid()) backend_->DestroyShader(uiShader_);
     if (linesShader_.Valid()) backend_->DestroyShader(linesShader_);
@@ -378,6 +399,19 @@ void Renderer::InitBuiltinResources() {
     white_ = backend_->CreateTexture(whiteDesc);
 
     litShader_ = backend_->CreateShader(kLitVertexShader, kLitFragmentShader, "lit");
+    {
+        // Skinned lit variant: same source with #define SKINNED 1 inserted
+        // right after the #version line (GLSL requires #version first) so the
+        // shader enables the joint/weight attributes + uBoneMatrices.
+        std::string skinnedSrc(kLitVertexShader);
+        size_t versionPos = skinnedSrc.find("#version");
+        size_t versionEnd = skinnedSrc.find('\n', versionPos);
+        skinnedSrc.insert(versionEnd + 1, "#define SKINNED 1\n");
+        skinnedLitShader_ =
+            backend_->CreateShader(skinnedSrc.c_str(), kLitFragmentShader, "lit_skinned");
+        NEON_LOG_INFO("Renderer: skinned lit shader %s",
+                      skinnedLitShader_.Valid() ? "ok" : "FAILED");
+    }
     unlitShader_ = backend_->CreateShader(kUnlitVertexShader, kUnlitFragmentShader, "unlit");
     uiShader_ = backend_->CreateShader(kUIVertexShader, kUIFragmentShader, "ui");
     linesShader_ = backend_->CreateShader(kLineVertexShader, kLineFragmentShader, "lines");
@@ -523,6 +557,33 @@ void Renderer::DrawMesh(const Mesh& mesh, const Material& material, const math::
     ShaderHandle shader = material.shader.Valid() ? material.shader
                                                   : (material.lit ? litShader_ : unlitShader_);
     ApplyMaterial(material, viewProj_ * model, model, NormalMatrix(model), shader);
+    backend_->DrawMesh(mesh.Handle());
+    ++stats_.drawCalls;
+    stats_.triangles += mesh.TriangleCount();
+}
+
+void Renderer::DrawSkinnedMesh(const Mesh& mesh, const Material& material,
+                               const math::Mat4& model,
+                               const std::vector<math::Mat4>& boneMatrices, int boneCount) {
+    if (!mesh.Valid()) return;
+    Flush2D();
+
+    if (frustumValid_ && !frustum_.Intersects(math::TransformAABB(mesh.Bounds(), model))) return;
+
+    ShaderHandle shader = material.shader.Valid() ? material.shader : skinnedLitShader_;
+    ApplyMaterial(material, viewProj_ * model, model, NormalMatrix(model), shader);
+
+    // Upload up to 64 bone matrices as one contiguous row-major array.
+    int count = boneCount >= 0 ? std::min(boneCount, static_cast<int>(boneMatrices.size()))
+                               : static_cast<int>(boneMatrices.size());
+    count = std::min(count, 64);
+    if (count > 0) {
+        std::vector<float> flat(static_cast<size_t>(count) * 16);
+        for (int i = 0; i < count; ++i)
+            std::memcpy(flat.data() + static_cast<size_t>(i) * 16,
+                        boneMatrices[static_cast<size_t>(i)].Data(), 16 * sizeof(float));
+        backend_->SetUniformMat4Array("uBoneMatrices", flat.data(), count);
+    }
     backend_->DrawMesh(mesh.Handle());
     ++stats_.drawCalls;
     stats_.triangles += mesh.TriangleCount();

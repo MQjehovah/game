@@ -510,6 +510,15 @@ GltfAsset AssetManager::LoadGLTF(const std::string& path) {
                         const float* uv = reinterpret_cast<const float*>(uvBase + v * uvStride);
                         out.uv = {uv[0], uv[1]};
                     }
+                    if (rm.skinned) {
+                        // Bake the skin influence into the vertex so the VBO
+                        // carries the same data AttachSkinData records on CPU.
+                        const size_t vi = static_cast<size_t>(v) * 4;
+                        for (int c = 0; c < 4; ++c) {
+                            out.j[c] = static_cast<float>(rm.jointIds[vi + static_cast<size_t>(c)]);
+                            out.w[c] = rm.jointWeights[vi + static_cast<size_t>(c)];
+                        }
+                    }
                 }
                 const uint8_t* idxBase = nullptr;
                 int idxStride = 0, idxCount = 0;

@@ -252,6 +252,20 @@ void GameScene::SetupWorld() {
     scatter(app_.assets_.kenneyRock, rocks_, 32, 14.0f, 96.0f, 0.5f, 1.5f, 6.0f);
     scatter(app_.assets_.kenneyLog, logs_, 10, 4.0f, 30.0f, 0.8f, 1.4f, 3.0f);
 
+    // GPU-skinned demo flag rig: bone 0 = static pole (pins the bottom edge),
+    // bone 1 = child rotating the top of the flag around the local Z axis.
+    {
+        flagSkeleton_.bones.resize(2);
+        flagSkeleton_.bones[0].name = "flagRoot";
+        flagSkeleton_.bones[0].parent = -1;
+        flagSkeleton_.bones[0].inverseBind = math::Mat4::Identity();
+        flagSkeleton_.bones[1].name = "flagTop";
+        flagSkeleton_.bones[1].parent = 0;
+        flagSkeleton_.bones[1].inverseBind = math::Mat4::Identity();
+        flagPose_ = flagSkeleton_.BindPose();
+        flagBones_ = flagSkeleton_.ComputeBoneMatrices(flagPose_);
+    }
+
     // Terrain is drawn directly; keep a static entity so it is part of the scene.
     ecs::Entity terrainEntity = world_.Create();
     world_.Add<CTransform>(terrainEntity, CTransform{{0, 0, 0}, math::Quat::Identity(), {1, 1, 1}});
@@ -668,6 +682,16 @@ void GameScene::UpdateDayNight(float dt) {
     if (dayTime_ > 90.0f) dayTime_ -= 90.0f;
 }
 
+void GameScene::UpdateFlag(float dt) {
+    flagAnimTime_ += dt;
+    // Rotate the top bone around the flag's local Z axis (FromEuler's first
+    // arg is yaw = Z); the weight gradient (pinned bottom -> free top) bends
+    // the ribbon like a waving banner.
+    float angle = std::sin(flagAnimTime_ * 1.6f) * 0.7f;
+    flagPose_.r[1] = math::Quat::FromEuler(angle, 0.0f, 0.0f);
+    flagBones_ = flagSkeleton_.ComputeBoneMatrices(flagPose_);
+}
+
 void GameScene::UpdateRings(float dt) {
     for (Ring& ring : rings_) ring.t += dt;
     rings_.erase(std::remove_if(rings_.begin(), rings_.end(),
@@ -733,6 +757,7 @@ void GameScene::Update(float dt) {
     if (bannerTime_ > 0.0f) bannerTime_ -= dt;
     hurtFlash_ = std::max(0.0f, hurtFlash_ - dt * 2.0f);
     UpdateRings(dt);
+    UpdateFlag(dt);
     particles_.Update(dt);
     UpdateDayNight(dt);
     UpdateCamera(dt);
@@ -822,6 +847,14 @@ void GameScene::Draw(gfx::Renderer& renderer) {
         math::Mat4 display = math::Mat4::Translation({8.0f, 0.9f, -5.0f}) *
                              math::Mat4::RotationY(-0.6f) * node.transform;
         renderer.DrawMesh(node.mesh, node.material, display);
+    }
+
+    // GPU-skinned demo: waving flag, bone matrices recomputed in Update().
+    if (!flagBones_.empty()) {
+        math::Mat4 flagM = math::Mat4::Translation({2.6f, 0.0f, 1.2f});
+        renderer.DrawSkinnedMesh(assets.flagMesh,
+                                 gfx::Material::Lit({}, gfx::Color::White, 16.0f), flagM,
+                                 flagBones_, static_cast<int>(flagBones_.size()));
     }
 
     // 4. Remaining entity meshes (player, mobs, NPC, projectiles), painter-sorted.

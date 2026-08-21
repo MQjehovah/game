@@ -256,6 +256,57 @@ void CreateDemoAssets(gfx::Renderer& renderer, assets::AssetManager& assetMgr, D
                                                  "wolf");
     }
 
+    // GPU-skinned demo: a waving flag. A grid of vertices in the X/Y plane
+    // (Y up) driven by two bones - bone 0 pins the bottom edge (static),
+    // bone 1 rotates the top around the local Z axis, so the flag bends like a
+    // banner. Every vertex gets 2 influences (weight rises with height), which
+    // is exactly what the SKINNED lit shader blends via uBoneMatrices.
+    {
+        std::vector<gfx::Vertex3D> verts;
+        std::vector<uint16_t> indices;
+        std::vector<uint16_t> jointIds;
+        std::vector<float> jointWeights;
+        const float kWidth = 2.6f;
+        const float kHeight = 2.0f;
+        const int kCols = 16;
+        const int kRows = 8;
+        for (int r = 0; r <= kRows; ++r) {
+            float v = static_cast<float>(r) / kRows; // 0 = bottom, 1 = top
+            for (int c = 0; c <= kCols; ++c) {
+                float u = static_cast<float>(c) / kCols;
+                gfx::Vertex3D vert;
+                vert.pos = {(u - 0.5f) * kWidth, v * kHeight, 0.0f};
+                vert.normal = {0.0f, 0.0f, 1.0f};
+                vert.uv = {u, v};
+                vert.color = {0.85f + 0.15f * u, 0.34f - 0.12f * v, 0.16f + 0.2f * v, 1.0f};
+                vert.j[0] = 0.0f;
+                vert.j[1] = 1.0f;
+                vert.w[0] = 1.0f - v; // pinned bottom -> static bone 0
+                vert.w[1] = v;        // top -> rotating bone 1
+                verts.push_back(vert);
+                jointIds.insert(jointIds.end(), {0, 1, 0, 0});
+                jointWeights.insert(jointWeights.end(), {1.0f - v, v, 0.0f, 0.0f});
+            }
+        }
+        for (int r = 0; r < kRows; ++r) {
+            for (int c = 0; c < kCols; ++c) {
+                uint16_t a = static_cast<uint16_t>(r * (kCols + 1) + c);
+                uint16_t b = static_cast<uint16_t>(a + 1);
+                uint16_t d = static_cast<uint16_t>(a + kCols + 1);
+                uint16_t e = static_cast<uint16_t>(d + 1);
+                // CCW winding from +Z so back-face culling keeps the front face.
+                indices.insert(indices.end(), {a, b, d, b, e, d});
+            }
+        }
+        gfx::Mesh mesh = gfx::Mesh::CreateFromData(renderer, verts.data(),
+                                                   static_cast<uint32_t>(verts.size()),
+                                                   indices.data(),
+                                                   static_cast<uint32_t>(indices.size()),
+                                                   "flag");
+        mesh.AttachSkinData(std::move(jointIds), std::move(jointWeights), 0);
+        out.flagMesh = mesh;
+    }
+
     // Kenney Nature Kit models (CC0, MIT-style license in pack).
     out.kenneyPine = assetMgr.LoadMeshOBJ("assets/kenney_nature/Models/OBJ format/tree_pineTallA.obj");
     out.kenneyOak = assetMgr.LoadMeshOBJ("assets/kenney_nature/Models/OBJ format/tree_default.obj");

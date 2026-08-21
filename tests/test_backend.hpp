@@ -47,6 +47,7 @@ public:
         return {1, 1, 1, indexCount};
     }
     void DestroyMesh(const neon::gfx::MeshHandle&) override {}
+    void UpdateMeshVertices(const neon::gfx::MeshHandle&, const void*, uint32_t) override {}
 
     void SetBlendMode(neon::gfx::BlendMode) override {}
     void SetDepthTest(bool, bool) override {}
@@ -57,6 +58,7 @@ public:
 
     void UseShader(neon::gfx::ShaderHandle) override {}
     void SetUniformMat4(const char*, const neon::math::Mat4&) override {}
+    void SetUniformMat4Array(const char*, const float*, int) override {}
     void SetUniformVec4(const char*, const neon::math::Vec4&) override {}
     void SetUniformVec3(const char*, const neon::math::Vec3&) override {}
     void SetUniformFloat(const char*, float) override {}

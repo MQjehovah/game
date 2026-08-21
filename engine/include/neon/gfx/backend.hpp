@@ -69,10 +69,16 @@ public:
     virtual TextureHandle CreateTexture(const TextureDesc& desc) = 0;
     virtual void DestroyTexture(TextureHandle texture) = 0;
 
-    // Vertex layout is fixed: position(3f) normal(3f) uv(2f) = 32 bytes.
+    // Vertex layout is fixed: position(3f) normal(3f) uv(2f) color(4f)
+    // joints(4f) weights(4f) = 80 bytes (see gfx::Vertex3D).
     virtual MeshHandle CreateMesh(const void* vertices, uint32_t vertexCount,
                                   const uint16_t* indices, uint32_t indexCount) = 0;
     virtual void DestroyMesh(const MeshHandle& mesh) = 0;
+    // Replaces the vertex buffer contents of an existing mesh (same layout as
+    // CreateMesh). Used when skinned joint/weight data is attached after the
+    // initial upload.
+    virtual void UpdateMeshVertices(const MeshHandle& mesh, const void* vertices,
+                                    uint32_t vertexCount) = 0;
 
     // State
     virtual void SetBlendMode(BlendMode mode) = 0;
@@ -86,6 +92,8 @@ public:
     // Shader uniforms (current program)
     virtual void UseShader(ShaderHandle shader) = 0;
     virtual void SetUniformMat4(const char* name, const math::Mat4& value) = 0;
+    // Uploads `count` row-major mat4s as a contiguous array (e.g. uBoneMatrices).
+    virtual void SetUniformMat4Array(const char* name, const float* values, int count) = 0;
     virtual void SetUniformVec4(const char* name, const math::Vec4& value) = 0;
     virtual void SetUniformVec3(const char* name, const math::Vec3& value) = 0;
     virtual void SetUniformFloat(const char* name, float value) = 0;

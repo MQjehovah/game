@@ -17,6 +17,9 @@ struct DemoAssets {
     gfx::Mesh playerMesh;
     gfx::Mesh wolfMesh;
 
+    // GPU-skinned demo mesh: a waving flag driven by two bones (see art.cpp).
+    gfx::Mesh flagMesh;
+
     // Kenney Nature Kit (CC0) models, loaded through the asset pipeline.
     gfx::Mesh kenneyPine;
     gfx::Mesh kenneyOak;

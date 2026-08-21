@@ -66,6 +66,11 @@ public:
     TextureHandle ShadowColorTexture() const { return shadowColorTex_; }
 
     void DrawMesh(const Mesh& mesh, const Material& material, const math::Mat4& model);
+    // Skinned variant: binds the SKINNED lit program and uploads up to 64 bone
+    // matrices (from anim::Skeleton::ComputeBoneMatrices). The mesh must be
+    // Skinned() (have per-vertex joint ids/weights in its vertex buffer).
+    void DrawSkinnedMesh(const Mesh& mesh, const Material& material, const math::Mat4& model,
+                         const std::vector<math::Mat4>& boneMatrices, int boneCount);
     void DrawMeshInstanced(const Mesh& mesh, const Material& material, const math::Mat4* models,
                            uint32_t count, bool frustumCull = true);
     // CPU-side projected shadow: projects the mesh onto the ground plane
@@ -134,6 +139,7 @@ private:
     std::unique_ptr<IRenderBackend> backend_;
 
     ShaderHandle litShader_;
+    ShaderHandle skinnedLitShader_;
     ShaderHandle unlitShader_;
     ShaderHandle uiShader_;
     ShaderHandle linesShader_;

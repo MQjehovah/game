@@ -114,6 +114,7 @@ private:
     void UpdateCamera(float dt);
     void UpdateDayNight(float dt);
     void UpdateRings(float dt);
+    void UpdateFlag(float dt);
     void MeleeAttack();
     void Fireball();
     void Heal();
@@ -166,6 +167,13 @@ private:
     std::vector<math::Mat4> oaks_;
     std::vector<math::Mat4> rocks_;
     std::vector<math::Mat4> logs_;
+
+    // GPU-skinned flag rig: two bones, pose driven by time, bone matrices
+    // recomputed every frame and uploaded through Renderer::DrawSkinnedMesh.
+    anim::Skeleton flagSkeleton_;
+    anim::Pose flagPose_;
+    std::vector<math::Mat4> flagBones_;
+    float flagAnimTime_ = 0.0f;
 
     struct Ring {
         math::Vec3 pos;

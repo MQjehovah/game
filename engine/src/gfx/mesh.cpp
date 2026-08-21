@@ -189,10 +189,15 @@ Mesh Mesh::CreateFromData(Renderer& renderer, const Vertex3D* vertices, uint32_t
     Mesh mesh;
     mesh.data_ = std::make_shared<MeshData>();
     mesh.data_->name = name;
+    mesh.data_->backend = renderer.Backend();
     mesh.data_->handle = renderer.Backend()->CreateMesh(vertices, vertexCount, indices, indexCount);
     mesh.data_->triangleCount = indexCount / 3;
     mesh.data_->cpuVerts.assign(vertices, vertices + vertexCount);
     mesh.data_->cpuIndices.assign(indices, indices + indexCount);
+    // If skin data was attached before upload (edge case), bake it into the
+    // CPU/GPU vertex copy so the buffer is always consistent.
+    if (!mesh.data_->cpuJointIds.empty() && !mesh.data_->cpuVerts.empty())
+        mesh.BakeSkinDataIntoVerts();
     math::AABB bounds;
     bounds.min = {1e30f, 1e30f, 1e30f};
     bounds.max = {-1e30f, -1e30f, -1e30f};
@@ -200,6 +205,33 @@ Mesh Mesh::CreateFromData(Renderer& renderer, const Vertex3D* vertices, uint32_t
     if (vertexCount == 0) bounds = {};
     mesh.data_->bounds = bounds;
     return mesh;
+}
+
+void Mesh::AttachSkinData(std::vector<uint16_t> jointIds, std::vector<float> jointWeights,
+                          int skinIndex) {
+    if (!data_) return;
+    data_->cpuJointIds = std::move(jointIds);
+    data_->cpuJointWeights = std::move(jointWeights);
+    data_->skinIndex = skinIndex;
+    data_->skinned = !data_->cpuJointIds.empty();
+    if (data_->cpuVerts.empty() || !data_->backend) return;
+    BakeSkinDataIntoVerts();
+    data_->backend->UpdateMeshVertices(data_->handle, data_->cpuVerts.data(),
+                                       static_cast<uint32_t>(data_->cpuVerts.size()));
+}
+
+void Mesh::BakeSkinDataIntoVerts() {
+    if (!data_ || data_->cpuVerts.empty()) return;
+    const size_t jointCount = data_->cpuJointIds.size();
+    const size_t weightCount = data_->cpuJointWeights.size();
+    for (size_t i = 0; i < data_->cpuVerts.size(); ++i) {
+        Vertex3D& v = data_->cpuVerts[i];
+        for (int c = 0; c < 4; ++c) {
+            const size_t idx = i * 4 + static_cast<size_t>(c);
+            v.j[c] = idx < jointCount ? static_cast<float>(data_->cpuJointIds[idx]) : 0.0f;
+            v.w[c] = idx < weightCount ? data_->cpuJointWeights[idx] : 0.0f;
+        }
+    }
 }
 
 } // namespace neon::gfx

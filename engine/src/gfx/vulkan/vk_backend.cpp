@@ -29,6 +29,7 @@ public:
     void DestroyTexture(TextureHandle) override {}
     MeshHandle CreateMesh(const void*, uint32_t, const uint16_t*, uint32_t) override { return {}; }
     void DestroyMesh(const MeshHandle&) override {}
+    void UpdateMeshVertices(const MeshHandle&, const void*, uint32_t) override {}
     void SetBlendMode(BlendMode) override {}
     void SetDepthTest(bool, bool) override {}
     void SetCullMode(CullMode) override {}
@@ -37,6 +38,7 @@ public:
     void Clear(const Color&, float) override {}
     void UseShader(ShaderHandle) override {}
     void SetUniformMat4(const char*, const math::Mat4&) override {}
+    void SetUniformMat4Array(const char*, const float*, int) override {}
     void SetUniformVec4(const char*, const math::Vec4&) override {}
     void SetUniformVec3(const char*, const math::Vec3&) override {}
     void SetUniformFloat(const char*, float) override {}

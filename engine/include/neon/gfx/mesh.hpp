@@ -17,7 +17,17 @@ struct Vertex3D {
     math::Vec3 normal;
     math::Vec2 uv;
     math::Vec4 color{1.0f, 1.0f, 1.0f, 1.0f};
+    // GPU skinning data: up to 4 joint indices + 4 weights per vertex. Stored
+    // as plain floats (not integer attribs) so one VBO layout serves both
+    // static and skinned meshes; the skinned lit shader casts them to int.
+    // Zero for non-skinned vertices.
+    float j[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    float w[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 };
+
+// Byte stride of the fixed 3D vertex layout. The GL backend mirrors this in
+// CreateMesh/UpdateMeshVertices; keep them in sync if Vertex3D changes.
+static_assert(sizeof(Vertex3D) == 80, "Vertex3D layout changed; update GL backend stride/offsets");
 
 // Engine skin definition (CPU side): the joint chain of a glTF skin, expressed
 // as glTF node indices, plus one inverse-bind matrix per joint.
@@ -38,6 +48,10 @@ struct MeshData {
     int skinIndex = -1;
     std::vector<uint16_t> cpuJointIds;
     std::vector<float> cpuJointWeights;
+    // Backend used to (re)upload vertex data when skin data is attached after
+    // CreateFromData. The renderer outlives the meshes in every consumer, so a
+    // raw pointer is safe for the lifetime the mesh actually uses it.
+    IRenderBackend* backend = nullptr;
 };
 
 class Mesh {
@@ -95,17 +109,16 @@ public:
         return data_ ? data_->cpuJointWeights : kEmpty;
     }
     // Attaches skinned per-vertex data (4 joints + 4 weights per vertex) to a
-    // mesh already built from geometry. Flags the mesh as skinned.
+    // mesh already built from geometry. Bakes the data into the mesh's CPU
+    // vertex copy and re-uploads the vertex buffer so the GPU layout matches;
+    // flags the mesh as skinned. See mesh.cpp.
     void AttachSkinData(std::vector<uint16_t> jointIds, std::vector<float> jointWeights,
-                        int skinIndex = -1) {
-        if (!data_) return;
-        data_->cpuJointIds = std::move(jointIds);
-        data_->cpuJointWeights = std::move(jointWeights);
-        data_->skinIndex = skinIndex;
-        data_->skinned = !data_->cpuJointIds.empty();
-    }
+                        int skinIndex = -1);
 
 private:
+    // Copies cpuJointIds/cpuJointWeights into cpuVerts[j]/[w] (4+4 floats per
+    // vertex) so the CPU mirror matches the GPU vertex layout exactly.
+    void BakeSkinDataIntoVerts();
     std::shared_ptr<MeshData> data_;
 };
 
