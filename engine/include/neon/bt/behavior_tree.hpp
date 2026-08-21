@@ -4,6 +4,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "neon/core/json.hpp"
 #include "neon/script/blackboard.hpp"
@@ -14,6 +15,36 @@ namespace neon::bt {
 
 // Runtime status returned by every node's Tick.
 enum class Status { Running, Success, Failure };
+
+// ---------------------------------------------------------------------------
+// Node introspection (for editors/tools). Mirrors exactly what the JSON loader
+// reads so an editor can present the same parameter surface the runtime uses.
+// ---------------------------------------------------------------------------
+
+// JSON value type a node parameter accepts.
+enum class ParamType { Number, String, Bool, Object, Array };
+
+struct ParamInfo {
+    std::string name;
+    ParamType type;
+    bool required = false; // load fails when a required arg is missing/invalid
+};
+
+// A concrete loadable node type plus its parameter schema and semantic
+// category ("composite" / "decorator" / "action" / "condition").
+struct NodeTypeInfo {
+    std::string type;
+    std::string category;
+    std::vector<ParamInfo> params;
+};
+
+// Every builtin node type the loader understands, with its param schema.
+std::vector<NodeTypeInfo> AllNodeTypes();
+
+// How many children a node type accepts: -1 = unlimited (composites), 0 = none
+// (actions/conditions), 1 = exactly one (decorators), -2 = unknown type. Used
+// by the editor to validate links.
+int ChildCapacity(const std::string& type);
 
 class Context;
 class Args;
@@ -42,9 +73,27 @@ public:
     const std::string& Id() const { return id_; }
     void SetId(const std::string& id) { id_ = id; }
 
+    // Concrete loadable type string (e.g. "move_to"), distinct from Name().
+    const std::string& Type() const { return type_; }
+    void SetType(const std::string& type) { type_ = type; }
+
+    // The raw "args" object the loader read for this node (null when absent).
+    // Serialization re-emits it so ToJson -> LoadText is a faithful round-trip.
+    const core::Json& Args() const { return args_; }
+    void SetArgs(const core::Json& args) { args_ = args; }
+
+    // Evaluate with debug bookkeeping: records this node's Id() into
+    // ctx.activePath (the deepest ticking node overwrites it, so after a Tick
+    // activePath names the innermost node that ran) then ticks. The recording
+    // has no effect on the returned Status. All nested evaluation (composites
+    // ticking children, decorators ticking their child) routes through this.
+    Status TickNode(Context& ctx) const;
+
 protected:
     std::string name_;
     std::string id_;
+    std::string type_;
+    core::Json args_; // raw args from load; may be Null
 };
 
 using NodePtr = std::unique_ptr<Node>;
@@ -61,6 +110,12 @@ struct Context {
     script::Blackboard* blackboard = nullptr;
     uint64_t entity = 0;
     float dt = 0.f;
+
+    // Debug observability: the path id of the node most recently ticked by the
+    // current tree evaluation ("" before the first tick). Set by Node::TickNode;
+    // the deepest/innermost node that ran wins. Purely bookkeeping: has no
+    // effect on Status or any node behavior.
+    std::string activePath;
 
     // Runtime state owned by the caller, keyed by entity then node id. All
     // time-varying per-entity state (wait/cooldown timers) lives here so a
@@ -136,6 +191,13 @@ public:
 
     Status Tick(Context& ctx) const;
     bool Valid() const { return root_ != nullptr; }
+
+    // Serialize the loaded tree back to the SAME JSON shape the loader accepts
+    // ({"root": {...}}), so ToJson -> LoadText round-trips faithfully: node
+    // type/name/args and the children/child nesting are re-emitted exactly as
+    // they were read (args are preserved verbatim). Returns an empty object
+    // (no "root" key) when no tree is loaded.
+    core::Json ToJson() const;
 
 private:
     NodePtr root_;

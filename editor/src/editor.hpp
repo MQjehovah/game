@@ -9,6 +9,7 @@
 #include "neon/neon.hpp"
 #include "neon/scene/game_runtime.hpp"
 #include "neon/ui/system.hpp"
+#include "bt_editor.hpp"
 #include "imgui.h"
 #include "ImGuizmo.h"
 #include "history.hpp"
@@ -96,6 +97,26 @@ private:
     core::Result<core::Json> BuildPlaySceneJson();
     gfx::Camera OrbitCamera() const;
 
+    // Behavior tree editor (T4.4): docked 行为树 panel with a node palette,
+    // a drag canvas, link creation, param editing, save/load of .bt.json and a
+    // playtest debug highlight driven by bt::Context::activePath.
+    void BuildBtPanel();
+    void BuildBtToolbar();
+    void BuildBtPalette();
+    void BuildBtCanvas();
+    void BuildBtParams();
+    void BtNewTree();
+    bool BtSaveToFile(const std::string& path);
+    bool BtLoadFromFile(const std::string& path);
+    void BtPushSnapshot(const btgraph::BtGraph& before);
+    void BtUpdatePlaytestHighlight();
+    void BtRefreshBehaviorFiles();
+    std::string BtBehaviorsDir() const;
+    void BtParamNumber(const btgraph::BtGraphNode& n, const bt::ParamInfo& p);
+    void BtParamString(const btgraph::BtGraphNode& n, const bt::ParamInfo& p);
+    void BtParamBool(const btgraph::BtGraphNode& n, const bt::ParamInfo& p);
+    void BtParamJson(const btgraph::BtGraphNode& n, const bt::ParamInfo& p);
+
     gfx::Renderer renderer_;
     assets::AssetManager assetMgr_;
     ui::UIManager ui_;
@@ -170,6 +191,31 @@ private:
     ui::Button* demoAddButton_ = nullptr;
     int demoAddClicks_ = 0;
     int demoComboChanged_ = -1;
+
+    // Behavior tree editor (T4.4) state.
+    bool showBt_ = false;
+    bool btPanelFocused_ = false; // undo/redo routing: BT panel owns Ctrl+Z while focused
+    btgraph::BtGraph btGraph_;
+    HistoryManager btHistory_;
+    std::string btFileName_ = "behavior";
+    char btFileNameBuf_[256]{};
+    std::string btSelected_;   // selected canvas node id
+    std::string btPendingType_; // armed palette node type (click canvas to place)
+    std::string btActivePath_;  // playtest highlight: tree-path id of the running node
+    std::vector<std::string> btBehaviorFiles_;
+    bool btCanvasDrawn_ = false; // smoke: the BT canvas emitted geometry this frame
+    // Canvas drag state.
+    std::string btDragNode_;
+    math::Vec2 btDragStart_{0.f, 0.f};
+    math::Vec2 btNodeStartPos_{0.f, 0.f};
+    bool btDragging_ = false;
+    // Graph snapshot captured when a node drag began, pushed as one undo step
+    // on release (only when the node actually moved).
+    btgraph::BtGraph btGraphBeforeDrag_;
+    bool btHasGraphBeforeDrag_ = false;
+    // Per-param drag origin: args snapshot captured when a slider drag began,
+    // so the undo step reverts to the pre-drag value (one drag = one step).
+    std::map<std::string, btgraph::BtGraph> btArgDragOrigin_;
 };
 
 } // namespace neon::editor

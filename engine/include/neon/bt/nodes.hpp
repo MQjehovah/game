@@ -15,6 +15,8 @@ class Composite : public Node {
 public:
     void AddChild(NodePtr child) { children_.push_back(std::move(child)); }
     size_t ChildCount() const { return children_.size(); }
+    // Read-only access for serialization / introspection.
+    const std::vector<NodePtr>& Children() const { return children_; }
 
 protected:
     std::vector<NodePtr> children_;
@@ -24,6 +26,8 @@ protected:
 class Decorator : public Node {
 public:
     void SetChild(NodePtr child) { child_ = std::move(child); }
+    // Read-only access for serialization / introspection.
+    const NodePtr& Child() const { return child_; }
 
 protected:
     NodePtr child_;

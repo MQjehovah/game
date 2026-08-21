@@ -179,6 +179,53 @@ TEST(GameRuntimeRestartIsClean) {
 }
 
 // ---------------------------------------------------------------------------
+// Debug observability: ActiveTreePath surfaces the bt::Context::activePath of
+// the entity's tree after each tick (editor playtest highlight).
+// ---------------------------------------------------------------------------
+
+TEST(GameRuntimeActiveTreePath) {
+    scene::GameRuntime runtime;
+    CHECK(runtime.Start(kSimScene, scene::GameRuntimeConfig{}).Ok());
+    CHECK_EQ(runtime.BehaviorTreeCount(), 1u);
+
+    ecs::Entity btEnt;
+    {
+        auto view = runtime.World().ViewAll<scene::SceneBehaviorTree>();
+        CHECK_EQ(view.Size(), 1u);
+        if (view.Size() == 1u) btEnt = runtime.World().EntityAt<scene::SceneBehaviorTree>(0);
+    }
+    CHECK(btEnt.IsValid());
+    CHECK_EQ(runtime.ActiveTreePath(btEnt), std::string("")); // nothing ticked yet
+
+    // Walker's tree: sequence [ wait(0.5s), blackboard_set ]. While the wait is
+    // running, the deepest node that ran is the wait child ("0/0").
+    for (int i = 0; i < 10; ++i) runtime.Tick(1.0f / 60.0f); // 0.166s < 0.5s
+    CHECK_EQ(runtime.ActiveTreePath(btEnt), std::string("0/0"));
+
+    // Tick until the wait completes: the tick that crosses 0.5s also runs the
+    // blackboard_set child, so activePath names that child ("0/1").
+    bool sawDone = false;
+    for (int i = 0; i < 120; ++i) {
+        runtime.Tick(1.0f / 60.0f);
+        if (runtime.EntityBlackboardValue(btEnt, "bt_done").type ==
+            script::Value::Type::Bool) {
+            sawDone = true;
+            CHECK_EQ(runtime.ActiveTreePath(btEnt), std::string("0/1"));
+            break;
+        }
+    }
+    CHECK(sawDone);
+
+    // The wait restarts from 0 next cycle -> deepest node back to "0/0".
+    for (int i = 0; i < 5; ++i) runtime.Tick(1.0f / 60.0f);
+    CHECK_EQ(runtime.ActiveTreePath(btEnt), std::string("0/0"));
+
+    // Entities without a tree report nothing.
+    CHECK_EQ(runtime.ActiveTreePath(ecs::Entity{}), std::string(""));
+    runtime.Stop();
+}
+
+// ---------------------------------------------------------------------------
 // Draw path (headless backend): lazy mesh resolution + procedural primitives
 // ---------------------------------------------------------------------------
 

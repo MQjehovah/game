@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <iterator>
 #include <sstream>
 
 #if defined(_WIN32)
@@ -272,6 +273,24 @@ void EditorApp::OnUpdate(float dt) {
         showAssets_ = true;
         showResources_ = true;
         showLog_ = true;
+        showBt_ = true;
+        // Seed a small tree so the BT canvas renders real nodes on the smoke
+        // frame (frame 30) and the smoke can assert the canvas drew geometry.
+        btGraph_ = btgraph::BtGraph{};
+        const std::string r = btGraph_.AddNode("sequence", math::Vec2{20.f, 20.f});
+        const std::string c = btGraph_.AddNode("in_range", math::Vec2{20.f, 180.f});
+        const std::string a = btGraph_.AddNode("move_to", math::Vec2{240.f, 180.f});
+        core::Json dist;
+        dist.type_ = core::Json::Type::Number;
+        dist.number_ = 8.0;
+        core::Json speed;
+        speed.type_ = core::Json::Type::Number;
+        speed.number_ = 3.0;
+        btGraph_.SetArg(c, "distance", dist);
+        btGraph_.SetArg(a, "speed", speed);
+        btGraph_.SetParent(c, r);
+        btGraph_.SetParent(a, r);
+        btSelected_ = r;
     }
     if (smokeMode_ && TimeRef().frameIndex == 30) RunUISmokeTest();
 
@@ -362,21 +381,27 @@ void EditorApp::OnRender() {
 void EditorApp::OnEvent(const platform::InputEvent& event) {
     // Ctrl+Z (undo) / Ctrl+Y or Ctrl+Shift+Z (redo) on the KeyDown edge only,
     // and never while ImGui owns the keyboard (e.g. typing in the name field)
-    // -- same gating as the F5 playtest shortcut below.
+    // -- same gating as the F5 playtest shortcut below. When the 行为树 panel
+    // has focus AND its graph history has steps, undo/redo drive the BT graph;
+    // otherwise they drive the scene history (an empty BT history never
+    // swallows the scene shortcuts).
     if (event.type == platform::InputEvent::Type::KeyDown &&
         !gfx::ImGuiNeon_WantCaptureKeyboard()) {
         if (Input()->IsDown(platform::Key::Control)) {
             if (event.key == platform::Key::Z) {
                 if (Input()->IsDown(platform::Key::Shift)) {
-                    history_.Redo();
+                    if (btPanelFocused_ && btHistory_.CanRedo()) btHistory_.Redo();
+                    else history_.Redo();
                 } else {
-                    history_.Undo();
+                    if (btPanelFocused_ && btHistory_.CanUndo()) btHistory_.Undo();
+                    else history_.Undo();
                 }
                 ClampSelection();
                 return;
             }
             if (event.key == platform::Key::Y) {
-                history_.Redo();
+                if (btPanelFocused_ && btHistory_.CanRedo()) btHistory_.Redo();
+                else history_.Redo();
                 ClampSelection();
                 return;
             }
@@ -818,6 +843,7 @@ void EditorApp::BuildImGuiUI() {
             ImGui::MenuItem("资产", nullptr, &showAssets_);
             ImGui::MenuItem("资源", nullptr, &showResources_);
             ImGui::MenuItem("日志", nullptr, &showLog_);
+            ImGui::MenuItem("行为树", nullptr, &showBt_);
             ImGui::Separator();
             ImGui::MenuItem("引擎 UI 演示", nullptr, &showCustomUIDemo_);
             ImGui::MenuItem("ImGui Demo", nullptr, &showImGuiDemo_);
@@ -959,6 +985,7 @@ void EditorApp::BuildImGuiUI() {
     BuildResourcePanel();
     BuildInspectorPanel();
     BuildLogPanel();
+    BuildBtPanel();
     BuildViewportPanel();
 
     if (showImGuiDemo_) ImGui::ShowDemoWindow(&showImGuiDemo_);
@@ -1321,6 +1348,59 @@ void EditorApp::RunUISmokeTest() {
                       "imported SceneMesh carries the texture path + metallic + AO");
             }
         }
+    }
+
+    // --- Behavior tree editor: canvas + model + save/load + undo ---
+    {
+        check(btCanvasDrawn_, "bt canvas renders the seeded tree");
+        check(btGraph_.NodeCount() == 3u && btGraph_.LinkCount() == 2u,
+              "bt panel seeded a 3-node linked tree");
+
+        // Model-level create/link/serialize -> save to a temp .bt.json ->
+        // load back -> assert identical (the graph->JSON->graph round-trip).
+        btgraph::BtGraph g;
+        const std::string r = g.AddNode("sequence", math::Vec2{});
+        const std::string c = g.AddNode("in_range", math::Vec2{});
+        const std::string a = g.AddNode("move_to", math::Vec2{});
+        core::Json d, s;
+        d.type_ = core::Json::Type::Number;
+        d.number_ = 8.0;
+        s.type_ = core::Json::Type::Number;
+        s.number_ = 3.0;
+        g.SetArg(c, "distance", d);
+        g.SetArg(a, "speed", s);
+        g.SetParent(c, r);
+        g.SetParent(a, r);
+        const std::string json = g.Serialize();
+
+        const std::string btPath = GetTempDir() + "/bt_smoke.bt.json";
+        {
+            std::ofstream out(btPath, std::ios::binary);
+            out << json;
+        }
+        check(!json.empty(), "bt smoke: tree serialized");
+        std::string loadedText;
+        std::ifstream in(btPath, std::ios::binary);
+        loadedText.assign(std::istreambuf_iterator<char>(in),
+                          std::istreambuf_iterator<char>());
+        btgraph::BtGraph loaded;
+        check(loaded.FromTreeJson(core::Json::Parse(loadedText, nullptr)),
+              "bt smoke: saved .bt.json reloads");
+        check(loaded.Serialize() == json, "bt smoke: save/load round-trip identical");
+
+        // Editor graph edits route through the undo stack: add -> undo -> redo.
+        const size_t nodesBefore = btGraph_.NodeCount();
+        const btgraph::BtGraph before = btGraph_;
+        const std::string nid = btGraph_.AddNode("wait", math::Vec2{0.f, 0.f});
+        BtPushSnapshot(before);
+        check(!nid.empty() && btGraph_.NodeCount() == nodesBefore + 1,
+              "bt smoke: canvas add node");
+        btHistory_.Undo();
+        check(btGraph_.NodeCount() == nodesBefore, "bt smoke: undo restores the graph");
+        btHistory_.Redo();
+        check(btGraph_.NodeCount() == nodesBefore + 1, "bt smoke: redo reapplies the add");
+        btHistory_.Undo();
+        check(btGraph_.NodeCount() == nodesBefore, "bt smoke: graph left clean after undo");
     }
 
     NEON_LOG_INFO("EDITOR-UI-SMOKE: all checks done");

@@ -86,6 +86,12 @@ public:
     // tree or the key is unset).
     script::Value EntityBlackboardValue(const ecs::Entity& ent, const std::string& key) const;
 
+    // Debug observability: the node path id most recently ticked by the
+    // behavior tree of `ent` (bt::Context::activePath after the last tick; ""
+    // when the entity has no tree or none has ticked yet). Powers the editor's
+    // playtest highlight.
+    std::string ActiveTreePath(const ecs::Entity& ent) const;
+
 private:
     struct ScriptInst {
         ecs::Entity ent;
@@ -101,6 +107,8 @@ private:
         // swapped in/out of the fresh Context (a Context cannot be stored: it
         // binds a GameVars reference and the board address may move).
         std::map<uint64_t, std::map<std::string, float>> timers;
+        // bt::Context::activePath captured after the last Tick (debug highlight).
+        std::string activePath;
     };
     struct DrawItem {
         ecs::Entity ent;

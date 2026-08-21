@@ -1,6 +1,7 @@
 #include "neon/bt/nodes.hpp"
 
 #include <algorithm>
+#include <cstring>
 #include <functional>
 #include <map>
 #include <vector>
@@ -12,6 +13,11 @@ namespace neon::bt {
 // ---------------------------------------------------------------------------
 // Context
 // ---------------------------------------------------------------------------
+
+Status Node::TickNode(Context& ctx) const {
+    ctx.activePath = Id();
+    return Tick(ctx);
+}
 
 bool Context::BBHas(const std::string& key) const {
     return blackboard && blackboard->Has(entity, key);
@@ -133,7 +139,7 @@ bool CompareValues(const script::Value& a, const script::Value& b, const std::st
 
 Status SequenceNode::Tick(Context& ctx) const {
     for (auto& child : children_) {
-        Status s = child->Tick(ctx);
+        Status s = child->TickNode(ctx);
         if (s != Status::Success) return s;
     }
     return Status::Success;
@@ -141,7 +147,7 @@ Status SequenceNode::Tick(Context& ctx) const {
 
 Status SelectorNode::Tick(Context& ctx) const {
     for (auto& child : children_) {
-        Status s = child->Tick(ctx);
+        Status s = child->TickNode(ctx);
         if (s != Status::Failure) return s;
     }
     return Status::Failure;
@@ -160,7 +166,7 @@ Status RandomSelectorNode::Tick(Context& ctx) const {
         std::swap(order[i - 1], order[j]);
     }
     for (size_t idx : order) {
-        Status s = children_[idx]->Tick(ctx);
+        Status s = children_[idx]->TickNode(ctx);
         if (s != Status::Failure) return s;
     }
     return Status::Failure;
@@ -173,7 +179,7 @@ Status ParallelNode::Tick(Context& ctx) const {
 
     int successes = 0, failures = 0;
     for (auto& child : children_) {
-        Status s = child->Tick(ctx);
+        Status s = child->TickNode(ctx);
         if (s == Status::Success) ++successes;
         else if (s == Status::Failure) ++failures;
     }
@@ -188,7 +194,7 @@ Status ParallelNode::Tick(Context& ctx) const {
 
 Status InvertNode::Tick(Context& ctx) const {
     if (!child_) return Status::Failure;
-    Status s = child_->Tick(ctx);
+    Status s = child_->TickNode(ctx);
     if (s == Status::Success) return Status::Failure;
     if (s == Status::Failure) return Status::Success;
     return Status::Running;
@@ -202,7 +208,7 @@ Status CooldownNode::Tick(Context& ctx) const {
         if (remaining > 0.f) return Status::Failure; // blocked
         remaining = 0.f;
     }
-    Status s = child_->Tick(ctx);
+    Status s = child_->TickNode(ctx);
     if (s == Status::Success && seconds_ > 0.f) remaining = seconds_;
     return s;
 }
@@ -210,7 +216,7 @@ Status CooldownNode::Tick(Context& ctx) const {
 Status RepeatNode::Tick(Context& ctx) const {
     if (!child_) return Status::Failure;
     for (int i = 0; i < count_; ++i) {
-        Status s = child_->Tick(ctx);
+        Status s = child_->TickNode(ctx);
         if (s == Status::Running) return Status::Running;
         if (s == Status::Failure) return Status::Failure;
     }
@@ -219,7 +225,7 @@ Status RepeatNode::Tick(Context& ctx) const {
 
 Status UntilFailNode::Tick(Context& ctx) const {
     if (!child_) return Status::Failure;
-    Status s = child_->Tick(ctx);
+    Status s = child_->TickNode(ctx);
     return s == Status::Failure ? Status::Success : Status::Running;
 }
 
@@ -585,33 +591,65 @@ NodePtr BuildScriptBool(const core::Json& node, const std::string&, int, std::st
     return n;
 }
 
-const std::map<std::string, Factory>& Factories() {
-    static const std::map<std::string, Factory> factories = {
-        {"sequence", &BuildSequence},
-        {"selector", &BuildSelector},
-        {"random_selector", &BuildRandomSelector},
-        {"parallel", &BuildParallel},
-        {"invert", &BuildInvert},
-        {"cooldown", &BuildCooldown},
-        {"repeat", &BuildRepeat},
-        {"until_fail", &BuildUntilFail},
-        {"blackboard_set", &BuildBlackboardSet},
-        {"move_to", &BuildMoveTo},
-        {"attack", &BuildAttack},
-        {"dialogue", &BuildDialogue},
-        {"spawn", &BuildSpawn},
-        {"wait", &BuildWait},
-        {"play_sfx", &BuildPlaySfx},
-        {"run_script", &BuildRunScript},
-        {"in_range", &BuildInRange},
-        {"has_target", &BuildHasTarget},
-        {"quest_state", &BuildQuestState},
-        {"health_below", &BuildHealthBelow},
-        {"blackboard_cmp", &BuildBlackboardCmp},
-        {"gamevar_cmp", &BuildGameVarCmp},
-        {"script_bool", &BuildScriptBool},
+// The single source of truth for node types: builder factory, semantic
+// category and the parameter schema the loader reads. Both BuildNode and the
+// public introspection API (AllNodeTypes / ChildCapacity) derive from this
+// table, so the editor's palette and the loader can never drift apart.
+struct TypeEntry {
+    Factory factory;
+    const char* category;
+    std::vector<ParamInfo> params;
+};
+
+const std::map<std::string, TypeEntry>& TypeTable() {
+    static const std::map<std::string, TypeEntry> table = {
+        {"sequence", {&BuildSequence, "composite", {}}},
+        {"selector", {&BuildSelector, "composite", {}}},
+        {"random_selector", {&BuildRandomSelector, "composite", {}}},
+        {"parallel", {&BuildParallel, "composite",
+                      {{"threshold", ParamType::Number, false}}}},
+        {"invert", {&BuildInvert, "decorator", {}}},
+        {"cooldown", {&BuildCooldown, "decorator",
+                      {{"seconds", ParamType::Number, false}}}},
+        {"repeat", {&BuildRepeat, "decorator",
+                    {{"count", ParamType::Number, true}}}},
+        {"until_fail", {&BuildUntilFail, "decorator", {}}},
+        {"blackboard_set", {&BuildBlackboardSet, "action",
+                            {{"key", ParamType::String, false},
+                             {"value", ParamType::Object, false}}}},
+        {"move_to", {&BuildMoveTo, "action",
+                     {{"speed", ParamType::Number, false}}}},
+        {"attack", {&BuildAttack, "action", {}}},
+        {"dialogue", {&BuildDialogue, "action",
+                      {{"text", ParamType::String, false}}}},
+        {"spawn", {&BuildSpawn, "action",
+                   {{"kind", ParamType::String, false}}}},
+        {"wait", {&BuildWait, "action",
+                  {{"seconds", ParamType::Number, false}}}},
+        {"play_sfx", {&BuildPlaySfx, "action",
+                      {{"name", ParamType::String, false}}}},
+        {"run_script", {&BuildRunScript, "action",
+                        {{"script", ParamType::String, false}}}},
+        {"in_range", {&BuildInRange, "condition",
+                      {{"distance", ParamType::Number, false}}}},
+        {"has_target", {&BuildHasTarget, "condition", {}}},
+        {"quest_state", {&BuildQuestState, "condition",
+                         {{"quest", ParamType::String, false},
+                          {"state", ParamType::String, false}}}},
+        {"health_below", {&BuildHealthBelow, "condition",
+                          {{"pct", ParamType::Number, false}}}},
+        {"blackboard_cmp", {&BuildBlackboardCmp, "condition",
+                            {{"key", ParamType::String, false},
+                             {"op", ParamType::String, false},
+                             {"value", ParamType::Object, false}}}},
+        {"gamevar_cmp", {&BuildGameVarCmp, "condition",
+                         {{"key", ParamType::String, false},
+                          {"op", ParamType::String, false},
+                          {"value", ParamType::Object, false}}}},
+        {"script_bool", {&BuildScriptBool, "condition",
+                         {{"script", ParamType::String, false}}}},
     };
-    return factories;
+    return table;
 }
 
 // Categories accepted in the "type" field when the concrete node name lives in
@@ -623,22 +661,8 @@ bool IsCategory(const std::string& s) {
 // Semantic category of each concrete node type, used to validate that a
 // category-typed node's `name` actually maps to a node of that category.
 const char* CategoryOf(const std::string& type) {
-    static const std::map<std::string, const char*> cats = {
-        {"sequence", "composite"},     {"selector", "composite"},
-        {"random_selector", "composite"}, {"parallel", "composite"},
-        {"invert", "decorator"},       {"cooldown", "decorator"},
-        {"repeat", "decorator"},       {"until_fail", "decorator"},
-        {"move_to", "action"},        {"attack", "action"},
-        {"dialogue", "action"},       {"spawn", "action"},
-        {"wait", "action"},           {"play_sfx", "action"},
-        {"run_script", "action"},     {"blackboard_set", "action"},
-        {"in_range", "condition"},     {"has_target", "condition"},
-        {"quest_state", "condition"},  {"health_below", "condition"},
-        {"blackboard_cmp", "condition"}, {"gamevar_cmp", "condition"},
-        {"script_bool", "condition"},
-    };
-    auto it = cats.find(type);
-    return it != cats.end() ? it->second : nullptr;
+    auto it = TypeTable().find(type);
+    return it != TypeTable().end() ? it->second.category : nullptr;
 }
 
 NodePtr BuildNode(const core::Json& node, const std::string& path, int depth, std::string* error) {
@@ -671,9 +695,9 @@ NodePtr BuildNode(const core::Json& node, const std::string& path, int depth, st
     }
     const std::string type = typeJ->GetString();
     std::string key = type;
-    if (!Factories().count(type) && IsCategory(type)) {
+    if (!TypeTable().count(type) && IsCategory(type)) {
         const core::Json* nameJ = node.Get("name");
-        if (nameJ && nameJ->IsString() && Factories().count(nameJ->GetString())) {
+        if (nameJ && nameJ->IsString() && TypeTable().count(nameJ->GetString())) {
             const char* cat = CategoryOf(nameJ->GetString());
             if (!cat || cat != type) {
                 if (error) {
@@ -685,16 +709,55 @@ NodePtr BuildNode(const core::Json& node, const std::string& path, int depth, st
             key = nameJ->GetString();
         }
     }
-    auto it = Factories().find(key);
-    if (it == Factories().end()) {
+    auto it = TypeTable().find(key);
+    if (it == TypeTable().end()) {
         if (error) *error = "unknown node type '" + type + "'";
         return nullptr;
     }
-    NodePtr n = it->second(node, path, depth, error);
+    NodePtr n = it->second.factory(node, path, depth, error);
     if (!n) return nullptr;
     n->SetId(path);
+    n->SetType(key);
+    n->SetArgs(argsJ ? *argsJ : core::Json{});
     return n;
 }
+
+// ---------------------------------------------------------------------------
+// Serialization: walk a loaded Node graph back into the loader's JSON shape.
+// Args are re-emitted verbatim from what the loader read, so ToJson -> LoadText
+// is a faithful round-trip (type/name/args/nesting all preserved).
+// ---------------------------------------------------------------------------
+
+core::Json SerializeNode(const Node& n) {
+    core::Json obj;
+    obj.type_ = core::Json::Type::Object;
+    core::Json typeJ;
+    typeJ.type_ = core::Json::Type::String;
+    typeJ.string_ = n.Type();
+    obj.object_["type"] = std::move(typeJ);
+    // Only a name that differs from the type string needs emitting: the loader
+    // falls back to the type as the name, so equal ones round-trip implicitly.
+    if (!n.Name().empty() && n.Name() != n.Type()) {
+        core::Json nameJ;
+        nameJ.type_ = core::Json::Type::String;
+        nameJ.string_ = n.Name();
+        obj.object_["name"] = std::move(nameJ);
+    }
+    if (!n.Args().IsNull()) obj.object_["args"] = n.Args();
+
+    if (const Composite* comp = dynamic_cast<const Composite*>(&n)) {
+        if (!comp->Children().empty()) {
+            core::Json arr;
+            arr.type_ = core::Json::Type::Array;
+            for (const auto& c : comp->Children()) arr.array_.push_back(SerializeNode(*c));
+            obj.object_["children"] = std::move(arr);
+        }
+    } else if (const Decorator* dec = dynamic_cast<const Decorator*>(&n)) {
+        if (dec->Child()) obj.object_["child"] = SerializeNode(*dec->Child());
+    }
+    return obj;
+}
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -724,7 +787,34 @@ bool BehaviorTree::LoadText(const std::string& text, std::string* error) {
 }
 
 Status BehaviorTree::Tick(Context& ctx) const {
-    return root_ ? root_->Tick(ctx) : Status::Failure;
+    return root_ ? root_->TickNode(ctx) : Status::Failure;
+}
+
+core::Json BehaviorTree::ToJson() const {
+    core::Json root;
+    root.type_ = core::Json::Type::Object;
+    if (root_) root.object_["root"] = SerializeNode(*root_);
+    return root;
+}
+
+// ---------------------------------------------------------------------------
+// Introspection
+// ---------------------------------------------------------------------------
+
+std::vector<NodeTypeInfo> AllNodeTypes() {
+    std::vector<NodeTypeInfo> out;
+    out.reserve(TypeTable().size());
+    for (const auto& kv : TypeTable()) out.push_back({kv.first, kv.second.category, kv.second.params});
+    return out;
+}
+
+int ChildCapacity(const std::string& type) {
+    auto it = TypeTable().find(type);
+    if (it == TypeTable().end()) return -2;
+    const char* cat = it->second.category;
+    if (std::strcmp(cat, "composite") == 0) return -1; // unlimited
+    if (std::strcmp(cat, "decorator") == 0) return 1;  // exactly one
+    return 0;                                          // actions / conditions
 }
 
 } // namespace neon::bt

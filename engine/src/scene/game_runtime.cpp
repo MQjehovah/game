@@ -328,6 +328,7 @@ void GameRuntime::Tick(float dt) {
         ctx.timers.swap(inst.timers); // carry over accumulated wait/cooldown state
         inst.tree->Tick(ctx);
         ctx.timers.swap(inst.timers); // persist it for the next tick
+        inst.activePath = ctx.activePath; // debug highlight: deepest node that ran
     }
     // Compact when a fifth of the trees belong to dead entities.
     if (deadTrees && deadTrees * 5 > trees_.size()) {
@@ -346,6 +347,13 @@ script::Value GameRuntime::EntityBlackboardValue(const ecs::Entity& ent,
         if (inst.ent == ent) return inst.board.Get(EntityKey(ent), key);
     }
     return script::Value::Nil();
+}
+
+std::string GameRuntime::ActiveTreePath(const ecs::Entity& ent) const {
+    for (const BtInst& inst : trees_) {
+        if (inst.ent == ent) return inst.activePath;
+    }
+    return {};
 }
 
 std::string GameRuntime::FullScriptPath(const std::string& path) const {
