@@ -36,7 +36,7 @@
 | UI 自动化冒烟测试（ImGui + 自研控件命中/点击/状态校验） | ✅ `--smoke-test` |
 | 粒子系统（3D 公告板粒子） | ✅ |
 | 物理（动态球 vs 静态 AABB + 重力 + 射线） | ✅ 简易内置，可替换 Jolt/Bullet |
-| 音频（WinMM 软件混音器 + 程序化生成音效/音乐） | ✅ Windows；其他平台为 Null 后端 |
+| 音频（miniaudio 软件混音器 + 程序化生成音效/音乐） | ✅ miniaudio（三平台统一；Windows 失败回退 WinMM，其余 Null） |
 | 资源管线（stb_image、OBJ+MTL、glTF 2.0 导入、Kenney CC0、程序化生成） | ✅ |
 | glTF 2.0：JSON DOM 解析器、PBR 材质、节点变换（Khronos 样例模型验证） | ✅ |
 | 单元测试（13 项：数学/ECS/配置/RNG） | ✅ |
@@ -135,7 +135,8 @@ engine/
     platform/cocoa     # Cocoa/NSOpenGL（macOS）
     gfx/gl             # OpenGL 后端 + 自研 GL 加载器
     gfx/vulkan         # Vulkan 后端（占位）
-    audio/winmm        # WinMM 混音器
+    audio/miniaudio      # miniaudio 混音器（T5.1，跨平台）
+    audio/winmm          # WinMM 混音器（Windows 回退）
 game/
   src/                 # NeonRealm demo（ECS 玩法系统/程序化美术/音效）
 tests/                 # 单元测试

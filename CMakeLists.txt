@@ -16,6 +16,7 @@ set(ENGINE_CORE_SOURCES
   engine/src/assets/asset_manager.cpp
   engine/src/anim/anim.cpp
   engine/src/audio/audio.cpp
+  engine/src/audio/miniaudio/ma_audio.cpp
   engine/src/core/app.cpp
   engine/src/core/config.cpp
   engine/src/core/log.cpp
@@ -68,6 +69,8 @@ endif()
 # Platform backends: one window/input implementation per OS
 # ---------------------------------------------------------------------------
 if(WIN32)
+  # winmm stays compiled as the Windows fallback when miniaudio cannot open a
+  # device (see engine/src/audio/audio.cpp backend selection).
   target_sources(neon_engine PRIVATE
     engine/src/platform/win32/win32_window.cpp
     engine/src/audio/winmm/winmm_audio.cpp
@@ -85,6 +88,28 @@ else()
   target_compile_definitions(neon_engine PUBLIC NEONRUSH_PLATFORM_LINUX)
   target_link_libraries(neon_engine PUBLIC ${X11_LIBRARIES} GL)
 endif()
+
+# ---------------------------------------------------------------------------
+# miniaudio (T5.1): vendored single header compiled once (implementation lives
+# in ma_impl.cpp), mirroring how neon_lua is built. The engine's cross-platform
+# IAudioBackend (engine/src/audio/miniaudio/ma_audio.cpp) links it. Windows
+# needs no extra libs (WASAPI/DirectSound/WinMM are runtime-linked); POSIX
+# builds need libm/libdl for miniaudio's internal use.
+# ---------------------------------------------------------------------------
+add_library(neon_miniaudio STATIC
+  engine/src/audio/miniaudio/ma_impl.cpp
+)
+target_include_directories(neon_miniaudio PUBLIC third_party/miniaudio)
+# Vendored C — do not police its warnings as if it were our code.
+if(MSVC)
+  target_compile_options(neon_miniaudio PRIVATE /W3)
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(neon_miniaudio PRIVATE -w)
+endif()
+if(UNIX)
+  target_link_libraries(neon_miniaudio PRIVATE m dl)
+endif()
+target_link_libraries(neon_engine PRIVATE neon_miniaudio)
 
 # ---------------------------------------------------------------------------
 # Demo executable
@@ -239,6 +264,7 @@ add_executable(neon_tests tests/test_main.cpp tests/test_serialize.cpp tests/tes
   tests/test_spatial.cpp tests/test_post.cpp tests/test_ibl.cpp tests/test_history.cpp
   tests/test_bt_editor.cpp tests/test_script_panel.cpp tests/test_packager.cpp
   tests/test_player.cpp
+  tests/test_audio.cpp
   editor/src/history.cpp editor/src/packager.cpp)
 target_link_libraries(neon_tests PRIVATE neon_engine)
 # test_history.cpp includes the editor's generic undo/redo stack header.

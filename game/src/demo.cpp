@@ -1240,8 +1240,11 @@ bool NeonApp::OnCreate() {
         NEON_LOG_ERROR("Demo: renderer init failed");
         return false;
     }
-    audio_ = audio::CreatePlatformAudioBackend();
-    if (audio_) audio_->Init();
+    audio_ = nullptr;
+    if (!noAudio_) {
+        audio_ = audio::CreatePlatformAudioBackend();
+        if (audio_) audio_->Init();
+    }
     assetMgr_.Init(&renderer_);
 
     pixelFont_ = renderer_.CreateFontFromMemory(neon_rush::kEmbeddedFontData,

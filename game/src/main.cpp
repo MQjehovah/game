@@ -98,13 +98,13 @@ int main(int argc, char** argv) {
     config.glMajor = 4;
     config.glMinor = 6;
     (void)fullscreen;
-    (void)noAudio;
 
     neon::demo::NeonApp app;
     if (smokeFrames > 0) {
         app.SetSmokeMode(true);
         app.SetSmokeTestFrames(smokeFrames);
     }
+    if (noAudio) app.SetNoAudio(true);
     if (!screenshotPath.empty()) app.RequestScreenshot(screenshotPath, screenshotFrame);
     if (!compareOff.empty()) app.RequestBloomCompare(compareOff, compareOn, compareFrame);
     if (!tonemapClamped.empty()) app.RequestTonemapCompare(tonemapClamped, tonemapAces, tonemapFrame);

@@ -22,9 +22,9 @@
 │   IWindow  IInput  IRenderBackend  IAudioBackend        │
 ├──────────────┬──────────────┬──────────────┬────────────┤
 │ platform     │ gfx          │ audio        │ assets     │
-│ Win32 ✅     │ OpenGL ✅    │ WinMM ✅     │ stb 系     │
-│ X11   ⃝      │ Vulkan ⃝     │ Null   ✅    │ OBJ 解析器  │
-│ Cocoa  ⃝     │              │              │ 程序化生成  │
+│ Win32 ✅     │ OpenGL ✅    │ miniaudio ✅ │ stb 系     │
+│ X11   ⃝      │ Vulkan ⃝     │ WinMM  ✅    │ OBJ 解析器  │
+│ Cocoa  ⃝     │              │ Null   ✅    │ 程序化生成  │
 └──────────────┴──────────────┴──────────────┴────────────┘
 ```
 
@@ -34,7 +34,7 @@
 
 1. `game` 只能依赖 `engine::` 公共头文件，禁止直接包含平台/GL 头文件。
 2. `engine::core` 不依赖任何平台实现与第三方库。
-3. 后端（`platform::*`、`gfx::gl`、`gfx::vulkan`、`audio::winmm`）实现接口，且只在对应平台编译。
+3. 后端（`platform::*`、`gfx::gl`、`gfx::vulkan`、`audio::miniaudio`/`audio::winmm`）实现接口，且只在对应平台编译。
 4. 高层（Renderer/Material/Mesh）只通过 `IRenderBackend` 触达 GPU。
 
 ## 3. 模块说明
@@ -100,7 +100,7 @@ SparseSet 风格的 ECS：
 
 ### 3.6 audio
 
-`IAudioBackend` 接口；Windows 用 WinMM 软件混音器（后台线程 + 4 个缓冲 + 临界区），其他平台 Null 后端（静音可用）。音效/音乐由 demo 程序化合成（PCM），零音频资产。
+`IAudioBackend` 接口；首选用 miniaudio（T5.1，vendored 单头，MIT-0/公有领域）——WASAPI/DirectSound/CoreAudio/ALSA，开设备失败（无音频设备的 CI 等）自动回退 WinMM 软件混音器（Windows，后台线程 + 4 缓冲 + 临界区）或 Null 后端（静音可用）。三平台统一，音效/音乐由 demo 程序化合成（PCM），零音频资产。混音器抽成纯函数（`neon/audio/mixer.hpp`）可无头测试。`NEON_NO_MINIAUDIO` 环境变量可强制回退（测试钩子）。
 
 ### 3.7 physics
 
@@ -182,12 +182,12 @@ OnRender：
 | 截图先合成再回读 | `CaptureFrame` 在 HDR 目标上触发 bloom+合成到后备缓冲后 `glReadPixels`，截图即最终画面；`--bloom-compare` 同帧同 HDR 目标输出关/开对比 |
 | glTF/JSON 自研 | 控制解析细节（byteStride、代理对、UTF-8），无第三方 JSON 依赖 |
 | 平台后端按 OS 编译 | X11/Cocoa 无法在 Windows 验证，CI 矩阵分别编译 |
-| WinMM 音频 | 无外部依赖的最小实现；接口允许后续接 OpenAL/miniaudio |
+| miniaudio 音频 | vendored 单头（v0.11.25），三平台统一；Windows 回退 WinMM、其余回退 Null；`MA_NO_NULL` 让无设备时如实报不可用 |
 
 ## 6. 扩展点
 
 - **Vulkan 后端**：实现 `IRenderBackend` 即可，接口已冻结；步骤见 `docs/VULKAN_ROADMAP.md`。
 - **物理引擎替换**：保留 `physics::World` 外观，内部接 Jolt/Bullet。
-- **音频后端**：Linux/macOS 实现 `IAudioBackend`（ALSA/CoreAudio 或 miniaudio）。
+- **音频后端**：miniaudio 已 vendored 且三平台编译，Windows 已启用；Linux/macOS 可逐步把默认选择切到 miniaudio（当前保留 Null 兜底，CI 无音频设备也能跑）。
 - **资源流式加载**：`AssetManager` 增加异步/分块读取，供大世界分区使用。
 - **服务器复用**：玩法系统只依赖 `ecs::World` 与输入抽象，可编译为无渲染的服务器目标。

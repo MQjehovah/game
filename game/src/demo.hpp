@@ -209,6 +209,7 @@ public:
     assets::AssetManager& AssetMgr() { return assetMgr_; }
     void SetSmokeMode(bool v) { smokeMode_ = v; }
     bool SmokeMode() const { return smokeMode_; }
+    void SetNoAudio(bool v) { noAudio_ = v; }
     void SetDisableShadows(bool v) { disableShadows_ = v; }
     void SetBloomEnabled(bool v) { bloomEnabled_ = v; }
     void SetExposure(float v) { exposure_ = v; }
@@ -264,6 +265,7 @@ private:
     core::Config save_;
     int bestScore_ = 0;
     bool smokeMode_ = false;
+    bool noAudio_ = false;
     bool disableShadows_ = false;
     bool bloomEnabled_ = true;
     float exposure_ = 1.0f;
