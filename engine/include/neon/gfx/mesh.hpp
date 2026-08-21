@@ -122,4 +122,27 @@ private:
     std::shared_ptr<MeshData> data_;
 };
 
+// Level-of-detail chain for a renderable: `levels[0]` is the highest-detail
+// mesh and `levels[i]` a coarser stand-in. `thresholds[i]` is the camera
+// distance at which level `i` is swapped out for `i + 1`, so level i is active
+// while distance < thresholds[i] and the last level covers everything beyond
+// the final threshold. Thresholds are strictly increasing (enforced by the
+// scene factory); PickLod falls back to the highest level for any distance.
+// An empty `levels` marks a missing chain (PickLod returns -1).
+struct LodChain {
+    std::vector<Mesh> levels;
+    std::vector<float> thresholds;
+};
+
+// Returns the active level index for `distance`, or -1 for an empty chain.
+// Pure + header-only so renderers and tests share the same selection math.
+inline int PickLod(const LodChain& chain, float distance) {
+    if (chain.levels.empty()) return -1;
+    for (size_t i = 0; i < chain.thresholds.size(); ++i) {
+        if (distance < chain.thresholds[i])
+            return static_cast<int>(i < chain.levels.size() ? i : chain.levels.size() - 1);
+    }
+    return static_cast<int>(chain.levels.size() - 1);
+}
+
 } // namespace neon::gfx

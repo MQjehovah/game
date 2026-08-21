@@ -128,6 +128,17 @@ void ListFilesRecursive(const std::string& absDir, const std::string& prefix,
 #endif
 }
 
+// Returns the mesh to draw for one entity given a camera position: the single
+// resolved mesh when the item has no LOD chain, else the chain level selected
+// by PickLod. Falls back to the base mesh for a malformed/missing selection.
+const gfx::Mesh& SelectLodMesh(const gfx::Mesh& base, const gfx::LodChain& chain,
+                               const math::Vec3& pos, const math::Vec3& camPos) {
+    if (chain.levels.empty()) return base;
+    const int level = PickLod(chain, math::Distance(pos, camPos));
+    if (level < 0 || static_cast<size_t>(level) >= chain.levels.size()) return base;
+    return chain.levels[static_cast<size_t>(level)];
+}
+
 } // namespace
 
 core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig cfg) {
@@ -387,6 +398,7 @@ void GameRuntime::BuildDrawList() {
         DrawItem item;
         item.ent = ent;
         item.meshKey = m->meshKey;
+        item.lod = m->lod; // data-driven LOD chain spec; resolved at Draw time
         item.mat = gfx::Material::Lit({}, ParseColorHex(m->colorHex), 24.0f);
         item.mat.metallic = m->metallic;
         item.mat.roughness = m->roughness;
@@ -411,6 +423,42 @@ void GameRuntime::ResolveDrawItem(DrawItem& item, gfx::Renderer& renderer) {
     if (item.resolved || item.failed || !cfg_.assets) return;
 
     const std::string& key = item.meshKey;
+    gfx::Mesh mesh = ResolveMeshKey(renderer, key);
+    if (!mesh.Valid()) {
+        const bool knownPrefix = key.compare(0, 4, "obj:") == 0 || key.compare(0, 5, "gltf:") == 0 ||
+                                 key == "cube" || key == "sphere" || key == "plane" ||
+                                 key == "terrain";
+        NEON_LOG_CAT(neon::core::LogCategory::Scene, neon::core::LogLevel::Warn,
+                     knownPrefix ? "runtime: mesh '%s' failed to load (skipped)"
+                                 : "runtime: meshKey '%s' has no known loader/procedural "
+                                   "prefix (skipped)",
+                     key.c_str());
+        item.failed = true;
+        return;
+    }
+    item.mesh = mesh;
+
+    // LOD chain: level 0 is the base mesh; each entry resolves into a lower-
+    // detail level at its distance. A level that fails to load is logged and
+    // dropped — the chain degrades to the levels that resolved.
+    if (!item.lod.empty()) {
+        item.chain.levels.push_back(item.mesh);
+        for (const LodEntry& e : item.lod) {
+            gfx::Mesh levelMesh = ResolveMeshKey(renderer, e.meshKey);
+            if (!levelMesh.Valid()) {
+                NEON_LOG_CAT(neon::core::LogCategory::Scene, neon::core::LogLevel::Warn,
+                             "runtime: LOD mesh '%s' failed to load (skipped; level dropped)",
+                             e.meshKey.c_str());
+                continue;
+            }
+            item.chain.levels.push_back(levelMesh);
+            item.chain.thresholds.push_back(e.distance);
+        }
+    }
+    item.resolved = true;
+}
+
+gfx::Mesh GameRuntime::ResolveMeshKey(gfx::Renderer& renderer, const std::string& key) {
     gfx::Mesh mesh;
     if (key.compare(0, 4, "obj:") == 0) {
         mesh = cfg_.assets->LoadMeshOBJ(FullAssetPath(key.substr(4)));
@@ -427,21 +475,8 @@ void GameRuntime::ResolveDrawItem(DrawItem& item, gfx::Renderer& renderer) {
         // Flat-ground fallback: the editor's heightfield terrain has no file;
         // render a large flat plane so playtest stays visually useful.
         mesh = gfx::Mesh::CreatePlane(renderer, 60.0f, 60.0f, 24, 24, "terrain");
-    } else {
-        NEON_LOG_CAT(neon::core::LogCategory::Scene, neon::core::LogLevel::Warn,
-                     "runtime: meshKey '%s' has no known loader/procedural prefix (skipped)",
-                     key.c_str());
-        item.failed = true;
-        return;
     }
-    if (!mesh.Valid()) {
-        NEON_LOG_CAT(neon::core::LogCategory::Scene, neon::core::LogLevel::Warn,
-                     "runtime: mesh '%s' failed to load (skipped)", key.c_str());
-        item.failed = true;
-        return;
-    }
-    item.mesh = mesh;
-    item.resolved = true;
+    return mesh;
 }
 
 void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera) {
@@ -462,7 +497,8 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera) {
         if (!t) continue;
         math::Mat4 model =
             math::Mat4::Translation(t->pos) * t->rot.ToMat4() * math::Mat4::Scale(t->scale);
-        renderer.DrawMesh(item.mesh, item.mat, model);
+        renderer.DrawMesh(SelectLodMesh(item.mesh, item.chain, t->pos, camera.position),
+                          item.mat, model);
     }
     // Compact when a fifth of the draw list belongs to dead entities.
     if (dead && dead * 5 > draws_.size()) {
@@ -524,6 +560,17 @@ std::string GameRuntime::ActiveTreePath(const ecs::Entity& ent) const {
         if (inst.ent == ent) return inst.activePath;
     }
     return {};
+}
+
+gfx::Mesh GameRuntime::MeshForEntity(const ecs::Entity& ent,
+                                     const gfx::Camera& camera) const {
+    for (const DrawItem& item : draws_) {
+        if (item.ent != ent || !item.resolved || item.failed) continue;
+        const SceneTransform* t = world_.Get<SceneTransform>(ent);
+        if (!t) return gfx::Mesh{};
+        return SelectLodMesh(item.mesh, item.chain, t->pos, camera.position);
+    }
+    return gfx::Mesh{};
 }
 
 std::string GameRuntime::FullScriptPath(const std::string& path) const {

@@ -874,6 +874,14 @@ void GameScene::Draw(gfx::Renderer& renderer) {
     }
 
     // 2. Instanced scenery (trees/rocks/logs).
+    // The demo's Kenney scenery is single-LOD: each type draws one mesh for
+    // every instance regardless of distance. LOD asset chains (Task 5.3) are
+    // wired for data-driven scenes — a SceneMesh with a `lod` list is resolved
+    // into a gfx::LodChain and its level picked per frame by camera distance by
+    // scene::GameRuntime::Draw — but the demo's instanced props are drawn
+    // directly here (not through GameRuntime) and have no low-poly variants, so
+    // they stay single-LOD by design. Packed games / editor playtest get LOD
+    // for free via GameRuntime.
     renderer.DrawMeshInstanced(assets.kenneyPine, gfx::Material::Lit({}, gfx::Color::White, 8.0f),
                                pines_.data(), static_cast<uint32_t>(pines_.size()));
     renderer.DrawMeshInstanced(assets.kenneyOak, gfx::Material::Lit({}, gfx::Color::White, 8.0f),

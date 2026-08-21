@@ -101,6 +101,12 @@ public:
     // playtest highlight.
     std::string ActiveTreePath(const ecs::Entity& ent) const;
 
+    // Debug observability: the mesh GameRuntime::Draw would submit for `ent`
+    // given `camera` — the LOD level selected by camera distance when the
+    // entity's SceneMesh carries a chain, else the single resolved mesh.
+    // Invalid when `ent` has no resolved draw item (call Draw once first).
+    gfx::Mesh MeshForEntity(const ecs::Entity& ent, const gfx::Camera& camera) const;
+
 private:
     struct ScriptInst {
         ecs::Entity ent;
@@ -122,7 +128,11 @@ private:
     struct DrawItem {
         ecs::Entity ent;
         std::string meshKey;
+        // LOD chain spec from the entity's SceneMesh (data-driven: distance +
+        // meshKey per level). Resolved into `chain` during ResolveDrawItem.
+        std::vector<LodEntry> lod;
         gfx::Mesh mesh;
+        gfx::LodChain chain; // resolved levels+thresholds; empty = single mesh
         gfx::Material mat;
         bool resolved = false;
         bool failed = false;
@@ -136,6 +146,9 @@ private:
     void LoadPrefabs();
     void BuildDrawList();
     void ResolveDrawItem(DrawItem& item, gfx::Renderer& renderer);
+    // Resolves one meshKey ("obj:"/"gltf:" file-backed or a procedural
+    // primitive) through the runtime's AssetManager; invalid mesh on failure.
+    gfx::Mesh ResolveMeshKey(gfx::Renderer& renderer, const std::string& key);
     // Invokes a script global function and logs the first failure of a script
     // instance (throttled per Start); failures never abort the runtime.
     void CallEntityFunction(const char* fn, ScriptInst& inst,

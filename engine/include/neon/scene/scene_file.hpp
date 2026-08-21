@@ -34,6 +34,15 @@ struct EntityDef {
     std::vector<ComponentDef> components;
 };
 
+// One level-of-detail step for a SceneMesh: beyond `distance` (camera units)
+// the previous level is swapped for the lower-detail `meshKey`. `distance`
+// values must be strictly increasing across the list (the mesh factory
+// validates this); level 0 is always the component's base meshKey.
+struct LodEntry {
+    float distance = 0.f;
+    std::string meshKey;
+};
+
 // Parsed componentized scene file. Entities reference prefabs by name; the
 // runtime PrefabLibrary holds the prefab component templates.
 struct SceneFile {
@@ -66,6 +75,11 @@ struct SceneFile {
     // {"backend": "lua", "path": <scriptPath>, "vars": <scriptVars>} (vars
     // omitted when not a JSON object), matching the built-in `script` factory.
     // `scriptBackend` defaults to "lua" when empty.
+    //
+    // `lod` (optional) carries level-of-detail steps as
+    // [{"distance", "meshKey"}, ...] under the mesh component; each entry must
+    // have a strictly increasing distance (the factory rejects duplicates/non-
+    // increasing thresholds). Empty = no LOD chain.
     static core::Result<core::Json> MakeEntity(const std::string& name,
                                                const math::Vec3& pos,
                                                const math::Quat& rot,
@@ -82,7 +96,8 @@ struct SceneFile {
                                                float emissiveIntensity = 1.0f,
                                                const std::string& scriptPath = "",
                                                const std::string& scriptBackend = "lua",
-                                               const core::Json& scriptVars = core::Json{});
+                                               const core::Json& scriptVars = core::Json{},
+                                               const std::vector<LodEntry>& lod = {});
 };
 
 // Prefab library: registers prefab component templates parsed from JSON text
@@ -107,6 +122,11 @@ struct SceneTransform {
 };
 struct SceneMesh {
     std::string meshKey;
+    // Level-of-detail chain (data-driven): each entry swaps the previous mesh
+    // for a lower-detail one beyond `distance`. The runtime resolves these
+    // into a gfx::LodChain and picks a level per frame by camera distance.
+    // Empty = single-mesh entity (level 0 = meshKey).
+    std::vector<LodEntry> lod;
     float metallic = 0.f;
     float roughness = 1.f;
     std::string colorHex;

@@ -239,7 +239,8 @@ core::Result<core::Json> SceneFile::MakeEntity(const std::string& name,
                                                float emissiveIntensity,
                                                const std::string& scriptPath,
                                                const std::string& scriptBackend,
-                                               const core::Json& scriptVars) {
+                                               const core::Json& scriptVars,
+                                               const std::vector<LodEntry>& lod) {
     if (name.empty())
         return core::Result<core::Json>::Err("scene: exported entity name must not be empty");
     if (meshKey.empty())
@@ -268,6 +269,18 @@ core::Result<core::Json> SceneFile::MakeEntity(const std::string& name,
     core::Json mesh = MakeObject();
     mesh.object_["meshKey"] = MakeString(meshKey);
     mesh.object_["material"] = std::move(mat);
+    // LOD chain: emitted only when non-empty, as [{distance, meshKey}, ...].
+    if (!lod.empty()) {
+        core::Json lodArr;
+        lodArr.type_ = core::Json::Type::Array;
+        for (const LodEntry& entry : lod) {
+            core::Json item = MakeObject();
+            item.object_["distance"] = MakeNumber(entry.distance);
+            item.object_["meshKey"] = MakeString(entry.meshKey);
+            lodArr.array_.push_back(std::move(item));
+        }
+        mesh.object_["lod"] = std::move(lodArr);
+    }
 
     core::Json comps = MakeObject();
     comps.object_["transform"] = std::move(tf);
@@ -373,7 +386,7 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                  [assets](ecs::World& world, ecs::Entity ent, const core::Json& data,
                           const core::Json&, std::string* err) {
                      if (!CheckComponentShape(data,
-                                    {"meshKey", "material", "metallic", "roughness", "colorHex",
+                                    {"meshKey", "lod", "material", "metallic", "roughness", "colorHex",
                                      "albedoTex", "mrTex", "aoTex", "emissiveTex",
                                      "ao", "emissiveIntensity"},
                                     "mesh", err))
@@ -392,6 +405,60 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                                  *err = "component 'mesh' meshKey '" + k +
                                         "' has no known loader prefix (expected 'obj:' or 'gltf:')";
                              return false;
+                         }
+                     }
+                     // Optional LOD chain: [{distance, meshKey}, ...] with
+                     // strictly increasing distances. Each level's meshKey must
+                     // be non-empty and (when an AssetManager is present) use a
+                     // known loader prefix, mirroring the base meshKey rules.
+                     if (const core::Json* lod = data.Get("lod")) {
+                         if (!lod->IsArray()) {
+                             if (err) *err = "component 'mesh' field 'lod' must be an array";
+                             return false;
+                         }
+                         float prevDistance = 0.0f;
+                         bool first = true;
+                         for (size_t i = 0; i < lod->Size(); ++i) {
+                             const core::Json* item = lod->At(i);
+                             if (!item || !item->IsObject() ||
+                                 !CheckComponentShape(*item, {"distance", "meshKey"},
+                                                      "mesh.lod[" + std::to_string(i) + "]", err))
+                                 return false;
+                             const core::Json* d = item->Get("distance");
+                             if (!d || !d->IsNumber()) {
+                                 if (err)
+                                     *err = "component 'mesh' lod entry " + std::to_string(i) +
+                                            " requires a numeric 'distance'";
+                                 return false;
+                             }
+                             const core::Json* lk = item->Get("meshKey");
+                             if (!lk || !lk->IsString() || lk->GetString().empty()) {
+                                 if (err)
+                                     *err = "component 'mesh' lod entry " + std::to_string(i) +
+                                            " requires a non-empty 'meshKey' string";
+                                 return false;
+                             }
+                             const float dist = static_cast<float>(d->GetNumber());
+                             if (!first && dist <= prevDistance) {
+                                 if (err)
+                                     *err = "component 'mesh' lod distances must be strictly "
+                                            "increasing (entry " + std::to_string(i) + ")";
+                                 return false;
+                             }
+                             if (assets) {
+                                 const std::string& lkStr = lk->GetString();
+                                 if (lkStr.compare(0, 4, "obj:") != 0 &&
+                                     lkStr.compare(0, 5, "gltf:") != 0) {
+                                     if (err)
+                                         *err = "component 'mesh' lod meshKey '" + lkStr +
+                                                "' has no known loader prefix (expected 'obj:' or "
+                                                "'gltf:')";
+                                     return false;
+                                 }
+                             }
+                             m.lod.push_back({dist, lk->GetString()});
+                             prevDistance = dist;
+                             first = false;
                          }
                      }
                      if (const core::Json* mat = data.Get("material")) {
