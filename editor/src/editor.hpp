@@ -143,6 +143,7 @@ private:
     bool gizmoAltWindowSet_ = false; // set every frame the hover window is bound (smoke)
     bool gizmoDragActive_ = false;   // ImGuizmo::IsUsing() after the last Manipulate
     bool gizmoDragSimulated_ = false; // the smoke frame's synthetic drag ran
+    float gizmoRect_[4] = {0, 0, 0, 0}; // rect passed to ImGuizmo::SetRect (smoke)
 
     // Custom UI demo widget handles (engine widget system).
     ui::TreeView* demoTree_ = nullptr;

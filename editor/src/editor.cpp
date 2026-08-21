@@ -241,6 +241,17 @@ void EditorApp::SetupScene() {
 }
 
 void EditorApp::OnUpdate(float dt) {
+    // The gizmo drag-sim (frame 30) needs the real mouse to hover the viewport
+    // so ImGui's hover hit-test yields the dock host window (the window
+    // SetAlternativeWindow points at); headless starts at (0,0) over the menu
+    // bar, so park it on the viewport center for the smoke frame.
+    if (smokeMode_ && TimeRef().frameIndex == 30) {
+        platform::InputEvent e;
+        e.type = platform::InputEvent::Type::MouseMove;
+        e.x = renderer_.ScreenWidth() / 2;
+        e.y = renderer_.ScreenHeight() / 2;
+        Input()->HandleEvent(e);
+    }
     UpdateViewport(dt);
     if (playtestActive_ && playtest_) playtest_->Tick(dt);
     gfx::ImGuiNeon_NewFrame(*Input(), pendingText_, dt);
@@ -485,8 +496,15 @@ void EditorApp::DrawTransformGizmo() {
     // be the full window: this makes the gizmo sit on the entity exactly where
     // the renderer drew it and where the picker looks. The viewport window's
     // draw list still clips the gizmo to the visible viewport region.
-    ImGuizmo::SetRect(0.0f, 0.0f, static_cast<float>(renderer_.ScreenWidth()),
-                      static_cast<float>(renderer_.ScreenHeight()));
+    const float rx = 0.0f;
+    const float ry = 0.0f;
+    const float rw = static_cast<float>(renderer_.ScreenWidth());
+    const float rh = static_cast<float>(renderer_.ScreenHeight());
+    ImGuizmo::SetRect(rx, ry, rw, rh);
+    gizmoRect_[0] = rx;
+    gizmoRect_[1] = ry;
+    gizmoRect_[2] = rw;
+    gizmoRect_[3] = rh;
 
     float aspect = static_cast<float>(renderer_.ScreenWidth()) / renderer_.ScreenHeight();
     gfx::Camera cam = OrbitCamera();
@@ -587,6 +605,14 @@ void EditorApp::RunGizmoDragSim() {
     report(hostWin != nullptr, "drag sim resolves the dock host window");
     if (!hostWin) return;
 
+    // The real hover path relies on ImGui reporting the dock host as the
+    // hovered window when the mouse is over the viewport (OnUpdate parked the
+    // mouse on the viewport center for this smoke frame). If it doesn't match
+    // the host the gizmo is bound to, SetAlternativeWindow is wrong/removed
+    // and the gizmo would be undraggable - fail the smoke here.
+    report(ctx.HoveredWindow == hostWin,
+           "real hover over the viewport resolves to the dock host window");
+
     // Clear hover/active so CanActivate() sees no other ImGui item.
     ctx.HoveredWindow = hostWin;
     ctx.ActiveId = 0;
@@ -605,7 +631,10 @@ void EditorApp::RunGizmoDragSim() {
     ImGuizmo::SetDrawlist(ImGui::GetWindowDrawList());
     ImGuizmo::SetRect(0.0f, 0.0f, static_cast<float>(renderer_.ScreenWidth()),
                       static_cast<float>(renderer_.ScreenHeight()));
-    ImGuizmo::SetAlternativeWindow(hostWin);
+    // NOTE: deliberately NOT re-arming SetAlternativeWindow here. The real
+    // DrawTransformGizmo set it this frame; the activation below only succeeds
+    // if that setting matches ctx.HoveredWindow (the dock host), so a removed
+    // or retargeted SetAlternativeWindow is caught by this smoke.
     ImGuizmo::Manipulate(view, proj, ImGuizmo::TRANSLATE, ImGuizmo::WORLD, gizmoModel);
     report(ImGuizmo::IsUsing(), "gizmo activates on click over a handle");
 
@@ -952,6 +981,10 @@ void EditorApp::RunUISmokeTest() {
     check(gizmoDrawn_, "transform gizmo drawn in the viewport");
     check(gizmoBeginFrame_, "ImGuizmo::BeginFrame called every frame");
     check(gizmoAltWindowSet_, "gizmo hover bound to the dock host window");
+    check(gizmoRect_[0] == 0.0f && gizmoRect_[1] == 0.0f &&
+              gizmoRect_[2] == static_cast<float>(renderer_.ScreenWidth()) &&
+              gizmoRect_[3] == static_cast<float>(renderer_.ScreenHeight()),
+          "gizmo rect is the full window (matches scene render + picker)");
     auto nearVec = [](const math::Vec3& a, const math::Vec3& b) {
         return std::fabs(a.x - b.x) < 1e-4f && std::fabs(a.y - b.y) < 1e-4f &&
                std::fabs(a.z - b.z) < 1e-4f;
