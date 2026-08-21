@@ -910,6 +910,7 @@ void Renderer::SetIblStrength(float strength) {
 
 void Renderer::RecomputeIbl(const Color& top, const Color& horizon) {
     if (!backend_) return;
+    ++iblBuildCount_;
     const auto start = std::chrono::steady_clock::now();
 
     // BRDF LUT is a pure material term (roughness x NoV), independent of the

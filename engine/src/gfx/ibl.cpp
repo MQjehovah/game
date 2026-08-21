@@ -21,12 +21,6 @@ inline math::Vec2 Hammersley(uint32_t i, uint32_t n) {
     return {static_cast<float>(i) / static_cast<float>(n), RadicalInverseVdC(i)};
 }
 
-inline void TangentBasis(const math::Vec3& n, math::Vec3& t, math::Vec3& b) {
-    const math::Vec3 up = std::fabs(n.y) < 0.999f ? math::Vec3::Up() : math::Vec3::Right();
-    t = math::Cross(up, n).Normalized();
-    b = math::Cross(n, t);
-}
-
 // Importance-samples the GGX (Trowbridge-Reitz) half-vector distribution D with
 // alpha = roughness^2, in the tangent frame (t, b, n).
 inline math::Vec3 ImportanceSampleGGX(const math::Vec2& xi, float alpha, const math::Vec3& t,
@@ -59,7 +53,30 @@ inline void Push(std::vector<uint8_t>& out, const math::Vec3& v) {
     out.push_back(255);
 }
 
+// Unit vector with the given y-component, used to evaluate the sky-dependent
+// maps row by row. Passing {0, ny, 0} directly would be normalized by the
+// integrators to {0, +/-1, 0}, collapsing every row onto the poles - the map
+// would lose its vertical gradient entirely (the T3.8 symptom the tests
+// target). The x-component is only a tie-break; the environment is
+// y-symmetric so any azimuth gives the same row value.
+inline math::Vec3 DirForY(float ny) {
+    return math::Vec3{std::sqrt(std::max(1.0f - ny * ny, 0.0f)), ny, 0.0f};
+}
+
 } // namespace
+
+// Right-handed orthonormal tangent frame (t, b, n) for any normal n. The
+// reference is the world axis LEAST aligned with n (after normalizing), so the
+// cross product can never vanish - including for n parallel to a world axis.
+void TangentBasis(const math::Vec3& n, math::Vec3& t, math::Vec3& b) {
+    const math::Vec3 N = n.Normalized();
+    const float ax = std::fabs(N.x), ay = std::fabs(N.y), az = std::fabs(N.z);
+    const math::Vec3 ref = (ax <= ay && ax <= az) ? math::Vec3{1, 0, 0}
+                          : (ay <= az)            ? math::Vec3{0, 1, 0}
+                                                  : math::Vec3{0, 0, 1};
+    t = math::Cross(ref, N).Normalized();
+    b = math::Cross(N, t);
+}
 
 Color SkyColor(const Color& top, const Color& horizon, const math::Vec3& dir,
                float gradientPower) {
@@ -152,7 +169,7 @@ std::vector<uint8_t> BuildIrradianceMap(const Color& top, const Color& horizon,
     out.reserve(static_cast<size_t>(kEnvRows) * 4);
     for (int r = 0; r < kEnvRows; ++r) {
         const float ny = -1.0f + (static_cast<float>(r) + 0.5f) / kEnvRows * 2.0f;
-        Push(out, IrradianceForNormal(top, horizon, {0.0f, ny, 0.0f}, gradientPower));
+        Push(out, IrradianceForNormal(top, horizon, DirForY(ny), gradientPower));
     }
     return out;
 }
@@ -167,7 +184,7 @@ std::vector<uint8_t> BuildPrefilteredMap(const Color& top, const Color& horizon,
             const float roughness =
                 kRoughnessMin + (1.0f - kRoughnessMin) * (static_cast<float>(c) + 0.5f) /
                                     kRoughnessCols;
-            Push(out, PrefilteredForReflection(top, horizon, {0.0f, ny, 0.0f}, roughness,
+            Push(out, PrefilteredForReflection(top, horizon, DirForY(ny), roughness,
                                                gradientPower));
         }
     }

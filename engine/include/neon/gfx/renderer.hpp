@@ -79,6 +79,10 @@ public:
     // True once the IBL environment textures exist (first SetSky with a
     // positive strength).
     bool IblValid() const { return iblValid_; }
+    // Number of times the IBL environment was actually recomputed (SetSky
+    // rebuilds lazily: only when the sky moved enough and the throttle elapsed).
+    // Exposed so tests can assert that a recompute really happened.
+    uint64_t IblBuildCount() const { return iblBuildCount_; }
 
     // 3D drawing
     // Cascaded shadow mapping. When enabled, shadow casters are recorded
@@ -388,6 +392,7 @@ private:
     float iblAccumDelta_ = 0.0f;
     uint64_t iblFrameCounter_ = 0;
     uint64_t iblLastRecomputeFrame_ = 0;
+    uint64_t iblBuildCount_ = 0;
     void RecomputeIbl(const Color& top, const Color& horizon);
 
     math::Vec3 sunDir_{-0.4f, -1.0f, -0.3f};

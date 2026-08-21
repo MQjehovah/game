@@ -62,6 +62,41 @@ TEST(IblSkyGradientProperties) {
 }
 
 // ---------------------------------------------------------------------------
+// Tangent basis (used by every Monte Carlo integrator).
+// ---------------------------------------------------------------------------
+
+TEST(IblTangentBasisOrthonormal) {
+    // The basis must be a right-handed orthonormal frame for ANY normal - in
+    // particular axis-aligned normals (N = {0, +/-1, 0}, used by the map
+    // builders) and unnormalized inputs such as {0, 0.5, 0}. The pre-fix
+    // implementation picked a fixed Up reference and produced a zero vector for
+    // N parallel to it, collapsing every sample onto N.
+    const math::Vec3 norms[] = {
+        {0, 1, 0},
+        {0, -1, 0},
+        {0, 0.5f, 0},
+        {0.5f, 0.3f, 0.8f},
+        {0, 0, 1},
+        {1, 0, 0},
+        {0.7071f, 0.0f, -0.7071f},
+    };
+    for (const math::Vec3& n : norms) {
+        math::Vec3 t, b;
+        gfx::ibl::TangentBasis(n, t, b);
+        const math::Vec3 N = n.Normalized();
+        CHECK_NEAR(t.Length(), 1.0, 1e-4);
+        CHECK_NEAR(b.Length(), 1.0, 1e-4);
+        CHECK_NEAR(math::Dot(t, b), 0.0, 1e-4);
+        CHECK_NEAR(math::Dot(N, t), 0.0, 1e-4);
+        CHECK_NEAR(math::Dot(N, b), 0.0, 1e-4);
+        const math::Vec3 tb = math::Cross(t, b);
+        CHECK_NEAR(tb.x, N.x, 1e-4);
+        CHECK_NEAR(tb.y, N.y, 1e-4);
+        CHECK_NEAR(tb.z, N.z, 1e-4);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Irradiance (diffuse convolution).
 // ---------------------------------------------------------------------------
 
@@ -130,11 +165,45 @@ TEST(IblIrradianceMapLayoutAndDeterminism) {
         gfx::ibl::IrradianceForNormal(kTop, kHorizon, {0.7f, 0.0f, 0.7f}, kGp);
     const math::Vec3 level = gfx::ibl::IrradianceForNormal(kTop, kHorizon, {0, 0, 1}, kGp);
     // MC noise is azimuth-dependent at fixed sample count; the y-only claim is
-    // enforced on the map (which only ever evaluates N = {0, ny, 0}), so here
-    // we only check the two estimates agree within the MC variance.
+    // enforced on the map (which only ever evaluates unit normals with
+    // y-component = row ny, i.e. a fixed azimuth), so here we only check the
+    // two estimates agree within the MC variance.
     CHECK_NEAR(offAxis.x, level.x, 0.06);
     CHECK_NEAR(offAxis.y, level.y, 0.06);
     CHECK_NEAR(offAxis.z, level.z, 0.06);
+}
+
+TEST(IblIrradianceMapHasVerticalGradient) {
+    // REGRESSION (T3.8 critical bug): the map builders passed {0, ny, 0} to
+    // IrradianceForNormal, which normalized it to {0, +/-1, 0} - so every row
+    // collapsed onto the poles and the map was a hard step (~0.33/row) with no
+    // vertical gradient, even though each row was meant to represent the
+    // irradiance for a normal with y-component ny. A correct cosine-weighted
+    // integration is smooth: adjacent rows must differ by much less.
+    const std::vector<uint8_t> irr = gfx::ibl::BuildIrradianceMap(kTop, kHorizon, kGp);
+    double maxDelta = 0.0;
+    for (size_t i = 0; i + 4 < irr.size(); i += 4) {
+        for (int c = 0; c < 3; ++c)
+            maxDelta = std::max(maxDelta, std::fabs(irr[i + c] - irr[i + 4 + c]) / 255.0);
+    }
+    CHECK(maxDelta < 0.15);
+
+    // The rows genuinely track ny: the nadir row is the darkest and the zenith
+    // row the brightest on the channel where the sky top is brighter.
+    const gfx::Color nadir = DecodeRgb(irr, 0);
+    const gfx::Color zenith = DecodeRgb(irr, irr.size() - 4);
+    CHECK(zenith.r > nadir.r + 0.2f); // kTop.r (0.8) > kHorizon.r (0.2)
+
+    // Same ny, different azimuths (the environment is y-symmetric): the
+    // irradiance must agree within Monte Carlo noise, not differ by the ~0.15
+    // the pre-fix on-axis evaluation produced.
+    const math::Vec3 n1 = math::Vec3{0.0f, 0.5f, std::sqrt(0.75f)}.Normalized();
+    const math::Vec3 n2 = math::Vec3{0.6f, 0.5f, std::sqrt(0.39f)}.Normalized();
+    const math::Vec3 a = gfx::ibl::IrradianceForNormal(kTop, kHorizon, n1, kGp);
+    const math::Vec3 b = gfx::ibl::IrradianceForNormal(kTop, kHorizon, n2, kGp);
+    CHECK_NEAR(a.x, b.x, 0.03);
+    CHECK_NEAR(a.y, b.y, 0.03);
+    CHECK_NEAR(a.z, b.z, 0.03);
 }
 
 // ---------------------------------------------------------------------------
@@ -196,6 +265,25 @@ TEST(IblPrefilteredMapLayoutAndDeterminism) {
     CHECK_NEAR(zenith.b, kTop.b, 0.05);
 }
 
+TEST(IblPrefilteredMapRoughnessDependence) {
+    // REGRESSION (T3.8 critical bug): the map rows collapsed onto the poles, so
+    // the GGX convolution always looked near-straight up/down and the prefilter
+    // barely changed with roughness (adjacent-column deltas ~0.001). With a
+    // proper per-ny evaluation the blur visibly broadens: adjacent roughness
+    // columns must differ by a non-trivial amount.
+    const std::vector<uint8_t> pf = gfx::ibl::BuildPrefilteredMap(kTop, kHorizon, kGp);
+    double maxDelta = 0.0;
+    for (int r = 0; r < gfx::ibl::kEnvRows; ++r) {
+        for (int c = 0; c + 1 < gfx::ibl::kRoughnessCols; ++c) {
+            const size_t a = (static_cast<size_t>(r) * gfx::ibl::kRoughnessCols + c) * 4;
+            const size_t b = (static_cast<size_t>(r) * gfx::ibl::kRoughnessCols + c + 1) * 4;
+            for (int ch = 0; ch < 3; ++ch)
+                maxDelta = std::max(maxDelta, std::fabs(pf[a + ch] - pf[b + ch]) / 255.0);
+        }
+    }
+    CHECK(maxDelta > 0.01);
+}
+
 // ---------------------------------------------------------------------------
 // BRDF LUT (split-sum integration).
 // ---------------------------------------------------------------------------
@@ -245,26 +333,42 @@ TEST(IblBrdfLutMapDeterministic) {
 
 TEST(IblRendererHeadlessLifecycle) {
     test::HeadlessAssetFixture fx;
-    // IBL off by default setting? No - default is on; setting strength to 1 is
-    // the same. Recompute must run against the NullBackend without a crash.
+    // IBL default strength is 1; set it explicitly. Recompute must run against
+    // the NullBackend without a crash.
     fx.renderer.SetIblStrength(1.0f);
     CHECK_NEAR(fx.renderer.IblStrength(), 1.0f, 1e-6);
     CHECK(!fx.renderer.IblValid());
+    CHECK_EQ(fx.renderer.IblBuildCount(), 0u);
 
     fx.renderer.SetSky(kTop, kHorizon);
     CHECK(fx.renderer.IblValid()); // NullBackend CreateTexture returns valid handles
+    CHECK_EQ(fx.renderer.IblBuildCount(), 1u); // first sky -> rebuilt
 
-    // Same sky again: no recompute needed (accumulated delta below epsilon).
+    // Same sky again: no recompute (accumulated delta stays below epsilon).
     fx.renderer.SetSky(kTop, kHorizon);
     CHECK(fx.renderer.IblValid());
+    CHECK_EQ(fx.renderer.IblBuildCount(), 1u);
 
-    // A visibly different sky triggers a recompute.
-    fx.renderer.SetSky({0.1f, 0.2f, 0.3f, 1.0f}, {0.4f, 0.5f, 0.6f, 1.0f});
-    CHECK(fx.renderer.IblValid());
+    // A visibly different sky does NOT rebuild immediately: the recompute is
+    // throttled (kIblRecomputeInterval SetSky calls must elapse) even though
+    // the accumulated delta already exceeded the epsilon. Only after enough
+    // calls does the build counter increment.
+    const gfx::Color nightTop{0.1f, 0.2f, 0.3f, 1.0f};
+    const gfx::Color nightHor{0.4f, 0.5f, 0.6f, 1.0f};
+    for (int i = 0; i < 25; ++i) fx.renderer.SetSky(nightTop, nightHor);
+    CHECK_EQ(fx.renderer.IblBuildCount(), 2u); // throttled rebuild happened
+    fx.renderer.SetSky(nightTop, nightHor);
+    CHECK_EQ(fx.renderer.IblBuildCount(), 2u); // unchanged sky -> no rebuild
 
     // Disabling IBL skips further recomputes and keeps the flat ambient path.
     fx.renderer.SetIblStrength(0.0f);
     CHECK_NEAR(fx.renderer.IblStrength(), 0.0f, 1e-6);
     fx.renderer.SetSky({0.9f, 0.3f, 0.2f, 1.0f}, {0.1f, 0.2f, 0.9f, 1.0f});
     CHECK(fx.renderer.IblValid());
+    CHECK_EQ(fx.renderer.IblBuildCount(), 2u); // disabled: no rebuild
+
+    // Re-enabling forces a rebuild on the next SetSky.
+    fx.renderer.SetIblStrength(1.0f);
+    fx.renderer.SetSky(nightTop, nightHor);
+    CHECK_EQ(fx.renderer.IblBuildCount(), 3u);
 }

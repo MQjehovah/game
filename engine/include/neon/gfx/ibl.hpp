@@ -24,7 +24,7 @@ constexpr int kEnvRows = 128;        // Y resolution of the irradiance + prefilt
 constexpr int kRoughnessCols = 24;   // roughness steps (columns) of the prefiltered map
 constexpr int kBrdfLutSize = 128;    // BRDF LUT edge length (u = NoV, v = roughness)
 constexpr float kRoughnessMin = 0.045f; // matches the lit shader's roughness clamp
-constexpr int kIrradianceSamples = 64;  // cosine-weighted hemisphere samples per irradiance texel
+constexpr int kIrradianceSamples = 256; // cosine-weighted hemisphere samples per irradiance texel
 constexpr int kRadianceSamples = 64;    // GGX importance samples per prefiltered texel
 constexpr int kBrdfSamples = 64;        // samples per BRDF LUT texel
 
@@ -32,16 +32,26 @@ constexpr int kBrdfSamples = 64;        // samples per BRDF LUT texel
 Color SkyColor(const Color& top, const Color& horizon, const math::Vec3& dir,
                float gradientPower);
 
+// Builds a right-handed orthonormal tangent frame (t, b, n) for any normal n
+// (any length is tolerated - the input is normalized internally). Uses the
+// world axis least aligned with n as the reference so the cross product never
+// degenerates, even for n parallel to a world axis (e.g. the pole normals the
+// map builders evaluate at the map's top/bottom rows). Cross(t, b) == n.
+void TangentBasis(const math::Vec3& n, math::Vec3& t, math::Vec3& b);
+
 // Diffuse irradiance for a surface normal: cosine-weighted hemisphere integral
 // of the sky with 1/pi baked in, so a white environment yields irradiance = 1
 // and the lit-shader term is `kd * irradiance * albedo`. Because the sky is a
-// vertical gradient this is effectively a function of n.y alone.
+// vertical gradient this is effectively a function of n.y alone. Inputs are
+// expected normalized (any length is tolerated but the result is defined for
+// unit vectors; TangentBasis is robust to axis-aligned normals).
 math::Vec3 IrradianceForNormal(const Color& top, const Color& horizon, const math::Vec3& n,
                                float gradientPower);
 
 // Prefiltered specular for a reflection direction + roughness: GGX-weighted
 // hemisphere convolution, normalized so a white environment yields (1,1,1)
-// (the split-sum BRDF LUT carries the Fresnel/geometry term).
+// (the split-sum BRDF LUT carries the Fresnel/geometry term). r is expected
+// normalized and roughness in [0,1] (both clamped defensively).
 math::Vec3 PrefilteredForReflection(const Color& top, const Color& horizon,
                                     const math::Vec3& r, float roughness, float gradientPower);
 
