@@ -177,6 +177,11 @@ public:
 
     // Resources
     Texture CreateTexture(const TextureDesc& desc);
+    // Compressed (BC1/DXT1) texture upload; format is the backend format code
+    // (assets::kBc1Format). Returns an invalid Texture when the driver rejects
+    // compressed uploads - the asset layer then falls back to RGBA8.
+    Texture CreateTextureCompressed(int width, int height, uint32_t format, const void* data,
+                                    size_t size);
     Shader CreateShader(const char* vertexSource, const char* fragmentSource, const char* name);
     Font CreateFontFromMemory(const uint8_t* data, size_t size, int pixelHeight);
     Font CreateFontFromMemoryWithCodepoints(const uint8_t* data, size_t size, int pixelHeight,

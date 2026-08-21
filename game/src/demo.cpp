@@ -1294,7 +1294,11 @@ void NeonApp::OnShutdown() {
     renderer_.Shutdown();
 }
 
-void NeonApp::OnUpdate(float dt) { scenes_.Update(dt); }
+void NeonApp::OnUpdate(float dt) {
+    // Drain completed async texture decodes (uploads + callbacks, main thread).
+    assetMgr_.PumpAsync();
+    scenes_.Update(dt);
+}
 
 void NeonApp::OnRender() {
     renderer_.BeginFrame({0.02f, 0.03f, 0.08f, 1.0f});

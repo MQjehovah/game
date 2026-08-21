@@ -1,4 +1,5 @@
 #pragma once
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include "neon/gfx/color.hpp"
@@ -105,6 +106,14 @@ public:
 
     virtual TextureHandle CreateTexture(const TextureDesc& desc) = 0;
     virtual void DestroyTexture(TextureHandle texture) = 0;
+    // Compressed (block-compressed) texture upload, e.g. BC1/DXT1: 4x4 blocks,
+    // 8 bytes per block (GL_COMPRESSED_RGBA_S3TC_DXT1_EXT). `format` is the
+    // API-specific internal format code (see assets::kBc1Format); both
+    // dimensions are padded up to the block grid. Returns an invalid handle
+    // when the driver rejects compressed uploads - callers must then fall back
+    // to an uncompressed upload (and should not retry compressed per texture).
+    virtual TextureHandle CreateTextureCompressed(int width, int height, uint32_t format,
+                                                  const void* data, size_t size) = 0;
 
     // Vertex layout is fixed: position(3f) normal(3f) uv(2f) color(4f)
     // joints(4f) weights(4f) = 80 bytes (see gfx::Vertex3D).

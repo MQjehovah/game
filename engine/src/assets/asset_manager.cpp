@@ -20,6 +20,7 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
+#include "neon/assets/bc1.hpp"
 #include "neon/core/log.hpp"
 #include "neon/core/json.hpp"
 #include "neon/math/quat.hpp"
@@ -44,6 +45,64 @@ uint64_t FileMTime(const std::string& path) {
 #endif
     return 0;
 }
+
+} // anonymous namespace
+
+// Pure-CPU image decode + optional BC1 compression. Never touches GL, so it is
+// safe to run on an async worker thread. Loading in the image's NATIVE channel
+// count lets us distinguish opaque images (gray / RGB) from alpha-bearing ones
+// (gray+alpha / RGBA): BC1 has no alpha, so only opaque images are compressed.
+// Alpha images stay RGBA8.
+//
+// The produced RGBA8 pixels are byte-identical to the old
+// stbi_load(path, &w, &h, &ch, 4) path: stb_image expands gray->RGB->RGBA with
+// the same replication and alpha=255.
+DecodedImage DecodeImageFile(const std::string& path, bool compressBc1) {
+    DecodedImage img;
+    int w = 0, h = 0, channels = 0;
+    unsigned char* data = stbi_load(path.c_str(), &w, &h, &channels, 0);
+    if (!data) return img;
+    img.width = w;
+    img.height = h;
+    img.channels = 4; // uploads are always RGBA8
+
+    const size_t pixelCount = static_cast<size_t>(w) * static_cast<size_t>(h);
+    if (channels == 4) {
+        img.rgba.assign(data, data + pixelCount * 4);
+    } else if (channels == 2) {
+        // gray+alpha: expand to RGBA (stb_image's req_comp=4 does the same
+        // replication). NOTE: the 2-channel buffer is only pixelCount*2 bytes;
+        // copying pixelCount*4 would over-read it.
+        img.rgba.resize(pixelCount * 4);
+        for (size_t i = 0; i < pixelCount; ++i) {
+            img.rgba[i * 4 + 0] = img.rgba[i * 4 + 1] = img.rgba[i * 4 + 2] = data[i * 2 + 0];
+            img.rgba[i * 4 + 3] = data[i * 2 + 1];
+        }
+    } else {
+        // Opaque (gray / RGB): expand to RGBA with alpha=255. Only these are
+        // eligible for BC1 (which has no alpha channel).
+        img.rgba.resize(pixelCount * 4);
+        for (size_t i = 0; i < pixelCount; ++i) {
+            uint8_t r, g, b;
+            if (channels >= 3) {
+                r = data[i * 3 + 0];
+                g = data[i * 3 + 1];
+                b = data[i * 3 + 2];
+            } else {
+                r = g = b = data[i];
+            }
+            img.rgba[i * 4 + 0] = r;
+            img.rgba[i * 4 + 1] = g;
+            img.rgba[i * 4 + 2] = b;
+            img.rgba[i * 4 + 3] = 255;
+        }
+        if (compressBc1) Bc1EncodeOpaque(img.rgba.data(), w, h, img.bc1);
+    }
+    stbi_image_free(data);
+    return img;
+}
+
+namespace {
 
 void LoadMaterialColors(const std::string& mtlPath,
                         std::map<std::string, math::Vec4>& out) {
@@ -155,27 +214,139 @@ core::Result<std::vector<float>> GltfAsset::ReadAccessorFloats(int accessorIndex
     return core::Result<std::vector<float>>::Ok(std::move(out));
 }
 
+AssetManager::~AssetManager() {
+    // Join the worker pool before any member dies so no worker closure can
+    // reference a torn-down AssetManager. Pending/undelivered work is
+    // discarded (nothing is uploaded at shutdown).
+    asyncLoader_.Shutdown();
+}
+
+DecodedImage AssetManager::DecodeImage(const std::string& path, const TextureLoadOptions& opts,
+                                       bool compressed) {
+    if (decodeFn_) return decodeFn_(path, opts);
+    return DecodeImageFile(path, compressed);
+}
+
+gfx::Texture AssetManager::UploadDecoded(const DecodedImage& img) {
+    if (!img.bc1.empty()) {
+        gfx::Texture tex = renderer_->CreateTextureCompressed(
+            img.width, img.height, kBc1Format, img.bc1.data(), img.bc1.size());
+        if (tex.Valid()) return tex;
+        // The driver rejected the compressed upload: fall back to RGBA8 and
+        // remember not to compress again (log the fallback once).
+        if (!bc1FallbackWarned_) {
+            bc1FallbackWarned_ = true;
+            NEON_LOG_WARN("Asset: BC1 compressed upload rejected by the driver; "
+                          "falling back to RGBA8 (compression disabled for this session)");
+        }
+        bc1Supported_ = false;
+    }
+    gfx::TextureDesc desc;
+    desc.width = img.width;
+    desc.height = img.height;
+    desc.rgba = img.rgba.data();
+    desc.mipmaps = true;
+    return renderer_->CreateTexture(desc);
+}
+
 gfx::Texture AssetManager::LoadTexture(const std::string& path) {
+    return LoadTexture(path, TextureLoadOptions{});
+}
+
+gfx::Texture AssetManager::LoadTexture(const std::string& path, const TextureLoadOptions& opts) {
     auto cached = textures_.find(path);
     if (cached != textures_.end()) return cached->second;
 
-    int w = 0, h = 0, channels = 0;
-    unsigned char* data = stbi_load(path.c_str(), &w, &h, &channels, 4);
-    if (!data) {
+    DecodedImage img = DecodeImage(path, opts, opts.compressBc1 && bc1Supported_);
+    if (img.channels == 0) {
         NEON_LOG_ERROR("Asset: failed to load texture '%s'", path.c_str());
         return {};
     }
-    gfx::TextureDesc desc;
-    desc.width = w;
-    desc.height = h;
-    desc.rgba = data;
-    desc.mipmaps = true;
-    gfx::Texture texture = renderer_->CreateTexture(desc);
-    stbi_image_free(data);
+    gfx::Texture texture = UploadDecoded(img);
+    if (!texture.Valid()) {
+        NEON_LOG_ERROR("Asset: failed to upload texture '%s'", path.c_str());
+        return {};
+    }
     textures_[path] = texture;
     textureMtimes_[path] = FileMTime(path);
-    NEON_LOG_INFO("Asset: loaded texture '%s' (%dx%d)", path.c_str(), w, h);
+    NEON_LOG_INFO("Asset: loaded texture '%s' (%dx%d%s)", path.c_str(), img.width, img.height,
+                  img.bc1.empty() ? "" : ", BC1");
     return texture;
+}
+
+void AssetManager::LoadTextureAsync(const std::string& path, std::function<void(bool)> cb,
+                                    const TextureLoadOptions& opts) {
+    if (!cb) return;
+
+    // Already cached? The async contract fires cb on the main thread, and we
+    // are on the main thread, so firing inline matches the sync path exactly.
+    auto cached = textures_.find(path);
+    if (cached != textures_.end()) {
+        cb(true);
+        return;
+    }
+
+    if (!asyncEnabled_ || !asyncLoader_.Available()) {
+        // No worker pool (disabled for tests, or thread creation failed):
+        // degrade to a synchronous load, callback fires inline.
+        gfx::Texture tex = LoadTexture(path, opts);
+        cb(tex.Valid());
+        return;
+    }
+
+    // Dedupe: one in-flight decode per path; later callers coalesce onto it.
+    const bool inFlight = inFlight_.count(path) != 0;
+    if (!inFlight) inFlight_[path] = true;
+    pendingCallbacks_[path].push_back(std::move(cb));
+    if (inFlight) return;
+
+    // Compression eligibility is decided HERE on the main thread (reads the
+    // driver-capability flag); the worker just runs whatever it is told.
+    const bool compressed = opts.compressBc1 && bc1Supported_;
+    bool ok = asyncLoader_.Submit([this, path, opts, compressed]() {
+        DecodedImage img = DecodeImage(path, opts, compressed);
+        asyncLoader_.Deliver([this, path, img = std::move(img)]() mutable {
+            FinishAsyncTexture(path, std::move(img));
+        });
+    });
+    if (!ok) {
+        // The pool became unavailable between the check and the submit; fall
+        // back to a synchronous load for this one request.
+        inFlight_.erase(path);
+        auto cbs = std::move(pendingCallbacks_[path]);
+        pendingCallbacks_.erase(path);
+        gfx::Texture tex = LoadTexture(path, opts);
+        for (auto& c : cbs) c(tex.Valid());
+    }
+}
+
+void AssetManager::PumpAsync() { asyncLoader_.Pump(); }
+
+void AssetManager::FinishAsyncTexture(const std::string& path, DecodedImage img) {
+    inFlight_.erase(path);
+    std::vector<std::function<void(bool)>> cbs;
+    auto cbIt = pendingCallbacks_.find(path);
+    if (cbIt != pendingCallbacks_.end()) {
+        cbs = std::move(cbIt->second);
+        pendingCallbacks_.erase(cbIt);
+    }
+
+    bool ok = false;
+    if (img.channels > 0 && !img.rgba.empty()) {
+        gfx::Texture tex = UploadDecoded(img);
+        if (tex.Valid()) {
+            textures_[path] = tex;
+            textureMtimes_[path] = FileMTime(path);
+            ok = true;
+            NEON_LOG_INFO("Asset: async texture '%s' loaded (%dx%d%s)", path.c_str(), img.width,
+                          img.height, img.bc1.empty() ? "" : ", BC1");
+        } else {
+            NEON_LOG_ERROR("Asset: async texture '%s' GPU upload failed", path.c_str());
+        }
+    } else {
+        NEON_LOG_ERROR("Asset: async texture '%s' decode failed", path.c_str());
+    }
+    for (auto& cb : cbs) cb(ok);
 }
 
 gfx::Mesh AssetManager::LoadMeshOBJ(const std::string& path) {

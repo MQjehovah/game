@@ -252,6 +252,9 @@ bool PlayerApp::LoadSceneJson() {
 // ---------------------------------------------------------------------------
 
 void PlayerApp::OnUpdate(float dt) {
+    // Drain completed async texture decodes (GPU uploads + callbacks happen
+    // here on the main thread). No-op when no async loads are in flight.
+    assetMgr_.PumpAsync();
     if (!started_) return;
     UpdateCamera(dt);
     runtime_.Tick(dt);

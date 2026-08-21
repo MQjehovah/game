@@ -1639,6 +1639,12 @@ Texture Renderer::CreateTexture(const TextureDesc& desc) {
     return Texture(handle, desc.width, desc.height);
 }
 
+Texture Renderer::CreateTextureCompressed(int width, int height, uint32_t format,
+                                          const void* data, size_t size) {
+    TextureHandle handle = backend_->CreateTextureCompressed(width, height, format, data, size);
+    return Texture(handle, width, height);
+}
+
 Shader Renderer::CreateShader(const char* vertexSource, const char* fragmentSource, const char* name) {
     return Shader(backend_->CreateShader(vertexSource, fragmentSource, name), name);
 }

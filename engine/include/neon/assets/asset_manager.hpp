@@ -1,8 +1,10 @@
 #pragma once
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <string>
 #include <vector>
+#include "neon/assets/async_loader.hpp"
 #include "neon/core/result.hpp"
 #include "neon/gfx/font.hpp"
 #include "neon/gfx/mesh.hpp"
@@ -76,12 +78,29 @@ struct AssetStats {
     size_t meshVertices = 0;
 };
 
+// Per-load texture options. Default-constructed options reproduce the classic
+// LoadTexture(path) behavior byte-for-byte.
+struct TextureLoadOptions {
+    // Compress OPAQUE images (no alpha channel) to BC1/DXT1 (8 bytes per 4x4
+    // block = 1/8 the GPU memory of RGBA8) at load. Alpha-bearing images stay
+    // RGBA8 (BC1 has no alpha). Compression is opt-in per call site; a driver
+    // that rejects compressed uploads falls back to RGBA8 once and disables
+    // compression for the rest of the session.
+    bool compressBc1 = false;
+};
+
 // Runtime asset cache. Files are loaded once and reused by path.
 class AssetManager {
 public:
+    // Shuts down the async worker pool (joins worker threads, discards
+    // pending/undelivered work) before the rest of the cache is torn down.
+    ~AssetManager();
+
     void Init(gfx::Renderer* renderer) { renderer_ = renderer; }
 
     gfx::Texture LoadTexture(const std::string& path);
+    // Compression-aware overload; see TextureLoadOptions.
+    gfx::Texture LoadTexture(const std::string& path, const TextureLoadOptions& opts);
     gfx::Mesh LoadMeshOBJ(const std::string& path);
     // glTF 2.0 importer: POSITION/NORMAL/TEXCOORD_0, PBR metallic-roughness
     // materials (baseColor/metalRoughness/occlusion/emissive), node transforms.
@@ -90,6 +109,24 @@ public:
     // Loads a system CJK font (per-platform path list) and bakes the codepoints
     // that appear in sampleTexts (plus ASCII). Returns an invalid Font if none found.
     gfx::Font LoadSystemCJKFont(int pixelHeight, const std::vector<std::string>& sampleTexts);
+
+    // Async texture load (T5.2): the image decode (stbi_load, optional BC1
+    // compression) runs on a worker thread; the GPU upload, cache insert and
+    // `cb` all run on the MAIN thread inside PumpAsync() - call it once per
+    // frame. Callback contract (always on the main thread, ok = the texture is
+    // cached and usable):
+    //   * path already cached  -> cb(true) fires immediately.
+    //   * pool unavailable or SetAsyncEnabled(false)
+    //                          -> synchronous load, cb fires inline.
+    //   * concurrent requests for the SAME path
+    //                          -> coalesced: one in-flight decode, every
+    //                             caller's cb fires when it completes.
+    void LoadTextureAsync(const std::string& path, std::function<void(bool)> cb,
+                          const TextureLoadOptions& opts = {});
+    // Drains completed async decodes: performs the GPU uploads, populates the
+    // cache and fires callbacks on the calling (main) thread. The app calls
+    // this once per frame (wired into neon_rush/neon_game/neon_editor).
+    void PumpAsync();
 
     // Editor tooling: current cache contents and aggregate stats.
     AssetStats Stats() const;
@@ -106,13 +143,49 @@ public:
     void ReloadTexture(const std::string& path);
     void ReloadMeshOBJ(const std::string& path);
 
+    // Test/tooling hooks ---------------------------------------------------
+    // Disables the worker pool so LoadTextureAsync degrades to a synchronous
+    // load (callback fires inline). Default: enabled.
+    void SetAsyncEnabled(bool enabled) { asyncEnabled_ = enabled; }
+    // Replaces the worker-side image decode (default: stbi_load). A decode
+    // with channels == 0 counts as a failed load. Pass a default-constructed
+    // function to restore the built-in stbi_load path. Must be configured
+    // before any load.
+    void SetDecodeHook(
+        std::function<DecodedImage(const std::string&, const TextureLoadOptions&)> fn) {
+        decodeFn_ = std::move(fn);
+    }
+
 private:
+    // Pure-CPU decode (never touches GL). Runs on a worker for async loads and
+    // inline for sync loads. `compressed` is the resolved BC1 decision (already
+    // gated on driver capability by the caller, on the main thread).
+    DecodedImage DecodeImage(const std::string& path, const TextureLoadOptions& opts,
+                             bool compressed);
+    // Main-thread GPU upload; handles the compressed->RGBA8 driver fallback.
+    gfx::Texture UploadDecoded(const DecodedImage& img);
+    // Main-thread completion of an async request: cache + fire callbacks.
+    void FinishAsyncTexture(const std::string& path, DecodedImage img);
+
     gfx::Renderer* renderer_ = nullptr;
     std::map<std::string, gfx::Texture> textures_;
     std::map<std::string, gfx::Mesh> meshes_;
     std::map<std::pair<std::string, int>, gfx::Font> fonts_;
     std::map<std::string, uint64_t> textureMtimes_;
     std::map<std::string, uint64_t> meshMtimes_;
+
+    // Async state. All of these are touched only from the MAIN thread:
+    //   inFlight_ marks paths with a decode running; pendingCallbacks_ holds
+    //   every caller's callback for the in-flight path (coalescing).
+    AsyncLoader asyncLoader_{2};
+    bool asyncEnabled_ = true;
+    std::function<DecodedImage(const std::string&, const TextureLoadOptions&)> decodeFn_;
+    std::map<std::string, bool> inFlight_;
+    std::map<std::string, std::vector<std::function<void(bool)>>> pendingCallbacks_;
+    // Driver capability learned at runtime: the first rejected compressed
+    // upload flips this off and the fallback warning is logged once.
+    bool bc1Supported_ = true;
+    bool bc1FallbackWarned_ = false;
 };
 
 } // namespace neon::assets

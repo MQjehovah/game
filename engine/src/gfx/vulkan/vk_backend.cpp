@@ -33,6 +33,9 @@ public:
     void DestroyShader(ShaderHandle) override {}
     TextureHandle CreateTexture(const TextureDesc&) override { return {}; }
     void DestroyTexture(TextureHandle) override {}
+    TextureHandle CreateTextureCompressed(int, int, uint32_t, const void*, size_t) override {
+        return {};
+    }
     MeshHandle CreateMesh(const void*, uint32_t, const uint16_t*, uint32_t) override { return {}; }
     void DestroyMesh(const MeshHandle&) override {}
     void UpdateMeshVertices(const MeshHandle&, const void*, uint32_t) override {}

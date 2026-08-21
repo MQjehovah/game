@@ -70,6 +70,9 @@ constexpr gl::GLenum TextureCompareFunc = 0x884D;
 constexpr gl::GLenum Lequal = 0x0203;
 constexpr gl::GLenum ScissorTest = 0x0C11;
 constexpr gl::GLenum DepthComponent = 0x1902;
+// GL_COMPRESSED_RGBA_S3TC_DXT1_EXT - the only compressed format the asset
+// pipeline produces today (BC1 via stb_dxt, 4x4 blocks, 8 bytes/block).
+constexpr gl::GLenum CompressedRgbaS3tcDxt1 = 0x83F1;
 } // namespace glc
 
 void CheckError(const char* where) {
@@ -187,6 +190,28 @@ public:
                      g.GetError());
         NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info, "GL depth %s",
                      depthUsable_ ? "usable" : "BROKEN - using painter's order");
+
+        // Compressed-texture (BC1/DXT1) capability probe. The asset layer
+        // compresses opaque textures to BC1 when this works and falls back to
+        // RGBA8 when it does not (some drivers reject S3TC uploads with
+        // GL_INVALID_OPERATION). The block is a solid-white 4x4 BC1 block
+        // (color0 == color1 == white, all 2-bit indices 0); a successful upload
+        // with no GL error is sufficient evidence the driver accepts S3TC.
+        {
+            const uint8_t bc1Block[8] = {0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00};
+            gl::GLuint probeId = 0;
+            g.GenTextures(1, &probeId);
+            g.BindTexture(glc::Texture2D, probeId);
+            g.CompressedTexImage2D(glc::Texture2D, 0, glc::CompressedRgbaS3tcDxt1, 4, 4, 0, 8,
+                                   bc1Block);
+            compressedTexSupported_ = g.GetError() == glc::NoError;
+            g.DeleteTextures(1, &probeId);
+            g.BindTexture(glc::Texture2D, 0);
+            NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
+                         "GL compressed textures (BC1/DXT1): %s",
+                         compressedTexSupported_ ? "supported" : "NOT supported - textures fall back to RGBA8");
+        }
+
         glReady_ = true;
         return true;
     }
@@ -534,6 +559,51 @@ public:
         textures_.erase(it);
     }
 
+    TextureHandle CreateTextureCompressed(int width, int height, uint32_t format,
+                                          const void* data, size_t size) override {
+        if (!data || width <= 0 || height <= 0 || size == 0) return {};
+        if (format != glc::CompressedRgbaS3tcDxt1) {
+            NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Error,
+                         "GL: unsupported compressed format 0x%X (only BC1/DXT1 today)", format);
+            return {};
+        }
+        if (!compressedTexSupported_) {
+            // The init-time probe already told us this driver rejects S3TC
+            // uploads; the asset layer falls back to RGBA8 and logs once.
+            return {};
+        }
+        auto& g = gl::GetGL();
+        gl::GLuint id = 0;
+        g.GenTextures(1, &id);
+        g.BindTexture(glc::Texture2D, id);
+        g.TexParameteri(glc::Texture2D, glc::TextureWrapS, glc::ClampToEdge);
+        g.TexParameteri(glc::Texture2D, glc::TextureWrapT, glc::ClampToEdge);
+        // Only the base level is uploaded (no mip chain for compressed data);
+        // use plain linear filtering so minification bilinearly samples the
+        // base level instead of shimmering.
+        g.TexParameteri(glc::Texture2D, glc::TextureMinFilter, glc::Linear);
+        g.TexParameteri(glc::Texture2D, glc::TextureMagFilter, glc::Linear);
+        // glCompressedTexImage2D requires BOTH dimensions to be multiples of
+        // the 4x4 block size; the encoder pads non-multiple sizes, so allocate
+        // the padded size here.
+        const int bw = (width + 3) & ~3;
+        const int bh = (height + 3) & ~3;
+        g.CompressedTexImage2D(glc::Texture2D, 0, static_cast<gl::GLenum>(format), bw, bh, 0,
+                               static_cast<gl::GLsizei>(size), data);
+        gl::GLenum err = g.GetError();
+        if (err != glc::NoError) {
+            NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Error,
+                         "GL: compressed texture upload %dx%d rejected by the driver "
+                         "(err=0x%X); caller must fall back to RGBA8",
+                         width, height, err);
+            g.DeleteTextures(1, &id);
+            return {};
+        }
+        g.BindTexture(glc::Texture2D, 0);
+        textures_[++nextTextureId_] = GLTexture{id, width, height};
+        return {nextTextureId_};
+    }
+
     MeshHandle CreateMesh(const void* vertices, uint32_t vertexCount,
                           const uint16_t* indices, uint32_t indexCount) override {
         auto& g = gl::GetGL();
@@ -876,6 +946,7 @@ private:
     uint32_t nextTextureId_ = 0;
     bool glReady_ = false;
     bool depthUsable_ = false;
+    bool compressedTexSupported_ = false;
     gl::GLuint currentFBO_ = 0;
 };
 

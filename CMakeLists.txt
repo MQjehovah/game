@@ -14,6 +14,8 @@ endif()
 # ---------------------------------------------------------------------------
 set(ENGINE_CORE_SOURCES
   engine/src/assets/asset_manager.cpp
+  engine/src/assets/async_loader.cpp
+  engine/src/assets/bc1.cpp
   engine/src/anim/anim.cpp
   engine/src/audio/audio.cpp
   engine/src/audio/miniaudio/ma_audio.cpp
@@ -265,10 +267,11 @@ add_executable(neon_tests tests/test_main.cpp tests/test_serialize.cpp tests/tes
   tests/test_bt_editor.cpp tests/test_script_panel.cpp tests/test_packager.cpp
   tests/test_player.cpp
   tests/test_audio.cpp
+  tests/test_async.cpp
   editor/src/history.cpp editor/src/packager.cpp)
 target_link_libraries(neon_tests PRIVATE neon_engine)
 # test_history.cpp includes the editor's generic undo/redo stack header.
-target_include_directories(neon_tests PRIVATE editor/src)
+target_include_directories(neon_tests PRIVATE editor/src third_party/stb)
 if(MSVC)
   target_compile_options(neon_tests PRIVATE /W4 /permissive- /utf-8)
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")

@@ -328,6 +328,8 @@ void EditorApp::SetupScene() {
 }
 
 void EditorApp::OnUpdate(float dt) {
+    // Drain completed async texture decodes (uploads + callbacks, main thread).
+    assetMgr_.PumpAsync();
     // The gizmo drag-sim (frame 30) needs the real mouse to hover the viewport
     // so ImGui's hover hit-test yields the dock host window (the window
     // SetAlternativeWindow points at); headless starts at (0,0) over the menu
