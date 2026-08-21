@@ -99,6 +99,23 @@ target_include_directories(neon_rush PRIVATE assets/generated third_party/stb)
 target_link_libraries(neon_rush PRIVATE neon_engine)
 
 # ---------------------------------------------------------------------------
+# Generic data-driven player (T4.7): loads a game.pack and runs it with no
+# hardcoded gameplay. Reuses the engine renderer + GameRuntime.
+# ---------------------------------------------------------------------------
+add_executable(neon_game
+  game/src/player_main.cpp
+  game/src/player.cpp
+)
+target_include_directories(neon_game PRIVATE assets/generated third_party/stb)
+target_link_libraries(neon_game PRIVATE neon_engine)
+if(MSVC)
+  target_compile_options(neon_game PRIVATE /W4 /permissive- /utf-8)
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(neon_game PRIVATE -Wall -Wextra
+    -finput-charset=UTF-8 -fexec-charset=UTF-8)
+endif()
+
+# ---------------------------------------------------------------------------
 # Dear ImGui tool UI (optional module; only the editor links it)
 # ---------------------------------------------------------------------------
 add_library(neon_imgui STATIC
@@ -221,6 +238,7 @@ add_executable(neon_tests tests/test_main.cpp tests/test_serialize.cpp tests/tes
   tests/test_skinned.cpp tests/test_shadow.cpp tests/test_log.cpp
   tests/test_spatial.cpp tests/test_post.cpp tests/test_ibl.cpp tests/test_history.cpp
   tests/test_bt_editor.cpp tests/test_script_panel.cpp tests/test_packager.cpp
+  tests/test_player.cpp
   editor/src/history.cpp editor/src/packager.cpp)
 target_link_libraries(neon_tests PRIVATE neon_engine)
 # test_history.cpp includes the editor's generic undo/redo stack header.

@@ -3,12 +3,23 @@
 #include <algorithm>
 #include <cassert>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "neon/core/serialize.hpp"
+
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#else
+#include <cerrno>
+#include <sys/stat.h>
+#endif
 
 namespace neon::core {
 namespace {
@@ -242,6 +253,84 @@ core::Result<std::vector<uint8_t>> PackReader::Read(const std::string& virtualPa
     if (Crc32(out.data(), out.size()) != e.crc32)
         return core::Result<std::vector<uint8_t>>::Err("pack: crc mismatch: " + virtualPath);
     return core::Result<std::vector<uint8_t>>::Ok(std::move(out));
+}
+
+// ---------------------------------------------------------------------------
+// Unpack: expand a pack's entries into a real directory tree
+// ---------------------------------------------------------------------------
+
+namespace {
+
+bool MakeOneDir(const std::string& path) {
+#if defined(_WIN32)
+    return CreateDirectoryA(path.c_str(), nullptr) != 0 ||
+           GetLastError() == ERROR_ALREADY_EXISTS;
+#else
+    return ::mkdir(path.c_str(), 0777) == 0 || errno == EEXIST;
+#endif
+}
+
+// Creates every directory component of `path` up to (not including) the final
+// segment, so the caller can then open it as a file. Existing directories are
+// fine; the whole chain is created when missing.
+bool MakeParentDirs(const std::string& path) {
+    size_t start = 0;
+    while (true) {
+        const size_t slash = path.find_first_of("/\\", start);
+        if (slash == std::string::npos) break;
+        const std::string comp = path.substr(0, slash);
+        // A Windows drive root ("C:") already exists; skip creation.
+        if (!comp.empty() && !(comp.size() == 2 && comp[1] == ':')) {
+            if (!MakeOneDir(comp)) return false;
+        }
+        start = slash + 1;
+    }
+    return true;
+}
+
+// True when a virtual path could escape `destDir`: absolute (drive letter or
+// leading separator) or containing a ".." segment. Packs are produced by the
+// packager with normalized relative keys, so this is a defense-in-depth guard.
+bool UnsafeEntryPath(const std::string& p) {
+    if (p.empty()) return true;
+    if (p[0] == '/' || p[0] == '\\') return true;
+    if (p.size() >= 2 && p[1] == ':') return true;
+    size_t start = 0;
+    while (start <= p.size()) {
+        const size_t slash = p.find_first_of("/\\", start);
+        const size_t end = slash == std::string::npos ? p.size() : slash;
+        if (end - start == 2 && p.compare(start, 2, "..") == 0) return true;
+        if (slash == std::string::npos) break;
+        start = slash + 1;
+    }
+    return false;
+}
+
+} // namespace
+
+core::Status Unpack(const PackReader& reader, const std::string& destDir) {
+    if (!reader.Valid()) return core::Status::Err("unpack: " + reader.Error());
+    if (destDir.empty()) return core::Status::Err("unpack: empty destination directory");
+    if (!MakeOneDir(destDir))
+        return core::Status::Err("unpack: cannot create destination directory '" + destDir + "'");
+
+    for (const std::string& vpath : reader.Enumerate()) {
+        if (UnsafeEntryPath(vpath))
+            return core::Status::Err("unpack: unsafe entry path: " + vpath);
+        core::Result<std::vector<uint8_t>> data = reader.Read(vpath);
+        if (!data.Ok()) return core::Status::Err("unpack: " + data.Error());
+        const std::string out = destDir + "/" + vpath;
+        if (!MakeParentDirs(out)) {
+            return core::Status::Err("unpack: cannot create directories for '" + vpath + "'");
+        }
+        std::FILE* f = std::fopen(out.c_str(), "wb");
+        if (!f) return core::Status::Err("unpack: cannot open '" + vpath + "' for writing");
+        const std::vector<uint8_t>& bytes = data.Value();
+        const bool ok = bytes.empty() || std::fwrite(bytes.data(), 1, bytes.size(), f) == bytes.size();
+        std::fclose(f);
+        if (!ok) return core::Status::Err("unpack: failed to write '" + vpath + "'");
+    }
+    return core::Status::Ok(true);
 }
 
 } // namespace neon::core

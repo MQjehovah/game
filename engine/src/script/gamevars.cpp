@@ -19,4 +19,8 @@ void GameVars::Clear() {
     vars_.clear();
 }
 
+void GameVars::ForEach(const std::function<void(const std::string&, const Value&)>& visit) const {
+    for (const auto& kv : vars_) visit(kv.first, kv.second);
+}
+
 } // namespace neon::script

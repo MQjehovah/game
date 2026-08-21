@@ -6,6 +6,7 @@
 #include "neon/ecs/world.hpp"
 #include "neon/math/vec3.hpp"
 #include "neon/physics/physics.hpp"
+#include "neon/platform/input.hpp"
 #include "neon/script/gamevars.hpp"
 #include "neon/script/script.hpp"
 
@@ -37,12 +38,16 @@ struct ScriptContext {
     GameVars gameVars;
     std::function<void(const std::string&)> playSfx; // optional audio sink
     std::map<ecs::Entity, std::string, EntityLess> entityKinds; // entity -> kind name
+    // Optional live input state for the InputAxis/InputKey/InputMouse bindings.
+    // Null in headless hosts and unit tests -> every input query returns 0.
+    platform::IInput* input = nullptr;
 };
 
 // Registers Spawn/Despawn/GetPosition/SetPosition/GetVar/SetVar/Raycast/
-// PlaySfx and the namespaced Json.Parse on `host`. Safe to call on an
-// initialized host only; missing dependencies (null world/physics/audio sink)
-// yield nil/no-ops rather than script errors.
+// PlaySfx, the namespaced Json.Parse, and the input query API (InputAxis/
+// InputKey/InputMouseX/InputMouseY) on `host`. Safe to call on an initialized
+// host only; missing dependencies (null world/physics/audio sink/input) yield
+// nil/no-ops rather than script errors.
 void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx);
 
 } // namespace neon::script

@@ -67,6 +67,7 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
 
     scriptCtx_.world = &world_;
     scriptCtx_.physics = &physics_;
+    scriptCtx_.input = cfg_.input;
     scriptCtx_.entityKinds.clear();
 
     host_ = script::CreateLuaHost();
@@ -193,9 +194,46 @@ void GameRuntime::AttachTrees() {
         ecs::Entity ent = world_.EntityAt<SceneBehaviorTree>(i);
         const SceneBehaviorTree* bt = world_.Get<SceneBehaviorTree>(ent);
         if (!bt) continue;
+
+        // The tree field is either inline JSON ("{...}") or a named reference
+        // ("bt:<name>") resolving to behaviors/<name>.bt.json under the script
+        // base dir. The same ReadScript path used for Lua scripts honors the
+        // readScript override (pack readers) and the disk reader, so packed
+        // games load named trees exactly like loose-file projects.
+        std::string treeText;
+        const std::string& ref = bt->treeJson;
+        if (ref.compare(0, 3, "bt:") == 0) {
+            const std::string name = ref.substr(3);
+            if (name.empty()) {
+                NEON_LOG_CAT(neon::core::LogCategory::Bt, neon::core::LogLevel::Error,
+                             "runtime: empty behavior tree reference 'bt:' (skipped)");
+                continue;
+            }
+            treeText = ReadScript(FullScriptPath("behaviors/" + name + ".bt.json"));
+            if (treeText.empty()) {
+                NEON_LOG_CAT(neon::core::LogCategory::Bt, neon::core::LogLevel::Error,
+                             "runtime: cannot read behavior tree '%s' (skipped)", ref.c_str());
+                continue;
+            }
+        } else if (!ref.empty() && ref[0] == '{') {
+            treeText = ref; // inline JSON tree
+        } else {
+            NEON_LOG_CAT(neon::core::LogCategory::Bt, neon::core::LogLevel::Error,
+                         "runtime: behavior tree reference '%s' is neither inline JSON "
+                         "nor 'bt:<name>' (skipped)",
+                         ref.c_str());
+            continue;
+        }
+        // A UTF-8 BOM (common on Windows editors) must not break the JSON parse.
+        if (treeText.size() >= 3 && static_cast<unsigned char>(treeText[0]) == 0xEF &&
+            static_cast<unsigned char>(treeText[1]) == 0xBB &&
+            static_cast<unsigned char>(treeText[2]) == 0xBF) {
+            treeText.erase(0, 3);
+        }
+
         auto tree = std::make_unique<bt::BehaviorTree>();
         std::string err;
-        if (!tree->LoadText(bt->treeJson, &err)) {
+        if (!tree->LoadText(treeText, &err)) {
             NEON_LOG_CAT(neon::core::LogCategory::Bt, neon::core::LogLevel::Error,
                          "runtime: entity behavior tree failed to load: %s (skipped)",
                          err.c_str());
@@ -225,13 +263,14 @@ void GameRuntime::BuildDrawList() {
         item.mat.emissiveIntensity = m->emissiveIntensity;
         if (cfg_.assets) {
             if (!m->albedoTex.empty())
-                item.mat.albedo = cfg_.assets->LoadTexture(m->albedoTex).Handle();
+                item.mat.albedo = cfg_.assets->LoadTexture(FullAssetPath(m->albedoTex)).Handle();
             if (!m->mrTex.empty())
-                item.mat.metallicRoughness = cfg_.assets->LoadTexture(m->mrTex).Handle();
+                item.mat.metallicRoughness =
+                    cfg_.assets->LoadTexture(FullAssetPath(m->mrTex)).Handle();
             if (!m->aoTex.empty())
-                item.mat.occlusion = cfg_.assets->LoadTexture(m->aoTex).Handle();
+                item.mat.occlusion = cfg_.assets->LoadTexture(FullAssetPath(m->aoTex)).Handle();
             if (!m->emissiveTex.empty())
-                item.mat.emissive = cfg_.assets->LoadTexture(m->emissiveTex).Handle();
+                item.mat.emissive = cfg_.assets->LoadTexture(FullAssetPath(m->emissiveTex)).Handle();
         }
         draws_.push_back(std::move(item));
     }
@@ -243,9 +282,9 @@ void GameRuntime::ResolveDrawItem(DrawItem& item, gfx::Renderer& renderer) {
     const std::string& key = item.meshKey;
     gfx::Mesh mesh;
     if (key.compare(0, 4, "obj:") == 0) {
-        mesh = cfg_.assets->LoadMeshOBJ(key.substr(4));
+        mesh = cfg_.assets->LoadMeshOBJ(FullAssetPath(key.substr(4)));
     } else if (key.compare(0, 5, "gltf:") == 0) {
-        assets::GltfAsset gltf = cfg_.assets->LoadGLTF(key.substr(5));
+        assets::GltfAsset gltf = cfg_.assets->LoadGLTF(FullAssetPath(key.substr(5)));
         if (!gltf.nodes.empty()) mesh = gltf.nodes[0].mesh;
     } else if (key == "cube") {
         mesh = gfx::Mesh::CreateCube(renderer, 1.0f, 1.0f, 1.0f, "cube");
@@ -359,6 +398,14 @@ std::string GameRuntime::ActiveTreePath(const ecs::Entity& ent) const {
 std::string GameRuntime::FullScriptPath(const std::string& path) const {
     if (path.empty() || cfg_.scriptBaseDir.empty()) return path;
     return cfg_.scriptBaseDir + "/" + path;
+}
+
+std::string GameRuntime::FullAssetPath(const std::string& path) const {
+    if (path.empty() || cfg_.assetBaseDir.empty()) return path;
+    // Absolute paths (drive letter or leading separator) pass through unchanged.
+    if (path.size() >= 2 && path[1] == ':') return path;
+    if (path[0] == '/') return path;
+    return cfg_.assetBaseDir + "/" + path;
 }
 
 std::string GameRuntime::ReadScript(const std::string& path) const {

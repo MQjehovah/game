@@ -1,4 +1,5 @@
 #pragma once
+#include <functional>
 #include <map>
 #include <string>
 
@@ -21,6 +22,11 @@ public:
     bool Has(const std::string& name) const;
     void Clear();
     size_t Size() const { return vars_.size(); }
+
+    // Visits every stored key/value in ascending key order (used by the player
+    // to dump a session's GameVars for smoke-test verification). Single-
+    // threaded store; the visitor must not call Set/Get on the same store.
+    void ForEach(const std::function<void(const std::string&, const Value&)>& visit) const;
 
 private:
     std::map<std::string, Value> vars_;

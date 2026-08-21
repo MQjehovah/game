@@ -186,6 +186,81 @@ Value NativeJsonParse(IScriptHost& host, void* user) {
     return JsonToValue(dom);
 }
 
+// ---------------------------------------------------------------------------
+// Input queries (data-driven gameplay). Every query is guarded on a null input
+// (headless hosts / unit tests) and returns 0 so scripts never fault.
+// ---------------------------------------------------------------------------
+
+// Single key name -> engine key. "space"/"shift"/"ctrl"/"alt"/"enter"/"esc",
+// arrows ("up"/"down"/"left"/"right"), single letters and digits.
+platform::Key KeyFromName(const std::string& name) {
+    if (name == "space") return platform::Key::Space;
+    if (name == "shift") return platform::Key::Shift;
+    if (name == "ctrl" || name == "control") return platform::Key::Control;
+    if (name == "alt") return platform::Key::Alt;
+    if (name == "enter" || name == "return") return platform::Key::Enter;
+    if (name == "esc" || name == "escape") return platform::Key::Escape;
+    if (name == "up") return platform::Key::ArrowUp;
+    if (name == "down") return platform::Key::ArrowDown;
+    if (name == "left") return platform::Key::ArrowLeft;
+    if (name == "right") return platform::Key::ArrowRight;
+    if (name.size() == 1) {
+        char c = name[0];
+        if (c >= 'a' && c <= 'z') {
+            return static_cast<platform::Key>(static_cast<int>(platform::Key::A) + (c - 'a'));
+        }
+        if (c >= 'A' && c <= 'Z') {
+            return static_cast<platform::Key>(static_cast<int>(platform::Key::A) + (c - 'A'));
+        }
+        if (c >= '0' && c <= '9') {
+            return static_cast<platform::Key>(static_cast<int>(platform::Key::D0) + (c - '0'));
+        }
+    }
+    return platform::Key::Unknown;
+}
+
+// InputAxis(name): normalized analog-ish axis in [-1, 1]. "forward" is
+// W-S, "strafe" is D-A, "vertical" is E-Q. World-space, not camera-relative:
+// data-driven gameplay picks its own camera frame if it needs one.
+Value NativeInputAxis(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->input) return Value::Num(0);
+    platform::IInput* in = ctx->input;
+    const std::string name = StringArg(host, 0);
+    auto axis = [&](platform::Key pos, platform::Key neg) {
+        return (in->IsDown(pos) ? 1.0 : 0.0) - (in->IsDown(neg) ? 1.0 : 0.0);
+    };
+    if (name == "forward") return Value::Num(axis(platform::Key::W, platform::Key::S));
+    if (name == "strafe") return Value::Num(axis(platform::Key::D, platform::Key::A));
+    if (name == "vertical") return Value::Num(axis(platform::Key::E, platform::Key::Q));
+    return Value::Num(0);
+}
+
+// InputKey(name): 1 while the named key is held, 0 otherwise.
+Value NativeInputKey(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->input) return Value::Num(0);
+    const platform::Key key = KeyFromName(StringArg(host, 0));
+    if (key == platform::Key::Unknown) return Value::Num(0);
+    return Value::Num(ctx->input->IsDown(key) ? 1.0 : 0.0);
+}
+
+// InputMouseX()/InputMouseY(): accumulated mouse delta since the last frame
+// (pixels, screen space). Used for look / aim from data-driven scripts.
+Value NativeInputMouseX(IScriptHost& host, void* user) {
+    (void)host;
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->input) return Value::Num(0);
+    return Value::Num(ctx->input->MouseDelta().x);
+}
+
+Value NativeInputMouseY(IScriptHost& host, void* user) {
+    (void)host;
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->input) return Value::Num(0);
+    return Value::Num(ctx->input->MouseDelta().y);
+}
+
 } // namespace
 
 void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
@@ -197,6 +272,10 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("SetVar", &NativeSetVar, &ctx);
     host.Register("Raycast", &NativeRaycast, &ctx);
     host.Register("PlaySfx", &NativePlaySfx, &ctx);
+    host.Register("InputAxis", &NativeInputAxis, &ctx);
+    host.Register("InputKey", &NativeInputKey, &ctx);
+    host.Register("InputMouseX", &NativeInputMouseX, &ctx);
+    host.Register("InputMouseY", &NativeInputMouseY, &ctx);
     host.RegisterField("Json", "Parse", &NativeJsonParse, &ctx);
 }
 

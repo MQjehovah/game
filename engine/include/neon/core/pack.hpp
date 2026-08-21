@@ -104,4 +104,13 @@ private:
     std::string error_;
 };
 
+// Expands every entry of `reader` under `destDir`: virtual paths use forward
+// slashes and map onto real subdirectories, which are created on demand. The
+// destination directory itself is created when missing. Returns Err on the
+// first failed entry (an invalid reader, unsafe/traversal path, or write
+// failure); entries already written are left on disk for the caller to clean
+// up. Used by the neon_game player to turn a store-only pack into a disk tree
+// the AssetManager/GameRuntime can read.
+core::Status Unpack(const PackReader& reader, const std::string& destDir);
+
 } // namespace neon::core

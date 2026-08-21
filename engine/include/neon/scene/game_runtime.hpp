@@ -15,6 +15,7 @@
 #include "neon/gfx/material.hpp"
 #include "neon/gfx/mesh.hpp"
 #include "neon/physics/physics.hpp"
+#include "neon/platform/input.hpp"
 #include "neon/script/bindings.hpp"
 #include "neon/script/gamevars.hpp"
 #include "neon/script/script.hpp"
@@ -32,10 +33,16 @@ namespace neon::scene {
 // optional: a null AssetManager makes Draw a no-op (pure simulation, which is
 // what headless servers and unit tests use). Scripts are read from disk under
 // scriptBaseDir unless readScript overrides the source (pack readers, tests).
+// assetBaseDir prefixes file-backed mesh/texture paths (obj:/gltf:/textures)
+// so a packed game's unpacked directory works as the asset root; input wires
+// the platform input state into the Lua InputAxis/InputKey/InputMouse bindings
+// (null in headless hosts).
 struct GameRuntimeConfig {
     assets::AssetManager* assets = nullptr; // mesh loading; null = sim-only
     std::string scriptBaseDir;              // base dir for script paths ("" = cwd)
+    std::string assetBaseDir;               // base dir for obj:/gltf:/texture paths ("" = cwd)
     std::function<std::string(const std::string& path)> readScript; // optional override
+    platform::IInput* input = nullptr;      // optional live input for scripts
     uint64_t rngSeed = 20260821u;           // fixed: playtest RNG is reproducible
 };
 
@@ -129,6 +136,9 @@ private:
                             const std::vector<script::Value>& args);
     std::string ReadScript(const std::string& path) const;
     std::string FullScriptPath(const std::string& path) const;
+    // Resolves an asset reference (obj:/gltf:/texture path) against
+    // cfg_.assetBaseDir; absolute paths and empty base pass through unchanged.
+    std::string FullAssetPath(const std::string& path) const;
 
     ecs::World world_;
     physics::World physics_;
