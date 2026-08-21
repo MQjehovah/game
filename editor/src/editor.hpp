@@ -13,6 +13,7 @@
 #include "imgui.h"
 #include "ImGuizmo.h"
 #include "history.hpp"
+#include "packager.hpp"
 #include "script_panel_model.hpp"
 
 namespace neon::editor {
@@ -139,6 +140,11 @@ private:
     void BuildScriptPanel();
     void RefreshScriptChecks();
 
+    // Package panel (T4.6): docked 打包 panel with project/out dir inputs, a
+    // one-click 打包 button and the last PackageReport rendered.
+    void BuildPackagePanel();
+    void RunPackage();
+
     gfx::Renderer renderer_;
     assets::AssetManager assetMgr_;
     ui::UIManager ui_;
@@ -250,6 +256,12 @@ private:
     int scriptSyncEntity_ = -1;       // entity whose vars the buffer currently shows
     char scriptVarsBuf_[32768]{};     // raw JSON vars editor (32 KB; truncation is detected)
     std::string scriptVarsError_;     // last vars-parse / truncation message (empty when valid)
+
+    // Package panel (T4.6) state.
+    bool showPackage_ = false;
+    char packOutDirBuf_[4096]{};      // output dir for the pack ("" = none yet)
+    pack::PackageReport packReport_;  // last run's report (rendered by the panel)
+    bool packRan_ = false;            // the 打包 button ran at least once
 };
 
 } // namespace neon::editor

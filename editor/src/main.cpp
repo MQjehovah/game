@@ -4,6 +4,7 @@
 
 #include "editor.hpp"
 #include "neon/core/config.hpp"
+#include "packager.hpp"
 
 int main(int argc, char** argv) {
     neon::core::ApplyLogCli(argc, argv);
@@ -15,6 +16,27 @@ int main(int argc, char** argv) {
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "--smoke-test") == 0 && i + 1 < argc) {
             smokeFrames = std::atoi(argv[++i]);
+        } else if (std::strcmp(argv[i], "--package") == 0 && i + 2 < argc) {
+            const std::string projectDir = argv[++i];
+            const std::string outDir = argv[++i];
+            neon::editor::pack::PackConfig cfg;
+            cfg.projectDir = projectDir;
+            cfg.outDir = outDir;
+            cfg.playerSource = "build/neon_rush.exe";
+            neon::editor::pack::PackageReport r = neon::editor::pack::PackProject(cfg);
+            for (const std::string& e : r.errors) std::printf("PACK ERROR: %s\n", e.c_str());
+            for (const std::string& w : r.warnings) std::printf("PACK WARN:  %s\n", w.c_str());
+            if (r.ok) {
+                std::printf("PACK OK: %s (%zu files, %zu bytes)\n", r.packPath.c_str(),
+                            r.fileCount, r.bytesWritten);
+                std::printf("PACK RUN: %s\n", r.runScriptPath.c_str());
+                if (!r.playerPath.empty())
+                    std::printf("PACK PLAYER: %s\n", r.playerPath.c_str());
+            } else {
+                std::printf("PACK FAILED: %zu errors, %zu warnings\n", r.errors.size(),
+                            r.warnings.size());
+            }
+            return r.ok ? 0 : 1;
         } else if (std::strcmp(argv[i], "--screenshot") == 0 && i + 2 < argc) {
             screenshot = argv[++i];
             screenshotFrame = static_cast<uint64_t>(std::atoll(argv[++i]));
@@ -26,6 +48,8 @@ int main(int argc, char** argv) {
         } else if (std::strcmp(argv[i], "--help") == 0) {
             std::printf("NeonEditor - NeonEngine scene editor\n"
                         "  --smoke-test <frames>  run N simulation frames then exit\n"
+                        "  --package <project> <out>  validate + pack a project into\n"
+                        "                         <out>/game.pack (run.bat + neon_game.exe)\n"
                         "  --screenshot <path> <frame>  capture a PNG at frame N\n"
                         "  --disable-fbo          force-disable CSM shadow maps\n"
                         "  --no-shadows           alias for --disable-fbo\n"

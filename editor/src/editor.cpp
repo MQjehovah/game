@@ -274,6 +274,7 @@ void EditorApp::OnUpdate(float dt) {
         showLog_ = true;
         showBt_ = true;
         showScripts_ = true;
+        showPackage_ = true;
         // Seed a small tree so the BT canvas renders real nodes on the smoke
         // frame (frame 30) and the smoke can assert the canvas drew geometry.
         btGraph_ = btgraph::BtGraph{};
@@ -850,6 +851,7 @@ void EditorApp::BuildImGuiUI() {
             ImGui::MenuItem("日志", nullptr, &showLog_);
             ImGui::MenuItem("行为树", nullptr, &showBt_);
             ImGui::MenuItem("脚本", nullptr, &showScripts_);
+            ImGui::MenuItem("打包", nullptr, &showPackage_);
             ImGui::Separator();
             ImGui::MenuItem("引擎 UI 演示", nullptr, &showCustomUIDemo_);
             ImGui::MenuItem("ImGui Demo", nullptr, &showImGuiDemo_);
@@ -931,6 +933,7 @@ void EditorApp::BuildImGuiUI() {
             ImGui::DockBuilderDockWindow("日志", right);
             ImGui::DockBuilderDockWindow("行为树", bottom);
             ImGui::DockBuilderDockWindow("脚本", bottom);
+            ImGui::DockBuilderDockWindow("打包", bottom);
             ImGui::DockBuilderDockWindow("视口", dockId);
             ImGui::DockBuilderFinish(dockId);
         }
@@ -995,6 +998,7 @@ void EditorApp::BuildImGuiUI() {
     BuildLogPanel();
     BuildBtPanel();
     BuildScriptPanel();
+    BuildPackagePanel();
     BuildViewportPanel();
 
     if (showImGuiDemo_) ImGui::ShowDemoWindow(&showImGuiDemo_);

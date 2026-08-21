@@ -777,4 +777,72 @@ void EditorApp::BuildScriptPanel() {
     ImGui::End();
 }
 
+void EditorApp::RunPackage() {
+    pack::PackConfig cfg;
+    cfg.projectDir = projectDir_;
+    cfg.outDir = packOutDirBuf_;
+    cfg.playerSource = "build/neon_rush.exe";
+    packReport_ = pack::PackProject(cfg);
+    packRan_ = true;
+    if (packReport_.ok) {
+        NEON_LOG_INFO("Editor: packaged '%s' -> %s (%zu files, %zu bytes)",
+                      projectDir_.c_str(), packReport_.packPath.c_str(),
+                      packReport_.fileCount, packReport_.bytesWritten);
+    } else {
+        NEON_LOG_ERROR("Editor: package failed for '%s' (%zu errors)",
+                       projectDir_.c_str(), packReport_.errors.size());
+    }
+}
+
+void EditorApp::BuildPackagePanel() {
+    if (!showPackage_) return;
+    if (ImGui::Begin("打包", &showPackage_)) {
+        ImGui::TextDisabled("项目目录 (game.json + scenes/ + prefabs/ + behaviors/ + scripts/ + assets/)");
+        if (ImGui::InputText("##pack_proj", projectDirBuf_, sizeof(projectDirBuf_),
+                             ImGuiInputTextFlags_EnterReturnsTrue)) {
+            projectDir_ = projectDirBuf_;
+            if (projectDir_.empty()) projectDir_ = ".";
+            SaveEditorConfig();
+        }
+        ImGui::TextDisabled("输出目录");
+        ImGui::SetNextItemWidth(-1.0f);
+        ImGui::InputText("##pack_out", packOutDirBuf_, sizeof(packOutDirBuf_));
+        if (ImGui::Button("一键打包")) RunPackage();
+        ImGui::SameLine();
+        ImGui::TextDisabled("生成 game.pack + run.bat + neon_game.exe");
+        ImGui::Separator();
+
+        if (packRan_) {
+            if (packReport_.ok) {
+                ImGui::TextColored(ImVec4(0.4f, 0.9f, 0.5f, 1.0f), "打包成功");
+            } else {
+                ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.4f, 1.0f), "打包失败 (%zu 个错误)",
+                                   packReport_.errors.size());
+            }
+            ImGui::TextDisabled("文件: %zu    字节: %zu", packReport_.fileCount,
+                                packReport_.bytesWritten);
+            if (!packReport_.packPath.empty()) ImGui::TextUnformatted(packReport_.packPath.c_str());
+            if (!packReport_.runScriptPath.empty())
+                ImGui::TextUnformatted(packReport_.runScriptPath.c_str());
+            if (!packReport_.playerPath.empty())
+                ImGui::TextUnformatted(packReport_.playerPath.c_str());
+            if (!packReport_.errors.empty()) {
+                ImGui::TextUnformatted("错误:");
+                for (const std::string& e : packReport_.errors)
+                    ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.4f, 1.0f), "- %s", e.c_str());
+            }
+            if (!packReport_.warnings.empty()) {
+                ImGui::TextUnformatted("警告:");
+                for (const std::string& w : packReport_.warnings)
+                    ImGui::TextColored(ImVec4(0.9f, 0.8f, 0.4f, 1.0f), "- %s", w.c_str());
+            }
+            ImGui::Separator();
+        }
+        ImGui::TextDisabled(
+            "注意: neon_game.exe 目前为 neon_rush 演示占位，不读取 game.pack。\n"
+            "T4.7 将提供真正的数据驱动播放器。");
+    }
+    ImGui::End();
+}
+
 } // namespace neon::editor
