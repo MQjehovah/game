@@ -1,3 +1,4 @@
+#include <limits>
 #include <set>
 #include <string>
 #include <utility>
@@ -48,6 +49,20 @@ void Drain(scene::ChunkStreamer& s) {
     }
 }
 
+// Pumps for a fixed duration even when nothing is pending. Used to let worker
+// threads finish delivering completions that were submitted before a Clear()
+// (which drops the pending_ bookkeeping that Drain() keys off of).
+void PumpFor(scene::ChunkStreamer& s, int ms) {
+    for (int i = 0; i < ms; ++i) {
+        s.PumpAsync();
+#if defined(_WIN32)
+        ::Sleep(1);
+#else
+        ::usleep(1000);
+#endif
+    }
+}
+
 // Collects the (cx, cz) pairs of every loaded chunk.
 std::set<std::pair<int, int>> LoadedIds(const scene::ChunkStreamer& s) {
     std::set<std::pair<int, int>> ids;
@@ -80,6 +95,13 @@ TEST(ChunkCoordMath) {
     auto c3 = scene::ChunkCoordFromWorldPos({-1.0f, 0.0f, 127.0f}, 64.0f);
     CHECK_EQ(c3.first, -1);
     CHECK_EQ(c3.second, 1);
+
+    // Non-finite positions and non-positive sizes map to chunk 0 (guarded: no
+    // UB from casting NaN/Inf to int).
+    CHECK_EQ(scene::ChunkCoord(std::numeric_limits<float>::quiet_NaN(), 64.0f), 0);
+    CHECK_EQ(scene::ChunkCoord(std::numeric_limits<float>::infinity(), 64.0f), 0);
+    CHECK_EQ(scene::ChunkCoord(10.0f, 0.0f), 0);
+    CHECK_EQ(scene::ChunkCoord(10.0f, -64.0f), 0);
 
     CHECK_EQ(scene::ChunkFileName(3, -2), std::string("chunk_3_-2.json"));
 }
@@ -276,6 +298,55 @@ TEST(ChunkStreamClearUnloadsAll) {
     CHECK_EQ(streamer.Chunks().size(), 0u);
     CHECK_EQ(world.EntityCount(), 0u);
     CHECK_EQ(unloadedCount, 9);
+}
+
+// ---------------------------------------------------------------------------
+// Clear() cancels in-flight loads: a completion submitted before Clear() must
+// not resurrect a chunk on the next PumpAsync() (epoch guard), and a later
+// Update() must reload cleanly without double-instantiating.
+// ---------------------------------------------------------------------------
+
+TEST(ChunkStreamClearCancelsInflightLoads) {
+    test::TempDir tmp;
+    const std::string dir = tmp.Str();
+    test::WriteFileAll(dir + "/" + scene::ChunkFileName(0, 0), SceneOf({Ent("a", 10, 10)}));
+
+    scene::ComponentRegistry reg;
+    scene::RegisterBuiltinComponents(reg);
+    ecs::World world;
+    scene::ChunkStreamer streamer(MakeConfig(world, reg, dir));
+
+    int loadedFired = 0;
+    streamer.onChunkLoaded = [&](int, int) { ++loadedFired; };
+
+    // Submit 9 loads; all are in flight (async) and nothing is instantiated yet.
+    streamer.Update({32.0f, 0.0f, 32.0f});
+    CHECK_EQ(streamer.PendingChunkCount(), 9);
+    CHECK_EQ(world.EntityCount(), 0u);
+    CHECK_EQ(loadedFired, 0);
+
+    // Clear() drops all state AND must cancel the in-flight loads.
+    streamer.Clear();
+    CHECK_EQ(streamer.PendingChunkCount(), 0);
+    CHECK_EQ(streamer.Chunks().size(), 0u);
+
+    // Give every worker time to finish its (tiny) read and deliver; each
+    // completion is pumped and must be discarded by the epoch guard.
+    PumpFor(streamer, 200);
+    CHECK_EQ(streamer.LoadedChunkCount(), 0);
+    CHECK_EQ(streamer.Chunks().size(), 0u);
+    CHECK_EQ(world.EntityCount(), 0u);
+    CHECK_EQ(loadedFired, 0);                       // no stale onChunkLoaded
+
+    // A subsequent Update() reloads normally (fresh epoch) and never
+    // double-instantiates the chunk whose pre-Clear load also completed.
+    streamer.Update({32.0f, 0.0f, 32.0f});
+    Drain(streamer);
+    CHECK_EQ(streamer.LoadedChunkCount(), 9);
+    CHECK_EQ(world.EntityCount(), 1u);
+    const scene::WorldChunk* c00 = streamer.Get(0, 0);
+    CHECK(c00 != nullptr && c00->loaded);
+    CHECK_EQ(c00->entities.size(), 1u);
 }
 
 // ---------------------------------------------------------------------------

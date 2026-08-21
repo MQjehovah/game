@@ -21,6 +21,9 @@ bool ReadFileText(const std::string& path, std::string& out) {
 } // namespace
 
 int ChunkCoord(float worldPos, float size) {
+    // static_cast of a non-finite float to int is UB; guard against a corrupted
+    // focus (NaN/Inf) or a non-positive size and map to chunk 0 (documented).
+    if (!std::isfinite(worldPos) || !std::isfinite(size) || size <= 0.0f) return 0;
     return static_cast<int>(std::floor(worldPos / size));
 }
 
@@ -72,6 +75,10 @@ void ChunkStreamer::Update(const math::Vec3& focus) {
 void ChunkStreamer::PumpAsync() { loader_.Pump(); }
 
 void ChunkStreamer::Clear() {
+    // Bump the epoch FIRST: every completion already delivered (or still to be
+    // delivered) for a load submitted under the previous epoch is discarded by
+    // CompleteLoad, so in-flight loads cannot resurrect a chunk after Clear().
+    ++epoch_;
     for (auto& kv : chunks_) {
         Unload(kv.second);
         if (kv.second.loaded && onChunkUnloaded) onChunkUnloaded(kv.first.first, kv.first.second);
@@ -102,27 +109,36 @@ bool ChunkStreamer::InWindow(int cx, int cz) const {
 void ChunkStreamer::StartLoad(int cx, int cz) {
     pending_.insert(std::make_pair(cx, cz));
     const std::string path = cfg_.chunkDir + "/" + ChunkFileName(cx, cz);
+    const uint32_t epoch = epoch_;
 
     if (loader_.Available()) {
         // Worker: read the (small) chunk file. Completion is delivered and runs
         // on the main thread inside PumpAsync() - parsing/instantiation never
-        // touch the world or renderer off-thread.
-        loader_.Submit([this, cx, cz, path]() {
+        // touch the world or renderer off-thread. The submission epoch is
+        // captured so Clear() (which bumps epoch_) cancels this load even after
+        // the file was already read.
+        loader_.Submit([this, cx, cz, epoch, path]() {
             std::string text;
             const bool ok = ReadFileText(path, text);
             loader_.Deliver(
-                [this, cx, cz, text, ok]() { CompleteLoad(cx, cz, text, ok); });
+                [this, cx, cz, epoch, text, ok]() { CompleteLoad(cx, cz, text, ok, epoch); });
         });
     } else {
         // Synchronous fallback: complete inline (workerCount == 0).
         std::string text;
         const bool ok = ReadFileText(path, text);
-        CompleteLoad(cx, cz, text, ok);
+        CompleteLoad(cx, cz, text, ok, epoch);
     }
 }
 
-void ChunkStreamer::CompleteLoad(int cx, int cz, const std::string& text, bool readOk) {
+void ChunkStreamer::CompleteLoad(int cx, int cz, const std::string& text, bool readOk,
+                                 uint32_t epoch) {
     pending_.erase(std::make_pair(cx, cz));
+
+    // A Clear() happened since this load was submitted: discard the completion.
+    // Covers both the chunk-leaves-window case (no focus change involved) and
+    // Clear() + re-entry, where the fresh load carries the new epoch.
+    if (epoch != epoch_) return;
 
     // The focus moved while the file was being read: drop the chunk. If the
     // focus comes back it is re-submitted (fresh file read), so a stale chunk

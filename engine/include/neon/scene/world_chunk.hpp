@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <map>
 #include <set>
@@ -21,7 +22,9 @@ namespace neon::scene {
 // World position -> chunk index. Chunk edges sit on integer multiples of
 // `size`, so pos/size is floor division (a position exactly on an edge belongs
 // to the chunk ABOVE it, and negative positions land in the correctly-signed
-// chunk: x=-1 with size=64 -> chunk -1).
+// chunk: x=-1 with size=64 -> chunk -1). Non-finite input (NaN/Inf) or a
+// non-positive `size` maps to chunk 0 - a documented fallback that avoids the
+// UB of casting a non-finite float to int.
 int ChunkCoord(float worldPos, float size);
 
 // Chunk coordinates (cx, cz) of a world position. The horizontal (x, z) plane
@@ -67,6 +70,17 @@ struct WorldChunk {
 // the window later reloads it fresh). Config::workerCount == 0 disables the
 // pool so loads complete synchronously inside Update() (used by tests and a
 // documented fallback).
+//
+// Clear() cancels in-flight loads: it bumps an epoch counter, and a completion
+// delivered for a load submitted under an older epoch is discarded (like the
+// focus-based stale-load discard, but epoch-based so it also covers the case
+// where Clear() + a later Update() re-enters the same window without a focus
+// change). A chunk therefore never resurrects after Clear().
+//
+// NOTE: the destructor does NOT unload. It joins the worker pool (discarding
+// undelivered completions) and drops the streamer's own state, but the chunk
+// entities remain alive in the world - the caller owns the world and unloads
+// via Clear() or world teardown.
 class ChunkStreamer {
 public:
     struct Config {
@@ -84,6 +98,8 @@ public:
     };
 
     explicit ChunkStreamer(const Config& cfg);
+    // Joins the worker pool and drops the streamer's own state. Does NOT
+    // destroy the chunk entities (see the class comment).
     ~ChunkStreamer();
 
     ChunkStreamer(const ChunkStreamer&) = delete;
@@ -95,8 +111,11 @@ public:
     // Complete pending chunk loads on the calling (main) thread. Call once per
     // frame; no-op in the synchronous configuration.
     void PumpAsync();
-    // Unload every loaded chunk, destroy its entities and drop all state. Used
-    // on scene change / shutdown. Fires onChunkUnloaded per unloaded chunk.
+    // Unload every loaded chunk, destroy its entities and drop all state.
+    // Also cancels in-flight loads: completions delivered for loads submitted
+    // before the Clear() are discarded on the next PumpAsync() (epoch guard),
+    // so a chunk never resurrects. Used on scene change / shutdown. Fires
+    // onChunkUnloaded per unloaded chunk.
     void Clear();
 
     const std::map<std::pair<int, int>, WorldChunk>& Chunks() const { return chunks_; }
@@ -114,7 +133,7 @@ public:
 private:
     bool InWindow(int cx, int cz) const;
     void StartLoad(int cx, int cz);
-    void CompleteLoad(int cx, int cz, const std::string& text, bool readOk);
+    void CompleteLoad(int cx, int cz, const std::string& text, bool readOk, uint32_t epoch);
     void Unload(const WorldChunk& chunk);
 
     Config cfg_;
@@ -123,6 +142,9 @@ private:
     std::map<std::pair<int, int>, WorldChunk> chunks_;
     std::set<std::pair<int, int>> pending_; // loads in flight (not yet completed)
     std::pair<int, int> focusChunk_{0, 0};
+    // Bumped by Clear(); a load submitted under an older epoch is discarded
+    // when its completion runs, cancelling in-flight loads across Clear().
+    uint32_t epoch_ = 0;
 };
 
 } // namespace neon::scene
