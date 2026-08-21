@@ -59,6 +59,14 @@ void World::Clear() {
     collisions_.clear();
 }
 
+size_t World::BodyCount() const {
+    size_t n = 0;
+    for (const Body& b : bodies_) {
+        if (b.enabled && b.id.Valid()) ++n;
+    }
+    return n;
+}
+
 void World::SetPosition(BodyId body, const math::Vec3& pos) {
     if (Body* b = Find(body)) b->pos = pos;
 }

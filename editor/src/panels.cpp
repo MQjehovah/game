@@ -323,6 +323,18 @@ void EditorApp::BuildAssetPanel() {
                 ImGui::TextDisabled("%.1f KB", static_cast<double>(e.size) / 1024.0);
                 if (IsModelExt(e.name)) {
                     if (ImGui::Button("导入到场景")) ImportAssetPath(e.path);
+                    // Mesh thumbnail (T4.8): rendered into a small offscreen
+                    // target by the frame's OnRender, cached by path+mtime.
+                    RequestMeshThumbnail(e.path);
+                    auto thumb = meshThumbs_.find(e.path);
+                    if (thumb != meshThumbs_.end() &&
+                        thumb->second.texId != ImTextureID_Invalid) {
+                        ImGui::Image(thumb->second.texId, ImVec2(140.0f, 140.0f));
+                    } else {
+                        ImGui::Dummy(ImVec2(140.0f, 140.0f));
+                        ImGui::SameLine();
+                        ImGui::TextDisabled("生成缩略图中…");
+                    }
                 } else if (IsImageExt(e.name) && previewTexId_ != ImTextureID_Invalid) {
                     ImGui::Image(previewTexId_, ImVec2(140.0f, 140.0f));
                     ImGui::SameLine();
@@ -584,6 +596,40 @@ void EditorApp::BuildLogPanel() {
     ImGui::End();
 }
 
+void EditorApp::BuildProfilerPanel() {
+    if (!showProfiler_) return;
+    if (ImGui::Begin("性能", &showProfiler_)) {
+        const float ms = TimeRef().delta * 1000.0f;
+        const gfx::Renderer::RenderStats& st = renderer_.Stats();
+        profilerMs_[profilerMsHead_] = ms;
+        profilerMsHead_ = (profilerMsHead_ + 1) % kProfilerSamples;
+
+        ImGui::Text("帧时间 %.2f ms | %.1f FPS", ms, TimeRef().Fps());
+        ImGui::Text("Draw 调用 %u | 三角形 %u | 实例 %u", st.drawCalls, st.triangles,
+                    st.instances);
+
+        const bool playing = playtestActive_ && playtest_ != nullptr;
+        const size_t sceneEnts = entities_.size();
+        const size_t playEnts = playing ? playtest_->EntityCount() : 0;
+        const size_t bodies = playing ? playtest_->PhysicsBodyCount() : 0;
+        const size_t trees = playing ? playtest_->BehaviorTreeCount() : 0;
+        const size_t scripts = playing ? playtest_->ScriptCount() : 0;
+        ImGui::Text("实体 %zu (试玩 %zu) | 物理刚体 %zu", sceneEnts, playEnts, bodies);
+        ImGui::Text("行为树 %zu | 脚本 %zu", trees, scripts);
+
+        const assets::AssetStats a = assetMgr_.Stats();
+        ImGui::Text("纹理 %zu | 网格 %zu | 三角 %zu", a.textures, a.meshes, a.meshTriangles);
+        ImGui::Text("纹理内存 %.2f MB",
+                    static_cast<double>(a.textureBytes) / (1024.0 * 1024.0));
+
+        ImGui::Separator();
+        ImGui::PlotLines("##frame_ms", profilerMs_.data(), kProfilerSamples, 0, "帧时间 (ms)",
+                         0.0f, 40.0f, ImVec2(-1.0f, 88.0f));
+        profilerDrawn_ = true;
+    }
+    ImGui::End();
+}
+
 void EditorApp::BuildViewportPanel() {
     ImGuiWindowFlags vpFlags = ImGuiWindowFlags_NoScrollbar |
                                ImGuiWindowFlags_NoScrollWithMouse |
@@ -603,7 +649,10 @@ void EditorApp::BuildViewportPanel() {
             ImGui::SameLine();
             ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.5f, 1.0f), "试玩中 (F5 停止)");
         }
-        ImGui::TextDisabled("实体 %zu | 目标 (%.1f, %.1f, %.1f) | 距离 %.1f",
+        const char* camLabel = viewCam_ == ViewCam::Top
+                                   ? "顶视 (正交)"
+                                   : viewCam_ == ViewCam::Front ? "前视 (正交)" : "透视";
+        ImGui::TextDisabled("%s | 实体 %zu | 目标 (%.1f, %.1f, %.1f) | 距离 %.1f", camLabel,
                             entities_.size(), camTarget_.x, camTarget_.y, camTarget_.z,
                             camDist_);
 

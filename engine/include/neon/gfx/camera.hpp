@@ -12,6 +12,11 @@ struct Camera {
     float fovY = 55.0f * math::kDegToRad;
     float nearPlane = 0.1f;
     float farPlane = 800.0f;
+    // Orthographic projection (editor tool cameras / mesh thumbnails): when
+    // ortho is true, Projection returns an ortho frustum whose half-height is
+    // orthoSize (world units); the half-width follows the aspect ratio.
+    bool ortho = false;
+    float orthoSize = 10.0f;
 
     math::Mat4 View() const {
         math::Vec3 f = (target - position).Normalized();
@@ -28,6 +33,11 @@ struct Camera {
     }
 
     math::Mat4 Projection(float aspect) const {
+        if (ortho) {
+            const float halfH = orthoSize;
+            const float halfW = halfH * (aspect > 0.01f ? aspect : 0.01f);
+            return math::Mat4::Ortho(-halfW, halfW, -halfH, halfH, nearPlane, farPlane);
+        }
         return math::Mat4::Perspective(fovY, aspect, nearPlane, farPlane);
     }
 

@@ -97,11 +97,22 @@ public:
     const std::map<std::string, gfx::Mesh>& Meshes() const { return meshes_; }
     const std::map<std::pair<std::string, int>, gfx::Font>& Fonts() const { return fonts_; }
 
+    // Hot-reload support. Every successful load records the file's mtime;
+    // ChangedOnDisk compares the on-disk mtime against that record (false when
+    // the asset was never loaded or the file is missing). Reload* drops the
+    // stale cached entry and re-reads when the file changed on disk.
+    bool TextureChangedOnDisk(const std::string& path) const;
+    bool MeshChangedOnDisk(const std::string& path) const;
+    void ReloadTexture(const std::string& path);
+    void ReloadMeshOBJ(const std::string& path);
+
 private:
     gfx::Renderer* renderer_ = nullptr;
     std::map<std::string, gfx::Texture> textures_;
     std::map<std::string, gfx::Mesh> meshes_;
     std::map<std::pair<std::string, int>, gfx::Font> fonts_;
+    std::map<std::string, uint64_t> textureMtimes_;
+    std::map<std::string, uint64_t> meshMtimes_;
 };
 
 } // namespace neon::assets

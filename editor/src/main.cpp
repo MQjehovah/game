@@ -11,11 +11,14 @@ int main(int argc, char** argv) {
     int smokeFrames = 0;
     bool disableShadows = false;
     bool disableBloom = false;
+    bool hotReload = false;
     std::string screenshot;
     uint64_t screenshotFrame = 0;
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "--smoke-test") == 0 && i + 1 < argc) {
             smokeFrames = std::atoi(argv[++i]);
+        } else if (std::strcmp(argv[i], "--hot") == 0) {
+            hotReload = true;
         } else if (std::strcmp(argv[i], "--package") == 0 && i + 2 < argc) {
             const std::string projectDir = argv[++i];
             const std::string outDir = argv[++i];
@@ -48,6 +51,7 @@ int main(int argc, char** argv) {
         } else if (std::strcmp(argv[i], "--help") == 0) {
             std::printf("NeonEditor - NeonEngine scene editor\n"
                         "  --smoke-test <frames>  run N simulation frames then exit\n"
+                        "  --hot                  enable hot reload (scripts/assets on mtime change)\n"
                         "  --package <project> <out>  validate + pack a project into\n"
                         "                         <out>/game.pack (run.bat + neon_game.exe)\n"
                         "  --screenshot <path> <frame>  capture a PNG at frame N\n"
@@ -78,6 +82,7 @@ int main(int argc, char** argv) {
     if (!screenshot.empty()) app.RequestScreenshot(screenshot, screenshotFrame);
     if (disableShadows) app.SetDisableShadows(true);
     if (disableBloom) app.SetBloomEnabled(false);
+    if (hotReload) app.SetHotReload(true);
     int code = app.Run(config);
     return app.SmokeFailed() ? 1 : code;
 }

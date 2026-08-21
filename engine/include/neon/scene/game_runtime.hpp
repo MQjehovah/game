@@ -87,6 +87,7 @@ public:
     size_t ScriptCount() const { return scripts_.size(); }
     size_t BehaviorTreeCount() const { return trees_.size(); }
     size_t DrawCount() const { return draws_.size(); }
+    size_t PhysicsBodyCount() const { return physics_.BodyCount(); }
     double SimTime() const { return simTime_; }
 
     // Observability for tests/debug: the per-entity blackboard value the

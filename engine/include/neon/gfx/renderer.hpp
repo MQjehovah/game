@@ -93,6 +93,11 @@ public:
     // is false and the game falls back to DrawProjectedShadow.
     void SetShadowsEnabled(bool enabled);
     bool ShadowsEnabled() const { return csmEnabled_; }
+    // Editor tooling: temporarily suppress shadow-caster recording so a mesh
+    // rendered into its own offscreen target (e.g. an asset thumbnail) never
+    // pollutes the main scene's shadow pass. Enabled by default.
+    void SetShadowRecording(bool enabled) { shadowRecording_ = enabled; }
+    bool ShadowRecording() const { return shadowRecording_; }
     // True when a shadow map pass actually ran this frame (maps are valid).
     bool ShadowMapActive() const { return csmActive_; }
     // Shadow map size in pixels per cascade.
@@ -398,6 +403,7 @@ private:
     math::Vec3 sunDir_{-0.4f, -1.0f, -0.3f};
     Color sunColor_{1.0f, 0.95f, 0.85f, 1.0f};
     float ambient_ = 0.25f;
+    bool shadowRecording_ = true;
     math::Vec3 pointPos_[kMaxPointLights];
     Color pointColor_[kMaxPointLights];
     float pointRadius_[kMaxPointLights];

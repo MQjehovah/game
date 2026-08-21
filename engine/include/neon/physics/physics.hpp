@@ -31,6 +31,9 @@ public:
 
     void Step(float dt, const math::Vec3& gravity);
 
+    // Number of enabled bodies (editor profiler / debug panels).
+    size_t BodyCount() const;
+
     // Pairs of owners that collided this step (dynamic involved).
     const std::vector<std::pair<uint64_t, uint64_t>>& Collisions() const { return collisions_; }
     void ClearCollisions() { collisions_.clear(); }

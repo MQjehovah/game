@@ -1,6 +1,8 @@
 #pragma once
 
+#include <array>
 #include <functional>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -17,6 +19,10 @@
 #include "script_panel_model.hpp"
 
 namespace neon::editor {
+
+// Viewport camera presets (T4.8 multi-camera viewport): the perspective orbit
+// camera plus static orthographic top (down -Y) and front (down -Z) views.
+enum class ViewCam { Perspective, Top, Front };
 
 struct SceneEntity {
     std::string name;
@@ -63,6 +69,7 @@ public:
     void SetSmokeMode(bool v) { smokeMode_ = v; }
     void SetDisableShadows(bool v) { disableShadows_ = v; }
     void SetBloomEnabled(bool v) { bloomEnabled_ = v; }
+    void SetHotReload(bool v) { hotReload_ = v; }
     bool SmokeFailed() const { return smokeFailed_; }
     void RequestScreenshot(const std::string& path, uint64_t frame) {
         screenshotPath_ = path;
@@ -80,6 +87,7 @@ private:
     void BuildInspectorPanel();
     void BuildLogPanel();
     void BuildViewportPanel();
+    void BuildProfilerPanel();
     void DrawTransformGizmo();
     void RunGizmoDragSim();
     void ApplyMaterialParams(SceneEntity& e);
@@ -108,7 +116,26 @@ private:
     void StartPlaytest();
     void StopPlaytest();
     core::Result<core::Json> BuildPlaySceneJson();
-    gfx::Camera OrbitCamera() const;
+    // Active viewport camera: the perspective orbit (透视) or one of the
+    // orthographic presets (顶视 down -Y / 前视 down -Z). Every consumer
+    // (renderer, gizmo, picking) uses this so the tool always matches the view.
+    gfx::Camera ActiveCamera() const;
+
+    // T4.8 asset thumbnails: a mesh asset (OBJ/glTF) selected in the asset
+    // panel is rendered into a small offscreen target once per path+mtime;
+    // the resulting texture is shown inline. RequestMeshThumbnail queues the
+    // path; GenerateMeshThumbnails (called inside the frame's OnRender) does
+    // the GPU work so the panel displays the image on the next frame.
+    void RequestMeshThumbnail(const std::string& path);
+    void GenerateMeshThumbnails();
+
+    // T4.8 hot reload (--hot / toolbar toggle, off by default): polls the
+    // playtest's scripts and the scene's referenced assets (throttled every 30
+    // frames). A changed script restarts the playtest (Stop + Start = state
+    // reset); a changed texture/OBJ is re-read through the AssetManager and
+    // the owning entities re-resolved. Shaders are compiled from strings at
+    // init and are NOT hot-reloaded (documented; see PollHotReload).
+    void PollHotReload();
 
     // Behavior tree editor (T4.4): docked 行为树 panel with a node palette,
     // a drag canvas, link creation, param editing, save/load of .bt.json and a
@@ -170,6 +197,52 @@ private:
     float pitch_ = 0.35f;
     float camDist_ = 14.0f;
     math::Vec3 camTarget_{0, 1.2f, 0};
+
+    // Multi-camera viewport (T4.8): the active preset plus the ortho zoom
+    // level (half-height of the ortho frustum in world units).
+    ViewCam viewCam_ = ViewCam::Perspective;
+    float orthoSize_ = 16.0f;
+
+    // Hot reload (T4.8): off by default (--hot flag / toolbar toggle). The
+    // throttled poll compares recorded mtimes against the disk; scriptMtimes_
+    // gates the playtest restart, assetMtimes_ the texture/mesh reload.
+    bool hotReload_ = false;
+    std::map<std::string, uint64_t> scriptMtimes_;
+    std::map<std::string, uint64_t> assetMtimes_;
+    uint64_t hotReloadFrame_ = 0;
+    int hotReloadCount_ = 0; // smoke: number of reloads performed
+
+    // Profiler panel (T4.8): a rolling frame-time buffer drawn with the
+    // ImGui plot API plus per-frame renderer/ECS/physics/BT/memory stats.
+    bool showProfiler_ = false;
+    bool profilerDrawn_ = false; // smoke: the panel rendered its stats
+    static constexpr int kProfilerSamples = 180;
+    std::array<float, kProfilerSamples> profilerMs_{};
+    int profilerMsHead_ = 0;
+
+    // Asset thumbnail cache (T4.8): per-path GPU render target (kept alive so
+    // its color texture stays sampleable) + the ImGui texture id, keyed by
+    // path+mtime. meshThumbQueue_ holds paths awaiting the next frame's render.
+    struct MeshThumb {
+        gfx::RenderTargetHandle rt;
+        gfx::TextureHandle texHandle;
+        ImTextureID texId = ImTextureID_Invalid;
+        uint64_t mtime = 0;
+    };
+    std::map<std::string, MeshThumb> meshThumbs_;
+    std::vector<std::string> meshThumbQueue_;
+
+    // Smoke instrumentation (T4.8): the camera used by the last scene render,
+    // its scene draw-call count, and the temp-project paths for the hot-reload
+    // script restart check.
+    bool lastRenderCamOrtho_ = false;
+    uint32_t smokeDrawCalls_ = 0;
+    uint64_t lastRenderTick_ = 0; // tick processed by the most recent OnRender
+    bool thumbSmokeDone_ = false; // T4.8 smoke: offscreen mesh thumbnail verified
+    bool camSmokeDone_ = false;   // T4.8 smoke: ortho viewport render verified
+    std::string smokeThumbPath_;
+    std::string hotReloadProj_;
+    std::string prevProjectDir_;
 
     bool smokeMode_ = false;
     bool smokeFailed_ = false;

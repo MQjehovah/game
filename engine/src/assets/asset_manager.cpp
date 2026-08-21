@@ -10,6 +10,13 @@
 #include <tuple>
 #include <vector>
 
+#if defined(_WIN32)
+#include <sys/stat.h>
+#else
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
+
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
@@ -24,6 +31,18 @@ namespace {
 std::string DirName(const std::string& path) {
     size_t pos = path.find_last_of("/\\");
     return pos == std::string::npos ? std::string(".") : path.substr(0, pos + 1);
+}
+
+// File modification time (seconds). 0 when the file does not exist.
+uint64_t FileMTime(const std::string& path) {
+#if defined(_WIN32)
+    struct _stat64 st;
+    if (_stat64(path.c_str(), &st) == 0) return static_cast<uint64_t>(st.st_mtime);
+#else
+    struct stat st;
+    if (::stat(path.c_str(), &st) == 0) return static_cast<uint64_t>(st.st_mtime);
+#endif
+    return 0;
 }
 
 void LoadMaterialColors(const std::string& mtlPath,
@@ -154,6 +173,7 @@ gfx::Texture AssetManager::LoadTexture(const std::string& path) {
     gfx::Texture texture = renderer_->CreateTexture(desc);
     stbi_image_free(data);
     textures_[path] = texture;
+    textureMtimes_[path] = FileMTime(path);
     NEON_LOG_INFO("Asset: loaded texture '%s' (%dx%d)", path.c_str(), w, h);
     return texture;
 }
@@ -271,6 +291,7 @@ gfx::Mesh AssetManager::LoadMeshOBJ(const std::string& path) {
                                                indices.data(), static_cast<uint32_t>(indices.size()),
                                                path);
     meshes_[path] = mesh;
+    meshMtimes_[path] = FileMTime(path);
     NEON_LOG_INFO("Asset: loaded OBJ '%s' (%zu verts)", path.c_str(), verts.size());
     return mesh;
 }
@@ -801,6 +822,34 @@ AssetStats AssetManager::Stats() const {
     }
     stats.fonts = fonts_.size();
     return stats;
+}
+
+bool AssetManager::TextureChangedOnDisk(const std::string& path) const {
+    auto it = textureMtimes_.find(path);
+    if (it == textureMtimes_.end()) return false;
+    return it->second != FileMTime(path);
+}
+
+bool AssetManager::MeshChangedOnDisk(const std::string& path) const {
+    auto it = meshMtimes_.find(path);
+    if (it == meshMtimes_.end()) return false;
+    return it->second != FileMTime(path);
+}
+
+void AssetManager::ReloadTexture(const std::string& path) {
+    if (!TextureChangedOnDisk(path)) return;
+    NEON_LOG_INFO("Asset: hot-reload texture '%s'", path.c_str());
+    textures_.erase(path);
+    textureMtimes_.erase(path);
+    LoadTexture(path);
+}
+
+void AssetManager::ReloadMeshOBJ(const std::string& path) {
+    if (!MeshChangedOnDisk(path)) return;
+    NEON_LOG_INFO("Asset: hot-reload OBJ '%s'", path.c_str());
+    meshes_.erase(path);
+    meshMtimes_.erase(path);
+    LoadMeshOBJ(path);
 }
 
 } // namespace neon::assets

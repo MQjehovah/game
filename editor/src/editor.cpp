@@ -6,7 +6,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <fstream>
+#include <set>
 #include <sstream>
 
 #if defined(_WIN32)
@@ -14,9 +16,11 @@
 #define NOMINMAX
 #endif
 #include <direct.h>
+#include <sys/stat.h>
 #include <windows.h>
 #else
 #include <sys/stat.h>
+#include <utime.h>
 #endif
 
 #include "editor_history.hpp"
@@ -113,12 +117,72 @@ gfx::Mesh MakeTerrain(gfx::Renderer& renderer) {
     return gfx::Mesh::CreateTerrain(renderer, segments, size, heights, 1.0f, "terrain");
 }
 
+// File modification time in seconds (0 when the file does not exist).
+uint64_t FileMTime(const std::string& path) {
+#if defined(_WIN32)
+    struct _stat64 st;
+    if (_stat64(path.c_str(), &st) == 0) return static_cast<uint64_t>(st.st_mtime);
+#else
+    struct stat st;
+    if (::stat(path.c_str(), &st) == 0) return static_cast<uint64_t>(st.st_mtime);
+#endif
+    return 0;
+}
+
+// Pushes a file's mtime forward (hot-reload smoke test uses this to simulate
+// an on-disk edit without relying on same-second filesystem timestamps).
+bool TouchFileMTime(const std::string& path, int64_t offsetSeconds) {
+#if defined(_WIN32)
+    HANDLE h = CreateFileA(path.c_str(), FILE_WRITE_ATTRIBUTES, FILE_SHARE_READ, nullptr,
+                           OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h == INVALID_HANDLE_VALUE) return false;
+    SYSTEMTIME st;
+    GetSystemTime(&st);
+    FILETIME ft;
+    SystemTimeToFileTime(&st, &ft);
+    ULARGE_INTEGER ul;
+    ul.LowPart = ft.dwLowDateTime;
+    ul.HighPart = ft.dwHighDateTime;
+    ul.QuadPart += static_cast<unsigned __int64>(offsetSeconds) * 10000000ull;
+    FILETIME shifted;
+    shifted.dwLowDateTime = ul.LowPart;
+    shifted.dwHighDateTime = ul.HighPart;
+    SetFileTime(h, nullptr, &shifted, &shifted);
+    CloseHandle(h);
+    return true;
+#else
+    struct utimbuf ub;
+    ub.actime = static_cast<time_t>(std::time(nullptr) + offsetSeconds);
+    ub.modtime = ub.actime;
+    return ::utime(path.c_str(), &ub) == 0;
+#endif
+}
+
+// Lower-cased file extension with the leading dot, e.g. ".obj".
+std::string ExtLower(const std::string& path) {
+    size_t slash = path.find_last_of("/\\");
+    size_t dot = path.find_last_of('.');
+    if (dot == std::string::npos || (slash != std::string::npos && dot < slash)) return {};
+    std::string ext = path.substr(dot);
+    std::transform(ext.begin(), ext.end(), ext.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return ext;
+}
+
 math::Ray ScreenRay(const gfx::Camera& cam, float aspect, const math::Vec2& designPos) {
     float ndcX = designPos.x / static_cast<float>(gfx::Renderer::kDesignWidth) * 2.0f - 1.0f;
     float ndcY = 1.0f - designPos.y / static_cast<float>(gfx::Renderer::kDesignHeight) * 2.0f;
     math::Vec3 fwd = (cam.target - cam.position).Normalized();
     math::Vec3 right = math::Cross(fwd, cam.up).Normalized();
     math::Vec3 upv = math::Cross(right, fwd);
+    if (cam.ortho) {
+        // Ortho picking: every ray is parallel to the forward axis, through the
+        // mouse point on the camera plane (not through the eye).
+        float halfH = cam.orthoSize;
+        float halfW = halfH * (aspect > 0.01f ? aspect : 0.01f);
+        math::Vec3 origin = cam.position + right * (ndcX * halfW) + upv * (ndcY * halfH);
+        return {origin, fwd};
+    }
     float tanF = std::tan(cam.fovY * 0.5f);
     math::Vec3 dir = (fwd + right * ndcX * tanF * aspect + upv * ndcY * tanF).Normalized();
     return {cam.position, dir};
@@ -213,6 +277,17 @@ bool EditorApp::OnCreate() {
 
 void EditorApp::OnShutdown() {
     SaveEditorConfig();
+    // Release the offscreen thumbnail targets + their ImGui registrations
+    // before the renderer shuts down.
+    if (gfx::IRenderBackend* backend = renderer_.Backend()) {
+        for (auto& kv : meshThumbs_) {
+            if (kv.second.texId != ImTextureID_Invalid)
+                gfx::ImGuiNeon_UnregisterTexture(kv.second.texHandle);
+            if (kv.second.rt.Valid()) backend->DestroyRenderTarget(kv.second.rt);
+        }
+    }
+    meshThumbs_.clear();
+    meshThumbQueue_.clear();
     gfx::ImGuiNeon_Shutdown();
     renderer_.Shutdown();
 }
@@ -255,6 +330,12 @@ void EditorApp::OnUpdate(float dt) {
     }
     UpdateViewport(dt);
     if (playtestActive_ && playtest_) playtest_->Tick(dt);
+    // Hot reload (T4.8): throttled mtime poll for the playtest's scripts and
+    // the scene's referenced assets. Off unless --hot / the toolbar toggle.
+    if (hotReload_ && TimeRef().frameIndex - hotReloadFrame_ >= 30) {
+        hotReloadFrame_ = TimeRef().frameIndex;
+        PollHotReload();
+    }
     gfx::ImGuiNeon_NewFrame(*Input(), pendingText_, dt);
     pendingText_.clear();
     ImGui::NewFrame();
@@ -275,6 +356,7 @@ void EditorApp::OnUpdate(float dt) {
         showBt_ = true;
         showScripts_ = true;
         showPackage_ = true;
+        showProfiler_ = true;
         // Seed a small tree so the BT canvas renders real nodes on the smoke
         // frame (frame 30) and the smoke can assert the canvas drew geometry.
         btGraph_ = btgraph::BtGraph{};
@@ -294,6 +376,91 @@ void EditorApp::OnUpdate(float dt) {
         btSelected_ = r;
     }
     if (smokeMode_ && TimeRef().frameIndex == 30) RunUISmokeTest();
+
+    // T4.8 smoke: the frame-30 OnRender generated the queued mesh thumbnail
+    // (the asset panel selected the model during RunUISmokeTest); verify the
+    // cache + profiler output here, then arm the ortho render check. The app
+    // can run several fixed ticks between renders, so the checks key off
+    // lastRenderTick_ (the tick the most recent OnRender processed) rather
+    // than assuming a 1:1 tick/render correspondence.
+    if (smokeMode_ && TimeRef().frameIndex == 31) {
+        NEON_LOG_INFO("EDITOR-PROFILER-SMOKE: [%s] profiler panel populated",
+                      profilerDrawn_ ? "PASS" : "FAIL");
+        if (!profilerDrawn_) smokeFailed_ = true;
+        viewCam_ = ViewCam::Top; // next OnRender renders the top ortho view
+    }
+    if (smokeMode_ && !thumbSmokeDone_ && !smokeThumbPath_.empty()) {
+        // Once the queue has been processed by a render, the cache holds the
+        // path (a valid texture = the mesh rendered; an invalid one = the
+        // asset failed to load). Until then, keep waiting.
+        if (lastRenderTick_ >= 32) {
+            auto it = meshThumbs_.find(smokeThumbPath_);
+            thumbSmokeDone_ = true;
+            const bool ok = it != meshThumbs_.end() &&
+                            it->second.texId != ImTextureID_Invalid && it->second.rt.Valid();
+            NEON_LOG_INFO("EDITOR-THUMB-SMOKE: [%s] mesh thumbnail cached (%s)",
+                          ok ? "PASS" : "FAIL", smokeThumbPath_.c_str());
+            if (!ok) smokeFailed_ = true;
+        }
+    }
+    if (smokeMode_ && !camSmokeDone_ && viewCam_ == ViewCam::Top) {
+        // A render has now processed the Top arm (tick 31): lastRenderCamOrtho_
+        // reflects that frame's camera and the scene draw-call count.
+        if (lastRenderTick_ >= 32) {
+            camSmokeDone_ = true;
+            const bool ok = lastRenderCamOrtho_ && smokeDrawCalls_ > 0;
+            NEON_LOG_INFO("EDITOR-CAM-SMOKE: [%s] top ortho camera rendered the viewport "
+                          "(drawCalls=%u)",
+                          ok ? "PASS" : "FAIL", smokeDrawCalls_);
+            if (!ok) smokeFailed_ = true;
+            viewCam_ = ViewCam::Perspective;
+        }
+    }
+
+    // T4.8 smoke: hot reload. Frame 40 wires up a temp project with a script,
+    // attaches it, starts the playtest and records the script mtime baseline.
+    // Frame 41 bumps the file's mtime; frame 42 polls and asserts the playtest
+    // was torn down and restarted.
+    if (smokeMode_ && TimeRef().frameIndex == 40) {
+        const std::string proj = GetTempDir() + "/hotreload_proj";
+        EnsureDirs(proj + "/scripts");
+        {
+            std::ofstream out(proj + "/scripts/main.lua", std::ios::binary);
+            out << "function on_start(ent)\nend\nfunction on_update(ent, dt)\nend\n";
+        }
+        hotReloadProj_ = proj;
+        prevProjectDir_ = projectDir_;
+        projectDir_ = proj;
+        if (selected_ >= 0 && selected_ < static_cast<int>(entities_.size())) {
+            SceneEntity& sel = entities_[static_cast<size_t>(selected_)];
+            core::Json vars;
+            vars.type_ = core::Json::Type::Object;
+            const SceneScriptFields oldV{sel.scriptBackend, sel.scriptPath, sel.scriptVars};
+            const SceneScriptFields newV{"lua", "scripts/main.lua", vars};
+            history_.Push(std::make_unique<EditPropertyCommand<SceneScriptFields>>(
+                &entities_, selected_, ApplyScriptFields, oldV, newV, /*mergeable=*/false));
+        }
+        hotReload_ = true;
+        StartPlaytest();
+        PollHotReload(); // baseline: record the script's mtime (no restart)
+        const bool active = playtestActive_ && playtest_ && playtest_->Running();
+        NEON_LOG_INFO("EDITOR-HOTRELOAD-SMOKE: [%s] playtest running for hot reload",
+                      active ? "PASS" : "FAIL");
+        if (!active) smokeFailed_ = true;
+    }
+    if (smokeMode_ && TimeRef().frameIndex == 41) {
+        TouchFileMTime(hotReloadProj_ + "/scripts/main.lua", 2);
+    }
+    if (smokeMode_ && TimeRef().frameIndex == 42) {
+        const int before = hotReloadCount_;
+        PollHotReload();
+        const bool restarted = hotReloadCount_ > before && playtestActive_ && playtest_;
+        NEON_LOG_INFO("EDITOR-HOTRELOAD-SMOKE: [%s] script mtime change restarted the playtest",
+                      restarted ? "PASS" : "FAIL");
+        if (!restarted) smokeFailed_ = true;
+        hotReload_ = false;
+        projectDir_ = prevProjectDir_;
+    }
 
     // Play/Stop smoke: start a playtest at frame 60, verify it ticks, stop at
     // the last frame (119; OnUpdate never runs at 120). Kept at "Play/Stop
@@ -323,12 +490,7 @@ void EditorApp::OnRender() {
     renderer_.DrawSky();
 
     float aspect = static_cast<float>(renderer_.ScreenWidth()) / renderer_.ScreenHeight();
-    gfx::Camera cam;
-    cam.position = camTarget_ + math::Vec3{std::sin(yaw_) * std::cos(pitch_),
-                                           std::sin(pitch_),
-                                           std::cos(yaw_) * std::cos(pitch_)} *
-                                        camDist_;
-    cam.target = camTarget_;
+    gfx::Camera cam = ActiveCamera();
     renderer_.SetCamera(cam, aspect);
     renderer_.SetDirectionalLight({-0.4f, -1.0f, -0.3f}, {1.0f, 0.95f, 0.85f}, 0.3f);
 
@@ -361,6 +523,21 @@ void EditorApp::OnRender() {
     // bind the backbuffer so the tool UI (engine UI demo + ImGui) below renders
     // crisp and unbloomed on top.
     renderer_.EndScene();
+
+    // Scene pass draw calls (before the thumbnail pass adds its own counts).
+    if (smokeMode_) {
+        lastRenderTick_ = TimeRef().frameIndex;
+        smokeDrawCalls_ = renderer_.Stats().drawCalls;
+        lastRenderCamOrtho_ = cam.ortho;
+    }
+
+    // Asset thumbnails: meshes selected in the asset panel render into small
+    // offscreen targets here, after the scene is composited, so the ImGui pass
+    // below can sample them on the next frame. Flush any pending 2D first: on a
+    // non-HDR driver EndScene is a no-op and the sky's quads must reach the
+    // backbuffer, not the thumbnail target.
+    renderer_.Flush2D();
+    GenerateMeshThumbnails();
 
     if (showCustomUIDemo_) ui_.Draw(renderer_);
     renderer_.Flush2D();
@@ -419,6 +596,12 @@ void EditorApp::OnEvent(const platform::InputEvent& event) {
             f5Pressed_ = false;
         }
     }
+    // Tab cycles the viewport camera preset (透视 -> 顶视 -> 前视 -> ...), the
+    // same list the toolbar combo exposes.
+    if (event.type == platform::InputEvent::Type::KeyDown && event.key == platform::Key::Tab &&
+        !gfx::ImGuiNeon_WantCaptureKeyboard()) {
+        viewCam_ = static_cast<ViewCam>((static_cast<int>(viewCam_) + 1) % 3);
+    }
     if (event.type == platform::InputEvent::Type::TextInput) {
         if (!gfx::ImGuiNeon_WantCaptureKeyboard()) ui_.TextInput(event.text);
         pendingText_ += event.text;
@@ -429,13 +612,32 @@ void EditorApp::OnEvent(const platform::InputEvent& event) {
     }
 }
 
-gfx::Camera EditorApp::OrbitCamera() const {
+gfx::Camera EditorApp::ActiveCamera() const {
     gfx::Camera cam;
-    cam.position = camTarget_ + math::Vec3{std::sin(yaw_) * std::cos(pitch_),
-                                           std::sin(pitch_),
-                                           std::cos(yaw_) * std::cos(pitch_)} *
-                                    camDist_;
-    cam.target = camTarget_;
+    switch (viewCam_) {
+        case ViewCam::Top: // 顶视: orthographic looking down -Y
+            cam.position = camTarget_ + math::Vec3{0, camDist_, 0};
+            cam.target = camTarget_;
+            cam.up = {0, 0, -1};
+            cam.ortho = true;
+            cam.orthoSize = orthoSize_;
+            break;
+        case ViewCam::Front: // 前视: orthographic looking down -Z
+            cam.position = camTarget_ + math::Vec3{0, 0, camDist_};
+            cam.target = camTarget_;
+            cam.up = {0, 1, 0};
+            cam.ortho = true;
+            cam.orthoSize = orthoSize_;
+            break;
+        case ViewCam::Perspective:
+        default:
+            cam.position = camTarget_ + math::Vec3{std::sin(yaw_) * std::cos(pitch_),
+                                                   std::sin(pitch_),
+                                                   std::cos(yaw_) * std::cos(pitch_)} *
+                                            camDist_;
+            cam.target = camTarget_;
+            break;
+    }
     return cam;
 }
 
@@ -448,6 +650,7 @@ void EditorApp::UpdateViewport(float dt) {
     bool inViewport = mp.x >= viewportRect_.x && mp.x <= viewportRect_.x + viewportRect_.w &&
                       mp.y >= viewportRect_.y && mp.y <= viewportRect_.y + viewportRect_.h;
 
+    const bool ortho = viewCam_ != ViewCam::Perspective;
     if (!overPanel && inViewport) {
         // While the transform gizmo is hovered or being dragged the mouse
         // belongs to it: camera orbit/pan and left-click picking must not run.
@@ -456,38 +659,40 @@ void EditorApp::UpdateViewport(float dt) {
         const bool gizmoBusy =
             selected_ >= 0 && (gizmoDragActive_ || ImGuizmo::IsOver());
         if (!gizmoBusy) {
-            if (input->MouseDown(platform::MouseButton::Right)) {
+            if (!ortho && input->MouseDown(platform::MouseButton::Right)) {
                 yaw_ += -input->MouseDelta().x * 0.005f;
                 pitch_ = math::Clamp(pitch_ + -input->MouseDelta().y * 0.005f, 0.05f, 1.4f);
             }
             if (input->MouseDown(platform::MouseButton::Middle)) {
-                math::Vec3 fwd = (camTarget_ + math::Vec3{0, 0, 0} -
-                                  (camTarget_ +
-                                   math::Vec3{std::sin(yaw_) * std::cos(pitch_),
-                                              std::sin(pitch_),
-                                              std::cos(yaw_) * std::cos(pitch_)} *
-                                       camDist_))
-                                     .Normalized();
-                math::Vec3 right = math::Cross(fwd, {0, 1, 0}).Normalized();
+                // Pan in the ACTIVE camera's plane (the perspective orbit or a
+                // static ortho view): middle-drag moves the target along the
+                // camera's right/up axes.
+                gfx::Camera cam = ActiveCamera();
+                math::Vec3 fwd = (cam.target - cam.position).Normalized();
+                math::Vec3 right = math::Cross(fwd, cam.up).Normalized();
                 math::Vec3 upv = math::Cross(right, fwd);
-                camTarget_ -= right * input->MouseDelta().x * 0.02f;
-                camTarget_ += upv * input->MouseDelta().y * 0.02f;
+                const float worldPerPixel =
+                    ortho ? orthoSize_ * 2.0f / static_cast<float>(renderer_.ScreenHeight())
+                          : 1.0f;
+                const float k = ortho ? worldPerPixel : 0.02f;
+                camTarget_ -= right * input->MouseDelta().x * k;
+                camTarget_ += upv * input->MouseDelta().y * k;
             }
             float wheel = input->WheelDelta();
-            if (std::fabs(wheel) > 0.01f)
-                camDist_ = math::Clamp(camDist_ - wheel * 1.2f, 3.0f, 60.0f);
+            if (std::fabs(wheel) > 0.01f) {
+                if (ortho) {
+                    orthoSize_ = math::Clamp(orthoSize_ - wheel * 0.8f, 1.0f, 200.0f);
+                } else {
+                    camDist_ = math::Clamp(camDist_ - wheel * 1.2f, 3.0f, 60.0f);
+                }
+            }
         }
         // Play mode keeps camera navigation but not scene editing: left-click
         // picking would mutate the editor scene selection mid-playtest.
         if (input->MousePressed(platform::MouseButton::Left) && !playtestActive_ &&
             !gizmoBusy) {
             float aspect = static_cast<float>(renderer_.ScreenWidth()) / renderer_.ScreenHeight();
-            gfx::Camera cam;
-            cam.position = camTarget_ + math::Vec3{std::sin(yaw_) * std::cos(pitch_),
-                                                   std::sin(pitch_),
-                                                   std::cos(yaw_) * std::cos(pitch_)} *
-                                            camDist_;
-            cam.target = camTarget_;
+            gfx::Camera cam = ActiveCamera();
             math::Ray ray = ScreenRay(cam, aspect, mp);
             float best = 1e30f;
             int picked = -1;
@@ -542,7 +747,9 @@ void EditorApp::DrawTransformGizmo() {
     ImGuizmo::SetAlternativeWindow(hoverWindow);
     gizmoAltWindowSet_ = hoverWindow != nullptr;
 
-    ImGuizmo::SetOrthographic(false);
+    float aspect = static_cast<float>(renderer_.ScreenWidth()) / renderer_.ScreenHeight();
+    gfx::Camera cam = ActiveCamera();
+    ImGuizmo::SetOrthographic(cam.ortho);
     ImGuizmo::SetDrawlist(ImGui::GetWindowDrawList());
 
     // The 3D scene renders FULL-WINDOW (OnRender sets the camera with the full
@@ -560,8 +767,6 @@ void EditorApp::DrawTransformGizmo() {
     gizmoRect_[2] = rw;
     gizmoRect_[3] = rh;
 
-    float aspect = static_cast<float>(renderer_.ScreenWidth()) / renderer_.ScreenHeight();
-    gfx::Camera cam = OrbitCamera();
     float view[16], proj[16];
     Mat4ToGizmo(cam.View(), view);
     Mat4ToGizmo(cam.Projection(aspect), proj);
@@ -656,7 +861,7 @@ void EditorApp::RunGizmoDragSim() {
     ImGuiWindow* savedHoveredWin = ctx.HoveredWindow;
 
     float aspect = static_cast<float>(renderer_.ScreenWidth()) / renderer_.ScreenHeight();
-    gfx::Camera cam = OrbitCamera();
+    gfx::Camera cam = ActiveCamera();
     float view[16], proj[16];
     Mat4ToGizmo(cam.View(), view);
     Mat4ToGizmo(cam.Projection(aspect), proj);
@@ -699,7 +904,7 @@ void EditorApp::RunGizmoDragSim() {
     io.MouseDown[0] = true;
     io.MouseDownDuration[0] = 0.0f; // pressed this frame: IsMouseClicked fires
     ImGuizmo::BeginFrame();
-    ImGuizmo::SetOrthographic(false);
+    ImGuizmo::SetOrthographic(cam.ortho);
     ImGuizmo::SetDrawlist(ImGui::GetWindowDrawList());
     ImGuizmo::SetRect(0.0f, 0.0f, static_cast<float>(renderer_.ScreenWidth()),
                       static_cast<float>(renderer_.ScreenHeight()));
@@ -852,6 +1057,7 @@ void EditorApp::BuildImGuiUI() {
             ImGui::MenuItem("行为树", nullptr, &showBt_);
             ImGui::MenuItem("脚本", nullptr, &showScripts_);
             ImGui::MenuItem("打包", nullptr, &showPackage_);
+            ImGui::MenuItem("性能", nullptr, &showProfiler_);
             ImGui::Separator();
             ImGui::MenuItem("引擎 UI 演示", nullptr, &showCustomUIDemo_);
             ImGui::MenuItem("ImGui Demo", nullptr, &showImGuiDemo_);
@@ -934,6 +1140,7 @@ void EditorApp::BuildImGuiUI() {
             ImGui::DockBuilderDockWindow("行为树", bottom);
             ImGui::DockBuilderDockWindow("脚本", bottom);
             ImGui::DockBuilderDockWindow("打包", bottom);
+            ImGui::DockBuilderDockWindow("性能", bottom);
             ImGui::DockBuilderDockWindow("视口", dockId);
             ImGui::DockBuilderFinish(dockId);
         }
@@ -967,6 +1174,17 @@ void EditorApp::BuildImGuiUI() {
         ImGui::SameLine();
         if (ImGui::Button(playtestActive_ ? "■ 停止试玩" : "▶ 试玩")) TogglePlaytest();
         ImGui::SameLine();
+        // Hot reload toggle (T4.8): off by default. When on, script/asset mtime
+        // changes restart the playtest / reload the cached assets (throttled).
+        if (ImGui::Button(hotReload_ ? "● 热重载" : "○ 热重载")) hotReload_ = !hotReload_;
+        ImGui::SameLine();
+        // Multi-camera viewport preset (T4.8): 透视 / 顶视 / 前视 (also Tab).
+        const char* camLabels[] = {"透视", "顶视", "前视"};
+        int camSel = static_cast<int>(viewCam_);
+        ImGui::SetNextItemWidth(88.0f);
+        if (ImGui::Combo("##viewport_cam", &camSel, camLabels, 3))
+            viewCam_ = static_cast<ViewCam>(camSel);
+        ImGui::SameLine();
         if (ImGui::Button("导出场景")) ExportScene();
         ImGui::SameLine();
         ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
@@ -999,6 +1217,7 @@ void EditorApp::BuildImGuiUI() {
     BuildBtPanel();
     BuildScriptPanel();
     BuildPackagePanel();
+    BuildProfilerPanel();
     BuildViewportPanel();
 
     if (showImGuiDemo_) ImGui::ShowDemoWindow(&showImGuiDemo_);
@@ -1590,6 +1809,85 @@ void EditorApp::RunUISmokeTest() {
         NEON_LOG_INFO("EDITOR-SCRIPT-SMOKE: sync invalidation checks done");
     }
 
+    // --- Profiler panel (T4.8): the panel opened at frame 29 and populated its
+    // stats + rolling frame-time buffer during this frame's UI build. ---
+    check(profilerDrawn_, "profiler panel rendered its stats");
+    {
+        bool anyMs = false;
+        for (float v : profilerMs_) {
+            if (v > 0.0f) {
+                anyMs = true;
+                break;
+            }
+        }
+        check(anyMs, "profiler panel recorded frame-time samples");
+    }
+
+    // --- Multi-camera viewport (T4.8): the three presets expose the right
+    // projection + look direction, and the ortho pick ray stays parallel to the
+    // forward axis (not through the eye). Frame 31/32 verify the top view
+    // actually renders. ---
+    {
+        const gfx::Camera persp = ActiveCamera();
+        check(!persp.ortho, "multi-cam: perspective preset is perspective");
+        viewCam_ = ViewCam::Top;
+        const gfx::Camera top = ActiveCamera();
+        check(top.ortho, "multi-cam: top preset is orthographic");
+        const math::Vec3 topFwd = (top.target - top.position).Normalized();
+        check(std::fabs(topFwd.y + 1.0f) < 1e-4f && std::fabs(topFwd.x) < 1e-4f &&
+                  std::fabs(topFwd.z) < 1e-4f,
+              "multi-cam: top preset looks down -Y");
+        viewCam_ = ViewCam::Front;
+        const gfx::Camera front = ActiveCamera();
+        check(front.ortho, "multi-cam: front preset is orthographic");
+        const math::Vec3 frontFwd = (front.target - front.position).Normalized();
+        check(std::fabs(frontFwd.z + 1.0f) < 1e-4f && std::fabs(frontFwd.x) < 1e-4f &&
+                  std::fabs(frontFwd.y) < 1e-4f,
+              "multi-cam: front preset looks down -Z");
+        const math::Ray orthoRay = ScreenRay(top, 1.5f, {640.0f, 360.0f});
+        const math::Vec3 rayDir = orthoRay.dir.Normalized();
+        check(std::fabs(rayDir.y + 1.0f) < 1e-4f,
+              "multi-cam: ortho pick ray is parallel to the forward axis");
+        viewCam_ = ViewCam::Perspective;
+    }
+
+    // --- Asset thumbnails (T4.8): select a model asset in the asset panel so
+    // the next OnRender generates its offscreen thumbnail (verified by the
+    // frame poll above). A texture asset registers the image-preview texture
+    // id. ---
+    {
+        const std::string kThumbPath =
+            "assets/kenney_nature/Models/OBJ format/tree_pineTallA.obj";
+        smokeThumbPath_ = kThumbPath;
+        // Navigate the panel into the model's directory so the listing (one
+        // level, like the real UI) contains the asset, then select it.
+        std::string thumbParent = kThumbPath;
+        const size_t slash = thumbParent.find_last_of('/');
+        if (slash != std::string::npos) thumbParent = thumbParent.substr(0, slash);
+        assetDir_ = thumbParent;
+        RefreshAssetDir();
+        bool found = false;
+        for (size_t i = 0; i < assetEntries_.size(); ++i) {
+            if (assetEntries_[i].path == kThumbPath) {
+                selectedAsset_ = static_cast<int>(i);
+                found = true;
+                break;
+            }
+        }
+        check(found, "asset thumbnail: tree OBJ present in the asset panel listing");
+        if (found) RequestMeshThumbnail(kThumbPath);
+        check(std::find(meshThumbQueue_.begin(), meshThumbQueue_.end(), kThumbPath) !=
+                  meshThumbQueue_.end(),
+              "asset thumbnail: mesh thumbnail render requested");
+
+        gfx::Texture tex =
+            assetMgr_.LoadTexture("assets/models/DamagedHelmet/Default_albedo.jpg");
+        check(tex.Valid(), "asset thumbnail: texture asset loads for the preview");
+        ImportAssetPath("assets/models/DamagedHelmet/Default_albedo.jpg");
+        check(previewTexId_ != ImTextureID_Invalid,
+              "asset thumbnail: image preview texture registered for ImGui");
+    }
+
     NEON_LOG_INFO("EDITOR-UI-SMOKE: all checks done");
 }
 
@@ -1688,6 +1986,177 @@ void EditorApp::TogglePlaytest() {
         StopPlaytest();
     } else {
         StartPlaytest();
+    }
+}
+
+void EditorApp::RequestMeshThumbnail(const std::string& path) {
+    if (path.empty()) return;
+    const uint64_t m = FileMTime(path);
+    auto it = meshThumbs_.find(path);
+    if (it != meshThumbs_.end() && it->second.mtime == m) return; // fresh
+    if (std::find(meshThumbQueue_.begin(), meshThumbQueue_.end(), path) ==
+        meshThumbQueue_.end()) {
+        meshThumbQueue_.push_back(path);
+    }
+}
+
+void EditorApp::GenerateMeshThumbnails() {
+    if (meshThumbQueue_.empty()) return;
+    gfx::IRenderBackend* backend = renderer_.Backend();
+    if (!backend) {
+        meshThumbQueue_.clear();
+        return;
+    }
+    constexpr int kThumb = 96;
+    const bool savedShadowRec = renderer_.ShadowRecording();
+    // A thumbnail is tooling, not scene geometry: never record its mesh as a
+    // shadow caster for the main scene's next shadow pass.
+    renderer_.SetShadowRecording(false);
+    for (const std::string& path : meshThumbQueue_) {
+        const uint64_t m = FileMTime(path);
+        auto it = meshThumbs_.find(path);
+        if (it != meshThumbs_.end() && it->second.mtime == m) continue; // already fresh
+
+        // Resolve the asset's first mesh; a failed load caches a "miss" (same
+        // mtime) so the panel only retries when the file actually changes.
+        const std::string ext = ExtLower(path);
+        gfx::Mesh mesh;
+        gfx::Material mat = gfx::Material::Lit({}, gfx::Color{0.85f, 0.85f, 0.92f, 1.0f}, 16.0f);
+        if (ext == ".obj") {
+            mesh = assetMgr_.LoadMeshOBJ(path);
+        } else if (ext == ".gltf") {
+            assets::GltfAsset gltf = assetMgr_.LoadGLTF(path);
+            if (!gltf.nodes.empty()) {
+                mesh = gltf.nodes[0].mesh;
+                mat = gltf.nodes[0].material;
+            }
+        }
+        if (!mesh.Valid()) {
+            if (it != meshThumbs_.end()) {
+                if (it->second.texId != ImTextureID_Invalid)
+                    gfx::ImGuiNeon_UnregisterTexture(it->second.texHandle);
+                if (it->second.rt.Valid()) backend->DestroyRenderTarget(it->second.rt);
+                meshThumbs_.erase(it);
+            }
+            meshThumbs_[path] = {{}, {}, ImTextureID_Invalid, m};
+            continue;
+        }
+
+        // Orthographic front camera framing the mesh's bounds.
+        const math::AABB& b = mesh.Bounds();
+        const math::Vec3 center = (b.min + b.max) * 0.5f;
+        const math::Vec3 extents = b.max - b.min;
+        const float size = std::max({extents.x, extents.y, extents.z, 0.001f}) * 1.2f;
+        gfx::Camera cam;
+        cam.position = center + math::Vec3{0.45f, 0.35f, 1.0f} * size;
+        cam.target = center;
+        cam.up = {0, 1, 0};
+        cam.ortho = true;
+        cam.orthoSize = size * 0.62f;
+        cam.nearPlane = 0.05f;
+        cam.farPlane = size * 6.0f + 1.0f;
+
+        // RGBA16F so the target carries a depth attachment (a plain RGBA8
+        // target has none); the lit mesh then occludes correctly.
+        gfx::RenderTargetHandle rt = backend->CreateRenderTarget(kThumb, kThumb, true, 0);
+        if (!rt.Valid()) continue;
+        backend->BindRenderTarget(rt); // sets the 96x96 viewport
+        backend->Clear({0.10f, 0.11f, 0.14f, 1.0f}, 1.0f);
+        renderer_.SetCamera(cam, 1.0f);
+        renderer_.DrawMesh(mesh, mat, math::Mat4::Identity());
+        const gfx::TextureHandle tex = backend->RenderTargetColorTexture(rt);
+
+        if (it != meshThumbs_.end()) {
+            if (it->second.texId != ImTextureID_Invalid)
+                gfx::ImGuiNeon_UnregisterTexture(it->second.texHandle);
+            if (it->second.rt.Valid()) backend->DestroyRenderTarget(it->second.rt);
+            meshThumbs_.erase(it);
+        }
+        MeshThumb nt;
+        nt.rt = rt;
+        nt.texHandle = tex;
+        nt.texId = gfx::ImGuiNeon_RegisterTexture(tex);
+        nt.mtime = m;
+        meshThumbs_[path] = nt;
+    }
+    meshThumbQueue_.clear();
+    renderer_.SetShadowRecording(savedShadowRec);
+    // Leave the backbuffer bound + the viewport at window size for the ImGui
+    // pass (EndScene already composited to it).
+    backend->BindDefaultTarget();
+}
+
+void EditorApp::PollHotReload() {
+    const std::string base = projectDir_.empty() ? "." : projectDir_;
+
+    // Scripts: only while a playtest runs (that is what executes scripts). A
+    // changed *.lua under <projectDir>/scripts/ is applied as a playtest
+    // restart (Stop + Start), which resets all script/entity/BT state - a safe,
+    // deterministic reload for the editor. Shaders are compiled from strings
+    // at init and are deliberately NOT hot-reloaded (YAGNI; see T4.8 notes).
+    if (playtestActive_ && playtest_) {
+        std::vector<std::string> files;
+        ListLuaFiles(ScriptsDir(projectDir_), "scripts", files);
+        bool scriptChanged = false;
+        for (const std::string& rel : files) {
+            const std::string full = base + "/" + rel;
+            const uint64_t m = FileMTime(full);
+            auto it = scriptMtimes_.find(full);
+            if (it != scriptMtimes_.end() && it->second != m) {
+                scriptChanged = true;
+                break;
+            }
+            scriptMtimes_[full] = m;
+        }
+        if (scriptChanged) {
+            ++hotReloadCount_;
+            NEON_LOG_INFO(
+                "Editor: hot reload: a script changed on disk -> restarting playtest "
+                "(play state resets)");
+            StopPlaytest();
+            StartPlaytest();
+        }
+    }
+
+    // Assets referenced by the editor scene: textures + file-backed meshes.
+    // glTF is re-parsed by ResolveMesh on every call, so a change only needs
+    // the mtime gate here; OBJ/textures drop through the AssetManager cache.
+    std::set<std::string> changedPaths;
+    auto checkFile = [&](const std::string& path) {
+        if (path.empty()) return;
+        const uint64_t m = FileMTime(path);
+        auto it = assetMtimes_.find(path);
+        if (it != assetMtimes_.end() && it->second != m && m != 0) changedPaths.insert(path);
+        assetMtimes_[path] = m;
+    };
+    for (const SceneEntity& e : entities_) {
+        if (e.meshKey.rfind("obj:", 0) == 0) checkFile(e.meshKey.substr(4));
+        else if (e.meshKey.rfind("gltf:", 0) == 0) checkFile(e.meshKey.substr(5));
+        checkFile(e.albedoTex);
+        checkFile(e.mrTex);
+        checkFile(e.aoTex);
+        checkFile(e.emissiveTex);
+    }
+    if (!changedPaths.empty()) {
+        for (const std::string& p : changedPaths) {
+            const std::string ext = ExtLower(p);
+            if (ext == ".obj") assetMgr_.ReloadMeshOBJ(p);
+            else if (ext != ".gltf") assetMgr_.ReloadTexture(p);
+            NEON_LOG_INFO("Editor: hot reload: asset '%s' reloaded", p.c_str());
+        }
+        ++hotReloadCount_;
+        // Re-resolve only the entities that reference a changed asset.
+        for (SceneEntity& e : entities_) {
+            const bool touches =
+                (e.meshKey.rfind("obj:", 0) == 0 && changedPaths.count(e.meshKey.substr(4))) ||
+                (e.meshKey.rfind("gltf:", 0) == 0 && changedPaths.count(e.meshKey.substr(5))) ||
+                changedPaths.count(e.albedoTex) || changedPaths.count(e.mrTex) ||
+                changedPaths.count(e.aoTex) || changedPaths.count(e.emissiveTex);
+            if (touches) {
+                ResolveMesh(e);
+                ApplyMaterialParams(e);
+            }
+        }
     }
 }
 

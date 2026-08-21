@@ -1363,7 +1363,7 @@ void Renderer::DrawMesh(const Mesh& mesh, const Material& material, const math::
 
     if (frustumValid_ && !frustum_.Intersects(math::TransformAABB(mesh.Bounds(), model))) return;
 
-    if (csmEnabled_ && !material.transparent) {
+    if (csmEnabled_ && shadowRecording_ && !material.transparent) {
         shadowCasters_.push_back({mesh.Handle(), model, {}, {}, 0, mesh.Bounds()});
     }
 
@@ -1388,7 +1388,7 @@ void Renderer::DrawSkinnedMesh(const Mesh& mesh, const Material& material,
                                : static_cast<int>(boneMatrices.size());
     count = std::min(count, 64);
 
-    if (csmEnabled_ && !material.transparent) {
+    if (csmEnabled_ && shadowRecording_ && !material.transparent) {
         shadowCasters_.push_back({mesh.Handle(), model, {}, boneMatrices, count, mesh.Bounds()});
     }
 
@@ -1424,7 +1424,7 @@ void Renderer::DrawMeshInstanced(const Mesh& mesh, const Material& material,
     }
     if (visible.empty()) return;
 
-    if (csmEnabled_ && !material.transparent) {
+    if (csmEnabled_ && shadowRecording_ && !material.transparent) {
         shadowCasters_.push_back(
             {mesh.Handle(), math::Mat4::Identity(), visible, {}, 0, mesh.Bounds()});
     }
