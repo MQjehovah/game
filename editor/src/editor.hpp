@@ -24,6 +24,14 @@ struct SceneEntity {
     gfx::Color tint{1, 1, 1, 1};
     float metallic = 0.0f;
     float roughness = 0.8f;
+    // Material texture slots: file paths (empty = none) resolved through the
+    // AssetManager into the entity's gfx::Material texture handles below.
+    std::string albedoTex;
+    std::string mrTex;
+    std::string aoTex;
+    std::string emissiveTex;
+    float ao = 1.0f;               // AO strength (0 = ignore AO map, 1 = full)
+    float emissiveIntensity = 1.0f;
     gfx::Mesh mesh;
     gfx::Material material;
 };

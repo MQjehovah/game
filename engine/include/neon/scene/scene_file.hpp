@@ -57,7 +57,9 @@ struct SceneFile {
     // only when an AssetManager is registered, so exported scenes that use
     // short procedural keys require runtime-side procedural mesh resolution
     // (T2.9 playtest / T4.7 packager) — this helper does not resolve them.
-    // `color` becomes the mesh material's colorHex ("#RRGGBB"). Empty name or
+    // `color` becomes the mesh material's colorHex ("#RRGGBB"). The four
+    // texture paths are optional PBR maps (albedo / metallic-roughness / AO /
+    // emissive); empty strings are omitted from the JSON. Empty name or
     // meshKey returns an error.
     static core::Result<core::Json> MakeEntity(const std::string& name,
                                                const math::Vec3& pos,
@@ -66,7 +68,13 @@ struct SceneFile {
                                                const std::string& meshKey,
                                                float metallic = 0.0f,
                                                float roughness = 1.0f,
-                                               const gfx::Color& color = gfx::Color::White);
+                                               const gfx::Color& color = gfx::Color::White,
+                                               const std::string& albedoTex = "",
+                                               const std::string& mrTex = "",
+                                               const std::string& aoTex = "",
+                                               const std::string& emissiveTex = "",
+                                               float ao = 1.0f,
+                                               float emissiveIntensity = 1.0f);
 };
 
 // Prefab library: registers prefab component templates parsed from JSON text
@@ -94,6 +102,15 @@ struct SceneMesh {
     float metallic = 0.f;
     float roughness = 1.f;
     std::string colorHex;
+    // Optional PBR texture paths (empty = none). albedoTex is the base-color
+    // map, mrTex the metallic-roughness map (G=roughness, B=metallic), aoTex
+    // the ambient-occlusion map (R channel) and emissiveTex the emissive map.
+    std::string albedoTex;
+    std::string mrTex;
+    std::string aoTex;
+    std::string emissiveTex;
+    float ao = 1.f;               // occlusion strength (0 = ignore AO, 1 = full)
+    float emissiveIntensity = 1.f;
 };
 struct SceneHealth {
     float hp = 0.f;

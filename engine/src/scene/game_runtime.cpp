@@ -221,6 +221,18 @@ void GameRuntime::BuildDrawList() {
         item.mat = gfx::Material::Lit({}, ParseColorHex(m->colorHex), 24.0f);
         item.mat.metallic = m->metallic;
         item.mat.roughness = m->roughness;
+        item.mat.aoStrength = m->ao;
+        item.mat.emissiveIntensity = m->emissiveIntensity;
+        if (cfg_.assets) {
+            if (!m->albedoTex.empty())
+                item.mat.albedo = cfg_.assets->LoadTexture(m->albedoTex).Handle();
+            if (!m->mrTex.empty())
+                item.mat.metallicRoughness = cfg_.assets->LoadTexture(m->mrTex).Handle();
+            if (!m->aoTex.empty())
+                item.mat.occlusion = cfg_.assets->LoadTexture(m->aoTex).Handle();
+            if (!m->emissiveTex.empty())
+                item.mat.emissive = cfg_.assets->LoadTexture(m->emissiveTex).Handle();
+        }
         draws_.push_back(std::move(item));
     }
 }

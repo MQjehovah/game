@@ -1204,6 +1204,64 @@ void EditorApp::RunUISmokeTest() {
         projectDir_ = cfgPrev;
     }
 
+    // --- Material editor: metallic / AO / texture-slot edits via undo ---
+    // Set a texture path + metallic + AO on a selected entity through the
+    // command stack, verify undo/redo restores, then leave the edits applied so
+    // the export round-trip below asserts the material JSON + restored
+    // SceneMesh carry them.
+    const std::string kAlbedoTex = "assets/models/DamagedHelmet/Default_albedo.jpg";
+    const float kMetallic = 0.45f;
+    const float kAO = 0.7f;
+    {
+        const size_t idx = 0;
+        check(idx < entities_.size(), "material: smoke has an entity to edit");
+        if (idx < entities_.size()) {
+            SceneEntity& sel = entities_[idx];
+            const float origMetallic = sel.metallic;
+            const float origAO = sel.ao;
+            const std::string origAlbedo = sel.albedoTex;
+
+            history_.Push(std::make_unique<EditPropertyCommand<float>>(
+                &entities_, static_cast<int>(idx), ApplyMetallicProp, origMetallic, kMetallic));
+            check(sel.metallic == kMetallic && sel.material.metallic == kMetallic,
+                  "material: metallic edit applies through the command stack");
+            history_.Undo();
+            check(sel.metallic == origMetallic && sel.material.metallic == origMetallic,
+                  "material: metallic undo restores the original value");
+            history_.Redo();
+            check(sel.metallic == kMetallic && sel.material.metallic == kMetallic,
+                  "material: metallic redo reapplies the edit");
+
+            gfx::Texture tex = assetMgr_.LoadTexture(kAlbedoTex);
+            check(tex.Valid(), "material: albedo texture loads through the AssetManager");
+            if (tex.Valid()) {
+                const TextureSlotValue oldVal{origAlbedo, sel.material.albedo};
+                const TextureSlotValue newVal{kAlbedoTex, tex.Handle()};
+                history_.Push(std::make_unique<EditPropertyCommand<TextureSlotValue>>(
+                    &entities_, static_cast<int>(idx), ApplyAlbedoTexSlot, oldVal, newVal));
+                check(sel.albedoTex == kAlbedoTex &&
+                          sel.material.albedo.id == tex.Handle().id,
+                      "material: albedo texture edit applies through the command stack");
+                history_.Undo();
+                check(sel.albedoTex == origAlbedo && !sel.material.albedo.Valid(),
+                      "material: albedo undo restores the empty slot");
+                history_.Redo();
+                check(sel.albedoTex == kAlbedoTex && sel.material.albedo.Valid(),
+                      "material: albedo redo reapplies the path + handle");
+            }
+
+            history_.Push(std::make_unique<EditPropertyCommand<float>>(
+                &entities_, static_cast<int>(idx), ApplyAOProp, origAO, kAO));
+            check(sel.ao == kAO && sel.material.aoStrength == kAO,
+                  "material: AO edit applies through the command stack");
+            history_.Undo();
+            check(sel.ao == origAO, "material: AO undo restores the original value");
+            history_.Redo();
+            check(sel.ao == kAO && sel.material.aoStrength == kAO,
+                  "material: AO redo reapplies the edit");
+        }
+    }
+
     // --- Export → load round-trip (temp project dir; no repo pollution) ---
     const size_t exportCount = entities_.size();
     const std::string oldProjectDir = projectDir_;
@@ -1224,6 +1282,43 @@ void EditorApp::RunUISmokeTest() {
             if (!parsed.Value().entities.empty()) {
                 check(parsed.Value().entities[0].name == entities_[0].name,
                       "exported entity name matches editor entity");
+                // The material edit round-trips into the exported material JSON.
+                const scene::ComponentDef* meshComp = nullptr;
+                for (const auto& c : parsed.Value().entities[0].components) {
+                    if (c.name == "mesh") {
+                        meshComp = &c;
+                        break;
+                    }
+                }
+                const core::Json* matJson =
+                    meshComp ? meshComp->data.Get("material") : nullptr;
+                const core::Json* alb = matJson ? matJson->Get("albedoTex") : nullptr;
+                const core::Json* met = matJson ? matJson->Get("metallic") : nullptr;
+                const core::Json* ao = matJson ? matJson->Get("ao") : nullptr;
+                check(meshComp != nullptr && matJson != nullptr && alb != nullptr &&
+                          met != nullptr && ao != nullptr &&
+                          alb->GetString() == kAlbedoTex &&
+                          std::fabs(met->GetNumber() - kMetallic) < 1e-6f &&
+                          std::fabs(ao->GetNumber() - kAO) < 1e-6f,
+                      "exported material JSON carries the texture path + metallic + AO");
+            }
+            // Import back: Instantiate the exported scene and verify SceneMesh
+            // restores the material texture path + scalar edits.
+            scene::ComponentRegistry reg;
+            scene::RegisterBuiltinComponents(reg);
+            ecs::World world;
+            scene::PrefabLibrary prefs;
+            auto inst = scene::Instantiate(world, parsed.Value(), prefs, reg);
+            check(inst.Ok(), "imported exported scene instantiates");
+            auto view = world.ViewAll<scene::SceneMesh>();
+            check(view.Size() > 0, "imported scene has mesh components");
+            if (view.Size() > 0) {
+                ecs::Entity e0 = world.EntityAt<scene::SceneMesh>(0);
+                const scene::SceneMesh* m = world.Get<scene::SceneMesh>(e0);
+                check(m != nullptr && m->albedoTex == kAlbedoTex &&
+                          std::fabs(m->metallic - kMetallic) < 1e-6f &&
+                          std::fabs(m->ao - kAO) < 1e-6f,
+                      "imported SceneMesh carries the texture path + metallic + AO");
             }
         }
     }
@@ -1270,7 +1365,9 @@ core::Result<core::Json> EditorApp::BuildPlaySceneJson() {
     for (const SceneEntity& e : entities_) {
         auto res = scene::SceneFile::MakeEntity(e.name, e.pos, e.rot, e.scale,
                                                 ExportMeshKey(e.meshKey), e.metallic,
-                                                e.roughness, e.tint);
+                                                e.roughness, e.tint, e.albedoTex, e.mrTex,
+                                                e.aoTex, e.emissiveTex, e.ao,
+                                                e.emissiveIntensity);
         if (!res.Ok()) {
             return core::Result<core::Json>::Err("editor: " + res.Error());
         }
@@ -1422,6 +1519,15 @@ void EditorApp::ApplyMaterialParams(SceneEntity& e) {
     e.material.tint = e.tint;
     e.material.metallic = e.metallic;
     e.material.roughness = e.roughness;
+    e.material.aoStrength = e.ao;
+    e.material.emissiveIntensity = e.emissiveIntensity;
+    // Texture slots: load any non-empty path through the cached AssetManager.
+    // Empty paths leave the existing handle untouched (e.g. a glTF material's
+    // baked PBR textures survive until the user explicitly overrides/clears).
+    if (!e.albedoTex.empty()) e.material.albedo = assetMgr_.LoadTexture(e.albedoTex).Handle();
+    if (!e.mrTex.empty()) e.material.metallicRoughness = assetMgr_.LoadTexture(e.mrTex).Handle();
+    if (!e.aoTex.empty()) e.material.occlusion = assetMgr_.LoadTexture(e.aoTex).Handle();
+    if (!e.emissiveTex.empty()) e.material.emissive = assetMgr_.LoadTexture(e.emissiveTex).Handle();
 }
 
 void EditorApp::SaveScene() {
@@ -1463,6 +1569,12 @@ void EditorApp::SaveScene() {
         obj.object_["tint"] = tint;
         obj.object_["metallic"] = num(e.metallic);
         obj.object_["roughness"] = num(e.roughness);
+        obj.object_["ao"] = num(e.ao);
+        obj.object_["emissiveIntensity"] = num(e.emissiveIntensity);
+        obj.object_["albedoTex"] = str(e.albedoTex);
+        obj.object_["mrTex"] = str(e.mrTex);
+        obj.object_["aoTex"] = str(e.aoTex);
+        obj.object_["emissiveTex"] = str(e.emissiveTex);
         arr.array_.push_back(obj);
     }
     root.object_["entities"] = arr;
@@ -1507,6 +1619,12 @@ void EditorApp::LoadScene(const std::string& path) {
         }
         if (const core::Json* m = j->Get("metallic")) e.metallic = static_cast<float>(m->GetNumber());
         if (const core::Json* r = j->Get("roughness")) e.roughness = static_cast<float>(r->GetNumber());
+        if (const core::Json* a = j->Get("ao")) e.ao = static_cast<float>(a->GetNumber());
+        if (const core::Json* ei = j->Get("emissiveIntensity")) e.emissiveIntensity = static_cast<float>(ei->GetNumber());
+        if (const core::Json* at = j->Get("albedoTex")) e.albedoTex = at->GetString();
+        if (const core::Json* mt = j->Get("mrTex")) e.mrTex = mt->GetString();
+        if (const core::Json* aot = j->Get("aoTex")) e.aoTex = aot->GetString();
+        if (const core::Json* et = j->Get("emissiveTex")) e.emissiveTex = et->GetString();
         if (ResolveMesh(e)) {
             ApplyMaterialParams(e);
             loaded.push_back(std::move(e));

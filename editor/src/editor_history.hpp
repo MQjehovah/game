@@ -182,11 +182,48 @@ inline void ApplyRoughnessProp(SceneEntity& e, const float& v) {
     e.roughness = v;
     e.material.roughness = v;
 }
+inline void ApplyAOProp(SceneEntity& e, const float& v) {
+    e.ao = v;
+    e.material.aoStrength = v;
+}
+inline void ApplyEmissiveIntensityProp(SceneEntity& e, const float& v) {
+    e.emissiveIntensity = v;
+    e.material.emissiveIntensity = v;
+}
 inline void ApplyNameProp(SceneEntity& e, const std::string& v) { e.name = v; }
+
+// A texture slot edit: the new path plus the texture handle already resolved
+// through the AssetManager (resolved at command-construction time in the
+// inspector, which has access to it). Empty path + invalid handle clears the
+// slot.
+struct TextureSlotValue {
+    std::string path;
+    gfx::TextureHandle handle;
+};
+
+inline void ApplyAlbedoTexSlot(SceneEntity& e, const TextureSlotValue& v) {
+    e.albedoTex = v.path;
+    e.material.albedo = v.handle;
+}
+inline void ApplyMRTexSlot(SceneEntity& e, const TextureSlotValue& v) {
+    e.mrTex = v.path;
+    e.material.metallicRoughness = v.handle;
+}
+inline void ApplyAOTexSlot(SceneEntity& e, const TextureSlotValue& v) {
+    e.aoTex = v.path;
+    e.material.occlusion = v.handle;
+}
+inline void ApplyEmissiveTexSlot(SceneEntity& e, const TextureSlotValue& v) {
+    e.emissiveTex = v.path;
+    e.material.emissive = v.handle;
+}
 
 namespace {
 inline bool ValuesEqual(const float& a, const float& b) { return a == b; }
 inline bool ValuesEqual(const std::string& a, const std::string& b) { return a == b; }
+inline bool ValuesEqual(const TextureSlotValue& a, const TextureSlotValue& b) {
+    return a.path == b.path;
+}
 inline bool ValuesEqual(const gfx::Color& a, const gfx::Color& b) {
     return a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a;
 }

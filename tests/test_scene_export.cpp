@@ -272,3 +272,70 @@ TEST(SceneExportFileRoundTrip) {
     CHECK(hm != nullptr);
     CHECK_EQ(hm->colorHex, std::string("#00FF00"));
 }
+
+// ---------------------------------------------------------------------------
+// Material editor textures: the four PBR texture paths + AO / emissive
+// intensity persist through MakeEntity -> Parse -> Instantiate
+// ---------------------------------------------------------------------------
+
+TEST(SceneMaterialTextureRoundTrip) {
+    auto res = scene::SceneFile::MakeEntity(
+        "Hero", {0, 0, 0}, {}, {1, 1, 1}, "cube", 0.5f, 0.4f, gfx::Color::White,
+        "assets/albedo.png", "assets/mr.png", "assets/ao.png", "assets/emissive.png",
+        0.7f, 2.0f);
+    CHECK(res.Ok());
+
+    const core::Json* mat = res.Value().Get("components")->Get("mesh")->Get("material");
+    CHECK(mat != nullptr);
+    const core::Json* alb = mat->Get("albedoTex");
+    const core::Json* mr = mat->Get("mrTex");
+    const core::Json* aoTex = mat->Get("aoTex");
+    const core::Json* emiTex = mat->Get("emissiveTex");
+    CHECK(alb != nullptr && mr != nullptr && aoTex != nullptr && emiTex != nullptr);
+    if (alb) CHECK_EQ(alb->GetString(), std::string("assets/albedo.png"));
+    if (mr) CHECK_EQ(mr->GetString(), std::string("assets/mr.png"));
+    if (aoTex) CHECK_EQ(aoTex->GetString(), std::string("assets/ao.png"));
+    if (emiTex) CHECK_EQ(emiTex->GetString(), std::string("assets/emissive.png"));
+    CHECK_NEAR(mat->Get("ao")->GetNumber(), 0.7, 1e-6);
+    CHECK_NEAR(mat->Get("emissiveIntensity")->GetNumber(), 2.0, 1e-6);
+    CHECK_NEAR(mat->Get("metallic")->GetNumber(), 0.5, 1e-6);
+    CHECK_NEAR(mat->Get("roughness")->GetNumber(), 0.4, 1e-6);
+
+    // Empty texture paths are omitted from the JSON (optional fields).
+    auto noTex = scene::SceneFile::MakeEntity("Plain", {0, 0, 0}, {}, {1, 1, 1}, "cube");
+    CHECK(noTex.Ok());
+    const core::Json* mat2 = noTex.Value().Get("components")->Get("mesh")->Get("material");
+    CHECK(mat2 != nullptr);
+    CHECK(mat2->Get("albedoTex") == nullptr);
+    CHECK(mat2->Get("mrTex") == nullptr);
+    CHECK_NEAR(mat2->Get("ao")->GetNumber(), 1.0, 1e-6); // defaults still written
+
+    // Full round trip through the componentized JSON.
+    std::vector<core::Json> ents;
+    ents.push_back(res.Value());
+    std::string json = core::JsonWriter::Write(MakeSceneRoot(ents));
+    auto parsed = scene::SceneFile::Parse(json);
+    CHECK(parsed.Ok());
+
+    scene::ComponentRegistry reg;
+    scene::RegisterBuiltinComponents(reg); // no assets: any meshKey accepted
+    ecs::World world;
+    scene::PrefabLibrary prefs;
+    auto inst = scene::Instantiate(world, parsed.Value(), prefs, reg);
+    CHECK(inst.Ok());
+    CHECK_EQ(inst.Value(), 1);
+    auto view = world.ViewAll<scene::SceneMesh>();
+    CHECK_EQ(view.Size(), 1u);
+    ecs::Entity ent = world.EntityAt<scene::SceneMesh>(0);
+    const scene::SceneMesh* m = world.Get<scene::SceneMesh>(ent);
+    CHECK(m != nullptr);
+    CHECK_EQ(m->albedoTex, std::string("assets/albedo.png"));
+    CHECK_EQ(m->mrTex, std::string("assets/mr.png"));
+    CHECK_EQ(m->aoTex, std::string("assets/ao.png"));
+    CHECK_EQ(m->emissiveTex, std::string("assets/emissive.png"));
+    CHECK_NEAR(m->ao, 0.7, 1e-6);
+    CHECK_NEAR(m->emissiveIntensity, 2.0, 1e-6);
+    CHECK_NEAR(m->metallic, 0.5, 1e-6);
+    CHECK_NEAR(m->roughness, 0.4, 1e-6);
+    CHECK_EQ(m->colorHex, std::string("#FFFFFF"));
+}

@@ -81,6 +81,8 @@ uniform bool uHasTexture;
 uniform bool uHasMR;
 uniform bool uHasAO;
 uniform bool uHasEmissive;
+uniform float uAOStrength;
+uniform float uEmissiveIntensity;
 uniform float uShininess;
 uniform float uMetallic;
 uniform float uRoughness;
@@ -268,9 +270,9 @@ void main() {
     vec2 brdf = texture(uBrdfLUT, vec2(ndv, roughness)).rg;
     vec3 iblSpecular = prefiltered * (f0 * brdf.x + brdf.y) * uIblStrength;
     vec3 ambientLight = iblDiffuse + iblSpecular + albedo.rgb * uAmbient * (1.0 - uIblStrength);
-    if (uHasAO) ambientLight *= texture(uOcclusion, vUV).r;
+    if (uHasAO) ambientLight *= mix(1.0, texture(uOcclusion, vUV).r, uAOStrength);
     vec3 color = (kd * albedo.rgb + spec) * uSunColor * ndl + ambientLight;
-    if (uHasEmissive) color += texture(uEmissive, vUV).rgb;
+    if (uHasEmissive) color += texture(uEmissive, vUV).rgb * uEmissiveIntensity;
     for (int i = 0; i < 8; ++i) {
         if (i >= uPointCount) break;
         vec3 toL = uPointPos[i] - vWorldPos;
@@ -1491,6 +1493,8 @@ void Renderer::ApplyMaterial(const Material& material, const math::Mat4& mvp,
         backend_->SetUniformInt("uHasMR", material.metallicRoughness.Valid() ? 1 : 0);
         backend_->SetUniformInt("uHasAO", material.occlusion.Valid() ? 1 : 0);
         backend_->SetUniformInt("uHasEmissive", material.emissive.Valid() ? 1 : 0);
+        backend_->SetUniformFloat("uAOStrength", material.aoStrength);
+        backend_->SetUniformFloat("uEmissiveIntensity", material.emissiveIntensity);
         backend_->SetUniformVec4("uTint", {material.tint.r, material.tint.g, material.tint.b, material.tint.a});
         backend_->SetUniformFloat("uMetallic", material.metallic);
         backend_->SetUniformFloat("uRoughness", material.roughness);

@@ -303,6 +303,13 @@ void EditorApp::BuildAssetPanel() {
                     ImportAssetPath(e.path);
                 }
             }
+            // Image assets can be dragged onto a material texture slot in the
+            // inspector ("材质" section) to assign the texture.
+            if (!e.isDir && IsImageExt(e.name) && ImGui::BeginDragDropSource()) {
+                ImGui::SetDragDropPayload("ASSET_TEXTURE", e.path.c_str(), e.path.size() + 1);
+                ImGui::Text("%s", e.name.c_str());
+                ImGui::EndDragDropSource();
+            }
         }
         ImGui::EndChild();
 
@@ -436,6 +443,95 @@ void EditorApp::BuildInspectorPanel() {
             history_.Push(std::make_unique<EditPropertyCommand<float>>(
                 &entities_, selected_, ApplyRoughnessProp, oldRoughness, e.roughness));
         }
+        const float oldAO = e.ao;
+        if (ImGui::DragFloat("环境光遮蔽", &e.ao, 0.01f, 0.0f, 1.0f)) {
+            e.material.aoStrength = e.ao;
+            history_.Push(std::make_unique<EditPropertyCommand<float>>(
+                &entities_, selected_, ApplyAOProp, oldAO, e.ao));
+        }
+        const float oldEmissiveIntensity = e.emissiveIntensity;
+        if (ImGui::DragFloat("自发光强度", &e.emissiveIntensity, 0.05f, 0.0f, 5.0f)) {
+            e.material.emissiveIntensity = e.emissiveIntensity;
+            history_.Push(std::make_unique<EditPropertyCommand<float>>(
+                &entities_, selected_, ApplyEmissiveIntensityProp, oldEmissiveIntensity,
+                e.emissiveIntensity));
+        }
+        ImGui::Separator();
+        ImGui::TextUnformatted("纹理 (拖入资产面板的图片)");
+        // One slot per PBR texture: thumbnail preview, editable path (Enter to
+        // commit), clear button, and a drag-drop target from the asset panel.
+        // Every change routes through the undo history as a texture-slot edit.
+        auto textureSlot = [this, &e](const char* label, std::string& path,
+                                      gfx::TextureHandle& handle,
+                                      void (*apply)(SceneEntity&, const TextureSlotValue&)) {
+            char rowId[128];
+            std::snprintf(rowId, sizeof(rowId), "##slot_%s", label);
+            ImGui::TextUnformatted(label);
+            ImGui::SameLine();
+            ImGui::BeginChild(rowId, ImVec2(-1.0f, 32.0f), ImGuiChildFlags_Borders);
+            {
+                ImTextureID tid = ImTextureID_Invalid;
+                if (handle.Valid()) tid = gfx::ImGuiNeon_RegisterTexture(handle);
+                const ImVec2 previewSize(26.0f, 26.0f);
+                if (tid != ImTextureID_Invalid) {
+                    ImGui::Image(tid, previewSize);
+                } else {
+                    ImGui::Dummy(previewSize);
+                }
+                ImGui::SameLine();
+                char buf[2048];
+                std::snprintf(buf, sizeof(buf), "%s", path.c_str());
+                ImGui::SetNextItemWidth(-64.0f);
+                if (ImGui::InputText((std::string("##path_") + label).c_str(), buf, sizeof(buf),
+                                     ImGuiInputTextFlags_EnterReturnsTrue)) {
+                    const std::string newPath(buf);
+                    if (newPath != path) {
+                        const TextureSlotValue oldVal{path, handle};
+                        gfx::Texture tex =
+                            newPath.empty() ? gfx::Texture{} : assetMgr_.LoadTexture(newPath);
+                        if (newPath.empty() || tex.Valid()) {
+                            const TextureSlotValue newVal{newPath, tex.Handle()};
+                            history_.Push(std::make_unique<EditPropertyCommand<TextureSlotValue>>(
+                                &entities_, selected_, apply, oldVal, newVal));
+                        } else {
+                            NEON_LOG_WARN("Editor: texture '%s' failed to load (slot '%s')",
+                                          newPath.c_str(), label);
+                        }
+                    }
+                }
+                ImGui::SameLine();
+                if (ImGui::Button((std::string("清除##") + label).c_str())) {
+                    const TextureSlotValue oldVal{path, handle};
+                    const TextureSlotValue newVal{"", gfx::TextureHandle{}};
+                    history_.Push(std::make_unique<EditPropertyCommand<TextureSlotValue>>(
+                        &entities_, selected_, apply, oldVal, newVal));
+                }
+            }
+            ImGui::EndChild();
+            if (ImGui::BeginDragDropTarget()) {
+                if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("ASSET_TEXTURE")) {
+                    std::string newPath(static_cast<const char*>(payload->Data),
+                                        static_cast<size_t>(payload->DataSize));
+                    if (!newPath.empty() && newPath.back() == '\0') newPath.pop_back();
+                    if (!newPath.empty() && newPath != path) {
+                        const TextureSlotValue oldVal{path, handle};
+                        gfx::Texture tex = assetMgr_.LoadTexture(newPath);
+                        if (tex.Valid()) {
+                            const TextureSlotValue newVal{newPath, tex.Handle()};
+                            history_.Push(std::make_unique<EditPropertyCommand<TextureSlotValue>>(
+                                &entities_, selected_, apply, oldVal, newVal));
+                        } else {
+                            NEON_LOG_WARN("Editor: dropped texture '%s' failed to load", newPath.c_str());
+                        }
+                    }
+                }
+                ImGui::EndDragDropTarget();
+            }
+        };
+        textureSlot("漫反射", e.albedoTex, e.material.albedo, ApplyAlbedoTexSlot);
+        textureSlot("金属度/粗糙度", e.mrTex, e.material.metallicRoughness, ApplyMRTexSlot);
+        textureSlot("环境光遮蔽图", e.aoTex, e.material.occlusion, ApplyAOTexSlot);
+        textureSlot("自发光图", e.emissiveTex, e.material.emissive, ApplyEmissiveTexSlot);
         ImGui::Separator();
         ImGui::TextUnformatted("网格");
         ImGui::TextDisabled("来源: %s", e.meshKey.c_str());
