@@ -667,7 +667,19 @@ public:
         auto& g = gl::GetGL();
         g.BindVertexArray(it->second.vao);
         g.BindBuffer(glc::ArrayBuffer, instanceVbo_);
-        g.BufferData(glc::ArrayBuffer, static_cast<gl::GLsizeiptr>(count * 64), models,
+        // The engine matrices are row-major (m[row*4+col]); GLSL `mat4`
+        // attributes are filled column-major, so each instance matrix must be
+        // TRANSPOSED before upload or the translation is lost and every
+        // instance renders at the origin. Mirrors the transpose=GL_TRUE used
+        // for mat4 uniforms.
+        std::vector<float> flat(static_cast<size_t>(count) * 16);
+        for (uint32_t m = 0; m < count; ++m) {
+            const float* src = models[m].Data();
+            float* dst = flat.data() + static_cast<size_t>(m) * 16;
+            for (int r = 0; r < 4; ++r)
+                for (int c = 0; c < 4; ++c) dst[r * 4 + c] = src[c * 4 + r];
+        }
+        g.BufferData(glc::ArrayBuffer, static_cast<gl::GLsizeiptr>(count * 64), flat.data(),
                      glc::DynamicDraw);
         for (int i = 0; i < 4; ++i) {
             g.EnableVertexAttribArray(4 + i);

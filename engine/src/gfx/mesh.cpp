@@ -176,7 +176,7 @@ Mesh Mesh::CreateTerrain(Renderer& renderer, int segments, float size,
             uint16_t b = static_cast<uint16_t>(a + 1);
             uint16_t c = static_cast<uint16_t>((row + 1) * cols + col + 1);
             uint16_t d = static_cast<uint16_t>((row + 1) * cols + col);
-            indices.insert(indices.end(), {a, b, c, a, c, d});
+            indices.insert(indices.end(), {a, c, b, a, d, c});
         }
     }
     return CreateFromData(renderer, verts.data(), static_cast<uint32_t>(verts.size()),
