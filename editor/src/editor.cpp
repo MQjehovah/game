@@ -169,6 +169,17 @@ std::string ExtLower(const std::string& path) {
     return ext;
 }
 
+// Maps a mesh key to the file it loads (file-prefixed keys verbatim and the
+// file-backed built-ins "helmet"/"tree" from ResolveMesh). "" for procedural
+// primitives ("terrain", "cube") that have no on-disk asset to hot-reload.
+std::string MeshKeyAssetPath(const std::string& key) {
+    if (key == "helmet") return "assets/models/DamagedHelmet/DamagedHelmet.gltf";
+    if (key == "tree") return "assets/kenney_nature/Models/OBJ format/tree_pineTallA.obj";
+    if (key.rfind("obj:", 0) == 0) return key.substr(4);
+    if (key.rfind("gltf:", 0) == 0) return key.substr(5);
+    return {};
+}
+
 math::Ray ScreenRay(const gfx::Camera& cam, float aspect, const math::Vec2& designPos) {
     float ndcX = designPos.x / static_cast<float>(gfx::Renderer::kDesignWidth) * 2.0f - 1.0f;
     float ndcY = 1.0f - designPos.y / static_cast<float>(gfx::Renderer::kDesignHeight) * 2.0f;
@@ -2118,9 +2129,11 @@ void EditorApp::PollHotReload() {
         }
     }
 
-    // Assets referenced by the editor scene: textures + file-backed meshes.
-    // glTF is re-parsed by ResolveMesh on every call, so a change only needs
-    // the mtime gate here; OBJ/textures drop through the AssetManager cache.
+    // Assets referenced by the editor scene: textures + file-backed meshes,
+    // including the file-backed built-in mesh keys (helmet/tree resolve to
+    // files via ResolveMesh). glTF is re-parsed by ResolveMesh on every call,
+    // so a change only needs the mtime gate here; OBJ/textures drop through
+    // the AssetManager cache.
     std::set<std::string> changedPaths;
     auto checkFile = [&](const std::string& path) {
         if (path.empty()) return;
@@ -2130,8 +2143,8 @@ void EditorApp::PollHotReload() {
         assetMtimes_[path] = m;
     };
     for (const SceneEntity& e : entities_) {
-        if (e.meshKey.rfind("obj:", 0) == 0) checkFile(e.meshKey.substr(4));
-        else if (e.meshKey.rfind("gltf:", 0) == 0) checkFile(e.meshKey.substr(5));
+        const std::string meshPath = MeshKeyAssetPath(e.meshKey);
+        if (!meshPath.empty()) checkFile(meshPath);
         checkFile(e.albedoTex);
         checkFile(e.mrTex);
         checkFile(e.aoTex);
@@ -2148,8 +2161,7 @@ void EditorApp::PollHotReload() {
         // Re-resolve only the entities that reference a changed asset.
         for (SceneEntity& e : entities_) {
             const bool touches =
-                (e.meshKey.rfind("obj:", 0) == 0 && changedPaths.count(e.meshKey.substr(4))) ||
-                (e.meshKey.rfind("gltf:", 0) == 0 && changedPaths.count(e.meshKey.substr(5))) ||
+                changedPaths.count(MeshKeyAssetPath(e.meshKey)) ||
                 changedPaths.count(e.albedoTex) || changedPaths.count(e.mrTex) ||
                 changedPaths.count(e.aoTex) || changedPaths.count(e.emissiveTex);
             if (touches) {

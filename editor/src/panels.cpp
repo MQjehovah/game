@@ -329,7 +329,12 @@ void EditorApp::BuildAssetPanel() {
                     auto thumb = meshThumbs_.find(e.path);
                     if (thumb != meshThumbs_.end() &&
                         thumb->second.texId != ImTextureID_Invalid) {
-                        ImGui::Image(thumb->second.texId, ImVec2(140.0f, 140.0f));
+                        // FBO color textures store rows bottom-up (GL origin),
+                        // while ImGui samples top-down (uv0 = widget top-left),
+                        // so flip the V range here. Texture previews loaded via
+                        // stb_image (top-down rows) keep the default UVs.
+                        ImGui::Image(thumb->second.texId, ImVec2(140.0f, 140.0f),
+                                     ImVec2(0.0f, 1.0f), ImVec2(1.0f, 0.0f));
                     } else {
                         ImGui::Dummy(ImVec2(140.0f, 140.0f));
                         ImGui::SameLine();
@@ -623,7 +628,13 @@ void EditorApp::BuildProfilerPanel() {
                     static_cast<double>(a.textureBytes) / (1024.0 * 1024.0));
 
         ImGui::Separator();
-        ImGui::PlotLines("##frame_ms", profilerMs_.data(), kProfilerSamples, 0, "帧时间 (ms)",
+        // Plot the ring buffer in chronological order (oldest = profilerMsHead_)
+        // so the graph reads left-to-right instead of jumping when the head
+        // wraps around the fixed array.
+        float wrapped[kProfilerSamples];
+        for (int i = 0; i < kProfilerSamples; ++i)
+            wrapped[i] = profilerMs_[(profilerMsHead_ + i) % kProfilerSamples];
+        ImGui::PlotLines("##frame_ms", wrapped, kProfilerSamples, 0, "帧时间 (ms)",
                          0.0f, 40.0f, ImVec2(-1.0f, 88.0f));
         profilerDrawn_ = true;
     }
