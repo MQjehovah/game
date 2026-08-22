@@ -4,6 +4,15 @@
 #include <string>
 #include <vector>
 
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <dbghelp.h>
+#pragma comment(lib, "dbghelp.lib")
+#endif
+
 #include "neon/neon.hpp"
 #include "helpers.hpp"
 
@@ -329,7 +338,70 @@ TEST(InputConsumeSemantics) {
     CHECK_NEAR(input->MouseDelta().x, 2.0f, 1e-6);
 }
 
+#if defined(_WIN32)
+namespace {
+
+LONG WINAPI CrashFilter(_EXCEPTION_POINTERS* ep) {
+    const DWORD64 addr = reinterpret_cast<DWORD64>(ep->ExceptionRecord->ExceptionAddress);
+    std::printf("\nEXCEPTION code=0x%08X at 0x%p\n", ep->ExceptionRecord->ExceptionCode,
+                ep->ExceptionRecord->ExceptionAddress);
+    char mod[MAX_PATH] = "";
+    HMODULE h = nullptr;
+    if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
+                           reinterpret_cast<LPCSTR>(addr), &h) &&
+        h) {
+        GetModuleFileNameA(h, mod, sizeof(mod));
+        std::printf("  in module: %s\n", mod);
+    }
+    static bool symInit = false;
+    if (!symInit) {
+        SymInitialize(GetCurrentProcess(), nullptr, TRUE);
+        symInit = true;
+    }
+    char symBuf[sizeof(SYMBOL_INFO) + 256] = {};
+    SYMBOL_INFO* si = reinterpret_cast<SYMBOL_INFO*>(symBuf);
+    si->SizeOfStruct = sizeof(SYMBOL_INFO);
+    si->MaxNameLen = 256;
+    DWORD64 disp = 0;
+    if (SymFromAddr(GetCurrentProcess(), addr, &disp, si))
+        std::printf("  symbol: %s+0x%llX\n", si->Name, disp);
+
+    // Print a short stack trace (symbolized) for the faulting thread.
+    CONTEXT ctx = *ep->ContextRecord;
+    STACKFRAME64 frame = {};
+    frame.AddrPC.Offset = ctx.Rip;
+    frame.AddrPC.Mode = AddrModeFlat;
+    frame.AddrFrame.Offset = ctx.Rbp;
+    frame.AddrFrame.Mode = AddrModeFlat;
+    frame.AddrStack.Offset = ctx.Rsp;
+    frame.AddrStack.Mode = AddrModeFlat;
+    for (int i = 0; i < 12; ++i) {
+        if (!StackWalk64(IMAGE_FILE_MACHINE_AMD64, GetCurrentProcess(), GetCurrentThread(),
+                         &frame, &ctx, nullptr, SymFunctionTableAccess64,
+                         SymGetModuleBase64, nullptr))
+            break;
+        if (frame.AddrPC.Offset == 0) break;
+        char s2[sizeof(SYMBOL_INFO) + 256] = {};
+        SYMBOL_INFO* si2 = reinterpret_cast<SYMBOL_INFO*>(s2);
+        si2->SizeOfStruct = sizeof(SYMBOL_INFO);
+        si2->MaxNameLen = 256;
+        DWORD64 d2 = 0;
+        if (SymFromAddr(GetCurrentProcess(), frame.AddrPC.Offset, &d2, si2))
+            std::printf("    #%d %s+0x%llX\n", i, si2->Name, d2);
+        else
+            std::printf("    #%d 0x%llX\n", i, frame.AddrPC.Offset);
+    }
+    std::fflush(stdout);
+    return EXCEPTION_CONTINUE_SEARCH; // let the OS terminate after printing
+}
+
+} // namespace
+#endif
+
 int main() {
+#if defined(_WIN32)
+    SetUnhandledExceptionFilter(&CrashFilter);
+#endif
     int passed = 0;
     for (const test::TestCase& tc : test::Registry()) {
         int before = test::gFailures;

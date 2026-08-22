@@ -87,6 +87,29 @@ bool GameServer::Start(const Config& cfg) {
         return false;
     }
 
+    // Multi-player input routing: scripts read the input of the client that
+    // owns their entity (bound via BindPlayerToClient inside on_player_join);
+    // unbound entities fall back to the v1 shared controller input.
+    script::ScriptContext& ctx = runtime_.ScriptContext();
+    ctx.inputForEntity = [this](ecs::Entity e) -> platform::IInput* {
+        const auto it = entityClientIds_.find(EntityKey(e));
+        if (it != entityClientIds_.end()) {
+            if (NetInput* in = ClientInputById(it->second)) return in;
+        }
+        return &controllerInput_;
+    };
+    ctx.bindPlayerToClient = [this](ecs::Entity e, double clientId) {
+        if (!e.IsValid()) return;
+        const uint64_t id = static_cast<uint64_t>(clientId);
+        if (ClientInputById(id) != nullptr) {
+            entityClientIds_[EntityKey(e)] = id;
+            NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Debug,
+                         "server: entity %llu bound to client %llu",
+                         static_cast<unsigned long long>(EntityKey(e)),
+                         static_cast<unsigned long long>(id));
+        }
+    };
+
     running_ = true;
     tick_ = 0;
     accumulator_ = 0.0;
@@ -100,6 +123,7 @@ bool GameServer::Start(const Config& cfg) {
     pendingRemovals_.clear();
     grid_.SetCellSize(cfg_.aoiCellSize);
     grid_.Clear();
+    entityClientIds_.clear();
     snapshotTooBig_ = 0;
     snapshotDrops_ = 0;
     NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Info,
@@ -314,6 +338,14 @@ void GameServer::AdmitClient(const net::NetAddress& addr, const std::string& nam
                      "server: client id=%llu is the input controller (v1 single-client model)",
                      static_cast<unsigned long long>(client.clientId));
     }
+
+    // Multi-player (v2): a scene that defines on_player_join(clientId) spawns
+    // and binds a player for this client right here (the script calls
+    // BindPlayerToClient inside the handler).
+    if (runtime_.HasScriptFunction("on_player_join")) {
+        runtime_.CallScriptFunction(
+            "on_player_join", {script::Value::Num(static_cast<double>(client.clientId))});
+    }
 }
 
 void GameServer::HandleInput(const net::NetAddress& addr, const net::MsgInput& input) {
@@ -337,8 +369,8 @@ void GameServer::HandlePing(const net::NetAddress& addr, const net::MsgPing& pin
 
 void GameServer::SendWelcome(Client& c) {
     net::MsgWelcome welcome{c.clientId, tick_};
-    core::Status st = c.chan.Send(static_cast<uint8_t>(net::MsgType::Welcome),
-                                  EncodeBody(welcome));
+        core::Status st = c.chan.Send(static_cast<uint8_t>(net::MsgType::Welcome),
+                                  net::EncodeBody(welcome));
     if (!st.Ok())
         NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Warn,
                      "server: welcome to client %llu deferred (%s)",
@@ -348,7 +380,7 @@ void GameServer::SendWelcome(Client& c) {
 void GameServer::SendLoginOk(Client& c) {
     net::MsgLoginOk ok{c.accountId, tick_};
     core::Status st = c.chan.Send(static_cast<uint8_t>(net::MsgType::LoginOk),
-                                  EncodeBody(ok));
+                                  net::EncodeBody(ok));
     if (!st.Ok())
         NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Warn,
                      "server: loginOk to client %llu deferred (%s)",
@@ -363,7 +395,7 @@ void GameServer::SendCharList(Client& c) {
     list.characters.push_back({1u, "主角"});
     list.count = static_cast<uint32_t>(list.characters.size());
     core::Status st = c.chan.Send(static_cast<uint8_t>(net::MsgType::CharList),
-                                  EncodeBody(list));
+                                  net::EncodeBody(list));
     if (!st.Ok())
         NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Warn,
                      "server: charList to client %llu deferred (%s)",
@@ -373,7 +405,7 @@ void GameServer::SendCharList(Client& c) {
 void GameServer::SendPong(Client& c, uint64_t sendTime) {
     net::MsgPong pong{sendTime, nowMs_};
     core::Status st =
-        c.chan.Send(static_cast<uint8_t>(net::MsgType::Pong), EncodeBody(pong));
+        c.chan.Send(static_cast<uint8_t>(net::MsgType::Pong), net::EncodeBody(pong));
     if (!st.Ok())
         NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Debug,
                      "server: pong to client %llu deferred (%s)",
@@ -383,7 +415,7 @@ void GameServer::SendPong(Client& c, uint64_t sendTime) {
 void GameServer::SendDespawn(Client& c, uint64_t entityId) {
     net::MsgDespawn despawn{entityId};
     core::Status st =
-        c.chan.Send(static_cast<uint8_t>(net::MsgType::Despawn), EncodeBody(despawn));
+        c.chan.Send(static_cast<uint8_t>(net::MsgType::Despawn), net::EncodeBody(despawn));
     if (!st.Ok())
         NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Debug,
                      "server: despawn to client %llu deferred (%s)",
@@ -403,13 +435,26 @@ void GameServer::ApplyControllerInput() {
             controllerInput_.SetInput(0, 0.0f, 0.0f);
         return;
     }
-    auto it = clients_.find(controllerAddr_);
-    if (it == clients_.end() || !it->second.hasInput) {
-        controllerInput_.SetInput(0, 0.0f, 0.0f);
-        return;
+
+    // Multi-player (v2): drive every client's own NetInput from ITS latest
+    // MsgInput. Entities bound via BindPlayerToClient read their owner's
+    // input through the runtime's per-entity resolver.
+    for (auto& kv : clients_) {
+        Client& c = kv.second;
+        if (c.hasInput)
+            c.input.SetInput(c.lastInput.buttons, c.lastInput.moveX, c.lastInput.moveY);
+        else
+            c.input.SetInput(0, 0.0f, 0.0f);
     }
-    const net::MsgInput& in = it->second.lastInput;
-    controllerInput_.SetInput(in.buttons, in.moveX, in.moveY);
+
+    // v1 fallback for scenes without on_player_join: the controller client's
+    // input drives the shared NetInput every unbound script reads.
+    controllerInput_.SetInput(0, 0.0f, 0.0f);
+    auto it = clients_.find(controllerAddr_);
+    if (it != clients_.end() && it->second.hasInput) {
+        const net::MsgInput& in = it->second.lastInput;
+        controllerInput_.SetInput(in.buttons, in.moveX, in.moveY);
+    }
 }
 
 // The entity every client's AOI is centered on: the script entity of kind
@@ -495,9 +540,10 @@ void GameServer::BroadcastSnapshot() {
     grid_.SetCellSize(cfg_.aoiCellSize);
     grid_.Update(entries);
 
-    // One focus for all clients (v1: a single playable player). The focus is
-    // the controlled entity's position, or the world origin when the scene has
-    // no script entity to center on.
+    // The fallback focus (v1: a single playable player): the controlled
+    // entity's position, or the world origin when the scene has no script
+    // entity to center on. Multi-player clients override it with their own
+    // bound player below.
     const uint64_t controlledKey = ControlledEntityKey();
     math::Vec3 focus{0.0f, 0.0f, 0.0f};
     for (const Item& it : items)
@@ -517,19 +563,31 @@ void GameServer::BroadcastSnapshot() {
         return it == itemIndex.end() ? nullptr : &items[it->second];
     };
 
-    // Interest set is identical for every client (v1 shares one focus), so
-    // compute it once per snapshot instead of per client. The controlled
-    // entity sits in the focus cell, so it is already included for r >= 0;
-    // re-assert it explicitly so a client always keeps its player.
-    std::vector<uint64_t> interest = grid_.InterestSet(focus.x, focus.z, cfg_.aoiRadiusCells);
-    if (controlledKey != 0 &&
-        std::find(interest.begin(), interest.end(), controlledKey) == interest.end()) {
-        interest.push_back(controlledKey);
-    }
-
     for (auto& kv : clients_) {
         Client& c = kv.second;
         if (c.chan.TimedOut()) continue;
+
+        // Per-client AOI focus: the client's OWN bound player when it has one
+        // (multi-player), else the shared controlled entity / world origin.
+        math::Vec3 clientFocus = focus;
+        uint64_t clientBound = 0;
+        for (const auto& eit : entityClientIds_)
+            if (eit.second == c.clientId) {
+                clientBound = eit.first;
+                break;
+            }
+        if (clientBound != 0) {
+            if (const Item* it = itemById(clientBound))
+                clientFocus = {it->x, it->y, it->z};
+        }
+        std::vector<uint64_t> interest =
+            grid_.InterestSet(clientFocus.x, clientFocus.z, cfg_.aoiRadiusCells);
+        const uint64_t alwaysVisible =
+            clientBound != 0 ? clientBound : controlledKey;
+        if (alwaysVisible != 0 &&
+            std::find(interest.begin(), interest.end(), alwaysVisible) == interest.end()) {
+            interest.push_back(alwaysVisible);
+        }
 
         // Spawn/despawn diff against the client's previous interest set: ids
         // that entered are announced with MsgSpawn (id + kind + position),
@@ -562,14 +620,14 @@ void GameServer::BroadcastSnapshot() {
             snap.entities.push_back(se);
         }
         snap.entityCount = static_cast<uint32_t>(snap.entities.size());
-        const std::vector<uint8_t> body = EncodeBody(snap);
+        const std::vector<uint8_t> body = net::EncodeBody(snap);
 
         for (uint64_t id : spawned) {
             const Item* it = itemById(id);
             if (!it) continue;
             net::MsgSpawn spawn{it->id, it->kind, it->x, it->y, it->z};
             core::Status st =
-                c.chan.Send(static_cast<uint8_t>(net::MsgType::Spawn), EncodeBody(spawn));
+                c.chan.Send(static_cast<uint8_t>(net::MsgType::Spawn), net::EncodeBody(spawn));
             if (!st.Ok())
                 NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Debug,
                              "server: spawn of entity %llu to client %llu deferred (%s)",
@@ -645,6 +703,13 @@ void GameServer::RemoveClient(const net::NetAddress& addr) {
     const uint64_t id = it->second.clientId;
     if (it->second.accountId != 0) accountToClient_.erase(it->second.accountId);
     clients_.erase(it);
+    // Multi-player: drop every entity this client owned.
+    for (auto eit = entityClientIds_.begin(); eit != entityClientIds_.end();) {
+        if (eit->second == id)
+            eit = entityClientIds_.erase(eit);
+        else
+            ++eit;
+    }
     NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Info,
                  "server: client %llu disconnected (%u remaining)",
                  static_cast<unsigned long long>(id), ClientCount());
@@ -670,6 +735,12 @@ uint16_t GameServer::Port() const { return sock_.Port(); }
 uint64_t GameServer::ControllerClientId() const {
     auto it = clients_.find(controllerAddr_);
     return it == clients_.end() ? 0 : it->second.clientId;
+}
+
+NetInput* GameServer::ClientInputById(uint64_t clientId) {
+    for (auto& kv : clients_)
+        if (kv.second.clientId == clientId) return &kv.second.input;
+    return nullptr;
 }
 
 uint64_t GameServer::EntityKey(ecs::Entity e) const {

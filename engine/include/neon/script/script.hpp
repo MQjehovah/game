@@ -115,6 +115,19 @@ public:
     // global is not a function or the call raises.
     virtual core::Result<Value> Call(const std::string& fn, const std::vector<Value>& args) = 0;
 
+    // Captures the CURRENT global function `name` into an opaque handle so a
+    // later chunk overwriting the same global cannot change which function
+    // this caller invokes (per-entity script isolation: every ScriptInst
+    // captures its own chunk's on_start/on_update). Returns Err (handle 0)
+    // when the global is not a function. The handle stays valid until
+    // Shutdown.
+    virtual core::Result<uint64_t> CaptureFunction(const std::string& name) = 0;
+
+    // Calls a function previously captured by CaptureFunction. Errors when the
+    // handle is invalid or the call raises. Same semantics as Call otherwise.
+    virtual core::Result<Value> CallCaptured(uint64_t handle,
+                                             const std::vector<Value>& args) = 0;
+
     // Read/write a global variable. Missing globals read back as Nil.
     virtual void SetGlobal(const std::string& name, const Value& v) = 0;
     virtual core::Result<Value> GetGlobal(const std::string& name) = 0;

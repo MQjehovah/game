@@ -688,6 +688,130 @@ TEST(ServerPingPongAndTimeoutDisconnect) {
 }
 
 // ---------------------------------------------------------------------------
+// Multi-player (v2): each client controls its OWN player entity. A scene that
+// defines on_player_join(clientId) spawns + binds a player per client; the
+// server routes each client's MsgInput to that player's script, so A's input
+// moves only A's player and B's input moves only B's.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+const char* kMultiplayerHostLua = R"(
+function on_start(e)
+  SetVar("ticks", 0)
+end
+function on_update(e, dt)
+  SetVar("ticks", (GetVar("ticks") or 0) + 1)
+end
+function on_player_join(clientId)
+  local p = Spawn("player", { x = 0, y = 0, z = clientId * 4 }, "scripts/player_controller.lua")
+  BindPlayerToClient(p, clientId)
+end
+)";
+
+const char* kPlayerControllerLua = R"(
+function on_update(e, dt)
+  local fwd = InputAxis("forward")
+  if fwd > 0.5 then
+    local p = GetPosition(e)
+    if p ~= nil then
+      SetPosition(e, { x = p.x, y = p.y, z = p.z + 1 })
+    end
+  end
+end
+)";
+
+void WriteMultiplayerFixture(const std::string& dir) {
+    const char* scene =
+        R"({"entities":[{"name":"Host","components":{"transform":{"pos":[0,0,0]},)"
+        R"("script":{"backend":"lua","path":"scripts/host.lua"}}}]})";
+    CHECK(test::WriteFileAll(dir + "/scene.json", scene));
+    const std::string scriptsDir = dir + "/scripts";
+#if defined(_WIN32)
+    CreateDirectoryA(scriptsDir.c_str(), nullptr);
+#else
+    ::mkdir(scriptsDir.c_str(), 0700);
+#endif
+    CHECK(test::WriteFileAll(scriptsDir + "/host.lua", kMultiplayerHostLua));
+    CHECK(test::WriteFileAll(scriptsDir + "/player_controller.lua", kPlayerControllerLua));
+}
+
+// Stable snapshot key: (id << 32) | generation (matches GameServer::EntityKey).
+uint64_t MultiplayerEntityKey(const ecs::Entity& e) {
+    return (static_cast<uint64_t>(e.id) << 32) | static_cast<uint64_t>(e.generation);
+}
+
+} // namespace
+
+TEST(ServerEachClientControlsOwnPlayer) {
+    test::TempDir tmp;
+    WriteMultiplayerFixture(tmp.Str());
+    server::GameServer server;
+    CHECK(server.Start(SceneCfg(tmp.Str(), 20260)));
+
+    LoopbackClient a, b;
+    a.BindAndPeer(server.Port());
+    b.BindAndPeer(server.Port());
+    uint64_t now = 0;
+    auto stepAll = [&]() {
+        now += 17;
+        server.Step(now);
+        a.Pump(now);
+        b.Pump(now);
+    };
+
+    a.SendJoin("alice", 2);
+    for (int i = 0; i < 200 && !a.welcomed; ++i) stepAll();
+    CHECK(a.welcomed);
+    b.SendJoin("bob", 2);
+    for (int i = 0; i < 200 && !b.welcomed; ++i) stepAll();
+    CHECK(b.welcomed);
+
+    // Each client's player spawned at z = clientId * 4 (ids 1 and 2). Capture
+    // their stable keys by spawn z so movement can be tracked independently.
+    uint64_t keyA = 0, keyB = 0;
+    {
+        auto view = server.World().ViewAll<script::CTransformBind>();
+        for (size_t i = 0; i < view.Size(); ++i) {
+            ecs::Entity e = server.World().EntityAt<script::CTransformBind>(i);
+            const script::CTransformBind* t = server.World().Get<script::CTransformBind>(e);
+            if (!t) continue;
+            if (std::fabs(t->pos.z - 4.0f) < 0.5f) keyA = MultiplayerEntityKey(e);
+            else if (std::fabs(t->pos.z - 8.0f) < 0.5f) keyB = MultiplayerEntityKey(e);
+        }
+    }
+    CHECK(keyA != 0);
+    CHECK(keyB != 0);
+
+    auto zByKey = [&](uint64_t key) -> float {
+        auto view = server.World().ViewAll<script::CTransformBind>();
+        for (size_t i = 0; i < view.Size(); ++i) {
+            ecs::Entity e = server.World().EntityAt<script::CTransformBind>(i);
+            if (MultiplayerEntityKey(e) != key) continue;
+            const script::CTransformBind* t = server.World().Get<script::CTransformBind>(e);
+            return t ? t->pos.z : -1.0f;
+        }
+        return -1.0f;
+    };
+
+    // A holds forward for 10 ticks: A's player moves, B's stays at spawn.
+    a.SendInput(1, 0, 0.0f, 1.0f);
+    for (int i = 0; i < 10; ++i) stepAll();
+    CHECK(zByKey(keyA) > 4.0f);
+    CHECK_NEAR(zByKey(keyB), 8.0f, 1e-4);
+
+    // A releases, B holds forward: B's player moves, A's stays put.
+    a.SendInput(2, 0, 0.0f, 0.0f);
+    b.SendInput(1, 0, 0.0f, 1.0f);
+    const float zA = zByKey(keyA);
+    for (int i = 0; i < 10; ++i) stepAll();
+    CHECK(zByKey(keyB) > 8.0f);
+    CHECK_NEAR(zByKey(keyA), zA, 1e-4);
+
+    server.Shutdown();
+}
+
+// ---------------------------------------------------------------------------
 // The committed data-driven sample (scripts + BT + prefab) runs headless under
 // the server and its GameVars advance per fixed tick.
 // ---------------------------------------------------------------------------

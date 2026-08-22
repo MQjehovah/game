@@ -23,6 +23,16 @@ const void* kChunkKey() {
     return &key;
 }
 
+// Registry key under which captured chunk functions are stored:
+// registry[capturedKey][handle] = function. A single lightuserdata key cannot
+// collide with Lua's reserved integer registry indices (LUA_RIDX_MAINTHREAD =
+// 1, LUA_RIDX_GLOBALS = 2), which a raw integer key would clobber and corrupt
+// the whole state (the globals table reference lives at index 2).
+const void* kCapturedKey() {
+    static char key = 0;
+    return &key;
+}
+
 // A registered native function plus its opaque user pointer.
 struct NativeFn {
     NativeFunction fn = nullptr;
@@ -226,6 +236,7 @@ struct LuaHost::Impl {
     std::vector<int> frameArgCounts;
     bool nativeErrorPending = false;
     std::string nativeErrorMessage;
+    uint64_t nextFunctionKey = 0; // registry keys for captured chunk functions
     core::Rng rng;          // sandbox RNG; reseeded by SetRngSeed / NMath.Seed
     double simClock = 0.0;  // engine-injected simulated time (NMath.Time)
 };
@@ -439,6 +450,64 @@ core::Result<Value> LuaHost::Call(const std::string& fn, const std::vector<Value
     if (!lua_isfunction(impl_->L, -1)) {
         lua_pop(impl_->L, 1);
         return Fail(fn + " is not a function");
+    }
+    for (const Value& v : args) PushValue(impl_->L, v);
+    if (lua_pcall(impl_->L, static_cast<int>(args.size()), 1, 0) != LUA_OK) {
+        CaptureError();
+        return Fail(impl_->lastError.message, impl_->lastError.line);
+    }
+    Value result = PopValue(impl_->L, -1);
+    lua_pop(impl_->L, 1);
+    impl_->lastError = {};
+    return core::Result<Value>::Ok(result);
+}
+
+core::Result<uint64_t> LuaHost::CaptureFunction(const std::string& name) {
+    if (!impl_->L) return core::Result<uint64_t>::Err("script host is not initialized");
+    lua_getglobal(impl_->L, name.c_str());
+    if (!lua_isfunction(impl_->L, -1)) {
+        lua_pop(impl_->L, 1);
+        return core::Result<uint64_t>::Err(name + " is not a function");
+    }
+    // Park the function in the registry under registry[capturedKey][handle];
+    // the handle stays valid even when a later chunk overwrites the global
+    // name. Nested under one pointer key keeps integer handles far away from
+    // Lua's reserved registry indices (1 = main thread, 2 = globals).
+    const uint64_t key = ++impl_->nextFunctionKey;
+    lua_pushlightuserdata(impl_->L, const_cast<void*>(kCapturedKey()));
+    lua_rawget(impl_->L, LUA_REGISTRYINDEX);
+    if (!lua_istable(impl_->L, -1)) {
+        lua_pop(impl_->L, 1);
+        lua_newtable(impl_->L);
+        lua_pushlightuserdata(impl_->L, const_cast<void*>(kCapturedKey()));
+        lua_pushvalue(impl_->L, -2);
+        lua_rawset(impl_->L, LUA_REGISTRYINDEX);
+    }
+    lua_pushinteger(impl_->L, static_cast<lua_Integer>(key));
+    lua_pushvalue(impl_->L, -3); // the function (below the table)
+    // Stack here is [fn, table, key, fn2]: the captured table sits at -3.
+    // lua_rawset pops key + value and stores into the table at the index.
+    lua_rawset(impl_->L, -3);    // captured[key] = fn
+    lua_pop(impl_->L, 1);        // the table
+    lua_pop(impl_->L, 1);        // the global copy
+    impl_->lastError = {};
+    return core::Result<uint64_t>::Ok(key);
+}
+
+core::Result<Value> LuaHost::CallCaptured(uint64_t handle, const std::vector<Value>& args) {
+    if (!impl_->L) return Fail("script host is not initialized");
+    lua_pushlightuserdata(impl_->L, const_cast<void*>(kCapturedKey()));
+    lua_rawget(impl_->L, LUA_REGISTRYINDEX);
+    if (!lua_istable(impl_->L, -1)) {
+        lua_pop(impl_->L, 1);
+        return Fail("captured function registry is missing");
+    }
+    lua_pushinteger(impl_->L, static_cast<lua_Integer>(handle));
+    lua_rawget(impl_->L, -2);
+    lua_remove(impl_->L, -2); // drop the table, keep the function
+    if (!lua_isfunction(impl_->L, -1)) {
+        lua_pop(impl_->L, 1);
+        return Fail("captured function handle is invalid");
     }
     for (const Value& v : args) PushValue(impl_->L, v);
     if (lua_pcall(impl_->L, static_cast<int>(args.size()), 1, 0) != LUA_OK) {

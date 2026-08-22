@@ -4,6 +4,7 @@
 #include <map>
 #include <set>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "neon/core/result.hpp"
@@ -66,12 +67,14 @@ struct NetAddrLess {
 // last input / get a pong. A client with no packets for clientTimeoutMs (or
 // whose reliable channel times out) is disconnected.
 //
-// INPUT MODEL (v1, single-controller): the FIRST client to join is the "input
-// controller" — its MsgInput feeds the NetInput that the runtime's scripts
-// read via InputAxis/InputKey. Additional clients join and receive snapshots
-// but their inputs are ignored until a multi-input model exists (the demo has
-// exactly one player). If the controller disconnects, the next client is
-// promoted.
+// INPUT MODEL (v2, multi-player): every client owns a NetInput fed by ITS
+// MsgInput. A scene opts in by defining on_player_join(clientId): the server
+// calls it when a client is admitted, the script spawns that client's player
+// and calls BindPlayerToClient(player, clientId), and the runtime then routes
+// the client's input to that entity's script via per-entity input resolution.
+// Scenes without on_player_join keep the v1 single-controller fallback: the
+// first client's input drives the shared NetInput every script reads, and the
+// next client is promoted if the controller disconnects.
 //
 // DETERMINISM: the runtime uses the deterministic Lua sandbox (T2.4) seeded by
 // Config::rngSeed, the fixed tick drives all script/BT/physics updates, and
@@ -142,7 +145,8 @@ private:
         uint64_t clientId = 0;
         uint64_t accountId = 0; // v0 anonymous account (T6.6); 0 = not logged in
         uint64_t lastSeenMs = 0;
-        net::MsgInput lastInput; // v1: stored per client, only the controller's is applied
+        net::MsgInput lastInput;
+        NetInput input; // per-client input state fed by THIS client's MsgInput
         bool hasInput = false;
         // AOI: the entity ids replicated to this client's last snapshot.
         // Spawn/despawn diffs are computed against this set, so each client
@@ -170,6 +174,8 @@ private:
     void DropTimedOutClients(uint64_t nowMs);
     void RemoveClient(const net::NetAddress& addr);
     uint64_t EntityKey(ecs::Entity e) const;
+    // The NetInput of the client with `clientId` (nullptr when disconnected).
+    NetInput* ClientInputById(uint64_t clientId);
 
     Config cfg_;
     net::UdpSocket sock_;
@@ -178,6 +184,10 @@ private:
     NetInput controllerInput_; // wired into the runtime; fed by the controller client
     std::vector<ScriptedInput> scriptedInputs_; // T6.7 scripted-controller path
     std::map<net::NetAddress, Client, NetAddrLess> clients_;
+    // Multi-player ownership: stable entity key -> client id (set by the
+    // scene's BindPlayerToClient inside on_player_join). Drives per-entity
+    // input routing and per-client AOI focus.
+    std::unordered_map<uint64_t, uint64_t> entityClientIds_;
     std::vector<net::NetAddress> pendingRemovals_; // channel-timeout disconnects
     net::NetAddress controllerAddr_;
     uint64_t nextClientId_ = 0;

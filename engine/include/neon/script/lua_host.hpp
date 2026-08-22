@@ -37,6 +37,9 @@ public:
     bool CheckSyntax(const std::string& source) override;
     core::Result<Value> Run() override;
     core::Result<Value> Call(const std::string& fn, const std::vector<Value>& args) override;
+    core::Result<uint64_t> CaptureFunction(const std::string& name) override;
+    core::Result<Value> CallCaptured(uint64_t handle,
+                                     const std::vector<Value>& args) override;
     void SetGlobal(const std::string& name, const Value& v) override;
     core::Result<Value> GetGlobal(const std::string& name) override;
     void Register(const std::string& name, NativeFunction fn, void* user) override;

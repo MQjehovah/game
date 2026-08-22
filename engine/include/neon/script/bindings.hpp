@@ -44,6 +44,13 @@ struct ScriptContext {
     // Optional live input state for the InputAxis/InputKey/InputMouse bindings.
     // Null in headless hosts and unit tests -> every input query returns 0.
     platform::IInput* input = nullptr;
+    // The entity currently being updated (set by GameRuntime before each
+    // on_start/on_update call). Lets the input bindings route per-entity:
+    // when inputForEntity is set and returns non-null for the current entity,
+    // that input wins over `input` (multi-player: each player's script reads
+    // its OWN client's input).
+    ecs::Entity currentEntity;
+    std::function<platform::IInput*(ecs::Entity)> inputForEntity;
 
     // Optional gameplay hooks registered by the scene runtime (GameRuntime).
     // When null the corresponding bindings degrade to nil/no-ops, so other
@@ -75,6 +82,14 @@ struct ScriptContext {
     std::function<float(const std::string& name, ecs::Entity caster)> sceneSkillCooldown;
     std::function<int(const math::Vec3& center, const math::Vec3& half, float yaw, float damage)>
         attackBox;
+    // Multi-player: a scene script calls BindPlayerToClient(player, clientId)
+    // inside on_player_join(clientId) to own that entity; the server then
+    // routes the client's input to it. The runtime itself leaves this null.
+    std::function<void(ecs::Entity, double)> bindPlayerToClient;
+    // Optional: attaches a Lua script to a spawned entity (Spawn's 3rd arg) so
+    // dynamically created entities (multi-player player controllers) run
+    // on_start/on_update like scene-placed ones. Wired by GameRuntime.
+    std::function<void(ecs::Entity, const std::string&)> spawnScript;
 };
 
 // Registers Spawn/Despawn/GetPosition/SetPosition/GetVar/SetVar/Raycast/

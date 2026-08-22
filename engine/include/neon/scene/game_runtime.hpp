@@ -69,13 +69,14 @@ struct GameRuntimeConfig {
 // store).
 //
 // GLOBAL NAMESPACE SHARING (important): because there is exactly one host, all
-// scripts share one global Lua namespace. Two scripts that define the same
-// global (e.g. both define `on_update`) collide: the last-loaded script's
-// function wins and runs for EVERY entity, even ones carrying the earlier
-// script. Per-entity `script.vars` are also set as globals and therefore
-// overwrite each other across entities. Keep scene scripts distinct, or extend
-// the runtime with per-entity hosts/namespacing before relying on per-entity
-// script identity.
+// scripts share one global Lua namespace. Per-entity dispatch is now safe for
+// the standard handlers: each instance CAPTURES its own chunk's on_start and
+// on_update at attach time, so a later-loaded script cannot shadow an earlier
+// one for other entities (the captured function handle is called, not the
+// global name). Other globals still collide (a shared helper variable or a
+// second `on_player_join` is last-write-wins), and per-entity `script.vars`
+// are set as globals and therefore overwrite each other across entities. Keep
+// non-handler globals distinct.
 //
 // PHYSICS: `physics_.Step` runs every Tick, but the built-in scene registry has
 // no collider component yet, so the world steps with zero bodies (inert).
@@ -154,10 +155,31 @@ public:
     bool HasStatus(ecs::Entity ent, uint32_t id) const;
     float StatusMagnitude(ecs::Entity ent, uint32_t id) const;
 
+    // Script-function plumbing for hosts that drive the scene from outside
+    // (the server's multi-player join flow): HasScriptFunction reports whether
+    // the loaded scripts define `name`; CallScriptFunction invokes it with the
+    // given args (true when the call ran and succeeded). Failures are logged
+    // once per function per Start, never fatal.
+    bool HasScriptFunction(const std::string& name) const;
+    bool CallScriptFunction(const std::string& name,
+                            const std::vector<script::Value>& args);
+
+    // Spawns an entity with CTransformBind + kind (+ optional Lua script that
+    // runs on_start/on_update for it). Used by the Spawn binding's 3rd arg
+    // (multi-player player controllers) and by hosts that spawn programmatic
+    // entities. Returns the new entity (invalid when the world refused).
+    ecs::Entity SpawnEntity(const std::string& kind, const math::Vec3& pos,
+                            const std::string& scriptPath = {});
+
 private:
     struct ScriptInst {
         ecs::Entity ent;
         std::string path; // used for error logging; source is loaded once per path
+        // Captured chunk function handles (0 = this chunk defines none). Each
+        // instance calls ITS OWN chunk's handlers, so a later-loaded script
+        // cannot shadow an earlier one (per-entity script isolation).
+        uint64_t onStart = 0;
+        uint64_t onUpdate = 0;
         bool errorLogged = false; // one log per script instance per Start
     };
     struct BtInst {
@@ -200,6 +222,10 @@ private:
     };
 
     void AttachScripts();
+    // Attaches ONE script component to an entity (shared by AttachScripts and
+    // SpawnEntity/Spawn's 3rd arg). Returns false when skipped (missing file,
+    // compile error, unsafe path, previous failure).
+    bool AttachOneScript(ecs::Entity ent, const SceneScript& s);
     void AttachTrees();
     // Advances every entity's StatusComponent (damage/heal ticks + expiry).
     void TickStatuses(float dt);
@@ -218,10 +244,12 @@ private:
     // Resolves one meshKey ("obj:"/"gltf:" file-backed or a procedural
     // primitive) through the runtime's AssetManager; invalid mesh on failure.
     gfx::Mesh ResolveMeshKey(gfx::Renderer& renderer, const std::string& key);
-    // Invokes a script global function and logs the first failure of a script
-    // instance (throttled per Start); failures never abort the runtime.
-    void CallEntityFunction(const char* fn, ScriptInst& inst,
-                            const std::vector<script::Value>& args);
+    // Invokes one of the instance's captured chunk functions and logs the
+    // first failure of the script instance (throttled per Start); failures
+    // never abort the runtime. Sets the per-entity input routing context.
+    // `fn` names the handler for the log ("on_start" / "on_update").
+    void CallEntityFunctionHandle(ScriptInst& inst, uint64_t handle,
+                                  const char* fn, const std::vector<script::Value>& args);
     std::string ReadScript(const std::string& path) const;
     std::string FullScriptPath(const std::string& path) const;
     // Resolves an asset reference (obj:/gltf:/texture path) against

@@ -276,9 +276,10 @@ TEST(GameRuntimeDrawUnknownKeyWarnsNoCrash) {
 // Single-host semantics (review fixes): global shadowing, script vars, logging
 // ---------------------------------------------------------------------------
 
-// All scripts share one Lua host, so a later-loaded script's on_update shadows
-// the earlier one for EVERY entity. This test pins that documented behavior.
-TEST(GameRuntimeScriptGlobalShadowing) {
+// Each script instance captures its own chunk's handlers, so a later-loaded
+// script's on_update no longer shadows an earlier one for every entity: A runs
+// a.lua's handler, B runs b.lua's, independently.
+TEST(GameRuntimeScriptsDoNotShadowAcrossChunks) {
     const char* scene = R"({
       "entities": [
         {"name": "A", "components": {"transform": {"pos": [0,0,0]},
@@ -322,15 +323,22 @@ TEST(GameRuntimeScriptGlobalShadowing) {
 
     for (int i = 0; i < 10; ++i) runtime.Tick(1.0f / 60.0f);
 
-    // scriptB loaded last: its on_update runs for BOTH entities. Entity A's
-    // script (shadow_mark) never ran, and both entities' counters advanced
-    // under scriptB's function.
-    CHECK(runtime.GameVars().Get("shadow_mark").type == script::Value::Type::Nil);
+    // Entity A ran a.lua's on_update (shadow_mark); entity B ran b.lua's
+    // (its own tick counter) — no cross-chunk shadowing.
+    CHECK(runtime.GameVars().Get("shadow_mark").type == script::Value::Type::String);
+    CHECK_EQ(runtime.GameVars().Get("shadow_mark").str, std::string("A"));
+    // Exactly one tick counter exists (entity B's script) and it advanced
+    // every tick; entity A's script never ran b.lua's handler.
+    int tickCounters = 0;
     for (const ecs::Entity& e : scriptEnts) {
         const std::string key = "tick_" + std::to_string(e.id);
-        CHECK(runtime.GameVars().Get(key).type == script::Value::Type::Number);
-        CHECK_EQ(runtime.GameVars().Get(key).number, 10.0);
+        const script::Value v = runtime.GameVars().Get(key);
+        if (v.type == script::Value::Type::Number) {
+            ++tickCounters;
+            CHECK_EQ(v.number, 10.0);
+        }
     }
+    CHECK_EQ(tickCounters, 1);
 }
 
 // Per-entity SceneScript.vars are set as Lua globals before on_start/on_update.

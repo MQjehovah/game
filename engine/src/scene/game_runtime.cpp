@@ -223,6 +223,14 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
                                   float dmg) {
         return AttackBox(center, half, yaw, dmg);
     };
+    scriptCtx_.spawnScript = [this](ecs::Entity e, const std::string& path) {
+        if (!world_.Alive(e)) return;
+        scene::SceneScript s;
+        s.backend = "lua";
+        s.path = path;
+        if (!world_.Has<SceneScript>(e)) world_.Add<SceneScript>(e, s);
+        AttachOneScript(e, s);
+    };
     scriptCtx_.spawnProjectile = [this](const math::Vec3& pos, const math::Vec3& dir, float speed,
                                         float damage, float life, ecs::Entity caster) {
         SpawnProjectile(pos, dir, speed, damage, life, caster);
@@ -289,73 +297,86 @@ void GameRuntime::AttachScripts() {
     for (size_t i = 0; i < view.Size(); ++i) {
         ecs::Entity ent = world_.EntityAt<SceneScript>(i);
         const SceneScript* s = world_.Get<SceneScript>(ent);
-        if (!s || s->backend != "lua") continue;
-
-        // Defense-in-depth: a hand-crafted pack could reference ".." or an
-        // absolute path to read arbitrary local files. Reject such scripts.
-        if (neon::core::IsUnsafeRelPath(s->path)) {
-            NEON_LOG_CAT(neon::core::LogCategory::Script, neon::core::LogLevel::Warn,
-                         "runtime: skipping script '%s' (unsafe path)", s->path.c_str());
-            continue;
-        }
-
-        const std::string full = FullScriptPath(s->path);
-        if (scriptFailed_.count(full)) {
-            NEON_LOG_CAT(neon::core::LogCategory::Script, neon::core::LogLevel::Warn,
-                         "runtime: skipping script '%s' (previous load failed)", full.c_str());
-            continue;
-        }
-
-        // Load + run the chunk once per unique path (defines the global
-        // functions); a missing file / syntax error skips every entity that
-        // references it without failing the whole runtime.
-        if (!loadedScripts_.count(full)) {
-            std::string source = ReadScript(full);
-            if (source.empty()) {
-                NEON_LOG_CAT(neon::core::LogCategory::Script, neon::core::LogLevel::Error,
-                             "runtime: cannot read script '%s' (skipped)", full.c_str());
-                scriptFailed_.insert(full);
-                continue;
-            }
-            if (!host_->Load(source)) {
-                NEON_LOG_CAT(neon::core::LogCategory::Script, neon::core::LogLevel::Error,
-                             "runtime: script '%s' failed to compile: %s (skipped)",
-                             full.c_str(), host_->LastError().message.c_str());
-                scriptFailed_.insert(full);
-                continue;
-            }
-            if (!host_->Run().Ok()) {
-                NEON_LOG_CAT(neon::core::LogCategory::Script, neon::core::LogLevel::Error,
-                             "runtime: script '%s' failed to run: %s (skipped)",
-                             full.c_str(), host_->LastError().message.c_str());
-                scriptFailed_.insert(full);
-                continue;
-            }
-            loadedScripts_.insert(full);
-        }
-
-        scripts_.push_back({ent, s->path});
-        ScriptInst& inst = scripts_.back();
-
-        // Per-entity script vars become Lua globals so on_start/on_update can
-        // read them (e.g. `aggro`). Globals persist, so across entities the
-        // last-set value wins for all of them (documented single-host caveat).
-        if (s->vars.IsObject()) {
-            for (const auto& kv : s->vars.Members()) {
-                host_->SetGlobal(kv.first, bt::JsonToValue(kv.second));
-            }
-        }
-
-        if (host_->HasFunction("on_start")) {
-            CallEntityFunction("on_start", inst, {EntityToValue(ent)});
-        }
+        if (s) AttachOneScript(ent, *s);
     }
 }
 
-void GameRuntime::CallEntityFunction(const char* fn, ScriptInst& inst,
-                                     const std::vector<script::Value>& args) {
-    if (!host_) return;
-    auto res = host_->Call(fn, args);
+bool GameRuntime::AttachOneScript(ecs::Entity ent, const SceneScript& s) {
+    if (!host_ || s.backend != "lua") return false;
+
+    // Defense-in-depth: a hand-crafted pack could reference ".." or an
+    // absolute path to read arbitrary local files. Reject such scripts.
+    if (neon::core::IsUnsafeRelPath(s.path)) {
+        NEON_LOG_CAT(neon::core::LogCategory::Script, neon::core::LogLevel::Warn,
+                     "runtime: skipping script '%s' (unsafe path)", s.path.c_str());
+        return false;
+    }
+
+    const std::string full = FullScriptPath(s.path);
+    if (scriptFailed_.count(full)) {
+        NEON_LOG_CAT(neon::core::LogCategory::Script, neon::core::LogLevel::Warn,
+                     "runtime: skipping script '%s' (previous load failed)", full.c_str());
+        return false;
+    }
+
+    // Load + run the chunk once per unique path (defines the global
+    // functions); a missing file / syntax error skips every entity that
+    // references it without failing the whole runtime.
+    if (!loadedScripts_.count(full)) {
+        std::string source = ReadScript(full);
+        if (source.empty()) {
+            NEON_LOG_CAT(neon::core::LogCategory::Script, neon::core::LogLevel::Error,
+                         "runtime: cannot read script '%s' (skipped)", full.c_str());
+            scriptFailed_.insert(full);
+            return false;
+        }
+        if (!host_->Load(source)) {
+            NEON_LOG_CAT(neon::core::LogCategory::Script, neon::core::LogLevel::Error,
+                         "runtime: script '%s' failed to compile: %s (skipped)",
+                         full.c_str(), host_->LastError().message.c_str());
+            scriptFailed_.insert(full);
+            return false;
+        }
+        if (!host_->Run().Ok()) {
+            NEON_LOG_CAT(neon::core::LogCategory::Script, neon::core::LogLevel::Error,
+                         "runtime: script '%s' failed to run: %s (skipped)",
+                         full.c_str(), host_->LastError().message.c_str());
+            scriptFailed_.insert(full);
+            return false;
+        }
+        loadedScripts_.insert(full);
+    }
+
+    scripts_.push_back({ent, s.path, 0, 0, false});
+    ScriptInst& inst = scripts_.back();
+
+    // Per-entity script vars become Lua globals so on_start/on_update can
+    // read them (e.g. `aggro`). Globals persist, so across entities the
+    // last-set value wins for all of them (documented single-host caveat).
+    if (s.vars.IsObject()) {
+        for (const auto& kv : s.vars.Members()) {
+            host_->SetGlobal(kv.first, bt::JsonToValue(kv.second));
+        }
+    }
+
+    // Capture this chunk's handlers so later chunks cannot shadow them.
+    if (const auto h = host_->CaptureFunction("on_start"); h.Ok()) inst.onStart = h.Value();
+    if (const auto h = host_->CaptureFunction("on_update"); h.Ok()) inst.onUpdate = h.Value();
+    if (inst.onStart != 0) {
+        CallEntityFunctionHandle(inst, inst.onStart, "on_start", {EntityToValue(ent)});
+    }
+    return true;
+}
+
+void GameRuntime::CallEntityFunctionHandle(ScriptInst& inst, uint64_t handle,
+                                           const char* fn,
+                                           const std::vector<script::Value>& args) {
+    if (!host_ || handle == 0) return;
+    // The input bindings resolve per-entity input through the entity being
+    // updated (multi-player: each player's script reads its OWN client input).
+    scriptCtx_.currentEntity = inst.ent;
+    const auto res = host_->CallCaptured(handle, args);
+    scriptCtx_.currentEntity = {};
     if (!res.Ok() && !inst.errorLogged) {
         inst.errorLogged = true;
         NEON_LOG_CAT(neon::core::LogCategory::Script, neon::core::LogLevel::Error,
@@ -596,6 +617,21 @@ gfx::Mesh GameRuntime::ResolveMeshKey(gfx::Renderer& renderer, const std::string
     return mesh;
 }
 
+ecs::Entity GameRuntime::SpawnEntity(const std::string& kind, const math::Vec3& pos,
+                                     const std::string& scriptPath) {
+    ecs::Entity e = world_.Create();
+    world_.Add<script::CTransformBind>(e, script::CTransformBind{pos});
+    scriptCtx_.entityKinds[e] = kind;
+    if (!scriptPath.empty()) {
+        scene::SceneScript s;
+        s.backend = "lua";
+        s.path = scriptPath;
+        world_.Add<SceneScript>(e, s);
+        AttachOneScript(e, s);
+    }
+    return e;
+}
+
 void GameRuntime::SpawnProjectile(const math::Vec3& pos, const math::Vec3& dir, float speed,
                                   float damage, float life, ecs::Entity caster) {
     Projectile p;
@@ -800,6 +836,23 @@ float GameRuntime::StatusMagnitude(ecs::Entity ent, uint32_t id) const {
     return c ? scene::StatusMagnitude(*c, id) : 0.0f;
 }
 
+bool GameRuntime::HasScriptFunction(const std::string& name) const {
+    return host_ && host_->HasFunction(name);
+}
+
+bool GameRuntime::CallScriptFunction(const std::string& name,
+                                     const std::vector<script::Value>& args) {
+    if (!host_ || !host_->HasFunction(name)) return false;
+    scriptCtx_.currentEntity = {};
+    const core::Result<script::Value> res = host_->Call(name, args);
+    if (!res.Ok()) {
+        NEON_LOG_CAT(core::LogCategory::Script, core::LogLevel::Error,
+                     "runtime: script function %s() failed: %s", name.c_str(),
+                     host_->LastError().message.c_str());
+    }
+    return res.Ok();
+}
+
 void GameRuntime::TickProjectiles(float dt) {
     for (auto it = projectiles_.begin(); it != projectiles_.end();) {
         Projectile& p = *it;
@@ -908,12 +961,11 @@ void GameRuntime::Tick(float dt) {
 
     if (host_) {
         host_->SetSimClock(simTime_);
-        if (host_->HasFunction("on_update")) {
-            for (ScriptInst& inst : scripts_) {
-                if (!world_.Alive(inst.ent)) continue;
-                CallEntityFunction("on_update", inst,
-                                   {EntityToValue(inst.ent), script::Value::Num(dt)});
-            }
+        for (ScriptInst& inst : scripts_) {
+            if (!world_.Alive(inst.ent)) continue;
+            if (inst.onUpdate == 0) continue; // this chunk defines no on_update
+            CallEntityFunctionHandle(inst, inst.onUpdate, "on_update",
+                                     {EntityToValue(inst.ent), script::Value::Num(dt)});
         }
     }
 

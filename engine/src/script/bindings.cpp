@@ -57,6 +57,16 @@ Value Vec3ToValue(const math::Vec3& v) {
     return t;
 }
 
+// Resolves the input state a script sees: the per-entity input registered for
+// the entity currently being updated (multi-player), else the shared input.
+platform::IInput* InputFor(ScriptContext& ctx) {
+    if (ctx.inputForEntity && ctx.currentEntity.IsValid()) {
+        if (platform::IInput* perEntity = ctx.inputForEntity(ctx.currentEntity))
+            return perEntity;
+    }
+    return ctx.input;
+}
+
 // Reads {x=,y=,z=} from a table, falling back to `def` for missing/non-numeric
 // fields. Positional tables are not supported; named fields only.
 math::Vec3 Vec3FromValue(const Value& v, const math::Vec3& def) {
@@ -93,6 +103,12 @@ Value NativeSpawn(IScriptHost& host, void* user) {
     ecs::Entity e = ctx->world->Create();
     ctx->world->Add<CTransformBind>(e, CTransformBind{pos});
     ctx->entityKinds[e] = kind;
+    // Optional 3rd arg: attach a Lua script to the spawned entity so it runs
+    // on_start/on_update (multi-player player controllers).
+    if (host.ArgCount() >= 3 && ctx->spawnScript) {
+        const std::string path = StringArg(host, 2);
+        if (!path.empty()) ctx->spawnScript(e, path);
+    }
     return EntityToValue(e);
 }
 
@@ -281,18 +297,35 @@ Value NativeAttackBox(IScriptHost& host, void* user) {
 Value NativeInputMouseDown(IScriptHost& host, void* user) {
     auto* ctx = static_cast<ScriptContext*>(user);
     if (!ctx || !ctx->input) return Value::Num(0);
+    platform::IInput* in = InputFor(*ctx);
+    if (!in) return Value::Num(0);
     const std::string b = StringArg(host, 0);
     const int idx = b == "right" ? 1 : b == "middle" ? 2 : 0;
-    return Value::Num(ctx->input->MouseDown(static_cast<platform::MouseButton>(idx)) ? 1.0 : 0.0);
+    return Value::Num(in->MouseDown(static_cast<platform::MouseButton>(idx)) ? 1.0 : 0.0);
 }
 
 Value NativeInputMousePressed(IScriptHost& host, void* user) {
     auto* ctx = static_cast<ScriptContext*>(user);
     if (!ctx || !ctx->input) return Value::Num(0);
+    platform::IInput* in = InputFor(*ctx);
+    if (!in) return Value::Num(0);
     const std::string b = StringArg(host, 0);
     const int idx = b == "right" ? 1 : b == "middle" ? 2 : 0;
     return Value::Num(
-        ctx->input->MousePressed(static_cast<platform::MouseButton>(idx)) ? 1.0 : 0.0);
+        in->MousePressed(static_cast<platform::MouseButton>(idx)) ? 1.0 : 0.0);
+}
+
+// BindPlayerToClient(entity, clientId): multi-player ownership — the server
+// routes that client's MsgInput to the bound entity's script. No-op when the
+// host did not wire the hook (single-player runtimes).
+Value NativeBindPlayerToClient(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->bindPlayerToClient) return Value::Nil();
+    const ecs::Entity e = EntityFromValue(host.GetArg(0));
+    const Value v = host.GetArg(1);
+    if (v.type != Value::Type::Number) return Value::Nil();
+    ctx->bindPlayerToClient(e, v.number);
+    return Value::Nil();
 }
 
 Value NativeGetVar(IScriptHost& host, void* user) {
@@ -405,7 +438,8 @@ platform::Key KeyFromName(const std::string& name) {
 Value NativeInputAxis(IScriptHost& host, void* user) {
     auto* ctx = static_cast<ScriptContext*>(user);
     if (!ctx || !ctx->input) return Value::Num(0);
-    platform::IInput* in = ctx->input;
+    platform::IInput* in = InputFor(*ctx);
+    if (!in) return Value::Num(0);
     const std::string name = StringArg(host, 0);
     auto axis = [&](platform::Key pos, platform::Key neg) {
         return (in->IsDown(pos) ? 1.0 : 0.0) - (in->IsDown(neg) ? 1.0 : 0.0);
@@ -420,9 +454,11 @@ Value NativeInputAxis(IScriptHost& host, void* user) {
 Value NativeInputKey(IScriptHost& host, void* user) {
     auto* ctx = static_cast<ScriptContext*>(user);
     if (!ctx || !ctx->input) return Value::Num(0);
+    platform::IInput* in = InputFor(*ctx);
+    if (!in) return Value::Num(0);
     const platform::Key key = KeyFromName(StringArg(host, 0));
     if (key == platform::Key::Unknown) return Value::Num(0);
-    return Value::Num(ctx->input->IsDown(key) ? 1.0 : 0.0);
+    return Value::Num(in->IsDown(key) ? 1.0 : 0.0);
 }
 
 // InputMouseX()/InputMouseY(): accumulated mouse delta since the last frame
@@ -431,14 +467,16 @@ Value NativeInputMouseX(IScriptHost& host, void* user) {
     (void)host;
     auto* ctx = static_cast<ScriptContext*>(user);
     if (!ctx || !ctx->input) return Value::Num(0);
-    return Value::Num(ctx->input->MouseDelta().x);
+    platform::IInput* in = InputFor(*ctx);
+    return Value::Num(in ? in->MouseDelta().x : 0.0);
 }
 
 Value NativeInputMouseY(IScriptHost& host, void* user) {
     (void)host;
     auto* ctx = static_cast<ScriptContext*>(user);
     if (!ctx || !ctx->input) return Value::Num(0);
-    return Value::Num(ctx->input->MouseDelta().y);
+    platform::IInput* in = InputFor(*ctx);
+    return Value::Num(in ? in->MouseDelta().y : 0.0);
 }
 
 } // namespace
@@ -470,6 +508,7 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("CastSkill", &NativeCastSkill, &ctx);
     host.Register("SkillCooldown", &NativeSkillCooldown, &ctx);
     host.Register("AttackBox", &NativeAttackBox, &ctx);
+    host.Register("BindPlayerToClient", &NativeBindPlayerToClient, &ctx);
     host.RegisterField("Json", "Parse", &NativeJsonParse, &ctx);
 }
 
