@@ -156,6 +156,17 @@ SparseSet 风格的 ECS：
 - **登录/角色（T6.6，v0 占位）**：匿名账号 = 计数器自增，`MsgLoginOk` + 固定单角色 `MsgCharList`；真实认证留待替换。
 - **确定性验收（T6.7）**：`server::GameServer::SetScriptedInputs` + `server::ScriptedInputs()` 把同一脚本输入流注入服务器与客户端预测；`tests/test_determinism.cpp` 断言受控实体最终位置逐位一致且状态哈希（实体位置 + GameVars 的 FNV-1a）相等。`docs/NETWORKING.md` 含一服务器 + 两 `neon_game --connect` 的 LAN demo 与回滚/带宽等生产化缺口。
 
+### 3.11 内容创作运行时（`neon::script` / `neon::bt` / `neon::anim` / `neon::scene`）
+
+数据驱动工具链的核心：编辑器编辑的内容（场景/预制体/行为树/脚本）被 `neon_game`（通用播放器）与 `neon_server`（无头服务器）无差异地运行。
+
+- **脚本（`neon::script`，T2.2-T2.4）**：`IScriptHost` 抽象 + Lua 5.4 后端（vendor，PIMPL 隔离头文件）；`Value`/`Table`、原生函数注册、引擎绑定（ECS/物理/音频/GameVars/JSON）。**确定性沙箱**：xorshift RNG 替换 `math.random`、模拟时钟注入、`io/os/package/require` 关闭、表转换深度/循环保护——服务器与客户端逐位一致的前提。
+- **行为树（`neon::bt`，T2.5/T4.4）**：`Node::Tick(Context&) const`（状态全在调用方 Context，树定义可跨实体共享）、JSON 加载 + `ToJson` 序列化、节点类型注册表（`TypeTable` 单一事实源）、编辑器可视化编辑 + 试玩调试高亮（`Context::activePath`）。
+- **骨骼动画（`neon::anim`，T3.1-T3.3）**：glTF 蒙皮导入（JOINTS/WEIGHTS/IBM）、动画 clip（LINEAR/STEP/CUBICSPLINE + 环绕）、状态机（参数化过渡 + 交叉淡入）、GPU 蒙皮着色（`uBoneMatrices[64]`）。
+- **场景（`neon::scene`，T2.6-T2.9）**：组件化 JSON 场景（transform/mesh/rigidbody/animator/behaviorTree/script/health…）、预制体深合并 + 实例覆盖、`game.json` 清单、`GameRuntime`（解析→实例化→挂脚本/行为树→tick→绘制，headless 模式供服务器复用）、`WorldChunk`/`ChunkStreamer`（T5.4）、LOD 资产链（T5.3）。
+- **播放器（`neon_game`，T4.7）**：`--pack game.pack` → `core::Unpack` 到临时目录 → manifest → startScene → `GameRuntime`；输入经绑定暴露给脚本；`--connect`（T6.4）变为网络客户端。
+- **编辑器（`neon_editor`，T4）**：gizmo/撤销重做/材质/行为树可视化/脚本/打包/缩略图/多相机/热重载/性能面板；一键 `--package` 校验并打包。
+
 ## 4. 数据流（一帧）
 
 ```
@@ -203,8 +214,8 @@ OnRender：
 
 ## 6. 扩展点
 
-- **Vulkan 后端**：实现 `IRenderBackend` 即可，接口已冻结；步骤见 `docs/VULKAN_ROADMAP.md`。
+- **Vulkan 后端**：实验性实现已完成（`engine/src/gfx/vulkan/vk_backend.cpp`，volk 动态加载 + glslang 构建期 SPIR-V，`NEON_ENABLE_VULKAN` 选项）。**当前渲染结果为灰度**（`Vertex3D` 顶点输入布局或材质 uniform/描述符绑定未正确应用），GL 为默认后端。修复方向与验收标准见 `docs/ROADMAP.md`（M1）；跨后端一致性测试（T7.2）待 Vulkan 渲染正确后启用。
 - **物理引擎替换**：保留 `physics::World` 外观，内部接 Jolt/Bullet。
 - **音频后端**：miniaudio 已 vendored 且三平台编译，Windows 已启用；Linux/macOS 可逐步把默认选择切到 miniaudio（当前保留 Null 兜底，CI 无音频设备也能跑）。
-- **资源流式加载**：`AssetManager` 增加异步/分块读取，供大世界分区使用。
+- **资源流式加载**：`AssetManager` 异步解码 + `ChunkStreamer` 已实现，供大世界分区使用；pack 直读文件提供器（免解压）为可选优化。
 - **服务器复用**：玩法系统只依赖 `ecs::World` 与输入抽象，可编译为无渲染的服务器目标。

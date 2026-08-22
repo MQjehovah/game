@@ -16,7 +16,7 @@
 | 固定步长游戏循环（60Hz）+ 可变渲染 | ✅ |
 | 跨平台窗口/输入抽象（`IWindow`/`IInput`） | ✅ Win32 已实测；X11/Cocoa 代码就绪，CI 验证 |
 | OpenGL 3.3/4.x 渲染后端（自研 GL 加载器，无 GLEW/glad） | ✅ 已实测（Intel 4.6） |
-| Vulkan 渲染后端 | ⏳ 接口已定义，实现见 [VULKAN_ROADMAP.md](docs/VULKAN_ROADMAP.md) |
+| Vulkan 渲染后端 | ⚠️ 实验性：可构建/运行/截图，但渲染结果为灰度（顶点色/材质未正确应用），待修复；GL 为默认后端 |
 | 3D 渲染：相机、方向光+点光、雾、网格、调试线框 | ✅ |
 | PBR 材质：Cook-Torrance BRDF（金属度/粗糙度/AO/自发光） | ✅ |
 | 阴影：投影阴影（CPU 接触阴影，兼容损坏深度缓冲的驱动） | ✅ |
@@ -36,16 +36,27 @@
 | UI 自动化冒烟测试（ImGui + 自研控件命中/点击/状态校验） | ✅ `--smoke-test` |
 | 粒子系统（3D 公告板粒子） | ✅ |
 | 物理（动态球 vs 静态 AABB + 重力 + 射线） | ✅ 简易内置，可替换 Jolt/Bullet |
-| 音频（miniaudio 软件混音器 + 程序化生成音效/音乐） | ✅ miniaudio（三平台统一；Windows 失败回退 WinMM，其余 Null） |
 | 资源管线（stb_image、OBJ+MTL、glTF 2.0 导入、Kenney CC0、程序化生成） | ✅ |
 | glTF 2.0：JSON DOM 解析器、PBR 材质、节点变换（Khronos 样例模型验证） | ✅ |
-| 单元测试（13 项：数学/ECS/配置/RNG） | ✅ |
+| 单元测试（13 项：数学/ECS/配置/RNG） | ✅ 现 461 项 |
 | 截图/冒烟测试（`--smoke-test` / `--screenshot`） | ✅ |
 | 网络：UDP 传输 + 可靠通道（ACK/重传/乱序重排）、版本化消息编解码 | ✅ `neon::net` |
 | 网络：无头权威服务器 `neon_server`（固定 60Hz + 确定性沙箱） | ✅ |
 | 网络：快照插值 + 预测回滚 + AOI 九宫格兴趣管理 | ✅ |
 | 网络：v0 匿名登录 + 角色选择占位 | ✅ |
 | 网络：确定性模拟验收（服务器权威模拟 ≡ 客户端本地预测） | ✅ `tests/test_determinism.cpp` |
+| 骨骼动画：glTF 蒙皮导入 + 动画状态机（含过渡/混合）+ GPU 蒙皮着色 | ✅ |
+| 阴影映射：方向光 CSM + 点光 cubemap（颜色编码深度，兼容损坏深度缓冲的驱动） | ✅ |
+| 后处理：HDR 浮点管线 + Bloom + ACES 色调映射 + MSAA | ✅ |
+| IBL 环境光（天空梯度 → 辐照度/预过滤/BRDF LUT） | ✅ |
+| LOD 资产链（按距离切换网格，数据驱动） | ✅ |
+| 世界分区流式（chunk 3×3 窗口异步加载/卸载） | ✅ |
+| ECS 批量迭代 + 确定性并行 job（串行/并行逐位一致） | ✅ |
+| 脚本：Lua 5.4 沙箱（确定性 RNG/时钟）+ 引擎绑定 + 行为树引擎 | ✅ `neon::script`/`neon::bt` |
+| 数据驱动场景：组件化 JSON + 预制体 + `game.json` 清单 | ✅ |
+| 编辑器深化：gizmo / 撤销重做 / 材质编辑器 / 行为树可视化 / 脚本面板 / 缩略图 / 多相机 / 热重载 / 性能面板 | ✅ |
+| 一键打包 + 通用播放器：`neon_editor --package` → `game.pack` → `neon_game` 运行数据驱动游戏 | ✅ 编辑→打包→运行闭环 |
+| 音频：miniaudio 软件混音器 + 程序化音效/音乐 | ✅ 三平台统一，Windows 失败回退 WinMM |
 
 ## 构建
 
