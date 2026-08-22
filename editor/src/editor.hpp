@@ -266,6 +266,7 @@ private:
     // Tool panel state.
     std::vector<AssetEntry> assetEntries_;
     std::string assetDir_;
+    int assetFilter_ = 0; // 0 all, 1 models, 2 textures, 3 scripts
     int selectedAsset_ = -1;
     gfx::Texture previewTexture_;
     ImTextureID previewTexId_ = ImTextureID_Invalid;

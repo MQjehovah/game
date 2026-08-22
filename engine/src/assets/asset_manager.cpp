@@ -887,6 +887,10 @@ GltfAsset AssetManager::LoadGLTF(const std::string& path) {
             if (mesh.Valid()) {
                 if (rm.skinned)
                     mesh.AttachSkinData(rm.jointIds, rm.jointWeights, n.skin);
+                // Track under a per-node key so AssetManager::Stats() counts
+                // glTF meshes in the resource panel (meshes_ otherwise only
+                // holds OBJ meshes). Re-parsing the file re-inserts the key.
+                meshes_[path + "#" + std::to_string(idx)] = mesh;
                 out.nodes.push_back({world, mesh, rm.material});
             }
         }

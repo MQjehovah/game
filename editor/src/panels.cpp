@@ -57,6 +57,41 @@ bool IsModelExt(const std::string& name) {
     return ext == ".obj" || ext == ".gltf";
 }
 
+bool IsScriptExt(const std::string& name) {
+    std::string ext = ToLower(FileExt(name));
+    return ext == ".lua";
+}
+
+// Convert an asset path (absolute or project-root-relative) into a
+// project-relative path ("scripts/foo.lua"); returns the input unchanged when it
+// doesn't live under the project dir.
+std::string ToProjectRelPath(const std::string& path, const std::string& projectDir) {
+    std::string base = projectDir.empty() ? "." : projectDir;
+    if (base == ".") {
+        // Keep paths already relative ("scripts/..."); strip a leading "./".
+        if (path.compare(0, 2, "./") == 0) return path.substr(2);
+        return path;
+    }
+    std::string normBase = base;
+    if (normBase.back() != '/' && normBase.back() != '\\') normBase += '/';
+    std::string normPath = path;
+    if (normPath.rfind(normBase, 0) == 0) return normPath.substr(normBase.size());
+    // Also match with a leading "./".
+    std::string dotBase = "./" + base;
+    if (normPath.rfind(dotBase, 0) == 0)
+        return normPath.substr(dotBase.size() + 1); // skip "./" + base + "/"
+    return path;
+}
+
+// Asset listing filter: 0 all, 1 models, 2 textures, 3 scripts.
+bool AssetMatchesFilter(const AssetEntry& e, int filter) {
+    if (e.isDir || filter == 0) return true;
+    if (filter == 1) return IsModelExt(e.name);
+    if (filter == 2) return IsImageExt(e.name);
+    if (filter == 3) return IsScriptExt(e.name);
+    return true;
+}
+
 std::string GetCurrentDir() {
     char buf[4096];
 #if defined(_WIN32)
@@ -256,6 +291,35 @@ void EditorApp::BuildScenePanel() {
             }
         }
         ImGui::EndChild();
+
+        // Drop targets: a model asset adds an entity, a script asset attaches to
+        // the selected entity.
+        if (ImGui::BeginDragDropTarget()) {
+            if (const ImGuiPayload* p = ImGui::AcceptDragDropPayload("ASSET_MODEL")) {
+                const char* path = static_cast<const char*>(p->Data);
+                if (path) {
+                    std::string lower = ToLower(std::string(path));
+                    if (lower.rfind(".obj") != std::string::npos)
+                        AddEntity("obj:" + std::string(path));
+                    else if (lower.rfind(".gltf") != std::string::npos)
+                        AddEntity("gltf:" + std::string(path));
+                }
+            }
+            if (const ImGuiPayload* p = ImGui::AcceptDragDropPayload("ASSET_SCRIPT")) {
+                const char* path = static_cast<const char*>(p->Data);
+                if (path && selected_ >= 0 &&
+                    selected_ < static_cast<int>(entities_.size())) {
+                    const SceneScriptFields oldV{entities_[static_cast<size_t>(selected_)].scriptBackend,
+                                                 entities_[static_cast<size_t>(selected_)].scriptPath,
+                                                 entities_[static_cast<size_t>(selected_)].scriptVars};
+                    const SceneScriptFields newV{"lua", ToProjectRelPath(path, projectDir_), oldV.vars};
+                    history_.Push(std::make_unique<EditPropertyCommand<SceneScriptFields>>(
+                        &entities_, selected_, ApplyScriptFields, oldV, newV,
+                        /*mergeable=*/false));
+                }
+            }
+            ImGui::EndDragDropTarget();
+        }
     }
     ImGui::End();
 }
@@ -284,11 +348,23 @@ void EditorApp::BuildAssetPanel() {
         if (ImGui::SmallButton("刷新")) RefreshAssetDir();
         ImGui::SameLine();
         ImGui::TextUnformatted(assetDir_.c_str());
+
+        // Unity-style Project filter tabs: 全部 / 模型 / 贴图 / 脚本.
+        const char* filters[] = {"全部", "模型", "贴图", "脚本"};
+        for (int f = 0; f < 4; ++f) {
+            if (f) ImGui::SameLine();
+            if (ImGui::SmallButton(filters[f])) assetFilter_ = f;
+            if (assetFilter_ == f) {
+                ImGui::SameLine();
+                ImGui::TextColored(ImVec4(0.5f, 0.8f, 1.0f, 1.0f), "✓");
+            }
+        }
         ImGui::Separator();
 
         ImGui::BeginChild("##asset_list", ImVec2(0, -170.0f), ImGuiChildFlags_Borders);
         for (size_t i = 0; i < assetEntries_.size(); ++i) {
             const AssetEntry& e = assetEntries_[i];
+            if (!AssetMatchesFilter(e, assetFilter_)) continue;
             char label[320];
             std::snprintf(label, sizeof(label), "%s%s##asset_%zu",
                           e.isDir ? "[D] " : "    ", e.name.c_str(), i);
@@ -303,10 +379,19 @@ void EditorApp::BuildAssetPanel() {
                     ImportAssetPath(e.path);
                 }
             }
-            // Image assets can be dragged onto a material texture slot in the
-            // inspector ("材质" section) to assign the texture.
-            if (!e.isDir && IsImageExt(e.name) && ImGui::BeginDragDropSource()) {
+            if (e.isDir) continue;
+            // Drag sources: textures onto material slots, models onto the scene
+            // (hierarchy), scripts onto a selected entity.
+            if (IsImageExt(e.name) && ImGui::BeginDragDropSource()) {
                 ImGui::SetDragDropPayload("ASSET_TEXTURE", e.path.c_str(), e.path.size() + 1);
+                ImGui::Text("%s", e.name.c_str());
+                ImGui::EndDragDropSource();
+            } else if (IsModelExt(e.name) && ImGui::BeginDragDropSource()) {
+                ImGui::SetDragDropPayload("ASSET_MODEL", e.path.c_str(), e.path.size() + 1);
+                ImGui::Text("%s", e.name.c_str());
+                ImGui::EndDragDropSource();
+            } else if (IsScriptExt(e.name) && ImGui::BeginDragDropSource()) {
+                ImGui::SetDragDropPayload("ASSET_SCRIPT", e.path.c_str(), e.path.size() + 1);
                 ImGui::Text("%s", e.name.c_str());
                 ImGui::EndDragDropSource();
             }

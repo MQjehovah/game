@@ -12,6 +12,7 @@
 #include "neon/core/log.hpp"
 #include "neon/core/pack.hpp"
 #include "neon/gfx/renderer.hpp"
+#include "neon/gfx/scene_props.hpp"
 #include "neon/scene/scene_file.hpp"
 
 #if defined(_WIN32)
@@ -419,7 +420,12 @@ void GameRuntime::BuildDrawList() {
         } else {
             item.mat = gfx::Material::Lit({}, ParseColorHex(m->colorHex), 24.0f);
         }
-        item.mat.tint = ParseColorHex(m->colorHex);
+        // Props that bake colors into vertex data keep a white material tint so
+        // the baked colors show through (mirrors EditorApp::ApplyMaterialParams).
+        const bool bakedColor = m->meshKey == "terrain" || m->meshKey == "tree" ||
+                                m->meshKey == "house" || m->meshKey == "bush" ||
+                                m->meshKey == "npc" || m->meshKey.compare(0, 4, "npc:") == 0;
+        item.mat.tint = bakedColor ? gfx::Color::White : ParseColorHex(m->colorHex);
         item.mat.metallic = m->metallic;
         item.mat.roughness = m->roughness;
         item.mat.aoStrength = m->ao;
@@ -492,27 +498,26 @@ gfx::Mesh GameRuntime::ResolveMeshKey(gfx::Renderer& renderer, const std::string
     } else if (key == "plane") {
         mesh = gfx::Mesh::CreatePlane(renderer, 10.0f, 10.0f, 4, 4, "plane");
     } else if (key == "terrain") {
-        // The editor's heightfield terrain has no file on disk, so regenerate
-        // the same procedural field here (same formula as EditorApp::MakeTerrain)
-        // to keep the playtest ground's grass vertex colors + rolling shape
-        // identical to what the editor viewport shows.
-        const int segments = 48;
-        const float size = 60.0f;
-        std::vector<float> heights(static_cast<size_t>(segments + 1) * (segments + 1), 0.0f);
-        const float half = size * 0.5f;
-        const float cell = size / static_cast<float>(segments);
-        for (int row = 0; row <= segments; ++row) {
-            for (int col = 0; col <= segments; ++col) {
-                const float x = -half + col * cell;
-                const float z = -half + row * cell;
-                float h = std::sin(x * 0.11f) * std::cos(z * 0.13f) * 0.8f +
-                          std::sin(x * 0.31f + z * 0.27f) * 0.35f;
-                const float d = std::sqrt(x * x + z * z);
-                h *= math::Saturate((d - 6.0f) / 10.0f); // flatten the centre
-                heights[static_cast<size_t>(row) * (segments + 1) + col] = h;
-            }
-        }
-        mesh = gfx::Mesh::CreateTerrain(renderer, segments, size, heights, 1.0f, "terrain");
+        mesh = gfx::MakeTerrainMesh(renderer);
+    } else if (key == "tree") {
+        mesh = gfx::MakeTreeMesh(renderer);
+    } else if (key == "house") {
+        mesh = gfx::MakeHouseMesh(renderer);
+    } else if (key == "bush") {
+        mesh = gfx::MakeBushMesh(renderer);
+    } else if (key.compare(0, 4, "npc:") == 0) {
+        // "npc:r,g,b" encodes the villager's tunic tint (0-255 channels).
+        int r = 128, g = 128, b = 128;
+        std::sscanf(key.c_str() + 4, "%d,%d,%d", &r, &g, &b);
+        mesh = gfx::MakeNPCMesh(renderer, {r / 255.0f, g / 255.0f, b / 255.0f, 1.0f});
+    } else if (key == "npc") {
+        mesh = gfx::MakeNPCMesh(renderer, {0.5f, 0.5f, 0.6f, 1.0f});
+    } else if (key == "rock") {
+        mesh = gfx::Mesh::CreateSphere(renderer, 0.8f, 10, 7, "rock");
+    } else if (key == "water") {
+        mesh = gfx::Mesh::CreatePlane(renderer, 20.0f, 20.0f, 8, 8, "water");
+    } else if (key == "road") {
+        mesh = gfx::Mesh::CreatePlane(renderer, 1.0f, 1.0f, 1, 1, "road");
     }
     return mesh;
 }

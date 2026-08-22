@@ -29,6 +29,7 @@
 #include "imgui_internal.h"
 #include "neon/core/json.hpp"
 #include "neon/gfx/imgui_neon.hpp"
+#include "neon/gfx/scene_props.hpp"
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
@@ -47,7 +48,8 @@ std::string DirName(const std::string& path) {
 // pass through verbatim.
 std::string ExportMeshKey(const std::string& key) {
     if (key == "helmet") return "gltf:assets/models/DamagedHelmet/DamagedHelmet.gltf";
-    if (key == "tree") return "obj:assets/kenney_nature/Models/OBJ format/tree_pineTallA.obj";
+    // Procedural props (tree/house/npc/bush/rock/water/road/terrain) keep their
+    // bare key: the runtime regenerates the same meshes via scene_props.
     return key;
 }
 
@@ -96,25 +98,6 @@ std::string GetTempDir() {
     if (t && *t) return t;
     return "/tmp";
 #endif
-}
-
-gfx::Mesh MakeTerrain(gfx::Renderer& renderer) {
-    const int segments = 48;
-    const float size = 60.0f;
-    std::vector<float> heights(static_cast<size_t>(segments + 1) * (segments + 1), 0.0f);
-    float half = size * 0.5f;
-    for (int row = 0; row <= segments; ++row) {
-        for (int col = 0; col <= segments; ++col) {
-            float x = -half + col * (size / segments);
-            float z = -half + row * (size / segments);
-            float h = std::sin(x * 0.11f) * std::cos(z * 0.13f) * 0.8f +
-                      std::sin(x * 0.31f + z * 0.27f) * 0.35f;
-            float d = std::sqrt(x * x + z * z);
-            h *= math::Saturate((d - 6.0f) / 10.0f); // flatten the centre
-            heights[static_cast<size_t>(row) * (segments + 1) + col] = h;
-        }
-    }
-    return gfx::Mesh::CreateTerrain(renderer, segments, size, heights, 1.0f, "terrain");
 }
 
 // File modification time in seconds (0 when the file does not exist).
@@ -170,11 +153,11 @@ std::string ExtLower(const std::string& path) {
 }
 
 // Maps a mesh key to the file it loads (file-prefixed keys verbatim and the
-// file-backed built-ins "helmet"/"tree" from ResolveMesh). "" for procedural
-// primitives ("terrain", "cube") that have no on-disk asset to hot-reload.
+// file-backed built-in "helmet"). "" for procedural primitives ("terrain",
+// "tree", "house", "npc", "bush", "rock", "water", "road", "cube") that have
+// no on-disk asset to hot-reload.
 std::string MeshKeyAssetPath(const std::string& key) {
     if (key == "helmet") return "assets/models/DamagedHelmet/DamagedHelmet.gltf";
-    if (key == "tree") return "assets/kenney_nature/Models/OBJ format/tree_pineTallA.obj";
     if (key.rfind("obj:", 0) == 0) return key.substr(4);
     if (key.rfind("gltf:", 0) == 0) return key.substr(5);
     return {};
@@ -261,6 +244,36 @@ void DecomposeModel(const math::Mat4& m, math::Vec3& pos, math::Vec3& scale, mat
     rot = math::Mat4ToQuat(rotM);
 }
 
+// Layout version persisted as a versioned marker window in the ImGui ini. When
+// the ini is missing or predates the current layout version, the editor
+// re-applies the Unity-style default docking layout once (the user's later
+// customizations are still saved and respected).
+constexpr int kNeonLayoutVersion = 2;
+bool NeedsDefaultLayout() {
+    static const bool needs = [] {
+        const char* ini = ImGui::GetIO().IniFilename;
+        if (!ini) return true; // no ini yet -> fresh default
+        std::ifstream f(ini);
+        if (!f) return true; // unreadable -> treat as fresh
+    const std::string marker =
+        std::string("[Window][##NeonLayoutVer") + std::to_string(kNeonLayoutVersion) + "]";
+        std::string line;
+        while (std::getline(f, line))
+            if (line.find(marker) != std::string::npos) return false; // current layout saved
+        return true; // ini exists but predates this layout version
+    }();
+    return needs;
+}
+
+// True for props that bake their colors into vertex data (the lit shader
+// multiplies uTint * vColor). Their material tint must stay WHITE so the baked
+// colors show through instead of being double-tinted. npc:r,g,b is the runtime
+// form of the villager (tunic tint encoded in the mesh key).
+bool IsBakedColorKey(const std::string& key) {
+    return key == "terrain" || key == "tree" || key == "house" || key == "npc" ||
+           key == "bush" || key.compare(0, 4, "npc:") == 0;
+}
+
 } // namespace
 
 bool EditorApp::OnCreate() {
@@ -330,11 +343,66 @@ void EditorApp::SetupScene() {
         }
     };
 
+    // --- Ground: rolling hills with a village pond carved in the SW corner ---
     add("terrain", "地面", {0, 0, 0}, {1, 1, 1}, gfx::Color::White);
-    add("helmet", "头盔", {3, 0.9f, -2}, {1, 1, 1}, gfx::Color::White);
-    add("cube", "测试方块", {-3, 0.6f, 1}, {1, 1, 1}, gfx::Color{0.9f, 0.4f, 0.2f, 1.0f});
-    add("tree", "松树A", {-5, 0, -3}, {1.6f, 1.6f, 1.6f}, gfx::Color::White);
-    add("tree", "松树B", {5, 0, 4}, {1.2f, 1.2f, 1.2f}, gfx::Color::White);
+    add("water", "湖泊", {-18, -1.15f, -18}, {1.05f, 1, 1.05f}, gfx::Color{0.15f, 0.45f, 0.85f, 1});
+
+    // --- Village (centre): roads, houses, villagers ---
+    const float kRoadW = 2.8f;
+    add("road", "主干道", {0, 0.03f, 0}, {kRoadW, 1, 17.0f}, gfx::Color{0.44f, 0.39f, 0.32f, 1});
+    add("road", "横街", {0, 0.03f, 0}, {15.0f, 1, kRoadW}, gfx::Color{0.40f, 0.36f, 0.30f, 1});
+    add("road", "小路_东", {5.5f, 0.03f, -2.5f}, {2.0f, 1, 8.0f}, gfx::Color{0.38f, 0.34f, 0.29f, 1});
+    add("road", "小路_西", {-5.5f, 0.03f, -2.5f}, {2.0f, 1, 8.0f}, gfx::Color{0.38f, 0.34f, 0.29f, 1});
+
+    add("house", "农舍_东", {4.6f, 0, 3.2f}, {1.15f, 1.15f, 1.15f}, gfx::Color::White);
+    add("house", "旅店", {7.2f, 0, -2.2f}, {1.35f, 1.35f, 1.35f}, gfx::Color::White);
+    add("house", "农舍_西", {-4.6f, 0, 3.2f}, {1.15f, 1.15f, 1.15f}, gfx::Color::White);
+    add("house", "铁匠铺", {-7.2f, 0, -2.2f}, {1.2f, 1.2f, 1.2f}, gfx::Color::White);
+
+    add("npc", "村民_商人", {1.8f, 0, 1.2f}, {1, 1, 1}, gfx::Color{0.78f, 0.28f, 0.18f, 1});
+    add("npc", "村民_农夫", {-1.8f, 0, 1.4f}, {1, 1, 1}, gfx::Color{0.30f, 0.55f, 0.78f, 1});
+    add("npc", "村民_猎人", {0.6f, 0, -1.6f}, {1, 1, 1}, gfx::Color{0.48f, 0.42f, 0.20f, 1});
+    add("npc", "村民_法师", {3.0f, 0, -0.8f}, {1, 1, 1}, gfx::Color{0.60f, 0.36f, 0.72f, 1});
+    add("npc", "村民_卫兵", {-3.0f, 0, -0.8f}, {1.05f, 1.05f, 1.05f}, gfx::Color{0.55f, 0.55f, 0.58f, 1});
+    // The DamagedHelmet sits on a plinth as the village's trophy.
+    add("helmet", "展示头盔", {0.0f, 0.95f, 2.6f}, {1, 1, 1}, gfx::Color::White);
+    add("cube", "展示台", {0.0f, 0.45f, 2.6f}, {1.4f, 0.9f, 1.4f}, gfx::Color{0.55f, 0.42f, 0.30f, 1});
+
+    // --- Wilderness: deterministic scatter of trees / rocks / bushes ---
+    uint32_t seed = 0x9E3779B9u;
+    auto rnd = [&seed]() {
+        seed ^= seed << 13;
+        seed ^= seed >> 17;
+        seed ^= seed << 5;
+        return static_cast<float>(seed & 0xFFFFu) / 65535.0f;
+    };
+    auto within = [&](float lo, float hi) { return lo + rnd() * (hi - lo); };
+    auto nearVillage = [](const math::Vec3& p) { return p.x * p.x + p.z * p.z < 8.5f * 8.5f; };
+    auto inLake = [](const math::Vec3& p) {
+        float dx = p.x + 18.0f, dz = p.z + 18.0f;
+        return dx * dx + dz * dz < 11.5f * 11.5f;
+    };
+    int treeN = 0, rockN = 0, bushN = 0;
+    for (int i = 0; i < 80; ++i) {
+        math::Vec3 p{within(-26.0f, 26.0f), 0.0f, within(-26.0f, 26.0f)};
+        if (nearVillage(p) || inLake(p)) continue;
+        const float r = rnd();
+        if (r < 0.52f) {
+            add("tree", "松树_" + std::to_string(treeN++), p,
+                {0.9f + within(0.0f, 0.7f), 1, 0.9f + within(0.0f, 0.7f)}, gfx::Color::White);
+        } else if (r < 0.82f) {
+            add("rock", "岩石_" + std::to_string(rockN++), {p.x, 0, p.z},
+                {within(0.55f, 1.4f), within(0.45f, 0.9f), within(0.55f, 1.4f)},
+                gfx::Color{0.58f, 0.58f, 0.58f, 1});
+        } else {
+            add("bush", "灌木_" + std::to_string(bushN++), {p.x, 0.15f, p.z}, {1, 1, 1},
+                gfx::Color::White);
+        }
+    }
+    // A few trees inside the village edge for shade.
+    add("tree", "村口老树", {3.2f, 0, 4.6f}, {1.5f, 1, 1.5f}, gfx::Color::White);
+    add("tree", "村口老树_2", {-3.2f, 0, 4.6f}, {1.3f, 1, 1.3f}, gfx::Color::White);
+    add("tree", "村口老树_3", {3.4f, 0, -4.4f}, {1.2f, 1, 1.2f}, gfx::Color::White);
     LoadScene("editor_scene.json");
     SetSelection(entities_.empty() ? -1 : 0);
 }
@@ -1166,28 +1234,44 @@ void EditorApp::BuildImGuiUI() {
     ImGui::DockSpace(dockId, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_None);
     ImGui::End();
 
-    // First-run default docking layout (skipped when the ini already restores one).
+    // Persist a layout-version marker in the ini (offscreen, invisible). Its
+    // absence means "no saved layout yet" or "saved before the layout changed",
+    // which triggers the Unity-style default below exactly once.
+    {
+        char verName[32];
+        std::snprintf(verName, sizeof(verName), "##NeonLayoutVer%d", kNeonLayoutVersion);
+        ImGui::SetNextWindowPos(ImVec2(-100000.0f, -100000.0f), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(1.0f, 1.0f), ImGuiCond_Always);
+        ImGui::Begin(verName, nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoNav);
+        ImGui::End();
+    }
+
+    // First-run default docking layout (applied when there is no saved layout,
+    // the saved ini predates this layout version, or the dock space is empty).
     static bool layoutAttempted = false;
     if (!layoutAttempted) {
         layoutAttempted = true;
         ImGuiDockNode* node = ImGui::DockBuilderGetNode(dockId);
-        if (node == nullptr || !node->IsSplitNode()) {
+        if (node == nullptr || !node->IsSplitNode() || NeedsDefaultLayout()) {
             ImGui::DockBuilderRemoveNode(dockId);
             ImGui::DockBuilderAddNode(dockId, ImGuiDockNodeFlags_DockSpace);
             ImGui::DockBuilderSetNodeSize(dockId,
                                           ImVec2(mainVp->WorkSize.x,
                                                  mainVp->WorkSize.y - menuH - toolH));
-            ImGuiID right = ImGui::DockBuilderSplitNode(dockId, ImGuiDir_Right, 0.24f,
+            // Unity-style layout: Hierarchy (场景) left, Inspector (属性) right,
+            // Scene view (视口) center, Project/tools (资产/资源/日志/行为树/脚本/
+            // 打包/性能) docked across the bottom.
+            ImGuiID right = ImGui::DockBuilderSplitNode(dockId, ImGuiDir_Right, 0.22f,
                                                         nullptr, &dockId);
-            ImGuiID left = ImGui::DockBuilderSplitNode(dockId, ImGuiDir_Left, 0.22f,
+            ImGuiID left = ImGui::DockBuilderSplitNode(dockId, ImGuiDir_Left, 0.20f,
                                                        nullptr, &dockId);
-            ImGuiID bottom = ImGui::DockBuilderSplitNode(dockId, ImGuiDir_Down, 0.30f,
+            ImGuiID bottom = ImGui::DockBuilderSplitNode(dockId, ImGuiDir_Down, 0.28f,
                                                          nullptr, &dockId);
             ImGui::DockBuilderDockWindow("场景", left);
-            ImGui::DockBuilderDockWindow("资产", left);
-            ImGui::DockBuilderDockWindow("资源", left);
             ImGui::DockBuilderDockWindow("属性", right);
-            ImGui::DockBuilderDockWindow("日志", right);
+            ImGui::DockBuilderDockWindow("资产", bottom);
+            ImGui::DockBuilderDockWindow("资源", bottom);
+            ImGui::DockBuilderDockWindow("日志", bottom);
             ImGui::DockBuilderDockWindow("行为树", bottom);
             ImGui::DockBuilderDockWindow("脚本", bottom);
             ImGui::DockBuilderDockWindow("打包", bottom);
@@ -1907,8 +1991,7 @@ void EditorApp::RunUISmokeTest() {
     // frame poll above). A texture asset registers the image-preview texture
     // id. ---
     {
-        const std::string kThumbPath =
-            "assets/kenney_nature/Models/OBJ format/tree_pineTallA.obj";
+        const std::string kThumbPath = "assets/models/DamagedHelmet/DamagedHelmet.gltf";
         smokeThumbPath_ = kThumbPath;
         // Navigate the panel into the model's directory so the listing (one
         // level, like the real UI) contains the asset, then select it.
@@ -1925,7 +2008,7 @@ void EditorApp::RunUISmokeTest() {
                 break;
             }
         }
-        check(found, "asset thumbnail: tree OBJ present in the asset panel listing");
+        check(found, "asset thumbnail: helmet glTF present in the asset panel listing");
         if (found) RequestMeshThumbnail(kThumbPath);
         check(std::find(meshThumbQueue_.begin(), meshThumbQueue_.end(), kThumbPath) !=
                   meshThumbQueue_.end(),
@@ -1979,10 +2062,20 @@ core::Result<core::Json> EditorApp::BuildPlaySceneJson() {
     core::Json arr;
     arr.type_ = core::Json::Type::Array;
     for (const SceneEntity& e : entities_) {
-        auto res = scene::SceneFile::MakeEntity(e.name, e.pos, e.rot, e.scale,
-                                                ExportMeshKey(e.meshKey), e.metallic,
-                                                e.roughness, e.tint, e.albedoTex, e.mrTex,
-                                                e.aoTex, e.emissiveTex, e.ao,
+        std::string meshKey = ExportMeshKey(e.meshKey);
+        if (e.meshKey == "npc") {
+            // Encode the villager's tunic tint into the mesh key so the runtime
+            // bakes it into the NPC mesh (its material tint stays white).
+            char buf[48];
+            std::snprintf(buf, sizeof(buf), "npc:%d,%d,%d",
+                          static_cast<int>(e.tint.r * 255.0f),
+                          static_cast<int>(e.tint.g * 255.0f),
+                          static_cast<int>(e.tint.b * 255.0f));
+            meshKey = buf;
+        }
+        auto res = scene::SceneFile::MakeEntity(e.name, e.pos, e.rot, e.scale, meshKey,
+                                                e.metallic, e.roughness, e.tint, e.albedoTex,
+                                                e.mrTex, e.aoTex, e.emissiveTex, e.ao,
                                                 e.emissiveIntensity, e.scriptPath,
                                                 e.scriptBackend, e.scriptVars);
         if (!res.Ok()) {
@@ -2275,7 +2368,7 @@ void EditorApp::SaveEditorConfig() {
 bool EditorApp::ResolveMesh(SceneEntity& e) {
     const std::string& key = e.meshKey;
     if (key == "terrain") {
-        e.mesh = MakeTerrain(renderer_);
+        e.mesh = gfx::MakeTerrainMesh(renderer_);
         e.material = gfx::Material::Lit({}, e.tint, 4.0f);
     } else if (key == "helmet") {
         assets::GltfAsset gltf =
@@ -2288,9 +2381,27 @@ bool EditorApp::ResolveMesh(SceneEntity& e) {
         e.mesh = gfx::Mesh::CreateCube(renderer_, 1, 1, 1, "cube");
         e.material = gfx::Material::Lit({}, e.tint, 12.0f);
     } else if (key == "tree") {
-        e.mesh =
-            assetMgr_.LoadMeshOBJ("assets/kenney_nature/Models/OBJ format/tree_pineTallA.obj");
-        e.material = gfx::Material::Lit({}, e.tint, 8.0f);
+        e.mesh = gfx::MakeTreeMesh(renderer_);
+        e.material = gfx::Material::Lit({}, gfx::Color::White, 8.0f);
+    } else if (key == "house") {
+        e.mesh = gfx::MakeHouseMesh(renderer_);
+        e.material = gfx::Material::Lit({}, gfx::Color::White, 8.0f);
+    } else if (key == "npc") {
+        // The entity tint selects the villager's tunic; head stays skin-tone.
+        e.mesh = gfx::MakeNPCMesh(renderer_, {e.tint.r, e.tint.g, e.tint.b, 1.0f});
+        e.material = gfx::Material::Lit({}, gfx::Color::White, 12.0f);
+    } else if (key == "bush") {
+        e.mesh = gfx::MakeBushMesh(renderer_);
+        e.material = gfx::Material::Lit({}, gfx::Color::White, 8.0f);
+    } else if (key == "rock") {
+        e.mesh = gfx::Mesh::CreateSphere(renderer_, 0.8f, 10, 7, "rock");
+        e.material = gfx::Material::Lit({}, e.tint, 4.0f);
+    } else if (key == "water") {
+        e.mesh = gfx::Mesh::CreatePlane(renderer_, 20.0f, 20.0f, 8, 8, "water");
+        e.material = gfx::Material::Lit({}, e.tint, 64.0f);
+    } else if (key == "road") {
+        e.mesh = gfx::Mesh::CreatePlane(renderer_, 1.0f, 1.0f, 1, 1, "road");
+        e.material = gfx::Material::Lit({}, e.tint, 4.0f);
     } else if (key.rfind("obj:", 0) == 0) {
         e.mesh = assetMgr_.LoadMeshOBJ(key.substr(4));
         e.material = gfx::Material::Lit({}, e.tint, 8.0f);
@@ -2305,7 +2416,9 @@ bool EditorApp::ResolveMesh(SceneEntity& e) {
 }
 
 void EditorApp::ApplyMaterialParams(SceneEntity& e) {
-    e.material.tint = e.tint;
+    // Props that bake colors into vertex data keep a white material tint (for
+    // "npc" the entity tint already selected the tunic at mesh-build time).
+    e.material.tint = IsBakedColorKey(e.meshKey) ? gfx::Color::White : e.tint;
     e.material.metallic = e.metallic;
     e.material.roughness = e.roughness;
     e.material.aoStrength = e.ao;
