@@ -386,3 +386,111 @@ TEST(GameRuntimeScriptErrorLoggedOnce) {
     }
     CHECK_EQ(logged, 1u); // throttled: first failure only
 }
+
+// ---------------------------------------------------------------------------
+// Hero combat (T-skill): the new gameplay bindings (InputKey -> SpawnProjectile
+// -> projectile damage, plus MeleeAttack) damage SceneHealth entities end to end.
+// ---------------------------------------------------------------------------
+
+namespace {
+struct CombatInput : platform::IInput {
+    bool key1 = false;
+    bool key2 = false;
+    bool leftDown = false;
+    bool leftPressed = false;
+    void HandleEvent(const platform::InputEvent&) override {}
+    bool IsDown(platform::Key key) const override {
+        return (key == platform::Key::D1 && key1) || (key == platform::Key::D2 && key2);
+    }
+    bool Pressed(platform::Key) const override { return false; }
+    bool Released(platform::Key) const override { return false; }
+    bool MouseDown(platform::MouseButton) const override { return leftDown; }
+    bool MousePressed(platform::MouseButton b) const override {
+        return b == platform::MouseButton::Left && leftPressed;
+    }
+    bool MouseReleased(platform::MouseButton) const override { return false; }
+    math::Vec2 MousePos() const override { return {}; }
+    math::Vec2 MouseDelta() const override { return {}; }
+    float WheelDelta() const override { return 0.0f; }
+    void EndFrame() override { leftPressed = false; }
+};
+} // namespace
+
+TEST(GameRuntimeFireballHitsWolf) {
+    // Hero at origin (100 hp) fires toward -Z; wolf at (0,0,-3) with 40 hp.
+    const char* scene = R"({
+      "entities": [
+        {"name": "英雄", "components": {"transform": {"pos": [0,0,0]},
+          "mesh": {"meshKey": "hero"},
+          "health": {"hp": 100, "maxHp": 100},
+          "script": {"backend": "lua", "path": "hero_fire.lua"}}},
+        {"name": "野狼", "components": {"transform": {"pos": [0,0,-3]},
+          "mesh": {"meshKey": "wolf"},
+          "health": {"hp": 40, "maxHp": 40}}}
+      ]
+    })";
+    const char* lua = R"(
+      function on_start(e)
+        SetVar("cd", 0)
+        SetVar("ticks", 0)
+        SetVar("fired", 0)
+      end
+      function on_update(e, dt)
+        SetVar("ticks", (GetVar("ticks") or 0) + 1)
+        local cd = GetVar("cd") or 0
+        cd = math.max(0, cd - dt)
+        SetVar("cd", cd)
+        if InputKey("1") > 0 and cd <= 0 then
+          SpawnProjectile({x=0, y=1, z=0}, {x=0, y=0, z=-1}, 14, 18, 2.0, e)
+          SetVar("cd", 0.5)
+          SetVar("fired", (GetVar("fired") or 0) + 1)
+        end
+      end
+    )";
+    CombatInput input;
+    input.key1 = true;
+    scene::GameRuntime runtime;
+    scene::GameRuntimeConfig cfg;
+    cfg.readScript = [&](const std::string&) { return std::string(lua); };
+    cfg.input = &input;
+    cfg.headless = true; // no renderer; pure simulation
+    CHECK(runtime.Start(scene, cfg).Ok());
+
+    const ecs::Entity wolf = runtime.FindNamedEntity("野狼");
+    CHECK(wolf.IsValid());
+    auto before = runtime.EntityHealth(wolf);
+    CHECK_EQ(before.first, 40.0f);
+
+    // Run ~1.5s: fireballs fly to the wolf and damage it.
+    for (int i = 0; i < 90; ++i) runtime.Tick(1.0f / 60.0f);
+
+    auto after = runtime.EntityHealth(wolf);
+    CHECK(after.first < before.first);
+    CHECK(after.first >= 0.0f);
+}
+
+TEST(GameRuntimeMeleeAttackHitsInArc) {
+    const char* scene = R"({
+      "entities": [
+        {"name": "英雄", "components": {"transform": {"pos": [0,0,0]},
+          "health": {"hp": 100, "maxHp": 100}}},
+        {"name": "wolf_front", "components": {"transform": {"pos": [0,0,-1.5]},
+          "health": {"hp": 40, "maxHp": 40}}},
+        {"name": "wolf_back", "components": {"transform": {"pos": [0,0,1.5]},
+          "health": {"hp": 40, "maxHp": 40}}}
+      ]
+    })";
+    scene::GameRuntime runtime;
+    scene::GameRuntimeConfig cfg;
+    cfg.headless = true;
+    CHECK(runtime.Start(scene, cfg).Ok());
+
+    // Swing forward (-Z), range 2, 100deg arc, 12 damage.
+    const int hits = runtime.MeleeAttack({0, 1, 0}, {0, 0, -1}, 2.0f, 100.0f, 12.0f);
+    CHECK_EQ(hits, 1); // only the wolf in front
+
+    const ecs::Entity front = runtime.FindNamedEntity("wolf_front");
+    const ecs::Entity back = runtime.FindNamedEntity("wolf_back");
+    CHECK_EQ(runtime.EntityHealth(front).first, 28.0f); // 40 - 12
+    CHECK_EQ(runtime.EntityHealth(back).first, 40.0f);  // untouched
+}

@@ -263,10 +263,12 @@ core::Result<core::Json> SceneFile::MakeEntity(const std::string& name,
                                                const std::string& emissiveTex,
                                                float ao,
                                                float emissiveIntensity,
-                                               const std::string& scriptPath,
-                                               const std::string& scriptBackend,
-                                               const core::Json& scriptVars,
-                                               const std::vector<LodEntry>& lod) {
+                                                const std::string& scriptPath,
+                                                const std::string& scriptBackend,
+                                                const core::Json& scriptVars,
+                                                const std::vector<LodEntry>& lod,
+                                                float hp,
+                                                float maxHp) {
     if (name.empty())
         return core::Result<core::Json>::Err("scene: exported entity name must not be empty");
     if (meshKey.empty())
@@ -320,6 +322,15 @@ core::Result<core::Json> SceneFile::MakeEntity(const std::string& name,
         script.object_["path"] = MakeString(scriptPath);
         if (scriptVars.IsObject()) script.object_["vars"] = scriptVars;
         comps.object_["script"] = std::move(script);
+    }
+
+    // Optional health component (matching the built-in `health` factory
+    // schema); omitted when maxHp is <= 0 (no health tracked).
+    if (maxHp > 0.0f) {
+        core::Json health = MakeObject();
+        health.object_["hp"] = MakeNumber(hp > 0.0f ? hp : maxHp);
+        health.object_["maxHp"] = MakeNumber(maxHp);
+        comps.object_["health"] = std::move(health);
     }
 
     e.object_["components"] = std::move(comps);

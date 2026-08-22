@@ -41,6 +41,10 @@ struct SceneEntity {
     std::string emissiveTex;
     float ao = 1.0f;               // AO strength (0 = ignore AO map, 1 = full)
     float emissiveIntensity = 1.0f;
+    // Health (mirrors the built-in `health` component): maxHp <= 0 means the
+    // entity tracks no health. Used by the playtest for the hero + combat mobs.
+    float hp = 0.0f;
+    float maxHp = 0.0f;
     // Script component (mirrors scene::SceneScript, T4.5): backend/path/vars.
     // An empty scriptPath means no script is attached. scriptVars is a JSON
     // object (or null when absent) written into the exported script component.
@@ -89,6 +93,7 @@ private:
     void BuildLogPanel();
     void BuildViewportPanel();
     void BuildProfilerPanel();
+    void DrawPlaytestHUD();
     void DrawTransformGizmo();
     void RunGizmoDragSim();
     void ApplyMaterialParams(SceneEntity& e);

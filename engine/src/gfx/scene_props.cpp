@@ -132,4 +132,73 @@ Mesh MakeBushMesh(Renderer& renderer, const std::string& name) {
                                 static_cast<uint32_t>(bush.CpuIndices().size()), name);
 }
 
+namespace {
+// Appends a translated/recolored copy of `src`'s CPU verts to `v`/`idx`.
+void AppendMeshAt(std::vector<Vertex3D>& v, std::vector<uint16_t>& idx, const Mesh& src,
+                  const math::Vec3& offset, const math::Vec4& color) {
+    std::vector<Vertex3D> verts = src.CpuVerts();
+    RecolorVerts(verts, color);
+    for (auto& vv : verts) vv.pos += offset;
+    AppendMesh(v, idx, verts, src.CpuIndices());
+}
+} // namespace
+
+Mesh MakeHeroMesh(Renderer& renderer, const std::string& name) {
+    std::vector<Vertex3D> v;
+    std::vector<uint16_t> idx;
+    // Blue armored tunic.
+    Mesh torso = Mesh::CreateCube(renderer, 0.62f, 0.9f, 0.42f, "torso");
+    AppendMeshAt(v, idx, torso, {0.0f, 1.05f, 0.0f}, {0.22f, 0.36f, 0.75f, 1.0f});
+    // Gold belt.
+    Mesh belt = Mesh::CreateCube(renderer, 0.66f, 0.14f, 0.46f, "belt");
+    AppendMeshAt(v, idx, belt, {0.0f, 0.62f, 0.0f}, {0.85f, 0.68f, 0.25f, 1.0f});
+    // Legs.
+    Mesh leg = Mesh::CreateCube(renderer, 0.26f, 0.62f, 0.28f, "leg");
+    AppendMeshAt(v, idx, leg, {-0.16f, 0.31f, 0.0f}, {0.30f, 0.32f, 0.40f, 1.0f});
+    AppendMeshAt(v, idx, leg, {0.16f, 0.31f, 0.0f}, {0.30f, 0.32f, 0.40f, 1.0f});
+    // Skin head.
+    Mesh head = Mesh::CreateSphere(renderer, 0.26f, 12, 8, "head");
+    AppendMeshAt(v, idx, head, {0.0f, 1.65f, 0.0f}, {0.88f, 0.75f, 0.62f, 1.0f});
+    // Sword at the hip (thin bright blade).
+    Mesh blade = Mesh::CreateCube(renderer, 0.10f, 1.05f, 0.05f, "blade");
+    AppendMeshAt(v, idx, blade, {0.42f, 0.85f, 0.0f}, {0.85f, 0.92f, 1.0f, 1.0f});
+    return Mesh::CreateFromData(renderer, v.data(), static_cast<uint32_t>(v.size()),
+                                idx.data(), static_cast<uint32_t>(idx.size()), name);
+}
+
+Mesh MakeWolfMesh(Renderer& renderer, const std::string& name) {
+    std::vector<Vertex3D> v;
+    std::vector<uint16_t> idx;
+    const math::Vec4 fur{0.55f, 0.55f, 0.58f, 1.0f};
+    // Horizontal body.
+    Mesh body = Mesh::CreateCube(renderer, 1.5f, 0.6f, 0.6f, "wolf_body");
+    AppendMeshAt(v, idx, body, {0.0f, 0.7f, 0.0f}, fur);
+    // Head (front, +Z).
+    Mesh head = Mesh::CreateCube(renderer, 0.5f, 0.45f, 0.5f, "wolf_head");
+    AppendMeshAt(v, idx, head, {0.0f, 0.85f, 0.55f}, {0.48f, 0.48f, 0.52f, 1.0f});
+    // Snout.
+    Mesh snout = Mesh::CreateCube(renderer, 0.24f, 0.2f, 0.3f, "snout");
+    AppendMeshAt(v, idx, snout, {0.0f, 0.78f, 0.92f}, {0.40f, 0.40f, 0.45f, 1.0f});
+    // Four legs.
+    Mesh leg = Mesh::CreateCube(renderer, 0.18f, 0.7f, 0.18f, "wolf_leg");
+    AppendMeshAt(v, idx, leg, {-0.5f, 0.35f, -0.25f}, {0.42f, 0.42f, 0.46f, 1.0f});
+    AppendMeshAt(v, idx, leg, {0.5f, 0.35f, -0.25f}, {0.42f, 0.42f, 0.46f, 1.0f});
+    AppendMeshAt(v, idx, leg, {-0.5f, 0.35f, 0.25f}, {0.42f, 0.42f, 0.46f, 1.0f});
+    AppendMeshAt(v, idx, leg, {0.5f, 0.35f, 0.25f}, {0.42f, 0.42f, 0.46f, 1.0f});
+    // Tail (back, -Z).
+    Mesh tail = Mesh::CreateCube(renderer, 0.2f, 0.5f, 0.2f, "tail");
+    AppendMeshAt(v, idx, tail, {0.0f, 1.0f, -0.55f}, fur);
+    return Mesh::CreateFromData(renderer, v.data(), static_cast<uint32_t>(v.size()),
+                                idx.data(), static_cast<uint32_t>(idx.size()), name);
+}
+
+Mesh MakeFireballMesh(Renderer& renderer, const std::string& name) {
+    Mesh ball = Mesh::CreateSphere(renderer, 0.28f, 10, 7, "fireball");
+    std::vector<Vertex3D> v = ball.CpuVerts();
+    RecolorVerts(v, {1.0f, 0.55f, 0.18f, 1.0f});
+    return Mesh::CreateFromData(renderer, v.data(), static_cast<uint32_t>(v.size()),
+                                ball.CpuIndices().data(),
+                                static_cast<uint32_t>(ball.CpuIndices().size()), name);
+}
+
 } // namespace neon::gfx

@@ -151,7 +151,7 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
 
     // Mesh keys are resolved lazily at Draw time (file-backed "obj:"/"gltf:"
     // plus procedural primitives), so instantiation validates structure but
-    // not prefixes — a scene with an unresolvable key still plays headless.
+    // not prefixes �?a scene with an unresolvable key still plays headless.
     // cfg_ must be assigned before LoadPrefabs/AttachScripts read it.
     cfg_ = std::move(cfg);
     ComponentRegistry reg;
@@ -163,7 +163,35 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     scriptCtx_.world = &world_;
     scriptCtx_.physics = &physics_;
     scriptCtx_.input = cfg_.input;
+    scriptCtx_.playSfx = cfg_.playSfx;
     scriptCtx_.entityKinds.clear();
+    // Combat / control hooks so scripts can drive scene entities.
+    scriptCtx_.sceneGetPos = [this](ecs::Entity e) {
+        const SceneTransform* t = world_.Get<SceneTransform>(e);
+        return t ? t->pos : math::Vec3{};
+    };
+    scriptCtx_.sceneSetPos = [this](ecs::Entity e, const math::Vec3& p) {
+        if (SceneTransform* t = world_.Get<SceneTransform>(e)) t->pos = p;
+    };
+    scriptCtx_.sceneSetYaw = [this](ecs::Entity e, float yaw) {
+        if (SceneTransform* t = world_.Get<SceneTransform>(e))
+            t->rot = math::Quat::FromAxisAngle({0, 1, 0}, yaw);
+    };
+    scriptCtx_.sceneGetHp = [this](ecs::Entity e) {
+        const SceneHealth* h = world_.Get<SceneHealth>(e);
+        return h ? h->hp : -1.0f;
+    };
+    scriptCtx_.sceneSetHp = [this](ecs::Entity e, float hp) {
+        if (SceneHealth* h = world_.Get<SceneHealth>(e)) h->hp = hp;
+    };
+    scriptCtx_.spawnProjectile = [this](const math::Vec3& pos, const math::Vec3& dir, float speed,
+                                        float damage, float life, ecs::Entity caster) {
+        SpawnProjectile(pos, dir, speed, damage, life, caster);
+    };
+    scriptCtx_.meleeAttack = [this](const math::Vec3& origin, const math::Vec3& dir, float range,
+                                    float arcDeg, float damage) {
+        return MeleeAttack(origin, dir, range, arcDeg, damage);
+    };
 
     host_ = script::CreateLuaHost();
     if (!host_) {
@@ -200,6 +228,7 @@ void GameRuntime::Stop() {
     scripts_.clear();
     trees_.clear();
     draws_.clear();
+    projectiles_.clear();
     loadedScripts_.clear();
     scriptFailed_.clear();
     if (host_) {
@@ -424,6 +453,7 @@ void GameRuntime::BuildDrawList() {
         // the baked colors show through (mirrors EditorApp::ApplyMaterialParams).
         const bool bakedColor = m->meshKey == "terrain" || m->meshKey == "tree" ||
                                 m->meshKey == "house" || m->meshKey == "bush" ||
+                                m->meshKey == "hero" || m->meshKey == "wolf" ||
                                 m->meshKey == "npc" || m->meshKey.compare(0, 4, "npc:") == 0;
         item.mat.tint = bakedColor ? gfx::Color::White : ParseColorHex(m->colorHex);
         item.mat.metallic = m->metallic;
@@ -466,7 +496,7 @@ void GameRuntime::ResolveDrawItem(DrawItem& item, gfx::Renderer& renderer) {
 
     // LOD chain: level 0 is the base mesh; each entry resolves into a lower-
     // detail level at its distance. A level that fails to load is logged and
-    // dropped — the chain degrades to the levels that resolved.
+    // dropped �?the chain degrades to the levels that resolved.
     if (!item.lod.empty()) {
         item.chain.levels.push_back(item.mesh);
         for (const LodEntry& e : item.lod) {
@@ -505,6 +535,10 @@ gfx::Mesh GameRuntime::ResolveMeshKey(gfx::Renderer& renderer, const std::string
         mesh = gfx::MakeHouseMesh(renderer);
     } else if (key == "bush") {
         mesh = gfx::MakeBushMesh(renderer);
+    } else if (key == "hero") {
+        mesh = gfx::MakeHeroMesh(renderer);
+    } else if (key == "wolf") {
+        mesh = gfx::MakeWolfMesh(renderer);
     } else if (key.compare(0, 4, "npc:") == 0) {
         // "npc:r,g,b" encodes the villager's tunic tint (0-255 channels).
         int r = 128, g = 128, b = 128;
@@ -520,6 +554,100 @@ gfx::Mesh GameRuntime::ResolveMeshKey(gfx::Renderer& renderer, const std::string
         mesh = gfx::Mesh::CreatePlane(renderer, 1.0f, 1.0f, 1, 1, "road");
     }
     return mesh;
+}
+
+void GameRuntime::SpawnProjectile(const math::Vec3& pos, const math::Vec3& dir, float speed,
+                                  float damage, float life, ecs::Entity caster) {
+    Projectile p;
+    p.pos = pos;
+    p.dir = dir.LengthSq() > 1e-6f ? dir.Normalized() : math::Vec3{0, 0, 1};
+    p.speed = speed > 0.0f ? speed : 12.0f;
+    p.damage = damage;
+    p.life = life > 0.0f ? life : 2.0f;
+    p.caster = caster;
+    projectiles_.push_back(p);
+}
+
+int GameRuntime::MeleeAttack(const math::Vec3& origin, const math::Vec3& dir, float range,
+                             float arcDeg, float damage) {
+    const math::Vec3 fwd = dir.LengthSq() > 1e-6f ? dir.Normalized() : math::Vec3{0, 0, 1};
+    const float cosArc = std::cos(arcDeg * 0.5f * math::kDegToRad);
+    int hits = 0;
+    auto view = world_.ViewAll<SceneHealth>();
+    for (size_t i = 0; i < view.Size(); ++i) {
+        ecs::Entity ent = world_.EntityAt<SceneHealth>(i);
+        SceneHealth* h = world_.Get<SceneHealth>(ent);
+        const SceneTransform* t = world_.Get<SceneTransform>(ent);
+        if (!h || !t || h->hp <= 0.0f) continue;
+        const math::Vec3 to = t->pos - origin;
+        const float dist = to.Length();
+        if (dist > range || dist < 1e-4f) continue;
+        if (math::Dot(to / dist, fwd) < cosArc) continue; // outside the arc
+        h->hp = std::fmax(0.0f, h->hp - damage);
+        ++hits;
+    }
+    return hits;
+}
+
+void GameRuntime::TickProjectiles(float dt) {
+    for (auto it = projectiles_.begin(); it != projectiles_.end();) {
+        Projectile& p = *it;
+        const float step = p.speed * dt;
+        p.pos += p.dir * step;
+        p.traveled += step;
+        p.life -= dt;
+        // Damage the closest SceneHealth entity within the hit radius. Use a
+        // horizontal-radius + vertical-band test (projectiles fly at chest
+        // height while targets sit on the ground), so a fireball passing over
+        // a grounded enemy still connects.
+        float best = p.hitRadius;
+        ecs::Entity target;
+        auto view = world_.ViewAll<SceneHealth>();
+        for (size_t i = 0; i < view.Size(); ++i) {
+            ecs::Entity ent = world_.EntityAt<SceneHealth>(i);
+            SceneHealth* h = world_.Get<SceneHealth>(ent);
+            const SceneTransform* t = world_.Get<SceneTransform>(ent);
+            if (!h || !t || h->hp <= 0.0f) continue;
+            if (ent == p.caster) continue; // never self-hit
+            const math::Vec3 to = t->pos - p.pos;
+            const float horiz = std::sqrt(to.x * to.x + to.z * to.z);
+            if (horiz < best && std::fabs(to.y) < 2.0f) {
+                best = horiz;
+                target = ent;
+            }
+        }
+        if (target.IsValid()) {
+            SceneHealth* h = world_.Get<SceneHealth>(target);
+            if (h) h->hp = std::fmax(0.0f, h->hp - p.damage);
+            it = projectiles_.erase(it);
+            continue;
+        }
+        if (p.life <= 0.0f) {
+            it = projectiles_.erase(it);
+            continue;
+        }
+        ++it;
+    }
+}
+
+ecs::Entity GameRuntime::FindNamedEntity(const std::string& name) {
+    auto view = world_.ViewAll<SceneName>();
+    for (size_t i = 0; i < view.Size(); ++i) {
+        ecs::Entity ent = world_.EntityAt<SceneName>(i);
+        const SceneName* n = world_.Get<SceneName>(ent);
+        if (n && n->name == name) return ent;
+    }
+    return {};
+}
+
+std::pair<float, float> GameRuntime::EntityHealth(ecs::Entity ent) const {
+    const SceneHealth* h = world_.Get<SceneHealth>(ent);
+    return h ? std::pair<float, float>{h->hp, h->maxHp} : std::pair<float, float>{0, 0};
+}
+
+float GameRuntime::GameVar(const std::string& name) const {
+    script::Value v = scriptCtx_.gameVars.Get(name);
+    return v.type == script::Value::Type::Number ? static_cast<float>(v.number) : 0.0f;
 }
 
 void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera) {
@@ -542,6 +670,15 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera) {
             math::Mat4::Translation(t->pos) * t->rot.ToMat4() * math::Mat4::Scale(t->scale);
         renderer.DrawMesh(SelectLodMesh(item.mesh, item.chain, t->pos, camera.position),
                           item.mat, model);
+    }
+    // Skill projectiles (fireballs): bright glowing orbs.
+    if (!projectiles_.empty()) {
+        if (!fireballMesh_.Valid()) fireballMesh_ = gfx::MakeFireballMesh(renderer);
+        gfx::Material fmat = gfx::Material::Lit({}, gfx::Color::White, 8.0f);
+        fmat.emissiveIntensity = 2.5f;
+        for (const Projectile& p : projectiles_) {
+            renderer.DrawMesh(fireballMesh_, fmat, math::Mat4::Translation(p.pos));
+        }
     }
     // Compact when a fifth of the draw list belongs to dead entities.
     if (dead && dead * 5 > draws_.size()) {
@@ -587,6 +724,7 @@ void GameRuntime::Tick(float dt) {
     }
 
     physics_.Step(dt, math::Vec3{0.0f, kGravityY, 0.0f});
+    TickProjectiles(dt);
     simTime_ += dt;
 }
 

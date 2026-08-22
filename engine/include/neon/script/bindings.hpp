@@ -41,6 +41,22 @@ struct ScriptContext {
     // Optional live input state for the InputAxis/InputKey/InputMouse bindings.
     // Null in headless hosts and unit tests -> every input query returns 0.
     platform::IInput* input = nullptr;
+
+    // Optional gameplay hooks registered by the scene runtime (GameRuntime).
+    // When null the corresponding bindings degrade to nil/no-ops, so other
+    // hosts (demo, tests) keep working without them. Entity args are the scene
+    // entity handles passed into on_start/on_update.
+    std::function<math::Vec3(ecs::Entity)> sceneGetPos;   // null -> CTransformBind
+    std::function<void(ecs::Entity, const math::Vec3&)> sceneSetPos;
+    std::function<void(ecs::Entity, float)> sceneSetYaw;  // radians, Y-up
+    std::function<float(ecs::Entity)> sceneGetHp;         // -1 when no health
+    std::function<void(ecs::Entity, float)> sceneSetHp;
+    std::function<void(const math::Vec3& pos, const math::Vec3& dir, float speed, float damage,
+                       float life, ecs::Entity caster)>
+        spawnProjectile;
+    std::function<int(const math::Vec3& origin, const math::Vec3& dir, float range, float arcDeg,
+                      float damage)>
+        meleeAttack; // returns the number of entities hit
 };
 
 // Registers Spawn/Despawn/GetPosition/SetPosition/GetVar/SetVar/Raycast/

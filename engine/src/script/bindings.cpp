@@ -72,7 +72,16 @@ math::Vec3 Vec3FromValue(const Value& v, const math::Vec3& def) {
 
 std::string StringArg(IScriptHost& host, int index) {
     Value v = host.GetArg(index);
-    return v.type == Value::Type::String ? v.str : std::string();
+    if (v.type == Value::Type::String) return v.str;
+    // The Lua host reports a numeric-looking string literal ("1") as a NUMBER
+    // (lua_isnumber matches numeric strings), so stringify numbers back for
+    // bindings that take key names / asset paths (e.g. InputKey("1")).
+    if (v.type == Value::Type::Number) {
+        char buf[32];
+        std::snprintf(buf, sizeof(buf), "%g", v.number);
+        return std::string(buf);
+    }
+    return std::string();
 }
 
 Value NativeSpawn(IScriptHost& host, void* user) {
@@ -100,6 +109,7 @@ Value NativeGetPosition(IScriptHost& host, void* user) {
     auto* ctx = static_cast<ScriptContext*>(user);
     if (!ctx || !ctx->world) return Value::Nil();
     ecs::Entity e = EntityFromValue(host.GetArg(0));
+    if (ctx->sceneGetPos) return Vec3ToValue(ctx->sceneGetPos(e));
     const CTransformBind* t = ctx->world->Get<CTransformBind>(e);
     if (!t) return Value::Nil();
     return Vec3ToValue(t->pos);
@@ -109,10 +119,98 @@ Value NativeSetPosition(IScriptHost& host, void* user) {
     auto* ctx = static_cast<ScriptContext*>(user);
     if (!ctx || !ctx->world) return Value::Nil();
     ecs::Entity e = EntityFromValue(host.GetArg(0));
+    if (ctx->sceneSetPos) {
+        math::Vec3 p = Vec3FromValue(host.GetArg(1), math::Vec3{});
+        ctx->sceneSetPos(e, p);
+        return Value::Nil();
+    }
     CTransformBind* t = ctx->world->Get<CTransformBind>(e);
     if (!t) return Value::Nil();
     t->pos = Vec3FromValue(host.GetArg(1), t->pos);
     return Value::Nil();
+}
+
+Value NativeSetRotationY(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->sceneSetYaw) return Value::Nil();
+    ecs::Entity e = EntityFromValue(host.GetArg(0));
+    Value v = host.GetArg(1);
+    if (v.type != Value::Type::Number) return Value::Nil();
+    ctx->sceneSetYaw(e, static_cast<float>(v.number));
+    return Value::Nil();
+}
+
+Value NativeGetHealth(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->sceneGetHp) return Value::Num(-1);
+    ecs::Entity e = EntityFromValue(host.GetArg(0));
+    return Value::Num(ctx->sceneGetHp(e));
+}
+
+Value NativeSetHealth(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->sceneSetHp) return Value::Nil();
+    ecs::Entity e = EntityFromValue(host.GetArg(0));
+    Value v = host.GetArg(1);
+    if (v.type != Value::Type::Number) return Value::Nil();
+    ctx->sceneSetHp(e, static_cast<float>(v.number));
+    return Value::Nil();
+}
+
+Value NativeSpawnProjectile(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->spawnProjectile) return Value::Nil();
+    const math::Vec3 pos = Vec3FromValue(host.GetArg(0), math::Vec3{});
+    const math::Vec3 dir = Vec3FromValue(host.GetArg(1), math::Vec3{0, 0, 1});
+    const float speed = host.GetArg(2).type == Value::Type::Number
+                            ? static_cast<float>(host.GetArg(2).number)
+                            : 12.0f;
+    const float damage = host.GetArg(3).type == Value::Type::Number
+                             ? static_cast<float>(host.GetArg(3).number)
+                             : 10.0f;
+    const float life = host.GetArg(4).type == Value::Type::Number
+                           ? static_cast<float>(host.GetArg(4).number)
+                           : 2.0f;
+    // Optional 6th arg: the caster entity (never hit by its own projectile).
+    const ecs::Entity caster =
+        host.ArgCount() >= 6 ? EntityFromValue(host.GetArg(5)) : ecs::Entity{};
+    ctx->spawnProjectile(pos, dir, speed, damage, life, caster);
+    return Value::Nil();
+}
+
+// MeleeAttack(origin{x,y,z}, dir{x,y,z}, range, arcDeg, damage) -> entities hit.
+Value NativeMeleeAttack(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->meleeAttack) return Value::Num(0);
+    const math::Vec3 origin = Vec3FromValue(host.GetArg(0), math::Vec3{});
+    const math::Vec3 dir = Vec3FromValue(host.GetArg(1), math::Vec3{0, 0, 1});
+    const float range = host.GetArg(2).type == Value::Type::Number
+                            ? static_cast<float>(host.GetArg(2).number)
+                            : 2.0f;
+    const float arcDeg = host.GetArg(3).type == Value::Type::Number
+                             ? static_cast<float>(host.GetArg(3).number)
+                             : 90.0f;
+    const float damage = host.GetArg(4).type == Value::Type::Number
+                             ? static_cast<float>(host.GetArg(4).number)
+                             : 15.0f;
+    return Value::Num(ctx->meleeAttack(origin, dir, range, arcDeg, damage));
+}
+
+Value NativeInputMouseDown(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->input) return Value::Num(0);
+    const std::string b = StringArg(host, 0);
+    const int idx = b == "right" ? 1 : b == "middle" ? 2 : 0;
+    return Value::Num(ctx->input->MouseDown(static_cast<platform::MouseButton>(idx)) ? 1.0 : 0.0);
+}
+
+Value NativeInputMousePressed(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->input) return Value::Num(0);
+    const std::string b = StringArg(host, 0);
+    const int idx = b == "right" ? 1 : b == "middle" ? 2 : 0;
+    return Value::Num(
+        ctx->input->MousePressed(static_cast<platform::MouseButton>(idx)) ? 1.0 : 0.0);
 }
 
 Value NativeGetVar(IScriptHost& host, void* user) {
@@ -276,6 +374,13 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("InputKey", &NativeInputKey, &ctx);
     host.Register("InputMouseX", &NativeInputMouseX, &ctx);
     host.Register("InputMouseY", &NativeInputMouseY, &ctx);
+    host.Register("InputMouseDown", &NativeInputMouseDown, &ctx);
+    host.Register("InputMousePressed", &NativeInputMousePressed, &ctx);
+    host.Register("SetRotationY", &NativeSetRotationY, &ctx);
+    host.Register("GetHealth", &NativeGetHealth, &ctx);
+    host.Register("SetHealth", &NativeSetHealth, &ctx);
+    host.Register("SpawnProjectile", &NativeSpawnProjectile, &ctx);
+    host.Register("MeleeAttack", &NativeMeleeAttack, &ctx);
     host.RegisterField("Json", "Parse", &NativeJsonParse, &ctx);
 }
 

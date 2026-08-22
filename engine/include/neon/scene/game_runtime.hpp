@@ -48,6 +48,7 @@ struct GameRuntimeConfig {
     std::string scriptBaseDir;              // base dir for script paths ("" = cwd)
     std::string assetBaseDir;               // base dir for obj:/gltf:/texture paths ("" = cwd)
     std::function<std::string(const std::string& path)> readScript; // optional override
+    std::function<void(const std::string&)> playSfx; // optional audio sink for PlaySfx
     platform::IInput* input = nullptr;      // optional live input for scripts
     uint64_t rngSeed = 20260821u;           // fixed: playtest RNG is reproducible
     bool headless = false;                  // skip draw-list build; pure simulation
@@ -87,6 +88,11 @@ public:
     bool Running() const { return running_; }
     ecs::World& World() { return world_; }
     script::GameVars& GameVars() { return scriptCtx_.gameVars; }
+    // HUD helpers: finds a named scene entity (e.g. the hero) and reads its
+    // health, plus a numeric GameVar read (0 when unset / non-numeric).
+    ecs::Entity FindNamedEntity(const std::string& name);
+    std::pair<float, float> EntityHealth(ecs::Entity ent) const;
+    float GameVar(const std::string& name) const;
     // The bindings context scripts share (entityKinds, gameVars, input...).
     // Exposed for hosts that need to inspect script-spawned entity kinds (the
     // server's AOI replication, debug panels).
@@ -118,6 +124,15 @@ public:
     // Invalid when `ent` has no resolved draw item (call Draw once first).
     gfx::Mesh MeshForEntity(const ecs::Entity& ent, const gfx::Camera& camera) const;
 
+    // Combat (script-facing gameplay hooks). SpawnProjectile queues a fireball
+    // the runtime advances and renders; MeleeAttack damages SceneHealth entities
+    // in the arc and returns how many were hit.
+    void SpawnProjectile(const math::Vec3& pos, const math::Vec3& dir, float speed, float damage,
+                         float life, ecs::Entity caster = {});
+    int MeleeAttack(const math::Vec3& origin, const math::Vec3& dir, float range, float arcDeg,
+                    float damage);
+    void TickProjectiles(float dt);
+
 private:
     struct ScriptInst {
         ecs::Entity ent;
@@ -147,6 +162,18 @@ private:
         gfx::Material mat;
         bool resolved = false;
         bool failed = false;
+    };
+    // A skill projectile (fireball): moved each tick, damages the first SceneHealth
+    // entity within a small radius, and expires on time/travel-distance.
+    struct Projectile {
+        math::Vec3 pos;
+        math::Vec3 dir;
+        float speed = 0.0f;
+        float damage = 0.0f;
+        float life = 0.0f;    // seconds remaining
+        float traveled = 0.0f; // distance travelled
+        float hitRadius = 0.8f;
+        ecs::Entity caster;   // never damaged by its own projectile
     };
 
     void AttachScripts();
@@ -178,6 +205,8 @@ private:
     std::vector<ScriptInst> scripts_;
     std::vector<BtInst> trees_;
     std::vector<DrawItem> draws_;
+    std::vector<Projectile> projectiles_;
+    gfx::Mesh fireballMesh_; // lazily built for skill-projectile rendering
     std::set<std::string> loadedScripts_; // resolved paths whose chunk ran (presence only)
     std::set<std::string> scriptFailed_;  // resolved paths that failed (skip later)
     GameRuntimeConfig cfg_;

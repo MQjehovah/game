@@ -46,6 +46,13 @@ public:
     // Mouse capture (relative look): hides the cursor and reports deltas.
     virtual void SetCaptureMouse(bool capture) = 0;
 
+    // Attaches/detaches the platform IME for this window. Detaching (enabled =
+    // false) makes game keys (WASD, digits, space) arrive as raw key events even
+    // while a Chinese/Japanese/Korean input method is active in composition
+    // mode; the editor re-enables it when the playtest stops so ImGui text
+    // fields keep their input method. No-op on platforms without an IME.
+    virtual void SetImeEnabled(bool enabled) { (void)enabled; }
+
     std::function<void(const InputEvent&)> onEvent;
 };
 

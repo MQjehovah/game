@@ -166,7 +166,7 @@ if(WIN32)
     engine/src/audio/winmm/winmm_audio.cpp
   )
   target_compile_definitions(neon_engine PUBLIC NEONRUSH_PLATFORM_WINDOWS)
-  target_link_libraries(neon_engine PUBLIC opengl32 winmm user32 gdi32 shell32 ole32 ws2_32)
+  target_link_libraries(neon_engine PUBLIC opengl32 winmm user32 gdi32 shell32 ole32 ws2_32 imm32)
 elseif(APPLE)
   target_sources(neon_engine PRIVATE engine/src/platform/cocoa/cocoa_window.mm)
   set_source_files_properties(engine/src/platform/cocoa/cocoa_window.mm PROPERTIES LANGUAGE OBJCXX)

@@ -2,6 +2,7 @@
 
 #include <windows.h>
 #include <windowsx.h>
+#include <imm.h>
 
 #include "neon/core/log.hpp"
 #include "neon/gfx/gl/gl_loader.hpp"
@@ -172,6 +173,24 @@ public:
         } else {
             ShowCursor(TRUE);
             hasLastCursor_ = false; // re-seed on the next move to avoid a jump
+        }
+    }
+
+    void SetImeEnabled(bool enabled) override {
+        // Detaching the IME from the window stops the input method from
+        // capturing game keys (WASD/digits/space) during composition, which a
+        // Chinese/Japanese/Korean IME in native mode otherwise swallows. The
+        // editor re-attaches the saved context when the playtest ends so ImGui
+        // text fields keep their IME. Guarded for the IME-free case.
+        if (!enabled) {
+            if (imeContext_ == nullptr) imeContext_ = ImmGetContext(hwnd_);
+            ImmAssociateContext(hwnd_, nullptr);
+        } else {
+            if (imeContext_ != nullptr) {
+                ImmAssociateContext(hwnd_, imeContext_);
+                ImmReleaseContext(hwnd_, imeContext_);
+                imeContext_ = nullptr;
+            }
         }
     }
 
@@ -493,6 +512,7 @@ private:
     POINT lastCursor_{};
     bool hasLastCursor_ = false; // first WM_MOUSEMOVE seeds lastCursor_ (no delta)
     bool skipNextDelta_ = false;
+    HIMC imeContext_ = nullptr; // saved IME context while detached (SetImeEnabled)
 };
 
 } // namespace

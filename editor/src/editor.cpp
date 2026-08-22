@@ -271,7 +271,7 @@ bool NeedsDefaultLayout() {
 // form of the villager (tunic tint encoded in the mesh key).
 bool IsBakedColorKey(const std::string& key) {
     return key == "terrain" || key == "tree" || key == "house" || key == "npc" ||
-           key == "bush" || key.compare(0, 4, "npc:") == 0;
+           key == "bush" || key == "hero" || key == "wolf" || key.compare(0, 4, "npc:") == 0;
 }
 
 } // namespace
@@ -403,6 +403,46 @@ void EditorApp::SetupScene() {
     add("tree", "村口老树", {3.2f, 0, 4.6f}, {1.5f, 1, 1.5f}, gfx::Color::White);
     add("tree", "村口老树_2", {-3.2f, 0, 4.6f}, {1.3f, 1, 1.3f}, gfx::Color::White);
     add("tree", "村口老树_3", {3.4f, 0, -4.4f}, {1.2f, 1, 1.2f}, gfx::Color::White);
+
+    // --- Playable hero: blue-armored figure bound to the hero controller
+    // script (WASD/jump/melee/fireball/heal), parked at the south end of the
+    // main road. Its health lives in the scene so combat can damage it.
+    {
+        SceneEntity h;
+        h.name = "英雄";
+        h.meshKey = "hero";
+        h.pos = {0.0f, 0.0f, 5.5f};
+        h.scale = {1, 1, 1};
+        h.tint = gfx::Color::White;
+        h.scriptBackend = "lua";
+        h.scriptPath = "scripts/hero.lua";
+        h.hp = 100.0f;
+        h.maxHp = 100.0f;
+        if (ResolveMesh(h)) {
+            ApplyMaterialParams(h);
+            entities_.push_back(std::move(h));
+        }
+    }
+
+    // --- Hostile wolves in the wilderness: combat targets for the hero's
+    // skills (static for now; the hero can melee/fireball them).
+    uint32_t wolfSeed = 0x6D2B79F5u;
+    auto wrnd = [&wolfSeed]() {
+        wolfSeed ^= wolfSeed << 13;
+        wolfSeed ^= wolfSeed >> 17;
+        wolfSeed ^= wolfSeed << 5;
+        return static_cast<float>(wolfSeed & 0xFFFFu) / 65535.0f;
+    };
+    for (int i = 0; i < 8; ++i) {
+        math::Vec3 wp{10.0f + wrnd() * 14.0f, 0.0f, -12.0f - wrnd() * 12.0f};
+        if (i % 2) wp.x = -wp.x;
+        add("wolf", "野狼_" + std::to_string(i), wp,
+            {1.0f + wrnd() * 0.3f, 1, 1.0f + wrnd() * 0.3f}, gfx::Color::White);
+        if (!entities_.empty()) {
+            entities_.back().hp = 40.0f;
+            entities_.back().maxHp = 40.0f;
+        }
+    }
     LoadScene("editor_scene.json");
     SetSelection(entities_.empty() ? -1 : 0);
 }
@@ -617,6 +657,9 @@ void EditorApp::OnRender() {
     // crisp and unbloomed on top.
     renderer_.EndScene();
 
+    // Game HUD (HP/mana/skill hotbar) overlays the playtest scene.
+    if (playtestActive_) DrawPlaytestHUD();
+
     // Scene pass draw calls (before the thumbnail pass adds its own counts).
     if (smokeMode_) {
         lastRenderTick_ = TimeRef().frameIndex;
@@ -823,6 +866,69 @@ void EditorApp::UpdateViewport(float dt) {
 void EditorApp::SetSelection(int index) {
     selected_ = index;
     scriptSyncEntity_ = -1; // script panel caches by index: force a re-sync
+}
+
+void EditorApp::DrawPlaytestHUD() {
+    if (!playtest_ || !playtestActive_) return;
+    scene::GameRuntime& rt = *playtest_;
+    const ecs::Entity hero = rt.FindNamedEntity("英雄");
+    const auto heroHp = rt.EntityHealth(hero);
+    const float hp = heroHp.first, maxHp = heroHp.second;
+    const float mana = rt.GameVar("hero_mana");
+    const float maxMana = rt.GameVar("hero_max_mana");
+    const float fireCd = rt.GameVar("hero_fire_cd");
+    const float healCd = rt.GameVar("hero_heal_cd");
+    const float meleeCd = rt.GameVar("hero_melee_cd");
+    const int level = static_cast<int>(rt.GameVar("hero_level"));
+    const int gold = static_cast<int>(rt.GameVar("hero_gold"));
+
+    ui::Theme theme;
+    theme.font = cjkFont_.Valid() ? cjkFont_ : pixelFont_;
+
+    const int w = renderer_.ScreenWidth();
+    const int h = renderer_.ScreenHeight();
+
+    // HP bar (top-left).
+    ui::DrawLabel(renderer_, theme, "生命", {24, 20}, 14, theme.text, false, true);
+    const float hpFrac = maxHp > 0.0f ? math::Saturate(hp / maxHp) : 0.0f;
+    const gfx::Color hpColor = hpFrac > 0.5f ? gfx::Color{0.2f, 1.0f, 0.35f, 1.0f}
+                               : hpFrac > 0.25f ? gfx::Color{1.0f, 0.85f, 0.2f, 1.0f}
+                                                : gfx::Color{1.0f, 0.2f, 0.2f, 1.0f};
+    ui::DrawBar(renderer_, theme, {70, 14, 280, 22}, hpFrac, hpColor);
+
+    // Mana bar.
+    ui::DrawLabel(renderer_, theme, "法力", {24, 48}, 14, theme.text, false, true);
+    const float manaFrac = maxMana > 0.0f ? math::Saturate(mana / maxMana) : 0.0f;
+    ui::DrawBar(renderer_, theme, {70, 42, 200, 14}, manaFrac, gfx::Color{0.25f, 0.45f, 1.0f, 1.0f});
+
+    char buf[96];
+    std::snprintf(buf, sizeof(buf), "等级 %d", level);
+    ui::DrawLabel(renderer_, theme, buf, {24, 64}, 13, theme.text, false, false);
+    std::snprintf(buf, sizeof(buf), "金币 %d", gold);
+    const math::Vec2 gs = ui::MeasureText(theme.font, buf, 16);
+    ui::DrawLabel(renderer_, theme, buf, {static_cast<float>(w) - gs.x - 8, 18}, 16,
+                  gfx::Color{1.0f, 0.85f, 0.3f, 1.0f}, false, false);
+
+    // Skill hotbar (bottom-left): melee / fireball / heal with cooldowns.
+    float sx = 24.0f, sy = static_cast<float>(h) - 66.0f;
+    const float slotW = 54.0f, slotH = 54.0f, gap = 8.0f;
+    auto slot = [&](const char* name, const char* key, float cd, const gfx::Color& color) {
+        const math::Rect2 r{sx, sy, slotW, slotH};
+        ui::DrawPanel(renderer_, theme, r);
+        ui::DrawLabel(renderer_, theme, key, {sx + 4, sy + 2}, 12, theme.dim, false, false);
+        ui::DrawLabel(renderer_, theme, name, {sx + slotW * 0.5f, sy + slotH * 0.5f}, 15, color,
+                      true, true);
+        if (cd > 0.0f) {
+            ui::DrawBar(renderer_, theme, r, 1.0f, theme.panelBg.WithAlpha(0.65f));
+            std::snprintf(buf, sizeof(buf), "%.1f", cd);
+            ui::DrawLabel(renderer_, theme, buf, {sx + slotW * 0.5f, sy + slotH * 0.5f}, 15,
+                          theme.text, true, true);
+        }
+        sx += slotW + gap;
+    };
+    slot("近战", "左键", meleeCd, gfx::Color{0.92f, 0.92f, 1.0f, 1.0f});
+    slot("火球", "1", fireCd, gfx::Color{1.0f, 0.55f, 0.20f, 1.0f});
+    slot("治疗", "2", healCd, gfx::Color{0.4f, 1.0f, 0.5f, 1.0f});
 }
 
 void EditorApp::DrawTransformGizmo() {
@@ -2077,7 +2183,8 @@ core::Result<core::Json> EditorApp::BuildPlaySceneJson() {
                                                 e.metallic, e.roughness, e.tint, e.albedoTex,
                                                 e.mrTex, e.aoTex, e.emissiveTex, e.ao,
                                                 e.emissiveIntensity, e.scriptPath,
-                                                e.scriptBackend, e.scriptVars);
+                                                e.scriptBackend, e.scriptVars, {},
+                                                e.hp, e.maxHp);
         if (!res.Ok()) {
             return core::Result<core::Json>::Err("editor: " + res.Error());
         }
@@ -2103,6 +2210,8 @@ void EditorApp::StartPlaytest() {
     scene::GameRuntimeConfig cfg;
     cfg.assets = &assetMgr_;
     cfg.scriptBaseDir = projectDir_.empty() ? "." : projectDir_;
+    cfg.input = Input(); // hero controller reads live WASD/mouse input
+    // (The editor itself plays no sfx; script PlaySfx calls are no-ops here.)
 
     playtest_ = std::make_unique<scene::GameRuntime>();
     core::Status st = playtest_->Start(json, cfg);
@@ -2112,6 +2221,10 @@ void EditorApp::StartPlaytest() {
         return;
     }
     playtestActive_ = true;
+    // Detach the input method while the playtest runs so game keys (WASD,
+    // digits, space) arrive as raw key events even with a Chinese/Japanese IME
+    // in composition mode; StopPlaytest re-attaches it for ImGui text input.
+    if (Window()) Window()->SetImeEnabled(false);
     NEON_LOG_INFO("Editor: playtest started (%zu entities, %zu scripts, %zu trees)",
                   playtest_->EntityCount(), playtest_->ScriptCount(),
                   playtest_->BehaviorTreeCount());
@@ -2122,6 +2235,7 @@ void EditorApp::StopPlaytest() {
     playtest_->Stop();
     playtest_.reset();
     playtestActive_ = false;
+    if (Window()) Window()->SetImeEnabled(true);
     NEON_LOG_INFO("Editor: playtest stopped");
 }
 
@@ -2390,6 +2504,12 @@ bool EditorApp::ResolveMesh(SceneEntity& e) {
         // The entity tint selects the villager's tunic; head stays skin-tone.
         e.mesh = gfx::MakeNPCMesh(renderer_, {e.tint.r, e.tint.g, e.tint.b, 1.0f});
         e.material = gfx::Material::Lit({}, gfx::Color::White, 12.0f);
+    } else if (key == "hero") {
+        e.mesh = gfx::MakeHeroMesh(renderer_);
+        e.material = gfx::Material::Lit({}, gfx::Color::White, 12.0f);
+    } else if (key == "wolf") {
+        e.mesh = gfx::MakeWolfMesh(renderer_);
+        e.material = gfx::Material::Lit({}, gfx::Color::White, 8.0f);
     } else if (key == "bush") {
         e.mesh = gfx::MakeBushMesh(renderer_);
         e.material = gfx::Material::Lit({}, gfx::Color::White, 8.0f);

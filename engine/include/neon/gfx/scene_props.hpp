@@ -33,4 +33,13 @@ Mesh MakeNPCMesh(Renderer& renderer, const math::Vec4& tunic,
 // Low green bush / shrub.
 Mesh MakeBushMesh(Renderer& renderer, const std::string& name = "bush");
 
+// Playable hero: blue/gold armor figure with a sword.
+Mesh MakeHeroMesh(Renderer& renderer, const std::string& name = "hero");
+
+// Hostile wolf (low-poly): gray body, head, legs, tail.
+Mesh MakeWolfMesh(Renderer& renderer, const std::string& name = "wolf");
+
+// Small glowing fireball projectile.
+Mesh MakeFireballMesh(Renderer& renderer, const std::string& name = "fireball");
+
 } // namespace neon::gfx

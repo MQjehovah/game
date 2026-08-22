@@ -100,10 +100,12 @@ struct SceneFile {
                                                const std::string& emissiveTex = "",
                                                float ao = 1.0f,
                                                float emissiveIntensity = 1.0f,
-                                               const std::string& scriptPath = "",
-                                               const std::string& scriptBackend = "lua",
-                                               const core::Json& scriptVars = core::Json{},
-                                               const std::vector<LodEntry>& lod = {});
+                                                const std::string& scriptPath = "",
+                                                const std::string& scriptBackend = "lua",
+                                                const core::Json& scriptVars = core::Json{},
+                                                const std::vector<LodEntry>& lod = {},
+                                                float hp = 0.0f,
+                                                float maxHp = 0.0f);
 };
 
 // Prefab library: registers prefab component templates parsed from JSON text
