@@ -11,18 +11,49 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: windows-2022
+          - name: windows-release
+            os: windows-2022
             generator: "Visual Studio 17 2022"
-          - os: ubuntu-24.04
+            config: Release
+          - name: ubuntu-release
+            os: ubuntu-24.04
             generator: "Unix Makefiles"
+            config: Release
             deps: "sudo apt-get update && sudo apt-get install -y libx11-dev libgl1-mesa-dev"
-          - os: macos-14
+          - name: macos-release
+            os: macos-14
             generator: "Unix Makefiles"
+            config: Release
+          # Debug is a first-class build config: the ECS parallel-mutation
+          # contract used to abort (assert) in Debug while Release passed, so
+          # the suite only passed because CI never exercised Debug. Keep it
+          # green to close that gap.
+          - name: ubuntu-debug
+            os: ubuntu-24.04
+            generator: "Unix Makefiles"
+            config: Debug
+            deps: "sudo apt-get update && sudo apt-get install -y libx11-dev libgl1-mesa-dev"
+          # Sanitizer build (AddressSanitizer + UndefinedBehaviorSanitizer).
+          # Leak detection is disabled: a handful of tests intentionally keep
+          # small objects alive for the process lifetime (e.g. the cyclic
+          # Lua-table fixture), which would otherwise report benign leaks.
+          - name: ubuntu-sanitize
+            os: ubuntu-24.04
+            generator: "Unix Makefiles"
+            config: Release
+            deps: "sudo apt-get update && sudo apt-get install -y libx11-dev libgl1-mesa-dev"
+            cmake_args: >-
+              -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
+              -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
+              -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
 
     runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Whitespace check
+        run: git diff-tree --check -r HEAD
 
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
@@ -32,14 +63,18 @@ jobs:
         run: >
           cmake -S . -B build
           -G "${{ matrix.generator }}"
-          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_BUILD_TYPE=${{ matrix.config }}
+          ${{ matrix.cmake_args }}
 
       - name: Build
-        run: cmake --build build --config Release -j 2
+        run: cmake --build build --config ${{ matrix.config }} -j 2
 
       - name: Run unit tests
-        run: ctest --test-dir build -C Release --output-on-failure
+        run: ctest --test-dir build -C ${{ matrix.config }} --output-on-failure
+        env:
+          ASAN_OPTIONS: detect_leaks=0
+          UBSAN_OPTIONS: halt_on_error=1
 
-      - name: Smoke test (Windows)
-        if: runner.os == 'Windows'
+      - name: Smoke test (Windows Release)
+        if: runner.os == 'Windows' && matrix.config == 'Release'
         run: .\build\Release\neon_rush.exe --smoke-test 240
