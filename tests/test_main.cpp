@@ -292,6 +292,43 @@ TEST(HarnessFailurePaths) {
     test::gFailures = before;      // restore so the suite reports 0 failures
 }
 
+// Input consumption: the camera-style owner can take exclusive use of the
+// frame's mouse delta / wheel; later readers (script bindings) see 0.
+TEST(InputConsumeSemantics) {
+    std::unique_ptr<platform::IInput> input = platform::CreateInputState();
+
+    platform::InputEvent move;
+    move.type = platform::InputEvent::Type::MouseMove;
+    move.dx = 5;
+    move.dy = -7;
+    input->HandleEvent(move);
+
+    platform::InputEvent wheel;
+    wheel.type = platform::InputEvent::Type::MouseWheel;
+    wheel.wheel = 3;
+    input->HandleEvent(wheel);
+
+    // Before consumption: raw accumulated values are visible.
+    CHECK_NEAR(input->MouseDelta().x, 5.0f, 1e-6);
+    CHECK_NEAR(input->MouseDelta().y, -7.0f, 1e-6);
+    CHECK_NEAR(input->WheelDelta(), 3.0f, 1e-6);
+
+    // The owner consumes: subsequent reads are zero until EndFrame resets.
+    input->ConsumeMouseDelta();
+    input->ConsumeWheel();
+    CHECK_NEAR(input->MouseDelta().x, 0.0f, 1e-6);
+    CHECK_NEAR(input->WheelDelta(), 0.0f, 1e-6);
+
+    // EndFrame does not resurrect consumed values; new events accumulate anew.
+    input->EndFrame();
+    CHECK_NEAR(input->MouseDelta().x, 0.0f, 1e-6);
+    platform::InputEvent move2;
+    move2.type = platform::InputEvent::Type::MouseMove;
+    move2.dx = 2;
+    input->HandleEvent(move2);
+    CHECK_NEAR(input->MouseDelta().x, 2.0f, 1e-6);
+}
+
 int main() {
     int passed = 0;
     for (const test::TestCase& tc : test::Registry()) {

@@ -74,6 +74,16 @@ public:
     virtual math::Vec2 MouseDelta() const = 0;
     virtual float WheelDelta() const = 0;
 
+    // Consumption: marks this frame's accumulated mouse delta / wheel as
+    // handled, so later MouseDelta()/WheelDelta() reads return 0 until the
+    // next frame. Lets one owner (e.g. the orbit camera) take exclusive use
+    // while data-driven scripts reading InputMouseX/Y see no leftover instead
+    // of double-consuming the same input. Default no-op keeps passive bridges
+    // (server NetInput, test fakes) unchanged; real input states and bridges
+    // that forward to one must override.
+    virtual void ConsumeMouseDelta() {}
+    virtual void ConsumeWheel() {}
+
     // Call once per rendered frame; clears edge flags.
     virtual void EndFrame() = 0;
 };

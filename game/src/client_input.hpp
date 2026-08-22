@@ -62,6 +62,12 @@ public:
     math::Vec2 MousePos() const override { return base_ ? base_->MousePos() : math::Vec2{}; }
     math::Vec2 MouseDelta() const override { return base_ ? base_->MouseDelta() : math::Vec2{}; }
     float WheelDelta() const override { return base_ ? base_->WheelDelta() : 0.0f; }
+    void ConsumeMouseDelta() override {
+        if (base_) base_->ConsumeMouseDelta();
+    }
+    void ConsumeWheel() override {
+        if (base_) base_->ConsumeWheel();
+    }
 
     void EndFrame() override {
         if (base_) base_->EndFrame();

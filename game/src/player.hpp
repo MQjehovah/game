@@ -73,12 +73,11 @@ struct PlayerConfig {
 // smoke assertions hold (welcomed, snapshots received, controlled entity
 // moved) — the loopback smoke test for the networking layer.
 //
-// NOTE (input double-consume): the orbit camera reads MouseDelta/WheelDelta
-// every frame, and scripts see the SAME accumulated values through the
-// InputMouseX/Y bindings — a script "consuming" the mouse does not hide it
-// from the camera (the input state only resets at EndFrame). A data-driven
-// game that needs exclusive mouse control (e.g. an FPS look script) will
-// require a capture/lock option on the player.
+// MOUSE OWNERSHIP: by default the orbit camera consumes MouseDelta/WheelDelta
+// each frame, so scripts see 0 via InputMouseX/Y (no double-consume). A scene
+// that needs exclusive mouse control (e.g. an FPS look script) sets the
+// GameVar "cameraMouseLock" (truthy) and the camera yields entirely, letting
+// the script read the raw delta. See UpdateCamera for details.
 class PlayerApp : public core::Application {
 public:
     explicit PlayerApp(PlayerConfig cfg) : cfg_(std::move(cfg)) {}

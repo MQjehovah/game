@@ -64,6 +64,8 @@ public:
     math::Vec2 MousePos() const override { return mousePos_; }
     math::Vec2 MouseDelta() const override { return mouseDelta_; }
     float WheelDelta() const override { return wheel_; }
+    void ConsumeMouseDelta() override { mouseDelta_ = {0.0f, 0.0f}; }
+    void ConsumeWheel() override { wheel_ = 0.0f; }
 
     void EndFrame() override {
         prevKeys_ = keys_;

@@ -320,10 +320,13 @@ void PlayerApp::OnUpdate(float dt) {
 // GameVar "cameraFocus" = {x,y,z} (data-driven framing); the default is the
 // world origin. Mouse drag orbits, wheel zooms.
 //
-// NOTE: this reads MouseDelta/WheelDelta every frame and scripts see the SAME
-// accumulated values via InputMouseX/Y (the input state only clears at
-// EndFrame), so the orbit camera and data-driven scripts double-consume mouse
-// input. See the PlayerApp class comment for the FPS-camera caveat.
+// MOUSE OWNERSHIP: by default the orbit camera is the SOLE consumer of the
+// frame's MouseDelta/WheelDelta — after applying them it consumes the input,
+// so scripts reading InputMouseX/Y see 0 (no double-consume). A scene that
+// needs exclusive mouse control (e.g. an FPS look script) sets the GameVar
+// "cameraMouseLock" to a truthy value: the camera then yields entirely and
+// scripts read the raw delta. The mode flips one frame after the script sets
+// the var (the camera runs before scripts in OnUpdate).
 void PlayerApp::UpdateCamera(float dt) {
     math::Vec3 focus = focus_;
     script::Value f = runtime_.GameVars().Get("cameraFocus");
@@ -338,11 +341,21 @@ void PlayerApp::UpdateCamera(float dt) {
     }
 
     platform::IInput* input = Input();
-    yaw_ += -input->MouseDelta().x * 0.004f;
-    pitch_ += -input->MouseDelta().y * 0.004f;
-    pitch_ = math::Clamp(pitch_, -1.3f, 1.3f);
-    float wheel = input->WheelDelta();
-    if (std::fabs(wheel) > 0.01f) camDist_ = math::Clamp(camDist_ - wheel * 1.5f, 2.0f, 80.0f);
+    const script::Value lock = runtime_.GameVars().Get("cameraMouseLock");
+    const bool mouseLocked = (lock.type == script::Value::Type::Number &&
+                              lock.number != 0.0) ||
+                             (lock.type == script::Value::Type::Bool && lock.boolean);
+    if (!mouseLocked) {
+        yaw_ += -input->MouseDelta().x * 0.004f;
+        pitch_ += -input->MouseDelta().y * 0.004f;
+        pitch_ = math::Clamp(pitch_, -1.3f, 1.3f);
+        float wheel = input->WheelDelta();
+        if (std::fabs(wheel) > 0.01f)
+            camDist_ = math::Clamp(camDist_ - wheel * 1.5f, 2.0f, 80.0f);
+        // The camera owns the mouse by default: consume so scripts see zero.
+        input->ConsumeMouseDelta();
+        input->ConsumeWheel();
+    }
 
     math::Vec3 offset{std::sin(yaw_) * std::cos(pitch_), std::sin(pitch_),
                       std::cos(yaw_) * std::cos(pitch_)};
