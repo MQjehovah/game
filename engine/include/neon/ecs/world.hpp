@@ -9,6 +9,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "neon/core/log.hpp"
 #include "neon/ecs/parallel.hpp"
 
 namespace neon::ecs {
@@ -141,7 +142,13 @@ public:
     template <class T, class U>
     class View<T, U> {
     public:
-        explicit View(Pool<T>& pool, World& world) : pool_(pool), world_(world) {}
+        // Pre-creates the U pool at construction (not lazily during iteration),
+        // so workers in ParallelForEach only ever read an existing pool and
+        // never race to insert into the world's pool table. Constructing a
+        // View<T,U> therefore always leaves both pools present.
+        explicit View(Pool<T>& pool, World& world) : pool_(pool), world_(world) {
+            world_.template GetPool<U>();
+        }
         size_t Size() const { return pool_.Size(); }
         T& operator[](size_t i) { return pool_.dense()[i]; }
 
@@ -195,6 +202,13 @@ public:
     template <class T>
     T& Add(Entity e, const T& value = T{}) {
         assert(!inParallelIteration_ && "World::Add<T>() forbidden inside a parallel iteration");
+        if (inParallelIteration_) {
+            // Refused: no-op (no pool access - GetPool may insert). The returned
+            // reference is a throwaway never stored; treat it as void.
+            RejectParallelMutation("Add");
+            static T kRejected{};
+            return kRejected;
+        }
         Pool<T>& pool = GetPool<T>();
         pool.Add(e.id, value);
         return pool.Get(e.id);
@@ -220,6 +234,10 @@ public:
     template <class T>
     void Remove(Entity e) {
         assert(!inParallelIteration_ && "World::Remove<T>() forbidden inside a parallel iteration");
+        if (inParallelIteration_) {
+            RejectParallelMutation("Remove"); // no-op, no pool access
+            return;
+        }
         if (!Alive(e)) return;
         GetPool<T>().Remove(e.id);
     }
@@ -231,8 +249,16 @@ public:
 
     template <class T, class U>
     View<T, U> ViewAll() {
-        GetPool<U>(); // ensure the U pool exists; read (never written) during iteration
+        // The View<T,U> constructor pre-creates the U pool.
         return View<T, U>(GetPool<T>(), *this);
+    }
+
+    // Direct access to a component pool (advanced / batch-iteration use).
+    // Ensures the pool exists, like Get<T>/ViewAll<T>. Enables callers to
+    // construct views directly, e.g. World::View<T,U>(world.PoolOf<T>(), world).
+    template <class T>
+    Pool<T>& PoolOf() {
+        return GetPool<T>();
     }
 
     // Entity handle for the index-th element of a component pool view.
@@ -281,14 +307,33 @@ private:
 
     // RAII guard raised around a ParallelForEach pass. Cleared on the owning
     // thread after the pass joins, so worker threads only ever see it as true.
+    // Also verifies the pass created no component pools (a read during the pass
+    // must never insert into the pool table): logs an error when it did.
     class ParallelIterationGuard {
     public:
-        explicit ParallelIterationGuard(World& w) : world_(w) { world_.inParallelIteration_ = true; }
-        ~ParallelIterationGuard() { world_.inParallelIteration_ = false; }
+        explicit ParallelIterationGuard(World& w)
+            : world_(w), poolsBefore_(w.poolIndex_.size()) {
+            world_.inParallelIteration_ = true;
+        }
+        ~ParallelIterationGuard() {
+            world_.inParallelIteration_ = false;
+            if (world_.poolIndex_.size() != poolsBefore_) {
+                assert(false && "parallel iteration created a component pool (world mutation)");
+                NEON_LOG_CAT(neon::core::LogCategory::Ecs, neon::core::LogLevel::Error,
+                             "parallel iteration grew the component pool table (%zu -> %zu): "
+                             "views must pre-create every pool they read",
+                             poolsBefore_, world_.poolIndex_.size());
+            }
+        }
 
     private:
         World& world_;
+        size_t poolsBefore_;
     };
+
+    // Logs an error and returns - called when a world mutation is attempted
+    // inside a parallel iteration. The caller then refuses the mutation.
+    void RejectParallelMutation(const char* op);
 
     bool inParallelIteration_ = false;
     std::vector<uint32_t> generations_{1}; // entity ids start at 1

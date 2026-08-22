@@ -18,6 +18,7 @@ enum class LogCategory {
     Audio,
     Physics,
     Scene,
+    Ecs,
     Script,
     Bt,
     Net,

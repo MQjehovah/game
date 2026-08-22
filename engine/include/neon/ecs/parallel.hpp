@@ -1,10 +1,13 @@
 #pragma once
 #include <algorithm>
 #include <atomic>
+#include <cassert>
 #include <cstdint>
 #include <functional>
 #include <memory>
 #include <vector>
+
+#include "neon/core/log.hpp"
 
 // Deterministic parallel-for jobs over contiguous index ranges.
 //
@@ -41,13 +44,18 @@ namespace parallel {
 // associative/commutative types (e.g. int64) the combined result also equals a
 // fully serial reduction bit-for-bit.
 //
-// NOTE: `total` must equal the count passed to ParallelFor, and `slots` should
-// be the worker count of the pool used (AvailableWorkers() for the global
-// pool), so chunks == min(slots, total) matches the partition exactly.
+// Sizing contract: `total` must equal the count passed to ParallelFor, and
+// `slots` must be >= the worker count of the pool used (AvailableWorkers() for
+// the global pool). When `slots` is too small, distinct chunks collapse onto
+// one slot: Slot() detects the collision, logs an error (category ecs) and
+// Ok() returns false so the misconfiguration is visible even in Release.
 template <class T>
 class Reducer {
 public:
-    explicit Reducer(int slots) : data_(static_cast<size_t>(std::max(slots, 1)), T{}) {}
+    explicit Reducer(int slots)
+        : data_(static_cast<size_t>(std::max(slots, 1)), T{}), visits_(data_.size()) {
+        for (std::atomic<int>& v : visits_) v.store(0, std::memory_order_relaxed);
+    }
 
     // First index of the c-th chunk under ParallelFor's static partition.
     static uint32_t ChunkStart(uint32_t c, uint32_t total, uint32_t chunks) {
@@ -67,13 +75,31 @@ public:
             if (ChunkStart(mid, total, static_cast<uint32_t>(chunks)) <= chunkStart) lo = mid;
             else hi = mid;
         }
+        if (visits_[lo].fetch_add(1, std::memory_order_relaxed) != 0) {
+            // slots < chunk count: two chunks collapsed onto one slot.
+            assert(false && "parallel::Reducer: slots smaller than the chunk count");
+            NEON_LOG_CAT(neon::core::LogCategory::Ecs, neon::core::LogLevel::Error,
+                         "parallel::Reducer slot %u reused: size the Reducer with >= "
+                         "the pool's worker count",
+                         static_cast<unsigned>(lo));
+        }
         return data_[lo];
     }
 
     const std::vector<T>& Slots() const { return data_; }
 
+    // True when no slot was handed to more than one chunk. False signals a
+    // sizing mistake (slots < pool worker count) that would have shared a slot.
+    bool Ok() const {
+        for (size_t i = 0; i < visits_.size(); ++i) {
+            if (visits_[i].load(std::memory_order_relaxed) > 1) return false;
+        }
+        return true;
+    }
+
     // Serial combine of every slot in fixed order. Deterministic across runs.
     T Combine() const {
+        assert(Ok());
         T sum{};
         for (const T& s : data_) sum = sum + s;
         return sum;
@@ -81,6 +107,7 @@ public:
 
 private:
     std::vector<T> data_;
+    std::vector<std::atomic<int>> visits_;
 };
 
 // Bounded worker pool that runs ParallelFor chunks off the calling thread.
@@ -104,6 +131,11 @@ public:
     // Splits [0, count) into contiguous chunks and runs fn(start, end) once
     // per chunk on the workers, then joins. When the pool is unavailable or
     // count <= 1, runs fn(0, count) serially on the calling thread.
+    //
+    // Synchronous + single-submitter: ParallelFor blocks the calling thread
+    // until every chunk has finished (it joins before returning), so it must
+    // NOT be called re-entrantly from inside a chunk (that would deadlock),
+    // and only one ParallelFor may be in flight on the pool at a time.
     void ParallelFor(uint32_t count, std::function<void(uint32_t start, uint32_t end)> fn);
 
 private:

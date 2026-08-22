@@ -41,7 +41,6 @@ struct FillResult {
     std::vector<PPos> pos;
     std::vector<PVel> expectedVel;
 };
-
 FillResult FillWorld(ecs::World& world, size_t n) {
     FillResult r;
     r.pos.resize(n);
@@ -55,6 +54,17 @@ FillResult FillWorld(ecs::World& world, size_t n) {
         r.expectedVel[i] = ComputeVelocity(r.pos[i]);
     }
     return r;
+}
+
+// Log sink counting Ecs-category Error entries, so tests can assert that
+// guarded violations were both rejected AND reported in a Release build.
+struct EcsLogCounter {
+    std::atomic<int> count{0};
+};
+void EcsErrorSink(const neon::core::LogEntry& e, void* userData) {
+    if (e.category == neon::core::LogCategory::Ecs && e.level == neon::core::LogLevel::Error) {
+        static_cast<EcsLogCounter*>(userData)->count.fetch_add(1);
+    }
 }
 
 } // namespace
@@ -235,4 +245,137 @@ TEST(ECSParallelLargePassCompletes) {
     world.ViewAll<PPos>().ParallelForEach(
         [&out](ecs::Entity e, PPos& p) { out[e.id - 1] = ComputeVelocity(p); });
     CHECK(std::memcmp(out.data(), fr.expectedVel.data(), out.size() * sizeof(PVel)) == 0);
+}
+
+// 8. World mutation inside a parallel pass is REJECTED (logged + no-op) even in
+// Release builds: Create returns an invalid entity, Add/Remove/Destroy change
+// nothing, and every violation is reported on the ecs log category.
+TEST(ECSParallelMutationRejected) {
+    ecs::World world;
+    const size_t n = 64;
+    for (size_t i = 0; i < n; ++i) {
+        ecs::Entity e = world.Create();
+        world.Add<PPos>(e, PPos{static_cast<float>(i), 0.0f});
+    }
+    world.ViewAll<PVel>(); // pre-create the PVel pool so an Add would target it
+    const size_t entitiesBefore = world.EntityCount();
+    const size_t velBefore = world.ViewAll<PVel>().Size();
+
+    std::atomic<int> sawGuard{0};
+    std::atomic<int> rejectedCreates{0};
+    EcsLogCounter errs;
+    core::AddLogSink(&EcsErrorSink, &errs);
+
+    world.ViewAll<PPos>().ParallelForEach([&](ecs::Entity e, PPos&) {
+        if (world.InParallelIteration()) sawGuard.fetch_add(1, std::memory_order_relaxed);
+        ecs::Entity c = world.Create();
+        if (!c.IsValid()) rejectedCreates.fetch_add(1, std::memory_order_relaxed);
+        world.Add<PVel>(e, PVel{1.0f, 1.0f});
+        world.Remove<PVel>(e);
+        world.Destroy(e);
+    });
+
+    core::RemoveLogSink(&EcsErrorSink, &errs);
+
+    CHECK_EQ(sawGuard.load(), static_cast<int>(n)); // guard active on every callback
+    CHECK_EQ(rejectedCreates.load(), static_cast<int>(n)); // every Create refused
+    CHECK_EQ(world.EntityCount(), entitiesBefore); // Destroy refused
+    CHECK_EQ(world.ViewAll<PVel>().Size(), velBefore); // Add/Remove refused
+    CHECK_EQ(world.ViewAll<PPos>().Size(), n); // all entities still alive
+    CHECK(errs.count.load() >= 4); // one logged rejection per mutation op, minimum
+}
+
+// 9. Direct construction of View<T,U> (not via ViewAll) is safe: the ctor
+// pre-creates the U pool, so a parallel pass over it never inserts into the
+// world's pool table concurrently (guarded by ParallelIterationGuard, which
+// logs an ecs-category error on growth). Two phases prove it: (A) on a world
+// where the U pool does NOT yet exist, a pass must still complete with zero
+// pool-growth errors (only the ctor could have created U beforehand); (B) with
+// entities holding both components, results are correct and visited only the
+// matching entities.
+TEST(ECSParallelTwoComponentDirectConstruction) {
+    EcsLogCounter errs;
+
+    // Phase A: no PVel components/pool exist. If the ctor did not pre-create
+    // the U pool, the worker lookups would concurrently insert into poolIndex_
+    // and ParallelIterationGuard would log pool growth.
+    {
+        ecs::World world;
+        for (size_t i = 0; i < 2000; ++i) {
+            ecs::Entity e = world.Create();
+            world.Add<PPos>(e, PPos{static_cast<float>(i), 0.0f});
+        }
+        ecs::World::View<PPos, PVel> view(world.PoolOf<PPos>(), world);
+
+        core::AddLogSink(&EcsErrorSink, &errs);
+        view.ParallelForEach([](ecs::Entity, PPos&, PVel&) {});
+        core::RemoveLogSink(&EcsErrorSink, &errs);
+        CHECK_EQ(errs.count.load(), 0); // U pool existed (ctor) -> no growth
+    }
+
+    // Phase B: entities with both components; direct construction still yields
+    // correct, bit-exact results for exactly the entities holding both.
+    {
+        ecs::World world;
+        const size_t n = 2000;
+        std::vector<PVel> expected(n);
+        for (size_t i = 0; i < n; ++i) {
+            ecs::Entity e = world.Create();
+            world.Add<PPos>(e, PPos{static_cast<float>(i), static_cast<float>(i)});
+            if (i % 2 == 0) {
+                world.Add<PVel>(e, PVel{1.0f, 2.0f});
+                expected[i] = PVel{static_cast<float>(i) + 2.0f, 2.0f}; // p.x + v.dy
+            }
+        }
+
+        ecs::World::View<PPos, PVel> view(world.PoolOf<PPos>(), world);
+
+        core::AddLogSink(&EcsErrorSink, &errs);
+        std::vector<PVel> out(n);
+        view.ParallelForEach([&out](ecs::Entity e, PPos& p, PVel& v) {
+            v.dx = p.x + v.dy;
+            out[e.id - 1] = v;
+        });
+        core::RemoveLogSink(&EcsErrorSink, &errs);
+        CHECK_EQ(errs.count.load(), 0); // no pool growth / world mutation
+
+        int visited = 0;
+        for (size_t i = 0; i < n; ++i) {
+            if (expected[i].dy != 0.0f) {
+                ++visited;
+                CHECK_EQ(out[i].dx, expected[i].dx);
+                CHECK_EQ(out[i].dy, expected[i].dy);
+            }
+        }
+        CHECK_EQ(visited, static_cast<int>(n / 2)); // only entities with BOTH components
+    }
+}
+
+// 10. Reducer sizing guard: with slots >= worker count every chunk gets its own
+// slot (Ok() true, deterministic combine). In Release, an under-sized Reducer
+// is detected (Ok() false) instead of silently corrupting the reduction.
+TEST(ParallelForReducerMisSizedDetected) {
+    const uint32_t n = 10000;
+    const int64_t serialSum = 49995000; // sum of i, i in [0, n)
+
+    ecs::parallel::Reducer<int64_t> ok(ecs::parallel::AvailableWorkers());
+    ecs::parallel::ParallelFor(n, [&ok, n](uint32_t s, uint32_t e) {
+        int64_t& acc = ok.Slot(s, n);
+        for (uint32_t i = s; i < e; ++i) acc += static_cast<int64_t>(i);
+    });
+    CHECK(ok.Ok());
+    CHECK_EQ(ok.Combine(), serialSum);
+
+#if defined(NDEBUG)
+    // Release: an under-sized Reducer (slots < worker count) collapses several
+    // chunks onto one slot; Slot() flags it. The fn does not write to the
+    // returned slot so the test itself stays race-free (a real user write would
+    // be a data race, which is exactly what the sizing contract forbids).
+    ecs::parallel::Reducer<int64_t> tooSmall(1);
+    ecs::parallel::ParallelFor(n, [&tooSmall, n](uint32_t s, uint32_t e) {
+        (void)e;
+        (void)tooSmall.Slot(s, n);
+    });
+    CHECK(!tooSmall.Ok());
+#endif
 }

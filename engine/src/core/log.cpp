@@ -47,6 +47,7 @@ const char* CategoryName(LogCategory category) {
         case LogCategory::Audio: return "audio";
         case LogCategory::Physics: return "physics";
         case LogCategory::Scene: return "scene";
+        case LogCategory::Ecs: return "ecs";
         case LogCategory::Script: return "script";
         case LogCategory::Bt: return "bt";
         case LogCategory::Net: return "net";
@@ -84,6 +85,7 @@ LogCategory CategoryFromName(const std::string& name) {
     if (n == "audio") return LogCategory::Audio;
     if (n == "physics") return LogCategory::Physics;
     if (n == "scene") return LogCategory::Scene;
+    if (n == "ecs") return LogCategory::Ecs;
     if (n == "script") return LogCategory::Script;
     if (n == "bt") return LogCategory::Bt;
     if (n == "net") return LogCategory::Net;
