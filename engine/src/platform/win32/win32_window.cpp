@@ -171,6 +171,7 @@ public:
             skipNextDelta_ = true;
         } else {
             ShowCursor(TRUE);
+            hasLastCursor_ = false; // re-seed on the next move to avoid a jump
         }
     }
 
@@ -271,6 +272,16 @@ private:
                     ClientToScreen(hwnd_, &center);
                     SetCursorPos(center.x, center.y);
                     lastCursor_ = {rc.right / 2, rc.bottom / 2};
+                } else {
+                    // Editor-style relative tracking: report the movement since
+                    // the previous position even without capture so viewport
+                    // orbit/pan (which read MouseDelta) respond to mouse drags.
+                    if (hasLastCursor_) {
+                        dx = x - lastCursor_.x;
+                        dy = y - lastCursor_.y;
+                    }
+                    lastCursor_ = {x, y};
+                    hasLastCursor_ = true;
                 }
                 if (onEvent) {
                     InputEvent e;
@@ -480,6 +491,7 @@ private:
     bool shouldClose_ = false;
     bool capturing_ = false;
     POINT lastCursor_{};
+    bool hasLastCursor_ = false; // first WM_MOUSEMOVE seeds lastCursor_ (no delta)
     bool skipNextDelta_ = false;
 };
 

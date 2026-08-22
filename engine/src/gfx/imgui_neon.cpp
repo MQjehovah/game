@@ -255,8 +255,12 @@ void ImGuiNeon_NewFrame(platform::IInput& input, const std::string& pendingText,
     io.DisplaySize = ImVec2(static_cast<float>(gState.displayW),
                             static_cast<float>(gState.displayH));
     io.DisplayFramebufferScale = ImVec2(1.0f, 1.0f);
-    // 1.92+ moved the global font scale from io to style.
-    ImGui::GetStyle().FontScaleMain = gState.renderer->UIScale();
+    // Keep the font at its rasterized size. FontScaleMain was being set to
+    // UIScale() (which tracks window height), resampling the baked atlas
+    // glyphs and turning every resize into blurry text + erratic point sizes.
+    // The docking layout already adapts to the window, so the font stays crisp
+    // and constant while the panels grow/shrink around it.
+    ImGui::GetStyle().FontScaleMain = 1.0f;
     io.DeltaTime = std::max(1.0f / 120.0f, std::min(dt, 1.0f / 20.0f));
 
     // Mouse.

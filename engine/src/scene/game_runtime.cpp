@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdint>
 #include <fstream>
 #include <iterator>
@@ -402,7 +403,23 @@ void GameRuntime::BuildDrawList() {
         item.ent = ent;
         item.meshKey = m->meshKey;
         item.lod = m->lod; // data-driven LOD chain spec; resolved at Draw time
-        item.mat = gfx::Material::Lit({}, ParseColorHex(m->colorHex), 24.0f);
+        // Base material. A "gltf:" entity inherits the glTF node's baked PBR
+        // material (albedo/metal-roughness/AO/emissive textures) so playtest
+        // matches what the editor shows; otherwise start from a plain Lit
+        // material. The entity's own color/metallic/roughness/texture fields
+        // are then applied on top (mirroring EditorApp::ApplyMaterialParams),
+        // so explicit material edits still win over the file's defaults.
+        const bool gltfBase = m->meshKey.compare(0, 5, "gltf:") == 0 && cfg_.assets;
+        if (gltfBase) {
+            assets::GltfAsset gltf = cfg_.assets->LoadGLTF(FullAssetPath(m->meshKey.substr(5)));
+            if (!gltf.nodes.empty())
+                item.mat = gltf.nodes[0].material;
+            else
+                item.mat = gfx::Material::Lit({}, ParseColorHex(m->colorHex), 24.0f);
+        } else {
+            item.mat = gfx::Material::Lit({}, ParseColorHex(m->colorHex), 24.0f);
+        }
+        item.mat.tint = ParseColorHex(m->colorHex);
         item.mat.metallic = m->metallic;
         item.mat.roughness = m->roughness;
         item.mat.aoStrength = m->ao;
@@ -475,9 +492,27 @@ gfx::Mesh GameRuntime::ResolveMeshKey(gfx::Renderer& renderer, const std::string
     } else if (key == "plane") {
         mesh = gfx::Mesh::CreatePlane(renderer, 10.0f, 10.0f, 4, 4, "plane");
     } else if (key == "terrain") {
-        // Flat-ground fallback: the editor's heightfield terrain has no file;
-        // render a large flat plane so playtest stays visually useful.
-        mesh = gfx::Mesh::CreatePlane(renderer, 60.0f, 60.0f, 24, 24, "terrain");
+        // The editor's heightfield terrain has no file on disk, so regenerate
+        // the same procedural field here (same formula as EditorApp::MakeTerrain)
+        // to keep the playtest ground's grass vertex colors + rolling shape
+        // identical to what the editor viewport shows.
+        const int segments = 48;
+        const float size = 60.0f;
+        std::vector<float> heights(static_cast<size_t>(segments + 1) * (segments + 1), 0.0f);
+        const float half = size * 0.5f;
+        const float cell = size / static_cast<float>(segments);
+        for (int row = 0; row <= segments; ++row) {
+            for (int col = 0; col <= segments; ++col) {
+                const float x = -half + col * cell;
+                const float z = -half + row * cell;
+                float h = std::sin(x * 0.11f) * std::cos(z * 0.13f) * 0.8f +
+                          std::sin(x * 0.31f + z * 0.27f) * 0.35f;
+                const float d = std::sqrt(x * x + z * z);
+                h *= math::Saturate((d - 6.0f) / 10.0f); // flatten the centre
+                heights[static_cast<size_t>(row) * (segments + 1) + col] = h;
+            }
+        }
+        mesh = gfx::Mesh::CreateTerrain(renderer, segments, size, heights, 1.0f, "terrain");
     }
     return mesh;
 }

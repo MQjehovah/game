@@ -180,9 +180,10 @@ std::string MeshKeyAssetPath(const std::string& key) {
     return {};
 }
 
-math::Ray ScreenRay(const gfx::Camera& cam, float aspect, const math::Vec2& designPos) {
-    float ndcX = designPos.x / static_cast<float>(gfx::Renderer::kDesignWidth) * 2.0f - 1.0f;
-    float ndcY = 1.0f - designPos.y / static_cast<float>(gfx::Renderer::kDesignHeight) * 2.0f;
+// Unprojects a point from clip space to a world ray for the given camera.
+// ndcX/ndcY are in [-1, 1] (y-up, matching the renderer's screen→NDC mapping:
+// ndcX = px*2/width-1, ndcY = 1 - py*2/height).
+math::Ray RayFromNDC(const gfx::Camera& cam, float aspect, float ndcX, float ndcY) {
     math::Vec3 fwd = (cam.target - cam.position).Normalized();
     math::Vec3 right = math::Cross(fwd, cam.up).Normalized();
     math::Vec3 upv = math::Cross(right, fwd);
@@ -197,6 +198,16 @@ math::Ray ScreenRay(const gfx::Camera& cam, float aspect, const math::Vec2& desi
     float tanF = std::tan(cam.fovY * 0.5f);
     math::Vec3 dir = (fwd + right * ndcX * tanF * aspect + upv * ndcY * tanF).Normalized();
     return {cam.position, dir};
+}
+
+// Design-space variant used by the smoke tests (design resolution 1280x720).
+// NOTE: picking uses RayFromNDC directly from client-pixel coordinates so it
+// stays correct at any window aspect; converting design→NDC only matches the
+// full-window render when the window is exactly 16:9.
+math::Ray ScreenRay(const gfx::Camera& cam, float aspect, const math::Vec2& designPos) {
+    const float ndcX = designPos.x / static_cast<float>(gfx::Renderer::kDesignWidth) * 2.0f - 1.0f;
+    const float ndcY = 1.0f - designPos.y / static_cast<float>(gfx::Renderer::kDesignHeight) * 2.0f;
+    return RayFromNDC(cam, aspect, ndcX, ndcY);
 }
 
 // ---------------------------------------------------------------------------
@@ -660,7 +671,14 @@ void EditorApp::UpdateViewport(float dt) {
     math::Vec2 mp = renderer_.ScreenToUI(input->MousePos());
     // ImGui tool windows capture mouse when hovered/active; the 3D viewport
     // area itself has no ImGui window, so camera controls stay responsive.
-    bool overPanel = ImGui::GetIO().WantCaptureMouse;
+    // NOTE: the DockSpace node host window (named "##NeonDockSpace/...") spans
+    // the whole workspace and is reported as hovered over the open viewport,
+    // so io.WantCaptureMouse is true there too. Only hovering an actual tool
+    // panel (a docked leaf window, i.e. DockNodeAsHost == NULL) or an ImGui
+    // widget should disable the camera controls - a dock host is not a panel.
+    const ImGuiWindow* hoveredWin = ImGui::GetCurrentContext()->HoveredWindow;
+    bool overPanel = ImGui::GetIO().WantCaptureMouse && hoveredWin != nullptr &&
+                     hoveredWin->DockNodeAsHost == nullptr;
     bool inViewport = mp.x >= viewportRect_.x && mp.x <= viewportRect_.x + viewportRect_.w &&
                       mp.y >= viewportRect_.y && mp.y <= viewportRect_.y + viewportRect_.h;
 
@@ -707,7 +725,14 @@ void EditorApp::UpdateViewport(float dt) {
             !gizmoBusy) {
             float aspect = static_cast<float>(renderer_.ScreenWidth()) / renderer_.ScreenHeight();
             gfx::Camera cam = ActiveCamera();
-            math::Ray ray = ScreenRay(cam, aspect, mp);
+            // Build the ray from the ACTUAL client-pixel mouse position so
+            // picking lines up with the full-window render at any window aspect
+            // (the design-space ScreenRay only matches at 16:9).
+            const math::Vec2 mousePx = input->MousePos();
+            const float ndcX = mousePx.x / static_cast<float>(renderer_.ScreenWidth()) * 2.0f - 1.0f;
+            const float ndcY =
+                1.0f - mousePx.y / static_cast<float>(renderer_.ScreenHeight()) * 2.0f;
+            math::Ray ray = RayFromNDC(cam, aspect, ndcX, ndcY);
             float best = 1e30f;
             int picked = -1;
             for (size_t i = 0; i < entities_.size(); ++i) {
