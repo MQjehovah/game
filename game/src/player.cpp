@@ -50,6 +50,15 @@ void StripBom(std::string& s) {
     }
 }
 
+// Parent directory of a path ("a/b/c.json" -> "a/b", "scene.json" -> ".").
+// Mirrors neon_server's DirName so a loose --scene resolves its scripts/ the
+// same way the server does.
+std::string DirName(const std::string& path) {
+    const size_t slash = path.find_last_of("/\\");
+    if (slash == std::string::npos) return ".";
+    return path.substr(0, slash);
+}
+
 std::string MakeTempDir() {
 #if defined(_WIN32)
     char base[MAX_PATH];
@@ -198,8 +207,15 @@ bool PlayerApp::OnCreate() {
     scene::GameRuntimeConfig rcfg;
     rcfg.assets = &assetMgr_;
     rcfg.scriptBaseDir = cfg_.unpackedDir; // scripts/ + behaviors/ resolve here
+    if (!cfg_.looseScenePath.empty()) rcfg.scriptBaseDir = cfg_.scriptsDir;
     rcfg.assetBaseDir = cfg_.unpackedDir;  // obj:/gltf:/texture paths resolve here
-    rcfg.input = Input();                  // data-driven scripts read live input
+    // The runtime reads input through ClientInput (a transparent bridge to the
+    // real input; SetForceMove synthesizes W for the --ticks smoke run). The
+    // same bridge feeds the MsgInput builder, so prediction and the
+    // authoritative server see the identical input.
+    clientInput_.SetBase(Input());
+    rcfg.input = &clientInput_;
+    rcfg.rngSeed = cfg_.rngSeed;
     core::Status st = runtime_.Start(sceneJson_, rcfg);
     if (!st.Ok()) {
         NEON_LOG_ERROR("Player: runtime start failed: %s", st.Error().c_str());
@@ -211,6 +227,19 @@ bool PlayerApp::OnCreate() {
                  "player: '%s' started (%zu entities, %zu scripts, %zu trees, %zu draws)",
                  title_.c_str(), runtime_.EntityCount(), runtime_.ScriptCount(),
                  runtime_.BehaviorTreeCount(), runtime_.DrawCount());
+
+    // T6.4 --connect: join the server (UdpSocket + ReliableChannel + MsgJoin),
+    // then per frame send MsgInput, receive MsgSnapshot into ClientSync and
+    // reconcile the controlled entity.
+    if (!cfg_.connectHost.empty() && cfg_.connectPort != 0) {
+        networked_ = true;
+        if (SmokeActive()) clientInput_.SetForceMove(true);
+        if (!StartNetwork()) {
+            CleanupUnpackedDir();
+            return false;
+        }
+        ResolveControlledEntity(); // the script spawns the player in on_start
+    }
     return true;
 }
 
@@ -222,6 +251,22 @@ void PlayerApp::CleanupUnpackedDir() {
 }
 
 bool PlayerApp::LoadSceneJson() {
+    // T6.4 --connect with a loose scene FILE (no pack): load it directly and
+    // resolve scripts from --scripts or the scene file's directory, exactly
+    // like neon_server does. The client runs the SAME scene as the server; the
+    // server is authoritative.
+    if (!cfg_.looseScenePath.empty()) {
+        if (!ReadFileAll(cfg_.looseScenePath, sceneJson_)) {
+            NEON_LOG_ERROR("Player: cannot read scene '%s'", cfg_.looseScenePath.c_str());
+            return false;
+        }
+        StripBom(sceneJson_);
+        if (cfg_.scriptsDir.empty()) cfg_.scriptsDir = DirName(cfg_.looseScenePath);
+        NEON_LOG_INFO("Player: loading loose scene '%s' (scripts from '%s')",
+                      cfg_.looseScenePath.c_str(), cfg_.scriptsDir.c_str());
+        return true;
+    }
+
     std::string scenePath = cfg_.manifest.startScene;
     if (!cfg_.sceneOverride.empty()) {
         scenePath = cfg_.sceneOverride;
@@ -257,7 +302,17 @@ void PlayerApp::OnUpdate(float dt) {
     assetMgr_.PumpAsync();
     if (!started_) return;
     UpdateCamera(dt);
-    runtime_.Tick(dt);
+    if (networked_) {
+        // T6.4 networked frame: ingest snapshots, send this frame's input,
+        // step LOCAL prediction with the same input, then reconcile the
+        // controlled entity against the latest server snapshot.
+        PumpNetwork();
+        SendInputPacket();
+        runtime_.Tick(dt);
+        ReconcileControlled();
+    } else {
+        runtime_.Tick(dt);
+    }
     if (Input()->Pressed(platform::Key::Escape)) Window()->RequestClose();
 }
 
@@ -307,7 +362,10 @@ void PlayerApp::OnRender() {
     if (started_) {
         float aspect = static_cast<float>(renderer_.ScreenWidth()) / renderer_.ScreenHeight();
         renderer_.SetCamera(camera_, aspect);
-        runtime_.Draw(renderer_, camera_);
+        if (networked_)
+            DrawNetworkWorld();
+        else
+            runtime_.Draw(renderer_, camera_);
     }
     renderer_.EndScene();
 
@@ -325,12 +383,235 @@ void PlayerApp::DrawOverlay() {
     ui::DrawLabel(renderer_, theme_, "Esc 退出", {18, static_cast<float>(h) - 28}, 13,
                   theme_.text.WithAlpha(0.8f), false, false);
 
-    char buf[128];
+    char buf[160];
+    if (networked_) {
+        const char* state = connectedLost_    ? "LOST"
+                            : welcomed_       ? "CONNECTED"
+                            : snapshotsReceived_ > 0 ? "LINKED"
+                            : "JOINING";
+        std::snprintf(buf, sizeof(buf),
+                      "%s | %.0f FPS | tick %.0f | snaps %u | server %s:%u",
+                      state, TimeRef().Fps(), sync_.CurrentServerTick(),
+                      snapshotsReceived_, cfg_.connectHost.c_str(), cfg_.connectPort);
+        const float wsnap = static_cast<float>(w) - 500.0f;
+        ui::DrawLabel(renderer_, theme_, buf,
+                      {wsnap < 18.0f ? 18.0f : wsnap, static_cast<float>(h) - 48}, 12,
+                      theme_.text.WithAlpha(0.55f), false, false);
+        std::snprintf(buf, sizeof(buf), "snapshots received: %u | 预测本地: %s | 网络插值: 方框占位",
+                      snapshotsReceived_, controlledMoved_ ? "移动" : "静止");
+        ui::DrawLabel(renderer_, theme_, buf, {18, static_cast<float>(h) - 48}, 12,
+                      theme_.text.WithAlpha(0.55f), false, false);
+        return;
+    }
     std::snprintf(buf, sizeof(buf), "%.0f FPS | 鼠标拖动旋转 滚轮缩放", TimeRef().Fps());
     math::Vec2 size = ui::MeasureText(theme_.font, buf, 12);
     ui::DrawLabel(renderer_, theme_, buf,
                   {static_cast<float>(w) - size.x - 14, static_cast<float>(h) - 28}, 12,
                   theme_.text.WithAlpha(0.55f), false, false);
+}
+
+// ---------------------------------------------------------------------------
+// T6.4 networked client: join, send inputs, receive snapshots, predict +
+// reconcile. The wire format (EncodeBody + MsgJoin/Input/Despawn) matches
+// server::EncodeBody exactly, so the player and the server speak the same
+// protocol.
+// ---------------------------------------------------------------------------
+
+uint64_t PlayerApp::EntityKey(const ecs::Entity& e) const {
+    // Matches GameServer::EntityKey: stable across id reuse via the generation.
+    return (static_cast<uint64_t>(e.id) << 32) | static_cast<uint64_t>(e.generation);
+}
+
+bool PlayerApp::SmokeActive() const {
+    return cfg_.smokeFrames > 0 || cfg_.connectTicks > 0;
+}
+
+bool PlayerApp::StartNetwork() {
+    core::Result<net::UdpSocket> sock = net::UdpSocket::Create();
+    if (!sock.Ok()) {
+        NEON_LOG_ERROR("client: socket create failed: %s", sock.Error().c_str());
+        return false;
+    }
+    clientSock_ = std::move(sock.Value());
+    if (!clientSock_.BindLoopback(0).Ok()) {
+        NEON_LOG_ERROR("client: cannot bind local UDP socket");
+        clientSock_.Close();
+        return false;
+    }
+    if (!clientSock_.SetPeer(net::NetAddress{cfg_.connectHost, cfg_.connectPort}).Ok()) {
+        NEON_LOG_ERROR("client: cannot set peer %s:%u", cfg_.connectHost.c_str(),
+                       cfg_.connectPort);
+        clientSock_.Close();
+        return false;
+    }
+    clientChan_.SetOutbound([this](const std::vector<uint8_t>& bytes) {
+        if (clientSock_.Valid()) clientSock_.Send(bytes.data(), bytes.size());
+    });
+    clientChan_.SetDeliver([this](const net::DecodedMessage& m) { OnClientMessage(m); });
+    clientChan_.SetTimeout([this]() {
+        NEON_LOG_CAT(neon::core::LogCategory::Net, neon::core::LogLevel::Warn,
+                     "client: reliable channel to %s:%u timed out",
+                     cfg_.connectHost.c_str(), cfg_.connectPort);
+        connectedLost_ = true;
+    });
+
+    net::MsgJoin join{"neon_player", net::kProtocolVersion};
+    core::Status st =
+        clientChan_.Send(static_cast<uint8_t>(net::MsgType::Join), client::EncodeBody(join));
+    if (!st.Ok()) {
+        NEON_LOG_ERROR("client: join send failed: %s", st.Error().c_str());
+        clientSock_.Close();
+        return false;
+    }
+    NEON_LOG_CAT(neon::core::LogCategory::Net, neon::core::LogLevel::Info,
+                 "client: connecting to %s:%u", cfg_.connectHost.c_str(), cfg_.connectPort);
+    return true;
+}
+
+void PlayerApp::OnClientMessage(const net::DecodedMessage& msg) {
+    switch (static_cast<net::MsgType>(msg.header.msgId)) {
+        case net::MsgType::Welcome: {
+            const net::MsgWelcome& w = std::get<net::MsgWelcome>(msg.payload);
+            welcomed_ = true;
+            NEON_LOG_CAT(neon::core::LogCategory::Net, neon::core::LogLevel::Info,
+                         "client: welcomed as client id=%llu (server tick %u)",
+                         static_cast<unsigned long long>(w.clientId), w.tick);
+            break;
+        }
+        case net::MsgType::Snapshot: {
+            const net::MsgSnapshot& s = std::get<net::MsgSnapshot>(msg.payload);
+            sync_.OnSnapshot(s);
+            ++snapshotsReceived_;
+            break;
+        }
+        case net::MsgType::Despawn:
+            sync_.OnDespawn(std::get<net::MsgDespawn>(msg.payload).entityId);
+            break;
+        case net::MsgType::Pong:
+        case net::MsgType::Join:
+        case net::MsgType::Input:
+        case net::MsgType::Spawn:
+        case net::MsgType::Ping:
+        case net::MsgType::Ack:
+            break; // client-authoritative messages are ignored
+    }
+}
+
+void PlayerApp::PumpNetwork() {
+    if (connectedLost_) return;
+    uint8_t buf[4096];
+    for (;;) {
+        core::Result<net::RecvPacket> r = clientSock_.RecvFrom(buf, sizeof(buf));
+        if (!r.Ok() || r.Value().size == 0) break;
+        clientChan_.OnDatagram(buf, r.Value().size);
+    }
+    // Monotonic clock in ms (accumulated fixed ticks * 1000); the reliable
+    // channel only needs a monotonic clock for retransmit/timeout/ack pacing.
+    const uint64_t nowMs = static_cast<uint64_t>(TimeRef().elapsed * 1000.0);
+    clientChan_.Tick(nowMs);
+    if (connectedLost_ && SmokeActive()) {
+        NEON_LOG_WARN("client: connection lost; smoke run will report failure");
+    }
+}
+
+void PlayerApp::SendInputPacket() {
+    if (connectedLost_ || clientChan_.TimedOut()) return;
+    // Derive MsgInput from the same input the local prediction reads
+    // (bitmask + axes match the server's NetInput mapping).
+    uint8_t buttons = 0;
+    if (clientInput_.IsDown(platform::Key::Space)) buttons |= client::kButtonJump;
+    if (clientInput_.IsDown(platform::Key::Shift)) buttons |= client::kButtonSprint;
+    if (clientInput_.IsDown(platform::Key::Control)) buttons |= client::kButtonControl;
+    if (clientInput_.IsDown(platform::Key::F)) buttons |= client::kButtonInteract;
+    const float moveX = (clientInput_.IsDown(platform::Key::D) ? 1.0f : 0.0f) -
+                        (clientInput_.IsDown(platform::Key::A) ? 1.0f : 0.0f);
+    const float moveY = (clientInput_.IsDown(platform::Key::W) ? 1.0f : 0.0f) -
+                        (clientInput_.IsDown(platform::Key::S) ? 1.0f : 0.0f);
+    net::MsgInput in{inputSeq_++, buttons, moveX, moveY};
+    core::Status st =
+        clientChan_.Send(static_cast<uint8_t>(net::MsgType::Input), client::EncodeBody(in));
+    if (!st.Ok() && ++sendDropLogs_ <= 3) {
+        // The send window can be full (e.g. the server is slow to ack); the
+        // input is simply not sent this frame. Throttled so it never spams.
+        NEON_LOG_CAT(neon::core::LogCategory::Net, neon::core::LogLevel::Debug,
+                     "client: input %u deferred (%s)", inputSeq_ - 1, st.Error().c_str());
+    }
+}
+
+void PlayerApp::ResolveControlledEntity() {
+    if (controlledKey_ != 0) return;
+    ecs::World& world = runtime_.World();
+    auto view = world.ViewAll<script::CTransformBind>();
+    for (size_t i = 0; i < view.Size(); ++i) {
+        ecs::Entity e = world.EntityAt<script::CTransformBind>(i);
+        controlledEntity_ = e;
+        controlledKey_ = EntityKey(e);
+        const script::CTransformBind* t = world.Get<script::CTransformBind>(e);
+        if (t) controlledStartPos_ = t->pos;
+        NEON_LOG_CAT(neon::core::LogCategory::Net, neon::core::LogLevel::Info,
+                     "client: controlled entity id=%u gen=%u key=%llu start=(%.2f,%.2f,%.2f)",
+                     e.id, e.generation, static_cast<unsigned long long>(controlledKey_),
+                     controlledStartPos_.x, controlledStartPos_.y, controlledStartPos_.z);
+        break;
+    }
+}
+
+void PlayerApp::ReconcileControlled() {
+    if (!welcomed_ || controlledKey_ == 0) return;
+    ecs::World& world = runtime_.World();
+    script::CTransformBind* t = world.Get<script::CTransformBind>(controlledEntity_);
+    if (!t) return;
+    math::Vec3 correction;
+    if (sync_.NeedsReconcile(controlledKey_, t->pos, &correction)) {
+        // v1 snap-on-divergence: the server is authoritative. No replay yet
+        // (T6.7 can add multi-frame re-simulation).
+        t->pos = correction;
+        if (!reconcileLogged_) {
+            NEON_LOG_CAT(neon::core::LogCategory::Net, neon::core::LogLevel::Warn,
+                         "client: reconciled controlled entity to server (%.2f,%.2f,%.2f)",
+                         correction.x, correction.y, correction.z);
+            reconcileLogged_ = true;
+        }
+    }
+    if (controlledKey_ != 0 && t->pos.z - controlledStartPos_.z > 0.5f) controlledMoved_ = true;
+}
+
+void PlayerApp::DrawNetworkWorld() {
+    // Placeholder visual (T6.4): the LOCAL world is used only for prediction;
+    // rendering shows the interpolated remote entities as wireframe boxes plus
+    // the controlled entity at its locally PREDICTED position (highlighted).
+    // A real networked renderer would draw interpolated meshes for the remote
+    // set instead.
+    const net::MsgSnapshot* latest = sync_.Latest();
+    if (!latest) return;
+    double renderTick = sync_.CurrentServerTick() - static_cast<double>(client::kInterpDelayTicks);
+    if (renderTick < 0.0) renderTick = 0.0;
+    const float half = 0.35f;
+    for (const net::SnapshotEntity& e : latest->entities) {
+        if (e.id == controlledKey_) continue; // the controlled one renders below
+        core::Result<client::InterpolatedEntity> s = sync_.Sample(e.id, renderTick);
+        if (!s.Ok()) continue;
+        const math::Vec3 p = s.Value().pos;
+        const math::Vec3 lo{p.x - half, p.y - half, p.z - half};
+        const math::Vec3 hi{p.x + half, p.y + half, p.z + half};
+        renderer_.DrawBox(math::AABB{lo, hi}, gfx::Color{0.4f, 0.8f, 1.0f, 1.0f});
+    }
+    if (controlledKey_ != 0) {
+        const script::CTransformBind* t =
+            runtime_.World().Get<script::CTransformBind>(controlledEntity_);
+        if (t) {
+            const math::Vec3 p = t->pos;
+            const float h2 = half * 1.8f;
+            const math::Vec3 lo{p.x - h2, p.y - h2, p.z - h2};
+            const math::Vec3 hi{p.x + h2, p.y + h2, p.z + h2};
+            renderer_.DrawBox(math::AABB{lo, hi}, gfx::Color::Yellow);
+        }
+    }
+}
+
+bool PlayerApp::SmokeOk() const {
+    if (!networked_) return true; // local runs keep the legacy behavior
+    return welcomed_ && snapshotsReceived_ > 0 && controlledMoved_;
 }
 
 void PlayerApp::CaptureScreenshotIfDue() {
@@ -359,6 +640,18 @@ void PlayerApp::OnShutdown() {
     if (started_) {
         if (cfg_.dumpVars) DumpGameVars();
         runtime_.Stop();
+    }
+    if (networked_) {
+        NEON_LOG_CAT(neon::core::LogCategory::Net, neon::core::LogLevel::Info,
+                     "client: shutting down (welcomed=%d snapshots=%u controlledMoved=%d "
+                     "buffered=%u)",
+                     welcomed_ ? 1 : 0, snapshotsReceived_, controlledMoved_ ? 1 : 0,
+                     sync_.BufferedSnapshots());
+        clientChan_.Reset();
+        clientSock_.Close();
+        if (SmokeActive()) {
+            NEON_LOG_INFO("client: smoke assertions %s", SmokeOk() ? "passed" : "FAILED");
+        }
     }
     renderer_.Shutdown();
     CleanupUnpackedDir();

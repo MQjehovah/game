@@ -7,6 +7,8 @@
 #include "neon/neon.hpp"
 #include "neon/scene/game_manifest.hpp"
 #include "neon/scene/game_runtime.hpp"
+#include "client_input.hpp"
+#include "client_sync.hpp"
 
 namespace neon::player {
 
@@ -37,6 +39,14 @@ struct PlayerConfig {
     uint64_t screenshotFrame = 0;
     bool keep = false;            // --keep: leave the unpacked dir on exit (debug)
     bool dumpVars = false;        // --dump-vars: log every GameVar at exit
+    // T6.4 --connect host:port: join a GameServer, send inputs, receive
+    // snapshots and render the interpolated/reconciled state.
+    std::string connectHost;      // --connect host:port ("" = local-only)
+    uint16_t connectPort = 0;
+    std::string scriptsDir;       // --scripts DIR: scene script base (loose scene mode)
+    std::string looseScenePath;   // --scene <path.json> in connect mode (direct file)
+    int connectTicks = 0;         // --ticks <n>: run n frames then exit (connect smoke)
+    uint64_t rngSeed = 20260821u; // --seed: local prediction RNG (must match the server)
 };
 
 // The data-driven player: unpack a store-only pack to a temp dir, read the
@@ -46,6 +56,20 @@ struct PlayerConfig {
 // a focus point (world origin by default, overridable by a script via the
 // "cameraFocus" GameVar = {x,y,z}); mouse drag orbits, wheel zooms, Esc quits.
 // WASD does NOT move the camera: data-driven scripts read input themselves.
+//
+// CONNECT MODE (T6.4, --connect host:port): the player joins a GameServer as
+// the input controller and renders the networked world. Local prediction: the
+// same scene runs locally in the runtime with the same inputs. Every frame the
+// player sends a MsgInput derived from the real input (ClientInput), steps the
+// local runtime (prediction), receives MsgSnapshot via a reliable channel into
+// ClientSync, and reconciles the controlled entity: when the locally predicted
+// position diverges past the threshold, it snaps to the authoritative server
+// position (v1 snap-on-divergence; no replay — T6.7 can add it). Rendering is
+// a placeholder visual: the interpolated remote entities (from the snapshot
+// buffer) plus the controlled entity at its locally predicted position are
+// drawn as wireframe boxes. --ticks N runs N frames then exits 0 when the
+// smoke assertions hold (welcomed, snapshots received, controlled entity
+// moved) — the loopback smoke test for the networking layer.
 //
 // NOTE (input double-consume): the orbit camera reads MouseDelta/WheelDelta
 // every frame, and scripts see the SAME accumulated values through the
@@ -63,6 +87,11 @@ public:
     void OnRender() override;
     void OnEvent(const platform::InputEvent& event) override;
 
+    // Smoke-mode exit gate (--ticks in --connect mode): true when the network
+    // smoke assertions held (welcomed, snapshots received, controlled entity
+    // moved). Always true without --connect.
+    bool SmokeOk() const;
+
 private:
     bool LoadSceneJson();
     // Removes the unpacked pack dir unless --keep; safe to call repeatedly and
@@ -73,6 +102,17 @@ private:
     void DrawOverlay();
     void CaptureScreenshotIfDue();
     void DumpGameVars();
+
+    // ---- T6.4 networked-client helpers ----------------------------------
+    bool StartNetwork();
+    void OnClientMessage(const net::DecodedMessage& msg);
+    void PumpNetwork();
+    void SendInputPacket();
+    void ResolveControlledEntity();
+    void ReconcileControlled();
+    void DrawNetworkWorld();
+    uint64_t EntityKey(const ecs::Entity& e) const;
+    bool SmokeActive() const;
 
     PlayerConfig cfg_;
     gfx::Renderer renderer_;
@@ -89,6 +129,23 @@ private:
     float pitch_ = 0.32f;
     float camDist_ = 12.0f;
     bool started_ = false;
+
+    // T6.4 network state.
+    bool networked_ = false;
+    client::ClientInput clientInput_;      // bridges real input -> prediction + wire
+    net::UdpSocket clientSock_;
+    net::ReliableChannel clientChan_;
+    client::ClientSync sync_;              // snapshot buffer + interp + reconcile query
+    bool welcomed_ = false;
+    bool connectedLost_ = false;
+    uint32_t inputSeq_ = 0;
+    ecs::Entity controlledEntity_;
+    uint64_t controlledKey_ = 0;           // stable (id<<32)|generation key
+    math::Vec3 controlledStartPos_;
+    bool controlledMoved_ = false;
+    uint32_t snapshotsReceived_ = 0;
+    bool reconcileLogged_ = false;
+    uint32_t sendDropLogs_ = 0;
 };
 
 } // namespace neon::player

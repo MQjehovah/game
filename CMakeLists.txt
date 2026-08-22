@@ -137,6 +137,7 @@ target_link_libraries(neon_rush PRIVATE neon_engine)
 add_executable(neon_game
   game/src/player_main.cpp
   game/src/player.cpp
+  game/src/client_sync.cpp
 )
 target_include_directories(neon_game PRIVATE assets/generated third_party/stb)
 target_link_libraries(neon_game PRIVATE neon_engine)
@@ -297,10 +298,12 @@ add_executable(neon_tests tests/test_main.cpp tests/test_serialize.cpp tests/tes
   tests/test_ecs_parallel.cpp
   tests/test_reliable.cpp
   tests/test_server.cpp
-  editor/src/history.cpp editor/src/packager.cpp server/src/game_server.cpp)
+  tests/test_client_sync.cpp
+  editor/src/history.cpp editor/src/packager.cpp server/src/game_server.cpp
+  game/src/client_sync.cpp)
 target_link_libraries(neon_tests PRIVATE neon_engine)
 # test_history.cpp includes the editor's generic undo/redo stack header.
-target_include_directories(neon_tests PRIVATE editor/src third_party/stb server/src)
+target_include_directories(neon_tests PRIVATE editor/src third_party/stb server/src game/src)
 if(MSVC)
   target_compile_options(neon_tests PRIVATE /W4 /permissive- /utf-8)
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")

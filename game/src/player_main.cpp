@@ -1,6 +1,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <string>
 #include <utility>
 
 #include "neon/core/config.hpp"
@@ -12,9 +13,20 @@ void PrintHelp() {
     std::printf(
         "neon_game - NeonEngine generic data-driven player\n"
         "Usage: neon_game --pack <file> [options]\n"
-        "  --pack <file>              game.pack to run (required)\n"
-        "  --scene <name>             override the manifest startScene; a bare name\n"
-        "                             maps to scenes/<name>.json\n"
+        "  --pack <file>              game.pack to run (required unless --connect uses\n"
+        "                             a loose --scene file)\n"
+        "  --scene <name|path>        override the manifest startScene; a bare name maps\n"
+        "                             to scenes/<name>.json, a file path is loaded directly\n"
+        "                             (loose scene, --connect mode)\n"
+        "  --connect host:port        join a GameServer as the input controller (T6.4):\n"
+        "                             local prediction + snapshot interpolation + reconcile\n"
+        "  --scripts DIR              scene script base dir (loose --scene mode; defaults\n"
+        "                             to the scene file's directory, like neon_server)\n"
+        "  --ticks <n>                run n frames then exit; in --connect mode the exit is\n"
+        "                             0 only when snapshots were received and the controlled\n"
+        "                             entity moved (smoke assertion)\n"
+        "  --seed <n>                 local prediction RNG seed (must match the server's\n"
+        "                             --seed for deterministic scenes)\n"
         "  --smoke-test <n>           run n fixed ticks then exit 0 (verification)\n"
         "  --screenshot <file> <n>    capture a PNG at frame n\n"
         "  --dump-vars                log every GameVar at exit (verification)\n"
@@ -24,6 +36,13 @@ void PrintHelp() {
         "                             e.g. gfx:debug); names: core,gfx,audio,physics,scene,\n"
         "                             script,bt,net,editor,game\n"
         "  --help                     show this help\n");
+}
+
+// True when a --scene value is a direct file path rather than a pack scene
+// name (contains a path separator or ends with .json).
+bool LooksLikePath(const std::string& s) {
+    return s.find('/') != std::string::npos || s.find('\\') != std::string::npos ||
+           s.size() > 5 && s.compare(s.size() - 5, 5, ".json") == 0;
 }
 
 } // namespace
@@ -36,6 +55,27 @@ int main(int argc, char** argv) {
             cfg.packPath = argv[++i];
         } else if (std::strcmp(argv[i], "--scene") == 0 && i + 1 < argc) {
             cfg.sceneOverride = argv[++i];
+        } else if (std::strcmp(argv[i], "--connect") == 0 && i + 1 < argc) {
+            std::string hostPort = argv[++i];
+            const size_t colon = hostPort.rfind(':');
+            if (colon == std::string::npos) {
+                std::fprintf(stderr, "neon_game: --connect expects host:port\n");
+                return 2;
+            }
+            cfg.connectHost = hostPort.substr(0, colon);
+            cfg.connectPort =
+                static_cast<uint16_t>(std::atoi(hostPort.substr(colon + 1).c_str()));
+            if (cfg.connectHost.empty() || cfg.connectPort == 0) {
+                std::fprintf(stderr, "neon_game: bad --connect endpoint '%s'\n",
+                             hostPort.c_str());
+                return 2;
+            }
+        } else if (std::strcmp(argv[i], "--scripts") == 0 && i + 1 < argc) {
+            cfg.scriptsDir = argv[++i];
+        } else if (std::strcmp(argv[i], "--ticks") == 0 && i + 1 < argc) {
+            cfg.connectTicks = std::atoi(argv[++i]);
+        } else if (std::strcmp(argv[i], "--seed") == 0 && i + 1 < argc) {
+            cfg.rngSeed = std::strtoull(argv[++i], nullptr, 10);
         } else if (std::strcmp(argv[i], "--smoke-test") == 0 && i + 1 < argc) {
             cfg.smokeFrames = std::atoi(argv[++i]);
         } else if (std::strcmp(argv[i], "--screenshot") == 0 && i + 2 < argc) {
@@ -51,32 +91,53 @@ int main(int argc, char** argv) {
         }
     }
 
-    if (cfg.packPath.empty()) {
-        std::fprintf(stderr, "neon_game: no --pack file given (see --help)\n");
+    const bool connectMode = !cfg.connectHost.empty() && cfg.connectPort != 0;
+    // A --scene that looks like a file path is a loose scene loaded directly
+    // from disk (the client runs the SAME scene JSON as the server); a bare
+    // name still resolves inside the pack.
+    if (connectMode && !cfg.sceneOverride.empty() && LooksLikePath(cfg.sceneOverride)) {
+        cfg.looseScenePath = cfg.sceneOverride;
+        cfg.sceneOverride.clear();
+    }
+
+    if (cfg.packPath.empty() && cfg.looseScenePath.empty()) {
+        std::fprintf(stderr, "neon_game: no --pack (or --connect --scene <file>) given "
+                             "(see --help)\n");
         return 1;
     }
 
-    auto boot = neon::player::BootPack(cfg.packPath);
-    if (!boot.Ok()) {
-        std::fprintf(stderr, "neon_game: %s\n", boot.Error().c_str());
-        return 1;
+    if (cfg.looseScenePath.empty()) {
+        auto boot = neon::player::BootPack(cfg.packPath);
+        if (!boot.Ok()) {
+            std::fprintf(stderr, "neon_game: %s\n", boot.Error().c_str());
+            return 1;
+        }
+        cfg.unpackedDir = boot.Value().unpackedDir;
+        cfg.manifest = boot.Value().manifest;
     }
-    cfg.unpackedDir = boot.Value().unpackedDir;
-    cfg.manifest = boot.Value().manifest;
-    const int smokeFrames = cfg.smokeFrames;
+    const int frames = cfg.connectTicks > 0 ? cfg.connectTicks : cfg.smokeFrames;
 
     neon::platform::WindowConfig config;
-    config.title = cfg.manifest.title.empty() ? "Neon Game" : cfg.manifest.title;
-    config.width = cfg.manifest.window.w;
-    config.height = cfg.manifest.window.h;
+    config.title = cfg.manifest.title.empty()
+                       ? (connectMode ? "Neon Client" : "Neon Game")
+                       : cfg.manifest.title;
+    config.width = cfg.manifest.window.w > 0 ? cfg.manifest.window.w : 1280;
+    config.height = cfg.manifest.window.h > 0 ? cfg.manifest.window.h : 720;
     config.resizable = true;
     config.vsync = true;
     config.glMajor = 4;
     config.glMinor = 6;
 
     neon::player::PlayerApp app(std::move(cfg));
-    if (smokeFrames > 0) app.SetSmokeTestFrames(smokeFrames);
+    if (frames > 0) app.SetSmokeTestFrames(frames);
     int result = app.Run(config);
+    if (connectMode && frames > 0) {
+        if (!app.SmokeOk()) {
+            std::fprintf(stderr, "neon_game: connect smoke FAILED (snapshots received? "
+                                 "controlled moved?)\n");
+            return 1;
+        }
+    }
     std::printf("neon_game exited with code %d\n", result);
     return result;
 }
