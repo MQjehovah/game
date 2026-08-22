@@ -264,7 +264,10 @@ private:
     bool showInspector_ = true;
     bool showAssets_ = false;
     bool showResources_ = false;
-    bool showLog_ = false;
+    // Log panel visible by default so the bottom dock node is never empty
+    // (an all-hidden bottom node collapses into the viewport and the full-window
+    // 3D scene bleeds down into where the panels should be).
+    bool showLog_ = true;
     bool showCustomUIDemo_ = false;
     bool showImGuiDemo_ = false;
 
@@ -276,6 +279,9 @@ private:
     gfx::Texture previewTexture_;
     ImTextureID previewTexId_ = ImTextureID_Invalid;
     math::Rect2 viewportRect_{244, 58, 792, 640};
+    // The 视口 window's rect in SCREEN pixels (set by BuildViewportPanel); the
+    // 3D pass is scissored to it so the scene never bleeds into the dock area.
+    math::Rect2 viewportScreenRect_{0, 0, 0, 0};
     std::vector<core::LogEntry> logEntries_;
     int logFilter_ = 0; // 0 all, 1 info+, 2 warn+, 3 error
     bool logAutoScroll_ = true;

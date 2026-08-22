@@ -618,6 +618,16 @@ void EditorApp::OnUpdate(float dt) {
 
 void EditorApp::OnRender() {
     renderer_.BeginFrame({0.06f, 0.08f, 0.13f, 1.0f});
+    // Scissor the 3D scene to the central viewport so the full-window render
+    // doesn't bleed into the dock areas around it (e.g. the empty bottom dock
+    // node whose panels are hidden by default). Cleared before EndScene so the
+    // HDR->backbuffer composite still covers the whole window.
+    const int vpX = static_cast<int>(viewportScreenRect_.x);
+    const int vpY = static_cast<int>(viewportScreenRect_.y);
+    const int vpW = static_cast<int>(viewportScreenRect_.w);
+    const int vpH = static_cast<int>(viewportScreenRect_.h);
+    if (vpW > 0 && vpH > 0 && renderer_.Backend())
+        renderer_.Backend()->SetScissor(vpX, vpY, vpW, vpH, true);
     renderer_.SetSky({0.05f, 0.08f, 0.16f, 1.0f}, {0.35f, 0.45f, 0.6f, 1.0f});
     renderer_.SetFog({0.3f, 0.38f, 0.5f, 1.0f}, 60.0f, 140.0f);
     renderer_.DrawSky();
@@ -651,6 +661,10 @@ void EditorApp::OnRender() {
             renderer_.DrawBox(world, gfx::Color{0.3f, 0.8f, 1.0f, 1.0f});
         }
     }
+
+    // Release the viewport scissor before compositing (the HDR->backbuffer
+    // pass must cover the full window; the scene itself is already clipped).
+    if (renderer_.Backend()) renderer_.Backend()->SetScissor(0, 0, 0, 0, false);
 
     // End the 3D scene phase: composite the HDR frame to the backbuffer and
     // bind the backbuffer so the tool UI (engine UI demo + ImGui) below renders
@@ -804,7 +818,7 @@ void EditorApp::UpdateViewport(float dt) {
         if (!gizmoBusy) {
             if (!ortho && input->MouseDown(platform::MouseButton::Right)) {
                 yaw_ += -input->MouseDelta().x * 0.005f;
-                pitch_ = math::Clamp(pitch_ + -input->MouseDelta().y * 0.005f, 0.05f, 1.4f);
+                pitch_ = math::Clamp(pitch_ + input->MouseDelta().y * 0.005f, 0.05f, 1.4f);
             }
             if (input->MouseDown(platform::MouseButton::Middle)) {
                 // Pan in the ACTIVE camera's plane (the perspective orbit or a
@@ -1701,7 +1715,10 @@ void EditorApp::RunUISmokeTest() {
         SaveEditorConfig();
         LoadEditorConfig();
         check(projectDir_ == cfgDir, "editor config project dir round-trips");
+        // Restore the REAL project dir (and persist it) so the temp cfg_proj
+        // directory is never written into the user's editor config.
         projectDir_ = cfgPrev;
+        SaveEditorConfig();
     }
 
     // --- Material editor: metallic / AO / texture-slot edits via undo ---

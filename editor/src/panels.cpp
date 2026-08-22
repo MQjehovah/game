@@ -738,6 +738,7 @@ void EditorApp::BuildViewportPanel() {
         math::Vec2 uiPos = renderer_.ScreenToUI({pos.x, pos.y});
         float scale = renderer_.UIScale();
         viewportRect_ = {uiPos.x, uiPos.y, size.x / scale, size.y / scale};
+        viewportScreenRect_ = {pos.x, pos.y, size.x, size.y};
 
         ImGui::TextColored(ImVec4(0.65f, 0.85f, 1.0f, 1.0f),
                            "右键旋转 | 中键平移 | 滚轮缩放 | 左键拾取");
