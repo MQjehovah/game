@@ -50,3 +50,4 @@
 #include "neon/script/bindings.hpp"
 #include "neon/bt/behavior_tree.hpp"
 #include "neon/bt/nodes.hpp"
+#include "neon/net/protocol.hpp"

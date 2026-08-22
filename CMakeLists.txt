@@ -27,6 +27,7 @@ set(ENGINE_CORE_SOURCES
   engine/src/core/json.cpp
   engine/src/core/serialize.cpp
   engine/src/core/pack.cpp
+  engine/src/net/protocol.cpp
   engine/src/gfx/color.cpp
   engine/src/gfx/csm.cpp
   engine/src/gfx/font.cpp
@@ -260,7 +261,7 @@ endif()
 # ---------------------------------------------------------------------------
 enable_testing()
 add_executable(neon_tests tests/test_main.cpp tests/test_serialize.cpp tests/test_pack.cpp
-  tests/test_physics.cpp tests/test_obj.cpp tests/test_gltf.cpp tests/test_json.cpp
+  tests/test_physics.cpp tests/test_protocol.cpp tests/test_obj.cpp tests/test_gltf.cpp tests/test_json.cpp
   tests/test_script.cpp tests/test_script_bindings.cpp tests/test_script_determinism.cpp
   tests/test_bt.cpp tests/test_scene_file.cpp tests/test_scene_export.cpp tests/test_manifest.cpp
   tests/test_game_runtime.cpp tests/test_gltf_skin.cpp tests/test_anim.cpp
