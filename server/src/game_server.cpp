@@ -92,6 +92,8 @@ bool GameServer::Start(const Config& cfg) {
     lastStepMs_ = 0;
     nowMs_ = 0;
     nextClientId_ = 0;
+    nextAccountId_ = 0;
+    accountToClient_.clear();
     controllerAddr_ = {};
     clients_.clear();
     pendingRemovals_.clear();
@@ -149,26 +151,36 @@ void GameServer::PumpNetwork(uint64_t nowMs) {
             continue;
         }
 
-        // Unknown sender: only a valid MsgJoin may create a client. Anything
-        // else is dropped (spoofing / garbage / pre-join messages). The join
-        // is then fed through the new channel's OnDatagram so its seq-space
-        // advances with the channel — subsequent client frames align.
+        // Unknown sender: a valid MsgJoin (T6.3 transport join) or MsgLogin
+        // (T6.6 account step) may create a client; anything else is dropped
+        // (spoofing / garbage / pre-join messages). The datagram is then fed
+        // through the new channel's OnDatagram so its seq-space advances with
+        // the channel — subsequent client frames align.
         if (size < 2) continue;
         const uint16_t len = static_cast<uint16_t>((buf[0] << 8) | buf[1]);
         if (static_cast<size_t>(len) != size - 2) continue;
         core::Result<net::DecodedMessage> dec = codec_.Decode(buf + 2, len);
         if (!dec.Ok()) continue;
-        if (dec.Value().header.msgId == static_cast<uint8_t>(net::MsgType::Join)) {
+        const uint8_t msgId = dec.Value().header.msgId;
+        if (msgId == static_cast<uint8_t>(net::MsgType::Join)) {
             const net::MsgJoin& join = std::get<net::MsgJoin>(dec.Value().payload);
-            AdmitClient(from, join);
+            AdmitClient(from, join.name, join.version);
             auto admitted = clients_.find(from);
             if (admitted != clients_.end()) {
                 admitted->second.lastSeenMs = nowMs;
                 admitted->second.chan.OnDatagram(buf, size); // delivers Join -> welcome
             }
+        } else if (msgId == static_cast<uint8_t>(net::MsgType::Login)) {
+            const net::MsgLogin& login = std::get<net::MsgLogin>(dec.Value().payload);
+            AdmitClient(from, login.name, login.clientVersion);
+            auto admitted = clients_.find(from);
+            if (admitted != clients_.end()) {
+                admitted->second.lastSeenMs = nowMs;
+                admitted->second.chan.OnDatagram(buf, size); // delivers Login -> LoginOk
+            }
         } else {
             NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Debug,
-                         "server: dropping non-join datagram from unknown %s:%u",
+                         "server: dropping non-join/login datagram from unknown %s:%u",
                          from.host.c_str(), from.port);
         }
     }
@@ -180,6 +192,9 @@ void GameServer::OnClientMessage(const net::NetAddress& addr,
         case net::MsgType::Join:
             if (auto* m = std::get_if<net::MsgJoin>(&msg.payload)) HandleJoin(addr, *m);
             break;
+        case net::MsgType::Login:
+            if (auto* m = std::get_if<net::MsgLogin>(&msg.payload)) HandleLogin(addr, *m);
+            break;
         case net::MsgType::Input:
             if (auto* m = std::get_if<net::MsgInput>(&msg.payload)) HandleInput(addr, *m);
             break;
@@ -190,6 +205,8 @@ void GameServer::OnClientMessage(const net::NetAddress& addr,
         case net::MsgType::Snapshot:
         case net::MsgType::Spawn:
         case net::MsgType::Despawn:
+        case net::MsgType::LoginOk:
+        case net::MsgType::CharList:
         case net::MsgType::Pong:
         case net::MsgType::Ack:
             break; // server-authoritative: client replication messages are ignored
@@ -201,7 +218,7 @@ void GameServer::HandleJoin(const net::NetAddress& addr, const net::MsgJoin& joi
     if (it == clients_.end()) {
         // A Join that reached us outside the normal admit-then-deliver path
         // (e.g. a re-created client after a race): admit it before welcoming.
-        AdmitClient(addr, join);
+        AdmitClient(addr, join.name, join.version);
         it = clients_.find(addr);
     }
     if (it != clients_.end()) {
@@ -210,15 +227,55 @@ void GameServer::HandleJoin(const net::NetAddress& addr, const net::MsgJoin& joi
     }
 }
 
+// v0 anonymous login (T6.6): accepts any non-empty name, assigns a fresh
+// account id (a plain counter; a real auth would replace the accept with a
+// credential lookup) and answers MsgLoginOk + the placeholder MsgCharList.
+// An empty name is rejected: no account is created and nothing is sent back.
+void GameServer::HandleLogin(const net::NetAddress& addr, const net::MsgLogin& login) {
+    auto it = clients_.find(addr);
+    if (it == clients_.end()) {
+        // A Login that reached us outside the normal admit-then-deliver path
+        // (e.g. a re-created client after a race): admit it before logging in.
+        AdmitClient(addr, login.name, login.clientVersion);
+        it = clients_.find(addr);
+    }
+    if (it == clients_.end()) return; // e.g. server full
+
+    Client& c = it->second;
+    c.lastSeenMs = nowMs_;
+    if (login.name.empty()) {
+        NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Warn,
+                     "server: login from client %llu (%s:%u) rejected (empty name)",
+                     static_cast<unsigned long long>(c.clientId), addr.host.c_str(),
+                     addr.port);
+        return;
+    }
+
+    if (c.accountId == 0) {
+        c.accountId = ++nextAccountId_;
+        accountToClient_[c.accountId] = addr;
+        NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Info,
+                     "server: client %llu logged in as anonymous account id=%llu "
+                     "name='%s' clientVersion=%u",
+                     static_cast<unsigned long long>(c.clientId),
+                     static_cast<unsigned long long>(c.accountId), login.name.c_str(),
+                     login.clientVersion);
+    }
+    // Idempotent: a re-login re-asserts the session (same account id).
+    SendLoginOk(c);
+    SendCharList(c);
+}
+
 // Creates the Client for a joining address (channel wiring, id assignment,
-// v1 controller election). Does NOT welcome — the join datagram is delivered
-// through the channel right after, which sequences the channel and triggers
-// HandleJoin -> SendWelcome.
-void GameServer::AdmitClient(const net::NetAddress& addr, const net::MsgJoin& join) {
+// v1 controller election). Does NOT welcome — the join/login datagram is
+// delivered through the channel right after, which sequences the channel and
+// triggers HandleJoin/HandleLogin.
+void GameServer::AdmitClient(const net::NetAddress& addr, const std::string& name,
+                             uint32_t version) {
     if (clients_.count(addr) != 0) return;
     if (clients_.size() >= static_cast<size_t>(cfg_.maxClients)) {
         NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Warn,
-                     "server: join from %s:%u rejected (server full)", addr.host.c_str(),
+                     "server: client %s:%u rejected (server full)", addr.host.c_str(),
                      addr.port);
         return;
     }
@@ -245,9 +302,9 @@ void GameServer::AdmitClient(const net::NetAddress& addr, const net::MsgJoin& jo
     auto res = clients_.emplace(addr, std::move(c));
     Client& client = res.first->second;
     NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Info,
-                 "server: client id=%llu name='%s' version=%u joined from %s:%u",
-                 static_cast<unsigned long long>(client.clientId), join.name.c_str(),
-                 join.version, addr.host.c_str(), addr.port);
+                 "server: client id=%llu name='%s' version=%u admitted from %s:%u",
+                 static_cast<unsigned long long>(client.clientId), name.c_str(),
+                 version, addr.host.c_str(), addr.port);
 
     // v1 input model: the first joiner drives the scene's player script.
     if (!controllerAddr_.Valid()) {
@@ -284,6 +341,31 @@ void GameServer::SendWelcome(Client& c) {
     if (!st.Ok())
         NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Warn,
                      "server: welcome to client %llu deferred (%s)",
+                     static_cast<unsigned long long>(c.clientId), st.Error().c_str());
+}
+
+void GameServer::SendLoginOk(Client& c) {
+    net::MsgLoginOk ok{c.accountId, tick_};
+    core::Status st = c.chan.Send(static_cast<uint8_t>(net::MsgType::LoginOk),
+                                  EncodeBody(ok));
+    if (!st.Ok())
+        NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Warn,
+                     "server: loginOk to client %llu deferred (%s)",
+                     static_cast<unsigned long long>(c.clientId), st.Error().c_str());
+}
+
+// Placeholder character select (T6.6): a fixed single-character roster.
+// v0 ships exactly one character ("主角"); a real character system would build
+// the roster from saved character data keyed by accountId.
+void GameServer::SendCharList(Client& c) {
+    net::MsgCharList list;
+    list.characters.push_back({1u, "主角"});
+    list.count = static_cast<uint32_t>(list.characters.size());
+    core::Status st = c.chan.Send(static_cast<uint8_t>(net::MsgType::CharList),
+                                  EncodeBody(list));
+    if (!st.Ok())
+        NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Warn,
+                     "server: charList to client %llu deferred (%s)",
                      static_cast<unsigned long long>(c.clientId), st.Error().c_str());
 }
 
@@ -540,6 +622,7 @@ void GameServer::RemoveClient(const net::NetAddress& addr) {
     auto it = clients_.find(addr);
     if (it == clients_.end()) return;
     const uint64_t id = it->second.clientId;
+    if (it->second.accountId != 0) accountToClient_.erase(it->second.accountId);
     clients_.erase(it);
     NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Info,
                  "server: client %llu disconnected (%u remaining)",

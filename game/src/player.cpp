@@ -385,10 +385,11 @@ void PlayerApp::DrawOverlay() {
 
     char buf[160];
     if (networked_) {
-        const char* state = connectedLost_    ? "LOST"
-                            : welcomed_       ? "CONNECTED"
-                            : snapshotsReceived_ > 0 ? "LINKED"
-                            : "JOINING";
+        const char* state = connectedLost_            ? "LOST"
+                            : !loggedIn_              ? "LOGGING IN"
+                            : !welcomed_              ? "LOGGED IN"
+                            : snapshotsReceived_ > 0  ? "LINKED"
+                            : "CONNECTED";
         std::snprintf(buf, sizeof(buf),
                       "%s | %.0f FPS | tick %.0f | snaps %u | server %s:%u",
                       state, TimeRef().Fps(), sync_.CurrentServerTick(),
@@ -455,21 +456,59 @@ bool PlayerApp::StartNetwork() {
         connectedLost_ = true;
     });
 
-    net::MsgJoin join{"neon_player", net::kProtocolVersion};
+    // T6.6 v0 anonymous login: the FIRST network step. The server accepts any
+    // non-empty name, replies MsgLoginOk + MsgCharList, and only then do we
+    // send the T6.4 game join (see SendJoin / the LoginOk handler).
+    net::MsgLogin login{cfg_.playerName, net::kProtocolVersion};
     core::Status st =
-        clientChan_.Send(static_cast<uint8_t>(net::MsgType::Join), client::EncodeBody(join));
+        clientChan_.Send(static_cast<uint8_t>(net::MsgType::Login), client::EncodeBody(login));
     if (!st.Ok()) {
-        NEON_LOG_ERROR("client: join send failed: %s", st.Error().c_str());
+        NEON_LOG_ERROR("client: login send failed: %s", st.Error().c_str());
         clientSock_.Close();
         return false;
     }
     NEON_LOG_CAT(neon::core::LogCategory::Net, neon::core::LogLevel::Info,
-                 "client: connecting to %s:%u", cfg_.connectHost.c_str(), cfg_.connectPort);
+                 "client: connecting to %s:%u (login name '%s')",
+                 cfg_.connectHost.c_str(), cfg_.connectPort, cfg_.playerName.c_str());
     return true;
+}
+
+// The T6.4 game join (MsgJoin -> MsgWelcome -> snapshots). Sent once, only
+// after the account step completed (MsgLoginOk), so the join/transport flow is
+// gated behind the login.
+void PlayerApp::SendJoin() {
+    if (joinSent_) return;
+    joinSent_ = true;
+    net::MsgJoin join{cfg_.playerName, net::kProtocolVersion};
+    core::Status st =
+        clientChan_.Send(static_cast<uint8_t>(net::MsgType::Join), client::EncodeBody(join));
+    if (!st.Ok()) {
+        NEON_LOG_ERROR("client: join send failed: %s", st.Error().c_str());
+    }
 }
 
 void PlayerApp::OnClientMessage(const net::DecodedMessage& msg) {
     switch (static_cast<net::MsgType>(msg.header.msgId)) {
+        case net::MsgType::LoginOk: {
+            const net::MsgLoginOk& ok = std::get<net::MsgLoginOk>(msg.payload);
+            loggedIn_ = true;
+            NEON_LOG_CAT(neon::core::LogCategory::Net, neon::core::LogLevel::Info,
+                         "client: logged in as account id=%llu (server tick %u)",
+                         static_cast<unsigned long long>(ok.accountId), ok.tick);
+            SendJoin(); // logged in: now join the game (welcome follows)
+            break;
+        }
+        case net::MsgType::CharList: {
+            const net::MsgCharList& list = std::get<net::MsgCharList>(msg.payload);
+            std::string names;
+            for (size_t i = 0; i < list.characters.size(); ++i) {
+                if (i != 0) names += ", ";
+                names += list.characters[i].name;
+            }
+            NEON_LOG_CAT(neon::core::LogCategory::Net, neon::core::LogLevel::Info,
+                         "client: characters: %u (%s)", list.count, names.c_str());
+            break;
+        }
         case net::MsgType::Welcome: {
             const net::MsgWelcome& w = std::get<net::MsgWelcome>(msg.payload);
             welcomed_ = true;

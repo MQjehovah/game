@@ -43,6 +43,7 @@ struct PlayerConfig {
     // snapshots and render the interpolated/reconciled state.
     std::string connectHost;      // --connect host:port ("" = local-only)
     uint16_t connectPort = 0;
+    std::string playerName = "neon_player"; // --name <n>: anonymous login name (T6.6)
     std::string scriptsDir;       // --scripts DIR: scene script base (loose scene mode)
     std::string looseScenePath;   // --scene <path.json> in connect mode (direct file)
     int connectTicks = 0;         // --ticks <n>: run n frames then exit (connect smoke)
@@ -105,6 +106,7 @@ private:
 
     // ---- T6.4 networked-client helpers ----------------------------------
     bool StartNetwork();
+    void SendJoin(); // T6.6: the game join, only sent after MsgLoginOk
     void OnClientMessage(const net::DecodedMessage& msg);
     void PumpNetwork();
     void SendInputPacket();
@@ -136,6 +138,8 @@ private:
     net::UdpSocket clientSock_;
     net::ReliableChannel clientChan_;
     client::ClientSync sync_;              // snapshot buffer + interp + reconcile query
+    bool loggedIn_ = false;  // MsgLoginOk received (T6.6 account step done)
+    bool joinSent_ = false;  // MsgJoin sent (only after login)
     bool welcomed_ = false;
     bool connectedLost_ = false;
     uint32_t inputSeq_ = 0;

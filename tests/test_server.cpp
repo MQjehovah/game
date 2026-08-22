@@ -88,6 +88,10 @@ struct LoopbackClient {
     bool welcomed = false;
     uint64_t clientId = 0;
     uint32_t welcomeTick = 0;
+    bool loggedIn = false; // T6.6: MsgLoginOk received
+    uint64_t accountId = 0;
+    uint32_t loginTick = 0;
+    std::vector<net::MsgCharList> charLists;
     size_t pongs = 0;
     std::vector<net::MsgSnapshot> snapshots;
     std::vector<uint64_t> despawned;
@@ -110,6 +114,13 @@ struct LoopbackClient {
             welcomed = true;
             clientId = w.clientId;
             welcomeTick = w.tick;
+        } else if (m.header.msgId == static_cast<uint8_t>(net::MsgType::LoginOk)) {
+            const net::MsgLoginOk& ok = std::get<net::MsgLoginOk>(m.payload);
+            loggedIn = true;
+            accountId = ok.accountId;
+            loginTick = ok.tick;
+        } else if (m.header.msgId == static_cast<uint8_t>(net::MsgType::CharList)) {
+            charLists.push_back(std::get<net::MsgCharList>(m.payload));
         } else if (m.header.msgId == static_cast<uint8_t>(net::MsgType::Snapshot)) {
             snapshots.push_back(std::get<net::MsgSnapshot>(m.payload));
         } else if (m.header.msgId == static_cast<uint8_t>(net::MsgType::Despawn)) {
@@ -133,6 +144,11 @@ struct LoopbackClient {
     void SendJoin(const std::string& name, uint32_t version) {
         net::MsgJoin m{name, version};
         CHECK(chan.Send(static_cast<uint8_t>(net::MsgType::Join), server::EncodeBody(m)).Ok());
+    }
+
+    void SendLogin(const std::string& name, uint32_t clientVersion) {
+        net::MsgLogin m{name, clientVersion};
+        CHECK(chan.Send(static_cast<uint8_t>(net::MsgType::Login), server::EncodeBody(m)).Ok());
     }
 
     void SendInput(uint32_t seq, uint8_t buttons, float moveX, float moveY) {
@@ -238,6 +254,116 @@ TEST(ServerJoinInputSnapshotAndAdvance) {
 
     server.Shutdown();
     CHECK(!server.Running());
+}
+
+// ---------------------------------------------------------------------------
+// T6.6 placeholder auth + character select: login -> MsgLoginOk + MsgCharList,
+// then the existing join flow still works.
+// ---------------------------------------------------------------------------
+
+TEST(ServerLoginFlowAndCharSelect) {
+    test::TempDir tmp;
+    WriteSceneFixture(tmp.Str());
+    server::GameServer server;
+    CHECK(server.Start(SceneCfg(tmp.Str(), 555)));
+    CHECK_EQ(server.AccountCount(), 0u);
+
+    LoopbackClient client;
+    client.BindAndPeer(server.Port());
+    uint64_t now = 0;
+    auto stepBoth = [&]() {
+        now += 17;
+        server.Step(now);
+        client.Pump(now);
+    };
+
+    // Login -> MsgLoginOk{accountId, tick} + MsgCharList.
+    client.SendLogin("alice", net::kProtocolVersion);
+    for (int i = 0; i < 200 && !(client.loggedIn && !client.charLists.empty()); ++i)
+        stepBoth();
+    CHECK(client.loggedIn);
+    CHECK((client.accountId) > (0u));
+    CHECK_EQ(server.AccountCount(), 1u);
+    CHECK_EQ(server.ClientCount(), 1u);
+
+    // The placeholder roster: exactly one character, "主角".
+    CHECK_EQ(client.charLists.size(), 1u);
+    const net::MsgCharList& list = client.charLists.back();
+    CHECK_EQ(list.count, 1u);
+    CHECK_EQ(list.characters.size(), 1u);
+    CHECK_EQ(list.characters[0].id, 1u);
+    CHECK_EQ(list.characters[0].name, "主角");
+
+    // After login, the transport join still proceeds to MsgWelcome.
+    client.SendJoin("alice", 2);
+    for (int i = 0; i < 200 && !client.welcomed; ++i) stepBoth();
+    CHECK(client.welcomed);
+    CHECK_EQ(server.ControllerClientId(), client.clientId);
+    server.Shutdown();
+}
+
+TEST(ServerLoginRejectsEmptyName) {
+    test::TempDir tmp;
+    WriteSceneFixture(tmp.Str());
+    server::GameServer server;
+    CHECK(server.Start(SceneCfg(tmp.Str(), 556)));
+
+    LoopbackClient client;
+    client.BindAndPeer(server.Port());
+    uint64_t now = 0;
+    auto stepBoth = [&]() {
+        now += 17;
+        server.Step(now);
+        client.Pump(now);
+    };
+
+    // Empty-name login: rejected — no MsgLoginOk, no char list, no account.
+    client.SendLogin("", net::kProtocolVersion);
+    for (int i = 0; i < 50; ++i) stepBoth();
+    CHECK(!client.loggedIn);
+    CHECK_EQ(client.charLists.size(), 0u);
+    CHECK_EQ(server.AccountCount(), 0u);
+
+    // A subsequent valid login from the same client is accepted.
+    client.SendLogin("bob", net::kProtocolVersion);
+    for (int i = 0; i < 200 && !(client.loggedIn && !client.charLists.empty()); ++i)
+        stepBoth();
+    CHECK(client.loggedIn);
+    CHECK((client.accountId) > (0u));
+    CHECK_EQ(server.AccountCount(), 1u);
+    CHECK_EQ(client.charLists.size(), 1u);
+    server.Shutdown();
+}
+
+TEST(ServerAccountCounterIncrements) {
+    test::TempDir tmp;
+    WriteSceneFixture(tmp.Str());
+    server::GameServer server;
+    CHECK(server.Start(SceneCfg(tmp.Str(), 557)));
+
+    LoopbackClient a;
+    a.BindAndPeer(server.Port());
+    LoopbackClient b;
+    b.BindAndPeer(server.Port());
+    uint64_t now = 0;
+    auto stepBoth = [&]() {
+        now += 17;
+        server.Step(now);
+        a.Pump(now);
+        b.Pump(now);
+    };
+
+    a.SendLogin("one", net::kProtocolVersion);
+    for (int i = 0; i < 200 && !a.loggedIn; ++i) stepBoth();
+    CHECK(a.loggedIn);
+    b.SendLogin("two", net::kProtocolVersion);
+    for (int i = 0; i < 200 && !b.loggedIn; ++i) stepBoth();
+    CHECK(b.loggedIn);
+
+    // Each login gets its own account id; the counter advances per login.
+    CHECK((a.accountId) != (b.accountId));
+    CHECK_EQ(server.AccountCount(), 2u);
+    server.Shutdown();
 }
 
 // ---------------------------------------------------------------------------

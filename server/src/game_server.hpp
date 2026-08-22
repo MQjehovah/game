@@ -111,6 +111,10 @@ public:
     uint32_t ClientCount() const { return static_cast<uint32_t>(clients_.size()); }
     uint32_t CurrentTick() const { return tick_; }
     uint64_t ControllerClientId() const;
+    // Total anonymous accounts assigned so far (T6.6). A monotonically
+    // increasing counter: every accepted MsgLogin bumps it, so it is also the
+    // next account id (0 before any login).
+    uint64_t AccountCount() const { return nextAccountId_; }
     // The stable entity key every client's AOI is centered on: the script
     // entity of kind "player" if the scene spawned one, else the first script
     // (CTransformBind) entity, else 0 (clients then focus on the world origin).
@@ -130,6 +134,7 @@ private:
         net::NetAddress addr;
         net::ReliableChannel chan;
         uint64_t clientId = 0;
+        uint64_t accountId = 0; // v0 anonymous account (T6.6); 0 = not logged in
         uint64_t lastSeenMs = 0;
         net::MsgInput lastInput; // v1: stored per client, only the controller's is applied
         bool hasInput = false;
@@ -143,10 +148,14 @@ private:
     void PumpNetwork(uint64_t nowMs);
     void OnClientMessage(const net::NetAddress& addr, const net::DecodedMessage& msg);
     void HandleJoin(const net::NetAddress& addr, const net::MsgJoin& join);
-    void AdmitClient(const net::NetAddress& addr, const net::MsgJoin& join);
+    void AdmitClient(const net::NetAddress& addr, const std::string& name,
+                     uint32_t version);
+    void HandleLogin(const net::NetAddress& addr, const net::MsgLogin& login);
     void HandleInput(const net::NetAddress& addr, const net::MsgInput& input);
     void HandlePing(const net::NetAddress& addr, const net::MsgPing& ping);
     void SendWelcome(Client& c);
+    void SendLoginOk(Client& c);
+    void SendCharList(Client& c);
     void SendPong(Client& c, uint64_t sendTime);
     void SendDespawn(Client& c, uint64_t entityId);
     void ApplyControllerInput();
@@ -165,6 +174,11 @@ private:
     std::vector<net::NetAddress> pendingRemovals_; // channel-timeout disconnects
     net::NetAddress controllerAddr_;
     uint64_t nextClientId_ = 0;
+    uint64_t nextAccountId_ = 0;
+    // v0 anonymous account registry (T6.6): accountId -> the client address it
+    // is bound to. A future real auth flow can replace the accept-with-counter
+    // with a credential lookup while keeping this map as the session table.
+    std::map<uint64_t, net::NetAddress> accountToClient_;
     uint32_t tick_ = 0;
     double accumulator_ = 0.0;
     uint64_t lastStepMs_ = 0;

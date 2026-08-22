@@ -20,6 +20,7 @@ void PrintHelp() {
         "                             (loose scene, --connect mode)\n"
         "  --connect host:port        join a GameServer as the input controller (T6.4):\n"
         "                             local prediction + snapshot interpolation + reconcile\n"
+        "  --name <n>                 anonymous login name (T6.6; default neon_player)\n"
         "  --scripts DIR              scene script base dir (loose --scene mode; defaults\n"
         "                             to the scene file's directory, like neon_server)\n"
         "  --ticks <n>                run n frames then exit; in --connect mode the exit is\n"
@@ -70,6 +71,8 @@ int main(int argc, char** argv) {
                              hostPort.c_str());
                 return 2;
             }
+        } else if (std::strcmp(argv[i], "--name") == 0 && i + 1 < argc) {
+            cfg.playerName = argv[++i];
         } else if (std::strcmp(argv[i], "--scripts") == 0 && i + 1 < argc) {
             cfg.scriptsDir = argv[++i];
         } else if (std::strcmp(argv[i], "--ticks") == 0 && i + 1 < argc) {

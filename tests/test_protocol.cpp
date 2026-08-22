@@ -205,6 +205,113 @@ TEST(ProtocolAckRoundTrip) {
     CHECK_EQ(out.ackBits, in.ackBits);
 }
 
+TEST(ProtocolLoginRoundTrip) {
+    net::MessageCodec codec;
+    net::MsgLogin in{"neon_player", net::kProtocolVersion};
+
+    core::Result<std::vector<uint8_t>> enc =
+        codec.Encode(net::MsgType::Login, 5, in);
+    CHECK(enc.Ok());
+    core::Result<net::DecodedMessage> dec = codec.Decode(enc.Value());
+    CHECK(dec.Ok());
+    CHECK_EQ(dec.Value().header.version, net::kProtocolVersion);
+    CHECK_EQ(dec.Value().header.msgId, static_cast<uint8_t>(net::MsgType::Login));
+    CHECK_EQ(dec.Value().header.seq, 5u);
+    CHECK(Holds<net::MsgLogin>(dec.Value()));
+    const net::MsgLogin& out = std::get<net::MsgLogin>(dec.Value().payload);
+    CHECK_EQ(out.name, in.name);
+    CHECK_EQ(out.clientVersion, in.clientVersion);
+}
+
+TEST(ProtocolLoginOkRoundTrip) {
+    net::MessageCodec codec;
+    net::MsgLoginOk in{0x0102030405060708ull, 4321u};
+
+    core::Result<std::vector<uint8_t>> enc =
+        codec.Encode(net::MsgType::LoginOk, 6, in);
+    CHECK(enc.Ok());
+    core::Result<net::DecodedMessage> dec = codec.Decode(enc.Value());
+    CHECK(dec.Ok());
+    CHECK_EQ(dec.Value().header.msgId, static_cast<uint8_t>(net::MsgType::LoginOk));
+    CHECK_EQ(dec.Value().header.seq, 6u);
+    CHECK(Holds<net::MsgLoginOk>(dec.Value()));
+    const net::MsgLoginOk& out = std::get<net::MsgLoginOk>(dec.Value().payload);
+    CHECK_EQ(out.accountId, in.accountId);
+    CHECK_EQ(out.tick, in.tick);
+}
+
+TEST(ProtocolCharListRoundTrip) {
+    net::MessageCodec codec;
+    net::MsgCharList in;
+    in.characters = {{1u, "主角"}, {2u, "Alice"}, {3u, "Bob"}};
+    in.count = static_cast<uint32_t>(in.characters.size());
+
+    core::Result<std::vector<uint8_t>> enc =
+        codec.Encode(net::MsgType::CharList, 7, in);
+    CHECK(enc.Ok());
+    core::Result<net::DecodedMessage> dec = codec.Decode(enc.Value());
+    CHECK(dec.Ok());
+    CHECK_EQ(dec.Value().header.msgId, static_cast<uint8_t>(net::MsgType::CharList));
+    CHECK_EQ(dec.Value().header.seq, 7u);
+    CHECK(Holds<net::MsgCharList>(dec.Value()));
+    const net::MsgCharList& out = std::get<net::MsgCharList>(dec.Value().payload);
+    CHECK_EQ(out.count, in.count);
+    CHECK_EQ(out.characters.size(), in.characters.size());
+    for (size_t i = 0; i < in.characters.size(); ++i) {
+        CHECK_EQ(out.characters[i].id, in.characters[i].id);
+        CHECK_EQ(out.characters[i].name, in.characters[i].name);
+    }
+}
+
+TEST(ProtocolEmptyCharList) {
+    net::MessageCodec codec;
+    net::MsgCharList in;
+    in.count = 0u;
+
+    core::Result<std::vector<uint8_t>> enc =
+        codec.Encode(net::MsgType::CharList, 8, in);
+    CHECK(enc.Ok());
+    core::Result<net::DecodedMessage> dec = codec.Decode(enc.Value());
+    CHECK(dec.Ok());
+    CHECK(Holds<net::MsgCharList>(dec.Value()));
+    const net::MsgCharList& out = std::get<net::MsgCharList>(dec.Value().payload);
+    CHECK_EQ(out.count, 0u);
+    CHECK_EQ(out.characters.size(), 0u);
+}
+
+// The Payload variant alternative order must stay in lockstep with MsgType ids
+// (TypeOf() maps variant index -> msgId and Encode() rejects a mismatch). One
+// round-trip per message type pins that invariant.
+TEST(ProtocolEnumVariantConsistency) {
+    net::MessageCodec codec;
+    struct Entry {
+        net::MsgType type;
+        net::Payload payload;
+        uint8_t expectedId;
+    };
+    const std::vector<Entry> entries = {
+        {net::MsgType::Join, net::MsgJoin{"p", 1u}, 1},
+        {net::MsgType::Welcome, net::MsgWelcome{2u, 3u}, 2},
+        {net::MsgType::Input, net::MsgInput{4u, 0u, 0.0f, 0.0f}, 3},
+        {net::MsgType::Snapshot, net::MsgSnapshot{}, 4},
+        {net::MsgType::Spawn, net::MsgSpawn{5u, "box", 0.0f, 0.0f, 0.0f}, 5},
+        {net::MsgType::Despawn, net::MsgDespawn{6u}, 6},
+        {net::MsgType::Ping, net::MsgPing{7u}, 7},
+        {net::MsgType::Pong, net::MsgPong{8u, 9u}, 8},
+        {net::MsgType::Ack, net::MsgAck{10u, 11u}, 9},
+        {net::MsgType::Login, net::MsgLogin{"n", 3u}, 10},
+        {net::MsgType::LoginOk, net::MsgLoginOk{12u, 13u}, 11},
+        {net::MsgType::CharList, net::MsgCharList{}, 12},
+    };
+    for (const Entry& e : entries) {
+        core::Result<std::vector<uint8_t>> enc = codec.Encode(e.type, 0, e.payload);
+        CHECK(enc.Ok());
+        core::Result<net::DecodedMessage> dec = codec.Decode(enc.Value());
+        CHECK(dec.Ok());
+        CHECK_EQ(dec.Value().header.msgId, e.expectedId);
+    }
+}
+
 TEST(ProtocolUnknownMsgId) {
     net::MessageCodec codec;
     core::Result<std::vector<uint8_t>> frame = codec.EncodeFrame(99, 1, {});
@@ -256,6 +363,16 @@ TEST(ProtocolOversizedEntityCount) {
     AppendU32(payload, 999999); // entity count over kMaxSnapshotEntities
     core::Result<std::vector<uint8_t>> frame =
         codec.EncodeFrame(static_cast<uint8_t>(net::MsgType::Snapshot), 1, payload);
+    CHECK(frame.Ok());
+    CHECK(!codec.Decode(frame.Value()).Ok());
+}
+
+TEST(ProtocolOversizedCharCount) {
+    net::MessageCodec codec;
+    std::vector<uint8_t> payload;
+    AppendU32(payload, 999999); // char count over kMaxCharacters
+    core::Result<std::vector<uint8_t>> frame =
+        codec.EncodeFrame(static_cast<uint8_t>(net::MsgType::CharList), 1, payload);
     CHECK(frame.Ok());
     CHECK(!codec.Decode(frame.Value()).Ok());
 }

@@ -17,7 +17,10 @@ MsgType TypeOf(const Payload& p) {
         case 5: return MsgType::Despawn;
         case 6: return MsgType::Ping;
         case 7: return MsgType::Pong;
-        default: return MsgType::Ack;
+        case 8: return MsgType::Ack;
+        case 9: return MsgType::Login;
+        case 10: return MsgType::LoginOk;
+        default: return MsgType::CharList;
     }
 }
 
@@ -209,6 +212,87 @@ core::Result<MsgAck> MsgAck::Read(core::Deserializer& d) {
     return core::Result<MsgAck>::Ok(std::move(m));
 }
 
+void MsgLogin::Write(core::Serializer& s) const {
+    s.WriteString(name);
+    s.WriteU32(clientVersion);
+}
+
+core::Result<MsgLogin> MsgLogin::Read(core::Deserializer& d) {
+    MsgLogin m;
+    core::Result<std::string> name = d.ReadString();
+    if (!name.Ok()) return core::Result<MsgLogin>::Err("net: login name truncated");
+    if (name.Value().size() > kMaxStringBytes)
+        return core::Result<MsgLogin>::Err("net: login name exceeds " +
+                                           std::to_string(kMaxStringBytes) + " bytes");
+    m.name = std::move(name.Value());
+    core::Result<uint32_t> clientVersion = d.ReadU32();
+    if (!clientVersion.Ok())
+        return core::Result<MsgLogin>::Err("net: login clientVersion truncated");
+    m.clientVersion = clientVersion.Value();
+    return core::Result<MsgLogin>::Ok(std::move(m));
+}
+
+void MsgLoginOk::Write(core::Serializer& s) const {
+    s.WriteU64(accountId);
+    s.WriteU32(tick);
+}
+
+core::Result<MsgLoginOk> MsgLoginOk::Read(core::Deserializer& d) {
+    MsgLoginOk m;
+    core::Result<uint64_t> accountId = d.ReadU64();
+    if (!accountId.Ok()) return core::Result<MsgLoginOk>::Err("net: loginOk accountId truncated");
+    m.accountId = accountId.Value();
+    core::Result<uint32_t> tick = d.ReadU32();
+    if (!tick.Ok()) return core::Result<MsgLoginOk>::Err("net: loginOk tick truncated");
+    m.tick = tick.Value();
+    return core::Result<MsgLoginOk>::Ok(std::move(m));
+}
+
+void MsgCharInfo::Write(core::Serializer& s) const {
+    s.WriteU64(id);
+    s.WriteString(name);
+}
+
+core::Result<MsgCharInfo> MsgCharInfo::Read(core::Deserializer& d) {
+    MsgCharInfo m;
+    core::Result<uint64_t> id = d.ReadU64();
+    if (!id.Ok()) return core::Result<MsgCharInfo>::Err("net: charInfo id truncated");
+    m.id = id.Value();
+    core::Result<std::string> name = d.ReadString();
+    if (!name.Ok()) return core::Result<MsgCharInfo>::Err("net: charInfo name truncated");
+    if (name.Value().size() > kMaxStringBytes)
+        return core::Result<MsgCharInfo>::Err("net: charInfo name exceeds " +
+                                              std::to_string(kMaxStringBytes) + " bytes");
+    m.name = std::move(name.Value());
+    return core::Result<MsgCharInfo>::Ok(std::move(m));
+}
+
+void MsgCharList::Write(core::Serializer& s) const {
+    s.WriteU32(static_cast<uint32_t>(characters.size()));
+    for (const MsgCharInfo& c : characters) {
+        s.WriteU64(c.id);
+        s.WriteString(c.name);
+    }
+}
+
+core::Result<MsgCharList> MsgCharList::Read(core::Deserializer& d) {
+    MsgCharList m;
+    core::Result<uint32_t> count = d.ReadU32();
+    if (!count.Ok()) return core::Result<MsgCharList>::Err("net: charList count truncated");
+    if (count.Value() > kMaxCharacters)
+        return core::Result<MsgCharList>::Err(
+            "net: charList count " + std::to_string(count.Value()) +
+            " exceeds limit " + std::to_string(kMaxCharacters));
+    m.count = count.Value();
+    m.characters.reserve(m.count);
+    for (uint32_t i = 0; i < m.count; ++i) {
+        core::Result<MsgCharInfo> c = MsgCharInfo::Read(d);
+        if (!c.Ok()) return core::Result<MsgCharList>::Err(c.Error());
+        m.characters.push_back(c.Value());
+    }
+    return core::Result<MsgCharList>::Ok(std::move(m));
+}
+
 core::Result<std::vector<uint8_t>> MessageCodec::Encode(MsgType type, uint16_t seq,
                                                         const Payload& payload) {
     if (TypeOf(payload) != type)
@@ -311,6 +395,24 @@ core::Result<DecodedMessage> MessageCodec::Decode(const uint8_t* data, size_t si
         }
         case MsgType::Ack: {
             core::Result<MsgAck> m = MsgAck::Read(d);
+            if (!m.Ok()) return core::Result<DecodedMessage>::Err(m.Error());
+            out.payload = std::move(m.Value());
+            break;
+        }
+        case MsgType::Login: {
+            core::Result<MsgLogin> m = MsgLogin::Read(d);
+            if (!m.Ok()) return core::Result<DecodedMessage>::Err(m.Error());
+            out.payload = std::move(m.Value());
+            break;
+        }
+        case MsgType::LoginOk: {
+            core::Result<MsgLoginOk> m = MsgLoginOk::Read(d);
+            if (!m.Ok()) return core::Result<DecodedMessage>::Err(m.Error());
+            out.payload = std::move(m.Value());
+            break;
+        }
+        case MsgType::CharList: {
+            core::Result<MsgCharList> m = MsgCharList::Read(d);
             if (!m.Ok()) return core::Result<DecodedMessage>::Err(m.Error());
             out.payload = std::move(m.Value());
             break;

@@ -30,17 +30,22 @@ namespace neon::net {
 
 // Protocol version this codec speaks. Bump on any incompatible wire change.
 // v1 -> v2: added the transport-level Ack message (T6.2 reliable layer).
-inline constexpr uint8_t kProtocolVersion = 2;
+// v2 -> v3: added the account/login + character-select messages
+// (MsgLogin/MsgLoginOk/MsgCharList, T6.6 placeholder auth).
+inline constexpr uint8_t kProtocolVersion = 3;
 
 // Hard caps applied on decode to hostile input. Strings longer than
 // kMaxStringBytes and snapshots with more than kMaxSnapshotEntities entries
 // are rejected as malformed.
 inline constexpr size_t kMaxStringBytes = 256;
 inline constexpr uint32_t kMaxSnapshotEntities = 4096;
+inline constexpr uint32_t kMaxCharacters = 256;
 
-// Message set for v2. Join/Welcome/Input/Snapshot/Spawn/Despawn drive the
+// Message set for v3. Join/Welcome/Input/Snapshot/Spawn/Despawn drive the
 // lobby and replication flow; Ping/Pong carry RTT timestamps; Ack is emitted
-// by the T6.2 reliable transport (it never reaches application logic).
+// by the T6.2 reliable transport (it never reaches application logic);
+// Login/LoginOk/CharList are the v0 anonymous account + character-select
+// placeholder (T6.6).
 enum class MsgType : uint8_t {
     Join = 1,
     Welcome = 2,
@@ -51,6 +56,9 @@ enum class MsgType : uint8_t {
     Ping = 7,
     Pong = 8,
     Ack = 9,
+    Login = 10,
+    LoginOk = 11,
+    CharList = 12,
 };
 
 // Logical header of a decoded frame. The magic + CRC halves of the wire header
@@ -148,9 +156,47 @@ struct MsgAck {
     static core::Result<MsgAck> Read(core::Deserializer& d);
 };
 
+// v0 anonymous account login (T6.6): requested display name + client engine
+// version. A real auth flow would replace the anonymous accept with a
+// credential/token exchange; this is the semantic "account" step, kept
+// separate from MsgJoin (the transport-level join/welcome).
+struct MsgLogin {
+    std::string name;
+    uint32_t clientVersion = 0;
+    void Write(core::Serializer& s) const;
+    static core::Result<MsgLogin> Read(core::Deserializer& d);
+};
+
+// Server acceptance of a login: assigned account id + current simulation tick.
+struct MsgLoginOk {
+    uint64_t accountId = 0;
+    uint32_t tick = 0;
+    void Write(core::Serializer& s) const;
+    static core::Result<MsgLoginOk> Read(core::Deserializer& d);
+};
+
+// One selectable character in the placeholder character-select list.
+struct MsgCharInfo {
+    uint64_t id = 0;
+    std::string name;
+    void Write(core::Serializer& s) const;
+    static core::Result<MsgCharInfo> Read(core::Deserializer& d);
+};
+
+// Fixed character list sent right after MsgLoginOk (T6.6 placeholder: v0 has a
+// single "主角" character). A real character-select UI / multi-character save
+// system can build on this list.
+struct MsgCharList {
+    uint32_t count = 0; // characters.size(), carried on the wire verbatim
+    std::vector<MsgCharInfo> characters;
+    void Write(core::Serializer& s) const;
+    static core::Result<MsgCharList> Read(core::Deserializer& d);
+};
+
 // Type-erased payload of any message; alternative order matches MsgType ids.
 using Payload = std::variant<MsgJoin, MsgWelcome, MsgInput, MsgSnapshot, MsgSpawn,
-                             MsgDespawn, MsgPing, MsgPong, MsgAck>;
+                             MsgDespawn, MsgPing, MsgPong, MsgAck, MsgLogin,
+                             MsgLoginOk, MsgCharList>;
 
 // A fully decoded and validated frame.
 struct DecodedMessage {
