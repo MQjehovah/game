@@ -87,6 +87,11 @@ public:
     bool Running() const { return running_; }
     ecs::World& World() { return world_; }
     script::GameVars& GameVars() { return scriptCtx_.gameVars; }
+    // The bindings context scripts share (entityKinds, gameVars, input...).
+    // Exposed for hosts that need to inspect script-spawned entity kinds (the
+    // server's AOI replication, debug panels).
+    script::ScriptContext& ScriptContext() { return scriptCtx_; }
+    const script::ScriptContext& ScriptContext() const { return scriptCtx_; }
 
     // Stats for the editor profiler / debug panels.
     size_t EntityCount() const { return world_.EntityCount(); }

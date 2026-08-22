@@ -95,7 +95,8 @@ bool GameServer::Start(const Config& cfg) {
     controllerAddr_ = {};
     clients_.clear();
     pendingRemovals_.clear();
-    lastSnapshotIds_.clear();
+    grid_.SetCellSize(cfg_.aoiCellSize);
+    grid_.Clear();
     snapshotTooBig_ = 0;
     snapshotDrops_ = 0;
     NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Info,
@@ -316,34 +317,66 @@ void GameServer::ApplyControllerInput() {
     controllerInput_.SetInput(in.buttons, in.moveX, in.moveY);
 }
 
+// The entity every client's AOI is centered on: the script entity of kind
+// "player" if the scene spawned one, else the first script (CTransformBind)
+// entity, else 0 (no controlled entity -> clients focus on the world origin).
+// Matches how the client resolves its controlled entity (the first
+// CTransformBind it finds); preferring the "player" kind keeps a scene with
+// several script entities centered on the actual playable one.
+uint64_t GameServer::ControlledEntityKey() {
+    ecs::World& world = runtime_.World();
+    uint64_t fallback = 0;
+    auto view = world.ViewAll<script::CTransformBind>();
+    for (size_t i = 0; i < view.Size(); ++i) {
+        ecs::Entity e = world.EntityAt<script::CTransformBind>(i);
+        const uint64_t key = EntityKey(e);
+        const auto it = runtime_.ScriptContext().entityKinds.find(e);
+        if (it != runtime_.ScriptContext().entityKinds.end() && it->second == "player")
+            return key;
+        if (fallback == 0) fallback = key;
+    }
+    return fallback;
+}
+
 void GameServer::BroadcastSnapshot() {
     ecs::World& world = runtime_.World();
 
-    // Collect positions from both position-bearing component kinds: scene
-    // entities carry SceneTransform (from the data-driven scene), script
-    // entities carry CTransformBind (Spawn/SetPosition). Entity ids are the
-    // stable (id<<32)|generation key so id reuse across generations never
-    // aliases.
-    std::vector<net::SnapshotEntity> ents;
+    // One replicated entity: stable id, transform and the kind used for
+    // MsgSpawn. Scene entities carry their name as the kind (SceneName), script
+    // entities carry the Spawn("kind") recorded in ScriptContext::entityKinds;
+    // the default is "box" when neither source provides one.
+    struct Item {
+        uint64_t id = 0;
+        float x = 0.0f, y = 0.0f, z = 0.0f;
+        float yaw = 0.0f;
+        std::string kind;
+    };
+
+    std::vector<Item> items;
     std::set<uint64_t> seen;
-    auto add = [&](ecs::Entity e, const math::Vec3& pos, const math::Quat& rot) {
+    auto add = [&](ecs::Entity e, const math::Vec3& pos, const math::Quat& rot,
+                   const std::string& kind) {
         const uint64_t key = EntityKey(e);
         if (seen.count(key) != 0) return;
         seen.insert(key);
-        net::SnapshotEntity se;
-        se.id = key;
-        se.x = pos.x;
-        se.y = pos.y;
-        se.z = pos.z;
-        se.yaw = YawOf(rot);
-        ents.push_back(se);
+        Item it;
+        it.id = key;
+        it.x = pos.x;
+        it.y = pos.y;
+        it.z = pos.z;
+        it.yaw = YawOf(rot);
+        it.kind = kind.empty() ? "box" : kind;
+        items.push_back(std::move(it));
     };
     {
         auto view = world.ViewAll<scene::SceneTransform>();
         for (size_t i = 0; i < view.Size(); ++i) {
             ecs::Entity e = world.EntityAt<scene::SceneTransform>(i);
             const scene::SceneTransform* t = world.Get<scene::SceneTransform>(e);
-            if (t) add(e, t->pos, t->rot);
+            if (!t) continue;
+            std::string kind;
+            if (const scene::SceneName* n = world.Get<scene::SceneName>(e)) kind = n->name;
+            add(e, t->pos, t->rot, kind);
         }
     }
     {
@@ -351,32 +384,103 @@ void GameServer::BroadcastSnapshot() {
         for (size_t i = 0; i < view.Size(); ++i) {
             ecs::Entity e = world.EntityAt<script::CTransformBind>(i);
             const script::CTransformBind* t = world.Get<script::CTransformBind>(e);
-            if (t) add(e, t->pos, math::Quat::Identity());
+            if (!t) continue;
+            std::string kind;
+            const auto it = runtime_.ScriptContext().entityKinds.find(e);
+            if (it != runtime_.ScriptContext().entityKinds.end()) kind = it->second;
+            add(e, t->pos, math::Quat::Identity(), kind);
         }
     }
 
-    // Entities that left the snapshot since the last broadcast get MsgDespawn.
-    std::vector<uint64_t> despawned;
-    for (uint64_t id : lastSnapshotIds_)
-        if (seen.count(id) == 0) despawned.push_back(id);
-    lastSnapshotIds_ = std::move(seen);
+    // Rebuild the AOI index from the same positions the snapshot uses, so the
+    // grid and the snapshot can never disagree about an entity's cell.
+    std::vector<AoiGrid::Entry> entries;
+    entries.reserve(items.size());
+    for (const Item& it : items) entries.push_back({it.id, it.x, it.z});
+    grid_.SetCellSize(cfg_.aoiCellSize);
+    grid_.Update(entries);
 
-    net::MsgSnapshot snap;
-    snap.tick = tick_;
-    snap.entityCount = static_cast<uint32_t>(ents.size());
-    snap.entities = std::move(ents);
-    const std::vector<uint8_t> body = EncodeBody(snap);
+    // One focus for all clients (v1: a single playable player). The focus is
+    // the controlled entity's position, or the world origin when the scene has
+    // no script entity to center on.
+    const uint64_t controlledKey = ControlledEntityKey();
+    math::Vec3 focus{0.0f, 0.0f, 0.0f};
+    for (const Item& it : items)
+        if (it.id == controlledKey) {
+            focus = {it.x, it.y, it.z};
+            break;
+        }
 
-    // The reliable transport caps every frame at Config().maxFrameBytes
-    // (~1200; the codec adds 8 magic+CRC + 4 version + 1 msgId + 2 seq bytes
-    // on top of the payload). A scene with ~48 entities already exceeds that.
-    // T6.4 should replicate at a lower cadence (snapshotEveryTicks) or with
-    // delta/dirty-entity encoding so full-list snapshots stay under the cap.
-    const size_t frameBytes = body.size() + 15;
+    const auto itemById = [&](uint64_t id) -> const Item* {
+        for (const Item& it : items)
+            if (it.id == id) return &it;
+        return nullptr;
+    };
+
     for (auto& kv : clients_) {
         Client& c = kv.second;
         if (c.chan.TimedOut()) continue;
+
+        // Interest set: the (2r+1)^2 cells around the focus. The controlled
+        // entity sits in the focus cell, so it is already included for r >= 0;
+        // re-assert it explicitly so a client always keeps its player.
+        std::vector<uint64_t> interest = grid_.InterestSet(focus.x, focus.z, cfg_.aoiRadiusCells);
+        if (controlledKey != 0 &&
+            std::find(interest.begin(), interest.end(), controlledKey) == interest.end()) {
+            interest.push_back(controlledKey);
+        }
+
+        // Spawn/despawn diff against the client's previous interest set: ids
+        // that entered are announced with MsgSpawn (id + kind + position),
+        // ids that left with MsgDespawn. The first snapshot spawns the whole
+        // interest set (lastInterest starts empty).
+        const std::set<uint64_t> interestSet(interest.begin(), interest.end());
+        std::vector<uint64_t> spawned;
+        std::vector<uint64_t> despawned;
+        for (uint64_t id : interest)
+            if (c.lastInterest.count(id) == 0) spawned.push_back(id);
+        for (uint64_t id : c.lastInterest)
+            if (interestSet.count(id) == 0) despawned.push_back(id);
+        c.lastInterest = interestSet;
+
+        // Build the per-client snapshot from exactly the interest set, in the
+        // same order InterestSet returned it (deterministic).
+        net::MsgSnapshot snap;
+        snap.tick = tick_;
+        for (uint64_t id : interest) {
+            const Item* it = itemById(id);
+            if (!it) continue;
+            net::SnapshotEntity se;
+            se.id = it->id;
+            se.x = it->x;
+            se.y = it->y;
+            se.z = it->z;
+            se.yaw = it->yaw;
+            snap.entities.push_back(se);
+        }
+        snap.entityCount = static_cast<uint32_t>(snap.entities.size());
+        const std::vector<uint8_t> body = EncodeBody(snap);
+
+        for (uint64_t id : spawned) {
+            const Item* it = itemById(id);
+            if (!it) continue;
+            net::MsgSpawn spawn{it->id, it->kind, it->x, it->y, it->z};
+            core::Status st =
+                c.chan.Send(static_cast<uint8_t>(net::MsgType::Spawn), EncodeBody(spawn));
+            if (!st.Ok())
+                NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Debug,
+                             "server: spawn of entity %llu to client %llu deferred (%s)",
+                             static_cast<unsigned long long>(id),
+                             static_cast<unsigned long long>(c.clientId), st.Error().c_str());
+        }
         for (uint64_t id : despawned) SendDespawn(c, id);
+
+        // The reliable transport caps every frame at Config().maxFrameBytes
+        // (~1200; the codec adds 8 magic+CRC + 4 version + 1 msgId + 2 seq
+        // bytes on top of the payload). AOI keeps the interest set small, but
+        // a dense neighborhood (or a large radius) can still exceed the cap —
+        // keep the guard.
+        const size_t frameBytes = body.size() + 15;
         if (frameBytes > c.chan.Config().maxFrameBytes) {
             // The snapshot cannot fit in one frame: the client would silently
             // freeze on the previous state. Count it and log at Warn (throttled
@@ -385,8 +489,7 @@ void GameServer::BroadcastSnapshot() {
             if (++c.dropLogCount % 60 == 1)
                 NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Warn,
                              "server: snapshot with %zu entities exceeds the %u-byte frame "
-                             "cap for client %llu; dropped (T6.4: add snapshotEveryTicks/"
-                             "delta encoding)",
+                             "cap for client %llu; dropped",
                              snap.entityCount, c.chan.Config().maxFrameBytes,
                              static_cast<unsigned long long>(c.clientId));
             continue;

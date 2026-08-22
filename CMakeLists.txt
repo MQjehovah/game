@@ -248,6 +248,7 @@ target_link_libraries(neon_engine PUBLIC neon_lua)
 add_executable(neon_server
   server/src/main.cpp
   server/src/game_server.cpp
+  server/src/aoi.cpp
 )
 target_include_directories(neon_server PRIVATE server/src)
 target_link_libraries(neon_server PRIVATE neon_engine)
@@ -299,7 +300,8 @@ add_executable(neon_tests tests/test_main.cpp tests/test_serialize.cpp tests/tes
   tests/test_reliable.cpp
   tests/test_server.cpp
   tests/test_client_sync.cpp
-  editor/src/history.cpp editor/src/packager.cpp server/src/game_server.cpp
+  tests/test_aoi.cpp
+  editor/src/history.cpp editor/src/packager.cpp server/src/game_server.cpp server/src/aoi.cpp
   game/src/client_sync.cpp)
 target_link_libraries(neon_tests PRIVATE neon_engine)
 # test_history.cpp includes the editor's generic undo/redo stack header.

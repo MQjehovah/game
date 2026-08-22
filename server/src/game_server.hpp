@@ -13,6 +13,7 @@
 #include "neon/net/socket.hpp"
 #include "neon/scene/game_runtime.hpp"
 #include "neon/script/gamevars.hpp"
+#include "aoi.hpp"
 #include "net_input.hpp"
 
 namespace neon::server {
@@ -53,9 +54,14 @@ struct NetAddrLess {
 // Config().maxFrameBytes (~1200 bytes), so a full-list snapshot fits roughly
 // 48 entities before ReliableChannel::Send refuses it. Such snapshots are
 // dropped (counted in SnapshotTooBig(), logged at Warn, throttled) — a client
-// simply stays on its last received state. T6.4 should replicate at a lower
-// cadence (Config::snapshotEveryTicks) or with delta/dirty-entity encoding so
-// full snapshots stay under the cap.
+// simply stays on its last received state.
+//
+// AOI (T6.5): snapshots are per-client and contain only the entities inside
+// the client's interest set — the (2r+1)^2 cells around its controlled entity.
+// Entities entering the set are announced with MsgSpawn, entities leaving with
+// MsgDespawn (diffed against the client's last interest set); the controlled
+// entity is always included. This keeps per-client snapshots small even in
+// worlds much larger than the ~48-entity frame cap.
 //
 // Client flow: the first MsgJoin from an unknown address creates a Client
 // (ReliableChannel wired to that address) and answers MsgWelcome{clientId,
@@ -87,6 +93,13 @@ public:
         uint64_t clientTimeoutMs = 5000; // disconnect a client silent this long
         uint32_t snapshotEveryTicks = 1; // broadcast a snapshot every N fixed ticks
         int maxClients = 64;
+        // AOI (T6.5): each client's snapshot contains only the entities in the
+        // (2*aoiRadiusCells+1)^2 cells centered on its controlled entity, in a
+        // grid of aoiCellSize world units. Defaults replicate a 96x96-unit
+        // area around the player (the demo scene); scenes with entities spread
+        // wider only replicate the nearby ones.
+        float aoiCellSize = AoiGrid::kDefaultCellSize;
+        int aoiRadiusCells = 1;
     };
 
     bool Start(const Config& cfg);
@@ -98,6 +111,10 @@ public:
     uint32_t ClientCount() const { return static_cast<uint32_t>(clients_.size()); }
     uint32_t CurrentTick() const { return tick_; }
     uint64_t ControllerClientId() const;
+    // The stable entity key every client's AOI is centered on: the script
+    // entity of kind "player" if the scene spawned one, else the first script
+    // (CTransformBind) entity, else 0 (clients then focus on the world origin).
+    uint64_t ControlledEntityKey();
     script::GameVars& GameVars() { return runtime_.GameVars(); }
     ecs::World& World() { return runtime_.World(); }
 
@@ -116,6 +133,10 @@ private:
         uint64_t lastSeenMs = 0;
         net::MsgInput lastInput; // v1: stored per client, only the controller's is applied
         bool hasInput = false;
+        // AOI: the entity ids replicated to this client's last snapshot.
+        // Spawn/despawn diffs are computed against this set, so each client
+        // gets exactly the entities it has not seen yet / has lost.
+        std::set<uint64_t> lastInterest;
         uint32_t dropLogCount = 0; // throttles the deferred-snapshot log
     };
 
@@ -148,9 +169,9 @@ private:
     double accumulator_ = 0.0;
     uint64_t lastStepMs_ = 0;
     uint64_t nowMs_ = 0;
-    std::set<uint64_t> lastSnapshotIds_; // entity ids of the last broadcast (despawn diff)
-    uint64_t snapshotTooBig_ = 0;        // snapshots dropped for exceeding the frame cap
-    uint64_t snapshotDrops_ = 0;         // snapshots dropped for other send failures
+    AoiGrid grid_;                 // AOI cell index rebuilt every broadcast
+    uint64_t snapshotTooBig_ = 0;  // snapshots dropped for exceeding the frame cap
+    uint64_t snapshotDrops_ = 0;   // snapshots dropped for other send failures
     bool running_ = false;
 };
 
