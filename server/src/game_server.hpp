@@ -15,6 +15,7 @@
 #include "neon/script/gamevars.hpp"
 #include "aoi.hpp"
 #include "net_input.hpp"
+#include "scripted_input.hpp"
 
 namespace neon::server {
 
@@ -129,6 +130,15 @@ public:
     uint64_t SnapshotTooBig() const { return snapshotTooBig_; }
     uint64_t SnapshotDrops() const { return snapshotDrops_; }
 
+    // T6.7 test/demo injection: when non-empty, the controller input comes from
+    // this fixed scripted sequence instead of a socket client (the
+    // deterministic-acceptance path; no clients are needed). The input whose
+    // tick equals the current fixed step drives that step. Ignored once empty
+    // (default: the normal v1 client-controller path).
+    void SetScriptedInputs(std::vector<ScriptedInput> inputs) {
+        scriptedInputs_ = std::move(inputs);
+    }
+
 private:
     struct Client {
         net::NetAddress addr;
@@ -170,6 +180,7 @@ private:
     net::MessageCodec codec_; // decodes datagrams from unknown senders (join path)
     scene::GameRuntime runtime_;
     NetInput controllerInput_; // wired into the runtime; fed by the controller client
+    std::vector<ScriptedInput> scriptedInputs_; // T6.7 scripted-controller path
     std::map<net::NetAddress, Client, NetAddrLess> clients_;
     std::vector<net::NetAddress> pendingRemovals_; // channel-timeout disconnects
     net::NetAddress controllerAddr_;

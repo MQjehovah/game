@@ -41,6 +41,11 @@
 | glTF 2.0：JSON DOM 解析器、PBR 材质、节点变换（Khronos 样例模型验证） | ✅ |
 | 单元测试（13 项：数学/ECS/配置/RNG） | ✅ |
 | 截图/冒烟测试（`--smoke-test` / `--screenshot`） | ✅ |
+| 网络：UDP 传输 + 可靠通道（ACK/重传/乱序重排）、版本化消息编解码 | ✅ `neon::net` |
+| 网络：无头权威服务器 `neon_server`（固定 60Hz + 确定性沙箱） | ✅ |
+| 网络：快照插值 + 预测回滚 + AOI 九宫格兴趣管理 | ✅ |
+| 网络：v0 匿名登录 + 角色选择占位 | ✅ |
+| 网络：确定性模拟验收（服务器权威模拟 ≡ 客户端本地预测） | ✅ `tests/test_determinism.cpp` |
 
 ## 构建
 
@@ -124,6 +129,19 @@ cmake --build build --target neon_tests -j
 - 模型：Kenney Nature Kit（CC0）+ DamagedHelmet（Khronos glTF 样例，CC-BY 4.0）。
 - 中文 UI 字体：运行时加载系统字体（Windows 微软雅黑 / macOS 苹方 / Linux Noto CJK）。
 
+### 局域网双进程 demo（一服务器 + 两客户端）
+
+```bat
+:: 终端 1：服务器（默认即 --host 模式）
+build\neon_server.exe --scene tests\data\neon_server_sample\scene.json
+:: 终端 2：客户端 A（先登录 → 输入控制器）
+build\neon_game.exe --connect 127.0.0.1:26000 --scene tests\data\neon_server_sample\scene.json --name alice
+:: 终端 3：客户端 B（后登录 → 观察者，只收快照）
+build\neon_game.exe --connect 127.0.0.1:26000 --scene tests\data\neon_server_sample\scene.json --name bob
+```
+
+核心承诺：**确定性模拟**——服务器权威模拟与客户端本地预测在相同输入流下逐位一致（`tests/test_determinism.cpp` 哈希验收）。详见 [docs/NETWORKING.md](docs/NETWORKING.md)。
+
 ## 项目结构
 
 ```
@@ -137,11 +155,16 @@ engine/
     gfx/vulkan         # Vulkan 后端（占位）
     audio/miniaudio      # miniaudio 混音器（T5.1，跨平台）
     audio/winmm          # WinMM 混音器（Windows 回退）
+    net/               # UDP 传输 + 可靠通道 + 协议编解码
 game/
-  src/                 # NeonRealm demo（ECS 玩法系统/程序化美术/音效）
+  src/                 # NeonRealm demo + 数据驱动玩家（neon_game，含网络客户端）
+server/
+  src/                 # 无头权威服务器 neon_server（GameServer + AOI）
+editor/
+  src/                 # 场景编辑器 neon_editor（ImGui 工具 UI）
 tests/                 # 单元测试
-third_party/           # stb、字体（均已 vendored）
-docs/                  # 架构/路线图/规范文档
+third_party/           # stb、字体、lua、imgui（均已 vendored）
+docs/                  # 架构/路线图/网络说明/规范文档
 ```
 
 详细设计见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)，路线图见 [docs/ROADMAP.md](docs/ROADMAP.md)。

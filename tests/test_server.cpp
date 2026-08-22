@@ -537,6 +537,115 @@ TEST(ServerUnknownSenderIgnoredAndSecondClient) {
 }
 
 // ---------------------------------------------------------------------------
+// T6.7 two-client LAN smoke: ONE server + TWO clients. A logs in first -> the
+// input controller (v1 single-controller); B logs in second -> observer. Both
+// receive snapshots; the controller's input moves the player; the observer's
+// snapshots show the SAME entity state (bit-exact, same world + same tick).
+// ---------------------------------------------------------------------------
+
+TEST(ServerTwoClientLanSmoke) {
+    test::TempDir tmp;
+    WriteSceneFixture(tmp.Str());
+    server::GameServer server;
+    CHECK(server.Start(SceneCfg(tmp.Str(), 2026)));
+    CHECK_EQ(server.ClientCount(), 0u);
+
+    LoopbackClient a, b;
+    a.BindAndPeer(server.Port());
+    b.BindAndPeer(server.Port());
+    uint64_t now = 0;
+    auto stepAll = [&]() {
+        now += 17;
+        server.Step(now);
+        a.Pump(now);
+        b.Pump(now);
+    };
+
+    // A is the first login -> controller.
+    a.SendLogin("alice", net::kProtocolVersion);
+    a.SendJoin("alice", 2);
+    for (int i = 0; i < 200 && !a.welcomed; ++i) stepAll();
+    CHECK(a.welcomed);
+    CHECK_EQ(server.ClientCount(), 1u);
+    CHECK_EQ(server.ControllerClientId(), a.clientId);
+
+    // B joins second -> observer (still exactly one controller, A).
+    b.SendLogin("bob", net::kProtocolVersion);
+    b.SendJoin("bob", 2);
+    for (int i = 0; i < 200 && !b.welcomed; ++i) stepAll();
+    CHECK(b.welcomed);
+    CHECK_EQ(server.ClientCount(), 2u);
+    CHECK_EQ(server.ControllerClientId(), a.clientId);
+
+    // The controlled entity's stable key (the script-spawned player).
+    const uint64_t key = server.ControlledEntityKey();
+    CHECK((key) != (0u));
+
+    auto findEntity = [](const net::MsgSnapshot& s,
+                         uint64_t id) -> const net::SnapshotEntity* {
+        for (const net::SnapshotEntity& e : s.entities)
+            if (e.id == id) return &e;
+        return nullptr;
+    };
+
+    // Both clients already receive snapshots of the idle world (player at z=0).
+    CHECK(!a.snapshots.empty());
+    CHECK(!b.snapshots.empty());
+    {
+        const net::SnapshotEntity* ea = findEntity(a.snapshots.back(), key);
+        const net::SnapshotEntity* eb = findEntity(b.snapshots.back(), key);
+        CHECK(ea != nullptr);
+        CHECK(eb != nullptr);
+        CHECK_NEAR(ea->z, 0.0, 1e-6);
+        CHECK_NEAR(eb->z, 0.0, 1e-6);
+    }
+
+    // Controller A holds moveY=1 for 60 ticks: the player advances z.
+    a.SendInput(1, 0, 0.0f, 1.0f);
+    for (int i = 0; i < 60; ++i) stepAll();
+
+    // The controller's entity moved, and BOTH clients see the SAME state in
+    // their latest snapshots (same world, same snapshot tick -> bit-exact).
+    const net::SnapshotEntity* ea = findEntity(a.snapshots.back(), key);
+    const net::SnapshotEntity* eb = findEntity(b.snapshots.back(), key);
+    CHECK(ea != nullptr);
+    CHECK(eb != nullptr);
+    CHECK((ea->z) > (0.5f));
+    CHECK_EQ(a.snapshots.back().tick, b.snapshots.back().tick);
+    CHECK(ea->x == eb->x);
+    CHECK(ea->y == eb->y);
+    CHECK(ea->z == eb->z);
+
+    // The world advanced on the server (GameVar ticks per fixed step).
+    CHECK((server.GameVars().Get("ticks").number) > (0.0));
+
+    // v1 input model: A releases, then B (observer) tries to drive the sim —
+    // non-controller input is ignored, so the player stays put.
+    a.SendInput(2, 0, 0.0f, 0.0f); // controller releases forward
+    for (int i = 0; i < 5; ++i) stepAll();
+    double zAfterStop = 0.0;
+    {
+        auto view = server.World().ViewAll<script::CTransformBind>();
+        for (size_t i = 0; i < view.Size(); ++i) {
+            ecs::Entity e = server.World().EntityAt<script::CTransformBind>(i);
+            const script::CTransformBind* t = server.World().Get<script::CTransformBind>(e);
+            if (t) zAfterStop = t->pos.z;
+        }
+    }
+    b.SendInput(1, 0, 0.0f, 1.0f); // observer's forward: ignored
+    for (int i = 0; i < 5; ++i) stepAll();
+    {
+        auto view = server.World().ViewAll<script::CTransformBind>();
+        for (size_t i = 0; i < view.Size(); ++i) {
+            ecs::Entity e = server.World().EntityAt<script::CTransformBind>(i);
+            const script::CTransformBind* t = server.World().Get<script::CTransformBind>(e);
+            if (t) CHECK_NEAR(t->pos.z, zAfterStop, 1e-6); // B had no effect
+        }
+    }
+    server.Shutdown();
+}
+
+// ---------------------------------------------------------------------------
 // Ping -> pong reply, and inactivity/reliable-channel timeout disconnect.
 // ---------------------------------------------------------------------------
 

@@ -144,6 +144,18 @@ SparseSet 风格的 ECS：
 - **混合模式**：自研 UI 着色器输出非预乘颜色，ImGui 绘制必须用 `BlendMode::Alpha`（SRC_ALPHA）而非官方后端的预乘混合——否则字形四边形的 RGB 全强度叠加，中文会变成实心白块（已踩坑记录）。
 - **停靠支持**：使用官方 **docking 分支**（master 分支不含停靠 API）；`io.ConfigFlags |= DockingEnable`，DockBuilder 仅在新 ini 时设置默认布局，用户调整结果写入 `neon_editor_imgui.ini`。
 
+### 3.10 网络层（`neon::net` / `server` / `client`，M4）
+
+客户端/服务器**同构**：服务器与客户端复用同一个 `scene::GameRuntime` + 同一份确定性 Lua 沙箱（T2.4），这是"相同输入 → 相同状态"的基础。分层：
+
+- **传输层（`neon::net`，T6.1/T6.2）**：`UdpSocket` + `ReliableChannel`。自研帧格式继承 core::Serializer 的 big-endian + magic + CRC32：`[magic][crc][version][msgId][seq][payload]`。`MessageCodec` 解码校验 magic/version/CRC 并逐字段边界检查（防恶意输入）；可靠通道用滑动窗口 ACK（`MsgAck`，ackSeq + 32 位位图）实现有序、重传与断线判定。
+- **协议（`neon/net/protocol.hpp`）**：版本化消息集 `MsgJoin/Welcome/Input/Snapshot/Spawn/Despawn/Ping/Pong/Ack/Login/LoginOk/CharList`（当前 v3）。客户端/服务器共用同一套 `Write/Read` 编解码对。
+- **权威服务器（`server::GameServer`，T6.3）**：headless 无渲染，固定 60Hz 累加器步进（`Step(nowMs)` 每调用至多一个固定 tick，保证 `--ticks N` 精确）；每 tick 收集控制器输入 → 步进同构 `GameRuntime` → 广播 `MsgSnapshot`。首个登录者 = **输入控制器**（v1 单控制器模型），其输入经 `NetInput` 喂给脚本的 `InputAxis/InputKey`。
+- **AOI 兴趣管理（`server::AoiGrid`，T6.5）**：九宫格索引，客户端快照只含受控实体周边 `(2r+1)^2` 格内实体，进出以 `MsgSpawn`/`MsgDespawn` 增量通知；受控实体恒在兴趣集内。格子行主序 + 实体 id 升序，保证快照流可复现。
+- **客户端同步（`client::ClientSync`，T6.4）**：快照环缓冲（丢弃过期/重复 tick）、相邻快照插值（yaw 走最短弧）、spawn/despawn 处理；v1 预测回滚为"分歧即快照纠正"（无重放）。
+- **登录/角色（T6.6，v0 占位）**：匿名账号 = 计数器自增，`MsgLoginOk` + 固定单角色 `MsgCharList`；真实认证留待替换。
+- **确定性验收（T6.7）**：`server::GameServer::SetScriptedInputs` + `server::ScriptedInputs()` 把同一脚本输入流注入服务器与客户端预测；`tests/test_determinism.cpp` 断言受控实体最终位置逐位一致且状态哈希（实体位置 + GameVars 的 FNV-1a）相等。`docs/NETWORKING.md` 含一服务器 + 两 `neon_game --connect` 的 LAN demo 与回滚/带宽等生产化缺口。
+
 ## 4. 数据流（一帧）
 
 ```
@@ -186,6 +198,8 @@ OnRender：
 | glTF/JSON 自研 | 控制解析细节（byteStride、代理对、UTF-8），无第三方 JSON 依赖 |
 | 平台后端按 OS 编译 | X11/Cocoa 无法在 Windows 验证，CI 矩阵分别编译 |
 | miniaudio 音频 | vendored 单头（v0.11.25），三平台统一；Windows 回退 WinMM、其余回退 Null；`MA_NO_NULL` 让无设备时如实报不可用 |
+| 客户端/服务器同构 + 确定性沙箱 | 服务器与客户端复用同一 `GameRuntime`/Lua 沙箱/固定 tick，同一输入流逐位一致（`tests/test_determinism.cpp` 哈希验收），是快照/预测/回滚的前提 |
+| AOI 按客户端裁剪快照 | 九宫格兴趣集 + spawn/despawn 增量，避免全量快照超可靠通道帧上限；迭代序稳定保证可复现 |
 
 ## 6. 扩展点
 

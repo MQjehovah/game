@@ -390,6 +390,18 @@ void GameServer::SendDespawn(Client& c, uint64_t entityId) {
 }
 
 void GameServer::ApplyControllerInput() {
+    // Scripted-controller path (T6.7 determinism acceptance): when a scripted
+    // sequence is installed, the input keyed to the CURRENT fixed step drives
+    // the sim directly — no socket client involved, so a headless run can be
+    // compared bit-exactly against a client prediction fed the same sequence.
+    if (!scriptedInputs_.empty()) {
+        const net::MsgInput* in = InputForTick(scriptedInputs_, tick_);
+        if (in)
+            controllerInput_.SetInput(in->buttons, in->moveX, in->moveY);
+        else
+            controllerInput_.SetInput(0, 0.0f, 0.0f);
+        return;
+    }
     auto it = clients_.find(controllerAddr_);
     if (it == clients_.end() || !it->second.hasInput) {
         controllerInput_.SetInput(0, 0.0f, 0.0f);
