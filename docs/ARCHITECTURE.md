@@ -219,3 +219,10 @@ OnRender：
 - **音频后端**：miniaudio 已 vendored 且三平台编译，Windows 已启用；Linux/macOS 可逐步把默认选择切到 miniaudio（当前保留 Null 兜底，CI 无音频设备也能跑）。
 - **资源流式加载**：`AssetManager` 异步解码 + `ChunkStreamer` 已实现，供大世界分区使用；pack 直读文件提供器（免解压）为可选优化。
 - **服务器复用**：玩法系统只依赖 `ecs::World` 与输入抽象，可编译为无渲染的服务器目标。
+
+### 新增模块与演进（2026-08）
+
+- **状态效果**（`engine/scene/status`）：实体携带 `StatusComponent`（ECS），效果按稳定 id 解析（燃烧/中毒=伤害 tick，回血=治疗 tick），`GameRuntime::Tick` 推进剩余时间、按间隔触发 tick 并在到期移除；Lua 绑定 `ApplyStatus/HasStatus/StatusMagnitude/RemoveStatus`。
+- **数据驱动技能表**（`engine/scene/skills`）：JSON 定义技能（`projectile` / `melee` 扇形 / `box` 朝向攻击盒），含伤害、冷却、法力（约定 GameVar `mana`）、命中附加状态效果；`GameRuntime::CastSkill/SkillCooldownLeft/AttackBox` 与 Lua 绑定 `CastSkill/SkillCooldown/AttackBox`。冷却按施法者（EntityKey）记录，每 tick 衰减并清理已销毁实体。
+- **脚本按实例函数捕获**：`IScriptHost::CaptureFunction/CallCaptured` 把每个 chunk 自己的 `on_start/on_update` 存入 Lua registry（指针键嵌套，避免覆盖 `LUA_RIDX_MAINTHREAD/GLOBALS`）；`GameRuntime` 按实例分发，后加载 chunk 不再遮蔽先前实体的 handler。`Spawn(kind, pos, script)` 可给动态实体附带控制器脚本。
+- **多玩家输入模型**：服务器为每个客户端持有独立 `NetInput`；场景定义 `on_player_join(clientId)` 时服务器在准入时调用，脚本 `Spawn` + `BindPlayerToClient(player, clientId)` 绑定，运行时按实体路由输入（`ScriptContext::inputForEntity`）。未定义该函数的场景回退到 v1 单控制器模型。AOI 焦点按客户端取其绑定角色。
