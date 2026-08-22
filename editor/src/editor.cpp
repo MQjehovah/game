@@ -1111,8 +1111,12 @@ void EditorApp::BuildImGuiUI() {
     const float toolH = 36.0f;
     ImGuiViewport* mainVp = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(ImVec2(0.0f, menuH + toolH), ImGuiCond_Always);
+    // Use Size.y (the full window height), NOT WorkSize.y: BeginMainMenuBar
+    // shrinks the main viewport's WorkSize by the menu bar height, so sizing
+    // the DockSpace off WorkSize.y would end it ~menuH px above the window
+    // bottom and let the full-screen 3D scene leak out below the panels.
     ImGui::SetNextWindowSize(
-        ImVec2(mainVp->WorkSize.x, mainVp->WorkSize.y - menuH - toolH),
+        ImVec2(mainVp->Size.x, mainVp->Size.y - menuH - toolH),
                              ImGuiCond_Always);
     ImGui::SetNextWindowViewport(mainVp->ID);
     ImGuiWindowFlags dsFlags = ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar |
@@ -1126,7 +1130,15 @@ void EditorApp::BuildImGuiUI() {
     ImGui::Begin("##NeonDockSpace", nullptr, dsFlags);
     ImGui::PopStyleVar(3);
     ImGuiID dockId = ImGui::GetID("NeonDockSpace");
-    ImGui::DockSpace(dockId, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_PassthruCentralNode);
+    // NOTE: no ImGuiDockNodeFlags_PassthruCentralNode here. That flag makes the
+    // DockSpace root paint an opaque ImGuiCol_WindowBg rectangle over the WHOLE
+    // workspace when the central node is non-empty (and the 3D viewport window
+    // IS docked into the central node, so the passthru "hole" is never
+    // registered) - which would cover the full-screen 3D scene. Without the
+    // flag the host window (NoBackground) + the 视口 window (NoBackground) stay
+    // transparent, so the scene shows through the central viewport while the
+    // opaque tool panels cover the rest.
+    ImGui::DockSpace(dockId, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_None);
     ImGui::End();
 
     // First-run default docking layout (skipped when the ini already restores one).

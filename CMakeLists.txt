@@ -211,6 +211,12 @@ add_executable(neon_rush
 )
 target_include_directories(neon_rush PRIVATE assets/generated third_party/stb)
 target_link_libraries(neon_rush PRIVATE neon_engine)
+if(MSVC)
+  target_compile_options(neon_rush PRIVATE /W4 /permissive- /utf-8)
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(neon_rush PRIVATE -Wall -Wextra
+    -finput-charset=UTF-8 -fexec-charset=UTF-8)
+endif()
 
 # ---------------------------------------------------------------------------
 # Generic data-driven player (T4.7): loads a game.pack and runs it with no

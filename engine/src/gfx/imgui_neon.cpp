@@ -363,13 +363,15 @@ void ImGuiNeon_RenderDrawData(ImDrawData* drawData) {
             TextureHandle tex = it != gState.textures.end() ? it->second : gState.whiteTexture;
             backend->BindTexture(0, tex.Valid() ? tex : gState.whiteTexture);
 
-            // 1.93 removed ImDrawCmd::VtxCount; derive it from the next command
-            // (or the end of the vertex buffer).
-            const ImDrawCmd* next = &cmd + 1;
-            bool hasNext = (next < list->CmdBuffer.Data + list->CmdBuffer.Size);
-            uint32_t vtxCount = hasNext ? next->VtxOffset - cmd.VtxOffset
-                                        : static_cast<uint32_t>(list->VtxBuffer.Size) -
-                                              cmd.VtxOffset;
+            // 1.93 removed ImDrawCmd::VtxCount. This backend does not set
+            // ImGuiBackendFlags_RendererHasVtxOffset, so every ImDrawCmd in a
+            // list has VtxOffset == 0 and all commands draw from the list's own
+            // vertex buffer; the drawable vertex range is the whole buffer, not
+            // the gap to the next command (that "next command" heuristic broke
+            // multi-command lists into zero-size vertex ranges, crashing the
+            // GL driver with a 0-byte VBO + live indices).
+            uint32_t vtxCount =
+                static_cast<uint32_t>(list->VtxBuffer.Size) - cmd.VtxOffset;
             indices.resize(static_cast<size_t>(cmd.ElemCount));
             const ImDrawIdx* src = list->IdxBuffer.Data + cmd.IdxOffset;
             for (int i = 0; i < static_cast<int>(cmd.ElemCount); ++i) {

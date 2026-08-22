@@ -125,7 +125,7 @@ private:
                     for (size_t i = 0; i < kBufferFrames && voice.pos < samples.size(); ++i, ++voice.pos) {
                         int mixed = static_cast<int>(data[i]) +
                                     static_cast<int>(static_cast<float>(samples[voice.pos]) * voice.volume);
-                        data[i] = static_cast<int16_t>(std::max(-32768, std::min(32767, mixed)));
+                        data[i] = static_cast<int16_t>((std::max)(-32768, (std::min)(32767, mixed)));
                     }
                     if (voice.pos >= samples.size()) {
                         voice.pos = 0;

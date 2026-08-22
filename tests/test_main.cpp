@@ -1,5 +1,6 @@
 #include <cstdio>
 #include <cmath>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -280,7 +281,7 @@ TEST(HarnessFailurePaths) {
     CHECK_THROW((void)0);          // fails: nothing thrown
     CHECK_EQ(test::gFailures, before + 2);
 
-    CHECK_NEAR(0.0 / 0.0, 1.0, 1e-6); // fails: NaN operand
+    CHECK_NEAR(std::numeric_limits<double>::quiet_NaN(), 1.0, 1e-6); // fails: NaN operand
     CHECK_EQ(test::gFailures, before + 3);
 
     CHECK_NEAR(1.0, 1.0, -1e-6);   // passes: |eps| used as tolerance
