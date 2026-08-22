@@ -6,6 +6,7 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "neon/bt/behavior_tree.hpp"
@@ -17,6 +18,8 @@
 #include "neon/physics/physics.hpp"
 #include "neon/platform/input.hpp"
 #include "neon/scene/scene_file.hpp"
+#include "neon/scene/skills.hpp"
+#include "neon/scene/status.hpp"
 #include "neon/script/bindings.hpp"
 #include "neon/script/gamevars.hpp"
 #include "neon/script/script.hpp"
@@ -126,12 +129,30 @@ public:
 
     // Combat (script-facing gameplay hooks). SpawnProjectile queues a fireball
     // the runtime advances and renders; MeleeAttack damages SceneHealth entities
-    // in the arc and returns how many were hit.
+    // in the arc and returns how many were hit; AttackBox damages every
+    // SceneHealth entity inside a yaw-oriented box (half extents) and returns
+    // how many were hit.
     void SpawnProjectile(const math::Vec3& pos, const math::Vec3& dir, float speed, float damage,
                          float life, ecs::Entity caster = {});
     int MeleeAttack(const math::Vec3& origin, const math::Vec3& dir, float range, float arcDeg,
                     float damage);
+    int AttackBox(const math::Vec3& center, const math::Vec3& half, float yaw, float damage);
     void TickProjectiles(float dt);
+
+    // Data-driven skills (M2 combat core). LoadSkills replaces the table;
+    // CastSkill looks the skill up, checks cooldown/mana, casts it (projectile
+    // / melee arc / attack box), applies the skill's status effects to every
+    // hit target and records the cooldown for `caster`. Returns 1 when the
+    // skill was cast, 0 when unknown / on cooldown / out of mana.
+    bool LoadSkills(const std::string& json, std::string* err);
+    int CastSkill(const std::string& name, const math::Vec3& origin, const math::Vec3& dir,
+                  ecs::Entity caster = {});
+    // Remaining cooldown seconds for `caster`'s skill (0 = ready / unknown).
+    float SkillCooldownLeft(const std::string& name, ecs::Entity caster) const;
+
+    // Status-effect observability (tests / HUD).
+    bool HasStatus(ecs::Entity ent, uint32_t id) const;
+    float StatusMagnitude(ecs::Entity ent, uint32_t id) const;
 
 private:
     struct ScriptInst {
@@ -172,12 +193,22 @@ private:
         float damage = 0.0f;
         float life = 0.0f;    // seconds remaining
         float traveled = 0.0f; // distance travelled
+        float range = 0.0f;    // max travel before expiring (0 = life-bounded only)
         float hitRadius = 0.8f;
         ecs::Entity caster;   // never damaged by its own projectile
+        std::vector<SkillStatus> statuses; // applied to the hit target
     };
 
     void AttachScripts();
     void AttachTrees();
+    // Advances every entity's StatusComponent (damage/heal ticks + expiry).
+    void TickStatuses(float dt);
+    // Decays per-caster skill cooldowns and prunes dead casters.
+    void TickSkillCooldowns(float dt);
+    // Applies a skill's status effects to `target` (creates the component).
+    void ApplySkillStatuses(ecs::Entity target, const std::vector<SkillStatus>& statuses);
+    // Damages `target` (clamped to 0) and applies the skill's statuses.
+    void ApplyHit(ecs::Entity target, float damage, const std::vector<SkillStatus>& statuses);
     // Loads every prefabs/*.json under cfg_.scriptBaseDir into prefs_ (no-op
     // when the base dir is empty or the prefabs dir is absent). Scene entities
     // can then reference prefabs by name, matching how packed games ship them.
@@ -206,6 +237,9 @@ private:
     std::vector<BtInst> trees_;
     std::vector<DrawItem> draws_;
     std::vector<Projectile> projectiles_;
+    SkillTable skills_;
+    // Per-caster (EntityKey) skill cooldown seconds by skill name.
+    std::unordered_map<uint64_t, std::map<std::string, float>> skillCooldowns_;
     gfx::Mesh fireballMesh_; // lazily built for skill-projectile rendering
     std::set<std::string> loadedScripts_; // resolved paths whose chunk ran (presence only)
     std::set<std::string> scriptFailed_;  // resolved paths that failed (skip later)

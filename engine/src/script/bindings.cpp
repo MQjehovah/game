@@ -4,6 +4,7 @@
 #include <cstdint>
 
 #include "neon/core/json.hpp"
+#include "neon/scene/status.hpp"
 
 namespace neon::script {
 namespace {
@@ -196,6 +197,87 @@ Value NativeMeleeAttack(IScriptHost& host, void* user) {
     return Value::Num(ctx->meleeAttack(origin, dir, range, arcDeg, damage));
 }
 
+// Status effects (M2 combat core): ApplyStatus(ent, "burning", 3, 2) applies
+// 3s of burning dealing 2 damage/tick; HasStatus/StatusMagnitude/RemoveStatus
+// query and remove. Names resolve through the built-in status table.
+Value NativeApplyStatus(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->sceneApplyStatus) return Value::Nil();
+    const ecs::Entity e = EntityFromValue(host.GetArg(0));
+    const uint32_t id = scene::StatusIdByName(StringArg(host, 1));
+    const float duration =
+        host.GetArg(2).type == Value::Type::Number ? static_cast<float>(host.GetArg(2).number) : 0.0f;
+    const float magnitude =
+        host.GetArg(3).type == Value::Type::Number ? static_cast<float>(host.GetArg(3).number) : 0.0f;
+    if (id == 0 || duration <= 0.0f) return Value::Nil();
+    ctx->sceneApplyStatus(e, id, duration, magnitude);
+    return Value::Nil();
+}
+
+Value NativeHasStatus(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->sceneHasStatus) return Value::Num(0);
+    const ecs::Entity e = EntityFromValue(host.GetArg(0));
+    const uint32_t id = scene::StatusIdByName(StringArg(host, 1));
+    return Value::Num(id != 0 && ctx->sceneHasStatus(e, id) ? 1.0 : 0.0);
+}
+
+Value NativeStatusMagnitude(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->sceneStatusMagnitude) return Value::Num(0);
+    const ecs::Entity e = EntityFromValue(host.GetArg(0));
+    const uint32_t id = scene::StatusIdByName(StringArg(host, 1));
+    return Value::Num(id != 0 ? ctx->sceneStatusMagnitude(e, id) : 0.0);
+}
+
+Value NativeRemoveStatus(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->sceneRemoveStatus) return Value::Nil();
+    const ecs::Entity e = EntityFromValue(host.GetArg(0));
+    const uint32_t id = scene::StatusIdByName(StringArg(host, 1));
+    if (id != 0) ctx->sceneRemoveStatus(e, id);
+    return Value::Nil();
+}
+
+// CastSkill(name, origin{x,y,z}, dir{x,y,z}, caster) -> 1 cast / 0 failed
+// (unknown skill, on cooldown, out of mana). SkillCooldown(caster, name)
+// returns the remaining seconds (0 = ready).
+Value NativeCastSkill(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->castSkill) return Value::Num(0);
+    const std::string name = StringArg(host, 0);
+    const math::Vec3 origin = Vec3FromValue(host.GetArg(1), math::Vec3{});
+    const math::Vec3 dir = Vec3FromValue(host.GetArg(2), math::Vec3{0, 0, 1});
+    const ecs::Entity caster =
+        host.ArgCount() >= 4 ? EntityFromValue(host.GetArg(3)) : ecs::Entity{};
+    return Value::Num(ctx->castSkill(name, origin, dir, caster));
+}
+
+Value NativeSkillCooldown(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->sceneSkillCooldown) return Value::Num(0);
+    const ecs::Entity caster = EntityFromValue(host.GetArg(0));
+    const std::string name = StringArg(host, 1);
+    return Value::Num(ctx->sceneSkillCooldown(name, caster));
+}
+
+// AttackBox(center{x,y,z}, half{x,y,z}, yawDeg, damage) -> entities hit. The
+// box is centered at `center`, half-extents `half` along the local axes, and
+// rotated `yawDeg` degrees around Y.
+Value NativeAttackBox(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->attackBox) return Value::Num(0);
+    const math::Vec3 center = Vec3FromValue(host.GetArg(0), math::Vec3{});
+    const math::Vec3 half = Vec3FromValue(host.GetArg(1), math::Vec3{1, 1, 1});
+    const float yawDeg =
+        host.GetArg(2).type == Value::Type::Number
+            ? static_cast<float>(host.GetArg(2).number) * math::kDegToRad
+            : 0.0f;
+    const float damage =
+        host.GetArg(3).type == Value::Type::Number ? static_cast<float>(host.GetArg(3).number) : 0.0f;
+    return Value::Num(ctx->attackBox(center, half, yawDeg, damage));
+}
+
 Value NativeInputMouseDown(IScriptHost& host, void* user) {
     auto* ctx = static_cast<ScriptContext*>(user);
     if (!ctx || !ctx->input) return Value::Num(0);
@@ -381,6 +463,13 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("SetHealth", &NativeSetHealth, &ctx);
     host.Register("SpawnProjectile", &NativeSpawnProjectile, &ctx);
     host.Register("MeleeAttack", &NativeMeleeAttack, &ctx);
+    host.Register("ApplyStatus", &NativeApplyStatus, &ctx);
+    host.Register("HasStatus", &NativeHasStatus, &ctx);
+    host.Register("StatusMagnitude", &NativeStatusMagnitude, &ctx);
+    host.Register("RemoveStatus", &NativeRemoveStatus, &ctx);
+    host.Register("CastSkill", &NativeCastSkill, &ctx);
+    host.Register("SkillCooldown", &NativeSkillCooldown, &ctx);
+    host.Register("AttackBox", &NativeAttackBox, &ctx);
     host.RegisterField("Json", "Parse", &NativeJsonParse, &ctx);
 }
 

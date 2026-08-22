@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdint>
 #include <functional>
 #include <map>
 #include <string>
@@ -59,6 +60,21 @@ struct ScriptContext {
     std::function<int(const math::Vec3& origin, const math::Vec3& dir, float range, float arcDeg,
                       float damage)>
         meleeAttack; // returns the number of entities hit
+    // Status-effect hooks (M2 combat core): names are resolved to ids by the
+    // caller (the bindings) through the built-in status table before calling.
+    std::function<void(ecs::Entity, uint32_t id, float duration, float magnitude)>
+        sceneApplyStatus;
+    std::function<bool(ecs::Entity, uint32_t id)> sceneHasStatus;
+    std::function<float(ecs::Entity, uint32_t id)> sceneStatusMagnitude;
+    std::function<void(ecs::Entity, uint32_t id)> sceneRemoveStatus;
+    // Skill hooks (M2 combat core): data-driven CastSkill / SkillCooldown and
+    // the oriented attack box.
+    std::function<int(const std::string& name, const math::Vec3& origin, const math::Vec3& dir,
+                      ecs::Entity caster)>
+        castSkill;
+    std::function<float(const std::string& name, ecs::Entity caster)> sceneSkillCooldown;
+    std::function<int(const math::Vec3& center, const math::Vec3& half, float yaw, float damage)>
+        attackBox;
 };
 
 // Registers Spawn/Despawn/GetPosition/SetPosition/GetVar/SetVar/Raycast/

@@ -219,7 +219,10 @@ public:
             return kRejected;
         }
         Pool<T>& pool = GetPool<T>();
-        pool.Add(e.id, value);
+        // Idempotent: a second Add for the same entity leaves the existing
+        // component in place (overwriting sparse would orphan the old dense
+        // entry and corrupt pool iteration).
+        if (!pool.Has(e.id)) pool.Add(e.id, value);
         return pool.Get(e.id);
     }
 

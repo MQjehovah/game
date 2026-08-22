@@ -46,6 +46,8 @@ set(ENGINE_CORE_SOURCES
   engine/src/scene/scene_manager.cpp
   engine/src/scene/game_manifest.cpp
   engine/src/scene/game_runtime.cpp
+  engine/src/scene/skills.cpp
+  engine/src/scene/status.cpp
   engine/src/scene/world_chunk.cpp
   engine/src/script/lua_host.cpp
   engine/src/script/script_manager.cpp
@@ -377,6 +379,7 @@ add_executable(neon_tests tests/test_main.cpp tests/test_serialize.cpp tests/tes
   tests/test_script.cpp tests/test_script_bindings.cpp tests/test_script_determinism.cpp
   tests/test_bt.cpp tests/test_scene_file.cpp tests/test_scene_export.cpp tests/test_manifest.cpp
   tests/test_game_runtime.cpp tests/test_gltf_skin.cpp tests/test_anim.cpp
+  tests/test_combat.cpp
   tests/test_skinned.cpp tests/test_shadow.cpp tests/test_log.cpp
   tests/test_spatial.cpp tests/test_post.cpp tests/test_ibl.cpp tests/test_history.cpp
   tests/test_bt_editor.cpp tests/test_script_panel.cpp tests/test_packager.cpp

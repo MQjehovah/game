@@ -192,6 +192,37 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     scriptCtx_.sceneSetHp = [this](ecs::Entity e, float hp) {
         if (SceneHealth* h = world_.Get<SceneHealth>(e)) h->hp = hp;
     };
+    // Status-effect hooks (M2 combat core): scripts apply/query/remove
+    // buffs+debuffs through ApplyStatus/HasStatus/StatusMagnitude/RemoveStatus.
+    scriptCtx_.sceneApplyStatus = [this](ecs::Entity e, uint32_t id, float dur, float mag) {
+        if (!world_.Alive(e)) return;
+        if (!world_.Has<StatusComponent>(e)) world_.Add<StatusComponent>(e);
+        if (StatusComponent* c = world_.Get<StatusComponent>(e)) ApplyStatus(*c, id, dur, mag);
+    };
+    scriptCtx_.sceneHasStatus = [this](ecs::Entity e, uint32_t id) {
+        const StatusComponent* c = world_.Get<StatusComponent>(e);
+        return c ? scene::HasStatus(*c, id) : false;
+    };
+    scriptCtx_.sceneStatusMagnitude = [this](ecs::Entity e, uint32_t id) {
+        const StatusComponent* c = world_.Get<StatusComponent>(e);
+        return c ? scene::StatusMagnitude(*c, id) : 0.0f;
+    };
+    scriptCtx_.sceneRemoveStatus = [this](ecs::Entity e, uint32_t id) {
+        if (StatusComponent* c = world_.Get<StatusComponent>(e)) RemoveStatus(*c, id);
+    };
+    // Skill hooks (M2 combat core): data-driven CastSkill / SkillCooldown and
+    // the oriented attack box.
+    scriptCtx_.castSkill = [this](const std::string& name, const math::Vec3& origin,
+                                  const math::Vec3& dir, ecs::Entity caster) {
+        return CastSkill(name, origin, dir, caster);
+    };
+    scriptCtx_.sceneSkillCooldown = [this](const std::string& name, ecs::Entity e) {
+        return SkillCooldownLeft(name, e);
+    };
+    scriptCtx_.attackBox = [this](const math::Vec3& center, const math::Vec3& half, float yaw,
+                                  float dmg) {
+        return AttackBox(center, half, yaw, dmg);
+    };
     scriptCtx_.spawnProjectile = [this](const math::Vec3& pos, const math::Vec3& dir, float speed,
                                         float damage, float life, ecs::Entity caster) {
         SpawnProjectile(pos, dir, speed, damage, life, caster);
@@ -237,6 +268,7 @@ void GameRuntime::Stop() {
     trees_.clear();
     draws_.clear();
     projectiles_.clear();
+    skillCooldowns_.clear();
     loadedScripts_.clear();
     scriptFailed_.clear();
     if (host_) {
@@ -597,6 +629,177 @@ int GameRuntime::MeleeAttack(const math::Vec3& origin, const math::Vec3& dir, fl
     return hits;
 }
 
+// Oriented attack box (OBB around Y): damages every SceneHealth entity whose
+// position lies inside the yaw-rotated half-extents box. Returns hit count.
+int GameRuntime::AttackBox(const math::Vec3& center, const math::Vec3& half, float yaw,
+                           float damage) {
+    const float c = std::cos(yaw);
+    const float s = std::sin(yaw);
+    int hits = 0;
+    auto view = world_.ViewAll<SceneHealth>();
+    for (size_t i = 0; i < view.Size(); ++i) {
+        ecs::Entity ent = world_.EntityAt<SceneHealth>(i);
+        SceneHealth* h = world_.Get<SceneHealth>(ent);
+        const SceneTransform* t = world_.Get<SceneTransform>(ent);
+        if (!h || !t || h->hp <= 0.0f) continue;
+        const math::Vec3 d = t->pos - center;
+        // Rotate the target into box-local space (rotate by -yaw around Y).
+        const float lx = c * d.x - s * d.z;
+        const float ly = d.y;
+        const float lz = s * d.x + c * d.z;
+        if (std::fabs(lx) <= half.x && std::fabs(ly) <= half.y && std::fabs(lz) <= half.z) {
+            h->hp = std::fmax(0.0f, h->hp - damage);
+            ++hits;
+        }
+    }
+    return hits;
+}
+
+void GameRuntime::ApplySkillStatuses(ecs::Entity target,
+                                     const std::vector<SkillStatus>& statuses) {
+    if (statuses.empty() || !world_.Alive(target)) return;
+    if (!world_.Has<StatusComponent>(target)) world_.Add<StatusComponent>(target);
+    StatusComponent* c = world_.Get<StatusComponent>(target);
+    if (!c) return;
+    for (const SkillStatus& st : statuses) {
+        const uint32_t id = StatusIdByName(st.name);
+        if (id != 0) ApplyStatus(*c, id, st.duration, st.magnitude);
+    }
+}
+
+void GameRuntime::ApplyHit(ecs::Entity target, float damage,
+                           const std::vector<SkillStatus>& statuses) {
+    if (!world_.Alive(target)) return;
+    if (SceneHealth* h = world_.Get<SceneHealth>(target)) {
+        h->hp = std::fmax(0.0f, h->hp - damage);
+    }
+    ApplySkillStatuses(target, statuses);
+}
+
+void GameRuntime::TickStatuses(float dt) {
+    auto view = world_.ViewAll<StatusComponent>();
+    for (size_t i = 0; i < view.Size(); ++i) {
+        ecs::Entity ent = world_.EntityAt<StatusComponent>(i);
+        StatusComponent* c = world_.Get<StatusComponent>(ent);
+        if (!c) continue;
+        TickStatus(*c, dt, [this, ent](uint32_t id, float magnitude) {
+            SceneHealth* h = world_.Get<SceneHealth>(ent);
+            if (!h || h->hp <= 0.0f) return;
+            if (id == kStatusRegen) {
+                // Regen magnitude is a heal amount per tick.
+                h->hp = std::fmin(h->maxHp, h->hp + magnitude);
+            } else {
+                h->hp = std::fmax(0.0f, h->hp - magnitude);
+            }
+        });
+    }
+}
+
+void GameRuntime::TickSkillCooldowns(float dt) {
+    for (auto it = skillCooldowns_.begin(); it != skillCooldowns_.end();) {
+        // Reconstruct the entity from the stable key; prune destroyed casters.
+        const uint64_t key = it->first;
+        ecs::Entity e{static_cast<uint32_t>(key >> 32), static_cast<uint32_t>(key & 0xFFFFFFFFu)};
+        if (!world_.Alive(e)) {
+            it = skillCooldowns_.erase(it);
+            continue;
+        }
+        bool any = false;
+        for (auto& kv : it->second) {
+            kv.second = std::fmax(0.0f, kv.second - dt);
+            if (kv.second > 0.0f) any = true;
+        }
+        if (!any)
+            it = skillCooldowns_.erase(it);
+        else
+            ++it;
+    }
+}
+
+bool GameRuntime::LoadSkills(const std::string& json, std::string* err) {
+    return skills_.Load(json, err);
+}
+
+int GameRuntime::CastSkill(const std::string& name, const math::Vec3& origin,
+                           const math::Vec3& dir, ecs::Entity caster) {
+    const SkillDef* def = skills_.Find(name);
+    if (!def) return 0;
+
+    const uint64_t key = EntityKey(caster);
+    auto& cds = skillCooldowns_[key];
+    const auto cdIt = cds.find(name);
+    if (cdIt != cds.end() && cdIt->second > 0.0f) return 0; // on cooldown
+
+    // Mana: when the skill has a cost, the convention is a GameVar "mana"
+    // (set by the scene script). Refuse without enough mana, subtract on cast.
+    if (def->manaCost > 0.0f) {
+        const script::Value mana = scriptCtx_.gameVars.Get("mana");
+        const float have =
+            mana.type == script::Value::Type::Number ? static_cast<float>(mana.number) : 0.0f;
+        if (have < def->manaCost) return 0;
+        scriptCtx_.gameVars.Set("mana", script::Value::Num(have - def->manaCost));
+    }
+    if (def->cooldown > 0.0f) cds[name] = def->cooldown;
+
+    if (def->kind == "projectile") {
+        Projectile p;
+        p.pos = origin;
+        p.dir = dir.LengthSq() > 1e-6f ? dir.Normalized() : math::Vec3{0, 0, 1};
+        p.speed = def->speed;
+        p.damage = def->damage;
+        p.life = def->life;
+        p.range = def->range;
+        p.caster = caster;
+        p.statuses = def->statuses;
+        projectiles_.push_back(p);
+        return 1;
+    }
+
+    if (def->kind == "melee") {
+        const math::Vec3 fwd = dir.LengthSq() > 1e-6f ? dir.Normalized() : math::Vec3{0, 0, 1};
+        const float cosArc = std::cos(def->arcDeg * 0.5f * math::kDegToRad);
+        int hits = 0;
+        auto view = world_.ViewAll<SceneHealth>();
+        for (size_t i = 0; i < view.Size(); ++i) {
+            ecs::Entity ent = world_.EntityAt<SceneHealth>(i);
+            const SceneHealth* h = world_.Get<SceneHealth>(ent);
+            const SceneTransform* t = world_.Get<SceneTransform>(ent);
+            if (!h || !t || h->hp <= 0.0f) continue;
+            if (ent == caster) continue; // never self-hit
+            const math::Vec3 to = t->pos - origin;
+            const float dist = to.Length();
+            if (dist > def->meleeRange || dist < 1e-4f) continue;
+            if (math::Dot(to / dist, fwd) < cosArc) continue;
+            ApplyHit(ent, def->damage, def->statuses);
+            ++hits;
+        }
+        return 1; // the cast happened even when no target was in the arc
+    }
+
+    // "box": oriented attack box; yaw derived from the facing dir so a
+    // script passes a direction vector like every other skill.
+    const float yaw = std::atan2(dir.x, dir.z);
+    AttackBox(origin, {def->boxHalfX, def->boxHalfY, def->boxHalfZ}, yaw, def->damage);
+    return 1;
+}
+
+float GameRuntime::SkillCooldownLeft(const std::string& name, ecs::Entity caster) const {
+    const auto it = skillCooldowns_.find(EntityKey(caster));
+    if (it == skillCooldowns_.end()) return 0.0f;
+    const auto cd = it->second.find(name);
+    return cd == it->second.end() ? 0.0f : cd->second;
+}
+
+bool GameRuntime::HasStatus(ecs::Entity ent, uint32_t id) const {
+    const StatusComponent* c = world_.Get<StatusComponent>(ent);
+    return c ? scene::HasStatus(*c, id) : false;
+}
+
+float GameRuntime::StatusMagnitude(ecs::Entity ent, uint32_t id) const {
+    const StatusComponent* c = world_.Get<StatusComponent>(ent);
+    return c ? scene::StatusMagnitude(*c, id) : 0.0f;
+}
+
 void GameRuntime::TickProjectiles(float dt) {
     for (auto it = projectiles_.begin(); it != projectiles_.end();) {
         Projectile& p = *it;
@@ -604,6 +807,11 @@ void GameRuntime::TickProjectiles(float dt) {
         p.pos += p.dir * step;
         p.traveled += step;
         p.life -= dt;
+        // Data-driven skills can bound a projectile by travel distance.
+        if (p.range > 0.0f && p.traveled >= p.range) {
+            it = projectiles_.erase(it);
+            continue;
+        }
         // Damage the closest SceneHealth entity within the hit radius. Use a
         // horizontal-radius + vertical-band test (projectiles fly at chest
         // height while targets sit on the ground), so a fireball passing over
@@ -625,8 +833,7 @@ void GameRuntime::TickProjectiles(float dt) {
             }
         }
         if (target.IsValid()) {
-            SceneHealth* h = world_.Get<SceneHealth>(target);
-            if (h) h->hp = std::fmax(0.0f, h->hp - p.damage);
+            ApplyHit(target, p.damage, p.statuses);
             it = projectiles_.erase(it);
             continue;
         }
@@ -732,6 +939,8 @@ void GameRuntime::Tick(float dt) {
     }
 
     physics_.Step(dt, math::Vec3{0.0f, kGravityY, 0.0f});
+    TickStatuses(dt);
+    TickSkillCooldowns(dt);
     TickProjectiles(dt);
     simTime_ += dt;
 }
