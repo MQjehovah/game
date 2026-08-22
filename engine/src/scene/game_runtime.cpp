@@ -181,7 +181,10 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
 
     AttachScripts();
     AttachTrees();
-    BuildDrawList();
+    // Headless hosts (servers / sim tests) have no renderer: skip the draw
+    // list entirely. Draw() is also a no-op without cfg_.assets, so both the
+    // flag and a null AssetManager keep the runtime window-free.
+    if (!cfg_.headless) BuildDrawList();
 
     running_ = true;
     simTime_ = 0.0;

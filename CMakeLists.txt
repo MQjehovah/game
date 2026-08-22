@@ -239,6 +239,25 @@ endif()
 target_link_libraries(neon_engine PUBLIC neon_lua)
 
 # ---------------------------------------------------------------------------
+# Headless authoritative server (T6.3): binds a UDP socket, runs the data-driven
+# scene at a fixed 60Hz step and replicates MsgSnapshot streams. No window, no
+# GL, no audio — the engine's platform/gfx code is linked (static lib) but never
+# called. game_server.cpp is also compiled into neon_tests for loopback tests.
+# ---------------------------------------------------------------------------
+add_executable(neon_server
+  server/src/main.cpp
+  server/src/game_server.cpp
+)
+target_include_directories(neon_server PRIVATE server/src)
+target_link_libraries(neon_server PRIVATE neon_engine)
+if(MSVC)
+  target_compile_options(neon_server PRIVATE /W4 /permissive- /utf-8)
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(neon_server PRIVATE -Wall -Wextra
+    -finput-charset=UTF-8 -fexec-charset=UTF-8)
+endif()
+
+# ---------------------------------------------------------------------------
 # Editor
 # ---------------------------------------------------------------------------
 add_executable(neon_editor
@@ -277,10 +296,11 @@ add_executable(neon_tests tests/test_main.cpp tests/test_serialize.cpp tests/tes
   tests/test_world_chunk.cpp
   tests/test_ecs_parallel.cpp
   tests/test_reliable.cpp
-  editor/src/history.cpp editor/src/packager.cpp)
+  tests/test_server.cpp
+  editor/src/history.cpp editor/src/packager.cpp server/src/game_server.cpp)
 target_link_libraries(neon_tests PRIVATE neon_engine)
 # test_history.cpp includes the editor's generic undo/redo stack header.
-target_include_directories(neon_tests PRIVATE editor/src third_party/stb)
+target_include_directories(neon_tests PRIVATE editor/src third_party/stb server/src)
 if(MSVC)
   target_compile_options(neon_tests PRIVATE /W4 /permissive- /utf-8)
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")

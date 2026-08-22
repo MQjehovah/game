@@ -1,0 +1,18 @@
+{
+  "entities": [
+    {
+      "name": "Host",
+      "components": {
+        "transform": { "pos": [0, 0, 0] },
+        "script": { "backend": "lua", "path": "scripts/controller.lua" }
+      }
+    },
+    {
+      "name": "Prop",
+      "components": {
+        "transform": { "pos": [3, 0, 0] },
+        "mesh": { "meshKey": "cube", "material": { "colorHex": "#e8c34a" } }
+      }
+    }
+  ]
+}

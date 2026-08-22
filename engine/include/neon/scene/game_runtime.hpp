@@ -38,6 +38,11 @@ namespace neon::scene {
 // so a packed game's unpacked directory works as the asset root; input wires
 // the platform input state into the Lua InputAxis/InputKey/InputMouse bindings
 // (null in headless hosts).
+//
+// Headless mode (servers, sim tests): set headless = true (and leave assets
+// null) to skip building the draw list entirely — Start + Tick run the full
+// data-driven scene (scripts + behavior trees + physics) with no renderer,
+// window, or audio. Draw() stays a safe no-op whenever assets is null.
 struct GameRuntimeConfig {
     assets::AssetManager* assets = nullptr; // mesh loading; null = sim-only
     std::string scriptBaseDir;              // base dir for script paths ("" = cwd)
@@ -45,6 +50,7 @@ struct GameRuntimeConfig {
     std::function<std::string(const std::string& path)> readScript; // optional override
     platform::IInput* input = nullptr;      // optional live input for scripts
     uint64_t rngSeed = 20260821u;           // fixed: playtest RNG is reproducible
+    bool headless = false;                  // skip draw-list build; pure simulation
 };
 
 // A self-contained, reusable game runtime. The editor embeds one instance for
