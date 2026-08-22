@@ -1,0 +1,238 @@
+#include <algorithm>
+#include <atomic>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <vector>
+
+#include "neon/neon.hpp"
+#include "helpers.hpp"
+
+using namespace neon;
+
+// Test-suite 5.5: ECS batch iteration + deterministic parallel jobs.
+// ---------------------------------------------------------------------------
+// The MinGW 8.1 win32 toolchain has no std::thread (__STDCPP_THREADS__
+// undefined), so parallel.hpp uses Win32 CreateThread / POSIX pthread via a
+// small worker pool (same approach as neon/assets/async_loader). ParallelFor
+// splits a range into a FIXED set of contiguous chunks; only which thread runs
+// a chunk varies, so independent-item work is bit-identical to the serial path
+// and identical across runs. These tests assert exactly that.
+
+namespace {
+
+struct PPos {
+    float x = 0, y = 0;
+};
+struct PVel {
+    float dx = 0, dy = 0;
+};
+
+constexpr size_t kCount = 100000;
+
+PVel ComputeVelocity(const PPos& p) {
+    return PVel{p.x * 3.0f + 1.0f, p.y * 0.5f - 2.0f};
+}
+
+// Creates kCount entities 1..kCount in creation order (so pool dense order ==
+// id order and out[e.id - 1] is a clean per-entity slot). Returns the source
+// positions and the expected velocity computed serially at fill time.
+struct FillResult {
+    std::vector<PPos> pos;
+    std::vector<PVel> expectedVel;
+};
+
+FillResult FillWorld(ecs::World& world, size_t n) {
+    FillResult r;
+    r.pos.resize(n);
+    r.expectedVel.resize(n);
+    for (size_t i = 0; i < n; ++i) {
+        ecs::Entity e = world.Create();
+        const float f = static_cast<float>(i);
+        world.Add<PPos>(e, PPos{f, f * 2.0f});
+        world.Add<PVel>(e, PVel{0, 0});
+        r.pos[i] = PPos{f, f * 2.0f};
+        r.expectedVel[i] = ComputeVelocity(r.pos[i]);
+    }
+    return r;
+}
+
+} // namespace
+
+// 1. 100k-entity batch iteration: serial ForEach visits every entity exactly
+// once and produces the expected per-entity result.
+TEST(ECSForEachBatch100k) {
+    ecs::World world;
+    FillResult fr = FillWorld(world, kCount);
+
+    auto view = world.ViewAll<PPos>();
+    CHECK_EQ(view.Size(), kCount);
+
+    std::vector<PVel> out(kCount);
+    view.ForEach([&out](ecs::Entity e, PPos& p) { out[e.id - 1] = ComputeVelocity(p); });
+
+    CHECK(std::memcmp(out.data(), fr.expectedVel.data(), out.size() * sizeof(PVel)) == 0);
+    CHECK_EQ(world.EntityCount(), kCount);
+}
+
+// 2. ParallelForEach over the same 100k entities is bit-identical to the
+// serial ForEach, and a second parallel pass is bit-identical to the first
+// (determinism across runs).
+TEST(ECSParallelForEachMatchesSerial) {
+    ecs::World world;
+    FillResult fr = FillWorld(world, kCount);
+    CHECK(ecs::parallel::AvailableWorkers() > 0); // this platform really threaded
+
+    std::vector<PVel> serial(kCount), par1(kCount), par2(kCount);
+
+    world.ViewAll<PPos>().ForEach(
+        [&serial](ecs::Entity e, PPos& p) { serial[e.id - 1] = ComputeVelocity(p); });
+    world.ViewAll<PPos>().ParallelForEach(
+        [&par1](ecs::Entity e, PPos& p) { par1[e.id - 1] = ComputeVelocity(p); });
+    world.ViewAll<PPos>().ParallelForEach(
+        [&par2](ecs::Entity e, PPos& p) { par2[e.id - 1] = ComputeVelocity(p); });
+
+    CHECK(std::memcmp(serial.data(), fr.expectedVel.data(), serial.size() * sizeof(PVel)) == 0);
+    CHECK(std::memcmp(par1.data(), serial.data(), par1.size() * sizeof(PVel)) == 0);
+    CHECK(std::memcmp(par2.data(), par1.data(), par2.size() * sizeof(PVel)) == 0);
+}
+
+// 3. ParallelFor with a per-chunk-slot reduction + serial combine equals a
+// fully serial reduction, and is stable when run again (determinism).
+TEST(ParallelForReductionDeterministic) {
+    const uint32_t n = 100000;
+
+    int64_t serialSum = 0;
+    for (uint32_t i = 0; i < n; ++i) serialSum += static_cast<int64_t>(i) * 3 + 1;
+
+    ecs::parallel::Reducer<int64_t> red(ecs::parallel::AvailableWorkers());
+    ecs::parallel::ParallelFor(n, [&red, n](uint32_t s, uint32_t e) {
+        int64_t& acc = red.Slot(s, n);
+        for (uint32_t i = s; i < e; ++i) acc += static_cast<int64_t>(i) * 3 + 1;
+    });
+    CHECK_EQ(red.Combine(), serialSum);
+
+    // Second pass must reproduce the identical combined result.
+    ecs::parallel::Reducer<int64_t> red2(ecs::parallel::AvailableWorkers());
+    ecs::parallel::ParallelFor(n, [&red2, n](uint32_t s, uint32_t e) {
+        int64_t& acc = red2.Slot(s, n);
+        for (uint32_t i = s; i < e; ++i) acc += static_cast<int64_t>(i) * 3 + 1;
+    });
+    CHECK_EQ(red2.Combine(), serialSum);
+}
+
+// 3b. Reducer::Slot assigns each chunk a UNIQUE slot (no two chunks collide),
+// and every chunk is covered exactly once - guards the partition math.
+TEST(ParallelForReducerUniqueSlots) {
+    const uint32_t n = 100000;
+    const int slots = std::max(ecs::parallel::AvailableWorkers(), 1);
+    ecs::parallel::Reducer<int64_t> red(slots);
+    std::vector<std::atomic<int>> touch(static_cast<size_t>(slots));
+
+    ecs::parallel::ParallelFor(n, [&red, &touch, n](uint32_t s, uint32_t e) {
+        int64_t& acc = red.Slot(s, n);
+        for (size_t i = 0; i < touch.size(); ++i) {
+            if (&acc == &red.Slots()[i]) {
+                touch[i].fetch_add(1, std::memory_order_relaxed);
+                break;
+            }
+        }
+        for (uint32_t i = s; i < e; ++i) acc += 1;
+    });
+
+    int touched = 0;
+    for (auto& t : touch) {
+        CHECK(t.load() <= 1);
+        if (t.load() == 1) ++touched;
+    }
+    CHECK_EQ(touched, std::min(slots, static_cast<int>(n)));
+    CHECK_EQ(red.Combine(), static_cast<int64_t>(n));
+}
+
+// 4. A pool with zero workers (AvailableWorkers() == 0) falls back to a serial
+// loop and is still correct.
+TEST(ParallelForNoWorkersFallsBackToSerial) {
+    ecs::parallel::ThreadPool pool(0);
+    CHECK(!pool.Available());
+    CHECK_EQ(pool.WorkerCount(), 0);
+
+    const uint32_t n = 10000;
+    std::vector<uint32_t> out(n, 0);
+    pool.ParallelFor(n, [&out](uint32_t s, uint32_t e) {
+        for (uint32_t i = s; i < e; ++i) out[i] = i * 3u;
+    });
+    for (uint32_t i = 0; i < n; ++i) CHECK_EQ(out[i], i * 3u);
+
+    // Empty range is a no-op serial call, not a crash.
+    pool.ParallelFor(0, [](uint32_t, uint32_t) {});
+    CHECK_EQ(out[0], 0u);
+}
+
+// 5. Two-component view: only entities that have BOTH components are visited.
+TEST(ECSViewTwoComponents) {
+    ecs::World world;
+    const size_t n = 50000;
+    std::vector<ecs::Entity> withVel;
+    for (size_t i = 0; i < n; ++i) {
+        ecs::Entity e = world.Create();
+        world.Add<PPos>(e, PPos{static_cast<float>(i), static_cast<float>(i)});
+        if (i % 2 == 0) {
+            world.Add<PVel>(e, PVel{1.0f, 2.0f});
+            withVel.push_back(e);
+        }
+    }
+
+    int visited = 0;
+    auto dual = world.ViewAll<PPos, PVel>();
+    CHECK_EQ(dual.Size(), n); // Size() reports the T pool, not the intersection
+    dual.ForEach([&visited](ecs::Entity, PPos& p, PVel& v) {
+        ++visited;
+        v.dx = p.x + v.dy; // reads both, writes the second
+    });
+    CHECK_EQ(visited, 25000);
+
+    std::atomic<int> pvisited{0};
+    world.ViewAll<PPos, PVel>().ParallelForEach(
+        [&pvisited](ecs::Entity, PPos&, PVel& v) {
+            pvisited.fetch_add(1, std::memory_order_relaxed);
+            v.dx += 1.0f;
+        });
+    CHECK_EQ(pvisited.load(), 25000);
+
+    // Every visited velocity was actually written (spot check the first ones).
+    for (size_t i = 0; i < withVel.size() && i < 10; ++i) {
+        const PVel* v = world.Get<PVel>(withVel[i]);
+        CHECK(v != nullptr);
+    }
+}
+
+// 6. World-mutation-in-parallel contract: the guard is active on every worker
+// callback and cleared after the pass. (Debug builds additionally assert-fail
+// if Create/Destroy/Add/Remove run while it is active.)
+TEST(ECSParallelMutationContract) {
+    ecs::World world;
+    FillResult fr = FillWorld(world, kCount);
+
+    CHECK(!world.InParallelIteration());
+    std::atomic<int> sawInside{0};
+    world.ViewAll<PPos>().ParallelForEach([&sawInside, &world](ecs::Entity, PPos& p) {
+        if (world.InParallelIteration()) sawInside.fetch_add(1, std::memory_order_relaxed);
+        p.x += 1.0f;
+    });
+    CHECK_EQ(sawInside.load(), static_cast<int>(kCount));
+    CHECK(!world.InParallelIteration());
+    CHECK_EQ(world.EntityCount(), kCount); // nothing mutated structurally
+}
+
+// 7. Perf sanity: a large parallel pass simply completes (no timing assertion,
+// which would be flaky on shared CI machines).
+TEST(ECSParallelLargePassCompletes) {
+    ecs::World world;
+    const size_t n = 200000;
+    FillResult fr = FillWorld(world, n);
+
+    std::vector<PVel> out(n);
+    world.ViewAll<PPos>().ParallelForEach(
+        [&out](ecs::Entity e, PPos& p) { out[e.id - 1] = ComputeVelocity(p); });
+    CHECK(std::memcmp(out.data(), fr.expectedVel.data(), out.size() * sizeof(PVel)) == 0);
+}

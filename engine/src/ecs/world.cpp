@@ -6,6 +6,7 @@ World::World() = default;
 World::~World() = default;
 
 Entity World::Create() {
+    assert(!inParallelIteration_ && "World::Create() forbidden inside a parallel iteration");
     uint32_t id = 0;
     if (freeIds_.empty()) {
         id = static_cast<uint32_t>(generations_.size());
@@ -19,6 +20,7 @@ Entity World::Create() {
 }
 
 void World::Destroy(Entity e) {
+    assert(!inParallelIteration_ && "World::Destroy() forbidden inside a parallel iteration");
     if (!Alive(e)) return;
     ++generations_[e.id];
     freeIds_.push_back(e.id);

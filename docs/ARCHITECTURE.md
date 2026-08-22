@@ -59,9 +59,12 @@ SparseSet 风格的 ECS：
 
 - `Entity` = 32 位 id + 32 位 generation（句柄，防悬垂引用）。
 - `World::Pool<T>`：dense 数组 + sparse 索引，swap-erase 删除；`View<T>` 顺序遍历。
+- **批量迭代（T5.5）**：`View<T>::ForEach` / `View<T,U>::ForEach`（两组件视图，只访问同时持有 T+U 的实体）提供缓存友好的批量遍历；`ParallelForEach` 把 dense 区间切成固定连续 chunk 交给 worker 线程，对“只碰自己那条目”的独立工作负载，结果与串行路径**逐位一致**且跨运行一致。
+- **确定性并行 job（`neon::ecs::parallel`）**：`parallel::ParallelFor(count, fn)` 固定切分 + 持久线程池（本工具链无 `std::thread`，用 Win32 `CreateThread` / POSIX pthread，同 async_loader 模式）；无 worker 时自动回退串行。`parallel::Reducer<T>` 提供按 chunk 槽位的归约助手。
+- **并行契约**：`ParallelForEach` 期间禁止 `Create/Destroy/Add/Remove`（debug 构建 assert 触发）；需要改世界的系统必须先收集变更、并行阶段结束后再应用。demo 系统保持串行，并行 API 供未来系统与无头服务器（T6）使用。
 - `System`：`Update(dt, World&)` 接口；demo 的玩法逻辑按系统组织。
 
-当前实现适合数千实体；大规模 MMO 需要的 archetype 存储/批量迭代/并行 job 化见路线图。
+当前实现适合数千实体；大规模 MMO 需要的 archetype 存储（跨组件缓存友好布局）留作后续重构——批量迭代 API（`ForEach`/`ParallelForEach`/`View<T,U>`）已就位，届时只需替换存储后端。
 
 ### 3.4 platform（`neon::platform`）
 

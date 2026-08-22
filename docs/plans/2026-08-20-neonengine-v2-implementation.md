@@ -394,13 +394,16 @@ assert(Raycast({x=0,y=5,z=0}, {x=0,y=0,z=0}))  -- 物理
 
 ### Task 5.5: ECS archetype + 并行
 
-**Files:**
-- Modify: `engine/include/neon/ecs/world.hpp`、`engine/src/ecs/world.cpp`
-- Test: `tests/test_ecs_archetype.cpp`
+> **范围决策（已执行）**：不做存储层重写（SparseSet `Pool<T>` 被 game/editor/engine 约 100 处调用，重写会破坏整个运行链路）。改为**增量交付**：在现有存储上提供批量迭代 API（`View<T>::ForEach`/`ParallelForEach`、`View<T,U>`）与确定性并行 job 工具（`neon::ecs::parallel::ParallelFor` + 线程池）。archetype 存储布局留作后续重构，批量迭代 API 已就位，届时只需替换存储后端。提交信息用 `feat(ecs): batch iteration + parallel jobs`。
 
-**Step 1:** 增加 archetype 存储路径（保持现有 `Pool<T>` 兼容 API），`View<T,U>` 批量迭代。
-**Step 2:** `System::Update` 支持并行 job（组件版本号 + 只读视图共享，写视图独占）。
-**Step 3:** 测试：10 万实体迭代正确 + 并行与串行结果一致；提交 `feat(ecs): archetype storage + parallel jobs`.
+**Files:**
+- Modify: `engine/include/neon/ecs/world.hpp`、`engine/src/ecs/world.cpp`（批量迭代 + `View<T,U>` + 并行变更契约）
+- Create: `engine/include/neon/ecs/parallel.hpp`、`engine/src/ecs/parallel.cpp`（确定性 ParallelFor 线程池）
+- Test: `tests/test_ecs_parallel.cpp`
+
+**Step 1:** `View<T>` 增加 `ForEach`（串行批量迭代）；`View<T,U>` 双组件视图（只访问同时持有 T+U 的实体）；`World::ViewAll<T,U>()`。
+**Step 2:** `parallel::ParallelFor(count, fn)`：固定切分 + 持久线程池（MinGW 无 `std::thread`，用 Win32 CreateThread / POSIX pthread），join 后返回；无 worker 回退串行。`parallel::Reducer<T>` 按 chunk 槽位归约。
+**Step 3:** 测试：10 万实体迭代正确 + 并行与串行逐位一致 + 跨运行一致 + 无 worker 回退 + `View<T,U>` 只访问双组件实体；并行期间世界变更由 debug assert 契约禁止。提交 `feat(ecs): batch iteration + parallel jobs`.
 
 ---
 

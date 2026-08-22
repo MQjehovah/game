@@ -23,6 +23,7 @@ set(ENGINE_CORE_SOURCES
   engine/src/core/config.cpp
   engine/src/core/log.cpp
   engine/src/ecs/world.cpp
+  engine/src/ecs/parallel.cpp
   engine/src/core/json.cpp
   engine/src/core/serialize.cpp
   engine/src/core/pack.cpp
@@ -271,6 +272,7 @@ add_executable(neon_tests tests/test_main.cpp tests/test_serialize.cpp tests/tes
   tests/test_async.cpp
   tests/test_lod.cpp
   tests/test_world_chunk.cpp
+  tests/test_ecs_parallel.cpp
   editor/src/history.cpp editor/src/packager.cpp)
 target_link_libraries(neon_tests PRIVATE neon_engine)
 # test_history.cpp includes the editor's generic undo/redo stack header.

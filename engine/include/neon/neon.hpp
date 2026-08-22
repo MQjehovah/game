@@ -17,6 +17,7 @@
 #include "neon/core/app.hpp"
 
 #include "neon/ecs/world.hpp"
+#include "neon/ecs/parallel.hpp"
 
 #include "neon/platform/window.hpp"
 #include "neon/platform/input.hpp"
