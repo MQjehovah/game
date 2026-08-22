@@ -165,17 +165,25 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     scriptCtx_.input = cfg_.input;
     scriptCtx_.playSfx = cfg_.playSfx;
     scriptCtx_.entityKinds.clear();
-    // Combat / control hooks so scripts can drive scene entities.
+    // Combat / control hooks so scripts can drive scene entities. Both
+    // component flavors are supported: scene entities carry SceneTransform
+    // (from the scene JSON "transform" component) while script-spawned
+    // entities (Spawn()) carry CTransformBind. Missing either falls through
+    // so GetPosition on a script entity reads the component Spawn created.
     scriptCtx_.sceneGetPos = [this](ecs::Entity e) {
-        const SceneTransform* t = world_.Get<SceneTransform>(e);
-        return t ? t->pos : math::Vec3{};
+        if (const SceneTransform* t = world_.Get<SceneTransform>(e)) return t->pos;
+        if (const script::CTransformBind* t = world_.Get<script::CTransformBind>(e))
+            return t->pos;
+        return math::Vec3{};
     };
     scriptCtx_.sceneSetPos = [this](ecs::Entity e, const math::Vec3& p) {
         if (SceneTransform* t = world_.Get<SceneTransform>(e)) t->pos = p;
+        if (script::CTransformBind* t = world_.Get<script::CTransformBind>(e)) t->pos = p;
     };
     scriptCtx_.sceneSetYaw = [this](ecs::Entity e, float yaw) {
-        if (SceneTransform* t = world_.Get<SceneTransform>(e))
-            t->rot = math::Quat::FromAxisAngle({0, 1, 0}, yaw);
+        const math::Quat q = math::Quat::FromAxisAngle({0, 1, 0}, yaw);
+        if (SceneTransform* t = world_.Get<SceneTransform>(e)) t->rot = q;
+        if (script::CTransformBind* t = world_.Get<script::CTransformBind>(e)) t->rot = q;
     };
     scriptCtx_.sceneGetHp = [this](ecs::Entity e) {
         const SceneHealth* h = world_.Get<SceneHealth>(e);

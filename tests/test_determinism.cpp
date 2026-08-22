@@ -353,7 +353,11 @@ struct ScriptedLoopbackClient {
 
     // Sends the scripted input for `tick` over the wire.
     void SendScripted(uint32_t tick) {
-        const net::MsgInput* in = server::InputForTick(server::ScriptedInputs(), tick);
+        // Keep the sequence alive: InputForTick returns a pointer into the
+        // vector, so a temporary (ScriptedInputs() by value) would dangle
+        // immediately after the call and read freed (0xDD in Debug) memory.
+        const std::vector<server::ScriptedInput> seq = server::ScriptedInputs();
+        const net::MsgInput* in = server::InputForTick(seq, tick);
         const uint8_t buttons = in ? in->buttons : 0;
         const float mx = in ? in->moveX : 0.0f;
         const float my = in ? in->moveY : 0.0f;
@@ -365,7 +369,8 @@ struct ScriptedLoopbackClient {
 
     // Local prediction with the SAME scripted input for `tick`.
     void StepLocalScripted(uint32_t tick) {
-        const net::MsgInput* in = server::InputForTick(server::ScriptedInputs(), tick);
+        const std::vector<server::ScriptedInput> seq = server::ScriptedInputs();
+        const net::MsgInput* in = server::InputForTick(seq, tick);
         localInput.SetInput(in ? in->buttons : 0, in ? in->moveX : 0, in ? in->moveY : 0);
         local.Tick(1.0f / 60.0f);
         localInput.EndFrame();

@@ -1,6 +1,7 @@
 build/
 *.o
 *.obj
+!assets/kenney_nature/**/*.obj
 *.exe
 *.pdb
 *.ilk

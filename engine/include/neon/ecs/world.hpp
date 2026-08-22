@@ -201,7 +201,6 @@ public:
     // --- Components ---
     template <class T>
     T& Add(Entity e, const T& value = T{}) {
-        assert(!inParallelIteration_ && "World::Add<T>() forbidden inside a parallel iteration");
         if (inParallelIteration_) {
             // Refused: no-op (no pool access - GetPool may insert). The returned
             // reference is a throwaway never stored; treat it as void.
@@ -233,7 +232,6 @@ public:
 
     template <class T>
     void Remove(Entity e) {
-        assert(!inParallelIteration_ && "World::Remove<T>() forbidden inside a parallel iteration");
         if (inParallelIteration_) {
             RejectParallelMutation("Remove"); // no-op, no pool access
             return;

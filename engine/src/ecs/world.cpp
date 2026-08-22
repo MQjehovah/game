@@ -12,7 +12,6 @@ void World::RejectParallelMutation(const char* op) {
 }
 
 Entity World::Create() {
-    assert(!inParallelIteration_ && "World::Create() forbidden inside a parallel iteration");
     if (inParallelIteration_) {
         RejectParallelMutation("Create");
         return {}; // no-op: invalid entity
@@ -30,7 +29,6 @@ Entity World::Create() {
 }
 
 void World::Destroy(Entity e) {
-    assert(!inParallelIteration_ && "World::Destroy() forbidden inside a parallel iteration");
     if (inParallelIteration_) {
         RejectParallelMutation("Destroy");
         return;

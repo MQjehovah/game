@@ -494,3 +494,56 @@ TEST(GameRuntimeMeleeAttackHitsInArc) {
     CHECK_EQ(runtime.EntityHealth(front).first, 28.0f); // 40 - 12
     CHECK_EQ(runtime.EntityHealth(back).first, 40.0f);  // untouched
 }
+
+// ---------------------------------------------------------------------------
+// Regression: script-spawned entities (Spawn()) must be readable/writable via
+// GetPosition/SetPosition exactly like scene entities. The GameRuntime hooks
+// (sceneGetPos/sceneSetPos) used to only look at SceneTransform, so a spawned
+// player's CTransformBind stayed frozen at (0,0,0) — the server/determinism
+// suites failed because their scripted player never moved. Both component
+// flavors must work through the same binding.
+// ---------------------------------------------------------------------------
+
+TEST(GameRuntimeSpawnedEntityPositionReadWrite) {
+    const char* scene = R"({
+      "entities": [
+        {"name": "Host", "components": {
+          "transform": {"pos": [0,0,0]},
+          "script": {"backend": "lua", "path": "spawner.lua"}}}
+      ]
+    })";
+    const char* lua = R"(
+      function on_start(e)
+        player = Spawn("player", { x = 0, y = 0, z = 0 })
+      end
+      function on_update(e, dt)
+        local p = GetPosition(player)
+        if p ~= nil then
+          SetPosition(player, { x = p.x, y = p.y, z = p.z + 1 })
+        end
+      end
+    )";
+    scene::GameRuntime runtime;
+    scene::GameRuntimeConfig cfg;
+    cfg.readScript = [&](const std::string&) { return std::string(lua); };
+    cfg.headless = true;
+    CHECK(runtime.Start(scene, cfg).Ok());
+    CHECK_EQ(runtime.EntityCount(), 2u); // Host + script-spawned player
+
+    for (int i = 0; i < 10; ++i) runtime.Tick(1.0f / 60.0f);
+
+    // The spawned entity (CTransformBind) must have moved to z == 10.
+    int seen = 0;
+    math::Vec3 pos;
+    auto view = runtime.World().ViewAll<script::CTransformBind>();
+    for (size_t i = 0; i < view.Size(); ++i) {
+        ecs::Entity e = runtime.World().EntityAt<script::CTransformBind>(i);
+        const script::CTransformBind* t = runtime.World().Get<script::CTransformBind>(e);
+        if (t) {
+            ++seen;
+            pos = t->pos;
+        }
+    }
+    CHECK_EQ(seen, 1);
+    CHECK_NEAR(pos.z, 10.0f, 1e-6);
+}

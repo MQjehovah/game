@@ -482,7 +482,7 @@ void GameServer::BroadcastSnapshot() {
             std::string kind;
             const auto it = runtime_.ScriptContext().entityKinds.find(e);
             if (it != runtime_.ScriptContext().entityKinds.end()) kind = it->second;
-            add(e, t->pos, math::Quat::Identity(), kind);
+            add(e, t->pos, t->rot, kind);
         }
     }
 

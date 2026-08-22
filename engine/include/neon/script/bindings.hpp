@@ -4,6 +4,7 @@
 #include <string>
 
 #include "neon/ecs/world.hpp"
+#include "neon/math/quat.hpp"
 #include "neon/math/vec3.hpp"
 #include "neon/physics/physics.hpp"
 #include "neon/platform/input.hpp"
@@ -17,6 +18,7 @@ namespace neon::script {
 // data-driven scene system (T2.6) maps it onto real scene data later.
 struct CTransformBind {
     math::Vec3 pos{};
+    math::Quat rot{}; // heading/attitude (SetRotationY writes this)
 };
 
 // Strict ordering for std::map<ecs::Entity, ...> (entities are id+generation
