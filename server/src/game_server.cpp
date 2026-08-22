@@ -96,6 +96,8 @@ bool GameServer::Start(const Config& cfg) {
     clients_.clear();
     pendingRemovals_.clear();
     lastSnapshotIds_.clear();
+    snapshotTooBig_ = 0;
+    snapshotDrops_ = 0;
     NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Info,
                  "server: listening on %s:%u (%zu entities, %zu scripts, %zu trees)",
                  cfg_.loopback ? "127.0.0.1" : "0.0.0.0", Port(), runtime_.EntityCount(),
@@ -111,16 +113,21 @@ void GameServer::Step(uint64_t nowMs) {
     PumpNetwork(nowMs_);
     // 2) Reliable channels: retransmit due frames, emit acks, fire timeouts.
     TickChannels(nowMs_);
-    // 3) Fixed-step simulation (accumulator, exactly like core::Application).
+    // 3) Fixed-step simulation. The accumulator tracks elapsed time exactly like
+    // core::Application, but Step runs AT MOST ONE fixed tick per call: callers
+    // (neon_server's loop) count tick consumptions, so `--ticks N` stops at
+    // exactly N — the accumulator residual never produces a second tick inside
+    // a single Step (no overshoot). The leftover accumulates and drains one
+    // tick per later call, so wall-clock pacing still catches up.
     accumulator_ += static_cast<double>(nowMs_ - lastStepMs_) / 1000.0;
     lastStepMs_ = nowMs_;
-    while (accumulator_ >= kFixedDt) {
+    if (accumulator_ >= kFixedDt) {
+        accumulator_ -= kFixedDt;
         ApplyControllerInput();
         runtime_.Tick(static_cast<float>(kFixedDt));
         ++tick_;
         if (tick_ % cfg_.snapshotEveryTicks == 0) BroadcastSnapshot();
         controllerInput_.EndFrame(); // advance edges for the next tick
-        accumulator_ -= kFixedDt;
     }
     // 4) Disconnect stale clients (inactivity + reliable-channel timeouts).
     DropTimedOutClients(nowMs_);
@@ -360,15 +367,36 @@ void GameServer::BroadcastSnapshot() {
     snap.entities = std::move(ents);
     const std::vector<uint8_t> body = EncodeBody(snap);
 
+    // The reliable transport caps every frame at Config().maxFrameBytes
+    // (~1200; the codec adds 8 magic+CRC + 4 version + 1 msgId + 2 seq bytes
+    // on top of the payload). A scene with ~48 entities already exceeds that.
+    // T6.4 should replicate at a lower cadence (snapshotEveryTicks) or with
+    // delta/dirty-entity encoding so full-list snapshots stay under the cap.
+    const size_t frameBytes = body.size() + 15;
     for (auto& kv : clients_) {
         Client& c = kv.second;
         if (c.chan.TimedOut()) continue;
         for (uint64_t id : despawned) SendDespawn(c, id);
+        if (frameBytes > c.chan.Config().maxFrameBytes) {
+            // The snapshot cannot fit in one frame: the client would silently
+            // freeze on the previous state. Count it and log at Warn (throttled
+            // so a too-big scene does not spam every tick).
+            ++snapshotTooBig_;
+            if (++c.dropLogCount % 60 == 1)
+                NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Warn,
+                             "server: snapshot with %zu entities exceeds the %u-byte frame "
+                             "cap for client %llu; dropped (T6.4: add snapshotEveryTicks/"
+                             "delta encoding)",
+                             snap.entityCount, c.chan.Config().maxFrameBytes,
+                             static_cast<unsigned long long>(c.clientId));
+            continue;
+        }
         core::Status st =
             c.chan.Send(static_cast<uint8_t>(net::MsgType::Snapshot), body);
         if (!st.Ok()) {
             // Throttled: a client that never acks fills the window and would
             // otherwise log once per tick until it is disconnected.
+            ++snapshotDrops_;
             if (++c.dropLogCount % 60 == 1)
                 NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Debug,
                              "server: snapshot to client %llu deferred (%s)",

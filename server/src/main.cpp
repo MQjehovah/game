@@ -32,7 +32,7 @@ void PrintUsage(const char* prog) {
         "  --scene FILE  scene JSON file to load (required)\n"
         "  --scripts DIR base dir for scripts/behaviors/prefabs (default: scene's dir)\n"
         "  --assets DIR  asset base dir (unused headless; kept for parity)\n"
-        "  --ticks N     run N fixed 60Hz simulation steps then exit 0\n"
+        "  --ticks N     run exactly N fixed 60Hz simulation steps then exit 0\n"
         "  --seed N      deterministic simulation seed (default: fixed constant)\n"
         "  --loopback    bind 127.0.0.1 instead of 0.0.0.0\n"
         "  --help        show this help\n",
@@ -113,11 +113,13 @@ int main(int argc, char** argv) {
                   scenePath.c_str(), scriptsDir.c_str(), ticksLimit,
                   cfg.loopback ? " loopback" : "");
 
-    // Virtual 60Hz-ish clock. The accumulator in GameServer::Step runs exactly
-    // kFixedDt fixed steps; advancing 17ms per iteration yields one step per
-    // iteration, so --ticks N maps 1:1 to N simulation steps (deterministic).
+    // Virtual clock. GameServer::Step runs AT MOST ONE fixed tick per call and
+    // the accumulator residual drains on later calls, so the loop counts tick
+    // consumptions: each iteration advances the clock by >= one fixed step and
+    // runs exactly one tick. `--ticks N` therefore stops at exactly N (no
+    // overshoot from the 17ms advance vs. the 16.667ms fixed step).
     uint64_t now = 0;
-    constexpr uint64_t kStepMs = 17;
+    constexpr uint64_t kStepMs = 17; // >= one fixed step (1000/60 ~= 16.667ms)
     constexpr uint64_t kRealSleepMs = 16;
     while (ticksLimit <= 0 || server.CurrentTick() < static_cast<uint32_t>(ticksLimit)) {
         now += kStepMs;

@@ -42,9 +42,20 @@ struct NetAddrLess {
 //
 // Loop model: the host calls Step(nowMs) with a monotonic clock (wall time in
 // neon_server, a deterministic fake clock in tests). Each Step pumps inbound
-// datagrams, runs the 60Hz fixed-step simulation via an accumulator, and
-// broadcasts MsgSnapshot (entity positions) to every client. No threads, no
-// window, no GL/audio — pure simulation + UDP.
+// datagrams, runs at most ONE 60Hz fixed simulation step (the accumulator
+// residual carries over and drains on later calls), and broadcasts
+// MsgSnapshot (entity positions) to every client. Callers that count ticks
+// (e.g. neon_server's --ticks N) get an exact count: a Step never produces a
+// second tick from the accumulator residual. No threads, no window, no
+// GL/audio — pure simulation + UDP.
+//
+// SNAPSHOT SIZE CAP: the reliable transport caps every frame at
+// Config().maxFrameBytes (~1200 bytes), so a full-list snapshot fits roughly
+// 48 entities before ReliableChannel::Send refuses it. Such snapshots are
+// dropped (counted in SnapshotTooBig(), logged at Warn, throttled) — a client
+// simply stays on its last received state. T6.4 should replicate at a lower
+// cadence (Config::snapshotEveryTicks) or with delta/dirty-entity encoding so
+// full snapshots stay under the cap.
 //
 // Client flow: the first MsgJoin from an unknown address creates a Client
 // (ReliableChannel wired to that address) and answers MsgWelcome{clientId,
@@ -90,6 +101,13 @@ public:
     script::GameVars& GameVars() { return runtime_.GameVars(); }
     ecs::World& World() { return runtime_.World(); }
 
+    // Snapshot replication stats (admin/tests). SnapshotTooBig counts
+    // snapshots dropped because they exceeded the ~1200-byte frame cap (see
+    // the loop-model comment); SnapshotDrops counts snapshots the reliable
+    // channel refused for other reasons (e.g. a client's send window full).
+    uint64_t SnapshotTooBig() const { return snapshotTooBig_; }
+    uint64_t SnapshotDrops() const { return snapshotDrops_; }
+
 private:
     struct Client {
         net::NetAddress addr;
@@ -131,6 +149,8 @@ private:
     uint64_t lastStepMs_ = 0;
     uint64_t nowMs_ = 0;
     std::set<uint64_t> lastSnapshotIds_; // entity ids of the last broadcast (despawn diff)
+    uint64_t snapshotTooBig_ = 0;        // snapshots dropped for exceeding the frame cap
+    uint64_t snapshotDrops_ = 0;         // snapshots dropped for other send failures
     bool running_ = false;
 };
 

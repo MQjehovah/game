@@ -67,6 +67,19 @@ void WriteSceneFixture(const std::string& dir) {
     CHECK(test::WriteFileAll(scriptsDir + "/controller.lua", kControllerLua));
 }
 
+// A scene with `n` transform-only entities (no scripts) — used to exceed the
+// ~48-entity reliable-frame snapshot cap.
+std::string BigScene(int n) {
+    std::string s = "{\"entities\":[";
+    for (int i = 0; i < n; ++i) {
+        if (i != 0) s += ",";
+        s += "{\"name\":\"e" + std::to_string(i) +
+             "\",\"components\":{\"transform\":{\"pos\":[" + std::to_string(i) + ",0,0]}}}";
+    }
+    s += "]}";
+    return s;
+}
+
 // A minimal loopback client: a real UDP socket + ReliableChannel wired to the
 // server, collecting Welcome/Snapshot/Despawn messages as they arrive.
 struct LoopbackClient {
@@ -477,5 +490,44 @@ TEST(ServerRunsCommittedSampleHeadless) {
     // Snapshots replicate every scene entity (all have transforms).
     CHECK(!client.snapshots.empty());
     CHECK_EQ(client.snapshots.back().entities.size(), server.World().EntityCount());
+    server.Shutdown();
+}
+
+// ---------------------------------------------------------------------------
+// Snapshot frame cap: a scene with >~48 entities cannot fit in one reliable
+// frame. Such snapshots are dropped (never sent), counted in SnapshotTooBig()
+// and warned (throttled) — the client stays on its last received state.
+// ---------------------------------------------------------------------------
+
+TEST(ServerSnapshotTooBigCounted) {
+    server::GameServer server;
+    server::GameServer::Config cfg;
+    cfg.port = 0;
+    cfg.loopback = true;
+    cfg.sceneJson = BigScene(100); // ~100 entities >> the ~48-entity frame cap
+    CHECK(server.Start(cfg));
+    CHECK((server.World().EntityCount()) > (48u));
+
+    LoopbackClient client;
+    client.BindAndPeer(server.Port());
+    uint64_t now = 0;
+    client.SendJoin("tester", 2);
+    for (int i = 0; i < 200 && !client.welcomed; ++i) {
+        now += 17;
+        server.Step(now);
+        client.Pump(now);
+    }
+    CHECK(client.welcomed);
+
+    const uint64_t tooBigBefore = server.SnapshotTooBig();
+    for (int i = 0; i < 30; ++i) {
+        now += 17;
+        server.Step(now);
+        client.Pump(now);
+    }
+    // One snapshot per fixed tick, every one too big -> counted, none sent.
+    CHECK((server.SnapshotTooBig()) >= (tooBigBefore + 30));
+    CHECK_EQ(server.SnapshotDrops(), 0u); // dropped for size, not the send window
+    CHECK_EQ(client.snapshots.size(), 0u); // the client never received a snapshot
     server.Shutdown();
 }
