@@ -4,6 +4,7 @@
 #include <cmath>
 #include <fstream>
 #include <iterator>
+#include <unordered_map>
 
 #include "neon/core/log.hpp"
 #include "neon/script/bindings.hpp"
@@ -505,24 +506,30 @@ void GameServer::BroadcastSnapshot() {
             break;
         }
 
+    // id -> items index for O(1) assembly (the old per-interest linear scan
+    // was O(interest x entities) per client per tick). Built once per
+    // snapshot; entity counts are bounded by the scene's replicated set.
+    std::unordered_map<uint64_t, size_t> itemIndex;
+    itemIndex.reserve(items.size());
+    for (size_t i = 0; i < items.size(); ++i) itemIndex.emplace(items[i].id, i);
     const auto itemById = [&](uint64_t id) -> const Item* {
-        for (const Item& it : items)
-            if (it.id == id) return &it;
-        return nullptr;
+        const auto it = itemIndex.find(id);
+        return it == itemIndex.end() ? nullptr : &items[it->second];
     };
+
+    // Interest set is identical for every client (v1 shares one focus), so
+    // compute it once per snapshot instead of per client. The controlled
+    // entity sits in the focus cell, so it is already included for r >= 0;
+    // re-assert it explicitly so a client always keeps its player.
+    std::vector<uint64_t> interest = grid_.InterestSet(focus.x, focus.z, cfg_.aoiRadiusCells);
+    if (controlledKey != 0 &&
+        std::find(interest.begin(), interest.end(), controlledKey) == interest.end()) {
+        interest.push_back(controlledKey);
+    }
 
     for (auto& kv : clients_) {
         Client& c = kv.second;
         if (c.chan.TimedOut()) continue;
-
-        // Interest set: the (2r+1)^2 cells around the focus. The controlled
-        // entity sits in the focus cell, so it is already included for r >= 0;
-        // re-assert it explicitly so a client always keeps its player.
-        std::vector<uint64_t> interest = grid_.InterestSet(focus.x, focus.z, cfg_.aoiRadiusCells);
-        if (controlledKey != 0 &&
-            std::find(interest.begin(), interest.end(), controlledKey) == interest.end()) {
-            interest.push_back(controlledKey);
-        }
 
         // Spawn/despawn diff against the client's previous interest set: ids
         // that entered are announced with MsgSpawn (id + kind + position),
@@ -531,6 +538,7 @@ void GameServer::BroadcastSnapshot() {
         const std::set<uint64_t> interestSet(interest.begin(), interest.end());
         std::vector<uint64_t> spawned;
         std::vector<uint64_t> despawned;
+        spawned.reserve(interest.size());
         for (uint64_t id : interest)
             if (c.lastInterest.count(id) == 0) spawned.push_back(id);
         for (uint64_t id : c.lastInterest)
@@ -541,6 +549,7 @@ void GameServer::BroadcastSnapshot() {
         // same order InterestSet returned it (deterministic).
         net::MsgSnapshot snap;
         snap.tick = tick_;
+        snap.entities.reserve(interest.size());
         for (uint64_t id : interest) {
             const Item* it = itemById(id);
             if (!it) continue;

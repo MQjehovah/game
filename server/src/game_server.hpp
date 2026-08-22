@@ -19,16 +19,12 @@
 
 namespace neon::server {
 
-// Serializes a protocol message into the raw body bytes that
-// ReliableChannel::Send expects (the transport adds its own frame header,
-// protocol version and sequence number). Uses the message's Write() codec pair
-// so the wire layout is exactly what the T6.1 codec produces.
+// Thin alias onto the canonical shared encoder (neon::net::EncodeBody). Kept
+// for call-site readability; the implementation lives in the engine so the
+// client player and the tests can never drift from the server's wire layout.
 template <typename T>
 std::vector<uint8_t> EncodeBody(const T& msg) {
-    core::Serializer s;
-    msg.Write(s);
-    const std::vector<uint8_t>& data = s.Data();
-    return std::vector<uint8_t>(data.begin() + core::kHeaderBytes, data.end());
+    return net::EncodeBody(msg);
 }
 
 // Strict key ordering for std::map<NetAddress, ...> (host, then port).

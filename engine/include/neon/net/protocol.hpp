@@ -28,6 +28,19 @@
 
 namespace neon::net {
 
+// Serializes a protocol message into the raw body bytes that
+// ReliableChannel::Send expects (the transport adds its own frame header,
+// protocol version and sequence number). Canonical shared implementation —
+// the server, the client player and the tests all use this one encoder so the
+// wire layout can never drift between peers.
+template <typename T>
+std::vector<uint8_t> EncodeBody(const T& msg) {
+    core::Serializer s;
+    msg.Write(s);
+    const std::vector<uint8_t>& data = s.Data();
+    return std::vector<uint8_t>(data.begin() + core::kHeaderBytes, data.end());
+}
+
 // Protocol version this codec speaks. Bump on any incompatible wire change.
 // v1 -> v2: added the transport-level Ack message (T6.2 reliable layer).
 // v2 -> v3: added the account/login + character-select messages

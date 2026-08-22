@@ -55,14 +55,11 @@ inline constexpr float kReconcileThreshold = 2.0f;
 
 // Serializes a protocol message into the raw body bytes that
 // ReliableChannel::Send expects (the transport adds its own frame header,
-// protocol version and sequence number). This is a client-local copy of the
-// canonical server::EncodeBody (same codec pair -> identical wire layout).
+// protocol version and sequence number). Thin alias onto the canonical
+// shared encoder (neon::net::EncodeBody) — no client-local copy anymore.
 template <typename T>
 std::vector<uint8_t> EncodeBody(const T& msg) {
-    core::Serializer s;
-    msg.Write(s);
-    const std::vector<uint8_t>& data = s.Data();
-    return std::vector<uint8_t>(data.begin() + core::kHeaderBytes, data.end());
+    return net::EncodeBody(msg);
 }
 
 // Interpolated transform of a replicated entity at some render tick.
