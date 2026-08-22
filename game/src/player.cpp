@@ -184,6 +184,7 @@ core::Result<PackBoot> BootPack(const std::string& packPath) {
 
 bool PlayerApp::OnCreate() {
     title_ = cfg_.manifest.title.empty() ? "Neon Game" : cfg_.manifest.title;
+    renderer_.SetBackendName(cfg_.backend);
     if (!LoadSceneJson()) {
         CleanupUnpackedDir();
         return false;
@@ -195,7 +196,6 @@ bool PlayerApp::OnCreate() {
         return false;
     }
     assetMgr_.Init(&renderer_);
-
     // Overlay font: embedded ASCII pixel font, upgraded with the system CJK
     // font when available so "Esc 退出" renders (fallback keeps ASCII labels).
     pixelFont_ = renderer_.CreateFontFromMemory(neon_rush::kEmbeddedFontData,

@@ -599,9 +599,18 @@ Renderer::~Renderer() { Shutdown(); }
 bool Renderer::Init(platform::IWindow* window) {
     window_ = window;
     backend_ = CreateOpenGLBackend();
+#if defined(NEON_ENABLE_VULKAN)
+    if (backendName_ == "vulkan") {
+        backend_ = CreateVulkanBackend();
+    }
+#endif
+    if (!backend_) {
+        backend_ = CreateOpenGLBackend();
+    }
     if (!backend_ || !backend_->Init(window)) {
         NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Error,
-                     "Renderer: OpenGL backend initialization failed");
+                     "Renderer: %s backend initialization failed",
+                     backendName_ == "vulkan" ? "Vulkan" : "OpenGL");
         return false;
     }
     InitBuiltinResources();

@@ -39,7 +39,6 @@ set(ENGINE_CORE_SOURCES
   engine/src/gfx/renderer.cpp
   engine/src/gfx/gl/gl_loader.cpp
   engine/src/gfx/gl/gl_backend.cpp
-  engine/src/gfx/vulkan/vk_backend.cpp
   engine/src/physics/physics.cpp
   engine/src/platform/input.cpp
   engine/src/scene/scene_file.cpp
@@ -70,6 +69,89 @@ if(MSVC)
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
   target_compile_options(neon_engine PRIVATE -Wall -Wextra
     -finput-charset=UTF-8 -fexec-charset=UTF-8)
+endif()
+
+# ---------------------------------------------------------------------------
+# Vulkan backend (T7.1): opt-in, SDK-free via volk.
+#
+# When NEON_ENABLE_VULKAN=ON the backend is compiled and the app's
+# `--backend vulkan` flag works. The built-in shaders are precompiled to SPIR-V
+# at build time by a vendored glslang (third_party/glslang_tool) into
+# assets/generated/vk_shaders.hpp (a committed generated header, so tool-less
+# builds still work). When OFF the Vulkan backend is not compiled; requesting
+# `--backend vulkan` falls back to OpenGL with a log.
+# ---------------------------------------------------------------------------
+option(NEON_ENABLE_VULKAN "Build the Vulkan render backend (volk, SDK-free)" OFF)
+if(NEON_ENABLE_VULKAN)
+  add_library(neon_volk STATIC third_party/volk/volk.c)
+  target_include_directories(neon_volk PUBLIC
+    third_party/volk
+    third_party/vulkan_headers/include
+  )
+  target_compile_definitions(neon_volk PRIVATE VK_USE_PLATFORM_WIN32_KHR)
+  # Vendored C loader - silence warnings from foreign code.
+  if(MSVC)
+    target_compile_options(neon_volk PRIVATE /W3)
+  elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(neon_volk PRIVATE -w)
+  endif()
+  target_link_libraries(neon_engine PRIVATE neon_volk)
+  target_include_directories(neon_engine PUBLIC
+    third_party/volk
+    third_party/vulkan_headers/include
+  )
+  target_compile_definitions(neon_engine PUBLIC NEON_ENABLE_VULKAN=1)
+  target_sources(neon_engine PRIVATE engine/src/gfx/vulkan/vk_backend.cpp)
+  target_include_directories(neon_engine PRIVATE engine/src/gfx/vulkan)
+
+  # Build-time SPIR-V generation (glslang vendored in third_party/glslang_tool).
+  # Only re-runs when a shader source is newer than the committed header; the
+  # header itself is committed so builds without the tool keep working.
+  set(VK_GLSLANG ${CMAKE_SOURCE_DIR}/third_party/glslang_tool/bin/glslang.exe)
+  set(VK_SHADER_DIR ${CMAKE_SOURCE_DIR}/engine/src/gfx/vulkan/shaders)
+  set(VK_SHADER_OUTPUT ${CMAKE_SOURCE_DIR}/assets/generated/vk_shaders.hpp)
+  add_custom_command(
+    OUTPUT ${VK_SHADER_OUTPUT}
+    COMMAND powershell -NoProfile -ExecutionPolicy Bypass -File
+      ${CMAKE_SOURCE_DIR}/tools/gen_vk_shaders.ps1
+      -Glslang ${VK_GLSLANG}
+      -ShaderDir ${VK_SHADER_DIR}
+      -SpvDir ${CMAKE_CURRENT_BINARY_DIR}/vk_spv
+      -OutputHeader ${VK_SHADER_OUTPUT}
+    DEPENDS
+      ${CMAKE_SOURCE_DIR}/tools/gen_vk_shaders.ps1
+      ${VK_GLSLANG}
+      ${VK_SHADER_DIR}/engine_ubo.glsl
+      ${VK_SHADER_DIR}/lit.vert
+      ${VK_SHADER_DIR}/lit.frag
+      ${VK_SHADER_DIR}/lit_skinned.vert
+      ${VK_SHADER_DIR}/unlit.vert
+      ${VK_SHADER_DIR}/unlit.frag
+      ${VK_SHADER_DIR}/ui.vert
+      ${VK_SHADER_DIR}/ui.frag
+      ${VK_SHADER_DIR}/lines.vert
+      ${VK_SHADER_DIR}/lines.frag
+      ${VK_SHADER_DIR}/lit_instanced.vert
+      ${VK_SHADER_DIR}/unlit_instanced.vert
+      ${VK_SHADER_DIR}/shadow.vert
+      ${VK_SHADER_DIR}/shadow.frag
+      ${VK_SHADER_DIR}/shadow_instanced.vert
+      ${VK_SHADER_DIR}/shadow_skinned.vert
+      ${VK_SHADER_DIR}/point_shadow.vert
+      ${VK_SHADER_DIR}/point_shadow.frag
+      ${VK_SHADER_DIR}/point_shadow_instanced.vert
+      ${VK_SHADER_DIR}/point_shadow_skinned.vert
+      ${VK_SHADER_DIR}/post.vert
+      ${VK_SHADER_DIR}/bright.frag
+      ${VK_SHADER_DIR}/blur.frag
+      ${VK_SHADER_DIR}/downsample.frag
+      ${VK_SHADER_DIR}/upsample_add.frag
+      ${VK_SHADER_DIR}/composite.frag
+    COMMENT "Generating embedded Vulkan SPIR-V (vk_shaders.hpp)..."
+    VERBATIM
+  )
+  add_custom_target(neon_vk_shaders ALL DEPENDS ${VK_SHADER_OUTPUT})
+  add_dependencies(neon_engine neon_vk_shaders)
 endif()
 
 # ---------------------------------------------------------------------------

@@ -38,6 +38,11 @@ public:
     virtual int Width() const = 0;
     virtual int Height() const = 0;
 
+    // Native window handle used by API-specific backends (Vulkan surfaces).
+    // Win32 returns the HWND; other platforms return nullptr (the Vulkan
+    // backend currently supports Win32 only).
+    virtual void* NativeHandle() { return nullptr; }
+
     // Mouse capture (relative look): hides the cursor and reports deltas.
     virtual void SetCaptureMouse(bool capture) = 0;
 

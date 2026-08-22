@@ -1239,6 +1239,7 @@ void GameScene::DrawOverlays(gfx::Renderer& renderer) {
 
 bool NeonApp::OnCreate() {
     if (disableShadows_) renderer_.SetShadowsEnabled(false);
+    renderer_.SetBackendName(backendName_);
     renderer_.SetBloomEnabled(bloomEnabled_);
     renderer_.SetExposure(exposure_);
     renderer_.SetTonemapEnabled(tonemapEnabled_);

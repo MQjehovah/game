@@ -21,6 +21,8 @@ void PrintHelp() {
         "  --exposure <v>         composite exposure for ACES tonemapping (default 1.0)\n"
         "  --ibl <0..1>           IBL environment lighting intensity (default 1.0);\n"
         "                         0 keeps the legacy flat ambient (for diffing)\n"
+        "  --backend <gl|vulkan>  graphics backend (default gl; vulkan is opt-in and\n"
+        "                         requires a NEON_ENABLE_VULKAN build)\n"
         "  --bloom-compare <off.png> <on.png> <frame>  write the SAME frame twice\n"
         "                         (bloom off then on) from one HDR target for diffing\n"
         "  --tonemap-compare <clamped.png> <aces.png> <frame>  write the SAME frame twice\n"
@@ -52,8 +54,11 @@ int main(int argc, char** argv) {
     bool disableTonemap = false;
     bool disableMsaa = false;
     float iblStrength = 1.0f;
+    std::string backend = "gl";
     for (int i = 1; i < argc; ++i) {
-        if (std::strcmp(argv[i], "--smoke-test") == 0 && i + 1 < argc) {
+        if (std::strcmp(argv[i], "--backend") == 0 && i + 1 < argc) {
+            backend = argv[++i];
+        } else if (std::strcmp(argv[i], "--smoke-test") == 0 && i + 1 < argc) {
             smokeFrames = std::atoi(argv[++i]);
         } else if (std::strcmp(argv[i], "--screenshot") == 0 && i + 2 < argc) {
             screenshotPath = argv[++i];
@@ -114,6 +119,7 @@ int main(int argc, char** argv) {
     if (disableMsaa) app.SetMsaaEnabled(false);
     if (exposure != 1.0f) app.SetExposure(exposure);
     if (iblStrength != 1.0f) app.SetIblStrength(iblStrength);
+    if (backend != "gl") app.SetBackendName(backend);
     int result = app.Run(config);
     std::printf("NeonRealm exited with code %d\n", result);
     return result;

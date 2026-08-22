@@ -30,6 +30,11 @@ public:
     bool Init(platform::IWindow* window);
     void Shutdown();
 
+    // Selects the graphics backend before Init. "gl" (default) uses OpenGL;
+    // "vulkan" uses the Vulkan backend when built with NEON_ENABLE_VULKAN=ON
+    // (falls back to OpenGL with a log otherwise).
+    void SetBackendName(const std::string& name) { backendName_ = name; }
+
     // Headless hook used by unit tests and tooling: installs a backend
     // directly, bypassing window/GL-context creation so the CPU-side asset
     // pipeline (mesh/texture upload via CreateMesh/CreateTexture) can run
@@ -298,6 +303,7 @@ private:
     void CompositeSceneToBackbuffer();
 
     std::unique_ptr<IRenderBackend> backend_;
+    std::string backendName_ = "gl";
 
     ShaderHandle litShader_;
     ShaderHandle skinnedLitShader_;

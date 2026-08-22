@@ -48,6 +48,7 @@ struct PlayerConfig {
     std::string looseScenePath;   // --scene <path.json> in connect mode (direct file)
     int connectTicks = 0;         // --ticks <n>: run n frames then exit (connect smoke)
     uint64_t rngSeed = 20260821u; // --seed: local prediction RNG (must match the server)
+    std::string backend = "gl";   // --backend gl|vulkan: graphics backend (default gl)
 };
 
 // The data-driven player: unpack a store-only pack to a temp dir, read the

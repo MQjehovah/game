@@ -12,6 +12,7 @@ int main(int argc, char** argv) {
     bool disableShadows = false;
     bool disableBloom = false;
     bool hotReload = false;
+    std::string backend = "gl";
     std::string screenshot;
     uint64_t screenshotFrame = 0;
     for (int i = 1; i < argc; ++i) {
@@ -48,10 +49,13 @@ int main(int argc, char** argv) {
             disableShadows = true;
         } else if (std::strcmp(argv[i], "--no-bloom") == 0) {
             disableBloom = true;
+        } else if (std::strcmp(argv[i], "--backend") == 0 && i + 1 < argc) {
+            backend = argv[++i];
         } else if (std::strcmp(argv[i], "--help") == 0) {
             std::printf("NeonEditor - NeonEngine scene editor\n"
                         "  --smoke-test <frames>  run N simulation frames then exit\n"
                         "  --hot                  enable hot reload (scripts/assets on mtime change)\n"
+                        "  --backend <gl|vulkan>  graphics backend (default gl; vulkan is opt-in)\n"
                         "  --package <project> <out>  validate + pack a project into\n"
                         "                         <out>/game.pack (run.bat + neon_game.exe)\n"
                         "  --screenshot <path> <frame>  capture a PNG at frame N\n"
@@ -83,6 +87,7 @@ int main(int argc, char** argv) {
     if (disableShadows) app.SetDisableShadows(true);
     if (disableBloom) app.SetBloomEnabled(false);
     if (hotReload) app.SetHotReload(true);
+    if (backend != "gl") app.SetBackendName(backend);
     int code = app.Run(config);
     return app.SmokeFailed() ? 1 : code;
 }

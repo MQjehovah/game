@@ -254,6 +254,7 @@ void DecomposeModel(const math::Mat4& m, math::Vec3& pos, math::Vec3& scale, mat
 
 bool EditorApp::OnCreate() {
     if (disableShadows_) renderer_.SetShadowsEnabled(false);
+    renderer_.SetBackendName(backendName_);
     renderer_.SetBloomEnabled(bloomEnabled_);
     if (!renderer_.Init(Window())) {
         NEON_LOG_ERROR("Editor: renderer init failed");

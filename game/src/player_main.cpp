@@ -28,6 +28,8 @@ void PrintHelp() {
         "                             entity moved (smoke assertion)\n"
         "  --seed <n>                 local prediction RNG seed (must match the server's\n"
         "                             --seed for deterministic scenes)\n"
+        "  --backend <gl|vulkan>      graphics backend (default gl; vulkan is opt-in and\n"
+        "                             requires a NEON_ENABLE_VULKAN build)\n"
         "  --smoke-test <n>           run n fixed ticks then exit 0 (verification)\n"
         "  --screenshot <file> <n>    capture a PNG at frame n\n"
         "  --dump-vars                log every GameVar at exit (verification)\n"
@@ -79,6 +81,8 @@ int main(int argc, char** argv) {
             cfg.connectTicks = std::atoi(argv[++i]);
         } else if (std::strcmp(argv[i], "--seed") == 0 && i + 1 < argc) {
             cfg.rngSeed = std::strtoull(argv[++i], nullptr, 10);
+        } else if (std::strcmp(argv[i], "--backend") == 0 && i + 1 < argc) {
+            cfg.backend = argv[++i];
         } else if (std::strcmp(argv[i], "--smoke-test") == 0 && i + 1 < argc) {
             cfg.smokeFrames = std::atoi(argv[++i]);
         } else if (std::strcmp(argv[i], "--screenshot") == 0 && i + 2 < argc) {

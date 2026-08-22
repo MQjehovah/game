@@ -156,6 +156,7 @@ public:
     void RequestClose() override { shouldClose_ = true; }
     int Width() const override { return width_; }
     int Height() const override { return height_; }
+    void* NativeHandle() override { return hwnd_; }
 
     void SetCaptureMouse(bool capture) override {
         capturing_ = capture;

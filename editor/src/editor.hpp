@@ -70,6 +70,7 @@ public:
     void SetDisableShadows(bool v) { disableShadows_ = v; }
     void SetBloomEnabled(bool v) { bloomEnabled_ = v; }
     void SetHotReload(bool v) { hotReload_ = v; }
+    void SetBackendName(const std::string& name) { backendName_ = name; }
     bool SmokeFailed() const { return smokeFailed_; }
     void RequestScreenshot(const std::string& path, uint64_t frame) {
         screenshotPath_ = path;
@@ -248,6 +249,7 @@ private:
     bool smokeFailed_ = false;
     bool disableShadows_ = false;
     bool bloomEnabled_ = true;
+    std::string backendName_ = "gl";
     std::string screenshotPath_;
     uint64_t screenshotFrame_ = 0;
 
