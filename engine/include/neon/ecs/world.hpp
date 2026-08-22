@@ -87,12 +87,13 @@ public:
 
     // --- Batch iteration views ---
     // View<T> iterates every entity that has T; View<T,U> iterates entities
-    // that have BOTH T and U (U is looked up per entity; dense order of T
-    // drives the visit order). Both offer ForEach (serial) and
-    // ParallelForEach (deterministic split across worker threads). Archetype
-    // storage (a future refactor) would give cache-friendly cross-component
-    // iteration; these views deliver the same batch-iteration API on the
-    // existing SparseSet pools.
+    // that have BOTH T and U (the U pool is pre-created and held directly, so
+    // the per-entity U lookup is a pool-local sparse-index probe instead of a
+    // world type-table + virtual call; dense order of T drives the visit
+    // order). Both offer ForEach (serial) and ParallelForEach (deterministic
+    // split across worker threads). Archetype storage (a future refactor)
+    // would give cache-friendly cross-component iteration; these views
+    // deliver the same batch-iteration API on the existing SparseSet pools.
     template <class T, class... Us>
     class View;
 
@@ -105,8 +106,10 @@ public:
 
         // Serial batch iteration: calls fn(entity, component) once per entity
         // holding T. fn may write its own component. Mutating the world while
-        // iterating (Create/Destroy/Add/Remove) invalidates the pool.
-        void ForEach(std::function<void(ecs::Entity, T&)> fn) {
+        // iterating (Create/Destroy/Add/Remove) invalidates the pool. The
+        // callback is templated (no std::function allocation in hot paths).
+        template <class Fn>
+        void ForEach(Fn&& fn) {
             const size_t n = pool_.Size();
             for (size_t i = 0; i < n; ++i) {
                 ecs::Entity e = world_.EntityFromPool(pool_, i);
@@ -119,14 +122,16 @@ public:
         // pair it is given - no shared mutable state, no world mutation. For
         // such independent-item workloads the result is bit-identical to
         // ForEach and identical across runs.
-        void ParallelForEach(std::function<void(ecs::Entity, T&)> fn) {
+        template <class Fn>
+        void ParallelForEach(Fn&& fn) {
             const size_t n = pool_.Size();
             if (n == 0) return;
             ParallelIterationGuard guard(world_);
             World& w = world_;
             Pool<T>& p = pool_;
             parallel::ParallelFor(static_cast<uint32_t>(n),
-                                  [&w, &p, fn](uint32_t s, uint32_t e) {
+                                  [&w, &p, fn = std::forward<Fn>(fn)](
+                                      uint32_t s, uint32_t e) {
                                       for (uint32_t i = s; i < e; ++i) {
                                           ecs::Entity ent = w.EntityFromPool(p, i);
                                           fn(ent, p.dense_[i]);
@@ -144,21 +149,22 @@ public:
     public:
         // Pre-creates the U pool at construction (not lazily during iteration),
         // so workers in ParallelForEach only ever read an existing pool and
-        // never race to insert into the world's pool table. Constructing a
-        // View<T,U> therefore always leaves both pools present.
-        explicit View(Pool<T>& pool, World& world) : pool_(pool), world_(world) {
-            world_.template GetPool<U>();
-        }
+        // never race to insert into the world's pool table. The U pool is
+        // held directly: per-entity lookups skip the world's type table.
+        explicit View(Pool<T>& pool, World& world)
+            : pool_(pool), poolU_(world.template GetPool<U>()), world_(world) {}
         size_t Size() const { return pool_.Size(); }
         T& operator[](size_t i) { return pool_.dense()[i]; }
 
         // Serial batch iteration over entities that have BOTH T and U. The
-        // functor receives both components.
-        void ForEach(std::function<void(ecs::Entity, T&, U&)> fn) {
+        // functor receives both components. The callback is templated (no
+        // std::function allocation per call).
+        template <class Fn>
+        void ForEach(Fn&& fn) {
             const size_t n = pool_.Size();
             for (size_t i = 0; i < n; ++i) {
                 ecs::Entity e = world_.EntityFromPool(pool_, i);
-                U* u = world_.template Get<U>(e);
+                U* u = poolU_.TryGet(e.id);
                 if (!u) continue;
                 fn(e, pool_.dense_[i], *u);
             }
@@ -166,17 +172,20 @@ public:
 
         // Parallel version of the two-component view; same thread-safety
         // contract as View<T>::ParallelForEach. The U lookup is read-only.
-        void ParallelForEach(std::function<void(ecs::Entity, T&, U&)> fn) {
+        template <class Fn>
+        void ParallelForEach(Fn&& fn) {
             const size_t n = pool_.Size();
             if (n == 0) return;
             ParallelIterationGuard guard(world_);
             World& w = world_;
             Pool<T>& p = pool_;
+            Pool<U>& pu = poolU_;
             parallel::ParallelFor(static_cast<uint32_t>(n),
-                                  [&w, &p, fn](uint32_t s, uint32_t e) {
+                                  [&w, &p, &pu, fn = std::forward<Fn>(fn)](
+                                      uint32_t s, uint32_t e) {
                                       for (uint32_t i = s; i < e; ++i) {
                                           ecs::Entity ent = w.EntityFromPool(p, i);
-                                          U* u = w.template Get<U>(ent);
+                                          U* u = pu.TryGet(ent.id);
                                           if (!u) continue;
                                           fn(ent, p.dense_[i], *u);
                                       }
@@ -185,6 +194,7 @@ public:
 
     private:
         Pool<T>& pool_;
+        Pool<U>& poolU_;
         World& world_;
     };
 
