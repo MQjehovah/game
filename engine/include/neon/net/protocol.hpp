@@ -29,7 +29,8 @@
 namespace neon::net {
 
 // Protocol version this codec speaks. Bump on any incompatible wire change.
-inline constexpr uint8_t kProtocolVersion = 1;
+// v1 -> v2: added the transport-level Ack message (T6.2 reliable layer).
+inline constexpr uint8_t kProtocolVersion = 2;
 
 // Hard caps applied on decode to hostile input. Strings longer than
 // kMaxStringBytes and snapshots with more than kMaxSnapshotEntities entries
@@ -37,9 +38,9 @@ inline constexpr uint8_t kProtocolVersion = 1;
 inline constexpr size_t kMaxStringBytes = 256;
 inline constexpr uint32_t kMaxSnapshotEntities = 4096;
 
-// Message set for v1. Join/Welcome/Input/Snapshot/Spawn/Despawn drive the
-// lobby and replication flow; Ping/Pong carry RTT timestamps (used by the
-// transport in T6.2).
+// Message set for v2. Join/Welcome/Input/Snapshot/Spawn/Despawn drive the
+// lobby and replication flow; Ping/Pong carry RTT timestamps; Ack is emitted
+// by the T6.2 reliable transport (it never reaches application logic).
 enum class MsgType : uint8_t {
     Join = 1,
     Welcome = 2,
@@ -49,6 +50,7 @@ enum class MsgType : uint8_t {
     Despawn = 6,
     Ping = 7,
     Pong = 8,
+    Ack = 9,
 };
 
 // Logical header of a decoded frame. The magic + CRC halves of the wire header
@@ -133,9 +135,22 @@ struct MsgPong {
     static core::Result<MsgPong> Read(core::Deserializer& d);
 };
 
+// Transport acknowledgement (T6.2 reliable layer): sliding-window ack.
+// ackSeq is the highest contiguously-delivered sequence number; ackBits is a
+// bitmap for the following 32 seqs (bit i covers seq ackSeq+1+i), so
+// out-of-order arrivals beyond the gap are acknowledged too and the sender
+// stops retransmitting them. The ack frame's own header seq is unused by the
+// reliable layer; acks are idempotent and may be dropped/reordered safely.
+struct MsgAck {
+    uint16_t ackSeq = 0;
+    uint32_t ackBits = 0;
+    void Write(core::Serializer& s) const;
+    static core::Result<MsgAck> Read(core::Deserializer& d);
+};
+
 // Type-erased payload of any message; alternative order matches MsgType ids.
 using Payload = std::variant<MsgJoin, MsgWelcome, MsgInput, MsgSnapshot, MsgSpawn,
-                             MsgDespawn, MsgPing, MsgPong>;
+                             MsgDespawn, MsgPing, MsgPong, MsgAck>;
 
 // A fully decoded and validated frame.
 struct DecodedMessage {

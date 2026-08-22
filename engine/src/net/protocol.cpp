@@ -16,7 +16,8 @@ MsgType TypeOf(const Payload& p) {
         case 4: return MsgType::Spawn;
         case 5: return MsgType::Despawn;
         case 6: return MsgType::Ping;
-        default: return MsgType::Pong;
+        case 7: return MsgType::Pong;
+        default: return MsgType::Ack;
     }
 }
 
@@ -192,6 +193,22 @@ core::Result<MsgPong> MsgPong::Read(core::Deserializer& d) {
     return core::Result<MsgPong>::Ok(std::move(m));
 }
 
+void MsgAck::Write(core::Serializer& s) const {
+    s.WriteU16(ackSeq);
+    s.WriteU32(ackBits);
+}
+
+core::Result<MsgAck> MsgAck::Read(core::Deserializer& d) {
+    MsgAck m;
+    core::Result<uint16_t> ackSeq = d.ReadU16();
+    if (!ackSeq.Ok()) return core::Result<MsgAck>::Err("net: ack ackSeq truncated");
+    m.ackSeq = ackSeq.Value();
+    core::Result<uint32_t> ackBits = d.ReadU32();
+    if (!ackBits.Ok()) return core::Result<MsgAck>::Err("net: ack ackBits truncated");
+    m.ackBits = ackBits.Value();
+    return core::Result<MsgAck>::Ok(std::move(m));
+}
+
 core::Result<std::vector<uint8_t>> MessageCodec::Encode(MsgType type, uint16_t seq,
                                                         const Payload& payload) {
     if (TypeOf(payload) != type)
@@ -288,6 +305,12 @@ core::Result<DecodedMessage> MessageCodec::Decode(const uint8_t* data, size_t si
         }
         case MsgType::Pong: {
             core::Result<MsgPong> m = MsgPong::Read(d);
+            if (!m.Ok()) return core::Result<DecodedMessage>::Err(m.Error());
+            out.payload = std::move(m.Value());
+            break;
+        }
+        case MsgType::Ack: {
+            core::Result<MsgAck> m = MsgAck::Read(d);
             if (!m.Ok()) return core::Result<DecodedMessage>::Err(m.Error());
             out.payload = std::move(m.Value());
             break;

@@ -189,6 +189,22 @@ TEST(ProtocolPingPongRoundTrip) {
     CHECK_EQ(out.receiveTime, pong.receiveTime);
 }
 
+TEST(ProtocolAckRoundTrip) {
+    net::MessageCodec codec;
+    net::MsgAck in{0xABCDu, 0xCAFEBABEu};
+
+    core::Result<std::vector<uint8_t>> enc =
+        codec.Encode(net::MsgType::Ack, 0, in);
+    CHECK(enc.Ok());
+    core::Result<net::DecodedMessage> dec = codec.Decode(enc.Value());
+    CHECK(dec.Ok());
+    CHECK_EQ(dec.Value().header.msgId, static_cast<uint8_t>(net::MsgType::Ack));
+    CHECK(Holds<net::MsgAck>(dec.Value()));
+    const net::MsgAck& out = std::get<net::MsgAck>(dec.Value().payload);
+    CHECK_EQ(out.ackSeq, in.ackSeq);
+    CHECK_EQ(out.ackBits, in.ackBits);
+}
+
 TEST(ProtocolUnknownMsgId) {
     net::MessageCodec codec;
     core::Result<std::vector<uint8_t>> frame = codec.EncodeFrame(99, 1, {});

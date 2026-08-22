@@ -51,3 +51,5 @@
 #include "neon/bt/behavior_tree.hpp"
 #include "neon/bt/nodes.hpp"
 #include "neon/net/protocol.hpp"
+#include "neon/net/socket.hpp"
+#include "neon/net/reliable.hpp"

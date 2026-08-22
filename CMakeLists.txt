@@ -28,6 +28,8 @@ set(ENGINE_CORE_SOURCES
   engine/src/core/serialize.cpp
   engine/src/core/pack.cpp
   engine/src/net/protocol.cpp
+  engine/src/net/socket.cpp
+  engine/src/net/reliable.cpp
   engine/src/gfx/color.cpp
   engine/src/gfx/csm.cpp
   engine/src/gfx/font.cpp
@@ -81,7 +83,7 @@ if(WIN32)
     engine/src/audio/winmm/winmm_audio.cpp
   )
   target_compile_definitions(neon_engine PUBLIC NEONRUSH_PLATFORM_WINDOWS)
-  target_link_libraries(neon_engine PUBLIC opengl32 winmm user32 gdi32 shell32 ole32)
+  target_link_libraries(neon_engine PUBLIC opengl32 winmm user32 gdi32 shell32 ole32 ws2_32)
 elseif(APPLE)
   target_sources(neon_engine PRIVATE engine/src/platform/cocoa/cocoa_window.mm)
   set_source_files_properties(engine/src/platform/cocoa/cocoa_window.mm PROPERTIES LANGUAGE OBJCXX)
@@ -274,6 +276,7 @@ add_executable(neon_tests tests/test_main.cpp tests/test_serialize.cpp tests/tes
   tests/test_lod.cpp
   tests/test_world_chunk.cpp
   tests/test_ecs_parallel.cpp
+  tests/test_reliable.cpp
   editor/src/history.cpp editor/src/packager.cpp)
 target_link_libraries(neon_tests PRIVATE neon_engine)
 # test_history.cpp includes the editor's generic undo/redo stack header.
