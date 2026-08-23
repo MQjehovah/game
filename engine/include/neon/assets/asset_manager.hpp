@@ -106,9 +106,9 @@ public:
     // materials (baseColor/metalRoughness/occlusion/emissive), node transforms.
     GltfAsset LoadGLTF(const std::string& path);
     gfx::Font LoadFont(const std::string& path, int pixelHeight);
-    // Loads a system CJK font (per-platform path list) and bakes the codepoints
-    // that appear in sampleTexts (plus ASCII). Returns an invalid Font if none found.
-    gfx::Font LoadSystemCJKFont(int pixelHeight, const std::vector<std::string>& sampleTexts);
+    // Loads a system CJK font with DYNAMIC glyphs (stb_truetype atlas grows on
+    // demand), so any text renders without declaring a character list.
+    gfx::Font LoadSystemCJKFont(int pixelHeight);
 
     // Async texture load (T5.2): the image decode (stbi_load, optional BC1
     // compression) runs on a worker thread; the GPU upload, cache insert and

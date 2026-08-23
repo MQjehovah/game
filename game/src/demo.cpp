@@ -1259,15 +1259,9 @@ bool NeonApp::OnCreate() {
     pixelFont_ = renderer_.CreateFontFromMemory(neon_rush::kEmbeddedFontData,
                                                 neon_rush::kEmbeddedFontSize, 24);
     // 所有 UI 中文文本集合：新增中文文本时请同步加入，否则对应字形不会烘焙。
-    const std::vector<std::string> cjkSamples = {
-        "霓虹大陆欢迎来到生命法力等级金币经验任务猎杀野狼接受交付离开对话交谈继续返回标题",
-        "暂停你死了在村庄复活操作说明开始冒险退出游戏移动旋转视角左键近战攻击右键冲刺空格跳跃",
-        "火球术治疗术技能帮助村长年轻的冒险者村外的正在威胁我们的安全帮我只我会给你丰厚报酬",
-        "干得漂亮再也不敢靠近了这是你的奖励进度继续加油回去找领取等级提升帧率绘制三角形实例小地图",
-        "按交谈野狼村的奖励猎杀只野狼后游戏无敌帧交接获得完成按钮键盘方向拖动鼠标按对话交接任务",
-        "血条名板是否战斗中复活后继续游戏确认取消返回标题暂停中击杀敌人获得金币提升等级",
-        "。与！（），："};
-    cjkFont_ = assetMgr_.LoadSystemCJKFont(24, cjkSamples);
+        // System CJK font with DYNAMIC glyphs (any Chinese text renders
+    // without maintaining a character list).
+    cjkFont_ = assetMgr_.LoadSystemCJKFont(24);
     theme_.font = cjkFont_.Valid() ? cjkFont_ : pixelFont_;
 
     demo::CreateDemoAssets(renderer_, assetMgr_, assets_);

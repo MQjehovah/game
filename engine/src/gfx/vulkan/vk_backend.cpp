@@ -808,6 +808,10 @@ public:
         textures_.erase(it);
     }
 
+    // Dynamic font atlases are GL-path only today; Vulkan keeps the texture
+    // as created (dynamic glyph baking falls back to a static atlas).
+    void UpdateTextureRegion(TextureHandle, int, int, int, int, const void*) override {}
+
     TextureHandle CreateTextureCompressed(int width, int height, uint32_t format, const void* data,
                                           size_t size) override {
         if (!data || width <= 0 || height <= 0 || size == 0) return {};

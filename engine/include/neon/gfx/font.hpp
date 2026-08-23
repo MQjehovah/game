@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <unordered_map>
 #include "neon/gfx/backend.hpp"
@@ -59,9 +60,19 @@ public:
     math::Vec2 Measure(const std::string& text, float size) const;
     float CharAdvance(int32_t codepoint, float size) const;
 
+    // DYNAMIC GLYPHS (Godot-style): rasterizes `codepoint` into the font's
+    // atlas on demand and uploads it, so any text renders without declaring a
+    // character list upfront. No-op when the codepoint is already present or
+    // the atlas is full. Renderer::DrawText calls this for every missing
+    // glyph; Measure/CharAdvance also ensure glyphs (single-threaded render).
+    bool EnsureGlyph(int32_t codepoint);
+    bool Dynamic() const { return face_ != nullptr; }
+
 private:
     friend class Renderer;
 
+    struct FontFace;
+    std::shared_ptr<FontFace> face_; // font file + stbtt parse + dynamic atlas
     TextureHandle atlas_;
     int atlasW_ = 0;
     int atlasH_ = 0;

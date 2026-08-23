@@ -925,8 +925,7 @@ gfx::Font AssetManager::LoadFont(const std::string& path, int pixelHeight) {
     return font;
 }
 
-gfx::Font AssetManager::LoadSystemCJKFont(int pixelHeight,
-                                          const std::vector<std::string>& sampleTexts) {
+gfx::Font AssetManager::LoadSystemCJKFont(int pixelHeight) {
 #if defined(_WIN32)
     const char* kCandidates[] = {
         "C:/Windows/Fonts/msyh.ttc",
@@ -946,35 +945,14 @@ gfx::Font AssetManager::LoadSystemCJKFont(int pixelHeight,
         nullptr};
 #endif
 
-    // Collect unique non-ASCII codepoints from sample texts.
-    std::vector<int32_t> codepoints;
-    {
-        std::vector<bool> seen(0x110000, false);
-        for (const std::string& text : sampleTexts) {
-            const char* it = text.data();
-            const char* end = it + text.size();
-            while (it < end) {
-                int32_t cp = gfx::DecodeUTF8Next(it, end);
-                if (cp > 126 && !seen[static_cast<size_t>(cp)]) {
-                    seen[static_cast<size_t>(cp)] = true;
-                    codepoints.push_back(cp);
-                }
-            }
-        }
-    }
-    if (codepoints.empty()) return {};
-
     for (const char* candidate : kCandidates) {
         std::ifstream in(candidate, std::ios::binary);
         if (!in.is_open()) continue;
         std::vector<uint8_t> data((std::istreambuf_iterator<char>(in)),
                                   std::istreambuf_iterator<char>());
-        gfx::Font font = renderer_->CreateFontFromMemoryWithCodepoints(
-            data.data(), data.size(), pixelHeight, codepoints.data(),
-            static_cast<int>(codepoints.size()));
+        gfx::Font font = renderer_->CreateFontFromMemory(data.data(), data.size(), pixelHeight);
         if (font.Valid()) {
-            NEON_LOG_INFO("Asset: loaded system CJK font '%s' (%zu codepoints)",
-                          candidate, codepoints.size());
+            NEON_LOG_INFO("Asset: loaded system CJK font '%s' (dynamic glyphs)", candidate);
             return font;
         }
     }

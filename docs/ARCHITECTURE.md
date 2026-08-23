@@ -202,7 +202,7 @@ OnRender：
 | 深度不可用降级为画家算法 | 实测 Intel 驱动深度缓冲损坏；引擎自适应，普通机器仍用深度测试 |
 | 字体灰度打包后展开 RGBA | stb 过采样预滤波要求 stride==宽度，RGBA 直写会越界 |
 | UI 控件树使用相对坐标 + AbsolutePos 累加 | 子节点布局与父节点（窗口拖拽/移动）解耦；命中测试逐层换算 |
-| CJK 字形由 cjkSamples 显式收集 | 系统字体图集按码点烘焙，UI 新增中文必须同步加入采样串（demo/editor 各自维护） |
+| CJK 字形动态栅格化（Godot 风格） | 引擎侧文本（HUD/场景名/2D 游戏）加载系统字体后按需把字形烘焙进 2048×2048 图集，并以 `UpdateTextureRegion` 增量上传；任意中文直接渲染，无需维护字符集（demo/editor/2D 脚本各自零采样串）。编辑器 ImGui 仍走全量 CJK 码点烘焙，启动 1-2 秒可接受 |
 | 投影阴影而非阴影贴图 | 实测该 Intel 驱动 FBO 的 VAO 渲染损坏（Clear 可写、DrawElements 不写）；CPU 投影零依赖、跨平台稳定 |
 | HDR 离屏 RGBA16F + 渐进 bloom | 主场景保留超 1.0 的亮部，后处理金字塔模糊后加回；浮点目标能力自检失败自动回退直绘后备缓冲 |
 | 截图先合成再回读 | `CaptureFrame` 在 HDR 目标上触发 bloom+合成到后备缓冲后 `glReadPixels`，截图即最终画面；`--bloom-compare` 同帧同 HDR 目标输出关/开对比 |

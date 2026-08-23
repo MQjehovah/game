@@ -106,6 +106,10 @@ public:
 
     virtual TextureHandle CreateTexture(const TextureDesc& desc) = 0;
     virtual void DestroyTexture(TextureHandle texture) = 0;
+    // Uploads an RGBA8 sub-rectangle into an existing texture (dynamic font
+    // atlases). `x/y` are in pixels; the data must cover w*h*4 bytes.
+    virtual void UpdateTextureRegion(TextureHandle texture, int x, int y, int w, int h,
+                                     const void* rgba) = 0;
     // Compressed (block-compressed) texture upload, e.g. BC1/DXT1: 4x4 blocks,
     // 8 bytes per block (GL_COMPRESSED_RGBA_S3TC_DXT1_EXT). `format` is the
     // API-specific internal format code (see assets::kBc1Format); both

@@ -303,15 +303,9 @@ bool EditorApp::OnCreate() {
 
     pixelFont_ = renderer_.CreateFontFromMemory(neon_rush::kEmbeddedFontData,
                                                 neon_rush::kEmbeddedFontSize, 24);
-    const std::vector<std::string> cjkSamples = {
-        "霓虹编辑器场景层级属性名称位置旋转缩放颜色保存加载添加删除播放停止网格头盔立方体树木地面",
-        "工具栏视口实体选择变换材质渲染确定取消打开文件写入成功失败无法松树",
-        "块测试引擎演示场景树表单滚动列表地形添加节点自研控件树拖动分隔条右侧面板第行",
-        "文件视图退出图层属性菜单帮助关于版本相机旋转中键平移滚轮拾取",
-        "2D模式返回向日葵豌豆坚果橡皮僵尸保存关卡加载家葵豆僵阳点击卡牌选择格子种植收集胜利失败",
-        "寒冰樱桃炸弹路障铁桶试玩停止",
-        "霓虹大陆等级金币经验波次击杀火球治疗左键近战右键冲刺村长狼群威胁村庄用移动击败获得倒下了苏醒中欢迎来到升级你达到了"};
-    cjkFont_ = assetMgr_.LoadSystemCJKFont(24, cjkSamples);
+        // System CJK font with DYNAMIC glyphs: scene names, panels and
+    // playtest HUD render any Chinese text without maintaining a list.
+    cjkFont_ = assetMgr_.LoadSystemCJKFont(24);
     ui_.Init(&renderer_, cjkFont_.Valid() ? cjkFont_ : pixelFont_);
 
     if (!gfx::ImGuiNeon_Init(&renderer_, gfx::ImGuiNeon_SystemCJKPath())) {
@@ -2719,8 +2713,14 @@ bool EditorApp::ResolveMesh(SceneEntity& e) {
     } else if (key == "house") {
         e.mesh = gfx::MakeHouseMesh(renderer_);
         e.material = gfx::Material::Lit({}, gfx::Color::White, 8.0f);
-    } else if (key == "npc") {
+    } else if (key == "npc" || key.compare(0, 4, "npc:") == 0) {
         // The entity tint selects the villager's tunic; head stays skin-tone.
+        if (key.compare(0, 4, "npc:") == 0) {
+            // "npc:r,g,b" encodes the tunic tint; decode it onto e.tint.
+            int r = 128, g = 128, b = 128;
+            std::sscanf(key.c_str() + 4, "%d,%d,%d", &r, &g, &b);
+            e.tint = {r / 255.0f, g / 255.0f, b / 255.0f, 1.0f};
+        }
         e.mesh = gfx::MakeNPCMesh(renderer_, {e.tint.r, e.tint.g, e.tint.b, 1.0f});
         e.material = gfx::Material::Lit({}, gfx::Color::White, 12.0f);
     } else if (key == "hero") {

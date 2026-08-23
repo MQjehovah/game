@@ -559,6 +559,18 @@ public:
         textures_.erase(it);
     }
 
+    void UpdateTextureRegion(TextureHandle texture, int x, int y, int w, int h,
+                             const void* rgba) override {
+        auto it = textures_.find(texture.id);
+        if (it == textures_.end() || !rgba || w <= 0 || h <= 0) return;
+        if (x < 0 || y < 0 || x + w > it->second.width || y + h > it->second.height) return;
+        auto& g = gl::GetGL();
+        g.BindTexture(glc::Texture2D, it->second.id);
+        g.TexSubImage2D(glc::Texture2D, 0, x, y, w, h, glc::Rgba, glc::UnsignedByte, rgba);
+        g.BindTexture(glc::Texture2D, 0);
+        CheckError("UpdateTextureRegion");
+    }
+
     TextureHandle CreateTextureCompressed(int width, int height, uint32_t format,
                                           const void* data, size_t size) override {
         if (!data || width <= 0 || height <= 0 || size == 0) return {};

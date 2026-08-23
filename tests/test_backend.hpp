@@ -48,6 +48,7 @@ public:
 
     neon::gfx::TextureHandle CreateTexture(const neon::gfx::TextureDesc&) override { return {1}; }
     void DestroyTexture(neon::gfx::TextureHandle) override {}
+    void UpdateTextureRegion(neon::gfx::TextureHandle, int, int, int, int, const void*) override {}
     neon::gfx::TextureHandle CreateTextureCompressed(int, int, uint32_t, const void*, size_t) override {
         return {1};
     }

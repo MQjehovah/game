@@ -1725,6 +1725,11 @@ void Renderer::DrawText(const Font& font, const std::string& text, const math::V
             continue;
         }
         const Font::Glyph* g = font.FindGlyph(cp);
+        if (!g) {
+            // Dynamic glyphs: rasterize the missing codepoint into the atlas.
+            const_cast<Font&>(font).EnsureGlyph(cp);
+            g = font.FindGlyph(cp);
+        }
         if (!g) continue;
         math::Vec2 a{p.x + cursorX + g->xoff * scale, p.y + cursorY + g->yoff * scale};
         math::Vec2 b{p.x + cursorX + g->xoff2 * scale, p.y + cursorY + g->yoff2 * scale};
