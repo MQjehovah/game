@@ -716,7 +716,7 @@ void EditorApp::BuildAssetPanel() {
 
         // Unity-style Project filter tabs: 全部 / 模型 / 贴图 / 脚本.
         const char* filters[] = {"全部", "模型", "贴图", "脚本", "材质"};
-        for (int f = 0; f < 4; ++f) {
+        for (int f = 0; f < 5; ++f) {
             if (f) ImGui::SameLine();
             if (ImGui::SmallButton(filters[f])) assetFilter_ = f;
             if (assetFilter_ == f) {
@@ -726,7 +726,11 @@ void EditorApp::BuildAssetPanel() {
         }
         ImGui::Separator();
 
-        ImGui::BeginChild("##asset_list", ImVec2(0, -170.0f), ImGuiChildFlags_Borders);
+        // The panel docks at the bottom of the window, so a fixed -170px
+        // preview reserve can squeeze the list to zero height (it read as
+        // "empty"). Keep the list at least 48px and let the preview shrink.
+        const float listH = std::max(48.0f, ImGui::GetContentRegionAvail().y - 150.0f);
+        ImGui::BeginChild("##asset_list", ImVec2(0, listH), ImGuiChildFlags_Borders);
         if (assetEntries_.empty()) {
             ImGui::TextWrapped("此目录为空。使用上方 浏览导入 / 浏览目录 添加外部资源，"
                                "或 新建 创建 Lua 脚本 / JSON / 材质球 / 目录。");
@@ -792,15 +796,15 @@ void EditorApp::BuildAssetPanel() {
                         // while ImGui samples top-down (uv0 = widget top-left),
                         // so flip the V range here. Texture previews loaded via
                         // stb_image (top-down rows) keep the default UVs.
-                        ImGui::Image(thumb->second.texId, ImVec2(140.0f, 140.0f),
+                        ImGui::Image(thumb->second.texId, ImVec2(96.0f, 96.0f),
                                      ImVec2(0.0f, 1.0f), ImVec2(1.0f, 0.0f));
                     } else {
-                        ImGui::Dummy(ImVec2(140.0f, 140.0f));
+                        ImGui::Dummy(ImVec2(96.0f, 96.0f));
                         ImGui::SameLine();
                         ImGui::TextDisabled("生成缩略图中…");
                     }
                 } else if (IsImageExt(e.name) && previewTexId_ != ImTextureID_Invalid) {
-                    ImGui::Image(previewTexId_, ImVec2(140.0f, 140.0f));
+                    ImGui::Image(previewTexId_, ImVec2(96.0f, 96.0f));
                     ImGui::SameLine();
                     ImGui::TextDisabled("%dx%d", previewTexture_.Width(),
                                         previewTexture_.Height());
