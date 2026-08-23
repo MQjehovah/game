@@ -15,67 +15,193 @@
         }
       },
       "name": "PvZ"
+    },
+    {
+      "components": {
+        "plant": {
+          "col": 1,
+          "row": 4,
+          "type": "sunflower"
+        },
+        "transform": {
+          "pos": [
+            0,
+            0,
+            0
+          ]
+        }
+      },
+      "name": "sunflower_4_1"
+    },
+    {
+      "components": {
+        "plant": {
+          "col": 2,
+          "row": 4,
+          "type": "peashooter"
+        },
+        "transform": {
+          "pos": [
+            0,
+            0,
+            0
+          ]
+        }
+      },
+      "name": "peashooter_4_2"
+    },
+    {
+      "components": {
+        "plant": {
+          "col": 3,
+          "row": 4,
+          "type": "snowpea"
+        },
+        "transform": {
+          "pos": [
+            0,
+            0,
+            0
+          ]
+        }
+      },
+      "name": "snowpea_4_3"
+    },
+    {
+      "components": {
+        "plant": {
+          "col": 2,
+          "row": 2,
+          "type": "sunflower"
+        },
+        "transform": {
+          "pos": [
+            0,
+            0,
+            0
+          ]
+        }
+      },
+      "name": "sunflower_2_2"
+    },
+    {
+      "components": {
+        "plant": {
+          "col": 3,
+          "row": 2,
+          "type": "peashooter"
+        },
+        "transform": {
+          "pos": [
+            0,
+            0,
+            0
+          ]
+        }
+      },
+      "name": "peashooter_2_3"
+    },
+    {
+      "components": {
+        "plant": {
+          "col": 3,
+          "row": 0,
+          "type": "wallnut"
+        },
+        "transform": {
+          "pos": [
+            0,
+            0,
+            0
+          ]
+        }
+      },
+      "name": "wallnut_0_3"
+    },
+    {
+      "components": {
+        "transform": {
+          "pos": [
+            0,
+            0,
+            0
+          ]
+        },
+        "zombie": {
+          "delay": 8,
+          "row": 4,
+          "type": "basic"
+        }
+      },
+      "name": "zombie_7"
+    },
+    {
+      "components": {
+        "transform": {
+          "pos": [
+            0,
+            0,
+            0
+          ]
+        },
+        "zombie": {
+          "delay": 18,
+          "row": 2,
+          "type": "cone"
+        }
+      },
+      "name": "zombie_8"
+    },
+    {
+      "components": {
+        "transform": {
+          "pos": [
+            0,
+            0,
+            0
+          ]
+        },
+        "zombie": {
+          "delay": 28,
+          "row": 1,
+          "type": "basic"
+        }
+      },
+      "name": "zombie_9"
+    },
+    {
+      "components": {
+        "transform": {
+          "pos": [
+            0,
+            0,
+            0
+          ]
+        },
+        "zombie": {
+          "delay": 38,
+          "row": 4,
+          "type": "bucket"
+        }
+      },
+      "name": "zombie_10"
+    },
+    {
+      "components": {
+        "transform": {
+          "pos": [
+            0,
+            0,
+            0
+          ]
+        },
+        "zombie": {
+          "delay": 45,
+          "row": 3,
+          "type": "cone"
+        }
+      },
+      "name": "zombie_11"
     }
-  ],
-  "level": {
-    "plants": [
-      {
-        "col": 1,
-        "plant": "sunflower",
-        "row": 4
-      },
-      {
-        "col": 2,
-        "plant": "peashooter",
-        "row": 4
-      },
-      {
-        "col": 3,
-        "plant": "snowpea",
-        "row": 4
-      },
-      {
-        "col": 2,
-        "plant": "sunflower",
-        "row": 2
-      },
-      {
-        "col": 3,
-        "plant": "peashooter",
-        "row": 2
-      },
-      {
-        "col": 3,
-        "plant": "wallnut",
-        "row": 0
-      }
-    ],
-    "zombies": [
-      {
-        "delay": 8,
-        "row": 4,
-        "type": "basic"
-      },
-      {
-        "delay": 18,
-        "row": 2,
-        "type": "cone"
-      },
-      {
-        "delay": 28,
-        "row": 1,
-        "type": "basic"
-      },
-      {
-        "delay": 38,
-        "row": 4,
-        "type": "bucket"
-      },
-      {
-        "delay": 45,
-        "row": 3,
-        "type": "cone"
-      }
-    ]
-  }
+  ]
 }

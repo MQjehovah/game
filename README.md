@@ -119,7 +119,7 @@ cmake --build build --target neon_tests -j
 
 **项目切换（Godot 风格）**：工具栏左侧是项目选择器，自动扫描 `projects/` 下带 `game.json` 的项目（如 NeonRealm 3D、NeonPvZ 2D），右侧是场景选择器。切换项目会按 `game.json` 的 `editor.mode` 进入对应编辑视图（3D 场景树或 2D 画布）并加载起始场景；上次打开的项目会从 `neon_editor_config.json` 恢复。试玩（`▶ 试玩`）直接运行当前项目的场景。"项目"菜单可手输任意项目目录、重新加载或导出场景。
 
-**2D 与 3D 统一由场景维护**：场景文件（`scenes/*.json`）是唯一的编辑/运行单元。3D 场景由 `entities` 组成；2D 场景的关卡布局放在同一个文件的可选 `level` 字段（`{"plants": [...], "zombies": [...]}`），编辑器 2D 画布直接编辑它，运行时 Lua 脚本也读同一个文件——不存在单独的 `assets/levels/` 数据路径。
+**2D 与 3D 统一由场景维护**：场景文件（`scenes/*.json`）是唯一的编辑/运行单元，与 2D/3D 无关——一关就是一个场景。植物、僵尸和 3D 实体一样是场景里的实体，带 `plant`/`zombie` 组件；编辑器 2D 画布用格子视图编辑这些实体并写回场景文件，运行时 `pvz.lua` 从同一个场景文件读取——"关卡"是游戏概念（关卡列表、波次表由项目脚本/数据表达），引擎只有场景。
 
 ## 运行与验证
 
@@ -166,7 +166,7 @@ build\neon_game.exe --connect 127.0.0.1:26000 --scene tests\data\neon_server_sam
 
 ### 数据驱动 2D 游戏（NeonPvZ，植物大战僵尸原型）
 
-玩法与绘制全部在 Lua 脚本里（`projects/pvz/scripts/pvz.lua`），精灵贴图在 `projects/pvz/assets/sprites/`，关卡布局由编辑器 2D 模式摆放在场景文件 `projects/pvz/scenes/pvz.json` 的 `level` 字段：
+玩法与绘制全部在 Lua 脚本里（`projects/pvz/scripts/pvz.lua`），精灵贴图在 `projects/pvz/assets/sprites/`，关卡布局由编辑器 2D 模式以场景实体（`plant`/`zombie` 组件）摆放在场景文件 `projects/pvz/scenes/pvz.json`：
 
 ```bat
 :: 1) 打开编辑器，工具栏点"2D模式"（或 --2d 启动）：摆植物/僵尸刷怪点，F5 或 ▶ 试玩直接开打

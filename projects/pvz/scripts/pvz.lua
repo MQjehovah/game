@@ -59,34 +59,40 @@ local function cell_center(r, c)
 end
 
 local function load_level()
-  -- The level lives INSIDE the scene file (scenes/pvz.json), so 2D and 3D
-  -- projects both keep their editable scene data under scenes/.
+  -- The level is a SCENE (scenes/pvz.json): plants and zombies are scene
+  -- entities carrying "plant"/"zombie" components. The runtime's ECS keeps
+  -- the script entry entity; the board data is read from the same file the
+  -- editor writes, so 2D and 3D projects share one scene pipeline.
   local text = ReadText("scenes/pvz.json")
   if text == nil or text == "" then return end
   local dom = Json.Parse(text)
   if dom == nil then return end
-  local level = dom.level
-  if level == nil then return end
-  if level.plants ~= nil then
-    for _, p in ipairs(level.plants) do
-      local row, col = (p.row or 0) + 1, (p.col or 0) + 1
-      if PLANTS[p.plant] and row >= 1 and row <= ROWS and col >= 1 and col <= COLS
-          and board[row] and board[row][col] == nil then
-        board[row][col] = { plant = p.plant, hp = PLANTS[p.plant].hp, t = 0 }
+  if dom.entities ~= nil then
+    for _, e in ipairs(dom.entities) do
+      local comps = e.components
+      if comps ~= nil then
+        local p = comps.plant
+        if p ~= nil then
+          local row, col = (p.row or 0) + 1, (p.col or 0) + 1
+          local pname = p.type or "sunflower"
+          if PLANTS[pname] and row >= 1 and row <= ROWS and col >= 1 and col <= COLS
+              and board[row] and board[row][col] == nil then
+            board[row][col] = { plant = pname, hp = PLANTS[pname].hp, t = 0 }
+          end
+        end
+        local z = comps.zombie
+        if z ~= nil then
+          local row = (z.row or 0) + 1
+          if row >= 1 and row <= ROWS then
+            local zt = z.type or "basic"
+            if ZOMBIES[zt] == nil then zt = "basic" end
+            table.insert(spawns, { row = row, delay = z.delay or 10, type = zt })
+          end
+        end
       end
     end
   end
-  if level.zombies ~= nil then
-    for _, z in ipairs(level.zombies) do
-      local row = (z.row or 0) + 1
-      if row >= 1 and row <= ROWS then
-        local zt = z.type or "basic"
-        if ZOMBIES[zt] == nil then zt = "basic" end
-        table.insert(spawns, { row = row, delay = z.delay or 10, type = zt })
-      end
-    end
-    table.sort(spawns, function(a, b) return a.delay < b.delay end)
-  end
+  table.sort(spawns, function(a, b) return a.delay < b.delay end)
 end
 
 local function handle_click(x, y)

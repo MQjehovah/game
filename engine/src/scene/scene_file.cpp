@@ -694,8 +694,11 @@ core::Result<int> Instantiate(ecs::World& world, const SceneFile& scene,
 
         for (const auto& [name, data] : effective) {
             if (!reg.Has(name)) {
-                NEON_LOG_WARN("scene: %s: skipping component '%s' (no factory registered)",
-                              label.c_str(), name.c_str());
+                // Components without a factory are legitimate scene DATA (e.g.
+                // a 2D game's "plant"/"zombie" layout entities read by the
+                // project script), so this is debug-level noise, not a warning.
+                NEON_LOG_DEBUG("scene: %s: data component '%s' (no factory, kept as data)",
+                               label.c_str(), name.c_str());
                 continue;
             }
             const ComponentFactory& fn = reg.All().at(name);

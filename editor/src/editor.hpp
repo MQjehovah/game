@@ -152,9 +152,9 @@ private:
     void SaveEditorConfig();
     void RunUISmokeTest();
     // 2D mode: a data-driven 2D canvas (the NeonPvZ lawn editor). Plants are
-    // placed per grid cell; zombie spawns per row. The level layout lives in
-    // the scene file's root["level"] (scenes/*.json), the same file the
-    // neon_game player's Lua script reads.
+    // placed per grid cell; zombie spawns per row. The layout is stored as
+    // plant/zombie ENTITIES in the scene file (scenes/*.json), the same file
+    // the neon_game player's Lua script reads.
     enum class EditMode { Scene3D, Scene2D };
     EditMode editMode_ = EditMode::Scene3D;
     struct Pvz2DCell {
@@ -279,8 +279,8 @@ private:
     std::vector<std::string> projectScenes_; // current project scene files
     std::string currentSceneName_; // scene picker label (loaded scene file)
     // The parsed root of the scene currently in the editor + its file path.
-    // 2D levels live INSIDE the scene (root["level"]), so SavePvzLevel writes
-    // back into the scene file instead of a separate assets/levels/*.json.
+    // 2D levels are scene entities (plant/zombie components), so SavePvzLevel
+    // writes them back into the scene file.
     core::Json currentSceneRoot_;
     std::string currentScenePath_;
 

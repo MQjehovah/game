@@ -39,8 +39,8 @@ namespace neon::editor {
 namespace {
 
 // 2D canvas/level layout (must match projects/pvz/scripts/pvz.lua: 9x5 cells
-// of 100 at (190,160)). Shared by LoadScene's root["level"] parsing and the
-// 2D canvas editor.
+// of 100 at (190,160)). Shared by LoadScene's plant/zombie entity parsing and
+// the 2D canvas editor.
 constexpr int kPvzRows = 5;
 constexpr int kPvzCols = 9;
 const char* kPvzPlantNames[5] = {"sunflower", "peashooter", "wallnut", "snowpea", "cherry"};
@@ -350,10 +350,18 @@ bool EditorApp::OnCreate() {
         std::ifstream in(projectDir_ + "/game.json", std::ios::binary);
         if (in.is_open()) SwitchProject(projectDir_);
     }
-    // The config may have restored a different projectDir_ after Set2DMode ran
-    // (main.cpp sets it before Run). Re-enter 2D mode so the canvas + playtest
-    // use the PvZ project regardless.
-    if (editMode_ == EditMode::Scene2D) Enter2DMode();
+    // 2D edit mode needs a 2D project: --2d / --2d-play with no 2D project
+    // open defaults to the bundled PvZ project (data-driven switch, so the
+    // canvas + playtest always see plant/zombie entities). The toolbar view
+    // switcher never changes the project - Enter2DMode only loads the scene.
+    if (editMode_ == EditMode::Scene2D) {
+        ScanProjects();
+        if ((projectMode_ != "2d" || projectStartScene_.empty()) &&
+            std::ifstream("projects/pvz/game.json").is_open()) {
+            SwitchProject("projects/pvz");
+        }
+        Enter2DMode();
+    }
     if (pvzPlaytestOnStart_) StartPlaytest();
     if (!projectDirOnStart_.empty()) {
         projectDir_ = projectDirOnStart_;
@@ -2524,9 +2532,9 @@ void EditorApp::StartPlaytest() {
     std::string json;
 
     if (editMode_ == EditMode::Scene2D) {
-        // 2D project (e.g. NeonPvZ): the edited level lives in the scene file
-        // (root["level"]); save it back, then play the project's start scene
-        // so the Lua script reads the same scene the editor edited.
+        // 2D project (e.g. NeonPvZ): the edited level is scene entities
+        // (plant/zombie components); save them back, then play the project's
+        // start scene so the Lua script reads the same scene the editor edited.
         SavePvzLevel();
         cfg.assetBaseDir = projectDir_;
         const std::string sceneRel =
@@ -2972,62 +2980,16 @@ void EditorApp::LoadScene(const std::string& path) {
     const core::Json* arr = root.Get("entities");
     if (!arr) return;
     // Keep the parsed scene root + path: 2D levels live inside the scene
-    // (root["level"]) and SavePvzLevel writes back into this file, so scenes
-    // are the single source of truth for both 3D and 2D projects.
+    // as plant/zombie ENTITIES and SavePvzLevel writes them back into this
+    // file, so scenes are the single source of truth for both 3D and 2D.
     currentSceneRoot_ = root;
     currentScenePath_ = path;
-    // A scene with a root-level "level" object is a 2D level: parse it into
-    // the 2D canvas and switch to the 2D edit view.
     pvzPlants_.clear();
     pvzZombies_.clear();
     pvzNextDelay_ = 8.0f;
-    bool hasLevel = false;
-    if (const core::Json* lv = root.Get("level")) {
-        if (lv->IsObject()) {
-            hasLevel = true;
-            if (const core::Json* plants = lv->Get("plants")) {
-                if (plants->IsArray()) {
-                    for (size_t i = 0; i < plants->Size(); ++i) {
-                        const core::Json* e = plants->At(i);
-                        if (!e) continue;
-                        const int row = e->Get("row") ? e->Get("row")->GetInt(-1) : -1;
-                        const int col = e->Get("col") ? e->Get("col")->GetInt(-1) : -1;
-                        const std::string name =
-                            e->Get("plant") ? e->Get("plant")->GetString() : "";
-                        int type = -1;
-                        for (int t = 0; t < 5; ++t)
-                            if (name == kPvzPlantNames[t]) type = t;
-                        if (row >= 0 && row < kPvzRows && col >= 0 && col < kPvzCols &&
-                            type >= 0)
-                            pvzPlants_.push_back({row, col, type});
-                    }
-                }
-            }
-            if (const core::Json* zombies = lv->Get("zombies")) {
-                if (zombies->IsArray()) {
-                    for (size_t i = 0; i < zombies->Size(); ++i) {
-                        const core::Json* e = zombies->At(i);
-                        if (!e) continue;
-                        const int row = e->Get("row") ? e->Get("row")->GetInt(-1) : -1;
-                        const float delay =
-                            e->Get("delay") ? static_cast<float>(e->Get("delay")->GetNumber()) : 8.0f;
-                        const std::string name =
-                            e->Get("type") ? e->Get("type")->GetString("basic") : "basic";
-                        int type = 0;
-                        for (int t = 0; t < 3; ++t)
-                            if (name == kPvzZombieNames[t]) type = t;
-                        if (row >= 0 && row < kPvzRows)
-                            pvzZombies_.push_back({row, delay, type});
-                    }
-                }
-            }
-            editMode_ = EditMode::Scene2D;
-            NEON_LOG_INFO("Scene level loaded (%zu plants, %zu zombie spawns)",
-                          pvzPlants_.size(), pvzZombies_.size());
-        }
-    }
     // Replace entity list, re-resolve meshes.
     std::vector<SceneEntity> loaded;
+    bool has2DData = false; // any plant/zombie entity -> a 2D level scene
     // Support both the editor's flat format and the runtime's componentized
     // SceneFile format ("components": {transform/mesh/health/script}) so a
     // data-driven project scene (e.g. projects/neon_realm) opens directly.
@@ -3073,6 +3035,39 @@ void EditorApp::LoadScene(const std::string& path) {
                 e.scriptBackend = s->Get("backend") ? s->Get("backend")->GetString("lua") : "lua";
                 if (const core::Json* v = s->Get("vars")) e.scriptVars = *v;
             }
+            if (const core::Json* pl = comps->Get("plant")) {
+                if (pl->IsObject()) {
+                    const int row = pl->Get("row") ? pl->Get("row")->GetInt(-1) : -1;
+                    const int col = pl->Get("col") ? pl->Get("col")->GetInt(-1) : -1;
+                    const std::string name =
+                        pl->Get("type") ? pl->Get("type")->GetString("sunflower") : "sunflower";
+                    int type = -1;
+                    for (int t = 0; t < 5; ++t)
+                        if (name == kPvzPlantNames[t]) type = t;
+                    if (row >= 0 && row < kPvzRows && col >= 0 && col < kPvzCols && type >= 0) {
+                        pvzPlants_.push_back({row, col, type});
+                        has2DData = true;
+                    }
+                }
+            }
+            if (const core::Json* zb = comps->Get("zombie")) {
+                if (zb->IsObject()) {
+                    const int row = zb->Get("row") ? zb->Get("row")->GetInt(-1) : -1;
+                    const float delay =
+                        zb->Get("delay")
+                            ? static_cast<float>(zb->Get("delay")->GetNumber())
+                            : 8.0f;
+                    const std::string name =
+                        zb->Get("type") ? zb->Get("type")->GetString("basic") : "basic";
+                    int type = 0;
+                    for (int t = 0; t < 3; ++t)
+                        if (name == kPvzZombieNames[t]) type = t;
+                    if (row >= 0 && row < kPvzRows) {
+                        pvzZombies_.push_back({row, delay, type});
+                        has2DData = true;
+                    }
+                }
+            }
         } else {
             if (const core::Json* p = j->Get("parent")) e.parent = p->GetString();
             e.meshKey = j->Get("mesh")->GetString("cube");
@@ -3108,7 +3103,12 @@ void EditorApp::LoadScene(const std::string& path) {
             loaded.push_back(std::move(e));
         }
     }
-    if (!loaded.empty() || hasLevel) {
+    if (has2DData) {
+        editMode_ = EditMode::Scene2D;
+        NEON_LOG_INFO("Scene 2D level loaded (%zu plants, %zu zombie spawns)",
+                      pvzPlants_.size(), pvzZombies_.size());
+    }
+    if (!loaded.empty() || has2DData) {
         entities_ = std::move(loaded);
         SetSelection(-1);
         history_.Clear(); // undo history from the previous scene is invalid
@@ -3212,8 +3212,8 @@ void EditorApp::SwitchProject(const std::string& dir) {
     SetSelection(-1);
     if (projectMode_ == "2d") {
         // 2D projects are scenes too: LoadScene reads scenes/<start>.json and
-        // its root["level"] (the 2D level layout) switches the editor to the
-        // 2D canvas automatically. No separate assets/levels/ data path.
+        // its plant/zombie entities switch the editor to the 2D canvas
+        // automatically. No separate assets/levels/ data path.
         editMode_ = EditMode::Scene2D;
     } else {
         editMode_ = EditMode::Scene3D;
@@ -3377,73 +3377,144 @@ void EditorApp::SavePvzLevel() {
         NEON_LOG_ERROR("2D: no scene loaded; cannot save the level (open a project scene)");
         return;
     }
-    // Only write into a scene that actually carries 2D level data (or belongs
-    // to a declared 2D project). Guard against saving into a 3D scene (e.g.
-    // the default sandbox) when the view was switched manually.
-    const core::Json* lv = currentSceneRoot_.Get("level");
-    if (projectMode_ != "2d" && (lv == nullptr || !lv->IsObject())) {
-        NEON_LOG_ERROR("2D: current scene '%s' has no level data; refusing to save",
+    // Only write into a scene that carries plant/zombie entities (a 2D level)
+    // or belongs to a declared 2D project. Guard against saving into a 3D
+    // scene (e.g. the default sandbox) when the view was switched manually.
+    bool has2DEntities = false;
+    if (const core::Json* ents = currentSceneRoot_.Get("entities")) {
+        if (ents->IsArray()) {
+            for (size_t i = 0; i < ents->Size(); ++i) {
+                const core::Json* e = ents->At(i);
+                const core::Json* comps = e ? e->Get("components") : nullptr;
+                if (comps && comps->IsObject() &&
+                    (comps->Get("plant") != nullptr || comps->Get("zombie") != nullptr)) {
+                    has2DEntities = true;
+                    break;
+                }
+            }
+        }
+    }
+    if (projectMode_ != "2d" && !has2DEntities) {
+        NEON_LOG_ERROR("2D: current scene '%s' has no plant/zombie entities; refusing to save",
                        currentScenePath_.c_str());
         return;
     }
-    core::Json root;
-    root.type_ = core::Json::Type::Object;
-    core::Json plants;
-    plants.type_ = core::Json::Type::Array;
+
+    auto makeNum = [](double v) {
+        core::Json j;
+        j.type_ = core::Json::Type::Number;
+        j.number_ = v;
+        return j;
+    };
+    auto makeStr = [](const std::string& s) {
+        core::Json j;
+        j.type_ = core::Json::Type::String;
+        j.string_ = s;
+        return j;
+    };
+    auto makePos = []() {
+        core::Json pos;
+        pos.type_ = core::Json::Type::Array;
+        core::Json z;
+        z.type_ = core::Json::Type::Number;
+        z.number_ = 0;
+        pos.array_ = {z, z, z};
+        return pos;
+    };
+
+    // Rebuild the scene's entities: keep every non-2D entity (the script
+    // entry, decorations...), then write plants/zombies as scene entities
+    // with plant/zombie components - the same entities the runtime reads.
+    core::Json entities;
+    entities.type_ = core::Json::Type::Array;
+    if (const core::Json* ents = currentSceneRoot_.Get("entities")) {
+        if (ents->IsArray()) {
+            for (size_t i = 0; i < ents->Size(); ++i) {
+                const core::Json* e = ents->At(i);
+                if (!e) continue;
+                const core::Json* comps = e->Get("components");
+                if (comps && comps->IsObject() &&
+                    (comps->Get("plant") != nullptr || comps->Get("zombie") != nullptr))
+                    continue;
+                entities.array_.push_back(*e);
+            }
+        }
+    }
     for (const Pvz2DCell& p : pvzPlants_) {
         core::Json e;
         e.type_ = core::Json::Type::Object;
-        e.object_["row"] = core::Json();
-        e.object_["row"].type_ = core::Json::Type::Number;
-        e.object_["row"].number_ = p.row;
-        e.object_["col"] = core::Json();
-        e.object_["col"].type_ = core::Json::Type::Number;
-        e.object_["col"].number_ = p.col;
-        e.object_["plant"] = core::Json();
-        e.object_["plant"].type_ = core::Json::Type::String;
-        e.object_["plant"].string_ = kPvzPlantNames[p.type];
-        plants.array_.push_back(std::move(e));
+        e.object_["name"] = makeStr(std::string(kPvzPlantNames[p.type]) + "_" +
+                                    std::to_string(p.row) + "_" + std::to_string(p.col));
+        core::Json comps;
+        comps.type_ = core::Json::Type::Object;
+        core::Json tf;
+        tf.type_ = core::Json::Type::Object;
+        tf.object_["pos"] = makePos();
+        comps.object_["transform"] = std::move(tf);
+        core::Json plant;
+        plant.type_ = core::Json::Type::Object;
+        plant.object_["row"] = makeNum(p.row);
+        plant.object_["col"] = makeNum(p.col);
+        plant.object_["type"] = makeStr(kPvzPlantNames[p.type]);
+        comps.object_["plant"] = std::move(plant);
+        e.object_["components"] = std::move(comps);
+        entities.array_.push_back(std::move(e));
     }
-    core::Json zombies;
-    zombies.type_ = core::Json::Type::Array;
     for (const PvzZombieSpawn& z : pvzZombies_) {
         core::Json e;
         e.type_ = core::Json::Type::Object;
-        e.object_["row"] = core::Json();
-        e.object_["row"].type_ = core::Json::Type::Number;
-        e.object_["row"].number_ = z.row;
-        e.object_["delay"] = core::Json();
-        e.object_["delay"].type_ = core::Json::Type::Number;
-        e.object_["delay"].number_ = z.delay;
-        e.object_["type"] = core::Json();
-        e.object_["type"].type_ = core::Json::Type::String;
-        e.object_["type"].string_ = kPvzZombieNames[z.type];
-        zombies.array_.push_back(std::move(e));
+        char name[64];
+        std::snprintf(name, sizeof(name), "zombie_%d", static_cast<int>(entities.array_.size()));
+        e.object_["name"] = makeStr(name);
+        core::Json comps;
+        comps.type_ = core::Json::Type::Object;
+        core::Json tf;
+        tf.type_ = core::Json::Type::Object;
+        tf.object_["pos"] = makePos();
+        comps.object_["transform"] = std::move(tf);
+        core::Json zombie;
+        zombie.type_ = core::Json::Type::Object;
+        zombie.object_["row"] = makeNum(z.row);
+        zombie.object_["delay"] = makeNum(z.delay);
+        zombie.object_["type"] = makeStr(kPvzZombieNames[z.type]);
+        comps.object_["zombie"] = std::move(zombie);
+        e.object_["components"] = std::move(comps);
+        entities.array_.push_back(std::move(e));
     }
-    root.object_["plants"] = std::move(plants);
-    root.object_["zombies"] = std::move(zombies);
-
-    // The level lives INSIDE the scene file (root["level"]), so saving writes
-    // back into the scene and keeps 2D/3D data under scenes/ uniformly.
-    currentSceneRoot_.object_["level"] = std::move(root);
+    currentSceneRoot_.object_["entities"] = std::move(entities);
+    // Legacy 2D layout field (the old assets/levels-style format) is dropped.
+    currentSceneRoot_.object_.erase("level");
     std::ofstream out(currentScenePath_, std::ios::binary);
     if (!out.is_open()) {
-        NEON_LOG_ERROR("2D: cannot write level into scene '%s'", currentScenePath_.c_str());
+        NEON_LOG_ERROR("2D: cannot write level entities into scene '%s'",
+                       currentScenePath_.c_str());
         return;
     }
     out << core::JsonWriter::Write(currentSceneRoot_);
-    NEON_LOG_INFO("2D: level saved into scene '%s' (%zu plants, %zu zombie spawns)",
+    NEON_LOG_INFO("2D: level entities saved into scene '%s' (%zu plants, %zu zombie spawns)",
                   currentScenePath_.c_str(), pvzPlants_.size(), pvzZombies_.size());
 }
 
 void EditorApp::LoadPvzLevel() {
-    // The level is part of the scene file, so "reload level" reloads the
-    // current scene when it already carries level data; otherwise fall back
-    // to the project start scene (e.g. right after startup, when the editor
-    // still shows the default sandbox).
-    const core::Json* lv =
-        currentSceneRoot_.IsObject() ? currentSceneRoot_.Get("level") : nullptr;
-    std::string path = (lv != nullptr && lv->IsObject() && !currentScenePath_.empty())
+    // Plants/zombies are scene entities, so "reload level" reloads the
+    // current scene when it already carries plant/zombie entities; otherwise
+    // fall back to the project start scene (e.g. right after startup, when
+    // the editor still shows the default sandbox).
+    bool has2DEntities = false;
+    if (const core::Json* ents = currentSceneRoot_.Get("entities")) {
+        if (ents->IsArray()) {
+            for (size_t i = 0; i < ents->Size(); ++i) {
+                const core::Json* e = ents->At(i);
+                const core::Json* comps = e ? e->Get("components") : nullptr;
+                if (comps && comps->IsObject() &&
+                    (comps->Get("plant") != nullptr || comps->Get("zombie") != nullptr)) {
+                    has2DEntities = true;
+                    break;
+                }
+            }
+        }
+    }
+    std::string path = (has2DEntities && !currentScenePath_.empty())
                            ? currentScenePath_
                            : projectDir_ + "/" +
                                  (projectStartScene_.empty() ? "scenes/pvz.json"
@@ -3452,16 +3523,9 @@ void EditorApp::LoadPvzLevel() {
 }
 
 void EditorApp::Enter2DMode() {
-    // The project switcher owns projectDir_ (SwitchProject loads the 2D
-    // project's start scene, whose root["level"] fills the canvas).
-    // Backward-compat for --2d: with no project open, fall back to the
-    // bundled PvZ project; otherwise never hijack the directory.
-    if (projectDir_ == "." && std::ifstream("projects/pvz/game.json").is_open()) {
-        projectDir_ = "projects/pvz";
-        std::strncpy(projectDirBuf_, projectDir_.c_str(), sizeof(projectDirBuf_) - 1);
-        projectDirBuf_[sizeof(projectDirBuf_) - 1] = '\0';
-        ScanProjects();
-    }
+    // The PROJECT switcher owns projectDir_; Enter2DMode only makes sure the
+    // 2D canvas has a scene to edit (reloading the current scene when it is a
+    // 2D level, or the project start scene otherwise).
     LoadPvzLevel();
 }
 
