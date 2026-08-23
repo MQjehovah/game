@@ -1661,6 +1661,19 @@ void EditorApp::RunUISmokeTest() {
         NEON_LOG_INFO("EDITOR-UI-SMOKE: forced 3D mode for the canonical smoke run");
     }
 
+    // --- Scene entity names stay UTF-8 (no mojibake regression) ---
+    {
+        const std::string ground = std::string("\xE5\x9C\xB0\xE9\x9D\xA2"); // 地面
+        const std::string hero = std::string("\xE8\x8B\xB1\xE9\x9B\x84");   // 英雄
+        bool foundHero = false;
+        for (const SceneEntity& e : entities_) {
+            if (e.name == hero) foundHero = true;
+        }
+        check(!entities_.empty() && entities_[0].name == ground,
+              "editor scene entity[0] name is 地面 (UTF-8 intact)");
+        check(foundHero, "editor scene contains 英雄 (UTF-8 intact)");
+    }
+
     // --- Dear ImGui tool layer ---
     check(ImGui::GetCurrentContext() != nullptr, "ImGui context created");
     check(ImGui::GetIO().Fonts->IsBuilt(), "ImGui font atlas built");

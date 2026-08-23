@@ -335,6 +335,30 @@ TEST(SceneParseRoundTrip) {
 }
 
 // ---------------------------------------------------------------------------
+// Chinese (UTF-8) entity names survive Parse -> ToJson -> Write -> Parse
+// ---------------------------------------------------------------------------
+
+TEST(SceneCjkNameRoundTrip) {
+    // "地面" as raw UTF-8 bytes: E5 9C B0 E9 9D A2.
+    const std::string ground = std::string("\xE5\x9C\xB0\xE9\x9D\xA2");
+    const std::string json =
+        "{\"entities\":[{\"name\":\"" + ground + "\",\"components\":{"
+        "\"transform\":{\"pos\":[0,0,0],\"scale\":[1,1,1]},"
+        "\"mesh\":{\"meshKey\":\"terrain\"}}}]}";
+    auto a = scene::SceneFile::Parse(json);
+    CHECK(a.Ok());
+    CHECK_EQ(a.Value().entities[0].name, ground);
+
+    const std::string written = core::JsonWriter::Write(a.Value().ToJson());
+    // The writer must emit the raw UTF-8 bytes, never \u-escaped Latin-1 lookalikes.
+    CHECK(written.find("\xE5\x9C\xB0\xE9\x9D\xA2") != std::string::npos);
+
+    auto b = scene::SceneFile::Parse(written);
+    CHECK(b.Ok());
+    CHECK_EQ(b.Value().entities[0].name, ground);
+}
+
+// ---------------------------------------------------------------------------
 // PrefabLibrary basics + mesh key prefix validation (assets mode)
 // ---------------------------------------------------------------------------
 

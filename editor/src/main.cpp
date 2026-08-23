@@ -87,7 +87,10 @@ int main(int argc, char** argv) {
     config.width = 1280;
     config.height = 720;
     config.resizable = true;
-    config.vsync = true;
+    // Headless/CI smoke runs must not be throttled by swap-vsync: a hidden or
+    // unocused window can stall on vblank and the fixed 120-frame smoke would
+    // take minutes instead of seconds.
+    config.vsync = !(smokeFrames > 0);
     config.glMajor = 4;
     config.glMinor = 6;
 
