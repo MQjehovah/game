@@ -206,6 +206,7 @@ bool PlayerApp::OnCreate() {
         "退出鼠标拖动旋转视角帧率游戏",
         "家葵豆坚果僵阳点击卡牌选择格子种植收集胜利失败向日葵豌豆射手阳光！；：",
         "寒冰樱桃炸弹路障铁桶",
+        "霓虹大陆等级金币经验波次击杀火球治疗左键近战右键冲刺村长狼群威胁村庄用移动击败获得倒下了苏醒中欢迎来到升级你达到了",
     };
     cjkFont_ = assetMgr_.LoadSystemCJKFont(24, cjkSamples);
     theme_.font = cjkFont_.Valid() ? cjkFont_ : pixelFont_;
@@ -369,6 +370,8 @@ void PlayerApp::UpdateCamera(float dt) {
     camera_.position = focus + offset * camDist_;
     camera_.target = focus;
     camera_.up = {0, 1, 0};
+    // Data-driven scripts use the orbit yaw for camera-relative movement.
+    runtime_.GameVars().Set("cameraYaw", script::Value::Num(yaw_));
     (void)dt;
 }
 

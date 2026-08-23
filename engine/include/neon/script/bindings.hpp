@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <functional>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -122,6 +123,13 @@ struct ScriptContext {
     // Resolves a sprite path (assets/sprites/*.png) to a texture handle.
     // Wired by GameRuntime; null -> DrawSprite draws a plain quad.
     std::function<gfx::TextureHandle(const std::string&)> loadTexture;
+    // Writes a text data file (saves etc.) into the project/pack data root.
+    // Wired by GameRuntime; null -> WriteText is a no-op.
+    std::function<bool(const std::string&, const std::string&)> writeData;
+    // Finds a scene entity by name (wired by GameRuntime).
+    std::function<ecs::Entity(const std::string&)> findEntity;
+    // Entities hidden from rendering by SetVisible (runtime-owned set).
+    std::set<uint64_t>* hiddenEntities = nullptr;
     // Optional: attaches a Lua script to a spawned entity (Spawn's 3rd arg) so
     // dynamically created entities (multi-player player controllers) run
     // on_start/on_update like scene-placed ones. Wired by GameRuntime.

@@ -271,6 +271,7 @@ private:
     std::vector<Projectile> projectiles_;
     SkillTable skills_;
     std::vector<script::Draw2DCmd> draw2d_; // script 2D canvas (on_render)
+    std::set<uint64_t> hiddenEntities_;     // SetVisible hide list (EntityKey)
     // Per-caster (EntityKey) skill cooldown seconds by skill name.
     std::unordered_map<uint64_t, std::map<std::string, float>> skillCooldowns_;
     gfx::Mesh fireballMesh_; // lazily built for skill-projectile rendering

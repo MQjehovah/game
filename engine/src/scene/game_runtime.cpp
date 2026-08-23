@@ -176,6 +176,17 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
         if (!cfg_.assets || path.empty()) return gfx::TextureHandle{};
         return cfg_.assets->LoadTexture(FullAssetPath(path)).Handle();
     };
+    scriptCtx_.writeData = [this](const std::string& path, const std::string& content) {
+        std::ofstream out(FullScriptPath(path), std::ios::binary);
+        if (!out.is_open()) return false;
+        out << content;
+        return static_cast<bool>(out);
+    };
+    scriptCtx_.findEntity = [this](const std::string& name) {
+        return FindNamedEntity(name);
+    };
+    hiddenEntities_.clear();
+    scriptCtx_.hiddenEntities = &hiddenEntities_;
     // Combat / control hooks so scripts can drive scene entities. Both
     // component flavors are supported: scene entities carry SceneTransform
     // (from the scene JSON "transform" component) while script-spawned
@@ -941,6 +952,7 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera) {
             ++dead; // scripts can Despawn entities mid-playtest
             continue;
         }
+        if (hiddenEntities_.count(EntityKey(item.ent)) != 0) continue; // SetVisible(false)
         if (!item.resolved) ResolveDrawItem(item, renderer);
         if (!item.resolved || item.failed) continue;
         const SceneTransform* t = world_.Get<SceneTransform>(item.ent);

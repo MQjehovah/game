@@ -79,6 +79,10 @@ public:
         if (v) Enter2DMode();
     }
     void SetPvzPlaytestOnStart(bool v) { pvzPlaytestOnStart_ = v; }
+    void SetProjectOnStart(const std::string& dir, bool loadScene) {
+        projectDirOnStart_ = dir;
+        loadProjectOnStart_ = loadScene;
+    }
     void SetBackendName(const std::string& name) { backendName_ = name; }
     bool SmokeFailed() const { return smokeFailed_; }
     void RequestScreenshot(const std::string& path, uint64_t frame) {
@@ -115,6 +119,8 @@ private:
     void UpdateViewport(float dt);
     void SaveScene();
     void LoadScene(const std::string& path);
+    // Loads <projectDir>/game.json -> startScene into the editor (3D projects).
+    void LoadProjectScene();
     void AddEntity(const std::string& meshKey);
     core::Status ExportScene();
     void LoadEditorConfig();
@@ -146,11 +152,6 @@ private:
     void LoadPvzLevel();
     // Defaults the project dir to projects/pvz on first run, loads the level.
     void Enter2DMode();
-    // In-editor 2D playtest (F5 / toolbar): runs projects/pvz via a
-    // GameRuntime so the edited level is playable without leaving the editor.
-    void TogglePvzPlaytest();
-    void StartPvzPlaytest();
-    void StopPvzPlaytest();
 
     // In-editor playtest (F5): a GameRuntime snapshot of the editor scene runs
     // in the viewport while the editor scene stays untouched.
@@ -224,10 +225,9 @@ private:
     int selected_ = -1;
     bool playtestActive_ = false;
     std::unique_ptr<scene::GameRuntime> playtest_; // non-null while playtesting
-    // 2D-mode playtest (NeonPvZ): independent runtime drawing via on_render.
-    bool pvzPlaytestActive_ = false;
-    std::unique_ptr<scene::GameRuntime> pvzPlaytest_;
     bool pvzPlaytestOnStart_ = false; // --2d-play: auto-start the playtest
+    std::string projectDirOnStart_;    // --project: open this project
+    bool loadProjectOnStart_ = false;  // --project also loads its start scene
     bool f5Pressed_ = false; // edge-trigger: Win32 repeats KeyDown while held
 
     // Undo/redo command stack. Every scene mutation (entity add/delete/

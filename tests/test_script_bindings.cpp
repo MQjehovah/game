@@ -413,3 +413,33 @@ TEST(ScriptBindingsDrawSprite) {
         CHECK(!cmds[1].texture.Valid());
     }
 }
+
+// Data-driven game plumbing: WriteText persists, FindNamedEntity resolves a
+// scene entity by name, SetVisible toggles the render-hide list.
+TEST(ScriptBindingsWriteFindVisible) {
+    Bindings b;
+    std::string writtenPath, writtenContent;
+    b.ctx.writeData = [&](const std::string& p, const std::string& c) {
+        writtenPath = p;
+        writtenContent = c;
+        return true;
+    };
+    ecs::Entity target = b.world.Create(); // id 1, generation 1
+    b.ctx.findEntity = [&](const std::string& n) {
+        return n == "hero" ? target : ecs::Entity{};
+    };
+    std::set<uint64_t> hidden;
+    b.ctx.hiddenEntities = &hidden;
+
+    CHECK(RunScript(*b.host, R"(
+      assert(WriteText("save.json", "level=3") == 1)
+      local h = FindNamedEntity("hero")
+      assert(h ~= nil and h.id == 1 and h.gen == 1)
+      assert(FindNamedEntity("ghost") == nil)
+      SetVisible(h, false)
+    )"));
+    CHECK_EQ(writtenPath, std::string("save.json"));
+    CHECK_EQ(writtenContent, std::string("level=3"));
+    const uint64_t key = (static_cast<uint64_t>(target.id) << 32) | target.generation;
+    CHECK(hidden.count(key) == 1u); // SetVisible(false) hid the entity
+}

@@ -38,6 +38,20 @@
 namespace neon::editor {
 namespace {
 
+gfx::Color ColorFromHex(const std::string& hex) {
+    if (hex.size() < 7 || hex[0] != '#') return gfx::Color::White;
+    auto nibble = [](char c) -> unsigned {
+        if (c >= '0' && c <= '9') return static_cast<unsigned>(c - '0');
+        if (c >= 'a' && c <= 'f') return static_cast<unsigned>(c - 'a' + 10);
+        if (c >= 'A' && c <= 'F') return static_cast<unsigned>(c - 'A' + 10);
+        return 255u;
+    };
+    auto byte = [&](char hi, char lo) {
+        return static_cast<float>(((nibble(hi) << 4) | nibble(lo)) / 255.0);
+    };
+    return {byte(hex[1], hex[2]), byte(hex[3], hex[4]), byte(hex[5], hex[6]), 1.0f};
+}
+
 std::string DirName(const std::string& path) {
     size_t pos = path.find_last_of("/\\");
     return pos == std::string::npos ? std::string(".") : path.substr(0, pos + 1);
@@ -295,7 +309,8 @@ bool EditorApp::OnCreate() {
         "块测试引擎演示场景树表单滚动列表地形添加节点自研控件树拖动分隔条右侧面板第行",
         "文件视图退出图层属性菜单帮助关于版本相机旋转中键平移滚轮拾取",
         "2D模式返回向日葵豌豆坚果橡皮僵尸保存关卡加载家葵豆僵阳点击卡牌选择格子种植收集胜利失败",
-        "寒冰樱桃炸弹路障铁桶试玩停止"};
+        "寒冰樱桃炸弹路障铁桶试玩停止",
+        "霓虹大陆等级金币经验波次击杀火球治疗左键近战右键冲刺村长狼群威胁村庄用移动击败获得倒下了苏醒中欢迎来到升级你达到了"};
     cjkFont_ = assetMgr_.LoadSystemCJKFont(24, cjkSamples);
     ui_.Init(&renderer_, cjkFont_.Valid() ? cjkFont_ : pixelFont_);
 
@@ -311,15 +326,24 @@ bool EditorApp::OnCreate() {
     LoadEditorConfig();
     NEON_LOG_INFO("NeonEditor ready (%zu entities), project dir '%s'", entities_.size(),
                   projectDir_.c_str());
+    // The smoke test is the canonical 3D-editor flow: --2d/--2d-play/--project
+    // only matter for interactive sessions. Normalize before any render so the
+    // gizmo/camera assertions see the default scene from frame 0.
+    if (smokeMode_) {
+        editMode_ = EditMode::Scene3D;
+        pvzPlaytestOnStart_ = false;
+        loadProjectOnStart_ = false;
+    }
     // The config may have restored a different projectDir_ after Set2DMode ran
     // (main.cpp sets it before Run). Re-enter 2D mode so the canvas + playtest
     // use the PvZ project regardless.
-    if (editMode_ == EditMode::Scene2D) {
-        Enter2DMode();
-        if (pvzPlaytestOnStart_) StartPvzPlaytest();
-    } else if (pvzPlaytestOnStart_) {
-        Set2DMode(true);
-        StartPvzPlaytest();
+    if (editMode_ == EditMode::Scene2D) Enter2DMode();
+    if (pvzPlaytestOnStart_) StartPlaytest();
+    if (!projectDirOnStart_.empty()) {
+        projectDir_ = projectDirOnStart_;
+        std::strncpy(projectDirBuf_, projectDir_.c_str(), sizeof(projectDirBuf_) - 1);
+        projectDirBuf_[sizeof(projectDirBuf_) - 1] = '\0';
+        if (loadProjectOnStart_) LoadProjectScene();
     }
     return true;
 }
@@ -475,8 +499,8 @@ void EditorApp::OnUpdate(float dt) {
         Input()->HandleEvent(e);
     }
     if (editMode_ == EditMode::Scene2D) {
-        if (pvzPlaytestActive_ && pvzPlaytest_) {
-            pvzPlaytest_->Tick(dt);
+        if (playtestActive_ && playtest_) {
+            playtest_->Tick(dt);
         } else if (Input()->MousePressed(platform::MouseButton::Left)) {
             // 2D canvas editing: clicks place/erase plants and zombie spawns.
             HandlePvzClick(renderer_.ScreenToUI(Input()->MousePos()));
@@ -643,9 +667,9 @@ void EditorApp::OnRender() {
     renderer_.BeginFrame({0.06f, 0.08f, 0.13f, 1.0f});
     gfx::Camera cam = ActiveCamera(); // 2D mode ignores it; the 3D branch re-reads
     if (editMode_ == EditMode::Scene2D) {
-        if (pvzPlaytestActive_ && pvzPlaytest_) {
+        if (playtestActive_ && playtest_) {
             // The runtime's on_render draws the playable game via the 2D canvas.
-            pvzPlaytest_->Draw(renderer_, cam);
+            playtest_->Draw(renderer_, cam);
         } else {
             DrawPvzCanvas();
         }
@@ -701,8 +725,11 @@ void EditorApp::OnRender() {
     // crisp and unbloomed on top.
     renderer_.EndScene();
 
-    // Game HUD (HP/mana/skill hotbar) overlays the playtest scene.
-    if (playtestActive_) DrawPlaytestHUD();
+    // Game HUD (HP/mana/skill hotbar) overlays the playtest scene. A
+    // data-driven game that defines on_render draws its OWN HUD on the 2D
+    // canvas, so the built-in HUD is only a fallback for legacy scenes.
+    if (playtestActive_ && playtest_ && !playtest_->HasScriptFunction("on_render"))
+        DrawPlaytestHUD();
 
     // Scene pass draw calls (before the thumbnail pass adds its own counts).
     if (smokeMode_) {
@@ -771,10 +798,7 @@ void EditorApp::OnEvent(const platform::InputEvent& event) {
     if (event.key == platform::Key::F5) {
         if (event.type == platform::InputEvent::Type::KeyDown) {
             if (!f5Pressed_ && !gfx::ImGuiNeon_WantCaptureKeyboard()) {
-                if (editMode_ == EditMode::Scene2D)
-                    TogglePvzPlaytest();
-                else
-                    TogglePlaytest();
+                TogglePlaytest();
             }
             f5Pressed_ = true;
         } else if (event.type == platform::InputEvent::Type::KeyUp) {
@@ -909,6 +933,10 @@ void EditorApp::UpdateViewport(float dt) {
             SetSelection(picked);
         }
     }
+    // Data-driven playtest scripts use the orbit yaw for camera-relative
+    // movement (same GameVar the neon_game player publishes).
+    if (playtestActive_ && playtest_)
+        playtest_->GameVars().Set("cameraYaw", script::Value::Num(yaw_));
     (void)dt;
 }
 
@@ -1336,6 +1364,7 @@ void EditorApp::BuildImGuiUI() {
             ImGui::TextDisabled("导出场景写入 %s/scenes/exported_scene.json",
                                 projectDir_.c_str());
             ImGui::Separator();
+            if (ImGui::MenuItem("打开项目场景")) LoadProjectScene();
             if (ImGui::MenuItem("导出游戏场景")) ExportScene();
             ImGui::EndMenu();
         }
@@ -1448,6 +1477,8 @@ void EditorApp::BuildImGuiUI() {
         ImGui::SameLine();
         if (ImGui::Button("加载")) LoadScene("editor_scene.json");
         ImGui::SameLine();
+        if (ImGui::Button("项目场景")) LoadProjectScene();
+        ImGui::SameLine();
         if (ImGui::Button("+头盔")) AddEntity("helmet");
         ImGui::SameLine();
         if (ImGui::Button("+方块")) AddEntity("cube");
@@ -1506,7 +1537,7 @@ void EditorApp::BuildImGuiUI() {
             if (!in2D) {
                 Enter2DMode();
             } else {
-                StopPvzPlaytest(); // leaving 2D: end any running playtest
+                StopPlaytest(); // leaving 2D: end any running playtest
             }
         }
         if (in2D) {
@@ -1515,9 +1546,6 @@ void EditorApp::BuildImGuiUI() {
                                      "橡皮", "僵尸", "路障", "铁桶"};
             ImGui::SetNextItemWidth(120.0f);
             ImGui::Combo("##pvz_brush", &pvzBrush_, brushes, 9);
-            ImGui::SameLine();
-            if (ImGui::Button(pvzPlaytestActive_ ? "■ 停止" : "▶ 试玩"))
-                TogglePvzPlaytest();
             ImGui::SameLine();
             if (ImGui::Button("保存关卡")) SavePvzLevel();
             ImGui::SameLine();
@@ -1549,6 +1577,12 @@ void EditorApp::RunUISmokeTest() {
         NEON_LOG_INFO("EDITOR-UI-SMOKE: [%s] %s", ok ? "PASS" : "FAIL", what);
         if (!ok) smokeFailed_ = true;
     };
+
+    if (editMode_ != EditMode::Scene3D) {
+        StopPlaytest();
+        editMode_ = EditMode::Scene3D;
+        NEON_LOG_INFO("EDITOR-UI-SMOKE: forced 3D mode for the canonical smoke run");
+    }
 
     // --- Dear ImGui tool layer ---
     check(ImGui::GetCurrentContext() != nullptr, "ImGui context created");
@@ -1600,13 +1634,15 @@ void EditorApp::RunUISmokeTest() {
     // The gizmo renders every frame while an entity is selected; verify the
     // setup path ran and the matrix boundary (engine row-major Mat4 <-> ImGuizmo
     // column-major float[16]) round-trips a synthetic TRS without drift.
-    check(gizmoDrawn_, "transform gizmo drawn in the viewport");
-    check(gizmoBeginFrame_, "ImGuizmo::BeginFrame called every frame");
-    check(gizmoAltWindowSet_, "gizmo hover bound to the dock host window");
-    check(gizmoRect_[0] == 0.0f && gizmoRect_[1] == 0.0f &&
-              gizmoRect_[2] == static_cast<float>(renderer_.ScreenWidth()) &&
-              gizmoRect_[3] == static_cast<float>(renderer_.ScreenHeight()),
-          "gizmo rect is the full window (matches scene render + picker)");
+    if (editMode_ == EditMode::Scene3D) {
+        check(gizmoDrawn_, "transform gizmo drawn in the viewport");
+        check(gizmoBeginFrame_, "ImGuizmo::BeginFrame called every frame");
+        check(gizmoAltWindowSet_, "gizmo hover bound to the dock host window");
+        check(gizmoRect_[0] == 0.0f && gizmoRect_[1] == 0.0f &&
+                  gizmoRect_[2] == static_cast<float>(renderer_.ScreenWidth()) &&
+                  gizmoRect_[3] == static_cast<float>(renderer_.ScreenHeight()),
+              "gizmo rect is the full window (matches scene render + picker)");
+    }
     auto nearVec = [](const math::Vec3& a, const math::Vec3& b) {
         return std::fabs(a.x - b.x) < 1e-4f && std::fabs(a.y - b.y) < 1e-4f &&
                std::fabs(a.z - b.z) < 1e-4f;
@@ -2279,22 +2315,39 @@ core::Result<core::Json> EditorApp::BuildPlaySceneJson() {
 
 void EditorApp::StartPlaytest() {
     StopPlaytest(); // restart semantics: a fresh snapshot each time
-    if (entities_.empty()) {
-        NEON_LOG_WARN("Editor: nothing to play (scene is empty)");
-        return;
-    }
-    auto root = BuildPlaySceneJson();
-    if (!root.Ok()) {
-        NEON_LOG_ERROR("Editor: cannot build play scene: %s", root.Error().c_str());
-        return;
-    }
-    std::string json = core::JsonWriter::Write(root.Value());
 
     scene::GameRuntimeConfig cfg;
     cfg.assets = &assetMgr_;
     cfg.scriptBaseDir = projectDir_.empty() ? "." : projectDir_;
     cfg.input = Input(); // hero controller reads live WASD/mouse input
-    // (The editor itself plays no sfx; script PlaySfx calls are no-ops here.)
+    cfg.font2d = cjkFont_.Valid() ? cjkFont_ : pixelFont_; // 2D HUD / on_render
+    std::string json;
+
+    if (editMode_ == EditMode::Scene2D) {
+        // 2D project (e.g. NeonPvZ): play the project's scene file directly so
+        // the edited level (assets/levels/*.json) is what the game loads.
+        SavePvzLevel();
+        cfg.assetBaseDir = projectDir_;
+        const std::string scenePath = projectDir_ + "/scenes/pvz.json";
+        std::ifstream in(scenePath, std::ios::binary);
+        if (!in.is_open()) {
+            NEON_LOG_ERROR("Editor: cannot read play scene '%s'", scenePath.c_str());
+            return;
+        }
+        json.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+    } else {
+        // 3D scene: play the editor's current entities (serialized snapshot).
+        if (entities_.empty()) {
+            NEON_LOG_WARN("Editor: nothing to play (scene is empty)");
+            return;
+        }
+        auto root = BuildPlaySceneJson();
+        if (!root.Ok()) {
+            NEON_LOG_ERROR("Editor: cannot build play scene: %s", root.Error().c_str());
+            return;
+        }
+        json = core::JsonWriter::Write(root.Value());
+    }
 
     playtest_ = std::make_unique<scene::GameRuntime>();
     core::Status st = playtest_->Start(json, cfg);
@@ -2706,38 +2759,79 @@ void EditorApp::LoadScene(const std::string& path) {
     if (!arr) return;
     // Replace entity list, re-resolve meshes.
     std::vector<SceneEntity> loaded;
+    // Support both the editor's flat format and the runtime's componentized
+    // SceneFile format ("components": {transform/mesh/health/script}) so a
+    // data-driven project scene (e.g. projects/neon_realm) opens directly.
+    const bool componentized =
+        arr->Size() > 0 && arr->At(0) != nullptr && arr->At(0)->Get("components") != nullptr;
     for (size_t i = 0; i < arr->Size(); ++i) {
         const core::Json* j = arr->At(i);
         if (!j) continue;
         SceneEntity e;
         e.name = j->Get("name")->GetString("entity");
-        e.meshKey = j->Get("mesh")->GetString("cube");
-        if (const core::Json* p = j->Get("pos")) {
-            e.pos = {static_cast<float>(p->At(0)->GetNumber()),
-                     static_cast<float>(p->At(1)->GetNumber()),
-                     static_cast<float>(p->At(2)->GetNumber())};
+        if (componentized) {
+            const core::Json* comps = j->Get("components");
+            if (!comps) continue;
+            if (const core::Json* t = comps->Get("transform")) {
+                if (const core::Json* p = t->Get("pos"))
+                    e.pos = {static_cast<float>(p->At(0)->GetNumber()),
+                             static_cast<float>(p->At(1)->GetNumber()),
+                             static_cast<float>(p->At(2)->GetNumber())};
+                if (const core::Json* s = t->Get("scale"))
+                    e.scale = {static_cast<float>(s->At(0)->GetNumber()),
+                               static_cast<float>(s->At(1)->GetNumber()),
+                               static_cast<float>(s->At(2)->GetNumber())};
+            }
+            if (const core::Json* m = comps->Get("mesh")) {
+                e.meshKey = m->Get("meshKey") ? m->Get("meshKey")->GetString("cube") : "cube";
+                if (const core::Json* c = m->Get("colorHex")) e.tint = ColorFromHex(c->GetString());
+                if (const core::Json* v = m->Get("metallic")) e.metallic = static_cast<float>(v->GetNumber());
+                if (const core::Json* v = m->Get("roughness")) e.roughness = static_cast<float>(v->GetNumber());
+                if (const core::Json* v = m->Get("ao")) e.ao = static_cast<float>(v->GetNumber());
+                if (const core::Json* v = m->Get("emissiveIntensity")) e.emissiveIntensity = static_cast<float>(v->GetNumber());
+                if (const core::Json* v = m->Get("albedoTex")) e.albedoTex = v->GetString();
+                if (const core::Json* v = m->Get("mrTex")) e.mrTex = v->GetString();
+                if (const core::Json* v = m->Get("aoTex")) e.aoTex = v->GetString();
+                if (const core::Json* v = m->Get("emissiveTex")) e.emissiveTex = v->GetString();
+            }
+            if (const core::Json* h = comps->Get("health")) {
+                if (const core::Json* v = h->Get("hp")) e.hp = static_cast<float>(v->GetNumber());
+                if (const core::Json* v = h->Get("maxHp")) e.maxHp = static_cast<float>(v->GetNumber());
+            }
+            if (const core::Json* s = comps->Get("script")) {
+                e.scriptPath = s->Get("path") ? s->Get("path")->GetString() : "";
+                e.scriptBackend = s->Get("backend") ? s->Get("backend")->GetString("lua") : "lua";
+                if (const core::Json* v = s->Get("vars")) e.scriptVars = *v;
+            }
+        } else {
+            e.meshKey = j->Get("mesh")->GetString("cube");
+            if (const core::Json* p = j->Get("pos")) {
+                e.pos = {static_cast<float>(p->At(0)->GetNumber()),
+                         static_cast<float>(p->At(1)->GetNumber()),
+                         static_cast<float>(p->At(2)->GetNumber())};
+            }
+            if (const core::Json* s = j->Get("scale")) {
+                e.scale = {static_cast<float>(s->At(0)->GetNumber()),
+                           static_cast<float>(s->At(1)->GetNumber()),
+                           static_cast<float>(s->At(2)->GetNumber())};
+            }
+            if (const core::Json* t = j->Get("tint")) {
+                e.tint = {static_cast<float>(t->At(0)->GetNumber()),
+                          static_cast<float>(t->At(1)->GetNumber()),
+                          static_cast<float>(t->At(2)->GetNumber()), 1.0f};
+            }
+            if (const core::Json* m = j->Get("metallic")) e.metallic = static_cast<float>(m->GetNumber());
+            if (const core::Json* r = j->Get("roughness")) e.roughness = static_cast<float>(r->GetNumber());
+            if (const core::Json* a = j->Get("ao")) e.ao = static_cast<float>(a->GetNumber());
+            if (const core::Json* ei = j->Get("emissiveIntensity")) e.emissiveIntensity = static_cast<float>(ei->GetNumber());
+            if (const core::Json* at = j->Get("albedoTex")) e.albedoTex = at->GetString();
+            if (const core::Json* mt = j->Get("mrTex")) e.mrTex = mt->GetString();
+            if (const core::Json* aot = j->Get("aoTex")) e.aoTex = aot->GetString();
+            if (const core::Json* et = j->Get("emissiveTex")) e.emissiveTex = et->GetString();
+            if (const core::Json* sp = j->Get("scriptPath")) e.scriptPath = sp->GetString();
+            if (const core::Json* sb = j->Get("scriptBackend")) e.scriptBackend = sb->GetString();
+            if (const core::Json* sv = j->Get("scriptVars")) e.scriptVars = *sv;
         }
-        if (const core::Json* s = j->Get("scale")) {
-            e.scale = {static_cast<float>(s->At(0)->GetNumber()),
-                       static_cast<float>(s->At(1)->GetNumber()),
-                       static_cast<float>(s->At(2)->GetNumber())};
-        }
-        if (const core::Json* t = j->Get("tint")) {
-            e.tint = {static_cast<float>(t->At(0)->GetNumber()),
-                      static_cast<float>(t->At(1)->GetNumber()),
-                      static_cast<float>(t->At(2)->GetNumber()), 1.0f};
-        }
-        if (const core::Json* m = j->Get("metallic")) e.metallic = static_cast<float>(m->GetNumber());
-        if (const core::Json* r = j->Get("roughness")) e.roughness = static_cast<float>(r->GetNumber());
-        if (const core::Json* a = j->Get("ao")) e.ao = static_cast<float>(a->GetNumber());
-        if (const core::Json* ei = j->Get("emissiveIntensity")) e.emissiveIntensity = static_cast<float>(ei->GetNumber());
-        if (const core::Json* at = j->Get("albedoTex")) e.albedoTex = at->GetString();
-        if (const core::Json* mt = j->Get("mrTex")) e.mrTex = mt->GetString();
-        if (const core::Json* aot = j->Get("aoTex")) e.aoTex = aot->GetString();
-        if (const core::Json* et = j->Get("emissiveTex")) e.emissiveTex = et->GetString();
-        if (const core::Json* sp = j->Get("scriptPath")) e.scriptPath = sp->GetString();
-        if (const core::Json* sb = j->Get("scriptBackend")) e.scriptBackend = sb->GetString();
-        if (const core::Json* sv = j->Get("scriptVars")) e.scriptVars = *sv;
         if (ResolveMesh(e)) {
             ApplyMaterialParams(e);
             loaded.push_back(std::move(e));
@@ -2749,6 +2843,29 @@ void EditorApp::LoadScene(const std::string& path) {
         history_.Clear(); // undo history from the previous scene is invalid
         NEON_LOG_INFO("Scene loaded (%zu entities)", entities_.size());
     }
+}
+
+void EditorApp::LoadProjectScene() {
+    std::ifstream in(projectDir_ + "/game.json", std::ios::binary);
+    if (!in.is_open()) {
+        NEON_LOG_ERROR("Editor: no game.json in project dir '%s'", projectDir_.c_str());
+        return;
+    }
+    std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    std::string err;
+    core::Json root = core::Json::Parse(text, &err);
+    if (!err.empty()) {
+        NEON_LOG_ERROR("Editor: game.json parse failed: %s", err.c_str());
+        return;
+    }
+    const core::Json* start = root.Get("startScene");
+    if (!start || !start->IsString() || start->GetString().empty()) {
+        NEON_LOG_ERROR("Editor: game.json has no startScene");
+        return;
+    }
+    const std::string scenePath = projectDir_ + "/" + start->GetString();
+    LoadScene(scenePath);
+    NEON_LOG_INFO("Editor: project scene loaded from '%s'", scenePath.c_str());
 }
 
 // ---------------------------------------------------------------------------
@@ -2994,50 +3111,6 @@ void EditorApp::Enter2DMode() {
     if (!hasLevel && std::ifstream("projects/pvz/game.json").is_open())
         projectDir_ = "projects/pvz";
     LoadPvzLevel();
-}
-
-void EditorApp::StartPvzPlaytest() {
-    StopPvzPlaytest();
-    SavePvzLevel(); // the playtest loads the edited level from disk
-    const std::string scenePath = projectDir_ + "/scenes/pvz.json";
-    std::ifstream in(scenePath, std::ios::binary);
-    if (!in.is_open()) {
-        NEON_LOG_ERROR("2D: cannot read play scene '%s'", scenePath.c_str());
-        return;
-    }
-    std::string json((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-    scene::GameRuntimeConfig cfg;
-    cfg.assets = &assetMgr_;
-    cfg.scriptBaseDir = projectDir_;
-    cfg.assetBaseDir = projectDir_;
-    cfg.font2d = cjkFont_.Valid() ? cjkFont_ : pixelFont_;
-    cfg.input = Input();
-
-    pvzPlaytest_ = std::make_unique<scene::GameRuntime>();
-    core::Status st = pvzPlaytest_->Start(json, cfg);
-    if (!st.Ok()) {
-        NEON_LOG_ERROR("2D: playtest failed to start: %s", st.Error().c_str());
-        pvzPlaytest_.reset();
-        return;
-    }
-    pvzPlaytestActive_ = true;
-    NEON_LOG_INFO("2D: playtest started (scene '%s')", scenePath.c_str());
-}
-
-void EditorApp::StopPvzPlaytest() {
-    if (!pvzPlaytest_) return;
-    pvzPlaytest_->Stop();
-    pvzPlaytest_.reset();
-    pvzPlaytestActive_ = false;
-    NEON_LOG_INFO("2D: playtest stopped");
-}
-
-void EditorApp::TogglePvzPlaytest() {
-    if (pvzPlaytestActive_) {
-        StopPvzPlaytest();
-    } else {
-        StartPvzPlaytest();
-    }
 }
 
 void EditorApp::ClampSelection() {

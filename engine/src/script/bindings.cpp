@@ -438,6 +438,43 @@ Value NativeReadText(IScriptHost& host, void* user) {
     return Value::Str(ctx->readData(StringArg(host, 0)));
 }
 
+// WriteText(path, content): saves a text file into the project/pack data root
+// (saves, editor exports). Returns 1 on success / 0 on failure.
+Value NativeWriteText(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->writeData) return Value::Num(0);
+    const std::string path = StringArg(host, 0);
+    const std::string content = StringArg(host, 1);
+    return Value::Num(ctx->writeData(path, content) ? 1.0 : 0.0);
+}
+
+// FindNamedEntity(name) -> entity handle (invalid handle when not found).
+Value NativeFindNamedEntity(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->findEntity) return Value::Nil();
+    const ecs::Entity e = ctx->findEntity(StringArg(host, 0));
+    return e.IsValid() ? EntityToValue(e) : Value::Nil();
+}
+
+// SetVisible(entity, true|false): hides/shows an entity in the runtime's
+// render pass (dead mobs, spawn markers, toggled props). Works on any entity
+// with a mesh; the world state itself is untouched.
+Value NativeSetVisible(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->hiddenEntities) return Value::Nil();
+    const ecs::Entity e = EntityFromValue(host.GetArg(0));
+    if (!e.IsValid()) return Value::Nil();
+    const uint64_t key =
+        (static_cast<uint64_t>(e.id) << 32) | static_cast<uint64_t>(e.generation);
+    const Value v = host.GetArg(1);
+    const bool visible = v.type == Value::Type::Bool ? v.boolean : v.number != 0.0;
+    if (visible)
+        ctx->hiddenEntities->erase(key);
+    else
+        ctx->hiddenEntities->insert(key);
+    return Value::Nil();
+}
+
 // InputMousePos() -> {x=, y=} in 2D design units (1280x720). Falls back to
 // raw screen pixels when no renderer conversion is wired.
 Value NativeInputMousePos(IScriptHost& host, void* user) {
@@ -638,6 +675,9 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("DrawRectOutline", &NativeDrawRectOutline, &ctx);
     host.Register("DrawText", &NativeDrawText, &ctx);
     host.Register("ReadText", &NativeReadText, &ctx);
+    host.Register("WriteText", &NativeWriteText, &ctx);
+    host.Register("FindNamedEntity", &NativeFindNamedEntity, &ctx);
+    host.Register("SetVisible", &NativeSetVisible, &ctx);
     host.Register("InputMousePos", &NativeInputMousePos, &ctx);
     host.RegisterField("Json", "Parse", &NativeJsonParse, &ctx);
 }

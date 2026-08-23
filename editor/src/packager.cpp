@@ -308,6 +308,55 @@ void CheckAssetRef(ProjectContext& pc, const std::string& ref) {
     pc.packFiles[vp] = abs;
 }
 
+// Collects a glTF's internal dependencies (buffers + image URIs) into the
+// pack. The glTF JSON is parsed with core::Json; URIs are resolved relative to
+// the gltf file and mapped to pack virtual paths under the same directory.
+// Embedded base64 data URIs are skipped (no external file).
+void CollectGltfDeps(ProjectContext& pc, const std::string& ref) {
+    const std::string norm = Normalize(ref);
+    if (norm.empty() || ContainsTraversal(norm)) return;
+    std::string abs = ResolveRef(pc.projectDir, norm);
+    if (abs.empty()) return; // CheckAssetRef already reported the missing file
+    std::string text;
+    if (!ReadFileText(abs, text)) return;
+    std::string err;
+    core::Json root = core::Json::Parse(text, &err);
+    if (!err.empty()) {
+        pc.report.warnings.push_back("gltf '" + ref + "' failed to parse for pack deps: " + err);
+        return;
+    }
+    const std::string dir = abs.substr(0, abs.find_last_of("/\\") + 1);
+    const std::string vpDir = VirtualPathOf(ref);
+    const std::string vpBase = vpDir.substr(0, vpDir.find_last_of('/') + 1);
+    auto collect = [&](const char* section) {
+        const core::Json* arr = root.Get(section);
+        if (!arr || !arr->IsArray()) return;
+        for (size_t i = 0; i < arr->Size(); ++i) {
+            const core::Json* e = arr->At(i);
+            if (!e || !e->IsObject()) continue;
+            const core::Json* uri = e->Get("uri");
+            if (!uri || !uri->IsString()) continue;
+            const std::string u = Normalize(uri->GetString());
+            if (u.empty() || u.compare(0, 5, "data:") == 0) continue; // embedded
+            if (ContainsTraversal(u)) {
+                pc.report.errors.push_back("gltf '" + ref + "' " + section +
+                                           " uri escapes its directory ('" + u + "')");
+                continue;
+            }
+            const std::string absDep = dir + u;
+            const std::string vp = vpBase + u;
+            if (!FileExists(absDep)) {
+                pc.report.errors.push_back("gltf '" + ref + "' " + section + " file missing: '" +
+                                           u + "'");
+                continue;
+            }
+            pc.packFiles[vp] = absDep;
+        }
+    };
+    collect("buffers");
+    collect("images");
+}
+
 void ValidateMesh(ProjectContext& pc, const std::string& where, const core::Json& data) {
     if (!data.IsObject()) {
         pc.report.errors.push_back(where + ": mesh component must be a JSON object");
@@ -323,7 +372,11 @@ void ValidateMesh(ProjectContext& pc, const std::string& where, const core::Json
         CheckAssetRef(pc, k.substr(4));
     } else if (k.compare(0, 5, "gltf:") == 0) {
         CheckAssetRef(pc, k.substr(5));
-    } else if (k != "terrain" && k != "cube" && k != "sphere" && k != "plane") {
+        CollectGltfDeps(pc, k.substr(5));
+    } else if (k != "terrain" && k != "cube" && k != "sphere" && k != "plane" &&
+               k != "tree" && k != "house" && k != "bush" && k != "hero" &&
+               k != "wolf" && k != "rock" && k != "water" && k != "road" &&
+               k != "npc" && k.compare(0, 4, "npc:") != 0) {
         // An unknown prefix: the runtime logs and skips it; the packager warns.
         pc.report.warnings.push_back(where + ": meshKey '" + k +
                                      "' has no file / known loader prefix (skipped)");
