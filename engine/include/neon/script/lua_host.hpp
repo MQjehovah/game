@@ -40,6 +40,7 @@ public:
     core::Result<uint64_t> CaptureFunction(const std::string& name) override;
     core::Result<Value> CallCaptured(uint64_t handle,
                                      const std::vector<Value>& args) override;
+    core::Result<uint64_t> CaptureStackFunction(int index) override;
     void SetGlobal(const std::string& name, const Value& v) override;
     core::Result<Value> GetGlobal(const std::string& name) override;
     void Register(const std::string& name, NativeFunction fn, void* user) override;

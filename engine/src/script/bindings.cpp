@@ -475,6 +475,42 @@ Value NativeSetVisible(IScriptHost& host, void* user) {
     return Value::Nil();
 }
 
+// ChangeScene(path): swaps to another scene file (relative to the project's
+// scenes/ root) at the next fixed tick. The current runtime is restarted with
+// the same config, so per-scene state resets (title -> level -> results).
+Value NativeChangeScene(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->changeScene) return Value::Num(0);
+    const std::string path = StringArg(host, 0);
+    return Value::Num(ctx->changeScene(path) ? 1.0 : 0.0);
+}
+
+// SignalConnect(name, fn): registers a Lua function (captured by value, so
+// local/anonymous functions work) for the signal. SignalEmit(name, arg) calls
+// every handler in registration order with the argument.
+Value NativeSignalConnect(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->signalHandlers) return Value::Nil();
+    const std::string name = StringArg(host, 0);
+    const core::Result<uint64_t> h = host.CaptureStackFunction(1);
+    if (!h.Ok()) return Value::Nil();
+    ctx->signalHandlers->emplace_back(name, h.Value());
+    return Value::Nil();
+}
+
+Value NativeSignalEmit(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->signalHandlers) return Value::Nil();
+    const std::string name = StringArg(host, 0);
+    // Snapshot the handler list: a handler may connect/disconnect on emit.
+    std::vector<uint64_t> calls;
+    for (const auto& kv : *ctx->signalHandlers)
+        if (kv.first == name) calls.push_back(kv.second);
+    const Value arg = host.GetArg(1);
+    for (uint64_t handle : calls) host.CallCaptured(handle, {arg});
+    return Value::Nil();
+}
+
 // InputMousePos() -> {x=, y=} in 2D design units (1280x720). Falls back to
 // raw screen pixels when no renderer conversion is wired.
 Value NativeInputMousePos(IScriptHost& host, void* user) {
@@ -739,6 +775,9 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("WriteText", &NativeWriteText, &ctx);
     host.Register("FindNamedEntity", &NativeFindNamedEntity, &ctx);
     host.Register("SetVisible", &NativeSetVisible, &ctx);
+    host.Register("ChangeScene", &NativeChangeScene, &ctx);
+    host.Register("SignalConnect", &NativeSignalConnect, &ctx);
+    host.Register("SignalEmit", &NativeSignalEmit, &ctx);
     host.Register("InputMousePos", &NativeInputMousePos, &ctx);
     host.RegisterField("Json", "Parse", &NativeJsonParse, &ctx);
 }

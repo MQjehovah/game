@@ -128,6 +128,13 @@ public:
     virtual core::Result<Value> CallCaptured(uint64_t handle,
                                              const std::vector<Value>& args) = 0;
 
+    // Captures the FUNCTION value of the native binding's `index`-th argument
+    // (0-based, matching GetArg) into the registry and returns a handle usable
+    // with CallCaptured. Lets SignalConnect store arbitrary functions
+    // (local/anonymous), not just globals by name. Errors when the value is
+    // not a function.
+    virtual core::Result<uint64_t> CaptureStackFunction(int index) = 0;
+
     // Read/write a global variable. Missing globals read back as Nil.
     virtual void SetGlobal(const std::string& name, const Value& v) = 0;
     virtual core::Result<Value> GetGlobal(const std::string& name) = 0;

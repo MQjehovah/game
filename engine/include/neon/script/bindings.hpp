@@ -134,6 +134,13 @@ struct ScriptContext {
     // Godot-style action map (runtime-owned). Null -> Action* bindings fall
     // back to legacy KeyFromName behavior; InputAxis/InputKey prefer the map.
     InputMap* inputMap = nullptr;
+    // Multi-scene: ChangeScene(path) defers a runtime restart to the next Tick
+    // (a script call must not destroy the Lua host mid-call). Runtime-owned.
+    std::function<bool(const std::string&)> changeScene;
+    // Godot-style signals: SignalConnect(name, fn) stores the captured Lua
+    // function; SignalEmit(name, arg) calls every handler. Runtime-owned
+    // vector of (signal name -> captured function handle).
+    std::vector<std::pair<std::string, uint64_t>>* signalHandlers = nullptr;
     // Optional: attaches a Lua script to a spawned entity (Spawn's 3rd arg) so
     // dynamically created entities (multi-player player controllers) run
     // on_start/on_update like scene-placed ones. Wired by GameRuntime.

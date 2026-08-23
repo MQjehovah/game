@@ -2386,7 +2386,7 @@ core::Result<core::Json> EditorApp::BuildPlaySceneJson() {
                                                 e.mrTex, e.aoTex, e.emissiveTex, e.ao,
                                                 e.emissiveIntensity, e.scriptPath,
                                                 e.scriptBackend, e.scriptVars, {},
-                                                e.hp, e.maxHp);
+                                                e.hp, e.maxHp, e.parent);
         if (!res.Ok()) {
             return core::Result<core::Json>::Err("editor: " + res.Error());
         }
@@ -2802,6 +2802,7 @@ void EditorApp::SaveScene() {
             return j;
         };
         obj.object_["mesh"] = str(e.meshKey);
+        if (!e.parent.empty()) obj.object_["parent"] = str(e.parent);
         obj.object_["pos"] = vec3(e.pos);
         obj.object_["scale"] = vec3(e.scale);
         core::Json tint;
@@ -2864,6 +2865,7 @@ void EditorApp::LoadScene(const std::string& path) {
                     e.scale = {static_cast<float>(s->At(0)->GetNumber()),
                                static_cast<float>(s->At(1)->GetNumber()),
                                static_cast<float>(s->At(2)->GetNumber())};
+                if (const core::Json* p = t->Get("parent")) e.parent = p->GetString();
             }
             if (const core::Json* m = comps->Get("mesh")) {
                 e.meshKey = m->Get("meshKey") ? m->Get("meshKey")->GetString("cube") : "cube";
@@ -2887,6 +2889,7 @@ void EditorApp::LoadScene(const std::string& path) {
                 if (const core::Json* v = s->Get("vars")) e.scriptVars = *v;
             }
         } else {
+            if (const core::Json* p = j->Get("parent")) e.parent = p->GetString();
             e.meshKey = j->Get("mesh")->GetString("cube");
             if (const core::Json* p = j->Get("pos")) {
                 e.pos = {static_cast<float>(p->At(0)->GetNumber()),

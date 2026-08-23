@@ -531,3 +531,28 @@ TEST(ScriptBindingsActionQueries) {
                          b.host->LastError().message.c_str());
     CHECK(ok);
 }
+
+// Godot-style signals: SignalConnect captures a Lua function value (local
+// closures work); SignalEmit calls every handler with the argument.
+TEST(ScriptBindingsSignals) {
+    Bindings b;
+    std::vector<std::pair<std::string, uint64_t>> handlers;
+    b.ctx.signalHandlers = &handlers;
+    CHECK(RunScript(*b.host, R"(
+      local count = 0
+      local last = 0
+      function on_wave(n)
+        count = count + 1
+        last = n
+      end
+      SignalConnect("wave_started", on_wave)
+      SignalEmit("wave_started", 1)
+      SignalEmit("wave_started", 2)
+      assert(count == 2)
+      assert(last == 2)
+      SignalEmit("other", 99)
+      assert(count == 2)
+    )"));
+    CHECK_EQ(handlers.size(), 1u);
+    CHECK_EQ(handlers[0].first, std::string("wave_started"));
+}

@@ -103,9 +103,10 @@ struct SceneFile {
                                                 const std::string& scriptPath = "",
                                                 const std::string& scriptBackend = "lua",
                                                 const core::Json& scriptVars = core::Json{},
-                                                const std::vector<LodEntry>& lod = {},
-                                                float hp = 0.0f,
-                                                float maxHp = 0.0f);
+                                               const std::vector<LodEntry>& lod = {},
+                                               float hp = 0.0f,
+                                               float maxHp = 0.0f,
+                                               const std::string& parent = "");
 };
 
 // Prefab library: registers prefab component templates parsed from JSON text
@@ -127,6 +128,12 @@ struct SceneTransform {
     math::Vec3 pos;
     math::Quat rot;
     math::Vec3 scale{1, 1, 1};
+    std::string parent; // scene-tree parent by entity NAME ("" = root)
+};
+// Resolved scene-tree link (set by Instantiate after names resolve): the
+// parent entity whose world transform this entity inherits at render time.
+struct SceneParentLink {
+    ecs::Entity parent;
 };
 struct SceneMesh {
     std::string meshKey;

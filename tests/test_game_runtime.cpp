@@ -555,3 +555,82 @@ TEST(GameRuntimeSpawnedEntityPositionReadWrite) {
     CHECK_EQ(seen, 1);
     CHECK_NEAR(pos.z, 10.0f, 1e-6);
 }
+
+// Godot-style scene tree: transform.parent (by name) resolves to a
+// SceneParentLink; an unknown parent name rejects the scene.
+TEST(GameRuntimeSceneTreeParentLink) {
+    const char* scene = R"({
+      "entities": [
+        {"name": "Root", "components": {"transform": {"pos": [0,0,0]}}},
+        {"name": "Child", "components": {"transform": {"pos": [5,0,0], "parent": "Root"}}}
+      ]
+    })";
+    scene::GameRuntime runtime;
+    scene::GameRuntimeConfig cfg;
+    cfg.headless = true;
+    CHECK(runtime.Start(scene, cfg).Ok());
+
+    ecs::Entity root, child;
+    auto view = runtime.World().ViewAll<scene::SceneName>();
+    for (size_t i = 0; i < view.Size(); ++i) {
+        ecs::Entity e = runtime.World().EntityAt<scene::SceneName>(i);
+        const scene::SceneName* n = runtime.World().Get<scene::SceneName>(e);
+        if (n && n->name == "Root") root = e;
+        if (n && n->name == "Child") child = e;
+    }
+    CHECK(root.IsValid());
+    CHECK(child.IsValid());
+    const scene::SceneParentLink* link = runtime.World().Get<scene::SceneParentLink>(child);
+    CHECK(link != nullptr);
+    if (link) CHECK(link->parent == root);
+    CHECK(runtime.World().Get<scene::SceneParentLink>(root) == nullptr);
+
+    // Unknown parent name: the scene is rejected (no dangling links).
+    const char* bad = R"({
+      "entities": [
+        {"name": "A", "components": {"transform": {"pos": [0,0,0], "parent": "Ghost"}}}
+      ]
+    })";
+    scene::GameRuntime r2;
+    CHECK(!r2.Start(bad, cfg).Ok());
+}
+
+// ChangeScene defers the swap to the end of Tick (never mid-Lua-call): the
+// first tick queues it and applies it before the next tick runs.
+TEST(GameRuntimeChangeSceneDeferred) {
+    const char* sceneA = R"({
+      "entities": [
+        {"name": "A", "components": {
+          "transform": {"pos": [0,0,0]},
+          "script": {"backend": "lua", "path": "a.lua"}}}
+      ]
+    })";
+    const char* sceneB = R"({
+      "entities": [
+        {"name": "B", "components": {"transform": {"pos": [1,0,0]}}}
+      ]
+    })";
+    const char* luaA = R"(
+      function on_start(e) end
+      function on_update(e, dt)
+        if ChangeScene("scenes/b.json") == 1 then
+          SetVar("switched", 1)
+        end
+      end
+    )";
+    scene::GameRuntime runtime;
+    scene::GameRuntimeConfig cfg;
+    cfg.headless = true;
+    cfg.readScript = [&](const std::string& p) {
+        if (p == "a.lua") return std::string(luaA);
+        if (p == "scenes/b.json") return std::string(sceneB);
+        return std::string();
+    };
+    CHECK(runtime.Start(sceneA, cfg).Ok());
+    CHECK(runtime.FindNamedEntity("A").IsValid());
+    runtime.Tick(1.0f / 60.0f); // on_update queues the swap; Tick applies it
+    CHECK(runtime.Running());
+    CHECK(!runtime.FindNamedEntity("A").IsValid());
+    CHECK(runtime.FindNamedEntity("B").IsValid());
+    CHECK_EQ(runtime.EntityCount(), 1u);
+}

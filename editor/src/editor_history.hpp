@@ -192,6 +192,7 @@ inline void ApplyEmissiveIntensityProp(SceneEntity& e, const float& v) {
     e.material.emissiveIntensity = v;
 }
 inline void ApplyNameProp(SceneEntity& e, const std::string& v) { e.name = v; }
+inline void ApplyParentProp(SceneEntity& e, const std::string& v) { e.parent = v; }
 
 // Script component edit: attaches/replaces/clears the entity's script
 // (backend/path/vars) in one undo step. A detach is just an edit whose new

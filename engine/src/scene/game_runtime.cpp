@@ -200,6 +200,13 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
         }
     }
     scriptCtx_.inputMap = &inputMap_;
+    signalHandlers_.clear();
+    scriptCtx_.signalHandlers = &signalHandlers_;
+    scriptCtx_.changeScene = [this](const std::string& path) {
+        if (path.empty()) return false;
+        pendingScene_ = path;
+        return true;
+    };
     // Combat / control hooks so scripts can drive scene entities. Both
     // component flavors are supported: scene entities carry SceneTransform
     // (from the scene JSON "transform" component) while script-spawned
@@ -312,6 +319,8 @@ void GameRuntime::Stop() {
     draws_.clear();
     projectiles_.clear();
     skillCooldowns_.clear();
+    signalHandlers_.clear();
+    pendingScene_.clear();
     loadedScripts_.clear();
     scriptFailed_.clear();
     if (host_) {
@@ -968,11 +977,10 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera) {
         if (hiddenEntities_.count(EntityKey(item.ent)) != 0) continue; // SetVisible(false)
         if (!item.resolved) ResolveDrawItem(item, renderer);
         if (!item.resolved || item.failed) continue;
-        const SceneTransform* t = world_.Get<SceneTransform>(item.ent);
-        if (!t) continue;
-        math::Mat4 model =
-            math::Mat4::Translation(t->pos) * t->rot.ToMat4() * math::Mat4::Scale(t->scale);
-        renderer.DrawMesh(SelectLodMesh(item.mesh, item.chain, t->pos, camera.position),
+        if (!world_.Get<SceneTransform>(item.ent)) continue;
+        math::Mat4 model = LocalToWorld(item.ent);
+        const math::Vec3 worldPos{model.m[12], model.m[13], model.m[14]};
+        renderer.DrawMesh(SelectLodMesh(item.mesh, item.chain, worldPos, camera.position),
                           item.mat, model);
     }
     // Skill projectiles (fireballs): bright glowing orbs.
@@ -1013,6 +1021,18 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera) {
         scriptCtx_.draw2d = nullptr;
         FlushDraw2D(renderer);
     }
+}
+
+math::Mat4 GameRuntime::LocalToWorld(ecs::Entity e) const {
+    math::Mat4 m = math::Mat4::Identity();
+    for (int depth = 0; depth < 8 && e.IsValid(); ++depth) {
+        const SceneTransform* t = world_.Get<SceneTransform>(e);
+        if (!t) break;
+        m = math::Mat4::Translation(t->pos) * t->rot.ToMat4() * math::Mat4::Scale(t->scale) * m;
+        const SceneParentLink* link = world_.Get<SceneParentLink>(e);
+        e = link ? link->parent : ecs::Entity{};
+    }
+    return m;
 }
 
 void GameRuntime::FlushDraw2D(gfx::Renderer& renderer) {
@@ -1074,6 +1094,29 @@ void GameRuntime::Tick(float dt) {
     TickSkillCooldowns(dt);
     TickProjectiles(dt);
     simTime_ += dt;
+
+    // ChangeScene deferral: a script's ChangeScene call must not destroy the
+    // Lua host mid-call, so the swap happens here, after every script handler
+    // has returned. Start() resets the world/host with the same config.
+    if (!pendingScene_.empty()) {
+        const std::string path = pendingScene_;
+        pendingScene_.clear();
+        const std::string text = ReadScript(FullScriptPath(path));
+        if (text.empty()) {
+            NEON_LOG_CAT(core::LogCategory::Scene, core::LogLevel::Error,
+                         "runtime: ChangeScene cannot read '%s'", path.c_str());
+        } else {
+            core::Status st = Start(text, cfg_);
+            if (!st.Ok()) {
+                NEON_LOG_CAT(core::LogCategory::Scene, core::LogLevel::Error,
+                             "runtime: ChangeScene to '%s' failed: %s", path.c_str(),
+                             st.Error().c_str());
+            } else {
+                NEON_LOG_CAT(core::LogCategory::Scene, core::LogLevel::Info,
+                             "runtime: changed scene to '%s'", path.c_str());
+            }
+        }
+    }
 }
 
 script::Value GameRuntime::EntityBlackboardValue(const ecs::Entity& ent,

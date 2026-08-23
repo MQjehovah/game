@@ -520,6 +520,33 @@ core::Result<Value> LuaHost::CallCaptured(uint64_t handle, const std::vector<Val
     return core::Result<Value>::Ok(result);
 }
 
+core::Result<uint64_t> LuaHost::CaptureStackFunction(int index) {
+    if (!impl_->L) return core::Result<uint64_t>::Err("script host is not initialized");
+    const int stackIndex = index + 1; // binding arg index -> Lua stack index
+    const int top = lua_gettop(impl_->L);
+    if (stackIndex < 1 || stackIndex > top) return core::Result<uint64_t>::Err("bad stack index");
+    if (!lua_isfunction(impl_->L, stackIndex)) {
+        return core::Result<uint64_t>::Err("value at stack index is not a function");
+    }
+    const uint64_t key = ++impl_->nextFunctionKey;
+    lua_pushlightuserdata(impl_->L, const_cast<void*>(kCapturedKey()));
+    lua_rawget(impl_->L, LUA_REGISTRYINDEX);
+    if (!lua_istable(impl_->L, -1)) {
+        lua_pop(impl_->L, 1);
+        lua_newtable(impl_->L);
+        lua_pushlightuserdata(impl_->L, const_cast<void*>(kCapturedKey()));
+        lua_pushvalue(impl_->L, -2);
+        lua_rawset(impl_->L, LUA_REGISTRYINDEX);
+    }
+    lua_pushinteger(impl_->L, static_cast<lua_Integer>(key));
+    lua_pushvalue(impl_->L, stackIndex);
+    // Stack here is [fn, table, key, fn2]: the captured table sits at -3.
+    lua_rawset(impl_->L, -3);
+    lua_pop(impl_->L, 1); // the table
+    impl_->lastError = {};
+    return core::Result<uint64_t>::Ok(key);
+}
+
 void LuaHost::SetGlobal(const std::string& name, const Value& v) {
     if (!impl_->L) return;
     PushValue(impl_->L, v);

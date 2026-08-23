@@ -288,6 +288,11 @@ function on_update(e, dt)
     state = "won"
   end
 
+  -- 胜利/失败后按 Enter 重开本关（ChangeScene 数据驱动循环）
+  if (state == "won" or state == "lost") and InputKey("enter") > 0 then
+    ChangeScene("scenes/pvz.json")
+  end
+
   -- 输入
   if state == "playing" and InputMousePressed("left") then
     local pos = InputMousePos()
@@ -425,8 +430,10 @@ function on_render()
   if state == "won" then
     DrawRect(440, 280, 400, 110, 0.05, 0.25, 0.10, 0.92)
     DrawText("胜利！", 640, 335, 46, 1, 0.9, 0.1, 1, true, true)
+    DrawText("按 Enter 重新开始", 640, 372, 18, 1, 1, 1, 1, true, true)
   elseif state == "lost" then
     DrawRect(440, 280, 400, 110, 0.35, 0.08, 0.06, 0.92)
     DrawText("失败！", 640, 335, 46, 1, 0.2, 0.2, 1, true, true)
+    DrawText("按 Enter 重新开始", 640, 372, 18, 1, 1, 1, 1, true, true)
   end
 end

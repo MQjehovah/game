@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstring>
+#include <functional>
 #include <cstdio>
 #if defined(_WIN32)
 #include <direct.h>
@@ -282,12 +284,71 @@ void EditorApp::BuildScenePanel() {
         }
         ImGui::Separator();
         ImGui::BeginChild("##scene_list", ImVec2(0, 0), ImGuiChildFlags_Borders);
-        for (size_t i = 0; i < entities_.size(); ++i) {
-            char label[256];
-            std::snprintf(label, sizeof(label), "%s##scene_%zu",
-                          entities_[i].name.c_str(), i);
-            if (ImGui::Selectable(label, selected_ == static_cast<int>(i))) {
-                SetSelection(static_cast<int>(i));
+        // Godot-style scene tree: entities group under their "parent" name
+        // (root = empty/missing parent). Drag one row onto another to reparent;
+        // drag onto the empty area to detach back to root.
+        {
+            std::map<std::string, std::vector<int>> childrenByParent;
+            std::set<std::string> names;
+            for (const SceneEntity& e : entities_) names.insert(e.name);
+            for (size_t i = 0; i < entities_.size(); ++i)
+                childrenByParent[entities_[i].parent].push_back(static_cast<int>(i));
+            auto reparent = [this](int from, const std::string& toParent) {
+                if (from < 0 || from >= static_cast<int>(entities_.size())) return;
+                const std::string oldParent = entities_[static_cast<size_t>(from)].parent;
+                if (oldParent == toParent) return;
+                entities_[static_cast<size_t>(from)].parent = toParent;
+                history_.Push(std::make_unique<EditPropertyCommand<std::string>>(
+                    &entities_, from, ApplyParentProp, oldParent, toParent,
+                    /*mergeable=*/false));
+            };
+            std::function<void(const std::string&)> drawNode = [&](const std::string& parentName) {
+                const auto it = childrenByParent.find(parentName);
+                if (it == childrenByParent.end()) return;
+                for (int idx : it->second) {
+                    const SceneEntity& e = entities_[static_cast<size_t>(idx)];
+                    char label[256];
+                    std::snprintf(label, sizeof(label), "%s##scene_%d", e.name.c_str(), idx);
+                    const bool hasChildren = childrenByParent.count(e.name) != 0;
+                    if (hasChildren) {
+                        const bool open = ImGui::TreeNodeEx(
+                            label, ImGuiTreeNodeFlags_OpenOnArrow |
+                                       (selected_ == idx ? ImGuiTreeNodeFlags_Selected : 0));
+                        if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen())
+                            SetSelection(idx);
+                        if (open) {
+                            drawNode(e.name);
+                            ImGui::TreePop();
+                        }
+                    } else {
+                        if (ImGui::Selectable(label, selected_ == idx)) SetSelection(idx);
+                    }
+                    if (ImGui::BeginDragDropSource()) {
+                        ImGui::SetDragDropPayload("SCENE_ENTITY", &idx, sizeof(int));
+                        ImGui::Text("移动 %s", e.name.c_str());
+                        ImGui::EndDragDropSource();
+                    }
+                    if (ImGui::BeginDragDropTarget()) {
+                        if (const ImGuiPayload* p =
+                                ImGui::AcceptDragDropPayload("SCENE_ENTITY")) {
+                            int from = 0;
+                            std::memcpy(&from, p->Data, sizeof(from));
+                            reparent(from, e.name);
+                        }
+                        ImGui::EndDragDropTarget();
+                    }
+                }
+            };
+            drawNode("");
+            // Detach target: drag an entity here to clear its parent.
+            ImGui::TextDisabled("(拖到此处取消父子关系)");
+            if (ImGui::BeginDragDropTarget()) {
+                if (const ImGuiPayload* p = ImGui::AcceptDragDropPayload("SCENE_ENTITY")) {
+                    int from = 0;
+                    std::memcpy(&from, p->Data, sizeof(from));
+                    reparent(from, "");
+                }
+                ImGui::EndDragDropTarget();
             }
         }
         ImGui::EndChild();
@@ -501,6 +562,29 @@ void EditorApp::BuildInspectorPanel() {
             history_.Push(std::make_unique<EditPropertyCommand<std::string>>(
                 &entities_, selected_, ApplyNameProp, oldName, e.name,
                 /*mergeable=*/false)); // one undo step per keystroke
+        }
+        // Scene-tree parent: a combo of every entity name + "" (root).
+        {
+            std::vector<const char*> names;
+            std::vector<std::string> storage;
+            storage.push_back("");
+            for (const SceneEntity& other : entities_) {
+                if (other.name == e.name) continue; // no self-parenting
+                storage.push_back(other.name);
+            }
+            for (const std::string& s : storage) names.push_back(s.c_str());
+            int sel = 0;
+            for (size_t i = 0; i < storage.size(); ++i)
+                if (storage[i] == e.parent) sel = static_cast<int>(i);
+            if (ImGui::Combo("父实体", &sel, names.data(), static_cast<int>(names.size()))) {
+                const std::string newParent = storage[static_cast<size_t>(sel)];
+                if (newParent != e.parent) {
+                    const std::string oldParent = e.parent;
+                    e.parent = newParent;
+                    history_.Push(std::make_unique<EditPropertyCommand<std::string>>(
+                        &entities_, selected_, ApplyParentProp, oldParent, e.parent));
+                }
+            }
         }
         ImGui::TextDisabled("类型: %s", TypeLabel(e.meshKey).c_str());
         ImGui::Separator();

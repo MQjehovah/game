@@ -266,9 +266,10 @@ core::Result<core::Json> SceneFile::MakeEntity(const std::string& name,
                                                 const std::string& scriptPath,
                                                 const std::string& scriptBackend,
                                                 const core::Json& scriptVars,
-                                                const std::vector<LodEntry>& lod,
-                                                float hp,
-                                                float maxHp) {
+                                               const std::vector<LodEntry>& lod,
+                                               float hp,
+                                               float maxHp,
+                                               const std::string& parent) {
     if (name.empty())
         return core::Result<core::Json>::Err("scene: exported entity name must not be empty");
     if (meshKey.empty())
@@ -282,6 +283,7 @@ core::Result<core::Json> SceneFile::MakeEntity(const std::string& name,
     tf.object_["pos"] = MakeVec3(pos);
     tf.object_["rot"] = MakeQuat(rot);
     tf.object_["scale"] = MakeVec3(scale);
+    if (!parent.empty()) tf.object_["parent"] = MakeString(parent);
 
     core::Json mat = MakeObject();
     mat.object_["metallic"] = MakeNumber(metallic);
@@ -410,11 +412,20 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
     reg.Register("transform",
                  [](ecs::World& world, ecs::Entity ent, const core::Json& data,
                     const core::Json&, std::string* err) {
-                     if (!CheckComponentShape(data, {"pos", "rot", "scale"}, "transform", err)) return false;
+                     if (!CheckComponentShape(data, {"pos", "rot", "scale", "parent"},
+                                              "transform", err))
+                         return false;
                      SceneTransform t;
                      if (!ReadVec3(data, "pos", "transform", t.pos, err)) return false;
                      if (!ReadQuat(data, "rot", "transform", t.rot, err)) return false;
                      if (!ReadVec3(data, "scale", "transform", t.scale, err)) return false;
+                     if (const core::Json* p = data.Get("parent")) {
+                         if (!p->IsString()) {
+                             if (err) *err = "component 'transform' field 'parent' must be a string";
+                             return false;
+                         }
+                         t.parent = p->GetString();
+                     }
                      world.Add<SceneTransform>(ent, t);
                      return true;
                  });
@@ -695,6 +706,28 @@ core::Result<int> Instantiate(ecs::World& world, const SceneFile& scene,
                 return core::Result<int>::Err("scene: " + label + ": " + err);
             }
         }
+    }
+
+    // Scene tree: resolve transform.parent names after every entity exists.
+    for (ecs::Entity child : created) {
+        const SceneTransform* t = world.Get<SceneTransform>(child);
+        if (!t || t->parent.empty()) continue;
+        ecs::Entity parent;
+        auto names = world.ViewAll<SceneName>();
+        for (size_t i = 0; i < names.Size(); ++i) {
+            ecs::Entity cand = world.EntityAt<SceneName>(i);
+            const SceneName* n = world.Get<SceneName>(cand);
+            if (n && n->name == t->parent) {
+                parent = cand;
+                break;
+            }
+        }
+        if (!parent.IsValid()) {
+            for (ecs::Entity e : created) world.Destroy(e);
+            return core::Result<int>::Err("scene: entity '" + t->parent +
+                                          "' referenced by 'parent' not found");
+        }
+        world.Add<SceneParentLink>(child, SceneParentLink{parent});
     }
 
     if (outEntities) *outEntities = created;
