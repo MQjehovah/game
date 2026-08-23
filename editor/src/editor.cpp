@@ -294,7 +294,8 @@ bool EditorApp::OnCreate() {
         "工具栏视口实体选择变换材质渲染确定取消打开文件写入成功失败无法松树",
         "块测试引擎演示场景树表单滚动列表地形添加节点自研控件树拖动分隔条右侧面板第行",
         "文件视图退出图层属性菜单帮助关于版本相机旋转中键平移滚轮拾取",
-        "2D模式返回向日葵豌豆坚果橡皮僵尸保存关卡加载家葵豆僵阳点击卡牌选择格子种植收集胜利失败"};
+        "2D模式返回向日葵豌豆坚果橡皮僵尸保存关卡加载家葵豆僵阳点击卡牌选择格子种植收集胜利失败",
+        "寒冰樱桃炸弹路障铁桶试玩停止"};
     cjkFont_ = assetMgr_.LoadSystemCJKFont(24, cjkSamples);
     ui_.Init(&renderer_, cjkFont_.Valid() ? cjkFont_ : pixelFont_);
 
@@ -310,6 +311,16 @@ bool EditorApp::OnCreate() {
     LoadEditorConfig();
     NEON_LOG_INFO("NeonEditor ready (%zu entities), project dir '%s'", entities_.size(),
                   projectDir_.c_str());
+    // The config may have restored a different projectDir_ after Set2DMode ran
+    // (main.cpp sets it before Run). Re-enter 2D mode so the canvas + playtest
+    // use the PvZ project regardless.
+    if (editMode_ == EditMode::Scene2D) {
+        Enter2DMode();
+        if (pvzPlaytestOnStart_) StartPvzPlaytest();
+    } else if (pvzPlaytestOnStart_) {
+        Set2DMode(true);
+        StartPvzPlaytest();
+    }
     return true;
 }
 
@@ -464,8 +475,10 @@ void EditorApp::OnUpdate(float dt) {
         Input()->HandleEvent(e);
     }
     if (editMode_ == EditMode::Scene2D) {
-        // 2D canvas editing: clicks place/erase plants and zombie spawns.
-        if (Input()->MousePressed(platform::MouseButton::Left)) {
+        if (pvzPlaytestActive_ && pvzPlaytest_) {
+            pvzPlaytest_->Tick(dt);
+        } else if (Input()->MousePressed(platform::MouseButton::Left)) {
+            // 2D canvas editing: clicks place/erase plants and zombie spawns.
             HandlePvzClick(renderer_.ScreenToUI(Input()->MousePos()));
         }
     } else {
@@ -630,7 +643,12 @@ void EditorApp::OnRender() {
     renderer_.BeginFrame({0.06f, 0.08f, 0.13f, 1.0f});
     gfx::Camera cam = ActiveCamera(); // 2D mode ignores it; the 3D branch re-reads
     if (editMode_ == EditMode::Scene2D) {
-        DrawPvzCanvas();
+        if (pvzPlaytestActive_ && pvzPlaytest_) {
+            // The runtime's on_render draws the playable game via the 2D canvas.
+            pvzPlaytest_->Draw(renderer_, cam);
+        } else {
+            DrawPvzCanvas();
+        }
     } else {
         // Scissor the 3D scene to the central viewport so the full-window
         // render doesn't bleed into the dock areas around it. Cleared before
@@ -752,7 +770,12 @@ void EditorApp::OnEvent(const platform::InputEvent& event) {
     // ImGui owns the keyboard (e.g. typing in a text field).
     if (event.key == platform::Key::F5) {
         if (event.type == platform::InputEvent::Type::KeyDown) {
-            if (!f5Pressed_ && !gfx::ImGuiNeon_WantCaptureKeyboard()) TogglePlaytest();
+            if (!f5Pressed_ && !gfx::ImGuiNeon_WantCaptureKeyboard()) {
+                if (editMode_ == EditMode::Scene2D)
+                    TogglePvzPlaytest();
+                else
+                    TogglePlaytest();
+            }
             f5Pressed_ = true;
         } else if (event.type == platform::InputEvent::Type::KeyUp) {
             f5Pressed_ = false;
@@ -1480,13 +1503,21 @@ void EditorApp::BuildImGuiUI() {
         const bool in2D = editMode_ == EditMode::Scene2D;
         if (ImGui::Button(in2D ? "[2D模式] 返回3D" : "2D模式")) {
             editMode_ = in2D ? EditMode::Scene3D : EditMode::Scene2D;
-            if (!in2D) Enter2DMode();
+            if (!in2D) {
+                Enter2DMode();
+            } else {
+                StopPvzPlaytest(); // leaving 2D: end any running playtest
+            }
         }
         if (in2D) {
             ImGui::SameLine();
-            const char* brushes[] = {"向日葵", "豌豆", "坚果", "橡皮", "僵尸"};
-            ImGui::SetNextItemWidth(104.0f);
-            ImGui::Combo("##pvz_brush", &pvzBrush_, brushes, 5);
+            const char* brushes[] = {"向日葵", "豌豆", "坚果", "寒冰", "樱桃",
+                                     "橡皮", "僵尸", "路障", "铁桶"};
+            ImGui::SetNextItemWidth(120.0f);
+            ImGui::Combo("##pvz_brush", &pvzBrush_, brushes, 9);
+            ImGui::SameLine();
+            if (ImGui::Button(pvzPlaytestActive_ ? "■ 停止" : "▶ 试玩"))
+                TogglePvzPlaytest();
             ImGui::SameLine();
             if (ImGui::Button("保存关卡")) SavePvzLevel();
             ImGui::SameLine();
@@ -2734,12 +2765,21 @@ constexpr float kPvzBX = 190.0f;
 constexpr float kPvzBY = 160.0f;
 constexpr float kPvzSpawnX = 1150.0f;
 
-const char* kPvzPlantNames[3] = {"sunflower", "peashooter", "wallnut"};
-const char* kPvzPlantLabels[3] = {"葵", "豆", "坚"};
-const gfx::Color kPvzPlantColors[3] = {
+const char* kPvzPlantNames[5] = {"sunflower", "peashooter", "wallnut", "snowpea", "cherry"};
+const char* kPvzPlantLabels[5] = {"葵", "豆", "坚", "冰", "樱"};
+const gfx::Color kPvzPlantColors[5] = {
     {0.95f, 0.78f, 0.10f, 1.0f},
     {0.28f, 0.75f, 0.25f, 1.0f},
     {0.62f, 0.42f, 0.20f, 1.0f},
+    {0.45f, 0.72f, 0.95f, 1.0f},
+    {0.90f, 0.25f, 0.20f, 1.0f},
+};
+const char* kPvzZombieNames[3] = {"basic", "cone", "bucket"};
+const char* kPvzZombieLabels[3] = {"僵", "路", "桶"};
+const gfx::Color kPvzZombieColors[3] = {
+    {0.90f, 0.20f, 0.15f, 0.90f},
+    {0.95f, 0.60f, 0.15f, 0.90f},
+    {0.55f, 0.55f, 0.60f, 0.90f},
 };
 
 } // namespace
@@ -2785,11 +2825,12 @@ void EditorApp::DrawPvzCanvas() {
     }
 
     // Zombie spawn markers: red flag at the right edge of the row.
-    for (const auto& z : pvzZombies_) {
-        const float y = kPvzBY + (z.first + 0.5f) * kPvzCell;
+    for (const PvzZombieSpawn& z : pvzZombies_) {
+        const float y = kPvzBY + (z.row + 0.5f) * kPvzCell;
         renderer_.DrawRect({kPvzSpawnX - 14, y - 14}, {28, 28},
-                           gfx::Color::Red.WithAlpha(0.85f));
-        renderer_.DrawText(cjkFont_, "僵", {kPvzSpawnX, y}, 18, gfx::Color::White, true, true);
+                           kPvzZombieColors[z.type].WithAlpha(0.85f));
+        renderer_.DrawText(cjkFont_, kPvzZombieLabels[z.type], {kPvzSpawnX, y}, 18,
+                           gfx::Color::White, true, true);
     }
 
     // Hover highlight + brush hint.
@@ -2799,18 +2840,18 @@ void EditorApp::DrawPvzCanvas() {
              kPvzCell, kPvzCell},
             3.0f, gfx::Color::Yellow.WithAlpha(0.9f));
     }
-    const char* brushHint = pvzBrush_ == 3 ? "橡皮：点击清除植物"
-                            : pvzBrush_ == 4 ? "僵尸：点击行添加刷怪点"
+    const char* brushHint = pvzBrush_ == 5 ? "橡皮：点击清除植物"
+                            : pvzBrush_ >= 6 ? "僵尸刷怪：点击行添加"
                                              : "点击格子种植";
     renderer_.DrawText(cjkFont_, brushHint, {14, 690}, 16, gfx::Color::Gray, false, false);
 }
 
 void EditorApp::HandlePvzClick(const math::Vec2& ui) {
-    // Zombie spawn brush: click anywhere on a row.
-    if (pvzBrush_ == 4) {
+    // Zombie spawn brushes (6..8): click anywhere on a row.
+    if (pvzBrush_ >= 6) {
         const int row = static_cast<int>((ui.y - kPvzBY) / kPvzCell);
         if (row >= 0 && row < kPvzRows) {
-            pvzZombies_.emplace_back(row, pvzNextDelay_);
+            pvzZombies_.push_back({row, pvzNextDelay_, pvzBrush_ - 6});
             pvzNextDelay_ += 8.0f;
         }
         return;
@@ -2818,7 +2859,7 @@ void EditorApp::HandlePvzClick(const math::Vec2& ui) {
     const int col = static_cast<int>((ui.x - kPvzBX) / kPvzCell);
     const int row = static_cast<int>((ui.y - kPvzBY) / kPvzCell);
     if (row < 0 || row >= kPvzRows || col < 0 || col >= kPvzCols) return;
-    if (pvzBrush_ == 3) { // eraser
+    if (pvzBrush_ == 5) { // eraser
         pvzPlants_.erase(
             std::remove_if(pvzPlants_.begin(), pvzPlants_.end(),
                            [&](const Pvz2DCell& p) { return p.row == row && p.col == col; }),
@@ -2861,15 +2902,18 @@ void EditorApp::SavePvzLevel() {
     }
     core::Json zombies;
     zombies.type_ = core::Json::Type::Array;
-    for (const auto& z : pvzZombies_) {
+    for (const PvzZombieSpawn& z : pvzZombies_) {
         core::Json e;
         e.type_ = core::Json::Type::Object;
         e.object_["row"] = core::Json();
         e.object_["row"].type_ = core::Json::Type::Number;
-        e.object_["row"].number_ = z.first;
+        e.object_["row"].number_ = z.row;
         e.object_["delay"] = core::Json();
         e.object_["delay"].type_ = core::Json::Type::Number;
-        e.object_["delay"].number_ = z.second;
+        e.object_["delay"].number_ = z.delay;
+        e.object_["type"] = core::Json();
+        e.object_["type"].type_ = core::Json::Type::String;
+        e.object_["type"].string_ = kPvzZombieNames[z.type];
         zombies.array_.push_back(std::move(e));
     }
     root.object_["plants"] = std::move(plants);
@@ -2915,7 +2959,7 @@ void EditorApp::LoadPvzLevel() {
             const std::string name =
                 e->Get("plant") ? e->Get("plant")->GetString() : "";
             int type = -1;
-            for (int t = 0; t < 3; ++t)
+            for (int t = 0; t < 5; ++t)
                 if (name == kPvzPlantNames[t]) type = t;
             if (row >= 0 && row < kPvzRows && col >= 0 && col < kPvzCols && type >= 0)
                 pvzPlants_.push_back({row, col, type});
@@ -2928,19 +2972,72 @@ void EditorApp::LoadPvzLevel() {
             const int row = e->Get("row") ? e->Get("row")->GetInt(0) : 0;
             const float delay =
                 static_cast<float>(e->Get("delay") ? e->Get("delay")->GetNumber(8.0) : 8.0);
-            if (row >= 0 && row < kPvzRows) pvzZombies_.emplace_back(row, delay);
+            const std::string typeName =
+                e->Get("type") ? e->Get("type")->GetString("basic") : "basic";
+            int type = 0;
+            for (int t = 0; t < 3; ++t)
+                if (typeName == kPvzZombieNames[t]) type = t;
+            if (row >= 0 && row < kPvzRows) pvzZombies_.push_back({row, delay, type});
         }
         for (const auto& z : pvzZombies_)
-            pvzNextDelay_ = std::fmax(pvzNextDelay_, z.second + 8.0f);
+            pvzNextDelay_ = std::fmax(pvzNextDelay_, z.delay + 8.0f);
     }
     NEON_LOG_INFO("2D: level loaded from '%s' (%zu plants, %zu zombie spawns)",
                   path.c_str(), pvzPlants_.size(), pvzZombies_.size());
 }
 
 void EditorApp::Enter2DMode() {
-    if (projectDir_ == "." && std::ifstream("projects/pvz/game.json").is_open())
+    // Default to the bundled PvZ project unless the configured project dir
+    // already contains a pvz level.
+    const bool hasLevel =
+        std::ifstream(projectDir_ + "/assets/levels/pvz_level.json").is_open();
+    if (!hasLevel && std::ifstream("projects/pvz/game.json").is_open())
         projectDir_ = "projects/pvz";
     LoadPvzLevel();
+}
+
+void EditorApp::StartPvzPlaytest() {
+    StopPvzPlaytest();
+    SavePvzLevel(); // the playtest loads the edited level from disk
+    const std::string scenePath = projectDir_ + "/scenes/pvz.json";
+    std::ifstream in(scenePath, std::ios::binary);
+    if (!in.is_open()) {
+        NEON_LOG_ERROR("2D: cannot read play scene '%s'", scenePath.c_str());
+        return;
+    }
+    std::string json((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    scene::GameRuntimeConfig cfg;
+    cfg.assets = &assetMgr_;
+    cfg.scriptBaseDir = projectDir_;
+    cfg.assetBaseDir = projectDir_;
+    cfg.font2d = cjkFont_.Valid() ? cjkFont_ : pixelFont_;
+    cfg.input = Input();
+
+    pvzPlaytest_ = std::make_unique<scene::GameRuntime>();
+    core::Status st = pvzPlaytest_->Start(json, cfg);
+    if (!st.Ok()) {
+        NEON_LOG_ERROR("2D: playtest failed to start: %s", st.Error().c_str());
+        pvzPlaytest_.reset();
+        return;
+    }
+    pvzPlaytestActive_ = true;
+    NEON_LOG_INFO("2D: playtest started (scene '%s')", scenePath.c_str());
+}
+
+void EditorApp::StopPvzPlaytest() {
+    if (!pvzPlaytest_) return;
+    pvzPlaytest_->Stop();
+    pvzPlaytest_.reset();
+    pvzPlaytestActive_ = false;
+    NEON_LOG_INFO("2D: playtest stopped");
+}
+
+void EditorApp::TogglePvzPlaytest() {
+    if (pvzPlaytestActive_) {
+        StopPvzPlaytest();
+    } else {
+        StartPvzPlaytest();
+    }
 }
 
 void EditorApp::ClampSelection() {

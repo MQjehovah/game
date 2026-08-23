@@ -205,6 +205,7 @@ bool PlayerApp::OnCreate() {
     const std::vector<std::string> cjkSamples = {
         "退出鼠标拖动旋转视角帧率游戏",
         "家葵豆坚果僵阳点击卡牌选择格子种植收集胜利失败向日葵豌豆射手阳光！；：",
+        "寒冰樱桃炸弹路障铁桶",
     };
     cjkFont_ = assetMgr_.LoadSystemCJKFont(24, cjkSamples);
     theme_.font = cjkFont_.Valid() ? cjkFont_ : pixelFont_;

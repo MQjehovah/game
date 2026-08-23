@@ -1,16 +1,1 @@
-{
-  "plants": [
-    { "row": 4, "col": 1, "plant": "sunflower" },
-    { "row": 4, "col": 2, "plant": "peashooter" },
-    { "row": 2, "col": 2, "plant": "sunflower" },
-    { "row": 2, "col": 3, "plant": "peashooter" },
-    { "row": 0, "col": 3, "plant": "wallnut" }
-  ],
-  "zombies": [
-    { "row": 4, "delay": 8 },
-    { "row": 2, "delay": 18 },
-    { "row": 1, "delay": 28 },
-    { "row": 4, "delay": 38 },
-    { "row": 3, "delay": 45 }
-  ]
-}
+{"plants":[{"col":1,"plant":"sunflower","row":4},{"col":2,"plant":"peashooter","row":4},{"col":3,"plant":"snowpea","row":4},{"col":2,"plant":"sunflower","row":2},{"col":3,"plant":"peashooter","row":2},{"col":3,"plant":"wallnut","row":0}],"zombies":[{"delay":8,"row":4,"type":"basic"},{"delay":18,"row":2,"type":"cone"},{"delay":28,"row":1,"type":"basic"},{"delay":38,"row":4,"type":"bucket"},{"delay":45,"row":3,"type":"cone"}]}

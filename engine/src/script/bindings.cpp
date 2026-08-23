@@ -354,6 +354,34 @@ Value NativeDrawRect(IScriptHost& host, void* user) {
     return Value::Nil();
 }
 
+// DrawSprite(path, x, y, w, h): textured quad. The runtime resolves `path`
+// against the project/pack asset root (assets/sprites/*.png). When the
+// texture cannot be loaded the command still draws a plain quad with the
+// caller's tint (default white).
+Value NativeDrawSprite(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->draw2d) return Value::Nil();
+    auto num = [&](int i, float def) {
+        return host.GetArg(i).type == Value::Type::Number
+                   ? static_cast<float>(host.GetArg(i).number)
+                   : def;
+    };
+    Draw2DCmd c;
+    c.kind = Draw2DCmd::Kind::Rect;
+    const std::string path = StringArg(host, 0);
+    if (ctx->loadTexture) c.texture = ctx->loadTexture(path);
+    c.x = num(1, 0.0f);
+    c.y = num(2, 0.0f);
+    c.w = num(3, 64.0f);
+    c.h = num(4, 64.0f);
+    c.r = num(5, 1.0f);
+    c.g = num(6, 1.0f);
+    c.b = num(7, 1.0f);
+    c.a = num(8, 1.0f);
+    ctx->draw2d->push_back(std::move(c));
+    return Value::Nil();
+}
+
 Value NativeDrawRectOutline(IScriptHost& host, void* user) {
     auto* ctx = static_cast<ScriptContext*>(user);
     if (!ctx || !ctx->draw2d) return Value::Nil();
@@ -606,6 +634,7 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("AttackBox", &NativeAttackBox, &ctx);
     host.Register("BindPlayerToClient", &NativeBindPlayerToClient, &ctx);
     host.Register("DrawRect", &NativeDrawRect, &ctx);
+    host.Register("DrawSprite", &NativeDrawSprite, &ctx);
     host.Register("DrawRectOutline", &NativeDrawRectOutline, &ctx);
     host.Register("DrawText", &NativeDrawText, &ctx);
     host.Register("ReadText", &NativeReadText, &ctx);

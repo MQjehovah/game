@@ -172,6 +172,10 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     scriptCtx_.readData = [this](const std::string& path) {
         return ReadScript(FullScriptPath(path));
     };
+    scriptCtx_.loadTexture = [this](const std::string& path) {
+        if (!cfg_.assets || path.empty()) return gfx::TextureHandle{};
+        return cfg_.assets->LoadTexture(FullAssetPath(path)).Handle();
+    };
     // Combat / control hooks so scripts can drive scene entities. Both
     // component flavors are supported: scene entities carry SceneTransform
     // (from the scene JSON "transform" component) while script-spawned
@@ -990,7 +994,8 @@ void GameRuntime::FlushDraw2D(gfx::Renderer& renderer) {
     for (const script::Draw2DCmd& c : draw2d_) {
         switch (c.kind) {
             case script::Draw2DCmd::Kind::Rect:
-                renderer.DrawQuad({c.x, c.y}, {c.w, c.h}, {c.r, c.g, c.b, c.a});
+                renderer.DrawQuad({c.x, c.y}, {c.w, c.h}, {c.r, c.g, c.b, c.a},
+                                  c.texture);
                 break;
             case script::Draw2DCmd::Kind::RectOutline:
                 renderer.DrawRectOutline({c.x, c.y, c.w, c.h}, c.thickness,

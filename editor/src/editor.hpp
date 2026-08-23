@@ -78,6 +78,7 @@ public:
         editMode_ = v ? EditMode::Scene2D : EditMode::Scene3D;
         if (v) Enter2DMode();
     }
+    void SetPvzPlaytestOnStart(bool v) { pvzPlaytestOnStart_ = v; }
     void SetBackendName(const std::string& name) { backendName_ = name; }
     bool SmokeFailed() const { return smokeFailed_; }
     void RequestScreenshot(const std::string& path, uint64_t frame) {
@@ -127,11 +128,16 @@ private:
     struct Pvz2DCell {
         int row = 0;
         int col = 0;
-        int type = 0; // 0 sunflower, 1 peashooter, 2 wallnut
+        int type = 0; // 0 sunflower, 1 peashooter, 2 wallnut, 3 snowpea, 4 cherry
+    };
+    struct PvzZombieSpawn {
+        int row = 0;
+        float delay = 0.0f;
+        int type = 0; // 0 basic, 1 cone, 2 bucket
     };
     std::vector<Pvz2DCell> pvzPlants_;
-    std::vector<std::pair<int, float>> pvzZombies_; // row, spawn delay (s)
-    int pvzBrush_ = 0;                              // 0..2 plant, 3 eraser, 4 zombie
+    std::vector<PvzZombieSpawn> pvzZombies_;
+    int pvzBrush_ = 0; // 0..4 plant, 5 eraser, 6..8 zombie type
     float pvzNextDelay_ = 8.0f;
     int pvzHoverRow_ = -1, pvzHoverCol_ = -1;
     void DrawPvzCanvas();
@@ -140,6 +146,11 @@ private:
     void LoadPvzLevel();
     // Defaults the project dir to projects/pvz on first run, loads the level.
     void Enter2DMode();
+    // In-editor 2D playtest (F5 / toolbar): runs projects/pvz via a
+    // GameRuntime so the edited level is playable without leaving the editor.
+    void TogglePvzPlaytest();
+    void StartPvzPlaytest();
+    void StopPvzPlaytest();
 
     // In-editor playtest (F5): a GameRuntime snapshot of the editor scene runs
     // in the viewport while the editor scene stays untouched.
@@ -213,6 +224,10 @@ private:
     int selected_ = -1;
     bool playtestActive_ = false;
     std::unique_ptr<scene::GameRuntime> playtest_; // non-null while playtesting
+    // 2D-mode playtest (NeonPvZ): independent runtime drawing via on_render.
+    bool pvzPlaytestActive_ = false;
+    std::unique_ptr<scene::GameRuntime> pvzPlaytest_;
+    bool pvzPlaytestOnStart_ = false; // --2d-play: auto-start the playtest
     bool f5Pressed_ = false; // edge-trigger: Win32 repeats KeyDown while held
 
     // Undo/redo command stack. Every scene mutation (entity add/delete/

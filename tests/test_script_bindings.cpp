@@ -391,3 +391,25 @@ TEST(ScriptBindings2DCanvasAndData) {
         CHECK_NEAR(cmds[2].size, 18.0f, 1e-5);
     }
 }
+
+// DrawSprite resolves a texture path through the runtime hook and carries the
+// handle in the 2D command; missing textures fall back to a plain quad.
+TEST(ScriptBindingsDrawSprite) {
+    Bindings b;
+    std::vector<script::Draw2DCmd> cmds;
+    b.ctx.draw2d = &cmds;
+    b.ctx.loadTexture = [](const std::string& p) {
+        return p == "assets/sprites/sun.png" ? gfx::TextureHandle{7}
+                                             : gfx::TextureHandle{};
+    };
+    CHECK(RunScript(*b.host, R"(
+      DrawSprite("assets/sprites/sun.png", 10, 20, 48, 48)
+      DrawSprite("missing.png", 0, 0, 16, 16)
+    )"));
+    CHECK_EQ(cmds.size(), 2u);
+    if (cmds.size() == 2u) {
+        CHECK(cmds[0].texture.id == 7u);
+        CHECK_NEAR(cmds[0].w, 48.0f, 1e-5);
+        CHECK(!cmds[1].texture.Valid());
+    }
+}

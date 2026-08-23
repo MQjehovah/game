@@ -13,6 +13,7 @@ int main(int argc, char** argv) {
     bool disableBloom = false;
     bool hotReload = false;
     bool twoD = false;
+    bool twoDPlay = false;
     std::string backend = "gl";
     std::string screenshot;
     uint64_t screenshotFrame = 0;
@@ -23,6 +24,9 @@ int main(int argc, char** argv) {
             hotReload = true;
         } else if (std::strcmp(argv[i], "--2d") == 0) {
             twoD = true;
+        } else if (std::strcmp(argv[i], "--2d-play") == 0) {
+            twoD = true;
+            twoDPlay = true;
         } else if (std::strcmp(argv[i], "--package") == 0 && i + 2 < argc) {
             const std::string projectDir = argv[++i];
             const std::string outDir = argv[++i];
@@ -59,6 +63,7 @@ int main(int argc, char** argv) {
                         "  --smoke-test <frames>  run N simulation frames then exit\n"
                         "  --hot                  enable hot reload (scripts/assets on mtime change)\n"
                         "  --2d                   start in the 2D canvas mode (NeonPvZ lawn editor)\n"
+                        "  --2d-play              start 2D mode with the PvZ playtest running\n"
                         "  --backend <gl|vulkan>  graphics backend (default gl; vulkan is opt-in)\n"
                         "  --package <project> <out>  validate + pack a project into\n"
                         "                         <out>/game.pack (run.bat + neon_game.exe)\n"
@@ -92,6 +97,7 @@ int main(int argc, char** argv) {
     if (disableBloom) app.SetBloomEnabled(false);
     if (hotReload) app.SetHotReload(true);
     if (twoD) app.Set2DMode(true);
+    if (twoDPlay) app.SetPvzPlaytestOnStart(true);
     if (backend != "gl") app.SetBackendName(backend);
     int code = app.Run(config);
     return app.SmokeFailed() ? 1 : code;

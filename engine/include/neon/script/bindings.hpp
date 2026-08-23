@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "neon/ecs/world.hpp"
+#include "neon/gfx/backend.hpp"
 #include "neon/math/quat.hpp"
 #include "neon/math/vec3.hpp"
 #include "neon/physics/physics.hpp"
@@ -50,6 +51,7 @@ struct Draw2DCmd {
     float size = 16.0f;
     bool centerX = false;
     bool centerY = false;
+    gfx::TextureHandle texture; // sprite (DrawSprite); invalid = plain quad
     std::string text;
 };
 
@@ -117,6 +119,9 @@ struct ScriptContext {
     // Reads a text data file (levels/*.json etc.) from the project/pack.
     // Wired by GameRuntime; null -> ReadText returns "".
     std::function<std::string(const std::string&)> readData;
+    // Resolves a sprite path (assets/sprites/*.png) to a texture handle.
+    // Wired by GameRuntime; null -> DrawSprite draws a plain quad.
+    std::function<gfx::TextureHandle(const std::string&)> loadTexture;
     // Optional: attaches a Lua script to a spawned entity (Spawn's 3rd arg) so
     // dynamically created entities (multi-player player controllers) run
     // on_start/on_update like scene-placed ones. Wired by GameRuntime.
