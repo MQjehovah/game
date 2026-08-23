@@ -2,6 +2,7 @@
 #include <vector>
 
 #include "neon/neon.hpp"
+#include "neon/scene/component_schema.hpp"
 #include "neon/scene/scene_file.hpp"
 #include "helpers.hpp"
 
@@ -393,6 +394,41 @@ TEST(SceneLevelDataRoundTrip) {
     CHECK_EQ(b.Value().level.Get("plants")->Size(), 1u);
     CHECK_EQ(b.Value().level.Get("zombies")->At(0)->Get("delay")->GetNumber(), 8.0);
     CHECK_EQ(b.Value().entities[0].name, std::string("PvZ"));
+}
+
+// ---------------------------------------------------------------------------
+// Component schemas (inspector metadata for arbitrary components)
+// ---------------------------------------------------------------------------
+
+TEST(ComponentSchemaRegistry) {
+    scene::RegisterBuiltinComponentSchemas();
+    const scene::ComponentSchema* plant = scene::FindComponentSchema("plant");
+    CHECK(plant != nullptr);
+    CHECK_EQ(plant->label, std::string("植物"));
+    CHECK(plant->fields.size() >= 3u);
+    bool hasRow = false, hasType = false;
+    for (const scene::FieldSchema& f : plant->fields) {
+        if (f.key == "row") {
+            hasRow = true;
+            CHECK(f.type == scene::FieldType::Int);
+            CHECK_EQ(f.min, 0.0);
+            CHECK_EQ(f.max, 4.0);
+        }
+        if (f.key == "type") {
+            hasType = true;
+            CHECK(f.type == scene::FieldType::Enum);
+            CHECK(f.optionCount == 5);
+        }
+    }
+    CHECK(hasRow);
+    CHECK(hasType);
+
+    // Unknown components have no schema (inspector falls back to raw JSON).
+    CHECK(scene::FindComponentSchema("does_not_exist") == nullptr);
+    // Built-ins are registered too.
+    CHECK(scene::FindComponentSchema("transform") != nullptr);
+    CHECK(scene::FindComponentSchema("mesh") != nullptr);
+    CHECK(scene::FindComponentSchema("health") != nullptr);
 }
 
 // ---------------------------------------------------------------------------

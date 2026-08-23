@@ -1421,6 +1421,8 @@ void EditorApp::BuildImGuiUI() {
             ImGui::MenuItem("打包", nullptr, &showPackage_);
             ImGui::MenuItem("性能", nullptr, &showProfiler_);
             ImGui::MenuItem("输入映射", nullptr, &showInputMap_);
+            ImGui::MenuItem("导航", nullptr, &showNav_);
+            ImGui::MenuItem("本地化", nullptr, &showLoc_);
             ImGui::Separator();
             ImGui::MenuItem("引擎 UI 演示", nullptr, &showCustomUIDemo_);
             ImGui::MenuItem("ImGui Demo", nullptr, &showImGuiDemo_);
@@ -1694,6 +1696,8 @@ void EditorApp::BuildImGuiUI() {
     BuildPackagePanel();
     BuildProfilerPanel();
     BuildInputMapPanel();
+    BuildNavPanel();
+    BuildLocPanel();
     BuildViewportPanel();
 
     if (showImGuiDemo_) ImGui::ShowDemoWindow(&showImGuiDemo_);
@@ -2441,7 +2445,7 @@ void EditorApp::RunUISmokeTest() {
                 break;
             }
         }
-        check(found, "asset thumbnail: helmet glTF present in the asset panel listing");
+    check(found, "asset thumbnail: helmet glTF present in the asset panel listing");
         if (found) RequestMeshThumbnail(kThumbPath);
         check(std::find(meshThumbQueue_.begin(), meshThumbQueue_.end(), kThumbPath) !=
                   meshThumbQueue_.end(),
@@ -2455,6 +2459,34 @@ void EditorApp::RunUISmokeTest() {
               "asset thumbnail: image preview texture registered for ImGui");
     }
 
+    // --- Prefab workflow (Godot-style): library load + instantiate + save ---
+    {
+        const std::string proj = GetTempDir() + "/prefab_proj";
+        EnsureDirs(proj + "/prefabs");
+        {
+            std::ofstream out(proj + "/prefabs/watchtower.json", std::ios::binary);
+            out << R"({"components":{"transform":{"pos":[0,0,0],"scale":[1,1,1]},
+                      "mesh":{"meshKey":"cube","colorHex":"#AABBCC"},
+                      "health":{"hp":50,"maxHp":50}}})";
+        }
+        const std::string prev = projectDir_;
+        projectDir_ = proj;
+        LoadPrefabLibrary();
+        check(prefabLib_.Has("watchtower"),
+              "prefab: library loads prefabs/watchtower.json");
+        const size_t before = entities_.size();
+        AddEntity("prefab:watchtower");
+        check(entities_.size() == before + 1 && entities_.back().prefab == "watchtower",
+              "prefab: instantiate appends an entity with the prefab reference");
+        SetSelection(static_cast<int>(entities_.size()) - 1);
+        SavePrefab("watchtower_copy");
+        check(prefabLib_.Has("watchtower_copy"),
+              "prefab: SavePrefab registers a new template");
+        history_.Undo(); // drop the instanced entity so later smoke checks
+                         // (playtest) run against the canonical scene
+        projectDir_ = prev;
+    }
+
     NEON_LOG_INFO("EDITOR-UI-SMOKE: all checks done");
 }
 
@@ -2462,6 +2494,68 @@ void EditorApp::AddEntity(const std::string& meshKey) {
     static int counter = 1;
     math::Vec3 pos = camTarget_ + math::Vec3{0, 1.0f, -3.0f};
     std::string name;
+    if (meshKey.rfind("prefab:", 0) == 0) {
+        // Instantiate a project prefab (prefabs/<name>.json): materialize its
+        // component template into a new editable entity.
+        const std::string pfName = meshKey.substr(7);
+        auto tpl = prefabLib_.Get(pfName);
+        if (!tpl.Ok()) {
+            NEON_LOG_ERROR("Editor: prefab '%s' not found in '%s/prefabs'", pfName.c_str(),
+                           projectDir_.c_str());
+            return;
+        }
+        SceneEntity e;
+        e.prefab = pfName;
+        e.name = pfName + std::to_string(counter++);
+        e.pos = pos;
+        {
+            // PrefabLibrary stores the component map directly (no wrapper).
+            const core::Json* comps = tpl.Value();
+            if (comps && comps->IsObject()) {
+                if (const core::Json* m = comps->Get("mesh")) {
+                    if (m->IsObject()) {
+                        e.meshKey =
+                            m->Get("meshKey") ? m->Get("meshKey")->GetString("cube") : "cube";
+                        if (const core::Json* c = m->Get("colorHex"))
+                            e.tint = ColorFromHex(c->GetString());
+                        if (const core::Json* v = m->Get("metallic"))
+                            e.metallic = static_cast<float>(v->GetNumber());
+                        if (const core::Json* v = m->Get("roughness"))
+                            e.roughness = static_cast<float>(v->GetNumber());
+                    }
+                }
+                if (const core::Json* h = comps->Get("health")) {
+                    if (h->IsObject()) {
+                        if (const core::Json* v = h->Get("hp"))
+                            e.hp = static_cast<float>(v->GetNumber());
+                        if (const core::Json* v = h->Get("maxHp"))
+                            e.maxHp = static_cast<float>(v->GetNumber());
+                    }
+                }
+                if (const core::Json* s = comps->Get("script")) {
+                    if (s->IsObject()) {
+                        e.scriptPath = s->Get("path") ? s->Get("path")->GetString() : "";
+                        e.scriptBackend =
+                            s->Get("backend") ? s->Get("backend")->GetString("lua") : "lua";
+                        if (const core::Json* v = s->Get("vars")) e.scriptVars = *v;
+                    }
+                }
+                for (const auto& [cname, cdata] : comps->Members()) {
+                    if (cname == "transform" || cname == "mesh" || cname == "health" ||
+                        cname == "script")
+                        continue;
+                    e.extraComponents[cname] = cdata;
+                }
+            }
+        }
+        if (ResolveMesh(e)) {
+            ApplyMaterialParams(e);
+            const size_t insertAt = entities_.size();
+            history_.Push(std::make_unique<AddEntityCommand>(&entities_, e, insertAt));
+            SetSelection(static_cast<int>(entities_.size()) - 1);
+        }
+        return;
+    }
     if (meshKey.rfind("obj:", 0) == 0 || meshKey.rfind("gltf:", 0) == 0) {
         std::string path = meshKey.substr(meshKey.find(':') + 1);
         size_t slash = path.find_last_of("/\\");
@@ -2515,6 +2609,25 @@ core::Result<core::Json> EditorApp::BuildPlaySceneJson() {
         if (!res.Ok()) {
             return core::Result<core::Json>::Err("editor: " + res.Error());
         }
+        if (!e.prefab.empty()) res.Value().object_["prefab"] = [&e]() {
+            core::Json j;
+            j.type_ = core::Json::Type::String;
+            j.string_ = e.prefab;
+            return j;
+        }();
+        // Merge schema-editable extra components into the exported entity so
+        // project scenes round-trip without data loss.
+        if (!e.extraComponents.empty()) {
+            core::Json& obj = res.Value();
+            core::Json comps;
+            if (const core::Json* c = obj.Get("components")) {
+                if (c->IsObject()) comps = *c;
+            }
+            comps.type_ = core::Json::Type::Object;
+            for (const auto& [cname, cdata] : e.extraComponents)
+                comps.object_[cname] = cdata;
+            obj.object_["components"] = std::move(comps);
+        }
         arr.array_.push_back(res.Value());
     }
     root.object_["entities"] = std::move(arr);
@@ -2527,6 +2640,7 @@ void EditorApp::StartPlaytest() {
     scene::GameRuntimeConfig cfg;
     cfg.assets = &assetMgr_;
     cfg.scriptBaseDir = projectDir_.empty() ? "." : projectDir_;
+    cfg.localesDir = projectDir_.empty() ? "./locales" : projectDir_ + "/locales";
     cfg.input = Input(); // hero controller reads live WASD/mouse input
     cfg.font2d = cjkFont_.Valid() ? cjkFont_ : pixelFont_; // 2D HUD / on_render
     std::string json;
@@ -3001,8 +3115,25 @@ void EditorApp::LoadScene(const std::string& path) {
         SceneEntity e;
         e.name = j->Get("name")->GetString("entity");
         if (componentized) {
-            const core::Json* comps = j->Get("components");
-            if (!comps) continue;
+            if (const core::Json* pf = j->Get("prefab")) e.prefab = pf->GetString();
+            // Effective components = prefab template merged with instance
+            // overrides (instance fields win), mirroring the runtime.
+            core::Json effective;
+            effective.type_ = core::Json::Type::Object;
+            if (!e.prefab.empty() && prefabLib_.Has(e.prefab)) {
+                auto tpl = prefabLib_.Get(e.prefab);
+                if (tpl.Ok()) {
+                    // PrefabLibrary stores the component map directly.
+                    const core::Json* tc = tpl.Value();
+                    if (tc && tc->IsObject()) effective = *tc;
+                }
+            }
+            if (const core::Json* inst = j->Get("components")) {
+                if (inst->IsObject()) {
+                    for (const auto& [k, v] : inst->Members()) effective.object_[k] = v;
+                }
+            }
+            const core::Json* comps = &effective;
             if (const core::Json* t = comps->Get("transform")) {
                 if (const core::Json* p = t->Get("pos"))
                     e.pos = {static_cast<float>(p->At(0)->GetNumber()),
@@ -3034,6 +3165,14 @@ void EditorApp::LoadScene(const std::string& path) {
                 e.scriptPath = s->Get("path") ? s->Get("path")->GetString() : "";
                 e.scriptBackend = s->Get("backend") ? s->Get("backend")->GetString("lua") : "lua";
                 if (const core::Json* v = s->Get("vars")) e.scriptVars = *v;
+            }
+            // Keep every non-flattened component as editable extra data
+            // (schema-driven inspector; plant/zombie mirror the 2D canvas).
+            for (const auto& [cname, cdata] : comps->Members()) {
+                if (cname == "transform" || cname == "mesh" || cname == "health" ||
+                    cname == "script")
+                    continue;
+                e.extraComponents[cname] = cdata;
             }
             if (const core::Json* pl = comps->Get("plant")) {
                 if (pl->IsObject()) {
@@ -3200,6 +3339,85 @@ void EditorApp::ScanProjects() {
     }
 }
 
+// Loads every prefabs/*.json from the current project (Godot-style prefab
+// templates referenced by scene entities).
+void EditorApp::LoadPrefabLibrary() {
+    prefabLib_ = scene::PrefabLibrary();
+    projectPrefabs_.clear();
+    std::vector<AssetEntry> files;
+    if (!ListDirectory(projectDir_ + "/prefabs", files)) return;
+    for (const AssetEntry& f : files) {
+        if (f.isDir) continue;
+        const std::string& n = f.name;
+        const bool isJson =
+            n.size() > 5 && (n.compare(n.size() - 5, 5, ".json") == 0 ||
+                             n.compare(n.size() - 5, 5, ".JSON") == 0);
+        if (!isJson) continue;
+        std::ifstream in(f.path, std::ios::binary);
+        if (!in.is_open()) continue;
+        std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        const std::string name = BaseName(f.path);
+        const size_t dot = name.find_last_of('.');
+        const std::string stem = dot == std::string::npos ? name : name.substr(0, dot);
+        projectPrefabs_.push_back(stem);
+        core::Status st = prefabLib_.Add(stem, text);
+        if (!st.Ok())
+            NEON_LOG_WARN("Editor: prefab '%s' failed to parse: %s", f.path.c_str(),
+                          st.Error().c_str());
+    }
+    std::sort(projectPrefabs_.begin(), projectPrefabs_.end());
+    NEON_LOG_INFO("Editor: prefab library loaded (%zu prefabs)", prefabLib_.Size());
+}
+
+// Saves the selected entity's components as prefabs/<name>.json (a component
+// template other entities can instantiate).
+void EditorApp::SavePrefab(const std::string& name) {
+    if (selected_ < 0 || selected_ >= static_cast<int>(entities_.size())) return;
+    const SceneEntity& e = entities_[static_cast<size_t>(selected_)];
+    if (name.empty()) {
+        NEON_LOG_WARN("Editor: prefab name is empty");
+        return;
+    }
+    if (e.meshKey.empty()) {
+        NEON_LOG_WARN("Editor: entity has no mesh; cannot save as prefab");
+        return;
+    }
+    auto res = scene::SceneFile::MakeEntity(e.name, e.pos, e.rot, e.scale,
+                                            ExportMeshKey(e.meshKey), e.metallic, e.roughness,
+                                            e.tint, e.albedoTex, e.mrTex, e.aoTex,
+                                            e.emissiveTex, e.ao, e.emissiveIntensity,
+                                            e.scriptPath, e.scriptBackend, e.scriptVars, {},
+                                            e.hp, e.maxHp, e.parent);
+    if (!res.Ok()) {
+        NEON_LOG_ERROR("Editor: cannot save prefab: %s", res.Error().c_str());
+        return;
+    }
+    core::Json root;
+    root.type_ = core::Json::Type::Object;
+    core::Json comps;
+    if (const core::Json* c = res.Value().Get("components")) {
+        if (c->IsObject()) comps = *c;
+    }
+    comps.type_ = core::Json::Type::Object;
+    for (const auto& [cname, cdata] : e.extraComponents) comps.object_[cname] = cdata;
+    root.object_["components"] = std::move(comps);
+
+    const std::string dir = projectDir_ + "/prefabs";
+    EnsureDirs(dir + "/");
+    const std::string path = dir + "/" + name + ".json";
+    std::ofstream out(path, std::ios::binary);
+    if (!out.is_open()) {
+        NEON_LOG_ERROR("Editor: cannot write prefab '%s'", path.c_str());
+        return;
+    }
+    {
+        out << core::JsonWriter::Write(root);
+        out.close(); // flush before the library reload below reads the file
+    }
+    LoadPrefabLibrary();
+    NEON_LOG_INFO("Editor: prefab saved -> %s", path.c_str());
+}
+
 // Godot-style project switch: loads <dir>/game.json, enters the project's
 // declared edit mode and loads its start scene (3D) or first level (2D).
 void EditorApp::SwitchProject(const std::string& dir) {
@@ -3208,6 +3426,7 @@ void EditorApp::SwitchProject(const std::string& dir) {
     std::strncpy(projectDirBuf_, projectDir_.c_str(), sizeof(projectDirBuf_) - 1);
     projectDirBuf_[sizeof(projectDirBuf_) - 1] = '\0';
     ScanProjects();
+    LoadPrefabLibrary();
     history_.Clear();
     SetSelection(-1);
     if (projectMode_ == "2d") {

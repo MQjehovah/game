@@ -8,7 +8,9 @@
 #include <vector>
 
 #include "neon/core/log.hpp"
+#include "neon/nav/nav_grid.hpp"
 #include "neon/neon.hpp"
+#include "neon/scene/component_schema.hpp"
 #include "neon/scene/game_runtime.hpp"
 #include "neon/ui/system.hpp"
 #include "bt_editor.hpp"
@@ -27,6 +29,7 @@ enum class ViewCam { Perspective, Top, Front };
 struct SceneEntity {
     std::string name;
     std::string parent; // scene-tree parent by entity name ("" = root)
+    std::string prefab; // prefabs/<name>.json template reference ("" = none)
     std::string meshKey; // "terrain" | "helmet" | "cube" | "tree" | "obj:<path>" | "gltf:<path>"
     math::Vec3 pos{};
     math::Quat rot{};
@@ -52,6 +55,12 @@ struct SceneEntity {
     std::string scriptBackend;
     std::string scriptPath;
     core::Json scriptVars;
+    // Non-flattened component data (Godot-style): every component of the
+    // entity that isn't one of the built-in flattened fields above. Kept so
+    // the inspector can edit arbitrary components (schema-driven) and project
+    // scenes round-trip without data loss. 2D layout components (plant/zombie)
+    // also live here; the 2D canvas mirrors them.
+    std::map<std::string, core::Json> extraComponents;
     gfx::Mesh mesh;
     gfx::Material material;
 };
@@ -79,6 +88,8 @@ bool ListDirectory(const std::string& dir, std::vector<AssetEntry>& out);
 
 class EditorApp : public core::Application {
 public:
+    friend class EditMeshKeyCommand;
+
     bool OnCreate() override;
     void OnShutdown() override;
     void OnUpdate(float dt) override;
@@ -116,6 +127,8 @@ private:
     void BuildInspectorPanel();
     void BuildLogPanel();
     void BuildViewportPanel();
+    void BuildNavPanel();
+    void BuildLocPanel();
     void BuildProfilerPanel();
     void BuildInputMapPanel();
     void DrawPlaytestHUD();
@@ -140,6 +153,10 @@ private:
     // lists and enters the declared edit mode (2d canvas or 3D scene tree).
     void ScanProjects();
     void SwitchProject(const std::string& dir);
+    // Loads every prefabs/*.json from the current project into prefabLib_.
+    void LoadPrefabLibrary();
+    // Saves the selected entity's components as prefabs/<name>.json.
+    void SavePrefab(const std::string& name);
     // Reads <dir>/game.json + scene/level lists into `p`; false if no game.json.
     bool ReadProjectMeta(EditorProject& p);
     // Loads the current project's start scene (3D projects) / level (2D).
@@ -278,6 +295,8 @@ private:
     std::string projectStartScene_;  // current game.json startScene (relative)
     std::vector<std::string> projectScenes_; // current project scene files
     std::string currentSceneName_; // scene picker label (loaded scene file)
+    scene::PrefabLibrary prefabLib_; // current project's prefab templates
+    std::vector<std::string> projectPrefabs_; // prefab names (sorted, for UI)
     // The parsed root of the scene currently in the editor + its file path.
     // 2D levels are scene entities (plant/zombie components), so SavePvzLevel
     // writes them back into the scene file.
@@ -355,6 +374,22 @@ private:
     bool showLog_ = true;
     bool showCustomUIDemo_ = false;
     bool showImGuiDemo_ = false;
+    bool showNav_ = false;
+    bool showLoc_ = false;
+
+    // Localization editor: merged string tables from <project>/locales/*.json
+    // plus the active language for the preview.
+    core::Localization locEdit_;
+    std::string locLanguage_ = "zh";
+    std::string locPath_; // last loaded/saved locales file
+
+    // Navigation tool (A* on a 2D walkability grid): asset path, grid, and
+    // the current start/goal/path for viewport visualization.
+    std::string navAssetPath_; // project nav/<name>.json ("" = unsaved)
+    nav::NavGrid navGrid_;
+    math::Vec2 navStart_{-5, -5}; // cell-space markers (invalid when < 0)
+    math::Vec2 navGoal_{-5, -5};
+    std::vector<math::Vec2> navPath_;
 
     // Tool panel state.
     std::vector<AssetEntry> assetEntries_;

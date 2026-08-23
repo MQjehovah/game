@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cerrno>
 #include <cstring>
 #include <functional>
 #include <cstdio>
@@ -41,6 +42,28 @@ std::string ToLower(std::string s) {
     std::transform(s.begin(), s.end(), s.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return s;
+}
+
+gfx::Color ColorFromHex(const std::string& hex) {
+    if (hex.size() < 7 || hex[0] != '#') return gfx::Color::White;
+    auto nibble = [](char c) -> unsigned {
+        if (c >= '0' && c <= '9') return static_cast<unsigned>(c - '0');
+        if (c >= 'a' && c <= 'f') return static_cast<unsigned>(c - 'a' + 10);
+        if (c >= 'A' && c <= 'F') return static_cast<unsigned>(c - 'A' + 10);
+        return 255u;
+    };
+    auto byte = [&](char hi, char lo) {
+        return static_cast<float>(((nibble(hi) << 4) | nibble(lo)) / 255.0);
+    };
+    return {byte(hex[1], hex[2]), byte(hex[3], hex[4]), byte(hex[5], hex[6]), 1.0f};
+}
+
+bool MakeDirSingle(const std::string& path) {
+#if defined(_WIN32)
+    return _mkdir(path.c_str()) == 0 || errno == EEXIST;
+#else
+    return ::mkdir(path.c_str(), 0777) == 0 || errno == EEXIST;
+#endif
 }
 
 std::string GetCurrentDir();
@@ -256,6 +279,24 @@ void EditorApp::BuildScenePanel() {
             AddEntity(keys[addType]);
         }
         ImGui::SameLine();
+        {
+            static int prefabSel = 0;
+            if (prefabLib_.Size() > 0) {
+                std::vector<const char*> prefabNames;
+                for (const auto& entry : projectPrefabs_) prefabNames.push_back(entry.c_str());
+                if (prefabSel >= static_cast<int>(prefabNames.size())) prefabSel = 0;
+                ImGui::SetNextItemWidth(110.0f);
+                if (ImGui::Combo("##prefab_pick", &prefabSel, prefabNames.data(),
+                                 static_cast<int>(prefabNames.size())))
+                    ;
+                ImGui::SameLine();
+                if (ImGui::Button("插入预置体"))
+                    AddEntity("prefab:" + projectPrefabs_[static_cast<size_t>(prefabSel)]);
+            } else {
+                ImGui::TextDisabled("无预置体");
+            }
+        }
+        ImGui::SameLine();
         if (ImGui::Button("复制") && selected_ >= 0) {
             history_.Push(std::make_unique<DuplicateEntityCommand>(
                 &entities_, static_cast<size_t>(selected_)));
@@ -308,7 +349,8 @@ void EditorApp::BuildScenePanel() {
                 for (int idx : it->second) {
                     const SceneEntity& e = entities_[static_cast<size_t>(idx)];
                     char label[256];
-                    std::snprintf(label, sizeof(label), "%s##scene_%d", e.name.c_str(), idx);
+                    std::snprintf(label, sizeof(label), "%s%s##scene_%d", e.name.c_str(),
+                                  e.prefab.empty() ? "" : " (预置体)", idx);
                     const bool hasChildren = childrenByParent.count(e.name) != 0;
                     if (hasChildren) {
                         const bool open = ImGui::TreeNodeEx(
@@ -587,6 +629,24 @@ void EditorApp::BuildInspectorPanel() {
             }
         }
         ImGui::TextDisabled("类型: %s", TypeLabel(e.meshKey).c_str());
+        if (!e.prefab.empty()) {
+            ImGui::TextDisabled("预置体: %s", e.prefab.c_str());
+        }
+        {
+            static char prefabName[128] = {};
+            std::snprintf(prefabName, sizeof(prefabName), "%s", e.name.c_str());
+            ImGui::SetNextItemWidth(140.0f);
+            ImGui::InputText("预置体名", prefabName, sizeof(prefabName));
+            ImGui::SameLine();
+            if (ImGui::Button("另存为预置体")) {
+                std::string name(prefabName);
+                if (!name.empty()) {
+                    const size_t dot = name.find_last_of('.');
+                    if (dot != std::string::npos) name = name.substr(0, dot);
+                    SavePrefab(name);
+                }
+            }
+        }
         ImGui::Separator();
         const math::Vec3 oldPos = e.pos;
         if (ImGui::DragFloat3("位置", &e.pos.x, 0.1f)) {
@@ -720,12 +780,214 @@ void EditorApp::BuildInspectorPanel() {
         textureSlot("自发光图", e.emissiveTex, e.material.emissive, ApplyEmissiveTexSlot);
         ImGui::Separator();
         ImGui::TextUnformatted("网格");
-        ImGui::TextDisabled("来源: %s", e.meshKey.c_str());
+        char meshBuf[2048];
+        std::snprintf(meshBuf, sizeof(meshBuf), "%s", e.meshKey.c_str());
+        if (ImGui::InputText("网格键", meshBuf, sizeof(meshBuf),
+                             ImGuiInputTextFlags_EnterReturnsTrue)) {
+            const std::string newKey(meshBuf);
+            if (newKey != e.meshKey) {
+                const std::string oldKey = e.meshKey;
+                history_.Push(std::make_unique<EditMeshKeyCommand>(
+                    this, &entities_, selected_, oldKey, newKey));
+            }
+        }
+        // Drag a model from the asset panel to replace the mesh.
+        if (ImGui::BeginDragDropTarget()) {
+            if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("ASSET_MODEL")) {
+                std::string path(static_cast<const char*>(payload->Data),
+                                 static_cast<size_t>(payload->DataSize));
+                if (!path.empty() && path.back() == '\0') path.pop_back();
+                if (!path.empty()) {
+                    const std::string lower = ToLower(path);
+                    const std::string key =
+                        lower.rfind(".obj") != std::string::npos ? "obj:" + path
+                                                                 : "gltf:" + path;
+                    const std::string oldKey = e.meshKey;
+                    history_.Push(std::make_unique<EditMeshKeyCommand>(
+                        this, &entities_, selected_, oldKey, key));
+                }
+            }
+            ImGui::EndDragDropTarget();
+        }
         if (e.mesh.Valid()) {
             ImGui::TextDisabled("%u 三角形", e.mesh.TriangleCount());
             const math::AABB& b = e.mesh.Bounds();
             ImGui::TextDisabled("包围盒 (%.1f, %.1f, %.1f) ~ (%.1f, %.1f, %.1f)", b.min.x,
                                 b.min.y, b.min.z, b.max.x, b.max.y, b.max.z);
+        }
+        // Schema-driven component editor (Godot @export / UE UPROPERTY style):
+        // every component stored in extraComponents renders its registered
+        // fields; components without a schema show their raw JSON read-only.
+        // plant/zombie are skipped - the 2D canvas is their editor.
+        ImGui::Separator();
+        ImGui::TextUnformatted("组件");
+        auto makeNum = [](double v) {
+            core::Json j;
+            j.type_ = core::Json::Type::Number;
+            j.number_ = v;
+            return j;
+        };
+        auto makeStr = [](const std::string& s) {
+            core::Json j;
+            j.type_ = core::Json::Type::String;
+            j.string_ = s;
+            return j;
+        };
+        auto makeBool = [](bool v) {
+            core::Json j;
+            j.type_ = core::Json::Type::Bool;
+            j.bool_ = v;
+            return j;
+        };
+        auto makeArr = [&](const std::vector<double>& v) {
+            core::Json j;
+            j.type_ = core::Json::Type::Array;
+            for (double x : v) j.array_.push_back(makeNum(x));
+            return j;
+        };
+        for (auto& [compName, compData] : e.extraComponents) {
+            if (compName == "plant" || compName == "zombie") continue; // 2D canvas edits
+            const scene::ComponentSchema* schema = scene::FindComponentSchema(compName);
+            const std::string header =
+                schema ? (schema->label + "##" + compName) : (compName + "##raw");
+            if (!ImGui::CollapsingHeader(header.c_str(), ImGuiTreeNodeFlags_DefaultOpen))
+                continue;
+            if (!schema) {
+                ImGui::TextWrapped("%s", core::JsonWriter::Write(compData).c_str());
+                continue;
+            }
+            for (const scene::FieldSchema& f : schema->fields) {
+                if (!compData.IsObject()) {
+                    compData.type_ = core::Json::Type::Object;
+                }
+                core::Json& node = compData.object_[f.key];
+                if (node.IsNull()) node = makeNum(f.def);
+                const core::Json oldField = node;
+                bool changed = false;
+                switch (f.type) {
+                    case scene::FieldType::Number: {
+                        float v = static_cast<float>(node.IsNumber() ? node.GetNumber() : f.def);
+                        if (ImGui::DragFloat(f.label.c_str(), &v, static_cast<float>(f.step),
+                                             static_cast<float>(f.min),
+                                             static_cast<float>(f.max)))
+                            node = makeNum(static_cast<double>(v)), changed = true;
+                        break;
+                    }
+                    case scene::FieldType::Int: {
+                        int v = node.IsNumber() ? static_cast<int>(node.GetNumber())
+                                                : static_cast<int>(f.def);
+                        if (ImGui::DragInt(f.label.c_str(), &v, 1, static_cast<int>(f.min),
+                                           static_cast<int>(f.max)))
+                            node = makeNum(v), changed = true;
+                        break;
+                    }
+                    case scene::FieldType::Bool: {
+                        bool v = node.IsBool() ? node.GetBool() : false;
+                        if (ImGui::Checkbox(f.label.c_str(), &v))
+                            node = makeBool(v), changed = true;
+                        break;
+                    }
+                    case scene::FieldType::String: {
+                        char buf[1024];
+                        std::snprintf(buf, sizeof(buf), "%s",
+                                      node.IsString() ? node.GetString().c_str() : "");
+                        if (ImGui::InputText(f.label.c_str(), buf, sizeof(buf))) {
+                            node = makeStr(buf);
+                            changed = true;
+                        }
+                        break;
+                    }
+                    case scene::FieldType::Vec3: {
+                        float v[3] = {static_cast<float>(f.def), static_cast<float>(f.def),
+                                      static_cast<float>(f.def)};
+                        if (node.IsArray() && node.Size() == 3) {
+                            for (int i = 0; i < 3; ++i)
+                                v[i] = static_cast<float>(node.At(static_cast<size_t>(i))
+                                                              ->GetNumber());
+                        }
+                        if (ImGui::DragFloat3(f.label.c_str(), v,
+                                              static_cast<float>(f.step),
+                                              static_cast<float>(f.min),
+                                              static_cast<float>(f.max))) {
+                            node = makeArr({v[0], v[1], v[2]});
+                            changed = true;
+                        }
+                        break;
+                    }
+                    case scene::FieldType::Color: {
+                        float col[4] = {1, 1, 1, 1};
+                        if (node.IsString()) {
+                            gfx::Color c = ColorFromHex(node.GetString());
+                            col[0] = c.r;
+                            col[1] = c.g;
+                            col[2] = c.b;
+                        }
+                        if (ImGui::ColorEdit3(f.label.c_str(), col)) {
+                            char hex[16];
+                            std::snprintf(hex, sizeof(hex), "#%02X%02X%02X",
+                                          static_cast<int>(col[0] * 255.0f),
+                                          static_cast<int>(col[1] * 255.0f),
+                                          static_cast<int>(col[2] * 255.0f));
+                            node = makeStr(hex);
+                            changed = true;
+                        }
+                        break;
+                    }
+                    case scene::FieldType::Enum: {
+                        int sel = 0;
+                        if (node.IsString() && f.options) {
+                            for (int i = 0; i < f.optionCount; ++i)
+                                if (node.GetString() == f.options[i]) sel = i;
+                        }
+                        if (ImGui::Combo(f.label.c_str(), &sel, f.options, f.optionCount)) {
+                            node = makeStr(f.options[sel]);
+                            changed = true;
+                        }
+                        break;
+                    }
+                    case scene::FieldType::Resource: {
+                        std::string path = node.IsString() ? node.GetString() : "";
+                        char buf[1024];
+                        std::snprintf(buf, sizeof(buf), "%s", path.c_str());
+                        ImGui::SetNextItemWidth(-1.0f);
+                        if (ImGui::InputText(f.label.c_str(), buf, sizeof(buf),
+                                             ImGuiInputTextFlags_EnterReturnsTrue)) {
+                            node = makeStr(buf);
+                            changed = true;
+                        }
+                        // Drag a matching asset from the asset panel.
+                        const char* payloadKind =
+                            f.resourceKind && std::string(f.resourceKind) == "model"
+                                ? "ASSET_MODEL"
+                                : f.resourceKind && std::string(f.resourceKind) == "script"
+                                      ? "ASSET_SCRIPT"
+                                      : "ASSET_TEXTURE";
+                        if (ImGui::BeginDragDropTarget()) {
+                            if (const ImGuiPayload* payload =
+                                    ImGui::AcceptDragDropPayload(payloadKind)) {
+                                std::string dropped(static_cast<const char*>(payload->Data),
+                                                    static_cast<size_t>(payload->DataSize));
+                                if (!dropped.empty() && dropped.back() == '\0')
+                                    dropped.pop_back();
+                                if (!dropped.empty()) {
+                                    node = makeStr(dropped);
+                                    changed = true;
+                                }
+                            }
+                            ImGui::EndDragDropTarget();
+                        }
+                        break;
+                    }
+                    case scene::FieldType::Json:
+                        ImGui::TextDisabled("%s: %s", f.label.c_str(),
+                                            core::JsonWriter::Write(node).c_str());
+                        break;
+                }
+                if (changed) {
+                    history_.Push(std::make_unique<EditComponentCommand>(
+                        &entities_, selected_, compName, f.key, oldField, node));
+                }
+            }
         }
     }
     ImGui::End();
@@ -840,6 +1102,244 @@ void EditorApp::BuildViewportPanel() {
         // Transform gizmo for the selected entity (drawn into this window's
         // draw list; interacts via ImGui's mouse state).
         DrawTransformGizmo();
+    }
+    ImGui::End();
+}
+
+// Navigation tool: edit a 2D walkability grid (.navgrid.json), place a start
+// and goal, and preview the A* path. The runtime/scripts consume the same
+// asset format (neon::nav::NavGrid).
+void EditorApp::BuildNavPanel() {
+    if (!showNav_) return;
+    if (ImGui::Begin("导航", &showNav_)) {
+        char navBuf[512];
+        std::snprintf(navBuf, sizeof(navBuf), "%s", navAssetPath_.c_str());
+        ImGui::SetNextItemWidth(260.0f);
+        if (ImGui::InputText("导航资产", navBuf, sizeof(navBuf),
+                             ImGuiInputTextFlags_EnterReturnsTrue)) {
+            navAssetPath_ = navBuf;
+        }
+        if (ImGui::Button("加载")) {
+            std::ifstream in(navAssetPath_, std::ios::binary);
+            if (!in.is_open()) {
+                NEON_LOG_ERROR("Nav: cannot open '%s'", navAssetPath_.c_str());
+            } else {
+                std::string text((std::istreambuf_iterator<char>(in)),
+                                 std::istreambuf_iterator<char>());
+                auto r = nav::NavGrid::FromJson(text);
+                if (!r.Ok()) {
+                    NEON_LOG_ERROR("Nav: parse failed: %s", r.Error().c_str());
+                } else {
+                    navGrid_ = r.Value();
+                    navAssetPath_.clear();
+                    navStart_ = {-5, -5};
+                    navGoal_ = {-5, -5};
+                    NEON_LOG_INFO("Nav: loaded '%s' (%dx%d)", navBuf, navGrid_.Width(),
+                                  navGrid_.Height());
+                }
+            }
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("保存")) {
+            if (!navGrid_.Valid()) {
+                NEON_LOG_ERROR("Nav: nothing to save");
+            } else {
+                const std::string path =
+                    navAssetPath_.empty() ? projectDir_ + "/nav/grid.json" : navAssetPath_;
+                const std::string dir = ParentPath(path);
+                if (!dir.empty() && dir != "." && dir != "/") MakeDirSingle(dir);
+                auto json = navGrid_.ToJson();
+                if (json.Ok()) {
+                    std::ofstream out(path, std::ios::binary);
+                    if (out.is_open()) {
+                        out << core::JsonWriter::Write(json.Value());
+                        navAssetPath_ = path;
+                        NEON_LOG_INFO("Nav: saved -> %s", path.c_str());
+                    } else {
+                        NEON_LOG_ERROR("Nav: cannot write '%s'", path.c_str());
+                    }
+                }
+            }
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("新建 16x16")) navGrid_ = nav::NavGrid::Create(16, 16, 1.0f, {0, 0});
+
+        ImGui::Separator();
+        ImGui::TextDisabled("左键: 翻转可行走 | Shift+左键: 起点 | Ctrl+左键: 终点");
+        if (!navGrid_.Valid()) {
+            ImGui::TextDisabled("未加载导航网格 (加载或新建)");
+            ImGui::End();
+            return;
+        }
+        const float cellPx = 18.0f;
+        const ImVec2 canvasOrigin = ImGui::GetCursorScreenPos();
+        const ImVec2 canvasSize(cellPx * navGrid_.Width(), cellPx * navGrid_.Height());
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        for (int y = 0; y < navGrid_.Height(); ++y) {
+            for (int x = 0; x < navGrid_.Width(); ++x) {
+                const ImVec2 a(canvasOrigin.x + x * cellPx, canvasOrigin.y + y * cellPx);
+                const ImVec2 b(a.x + cellPx, a.y + cellPx);
+                dl->AddRectFilled(a, b, navGrid_.Walkable(x, y)
+                                            ? IM_COL32(30, 90, 40, 255)
+                                            : IM_COL32(150, 40, 40, 255));
+                dl->AddRect(a, b, IM_COL32(20, 20, 20, 160));
+            }
+        }
+        // A* path preview (yellow polyline through cell centers).
+        if (!navPath_.empty()) {
+            for (size_t i = 1; i < navPath_.size(); ++i) {
+                const math::Vec2& p0 = navPath_[i - 1];
+                const math::Vec2& p1 = navPath_[i];
+                dl->AddLine(ImVec2(canvasOrigin.x + p0.x * cellPx,
+                                   canvasOrigin.y + p0.y * cellPx),
+                            ImVec2(canvasOrigin.x + p1.x * cellPx,
+                                   canvasOrigin.y + p1.y * cellPx),
+                            IM_COL32(255, 220, 60, 255), 3.0f);
+            }
+        }
+        ImGui::InvisibleButton("##nav_canvas", canvasSize);
+        if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+            const ImVec2 mouse = ImGui::GetIO().MousePos;
+            const int cx = static_cast<int>((mouse.x - canvasOrigin.x) / cellPx);
+            const int cy = static_cast<int>((mouse.y - canvasOrigin.y) / cellPx);
+            if (navGrid_.InBounds(cx, cy)) {
+                if (ImGui::GetIO().KeyShift) {
+                    navStart_ = {static_cast<float>(cx), static_cast<float>(cy)};
+                } else if (ImGui::GetIO().KeyCtrl) {
+                    navGoal_ = {static_cast<float>(cx), static_cast<float>(cy)};
+                } else {
+                    navGrid_.SetWalkable(cx, cy, !navGrid_.Walkable(cx, cy));
+                }
+                // Recompute the path whenever the input state changes.
+                navPath_.clear();
+                if (navStart_.x >= 0 && navGoal_.x >= 0) {
+                    navPath_ = navGrid_.FindPath(
+                        navGrid_.CellToWorld(static_cast<int>(navStart_.x),
+                                             static_cast<int>(navStart_.y)),
+                        navGrid_.CellToWorld(static_cast<int>(navGoal_.x),
+                                             static_cast<int>(navGoal_.y)));
+                    // Convert world -> canvas pixel cells for the preview.
+                    for (size_t i = 0; i < navPath_.size(); ++i) {
+                        math::Vec2& p = navPath_[i];
+                        int cx2 = 0, cy2 = 0;
+                        navGrid_.WorldToCell(p, &cx2, &cy2);
+                        p = {static_cast<float>(cx2) + 0.5f,
+                             static_cast<float>(cy2) + 0.5f};
+                    }
+                }
+            }
+        }
+        if (navStart_.x >= 0) {
+            dl->AddCircleFilled(
+                ImVec2(canvasOrigin.x + (navStart_.x + 0.5f) * cellPx,
+                       canvasOrigin.y + (navStart_.y + 0.5f) * cellPx),
+                cellPx * 0.35f, IM_COL32(80, 220, 255, 255));
+        }
+        if (navGoal_.x >= 0) {
+            dl->AddCircleFilled(
+                ImVec2(canvasOrigin.x + (navGoal_.x + 0.5f) * cellPx,
+                       canvasOrigin.y + (navGoal_.y + 0.5f) * cellPx),
+                cellPx * 0.35f, IM_COL32(255, 120, 80, 255));
+        }
+        ImGui::Text("起点 (%d,%d)  终点 (%d,%d)  路径 %zu 段",
+                    static_cast<int>(navStart_.x), static_cast<int>(navStart_.y),
+                    static_cast<int>(navGoal_.x), static_cast<int>(navGoal_.y),
+                    navPath_.size());
+    }
+    ImGui::End();
+}
+
+// Localization editor (Godot-style): load <project>/locales/*.json, pick the
+// preview language, edit key/value pairs, save back to locales.json.
+void EditorApp::BuildLocPanel() {
+    if (!showLoc_) return;
+    if (ImGui::Begin("本地化", &showLoc_)) {
+        if (ImGui::Button("加载项目字符串表")) {
+            locEdit_ = core::Localization();
+            std::vector<AssetEntry> files;
+            if (ListDirectory(projectDir_ + "/locales", files)) {
+                for (const AssetEntry& f : files) {
+                    if (f.isDir) continue;
+                    const std::string& n = f.name;
+                    const bool isJson =
+                        n.size() > 5 && (n.compare(n.size() - 5, 5, ".json") == 0 ||
+                                         n.compare(n.size() - 5, 5, ".JSON") == 0);
+                    if (!isJson) continue;
+                    std::ifstream in(f.path, std::ios::binary);
+                    if (!in.is_open()) continue;
+                    std::string text((std::istreambuf_iterator<char>(in)),
+                                     std::istreambuf_iterator<char>());
+                    std::string err;
+                    if (!locEdit_.LoadTable(text, &err)) {
+                        NEON_LOG_WARN("Loc: '%s' failed to load: %s", f.path.c_str(),
+                                      err.c_str());
+                        continue;
+                    }
+                    locPath_ = f.path;
+                }
+            }
+            locEdit_.SetLanguage(locLanguage_);
+            NEON_LOG_INFO("Loc: loaded project strings (%zu keys)", locEdit_.Keys().size());
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("保存 (locales.json)")) {
+            const std::string dir = projectDir_ + "/locales";
+            MakeDirSingle(dir);
+            const std::string path = dir + "/locales.json";
+            std::ofstream out(path, std::ios::binary);
+            if (out.is_open()) {
+                out << core::JsonWriter::Write(locEdit_.ToJson());
+                locPath_ = path;
+                NEON_LOG_INFO("Loc: saved -> %s", path.c_str());
+            } else {
+                NEON_LOG_ERROR("Loc: cannot write '%s'", path.c_str());
+            }
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("路径: %s", locPath_.c_str());
+        ImGui::Separator();
+
+        const std::vector<std::string> langs = locEdit_.Languages();
+        if (!langs.empty()) {
+            std::vector<const char*> langLabels;
+            for (const std::string& l : langs) langLabels.push_back(l.c_str());
+            int sel = 0;
+            for (size_t i = 0; i < langs.size(); ++i)
+                if (langs[i] == locLanguage_) sel = static_cast<int>(i);
+            ImGui::SetNextItemWidth(120.0f);
+            if (ImGui::Combo("语言", &sel, langLabels.data(),
+                             static_cast<int>(langLabels.size()))) {
+                locLanguage_ = langs[static_cast<size_t>(sel)];
+                locEdit_.SetLanguage(locLanguage_);
+            }
+            ImGui::SameLine();
+            ImGui::TextDisabled("默认: %s", locEdit_.DefaultLanguage().c_str());
+        } else {
+            ImGui::TextDisabled("未加载字符串表");
+        }
+
+        static char newKey[128] = {};
+        ImGui::SetNextItemWidth(180.0f);
+        ImGui::InputText("新键", newKey, sizeof(newKey));
+        ImGui::SameLine();
+        if (ImGui::Button("添加键") && newKey[0] != '\0') {
+            locEdit_.Set(locLanguage_, newKey, "");
+            newKey[0] = '\0';
+        }
+        ImGui::Separator();
+
+        ImGui::BeginChild("##loc_list", ImVec2(0, 0), ImGuiChildFlags_Borders);
+        const std::vector<std::string> keys = locEdit_.Keys();
+        for (const std::string& key : keys) {
+            char buf[2048];
+            std::snprintf(buf, sizeof(buf), "%s",
+                          locEdit_.GetIn(locLanguage_, key).c_str());
+            const std::string label = key + "##" + locLanguage_;
+            if (ImGui::InputText(label.c_str(), buf, sizeof(buf))) {
+                locEdit_.Set(locLanguage_, key, buf);
+            }
+        }
+        ImGui::EndChild();
     }
     ImGui::End();
 }
@@ -1037,6 +1537,74 @@ void EditorApp::BuildPackagePanel() {
         ImGui::TextDisabled("输出目录");
         ImGui::SetNextItemWidth(-1.0f);
         ImGui::InputText("##pack_out", packOutDirBuf_, sizeof(packOutDirBuf_));
+        ImGui::Separator();
+        // Export presets (Godot-style): edit game.json's "export" block.
+        ImGui::TextUnformatted("导出配置 (game.json \"export\")");
+        static std::string expProj;
+        static char expPlatform[64] = "windows";
+        static char expIcon[512] = {};
+        static char expDesc[512] = {};
+        if (expProj != projectDir_) {
+            expProj = projectDir_;
+            std::strcpy(expPlatform, "windows");
+            expIcon[0] = '\0';
+            expDesc[0] = '\0';
+            std::ifstream in(projectDir_ + "/game.json", std::ios::binary);
+            if (in.is_open()) {
+                std::string text((std::istreambuf_iterator<char>(in)),
+                                 std::istreambuf_iterator<char>());
+                std::string err;
+                core::Json root = core::Json::Parse(text, &err);
+                if (const core::Json* ex = root.Get("export")) {
+                    if (const core::Json* p = ex->Get("platform"))
+                        std::strncpy(expPlatform, p->GetString().c_str(),
+                                     sizeof(expPlatform) - 1);
+                    if (const core::Json* i = ex->Get("icon"))
+                        std::strncpy(expIcon, i->GetString().c_str(), sizeof(expIcon) - 1);
+                    if (const core::Json* d = ex->Get("description"))
+                        std::strncpy(expDesc, d->GetString().c_str(), sizeof(expDesc) - 1);
+                }
+            }
+        }
+        ImGui::SetNextItemWidth(130.0f);
+        ImGui::InputText("平台", expPlatform, sizeof(expPlatform));
+        ImGui::SetNextItemWidth(-1.0f);
+        ImGui::InputText("图标", expIcon, sizeof(expIcon));
+        ImGui::SetNextItemWidth(-1.0f);
+        ImGui::InputText("说明", expDesc, sizeof(expDesc));
+        if (ImGui::Button("保存导出配置")) {
+            std::ifstream in(projectDir_ + "/game.json", std::ios::binary);
+            std::string text((std::istreambuf_iterator<char>(in)),
+                             std::istreambuf_iterator<char>());
+            std::string err;
+            core::Json root = core::Json::Parse(text, &err);
+            if (!root.IsObject()) {
+                NEON_LOG_ERROR("Export: cannot read '%s/game.json'", projectDir_.c_str());
+            } else {
+                core::Json ex;
+                ex.type_ = core::Json::Type::Object;
+                auto str = [](const char* s) {
+                    core::Json j;
+                    j.type_ = core::Json::Type::String;
+                    j.string_ = s;
+                    return j;
+                };
+                ex.object_["platform"] = str(expPlatform);
+                if (expIcon[0]) ex.object_["icon"] = str(expIcon);
+                if (expDesc[0]) ex.object_["description"] = str(expDesc);
+                root.object_["export"] = ex;
+                std::ofstream out(projectDir_ + "/game.json", std::ios::binary);
+                if (out.is_open()) {
+                    out << core::JsonWriter::Write(root);
+                    NEON_LOG_INFO("Export: preset saved -> %s/game.json", projectDir_.c_str());
+                } else {
+                    NEON_LOG_ERROR("Export: cannot write '%s/game.json'", projectDir_.c_str());
+                }
+            }
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("windows | linux | macos | web");
+        ImGui::Separator();
         if (ImGui::Button("一键打包")) RunPackage();
         ImGui::SameLine();
         ImGui::TextDisabled("生成 game.pack + run.bat + neon_game.exe");

@@ -113,6 +113,29 @@ TEST(ManifestUnknownWindowKey) {
     CHECK(res.Error().find("fullscreen") != std::string::npos);
 }
 
+// Editor metadata + export presets are accepted and round-trip.
+TEST(ManifestEditorAndExport) {
+    auto res = scene::GameManifest::Load(
+        R"({"startScene": "s", "title": "T",
+             "editor": {"mode": "2d"},
+             "export": {"platform": "linux", "icon": "assets/i.png",
+                        "description": "test build"}})" );
+    CHECK(res.Ok());
+    CHECK_EQ(res.Value().exportPreset.platform, std::string("linux"));
+    CHECK_EQ(res.Value().exportPreset.icon, std::string("assets/i.png"));
+    CHECK_EQ(res.Value().exportPreset.description, std::string("test build"));
+
+    auto back = scene::GameManifest::Load(core::JsonWriter::Write(res.Value().ToJson()));
+    CHECK(back.Ok());
+    CHECK_EQ(back.Value().exportPreset.platform, std::string("linux"));
+    CHECK_EQ(back.Value().exportPreset.icon, std::string("assets/i.png"));
+
+    CHECK(!scene::GameManifest::Load(
+               R"({"startScene": "s", "export": {"platform": 42}})")
+               .Ok());
+    CHECK(!scene::GameManifest::Load(R"({"startScene": "s", "editor": "x"})").Ok());
+}
+
 TEST(ManifestNonObjectRoot) {
     CHECK(!scene::GameManifest::Load("this is not json").Ok());
     CHECK(!scene::GameManifest::Load("42").Ok());

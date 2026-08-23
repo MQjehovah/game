@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "neon/bt/behavior_tree.hpp"
+#include "neon/core/localization.hpp"
 #include "neon/core/result.hpp"
 #include "neon/ecs/world.hpp"
 #include "neon/gfx/camera.hpp"
@@ -51,6 +52,7 @@ struct GameRuntimeConfig {
     assets::AssetManager* assets = nullptr; // mesh loading; null = sim-only
     std::string scriptBaseDir;              // base dir for script paths ("" = cwd)
     std::string assetBaseDir;               // base dir for obj:/gltf:/texture paths ("" = cwd)
+    std::string localesDir;                 // locales/*.json tables for Loc()
     std::function<std::string(const std::string& path)> readScript; // optional override
     std::function<void(const std::string&)> playSfx; // optional audio sink for PlaySfx
     platform::IInput* input = nullptr;      // optional live input for scripts
@@ -246,6 +248,7 @@ private:
     // when the base dir is empty or the prefabs dir is absent). Scene entities
     // can then reference prefabs by name, matching how packed games ship them.
     void LoadPrefabs();
+    void LoadLocales(); // locales/*.json string tables for Loc()
     void BuildDrawList();
     void ResolveDrawItem(DrawItem& item, gfx::Renderer& renderer);
     // Resolves one meshKey ("obj:"/"gltf:" file-backed or a procedural
@@ -267,6 +270,7 @@ private:
     physics::World physics_;
     script::ScriptContext scriptCtx_; // owns the GameVars scripts + BT share
     PrefabLibrary prefs_;             // prefabs loaded from <scriptBaseDir>/prefabs/
+    core::Localization loc_;          // string tables loaded from cfg_.localesDir
     std::unique_ptr<script::IScriptHost> host_; // one Lua host, deterministic RNG
     std::vector<ScriptInst> scripts_;
     std::vector<BtInst> trees_;

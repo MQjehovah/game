@@ -17,11 +17,19 @@ struct GameManifest {
         int h = 720;
         std::string title;
     };
+    // Editor-facing export preset (Godot-style export presets in game.json):
+    // the packager reads it for the build config; the editor writes it.
+    struct ExportPreset {
+        std::string platform = "windows"; // windows | linux | macos | web
+        std::string icon;                 // project-relative icon path
+        std::string description;          // one-line build description
+    };
 
     std::string startScene;            // required; scene file the game boots into
     WindowSettings window;             // optional; defaults 1280x720
     std::vector<std::string> packages; // optional pack files; empty = loose files
     std::string title;                 // game display name (may equal window.title)
+    ExportPreset exportPreset;         // optional editor export config
 
     // Parse + validate a game.json manifest. Strict: unknown keys at the top
     // level or inside "window" are rejected; startScene must be present and

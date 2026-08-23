@@ -158,12 +158,14 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     ComponentRegistry reg;
     RegisterBuiltinComponents(reg, /*assets=*/nullptr);
     LoadPrefabs(); // scene entities may reference prefabs by name (packed games)
+    LoadLocales(); // Loc() string tables (best effort; missing dir = no-op)
     auto inst = Instantiate(world_, parsed.Value(), prefs_, reg);
     if (!inst.Ok()) return core::Status::Err("runtime: " + inst.Error());
 
     scriptCtx_.world = &world_;
     scriptCtx_.physics = &physics_;
     scriptCtx_.input = cfg_.input;
+    scriptCtx_.loc = &loc_;
     scriptCtx_.playSfx = cfg_.playSfx;
     scriptCtx_.entityKinds.clear();
     // Data files (levels/*.json etc.) resolve like scripts: project dir on
@@ -1020,6 +1022,36 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera) {
         }
         scriptCtx_.draw2d = nullptr;
         FlushDraw2D(renderer);
+    }
+}
+
+void GameRuntime::LoadLocales() {
+    loc_ = core::Localization();
+    if (cfg_.localesDir.empty()) return;
+    std::vector<std::string> files;
+    ListFilesRecursive(cfg_.localesDir, "", files);
+    size_t loaded = 0;
+    for (const std::string& rel : files) {
+        if (!HasSuffix(rel, ".json")) continue;
+        std::string text = ReadScript(FullScriptPath(rel));
+        if (text.empty()) continue;
+        std::string err;
+        if (!loc_.LoadTable(text, &err)) {
+            NEON_LOG_CAT(neon::core::LogCategory::Scene, neon::core::LogLevel::Warn,
+                         "runtime: locale '%s' failed to load: %s", rel.c_str(), err.c_str());
+            continue;
+        }
+        ++loaded;
+    }
+    if (loaded > 0) {
+        std::string langs;
+        for (const std::string& l : loc_.Languages()) {
+            if (!langs.empty()) langs += ",";
+            langs += l;
+        }
+        NEON_LOG_CAT(neon::core::LogCategory::Scene, neon::core::LogLevel::Info,
+                     "runtime: loaded %zu locale file(s), languages: %s", loaded,
+                     langs.c_str());
     }
 }
 

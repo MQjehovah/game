@@ -121,6 +121,7 @@ public:
     core::Status Add(const std::string& name, const std::string& jsonText);
     bool Has(const std::string& name) const;
     core::Result<const core::Json*> Get(const std::string& name) const;
+    size_t Size() const { return prefs_.size(); }
 
 private:
     std::map<std::string, core::Json> prefs_;

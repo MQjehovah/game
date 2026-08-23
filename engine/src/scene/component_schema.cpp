@@ -1,0 +1,72 @@
+#include "neon/scene/component_schema.hpp"
+
+namespace neon::scene {
+namespace {
+
+const char* kPlantTypes[] = {"sunflower", "peashooter", "wallnut", "snowpea", "cherry"};
+const char* kZombieTypes[] = {"basic", "cone", "bucket"};
+const char* kScriptBackends[] = {"lua"};
+
+std::vector<ComponentSchema> BuildSchemas() {
+    std::vector<ComponentSchema> out;
+    out.push_back({"transform", "变换",
+                   {{"pos", "位置", FieldType::Vec3, 0, -100000, 100000, 0.1},
+                    {"rot", "旋转 (欧拉角度)", FieldType::Vec3, 0, -360, 360, 0.5},
+                    {"scale", "缩放", FieldType::Vec3, 1, 0.01, 1000, 0.05}}});
+    out.push_back({"mesh", "网格",
+                   {{"meshKey", "网格键", FieldType::Resource, 0, 0, 0, 0, nullptr, 0,
+                     "model"},
+                    {"colorHex", "颜色", FieldType::Color, 0, 0, 0, 0},
+                    {"metallic", "金属度", FieldType::Number, 0, 0, 1, 0.01},
+                    {"roughness", "粗糙度", FieldType::Number, 0.8, 0, 1, 0.01},
+                    {"ao", "环境光遮蔽", FieldType::Number, 1, 0, 1, 0.01},
+                    {"emissiveIntensity", "自发光强度", FieldType::Number, 1, 0, 5, 0.05},
+                    {"albedoTex", "漫反射贴图", FieldType::Resource, 0, 0, 0, 0, nullptr, 0,
+                     "texture"},
+                    {"mrTex", "金属度/粗糙度贴图", FieldType::Resource, 0, 0, 0, 0, nullptr, 0,
+                     "texture"},
+                    {"aoTex", "AO 贴图", FieldType::Resource, 0, 0, 0, 0, nullptr, 0, "texture"},
+                    {"emissiveTex", "自发光贴图", FieldType::Resource, 0, 0, 0, 0, nullptr, 0,
+                     "texture"}}});
+    out.push_back({"health", "生命",
+                   {{"hp", "当前生命", FieldType::Number, 0, 0, 1e9, 1},
+                    {"maxHp", "最大生命", FieldType::Number, 0, 0, 1e9, 1}}});
+    out.push_back({"script", "脚本",
+                   {{"backend", "后端", FieldType::Enum, 0, 0, 0, 0, kScriptBackends, 1},
+                    {"path", "脚本路径", FieldType::Resource, 0, 0, 0, 0, nullptr, 0, "script"},
+                    {"vars", "变量", FieldType::Json, 0, 0, 0, 0}}});
+    out.push_back({"behaviorTree", "行为树",
+                   {{"path", "行为树路径", FieldType::String, 0, 0, 0, 0}}});
+    out.push_back({"name", "名称", {{"value", "值", FieldType::String, 0, 0, 0, 0}}});
+    out.push_back({"plant", "植物",
+                   {{"row", "行", FieldType::Int, 0, 0, 4, 1},
+                    {"col", "列", FieldType::Int, 0, 0, 8, 1},
+                    {"type", "类型", FieldType::Enum, 0, 0, 0, 0, kPlantTypes, 5}}});
+    out.push_back({"zombie", "僵尸",
+                   {{"row", "行", FieldType::Int, 0, 0, 4, 1},
+                    {"delay", "延迟 (秒)", FieldType::Number, 8, 0, 3600, 0.5},
+                    {"type", "类型", FieldType::Enum, 0, 0, 0, 0, kZombieTypes, 3}}});
+    return out;
+}
+
+} // namespace
+
+const ComponentSchema* FindComponentSchema(const std::string& name) {
+    const auto& all = AllComponentSchemas();
+    for (const ComponentSchema& s : all)
+        if (s.name == name) return &s;
+    return nullptr;
+}
+
+const std::vector<ComponentSchema>& AllComponentSchemas() {
+    static const std::vector<ComponentSchema> kSchemas = BuildSchemas();
+    return kSchemas;
+}
+
+void RegisterBuiltinComponentSchemas() {
+    // Schemas are a static table; this call exists for symmetry with the
+    // runtime component registry and as a future extension point.
+    AllComponentSchemas();
+}
+
+} // namespace neon::scene

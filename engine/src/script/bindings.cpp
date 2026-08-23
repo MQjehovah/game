@@ -4,6 +4,7 @@
 #include <cstdint>
 
 #include "neon/core/json.hpp"
+#include "neon/core/localization.hpp"
 #include "neon/scene/status.hpp"
 
 namespace neon::script {
@@ -438,6 +439,15 @@ Value NativeReadText(IScriptHost& host, void* user) {
     return Value::Str(ctx->readData(StringArg(host, 0)));
 }
 
+// Loc(key): localized string for the active language (fallback chain active ->
+// default -> key). Returns the key itself when no tables are loaded.
+Value NativeLoc(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    const std::string key = StringArg(host, 0);
+    if (!ctx || !ctx->loc) return Value::Str(key);
+    return Value::Str(ctx->loc->Get(key));
+}
+
 // WriteText(path, content): saves a text file into the project/pack data root
 // (saves, editor exports). Returns 1 on success / 0 on failure.
 Value NativeWriteText(IScriptHost& host, void* user) {
@@ -772,6 +782,7 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("DrawRectOutline", &NativeDrawRectOutline, &ctx);
     host.Register("DrawText", &NativeDrawText, &ctx);
     host.Register("ReadText", &NativeReadText, &ctx);
+    host.Register("Loc", &NativeLoc, &ctx);
     host.Register("WriteText", &NativeWriteText, &ctx);
     host.Register("FindNamedEntity", &NativeFindNamedEntity, &ctx);
     host.Register("SetVisible", &NativeSetVisible, &ctx);

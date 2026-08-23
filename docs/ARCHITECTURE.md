@@ -128,9 +128,12 @@ SparseSet 风格的 ECS：
   - **场景**：实体列表（名称/类型）、添加/复制/删除/上移/下移，选中同步到属性与视口包围盒。
   - **资产**：跨平台目录浏览（Win32 `FindFirstFileW` / POSIX `opendir`，UTF-8 路径），双击目录进入、双击模型导入场景、双击图片预览（`ImGui::Image` 注册引擎纹理）、面包屑/快捷目录。
   - **资源**：AssetManager 缓存统计（纹理数量/内存、网格/三角形、字体），按纹理/网格/字体分页签列出已加载资源。
-  - **属性**：名称/类型/位置/旋转/缩放/颜色 + 材质金属度/粗糙度 + 网格信息（三角形/包围盒）。
+  - **属性**：名称/类型/位置/旋转/缩放/颜色 + 材质金属度/粗糙度 + 网格信息（三角形/包围盒）+ **Schema 驱动组件编辑**（`neon::scene::ComponentSchema`：transform/mesh/health/script/plant/zombie/... 字段元数据 → 属性面板自动生成控件，未知组件回退只读 JSON）+ 网格键编辑/模型拖拽 + **预置体**（显示 prefab 引用、"另存为预置体"）。
   - **日志**：引擎日志环形缓冲（`core::GetRecentLogs`），分级过滤（全部/INFO+/WARN+/ERROR）、自动滚动、清空。
   - **视口**：NoInputs 停靠窗口，不拦截 3D 输入；右键旋转、中键平移、滚轮缩放、射线-AABB 拾取；`WantCaptureMouse` 为真时让出输入。
+  - **导航**：`neon::nav::NavGrid`（2D 可行走网格 + A* 八方向寻路、绕墙防切角、`.navgrid.json` 资产往返），面板内格子编辑（左键翻转/Shift 起点/Ctrl 终点）+ 路径预览。
+  - **本地化**：`neon::core::Localization` 多语言字符串表（激活→默认→键 回退链），脚本 `Loc(key)`（`GameRuntime` 从 `locales/` 加载），面板加载/编辑/保存 `locales.json`。
+  - **打包**：`game.json` 的 `export` 预设（platform/icon/description）可视化编辑，manifest 接受 `editor` 元数据字段。
 - **资产导入**：任意 `.obj`/`.gltf` 可作为实体导入（`meshKey = "obj:<path>" / "gltf:<path>"`），随场景 JSON 持久化并按路径重解析。
 - **场景数据**：`core::Json` + `JsonWriter` 保存/加载 `editor_scene.json`（含位置/缩放/颜色/金属度/粗糙度）。
 - **验证**：`--smoke-test <帧>` 自动运行 UI 冒烟测试（ImGui 上下文/图集/绘制数据、自研控件命中/点击/选择、日志缓冲、资产目录、资源统计、glTF 导入），任一检查失败退出码为 1。

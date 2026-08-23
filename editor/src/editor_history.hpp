@@ -242,6 +242,9 @@ inline bool ValuesEqual(const gfx::Color& a, const gfx::Color& b) {
 inline bool ValuesEqual(const SceneScriptFields& a, const SceneScriptFields& b) {
     return ScriptFieldsEqual(a, b);
 }
+inline bool ValuesEqual(const core::Json& a, const core::Json& b) {
+    return core::JsonWriter::Write(a) == core::JsonWriter::Write(b);
+}
 } // namespace
 
 // Single-field property edit (color / metallic / roughness / name). Merges
@@ -277,6 +280,73 @@ private:
     T old_;
     T cur_;
     bool mergeable_;
+};
+
+// Schema-driven component field edit: writes one field of
+// SceneEntity::extraComponents[component][fieldKey]. Consecutive edits of the
+// same field merge into a single undo step (like EditPropertyCommand).
+class EditComponentCommand : public Command {
+public:
+    EditComponentCommand(std::vector<SceneEntity>* entities, int index,
+                         std::string component, std::string fieldKey, core::Json oldValue,
+                         core::Json newValue)
+        : entities_(entities), index_(index), component_(std::move(component)),
+          fieldKey_(std::move(fieldKey)), old_(std::move(oldValue)), cur_(std::move(newValue)) {}
+
+    void Apply() override { Set(cur_); }
+    void Undo() override { Set(old_); }
+    bool Merge(const Command& incoming) override {
+        const EditComponentCommand* other =
+            dynamic_cast<const EditComponentCommand*>(&incoming);
+        if (!other || other->index_ != index_ || other->component_ != component_ ||
+            other->fieldKey_ != fieldKey_)
+            return false;
+        if (!ValuesEqual(other->old_, cur_)) return false; // not a consecutive chain
+        cur_ = other->cur_;
+        return true;
+    }
+    bool IsNoop() const override { return ValuesEqual(old_, cur_); }
+
+private:
+    void Set(const core::Json& v) {
+        SceneEntity& e = (*entities_)[static_cast<size_t>(index_)];
+        e.extraComponents[component_].object_[fieldKey_] = v;
+    }
+
+    std::vector<SceneEntity>* entities_;
+    int index_;
+    std::string component_;
+    std::string fieldKey_;
+    core::Json old_;
+    core::Json cur_;
+};
+
+// Mesh-key edit: swaps an entity's mesh and re-resolves it (mesh + material
+// stay in sync on both undo and redo). Needs the editor app for ResolveMesh.
+class EditMeshKeyCommand : public Command {
+public:
+    EditMeshKeyCommand(EditorApp* app, std::vector<SceneEntity>* entities, int index,
+                       std::string oldKey, std::string newKey)
+        : app_(app), entities_(entities), index_(index), old_(std::move(oldKey)),
+          cur_(std::move(newKey)) {}
+
+    void Apply() override { Set(cur_); }
+    void Undo() override { Set(old_); }
+    bool Merge(const Command&) override { return false; }
+    bool IsNoop() const override { return old_ == cur_; }
+
+private:
+    void Set(const std::string& key) {
+        SceneEntity& e = (*entities_)[static_cast<size_t>(index_)];
+        e.meshKey = key;
+        if (app_ && app_->ResolveMesh(e)) app_->ApplyMaterialParams(e);
+    }
+
+    EditorApp* app_;
+    std::vector<SceneEntity>* entities_;
+    int index_;
+    std::string old_;
+    std::string cur_;
 };
 
 } // namespace neon::editor

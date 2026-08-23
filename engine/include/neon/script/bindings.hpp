@@ -16,6 +16,12 @@
 #include "neon/script/gamevars.hpp"
 #include "neon/script/script.hpp"
 
+namespace neon {
+namespace core {
+class Localization;
+}
+}
+
 namespace neon::script {
 
 // Scripting convenience transform component. The engine's ECS has no gameplay
@@ -70,6 +76,8 @@ struct ScriptContext {
     // Optional live input state for the InputAxis/InputKey/InputMouse bindings.
     // Null in headless hosts and unit tests -> every input query returns 0.
     platform::IInput* input = nullptr;
+    // Optional localization tables (Loc(key)); null = Loc returns the key.
+    const ::neon::core::Localization* loc = nullptr;
     // The entity currently being updated (set by GameRuntime before each
     // on_start/on_update call). Lets the input bindings route per-entity:
     // when inputForEntity is set and returns non-null for the current entity,

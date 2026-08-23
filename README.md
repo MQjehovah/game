@@ -60,6 +60,11 @@
 | 编辑器 2D 模式：9x5 草坪画布（5 种植物/橡皮/3 种僵尸笔刷），保存/加载关卡 JSON；试玩按钮/F5 统一（3D 与 2D 同一入口） | ✅ `neon_editor` |
 | 数据驱动 3D 游戏：`projects/neon_realm`（魔兽风格 demo 移植：村庄/狼群/波次/任务对话/存档，全 Lua） | ✅ |
 | 输入映射（Godot 式）：动作名→按键 JSON（项目 input.json）+ `ActionDown/ActionPressed/ActionAxis` 绑定 + 编辑器改键面板 | ✅ `neon::script::InputMap` |
+| 组件 Schema（Godot @export / UE UPROPERTY 风格）：组件字段元数据 → 属性面板自动生成编辑器，任意自定义组件（含 plant/zombie）可编辑 | ✅ `neon::scene::ComponentSchema` |
+| 预置体工作流（Godot 场景实例化风格）：`prefabs/*.json` 模板 + 编辑器"插入预置体/另存为预置体"，场景实体带 prefab 引用与实例覆盖 | ✅ 冒烟覆盖 |
+| 导航寻路：2D 可行走网格 `NavGrid` + A*（八方向、绕墙、JSON 资产往返）+ 编辑器导航面板（格子编辑/起点终点/路径预览） | ✅ `neon::nav` |
+| 本地化（Godot 风格）：多语言字符串表 JSON + 脚本 `Loc(key)`（激活→默认→键 回退链）+ 编辑器本地化面板 | ✅ `neon::core::Localization` |
+| 导出配置：`game.json` 的 `export` 预设（platform/icon/description）+ 打包面板可视化编辑；manifest 接受 `editor` 元数据字段 | ✅ |
 | 场景树（Godot 式）：实体 `transform.parent` 父子变换继承 + 编辑器树形层级面板 + 拖拽排父子 | ✅ |
 | 信号系统：`SignalConnect(name, fn)` / `SignalEmit(name, arg)`（支持局部闭包）+ 多场景 `ChangeScene(path)` | ✅ |
 | 数据驱动场景：组件化 JSON + 预制体 + `game.json` 清单 | ✅ |

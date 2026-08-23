@@ -49,7 +49,8 @@ core::Result<GameManifest> GameManifest::Load(const std::string& jsonText) {
         return core::Result<GameManifest>::Err("manifest: JSON parse error: " + perr);
     if (!root.IsObject())
         return core::Result<GameManifest>::Err("manifest: root must be a JSON object");
-    if (!CheckKeys(root, {"startScene", "window", "packages", "title"}, "manifest", &perr))
+    if (!CheckKeys(root, {"startScene", "window", "packages", "title", "editor", "export"},
+                   "manifest", &perr))
         return core::Result<GameManifest>::Err(perr);
 
     GameManifest m;
@@ -64,6 +65,34 @@ core::Result<GameManifest> GameManifest::Load(const std::string& jsonText) {
         if (!title->IsString())
             return core::Result<GameManifest>::Err("manifest: 'title' must be a string");
         m.title = title->GetString();
+    }
+
+    // "editor" is editor metadata (project mode etc.); the runtime ignores it.
+    if (const core::Json* ed = root.Get("editor")) {
+        if (!ed->IsObject())
+            return core::Result<GameManifest>::Err("manifest: 'editor' must be an object");
+    }
+    if (const core::Json* ex = root.Get("export")) {
+        if (!ex->IsObject())
+            return core::Result<GameManifest>::Err("manifest: 'export' must be an object");
+        if (const core::Json* p = ex->Get("platform")) {
+            if (!p->IsString())
+                return core::Result<GameManifest>::Err(
+                    "manifest: 'export.platform' must be a string");
+            m.exportPreset.platform = p->GetString();
+        }
+        if (const core::Json* i = ex->Get("icon")) {
+            if (!i->IsString())
+                return core::Result<GameManifest>::Err(
+                    "manifest: 'export.icon' must be a string");
+            m.exportPreset.icon = i->GetString();
+        }
+        if (const core::Json* d = ex->Get("description")) {
+            if (!d->IsString())
+                return core::Result<GameManifest>::Err(
+                    "manifest: 'export.description' must be a string");
+            m.exportPreset.description = d->GetString();
+        }
     }
 
     if (const core::Json* win = root.Get("window")) {
@@ -134,6 +163,12 @@ core::Json GameManifest::ToJson() const {
         for (const std::string& p : packages) arr.array_.push_back(MakeString(p));
         root.object_["packages"] = std::move(arr);
     }
+    core::Json ex = MakeObject();
+    ex.object_["platform"] = MakeString(exportPreset.platform);
+    if (!exportPreset.icon.empty()) ex.object_["icon"] = MakeString(exportPreset.icon);
+    if (!exportPreset.description.empty())
+        ex.object_["description"] = MakeString(exportPreset.description);
+    root.object_["export"] = std::move(ex);
     return root;
 }
 
