@@ -26,6 +26,7 @@ enum class ViewCam { Perspective, Top, Front };
 
 struct SceneEntity {
     std::string name;
+    std::string parent; // scene-tree parent by entity name ("" = root)
     std::string meshKey; // "terrain" | "helmet" | "cube" | "tree" | "obj:<path>" | "gltf:<path>"
     math::Vec3 pos{};
     math::Quat rot{};
