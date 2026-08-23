@@ -57,7 +57,8 @@
 | 脚本：按实例函数捕获（跨 chunk 不再互相遮蔽）+ `Spawn(kind, pos, script)` 动态控制器 | ✅ |
 | 战斗核心（M2）：状态效果（燃烧/中毒/回血，确定性 tick）+ 数据驱动技能表（投射物/近战扇形/朝向攻击盒，冷却/法力/命中附加效果） | ✅ |
 | 2D 脚本画布：Lua `on_render()` + `DrawRect/DrawRectOutline/DrawText/DrawSprite`（1280x720 设计坐标 + 贴图），数据驱动 2D 游戏零 C++ 玩法代码 | ✅ |
-| 编辑器 2D 模式：9x5 草坪画布（5 种植物/橡皮/3 种僵尸笔刷），保存/加载关卡 JSON，F5 或 ▶ 试玩直接在编辑器内运行游戏 | ✅ `neon_editor` |
+| 编辑器 2D 模式：9x5 草坪画布（5 种植物/橡皮/3 种僵尸笔刷），保存/加载关卡 JSON；试玩按钮/F5 统一（3D 与 2D 同一入口） | ✅ `neon_editor` |
+| 数据驱动 3D 游戏：`projects/neon_realm`（魔兽风格 demo 移植：村庄/狼群/波次/任务对话/存档，全 Lua） | ✅ |
 | 数据驱动场景：组件化 JSON + 预制体 + `game.json` 清单 | ✅ |
 | 编辑器深化：gizmo / 撤销重做 / 材质编辑器 / 行为树可视化 / 脚本面板 / 缩略图 / 多相机 / 热重载 / 性能面板 | ✅ |
 | 一键打包 + 通用播放器：`neon_editor --package` → `game.pack` → `neon_game` 运行数据驱动游戏 | ✅ 编辑→打包→运行闭环 |
@@ -171,6 +172,22 @@ build\neon_game.exe --connect 127.0.0.1:26000 --scene tests\data\neon_server_sam
 
 操作：点击卡牌选择植物（向日葵/豌豆/寒冰/坚果/樱桃炸弹）→ 点击草坪格子种植；点击阳光收集；
 僵尸（普通/路障/铁桶）到达房屋左侧时该行推草机触发，无推草机则失败。
+
+### 数据驱动 3D 游戏（NeonRealm，魔兽风格 demo 移植）
+
+村庄、狼群、波次、对话与 HUD 全部在 `projects/neon_realm`（场景 JSON + Lua），
+程序化 mesh 由引擎生成，运行方式与 PvZ 完全一致：
+
+```bat
+:: 编辑器打开项目场景并 F5 试玩（统一试玩按钮）
+.\build\neon_editor.exe --project projects/neon_realm
+:: 或直接打包运行
+.\build\neon_editor.exe --package projects/neon_realm build\realm_out
+.\build\neon_game.exe --pack build\realm_out\game.pack
+```
+
+操作：WASD 移动（相机相对）、左键近战、1 火球、2 治疗、右键冲刺、空格跳跃；
+靠近村长按 F 对话；击败狼群获得经验/金币并触发下一波。
 
 核心承诺：**确定性模拟**——服务器权威模拟与客户端本地预测在相同输入流下逐位一致（`tests/test_determinism.cpp` 哈希验收）。详见 [docs/NETWORKING.md](docs/NETWORKING.md)。
 
