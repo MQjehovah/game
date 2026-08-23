@@ -847,17 +847,18 @@ void Renderer::BeginFrame(const Color& clearColor, float clearDepth) {
     screenH_ = window_ ? window_->Height() : screenH_;
     uiScale_ = static_cast<float>(screenH_) / static_cast<float>(kDesignHeight);
     uiOffsetX_ = (static_cast<float>(screenW_) - static_cast<float>(kDesignWidth) * uiScale_) * 0.5f;
+    uiOffsetY_ = 0.0f;
     EnsurePostTargets();
     if (hdrEnabled_ && hdrRT_.Valid()) {
         // Scene + sky draw into the (multisample when MSAA is active) HDR
         // target; the final composite (bloom -> backbuffer) happens in
         // EndFrame / CaptureFrame after resolving the MSAA samples.
         RebindMainTarget();
-        backend_->SetViewport(screenW_, screenH_);
+        backend_->SetViewport(0, 0, screenW_, screenH_);
         backend_->Clear(clearColor, clearDepth);
     } else {
         backend_->BindDefaultTarget();
-        backend_->SetViewport(screenW_, screenH_);
+        backend_->SetViewport(0, 0, screenW_, screenH_);
         backend_->Clear(clearColor, clearDepth);
     }
 }
@@ -869,6 +870,7 @@ void Renderer::EndFrame() {
 
 void Renderer::SetCamera(const Camera& camera, float aspect) {
     camera_ = camera;
+    viewAspect_ = aspect > 0.01f ? aspect : viewAspect_;
     viewProj_ = camera.ViewProjection(aspect);
     view_ = camera.View();
     camPos_ = camera.position;
@@ -1023,8 +1025,9 @@ void Renderer::RunShadowPass() {
     shadowPassRanThisFrame_ = true;
 
     ComputeCascadeSplits(camera_.nearPlane, camera_.farPlane, cascadeSplits_);
-    const float aspect = screenH_ > 0 ? static_cast<float>(screenW_) / static_cast<float>(screenH_)
-                                      : 16.0f / 9.0f;
+    // Cascade frusta must match the camera projection (which may use the
+    // viewport rect's aspect when the editor renders into a sub-viewport).
+    const float aspect = viewAspect_;
 
     // Union of all shadow-caster world AABBs: the cascade light frusta are
     // tightened to it so a small scene fills the shadow maps instead of being
@@ -1743,11 +1746,15 @@ void Renderer::DrawBillboard(const math::Vec3& worldPos, float size, const Color
                              TextureHandle texture, BlendMode blend) {
     math::Vec4 clip = viewProj_.TransformVec4(math::Vec4(worldPos.x, worldPos.y, worldPos.z, 1.0f));
     if (clip.w <= 0.1f) return;
-    float ndcX = clip.x / clip.w;
-    float ndcY = clip.y / clip.w;
-    float px = (ndcX * 0.5f + 0.5f) * static_cast<float>(screenW_);
-    float py = (0.5f - ndcY * 0.5f) * static_cast<float>(screenH_);
-    float pixelSize = size * static_cast<float>(screenH_) * 0.5f /
+    const float ndcX = clip.x / clip.w;
+    const float ndcY = clip.y / clip.w;
+    const math::Rect2& r = sceneViewport_.w > 0.0f
+                               ? sceneViewport_
+                               : math::Rect2{0.0f, 0.0f, static_cast<float>(screenW_),
+                                             static_cast<float>(screenH_)};
+    const float px = r.x + (ndcX * 0.5f + 0.5f) * r.w;
+    const float py = r.y + (0.5f - ndcY * 0.5f) * r.h;
+    float pixelSize = size * r.h * 0.5f /
                       (std::tan(camera_.fovY * 0.5f) * clip.w);
     math::Vec2 design = ScreenToUI({px, py});
     float designSize = pixelSize / uiScale_;
@@ -1756,7 +1763,8 @@ void Renderer::DrawBillboard(const math::Vec3& worldPos, float size, const Color
 }
 
 math::Vec2 Renderer::ScreenToUI(const math::Vec2& screenPixels) const {
-    return {(screenPixels.x - uiOffsetX_) / uiScale_, screenPixels.y / uiScale_};
+    return {(screenPixels.x - uiOffsetX_) / uiScale_,
+            (screenPixels.y - uiOffsetY_) / uiScale_};
 }
 
 bool Renderer::CaptureFrame(std::vector<uint8_t>& out) {
@@ -1772,7 +1780,50 @@ bool Renderer::CaptureFrame(std::vector<uint8_t>& out) {
 }
 
 math::Vec2 Renderer::ToScreen(const math::Vec2& design) const {
-    return {design.x * uiScale_ + uiOffsetX_, design.y * uiScale_};
+    return {design.x * uiScale_ + uiOffsetX_, design.y * uiScale_ + uiOffsetY_};
+}
+
+void Renderer::Set2DViewport(float x, float y, float w, float h, float zoom,
+                             const math::Vec2& pan) {
+    if (w <= 0.0f || h <= 0.0f || zoom <= 0.0f) {
+        Reset2DViewport();
+        return;
+    }
+    const float fitScale =
+        std::min(w / static_cast<float>(kDesignWidth), h / static_cast<float>(kDesignHeight));
+    uiScale_ = fitScale * zoom;
+    // The design point (640 + pan, 360 + pan) sits at the viewport rect center.
+    const float designCx = static_cast<float>(kDesignWidth) * 0.5f + pan.x;
+    const float designCy = static_cast<float>(kDesignHeight) * 0.5f + pan.y;
+    uiOffsetX_ = x + w * 0.5f - designCx * uiScale_;
+    uiOffsetY_ = y + h * 0.5f - designCy * uiScale_;
+}
+
+void Renderer::Reset2DViewport() {
+    uiScale_ = static_cast<float>(screenH_) / static_cast<float>(kDesignHeight);
+    uiOffsetX_ = (static_cast<float>(screenW_) - static_cast<float>(kDesignWidth) * uiScale_) * 0.5f;
+    uiOffsetY_ = 0.0f;
+}
+
+void Renderer::Set2DViewportPixels(float x, float y) {
+    uiScale_ = 1.0f;
+    uiOffsetX_ = x;
+    uiOffsetY_ = y;
+}
+
+void Renderer::SetSceneViewport(float x, float y, float w, float h) {
+    if (w <= 0.0f || h <= 0.0f) {
+        ResetSceneViewport();
+        return;
+    }
+    sceneViewport_ = {x, y, w, h};
+    backend_->SetViewport(static_cast<int>(x), static_cast<int>(y),
+                          static_cast<int>(w), static_cast<int>(h));
+}
+
+void Renderer::ResetSceneViewport() {
+    sceneViewport_ = {0.0f, 0.0f, static_cast<float>(screenW_), static_cast<float>(screenH_)};
+    backend_->SetViewport(0, 0, screenW_, screenH_);
 }
 
 void Renderer::PushQuad(const math::Vec2& a, const math::Vec2& b, const math::Vec2& c,
@@ -1817,6 +1868,17 @@ void Renderer::PushQuadColored(const math::Vec2& a, const math::Vec2& b, const m
 
 void Renderer::Flush2D() {
     if (uiVerts_.empty()) return;
+    // The 2D overlay uses full-window pixel coordinates with a full-screen
+    // ortho, so it must always rasterize with the FULL backend viewport even
+    // when the 3D scene is rendering into a sub-rect (editor viewport dock).
+    // Otherwise an early flush (e.g. ApplyMaterial switching to the 3D shader)
+    // would squash the overlay into the scene rect. Restore the scene viewport
+    // afterwards so the next 3D draw is unaffected.
+    const bool sceneVpActive = sceneViewport_.w > 0.0f && sceneViewport_.h > 0.0f &&
+                               (sceneViewport_.x != 0.0f || sceneViewport_.y != 0.0f ||
+                                sceneViewport_.w != static_cast<float>(screenW_) ||
+                                sceneViewport_.h != static_cast<float>(screenH_));
+    if (sceneVpActive) backend_->SetViewport(0, 0, screenW_, screenH_);
     backend_->SetBlendMode(currentUIBlend_);
     backend_->SetDepthTest(false, false);
     backend_->SetCullMode(CullMode::None);
@@ -1829,6 +1891,12 @@ void Renderer::Flush2D() {
     backend_->DrawPrimitives(uiVerts_.data(), static_cast<uint32_t>(uiVerts_.size()), 32,
                              uiIndices_.data(), static_cast<uint32_t>(uiIndices_.size()),
                              PrimitiveTopology::Triangles);
+    if (sceneVpActive) {
+        backend_->SetViewport(static_cast<int>(sceneViewport_.x),
+                              static_cast<int>(sceneViewport_.y),
+                              static_cast<int>(sceneViewport_.w),
+                              static_cast<int>(sceneViewport_.h));
+    }
     uiVerts_.clear();
     uiIndices_.clear();
     currentUITexture_ = {};

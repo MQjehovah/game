@@ -168,6 +168,17 @@ private:
     void ImportAssetPath(const std::string& path);
     void ImportSelectedAsset();
     void UpdateViewport(float dt);
+    // 2D canvas camera: wheel zoom (around cursor) + middle-drag pan + reset.
+    void Update2DViewport();
+    // The active viewport dock rect (screen pixels) and its aspect ratio; the
+    // 3D camera projection and gizmo use these so the scene fits the panel.
+    const math::Rect2& ViewportRect() const { return viewportScreenRect_; }
+    float ViewportAspect() const {
+        const math::Rect2& vp = viewportScreenRect_;
+        if (vp.w > 0.0f && vp.h > 0.0f) return vp.w / vp.h;
+        return static_cast<float>(renderer_.ScreenWidth()) /
+               static_cast<float>(renderer_.ScreenHeight());
+    }
     void SaveScene();
     void LoadScene(const std::string& path);
     // Project switcher (Godot-style): ScanProjects discovers the projects/
@@ -438,6 +449,10 @@ private:
     // The 视口 window's rect in SCREEN pixels (set by BuildViewportPanel); the
     // 3D pass is scissored to it so the scene never bleeds into the dock area.
     math::Rect2 viewportScreenRect_{0, 0, 0, 0};
+    // 2D canvas camera state (design-space view): zoom 1 = fit the whole
+    // 1280x720 design into the viewport; pan = design point at viewport center.
+    float canvasZoom_ = 1.0f;
+    math::Vec2 canvasPan_{0.0f, 0.0f};
     std::vector<core::LogEntry> logEntries_;
     int logFilter_ = 0; // 0 all, 1 info+, 2 warn+, 3 error
     bool logAutoScroll_ = true;

@@ -1063,7 +1063,12 @@ void EditorApp::BuildResourcePanel() {
                 ImGui::BeginChild("##res_tex");
                 for (const auto& kv : assetMgr_.Textures()) {
                     if (!kv.second.Valid()) continue;
-                    ImGui::Text("%s", kv.first.c_str());
+                    // Strip the load-option cache suffix ("\x1Ff" = glTF flip)
+                    // when displaying the asset path.
+                    std::string display = kv.first;
+                    const size_t sep = display.find('\x1F');
+                    if (sep != std::string::npos) display = display.substr(0, sep);
+                    ImGui::Text("%s", display.c_str());
                     ImGui::SameLine();
                     ImGui::TextDisabled("%dx%d", kv.second.Width(), kv.second.Height());
                 }
@@ -1635,6 +1640,17 @@ void EditorApp::BuildViewportPanel() {
         ImGui::TextDisabled("%s | 实体 %zu | 目标 (%.1f, %.1f, %.1f) | 距离 %.1f", camLabel,
                             entities_.size(), camTarget_.x, camTarget_.y, camTarget_.z,
                             camDist_);
+        if (editMode_ == EditMode::Scene2D) {
+            ImGui::SameLine();
+            ImGui::TextColored(ImVec4(0.65f, 0.85f, 1.0f, 1.0f),
+                               "2D 画布: 中键平移 | 滚轮缩放 | 缩放 %.0f%%",
+                               canvasZoom_ * 100.0f);
+            ImGui::SameLine();
+            if (ImGui::SmallButton("适应视野")) {
+                canvasZoom_ = 1.0f;
+                canvasPan_ = {0.0f, 0.0f};
+            }
+        }
 
         // Transform gizmo for the selected entity (drawn into this window's
         // draw list; interacts via ImGui's mouse state).

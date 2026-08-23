@@ -229,7 +229,7 @@ DecodedImage AssetManager::DecodeImage(const std::string& path, const TextureLoa
     return DecodeImageFile(path, compressed, opts.flipVertically);
 }
 
-gfx::Texture AssetManager::UploadDecoded(const DecodedImage& img) {
+gfx::Texture AssetManager::UploadDecoded(const DecodedImage& img, gfx::Wrap wrap) {
     if (!img.bc1.empty()) {
         gfx::Texture tex = renderer_->CreateTextureCompressed(
             img.width, img.height, kBc1Format, img.bc1.data(), img.bc1.size());
@@ -248,6 +248,7 @@ gfx::Texture AssetManager::UploadDecoded(const DecodedImage& img) {
     desc.height = img.height;
     desc.rgba = img.rgba.data();
     desc.mipmaps = true;
+    desc.wrap = wrap;
     return renderer_->CreateTexture(desc);
 }
 
@@ -255,8 +256,19 @@ gfx::Texture AssetManager::LoadTexture(const std::string& path) {
     return LoadTexture(path, TextureLoadOptions{});
 }
 
+std::string AssetManager::TextureCacheKey(const std::string& path,
+                                          const TextureLoadOptions& opts) {
+    // Unit separator keeps the suffix unambiguous; Stats()/resource panel
+    // strip it when displaying the path.
+    std::string key = path;
+    if (opts.flipVertically) key += std::string("\x1F") + "f";
+    if (opts.wrap == gfx::Wrap::Repeat) key += std::string("\x1F") + "r";
+    return key;
+}
+
 gfx::Texture AssetManager::LoadTexture(const std::string& path, const TextureLoadOptions& opts) {
-    auto cached = textures_.find(path);
+    const std::string key = TextureCacheKey(path, opts);
+    auto cached = textures_.find(key);
     if (cached != textures_.end()) return cached->second;
 
     DecodedImage img = DecodeImage(path, opts, opts.compressBc1 && bc1Supported_);
@@ -264,13 +276,13 @@ gfx::Texture AssetManager::LoadTexture(const std::string& path, const TextureLoa
         NEON_LOG_ERROR("Asset: failed to load texture '%s'", path.c_str());
         return {};
     }
-    gfx::Texture texture = UploadDecoded(img);
+    gfx::Texture texture = UploadDecoded(img, opts.wrap);
     if (!texture.Valid()) {
         NEON_LOG_ERROR("Asset: failed to upload texture '%s'", path.c_str());
         return {};
     }
-    textures_[path] = texture;
-    textureMtimes_[path] = FileMTime(path);
+    textures_[key] = texture;
+    textureMtimes_[key] = FileMTime(path);
     NEON_LOG_INFO("Asset: loaded texture '%s' (%dx%d%s)", path.c_str(), img.width, img.height,
                   img.bc1.empty() ? "" : ", BC1");
     return texture;
@@ -282,7 +294,8 @@ void AssetManager::LoadTextureAsync(const std::string& path, std::function<void(
 
     // Already cached? The async contract fires cb on the main thread, and we
     // are on the main thread, so firing inline matches the sync path exactly.
-    auto cached = textures_.find(path);
+    const std::string key = TextureCacheKey(path, opts);
+    auto cached = textures_.find(key);
     if (cached != textures_.end()) {
         cb(true);
         return;
@@ -307,8 +320,8 @@ void AssetManager::LoadTextureAsync(const std::string& path, std::function<void(
     const bool compressed = opts.compressBc1 && bc1Supported_;
     bool ok = asyncLoader_.Submit([this, path, opts, compressed]() {
         DecodedImage img = DecodeImage(path, opts, compressed);
-        asyncLoader_.Deliver([this, path, img = std::move(img)]() mutable {
-            FinishAsyncTexture(path, std::move(img));
+        asyncLoader_.Deliver([this, path, opts, img = std::move(img)]() mutable {
+            FinishAsyncTexture(path, std::move(img), opts);
         });
     });
     if (!ok) {
@@ -324,7 +337,8 @@ void AssetManager::LoadTextureAsync(const std::string& path, std::function<void(
 
 void AssetManager::PumpAsync() { asyncLoader_.Pump(); }
 
-void AssetManager::FinishAsyncTexture(const std::string& path, DecodedImage img) {
+void AssetManager::FinishAsyncTexture(const std::string& path, DecodedImage img,
+                                      const TextureLoadOptions& opts) {
     inFlight_.erase(path);
     std::vector<std::function<void(bool)>> cbs;
     auto cbIt = pendingCallbacks_.find(path);
@@ -335,10 +349,11 @@ void AssetManager::FinishAsyncTexture(const std::string& path, DecodedImage img)
 
     bool ok = false;
     if (img.channels > 0 && !img.rgba.empty()) {
-        gfx::Texture tex = UploadDecoded(img);
+        gfx::Texture tex = UploadDecoded(img, opts.wrap);
         if (tex.Valid()) {
-            textures_[path] = tex;
-            textureMtimes_[path] = FileMTime(path);
+            const std::string key = TextureCacheKey(path, opts);
+            textures_[key] = tex;
+            textureMtimes_[key] = FileMTime(path);
             ok = true;
             NEON_LOG_INFO("Asset: async texture '%s' loaded (%dx%d%s)", path.c_str(), img.width,
                           img.height, img.bc1.empty() ? "" : ", BC1");
@@ -549,9 +564,29 @@ GltfAsset AssetManager::LoadGLTF(const std::string& path) {
     std::vector<gfx::Texture> textures;
     if (const core::Json* texs = root.Get("textures")) {
         const core::Json* images = root.Get("images");
+        const core::Json* samplers = root.Get("samplers");
+        auto samplerWrap = [&](int samplerIndex) -> gfx::Wrap {
+            // glTF samplers default to REPEAT; only CLAMP_TO_EDGE overrides
+            // it (MIRRORED_REPEAT is approximated with plain REPEAT).
+            gfx::Wrap w = gfx::Wrap::Repeat;
+            if (samplerIndex >= 0 && samplers && samplerIndex < static_cast<int>(samplers->Size())) {
+                const core::Json* s = samplers->At(samplerIndex);
+                if (s) {
+                    if (const core::Json* wt = s->Get("wrapT")) {
+                        if (wt->GetInt(10497) == 33071) w = gfx::Wrap::Clamp;
+                    }
+                    if (const core::Json* ws = s->Get("wrapS")) {
+                        if (ws->GetInt(10497) == 33071) w = gfx::Wrap::Clamp;
+                    }
+                }
+            }
+            return w;
+        };
         for (size_t i = 0; i < texs->Size(); ++i) {
             int src = -1;
             if (const core::Json* srcNode = texs->At(i)->Get("source")) src = srcNode->GetInt(-1);
+            int samplerIdx = -1;
+            if (const core::Json* smp = texs->At(i)->Get("sampler")) samplerIdx = smp->GetInt(-1);
             std::string uri;
             if (images && src >= 0 && images->At(src) && images->At(src)->Get("uri")) {
                 uri = images->At(src)->Get("uri")->GetString();
@@ -559,10 +594,12 @@ GltfAsset AssetManager::LoadGLTF(const std::string& path) {
             if (uri.empty()) {
                 textures.push_back(gfx::Texture{});
             } else {
-                // glTF texture coordinates have their origin in the TOP-left;
-                // OpenGL sampling expects bottom-left, so flip on load.
+                // This engine uploads textures with their first row at v=0,
+                // which already matches glTF's top-left UV origin - no flip.
+                // Use the sampler's wrap mode so UVs outside [0,1] (common in
+                // Khronos sample assets like DamagedHelmet) sample correctly.
                 TextureLoadOptions gltfOpts;
-                gltfOpts.flipVertically = true;
+                gltfOpts.wrap = samplerWrap(samplerIdx);
                 textures.push_back(LoadTexture(dir + uri, gltfOpts));
             }
         }

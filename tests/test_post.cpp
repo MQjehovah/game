@@ -288,3 +288,50 @@ TEST(TonemapAndMsaaStateHeadless) {
     fx.renderer.EndFrame();
     CHECK(!fx.renderer.MsaaEnabled());
 }
+
+// 2D canvas camera: Set2DViewport maps the 1280x720 design space into a
+// screen rect with fit+center, zoom (around the design center) and pan (the
+// design point at the rect center). ToScreen/ScreenToUI must round-trip so
+// editor clicks and playtest InputMousePos stay aligned with the canvas.
+TEST(Set2DViewportZoomPanMapping) {
+    test::HeadlessAssetFixture fx;
+    const float vpx = 100.0f, vpy = 50.0f, vpw = 1000.0f, vph = 600.0f;
+
+    // Fit: design center maps to the viewport rect center.
+    fx.renderer.Set2DViewport(vpx, vpy, vpw, vph);
+    math::Vec2 s = fx.renderer.ToScreen({640.0f, 360.0f});
+    CHECK_NEAR(s.x, vpx + vpw * 0.5f, 1e-3f);
+    CHECK_NEAR(s.y, vpy + vph * 0.5f, 1e-3f);
+
+    // Zoom around the design center: the center stays put, corners move out.
+    fx.renderer.Set2DViewport(vpx, vpy, vpw, vph, 2.0f);
+    s = fx.renderer.ToScreen({640.0f, 360.0f});
+    CHECK_NEAR(s.x, vpx + vpw * 0.5f, 1e-3f);
+    CHECK_NEAR(s.y, vpy + vph * 0.5f, 1e-3f);
+    const math::Vec2 corner = fx.renderer.ToScreen({0.0f, 0.0f});
+    CHECK_NEAR(corner.x, vpx + vpw * 0.5f - 640.0f * fx.renderer.UIScale(), 1e-3f);
+    CHECK_NEAR(corner.y, vpy + vph * 0.5f - 360.0f * fx.renderer.UIScale(), 1e-3f);
+
+    // Pan: the design point (640 + pan) sits at the rect center.
+    fx.renderer.Set2DViewport(vpx, vpy, vpw, vph, 1.0f, {200.0f, 100.0f});
+    s = fx.renderer.ToScreen({840.0f, 460.0f});
+    CHECK_NEAR(s.x, vpx + vpw * 0.5f, 1e-3f);
+    CHECK_NEAR(s.y, vpy + vph * 0.5f, 1e-3f);
+
+    // Round-trip with zoom+pan: ScreenToUI(ToScreen(p)) == p.
+    fx.renderer.Set2DViewport(vpx, vpy, vpw, vph, 1.7f, {-85.0f, 320.0f});
+    const math::Vec2 p{123.5f, 456.25f};
+    const math::Vec2 r = fx.renderer.ScreenToUI(fx.renderer.ToScreen(p));
+    CHECK_NEAR(r.x, p.x, 1e-3f);
+    CHECK_NEAR(r.y, p.y, 1e-3f);
+
+    // 1:1 pixel mapping (3D overlay): design pixel == screen pixel, origin at
+    // the given point; round-trip stays exact.
+    fx.renderer.Set2DViewportPixels(350.0f, 60.0f);
+    s = fx.renderer.ToScreen({14.0f, 20.0f});
+    CHECK_NEAR(s.x, 364.0f, 1e-3f);
+    CHECK_NEAR(s.y, 80.0f, 1e-3f);
+    const math::Vec2 r2 = fx.renderer.ScreenToUI(fx.renderer.ToScreen({777.0f, 123.0f}));
+    CHECK_NEAR(r2.x, 777.0f, 1e-3f);
+    CHECK_NEAR(r2.y, 123.0f, 1e-3f);
+}

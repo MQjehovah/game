@@ -204,6 +204,29 @@ public:
                         const Color& color);
     void DrawText(const Font& font, const std::string& text, const math::Vec2& pos, float size,
                   const Color& color, bool centerX = false, bool centerY = false);
+
+    // Maps the 1280x720 2D design space into a screen-space rect (fit + center,
+    // preserving aspect). `zoom` scales around the design center (1 = fit the
+    // whole design into the rect) and `pan` shifts the design point at the
+    // rect's center (design units). Used by the editor to render the 2D canvas /
+    // playtest inside the viewport dock instead of the whole window, with
+    // zoom/pan camera control. Reset2DViewport restores the default full-window
+    // mapping.
+    void Set2DViewport(float x, float y, float w, float h, float zoom = 1.0f,
+                       const math::Vec2& pan = {0.0f, 0.0f});
+    void Reset2DViewport();
+    // Maps the 2D design space 1:1 into the screen with its origin at (x, y):
+    // a design pixel is a screen pixel. Used for the 3D playtest overlay so
+    // HUD text/panels keep their intended size inside the viewport dock
+    // (elements outside the rect are clipped by the caller's scissor).
+    void Set2DViewportPixels(float x, float y);
+    // Renders the 3D scene into a sub-rect of the target (the editor viewport
+    // dock): sets the backend rasterization viewport to the rect. The caller
+    // must also pass the rect's aspect to SetCamera so the projection matches.
+    // ResetSceneViewport restores the full-target viewport (call before the
+    // 2D overlay flush, which is in full-window pixel coordinates).
+    void SetSceneViewport(float x, float y, float w, float h);
+    void ResetSceneViewport();
     void DrawBillboard(const math::Vec3& worldPos, float size, const Color& color,
                        TextureHandle texture, BlendMode blend = BlendMode::Additive);
 
@@ -212,6 +235,8 @@ public:
     void Flush2D();
 
     math::Vec2 ScreenToUI(const math::Vec2& screenPixels) const;
+    // Design -> screen for the 2D overlay (inverse of ScreenToUI).
+    math::Vec2 ToScreen(const math::Vec2& design) const;
     // Copies the current back buffer (RGBA8, top-down) into out.
     bool CaptureFrame(std::vector<uint8_t>& out);
     // T3.6 verification helper: composites the current HDR frame twice - once
@@ -235,7 +260,6 @@ private:
     void InitBuiltinResources();
     void ApplyMaterial(const Material& material, const math::Mat4& mvp, const math::Mat4& model,
                        const math::Mat4& normalMat, ShaderHandle shader);
-    math::Vec2 ToScreen(const math::Vec2& design) const;
     void PushQuad(const math::Vec2& a, const math::Vec2& b, const math::Vec2& c, const math::Vec2& d,
                   const Color& color, const math::Vec2& uv0, const math::Vec2& uv1,
                   TextureHandle texture, BlendMode blend);
@@ -428,6 +452,10 @@ private:
     int screenH_ = 720;
     float uiScale_ = 1.0f;
     float uiOffsetX_ = 0.0f;
+    float uiOffsetY_ = 0.0f;
+    // 3D scene rasterization rect (defaults to the full target).
+    math::Rect2 sceneViewport_{0.0f, 0.0f, 0.0f, 0.0f};
+    float viewAspect_ = 16.0f / 9.0f; // last SetCamera aspect (shadow frusta)
 
     struct UIVertex {
         float x, y, u, v;

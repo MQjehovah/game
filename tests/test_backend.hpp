@@ -63,7 +63,7 @@ public:
     void SetBlendMode(neon::gfx::BlendMode) override {}
     void SetDepthTest(bool, bool) override {}
     void SetCullMode(neon::gfx::CullMode) override {}
-    void SetViewport(int, int) override {}
+    void SetViewport(int, int, int, int) override {}
     void SetScissor(int, int, int, int, bool) override {}
     void Clear(const neon::gfx::Color&, float) override {}
 

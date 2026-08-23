@@ -1,0 +1,7 @@
+{
+  "startScene": "scenes/snake.json",
+  "window": { "w": 1280, "h": 720, "title": "NeonSnake - 贪吃蛇" },
+  "title": "NeonSnake",
+  "editor": { "mode": "2d" },
+  "export": { "platform": "windows", "description": "经典贪吃蛇 (NeonEngine 2D Lua 演示)" }
+}

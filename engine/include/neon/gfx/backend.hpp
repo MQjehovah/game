@@ -12,6 +12,7 @@ enum class BlendMode : uint8_t { Opaque, Alpha, Additive, Premultiplied };
 enum class CullMode : uint8_t { None, Back, Front };
 enum class PrimitiveTopology : uint8_t { Triangles, Lines };
 enum class Filter : uint8_t { Nearest, Linear };
+enum class Wrap : uint8_t { Clamp, Repeat };
 
 struct TextureDesc {
     int width = 0;
@@ -19,6 +20,7 @@ struct TextureDesc {
     const uint8_t* rgba = nullptr; // 8-bit RGBA, row-major, top-left origin
     bool mipmaps = false;
     Filter filter = Filter::Linear;
+    Wrap wrap = Wrap::Clamp;
 };
 
 struct ShaderHandle {
@@ -134,7 +136,10 @@ public:
     virtual void SetBlendMode(BlendMode mode) = 0;
     virtual void SetDepthTest(bool enabled, bool write = true) = 0;
     virtual void SetCullMode(CullMode mode) = 0;
-    virtual void SetViewport(int width, int height) = 0;
+    // Sets the rasterization viewport in screen/window coordinates (top-left
+    // origin; each backend translates to its own convention). Lets a 3D scene
+    // render into a sub-rect of the target (e.g. the editor viewport dock).
+    virtual void SetViewport(int x, int y, int width, int height) = 0;
     // Scissor rect in window pixels, y-down (origin top-left).
     virtual void SetScissor(int x, int y, int width, int height, bool enabled) = 0;
     virtual void Clear(const Color& color, float depth = 1.0f) = 0;

@@ -87,9 +87,14 @@ struct TextureLoadOptions {
     // that rejects compressed uploads falls back to RGBA8 once and disables
     // compression for the rest of the session.
     bool compressBc1 = false;
-    // Flip the image vertically on load (glTF texture coordinates have their
-    // origin in the top-left; OpenGL sampling expects bottom-left).
+    // Flip the image vertically on load. This engine uploads textures with
+    // their first row at v=0, which already matches glTF's top-left UV origin,
+    // so glTF assets must NOT flip; the flag remains for callers that need the
+    // legacy image-space orientation.
     bool flipVertically = false;
+    // Wrap mode. glTF samplers default to REPEAT (DamagedHelmet-style assets
+    // rely on UVs outside [0,1]), so the glTF importer sets Repeat here.
+    gfx::Wrap wrap = gfx::Wrap::Clamp;
 };
 
 // Runtime asset cache. Files are loaded once and reused by path.
@@ -104,6 +109,10 @@ public:
     gfx::Texture LoadTexture(const std::string& path);
     // Compression-aware overload; see TextureLoadOptions.
     gfx::Texture LoadTexture(const std::string& path, const TextureLoadOptions& opts);
+    // Cache key that distinguishes load options (flip / wrap) so a texture
+    // loaded with different settings never shares a stale entry.
+    static std::string TextureCacheKey(const std::string& path,
+                                       const TextureLoadOptions& opts);
     gfx::Mesh LoadMeshOBJ(const std::string& path);
     // glTF 2.0 importer: POSITION/NORMAL/TEXCOORD_0, PBR metallic-roughness
     // materials (baseColor/metalRoughness/occlusion/emissive), node transforms.
@@ -166,9 +175,10 @@ private:
     DecodedImage DecodeImage(const std::string& path, const TextureLoadOptions& opts,
                              bool compressed);
     // Main-thread GPU upload; handles the compressed->RGBA8 driver fallback.
-    gfx::Texture UploadDecoded(const DecodedImage& img);
+    gfx::Texture UploadDecoded(const DecodedImage& img, gfx::Wrap wrap = gfx::Wrap::Clamp);
     // Main-thread completion of an async request: cache + fire callbacks.
-    void FinishAsyncTexture(const std::string& path, DecodedImage img);
+    void FinishAsyncTexture(const std::string& path, DecodedImage img,
+                            const TextureLoadOptions& opts);
 
     gfx::Renderer* renderer_ = nullptr;
     std::map<std::string, gfx::Texture> textures_;

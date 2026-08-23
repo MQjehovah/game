@@ -317,7 +317,7 @@ void ImGuiNeon_RenderDrawData(ImDrawData* drawData) {
     const int h = gState.displayH;
     if (w <= 0 || h <= 0) return;
 
-    backend->SetViewport(w, h);
+    backend->SetViewport(0, 0, w, h);
     // Our shader outputs straight (non-premultiplied) color = vColor * tex,
     // and the font atlas stores RGB=1 with coverage in alpha, so standard
     // alpha blending (SRC_ALPHA, ONE_MINUS_SRC_ALPHA) is correct. Using

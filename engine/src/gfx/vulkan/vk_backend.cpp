@@ -452,6 +452,8 @@ public:
 
         if (samplerNearest_) vkDestroySampler(device_, samplerNearest_, nullptr);
         if (samplerLinear_) vkDestroySampler(device_, samplerLinear_, nullptr);
+        if (samplerRepeatNearest_) vkDestroySampler(device_, samplerRepeatNearest_, nullptr);
+        if (samplerRepeatLinear_) vkDestroySampler(device_, samplerRepeatLinear_, nullptr);
         if (pipelineCache_) vkDestroyPipelineCache(device_, pipelineCache_, nullptr);
         if (descLayoutSet0_) vkDestroyDescriptorSetLayout(device_, descLayoutSet0_, nullptr);
         if (descLayoutSet1_) vkDestroyDescriptorSetLayout(device_, descLayoutSet1_, nullptr);
@@ -659,7 +661,7 @@ public:
         auto it = renderTargets_.find(target.id);
         if (it == renderTargets_.end()) return;
         BindTarget(&it->second);
-        SetViewport(it->second.width, it->second.height);
+        SetViewport(0, 0, it->second.width, it->second.height);
     }
 
     void EndDepthPass() override { BindDefaultTarget(); }
@@ -790,7 +792,11 @@ public:
         Texture tex;
         tex.image = image;
         tex.view = view;
-        tex.sampler = desc.filter == Filter::Nearest ? samplerNearest_ : samplerLinear_;
+        if (desc.wrap == Wrap::Repeat)
+            tex.sampler = desc.filter == Filter::Nearest ? samplerRepeatNearest_
+                                                         : samplerRepeatLinear_;
+        else
+            tex.sampler = desc.filter == Filter::Nearest ? samplerNearest_ : samplerLinear_;
         tex.format = format;
         tex.width = desc.width;
         tex.height = desc.height;
@@ -961,7 +967,9 @@ public:
         currentCull_ = mode == CullMode::Back ? 1 : (mode == CullMode::Front ? 2 : 0);
     }
 
-    void SetViewport(int width, int height) override {
+    void SetViewport(int x, int y, int width, int height) override {
+        viewportX_ = x;
+        viewportY_ = y;
         viewportWidth_ = width;
         viewportHeight_ = height;
     }
@@ -1479,10 +1487,17 @@ private:
         si.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
         si.maxLod = VK_LOD_CLAMP_NONE;
         if (vkCreateSampler(device_, &si, nullptr, &samplerNearest_) != VK_SUCCESS) return false;
+        si.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        si.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        si.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        if (vkCreateSampler(device_, &si, nullptr, &samplerRepeatNearest_) != VK_SUCCESS)
+            return false;
         si.magFilter = VK_FILTER_LINEAR;
         si.minFilter = VK_FILTER_LINEAR;
         si.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
         if (vkCreateSampler(device_, &si, nullptr, &samplerLinear_) != VK_SUCCESS) return false;
+        if (vkCreateSampler(device_, &si, nullptr, &samplerRepeatLinear_) != VK_SUCCESS)
+            return false;
 
         depthFormat_ = VK_FORMAT_UNDEFINED;
         for (VkFormat f : kDepthFormats) {
@@ -2400,8 +2415,8 @@ private:
     void BindPipeline(Frame& f, VkPipeline pipeline) {
         vkCmdBindPipeline(f.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
         VkViewport vp{};
-        vp.x = 0;
-        vp.y = 0;
+        vp.x = static_cast<float>(viewportX_);
+        vp.y = static_cast<float>(viewportY_);
         vp.width = static_cast<float>(viewportWidth_);
         vp.height = static_cast<float>(viewportHeight_);
         vp.minDepth = 0.0f;
@@ -2779,6 +2794,8 @@ private:
     VkRenderPass depthOnlyPass_ = VK_NULL_HANDLE;
     VkSampler samplerNearest_ = VK_NULL_HANDLE;
     VkSampler samplerLinear_ = VK_NULL_HANDLE;
+    VkSampler samplerRepeatNearest_ = VK_NULL_HANDLE;
+    VkSampler samplerRepeatLinear_ = VK_NULL_HANDLE;
     VkDescriptorPool texPool_ = VK_NULL_HANDLE;
 
     TextureHandle white_;
@@ -2790,6 +2807,8 @@ private:
     uint8_t currentCull_ = 0;
     int viewportWidth_ = 1280;
     int viewportHeight_ = 720;
+    int viewportX_ = 0;
+    int viewportY_ = 0;
     bool scissorEnabled_ = false;
     int scissorX_ = 0;
     int scissorY_ = 0;

@@ -273,6 +273,21 @@ TEST(GltfDamagedHelmetEndToEnd) {
     CHECK_NEAR(mat.roughness, 1.0, 1e-6);
     CHECK_NEAR(mat.tint.r, 1.0, 1e-6);
 
+    // Sampler-driven wrapping: the file's samplers are empty (glTF default =
+    // REPEAT) and its UVs run v in [1,2], so every texture must be requested
+    // with Repeat wrapping - not the engine's default CLAMP_TO_EDGE, which
+    // would collapse the whole model onto one texel row.
+    {
+        neon::assets::TextureLoadOptions repeatOpts;
+        repeatOpts.wrap = neon::gfx::Wrap::Repeat;
+        const std::string albedoKey = assets::AssetManager::TextureCacheKey(
+            "assets/models/DamagedHelmet/Default_albedo.jpg", repeatOpts);
+        CHECK_EQ(fix.assets.Textures().count(albedoKey), 1u);
+        const std::string mrKey = assets::AssetManager::TextureCacheKey(
+            "assets/models/DamagedHelmet/Default_metalRoughness.jpg", repeatOpts);
+        CHECK_EQ(fix.assets.Textures().count(mrKey), 1u);
+    }
+
     // Node rotation = 90 degrees about +X (quat [0.7071, 0, -0, 0.7071]).
     math::Vec3 y = asset.nodes[0].transform.TransformDir({0, 1, 0});
     CHECK_NEAR(y.x, 0.0, 1e-4);

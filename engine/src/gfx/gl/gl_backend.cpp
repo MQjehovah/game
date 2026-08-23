@@ -39,6 +39,7 @@ constexpr gl::GLenum TextureMagFilter = 0x2800;
 constexpr gl::GLenum TextureWrapS = 0x2802;
 constexpr gl::GLenum TextureWrapT = 0x2803;
 constexpr gl::GLenum ClampToEdge = 0x812F;
+constexpr gl::GLenum Repeat = 0x2901;
 constexpr gl::GLenum Linear = 0x2601;
 constexpr gl::GLenum Nearest = 0x2600;
 constexpr gl::GLenum LinearMipmapLinear = 0x2703;
@@ -550,8 +551,9 @@ public:
         gl::GLuint id = 0;
         g.GenTextures(1, &id);
         g.BindTexture(glc::Texture2D, id);
-        g.TexParameteri(glc::Texture2D, glc::TextureWrapS, glc::ClampToEdge);
-        g.TexParameteri(glc::Texture2D, glc::TextureWrapT, glc::ClampToEdge);
+        const gl::GLenum wrap = desc.wrap == Wrap::Repeat ? glc::Repeat : glc::ClampToEdge;
+        g.TexParameteri(glc::Texture2D, glc::TextureWrapS, wrap);
+        g.TexParameteri(glc::Texture2D, glc::TextureWrapT, wrap);
         g.TexParameteri(glc::Texture2D, glc::TextureMinFilter,
                         desc.filter == Filter::Nearest ? glc::Nearest : glc::Linear);
         g.TexParameteri(glc::Texture2D, glc::TextureMagFilter,
@@ -744,8 +746,9 @@ public:
         }
     }
 
-    void SetViewport(int width, int height) override {
-        gl::GetGL().Viewport(0, 0, width, height);
+    void SetViewport(int x, int y, int width, int height) override {
+        const int winH = window_ ? window_->Height() : height;
+        gl::GetGL().Viewport(x, winH - (y + height), width, height);
     }
 
     void SetScissor(int x, int y, int width, int height, bool enabled) override {

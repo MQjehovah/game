@@ -273,6 +273,49 @@ TEST(AsyncLoadTextureCached) {
     CHECK_EQ(tex.Height(), 4);
 }
 
+TEST(TextureCacheKeySeparatesLoadOptions) {
+    // glTF textures load with REPEAT wrapping while editor thumbnails of the
+    // same image load clamped; the two must never share a cache entry (and a
+    // flip variant must stay distinct too).
+    test::HeadlessAssetFixture fx;
+    std::atomic<int> decodeCalls{0};
+    fx.assets.SetDecodeHook(
+        [&decodeCalls](const std::string&, const neon::assets::TextureLoadOptions&) {
+            ++decodeCalls;
+            neon::assets::DecodedImage img;
+            img.width = 2;
+            img.height = 2;
+            img.channels = 4;
+            img.rgba.assign(2 * 2 * 4, 200);
+            return img;
+        });
+
+    neon::assets::TextureLoadOptions clampOpts;
+    neon::assets::TextureLoadOptions repeatOpts;
+    repeatOpts.wrap = neon::gfx::Wrap::Repeat;
+    neon::assets::TextureLoadOptions flipOpts;
+    flipOpts.flipVertically = true;
+
+    CHECK(neon::assets::AssetManager::TextureCacheKey("fake://w", clampOpts) !=
+          neon::assets::AssetManager::TextureCacheKey("fake://w", repeatOpts));
+    CHECK(neon::assets::AssetManager::TextureCacheKey("fake://w", clampOpts) !=
+          neon::assets::AssetManager::TextureCacheKey("fake://w", flipOpts));
+
+    CHECK(fx.assets.LoadTexture("fake://w", clampOpts).Valid());
+    CHECK(fx.assets.LoadTexture("fake://w", repeatOpts).Valid());
+    CHECK(fx.assets.LoadTexture("fake://w", flipOpts).Valid());
+    CHECK_EQ(decodeCalls.load(), 3); // three distinct keys -> three decodes
+    CHECK_EQ(fx.assets.Textures().count(
+                 neon::assets::AssetManager::TextureCacheKey("fake://w", clampOpts)),
+             1u);
+    CHECK_EQ(fx.assets.Textures().count(
+                 neon::assets::AssetManager::TextureCacheKey("fake://w", repeatOpts)),
+             1u);
+    CHECK_EQ(fx.assets.Textures().count(
+                 neon::assets::AssetManager::TextureCacheKey("fake://w", flipOpts)),
+             1u);
+}
+
 TEST(AsyncLoadTextureCachedImmediate) {
     // Once a path is in the cache, LoadTextureAsync fires cb(true) inline
     // (main thread) without touching the pool or the decode hook.

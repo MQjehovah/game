@@ -11,8 +11,12 @@ editor_scene.json
 scenes/
 # ...but project scenes are first-class project data (2D levels now live in
 # scenes/*.json too), so keep them under version control.
+projects/*
 !projects/*/scenes/
 !projects/*/scenes/*.json
+# NeonSnake classic-game demo project (scripts/game.json are first-class data)
+!projects/snake/
+!projects/snake/**
 .vs/
 .vscode/
 CMakeUserPresets.json
@@ -20,3 +24,4 @@ CMakeUserPresets.json
 *.raw
 *.png
 !projects/pvz/assets/sprites/*.png
+

@@ -550,6 +550,10 @@ void EditorApp::OnUpdate(float dt) {
         Input()->HandleEvent(e);
     }
     if (editMode_ == EditMode::Scene2D) {
+        // The 2D canvas lives inside the viewport dock: keep the design-space
+        // mapping (and therefore mouse input) aligned with where it is drawn,
+        // including the 2D canvas camera (zoom/pan).
+        Update2DViewport();
         if (playtestActive_ && playtest_) {
             playtest_->Tick(dt);
         } else if (Input()->MousePressed(platform::MouseButton::Left)) {
@@ -771,29 +775,66 @@ void EditorApp::OnRender() {
     renderer_.BeginFrame({0.06f, 0.08f, 0.13f, 1.0f});
     gfx::Camera cam = ActiveCamera(); // 2D mode ignores it; the 3D branch re-reads
     if (editMode_ == EditMode::Scene2D) {
-        if (playtestActive_ && playtest_) {
-            // The runtime's on_render draws the playable game via the 2D canvas.
-            playtest_->Draw(renderer_, cam);
+        // Clip the 2D canvas to the viewport dock (like the 3D branch's
+        // scissor) and map the 1280x720 design space into it, so dock panels
+        // never cover game content. Flush2D while the scissor is active so the
+        // canvas is rasterized into the HDR target clipped to the viewport.
+        const math::Rect2& vp = viewportScreenRect_;
+        if (vp.w > 0.0f && vp.h > 0.0f && renderer_.Backend()) {
+            renderer_.Set2DViewport(vp.x, vp.y, vp.w, vp.h, canvasZoom_, canvasPan_);
+            renderer_.Backend()->SetScissor(static_cast<int>(vp.x), static_cast<int>(vp.y),
+                                            static_cast<int>(vp.w), static_cast<int>(vp.h), true);
+            if (playtestActive_ && playtest_) {
+                // The runtime's on_render draws the playable game via the 2D canvas.
+                playtest_->Draw(renderer_, cam);
+            } else {
+                DrawPvzCanvas();
+            }
+            // Mark the game's camera view (the full 1280x720 design area).
+            renderer_.DrawRectOutline(
+                {0.0f, 0.0f, static_cast<float>(gfx::Renderer::kDesignWidth),
+                 static_cast<float>(gfx::Renderer::kDesignHeight)},
+                2.0f, gfx::Color{0.4f, 0.9f, 1.0f, 0.65f});
+            renderer_.Flush2D();
+            renderer_.Backend()->SetScissor(0, 0, 0, 0, false);
         } else {
-            DrawPvzCanvas();
+            // No viewport rect yet (first frame): full-window fallback.
+            if (playtestActive_ && playtest_) {
+                playtest_->Draw(renderer_, cam);
+            } else {
+                DrawPvzCanvas();
+            }
         }
+        renderer_.Reset2DViewport();
     } else {
-        // Scissor the 3D scene to the central viewport so the full-window
-        // render doesn't bleed into the dock areas around it. Cleared before
-        // EndScene so the HDR->backbuffer composite still covers the window.
-        const int vpX = static_cast<int>(viewportScreenRect_.x);
-        const int vpY = static_cast<int>(viewportScreenRect_.y);
-        const int vpW = static_cast<int>(viewportScreenRect_.w);
-        const int vpH = static_cast<int>(viewportScreenRect_.h);
-        if (vpW > 0 && vpH > 0 && renderer_.Backend())
-            renderer_.Backend()->SetScissor(vpX, vpY, vpW, vpH, true);
+        // Render the 3D scene INTO the viewport dock (same idea as the 2D
+        // canvas): the camera projection uses the viewport aspect, the
+        // rasterization viewport is the dock rect, and the 2D overlay (sky,
+        // billboards, playtest HUD) is clipped to it. Nothing bleeds into the
+        // dock panels anymore.
+        const math::Rect2& vp = viewportScreenRect_;
+        const bool hasVp = vp.w > 0.0f && vp.h > 0.0f && renderer_.Backend();
+        if (hasVp) {
+            renderer_.Backend()->SetScissor(static_cast<int>(vp.x), static_cast<int>(vp.y),
+                                            static_cast<int>(vp.w), static_cast<int>(vp.h), true);
+            // 3D HUD/billboards draw at design pixel size (1:1) inside the
+            // viewport, matching the packed game; the scissor clips anything
+            // outside the panel. (2D canvas games keep the fit+center mapping
+            // in their own branch.)
+            renderer_.Set2DViewportPixels(vp.x, vp.y);
+        }
         renderer_.SetSky({0.05f, 0.08f, 0.16f, 1.0f}, {0.35f, 0.45f, 0.6f, 1.0f});
         renderer_.SetFog({0.3f, 0.38f, 0.5f, 1.0f}, 60.0f, 140.0f);
         renderer_.DrawSky();
 
-        float aspect = static_cast<float>(renderer_.ScreenWidth()) / renderer_.ScreenHeight();
+        const float aspect = ViewportAspect();
         cam = ActiveCamera();
         renderer_.SetCamera(cam, aspect);
+        if (hasVp) {
+            // SetCamera may run the shadow pass (which rebinds targets and
+            // resets the backend viewport), so apply the scene rect after it.
+            renderer_.SetSceneViewport(vp.x, vp.y, vp.w, vp.h);
+        }
         renderer_.SetDirectionalLight({-0.4f, -1.0f, -0.3f}, {1.0f, 0.95f, 0.85f}, 0.3f);
 
         if (playtestActive_ && playtest_) {
@@ -821,8 +862,15 @@ void EditorApp::OnRender() {
             }
         }
 
-        // Release the viewport scissor before compositing.
-        if (renderer_.Backend()) renderer_.Backend()->SetScissor(0, 0, 0, 0, false);
+        // Rasterize the scene's 2D overlay (sky / billboards / playtest HUD)
+        // while the scissor is active so it stays inside the viewport, then
+        // restore the full-window mapping for the composite + tool UI.
+        if (hasVp) {
+            renderer_.ResetSceneViewport();
+            renderer_.Flush2D();
+            renderer_.Backend()->SetScissor(0, 0, 0, 0, false);
+            renderer_.Reset2DViewport();
+        }
     }
     // End the 3D scene phase: composite the HDR frame to the backbuffer and
     // bind the backbuffer so the tool UI (engine UI demo + ImGui) below renders
@@ -938,6 +986,48 @@ void EditorApp::OnEvent(const platform::InputEvent& event) {
     }
 }
 
+void EditorApp::Update2DViewport() {
+    const math::Rect2& vp = viewportScreenRect_;
+    if (vp.w <= 0.0f || vp.h <= 0.0f) return;
+    platform::IInput* input = Input();
+    if (!input) return;
+    const float fitScale =
+        std::min(vp.w / static_cast<float>(gfx::Renderer::kDesignWidth),
+                 vp.h / static_cast<float>(gfx::Renderer::kDesignHeight));
+    if (fitScale <= 0.0f) return;
+
+    renderer_.Set2DViewport(vp.x, vp.y, vp.w, vp.h, canvasZoom_, canvasPan_);
+    // Design point currently under the cursor (used for zoom-to-cursor).
+    const math::Vec2 design = renderer_.ScreenToUI(input->MousePos());
+
+    // Middle-drag pans the canvas; consume so playtest InputMouseX/Y sees no
+    // leftover delta (the editor owns camera navigation in 2D mode).
+    if (input->MouseDown(platform::MouseButton::Middle)) {
+        const float scale = renderer_.UIScale();
+        if (scale > 0.0f) {
+            canvasPan_ -= input->MouseDelta() / scale;
+            input->ConsumeMouseDelta();
+        }
+    }
+
+    // Wheel zooms around the cursor: keep the design point under it fixed.
+    const float wheel = input->WheelDelta();
+    if (std::fabs(wheel) > 0.01f) {
+        const float factor = std::pow(1.15f, wheel);
+        const float newZoom = math::Clamp(canvasZoom_ * factor, 0.2f, 8.0f);
+        if (newZoom != canvasZoom_) {
+            const float oldScale = renderer_.UIScale();
+            const float newScale = fitScale * newZoom;
+            const float ratio = oldScale / newScale;
+            canvasPan_.x = design.x - 640.0f - (design.x - 640.0f - canvasPan_.x) * ratio;
+            canvasPan_.y = design.y - 360.0f - (design.y - 360.0f - canvasPan_.y) * ratio;
+            canvasZoom_ = newZoom;
+            renderer_.Set2DViewport(vp.x, vp.y, vp.w, vp.h, canvasZoom_, canvasPan_);
+        }
+        input->ConsumeWheel();
+    }
+}
+
 gfx::Camera EditorApp::ActiveCamera() const {
     gfx::Camera cam;
     switch (viewCam_) {
@@ -1005,7 +1095,10 @@ void EditorApp::UpdateViewport(float dt) {
                 math::Vec3 right = math::Cross(fwd, cam.up).Normalized();
                 math::Vec3 upv = math::Cross(right, fwd);
                 const float worldPerPixel =
-                    ortho ? orthoSize_ * 2.0f / static_cast<float>(renderer_.ScreenHeight())
+                    ortho ? orthoSize_ * 2.0f /
+                                (viewportScreenRect_.h > 0.0f
+                                     ? viewportScreenRect_.h
+                                     : static_cast<float>(renderer_.ScreenHeight()))
                           : 1.0f;
                 const float k = ortho ? worldPerPixel : 0.02f;
                 camTarget_ -= right * input->MouseDelta().x * k;
@@ -1024,15 +1117,18 @@ void EditorApp::UpdateViewport(float dt) {
         // picking would mutate the editor scene selection mid-playtest.
         if (input->MousePressed(platform::MouseButton::Left) && !playtestActive_ &&
             !gizmoBusy) {
-            float aspect = static_cast<float>(renderer_.ScreenWidth()) / renderer_.ScreenHeight();
+            const float aspect = ViewportAspect();
             gfx::Camera cam = ActiveCamera();
-            // Build the ray from the ACTUAL client-pixel mouse position so
-            // picking lines up with the full-window render at any window aspect
-            // (the design-space ScreenRay only matches at 16:9).
+            // Build the ray from the mouse position RELATIVE to the viewport
+            // dock, matching the viewport-aspect projection the scene uses.
             const math::Vec2 mousePx = input->MousePos();
-            const float ndcX = mousePx.x / static_cast<float>(renderer_.ScreenWidth()) * 2.0f - 1.0f;
-            const float ndcY =
-                1.0f - mousePx.y / static_cast<float>(renderer_.ScreenHeight()) * 2.0f;
+            const math::Rect2& vp = viewportScreenRect_;
+            const float vpW = vp.w > 0.0f ? vp.w : static_cast<float>(renderer_.ScreenWidth());
+            const float vpH = vp.h > 0.0f ? vp.h : static_cast<float>(renderer_.ScreenHeight());
+            const float vpX = vp.w > 0.0f ? vp.x : 0.0f;
+            const float vpY = vp.h > 0.0f ? vp.y : 0.0f;
+            const float ndcX = (mousePx.x - vpX) / vpW * 2.0f - 1.0f;
+            const float ndcY = 1.0f - (mousePx.y - vpY) / vpH * 2.0f;
             math::Ray ray = RayFromNDC(cam, aspect, ndcX, ndcY);
             float best = 1e30f;
             int picked = -1;
@@ -1154,20 +1250,18 @@ void EditorApp::DrawTransformGizmo() {
     ImGuizmo::SetAlternativeWindow(hoverWindow);
     gizmoAltWindowSet_ = hoverWindow != nullptr;
 
-    float aspect = static_cast<float>(renderer_.ScreenWidth()) / renderer_.ScreenHeight();
+    const float aspect = ViewportAspect();
     gfx::Camera cam = ActiveCamera();
     ImGuizmo::SetOrthographic(cam.ortho);
     ImGuizmo::SetDrawlist(ImGui::GetWindowDrawList());
 
-    // The 3D scene renders FULL-WINDOW (OnRender sets the camera with the full
-    // screen aspect; the viewport window is an overlay), so the gizmo rect must
-    // be the full window: this makes the gizmo sit on the entity exactly where
-    // the renderer drew it and where the picker looks. The viewport window's
-    // draw list still clips the gizmo to the visible viewport region.
-    const float rx = 0.0f;
-    const float ry = 0.0f;
-    const float rw = static_cast<float>(renderer_.ScreenWidth());
-    const float rh = static_cast<float>(renderer_.ScreenHeight());
+    // The 3D scene now renders INTO the viewport dock with the viewport aspect
+    // and rasterization rect, so the gizmo uses the same rect + aspect.
+    const math::Rect2& vp = viewportScreenRect_;
+    const float rx = vp.w > 0.0f ? vp.x : 0.0f;
+    const float ry = vp.h > 0.0f ? vp.y : 0.0f;
+    const float rw = vp.w > 0.0f ? vp.w : static_cast<float>(renderer_.ScreenWidth());
+    const float rh = vp.h > 0.0f ? vp.h : static_cast<float>(renderer_.ScreenHeight());
     ImGuizmo::SetRect(rx, ry, rw, rh);
     gizmoRect_[0] = rx;
     gizmoRect_[1] = ry;
@@ -1267,20 +1361,21 @@ void EditorApp::RunGizmoDragSim() {
     const ImGuiID savedHoveredPrev = ctx.HoveredIdPreviousFrame;
     ImGuiWindow* savedHoveredWin = ctx.HoveredWindow;
 
-    float aspect = static_cast<float>(renderer_.ScreenWidth()) / renderer_.ScreenHeight();
+    const float aspect = ViewportAspect();
     gfx::Camera cam = ActiveCamera();
     float view[16], proj[16];
     Mat4ToGizmo(cam.View(), view);
     Mat4ToGizmo(cam.Projection(aspect), proj);
 
-    // Screen position of the entity origin under the full-window rect (the
-    // same rect the gizmo now uses), in y-down ImGui pixels.
+    // Screen position of the entity origin under the viewport rect (the same
+    // rect the gizmo now uses), in y-down ImGui pixels.
     math::Mat4 vp = cam.ViewProjection(aspect);
     math::Vec4 clip = vp.TransformVec4({sel.pos.x, sel.pos.y, sel.pos.z, 1.0f});
-    const float gx = (clip.x / clip.w * 0.5f + 0.5f) *
-                     static_cast<float>(renderer_.ScreenWidth());
-    const float gy = (0.5f - clip.y / clip.w * 0.5f) *
-                     static_cast<float>(renderer_.ScreenHeight());
+    const math::Rect2& vr = viewportScreenRect_;
+    const float vrW = vr.w > 0.0f ? vr.w : static_cast<float>(renderer_.ScreenWidth());
+    const float vrH = vr.h > 0.0f ? vr.h : static_cast<float>(renderer_.ScreenHeight());
+    const float gx = vr.x + (clip.x / clip.w * 0.5f + 0.5f) * vrW;
+    const float gy = vr.y + (0.5f - clip.y / clip.w * 0.5f) * vrH;
 
     // The docked leaf's parent IS the dock host ImGui reports as hovered; the
     // same window SetAlternativeWindow points the gizmo at.
@@ -1313,8 +1408,9 @@ void EditorApp::RunGizmoDragSim() {
     ImGuizmo::BeginFrame();
     ImGuizmo::SetOrthographic(cam.ortho);
     ImGuizmo::SetDrawlist(ImGui::GetWindowDrawList());
-    ImGuizmo::SetRect(0.0f, 0.0f, static_cast<float>(renderer_.ScreenWidth()),
-                      static_cast<float>(renderer_.ScreenHeight()));
+    ImGuizmo::SetRect(vr.w > 0.0f ? vr.x : 0.0f, vr.h > 0.0f ? vr.y : 0.0f,
+                      vr.w > 0.0f ? vr.w : static_cast<float>(renderer_.ScreenWidth()),
+                      vr.h > 0.0f ? vr.h : static_cast<float>(renderer_.ScreenHeight()));
     // NOTE: deliberately NOT re-arming SetAlternativeWindow here. The real
     // DrawTransformGizmo set it this frame; the activation below only succeeds
     // if that setting matches ctx.HoveredWindow (the dock host), so a removed
@@ -1900,10 +1996,15 @@ void EditorApp::RunUISmokeTest() {
         check(gizmoDrawn_, "transform gizmo drawn in the viewport");
         check(gizmoBeginFrame_, "ImGuizmo::BeginFrame called every frame");
         check(gizmoAltWindowSet_, "gizmo hover bound to the dock host window");
-        check(gizmoRect_[0] == 0.0f && gizmoRect_[1] == 0.0f &&
-                  gizmoRect_[2] == static_cast<float>(renderer_.ScreenWidth()) &&
-                  gizmoRect_[3] == static_cast<float>(renderer_.ScreenHeight()),
-              "gizmo rect is the full window (matches scene render + picker)");
+        {
+            const math::Rect2& vr = viewportScreenRect_;
+            const float rw = vr.w > 0.0f ? vr.w : static_cast<float>(renderer_.ScreenWidth());
+            const float rh = vr.h > 0.0f ? vr.h : static_cast<float>(renderer_.ScreenHeight());
+            check(gizmoRect_[0] == (vr.w > 0.0f ? vr.x : 0.0f) &&
+                      gizmoRect_[1] == (vr.h > 0.0f ? vr.y : 0.0f) &&
+                      gizmoRect_[2] == rw && gizmoRect_[3] == rh,
+                  "gizmo rect matches the viewport dock (scene render + picker)");
+        }
     }
     auto nearVec = [](const math::Vec3& a, const math::Vec3& b) {
         return std::fabs(a.x - b.x) < 1e-4f && std::fabs(a.y - b.y) < 1e-4f &&

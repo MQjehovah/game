@@ -1,0 +1,1 @@
+{"entities":[{"components":{"script":{"backend":"lua","path":"scripts/snake.lua","vars":{"demo":0}},"transform":{"pos":[0,0,0]}},"name":"Snake"}]}

@@ -187,6 +187,20 @@ build\neon_game.exe --connect 127.0.0.1:26000 --scene tests\data\neon_server_sam
 操作：点击卡牌选择植物（向日葵/豌豆/寒冰/坚果/樱桃炸弹）→ 点击草坪格子种植；点击阳光收集；
 僵尸（普通/路障/铁桶）到达房屋左侧时该行推草机触发，无推草机则失败；胜负后按 Enter 重新开始。
 
+### 经典小游戏演示（NeonSnake，贪吃蛇）
+`projects/snake` 是纯 Lua 的经典贪吃蛇，作为 2D 脚本画布的能力验证（零贴图、纯 `DrawRect/DrawText` 绘制）：
+方向键 / WASD 转向，空格或 Enter 开始 / 重开，P 暂停；吃食物增长并提速，撞墙或咬到自己结束。
+场景 `scenes/snake.json` 的 script 组件带 `vars.demo`：置 1 时进入自动演示模式（AI 吃食物，
+用于无头验证与观赏），置 0（默认）为手动操作。
+
+```bat
+:: 编辑器打开项目并 F5 试玩（2D 画布在视口面板内等比显示）
+.\build\neon_editor.exe --project projects/snake
+:: 打包后由通用播放器全窗口运行
+.\build\neon_editor.exe --package projects/snake build\snake_out
+.\build\neon_game.exe --pack build\snake_out\game.pack
+```
+
 ### 数据驱动 3D 游戏（NeonRealm，魔兽风格 demo 移植）
 
 村庄、狼群、波次、对话与 HUD 全部在 `projects/neon_realm`（场景 JSON + Lua），
