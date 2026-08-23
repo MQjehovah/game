@@ -231,3 +231,5 @@ OnRender：
 - **统一试玩**：编辑器只有一个试玩入口（工具栏按钮/F5），`StartPlaytest` 按模式分支——3D 序列化当前编辑场景、2D 加载项目场景文件；数据驱动游戏若定义 `on_render` 则自己画 HUD（编辑器不再叠加内置 HUD）。`LoadScene` 支持运行时组件化 SceneFile 格式；`--project <dir>` 打开项目、`--2d-play` 直达 2D 试玩；冒烟测试在 `--smoke-test` 下归一化为默认 3D 编辑器流程。
 - **打包器**：glTF 依赖收集（解析 buffers/images URI 一并入包），程序化 mesh key 校验放行。
 - **输入映射（Godot 式）**：`script::InputMap` 把动作名映射到按键（down/pressed/released/axis），内建默认（forward/strafe/vertical/jump/…）+ 项目 `input.json` 覆盖（打包时随 game.json 收集）；Lua 新增 `ActionDown/ActionPressed/ActionReleased/ActionAxis`，`InputAxis/InputKey` 优先查映射、未命中回退旧表，旧脚本零改动；编辑器"输入映射"面板可视化改键并写回 `input.json`。示例：`projects/neon_realm/input.json`（WASD/空格/1/2/F 全部动作化）。
+- **场景树（Godot 式）**：实体 `transform.parent`（按实体名引用）在 `Instantiate` 后解析为 `SceneParentLink`，`GameRuntime::LocalToWorld` 沿父链累乘 TRS 渲染（有界深度，未知父名拒绝场景）；编辑器"场景"面板改为按父分组的树形层级，行间拖拽即重新挂父、拖到空白取消父子，检查器提供"父实体"下拉，保存/加载/导出均携带 parent。
+- **信号系统 + 多场景**：`IScriptHost::CaptureStackFunction` 捕获绑定参数的函数值（支持局部/匿名闭包）；Lua `SignalConnect(name, fn)` / `SignalEmit(name, arg)` 按注册序调用（发射时快照）；`ChangeScene(path)` 延迟到 Tick 末尾重启运行时（避免 Lua 调用中销毁宿主），同一配置新世界——pvz 胜负后按 Enter 用其重开本关，构成"标题→关卡→结算"循环的数据驱动基础。

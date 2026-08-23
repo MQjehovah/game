@@ -60,6 +60,8 @@
 | 编辑器 2D 模式：9x5 草坪画布（5 种植物/橡皮/3 种僵尸笔刷），保存/加载关卡 JSON；试玩按钮/F5 统一（3D 与 2D 同一入口） | ✅ `neon_editor` |
 | 数据驱动 3D 游戏：`projects/neon_realm`（魔兽风格 demo 移植：村庄/狼群/波次/任务对话/存档，全 Lua） | ✅ |
 | 输入映射（Godot 式）：动作名→按键 JSON（项目 input.json）+ `ActionDown/ActionPressed/ActionAxis` 绑定 + 编辑器改键面板 | ✅ `neon::script::InputMap` |
+| 场景树（Godot 式）：实体 `transform.parent` 父子变换继承 + 编辑器树形层级面板 + 拖拽排父子 | ✅ |
+| 信号系统：`SignalConnect(name, fn)` / `SignalEmit(name, arg)`（支持局部闭包）+ 多场景 `ChangeScene(path)` | ✅ |
 | 数据驱动场景：组件化 JSON + 预制体 + `game.json` 清单 | ✅ |
 | 编辑器深化：gizmo / 撤销重做 / 材质编辑器 / 行为树可视化 / 脚本面板 / 缩略图 / 多相机 / 热重载 / 性能面板 | ✅ |
 | 一键打包 + 通用播放器：`neon_editor --package` → `game.pack` → `neon_game` 运行数据驱动游戏 | ✅ 编辑→打包→运行闭环 |
@@ -172,7 +174,7 @@ build\neon_game.exe --connect 127.0.0.1:26000 --scene tests\data\neon_server_sam
 ```
 
 操作：点击卡牌选择植物（向日葵/豌豆/寒冰/坚果/樱桃炸弹）→ 点击草坪格子种植；点击阳光收集；
-僵尸（普通/路障/铁桶）到达房屋左侧时该行推草机触发，无推草机则失败。
+僵尸（普通/路障/铁桶）到达房屋左侧时该行推草机触发，无推草机则失败；胜负后按 Enter 重新开始。
 
 ### 数据驱动 3D 游戏（NeonRealm，魔兽风格 demo 移植）
 
