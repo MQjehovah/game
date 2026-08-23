@@ -2498,6 +2498,41 @@ void EditorApp::RunUISmokeTest() {
         projectDir_ = prev;
     }
 
+    // --- Asset panel: create + import actions (temp project) ---
+    {
+        const std::string proj = GetTempDir() + "/asset_proj";
+        MakeDir(proj);
+        const std::string prevDir = assetDir_;
+        const std::string prevProj = projectDir_;
+        projectDir_ = proj;
+        assetDir_ = proj + "/assets";
+        MakeDir(assetDir_);
+        CreateAssetFile("test.lua", 1);
+        check(std::ifstream(assetDir_ + "/test.lua").is_open(),
+              "asset: create lua file");
+        CreateAssetFile("data.json", 2);
+        check(std::ifstream(assetDir_ + "/data.json").is_open(),
+              "asset: create json file");
+        CreateAssetFile("subdir", 0);
+        const std::string subdir = assetDir_ + "/subdir";
+        struct _stat64 st;
+        check(_stat64(subdir.c_str(), &st) == 0 && (st.st_mode & _S_IFDIR),
+              "asset: create directory");
+        const std::string src = GetTempDir() + "/asset_src.png";
+        {
+            std::ofstream out(src, std::ios::binary);
+            out << "fake png bytes";
+        }
+        ImportAssetFile(src);
+        check(std::ifstream(assetDir_ + "/asset_src.png").is_open(),
+              "asset: import copies the file into the project");
+        ImportAssetFile(src); // duplicate -> numbered name
+        check(std::ifstream(assetDir_ + "/asset_src_1.png").is_open(),
+              "asset: duplicate import gets a numbered name");
+        projectDir_ = prevProj;
+        assetDir_ = prevDir;
+    }
+
     NEON_LOG_INFO("EDITOR-UI-SMOKE: all checks done");
 }
 
@@ -3454,15 +3489,13 @@ void EditorApp::SwitchProject(const std::string& dir) {
         LoadScene("editor_scene.json"); // default sandbox scene
     }
     // The asset panel follows the active project: prefer its assets/ dir
-    // (sprites/models/textures). A project without assets/ (e.g. a
-    // procedural-mesh 3D project) falls back to the engine's shared asset
-    // dir, so the panel always has browsable/draggable content.
+    // (sprites/models/textures). A project without assets/ stays at the
+    // project root; the asset panel provides 导入/新建 actions to create the
+    // assets/ tree - never the engine's own shared asset dir.
     {
         std::vector<AssetEntry> probe;
         if (ListDirectory(projectDir_ + "/assets", probe)) {
             assetDir_ = projectDir_ + "/assets";
-        } else if (ListDirectory(GetWorkingDir() + "/assets", probe)) {
-            assetDir_ = GetWorkingDir() + "/assets";
         } else {
             assetDir_ = projectDir_;
         }

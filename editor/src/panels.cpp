@@ -6,6 +6,7 @@
 #include <cstring>
 #include <functional>
 #include <cstdio>
+#include <fstream>
 #if defined(_WIN32)
 #include <direct.h>
 #endif
@@ -64,6 +65,14 @@ bool MakeDirSingle(const std::string& path) {
 #else
     return ::mkdir(path.c_str(), 0777) == 0 || errno == EEXIST;
 #endif
+}
+
+bool CopyFileBinary(const std::string& src, const std::string& dst) {
+    std::ifstream in(src, std::ios::binary);
+    std::ofstream out(dst, std::ios::binary);
+    if (!in.is_open() || !out.is_open()) return false;
+    out << in.rdbuf();
+    return true;
 }
 
 std::string GetCurrentDir();
@@ -234,6 +243,74 @@ void EditorApp::RefreshAssetDir() {
               });
     NEON_LOG_DEBUG("Editor: asset dir '%s' (%zu entries)", assetDir_.c_str(),
                    assetEntries_.size());
+}
+
+// Copies a file into the current asset dir (skipping a duplicate name by
+// appending _1/_2/...), then refreshes the listing.
+void EditorApp::ImportAssetFile(const std::string& srcPath) {
+    if (srcPath.empty()) return;
+    const std::string base = FileName(srcPath);
+    if (base.empty() || base == "." || base == "..") {
+        NEON_LOG_ERROR("Asset: cannot import '%s'", srcPath.c_str());
+        return;
+    }
+    std::string name = base;
+    int counter = 1;
+    while (true) {
+        std::ifstream probe(assetDir_ + "/" + name, std::ios::binary);
+        if (!probe.is_open()) break;
+        probe.close();
+        const size_t dot = name.find_last_of('.');
+        name = (dot == std::string::npos ? base : base.substr(0, dot)) + "_" +
+               std::to_string(counter++) +
+               (dot == std::string::npos ? "" : base.substr(dot));
+    }
+    if (CopyFileBinary(srcPath, assetDir_ + "/" + name)) {
+        NEON_LOG_INFO("Asset: imported '%s' -> '%s/%s'", srcPath.c_str(), assetDir_.c_str(),
+                      name.c_str());
+        RefreshAssetDir();
+    } else {
+        NEON_LOG_ERROR("Asset: failed to import '%s' (target '%s/%s')", srcPath.c_str(),
+                       assetDir_.c_str(), name.c_str());
+    }
+}
+
+// Creates a new asset in the current asset dir: kind 0 = directory, 1 = Lua
+// script, 2 = JSON, 3 = empty text file.
+void EditorApp::CreateAssetFile(const std::string& name, int kind) {
+    if (name.empty() || name == "." || name == "..") {
+        NEON_LOG_ERROR("Asset: invalid asset name '%s'", name.c_str());
+        return;
+    }
+    const std::string path = assetDir_ + "/" + name;
+    if (kind == 0) {
+        if (MakeDirSingle(path)) {
+            NEON_LOG_INFO("Asset: created directory '%s'", path.c_str());
+            RefreshAssetDir();
+        } else {
+            NEON_LOG_ERROR("Asset: cannot create directory '%s'", path.c_str());
+        }
+        return;
+    }
+    if (std::ifstream(path, std::ios::binary).is_open()) {
+        NEON_LOG_ERROR("Asset: '%s' already exists", path.c_str());
+        return;
+    }
+    std::string content;
+    if (kind == 1) {
+        content = "-- New script (data-driven)\nfunction on_start(ent)\nend\n"
+                  "function on_update(ent, dt)\nend\n";
+    } else if (kind == 2) {
+        content = "{\n}\n";
+    }
+    std::ofstream out(path, std::ios::binary);
+    if (!out.is_open()) {
+        NEON_LOG_ERROR("Asset: cannot create '%s'", path.c_str());
+        return;
+    }
+    out << content;
+    NEON_LOG_INFO("Asset: created '%s'", path.c_str());
+    RefreshAssetDir();
 }
 
 void EditorApp::ImportAssetPath(const std::string& path) {
@@ -440,19 +517,61 @@ void EditorApp::BuildAssetPanel() {
             }
         }
         ImGui::SameLine();
-        if (ImGui::SmallButton("assets")) {
-            assetDir_ = GetCurrentDir() + "/assets";
+        if (ImGui::SmallButton("项目assets")) {
+            assetDir_ = projectDir_ + "/assets";
+            MakeDirSingle(assetDir_);
             RefreshAssetDir();
         }
         ImGui::SameLine();
-        if (ImGui::SmallButton("根目录")) {
-            assetDir_ = GetCurrentDir();
+        if (ImGui::SmallButton("项目根")) {
+            assetDir_ = projectDir_;
             RefreshAssetDir();
         }
         ImGui::SameLine();
         if (ImGui::SmallButton("刷新")) RefreshAssetDir();
         ImGui::SameLine();
+        static bool importOpen = false;
+        if (ImGui::SmallButton(importOpen ? "取消导入" : "导入")) importOpen = !importOpen;
+        ImGui::SameLine();
+        static int newKind = -1;
+        if (ImGui::SmallButton(newKind >= 0 ? "取消新建" : "新建"))
+            newKind = (newKind >= 0) ? -1 : 0;
+        ImGui::SameLine();
         ImGui::TextUnformatted(assetDir_.c_str());
+        // Import row: paste a source path and copy it into the current dir.
+        if (importOpen) {
+            static char importSrc[1024] = {};
+            ImGui::SetNextItemWidth(-110.0f);
+            ImGui::InputText("##import_src", importSrc, sizeof(importSrc));
+            ImGui::SameLine();
+            if (ImGui::SmallButton("导入文件")) {
+                ImportAssetFile(importSrc);
+                importSrc[0] = '\0';
+            }
+        }
+        // New-asset row: type combo + name + create.
+        if (newKind >= 0) {
+            static const char* kinds[] = {"目录", "Lua 脚本", "JSON 文件", "文本文件"};
+            static char newName[128] = {};
+            ImGui::SetNextItemWidth(90.0f);
+            if (ImGui::Combo("##new_kind", &newKind, kinds, 4)) {
+                // hint defaults per kind
+                if (newKind == 1) std::strncpy(newName, "new_script.lua", sizeof(newName) - 1);
+                else if (newKind == 2) std::strncpy(newName, "new_data.json", sizeof(newName) - 1);
+            }
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(180.0f);
+            ImGui::InputText("##new_name", newName, sizeof(newName));
+            ImGui::SameLine();
+            if (ImGui::SmallButton("创建")) {
+                if (newName[0] != '\0') {
+                    CreateAssetFile(newName, newKind);
+                    newName[0] = '\0';
+                    newKind = -1;
+                }
+            }
+        }
+        ImGui::Separator();
 
         // Unity-style Project filter tabs: 全部 / 模型 / 贴图 / 脚本.
         const char* filters[] = {"全部", "模型", "贴图", "脚本"};

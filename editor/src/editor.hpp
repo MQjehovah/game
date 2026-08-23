@@ -143,6 +143,10 @@ private:
     // entity's script (the panel re-syncs on the next frame it runs).
     void SetSelection(int index);
     void RefreshAssetDir();
+    // Asset panel actions: copy a file into the current asset dir and create
+    // a new asset (dir / lua / json / empty text). Both refresh the listing.
+    void ImportAssetFile(const std::string& srcPath);
+    void CreateAssetFile(const std::string& name, int kind);
     void ImportAssetPath(const std::string& path);
     void ImportSelectedAsset();
     void UpdateViewport(float dt);
