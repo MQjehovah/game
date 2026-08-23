@@ -161,6 +161,7 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     LoadLocales(); // Loc() string tables (best effort; missing dir = no-op)
     auto inst = Instantiate(world_, parsed.Value(), prefs_, reg);
     if (!inst.Ok()) return core::Status::Err("runtime: " + inst.Error());
+    RegisterSceneBodies();
 
     scriptCtx_.world = &world_;
     scriptCtx_.physics = &physics_;
@@ -174,6 +175,18 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     scriptCtx_.readData = [this](const std::string& path) {
         return ReadScript(FullScriptPath(path));
     };
+    scriptCtx_.uiShow = [this](const std::string& path) { return ShowUI(path); };
+    scriptCtx_.uiHide = [this]() { HideUI(); };
+    scriptCtx_.uiClicked = [this](const std::string& name) { return UIClicked(name); };
+    scriptCtx_.uiSetText = [this](const std::string& name, const std::string& text) {
+        UISetText(name, text);
+    };
+    scriptCtx_.uiSetFill = [this](const std::string& name, float fill) {
+        UISetFill(name, fill);
+    };
+    scriptCtx_.uiSetVisible = [this](const std::string& name, bool visible) {
+        UISetVisible(name, visible);
+    };
     scriptCtx_.loadTexture = [this](const std::string& path) {
         if (!cfg_.assets || path.empty()) return gfx::TextureHandle{};
         return cfg_.assets->LoadTexture(FullAssetPath(path)).Handle();
@@ -186,6 +199,24 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     };
     scriptCtx_.findEntity = [this](const std::string& name) {
         return FindNamedEntity(name);
+    };
+    // SpawnSprite: create a renderable sprite entity (2D games). The texture
+    // resolves at draw time through the same path as scene sprites, so dynamic
+    // gameplay objects render identically in edit and play modes.
+    scriptCtx_.spawnSprite = [this](const std::string& tex, const math::Vec3& pos,
+                                    float w, float h, bool flipX, bool flipY) {
+        if (tex.empty()) return ecs::Entity{};
+        ecs::Entity e = world_.Create();
+        SceneTransform t;
+        t.pos = pos;
+        t.scale = {w, h, 1.0f};
+        world_.Add<SceneTransform>(e, t);
+        SceneSprite s;
+        s.texture = tex;
+        s.flipX = flipX;
+        s.flipY = flipY;
+        world_.Add<SceneSprite>(e, s);
+        return e;
     };
     hiddenEntities_.clear();
     scriptCtx_.hiddenEntities = &hiddenEntities_;
@@ -316,6 +347,9 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
 }
 
 void GameRuntime::Stop() {
+    uiDoc_.reset();
+    uiClickedNames_.clear();
+    physicsAccum_ = 0.0f;
     scripts_.clear();
     trees_.clear();
     draws_.clear();
@@ -335,6 +369,72 @@ void GameRuntime::Stop() {
     prefs_ = PrefabLibrary{};
     running_ = false;
     simTime_ = 0.0;
+}
+
+// Registers every scene entity that carries a rigidbody component with the
+// physics world. The entity's transform provides the initial position; the
+// generated physics body id is stored back on the component so per-step
+// SyncSceneBodies can follow it.
+void GameRuntime::RegisterSceneBodies() {
+    world_.ViewAll<SceneRigidBody, SceneTransform>().ForEach(
+        [this](ecs::Entity e, SceneRigidBody& rb, const SceneTransform& t) {
+            physics::RigidBodyDesc desc;
+            desc.dynamic = rb.dynamic;
+            desc.mass = rb.mass;
+            desc.restitution = rb.restitution;
+            desc.friction = rb.friction;
+            desc.linearDamping = rb.linearDamping;
+            desc.gravityScale = rb.gravityScale;
+            physics::World::BodyId body;
+            if (rb.shape == "box") {
+                body = physics_.AddBox(EntityKey(e), t.pos, rb.halfExtents, rb.dynamic, desc);
+            } else {
+                body = physics_.AddSphere(EntityKey(e), t.pos, rb.radius, rb.dynamic, desc);
+            }
+            rb.bodyId = body.id;
+        });
+}
+
+// Writes the physics bodies' positions back into their entities' transforms
+// so rendered meshes follow the simulation. Called after every physics step.
+void GameRuntime::SyncSceneBodies() {
+    world_.ViewAll<SceneRigidBody, SceneTransform>().ForEach(
+        [this](ecs::Entity e, const SceneRigidBody& rb, SceneTransform& t) {
+            if (rb.bodyId == 0) return;
+            t.pos = physics_.GetPosition({rb.bodyId});
+            (void)e;
+        });
+}
+
+bool GameRuntime::ShowUI(const std::string& path) {
+    auto doc = std::make_unique<ui::UiDocument>();
+    if (!doc->Load(FullScriptPath(path))) return false;
+    uiDoc_ = std::move(doc);
+    uiClickedNames_.clear();
+    return true;
+}
+
+void GameRuntime::HideUI() {
+    uiDoc_.reset();
+    uiClickedNames_.clear();
+}
+
+void GameRuntime::UISetText(const std::string& name, const std::string& text) {
+    if (uiDoc_) {
+        if (ui::UiNode* n = uiDoc_->Find(name)) n->text = text;
+    }
+}
+
+void GameRuntime::UISetFill(const std::string& name, float fill) {
+    if (uiDoc_) {
+        if (ui::UiNode* n = uiDoc_->Find(name)) n->fill = fill;
+    }
+}
+
+void GameRuntime::UISetVisible(const std::string& name, bool visible) {
+    if (uiDoc_) {
+        if (ui::UiNode* n = uiDoc_->Find(name)) n->visible = visible;
+    }
 }
 
 void GameRuntime::AttachScripts() {
@@ -530,9 +630,21 @@ void GameRuntime::LoadPrefabs() {
 }
 
 void GameRuntime::BuildDrawList() {
+    // Synchronize with the live entity set: scripts can Spawn/Despawn entities
+    // (SpawnSprite, Despawn) while running, so drop dead draws and append new
+    // mesh/sprite entities each call while keeping resolved items cached.
+    draws_.erase(std::remove_if(draws_.begin(), draws_.end(),
+                                [this](const DrawItem& d) { return !world_.Alive(d.ent); }),
+                 draws_.end());
+    auto contains = [this](ecs::Entity e) {
+        for (const DrawItem& d : draws_)
+            if (d.ent == e) return true;
+        return false;
+    };
     auto view = world_.ViewAll<SceneMesh>();
     for (size_t i = 0; i < view.Size(); ++i) {
         ecs::Entity ent = world_.EntityAt<SceneMesh>(i);
+        if (contains(ent)) continue; // already tracked (resolved state kept)
         const SceneMesh* m = world_.Get<SceneMesh>(ent);
         const SceneTransform* t = world_.Get<SceneTransform>(ent);
         if (!m || !t) continue; // a mesh without a transform draws nothing
@@ -580,10 +692,42 @@ void GameRuntime::BuildDrawList() {
         }
         draws_.push_back(std::move(item));
     }
+    auto spriteView = world_.ViewAll<SceneSprite>();
+    for (size_t i = 0; i < spriteView.Size(); ++i) {
+        ecs::Entity ent = world_.EntityAt<SceneSprite>(i);
+        if (contains(ent)) continue;
+        const SceneSprite* s = world_.Get<SceneSprite>(ent);
+        const SceneTransform* t = world_.Get<SceneTransform>(ent);
+        if (!s || !t) continue; // a sprite without a transform draws nothing
+        DrawItem item;
+        item.ent = ent;
+        item.isSprite = true;
+        item.spriteTex = s->texture;
+        item.flipX = s->flipX;
+        item.flipY = s->flipY;
+        item.mat = gfx::Material::Unlit({}, ParseColorHex(s->colorHex));
+        draws_.push_back(std::move(item));
+    }
 }
 
 void GameRuntime::ResolveDrawItem(DrawItem& item, gfx::Renderer& renderer) {
     if (item.resolved || item.failed || !cfg_.assets) return;
+
+    if (item.isSprite) {
+        gfx::Texture tex = cfg_.assets->LoadTexture(FullAssetPath(item.spriteTex));
+        if (!tex.Valid()) {
+            NEON_LOG_CAT(core::LogCategory::Scene, core::LogLevel::Warn,
+                         "runtime: sprite texture '%s' failed to load (skipped)",
+                         item.spriteTex.c_str());
+            item.failed = true;
+            return;
+        }
+        item.mesh = gfx::Mesh::CreateQuad(renderer, 1.0f, 1.0f, "sprite");
+        item.mat.albedo = tex.Handle();
+        item.mat.transparent = true; // PNG sprites keep their alpha
+        item.resolved = true;
+        return;
+    }
 
     const std::string& key = item.meshKey;
     gfx::Mesh mesh = ResolveMeshKey(renderer, key);
@@ -966,10 +1110,13 @@ float GameRuntime::GameVar(const std::string& name) const {
 
 void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera) {
     if (!running_ || !cfg_.assets) return; // sim-only runtime draws nothing
-    if (renderer.ScreenHeight() > 0) {
-        float aspect = static_cast<float>(renderer.ScreenWidth()) / renderer.ScreenHeight();
-        renderer.SetCamera(camera, aspect);
-    }
+    // Project at the ACTIVE scene viewport's aspect (a dock sub-rect in the
+    // editor, the full target in the standalone player) so the runtime render
+    // matches whatever rasterization rect the host set up - otherwise the
+    // playtest FOV would differ from the edit-mode viewport.
+    renderer.SetCamera(camera, renderer.SceneAspect());
+    // Scripts may have spawned/despawned sprite entities since the last frame.
+    BuildDrawList();
     size_t dead = 0;
     for (DrawItem& item : draws_) {
         if (!world_.Alive(item.ent)) {
@@ -982,8 +1129,17 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera) {
         if (!world_.Get<SceneTransform>(item.ent)) continue;
         math::Mat4 model = LocalToWorld(item.ent);
         const math::Vec3 worldPos{model.m[12], model.m[13], model.m[14]};
-        renderer.DrawMesh(SelectLodMesh(item.mesh, item.chain, worldPos, camera.position),
-                          item.mat, model);
+        if (item.isSprite) {
+            // Flip mirrors the quad around its center: a negative local scale
+            // keeps the texture upright and needs no UV/shader changes.
+            if (item.flipX || item.flipY)
+                model = model * math::Mat4::Scale({item.flipX ? -1.0f : 1.0f,
+                                                   item.flipY ? -1.0f : 1.0f, 1.0f});
+            renderer.DrawMesh(item.mesh, item.mat, model);
+        } else {
+            renderer.DrawMesh(SelectLodMesh(item.mesh, item.chain, worldPos, camera.position),
+                              item.mat, model);
+        }
     }
     // Skill projectiles (fireballs): bright glowing orbs.
     if (!projectiles_.empty()) {
@@ -1007,8 +1163,13 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera) {
     // (e.g. the PvZ project) need zero C++ gameplay code.
     if (host_) {
         scriptCtx_.draw2d = &draw2d_;
-        scriptCtx_.screenToUi = [&renderer](const math::Vec2& p) {
-            return renderer.ScreenToUI(p);
+        // Snapshot the host's live 2D mapping (Set2DViewport) so on_update's
+        // InputMousePos() and UI hit-tests keep design coordinates between
+        // renders (the renderer resets its 2D viewport after the frame).
+        uiScale_ = renderer.UIScale();
+        uiOffset_ = renderer.UI2DOffset();
+        scriptCtx_.screenToUi = [this](const math::Vec2& p) {
+            return (p - uiOffset_) / uiScale_;
         };
         draw2d_.clear();
         scriptCtx_.currentEntity = {};
@@ -1023,6 +1184,30 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera) {
         scriptCtx_.draw2d = nullptr;
         FlushDraw2D(renderer);
     }
+
+    // Data-driven UI document: drawn by DrawUI() AFTER the frame is composited
+    // (menus/HUD keep authored colors instead of being tone-mapped with the
+    // 3D scene). Button clicks are edge-triggered per frame so scripts can
+    // query UIClicked(name) from on_update on the next tick.
+    uiClickedNames_.clear();
+    if (uiDoc_) {
+        if (cfg_.input && cfg_.input->MousePressed(platform::MouseButton::Left)) {
+            math::Vec2 p = cfg_.input->MousePos();
+            if (scriptCtx_.screenToUi) p = scriptCtx_.screenToUi(p);
+            if (ui::UiNode* hit = uiDoc_->HitTest(p);
+                hit && hit->type == ui::UiNodeType::Button) {
+                uiClickedNames_.insert(hit->name);
+            }
+        }
+    }
+}
+
+void GameRuntime::DrawUI(gfx::Renderer& renderer) {
+    if (!running_ || !cfg_.assets || !uiDoc_ || !cfg_.font2d.Valid()) return;
+    scriptCtx_.screenToUi = [this](const math::Vec2& p) {
+        return (p - uiOffset_) / uiScale_;
+    };
+    uiDoc_->Draw(renderer, cfg_.font2d);
 }
 
 void GameRuntime::LoadLocales() {
@@ -1121,7 +1306,19 @@ void GameRuntime::Tick(float dt) {
                      trees_.end());
     }
 
-    physics_.Step(dt, math::Vec3{0.0f, kGravityY, 0.0f});
+    // Fixed-step physics: accumulate the frame delta and advance the world at
+    // 60 Hz so collision resolution and scripts stay deterministic regardless
+    // of frame rate. Cap the catch-up to avoid a spiral of death after a hitch.
+    physicsAccum_ += dt;
+    constexpr float kPhysicsStep = 1.0f / 60.0f;
+    int physicsSteps = 0;
+    while (physicsAccum_ >= kPhysicsStep && physicsSteps < 4) {
+        physics_.Step(kPhysicsStep, math::Vec3{0.0f, kGravityY, 0.0f});
+        physicsAccum_ -= kPhysicsStep;
+        ++physicsSteps;
+    }
+    if (physicsSteps == 4) physicsAccum_ = 0.0f;
+    SyncSceneBodies();
     TickStatuses(dt);
     TickSkillCooldowns(dt);
     TickProjectiles(dt);

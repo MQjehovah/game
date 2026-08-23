@@ -16,6 +16,7 @@ enum class Key : uint16_t {
     Escape,
     Tab,
     Backspace,
+    Delete,
     Shift,
     Control,
     Alt,

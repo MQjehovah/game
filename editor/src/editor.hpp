@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "neon/core/log.hpp"
+#include "neon/audio/audio.hpp"
 #include "neon/nav/nav_grid.hpp"
 #include "neon/neon.hpp"
 #include "neon/scene/component_schema.hpp"
@@ -50,6 +51,14 @@ struct SceneEntity {
     // Unity/Godot). LoadScene expands it into the flattened fields below; the
     // export writes both the reference and the expanded params.
     std::string materialRef;
+    // 2D sprite: non-empty spriteTex turns the entity into an image quad
+    // (XY plane facing the front-ortho camera) rendered with an unlit texture
+    // material. Display size comes from `scale`; flips mirror the quad.
+    std::string spriteTex;
+    bool spriteFlipX = false;
+    bool spriteFlipY = false;
+    gfx::Mesh spriteMesh;       // unit XY quad (faces the front camera)
+    gfx::Material spriteMaterial; // unlit texture material
     // Health (mirrors the built-in `health` component): maxHp <= 0 means the
     // entity tracks no health. Used by the playtest for the hero + combat mobs.
     float hp = 0.0f;
@@ -107,10 +116,13 @@ public:
     void SetDisableShadows(bool v) { disableShadows_ = v; }
     void SetBloomEnabled(bool v) { bloomEnabled_ = v; }
     void SetHotReload(bool v) { hotReload_ = v; }
-    // Only flips the edit mode; OnCreate runs Enter2DMode() after the
-    // renderer/assets are ready (calling it here would load scenes before
-    // init and clobber the current-scene state).
-    void Set2DMode(bool v) { editMode_ = v ? EditMode::Scene2D : EditMode::Scene3D; }
+    // Godot/Unity-style view lock: 2D is the front-ortho camera, 3D is the
+    // perspective camera. The project/scene/content never changes - only the
+    // camera that views it.
+    void Set2DMode(bool v) {
+        editMode_ = v ? EditMode::Scene2D : EditMode::Scene3D;
+        viewCam_ = v ? ViewCam::Front : ViewCam::Perspective;
+    }
     void SetPvzPlaytestOnStart(bool v) { pvzPlaytestOnStart_ = v; }
     void SetProjectOnStart(const std::string& dir, bool loadScene) {
         projectDirOnStart_ = dir;
@@ -125,7 +137,6 @@ public:
 
 private:
     void SetupScene();
-    void BuildCustomUIDemo();
     void InitToolPanels();
     void BuildImGuiUI();
     void BuildScenePanel();
@@ -135,6 +146,14 @@ private:
     void BuildLogPanel();
     void BuildViewportPanel();
     void BuildNavPanel();
+    void BuildUIEditorPanel();
+    // UI editor viewport input: click selects a node, drag moves it, corner
+    // handles resize it (design-space coordinates).
+    void UpdateUIEditorViewport();
+    // Marks the open UI document dirty and, when it has a real file path,
+    // saves it immediately so edits survive closing the panel / the editor
+    // (untitled docs wait for the explicit 保存 button).
+    void MarkUIDirty();
     void BuildLocPanel();
     void BuildProfilerPanel();
     void BuildInputMapPanel();
@@ -168,8 +187,10 @@ private:
     void ImportAssetPath(const std::string& path);
     void ImportSelectedAsset();
     void UpdateViewport(float dt);
-    // 2D canvas camera: wheel zoom (around cursor) + middle-drag pan + reset.
-    void Update2DViewport();
+    // Marks the front-ortho camera's visible rect (the "camera border" Unity
+    // shows for a 2D/ortho camera): a cyan rect on the plane the camera looks
+    // at, so the user can see exactly what the locked camera frames.
+    void DrawCameraFrame();
     // The active viewport dock rect (screen pixels) and its aspect ratio; the
     // 3D camera projection and gizmo use these so the scene fits the panel.
     const math::Rect2& ViewportRect() const { return viewportScreenRect_; }
@@ -197,16 +218,26 @@ private:
     // Loads a specific scene from the current project (scenes/*.json).
     void LoadProjectScene(const std::string& rel);
     void AddEntity(const std::string& meshKey);
+    // Adds a 2D sprite entity for a texture asset (spriteTex + unlit quad).
+    void AddSpriteEntity(const std::string& texPath);
     core::Status ExportScene();
     void LoadEditorConfig();
     void SaveEditorConfig();
     void RunUISmokeTest();
-    // 2D mode: a data-driven 2D canvas (the NeonPvZ lawn editor). Plants are
-    // placed per grid cell; zombie spawns per row. The layout is stored as
-    // plant/zombie ENTITIES in the scene file (scenes/*.json), the same file
-    // the neon_game player's Lua script reads.
+    // 2D mode is a camera view (front-ortho), not a separate canvas: the
+    // project, scene and content stay identical in 2D and 3D. 2D scenes can
+    // still carry plant/zombie components; LoadScene parses them into the
+    // vectors below so playtest/level data stays scene-driven.
     enum class EditMode { Scene3D, Scene2D };
     EditMode editMode_ = EditMode::Scene3D;
+    // Sets the active viewport camera and keeps the edit mode in sync with it
+    // (2D canvas editing only exists in the front-ortho view; perspective and
+    // top are 3D-mode cameras). Used by the toolbar combo, Tab and toolbar
+    // 2D/3D toggle so the two can never disagree.
+    void SetViewCam(ViewCam v) {
+        viewCam_ = v;
+        editMode_ = (v == ViewCam::Front) ? EditMode::Scene2D : EditMode::Scene3D;
+    }
     struct Pvz2DCell {
         int row = 0;
         int col = 0;
@@ -219,16 +250,6 @@ private:
     };
     std::vector<Pvz2DCell> pvzPlants_;
     std::vector<PvzZombieSpawn> pvzZombies_;
-    int pvzBrush_ = 0; // 0..4 plant, 5 eraser, 6..8 zombie type
-    float pvzNextDelay_ = 8.0f;
-    int pvzHoverRow_ = -1, pvzHoverCol_ = -1;
-    void DrawPvzCanvas();
-    void HandlePvzClick(const math::Vec2& ui);
-    void SavePvzLevel();
-    void LoadPvzLevel();
-    // Defaults the project dir to projects/pvz on first run, loads the level.
-    void Enter2DMode();
-
     // In-editor playtest (F5): a GameRuntime snapshot of the editor scene runs
     // in the viewport while the editor scene stays untouched.
     void TogglePlaytest();
@@ -302,8 +323,10 @@ private:
     void RunPackage();
 
     gfx::Renderer renderer_;
+    // Playtest audio: procedural SoundFx synthesized per PlaySfx(name) and
+    // played through the platform backend (miniaudio / WinMM / null).
+    std::unique_ptr<neon::audio::IAudioBackend> audioBackend_;
     assets::AssetManager assetMgr_;
-    ui::UIManager ui_;
     gfx::Font pixelFont_;
     gfx::Font cjkFont_;
 
@@ -341,8 +364,8 @@ private:
     scene::PrefabLibrary prefabLib_; // current project's prefab templates
     std::vector<std::string> projectPrefabs_; // prefab names (sorted, for UI)
     // The parsed root of the scene currently in the editor + its file path.
-    // 2D levels are scene entities (plant/zombie components), so SavePvzLevel
-    // writes them back into the scene file.
+    // 2D levels are scene entities (plant/zombie components); the scene file
+    // is the single source of truth for both the editor and the runtime.
     core::Json currentSceneRoot_;
     std::string currentScenePath_;
 
@@ -355,6 +378,10 @@ private:
     // level (half-height of the ortho frustum in world units).
     ViewCam viewCam_ = ViewCam::Perspective;
     float orthoSize_ = 16.0f;
+    // 2D views auto-fit the 1280x720 design space to the viewport height
+    // (1 world unit = 1 design pixel) until the user explicitly zooms/pans;
+    // then the user's framing wins.
+    bool cameraUserAdjusted_ = false;
 
     // Hot reload (T4.8): off by default (--hot flag / toolbar toggle). The
     // throttled poll compares recorded mtimes against the disk; scriptMtimes_
@@ -417,9 +444,20 @@ private:
     // (an all-hidden bottom node collapses into the viewport and the full-window
     // 3D scene bleeds down into where the panels should be).
     bool showLog_ = true;
-    bool showCustomUIDemo_ = false;
     bool showImGuiDemo_ = false;
     bool showNav_ = false;
+    // Data-driven UI editor (ui/*.ui.json): edit a UI document tree and
+    // preview it in the viewport. Opens via 视图 → UI 编辑器.
+    bool showUIEditor_ = false;
+    std::vector<std::string> uiFiles_; // ui/*.ui.json in the active project
+    std::string uiDocPath_;            // absolute path of the open document
+    ui::UiDocument uiDoc_;             // document being edited
+    bool uiDocOpen_ = false;           // a document is loaded/created
+    ui::UiNode* uiSelected_ = nullptr; // selected node (owned by uiDoc_)
+    bool uiDirty_ = false;
+    bool uiDragging_ = false;
+    int uiResizeHandle_ = -1;          // -1 none, 0..3 corner handles
+    math::Vec2 uiDragPos_{0.0f, 0.0f}; // mouse in design space
     bool showLoc_ = false;
 
     // Localization editor: merged string tables from <project>/locales/*.json
@@ -443,6 +481,7 @@ private:
     bool assetGridView_ = false; // thumbnail grid vs list
     int selectedAsset_ = -1;
     int assetDeletePending_ = -1; // asset index awaiting delete confirmation
+    bool deleteAssetRequested_ = false; // Delete key -> confirm in-panel next frame
     gfx::Texture previewTexture_;
     ImTextureID previewTexId_ = ImTextureID_Invalid;
     math::Rect2 viewportRect_{244, 58, 792, 640};
@@ -470,13 +509,6 @@ private:
     // uses it to mark the finished drag command so the next drag opens its own
     // undo step.
     bool gizmoDragOriginValid_ = false;
-
-    // Custom UI demo widget handles (engine widget system).
-    ui::TreeView* demoTree_ = nullptr;
-    ui::ComboBox* demoCombo_ = nullptr;
-    ui::Button* demoAddButton_ = nullptr;
-    int demoAddClicks_ = 0;
-    int demoComboChanged_ = -1;
 
     // Behavior tree editor (T4.4) state.
     bool showBt_ = false;

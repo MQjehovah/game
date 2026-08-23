@@ -39,6 +39,7 @@
 #include "neon/audio/audio.hpp"
 #include "neon/physics/physics.hpp"
 #include "neon/ui/ui.hpp"
+#include "neon/ui/document.hpp"
 #include "neon/assets/asset_manager.hpp"
 #include "neon/anim/anim.hpp"
 #include "neon/scene/scene.hpp"

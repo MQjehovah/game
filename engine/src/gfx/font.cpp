@@ -19,7 +19,6 @@ namespace {
 // below the static region and uploaded with UpdateTextureRegion).
 constexpr int kAtlasW = 2048;
 constexpr int kAtlasH = 2048;
-constexpr int kDynamicStartY = 256; // below the ASCII/static baked rows
 constexpr int kGlyphPad = 1;
 
 } // namespace
@@ -32,7 +31,7 @@ struct Font::FontFace {
     float scale = 1.0f;
     std::vector<unsigned char> atlasPixels; // RGBA8, kAtlasW x kAtlasH
     int cursorX = 0;
-    int cursorY = kDynamicStartY;
+    int cursorY = 0;
     int rowH = 0;
     bool full = false;
 };
@@ -179,17 +178,24 @@ Font Renderer::CreateFontFromMemoryWithCodepoints(const uint8_t* data, size_t si
     }
     f.scale = stbtt_ScaleForPixelHeight(&f.info, static_cast<float>(pixelHeight));
 
-    // One RGBA atlas buffer: stbtt packs into the RED channel (stride = W*4),
-    // then we expand R -> RGBA so dynamic glyphs share the same upload path.
+    // stbtt_PackFontRanges is a GRAYSCALE API: glyph pixels are consecutive
+    // bytes at (y*stride + x). Feeding it the RGBA atlas directly makes it
+    // write each glyph row into 1/4 the pixels (the R,G,B,A channels), so the
+    // UV rects point at bytes that belong to other glyphs and text renders
+    // garbled/invisible. Pack into a proper 1-byte staging buffer first, then
+    // expand to RGBA for the GPU atlas and the dynamic-glyph upload path.
     f.atlasPixels.assign(static_cast<size_t>(kAtlasW) * kAtlasH * 4, 0);
+    std::vector<unsigned char> gray(static_cast<size_t>(kAtlasW) * kAtlasH, 0);
     stbtt_pack_context packContext;
-    if (!stbtt_PackBegin(&packContext, f.atlasPixels.data(), kAtlasW, kAtlasH, kAtlasW * 4, 1,
-                         nullptr)) {
+    if (!stbtt_PackBegin(&packContext, gray.data(), kAtlasW, kAtlasH, kAtlasW, 1, nullptr)) {
         NEON_LOG_ERROR("Font: stbtt_PackBegin failed");
         font.face_.reset();
         return font;
     }
-    stbtt_PackSetOversampling(&packContext, 2, 2);
+    // 1x oversampling: the full GB2312 first-level set (~3800 glyphs) must fit
+    // in the atlas, and dynamic glyphs (which stb_truetype rasterizes at 1x)
+    // stay consistent with the baked ones. Matches ImGui's CJK atlas settings.
+    stbtt_PackSetOversampling(&packContext, 1, 1);
     std::vector<stbtt_packedchar> asciiChars(95);
     std::vector<stbtt_packedchar> extraChars(static_cast<size_t>(std::max(codepointCount, 0)));
     std::vector<int> extraCps(codepoints, codepoints + std::max(codepointCount, 0));
@@ -205,14 +211,19 @@ Font Renderer::CreateFontFromMemoryWithCodepoints(const uint8_t* data, size_t si
     }
     stbtt_PackEnd(&packContext);
 
-    // Expand the packed RED channel into RGBA (dynamic glyphs write RGBA too).
+    // Expand the packed grayscale glyphs into RGBA (dynamic glyphs write RGBA
+    // too), so both paths share the same atlas layout.
     size_t covered = 0;
-    for (size_t i = 0; i < f.atlasPixels.size(); i += 4) {
-        const unsigned char v = f.atlasPixels[i];
-        f.atlasPixels[i + 1] = v;
-        f.atlasPixels[i + 2] = v;
-        f.atlasPixels[i + 3] = v;
-        if (v > 0) ++covered;
+    for (size_t yy = 0; yy < static_cast<size_t>(kAtlasH); ++yy) {
+        for (size_t xx = 0; xx < static_cast<size_t>(kAtlasW); ++xx) {
+            const unsigned char v = gray[yy * kAtlasW + xx];
+            unsigned char* dst = &f.atlasPixels[(yy * kAtlasW + xx) * 4];
+            dst[0] = v;
+            dst[1] = v;
+            dst[2] = v;
+            dst[3] = v;
+            if (v > 0) ++covered;
+        }
     }
 
     int ascent = 0, descent = 0, lineGap = 0;
@@ -223,8 +234,11 @@ Font Renderer::CreateFontFromMemoryWithCodepoints(const uint8_t* data, size_t si
     font.bakedSize_ = pixelHeight;
     font.ascent_ = static_cast<float>(ascent) * f.scale;
     font.descent_ = static_cast<float>(descent) * f.scale;
+    int maxPackedY = 0;
+    int missingBaked = 0;
     for (int i = 0; i < 95; ++i) {
         const stbtt_packedchar& c = asciiChars[i];
+        maxPackedY = std::max(maxPackedY, static_cast<int>(c.y1));
         font.glyphs_[i] = {c.xoff,
                            c.yoff,
                            c.xoff2,
@@ -237,7 +251,11 @@ Font Renderer::CreateFontFromMemoryWithCodepoints(const uint8_t* data, size_t si
     }
     for (int i = 0; i < codepointCount; ++i) {
         const stbtt_packedchar& pc = extraChars[i];
-        if (pc.x0 == 0 && pc.x1 == 0 && pc.y0 == 0 && pc.y1 == 0) continue;
+        if (pc.x0 == 0 && pc.x1 == 0 && pc.y0 == 0 && pc.y1 == 0) {
+            ++missingBaked;
+            continue;
+        }
+        maxPackedY = std::max(maxPackedY, static_cast<int>(pc.y1));
         font.extraGlyphs_[codepoints[i]] = {
             pc.xoff, pc.yoff, pc.xoff2, pc.yoff2,
             pc.x0 / static_cast<float>(kAtlasW), pc.y0 / static_cast<float>(kAtlasH),
@@ -245,14 +263,21 @@ Font Renderer::CreateFontFromMemoryWithCodepoints(const uint8_t* data, size_t si
             pc.xadvance};
     }
 
+    // Dynamic glyphs append BELOW the statically packed rows (never at a fixed
+    // offset that would overwrite baked glyphs).
+    f.cursorX = 0;
+    f.cursorY = maxPackedY + kGlyphPad;
+    f.rowH = 0;
+
     TextureDesc desc;
     desc.width = kAtlasW;
     desc.height = kAtlasH;
     desc.rgba = f.atlasPixels.data();
     desc.filter = Filter::Linear;
     font.atlas_ = backend_->CreateTexture(desc);
-    NEON_LOG_INFO("Font: baked %dpx dynamic atlas %dx%d covered=%zu tex=%u", pixelHeight,
-                  kAtlasW, kAtlasH, covered, font.atlas_.id);
+    NEON_LOG_INFO("Font: baked %dpx atlas %dx%d covered=%zu tex=%u packY=%d missing=%d",
+                  pixelHeight, kAtlasW, kAtlasH, covered, font.atlas_.id, maxPackedY,
+                  missingBaked);
     return font;
 }
 

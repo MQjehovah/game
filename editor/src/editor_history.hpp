@@ -188,6 +188,7 @@ private:
 inline void ApplyColorProp(SceneEntity& e, const gfx::Color& v) {
     e.tint = v;
     e.material.tint = v;
+    e.spriteMaterial.tint = v;
 }
 inline void ApplyMetallicProp(SceneEntity& e, const float& v) {
     e.metallic = v;
@@ -207,6 +208,19 @@ inline void ApplyEmissiveIntensityProp(SceneEntity& e, const float& v) {
 }
 inline void ApplyNameProp(SceneEntity& e, const std::string& v) { e.name = v; }
 inline void ApplyParentProp(SceneEntity& e, const std::string& v) { e.parent = v; }
+
+// 2D sprite mirroring: flips both axes in one undo step.
+struct SpriteFlipValue {
+    bool flipX = false;
+    bool flipY = false;
+};
+inline void ApplySpriteFlip(SceneEntity& e, const SpriteFlipValue& v) {
+    e.spriteFlipX = v.flipX;
+    e.spriteFlipY = v.flipY;
+}
+inline bool ValuesEqual(const SpriteFlipValue& a, const SpriteFlipValue& b) {
+    return a.flipX == b.flipX && a.flipY == b.flipY;
+}
 
 // Script component edit: attaches/replaces/clears the entity's script
 // (backend/path/vars) in one undo step. A detach is just an edit whose new
@@ -364,6 +378,40 @@ private:
     std::string fieldKey_;
     core::Json old_;
     core::Json cur_;
+};
+
+// Adds or removes a whole extra component on one entity (undo restores the
+// component's previous JSON / absence). Used by the inspector's 添加组件 /
+// 移除 buttons so component edits are first-class undoable scene edits.
+class AddComponentCommand : public Command {
+public:
+    AddComponentCommand(std::vector<SceneEntity>* entities, int index,
+                        std::string component, core::Json data, bool remove)
+        : entities_(entities), index_(index), component_(std::move(component)),
+          data_(std::move(data)), remove_(remove) {}
+
+    void Apply() override {
+        SceneEntity& e = (*entities_)[static_cast<size_t>(index_)];
+        if (remove_)
+            e.extraComponents.erase(component_);
+        else
+            e.extraComponents[component_] = data_;
+    }
+    void Undo() override {
+        SceneEntity& e = (*entities_)[static_cast<size_t>(index_)];
+        if (remove_)
+            e.extraComponents[component_] = data_;
+        else
+            e.extraComponents.erase(component_);
+    }
+    bool IsNoop() const override { return false; }
+
+private:
+    std::vector<SceneEntity>* entities_;
+    int index_;
+    std::string component_;
+    core::Json data_;
+    bool remove_;
 };
 
 // Mesh-key edit: swaps an entity's mesh and re-resolves it (mesh + material

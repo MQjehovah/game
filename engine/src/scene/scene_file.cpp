@@ -237,6 +237,10 @@ std::vector<std::string> SceneFile::MeshKeys() const {
     };
     for (const EntityDef& e : entities) {
         for (const ComponentDef& c : e.components) {
+            if (c.name == "sprite") {
+                addString(c.data.Get("texture"));
+                continue;
+            }
             if (c.name != "mesh") continue;
             addString(c.data.Get("meshKey"));
             if (const core::Json* lod = c.data.Get("lod")) {
@@ -587,6 +591,45 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                      return true;
                  });
 
+    reg.Register("sprite",
+                 [](ecs::World& world, ecs::Entity ent, const core::Json& data,
+                    const core::Json&, std::string* err) {
+                     if (!CheckComponentShape(data,
+                                              {"texture", "flipX", "flipY", "colorHex"},
+                                              "sprite", err))
+                         return false;
+                     const core::Json* tex = data.Get("texture");
+                     if (!tex || !tex->IsString() || tex->GetString().empty()) {
+                         if (err) *err = "component 'sprite' requires a non-empty 'texture' string";
+                         return false;
+                     }
+                     SceneSprite s;
+                     s.texture = tex->GetString();
+                     if (const core::Json* fx = data.Get("flipX")) {
+                         if (!fx->IsBool()) {
+                             if (err) *err = "component 'sprite' field 'flipX' must be a bool";
+                             return false;
+                         }
+                         s.flipX = fx->GetBool();
+                     }
+                     if (const core::Json* fy = data.Get("flipY")) {
+                         if (!fy->IsBool()) {
+                             if (err) *err = "component 'sprite' field 'flipY' must be a bool";
+                             return false;
+                         }
+                         s.flipY = fy->GetBool();
+                     }
+                     if (const core::Json* c = data.Get("colorHex")) {
+                         if (!c->IsString()) {
+                             if (err) *err = "component 'sprite' field 'colorHex' must be a string";
+                             return false;
+                         }
+                         s.colorHex = c->GetString();
+                     }
+                     world.Add<SceneSprite>(ent, s);
+                     return true;
+                 });
+
     reg.Register("script",
                  [](ecs::World& world, ecs::Entity ent, const core::Json& data,
                     const core::Json&, std::string* err) {
@@ -614,6 +657,60 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                          s.vars = *v;
                      }
                      world.Add<SceneScript>(ent, s);
+                     return true;
+                 });
+
+    reg.Register("rigidbody",
+                 [](ecs::World& world, ecs::Entity ent, const core::Json& data,
+                    const core::Json&, std::string* err) {
+                     if (!CheckComponentShape(
+                             data,
+                             {"shape", "radius", "halfExtents", "dynamic", "mass",
+                              "restitution", "friction", "damping", "gravityScale"},
+                             "rigidbody", err))
+                         return false;
+                     SceneRigidBody r;
+                     if (const core::Json* s = data.Get("shape")) {
+                         if (!s->IsString()) {
+                             if (err)
+                                 *err = "component 'rigidbody' field 'shape' must be "
+                                        "'sphere' or 'box'";
+                             return false;
+                         }
+                         const std::string& v = s->GetString();
+                         if (v != "sphere" && v != "box") {
+                             // Tolerant: an empty/invalid shape (e.g. created by
+                             // an older editor build) falls back to sphere so the
+                             // scene still plays; the inspector shows the combo.
+                             NEON_LOG_CAT(core::LogCategory::Scene, core::LogLevel::Warn,
+                                          "scene: rigidbody shape '%s' invalid, "
+                                          "defaulting to 'sphere'",
+                                          v.c_str());
+                             r.shape = "sphere";
+                         } else {
+                             r.shape = v;
+                         }
+                     }
+                     if (!RequireNumber(data, "radius", "rigidbody", r.radius, err)) return false;
+                     if (!ReadVec3(data, "halfExtents", "rigidbody", r.halfExtents, err))
+                         return false;
+                     if (const core::Json* d = data.Get("dynamic")) {
+                         if (!d->IsBool()) {
+                             if (err) *err = "component 'rigidbody' field 'dynamic' must be a bool";
+                             return false;
+                         }
+                         r.dynamic = d->GetBool();
+                     }
+                     if (!RequireNumber(data, "mass", "rigidbody", r.mass, err)) return false;
+                     if (!RequireNumber(data, "restitution", "rigidbody", r.restitution, err))
+                         return false;
+                     if (!RequireNumber(data, "friction", "rigidbody", r.friction, err))
+                         return false;
+                     if (!RequireNumber(data, "damping", "rigidbody", r.linearDamping, err))
+                         return false;
+                     if (!RequireNumber(data, "gravityScale", "rigidbody", r.gravityScale, err))
+                         return false;
+                     world.Add<SceneRigidBody>(ent, r);
                      return true;
                  });
 

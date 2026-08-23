@@ -227,6 +227,10 @@ public:
     // 2D overlay flush, which is in full-window pixel coordinates).
     void SetSceneViewport(float x, float y, float w, float h);
     void ResetSceneViewport();
+    // Aspect ratio of the active 3D scene viewport (w/h), falling back to the
+    // full target when no sub-rect is active. Callers that render into a dock
+    // (editor viewport) use this so projections match the rasterization rect.
+    float SceneAspect() const;
     void DrawBillboard(const math::Vec3& worldPos, float size, const Color& color,
                        TextureHandle texture, BlendMode blend = BlendMode::Additive);
 
@@ -253,6 +257,10 @@ public:
     bool CaptureTonemapComparison(std::vector<uint8_t>& clamped,
                                   std::vector<uint8_t>& tonemapped);
     float UIScale() const { return uiScale_; }
+    // Top-left offset of the 2D design space inside the screen (with UIScale,
+    // exactly the inverse mapping ScreenToUI uses). Lets hosts snapshot the
+    // current 2D mapping without depending on the renderer's live state.
+    math::Vec2 UI2DOffset() const { return {uiOffsetX_, uiOffsetY_}; }
     int ScreenWidth() const { return screenW_; }
     int ScreenHeight() const { return screenH_; }
 

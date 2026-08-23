@@ -1,0 +1,7 @@
+{
+  "startScene": "scenes/physics_demo.json",
+  "window": { "w": 1280, "h": 720, "title": "NeonPhysics - 刚体物理 demo" },
+  "title": "NeonPhysics",
+  "editor": { "mode": "3d" },
+  "export": { "platform": "windows", "description": "刚体物理引擎 demo:质量/弹性/摩擦/碰撞" }
+}

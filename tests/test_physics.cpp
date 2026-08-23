@@ -159,3 +159,189 @@ TEST(PhysicsClearResetsWorld) {
     physics::World::BodyId b = world.AddSphere(200, {0, 0, 0}, 1.0f, true);
     CHECK_EQ(b.id, 1u);
 }
+
+// ---------------------------------------------------------------------------
+// Upgraded rigid-body features: dynamic boxes, restitution, friction, mass,
+// damping and deterministic fixed-step simulation.
+// ---------------------------------------------------------------------------
+
+TEST(PhysicsDynamicBoxRestsOnStaticBox) {
+    physics::World world;
+    // Static platform: top at y=1, spans x/z [-3,3].
+    world.AddBox(10, {{-3, 0, -3}, {3, 1, 3}}, false);
+    // Dynamic box above it, half extents 0.5.
+    physics::World::BodyId box = world.AddBox(20, {0, 2.5f, 0}, {0.5f, 0.5f, 0.5f}, true);
+    world.SetVelocity(box, {0, -3, 0});
+
+    bool collided = false;
+    const float dt = 1.0f / 60.0f;
+    for (int i = 0; i < 180 && !collided; ++i) {
+        world.Step(dt, {0, -9.81f, 0});
+        for (const auto& c : world.Collisions()) {
+            if (c.first == 20u && c.second == 10u) collided = true;
+        }
+    }
+    CHECK(collided);
+    // Rests exactly on the platform top (y = 1 + halfExtent.y).
+    CHECK_NEAR(world.GetPosition(box).y, 1.5, 1e-4);
+    CHECK_NEAR(world.GetVelocity(box).y, 0.0, 1e-4);
+}
+
+TEST(PhysicsRestitutionBounces) {
+    physics::World world;
+    physics::RigidBodyDesc desc;
+    desc.restitution = 0.8f;
+    physics::World::BodyId ball =
+        world.AddSphere(100, {0, 5, 0}, 0.5f, true, desc);
+    const float dt = 1.0f / 60.0f;
+    // Fall until first ground contact, then the ball must rebound upward and
+    // rise well above the ground before the next impact.
+    bool sawUpward = false;
+    float peak = -1.0f;
+    for (int i = 0; i < 240; ++i) {
+        world.Step(dt, {0, -9.81f, 0});
+        if (world.GetPosition(ball).y > peak) {
+            peak = world.GetPosition(ball).y;
+        }
+        if (world.GetVelocity(ball).y > 2.0f) sawUpward = true;
+    }
+    CHECK(sawUpward);          // bounced back upward
+    CHECK(peak > 2.5f);        // rose well above the ground after the bounce
+    CHECK(peak < 5.0f);        // but lower than the drop (energy lost)
+}
+
+TEST(PhysicsSphereSphereMomentumExchange) {
+    physics::World world;
+    physics::RigidBodyDesc aDesc;
+    aDesc.restitution = 1.0f;
+    aDesc.mass = 2.0f;
+    physics::World::BodyId a = world.AddSphere(100, {-1.1f, 1, 0}, 1.0f, true, aDesc);
+    physics::World::BodyId b = world.AddSphere(200, {1.1f, 1, 0}, 1.0f, true, aDesc);
+    world.SetVelocity(a, {2.0f, 0, 0});
+
+    const float p0 = 2.0f * 2.0f; // a's linear momentum along x
+    const float dt = 1.0f / 60.0f;
+    for (int i = 0; i < 10; ++i) {
+        world.Step(dt, {0, 0, 0});
+        if (!world.Collisions().empty()) break;
+    }
+    CHECK(!world.Collisions().empty());
+    const float p1 = 2.0f * world.GetVelocity(a).x + 2.0f * world.GetVelocity(b).x;
+    CHECK_NEAR(p1, p0, 1e-3); // momentum conserved
+    // Equal masses + full restitution => a stops, b takes the velocity.
+    CHECK_NEAR(world.GetVelocity(a).x, 0.0, 1e-3);
+    CHECK_NEAR(world.GetVelocity(b).x, 2.0, 1e-3);
+}
+
+TEST(PhysicsMassWeightedSeparation) {
+    physics::World world;
+    physics::RigidBodyDesc light;
+    light.mass = 1.0f;
+    physics::RigidBodyDesc heavy;
+    heavy.mass = 3.0f;
+    // Overlapping spheres: the light one should move 3x as far as the heavy one.
+    physics::World::BodyId a = world.AddSphere(100, {-0.5f, 1, 0}, 1.0f, true, light);
+    physics::World::BodyId b = world.AddSphere(200, {0.5f, 1, 0}, 1.0f, true, heavy);
+    world.Step(1.0f / 60.0f, {0, 0, 0});
+    const float moveA = std::fabs(world.GetPosition(a).x + 0.5f);
+    const float moveB = std::fabs(world.GetPosition(b).x - 0.5f);
+    CHECK_NEAR(moveA / moveB, 3.0, 1e-3);
+}
+
+TEST(PhysicsFrictionSlowsTangentVelocity) {
+    physics::World world;
+    physics::RigidBodyDesc desc;
+    desc.friction = 0.9f;
+    desc.restitution = 0.0f;
+    physics::World::BodyId ball = world.AddSphere(100, {0, 1.5f, 0}, 0.5f, true, desc);
+    world.SetVelocity(ball, {3.0f, -4.0f, 0});
+    const float dt = 1.0f / 60.0f;
+    bool hitBox = false;
+    world.AddBox(200, {{-5, 0, -5}, {5, 1, 5}}, false); // static floor box at y 0..1
+    for (int i = 0; i < 120; ++i) {
+        world.Step(dt, {0, -9.81f, 0});
+        if (!world.Collisions().empty()) {
+            hitBox = true;
+            break;
+        }
+    }
+    CHECK(hitBox);
+    CHECK(world.GetVelocity(ball).x < 3.0f); // tangential speed reduced
+    CHECK_NEAR(world.GetVelocity(ball).y, 0.0, 1e-3);
+}
+
+TEST(PhysicsDampingAndGravityScale) {
+    physics::World world;
+    physics::RigidBodyDesc damped;
+    damped.linearDamping = 2.0f;
+    physics::World::BodyId a = world.AddSphere(100, {0, 1, 0}, 0.5f, true, damped);
+    world.SetVelocity(a, {10.0f, 0, 0});
+    physics::RigidBodyDesc noGravity;
+    noGravity.gravityScale = 0.0f;
+    physics::World::BodyId b = world.AddSphere(200, {0, 2, 0}, 0.5f, true, noGravity);
+    const float dt = 1.0f / 60.0f;
+    for (int i = 0; i < 60; ++i) world.Step(dt, {0, -9.81f, 0});
+    CHECK(world.GetVelocity(a).x < 10.0f);        // damping decayed
+    CHECK_NEAR(world.GetPosition(b).y, 2.0, 1e-4); // no gravity -> floats
+}
+
+TEST(PhysicsDynamicBoxVsStaticSphere) {
+    physics::World world;
+    world.AddSphere(10, {0, 1.0f, 0}, 1.0f, false); // static ball center y=1
+    physics::World::BodyId box =
+        world.AddBox(20, {0, 3.0f, 0}, {0.5f, 0.5f, 0.5f}, true);
+    world.SetVelocity(box, {0, -4, 0});
+    bool collided = false;
+    const float dt = 1.0f / 60.0f;
+    for (int i = 0; i < 120 && !collided; ++i) {
+        world.Step(dt, {0, -9.81f, 0});
+        for (const auto& c : world.Collisions()) {
+            if (c.first == 20u && c.second == 10u) collided = true;
+        }
+    }
+    CHECK(collided);
+    // Box rests on top of the sphere (y = sphereTop + boxHalf).
+    CHECK_NEAR(world.GetPosition(box).y, 2.5, 1e-4);
+}
+
+TEST(PhysicsDeterministicFixedStep) {
+    auto run = []() {
+        physics::World w;
+        physics::RigidBodyDesc bouncy;
+        bouncy.restitution = 0.6f;
+        w.AddSphere(100, {0, 4, 0}, 0.5f, true, bouncy);
+        w.AddBox(200, {{-4, 0, -4}, {4, 1, 4}}, false);
+        physics::World::BodyId box = w.AddBox(300, {0, 3, 0}, {0.5f, 0.5f, 0.5f}, true, bouncy);
+        const float dt = 1.0f / 60.0f;
+        for (int i = 0; i < 120; ++i) w.Step(dt, {0, -9.81f, 0});
+        return w.GetPosition(box);
+    };
+    const math::Vec3 p1 = run();
+    const math::Vec3 p2 = run();
+    CHECK_NEAR(p1.x, p2.x, 1e-6);
+    CHECK_NEAR(p1.y, p2.y, 1e-6);
+    CHECK_NEAR(p1.z, p2.z, 1e-6);
+}
+
+TEST(PhysicsDebugBodiesSnapshot) {
+    physics::World world;
+    world.AddSphere(100, {0, 1, 0}, 0.5f, true);
+    world.AddBox(200, {{-2, 0, -2}, {2, 1, 2}}, false);
+    const auto bodies = world.DebugBodies();
+    CHECK_EQ(bodies.size(), 2u);
+    if (bodies.size() != 2u) return;
+    // First body: dynamic sphere with radius 0.5 at (0,1,0).
+    CHECK(bodies[0].kind == physics::World::ShapeKind::Sphere);
+    CHECK(bodies[0].dynamic);
+    CHECK_NEAR(bodies[0].radius, 0.5, 1e-6);
+    CHECK_NEAR(bodies[0].pos.y, 1.0, 1e-6);
+    // Second body: static box with half extents from the AABB.
+    CHECK(bodies[1].kind == physics::World::ShapeKind::Box);
+    CHECK(!bodies[1].dynamic);
+    CHECK_NEAR(bodies[1].halfExtents.x, 2.0, 1e-6);
+    CHECK_NEAR(bodies[1].halfExtents.y, 0.5, 1e-6);
+
+    // Disabled bodies are excluded from the snapshot.
+    world.Remove({1});
+    CHECK_EQ(world.DebugBodies().size(), 1u);
+}

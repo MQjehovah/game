@@ -6,6 +6,7 @@ namespace {
 const char* kPlantTypes[] = {"sunflower", "peashooter", "wallnut", "snowpea", "cherry"};
 const char* kZombieTypes[] = {"basic", "cone", "bucket"};
 const char* kScriptBackends[] = {"lua"};
+const char* kRigidBodyShapes[] = {"sphere", "box"};
 
 std::vector<ComponentSchema> BuildSchemas() {
     std::vector<ComponentSchema> out;
@@ -38,6 +39,16 @@ std::vector<ComponentSchema> BuildSchemas() {
     out.push_back({"behaviorTree", "行为树",
                    {{"path", "行为树路径", FieldType::String, 0, 0, 0, 0}}});
     out.push_back({"name", "名称", {{"value", "值", FieldType::String, 0, 0, 0, 0}}});
+    out.push_back({"rigidbody", "刚体",
+                   {{"shape", "形状", FieldType::Enum, 0, 0, 0, 0, kRigidBodyShapes, 2},
+                    {"radius", "半径", FieldType::Number, 0.5, 0.01, 100, 0.1},
+                    {"halfExtents", "半尺寸", FieldType::Vec3, 0.5, 0.01, 100, 0.1},
+                    {"dynamic", "动态", FieldType::Bool, 1, 0, 1, 0},
+                    {"mass", "质量 (0=自动)", FieldType::Number, 0, 0, 1e6, 0.5},
+                    {"restitution", "弹性", FieldType::Number, 0, 0, 1, 0.01},
+                    {"friction", "摩擦", FieldType::Number, 0.4, 0, 1, 0.01},
+                    {"damping", "线性阻尼", FieldType::Number, 0, 0, 10, 0.01},
+                    {"gravityScale", "重力缩放", FieldType::Number, 1, 0, 10, 0.1}}});
     out.push_back({"plant", "植物",
                    {{"row", "行", FieldType::Int, 0, 0, 4, 1},
                     {"col", "列", FieldType::Int, 0, 0, 8, 1},

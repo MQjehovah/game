@@ -1,5 +1,7 @@
 #include "neon/assets/asset_manager.hpp"
 
+#include "system_cjk_codepoints.hpp"
+
 #include <algorithm>
 #include <array>
 #include <functional>
@@ -997,9 +999,13 @@ gfx::Font AssetManager::LoadSystemCJKFont(int pixelHeight) {
         if (!in.is_open()) continue;
         std::vector<uint8_t> data((std::istreambuf_iterator<char>(in)),
                                   std::istreambuf_iterator<char>());
-        gfx::Font font = renderer_->CreateFontFromMemory(data.data(), data.size(), pixelHeight);
+        gfx::Font font = renderer_->CreateFontFromMemoryWithCodepoints(
+            data.data(), data.size(), pixelHeight, kSystemCjkCodepoints,
+            static_cast<int>(sizeof(kSystemCjkCodepoints) / sizeof(kSystemCjkCodepoints[0])));
         if (font.Valid()) {
-            NEON_LOG_INFO("Asset: loaded system CJK font '%s' (dynamic glyphs)", candidate);
+            NEON_LOG_INFO("Asset: loaded system CJK font '%s' (%d pre-baked glyphs)", candidate,
+                          static_cast<int>(sizeof(kSystemCjkCodepoints) /
+                                           sizeof(kSystemCjkCodepoints[0])));
             return font;
         }
     }

@@ -17,6 +17,9 @@ projects/*
 # NeonSnake classic-game demo project (scripts/game.json are first-class data)
 !projects/snake/
 !projects/snake/**
+# NeonPhysics rigid-body demo project
+!projects/physics_demo/
+!projects/physics_demo/**
 .vs/
 .vscode/
 CMakeUserPresets.json
@@ -24,4 +27,3 @@ CMakeUserPresets.json
 *.raw
 *.png
 !projects/pvz/assets/sprites/*.png
-

@@ -159,30 +159,31 @@ local function demo_dir()
   return best
 end
 
+local function show_menu()
+  UISetVisible("StartMenu", true)
+  UISetVisible("Hud", false)
+end
+
+local function start_game()
+  UISetVisible("StartMenu", false)
+  UISetVisible("Hud", true)
+  state = "playing"
+end
+
 function on_start(e)
   if os and os.time then math.randomseed(os.time()) else math.randomseed(0) end
   reset()
+  UIShow("ui/main.ui.json")
+  show_menu()
 end
 
 function on_update(e, dt)
   clock = clock + dt
-  if DEMO then
-    debugT = debugT - dt
-    if debugT <= 0 then
-      debugT = 0.5
-      local h = snake[1]
-      WriteText("_snake_debug.txt",
-                state .. " len=" .. tostring(#snake) .. " score=" .. tostring(score)
-                .. " head=" .. tostring(h.x) .. "," .. tostring(h.y)
-                .. " dir=" .. tostring(dir.x) .. "," .. tostring(dir.y)
-                .. " food=" .. tostring(food.x) .. "," .. tostring(food.y))
-    end
-  end
   if state == "ready" then
-    if InputKey("space") > 0 or InputKey("enter") > 0 then
-      state = "playing"
+    if UIClicked("Start") > 0 or InputKey("space") > 0 or InputKey("enter") > 0 then
+      start_game()
     elseif DEMO and demoTimer <= 0 then
-      state = "playing"
+      start_game()
     end
     if DEMO then demoTimer = demoTimer - dt end
     return
@@ -192,13 +193,24 @@ function on_update(e, dt)
     return
   end
   if state == "dead" or state == "won" then
-    if InputKey("enter") > 0 or InputKey("space") > 0 then reset() end
+    if InputKey("enter") > 0 or InputKey("space") > 0 then
+      reset()
+      show_menu()
+    end
     if DEMO then
       demoTimer = demoTimer - dt
-      if demoTimer <= 0 then reset() end
+      if demoTimer <= 0 then
+        reset()
+        show_menu()
+      end
     end
     return
   end
+
+  -- HUD 刷新(游戏中)
+  UISetText("ScoreLabel", "得分: " .. tostring(score))
+  local prog = (score % 50) / 50
+  UISetFill("FoodBar", prog)
 
   -- 输入
   if InputKey("p") > 0 then state = "paused" return end

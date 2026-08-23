@@ -1,0 +1,45 @@
+{
+  "entities": [
+    {
+      "name": "地面",
+      "components": {
+        "transform": { "pos": [0, 0, 0], "rot": [0, 0, 0, 1], "scale": [20, 1, 20] },
+        "mesh": { "meshKey": "cube", "colorHex": "#4A5568", "roughness": 0.9 },
+        "rigidbody": { "shape": "box", "halfExtents": [10, 0.5, 10], "dynamic": false }
+      }
+    },
+    {
+      "name": "红盒",
+      "components": {
+        "transform": { "pos": [0, 8, 0], "rot": [0, 0, 0, 1], "scale": [1.5, 1.5, 1.5] },
+        "mesh": { "meshKey": "cube", "colorHex": "#E53E3E", "roughness": 0.6 },
+        "rigidbody": { "shape": "box", "halfExtents": [0.75, 0.75, 0.75], "mass": 2, "restitution": 0.2 }
+      }
+    },
+    {
+      "name": "绿盒",
+      "components": {
+        "transform": { "pos": [2.5, 11, 0], "rot": [0, 0, 0, 1], "scale": [1.5, 1.5, 1.5] },
+        "mesh": { "meshKey": "cube", "colorHex": "#38A169", "roughness": 0.6 },
+        "rigidbody": { "shape": "box", "halfExtents": [0.75, 0.75, 0.75], "mass": 4, "restitution": 0.1 }
+      }
+    },
+    {
+      "name": "弹球",
+      "components": {
+        "transform": { "pos": [-2.5, 10, -1], "rot": [0, 0, 0, 1], "scale": [1.2, 1.2, 1.2] },
+        "mesh": { "meshKey": "sphere", "colorHex": "#3182CE", "roughness": 0.2 },
+        "rigidbody": { "shape": "sphere", "radius": 0.6, "mass": 1, "restitution": 0.85, "friction": 0.5 }
+      }
+    },
+    {
+      "name": "报告盒",
+      "components": {
+        "transform": { "pos": [0, 6, 2], "rot": [0, 0, 0, 1], "scale": [1, 1, 1] },
+        "mesh": { "meshKey": "cube", "colorHex": "#D69E2E", "roughness": 0.6 },
+        "rigidbody": { "shape": "box", "halfExtents": [0.5, 0.5, 0.5], "mass": 1, "restitution": 0.3 },
+        "script": { "backend": "lua", "path": "scripts/physics_demo.lua" }
+      }
+    }
+  ]
+}

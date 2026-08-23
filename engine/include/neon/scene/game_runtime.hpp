@@ -25,6 +25,7 @@
 #include "neon/script/bindings.hpp"
 #include "neon/script/gamevars.hpp"
 #include "neon/script/script.hpp"
+#include "neon/ui/document.hpp"
 
 namespace neon::assets {
 class AssetManager;
@@ -82,16 +83,32 @@ struct GameRuntimeConfig {
 // are set as globals and therefore overwrite each other across entities. Keep
 // non-handler globals distinct.
 //
-// PHYSICS: `physics_.Step` runs every Tick, but the built-in scene registry has
-// no collider component yet, so the world steps with zero bodies (inert).
-// Rigidbody/spawn-body wiring is a later task; this note keeps downstream
-// consumers (T4.7 neon_game, T6.3) from assuming physics is already live.
+// PHYSICS: every entity with a `rigidbody` component is registered with the
+// physics world at Start; Tick advances the world on a fixed 60 Hz step and
+// writes the resulting positions back into the entities' transforms. Scripts
+// can also spawn ad-hoc bodies (PhysicsAddSphere/PhysicsAddBox) and query
+// collisions/raycasts through the bindings.
 class GameRuntime {
 public:
     core::Status Start(const std::string& sceneJson, GameRuntimeConfig cfg);
     void Tick(float dt);
     void Draw(gfx::Renderer& renderer, const gfx::Camera& camera);
+    // Draws the data-driven UI document (UIShow / ui/*.ui.json) on top of the
+    // composited frame. Call AFTER Renderer::EndScene so menus/HUD keep their
+    // authored colors instead of being ACES tone-mapped with the 3D scene.
+    void DrawUI(gfx::Renderer& renderer);
     void Stop();
+
+    // Data-driven UI document (UIShow / ui/*.ui.json): rendered on top of the
+    // 2D canvas every frame; button clicks are edge-triggered per frame.
+    bool ShowUI(const std::string& path);
+    void HideUI();
+    bool UIClicked(const std::string& name) const {
+        return uiClickedNames_.count(name) != 0;
+    }
+    void UISetText(const std::string& name, const std::string& text);
+    void UISetFill(const std::string& name, float fill);
+    void UISetVisible(const std::string& name, bool visible);
 
     bool Running() const { return running_; }
     ecs::World& World() { return world_; }
@@ -113,6 +130,8 @@ public:
     size_t BehaviorTreeCount() const { return trees_.size(); }
     size_t DrawCount() const { return draws_.size(); }
     size_t PhysicsBodyCount() const { return physics_.BodyCount(); }
+    physics::World& PhysicsWorld() { return physics_; }
+    const physics::World& PhysicsWorld() const { return physics_; }
     double SimTime() const { return simTime_; }
 
     // Observability for tests/debug: the per-entity blackboard value the
@@ -201,6 +220,12 @@ private:
     struct DrawItem {
         ecs::Entity ent;
         std::string meshKey;
+        // 2D sprite: texture path + flips. When isSprite is true the item
+        // draws an XY quad with an unlit texture material instead of a mesh.
+        bool isSprite = false;
+        std::string spriteTex;
+        bool flipX = false;
+        bool flipY = false;
         // LOD chain spec from the entity's SceneMesh (data-driven: distance +
         // meshKey per level). Resolved into `chain` during ResolveDrawItem.
         std::vector<LodEntry> lod;
@@ -210,6 +235,12 @@ private:
         bool resolved = false;
         bool failed = false;
     };
+    // Snapshot of the active 2D design-space mapping (captured during Draw,
+    // when the host's 2D viewport is live). InputMousePos()/UIClicked() use
+    // this between renders so coordinates stay in design units even after the
+    // renderer resets its 2D mapping at the end of the frame.
+    float uiScale_ = 1.0f;
+    math::Vec2 uiOffset_{0.0f, 0.0f};
     // A skill projectile (fireball): moved each tick, damages the first SceneHealth
     // entity within a small radius, and expires on time/travel-distance.
     struct Projectile {
@@ -260,6 +291,8 @@ private:
     // `fn` names the handler for the log ("on_start" / "on_update").
     void CallEntityFunctionHandle(ScriptInst& inst, uint64_t handle,
                                   const char* fn, const std::vector<script::Value>& args);
+    void RegisterSceneBodies();
+    void SyncSceneBodies();
     std::string ReadScript(const std::string& path) const;
     std::string FullScriptPath(const std::string& path) const;
     // Resolves an asset reference (obj:/gltf:/texture path) against
@@ -268,6 +301,7 @@ private:
 
     ecs::World world_;
     physics::World physics_;
+    float physicsAccum_ = 0.0f; // fixed-step accumulator (60 Hz)
     script::ScriptContext scriptCtx_; // owns the GameVars scripts + BT share
     PrefabLibrary prefs_;             // prefabs loaded from <scriptBaseDir>/prefabs/
     core::Localization loc_;          // string tables loaded from cfg_.localesDir
@@ -278,6 +312,8 @@ private:
     std::vector<Projectile> projectiles_;
     SkillTable skills_;
     std::vector<script::Draw2DCmd> draw2d_; // script 2D canvas (on_render)
+    std::unique_ptr<ui::UiDocument> uiDoc_; // data-driven UI document
+    std::set<std::string> uiClickedNames_;  // buttons clicked since last Draw
     std::set<uint64_t> hiddenEntities_;     // SetVisible hide list (EntityKey)
     script::InputMap inputMap_;             // Godot-style actions (input.json)
     std::string pendingScene_;              // ChangeScene deferred to next Tick

@@ -1,207 +1,315 @@
 {
-  "entities": [
-    {
-      "components": {
-        "script": {
-          "backend": "lua",
-          "path": "scripts/pvz.lua"
-        },
-        "transform": {
-          "pos": [
-            0,
-            0,
-            0
-          ]
-        }
-      },
-      "name": "PvZ"
+ "entities": [
+  {
+   "name": "PvZ",
+   "components": {
+    "script": {
+     "backend": "lua",
+     "path": "scripts/pvz.lua"
     },
-    {
-      "components": {
-        "plant": {
-          "col": 1,
-          "row": 4,
-          "type": "sunflower"
-        },
-        "transform": {
-          "pos": [
-            0,
-            0,
-            0
-          ]
-        }
-      },
-      "name": "sunflower_4_1"
-    },
-    {
-      "components": {
-        "plant": {
-          "col": 2,
-          "row": 4,
-          "type": "peashooter"
-        },
-        "transform": {
-          "pos": [
-            0,
-            0,
-            0
-          ]
-        }
-      },
-      "name": "peashooter_4_2"
-    },
-    {
-      "components": {
-        "plant": {
-          "col": 3,
-          "row": 4,
-          "type": "snowpea"
-        },
-        "transform": {
-          "pos": [
-            0,
-            0,
-            0
-          ]
-        }
-      },
-      "name": "snowpea_4_3"
-    },
-    {
-      "components": {
-        "plant": {
-          "col": 2,
-          "row": 2,
-          "type": "sunflower"
-        },
-        "transform": {
-          "pos": [
-            0,
-            0,
-            0
-          ]
-        }
-      },
-      "name": "sunflower_2_2"
-    },
-    {
-      "components": {
-        "plant": {
-          "col": 3,
-          "row": 2,
-          "type": "peashooter"
-        },
-        "transform": {
-          "pos": [
-            0,
-            0,
-            0
-          ]
-        }
-      },
-      "name": "peashooter_2_3"
-    },
-    {
-      "components": {
-        "plant": {
-          "col": 3,
-          "row": 0,
-          "type": "wallnut"
-        },
-        "transform": {
-          "pos": [
-            0,
-            0,
-            0
-          ]
-        }
-      },
-      "name": "wallnut_0_3"
-    },
-    {
-      "components": {
-        "transform": {
-          "pos": [
-            0,
-            0,
-            0
-          ]
-        },
-        "zombie": {
-          "delay": 8,
-          "row": 4,
-          "type": "basic"
-        }
-      },
-      "name": "zombie_7"
-    },
-    {
-      "components": {
-        "transform": {
-          "pos": [
-            0,
-            0,
-            0
-          ]
-        },
-        "zombie": {
-          "delay": 18,
-          "row": 2,
-          "type": "cone"
-        }
-      },
-      "name": "zombie_8"
-    },
-    {
-      "components": {
-        "transform": {
-          "pos": [
-            0,
-            0,
-            0
-          ]
-        },
-        "zombie": {
-          "delay": 28,
-          "row": 1,
-          "type": "basic"
-        }
-      },
-      "name": "zombie_9"
-    },
-    {
-      "components": {
-        "transform": {
-          "pos": [
-            0,
-            0,
-            0
-          ]
-        },
-        "zombie": {
-          "delay": 38,
-          "row": 4,
-          "type": "bucket"
-        }
-      },
-      "name": "zombie_10"
-    },
-    {
-      "components": {
-        "transform": {
-          "pos": [
-            0,
-            0,
-            0
-          ]
-        },
-        "zombie": {
-          "delay": 45,
-          "row": 3,
-          "type": "cone"
-        }
-      },
-      "name": "zombie_11"
+    "transform": {
+     "pos": [
+      0,
+      0,
+      0
+     ]
     }
-  ]
+   }
+  },
+  {
+   "name": "lawn",
+   "components": {
+    "transform": {
+     "pos": [
+      640,
+      410,
+      0
+     ],
+     "scale": [
+      900,
+      500,
+      1
+     ]
+    },
+    "sprite": {
+     "texture": "assets/sprites/lawn.png"
+    }
+   }
+  },
+  {
+   "name": "sunflower_4_1",
+   "components": {
+    "plant": {
+     "col": 1,
+     "row": 4,
+     "type": "sunflower"
+    },
+    "transform": {
+     "pos": [
+      240.0,
+      510.0,
+      0
+     ],
+     "scale": [
+      60,
+      68,
+      1
+     ]
+    },
+    "sprite": {
+     "texture": "assets/sprites/sunflower.png"
+    }
+   }
+  },
+  {
+   "name": "peashooter_4_2",
+   "components": {
+    "plant": {
+     "col": 2,
+     "row": 4,
+     "type": "peashooter"
+    },
+    "transform": {
+     "pos": [
+      340.0,
+      510.0,
+      0
+     ],
+     "scale": [
+      60,
+      68,
+      1
+     ]
+    },
+    "sprite": {
+     "texture": "assets/sprites/peashooter.png"
+    }
+   }
+  },
+  {
+   "name": "snowpea_4_3",
+   "components": {
+    "plant": {
+     "col": 3,
+     "row": 4,
+     "type": "snowpea"
+    },
+    "transform": {
+     "pos": [
+      440.0,
+      510.0,
+      0
+     ],
+     "scale": [
+      60,
+      68,
+      1
+     ]
+    },
+    "sprite": {
+     "texture": "assets/sprites/snowpea.png"
+    }
+   }
+  },
+  {
+   "name": "sunflower_2_2",
+   "components": {
+    "plant": {
+     "col": 2,
+     "row": 2,
+     "type": "sunflower"
+    },
+    "transform": {
+     "pos": [
+      340.0,
+      310.0,
+      0
+     ],
+     "scale": [
+      60,
+      68,
+      1
+     ]
+    },
+    "sprite": {
+     "texture": "assets/sprites/sunflower.png"
+    }
+   }
+  },
+  {
+   "name": "peashooter_2_3",
+   "components": {
+    "plant": {
+     "col": 3,
+     "row": 2,
+     "type": "peashooter"
+    },
+    "transform": {
+     "pos": [
+      440.0,
+      310.0,
+      0
+     ],
+     "scale": [
+      60,
+      68,
+      1
+     ]
+    },
+    "sprite": {
+     "texture": "assets/sprites/peashooter.png"
+    }
+   }
+  },
+  {
+   "name": "sunflower_1_4",
+   "components": {
+    "plant": {
+     "col": 4,
+     "row": 1,
+     "type": "sunflower"
+    },
+    "transform": {
+     "pos": [
+      540.0,
+      210.0,
+      0
+     ],
+     "scale": [
+      60,
+      68,
+      1
+     ]
+    },
+    "sprite": {
+     "texture": "assets/sprites/sunflower.png"
+    }
+   }
+  },
+  {
+   "name": "zombie_7",
+   "components": {
+    "zombie": {
+     "delay": 8,
+     "row": 4,
+     "type": "basic"
+    },
+    "transform": {
+     "pos": [
+      1150,
+      510.0,
+      -0.5
+     ],
+     "scale": [
+      56,
+      72,
+      1
+     ]
+    },
+    "sprite": {
+     "texture": "assets/sprites/zombie.png"
+    }
+   }
+  },
+  {
+   "name": "zombie_8",
+   "components": {
+    "zombie": {
+     "delay": 18,
+     "row": 2,
+     "type": "cone"
+    },
+    "transform": {
+     "pos": [
+      1150,
+      310.0,
+      -0.5
+     ],
+     "scale": [
+      56,
+      72,
+      1
+     ]
+    },
+    "sprite": {
+     "texture": "assets/sprites/cone.png"
+    }
+   }
+  },
+  {
+   "name": "zombie_9",
+   "components": {
+    "zombie": {
+     "delay": 28,
+     "row": 1,
+     "type": "basic"
+    },
+    "transform": {
+     "pos": [
+      1150,
+      210.0,
+      -0.5
+     ],
+     "scale": [
+      56,
+      72,
+      1
+     ]
+    },
+    "sprite": {
+     "texture": "assets/sprites/zombie.png"
+    }
+   }
+  },
+  {
+   "name": "zombie_10",
+   "components": {
+    "zombie": {
+     "delay": 38,
+     "row": 4,
+     "type": "bucket"
+    },
+    "transform": {
+     "pos": [
+      1150,
+      510.0,
+      -0.5
+     ],
+     "scale": [
+      56,
+      72,
+      1
+     ]
+    },
+    "sprite": {
+     "texture": "assets/sprites/bucket.png"
+    }
+   }
+  },
+  {
+   "name": "zombie_11",
+   "components": {
+    "zombie": {
+     "delay": 45,
+     "row": 3,
+     "type": "cone"
+    },
+    "transform": {
+     "pos": [
+      1150,
+      410.0,
+      -0.5
+     ],
+     "scale": [
+      56,
+      72,
+      1
+     ]
+    },
+    "sprite": {
+     "texture": "assets/sprites/cone.png"
+    }
+   }
+  }
+ ]
 }

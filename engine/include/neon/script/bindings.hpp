@@ -129,6 +129,15 @@ struct ScriptContext {
     // Reads a text data file (levels/*.json etc.) from the project/pack.
     // Wired by GameRuntime; null -> ReadText returns "".
     std::function<std::string(const std::string&)> readData;
+    // UI document hooks (wired by GameRuntime): a script shows a .ui.json
+    // document, queries button clicks and mutates node properties. Null in
+    // headless hosts -> UI bindings are no-ops.
+    std::function<bool(const std::string&)> uiShow;   // path -> loaded?
+    std::function<void()> uiHide;
+    std::function<bool(const std::string&)> uiClicked; // button name -> clicked this frame
+    std::function<void(const std::string&, const std::string&)> uiSetText;
+    std::function<void(const std::string&, float)> uiSetFill;
+    std::function<void(const std::string&, bool)> uiSetVisible;
     // Resolves a sprite path (assets/sprites/*.png) to a texture handle.
     // Wired by GameRuntime; null -> DrawSprite draws a plain quad.
     std::function<gfx::TextureHandle(const std::string&)> loadTexture;
@@ -137,6 +146,12 @@ struct ScriptContext {
     std::function<bool(const std::string&, const std::string&)> writeData;
     // Finds a scene entity by name (wired by GameRuntime).
     std::function<ecs::Entity(const std::string&)> findEntity;
+    // Spawns a renderable sprite entity (2D games): texture path (project-
+    // relative), design-space position, display width/height (design units)
+    // and flips. Returns the entity handle for SetPosition/SetVisible/Despawn.
+    // Wired by GameRuntime; null -> SpawnSprite is a no-op returning invalid.
+    std::function<ecs::Entity(const std::string&, const math::Vec3&, float, float, bool, bool)>
+        spawnSprite;
     // Entities hidden from rendering by SetVisible (runtime-owned set).
     std::set<uint64_t>* hiddenEntities = nullptr;
     // Godot-style action map (runtime-owned). Null -> Action* bindings fall

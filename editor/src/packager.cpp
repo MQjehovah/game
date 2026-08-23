@@ -663,6 +663,11 @@ void ValidateInto(const PackConfig& cfg, ProjectContext& pc) {
     ListFilesRecursive(pc.projectDir + "/assets", "assets", assets);
     for (const std::string& rel : assets) pc.packFiles[rel] = pc.projectDir + "/" + rel;
 
+    // UI documents (data-driven .ui.json, consumed by UIShow at runtime).
+    std::vector<std::string> uiDocs;
+    ListFilesRecursive(pc.projectDir + "/ui", "ui", uiDocs);
+    for (const std::string& rel : uiDocs) pc.packFiles[rel] = pc.projectDir + "/" + rel;
+
     // Godot-style input actions (project root, next to game.json).
     const std::string inputPath = pc.projectDir + "/input.json";
     if (FileExists(inputPath)) pc.packFiles["input.json"] = inputPath;

@@ -160,9 +160,36 @@ struct SceneMesh {
     float ao = 1.f;               // occlusion strength (0 = ignore AO, 1 = full)
     float emissiveIntensity = 1.f;
 };
+// 2D sprite component: an image texture drawn on an XY quad facing +Z (the
+// front-ortho camera). Display size comes from SceneTransform::scale, so the
+// gizmo and inspector scale edits work like any other entity. flips mirror
+// the quad around its center (rendered as negative scale, no UV changes).
+struct SceneSprite {
+    std::string texture; // asset path, e.g. "assets/textures/plant.png"
+    bool flipX = false;
+    bool flipY = false;
+    std::string colorHex; // tint, "#rrggbb" (empty = white)
+};
 struct SceneHealth {
     float hp = 0.f;
     float maxHp = 0.f;
+};
+// Rigid body component (physics::World): describes one collider attached to
+// the entity's transform. GameRuntime::Start registers the body with the
+// physics world and writes `bodyId`; every fixed physics step moves the body
+// and the resulting position is written back into SceneTransform so the mesh
+// follows. AABB-only boxes (axis aligned), no rotation support yet.
+struct SceneRigidBody {
+    std::string shape = "sphere";       // "sphere" | "box"
+    float radius = 0.5f;
+    math::Vec3 halfExtents{0.5f, 0.5f, 0.5f};
+    bool dynamic = true;
+    float mass = 0.0f;                  // <=0 -> auto from volume
+    float restitution = 0.0f;
+    float friction = 0.4f;
+    float linearDamping = 0.0f;
+    float gravityScale = 1.0f;
+    uint32_t bodyId = 0;                // physics::World::BodyId (runtime state)
 };
 struct SceneScript {
     std::string backend;

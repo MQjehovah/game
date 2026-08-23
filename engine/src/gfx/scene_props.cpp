@@ -41,8 +41,11 @@ std::vector<uint16_t> ConeIndices(int seg) {
     std::vector<uint16_t> idx;
     idx.reserve(static_cast<size_t>(seg) * 3);
     for (int i = 0; i < seg; ++i)
-        idx.insert(idx.end(), {0, static_cast<uint16_t>(1 + i),
-                               static_cast<uint16_t>(1 + (i + 1) % seg)});
+        // Front face = CCW when viewed from outside: apex -> base[i+1] -> base[i].
+        // The previous order was clockwise from outside, so every cone side
+        // (roofs, tree crowns) was back-face culled and only the apex showed.
+        idx.insert(idx.end(), {0, static_cast<uint16_t>(1 + (i + 1) % seg),
+                               static_cast<uint16_t>(1 + i)});
     return idx;
 }
 

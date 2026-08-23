@@ -22,6 +22,16 @@ uint32_t SafeU32FromNumber(double n) {
     return 0;
 }
 
+float NumberArg(IScriptHost& host, int index, float def) {
+    const Value v = host.GetArg(index);
+    return v.type == Value::Type::Number ? static_cast<float>(v.number) : def;
+}
+
+bool BoolArg(IScriptHost& host, int index, bool def) {
+    const Value v = host.GetArg(index);
+    return v.type == Value::Type::Bool ? v.boolean : def;
+}
+
 // Entity handles are small Lua tables { id = <int>, gen = <int> }.
 Value EntityToValue(const ecs::Entity& e) {
     Value t = Value::Tbl();
@@ -439,6 +449,55 @@ Value NativeReadText(IScriptHost& host, void* user) {
     return Value::Str(ctx->readData(StringArg(host, 0)));
 }
 
+// UIShow(path): loads and shows a UI document (.ui.json, project-relative).
+// Returns 1 when the document loaded, 0 otherwise.
+Value NativeUIShow(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->uiShow) return Value::Num(0);
+    return Value::Num(ctx->uiShow(StringArg(host, 0)) ? 1.0 : 0.0);
+}
+
+// UIHide(): hides the currently shown UI document (if any).
+Value NativeUIHide(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (ctx && ctx->uiHide) ctx->uiHide();
+    return Value::Nil();
+}
+
+// UIClicked(name): 1 when the named button was clicked since the last frame.
+Value NativeUIClicked(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->uiClicked) return Value::Num(0);
+    return Value::Num(ctx->uiClicked(StringArg(host, 0)) ? 1.0 : 0.0);
+}
+
+// UISetText(name, text) / UISetFill(name, 0..1) / UISetVisible(name, bool):
+// mutate a node by name (no-op when the node is missing).
+Value NativeUISetText(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (ctx && ctx->uiSetText) ctx->uiSetText(StringArg(host, 0), StringArg(host, 1));
+    return Value::Nil();
+}
+
+Value NativeUISetFill(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (ctx && ctx->uiSetFill) {
+        const Value v = host.GetArg(1);
+        ctx->uiSetFill(StringArg(host, 0), v.type == Value::Type::Number ? v.number : 0.0);
+    }
+    return Value::Nil();
+}
+
+Value NativeUISetVisible(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (ctx && ctx->uiSetVisible) {
+        const Value v = host.GetArg(1);
+        ctx->uiSetVisible(StringArg(host, 0),
+                          v.type == Value::Type::Bool ? v.boolean : v.number != 0.0);
+    }
+    return Value::Nil();
+}
+
 // Loc(key): localized string for the active language (fallback chain active ->
 // default -> key). Returns the key itself when no tables are loaded.
 Value NativeLoc(IScriptHost& host, void* user) {
@@ -464,6 +523,31 @@ Value NativeFindNamedEntity(IScriptHost& host, void* user) {
     if (!ctx || !ctx->findEntity) return Value::Nil();
     const ecs::Entity e = ctx->findEntity(StringArg(host, 0));
     return e.IsValid() ? EntityToValue(e) : Value::Nil();
+}
+
+// SpawnSprite(texture, x, y, width, height, flipX, flipY): creates a
+// renderable sprite entity (2D games) and returns its handle. The runtime
+// renders it through the normal scene pass, so editing and playtesting share
+// one content pipeline. width/height are design units (1 world unit = 1 design
+// pixel in the 2D view).
+Value NativeSpawnSprite(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->spawnSprite) return Value::Nil();
+    const std::string tex = StringArg(host, 0);
+    const math::Vec3 pos = Vec3FromValue(host.GetArg(1), math::Vec3{});
+    auto num = [&host](int idx, float def) {
+        const Value v = host.GetArg(idx);
+        return v.type == Value::Type::Number ? static_cast<float>(v.number) : def;
+    };
+    const float w = num(2, 1.0f);
+    const float h = num(3, 1.0f);
+    auto asBool = [&host](int idx) {
+        const Value v = host.GetArg(idx);
+        return v.type == Value::Type::Bool ? v.boolean : v.number != 0.0;
+    };
+    const bool flipX = asBool(4);
+    const bool flipY = asBool(5);
+    return EntityToValue(ctx->spawnSprite(tex, pos, w, h, flipX, flipY));
 }
 
 // SetVisible(entity, true|false): hides/shows an entity in the runtime's
@@ -557,6 +641,131 @@ Value NativeRaycast(IScriptHost& host, void* user) {
     float t = 0.0f;
     bool hit = ctx->physics->Raycast(ray, kRayMaxDist, t, nullptr);
     return Value::Bool(hit);
+}
+
+// Reads an optional RigidBodyDesc table ({mass=, restitution=, friction=,
+// damping=, gravityScale=}) from `argIndex`; missing entries keep defaults.
+physics::RigidBodyDesc RigidBodyDescFromValue(IScriptHost& host, int argIndex) {
+    physics::RigidBodyDesc desc;
+    const Value v = host.GetArg(argIndex);
+    if (v.type != Value::Type::Table || !v.table) return desc;
+    for (const auto& kv : v.table->fields) {
+        if (kv.second.type != Value::Type::Number) continue;
+        const float f = static_cast<float>(kv.second.number);
+        if (kv.first == "mass") desc.mass = f;
+        else if (kv.first == "restitution") desc.restitution = f;
+        else if (kv.first == "friction") desc.friction = f;
+        else if (kv.first == "damping") desc.linearDamping = f;
+        else if (kv.first == "gravityScale") desc.gravityScale = f;
+    }
+    return desc;
+}
+
+Value NativePhysicsAddSphere(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->physics) return Value::Nil();
+    const math::Vec3 pos = Vec3FromValue(host.GetArg(0), math::Vec3{});
+    const float radius = NumberArg(host, 1, 0.5f);
+    const bool dynamic = BoolArg(host, 2, true);
+    const physics::RigidBodyDesc desc = RigidBodyDescFromValue(host, 3);
+    const physics::World::BodyId id =
+        ctx->physics->AddSphere(0, pos, radius, dynamic, desc);
+    return Value::Num(static_cast<double>(id.id));
+}
+
+Value NativePhysicsAddBox(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->physics) return Value::Nil();
+    const math::Vec3 center = Vec3FromValue(host.GetArg(0), math::Vec3{});
+    const math::Vec3 half = Vec3FromValue(host.GetArg(1), math::Vec3{0.5f, 0.5f, 0.5f});
+    const bool dynamic = BoolArg(host, 2, true);
+    const physics::RigidBodyDesc desc = RigidBodyDescFromValue(host, 3);
+    const physics::World::BodyId id =
+        ctx->physics->AddBox(0, center, half, dynamic, desc);
+    return Value::Num(static_cast<double>(id.id));
+}
+
+Value NativePhysicsRemove(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->physics) return Value::Nil();
+    const uint32_t id = SafeU32FromNumber(NumberArg(host, 0, 0.0));
+    if (id != 0) ctx->physics->Remove({id});
+    return Value::Nil();
+}
+
+Value NativePhysicsSetVelocity(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->physics) return Value::Nil();
+    const uint32_t id = SafeU32FromNumber(NumberArg(host, 0, 0.0));
+    if (id != 0) ctx->physics->SetVelocity({id}, Vec3FromValue(host.GetArg(1), math::Vec3{}));
+    return Value::Nil();
+}
+
+Value NativePhysicsGetVelocity(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->physics) return Value::Nil();
+    const uint32_t id = SafeU32FromNumber(NumberArg(host, 0, 0.0));
+    return id == 0 ? Value::Nil() : Vec3ToValue(ctx->physics->GetVelocity({id}));
+}
+
+Value NativePhysicsSetPosition(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->physics) return Value::Nil();
+    const uint32_t id = SafeU32FromNumber(NumberArg(host, 0, 0.0));
+    if (id != 0) ctx->physics->SetPosition({id}, Vec3FromValue(host.GetArg(1), math::Vec3{}));
+    return Value::Nil();
+}
+
+Value NativePhysicsGetPosition(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->physics) return Value::Nil();
+    const uint32_t id = SafeU32FromNumber(NumberArg(host, 0, 0.0));
+    return id == 0 ? Value::Nil() : Vec3ToValue(ctx->physics->GetPosition({id}));
+}
+
+Value NativePhysicsSetMass(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->physics) return Value::Nil();
+    const uint32_t id = SafeU32FromNumber(NumberArg(host, 0, 0.0));
+    if (id != 0) ctx->physics->SetMass({id}, NumberArg(host, 1, 1.0f));
+    return Value::Nil();
+}
+
+Value NativePhysicsSetRestitution(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->physics) return Value::Nil();
+    const uint32_t id = SafeU32FromNumber(NumberArg(host, 0, 0.0));
+    if (id != 0) ctx->physics->SetRestitution({id}, NumberArg(host, 1, 0.0f));
+    return Value::Nil();
+}
+
+Value NativePhysicsSetFriction(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->physics) return Value::Nil();
+    const uint32_t id = SafeU32FromNumber(NumberArg(host, 0, 0.0));
+    if (id != 0) ctx->physics->SetFriction({id}, NumberArg(host, 1, 0.4f));
+    return Value::Nil();
+}
+
+Value NativePhysicsIsOnGround(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->physics) return Value::Nil();
+    const uint32_t id = SafeU32FromNumber(NumberArg(host, 0, 0.0));
+    return id == 0 ? Value::Bool(false) : Value::Bool(ctx->physics->IsOnGround({id}));
+}
+
+Value NativePhysicsCollisions(IScriptHost& host, void* user) {
+    (void)host;
+    auto* ctx = static_cast<ScriptContext*>(user);
+    Value t = Value::Tbl();
+    if (!ctx || !ctx->physics) return t;
+    for (const auto& c : ctx->physics->Collisions()) {
+        Value pair = Value::Tbl();
+        pair.table->fields.emplace_back("a", Value::Num(static_cast<double>(c.first)));
+        pair.table->fields.emplace_back("b", Value::Num(static_cast<double>(c.second)));
+        t.table->array.push_back(std::move(pair));
+    }
+    return t;
 }
 
 Value NativePlaySfx(IScriptHost& host, void* user) {
@@ -753,6 +962,18 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("GetVar", &NativeGetVar, &ctx);
     host.Register("SetVar", &NativeSetVar, &ctx);
     host.Register("Raycast", &NativeRaycast, &ctx);
+    host.Register("PhysicsAddSphere", &NativePhysicsAddSphere, &ctx);
+    host.Register("PhysicsAddBox", &NativePhysicsAddBox, &ctx);
+    host.Register("PhysicsRemove", &NativePhysicsRemove, &ctx);
+    host.Register("PhysicsSetVelocity", &NativePhysicsSetVelocity, &ctx);
+    host.Register("PhysicsGetVelocity", &NativePhysicsGetVelocity, &ctx);
+    host.Register("PhysicsSetPosition", &NativePhysicsSetPosition, &ctx);
+    host.Register("PhysicsGetPosition", &NativePhysicsGetPosition, &ctx);
+    host.Register("PhysicsSetMass", &NativePhysicsSetMass, &ctx);
+    host.Register("PhysicsSetRestitution", &NativePhysicsSetRestitution, &ctx);
+    host.Register("PhysicsSetFriction", &NativePhysicsSetFriction, &ctx);
+    host.Register("PhysicsIsOnGround", &NativePhysicsIsOnGround, &ctx);
+    host.Register("PhysicsCollisions", &NativePhysicsCollisions, &ctx);
     host.Register("PlaySfx", &NativePlaySfx, &ctx);
     host.Register("InputAxis", &NativeInputAxis, &ctx);
     host.Register("InputKey", &NativeInputKey, &ctx);
@@ -782,9 +1003,16 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("DrawRectOutline", &NativeDrawRectOutline, &ctx);
     host.Register("DrawText", &NativeDrawText, &ctx);
     host.Register("ReadText", &NativeReadText, &ctx);
+    host.Register("UIShow", &NativeUIShow, &ctx);
+    host.Register("UIHide", &NativeUIHide, &ctx);
+    host.Register("UIClicked", &NativeUIClicked, &ctx);
+    host.Register("UISetText", &NativeUISetText, &ctx);
+    host.Register("UISetFill", &NativeUISetFill, &ctx);
+    host.Register("UISetVisible", &NativeUISetVisible, &ctx);
     host.Register("Loc", &NativeLoc, &ctx);
     host.Register("WriteText", &NativeWriteText, &ctx);
     host.Register("FindNamedEntity", &NativeFindNamedEntity, &ctx);
+    host.Register("SpawnSprite", &NativeSpawnSprite, &ctx);
     host.Register("SetVisible", &NativeSetVisible, &ctx);
     host.Register("ChangeScene", &NativeChangeScene, &ctx);
     host.Register("SignalConnect", &NativeSignalConnect, &ctx);

@@ -201,6 +201,12 @@ build\neon_game.exe --connect 127.0.0.1:26000 --scene tests\data\neon_server_sam
 .\build\neon_game.exe --pack build\snake_out\game.pack
 ```
 
+### UI 编辑器（数据驱动界面）
+引擎内置可视化 UI 编辑器(视图菜单 →「UI 编辑器」):项目 `ui/*.ui.json` 文档按节点树编辑
+(面板/文本/按钮/进度条),支持属性检查器、视口内 1:1 预览、鼠标拖动移动/角点缩放、增删节点与保存。
+运行时由 Lua 加载展示:`UIShow("ui/main.ui.json")` 显示文档、`UIClicked("按钮名")` 查询点击、
+`UISetText/UISetFill/UISetVisible` 动态改属性(贪吃蛇的开始菜单与 HUD 即用此系统实现)。
+
 ### 数据驱动 3D 游戏（NeonRealm，魔兽风格 demo 移植）
 
 村庄、狼群、波次、对话与 HUD 全部在 `projects/neon_realm`（场景 JSON + Lua），

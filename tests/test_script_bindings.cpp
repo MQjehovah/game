@@ -168,6 +168,48 @@ assert(Raycast({x=0, y=5, z=0}, {x=0, y=-1, z=0}))
     CHECK_EQ(b.ctx.gameVars.Get("gold").number, 42.0);
 }
 
+// Physics Lua bindings: spawn bodies, drive velocities, query state, and read
+// per-step collision pairs. A static floor box + a dropped ball must collide
+// (dynamic owner first), and the ball must rest on the box top.
+TEST(ScriptBindingsPhysicsBodiesAndCollisions) {
+    Bindings b;
+    const char* src = R"(
+local floor = PhysicsAddBox({x=0, y=0, z=0}, {x=3, y=0.5, z=3}, false)
+assert(type(floor) == "number" and floor > 0)
+local ball = PhysicsAddSphere({x=0, y=3, z=0}, 0.5, true)
+assert(type(ball) == "number" and ball > 0)
+PhysicsSetVelocity(ball, {x=0, y=-5, z=0})
+local v = PhysicsGetVelocity(ball)
+assert(v.y == -5)
+PhysicsSetPosition(ball, {x=0, y=2.5, z=0})
+assert(PhysicsGetPosition(ball).y == 2.5)
+)";
+    CHECK(RunScript(*b.host, src));
+
+    bool collided = false;
+    const float dt = 1.0f / 60.0f;
+    for (int i = 0; i < 180 && !collided; ++i) {
+        b.physics.Step(dt, {0, -9.81f, 0});
+        collided = !b.physics.Collisions().empty();
+    }
+    CHECK(collided);
+
+    // The ball rests on the box top (y = boxTop 0.5 + radius 0.5) with zero
+    // vertical velocity.
+    const char* check = R"(
+local p = PhysicsGetPosition(2)
+local v = PhysicsGetVelocity(2)
+assert(math.abs(p.y - 1.0) < 0.01, "rest y")
+assert(math.abs(v.y) < 0.01, "rest vy")
+local cols = PhysicsCollisions()
+assert(type(cols) == "table")
+assert(#cols >= 1)
+local c = cols[1]
+assert(c.a ~= nil and c.b ~= nil)
+)";
+    CHECK(RunScript(*b.host, check));
+}
+
 TEST(ScriptBindingsDespawnThenGetPositionNil) {
     Bindings b;
     const char* src = R"(

@@ -10,7 +10,21 @@
 namespace neon::platform {
 namespace {
 
-constexpr const char* kWindowClassName = "NeonEngineWindow";
+constexpr const wchar_t* kWindowClassName = L"NeonEngineWindow";
+
+// The window class is Unicode so WM_CHAR delivers real UTF-16 code units
+// (including IME composition results) instead of ANSI/GBK bytes. config.title
+// is UTF-8, so convert it when creating the window.
+std::wstring Utf8ToWide(const std::string& utf8) {
+    if (utf8.empty()) return {};
+    const int len = MultiByteToWideChar(CP_UTF8, 0, utf8.data(),
+                                        static_cast<int>(utf8.size()), nullptr, 0);
+    std::wstring wide(static_cast<size_t>(len > 0 ? len : 0), L'\0');
+    if (len > 0)
+        MultiByteToWideChar(CP_UTF8, 0, utf8.data(), static_cast<int>(utf8.size()),
+                            wide.data(), len);
+    return wide;
+}
 
 // WGL extension constants (defined in wglext.h; kept local to avoid the header).
 constexpr int kWglDrawToWindow = 0x2001;
@@ -40,6 +54,7 @@ Key VkToKey(WPARAM vk) {
         case VK_ESCAPE: return Key::Escape;
         case VK_TAB: return Key::Tab;
         case VK_BACK: return Key::Backspace;
+        case VK_DELETE: return Key::Delete;
         case VK_SHIFT: return Key::Shift;
         case VK_CONTROL: return Key::Control;
         case VK_MENU: return Key::Alt;
@@ -75,23 +90,24 @@ public:
         if (setDpiAware) setDpiAware();
 
         HINSTANCE instance = GetModuleHandle(nullptr);
-        WNDCLASS wc{};
+        WNDCLASSW wc{};
         wc.style = CS_OWNDC;
         wc.lpfnWndProc = &Win32Window::WndProc;
         wc.hInstance = instance;
         wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
         wc.lpszClassName = kWindowClassName;
-        RegisterClass(&wc);
+        RegisterClassW(&wc);
 
         RECT rect{0, 0, config.width, config.height};
         DWORD style = WS_OVERLAPPEDWINDOW;
         if (!config.resizable) style &= ~(WS_THICKFRAME | WS_MAXIMIZEBOX);
         AdjustWindowRect(&rect, style, FALSE);
 
-        hwnd_ = CreateWindowEx(0, kWindowClassName, config.title.c_str(), style,
-                               CW_USEDEFAULT, CW_USEDEFAULT,
-                               rect.right - rect.left, rect.bottom - rect.top,
-                               nullptr, nullptr, instance, nullptr);
+        const std::wstring titleW = Utf8ToWide(config.title);
+        hwnd_ = CreateWindowExW(0, kWindowClassName, titleW.c_str(), style,
+                                CW_USEDEFAULT, CW_USEDEFAULT,
+                                rect.right - rect.left, rect.bottom - rect.top,
+                                nullptr, nullptr, instance, nullptr);
         if (!hwnd_) {
             NEON_LOG_ERROR("Win32: CreateWindowEx failed, error=%lu", GetLastError());
             return false;
@@ -247,16 +263,31 @@ private:
                 return 0;
             }
             case WM_CHAR: {
-                unsigned int cp = static_cast<unsigned int>(wp);
+                // With the Unicode window class, wParam is a UTF-16 code unit.
+                // BMP characters arrive directly; astral-plane characters
+                // arrive as a surrogate pair split across two WM_CHAR messages
+                // (keep the high half and combine with the next low half).
+                const uint16_t unit = static_cast<uint16_t>(wp);
+                if (unit >= 0xD800 && unit <= 0xDBFF) {
+                    pendingHighSurrogate_ = unit;
+                    return 0;
+                }
+                unsigned int cp = 0;
+                if (unit >= 0xDC00 && unit <= 0xDFFF) {
+                    if (pendingHighSurrogate_ == 0) return 0;
+                    cp = 0x10000u + (static_cast<unsigned int>(pendingHighSurrogate_ - 0xD800u) << 10) +
+                         static_cast<unsigned int>(unit - 0xDC00u);
+                    pendingHighSurrogate_ = 0;
+                } else {
+                    pendingHighSurrogate_ = 0;
+                    cp = unit;
+                }
                 char utf8[8] = {};
                 if (cp < 0x80) {
                     utf8[0] = static_cast<char>(cp);
                 } else if (cp < 0x800) {
                     utf8[0] = static_cast<char>(0xC0 | (cp >> 6));
                     utf8[1] = static_cast<char>(0x80 | (cp & 0x3F));
-                } else if (cp >= 0xD800 && cp <= 0xDFFF) {
-                    // Surrogate half (IME composition); ignored for now.
-                    return 0;
                 } else if (cp < 0x10000) {
                     utf8[0] = static_cast<char>(0xE0 | (cp >> 12));
                     utf8[1] = static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
@@ -356,8 +387,8 @@ private:
     bool CreateGLContext(const WindowConfig& config) {
         // 1. Dummy context on a hidden helper window to load WGL extensions.
         HINSTANCE instance = GetModuleHandle(nullptr);
-        helperHwnd_ = CreateWindowEx(0, kWindowClassName, "", WS_OVERLAPPED,
-                                     0, 0, 1, 1, nullptr, nullptr, instance, nullptr);
+        helperHwnd_ = CreateWindowExW(0, kWindowClassName, L"", WS_OVERLAPPED,
+                                      0, 0, 1, 1, nullptr, nullptr, instance, nullptr);
         if (!helperHwnd_) return false;
         helperHdc_ = GetDC(helperHwnd_);
 
@@ -513,6 +544,7 @@ private:
     bool hasLastCursor_ = false; // first WM_MOUSEMOVE seeds lastCursor_ (no delta)
     bool skipNextDelta_ = false;
     HIMC imeContext_ = nullptr; // saved IME context while detached (SetImeEnabled)
+    uint16_t pendingHighSurrogate_ = 0; // high half of an in-progress astral char
 };
 
 } // namespace

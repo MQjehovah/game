@@ -146,6 +146,134 @@ TEST(ScenePrefabExpansionAndInstanceOverride) {
 }
 
 // ---------------------------------------------------------------------------
+// Rigidbody component: invalid/empty shape falls back to sphere (editor added
+// the component with an empty enum default in older builds); valid shapes pass
+// through; the registered schema's first option is "sphere".
+// ---------------------------------------------------------------------------
+
+TEST(SceneRigidBodyShapeTolerance) {
+    scene::ComponentRegistry reg;
+    scene::RegisterBuiltinComponents(reg);
+    const char* json = R"({
+        "entities": [
+            {
+                "name": "EmptyShape",
+                "components": {
+                    "transform": {"pos": [0,0,0]},
+                    "rigidbody": {"shape": "", "radius": 0.5}
+                }
+            },
+            {
+                "name": "BoxShape",
+                "components": {
+                    "transform": {"pos": [1,0,0]},
+                    "rigidbody": {"shape": "box", "halfExtents": [0.5,0.5,0.5]}
+                }
+            }
+        ]
+    })";
+    auto res = scene::SceneFile::Parse(json);
+    CHECK(res.Ok());
+    scene::PrefabLibrary prefs;
+    ecs::World world;
+    auto inst = scene::Instantiate(world, res.Value(), prefs, reg);
+    CHECK(inst.Ok());
+    CHECK_EQ(inst.Value(), 2);
+
+    const scene::SceneRigidBody* rb0 =
+        world.Get<scene::SceneRigidBody>(world.EntityAt<scene::SceneRigidBody>(0));
+    CHECK(rb0 != nullptr);
+    CHECK_EQ(rb0->shape, std::string("sphere")); // invalid shape defaulted
+    const scene::SceneRigidBody* rb1 =
+        world.Get<scene::SceneRigidBody>(world.EntityAt<scene::SceneRigidBody>(1));
+    CHECK(rb1 != nullptr);
+    CHECK_EQ(rb1->shape, std::string("box")); // valid shape preserved
+}
+
+TEST(SceneSpriteComponentRoundTrip) {
+    // A 2D sprite: image texture on an XY quad. Parse -> Instantiate -> ECS
+    // component -> ToJson round-trips the flip flags and tint, and invalid
+    // shapes (missing texture / wrong types) are rejected.
+    scene::ComponentRegistry reg;
+    scene::RegisterBuiltinComponents(reg);
+    const char* json = R"({
+        "entities": [
+            {
+                "name": "Plant",
+                "components": {
+                    "transform": {"pos": [3,4,0], "scale": [2,2,1]},
+                    "sprite": {"texture": "assets/textures/plant.png",
+                               "flipX": true, "flipY": false,
+                               "colorHex": "#ff00aa"}
+                }
+            },
+            {
+                "name": "Plain",
+                "components": {
+                    "transform": {"pos": [0,0,0]},
+                    "sprite": {"texture": "assets/textures/bg.png"}
+                }
+            }
+        ]
+    })";
+    auto res = scene::SceneFile::Parse(json);
+    CHECK(res.Ok());
+    scene::PrefabLibrary prefs;
+    ecs::World world;
+    auto inst = scene::Instantiate(world, res.Value(), prefs, reg);
+    CHECK(inst.Ok());
+    CHECK_EQ(inst.Value(), 2);
+
+    const scene::SceneSprite* s0 =
+        world.Get<scene::SceneSprite>(world.EntityAt<scene::SceneSprite>(0));
+    CHECK(s0 != nullptr);
+    CHECK_EQ(s0->texture, std::string("assets/textures/plant.png"));
+    CHECK(s0->flipX);
+    CHECK(!s0->flipY);
+    CHECK_EQ(s0->colorHex, std::string("#ff00aa"));
+
+    // ToJson keeps the sprite component intact.
+    core::Json out = res.Value().ToJson();
+    const core::Json* ent = out.Get("entities")->At(0);
+    const core::Json* sp = ent->Get("components")->Get("sprite");
+    CHECK(sp != nullptr);
+    CHECK_EQ(sp->Get("texture")->GetString(), std::string("assets/textures/plant.png"));
+    CHECK(sp->Get("flipX")->GetBool());
+
+    // Missing texture / non-string texture fail at Instantiate (the factory
+    // validates component content; Parse only checks the JSON shape).
+    const char* badJson1 = R"({"entities":[{"name":"B",
+        "components":{"transform":{"pos":[0,0,0]},"sprite":{}}}]})";
+    const char* badJson2 = R"({"entities":[{"name":"B",
+        "components":{"transform":{"pos":[0,0,0]},"sprite":{"texture":7}}}]})";
+    for (const char* bad : {badJson1, badJson2}) {
+        auto badRes = scene::SceneFile::Parse(bad);
+        CHECK(badRes.Ok()); // shape parses
+        scene::PrefabLibrary badPrefs;
+        ecs::World badWorld;
+        auto badInst = scene::Instantiate(badWorld, badRes.Value(), badPrefs, reg);
+        CHECK(!badInst.Ok()); // factory rejects the component
+    }
+}
+
+TEST(SceneRigidBodySchemaDefaultOption) {
+    // The inspector's 添加组件 button uses the schema's first enum option as
+    // the default, so a freshly added rigidbody is "sphere" and plays.
+    const scene::ComponentSchema* s = scene::FindComponentSchema("rigidbody");
+    CHECK(s != nullptr);
+    if (!s) return;
+    bool foundShape = false;
+    for (const scene::FieldSchema& f : s->fields) {
+        if (f.key == "shape" && f.type == scene::FieldType::Enum) {
+            foundShape = true;
+            CHECK(f.optionCount > 0);
+            CHECK_EQ(std::string(f.options[0]), std::string("sphere"));
+        }
+    }
+    CHECK(foundShape);
+}
+
+// ---------------------------------------------------------------------------
 // Deep merge of nested objects (script vars)
 // ---------------------------------------------------------------------------
 

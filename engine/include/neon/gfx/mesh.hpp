@@ -63,6 +63,10 @@ public:
                              const std::string& name = "sphere");
     static Mesh CreatePlane(Renderer& renderer, float width, float depth, int tilesU = 1, int tilesV = 1,
                             const std::string& name = "plane");
+    // XY-plane quad facing +Z (the editor's front-ortho camera looks down -Z),
+    // unit-sized UVs so an image texture maps 1:1. Used by 2D sprites.
+    static Mesh CreateQuad(Renderer& renderer, float width, float height,
+                           const std::string& name = "quad");
     static Mesh CreateCylinder(Renderer& renderer, float radius, float height, int segments = 20,
                                const std::string& name = "cylinder");
     // Heightfield terrain: segments x segments cells spanning size x size,

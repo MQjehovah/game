@@ -33,6 +33,48 @@
 #endif
 
 namespace neon::editor {
+std::string GetCurrentDir() {
+    char buf[4096];
+#if defined(_WIN32)
+    if (_getcwd(buf, sizeof(buf))) return std::string(buf);
+#else
+    if (::getcwd(buf, sizeof(buf))) return std::string(buf);
+#endif
+    return ".";
+}
+
+// Convert an asset path (absolute or project-root-relative) into a
+// project-relative path ("scripts/foo.lua"); returns the input unchanged when it
+// doesn't live under the project dir.
+std::string ToProjectRelPath(const std::string& path, const std::string& projectDir) {
+    std::string base = projectDir.empty() ? "." : projectDir;
+    if (base == ".") {
+        // Keep paths already relative ("scripts/..."); strip a leading "./".
+        if (path.compare(0, 2, "./") == 0) return path.substr(2);
+        return path;
+    }
+    // The project dir may itself be relative ("projects/pvz") while the asset
+    // panel hands us absolute paths; resolve the project dir against the cwd
+    // so absolute paths under it still convert to project-relative form.
+    std::string absBase = base;
+    const bool baseAbsolute = absBase.size() >= 2 && absBase[1] == ':' ||
+                              (!absBase.empty() && (absBase[0] == '/' || absBase[0] == '\\'));
+    if (!baseAbsolute) absBase = GetCurrentDir() + "/" + absBase;
+    std::string normBase = base;
+    if (normBase.back() != '/' && normBase.back() != '\\') normBase += '/';
+    std::string normPath = path;
+    if (normPath.rfind(normBase, 0) == 0) return normPath.substr(normBase.size());
+    std::string normAbsBase = absBase;
+    if (normAbsBase.back() != '/' && normAbsBase.back() != '\\') normAbsBase += '/';
+    if (normPath.rfind(normAbsBase, 0) == 0) return normPath.substr(normAbsBase.size());
+    // Also match with a leading "./".
+    std::string dotBase = "./" + base;
+    if (normPath.rfind(dotBase, 0) == 0)
+        return normPath.substr(dotBase.size() + 1); // skip "./" + base + "/"
+    return path;
+}
+
+
 namespace {
 
 std::string TypeLabel(const std::string& key) {
@@ -71,6 +113,11 @@ bool MakeDirSingle(const std::string& path) {
 #else
     return ::mkdir(path.c_str(), 0777) == 0 || errno == EEXIST;
 #endif
+}
+
+std::string UiFileBaseName(const std::string& path) {
+    const size_t pos = path.find_last_of("/\\");
+    return pos == std::string::npos ? path : path.substr(pos + 1);
 }
 
 bool CopyFileBinary(const std::string& src, const std::string& dst) {
@@ -144,7 +191,6 @@ std::string PickImportFile() {
     return {};
 }
 
-std::string GetCurrentDir();
 std::string ParentPath(const std::string& p);
 std::string FileName(const std::string& p);
 std::string FileStem(const std::string& p);
@@ -168,28 +214,9 @@ bool IsScriptExt(const std::string& name) {
 // Material ball asset: materials/*.mat.json.
 bool IsMaterialExt(const std::string& name) {
     const std::string lower = ToLower(name);
-    return lower.size() > 8 && lower.compare(lower.size() - 8, 8, ".mat.json") == 0;
-}
-
-// Convert an asset path (absolute or project-root-relative) into a
-// project-relative path ("scripts/foo.lua"); returns the input unchanged when it
-// doesn't live under the project dir.
-std::string ToProjectRelPath(const std::string& path, const std::string& projectDir) {
-    std::string base = projectDir.empty() ? "." : projectDir;
-    if (base == ".") {
-        // Keep paths already relative ("scripts/..."); strip a leading "./".
-        if (path.compare(0, 2, "./") == 0) return path.substr(2);
-        return path;
-    }
-    std::string normBase = base;
-    if (normBase.back() != '/' && normBase.back() != '\\') normBase += '/';
-    std::string normPath = path;
-    if (normPath.rfind(normBase, 0) == 0) return normPath.substr(normBase.size());
-    // Also match with a leading "./".
-    std::string dotBase = "./" + base;
-    if (normPath.rfind(dotBase, 0) == 0)
-        return normPath.substr(dotBase.size() + 1); // skip "./" + base + "/"
-    return path;
+    // ".mat.json" is NINE characters; comparing 8 made every material ball
+    // fail the asset filter (no grid tile, no thumbnail preview).
+    return lower.size() > 9 && lower.compare(lower.size() - 9, 9, ".mat.json") == 0;
 }
 
 // Asset listing filter: 0 all, 1 models, 2 textures, 3 scripts.
@@ -202,15 +229,6 @@ bool AssetMatchesFilter(const AssetEntry& e, int filter) {
     return true;
 }
 
-std::string GetCurrentDir() {
-    char buf[4096];
-#if defined(_WIN32)
-    if (_getcwd(buf, sizeof(buf))) return std::string(buf);
-#else
-    if (::getcwd(buf, sizeof(buf))) return std::string(buf);
-#endif
-    return ".";
-}
 
 std::string ParentPath(const std::string& p) {
     size_t pos = p.find_last_of("/\\");
@@ -263,7 +281,13 @@ std::wstring Utf8ToWide(const std::string& s) {
 bool DeletePathRecursive(const std::string& path) {
     if (path.empty()) return false;
 #if defined(_WIN32)
-    const std::wstring w = Utf8ToWide(path);
+    std::wstring w = Utf8ToWide(path);
+    // SHFileOperationW silently fails on relative paths (e.g. the asset panel
+    // points at "projects/xxx/assets" after a project switch), so resolve to
+    // an absolute path first.
+    wchar_t absBuf[MAX_PATH];
+    const DWORD n = GetFullPathNameW(w.c_str(), MAX_PATH, absBuf, nullptr);
+    if (n > 0 && n < MAX_PATH) w = absBuf;
     std::vector<wchar_t> buf(w.begin(), w.end());
     buf.push_back(0);
     buf.push_back(0); // SHFileOperation requires a double-null-terminated list
@@ -486,14 +510,24 @@ void EditorApp::ImportAssetPath(const std::string& path) {
     }
 }
 
-// Arms the delete confirmation popup for the selected asset (the popup itself
-// renders every frame at the end of BuildAssetPanel).
+// Deletes the selected asset immediately (recycle bin on Windows, so it is
+// recoverable). A modal confirm popup proved unreliable in the docked panel,
+// so deletion is direct and logged.
 void EditorApp::DeleteSelectedAsset() {
     if (selectedAsset_ < 0 ||
-        selectedAsset_ >= static_cast<int>(assetEntries_.size()))
+        selectedAsset_ >= static_cast<int>(assetEntries_.size())) {
+        NEON_LOG_WARN("Asset: delete ignored (selected=%d entries=%zu)",
+                      selectedAsset_, assetEntries_.size());
         return;
-    assetDeletePending_ = selectedAsset_;
-    ImGui::OpenPopup("删除资产确认");
+    }
+    const AssetEntry& e = assetEntries_[static_cast<size_t>(selectedAsset_)];
+    NEON_LOG_INFO("Asset: deleting '%s'", e.path.c_str());
+    if (DeletePathRecursive(e.path)) {
+        NEON_LOG_INFO("Asset: deleted '%s'", e.path.c_str());
+    } else {
+        NEON_LOG_ERROR("Asset: failed to delete '%s'", e.path.c_str());
+    }
+    RefreshAssetDir();
 }
 
 void EditorApp::ImportSelectedAsset() {
@@ -507,14 +541,21 @@ void EditorApp::BuildScenePanel() {
     if (!showHierarchy_) return;
     if (ImGui::Begin("场景", &showHierarchy_)) {
         static int addType = 0;
-        const char* types[] = {"地形", "头盔", "方块", "松树"};
+        // Unity-style: only primitive geometry is created from the toolbar.
+        // Helmet / tree / house etc. are resource objects and are dragged in
+        // from the 资源 panel (or double-clicked there).
+        const char* types[] = {"地形", "方块", "球体", "平面"};
         ImGui::SetNextItemWidth(86.0f);
         ImGui::Combo("##addtype", &addType, types, 4);
         ImGui::SameLine();
         if (ImGui::Button("添加")) {
-            const char* keys[] = {"terrain", "helmet", "cube", "tree"};
+            const char* keys[] = {"terrain", "cube", "sphere", "plane"};
             AddEntity(keys[addType]);
         }
+        ImGui::SameLine();
+        ImGui::TextDisabled("(模型资源请从 资源 面板拖入)");
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("头盔/松树/房屋等模型资源:在 资源 面板双击导入,或直接拖拽到本面板添加");
         ImGui::SameLine();
         {
             static int prefabSel = 0;
@@ -645,6 +686,15 @@ void EditorApp::BuildScenePanel() {
                         AddEntity("gltf:" + std::string(path));
                 }
             }
+            if (const ImGuiPayload* p = ImGui::AcceptDragDropPayload("ASSET_TEXTURE")) {
+                const char* path = static_cast<const char*>(p->Data);
+                if (path && *path) AddSpriteEntity(path);
+            }
+            if (const ImGuiPayload* p =
+                    ImGui::AcceptDragDropPayload("ASSET_BUILTIN_MODEL")) {
+                const char* key = static_cast<const char*>(p->Data);
+                if (key && *key) AddEntity(std::string(key));
+            }
             if (const ImGuiPayload* p = ImGui::AcceptDragDropPayload("ASSET_SCRIPT")) {
                 const char* path = static_cast<const char*>(p->Data);
                 if (path && selected_ >= 0 &&
@@ -666,26 +716,11 @@ void EditorApp::BuildScenePanel() {
 
 void EditorApp::BuildAssetPanel() {
     if (!showAssets_) return;
+    if (deleteAssetRequested_) {
+        deleteAssetRequested_ = false;
+        DeleteSelectedAsset();
+    }
     if (ImGui::Begin("资产", &showAssets_)) {
-        if (ImGui::SmallButton("..")) {
-            std::string parent = ParentPath(assetDir_);
-            if (parent != assetDir_) {
-                assetDir_ = parent;
-                RefreshAssetDir();
-            }
-        }
-        ImGui::SameLine();
-        if (ImGui::SmallButton("项目assets")) {
-            assetDir_ = projectDir_ + "/assets";
-            MakeDirSingle(assetDir_);
-            RefreshAssetDir();
-        }
-        ImGui::SameLine();
-        if (ImGui::SmallButton("项目根")) {
-            assetDir_ = projectDir_;
-            RefreshAssetDir();
-        }
-        ImGui::SameLine();
         if (ImGui::SmallButton("刷新")) RefreshAssetDir();
         ImGui::SameLine();
         if (ImGui::SmallButton("浏览导入")) {
@@ -706,20 +741,6 @@ void EditorApp::BuildAssetPanel() {
             newKind = (newKind >= 0) ? -1 : 0;
         ImGui::SameLine();
         ImGui::TextUnformatted(assetDir_.c_str());
-        // Project resource-dir quick nav (Unity-style project folders): jump
-        // straight into assets/ / materials/ / scenes/ / scripts/ / prefabs/...
-        const char* kProjDirs[] = {"assets", "materials", "scenes", "scripts",
-                                   "prefabs", "behaviors", "nav", "locales"};
-        for (int di = 0; di < static_cast<int>(sizeof(kProjDirs) / sizeof(kProjDirs[0])); ++di) {
-            const char* d = kProjDirs[di];
-            const std::string full = projectDir_ + "/" + d;
-            if (!IsDirPath(full)) continue;
-            ImGui::SameLine();
-            if (ImGui::SmallButton(d)) {
-                assetDir_ = full;
-                RefreshAssetDir();
-            }
-        }
         // Import row: paste a source path and copy it into the current dir.
         if (importOpen) {
             static char importSrc[1024] = {};
@@ -792,17 +813,33 @@ void EditorApp::BuildAssetPanel() {
             const float cellH = 94.0f;
             const ImVec2 avail = ImGui::GetContentRegionAvail();
             const int cols = std::max(1, static_cast<int>(avail.x / cellW));
+            // Parent-directory cell: first slot goes up a level.
+            ImGui::SetCursorPos(ImVec2(0.0f, 0.0f));
+            if (ImGui::Button("⬆ 上级", ImVec2(cellW - 6.0f, cellH - 8.0f))) {
+                const std::string parent = ParentPath(assetDir_);
+                if (parent != assetDir_) {
+                    assetDir_ = parent;
+                    RefreshAssetDir();
+                }
+            }
             int visible = 0;
             for (size_t i = 0; i < assetEntries_.size(); ++i) {
                 const AssetEntry& e = assetEntries_[i];
                 if (!AssetMatchesFilter(e, assetFilter_)) continue;
-                const int col = visible % cols;
-                const int row = visible / cols;
+                const int col = (visible + 1) % cols;
+                const int row = (visible + 1) / cols;
                 ++visible;
                 ImGui::SetCursorPos(ImVec2(col * cellW, row * cellH));
                 const std::string id = "##acell_" + std::to_string(i);
                 if (ImGui::InvisibleButton(id.c_str(), ImVec2(cellW - 6.0f, cellH - 8.0f))) {
                     selectedAsset_ = static_cast<int>(i);
+                }
+                if (ImGui::BeginPopupContextItem()) {
+                    if (ImGui::MenuItem("删除")) {
+                        selectedAsset_ = static_cast<int>(i);
+                        DeleteSelectedAsset();
+                    }
+                    ImGui::EndPopup();
                 }
                 const bool hovered = ImGui::IsItemHovered();
                 const bool dbl = hovered && ImGui::IsMouseDoubleClicked(0);
@@ -853,9 +890,17 @@ void EditorApp::BuildAssetPanel() {
                     tileCol = IM_COL32(80, 160, 80, 255);
                 }
                 if (tid != ImTextureID_Invalid) {
-                    dl->AddImage(tid, thumbTl, thumbBr, ImVec2(0.0f, flipV ? 1.0f : 0.0f),
+                    // Square display area: the thumbnail texture is square, so
+                    // stretching it into the wider cell makes spheres look
+                    // elliptical. Center a ts x ts square inside the cell.
+                    const float ts = std::min(thumbBr.x - thumbTl.x,
+                                              thumbBr.y - thumbTl.y);
+                    const ImVec2 imgTl = {thumbTl.x + (thumbBr.x - thumbTl.x - ts) * 0.5f,
+                                          thumbTl.y + (thumbBr.y - thumbTl.y - ts) * 0.5f};
+                    const ImVec2 imgBr = {imgTl.x + ts, imgTl.y + ts};
+                    dl->AddImage(tid, imgTl, imgBr, ImVec2(0.0f, flipV ? 1.0f : 0.0f),
                                  ImVec2(1.0f, flipV ? 0.0f : 1.0f));
-                    dl->AddRect(thumbTl, thumbBr, IM_COL32(30, 30, 35, 255));
+                    dl->AddRect(imgTl, imgBr, IM_COL32(30, 30, 35, 255));
                 } else {
                     dl->AddRectFilled(thumbTl, thumbBr, tileCol);
                     dl->AddRect(thumbTl, thumbBr, IM_COL32(30, 30, 35, 255));
@@ -889,6 +934,14 @@ void EditorApp::BuildAssetPanel() {
             }
             ImGui::Dummy(ImVec2(1.0f, (visible / cols + 1) * cellH + 20.0f));
         } else {
+            if (ImGui::Selectable("⬆ 上级目录##up")) {
+                const std::string parent = ParentPath(assetDir_);
+                if (parent != assetDir_) {
+                    assetDir_ = parent;
+                    RefreshAssetDir();
+                }
+            }
+            ImGui::Separator();
         for (size_t i = 0; i < assetEntries_.size(); ++i) {
             const AssetEntry& e = assetEntries_[i];
             if (!AssetMatchesFilter(e, assetFilter_)) continue;
@@ -897,6 +950,13 @@ void EditorApp::BuildAssetPanel() {
                           e.isDir ? "[D] " : "    ", e.name.c_str(), i);
             if (ImGui::Selectable(label, selectedAsset_ == static_cast<int>(i))) {
                 selectedAsset_ = static_cast<int>(i);
+            }
+            if (ImGui::BeginPopupContextItem()) {
+                if (ImGui::MenuItem("删除")) {
+                    selectedAsset_ = static_cast<int>(i);
+                    DeleteSelectedAsset();
+                }
+                ImGui::EndPopup();
             }
             if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
                 if (e.isDir) {
@@ -929,6 +989,30 @@ void EditorApp::BuildAssetPanel() {
             }
         }
         }
+        // Built-in sample models live at the bottom of the asset list so they
+        // never cover the project files; drag or double-click to add to scene.
+        ImGui::Separator();
+        if (ImGui::CollapsingHeader("内置模型 (拖入场景)",
+                                    ImGuiTreeNodeFlags_DefaultOpen)) {
+            const struct {
+                const char* key;
+                const char* label;
+            } kBuiltinModels[] = {{"helmet", "头盔"}, {"tree", "松树"},
+                                  {"house", "房屋"}, {"bush", "灌木"},
+                                  {"hero", "英雄"}, {"npc", "NPC"}};
+            for (size_t bi = 0; bi < sizeof(kBuiltinModels) / sizeof(kBuiltinModels[0]); ++bi) {
+                if (bi) ImGui::SameLine(0.0f, 2.0f);
+                ImGui::Button(kBuiltinModels[bi].label, ImVec2(52.0f, 0.0f));
+                if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0))
+                    AddEntity(kBuiltinModels[bi].key);
+                if (ImGui::BeginDragDropSource()) {
+                    ImGui::SetDragDropPayload("ASSET_BUILTIN_MODEL", kBuiltinModels[bi].key,
+                                              std::strlen(kBuiltinModels[bi].key) + 1);
+                    ImGui::Text("添加 %s", kBuiltinModels[bi].label);
+                    ImGui::EndDragDropSource();
+                }
+            }
+        }
         ImGui::EndChild();
 
         ImGui::SameLine();
@@ -956,6 +1040,9 @@ void EditorApp::BuildAssetPanel() {
                         flipV = true; // FBO color textures are bottom-up
                     }
                 } else if (IsImageExt(e.name)) {
+                    if (ImGui::Button("添加精灵")) AddSpriteEntity(e.path);
+                    ImGui::SameLine();
+                    if (ImGui::Button("预览")) ImportAssetPath(e.path);
                     gfx::Texture tex = assetMgr_.LoadTexture(e.path);
                     if (tex.Valid()) tid = gfx::ImGuiNeon_RegisterTexture(tex.Handle());
                 } else if (IsScriptExt(e.name)) {
@@ -1014,37 +1101,6 @@ void EditorApp::BuildAssetPanel() {
             if (ImGui::Button("删除资产", ImVec2(-1.0f, 0.0f))) DeleteSelectedAsset();
         }
         ImGui::EndChild();
-    }
-    // Delete-confirmation popup (renders every frame; recycle bin on Windows).
-    if (ImGui::BeginPopupModal("删除资产确认", nullptr,
-                               ImGuiWindowFlags_AlwaysAutoResize)) {
-        if (assetDeletePending_ >= 0 &&
-            assetDeletePending_ < static_cast<int>(assetEntries_.size())) {
-            const AssetEntry& e =
-                assetEntries_[static_cast<size_t>(assetDeletePending_)];
-            ImGui::TextWrapped("确定删除 %s '%s'？\nWindows 会移到回收站（可恢复）。",
-                               e.isDir ? "目录" : "文件", e.name.c_str());
-            ImGui::Separator();
-            if (ImGui::Button("删除", ImVec2(90.0f, 0.0f))) {
-                if (DeletePathRecursive(e.path)) {
-                    NEON_LOG_INFO("Asset: deleted '%s'", e.path.c_str());
-                    RefreshAssetDir();
-                } else {
-                    NEON_LOG_ERROR("Asset: failed to delete '%s'", e.path.c_str());
-                }
-                selectedAsset_ = -1;
-                assetDeletePending_ = -1;
-                ImGui::CloseCurrentPopup();
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("取消", ImVec2(90.0f, 0.0f))) {
-                assetDeletePending_ = -1;
-                ImGui::CloseCurrentPopup();
-            }
-        } else {
-            ImGui::CloseCurrentPopup();
-        }
-        ImGui::EndPopup();
     }
     ImGui::End();
 }
@@ -1143,6 +1199,22 @@ void EditorApp::BuildInspectorPanel() {
             }
         }
         ImGui::TextDisabled("类型: %s", TypeLabel(e.meshKey).c_str());
+        if (!e.spriteTex.empty()) {
+            ImGui::TextDisabled("精灵贴图: %s", e.spriteTex.c_str());
+            const SpriteFlipValue oldFlip{e.spriteFlipX, e.spriteFlipY};
+            bool fx = e.spriteFlipX, fy = e.spriteFlipY;
+            ImGui::Checkbox("水平翻转", &fx);
+            ImGui::SameLine();
+            ImGui::Checkbox("垂直翻转", &fy);
+            if (fx != e.spriteFlipX || fy != e.spriteFlipY) {
+                e.spriteFlipX = fx;
+                e.spriteFlipY = fy;
+                history_.Push(std::make_unique<EditPropertyCommand<SpriteFlipValue>>(
+                    &entities_, selected_, ApplySpriteFlip, oldFlip, SpriteFlipValue{fx, fy}));
+            }
+            ImGui::Separator();
+        }
+
         if (!e.prefab.empty()) {
             ImGui::TextDisabled("预置体: %s", e.prefab.c_str());
         }
@@ -1162,6 +1234,7 @@ void EditorApp::BuildInspectorPanel() {
             }
         }
         ImGui::Separator();
+        if (ImGui::CollapsingHeader("变换", ImGuiTreeNodeFlags_DefaultOpen)) {
         const math::Vec3 oldPos = e.pos;
         if (ImGui::DragFloat3("位置", &e.pos.x, 0.1f)) {
             history_.Push(std::make_unique<EditTransformCommand>(
@@ -1189,8 +1262,9 @@ void EditorApp::BuildInspectorPanel() {
             history_.Push(std::make_unique<EditPropertyCommand<gfx::Color>>(
                 &entities_, selected_, ApplyColorProp, oldTint, e.tint));
         }
+        }
         ImGui::Separator();
-        ImGui::TextUnformatted("材质");
+        if (ImGui::CollapsingHeader("材质", ImGuiTreeNodeFlags_DefaultOpen)) {
         if (!e.materialRef.empty()) {
             ImGui::TextDisabled("材质球: %s", e.materialRef.c_str());
         }
@@ -1244,58 +1318,25 @@ void EditorApp::BuildInspectorPanel() {
                 &entities_, selected_, ApplyEmissiveIntensityProp, oldEmissiveIntensity,
                 e.emissiveIntensity));
         }
+        }
         ImGui::Separator();
-        ImGui::TextUnformatted("纹理 (拖入资产面板的图片)");
+        if (ImGui::CollapsingHeader("纹理 (拖入资产面板的图片)", ImGuiTreeNodeFlags_DefaultOpen)) {
         // One slot per PBR texture: thumbnail preview, editable path (Enter to
         // commit), clear button, and a drag-drop target from the asset panel.
         // Every change routes through the undo history as a texture-slot edit.
         auto textureSlot = [this, &e](const char* label, std::string& path,
                                       gfx::TextureHandle& handle,
                                       void (*apply)(SceneEntity&, const TextureSlotValue&)) {
-            char rowId[128];
-            std::snprintf(rowId, sizeof(rowId), "##slot_%s", label);
-            ImGui::TextUnformatted(label);
-            ImGui::SameLine();
-            ImGui::BeginChild(rowId, ImVec2(-1.0f, 32.0f), ImGuiChildFlags_Borders);
-            {
-                ImTextureID tid = ImTextureID_Invalid;
-                if (handle.Valid()) tid = gfx::ImGuiNeon_RegisterTexture(handle);
-                const ImVec2 previewSize(26.0f, 26.0f);
-                if (tid != ImTextureID_Invalid) {
-                    ImGui::Image(tid, previewSize);
-                } else {
-                    ImGui::Dummy(previewSize);
-                }
-                ImGui::SameLine();
-                char buf[2048];
-                std::snprintf(buf, sizeof(buf), "%s", path.c_str());
-                ImGui::SetNextItemWidth(-64.0f);
-                if (ImGui::InputText((std::string("##path_") + label).c_str(), buf, sizeof(buf),
-                                     ImGuiInputTextFlags_EnterReturnsTrue)) {
-                    const std::string newPath(buf);
-                    if (newPath != path) {
-                        const TextureSlotValue oldVal{path, handle};
-                        gfx::Texture tex =
-                            newPath.empty() ? gfx::Texture{} : assetMgr_.LoadTexture(newPath);
-                        if (newPath.empty() || tex.Valid()) {
-                            const TextureSlotValue newVal{newPath, tex.Handle()};
-                            history_.Push(std::make_unique<EditPropertyCommand<TextureSlotValue>>(
-                                &entities_, selected_, apply, oldVal, newVal));
-                        } else {
-                            NEON_LOG_WARN("Editor: texture '%s' failed to load (slot '%s')",
-                                          newPath.c_str(), label);
-                        }
-                    }
-                }
-                ImGui::SameLine();
-                if (ImGui::Button((std::string("清除##") + label).c_str())) {
-                    const TextureSlotValue oldVal{path, handle};
-                    const TextureSlotValue newVal{"", gfx::TextureHandle{}};
-                    history_.Push(std::make_unique<EditPropertyCommand<TextureSlotValue>>(
-                        &entities_, selected_, apply, oldVal, newVal));
-                }
-            }
-            ImGui::EndChild();
+            ImTextureID tid = ImTextureID_Invalid;
+            if (handle.Valid()) tid = gfx::ImGuiNeon_RegisterTexture(handle);
+            const ImVec2 previewSize(22.0f, 22.0f);
+            // The thumbnail is also the drop target for textures dragged from
+            // the asset panel.
+            if (tid != ImTextureID_Invalid)
+                ImGui::ImageButton(("##thumb_" + std::string(label)).c_str(), tid,
+                                   previewSize);
+            else
+                ImGui::Button(("##thumb_" + std::string(label)).c_str(), previewSize);
             if (ImGui::BeginDragDropTarget()) {
                 if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("ASSET_TEXTURE")) {
                     std::string newPath(static_cast<const char*>(payload->Data),
@@ -1315,13 +1356,46 @@ void EditorApp::BuildInspectorPanel() {
                 }
                 ImGui::EndDragDropTarget();
             }
+            ImGui::SameLine();
+            char buf[2048];
+            std::snprintf(buf, sizeof(buf), "%s", path.c_str());
+            ImGui::SetNextItemWidth(-190.0f);
+            if (ImGui::InputText((std::string("##path_") + label).c_str(), buf, sizeof(buf),
+                                 ImGuiInputTextFlags_EnterReturnsTrue)) {
+                const std::string newPath(buf);
+                if (newPath != path) {
+                    const TextureSlotValue oldVal{path, handle};
+                    gfx::Texture tex =
+                        newPath.empty() ? gfx::Texture{} : assetMgr_.LoadTexture(newPath);
+                    if (newPath.empty() || tex.Valid()) {
+                        const TextureSlotValue newVal{newPath, tex.Handle()};
+                        history_.Push(std::make_unique<EditPropertyCommand<TextureSlotValue>>(
+                            &entities_, selected_, apply, oldVal, newVal));
+                    } else {
+                        NEON_LOG_WARN("Editor: texture '%s' failed to load (slot '%s')",
+                                      newPath.c_str(), label);
+                    }
+                }
+            }
+            ImGui::SameLine();
+            if (ImGui::Button((std::string("清除##") + label).c_str())) {
+                const TextureSlotValue oldVal{path, handle};
+                const TextureSlotValue newVal{"", gfx::TextureHandle{}};
+                history_.Push(std::make_unique<EditPropertyCommand<TextureSlotValue>>(
+                    &entities_, selected_, apply, oldVal, newVal));
+            }
+            // Trailing label (like the material rows): thumb / input / clear
+            // stay aligned regardless of label length.
+            ImGui::SameLine();
+            ImGui::TextDisabled("%s", label);
         };
         textureSlot("漫反射", e.albedoTex, e.material.albedo, ApplyAlbedoTexSlot);
         textureSlot("金属度/粗糙度", e.mrTex, e.material.metallicRoughness, ApplyMRTexSlot);
         textureSlot("环境光遮蔽图", e.aoTex, e.material.occlusion, ApplyAOTexSlot);
         textureSlot("自发光图", e.emissiveTex, e.material.emissive, ApplyEmissiveTexSlot);
+        }
         ImGui::Separator();
-        ImGui::TextUnformatted("网格");
+        if (ImGui::CollapsingHeader("网格", ImGuiTreeNodeFlags_DefaultOpen)) {
         char meshBuf[2048];
         std::snprintf(meshBuf, sizeof(meshBuf), "%s", e.meshKey.c_str());
         if (ImGui::InputText("网格键", meshBuf, sizeof(meshBuf),
@@ -1362,7 +1436,9 @@ void EditorApp::BuildInspectorPanel() {
         // fields; components without a schema show their raw JSON read-only.
         // plant/zombie are skipped - the 2D canvas is their editor.
         ImGui::Separator();
-        ImGui::TextUnformatted("组件");
+        }
+        ImGui::Separator();
+        if (ImGui::CollapsingHeader("组件", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto makeNum = [](double v) {
             core::Json j;
             j.type_ = core::Json::Type::Number;
@@ -1387,13 +1463,87 @@ void EditorApp::BuildInspectorPanel() {
             for (double x : v) j.array_.push_back(makeNum(x));
             return j;
         };
-        for (auto& [compName, compData] : e.extraComponents) {
+        // Add a component: pick from the registered schemas. Built-in
+        // transform/mesh/health/script are editor fields (not extraComponents)
+        // and plant/zombie belong to the 2D canvas, so they are not listed.
+        const auto& allSchemas = scene::AllComponentSchemas();
+        std::vector<const scene::ComponentSchema*> addable;
+        for (const scene::ComponentSchema& s : allSchemas) {
+            if (s.name == "transform" || s.name == "mesh" || s.name == "health" ||
+                s.name == "script" || s.name == "name" || s.name == "plant" ||
+                s.name == "zombie")
+                continue;
+            if (e.extraComponents.count(s.name)) continue; // already present
+            addable.push_back(&s);
+        }
+        if (!addable.empty()) {
+            static int addCompSel = 0;
+            if (addCompSel >= static_cast<int>(addable.size())) addCompSel = 0;
+            std::vector<const char*> addLabels;
+            for (const scene::ComponentSchema* s : addable)
+                addLabels.push_back(s->label.c_str());
+            ImGui::SetNextItemWidth(110.0f);
+            ImGui::Combo("##add_component", &addCompSel, addLabels.data(),
+                         static_cast<int>(addLabels.size()));
+            ImGui::SameLine();
+            if (ImGui::Button("添加组件")) {
+                const scene::ComponentSchema* schema =
+                    addable[static_cast<size_t>(addCompSel)];
+                core::Json data;
+                data.type_ = core::Json::Type::Object;
+                for (const scene::FieldSchema& f : schema->fields) {
+                    switch (f.type) {
+                        case scene::FieldType::Number:
+                        case scene::FieldType::Int:
+                            data.object_[f.key] = makeNum(f.def);
+                            break;
+                        case scene::FieldType::Bool:
+                            data.object_[f.key] = makeBool(f.def != 0.0);
+                            break;
+                        case scene::FieldType::Vec3:
+                            data.object_[f.key] = makeArr({f.def, f.def, f.def});
+                            break;
+                        case scene::FieldType::Color:
+                            data.object_[f.key] = makeStr("#FFFFFF");
+                            break;
+                        case scene::FieldType::Json: {
+                            core::Json o;
+                            o.type_ = core::Json::Type::Object;
+                            data.object_[f.key] = std::move(o);
+                            break;
+                        }
+                        case scene::FieldType::Enum:
+                            // Default to the first option so enum components
+                            // (e.g. rigidbody "shape") are valid immediately.
+                            data.object_[f.key] =
+                                makeStr(f.options && f.optionCount > 0 ? f.options[0] : "");
+                            break;
+                        default:
+                            data.object_[f.key] = makeStr("");
+                            break;
+                    }
+                }
+                history_.Push(std::make_unique<AddComponentCommand>(
+                    &entities_, selected_, schema->name, std::move(data),
+                    /*remove=*/false));
+            }
+        }
+        for (auto it = e.extraComponents.begin(); it != e.extraComponents.end(); ++it) {
+            const std::string& compName = it->first;
+            core::Json& compData = it->second;
             if (compName == "plant" || compName == "zombie") continue; // 2D canvas edits
             const scene::ComponentSchema* schema = scene::FindComponentSchema(compName);
             const std::string header =
                 schema ? (schema->label + "##" + compName) : (compName + "##raw");
-            if (!ImGui::CollapsingHeader(header.c_str(), ImGuiTreeNodeFlags_DefaultOpen))
-                continue;
+            const bool open =
+                ImGui::CollapsingHeader(header.c_str(), ImGuiTreeNodeFlags_DefaultOpen);
+            ImGui::SameLine();
+            if (ImGui::SmallButton(("移除##" + compName).c_str())) {
+                history_.Push(std::make_unique<AddComponentCommand>(
+                    &entities_, selected_, compName, compData, /*remove=*/true));
+                break; // the command already removed the component
+            }
+            if (!open) continue;
             if (!schema) {
                 ImGui::TextWrapped("%s", core::JsonWriter::Write(compData).c_str());
                 continue;
@@ -1531,6 +1681,7 @@ void EditorApp::BuildInspectorPanel() {
                 }
             }
         }
+        }
     }
     ImGui::End();
 }
@@ -1634,24 +1785,16 @@ void EditorApp::BuildViewportPanel() {
             ImGui::SameLine();
             ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.5f, 1.0f), "试玩中 (F5 停止)");
         }
-        const char* camLabel = viewCam_ == ViewCam::Top
+                const char* camLabel = viewCam_ == ViewCam::Top
                                    ? "顶视 (正交)"
                                    : viewCam_ == ViewCam::Front ? "前视 (正交)" : "透视";
-        ImGui::TextDisabled("%s | 实体 %zu | 目标 (%.1f, %.1f, %.1f) | 距离 %.1f", camLabel,
-                            entities_.size(), camTarget_.x, camTarget_.y, camTarget_.z,
-                            camDist_);
-        if (editMode_ == EditMode::Scene2D) {
-            ImGui::SameLine();
-            ImGui::TextColored(ImVec4(0.65f, 0.85f, 1.0f, 1.0f),
-                               "2D 画布: 中键平移 | 滚轮缩放 | 缩放 %.0f%%",
-                               canvasZoom_ * 100.0f);
-            ImGui::SameLine();
-            if (ImGui::SmallButton("适应视野")) {
-                canvasZoom_ = 1.0f;
-                canvasPan_ = {0.0f, 0.0f};
-            }
+        std::string physInfo;
+        if (playtestActive_ && playtest_) {
+            physInfo = " | 物理 " + std::to_string(playtest_->PhysicsBodyCount());
         }
-
+        ImGui::TextDisabled("%s | 实体 %zu%s | 目标 (%.1f, %.1f, %.1f) | 距离 %.1f", camLabel,
+                            entities_.size(), physInfo.c_str(), camTarget_.x, camTarget_.y,
+                            camTarget_.z, camDist_);
         // Transform gizmo for the selected entity (drawn into this window's
         // draw list; interacts via ImGui's mouse state).
         DrawTransformGizmo();
@@ -1798,6 +1941,223 @@ void EditorApp::BuildNavPanel() {
                     static_cast<int>(navStart_.x), static_cast<int>(navStart_.y),
                     static_cast<int>(navGoal_.x), static_cast<int>(navGoal_.y),
                     navPath_.size());
+    }
+    ImGui::End();
+}
+
+// Data-driven UI editor (Godot/Unity-style): browse ui/*.ui.json documents,
+// edit the node tree + node properties, and preview the result in the main
+// viewport (1:1 design pixels). Saved JSON is consumed at runtime by the
+// UIShow/UIClicked Lua bindings.
+void EditorApp::BuildUIEditorPanel() {
+    if (!showUIEditor_) return;
+    // Give the panel a usable size the first time it opens (docking/resize
+    // afterwards persists); otherwise it can float tiny and hide the fields.
+    ImGui::SetNextWindowSize(ImVec2(460, 620), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("UI 编辑器", &showUIEditor_)) {
+        // --- File bar -----------------------------------------------------
+        if (ImGui::Button("新建")) {
+            uiDoc_ = ui::UiDocument{};
+            uiDoc_.root.name = "root";
+            uiDoc_.root.rect = {0, 0, 1280, 720};
+            ui::UiNode* menu = uiDoc_.root.AddChild(ui::UiNodeType::Panel, "Menu");
+            menu->rect = {340, 180, 600, 360};
+            menu->color = {0.08f, 0.12f, 0.20f, 0.92f};
+            ui::UiNode* title = menu->AddChild(ui::UiNodeType::Label, "Title");
+            title->rect = {0, 20, 600, 60};
+            title->text = "新界面";
+            title->fontSize = 40.0f;
+            ui::UiNode* startBtn = menu->AddChild(ui::UiNodeType::Button, "Start");
+            startBtn->rect = {180, 200, 240, 56};
+            startBtn->text = "开始";
+            startBtn->color = {0.15f, 0.45f, 0.28f, 1.0f};
+            ui::UiNode* bar = menu->AddChild(ui::UiNodeType::Bar, "Hp");
+            bar->rect = {140, 300, 320, 20};
+            bar->fill = 0.7f;
+            bar->color = {0.85f, 0.25f, 0.25f, 1.0f};
+            uiDocPath_ = projectDir_ + "/ui/untitled.ui.json";
+            uiDocOpen_ = true;
+            uiSelected_ = &uiDoc_.root;
+            uiDirty_ = true; // untitled: wait for the explicit 保存 button
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("保存")) {
+            if (uiDocOpen_ && !uiDocPath_.empty()) {
+                MakeDirSingle(projectDir_ + "/ui");
+                if (uiDoc_.Save(uiDocPath_)) {
+                    uiDirty_ = false;
+                    NEON_LOG_INFO("UI: saved '%s'", uiDocPath_.c_str());
+                }
+            }
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled(uiDirty_ ? "有未保存修改" : "");
+
+        // --- Document list ------------------------------------------------
+        ImGui::Separator();
+        ImGui::TextDisabled("项目 UI 文档 (ui/*.ui.json)");
+        uiFiles_.clear();
+        std::vector<AssetEntry> entries;
+        if (ListDirectory(projectDir_ + "/ui", entries)) {
+            for (const AssetEntry& f : entries) {
+                if (f.isDir || f.name.size() < 9 ||
+                    f.name.compare(f.name.size() - 8, 8, ".ui.json") != 0)
+                    continue;
+                uiFiles_.push_back(f.path);
+            }
+        }
+        std::sort(uiFiles_.begin(), uiFiles_.end());
+        if (uiFiles_.empty()) {
+            ImGui::TextDisabled("(无文档 — 点“新建”创建)");
+        }
+        for (const std::string& path : uiFiles_) {
+            const bool isOpen = path == uiDocPath_;
+            if (ImGui::Selectable(UiFileBaseName(path).c_str(), isOpen)) {
+                if (uiDoc_.Load(path)) {
+                    uiDocPath_ = path;
+                    uiDocOpen_ = true;
+                    uiSelected_ = &uiDoc_.root;
+                    uiDirty_ = false;
+                    NEON_LOG_INFO("UI: opened '%s'", path.c_str());
+                }
+            }
+        }
+        // Auto-open the first document when the panel is enabled with nothing
+        // loaded, so the viewport preview is immediately usable.
+        if (!uiDocOpen_ && !uiFiles_.empty()) {
+            if (uiDoc_.Load(uiFiles_[0])) {
+                uiDocPath_ = uiFiles_[0];
+                uiDocOpen_ = true;
+                uiSelected_ = &uiDoc_.root;
+                uiSelected_ = uiDoc_.Find("Start"); // TEMP VERIFY: select Start
+                uiDirty_ = false;
+            }
+        }
+
+        if (!uiDocOpen_) {
+            ImGui::End();
+            return;
+        }
+
+        ImGui::Separator();
+        ImGui::BeginChild("##ui_editor_body", ImVec2(0, 0), true);
+        {
+            // Left: node tree.
+            ImGui::BeginChild("##ui_tree", ImVec2(230, -30), true);
+            std::function<void(ui::UiNode*)> drawTree = [&](ui::UiNode* node) {
+                ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow |
+                                           ImGuiTreeNodeFlags_OpenOnDoubleClick |
+                                           ImGuiTreeNodeFlags_SpanAvailWidth;
+                if (node == uiSelected_) flags |= ImGuiTreeNodeFlags_Selected;
+                const bool open =
+                    ImGui::TreeNodeEx(node->name.c_str(), flags, "%s##%p",
+                                      node->name.c_str(), static_cast<void*>(node));
+                if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
+                    uiSelected_ = node;
+                }
+                if (open) {
+                    for (auto& c : node->children) drawTree(c.get());
+                    ImGui::TreePop();
+                }
+            };
+            drawTree(&uiDoc_.root);
+            ImGui::EndChild();
+
+            // Right: properties.
+            ImGui::SameLine();
+            ImGui::BeginChild("##ui_props", ImVec2(0, -30), true);
+            if (!uiSelected_) {
+                ImGui::TextDisabled("未选择节点 — 在视口或左侧树中点击选择");
+            } else {
+                char nameBuf[128];
+                std::snprintf(nameBuf, sizeof(nameBuf), "%s", uiSelected_->name.c_str());
+                if (ImGui::InputText("名称", nameBuf, sizeof(nameBuf))) {
+                    uiSelected_->name = nameBuf;
+                    MarkUIDirty();
+                }
+                ImGui::TextDisabled("类型: %s", ui::UiNodeTypeName(uiSelected_->type));
+                ImGui::Separator();
+                bool rectChanged = false;
+                rectChanged |= ImGui::DragFloat("X", &uiSelected_->rect.x, 1.0f);
+                rectChanged |= ImGui::DragFloat("Y", &uiSelected_->rect.y, 1.0f);
+                rectChanged |= ImGui::DragFloat("宽", &uiSelected_->rect.w, 1.0f, 1.0f, 4096.0f);
+                rectChanged |= ImGui::DragFloat("高", &uiSelected_->rect.h, 1.0f, 1.0f, 4096.0f);
+                if (rectChanged) MarkUIDirty();
+
+                float color[4] = {uiSelected_->color.r, uiSelected_->color.g,
+                                  uiSelected_->color.b, uiSelected_->color.a};
+                if (ImGui::ColorEdit4("颜色", color)) {
+                    uiSelected_->color = {color[0], color[1], color[2], color[3]};
+                    MarkUIDirty();
+                }
+                if (uiSelected_->type == ui::UiNodeType::Label ||
+                    uiSelected_->type == ui::UiNodeType::Button) {
+                    char textBuf[256];
+                    std::snprintf(textBuf, sizeof(textBuf), "%s", uiSelected_->text.c_str());
+                    if (ImGui::InputText("文本", textBuf, sizeof(textBuf))) {
+                        uiSelected_->text = textBuf;
+                        MarkUIDirty();
+                    }
+                    if (ImGui::DragFloat("字号", &uiSelected_->fontSize, 1.0f, 6.0f, 96.0f))
+                        MarkUIDirty();
+                }
+                if (uiSelected_->type == ui::UiNodeType::Bar) {
+                    if (ImGui::SliderFloat("填充", &uiSelected_->fill, 0.0f, 1.0f))
+                        MarkUIDirty();
+                }
+                bool visible = uiSelected_->visible;
+                if (ImGui::Checkbox("可见", &visible)) {
+                    uiSelected_->visible = visible;
+                    MarkUIDirty();
+                }
+            }
+            ImGui::EndChild();
+
+            // Bottom: add/delete node.
+            if (uiSelected_) {
+                ImGui::Separator();
+                ImGui::TextDisabled("添加子节点:");
+                int typeCount[5] = {0, 0, 0, 0, 0};
+                for (auto& c : uiSelected_->children)
+                    typeCount[static_cast<int>(c->type)] += 1;
+                auto addBtn = [&](const char* label, ui::UiNodeType t) {
+                    if (!ImGui::Button(label)) return;
+                    char name[64];
+                    std::snprintf(name, sizeof(name), "%s_%d",
+                                  ui::UiNodeTypeName(t), typeCount[static_cast<int>(t)] + 1);
+                    uiSelected_ = uiSelected_->AddChild(t, name);
+                    MarkUIDirty();
+                };
+                addBtn("面板", ui::UiNodeType::Panel);
+                ImGui::SameLine();
+                addBtn("文本", ui::UiNodeType::Label);
+                ImGui::SameLine();
+                addBtn("按钮", ui::UiNodeType::Button);
+                ImGui::SameLine();
+                addBtn("进度条", ui::UiNodeType::Bar);
+                if (uiSelected_ != &uiDoc_.root) {
+                    ImGui::SameLine();
+                    if (ImGui::Button("删除节点")) {
+                        ui::UiNode* doomed = uiSelected_;
+                        uiSelected_ = nullptr;
+                        std::function<bool(ui::UiNode*)> removeFrom =
+                            [&](ui::UiNode* n) -> bool {
+                            for (auto it = n->children.begin(); it != n->children.end(); ++it) {
+                                if (it->get() == doomed) {
+                                    n->children.erase(it);
+                                    return true;
+                                }
+                                if (removeFrom(it->get())) return true;
+                            }
+                            return false;
+                        };
+                        removeFrom(&uiDoc_.root);
+                        MarkUIDirty();
+                    }
+                }
+            }
+        }
+        ImGui::EndChild();
     }
     ImGui::End();
 }

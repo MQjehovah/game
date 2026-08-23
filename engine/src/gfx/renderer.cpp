@@ -1826,6 +1826,13 @@ void Renderer::ResetSceneViewport() {
     backend_->SetViewport(0, 0, screenW_, screenH_);
 }
 
+float Renderer::SceneAspect() const {
+    if (sceneViewport_.w > 0.0f && sceneViewport_.h > 0.0f) {
+        return sceneViewport_.w / sceneViewport_.h;
+    }
+    return screenH_ > 0 ? static_cast<float>(screenW_) / static_cast<float>(screenH_) : 1.0f;
+}
+
 void Renderer::PushQuad(const math::Vec2& a, const math::Vec2& b, const math::Vec2& c,
                         const math::Vec2& d, const Color& color, const math::Vec2& uv0,
                         const math::Vec2& uv1, TextureHandle texture, BlendMode blend) {

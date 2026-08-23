@@ -127,6 +127,19 @@ Mesh Mesh::CreatePlane(Renderer& renderer, float width, float depth, int tilesU,
                           indices.data(), static_cast<uint32_t>(indices.size()), name);
 }
 
+Mesh Mesh::CreateQuad(Renderer& renderer, float width, float height, const std::string& name) {
+    std::vector<Vertex3D> verts;
+    std::vector<uint16_t> indices;
+    const float hw = width * 0.5f, hh = height * 0.5f;
+    // XY plane, normal +Z. v = 0 is the bottom edge so image textures (whose
+    // first row is the top of the picture) appear upright in the front view.
+    PushFace(verts, indices, {0, 0, 1},
+             {-hw, -hh, 0}, {hw, -hh, 0}, {hw, hh, 0}, {-hw, hh, 0},
+             {0, 0}, {1, 0}, {1, 1}, {0, 1});
+    return CreateFromData(renderer, verts.data(), static_cast<uint32_t>(verts.size()),
+                          indices.data(), static_cast<uint32_t>(indices.size()), name);
+}
+
 Mesh Mesh::CreateCylinder(Renderer& renderer, float radius, float height, int segments,
                           const std::string& name) {
     std::vector<Vertex3D> verts;
