@@ -56,6 +56,8 @@
 | 脚本：Lua 5.4 沙箱（确定性 RNG/时钟）+ 引擎绑定 + 行为树引擎 | ✅ `neon::script`/`neon::bt` |
 | 脚本：按实例函数捕获（跨 chunk 不再互相遮蔽）+ `Spawn(kind, pos, script)` 动态控制器 | ✅ |
 | 战斗核心（M2）：状态效果（燃烧/中毒/回血，确定性 tick）+ 数据驱动技能表（投射物/近战扇形/朝向攻击盒，冷却/法力/命中附加效果） | ✅ |
+| 2D 脚本画布：Lua `on_render()` + `DrawRect/DrawRectOutline/DrawText`（1280x720 设计坐标），数据驱动 2D 游戏零 C++ 玩法代码 | ✅ |
+| 编辑器 2D 模式：9x5 草坪画布（植物/橡皮/僵尸刷怪笔刷），保存/加载关卡 JSON，`--2d` 启动 | ✅ `neon_editor` |
 | 数据驱动场景：组件化 JSON + 预制体 + `game.json` 清单 | ✅ |
 | 编辑器深化：gizmo / 撤销重做 / 材质编辑器 / 行为树可视化 / 脚本面板 / 缩略图 / 多相机 / 热重载 / 性能面板 | ✅ |
 | 一键打包 + 通用播放器：`neon_editor --package` → `game.pack` → `neon_game` 运行数据驱动游戏 | ✅ 编辑→打包→运行闭环 |
@@ -153,6 +155,21 @@ build\neon_game.exe --connect 127.0.0.1:26000 --scene tests\data\neon_server_sam
 :: 终端 3：客户端 B（后登录 → 观察者，只收快照）
 build\neon_game.exe --connect 127.0.0.1:26000 --scene tests\data\neon_server_sample\scene.json --name bob
 ```
+
+### 数据驱动 2D 游戏（NeonPvZ，植物大战僵尸原型）
+
+玩法与绘制全部在 Lua 脚本里（`projects/pvz/scripts/pvz.lua`），关卡 JSON 由编辑器 2D 模式摆放：
+
+```bat
+:: 1) 打开编辑器，工具栏点"2D模式"（或 --2d 启动）：摆植物/僵尸刷怪点，保存关卡
+.\build\neon_editor.exe --2d
+:: 2) 打包项目
+.\build\neon_editor.exe --package projects/pvz build\pvz_out
+:: 3) 用通用播放器运行
+.\build\neon_game.exe --pack build\pvz_out\game.pack
+```
+
+操作：点击卡牌选择植物 → 点击草坪格子种植；点击阳光收集；僵尸到达房屋左侧即失败。
 
 核心承诺：**确定性模拟**——服务器权威模拟与客户端本地预测在相同输入流下逐位一致（`tests/test_determinism.cpp` 哈希验收）。详见 [docs/NETWORKING.md](docs/NETWORKING.md)。
 
