@@ -369,7 +369,7 @@ target_include_directories(neon_editor PRIVATE assets/generated third_party/stb)
 target_link_libraries(neon_editor PRIVATE neon_engine neon_imgui)
 if(WIN32)
   # Native open-file dialog for the asset panel's 导入 action.
-  target_link_libraries(neon_editor PRIVATE comdlg32)
+  target_link_libraries(neon_editor PRIVATE comdlg32 ole32)
 endif()
 if(MSVC)
   target_compile_options(neon_editor PRIVATE /W4 /permissive- /utf-8)

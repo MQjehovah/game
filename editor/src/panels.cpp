@@ -10,6 +10,10 @@
 #if defined(_WIN32)
 #include <direct.h>
 #include <commdlg.h>
+#include <shobjidl.h>
+#include <sys/stat.h>
+#else
+#include <sys/stat.h>
 #endif
 
 #include "editor_history.hpp"
@@ -73,6 +77,47 @@ bool CopyFileBinary(const std::string& src, const std::string& dst) {
     std::ofstream out(dst, std::ios::binary);
     if (!in.is_open() || !out.is_open()) return false;
     out << in.rdbuf();
+    return true;
+}
+
+bool IsDirPath(const std::string& p) {
+#if defined(_WIN32)
+    struct _stat64 st;
+    if (_stat64(p.c_str(), &st) != 0) return false;
+    return (st.st_mode & _S_IFDIR) != 0;
+#else
+    struct stat st;
+    if (::stat(p.c_str(), &st) != 0) return false;
+    return S_ISDIR(st.st_mode);
+#endif
+}
+
+// Picks a collision-free file name in `dir` ("base.ext" -> "base_1.ext"...).
+std::string UniqueNameIn(const std::string& dir, const std::string& base) {
+    std::string name = base;
+    const size_t dot = base.find_last_of('.');
+    const std::string stem = dot == std::string::npos ? base : base.substr(0, dot);
+    const std::string ext = dot == std::string::npos ? "" : base.substr(dot);
+    int counter = 1;
+    while (std::ifstream(dir + "/" + name, std::ios::binary).is_open())
+        name = stem + "_" + std::to_string(counter++) + ext;
+    return name;
+}
+
+// Recursively copies a source directory tree into `dst` (created on demand).
+// Files keep their relative layout; name collisions get _N suffixes.
+bool CopyDirRecursive(const std::string& src, const std::string& dst) {
+    MakeDirSingle(dst);
+    std::vector<AssetEntry> entries;
+    if (!ListDirectory(src, entries)) return false;
+    for (const AssetEntry& e : entries) {
+        if (e.isDir) {
+            if (!CopyDirRecursive(e.path, dst + "/" + e.name)) return false;
+        } else {
+            const std::string name = UniqueNameIn(dst, e.name);
+            if (!CopyFileBinary(e.path, dst + "/" + name)) return false;
+        }
+    }
     return true;
 }
 
@@ -205,6 +250,38 @@ std::wstring Utf8ToWide(const std::string& s) {
 
 } // namespace
 
+// Native folder picker for importing a whole resource directory (model +
+// textures + subfolders). Non-Windows hosts fall back to the path input row.
+std::string PickImportDir() {
+#if defined(_WIN32)
+    std::string out;
+    HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    IFileDialog* pfd = nullptr;
+    if (SUCCEEDED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER,
+                                   IID_PPV_ARGS(&pfd)))) {
+        DWORD opts = 0;
+        pfd->GetOptions(&opts);
+        pfd->SetOptions(opts | FOS_PICKFOLDERS | FOS_PATHMUSTEXIST);
+        if (SUCCEEDED(pfd->Show(nullptr))) {
+            IShellItem* item = nullptr;
+            if (SUCCEEDED(pfd->GetResult(&item))) {
+                PWSTR path = nullptr;
+                if (SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH, &path))) {
+                    out = WideToUtf8(path);
+                    CoTaskMemFree(path);
+                }
+                item->Release();
+            }
+        }
+        pfd->Release();
+    }
+    if (SUCCEEDED(hr)) CoUninitialize();
+    return out;
+#else
+    return {};
+#endif
+}
+
 bool ListDirectory(const std::string& dir, std::vector<AssetEntry>& out) {
 #if defined(_WIN32)
     std::wstring pattern = Utf8ToWide(dir) + L"\\*";
@@ -272,22 +349,25 @@ void EditorApp::RefreshAssetDir() {
 // appending _1/_2/...), then refreshes the listing.
 void EditorApp::ImportAssetFile(const std::string& srcPath) {
     if (srcPath.empty()) return;
+    if (IsDirPath(srcPath)) {
+        // A whole resource directory (model + textures + subfolders) is
+        // copied recursively into the project assets/.
+        const std::string name = FileName(srcPath);
+        if (CopyDirRecursive(srcPath, assetDir_ + "/" + name)) {
+            NEON_LOG_INFO("Asset: imported directory '%s' -> '%s/%s'", srcPath.c_str(),
+                          assetDir_.c_str(), name.c_str());
+            RefreshAssetDir();
+        } else {
+            NEON_LOG_ERROR("Asset: failed to import directory '%s'", srcPath.c_str());
+        }
+        return;
+    }
     const std::string base = FileName(srcPath);
     if (base.empty() || base == "." || base == "..") {
         NEON_LOG_ERROR("Asset: cannot import '%s'", srcPath.c_str());
         return;
     }
-    std::string name = base;
-    const size_t dot = base.find_last_of('.');
-    const std::string stem = dot == std::string::npos ? base : base.substr(0, dot);
-    const std::string ext = dot == std::string::npos ? "" : base.substr(dot);
-    int counter = 1;
-    while (true) {
-        std::ifstream probe(assetDir_ + "/" + name, std::ios::binary);
-        if (!probe.is_open()) break;
-        probe.close();
-        name = stem + "_" + std::to_string(counter++) + ext;
-    }
+    const std::string name = UniqueNameIn(assetDir_, base);
     if (CopyFileBinary(srcPath, assetDir_ + "/" + name)) {
         NEON_LOG_INFO("Asset: imported '%s' -> '%s/%s'", srcPath.c_str(), assetDir_.c_str(),
                       name.c_str());
@@ -555,6 +635,11 @@ void EditorApp::BuildAssetPanel() {
         ImGui::SameLine();
         if (ImGui::SmallButton("浏览导入")) {
             const std::string picked = PickImportFile();
+            if (!picked.empty()) ImportAssetFile(picked);
+        }
+        ImGui::SameLine();
+        if (ImGui::SmallButton("浏览目录")) {
+            const std::string picked = PickImportDir();
             if (!picked.empty()) ImportAssetFile(picked);
         }
         ImGui::SameLine();

@@ -711,8 +711,10 @@ void EditorApp::OnUpdate(float dt) {
         StopPlaytest();
         editMode_ = EditMode::Scene3D;
         LoadScene("editor_scene.json");
-        const bool backOk = editMode_ == EditMode::Scene3D && entities_.size() == 106;
-        NEON_LOG_INFO("EDITOR-PROJECT-SMOKE: [%s] normalized to the smoke sandbox (%zu)",
+        // The sandbox scene is user data (SaveScene writes it), so only assert
+        // the 3D scene tree is back and non-empty - not a fixed entity count.
+        const bool backOk = editMode_ == EditMode::Scene3D && !entities_.empty();
+        NEON_LOG_INFO("EDITOR-PROJECT-SMOKE: [%s] normalized to the 3D sandbox (%zu)",
                       backOk ? "PASS" : "FAIL", entities_.size());
         if (!backOk) smokeFailed_ = true;
     }
@@ -2533,6 +2535,24 @@ void EditorApp::RunUISmokeTest() {
         ImportAssetFile(src); // duplicate -> numbered name
         check(std::ifstream(assetDir_ + "/asset_src_1.png").is_open(),
               "asset: duplicate import gets a numbered name");
+        // Directory import (a model resource pack with textures + subfolders).
+        const std::string pack = GetTempDir() + "/asset_pack";
+        MakeDir(pack);
+        MakeDir(pack + "/models");
+        MakeDir(pack + "/models/tex");
+        {
+            std::ofstream out(pack + "/models/foo.obj", std::ios::binary);
+            out << "v 0 0 0\n";
+            std::ofstream out2(pack + "/models/foo.mtl", std::ios::binary);
+            out2 << "newmtl mat\n";
+            std::ofstream out3(pack + "/models/tex/foo.png", std::ios::binary);
+            out3 << "png";
+        }
+        ImportAssetFile(pack);
+        check(std::ifstream(assetDir_ + "/asset_pack/models/foo.obj").is_open(),
+              "asset: directory import copies nested model files");
+        check(std::ifstream(assetDir_ + "/asset_pack/models/tex/foo.png").is_open(),
+              "asset: directory import copies nested texture files");
         projectDir_ = prevProj;
         assetDir_ = prevDir;
     }
