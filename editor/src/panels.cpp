@@ -664,6 +664,20 @@ void EditorApp::BuildAssetPanel() {
             newKind = (newKind >= 0) ? -1 : 0;
         ImGui::SameLine();
         ImGui::TextUnformatted(assetDir_.c_str());
+        // Project resource-dir quick nav (Unity-style project folders): jump
+        // straight into assets/ / materials/ / scenes/ / scripts/ / prefabs/...
+        const char* kProjDirs[] = {"assets", "materials", "scenes", "scripts",
+                                   "prefabs", "behaviors", "nav", "locales"};
+        for (int di = 0; di < static_cast<int>(sizeof(kProjDirs) / sizeof(kProjDirs[0])); ++di) {
+            const char* d = kProjDirs[di];
+            const std::string full = projectDir_ + "/" + d;
+            if (!IsDirPath(full)) continue;
+            ImGui::SameLine();
+            if (ImGui::SmallButton(d)) {
+                assetDir_ = full;
+                RefreshAssetDir();
+            }
+        }
         // Import row: paste a source path and copy it into the current dir.
         if (importOpen) {
             static char importSrc[1024] = {};
@@ -713,6 +727,10 @@ void EditorApp::BuildAssetPanel() {
         ImGui::Separator();
 
         ImGui::BeginChild("##asset_list", ImVec2(0, -170.0f), ImGuiChildFlags_Borders);
+        if (assetEntries_.empty()) {
+            ImGui::TextWrapped("此目录为空。使用上方 浏览导入 / 浏览目录 添加外部资源，"
+                               "或 新建 创建 Lua 脚本 / JSON / 材质球 / 目录。");
+        }
         for (size_t i = 0; i < assetEntries_.size(); ++i) {
             const AssetEntry& e = assetEntries_[i];
             if (!AssetMatchesFilter(e, assetFilter_)) continue;
