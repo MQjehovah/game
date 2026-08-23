@@ -63,6 +63,21 @@ struct AssetEntry {
     bool isDir = false;
 };
 
+// One discovered project (a directory with a game.json), Godot-style. The
+// editor can switch projects from the toolbar, load any of its scenes or 2D
+// levels, and playtest the result.
+struct EditorProject {
+    std::string name;       // game.json "title" (fallback: directory name)
+    std::string dir;        // "projects/pvz" or "." for the default sandbox
+    std::string startScene; // game.json "startScene" (project-relative)
+    std::string mode = "3d"; // game.json "editor.mode": "2d" | "3d" (default 3d)
+    std::vector<std::string> scenes; // scenes/*.json (project-relative)
+    std::vector<std::string> levels; // assets/levels/*.json (project-relative)
+};
+
+// Shared UTF-8 directory listing (editor project scanner + asset panel).
+bool ListDirectory(const std::string& dir, std::vector<AssetEntry>& out);
+
 class EditorApp : public core::Application {
 public:
     bool OnCreate() override;
@@ -121,8 +136,19 @@ private:
     void UpdateViewport(float dt);
     void SaveScene();
     void LoadScene(const std::string& path);
-    // Loads <projectDir>/game.json -> startScene into the editor (3D projects).
+    // Project switcher (Godot-style): ScanProjects discovers the projects/
+    // folders; SwitchProject loads a project's game.json, its scene/level
+    // lists and enters the declared edit mode (2d canvas or 3D scene tree).
+    void ScanProjects();
+    void SwitchProject(const std::string& dir);
+    // Reads <dir>/game.json + scene/level lists into `p`; false if no game.json.
+    bool ReadProjectMeta(EditorProject& p);
+    // Loads the current project's start scene (3D projects) / level (2D).
     void LoadProjectScene();
+    // Loads a specific scene from the current project (scenes/*.json).
+    void LoadProjectScene(const std::string& rel);
+    // Loads a specific 2D level from the current project (assets/levels/*).
+    void LoadProjectLevel(const std::string& rel);
     void AddEntity(const std::string& meshKey);
     core::Status ExportScene();
     void LoadEditorConfig();
@@ -246,6 +272,16 @@ private:
     // Project directory: exported scenes are written to <projectDir>/scenes/.
     std::string projectDir_{"."};
     char projectDirBuf_[4096]{};
+    // Godot-style project switcher state (ScanProjects / SwitchProject).
+    std::vector<EditorProject> projects_;
+    int projectSel_ = -1;
+    std::string projectName_;        // current game.json title ("" = sandbox)
+    std::string projectMode_ = "3d"; // "2d" | "3d"
+    std::string projectStartScene_;  // current game.json startScene (relative)
+    std::vector<std::string> projectScenes_; // current project scene files
+    std::vector<std::string> projectLevels_; // current project 2D level files
+    std::string pvzLevelPath_; // active 2D level file (Save/LoadPvzLevel)
+    std::string currentSceneName_; // scene picker label (loaded scene file)
 
     float yaw_ = 0.7f;
     float pitch_ = 0.35f;

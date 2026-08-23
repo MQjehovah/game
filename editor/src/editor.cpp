@@ -57,6 +57,11 @@ std::string DirName(const std::string& path) {
     return pos == std::string::npos ? std::string(".") : path.substr(0, pos + 1);
 }
 
+std::string BaseName(const std::string& path) {
+    size_t pos = path.find_last_of("/\\");
+    return pos == std::string::npos ? path : path.substr(pos + 1);
+}
+
 // Map an editor mesh key to the runtime-loadable key written into an exported
 // scene. File-backed built-ins resolve to their asset paths; procedural
 // primitives ("terrain", "cube") and already-prefixed keys ("obj:", "gltf:")
@@ -327,6 +332,15 @@ bool EditorApp::OnCreate() {
         editMode_ = EditMode::Scene3D;
         pvzPlaytestOnStart_ = false;
         loadProjectOnStart_ = false;
+    }
+    // Godot-style: restore the last-opened project from the editor config so
+    // the editor reopens where the user left off. Skipped for --2d (the flag
+    // pins the PvZ project), --project (explicit path wins) and smoke runs
+    // (the smoke needs the deterministic default sandbox scene).
+    if (!smokeMode_ && projectDirOnStart_.empty() && editMode_ != EditMode::Scene2D &&
+        projectDir_ != ".") {
+        std::ifstream in(projectDir_ + "/game.json", std::ios::binary);
+        if (in.is_open()) SwitchProject(projectDir_);
     }
     // The config may have restored a different projectDir_ after Set2DMode ran
     // (main.cpp sets it before Run). Re-enter 2D mode so the canvas + playtest
@@ -635,6 +649,33 @@ void EditorApp::OnUpdate(float dt) {
         if (!restarted) smokeFailed_ = true;
         hotReload_ = false;
         projectDir_ = prevProjectDir_;
+    }
+
+    // Godot-style project switcher smoke: ScanProjects discovers both bundled
+    // projects, SwitchProject enters the 2D project's canvas with its level
+    // loaded, and switching back restores the 3D sandbox (editor_scene.json)
+    // so the playtest smoke at frame 60 sees the canonical scene.
+    if (smokeMode_ && TimeRef().frameIndex == 43) {
+        const std::string prevProj = projectDir_;
+        ScanProjects();
+        bool has2D = false, has3D = false;
+        for (const EditorProject& p : projects_) {
+            if (p.mode == "2d" && !p.levels.empty()) has2D = true;
+            if (p.mode == "3d" && !p.scenes.empty()) has3D = true;
+        }
+        NEON_LOG_INFO("EDITOR-PROJECT-SMOKE: [%s] discovered 2D+3D projects (%zu)",
+                      has2D && has3D ? "PASS" : "FAIL", projects_.size());
+        if (!has2D || !has3D) smokeFailed_ = true;
+        SwitchProject("projects/pvz");
+        const bool pvzOk = editMode_ == EditMode::Scene2D && entities_.empty();
+        NEON_LOG_INFO("EDITOR-PROJECT-SMOKE: [%s] 2D project switch -> canvas (%zu plants)",
+                      pvzOk ? "PASS" : "FAIL", pvzPlants_.size());
+        if (!pvzOk) smokeFailed_ = true;
+        SwitchProject(prevProj);
+        const bool backOk = editMode_ == EditMode::Scene3D && !entities_.empty();
+        NEON_LOG_INFO("EDITOR-PROJECT-SMOKE: [%s] 3D project switch restored the scene (%zu)",
+                      backOk ? "PASS" : "FAIL", entities_.size());
+        if (!backOk) smokeFailed_ = true;
     }
 
     // Play/Stop smoke: start a playtest at frame 60, verify it ticks, stop at
@@ -1362,17 +1403,36 @@ void EditorApp::BuildImGuiUI() {
             ImGui::EndMenu();
         }
         if (ImGui::BeginMenu("项目")) {
+            if (projects_.empty()) ScanProjects();
+            ImGui::TextDisabled("打开项目");
+            for (size_t i = 0; i < projects_.size(); ++i) {
+                const EditorProject& p = projects_[i];
+                char label[256];
+                std::snprintf(label, sizeof(label), "%s  [%s]###mproj%d", p.name.c_str(),
+                              p.mode == "2d" ? "2D" : "3D", static_cast<int>(i));
+                if (ImGui::MenuItem(label, nullptr, projectSel_ == static_cast<int>(i)))
+                    SwitchProject(p.dir);
+            }
+            ImGui::Separator();
+            ImGui::TextDisabled("当前项目场景");
+            for (const std::string& s : projectScenes_) {
+                if (ImGui::MenuItem(BaseName(s).c_str())) LoadProjectScene(s);
+            }
+            for (const std::string& l : projectLevels_) {
+                char label[256];
+                std::snprintf(label, sizeof(label), "关卡: %s", BaseName(l).c_str());
+                if (ImGui::MenuItem(label)) LoadProjectLevel(l);
+            }
+            ImGui::Separator();
             ImGui::TextUnformatted("项目目录");
             if (ImGui::InputText("##project_dir", projectDirBuf_, sizeof(projectDirBuf_),
                                  ImGuiInputTextFlags_EnterReturnsTrue)) {
-                projectDir_ = projectDirBuf_;
-                if (projectDir_.empty()) projectDir_ = ".";
-                SaveEditorConfig();
+                SwitchProject(projectDirBuf_);
             }
             ImGui::TextDisabled("导出场景写入 %s/scenes/exported_scene.json",
                                 projectDir_.c_str());
             ImGui::Separator();
-            if (ImGui::MenuItem("打开项目场景")) LoadProjectScene();
+            if (ImGui::MenuItem("重新加载项目")) SwitchProject(projectDir_);
             if (ImGui::MenuItem("导出游戏场景")) ExportScene();
             ImGui::EndMenu();
         }
@@ -1485,7 +1545,51 @@ void EditorApp::BuildImGuiUI() {
         ImGui::SameLine();
         if (ImGui::Button("加载")) LoadScene("editor_scene.json");
         ImGui::SameLine();
-        if (ImGui::Button("项目场景")) LoadProjectScene();
+        // Godot-style project switcher: pick a project (NeonRealm 3D /
+        // NeonPvZ 2D / default sandbox), then pick a scene or 2D level.
+        ImGui::SetNextItemWidth(178.0f);
+        const char* projPreview = projectName_.empty()
+                                      ? (projectDir_ == "." ? "默认场景" : projectDir_.c_str())
+                                      : projectName_.c_str();
+        if (ImGui::BeginCombo("##project_picker", projPreview)) {
+            if (ImGui::Selectable("默认场景", projectDir_ == ".")) SwitchProject(".");
+            ImGui::Separator();
+            if (projects_.empty()) ScanProjects();
+            for (size_t i = 0; i < projects_.size(); ++i) {
+                const EditorProject& p = projects_[i];
+                char label[256];
+                std::snprintf(label, sizeof(label), "%s  [%s]###proj%d", p.name.c_str(),
+                              p.mode == "2d" ? "2D" : "3D", static_cast<int>(i));
+                if (ImGui::Selectable(label, projectSel_ == static_cast<int>(i)))
+                    SwitchProject(p.dir);
+            }
+            ImGui::Separator();
+            if (ImGui::MenuItem("重新扫描项目")) ScanProjects();
+            ImGui::EndCombo();
+        }
+        ImGui::SameLine();
+        // Scene / level picker for the active project.
+        ImGui::SetNextItemWidth(196.0f);
+        if (ImGui::BeginCombo("##scene_picker", currentSceneName_.empty()
+                                                    ? "选择场景…"
+                                                    : currentSceneName_.c_str())) {
+            if (projectDir_ == ".")
+                if (ImGui::Selectable("editor_scene.json", currentSceneName_ == "editor_scene.json"))
+                    LoadScene("editor_scene.json");
+            for (const std::string& s : projectScenes_) {
+                if (ImGui::Selectable(s.c_str(), currentSceneName_ == BaseName(s)))
+                    LoadProjectScene(s);
+            }
+            if (!projectLevels_.empty()) {
+                ImGui::Separator();
+                ImGui::TextDisabled("2D 关卡");
+                for (const std::string& l : projectLevels_) {
+                    if (ImGui::Selectable(l.c_str(), currentSceneName_ == BaseName(l)))
+                        LoadProjectLevel(l);
+                }
+            }
+            ImGui::EndCombo();
+        }
         ImGui::SameLine();
         if (ImGui::Button("+头盔")) AddEntity("helmet");
         ImGui::SameLine();
@@ -1536,16 +1640,19 @@ void EditorApp::BuildImGuiUI() {
         ImGui::SameLine();
         ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
         ImGui::SameLine();
-        // 2D mode: a data-driven 2D canvas (NeonPvZ lawn editor). Entering the
-        // mode loads the project's current level; leaving restores the 3D
-        // scene. First run defaults the project dir to projects/pvz.
+        // View switcher: 2D canvas (data-driven 2D games) <-> 3D scene tree.
+        // The PROJECT switcher owns which project is open; this button only
+        // changes the edit view of the current project.
         const bool in2D = editMode_ == EditMode::Scene2D;
-        if (ImGui::Button(in2D ? "[2D模式] 返回3D" : "2D模式")) {
-            editMode_ = in2D ? EditMode::Scene3D : EditMode::Scene2D;
-            if (!in2D) {
-                Enter2DMode();
-            } else {
+        if (ImGui::Button(in2D ? "[2D画布] 3D场景" : "[3D场景] 2D画布")) {
+            if (in2D) {
                 StopPlaytest(); // leaving 2D: end any running playtest
+                editMode_ = EditMode::Scene3D;
+                if (entities_.empty() && !projectStartScene_.empty())
+                    LoadScene(projectDir_ + "/" + projectStartScene_);
+            } else {
+                editMode_ = EditMode::Scene2D;
+                Enter2DMode();
             }
         }
         if (in2D) {
@@ -1559,7 +1666,7 @@ void EditorApp::BuildImGuiUI() {
             ImGui::SameLine();
             if (ImGui::Button("加载关卡")) LoadPvzLevel();
             ImGui::SameLine();
-            ImGui::TextDisabled("→ projects/pvz/assets/levels/pvz_level.json");
+            ImGui::TextDisabled("→ %s", pvzLevelPath_.c_str());
         }
         ImGui::SameLine();
         ImGui::Text("实体 %zu", entities_.size());
@@ -2418,7 +2525,9 @@ void EditorApp::StartPlaytest() {
         // the edited level (assets/levels/*.json) is what the game loads.
         SavePvzLevel();
         cfg.assetBaseDir = projectDir_;
-        const std::string scenePath = projectDir_ + "/scenes/pvz.json";
+        const std::string sceneRel =
+            projectStartScene_.empty() ? "scenes/pvz.json" : projectStartScene_;
+        const std::string scenePath = projectDir_ + "/" + sceneRel;
         std::ifstream in(scenePath, std::ios::binary);
         if (!in.is_open()) {
             NEON_LOG_ERROR("Editor: cannot read play scene '%s'", scenePath.c_str());
@@ -2940,31 +3049,168 @@ void EditorApp::LoadScene(const std::string& path) {
         entities_ = std::move(loaded);
         SetSelection(-1);
         history_.Clear(); // undo history from the previous scene is invalid
+        currentSceneName_ = BaseName(path);
         NEON_LOG_INFO("Scene loaded (%zu entities)", entities_.size());
     }
 }
 
-void EditorApp::LoadProjectScene() {
-    std::ifstream in(projectDir_ + "/game.json", std::ios::binary);
-    if (!in.is_open()) {
-        NEON_LOG_ERROR("Editor: no game.json in project dir '%s'", projectDir_.c_str());
-        return;
-    }
+// Reads <dir>/game.json into `p` (title/mode/startScene) and lists the
+// project's scenes/ and 2D levels/. Returns false when there is no game.json.
+bool EditorApp::ReadProjectMeta(EditorProject& p) {
+    std::ifstream in(p.dir + "/game.json", std::ios::binary);
+    if (!in.is_open()) return false;
     std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     std::string err;
     core::Json root = core::Json::Parse(text, &err);
-    if (!err.empty()) {
-        NEON_LOG_ERROR("Editor: game.json parse failed: %s", err.c_str());
+    const size_t slash = p.dir.find_last_of("/\\");
+    p.name = slash == std::string::npos ? p.dir : p.dir.substr(slash + 1);
+    if (root.IsObject()) {
+        if (const core::Json* t = root.Get("title"))
+            if (t->IsString() && !t->GetString().empty()) p.name = t->GetString();
+        if (const core::Json* s = root.Get("startScene"))
+            if (s->IsString()) p.startScene = s->GetString();
+        if (const core::Json* ed = root.Get("editor"))
+            if (const core::Json* m = ed->Get("mode"))
+                if (m->IsString() && m->GetString() == "2d") p.mode = "2d";
+    }
+    std::vector<AssetEntry> files;
+    if (ListDirectory(p.dir + "/scenes", files)) {
+        for (const AssetEntry& f : files) {
+            if (f.isDir) continue;
+            const std::string& n = f.name;
+            const bool isJson = n.size() > 5 &&
+                                (n.compare(n.size() - 5, 5, ".json") == 0 ||
+                                 n.compare(n.size() - 5, 5, ".JSON") == 0);
+            if (isJson) p.scenes.push_back("scenes/" + n);
+        }
+    }
+    files.clear();
+    if (ListDirectory(p.dir + "/assets/levels", files)) {
+        for (const AssetEntry& f : files) {
+            if (f.isDir) continue;
+            const std::string& n = f.name;
+            const bool isJson = n.size() > 5 &&
+                                (n.compare(n.size() - 5, 5, ".json") == 0 ||
+                                 n.compare(n.size() - 5, 5, ".JSON") == 0);
+            if (isJson) p.levels.push_back("assets/levels/" + n);
+        }
+    }
+    std::sort(p.scenes.begin(), p.scenes.end());
+    std::sort(p.levels.begin(), p.levels.end());
+    return true;
+}
+
+// Discovers every project under projects/ (a directory with a game.json) and
+// keeps the active-project fields in sync with projectDir_.
+void EditorApp::ScanProjects() {
+    projects_.clear();
+    std::vector<AssetEntry> dirs;
+    if (ListDirectory("projects", dirs)) {
+        for (const AssetEntry& d : dirs) {
+            if (!d.isDir) continue;
+            EditorProject p;
+            p.dir = d.path;
+            if (ReadProjectMeta(p)) projects_.push_back(std::move(p));
+        }
+    }
+    std::sort(projects_.begin(), projects_.end(),
+              [](const EditorProject& a, const EditorProject& b) {
+                  std::string al = a.name, bl = b.name;
+                  std::transform(al.begin(), al.end(), al.begin(),
+                                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                  std::transform(bl.begin(), bl.end(), bl.begin(),
+                                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                  return al < bl;
+              });
+    // Re-sync the active project fields (projectSel_/name/mode/scenes/levels).
+    projectSel_ = -1;
+    for (size_t i = 0; i < projects_.size(); ++i) {
+        if (projects_[i].dir != projectDir_) continue;
+        projectSel_ = static_cast<int>(i);
+        projectName_ = projects_[i].name;
+        projectMode_ = projects_[i].mode;
+        projectStartScene_ = projects_[i].startScene;
+        projectScenes_ = projects_[i].scenes;
+        projectLevels_ = projects_[i].levels;
         return;
     }
-    const core::Json* start = root.Get("startScene");
-    if (!start || !start->IsString() || start->GetString().empty()) {
-        NEON_LOG_ERROR("Editor: game.json has no startScene");
-        return;
+    // projectDir_ is not under projects/: a custom path (or the default
+    // sandbox). Read its game.json directly when present.
+    projectName_.clear();
+    projectMode_ = "3d";
+    projectStartScene_.clear();
+    projectScenes_.clear();
+    projectLevels_.clear();
+    EditorProject custom;
+    custom.dir = projectDir_;
+    if (ReadProjectMeta(custom)) {
+        projectName_ = custom.name;
+        projectMode_ = custom.mode;
+        projectStartScene_ = custom.startScene;
+        projectScenes_ = custom.scenes;
+        projectLevels_ = custom.levels;
     }
-    const std::string scenePath = projectDir_ + "/" + start->GetString();
-    LoadScene(scenePath);
-    NEON_LOG_INFO("Editor: project scene loaded from '%s'", scenePath.c_str());
+}
+
+// Godot-style project switch: loads <dir>/game.json, enters the project's
+// declared edit mode and loads its start scene (3D) or first level (2D).
+void EditorApp::SwitchProject(const std::string& dir) {
+    StopPlaytest();
+    projectDir_ = dir.empty() ? "." : dir;
+    std::strncpy(projectDirBuf_, projectDir_.c_str(), sizeof(projectDirBuf_) - 1);
+    projectDirBuf_[sizeof(projectDirBuf_) - 1] = '\0';
+    ScanProjects();
+    history_.Clear();
+    SetSelection(-1);
+    if (projectMode_ == "2d") {
+        editMode_ = EditMode::Scene2D;
+        entities_.clear();
+        pvzLevelPath_ = projectDir_ + "/assets/levels/pvz_level.json";
+        if (!projectLevels_.empty()) pvzLevelPath_ = projectDir_ + "/" + projectLevels_[0];
+        LoadPvzLevel();
+    } else {
+        editMode_ = EditMode::Scene3D;
+        if (!projectStartScene_.empty()) {
+            LoadScene(projectDir_ + "/" + projectStartScene_);
+        } else {
+            LoadScene("editor_scene.json"); // default sandbox scene
+        }
+    }
+    assetDir_ = projectDir_; // the asset panel follows the active project
+    RefreshAssetDir();
+    SaveEditorConfig();
+    NEON_LOG_INFO("Editor: switched project '%s' (mode=%s, %zu scenes, %zu levels)",
+                  projectName_.c_str(), projectMode_.c_str(), projectScenes_.size(),
+                  projectLevels_.size());
+}
+
+// Loads the current project's start scene (3D) / level (2D): a "reload"
+// entry point for the 项目 menu.
+void EditorApp::LoadProjectScene() {
+    SwitchProject(projectDir_);
+}
+
+// Loads a specific scene from the current project into the 3D scene tree.
+void EditorApp::LoadProjectScene(const std::string& rel) {
+    StopPlaytest();
+    editMode_ = EditMode::Scene3D;
+    SetSelection(-1);
+    history_.Clear();
+    LoadScene(projectDir_ + "/" + rel);
+    NEON_LOG_INFO("Editor: project scene loaded from '%s/%s'", projectDir_.c_str(),
+                  rel.c_str());
+}
+
+// Loads a specific 2D level from the current project into the 2D canvas.
+void EditorApp::LoadProjectLevel(const std::string& rel) {
+    StopPlaytest();
+    editMode_ = EditMode::Scene2D;
+    entities_.clear();
+    SetSelection(-1);
+    history_.Clear();
+    pvzLevelPath_ = projectDir_ + "/" + rel;
+    LoadPvzLevel();
+    NEON_LOG_INFO("Editor: 2D level loaded from '%s/%s'", projectDir_.c_str(), rel.c_str());
 }
 
 // ---------------------------------------------------------------------------
@@ -3135,9 +3381,12 @@ void EditorApp::SavePvzLevel() {
     root.object_["plants"] = std::move(plants);
     root.object_["zombies"] = std::move(zombies);
 
-    const std::string dir = projectDir_ + "/assets/levels";
+    // Save to the ACTIVE level file (the project switcher / scene picker may
+    // have pointed pvzLevelPath_ at any assets/levels/*.json).
+    const std::string path =
+        pvzLevelPath_.empty() ? projectDir_ + "/assets/levels/pvz_level.json" : pvzLevelPath_;
+    const std::string dir = DirName(path);
     EnsureDirs(dir + "/");
-    const std::string path = dir + "/pvz_level.json";
     std::ofstream out(path, std::ios::binary);
     if (!out.is_open()) {
         NEON_LOG_ERROR("2D: cannot write level '%s'", path.c_str());
@@ -3149,11 +3398,15 @@ void EditorApp::SavePvzLevel() {
 }
 
 void EditorApp::LoadPvzLevel() {
-    const std::string path = projectDir_ + "/assets/levels/pvz_level.json";
+    if (pvzLevelPath_.empty()) pvzLevelPath_ = projectDir_ + "/assets/levels/pvz_level.json";
+    const std::string& path = pvzLevelPath_;
     std::string text;
     std::ifstream in(path, std::ios::binary);
     if (!in.is_open()) {
         NEON_LOG_ERROR("2D: cannot read level '%s'", path.c_str());
+        pvzPlants_.clear();
+        pvzZombies_.clear();
+        pvzNextDelay_ = 8.0f;
         return;
     }
     text.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
@@ -3198,17 +3451,22 @@ void EditorApp::LoadPvzLevel() {
         for (const auto& z : pvzZombies_)
             pvzNextDelay_ = std::fmax(pvzNextDelay_, z.delay + 8.0f);
     }
+    currentSceneName_ = BaseName(path);
     NEON_LOG_INFO("2D: level loaded from '%s' (%zu plants, %zu zombie spawns)",
                   path.c_str(), pvzPlants_.size(), pvzZombies_.size());
 }
 
 void EditorApp::Enter2DMode() {
-    // Default to the bundled PvZ project unless the configured project dir
-    // already contains a pvz level.
-    const bool hasLevel =
-        std::ifstream(projectDir_ + "/assets/levels/pvz_level.json").is_open();
-    if (!hasLevel && std::ifstream("projects/pvz/game.json").is_open())
+    // The project switcher owns projectDir_ (SwitchProject sets pvzLevelPath_
+    // explicitly). Backward-compat for --2d: with no project open, fall back
+    // to the bundled PvZ project; otherwise never hijack the directory.
+    if (projectDir_ == "." && projectName_.empty() &&
+        std::ifstream("projects/pvz/game.json").is_open()) {
         projectDir_ = "projects/pvz";
+        std::strncpy(projectDirBuf_, projectDir_.c_str(), sizeof(projectDirBuf_) - 1);
+        projectDirBuf_[sizeof(projectDirBuf_) - 1] = '\0';
+        ScanProjects();
+    }
     LoadPvzLevel();
 }
 

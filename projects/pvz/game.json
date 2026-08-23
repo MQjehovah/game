@@ -1,5 +1,6 @@
 {
   "startScene": "scenes/pvz.json",
   "window": { "w": 1280, "h": 720, "title": "NeonPvZ - 植物大战僵尸" },
-  "title": "NeonPvZ"
+  "title": "NeonPvZ",
+  "editor": { "mode": "2d" }
 }

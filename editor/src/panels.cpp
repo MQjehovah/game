@@ -148,6 +148,8 @@ std::wstring Utf8ToWide(const std::string& s) {
 }
 #endif
 
+} // namespace
+
 bool ListDirectory(const std::string& dir, std::vector<AssetEntry>& out) {
 #if defined(_WIN32)
     std::wstring pattern = Utf8ToWide(dir) + L"\\*";
@@ -192,8 +194,6 @@ bool ListDirectory(const std::string& dir, std::vector<AssetEntry>& out) {
     return true;
 #endif
 }
-
-} // namespace
 
 void EditorApp::InitToolPanels() {
     assetDir_ = GetCurrentDir();
