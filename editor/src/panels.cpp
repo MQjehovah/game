@@ -255,15 +255,15 @@ void EditorApp::ImportAssetFile(const std::string& srcPath) {
         return;
     }
     std::string name = base;
+    const size_t dot = base.find_last_of('.');
+    const std::string stem = dot == std::string::npos ? base : base.substr(0, dot);
+    const std::string ext = dot == std::string::npos ? "" : base.substr(dot);
     int counter = 1;
     while (true) {
         std::ifstream probe(assetDir_ + "/" + name, std::ios::binary);
         if (!probe.is_open()) break;
         probe.close();
-        const size_t dot = name.find_last_of('.');
-        name = (dot == std::string::npos ? base : base.substr(0, dot)) + "_" +
-               std::to_string(counter++) +
-               (dot == std::string::npos ? "" : base.substr(dot));
+        name = stem + "_" + std::to_string(counter++) + ext;
     }
     if (CopyFileBinary(srcPath, assetDir_ + "/" + name)) {
         NEON_LOG_INFO("Asset: imported '%s' -> '%s/%s'", srcPath.c_str(), assetDir_.c_str(),

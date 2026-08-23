@@ -699,6 +699,10 @@ void EditorApp::OnUpdate(float dt) {
         NEON_LOG_INFO("EDITOR-PROJECT-SMOKE: [%s] 2D project switch -> canvas (%zu plants)",
                       pvzOk ? "PASS" : "FAIL", pvzPlants_.size());
         if (!pvzOk) smokeFailed_ = true;
+        const bool assetOk = assetDir_ == "projects/pvz/assets";
+        NEON_LOG_INFO("EDITOR-PROJECT-SMOKE: [%s] asset panel follows the project assets dir",
+                      assetOk ? "PASS" : "FAIL");
+        if (!assetOk) smokeFailed_ = true;
         SwitchProject("projects/neon_realm");
         const bool realmOk = editMode_ == EditMode::Scene3D && !entities_.empty();
         NEON_LOG_INFO("EDITOR-PROJECT-SMOKE: [%s] 3D project switch loaded its scene (%zu)",
@@ -3488,18 +3492,13 @@ void EditorApp::SwitchProject(const std::string& dir) {
     } else if (projectMode_ != "2d") {
         LoadScene("editor_scene.json"); // default sandbox scene
     }
-    // The asset panel follows the active project: prefer its assets/ dir
-    // (sprites/models/textures). A project without assets/ stays at the
-    // project root; the asset panel provides 导入/新建 actions to create the
-    // assets/ tree - never the engine's own shared asset dir.
-    {
-        std::vector<AssetEntry> probe;
-        if (ListDirectory(projectDir_ + "/assets", probe)) {
-            assetDir_ = projectDir_ + "/assets";
-        } else {
-            assetDir_ = projectDir_;
-        }
-    }
+    // The asset panel always points at the active context's assets/ dir and
+    // creates it on demand (so 导入/新建 always have a home). The default
+    // sandbox (no project open, projectDir_ == ".") is the repo root, whose
+    // assets/ dir is that context's project assets.
+    const std::string assetsDir = projectDir_ + "/assets";
+    MakeDir(assetsDir);
+    assetDir_ = assetsDir;
     RefreshAssetDir();
     SaveEditorConfig();
     NEON_LOG_INFO("Editor: switched project '%s' (mode=%s, %zu scenes)",
