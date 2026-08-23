@@ -761,6 +761,10 @@ public:
 
     void Clear(const Color& color, float depth) override {
         auto& g = gl::GetGL();
+        // glClear respects the depth WRITE MASK: a previous SetDepthTest(false,
+        // false) leaves DepthMask(0), so the depth clear would silently no-op
+        // and the LEQUAL test would reject every pixel. Force the mask on.
+        g.DepthMask(1);
         g.ClearColor(color.r, color.g, color.b, color.a);
         g.ClearDepth(depth);
         g.Clear(glc::ColorBufferBit | glc::DepthBufferBit);
