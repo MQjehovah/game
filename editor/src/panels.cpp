@@ -9,6 +9,7 @@
 #include <fstream>
 #if defined(_WIN32)
 #include <direct.h>
+#include <commdlg.h>
 #endif
 
 #include "editor_history.hpp"
@@ -73,6 +74,28 @@ bool CopyFileBinary(const std::string& src, const std::string& dst) {
     if (!in.is_open() || !out.is_open()) return false;
     out << in.rdbuf();
     return true;
+}
+
+// Native open-file dialog for the asset panel's 导入 action. Returns an empty
+// string when cancelled. Non-Windows hosts fall back to the path input row.
+std::string PickImportFile() {
+#if defined(_WIN32)
+    char buf[MAX_PATH] = {};
+    OPENFILENAMEA ofn = {};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.lpstrFilter =
+        "所有文件 (*.*)\0*.*\0"
+        "图片 (*.png;*.jpg;*.bmp;*.tga)\0*.png;*.jpg;*.jpeg;*.bmp;*.tga\0"
+        "模型 (*.obj;*.gltf)\0*.obj;*.gltf\0"
+        "脚本 (*.lua)\0*.lua\0";
+    ofn.lpstrFile = buf;
+    ofn.nMaxFile = MAX_PATH;
+    ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_HIDEREADONLY;
+    if (GetOpenFileNameA(&ofn)) return buf;
+#else
+    (void)0;
+#endif
+    return {};
 }
 
 std::string GetCurrentDir();
@@ -530,8 +553,13 @@ void EditorApp::BuildAssetPanel() {
         ImGui::SameLine();
         if (ImGui::SmallButton("刷新")) RefreshAssetDir();
         ImGui::SameLine();
+        if (ImGui::SmallButton("浏览导入")) {
+            const std::string picked = PickImportFile();
+            if (!picked.empty()) ImportAssetFile(picked);
+        }
+        ImGui::SameLine();
         static bool importOpen = false;
-        if (ImGui::SmallButton(importOpen ? "取消导入" : "导入")) importOpen = !importOpen;
+        if (ImGui::SmallButton(importOpen ? "取消路径" : "输入路径")) importOpen = !importOpen;
         ImGui::SameLine();
         static int newKind = -1;
         if (ImGui::SmallButton(newKind >= 0 ? "取消新建" : "新建"))
