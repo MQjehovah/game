@@ -102,6 +102,7 @@ private:
     void BuildLogPanel();
     void BuildViewportPanel();
     void BuildProfilerPanel();
+    void BuildInputMapPanel();
     void DrawPlaytestHUD();
     void DrawTransformGizmo();
     void RunGizmoDragSim();
@@ -228,6 +229,12 @@ private:
     bool pvzPlaytestOnStart_ = false; // --2d-play: auto-start the playtest
     std::string projectDirOnStart_;    // --project: open this project
     bool loadProjectOnStart_ = false;  // --project also loads its start scene
+    // Godot-style input mapping panel: edit project input.json actions.
+    bool showInputMap_ = false;
+    script::InputMap inputMapEdit_;
+    std::string inputMapListenAction_; // "listening" action, "" = idle
+    void LoadInputMapEdit();
+    void SaveInputMapEdit();
     bool f5Pressed_ = false; // edge-trigger: Win32 repeats KeyDown while held
 
     // Undo/redo command stack. Every scene mutation (entity add/delete/

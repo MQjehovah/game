@@ -8,6 +8,7 @@
 
 #include "neon/ecs/world.hpp"
 #include "neon/gfx/backend.hpp"
+#include "neon/script/input_map.hpp"
 #include "neon/math/quat.hpp"
 #include "neon/math/vec3.hpp"
 #include "neon/physics/physics.hpp"
@@ -130,6 +131,9 @@ struct ScriptContext {
     std::function<ecs::Entity(const std::string&)> findEntity;
     // Entities hidden from rendering by SetVisible (runtime-owned set).
     std::set<uint64_t>* hiddenEntities = nullptr;
+    // Godot-style action map (runtime-owned). Null -> Action* bindings fall
+    // back to legacy KeyFromName behavior; InputAxis/InputKey prefer the map.
+    InputMap* inputMap = nullptr;
     // Optional: attaches a Lua script to a spawned entity (Spawn's 3rd arg) so
     // dynamically created entities (multi-player player controllers) run
     // on_start/on_update like scene-placed ones. Wired by GameRuntime.

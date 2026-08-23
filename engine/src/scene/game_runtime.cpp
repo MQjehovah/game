@@ -187,6 +187,19 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     };
     hiddenEntities_.clear();
     scriptCtx_.hiddenEntities = &hiddenEntities_;
+    // Godot-style input actions: seed built-ins, then merge the project's
+    // input.json (packed next to game.json; missing file = defaults only).
+    inputMap_ = script::InputMap::Defaults();
+    const std::string inputJson = ReadScript(FullScriptPath("input.json"));
+    if (!inputJson.empty()) {
+        std::string mapErr;
+        if (!inputMap_.Load(inputJson, &mapErr)) {
+            NEON_LOG_CAT(core::LogCategory::Script, core::LogLevel::Warn,
+                         "runtime: input.json failed to load: %s (defaults kept)",
+                         mapErr.c_str());
+        }
+    }
+    scriptCtx_.inputMap = &inputMap_;
     // Combat / control hooks so scripts can drive scene entities. Both
     // component flavors are supported: scene entities carry SceneTransform
     // (from the scene JSON "transform" component) while script-spawned

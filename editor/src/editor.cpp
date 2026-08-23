@@ -345,6 +345,7 @@ bool EditorApp::OnCreate() {
         projectDirBuf_[sizeof(projectDirBuf_) - 1] = '\0';
         if (loadProjectOnStart_) LoadProjectScene();
     }
+    LoadInputMapEdit(); // Godot-style input panel data
     return true;
 }
 
@@ -764,6 +765,18 @@ void EditorApp::OnRender() {
 }
 
 void EditorApp::OnEvent(const platform::InputEvent& event) {
+    // Input-map panel: while listening for a rebind, the next raw key wins
+    // (checked before the F5/gizmo shortcuts so rebinding works while playing).
+    if (!inputMapListenAction_.empty() &&
+        event.type == platform::InputEvent::Type::KeyDown &&
+        event.key != platform::Key::Unknown &&
+        !gfx::ImGuiNeon_WantCaptureKeyboard()) {
+        if (inputMapEdit_.SetPrimaryKey(inputMapListenAction_, event.key))
+            NEON_LOG_INFO("Editor: input action '%s' -> %s", inputMapListenAction_.c_str(),
+                          script::InputMap::KeyToName(event.key).c_str());
+        inputMapListenAction_ = "";
+        return;
+    }
     // Ctrl+Z (undo) / Ctrl+Y or Ctrl+Shift+Z (redo) on the KeyDown edge only,
     // and never while ImGui owns the keyboard (e.g. typing in the name field)
     // -- same gating as the F5 playtest shortcut below. When the 行为树 panel
@@ -1348,6 +1361,7 @@ void EditorApp::BuildImGuiUI() {
             ImGui::MenuItem("脚本", nullptr, &showScripts_);
             ImGui::MenuItem("打包", nullptr, &showPackage_);
             ImGui::MenuItem("性能", nullptr, &showProfiler_);
+            ImGui::MenuItem("输入映射", nullptr, &showInputMap_);
             ImGui::Separator();
             ImGui::MenuItem("引擎 UI 演示", nullptr, &showCustomUIDemo_);
             ImGui::MenuItem("ImGui Demo", nullptr, &showImGuiDemo_);
@@ -1567,9 +1581,78 @@ void EditorApp::BuildImGuiUI() {
     BuildScriptPanel();
     BuildPackagePanel();
     BuildProfilerPanel();
+    BuildInputMapPanel();
     BuildViewportPanel();
 
     if (showImGuiDemo_) ImGui::ShowDemoWindow(&showImGuiDemo_);
+}
+
+void EditorApp::LoadInputMapEdit() {
+    inputMapEdit_ = script::InputMap::Defaults();
+    std::ifstream in(projectDir_ + "/input.json", std::ios::binary);
+    if (in.is_open()) {
+        std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        std::string err;
+        if (!inputMapEdit_.Load(text, &err))
+            NEON_LOG_ERROR("Editor: input.json parse failed: %s", err.c_str());
+    }
+    inputMapListenAction_ = "";
+}
+
+void EditorApp::SaveInputMapEdit() {
+    std::ofstream out(projectDir_ + "/input.json", std::ios::binary);
+    if (!out.is_open()) {
+        NEON_LOG_ERROR("Editor: cannot write '%s/input.json'", projectDir_.c_str());
+        return;
+    }
+    out << inputMapEdit_.ToJson();
+    NEON_LOG_INFO("Editor: input.json saved (%zu actions)", inputMapEdit_.Names().size());
+}
+
+void EditorApp::BuildInputMapPanel() {
+    if (!showInputMap_) return;
+    if (!ImGui::Begin("输入映射", &showInputMap_)) {
+        ImGui::End();
+        return;
+    }
+    ImGui::TextDisabled("项目: %s/input.json", projectDir_.c_str());
+    ImGui::SameLine();
+    if (ImGui::Button("重新加载")) LoadInputMapEdit();
+    ImGui::SameLine();
+    if (ImGui::Button("保存")) SaveInputMapEdit();
+    ImGui::Separator();
+    if (ImGui::BeginTable("##inputmap", 3, ImGuiTableFlags_Borders)) {
+        ImGui::TableSetupColumn("动作");
+        ImGui::TableSetupColumn("按键");
+        ImGui::TableSetupColumn("绑定");
+        ImGui::TableHeadersRow();
+        for (const std::string& name : inputMapEdit_.Names()) {
+            const script::InputAction* a = inputMapEdit_.Find(name);
+            if (!a) continue;
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::TextUnformatted(name.c_str());
+            ImGui::TableSetColumnIndex(1);
+            std::string keys;
+            for (platform::Key k : a->positive)
+                keys += (keys.empty() ? "" : " / ") + script::InputMap::KeyToName(k) + "+";
+            for (platform::Key k : a->negative)
+                keys += (keys.empty() ? "" : " / ") + script::InputMap::KeyToName(k) + "-";
+            for (platform::Key k : a->keys)
+                keys += (keys.empty() ? "" : " / ") + script::InputMap::KeyToName(k);
+            ImGui::TextUnformatted(keys.empty() ? "(无)" : keys.c_str());
+            ImGui::TableSetColumnIndex(2);
+            const bool listening = inputMapListenAction_ == name;
+            if (ImGui::Button(listening ? "等待按键..." : "改键", ImVec2(92.0f, 0.0f))) {
+                inputMapListenAction_ = listening ? "" : name;
+            }
+        }
+        ImGui::EndTable();
+    }
+    if (!inputMapListenAction_.empty())
+        ImGui::TextColored(ImVec4(1.0f, 0.9f, 0.3f, 1.0f),
+                           "请按一个新按键绑定到 '%s'...", inputMapListenAction_.c_str());
+    ImGui::End();
 }
 
 void EditorApp::RunUISmokeTest() {

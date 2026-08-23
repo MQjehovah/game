@@ -53,6 +53,7 @@ set(ENGINE_CORE_SOURCES
   engine/src/script/script_manager.cpp
   engine/src/script/gamevars.cpp
   engine/src/script/bindings.cpp
+  engine/src/script/input_map.cpp
   engine/src/bt/behavior_tree.cpp
   engine/src/ui/ui.cpp
   engine/src/ui/system.cpp

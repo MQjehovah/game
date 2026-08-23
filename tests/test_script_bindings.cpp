@@ -1,3 +1,4 @@
+#include <set>
 #include <string>
 #include <vector>
 
@@ -442,4 +443,91 @@ TEST(ScriptBindingsWriteFindVisible) {
     CHECK_EQ(writtenContent, std::string("level=3"));
     const uint64_t key = (static_cast<uint64_t>(target.id) << 32) | target.generation;
     CHECK(hidden.count(key) == 1u); // SetVisible(false) hid the entity
+}
+
+// Godot-style input actions: Defaults + JSON merge, Axis/IsDown/Pressed, and
+// the Lua Action* bindings reading through a wired InputMap.
+namespace {
+
+struct KeyHeldInput : platform::IInput {
+    std::set<platform::Key> held;
+    std::set<platform::Key> pressedEdge;
+    void HandleEvent(const platform::InputEvent&) override {}
+    bool IsDown(platform::Key k) const override { return held.count(k) != 0; }
+    bool Pressed(platform::Key k) const override { return pressedEdge.count(k) != 0; }
+    bool Released(platform::Key) const override { return false; }
+    bool MouseDown(platform::MouseButton) const override { return false; }
+    bool MousePressed(platform::MouseButton) const override { return false; }
+    bool MouseReleased(platform::MouseButton) const override { return false; }
+    math::Vec2 MousePos() const override { return {}; }
+    math::Vec2 MouseDelta() const override { return {}; }
+    float WheelDelta() const override { return 0.0f; }
+    void EndFrame() override { pressedEdge.clear(); }
+};
+
+} // namespace
+
+TEST(InputMapDefaultsAndJsonMerge) {
+    script::InputMap map = script::InputMap::Defaults();
+    CHECK(map.Has("forward"));
+    CHECK(map.Has("jump"));
+    CHECK_EQ(map.Names().size(), 8u);
+
+    std::string err;
+    CHECK(map.Load(R"({"actions":{
+        "jump":["X"],
+        "custom_axis":{"positive":["W"],"negative":["S"]}
+    }})", &err));
+    const script::InputAction* jump = map.Find("jump");
+    CHECK(jump != nullptr);
+    if (jump) {
+        CHECK_EQ(jump->keys.size(), 1u);
+        CHECK(jump->keys[0] == platform::Key::X); // JSON overrides the default
+    }
+    CHECK(map.Find("custom_axis") != nullptr);
+    CHECK_EQ(map.Names().size(), 9u); // 8 defaults + custom_axis (jump merged)
+}
+
+TEST(InputMapAxisAndEdges) {
+    script::InputMap map = script::InputMap::Defaults();
+    KeyHeldInput in;
+
+    // forward = W / S axis.
+    CHECK_NEAR(map.Axis("forward", in), 0.0f, 1e-6);
+    in.held.insert(platform::Key::W);
+    CHECK_NEAR(map.Axis("forward", in), 1.0f, 1e-6);
+    in.held.insert(platform::Key::S);
+    CHECK_NEAR(map.Axis("forward", in), 0.0f, 1e-6);
+
+    // jump = Space down/pressed.
+    CHECK(!map.IsDown("jump", in));
+    in.held.insert(platform::Key::Space);
+    in.pressedEdge.insert(platform::Key::Space);
+    CHECK(map.IsDown("jump", in));
+    CHECK(map.Pressed("jump", in));
+    in.pressedEdge.clear();
+    CHECK(!map.Pressed("jump", in));
+}
+
+TEST(ScriptBindingsActionQueries) {
+    Bindings b;
+    script::InputMap map = script::InputMap::Defaults();
+    KeyHeldInput in;
+    in.held.insert(platform::Key::W);
+    in.held.insert(platform::Key::Space);
+    in.pressedEdge.insert(platform::Key::Space);
+    b.ctx.inputMap = &map;
+    b.ctx.input = &in;
+
+    const bool ok = RunScript(*b.host, R"(
+      assert(ActionAxis("forward") == 1)
+      assert(ActionAxis("strafe") == 0)
+      assert(ActionDown("jump") == 1)
+      assert(ActionPressed("jump") == 1)
+      assert(ActionPressed("forward") == 0)
+      assert(ActionAxis("unknown_action") == 0)
+    )");
+    if (!ok) std::printf("DIAG ActionQueries error: %s\n",
+                         b.host->LastError().message.c_str());
+    CHECK(ok);
 }

@@ -663,6 +663,10 @@ void ValidateInto(const PackConfig& cfg, ProjectContext& pc) {
     ListFilesRecursive(pc.projectDir + "/assets", "assets", assets);
     for (const std::string& rel : assets) pc.packFiles[rel] = pc.projectDir + "/" + rel;
 
+    // Godot-style input actions (project root, next to game.json).
+    const std::string inputPath = pc.projectDir + "/input.json";
+    if (FileExists(inputPath)) pc.packFiles["input.json"] = inputPath;
+
     if (pc.manifestOk) pc.packFiles["game.json"] = manifestPath;
 
     r.ok = r.errors.empty();

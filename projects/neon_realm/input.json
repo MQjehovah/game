@@ -1,0 +1,11 @@
+{
+  "actions": {
+    "move_forward": { "positive": ["W", "ArrowUp"], "negative": ["S", "ArrowDown"] },
+    "move_strafe": { "positive": ["D", "ArrowRight"], "negative": ["A", "ArrowLeft"] },
+    "jump": ["Space"],
+    "sprint": ["Shift"],
+    "fireball": ["1"],
+    "heal": ["2"],
+    "interact": ["F"]
+  }
+}

@@ -602,6 +602,9 @@ Value NativeInputAxis(IScriptHost& host, void* user) {
     platform::IInput* in = InputFor(*ctx);
     if (!in) return Value::Num(0);
     const std::string name = StringArg(host, 0);
+    // Godot-style: a project input.json action overrides the legacy mapping.
+    if (ctx->inputMap && ctx->inputMap->Has(name))
+        return Value::Num(ctx->inputMap->Axis(name, *in));
     auto axis = [&](platform::Key pos, platform::Key neg) {
         return (in->IsDown(pos) ? 1.0 : 0.0) - (in->IsDown(neg) ? 1.0 : 0.0);
     };
@@ -617,9 +620,63 @@ Value NativeInputKey(IScriptHost& host, void* user) {
     if (!ctx || !ctx->input) return Value::Num(0);
     platform::IInput* in = InputFor(*ctx);
     if (!in) return Value::Num(0);
-    const platform::Key key = KeyFromName(StringArg(host, 0));
+    const std::string name = StringArg(host, 0);
+    if (ctx->inputMap && ctx->inputMap->Has(name))
+        return Value::Num(ctx->inputMap->IsDown(name, *in) ? 1.0 : 0.0);
+    const platform::Key key = KeyFromName(name);
     if (key == platform::Key::Unknown) return Value::Num(0);
     return Value::Num(in->IsDown(key) ? 1.0 : 0.0);
+}
+
+// Godot-style action queries: ActionDown/ActionPressed/ActionReleased/
+// ActionAxis(name). An action not present in the input map falls back to the
+// legacy single-key table (KeyFromName), so scripts migrate gradually.
+
+Value NativeActionDown(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->input) return Value::Num(0);
+    platform::IInput* in = InputFor(*ctx);
+    if (!in) return Value::Num(0);
+    const std::string name = StringArg(host, 0);
+    if (ctx->inputMap && ctx->inputMap->Has(name))
+        return Value::Num(ctx->inputMap->IsDown(name, *in) ? 1.0 : 0.0);
+    const platform::Key key = KeyFromName(name);
+    return Value::Num(key != platform::Key::Unknown && in->IsDown(key) ? 1.0 : 0.0);
+}
+
+Value NativeActionPressed(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->input) return Value::Num(0);
+    platform::IInput* in = InputFor(*ctx);
+    if (!in) return Value::Num(0);
+    const std::string name = StringArg(host, 0);
+    if (ctx->inputMap && ctx->inputMap->Has(name))
+        return Value::Num(ctx->inputMap->Pressed(name, *in) ? 1.0 : 0.0);
+    const platform::Key key = KeyFromName(name);
+    return Value::Num(key != platform::Key::Unknown && in->Pressed(key) ? 1.0 : 0.0);
+}
+
+Value NativeActionReleased(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->input) return Value::Num(0);
+    platform::IInput* in = InputFor(*ctx);
+    if (!in) return Value::Num(0);
+    const std::string name = StringArg(host, 0);
+    if (ctx->inputMap && ctx->inputMap->Has(name))
+        return Value::Num(ctx->inputMap->Released(name, *in) ? 1.0 : 0.0);
+    const platform::Key key = KeyFromName(name);
+    return Value::Num(key != platform::Key::Unknown && in->Released(key) ? 1.0 : 0.0);
+}
+
+Value NativeActionAxis(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->input) return Value::Num(0);
+    platform::IInput* in = InputFor(*ctx);
+    if (!in) return Value::Num(0);
+    const std::string name = StringArg(host, 0);
+    if (ctx->inputMap && ctx->inputMap->Has(name))
+        return Value::Num(ctx->inputMap->Axis(name, *in));
+    return Value::Num(0);
 }
 
 // InputMouseX()/InputMouseY(): accumulated mouse delta since the last frame
@@ -655,6 +712,10 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("InputKey", &NativeInputKey, &ctx);
     host.Register("InputMouseX", &NativeInputMouseX, &ctx);
     host.Register("InputMouseY", &NativeInputMouseY, &ctx);
+    host.Register("ActionDown", &NativeActionDown, &ctx);
+    host.Register("ActionPressed", &NativeActionPressed, &ctx);
+    host.Register("ActionReleased", &NativeActionReleased, &ctx);
+    host.Register("ActionAxis", &NativeActionAxis, &ctx);
     host.Register("InputMouseDown", &NativeInputMouseDown, &ctx);
     host.Register("InputMousePressed", &NativeInputMousePressed, &ctx);
     host.Register("SetRotationY", &NativeSetRotationY, &ctx);
