@@ -1,6 +1,7 @@
 -- NeonPvZ: 植物大战僵尸（数据驱动原型）。
 -- 玩法与绘制全部在脚本里：关卡 JSON 由编辑器 2D 模式摆放
--- （assets/levels/pvz_level.json），精灵图在 assets/sprites/。
+-- （scenes/pvz.json 的 "level" 字段，与 3D 场景统一放在 scenes/），
+-- 精灵图在 assets/sprites/。
 --
 -- 棋盘布局（设计坐标 1280x720，与编辑器 2D 模式一致）：
 --   9 列 x 5 行，每格 100x100，原点 (190,160)；僵尸从右侧进入向左走。
@@ -58,12 +59,16 @@ local function cell_center(r, c)
 end
 
 local function load_level()
-  local text = ReadText("assets/levels/pvz_level.json")
+  -- The level lives INSIDE the scene file (scenes/pvz.json), so 2D and 3D
+  -- projects both keep their editable scene data under scenes/.
+  local text = ReadText("scenes/pvz.json")
   if text == nil or text == "" then return end
   local dom = Json.Parse(text)
   if dom == nil then return end
-  if dom.plants ~= nil then
-    for _, p in ipairs(dom.plants) do
+  local level = dom.level
+  if level == nil then return end
+  if level.plants ~= nil then
+    for _, p in ipairs(level.plants) do
       local row, col = (p.row or 0) + 1, (p.col or 0) + 1
       if PLANTS[p.plant] and row >= 1 and row <= ROWS and col >= 1 and col <= COLS
           and board[row] and board[row][col] == nil then
@@ -71,8 +76,8 @@ local function load_level()
       end
     end
   end
-  if dom.zombies ~= nil then
-    for _, z in ipairs(dom.zombies) do
+  if level.zombies ~= nil then
+    for _, z in ipairs(level.zombies) do
       local row = (z.row or 0) + 1
       if row >= 1 and row <= ROWS then
         local zt = z.type or "basic"

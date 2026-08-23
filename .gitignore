@@ -9,6 +9,10 @@ neon_rush_save.dat
 neon_editor_config.json
 editor_scene.json
 scenes/
+# ...but project scenes are first-class project data (2D levels now live in
+# scenes/*.json too), so keep them under version control.
+!projects/*/scenes/
+!projects/*/scenes/*.json
 .vs/
 .vscode/
 CMakeUserPresets.json

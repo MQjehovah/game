@@ -202,6 +202,11 @@ core::Result<SceneFile> SceneFile::Parse(const std::string& jsonText) {
             return core::Result<SceneFile>::Err("scene: 'gameVars' must be a JSON object");
         out.gameVars = *gv;
     }
+    if (const core::Json* lv = root.Get("level")) {
+        if (!lv->IsObject())
+            return core::Result<SceneFile>::Err("scene: 'level' must be a JSON object");
+        out.level = *lv;
+    }
     return core::Result<SceneFile>::Ok(std::move(out));
 }
 
@@ -220,6 +225,7 @@ core::Json SceneFile::ToJson() const {
     }
     root.object_["entities"] = std::move(arr);
     if (gameVars.IsObject()) root.object_["gameVars"] = gameVars;
+    if (level.IsObject()) root.object_["level"] = level;
     return root;
 }
 

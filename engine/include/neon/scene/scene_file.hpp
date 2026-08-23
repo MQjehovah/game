@@ -48,6 +48,10 @@ struct LodEntry {
 struct SceneFile {
     std::vector<EntityDef> entities;
     core::Json gameVars; // object, or null when absent
+    // Optional scene-level data (any object, e.g. a 2D game's level layout:
+    // {"plants": [...], "zombies": [...]}). Editors and scripts read/write it
+    // as part of the scene file, so 2D and 3D scenes live in scenes/*.json.
+    core::Json level; // object, or null when absent
 
     // Parse + structural validation (entities array, entity/component shapes,
     // gameVars type). Semantic checks (transform presence, prefab resolution,

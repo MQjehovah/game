@@ -38,6 +38,14 @@
 namespace neon::editor {
 namespace {
 
+// 2D canvas/level layout (must match projects/pvz/scripts/pvz.lua: 9x5 cells
+// of 100 at (190,160)). Shared by LoadScene's root["level"] parsing and the
+// 2D canvas editor.
+constexpr int kPvzRows = 5;
+constexpr int kPvzCols = 9;
+const char* kPvzPlantNames[5] = {"sunflower", "peashooter", "wallnut", "snowpea", "cherry"};
+const char* kPvzZombieNames[3] = {"basic", "cone", "bucket"};
+
 gfx::Color ColorFromHex(const std::string& hex) {
     if (hex.size() < 7 || hex[0] != '#') return gfx::Color::White;
     auto nibble = [](char c) -> unsigned {
@@ -653,27 +661,35 @@ void EditorApp::OnUpdate(float dt) {
 
     // Godot-style project switcher smoke: ScanProjects discovers both bundled
     // projects, SwitchProject enters the 2D project's canvas with its level
-    // loaded, and switching back restores the 3D sandbox (editor_scene.json)
-    // so the playtest smoke at frame 60 sees the canonical scene.
+    // loaded, the 3D project loads its start scene, then we normalize back to
+    // the canonical sandbox (editor_scene.json) so the playtest smoke at
+    // frame 60 sees the deterministic 3D scene regardless of the saved config.
     if (smokeMode_ && TimeRef().frameIndex == 43) {
-        const std::string prevProj = projectDir_;
         ScanProjects();
         bool has2D = false, has3D = false;
         for (const EditorProject& p : projects_) {
-            if (p.mode == "2d" && !p.levels.empty()) has2D = true;
+            if (p.mode == "2d" && !p.scenes.empty()) has2D = true;
             if (p.mode == "3d" && !p.scenes.empty()) has3D = true;
         }
         NEON_LOG_INFO("EDITOR-PROJECT-SMOKE: [%s] discovered 2D+3D projects (%zu)",
                       has2D && has3D ? "PASS" : "FAIL", projects_.size());
         if (!has2D || !has3D) smokeFailed_ = true;
         SwitchProject("projects/pvz");
-        const bool pvzOk = editMode_ == EditMode::Scene2D && entities_.empty();
+        const bool pvzOk = editMode_ == EditMode::Scene2D && !entities_.empty() &&
+                           pvzPlants_.size() > 0 && currentSceneName_ == "pvz.json";
         NEON_LOG_INFO("EDITOR-PROJECT-SMOKE: [%s] 2D project switch -> canvas (%zu plants)",
                       pvzOk ? "PASS" : "FAIL", pvzPlants_.size());
         if (!pvzOk) smokeFailed_ = true;
-        SwitchProject(prevProj);
-        const bool backOk = editMode_ == EditMode::Scene3D && !entities_.empty();
-        NEON_LOG_INFO("EDITOR-PROJECT-SMOKE: [%s] 3D project switch restored the scene (%zu)",
+        SwitchProject("projects/neon_realm");
+        const bool realmOk = editMode_ == EditMode::Scene3D && !entities_.empty();
+        NEON_LOG_INFO("EDITOR-PROJECT-SMOKE: [%s] 3D project switch loaded its scene (%zu)",
+                      realmOk ? "PASS" : "FAIL", entities_.size());
+        if (!realmOk) smokeFailed_ = true;
+        StopPlaytest();
+        editMode_ = EditMode::Scene3D;
+        LoadScene("editor_scene.json");
+        const bool backOk = editMode_ == EditMode::Scene3D && entities_.size() == 106;
+        NEON_LOG_INFO("EDITOR-PROJECT-SMOKE: [%s] normalized to the smoke sandbox (%zu)",
                       backOk ? "PASS" : "FAIL", entities_.size());
         if (!backOk) smokeFailed_ = true;
     }
@@ -1418,11 +1434,6 @@ void EditorApp::BuildImGuiUI() {
             for (const std::string& s : projectScenes_) {
                 if (ImGui::MenuItem(BaseName(s).c_str())) LoadProjectScene(s);
             }
-            for (const std::string& l : projectLevels_) {
-                char label[256];
-                std::snprintf(label, sizeof(label), "关卡: %s", BaseName(l).c_str());
-                if (ImGui::MenuItem(label)) LoadProjectLevel(l);
-            }
             ImGui::Separator();
             ImGui::TextUnformatted("项目目录");
             if (ImGui::InputText("##project_dir", projectDirBuf_, sizeof(projectDirBuf_),
@@ -1580,14 +1591,6 @@ void EditorApp::BuildImGuiUI() {
                 if (ImGui::Selectable(s.c_str(), currentSceneName_ == BaseName(s)))
                     LoadProjectScene(s);
             }
-            if (!projectLevels_.empty()) {
-                ImGui::Separator();
-                ImGui::TextDisabled("2D 关卡");
-                for (const std::string& l : projectLevels_) {
-                    if (ImGui::Selectable(l.c_str(), currentSceneName_ == BaseName(l)))
-                        LoadProjectLevel(l);
-                }
-            }
             ImGui::EndCombo();
         }
         ImGui::SameLine();
@@ -1666,7 +1669,7 @@ void EditorApp::BuildImGuiUI() {
             ImGui::SameLine();
             if (ImGui::Button("加载关卡")) LoadPvzLevel();
             ImGui::SameLine();
-            ImGui::TextDisabled("→ %s", pvzLevelPath_.c_str());
+            ImGui::TextDisabled("→ %s", currentScenePath_.c_str());
         }
         ImGui::SameLine();
         ImGui::Text("实体 %zu", entities_.size());
@@ -2521,8 +2524,9 @@ void EditorApp::StartPlaytest() {
     std::string json;
 
     if (editMode_ == EditMode::Scene2D) {
-        // 2D project (e.g. NeonPvZ): play the project's scene file directly so
-        // the edited level (assets/levels/*.json) is what the game loads.
+        // 2D project (e.g. NeonPvZ): the edited level lives in the scene file
+        // (root["level"]); save it back, then play the project's start scene
+        // so the Lua script reads the same scene the editor edited.
         SavePvzLevel();
         cfg.assetBaseDir = projectDir_;
         const std::string sceneRel =
@@ -2872,6 +2876,10 @@ bool EditorApp::ResolveMesh(SceneEntity& e) {
             e.mesh = gltf.nodes[0].mesh;
             e.material = gltf.nodes[0].material;
         }
+    } else if (key.empty()) {
+        // Script-only / logical entities (e.g. a 2D game's entry entity that
+        // carries no mesh) are valid without geometry.
+        return true;
     }
     return e.mesh.Valid();
 }
@@ -2963,6 +2971,61 @@ void EditorApp::LoadScene(const std::string& path) {
     core::Json root = core::Json::Parse(ss.str(), &err);
     const core::Json* arr = root.Get("entities");
     if (!arr) return;
+    // Keep the parsed scene root + path: 2D levels live inside the scene
+    // (root["level"]) and SavePvzLevel writes back into this file, so scenes
+    // are the single source of truth for both 3D and 2D projects.
+    currentSceneRoot_ = root;
+    currentScenePath_ = path;
+    // A scene with a root-level "level" object is a 2D level: parse it into
+    // the 2D canvas and switch to the 2D edit view.
+    pvzPlants_.clear();
+    pvzZombies_.clear();
+    pvzNextDelay_ = 8.0f;
+    bool hasLevel = false;
+    if (const core::Json* lv = root.Get("level")) {
+        if (lv->IsObject()) {
+            hasLevel = true;
+            if (const core::Json* plants = lv->Get("plants")) {
+                if (plants->IsArray()) {
+                    for (size_t i = 0; i < plants->Size(); ++i) {
+                        const core::Json* e = plants->At(i);
+                        if (!e) continue;
+                        const int row = e->Get("row") ? e->Get("row")->GetInt(-1) : -1;
+                        const int col = e->Get("col") ? e->Get("col")->GetInt(-1) : -1;
+                        const std::string name =
+                            e->Get("plant") ? e->Get("plant")->GetString() : "";
+                        int type = -1;
+                        for (int t = 0; t < 5; ++t)
+                            if (name == kPvzPlantNames[t]) type = t;
+                        if (row >= 0 && row < kPvzRows && col >= 0 && col < kPvzCols &&
+                            type >= 0)
+                            pvzPlants_.push_back({row, col, type});
+                    }
+                }
+            }
+            if (const core::Json* zombies = lv->Get("zombies")) {
+                if (zombies->IsArray()) {
+                    for (size_t i = 0; i < zombies->Size(); ++i) {
+                        const core::Json* e = zombies->At(i);
+                        if (!e) continue;
+                        const int row = e->Get("row") ? e->Get("row")->GetInt(-1) : -1;
+                        const float delay =
+                            e->Get("delay") ? static_cast<float>(e->Get("delay")->GetNumber()) : 8.0f;
+                        const std::string name =
+                            e->Get("type") ? e->Get("type")->GetString("basic") : "basic";
+                        int type = 0;
+                        for (int t = 0; t < 3; ++t)
+                            if (name == kPvzZombieNames[t]) type = t;
+                        if (row >= 0 && row < kPvzRows)
+                            pvzZombies_.push_back({row, delay, type});
+                    }
+                }
+            }
+            editMode_ = EditMode::Scene2D;
+            NEON_LOG_INFO("Scene level loaded (%zu plants, %zu zombie spawns)",
+                          pvzPlants_.size(), pvzZombies_.size());
+        }
+    }
     // Replace entity list, re-resolve meshes.
     std::vector<SceneEntity> loaded;
     // Support both the editor's flat format and the runtime's componentized
@@ -3045,7 +3108,7 @@ void EditorApp::LoadScene(const std::string& path) {
             loaded.push_back(std::move(e));
         }
     }
-    if (!loaded.empty()) {
+    if (!loaded.empty() || hasLevel) {
         entities_ = std::move(loaded);
         SetSelection(-1);
         history_.Clear(); // undo history from the previous scene is invalid
@@ -3055,7 +3118,7 @@ void EditorApp::LoadScene(const std::string& path) {
 }
 
 // Reads <dir>/game.json into `p` (title/mode/startScene) and lists the
-// project's scenes/ and 2D levels/. Returns false when there is no game.json.
+// project's scenes/. Returns false when there is no game.json.
 bool EditorApp::ReadProjectMeta(EditorProject& p) {
     std::ifstream in(p.dir + "/game.json", std::ios::binary);
     if (!in.is_open()) return false;
@@ -3084,19 +3147,7 @@ bool EditorApp::ReadProjectMeta(EditorProject& p) {
             if (isJson) p.scenes.push_back("scenes/" + n);
         }
     }
-    files.clear();
-    if (ListDirectory(p.dir + "/assets/levels", files)) {
-        for (const AssetEntry& f : files) {
-            if (f.isDir) continue;
-            const std::string& n = f.name;
-            const bool isJson = n.size() > 5 &&
-                                (n.compare(n.size() - 5, 5, ".json") == 0 ||
-                                 n.compare(n.size() - 5, 5, ".JSON") == 0);
-            if (isJson) p.levels.push_back("assets/levels/" + n);
-        }
-    }
     std::sort(p.scenes.begin(), p.scenes.end());
-    std::sort(p.levels.begin(), p.levels.end());
     return true;
 }
 
@@ -3122,7 +3173,7 @@ void EditorApp::ScanProjects() {
                                  [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
                   return al < bl;
               });
-    // Re-sync the active project fields (projectSel_/name/mode/scenes/levels).
+    // Re-sync the active project fields (projectSel_/name/mode/scenes).
     projectSel_ = -1;
     for (size_t i = 0; i < projects_.size(); ++i) {
         if (projects_[i].dir != projectDir_) continue;
@@ -3131,7 +3182,6 @@ void EditorApp::ScanProjects() {
         projectMode_ = projects_[i].mode;
         projectStartScene_ = projects_[i].startScene;
         projectScenes_ = projects_[i].scenes;
-        projectLevels_ = projects_[i].levels;
         return;
     }
     // projectDir_ is not under projects/: a custom path (or the default
@@ -3140,7 +3190,6 @@ void EditorApp::ScanProjects() {
     projectMode_ = "3d";
     projectStartScene_.clear();
     projectScenes_.clear();
-    projectLevels_.clear();
     EditorProject custom;
     custom.dir = projectDir_;
     if (ReadProjectMeta(custom)) {
@@ -3148,7 +3197,6 @@ void EditorApp::ScanProjects() {
         projectMode_ = custom.mode;
         projectStartScene_ = custom.startScene;
         projectScenes_ = custom.scenes;
-        projectLevels_ = custom.levels;
     }
 }
 
@@ -3163,25 +3211,23 @@ void EditorApp::SwitchProject(const std::string& dir) {
     history_.Clear();
     SetSelection(-1);
     if (projectMode_ == "2d") {
+        // 2D projects are scenes too: LoadScene reads scenes/<start>.json and
+        // its root["level"] (the 2D level layout) switches the editor to the
+        // 2D canvas automatically. No separate assets/levels/ data path.
         editMode_ = EditMode::Scene2D;
-        entities_.clear();
-        pvzLevelPath_ = projectDir_ + "/assets/levels/pvz_level.json";
-        if (!projectLevels_.empty()) pvzLevelPath_ = projectDir_ + "/" + projectLevels_[0];
-        LoadPvzLevel();
     } else {
         editMode_ = EditMode::Scene3D;
-        if (!projectStartScene_.empty()) {
-            LoadScene(projectDir_ + "/" + projectStartScene_);
-        } else {
-            LoadScene("editor_scene.json"); // default sandbox scene
-        }
+    }
+    if (!projectStartScene_.empty()) {
+        LoadScene(projectDir_ + "/" + projectStartScene_);
+    } else if (projectMode_ != "2d") {
+        LoadScene("editor_scene.json"); // default sandbox scene
     }
     assetDir_ = projectDir_; // the asset panel follows the active project
     RefreshAssetDir();
     SaveEditorConfig();
-    NEON_LOG_INFO("Editor: switched project '%s' (mode=%s, %zu scenes, %zu levels)",
-                  projectName_.c_str(), projectMode_.c_str(), projectScenes_.size(),
-                  projectLevels_.size());
+    NEON_LOG_INFO("Editor: switched project '%s' (mode=%s, %zu scenes)",
+                  projectName_.c_str(), projectMode_.c_str(), projectScenes_.size());
 }
 
 // Loads the current project's start scene (3D) / level (2D): a "reload"
@@ -3193,24 +3239,10 @@ void EditorApp::LoadProjectScene() {
 // Loads a specific scene from the current project into the 3D scene tree.
 void EditorApp::LoadProjectScene(const std::string& rel) {
     StopPlaytest();
-    editMode_ = EditMode::Scene3D;
     SetSelection(-1);
     history_.Clear();
     LoadScene(projectDir_ + "/" + rel);
-    NEON_LOG_INFO("Editor: project scene loaded from '%s/%s'", projectDir_.c_str(),
-                  rel.c_str());
-}
-
-// Loads a specific 2D level from the current project into the 2D canvas.
-void EditorApp::LoadProjectLevel(const std::string& rel) {
-    StopPlaytest();
-    editMode_ = EditMode::Scene2D;
-    entities_.clear();
-    SetSelection(-1);
-    history_.Clear();
-    pvzLevelPath_ = projectDir_ + "/" + rel;
-    LoadPvzLevel();
-    NEON_LOG_INFO("Editor: 2D level loaded from '%s/%s'", projectDir_.c_str(), rel.c_str());
+    NEON_LOG_INFO("Editor: project scene loaded from '%s/%s'", projectDir_.c_str(), rel.c_str());
 }
 
 // ---------------------------------------------------------------------------
@@ -3220,14 +3252,11 @@ void EditorApp::LoadProjectLevel(const std::string& rel) {
 
 namespace {
 
-constexpr int kPvzRows = 5;
-constexpr int kPvzCols = 9;
 constexpr float kPvzCell = 100.0f;
 constexpr float kPvzBX = 190.0f;
 constexpr float kPvzBY = 160.0f;
 constexpr float kPvzSpawnX = 1150.0f;
 
-const char* kPvzPlantNames[5] = {"sunflower", "peashooter", "wallnut", "snowpea", "cherry"};
 const char* kPvzPlantLabels[5] = {"葵", "豆", "坚", "冰", "樱"};
 const gfx::Color kPvzPlantColors[5] = {
     {0.95f, 0.78f, 0.10f, 1.0f},
@@ -3236,7 +3265,6 @@ const gfx::Color kPvzPlantColors[5] = {
     {0.45f, 0.72f, 0.95f, 1.0f},
     {0.90f, 0.25f, 0.20f, 1.0f},
 };
-const char* kPvzZombieNames[3] = {"basic", "cone", "bucket"};
 const char* kPvzZombieLabels[3] = {"僵", "路", "桶"};
 const gfx::Color kPvzZombieColors[3] = {
     {0.90f, 0.20f, 0.15f, 0.90f},
@@ -3344,6 +3372,20 @@ void EditorApp::HandlePvzClick(const math::Vec2& ui) {
 }
 
 void EditorApp::SavePvzLevel() {
+    if (currentSceneRoot_.IsNull() || !currentSceneRoot_.IsObject() ||
+        currentScenePath_.empty()) {
+        NEON_LOG_ERROR("2D: no scene loaded; cannot save the level (open a project scene)");
+        return;
+    }
+    // Only write into a scene that actually carries 2D level data (or belongs
+    // to a declared 2D project). Guard against saving into a 3D scene (e.g.
+    // the default sandbox) when the view was switched manually.
+    const core::Json* lv = currentSceneRoot_.Get("level");
+    if (projectMode_ != "2d" && (lv == nullptr || !lv->IsObject())) {
+        NEON_LOG_ERROR("2D: current scene '%s' has no level data; refusing to save",
+                       currentScenePath_.c_str());
+        return;
+    }
     core::Json root;
     root.type_ = core::Json::Type::Object;
     core::Json plants;
@@ -3381,87 +3423,40 @@ void EditorApp::SavePvzLevel() {
     root.object_["plants"] = std::move(plants);
     root.object_["zombies"] = std::move(zombies);
 
-    // Save to the ACTIVE level file (the project switcher / scene picker may
-    // have pointed pvzLevelPath_ at any assets/levels/*.json).
-    const std::string path =
-        pvzLevelPath_.empty() ? projectDir_ + "/assets/levels/pvz_level.json" : pvzLevelPath_;
-    const std::string dir = DirName(path);
-    EnsureDirs(dir + "/");
-    std::ofstream out(path, std::ios::binary);
+    // The level lives INSIDE the scene file (root["level"]), so saving writes
+    // back into the scene and keeps 2D/3D data under scenes/ uniformly.
+    currentSceneRoot_.object_["level"] = std::move(root);
+    std::ofstream out(currentScenePath_, std::ios::binary);
     if (!out.is_open()) {
-        NEON_LOG_ERROR("2D: cannot write level '%s'", path.c_str());
+        NEON_LOG_ERROR("2D: cannot write level into scene '%s'", currentScenePath_.c_str());
         return;
     }
-    out << core::JsonWriter::Write(root);
-    NEON_LOG_INFO("2D: level saved to '%s' (%zu plants, %zu zombie spawns)",
-                  path.c_str(), pvzPlants_.size(), pvzZombies_.size());
+    out << core::JsonWriter::Write(currentSceneRoot_);
+    NEON_LOG_INFO("2D: level saved into scene '%s' (%zu plants, %zu zombie spawns)",
+                  currentScenePath_.c_str(), pvzPlants_.size(), pvzZombies_.size());
 }
 
 void EditorApp::LoadPvzLevel() {
-    if (pvzLevelPath_.empty()) pvzLevelPath_ = projectDir_ + "/assets/levels/pvz_level.json";
-    const std::string& path = pvzLevelPath_;
-    std::string text;
-    std::ifstream in(path, std::ios::binary);
-    if (!in.is_open()) {
-        NEON_LOG_ERROR("2D: cannot read level '%s'", path.c_str());
-        pvzPlants_.clear();
-        pvzZombies_.clear();
-        pvzNextDelay_ = 8.0f;
-        return;
-    }
-    text.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
-    std::string err;
-    core::Json root = core::Json::Parse(text, &err);
-    if (!err.empty()) {
-        NEON_LOG_ERROR("2D: level parse failed: %s", err.c_str());
-        return;
-    }
-    pvzPlants_.clear();
-    pvzZombies_.clear();
-    pvzNextDelay_ = 8.0f;
-    if (const core::Json* arr = root.Get("plants")) {
-        for (size_t i = 0; i < arr->Size(); ++i) {
-            const core::Json* e = arr->At(i);
-            if (!e) continue;
-            const int row = e->Get("row") ? e->Get("row")->GetInt(-1) : -1;
-            const int col = e->Get("col") ? e->Get("col")->GetInt(-1) : -1;
-            const std::string name =
-                e->Get("plant") ? e->Get("plant")->GetString() : "";
-            int type = -1;
-            for (int t = 0; t < 5; ++t)
-                if (name == kPvzPlantNames[t]) type = t;
-            if (row >= 0 && row < kPvzRows && col >= 0 && col < kPvzCols && type >= 0)
-                pvzPlants_.push_back({row, col, type});
-        }
-    }
-    if (const core::Json* arr = root.Get("zombies")) {
-        for (size_t i = 0; i < arr->Size(); ++i) {
-            const core::Json* e = arr->At(i);
-            if (!e) continue;
-            const int row = e->Get("row") ? e->Get("row")->GetInt(0) : 0;
-            const float delay =
-                static_cast<float>(e->Get("delay") ? e->Get("delay")->GetNumber(8.0) : 8.0);
-            const std::string typeName =
-                e->Get("type") ? e->Get("type")->GetString("basic") : "basic";
-            int type = 0;
-            for (int t = 0; t < 3; ++t)
-                if (typeName == kPvzZombieNames[t]) type = t;
-            if (row >= 0 && row < kPvzRows) pvzZombies_.push_back({row, delay, type});
-        }
-        for (const auto& z : pvzZombies_)
-            pvzNextDelay_ = std::fmax(pvzNextDelay_, z.delay + 8.0f);
-    }
-    currentSceneName_ = BaseName(path);
-    NEON_LOG_INFO("2D: level loaded from '%s' (%zu plants, %zu zombie spawns)",
-                  path.c_str(), pvzPlants_.size(), pvzZombies_.size());
+    // The level is part of the scene file, so "reload level" reloads the
+    // current scene when it already carries level data; otherwise fall back
+    // to the project start scene (e.g. right after startup, when the editor
+    // still shows the default sandbox).
+    const core::Json* lv =
+        currentSceneRoot_.IsObject() ? currentSceneRoot_.Get("level") : nullptr;
+    std::string path = (lv != nullptr && lv->IsObject() && !currentScenePath_.empty())
+                           ? currentScenePath_
+                           : projectDir_ + "/" +
+                                 (projectStartScene_.empty() ? "scenes/pvz.json"
+                                                             : projectStartScene_);
+    LoadScene(path);
 }
 
 void EditorApp::Enter2DMode() {
-    // The project switcher owns projectDir_ (SwitchProject sets pvzLevelPath_
-    // explicitly). Backward-compat for --2d: with no project open, fall back
-    // to the bundled PvZ project; otherwise never hijack the directory.
-    if (projectDir_ == "." && projectName_.empty() &&
-        std::ifstream("projects/pvz/game.json").is_open()) {
+    // The project switcher owns projectDir_ (SwitchProject loads the 2D
+    // project's start scene, whose root["level"] fills the canvas).
+    // Backward-compat for --2d: with no project open, fall back to the
+    // bundled PvZ project; otherwise never hijack the directory.
+    if (projectDir_ == "." && std::ifstream("projects/pvz/game.json").is_open()) {
         projectDir_ = "projects/pvz";
         std::strncpy(projectDirBuf_, projectDir_.c_str(), sizeof(projectDirBuf_) - 1);
         projectDirBuf_[sizeof(projectDirBuf_) - 1] = '\0';

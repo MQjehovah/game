@@ -72,7 +72,6 @@ struct EditorProject {
     std::string startScene; // game.json "startScene" (project-relative)
     std::string mode = "3d"; // game.json "editor.mode": "2d" | "3d" (default 3d)
     std::vector<std::string> scenes; // scenes/*.json (project-relative)
-    std::vector<std::string> levels; // assets/levels/*.json (project-relative)
 };
 
 // Shared UTF-8 directory listing (editor project scanner + asset panel).
@@ -90,10 +89,10 @@ public:
     void SetDisableShadows(bool v) { disableShadows_ = v; }
     void SetBloomEnabled(bool v) { bloomEnabled_ = v; }
     void SetHotReload(bool v) { hotReload_ = v; }
-    void Set2DMode(bool v) {
-        editMode_ = v ? EditMode::Scene2D : EditMode::Scene3D;
-        if (v) Enter2DMode();
-    }
+    // Only flips the edit mode; OnCreate runs Enter2DMode() after the
+    // renderer/assets are ready (calling it here would load scenes before
+    // init and clobber the current-scene state).
+    void Set2DMode(bool v) { editMode_ = v ? EditMode::Scene2D : EditMode::Scene3D; }
     void SetPvzPlaytestOnStart(bool v) { pvzPlaytestOnStart_ = v; }
     void SetProjectOnStart(const std::string& dir, bool loadScene) {
         projectDirOnStart_ = dir;
@@ -147,16 +146,15 @@ private:
     void LoadProjectScene();
     // Loads a specific scene from the current project (scenes/*.json).
     void LoadProjectScene(const std::string& rel);
-    // Loads a specific 2D level from the current project (assets/levels/*).
-    void LoadProjectLevel(const std::string& rel);
     void AddEntity(const std::string& meshKey);
     core::Status ExportScene();
     void LoadEditorConfig();
     void SaveEditorConfig();
     void RunUISmokeTest();
     // 2D mode: a data-driven 2D canvas (the NeonPvZ lawn editor). Plants are
-    // placed per grid cell; zombie spawns per row. Saves the same JSON the
-    // neon_game player's Lua script reads (projects/<dir>/assets/levels/).
+    // placed per grid cell; zombie spawns per row. The level layout lives in
+    // the scene file's root["level"] (scenes/*.json), the same file the
+    // neon_game player's Lua script reads.
     enum class EditMode { Scene3D, Scene2D };
     EditMode editMode_ = EditMode::Scene3D;
     struct Pvz2DCell {
@@ -279,9 +277,12 @@ private:
     std::string projectMode_ = "3d"; // "2d" | "3d"
     std::string projectStartScene_;  // current game.json startScene (relative)
     std::vector<std::string> projectScenes_; // current project scene files
-    std::vector<std::string> projectLevels_; // current project 2D level files
-    std::string pvzLevelPath_; // active 2D level file (Save/LoadPvzLevel)
     std::string currentSceneName_; // scene picker label (loaded scene file)
+    // The parsed root of the scene currently in the editor + its file path.
+    // 2D levels live INSIDE the scene (root["level"]), so SavePvzLevel writes
+    // back into the scene file instead of a separate assets/levels/*.json.
+    core::Json currentSceneRoot_;
+    std::string currentScenePath_;
 
     float yaw_ = 0.7f;
     float pitch_ = 0.35f;

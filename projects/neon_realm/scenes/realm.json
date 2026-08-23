@@ -1,0 +1,3308 @@
+{
+  "entities": [
+    {
+      "name": "地面",
+      "components": {
+        "transform": {
+          "pos": [
+            0,
+            0,
+            0
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "mesh": {
+          "meshKey": "terrain",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 1.0
+        }
+      }
+    },
+    {
+      "name": "湖泊",
+      "components": {
+        "transform": {
+          "pos": [
+            -24,
+            -1.15,
+            -24
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.05,
+            1,
+            1.05
+          ]
+        },
+        "mesh": {
+          "meshKey": "water",
+          "colorHex": "#2673D9",
+          "metallic": 0.0,
+          "roughness": 0.2
+        }
+      }
+    },
+    {
+      "name": "湖泊",
+      "components": {
+        "transform": {
+          "pos": [
+            24,
+            -1.15,
+            -24
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.05,
+            1,
+            1.05
+          ]
+        },
+        "mesh": {
+          "meshKey": "water",
+          "colorHex": "#2673D9",
+          "metallic": 0.0,
+          "roughness": 0.2
+        }
+      }
+    },
+    {
+      "name": "湖泊",
+      "components": {
+        "transform": {
+          "pos": [
+            -24,
+            -1.15,
+            24
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.05,
+            1,
+            1.05
+          ]
+        },
+        "mesh": {
+          "meshKey": "water",
+          "colorHex": "#2673D9",
+          "metallic": 0.0,
+          "roughness": 0.2
+        }
+      }
+    },
+    {
+      "name": "湖泊",
+      "components": {
+        "transform": {
+          "pos": [
+            24,
+            -1.15,
+            24
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.05,
+            1,
+            1.05
+          ]
+        },
+        "mesh": {
+          "meshKey": "water",
+          "colorHex": "#2673D9",
+          "metallic": 0.0,
+          "roughness": 0.2
+        }
+      }
+    },
+    {
+      "name": "主干道",
+      "components": {
+        "transform": {
+          "pos": [
+            0,
+            0.03,
+            0
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            2.8,
+            1,
+            17
+          ]
+        },
+        "mesh": {
+          "meshKey": "road",
+          "colorHex": "#70635B",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "横街",
+      "components": {
+        "transform": {
+          "pos": [
+            0,
+            0.03,
+            0
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            15,
+            1,
+            2.8
+          ]
+        },
+        "mesh": {
+          "meshKey": "road",
+          "colorHex": "#665C54",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "小路_东",
+      "components": {
+        "transform": {
+          "pos": [
+            5.5,
+            0.03,
+            -2.5
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            2,
+            1,
+            8
+          ]
+        },
+        "mesh": {
+          "meshKey": "road",
+          "colorHex": "#61564D",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "小路_西",
+      "components": {
+        "transform": {
+          "pos": [
+            -5.5,
+            0.03,
+            -2.5
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            2,
+            1,
+            8
+          ]
+        },
+        "mesh": {
+          "meshKey": "road",
+          "colorHex": "#61564D",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "农舍_东",
+      "components": {
+        "transform": {
+          "pos": [
+            4.6,
+            0,
+            3.2
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.15,
+            1.15,
+            1.15
+          ]
+        },
+        "mesh": {
+          "meshKey": "house",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "旅店",
+      "components": {
+        "transform": {
+          "pos": [
+            7.2,
+            0,
+            -2.2
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.35,
+            1.35,
+            1.35
+          ]
+        },
+        "mesh": {
+          "meshKey": "house",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "农舍_西",
+      "components": {
+        "transform": {
+          "pos": [
+            -4.6,
+            0,
+            3.2
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.15,
+            1.15,
+            1.15
+          ]
+        },
+        "mesh": {
+          "meshKey": "house",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "铁匠铺",
+      "components": {
+        "transform": {
+          "pos": [
+            -7.2,
+            0,
+            -2.2
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.2,
+            1.2,
+            1.2
+          ]
+        },
+        "mesh": {
+          "meshKey": "house",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "村民_商人",
+      "components": {
+        "transform": {
+          "pos": [
+            1.8,
+            0,
+            1.2
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.05,
+            1.05,
+            1.05
+          ]
+        },
+        "mesh": {
+          "meshKey": "npc:199,71,46",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "村民_农夫",
+      "components": {
+        "transform": {
+          "pos": [
+            -1.8,
+            0,
+            1.4
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.05,
+            1.05,
+            1.05
+          ]
+        },
+        "mesh": {
+          "meshKey": "npc:77,140,199",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "村民_猎人",
+      "components": {
+        "transform": {
+          "pos": [
+            0.6,
+            0,
+            -1.6
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.05,
+            1.05,
+            1.05
+          ]
+        },
+        "mesh": {
+          "meshKey": "npc:122,107,51",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "村民_法师",
+      "components": {
+        "transform": {
+          "pos": [
+            3.0,
+            0,
+            -0.8
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.05,
+            1.05,
+            1.05
+          ]
+        },
+        "mesh": {
+          "meshKey": "npc:153,92,184",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "村民_卫兵",
+      "components": {
+        "transform": {
+          "pos": [
+            -3.0,
+            0,
+            -0.8
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.05,
+            1.05,
+            1.05
+          ]
+        },
+        "mesh": {
+          "meshKey": "npc:140,140,148",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "村长",
+      "components": {
+        "transform": {
+          "pos": [
+            0,
+            0,
+            0
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.05,
+            1.05,
+            1.05
+          ]
+        },
+        "mesh": {
+          "meshKey": "npc:217,153,89",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "展示头盔",
+      "components": {
+        "transform": {
+          "pos": [
+            0,
+            0.95,
+            2.6
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "mesh": {
+          "meshKey": "gltf:assets/models/DamagedHelmet/DamagedHelmet.gltf",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "展示台",
+      "components": {
+        "transform": {
+          "pos": [
+            0,
+            0.45,
+            2.6
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.4,
+            0.9,
+            1.4
+          ]
+        },
+        "mesh": {
+          "meshKey": "cube",
+          "colorHex": "#8C6B4D",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "松树_0",
+      "components": {
+        "transform": {
+          "pos": [
+            -39.708289009600364,
+            0,
+            -46.17090552923323
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.1103121147748385,
+            1.1103121147748385,
+            1.1103121147748385
+          ]
+        },
+        "mesh": {
+          "meshKey": "tree",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "松树_1",
+      "components": {
+        "transform": {
+          "pos": [
+            -8.043174253342638,
+            0,
+            28.98269517783386
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.2429273582835703,
+            1.2429273582835703,
+            1.2429273582835703
+          ]
+        },
+        "mesh": {
+          "meshKey": "tree",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "松树_2",
+      "components": {
+        "transform": {
+          "pos": [
+            -56.40457556881422,
+            0,
+            -53.40897723109722
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.2427236744913444,
+            1.2427236744913444,
+            1.2427236744913444
+          ]
+        },
+        "mesh": {
+          "meshKey": "tree",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "松树_3",
+      "components": {
+        "transform": {
+          "pos": [
+            -55.67225630700621,
+            0,
+            47.73761740233289
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.6636775077373165,
+            1.6636775077373165,
+            1.6636775077373165
+          ]
+        },
+        "mesh": {
+          "meshKey": "tree",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "松树_4",
+      "components": {
+        "transform": {
+          "pos": [
+            -47.04491008448592,
+            0,
+            -32.336892120142416
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.2515059829173096,
+            1.2515059829173096,
+            1.2515059829173096
+          ]
+        },
+        "mesh": {
+          "meshKey": "tree",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "松树_5",
+      "components": {
+        "transform": {
+          "pos": [
+            22.61258174210439,
+            0,
+            -31.814962439177112
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.3993384846478463,
+            1.3993384846478463,
+            1.3993384846478463
+          ]
+        },
+        "mesh": {
+          "meshKey": "tree",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "松树_6",
+      "components": {
+        "transform": {
+          "pos": [
+            -39.65637520971337,
+            0,
+            4.127194748951229
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.3679459835238017,
+            1.3679459835238017,
+            1.3679459835238017
+          ]
+        },
+        "mesh": {
+          "meshKey": "tree",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "松树_7",
+      "components": {
+        "transform": {
+          "pos": [
+            32.83163374094348,
+            0,
+            8.472853966343983
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.5555211617518396,
+            1.5555211617518396,
+            1.5555211617518396
+          ]
+        },
+        "mesh": {
+          "meshKey": "tree",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "松树_8",
+      "components": {
+        "transform": {
+          "pos": [
+            48.884371187213226,
+            0,
+            -52.75180544722724
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.4045512266062536,
+            1.4045512266062536,
+            1.4045512266062536
+          ]
+        },
+        "mesh": {
+          "meshKey": "tree",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "松树_9",
+      "components": {
+        "transform": {
+          "pos": [
+            38.612140736777235,
+            0,
+            15.869902131771362
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.050636041564696,
+            1.050636041564696,
+            1.050636041564696
+          ]
+        },
+        "mesh": {
+          "meshKey": "tree",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "松树_10",
+      "components": {
+        "transform": {
+          "pos": [
+            28.19178524868911,
+            0,
+            21.864386949584024
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.2202200247880544,
+            1.2202200247880544,
+            1.2202200247880544
+          ]
+        },
+        "mesh": {
+          "meshKey": "tree",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "松树_11",
+      "components": {
+        "transform": {
+          "pos": [
+            -39.698577408496234,
+            0,
+            55.848801091392346
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.6559679652197299,
+            1.6559679652197299,
+            1.6559679652197299
+          ]
+        },
+        "mesh": {
+          "meshKey": "tree",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "松树_12",
+      "components": {
+        "transform": {
+          "pos": [
+            30.244771535814984,
+            0,
+            -69.8523498787792
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.4146894805849775,
+            1.4146894805849775,
+            1.4146894805849775
+          ]
+        },
+        "mesh": {
+          "meshKey": "tree",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "松树_13",
+      "components": {
+        "transform": {
+          "pos": [
+            71.10557122257342,
+            0,
+            11.444963508317581
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.2797389842698386,
+            1.2797389842698386,
+            1.2797389842698386
+          ]
+        },
+        "mesh": {
+          "meshKey": "tree",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "松树_14",
+      "components": {
+        "transform": {
+          "pos": [
+            88.8853180050266,
+            0,
+            4.440531769030731
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.5640797279054173,
+            1.5640797279054173,
+            1.5640797279054173
+          ]
+        },
+        "mesh": {
+          "meshKey": "tree",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "松树_15",
+      "components": {
+        "transform": {
+          "pos": [
+            -53.2520136840068,
+            0,
+            50.98801587262271
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.3780226696629485,
+            1.3780226696629485,
+            1.3780226696629485
+          ]
+        },
+        "mesh": {
+          "meshKey": "tree",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "松树_16",
+      "components": {
+        "transform": {
+          "pos": [
+            30.053474274350396,
+            0,
+            38.58350781163435
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.1980112076149507,
+            1.1980112076149507,
+            1.1980112076149507
+          ]
+        },
+        "mesh": {
+          "meshKey": "tree",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "松树_17",
+      "components": {
+        "transform": {
+          "pos": [
+            61.40355649850972,
+            0,
+            23.104464302430408
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.7786725185559047,
+            1.7786725185559047,
+            1.7786725185559047
+          ]
+        },
+        "mesh": {
+          "meshKey": "tree",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "松树_18",
+      "components": {
+        "transform": {
+          "pos": [
+            75.2456199964332,
+            0,
+            -8.6019883227388
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.3426429087162746,
+            1.3426429087162746,
+            1.3426429087162746
+          ]
+        },
+        "mesh": {
+          "meshKey": "tree",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "松树_19",
+      "components": {
+        "transform": {
+          "pos": [
+            0.9979276448740085,
+            0,
+            70.8560743119125
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.2891842412350738,
+            1.2891842412350738,
+            1.2891842412350738
+          ]
+        },
+        "mesh": {
+          "meshKey": "tree",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "松树_20",
+      "components": {
+        "transform": {
+          "pos": [
+            -52.15332668625998,
+            0,
+            -53.55203045446867
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.6196910945809107,
+            1.6196910945809107,
+            1.6196910945809107
+          ]
+        },
+        "mesh": {
+          "meshKey": "tree",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "松树_21",
+      "components": {
+        "transform": {
+          "pos": [
+            22.200471176639358,
+            0,
+            49.78436223570931
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.1265181062388074,
+            1.1265181062388074,
+            1.1265181062388074
+          ]
+        },
+        "mesh": {
+          "meshKey": "tree",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "松树_22",
+      "components": {
+        "transform": {
+          "pos": [
+            -29.762242260319994,
+            0,
+            30.68999675330956
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.7018417226641258,
+            1.7018417226641258,
+            1.7018417226641258
+          ]
+        },
+        "mesh": {
+          "meshKey": "tree",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "松树_23",
+      "components": {
+        "transform": {
+          "pos": [
+            6.756946669045759,
+            0,
+            25.28808173448838
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.3563865472082546,
+            1.3563865472082546,
+            1.3563865472082546
+          ]
+        },
+        "mesh": {
+          "meshKey": "tree",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "松树_24",
+      "components": {
+        "transform": {
+          "pos": [
+            13.286609652117189,
+            0,
+            46.14892224215785
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.428856469817808,
+            1.428856469817808,
+            1.428856469817808
+          ]
+        },
+        "mesh": {
+          "meshKey": "tree",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "松树_25",
+      "components": {
+        "transform": {
+          "pos": [
+            24.536792781823824,
+            0,
+            -28.42450814136767
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.3423672628076293,
+            1.3423672628076293,
+            1.3423672628076293
+          ]
+        },
+        "mesh": {
+          "meshKey": "tree",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "松树_26",
+      "components": {
+        "transform": {
+          "pos": [
+            22.01807626729141,
+            0,
+            64.84560918095319
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.1598020607196187,
+            1.1598020607196187,
+            1.1598020607196187
+          ]
+        },
+        "mesh": {
+          "meshKey": "tree",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "松树_27",
+      "components": {
+        "transform": {
+          "pos": [
+            6.22941093108139,
+            0,
+            86.26279841432721
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.1186571855612366,
+            1.1186571855612366,
+            1.1186571855612366
+          ]
+        },
+        "mesh": {
+          "meshKey": "tree",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "松树_28",
+      "components": {
+        "transform": {
+          "pos": [
+            11.71243033794499,
+            0,
+            -61.96148620211638
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.381184579902493,
+            1.381184579902493,
+            1.381184579902493
+          ]
+        },
+        "mesh": {
+          "meshKey": "tree",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "松树_29",
+      "components": {
+        "transform": {
+          "pos": [
+            63.88142825887225,
+            0,
+            17.706628270089812
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.538211980700014,
+            1.538211980700014,
+            1.538211980700014
+          ]
+        },
+        "mesh": {
+          "meshKey": "tree",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "松树_30",
+      "components": {
+        "transform": {
+          "pos": [
+            -18.610901673840644,
+            0,
+            89.53946018566752
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.2902901484523102,
+            1.2902901484523102,
+            1.2902901484523102
+          ]
+        },
+        "mesh": {
+          "meshKey": "tree",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "松树_31",
+      "components": {
+        "transform": {
+          "pos": [
+            63.000638973013736,
+            0,
+            8.18913443562536
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.7294615204648522,
+            1.7294615204648522,
+            1.7294615204648522
+          ]
+        },
+        "mesh": {
+          "meshKey": "tree",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "松树_32",
+      "components": {
+        "transform": {
+          "pos": [
+            63.35936966603377,
+            0,
+            -4.946196373155247
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.4092925749876026,
+            1.4092925749876026,
+            1.4092925749876026
+          ]
+        },
+        "mesh": {
+          "meshKey": "tree",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "松树_33",
+      "components": {
+        "transform": {
+          "pos": [
+            -83.4653253417829,
+            0,
+            -44.841420521669725
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.532130151180151,
+            1.532130151180151,
+            1.532130151180151
+          ]
+        },
+        "mesh": {
+          "meshKey": "tree",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "松树_34",
+      "components": {
+        "transform": {
+          "pos": [
+            -53.27118681634576,
+            0,
+            -73.72907505820508
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.7471836668021337,
+            1.7471836668021337,
+            1.7471836668021337
+          ]
+        },
+        "mesh": {
+          "meshKey": "tree",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "松树_35",
+      "components": {
+        "transform": {
+          "pos": [
+            -71.1412382391765,
+            0,
+            -0.43171415545063146
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.1235803986052768,
+            1.1235803986052768,
+            1.1235803986052768
+          ]
+        },
+        "mesh": {
+          "meshKey": "tree",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "松树_36",
+      "components": {
+        "transform": {
+          "pos": [
+            -84.07950131619347,
+            0,
+            -9.50941766376315
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.4980229009998984,
+            1.4980229009998984,
+            1.4980229009998984
+          ]
+        },
+        "mesh": {
+          "meshKey": "tree",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "松树_37",
+      "components": {
+        "transform": {
+          "pos": [
+            85.47972196579781,
+            0,
+            20.62816631100554
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.127855558634912,
+            1.127855558634912,
+            1.127855558634912
+          ]
+        },
+        "mesh": {
+          "meshKey": "tree",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "松树_38",
+      "components": {
+        "transform": {
+          "pos": [
+            14.882018155180623,
+            0,
+            27.665025923959778
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.3183872240151133,
+            1.3183872240151133,
+            1.3183872240151133
+          ]
+        },
+        "mesh": {
+          "meshKey": "tree",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "松树_39",
+      "components": {
+        "transform": {
+          "pos": [
+            -38.862449263576025,
+            0,
+            -13.773374319815051
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.295002427700584,
+            1.295002427700584,
+            1.295002427700584
+          ]
+        },
+        "mesh": {
+          "meshKey": "tree",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "灌木_0",
+      "components": {
+        "transform": {
+          "pos": [
+            35.377700142586114,
+            0,
+            66.05184338873845
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.0317783316404174,
+            1.0317783316404174,
+            1.0317783316404174
+          ]
+        },
+        "mesh": {
+          "meshKey": "bush",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "灌木_1",
+      "components": {
+        "transform": {
+          "pos": [
+            -43.66012226900761,
+            0,
+            74.81172867295926
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            0.8271914773155578,
+            0.8271914773155578,
+            0.8271914773155578
+          ]
+        },
+        "mesh": {
+          "meshKey": "bush",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "灌木_2",
+      "components": {
+        "transform": {
+          "pos": [
+            18.053287026584826,
+            0,
+            -21.961956855810605
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            0.9427881483276257,
+            0.9427881483276257,
+            0.9427881483276257
+          ]
+        },
+        "mesh": {
+          "meshKey": "bush",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "灌木_3",
+      "components": {
+        "transform": {
+          "pos": [
+            -27.681950302928982,
+            0,
+            -14.443204304727844
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.1344938683625765,
+            1.1344938683625765,
+            1.1344938683625765
+          ]
+        },
+        "mesh": {
+          "meshKey": "bush",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "灌木_4",
+      "components": {
+        "transform": {
+          "pos": [
+            0.5278422497935898,
+            0,
+            -41.89817467606829
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            0.9219198699949995,
+            0.9219198699949995,
+            0.9219198699949995
+          ]
+        },
+        "mesh": {
+          "meshKey": "bush",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "灌木_5",
+      "components": {
+        "transform": {
+          "pos": [
+            18.698746380828354,
+            0,
+            -56.914578019207106
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            0.8379888840707479,
+            0.8379888840707479,
+            0.8379888840707479
+          ]
+        },
+        "mesh": {
+          "meshKey": "bush",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "灌木_6",
+      "components": {
+        "transform": {
+          "pos": [
+            -92.63405167698498,
+            0,
+            0.23037669087594778
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.055995588715379,
+            1.055995588715379,
+            1.055995588715379
+          ]
+        },
+        "mesh": {
+          "meshKey": "bush",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "灌木_7",
+      "components": {
+        "transform": {
+          "pos": [
+            4.865398631568493,
+            0,
+            73.06880683250031
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.2212272351099454,
+            1.2212272351099454,
+            1.2212272351099454
+          ]
+        },
+        "mesh": {
+          "meshKey": "bush",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "灌木_8",
+      "components": {
+        "transform": {
+          "pos": [
+            69.88920947231065,
+            0,
+            -1.9268966558634906
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.1155557259427982,
+            1.1155557259427982,
+            1.1155557259427982
+          ]
+        },
+        "mesh": {
+          "meshKey": "bush",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "灌木_9",
+      "components": {
+        "transform": {
+          "pos": [
+            24.672080908744885,
+            0,
+            -14.468229395885036
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.2843486820418097,
+            1.2843486820418097,
+            1.2843486820418097
+          ]
+        },
+        "mesh": {
+          "meshKey": "bush",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "灌木_10",
+      "components": {
+        "transform": {
+          "pos": [
+            -24.266584782859674,
+            0,
+            20.73167563121474
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.1673437054729487,
+            1.1673437054729487,
+            1.1673437054729487
+          ]
+        },
+        "mesh": {
+          "meshKey": "bush",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "灌木_11",
+      "components": {
+        "transform": {
+          "pos": [
+            61.18468697329366,
+            0,
+            52.657297052081866
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.014317064251177,
+            1.014317064251177,
+            1.014317064251177
+          ]
+        },
+        "mesh": {
+          "meshKey": "bush",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "灌木_12",
+      "components": {
+        "transform": {
+          "pos": [
+            -25.152764242886736,
+            0,
+            57.32143422223217
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.1094195225147612,
+            1.1094195225147612,
+            1.1094195225147612
+          ]
+        },
+        "mesh": {
+          "meshKey": "bush",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "灌木_13",
+      "components": {
+        "transform": {
+          "pos": [
+            48.7779215593862,
+            0,
+            45.36612977850257
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.0894443214236662,
+            1.0894443214236662,
+            1.0894443214236662
+          ]
+        },
+        "mesh": {
+          "meshKey": "bush",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "灌木_14",
+      "components": {
+        "transform": {
+          "pos": [
+            17.516390754536705,
+            0,
+            -61.2301245700893
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.2577875808872658,
+            1.2577875808872658,
+            1.2577875808872658
+          ]
+        },
+        "mesh": {
+          "meshKey": "bush",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "灌木_15",
+      "components": {
+        "transform": {
+          "pos": [
+            47.7362301529527,
+            0,
+            16.356207939761433
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.2499756830324333,
+            1.2499756830324333,
+            1.2499756830324333
+          ]
+        },
+        "mesh": {
+          "meshKey": "bush",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "灌木_16",
+      "components": {
+        "transform": {
+          "pos": [
+            17.38110900312989,
+            0,
+            -31.36089488036621
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.254136427347686,
+            1.254136427347686,
+            1.254136427347686
+          ]
+        },
+        "mesh": {
+          "meshKey": "bush",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "灌木_17",
+      "components": {
+        "transform": {
+          "pos": [
+            47.01150278592742,
+            0,
+            -50.5887118994587
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.193366787922964,
+            1.193366787922964,
+            1.193366787922964
+          ]
+        },
+        "mesh": {
+          "meshKey": "bush",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "灌木_18",
+      "components": {
+        "transform": {
+          "pos": [
+            60.723324807772215,
+            0,
+            26.453004082046398
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.2590526295409072,
+            1.2590526295409072,
+            1.2590526295409072
+          ]
+        },
+        "mesh": {
+          "meshKey": "bush",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "灌木_19",
+      "components": {
+        "transform": {
+          "pos": [
+            -90.25086208133506,
+            0,
+            -20.606098207128532
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.048649655406005,
+            1.048649655406005,
+            1.048649655406005
+          ]
+        },
+        "mesh": {
+          "meshKey": "bush",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "灌木_20",
+      "components": {
+        "transform": {
+          "pos": [
+            -15.195962201576437,
+            0,
+            29.895491899227206
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.026273707860502,
+            1.026273707860502,
+            1.026273707860502
+          ]
+        },
+        "mesh": {
+          "meshKey": "bush",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "灌木_21",
+      "components": {
+        "transform": {
+          "pos": [
+            -40.28681188973039,
+            0,
+            -60.93684757251796
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            0.9031183065872184,
+            0.9031183065872184,
+            0.9031183065872184
+          ]
+        },
+        "mesh": {
+          "meshKey": "bush",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "灌木_22",
+      "components": {
+        "transform": {
+          "pos": [
+            9.226118514864075,
+            0,
+            -66.00950066959356
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.1508639609651743,
+            1.1508639609651743,
+            1.1508639609651743
+          ]
+        },
+        "mesh": {
+          "meshKey": "bush",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "灌木_23",
+      "components": {
+        "transform": {
+          "pos": [
+            12.786075887310316,
+            0,
+            31.535115952578675
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.1564525995369315,
+            1.1564525995369315,
+            1.1564525995369315
+          ]
+        },
+        "mesh": {
+          "meshKey": "bush",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "岩石_0",
+      "components": {
+        "transform": {
+          "pos": [
+            -16.638587120222954,
+            0,
+            -26.737161763652683
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.2618232866537609,
+            1.2618232866537609,
+            1.2618232866537609
+          ]
+        },
+        "mesh": {
+          "meshKey": "rock",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "岩石_1",
+      "components": {
+        "transform": {
+          "pos": [
+            -1.6168067354808884,
+            0,
+            -28.163641972934208
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.2769854410517183,
+            1.2769854410517183,
+            1.2769854410517183
+          ]
+        },
+        "mesh": {
+          "meshKey": "rock",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "岩石_2",
+      "components": {
+        "transform": {
+          "pos": [
+            -15.98738113271875,
+            0,
+            -20.65614170755783
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            0.7216390420799491,
+            0.7216390420799491,
+            0.7216390420799491
+          ]
+        },
+        "mesh": {
+          "meshKey": "rock",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "岩石_3",
+      "components": {
+        "transform": {
+          "pos": [
+            20.63799799975151,
+            0,
+            41.410067619893034
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            0.8901348029503069,
+            0.8901348029503069,
+            0.8901348029503069
+          ]
+        },
+        "mesh": {
+          "meshKey": "rock",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "岩石_4",
+      "components": {
+        "transform": {
+          "pos": [
+            -51.71742509235397,
+            0,
+            22.67656508905166
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.1804973613833631,
+            1.1804973613833631,
+            1.1804973613833631
+          ]
+        },
+        "mesh": {
+          "meshKey": "rock",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "岩石_5",
+      "components": {
+        "transform": {
+          "pos": [
+            18.912474409554953,
+            0,
+            -18.46849003979849
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            0.7587537843802403,
+            0.7587537843802403,
+            0.7587537843802403
+          ]
+        },
+        "mesh": {
+          "meshKey": "rock",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "岩石_6",
+      "components": {
+        "transform": {
+          "pos": [
+            -23.91940831975606,
+            0,
+            38.00583643519002
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            0.7035999037237275,
+            0.7035999037237275,
+            0.7035999037237275
+          ]
+        },
+        "mesh": {
+          "meshKey": "rock",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "岩石_7",
+      "components": {
+        "transform": {
+          "pos": [
+            -4.813336460435793,
+            0,
+            -42.442959781057375
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.2356629517008977,
+            1.2356629517008977,
+            1.2356629517008977
+          ]
+        },
+        "mesh": {
+          "meshKey": "rock",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "岩石_8",
+      "components": {
+        "transform": {
+          "pos": [
+            -21.102462347266002,
+            0,
+            -51.11835014108401
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            0.6656231753007266,
+            0.6656231753007266,
+            0.6656231753007266
+          ]
+        },
+        "mesh": {
+          "meshKey": "rock",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "岩石_9",
+      "components": {
+        "transform": {
+          "pos": [
+            -52.98704113567889,
+            0,
+            51.47249328765561
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.2892729352423373,
+            1.2892729352423373,
+            1.2892729352423373
+          ]
+        },
+        "mesh": {
+          "meshKey": "rock",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "岩石_10",
+      "components": {
+        "transform": {
+          "pos": [
+            -11.375773890595008,
+            0,
+            72.94659098627248
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.208657297837754,
+            1.208657297837754,
+            1.208657297837754
+          ]
+        },
+        "mesh": {
+          "meshKey": "rock",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "岩石_11",
+      "components": {
+        "transform": {
+          "pos": [
+            -22.90611317464276,
+            0,
+            15.132415595157147
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            0.6083716061896919,
+            0.6083716061896919,
+            0.6083716061896919
+          ]
+        },
+        "mesh": {
+          "meshKey": "rock",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "岩石_12",
+      "components": {
+        "transform": {
+          "pos": [
+            57.44624702239926,
+            0,
+            18.706467861973458
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            0.8155377787659301,
+            0.8155377787659301,
+            0.8155377787659301
+          ]
+        },
+        "mesh": {
+          "meshKey": "rock",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "岩石_13",
+      "components": {
+        "transform": {
+          "pos": [
+            -43.82917059256639,
+            0,
+            0.13871087092168477
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.2148224633506113,
+            1.2148224633506113,
+            1.2148224633506113
+          ]
+        },
+        "mesh": {
+          "meshKey": "rock",
+          "colorHex": "#FFFFFF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "name": "英雄",
+      "components": {
+        "transform": {
+          "pos": [
+            0,
+            0.9,
+            4
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "mesh": {
+          "meshKey": "hero",
+          "colorHex": "#33B2FF",
+          "metallic": 0.0,
+          "roughness": 0.8
+        },
+        "health": {
+          "hp": 100,
+          "maxHp": 100
+        },
+        "script": {
+          "backend": "lua",
+          "path": "scripts/realm.lua"
+        }
+      }
+    },
+    {
+      "name": "狼_1",
+      "components": {
+        "transform": {
+          "pos": [
+            -39.869685981846665,
+            0.55,
+            -27.02197819218615
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "mesh": {
+          "meshKey": "wolf",
+          "colorHex": "#806052",
+          "metallic": 0.0,
+          "roughness": 0.8
+        },
+        "health": {
+          "hp": 45,
+          "maxHp": 45
+        }
+      }
+    },
+    {
+      "name": "狼_2",
+      "components": {
+        "transform": {
+          "pos": [
+            -52.06491949057779,
+            0.55,
+            -33.14286185479917
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "mesh": {
+          "meshKey": "wolf",
+          "colorHex": "#806052",
+          "metallic": 0.0,
+          "roughness": 0.8
+        },
+        "health": {
+          "hp": 45,
+          "maxHp": 45
+        }
+      }
+    },
+    {
+      "name": "狼_3",
+      "components": {
+        "transform": {
+          "pos": [
+            -23.754511869544263,
+            0.55,
+            -29.38229907313115
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "mesh": {
+          "meshKey": "wolf",
+          "colorHex": "#806052",
+          "metallic": 0.0,
+          "roughness": 0.8
+        },
+        "health": {
+          "hp": 45,
+          "maxHp": 45
+        }
+      }
+    },
+    {
+      "name": "狼_4",
+      "components": {
+        "transform": {
+          "pos": [
+            -43.90253226112791,
+            0.55,
+            23.529459774736413
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "mesh": {
+          "meshKey": "wolf",
+          "colorHex": "#806052",
+          "metallic": 0.0,
+          "roughness": 0.8
+        },
+        "health": {
+          "hp": 45,
+          "maxHp": 45
+        }
+      }
+    },
+    {
+      "name": "狼_5",
+      "components": {
+        "transform": {
+          "pos": [
+            14.028145265911514,
+            0.55,
+            -48.488313017015784
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "mesh": {
+          "meshKey": "wolf",
+          "colorHex": "#806052",
+          "metallic": 0.0,
+          "roughness": 0.8
+        },
+        "health": {
+          "hp": 45,
+          "maxHp": 45
+        }
+      }
+    },
+    {
+      "name": "狼_6",
+      "components": {
+        "transform": {
+          "pos": [
+            -28.068098778159538,
+            0.55,
+            -17.262680851496647
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "mesh": {
+          "meshKey": "wolf",
+          "colorHex": "#806052",
+          "metallic": 0.0,
+          "roughness": 0.8
+        },
+        "health": {
+          "hp": 45,
+          "maxHp": 45
+        }
+      }
+    },
+    {
+      "name": "狼_7",
+      "components": {
+        "transform": {
+          "pos": [
+            22.575007744935473,
+            0.55,
+            -33.7939892676994
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "mesh": {
+          "meshKey": "wolf",
+          "colorHex": "#806052",
+          "metallic": 0.0,
+          "roughness": 0.8
+        },
+        "health": {
+          "hp": 45,
+          "maxHp": 45
+        }
+      }
+    },
+    {
+      "name": "狼_8",
+      "components": {
+        "transform": {
+          "pos": [
+            -36.68479127180433,
+            0.55,
+            15.932972196088942
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "mesh": {
+          "meshKey": "wolf",
+          "colorHex": "#806052",
+          "metallic": 0.0,
+          "roughness": 0.8
+        },
+        "health": {
+          "hp": 45,
+          "maxHp": 45
+        }
+      }
+    },
+    {
+      "name": "狼_9",
+      "components": {
+        "transform": {
+          "pos": [
+            24.261470484218147,
+            0.55,
+            -54.69237640305866
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "mesh": {
+          "meshKey": "wolf",
+          "colorHex": "#806052",
+          "metallic": 0.0,
+          "roughness": 0.8
+        },
+        "health": {
+          "hp": 45,
+          "maxHp": 45
+        }
+      }
+    },
+    {
+      "name": "狼_10",
+      "components": {
+        "transform": {
+          "pos": [
+            -1.8617626314047329,
+            0.55,
+            29.648934864286467
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "mesh": {
+          "meshKey": "wolf",
+          "colorHex": "#806052",
+          "metallic": 0.0,
+          "roughness": 0.8
+        },
+        "health": {
+          "hp": 45,
+          "maxHp": 45
+        }
+      }
+    },
+    {
+      "name": "狼_11",
+      "components": {
+        "transform": {
+          "pos": [
+            51.82963121596449,
+            0.55,
+            33.962321638339766
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "mesh": {
+          "meshKey": "wolf",
+          "colorHex": "#806052",
+          "metallic": 0.0,
+          "roughness": 0.8
+        },
+        "health": {
+          "hp": 45,
+          "maxHp": 45
+        }
+      }
+    },
+    {
+      "name": "狼_12",
+      "components": {
+        "transform": {
+          "pos": [
+            -11.212277981106217,
+            0.55,
+            25.720595611127052
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "mesh": {
+          "meshKey": "wolf",
+          "colorHex": "#806052",
+          "metallic": 0.0,
+          "roughness": 0.8
+        },
+        "health": {
+          "hp": 45,
+          "maxHp": 45
+        }
+      }
+    }
+  ]
+}

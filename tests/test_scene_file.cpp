@@ -359,6 +359,43 @@ TEST(SceneCjkNameRoundTrip) {
 }
 
 // ---------------------------------------------------------------------------
+// Scene-level "level" data (2D levels embedded in scenes/*.json) round trips
+// ---------------------------------------------------------------------------
+
+TEST(SceneLevelDataRoundTrip) {
+    const char* json = R"({
+        "entities": [
+            {
+                "name": "PvZ",
+                "components": {
+                    "transform": {"pos": [0,0,0]},
+                    "script": {"backend": "lua", "path": "scripts/pvz.lua"}
+                }
+            }
+        ],
+        "level": {
+            "plants": [{"row": 4, "col": 1, "plant": "sunflower"}],
+            "zombies": [{"row": 2, "delay": 8, "type": "basic"}]
+        }
+    })";
+    auto a = scene::SceneFile::Parse(json);
+    CHECK(a.Ok());
+    CHECK(a.Value().level.IsObject());
+    CHECK_EQ(a.Value().level.Get("plants")->At(0)->Get("plant")->GetString(),
+             std::string("sunflower"));
+
+    const std::string written = core::JsonWriter::Write(a.Value().ToJson());
+    CHECK(written.find("\"level\"") != std::string::npos);
+
+    auto b = scene::SceneFile::Parse(written);
+    CHECK(b.Ok());
+    CHECK(b.Value().level.IsObject());
+    CHECK_EQ(b.Value().level.Get("plants")->Size(), 1u);
+    CHECK_EQ(b.Value().level.Get("zombies")->At(0)->Get("delay")->GetNumber(), 8.0);
+    CHECK_EQ(b.Value().entities[0].name, std::string("PvZ"));
+}
+
+// ---------------------------------------------------------------------------
 // PrefabLibrary basics + mesh key prefix validation (assets mode)
 // ---------------------------------------------------------------------------
 
