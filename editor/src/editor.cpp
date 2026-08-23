@@ -16,6 +16,7 @@
 #define NOMINMAX
 #endif
 #include <direct.h>
+#include <shellapi.h>
 #include <sys/stat.h>
 #include <windows.h>
 #undef DrawText // windows.h maps DrawText -> DrawTextA; keep the renderer API
@@ -1462,6 +1463,7 @@ void EditorApp::BuildImGuiUI() {
             ImGui::MenuItem("日志", nullptr, &showLog_);
             ImGui::MenuItem("行为树", nullptr, &showBt_);
             ImGui::MenuItem("脚本", nullptr, &showScripts_);
+            ImGui::MenuItem("脚本编辑器", nullptr, &showScriptEditor_);
             ImGui::MenuItem("打包", nullptr, &showPackage_);
             ImGui::MenuItem("性能", nullptr, &showProfiler_);
             ImGui::MenuItem("输入映射", nullptr, &showInputMap_);
@@ -1737,6 +1739,7 @@ void EditorApp::BuildImGuiUI() {
     BuildLogPanel();
     BuildBtPanel();
     BuildScriptPanel();
+    BuildScriptEditorPanel();
     BuildPackagePanel();
     BuildProfilerPanel();
     BuildInputMapPanel();
@@ -2623,6 +2626,34 @@ void EditorApp::RunUISmokeTest() {
         history_.Undo(); // remove the temp cube so later checks see the sandbox
         projectDir_ = prevProj;
         assetDir_ = prevAsset;
+    }
+
+    // --- Built-in script editor (open / save / syntax check) ---
+    {
+        const std::string path = GetTempDir() + "/editor_script.lua";
+        {
+            std::ofstream out(path, std::ios::binary);
+            out << "function on_start(ent)\nend\n";
+        }
+        OpenScriptEditor(path);
+        check(showScriptEditor_ && scriptEditorPath_ == path,
+              "script editor: opens the file");
+        check(scriptEditorCheck_.ok, "script editor: syntax passes on open");
+        // Break the syntax, save, and expect the error to surface.
+        std::snprintf(scriptEditorBuf_, sizeof(scriptEditorBuf_), "function broken( then\n");
+        SaveScriptEditor();
+        check(!scriptEditorCheck_.ok && !scriptEditorCheck_.message.empty(),
+              "script editor: syntax error detected after save");
+        // Fix and save again.
+        std::snprintf(scriptEditorBuf_, sizeof(scriptEditorBuf_),
+                      "function on_start(ent)\nend\n");
+        SaveScriptEditor();
+        check(scriptEditorCheck_.ok, "script editor: syntax passes after fix");
+        std::ifstream verify(path, std::ios::binary);
+        std::string saved((std::istreambuf_iterator<char>(verify)),
+                          std::istreambuf_iterator<char>());
+        check(saved.find("function on_start(ent)") != std::string::npos,
+              "script editor: save writes the edited content");
     }
 
     NEON_LOG_INFO("EDITOR-UI-SMOKE: all checks done");
@@ -4110,6 +4141,92 @@ void EditorApp::LoadPvzLevel() {
                                  (projectStartScene_.empty() ? "scenes/pvz.json"
                                                              : projectStartScene_);
     LoadScene(path);
+}
+
+// Opens a .lua file in the built-in script editor (Godot-style).
+void EditorApp::OpenScriptEditor(const std::string& path) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in.is_open()) {
+        NEON_LOG_ERROR("Editor: cannot open script '%s'", path.c_str());
+        return;
+    }
+    if (!scriptCheckHost_) {
+        scriptCheckHost_ = script::CreateLuaHost();
+        if (scriptCheckHost_) scriptCheckHost_->Init();
+    }
+    std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    const size_t cap = sizeof(scriptEditorBuf_) - 1;
+    if (text.size() >= cap) {
+        NEON_LOG_WARN("Editor: script '%s' too large for the editor buffer (%.1f KB cap)",
+                      path.c_str(), static_cast<double>(cap) / 1024.0);
+        text.resize(cap);
+    }
+    std::memcpy(scriptEditorBuf_, text.data(), text.size());
+    scriptEditorBuf_[text.size()] = '\0';
+    scriptEditorPath_ = path;
+    scriptEditorRel_ = path;
+    const std::string base = projectDir_.empty() ? "." : projectDir_;
+    if (path.compare(0, base.size(), base) == 0 && path.size() > base.size() &&
+        (path[base.size()] == '/' || path[base.size()] == '\\'))
+        scriptEditorRel_ = path.substr(base.size() + 1);
+    scriptEditorCheck_ = ScriptCheckResult{};
+    if (scriptCheckHost_) {
+        if (scriptEditorRel_ != path) {
+            scriptEditorCheck_ = CheckScriptFile(*scriptCheckHost_, base, scriptEditorRel_);
+        } else {
+            std::ifstream src(path, std::ios::binary);
+            std::string text((std::istreambuf_iterator<char>(src)),
+                             std::istreambuf_iterator<char>());
+            scriptEditorCheck_.path = path;
+            scriptEditorCheck_.ok = scriptCheckHost_->CheckSyntax(text);
+            if (!scriptEditorCheck_.ok) {
+                scriptEditorCheck_.message = scriptCheckHost_->LastError().message;
+                scriptEditorCheck_.line = scriptCheckHost_->LastError().line;
+            }
+        }
+    }
+    scriptEditorDirty_ = false;
+    showScriptEditor_ = true;
+    NEON_LOG_INFO("Editor: script editor opened '%s'", path.c_str());
+}
+
+// Saves the built-in editor's content, re-checks syntax and refreshes the
+// script panel.
+void EditorApp::SaveScriptEditor() {
+    if (scriptEditorPath_.empty()) return;
+    std::ofstream out(scriptEditorPath_, std::ios::binary);
+    if (!out.is_open()) {
+        NEON_LOG_ERROR("Editor: cannot write script '%s'", scriptEditorPath_.c_str());
+        return;
+    }
+    out << scriptEditorBuf_;
+    scriptEditorDirty_ = false;
+    const std::string base = projectDir_.empty() ? "." : projectDir_;
+    if (scriptCheckHost_) {
+        if (scriptEditorRel_ != scriptEditorPath_) {
+            scriptEditorCheck_ = CheckScriptFile(*scriptCheckHost_, base, scriptEditorRel_);
+        } else {
+            scriptEditorCheck_.path = scriptEditorPath_;
+            scriptEditorCheck_.ok = scriptCheckHost_->CheckSyntax(scriptEditorBuf_);
+            if (!scriptEditorCheck_.ok) {
+                scriptEditorCheck_.message = scriptCheckHost_->LastError().message;
+                scriptEditorCheck_.line = scriptCheckHost_->LastError().line;
+            }
+        }
+    }
+    RefreshScriptChecks();
+    NEON_LOG_INFO("Editor: script saved '%s'", scriptEditorPath_.c_str());
+}
+
+// Opens the file in the system's default editor (VS Code etc.).
+void EditorApp::OpenInExternalEditor(const std::string& path) {
+    if (path.empty()) return;
+#if defined(_WIN32)
+    ShellExecuteA(nullptr, "open", path.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+#else
+    const std::string cmd = std::string("xdg-open \"") + path + "\"";
+    std::system(cmd.c_str());
+#endif
 }
 
 void EditorApp::Enter2DMode() {

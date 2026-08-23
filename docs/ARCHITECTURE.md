@@ -135,6 +135,7 @@ SparseSet 风格的 ECS：
   - **本地化**：`neon::core::Localization` 多语言字符串表（激活→默认→键 回退链），脚本 `Loc(key)`（`GameRuntime` 从 `locales/` 加载），面板加载/编辑/保存 `locales.json`。
   - **资产面板**：项目 `assets/` 缺失自动创建；"浏览导入"（原生文件对话框）/ "浏览目录"（`IFileDialog` 文件夹选择，递归复制模型包）/ 手动路径输入；"新建"可创建目录、Lua、JSON、文本、**材质球**（`materials/*.mat.json`，可拖拽到属性面板应用到实体）；过滤页签含材质。
   - **打包**：`game.json` 的 `export` 预设（platform/icon/description）可视化编辑，manifest 接受 `editor` 元数据字段。
+  - **脚本编辑器**：资产面板/脚本面板双击 `.lua` 打开内置多行编辑器（保存 + 语法检查 + 未保存标记），或"外部编辑器打开"调系统默认编辑器（ShellExecute / xdg-open）。
 - **资产导入**：任意 `.obj`/`.gltf` 可作为实体导入（`meshKey = "obj:<path>" / "gltf:<path>"`），随场景 JSON 持久化并按路径重解析。
 - **场景数据**：`core::Json` + `JsonWriter` 保存/加载 `editor_scene.json`（含位置/缩放/颜色/金属度/粗糙度）。
 - **验证**：`--smoke-test <帧>` 自动运行 UI 冒烟测试（ImGui 上下文/图集/绘制数据、自研控件命中/点击/选择、日志缓冲、资产目录、资源统计、glTF 导入），任一检查失败退出码为 1。

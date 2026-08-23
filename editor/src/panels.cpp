@@ -448,6 +448,9 @@ void EditorApp::ImportAssetPath(const std::string& path) {
             NEON_LOG_INFO("Editor: preview texture '%s' (%dx%d)", path.c_str(), tex.Width(),
                           tex.Height());
         }
+    } else if (IsScriptExt(path)) {
+        // Double-clicking a .lua opens the built-in script editor.
+        OpenScriptEditor(path);
     } else {
         NEON_LOG_INFO("Editor: '%s' (%llu bytes) - no import action",
                       path.c_str(), static_cast<unsigned long long>(0));
@@ -916,6 +919,10 @@ void EditorApp::BuildAssetPanel() {
                 } else if (IsImageExt(e.name)) {
                     gfx::Texture tex = assetMgr_.LoadTexture(e.path);
                     if (tex.Valid()) tid = gfx::ImGuiNeon_RegisterTexture(tex.Handle());
+                } else if (IsScriptExt(e.name)) {
+                    if (ImGui::Button("编辑")) OpenScriptEditor(e.path);
+                    ImGui::SameLine();
+                    if (ImGui::Button("外部打开")) OpenInExternalEditor(e.path);
                 } else if (IsMaterialExt(e.name)) {
                     RequestMaterialThumbnail(e.path);
                     auto thumb = materialThumbs_.find(e.path);
@@ -1857,6 +1864,10 @@ void EditorApp::BuildScriptPanel() {
             std::snprintf(label, sizeof(label), "%s##script_%zu", scriptFiles_[i].c_str(), i);
             if (ImGui::Selectable(label, scriptAttachIndex_ == static_cast<int>(i)))
                 scriptAttachIndex_ = static_cast<int>(i);
+            if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
+                const std::string base = projectDir_.empty() ? "." : projectDir_;
+                OpenScriptEditor(base + "/" + scriptFiles_[i]);
+            }
             if (r.ok) {
                 ImGui::SameLine();
                 ImGui::TextColored(ImVec4(0.4f, 0.9f, 0.5f, 1.0f), "✓ 语法通过");
@@ -1980,6 +1991,46 @@ void EditorApp::RunPackage() {
         NEON_LOG_ERROR("Editor: package failed for '%s' (%zu errors)",
                        projectDir_.c_str(), packReport_.errors.size());
     }
+}
+
+// Built-in script editor (Godot-style): open/save a .lua, live syntax check,
+// and a one-click external-editor binding.
+void EditorApp::BuildScriptEditorPanel() {
+    if (!showScriptEditor_) return;
+    if (ImGui::Begin("脚本编辑器", &showScriptEditor_)) {
+        if (scriptEditorPath_.empty()) {
+            ImGui::TextDisabled("未打开脚本 — 在资产面板或脚本面板双击 .lua 打开");
+            ImGui::End();
+            return;
+        }
+        if (ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_S, false))
+            SaveScriptEditor();
+        ImGui::TextDisabled("文件: %s", scriptEditorPath_.c_str());
+        ImGui::SameLine();
+        if (ImGui::Button("保存")) SaveScriptEditor();
+        ImGui::SameLine();
+        if (ImGui::Button("外部编辑器打开")) OpenInExternalEditor(scriptEditorPath_);
+        ImGui::SameLine();
+        if (scriptEditorDirty_) {
+            ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f), "● 未保存");
+        } else {
+            ImGui::TextColored(ImVec4(0.5f, 0.8f, 0.6f, 1.0f), "已保存");
+        }
+        if (scriptEditorCheck_.ok) {
+            ImGui::TextColored(ImVec4(0.4f, 0.9f, 0.5f, 1.0f), "✓ 语法通过");
+        } else {
+            ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.4f, 1.0f),
+                               "✗ 语法错误 (行 %d): %s", scriptEditorCheck_.line,
+                               scriptEditorCheck_.message.c_str());
+        }
+        ImGui::Separator();
+        const ImVec2 editSize = ImGui::GetContentRegionAvail();
+        ImGui::InputTextMultiline(
+            "##script_editor", scriptEditorBuf_, sizeof(scriptEditorBuf_), editSize,
+            ImGuiInputTextFlags_AllowTabInput);
+        if (ImGui::IsItemEdited()) scriptEditorDirty_ = true;
+    }
+    ImGui::End();
 }
 
 void EditorApp::BuildPackagePanel() {

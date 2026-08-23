@@ -273,6 +273,12 @@ private:
     // re-runs CheckSyntax on each file (used by the panel and the smoke).
     void BuildScriptPanel();
     void RefreshScriptChecks();
+    // Script editor (Godot-style built-in): open/save a .lua with live syntax
+    // check, plus a one-click external-editor binding (system default).
+    void OpenScriptEditor(const std::string& path);
+    void SaveScriptEditor();
+    void BuildScriptEditorPanel();
+    void OpenInExternalEditor(const std::string& path);
 
     // Package panel (T4.6): docked 打包 panel with project/out dir inputs, a
     // one-click 打包 button and the last PackageReport rendered.
@@ -482,6 +488,12 @@ private:
     std::unique_ptr<script::IScriptHost> scriptCheckHost_; // throwaway host for syntax checks
     std::vector<std::string> scriptFiles_;                 // project-relative "scripts/*.lua"
     std::vector<ScriptCheckResult> scriptChecks_;          // parallel: per-file check results
+    bool showScriptEditor_ = false;
+    std::string scriptEditorPath_;   // file being edited ("" = closed)
+    std::string scriptEditorRel_;    // project-relative path for checks
+    char scriptEditorBuf_[256 * 1024] = {};
+    bool scriptEditorDirty_ = false;
+    ScriptCheckResult scriptEditorCheck_; // last syntax check result
     uint64_t scriptRefreshFrame_ = 0; // throttle: refresh scripts/ listing + checks
     int scriptAttachIndex_ = -1;      // dropdown/list selection into scriptFiles_
     int scriptSyncEntity_ = -1;       // entity whose vars the buffer currently shows
