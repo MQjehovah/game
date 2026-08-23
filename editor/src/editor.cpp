@@ -1865,6 +1865,9 @@ void EditorApp::RunUISmokeTest() {
     // --- Tool panels ---
     check(!core::GetRecentLogs(16).empty(), "log panel has engine log entries");
     check(!assetEntries_.empty(), "asset panel enumerated files");
+    assetGridView_ = true; // the grid view renders from the next frame on;
+                           // a crash here fails the smoke run
+    check(assetGridView_, "asset panel thumbnail grid view enabled");
 
     // --- Transform gizmo ---
     // The gizmo renders every frame while an entity is selected; verify the

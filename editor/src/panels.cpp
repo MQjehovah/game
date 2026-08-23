@@ -724,6 +724,11 @@ void EditorApp::BuildAssetPanel() {
                 ImGui::TextColored(ImVec4(0.5f, 0.8f, 1.0f, 1.0f), "✓");
             }
         }
+        ImGui::SameLine();
+        ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
+        ImGui::SameLine();
+        if (ImGui::SmallButton(assetGridView_ ? "网格视图" : "列表视图"))
+            assetGridView_ = !assetGridView_;
         ImGui::Separator();
 
         // The panel docks at the bottom of the window, so a fixed -170px
@@ -735,6 +740,105 @@ void EditorApp::BuildAssetPanel() {
             ImGui::TextWrapped("此目录为空。使用上方 浏览导入 / 浏览目录 添加外部资源，"
                                "或 新建 创建 Lua 脚本 / JSON / 材质球 / 目录。");
         }
+        if (assetGridView_) {
+            // Thumbnail grid (Unity Project icon mode): a fixed cell per
+            // asset with a real preview for textures/models and a colored
+            // type tile for directories/scripts/materials/JSON.
+            const float cellW = 84.0f;
+            const float cellH = 94.0f;
+            const ImVec2 avail = ImGui::GetContentRegionAvail();
+            const int cols = std::max(1, static_cast<int>(avail.x / cellW));
+            int visible = 0;
+            for (size_t i = 0; i < assetEntries_.size(); ++i) {
+                const AssetEntry& e = assetEntries_[i];
+                if (!AssetMatchesFilter(e, assetFilter_)) continue;
+                const int col = visible % cols;
+                const int row = visible / cols;
+                ++visible;
+                ImGui::SetCursorPos(ImVec2(col * cellW, row * cellH));
+                const std::string id = "##acell_" + std::to_string(i);
+                if (ImGui::InvisibleButton(id.c_str(), ImVec2(cellW - 6.0f, cellH - 8.0f))) {
+                    selectedAsset_ = static_cast<int>(i);
+                }
+                const bool hovered = ImGui::IsItemHovered();
+                const bool dbl = hovered && ImGui::IsMouseDoubleClicked(0);
+                if (dbl) {
+                    if (e.isDir) {
+                        assetDir_ = e.path;
+                        RefreshAssetDir();
+                    } else {
+                        ImportAssetPath(e.path);
+                    }
+                }
+                ImDrawList* dl = ImGui::GetWindowDrawList();
+                const ImVec2 tl = ImGui::GetItemRectMin();
+                const float tw = ImGui::GetItemRectSize().x;
+                const ImVec2 thumbTl = {tl.x + 4.0f, tl.y + 2.0f};
+                const ImVec2 thumbBr = {tl.x + tw - 4.0f, tl.y + 60.0f};
+                const ImVec2 thumbSize = {thumbBr.x - thumbTl.x, thumbBr.y - thumbTl.y};
+                // Selection highlight behind the tile.
+                if (selectedAsset_ == static_cast<int>(i)) {
+                    dl->AddRectFilled(tl, {tl.x + tw, tl.y + cellH - 8.0f},
+                                      IM_COL32(60, 100, 160, 70));
+                }
+                ImTextureID tid = ImTextureID_Invalid;
+                bool flipV = false;
+                ImU32 tileCol = IM_COL32(70, 70, 80, 255);
+                if (e.isDir) {
+                    tileCol = IM_COL32(180, 140, 40, 255);
+                } else if (IsImageExt(e.name)) {
+                    gfx::Texture tex = assetMgr_.LoadTexture(e.path);
+                    if (tex.Valid()) tid = gfx::ImGuiNeon_RegisterTexture(tex.Handle());
+                } else if (IsModelExt(e.name)) {
+                    RequestMeshThumbnail(e.path);
+                    auto thumb = meshThumbs_.find(e.path);
+                    if (thumb != meshThumbs_.end()) {
+                        tid = thumb->second.texId;
+                        flipV = true; // FBO color textures are bottom-up
+                    }
+                    tileCol = IM_COL32(90, 130, 200, 255);
+                } else if (IsMaterialExt(e.name)) {
+                    tileCol = IM_COL32(150, 90, 190, 255);
+                } else if (IsScriptExt(e.name)) {
+                    tileCol = IM_COL32(80, 160, 80, 255);
+                }
+                if (tid != ImTextureID_Invalid) {
+                    dl->AddImage(tid, thumbTl, thumbBr, ImVec2(0.0f, flipV ? 1.0f : 0.0f),
+                                 ImVec2(1.0f, flipV ? 0.0f : 1.0f));
+                    dl->AddRect(thumbTl, thumbBr, IM_COL32(30, 30, 35, 255));
+                } else {
+                    dl->AddRectFilled(thumbTl, thumbBr, tileCol);
+                    dl->AddRect(thumbTl, thumbBr, IM_COL32(30, 30, 35, 255));
+                    const char* tag = e.isDir ? "DIR"
+                                      : IsMaterialExt(e.name) ? "MAT"
+                                      : IsScriptExt(e.name) ? "LUA"
+                                      : IsImageExt(e.name) ? "IMG"
+                                      : IsModelExt(e.name) ? "MDL"
+                                                           : "FILE";
+                    dl->AddText(ImVec2(thumbTl.x + 4.0f, thumbTl.y + thumbSize.y * 0.5f - 8.0f),
+                                IM_COL32(255, 255, 255, 220), tag);
+                }
+                // Name below the thumbnail (truncated to one line).
+                const ImVec2 namePos = {tl.x + 3.0f, thumbBr.y + 2.0f};
+                dl->PushClipRect(tl, {tl.x + tw, tl.y + cellH - 6.0f}, true);
+                dl->AddText(namePos, IM_COL32(220, 225, 235, 255), e.name.c_str());
+                dl->PopClipRect();
+                // Drag sources work in grid mode too.
+                if (!e.isDir && ImGui::BeginDragDropSource()) {
+                    const char* kind = IsImageExt(e.name)   ? "ASSET_TEXTURE"
+                                       : IsModelExt(e.name) ? "ASSET_MODEL"
+                                       : IsScriptExt(e.name) ? "ASSET_SCRIPT"
+                                       : IsMaterialExt(e.name) ? "ASSET_MATERIAL"
+                                                               : nullptr;
+                    if (kind) {
+                        ImGui::SetDragDropPayload(kind, e.path.c_str(), e.path.size() + 1);
+                        ImGui::Text("%s", e.name.c_str());
+                    }
+                    ImGui::EndDragDropSource();
+                }
+            }
+            ImGui::Dummy(ImVec2(1.0f, (visible / cols + 1) * cellH + 20.0f));
+        } else {
         for (size_t i = 0; i < assetEntries_.size(); ++i) {
             const AssetEntry& e = assetEntries_[i];
             if (!AssetMatchesFilter(e, assetFilter_)) continue;
@@ -773,6 +877,7 @@ void EditorApp::BuildAssetPanel() {
                 ImGui::Text("%s", e.name.c_str());
                 ImGui::EndDragDropSource();
             }
+        }
         }
         ImGui::EndChild();
 
