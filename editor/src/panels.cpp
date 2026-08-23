@@ -164,6 +164,12 @@ bool IsScriptExt(const std::string& name) {
     return ext == ".lua";
 }
 
+// Material ball asset: materials/*.mat.json.
+bool IsMaterialExt(const std::string& name) {
+    const std::string lower = ToLower(name);
+    return lower.size() > 8 && lower.compare(lower.size() - 8, 8, ".mat.json") == 0;
+}
+
 // Convert an asset path (absolute or project-root-relative) into a
 // project-relative path ("scripts/foo.lua"); returns the input unchanged when it
 // doesn't live under the project dir.
@@ -191,6 +197,7 @@ bool AssetMatchesFilter(const AssetEntry& e, int filter) {
     if (filter == 1) return IsModelExt(e.name);
     if (filter == 2) return IsImageExt(e.name);
     if (filter == 3) return IsScriptExt(e.name);
+    if (filter == 4) return IsMaterialExt(e.name);
     return true;
 }
 
@@ -405,6 +412,12 @@ void EditorApp::CreateAssetFile(const std::string& name, int kind) {
                   "function on_update(ent, dt)\nend\n";
     } else if (kind == 2) {
         content = "{\n}\n";
+    } else if (kind == 4) {
+        // Material ball asset (Unity .mat / Godot Material style).
+        content = "{\n  \"colorHex\": \"#FFFFFF\",\n  \"metallic\": 0.0,\n"
+                  "  \"roughness\": 0.8,\n  \"ao\": 1.0,\n"
+                  "  \"emissiveIntensity\": 1.0,\n  \"albedoTex\": \"\",\n"
+                  "  \"mrTex\": \"\",\n  \"aoTex\": \"\",\n  \"emissiveTex\": \"\"\n}\n";
     }
     std::ofstream out(path, std::ios::binary);
     if (!out.is_open()) {
@@ -664,13 +677,14 @@ void EditorApp::BuildAssetPanel() {
         }
         // New-asset row: type combo + name + create.
         if (newKind >= 0) {
-            static const char* kinds[] = {"目录", "Lua 脚本", "JSON 文件", "文本文件"};
+            static const char* kinds[] = {"目录", "Lua 脚本", "JSON 文件", "文本文件", "材质球"};
             static char newName[128] = {};
             ImGui::SetNextItemWidth(90.0f);
-            if (ImGui::Combo("##new_kind", &newKind, kinds, 4)) {
+            if (ImGui::Combo("##new_kind", &newKind, kinds, 5)) {
                 // hint defaults per kind
                 if (newKind == 1) std::strncpy(newName, "new_script.lua", sizeof(newName) - 1);
                 else if (newKind == 2) std::strncpy(newName, "new_data.json", sizeof(newName) - 1);
+                else if (newKind == 4) std::strncpy(newName, "new_material.mat.json", sizeof(newName) - 1);
             }
             ImGui::SameLine();
             ImGui::SetNextItemWidth(180.0f);
@@ -687,7 +701,7 @@ void EditorApp::BuildAssetPanel() {
         ImGui::Separator();
 
         // Unity-style Project filter tabs: 全部 / 模型 / 贴图 / 脚本.
-        const char* filters[] = {"全部", "模型", "贴图", "脚本"};
+        const char* filters[] = {"全部", "模型", "贴图", "脚本", "材质"};
         for (int f = 0; f < 4; ++f) {
             if (f) ImGui::SameLine();
             if (ImGui::SmallButton(filters[f])) assetFilter_ = f;
@@ -729,6 +743,11 @@ void EditorApp::BuildAssetPanel() {
                 ImGui::EndDragDropSource();
             } else if (IsScriptExt(e.name) && ImGui::BeginDragDropSource()) {
                 ImGui::SetDragDropPayload("ASSET_SCRIPT", e.path.c_str(), e.path.size() + 1);
+                ImGui::Text("%s", e.name.c_str());
+                ImGui::EndDragDropSource();
+            } else if (IsMaterialExt(e.name) && ImGui::BeginDragDropSource()) {
+                ImGui::SetDragDropPayload("ASSET_MATERIAL", e.path.c_str(),
+                                          e.path.size() + 1);
                 ImGui::Text("%s", e.name.c_str());
                 ImGui::EndDragDropSource();
             }
@@ -911,6 +930,34 @@ void EditorApp::BuildInspectorPanel() {
         }
         ImGui::Separator();
         ImGui::TextUnformatted("材质");
+        if (!e.materialRef.empty()) {
+            ImGui::TextDisabled("材质球: %s", e.materialRef.c_str());
+        }
+        {
+            static char matName[128] = {};
+            std::snprintf(matName, sizeof(matName), "%s", e.name.c_str());
+            ImGui::SetNextItemWidth(150.0f);
+            ImGui::InputText("材质球名", matName, sizeof(matName));
+            ImGui::SameLine();
+            if (ImGui::Button("另存为材质球")) {
+                std::string name(matName);
+                if (!name.empty()) {
+                    const size_t dot = name.find_last_of('.');
+                    if (dot != std::string::npos) name = name.substr(0, dot);
+                    SaveMaterialAsset(name);
+                }
+            }
+        }
+        // Drag a material-ball asset from the asset panel onto the entity.
+        if (ImGui::BeginDragDropTarget()) {
+            if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("ASSET_MATERIAL")) {
+                std::string path(static_cast<const char*>(payload->Data),
+                                 static_cast<size_t>(payload->DataSize));
+                if (!path.empty() && path.back() == '\0') path.pop_back();
+                if (!path.empty()) ApplyMaterialAsset(path);
+            }
+            ImGui::EndDragDropTarget();
+        }
         const float oldMetallic = e.metallic;
         if (ImGui::DragFloat("金属度", &e.metallic, 0.01f, 0.0f, 1.0f)) {
             e.material.metallic = e.metallic;

@@ -133,6 +133,7 @@ SparseSet 风格的 ECS：
   - **视口**：NoInputs 停靠窗口，不拦截 3D 输入；右键旋转、中键平移、滚轮缩放、射线-AABB 拾取；`WantCaptureMouse` 为真时让出输入。
   - **导航**：`neon::nav::NavGrid`（2D 可行走网格 + A* 八方向寻路、绕墙防切角、`.navgrid.json` 资产往返），面板内格子编辑（左键翻转/Shift 起点/Ctrl 终点）+ 路径预览。
   - **本地化**：`neon::core::Localization` 多语言字符串表（激活→默认→键 回退链），脚本 `Loc(key)`（`GameRuntime` 从 `locales/` 加载），面板加载/编辑/保存 `locales.json`。
+  - **资产面板**：项目 `assets/` 缺失自动创建；"浏览导入"（原生文件对话框）/ "浏览目录"（`IFileDialog` 文件夹选择，递归复制模型包）/ 手动路径输入；"新建"可创建目录、Lua、JSON、文本、**材质球**（`materials/*.mat.json`，可拖拽到属性面板应用到实体）；过滤页签含材质。
   - **打包**：`game.json` 的 `export` 预设（platform/icon/description）可视化编辑，manifest 接受 `editor` 元数据字段。
 - **资产导入**：任意 `.obj`/`.gltf` 可作为实体导入（`meshKey = "obj:<path>" / "gltf:<path>"`），随场景 JSON 持久化并按路径重解析。
 - **场景数据**：`core::Json` + `JsonWriter` 保存/加载 `editor_scene.json`（含位置/缩放/颜色/金属度/粗糙度）。

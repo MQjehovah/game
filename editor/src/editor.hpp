@@ -45,6 +45,11 @@ struct SceneEntity {
     std::string emissiveTex;
     float ao = 1.0f;               // AO strength (0 = ignore AO map, 1 = full)
     float emissiveIntensity = 1.0f;
+    // Material asset reference (materials/<name>.mat.json): when set, the
+    // entity's material params come from that asset (material "ball" like
+    // Unity/Godot). LoadScene expands it into the flattened fields below; the
+    // export writes both the reference and the expanded params.
+    std::string materialRef;
     // Health (mirrors the built-in `health` component): maxHp <= 0 means the
     // entity tracks no health. Used by the playtest for the hero + combat mobs.
     float hp = 0.0f;
@@ -147,6 +152,14 @@ private:
     // a new asset (dir / lua / json / empty text). Both refresh the listing.
     void ImportAssetFile(const std::string& srcPath);
     void CreateAssetFile(const std::string& name, int kind);
+    // Material-ball assets (Unity .mat / Godot Material style): save the
+    // selected entity's material as materials/<name>.mat.json and apply a
+    // material asset to the selected entity (both through undo).
+    void SaveMaterialAsset(const std::string& name);
+    void ApplyMaterialAsset(const std::string& path);
+    // Expands a material asset into an entity's flattened material fields
+    // (used by ApplyMaterialAsset and scene loading). False when missing/invalid.
+    bool LoadMaterialParamsInto(SceneEntity& e, const std::string& path);
     void ImportAssetPath(const std::string& path);
     void ImportSelectedAsset();
     void UpdateViewport(float dt);

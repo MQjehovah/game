@@ -65,6 +65,7 @@
 | 导航寻路：2D 可行走网格 `NavGrid` + A*（八方向、绕墙、JSON 资产往返）+ 编辑器导航面板（格子编辑/起点终点/路径预览） | ✅ `neon::nav` |
 | 本地化（Godot 风格）：多语言字符串表 JSON + 脚本 `Loc(key)`（激活→默认→键 回退链）+ 编辑器本地化面板 | ✅ `neon::core::Localization` |
 | 导出配置：`game.json` 的 `export` 预设（platform/icon/description）+ 打包面板可视化编辑；manifest 接受 `editor` 元数据字段 | ✅ |
+| 材质球资产（Unity .mat / Godot Material 风格）：`materials/*.mat.json`（颜色/金属度/粗糙度/AO/自发光/四张贴图），资产面板新建/过滤/拖拽到实体，属性面板"另存为材质球"，场景导出带引用并展开 | ✅ `materialRef` |
 | 场景树（Godot 式）：实体 `transform.parent` 父子变换继承 + 编辑器树形层级面板 + 拖拽排父子 | ✅ |
 | 信号系统：`SignalConnect(name, fn)` / `SignalEmit(name, arg)`（支持局部闭包）+ 多场景 `ChangeScene(path)` | ✅ |
 | 数据驱动场景：组件化 JSON + 预制体 + `game.json` 清单 | ✅ |

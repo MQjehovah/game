@@ -27,6 +27,20 @@ inline bool Vec3Eq(const math::Vec3& a, const math::Vec3& b) {
 inline bool QuatEq(const math::Quat& a, const math::Quat& b) {
     return a.x == b.x && a.y == b.y && a.z == b.z && a.w == b.w;
 }
+
+inline gfx::Color HexToColor(const std::string& hex) {
+    if (hex.size() < 7 || hex[0] != '#') return gfx::Color::White;
+    auto nibble = [](char c) -> unsigned {
+        if (c >= '0' && c <= '9') return static_cast<unsigned>(c - '0');
+        if (c >= 'a' && c <= 'f') return static_cast<unsigned>(c - 'a' + 10);
+        if (c >= 'A' && c <= 'F') return static_cast<unsigned>(c - 'A' + 10);
+        return 255u;
+    };
+    auto byte = [&](char hi, char lo) {
+        return static_cast<float>(((nibble(hi) << 4) | nibble(lo)) / 255.0);
+    };
+    return {byte(hex[1], hex[2]), byte(hex[3], hex[4]), byte(hex[5], hex[6]), 1.0f};
+}
 } // namespace
 
 // Insert a resolved entity at a recorded position. Undo erases it; redo
@@ -230,9 +244,40 @@ inline void ApplyEmissiveTexSlot(SceneEntity& e, const TextureSlotValue& v) {
     e.material.emissive = v.handle;
 }
 
+// A material-ball asset applied to an entity: the reference path plus the
+// expanded params (Unity .mat / Godot Material style).
+struct MaterialAssetValue {
+    std::string ref;          // materials/<name>.mat.json ("" = embedded)
+    std::string colorHex;     // "#RRGGBB"
+    float metallic = 0.0f;
+    float roughness = 0.8f;
+    float ao = 1.0f;
+    float emissiveIntensity = 1.0f;
+    std::string albedoTex, mrTex, aoTex, emissiveTex;
+};
+
+inline void ApplyMaterialAssetProp(SceneEntity& e, const MaterialAssetValue& v) {
+    e.materialRef = v.ref;
+    e.tint = HexToColor(v.colorHex);
+    e.metallic = v.metallic;
+    e.roughness = v.roughness;
+    e.ao = v.ao;
+    e.emissiveIntensity = v.emissiveIntensity;
+    e.albedoTex = v.albedoTex;
+    e.mrTex = v.mrTex;
+    e.aoTex = v.aoTex;
+    e.emissiveTex = v.emissiveTex;
+}
+
 namespace {
 inline bool ValuesEqual(const float& a, const float& b) { return a == b; }
 inline bool ValuesEqual(const std::string& a, const std::string& b) { return a == b; }
+inline bool ValuesEqual(const MaterialAssetValue& a, const MaterialAssetValue& b) {
+    return a.ref == b.ref && a.colorHex == b.colorHex && a.metallic == b.metallic &&
+           a.roughness == b.roughness && a.ao == b.ao &&
+           a.emissiveIntensity == b.emissiveIntensity && a.albedoTex == b.albedoTex &&
+           a.mrTex == b.mrTex && a.aoTex == b.aoTex && a.emissiveTex == b.emissiveTex;
+}
 inline bool ValuesEqual(const TextureSlotValue& a, const TextureSlotValue& b) {
     return a.path == b.path;
 }

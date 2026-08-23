@@ -60,6 +60,13 @@ gfx::Color ColorFromHex(const std::string& hex) {
     return {byte(hex[1], hex[2]), byte(hex[3], hex[4]), byte(hex[5], hex[6]), 1.0f};
 }
 
+std::string ColorToHex(const gfx::Color& c) {
+    char buf[16];
+    std::snprintf(buf, sizeof(buf), "#%02X%02X%02X", static_cast<int>(c.r * 255.0f),
+                  static_cast<int>(c.g * 255.0f), static_cast<int>(c.b * 255.0f));
+    return buf;
+}
+
 std::string DirName(const std::string& path) {
     size_t pos = path.find_last_of("/\\");
     return pos == std::string::npos ? std::string(".") : path.substr(0, pos + 1);
@@ -2557,6 +2564,41 @@ void EditorApp::RunUISmokeTest() {
         assetDir_ = prevDir;
     }
 
+    // --- Material-ball assets (Unity .mat / Godot Material style) ---
+    {
+        const std::string proj = GetTempDir() + "/asset_proj";
+        const std::string prevProj = projectDir_;
+        const std::string prevAsset = assetDir_;
+        projectDir_ = proj;
+        assetDir_ = proj + "/assets";
+        const size_t before = entities_.size();
+        AddEntity("cube");
+        const int idx = static_cast<int>(entities_.size()) - 1;
+        SetSelection(idx);
+        entities_[static_cast<size_t>(idx)].metallic = 0.42f;
+        entities_[static_cast<size_t>(idx)].roughness = 0.31f;
+        SaveMaterialAsset("smoke_mat");
+        check(std::ifstream(proj + "/materials/smoke_mat.mat.json").is_open(),
+              "material: SaveMaterialAsset writes the .mat.json");
+        check(entities_[static_cast<size_t>(idx)].materialRef ==
+                  "materials/smoke_mat.mat.json",
+              "material: entity links the asset reference");
+        {
+            std::ofstream out(proj + "/materials/other.mat.json", std::ios::binary);
+            out << R"({"colorHex":"#112233","metallic":0.9,"roughness":0.2})";
+        }
+        ApplyMaterialAsset(proj + "/materials/other.mat.json");
+        SceneEntity& applied = entities_[static_cast<size_t>(idx)];
+        check(applied.materialRef == "materials/other.mat.json" &&
+                  std::fabs(applied.metallic - 0.9f) < 1e-5f &&
+                  std::fabs(applied.roughness - 0.2f) < 1e-5f,
+              "material: ApplyMaterialAsset updates the entity");
+        // Scene export carries the reference; reloading expands it again.
+        history_.Undo(); // remove the temp cube so later checks see the sandbox
+        projectDir_ = prevProj;
+        assetDir_ = prevAsset;
+    }
+
     NEON_LOG_INFO("EDITOR-UI-SMOKE: all checks done");
 }
 
@@ -2685,6 +2727,16 @@ core::Result<core::Json> EditorApp::BuildPlaySceneJson() {
             j.string_ = e.prefab;
             return j;
         }();
+        if (!e.materialRef.empty()) {
+            // Write the material-ball reference alongside the expanded params
+            // (runtime reads the params; the editor keeps the asset link).
+            core::Json& obj = res.Value();
+            core::Json& mesh = obj.object_["components"].object_["mesh"];
+            core::Json j;
+            j.type_ = core::Json::Type::String;
+            j.string_ = e.materialRef;
+            mesh.object_["materialRef"] = std::move(j);
+        }
         // Merge schema-editable extra components into the exported entity so
         // project scenes round-trip without data loss.
         if (!e.extraComponents.empty()) {
@@ -3217,6 +3269,8 @@ void EditorApp::LoadScene(const std::string& path) {
             }
             if (const core::Json* m = comps->Get("mesh")) {
                 e.meshKey = m->Get("meshKey") ? m->Get("meshKey")->GetString("cube") : "cube";
+                if (const core::Json* mr = m->Get("materialRef"))
+                    e.materialRef = mr->GetString();
                 if (const core::Json* c = m->Get("colorHex")) e.tint = ColorFromHex(c->GetString());
                 if (const core::Json* v = m->Get("metallic")) e.metallic = static_cast<float>(v->GetNumber());
                 if (const core::Json* v = m->Get("roughness")) e.roughness = static_cast<float>(v->GetNumber());
@@ -3306,6 +3360,11 @@ void EditorApp::LoadScene(const std::string& path) {
             if (const core::Json* sp = j->Get("scriptPath")) e.scriptPath = sp->GetString();
             if (const core::Json* sb = j->Get("scriptBackend")) e.scriptBackend = sb->GetString();
             if (const core::Json* sv = j->Get("scriptVars")) e.scriptVars = *sv;
+        }
+        if (!e.materialRef.empty()) {
+            // Material-ball reference ("materials/x.mat.json"): expand it into
+            // the flattened fields before resolving the mesh.
+            LoadMaterialParamsInto(e, projectDir_ + "/" + e.materialRef);
         }
         if (ResolveMesh(e)) {
             ApplyMaterialParams(e);
@@ -3486,6 +3545,118 @@ void EditorApp::SavePrefab(const std::string& name) {
     }
     LoadPrefabLibrary();
     NEON_LOG_INFO("Editor: prefab saved -> %s", path.c_str());
+}
+
+// Expands a material-ball asset (materials/*.mat.json) into an entity's
+// flattened material fields. False when the asset is missing or invalid.
+bool EditorApp::LoadMaterialParamsInto(SceneEntity& e, const std::string& path) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in.is_open()) return false;
+    std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    std::string err;
+    core::Json root = core::Json::Parse(text, &err);
+    if (!root.IsObject()) return false;
+    if (const core::Json* c = root.Get("colorHex"))
+        e.tint = ColorFromHex(c->GetString("#FFFFFF"));
+    if (const core::Json* v = root.Get("metallic"))
+        e.metallic = static_cast<float>(v->GetNumber());
+    if (const core::Json* v = root.Get("roughness"))
+        e.roughness = static_cast<float>(v->GetNumber());
+    if (const core::Json* v = root.Get("ao")) e.ao = static_cast<float>(v->GetNumber());
+    if (const core::Json* v = root.Get("emissiveIntensity"))
+        e.emissiveIntensity = static_cast<float>(v->GetNumber());
+    if (const core::Json* v = root.Get("albedoTex")) e.albedoTex = v->GetString();
+    if (const core::Json* v = root.Get("mrTex")) e.mrTex = v->GetString();
+    if (const core::Json* v = root.Get("aoTex")) e.aoTex = v->GetString();
+    if (const core::Json* v = root.Get("emissiveTex")) e.emissiveTex = v->GetString();
+    return true;
+}
+
+// Saves the selected entity's material as a material-ball asset and links the
+// entity to it (one undo step).
+void EditorApp::SaveMaterialAsset(const std::string& name) {
+    if (name.empty() || selected_ < 0 ||
+        selected_ >= static_cast<int>(entities_.size())) {
+        NEON_LOG_WARN("Editor: material asset name/selection invalid");
+        return;
+    }
+    SceneEntity& e = entities_[static_cast<size_t>(selected_)];
+    if (e.meshKey.empty()) {
+        NEON_LOG_WARN("Editor: entity has no mesh; cannot save a material ball");
+        return;
+    }
+    auto str = [](const std::string& s) {
+        core::Json j;
+        j.type_ = core::Json::Type::String;
+        j.string_ = s;
+        return j;
+    };
+    auto num = [](double v) {
+        core::Json j;
+        j.type_ = core::Json::Type::Number;
+        j.number_ = v;
+        return j;
+    };
+    core::Json root;
+    root.type_ = core::Json::Type::Object;
+    root.object_["colorHex"] = str(ColorToHex(e.tint));
+    root.object_["metallic"] = num(e.metallic);
+    root.object_["roughness"] = num(e.roughness);
+    root.object_["ao"] = num(e.ao);
+    root.object_["emissiveIntensity"] = num(e.emissiveIntensity);
+    root.object_["albedoTex"] = str(e.albedoTex);
+    root.object_["mrTex"] = str(e.mrTex);
+    root.object_["aoTex"] = str(e.aoTex);
+    root.object_["emissiveTex"] = str(e.emissiveTex);
+
+    const std::string dir = projectDir_ + "/materials";
+    EnsureDirs(dir + "/");
+    const std::string rel = "materials/" + name + ".mat.json";
+    const std::string path = projectDir_ + "/" + rel;
+    std::ofstream out(path, std::ios::binary);
+    if (!out.is_open()) {
+        NEON_LOG_ERROR("Editor: cannot write material asset '%s'", path.c_str());
+        return;
+    }
+    out << core::JsonWriter::Write(root);
+
+    const MaterialAssetValue oldVal{e.materialRef, ColorToHex(e.tint), e.metallic, e.roughness,
+                                    e.ao, e.emissiveIntensity, e.albedoTex, e.mrTex, e.aoTex,
+                                    e.emissiveTex};
+    const MaterialAssetValue newVal{rel, ColorToHex(e.tint), e.metallic, e.roughness, e.ao,
+                                    e.emissiveIntensity, e.albedoTex, e.mrTex, e.aoTex,
+                                    e.emissiveTex};
+    history_.Push(std::make_unique<EditPropertyCommand<MaterialAssetValue>>(
+        &entities_, selected_, ApplyMaterialAssetProp, oldVal, newVal));
+    if (assetDir_ == dir) RefreshAssetDir();
+    NEON_LOG_INFO("Editor: material ball saved -> %s", path.c_str());
+}
+
+// Applies a material-ball asset to the selected entity (one undo step).
+void EditorApp::ApplyMaterialAsset(const std::string& path) {
+    if (selected_ < 0 || selected_ >= static_cast<int>(entities_.size())) return;
+    SceneEntity& e = entities_[static_cast<size_t>(selected_)];
+    SceneEntity tmp = e;
+    if (!LoadMaterialParamsInto(tmp, path)) {
+        NEON_LOG_ERROR("Editor: cannot load material asset '%s'", path.c_str());
+        return;
+    }
+    const MaterialAssetValue oldVal{e.materialRef, ColorToHex(e.tint), e.metallic, e.roughness,
+                                    e.ao, e.emissiveIntensity, e.albedoTex, e.mrTex, e.aoTex,
+                                    e.emissiveTex};
+    // Store the reference project-relative ("materials/x.mat.json") so scenes
+    // round-trip regardless of where the asset panel is browsing.
+    std::string rel = path;
+    const std::string base = projectDir_ == "." ? "" : projectDir_ + "/";
+    if (!base.empty() && rel.compare(0, base.size(), base) == 0)
+        rel = rel.substr(base.size());
+    const MaterialAssetValue newVal{rel, ColorToHex(tmp.tint), tmp.metallic, tmp.roughness,
+                                    tmp.ao, tmp.emissiveIntensity, tmp.albedoTex, tmp.mrTex,
+                                    tmp.aoTex, tmp.emissiveTex};
+    history_.Push(std::make_unique<EditPropertyCommand<MaterialAssetValue>>(
+        &entities_, selected_, ApplyMaterialAssetProp, oldVal, newVal));
+    ApplyMaterialParams(entities_[static_cast<size_t>(selected_)]);
+    NEON_LOG_INFO("Editor: material asset '%s' applied", path.c_str());
 }
 
 // Godot-style project switch: loads <dir>/game.json, enters the project's
