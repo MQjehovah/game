@@ -800,6 +800,12 @@ void EditorApp::BuildAssetPanel() {
                     }
                     tileCol = IM_COL32(90, 130, 200, 255);
                 } else if (IsMaterialExt(e.name)) {
+                    RequestMaterialThumbnail(e.path);
+                    auto thumb = materialThumbs_.find(e.path);
+                    if (thumb != materialThumbs_.end()) {
+                        tid = thumb->second.texId;
+                        flipV = true;
+                    }
                     tileCol = IM_COL32(150, 90, 190, 255);
                 } else if (IsScriptExt(e.name)) {
                     tileCol = IM_COL32(80, 160, 80, 255);
@@ -910,6 +916,40 @@ void EditorApp::BuildAssetPanel() {
                 } else if (IsImageExt(e.name)) {
                     gfx::Texture tex = assetMgr_.LoadTexture(e.path);
                     if (tex.Valid()) tid = gfx::ImGuiNeon_RegisterTexture(tex.Handle());
+                } else if (IsMaterialExt(e.name)) {
+                    RequestMaterialThumbnail(e.path);
+                    auto thumb = materialThumbs_.find(e.path);
+                    if (thumb != materialThumbs_.end() &&
+                        thumb->second.texId != ImTextureID_Invalid) {
+                        tid = thumb->second.texId;
+                        flipV = true;
+                    }
+                    // Material parameter summary under the sphere preview.
+                    std::ifstream in(e.path, std::ios::binary);
+                    if (in.is_open()) {
+                        std::string text((std::istreambuf_iterator<char>(in)),
+                                         std::istreambuf_iterator<char>());
+                        std::string err;
+                        core::Json root = core::Json::Parse(text, &err);
+                        if (root.IsObject()) {
+                            ImGui::Separator();
+                            ImGui::TextDisabled("颜色: %s",
+                                                root.Get("colorHex")
+                                                    ? root.Get("colorHex")->GetString("#FFFFFF").c_str()
+                                                    : "#FFFFFF");
+                            ImGui::TextDisabled("金属度: %.2f  粗糙度: %.2f",
+                                                root.Get("metallic")
+                                                    ? root.Get("metallic")->GetNumber()
+                                                    : 0.0,
+                                                root.Get("roughness")
+                                                    ? root.Get("roughness")->GetNumber()
+                                                    : 0.8);
+                            if (root.Get("albedoTex") &&
+                                !root.Get("albedoTex")->GetString().empty())
+                                ImGui::TextDisabled("贴图: %s",
+                                                    root.Get("albedoTex")->GetString().c_str());
+                        }
+                    }
                 }
                 const float prevSize = std::min(140.0f, detailW - 24.0f);
                 if (tid != ImTextureID_Invalid) {

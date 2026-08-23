@@ -231,6 +231,10 @@ private:
     // the GPU work so the panel displays the image on the next frame.
     void RequestMeshThumbnail(const std::string& path);
     void GenerateMeshThumbnails();
+    // Material-ball previews (Unity/UE-style): render a lit sphere with the
+    // material asset's params into a small offscreen target, cached by mtime.
+    void RequestMaterialThumbnail(const std::string& path);
+    void GenerateMaterialThumbnails();
 
     // T4.8 hot reload (--hot / toolbar toggle, off by default): polls the
     // playtest's scripts and the scene's referenced assets (throttled every 30
@@ -358,6 +362,8 @@ private:
     };
     std::map<std::string, MeshThumb> meshThumbs_;
     std::vector<std::string> meshThumbQueue_;
+    std::map<std::string, MeshThumb> materialThumbs_;
+    std::vector<std::string> materialThumbQueue_;
 
     // Smoke instrumentation (T4.8): the camera used by the last scene render,
     // its scene draw-call count, and the temp-project paths for the hot-reload

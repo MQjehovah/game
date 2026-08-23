@@ -401,9 +401,16 @@ void EditorApp::OnShutdown() {
                 gfx::ImGuiNeon_UnregisterTexture(kv.second.texHandle);
             if (kv.second.rt.Valid()) backend->DestroyRenderTarget(kv.second.rt);
         }
+        for (auto& kv : materialThumbs_) {
+            if (kv.second.texId != ImTextureID_Invalid)
+                gfx::ImGuiNeon_UnregisterTexture(kv.second.texHandle);
+            if (kv.second.rt.Valid()) backend->DestroyRenderTarget(kv.second.rt);
+        }
     }
     meshThumbs_.clear();
     meshThumbQueue_.clear();
+    materialThumbs_.clear();
+    materialThumbQueue_.clear();
     gfx::ImGuiNeon_Shutdown();
     renderer_.Shutdown();
 }
@@ -726,6 +733,18 @@ void EditorApp::OnUpdate(float dt) {
         if (!backOk) smokeFailed_ = true;
     }
 
+    // Material-ball sphere preview: queued at frame 30, the offscreen render
+    // runs in a later frame's OnRender; verify the cached texture landed.
+    if (smokeMode_ && TimeRef().frameIndex == 44) {
+        const std::string path = GetTempDir() + "/asset_proj/materials/smoke_mat.mat.json";
+        const auto it = materialThumbs_.find(path);
+        const bool ok = it != materialThumbs_.end() &&
+                        it->second.texId != ImTextureID_Invalid;
+        NEON_LOG_INFO("EDITOR-MATERIAL-SMOKE: [%s] material ball sphere preview generated",
+                      ok ? "PASS" : "FAIL");
+        if (!ok) smokeFailed_ = true;
+    }
+
     // Play/Stop smoke: start a playtest at frame 60, verify it ticks, stop at
     // the last frame (119; OnUpdate never runs at 120). Kept at "Play/Stop
     // doesn't crash the editor" level; the real script/BT verification lives
@@ -829,6 +848,7 @@ void EditorApp::OnRender() {
     // backbuffer, not the thumbnail target.
     renderer_.Flush2D();
     GenerateMeshThumbnails();
+    GenerateMaterialThumbnails();
 
     if (showCustomUIDemo_) ui_.Draw(renderer_);
     renderer_.Flush2D();
@@ -2596,6 +2616,9 @@ void EditorApp::RunUISmokeTest() {
                   std::fabs(applied.metallic - 0.9f) < 1e-5f &&
                   std::fabs(applied.roughness - 0.2f) < 1e-5f,
               "material: ApplyMaterialAsset updates the entity");
+        RequestMaterialThumbnail(proj + "/materials/smoke_mat.mat.json");
+        check(!materialThumbQueue_.empty(),
+              "material: sphere preview queued for the material ball");
         // Scene export carries the reference; reloading expands it again.
         history_.Undo(); // remove the temp cube so later checks see the sandbox
         projectDir_ = prevProj;
@@ -2927,6 +2950,104 @@ void EditorApp::GenerateMeshThumbnails() {
     renderer_.SetShadowRecording(savedShadowRec);
     // Leave the backbuffer bound + the viewport at window size for the ImGui
     // pass (EndScene already composited to it).
+    backend->BindDefaultTarget();
+}
+
+// Queues a material-ball sphere preview (mtime-gated, like mesh thumbnails).
+void EditorApp::RequestMaterialThumbnail(const std::string& path) {
+    if (path.empty()) return;
+    const uint64_t m = FileMTime(path);
+    auto it = materialThumbs_.find(path);
+    if (it != materialThumbs_.end() && it->second.mtime == m) return; // fresh
+    if (std::find(materialThumbQueue_.begin(), materialThumbQueue_.end(), path) ==
+        materialThumbQueue_.end()) {
+        materialThumbQueue_.push_back(path);
+    }
+}
+
+// Renders each queued material ball as a lit sphere (Unity/UE-style preview)
+// into a small offscreen target; the ImGui pass samples it next frame.
+void EditorApp::GenerateMaterialThumbnails() {
+    if (materialThumbQueue_.empty()) return;
+    gfx::IRenderBackend* backend = renderer_.Backend();
+    if (!backend) {
+        materialThumbQueue_.clear();
+        return;
+    }
+    constexpr int kThumb = 96;
+    const bool savedShadowRec = renderer_.ShadowRecording();
+    renderer_.SetShadowRecording(false);
+    for (const std::string& path : materialThumbQueue_) {
+        const uint64_t m = FileMTime(path);
+        auto it = materialThumbs_.find(path);
+        if (it != materialThumbs_.end() && it->second.mtime == m) continue;
+
+        // Expand the material asset into entity-style params, then build a
+        // PBR material from them (texture slots resolve through the cache).
+        SceneEntity params;
+        if (!LoadMaterialParamsInto(params, path)) {
+            // Cache a miss so the panel only retries when the file changes.
+            if (it != materialThumbs_.end()) {
+                if (it->second.texId != ImTextureID_Invalid)
+                    gfx::ImGuiNeon_UnregisterTexture(it->second.texHandle);
+                if (it->second.rt.Valid()) backend->DestroyRenderTarget(it->second.rt);
+                materialThumbs_.erase(it);
+            }
+            materialThumbs_[path] = {{}, {}, ImTextureID_Invalid, m};
+            continue;
+        }
+        gfx::Material mat = gfx::Material::Lit({}, params.tint, 8.0f);
+        mat.metallic = params.metallic;
+        mat.roughness = params.roughness;
+        mat.aoStrength = params.ao;
+        mat.emissiveIntensity = params.emissiveIntensity;
+        if (!params.albedoTex.empty())
+            mat.albedo = assetMgr_.LoadTexture(params.albedoTex).Handle();
+        if (!params.mrTex.empty())
+            mat.metallicRoughness = assetMgr_.LoadTexture(params.mrTex).Handle();
+        if (!params.aoTex.empty())
+            mat.occlusion = assetMgr_.LoadTexture(params.aoTex).Handle();
+        if (!params.emissiveTex.empty())
+            mat.emissive = assetMgr_.LoadTexture(params.emissiveTex).Handle();
+
+        gfx::Mesh sphere = gfx::Mesh::CreateSphere(renderer_, 0.8f, 16, 12, "matball");
+        const math::AABB& b = sphere.Bounds();
+        const math::Vec3 center = (b.min + b.max) * 0.5f;
+        const float size = std::max({b.max.x - b.min.x, b.max.y - b.min.y,
+                                     b.max.z - b.min.z, 0.001f}) *
+                           1.2f;
+        gfx::Camera cam;
+        cam.position = center + math::Vec3{0.45f, 0.35f, 1.0f} * size;
+        cam.target = center;
+        cam.up = {0, 1, 0};
+        cam.ortho = true;
+        cam.orthoSize = size * 0.62f;
+        cam.nearPlane = 0.05f;
+        cam.farPlane = size * 6.0f + 1.0f;
+
+        gfx::RenderTargetHandle rt = backend->CreateRenderTarget(kThumb, kThumb, true, 0);
+        if (!rt.Valid()) continue;
+        backend->BindRenderTarget(rt);
+        backend->Clear({0.10f, 0.11f, 0.14f, 1.0f}, 1.0f);
+        renderer_.SetCamera(cam, 1.0f);
+        renderer_.DrawMesh(sphere, mat, math::Mat4::Identity());
+        const gfx::TextureHandle tex = backend->RenderTargetColorTexture(rt);
+
+        if (it != materialThumbs_.end()) {
+            if (it->second.texId != ImTextureID_Invalid)
+                gfx::ImGuiNeon_UnregisterTexture(it->second.texHandle);
+            if (it->second.rt.Valid()) backend->DestroyRenderTarget(it->second.rt);
+            materialThumbs_.erase(it);
+        }
+        MeshThumb nt;
+        nt.rt = rt;
+        nt.texHandle = tex;
+        nt.texId = gfx::ImGuiNeon_RegisterTexture(tex);
+        nt.mtime = m;
+        materialThumbs_[path] = nt;
+    }
+    materialThumbQueue_.clear();
+    renderer_.SetShadowRecording(savedShadowRec);
     backend->BindDefaultTarget();
 }
 
