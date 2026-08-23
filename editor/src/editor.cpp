@@ -128,6 +128,17 @@ std::string GetTempDir() {
 #endif
 }
 
+std::string GetWorkingDir() {
+#if defined(_WIN32)
+    char buf[4096];
+    if (_getcwd(buf, sizeof(buf))) return std::string(buf);
+#else
+    char buf[4096];
+    if (::getcwd(buf, sizeof(buf))) return std::string(buf);
+#endif
+    return ".";
+}
+
 // File modification time in seconds (0 when the file does not exist).
 uint64_t FileMTime(const std::string& path) {
 #if defined(_WIN32)
@@ -3442,7 +3453,20 @@ void EditorApp::SwitchProject(const std::string& dir) {
     } else if (projectMode_ != "2d") {
         LoadScene("editor_scene.json"); // default sandbox scene
     }
-    assetDir_ = projectDir_; // the asset panel follows the active project
+    // The asset panel follows the active project: prefer its assets/ dir
+    // (sprites/models/textures). A project without assets/ (e.g. a
+    // procedural-mesh 3D project) falls back to the engine's shared asset
+    // dir, so the panel always has browsable/draggable content.
+    {
+        std::vector<AssetEntry> probe;
+        if (ListDirectory(projectDir_ + "/assets", probe)) {
+            assetDir_ = projectDir_ + "/assets";
+        } else if (ListDirectory(GetWorkingDir() + "/assets", probe)) {
+            assetDir_ = GetWorkingDir() + "/assets";
+        } else {
+            assetDir_ = projectDir_;
+        }
+    }
     RefreshAssetDir();
     SaveEditorConfig();
     NEON_LOG_INFO("Editor: switched project '%s' (mode=%s, %zu scenes)",

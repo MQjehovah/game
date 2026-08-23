@@ -232,6 +232,8 @@ void EditorApp::RefreshAssetDir() {
                   if (a.isDir != b.isDir) return a.isDir;
                   return ToLower(a.name) < ToLower(b.name);
               });
+    NEON_LOG_DEBUG("Editor: asset dir '%s' (%zu entries)", assetDir_.c_str(),
+                   assetEntries_.size());
 }
 
 void EditorApp::ImportAssetPath(const std::string& path) {
