@@ -74,6 +74,10 @@ public:
     void SetDisableShadows(bool v) { disableShadows_ = v; }
     void SetBloomEnabled(bool v) { bloomEnabled_ = v; }
     void SetHotReload(bool v) { hotReload_ = v; }
+    void Set2DMode(bool v) {
+        editMode_ = v ? EditMode::Scene2D : EditMode::Scene3D;
+        if (v) Enter2DMode();
+    }
     void SetBackendName(const std::string& name) { backendName_ = name; }
     bool SmokeFailed() const { return smokeFailed_; }
     void RequestScreenshot(const std::string& path, uint64_t frame) {
@@ -115,6 +119,27 @@ private:
     void LoadEditorConfig();
     void SaveEditorConfig();
     void RunUISmokeTest();
+    // 2D mode: a data-driven 2D canvas (the NeonPvZ lawn editor). Plants are
+    // placed per grid cell; zombie spawns per row. Saves the same JSON the
+    // neon_game player's Lua script reads (projects/<dir>/assets/levels/).
+    enum class EditMode { Scene3D, Scene2D };
+    EditMode editMode_ = EditMode::Scene3D;
+    struct Pvz2DCell {
+        int row = 0;
+        int col = 0;
+        int type = 0; // 0 sunflower, 1 peashooter, 2 wallnut
+    };
+    std::vector<Pvz2DCell> pvzPlants_;
+    std::vector<std::pair<int, float>> pvzZombies_; // row, spawn delay (s)
+    int pvzBrush_ = 0;                              // 0..2 plant, 3 eraser, 4 zombie
+    float pvzNextDelay_ = 8.0f;
+    int pvzHoverRow_ = -1, pvzHoverCol_ = -1;
+    void DrawPvzCanvas();
+    void HandlePvzClick(const math::Vec2& ui);
+    void SavePvzLevel();
+    void LoadPvzLevel();
+    // Defaults the project dir to projects/pvz on first run, loads the level.
+    void Enter2DMode();
 
     // In-editor playtest (F5): a GameRuntime snapshot of the editor scene runs
     // in the viewport while the editor scene stays untouched.

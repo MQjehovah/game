@@ -13,6 +13,7 @@
 #include "neon/core/result.hpp"
 #include "neon/ecs/world.hpp"
 #include "neon/gfx/camera.hpp"
+#include "neon/gfx/font.hpp"
 #include "neon/gfx/material.hpp"
 #include "neon/gfx/mesh.hpp"
 #include "neon/physics/physics.hpp"
@@ -53,6 +54,7 @@ struct GameRuntimeConfig {
     std::function<std::string(const std::string& path)> readScript; // optional override
     std::function<void(const std::string&)> playSfx; // optional audio sink for PlaySfx
     platform::IInput* input = nullptr;      // optional live input for scripts
+    gfx::Font font2d;                       // 2D canvas font (on_render text); invalid = skip
     uint64_t rngSeed = 20260821u;           // fixed: playtest RNG is reproducible
     bool headless = false;                  // skip draw-list build; pure simulation
 };
@@ -231,6 +233,8 @@ private:
     void TickStatuses(float dt);
     // Decays per-caster skill cooldowns and prunes dead casters.
     void TickSkillCooldowns(float dt);
+    // Flushes the script 2D canvas (draw2d_) into the renderer overlay.
+    void FlushDraw2D(gfx::Renderer& renderer);
     // Applies a skill's status effects to `target` (creates the component).
     void ApplySkillStatuses(ecs::Entity target, const std::vector<SkillStatus>& statuses);
     // Damages `target` (clamped to 0) and applies the skill's statuses.
@@ -266,6 +270,7 @@ private:
     std::vector<DrawItem> draws_;
     std::vector<Projectile> projectiles_;
     SkillTable skills_;
+    std::vector<script::Draw2DCmd> draw2d_; // script 2D canvas (on_render)
     // Per-caster (EntityKey) skill cooldown seconds by skill name.
     std::unordered_map<uint64_t, std::map<std::string, float>> skillCooldowns_;
     gfx::Mesh fireballMesh_; // lazily built for skill-projectile rendering

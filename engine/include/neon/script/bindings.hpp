@@ -3,6 +3,7 @@
 #include <functional>
 #include <map>
 #include <string>
+#include <vector>
 
 #include "neon/ecs/world.hpp"
 #include "neon/math/quat.hpp"
@@ -29,6 +30,27 @@ struct EntityLess {
         if (a.id != b.id) return a.id < b.id;
         return a.generation < b.generation;
     }
+};
+
+// One 2D immediate-mode drawing command issued by a script's on_render()
+// handler (design units: 1280x720). The runtime owns the buffer: scripts
+// append via the DrawRect/DrawRectOutline/DrawText bindings and the runtime
+// flushes them into the renderer's 2D overlay every frame. This is how
+// data-driven 2D games (e.g. the editor-authored PvZ project) draw without
+// any C++ gameplay code.
+struct Draw2DCmd {
+    enum class Kind : uint8_t { Rect, RectOutline, Text };
+    Kind kind = Kind::Rect;
+    float x = 0.0f;
+    float y = 0.0f;
+    float w = 0.0f;
+    float h = 0.0f;
+    float r = 1.0f, g = 1.0f, b = 1.0f, a = 1.0f;
+    float thickness = 1.0f;
+    float size = 16.0f;
+    bool centerX = false;
+    bool centerY = false;
+    std::string text;
 };
 
 // The state engine bindings operate on. Created by the game/demo and passed to
@@ -86,6 +108,15 @@ struct ScriptContext {
     // inside on_player_join(clientId) to own that entity; the server then
     // routes the client's input to it. The runtime itself leaves this null.
     std::function<void(ecs::Entity, double)> bindPlayerToClient;
+    // 2D immediate-mode canvas (runtime-owned; set only while on_render runs).
+    // Null in headless hosts -> draw bindings are no-ops.
+    std::vector<Draw2DCmd>* draw2d = nullptr;
+    // Screen pixels -> 2D design units (wired by the runtime when a renderer
+    // exists; null -> raw pixel coordinates).
+    std::function<math::Vec2(const math::Vec2&)> screenToUi;
+    // Reads a text data file (levels/*.json etc.) from the project/pack.
+    // Wired by GameRuntime; null -> ReadText returns "".
+    std::function<std::string(const std::string&)> readData;
     // Optional: attaches a Lua script to a spawned entity (Spawn's 3rd arg) so
     // dynamically created entities (multi-player player controllers) run
     // on_start/on_update like scene-placed ones. Wired by GameRuntime.

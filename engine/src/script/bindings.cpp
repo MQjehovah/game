@@ -328,6 +328,102 @@ Value NativeBindPlayerToClient(IScriptHost& host, void* user) {
     return Value::Nil();
 }
 
+// --- 2D immediate-mode canvas (data-driven 2D games) -----------------------
+// Design units are 1280x720; DrawRect/DrawRectOutline/DrawText append to the
+// runtime's 2D buffer and are flushed by GameRuntime::Draw every frame.
+
+Value NativeDrawRect(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->draw2d) return Value::Nil();
+    auto num = [&](int i, float def) {
+        return host.GetArg(i).type == Value::Type::Number
+                   ? static_cast<float>(host.GetArg(i).number)
+                   : def;
+    };
+    Draw2DCmd c;
+    c.kind = Draw2DCmd::Kind::Rect;
+    c.x = num(0, 0.0f);
+    c.y = num(1, 0.0f);
+    c.w = num(2, 10.0f);
+    c.h = num(3, 10.0f);
+    c.r = num(4, 1.0f);
+    c.g = num(5, 1.0f);
+    c.b = num(6, 1.0f);
+    c.a = num(7, 1.0f);
+    ctx->draw2d->push_back(std::move(c));
+    return Value::Nil();
+}
+
+Value NativeDrawRectOutline(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->draw2d) return Value::Nil();
+    auto num = [&](int i, float def) {
+        return host.GetArg(i).type == Value::Type::Number
+                   ? static_cast<float>(host.GetArg(i).number)
+                   : def;
+    };
+    Draw2DCmd c;
+    c.kind = Draw2DCmd::Kind::RectOutline;
+    c.x = num(0, 0.0f);
+    c.y = num(1, 0.0f);
+    c.w = num(2, 10.0f);
+    c.h = num(3, 10.0f);
+    c.thickness = num(4, 1.0f);
+    c.r = num(5, 1.0f);
+    c.g = num(6, 1.0f);
+    c.b = num(7, 1.0f);
+    c.a = num(8, 1.0f);
+    ctx->draw2d->push_back(std::move(c));
+    return Value::Nil();
+}
+
+Value NativeDrawText(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->draw2d) return Value::Nil();
+    auto num = [&](int i, float def) {
+        return host.GetArg(i).type == Value::Type::Number
+                   ? static_cast<float>(host.GetArg(i).number)
+                   : def;
+    };
+    Draw2DCmd c;
+    c.kind = Draw2DCmd::Kind::Text;
+    c.text = StringArg(host, 0);
+    c.x = num(1, 0.0f);
+    c.y = num(2, 0.0f);
+    c.size = num(3, 16.0f);
+    c.r = num(4, 1.0f);
+    c.g = num(5, 1.0f);
+    c.b = num(6, 1.0f);
+    c.a = num(7, 1.0f);
+    c.centerX = host.GetArg(8).type == Value::Type::Bool && host.GetArg(8).boolean;
+    c.centerY = host.GetArg(9).type == Value::Type::Bool && host.GetArg(9).boolean;
+    ctx->draw2d->push_back(std::move(c));
+    return Value::Nil();
+}
+
+// ReadText(path): loads a text file from the project/pack (levels/*.json etc.),
+// returns "" when missing. Lets data-driven games ship level/config JSON next
+// to their scripts.
+Value NativeReadText(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->readData) return Value::Str("");
+    return Value::Str(ctx->readData(StringArg(host, 0)));
+}
+
+// InputMousePos() -> {x=, y=} in 2D design units (1280x720). Falls back to
+// raw screen pixels when no renderer conversion is wired.
+Value NativeInputMousePos(IScriptHost& host, void* user) {
+    (void)host;
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->input) return Value::Nil();
+    math::Vec2 p = ctx->input->MousePos();
+    if (ctx->screenToUi) p = ctx->screenToUi(p);
+    Value t = Value::Tbl();
+    t.table->fields.emplace_back("x", Value::Num(p.x));
+    t.table->fields.emplace_back("y", Value::Num(p.y));
+    return t;
+}
+
 Value NativeGetVar(IScriptHost& host, void* user) {
     auto* ctx = static_cast<ScriptContext*>(user);
     if (!ctx) return Value::Nil();
@@ -509,6 +605,11 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("SkillCooldown", &NativeSkillCooldown, &ctx);
     host.Register("AttackBox", &NativeAttackBox, &ctx);
     host.Register("BindPlayerToClient", &NativeBindPlayerToClient, &ctx);
+    host.Register("DrawRect", &NativeDrawRect, &ctx);
+    host.Register("DrawRectOutline", &NativeDrawRectOutline, &ctx);
+    host.Register("DrawText", &NativeDrawText, &ctx);
+    host.Register("ReadText", &NativeReadText, &ctx);
+    host.Register("InputMousePos", &NativeInputMousePos, &ctx);
     host.RegisterField("Json", "Parse", &NativeJsonParse, &ctx);
 }
 

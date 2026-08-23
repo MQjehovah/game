@@ -20,6 +20,7 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#undef DrawText // windows.h maps DrawText -> DrawTextA; keep the renderer API
 #else
 #include <dirent.h>
 #include <sys/stat.h>
@@ -165,6 +166,12 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     scriptCtx_.input = cfg_.input;
     scriptCtx_.playSfx = cfg_.playSfx;
     scriptCtx_.entityKinds.clear();
+    // Data files (levels/*.json etc.) resolve like scripts: project dir on
+    // disk, or the unpacked dir for packed games (ReadScript honors the pack
+    // reader override).
+    scriptCtx_.readData = [this](const std::string& path) {
+        return ReadScript(FullScriptPath(path));
+    };
     // Combat / control hooks so scripts can drive scene entities. Both
     // component flavors are supported: scene entities carry SceneTransform
     // (from the scene JSON "transform" component) while script-spawned
@@ -953,6 +960,48 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera) {
         draws_.erase(std::remove_if(draws_.begin(), draws_.end(),
                                     [this](const DrawItem& i) { return !world_.Alive(i.ent); }),
                      draws_.end());
+    }
+
+    // 2D script canvas: a global on_render() handler draws the game with the
+    // DrawRect/DrawRectOutline/DrawText bindings (design units 1280x720). The
+    // runtime flushes the buffer into the renderer's 2D overlay so 2D games
+    // (e.g. the PvZ project) need zero C++ gameplay code.
+    if (host_) {
+        scriptCtx_.draw2d = &draw2d_;
+        scriptCtx_.screenToUi = [&renderer](const math::Vec2& p) {
+            return renderer.ScreenToUI(p);
+        };
+        draw2d_.clear();
+        scriptCtx_.currentEntity = {};
+        if (host_->HasFunction("on_render")) {
+            const core::Result<script::Value> res = host_->Call("on_render", {});
+            if (!res.Ok()) {
+                NEON_LOG_CAT(core::LogCategory::Script, core::LogLevel::Error,
+                             "runtime: on_render() failed: %s",
+                             host_->LastError().message.c_str());
+            }
+        }
+        scriptCtx_.draw2d = nullptr;
+        FlushDraw2D(renderer);
+    }
+}
+
+void GameRuntime::FlushDraw2D(gfx::Renderer& renderer) {
+    for (const script::Draw2DCmd& c : draw2d_) {
+        switch (c.kind) {
+            case script::Draw2DCmd::Kind::Rect:
+                renderer.DrawQuad({c.x, c.y}, {c.w, c.h}, {c.r, c.g, c.b, c.a});
+                break;
+            case script::Draw2DCmd::Kind::RectOutline:
+                renderer.DrawRectOutline({c.x, c.y, c.w, c.h}, c.thickness,
+                                         {c.r, c.g, c.b, c.a});
+                break;
+            case script::Draw2DCmd::Kind::Text:
+                if (cfg_.font2d.Valid())
+                    renderer.DrawText(cfg_.font2d, c.text, {c.x, c.y}, c.size,
+                                      {c.r, c.g, c.b, c.a}, c.centerX, c.centerY);
+                break;
+        }
     }
 }
 

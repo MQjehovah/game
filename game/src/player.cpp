@@ -200,7 +200,12 @@ bool PlayerApp::OnCreate() {
     // font when available so "Esc 退出" renders (fallback keeps ASCII labels).
     pixelFont_ = renderer_.CreateFontFromMemory(neon_rush::kEmbeddedFontData,
                                                 neon_rush::kEmbeddedFontSize, 24);
-    const std::vector<std::string> cjkSamples = {"退出鼠标拖动旋转视角帧率游戏"};
+    // Overlay + data-driven 2D games (NeonPvZ labels/UI). Keep every glyph a
+    // 2D script draws in sync here or the glyphs render blank.
+    const std::vector<std::string> cjkSamples = {
+        "退出鼠标拖动旋转视角帧率游戏",
+        "家葵豆坚果僵阳点击卡牌选择格子种植收集胜利失败向日葵豌豆射手阳光！；：",
+    };
     cjkFont_ = assetMgr_.LoadSystemCJKFont(24, cjkSamples);
     theme_.font = cjkFont_.Valid() ? cjkFont_ : pixelFont_;
 
@@ -215,6 +220,7 @@ bool PlayerApp::OnCreate() {
     // authoritative server see the identical input.
     clientInput_.SetBase(Input());
     rcfg.input = &clientInput_;
+    rcfg.font2d = cjkFont_.Valid() ? cjkFont_ : pixelFont_;
     rcfg.rngSeed = cfg_.rngSeed;
     core::Status st = runtime_.Start(sceneJson_, rcfg);
     if (!st.Ok()) {

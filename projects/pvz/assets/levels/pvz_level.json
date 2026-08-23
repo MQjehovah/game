@@ -1,0 +1,16 @@
+{
+  "plants": [
+    { "row": 4, "col": 1, "plant": "sunflower" },
+    { "row": 4, "col": 2, "plant": "peashooter" },
+    { "row": 2, "col": 2, "plant": "sunflower" },
+    { "row": 2, "col": 3, "plant": "peashooter" },
+    { "row": 0, "col": 3, "plant": "wallnut" }
+  ],
+  "zombies": [
+    { "row": 4, "delay": 8 },
+    { "row": 2, "delay": 18 },
+    { "row": 1, "delay": 28 },
+    { "row": 4, "delay": 38 },
+    { "row": 3, "delay": 45 }
+  ]
+}

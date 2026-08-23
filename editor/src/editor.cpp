@@ -18,6 +18,7 @@
 #include <direct.h>
 #include <sys/stat.h>
 #include <windows.h>
+#undef DrawText // windows.h maps DrawText -> DrawTextA; keep the renderer API
 #else
 #include <sys/stat.h>
 #include <utime.h>
@@ -292,7 +293,8 @@ bool EditorApp::OnCreate() {
         "霓虹编辑器场景层级属性名称位置旋转缩放颜色保存加载添加删除播放停止网格头盔立方体树木地面",
         "工具栏视口实体选择变换材质渲染确定取消打开文件写入成功失败无法松树",
         "块测试引擎演示场景树表单滚动列表地形添加节点自研控件树拖动分隔条右侧面板第行",
-        "文件视图退出图层属性菜单帮助关于版本相机旋转中键平移滚轮拾取"};
+        "文件视图退出图层属性菜单帮助关于版本相机旋转中键平移滚轮拾取",
+        "2D模式返回向日葵豌豆坚果橡皮僵尸保存关卡加载家葵豆僵阳点击卡牌选择格子种植收集胜利失败"};
     cjkFont_ = assetMgr_.LoadSystemCJKFont(24, cjkSamples);
     ui_.Init(&renderer_, cjkFont_.Valid() ? cjkFont_ : pixelFont_);
 
@@ -461,8 +463,15 @@ void EditorApp::OnUpdate(float dt) {
         e.y = renderer_.ScreenHeight() / 2;
         Input()->HandleEvent(e);
     }
-    UpdateViewport(dt);
-    if (playtestActive_ && playtest_) playtest_->Tick(dt);
+    if (editMode_ == EditMode::Scene2D) {
+        // 2D canvas editing: clicks place/erase plants and zombie spawns.
+        if (Input()->MousePressed(platform::MouseButton::Left)) {
+            HandlePvzClick(renderer_.ScreenToUI(Input()->MousePos()));
+        }
+    } else {
+        UpdateViewport(dt);
+        if (playtestActive_ && playtest_) playtest_->Tick(dt);
+    }
     // Hot reload (T4.8): throttled mtime poll for the playtest's scripts and
     // the scene's referenced assets. Off unless --hot / the toolbar toggle.
     if (hotReload_ && TimeRef().frameIndex - hotReloadFrame_ >= 30) {
@@ -536,7 +545,8 @@ void EditorApp::OnUpdate(float dt) {
             if (!ok) smokeFailed_ = true;
         }
     }
-    if (smokeMode_ && !camSmokeDone_ && viewCam_ == ViewCam::Top) {
+    if (smokeMode_ && editMode_ == EditMode::Scene3D && !camSmokeDone_ &&
+        viewCam_ == ViewCam::Top) {
         // A render has now processed the Top arm (tick 31): lastRenderCamOrtho_
         // reflects that frame's camera and the scene draw-call count.
         if (lastRenderTick_ >= 32) {
@@ -618,54 +628,56 @@ void EditorApp::OnUpdate(float dt) {
 
 void EditorApp::OnRender() {
     renderer_.BeginFrame({0.06f, 0.08f, 0.13f, 1.0f});
-    // Scissor the 3D scene to the central viewport so the full-window render
-    // doesn't bleed into the dock areas around it (e.g. the empty bottom dock
-    // node whose panels are hidden by default). Cleared before EndScene so the
-    // HDR->backbuffer composite still covers the whole window.
-    const int vpX = static_cast<int>(viewportScreenRect_.x);
-    const int vpY = static_cast<int>(viewportScreenRect_.y);
-    const int vpW = static_cast<int>(viewportScreenRect_.w);
-    const int vpH = static_cast<int>(viewportScreenRect_.h);
-    if (vpW > 0 && vpH > 0 && renderer_.Backend())
-        renderer_.Backend()->SetScissor(vpX, vpY, vpW, vpH, true);
-    renderer_.SetSky({0.05f, 0.08f, 0.16f, 1.0f}, {0.35f, 0.45f, 0.6f, 1.0f});
-    renderer_.SetFog({0.3f, 0.38f, 0.5f, 1.0f}, 60.0f, 140.0f);
-    renderer_.DrawSky();
-
-    float aspect = static_cast<float>(renderer_.ScreenWidth()) / renderer_.ScreenHeight();
-    gfx::Camera cam = ActiveCamera();
-    renderer_.SetCamera(cam, aspect);
-    renderer_.SetDirectionalLight({-0.4f, -1.0f, -0.3f}, {1.0f, 0.95f, 0.85f}, 0.3f);
-
-    if (playtestActive_ && playtest_) {
-        // Play mode: the viewport renders the runtime's world (a snapshot of
-        // the scene taken at Play). The editor scene is untouched.
-        playtest_->Draw(renderer_, cam);
+    gfx::Camera cam = ActiveCamera(); // 2D mode ignores it; the 3D branch re-reads
+    if (editMode_ == EditMode::Scene2D) {
+        DrawPvzCanvas();
     } else {
-        for (const SceneEntity& e : entities_) {
-            math::Mat4 model = math::Mat4::Translation(e.pos) * e.rot.ToMat4() *
-                               math::Mat4::Scale(e.scale);
-            renderer_.DrawMesh(e.mesh, e.material, model);
+        // Scissor the 3D scene to the central viewport so the full-window
+        // render doesn't bleed into the dock areas around it. Cleared before
+        // EndScene so the HDR->backbuffer composite still covers the window.
+        const int vpX = static_cast<int>(viewportScreenRect_.x);
+        const int vpY = static_cast<int>(viewportScreenRect_.y);
+        const int vpW = static_cast<int>(viewportScreenRect_.w);
+        const int vpH = static_cast<int>(viewportScreenRect_.h);
+        if (vpW > 0 && vpH > 0 && renderer_.Backend())
+            renderer_.Backend()->SetScissor(vpX, vpY, vpW, vpH, true);
+        renderer_.SetSky({0.05f, 0.08f, 0.16f, 1.0f}, {0.35f, 0.45f, 0.6f, 1.0f});
+        renderer_.SetFog({0.3f, 0.38f, 0.5f, 1.0f}, 60.0f, 140.0f);
+        renderer_.DrawSky();
+
+        float aspect = static_cast<float>(renderer_.ScreenWidth()) / renderer_.ScreenHeight();
+        cam = ActiveCamera();
+        renderer_.SetCamera(cam, aspect);
+        renderer_.SetDirectionalLight({-0.4f, -1.0f, -0.3f}, {1.0f, 0.95f, 0.85f}, 0.3f);
+
+        if (playtestActive_ && playtest_) {
+            // Play mode: the viewport renders the runtime's world (a snapshot
+            // of the scene taken at Play). The editor scene is untouched.
+            playtest_->Draw(renderer_, cam);
+        } else {
+            for (const SceneEntity& e : entities_) {
+                math::Mat4 model = math::Mat4::Translation(e.pos) * e.rot.ToMat4() *
+                                   math::Mat4::Scale(e.scale);
+                renderer_.DrawMesh(e.mesh, e.material, model);
+            }
+            static bool dbg = false;
+            if (!dbg && smokeMode_) {
+                dbg = true;
+                NEON_LOG_INFO("EDITOR-DRAW: entities=%zu drawCalls=%u", entities_.size(),
+                              renderer_.Stats().drawCalls);
+            }
+            if (selected_ >= 0 && selected_ < static_cast<int>(entities_.size())) {
+                const SceneEntity& e = entities_[static_cast<size_t>(selected_)];
+                math::Mat4 model = math::Mat4::Translation(e.pos) * e.rot.ToMat4() *
+                                   math::Mat4::Scale(e.scale);
+                math::AABB world = math::TransformAABB(e.mesh.Bounds(), model);
+                renderer_.DrawBox(world, gfx::Color{0.3f, 0.8f, 1.0f, 1.0f});
+            }
         }
-        static bool dbg = false;
-        if (!dbg && smokeMode_) {
-            dbg = true;
-            NEON_LOG_INFO("EDITOR-DRAW: entities=%zu drawCalls=%u", entities_.size(),
-                          renderer_.Stats().drawCalls);
-        }
-        if (selected_ >= 0 && selected_ < static_cast<int>(entities_.size())) {
-            const SceneEntity& e = entities_[static_cast<size_t>(selected_)];
-            math::Mat4 model = math::Mat4::Translation(e.pos) * e.rot.ToMat4() *
-                               math::Mat4::Scale(e.scale);
-            math::AABB world = math::TransformAABB(e.mesh.Bounds(), model);
-            renderer_.DrawBox(world, gfx::Color{0.3f, 0.8f, 1.0f, 1.0f});
-        }
+
+        // Release the viewport scissor before compositing.
+        if (renderer_.Backend()) renderer_.Backend()->SetScissor(0, 0, 0, 0, false);
     }
-
-    // Release the viewport scissor before compositing (the HDR->backbuffer
-    // pass must cover the full window; the scene itself is already clipped).
-    if (renderer_.Backend()) renderer_.Backend()->SetScissor(0, 0, 0, 0, false);
-
     // End the 3D scene phase: composite the HDR frame to the backbuffer and
     // bind the backbuffer so the tool UI (engine UI demo + ImGui) below renders
     // crisp and unbloomed on top.
@@ -1459,6 +1471,29 @@ void EditorApp::BuildImGuiUI() {
         ImGui::SameLine();
         if (ImGui::Button(gizmoMode_ == ImGuizmo::WORLD ? "[世界]" : "世界"))
             gizmoMode_ = ImGuizmo::WORLD;
+        ImGui::SameLine();
+        ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
+        ImGui::SameLine();
+        // 2D mode: a data-driven 2D canvas (NeonPvZ lawn editor). Entering the
+        // mode loads the project's current level; leaving restores the 3D
+        // scene. First run defaults the project dir to projects/pvz.
+        const bool in2D = editMode_ == EditMode::Scene2D;
+        if (ImGui::Button(in2D ? "[2D模式] 返回3D" : "2D模式")) {
+            editMode_ = in2D ? EditMode::Scene3D : EditMode::Scene2D;
+            if (!in2D) Enter2DMode();
+        }
+        if (in2D) {
+            ImGui::SameLine();
+            const char* brushes[] = {"向日葵", "豌豆", "坚果", "橡皮", "僵尸"};
+            ImGui::SetNextItemWidth(104.0f);
+            ImGui::Combo("##pvz_brush", &pvzBrush_, brushes, 5);
+            ImGui::SameLine();
+            if (ImGui::Button("保存关卡")) SavePvzLevel();
+            ImGui::SameLine();
+            if (ImGui::Button("加载关卡")) LoadPvzLevel();
+            ImGui::SameLine();
+            ImGui::TextDisabled("→ projects/pvz/assets/levels/pvz_level.json");
+        }
         ImGui::SameLine();
         ImGui::Text("实体 %zu", entities_.size());
     }
@@ -2683,6 +2718,229 @@ void EditorApp::LoadScene(const std::string& path) {
         history_.Clear(); // undo history from the previous scene is invalid
         NEON_LOG_INFO("Scene loaded (%zu entities)", entities_.size());
     }
+}
+
+// ---------------------------------------------------------------------------
+// 2D mode (data-driven 2D games: the NeonPvZ lawn editor). The canvas layout
+// MUST match projects/pvz/scripts/pvz.lua (9x5 cells of 100 at (190,160)).
+// ---------------------------------------------------------------------------
+
+namespace {
+
+constexpr int kPvzRows = 5;
+constexpr int kPvzCols = 9;
+constexpr float kPvzCell = 100.0f;
+constexpr float kPvzBX = 190.0f;
+constexpr float kPvzBY = 160.0f;
+constexpr float kPvzSpawnX = 1150.0f;
+
+const char* kPvzPlantNames[3] = {"sunflower", "peashooter", "wallnut"};
+const char* kPvzPlantLabels[3] = {"葵", "豆", "坚"};
+const gfx::Color kPvzPlantColors[3] = {
+    {0.95f, 0.78f, 0.10f, 1.0f},
+    {0.28f, 0.75f, 0.25f, 1.0f},
+    {0.62f, 0.42f, 0.20f, 1.0f},
+};
+
+} // namespace
+
+void EditorApp::DrawPvzCanvas() {
+    // Backdrop + house strip (same palette as the game's on_render).
+    renderer_.DrawRect({0, 0}, {1280, 720}, {0.06f, 0.09f, 0.12f, 1.0f});
+    renderer_.DrawRect({0, kPvzBY - 12}, {kPvzBX + 8, kPvzCell * kPvzRows + 24},
+                       {0.25f, 0.18f, 0.12f, 1.0f});
+    renderer_.DrawText(cjkFont_, "家", {kPvzBX * 0.5f, 360}, 34, gfx::Color::White, true, true);
+    renderer_.DrawRect({kPvzBX - 6, kPvzBY - 12},
+                       {kPvzCell * kPvzCols + 12, kPvzCell * kPvzRows + 24},
+                       {0.10f, 0.25f, 0.10f, 1.0f});
+
+    // Checkerboard cells.
+    for (int r = 0; r < kPvzRows; ++r) {
+        for (int c = 0; c < kPvzCols; ++c) {
+            const math::Vec2 o{kPvzBX + c * kPvzCell, kPvzBY + r * kPvzCell};
+            const bool dark = ((r + c) & 1) == 0;
+            renderer_.DrawRect(o, {kPvzCell, kPvzCell},
+                               dark ? gfx::Color{0.18f, 0.42f, 0.16f, 1.0f}
+                                    : gfx::Color{0.24f, 0.50f, 0.20f, 1.0f});
+        }
+    }
+    // Grid lines.
+    for (int i = 0; i <= kPvzCols; ++i)
+        renderer_.DrawRect({kPvzBX + i * kPvzCell, kPvzBY},
+                           {1.5f, kPvzCell * kPvzRows}, {0.08f, 0.22f, 0.08f, 1.0f});
+    for (int i = 0; i <= kPvzRows; ++i)
+        renderer_.DrawRect({kPvzBX, kPvzBY + i * kPvzCell},
+                           {kPvzCell * kPvzCols, 1.5f}, {0.08f, 0.22f, 0.08f, 1.0f});
+
+    // Placed plants.
+    for (const Pvz2DCell& p : pvzPlants_) {
+        const math::Vec2 o{kPvzBX + p.col * kPvzCell, kPvzBY + p.row * kPvzCell};
+        const math::Vec2 center{o.x + kPvzCell * 0.5f, o.y + kPvzCell * 0.5f};
+        const gfx::Color& col = kPvzPlantColors[p.type];
+        renderer_.DrawRect({center.x - 34, center.y - 34}, {68, 68}, col);
+        renderer_.DrawRectOutline({center.x - 34, center.y - 34, 68, 68}, 2.0f,
+                                  gfx::Color::Black.WithAlpha(0.5f));
+        renderer_.DrawText(cjkFont_, kPvzPlantLabels[p.type], center, 30,
+                           gfx::Color::White, true, true);
+    }
+
+    // Zombie spawn markers: red flag at the right edge of the row.
+    for (const auto& z : pvzZombies_) {
+        const float y = kPvzBY + (z.first + 0.5f) * kPvzCell;
+        renderer_.DrawRect({kPvzSpawnX - 14, y - 14}, {28, 28},
+                           gfx::Color::Red.WithAlpha(0.85f));
+        renderer_.DrawText(cjkFont_, "僵", {kPvzSpawnX, y}, 18, gfx::Color::White, true, true);
+    }
+
+    // Hover highlight + brush hint.
+    if (pvzHoverRow_ >= 0 && pvzHoverCol_ >= 0) {
+        renderer_.DrawRectOutline(
+            {kPvzBX + pvzHoverCol_ * kPvzCell, kPvzBY + pvzHoverRow_ * kPvzCell,
+             kPvzCell, kPvzCell},
+            3.0f, gfx::Color::Yellow.WithAlpha(0.9f));
+    }
+    const char* brushHint = pvzBrush_ == 3 ? "橡皮：点击清除植物"
+                            : pvzBrush_ == 4 ? "僵尸：点击行添加刷怪点"
+                                             : "点击格子种植";
+    renderer_.DrawText(cjkFont_, brushHint, {14, 690}, 16, gfx::Color::Gray, false, false);
+}
+
+void EditorApp::HandlePvzClick(const math::Vec2& ui) {
+    // Zombie spawn brush: click anywhere on a row.
+    if (pvzBrush_ == 4) {
+        const int row = static_cast<int>((ui.y - kPvzBY) / kPvzCell);
+        if (row >= 0 && row < kPvzRows) {
+            pvzZombies_.emplace_back(row, pvzNextDelay_);
+            pvzNextDelay_ += 8.0f;
+        }
+        return;
+    }
+    const int col = static_cast<int>((ui.x - kPvzBX) / kPvzCell);
+    const int row = static_cast<int>((ui.y - kPvzBY) / kPvzCell);
+    if (row < 0 || row >= kPvzRows || col < 0 || col >= kPvzCols) return;
+    if (pvzBrush_ == 3) { // eraser
+        pvzPlants_.erase(
+            std::remove_if(pvzPlants_.begin(), pvzPlants_.end(),
+                           [&](const Pvz2DCell& p) { return p.row == row && p.col == col; }),
+            pvzPlants_.end());
+        return;
+    }
+    // Plant brush: place only into an empty cell (clicking an occupied cell
+    // with the same brush erases it, a light toggle).
+    const auto it = std::find_if(pvzPlants_.begin(), pvzPlants_.end(),
+                                 [&](const Pvz2DCell& p) { return p.row == row && p.col == col; });
+    if (it != pvzPlants_.end()) {
+        if (it->type == pvzBrush_) {
+            pvzPlants_.erase(it);
+        } else {
+            it->type = pvzBrush_;
+        }
+    } else {
+        pvzPlants_.push_back({row, col, pvzBrush_});
+    }
+}
+
+void EditorApp::SavePvzLevel() {
+    core::Json root;
+    root.type_ = core::Json::Type::Object;
+    core::Json plants;
+    plants.type_ = core::Json::Type::Array;
+    for (const Pvz2DCell& p : pvzPlants_) {
+        core::Json e;
+        e.type_ = core::Json::Type::Object;
+        e.object_["row"] = core::Json();
+        e.object_["row"].type_ = core::Json::Type::Number;
+        e.object_["row"].number_ = p.row;
+        e.object_["col"] = core::Json();
+        e.object_["col"].type_ = core::Json::Type::Number;
+        e.object_["col"].number_ = p.col;
+        e.object_["plant"] = core::Json();
+        e.object_["plant"].type_ = core::Json::Type::String;
+        e.object_["plant"].string_ = kPvzPlantNames[p.type];
+        plants.array_.push_back(std::move(e));
+    }
+    core::Json zombies;
+    zombies.type_ = core::Json::Type::Array;
+    for (const auto& z : pvzZombies_) {
+        core::Json e;
+        e.type_ = core::Json::Type::Object;
+        e.object_["row"] = core::Json();
+        e.object_["row"].type_ = core::Json::Type::Number;
+        e.object_["row"].number_ = z.first;
+        e.object_["delay"] = core::Json();
+        e.object_["delay"].type_ = core::Json::Type::Number;
+        e.object_["delay"].number_ = z.second;
+        zombies.array_.push_back(std::move(e));
+    }
+    root.object_["plants"] = std::move(plants);
+    root.object_["zombies"] = std::move(zombies);
+
+    const std::string dir = projectDir_ + "/assets/levels";
+    EnsureDirs(dir + "/");
+    const std::string path = dir + "/pvz_level.json";
+    std::ofstream out(path, std::ios::binary);
+    if (!out.is_open()) {
+        NEON_LOG_ERROR("2D: cannot write level '%s'", path.c_str());
+        return;
+    }
+    out << core::JsonWriter::Write(root);
+    NEON_LOG_INFO("2D: level saved to '%s' (%zu plants, %zu zombie spawns)",
+                  path.c_str(), pvzPlants_.size(), pvzZombies_.size());
+}
+
+void EditorApp::LoadPvzLevel() {
+    const std::string path = projectDir_ + "/assets/levels/pvz_level.json";
+    std::string text;
+    std::ifstream in(path, std::ios::binary);
+    if (!in.is_open()) {
+        NEON_LOG_ERROR("2D: cannot read level '%s'", path.c_str());
+        return;
+    }
+    text.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+    std::string err;
+    core::Json root = core::Json::Parse(text, &err);
+    if (!err.empty()) {
+        NEON_LOG_ERROR("2D: level parse failed: %s", err.c_str());
+        return;
+    }
+    pvzPlants_.clear();
+    pvzZombies_.clear();
+    pvzNextDelay_ = 8.0f;
+    if (const core::Json* arr = root.Get("plants")) {
+        for (size_t i = 0; i < arr->Size(); ++i) {
+            const core::Json* e = arr->At(i);
+            if (!e) continue;
+            const int row = e->Get("row") ? e->Get("row")->GetInt(-1) : -1;
+            const int col = e->Get("col") ? e->Get("col")->GetInt(-1) : -1;
+            const std::string name =
+                e->Get("plant") ? e->Get("plant")->GetString() : "";
+            int type = -1;
+            for (int t = 0; t < 3; ++t)
+                if (name == kPvzPlantNames[t]) type = t;
+            if (row >= 0 && row < kPvzRows && col >= 0 && col < kPvzCols && type >= 0)
+                pvzPlants_.push_back({row, col, type});
+        }
+    }
+    if (const core::Json* arr = root.Get("zombies")) {
+        for (size_t i = 0; i < arr->Size(); ++i) {
+            const core::Json* e = arr->At(i);
+            if (!e) continue;
+            const int row = e->Get("row") ? e->Get("row")->GetInt(0) : 0;
+            const float delay =
+                static_cast<float>(e->Get("delay") ? e->Get("delay")->GetNumber(8.0) : 8.0);
+            if (row >= 0 && row < kPvzRows) pvzZombies_.emplace_back(row, delay);
+        }
+        for (const auto& z : pvzZombies_)
+            pvzNextDelay_ = std::fmax(pvzNextDelay_, z.second + 8.0f);
+    }
+    NEON_LOG_INFO("2D: level loaded from '%s' (%zu plants, %zu zombie spawns)",
+                  path.c_str(), pvzPlants_.size(), pvzZombies_.size());
+}
+
+void EditorApp::Enter2DMode() {
+    if (projectDir_ == "." && std::ifstream("projects/pvz/game.json").is_open())
+        projectDir_ = "projects/pvz";
+    LoadPvzLevel();
 }
 
 void EditorApp::ClampSelection() {

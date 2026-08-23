@@ -356,3 +356,38 @@ assert(v.a == 1 and v.b == 2)
 )";
     CHECK(RunScript(*b.host, src));
 }
+
+// 2D canvas bindings (data-driven 2D games): DrawRect/DrawRectOutline/DrawText
+// append to the runtime's buffer; ReadText loads project data files.
+TEST(ScriptBindings2DCanvasAndData) {
+    Bindings b;
+    std::vector<script::Draw2DCmd> cmds;
+    b.ctx.draw2d = &cmds;
+    b.ctx.readData = [](const std::string& p) {
+        return p == "levels/a.json" ? std::string("{\"ok\":1}") : std::string();
+    };
+
+    CHECK(RunScript(*b.host, R"(
+      DrawRect(10, 20, 30, 40, 1, 0, 0, 0.5)
+      DrawRectOutline(1, 2, 3, 4, 2, 0.5, 0.5, 0.5, 1)
+      DrawText("hi", 5, 6, 18, 1, 1, 1, 1)
+      local t = ReadText("levels/a.json")
+      assert(t == '{"ok":1}')
+      assert(ReadText("missing") == "")
+    )"));
+
+    CHECK_EQ(cmds.size(), 3u);
+    if (cmds.size() == 3u) {
+        CHECK(cmds[0].kind == script::Draw2DCmd::Kind::Rect);
+        CHECK_NEAR(cmds[0].x, 10.0f, 1e-5);
+        CHECK_NEAR(cmds[0].w, 30.0f, 1e-5);
+        CHECK_NEAR(cmds[0].a, 0.5f, 1e-5);
+
+        CHECK(cmds[1].kind == script::Draw2DCmd::Kind::RectOutline);
+        CHECK_NEAR(cmds[1].thickness, 2.0f, 1e-5);
+
+        CHECK(cmds[2].kind == script::Draw2DCmd::Kind::Text);
+        CHECK_EQ(cmds[2].text, std::string("hi"));
+        CHECK_NEAR(cmds[2].size, 18.0f, 1e-5);
+    }
+}
