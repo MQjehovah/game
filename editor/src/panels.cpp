@@ -731,11 +731,13 @@ void EditorApp::BuildAssetPanel() {
             assetGridView_ = !assetGridView_;
         ImGui::Separator();
 
-        // The panel docks at the bottom of the window, so a fixed -170px
-        // preview reserve can squeeze the list to zero height (it read as
-        // "empty"). Keep the list at least 48px and let the preview shrink.
-        const float listH = std::max(48.0f, ImGui::GetContentRegionAvail().y - 150.0f);
-        ImGui::BeginChild("##asset_list", ImVec2(0, listH), ImGuiChildFlags_Borders);
+        // Split-pane layout: file browsing on the LEFT takes all the height,
+        // the selected asset's details/preview sit in a fixed-width RIGHT
+        // column (no more squeezing the list with a bottom reserve).
+        const float detailW = 250.0f;
+        const ImVec2 bodyAvail = ImGui::GetContentRegionAvail();
+        ImGui::BeginChild("##asset_list", ImVec2(bodyAvail.x - detailW - 8.0f, 0),
+                          ImGuiChildFlags_Borders);
         if (assetEntries_.empty()) {
             ImGui::TextWrapped("此目录为空。使用上方 浏览导入 / 浏览目录 添加外部资源，"
                                "或 新建 创建 Lua 脚本 / JSON / 材质球 / 目录。");
@@ -881,6 +883,8 @@ void EditorApp::BuildAssetPanel() {
         }
         ImGui::EndChild();
 
+        ImGui::SameLine();
+        ImGui::BeginChild("##asset_detail", ImVec2(detailW, 0), ImGuiChildFlags_Borders);
         if (selectedAsset_ >= 0 &&
             selectedAsset_ < static_cast<int>(assetEntries_.size())) {
             const AssetEntry& e = assetEntries_[static_cast<size_t>(selectedAsset_)];
@@ -889,6 +893,9 @@ void EditorApp::BuildAssetPanel() {
             if (!e.isDir) {
                 ImGui::SameLine();
                 ImGui::TextDisabled("%.1f KB", static_cast<double>(e.size) / 1024.0);
+                ImGui::Separator();
+                ImTextureID tid = ImTextureID_Invalid;
+                bool flipV = false;
                 if (IsModelExt(e.name)) {
                     if (ImGui::Button("导入到场景")) ImportAssetPath(e.path);
                     // Mesh thumbnail (T4.8): rendered into a small offscreen
@@ -897,25 +904,28 @@ void EditorApp::BuildAssetPanel() {
                     auto thumb = meshThumbs_.find(e.path);
                     if (thumb != meshThumbs_.end() &&
                         thumb->second.texId != ImTextureID_Invalid) {
-                        // FBO color textures store rows bottom-up (GL origin),
-                        // while ImGui samples top-down (uv0 = widget top-left),
-                        // so flip the V range here. Texture previews loaded via
-                        // stb_image (top-down rows) keep the default UVs.
-                        ImGui::Image(thumb->second.texId, ImVec2(96.0f, 96.0f),
-                                     ImVec2(0.0f, 1.0f), ImVec2(1.0f, 0.0f));
-                    } else {
-                        ImGui::Dummy(ImVec2(96.0f, 96.0f));
-                        ImGui::SameLine();
-                        ImGui::TextDisabled("生成缩略图中…");
+                        tid = thumb->second.texId;
+                        flipV = true; // FBO color textures are bottom-up
                     }
-                } else if (IsImageExt(e.name) && previewTexId_ != ImTextureID_Invalid) {
-                    ImGui::Image(previewTexId_, ImVec2(96.0f, 96.0f));
+                } else if (IsImageExt(e.name)) {
+                    gfx::Texture tex = assetMgr_.LoadTexture(e.path);
+                    if (tex.Valid()) tid = gfx::ImGuiNeon_RegisterTexture(tex.Handle());
+                }
+                const float prevSize = std::min(140.0f, detailW - 24.0f);
+                if (tid != ImTextureID_Invalid) {
+                    ImGui::Image(tid, ImVec2(prevSize, prevSize),
+                                 ImVec2(0.0f, flipV ? 1.0f : 0.0f),
+                                 ImVec2(1.0f, flipV ? 0.0f : 1.0f));
                     ImGui::SameLine();
-                    ImGui::TextDisabled("%dx%d", previewTexture_.Width(),
-                                        previewTexture_.Height());
+                    ImGui::TextDisabled("%.0fx%.0f", prevSize, prevSize);
+                } else if (IsModelExt(e.name)) {
+                    ImGui::Dummy(ImVec2(prevSize, prevSize));
+                    ImGui::SameLine();
+                    ImGui::TextDisabled("生成缩略图中…");
                 }
             }
         }
+        ImGui::EndChild();
     }
     ImGui::End();
 }
