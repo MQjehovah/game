@@ -2586,6 +2586,23 @@ void EditorApp::RunUISmokeTest() {
               "asset: directory import copies nested model files");
         check(std::ifstream(assetDir_ + "/asset_pack/models/tex/foo.png").is_open(),
               "asset: directory import copies nested texture files");
+        // Delete the imported file (recycle bin on Windows; removed here).
+        selectedAsset_ = -1;
+        RefreshAssetDir();
+        for (size_t i = 0; i < assetEntries_.size(); ++i) {
+            if (assetEntries_[i].name == "asset_src.png") {
+                selectedAsset_ = static_cast<int>(i);
+                break;
+            }
+        }
+        check(selectedAsset_ >= 0, "asset: delete target found in the listing");
+        assetDeletePending_ = selectedAsset_;
+        if (selectedAsset_ >= 0) {
+            const std::string victim =
+                assetEntries_[static_cast<size_t>(selectedAsset_)].path;
+            check(DeletePathRecursive(victim), "asset: delete removes the file");
+            check(!std::ifstream(victim).is_open(), "asset: deleted file is gone");
+        }
         projectDir_ = prevProj;
         assetDir_ = prevDir;
     }
@@ -3274,6 +3291,14 @@ bool EditorApp::ResolveMesh(SceneEntity& e) {
         if (!gltf.nodes.empty()) {
             e.mesh = gltf.nodes[0].mesh;
             e.material = gltf.nodes[0].material;
+            // glTF materials carry their own PBR params (factors + texture
+            // slots); sync them into the flattened fields so ApplyMaterialParams
+            // applies the asset's values instead of the editor defaults.
+            e.metallic = e.material.metallic;
+            e.roughness = e.material.roughness;
+            e.ao = e.material.aoStrength;
+            e.emissiveIntensity = e.material.emissiveIntensity;
+            e.tint = e.material.tint;
         }
     } else if (key.empty()) {
         // Script-only / logical entities (e.g. a 2D game's entry entity that

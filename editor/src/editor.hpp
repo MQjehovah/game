@@ -90,6 +90,8 @@ struct EditorProject {
 
 // Shared UTF-8 directory listing (editor project scanner + asset panel).
 bool ListDirectory(const std::string& dir, std::vector<AssetEntry>& out);
+// Deletes a file or directory tree (recycle bin on Windows).
+bool DeletePathRecursive(const std::string& path);
 
 class EditorApp : public core::Application {
 public:
@@ -152,6 +154,9 @@ private:
     // a new asset (dir / lua / json / empty text). Both refresh the listing.
     void ImportAssetFile(const std::string& srcPath);
     void CreateAssetFile(const std::string& name, int kind);
+    // Deletes the selected asset (file or directory, recursive). Windows uses
+    // the recycle bin (undo-able); POSIX removes recursively after confirm.
+    void DeleteSelectedAsset();
     // Material-ball assets (Unity .mat / Godot Material style): save the
     // selected entity's material as materials/<name>.mat.json and apply a
     // material asset to the selected entity (both through undo).
@@ -426,6 +431,7 @@ private:
     int assetFilter_ = 0; // 0 all, 1 models, 2 textures, 3 scripts
     bool assetGridView_ = false; // thumbnail grid vs list
     int selectedAsset_ = -1;
+    int assetDeletePending_ = -1; // asset index awaiting delete confirmation
     gfx::Texture previewTexture_;
     ImTextureID previewTexId_ = ImTextureID_Invalid;
     math::Rect2 viewportRect_{244, 58, 792, 640};

@@ -29,7 +29,8 @@ struct DecodedImage {
 // failure. The RGBA8 output is byte-identical to the legacy stbi_load(path,
 // &w, &h, &ch, 4) path. Public so tests can assert the channel-expansion rules
 // directly; AssetManager::DecodeImage wraps it for hook injection.
-DecodedImage DecodeImageFile(const std::string& path, bool compressBc1);
+DecodedImage DecodeImageFile(const std::string& path, bool compressBc1,
+                             bool flipVertically = false);
 
 // Bounded worker pool that runs pure-CPU decode work off the main thread.
 //

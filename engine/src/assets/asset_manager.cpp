@@ -57,10 +57,12 @@ uint64_t FileMTime(const std::string& path) {
 // The produced RGBA8 pixels are byte-identical to the old
 // stbi_load(path, &w, &h, &ch, 4) path: stb_image expands gray->RGB->RGBA with
 // the same replication and alpha=255.
-DecodedImage DecodeImageFile(const std::string& path, bool compressBc1) {
+DecodedImage DecodeImageFile(const std::string& path, bool compressBc1, bool flipVertically) {
     DecodedImage img;
     int w = 0, h = 0, channels = 0;
+    if (flipVertically) stbi_set_flip_vertically_on_load(1);
     unsigned char* data = stbi_load(path.c_str(), &w, &h, &channels, 0);
+    if (flipVertically) stbi_set_flip_vertically_on_load(0);
     if (!data) return img;
     img.width = w;
     img.height = h;
@@ -224,7 +226,7 @@ AssetManager::~AssetManager() {
 DecodedImage AssetManager::DecodeImage(const std::string& path, const TextureLoadOptions& opts,
                                        bool compressed) {
     if (decodeFn_) return decodeFn_(path, opts);
-    return DecodeImageFile(path, compressed);
+    return DecodeImageFile(path, compressed, opts.flipVertically);
 }
 
 gfx::Texture AssetManager::UploadDecoded(const DecodedImage& img) {
@@ -554,7 +556,15 @@ GltfAsset AssetManager::LoadGLTF(const std::string& path) {
             if (images && src >= 0 && images->At(src) && images->At(src)->Get("uri")) {
                 uri = images->At(src)->Get("uri")->GetString();
             }
-            textures.push_back(uri.empty() ? gfx::Texture{} : LoadTexture(dir + uri));
+            if (uri.empty()) {
+                textures.push_back(gfx::Texture{});
+            } else {
+                // glTF texture coordinates have their origin in the TOP-left;
+                // OpenGL sampling expects bottom-left, so flip on load.
+                TextureLoadOptions gltfOpts;
+                gltfOpts.flipVertically = true;
+                textures.push_back(LoadTexture(dir + uri, gltfOpts));
+            }
         }
     }
 

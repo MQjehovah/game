@@ -87,6 +87,9 @@ struct TextureLoadOptions {
     // that rejects compressed uploads falls back to RGBA8 once and disables
     // compression for the rest of the session.
     bool compressBc1 = false;
+    // Flip the image vertically on load (glTF texture coordinates have their
+    // origin in the top-left; OpenGL sampling expects bottom-left).
+    bool flipVertically = false;
 };
 
 // Runtime asset cache. Files are loaded once and reused by path.

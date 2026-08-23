@@ -10,6 +10,7 @@
 #if defined(_WIN32)
 #include <direct.h>
 #include <commdlg.h>
+#include <shellapi.h>
 #include <shobjidl.h>
 #include <sys/stat.h>
 #else
@@ -257,6 +258,34 @@ std::wstring Utf8ToWide(const std::string& s) {
 
 } // namespace
 
+// Deletes a file or a whole directory tree. Windows moves it to the recycle
+// bin (recoverable); POSIX removes it recursively (caller confirms first).
+bool DeletePathRecursive(const std::string& path) {
+    if (path.empty()) return false;
+#if defined(_WIN32)
+    const std::wstring w = Utf8ToWide(path);
+    std::vector<wchar_t> buf(w.begin(), w.end());
+    buf.push_back(0);
+    buf.push_back(0); // SHFileOperation requires a double-null-terminated list
+    SHFILEOPSTRUCTW op = {};
+    op.wFunc = FO_DELETE;
+    op.pFrom = buf.data();
+    op.fFlags = FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT;
+    return SHFileOperationW(&op) == 0;
+#else
+    if (IsDirPath(path)) {
+        std::vector<AssetEntry> entries;
+        if (ListDirectory(path, entries)) {
+            for (const AssetEntry& e : entries) {
+                if (!DeletePathRecursive(e.path)) return false;
+            }
+        }
+        return ::rmdir(path.c_str()) == 0;
+    }
+    return ::remove(path.c_str()) == 0;
+#endif
+}
+
 // Native folder picker for importing a whole resource directory (model +
 // textures + subfolders). Non-Windows hosts fall back to the path input row.
 std::string PickImportDir() {
@@ -455,6 +484,16 @@ void EditorApp::ImportAssetPath(const std::string& path) {
         NEON_LOG_INFO("Editor: '%s' (%llu bytes) - no import action",
                       path.c_str(), static_cast<unsigned long long>(0));
     }
+}
+
+// Arms the delete confirmation popup for the selected asset (the popup itself
+// renders every frame at the end of BuildAssetPanel).
+void EditorApp::DeleteSelectedAsset() {
+    if (selectedAsset_ < 0 ||
+        selectedAsset_ >= static_cast<int>(assetEntries_.size()))
+        return;
+    assetDeletePending_ = selectedAsset_;
+    ImGui::OpenPopup("删除资产确认");
 }
 
 void EditorApp::ImportSelectedAsset() {
@@ -971,8 +1010,41 @@ void EditorApp::BuildAssetPanel() {
                     ImGui::TextDisabled("生成缩略图中…");
                 }
             }
+            ImGui::Separator();
+            if (ImGui::Button("删除资产", ImVec2(-1.0f, 0.0f))) DeleteSelectedAsset();
         }
         ImGui::EndChild();
+    }
+    // Delete-confirmation popup (renders every frame; recycle bin on Windows).
+    if (ImGui::BeginPopupModal("删除资产确认", nullptr,
+                               ImGuiWindowFlags_AlwaysAutoResize)) {
+        if (assetDeletePending_ >= 0 &&
+            assetDeletePending_ < static_cast<int>(assetEntries_.size())) {
+            const AssetEntry& e =
+                assetEntries_[static_cast<size_t>(assetDeletePending_)];
+            ImGui::TextWrapped("确定删除 %s '%s'？\nWindows 会移到回收站（可恢复）。",
+                               e.isDir ? "目录" : "文件", e.name.c_str());
+            ImGui::Separator();
+            if (ImGui::Button("删除", ImVec2(90.0f, 0.0f))) {
+                if (DeletePathRecursive(e.path)) {
+                    NEON_LOG_INFO("Asset: deleted '%s'", e.path.c_str());
+                    RefreshAssetDir();
+                } else {
+                    NEON_LOG_ERROR("Asset: failed to delete '%s'", e.path.c_str());
+                }
+                selectedAsset_ = -1;
+                assetDeletePending_ = -1;
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("取消", ImVec2(90.0f, 0.0f))) {
+                assetDeletePending_ = -1;
+                ImGui::CloseCurrentPopup();
+            }
+        } else {
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
     }
     ImGui::End();
 }
