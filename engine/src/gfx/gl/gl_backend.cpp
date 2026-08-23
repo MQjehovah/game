@@ -180,14 +180,42 @@ public:
         g.GetIntegerv(0x0D56, &depthBits); // GL_DEPTH_BITS
         // Verify the depth buffer actually clears to the requested value.
         // Some drivers report depth bits but clear to 0, breaking GL_LESS.
-        g.ClearDepth(1.0f);
-        g.Clear(glc::DepthBufferBit);
-        float depthValue = -1.0f;
-        g.ReadPixels(0, 0, 1, 1, 0x1902, 0x1406, &depthValue); // GL_DEPTH_COMPONENT, GL_FLOAT
-        depthUsable_ = depthBits >= 16 && depthValue > 0.9f;
-        NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
-                     "GL depth bits=%d value-after-clear=%.3f err=%u", depthBits, depthValue,
-                     g.GetError());
+        // IMPORTANT: this must run on an OFFSCREEN FBO - reading the window
+        // framebuffer's depth is implementation-defined (NVIDIA returns 0),
+        // which used to false-positive "depth broken" and force painter's
+        // order with wrong occlusion.
+        gl::GLuint depthFbo = 0, depthRbo = 0, depthTex = 0;
+        g.GenFramebuffers(1, &depthFbo);
+        g.BindFramebuffer(glc::Framebuffer, depthFbo);
+        g.GenTextures(1, &depthTex);
+        g.BindTexture(glc::Texture2D, depthTex);
+        g.TexImage2D(glc::Texture2D, 0, static_cast<gl::GLint>(glc::Rgba8), 4, 4, 0, glc::Rgba,
+                     glc::UnsignedByte, nullptr);
+        g.FramebufferTexture2D(glc::Framebuffer, glc::ColorAttachment0, glc::Texture2D, depthTex,
+                               0);
+        g.GenRenderbuffers(1, &depthRbo);
+        g.BindRenderbuffer(glc::Renderbuffer, depthRbo);
+        g.RenderbufferStorage(glc::Renderbuffer, glc::DepthComponent24, 4, 4);
+        g.FramebufferRenderbuffer(glc::Framebuffer, glc::DepthAttachment, glc::Renderbuffer,
+                                  depthRbo);
+        if (g.CheckFramebufferStatus(glc::Framebuffer) == 0x8CD5) {
+            g.ClearDepth(1.0f);
+            g.Clear(glc::DepthBufferBit);
+            float depthValue = -1.0f;
+            g.ReadPixels(0, 0, 1, 1, 0x1902, 0x1406, &depthValue); // GL_DEPTH_COMPONENT, GL_FLOAT
+            depthUsable_ = depthBits >= 16 && depthValue > 0.9f;
+            NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
+                         "GL depth bits=%d value-after-clear=%.3f err=%u (FBO probe)", depthBits,
+                         depthValue, g.GetError());
+        } else {
+            depthUsable_ = false;
+            NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Warn,
+                         "GL depth probe FBO incomplete; falling back to painter's order");
+        }
+        g.BindFramebuffer(glc::Framebuffer, 0);
+        g.DeleteFramebuffers(1, &depthFbo);
+        g.DeleteRenderbuffers(1, &depthRbo);
+        g.DeleteTextures(1, &depthTex);
         NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info, "GL depth %s",
                      depthUsable_ ? "usable" : "BROKEN - using painter's order");
 

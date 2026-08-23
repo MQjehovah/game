@@ -1,6 +1,10 @@
 NEON_GL_FUNC(void, Clear, (GLbitfield))
 NEON_GL_FUNC(void, ClearColor, (GLfloat, GLfloat, GLfloat, GLfloat))
-NEON_GL_FUNC(void, ClearDepth, (GLfloat))
+// glClearDepth takes a double (glClearDepthf is the float variant); the
+// loader resolves "glClearDepth" so the proc type must match the double ABI,
+// otherwise the depth clear value is garbage (and the depth self-test reads 0
+// -> false "depth broken" -> painter's order with wrong occlusion).
+NEON_GL_FUNC(void, ClearDepth, (double))
 NEON_GL_FUNC(void, Viewport, (GLint, GLint, GLsizei, GLsizei))
 NEON_GL_FUNC(void, Scissor, (GLint, GLint, GLsizei, GLsizei))
 NEON_GL_FUNC(void, Enable, (GLenum))
