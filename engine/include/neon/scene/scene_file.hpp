@@ -261,6 +261,15 @@ struct SceneCamera {
 struct SceneSortOrder {
     float z = 0.0f;
 };
+// Authorable terrain (P1-1 world editor): a (segments+1)^2 heightmap over a
+// size x size area. The runtime builds the terrain mesh from these heights;
+// the editor paints them with a brush.
+struct SceneTerrain {
+    int segments = 48;
+    float size = 60.0f;
+    float heightScale = 1.0f;
+    std::vector<float> heights;
+};
 
 // A component factory builds a component onto `ent` from its effective JSON
 // data. Args: world, entity, merged component data (prefab already applied),

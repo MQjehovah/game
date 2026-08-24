@@ -3126,6 +3126,54 @@ void EditorApp::BuildAnimEditorPanel() {
     ImGui::End();
 }
 
+// P1-1 terrain brush panel: select a "terrain" entity, enable 雕刻, then
+// click / drag in the viewport to raise or lower the heightmap.
+void EditorApp::BuildTerrainPanel() {
+    if (!showTerrain_) return;
+    if (ImGui::Begin("地形编辑", &showTerrain_)) {
+        const bool hasTerrain =
+            selected_ >= 0 && selected_ < static_cast<int>(entities_.size()) &&
+            entities_[static_cast<size_t>(selected_)].meshKey == "terrain";
+        if (!hasTerrain) {
+            ImGui::TextDisabled("请先选中一个 \"terrain\" 实体");
+            ImGui::Checkbox("雕刻模式", &terrainPaintMode_);
+            ImGui::End();
+            return;
+        }
+        ImGui::Checkbox("雕刻模式", &terrainPaintMode_);
+        ImGui::SameLine();
+        ImGui::Checkbox("抬高", &terrainRaise_);
+        ImGui::SameLine();
+        if (ImGui::Button("降低")) {
+            terrainRaise_ = false;
+        }
+        if (ImGui::Button("重置为平地")) {
+            SceneEntity& e = entities_[static_cast<size_t>(selected_)];
+            e.terrainHeights_.assign(e.terrainHeights_.size(), 0.0f);
+            RebuildTerrainMesh(e);
+            sceneDirty_ = true;
+        }
+        ImGui::DragFloat("笔刷半径", &terrainBrushRadius_, 0.1f, 0.5f, 30.0f);
+        ImGui::DragFloat("笔刷强度", &terrainBrushStrength_, 0.01f, 0.005f, 2.0f);
+        SceneEntity& e = entities_[static_cast<size_t>(selected_)];
+        if (ImGui::DragInt("细分", &e.terrainSegments_, 1, 4, 128)) {
+            e.terrainSegments_ = std::max(4, std::min(e.terrainSegments_, 128));
+            RebuildTerrainMesh(e);
+            sceneDirty_ = true;
+        }
+        if (ImGui::DragFloat("尺寸", &e.terrainSize_, 1.0f, 4.0f, 500.0f)) {
+            RebuildTerrainMesh(e);
+            sceneDirty_ = true;
+        }
+        if (ImGui::DragFloat("高度缩放", &e.terrainHeightScale_, 0.05f, 0.1f, 10.0f)) {
+            RebuildTerrainMesh(e);
+            sceneDirty_ = true;
+        }
+        ImGui::TextDisabled("提示: 雕刻模式下点击/拖拽视口即可塑形");
+    }
+    ImGui::End();
+}
+
 void EditorApp::BuildPackagePanel() {
     if (!showPackage_) return;
     if (ImGui::Begin("打包", &showPackage_)) {

@@ -38,6 +38,11 @@ struct SceneEntity {
     float cameraFov = 60.0f;  // Camera3D type only (degrees)
     bool cameraOrtho = false; // Camera3D type only
     std::string meshKey; // "terrain" | "helmet" | "cube" | "tree" | "obj:<path>" | "gltf:<path>"
+    // P1-1 terrain editing: heightmap canvas for meshKey "terrain".
+    std::vector<float> terrainHeights_;
+    int terrainSegments_ = 48;
+    float terrainSize_ = 60.0f;
+    float terrainHeightScale_ = 1.0f;
     math::Vec3 pos{};
     math::Quat rot{};
     math::Vec3 scale{1, 1, 1};
@@ -332,8 +337,11 @@ private:
     void SaveScriptEditor();
     void BuildScriptEditorPanel();
     void BuildAnimEditorPanel();
+    void BuildTerrainPanel();
     void SaveSceneAsChild();
     void ReloadEntityShader(SceneEntity& e);
+    void PaintTerrain(const math::Ray& ray);
+    void RebuildTerrainMesh(SceneEntity& e);
     void OpenInExternalEditor(const std::string& path);
 
     // Package panel (T4.6): docked 打包 panel with project/out dir inputs, a
@@ -388,7 +396,13 @@ private:
     core::Json currentSceneRoot_;
     std::string currentScenePath_;
     std::string sceneExtends_; // P1-1: parent scene path ("" = no inheritance)
+    bool sceneDirty_ = false;  // scene edited since last save (terrain brush etc.)
     bool cameraFollowSelected_ = false; // P1-1: view through the selected Camera3D
+    // P1-1 terrain brush state.
+    bool terrainPaintMode_ = false;
+    float terrainBrushRadius_ = 5.0f;
+    float terrainBrushStrength_ = 0.12f;
+    bool terrainRaise_ = true;
 
     float yaw_ = 0.7f;
     float pitch_ = 0.35f;
@@ -582,6 +596,7 @@ private:
     std::vector<ScriptCheckResult> scriptChecks_;          // parallel: per-file check results
     bool showScriptEditor_ = false;
     bool showAnimEditor_ = false;
+    bool showTerrain_ = false;
     // P1-1 animation timeline editor state.
     anim::AnimationClip animClip_;
     std::string animClipPath_;

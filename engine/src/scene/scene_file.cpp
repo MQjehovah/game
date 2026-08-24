@@ -961,6 +961,30 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                      world.Add<SceneSortOrder>(ent, s);
                      return true;
                  });
+
+    reg.Register("terrain",
+                 [](ecs::World& world, ecs::Entity ent, const core::Json& data,
+                    const core::Json&, std::string* err) {
+                     if (!CheckComponentShape(data, {"segments", "size", "heightScale",
+                                                     "heights"},
+                                              "terrain", err))
+                         return false;
+                     SceneTerrain t;
+                     float seg = 48.0f;
+                     if (!RequireNumber(data, "segments", "terrain", seg, err)) return false;
+                     t.segments = static_cast<int>(seg);
+                     if (!RequireNumber(data, "size", "terrain", t.size, err)) return false;
+                     if (!RequireNumber(data, "heightScale", "terrain", t.heightScale, err))
+                         return false;
+                     if (const core::Json* h = data.Get("heights")) {
+                         if (h->IsArray()) {
+                             for (const core::Json& v : h->Items())
+                                 t.heights.push_back(static_cast<float>(v.GetNumber()));
+                         }
+                     }
+                     world.Add<SceneTerrain>(ent, std::move(t));
+                     return true;
+                 });
 }
 
 // --- Instantiate -------------------------------------------------------------

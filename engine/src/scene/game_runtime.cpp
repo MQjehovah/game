@@ -861,7 +861,8 @@ void GameRuntime::ResolveDrawItem(DrawItem& item, gfx::Renderer& renderer) {
     }
 
     const std::string& key = item.meshKey;
-    gfx::Mesh mesh = ResolveMeshKey(renderer, key);
+    const SceneTerrain* terr = key == "terrain" ? world_.Get<SceneTerrain>(item.ent) : nullptr;
+    gfx::Mesh mesh = ResolveMeshKey(renderer, key, terr);
     if (!mesh.Valid()) {
         const bool knownPrefix = key.compare(0, 4, "obj:") == 0 || key.compare(0, 5, "gltf:") == 0 ||
                                  key == "cube" || key == "sphere" || key == "plane" ||
@@ -896,7 +897,8 @@ void GameRuntime::ResolveDrawItem(DrawItem& item, gfx::Renderer& renderer) {
     item.resolved = true;
 }
 
-gfx::Mesh GameRuntime::ResolveMeshKey(gfx::Renderer& renderer, const std::string& key) {
+gfx::Mesh GameRuntime::ResolveMeshKey(gfx::Renderer& renderer, const std::string& key,
+                                      const SceneTerrain* terrain) {
     gfx::Mesh mesh;
     if (key.compare(0, 4, "obj:") == 0) {
         mesh = cfg_.assets->LoadMeshOBJ(FullAssetPath(key.substr(4)));
@@ -910,7 +912,14 @@ gfx::Mesh GameRuntime::ResolveMeshKey(gfx::Renderer& renderer, const std::string
     } else if (key == "plane") {
         mesh = gfx::Mesh::CreatePlane(renderer, 10.0f, 10.0f, 4, 4, "plane");
     } else if (key == "terrain") {
-        mesh = gfx::MakeTerrainMesh(renderer);
+        if (terrain && terrain->heights.size() ==
+                           static_cast<size_t>(terrain->segments + 1) *
+                               (terrain->segments + 1)) {
+            mesh = gfx::Mesh::CreateTerrain(renderer, terrain->segments, terrain->size,
+                                            terrain->heights, terrain->heightScale, "terrain");
+        } else {
+            mesh = gfx::MakeTerrainMesh(renderer);
+        }
     } else if (key == "tree") {
         mesh = gfx::MakeTreeMesh(renderer);
     } else if (key == "house") {

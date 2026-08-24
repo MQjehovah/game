@@ -297,7 +297,8 @@ private:
     void ResolveDrawItem(DrawItem& item, gfx::Renderer& renderer);
     // Resolves one meshKey ("obj:"/"gltf:" file-backed or a procedural
     // primitive) through the runtime's AssetManager; invalid mesh on failure.
-    gfx::Mesh ResolveMeshKey(gfx::Renderer& renderer, const std::string& key);
+    gfx::Mesh ResolveMeshKey(gfx::Renderer& renderer, const std::string& key,
+                             const SceneTerrain* terrain = nullptr);
     // Invokes one of the instance's captured chunk functions and logs the
     // first failure of the script instance (throttled per Start); failures
     // never abort the runtime. Sets the per-entity input routing context.

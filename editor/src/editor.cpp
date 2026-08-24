@@ -1022,6 +1022,24 @@ void EditorApp::OnUpdate(float dt) {
                       ok ? "PASS" : "FAIL");
         if (!ok) smokeFailed_ = true;
     }
+    // P1-1 terrain tool smoke: edit the heightmap canvas and rebuild the mesh.
+    if (smokeMode_ && TimeRef().frameIndex == 47) {
+        bool ok = false;
+        for (SceneEntity& e : entities_) {
+            if (e.meshKey != "terrain") continue;
+            RebuildTerrainMesh(e);
+            if (e.terrainHeights_.empty() || !e.mesh.Valid()) break;
+            const float before = e.terrainHeights_[0];
+            e.terrainHeights_[0] = before + 1.0f;
+            RebuildTerrainMesh(e);
+            ok = e.mesh.Valid() &&
+                 std::fabs(e.terrainHeights_[0] - before - 1.0f) < 1e-4f;
+            break;
+        }
+        NEON_LOG_INFO("EDITOR-TERRAIN-SMOKE: [%s] terrain heightmap edit + rebuild",
+                      ok ? "PASS" : "FAIL");
+        if (!ok) smokeFailed_ = true;
+    }
     // Play/Stop smoke: start a playtest at frame 60, verify it ticks, stop at
     // the last frame (119; OnUpdate never runs at 120). Kept at "Play/Stop
     // doesn't crash the editor" level; the real script/BT verification lives
@@ -1630,6 +1648,11 @@ void EditorApp::UpdateViewport(float dt) {
             const float ndcX = (mousePx.x - vpX) / vpW * 2.0f - 1.0f;
             const float ndcY = 1.0f - (mousePx.y - vpY) / vpH * 2.0f;
             math::Ray ray = RayFromNDC(cam, aspect, ndcX, ndcY);
+            // P1-1 terrain brush: paint instead of picking while enabled.
+            if (terrainPaintMode_) {
+                PaintTerrain(ray);
+                return;
+            }
             float best = 1e30f;
             int picked = -1;
             for (size_t i = 0; i < entities_.size(); ++i) {
@@ -1648,6 +1671,21 @@ void EditorApp::UpdateViewport(float dt) {
                 }
             }
             SetSelection(picked);
+        }
+        // Hold-to-paint: the brush applies every frame while the button stays
+        // down (drag sculpting).
+        if (terrainPaintMode_ && input->MouseDown(platform::MouseButton::Left)) {
+            const float aspect = ViewportAspect();
+            gfx::Camera cam = ActiveCamera();
+            const math::Vec2 mousePx = input->MousePos();
+            const math::Rect2& vp = viewportScreenRect_;
+            const float vpW = vp.w > 0.0f ? vp.w : static_cast<float>(renderer_.ScreenWidth());
+            const float vpH = vp.h > 0.0f ? vp.h : static_cast<float>(renderer_.ScreenHeight());
+            const float vpX = vp.w > 0.0f ? vp.x : 0.0f;
+            const float vpY = vp.h > 0.0f ? vp.y : 0.0f;
+            const float ndcX = (mousePx.x - vpX) / vpW * 2.0f - 1.0f;
+            const float ndcY = 1.0f - (mousePx.y - vpY) / vpH * 2.0f;
+            PaintTerrain(RayFromNDC(cam, aspect, ndcX, ndcY));
         }
     }
     // Data-driven playtest scripts use the orbit yaw for camera-relative
@@ -1961,6 +1999,7 @@ void EditorApp::BuildImGuiUI() {
             ImGui::MenuItem("场景", nullptr, &showHierarchy_);
             ImGui::MenuItem("属性", nullptr, &showInspector_);
             ImGui::MenuItem("动画时间线", nullptr, &showAnimEditor_);
+            ImGui::MenuItem("地形编辑", nullptr, &showTerrain_);
             ImGui::MenuItem("以选中相机为视图", nullptr, &cameraFollowSelected_);
             ImGui::MenuItem("资产", nullptr, &showAssets_);
             ImGui::MenuItem("资源", nullptr, &showResources_);
@@ -2240,6 +2279,7 @@ void EditorApp::BuildImGuiUI() {
     BuildScriptPanel();
     BuildScriptEditorPanel();
     BuildAnimEditorPanel();
+    BuildTerrainPanel();
     BuildPackagePanel();
     BuildProfilerPanel();
     BuildInputMapPanel();
@@ -3683,6 +3723,59 @@ core::Result<core::Json> EditorApp::BuildPlaySceneJson() {
             comps.object_["scripts"] = std::move(scripts);
             obj.object_["components"] = std::move(comps);
         }
+        // P1-1/P2-3 export: node type, camera, sort order and the authored
+        // terrain heightmap as runtime components.
+        {
+            auto mkNum = [](double v) {
+                core::Json j;
+                j.type_ = core::Json::Type::Number;
+                j.number_ = v;
+                return j;
+            };
+            core::Json comps;
+            if (const core::Json* c = obj.Get("components")) {
+                if (c->IsObject()) comps = *c;
+            }
+            comps.type_ = core::Json::Type::Object;
+            if (!e.nodeType.empty()) {
+                core::Json t;
+                t.type_ = core::Json::Type::Object;
+                core::Json v;
+                v.type_ = core::Json::Type::String;
+                v.string_ = e.nodeType;
+                t.object_["value"] = v;
+                comps.object_["type"] = std::move(t);
+            }
+            if (e.nodeType == "Camera3D") {
+                core::Json cam;
+                cam.type_ = core::Json::Type::Object;
+                cam.object_["fov"] = mkNum(e.cameraFov);
+                core::Json ortho;
+                ortho.type_ = core::Json::Type::Bool;
+                ortho.bool_ = e.cameraOrtho;
+                cam.object_["ortho"] = ortho;
+                comps.object_["camera"] = std::move(cam);
+            }
+            if (e.zOrder != 0.0f) {
+                core::Json so;
+                so.type_ = core::Json::Type::Object;
+                so.object_["z"] = mkNum(e.zOrder);
+                comps.object_["sortOrder"] = std::move(so);
+            }
+            if (e.meshKey == "terrain" && !e.terrainHeights_.empty()) {
+                core::Json terr;
+                terr.type_ = core::Json::Type::Object;
+                terr.object_["segments"] = mkNum(e.terrainSegments_);
+                terr.object_["size"] = mkNum(e.terrainSize_);
+                terr.object_["heightScale"] = mkNum(e.terrainHeightScale_);
+                core::Json hs;
+                hs.type_ = core::Json::Type::Array;
+                for (float h : e.terrainHeights_) hs.array_.push_back(mkNum(h));
+                terr.object_["heights"] = std::move(hs);
+                comps.object_["terrain"] = std::move(terr);
+            }
+            obj.object_["components"] = std::move(comps);
+        }
         arr.array_.push_back(std::move(obj));
     }
     root.object_["entities"] = std::move(arr);
@@ -4142,7 +4235,7 @@ void EditorApp::SaveEditorConfig() {
 bool EditorApp::ResolveMesh(SceneEntity& e) {
     const std::string& key = e.meshKey;
     if (key == "terrain") {
-        e.mesh = gfx::MakeTerrainMesh(renderer_);
+        RebuildTerrainMesh(e);
         e.material = gfx::Material::Lit({}, e.tint, 4.0f);
     } else if (key == "helmet") {
         assets::GltfAsset gltf =
@@ -4286,6 +4379,72 @@ void EditorApp::ApplyMaterialParams(SceneEntity& e) {
     if (!e.emissiveTex.empty()) e.material.emissive = assetMgr_.LoadTexture(e.emissiveTex).Handle();
 }
 
+// Rebuilds a terrain entity's mesh from its heightmap canvas (P1-1). A blank
+// canvas (no heights) becomes a flat field the brush can carve.
+void EditorApp::RebuildTerrainMesh(SceneEntity& e) {
+    const size_t need = static_cast<size_t>(e.terrainSegments_ + 1) *
+                        (e.terrainSegments_ + 1);
+    if (e.terrainHeights_.size() != need) {
+        e.terrainHeights_.assign(need, 0.0f);
+        // Match the runtime's default rolling terrain so a fresh 地面 matches
+        // what the packed game shows before the user sculpts.
+        const float half = e.terrainSize_ * 0.5f;
+        const float cell = e.terrainSize_ / static_cast<float>(e.terrainSegments_);
+        for (int row = 0; row <= e.terrainSegments_; ++row) {
+            for (int col = 0; col <= e.terrainSegments_; ++col) {
+                const float x = -half + col * cell;
+                const float z = -half + row * cell;
+                float h = std::sin(x * 0.11f) * std::cos(z * 0.13f) * 0.8f +
+                          std::sin(x * 0.31f + z * 0.27f) * 0.35f;
+                const float d = std::sqrt(x * x + z * z);
+                h *= math::Saturate((d - 6.0f) / 10.0f);
+                e.terrainHeights_[static_cast<size_t>(row) * (e.terrainSegments_ + 1) + col] = h;
+            }
+        }
+    }
+    e.mesh = gfx::Mesh::CreateTerrain(renderer_, e.terrainSegments_, e.terrainSize_,
+                                      e.terrainHeights_, e.terrainHeightScale_, "terrain");
+}
+
+// P1-1 terrain brush: lowers/raises the heightmap around the ray's hit on the
+// selected terrain's ground plane, then rebuilds the mesh.
+void EditorApp::PaintTerrain(const math::Ray& ray) {
+    if (selected_ < 0 || selected_ >= static_cast<int>(entities_.size())) return;
+    SceneEntity& e = entities_[static_cast<size_t>(selected_)];
+    if (e.meshKey != "terrain") return;
+    if (e.terrainHeights_.size() !=
+        static_cast<size_t>(e.terrainSegments_ + 1) * (e.terrainSegments_ + 1))
+        RebuildTerrainMesh(e);
+    // Intersect the ray with the terrain's ground plane (y = e.pos.y).
+    if (std::fabs(ray.dir.y) < 1e-6f) return;
+    const float t = (e.pos.y - ray.origin.y) / ray.dir.y;
+    if (t < 0.0f) return;
+    const math::Vec3 hit = ray.origin + ray.dir * t;
+    const float half = e.terrainSize_ * 0.5f;
+    const float cell = e.terrainSize_ / static_cast<float>(e.terrainSegments_);
+    const float localX = hit.x - e.pos.x;
+    const float localZ = hit.z - e.pos.z;
+    if (localX < -half || localX > half || localZ < -half || localZ > half) return;
+    const int seg = e.terrainSegments_;
+    const float radius = terrainBrushRadius_;
+    const float r2 = radius * radius;
+    const float delta = terrainBrushStrength_ * (terrainRaise_ ? 1.0f : -1.0f) / e.terrainHeightScale_;
+    for (int row = 0; row <= seg; ++row) {
+        for (int col = 0; col <= seg; ++col) {
+            const float x = -half + col * cell - localX;
+            const float z = -half + row * cell - localZ;
+            const float d2 = x * x + z * z;
+            if (d2 > r2) continue;
+            const float falloff = 1.0f - d2 / r2;
+            size_t idx = static_cast<size_t>(row) * (seg + 1) + col;
+            e.terrainHeights_[idx] = math::Clamp(e.terrainHeights_[idx] + delta * falloff,
+                                                 -10.0f, 10.0f);
+        }
+    }
+    RebuildTerrainMesh(e);
+    sceneDirty_ = true;
+}
+
 // P2-6 shader hot reload: (re)compiles the entity's custom fragment shader
 // against the built-in unlit vertex contract and re-binds it to the material.
 // The GL backend supports custom fragments; other backends return an invalid
@@ -4366,6 +4525,18 @@ void EditorApp::SaveScene() {
         obj.object_["pos"] = vec3(e.pos);
         obj.object_["scale"] = vec3(e.scale);
         if (e.zOrder != 0.0f) obj.object_["zOrder"] = num(e.zOrder);
+        if (e.meshKey == "terrain" && !e.terrainHeights_.empty()) {
+            core::Json td;
+            td.type_ = core::Json::Type::Object;
+            td.object_["segments"] = num(e.terrainSegments_);
+            td.object_["size"] = num(e.terrainSize_);
+            td.object_["heightScale"] = num(e.terrainHeightScale_);
+            core::Json hs;
+            hs.type_ = core::Json::Type::Array;
+            for (float h : e.terrainHeights_) hs.array_.push_back(num(h));
+            td.object_["heights"] = std::move(hs);
+            obj.object_["terrainData"] = std::move(td);
+        }
         core::Json tint;
         tint.type_ = core::Json::Type::Array;
         tint.array_ = {num(e.tint.r), num(e.tint.g), num(e.tint.b)};
@@ -4625,6 +4796,19 @@ void EditorApp::LoadScene(const std::string& path) {
                 if (const core::Json* z = so->Get("z"))
                     e.zOrder = static_cast<float>(z->GetNumber());
             }
+            if (const core::Json* te = comps->Get("terrain")) {
+                if (const core::Json* seg = te->Get("segments"))
+                    e.terrainSegments_ = seg->GetInt(48);
+                if (const core::Json* sz = te->Get("size"))
+                    e.terrainSize_ = static_cast<float>(sz->GetNumber());
+                if (const core::Json* hscale = te->Get("heightScale"))
+                    e.terrainHeightScale_ = static_cast<float>(hscale->GetNumber());
+                if (const core::Json* h = te->Get("heights")) {
+                    if (h->IsArray())
+                        for (const core::Json& v : h->Items())
+                            e.terrainHeights_.push_back(static_cast<float>(v.GetNumber()));
+                }
+            }
             if (const core::Json* s = comps->Get("script")) {
                 // Legacy single "script" component: one mounted script.
                 if (s->IsObject()) {
@@ -4701,6 +4885,19 @@ void EditorApp::LoadScene(const std::string& path) {
             e.meshKey = j->Get("mesh")->GetString("cube");
             if (const core::Json* zo = j->Get("zOrder"))
                 e.zOrder = static_cast<float>(zo->GetNumber());
+            if (const core::Json* td = j->Get("terrainData")) {
+                if (const core::Json* seg = td->Get("segments"))
+                    e.terrainSegments_ = seg->GetInt(48);
+                if (const core::Json* sz = td->Get("size"))
+                    e.terrainSize_ = static_cast<float>(sz->GetNumber());
+                if (const core::Json* hscale = td->Get("heightScale"))
+                    e.terrainHeightScale_ = static_cast<float>(hscale->GetNumber());
+                if (const core::Json* h = td->Get("heights")) {
+                    if (h->IsArray())
+                        for (const core::Json& v : h->Items())
+                            e.terrainHeights_.push_back(static_cast<float>(v.GetNumber()));
+                }
+            }
             if (const core::Json* st = j->Get("spriteTex")) e.spriteTex = st->GetString();
             if (const core::Json* fx = j->Get("spriteFlipX")) e.spriteFlipX = fx->GetInt(0) != 0;
             if (const core::Json* fy = j->Get("spriteFlipY")) e.spriteFlipY = fy->GetInt(0) != 0;
