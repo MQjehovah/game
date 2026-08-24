@@ -46,38 +46,73 @@ NeonEngine 是一个 C++17 自研引擎，核心约 1.9 万行、编辑器约 1.
 | 固定 60Hz tick | 服务端友好 |
 | 脚本/行为树 | Lua 5.4 确定性沙箱 + 行为树引擎 + 按实例捕获 |
 | CJK | 系统字体动态字形，中文开箱即用 |
-| 体积 | 代码量小、自包含，易于改造（Godot 数百万行，改内核门槛高） |
+| 体积 | 自研代码量小、自包含，易于改造（Godot 数百万行，改内核门槛高）；Jolt 为 vendored 第三方 |
+| 物理 | Jolt v5.0.0（Godot 4 同款）——刚体/碰撞层/角色控制器开箱即用 |
+| 工程闭环 | 545 项测试 + 多平台 CI + 打包发布（game.pack + 安装/更新脚本） |
 
 ### 1.2 模块规模（粗略行数）
 
 | 模块 | 行数 | 模块 | 行数 |
 | --- | --- | --- | --- |
-| gfx（渲染） | ~5.4k | script | ~2.7k |
-| scene | ~4.1k | editor（含 ImGui） | ~11k |
-| core | ~2.1k | net | ~1.4k |
+| gfx（渲染） | ~5.5k | script | ~2.8k |
+| scene | ~4.3k | editor（含 ImGui） | ~12k |
+| core | ~2.1k | net | ~1.6k |
 | assets | ~1.6k | ui | ~1.6k |
-| bt | ~1.3k | anim | ~550 |
-| physics | ~530 | audio | ~150 |
+| bt | ~1.3k | anim | ~0.8k |
+| physics | ~1.2k + Jolt(~9.5万行 vendored) | audio | ~0.4k |
 
-物理、动画、音频的体量说明它们目前只是"能跑 demo"的深度。
+物理已从"能跑 demo"升级为与 Godot 同库的 Jolt；动画/音频从 demo 深度提升为可用工具链
+（BlendSpace/IK/Tween/时间线、立体声总线/3D 音效）。
 
 ## 2. 差距对照（Godot 4.x vs NeonEngine）
 
-| 领域 | Godot 4.x | NeonEngine | 差距 |
+> 以下为 2026-08-24 完成 P0/P1/P2 大部分项之后的"当前差距"。与前版相比，
+> 物理（Jolt 同库）、Vulkan 后端、动画、Lua 调试器、编辑器工作流、音频总线/3D、
+> 2D 排序/tilemap、网络 RPC/房间/反作弊、资源生命周期、打包发布均已完成。
+
+| 领域 | Godot 4.x | NeonEngine（当前） | 差距 |
 | --- | --- | --- | --- |
-| 物理 | Jolt/Bullet：刚体、角色控制器、关节、碰撞层/掩码、Area、形状查询、软体 | 约 400 行自研：球 vs AABB + 重力 + 射线 | **极大**，最大短板 |
-| 渲染 | Vulkan/Metal/D3D12/GL 四后端；SDFGI/VoxelGI/光照贴图、SSAO、SSR、TAA、体积雾、贴花、GPU 粒子 | GL3.3 PBR + CSM + IBL + HDR/Bloom/ACES/MSAA；Vulkan 实验性且灰度 | 大 |
-| 动画 | AnimationPlayer/Tree、BlendSpace、Tween、IK、重定向、时间线编辑器 | glTF 蒙皮 + 基础状态机（过渡/混合） | 大 |
-| 脚本 | GDScript：断点/单步/补全/内联文档/远程调试 | Lua 编辑器（语法检查 + 保存 + 外部编辑器） | 大（无调试器/补全） |
-| 编辑器 | 节点树、场景继承、组、全类型检查器、动画/地形/tilemap/着色器编辑器 | ImGui 面板：场景/资产/属性/材质/行为树/脚本/2D 网格 | 大 |
-| UI | Control 节点 + 锚点/容器/主题 + UI 编辑器 | 自研控件树 + ImGui 工具层 + 2D 即时 HUD | 中 |
-| 音频 | 3D 空间音频、总线、效果器、流式 | miniaudio 封装 + 程序化音效 | 中 |
-| 2D | 完整 2D 引擎（sprite/tilemap/光照/粒子/物理） | Lua 脚本画布 + PvZ 网格编辑器 | 大 |
-| 网络 | RPC/多人同步器/WebSocket/WebRTC | 自研 UDP 可靠通道 + 权威服务器 + 预测/AOI | 强项；缺高层 RPC 与生产化 |
-| 资源 | Resource 引用计数、导入/重导入、`user://` | AssetManager 缓存，生命周期=应用 | 中（流式大世界必需） |
+| 物理 | Jolt 全家桶（刚体/角色/关节/车辆/软体/Area/形状查询） | Jolt v5.0.0 同款：刚体、碰撞层/掩码、角色控制器（CharacterVirtual）、射线/接触；未封装关节/车辆/软体/Area | 小→中（核心同库；缺上层封装与编辑器调试工具） |
+| 渲染 | Vulkan/Metal/D3D12/GL；SDFGI/VoxelGI/光照贴图、SSAO、SSR、TAA、体积雾、任意表面贴花、GPU 粒子 | GL3.3 PBR + CSM + IBL + HDR/Bloom/ACES/MSAA；Vulkan 已与 GL 逐像素一致；地面贴花；粒子 CPU 合批 | 中→大：缺 SSAO/SSR/TAA/体积雾/GI/GPU 粒子/任意表面贴花 |
+| 动画 | AnimationPlayer/Tree、BlendSpace、Tween、IK、重定向、时间线编辑器 | 状态机+过渡、BlendSpace1D/2D、两骨骼 IK、Lua Tween、.anim.json 时间线编辑器；无重定向/多轨时间线 | 中 |
+| 脚本 | GDScript 全功能编辑器（断点/单步/变量/调用栈/补全/文档/远程调试） | Lua 5.4 + 编辑器断点/单步/局部变量/调用栈（顶层帧）/绑定参考/前缀补全；无远程调试/完整调用栈/悬停文档 | 中 |
+| 编辑器 | 完整节点系统 + 检查器 + 场景继承/组 + 动画/地形/tilemap/着色器编辑器 + 导入 watch | ImGui：场景继承、组、节点类型、动画时间线、地形笔刷、tilemap、脚本+调试器、shader 热重载、资产 watch | 中（骨架齐全，打磨与深度差一截） |
+| UI | Control 节点树 + 锚点/容器/主题 + 可视化 UI 编辑器 | 自研控件树 + 数据驱动 UI 文档 + ImGui 工具层；无可视化 UI 编辑器 | 中 |
+| 音频 | 3D 空间、总线/效果器、流式 | 立体声混音、Master/Sfx/Music 总线、3D 空间音效、WAV 加载；无效果器/流式 | 中 |
+| 2D | 完整 2D（sprite/tilemap/光照/粒子/物理） | sprite、z 排序、tilemap、2D 相机实体；无 2D 光照/2D 粒子/2D 物理工具 | 中 |
+| 网络 | 高层多人同步器 + WebSocket/WebRTC | 自研 UDP 权威 + 确定性 + 快照/AOI/预测 + RPC/房间/反作弊——对 MMO 目标更强；缺 WS/TLS 传输 | 强项 |
+| 资源 | Resource 引用计数/导入/重导入/`user://` | 引用计数 + 延迟回收、资产 watch/重导入、ObjectPool；无 `user://` 存档抽象 | 中→小 |
+| 平台 | 全平台导出 + 安装器/自动更新 | Windows 优先（图标/版本资源/打包发布件/自动更新脚本）+ CI 覆盖 Win/MSVC、Ubuntu、macOS、Sanitizer；无 WASM/WebGPU | 中（Windows 已自洽） |
+| 工程质量 | 成熟（测试/文档/插件生态） | 545 项测试 + 多平台 CI + `--bench` 基准 + 崩溃处理 + 热重载 | 中（无插件生态/文档体系） |
+
+### 2.1 仍存在的关键差距（按 MMO 目标收益排序）
+
+1. **渲染管线深度**（收益最高）：SSAO → 体积雾 → 光照贴图/GI 是"大型 3D 网络游戏"
+   观感的主要分水岭；需要先补"深度贴图 + 后处理链"基建（当前 HDR 目标深度是 RBO，
+   无法在 shader 中采样）。GPU 粒子与任意表面贴花次之。
+2. **编辑器打磨**：骨架已齐，缺的是"体验"——多选/复制粘贴/层级拖拽、动画多轨时间线、
+   地形笔刷实时预览、tilemap 调色板拖放、UI 可视化编辑器。这些是纯编辑器投入，收益直观。
+3. **脚本体验**：Lua 调试器补完整调用栈、悬停文档、自动补全作用域感知、远程调试
+   （编辑器与运行中进程通过内存/网络通道连接）。
+4. **音频/2D 纵深**：效果器（低通/混响）、流式背景音乐；2D 光照与 2D 物理工具。
+5. **平台扩张**：WASM/WebGPU（需要 Emscripten 工具链与独立后端）、macOS/Linux 实机验证、
+   TLS/WebSocket 传输。
+
+### 2.2 建议的下一阶段顺序
+
+```text
+1. 渲染后处理链基建（深度贴图 + 全屏 pass 框架）→ SSAO → 体积雾 → 光照贴图/GI
+2. 编辑器体验迭代（多选/层级拖拽/动画多轨/UI 编辑器）
+3. Lua 调试器补全（完整调用栈/悬停文档/远程调试）
+4. 音频效果器/流式 + 2D 光照
+5. 平台：WASM/WebGPU、TLS/WebSocket、实机验证
+```
 
 ## 3. 改进路线
 
+> 本节为 2026-08-24 前的历史计划：P0/P1 与 P2 大部分已按第 0 节状态落地，
+> 剩余未完成项见 2.1/2.2（渲染后处理链、编辑器打磨、脚本远程调试、音频/2D 纵深、平台扩张）。
+>
 优先级按"MMO 目标收益 / 成本"排序。每项含：目标、现状、实施方案、验收标准、涉及模块。
 
 ---
