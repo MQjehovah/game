@@ -134,8 +134,16 @@ public:
     script::ScriptContext& ScriptContext() { return scriptCtx_; }
     const script::ScriptContext& ScriptContext() const { return scriptCtx_; }
     // P1-2 debugger passthrough for the editor playtest.
-    script::IScriptHost* ScriptHost() { return host_.get(); }
-    bool DebuggerPaused() const { return host_ && host_->DebuggerPaused(); }
+    // The Lua host (the canonical debugger backend; the editor's breakpoint /
+    // step UI talks to it). JS scripts route internally through the same
+    // IScriptHost interface.
+    script::IScriptHost* ScriptHost() { return hosts_.lua.get(); }
+    script::IScriptHost* ScriptHost(const std::string& backend) {
+        return hosts_.Get(backend);
+    }
+    bool DebuggerPaused() const {
+        return hosts_.lua && hosts_.lua->DebuggerPaused();
+    }
 
     // Stats for the editor profiler / debug panels.
     size_t EntityCount() const { return world_.EntityCount(); }
@@ -211,6 +219,10 @@ private:
     struct ScriptInst {
         ecs::Entity ent;
         std::string path; // used for error logging; source is loaded once per path
+        // The backend host this instance's chunk runs on (resolved from the
+        // component's `backend` field: "lua" / "js"). Null never happens for
+        // an attached instance.
+        script::IScriptHost* host = nullptr;
         // Captured chunk function handles (0 = this chunk defines none). Each
         // instance calls ITS OWN chunk's handlers, so a later-loaded script
         // cannot shadow an earlier one (per-entity script isolation).
@@ -229,6 +241,9 @@ private:
         std::map<uint64_t, std::map<std::string, float>> timers;
         // bt::Context::activePath captured after the last Tick (debug highlight).
         std::string activePath;
+        // The host run_script/script_bool nodes call through (the tree
+        // entity's script backend, defaulting to Lua).
+        script::IScriptHost* host = nullptr;
     };
     struct DrawItem {
         ecs::Entity ent;
@@ -279,6 +294,11 @@ private:
     // compile error, unsafe path, previous failure).
     bool AttachOneScript(ecs::Entity ent, const SceneScript& s);
     void AttachTrees();
+    // Behavior-tree script hook: invokes the named global function on the
+    // tree entity's backend host (run_script / script_bool nodes). Returns
+    // Nil when the function is missing or the call failed.
+    script::Value CallScriptOnTree(const BtInst& inst, const std::string& fn,
+                                   uint64_t ent);
     // Advances every entity's StatusComponent (damage/heal ticks + expiry).
     void TickStatuses(float dt);
     // Decays per-caster skill cooldowns and prunes dead casters.
@@ -325,7 +345,20 @@ private:
     script::ScriptContext scriptCtx_; // owns the GameVars scripts + BT share
     PrefabLibrary prefs_;             // prefabs loaded from <scriptBaseDir>/prefabs/
     core::Localization loc_;          // string tables loaded from cfg_.localesDir
-    std::unique_ptr<script::IScriptHost> host_; // one Lua host, deterministic RNG
+    // Dual script backends: Lua + QuickJS (ES2020). Scene scripts pick a
+    // backend via the script component's `backend` field; both hosts share the
+    // same bindings, RNG seed and sim clock, so one scene can mix languages.
+    struct ScriptHosts {
+        std::unique_ptr<script::IScriptHost> lua;
+        std::unique_ptr<script::IScriptHost> js;
+        script::IScriptHost* Get(const std::string& backend) {
+            return backend == "js" ? js.get() : lua.get();
+        }
+        const script::IScriptHost* Get(const std::string& backend) const {
+            return backend == "js" ? js.get() : lua.get();
+        }
+        script::IScriptHost* First() { return lua.get(); }
+    } hosts_;
     std::vector<ScriptInst> scripts_;
     std::vector<BtInst> trees_;
     std::vector<DrawItem> draws_;

@@ -134,6 +134,29 @@ TEST(ScriptPanelListLuaFilesRecursive) {
     CHECK_EQ(ScriptsDir(""), std::string("./scripts"));
 }
 
+TEST(ScriptPanelListScriptFilesIncludesJs) {
+    test::TempDir tmp;
+    const std::string base = tmp.Str();
+    CHECK(MakeTestDir(base + "/scripts"));
+    CHECK(test::WriteFileAll(base + "/scripts/game.lua", "return 1\n"));
+    CHECK(test::WriteFileAll(base + "/scripts/ui.js",
+                             "function on_start(ent) {\n  SetVar('x', 1);\n}\n"));
+    CHECK(test::WriteFileAll(base + "/scripts/readme.txt", "not a script"));
+
+    std::vector<std::string> files;
+    ListScriptFiles(base + "/scripts", "scripts", files);
+    CHECK_EQ(files.size(), 2u); // .lua + .js, no .txt
+    CHECK_EQ(files[0], std::string("scripts/game.lua"));
+    CHECK_EQ(files[1], std::string("scripts/ui.js"));
+
+    // The legacy Lua-only listing still excludes .js (packagers predating the
+    // JS backend keep their exact behavior).
+    std::vector<std::string> luaOnly;
+    ListLuaFiles(base + "/scripts", "scripts", luaOnly);
+    CHECK_EQ(luaOnly.size(), 1u);
+    CHECK_EQ(luaOnly[0], std::string("scripts/game.lua"));
+}
+
 TEST(ScriptPanelCheckScriptFile) {
     test::TempDir tmp;
     const std::string base = tmp.Str();

@@ -623,11 +623,12 @@ void ValidateInto(const PackConfig& cfg, ProjectContext& pc) {
         pc.packFiles[rel] = pc.projectDir + "/" + rel;
     }
 
-    // 5. Scripts: enumerate scripts/*.lua (recursive), plus every script a
-    // scene/prefab references (which may live outside scripts/), syntax-check
-    // each lua script when enabled and collect every one into the pack.
+    // 5. Scripts: enumerate scripts/*.lua + scripts/*.js (recursive), plus
+    // every script a scene/prefab references (which may live outside
+    // scripts/), syntax-check each one with its backend host when enabled and
+    // collect every one into the pack.
     std::vector<std::string> scripts;
-    ListLuaFiles(pc.projectDir + "/scripts", "scripts", scripts);
+    ListScriptFiles(pc.projectDir + "/scripts", "scripts", scripts);
     for (const std::string& rel : scripts) pc.packFiles[rel] = pc.projectDir + "/" + rel;
 
     // Absolute path -> virtual path, deduped across the enumeration and the
@@ -636,9 +637,10 @@ void ValidateInto(const PackConfig& cfg, ProjectContext& pc) {
     for (const std::string& rel : scripts) scriptsToCheck[pc.projectDir + "/" + rel] = rel;
     for (const auto& kv : pc.scriptRefs) scriptsToCheck[kv.second] = kv.first;
     if (pc.syntaxCheck && !scriptsToCheck.empty()) {
-        auto host = script::CreateLuaHost();
-        if (!host || !host->Init()) {
-            r.warnings.push_back("script host unavailable; skipping Lua syntax checks");
+        auto luaHost = script::CreateLuaHost();
+        auto jsHost = script::CreateJsHost();
+        if ((!luaHost || !luaHost->Init()) || (!jsHost || !jsHost->Init())) {
+            r.warnings.push_back("script host unavailable; skipping syntax checks");
         } else {
             for (const auto& kv : scriptsToCheck) {
                 std::string source;
@@ -646,15 +648,19 @@ void ValidateInto(const PackConfig& cfg, ProjectContext& pc) {
                     r.errors.push_back("script '" + kv.second + "' cannot be read");
                     continue;
                 }
-                if (!host->CheckSyntax(source)) {
-                    const script::ScriptError& err = host->LastError();
+                const bool isJs = kv.second.size() >= 3 &&
+                                  kv.second.compare(kv.second.size() - 3, 3, ".js") == 0;
+                script::IScriptHost& host = isJs ? *jsHost : *luaHost;
+                if (!host.CheckSyntax(source)) {
+                    const script::ScriptError& err = host.LastError();
                     char line[32];
                     std::snprintf(line, sizeof(line), "%d", err.line);
                     r.errors.push_back("script '" + kv.second + "' syntax error (line " + line +
                                        "): " + err.message);
                 }
             }
-            host->Shutdown();
+            luaHost->Shutdown();
+            jsHost->Shutdown();
         }
     }
 

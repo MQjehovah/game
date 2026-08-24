@@ -4041,6 +4041,27 @@ void EditorApp::RunUISmokeTest() {
               "script editor: save writes the edited content");
     }
 
+    // --- Built-in script editor, JS backend (.js routes to QuickJS) ---
+    {
+        const std::string path = GetTempDir() + "/editor_script.js";
+        {
+            std::ofstream out(path, std::ios::binary);
+            out << "function on_start(ent) {\n}\n";
+        }
+        OpenScriptEditor(path);
+        check(showScriptEditor_ && scriptEditorPath_ == path,
+              "script editor: opens a .js file");
+        check(scriptEditorCheck_.ok, "script editor: JS syntax passes on open");
+        std::snprintf(scriptEditorBuf_, sizeof(scriptEditorBuf_), "function broken( {\n");
+        SaveScriptEditor();
+        check(!scriptEditorCheck_.ok && !scriptEditorCheck_.message.empty(),
+              "script editor: JS syntax error detected after save");
+        std::snprintf(scriptEditorBuf_, sizeof(scriptEditorBuf_),
+                      "function on_start(ent) {\n}\n");
+        SaveScriptEditor();
+        check(scriptEditorCheck_.ok, "script editor: JS syntax passes after fix");
+    }
+
     // --- 2D sprite: the editor loader parses a componentized sprite entity,
     // resolves its texture into a quad mesh and keeps the flip flags ---
     {
@@ -4768,7 +4789,7 @@ void EditorApp::PollHotReload() {
     // at init and are deliberately NOT hot-reloaded (YAGNI; see T4.8 notes).
     if (playtestActive_ && playtest_) {
         std::vector<std::string> files;
-        ListLuaFiles(ScriptsDir(projectDir_), "scripts", files);
+        ListScriptFiles(ScriptsDir(projectDir_), "scripts", files);
         bool scriptChanged = false;
         for (const std::string& rel : files) {
             const std::string full = base + "/" + rel;
@@ -6112,15 +6133,33 @@ void EditorApp::LoadProjectScene(const std::string& rel) {
     NEON_LOG_INFO("Editor: project scene loaded from '%s/%s'", projectDir_.c_str(), rel.c_str());
 }
 
+// Returns the throwaway syntax-check host matching a script file's extension
+// (.js -> QuickJS, otherwise Lua), creating it lazily. Both hosts are
+// validation-only: CheckSyntax never executes a chunk, so a failed check
+// leaves the host fully reusable for the next file.
+script::IScriptHost* EditorApp::ScriptCheckHostFor(const std::string& path) {
+    const bool isJs = path.size() >= 3 &&
+                      (path.compare(path.size() - 3, 3, ".js") == 0 ||
+                       path.compare(path.size() - 3, 3, ".JS") == 0);
+    if (isJs) {
+        if (!scriptCheckHostJs_) {
+            scriptCheckHostJs_ = script::CreateJsHost();
+            if (scriptCheckHostJs_) scriptCheckHostJs_->Init();
+        }
+        return scriptCheckHostJs_.get();
+    }
+    if (!scriptCheckHost_) {
+        scriptCheckHost_ = script::CreateLuaHost();
+        if (scriptCheckHost_) scriptCheckHost_->Init();
+    }
+    return scriptCheckHost_.get();
+}
+
 void EditorApp::OpenScriptEditor(const std::string& path) {
     std::ifstream in(path, std::ios::binary);
     if (!in.is_open()) {
         NEON_LOG_ERROR("Editor: cannot open script '%s'", path.c_str());
         return;
-    }
-    if (!scriptCheckHost_) {
-        scriptCheckHost_ = script::CreateLuaHost();
-        if (scriptCheckHost_) scriptCheckHost_->Init();
     }
     std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     const size_t cap = sizeof(scriptEditorBuf_) - 1;
@@ -6138,18 +6177,19 @@ void EditorApp::OpenScriptEditor(const std::string& path) {
         (path[base.size()] == '/' || path[base.size()] == '\\'))
         scriptEditorRel_ = path.substr(base.size() + 1);
     scriptEditorCheck_ = ScriptCheckResult{};
-    if (scriptCheckHost_) {
+    script::IScriptHost* checkHost = ScriptCheckHostFor(path);
+    if (checkHost) {
         if (scriptEditorRel_ != path) {
-            scriptEditorCheck_ = CheckScriptFile(*scriptCheckHost_, base, scriptEditorRel_);
+            scriptEditorCheck_ = CheckScriptFile(*checkHost, base, scriptEditorRel_);
         } else {
             std::ifstream src(path, std::ios::binary);
             std::string text((std::istreambuf_iterator<char>(src)),
                              std::istreambuf_iterator<char>());
             scriptEditorCheck_.path = path;
-            scriptEditorCheck_.ok = scriptCheckHost_->CheckSyntax(text);
+            scriptEditorCheck_.ok = checkHost->CheckSyntax(text);
             if (!scriptEditorCheck_.ok) {
-                scriptEditorCheck_.message = scriptCheckHost_->LastError().message;
-                scriptEditorCheck_.line = scriptCheckHost_->LastError().line;
+                scriptEditorCheck_.message = checkHost->LastError().message;
+                scriptEditorCheck_.line = checkHost->LastError().line;
             }
         }
     }
@@ -6170,15 +6210,16 @@ void EditorApp::SaveScriptEditor() {
     out << scriptEditorBuf_;
     scriptEditorDirty_ = false;
     const std::string base = projectDir_.empty() ? "." : projectDir_;
-    if (scriptCheckHost_) {
+    script::IScriptHost* checkHost = ScriptCheckHostFor(scriptEditorPath_);
+    if (checkHost) {
         if (scriptEditorRel_ != scriptEditorPath_) {
-            scriptEditorCheck_ = CheckScriptFile(*scriptCheckHost_, base, scriptEditorRel_);
+            scriptEditorCheck_ = CheckScriptFile(*checkHost, base, scriptEditorRel_);
         } else {
             scriptEditorCheck_.path = scriptEditorPath_;
-            scriptEditorCheck_.ok = scriptCheckHost_->CheckSyntax(scriptEditorBuf_);
+            scriptEditorCheck_.ok = checkHost->CheckSyntax(scriptEditorBuf_);
             if (!scriptEditorCheck_.ok) {
-                scriptEditorCheck_.message = scriptCheckHost_->LastError().message;
-                scriptEditorCheck_.line = scriptCheckHost_->LastError().line;
+                scriptEditorCheck_.message = checkHost->LastError().message;
+                scriptEditorCheck_.line = checkHost->LastError().line;
             }
         }
     }

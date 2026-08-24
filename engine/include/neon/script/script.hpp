@@ -220,8 +220,11 @@ public:
     virtual void DebuggerResume(bool stepInto) { (void)stepInto; }
 };
 
-// Factory: creates the engine's Lua-backed host (implemented in
-// script_manager.cpp).
+// Factories: create the engine's script hosts (implemented in
+// script_manager.cpp). Lua is the original backend; the QuickJS host is the
+// second-class citizen with identical IScriptHost semantics, so scene scripts
+// pick a backend by file extension (.lua / .js) and share the same bindings.
 std::unique_ptr<IScriptHost> CreateLuaHost();
+std::unique_ptr<IScriptHost> CreateJsHost();
 
 } // namespace neon::script

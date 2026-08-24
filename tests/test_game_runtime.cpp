@@ -42,6 +42,74 @@ function on_update(e, dt)
 end
 )";
 
+// --- Dual-backend coexistence (Lua + JS in one scene) -----------------------
+
+// A JS counter entity + two scripted behavior trees (one per backend) that
+// exercise the previously-unwired bt::Context::callScript hook.
+const char* kDualScene = R"({
+  "entities": [
+    {
+      "name": "LuaCounter",
+      "components": {
+        "transform": {"pos": [0, 0, 0]},
+        "script": {"backend": "lua", "path": "counter.lua"}
+      }
+    },
+    {
+      "name": "JsCounter",
+      "components": {
+        "transform": {"pos": [1, 0, 0]},
+        "script": {"backend": "js", "path": "counter.js"}
+      }
+    },
+    {
+      "name": "JsTree",
+      "components": {
+        "transform": {"pos": [2, 0, 0]},
+        "script": {"backend": "js", "path": "tree_script.js"},
+        "behaviorTree": {"tree": "{\"root\":{\"type\":\"sequence\",\"children\":[{\"type\":\"run_script\",\"args\":{\"script\":\"treeStep\"}},{\"type\":\"script_bool\",\"args\":{\"script\":\"treeReady\"}}]}}"}
+      }
+    },
+    {
+      "name": "LuaTree",
+      "components": {
+        "transform": {"pos": [3, 0, 0]},
+        "script": {"backend": "lua", "path": "tree_lua.lua"},
+        "behaviorTree": {"tree": "{\"root\":{\"type\":\"sequence\",\"children\":[{\"type\":\"run_script\",\"args\":{\"script\":\"treeStepLua\"}},{\"type\":\"script_bool\",\"args\":{\"script\":\"treeReadyLua\"}}]}}"}
+      }
+    }
+  ]
+})";
+
+const char* kJsCounter = R"(
+function on_start(e) {
+  SetVar("js_started", true);
+}
+function on_update(e, dt) {
+  var g = GetVar("js_gold");
+  if (typeof g !== "number") g = 0;
+  SetVar("js_gold", g + 1);
+}
+)";
+
+const char* kJsTreeScript = R"(
+function treeStep(e) {
+  SetVar("tree_ran", true);
+}
+function treeReady(e) {
+  return true;
+}
+)";
+
+const char* kLuaTreeScript = R"(
+function treeStepLua(e)
+  SetVar("tree_lua_ran", true)
+end
+function treeReadyLua(e)
+  return true
+end
+)";
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -105,6 +173,42 @@ TEST(GameRuntimeDiskScriptPath) {
     runtime.Tick(1.0f / 60.0f);
     runtime.Tick(1.0f / 60.0f);
     CHECK_EQ(runtime.GameVars().Get("gold").number, 2.0);
+}
+
+TEST(GameRuntimeMixedLuaAndJsBackends) {
+    scene::GameRuntime runtime;
+    scene::GameRuntimeConfig cfg;
+    cfg.readScript = [](const std::string& path) {
+        if (path == "counter.lua") return std::string(kCounterLua);
+        if (path == "counter.js") return std::string(kJsCounter);
+        if (path == "tree_script.js") return std::string(kJsTreeScript);
+        if (path == "tree_lua.lua") return std::string(kLuaTreeScript);
+        return std::string();
+    };
+    core::Status st = runtime.Start(kDualScene, cfg);
+    CHECK(st.Ok());
+    CHECK(runtime.Running());
+    CHECK_EQ(runtime.ScriptCount(), 4u); // 2 counters + 2 tree scripts
+    CHECK_EQ(runtime.BehaviorTreeCount(), 2u);
+
+    // The JS on_start fired during Start (JS host loaded + captured).
+    CHECK(runtime.GameVars().Get("js_started").type == script::Value::Type::Bool);
+    CHECK(runtime.GameVars().Get("js_started").boolean);
+
+    for (int i = 0; i < 120; ++i) runtime.Tick(1.0f / 60.0f);
+
+    // Both languages bumped their own counter every tick.
+    CHECK_EQ(runtime.GameVars().Get("gold").number, 120.0);    // Lua
+    CHECK_EQ(runtime.GameVars().Get("js_gold").number, 120.0); // JS
+
+    // Both behavior trees ran their script nodes through their own backend.
+    CHECK(runtime.GameVars().Get("tree_ran").type == script::Value::Type::Bool);
+    CHECK(runtime.GameVars().Get("tree_ran").boolean);
+    CHECK(runtime.GameVars().Get("tree_lua_ran").type == script::Value::Type::Bool);
+    CHECK(runtime.GameVars().Get("tree_lua_ran").boolean);
+
+    runtime.Stop();
+    CHECK(!runtime.Running());
 }
 
 TEST(GameRuntimeMissingScriptIsNonFatal) {

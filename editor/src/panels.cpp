@@ -208,7 +208,7 @@ std::string PickImportFile() {
         "所有文件 (*.*)\0*.*\0"
         "图片 (*.png;*.jpg;*.bmp;*.tga)\0*.png;*.jpg;*.jpeg;*.bmp;*.tga\0"
         "模型 (*.obj;*.gltf)\0*.obj;*.gltf\0"
-        "脚本 (*.lua)\0*.lua\0";
+        "脚本 (*.lua;*.js)\0*.lua;*.js\0";
     ofn.lpstrFile = buf;
     ofn.nMaxFile = MAX_PATH;
     ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_HIDEREADONLY;
@@ -236,7 +236,7 @@ bool IsModelExt(const std::string& name) {
 
 bool IsScriptExt(const std::string& name) {
     std::string ext = ToLower(FileExt(name));
-    return ext == ".lua";
+    return ext == ".lua" || ext == ".js";
 }
 
 // Material ball asset: materials/*.mat.json.
@@ -467,7 +467,7 @@ void EditorApp::ImportAssetFile(const std::string& srcPath) {
 }
 
 // Creates a new asset in the current asset dir: kind 0 = directory, 1 = Lua
-// script, 2 = JSON, 3 = empty text file.
+// script, 2 = JSON, 3 = empty text file, 4 = material ball, 5 = JS script.
 void EditorApp::CreateAssetFile(const std::string& name, int kind) {
     if (name.empty() || name == "." || name == "..") {
         NEON_LOG_ERROR("Asset: invalid asset name '%s'", name.c_str());
@@ -491,6 +491,10 @@ void EditorApp::CreateAssetFile(const std::string& name, int kind) {
     if (kind == 1) {
         content = "-- New script (data-driven)\nfunction on_start(ent)\nend\n"
                   "function on_update(ent, dt)\nend\n";
+    } else if (kind == 5) {
+        content = "// New script (data-driven)\n"
+                  "function on_start(ent) {\n}\n"
+                  "function on_update(ent, dt) {\n}\n";
     } else if (kind == 2) {
         content = "{\n}\n";
     } else if (kind == 4) {
@@ -860,12 +864,14 @@ void EditorApp::BuildAssetPanel() {
         }
         // New-asset row: type combo + name + create.
         if (newKind >= 0) {
-            static const char* kinds[] = {"目录", "Lua 脚本", "JSON 文件", "文本文件", "材质球"};
+            static const char* kinds[] = {"目录", "Lua 脚本", "JSON 文件", "文本文件",
+                                          "材质球", "JS 脚本"};
             static char newName[128] = {};
             ImGui::SetNextItemWidth(90.0f);
-            if (ImGui::Combo("##new_kind", &newKind, kinds, 5)) {
+            if (ImGui::Combo("##new_kind", &newKind, kinds, 6)) {
                 // hint defaults per kind
                 if (newKind == 1) std::strncpy(newName, "new_script.lua", sizeof(newName) - 1);
+                else if (newKind == 5) std::strncpy(newName, "new_script.js", sizeof(newName) - 1);
                 else if (newKind == 2) std::strncpy(newName, "new_data.json", sizeof(newName) - 1);
                 else if (newKind == 4) std::strncpy(newName, "new_material.mat.json", sizeof(newName) - 1);
             }
@@ -2712,22 +2718,18 @@ void EditorApp::BuildLocPanel() {
     ImGui::End();
 }
 
-// Re-scan <projectDir>/scripts/ and run a syntax check on every *.lua. Reuses
-// one throwaway LuaHost across all checks (nothing ever runs, so a failed check
-// leaves the host fully usable for the next one).
+// Re-scan <projectDir>/scripts/ and run a syntax check on every *.lua / *.js.
+// Each file is routed to the matching throwaway host (Lua vs QuickJS);
+// nothing ever runs, so a failed check leaves the host reusable.
 void EditorApp::RefreshScriptChecks() {
     scriptFiles_.clear();
     scriptChecks_.clear();
-    if (!scriptCheckHost_) {
-        scriptCheckHost_ = script::CreateLuaHost();
-        if (scriptCheckHost_) scriptCheckHost_->Init();
-    }
     std::vector<std::string> files;
-    ListLuaFiles(ScriptsDir(projectDir_), "scripts", files);
+    ListScriptFiles(ScriptsDir(projectDir_), "scripts", files);
     const std::string base = projectDir_.empty() ? "." : projectDir_;
     for (const std::string& rel : files) {
-        if (scriptCheckHost_) {
-            scriptChecks_.push_back(CheckScriptFile(*scriptCheckHost_, base, rel));
+        if (script::IScriptHost* checkHost = ScriptCheckHostFor(rel)) {
+            scriptChecks_.push_back(CheckScriptFile(*checkHost, base, rel));
         } else {
             ScriptCheckResult failed;
             failed.path = rel;

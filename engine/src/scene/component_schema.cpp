@@ -5,7 +5,9 @@ namespace {
 
 const char* kPlantTypes[] = {"sunflower", "peashooter", "wallnut", "snowpea", "cherry"};
 const char* kZombieTypes[] = {"basic", "cone", "bucket"};
-const char* kScriptBackends[] = {"lua"};
+// Dual script backends: the editor's script-component dropdown lets users pick
+// the language; the runtime routes by this value ("lua" / "js").
+const char* kScriptBackends[] = {"lua", "js"};
 const char* kRigidBodyShapes[] = {"sphere", "box"};
 const char* kNodeTypes[] = {"Node", "MeshInstance3D", "Camera3D",
                             "CharacterBody", "Sprite", "Light3D"};
@@ -35,7 +37,7 @@ std::vector<ComponentSchema> BuildSchemas() {
                    {{"hp", "当前生命", FieldType::Number, 0, 0, 1e9, 1},
                     {"maxHp", "最大生命", FieldType::Number, 0, 0, 1e9, 1}}});
     out.push_back({"script", "脚本",
-                   {{"backend", "后端", FieldType::Enum, 0, 0, 0, 0, kScriptBackends, 1},
+                     {{"backend", "后端", FieldType::Enum, 0, 0, 0, 0, kScriptBackends, 2},
                     {"path", "脚本路径", FieldType::Resource, 0, 0, 0, 0, nullptr, 0, "script"},
                     {"vars", "变量", FieldType::Json, 0, 0, 0, 0}}});
     out.push_back({"behaviorTree", "行为树",

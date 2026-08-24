@@ -59,12 +59,13 @@ inline std::string ScriptsDir(const std::string& projectDir) {
     return base + "/scripts";
 }
 
-// Recursively enumerate every *.lua under `dir`, appending project-relative
-// paths ("scripts/foo.lua", "scripts/sub/x.lua") to `out`. `prefix` is the
-// relative path of `dir` ("scripts", "scripts/sub", ...). Missing dirs yield
-// an empty list (not an error). Results are sorted for deterministic UI/tests.
-inline void ListLuaFiles(const std::string& dir, const std::string& prefix,
-                         std::vector<std::string>& out) {
+// Recursively enumerate *.lua (and, when includeJs, *.js) under `dir`,
+// appending project-relative paths ("scripts/foo.lua", "scripts/sub/x.js") to
+// `out`. `prefix` is the relative path of `dir` ("scripts", "scripts/sub",
+// ...). Missing dirs yield an empty list (not an error). Results are sorted
+// for deterministic UI/tests.
+inline void ListScriptFilesImpl(const std::string& dir, const std::string& prefix,
+                                std::vector<std::string>& out, bool includeJs) {
 #if defined(_WIN32)
     auto utf8ToWide = [](const std::string& s) {
         if (s.empty()) return std::wstring();
@@ -98,23 +99,25 @@ inline void ListLuaFiles(const std::string& dir, const std::string& prefix,
     } while (FindNextFileW(h, &fd));
     FindClose(h);
 
-    std::vector<std::string> luaNames;
+    std::vector<std::string> scriptNames;
     for (const std::wstring& f : files) {
         std::string name = wideToUtf8(f);
         std::string lower = name;
         std::transform(lower.begin(), lower.end(), lower.begin(),
                        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-        if (lower.size() >= 4 && lower.compare(lower.size() - 4, 4, ".lua") == 0)
-            luaNames.push_back(name);
+        const bool isLua = lower.size() >= 4 && lower.compare(lower.size() - 4, 4, ".lua") == 0;
+        const bool isJs = includeJs && lower.size() >= 3 &&
+                          lower.compare(lower.size() - 3, 3, ".js") == 0;
+        if (isLua || isJs) scriptNames.push_back(name);
     }
-    std::sort(luaNames.begin(), luaNames.end());
-    for (const std::string& f : luaNames) out.push_back(prefix + "/" + f);
+    std::sort(scriptNames.begin(), scriptNames.end());
+    for (const std::string& f : scriptNames) out.push_back(prefix + "/" + f);
 
     std::vector<std::string> subNames;
     for (const std::wstring& s : subdirs) subNames.push_back(wideToUtf8(s));
     std::sort(subNames.begin(), subNames.end());
     for (const std::string& s : subNames)
-        ListLuaFiles(dir + "/" + s, prefix + "/" + s, out);
+        ListScriptFilesImpl(dir + "/" + s, prefix + "/" + s, out, includeJs);
 #else
     DIR* d = ::opendir(dir.c_str());
     if (!d) return;
@@ -129,15 +132,30 @@ inline void ListLuaFiles(const std::string& dir, const std::string& prefix,
         if (::stat(full.c_str(), &st) != 0) continue;
         if (S_ISDIR(st.st_mode))
             subdirs.push_back(name);
-        else if (name.size() >= 4 && name.compare(name.size() - 4, 4, ".lua") == 0)
+        else if (name.size() >= 4 && name.compare(name.size() - 4, 4, ".lua") == 0 ||
+                 includeJs && name.size() >= 3 && name.compare(name.size() - 3, 3, ".js") == 0)
             files.push_back(name);
     }
     ::closedir(d);
     std::sort(files.begin(), files.end());
     std::sort(subdirs.begin(), subdirs.end());
     for (const std::string& f : files) out.push_back(prefix + "/" + f);
-    for (const std::string& s : subdirs) ListLuaFiles(dir + "/" + s, prefix + "/" + s, out);
+    for (const std::string& s : subdirs)
+        ListScriptFilesImpl(dir + "/" + s, prefix + "/" + s, out, includeJs);
 #endif
+}
+
+// Lua-only enumeration (legacy callers / packagers that predate the JS
+// backend keep their exact behavior).
+inline void ListLuaFiles(const std::string& dir, const std::string& prefix,
+                         std::vector<std::string>& out) {
+    ListScriptFilesImpl(dir, prefix, out, /*includeJs=*/false);
+}
+
+// Both script backends (.lua + .js).
+inline void ListScriptFiles(const std::string& dir, const std::string& prefix,
+                            std::vector<std::string>& out) {
+    ListScriptFilesImpl(dir, prefix, out, /*includeJs=*/true);
 }
 
 // Read a text file's bytes. Returns false when the file cannot be opened; `out`

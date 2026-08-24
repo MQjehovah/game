@@ -373,18 +373,34 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
         return MeleeAttack(origin, dir, range, arcDeg, damage);
     };
 
-    host_ = script::CreateLuaHost();
-    if (!host_) {
+    // Lua is the canonical backend (the editor's debugger targets it); a
+    // failure there aborts the runtime. The JS backend is optional: when its
+    // host fails to initialize, JS-scripted entities are skipped with a log.
+    hosts_.lua = script::CreateLuaHost();
+    if (!hosts_.lua) {
         Stop();
         return core::Status::Err("runtime: failed to create script host");
     }
-    if (!host_->Init()) {
+    if (!hosts_.lua->Init()) {
         Stop();
         return core::Status::Err("runtime: failed to initialize script host");
     }
-    script::RegisterEngineBindings(*host_, scriptCtx_);
-    host_->SetRngSeed(cfg_.rngSeed ? cfg_.rngSeed : 1u); // 0 aliases seed 1
-    host_->SetSimClock(0.0);
+    script::RegisterEngineBindings(*hosts_.lua, scriptCtx_);
+    hosts_.lua->SetRngSeed(cfg_.rngSeed ? cfg_.rngSeed : 1u); // 0 aliases seed 1
+    hosts_.lua->SetSimClock(0.0);
+
+    hosts_.js = script::CreateJsHost();
+    if (hosts_.js && hosts_.js->Init()) {
+        // Same bindings / seed / clock as Lua: a mixed scene keeps one
+        // deterministic stream per backend, seeded identically.
+        script::RegisterEngineBindings(*hosts_.js, scriptCtx_);
+        hosts_.js->SetRngSeed(cfg_.rngSeed ? cfg_.rngSeed : 1u);
+        hosts_.js->SetSimClock(0.0);
+    } else {
+        hosts_.js.reset();
+        NEON_LOG_CAT(core::LogCategory::Script, core::LogLevel::Warn,
+                     "runtime: JS script backend unavailable; JS scripts are skipped");
+    }
 
     loadedScripts_.clear();
     scriptFailed_.clear();
@@ -418,9 +434,13 @@ void GameRuntime::Stop() {
     pendingScene_.clear();
     loadedScripts_.clear();
     scriptFailed_.clear();
-    if (host_) {
-        host_->Shutdown();
-        host_.reset();
+    if (hosts_.lua) {
+        hosts_.lua->Shutdown();
+        hosts_.lua.reset();
+    }
+    if (hosts_.js) {
+        hosts_.js->Shutdown();
+        hosts_.js.reset();
     }
     world_.Clear();
     if (physics_) physics_->Clear();
@@ -559,7 +579,7 @@ void GameRuntime::UISetVisible(const std::string& name, bool visible) {
 }
 
 void GameRuntime::AttachScripts() {
-    if (!host_) return;
+    if (!hosts_.lua) return;
     auto view = world_.ViewAll<SceneScript>();
     for (size_t i = 0; i < view.Size(); ++i) {
         ecs::Entity ent = world_.EntityAt<SceneScript>(i);
@@ -578,7 +598,18 @@ void GameRuntime::AttachScripts() {
 }
 
 bool GameRuntime::AttachOneScript(ecs::Entity ent, const SceneScript& s) {
-    if (!host_ || s.backend != "lua") return false;
+    if (!hosts_.lua) return false;
+    // The component's `backend` field picks the language ("lua" / "js");
+    // empty means the schema default (lua). An unknown backend skips the
+    // script without failing the runtime.
+    const std::string backend = s.backend.empty() ? "lua" : s.backend;
+    script::IScriptHost* host = hosts_.Get(backend);
+    if (!host) {
+        NEON_LOG_CAT(neon::core::LogCategory::Script, neon::core::LogLevel::Warn,
+                     "runtime: unknown script backend '%s' for '%s' (skipped)",
+                     backend.c_str(), s.path.c_str());
+        return false;
+    }
 
     // Defense-in-depth: a hand-crafted pack could reference ".." or an
     // absolute path to read arbitrary local files. Reject such scripts.
@@ -589,7 +620,10 @@ bool GameRuntime::AttachOneScript(ecs::Entity ent, const SceneScript& s) {
     }
 
     const std::string full = FullScriptPath(s.path);
-    if (scriptFailed_.count(full)) {
+    // Load state is per (backend, path): the same file could be referenced by
+    // a Lua and a JS component without sharing a chunk.
+    const std::string loadKey = backend + "|" + full;
+    if (scriptFailed_.count(loadKey)) {
         NEON_LOG_CAT(neon::core::LogCategory::Script, neon::core::LogLevel::Warn,
                      "runtime: skipping script '%s' (previous load failed)", full.c_str());
         return false;
@@ -598,7 +632,7 @@ bool GameRuntime::AttachOneScript(ecs::Entity ent, const SceneScript& s) {
     // Load + run the chunk once per unique path (defines the global
     // functions); a missing file / syntax error skips every entity that
     // references it without failing the whole runtime.
-    if (!loadedScripts_.count(full)) {
+    if (!loadedScripts_.count(loadKey)) {
         std::string source = ReadScript(full);
         if (source.empty()) {
             NEON_LOG_CAT(neon::core::LogCategory::Script, neon::core::LogLevel::Error,
@@ -606,24 +640,31 @@ bool GameRuntime::AttachOneScript(ecs::Entity ent, const SceneScript& s) {
             scriptFailed_.insert(full);
             return false;
         }
-        if (!host_->Load(source)) {
+        if (!host->Load(source)) {
             NEON_LOG_CAT(neon::core::LogCategory::Script, neon::core::LogLevel::Error,
                          "runtime: script '%s' failed to compile: %s (skipped)",
-                         full.c_str(), host_->LastError().message.c_str());
-            scriptFailed_.insert(full);
+                         full.c_str(), host->LastError().message.c_str());
+            scriptFailed_.insert(loadKey);
             return false;
         }
-        if (!host_->Run().Ok()) {
+        // Per-entity isolation: clear the handler globals before the chunk
+        // runs so a chunk that does NOT define on_start/on_update cannot
+        // inherit the previous chunk's handlers (a tree/utility script would
+        // otherwise double-run the wrong counter every tick). The captures
+        // below then succeed only for handlers THIS chunk declared.
+        host->SetGlobal("on_start", script::Value::Nil());
+        host->SetGlobal("on_update", script::Value::Nil());
+        if (!host->Run().Ok()) {
             NEON_LOG_CAT(neon::core::LogCategory::Script, neon::core::LogLevel::Error,
                          "runtime: script '%s' failed to run: %s (skipped)",
-                         full.c_str(), host_->LastError().message.c_str());
-            scriptFailed_.insert(full);
+                         full.c_str(), host->LastError().message.c_str());
+            scriptFailed_.insert(loadKey);
             return false;
         }
-        loadedScripts_.insert(full);
+        loadedScripts_.insert(loadKey);
     }
 
-    scripts_.push_back({ent, s.path, 0, 0, false});
+    scripts_.push_back({ent, s.path, host, 0, 0, false});
     ScriptInst& inst = scripts_.back();
 
     // Per-entity script vars become Lua globals so on_start/on_update can
@@ -631,13 +672,13 @@ bool GameRuntime::AttachOneScript(ecs::Entity ent, const SceneScript& s) {
     // last-set value wins for all of them (documented single-host caveat).
     if (s.vars.IsObject()) {
         for (const auto& kv : s.vars.Members()) {
-            host_->SetGlobal(kv.first, bt::JsonToValue(kv.second));
+            host->SetGlobal(kv.first, bt::JsonToValue(kv.second));
         }
     }
 
     // Capture this chunk's handlers so later chunks cannot shadow them.
-    if (const auto h = host_->CaptureFunction("on_start"); h.Ok()) inst.onStart = h.Value();
-    if (const auto h = host_->CaptureFunction("on_update"); h.Ok()) inst.onUpdate = h.Value();
+    if (const auto h = host->CaptureFunction("on_start"); h.Ok()) inst.onStart = h.Value();
+    if (const auto h = host->CaptureFunction("on_update"); h.Ok()) inst.onUpdate = h.Value();
     if (inst.onStart != 0) {
         CallEntityFunctionHandle(inst, inst.onStart, "on_start", {EntityToValue(ent)});
     }
@@ -647,19 +688,37 @@ bool GameRuntime::AttachOneScript(ecs::Entity ent, const SceneScript& s) {
 void GameRuntime::CallEntityFunctionHandle(ScriptInst& inst, uint64_t handle,
                                            const char* fn,
                                            const std::vector<script::Value>& args) {
-    if (!host_ || handle == 0) return;
+    if (!inst.host || handle == 0) return;
     // The input bindings resolve per-entity input through the entity being
     // updated (multi-player: each player's script reads its OWN client input).
     scriptCtx_.currentEntity = inst.ent;
-    host_->SetCurrentScript(inst.path);
-    const auto res = host_->CallCaptured(handle, args);
+    inst.host->SetCurrentScript(inst.path);
+    const auto res = inst.host->CallCaptured(handle, args);
     scriptCtx_.currentEntity = {};
     if (!res.Ok() && !inst.errorLogged) {
         inst.errorLogged = true;
         NEON_LOG_CAT(neon::core::LogCategory::Script, neon::core::LogLevel::Error,
                      "runtime: script '%s' %s() failed: %s", inst.path.c_str(), fn,
-                     host_->LastError().message.c_str());
+                     inst.host->LastError().message.c_str());
     }
+}
+
+script::Value GameRuntime::CallScriptOnTree(const BtInst& inst, const std::string& fn,
+                                            uint64_t ent) {
+    script::IScriptHost* host = inst.host;
+    if (!host || !host->HasFunction(fn)) return script::Value::Nil();
+    script::Value entVal = script::Value::Tbl();
+    entVal.table->fields.emplace_back("id", script::Value::Num(static_cast<double>(ent)));
+    scriptCtx_.currentEntity = inst.ent;
+    const core::Result<script::Value> res = host->Call(fn, {entVal});
+    scriptCtx_.currentEntity = {};
+    if (!res.Ok()) {
+        NEON_LOG_CAT(core::LogCategory::Bt, core::LogLevel::Error,
+                     "runtime: tree script %s() failed: %s", fn.c_str(),
+                     host->LastError().message.c_str());
+        return script::Value::Nil();
+    }
+    return res.Value();
 }
 
 void GameRuntime::AttachTrees() {
@@ -725,6 +784,18 @@ void GameRuntime::AttachTrees() {
         BtInst inst;
         inst.ent = ent;
         inst.tree = std::move(tree);
+        // run_script / script_bool nodes call global functions on the tree
+        // entity's own script backend (first mounted script's `backend`;
+        // default Lua), so a JS-scripted entity's tree talks to JS.
+        std::string backend = "lua";
+        if (const SceneScript* sc = world_.Get<SceneScript>(ent))
+            backend = sc->backend.empty() ? "lua" : sc->backend;
+        else if (const SceneScripts* list = world_.Get<SceneScripts>(ent))
+            if (!list->items.empty())
+                backend = list->items[0].backend.empty() ? "lua"
+                                                         : list->items[0].backend;
+        inst.host = hosts_.Get(backend);
+        if (!inst.host) inst.host = hosts_.lua.get();
         trees_.push_back(std::move(inst));
     }
 }
@@ -1222,18 +1293,26 @@ float GameRuntime::StatusMagnitude(ecs::Entity ent, uint32_t id) const {
 }
 
 bool GameRuntime::HasScriptFunction(const std::string& name) const {
-    return host_ && host_->HasFunction(name);
+    return (hosts_.lua && hosts_.lua->HasFunction(name)) ||
+           (hosts_.js && hosts_.js->HasFunction(name));
 }
 
 bool GameRuntime::CallScriptFunction(const std::string& name,
                                      const std::vector<script::Value>& args) {
-    if (!host_ || !host_->HasFunction(name)) return false;
+    // Deterministic lookup order: Lua first, then JS (an on_player_join etc.
+    // defined by both backends resolves to the Lua one).
+    script::IScriptHost* host = nullptr;
+    if (hosts_.lua && hosts_.lua->HasFunction(name))
+        host = hosts_.lua.get();
+    else if (hosts_.js && hosts_.js->HasFunction(name))
+        host = hosts_.js.get();
+    if (!host) return false;
     scriptCtx_.currentEntity = {};
-    const core::Result<script::Value> res = host_->Call(name, args);
+    const core::Result<script::Value> res = host->Call(name, args);
     if (!res.Ok()) {
         NEON_LOG_CAT(core::LogCategory::Script, core::LogLevel::Error,
                      "runtime: script function %s() failed: %s", name.c_str(),
-                     host_->LastError().message.c_str());
+                     host->LastError().message.c_str());
     }
     return res.Ok();
 }
@@ -1387,7 +1466,7 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera) {
     // DrawRect/DrawRectOutline/DrawText bindings (design units 1280x720). The
     // runtime flushes the buffer into the renderer's 2D overlay so 2D games
     // (e.g. the PvZ project) need zero C++ gameplay code.
-    if (host_) {
+    if (hosts_.lua || hosts_.js) {
         scriptCtx_.draw2d = &draw2d_;
         // Snapshot the host's live 2D mapping (Set2DViewport) so on_update's
         // InputMousePos() and UI hit-tests keep design coordinates between
@@ -1399,12 +1478,15 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera) {
         };
         draw2d_.clear();
         scriptCtx_.currentEntity = {};
-        if (host_->HasFunction("on_render")) {
-            const core::Result<script::Value> res = host_->Call("on_render", {});
+        // Global handlers can be defined by either backend; Lua wins ties
+        // (deterministic order).
+        for (script::IScriptHost* h : {hosts_.lua.get(), hosts_.js.get()}) {
+            if (!h || !h->HasFunction("on_render")) continue;
+            const core::Result<script::Value> res = h->Call("on_render", {});
             if (!res.Ok()) {
                 NEON_LOG_CAT(core::LogCategory::Script, core::LogLevel::Error,
                              "runtime: on_render() failed: %s",
-                             host_->LastError().message.c_str());
+                             h->LastError().message.c_str());
             }
         }
         scriptCtx_.draw2d = nullptr;
@@ -1503,16 +1585,16 @@ void GameRuntime::Tick(float dt) {
     // P1-2 debugger: a breakpoint hit latches the host's paused flag during a
     // script call; stop advancing the simulation so the editor can inspect and
     // step before resuming.
-    if (host_ && host_->DebuggerPaused()) return;
+    if (hosts_.lua && hosts_.lua->DebuggerPaused()) return;
 
-    if (host_) {
-        host_->SetSimClock(simTime_);
-        for (ScriptInst& inst : scripts_) {
-            if (!world_.Alive(inst.ent)) continue;
-            if (inst.onUpdate == 0) continue; // this chunk defines no on_update
-            CallEntityFunctionHandle(inst, inst.onUpdate, "on_update",
-                                     {EntityToValue(inst.ent), script::Value::Num(dt)});
-        }
+    // Both backends share the engine-injected simulated clock.
+    if (hosts_.lua) hosts_.lua->SetSimClock(simTime_);
+    if (hosts_.js) hosts_.js->SetSimClock(simTime_);
+    for (ScriptInst& inst : scripts_) {
+        if (!world_.Alive(inst.ent)) continue;
+        if (inst.onUpdate == 0) continue; // this chunk defines no on_update
+        CallEntityFunctionHandle(inst, inst.onUpdate, "on_update",
+                                 {EntityToValue(inst.ent), script::Value::Num(dt)});
     }
 
     size_t deadTrees = 0;
@@ -1524,6 +1606,12 @@ void GameRuntime::Tick(float dt) {
         bt::Context ctx(scriptCtx_.gameVars, &inst.board);
         ctx.entity = EntityKey(inst.ent);
         ctx.dt = dt;
+        // run_script / script_bool nodes execute a named global function on
+        // the tree entity's script backend (wired here for the first time; the
+        // hook previously existed but nothing set it).
+        ctx.callScript = [this, &inst](const std::string& fn, uint64_t ent) {
+            return CallScriptOnTree(inst, fn, ent);
+        };
         ctx.timers.swap(inst.timers); // carry over accumulated wait/cooldown state
         inst.tree->Tick(ctx);
         ctx.timers.swap(inst.timers); // persist it for the next tick

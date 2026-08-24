@@ -53,6 +53,7 @@ set(ENGINE_CORE_SOURCES
   engine/src/scene/status.cpp
   engine/src/scene/world_chunk.cpp
   engine/src/script/lua_host.cpp
+  engine/src/script/js_host.cpp
   engine/src/script/script_manager.cpp
   engine/src/script/gamevars.cpp
   engine/src/script/bindings.cpp
@@ -380,6 +381,39 @@ endif()
 target_link_libraries(neon_engine PUBLIC neon_lua)
 
 # ---------------------------------------------------------------------------
+# QuickJS (ES2020 JavaScript runtime): the second script backend (JS host).
+# Same vendored-source pattern as Lua; quickjs.c + cutils/libregexp/libunicode/
+# libbf are compiled as C99 and the JS host (engine/src/script/js_host.cpp)
+# implements the same IScriptHost interface as LuaHost.
+# ---------------------------------------------------------------------------
+set(QUICKJS_SOURCES
+  third_party/quickjs/quickjs.c
+  third_party/quickjs/cutils.c
+  third_party/quickjs/libregexp.c
+  third_party/quickjs/libunicode.c
+  third_party/quickjs/libbf.c
+)
+
+add_library(neon_quickjs STATIC ${QUICKJS_SOURCES})
+target_include_directories(neon_quickjs PUBLIC third_party/quickjs)
+set_target_properties(neon_quickjs PROPERTIES
+  C_STANDARD 99
+  C_STANDARD_REQUIRED ON
+  C_EXTENSIONS ON
+)
+target_compile_definitions(neon_quickjs PRIVATE
+  CONFIG_VERSION="2024-01-13"
+  CONFIG_BIGNUM
+)
+if(MSVC)
+  target_compile_definitions(neon_quickjs PRIVATE _CRT_SECURE_NO_WARNINGS)
+  target_compile_options(neon_quickjs PRIVATE /W3)
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(neon_quickjs PRIVATE -w)
+endif()
+target_link_libraries(neon_engine PUBLIC neon_quickjs)
+
+# ---------------------------------------------------------------------------
 # Headless authoritative server (T6.3): binds a UDP socket, runs the data-driven
 # scene at a fixed 60Hz step and replicates MsgSnapshot streams. No window, no
 # GL, no audio — the engine's platform/gfx code is linked (static lib) but never
@@ -433,6 +467,7 @@ add_executable(neon_tests tests/test_main.cpp tests/test_serialize.cpp tests/tes
   tests/test_physics.cpp tests/test_protocol.cpp tests/test_obj.cpp tests/test_gltf.cpp tests/test_json.cpp
   tests/test_ui_document.cpp
   tests/test_script.cpp tests/test_script_bindings.cpp tests/test_script_determinism.cpp
+  tests/test_script_js.cpp
   tests/test_bt.cpp tests/test_scene_file.cpp tests/test_scene_export.cpp tests/test_manifest.cpp
   tests/test_nav.cpp
   tests/test_localization.cpp

@@ -643,6 +643,11 @@ private:
     // Script panel (T4.5) state.
     bool showScripts_ = false;
     std::unique_ptr<script::IScriptHost> scriptCheckHost_; // throwaway host for syntax checks
+    // Throwaway QuickJS host for .js syntax checks (dual-script backend).
+    std::unique_ptr<script::IScriptHost> scriptCheckHostJs_;
+    // Returns the throwaway syntax-check host matching a script file's
+    // extension (.js -> QuickJS, everything else -> Lua), creating it lazily.
+    script::IScriptHost* ScriptCheckHostFor(const std::string& path);
     std::vector<std::string> scriptFiles_;                 // project-relative "scripts/*.lua"
     std::vector<ScriptCheckResult> scriptChecks_;          // parallel: per-file check results
     bool showScriptEditor_ = false;
