@@ -204,7 +204,8 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     // resolves at draw time through the same path as scene sprites, so dynamic
     // gameplay objects render identically in edit and play modes.
     scriptCtx_.spawnSprite = [this](const std::string& tex, const math::Vec3& pos,
-                                    float w, float h, bool flipX, bool flipY) {
+                                    float w, float h, bool flipX, bool flipY,
+                                    const std::string& scriptPath) {
         if (tex.empty()) return ecs::Entity{};
         ecs::Entity e = world_.Create();
         SceneTransform t;
@@ -216,7 +217,22 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
         s.flipX = flipX;
         s.flipY = flipY;
         world_.Add<SceneSprite>(e, s);
+        if (!scriptPath.empty()) {
+            SceneScript sc;
+            sc.backend = "lua";
+            sc.path = scriptPath;
+            AttachOneScript(e, sc); // loads once, captures + runs on_start
+        }
         return e;
+    };
+    scriptCtx_.zombieInfo = [this](ecs::Entity e) {
+        const SceneZombie* z = world_.Get<SceneZombie>(e);
+        if (!z) return script::Value::Nil();
+        script::Value t = script::Value::Tbl();
+        t.table->fields.emplace_back("row", script::Value::Num(z->row));
+        t.table->fields.emplace_back("delay", script::Value::Num(z->delay));
+        t.table->fields.emplace_back("type", script::Value::Str(z->type));
+        return t;
     };
     hiddenEntities_.clear();
     scriptCtx_.hiddenEntities = &hiddenEntities_;
@@ -444,6 +460,15 @@ void GameRuntime::AttachScripts() {
         ecs::Entity ent = world_.EntityAt<SceneScript>(i);
         const SceneScript* s = world_.Get<SceneScript>(ent);
         if (s) AttachOneScript(ent, *s);
+    }
+    // Unity-style multiple scripts: every entry in a "scripts" component
+    // attaches like a single script component.
+    auto multiView = world_.ViewAll<SceneScripts>();
+    for (size_t i = 0; i < multiView.Size(); ++i) {
+        ecs::Entity ent = world_.EntityAt<SceneScripts>(i);
+        const SceneScripts* list = world_.Get<SceneScripts>(ent);
+        if (!list) continue;
+        for (const SceneScript& s : list->items) AttachOneScript(ent, s);
     }
 }
 

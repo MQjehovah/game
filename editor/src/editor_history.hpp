@@ -231,6 +231,22 @@ inline void ApplyScriptFields(SceneEntity& e, const SceneScriptFields& v) {
     e.scriptPath = v.path;
     e.scriptVars = v.vars;
 }
+// Multiple script components (Unity-style): replaces the whole extra list in
+// one undo step (add/remove/reorder of entries).
+inline void ApplyExtraScripts(SceneEntity& e,
+                              const std::vector<SceneScriptFields>& v) {
+    e.extraScripts = v;
+}
+inline bool ValuesEqual(const std::vector<SceneScriptFields>& a,
+                        const std::vector<SceneScriptFields>& b) {
+    if (a.size() != b.size()) return false;
+    for (size_t i = 0; i < a.size(); ++i) {
+        if (a[i].backend != b[i].backend || a[i].path != b[i].path ||
+            core::JsonWriter::Write(a[i].vars) != core::JsonWriter::Write(b[i].vars))
+            return false;
+    }
+    return true;
+}
 
 // A texture slot edit: the new path plus the texture handle already resolved
 // through the AssetManager (resolved at command-construction time in the

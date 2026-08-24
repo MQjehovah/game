@@ -1439,6 +1439,81 @@ void EditorApp::BuildInspectorPanel() {
         }
         ImGui::Separator();
         if (ImGui::CollapsingHeader("组件", ImGuiTreeNodeFlags_DefaultOpen)) {
+        // Script components (Unity-style): the primary scriptPath plus any
+        // extra "scripts" entries. Each shows its path + a detach button;
+        // add via the project scripts dropdown or ASSET_SCRIPT drag-drop.
+        {
+            ImGui::TextDisabled("脚本");
+            if (!e.scriptPath.empty()) {
+                ImGui::Text("  %s (%s)", e.scriptPath.c_str(),
+                            e.scriptBackend.empty() ? "lua" : e.scriptBackend.c_str());
+                ImGui::SameLine();
+                if (ImGui::SmallButton("移除主")) {
+                    const SceneScriptFields oldV{e.scriptBackend, e.scriptPath,
+                                                 e.scriptVars};
+                    const SceneScriptFields newV{"", "", {}};
+                    history_.Push(std::make_unique<EditPropertyCommand<SceneScriptFields>>(
+                        &entities_, selected_, ApplyScriptFields, oldV, newV));
+                }
+            } else {
+                ImGui::TextDisabled("  (未挂载)");
+            }
+            for (int si = 0; si < static_cast<int>(e.extraScripts.size()); ++si) {
+                const SceneScriptFields& f = e.extraScripts[static_cast<size_t>(si)];
+                ImGui::Text("  %s", f.path.c_str());
+                ImGui::SameLine();
+                if (ImGui::SmallButton(("移除##s" + std::to_string(si)).c_str())) {
+                    std::vector<SceneScriptFields> newList = e.extraScripts;
+                    newList.erase(newList.begin() + si);
+                    history_.Push(std::make_unique<
+                        EditPropertyCommand<std::vector<SceneScriptFields>>>(
+                        &entities_, selected_, ApplyExtraScripts, e.extraScripts,
+                        newList));
+                }
+            }
+            // Add: pick from the project scripts list.
+            if (scriptFiles_.empty()) RefreshScriptChecks();
+            if (!scriptFiles_.empty()) {
+                if (scriptAttachIndex_ < 0) scriptAttachIndex_ = 0;
+                if (scriptAttachIndex_ >= static_cast<int>(scriptFiles_.size()))
+                    scriptAttachIndex_ = 0;
+                std::vector<const char*> names;
+                for (const std::string& f : scriptFiles_) names.push_back(f.c_str());
+                ImGui::SetNextItemWidth(150.0f);
+                ImGui::Combo("##add_script", &scriptAttachIndex_, names.data(),
+                             static_cast<int>(names.size()));
+                ImGui::SameLine();
+                if (ImGui::Button("添加脚本")) {
+                    std::vector<SceneScriptFields> newList = e.extraScripts;
+                    newList.push_back({"lua",
+                                       scriptFiles_[static_cast<size_t>(scriptAttachIndex_)],
+                                       {}});
+                    history_.Push(std::make_unique<
+                        EditPropertyCommand<std::vector<SceneScriptFields>>>(
+                        &entities_, selected_, ApplyExtraScripts, e.extraScripts,
+                        newList));
+                }
+            }
+            if (ImGui::BeginDragDropTarget()) {
+                if (const ImGuiPayload* payload =
+                        ImGui::AcceptDragDropPayload("ASSET_SCRIPT")) {
+                    const char* path = static_cast<const char*>(payload->Data);
+                    if (path && selected_ >= 0 &&
+                        selected_ < static_cast<int>(entities_.size())) {
+                        std::vector<SceneScriptFields> newList = e.extraScripts;
+                        newList.push_back({"lua", ToProjectRelPath(path, projectDir_),
+                                           {}});
+                        history_.Push(std::make_unique<
+                            EditPropertyCommand<std::vector<SceneScriptFields>>>(
+                            &entities_, selected_, ApplyExtraScripts, e.extraScripts,
+                            newList));
+                    }
+                }
+                ImGui::EndDragDropTarget();
+            }
+        }
+
+
         auto makeNum = [](double v) {
             core::Json j;
             j.type_ = core::Json::Type::Number;

@@ -1,11 +1,11 @@
 {
  "entities": [
   {
-   "name": "PvZ",
+   "name": "Game",
    "components": {
     "script": {
      "backend": "lua",
-     "path": "scripts/pvz.lua"
+     "path": "scripts/game.lua"
     },
     "transform": {
      "pos": [
@@ -13,6 +13,30 @@
       0,
       0
      ]
+    }
+   }
+  },
+  {
+   "name": "house",
+   "components": {
+    "transform": {
+     "pos": [
+      95,
+      360,
+      0
+     ],
+     "scale": [
+      170,
+      240,
+      1
+     ]
+    },
+    "sprite": {
+     "texture": "assets/sprites/house.png"
+    },
+    "script": {
+     "backend": "lua",
+     "path": "scripts/entities/house.lua"
     }
    }
   },
@@ -39,11 +63,6 @@
   {
    "name": "sunflower_4_1",
    "components": {
-    "plant": {
-     "col": 1,
-     "row": 4,
-     "type": "sunflower"
-    },
     "transform": {
      "pos": [
       240.0,
@@ -56,19 +75,23 @@
       1
      ]
     },
+    "plant": {
+     "col": 1,
+     "row": 4,
+     "type": "sunflower"
+    },
     "sprite": {
      "texture": "assets/sprites/sunflower.png"
+    },
+    "script": {
+     "backend": "lua",
+     "path": "scripts/plants/sunflower.lua"
     }
    }
   },
   {
    "name": "peashooter_4_2",
    "components": {
-    "plant": {
-     "col": 2,
-     "row": 4,
-     "type": "peashooter"
-    },
     "transform": {
      "pos": [
       340.0,
@@ -81,19 +104,23 @@
       1
      ]
     },
+    "plant": {
+     "col": 2,
+     "row": 4,
+     "type": "peashooter"
+    },
     "sprite": {
      "texture": "assets/sprites/peashooter.png"
+    },
+    "script": {
+     "backend": "lua",
+     "path": "scripts/plants/peashooter.lua"
     }
    }
   },
   {
    "name": "snowpea_4_3",
    "components": {
-    "plant": {
-     "col": 3,
-     "row": 4,
-     "type": "snowpea"
-    },
     "transform": {
      "pos": [
       440.0,
@@ -106,19 +133,23 @@
       1
      ]
     },
+    "plant": {
+     "col": 3,
+     "row": 4,
+     "type": "snowpea"
+    },
     "sprite": {
      "texture": "assets/sprites/snowpea.png"
+    },
+    "script": {
+     "backend": "lua",
+     "path": "scripts/plants/snowpea.lua"
     }
    }
   },
   {
    "name": "sunflower_2_2",
    "components": {
-    "plant": {
-     "col": 2,
-     "row": 2,
-     "type": "sunflower"
-    },
     "transform": {
      "pos": [
       340.0,
@@ -131,19 +162,23 @@
       1
      ]
     },
+    "plant": {
+     "col": 2,
+     "row": 2,
+     "type": "sunflower"
+    },
     "sprite": {
      "texture": "assets/sprites/sunflower.png"
+    },
+    "script": {
+     "backend": "lua",
+     "path": "scripts/plants/sunflower.lua"
     }
    }
   },
   {
    "name": "peashooter_2_3",
    "components": {
-    "plant": {
-     "col": 3,
-     "row": 2,
-     "type": "peashooter"
-    },
     "transform": {
      "pos": [
       440.0,
@@ -156,19 +191,23 @@
       1
      ]
     },
+    "plant": {
+     "col": 3,
+     "row": 2,
+     "type": "peashooter"
+    },
     "sprite": {
      "texture": "assets/sprites/peashooter.png"
+    },
+    "script": {
+     "backend": "lua",
+     "path": "scripts/plants/peashooter.lua"
     }
    }
   },
   {
    "name": "sunflower_1_4",
    "components": {
-    "plant": {
-     "col": 4,
-     "row": 1,
-     "type": "sunflower"
-    },
     "transform": {
      "pos": [
       540.0,
@@ -181,19 +220,23 @@
       1
      ]
     },
+    "plant": {
+     "col": 4,
+     "row": 1,
+     "type": "sunflower"
+    },
     "sprite": {
      "texture": "assets/sprites/sunflower.png"
+    },
+    "script": {
+     "backend": "lua",
+     "path": "scripts/plants/sunflower.lua"
     }
    }
   },
   {
    "name": "zombie_7",
    "components": {
-    "zombie": {
-     "delay": 8,
-     "row": 4,
-     "type": "basic"
-    },
     "transform": {
      "pos": [
       1150,
@@ -206,19 +249,23 @@
       1
      ]
     },
+    "zombie": {
+     "delay": 8,
+     "row": 3,
+     "type": "basic"
+    },
     "sprite": {
      "texture": "assets/sprites/zombie.png"
+    },
+    "script": {
+     "backend": "lua",
+     "path": "scripts/entities/zombie.lua"
     }
    }
   },
   {
    "name": "zombie_8",
    "components": {
-    "zombie": {
-     "delay": 18,
-     "row": 2,
-     "type": "cone"
-    },
     "transform": {
      "pos": [
       1150,
@@ -231,19 +278,23 @@
       1
      ]
     },
+    "zombie": {
+     "delay": 18,
+     "row": 1,
+     "type": "cone"
+    },
     "sprite": {
      "texture": "assets/sprites/cone.png"
+    },
+    "script": {
+     "backend": "lua",
+     "path": "scripts/entities/zombie.lua"
     }
    }
   },
   {
    "name": "zombie_9",
    "components": {
-    "zombie": {
-     "delay": 28,
-     "row": 1,
-     "type": "basic"
-    },
     "transform": {
      "pos": [
       1150,
@@ -256,19 +307,23 @@
       1
      ]
     },
+    "zombie": {
+     "delay": 28,
+     "row": 0,
+     "type": "basic"
+    },
     "sprite": {
      "texture": "assets/sprites/zombie.png"
+    },
+    "script": {
+     "backend": "lua",
+     "path": "scripts/entities/zombie.lua"
     }
    }
   },
   {
    "name": "zombie_10",
    "components": {
-    "zombie": {
-     "delay": 38,
-     "row": 4,
-     "type": "bucket"
-    },
     "transform": {
      "pos": [
       1150,
@@ -281,19 +336,23 @@
       1
      ]
     },
+    "zombie": {
+     "delay": 38,
+     "row": 3,
+     "type": "bucket"
+    },
     "sprite": {
      "texture": "assets/sprites/bucket.png"
+    },
+    "script": {
+     "backend": "lua",
+     "path": "scripts/entities/zombie.lua"
     }
    }
   },
   {
    "name": "zombie_11",
    "components": {
-    "zombie": {
-     "delay": 45,
-     "row": 3,
-     "type": "cone"
-    },
     "transform": {
      "pos": [
       1150,
@@ -306,8 +365,137 @@
       1
      ]
     },
+    "zombie": {
+     "delay": 45,
+     "row": 2,
+     "type": "cone"
+    },
     "sprite": {
      "texture": "assets/sprites/cone.png"
+    },
+    "script": {
+     "backend": "lua",
+     "path": "scripts/entities/zombie.lua"
+    }
+   }
+  },
+  {
+   "name": "mower_1",
+   "components": {
+    "transform": {
+     "pos": [
+      165,
+      210.0,
+      -1
+     ],
+     "scale": [
+      40,
+      52,
+      1
+     ]
+    },
+    "sprite": {
+     "texture": "assets/sprites/mower.png"
+    },
+    "script": {
+     "backend": "lua",
+     "path": "scripts/entities/mower.lua"
+    }
+   }
+  },
+  {
+   "name": "mower_2",
+   "components": {
+    "transform": {
+     "pos": [
+      165,
+      310.0,
+      -1
+     ],
+     "scale": [
+      40,
+      52,
+      1
+     ]
+    },
+    "sprite": {
+     "texture": "assets/sprites/mower.png"
+    },
+    "script": {
+     "backend": "lua",
+     "path": "scripts/entities/mower.lua"
+    }
+   }
+  },
+  {
+   "name": "mower_3",
+   "components": {
+    "transform": {
+     "pos": [
+      165,
+      410.0,
+      -1
+     ],
+     "scale": [
+      40,
+      52,
+      1
+     ]
+    },
+    "sprite": {
+     "texture": "assets/sprites/mower.png"
+    },
+    "script": {
+     "backend": "lua",
+     "path": "scripts/entities/mower.lua"
+    }
+   }
+  },
+  {
+   "name": "mower_4",
+   "components": {
+    "transform": {
+     "pos": [
+      165,
+      510.0,
+      -1
+     ],
+     "scale": [
+      40,
+      52,
+      1
+     ]
+    },
+    "sprite": {
+     "texture": "assets/sprites/mower.png"
+    },
+    "script": {
+     "backend": "lua",
+     "path": "scripts/entities/mower.lua"
+    }
+   }
+  },
+  {
+   "name": "mower_5",
+   "components": {
+    "transform": {
+     "pos": [
+      165,
+      610.0,
+      -1
+     ],
+     "scale": [
+      40,
+      52,
+      1
+     ]
+    },
+    "sprite": {
+     "texture": "assets/sprites/mower.png"
+    },
+    "script": {
+     "backend": "lua",
+     "path": "scripts/entities/mower.lua"
     }
    }
   }

@@ -547,7 +547,16 @@ Value NativeSpawnSprite(IScriptHost& host, void* user) {
     };
     const bool flipX = asBool(4);
     const bool flipY = asBool(5);
-    return EntityToValue(ctx->spawnSprite(tex, pos, w, h, flipX, flipY));
+    const std::string script = host.ArgCount() >= 8 ? StringArg(host, 7) : "";
+    return EntityToValue(ctx->spawnSprite(tex, pos, w, h, flipX, flipY, script));
+}
+
+// ZombieInfo(entity) -> {row=, delay=, type=} or nil (data-driven zombie
+// component; lets each zombie script read its own spawn parameters).
+Value NativeZombieInfo(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->zombieInfo) return Value::Nil();
+    return ctx->zombieInfo(EntityFromValue(host.GetArg(0)));
 }
 
 // SetVisible(entity, true|false): hides/shows an entity in the runtime's
@@ -1013,6 +1022,7 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("WriteText", &NativeWriteText, &ctx);
     host.Register("FindNamedEntity", &NativeFindNamedEntity, &ctx);
     host.Register("SpawnSprite", &NativeSpawnSprite, &ctx);
+    host.Register("ZombieInfo", &NativeZombieInfo, &ctx);
     host.Register("SetVisible", &NativeSetVisible, &ctx);
     host.Register("ChangeScene", &NativeChangeScene, &ctx);
     host.Register("SignalConnect", &NativeSignalConnect, &ctx);

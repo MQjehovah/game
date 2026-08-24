@@ -170,6 +170,14 @@ struct SceneSprite {
     bool flipY = false;
     std::string colorHex; // tint, "#rrggbb" (empty = white)
 };
+// Data-driven zombie spawn: which row it attacks, when it appears (scene
+// time) and its armor type. Kept as a component so per-entity scripts can
+// read their own parameters (scripts/zombie.lua etc.).
+struct SceneZombie {
+    int row = 0;           // 0-based lawn row (matches plant/zombie data)
+    float delay = 0.0f;    // seconds after scene start before it appears
+    std::string type;      // "basic" | "cone" | "bucket"
+};
 struct SceneHealth {
     float hp = 0.f;
     float maxHp = 0.f;
@@ -195,6 +203,11 @@ struct SceneScript {
     std::string backend;
     std::string path;
     core::Json vars; // object, or null when absent
+};
+// Multiple script components on one entity (Unity-style): a scene entity can
+// carry several behaviors. Each entry attaches like a single SceneScript.
+struct SceneScripts {
+    std::vector<SceneScript> items;
 };
 struct SceneBehaviorTree {
     std::string treeJson;

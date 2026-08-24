@@ -69,6 +69,11 @@ struct SceneEntity {
     std::string scriptBackend;
     std::string scriptPath;
     core::Json scriptVars;
+    // Additional script components (Unity-style multi-behavior): beyond the
+    // primary script above, an entity can carry more scripts. Serialized as
+    // "scripts": [{backend,path,vars}, ...] in componentized scenes; the
+    // runtime attaches every entry.
+    std::vector<SceneScriptFields> extraScripts;
     // Non-flattened component data (Godot-style): every component of the
     // entity that isn't one of the built-in flattened fields above. Kept so
     // the inspector can edit arbitrary components (schema-driven) and project

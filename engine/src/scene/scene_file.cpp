@@ -630,6 +630,38 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                      return true;
                  });
 
+    reg.Register("zombie",
+                 [](ecs::World& world, ecs::Entity ent, const core::Json& data,
+                    const core::Json&, std::string* err) {
+                     if (!CheckComponentShape(data, {"row", "delay", "type"},
+                                              "zombie", err))
+                         return false;
+                     SceneZombie z;
+                     if (const core::Json* r = data.Get("row")) {
+                         if (!r->IsNumber()) {
+                             if (err) *err = "component 'zombie' field 'row' must be a number";
+                             return false;
+                         }
+                         z.row = static_cast<int>(r->GetNumber());
+                     }
+                     if (const core::Json* d = data.Get("delay")) {
+                         if (!d->IsNumber()) {
+                             if (err) *err = "component 'zombie' field 'delay' must be a number";
+                             return false;
+                         }
+                         z.delay = static_cast<float>(d->GetNumber());
+                     }
+                     if (const core::Json* t = data.Get("type")) {
+                         if (!t->IsString()) {
+                             if (err) *err = "component 'zombie' field 'type' must be a string";
+                             return false;
+                         }
+                         z.type = t->GetString();
+                     }
+                     world.Add<SceneZombie>(ent, z);
+                     return true;
+                 });
+
     reg.Register("script",
                  [](ecs::World& world, ecs::Entity ent, const core::Json& data,
                     const core::Json&, std::string* err) {
@@ -657,6 +689,42 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                          s.vars = *v;
                      }
                      world.Add<SceneScript>(ent, s);
+                     return true;
+                 });
+
+    reg.Register("scripts",
+                 [](ecs::World& world, ecs::Entity ent, const core::Json& data,
+                    const core::Json&, std::string* err) {
+                     const core::Json* arr = data.Get("items");
+                     if (!arr || !arr->IsArray()) {
+                         if (err) *err = "component 'scripts' requires an 'items' array";
+                         return false;
+                     }
+                     SceneScripts out;
+                     for (size_t i = 0; i < arr->Size(); ++i) {
+                         const core::Json* item = arr->At(i);
+                         if (!item || !item->IsObject() ||
+                             !CheckComponentShape(*item, {"backend", "path", "vars"},
+                                                  "scripts.items[" + std::to_string(i) + "]",
+                                                  err))
+                             return false;
+                         SceneScript s;
+                         if (const core::Json* b = item->Get("backend")) s.backend = b->GetString();
+                         if (const core::Json* p = item->Get("path")) s.path = p->GetString();
+                         if (const core::Json* v = item->Get("vars")) s.vars = *v;
+                         if (s.path.empty()) {
+                             if (err)
+                                 *err = "component 'scripts' item " + std::to_string(i) +
+                                        " requires a non-empty 'path'";
+                             return false;
+                         }
+                         out.items.push_back(std::move(s));
+                     }
+                     if (out.items.empty()) {
+                         if (err) *err = "component 'scripts' must not be empty";
+                         return false;
+                     }
+                     world.Add<SceneScripts>(ent, out);
                      return true;
                  });
 

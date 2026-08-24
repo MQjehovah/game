@@ -147,11 +147,16 @@ struct ScriptContext {
     // Finds a scene entity by name (wired by GameRuntime).
     std::function<ecs::Entity(const std::string&)> findEntity;
     // Spawns a renderable sprite entity (2D games): texture path (project-
-    // relative), design-space position, display width/height (design units)
-    // and flips. Returns the entity handle for SetPosition/SetVisible/Despawn.
-    // Wired by GameRuntime; null -> SpawnSprite is a no-op returning invalid.
-    std::function<ecs::Entity(const std::string&, const math::Vec3&, float, float, bool, bool)>
+    // relative), design-space position, display width/height (design units),
+    // flips and an optional script path ("" = none) to attach as its behavior.
+    // Returns the entity handle for SetPosition/SetVisible/Despawn. Wired by
+    // GameRuntime; null -> SpawnSprite is a no-op returning an invalid handle.
+    std::function<ecs::Entity(const std::string&, const math::Vec3&, float, float, bool, bool,
+                              const std::string&)>
         spawnSprite;
+    // Reads an entity's data-driven "zombie" component (row/delay/type) as a
+    // Lua table, or nil. Wired by GameRuntime; null -> ZombieInfo returns nil.
+    std::function<script::Value(ecs::Entity)> zombieInfo;
     // Entities hidden from rendering by SetVisible (runtime-owned set).
     std::set<uint64_t>* hiddenEntities = nullptr;
     // Godot-style action map (runtime-owned). Null -> Action* bindings fall

@@ -3287,6 +3287,36 @@ core::Result<core::Json> EditorApp::BuildPlaySceneJson() {
                 comps.object_[cname] = cdata;
             obj.object_["components"] = std::move(comps);
         }
+        // Multiple script components (Unity-style): "scripts": [{backend,path,
+        // vars}, ...]. The primary scriptPath already exports as "script".
+        if (!e.extraScripts.empty()) {
+            core::Json comps;
+            if (const core::Json* c = obj.Get("components")) {
+                if (c->IsObject()) comps = *c;
+            }
+            comps.type_ = core::Json::Type::Object;
+            auto mkStr2 = [](const std::string& v) {
+                core::Json j;
+                j.type_ = core::Json::Type::String;
+                j.string_ = v;
+                return j;
+            };
+            core::Json items;
+            items.type_ = core::Json::Type::Array;
+            for (const SceneScriptFields& f : e.extraScripts) {
+                core::Json it;
+                it.type_ = core::Json::Type::Object;
+                it.object_["backend"] = mkStr2(f.backend.empty() ? "lua" : f.backend);
+                it.object_["path"] = mkStr2(f.path);
+                if (f.vars.IsObject()) it.object_["vars"] = f.vars;
+                items.array_.push_back(std::move(it));
+            }
+            core::Json scripts;
+            scripts.type_ = core::Json::Type::Object;
+            scripts.object_["items"] = std::move(items);
+            comps.object_["scripts"] = std::move(scripts);
+            obj.object_["components"] = std::move(comps);
+        }
         arr.array_.push_back(std::move(obj));
     }
     root.object_["entities"] = std::move(arr);
@@ -3994,6 +4024,20 @@ void EditorApp::LoadScene(const std::string& path) {
                 e.scriptPath = s->Get("path") ? s->Get("path")->GetString() : "";
                 e.scriptBackend = s->Get("backend") ? s->Get("backend")->GetString("lua") : "lua";
                 if (const core::Json* v = s->Get("vars")) e.scriptVars = *v;
+            }
+            if (const core::Json* list = comps->Get("scripts")) {
+                if (const core::Json* items = list->Get("items")) {
+                    if (items->IsArray()) {
+                        for (const core::Json& it : items->Items()) {
+                            SceneScriptFields f;
+                            f.backend = it.Get("backend") ? it.Get("backend")->GetString("lua")
+                                                          : "lua";
+                            f.path = it.Get("path") ? it.Get("path")->GetString() : "";
+                            if (const core::Json* v = it.Get("vars")) f.vars = *v;
+                            if (!f.path.empty()) e.extraScripts.push_back(std::move(f));
+                        }
+                    }
+                }
             }
             // Keep every non-flattened component as editable extra data
             // (schema-driven inspector; plant/zombie mirror the 2D canvas).
