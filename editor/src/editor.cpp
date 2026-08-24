@@ -298,6 +298,15 @@ std::string ExtLower(const std::string& path) {
     return ext;
 }
 
+// Scene picker label: base name WITHOUT the ".json" suffix. Scenes are the
+// editor's primary objects; the extension is UI noise (storage keeps the full
+// name so scene matching logic is unaffected).
+std::string SceneDisplayName(const std::string& path) {
+    std::string n = BaseName(path);
+    if (ExtLower(n) == ".json") n = n.substr(0, n.size() - 5);
+    return n;
+}
+
 // Maps a mesh key to the file it loads (file-prefixed keys verbatim and the
 // file-backed built-in "helmet"). "" for procedural primitives ("terrain",
 // "tree", "house", "npc", "bush", "rock", "water", "road", "cube") that have
@@ -2652,7 +2661,7 @@ void EditorApp::BuildImGuiUI() {
             ImGui::Separator();
             ImGui::TextDisabled("当前项目场景");
             for (const std::string& s : projectScenes_) {
-                if (ImGui::MenuItem(BaseName(s).c_str())) LoadProjectScene(s);
+                if (ImGui::MenuItem(SceneDisplayName(s).c_str())) LoadProjectScene(s);
             }
             ImGui::Separator();
             ImGui::TextUnformatted("项目目录");
@@ -2839,12 +2848,14 @@ void EditorApp::BuildImGuiUI() {
         ImGui::SetNextItemWidth(160.0f);
         if (ImGui::BeginCombo("##scene_picker", currentSceneName_.empty()
                                                     ? "选择场景…"
-                                                    : currentSceneName_.c_str())) {
+                                                    : SceneDisplayName(currentSceneName_).c_str())) {
             if (projectDir_ == ".")
-                if (ImGui::Selectable("editor_scene.json", currentSceneName_ == "editor_scene.json"))
+                if (ImGui::Selectable(SceneDisplayName("editor_scene.json").c_str(),
+                                      currentSceneName_ == "editor_scene.json"))
                     LoadScene("editor_scene.json");
             for (const std::string& s : projectScenes_) {
-                if (ImGui::Selectable(s.c_str(), currentSceneName_ == BaseName(s)))
+                if (ImGui::Selectable(SceneDisplayName(s).c_str(),
+                                      currentSceneName_ == BaseName(s)))
                     LoadProjectScene(s);
             }
             ImGui::EndCombo();
