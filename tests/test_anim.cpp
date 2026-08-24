@@ -92,7 +92,7 @@ TEST(ClipJsonRoundTrip) {
     clip.duration = 1.5f;
     anim::Track tr;
     tr.bone = 3;
-    tr.interp = anim::Interp::CubicSpline;
+    tr.interp = anim::Interp::Linear;
     tr.times = {0.0f, 1.5f};
     tr.translations = {{0, 0, 0}, {1, 0, 0}};
     tr.rotations = {{0, 0, 0, 1}, {0, 0, 0, 1}};
@@ -107,7 +107,7 @@ TEST(ClipJsonRoundTrip) {
     CHECK_NEAR(back.duration, 1.5f, 1e-5f);
     CHECK_EQ(back.tracks.size(), 1u);
     CHECK_EQ(back.tracks[0].bone, 3);
-    CHECK(back.tracks[0].interp == anim::Interp::CubicSpline);
+    CHECK(back.tracks[0].interp == anim::Interp::Linear);
     CHECK_EQ(back.tracks[0].times.size(), 2u);
     CHECK_NEAR(back.tracks[0].translations[1].x, 1.0f, 1e-5f);
     CHECK_NEAR(back.tracks[0].rotations[0].w, 1.0f, 1e-5f);
