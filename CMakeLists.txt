@@ -519,3 +519,29 @@ if(NOT WIN32)
   find_package(Threads REQUIRED)
   target_link_libraries(neon_engine PUBLIC Threads::Threads)
 endif()
+
+# ---------------------------------------------------------------------------
+# MinGW runtime DLLs next to each executable (launch robustness)
+#
+# The exe is built against C:/msys64/mingw64 (GCC 16.2). Machines that also
+# have an OLD MinGW earlier on PATH (e.g. D:\mingw64 with GCC 8.1) would load
+# its stale libstdc++-6.dll and fail to start with STATUS_ENTRYPOINT_NOT_FOUND
+# (0xC0000139) from a terminal. Windows loads DLLs from the exe's directory
+# FIRST, so copying the three runtime DLLs next to every target makes launch
+# independent of PATH.
+# ---------------------------------------------------------------------------
+if(MINGW)
+  get_filename_component(NEON_MINGW_BIN "${CMAKE_CXX_COMPILER}" DIRECTORY)
+  function(neon_copy_runtime_dlls target)
+    add_custom_command(TARGET ${target} POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${NEON_MINGW_BIN}/libstdc++-6.dll"
+        "${NEON_MINGW_BIN}/libgcc_s_seh-1.dll"
+        "${NEON_MINGW_BIN}/libwinpthread-1.dll"
+        $<TARGET_FILE_DIR:${target}>
+      VERBATIM)
+  endfunction()
+  neon_copy_runtime_dlls(neon_editor)
+  neon_copy_runtime_dlls(neon_tests)
+  neon_copy_runtime_dlls(neon_server)
+endif()
