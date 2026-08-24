@@ -447,6 +447,32 @@ bool EditorApp::OnCreate() {
         return false;
     }
     ApplyEditorTheme();
+    // Toolbar icon glyph self-check: a missing glyph renders as '?' in the
+    // toolbar. Log once at startup so icon regressions are caught immediately.
+    {
+        ImFontBaked* baked = nullptr;
+        if (ImGui::GetIO().Fonts && !ImGui::GetIO().Fonts->Fonts.empty())
+            baked = ImGui::GetIO().Fonts->Fonts[0]->GetFontBaked(18.0f);
+        if (baked) {
+            static const unsigned int kToolbarIcons[] = {
+                0x2725, 0x27F3, 0x21F2, 0x25C9, 0x25CE, 0x25A6, 0x2316,
+                0x25B6, 0x25A0, 0x25CF, 0x25CB, 0x2715, 0x2B06};
+            std::string missing;
+            for (unsigned int cp : kToolbarIcons) {
+                if (!baked->IsGlyphLoaded(static_cast<ImWchar>(cp))) {
+                    char buf[16];
+                    std::snprintf(buf, sizeof(buf), "U+%04X ", cp);
+                    missing += buf;
+                }
+            }
+            if (missing.empty()) {
+                NEON_LOG_INFO("Editor: toolbar icon glyphs all present in the font atlas");
+            } else {
+                NEON_LOG_WARN("Editor: toolbar glyphs missing from the font atlas: %s",
+                              missing.c_str());
+            }
+        }
+    }
     audioBackend_ = neon::audio::CreatePlatformAudioBackend();
     if (audioBackend_ && !audioBackend_->Init()) {
         audioBackend_->Shutdown();
@@ -2544,8 +2570,41 @@ void EditorApp::BuildImGuiUI() {
             if (ImGui::MenuItem("加载场景", "Ctrl+L")) LoadScene("editor_scene.json");
             if (ImGui::MenuItem("另存为子场景")) SaveSceneAsChild();
             ImGui::Separator();
+            if (ImGui::MenuItem("导出场景", "Ctrl+E")) ExportScene();
+            ImGui::Separator();
             if (ImGui::MenuItem("退出")) {
                 if (Window()) Window()->RequestClose();
+            }
+            ImGui::EndMenu();
+        }
+        // 编辑: scene-history undo/redo + selection batch operations (the
+        // shortcuts also work while the viewport has focus; the menu adds
+        // discoverability + enabled/disabled state).
+        if (ImGui::BeginMenu("编辑")) {
+            if (ImGui::MenuItem("撤销", "Ctrl+Z", false, history_.CanUndo())) {
+                history_.Undo();
+                ClampSelection();
+            }
+            if (ImGui::MenuItem("重做", "Ctrl+Y", false, history_.CanRedo())) {
+                history_.Redo();
+                ClampSelection();
+            }
+            ImGui::Separator();
+            if (ImGui::MenuItem("删除选中", "Del", false, !selection_.empty())) {
+                history_.Push(std::make_unique<MultiDeleteEntityCommand>(
+                    &entities_, SelectedIndices()));
+                ClampSelection();
+            }
+            if (ImGui::MenuItem("复制选中", "Ctrl+D", false, !selection_.empty())) {
+                history_.Push(std::make_unique<MultiDuplicateEntityCommand>(
+                    &entities_, SelectedIndices()));
+                SetSelection(static_cast<int>(entities_.size()) - 1);
+            }
+            ImGui::Separator();
+            if (ImGui::MenuItem("聚焦选中", "F", false,
+                                selected_ >= 0 &&
+                                    selected_ < static_cast<int>(entities_.size()))) {
+                camTarget_ = entities_[static_cast<size_t>(selected_)].pos;
             }
             ImGui::EndMenu();
         }
@@ -2755,54 +2814,7 @@ void EditorApp::BuildImGuiUI() {
                 ImGui::SetTooltip("%s", tip);
             return clicked;
         };
-        if (ImGui::Button("保存")) SaveScene();
-        ImGui::SameLine();
-        if (ImGui::Button("加载")) LoadScene("editor_scene.json");
-        ImGui::SameLine();
-        // Godot-style project switcher: pick a project (NeonRealm 3D /
-        // NeonPvZ 2D / default sandbox), then pick a scene or 2D level.
-        ImGui::SetNextItemWidth(178.0f);
-        const char* projPreview = projectName_.empty()
-                                      ? (projectDir_ == "." ? "默认场景" : projectDir_.c_str())
-                                      : projectName_.c_str();
-        if (ImGui::BeginCombo("##project_picker", projPreview)) {
-            if (ImGui::Selectable("默认场景", projectDir_ == ".")) SwitchProject(".");
-            ImGui::Separator();
-            if (projects_.empty()) ScanProjects();
-            for (size_t i = 0; i < projects_.size(); ++i) {
-                const EditorProject& p = projects_[i];
-                char label[256];
-                std::snprintf(label, sizeof(label), "%s  [%s]###proj%d", p.name.c_str(),
-                              p.mode == "2d" ? "2D" : "3D", static_cast<int>(i));
-                if (ImGui::Selectable(label, projectSel_ == static_cast<int>(i)))
-                    SwitchProject(p.dir);
-            }
-            ImGui::Separator();
-            if (ImGui::MenuItem("重新扫描项目")) ScanProjects();
-            ImGui::EndCombo();
-        }
-        ImGui::SameLine();
-        // Scene / level picker for the active project.
-        ImGui::SetNextItemWidth(196.0f);
-        if (ImGui::BeginCombo("##scene_picker", currentSceneName_.empty()
-                                                    ? "选择场景…"
-                                                    : currentSceneName_.c_str())) {
-            if (projectDir_ == ".")
-                if (ImGui::Selectable("editor_scene.json", currentSceneName_ == "editor_scene.json"))
-                    LoadScene("editor_scene.json");
-            for (const std::string& s : projectScenes_) {
-                if (ImGui::Selectable(s.c_str(), currentSceneName_ == BaseName(s)))
-                    LoadProjectScene(s);
-            }
-            ImGui::EndCombo();
-        }
-        ImGui::SameLine();
-        if (ToolbarIcon("✕", "删除选中 (Del)", false) && !selection_.empty()) {
-            history_.Push(std::make_unique<MultiDeleteEntityCommand>(
-                &entities_, SelectedIndices()));
-            ClampSelection();
-        }
-        ImGui::SameLine();
+        // --- 运行/视图: 试玩、热重载、相机预设、2D/3D 切换 ---
         if (ToolbarIcon(playtestActive_ ? "■" : "▶",
                         playtestActive_ ? "停止试玩 (F5)" : "试玩 (F5)", playtestActive_))
             TogglePlaytest();
@@ -2819,13 +2831,14 @@ void EditorApp::BuildImGuiUI() {
         if (ImGui::Combo("##viewport_cam", &camSel, camLabels, 3))
             SetViewCam(static_cast<ViewCam>(camSel));
         ImGui::SameLine();
-        if (ImGui::Button("导出")) ExportScene();
-        if (ImGui::IsItemHovered(ImGuiHoveredFlags_Stationary))
-            ImGui::SetTooltip("导出场景为 scenes/exported_scene.json");
+        const bool in2D = editMode_ == EditMode::Scene2D;
+        if (ToolbarIcon(in2D ? "3D" : "2D", in2D ? "切换到 3D 透视" : "切换到 2D 视图",
+                        false))
+            Set2DMode(!in2D);
         ImGui::SameLine();
         ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
         ImGui::SameLine();
-        // Gizmo operation (W/E/R) and mode toggle for the selected entity.
+        // --- 变换: 移动/旋转/缩放 + 本地/世界坐标 ---
         if (ToolbarIcon("✥", "移动 (W)", gizmoOp_ == ImGuizmo::TRANSLATE))
             gizmoOp_ = ImGuizmo::TRANSLATE;
         ImGui::SameLine();
@@ -2841,10 +2854,11 @@ void EditorApp::BuildImGuiUI() {
         if (ToolbarIcon("◎", "世界坐标空间", gizmoMode_ == ImGuizmo::WORLD))
             gizmoMode_ = ImGuizmo::WORLD;
         ImGui::SameLine();
+        ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
+        ImGui::SameLine();
+        // --- 视口辅助: 网格、聚焦 ---
         if (ToolbarIcon("▦", "视口网格", showViewportGrid_))
             showViewportGrid_ = !showViewportGrid_;
-        ImGui::SameLine();
-        ImGui::TextDisabled("选中 %zu", selection_.size());
         ImGui::SameLine();
         if (ToolbarIcon("⌖", "聚焦选中 (F)", false) && selected_ >= 0 &&
             selected_ < static_cast<int>(entities_.size()))
@@ -2852,15 +2866,15 @@ void EditorApp::BuildImGuiUI() {
         ImGui::SameLine();
         ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
         ImGui::SameLine();
-        // View switcher (Unity/Godot style): 2D is the front-ortho camera
-        // locked to the SAME scene, 3D is the perspective camera. Only the
-        // camera changes - the project, scene and content stay identical.
-        const bool in2D = editMode_ == EditMode::Scene2D;
-        if (ToolbarIcon(in2D ? "3D" : "2D", in2D ? "切换到 3D 透视" : "切换到 2D 视图",
-                        false))
-            Set2DMode(!in2D);
+        // --- 状态: 选中/实体数量 ---
+        if (!currentSceneName_.empty()) {
+            ImGui::TextDisabled("场景 %s", currentSceneName_.c_str());
+            ImGui::SameLine();
+        }
+        ImGui::TextDisabled("选中 %zu / 实体 %zu", selection_.size(), entities_.size());
         ImGui::SameLine();
-        ImGui::Text("实体 %zu", entities_.size());
+        ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
+        ImGui::SameLine();
         // Plugin-contributed toolbar tools.
         if (pluginMgr_) {
             for (editor::PluginTool& t : pluginMgr_->Tools()) {

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <fstream>
 #include <unordered_map>
 #include <vector>
 
@@ -169,6 +170,7 @@ bool ImGuiNeon_Init(Renderer* renderer, const char* cjkFontPath) {
 
     // Fonts: default Latin + (optionally) full CJK coverage from a system font.
     if (cjkFontPath) {
+        bool cjkAdded = false;
         static const ImWchar kCJKRanges[] = {
             0x20, 0x7E,     // Basic Latin
             0x00A0, 0x00FF, // Latin-1
@@ -190,6 +192,40 @@ bool ImGuiNeon_Init(Renderer* renderer, const char* cjkFontPath) {
             NEON_LOG_WARN("ImGui: failed to load CJK font '%s'", cjkFontPath);
         } else {
             NEON_LOG_INFO("ImGui: CJK font '%s'", cjkFontPath);
+            cjkAdded = true;
+        }
+        // Icon/symbol font: msyh.ttc only contains a handful of geometric
+        // shapes, so toolbar glyphs (rotate/up-arrow/move/play/stop...) would
+        // render as '?' without a second font. Windows ships Segoe UI Symbol
+        // with every one of them; merging it INTO the CJK font (MergeMode)
+        // makes text + icons come from a single ImFont.
+        static const ImWchar kSymbolRanges[] = {
+            0x2190, 0x21FF, // Arrows (move/scale icons)
+            0x2300, 0x23FF, // Technical (play/pause/stop transport)
+            0x25A0, 0x25FF, // Geometric shapes (play/stop/grid/dot)
+            0x2600, 0x27FF, // Misc symbols + dingbats (rotate 27F3, focus 2316)
+            0x2B00, 0x2BFF, // Misc arrows (up-arrow 2B06)
+            0,
+        };
+        const char* kSymbolFontPath = "C:/Windows/Fonts/seguisym.ttf";
+        if (cjkAdded && std::ifstream(kSymbolFontPath).is_open()) {
+            ImFontConfig iconCfg;
+            iconCfg.MergeMode = true;
+            iconCfg.FontNo = 0;
+            iconCfg.OversampleH = 1;
+            iconCfg.OversampleV = 1;
+            if (!io.Fonts->AddFontFromFileTTF(kSymbolFontPath, 18.0f, &iconCfg,
+                                              kSymbolRanges)) {
+                NEON_LOG_WARN("ImGui: failed to load symbol font '%s'",
+                              kSymbolFontPath);
+            } else {
+                NEON_LOG_INFO("ImGui: merged symbol font '%s' (toolbar icons)",
+                              kSymbolFontPath);
+            }
+        } else {
+            NEON_LOG_WARN("ImGui: symbol font '%s' not found; toolbar icons "
+                          "will fall back to text",
+                          kSymbolFontPath);
         }
     }
     // Legacy atlas path: bake the full glyph range up-front. This avoids the
