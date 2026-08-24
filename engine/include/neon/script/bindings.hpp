@@ -78,6 +78,9 @@ struct ScriptContext {
     std::function<void(const std::string&, const math::Vec3&)> playSfx3D;
     std::function<void(const math::Vec3&, const math::Vec3&)> setAudioListener;
     std::function<void(int, float)> setBusVolume;
+    // P2-4 production RPC: sends a named remote call with a JSON args payload
+    // through the network layer. Wired by networked hosts; null -> Rpc no-op.
+    std::function<void(const std::string&, const std::string&)> rpcCall;
     std::map<ecs::Entity, std::string, EntityLess> entityKinds; // entity -> kind name
     // Optional live input state for the InputAxis/InputKey/InputMouse bindings.
     // Null in headless hosts and unit tests -> every input query returns 0.

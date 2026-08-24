@@ -95,6 +95,7 @@ struct LoopbackClient {
     size_t pongs = 0;
     std::vector<net::MsgSnapshot> snapshots;
     std::vector<uint64_t> despawned;
+    std::vector<net::MsgRpc> rpcs;  // P2-4: received RPC messages
 
     void BindAndPeer(uint16_t serverPort) {
         core::Result<net::UdpSocket> res = net::UdpSocket::Create();
@@ -127,7 +128,14 @@ struct LoopbackClient {
             despawned.push_back(std::get<net::MsgDespawn>(m.payload).entityId);
         } else if (m.header.msgId == static_cast<uint8_t>(net::MsgType::Pong)) {
             ++pongs;
+        } else if (m.header.msgId == static_cast<uint8_t>(net::MsgType::Rpc)) {
+            rpcs.push_back(std::get<net::MsgRpc>(m.payload));
         }
+    }
+
+    void SendRpc(const std::string& name, const std::string& argsJson) {
+        net::MsgRpc rpc{name, argsJson};
+        chan.Send(static_cast<uint8_t>(net::MsgType::Rpc), net::EncodeBody(rpc));
     }
 
     // Drain everything the socket has + tick the channel (emits acks).
@@ -888,5 +896,68 @@ TEST(ServerSnapshotTooBigCounted) {
     CHECK((server.SnapshotTooBig()) >= (tooBigBefore + 30));
     CHECK_EQ(server.SnapshotDrops(), 0u); // dropped for size, not the send window
     CHECK_EQ(client.snapshots.size(), 0u); // the client never received a snapshot
+    server.Shutdown();
+}
+
+// P2-4: production RPC + rooms. Two clients join the same room; a broadcast
+// from one reaches both (room.chat), and a room.list reply echoes the room.
+TEST(ServerRpcRoomsBroadcast) {
+    server::GameServer::Config cfg;
+    cfg.port = 0;
+    cfg.loopback = true;
+    cfg.sceneJson = "{\"entities\": []}";
+    server::GameServer server;
+    CHECK(server.Start(cfg));
+
+    LoopbackClient a, b;
+    a.BindAndPeer(server.Port());
+    b.BindAndPeer(server.Port());
+    uint64_t now = 0;
+    auto join = [&](LoopbackClient& c) {
+        c.SendJoin("player", 2);
+        for (int i = 0; i < 200 && !c.welcomed; ++i) {
+            now += 17;
+            server.Step(now);
+            c.Pump(now);
+        }
+        CHECK(c.welcomed);
+    };
+    join(a);
+    join(b);
+
+    // A joins room "alpha", B joins the same room.
+    a.SendRpc("room.join", "{\"room\":\"alpha\"}");
+    b.SendRpc("room.join", "{\"room\":\"alpha\"}");
+    for (int i = 0; i < 30; ++i) {
+        now += 17;
+        server.Step(now);
+        a.Pump(now);
+        b.Pump(now);
+    }
+    bool aJoined = false;
+    for (const net::MsgRpc& r : a.rpcs)
+        if (r.name == "room.joined" && r.argsJson.find("alpha") != std::string::npos)
+            aJoined = true;
+    CHECK(aJoined);
+
+    // Broadcast from A -> both A and B receive room.chat.
+    a.rpcs.clear();
+    b.rpcs.clear();
+    a.SendRpc("room.broadcast", "{\"message\":\"hello room\"}");
+    for (int i = 0; i < 30; ++i) {
+        now += 17;
+        server.Step(now);
+        a.Pump(now);
+        b.Pump(now);
+    }
+    auto gotChat = [](const std::vector<net::MsgRpc>& rpcs) {
+        for (const net::MsgRpc& r : rpcs)
+            if (r.name == "room.chat" &&
+                r.argsJson.find("hello room") != std::string::npos)
+                return true;
+        return false;
+    };
+    CHECK(gotChat(a.rpcs));
+    CHECK(gotChat(b.rpcs));
     server.Shutdown();
 }

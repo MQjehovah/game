@@ -11,6 +11,7 @@
 #include "neon/ecs/world.hpp"
 #include "neon/net/protocol.hpp"
 #include "neon/net/reliable.hpp"
+#include "neon/net/rpc.hpp"
 #include "neon/net/socket.hpp"
 #include "neon/scene/game_runtime.hpp"
 #include "neon/script/gamevars.hpp"
@@ -152,6 +153,7 @@ private:
         // Spawn/despawn diffs are computed against this set, so each client
         // gets exactly the entities it has not seen yet / has lost.
         std::set<uint64_t> lastInterest;
+        std::string room;  // P2-4: room membership ("" = lobby)
         uint32_t dropLogCount = 0; // throttles the deferred-snapshot log
     };
 
@@ -163,6 +165,12 @@ private:
     void HandleLogin(const net::NetAddress& addr, const net::MsgLogin& login);
     void HandleInput(const net::NetAddress& addr, const net::MsgInput& input);
     void HandlePing(const net::NetAddress& addr, const net::MsgPing& ping);
+    // P2-4 production RPC: dispatch + room management over MsgRpc.
+    void SetupRpc();
+    void HandleRpc(const net::NetAddress& addr, const net::MsgRpc& rpc);
+    void SendRpc(Client& c, const std::string& name, const std::string& argsJson);
+    void BroadcastRoom(const std::string& room, const std::string& name,
+                       const std::string& argsJson);
     void SendWelcome(Client& c);
     void SendLoginOk(Client& c);
     void SendCharList(Client& c);
@@ -184,6 +192,7 @@ private:
     NetInput controllerInput_; // wired into the runtime; fed by the controller client
     std::vector<ScriptedInput> scriptedInputs_; // T6.7 scripted-controller path
     std::map<net::NetAddress, Client, NetAddrLess> clients_;
+    net::RpcDispatcher rpc_;
     // Multi-player ownership: stable entity key -> client id (set by the
     // scene's BindPlayerToClient inside on_player_join). Drives per-entity
     // input routing and per-client AOI focus.

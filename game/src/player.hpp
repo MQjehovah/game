@@ -7,6 +7,7 @@
 #include "neon/neon.hpp"
 #include "neon/scene/game_manifest.hpp"
 #include "neon/scene/game_runtime.hpp"
+#include "neon/net/rpc.hpp"
 #include "client_input.hpp"
 #include "client_sync.hpp"
 
@@ -108,6 +109,9 @@ private:
     bool StartNetwork();
     void SendJoin(); // T6.6: the game join, only sent after MsgLoginOk
     void OnClientMessage(const net::DecodedMessage& msg);
+    // P2-4 production RPC: client-side dispatch + send.
+    void HandleRpc(const net::MsgRpc& rpc);
+    void SendRpc(const std::string& name, const std::string& argsJson);
     void PumpNetwork();
     void SendInputPacket();
     void ResolveControlledEntity();
@@ -137,6 +141,7 @@ private:
     client::ClientInput clientInput_;      // bridges real input -> prediction + wire
     net::UdpSocket clientSock_;
     net::ReliableChannel clientChan_;
+    net::RpcDispatcher clientRpc_;
     client::ClientSync sync_;              // snapshot buffer + interp + reconcile query
     bool loggedIn_ = false;  // MsgLoginOk received (T6.6 account step done)
     bool joinSent_ = false;  // MsgJoin sent (only after login)

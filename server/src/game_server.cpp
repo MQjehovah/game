@@ -39,6 +39,7 @@ bool GameServer::Start(const Config& cfg) {
     cfg_ = cfg;
     if (cfg_.clientTimeoutMs == 0) cfg_.clientTimeoutMs = 5000;
     if (cfg_.snapshotEveryTicks == 0) cfg_.snapshotEveryTicks = 1;
+    SetupRpc();
 
     // Scene source: inline JSON wins, else the scene file.
     std::string sceneJson = cfg_.sceneJson;
@@ -226,6 +227,9 @@ void GameServer::OnClientMessage(const net::NetAddress& addr,
         case net::MsgType::Ping:
             if (auto* m = std::get_if<net::MsgPing>(&msg.payload)) HandlePing(addr, *m);
             break;
+        case net::MsgType::Rpc:
+            if (auto* m = std::get_if<net::MsgRpc>(&msg.payload)) HandleRpc(addr, *m);
+            break;
         case net::MsgType::Welcome:
         case net::MsgType::Snapshot:
         case net::MsgType::Spawn:
@@ -410,6 +414,126 @@ void GameServer::SendPong(Client& c, uint64_t sendTime) {
         NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Debug,
                      "server: pong to client %llu deferred (%s)",
                      static_cast<unsigned long long>(c.clientId), st.Error().c_str());
+}
+
+// P2-4 production RPC: registers the built-in room handlers. Game code can
+// register more via RpcDispatcher (exposed below) in Start.
+void GameServer::SetupRpc() {
+    rpc_ = net::RpcDispatcher();
+    // room.join / room.create: (re)assign the client's room.
+    auto joinRoom = [this](uint64_t clientId, const std::string& argsJson) {
+        std::string room;
+        std::string perr;
+        core::Json args = core::Json::Parse(argsJson, &perr);
+        if (const core::Json* r = args.Get("room")) room = r->GetString();
+        if (room.empty()) room = "lobby";
+        for (auto& kv : clients_) {
+            if (kv.second.clientId == clientId) {
+                kv.second.room = room;
+                break;
+            }
+        }
+        core::Json reply;
+        reply.type_ = core::Json::Type::Object;
+        core::Json rj;
+        rj.type_ = core::Json::Type::String;
+        rj.string_ = room;
+        reply.object_["room"] = std::move(rj);
+        return std::optional<std::pair<std::string, std::string>>(
+            std::make_pair(std::string("room.joined"), core::JsonWriter::Write(reply)));
+    };
+    rpc_.Register("room.join", joinRoom);
+    rpc_.Register("room.create", joinRoom);
+    rpc_.Register("room.leave", [](uint64_t clientId, const std::string&) {
+        (void)clientId;
+        return std::optional<std::pair<std::string, std::string>>(
+            std::make_pair(std::string("room.left"), std::string("{}")));
+    });
+    rpc_.Register("room.list", [this](uint64_t, const std::string&) {
+        std::vector<std::string> rooms;
+        for (const auto& kv : clients_) {
+            if (!kv.second.room.empty() &&
+                std::find(rooms.begin(), rooms.end(), kv.second.room) == rooms.end())
+                rooms.push_back(kv.second.room);
+        }
+        core::Json reply;
+        reply.type_ = core::Json::Type::Object;
+        core::Json arr;
+        arr.type_ = core::Json::Type::Array;
+        for (const std::string& r : rooms) {
+            core::Json j;
+            j.type_ = core::Json::Type::String;
+            j.string_ = r;
+            arr.array_.push_back(std::move(j));
+        }
+        reply.object_["rooms"] = std::move(arr);
+        return std::optional<std::pair<std::string, std::string>>(
+            std::make_pair(std::string("room.list"), core::JsonWriter::Write(reply)));
+    });
+    // room.broadcast: relays {message} as room.chat to the sender's room.
+    rpc_.Register("room.broadcast", [this](uint64_t clientId, const std::string& argsJson) {
+        std::string room;
+        std::string message;
+        std::string perr;
+        core::Json args = core::Json::Parse(argsJson, &perr);
+        if (const core::Json* m = args.Get("message")) message = m->GetString();
+        for (const auto& kv : clients_) {
+            if (kv.second.clientId == clientId) {
+                room = kv.second.room;
+                break;
+            }
+        }
+        if (!room.empty()) {
+            core::Json chat;
+            chat.type_ = core::Json::Type::Object;
+            core::Json from;
+            from.type_ = core::Json::Type::Number;
+            from.number_ = static_cast<double>(clientId);
+            chat.object_["from"] = from;
+            core::Json mj;
+            mj.type_ = core::Json::Type::String;
+            mj.string_ = message;
+            chat.object_["message"] = std::move(mj);
+            BroadcastRoom(room, "room.chat", core::JsonWriter::Write(chat));
+        }
+        return std::optional<std::pair<std::string, std::string>>();
+    });
+}
+
+void GameServer::HandleRpc(const net::NetAddress& addr, const net::MsgRpc& rpc) {
+    auto it = clients_.find(addr);
+    if (it == clients_.end()) return;
+    // room.leave is handled specially so the sender's own room clears first.
+    if (rpc.name == "room.leave") {
+        it->second.room.clear();
+        SendRpc(it->second, "room.left", "{}");
+        return;
+    }
+    std::optional<std::pair<std::string, std::string>> reply;
+    if (!rpc_.Dispatch(it->second.clientId, rpc.name, rpc.argsJson, &reply)) {
+        NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Warn,
+                     "server: unhandled rpc '%s' from client %llu", rpc.name.c_str(),
+                     static_cast<unsigned long long>(it->second.clientId));
+        return;
+    }
+    if (reply) SendRpc(it->second, reply->first, reply->second);
+}
+
+void GameServer::SendRpc(Client& c, const std::string& name, const std::string& argsJson) {
+    net::MsgRpc rpc{name, argsJson};
+    core::Status st =
+        c.chan.Send(static_cast<uint8_t>(net::MsgType::Rpc), net::EncodeBody(rpc));
+    if (!st.Ok())
+        NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Debug,
+                     "server: rpc '%s' to client %llu deferred (%s)", name.c_str(),
+                     static_cast<unsigned long long>(c.clientId), st.Error().c_str());
+}
+
+void GameServer::BroadcastRoom(const std::string& room, const std::string& name,
+                               const std::string& argsJson) {
+    for (auto& kv : clients_) {
+        if (kv.second.room == room) SendRpc(kv.second, name, argsJson);
+    }
 }
 
 void GameServer::SendDespawn(Client& c, uint64_t entityId) {
@@ -700,6 +824,9 @@ void GameServer::DropTimedOutClients(uint64_t nowMs) {
 void GameServer::RemoveClient(const net::NetAddress& addr) {
     auto it = clients_.find(addr);
     if (it == clients_.end()) return;
+    // P2-4: leaving a client drops its room membership (room.chat etc. stop
+    // reaching it).
+    it->second.room.clear();
     const uint64_t id = it->second.clientId;
     if (it->second.accountId != 0) accountToClient_.erase(it->second.accountId);
     clients_.erase(it);

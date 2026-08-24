@@ -406,3 +406,48 @@ TEST(ProtocolTrailingBytes) {
     core::Result<net::DecodedMessage> dec = codec.Decode(bytes);
     CHECK(!dec.Ok());
 }
+
+// P2-4: MsgRpc round-trips and rejects hostile input.
+TEST(ProtocolRpcRoundTrip) {
+    net::MessageCodec codec;
+    net::MsgRpc in;
+    in.name = "room.broadcast";
+    in.argsJson = "{\"message\":\"hi\"}";
+    core::Result<std::vector<uint8_t>> enc =
+        codec.Encode(net::MsgType::Rpc, 7, in);
+    CHECK(enc.Ok());
+    core::Result<net::DecodedMessage> dec = codec.Decode(enc.Value());
+    CHECK(dec.Ok());
+    CHECK_EQ(dec.Value().header.msgId, static_cast<uint8_t>(net::MsgType::Rpc));
+    const net::MsgRpc& out = std::get<net::MsgRpc>(dec.Value().payload);
+    CHECK_EQ(out.name, "room.broadcast");
+    CHECK_EQ(out.argsJson, "{\"message\":\"hi\"}");
+}
+
+TEST(ProtocolRpcRejectsEmptyNameAndOversizedString) {
+    net::MessageCodec codec;
+    {
+        net::MsgRpc bad;
+        bad.name = "";
+        bad.argsJson = "{}";
+        core::Result<std::vector<uint8_t>> enc =
+            codec.Encode(net::MsgType::Rpc, 1, bad);
+        CHECK(enc.Ok());
+        core::Result<net::DecodedMessage> dec = codec.Decode(enc.Value());
+        CHECK(!dec.Ok());
+    }
+    {
+        // Oversized args string must be rejected on decode.
+        core::Serializer s;
+        s.WriteString("room.broadcast");
+        s.WriteString(std::string(net::kMaxStringBytes + 1, 'x'));
+        const std::vector<uint8_t>& data = s.Data();
+        core::Result<std::vector<uint8_t>> frame =
+            codec.EncodeFrame(static_cast<uint8_t>(net::MsgType::Rpc), 1,
+                              std::vector<uint8_t>(data.begin() + core::kHeaderBytes,
+                                                   data.end()));
+        CHECK(frame.Ok());
+        core::Result<net::DecodedMessage> dec = codec.Decode(frame.Value());
+        CHECK(!dec.Ok());
+    }
+}

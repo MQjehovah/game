@@ -227,6 +227,12 @@ bool PlayerApp::OnCreate() {
         CleanupUnpackedDir();
         return false;
     }
+    // P2-4: wire the Lua Rpc() binding to the networked channel and register
+    // the client-side informational handlers.
+    runtime_.ScriptContext().rpcCall = [this](const std::string& name,
+                                              const std::string& argsJson) {
+        SendRpc(name, argsJson);
+    };
     started_ = true;
     NEON_LOG_CAT(neon::core::LogCategory::Scene, neon::core::LogLevel::Info,
                  "player: '%s' started (%zu entities, %zu scripts, %zu trees, %zu draws)",
@@ -550,6 +556,9 @@ void PlayerApp::OnClientMessage(const net::DecodedMessage& msg) {
         case net::MsgType::Despawn:
             sync_.OnDespawn(std::get<net::MsgDespawn>(msg.payload).entityId);
             break;
+        case net::MsgType::Rpc:
+            HandleRpc(std::get<net::MsgRpc>(msg.payload));
+            break;
         case net::MsgType::Pong:
         case net::MsgType::Join:
         case net::MsgType::Input:
@@ -558,6 +567,39 @@ void PlayerApp::OnClientMessage(const net::DecodedMessage& msg) {
         case net::MsgType::Ack:
             break; // client-authoritative messages are ignored
     }
+}
+
+void PlayerApp::HandleRpc(const net::MsgRpc& rpc) {
+    std::optional<std::pair<std::string, std::string>> reply;
+    if (clientRpc_.Dispatch(0, rpc.name, rpc.argsJson, &reply)) {
+        if (reply) SendRpc(reply->first, reply->second);
+        return;
+    }
+    // Built-in informational RPCs the server sends are logged.
+    if (rpc.name == "room.chat") {
+        std::string from, message;
+        std::string perr;
+        core::Json args = core::Json::Parse(rpc.argsJson, &perr);
+        if (const core::Json* f = args.Get("from"))
+            from = std::to_string(static_cast<uint64_t>(f->GetNumber()));
+        if (const core::Json* m = args.Get("message")) message = m->GetString();
+        NEON_LOG_CAT(neon::core::LogCategory::Net, neon::core::LogLevel::Info,
+                     "client: room.chat from=%s: %s", from.c_str(), message.c_str());
+    } else if (rpc.name == "room.joined" || rpc.name == "room.left" ||
+               rpc.name == "room.list") {
+        NEON_LOG_CAT(neon::core::LogCategory::Net, neon::core::LogLevel::Info,
+                     "client: rpc '%s' %s", rpc.name.c_str(), rpc.argsJson.c_str());
+    } else {
+        NEON_LOG_CAT(neon::core::LogCategory::Net, neon::core::LogLevel::Debug,
+                     "client: unhandled rpc '%s'", rpc.name.c_str());
+    }
+}
+
+void PlayerApp::SendRpc(const std::string& name, const std::string& argsJson) {
+    if (!welcomed_) return;
+    net::MsgRpc rpc{name, argsJson};
+    clientChan_.Send(static_cast<uint8_t>(net::MsgType::Rpc),
+                     client::EncodeBody(rpc));
 }
 
 void PlayerApp::PumpNetwork() {

@@ -45,7 +45,8 @@ std::vector<uint8_t> EncodeBody(const T& msg) {
 // v1 -> v2: added the transport-level Ack message (T6.2 reliable layer).
 // v2 -> v3: added the account/login + character-select messages
 // (MsgLogin/MsgLoginOk/MsgCharList, T6.6 placeholder auth).
-inline constexpr uint8_t kProtocolVersion = 3;
+// v3 -> v4: added MsgRpc (P2-4 production RPC: named call + JSON args).
+inline constexpr uint8_t kProtocolVersion = 4;
 
 // Hard caps applied on decode to hostile input. Strings longer than
 // kMaxStringBytes and snapshots with more than kMaxSnapshotEntities entries
@@ -72,6 +73,7 @@ enum class MsgType : uint8_t {
     Login = 10,
     LoginOk = 11,
     CharList = 12,
+    Rpc = 13,
 };
 
 // Logical header of a decoded frame. The magic + CRC halves of the wire header
@@ -206,10 +208,23 @@ struct MsgCharList {
     static core::Result<MsgCharList> Read(core::Deserializer& d);
 };
 
+// P2-4 production RPC: a named remote call with a JSON-encoded argument
+// payload (any Lua table / engine value the caller serializes). Both peers
+// dispatch it through an RpcDispatcher; handlers may return a reply that is
+// sent back under the same name (the args of the reply are the handler's
+// result). Built-in server room handlers ("room.create/join/leave/list/
+// broadcast") build on this message.
+struct MsgRpc {
+    std::string name;
+    std::string argsJson;  // "{}" when no arguments
+    void Write(core::Serializer& s) const;
+    static core::Result<MsgRpc> Read(core::Deserializer& d);
+};
+
 // Type-erased payload of any message; alternative order matches MsgType ids.
 using Payload = std::variant<MsgJoin, MsgWelcome, MsgInput, MsgSnapshot, MsgSpawn,
                              MsgDespawn, MsgPing, MsgPong, MsgAck, MsgLogin,
-                             MsgLoginOk, MsgCharList>;
+                             MsgLoginOk, MsgCharList, MsgRpc>;
 
 // A fully decoded and validated frame.
 struct DecodedMessage {

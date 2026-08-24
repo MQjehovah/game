@@ -20,6 +20,8 @@ MsgType TypeOf(const Payload& p) {
         case 8: return MsgType::Ack;
         case 9: return MsgType::Login;
         case 10: return MsgType::LoginOk;
+        case 11: return MsgType::CharList;
+        case 12: return MsgType::Rpc;
         default: return MsgType::CharList;
     }
 }
@@ -293,6 +295,29 @@ core::Result<MsgCharList> MsgCharList::Read(core::Deserializer& d) {
     return core::Result<MsgCharList>::Ok(std::move(m));
 }
 
+void MsgRpc::Write(core::Serializer& s) const {
+    s.WriteString(name);
+    s.WriteString(argsJson);
+}
+
+core::Result<MsgRpc> MsgRpc::Read(core::Deserializer& d) {
+    MsgRpc out;
+    core::Result<std::string> name = d.ReadString();
+    if (!name.Ok()) return core::Result<MsgRpc>::Err("net: rpc name " + name.Error());
+    core::Result<std::string> args = d.ReadString();
+    if (!args.Ok()) return core::Result<MsgRpc>::Err("net: rpc args " + args.Error());
+    if (name.Value().size() > kMaxStringBytes)
+        return core::Result<MsgRpc>::Err("net: rpc name exceeds " +
+                                         std::to_string(kMaxStringBytes) + " bytes");
+    if (args.Value().size() > kMaxStringBytes)
+        return core::Result<MsgRpc>::Err("net: rpc args exceed " +
+                                         std::to_string(kMaxStringBytes) + " bytes");
+    out.name = std::move(name.Value());
+    out.argsJson = std::move(args.Value());
+    if (out.name.empty()) return core::Result<MsgRpc>::Err("net: rpc name must not be empty");
+    return core::Result<MsgRpc>::Ok(std::move(out));
+}
+
 core::Result<std::vector<uint8_t>> MessageCodec::Encode(MsgType type, uint16_t seq,
                                                         const Payload& payload) {
     if (TypeOf(payload) != type)
@@ -413,6 +438,12 @@ core::Result<DecodedMessage> MessageCodec::Decode(const uint8_t* data, size_t si
         }
         case MsgType::CharList: {
             core::Result<MsgCharList> m = MsgCharList::Read(d);
+            if (!m.Ok()) return core::Result<DecodedMessage>::Err(m.Error());
+            out.payload = std::move(m.Value());
+            break;
+        }
+        case MsgType::Rpc: {
+            core::Result<MsgRpc> m = MsgRpc::Read(d);
             if (!m.Ok()) return core::Result<DecodedMessage>::Err(m.Error());
             out.payload = std::move(m.Value());
             break;

@@ -863,6 +863,19 @@ Value NativeSetBusVolume(IScriptHost& host, void* user) {
     return Value::Nil();
 }
 
+// P2-4: Rpc(name, argsTable) -> sends a named call with JSON-serialized args
+// through the host's network layer (no-op when not wired).
+core::Json ValueToJson(const Value& v);  // defined below (with JsonToValue)
+Value NativeRpc(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->rpcCall) return Value::Nil();
+    const std::string name = StringArg(host, 0);
+    if (name.empty()) return Value::Nil();
+    const std::string json = core::JsonWriter::Write(ValueToJson(host.GetArg(1)));
+    ctx->rpcCall(name, json);
+    return Value::Nil();
+}
+
 Value NativePlaySfx(IScriptHost& host, void* user) {
     auto* ctx = static_cast<ScriptContext*>(user);
     if (!ctx || !ctx->playSfx) return Value::Nil();
@@ -898,6 +911,52 @@ Value JsonToValue(const core::Json& j) {
         }
     }
     return Value::Nil();
+}
+
+// P2-4: converts a Lua-shaped Value back into a core::Json DOM for RPC args.
+// Tables serialize as objects (fields) plus array entries under "1".."N"
+// keys when both are present; a pure array serializes as a JSON array.
+core::Json ValueToJson(const Value& v) {
+    core::Json j;
+    switch (v.type) {
+        case Value::Type::Nil:
+            j.type_ = core::Json::Type::Null;
+            break;
+        case Value::Type::Bool:
+            j.type_ = core::Json::Type::Bool;
+            j.bool_ = v.boolean;
+            break;
+        case Value::Type::Number:
+            j.type_ = core::Json::Type::Number;
+            j.number_ = v.number;
+            break;
+        case Value::Type::String:
+            j.type_ = core::Json::Type::String;
+            j.string_ = v.str;
+            break;
+        case Value::Type::Table: {
+            const bool hasFields = !v.table->fields.empty();
+            const bool hasArray = !v.table->array.empty();
+            if (hasFields || !hasArray) {
+                j.type_ = core::Json::Type::Object;
+                for (const auto& f : v.table->fields)
+                    j.object_[f.first] = ValueToJson(f.second);
+                if (hasArray) {
+                    for (size_t i = 0; i < v.table->array.size(); ++i)
+                        j.object_[std::to_string(i + 1)] = ValueToJson(v.table->array[i]);
+                }
+            } else {
+                j.type_ = core::Json::Type::Array;
+                for (const Value& item : v.table->array)
+                    j.array_.push_back(ValueToJson(item));
+            }
+            break;
+        }
+        default:
+            j.type_ = core::Json::Type::Null;
+            break;
+    }
+    return j;
 }
 
 Value NativeJsonParse(IScriptHost& host, void* user) {
@@ -1078,6 +1137,7 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("PlaySfx3D", &NativePlaySfx3D, &ctx);
     host.Register("SetAudioListener", &NativeSetListener, &ctx);
     host.Register("SetBusVolume", &NativeSetBusVolume, &ctx);
+    host.Register("Rpc", &NativeRpc, &ctx);
     host.Register("PlaySfx", &NativePlaySfx, &ctx);
     host.Register("InputAxis", &NativeInputAxis, &ctx);
     host.Register("InputKey", &NativeInputKey, &ctx);
