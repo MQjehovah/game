@@ -160,6 +160,11 @@ core::Result<SceneFile> SceneFile::Parse(const std::string& jsonText) {
         return core::Result<SceneFile>::Err("scene: root must be a JSON object");
 
     SceneFile out;
+    if (const core::Json* ex = root.Get("extends")) {
+        if (!ex->IsString())
+            return core::Result<SceneFile>::Err("scene: 'extends' must be a string");
+        out.extends = ex->GetString();
+    }
     const core::Json* ents = root.Get("entities");
     if (!ents || !ents->IsArray())
         return core::Result<SceneFile>::Err("scene: 'entities' must be an array");
@@ -208,6 +213,28 @@ core::Result<SceneFile> SceneFile::Parse(const std::string& jsonText) {
         out.level = *lv;
     }
     return core::Result<SceneFile>::Ok(std::move(out));
+}
+
+SceneFile SceneFile::Merge(const SceneFile& parent, const SceneFile& child) {
+    SceneFile out;
+    out.extends = child.extends.empty() ? parent.extends : child.extends;
+    out.gameVars = child.gameVars.IsObject() ? child.gameVars : parent.gameVars;
+    out.level = child.level.IsObject() ? child.level : parent.level;
+    // Parent entities first; child entities with the same name replace the
+    // parent's entry (keeping the parent's position), new names append.
+    out.entities = parent.entities;
+    for (const EntityDef& c : child.entities) {
+        bool replaced = false;
+        for (EntityDef& p : out.entities) {
+            if (!c.name.empty() && p.name == c.name) {
+                p = c;
+                replaced = true;
+                break;
+            }
+        }
+        if (!replaced) out.entities.push_back(c);
+    }
+    return out;
 }
 
 core::Json SceneFile::ToJson() const {

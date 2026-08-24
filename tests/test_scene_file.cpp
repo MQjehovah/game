@@ -697,3 +697,53 @@ TEST(SceneMeshDefaults) {
     CHECK_NEAR(m->metallic, 0.0, 1e-6);
     CHECK_NEAR(m->roughness, 1.0, 1e-6);
 }
+
+// P1-1 scene inheritance: "extends" parses, and Merge overlays parent entities
+// with same-name child overrides + appends new names.
+TEST(SceneInheritanceParseAndMerge) {
+    const std::string parentJson = R"({
+      "entities": [
+        {"name": "地面", "components": {"transform": {"pos": [0,0,0]}, "mesh": {"meshKey": "terrain"}}},
+        {"name": "树", "components": {"transform": {"pos": [1,0,0]}, "mesh": {"meshKey": "tree"}}}
+      ],
+      "gameVars": {"gold": 10}
+    })";
+    const std::string childJson = R"({
+      "extends": "scenes/parent.json",
+      "entities": [
+        {"name": "地面", "components": {"transform": {"pos": [5,0,0]}, "mesh": {"meshKey": "terrain"}}},
+        {"name": "英雄", "components": {"transform": {"pos": [0,1,0]}, "mesh": {"meshKey": "hero"}}}
+      ],
+      "gameVars": {"gold": 99}
+    })";
+    auto pp = scene::SceneFile::Parse(parentJson);
+    auto cc = scene::SceneFile::Parse(childJson);
+    CHECK(pp.Ok());
+    CHECK(cc.Ok());
+    CHECK_EQ(cc.Value().extends, "scenes/parent.json");
+
+    scene::SceneFile merged = scene::SceneFile::Merge(pp.Value(), cc.Value());
+    CHECK_EQ(merged.entities.size(), 3u);
+    // Overridden entity keeps its position (index 0) but child data wins.
+    CHECK_EQ(merged.entities[0].name, "地面");
+    bool foundGround = false;
+    bool foundTree = false;
+    bool foundHero = false;
+    for (const auto& e : merged.entities) {
+        if (e.name == "地面") {
+            foundGround = true;
+            for (const auto& c : e.components)
+                if (c.name == "transform")
+                    CHECK_NEAR(c.data.Get("pos")->At(0)->GetNumber(), 5.0, 1e-6);
+        } else if (e.name == "树") {
+            foundTree = true;
+        } else if (e.name == "英雄") {
+            foundHero = true;
+        }
+    }
+    CHECK(foundGround);
+    CHECK(foundTree);
+    CHECK(foundHero);
+    // Child gameVars win.
+    CHECK_NEAR(merged.gameVars.Get("gold")->GetNumber(), 99.0, 1e-6);
+}

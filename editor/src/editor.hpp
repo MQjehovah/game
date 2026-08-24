@@ -318,6 +318,7 @@ private:
     void OpenScriptEditor(const std::string& path);
     void SaveScriptEditor();
     void BuildScriptEditorPanel();
+    void SaveSceneAsChild();
     void OpenInExternalEditor(const std::string& path);
 
     // Package panel (T4.6): docked 打包 panel with project/out dir inputs, a
@@ -371,6 +372,7 @@ private:
     // is the single source of truth for both the editor and the runtime.
     core::Json currentSceneRoot_;
     std::string currentScenePath_;
+    std::string sceneExtends_; // P1-1: parent scene path ("" = no inheritance)
 
     float yaw_ = 0.7f;
     float pitch_ = 0.35f;

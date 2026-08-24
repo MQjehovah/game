@@ -48,6 +48,11 @@ struct LodEntry {
 struct SceneFile {
     std::vector<EntityDef> entities;
     core::Json gameVars; // object, or null when absent
+    // Optional parent scene path (P1-1 scene inheritance). When set, the
+    // parent scene's entities are loaded first and the child's same-named
+    // entities override them (new names append). The editor resolves this at
+    // load time (flattening); the runtime starts from flattened JSON.
+    std::string extends;
     // Optional scene-level data (any object, e.g. a 2D game's level layout:
     // {"plants": [...], "zombies": [...]}). Editors and scripts read/write it
     // as part of the scene file, so 2D and 3D scenes live in scenes/*.json.
@@ -57,6 +62,10 @@ struct SceneFile {
     // gameVars type). Semantic checks (transform presence, prefab resolution,
     // built-in field validation) happen in Instantiate.
     static core::Result<SceneFile> Parse(const std::string& jsonText);
+    // Scene inheritance merge (P1-1): parent entities first, child entities
+    // replace same-name parent entries and append new ones; child gameVars /
+    // level win when present.
+    static SceneFile Merge(const SceneFile& parent, const SceneFile& child);
 
     // Re-serialize the parsed scene back to a JSON DOM (instance level; prefab
     // references are preserved, not expanded).

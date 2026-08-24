@@ -1865,6 +1865,7 @@ void EditorApp::BuildImGuiUI() {
         if (ImGui::BeginMenu("文件")) {
             if (ImGui::MenuItem("保存场景", "Ctrl+S")) SaveScene();
             if (ImGui::MenuItem("加载场景", "Ctrl+L")) LoadScene("editor_scene.json");
+            if (ImGui::MenuItem("另存为子场景")) SaveSceneAsChild();
             ImGui::Separator();
             if (ImGui::MenuItem("退出")) {
                 if (Window()) Window()->RequestClose();
@@ -4155,6 +4156,12 @@ void EditorApp::ApplyMaterialParams(SceneEntity& e) {
 void EditorApp::SaveScene() {
     core::Json root;
     root.type_ = core::Json::Type::Object;
+    if (!sceneExtends_.empty()) {
+        core::Json ex;
+        ex.type_ = core::Json::Type::String;
+        ex.string_ = sceneExtends_;
+        root.object_["extends"] = ex;
+    }
     core::Json arr;
     arr.type_ = core::Json::Type::Array;
     for (const SceneEntity& e : entities_) {
@@ -4225,6 +4232,85 @@ void EditorApp::SaveScene() {
     }
 }
 
+// P1-1: writes a copy of the current scene as <dir>/<stem>_child.json with
+// "extends" pointing at the current scene, then opens it. The child loads with
+// the parent's entities underneath, so parent edits propagate and child
+// same-name entities override.
+void EditorApp::SaveSceneAsChild() {
+    if (currentScenePath_.empty()) {
+        NEON_LOG_WARN("Editor: 另存为子场景 needs a loaded scene file");
+        return;
+    }
+    std::ifstream in(currentScenePath_, std::ios::binary);
+    if (!in.is_open()) return;
+    std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    std::string perr;
+    core::Json root = core::Json::Parse(text, &perr);
+    if (!root.IsObject()) {
+        NEON_LOG_ERROR("Editor: cannot save child scene (parse error: %s)", perr.c_str());
+        return;
+    }
+    const size_t slash = currentScenePath_.find_last_of("/\\");
+    const std::string dir = slash == std::string::npos ? "" : currentScenePath_.substr(0, slash + 1);
+    const std::string base =
+        slash == std::string::npos ? currentScenePath_ : currentScenePath_.substr(slash + 1);
+    const size_t dot = base.rfind('.');
+    const std::string stem = dot == std::string::npos ? base : base.substr(0, dot);
+    core::Json ex;
+    ex.type_ = core::Json::Type::String;
+    ex.string_ = currentScenePath_;
+    root.object_["extends"] = ex;
+    const std::string childPath = dir + stem + "_child.json";
+    if (std::ofstream out(childPath, std::ios::binary); out.is_open()) {
+        out << core::JsonWriter::Write(root);
+        NEON_LOG_INFO("Editor: child scene saved -> %s (extends %s)", childPath.c_str(),
+                      currentScenePath_.c_str());
+        LoadScene(childPath);
+    }
+}
+
+// P1-1 scene inheritance: parent entities first; a child entity with the same
+// name replaces the parent's entry (keeping its position), new names append.
+// gameVars / level: the child wins when present.
+static core::Json MergeSceneJson(const core::Json& parent, const core::Json& child) {
+    core::Json out = parent;
+    if (const core::Json* gv = child.Get("gameVars")) out.object_["gameVars"] = *gv;
+    if (const core::Json* lv = child.Get("level")) out.object_["level"] = *lv;
+    std::vector<core::Json> merged;
+    if (const core::Json* pents = parent.Get("entities")) {
+        if (pents->IsArray())
+            for (const core::Json& e : pents->Items()) merged.push_back(e);
+    }
+    if (const core::Json* cents = child.Get("entities")) {
+        if (cents->IsArray()) {
+            for (const core::Json& c : cents->Items()) {
+                const std::string cname =
+                    c.Get("name") ? c.Get("name")->GetString("") : std::string();
+                bool replaced = false;
+                for (core::Json& e : merged) {
+                    const std::string ename =
+                        e.Get("name") ? e.Get("name")->GetString("") : std::string();
+                    // Same-name entities only override when the child differs
+                    // (a full-copy child inherits identical entities from the
+                    // parent, so parent edits propagate to the child).
+                    if (!cname.empty() && ename == cname &&
+                        core::JsonWriter::Write(c) != core::JsonWriter::Write(e)) {
+                        e = c;
+                        replaced = true;
+                        break;
+                    }
+                }
+                if (!replaced) merged.push_back(c);
+            }
+        }
+    }
+    core::Json arr;
+    arr.type_ = core::Json::Type::Array;
+    arr.array_ = std::move(merged);
+    out.object_["entities"] = std::move(arr);
+    return out;
+}
+
 void EditorApp::LoadScene(const std::string& path) {
     std::ifstream in(path);
     if (!in.is_open()) return;
@@ -4232,6 +4318,44 @@ void EditorApp::LoadScene(const std::string& path) {
     ss << in.rdbuf();
     std::string err;
     core::Json root = core::Json::Parse(ss.str(), &err);
+    // P1-1 scene inheritance: resolve "extends" chains by loading the parent
+    // file(s) and overlaying same-named entities (child wins, new names
+    // append). The parent path is kept so SaveScene writes it back.
+    sceneExtends_.clear();
+    if (const core::Json* ex = root.Get("extends")) {
+        if (ex->IsString() && !ex->GetString().empty()) {
+            const std::string parentPath = ex->GetString();
+            sceneExtends_ = parentPath;
+            std::ifstream pin(parentPath);
+            if (pin.is_open()) {
+                std::stringstream pss;
+                pss << pin.rdbuf();
+                core::Json parent = core::Json::Parse(pss.str(), &err);
+                if (parent.IsObject() && parent.Get("entities")) {
+                    // Recursively resolve the parent's own inheritance first.
+                    std::ifstream prein(parentPath);
+                    (void)prein;
+                    if (const core::Json* pex = parent.Get("extends")) {
+                        if (pex->IsString() && !pex->GetString().empty()) {
+                            std::ifstream pin2(pex->GetString());
+                            if (pin2.is_open()) {
+                                std::stringstream pss2;
+                                pss2 << pin2.rdbuf();
+                                core::Json grand = core::Json::Parse(pss2.str(), &err);
+                                if (grand.IsObject() && grand.Get("entities")) {
+                                    parent = MergeSceneJson(grand, parent);
+                                    parent.object_.erase("extends");
+                                }
+                            }
+                        }
+                    }
+                    parent.object_.erase("extends");
+                    root = MergeSceneJson(parent, root);
+                }
+            }
+            root.object_.erase("extends");
+        }
+    }
     const core::Json* arr = root.Get("entities");
     if (!arr) return;
     // Keep the parsed scene root + path: 2D levels live inside the scene as
