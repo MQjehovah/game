@@ -10,11 +10,21 @@
 | P0-2 Vulkan 灰度 | 完成 | 采样器 set/binding 与管线布局对齐；移除旧 exposure hack；`--backend vulkan` 与 GL 逐像素一致 |
 | P0-3 资源生命周期 | 完成 | AssetManager 引用计数 + 延迟回收；Chunk 卸载释放；ObjectPool |
 | P0-1 Jolt 物理 | 完成 | vendored Jolt v5.0.0；JoltWorld（刚体/碰撞层/射线/角色控制器）；需 GCC>=9（已升级 MinGW 16.2） |
-| P1-3 动画 | 完成 | BlendSpace1D/2D、两骨骼 IK、Lua Tween（pos/rot/scale，缓动） |
+| P1-3 动画 | 完成 | BlendSpace1D/2D、两骨骼 IK、Lua Tween、.anim.json clip 时间线编辑器 |
 | P1-1 组 | 完成 | `groups` 组件 + `GetEntitiesInGroup` + 编辑器 schema |
-| P1-2 Lua 调试器 | 部分 | 断点/单步/局部变量/调用栈（顶层帧）已在编辑器 playtest 可用；自动补全/悬停文档未做 |
-| P1-1 其余 | 未做 | 场景继承、节点类型表、动画时间线编辑器、地形/世界编辑、tilemap、shader 面板、导入 watch |
-| P2 | 未做 | 渲染表现、3D 音频、2D 路径、网络生产化、平台、工程质量 |
+| P1-1 场景继承 | 完成 | `extends` 父场景 + 同名实体覆盖合并 + 编辑器"另存为子场景" |
+| P1-1 节点类型表 | 完成 | nodeType 类型表 + 相机组件 + 以选中相机为视图 |
+| P1-1 动画时间线 | 完成 | 数据驱动 clip JSON + 关键帧/播放头编辑面板 |
+| P1-1 地形编辑 | 完成 | 高度图组件 + 笔刷雕刻 + 运行时按高度建网格 |
+| P1-1 2D tilemap | 完成 | tilemap 组件 + 网格涂色面板 + 运行时逐格渲染 |
+| P1-1 导入管线 | 完成 | 资产目录 watch 自动刷新 + 场景引用资产 mtime 自动重导入 |
+| P1-1 shader/材质 | 完成 | 材质球已有；新增自定义片元 shader 文件 + 热重载面板（GL；Vulkan 文档化不支持） |
+| P1-2 Lua 调试器 | 完成 | 断点/单步/局部变量/调用栈（顶层帧）+ 引擎绑定参考与补全 |
+| P2-2 音频 | 完成 | 立体声混音、Master/Sfx/Music 总线、3D 空间音效、WAV 加载、Lua 绑定 |
+| P2-3 2D 路径 | 完成 | 精灵 z 排序、场景相机实体（Camera3D）、tilemap |
+| P2-6 工程质量 | 完成 | `--bench` 基准日志、shader 热重载、资产 watch |
+| P2-1 渲染表现 | 未做 | SSAO、GPU 粒子、体积雾、贴花、GI（渲染大项，建议下阶段按序推进） |
+| P2-4/5 网络/平台 | 未做 | RPC/房间/WebSocket/TLS、WASM/macOS/Linux 实机验证 |
 
 构建注意：Jolt 需要新工具链，工程现用 MSYS2 MinGW-w64 GCC 16.2（`C:\msys64\mingw64\bin`，
 已加入用户 PATH）。旧 MinGW 8.1 无法编译 Jolt。
