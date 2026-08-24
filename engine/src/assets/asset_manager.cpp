@@ -971,14 +971,18 @@ GltfAsset AssetManager::LoadGLTF(const std::string& path) {
                                                        "gltf");
             if (mesh.Valid()) {
                 if (rm.skinned) {
-                    // This Blender export writes JOINTS_0 as glTF node indices
-                    // (not the spec's skin.joints subscript), and the engine's
-                    // bone array is node-indexed too, so bind directly
-                    // (bone == node). See skinned_model.cpp: the skin bind on
-                    // this export does not reproduce the authored verts under
-                    // GPU skinning, so the renderer draws the bind mesh
-                    // unbent for now.
-                    mesh.AttachSkinData(rm.jointIds, rm.jointWeights, n.skin);
+                    // glTF spec: JOINTS_0 stores indices *into* skin.joints,
+                    // while the engine's bone array is indexed by glTF *node*
+                    // (bone == node). Remap each vertex's joint id through the
+                    // skin's joint table so it picks the right bone matrix.
+                    std::vector<uint16_t> jids = rm.jointIds;
+                    if (n.skin >= 0 && n.skin < static_cast<int>(skins.size())) {
+                        const gfx::Skin& sk = skins[static_cast<size_t>(n.skin)];
+                        for (uint16_t& ji : jids)
+                            if (ji < sk.joints.size())
+                                ji = static_cast<uint16_t>(sk.joints[ji]);
+                    }
+                    mesh.AttachSkinData(std::move(jids), rm.jointWeights, n.skin);
                 }
                 // Track under a per-node key so AssetManager::Stats() counts
                 // glTF meshes in the resource panel (meshes_ otherwise only

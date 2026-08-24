@@ -53,4 +53,11 @@ core::Result<SkinnedModel> LoadSkinnedModel(assets::AssetManager& assets,
 // standalone demo's wolf rig).
 void FixSkinBind(anim::Skeleton& skeleton, const std::vector<uint32_t>& jointNodes);
 
+// Detects whether the skin's inverseBind reproduces the authored mesh under
+// bind-go skinning (bind skin-matrix ~identity). Non-standard exports (e.g.
+// Blender fur rigs where node REST != inverseBind) get rebound via
+// FixSkinBind; standard models are left untouched. Call on a skeleton built
+// from ImportGltf before animating.
+void EnsureValidSkinBind(anim::Skeleton& skeleton, const std::vector<uint32_t>& jointNodes);
+
 } // namespace neon::scene

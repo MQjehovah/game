@@ -1564,8 +1564,10 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera) {
         }
         const math::Vec3 worldPos{model.m[12], model.m[13], model.m[14]};
         if (item.skinned && item.skinned->Valid()) {
+            const std::vector<math::Mat4> bones = item.skinned->BoneMatrices();
             for (const auto& part : item.skinned->parts)
-                renderer.DrawMesh(part.mesh, part.material, model * part.localTransform);
+                renderer.DrawSkinnedMesh(part.mesh, part.material, model * part.localTransform,
+                                         bones, static_cast<int>(bones.size()));
         } else if (item.isSprite) {
             // Flip mirrors the quad around its center: a negative local scale
             // keeps the texture upright and needs no UV/shader changes.

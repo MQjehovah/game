@@ -7,6 +7,8 @@
 
 #include "font_data.hpp"
 
+#include "neon/scene/skinned_model.hpp"
+
 #include <fstream>
 #include <sstream>
 
@@ -978,7 +980,8 @@ void GameScene::Draw(gfx::Renderer& renderer) {
         if (ce && !ce->bones.empty() && cm->mesh.Skinned()) {
             const math::Mat4 model = tf->Model();
             for (const assets::GltfMeshNode& part : wolfParts_) {
-                renderer.DrawMesh(part.mesh, part.material, model);
+                renderer.DrawSkinnedMesh(part.mesh, part.material, model, ce->bones,
+                                         static_cast<int>(ce->bones.size()));
             }
         } else {
             renderer.DrawMesh(cm->mesh, cm->mat, tf->Model());
@@ -1349,6 +1352,9 @@ bool NeonApp::OnCreate() {
             anim::ImportGltf(ss.str(), assets_.wolfGltf, 0);
         if (animResult.Ok()) {
             assets_.wolfAnim = std::move(animResult.Value());
+            if (!assets_.wolfGltf.skins.empty())
+                scene::EnsureValidSkinBind(assets_.wolfAnim.skeleton,
+                                           assets_.wolfGltf.skins[0].joints);
             NEON_LOG_INFO("Wolf: %zu clips, %zu bones, %zu mesh nodes",
                           assets_.wolfAnim.clips.size(),
                           assets_.wolfAnim.skeleton.bones.size(),

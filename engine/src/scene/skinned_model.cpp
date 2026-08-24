@@ -108,6 +108,22 @@ void FixSkinBind(anim::Skeleton& sk, const std::vector<uint32_t>& jointNodes) {
     FixSkinBindImpl(sk, jointNodes);
 }
 
+void EnsureValidSkinBind(anim::Skeleton& sk, const std::vector<uint32_t>& jointNodes) {
+    const anim::Pose bp = sk.BindPose();
+    const std::vector<math::Mat4> bm = sk.ComputeBoneMatrices(bp);
+    float worst = 0.0f;
+    for (const math::Mat4& m : bm)
+        for (int r = 0; r < 4; ++r)
+            for (int c = 0; c < 4; ++c) {
+                const float e = (r == c) ? 1.0f : 0.0f;
+                worst = std::max(worst, std::fabs(m.m[r * 4 + c] - e));
+            }
+    if (worst > 1e-3f) {
+        FixSkinBind(sk, jointNodes);
+        NEON_LOG_INFO("Skin: non-standard bind (offset %.3f); rebound from node-REST", worst);
+    }
+}
+
 void SkinnedModel::Update(float dt) {
     if (defaultClip >= 0) animator.Update(dt);
 }
@@ -148,13 +164,12 @@ core::Result<SkinnedModel> LoadSkinnedModel(assets::AssetManager& assets,
     SkinnedModel out;
     out.skeleton = std::move(animSet.Value().skeleton);
     out.clips = std::move(animSet.Value().clips);
-    // Fix the bind pose from the skin's own inverseBind (some exporters put a
-    // non-bind TRS on nodes); makes bind-go skinning reproduce the authored
-    // vertices and keeps animation correct relative to the true bind.
-    std::vector<uint32_t> jointNodes;
-    if (skinIndex >= 0 && skinIndex < static_cast<int>(gltf.skins.size()))
-        jointNodes = gltf.skins[static_cast<size_t>(skinIndex)].joints;
-    FixSkinBind(out.skeleton, jointNodes);
+    {
+        std::vector<uint32_t> jointNodes;
+        if (skinIndex >= 0 && skinIndex < static_cast<int>(gltf.skins.size()))
+            jointNodes = gltf.skins[static_cast<size_t>(skinIndex)].joints;
+        EnsureValidSkinBind(out.skeleton, jointNodes);
+    }
     for (const assets::GltfMeshNode& n : gltf.nodes) {
         if (!n.mesh.Skinned()) continue; // skip unskinned decorative nodes
         // Skip transparent layers with no base texture (e.g. Blender fur-card

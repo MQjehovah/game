@@ -3712,8 +3712,18 @@ void EditorApp::RenderModelPreviewPanel() {
     pcam.target = center;
     renderer_.SetCamera(pcam, static_cast<float>(w) / static_cast<float>(h));
     renderer_.SetDirectionalLight({-0.4f, -1.0f, -0.3f}, {1.0f, 0.95f, 0.9f}, 0.5f);
+    anim::Pose pose = previewModel_->skeleton.BindPose();
+    if (previewClip_ >= 0 &&
+        previewClip_ < static_cast<int>(previewModel_->clips.size())) {
+        const anim::AnimationClip& clip =
+            previewModel_->clips[static_cast<size_t>(previewClip_)];
+        clip.Sample(previewTime_, pose);
+    }
+    const std::vector<math::Mat4> bones =
+        previewModel_->skeleton.ComputeBoneMatrices(pose);
     for (const scene::SkinnedModel::Part& part : previewModel_->parts)
-        renderer_.DrawMesh(part.mesh, part.material, math::Mat4::Identity());
+        renderer_.DrawSkinnedMesh(part.mesh, part.material, math::Mat4::Identity(), bones,
+                                  static_cast<int>(bones.size()));
     b->BindDefaultTarget();
 }
 

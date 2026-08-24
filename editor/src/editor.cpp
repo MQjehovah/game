@@ -1690,12 +1690,11 @@ void EditorApp::OnRender() {
                                                            e.spriteFlipY ? -1.0f : 1.0f, 1.0f});
                     renderer_.DrawMesh(e.spriteMesh, e.spriteMaterial, model);
                 } else if (e.skinned && e.skinned->Valid()) {
-                    // This Blender fur rig's skin bind does not line up with
-                    // the mesh verts (bind skin-matrix offset ~2.0), so render
-                    // the bind mesh unbent rather than a distorted skin.
+                    const std::vector<math::Mat4> bones = e.skinned->BoneMatrices();
                     for (const auto& part : e.skinned->parts)
-                        renderer_.DrawMesh(part.mesh, part.material,
-                                           model * part.localTransform);
+                        renderer_.DrawSkinnedMesh(part.mesh, part.material,
+                                                  model * part.localTransform, bones,
+                                                  static_cast<int>(bones.size()));
                 } else {
                     renderer_.DrawMesh(e.mesh, e.material, model);
                 }
