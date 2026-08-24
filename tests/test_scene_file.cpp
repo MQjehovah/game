@@ -769,7 +769,7 @@ TEST(SceneSortOrderAndCameraComponents) {
         bgEnt = e;
         CHECK_NEAR(s.z, -5.0f, 1e-6f);
     });
-    CHECK(bgEnt.Valid());
+    CHECK(bgEnt.IsValid());
 
     bool camFound = false;
     world.ViewAll<scene::SceneCamera, scene::SceneNodeType>().ForEach(
