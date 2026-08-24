@@ -917,6 +917,40 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                      world.Add<SceneGroups>(ent, std::move(out));
                      return true;
                  });
+
+    reg.Register("type",
+                 [](ecs::World& world, ecs::Entity ent, const core::Json& data,
+                    const core::Json&, std::string* err) {
+                     if (!CheckComponentShape(data, {"value"}, "type", err)) return false;
+                     SceneNodeType t;
+                     if (const core::Json* v = data.Get("value")) {
+                         if (!v->IsString()) {
+                             if (err) *err = "component 'type' field 'value' must be a string";
+                             return false;
+                         }
+                         t.value = v->GetString();
+                     }
+                     world.Add<SceneNodeType>(ent, std::move(t));
+                     return true;
+                 });
+
+    reg.Register("camera",
+                 [](ecs::World& world, ecs::Entity ent, const core::Json& data,
+                    const core::Json&, std::string* err) {
+                     if (!CheckComponentShape(data, {"fov", "ortho"}, "camera", err))
+                         return false;
+                     SceneCamera c;
+                     if (!RequireNumber(data, "fov", "camera", c.fov, err)) return false;
+                     if (const core::Json* o = data.Get("ortho")) {
+                         if (!o->IsBool()) {
+                             if (err) *err = "component 'camera' field 'ortho' must be a bool";
+                             return false;
+                         }
+                         c.ortho = o->GetBool();
+                     }
+                     world.Add<SceneCamera>(ent, c);
+                     return true;
+                 });
 }
 
 // --- Instantiate -------------------------------------------------------------

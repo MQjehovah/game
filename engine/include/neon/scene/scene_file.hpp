@@ -244,6 +244,18 @@ struct SceneName {
 struct SceneGroups {
     std::vector<std::string> groups;
 };
+// Node type table (P1-1): an explicit type for the inspector/editor (Node /
+// MeshInstance3D / Camera3D / CharacterBody / Sprite / Light3D). Empty = the
+// editor auto-derives the type from the mesh key / sprite.
+struct SceneNodeType {
+    std::string value;
+};
+// Camera3D component: view parameters for a camera entity (used by editors /
+// tools; the runtime reads the active camera from the scene when present).
+struct SceneCamera {
+    float fov = 60.0f;  // vertical field of view, degrees
+    bool ortho = false;
+};
 
 // A component factory builds a component onto `ent` from its effective JSON
 // data. Args: world, entity, merged component data (prefab already applied),

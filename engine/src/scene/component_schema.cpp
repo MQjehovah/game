@@ -7,6 +7,8 @@ const char* kPlantTypes[] = {"sunflower", "peashooter", "wallnut", "snowpea", "c
 const char* kZombieTypes[] = {"basic", "cone", "bucket"};
 const char* kScriptBackends[] = {"lua"};
 const char* kRigidBodyShapes[] = {"sphere", "box"};
+const char* kNodeTypes[] = {"Node", "MeshInstance3D", "Camera3D",
+                            "CharacterBody", "Sprite", "Light3D"};
 
 std::vector<ComponentSchema> BuildSchemas() {
     std::vector<ComponentSchema> out;
@@ -40,6 +42,11 @@ std::vector<ComponentSchema> BuildSchemas() {
                    {{"path", "行为树路径", FieldType::String, 0, 0, 0, 0}}});
     out.push_back({"name", "名称", {{"value", "值", FieldType::String, 0, 0, 0, 0}}});
     out.push_back({"groups", "组", {{"groups", "组 (逗号分隔)", FieldType::String, 0, 0, 0, 0}}});
+    out.push_back({"type", "类型",
+                   {{"value", "类型", FieldType::Enum, 0, 0, 0, 0, kNodeTypes, 6}}});
+    out.push_back({"camera", "相机",
+                   {{"fov", "视野 (度)", FieldType::Number, 60, 20, 120, 1},
+                    {"ortho", "正交", FieldType::Bool, 0, 0, 1, 0}}});
     out.push_back({"rigidbody", "刚体",
                    {{"shape", "形状", FieldType::Enum, 0, 0, 0, 0, kRigidBodyShapes, 2},
                     {"radius", "半径", FieldType::Number, 0.5, 0.01, 100, 0.1},

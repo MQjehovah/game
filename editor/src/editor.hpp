@@ -32,6 +32,11 @@ struct SceneEntity {
     std::string name;
     std::string parent; // scene-tree parent by entity name ("" = root)
     std::string prefab; // prefabs/<name>.json template reference ("" = none)
+    // Node type (P1-1): "Node" | "MeshInstance3D" | "Camera3D" | "CharacterBody"
+    // | "Sprite" | "Light3D" | "" (auto-derived from meshKey/sprite).
+    std::string nodeType;
+    float cameraFov = 60.0f;  // Camera3D type only (degrees)
+    bool cameraOrtho = false; // Camera3D type only
     std::string meshKey; // "terrain" | "helmet" | "cube" | "tree" | "obj:<path>" | "gltf:<path>"
     math::Vec3 pos{};
     math::Quat rot{};

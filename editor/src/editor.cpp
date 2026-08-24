@@ -4190,6 +4190,11 @@ void EditorApp::SaveScene() {
             return j;
         };
         obj.object_["mesh"] = str(e.meshKey);
+        if (!e.nodeType.empty()) obj.object_["nodeType"] = str(e.nodeType);
+        if (e.nodeType == "Camera3D") {
+            obj.object_["cameraFov"] = num(e.cameraFov);
+            if (e.cameraOrtho) obj.object_["cameraOrtho"] = num(1);
+        }
         if (!e.spriteTex.empty()) obj.object_["spriteTex"] = str(e.spriteTex);
         if (e.spriteFlipX) obj.object_["spriteFlipX"] = num(1);
         if (e.spriteFlipY) obj.object_["spriteFlipY"] = num(1);
@@ -4433,6 +4438,16 @@ void EditorApp::LoadScene(const std::string& path) {
                 if (const core::Json* v = h->Get("hp")) e.hp = static_cast<float>(v->GetNumber());
                 if (const core::Json* v = h->Get("maxHp")) e.maxHp = static_cast<float>(v->GetNumber());
             }
+            if (const core::Json* nt = comps->Get("type")) {
+                e.nodeType =
+                    nt->Get("value") ? nt->Get("value")->GetString() : nt->GetString();
+            }
+            if (const core::Json* cam = comps->Get("camera")) {
+                if (const core::Json* v = cam->Get("fov"))
+                    e.cameraFov = static_cast<float>(v->GetNumber());
+                if (const core::Json* v = cam->Get("ortho")) e.cameraOrtho = v->GetBool();
+                if (e.nodeType.empty()) e.nodeType = "Camera3D";
+            }
             if (const core::Json* s = comps->Get("script")) {
                 // Legacy single "script" component: one mounted script.
                 if (s->IsObject()) {
@@ -4500,6 +4515,11 @@ void EditorApp::LoadScene(const std::string& path) {
             }
         } else {
             if (const core::Json* p = j->Get("parent")) e.parent = p->GetString();
+            if (const core::Json* nt = j->Get("nodeType")) e.nodeType = nt->GetString();
+            if (const core::Json* cf = j->Get("cameraFov"))
+                e.cameraFov = static_cast<float>(cf->GetNumber());
+            if (const core::Json* co = j->Get("cameraOrtho"))
+                e.cameraOrtho = co->GetBool() || co->GetNumber() != 0;
             e.meshKey = j->Get("mesh")->GetString("cube");
             if (const core::Json* st = j->Get("spriteTex")) e.spriteTex = st->GetString();
             if (const core::Json* fx = j->Get("spriteFlipX")) e.spriteFlipX = fx->GetInt(0) != 0;

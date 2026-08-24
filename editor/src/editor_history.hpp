@@ -208,6 +208,9 @@ inline void ApplyEmissiveIntensityProp(SceneEntity& e, const float& v) {
 }
 inline void ApplyNameProp(SceneEntity& e, const std::string& v) { e.name = v; }
 inline void ApplyParentProp(SceneEntity& e, const std::string& v) { e.parent = v; }
+inline void ApplyNodeTypeProp(SceneEntity& e, const std::string& v) { e.nodeType = v; }
+inline void ApplyCameraFovProp(SceneEntity& e, const float& v) { e.cameraFov = v; }
+inline void ApplyCameraOrthoProp(SceneEntity& e, const bool& v) { e.cameraOrtho = v; }
 
 // 2D sprite mirroring: flips both axes in one undo step.
 struct SpriteFlipValue {

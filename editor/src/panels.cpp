@@ -103,12 +103,17 @@ std::string TypeLabel(const std::string& key) {
 // components / mesh kind (plant/zombie from the 2D canvas, sprite, prefab,
 // or the mesh type).
 std::string EntityTypeLabel(const SceneEntity& e) {
+    if (!e.nodeType.empty()) return e.nodeType;
     if (e.extraComponents.count("plant")) return "植物";
     if (e.extraComponents.count("zombie")) return "僵尸";
     if (!e.spriteTex.empty()) return "精灵";
     if (!e.prefab.empty()) return "预制体: " + e.prefab;
     return TypeLabel(e.meshKey);
 }
+
+// Node type table (P1-1): the combo list for the inspector.
+const char* kNodeTypes[] = {"Node", "MeshInstance3D", "Camera3D",
+                            "CharacterBody", "Sprite", "Light3D"};
 
 std::string ToLower(std::string s) {
     std::transform(s.begin(), s.end(), s.begin(),
@@ -1217,8 +1222,42 @@ void EditorApp::BuildInspectorPanel() {
                 }
             }
         }
-        ImGui::TextColored(ImVec4(0.85f, 0.9f, 1.0f, 1.0f), "类型: %s",
-                           EntityTypeLabel(e).c_str());
+        // Node type table (P1-1): explicit type overrides the auto-derived
+        // label; the inspector renders type-specific sections below.
+        {
+            const std::string current = e.nodeType.empty() ? EntityTypeLabel(e) : e.nodeType;
+            int sel = 0;
+            for (int i = 0; i < static_cast<int>(sizeof(kNodeTypes) / sizeof(kNodeTypes[0])); ++i)
+                if (current == kNodeTypes[i]) sel = i;
+            if (ImGui::Combo("类型", &sel, kNodeTypes,
+                             static_cast<int>(sizeof(kNodeTypes) / sizeof(kNodeTypes[0])))) {
+                const std::string oldType = e.nodeType;
+                e.nodeType = kNodeTypes[sel];
+                history_.Push(std::make_unique<EditPropertyCommand<std::string>>(
+                    &entities_, selected_, ApplyNodeTypeProp, oldType, e.nodeType,
+                    /*mergeable=*/false));
+            }
+            if (!e.nodeType.empty())
+                ImGui::TextDisabled("自动类型: %s", EntityTypeLabel(e).c_str());
+        }
+        if (e.nodeType == "Camera3D") {
+            const float oldFov = e.cameraFov;
+            if (ImGui::DragFloat("视野 (度)", &e.cameraFov, 0.5f, 20.0f, 120.0f)) {
+                history_.Push(std::make_unique<EditPropertyCommand<float>>(
+                    &entities_, selected_, ApplyCameraFovProp, oldFov, e.cameraFov));
+            }
+            const bool oldOrtho = e.cameraOrtho;
+            if (ImGui::Checkbox("正交相机", &e.cameraOrtho)) {
+                history_.Push(std::make_unique<EditPropertyCommand<bool>>(
+                    &entities_, selected_, ApplyCameraOrthoProp, oldOrtho, e.cameraOrtho));
+            }
+            ImGui::TextDisabled("将相机实体选中并设为视图: 使用右上角相机菜单的\"跟随选中\"");
+            ImGui::Separator();
+        }
+        if (e.nodeType == "Sprite" && e.spriteTex.empty()) {
+            ImGui::TextColored(ImVec4(0.8f, 0.85f, 1.0f, 1.0f),
+                               "精灵类型: 在下方\"精灵\"区块设置贴图");
+        }
         if (!e.spriteTex.empty()) {
             ImGui::TextDisabled("精灵贴图: %s", e.spriteTex.c_str());
             const SpriteFlipValue oldFlip{e.spriteFlipX, e.spriteFlipY};
