@@ -1564,8 +1564,6 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera) {
         }
         const math::Vec3 worldPos{model.m[12], model.m[13], model.m[14]};
         if (item.skinned && item.skinned->Valid()) {
-            // Blender's skin bind on this glTF doesn't reproduce the authored
-            // vertices deterministically, so render the bind mesh unbent.
             for (const auto& part : item.skinned->parts)
                 renderer.DrawMesh(part.mesh, part.material, model * part.localTransform);
         } else if (item.isSprite) {

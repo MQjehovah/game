@@ -46,4 +46,11 @@ struct SkinnedModel {
 core::Result<SkinnedModel> LoadSkinnedModel(assets::AssetManager& assets,
                                             const std::string& path);
 
+// Makes a skeleton's bind pose reproduce the authored mesh under skinning:
+// rewrites each skin joint's bind global to inverse(inverseBind), so bind-go
+// skinning is identity (some exporters put a non-bind TRS on nodes). Called
+// by LoadSkinnedModel; expose a detail AnimSet skeleton to it too (e.g. the
+// standalone demo's wolf rig).
+void FixSkinBind(anim::Skeleton& skeleton, const std::vector<uint32_t>& jointNodes);
+
 } // namespace neon::scene

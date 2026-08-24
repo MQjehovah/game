@@ -1690,9 +1690,9 @@ void EditorApp::OnRender() {
                                                            e.spriteFlipY ? -1.0f : 1.0f, 1.0f});
                     renderer_.DrawMesh(e.spriteMesh, e.spriteMaterial, model);
                 } else if (e.skinned && e.skinned->Valid()) {
-                    // Blender's skin bind on this glTF doesn't reproduce the
-                    // authored vertices deterministically, so draw the bind
-                    // mesh unbent for now (DrawMesh uses the bind vertices).
+                    // This Blender fur rig's skin bind does not line up with
+                    // the mesh verts (bind skin-matrix offset ~2.0), so render
+                    // the bind mesh unbent rather than a distorted skin.
                     for (const auto& part : e.skinned->parts)
                         renderer_.DrawMesh(part.mesh, part.material,
                                            model * part.localTransform);
@@ -2181,16 +2181,23 @@ void EditorApp::DrawCameraFrame() {
 }
 
 void EditorApp::UpdateViewport(float dt) {
-    // Model preview: orbit/zoom on the open glTF instead of the scene.
-    if (showModelPreview_ && previewModel_) {
+    // Model preview camera: only when the mouse is actually over the preview
+    // panel; otherwise this falls through and the main viewport camera keeps
+    // driving (right-drag in the 3D view must not rotate the preview).
+    if (showModelPreview_ && previewModel_ && previewScreenRect_.w > 0.0f) {
         platform::IInput* in = Input();
-        math::Vec2 mp = renderer_.ScreenToUI(in->MousePos());
-        if (in->MouseDown(platform::MouseButton::Right)) {
-            previewYaw_ += -in->MouseDelta().x * 0.005f;
-            previewPitch_ = math::Clamp(previewPitch_ + -in->MouseDelta().y * 0.005f,
-                                        -1.4f, 1.4f);
+        const math::Vec2 mpx = in->MousePos();
+        const bool overPreview =
+            mpx.x >= previewScreenRect_.x && mpx.x <= previewScreenRect_.x + previewScreenRect_.w &&
+            mpx.y >= previewScreenRect_.y && mpx.y <= previewScreenRect_.y + previewScreenRect_.h;
+        if (overPreview) {
+            if (in->MouseDown(platform::MouseButton::Right)) {
+                previewYaw_ += -in->MouseDelta().x * 0.005f;
+                previewPitch_ = math::Clamp(previewPitch_ + -in->MouseDelta().y * 0.005f,
+                                            -1.4f, 1.4f);
+            }
+            return;
         }
-        return;
     }
     platform::IInput* input = Input();
     math::Vec2 mp = renderer_.ScreenToUI(input->MousePos());

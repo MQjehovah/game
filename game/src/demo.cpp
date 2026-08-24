@@ -977,8 +977,6 @@ void GameScene::Draw(gfx::Renderer& renderer) {
         CEnemy* ce = world_.Get<CEnemy>(e);
         if (ce && !ce->bones.empty() && cm->mesh.Skinned()) {
             const math::Mat4 model = tf->Model();
-            // Blender's skin bind on this glTF doesn't reproduce the authored
-            // verts deterministically, so render the bind mesh unbent.
             for (const assets::GltfMeshNode& part : wolfParts_) {
                 renderer.DrawMesh(part.mesh, part.material, model);
             }

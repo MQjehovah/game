@@ -121,9 +121,11 @@ struct Mat4 {
         r.m[8] = (a3 * a7 - a4 * a6) * inv;
         r.m[9] = (a1 * a6 - a0 * a7) * inv;
         r.m[10] = (a0 * a4 - a1 * a3) * inv;
-        r.m[3] = -(r.m[0] * m[3] + r.m[4] * m[7] + r.m[8] * m[11]);
-        r.m[7] = -(r.m[1] * m[3] + r.m[5] * m[7] + r.m[9] * m[11]);
-        r.m[11] = -(r.m[2] * m[3] + r.m[6] * m[7] + r.m[10] * m[11]);
+        // T' = -Rinv * T. Row-major: Rinv row i is (r.m[i*4+0], r.m[i*4+1],
+        // r.m[i*4+2]); T is the last column (m[3], m[7], m[11]).
+        r.m[3] = -(r.m[0] * m[3] + r.m[1] * m[7] + r.m[2] * m[11]);
+        r.m[7] = -(r.m[4] * m[3] + r.m[5] * m[7] + r.m[6] * m[11]);
+        r.m[11] = -(r.m[8] * m[3] + r.m[9] * m[7] + r.m[10] * m[11]);
         r.m[12] = r.m[13] = r.m[14] = 0.0f;
         r.m[15] = 1.0f;
         return r;
