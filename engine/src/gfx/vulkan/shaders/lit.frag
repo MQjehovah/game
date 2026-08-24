@@ -13,28 +13,28 @@ layout(location = 0) out vec4 FragColor;
 
 #include "engine_ubo.glsl"
 
-layout(set = 0, binding = 1)  uniform sampler2D uAlbedo;
-layout(set = 2, binding = 1)  uniform sampler2D uMR;
-layout(set = 3, binding = 1)  uniform sampler2D uOcclusion;
-layout(set = 4, binding = 1)  uniform sampler2D uEmissive;
-layout(set = 5, binding = 1)  uniform sampler2D uShadowMap0;
-layout(set = 6, binding = 1)  uniform sampler2D uShadowMap1;
-layout(set = 7, binding = 1)  uniform sampler2D uShadowMap2;
-layout(set = 8, binding = 1)  uniform sampler2D uPointShadowMap0;
-layout(set = 9, binding = 1)  uniform sampler2D uPointShadowMap1;
-layout(set = 10, binding = 1) uniform sampler2D uPointShadowMap2;
-layout(set = 11, binding = 1) uniform sampler2D uPointShadowMap3;
-layout(set = 12, binding = 1) uniform sampler2D uPointShadowMap4;
-layout(set = 13, binding = 1) uniform sampler2D uPointShadowMap5;
-layout(set = 14, binding = 1) uniform sampler2D uPointShadowMap6;
-layout(set = 15, binding = 1) uniform sampler2D uPointShadowMap7;
-layout(set = 16, binding = 1) uniform sampler2D uPointShadowMap8;
-layout(set = 17, binding = 1) uniform sampler2D uPointShadowMap9;
-layout(set = 18, binding = 1) uniform sampler2D uPointShadowMap10;
-layout(set = 19, binding = 1) uniform sampler2D uPointShadowMap11;
-layout(set = 20, binding = 1) uniform sampler2D uIrradianceMap;
-layout(set = 21, binding = 1) uniform sampler2D uPrefilteredMap;
-layout(set = 22, binding = 1) uniform sampler2D uBrdfLUT;
+layout(set = 1, binding = 0)  uniform sampler2D uAlbedo;
+layout(set = 1, binding = 1)  uniform sampler2D uMR;
+layout(set = 1, binding = 2)  uniform sampler2D uOcclusion;
+layout(set = 1, binding = 3)  uniform sampler2D uEmissive;
+layout(set = 1, binding = 4)  uniform sampler2D uShadowMap0;
+layout(set = 1, binding = 5)  uniform sampler2D uShadowMap1;
+layout(set = 1, binding = 6)  uniform sampler2D uShadowMap2;
+layout(set = 1, binding = 8)  uniform sampler2D uPointShadowMap0;
+layout(set = 1, binding = 9)  uniform sampler2D uPointShadowMap1;
+layout(set = 1, binding = 10) uniform sampler2D uPointShadowMap2;
+layout(set = 1, binding = 11) uniform sampler2D uPointShadowMap3;
+layout(set = 1, binding = 12) uniform sampler2D uPointShadowMap4;
+layout(set = 1, binding = 13) uniform sampler2D uPointShadowMap5;
+layout(set = 1, binding = 14) uniform sampler2D uPointShadowMap6;
+layout(set = 1, binding = 15) uniform sampler2D uPointShadowMap7;
+layout(set = 1, binding = 16) uniform sampler2D uPointShadowMap8;
+layout(set = 1, binding = 17) uniform sampler2D uPointShadowMap9;
+layout(set = 1, binding = 18) uniform sampler2D uPointShadowMap10;
+layout(set = 1, binding = 19) uniform sampler2D uPointShadowMap11;
+layout(set = 1, binding = 20) uniform sampler2D uIrradianceMap;
+layout(set = 1, binding = 21) uniform sampler2D uPrefilteredMap;
+layout(set = 1, binding = 22) uniform sampler2D uBrdfLUT;
 
 float DecodeDepth(vec4 v) {
     return dot(v, vec4(1.0, 1.0 / 255.0, 1.0 / 65025.0, 1.0 / 16581375.0));

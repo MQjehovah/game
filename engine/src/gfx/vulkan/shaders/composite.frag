@@ -8,7 +8,7 @@ layout(location = 0) out vec4 FragColor;
 
 #include "engine_ubo.glsl"
 
-layout(set = 0, binding = 1) uniform sampler2D uHdr;
+layout(set = 1, binding = 0) uniform sampler2D uHdr;
 layout(set = 1, binding = 1) uniform sampler2D uBloom;
 
 vec3 ACESFilm(vec3 x) {

@@ -1043,12 +1043,6 @@ public:
         const UniEntry* e = FindUniform(name);
         if (!e || e->kind != UniKind::Float) return;
         float v = value;
-        if (std::strcmp(name, "uExposure") == 0) {
-            // The HDR targets clamp to LDR on this driver (RGBA8 fallback for
-            // unreadable SFLOAT sampling), so scene values beyond 1.0 wash out.
-            // Scale the composite exposure down to recover mid-tones.
-            v *= 0.55f;
-        }
         std::memcpy(uniforms_ + ElementOffset(e, name), &v, 4);
         uniformsDirty_ = true;
     }

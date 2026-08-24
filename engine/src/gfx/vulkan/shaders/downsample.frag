@@ -6,7 +6,7 @@ layout(location = 0) out vec4 FragColor;
 
 #include "engine_ubo.glsl"
 
-layout(set = 0, binding = 1) uniform sampler2D uTex;
+layout(set = 1, binding = 0) uniform sampler2D uTex;
 
 void main() {
     vec2 o = eng.uSrcTexelSize * 0.5;

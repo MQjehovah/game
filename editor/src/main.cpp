@@ -11,6 +11,8 @@ int main(int argc, char** argv) {
     int smokeFrames = 0;
     bool disableShadows = false;
     bool disableBloom = false;
+    bool disableMsaa = false;
+    bool disableTonemap = false;
     bool hotReload = false;
     bool twoD = false;
     bool twoDPlay = false;
@@ -59,6 +61,10 @@ int main(int argc, char** argv) {
             disableShadows = true;
         } else if (std::strcmp(argv[i], "--no-bloom") == 0) {
             disableBloom = true;
+        } else if (std::strcmp(argv[i], "--no-msaa") == 0) {
+            disableMsaa = true;
+        } else if (std::strcmp(argv[i], "--no-tonemap") == 0) {
+            disableTonemap = true;
         } else if (std::strcmp(argv[i], "--backend") == 0 && i + 1 < argc) {
             backend = argv[++i];
         } else if (std::strcmp(argv[i], "--help") == 0) {
@@ -75,6 +81,8 @@ int main(int argc, char** argv) {
                         "  --disable-fbo          force-disable CSM shadow maps\n"
                         "  --no-shadows           alias for --disable-fbo\n"
                         "  --no-bloom             disable the HDR bloom post-process\n"
+                        "  --no-msaa              force the single-sample HDR target (for diffing)\n"
+                        "  --no-tonemap           composite with the legacy clamp instead of ACES (for diffing)\n"
                         "  --log-level <level>    log filter: debug|info|warn|error\n"
                         "  --log-cat <n>:<level>  per-category override (repeatable,\n"
                         "                         comma-separated, e.g. gfx:debug)\n");
@@ -102,6 +110,8 @@ int main(int argc, char** argv) {
     if (!screenshot.empty()) app.RequestScreenshot(screenshot, screenshotFrame);
     if (disableShadows) app.SetDisableShadows(true);
     if (disableBloom) app.SetBloomEnabled(false);
+    if (disableMsaa) app.SetMsaaEnabled(false);
+    if (disableTonemap) app.SetTonemapEnabled(false);
     if (hotReload) app.SetHotReload(true);
     if (twoD) app.Set2DMode(true);
     if (twoDPlay) app.SetPvzPlaytestOnStart(true);

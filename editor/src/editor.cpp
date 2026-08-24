@@ -429,6 +429,8 @@ bool EditorApp::OnCreate() {
     if (disableShadows_) renderer_.SetShadowsEnabled(false);
     renderer_.SetBackendName(backendName_);
     renderer_.SetBloomEnabled(bloomEnabled_);
+    renderer_.SetMsaaEnabled(msaaEnabled_);
+    renderer_.SetTonemapEnabled(tonemapEnabled_);
     if (!renderer_.Init(Window())) {
         NEON_LOG_ERROR("Editor: renderer init failed");
         return false;

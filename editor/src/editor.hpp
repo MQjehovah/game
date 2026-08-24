@@ -115,6 +115,8 @@ public:
     void SetSmokeMode(bool v) { smokeMode_ = v; }
     void SetDisableShadows(bool v) { disableShadows_ = v; }
     void SetBloomEnabled(bool v) { bloomEnabled_ = v; }
+    void SetMsaaEnabled(bool v) { msaaEnabled_ = v; }
+    void SetTonemapEnabled(bool v) { tonemapEnabled_ = v; }
     void SetHotReload(bool v) { hotReload_ = v; }
     // Godot/Unity-style view lock: 2D is the front-ortho camera, 3D is the
     // perspective camera. The project/scene/content never changes - only the
@@ -435,6 +437,8 @@ private:
     bool smokeFailed_ = false;
     bool disableShadows_ = false;
     bool bloomEnabled_ = true;
+    bool msaaEnabled_ = true;
+    bool tonemapEnabled_ = true;
     std::string backendName_ = "gl";
     std::string screenshotPath_;
     uint64_t screenshotFrame_ = 0;
