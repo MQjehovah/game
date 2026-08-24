@@ -24,8 +24,8 @@
 | P2-3 2D 路径 | 完成 | 精灵 z 排序、场景相机实体（Camera3D）、tilemap |
 | P2-6 工程质量 | 完成 | `--bench` 基准日志、shader 热重载、资产 watch |
 | P2-1 渲染表现 | 部分 | 贴花（地面投影）完成；SSAO、体积雾、GI 需新渲染通道（深度贴图/后处理链），GPU 粒子需改实例化渲染模型——留待下一阶段按序推进 |
-| P2-4 网络生产化 | 完成 | MsgRpc + RpcDispatcher + 服务器房间（create/join/leave/list/broadcast）+ 客户端/脚本 Rpc 绑定 |
-| P2-5 平台 | 部分 | CI 已覆盖 Windows/MSVC、Ubuntu GCC、macOS Clang + Sanitizer；WASM/WebGPU 与实机安装包留待后续 |
+| P2-4 网络生产化 | 完成 | MsgRpc + RpcDispatcher + 服务器房间 + 反作弊（输入限速/封禁/admin.kick/ban/world.hash 校验和）+ 客户端/脚本 Rpc 绑定 |
+| P2-5 平台 | 完成（可落地部分） | Windows 图标 + 版本资源、打包发布件（update.json/install.bat/update.bat）、CI 覆盖 Windows/Ubuntu/macOS + Sanitizer；WASM/WebGPU 与 macOS/Linux 实机验证需外部工具链/硬件，留待后续 |
 
 构建注意：Jolt 需要新工具链，工程现用 MSYS2 MinGW-w64 GCC 16.2（`C:\msys64\mingw64\bin`，
 已加入用户 PATH）。旧 MinGW 8.1 无法编译 Jolt。
