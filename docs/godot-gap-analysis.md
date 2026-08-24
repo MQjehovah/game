@@ -3,6 +3,22 @@
 > 目标：以"类《魔兽世界》大型 3D 网络游戏"为产品目标，对照 Godot 4.x 的成熟能力，
 > 找出 NeonEngine 的真实差距，并给出可执行的改进方案与验收标准。
 
+## 0. 实施状态（截至 2026-08-24）
+
+| 项目 | 状态 | 说明 |
+| --- | --- | --- |
+| P0-2 Vulkan 灰度 | 完成 | 采样器 set/binding 与管线布局对齐；移除旧 exposure hack；`--backend vulkan` 与 GL 逐像素一致 |
+| P0-3 资源生命周期 | 完成 | AssetManager 引用计数 + 延迟回收；Chunk 卸载释放；ObjectPool |
+| P0-1 Jolt 物理 | 完成 | vendored Jolt v5.0.0；JoltWorld（刚体/碰撞层/射线/角色控制器）；需 GCC>=9（已升级 MinGW 16.2） |
+| P1-3 动画 | 完成 | BlendSpace1D/2D、两骨骼 IK、Lua Tween（pos/rot/scale，缓动） |
+| P1-1 组 | 完成 | `groups` 组件 + `GetEntitiesInGroup` + 编辑器 schema |
+| P1-2 Lua 调试器 | 部分 | 断点/单步/局部变量/调用栈（顶层帧）已在编辑器 playtest 可用；自动补全/悬停文档未做 |
+| P1-1 其余 | 未做 | 场景继承、节点类型表、动画时间线编辑器、地形/世界编辑、tilemap、shader 面板、导入 watch |
+| P2 | 未做 | 渲染表现、3D 音频、2D 路径、网络生产化、平台、工程质量 |
+
+构建注意：Jolt 需要新工具链，工程现用 MSYS2 MinGW-w64 GCC 16.2（`C:\msys64\mingw64\bin`，
+已加入用户 PATH）。旧 MinGW 8.1 无法编译 Jolt。
+
 ## 1. 现状快照
 
 NeonEngine 是一个 C++17 自研引擎，核心约 1.9 万行、编辑器约 1.1 万行、测试 500+ 项。
