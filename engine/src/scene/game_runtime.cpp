@@ -11,6 +11,7 @@
 #include "neon/assets/asset_manager.hpp"
 #include "neon/core/log.hpp"
 #include "neon/core/pack.hpp"
+#include "neon/core/profiler.hpp"
 #include "neon/gfx/renderer.hpp"
 #include "neon/gfx/scene_props.hpp"
 #include "neon/scene/scene_file.hpp"
@@ -1529,6 +1530,7 @@ float GameRuntime::GameVar(const std::string& name) const {
 
 void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera) {
     if (!running_ || !cfg_.assets) return; // sim-only runtime draws nothing
+    core::ScopedTimer drawTimer("runtime.draw");
     // P2-3 scene camera: when the world contains a camera entity, its transform
     // + camera component become the active view (Godot Camera3D-style).
     gfx::Camera cam = camera;
@@ -1565,6 +1567,35 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera) {
     // change. Flush whenever a non-batchable item interrupts the run so the
     // relative order of opaque vs transparent/skinned draws never changes.
     const bool canBatch = renderer.DepthTestAvailable();
+    // G1-2: build a per-frame BVH of batchable items and pre-cull the camera
+    // frustum, so instanced draws only receive visible instances (the
+    // renderer then skips its own per-instance test). Uses the renderer's own
+    // Frustum::Intersects test, so the visible set is identical to before.
+    drawBvh_.Clear();
+    bvhVisible_.assign(draws_.size(), 0);
+    if (canBatch) {
+        for (size_t idx : drawOrder_) {
+            DrawItem& item = draws_[idx];
+            if (!world_.Alive(item.ent)) continue;
+            if (hiddenEntities_.count(EntityKey(item.ent)) != 0) continue;
+            if (!item.resolved) ResolveDrawItem(item, renderer);
+            if (!item.resolved || item.failed) continue;
+            if (!world_.Get<SceneTransform>(item.ent)) continue;
+            if (item.skinned || item.isSprite || item.isDecal || item.mat.transparent ||
+                item.mat.shader.Valid() || !item.mesh.Valid())
+                continue;
+            const math::Mat4 model = LocalToWorld(item.ent);
+            const math::Vec3 worldPos{model.m[12], model.m[13], model.m[14]};
+            const gfx::Mesh drawMesh =
+                SelectLodMesh(item.mesh, item.chain, worldPos, camera.position);
+            if (!drawMesh.Valid()) continue;
+            drawBvh_.Insert(static_cast<math::Bvh::Id>(idx),
+                            math::TransformAABB(drawMesh.Bounds(), model));
+        }
+        if (!drawBvh_.Empty())
+            drawBvh_.QueryFrustum(renderer.ViewFrustum(),
+                                  [&](math::Bvh::Id id) { bvhVisible_[id] = 1; });
+    }
     drawBatches_.clear();
     batchModels_.clear();
     auto flushBatches = [&]() {
@@ -1572,7 +1603,7 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera) {
         for (const DrawBatch& b : drawBatches_) {
             if (b.count == 0) continue;
             renderer.DrawMeshInstanced(b.mesh, b.mat, batchModels_.data() + b.start, b.count,
-                                       true);
+                                       /*frustumCull=*/false);
         }
         drawBatches_.clear();
         batchModels_.clear();
@@ -1604,6 +1635,7 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera) {
                                !item.mat.transparent && !item.mat.shader.Valid() &&
                                item.mesh.Valid();
         if (batchable) {
+            if (!bvhVisible_.empty() && bvhVisible_[idx] == 0) continue; // pre-culled
             gfx::Mesh drawMesh = SelectLodMesh(item.mesh, item.chain, worldPos, camera.position);
             if (!drawMesh.Valid()) continue;
             int batchIndex = -1;
@@ -1781,6 +1813,7 @@ void GameRuntime::FlushDraw2D(gfx::Renderer& renderer) {
 
 void GameRuntime::Tick(float dt) {
     if (!running_) return;
+    core::ScopedTimer tickTimer("runtime.tick");
     // P1-2 debugger: a breakpoint hit latches the host's paused flag during a
     // script call; stop advancing the simulation so the editor can inspect and
     // step before resuming.
@@ -1789,21 +1822,24 @@ void GameRuntime::Tick(float dt) {
     // Both backends share the engine-injected simulated clock.
     if (hosts_.lua) hosts_.lua->SetSimClock(simTime_);
     if (hosts_.js) hosts_.js->SetSimClock(simTime_);
-    // Index-based: SpawnPrefab (called from a script) can push new ScriptInst
-    // entries into scripts_ mid-loop; an iterator would be invalidated. New
-    // instances are processed in the same tick, which is the expected
-    // "spawned this frame acts this frame" semantics.
-    for (size_t si = 0; si < scripts_.size(); ++si) {
-        ScriptInst& inst = scripts_[si];
-        if (!world_.Alive(inst.ent)) continue;
-        if (inst.onUpdate == 0) continue; // this chunk defines no on_update
-        CallEntityFunctionHandle(inst, inst.onUpdate, "on_update",
-                                 {EntityToValue(inst.ent), script::Value::Num(dt)});
-    }
-    // Runtime plugin systems tick after scene scripts (same simulated clock).
-    if (plugins_) {
-        plugins_->SetSimTime(simTime_);
-        plugins_->Tick(dt);
+    {
+        core::ScopedTimer scriptsTimer("runtime.scripts");
+        // Index-based: SpawnPrefab (called from a script) can push new
+        // ScriptInst entries into scripts_ mid-loop; an iterator would be
+        // invalidated. New instances are processed in the same tick, which is
+        // the expected "spawned this frame acts this frame" semantics.
+        for (size_t si = 0; si < scripts_.size(); ++si) {
+            ScriptInst& inst = scripts_[si];
+            if (!world_.Alive(inst.ent)) continue;
+            if (inst.onUpdate == 0) continue; // this chunk defines no on_update
+            CallEntityFunctionHandle(inst, inst.onUpdate, "on_update",
+                                     {EntityToValue(inst.ent), script::Value::Num(dt)});
+        }
+        // Runtime plugin systems tick after scene scripts (same sim clock).
+        if (plugins_) {
+            plugins_->SetSimTime(simTime_);
+            plugins_->Tick(dt);
+        }
     }
 
     size_t deadTrees = 0;
@@ -1836,15 +1872,18 @@ void GameRuntime::Tick(float dt) {
     // Fixed-step physics: accumulate the frame delta and advance the world at
     // 60 Hz so collision resolution and scripts stay deterministic regardless
     // of frame rate. Cap the catch-up to avoid a spiral of death after a hitch.
-    physicsAccum_ += dt;
-    constexpr float kPhysicsStep = 1.0f / 60.0f;
-    int physicsSteps = 0;
-    while (physicsAccum_ >= kPhysicsStep && physicsSteps < 4) {
-        physics_->Step(kPhysicsStep, math::Vec3{0.0f, kGravityY, 0.0f});
-        physicsAccum_ -= kPhysicsStep;
-        ++physicsSteps;
+    {
+        core::ScopedTimer physicsTimer("runtime.physics");
+        physicsAccum_ += dt;
+        constexpr float kPhysicsStep = 1.0f / 60.0f;
+        int physicsSteps = 0;
+        while (physicsAccum_ >= kPhysicsStep && physicsSteps < 4) {
+            physics_->Step(kPhysicsStep, math::Vec3{0.0f, kGravityY, 0.0f});
+            physicsAccum_ -= kPhysicsStep;
+            ++physicsSteps;
+        }
+        if (physicsSteps == 4) physicsAccum_ = 0.0f;
     }
-    if (physicsSteps == 4) physicsAccum_ = 0.0f;
     SyncSceneBodies();
     TickTweens(dt);
     TickAnimations(dt);

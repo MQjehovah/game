@@ -9,8 +9,11 @@
 #include "neon/math/quat.hpp"
 #include "neon/math/transform.hpp"
 #include "neon/math/spatial.hpp"
+#include "neon/math/bvh.hpp"
 
 #include "neon/core/log.hpp"
+#include "neon/core/profiler.hpp"
+#include "neon/core/crash.hpp"
 #include "neon/core/time.hpp"
 #include "neon/core/rng.hpp"
 #include "neon/core/config.hpp"

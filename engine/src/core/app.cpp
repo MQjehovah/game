@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include "neon/core/log.hpp"
+#include "neon/core/profiler.hpp"
 
 namespace neon::core {
 
@@ -38,8 +39,10 @@ int Application::Run(const platform::WindowConfig& config) {
 
     double previous = NowSeconds();
     float accumulator = 0.0f;
+    uint64_t renderFrame = 0;
 
     while (!window_->ShouldClose()) {
+        Profiler::Get().BeginFrame(++renderFrame);
         window_->PumpEvents();
 
         double now = NowSeconds();
@@ -67,6 +70,7 @@ int Application::Run(const platform::WindowConfig& config) {
 
         OnRender();
         input_->EndFrame();
+        Profiler::Get().EndFrame();
     }
 
     OnShutdown();

@@ -32,7 +32,9 @@ set(ENGINE_CORE_SOURCES
   engine/src/audio/miniaudio/ma_audio.cpp
   engine/src/core/app.cpp
   engine/src/core/config.cpp
+  engine/src/core/crash.cpp
   engine/src/core/log.cpp
+  engine/src/core/profiler.cpp
   engine/src/ecs/world.cpp
   engine/src/ecs/parallel.cpp
   engine/src/core/json.cpp
@@ -489,6 +491,8 @@ endif()
 add_executable(neon_tests tests/test_main.cpp tests/test_serialize.cpp tests/test_pack.cpp
   tests/test_physics.cpp tests/test_protocol.cpp tests/test_obj.cpp tests/test_gltf.cpp tests/test_json.cpp
   tests/test_ui_document.cpp
+  tests/test_bvh.cpp
+  tests/test_profiler.cpp
   tests/test_script.cpp tests/test_script_bindings.cpp tests/test_script_determinism.cpp
   ${NEON_JS_TEST}
   tests/test_plugin.cpp

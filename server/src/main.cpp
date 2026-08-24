@@ -4,6 +4,7 @@
 
 #include "neon/core/log.hpp"
 #include "game_server.hpp"
+#include "neon/core/crash.hpp"
 
 #if defined(_WIN32)
 #ifndef NOMINMAX
@@ -55,6 +56,7 @@ std::string DirName(const std::string& path) {
 // 60Hz step, and broadcasts MsgSnapshot to every connected client. With
 // --ticks N it runs exactly N simulation steps and exits 0 (smoke test).
 int main(int argc, char** argv) {
+    neon::core::InstallCrashHandler();
     neon::server::GameServer::Config cfg;
     std::string scenePath;
     std::string scriptsDir;

@@ -13,9 +13,11 @@
 
 #include "editor.hpp"
 #include "neon/core/config.hpp"
+#include "neon/core/crash.hpp"
 #include "packager.hpp"
 
 int main(int argc, char** argv) {
+    neon::core::InstallCrashHandler();
     // Anchor the working directory to the repo root (the folder containing
     // projects/ + CMakeLists.txt), walking up from the executable. Launching
     // from Explorer (cwd = build/) would otherwise leave projects/, assets/

@@ -61,6 +61,10 @@ public:
     void SetCamera(const Camera& camera, float aspect);
     const math::Mat4& ViewProjection() const { return viewProj_; }
     const math::Vec3& CameraPosition() const { return camPos_; }
+    // Frustum of the active camera (valid after SetCamera). Exposed so callers
+    // that pre-cull with a spatial index before instanced draws use the exact
+    // same test the renderer would.
+    const math::Frustum& ViewFrustum() const { return frustum_; }
 
     // Atmosphere / lights
     void SetSky(const Color& top, const Color& horizon);

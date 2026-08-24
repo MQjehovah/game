@@ -15,10 +15,11 @@
 
 ### G1-2 空间索引缺失（优先级最高）
 
-- [ ] 现状：**无四叉树 / 八叉树 / BVH**。渲染裁剪是逐实例暴力 `TransformAABB + Frustum::Intersects`（`renderer.cpp` 1376/1396/1431）；游戏侧空间查询无加速；碰撞加速依赖 Jolt 内部 broadphase；网络 AOI 九宫格是唯一已落地的空间索引。
+- [x] 现状：**动态 BVH 已落地**（`neon/math/bvh.hpp`，Box2D 风格动态树：插入/更新/移除 + AABB/视锥/射线/球查询）。已接入 `GameRuntime::Draw` 的场景实例化裁剪（帧内 BVH 预裁剪 + `DrawMeshInstanced(frustumCull=false)`）；万级（10k）实体视锥查询基准：暴力 243.55ms → BVH 19.33ms（约 12.6 倍，Debug 200 次查询）。单元测试 `tests/test_bvh.cpp` 与暴力法逐项比对（AABB/视锥/射线/移除/移动）。2026-08-25。
 - 差距：大世界 / 万级实体时 CPU 裁剪与查询成为瓶颈。
 - 建议：定义统一空间索引接口（插入/更新/移除/查询），2D 用四叉树、3D 用 BVH；接入渲染裁剪、游戏查询、服务器 AOI 三处。
 - 验收：万级动态实体视锥裁剪帧耗时显著下降；查询接口有单元测试。
+- 后续：BVH 接口可进一步复用于游戏侧查询（投射物/AOI）与 2D 四叉树。
 
 ### G1-3 场景树接口与两套实体表示
 
@@ -188,8 +189,8 @@
 ### G8-1 Live Profiler 环形缓冲 + 追溯式崩溃报告（第 10 项）
 
 - [~] 现状：性能面板（帧时/实体/物理/BT/内存统计）✅；`--bench` 基准日志 ✅；日志环形缓冲（`log.hpp:79`）✅。
-- [ ] 每帧函数耗时/内存分配/DrawCall 的持续环形缓冲记录——无。
-- [ ] 崩溃时自动导出崩溃前 5 秒性能数据报告——无（仅有普通日志）。
+- [x] 每帧函数耗时/内存分配/DrawCall 的持续环形缓冲记录——已落地 `neon/core/profiler.hpp`：固定 512 帧环形缓冲 + 命名作用域计时（`ScopedTimer`），`Application::Run` 自动逐帧采样，`GameRuntime::Tick/Draw` 已埋点（runtime.tick/scripts/physics/draw）；`Report()` 输出最近 N 帧。单元测试 `tests/test_profiler.cpp`（假时钟确定性 + 环形回绕 + 崩溃报告落盘）。2026-08-25。
+- [x] 崩溃时自动导出崩溃前 5 秒性能数据报告——已落地 `neon/core/crash.hpp`：Windows SEH / POSIX 信号钩子写 `crash_report.txt`（日志环形缓冲 + profiler 最近 512 帧 ≈ 8.5s@60Hz），已接入 neon_rush / neon_game / neon_editor / neon_server 入口。2026-08-25。
 - 建议：轻量采样 profiler（固定容量 ring，低开销），崩溃处理钩子（Windows MiniDump / POSIX 信号）导出报告。
 
 ### G8-2 实时代码热替换（第 11 项）

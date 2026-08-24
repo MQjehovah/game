@@ -4,6 +4,7 @@
 
 #include "demo.hpp"
 #include "neon/core/config.hpp"
+#include "neon/core/crash.hpp"
 
 namespace {
 
@@ -39,6 +40,7 @@ void PrintHelp() {
 
 int main(int argc, char** argv) {
     neon::core::ApplyLogCli(argc, argv);
+    neon::core::InstallCrashHandler();
     int smokeFrames = 0;
     bool noAudio = false;
     bool fullscreen = false;

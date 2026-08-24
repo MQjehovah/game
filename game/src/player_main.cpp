@@ -5,6 +5,7 @@
 #include <utility>
 
 #include "neon/core/config.hpp"
+#include "neon/core/crash.hpp"
 #include "player.hpp"
 
 namespace {
@@ -52,6 +53,7 @@ bool LooksLikePath(const std::string& s) {
 
 int main(int argc, char** argv) {
     neon::core::ApplyLogCli(argc, argv);
+    neon::core::InstallCrashHandler();
     neon::player::PlayerConfig cfg;
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "--pack") == 0 && i + 1 < argc) {

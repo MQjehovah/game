@@ -1163,6 +1163,11 @@ void EditorApp::OnUpdate(float dt) {
         showScripts_ = true;
         showPackage_ = true;
         showProfiler_ = true;
+        // Force the BT tab active for the upcoming render: when the persisted
+        // dock layout tabs the panel away, ImGui::Begin returns false and the
+        // canvas never emits vertices, so btCanvasDrawn_ (checked at frame 30)
+        // would stay false. Focus is honored on the next frame's Begin.
+        ImGui::SetWindowFocus("\u884c\u4e3a\u6811");
         // Seed a small tree so the BT canvas renders real nodes on the smoke
         // frame (frame 30) and the smoke can assert the canvas drew geometry.
         btGraph_ = btgraph::BtGraph{};
@@ -4358,7 +4363,11 @@ void EditorApp::RunUISmokeTest() {
               "script editor: save writes the edited content");
     }
 
+#ifdef NEON_ENABLE_JS
     // --- Built-in script editor, JS backend (.js routes to QuickJS) ---
+    // Only runs when the QuickJS backend is compiled in: without it the editor
+    // cannot syntax-check .js files (the host is unavailable), so this smoke
+    // assertion would fail on MSVC builds (NEON_ENABLE_JS defaults off).
     {
         const std::string path = GetTempDir() + "/editor_script.js";
         {
@@ -4378,6 +4387,7 @@ void EditorApp::RunUISmokeTest() {
         SaveScriptEditor();
         check(scriptEditorCheck_.ok, "script editor: JS syntax passes after fix");
     }
+#endif // NEON_ENABLE_JS
 
     // --- Editor plugins (project plugins/ dir, type=editor) ---
     {

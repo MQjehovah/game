@@ -17,6 +17,7 @@
 #include "neon/gfx/font.hpp"
 #include "neon/gfx/material.hpp"
 #include "neon/gfx/mesh.hpp"
+#include "neon/math/bvh.hpp"
 #include "neon/plugin/runtime_plugin.hpp"
 #include "neon/physics/physics.hpp"
 #include "neon/physics/jolt_world.hpp"
@@ -405,6 +406,10 @@ private:
     };
     std::vector<DrawBatch> drawBatches_;
     std::vector<math::Mat4> batchModels_;
+    // G1-2 spatial index: per-frame BVH over batchable draw items, used to
+    // pre-cull the camera frustum before instanced draws (id = draw index).
+    math::Bvh drawBvh_;
+    std::vector<uint8_t> bvhVisible_;
     // Sprite sort scratch (reused instead of a fresh allocation every frame).
     std::vector<size_t> drawOrder_;
     std::vector<Projectile> projectiles_;
