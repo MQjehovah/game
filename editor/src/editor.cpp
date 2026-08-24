@@ -446,6 +446,7 @@ bool EditorApp::OnCreate() {
         NEON_LOG_ERROR("Editor: Dear ImGui init failed");
         return false;
     }
+    ApplyEditorTheme();
     audioBackend_ = neon::audio::CreatePlatformAudioBackend();
     if (audioBackend_ && !audioBackend_->Init()) {
         audioBackend_->Shutdown();
@@ -494,6 +495,118 @@ bool EditorApp::OnCreate() {
     if (pvzPlaytestOnStart_) StartPlaytest();
     LoadInputMapEdit(); // Godot-style input panel data
     return true;
+}
+
+// Godot-inspired dark editor theme (UX item 6). Applied once right after the
+// ImGui context exists; the palette + compact metrics make docked panels read
+// as one workspace instead of default-gray windows, and keep the toolbar and
+// inspector dense enough that content, not chrome, fills the screen.
+void EditorApp::ApplyEditorTheme() {
+    ImGuiStyle& s = ImGui::GetStyle();
+
+    // Compact metrics.
+    s.WindowPadding = ImVec2(6.0f, 6.0f);
+    s.FramePadding = ImVec2(5.0f, 3.0f);
+    s.ItemSpacing = ImVec2(6.0f, 4.0f);
+    s.ItemInnerSpacing = ImVec2(4.0f, 4.0f);
+    s.IndentSpacing = 16.0f;
+    s.ScrollbarSize = 10.0f;
+    s.GrabMinSize = 8.0f;
+    s.WindowBorderSize = 1.0f;
+    s.ChildBorderSize = 1.0f;
+    s.PopupBorderSize = 1.0f;
+    s.FrameBorderSize = 0.0f;
+    s.WindowRounding = 0.0f; // docked panels: flush edges
+    s.ChildRounding = 0.0f;
+    s.FrameRounding = 3.0f;
+    s.PopupRounding = 4.0f;
+    s.TabRounding = 3.0f;
+    s.ScrollbarRounding = 6.0f;
+    s.GrabRounding = 3.0f;
+    s.WindowMenuButtonPosition = ImGuiDir_None;
+
+    // Palette.
+    const ImVec4 kAccent(0.35f, 0.65f, 1.00f, 1.0f);
+    const ImVec4 kWindowBg(0.125f, 0.133f, 0.157f, 1.0f);
+    const ImVec4 kChildBg(0.102f, 0.110f, 0.133f, 1.0f);
+    const ImVec4 kPopupBg(0.165f, 0.176f, 0.200f, 1.0f);
+    const ImVec4 kFrameBg(0.176f, 0.188f, 0.216f, 1.0f);
+    const ImVec4 kFrameHover(0.235f, 0.255f, 0.294f, 1.0f);
+    const ImVec4 kFrameActive(0.310f, 0.340f, 0.390f, 1.0f);
+    const ImVec4 kTitleBg(0.145f, 0.155f, 0.180f, 1.0f);
+    const ImVec4 kTitleActive(0.220f, 0.240f, 0.280f, 1.0f);
+    const ImVec4 kBorder(0.250f, 0.270f, 0.310f, 0.80f);
+    const ImVec4 kText(0.88f, 0.89f, 0.92f, 1.0f);
+    const ImVec4 kTextDisabled(0.42f, 0.45f, 0.51f, 1.0f);
+    const ImVec4 kHeader(0.220f, 0.240f, 0.280f, 1.0f);
+    const ImVec4 kHeaderHover(0.290f, 0.320f, 0.380f, 1.0f);
+    const ImVec4 kHeaderActive(0.350f, 0.390f, 0.460f, 1.0f);
+    const ImVec4 kTabHover(0.290f, 0.320f, 0.380f, 1.0f);
+    const ImVec4 kTabSelected(0.240f, 0.290f, 0.360f, 1.0f);
+    const ImVec4 kTabDimmed(0.170f, 0.185f, 0.220f, 1.0f);
+    const ImVec4 kTabDimmedSelected(0.200f, 0.235f, 0.290f, 1.0f);
+    const ImVec4 kSeparator(0.250f, 0.270f, 0.310f, 1.0f);
+    const ImVec4 kScrollbarGrab(0.330f, 0.360f, 0.410f, 1.0f);
+    const ImVec4 kScrollbarHover(0.420f, 0.460f, 0.520f, 1.0f);
+    const ImVec4 kScrollbarActive(0.500f, 0.550f, 0.620f, 1.0f);
+
+    ImVec4* c = s.Colors;
+    c[ImGuiCol_Text] = kText;
+    c[ImGuiCol_TextDisabled] = kTextDisabled;
+    c[ImGuiCol_WindowBg] = kWindowBg;
+    c[ImGuiCol_ChildBg] = kChildBg;
+    c[ImGuiCol_PopupBg] = kPopupBg;
+    c[ImGuiCol_Border] = kBorder;
+    c[ImGuiCol_BorderShadow] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+    c[ImGuiCol_FrameBg] = kFrameBg;
+    c[ImGuiCol_FrameBgHovered] = kFrameHover;
+    c[ImGuiCol_FrameBgActive] = kFrameActive;
+    c[ImGuiCol_TitleBg] = kTitleBg;
+    c[ImGuiCol_TitleBgActive] = kTitleActive;
+    c[ImGuiCol_TitleBgCollapsed] = kTitleBg;
+    c[ImGuiCol_MenuBarBg] = kTitleBg;
+    c[ImGuiCol_ScrollbarBg] = ImVec4(0.08f, 0.09f, 0.11f, 0.8f);
+    c[ImGuiCol_ScrollbarGrab] = kScrollbarGrab;
+    c[ImGuiCol_ScrollbarGrabHovered] = kScrollbarHover;
+    c[ImGuiCol_ScrollbarGrabActive] = kScrollbarActive;
+    c[ImGuiCol_CheckMark] = kAccent;
+    c[ImGuiCol_SliderGrab] = kScrollbarGrab;
+    c[ImGuiCol_SliderGrabActive] = kAccent;
+    c[ImGuiCol_Button] = kFrameBg;
+    c[ImGuiCol_ButtonHovered] = kFrameHover;
+    c[ImGuiCol_ButtonActive] = kFrameActive;
+    c[ImGuiCol_Header] = kHeader;
+    c[ImGuiCol_HeaderHovered] = kHeaderHover;
+    c[ImGuiCol_HeaderActive] = kHeaderActive;
+    c[ImGuiCol_Separator] = kSeparator;
+    c[ImGuiCol_SeparatorHovered] = kHeaderHover;
+    c[ImGuiCol_SeparatorActive] = kHeaderActive;
+    c[ImGuiCol_ResizeGrip] = kScrollbarGrab;
+    c[ImGuiCol_ResizeGripHovered] = kScrollbarHover;
+    c[ImGuiCol_ResizeGripActive] = kScrollbarActive;
+    c[ImGuiCol_Tab] = kTabDimmed;
+    c[ImGuiCol_TabHovered] = kTabHover;
+    c[ImGuiCol_TabSelected] = kTabSelected;
+    c[ImGuiCol_TabSelectedOverline] = kAccent;
+    c[ImGuiCol_TabDimmed] = kTabDimmed;
+    c[ImGuiCol_TabDimmedSelected] = kTabDimmedSelected;
+    c[ImGuiCol_TabDimmedSelectedOverline] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+    c[ImGuiCol_DockingPreview] = ImVec4(kAccent.x, kAccent.y, kAccent.z, 0.6f);
+    c[ImGuiCol_DockingEmptyBg] = ImVec4(0.09f, 0.095f, 0.12f, 1.0f);
+    c[ImGuiCol_TableHeaderBg] = kHeader;
+    c[ImGuiCol_TableBorderStrong] = kBorder;
+    c[ImGuiCol_TableBorderLight] = ImVec4(0.20f, 0.22f, 0.26f, 1.0f);
+    c[ImGuiCol_TableRowBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+    c[ImGuiCol_TableRowBgAlt] = ImVec4(1.0f, 1.0f, 1.0f, 0.03f);
+    c[ImGuiCol_TextLink] = kAccent;
+    c[ImGuiCol_PlotLines] = kAccent;
+    c[ImGuiCol_PlotLinesHovered] = ImVec4(1.0f, 0.8f, 0.3f, 1.0f);
+    c[ImGuiCol_PlotHistogram] = kAccent;
+    c[ImGuiCol_PlotHistogramHovered] = ImVec4(1.0f, 0.8f, 0.3f, 1.0f);
+    c[ImGuiCol_TextSelectedBg] = ImVec4(kAccent.x, kAccent.y, kAccent.z, 0.35f);
+    c[ImGuiCol_DragDropTarget] = kAccent;
+    c[ImGuiCol_NavHighlight] = kAccent;
+    c[ImGuiCol_ModalWindowDimBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.55f);
 }
 
 void EditorApp::OnShutdown() {
@@ -1159,10 +1272,14 @@ void EditorApp::OnRender() {
                                             static_cast<int>(vp.w), static_cast<int>(vp.h), true);
             renderer_.Set2DViewportPixels(vp.x, vp.y);
             if (cjkFont_.Valid()) uiDoc_.Draw(renderer_, cjkFont_);
-            if (uiSelected_) {
-                const math::Rect2 sel = uiSelected_->AbsoluteRect();
+            // P5-editor UX: outline every selected node; the active one gets
+            // resize handles.
+            for (ui::UiNode* n : uiSelection_) {
+                if (!n) continue;
+                const math::Rect2 sel = n->AbsoluteRect();
                 renderer_.DrawRectOutline(sel, 2.0f,
                                           {0.4f, 0.9f, 1.0f, 0.9f});
+                if (n != uiSelected_) continue;
                 const float hs = 8.0f;
                 const math::Vec2 corners[4] = {
                     {sel.x - hs, sel.y - hs},
@@ -1353,6 +1470,26 @@ void EditorApp::OnRender() {
                 NEON_LOG_INFO("EDITOR-DRAW: entities=%zu drawCalls=%u", entities_.size(),
                               renderer_.Stats().drawCalls);
             }
+            // P2-editor UX: terrain brush footprint preview at the hover point.
+            if (terrainPaintMode_ && terrainHoverValid_) {
+                const gfx::Color ringC{0.95f, 0.65f, 0.2f, 0.9f};
+                const int segs = 36;
+                const float y = entities_[static_cast<size_t>(selected_)].pos.y + 0.05f;
+                std::vector<gfx::Renderer::LineVertex> rv;
+                rv.reserve(static_cast<size_t>(segs) * 2);
+                for (int i = 0; i < segs; ++i) {
+                    const float a0 = static_cast<float>(i) / segs * 6.2831853f;
+                    const float a1 = static_cast<float>(i + 1) / segs * 6.2831853f;
+                    rv.push_back({{terrainHoverPos_.x + std::cos(a0) * terrainBrushRadius_, y,
+                                   terrainHoverPos_.z + std::sin(a0) * terrainBrushRadius_},
+                                  ringC});
+                    rv.push_back({{terrainHoverPos_.x + std::cos(a1) * terrainBrushRadius_, y,
+                                   terrainHoverPos_.z + std::sin(a1) * terrainBrushRadius_},
+                                  ringC});
+                }
+                renderer_.DrawLines(rv.data(), static_cast<uint32_t>(rv.size()),
+                                    math::Mat4::Identity());
+            }
             if (selected_ >= 0 && selected_ < static_cast<int>(entities_.size())) {
                 const SceneEntity& e = entities_[static_cast<size_t>(selected_)];
                 math::Mat4 model = math::Mat4::Translation(e.pos) * e.rot.ToMat4() *
@@ -1515,6 +1652,101 @@ void EditorApp::OnEvent(const platform::InputEvent& event) {
     }
 }
 
+// --- P5-editor UX: UI-editor selection / align / snap helpers -------------
+
+void EditorApp::UISelectNode(ui::UiNode* n) {
+    uiSelection_.clear();
+    if (n) uiSelection_.insert(n);
+    uiSelected_ = n;
+}
+
+void EditorApp::UIToggleSelectNode(ui::UiNode* n) {
+    if (!n) return;
+    const auto it = uiSelection_.find(n);
+    if (it != uiSelection_.end()) {
+        uiSelection_.erase(it);
+        if (uiSelected_ == n)
+            uiSelected_ = uiSelection_.empty() ? nullptr : *uiSelection_.rbegin();
+    } else {
+        uiSelection_.insert(n);
+        uiSelected_ = n;
+    }
+}
+
+ui::UiNode* EditorApp::UICloneNode(const ui::UiNode& src) {
+    auto clone = std::make_unique<ui::UiNode>();
+    clone->type = src.type;
+    clone->name = src.name + "_副本";
+    clone->rect = src.rect;
+    clone->rect.x += 8.0f;
+    clone->rect.y += 8.0f;
+    clone->color = src.color;
+    clone->borderColor = src.borderColor;
+    clone->text = src.text;
+    clone->sprite = src.sprite;
+    clone->fill = src.fill;
+    clone->fontSize = src.fontSize;
+    clone->visible = src.visible;
+    clone->clipChildren = src.clipChildren;
+    for (const auto& c : src.children)
+        clone->children.push_back(std::unique_ptr<ui::UiNode>(UICloneNode(*c)));
+    for (auto& c : clone->children) c->parent = clone.get();
+    return clone.release();
+}
+
+void EditorApp::UIDuplicateSelectedNodes() {
+    if (uiSelection_.empty()) return;
+    std::vector<ui::UiNode*> sel(uiSelection_.begin(), uiSelection_.end());
+    uiSelection_.clear();
+    for (ui::UiNode* n : sel) {
+        if (!n || !n->parent) continue;
+        ui::UiNode* copy = UICloneNode(*n);
+        n->parent->children.push_back(std::unique_ptr<ui::UiNode>(copy));
+        copy->parent = n->parent;
+        uiSelection_.insert(copy);
+    }
+    uiSelected_ = uiSelection_.empty() ? nullptr : *uiSelection_.rbegin();
+    MarkUIDirty();
+}
+
+void EditorApp::UIDeleteSelectedNodes() {
+    if (uiSelection_.empty()) return;
+    std::vector<ui::UiNode*> sel(uiSelection_.begin(), uiSelection_.end());
+    uiSelection_.clear();
+    uiSelected_ = nullptr;
+    for (ui::UiNode* n : sel) {
+        if (!n || !n->parent) continue;
+        std::vector<std::unique_ptr<ui::UiNode>>& kids = n->parent->children;
+        for (auto it = kids.begin(); it != kids.end(); ++it) {
+            if (it->get() == n) {
+                kids.erase(it);
+                break;
+            }
+        }
+    }
+    MarkUIDirty();
+}
+
+void EditorApp::UIAlignSelected(int mode) {
+    if (uiSelection_.empty()) return;
+    for (ui::UiNode* n : uiSelection_) {
+        if (!n || !n->parent) continue;
+        const math::Rect2& p = n->parent->rect;
+        switch (mode) {
+            case 0: n->rect.x = 0.0f; break;                     // left
+            case 1: n->rect.x = (p.w - n->rect.w) * 0.5f; break; // h-center
+            case 2: n->rect.x = p.w - n->rect.w; break;          // right
+            case 3: n->rect.y = 0.0f; break;                     // top
+            case 4: n->rect.y = (p.h - n->rect.h) * 0.5f; break; // v-center
+            case 5: n->rect.y = p.h - n->rect.h; break;          // bottom
+            default: break;
+        }
+        n->rect.x = UISnap(n->rect.x);
+        n->rect.y = UISnap(n->rect.y);
+    }
+    MarkUIDirty();
+}
+
 void EditorApp::UpdateUIEditorViewport() {
     const math::Rect2& vp = viewportScreenRect_;
     if (vp.w <= 0.0f || vp.h <= 0.0f) return;
@@ -1545,7 +1777,16 @@ void EditorApp::UpdateUIEditorViewport() {
             return;
         }
         ui::UiNode* hit = uiDoc_.HitTest(mouse);
-        uiSelected_ = (hit && hit != &uiDoc_.root) ? hit : nullptr;
+        // P5-editor UX: Ctrl+click toggles multi-selection.
+        const bool ctrl = ImGui::GetIO().KeyCtrl;
+        if (hit && hit != &uiDoc_.root) {
+            if (ctrl)
+                UIToggleSelectNode(hit);
+            else
+                UISelectNode(hit);
+        } else if (!ctrl) {
+            UISelectNode(nullptr);
+        }
         uiDragging_ = uiSelected_ != nullptr;
         return;
     }
@@ -1560,11 +1801,16 @@ void EditorApp::UpdateUIEditorViewport() {
                 case 2: r.x += delta.x; r.w -= delta.x; r.h += delta.y; break;
                 default: r.w += delta.x; r.h += delta.y; break;
             }
+            // P5-editor UX: grid snap while resizing.
+            r.x = UISnap(r.x);
+            r.y = UISnap(r.y);
+            r.w = std::max(UISnap(r.w), 4.0f);
+            r.h = std::max(UISnap(r.h), 4.0f);
             r.w = std::max(r.w, 8.0f);
             r.h = std::max(r.h, 8.0f);
         } else {
-            r.x += delta.x;
-            r.y += delta.y;
+            r.x = UISnap(r.x + delta.x);
+            r.y = UISnap(r.y + delta.y);
         }
         MarkUIDirty();
         return;
@@ -1573,6 +1819,27 @@ void EditorApp::UpdateUIEditorViewport() {
     if (input->MouseReleased(platform::MouseButton::Left)) {
         uiDragging_ = false;
         uiResizeHandle_ = -1;
+    }
+
+    // P5-editor UX shortcuts: Delete 删除选中, Ctrl+D 复制, 方向键 微调.
+    if (!gfx::ImGuiNeon_WantCaptureKeyboard()) {
+        if (input->Pressed(platform::Key::Delete)) UIDeleteSelectedNodes();
+        if (input->Pressed(platform::Key::D) && ImGui::GetIO().KeyCtrl)
+            UIDuplicateSelectedNodes();
+        const float nudge = uiGridSize_;
+        math::Vec2 dir{};
+        if (input->Pressed(platform::Key::ArrowLeft)) dir.x = -nudge;
+        if (input->Pressed(platform::Key::ArrowRight)) dir.x = nudge;
+        if (input->Pressed(platform::Key::ArrowUp)) dir.y = -nudge;
+        if (input->Pressed(platform::Key::ArrowDown)) dir.y = nudge;
+        if (dir.x != 0.0f || dir.y != 0.0f) {
+            for (ui::UiNode* n : uiSelection_) {
+                if (!n) continue;
+                n->rect.x += dir.x;
+                n->rect.y += dir.y;
+            }
+            MarkUIDirty();
+        }
     }
 }
 
@@ -1831,6 +2098,33 @@ void EditorApp::UpdateViewport(float dt) {
             const float ndcX = (mousePx.x - vpX) / vpW * 2.0f - 1.0f;
             const float ndcY = 1.0f - (mousePx.y - vpY) / vpH * 2.0f;
             PaintTerrain(RayFromNDC(cam, aspect, ndcX, ndcY));
+        }
+        // P2-editor UX: terrain brush hover preview — track where the brush
+        // would land every frame while paint mode is on.
+        terrainHoverValid_ = false;
+        if (terrainPaintMode_ && selected_ >= 0 &&
+            selected_ < static_cast<int>(entities_.size()) &&
+            entities_[static_cast<size_t>(selected_)].meshKey == "terrain") {
+            const float aspect = ViewportAspect();
+            gfx::Camera cam = ActiveCamera();
+            const math::Vec2 mousePx = input->MousePos();
+            const math::Rect2& vp = viewportScreenRect_;
+            const float vpW = vp.w > 0.0f ? vp.w : static_cast<float>(renderer_.ScreenWidth());
+            const float vpH = vp.h > 0.0f ? vp.h : static_cast<float>(renderer_.ScreenHeight());
+            const float vpX = vp.w > 0.0f ? vp.x : 0.0f;
+            const float vpY = vp.h > 0.0f ? vp.y : 0.0f;
+            const float ndcX = (mousePx.x - vpX) / vpW * 2.0f - 1.0f;
+            const float ndcY = 1.0f - (mousePx.y - vpY) / vpH * 2.0f;
+            const math::Ray ray = RayFromNDC(cam, aspect, ndcX, ndcY);
+            if (std::fabs(ray.dir.y) > 1e-6f) {
+                const float ty = (entities_[static_cast<size_t>(selected_)].pos.y -
+                                  ray.origin.y) /
+                                 ray.dir.y;
+                if (ty >= 0.0f) {
+                    terrainHoverPos_ = ray.origin + ray.dir * ty;
+                    terrainHoverValid_ = true;
+                }
+            }
         }
     }
     // Data-driven playtest scripts use the orbit yaw for camera-relative
@@ -2418,12 +2712,36 @@ void EditorApp::BuildImGuiUI() {
 
     // Toolbar row below the menu bar.
     ImGui::SetNextWindowPos(ImVec2(0.0f, menuH), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(1280.0f, 34.0f), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(mainVp->Size.x, toolH), ImGuiCond_Always);
     ImGuiWindowFlags tbFlags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
                                ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings |
                                ImGuiWindowFlags_NoFocusOnAppearing |
                                ImGuiWindowFlags_NoDocking;
     if (ImGui::Begin("##toolbar", nullptr, tbFlags)) {
+        // Icon button helper: fixed-size glyph button with an active-state
+        // highlight and a hover tooltip (toolbar icon-ization, UX item 6).
+        auto ToolbarIcon = [](const char* label, const char* tip, bool active) -> bool {
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(6.0f, 2.0f));
+            if (active) {
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.22f, 0.36f, 0.55f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.26f, 0.42f, 0.62f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.30f, 0.47f, 0.68f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+            } else {
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.27f, 0.29f, 0.33f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.35f, 0.38f, 0.43f, 1.0f));
+            }
+            const bool clicked = ImGui::Button(label, ImVec2(26.0f, 0.0f));
+            if (active)
+                ImGui::PopStyleColor(4);
+            else
+                ImGui::PopStyleColor(3);
+            ImGui::PopStyleVar();
+            if (tip && ImGui::IsItemHovered(ImGuiHoveredFlags_Stationary))
+                ImGui::SetTooltip("%s", tip);
+            return clicked;
+        };
         if (ImGui::Button("保存")) SaveScene();
         ImGui::SameLine();
         if (ImGui::Button("加载")) LoadScene("editor_scene.json");
@@ -2466,19 +2784,20 @@ void EditorApp::BuildImGuiUI() {
             ImGui::EndCombo();
         }
         ImGui::SameLine();
-        if (ImGui::Button("删除")) {
-            if (selected_ >= 0 && selected_ < static_cast<int>(entities_.size())) {
-                history_.Push(std::make_unique<DeleteEntityCommand>(
-                    &entities_, static_cast<size_t>(selected_)));
-                SetSelection(-1);
-            }
+        if (ToolbarIcon("✕", "删除选中 (Del)", false) && !selection_.empty()) {
+            history_.Push(std::make_unique<MultiDeleteEntityCommand>(
+                &entities_, SelectedIndices()));
+            ClampSelection();
         }
         ImGui::SameLine();
-        if (ImGui::Button(playtestActive_ ? "■ 停止试玩" : "▶ 试玩")) TogglePlaytest();
+        if (ToolbarIcon(playtestActive_ ? "■" : "▶",
+                        playtestActive_ ? "停止试玩 (F5)" : "试玩 (F5)", playtestActive_))
+            TogglePlaytest();
         ImGui::SameLine();
         // Hot reload toggle (T4.8): off by default. When on, script/asset mtime
         // changes restart the playtest / reload the cached assets (throttled).
-        if (ImGui::Button(hotReload_ ? "● 热重载" : "○ 热重载")) hotReload_ = !hotReload_;
+        if (ToolbarIcon(hotReload_ ? "●" : "○", "热重载: 脚本/资源改动自动重载", hotReload_))
+            hotReload_ = !hotReload_;
         ImGui::SameLine();
         // Multi-camera viewport preset (T4.8): 透视 / 顶视 / 前视 (also Tab).
         const char* camLabels[] = {"透视", "顶视", "前视"};
@@ -2487,31 +2806,34 @@ void EditorApp::BuildImGuiUI() {
         if (ImGui::Combo("##viewport_cam", &camSel, camLabels, 3))
             SetViewCam(static_cast<ViewCam>(camSel));
         ImGui::SameLine();
-        if (ImGui::Button("导出场景")) ExportScene();
+        if (ImGui::Button("导出")) ExportScene();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_Stationary))
+            ImGui::SetTooltip("导出场景为 scenes/exported_scene.json");
         ImGui::SameLine();
         ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
         ImGui::SameLine();
         // Gizmo operation (W/E/R) and mode toggle for the selected entity.
-        if (ImGui::Button(gizmoOp_ == ImGuizmo::TRANSLATE ? "[移动] W" : "移动 W"))
+        if (ToolbarIcon("✥", "移动 (W)", gizmoOp_ == ImGuizmo::TRANSLATE))
             gizmoOp_ = ImGuizmo::TRANSLATE;
         ImGui::SameLine();
-        if (ImGui::Button(gizmoOp_ == ImGuizmo::ROTATE ? "[旋转] E" : "旋转 E"))
+        if (ToolbarIcon("⟳", "旋转 (E)", gizmoOp_ == ImGuizmo::ROTATE))
             gizmoOp_ = ImGuizmo::ROTATE;
         ImGui::SameLine();
-        if (ImGui::Button(gizmoOp_ == ImGuizmo::SCALE ? "[缩放] R" : "缩放 R"))
+        if (ToolbarIcon("⇲", "缩放 (R)", gizmoOp_ == ImGuizmo::SCALE))
             gizmoOp_ = ImGuizmo::SCALE;
         ImGui::SameLine();
-        if (ImGui::Button(gizmoMode_ == ImGuizmo::LOCAL ? "[本地]" : "本地"))
+        if (ToolbarIcon("◉", "本地坐标空间", gizmoMode_ == ImGuizmo::LOCAL))
             gizmoMode_ = ImGuizmo::LOCAL;
         ImGui::SameLine();
-        if (ImGui::Button(gizmoMode_ == ImGuizmo::WORLD ? "[世界]" : "世界"))
+        if (ToolbarIcon("◎", "世界坐标空间", gizmoMode_ == ImGuizmo::WORLD))
             gizmoMode_ = ImGuizmo::WORLD;
         ImGui::SameLine();
-        ImGui::Checkbox("网格", &showViewportGrid_);
+        if (ToolbarIcon("▦", "视口网格", showViewportGrid_))
+            showViewportGrid_ = !showViewportGrid_;
         ImGui::SameLine();
         ImGui::TextDisabled("选中 %zu", selection_.size());
         ImGui::SameLine();
-        if (ImGui::Button("聚焦 F") && selected_ >= 0 &&
+        if (ToolbarIcon("⌖", "聚焦选中 (F)", false) && selected_ >= 0 &&
             selected_ < static_cast<int>(entities_.size()))
             camTarget_ = entities_[static_cast<size_t>(selected_)].pos;
         ImGui::SameLine();
@@ -2520,10 +2842,10 @@ void EditorApp::BuildImGuiUI() {
         // View switcher (Unity/Godot style): 2D is the front-ortho camera
         // locked to the SAME scene, 3D is the perspective camera. Only the
         // camera changes - the project, scene and content stay identical.
-        if (ImGui::Button(editMode_ == EditMode::Scene2D ? "[视图 2D] 切到 3D 透视"
-                                                       : "[3D 透视] 切到 2D 视图")) {
-            Set2DMode(editMode_ != EditMode::Scene2D);
-        }
+        const bool in2D = editMode_ == EditMode::Scene2D;
+        if (ToolbarIcon(in2D ? "3D" : "2D", in2D ? "切换到 3D 透视" : "切换到 2D 视图",
+                        false))
+            Set2DMode(!in2D);
         ImGui::SameLine();
         ImGui::Text("实体 %zu", entities_.size());
     }
@@ -2738,6 +3060,60 @@ void EditorApp::RunUISmokeTest() {
         uiDocOpen_ = false;
         uiDocPath_.clear();
         uiSelected_ = nullptr;
+    }
+
+    // --- UI editor multi-select / align / duplicate (P5-editor UX) ---
+    {
+        uiDoc_ = ui::UiDocument{};
+        uiDoc_.root.rect = {0, 0, 1280, 720};
+        ui::UiNode* a = uiDoc_.root.AddChild(ui::UiNodeType::Label, "A");
+        a->rect = {10, 20, 100, 24};
+        ui::UiNode* b = uiDoc_.root.AddChild(ui::UiNodeType::Label, "B");
+        b->rect = {300, 400, 120, 30};
+        ui::UiNode* c = uiDoc_.root.AddChild(ui::UiNodeType::Label, "C");
+        c->rect = {500, 600, 80, 20};
+
+        UISelectNode(a);
+        check(uiSelection_.size() == 1 && uiSelected_ == a,
+              "UI select sets the active node");
+        UIToggleSelectNode(b);
+        check(uiSelection_.count(a) == 1 && uiSelection_.count(b) == 1 &&
+                  uiSelection_.size() == 2,
+              "UI ctrl-click multi-select accumulates a second node");
+        UIToggleSelectNode(b);
+        check(uiSelection_.size() == 1 && uiSelected_ == a,
+              "UI ctrl-click again deselects");
+        UIToggleSelectNode(b);
+        UIToggleSelectNode(c);
+        check(uiSelection_.size() == 3, "UI multi-select holds three nodes");
+
+        const bool oldSnap = uiSnapToGrid_;
+        uiSnapToGrid_ = false; // exact math for the align assertions
+        UIAlignSelected(0);    // left
+        check(a->rect.x == 0.0f && b->rect.x == 0.0f && c->rect.x == 0.0f,
+              "UI align-left snaps every selected x to the parent edge");
+        UIAlignSelected(1); // h-center
+        check(std::fabs(a->rect.x - (1280.0f - a->rect.w) * 0.5f) < 0.01f &&
+                  std::fabs(b->rect.x - (1280.0f - b->rect.w) * 0.5f) < 0.01f &&
+                  std::fabs(c->rect.x - (1280.0f - c->rect.w) * 0.5f) < 0.01f,
+              "UI align h-center snaps every selected x to the parent center");
+        UIAlignSelected(5); // bottom
+        check(std::fabs(a->rect.y - (720.0f - a->rect.h)) < 0.01f &&
+                  std::fabs(b->rect.y - (720.0f - b->rect.h)) < 0.01f &&
+                  std::fabs(c->rect.y - (720.0f - c->rect.h)) < 0.01f,
+              "UI align bottom snaps every selected y to the parent bottom");
+        uiSnapToGrid_ = oldSnap;
+
+        const size_t childCount = uiDoc_.root.children.size();
+        UIDuplicateSelectedNodes();
+        check(uiDoc_.root.children.size() == childCount + 3 &&
+                  uiSelection_.size() == 3,
+              "UI duplicate clones every selected node");
+        UIDeleteSelectedNodes();
+        check(uiDoc_.root.children.size() == childCount && uiSelection_.empty(),
+              "UI delete removes the cloned selection");
+        uiDocOpen_ = false;
+        uiDocPath_.clear();
     }
 
     // --- Tool panels ---

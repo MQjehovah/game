@@ -173,6 +173,10 @@ bool ImGuiNeon_Init(Renderer* renderer, const char* cjkFontPath) {
             0x20, 0x7E,     // Basic Latin
             0x00A0, 0x00FF, // Latin-1
             0x2000, 0x206F, // General punctuation
+            0x2190, 0x21FF, // Arrows (toolbar: move/scale icons)
+            0x2300, 0x23FF, // Technical (play/pause/stop transport)
+            0x25A0, 0x25FF, // Geometric shapes (play/stop/grid/dot)
+            0x2600, 0x27BF, // Misc symbols + dingbats (rotate/focus icons)
             0x3000, 0x303F, // CJK punctuation
             0x4E00, 0x9FFF, // CJK Unified Ideographs
             0xFF00, 0xFFEF, // Fullwidth forms

@@ -358,6 +358,7 @@ private:
     void BuildTilemapPanel();
     void SaveSceneAsChild();
     void ReloadEntityShader(SceneEntity& e);
+    void ApplyEditorTheme();
     void PaintTerrain(const math::Ray& ray);
     void RebuildTerrainMesh(SceneEntity& e);
     void OpenInExternalEditor(const std::string& path);
@@ -429,6 +430,9 @@ private:
     float terrainBrushRadius_ = 5.0f;
     float terrainBrushStrength_ = 0.12f;
     bool terrainRaise_ = true;
+    // P2-editor UX: terrain brush hover preview.
+    math::Vec3 terrainHoverPos_{};
+    bool terrainHoverValid_ = false;
 
     float yaw_ = 0.7f;
     float pitch_ = 0.35f;
@@ -527,6 +531,19 @@ private:
     ui::UiDocument uiDoc_;             // document being edited
     bool uiDocOpen_ = false;           // a document is loaded/created
     ui::UiNode* uiSelected_ = nullptr; // selected node (owned by uiDoc_)
+    // P5-editor UX: UI-editor multi-selection (active = uiSelected_).
+    std::set<ui::UiNode*> uiSelection_;
+    bool uiSnapToGrid_ = true;
+    float uiGridSize_ = 8.0f;
+    void UISelectNode(ui::UiNode* n);
+    void UIToggleSelectNode(ui::UiNode* n);
+    void UIDeleteSelectedNodes();
+    void UIDuplicateSelectedNodes();
+    ui::UiNode* UICloneNode(const ui::UiNode& src);
+    void UIAlignSelected(int mode);  // 0=left 1=hcenter 2=right 3=top 4=vcenter 5=bottom
+    float UISnap(float v) const {
+        return uiSnapToGrid_ ? std::round(v / uiGridSize_) * uiGridSize_ : v;
+    }
     bool uiDirty_ = false;
     bool uiDragging_ = false;
     int uiResizeHandle_ = -1;          // -1 none, 0..3 corner handles
@@ -586,6 +603,7 @@ private:
     // Viewport grid overlay toggle.
     bool showViewportGrid_ = true;
     std::vector<int> dragPayload_;  // P2-editor UX: multi-drag payload buffer
+    std::string tileDragPath_;      // P2-editor UX: tilemap palette drag payload
     bool gizmoBeginFrame_ = false; // set every frame ImGuizmo::BeginFrame runs (smoke)
     bool gizmoAltWindowSet_ = false; // set every frame the hover window is bound (smoke)
     bool gizmoDragActive_ = false;   // ImGuizmo::IsUsing() after the last Manipulate

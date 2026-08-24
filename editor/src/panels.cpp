@@ -2383,6 +2383,7 @@ void EditorApp::BuildUIEditorPanel() {
         // --- File bar -----------------------------------------------------
         if (ImGui::Button("新建")) {
             uiDoc_ = ui::UiDocument{};
+            uiSelection_.clear();
             uiDoc_.root.name = "root";
             uiDoc_.root.rect = {0, 0, 1280, 720};
             ui::UiNode* menu = uiDoc_.root.AddChild(ui::UiNodeType::Panel, "Menu");
@@ -2402,7 +2403,7 @@ void EditorApp::BuildUIEditorPanel() {
             bar->color = {0.85f, 0.25f, 0.25f, 1.0f};
             uiDocPath_ = projectDir_ + "/ui/untitled.ui.json";
             uiDocOpen_ = true;
-            uiSelected_ = &uiDoc_.root;
+            UISelectNode(&uiDoc_.root);
             uiDirty_ = true; // untitled: wait for the explicit 保存 button
         }
         ImGui::SameLine();
@@ -2417,6 +2418,31 @@ void EditorApp::BuildUIEditorPanel() {
         }
         ImGui::SameLine();
         ImGui::TextDisabled(uiDirty_ ? "有未保存修改" : "");
+
+        // P5-editor UX: align tools + grid snap + batch copy/delete.
+        ImGui::Separator();
+        if (ImGui::Button("左对齐")) UIAlignSelected(0);
+        ImGui::SameLine();
+        if (ImGui::Button("水平居中")) UIAlignSelected(1);
+        ImGui::SameLine();
+        if (ImGui::Button("右对齐")) UIAlignSelected(2);
+        ImGui::SameLine();
+        if (ImGui::Button("顶对齐")) UIAlignSelected(3);
+        ImGui::SameLine();
+        if (ImGui::Button("垂直居中")) UIAlignSelected(4);
+        ImGui::SameLine();
+        if (ImGui::Button("底对齐")) UIAlignSelected(5);
+        ImGui::SameLine();
+        ImGui::Checkbox("网格吸附", &uiSnapToGrid_);
+        ImGui::SameLine();
+        if (ImGui::Button("复制选中")) UIDuplicateSelectedNodes();
+        ImGui::SameLine();
+        if (ImGui::Button("删除选中")) UIDeleteSelectedNodes();
+        if (uiSelection_.size() > 1)
+            ImGui::TextColored(ImVec4(0.7f, 0.85f, 1.0f, 1.0f),
+                               "已选中 %zu 个节点 (Ctrl 加选, 方向键微调)",
+                               uiSelection_.size());
+        ImGui::Separator();
 
         // --- Document list ------------------------------------------------
         ImGui::Separator();
@@ -2441,7 +2467,8 @@ void EditorApp::BuildUIEditorPanel() {
                 if (uiDoc_.Load(path)) {
                     uiDocPath_ = path;
                     uiDocOpen_ = true;
-                    uiSelected_ = &uiDoc_.root;
+                    uiSelection_.clear();
+                    UISelectNode(&uiDoc_.root);
                     uiDirty_ = false;
                     NEON_LOG_INFO("UI: opened '%s'", path.c_str());
                 }
@@ -2453,8 +2480,8 @@ void EditorApp::BuildUIEditorPanel() {
             if (uiDoc_.Load(uiFiles_[0])) {
                 uiDocPath_ = uiFiles_[0];
                 uiDocOpen_ = true;
-                uiSelected_ = &uiDoc_.root;
-                uiSelected_ = uiDoc_.Find("Start"); // TEMP VERIFY: select Start
+                uiSelection_.clear();
+                UISelectNode(uiDoc_.Find("Start") ? uiDoc_.Find("Start") : &uiDoc_.root);
                 uiDirty_ = false;
             }
         }
@@ -2471,14 +2498,17 @@ void EditorApp::BuildUIEditorPanel() {
             ImGui::BeginChild("##ui_tree", ImVec2(230, -30), true);
             std::function<void(ui::UiNode*)> drawTree = [&](ui::UiNode* node) {
                 ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow |
-                                           ImGuiTreeNodeFlags_OpenOnDoubleClick |
-                                           ImGuiTreeNodeFlags_SpanAvailWidth;
-                if (node == uiSelected_) flags |= ImGuiTreeNodeFlags_Selected;
+                ImGuiTreeNodeFlags_OpenOnDoubleClick |
+                ImGuiTreeNodeFlags_SpanAvailWidth;
+                if (uiSelection_.count(node)) flags |= ImGuiTreeNodeFlags_Selected;
                 const bool open =
                     ImGui::TreeNodeEx(node->name.c_str(), flags, "%s##%p",
                                       node->name.c_str(), static_cast<void*>(node));
                 if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
-                    uiSelected_ = node;
+                    if (ImGui::GetIO().KeyCtrl)
+                        UIToggleSelectNode(node);
+                    else
+                        UISelectNode(node);
                 }
                 if (open) {
                     for (auto& c : node->children) drawTree(c.get());
@@ -3368,6 +3398,14 @@ void EditorApp::BuildTilemapPanel() {
                     if (ImGui::Button(a.name.c_str())) {
                         std::snprintf(texBuf, sizeof(texBuf), "%s", a.path.c_str());
                     }
+                    // P2-editor UX: drag a palette tile straight onto a cell.
+                    if (ImGui::BeginDragDropSource()) {
+                        tileDragPath_ = a.path;
+                        ImGui::SetDragDropPayload("TILE_TEXTURE", tileDragPath_.data(),
+                                                  tileDragPath_.size() + 1);
+                        ImGui::Text("放置: %s", a.name.c_str());
+                        ImGui::EndDragDropSource();
+                    }
                 }
             }
             ImGui::EndChild();
@@ -3391,6 +3429,24 @@ void EditorApp::BuildTilemapPanel() {
                         e.tilemapTiles_[idx].clear();
                         sceneDirty_ = true;
                     }
+                }
+                // P2-editor UX: drop a palette tile or an asset texture here.
+                if (ImGui::BeginDragDropTarget()) {
+                    if (const ImGuiPayload* p = ImGui::AcceptDragDropPayload("TILE_TEXTURE")) {
+                        const char* path = static_cast<const char*>(p->Data);
+                        if (path && *path) {
+                            e.tilemapTiles_[idx] = path;
+                            sceneDirty_ = true;
+                        }
+                    } else if (const ImGuiPayload* p =
+                                   ImGui::AcceptDragDropPayload("ASSET_TEXTURE")) {
+                        const char* path = static_cast<const char*>(p->Data);
+                        if (path && *path) {
+                            e.tilemapTiles_[idx] = path;
+                            sceneDirty_ = true;
+                        }
+                    }
+                    ImGui::EndDragDropTarget();
                 }
                 if (ImGui::IsItemHovered() && !e.tilemapTiles_[idx].empty())
                     ImGui::SetTooltip("%s", e.tilemapTiles_[idx].c_str());
