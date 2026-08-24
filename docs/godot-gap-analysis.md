@@ -23,8 +23,9 @@
 | P2-2 音频 | 完成 | 立体声混音、Master/Sfx/Music 总线、3D 空间音效、WAV 加载、Lua 绑定 |
 | P2-3 2D 路径 | 完成 | 精灵 z 排序、场景相机实体（Camera3D）、tilemap |
 | P2-6 工程质量 | 完成 | `--bench` 基准日志、shader 热重载、资产 watch |
-| P2-1 渲染表现 | 未做 | SSAO、GPU 粒子、体积雾、贴花、GI（渲染大项，建议下阶段按序推进） |
-| P2-4/5 网络/平台 | 未做 | RPC/房间/WebSocket/TLS、WASM/macOS/Linux 实机验证 |
+| P2-1 渲染表现 | 部分 | 贴花（地面投影）完成；SSAO、体积雾、GI 需新渲染通道（深度贴图/后处理链），GPU 粒子需改实例化渲染模型——留待下一阶段按序推进 |
+| P2-4 网络生产化 | 完成 | MsgRpc + RpcDispatcher + 服务器房间（create/join/leave/list/broadcast）+ 客户端/脚本 Rpc 绑定 |
+| P2-5 平台 | 部分 | CI 已覆盖 Windows/MSVC、Ubuntu GCC、macOS Clang + Sanitizer；WASM/WebGPU 与实机安装包留待后续 |
 
 构建注意：Jolt 需要新工具链，工程现用 MSYS2 MinGW-w64 GCC 16.2（`C:\msys64\mingw64\bin`，
 已加入用户 PATH）。旧 MinGW 8.1 无法编译 Jolt。
