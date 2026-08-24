@@ -1997,6 +1997,11 @@ void EditorApp::UpdateViewport(float dt) {
     for (int wi = 0; wi < ictx.Windows.Size; ++wi) {
         ImGuiWindow* w = ictx.Windows[wi];
         if (!w || w->Hidden) continue;
+        // A CLOSED panel keeps its stale rect in g.Windows (ImGui never
+        // destroys it), so without this check the old area would keep
+        // hijacking the viewport camera even after the panel is closed.
+        // Active is reset every NewFrame for windows not submitted that frame.
+        if (!w->Active) continue;
         if (w->DockNodeAsHost != nullptr) continue; // dock host / tab bar
         if (w->ParentWindow != nullptr) continue;   // child windows
         if (w->Flags & ImGuiWindowFlags_NoMouseInputs) continue; // overlays (gizmo)
@@ -2950,6 +2955,7 @@ void EditorApp::BuildImGuiUI() {
             for (int wi = ictx.Windows.Size - 1; wi >= 0; --wi) {
                 ImGuiWindow* w = ictx.Windows[wi];
                 if (!w || w->Hidden) continue;
+                if (!w->Active) continue; // closed panels must not win hover
                 if (w->DockNodeAsHost != nullptr) continue;
                 if (w->ParentWindow != nullptr) continue;
                 if (w->Flags & ImGuiWindowFlags_NoMouseInputs) continue;
