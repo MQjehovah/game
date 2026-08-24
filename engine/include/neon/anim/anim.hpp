@@ -187,6 +187,12 @@ struct AnimSet {
     std::vector<AnimationClip> clips;
 };
 
+// Data-driven clip files (P1-1 animation timeline editor): serializes an
+// AnimationClip to/from a small JSON document so clips can be authored in the
+// editor and loaded by the runtime/tools.
+std::string SaveClipJson(const AnimationClip& clip);
+core::Result<AnimationClip> LoadClipJson(const std::string& jsonText);
+
 // Imports glTF animations (channels/samplers, LINEAR/STEP/CUBICSPLINE) into a
 // skeleton + clips. The skeleton gets one bone per glTF node (bone index ==
 // node index) with TRS from the node hierarchy and inverseBind from the skin.

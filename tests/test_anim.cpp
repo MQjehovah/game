@@ -86,6 +86,38 @@ TEST(TwoBoneIKUnreachableClamps) {
     CHECK_NEAR((r.c - r.a).Length(), 2.0f, 1e-3f);
 }
 
+TEST(ClipJsonRoundTrip) {
+    anim::AnimationClip clip;
+    clip.name = "walk";
+    clip.duration = 1.5f;
+    anim::Track tr;
+    tr.bone = 3;
+    tr.interp = anim::Interp::CubicSpline;
+    tr.times = {0.0f, 1.5f};
+    tr.translations = {{0, 0, 0}, {1, 0, 0}};
+    tr.rotations = {{0, 0, 0, 1}, {0, 0, 0, 1}};
+    tr.scales = {{1, 1, 1}, {1, 1, 1}};
+    clip.tracks.push_back(std::move(tr));
+
+    const std::string json = anim::SaveClipJson(clip);
+    auto res = anim::LoadClipJson(json);
+    CHECK(res.Ok());
+    const anim::AnimationClip& back = res.Value();
+    CHECK_EQ(back.name, "walk");
+    CHECK_NEAR(back.duration, 1.5f, 1e-5f);
+    CHECK_EQ(back.tracks.size(), 1u);
+    CHECK_EQ(back.tracks[0].bone, 3);
+    CHECK(back.tracks[0].interp == anim::Interp::CubicSpline);
+    CHECK_EQ(back.tracks[0].times.size(), 2u);
+    CHECK_NEAR(back.tracks[0].translations[1].x, 1.0f, 1e-5f);
+    CHECK_NEAR(back.tracks[0].rotations[0].w, 1.0f, 1e-5f);
+    // Sample the loaded clip.
+    anim::Pose pose;
+    pose.Resize(4);
+    back.Sample(0.75f, pose);
+    CHECK_NEAR(pose.t[3].x, 0.5f, 1e-3f);
+}
+
 // ---------------------------------------------------------------------------
 // neon::anim: skeleton LocalToGlobal, clip sampling (LINEAR/STEP/CUBICSPLINE),
 // state machine cross-fade, animator, and glTF animation import (Task 3.2)

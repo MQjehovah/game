@@ -535,4 +535,156 @@ TwoBoneIKResult TwoBoneIK(const math::Vec3& hip, const math::Vec3& knee,
     return out;
 }
 
+// ---------------------------------------------------------------------------
+// Clip JSON (P1-1 animation timeline editor)
+// ---------------------------------------------------------------------------
+
+namespace {
+
+core::Json JsonStr(const std::string& s) {
+    core::Json j;
+    j.type_ = core::Json::Type::String;
+    j.string_ = s;
+    return j;
+}
+
+core::Json JsonNum(double v) {
+    core::Json j;
+    j.type_ = core::Json::Type::Number;
+    j.number_ = v;
+    return j;
+}
+
+core::Json Vec3ToJson(const math::Vec3& v) {
+    core::Json arr;
+    arr.type_ = core::Json::Type::Array;
+    for (float f : {v.x, v.y, v.z}) arr.array_.push_back(JsonNum(f));
+    return arr;
+}
+
+core::Json QuatToJson(const math::Quat& q) {
+    core::Json arr;
+    arr.type_ = core::Json::Type::Array;
+    for (float f : {q.x, q.y, q.z, q.w}) arr.array_.push_back(JsonNum(f));
+    return arr;
+}
+
+bool JsonIsArrayOfNumbers(const core::Json* j, size_t n) {
+    return j && j->IsArray() && j->Size() == n;
+}
+
+math::Vec3 Vec3FromJson(const core::Json* j) {
+    if (!JsonIsArrayOfNumbers(j, 3)) return {};
+    return {static_cast<float>(j->At(0)->GetNumber()),
+            static_cast<float>(j->At(1)->GetNumber()),
+            static_cast<float>(j->At(2)->GetNumber())};
+}
+
+math::Quat QuatFromJson(const core::Json* j) {
+    if (!JsonIsArrayOfNumbers(j, 4)) return {0, 0, 0, 1};
+    return {static_cast<float>(j->At(0)->GetNumber()),
+            static_cast<float>(j->At(1)->GetNumber()),
+            static_cast<float>(j->At(2)->GetNumber()),
+            static_cast<float>(j->At(3)->GetNumber())};
+}
+
+} // namespace
+
+std::string SaveClipJson(const AnimationClip& clip) {
+    core::Json root;
+    root.type_ = core::Json::Type::Object;
+    root.object_["name"] = JsonStr(clip.name);
+    root.object_["duration"] = JsonNum(clip.duration);
+    core::Json tracks;
+    tracks.type_ = core::Json::Type::Array;
+    for (const Track& tr : clip.tracks) {
+        core::Json t;
+        t.type_ = core::Json::Type::Object;
+        t.object_["bone"] = JsonNum(tr.bone);
+        t.object_["interp"] = JsonStr(
+            tr.interp == Interp::Step ? "step"
+                                      : (tr.interp == Interp::CubicSpline ? "cubic" : "linear"));
+        core::Json times;
+        times.type_ = core::Json::Type::Array;
+        for (float f : tr.times) times.array_.push_back(JsonNum(f));
+        t.object_["times"] = std::move(times);
+        if (!tr.translations.empty()) {
+            core::Json arr;
+            arr.type_ = core::Json::Type::Array;
+            for (const math::Vec3& v : tr.translations) arr.array_.push_back(Vec3ToJson(v));
+            t.object_["translations"] = std::move(arr);
+        }
+        if (!tr.rotations.empty()) {
+            core::Json arr;
+            arr.type_ = core::Json::Type::Array;
+            for (const math::Quat& q : tr.rotations) arr.array_.push_back(QuatToJson(q));
+            t.object_["rotations"] = std::move(arr);
+        }
+        if (!tr.scales.empty()) {
+            core::Json arr;
+            arr.type_ = core::Json::Type::Array;
+            for (const math::Vec3& v : tr.scales) arr.array_.push_back(Vec3ToJson(v));
+            t.object_["scales"] = std::move(arr);
+        }
+        tracks.array_.push_back(std::move(t));
+    }
+    root.object_["tracks"] = std::move(tracks);
+    return core::JsonWriter::Write(root);
+}
+
+core::Result<AnimationClip> LoadClipJson(const std::string& jsonText) {
+    std::string perr;
+    core::Json root = core::Json::Parse(jsonText, &perr);
+    if (root.IsNull() && !perr.empty())
+        return core::Result<AnimationClip>::Err("clip: JSON parse error: " + perr);
+    if (!root.IsObject())
+        return core::Result<AnimationClip>::Err("clip: root must be a JSON object");
+    AnimationClip clip;
+    if (const core::Json* name = root.Get("name")) {
+        if (!name->IsString())
+            return core::Result<AnimationClip>::Err("clip: 'name' must be a string");
+        clip.name = name->GetString();
+    }
+    if (const core::Json* dur = root.Get("duration")) {
+        if (!dur->IsNumber())
+            return core::Result<AnimationClip>::Err("clip: 'duration' must be a number");
+        clip.duration = static_cast<float>(dur->GetNumber());
+    }
+    const core::Json* tracks = root.Get("tracks");
+    if (tracks && tracks->IsArray()) {
+        for (const core::Json& t : tracks->Items()) {
+            Track tr;
+            if (const core::Json* b = t.Get("bone")) tr.bone = b->GetInt(-1);
+            if (const core::Json* ip = t.Get("interp")) {
+                const std::string s = ip->GetString();
+                tr.interp = s == "step" ? Interp::Step
+                                        : (s == "cubic" ? Interp::CubicSpline : Interp::Linear);
+            }
+            if (const core::Json* times = t.Get("times")) {
+                if (times->IsArray()) {
+                    for (const core::Json& f : times->Items())
+                        tr.times.push_back(static_cast<float>(f.GetNumber()));
+                }
+            }
+            if (const core::Json* arr = t.Get("translations")) {
+                if (arr->IsArray())
+                    for (const core::Json& v : arr->Items())
+                        tr.translations.push_back(Vec3FromJson(&v));
+            }
+            if (const core::Json* arr = t.Get("rotations")) {
+                if (arr->IsArray())
+                    for (const core::Json& q : arr->Items())
+                        tr.rotations.push_back(QuatFromJson(&q));
+            }
+            if (const core::Json* arr = t.Get("scales")) {
+                if (arr->IsArray())
+                    for (const core::Json& v : arr->Items())
+                        tr.scales.push_back(Vec3FromJson(&v));
+            }
+            clip.tracks.push_back(std::move(tr));
+        }
+    }
+    return core::Result<AnimationClip>::Ok(std::move(clip));
+}
+
 } // namespace neon::anim

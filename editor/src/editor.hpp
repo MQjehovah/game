@@ -323,6 +323,7 @@ private:
     void OpenScriptEditor(const std::string& path);
     void SaveScriptEditor();
     void BuildScriptEditorPanel();
+    void BuildAnimEditorPanel();
     void SaveSceneAsChild();
     void OpenInExternalEditor(const std::string& path);
 
@@ -565,6 +566,14 @@ private:
     std::vector<std::string> scriptFiles_;                 // project-relative "scripts/*.lua"
     std::vector<ScriptCheckResult> scriptChecks_;          // parallel: per-file check results
     bool showScriptEditor_ = false;
+    bool showAnimEditor_ = false;
+    // P1-1 animation timeline editor state.
+    anim::AnimationClip animClip_;
+    std::string animClipPath_;
+    bool animClipDirty_ = false;
+    float animPlayhead_ = 0.0f;
+    bool animPlaying_ = false;
+    char animPathBuf_[512] = {};
     std::string scriptEditorPath_;   // file being edited ("" = closed)
     std::string scriptEditorRel_;    // project-relative path for checks
     char scriptEditorBuf_[256 * 1024] = {};

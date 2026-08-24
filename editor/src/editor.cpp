@@ -1875,6 +1875,7 @@ void EditorApp::BuildImGuiUI() {
         if (ImGui::BeginMenu("视图")) {
             ImGui::MenuItem("场景", nullptr, &showHierarchy_);
             ImGui::MenuItem("属性", nullptr, &showInspector_);
+            ImGui::MenuItem("动画时间线", nullptr, &showAnimEditor_);
             ImGui::MenuItem("资产", nullptr, &showAssets_);
             ImGui::MenuItem("资源", nullptr, &showResources_);
             ImGui::MenuItem("日志", nullptr, &showLog_);
@@ -2152,6 +2153,7 @@ void EditorApp::BuildImGuiUI() {
     BuildBtPanel();
     BuildScriptPanel();
     BuildScriptEditorPanel();
+    BuildAnimEditorPanel();
     BuildPackagePanel();
     BuildProfilerPanel();
     BuildInputMapPanel();
