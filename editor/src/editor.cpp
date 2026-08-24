@@ -3953,6 +3953,25 @@ void EditorApp::PollHotReload() {
             }
         }
     }
+
+    // Asset directory watch (P1-1 import pipeline): new/changed files under
+    // the project's assets dir show up in the asset panel automatically (the
+    // panel still owns the actual import/copy actions).
+    if (!assetDir_.empty()) {
+        std::vector<AssetEntry> now;
+        if (ListDirectory(assetDir_, now)) {
+            std::string sig;
+            for (const AssetEntry& a : now) {
+                sig += a.name;
+                sig += a.isDir ? "/" : "|";
+            }
+            if (sig != assetDirSignature_) {
+                assetDirSignature_ = sig;
+                RefreshAssetDir();
+                NEON_LOG_INFO("Editor: asset dir watch: %zu entries", now.size());
+            }
+        }
+    }
 }
 
 core::Status EditorApp::ExportScene() {

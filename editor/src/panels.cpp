@@ -419,6 +419,11 @@ void EditorApp::RefreshAssetDir() {
     assetEntries_.clear();
     selectedAsset_ = -1;
     ListDirectory(assetDir_, assetEntries_);
+    assetDirSignature_.clear();
+    for (const AssetEntry& a : assetEntries_) {
+        assetDirSignature_ += a.name;
+        assetDirSignature_ += a.isDir ? "/" : "|";
+    }
     std::sort(assetEntries_.begin(), assetEntries_.end(),
               [](const AssetEntry& a, const AssetEntry& b) {
                   if (a.isDir != b.isDir) return a.isDir;
@@ -2784,6 +2789,109 @@ void EditorApp::BuildScriptEditorPanel() {
                     }
                     ImGui::PopID();
                 }
+            }
+            ImGui::Separator();
+        }
+        // P1-2 autocomplete: engine binding reference + prefix completion for
+        // the word being typed.
+        {
+            static const struct {
+                const char* name;
+                const char* doc;
+            } kBindings[] = {
+                {"Spawn", "Spawn(kind, pos[, scriptPath]) 生成实体"},
+                {"Despawn", "Despawn(entity) 销毁实体"},
+                {"GetPosition", "GetPosition(entity) -> x,y,z"},
+                {"SetPosition", "SetPosition(entity, x,y,z)"},
+                {"GetVar", "GetVar(name) 读全局变量"},
+                {"SetVar", "SetVar(name, value) 写全局变量"},
+                {"Raycast", "Raycast(x,y,z, dx,dy,dz, range) -> t,owner"},
+                {"PhysicsAddSphere", "PhysicsAddSphere(x,y,z, r, dynamic, {mass,...}) -> id"},
+                {"PhysicsAddBox", "PhysicsAddBox(cx,cy,cz, hx,hy,hz, dynamic, {..}) -> id"},
+                {"PhysicsAddCharacter", "PhysicsAddCharacter(x,y,z, r, halfH, {layer,mask}) -> id"},
+                {"PhysicsSetCharacterMove", "PhysicsSetCharacterMove(id, x,y,z) 角色移动速度"},
+                {"PhysicsSetVelocity", "PhysicsSetVelocity(id, x,y,z)"},
+                {"PhysicsGetVelocity", "PhysicsGetVelocity(id) -> x,y,z"},
+                {"PhysicsSetPosition", "PhysicsSetPosition(id, x,y,z)"},
+                {"PhysicsGetPosition", "PhysicsGetPosition(id) -> x,y,z"},
+                {"PhysicsIsOnGround", "PhysicsIsOnGround(id) -> bool"},
+                {"PhysicsCollisions", "PhysicsCollisions() -> [{a,b},...]"},
+                {"PhysicsRemove", "PhysicsRemove(id)"},
+                {"Tween", "Tween(entity, prop, fx,fy,fz, tx,ty,tz, time, easing) 属性动画"},
+                {"GetEntitiesInGroup", "GetEntitiesInGroup('enemy') -> 实体表"},
+                {"PlaySfx", "PlaySfx(name) 播放音效"},
+                {"InputAxis", "InputAxis(name) 输入轴 (-1..1)"},
+                {"InputKey", "InputKey(name) -> 按键是否按下"},
+                {"ActionDown", "ActionDown(name) 动作按下"},
+                {"ActionPressed", "ActionPressed(name) 动作按下沿"},
+                {"ActionReleased", "ActionReleased(name) 动作抬起沿"},
+                {"SetRotationY", "SetRotationY(entity, radians)"},
+                {"GetHealth", "GetHealth(entity) -> hp"},
+                {"SetHealth", "SetHealth(entity, hp)"},
+                {"SpawnProjectile", "SpawnProjectile(pos, dir, speed, damage, life, caster)"},
+                {"MeleeAttack", "MeleeAttack(pos, dir, range, arcDeg, damage) -> 命中数"},
+                {"CastSkill", "CastSkill(name, pos, dir, caster) -> 结果"},
+                {"SkillCooldown", "SkillCooldown(name, caster) -> 剩余秒"},
+                {"AttackBox", "AttackBox(center, half, yaw, damage) -> 命中数"},
+                {"ApplyStatus", "ApplyStatus(entity, name, duration, magnitude)"},
+                {"HasStatus", "HasStatus(entity, name) -> bool"},
+                {"StatusMagnitude", "StatusMagnitude(entity, name) -> 数值"},
+                {"RemoveStatus", "RemoveStatus(entity, name)"},
+                {"DrawRect", "DrawRect(x,y,w,h, r,g,b,a)"},
+                {"DrawSprite", "DrawSprite(tex, x,y,w,h, flipX, flipY)"},
+                {"DrawText", "DrawText(text, x,y, size, r,g,b,a)"},
+                {"ReadText", "ReadText(path) 读数据文件"},
+                {"WriteText", "WriteText(path, content) 写数据文件"},
+                {"UIShow", "UIShow(path) 显示 UI 文档"},
+                {"UIHide", "UIHide() 隐藏 UI"},
+                {"UIClicked", "UIClicked(name) -> 按钮是否被点击"},
+                {"Loc", "Loc(key) 本地化文本"},
+                {"FindNamedEntity", "FindNamedEntity(name) -> entity"},
+                {"SetVisible", "SetVisible(entity, bool)"},
+                {"ChangeScene", "ChangeScene(path) 切换场景"},
+                {"SignalConnect", "SignalConnect(name, fn) 连接信号"},
+                {"SignalEmit", "SignalEmit(name, arg) 发射信号"},
+            };
+            const size_t len = std::strlen(scriptEditorBuf_);
+            size_t wordStart = len;
+            while (wordStart > 0) {
+                const char c = scriptEditorBuf_[wordStart - 1];
+                if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                      (c >= '0' && c <= '9') || c == '_'))
+                    break;
+                --wordStart;
+            }
+            const std::string word(scriptEditorBuf_ + wordStart, len - wordStart);
+            if (ImGui::Button("插入第一个匹配 (Ctrl+Space)") ||
+                (ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Space, false))) {
+                for (const auto& b : kBindings) {
+                    if (word.empty() || std::strncmp(b.name, word.c_str(), word.size()) == 0) {
+                        const std::string rest = b.name + word.size();
+                        if (wordStart + rest.size() < sizeof(scriptEditorBuf_)) {
+                            std::memmove(scriptEditorBuf_ + wordStart + rest.size(),
+                                         scriptEditorBuf_ + len,
+                                         sizeof(scriptEditorBuf_) - len - wordStart);
+                            std::memcpy(scriptEditorBuf_ + wordStart, rest.c_str(), rest.size());
+                            scriptEditorDirty_ = true;
+                        }
+                        break;
+                    }
+                }
+            }
+            ImGui::SameLine();
+            ImGui::TextDisabled("前缀: %s", word.c_str());
+            if (ImGui::CollapsingHeader("引擎绑定参考", ImGuiTreeNodeFlags_DefaultOpen)) {
+                if (ImGui::BeginChild("##binding_ref", ImVec2(0, 180), true)) {
+                    for (const auto& b : kBindings) {
+                        if (!word.empty() &&
+                            std::strncmp(b.name, word.c_str(), word.size()) != 0)
+                            continue;
+                        ImGui::TextUnformatted(b.name);
+                        ImGui::SameLine();
+                        ImGui::TextDisabled("%s", b.doc);
+                    }
+                }
+                ImGui::EndChild();
             }
             ImGui::Separator();
         }

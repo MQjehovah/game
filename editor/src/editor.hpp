@@ -177,6 +177,7 @@ private:
     // entity's script (the panel re-syncs on the next frame it runs).
     void SetSelection(int index);
     void RefreshAssetDir();
+    std::string assetDirSignature_;  // P1-1: cached asset-dir listing signature
     // Asset panel actions: copy a file into the current asset dir and create
     // a new asset (dir / lua / json / empty text). Both refresh the listing.
     void ImportAssetFile(const std::string& srcPath);
