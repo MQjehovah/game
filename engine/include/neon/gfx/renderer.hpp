@@ -188,6 +188,13 @@ public:
     Texture CreateTextureCompressed(int width, int height, uint32_t format, const void* data,
                                     size_t size);
     Shader CreateShader(const char* vertexSource, const char* fragmentSource, const char* name);
+    // P2-6 shader hot reload: creates a program from a CUSTOM fragment source
+    // paired with the built-in unlit vertex shader (vUV/vColor + uTex contract).
+    // The GL backend supports arbitrary fragment sources; the Vulkan backend
+    // rejects custom shaders (documented limitation) and returns an invalid
+    // handle so callers can fall back to the built-in material shader.
+    Shader CreateUnlitFragmentShader(const std::string& fragmentSource,
+                                     const std::string& name);
     Font CreateFontFromMemory(const uint8_t* data, size_t size, int pixelHeight);
     Font CreateFontFromMemoryWithCodepoints(const uint8_t* data, size_t size, int pixelHeight,
                                             const int32_t* codepoints, int codepointCount);

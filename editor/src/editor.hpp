@@ -50,6 +50,11 @@ struct SceneEntity {
     std::string mrTex;
     std::string aoTex;
     std::string emissiveTex;
+    // Custom fragment shader file (P2-6 shader hot reload): compiled against
+    // the built-in unlit vertex contract (vUV/vColor + uTex). Empty = the
+    // material's built-in shader.
+    std::string shaderPath;
+    gfx::Shader customShader;  // editor-side compiled handle
     float ao = 1.0f;               // AO strength (0 = ignore AO map, 1 = full)
     float emissiveIntensity = 1.0f;
     // Material asset reference (materials/<name>.mat.json): when set, the
@@ -123,6 +128,7 @@ public:
     void SetBloomEnabled(bool v) { bloomEnabled_ = v; }
     void SetMsaaEnabled(bool v) { msaaEnabled_ = v; }
     void SetTonemapEnabled(bool v) { tonemapEnabled_ = v; }
+    void SetBenchMode(bool v) { benchMode_ = v; }
     void SetHotReload(bool v) { hotReload_ = v; }
     // Godot/Unity-style view lock: 2D is the front-ortho camera, 3D is the
     // perspective camera. The project/scene/content never changes - only the
@@ -326,6 +332,7 @@ private:
     void BuildScriptEditorPanel();
     void BuildAnimEditorPanel();
     void SaveSceneAsChild();
+    void ReloadEntityShader(SceneEntity& e);
     void OpenInExternalEditor(const std::string& path);
 
     // Package panel (T4.6): docked 打包 panel with project/out dir inputs, a
@@ -449,6 +456,11 @@ private:
     bool bloomEnabled_ = true;
     bool msaaEnabled_ = true;
     bool tonemapEnabled_ = true;
+    bool benchMode_ = false;  // P2-6: per-interval frame-time/draw logs + summary
+    uint64_t benchFrames_ = 0;
+    float benchFrameMsSum_ = 0.0f;
+    float benchFrameMsMax_ = 0.0f;
+    uint64_t benchLastLogFrame_ = 0;
     std::string backendName_ = "gl";
     std::string screenshotPath_;
     uint64_t screenshotFrame_ = 0;

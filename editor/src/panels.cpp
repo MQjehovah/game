@@ -1390,6 +1390,27 @@ void EditorApp::BuildInspectorPanel() {
                 }
             }
         }
+        // P2-6 custom shader (fragment .glsl) with hot reload: compiled
+        // against the built-in unlit vertex contract; the file is re-watched
+        // by PollHotReload (--hot) and the 重编译 button recompiles now.
+        {
+            static char shaderBuf[512] = {};
+            std::snprintf(shaderBuf, sizeof(shaderBuf), "%s", e.shaderPath.c_str());
+            ImGui::SetNextItemWidth(320.0f);
+            if (ImGui::InputText("着色器 (.glsl 片元)", shaderBuf, sizeof(shaderBuf))) {
+                const std::string oldPath = e.shaderPath;
+                e.shaderPath = shaderBuf;
+                history_.Push(std::make_unique<EditPropertyCommand<std::string>>(
+                    &entities_, selected_, ApplyShaderPathProp, oldPath, e.shaderPath,
+                    /*mergeable=*/false));
+                ReloadEntityShader(e);
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("重编译")) ReloadEntityShader(e);
+            if (!e.shaderPath.empty())
+                ImGui::TextDisabled(e.customShader.Valid() ? "已编译 ✓ (GL)"
+                                                           : "未编译 / 后端不支持自定义着色器");
+        }
         // Drag a material-ball asset from the asset panel onto the entity.
         if (ImGui::BeginDragDropTarget()) {
             if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("ASSET_MATERIAL")) {

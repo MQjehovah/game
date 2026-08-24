@@ -1661,6 +1661,12 @@ Shader Renderer::CreateShader(const char* vertexSource, const char* fragmentSour
     return Shader(backend_->CreateShader(vertexSource, fragmentSource, name), name);
 }
 
+Shader Renderer::CreateUnlitFragmentShader(const std::string& fragmentSource,
+                                             const std::string& name) {
+    if (fragmentSource.empty() || !backend_) return {};
+    return CreateShader(kUnlitVertexShader, fragmentSource.c_str(), name.c_str());
+}
+
 void Renderer::DrawQuad(const math::Vec2& pos, const math::Vec2& size, const Color& color,
                         TextureHandle texture, const math::Vec2& uv0, const math::Vec2& uv1,
                         BlendMode blend) {

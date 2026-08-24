@@ -13,6 +13,7 @@ int main(int argc, char** argv) {
     bool disableBloom = false;
     bool disableMsaa = false;
     bool disableTonemap = false;
+    bool benchMode = false;
     bool hotReload = false;
     bool twoD = false;
     bool twoDPlay = false;
@@ -65,6 +66,8 @@ int main(int argc, char** argv) {
             disableMsaa = true;
         } else if (std::strcmp(argv[i], "--no-tonemap") == 0) {
             disableTonemap = true;
+        } else if (std::strcmp(argv[i], "--bench") == 0) {
+            benchMode = true;
         } else if (std::strcmp(argv[i], "--backend") == 0 && i + 1 < argc) {
             backend = argv[++i];
         } else if (std::strcmp(argv[i], "--help") == 0) {
@@ -83,6 +86,7 @@ int main(int argc, char** argv) {
                         "  --no-bloom             disable the HDR bloom post-process\n"
                         "  --no-msaa              force the single-sample HDR target (for diffing)\n"
                         "  --no-tonemap           composite with the legacy clamp instead of ACES (for diffing)\n"
+                        "  --bench                log frame-time/draw stats every 60 frames and a summary at exit\n"
                         "  --log-level <level>    log filter: debug|info|warn|error\n"
                         "  --log-cat <n>:<level>  per-category override (repeatable,\n"
                         "                         comma-separated, e.g. gfx:debug)\n");
@@ -112,6 +116,7 @@ int main(int argc, char** argv) {
     if (disableBloom) app.SetBloomEnabled(false);
     if (disableMsaa) app.SetMsaaEnabled(false);
     if (disableTonemap) app.SetTonemapEnabled(false);
+    if (benchMode) app.SetBenchMode(true);
     if (hotReload) app.SetHotReload(true);
     if (twoD) app.Set2DMode(true);
     if (twoDPlay) app.SetPvzPlaytestOnStart(true);

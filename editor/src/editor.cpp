@@ -505,6 +505,9 @@ void EditorApp::OnShutdown() {
     // Release the offscreen thumbnail targets + their ImGui registrations
     // before the renderer shuts down.
     if (gfx::IRenderBackend* backend = renderer_.Backend()) {
+        for (SceneEntity& e : entities_) {
+            if (e.customShader.Valid()) backend->DestroyShader(e.customShader.Handle());
+        }
         for (auto& kv : meshThumbs_) {
             if (kv.second.texId != ImTextureID_Invalid)
                 gfx::ImGuiNeon_UnregisterTexture(kv.second.texHandle);
@@ -520,6 +523,12 @@ void EditorApp::OnShutdown() {
     meshThumbQueue_.clear();
     materialThumbs_.clear();
     materialThumbQueue_.clear();
+    if (benchMode_ && benchFrames_ > 0) {
+        NEON_LOG_CAT(core::LogCategory::Core, core::LogLevel::Info,
+                     "BENCH-SUMMARY frames=%llu avgMs=%.2f maxMs=%.2f",
+                     static_cast<unsigned long long>(benchFrames_),
+                     benchFrameMsSum_ / static_cast<float>(benchFrames_), benchFrameMsMax_);
+    }
     gfx::ImGuiNeon_Shutdown();
     renderer_.Shutdown();
 }
@@ -643,6 +652,25 @@ void EditorApp::SetupScene() {
 }
 
 void EditorApp::OnUpdate(float dt) {
+    // P2-6 benchmark: per-interval frame-time/draw logs + an exit summary.
+    if (benchMode_) {
+        const float ms = TimeRef().delta * 1000.0f;
+        ++benchFrames_;
+        benchFrameMsSum_ += ms;
+        benchFrameMsMax_ = std::fmax(benchFrameMsMax_, ms);
+        if (TimeRef().frameIndex - benchLastLogFrame_ >= 60) {
+            benchLastLogFrame_ = TimeRef().frameIndex;
+            const assets::AssetStats st = assetMgr_.Stats();
+            NEON_LOG_CAT(
+                core::LogCategory::Core, core::LogLevel::Info,
+                "BENCH frame=%llu fps=%.1f avgMs=%.2f maxMs=%.2f ents=%zu draws=%u bodies=%zu "
+                "tex=%zu mesh=%zu",
+                static_cast<unsigned long long>(TimeRef().frameIndex), TimeRef().Fps(),
+                benchFrameMsSum_ / static_cast<float>(benchFrames_), benchFrameMsMax_,
+                entities_.size(), renderer_.Stats().drawCalls,
+                playtest_ ? playtest_->PhysicsBodyCount() : 0, st.textures, st.meshes);
+        }
+    }
     // Drain completed async texture decodes (uploads + callbacks, main thread).
     assetMgr_.PumpAsync();
     // The gizmo drag-sim (frame 30) needs the real mouse to hover the viewport
@@ -960,6 +988,39 @@ void EditorApp::OnUpdate(float dt) {
         NEON_LOG_INFO("EDITOR-MATERIAL-SMOKE-CJK: [%s] CJK-named material ball preview",
                       zhOk ? "PASS" : "FAIL");
         if (!zhOk) smokeFailed_ = true;
+    }
+    // P2-6 shader hot reload smoke: compile a temp fragment shader on the
+    // first entity, rewrite the file, recompile (mtime gate), restore.
+    if (smokeMode_ && TimeRef().frameIndex == 46) {
+        bool ok = !entities_.empty();
+        SceneEntity* target = entities_.empty() ? nullptr : &entities_[0];
+        const std::string shPath = GetTempDir() + "/smoke_tint.glsl";
+        const std::string oldShader = target ? target->shaderPath : "";
+        if (ok) {
+            if (std::ofstream out(shPath, std::ios::binary); out.is_open()) {
+                out << "#version 330 core\n"
+                    << "in vec2 vUV;\nin vec4 vColor;\nout vec4 FragColor;\n"
+                    << "uniform sampler2D uTex;\n"
+                    << "void main() { FragColor = vColor * texture(uTex, vUV); }\n";
+            }
+            target->shaderPath = shPath;
+            ReloadEntityShader(*target);
+            ok = target->customShader.Valid();
+            if (ok) {
+                // Touch the file and recompile (simulates a hot reload).
+                if (std::ofstream out2(shPath, std::ios::app); out2) out2 << "// touched\n";
+                const uint64_t before = FileMTime(shPath);
+                ReloadEntityShader(*target);
+                ok = target->customShader.Valid() && FileMTime(shPath) >= before;
+            }
+        }
+        if (target) {
+            target->shaderPath = oldShader;
+            ReloadEntityShader(*target);
+        }
+        NEON_LOG_INFO("EDITOR-SHADER-SMOKE: [%s] custom fragment shader compile + hot reload",
+                      ok ? "PASS" : "FAIL");
+        if (!ok) smokeFailed_ = true;
     }
     // Play/Stop smoke: start a playtest at frame 60, verify it ticks, stop at
     // the last frame (119; OnUpdate never runs at 120). Kept at "Play/Stop
@@ -3928,6 +3989,7 @@ void EditorApp::PollHotReload() {
     for (const SceneEntity& e : entities_) {
         const std::string meshPath = MeshKeyAssetPath(e.meshKey);
         if (!meshPath.empty()) checkFile(meshPath);
+        if (!e.shaderPath.empty()) checkFile(e.shaderPath);
         checkFile(e.albedoTex);
         checkFile(e.mrTex);
         checkFile(e.aoTex);
@@ -3945,9 +4007,11 @@ void EditorApp::PollHotReload() {
         for (SceneEntity& e : entities_) {
             const bool touches =
                 changedPaths.count(MeshKeyAssetPath(e.meshKey)) ||
+                changedPaths.count(e.shaderPath) ||
                 changedPaths.count(e.albedoTex) || changedPaths.count(e.mrTex) ||
                 changedPaths.count(e.aoTex) || changedPaths.count(e.emissiveTex);
             if (touches) {
+                if (changedPaths.count(e.shaderPath)) ReloadEntityShader(e);
                 ResolveMesh(e);
                 ApplyMaterialParams(e);
             }
@@ -4158,6 +4222,13 @@ void EditorApp::ApplyMaterialParams(SceneEntity& e) {
         e.spriteMaterial.tint = e.tint;
         return;
     }
+    // Custom fragment shader (P2-6) wins over the built-in lit/unlit shader.
+    if (e.customShader.Valid()) {
+        e.material.shader = e.customShader.Handle();
+        e.material.lit = false;
+    } else {
+        e.material.shader = {};
+    }
     // Props that bake colors into vertex data keep a white material tint (for
     // "npc" the entity tint already selected the tunic at mesh-build time).
     e.material.tint = IsBakedColorKey(e.meshKey) ? gfx::Color::White : e.tint;
@@ -4172,6 +4243,37 @@ void EditorApp::ApplyMaterialParams(SceneEntity& e) {
     if (!e.mrTex.empty()) e.material.metallicRoughness = assetMgr_.LoadTexture(e.mrTex).Handle();
     if (!e.aoTex.empty()) e.material.occlusion = assetMgr_.LoadTexture(e.aoTex).Handle();
     if (!e.emissiveTex.empty()) e.material.emissive = assetMgr_.LoadTexture(e.emissiveTex).Handle();
+}
+
+// P2-6 shader hot reload: (re)compiles the entity's custom fragment shader
+// against the built-in unlit vertex contract and re-binds it to the material.
+// The GL backend supports custom fragments; other backends return an invalid
+// handle and the material keeps its built-in shader.
+void EditorApp::ReloadEntityShader(SceneEntity& e) {
+    if (e.shaderPath.empty()) {
+        if (e.customShader.Valid() && renderer_.Backend()) {
+            renderer_.Backend()->DestroyShader(e.customShader.Handle());
+            e.customShader = {};
+        }
+        ApplyMaterialParams(e);
+        return;
+    }
+    std::ifstream in(e.shaderPath, std::ios::binary);
+    if (!in.is_open()) {
+        NEON_LOG_ERROR("Editor: cannot open shader '%s'", e.shaderPath.c_str());
+        return;
+    }
+    std::string src((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    gfx::Shader sh = renderer_.CreateUnlitFragmentShader(src, e.shaderPath);
+    if (!sh.Valid()) {
+        NEON_LOG_ERROR("Editor: shader compile failed for '%s'", e.shaderPath.c_str());
+        return;
+    }
+    if (e.customShader.Valid() && renderer_.Backend())
+        renderer_.Backend()->DestroyShader(e.customShader.Handle());
+    e.customShader = sh;
+    ApplyMaterialParams(e);
+    NEON_LOG_INFO("Editor: shader '%s' compiled", e.shaderPath.c_str());
 }
 
 void EditorApp::SaveScene() {
@@ -4234,6 +4336,7 @@ void EditorApp::SaveScene() {
         obj.object_["mrTex"] = str(e.mrTex);
         obj.object_["aoTex"] = str(e.aoTex);
         obj.object_["emissiveTex"] = str(e.emissiveTex);
+        if (!e.shaderPath.empty()) obj.object_["shaderPath"] = str(e.shaderPath);
         if (!e.scripts.empty()) {
             core::Json scriptsArr;
             scriptsArr.type_ = core::Json::Type::Array;
@@ -4393,6 +4496,13 @@ void EditorApp::LoadScene(const std::string& path) {
     pvzZombies_.clear();
     // Replace entity list, re-resolve meshes.
     std::vector<SceneEntity> loaded;
+    // Destroy custom shader handles from the previous scene (P2-6).
+    if (renderer_.Backend()) {
+        for (SceneEntity& old : entities_) {
+            if (old.customShader.Valid())
+                renderer_.Backend()->DestroyShader(old.customShader.Handle());
+        }
+    }
     bool has2DData = false; // any plant/zombie entity -> a 2D level scene
     // Support both the editor's flat format and the runtime's componentized
     // SceneFile format ("components": {transform/mesh/health/script}) so a
@@ -4541,6 +4651,7 @@ void EditorApp::LoadScene(const std::string& path) {
                 e.cameraFov = static_cast<float>(cf->GetNumber());
             if (const core::Json* co = j->Get("cameraOrtho"))
                 e.cameraOrtho = co->GetBool() || co->GetNumber() != 0;
+            if (const core::Json* sp = j->Get("shaderPath")) e.shaderPath = sp->GetString();
             e.meshKey = j->Get("mesh")->GetString("cube");
             if (const core::Json* st = j->Get("spriteTex")) e.spriteTex = st->GetString();
             if (const core::Json* fx = j->Get("spriteFlipX")) e.spriteFlipX = fx->GetInt(0) != 0;
@@ -4596,6 +4707,7 @@ void EditorApp::LoadScene(const std::string& path) {
             LoadMaterialParamsInto(e, projectDir_ + "/" + e.materialRef);
         }
         if (ResolveMesh(e)) {
+            if (!e.shaderPath.empty()) ReloadEntityShader(e);
             ApplyMaterialParams(e);
             loaded.push_back(std::move(e));
         }
