@@ -993,6 +993,7 @@ void EditorApp::OnUpdate(float dt) {
     // first entity, rewrite the file, recompile (mtime gate), restore.
     if (smokeMode_ && TimeRef().frameIndex == 46) {
         bool ok = !entities_.empty();
+        const bool glBackend = backendName_ != "vulkan";  // custom shaders: GL only
         SceneEntity* target = entities_.empty() ? nullptr : &entities_[0];
         const std::string shPath = GetTempDir() + "/smoke_tint.glsl";
         const std::string oldShader = target ? target->shaderPath : "";
@@ -1005,13 +1006,13 @@ void EditorApp::OnUpdate(float dt) {
             }
             target->shaderPath = shPath;
             ReloadEntityShader(*target);
-            ok = target->customShader.Valid();
+            ok = !glBackend || target->customShader.Valid();
             if (ok) {
                 // Touch the file and recompile (simulates a hot reload).
                 if (std::ofstream out2(shPath, std::ios::app); out2) out2 << "// touched\n";
                 const uint64_t before = FileMTime(shPath);
                 ReloadEntityShader(*target);
-                ok = target->customShader.Valid() && FileMTime(shPath) >= before;
+                ok = (!glBackend || target->customShader.Valid()) && FileMTime(shPath) >= before;
             }
         }
         if (target) {
