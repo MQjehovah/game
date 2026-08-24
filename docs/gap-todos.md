@@ -112,9 +112,10 @@
 
 ### G4-2 文档同步
 
-- [ ] [`ROADMAP.md`](./ROADMAP.md) M1 的 Vulkan 状态仍标"灰度"，但 godot-gap-analysis P0-2 已记录修复完成，需更新。
-- [ ] ROADMAP M5 的 "shader 热重载未做" 已过时（代码与 gap-analysis 均已完成，仅限 GL），需更新。
-- [ ] 单元测试数量（ROADMAP 记录 561，当前实际 564）与横向"渲染资源生命周期管理"条目同步。
+- [x] [`ROADMAP.md`](./ROADMAP.md) M1/当前状态的 Vulkan 灰度描述、M5 shader 热重载、对象池、横向"资源生命周期"与单元测试数量（564）已全部更新（2026-08-24）。
+- [x] [`ARCHITECTURE.md`](./ARCHITECTURE.md) 扩展点的 Vulkan 灰度描述已更新为"已修复、与 GL 逐像素一致"（2026-08-24）。
+- [x] [`VULKAN_ROADMAP.md`](./VULKAN_ROADMAP.md) 开头"占位实现（Init 返回 false）"已更新为"已实现并修复灰度问题"，下文保留为实现记录（2026-08-24）。
+- [x] [`godot-gap-analysis.md`](./godot-gap-analysis.md) P0-2 现状已标注"已修复"，排查清单保留为历史记录（2026-08-24）。
 
 ## 五、架构设计级特性（第二轮 1–3）
 

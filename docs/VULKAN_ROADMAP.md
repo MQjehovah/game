@@ -1,6 +1,6 @@
 # Vulkan 后端实现路线
 
-`IRenderBackend` 接口已冻结，Vulkan 后端只需填充该接口。当前 `engine/src/gfx/vulkan/vk_backend.cpp` 为占位实现（`Init` 返回 false）。
+`IRenderBackend` 接口已冻结。**状态（2026-08-24）：Vulkan 后端已实现并修复灰度问题**——`engine/src/gfx/vulkan/vk_backend.cpp`（volk 动态加载 + glslang 构建期 SPIR-V），采样器 set/binding 与管线布局对齐后 `--backend vulkan` 与 GL 逐像素一致，冒烟/截图验证通过（见 `godot-gap-analysis.md` P0-2）。下文为当时的实现路线，保留作实现记录。
 
 ## 步骤
 

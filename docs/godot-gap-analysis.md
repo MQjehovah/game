@@ -165,8 +165,10 @@ tests。
 
 **目标**：让 Vulkan 后端渲染与 GL 一致（顶点色/材质/贴图正确），可作为 GL 的稳定备选。
 
-**现状**：`engine/src/gfx/vulkan/vk_backend.cpp` 可构建/运行/截图，但画面灰度。
-顶点布局看起来是对的（`Vertex3D` 80 字节、`static_assert`、pipeline stride=80，
+**现状（2026-08-24 已修复）**：灰度问题已解决——采样器 set/binding 与管线布局对齐、
+移除旧 exposure hack 后，`--backend vulkan` 与 GL 逐像素一致。下方排查清单为当时的
+修复记录；原现状：`engine/src/gfx/vulkan/vk_backend.cpp` 可构建/运行/截图，但画面
+灰度。顶点布局看起来是对的（`Vertex3D` 80 字节、`static_assert`、pipeline stride=80，
 `vk_backend.cpp:2512` 与 `lit.vert` 的 location 0-3 对应）。
 
 **排查清单（按概率排序）**：

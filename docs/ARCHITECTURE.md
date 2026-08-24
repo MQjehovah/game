@@ -219,7 +219,7 @@ OnRender：
 
 ## 6. 扩展点
 
-- **Vulkan 后端**：实验性实现已完成（`engine/src/gfx/vulkan/vk_backend.cpp`，volk 动态加载 + glslang 构建期 SPIR-V，`NEON_ENABLE_VULKAN` 选项）。**当前渲染结果为灰度**（`Vertex3D` 顶点输入布局或材质 uniform/描述符绑定未正确应用），GL 为默认后端。修复方向与验收标准见 `docs/ROADMAP.md`（M1）；跨后端一致性测试（T7.2）待 Vulkan 渲染正确后启用。
+- **Vulkan 后端**：实现已完成（`engine/src/gfx/vulkan/vk_backend.cpp`，volk 动态加载 + glslang 构建期 SPIR-V，`NEON_ENABLE_VULKAN` 选项）。采样器 set/binding 与管线布局对齐、移除旧 exposure hack 后，`--backend vulkan` 渲染与 GL 逐像素一致（2026-08-24 修复，见 `docs/godot-gap-analysis.md` P0-2）；GL 仍为默认后端。
 - **物理引擎替换**：保留 `physics::World` 外观，内部接 Jolt/Bullet。
 - **音频后端**：miniaudio 已 vendored 且三平台编译，Windows 已启用；Linux/macOS 可逐步把默认选择切到 miniaudio（当前保留 Null 兜底，CI 无音频设备也能跑）。
 - **资源流式加载**：`AssetManager` 异步解码 + `ChunkStreamer` 已实现，供大世界分区使用；pack 直读文件提供器（免解压）为可选优化。

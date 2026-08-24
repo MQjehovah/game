@@ -8,18 +8,18 @@
 ## 当前状态（已交付）
 
 - 分层引擎：core / interface / platform / gfx / audio / physics / assets / ui / scene。
-- OpenGL 3.3/4.x 后端（Windows 实测），Win32 窗口实测；X11/Cocoa 代码就绪由 CI 编译；**Vulkan 后端为实验性**（volk 动态加载 + 构建期 SPIR-V，可构建/运行/截图，但渲染结果为灰度，顶点色/材质未正确应用，待修复）。
+- OpenGL 3.3/4.x 后端（Windows 实测），Win32 窗口实测；X11/Cocoa 代码就绪由 CI 编译；**Vulkan 后端已修复**（volk 动态加载 + 构建期 SPIR-V，采样器 set/binding 与管线布局对齐后 `--backend vulkan` 与 GL 逐像素一致，见 [`godot-gap-analysis.md`](./godot-gap-analysis.md) P0-2；GL 仍为默认后端）。
 - **内容创作运行时**：Lua 5.4 沙箱（确定性 RNG/时钟）+ 引擎绑定、行为树引擎（JSON 序列化 + 逐实体状态）、组件化场景格式 + 预制体 + `game.json` 清单、`GameRuntime` 可复用运行时。
 - **数据驱动工具链闭环**：`neon_editor` 编辑场景/材质/行为树/脚本 → 一键打包 `game.pack` → `neon_game` 通用播放器运行数据驱动游戏（无硬编码玩法）。
-- **编辑器深化**：gizmo（ImGuizmo）、撤销/重做、材质编辑器（PBR 贴图槽）、行为树可视化编辑器、脚本面板、资产缩略图、多相机（透视/顶视/前视）、热重载（脚本/资产）、性能面板。
+- **编辑器深化**：gizmo（ImGuizmo）、撤销/重做、材质编辑器（PBR 贴图槽）、行为树可视化编辑器、脚本面板、资产缩略图、多相机（透视/顶视/前视）、热重载（脚本/资产/自定义 shader）、性能面板。
 - **渲染**：PBR（Cook-Torrance）、CSM + 点光 cubemap 阴影、HDR+Bloom+ACES 色调映射+MSAA、IBL 环境光、GPU 蒙皮骨骼动画、LOD 资产链、BC1 纹理压缩 + 异步解码。
 - **平台/性能**：miniaudio 三平台音频、ECS 批量迭代 + 确定性并行 job、世界分区流式（chunk 异步加载/卸载）。
 - **网络层（M4）**：UDP 传输 + 可靠通道（ACK/重传）、版本化消息编解码、无头权威服务器 `neon_server`、快照插值 + 预测回滚、AOI 九宫格、v0 匿名登录/角色选择占位，以及**确定性模拟验收**（服务器权威模拟与客户端本地预测对同一脚本输入流逐位一致，见 `docs/NETWORKING.md`）。
-- **测试**：461 项单元测试、截图与冒烟测试（demo/编辑器/服务器/播放器）、打包→运行闭环验收。
+- **测试**：564 项单元测试、截图与冒烟测试（demo/编辑器/服务器/播放器）、打包→运行闭环验收。
 
 ## M1：渲染质量
 
-- [⚠️] **Vulkan 后端**：volk 动态加载 + 构建期 SPIR-V（glslang），可运行但渲染为灰度（顶点色/材质缺陷），GL 为默认后端。修复方向：核对 `Vertex3D` 顶点输入布局与材质 uniform/描述符绑定。
+- [x] **Vulkan 后端**：volk 动态加载 + 构建期 SPIR-V（glslang）；采样器 set/binding 与管线布局对齐、移除旧 exposure hack 后，`--backend vulkan` 渲染与 GL 逐像素一致（冒烟/截图验证通过，见 [`godot-gap-analysis.md`](./godot-gap-analysis.md) P0-2）。GL 仍为默认后端。
 - [x] 阴影映射（方向光 CSM + 点光 cubemap，颜色编码深度兼容驱动缺陷）。
 - [x] PBR 材质（metallic/roughness/AO/自发光）。
 - [x] 网格实例化绘制 + 视锥剔除。
@@ -40,7 +40,7 @@
 - [x] 资产管线：glTF 2.0 导入（静态网格 + PBR 材质 + 蒙皮 + 动画）。
 - [x] 纹理压缩（BC1，stb_dxt）+ LOD 资产链 + 异步解码（线程池 + 主线程上传泵）。
 - [~] ECS 演进：批迭代 + 确定性并行 job（串行/并行逐位一致）已实现；archetype 存储与确定性快照为未来后端替换（接口已就绪）。
-- [ ] 对象池与内存 arena，控制 GC 停顿与分配。
+- [x] 对象池与内存 arena：`core::ObjectPool` 固定容量池 + ECS dense 数组 + 粒子稳定 arena，控制分配与停顿；通用 relocating allocator（后台 compact）列为远期（见 [`gap-todos.md`](./gap-todos.md) G6-3）。
 
 ## M4：网络化（客户端/服务器同构）
 
@@ -55,7 +55,7 @@
 - [x] 场景编辑器基础：ImGui 工具 UI、视口导航/拾取、实体增删改、属性面板、场景 JSON 保存加载。
 - [x] 编辑器面板：场景/资产/资源/属性/日志 + 材质/行为树/脚本/打包/性能面板。
 - [x] 编辑器进阶：多相机、gizmo、撤销/重做、资产缩略图、材质编辑器（贴图槽）、行为树可视化、脚本面板。
-- [~] 热重载：脚本/资产已实现（`--hot`）；shader 热重载未做。
+- [~] 热重载：脚本/资产/自定义 fragment shader 已实现（`--hot`；自定义 shader 仅 GL 后端）；Vulkan 自定义 shader 热重载待做（见 [`gap-todos.md`](./gap-todos.md) G2-5）。
 - [~] 性能分析：性能面板（帧时间/实体/物理/行为树/内存统计）已实现；CPU/GPU 时间线、自动化基准待做。
 - [~] 包体与更新管线：一键打包 + `game.pack` + 通用播放器已实现；崩溃上报、日志汇聚待做。
 
@@ -65,8 +65,8 @@
 - [x] 中文/CJK 字体（引擎侧动态字形：系统字体按需栅格化，任意中文直接渲染；编辑器 ImGui 仍为全量 CJK 烘焙）。
 - [x] CJK 字形自动收集：动态字形图集（`Font::EnsureGlyph` 运行时按需栅格化 + `UpdateTextureRegion` 增量上传），彻底替代手工维护 cjkSamples。
 - [x] 序列化：稳定、带版本的二进制序列化（`core::Serializer`）+ JSON 用于存档与网络。
-- [ ] 渲染资源生命周期管理（引用计数/GPU 资源缓存），当前 demo 生命周期即应用生命周期。
-- [x] 单元测试：461 项覆盖数学/ECS/脚本/行为树/场景/渲染数学/物理/音频/网络编解码/可靠传输/服务器/客户端同步/确定性验收。
+- [x] 资源生命周期：AssetManager 引用计数 + 延迟回收、chunk 卸载释放、对象池（P0-3）；统一资源依赖图与自动卸载策略见 [`gap-todos.md`](./gap-todos.md) G1-4。
+- [x] 单元测试：564 项覆盖数学/ECS/脚本/行为树/场景/渲染数学/物理/音频/网络编解码/可靠传输/服务器/客户端同步/确定性验收。
 
 ## 里程碑依赖关系
 
