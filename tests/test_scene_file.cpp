@@ -813,3 +813,31 @@ TEST(SceneTilemapComponent) {
         });
     CHECK(found);
 }
+
+TEST(SceneDecalComponent) {
+    const std::string json = R"({
+      "entities": [
+        {"name": "stain", "components": {
+          "transform": {"pos": [0, 0.02, 0]},
+          "decal": {"texture": "assets/decals/blood.png", "size": 4, "alpha": 0.7}
+        }}
+      ]
+    })";
+    auto res = scene::SceneFile::Parse(json);
+    CHECK(res.Ok());
+    scene::ComponentRegistry reg;
+    scene::RegisterBuiltinComponents(reg);
+    ecs::World world;
+    scene::PrefabLibrary prefs;
+    auto inst = scene::Instantiate(world, res.Value(), prefs, reg);
+    CHECK(inst.Ok());
+    bool found = false;
+    world.ViewAll<scene::SceneDecal>().ForEach(
+        [&](ecs::Entity, const scene::SceneDecal& d) {
+            found = true;
+            CHECK_EQ(d.texture, "assets/decals/blood.png");
+            CHECK_NEAR(d.size, 4.0f, 1e-6f);
+            CHECK_NEAR(d.alpha, 0.7f, 1e-6f);
+        });
+    CHECK(found);
+}

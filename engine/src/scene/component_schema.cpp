@@ -54,6 +54,11 @@ std::vector<ComponentSchema> BuildSchemas() {
                     {"rows", "行", FieldType::Int, 5, 1, 64, 1},
                     {"cellSize", "格大小", FieldType::Number, 80, 1, 512, 1},
                     {"tiles", "格 (纹理路径数组)", FieldType::String, 0, 0, 0, 0}}});
+    out.push_back({"decal", "贴花",
+                   {{"texture", "贴图", FieldType::Resource, 0, 0, 0, 0, nullptr, 0,
+                     "texture"},
+                    {"size", "尺寸", FieldType::Number, 2, 0.1, 100, 0.1},
+                    {"alpha", "不透明度", FieldType::Number, 1, 0, 1, 0.01}}});
     out.push_back({"rigidbody", "刚体",
                    {{"shape", "形状", FieldType::Enum, 0, 0, 0, 0, kRigidBodyShapes, 2},
                     {"radius", "半径", FieldType::Number, 0.5, 0.01, 100, 0.1},

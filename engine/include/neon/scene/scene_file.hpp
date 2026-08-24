@@ -278,6 +278,14 @@ struct SceneTilemap {
     float cellSize = 80.0f;
     std::vector<std::string> tiles;  // cols*rows, row-major
 };
+// Ground-projected decal (P2-1): a textured quad lying on the XZ plane at the
+// entity's position (road markings, stains, blood splats). `size` is the world
+// edge length; alpha fades the whole decal.
+struct SceneDecal {
+    std::string texture;
+    float size = 2.0f;
+    float alpha = 1.0f;
+};
 
 // A component factory builds a component onto `ent` from its effective JSON
 // data. Args: world, entity, merged component data (prefab already applied),

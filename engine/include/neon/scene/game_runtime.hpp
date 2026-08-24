@@ -240,6 +240,9 @@ private:
         bool flipX = false;
         bool flipY = false;
         math::Vec3 tileOffset{};  // P1-1: per-cell offset for tilemap quads
+        // P2-1 ground decal: draws a flat XZ-plane quad with the texture.
+        bool isDecal = false;
+        float decalSize = 2.0f;
         // LOD chain spec from the entity's SceneMesh (data-driven: distance +
         // meshKey per level). Resolved into `chain` during ResolveDrawItem.
         std::vector<LodEntry> lod;

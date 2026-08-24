@@ -1010,6 +1010,26 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                      world.Add<SceneTilemap>(ent, std::move(t));
                      return true;
                  });
+
+    reg.Register("decal",
+                 [](ecs::World& world, ecs::Entity ent, const core::Json& data,
+                    const core::Json&, std::string* err) {
+                     if (!CheckComponentShape(data, {"texture", "size", "alpha"}, "decal",
+                                              err))
+                         return false;
+                     SceneDecal d;
+                     if (const core::Json* tex = data.Get("texture")) {
+                         if (!tex->IsString()) {
+                             if (err) *err = "component 'decal' field 'texture' must be a string";
+                             return false;
+                         }
+                         d.texture = tex->GetString();
+                     }
+                     if (!RequireNumber(data, "size", "decal", d.size, err)) return false;
+                     if (!RequireNumber(data, "alpha", "decal", d.alpha, err)) return false;
+                     world.Add<SceneDecal>(ent, std::move(d));
+                     return true;
+                 });
 }
 
 // --- Instantiate -------------------------------------------------------------

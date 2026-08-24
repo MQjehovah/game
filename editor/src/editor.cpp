@@ -1056,6 +1056,31 @@ void EditorApp::OnUpdate(float dt) {
                       ok ? "PASS" : "FAIL", tm.tilemapTiles_.size());
         if (!ok) smokeFailed_ = true;
     }
+    // P2-1 decal smoke: exporting a scene with a decal writes the runtime
+    // component.
+    if (smokeMode_ && TimeRef().frameIndex == 49) {
+        bool ok = false;
+        if (!entities_.empty()) {
+            SceneEntity& e = entities_[0];
+            const std::string oldTex = e.decalTex;
+            e.decalTex = "assets/textures/decal.png";
+            e.decalSize = 3.0f;
+            e.decalAlpha = 0.5f;
+            auto rootRes = BuildPlaySceneJson();
+            e.decalTex = oldTex;
+            e.decalMesh = {};
+            if (rootRes.Ok()) {
+                const core::Json* ents = rootRes.Value().Get("entities");
+                if (ents && ents->Size() > 0) {
+                    const core::Json* comps = ents->At(0)->Get("components");
+                    ok = comps && comps->Get("decal") != nullptr;
+                }
+            }
+        }
+        NEON_LOG_INFO("EDITOR-DECAL-SMOKE: [%s] decal exports as a runtime component",
+                      ok ? "PASS" : "FAIL");
+        if (!ok) smokeFailed_ = true;
+    }
     // Play/Stop smoke: start a playtest at frame 60, verify it ticks, stop at
     // the last frame (119; OnUpdate never runs at 120). Kept at "Play/Stop
     // doesn't crash the editor" level; the real script/BT verification lives
@@ -1209,7 +1234,7 @@ void EditorApp::OnRender() {
                                  return entities_[a].zOrder < entities_[b].zOrder;
                              });
             for (size_t di : drawOrder) {
-                const SceneEntity& e = entities_[di];
+                SceneEntity& e = entities_[di];
                 if (e.meshKey == "tilemap") {
                     // P1-1: draw every non-empty cell as a sprite quad; the
                     // entity's scale sets the cell size.
@@ -1236,6 +1261,21 @@ void EditorApp::OnRender() {
                             }
                         }
                     }
+                    continue;
+                }
+                if (!e.decalTex.empty()) {
+                    gfx::Material mat = e.spriteMaterial;
+                    mat.albedo = assetMgr_.LoadTexture(e.decalTex).Handle();
+                    mat.transparent = true;
+                    mat.tint = {1, 1, 1, e.decalAlpha};
+                    if (!e.decalMesh.Valid())
+                        e.decalMesh =
+                            gfx::Mesh::CreatePlane(renderer_, e.decalSize, e.decalSize, 1, 1,
+                                                   "decal");
+                    math::Mat4 decalModel =
+                        math::Mat4::Translation(e.pos + math::Vec3{0, 0.02f, 0}) *
+                        e.rot.ToMat4();
+                    renderer_.DrawMesh(e.decalMesh, mat, decalModel);
                     continue;
                 }
                 math::Mat4 model = math::Mat4::Translation(e.pos) * e.rot.ToMat4() *
@@ -3836,6 +3876,17 @@ core::Result<core::Json> EditorApp::BuildPlaySceneJson() {
                 tlm.object_["tiles"] = std::move(tls);
                 comps.object_["tilemap"] = std::move(tlm);
             }
+            if (!e.decalTex.empty()) {
+                core::Json dc;
+                dc.type_ = core::Json::Type::Object;
+                core::Json tex;
+                tex.type_ = core::Json::Type::String;
+                tex.string_ = e.decalTex;
+                dc.object_["texture"] = std::move(tex);
+                dc.object_["size"] = mkNum(e.decalSize);
+                dc.object_["alpha"] = mkNum(e.decalAlpha);
+                comps.object_["decal"] = std::move(dc);
+            }
             obj.object_["components"] = std::move(comps);
         }
         arr.array_.push_back(std::move(obj));
@@ -4620,6 +4671,14 @@ void EditorApp::SaveScene() {
             td.object_["tiles"] = std::move(arr);
             obj.object_["tilemapData"] = std::move(td);
         }
+        if (!e.decalTex.empty()) {
+            core::Json dd;
+            dd.type_ = core::Json::Type::Object;
+            dd.object_["texture"] = str(e.decalTex);
+            dd.object_["size"] = num(e.decalSize);
+            dd.object_["alpha"] = num(e.decalAlpha);
+            obj.object_["decalData"] = std::move(dd);
+        }
         core::Json tint;
         tint.type_ = core::Json::Type::Array;
         tint.array_ = {num(e.tint.r), num(e.tint.g), num(e.tint.b)};
@@ -4905,6 +4964,14 @@ void EditorApp::LoadScene(const std::string& path) {
                             e.tilemapTiles_.push_back(v.GetString());
                 }
             }
+            if (const core::Json* dc = comps->Get("decal")) {
+                if (const core::Json* tex = dc->Get("texture"))
+                    e.decalTex = tex->GetString();
+                if (const core::Json* sz = dc->Get("size"))
+                    e.decalSize = static_cast<float>(sz->GetNumber());
+                if (const core::Json* al = dc->Get("alpha"))
+                    e.decalAlpha = static_cast<float>(al->GetNumber());
+            }
             if (const core::Json* s = comps->Get("script")) {
                 // Legacy single "script" component: one mounted script.
                 if (s->IsObject()) {
@@ -5006,6 +5073,14 @@ void EditorApp::LoadScene(const std::string& path) {
                         for (const core::Json& v : tls->Items())
                             e.tilemapTiles_.push_back(v.GetString());
                 }
+            }
+            if (const core::Json* dc = j->Get("decalData")) {
+                if (const core::Json* tex = dc->Get("texture"))
+                    e.decalTex = tex->GetString();
+                if (const core::Json* sz = dc->Get("size"))
+                    e.decalSize = static_cast<float>(sz->GetNumber());
+                if (const core::Json* al = dc->Get("alpha"))
+                    e.decalAlpha = static_cast<float>(al->GetNumber());
             }
             if (const core::Json* st = j->Get("spriteTex")) e.spriteTex = st->GetString();
             if (const core::Json* fx = j->Get("spriteFlipX")) e.spriteFlipX = fx->GetInt(0) != 0;

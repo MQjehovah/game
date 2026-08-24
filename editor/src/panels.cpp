@@ -1263,6 +1263,36 @@ void EditorApp::BuildInspectorPanel() {
             ImGui::TextColored(ImVec4(0.8f, 0.85f, 1.0f, 1.0f),
                                "精灵类型: 在下方\"精灵\"区块设置贴图");
         }
+        // P2-1 ground decal: a flat textured quad projected onto the ground.
+        if (ImGui::CollapsingHeader("贴花##decal")) {
+            static char decalBuf[512] = {};
+            std::snprintf(decalBuf, sizeof(decalBuf), "%s", e.decalTex.c_str());
+            ImGui::SetNextItemWidth(300.0f);
+            if (ImGui::InputText("贴图", decalBuf, sizeof(decalBuf))) {
+                const std::string old = e.decalTex;
+                e.decalTex = decalBuf;
+                e.decalMesh = {};
+                history_.Push(std::make_unique<EditPropertyCommand<std::string>>(
+                    &entities_, selected_, ApplyDecalTexProp, old, e.decalTex,
+                    /*mergeable=*/false));
+            }
+            if (!e.decalTex.empty()) {
+                const float oldSize = e.decalSize;
+                if (ImGui::DragFloat("尺寸", &e.decalSize, 0.1f, 0.1f, 100.0f)) {
+                    e.decalMesh = {};
+                    history_.Push(std::make_unique<EditPropertyCommand<float>>(
+                        &entities_, selected_, ApplyDecalSizeProp, oldSize, e.decalSize));
+                }
+                const float oldAlpha = e.decalAlpha;
+                if (ImGui::DragFloat("不透明度", &e.decalAlpha, 0.01f, 0.0f, 1.0f)) {
+                    history_.Push(std::make_unique<EditPropertyCommand<float>>(
+                        &entities_, selected_, ApplyDecalAlphaProp, oldAlpha, e.decalAlpha));
+                }
+            } else {
+                ImGui::TextDisabled("填入贴图路径后保存/导出即生成地面贴花");
+            }
+            ImGui::Separator();
+        }
         if (!e.spriteTex.empty()) {
             ImGui::TextDisabled("精灵贴图: %s", e.spriteTex.c_str());
             const SpriteFlipValue oldFlip{e.spriteFlipX, e.spriteFlipY};

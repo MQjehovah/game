@@ -862,6 +862,23 @@ void GameRuntime::BuildDrawList() {
             }
         }
     }
+    // P2-1 ground decals: a flat textured quad on the XZ plane.
+    auto decalView = world_.ViewAll<SceneDecal>();
+    for (size_t i = 0; i < decalView.Size(); ++i) {
+        ecs::Entity ent = world_.EntityAt<SceneDecal>(i);
+        if (contains(ent)) continue;
+        const SceneDecal* d = world_.Get<SceneDecal>(ent);
+        if (!d || d->texture.empty()) continue;
+        DrawItem item;
+        item.ent = ent;
+        item.isDecal = true;
+        item.spriteTex = d->texture;
+        item.decalSize = d->size;
+        item.mat = gfx::Material::Unlit({});
+        item.mat.transparent = true;
+        item.mat.tint = {1, 1, 1, d->alpha};
+        draws_.push_back(std::move(item));
+    }
 }
 
 void GameRuntime::ResolveDrawItem(DrawItem& item, gfx::Renderer& renderer) {
@@ -879,6 +896,21 @@ void GameRuntime::ResolveDrawItem(DrawItem& item, gfx::Renderer& renderer) {
         item.mesh = gfx::Mesh::CreateQuad(renderer, 1.0f, 1.0f, "sprite");
         item.mat.albedo = tex.Handle();
         item.mat.transparent = true; // PNG sprites keep their alpha
+        item.resolved = true;
+        return;
+    }
+    if (item.isDecal) {
+        gfx::Texture tex = cfg_.assets->LoadTexture(FullAssetPath(item.spriteTex));
+        if (!tex.Valid()) {
+            NEON_LOG_CAT(core::LogCategory::Scene, core::LogLevel::Warn,
+                         "runtime: decal texture '%s' failed to load (skipped)",
+                         item.spriteTex.c_str());
+            item.failed = true;
+            return;
+        }
+        item.mesh = gfx::Mesh::CreatePlane(renderer, item.decalSize, item.decalSize, 1, 1,
+                                           "decal");
+        item.mat.albedo = tex.Handle();
         item.resolved = true;
         return;
     }
@@ -1317,6 +1349,11 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera) {
         math::Mat4 model = LocalToWorld(item.ent);
         if (item.tileOffset.LengthSq() > 0.0f)
             model = model * math::Mat4::Translation(item.tileOffset);
+        if (item.isDecal) {
+            // Lift the quad a hair above the surface it projects onto so depth
+            // testing keeps it visible (no z-fighting on flat ground).
+            model = model * math::Mat4::Translation({0.0f, 0.02f, 0.0f});
+        }
         const math::Vec3 worldPos{model.m[12], model.m[13], model.m[14]};
         if (item.isSprite) {
             // Flip mirrors the quad around its center: a negative local scale

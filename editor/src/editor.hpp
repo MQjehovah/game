@@ -48,6 +48,10 @@ struct SceneEntity {
     int tilemapCols_ = 8;
     int tilemapRows_ = 5;
     float tilemapCellSize_ = 80.0f;
+    // P2-1 ground decal editing (flat XZ quad).
+    std::string decalTex;
+    float decalSize = 2.0f;
+    float decalAlpha = 1.0f;
     math::Vec3 pos{};
     math::Quat rot{};
     math::Vec3 scale{1, 1, 1};
@@ -66,6 +70,7 @@ struct SceneEntity {
     // material's built-in shader.
     std::string shaderPath;
     gfx::Shader customShader;  // editor-side compiled handle
+    gfx::Mesh decalMesh;       // P2-1: flat ground-decal quad (lazy)
     float ao = 1.0f;               // AO strength (0 = ignore AO map, 1 = full)
     float emissiveIntensity = 1.0f;
     // Material asset reference (materials/<name>.mat.json): when set, the

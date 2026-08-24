@@ -213,6 +213,9 @@ inline void ApplyCameraFovProp(SceneEntity& e, const float& v) { e.cameraFov = v
 inline void ApplyCameraOrthoProp(SceneEntity& e, const bool& v) { e.cameraOrtho = v; }
 inline void ApplyShaderPathProp(SceneEntity& e, const std::string& v) { e.shaderPath = v; }
 inline void ApplyZOrderProp(SceneEntity& e, const float& v) { e.zOrder = v; }
+inline void ApplyDecalTexProp(SceneEntity& e, const std::string& v) { e.decalTex = v; }
+inline void ApplyDecalSizeProp(SceneEntity& e, const float& v) { e.decalSize = v; }
+inline void ApplyDecalAlphaProp(SceneEntity& e, const float& v) { e.decalAlpha = v; }
 
 // 2D sprite mirroring: flips both axes in one undo step.
 struct SpriteFlipValue {
