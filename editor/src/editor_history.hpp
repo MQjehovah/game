@@ -212,6 +212,7 @@ inline void ApplyNodeTypeProp(SceneEntity& e, const std::string& v) { e.nodeType
 inline void ApplyCameraFovProp(SceneEntity& e, const float& v) { e.cameraFov = v; }
 inline void ApplyCameraOrthoProp(SceneEntity& e, const bool& v) { e.cameraOrtho = v; }
 inline void ApplyShaderPathProp(SceneEntity& e, const std::string& v) { e.shaderPath = v; }
+inline void ApplyZOrderProp(SceneEntity& e, const float& v) { e.zOrder = v; }
 
 // 2D sprite mirroring: flips both axes in one undo step.
 struct SpriteFlipValue {

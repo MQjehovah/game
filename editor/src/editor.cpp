@@ -1166,7 +1166,16 @@ void EditorApp::OnRender() {
                     renderer_.DrawBox({db.pos - db.halfExtents, db.pos + db.halfExtents}, c);
             }
         } else {
-            for (const SceneEntity& e : entities_) {
+            // P2-3: sprites draw back-to-front by zOrder (stable sort keeps the
+            // scene-tree order for everything else).
+            std::vector<size_t> drawOrder(entities_.size());
+            for (size_t i = 0; i < drawOrder.size(); ++i) drawOrder[i] = i;
+            std::stable_sort(drawOrder.begin(), drawOrder.end(),
+                             [&](size_t a, size_t b) {
+                                 return entities_[a].zOrder < entities_[b].zOrder;
+                             });
+            for (size_t di : drawOrder) {
+                const SceneEntity& e = entities_[di];
                 math::Mat4 model = math::Mat4::Translation(e.pos) * e.rot.ToMat4() *
                                    math::Mat4::Scale(e.scale);
                 if (!e.spriteTex.empty() && e.spriteMesh.Valid()) {
@@ -1423,6 +1432,21 @@ void EditorApp::MarkUIDirty() {
 }
 
 gfx::Camera EditorApp::ActiveCamera() const {
+    // P1-1 camera entity preview: when enabled and a Camera3D entity is
+    // selected, the viewport shows through it (transform + fov/ortho).
+    if (cameraFollowSelected_ && selected_ >= 0 &&
+        selected_ < static_cast<int>(entities_.size())) {
+        const SceneEntity& e = entities_[static_cast<size_t>(selected_)];
+        if (e.nodeType == "Camera3D") {
+            gfx::Camera cam;
+            cam.position = e.pos;
+            cam.target = e.pos + e.rot.Rotate({0, 0, -1});
+            cam.up = {0, 1, 0};
+            cam.ortho = e.cameraOrtho;
+            cam.fovY = e.cameraFov * math::kDegToRad;
+            return cam;
+        }
+    }
     gfx::Camera cam;
     switch (viewCam_) {
         case ViewCam::Top: // 顶视: orthographic looking down -Y
@@ -1937,6 +1961,7 @@ void EditorApp::BuildImGuiUI() {
             ImGui::MenuItem("场景", nullptr, &showHierarchy_);
             ImGui::MenuItem("属性", nullptr, &showInspector_);
             ImGui::MenuItem("动画时间线", nullptr, &showAnimEditor_);
+            ImGui::MenuItem("以选中相机为视图", nullptr, &cameraFollowSelected_);
             ImGui::MenuItem("资产", nullptr, &showAssets_);
             ImGui::MenuItem("资源", nullptr, &showResources_);
             ImGui::MenuItem("日志", nullptr, &showLog_);
@@ -4340,6 +4365,7 @@ void EditorApp::SaveScene() {
         if (!e.parent.empty()) obj.object_["parent"] = str(e.parent);
         obj.object_["pos"] = vec3(e.pos);
         obj.object_["scale"] = vec3(e.scale);
+        if (e.zOrder != 0.0f) obj.object_["zOrder"] = num(e.zOrder);
         core::Json tint;
         tint.type_ = core::Json::Type::Array;
         tint.array_ = {num(e.tint.r), num(e.tint.g), num(e.tint.b)};
@@ -4595,6 +4621,10 @@ void EditorApp::LoadScene(const std::string& path) {
                 if (const core::Json* v = cam->Get("ortho")) e.cameraOrtho = v->GetBool();
                 if (e.nodeType.empty()) e.nodeType = "Camera3D";
             }
+            if (const core::Json* so = comps->Get("sortOrder")) {
+                if (const core::Json* z = so->Get("z"))
+                    e.zOrder = static_cast<float>(z->GetNumber());
+            }
             if (const core::Json* s = comps->Get("script")) {
                 // Legacy single "script" component: one mounted script.
                 if (s->IsObject()) {
@@ -4669,6 +4699,8 @@ void EditorApp::LoadScene(const std::string& path) {
                 e.cameraOrtho = co->GetBool() || co->GetNumber() != 0;
             if (const core::Json* sp = j->Get("shaderPath")) e.shaderPath = sp->GetString();
             e.meshKey = j->Get("mesh")->GetString("cube");
+            if (const core::Json* zo = j->Get("zOrder"))
+                e.zOrder = static_cast<float>(zo->GetNumber());
             if (const core::Json* st = j->Get("spriteTex")) e.spriteTex = st->GetString();
             if (const core::Json* fx = j->Get("spriteFlipX")) e.spriteFlipX = fx->GetInt(0) != 0;
             if (const core::Json* fy = j->Get("spriteFlipY")) e.spriteFlipY = fy->GetInt(0) != 0;

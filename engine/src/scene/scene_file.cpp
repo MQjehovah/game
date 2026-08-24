@@ -951,6 +951,16 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                      world.Add<SceneCamera>(ent, c);
                      return true;
                  });
+
+    reg.Register("sortOrder",
+                 [](ecs::World& world, ecs::Entity ent, const core::Json& data,
+                    const core::Json&, std::string* err) {
+                     if (!CheckComponentShape(data, {"z"}, "sortOrder", err)) return false;
+                     SceneSortOrder s;
+                     if (!RequireNumber(data, "z", "sortOrder", s.z, err)) return false;
+                     world.Add<SceneSortOrder>(ent, s);
+                     return true;
+                 });
 }
 
 // --- Instantiate -------------------------------------------------------------

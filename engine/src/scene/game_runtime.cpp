@@ -1241,15 +1241,39 @@ float GameRuntime::GameVar(const std::string& name) const {
 
 void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera) {
     if (!running_ || !cfg_.assets) return; // sim-only runtime draws nothing
+    // P2-3 scene camera: when the world contains a camera entity, its transform
+    // + camera component become the active view (Godot Camera3D-style).
+    gfx::Camera cam = camera;
+    bool usedCameraEntity = false;
+    world_.ViewAll<SceneCamera, SceneTransform>().ForEach(
+        [&](ecs::Entity, const SceneCamera& c, const SceneTransform& t) {
+            if (usedCameraEntity) return;
+            usedCameraEntity = true;
+            cam.position = t.pos;
+            cam.target = t.pos + t.rot.Rotate({0, 0, -1});
+            cam.up = {0, 1, 0};
+            cam.ortho = c.ortho;
+            cam.fovY = c.fov * math::kDegToRad;
+        });
     // Project at the ACTIVE scene viewport's aspect (a dock sub-rect in the
     // editor, the full target in the standalone player) so the runtime render
     // matches whatever rasterization rect the host set up - otherwise the
     // playtest FOV would differ from the edit-mode viewport.
-    renderer.SetCamera(camera, renderer.SceneAspect());
+    renderer.SetCamera(cam, renderer.SceneAspect());
     // Scripts may have spawned/despawned sprite entities since the last frame.
     BuildDrawList();
+    // P2-3: sprites render back-to-front by their sortOrder component (2D
+    // games); 3D depth-tested meshes are unaffected by the stable order.
+    std::vector<size_t> order(draws_.size());
+    for (size_t i = 0; i < order.size(); ++i) order[i] = i;
+    std::stable_sort(order.begin(), order.end(), [&](size_t a, size_t b) {
+        const SceneSortOrder* sa = world_.Get<SceneSortOrder>(draws_[a].ent);
+        const SceneSortOrder* sb = world_.Get<SceneSortOrder>(draws_[b].ent);
+        return (sa ? sa->z : 0.0f) < (sb ? sb->z : 0.0f);
+    });
     size_t dead = 0;
-    for (DrawItem& item : draws_) {
+    for (size_t idx : order) {
+        DrawItem& item = draws_[idx];
         if (!world_.Alive(item.ent)) {
             ++dead; // scripts can Despawn entities mid-playtest
             continue;

@@ -256,6 +256,11 @@ struct SceneCamera {
     float fov = 60.0f;  // vertical field of view, degrees
     bool ortho = false;
 };
+// 2D sort order (P2-3): sprites draw back-to-front by this value (lower first;
+// default 0 when the component is absent).
+struct SceneSortOrder {
+    float z = 0.0f;
+};
 
 // A component factory builds a component onto `ent` from its effective JSON
 // data. Args: world, entity, merged component data (prefab already applied),

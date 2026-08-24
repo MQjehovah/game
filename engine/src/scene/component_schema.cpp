@@ -47,6 +47,8 @@ std::vector<ComponentSchema> BuildSchemas() {
     out.push_back({"camera", "相机",
                    {{"fov", "视野 (度)", FieldType::Number, 60, 20, 120, 1},
                     {"ortho", "正交", FieldType::Bool, 0, 0, 1, 0}}});
+    out.push_back({"sortOrder", "排序",
+                   {{"z", "Z 排序 (小在前)", FieldType::Number, 0, -10000, 10000, 0.1}}});
     out.push_back({"rigidbody", "刚体",
                    {{"shape", "形状", FieldType::Enum, 0, 0, 0, 0, kRigidBodyShapes, 2},
                     {"radius", "半径", FieldType::Number, 0.5, 0.01, 100, 0.1},

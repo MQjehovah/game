@@ -41,6 +41,7 @@ struct SceneEntity {
     math::Vec3 pos{};
     math::Quat rot{};
     math::Vec3 scale{1, 1, 1};
+    float zOrder = 0.0f;  // P2-3: 2D sprite draw order (lower draws first)
     gfx::Color tint{1, 1, 1, 1};
     float metallic = 0.0f;
     float roughness = 0.8f;
@@ -387,6 +388,7 @@ private:
     core::Json currentSceneRoot_;
     std::string currentScenePath_;
     std::string sceneExtends_; // P1-1: parent scene path ("" = no inheritance)
+    bool cameraFollowSelected_ = false; // P1-1: view through the selected Camera3D
 
     float yaw_ = 0.7f;
     float pitch_ = 0.35f;

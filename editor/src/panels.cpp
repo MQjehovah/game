@@ -1325,6 +1325,11 @@ void EditorApp::BuildInspectorPanel() {
                 &entities_, selected_, e.pos, e.rot, oldScale, e.pos, e.rot, e.scale,
                 EditTransformCommand::kScale));
         }
+        const float oldZ = e.zOrder;
+        if (ImGui::DragFloat("Z 排序", &e.zOrder, 0.1f, -10000.0f, 10000.0f)) {
+            history_.Push(std::make_unique<EditPropertyCommand<float>>(
+                &entities_, selected_, ApplyZOrderProp, oldZ, e.zOrder));
+        }
         }
         // 网格 (MeshRenderer-like): mesh key + material + textures in one
         // block. Hidden for sprites (the sprite quad replaces it); removable -

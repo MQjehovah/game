@@ -747,3 +747,37 @@ TEST(SceneInheritanceParseAndMerge) {
     // Child gameVars win.
     CHECK_NEAR(merged.gameVars.Get("gold")->GetNumber(), 99.0, 1e-6);
 }
+
+TEST(SceneSortOrderAndCameraComponents) {
+    const std::string json = R"({
+      "entities": [
+        {"name": "bg", "components": {"transform": {"pos": [0,0,0]}, "sprite": {"texture": "a.png"}, "sortOrder": {"z": -5}}},
+        {"name": "cam", "components": {"transform": {"pos": [0,0,10]}, "type": {"value": "Camera3D"}, "camera": {"fov": 75, "ortho": true}}}
+      ]
+    })";
+    auto res = scene::SceneFile::Parse(json);
+    CHECK(res.Ok());
+    scene::ComponentRegistry reg;
+    scene::RegisterBuiltinComponents(reg);
+    ecs::World world;
+    scene::PrefabLibrary prefs;
+    auto inst = scene::Instantiate(world, res.Value(), prefs, reg);
+    CHECK(inst.Ok());
+
+    ecs::Entity bgEnt;
+    world.ViewAll<scene::SceneSortOrder>().ForEach([&](ecs::Entity e, const scene::SceneSortOrder& s) {
+        bgEnt = e;
+        CHECK_NEAR(s.z, -5.0f, 1e-6f);
+    });
+    CHECK(bgEnt.Valid());
+
+    bool camFound = false;
+    world.ViewAll<scene::SceneCamera, scene::SceneNodeType>().ForEach(
+        [&](ecs::Entity, const scene::SceneCamera& c, const scene::SceneNodeType& t) {
+            camFound = true;
+            CHECK_NEAR(c.fov, 75.0f, 1e-6f);
+            CHECK(c.ortho);
+            CHECK_EQ(t.value, "Camera3D");
+        });
+    CHECK(camFound);
+}
