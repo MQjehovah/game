@@ -168,6 +168,11 @@ struct ScriptContext {
     std::function<ecs::Entity(const std::string&, const math::Vec3&, float, float, bool, bool,
                               const std::string&)>
         spawnSprite;
+    // Runtime prefab instantiation (SpawnPrefab binding): creates a prefab
+    // entity (prefabs/<name>.json) at `pos`, attaching its script components
+    // and running on_start like a scene-placed entity. Wired by GameRuntime;
+    // null -> SpawnPrefab is a no-op returning an invalid handle.
+    std::function<ecs::Entity(const std::string&, const math::Vec3&)> spawnPrefab;
     // Reads an entity's data-driven "zombie" component (row/delay/type) as a
     // Lua table, or nil. Wired by GameRuntime; null -> ZombieInfo returns nil.
     std::function<script::Value(ecs::Entity)> zombieInfo;

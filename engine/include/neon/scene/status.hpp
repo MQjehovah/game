@@ -21,7 +21,8 @@ enum : uint32_t {
     kStatusBurning = 1, // fire: damage tick every interval
     kStatusPoison = 2,  // poison: damage tick every interval
     kStatusRegen = 3,   // regen: heal tick every interval
-    kStatusCount = 4,
+    kStatusSlow = 4,    // slow: movement modifier (magnitude = speed factor), no tick
+    kStatusCount = 5,
 };
 
 struct StatusDef {

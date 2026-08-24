@@ -1,0 +1,9 @@
+{
+  "components": {
+    "transform": {"scale": [56, 72, 1]},
+    "sprite": {"texture": "assets/sprites/cone.png"},
+    "health": {"hp": 140, "maxHp": 140},
+    "zombie": {"type": "cone", "speed": 26, "damage": 12},
+    "script": {"backend": "lua", "path": "scripts/zombies.lua", "vars": {}}
+  }
+}

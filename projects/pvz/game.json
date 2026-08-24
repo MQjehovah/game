@@ -3,5 +3,8 @@
   "window": { "w": 1280, "h": 720, "title": "NeonPvZ - 植物大战僵尸" },
   "title": "NeonPvZ",
   "editor": { "mode": "2d" },
-  "export": { "platform": "windows", "description": "NeonPvZ 2D 植物大战僵尸" }
+  "export": {
+    "platform": "windows",
+    "description": "NeonPvZ 2D 植物大战僵尸（通用引擎架构示范：实体+组件 / prefab / 双语言脚本 / 插件 / 输入映射 / UI 文档 / 本地化）"
+  }
 }

@@ -1,6 +1,12 @@
 #include <cmath>
 #include <string>
 
+#if defined(_WIN32)
+#include <direct.h>
+#else
+#include <sys/stat.h>
+#endif
+
 #include "neon/neon.hpp"
 #include "neon/scene/game_runtime.hpp"
 #include "helpers.hpp"
@@ -260,6 +266,61 @@ end
     CHECK(runtime.GameVars().Get("got_slots").type == script::Value::Type::Number);
     CHECK_EQ(runtime.GameVars().Get("got_slots").number, 18.0);
     CHECK_EQ(runtime.GameVars().Get("got_weight").number, 50.0);
+    runtime.Stop();
+}
+
+// Runtime prefab instantiation: SpawnPrefab expands a prefab (components +
+// script), the script reads its custom component via EntityComponent and can
+// mutate it via SetEntityComponent.
+TEST(GameRuntimeSpawnPrefabAtRuntime) {
+    test::TempDir tmp;
+    const std::string dir = tmp.Str();
+#if defined(_WIN32)
+    ::_mkdir((dir + "/prefabs").c_str());
+#else
+    ::mkdir((dir + "/prefabs").c_str(), 0777);
+#endif
+    const char* peaLua = R"(
+function on_start(e)
+  local p = EntityComponent(e, "pea")
+  if p ~= nil then
+    SetVar("pea_damage", p.damage)
+    SetVar("pea_speed", p.speed)
+  end
+  SetEntityComponent(e, "pea", { damage = 99, speed = 1 })
+end
+function on_update(e, dt)
+  local p = EntityComponent(e, "pea")
+  if p ~= nil and p.damage == 99 then SetVar("pea_updated", true) end
+end
+)";
+    CHECK(test::WriteFileAll(
+        dir + "/prefabs/pea.json",
+        R"({"components": {
+             "sprite": {"texture": "assets/sprites/pea.png"},
+             "pea": {"damage": 10, "speed": 340},
+             "script": {"backend": "lua", "path": "pea.lua", "vars": {}}
+           }})"));
+    CHECK(test::WriteFileAll(dir + "/pea.lua", peaLua));
+    scene::GameRuntime runtime;
+    scene::GameRuntimeConfig cfg;
+    cfg.scriptBaseDir = dir;
+    // Disk-backed prefab + script (mirrors the standalone repro).
+    core::Status st = runtime.Start(R"({"entities":[]})", cfg);
+    CHECK(st.Ok());
+
+    const ecs::Entity e = runtime.SpawnPrefab("pea", {100, 200, 0});
+    CHECK(e.IsValid());
+    CHECK(runtime.GameVars().Get("pea_damage").type == script::Value::Type::Number);
+    CHECK_EQ(runtime.GameVars().Get("pea_damage").number, 10.0);
+    CHECK_EQ(runtime.GameVars().Get("pea_speed").number, 340.0);
+
+    runtime.Tick(1.0f / 60.0f);
+    CHECK(runtime.GameVars().Get("pea_updated").type == script::Value::Type::Bool);
+    CHECK(runtime.GameVars().Get("pea_updated").boolean);
+
+    // Unknown prefabs fail cleanly.
+    CHECK(!runtime.SpawnPrefab("nope", {0, 0, 0}).IsValid());
     runtime.Stop();
 }
 

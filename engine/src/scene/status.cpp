@@ -11,6 +11,7 @@ const StatusDef kStatusDefs[] = {
     {kStatusBurning, "burning", 1.0f},
     {kStatusPoison, "poison", 1.0f},
     {kStatusRegen, "regen", 1.0f},
+    {kStatusSlow, "slow", 1.0f},
 };
 
 } // namespace

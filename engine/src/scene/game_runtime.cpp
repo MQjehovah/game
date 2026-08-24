@@ -166,11 +166,11 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     NEON_LOG_CAT(core::LogCategory::Scene, core::LogLevel::Info,
                  "runtime: physics backend '%s' (%zu rigid bodies cap)",
                  cfg_.physicsBackend.c_str(), physics_->BodyCount());
-    ComponentRegistry reg;
-    RegisterBuiltinComponents(reg, /*assets=*/nullptr);
+    compReg_ = ComponentRegistry{};
+    RegisterBuiltinComponents(compReg_, /*assets=*/nullptr);
     LoadPrefabs(); // scene entities may reference prefabs by name (packed games)
     LoadLocales(); // Loc() string tables (best effort; missing dir = no-op)
-    auto inst = Instantiate(world_, parsed.Value(), prefs_, reg);
+    auto inst = Instantiate(world_, parsed.Value(), prefs_, compReg_);
     if (!inst.Ok()) return core::Status::Err("runtime: " + inst.Error());
     RegisterSceneBodies();
     RegisterCharacters();
@@ -266,6 +266,9 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
             AttachOneScript(e, sc); // loads once, captures + runs on_start
         }
         return e;
+    };
+    scriptCtx_.spawnPrefab = [this](const std::string& name, const math::Vec3& pos) {
+        return SpawnPrefab(name, pos);
     };
     scriptCtx_.zombieInfo = [this](ecs::Entity e) {
         const SceneZombie* z = world_.Get<SceneZombie>(e);
@@ -1105,6 +1108,75 @@ ecs::Entity GameRuntime::SpawnEntity(const std::string& kind, const math::Vec3& 
     return e;
 }
 
+ecs::Entity GameRuntime::SpawnPrefab(const std::string& name, const math::Vec3& pos) {
+    if (name.empty() || !prefs_.Get(name).Ok()) {
+        NEON_LOG_CAT(core::LogCategory::Scene, core::LogLevel::Warn,
+                     "runtime: SpawnPrefab: unknown prefab '%s'", name.c_str());
+        return {};
+    }
+    // Build a one-entity scene that references the prefab and overrides the
+    // transform, then reuse the exact Instantiate pipeline (prefab expansion,
+    // component factories, custom-component SceneData storage).
+    static uint64_t spawnCounter = 1;
+    const std::string uniqueName = name + "_" + std::to_string(spawnCounter++);
+    core::Json root;
+    root.type_ = core::Json::Type::Object;
+    core::Json arr;
+    arr.type_ = core::Json::Type::Array;
+    core::Json ent;
+    ent.type_ = core::Json::Type::Object;
+    core::Json nameJ;
+    nameJ.type_ = core::Json::Type::String;
+    nameJ.string_ = uniqueName;
+    ent.object_["name"] = std::move(nameJ);
+    core::Json prefabJ;
+    prefabJ.type_ = core::Json::Type::String;
+    prefabJ.string_ = name;
+    ent.object_["prefab"] = std::move(prefabJ);
+    core::Json comps;
+    comps.type_ = core::Json::Type::Object;
+    core::Json tr;
+    tr.type_ = core::Json::Type::Object;
+    core::Json posArr;
+    posArr.type_ = core::Json::Type::Array;
+    for (float v : {pos.x, pos.y, pos.z}) {
+        core::Json num;
+        num.type_ = core::Json::Type::Number;
+        num.number_ = v;
+        posArr.array_.push_back(std::move(num));
+    }
+    tr.object_["pos"] = std::move(posArr);
+    comps.object_["transform"] = std::move(tr);
+    ent.object_["components"] = std::move(comps);
+    arr.array_.push_back(std::move(ent));
+    root.object_["entities"] = std::move(arr);
+
+    auto parsed = SceneFile::Parse(core::JsonWriter::Write(root));
+    if (!parsed.Ok()) return {};
+    auto inst = Instantiate(world_, parsed.Value(), prefs_, compReg_);
+    if (!inst.Ok() || inst.Value() != 1) return {};
+
+    // Locate the created entity by its unique name, then attach its script
+    // components (AttachScripts only runs at Start for scene entities; the
+    // prefab's on_start fires here, with its custom components already set).
+    ecs::Entity out;
+    auto names = world_.ViewAll<SceneName>();
+    for (size_t i = 0; i < names.Size(); ++i) {
+        ecs::Entity ent2 = world_.EntityAt<SceneName>(i);
+        const SceneName* sn = world_.Get<SceneName>(ent2);
+        if (sn && sn->name == uniqueName) {
+            out = ent2;
+            break;
+        }
+    }
+    if (!out.IsValid()) return {};
+    if (const SceneScript* s = world_.Get<SceneScript>(out)) AttachOneScript(out, *s);
+    if (const SceneScripts* list = world_.Get<SceneScripts>(out)) {
+        for (const SceneScript& s : list->items) AttachOneScript(out, s);
+    }
+    return out;
+}
+
 void GameRuntime::SpawnProjectile(const math::Vec3& pos, const math::Vec3& dir, float speed,
                                   float damage, float life, ecs::Entity caster) {
     Projectile p;
@@ -1197,6 +1269,9 @@ void GameRuntime::TickStatuses(float dt) {
             if (id == kStatusRegen) {
                 // Regen magnitude is a heal amount per tick.
                 h->hp = std::fmin(h->maxHp, h->hp + magnitude);
+            } else if (id == kStatusSlow) {
+                // Slow is a movement modifier read by scripts (magnitude =
+                // speed factor); it deals no tick damage.
             } else {
                 h->hp = std::fmax(0.0f, h->hp - magnitude);
             }
@@ -1620,7 +1695,12 @@ void GameRuntime::Tick(float dt) {
     // Both backends share the engine-injected simulated clock.
     if (hosts_.lua) hosts_.lua->SetSimClock(simTime_);
     if (hosts_.js) hosts_.js->SetSimClock(simTime_);
-    for (ScriptInst& inst : scripts_) {
+    // Index-based: SpawnPrefab (called from a script) can push new ScriptInst
+    // entries into scripts_ mid-loop; an iterator would be invalidated. New
+    // instances are processed in the same tick, which is the expected
+    // "spawned this frame acts this frame" semantics.
+    for (size_t si = 0; si < scripts_.size(); ++si) {
+        ScriptInst& inst = scripts_[si];
         if (!world_.Alive(inst.ent)) continue;
         if (inst.onUpdate == 0) continue; // this chunk defines no on_update
         CallEntityFunctionHandle(inst, inst.onUpdate, "on_update",

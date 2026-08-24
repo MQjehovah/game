@@ -20,6 +20,10 @@ projects/*
 # NeonPhysics rigid-body demo project
 !projects/physics_demo/
 !projects/physics_demo/**
+# NeonPvZ architecture-showcase project: scenes, scripts, prefabs, UI docs,
+# locales, input map and plugins are all first-class project data.
+!projects/pvz/
+!projects/pvz/**
 .vs/
 .vscode/
 CMakeUserPresets.json

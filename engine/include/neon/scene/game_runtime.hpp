@@ -155,6 +155,12 @@ public:
     bool RunPluginCommand(const std::string& name,
                           const std::vector<script::Value>& args = {},
                           std::string* error = nullptr);
+    // Instantiates a prefab (prefabs/<name>.json) at `pos` into the live
+    // world, attaching its script components and running on_start like a
+    // scene-placed entity. Returns the new entity (invalid on failure). The
+    // SpawnPrefab binding calls this; game scripts use it for dynamic content
+    // (projectiles, spawned units, pickups).
+    ecs::Entity SpawnPrefab(const std::string& name, const math::Vec3& pos);
     bool DebuggerPaused() const {
         return hosts_.lua && hosts_.lua->DebuggerPaused();
     }
@@ -392,6 +398,7 @@ private:
     std::vector<Tween> tweens_;
     SkillTable skills_;
     std::unique_ptr<plugin::RuntimePluginManager> plugins_; // runtime plugins
+    scene::ComponentRegistry compReg_; // built-in + data component factories
     std::vector<script::Draw2DCmd> draw2d_; // script 2D canvas (on_render)
     std::unique_ptr<ui::UiDocument> uiDoc_; // data-driven UI document
     std::set<std::string> uiClickedNames_;  // buttons clicked since last Draw

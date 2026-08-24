@@ -1,0 +1,9 @@
+{
+  "components": {
+    "transform": {"scale": [56, 72, 1]},
+    "sprite": {"texture": "assets/sprites/zombie.png"},
+    "health": {"hp": 100, "maxHp": 100},
+    "zombie": {"type": "basic", "speed": 26, "damage": 12},
+    "script": {"backend": "lua", "path": "scripts/zombies.lua", "vars": {}}
+  }
+}

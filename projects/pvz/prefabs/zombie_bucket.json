@@ -1,0 +1,9 @@
+{
+  "components": {
+    "transform": {"scale": [56, 72, 1]},
+    "sprite": {"texture": "assets/sprites/bucket.png"},
+    "health": {"hp": 200, "maxHp": 200},
+    "zombie": {"type": "bucket", "speed": 26, "damage": 12},
+    "script": {"backend": "lua", "path": "scripts/zombies.lua", "vars": {}}
+  }
+}

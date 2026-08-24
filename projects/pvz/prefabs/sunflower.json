@@ -1,0 +1,8 @@
+{
+  "components": {
+    "transform": {"scale": [60, 68, 1]},
+    "sprite": {"texture": "assets/sprites/sunflower.png"},
+    "plant": {"type": "sunflower", "cost": 50, "cooldown": 4, "hp": 80, "maxHp": 80},
+    "script": {"backend": "lua", "path": "scripts/plants.lua", "vars": {}}
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "id": "wave_director",
+  "name": "波次导演",
+  "version": "1.0.0",
+  "type": "runtime",
+  "backend": "js",
+  "entry": "init.js",
+  "minEngineVersion": "0.1.0",
+  "permissions": ["world", "commands"]
+}

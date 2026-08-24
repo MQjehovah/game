@@ -1,0 +1,8 @@
+{
+  "components": {
+    "transform": {"scale": [40, 40, 1]},
+    "sprite": {"texture": "assets/sprites/pea.png"},
+    "pea": {"damage": 10, "speed": 340, "snow": 0},
+    "script": {"backend": "lua", "path": "scripts/pea.lua", "vars": {}}
+  }
+}

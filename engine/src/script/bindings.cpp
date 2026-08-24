@@ -16,6 +16,7 @@ constexpr float kRayMaxDist = 100000.0f;
 // Defined below; forward-declared so EntityComponent can convert component
 // JSON into a script Value.
 Value JsonToValue(const core::Json& j);
+core::Json ValueToJson(const Value& v);
 
 // Lua numbers are doubles; casting one directly to uint32_t is UB for
 // negative, NaN, or >= 2^32 values. Range-check first; anything out of range
@@ -556,12 +557,38 @@ Value NativeSpawnSprite(IScriptHost& host, void* user) {
     return EntityToValue(ctx->spawnSprite(tex, pos, w, h, flipX, flipY, script));
 }
 
-// ZombieInfo(entity) -> {row=, delay=, type=} or nil (data-driven zombie
-// component; lets each zombie script read its own spawn parameters).
+// SpawnPrefab(name, pos): instantiates prefabs/<name>.json at runtime (the
+// prefab's script components attach and on_start fires immediately). Returns
+// the entity handle or nil.
+Value NativeSpawnPrefab(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->spawnPrefab) return Value::Nil();
+    const std::string name = StringArg(host, 0);
+    const math::Vec3 pos = Vec3FromValue(host.GetArg(1), math::Vec3{});
+    if (name.empty()) return Value::Nil();
+    return EntityToValue(ctx->spawnPrefab(name, pos));
+}
+
+// ZombieInfo(entity) -> {row=, delay=, type=, ...} or nil. The zombie
+// component is now a generic data component stored in SceneData (readable via
+// EntityComponent); this legacy binding reads the same data for older scripts.
 Value NativeZombieInfo(IScriptHost& host, void* user) {
     auto* ctx = static_cast<ScriptContext*>(user);
-    if (!ctx || !ctx->zombieInfo) return Value::Nil();
-    return ctx->zombieInfo(EntityFromValue(host.GetArg(0)));
+    if (!ctx || !ctx->world) return Value::Nil();
+    const ecs::Entity e = EntityFromValue(host.GetArg(0));
+    if (!e.IsValid() || !ctx->world->Alive(e)) return Value::Nil();
+    // Legacy hook first (hosts that still wire SceneZombie), then the generic
+    // SceneData path so data-only zombie components work everywhere.
+    if (ctx->zombieInfo) {
+        const Value v = ctx->zombieInfo(e);
+        if (v.type != Value::Type::Nil) return v;
+    }
+    const scene::SceneData* sd = ctx->world->Get<scene::SceneData>(e);
+    if (!sd) return Value::Nil();
+    for (const auto& kv : sd->components) {
+        if (kv.first == "zombie") return JsonToValue(kv.second);
+    }
+    return Value::Nil();
 }
 
 // EntityComponent(entity, name) -> component JSON as a table, or nil. Reads a
@@ -578,6 +605,30 @@ Value NativeEntityComponent(IScriptHost& host, void* user) {
     for (const auto& kv : sd->components) {
         if (kv.first == name) return JsonToValue(kv.second);
     }
+    return Value::Nil();
+}
+
+// SetEntityComponent(entity, name, value): writes/replaces a custom component
+// on a runtime entity (spawned via Spawn/SpawnSprite) so its script can read
+// it with EntityComponent - the same data contract scene-placed entities get
+// from their JSON components.
+Value NativeSetEntityComponent(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->world) return Value::Nil();
+    const ecs::Entity e = EntityFromValue(host.GetArg(0));
+    const std::string name = StringArg(host, 1);
+    if (!e.IsValid() || !ctx->world->Alive(e) || name.empty()) return Value::Nil();
+    if (!ctx->world->Has<scene::SceneData>(e)) ctx->world->Add<scene::SceneData>(e);
+    scene::SceneData* sd = ctx->world->Get<scene::SceneData>(e);
+    if (!sd) return Value::Nil();
+    const core::Json data = ValueToJson(host.GetArg(2));
+    for (auto& kv : sd->components) {
+        if (kv.first == name) {
+            kv.second = data;
+            return Value::Nil();
+        }
+    }
+    sd->components.emplace_back(name, data);
     return Value::Nil();
 }
 
@@ -1199,8 +1250,10 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("WriteText", &NativeWriteText, &ctx);
     host.Register("FindNamedEntity", &NativeFindNamedEntity, &ctx);
     host.Register("SpawnSprite", &NativeSpawnSprite, &ctx);
+    host.Register("SpawnPrefab", &NativeSpawnPrefab, &ctx);
     host.Register("ZombieInfo", &NativeZombieInfo, &ctx);
     host.Register("EntityComponent", &NativeEntityComponent, &ctx);
+    host.Register("SetEntityComponent", &NativeSetEntityComponent, &ctx);
     host.Register("SetVisible", &NativeSetVisible, &ctx);
     host.Register("ChangeScene", &NativeChangeScene, &ctx);
     host.Register("SignalConnect", &NativeSignalConnect, &ctx);

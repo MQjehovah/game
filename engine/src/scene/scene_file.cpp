@@ -657,37 +657,6 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                      return true;
                  });
 
-    reg.Register("zombie",
-                 [](ecs::World& world, ecs::Entity ent, const core::Json& data,
-                    const core::Json&, std::string* err) {
-                     if (!CheckComponentShape(data, {"row", "delay", "type"},
-                                              "zombie", err))
-                         return false;
-                     SceneZombie z;
-                     if (const core::Json* r = data.Get("row")) {
-                         if (!r->IsNumber()) {
-                             if (err) *err = "component 'zombie' field 'row' must be a number";
-                             return false;
-                         }
-                         z.row = static_cast<int>(r->GetNumber());
-                     }
-                     if (const core::Json* d = data.Get("delay")) {
-                         if (!d->IsNumber()) {
-                             if (err) *err = "component 'zombie' field 'delay' must be a number";
-                             return false;
-                         }
-                         z.delay = static_cast<float>(d->GetNumber());
-                     }
-                     if (const core::Json* t = data.Get("type")) {
-                         if (!t->IsString()) {
-                             if (err) *err = "component 'zombie' field 'type' must be a string";
-                             return false;
-                         }
-                         z.type = t->GetString();
-                     }
-                     world.Add<SceneZombie>(ent, z);
-                     return true;
-                 });
 
     reg.Register("script",
                  [](ecs::World& world, ecs::Entity ent, const core::Json& data,

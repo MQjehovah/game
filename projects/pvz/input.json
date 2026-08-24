@@ -1,0 +1,10 @@
+{
+  "actions": {
+    "plant_sunflower": ["1"],
+    "plant_peashooter": ["2"],
+    "plant_snowpea": ["3"],
+    "plant_wallnut": ["4"],
+    "pause": ["P"],
+    "restart": ["R"]
+  }
+}
