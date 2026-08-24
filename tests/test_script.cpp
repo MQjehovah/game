@@ -32,6 +32,12 @@ script::Value NativeTripleIt(script::IScriptHost& host, void* /*user*/) {
     return script::Value::Num(v.number * 3.0);
 }
 
+script::Value NativeSquare(script::IScriptHost& host, void* /*user*/) {
+    script::Value v = host.GetArg(0);
+    if (v.type != script::Value::Type::Number) return script::Value::Nil();
+    return script::Value::Num(v.number * v.number);
+}
+
 script::Value NativeSum(script::IScriptHost& host, void* /*user*/) {
     CHECK_EQ(host.ArgCount(), 2);
     return script::Value::Num(host.GetArg(0).number + host.GetArg(1).number);
@@ -369,6 +375,48 @@ TEST(ScriptNativeExceptionContained) {
     CHECK(!host->LastError().message.empty());
     CHECK(host->LastError().message.find("native boom") != std::string::npos);
     host->Shutdown();
+}
+
+// Dotted-path registration ("A.B.f") creates nested tables (the editor plugin
+// system registers NeonEditor.ui.* this way).
+TEST(ScriptRegisterFieldNestedTables) {
+    auto host = MakeHost();
+    host->RegisterField("A.B", "triple", &NativeTripleIt);
+    host->RegisterField("A.B", "square", &NativeSquare);
+    host->RegisterField("A", "plain", &NativeDoubleIt);
+    // Volume: the editor plugin API registers ~30 fields on two nested levels
+    // (NeonEditor + NeonEditor.ui); exercise the same pattern.
+    for (int i = 0; i < 30; ++i) {
+        const std::string f1 = "f" + std::to_string(i);
+        const std::string f2 = "g" + std::to_string(i);
+        host->RegisterField("A.B", f1, &NativeDoubleIt);
+        host->RegisterField("A", f2, &NativeTripleIt);
+    }
+    CHECK(host->Load("v1 = A.B.triple(5); v2 = A.B.square(4); v3 = A.plain(3);"));
+    const auto runRes = host->Run();
+    if (!runRes.Ok()) {
+        std::fprintf(stderr, "DBG nested run error: %s (line %d)\n",
+                     host->LastError().message.c_str(), host->LastError().line);
+        CHECK(host->Load("diag = { a = type(A), ab = type(A.B), triple = type(A.B.triple), "
+                         "plain = type(A.plain), g0 = type(A.g0), f0 = type(A.B.f0) }"));
+        const auto d = host->Run();
+        if (d.Ok()) {
+            const auto v = host->GetGlobal("diag");
+            if (v.Ok() && v.Value().type == script::Value::Type::Table) {
+                for (const auto& kv : v.Value().table->fields)
+                    std::fprintf(stderr, "DBG diag %s=%s\n", kv.first.c_str(),
+                                 kv.second.str.c_str());
+            }
+        }
+    }
+    CHECK(runRes.Ok());
+    auto v1 = host->GetGlobal("v1");
+    CHECK(v1.Ok() && v1.Value().type == script::Value::Type::Number);
+    CHECK_EQ(v1.Value().number, 15.0);
+    auto v2 = host->GetGlobal("v2");
+    CHECK(v2.Ok() && v2.Value().number == 16.0);
+    auto v3 = host->GetGlobal("v3");
+    CHECK(v3.Ok() && v3.Value().number == 6.0);
 }
 
 // P1-2: cooperative line breakpoints. The host latches a paused state at a

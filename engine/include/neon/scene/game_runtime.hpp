@@ -17,6 +17,7 @@
 #include "neon/gfx/font.hpp"
 #include "neon/gfx/material.hpp"
 #include "neon/gfx/mesh.hpp"
+#include "neon/plugin/runtime_plugin.hpp"
 #include "neon/physics/physics.hpp"
 #include "neon/physics/jolt_world.hpp"
 #include "neon/platform/input.hpp"
@@ -141,6 +142,19 @@ public:
     script::IScriptHost* ScriptHost(const std::string& backend) {
         return hosts_.Get(backend);
     }
+    // Runtime plugin manager (gameplay/system modules loaded from
+    // <scriptBaseDir>/plugins). Null until Start() and after Stop().
+    plugin::RuntimePluginManager* PluginManager() { return plugins_.get(); }
+    const plugin::RuntimePluginManager* PluginManager() const { return plugins_.get(); }
+    // Dispatches a named event to every subscribed runtime plugin (the server
+    // uses this for player_join etc.). No-op when no plugins are loaded.
+    bool DispatchPluginEvent(const std::string& name,
+                             const std::vector<script::Value>& args = {});
+    // Runs a command registered by a runtime plugin. Returns false when the
+    // command is unknown or its handler raised.
+    bool RunPluginCommand(const std::string& name,
+                          const std::vector<script::Value>& args = {},
+                          std::string* error = nullptr);
     bool DebuggerPaused() const {
         return hosts_.lua && hosts_.lua->DebuggerPaused();
     }
@@ -377,6 +391,7 @@ private:
     };
     std::vector<Tween> tweens_;
     SkillTable skills_;
+    std::unique_ptr<plugin::RuntimePluginManager> plugins_; // runtime plugins
     std::vector<script::Draw2DCmd> draw2d_; // script 2D canvas (on_render)
     std::unique_ptr<ui::UiDocument> uiDoc_; // data-driven UI document
     std::set<std::string> uiClickedNames_;  // buttons clicked since last Draw

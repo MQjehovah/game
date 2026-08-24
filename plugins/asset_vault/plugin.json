@@ -1,0 +1,10 @@
+{
+  "id": "asset_vault",
+  "name": "本地素材库",
+  "version": "1.0.0",
+  "type": "editor",
+  "backend": "lua",
+  "entry": "init.lua",
+  "minEngineVersion": "0.1.0",
+  "permissions": ["assets"]
+}

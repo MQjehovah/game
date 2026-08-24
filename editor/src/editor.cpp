@@ -458,6 +458,11 @@ bool EditorApp::OnCreate() {
     InitToolPanels();
 
     LoadEditorConfig();
+    // Editor plugins: extend the editor itself (panels/tools/asset sources/
+    // component schemas) from <projectDir>/plugins (type "editor").
+    pluginMgr_ = std::make_unique<editor::EditorPluginManager>();
+    pluginMgr_->Init(this);
+    pluginMgr_->Load(projectDir_);
     NEON_LOG_INFO("NeonEditor ready (%zu entities), project dir '%s'", entities_.size(),
                   projectDir_.c_str());
     // The smoke test is the canonical 3D-editor flow: --2d/--2d-play/--project
@@ -611,6 +616,7 @@ void EditorApp::ApplyEditorTheme() {
 
 void EditorApp::OnShutdown() {
     SaveEditorConfig();
+    if (pluginMgr_) pluginMgr_->Shutdown();
     if (audioBackend_) {
         audioBackend_->Shutdown();
         audioBackend_.reset();
@@ -2562,6 +2568,13 @@ void EditorApp::BuildImGuiUI() {
             ImGui::MenuItem("导航", nullptr, &showNav_);
             ImGui::MenuItem("UI 编辑器", nullptr, &showUIEditor_);
             ImGui::MenuItem("本地化", nullptr, &showLoc_);
+            ImGui::MenuItem("插件", nullptr, &showPlugins_);
+            // Plugin-contributed panels appear in the same menu (docked like
+            // built-in panels; the manager owns their open state).
+            if (pluginMgr_) {
+                for (editor::PluginPanel& p : pluginMgr_->Panels())
+                    ImGui::MenuItem(p.title.c_str(), nullptr, &p.opened);
+            }
             ImGui::Separator();
             ImGui::MenuItem("ImGui Demo", nullptr, &showImGuiDemo_);
             ImGui::EndMenu();
@@ -2848,6 +2861,21 @@ void EditorApp::BuildImGuiUI() {
             Set2DMode(!in2D);
         ImGui::SameLine();
         ImGui::Text("实体 %zu", entities_.size());
+        // Plugin-contributed toolbar tools.
+        if (pluginMgr_) {
+            for (editor::PluginTool& t : pluginMgr_->Tools()) {
+                ImGui::SameLine();
+                if (ImGui::Button(t.label.c_str()) && t.host && t.fn != 0) {
+                    const auto res = t.host->CallCaptured(t.fn, {});
+                    if (!res.Ok()) {
+                        NEON_LOG_ERROR("Editor plugin tool '%s' failed: %s", t.id.c_str(),
+                                       t.host->LastError().message.c_str());
+                    }
+                }
+                if (ImGui::IsItemHovered(ImGuiHoveredFlags_Stationary))
+                    ImGui::SetTooltip("插件工具: %s (%s)", t.label.c_str(), t.id.c_str());
+            }
+        }
     }
     ImGui::End();
 
@@ -2888,6 +2916,8 @@ void EditorApp::BuildImGuiUI() {
     BuildUIEditorPanel();
     BuildLocPanel();
     BuildViewportPanel();
+    BuildPluginPanels();
+    BuildPluginsPanel();
 
     if (showImGuiDemo_) ImGui::ShowDemoWindow(&showImGuiDemo_);
 }
@@ -4060,6 +4090,47 @@ void EditorApp::RunUISmokeTest() {
                       "function on_start(ent) {\n}\n");
         SaveScriptEditor();
         check(scriptEditorCheck_.ok, "script editor: JS syntax passes after fix");
+    }
+
+    // --- Editor plugins (project plugins/ dir, type=editor) ---
+    {
+        // The smoke can run from any cwd; if the bundled examples are reachable
+        // from ".", load them so the registration checks below are meaningful.
+        if (pluginMgr_ && pluginMgr_->Count() == 0 &&
+            std::ifstream("plugins/tree_gen/plugin.json", std::ios::binary)
+                .is_open()) {
+            pluginMgr_->Load(".");
+        }
+        if (pluginMgr_ && pluginMgr_->Count() > 0) {
+            bool hasTree = false;
+            bool hasVault = false;
+            bool hasTool = false;
+            for (const editor::PluginPanel& p : pluginMgr_->Panels())
+                if (p.id == "tree_gen") hasTree = true;
+            for (const editor::PluginAssetSource& s : pluginMgr_->AssetSources())
+                if (s.id == "vault") hasVault = true;
+            for (const editor::PluginTool& t : pluginMgr_->Tools())
+                if (t.id == "tree_gen") hasTool = true;
+            check(hasTree, "editor plugin registered the tree generator panel");
+            check(hasTool, "editor plugin registered a toolbar tool");
+            check(hasVault, "editor plugin registered the asset vault source");
+        }
+        // Plugin mesh generation + scene placement (the tree generator's core
+        // path): buildMesh writes an OBJ asset, spawn adds an entity.
+        {
+            const size_t before = entities_.size();
+            const std::vector<math::Vec3> verts = {{0, 0, 0}, {1, 0, 0}, {0, 1, 0}};
+            const std::string key = PluginBuildMesh("smoke_plugin_tri", verts, {1, 2, 3});
+            check(!key.empty() && key.rfind("obj:", 0) == 0,
+                  "plugin buildMesh wrote an OBJ asset");
+            PluginAddEntity(key, 5, 5, 5);
+            check(entities_.size() == before + 1, "plugin spawn added an entity");
+            history_.Undo(); // remove the smoke entity; keep the sandbox intact
+            const std::string generated =
+                (projectDir_ == "." ? "assets/generated/" : projectDir_ + "/assets/generated/") +
+                "smoke_plugin_tri.obj";
+            std::remove(generated.c_str());
+        }
     }
 
     // --- 2D sprite: the editor loader parses a componentized sprite entity,
@@ -6084,6 +6155,8 @@ void EditorApp::SwitchProject(const std::string& dir) {
     projectDirBuf_[sizeof(projectDirBuf_) - 1] = '\0';
     ScanProjects();
     LoadPrefabLibrary();
+    // Editor plugins are project-scoped: reload them for the new project.
+    if (pluginMgr_) pluginMgr_->Load(projectDir_);
     history_.Clear();
     SetSelection(-1);
     if (projectMode_ == "2d") {
@@ -6260,6 +6333,182 @@ void EditorApp::ClampSelection() {
         selection_.clear();
         selectionAnchor_ = -1;
     }
+}
+
+// ---------------------------------------------------------------------------
+// Editor plugin API (NeonEditor.* native bindings)
+// ---------------------------------------------------------------------------
+
+void EditorApp::PluginAddEntity(const std::string& meshKey, float x, float y, float z) {
+    static int counter = 1;
+    std::string name;
+    if (meshKey.rfind("obj:", 0) == 0 || meshKey.rfind("gltf:", 0) == 0) {
+        const std::string path = meshKey.substr(meshKey.find(':') + 1);
+        const size_t slash = path.find_last_of("/\\");
+        const size_t dot = path.find_last_of('.');
+        const size_t begin = slash == std::string::npos ? 0 : slash + 1;
+        const size_t len =
+            (dot == std::string::npos || dot < begin) ? std::string::npos : dot - begin;
+        name = path.substr(begin, len) + std::to_string(counter++);
+    } else {
+        name = meshKey + std::to_string(counter++);
+    }
+    SceneEntity e;
+    e.name = name;
+    e.meshKey = meshKey;
+    e.pos = {x, y, z};
+    if (ResolveMesh(e)) {
+        ApplyMaterialParams(e);
+        const size_t insertAt = entities_.size();
+        history_.Push(std::make_unique<AddEntityCommand>(&entities_, e, insertAt));
+        SetSelection(static_cast<int>(entities_.size()) - 1);
+        NEON_LOG_INFO("Editor plugin spawned '%s' (%s) at (%.1f, %.1f, %.1f)", e.name.c_str(),
+                      meshKey.c_str(), x, y, z);
+    } else {
+        NEON_LOG_ERROR("Editor plugin: cannot resolve mesh key '%s'", meshKey.c_str());
+    }
+}
+
+std::string EditorApp::PluginBuildMesh(const std::string& name,
+                                       const std::vector<math::Vec3>& verts,
+                                       const std::vector<int>& indices) {
+    if (name.empty() || verts.empty() || indices.empty() || indices.size() % 3 != 0) {
+        NEON_LOG_ERROR("Editor plugin: buildMesh needs a name, verts and triangle indices");
+        return {};
+    }
+    const std::string rel =
+        (projectDir_ == "." ? "assets/generated/" : projectDir_ + "/assets/generated/") +
+        name + ".obj";
+    const size_t slash = rel.find_last_of("/\\");
+    if ((slash != std::string::npos && !EnsureDirs(rel.substr(0, slash))) ||
+        (slash == std::string::npos)) {
+        NEON_LOG_ERROR("Editor plugin: cannot create generated asset dir for '%s'", rel.c_str());
+        return {};
+    }
+    std::ofstream out(rel, std::ios::binary);
+    if (!out.is_open()) {
+        NEON_LOG_ERROR("Editor plugin: cannot write '%s'", rel.c_str());
+        return {};
+    }
+    for (const math::Vec3& v : verts)
+        out << "v " << v.x << " " << v.y << " " << v.z << "\n";
+    for (size_t i = 0; i < indices.size(); i += 3)
+        out << "f " << indices[i] << " " << indices[i + 1] << " " << indices[i + 2] << "\n";
+    out.close();
+    NEON_LOG_INFO("Editor plugin: generated mesh asset '%s'", rel.c_str());
+    return "obj:" + rel;
+}
+
+script::Value EditorApp::PluginSelectedEntity() const {
+    if (selected_ < 0 || selected_ >= static_cast<int>(entities_.size()))
+        return script::Value::Nil();
+    const SceneEntity& e = entities_[static_cast<size_t>(selected_)];
+    script::Value t = script::Value::Tbl();
+    t.table->fields.emplace_back("name", script::Value::Str(e.name));
+    t.table->fields.emplace_back("x", script::Value::Num(e.pos.x));
+    t.table->fields.emplace_back("y", script::Value::Num(e.pos.y));
+    t.table->fields.emplace_back("z", script::Value::Num(e.pos.z));
+    return t;
+}
+
+script::Value EditorApp::PluginEntityList() const {
+    script::Value out = script::Value::Tbl();
+    for (const SceneEntity& e : entities_) {
+        script::Value t = script::Value::Tbl();
+        t.table->fields.emplace_back("name", script::Value::Str(e.name));
+        t.table->fields.emplace_back("x", script::Value::Num(e.pos.x));
+        t.table->fields.emplace_back("y", script::Value::Num(e.pos.y));
+        t.table->fields.emplace_back("z", script::Value::Num(e.pos.z));
+        t.table->fields.emplace_back("mesh", script::Value::Str(e.meshKey));
+        out.table->array.push_back(std::move(t));
+    }
+    return out;
+}
+
+void EditorApp::PluginLog(const std::string& msg) {
+    NEON_LOG_CAT(core::LogCategory::Script, core::LogLevel::Info, "plugin: %s", msg.c_str());
+}
+
+std::string EditorApp::PluginImportAsset(const std::string& srcPath) {
+    if (srcPath.empty() || assetDir_.empty()) return {};
+    const std::string name = BaseName(srcPath);
+    if (name.empty() || name == "." || name == "..") return {};
+    const std::string dst = assetDir_ + "/" + name;
+    std::ifstream in(srcPath, std::ios::binary);
+    std::ofstream out(dst, std::ios::binary);
+    if (!in.is_open() || !out.is_open()) {
+        NEON_LOG_ERROR("Editor plugin: cannot import '%s' -> '%s'", srcPath.c_str(),
+                       dst.c_str());
+        return {};
+    }
+    out << in.rdbuf();
+    out.close();
+    RefreshAssetDir();
+    return ToProjectRelPath(dst, projectDir_);
+}
+
+std::vector<std::string> EditorApp::PluginListDir(const std::string& dir) const {
+    std::vector<std::string> out;
+#if defined(_WIN32)
+    WIN32_FIND_DATAA fd;
+    HANDLE h = FindFirstFileA((dir + "/*").c_str(), &fd);
+    if (h == INVALID_HANDLE_VALUE) return out;
+    do {
+        const std::string name = fd.cFileName;
+        if (name == "." || name == "..") continue;
+        if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) out.push_back(dir + "/" + name);
+    } while (FindNextFileA(h, &fd));
+    FindClose(h);
+#else
+    DIR* d = ::opendir(dir.c_str());
+    if (!d) return out;
+    while (struct dirent* ent = ::readdir(d)) {
+        const std::string name = ent->d_name;
+        if (name == "." || name == "..") continue;
+        struct stat st;
+        if (::stat((dir + "/" + name).c_str(), &st) != 0) continue;
+        if (!S_ISDIR(st.st_mode)) out.push_back(dir + "/" + name);
+    }
+    ::closedir(d);
+#endif
+    std::sort(out.begin(), out.end());
+    return out;
+}
+
+void EditorApp::BuildPluginPanels() {
+    if (!pluginMgr_) return;
+    for (editor::PluginPanel& p : pluginMgr_->Panels()) pluginMgr_->DrawPanel(p);
+}
+
+void EditorApp::BuildPluginsPanel() {
+    if (!showPlugins_ || !pluginMgr_) return;
+    if (ImGui::Begin("插件", &showPlugins_)) {
+        ImGui::TextDisabled("项目插件目录: %s/plugins", projectDir_.c_str());
+        ImGui::SameLine();
+        if (ImGui::SmallButton("重新加载")) pluginMgr_->Load(projectDir_);
+        ImGui::Separator();
+        const auto& manifests = pluginMgr_->Manifests();
+        if (manifests.empty()) {
+            ImGui::TextDisabled("未发现编辑器插件 (type=editor)");
+        }
+        for (const plugin::PluginManifest& m : manifests) {
+            ImGui::BulletText("%s  v%s  [%s/%s]", m.name.c_str(), m.version.c_str(),
+                              m.backend.c_str(), plugin::PluginTypeName(m.type));
+            ImGui::TextDisabled("  id: %s  entry: %s", m.id.c_str(), m.entry.c_str());
+        }
+        ImGui::Separator();
+        if (!pluginMgr_->Panels().empty()) {
+            ImGui::TextDisabled("面板 (%zu):", pluginMgr_->Panels().size());
+            for (const editor::PluginPanel& p : pluginMgr_->Panels())
+                ImGui::TextDisabled("  %s", p.title.c_str());
+        }
+        if (!pluginMgr_->AssetSources().empty()) {
+            ImGui::TextDisabled("资产源 (%zu):", pluginMgr_->AssetSources().size());
+            for (const editor::PluginAssetSource& s : pluginMgr_->AssetSources())
+                ImGui::TextDisabled("  %s", s.name.c_str());
+        }
+    }
+    ImGui::End();
 }
 
 } // namespace neon::editor

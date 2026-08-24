@@ -906,6 +906,54 @@ void EditorApp::BuildAssetPanel() {
             assetGridView_ = !assetGridView_;
         ImGui::Separator();
 
+        // Plugin asset sources (素材市场): plugins contribute read-only
+        // catalogs; 导入 copies an entry into the current project dir.
+        if (pluginMgr_ && !pluginMgr_->AssetSources().empty()) {
+            for (editor::PluginAssetSource& s : pluginMgr_->AssetSources()) {
+                const std::string header = s.name + " (插件)";
+                if (!ImGui::CollapsingHeader(header.c_str())) continue;
+                if (!s.host || s.listFn == 0) {
+                    ImGui::TextDisabled("源不可用");
+                    continue;
+                }
+                const auto res = s.host->CallCaptured(s.listFn, {});
+                if (!res.Ok() || res.Value().type != script::Value::Type::Table) {
+                    ImGui::TextDisabled("列表加载失败");
+                    continue;
+                }
+                const script::Value& entries = res.Value();
+                for (size_t i = 0; i < entries.table->array.size(); ++i) {
+                    const script::Value& it = entries.table->array[i];
+                    if (it.type != script::Value::Type::Table) continue;
+                    std::string name, type, path;
+                    for (const auto& kv : it.table->fields) {
+                        if (kv.second.type != script::Value::Type::String) continue;
+                        if (kv.first == "name") name = kv.second.str;
+                        if (kv.first == "type") type = kv.second.str;
+                        if (kv.first == "path") path = kv.second.str;
+                    }
+                    if (name.empty() || path.empty()) continue;
+                    ImGui::BulletText("%s  (%s)", name.c_str(), type.c_str());
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton(("导入##" + s.id + std::to_string(i)).c_str())) {
+                        if (s.importFn != 0) {
+                            const auto imp =
+                                s.host->CallCaptured(s.importFn, {script::Value::Str(path)});
+                            if (!imp.Ok()) {
+                                NEON_LOG_ERROR("插件资产源 '%s' 导入失败: %s", s.id.c_str(),
+                                               s.host->LastError().message.c_str());
+                            } else if (imp.Value().type == script::Value::Type::String &&
+                                       !imp.Value().str.empty()) {
+                                NEON_LOG_INFO("插件资产源 '%s' 已导入: %s", s.id.c_str(),
+                                              imp.Value().str.c_str());
+                            }
+                        }
+                    }
+                }
+            }
+            ImGui::Separator();
+        }
+
         // Split-pane layout: file browsing on the LEFT takes all the height,
         // the selected asset's details/preview sit in a fixed-width RIGHT
         // column (no more squeezing the list with a bottom reserve).
@@ -1848,6 +1896,7 @@ void EditorApp::BuildInspectorPanel() {
             core::Json& compData = it->second;
             if (compName == "plant" || compName == "zombie") continue; // 2D canvas edits
             const scene::ComponentSchema* schema = scene::FindComponentSchema(compName);
+            if (!schema && pluginMgr_) schema = pluginMgr_->FindSchema(compName);
             const std::string header =
                 schema ? (schema->label + "##" + compName) : (compName + "##raw");
             const bool open =
@@ -2013,6 +2062,13 @@ void EditorApp::BuildInspectorPanel() {
                     continue; // already attached
                 if (e.extraComponents.count(s.name)) continue; // already present
                 addable.push_back(&s);
+            }
+            // Plugin-registered component schemas (NeonEditor.registerComponent).
+            if (pluginMgr_) {
+                for (const scene::ComponentSchema& s : pluginMgr_->Schemas()) {
+                    if (s.name == "transform" || e.extraComponents.count(s.name)) continue;
+                    addable.push_back(&s);
+                }
             }
             if (!addable.empty()) {
                 static int addCompSel = 0;

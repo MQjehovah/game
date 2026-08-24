@@ -238,6 +238,13 @@ struct SceneBehaviorTree {
 struct SceneName {
     std::string name;
 };
+// Generic storage for scene components WITHOUT a registered factory (plugin
+// or game-data components such as "inventory" / "plant"). Instantiate appends
+// one SceneData per entity carrying such components so runtime scripts and
+// plugins can read custom component data via the EntityComponent binding.
+struct SceneData {
+    std::vector<std::pair<std::string, core::Json>> components;
+};
 // Group membership (P1-1): an entity can belong to any number of named groups
 // ("enemy", "player", "respawn"). Scripts query them at runtime via
 // GetEntitiesInGroup(name); the editor edits them as a comma-separated list.

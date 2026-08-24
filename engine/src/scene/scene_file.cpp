@@ -1079,10 +1079,13 @@ core::Result<int> Instantiate(ecs::World& world, const SceneFile& scene,
         for (const auto& [name, data] : effective) {
             if (!reg.Has(name)) {
                 // Components without a factory are legitimate scene DATA (e.g.
-                // a 2D game's "plant"/"zombie" layout entities read by the
-                // project script), so this is debug-level noise, not a warning.
-                NEON_LOG_DEBUG("scene: %s: data component '%s' (no factory, kept as data)",
-                               label.c_str(), name.c_str());
+                // a 2D game's "plant" layout entities or a plugin's custom
+                // "inventory" component). They are stored verbatim in a
+                // generic SceneData component so runtime scripts/plugins can
+                // read them via the EntityComponent binding.
+                if (!world.Has<SceneData>(ent)) world.Add<SceneData>(ent);
+                if (SceneData* sd = world.Get<SceneData>(ent))
+                    sd->components.emplace_back(name, data);
                 continue;
             }
             const ComponentFactory& fn = reg.All().at(name);

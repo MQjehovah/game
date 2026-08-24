@@ -225,6 +225,44 @@ TEST(GameRuntimeMissingScriptIsNonFatal) {
     CHECK_NEAR(runtime.SimTime(), 0.5f, 1e-4);
 }
 
+// Custom (plugin/game-data) components without a registered factory are stored
+// in the entity's SceneData and readable by scripts via EntityComponent.
+TEST(GameRuntimeCustomComponentDataReadable) {
+    const char* scene = R"({
+  "entities": [
+    {
+      "name": "Hero",
+      "components": {
+        "transform": {"pos": [0, 0, 0]},
+        "script": {"backend": "lua", "path": "reader.lua"},
+        "inventory": {"slots": 18, "maxWeight": 50}
+      }
+    }
+  ]
+})";
+    const char* reader = R"(
+function on_start(e)
+  local inv = EntityComponent(e, "inventory")
+  if inv ~= nil then
+    SetVar("got_slots", inv.slots)
+    SetVar("got_weight", inv.maxWeight)
+  end
+end
+)";
+    scene::GameRuntime runtime;
+    scene::GameRuntimeConfig cfg;
+    cfg.readScript = [&](const std::string& path) {
+        return path == "reader.lua" ? std::string(reader) : std::string();
+    };
+    core::Status st = runtime.Start(scene, cfg);
+    CHECK(st.Ok());
+    CHECK(runtime.Running());
+    CHECK(runtime.GameVars().Get("got_slots").type == script::Value::Type::Number);
+    CHECK_EQ(runtime.GameVars().Get("got_slots").number, 18.0);
+    CHECK_EQ(runtime.GameVars().Get("got_weight").number, 50.0);
+    runtime.Stop();
+}
+
 TEST(GameRuntimeBadTreeIsNonFatal) {
     const char* json = R"({
       "entities": [

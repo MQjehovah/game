@@ -367,6 +367,9 @@ void GameServer::AdmitClient(const net::NetAddress& addr, const std::string& nam
         runtime_.CallScriptFunction(
             "on_player_join", {script::Value::Num(static_cast<double>(client.clientId))});
     }
+    // Runtime plugins receive the same join event (Plugin.On("player_join")).
+    runtime_.DispatchPluginEvent(
+        "player_join", {script::Value::Num(static_cast<double>(client.clientId))});
 }
 
 void GameServer::HandleInput(const net::NetAddress& addr, const net::MsgInput& input) {

@@ -21,6 +21,7 @@
 #include "history.hpp"
 #include "packager.hpp"
 #include "script_panel_model.hpp"
+#include "editor_plugin.hpp"
 
 namespace neon::editor {
 
@@ -166,6 +167,25 @@ public:
         loadProjectOnStart_ = loadScene;
     }
     void SetBackendName(const std::string& name) { backendName_ = name; }
+
+    // --- Editor plugin API (NeonEditor.* native bindings) ------------------
+    editor::EditorPluginManager* PluginManager() { return pluginMgr_.get(); }
+    const editor::EditorPluginManager* PluginManager() const { return pluginMgr_.get(); }
+    // Adds an entity with a mesh key at an explicit position (undoable).
+    void PluginAddEntity(const std::string& meshKey, float x, float y, float z);
+    // Builds a procedural mesh from vertices + 1-based triangle indices,
+    // writes it as an OBJ asset and returns the "obj:<path>" mesh key.
+    std::string PluginBuildMesh(const std::string& name,
+                                const std::vector<math::Vec3>& verts,
+                                const std::vector<int>& indices);
+    script::Value PluginSelectedEntity() const;
+    script::Value PluginEntityList() const;
+    void PluginLog(const std::string& msg);
+    // Copies a source asset into the current asset browse dir; returns the
+    // project-relative path ("" on failure).
+    std::string PluginImportAsset(const std::string& srcPath);
+    // Lists files (not dirs) under `dir` (relative/absolute path).
+    std::vector<std::string> PluginListDir(const std::string& dir) const;
     bool SmokeFailed() const { return smokeFailed_; }
     void RequestScreenshot(const std::string& path, uint64_t frame) {
         screenshotPath_ = path;
@@ -182,6 +202,8 @@ private:
     void BuildInspectorPanel();
     void BuildLogPanel();
     void BuildViewportPanel();
+    void BuildPluginPanels();
+    void BuildPluginsPanel();
     void BuildNavPanel();
     void BuildUIEditorPanel();
     // UI editor viewport input: click selects a node, drag moves it, corner
@@ -549,6 +571,8 @@ private:
     int uiResizeHandle_ = -1;          // -1 none, 0..3 corner handles
     math::Vec2 uiDragPos_{0.0f, 0.0f}; // mouse in design space
     bool showLoc_ = false;
+    bool showPlugins_ = false; // plugin management panel
+    std::unique_ptr<editor::EditorPluginManager> pluginMgr_; // editor plugins
 
     // Localization editor: merged string tables from <project>/locales/*.json
     // plus the active language for the preview.

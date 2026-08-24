@@ -433,17 +433,27 @@ void JsHost::RegisterField(const std::string& tableName, const std::string& fiel
     impl_->nativeFns.push_back(NativeFn{fn, user});
     JSValue func = JS_NewCFunctionData(impl_->ctx, &JsHost::Impl::NativeCallData, 0, magic,
                                        0, nullptr);
-    JSValue global = JS_GetGlobalObject(impl_->ctx);
-    JSValue table = JS_GetPropertyStr(impl_->ctx, global, tableName.c_str());
-    if (!JS_IsObject(table)) {
-        JS_FreeValue(impl_->ctx, table);
-        table = JS_NewObject(impl_->ctx);
-        JS_SetPropertyStr(impl_->ctx, global, tableName.c_str(),
-                          JS_DupValue(impl_->ctx, table));
+    // Dotted paths ("A.B.C") walk/create nested objects so namespaced APIs
+    // like NeonEditor.ui.Button register as real JS object properties.
+    JSValue cur = JS_GetGlobalObject(impl_->ctx);
+    size_t start = 0;
+    for (size_t i = 0; i <= tableName.size(); ++i) {
+        if (i < tableName.size() && tableName[i] != '.') continue;
+        const std::string seg = tableName.substr(start, i - start);
+        start = i + 1;
+        if (seg.empty()) continue;
+        JSValue next = JS_GetPropertyStr(impl_->ctx, cur, seg.c_str());
+        if (!JS_IsObject(next)) {
+            JS_FreeValue(impl_->ctx, next);
+            next = JS_NewObject(impl_->ctx);
+            JS_SetPropertyStr(impl_->ctx, cur, seg.c_str(),
+                              JS_DupValue(impl_->ctx, next));
+        }
+        JS_FreeValue(impl_->ctx, cur);
+        cur = next;
     }
-    JS_SetPropertyStr(impl_->ctx, table, fieldName.c_str(), func);
-    JS_FreeValue(impl_->ctx, table);
-    JS_FreeValue(impl_->ctx, global);
+    JS_SetPropertyStr(impl_->ctx, cur, fieldName.c_str(), func);
+    JS_FreeValue(impl_->ctx, cur);
 }
 
 int JsHost::ArgCount() const {

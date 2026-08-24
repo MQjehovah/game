@@ -32,6 +32,8 @@ set(ENGINE_CORE_SOURCES
   engine/src/net/socket.cpp
   engine/src/net/reliable.cpp
   engine/src/nav/nav_grid.cpp
+  engine/src/plugin/plugin.cpp
+  engine/src/plugin/runtime_plugin.cpp
   engine/src/gfx/color.cpp
   engine/src/gfx/csm.cpp
   engine/src/gfx/font.cpp
@@ -439,6 +441,7 @@ endif()
 add_executable(neon_editor
   editor/src/main.cpp
   editor/src/editor.cpp
+  editor/src/editor_plugin.cpp
   editor/src/panels.cpp
   editor/src/history.cpp
   editor/src/bt_editor.cpp
@@ -468,6 +471,7 @@ add_executable(neon_tests tests/test_main.cpp tests/test_serialize.cpp tests/tes
   tests/test_ui_document.cpp
   tests/test_script.cpp tests/test_script_bindings.cpp tests/test_script_determinism.cpp
   tests/test_script_js.cpp
+  tests/test_plugin.cpp
   tests/test_bt.cpp tests/test_scene_file.cpp tests/test_scene_export.cpp tests/test_manifest.cpp
   tests/test_nav.cpp
   tests/test_localization.cpp

@@ -591,18 +591,33 @@ void LuaHost::RegisterField(const std::string& tableName, const std::string& fie
     // tables cannot collide (the closure's name upvalue is the dotted key).
     const std::string fullName = tableName + "." + fieldName;
     impl_->nativeFns[fullName] = NativeFn{fn, user};
-    lua_getglobal(impl_->L, tableName.c_str());
-    if (!lua_istable(impl_->L, -1)) {
-        lua_pop(impl_->L, 1);
-        lua_newtable(impl_->L);
-        lua_pushvalue(impl_->L, -1);
-        lua_setglobal(impl_->L, tableName.c_str());
+    // Dotted paths ("A.B.C") walk/create nested tables so namespaced APIs
+    // like NeonEditor.ui.Button register as real Lua tables. LUA_RIDX_GLOBALS
+    // is a REGISTRY pseudo-index; rawgeti reads the actual globals table.
+    // Absolute indices (counted from the stack bottom) keep every get/set
+    // unambiguous regardless of how many tables were walked.
+    lua_rawgeti(impl_->L, LUA_REGISTRYINDEX, LUA_RIDX_GLOBALS);
+    int tableIdx = 1;
+    size_t start = 0;
+    for (size_t i = 0; i <= tableName.size(); ++i) {
+        if (i < tableName.size() && tableName[i] != '.') continue;
+        const std::string seg = tableName.substr(start, i - start);
+        start = i + 1;
+        if (seg.empty()) continue;
+        lua_getfield(impl_->L, tableIdx, seg.c_str());
+        if (!lua_istable(impl_->L, -1)) {
+            lua_pop(impl_->L, 1);
+            lua_newtable(impl_->L);
+            lua_pushvalue(impl_->L, -1);
+            lua_setfield(impl_->L, tableIdx, seg.c_str()); // parent[seg] = new table
+        }
+        tableIdx = lua_gettop(impl_->L); // the walked child is now current
     }
     lua_pushlightuserdata(impl_->L, this);
     lua_pushlstring(impl_->L, fullName.data(), fullName.size());
     lua_pushcclosure(impl_->L, &LuaHost::NativeCallClosure, 2);
-    lua_setfield(impl_->L, -2, fieldName.c_str());
-    lua_pop(impl_->L, 1);
+    lua_setfield(impl_->L, tableIdx, fieldName.c_str());
+    lua_pop(impl_->L, tableIdx); // current table + ancestors + globals
 }
 
 int LuaHost::ArgCount() const {

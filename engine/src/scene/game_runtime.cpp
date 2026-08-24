@@ -405,6 +405,19 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     loadedScripts_.clear();
     scriptFailed_.clear();
 
+    // Runtime plugins: gameplay/system modules in <scriptBaseDir>/plugins
+    // (Lua or JS). They get their own isolated hosts sharing the engine
+    // bindings; failures are logged per plugin, never fatal.
+    plugins_ = std::make_unique<plugin::RuntimePluginManager>();
+    plugin::RuntimePluginManager::Config pc;
+    pc.baseDir = cfg_.scriptBaseDir.empty() ? "." : cfg_.scriptBaseDir;
+    pc.readFile = [this](const std::string& p) { return ReadScript(p); };
+    pc.ctx = &scriptCtx_;
+    pc.gameVars = &scriptCtx_.gameVars;
+    pc.rngSeed = cfg_.rngSeed ? cfg_.rngSeed : 1u;
+    plugins_->Load(pc);
+    plugins_->Start();
+
     AttachScripts();
     AttachTrees();
     // Headless hosts (servers / sim tests) have no renderer: skip the draw
@@ -434,6 +447,10 @@ void GameRuntime::Stop() {
     pendingScene_.clear();
     loadedScripts_.clear();
     scriptFailed_.clear();
+    if (plugins_) {
+        plugins_->Stop();
+        plugins_.reset();
+    }
     if (hosts_.lua) {
         hosts_.lua->Shutdown();
         hosts_.lua.reset();
@@ -1317,6 +1334,19 @@ bool GameRuntime::CallScriptFunction(const std::string& name,
     return res.Ok();
 }
 
+bool GameRuntime::DispatchPluginEvent(const std::string& name,
+                                      const std::vector<script::Value>& args) {
+    if (!plugins_) return false;
+    plugins_->DispatchEvent(name, args);
+    return true;
+}
+
+bool GameRuntime::RunPluginCommand(const std::string& name,
+                                   const std::vector<script::Value>& args,
+                                   std::string* error) {
+    return plugins_ && plugins_->RunCommand(name, args, error);
+}
+
 void GameRuntime::TickProjectiles(float dt) {
     for (auto it = projectiles_.begin(); it != projectiles_.end();) {
         Projectile& p = *it;
@@ -1595,6 +1625,11 @@ void GameRuntime::Tick(float dt) {
         if (inst.onUpdate == 0) continue; // this chunk defines no on_update
         CallEntityFunctionHandle(inst, inst.onUpdate, "on_update",
                                  {EntityToValue(inst.ent), script::Value::Num(dt)});
+    }
+    // Runtime plugin systems tick after scene scripts (same simulated clock).
+    if (plugins_) {
+        plugins_->SetSimTime(simTime_);
+        plugins_->Tick(dt);
     }
 
     size_t deadTrees = 0;

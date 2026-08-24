@@ -1,0 +1,9 @@
+{
+  "id": "tree_gen",
+  "name": "树木生成器",
+  "version": "1.0.0",
+  "type": "editor",
+  "backend": "lua",
+  "entry": "init.lua",
+  "minEngineVersion": "0.1.0"
+}
