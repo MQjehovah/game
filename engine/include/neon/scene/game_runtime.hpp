@@ -299,6 +299,7 @@ private:
     void RegisterSceneBodies();
     void RegisterCharacters();
     void SyncSceneBodies();
+    void TickTweens(float dt);
     std::string ReadScript(const std::string& path) const;
     std::string FullScriptPath(const std::string& path) const;
     // Resolves an asset reference (obj:/gltf:/texture path) against
@@ -316,6 +317,19 @@ private:
     std::vector<BtInst> trees_;
     std::vector<DrawItem> draws_;
     std::vector<Projectile> projectiles_;
+    // P1-3 tweens: Lua `Tween(ent, prop, from, to, time, easing)` calls append
+    // here; TickTweens advances them every frame and writes into the entity's
+    // SceneTransform. prop: 0=pos 1=rot(euler degrees) 2=scale.
+    struct Tween {
+        ecs::Entity target;
+        int prop = 0;
+        math::Vec3 from{};
+        math::Vec3 to{};
+        float time = 1.0f;
+        float elapsed = 0.0f;
+        int easing = 0;  // 0=linear 1=in 2=out 3=inout
+    };
+    std::vector<Tween> tweens_;
     SkillTable skills_;
     std::vector<script::Draw2DCmd> draw2d_; // script 2D canvas (on_render)
     std::unique_ptr<ui::UiDocument> uiDoc_; // data-driven UI document

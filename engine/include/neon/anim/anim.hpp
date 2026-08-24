@@ -123,6 +123,65 @@ private:
     float time_ = 0.f;
 };
 
+// 1D blend space (P1-3): two clips blended by a parameter in [0,1]
+// (Godot-style BlendSpace1D). The parameter can be any gameplay value (speed,
+// direction); Update advances the shared time and produces a blended pose.
+class BlendSpace1D {
+public:
+    void SetClips(const AnimationClip* a, const AnimationClip* b);
+    void SetParam(float v);  // clamped to [0,1]
+    void SetBoneCount(size_t n);
+    void SetBindPose(const Pose& bind);
+    void Update(float dt);
+    const Pose& ResultPose() const { return result_; }
+    float Param() const { return param_; }
+
+private:
+    const AnimationClip* a_ = nullptr;
+    const AnimationClip* b_ = nullptr;
+    float param_ = 0.f;
+    float time_ = 0.f;
+    Pose bind_, workA_, workB_, result_;
+};
+
+// 2D blend space (P1-3): four corner clips blended bilinearly by (x, y) in
+// [0,1]^2 (BlendSpace2D). Useful for locomotion (e.g. idle/run crossed with
+// strafe direction).
+class BlendSpace2D {
+public:
+    // Corners: 0=(-,-) 1=(+,-) 2=(-,+) 3=(+,+)
+    void SetClips(const AnimationClip* ll, const AnimationClip* lr,
+                  const AnimationClip* ul, const AnimationClip* ur);
+    void SetParam(float x, float y);  // both clamped to [0,1]
+    void SetBoneCount(size_t n);
+    void SetBindPose(const Pose& bind);
+    void Update(float dt);
+    const Pose& ResultPose() const { return result_; }
+    float ParamX() const { return px_; }
+    float ParamY() const { return py_; }
+
+private:
+    const AnimationClip* clips_[4] = {};
+    float px_ = 0.f;
+    float py_ = 0.f;
+    float time_ = 0.f;
+    Pose bind_, work_[4], result_;
+};
+
+// Two-bone IK (P1-3): analytic solver for a hip->knee->ankle chain reaching a
+// target. `pole` biases the elbow direction (the projection of the pole onto
+// the plane of the chain picks the bend side); returns the solved joint
+// positions with the end effector at (or as close as possible to) `target`.
+struct TwoBoneIKResult {
+    math::Vec3 a;   // hip (unchanged)
+    math::Vec3 b;   // knee (solved)
+    math::Vec3 c;   // ankle (== target when reachable)
+    bool reachable = true;
+};
+TwoBoneIKResult TwoBoneIK(const math::Vec3& hip, const math::Vec3& knee,
+                          const math::Vec3& ankle, const math::Vec3& target,
+                          const math::Vec3& pole);
+
 struct AnimSet {
     Skeleton skeleton;
     std::vector<AnimationClip> clips;

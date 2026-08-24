@@ -141,6 +141,11 @@ struct ScriptContext {
     // Resolves a sprite path (assets/sprites/*.png) to a texture handle.
     // Wired by GameRuntime; null -> DrawSprite draws a plain quad.
     std::function<gfx::TextureHandle(const std::string&)> loadTexture;
+    // Tween hook (P1-3): starts a property tween on a scene entity.
+    // prop: 0=pos 1=rot(euler degrees) 2=scale; easing: 0=linear 1=in 2=out
+    // 3=inout. Wired by GameRuntime; null -> Tween is a no-op.
+    std::function<void(ecs::Entity, int, const math::Vec3&, const math::Vec3&, float, int)>
+        tweenStart;
     // Writes a text data file (saves etc.) into the project/pack data root.
     // Wired by GameRuntime; null -> WriteText is a no-op.
     std::function<bool(const std::string&, const std::string&)> writeData;

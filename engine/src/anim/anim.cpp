@@ -410,4 +410,129 @@ core::Result<AnimSet> ImportGltf(const std::string& jsonText,
     return core::Result<AnimSet>::Ok(std::move(out));
 }
 
+// ---------------------------------------------------------------------------
+// Blend spaces (P1-3)
+// ---------------------------------------------------------------------------
+
+void BlendSpace1D::SetClips(const AnimationClip* a, const AnimationClip* b) {
+    a_ = a;
+    b_ = b;
+}
+
+void BlendSpace1D::SetParam(float v) { param_ = std::fmax(0.0f, std::fmin(v, 1.0f)); }
+
+void BlendSpace1D::SetBoneCount(size_t n) {
+    bind_.Resize(n);
+    workA_.Resize(n);
+    workB_.Resize(n);
+    result_.Resize(n);
+}
+
+void BlendSpace1D::SetBindPose(const Pose& bind) { bind_ = bind; }
+
+void BlendSpace1D::Update(float dt) {
+    if (!a_ || !b_) return;
+    const float dur = std::fmax(a_->duration, b_->duration);
+    if (dur > 0.0f) {
+        time_ += dt;
+        time_ = std::fmod(time_, dur);
+        if (time_ < 0.0f) time_ += dur;
+    }
+    workA_ = bind_;
+    a_->Sample(time_, workA_);
+    workB_ = bind_;
+    b_->Sample(time_, workB_);
+    result_.Lerp(workA_, workB_, param_);
+}
+
+void BlendSpace2D::SetClips(const AnimationClip* ll, const AnimationClip* lr,
+                            const AnimationClip* ul, const AnimationClip* ur) {
+    clips_[0] = ll;
+    clips_[1] = lr;
+    clips_[2] = ul;
+    clips_[3] = ur;
+}
+
+void BlendSpace2D::SetParam(float x, float y) {
+    px_ = std::fmax(0.0f, std::fmin(x, 1.0f));
+    py_ = std::fmax(0.0f, std::fmin(y, 1.0f));
+}
+
+void BlendSpace2D::SetBoneCount(size_t n) {
+    bind_.Resize(n);
+    for (Pose& w : work_) w.Resize(n);
+    result_.Resize(n);
+}
+
+void BlendSpace2D::SetBindPose(const Pose& bind) { bind_ = bind; }
+
+void BlendSpace2D::Update(float dt) {
+    if (!clips_[0] || !clips_[1] || !clips_[2] || !clips_[3]) return;
+    float dur = 0.0f;
+    for (const AnimationClip* c : clips_) dur = std::fmax(dur, c->duration);
+    if (dur > 0.0f) {
+        time_ += dt;
+        time_ = std::fmod(time_, dur);
+        if (time_ < 0.0f) time_ += dur;
+    }
+    for (int i = 0; i < 4; ++i) {
+        work_[i] = bind_;
+        clips_[i]->Sample(time_, work_[i]);
+    }
+    Pose bottom;
+    Pose top;
+    bottom.Resize(result_.t.size());
+    top.Resize(result_.t.size());
+    bottom.Lerp(work_[0], work_[1], px_);
+    top.Lerp(work_[2], work_[3], px_);
+    result_.Lerp(bottom, top, py_);
+}
+
+// ---------------------------------------------------------------------------
+// Two-bone IK (P1-3)
+// ---------------------------------------------------------------------------
+
+TwoBoneIKResult TwoBoneIK(const math::Vec3& hip, const math::Vec3& knee,
+                          const math::Vec3& ankle, const math::Vec3& target,
+                          const math::Vec3& pole) {
+    TwoBoneIKResult out;
+    out.a = hip;
+    const float l1 = (knee - hip).Length();
+    const float l2 = (ankle - knee).Length();
+    if (l1 <= 1e-6f || l2 <= 1e-6f) {
+        out.b = knee;
+        out.c = ankle;
+        out.reachable = false;
+        return out;
+    }
+
+    const math::Vec3 toTarget = target - hip;
+    const float rawD = toTarget.Length();
+    out.reachable = rawD <= l1 + l2 + 1e-4f;
+    const float d = math::Clamp(rawD, std::fabs(l1 - l2), l1 + l2);
+    if (d < 1e-6f) {
+        out.b = hip + math::Vec3{0, l1, 0};
+        out.c = hip + math::Vec3{0, l1 + l2, 0};
+        return out;
+    }
+
+    const math::Vec3 abDir = toTarget / std::fmax(rawD, 1e-6f);
+    const math::Vec3 poleDir = pole - hip;
+    const math::Vec3 poleProj = poleDir - abDir * math::Dot(poleDir, abDir);
+    math::Vec3 axis = math::Cross(abDir, poleProj);
+    if (axis.LengthSq() < 1e-8f) axis = math::Cross(abDir, math::Vec3{0, 1, 0});
+    if (axis.LengthSq() < 1e-8f) axis = math::Cross(abDir, math::Vec3{1, 0, 0});
+    axis = axis.Normalized();
+
+    const float cosA = math::Clamp((l1 * l1 + d * d - l2 * l2) / (2.0f * l1 * d), -1.0f, 1.0f);
+    const float angleA = std::acos(cosA);
+    const math::Quat qA = math::Quat::FromAxisAngle(axis, angleA);
+    out.b = hip + qA.Rotate(abDir) * l1;
+    // Reachable: the analytic solution closes the triangle at the target.
+    // Unreachable: clamp the end effector to the farthest point the limb
+    // lengths allow along the target direction.
+    out.c = out.reachable ? target : hip + abDir * d;
+    return out;
+}
+
 } // namespace neon::anim

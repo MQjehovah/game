@@ -8,6 +8,84 @@
 
 using namespace neon;
 
+namespace {
+
+anim::AnimationClip MakeClip(float tx, float ty, float tz, float duration = 1.0f) {
+    anim::AnimationClip clip;
+    clip.name = "clip";
+    clip.duration = duration;
+    anim::Track tr;
+    tr.bone = 0;
+    tr.interp = anim::Interp::Linear;
+    tr.times.push_back(0.0f);
+    tr.translations.push_back({tx, ty, tz});
+    clip.tracks.push_back(std::move(tr));
+    return clip;
+}
+
+} // namespace
+
+TEST(BlendSpace1DMixesClips) {
+    anim::AnimationClip slow = MakeClip(0.0f, 0.0f, 0.0f);
+    anim::AnimationClip fast = MakeClip(1.0f, 0.0f, 0.0f);
+    anim::BlendSpace1D bs;
+    anim::Pose bind;
+    bind.Resize(1);
+    bs.SetBoneCount(1);
+    bs.SetBindPose(bind);
+    bs.SetClips(&slow, &fast);
+    bs.SetParam(0.25f);
+    bs.Update(0.0f);
+    CHECK_NEAR(bs.ResultPose().t[0].x, 0.25f, 1e-4f);
+    bs.SetParam(1.0f);
+    bs.Update(0.0f);
+    CHECK_NEAR(bs.ResultPose().t[0].x, 1.0f, 1e-4f);
+    bs.SetParam(-1.0f);  // clamped
+    bs.Update(0.0f);
+    CHECK_NEAR(bs.ResultPose().t[0].x, 0.0f, 1e-4f);
+}
+
+TEST(BlendSpace2DBilinear) {
+    anim::AnimationClip ll = MakeClip(0.0f, 0.0f, 0.0f);
+    anim::AnimationClip lr = MakeClip(1.0f, 0.0f, 0.0f);
+    anim::AnimationClip ul = MakeClip(0.0f, 0.0f, 1.0f);
+    anim::AnimationClip ur = MakeClip(1.0f, 0.0f, 1.0f);
+    anim::BlendSpace2D bs;
+    anim::Pose bind;
+    bind.Resize(1);
+    bs.SetBoneCount(1);
+    bs.SetBindPose(bind);
+    bs.SetClips(&ll, &lr, &ul, &ur);
+    bs.SetParam(1.0f, 0.0f);  // bottom-right corner -> lr
+    bs.Update(0.0f);
+    CHECK_NEAR(bs.ResultPose().t[0].x, 1.0f, 1e-4f);
+    CHECK_NEAR(bs.ResultPose().t[0].z, 0.0f, 1e-4f);
+    bs.SetParam(0.5f, 1.0f);  // top row mid -> (0.5, 0, 1)
+    bs.Update(0.0f);
+    CHECK_NEAR(bs.ResultPose().t[0].x, 0.5f, 1e-4f);
+    CHECK_NEAR(bs.ResultPose().t[0].z, 1.0f, 1e-4f);
+}
+
+TEST(TwoBoneIKReachesTarget) {
+    anim::TwoBoneIKResult r = anim::TwoBoneIK(
+        {0, 0, 0}, {1, 0, 0}, {2, 0, 0}, {0, 2, 0}, {0, 1, 1});
+    CHECK(r.reachable);
+    CHECK_NEAR((r.b - r.a).Length(), 1.0f, 1e-3f);
+    CHECK_NEAR((r.c - r.b).Length(), 1.0f, 1e-3f);
+    CHECK_NEAR(r.c.x, 0.0f, 1e-3f);
+    CHECK_NEAR(r.c.y, 2.0f, 1e-3f);
+    CHECK_NEAR(r.c.z, 0.0f, 1e-3f);
+}
+
+TEST(TwoBoneIKUnreachableClamps) {
+    anim::TwoBoneIKResult r = anim::TwoBoneIK(
+        {0, 0, 0}, {1, 0, 0}, {2, 0, 0}, {0, 10, 0}, {0, 1, 1});
+    CHECK(!r.reachable);
+    CHECK_NEAR((r.b - r.a).Length(), 1.0f, 1e-3f);
+    CHECK_NEAR((r.c - r.b).Length(), 1.0f, 1e-3f);
+    CHECK_NEAR((r.c - r.a).Length(), 2.0f, 1e-3f);
+}
+
 // ---------------------------------------------------------------------------
 // neon::anim: skeleton LocalToGlobal, clip sampling (LINEAR/STEP/CUBICSPLINE),
 // state machine cross-fade, animator, and glTF animation import (Task 3.2)

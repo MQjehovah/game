@@ -808,6 +808,19 @@ Value NativePhysicsGetCharacterMove(IScriptHost& host, void* user) {
                    : Vec3ToValue(ctx->physics->GetCharacterMove({id}));
 }
 
+Value NativeTween(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->tweenStart) return Value::Nil();
+    const ecs::Entity e = EntityFromValue(host.GetArg(0));
+    const int prop = static_cast<int>(NumberArg(host, 1, 0.0));
+    const math::Vec3 from = Vec3FromValue(host.GetArg(2), math::Vec3{});
+    const math::Vec3 to = Vec3FromValue(host.GetArg(3), math::Vec3{});
+    const float time = static_cast<float>(NumberArg(host, 4, 1.0));
+    const int easing = static_cast<int>(NumberArg(host, 5, 0.0));
+    ctx->tweenStart(e, prop, from, to, time, easing);
+    return Value::Nil();
+}
+
 Value NativePlaySfx(IScriptHost& host, void* user) {
     auto* ctx = static_cast<ScriptContext*>(user);
     if (!ctx || !ctx->playSfx) return Value::Nil();
@@ -1017,6 +1030,7 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("PhysicsAddCharacter", &NativePhysicsAddCharacter, &ctx);
     host.Register("PhysicsSetCharacterMove", &NativePhysicsSetCharacterMove, &ctx);
     host.Register("PhysicsGetCharacterMove", &NativePhysicsGetCharacterMove, &ctx);
+    host.Register("Tween", &NativeTween, &ctx);
     host.Register("PlaySfx", &NativePlaySfx, &ctx);
     host.Register("InputAxis", &NativeInputAxis, &ctx);
     host.Register("InputKey", &NativeInputKey, &ctx);
