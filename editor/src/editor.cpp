@@ -2509,6 +2509,12 @@ void EditorApp::BuildImGuiUI() {
         ImGui::SameLine();
         ImGui::Checkbox("网格", &showViewportGrid_);
         ImGui::SameLine();
+        ImGui::TextDisabled("选中 %zu", selection_.size());
+        ImGui::SameLine();
+        if (ImGui::Button("聚焦 F") && selected_ >= 0 &&
+            selected_ < static_cast<int>(entities_.size()))
+            camTarget_ = entities_[static_cast<size_t>(selected_)].pos;
+        ImGui::SameLine();
         ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
         ImGui::SameLine();
         // View switcher (Unity/Godot style): 2D is the front-ortho camera

@@ -633,10 +633,35 @@ void EditorApp::BuildScenePanel() {
                                selection_.size());
         ImGui::Separator();
         ImGui::BeginChild("##scene_list", ImVec2(0, 0), ImGuiChildFlags_Borders);
+        // P2-editor UX: entity-name filter — flat filtered list replaces the
+        // tree while typing (large scenes stay navigable).
+        static char filterBuf[128] = {};
+        ImGui::SetNextItemWidth(-1.0f);
+        ImGui::InputTextWithHint("##scene_filter", "过滤实体名...", filterBuf,
+                                 sizeof(filterBuf));
+        ImGui::Separator();
+        const std::string filter = ToLower(filterBuf);
+        if (!filter.empty()) {
+            for (size_t i = 0; i < entities_.size(); ++i) {
+                const SceneEntity& fe = entities_[i];
+                if (ToLower(fe.name).find(filter) == std::string::npos) continue;
+                char flabel[256];
+                std::snprintf(flabel, sizeof(flabel), "%s##filter_%zu", fe.name.c_str(), i);
+                if (ImGui::Selectable(flabel, IsSelected(static_cast<int>(i)))) {
+                    if (ImGui::GetIO().KeyCtrl)
+                        ToggleSelection(static_cast<int>(i));
+                    else if (ImGui::GetIO().KeyShift)
+                        SelectRangeTo(static_cast<int>(i));
+                    else
+                        SetSelection(static_cast<int>(i));
+                }
+            }
+            ImGui::EndChild();
+            // The asset drop targets below still apply to the filtered view.
+        } else {
         // Godot-style scene tree: entities group under their "parent" name
         // (root = empty/missing parent). Drag one row onto another to reparent;
         // drag onto the empty area to detach back to root.
-        {
             std::map<std::string, std::vector<int>> childrenByParent;
             std::set<std::string> names;
             for (const SceneEntity& e : entities_) names.insert(e.name);
@@ -749,7 +774,7 @@ void EditorApp::BuildScenePanel() {
                     reparent(std::vector<int>(data, data + n), "");
                 }
                 ImGui::EndDragDropTarget();
-            }
+        }
         }
         ImGui::EndChild();
 
