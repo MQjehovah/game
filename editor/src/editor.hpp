@@ -4,6 +4,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -562,6 +563,11 @@ private:
     char scriptEditorBuf_[256 * 1024] = {};
     bool scriptEditorDirty_ = false;
     ScriptCheckResult scriptEditorCheck_; // last syntax check result
+    // P1-2 debugger: breakpoints keyed by the script path being edited, plus
+    // a dirty flag that pushes them into the running playtest host.
+    std::map<std::string, std::set<int>> scriptBreakpoints_;
+    bool scriptBreakpointsDirty_ = false;
+    char breakpointLineBuf_[64] = {};
     uint64_t scriptRefreshFrame_ = 0; // throttle: refresh scripts/ listing + checks
     int scriptAttachIndex_ = -1;      // dropdown/list selection into scriptFiles_
     int scriptSyncEntity_ = -1;       // entity whose vars the buffer currently shows

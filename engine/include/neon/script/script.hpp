@@ -185,6 +185,39 @@ public:
     // Pin the simulated clock reported by NMath.Time() (and future os.clock).
     // The default is 0; script time is always engine-injected, never wall time.
     virtual void SetSimClock(double seconds) = 0;
+
+    // Debugger (P1-2) ------------------------------------------------------
+    // Cooperative line breakpoints. SetScriptBreakpoints installs the set of
+    // line numbers that pause `path` (matched by chunk source name suffix);
+    // the host fires on every line event while enabled and latches paused_
+    // when a breakpoint line (or the next line after DebuggerResume(true))
+    // executes. GameRuntime checks DebuggerPaused() and stops ticking; the
+    // editor inspects PausedFrame() (locals + callstack captured at the
+    // breakpoint) and then resumes or steps. Hosts without debugger support
+    // keep the default no-ops.
+    struct DebugLocal {
+        std::string name;
+        std::string value;
+    };
+    struct DebugFrame {
+        std::string script;
+        int line = 0;
+        std::vector<DebugLocal> locals;
+        std::vector<std::string> callstack;
+    };
+    virtual void SetScriptBreakpoints(const std::string& path,
+                                      const std::vector<int>& lines) {}
+    // Names the chunk currently being executed (the runtime calls this before
+    // each entity script function so the debugger can match breakpoints by
+    // path). Hosts without debugger support keep the default no-op.
+    virtual void SetCurrentScript(const std::string& path) { (void)path; }
+    virtual void SetDebuggerEnabled(bool enabled) { (void)enabled; }
+    virtual bool DebuggerPaused() const { return false; }
+    virtual const DebugFrame& PausedFrame() const {
+        static const DebugFrame kEmpty;
+        return kEmpty;
+    }
+    virtual void DebuggerResume(bool stepInto) { (void)stepInto; }
 };
 
 // Factory: creates the engine's Lua-backed host (implemented in

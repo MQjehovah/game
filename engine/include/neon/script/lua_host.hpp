@@ -4,6 +4,7 @@
 #include "neon/script/script.hpp"
 
 struct lua_State; // forward declaration only; Lua headers stay out of the public interface
+struct lua_Debug; // forward declaration for the debug hook (P1-2)
 
 namespace neon::script {
 
@@ -53,6 +54,12 @@ public:
     bool HasFunction(const std::string& fn) const override;
     void SetRngSeed(uint64_t seed) override;  // seed 0 is treated as 1 (see class doc)
     void SetSimClock(double seconds) override;
+    void SetScriptBreakpoints(const std::string& path, const std::vector<int>& lines) override;
+    void SetCurrentScript(const std::string& path) override;
+    void SetDebuggerEnabled(bool enabled) override;
+    bool DebuggerPaused() const override;
+    const DebugFrame& PausedFrame() const override;
+    void DebuggerResume(bool stepInto) override;
 
 private:
     // Raw lua_CFunction closures. Each reads its LuaHost from upvalue 1
@@ -67,6 +74,11 @@ private:
     static int NMathSeed(lua_State* L);
     static int NMathTime(lua_State* L);
     static int Print(lua_State* L);
+    static void DebugHook(lua_State* L, lua_Debug* ar);
+    // Captures locals + callstack at the current hook position into frame.
+    static void CaptureDebugFrame(lua_State* L, lua_Debug* ar, const std::string& script,
+                                  const std::string& topName, int line,
+                                  IScriptHost::DebugFrame& out);
 
     // Opens the restricted libraries and installs the deterministic sandbox
     // (RNG-backed math.random/NMath, sim-clock NMath.Time, log-routed print,

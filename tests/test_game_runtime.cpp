@@ -597,6 +597,32 @@ TEST(GameRuntimeSceneTreeParentLink) {
 
 // ChangeScene defers the swap to the end of Tick (never mid-Lua-call): the
 // first tick queues it and applies it before the next tick runs.
+TEST(GameRuntimeGroupsQuery) {
+    // P1-1: entities with the "groups" component are queryable by name through
+    // the script context (GetEntitiesInGroup).
+    const std::string scene = R"({
+      "entities": [
+        {"name": "hero", "components": {"transform": {"pos": [0,0,0]}, "groups": {"groups": ["player","respawn"]}}},
+        {"name": "wolf", "components": {"transform": {"pos": [1,0,0]}, "groups": {"groups": ["enemy"]}}},
+        {"name": "tree", "components": {"transform": {"pos": [2,0,0]}}}
+      ]
+    })";
+    scene::GameRuntime runtime;
+    core::Status st = runtime.Start(scene, scene::GameRuntimeConfig{});
+    CHECK(st.Ok());
+    auto& ctx = runtime.ScriptContext();
+    CHECK(ctx.entitiesInGroup);
+    const auto players = ctx.entitiesInGroup("player");
+    CHECK_EQ(players.size(), 1u);
+    const auto enemies = ctx.entitiesInGroup("enemy");
+    CHECK_EQ(enemies.size(), 1u);
+    const auto respawn = ctx.entitiesInGroup("respawn");
+    CHECK_EQ(respawn.size(), 1u);
+    CHECK_EQ(respawn[0].id, players[0].id);
+    CHECK(ctx.entitiesInGroup("missing").empty());
+    CHECK(ctx.entitiesInGroup("").empty());
+}
+
 TEST(GameRuntimeChangeSceneDeferred) {
     const char* sceneA = R"({
       "entities": [

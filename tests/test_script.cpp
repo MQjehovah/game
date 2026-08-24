@@ -370,3 +370,70 @@ TEST(ScriptNativeExceptionContained) {
     CHECK(host->LastError().message.find("native boom") != std::string::npos);
     host->Shutdown();
 }
+
+// P1-2: cooperative line breakpoints. The host latches a paused state at a
+// breakpoint line, captures locals + callstack, and resumes (optionally
+// stepping to the next line event).
+TEST(ScriptDebuggerBreakpointPauseResume) {
+    auto host = MakeHost();
+    const char* src =
+        "function run(x)\n"
+        "  local a = x * 2\n"
+        "  local b = a + 1\n"
+        "  return b\n"
+        "end\n";
+    CHECK(host->Load(src));
+    CHECK(host->Run().Ok());
+    // Breakpoint on line 4 ("local b = a + 1").
+    std::vector<int> bps = {4};
+    host->SetScriptBreakpoints("test_script.lua", bps);
+    CHECK(!host->DebuggerPaused());
+
+    host->SetCurrentScript("test_script.lua");
+    auto callRes = host->Call("run", {script::Value::Num(10.0)});
+    CHECK(callRes.Ok());
+    script::Value r = callRes.Value();
+    CHECK_EQ(r.number, 21.0);  // the paused function still completes
+    CHECK(host->DebuggerPaused());
+    const auto& frame = host->PausedFrame();
+    CHECK_EQ(frame.line, 4);
+    bool hasA = false;
+    for (const auto& l : frame.locals) {
+        if (l.name == "a") {
+            hasA = true;
+            CHECK(l.value.find("20") != std::string::npos);
+        }
+    }
+    CHECK(hasA);
+    CHECK(!frame.callstack.empty());
+
+    // Continue: runs until the next breakpoint (the same line fires again).
+    host->DebuggerResume(false);
+    CHECK(!host->DebuggerPaused());
+    host->SetCurrentScript("test_script.lua");
+    host->Call("run", {script::Value::Num(1.0)});
+    CHECK(host->DebuggerPaused());
+
+    // Step: the next line event after resume pauses again (same line here).
+    host->DebuggerResume(true);
+    host->SetCurrentScript("test_script.lua");
+    host->Call("run", {script::Value::Num(2.0)});
+    CHECK(host->DebuggerPaused());
+    // Disable the debugger so shutdown is clean.
+    host->SetDebuggerEnabled(false);
+    host->DebuggerResume(false);
+    host->Shutdown();
+}
+
+// Breakpoints are per-script: a matching source pauses; others do not.
+TEST(ScriptDebuggerBreakpointPathMatching) {
+    auto host = MakeHost();
+    CHECK(host->Load("function f() return 1 end\n"));
+    CHECK(host->Run().Ok());
+    std::vector<int> bps = {1};
+    host->SetScriptBreakpoints("other_script.lua", bps);
+    host->SetCurrentScript("my_script.lua");
+    host->Call("f", {});
+    CHECK(!host->DebuggerPaused());
+    host->Shutdown();
+}

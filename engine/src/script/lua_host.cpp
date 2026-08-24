@@ -1,6 +1,9 @@
 #include "neon/script/lua_host.hpp"
 
 #include <exception>
+#include <map>
+#include <set>
+#include <sstream>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -239,6 +242,13 @@ struct LuaHost::Impl {
     uint64_t nextFunctionKey = 0; // registry keys for captured chunk functions
     core::Rng rng;          // sandbox RNG; reseeded by SetRngSeed / NMath.Seed
     double simClock = 0.0;  // engine-injected simulated time (NMath.Time)
+    // Debugger state (P1-2): cooperative line breakpoints.
+    bool debuggerEnabled = false;
+    bool paused = false;
+    bool stepInto = false;
+    std::map<std::string, std::set<int>> breakpoints;  // script path -> lines
+    IScriptHost::DebugFrame pausedFrame;
+    std::string currentScript;  // chunk path set by the runtime before each call
 };
 
 // Opens the restricted standard library, then applies the deterministic
@@ -313,6 +323,10 @@ bool LuaHost::Init() {
     // re-initialized host behaves like a newly created one.
     impl_->rng = core::Rng(kDefaultRngSeed);
     impl_->simClock = 0.0;
+    // Debugger line hook (installed once; it checks the enabled flag itself).
+    lua_sethook(L, &LuaHost::DebugHook, LUA_MASKLINE, 0);
+    lua_pushlightuserdata(L, this);
+    lua_setfield(L, LUA_REGISTRYINDEX, "neon_lua_host");
     OpenSandboxedLibraries(L, this);
     return true;
 }
@@ -739,6 +753,115 @@ int LuaHost::Print(lua_State* L) {
         SafeLog("");
     }
     return 0;
+}
+
+// Debugger line hook (P1-2): installed once at Init with LUA_MASKLINE; it
+// checks the enabled flag itself so toggling the debugger costs nothing while
+// off. On a breakpoint line (or the first line after a step-resume) it latches
+// paused_ and snapshots locals + callstack.
+void LuaHost::DebugHook(lua_State* L, lua_Debug* ar) {
+    if (!ar || ar->event != LUA_HOOKLINE) return;
+    lua_getfield(L, LUA_REGISTRYINDEX, "neon_lua_host");
+    LuaHost* self = static_cast<LuaHost*>(lua_touserdata(L, -1));
+    lua_pop(L, 1);
+    if (!self || !self->impl_) return;
+    Impl& impl = *self->impl_;
+    if (!impl.debuggerEnabled || impl.paused) return;
+
+    lua_getinfo(L, "S", ar);
+    const char* source = ar->source ? ar->source : "";
+    const int line = ar->currentline;
+    const std::string topName = ar->short_src ? ar->short_src : "?";
+    lua_pop(L, 3);  // source, short_src, what
+
+    bool hit = false;
+    if (impl.stepInto) {
+        hit = true;
+        impl.stepInto = false;
+    } else {
+        auto it = impl.breakpoints.find(impl.currentScript);
+        if (it != impl.breakpoints.end() && it->second.count(line) != 0) hit = true;
+    }
+    if (!hit) return;
+
+    impl.paused = true;
+    impl.pausedFrame.script = source;
+    impl.pausedFrame.line = line;
+    CaptureDebugFrame(L, ar, source, topName, line, impl.pausedFrame);
+}
+
+void LuaHost::CaptureDebugFrame(lua_State* L, lua_Debug* ar, const std::string& script,
+                                const std::string& topName, int line,
+                                IScriptHost::DebugFrame& out) {
+    out.script = script;
+    out.line = line;
+    out.locals.clear();
+    out.callstack.clear();
+    out.callstack.push_back(topName);
+    (void)ar;
+    // Locals of the frame that triggered the hook. A FRESH getstack ar is
+    // required: the hook's own lua_Debug only carries the info getinfo("S")
+    // requested and cannot drive getlocal on this Lua 5.4 build. No getinfo
+    // calls happen here (they raise inside this hook context).
+    lua_Debug ar2;
+    if (lua_getstack(L, 0, &ar2)) {
+        int i = 1;
+        const char* name = nullptr;
+        while ((name = lua_getlocal(L, &ar2, i)) != nullptr) {
+            std::string value;
+            switch (lua_type(L, -1)) {
+                case LUA_TNUMBER: {
+                    char buf[64];
+                    std::snprintf(buf, sizeof(buf), "%.7g", lua_tonumber(L, -1));
+                    value = buf;
+                    break;
+                }
+                case LUA_TBOOLEAN:
+                    value = lua_toboolean(L, -1) ? "true" : "false";
+                    break;
+                case LUA_TSTRING:
+                    value = lua_tostring(L, -1);
+                    break;
+                case LUA_TNIL:
+                    value = "nil";
+                    break;
+                default:
+                    value = lua_typename(L, lua_type(L, -1));
+                    break;
+            }
+            out.locals.push_back({name, value});
+            lua_pop(L, 1);
+            ++i;
+        }
+    }
+}
+
+void LuaHost::SetScriptBreakpoints(const std::string& path, const std::vector<int>& lines) {
+    if (!impl_) return;
+    std::set<int> set(lines.begin(), lines.end());
+    impl_->breakpoints[path] = std::move(set);
+    impl_->debuggerEnabled = !impl_->breakpoints.empty();
+}
+
+void LuaHost::SetCurrentScript(const std::string& path) {
+    if (impl_) impl_->currentScript = path;
+}
+
+void LuaHost::SetDebuggerEnabled(bool enabled) {
+    if (impl_) impl_->debuggerEnabled = enabled;
+}
+
+bool LuaHost::DebuggerPaused() const { return impl_ && impl_->paused; }
+
+const IScriptHost::DebugFrame& LuaHost::PausedFrame() const {
+    static const IScriptHost::DebugFrame kEmpty;
+    return impl_ ? impl_->pausedFrame : kEmpty;
+}
+
+void LuaHost::DebuggerResume(bool stepInto) {
+    if (!impl_) return;
+    impl_->paused = false;
+    impl_->stepInto = stepInto;
 }
 
 } // namespace neon::script

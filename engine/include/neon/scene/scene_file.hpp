@@ -229,6 +229,12 @@ struct SceneBehaviorTree {
 struct SceneName {
     std::string name;
 };
+// Group membership (P1-1): an entity can belong to any number of named groups
+// ("enemy", "player", "respawn"). Scripts query them at runtime via
+// GetEntitiesInGroup(name); the editor edits them as a comma-separated list.
+struct SceneGroups {
+    std::vector<std::string> groups;
+};
 
 // A component factory builds a component onto `ent` from its effective JSON
 // data. Args: world, entity, merged component data (prefab already applied),

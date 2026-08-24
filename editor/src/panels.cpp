@@ -2705,6 +2705,72 @@ void EditorApp::BuildScriptEditorPanel() {
                                scriptEditorCheck_.message.c_str());
         }
         ImGui::Separator();
+        // P1-2 debugger: breakpoints for the open script + live pause state.
+        if (!scriptEditorPath_.empty()) {
+            ImGui::TextDisabled("断点 (行号，逗号分隔)");
+            ImGui::SetNextItemWidth(180.0f);
+            const bool bpEnter =
+                ImGui::InputText("##bp_add", breakpointLineBuf_, sizeof(breakpointLineBuf_),
+                                 ImGuiInputTextFlags_EnterReturnsTrue);
+            ImGui::SameLine();
+            if (ImGui::Button("添加") || (bpEnter && breakpointLineBuf_[0] != '\0')) {
+                char* p = breakpointLineBuf_;
+                while (*p) {
+                    while (*p == ' ' || *p == ',') ++p;
+                    if (!*p) break;
+                    const int line = std::atoi(p);
+                    if (line > 0) scriptBreakpoints_[scriptEditorPath_].insert(line);
+                    while (*p && *p != ',') ++p;
+                }
+                breakpointLineBuf_[0] = '\0';
+                scriptBreakpointsDirty_ = true;
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("清空断点")) {
+                scriptBreakpoints_[scriptEditorPath_].clear();
+                scriptBreakpointsDirty_ = true;
+            }
+            auto& bps = scriptBreakpoints_[scriptEditorPath_];
+            if (!bps.empty()) {
+                ImGui::SameLine();
+                ImGui::TextDisabled("当前: ");
+                for (auto it = bps.begin(); it != bps.end();) {
+                    ImGui::SameLine();
+                    ImGui::PushID(static_cast<int>(*it));
+                    if (ImGui::SmallButton(("行" + std::to_string(*it)).c_str())) {
+                        it = bps.erase(it);
+                        scriptBreakpointsDirty_ = true;
+                    } else {
+                        ++it;
+                    }
+                    ImGui::PopID();
+                }
+            }
+            ImGui::Separator();
+        }
+        if (playtest_ && playtest_->DebuggerPaused()) {
+            const script::IScriptHost::DebugFrame& f = playtest_->ScriptHost()->PausedFrame();
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.7f, 0.3f, 1.0f));
+            ImGui::Text("⏸ 已暂停: %s 行 %d", f.script.c_str(), f.line);
+            ImGui::PopStyleColor();
+            ImGui::SameLine();
+            if (ImGui::Button("继续")) playtest_->ScriptHost()->DebuggerResume(false);
+            ImGui::SameLine();
+            if (ImGui::Button("单步")) playtest_->ScriptHost()->DebuggerResume(true);
+            if (ImGui::CollapsingHeader("局部变量")) {
+                if (f.locals.empty()) ImGui::TextDisabled("(无)");
+                for (const auto& l : f.locals) {
+                    ImGui::TextUnformatted(l.name.c_str());
+                    ImGui::SameLine();
+                    ImGui::TextDisabled("%s", l.value.c_str());
+                }
+            }
+            if (ImGui::CollapsingHeader("调用栈")) {
+                for (size_t i = 0; i < f.callstack.size(); ++i)
+                    ImGui::Text("%zu. %s", i, f.callstack[i].c_str());
+            }
+            ImGui::Separator();
+        }
         const ImVec2 editSize = ImGui::GetContentRegionAvail();
         ImGui::InputTextMultiline(
             "##script_editor", scriptEditorBuf_, sizeof(scriptEditorBuf_), editSize,

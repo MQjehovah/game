@@ -128,6 +128,9 @@ public:
     // server's AOI replication, debug panels).
     script::ScriptContext& ScriptContext() { return scriptCtx_; }
     const script::ScriptContext& ScriptContext() const { return scriptCtx_; }
+    // P1-2 debugger passthrough for the editor playtest.
+    script::IScriptHost* ScriptHost() { return host_.get(); }
+    bool DebuggerPaused() const { return host_ && host_->DebuggerPaused(); }
 
     // Stats for the editor profiler / debug panels.
     size_t EntityCount() const { return world_.EntityCount(); }

@@ -821,6 +821,18 @@ Value NativeTween(IScriptHost& host, void* user) {
     return Value::Nil();
 }
 
+Value NativeGetEntitiesInGroup(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    Value t = Value::Tbl();
+    if (!ctx || !ctx->entitiesInGroup) return t;
+    const std::string group = StringArg(host, 0);
+    if (group.empty()) return t;
+    for (const ecs::Entity& e : ctx->entitiesInGroup(group)) {
+        t.table->array.push_back(Value::Num(static_cast<double>(e.id)));
+    }
+    return t;
+}
+
 Value NativePlaySfx(IScriptHost& host, void* user) {
     auto* ctx = static_cast<ScriptContext*>(user);
     if (!ctx || !ctx->playSfx) return Value::Nil();
@@ -1031,6 +1043,7 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("PhysicsSetCharacterMove", &NativePhysicsSetCharacterMove, &ctx);
     host.Register("PhysicsGetCharacterMove", &NativePhysicsGetCharacterMove, &ctx);
     host.Register("Tween", &NativeTween, &ctx);
+    host.Register("GetEntitiesInGroup", &NativeGetEntitiesInGroup, &ctx);
     host.Register("PlaySfx", &NativePlaySfx, &ctx);
     host.Register("InputAxis", &NativeInputAxis, &ctx);
     host.Register("InputKey", &NativeInputKey, &ctx);

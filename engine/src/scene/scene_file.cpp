@@ -856,6 +856,40 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                      world.Add<SceneName>(ent, nm);
                      return true;
                  });
+
+    reg.Register("groups",
+                 [](ecs::World& world, ecs::Entity ent, const core::Json& data,
+                    const core::Json&, std::string* err) {
+                     if (!CheckComponentShape(data, {"groups"}, "groups", err)) return false;
+                     const core::Json* g = data.Get("groups");
+                     SceneGroups out;
+                     if (g && g->IsArray()) {
+                         for (const core::Json& item : g->Items()) {
+                             if (item.IsString() && !item.GetString().empty())
+                                 out.groups.push_back(item.GetString());
+                         }
+                     } else if (g && g->IsString()) {
+                         // Editor-friendly: comma-separated list.
+                         std::string s = g->GetString();
+                         size_t start = 0;
+                         while (start <= s.size()) {
+                             size_t comma = s.find(',', start);
+                             if (comma == std::string::npos) comma = s.size();
+                             std::string name = s.substr(start, comma - start);
+                             // trim whitespace
+                             size_t b = name.find_first_not_of(" \t\r\n");
+                             size_t e = name.find_last_not_of(" \t\r\n");
+                             if (b != std::string::npos) {
+                                 name = name.substr(b, e - b + 1);
+                                 if (!name.empty()) out.groups.push_back(name);
+                             }
+                             if (comma == s.size()) break;
+                             start = comma + 1;
+                         }
+                     }
+                     world.Add<SceneGroups>(ent, std::move(out));
+                     return true;
+                 });
 }
 
 // --- Instantiate -------------------------------------------------------------

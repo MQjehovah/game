@@ -664,7 +664,18 @@ void EditorApp::OnUpdate(float dt) {
         // so middle-drag pans the camera target and the wheel zooms the ortho
         // size (the camera frame moves with it).
         UpdateViewport(dt);
-        if (playtestActive_ && playtest_) playtest_->Tick(dt);
+        if (playtestActive_ && playtest_) {
+            // P1-2 debugger: push edited breakpoints into the playtest host
+            // (cheap, only when the set changed).
+            if (scriptBreakpointsDirty_ && playtest_->ScriptHost()) {
+                for (const auto& kv : scriptBreakpoints_) {
+                    std::vector<int> lines(kv.second.begin(), kv.second.end());
+                    playtest_->ScriptHost()->SetScriptBreakpoints(kv.first, lines);
+                }
+                scriptBreakpointsDirty_ = false;
+            }
+            playtest_->Tick(dt);
+        }
     }
     // Hot reload (T4.8): throttled mtime poll for the playtest's scripts and
     // the scene's referenced assets. Off unless --hot / the toolbar toggle.

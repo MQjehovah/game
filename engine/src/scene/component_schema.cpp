@@ -39,6 +39,7 @@ std::vector<ComponentSchema> BuildSchemas() {
     out.push_back({"behaviorTree", "行为树",
                    {{"path", "行为树路径", FieldType::String, 0, 0, 0, 0}}});
     out.push_back({"name", "名称", {{"value", "值", FieldType::String, 0, 0, 0, 0}}});
+    out.push_back({"groups", "组", {{"groups", "组 (逗号分隔)", FieldType::String, 0, 0, 0, 0}}});
     out.push_back({"rigidbody", "刚体",
                    {{"shape", "形状", FieldType::Enum, 0, 0, 0, 0, kRigidBodyShapes, 2},
                     {"radius", "半径", FieldType::Number, 0.5, 0.01, 100, 0.1},

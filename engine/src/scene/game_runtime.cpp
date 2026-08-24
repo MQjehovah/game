@@ -216,6 +216,19 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
         tw.elapsed = 0.0f;
         tweens_.push_back(tw);
     };
+    scriptCtx_.entitiesInGroup = [this](const std::string& group) {
+        std::vector<ecs::Entity> out;
+        if (group.empty()) return out;
+        world_.ViewAll<SceneGroups>().ForEach([&](ecs::Entity e, const SceneGroups& g) {
+            for (const std::string& name : g.groups) {
+                if (name == group) {
+                    out.push_back(e);
+                    break;
+                }
+            }
+        });
+        return out;
+    };
     scriptCtx_.writeData = [this](const std::string& path, const std::string& content) {
         std::ofstream out(FullScriptPath(path), std::ios::binary);
         if (!out.is_open()) return false;
@@ -634,6 +647,7 @@ void GameRuntime::CallEntityFunctionHandle(ScriptInst& inst, uint64_t handle,
     // The input bindings resolve per-entity input through the entity being
     // updated (multi-player: each player's script reads its OWN client input).
     scriptCtx_.currentEntity = inst.ent;
+    host_->SetCurrentScript(inst.path);
     const auto res = host_->CallCaptured(handle, args);
     scriptCtx_.currentEntity = {};
     if (!res.Ok() && !inst.errorLogged) {
@@ -1387,6 +1401,10 @@ void GameRuntime::FlushDraw2D(gfx::Renderer& renderer) {
 
 void GameRuntime::Tick(float dt) {
     if (!running_) return;
+    // P1-2 debugger: a breakpoint hit latches the host's paused flag during a
+    // script call; stop advancing the simulation so the editor can inspect and
+    // step before resuming.
+    if (host_ && host_->DebuggerPaused()) return;
 
     if (host_) {
         host_->SetSimClock(simTime_);

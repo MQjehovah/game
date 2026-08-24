@@ -178,6 +178,9 @@ struct ScriptContext {
     // dynamically created entities (multi-player player controllers) run
     // on_start/on_update like scene-placed ones. Wired by GameRuntime.
     std::function<void(ecs::Entity, const std::string&)> spawnScript;
+    // Group queries (P1-1): returns the scene entities carrying the named
+    // group. Wired by GameRuntime; null -> GetEntitiesInGroup returns {}.
+    std::function<std::vector<ecs::Entity>(const std::string&)> entitiesInGroup;
 };
 
 // Registers Spawn/Despawn/GetPosition/SetPosition/GetVar/SetVar/Raycast/
