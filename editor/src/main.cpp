@@ -1,12 +1,50 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
+#include <string>
+
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 
 #include "editor.hpp"
 #include "neon/core/config.hpp"
 #include "packager.hpp"
 
 int main(int argc, char** argv) {
+    // Anchor the working directory to the repo root (the folder containing
+    // projects/ + CMakeLists.txt), walking up from the executable. Launching
+    // from Explorer (cwd = build/) would otherwise leave projects/, assets/
+    // and plugins/ unresolvable and the project/scene switchers empty.
+#if defined(_WIN32)
+    {
+        char exePath[MAX_PATH];
+        const DWORD exeLen = GetModuleFileNameA(nullptr, exePath, MAX_PATH);
+        if (exeLen > 0 && exeLen < MAX_PATH) {
+            std::string dir = exePath;
+            const size_t slash = dir.find_last_of("/\\");
+            if (slash != std::string::npos) dir = dir.substr(0, slash);
+            for (int depth = 0; depth < 6; ++depth) {
+                const bool hasRoot =
+                    GetFileAttributesA((dir + "/CMakeLists.txt").c_str()) !=
+                        INVALID_FILE_ATTRIBUTES &&
+                    GetFileAttributesA((dir + "/projects").c_str()) !=
+                        INVALID_FILE_ATTRIBUTES;
+                if (hasRoot) {
+                    SetCurrentDirectoryA(dir.c_str());
+                    break;
+                }
+                const size_t up = dir.find_last_of("/\\");
+                if (up == std::string::npos || up == 0) break;
+                dir = dir.substr(0, up);
+            }
+        }
+    }
+#endif
     neon::core::ApplyLogCli(argc, argv);
     int smokeFrames = 0;
     bool disableShadows = false;

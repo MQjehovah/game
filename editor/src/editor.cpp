@@ -2814,6 +2814,44 @@ void EditorApp::BuildImGuiUI() {
                 ImGui::SetTooltip("%s", tip);
             return clicked;
         };
+        // --- 上下文: 项目 / 场景切换 ---
+        ImGui::SetNextItemWidth(150.0f);
+        const char* projPreview = projectName_.empty()
+                                      ? (projectDir_ == "." ? "默认场景" : projectDir_.c_str())
+                                      : projectName_.c_str();
+        if (ImGui::BeginCombo("##project_picker", projPreview)) {
+            if (ImGui::Selectable("默认场景", projectDir_ == ".")) SwitchProject(".");
+            ImGui::Separator();
+            if (projects_.empty()) ScanProjects();
+            for (size_t i = 0; i < projects_.size(); ++i) {
+                const EditorProject& p = projects_[i];
+                char label[256];
+                std::snprintf(label, sizeof(label), "%s  [%s]###proj%d", p.name.c_str(),
+                              p.mode == "2d" ? "2D" : "3D", static_cast<int>(i));
+                if (ImGui::Selectable(label, projectSel_ == static_cast<int>(i)))
+                    SwitchProject(p.dir);
+            }
+            ImGui::Separator();
+            if (ImGui::MenuItem("重新扫描项目")) ScanProjects();
+            ImGui::EndCombo();
+        }
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(160.0f);
+        if (ImGui::BeginCombo("##scene_picker", currentSceneName_.empty()
+                                                    ? "选择场景…"
+                                                    : currentSceneName_.c_str())) {
+            if (projectDir_ == ".")
+                if (ImGui::Selectable("editor_scene.json", currentSceneName_ == "editor_scene.json"))
+                    LoadScene("editor_scene.json");
+            for (const std::string& s : projectScenes_) {
+                if (ImGui::Selectable(s.c_str(), currentSceneName_ == BaseName(s)))
+                    LoadProjectScene(s);
+            }
+            ImGui::EndCombo();
+        }
+        ImGui::SameLine();
+        ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
+        ImGui::SameLine();
         // --- 运行/视图: 试玩、热重载、相机预设、2D/3D 切换 ---
         if (ToolbarIcon(playtestActive_ ? "■" : "▶",
                         playtestActive_ ? "停止试玩 (F5)" : "试玩 (F5)", playtestActive_))
@@ -2867,10 +2905,6 @@ void EditorApp::BuildImGuiUI() {
         ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
         ImGui::SameLine();
         // --- 状态: 选中/实体数量 ---
-        if (!currentSceneName_.empty()) {
-            ImGui::TextDisabled("场景 %s", currentSceneName_.c_str());
-            ImGui::SameLine();
-        }
         ImGui::TextDisabled("选中 %zu / 实体 %zu", selection_.size(), entities_.size());
         ImGui::SameLine();
         ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
@@ -2895,23 +2929,28 @@ void EditorApp::BuildImGuiUI() {
 
     // The DockSpace's Begin/End (above) can overwrite the hover we resolved
     // after NewFrame, so re-resolve it right before the tool panels build.
+    // IMPORTANT: never touch HoveredWindow while a popup/menu is open - the
+    // 项目/场景 menus and any combo render as popups, and stealing the hover
+    // would make their items unclickable.
     {
         ImGuiContext& ictx = *ImGui::GetCurrentContext();
-        ImGuiWindow* best = nullptr;
-        for (int wi = ictx.Windows.Size - 1; wi >= 0; --wi) {
-            ImGuiWindow* w = ictx.Windows[wi];
-            if (!w || w->Hidden) continue;
-            if (w->DockNodeAsHost != nullptr) continue;
-            if (w->ParentWindow != nullptr) continue;
-            if (w->Flags & ImGuiWindowFlags_NoMouseInputs) continue;
-            if (std::strcmp(w->Name, "视口") == 0) continue;
-            if (std::strncmp(w->Name, "##", 2) == 0) continue;
-            if (w->Rect().Contains(ictx.IO.MousePos)) {
-                best = w;
-                break;
+        if (ictx.OpenPopupStack.Size == 0) {
+            ImGuiWindow* best = nullptr;
+            for (int wi = ictx.Windows.Size - 1; wi >= 0; --wi) {
+                ImGuiWindow* w = ictx.Windows[wi];
+                if (!w || w->Hidden) continue;
+                if (w->DockNodeAsHost != nullptr) continue;
+                if (w->ParentWindow != nullptr) continue;
+                if (w->Flags & ImGuiWindowFlags_NoMouseInputs) continue;
+                if (std::strcmp(w->Name, "视口") == 0) continue;
+                if (std::strncmp(w->Name, "##", 2) == 0) continue;
+                if (w->Rect().Contains(ictx.IO.MousePos)) {
+                    best = w;
+                    break;
+                }
             }
+            if (best) ictx.HoveredWindow = best;
         }
-        if (best) ictx.HoveredWindow = best;
     }
     BuildScenePanel();
     BuildAssetPanel();
