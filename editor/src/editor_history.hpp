@@ -222,20 +222,11 @@ inline bool ValuesEqual(const SpriteFlipValue& a, const SpriteFlipValue& b) {
     return a.flipX == b.flipX && a.flipY == b.flipY;
 }
 
-// Script component edit: attaches/replaces/clears the entity's script
-// (backend/path/vars) in one undo step. A detach is just an edit whose new
-// fields are all empty. Defined here (not in script_panel_model.hpp) because it
-// needs the full SceneEntity type.
-inline void ApplyScriptFields(SceneEntity& e, const SceneScriptFields& v) {
-    e.scriptBackend = v.backend;
-    e.scriptPath = v.path;
-    e.scriptVars = v.vars;
-}
-// Multiple script components (Unity-style): replaces the whole extra list in
-// one undo step (add/remove/reorder of entries).
-inline void ApplyExtraScripts(SceneEntity& e,
-                              const std::vector<SceneScriptFields>& v) {
-    e.extraScripts = v;
+// Script mounts are a flat list like any other component list: add/remove
+// replaces the whole list in one undo step. There is deliberately no
+// "primary" script concept - every entry is an equal mounted script.
+inline void ApplyScriptList(SceneEntity& e, const std::vector<SceneScriptFields>& v) {
+    e.scripts = v;
 }
 inline bool ValuesEqual(const std::vector<SceneScriptFields>& a,
                         const std::vector<SceneScriptFields>& b) {
@@ -247,6 +238,41 @@ inline bool ValuesEqual(const std::vector<SceneScriptFields>& a,
     }
     return true;
 }
+
+// A single-field edit inside one mounted script block (index into
+// SceneEntity::scripts), so backend/path/vars edits undo exactly like the
+// schema-driven component field edits.
+struct ScriptFieldEdit {
+    size_t index = 0;
+    std::string field; // "backend" | "path" | "vars"
+    core::Json value;
+};
+inline void ApplyScriptField(SceneEntity& e, const ScriptFieldEdit& v) {
+    if (v.index >= e.scripts.size()) return;
+    SceneScriptFields& f = e.scripts[v.index];
+    if (v.field == "backend") f.backend = v.value.GetString("lua");
+    else if (v.field == "path") f.path = v.value.GetString();
+    else if (v.field == "vars") f.vars = v.value;
+}
+inline bool ValuesEqual(const ScriptFieldEdit& a, const ScriptFieldEdit& b) {
+    return a.index == b.index && a.field == b.field &&
+           core::JsonWriter::Write(a.value) == core::JsonWriter::Write(b.value);
+}
+
+// Health component (flattened hp/maxHp): one undo step for attach/detach.
+struct HealthValue {
+    float hp = 0.0f;
+    float maxHp = 0.0f;
+};
+inline void ApplyHealth(SceneEntity& e, const HealthValue& v) {
+    e.hp = v.hp;
+    e.maxHp = v.maxHp;
+}
+inline bool ValuesEqual(const HealthValue& a, const HealthValue& b) {
+    return a.hp == b.hp && a.maxHp == b.maxHp;
+}
+inline void ApplyHpProp(SceneEntity& e, const float& v) { e.hp = v; }
+inline void ApplyMaxHpProp(SceneEntity& e, const float& v) { e.maxHp = v; }
 
 // A texture slot edit: the new path plus the texture handle already resolved
 // through the AssetManager (resolved at command-construction time in the
@@ -448,6 +474,12 @@ private:
     void Set(const std::string& key) {
         SceneEntity& e = (*entities_)[static_cast<size_t>(index_)];
         e.meshKey = key;
+        if (key.empty()) {
+            // Mesh component removed: drop the resolved mesh so the viewport
+            // stops rendering it (sprite/logical entities re-resolve below).
+            e.mesh = gfx::Mesh{};
+            e.material = gfx::Material{};
+        }
         if (app_ && app_->ResolveMesh(e)) app_->ApplyMaterialParams(e);
     }
 

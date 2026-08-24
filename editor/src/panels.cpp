@@ -8,10 +8,16 @@
 #include <cstdio>
 #include <fstream>
 #if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+// windows.h must precede shobjidl.h: MinGW's IFileDialog needs the COM base
+// types defined first, otherwise it stays an incomplete type.
+#include <windows.h>
 #include <direct.h>
 #include <commdlg.h>
 #include <shellapi.h>
-#include <shobjidl.h>
+#include <shlobj.h>
 #include <sys/stat.h>
 #else
 #include <sys/stat.h>
@@ -21,12 +27,7 @@
 #include "imgui_internal.h"
 #include "neon/gfx/imgui_neon.hpp"
 
-#if defined(_WIN32)
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
-#else
+#if !defined(_WIN32)
 #include <dirent.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -78,13 +79,35 @@ std::string ToProjectRelPath(const std::string& path, const std::string& project
 namespace {
 
 std::string TypeLabel(const std::string& key) {
+    if (key.empty()) return "实体";
     if (key == "terrain") return "地形";
     if (key == "helmet") return "头盔 (glTF PBR)";
     if (key == "cube") return "方块";
+    if (key == "sphere") return "球体";
+    if (key == "plane") return "平面";
+    if (key == "hero") return "英雄";
+    if (key == "wolf") return "狼";
+    if (key == "npc" || key.compare(0, 4, "npc:") == 0) return "村民";
+    if (key == "house") return "房屋";
+    if (key == "bush") return "灌木";
+    if (key == "rock") return "岩石";
+    if (key == "water") return "水面";
+    if (key == "road") return "道路";
     if (key == "tree") return "松树 (OBJ)";
     if (key.rfind("obj:", 0) == 0) return "OBJ 模型";
     if (key.rfind("gltf:", 0) == 0) return "glTF 模型";
     return key;
+}
+
+// Unity-like entity type: what the selected object IS, derived from its
+// components / mesh kind (plant/zombie from the 2D canvas, sprite, prefab,
+// or the mesh type).
+std::string EntityTypeLabel(const SceneEntity& e) {
+    if (e.extraComponents.count("plant")) return "植物";
+    if (e.extraComponents.count("zombie")) return "僵尸";
+    if (!e.spriteTex.empty()) return "精灵";
+    if (!e.prefab.empty()) return "预制体: " + e.prefab;
+    return TypeLabel(e.meshKey);
 }
 
 std::string ToLower(std::string s) {
@@ -316,24 +339,19 @@ std::string PickImportDir() {
 #if defined(_WIN32)
     std::string out;
     HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
-    IFileDialog* pfd = nullptr;
-    if (SUCCEEDED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER,
-                                   IID_PPV_ARGS(&pfd)))) {
-        DWORD opts = 0;
-        pfd->GetOptions(&opts);
-        pfd->SetOptions(opts | FOS_PICKFOLDERS | FOS_PATHMUSTEXIST);
-        if (SUCCEEDED(pfd->Show(nullptr))) {
-            IShellItem* item = nullptr;
-            if (SUCCEEDED(pfd->GetResult(&item))) {
-                PWSTR path = nullptr;
-                if (SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH, &path))) {
-                    out = WideToUtf8(path);
-                    CoTaskMemFree(path);
-                }
-                item->Release();
-            }
+    // MinGW-w64's shobjidl.h only forward-declares IFileDialog, so use the
+    // classic SHBrowseForFolderW folder picker instead (same UX, compiles).
+    BROWSEINFOW bi = {};
+    bi.hwndOwner = nullptr;
+    bi.lpszTitle = L"选择要导入的资源目录";
+    bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
+    LPITEMIDLIST pidl = SHBrowseForFolderW(&bi);
+    if (pidl) {
+        wchar_t path[MAX_PATH];
+        if (SHGetPathFromIDListW(pidl, path)) {
+            out = WideToUtf8(path);
         }
-        pfd->Release();
+        CoTaskMemFree(pidl);
     }
     if (SUCCEEDED(hr)) CoUninitialize();
     return out;
@@ -699,12 +717,13 @@ void EditorApp::BuildScenePanel() {
                 const char* path = static_cast<const char*>(p->Data);
                 if (path && selected_ >= 0 &&
                     selected_ < static_cast<int>(entities_.size())) {
-                    const SceneScriptFields oldV{entities_[static_cast<size_t>(selected_)].scriptBackend,
-                                                 entities_[static_cast<size_t>(selected_)].scriptPath,
-                                                 entities_[static_cast<size_t>(selected_)].scriptVars};
-                    const SceneScriptFields newV{"lua", ToProjectRelPath(path, projectDir_), oldV.vars};
-                    history_.Push(std::make_unique<EditPropertyCommand<SceneScriptFields>>(
-                        &entities_, selected_, ApplyScriptFields, oldV, newV,
+                    std::vector<SceneScriptFields> newList =
+                        entities_[static_cast<size_t>(selected_)].scripts;
+                    newList.push_back({"lua", ToProjectRelPath(path, projectDir_), {}});
+                    history_.Push(std::make_unique<
+                        EditPropertyCommand<std::vector<SceneScriptFields>>>(
+                        &entities_, selected_, ApplyScriptList,
+                        entities_[static_cast<size_t>(selected_)].scripts, newList,
                         /*mergeable=*/false));
                 }
             }
@@ -1198,7 +1217,8 @@ void EditorApp::BuildInspectorPanel() {
                 }
             }
         }
-        ImGui::TextDisabled("类型: %s", TypeLabel(e.meshKey).c_str());
+        ImGui::TextColored(ImVec4(0.85f, 0.9f, 1.0f, 1.0f), "类型: %s",
+                           EntityTypeLabel(e).c_str());
         if (!e.spriteTex.empty()) {
             ImGui::TextDisabled("精灵贴图: %s", e.spriteTex.c_str());
             const SpriteFlipValue oldFlip{e.spriteFlipX, e.spriteFlipY};
@@ -1234,7 +1254,12 @@ void EditorApp::BuildInspectorPanel() {
             }
         }
         ImGui::Separator();
-        if (ImGui::CollapsingHeader("变换", ImGuiTreeNodeFlags_DefaultOpen)) {
+        // Unity-style: every entity is a type + a list of components. The
+        // default components (变换/网格/生命) are ordinary blocks in this same
+        // list; transform is mandatory like Unity's Transform, mesh and health
+        // are removable.
+        if (ImGui::CollapsingHeader("组件", ImGuiTreeNodeFlags_DefaultOpen)) {
+        if (ImGui::CollapsingHeader("变换##transform", ImGuiTreeNodeFlags_DefaultOpen)) {
         const math::Vec3 oldPos = e.pos;
         if (ImGui::DragFloat3("位置", &e.pos.x, 0.1f)) {
             history_.Push(std::make_unique<EditTransformCommand>(
@@ -1256,15 +1281,53 @@ void EditorApp::BuildInspectorPanel() {
                 &entities_, selected_, e.pos, e.rot, oldScale, e.pos, e.rot, e.scale,
                 EditTransformCommand::kScale));
         }
-        const gfx::Color oldTint = e.tint;
-        if (ImGui::ColorEdit3("颜色", &e.tint.r)) {
-            e.material.tint = e.tint;
-            history_.Push(std::make_unique<EditPropertyCommand<gfx::Color>>(
-                &entities_, selected_, ApplyColorProp, oldTint, e.tint));
         }
+        // 网格 (MeshRenderer-like): mesh key + material + textures in one
+        // block. Hidden for sprites (the sprite quad replaces it); removable -
+        // the entity becomes a logical/sprite-only object, and 网格 reappears
+        // in the 添加组件 dropdown to re-add it.
+        if (e.spriteTex.empty() && !e.meshKey.empty()) {
+        // Collapsed by default: the mesh block (key + material + 4 texture
+        // slots) is tall and pushed 生命/脚本 below the panel's visible area,
+        // making their remove buttons unreachable without scrolling.
+        const bool meshOpen = ImGui::CollapsingHeader("网格##mesh", ImGuiTreeNodeFlags_None);
+        if (meshOpen && !e.meshKey.empty()) {
+        char meshBuf[2048];
+        std::snprintf(meshBuf, sizeof(meshBuf), "%s", e.meshKey.c_str());
+        if (ImGui::InputText("网格键", meshBuf, sizeof(meshBuf),
+                             ImGuiInputTextFlags_EnterReturnsTrue)) {
+            const std::string newKey(meshBuf);
+            if (newKey != e.meshKey) {
+                const std::string oldKey = e.meshKey;
+                history_.Push(std::make_unique<EditMeshKeyCommand>(
+                    this, &entities_, selected_, oldKey, newKey));
+            }
+        }
+        // Drag a model from the asset panel to replace the mesh.
+        if (ImGui::BeginDragDropTarget()) {
+            if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("ASSET_MODEL")) {
+                std::string path(static_cast<const char*>(payload->Data),
+                                 static_cast<size_t>(payload->DataSize));
+                if (!path.empty() && path.back() == '\0') path.pop_back();
+                if (!path.empty()) {
+                    const std::string lower = ToLower(path);
+                    const std::string key =
+                        lower.rfind(".obj") != std::string::npos ? "obj:" + path
+                                                                 : "gltf:" + path;
+                    const std::string oldKey = e.meshKey;
+                    history_.Push(std::make_unique<EditMeshKeyCommand>(
+                        this, &entities_, selected_, oldKey, key));
+                }
+            }
+            ImGui::EndDragDropTarget();
+        }
+        if (e.mesh.Valid()) {
+            ImGui::TextDisabled("%u 三角形", e.mesh.TriangleCount());
+            const math::AABB& b = e.mesh.Bounds();
+            ImGui::TextDisabled("包围盒 (%.1f, %.1f, %.1f) ~ (%.1f, %.1f, %.1f)", b.min.x,
+                                b.min.y, b.min.z, b.max.x, b.max.y, b.max.z);
         }
         ImGui::Separator();
-        if (ImGui::CollapsingHeader("材质", ImGuiTreeNodeFlags_DefaultOpen)) {
         if (!e.materialRef.empty()) {
             ImGui::TextDisabled("材质球: %s", e.materialRef.c_str());
         }
@@ -1293,6 +1356,12 @@ void EditorApp::BuildInspectorPanel() {
             }
             ImGui::EndDragDropTarget();
         }
+        const gfx::Color oldTint = e.tint;
+        if (ImGui::ColorEdit3("颜色", &e.tint.r)) {
+            e.material.tint = e.tint;
+            history_.Push(std::make_unique<EditPropertyCommand<gfx::Color>>(
+                &entities_, selected_, ApplyColorProp, oldTint, e.tint));
+        }
         const float oldMetallic = e.metallic;
         if (ImGui::DragFloat("金属度", &e.metallic, 0.01f, 0.0f, 1.0f)) {
             e.material.metallic = e.metallic;
@@ -1318,9 +1387,6 @@ void EditorApp::BuildInspectorPanel() {
                 &entities_, selected_, ApplyEmissiveIntensityProp, oldEmissiveIntensity,
                 e.emissiveIntensity));
         }
-        }
-        ImGui::Separator();
-        if (ImGui::CollapsingHeader("纹理 (拖入资产面板的图片)", ImGuiTreeNodeFlags_DefaultOpen)) {
         // One slot per PBR texture: thumbnail preview, editable path (Enter to
         // commit), clear button, and a drag-drop target from the asset panel.
         // Every change routes through the undo history as a texture-slot edit.
@@ -1393,127 +1459,37 @@ void EditorApp::BuildInspectorPanel() {
         textureSlot("金属度/粗糙度", e.mrTex, e.material.metallicRoughness, ApplyMRTexSlot);
         textureSlot("环境光遮蔽图", e.aoTex, e.material.occlusion, ApplyAOTexSlot);
         textureSlot("自发光图", e.emissiveTex, e.material.emissive, ApplyEmissiveTexSlot);
+        ImGui::Separator();
+        if (ImGui::Button("移除网格")) {
+            history_.Push(std::make_unique<EditMeshKeyCommand>(
+                this, &entities_, selected_, e.meshKey, ""));
+        }
+        }
+        }
+        // 生命: attached when maxHp > 0; removable (sets maxHp back to 0).
+        if (e.maxHp > 0.0f) {
+        const bool healthOpen =
+            ImGui::CollapsingHeader("生命##health", ImGuiTreeNodeFlags_DefaultOpen);
+        if (healthOpen && e.maxHp > 0.0f) {
+        const float oldHp = e.hp;
+        if (ImGui::DragFloat("当前生命", &e.hp, 1.0f, 0.0f, e.maxHp)) {
+            history_.Push(std::make_unique<EditPropertyCommand<float>>(
+                &entities_, selected_, ApplyHpProp, oldHp, e.hp));
+        }
+        const float oldMaxHp = e.maxHp;
+        if (ImGui::DragFloat("最大生命", &e.maxHp, 1.0f, 0.0f, 1e9f)) {
+            history_.Push(std::make_unique<EditPropertyCommand<float>>(
+                &entities_, selected_, ApplyMaxHpProp, oldMaxHp, e.maxHp));
         }
         ImGui::Separator();
-        if (ImGui::CollapsingHeader("网格", ImGuiTreeNodeFlags_DefaultOpen)) {
-        char meshBuf[2048];
-        std::snprintf(meshBuf, sizeof(meshBuf), "%s", e.meshKey.c_str());
-        if (ImGui::InputText("网格键", meshBuf, sizeof(meshBuf),
-                             ImGuiInputTextFlags_EnterReturnsTrue)) {
-            const std::string newKey(meshBuf);
-            if (newKey != e.meshKey) {
-                const std::string oldKey = e.meshKey;
-                history_.Push(std::make_unique<EditMeshKeyCommand>(
-                    this, &entities_, selected_, oldKey, newKey));
-            }
+        if (ImGui::Button("移除生命")) {
+            const HealthValue oldV{e.hp, e.maxHp};
+            history_.Push(std::make_unique<EditPropertyCommand<HealthValue>>(
+                &entities_, selected_, ApplyHealth, oldV, HealthValue{},
+                /*mergeable=*/false));
         }
-        // Drag a model from the asset panel to replace the mesh.
-        if (ImGui::BeginDragDropTarget()) {
-            if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("ASSET_MODEL")) {
-                std::string path(static_cast<const char*>(payload->Data),
-                                 static_cast<size_t>(payload->DataSize));
-                if (!path.empty() && path.back() == '\0') path.pop_back();
-                if (!path.empty()) {
-                    const std::string lower = ToLower(path);
-                    const std::string key =
-                        lower.rfind(".obj") != std::string::npos ? "obj:" + path
-                                                                 : "gltf:" + path;
-                    const std::string oldKey = e.meshKey;
-                    history_.Push(std::make_unique<EditMeshKeyCommand>(
-                        this, &entities_, selected_, oldKey, key));
-                }
-            }
-            ImGui::EndDragDropTarget();
         }
-        if (e.mesh.Valid()) {
-            ImGui::TextDisabled("%u 三角形", e.mesh.TriangleCount());
-            const math::AABB& b = e.mesh.Bounds();
-            ImGui::TextDisabled("包围盒 (%.1f, %.1f, %.1f) ~ (%.1f, %.1f, %.1f)", b.min.x,
-                                b.min.y, b.min.z, b.max.x, b.max.y, b.max.z);
         }
-        // Schema-driven component editor (Godot @export / UE UPROPERTY style):
-        // every component stored in extraComponents renders its registered
-        // fields; components without a schema show their raw JSON read-only.
-        // plant/zombie are skipped - the 2D canvas is their editor.
-        ImGui::Separator();
-        }
-        ImGui::Separator();
-        if (ImGui::CollapsingHeader("组件", ImGuiTreeNodeFlags_DefaultOpen)) {
-        // Script components (Unity-style): the primary scriptPath plus any
-        // extra "scripts" entries. Each shows its path + a detach button;
-        // add via the project scripts dropdown or ASSET_SCRIPT drag-drop.
-        {
-            ImGui::TextDisabled("脚本");
-            if (!e.scriptPath.empty()) {
-                ImGui::Text("  %s (%s)", e.scriptPath.c_str(),
-                            e.scriptBackend.empty() ? "lua" : e.scriptBackend.c_str());
-                ImGui::SameLine();
-                if (ImGui::SmallButton("移除主")) {
-                    const SceneScriptFields oldV{e.scriptBackend, e.scriptPath,
-                                                 e.scriptVars};
-                    const SceneScriptFields newV{"", "", {}};
-                    history_.Push(std::make_unique<EditPropertyCommand<SceneScriptFields>>(
-                        &entities_, selected_, ApplyScriptFields, oldV, newV));
-                }
-            } else {
-                ImGui::TextDisabled("  (未挂载)");
-            }
-            for (int si = 0; si < static_cast<int>(e.extraScripts.size()); ++si) {
-                const SceneScriptFields& f = e.extraScripts[static_cast<size_t>(si)];
-                ImGui::Text("  %s", f.path.c_str());
-                ImGui::SameLine();
-                if (ImGui::SmallButton(("移除##s" + std::to_string(si)).c_str())) {
-                    std::vector<SceneScriptFields> newList = e.extraScripts;
-                    newList.erase(newList.begin() + si);
-                    history_.Push(std::make_unique<
-                        EditPropertyCommand<std::vector<SceneScriptFields>>>(
-                        &entities_, selected_, ApplyExtraScripts, e.extraScripts,
-                        newList));
-                }
-            }
-            // Add: pick from the project scripts list.
-            if (scriptFiles_.empty()) RefreshScriptChecks();
-            if (!scriptFiles_.empty()) {
-                if (scriptAttachIndex_ < 0) scriptAttachIndex_ = 0;
-                if (scriptAttachIndex_ >= static_cast<int>(scriptFiles_.size()))
-                    scriptAttachIndex_ = 0;
-                std::vector<const char*> names;
-                for (const std::string& f : scriptFiles_) names.push_back(f.c_str());
-                ImGui::SetNextItemWidth(150.0f);
-                ImGui::Combo("##add_script", &scriptAttachIndex_, names.data(),
-                             static_cast<int>(names.size()));
-                ImGui::SameLine();
-                if (ImGui::Button("添加脚本")) {
-                    std::vector<SceneScriptFields> newList = e.extraScripts;
-                    newList.push_back({"lua",
-                                       scriptFiles_[static_cast<size_t>(scriptAttachIndex_)],
-                                       {}});
-                    history_.Push(std::make_unique<
-                        EditPropertyCommand<std::vector<SceneScriptFields>>>(
-                        &entities_, selected_, ApplyExtraScripts, e.extraScripts,
-                        newList));
-                }
-            }
-            if (ImGui::BeginDragDropTarget()) {
-                if (const ImGuiPayload* payload =
-                        ImGui::AcceptDragDropPayload("ASSET_SCRIPT")) {
-                    const char* path = static_cast<const char*>(payload->Data);
-                    if (path && selected_ >= 0 &&
-                        selected_ < static_cast<int>(entities_.size())) {
-                        std::vector<SceneScriptFields> newList = e.extraScripts;
-                        newList.push_back({"lua", ToProjectRelPath(path, projectDir_),
-                                           {}});
-                        history_.Push(std::make_unique<
-                            EditPropertyCommand<std::vector<SceneScriptFields>>>(
-                            &entities_, selected_, ApplyExtraScripts, e.extraScripts,
-                            newList));
-                    }
-                }
-                ImGui::EndDragDropTarget();
-            }
-        }
-
-
         auto makeNum = [](double v) {
             core::Json j;
             j.type_ = core::Json::Type::Number;
@@ -1538,69 +1514,108 @@ void EditorApp::BuildInspectorPanel() {
             for (double x : v) j.array_.push_back(makeNum(x));
             return j;
         };
-        // Add a component: pick from the registered schemas. Built-in
-        // transform/mesh/health/script are editor fields (not extraComponents)
-        // and plant/zombie belong to the 2D canvas, so they are not listed.
-        const auto& allSchemas = scene::AllComponentSchemas();
-        std::vector<const scene::ComponentSchema*> addable;
-        for (const scene::ComponentSchema& s : allSchemas) {
-            if (s.name == "transform" || s.name == "mesh" || s.name == "health" ||
-                s.name == "script" || s.name == "name" || s.name == "plant" ||
-                s.name == "zombie")
-                continue;
-            if (e.extraComponents.count(s.name)) continue; // already present
-            addable.push_back(&s);
-        }
-        if (!addable.empty()) {
-            static int addCompSel = 0;
-            if (addCompSel >= static_cast<int>(addable.size())) addCompSel = 0;
-            std::vector<const char*> addLabels;
-            for (const scene::ComponentSchema* s : addable)
-                addLabels.push_back(s->label.c_str());
-            ImGui::SetNextItemWidth(110.0f);
-            ImGui::Combo("##add_component", &addCompSel, addLabels.data(),
-                         static_cast<int>(addLabels.size()));
-            ImGui::SameLine();
-            if (ImGui::Button("添加组件")) {
-                const scene::ComponentSchema* schema =
-                    addable[static_cast<size_t>(addCompSel)];
-                core::Json data;
-                data.type_ = core::Json::Type::Object;
-                for (const scene::FieldSchema& f : schema->fields) {
-                    switch (f.type) {
-                        case scene::FieldType::Number:
-                        case scene::FieldType::Int:
-                            data.object_[f.key] = makeNum(f.def);
-                            break;
-                        case scene::FieldType::Bool:
-                            data.object_[f.key] = makeBool(f.def != 0.0);
-                            break;
-                        case scene::FieldType::Vec3:
-                            data.object_[f.key] = makeArr({f.def, f.def, f.def});
-                            break;
-                        case scene::FieldType::Color:
-                            data.object_[f.key] = makeStr("#FFFFFF");
-                            break;
-                        case scene::FieldType::Json: {
-                            core::Json o;
-                            o.type_ = core::Json::Type::Object;
-                            data.object_[f.key] = std::move(o);
-                            break;
+        // Script components: ordinary component blocks (schema backend/path/
+        // vars), each with its own remove button - exactly like the
+        // schema-driven components below. Multiple scripts = multiple blocks.
+        {
+            const scene::ComponentSchema* scriptSchema =
+                scene::FindComponentSchema("script");
+            for (size_t si = 0; si < e.scripts.size(); ++si) {
+                SceneScriptFields& f = e.scripts[si];
+                const std::string header = "脚本##script_" + std::to_string(si);
+                const bool open = ImGui::CollapsingHeader(
+                    header.c_str(), ImGuiTreeNodeFlags_DefaultOpen);
+                if (!open) continue;
+                if (!scriptSchema) {
+                    ImGui::TextWrapped("%s", core::JsonWriter::Write(f.vars).c_str());
+                    continue;
+                }
+                for (const scene::FieldSchema& fs : scriptSchema->fields) {
+                    if (fs.type == scene::FieldType::Enum) {
+                        int sel = 0;
+                        if (fs.options)
+                            for (int o = 0; o < fs.optionCount; ++o)
+                                if (f.backend == fs.options[o]) sel = o;
+                        if (ImGui::Combo(fs.label.c_str(), &sel, fs.options,
+                                         fs.optionCount)) {
+                            const ScriptFieldEdit oldV{si, fs.key, makeStr(f.backend)};
+                            const ScriptFieldEdit newV{si, fs.key,
+                                                       makeStr(fs.options[sel])};
+                            history_.Push(std::make_unique<
+                                EditPropertyCommand<ScriptFieldEdit>>(
+                                &entities_, selected_, ApplyScriptField, oldV, newV,
+                                /*mergeable=*/false));
                         }
-                        case scene::FieldType::Enum:
-                            // Default to the first option so enum components
-                            // (e.g. rigidbody "shape") are valid immediately.
-                            data.object_[f.key] =
-                                makeStr(f.options && f.optionCount > 0 ? f.options[0] : "");
-                            break;
-                        default:
-                            data.object_[f.key] = makeStr("");
-                            break;
+                    } else if (fs.type == scene::FieldType::Resource) {
+                        char buf[1024];
+                        std::snprintf(buf, sizeof(buf), "%s", f.path.c_str());
+                        ImGui::SetNextItemWidth(-1.0f);
+                        if (ImGui::InputText(fs.label.c_str(), buf, sizeof(buf),
+                                             ImGuiInputTextFlags_EnterReturnsTrue)) {
+                            const ScriptFieldEdit oldV{si, fs.key, makeStr(f.path)};
+                            const ScriptFieldEdit newV{si, fs.key, makeStr(buf)};
+                            history_.Push(std::make_unique<
+                                EditPropertyCommand<ScriptFieldEdit>>(
+                                &entities_, selected_, ApplyScriptField, oldV, newV,
+                                /*mergeable=*/false));
+                        }
+                        const char* payloadKind =
+                            fs.resourceKind && std::string(fs.resourceKind) == "script"
+                                ? "ASSET_SCRIPT"
+                                : "ASSET_TEXTURE";
+                        if (ImGui::BeginDragDropTarget()) {
+                            if (const ImGuiPayload* payload =
+                                    ImGui::AcceptDragDropPayload(payloadKind)) {
+                                std::string dropped(
+                                    static_cast<const char*>(payload->Data),
+                                    static_cast<size_t>(payload->DataSize));
+                                if (!dropped.empty() && dropped.back() == '\0')
+                                    dropped.pop_back();
+                                if (!dropped.empty()) {
+                                    const ScriptFieldEdit oldV{si, fs.key, makeStr(f.path)};
+                                    const ScriptFieldEdit newV{
+                                        si, fs.key,
+                                        makeStr(ToProjectRelPath(dropped, projectDir_))};
+                                    history_.Push(std::make_unique<
+                                        EditPropertyCommand<ScriptFieldEdit>>(
+                                        &entities_, selected_, ApplyScriptField, oldV, newV,
+                                        /*mergeable=*/false));
+                                }
+                            }
+                            ImGui::EndDragDropTarget();
+                        }
+                    } else if (fs.type == scene::FieldType::Json) {
+                        ImGui::TextDisabled("%s: %s", fs.label.c_str(),
+                                            core::JsonWriter::Write(f.vars).c_str());
                     }
                 }
-                history_.Push(std::make_unique<AddComponentCommand>(
-                    &entities_, selected_, schema->name, std::move(data),
-                    /*remove=*/false));
+                ImGui::Separator();
+                if (ImGui::Button("移除脚本")) {
+                    std::vector<SceneScriptFields> newList = e.scripts;
+                    newList.erase(newList.begin() + static_cast<ptrdiff_t>(si));
+                    history_.Push(std::make_unique<
+                        EditPropertyCommand<std::vector<SceneScriptFields>>>(
+                        &entities_, selected_, ApplyScriptList, e.scripts, newList,
+                        /*mergeable=*/false));
+                    break; // the list changed; re-render next frame
+                }
+            }
+            // Dragging a .lua onto the component section mounts a new script.
+            if (ImGui::BeginDragDropTarget()) {
+                if (const ImGuiPayload* payload =
+                        ImGui::AcceptDragDropPayload("ASSET_SCRIPT")) {
+                    const char* path = static_cast<const char*>(payload->Data);
+                    if (path && selected_ >= 0 &&
+                        selected_ < static_cast<int>(entities_.size())) {
+                        std::vector<SceneScriptFields> newList = e.scripts;
+                        newList.push_back({"lua", ToProjectRelPath(path, projectDir_), {}});
+                        history_.Push(std::make_unique<
+                            EditPropertyCommand<std::vector<SceneScriptFields>>>(
+                            &entities_, selected_, ApplyScriptList, e.scripts, newList,
+                            /*mergeable=*/false));
+                    }
+                }
+                ImGui::EndDragDropTarget();
             }
         }
         for (auto it = e.extraComponents.begin(); it != e.extraComponents.end(); ++it) {
@@ -1612,12 +1627,6 @@ void EditorApp::BuildInspectorPanel() {
                 schema ? (schema->label + "##" + compName) : (compName + "##raw");
             const bool open =
                 ImGui::CollapsingHeader(header.c_str(), ImGuiTreeNodeFlags_DefaultOpen);
-            ImGui::SameLine();
-            if (ImGui::SmallButton(("移除##" + compName).c_str())) {
-                history_.Push(std::make_unique<AddComponentCommand>(
-                    &entities_, selected_, compName, compData, /*remove=*/true));
-                break; // the command already removed the component
-            }
             if (!open) continue;
             if (!schema) {
                 ImGui::TextWrapped("%s", core::JsonWriter::Write(compData).c_str());
@@ -1755,6 +1764,110 @@ void EditorApp::BuildInspectorPanel() {
                         &entities_, selected_, compName, f.key, oldField, node));
                 }
             }
+            ImGui::Separator();
+            if (ImGui::Button("移除组件")) {
+                history_.Push(std::make_unique<AddComponentCommand>(
+                    &entities_, selected_, compName, compData, /*remove=*/true));
+                break; // the command already removed the component
+            }
+        }
+        // 添加组件: every component type is here - default components that
+        // were removed (网格/生命) reappear, scripts are multi-instance, and
+        // schema components (刚体/行为树/...) work as before. Transform is
+        // mandatory (Unity's Transform) and never listed.
+        {
+            const auto& allSchemas = scene::AllComponentSchemas();
+            std::vector<const scene::ComponentSchema*> addable;
+            for (const scene::ComponentSchema& s : allSchemas) {
+                if (s.name == "transform" || s.name == "name" ||
+                    s.name == "plant" || s.name == "zombie")
+                    continue;
+                if (s.name == "mesh" && (!e.meshKey.empty() || !e.spriteTex.empty()))
+                    continue; // already has a renderer
+                if (s.name == "health" && e.maxHp > 0.0f)
+                    continue; // already attached
+                if (e.extraComponents.count(s.name)) continue; // already present
+                addable.push_back(&s);
+            }
+            if (!addable.empty()) {
+                static int addCompSel = 0;
+                if (addCompSel >= static_cast<int>(addable.size())) addCompSel = 0;
+                std::vector<const char*> addLabels;
+                for (const scene::ComponentSchema* s : addable)
+                    addLabels.push_back(s->label.c_str());
+                ImGui::SetNextItemWidth(110.0f);
+                ImGui::Combo("##add_component", &addCompSel, addLabels.data(),
+                             static_cast<int>(addLabels.size()));
+                ImGui::SameLine();
+                if (ImGui::Button("添加组件")) {
+                    const scene::ComponentSchema* schema =
+                        addable[static_cast<size_t>(addCompSel)];
+                    if (schema->name == "script") {
+                        // Scripts are a multi-instance list (extraComponents is
+                        // a name-keyed map, so scripts keep their own vector).
+                        // Default path: the script currently selected in the
+                        // script panel (if any); editable in the block.
+                        if (scriptFiles_.empty()) RefreshScriptChecks();
+                        std::string defPath;
+                        if (scriptAttachIndex_ >= 0 &&
+                            scriptAttachIndex_ < static_cast<int>(scriptFiles_.size()))
+                            defPath = scriptFiles_[static_cast<size_t>(scriptAttachIndex_)];
+                        std::vector<SceneScriptFields> newList = e.scripts;
+                        newList.push_back({"lua", defPath, {}});
+                        history_.Push(std::make_unique<
+                            EditPropertyCommand<std::vector<SceneScriptFields>>>(
+                            &entities_, selected_, ApplyScriptList, e.scripts, newList,
+                            /*mergeable=*/false));
+                    } else if (schema->name == "mesh") {
+                        // Re-add the mesh renderer (default cube).
+                        history_.Push(std::make_unique<EditMeshKeyCommand>(
+                            this, &entities_, selected_, "", "cube"));
+                    } else if (schema->name == "health") {
+                        const HealthValue oldV{e.hp, e.maxHp};
+                        history_.Push(std::make_unique<EditPropertyCommand<HealthValue>>(
+                            &entities_, selected_, ApplyHealth, oldV, HealthValue{100, 100},
+                            /*mergeable=*/false));
+                    } else {
+                        core::Json data;
+                        data.type_ = core::Json::Type::Object;
+                        for (const scene::FieldSchema& f : schema->fields) {
+                            switch (f.type) {
+                                case scene::FieldType::Number:
+                                case scene::FieldType::Int:
+                                    data.object_[f.key] = makeNum(f.def);
+                                    break;
+                                case scene::FieldType::Bool:
+                                    data.object_[f.key] = makeBool(f.def != 0.0);
+                                    break;
+                                case scene::FieldType::Vec3:
+                                    data.object_[f.key] = makeArr({f.def, f.def, f.def});
+                                    break;
+                                case scene::FieldType::Color:
+                                    data.object_[f.key] = makeStr("#FFFFFF");
+                                    break;
+                                case scene::FieldType::Json: {
+                                    core::Json o;
+                                    o.type_ = core::Json::Type::Object;
+                                    data.object_[f.key] = std::move(o);
+                                    break;
+                                }
+                                case scene::FieldType::Enum:
+                                    // Default to the first option so enum
+                                    // components are valid immediately.
+                                    data.object_[f.key] = makeStr(
+                                        f.options && f.optionCount > 0 ? f.options[0] : "");
+                                    break;
+                                default:
+                                    data.object_[f.key] = makeStr("");
+                                    break;
+                            }
+                        }
+                        history_.Push(std::make_unique<AddComponentCommand>(
+                            &entities_, selected_, schema->name, std::move(data),
+                            /*remove=*/false));
+                    }
+                }
+            }
         }
         }
     }
@@ -1844,9 +1957,27 @@ void EditorApp::BuildViewportPanel() {
     ImGuiWindowFlags vpFlags = ImGuiWindowFlags_NoScrollbar |
                                ImGuiWindowFlags_NoScrollWithMouse |
                                ImGuiWindowFlags_NoCollapse |
-                               ImGuiWindowFlags_NoBackground |
-                               ImGuiWindowFlags_NoInputs;
+                               ImGuiWindowFlags_NoBackground;
+    // NOTE: deliberately NOT ImGuiWindowFlags_NoInputs. That flag disables
+    // manual moving/resizing (imgui.cpp:7938), so the viewport could never be
+    // undocked or re-docked elsewhere. The 3D camera reads the platform input
+    // directly; ImGui just sees a normal (backgroundless) docked panel.
     if (ImGui::Begin("视口", nullptr, vpFlags)) {
+        // The viewport is a normal dockable panel defaulting to the central
+        // node. The user's saved layout (with a DockId) is always restored as
+        //-is; only when the DockId was LOST (a previous session left it
+        // floating) do we fall back to docking it in the center, on its first
+        // frame - so an intentional mid-session undock is never yanked back.
+        if (!viewportDockFallbackDone_) {
+            viewportDockFallbackDone_ = true;
+            ImGuiWindow* win = ImGui::GetCurrentWindow();
+            if (dockspaceId_ && !win->DockId && !win->DockIsActive) {
+                if (ImGuiDockNode* central = ImGui::DockBuilderGetCentralNode(dockspaceId_)) {
+                    ImGui::DockBuilderDockWindow("视口", central->ID);
+                    NEON_LOG_INFO("Editor: viewport DockId was lost; re-docked to the central node");
+                }
+            }
+        }
         ImVec2 pos = ImGui::GetWindowPos();
         ImVec2 size = ImGui::GetWindowSize();
         math::Vec2 uiPos = renderer_.ScreenToUI({pos.x, pos.y});
@@ -2411,14 +2542,12 @@ void EditorApp::BuildScriptPanel() {
         }
         SceneEntity& e = entities_[static_cast<size_t>(selected_)];
 
-        // Reload the vars editor from the entity's attached vars. Detects JSON
-        // larger than the buffer so a silent truncation surfaces a warning.
+        // The vars editor applies to the NEXT 附加: with a flat mounted list
+        // there is no single "the" script whose vars this box would show, so
+        // switching entities just resets the buffer (a too-large buffer still
+        // surfaces a truncation warning).
         auto reloadVars = [&]() {
-            const std::string json = e.scriptVars.IsObject()
-                                         ? core::JsonWriter::Write(e.scriptVars)
-                                         : "{}";
-            const int n = std::snprintf(scriptVarsBuf_, sizeof(scriptVarsBuf_), "%s",
-                                        json.c_str());
+            const int n = std::snprintf(scriptVarsBuf_, sizeof(scriptVarsBuf_), "{}");
             if (static_cast<size_t>(n) >= sizeof(scriptVarsBuf_)) {
                 char warn[128];
                 std::snprintf(warn, sizeof(warn),
@@ -2433,12 +2562,10 @@ void EditorApp::BuildScriptPanel() {
         // Sync the dropdown selection + vars buffer when the selected entity
         // changes (SetSelection / list mutations reset scriptSyncEntity_ so an
         // entity re-selected at the same index still re-syncs), so the panel
-        // always reflects the attached script (if any).
+        // never shows a previous entity's state.
         if (scriptSyncEntity_ != selected_) {
             scriptSyncEntity_ = selected_;
             scriptAttachIndex_ = -1;
-            for (size_t i = 0; i < scriptFiles_.size(); ++i)
-                if (scriptFiles_[i] == e.scriptPath) scriptAttachIndex_ = static_cast<int>(i);
             if (scriptAttachIndex_ < 0 && !scriptFiles_.empty()) scriptAttachIndex_ = 0;
             reloadVars();
         }
@@ -2459,8 +2586,23 @@ void EditorApp::BuildScriptPanel() {
                                   ImVec2(-1.0f, 88.0f));
         if (!scriptVarsError_.empty())
             ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.4f, 1.0f), "%s", scriptVarsError_.c_str());
-        if (!e.scriptPath.empty())
-            ImGui::TextDisabled("已附加: %s", e.scriptPath.c_str());
+        // Mounted scripts: one list like the inspector's component section
+        // (flat, no "primary"), each entry removable.
+        {
+            ImGui::TextDisabled("已附加 (%zu)", e.scripts.size());
+            for (size_t si = 0; si < e.scripts.size(); ++si) {
+                ImGui::Text("  %s", e.scripts[si].path.c_str());
+                ImGui::SameLine();
+                if (ImGui::SmallButton(("移除##script_" + std::to_string(si)).c_str())) {
+                    std::vector<SceneScriptFields> newList = e.scripts;
+                    newList.erase(newList.begin() + static_cast<ptrdiff_t>(si));
+                    history_.Push(std::make_unique<
+                        EditPropertyCommand<std::vector<SceneScriptFields>>>(
+                        &entities_, selected_, ApplyScriptList, e.scripts, newList,
+                        /*mergeable=*/false));
+                }
+            }
+        }
 
         const bool haveScript = !scriptFiles_.empty() && scriptAttachIndex_ >= 0 &&
                                 scriptAttachIndex_ < static_cast<int>(scriptFiles_.size());
@@ -2475,25 +2617,16 @@ void EditorApp::BuildScriptPanel() {
                 } else if (!parsed.IsNull() && !parsed.IsObject()) {
                     scriptVarsError_ = "变量必须是 JSON 对象";
                 } else {
-                    const SceneScriptFields oldV{e.scriptBackend, e.scriptPath, e.scriptVars};
-                    const SceneScriptFields newV{
-                        "lua", scriptFiles_[static_cast<size_t>(scriptAttachIndex_)],
-                        parsed.IsNull() ? core::Json{} : parsed};
-                    history_.Push(std::make_unique<EditPropertyCommand<SceneScriptFields>>(
-                        &entities_, selected_, ApplyScriptFields, oldV, newV,
+                    std::vector<SceneScriptFields> newList = e.scripts;
+                    newList.push_back(
+                        {"lua", scriptFiles_[static_cast<size_t>(scriptAttachIndex_)],
+                         parsed.IsNull() ? core::Json{} : parsed});
+                    history_.Push(std::make_unique<
+                        EditPropertyCommand<std::vector<SceneScriptFields>>>(
+                        &entities_, selected_, ApplyScriptList, e.scripts, newList,
                         /*mergeable=*/false)); // one click = one undo step
-                    reloadVars();
                 }
             }
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("分离") && !e.scriptPath.empty()) {
-            const SceneScriptFields oldV{e.scriptBackend, e.scriptPath, e.scriptVars};
-            const SceneScriptFields emptyV;
-            history_.Push(std::make_unique<EditPropertyCommand<SceneScriptFields>>(
-                &entities_, selected_, ApplyScriptFields, oldV, emptyV,
-                /*mergeable=*/false));
-            reloadVars(); // e.scriptVars is now null -> buffer shows "{}"
         }
     }
     ImGui::End();
@@ -2521,6 +2654,31 @@ void EditorApp::RunPackage() {
 void EditorApp::BuildScriptEditorPanel() {
     if (!showScriptEditor_) return;
     if (ImGui::Begin("脚本编辑器", &showScriptEditor_)) {
+        // Same fallback as the viewport: a session that lost the DockId (the
+        // window floats over the bottom tabs / Inspector) is re-docked into
+        // the bottom tab group on its first frame; a saved user layout with a
+        // DockId is always restored as-is.
+        if (!scriptEditorDockFallbackDone_) {
+            scriptEditorDockFallbackDone_ = true;
+            ImGuiWindow* win = ImGui::GetCurrentWindow();
+            if (dockspaceId_ && !win->DockId && !win->DockIsActive) {
+                ImGuiDockNode* bottom = nullptr;
+                if (ImGuiDockNode* central =
+                        ImGui::DockBuilderGetCentralNode(dockspaceId_)) {
+                    if (central->ParentNode && central->ParentNode->IsSplitNode()) {
+                        ImGuiDockNode* parent = central->ParentNode;
+                        bottom = (parent->ChildNodes[0] == central)
+                                     ? parent->ChildNodes[1]
+                                     : parent->ChildNodes[0];
+                    }
+                }
+                if (bottom && !bottom->IsSplitNode()) {
+                    ImGui::DockBuilderDockWindow("脚本编辑器", bottom->ID);
+                    NEON_LOG_INFO(
+                        "Editor: script editor DockId was lost; re-docked to the bottom tabs");
+                }
+            }
+        }
         if (scriptEditorPath_.empty()) {
             ImGui::TextDisabled("未打开脚本 — 在资产面板或脚本面板双击 .lua 打开");
             ImGui::End();

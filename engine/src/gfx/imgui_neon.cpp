@@ -160,6 +160,11 @@ bool ImGuiNeon_Init(Renderer* renderer, const char* cjkFontPath) {
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+    // The editor reads keyboard input itself (F5 playtest, Ctrl+Z undo, gizmo
+    // W/E/R...). ImGui should only own the keyboard while a text field is
+    // active, NOT whenever some docked panel happens to have focus - otherwise
+    // those shortcuts silently stop working after clicking any window.
+    io.ConfigNavCaptureKeyboard = false;
     io.IniFilename = "neon_editor_imgui.ini";
 
     // Fonts: default Latin + (optionally) full CJK coverage from a system font.

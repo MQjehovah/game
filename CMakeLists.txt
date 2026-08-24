@@ -409,6 +409,11 @@ add_executable(neon_tests tests/test_main.cpp tests/test_serialize.cpp tests/tes
   editor/src/history.cpp editor/src/packager.cpp server/src/game_server.cpp server/src/aoi.cpp
   game/src/client_sync.cpp)
 target_link_libraries(neon_tests PRIVATE neon_engine)
+if(MINGW)
+  # test_main.cpp's crash handler calls SymInitialize (dbghelp.h), which
+  # MSVC's #pragma comment(lib) does not carry over to MinGW links.
+  target_link_libraries(neon_tests PRIVATE dbghelp)
+endif()
 # test_history.cpp includes the editor's generic undo/redo stack header.
 target_include_directories(neon_tests PRIVATE editor/src third_party/stb server/src game/src)
 if(MSVC)

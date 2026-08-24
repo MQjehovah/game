@@ -63,17 +63,12 @@ struct SceneEntity {
     // entity tracks no health. Used by the playtest for the hero + combat mobs.
     float hp = 0.0f;
     float maxHp = 0.0f;
-    // Script component (mirrors scene::SceneScript, T4.5): backend/path/vars.
-    // An empty scriptPath means no script is attached. scriptVars is a JSON
-    // object (or null when absent) written into the exported script component.
-    std::string scriptBackend;
-    std::string scriptPath;
-    core::Json scriptVars;
-    // Additional script components (Unity-style multi-behavior): beyond the
-    // primary script above, an entity can carry more scripts. Serialized as
-    // "scripts": [{backend,path,vars}, ...] in componentized scenes; the
-    // runtime attaches every entry.
-    std::vector<SceneScriptFields> extraScripts;
+    // Script components: one flat list, no "primary" concept. Every mounted
+    // script is an equal entry (backend/path/vars) and multiple scripts are
+    // allowed; the runtime attaches each in order. Serialized as
+    // "scripts": [{backend,path,vars}, ...] (legacy single "script" and flat
+    // scriptPath/scriptVars fields are still read back for old scenes).
+    std::vector<SceneScriptFields> scripts;
     // Non-flattened component data (Godot-style): every component of the
     // entity that isn't one of the built-in flattened fields above. Kept so
     // the inspector can edit arbitrary components (schema-driven) and project
@@ -427,6 +422,11 @@ private:
     uint64_t lastRenderTick_ = 0; // tick processed by the most recent OnRender
     bool thumbSmokeDone_ = false; // T4.8 smoke: offscreen mesh thumbnail verified
     bool camSmokeDone_ = false;   // T4.8 smoke: ortho viewport render verified
+    // Smoke: a real click on a component's 移除 button (frame 33 captures the
+    // 网格 remove button's action (the command the button pushes) through the
+    // undo stack. Mouse-position tests are unreliable here: the real cursor
+    // overrides synthetic input every frame.
+    bool smokeRemoveActionDone_ = false;
     std::string smokeThumbPath_;
     std::string hotReloadProj_;
     std::string prevProjectDir_;
@@ -504,6 +504,12 @@ private:
     // Transform gizmo (ImGuizmo) state for the viewport.
     ImGuizmo::OPERATION gizmoOp_ = ImGuizmo::TRANSLATE;
     ImGuizmo::MODE gizmoMode_ = ImGuizmo::WORLD;
+    // Docking: the center (视口) and bottom (脚本编辑器) dock node IDs from the
+    // rebuilt default layout, used to force-dock windows that can otherwise
+    // float over the Inspector and swallow its clicks.
+    ImGuiID dockspaceId_ = 0;      // the DockSpace id (for the central node)
+    bool viewportDockFallbackDone_ = false; // viewport dockId-lost fallback ran
+    bool scriptEditorDockFallbackDone_ = false; // script editor dockId-lost fallback
     bool gizmoDrawn_ = false;    // set the first time the gizmo renders (smoke)
     bool gizmoBeginFrame_ = false; // set every frame ImGuizmo::BeginFrame runs (smoke)
     bool gizmoAltWindowSet_ = false; // set every frame the hover window is bound (smoke)

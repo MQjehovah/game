@@ -213,6 +213,28 @@ std::string GetTempDir() {
 #endif
 }
 
+// Write a file whose name may contain non-ASCII (CJK) characters. On Windows
+// std::ofstream would use the ANSI codepage, and MinGW's libstdc++ has no
+// std::wstring overload for fstream, so write through the wide API instead.
+bool WriteFileUtf8(const std::string& path, const std::string& content) {
+#if defined(_WIN32)
+    const int wl = MultiByteToWideChar(CP_UTF8, 0, path.data(),
+                                       static_cast<int>(path.size()), nullptr, 0);
+    std::wstring wpath(static_cast<size_t>(wl > 0 ? wl : 0), L'\0');
+    if (wl > 0)
+        MultiByteToWideChar(CP_UTF8, 0, path.data(), static_cast<int>(path.size()),
+                            &wpath[0], wl);
+    FILE* f = _wfopen(wpath.c_str(), L"wb");
+#else
+    FILE* f = std::fopen(path.c_str(), "wb");
+#endif
+    if (!f) return false;
+    const bool ok =
+        content.empty() || std::fwrite(content.data(), 1, content.size(), f) == content.size();
+    std::fclose(f);
+    return ok;
+}
+
 std::string GetWorkingDir() {
 #if defined(_WIN32)
     char buf[4096];
@@ -372,7 +394,10 @@ void DecomposeModel(const math::Mat4& m, math::Vec3& pos, math::Vec3& scale, mat
 // the ini is missing or predates the current layout version, the editor
 // re-applies the Unity-style default docking layout once (the user's later
 // customizations are still saved and respected).
-constexpr int kNeonLayoutVersion = 2;
+// v3: the built-in script editor is docked into the bottom tab group instead
+// of floating - its saved floating position (550,148) covered the left half
+// of the Inspector (属性) and swallowed every click on component blocks.
+constexpr int kNeonLayoutVersion = 3;
 bool NeedsDefaultLayout() {
     static const bool needs = [] {
         const char* ini = ImGui::GetIO().IniFilename;
@@ -583,8 +608,7 @@ void EditorApp::SetupScene() {
         h.pos = {0.0f, 0.0f, 5.5f};
         h.scale = {1, 1, 1};
         h.tint = gfx::Color::White;
-        h.scriptBackend = "lua";
-        h.scriptPath = "scripts/hero.lua";
+        h.scripts.push_back({"lua", "scripts/hero.lua", {}});
         h.hp = 100.0f;
         h.maxHp = 100.0f;
         if (ResolveMesh(h)) {
@@ -649,10 +673,103 @@ void EditorApp::OnUpdate(float dt) {
     gfx::ImGuiNeon_NewFrame(*Input(), pendingText_, dt);
     pendingText_.clear();
     ImGui::NewFrame();
+    // ImGui's implicit fallback window ("Debug##Default") defaults to (60,60)
+    // 400x400 - right on top of the viewport's upper-left corner, swallowing
+    // the viewport dock tab and the camera input there. Park it off-screen.
+    if (ImGuiWindow* fallback = ImGui::FindWindowByName("Debug##Default"))
+        ImGui::SetWindowPos(fallback, ImVec2(-100000.0f, -100000.0f));
+    // ImGui's hover resolution can report the DockSpace host instead of the
+    // docked leaf window under the mouse, which makes every panel button
+    // unclickable (ItemHoverable requires HoveredWindow == the item's window).
+    // Re-resolve the hover to the topmost visible docked leaf under the mouse.
+    {
+        ImGuiContext& ictx = *ImGui::GetCurrentContext();
+        ImGuiWindow* best = nullptr;
+        for (int wi = ictx.Windows.Size - 1; wi >= 0; --wi) {
+            ImGuiWindow* w = ictx.Windows[wi];
+            if (!w || w->Hidden) continue;
+            if (w->DockNodeAsHost != nullptr) continue; // dock host / tab bar
+            if (w->ParentWindow != nullptr) continue;   // child windows
+            if (w->Flags & ImGuiWindowFlags_NoMouseInputs) continue; // overlays
+            // The transform gizmo binds to the dock host over the 视口, so
+            // keep the host hover there; only re-resolve tool panels.
+            if (std::strcmp(w->Name, "视口") == 0) continue;
+            if (std::strncmp(w->Name, "##", 2) == 0) continue; // internal windows
+            if (w->Rect().Contains(ictx.IO.MousePos)) {
+                best = w;
+                break;
+            }
+        }
+        if (best && best != ictx.HoveredWindow) {
+            ictx.HoveredWindow = best;
+        }
+    }
     BuildImGuiUI();
     ImGui::Render();
 
-    // Open every tool panel right before the UI smoke test.
+    // Smoke: the 网格 移除 button's action (the command the button pushes)
+    // works through the undo stack. Real mouse input cannot be synthesized
+    // reliably here - the physical cursor overrides synthetic events every
+    // frame - so the action is driven through the same command the button
+    // handler pushes, then undone.
+    if (smokeMode_ && !smokeRemoveActionDone_ && TimeRef().frameIndex >= 45) {
+        smokeRemoveActionDone_ = true;
+        for (int i = 0; i < static_cast<int>(entities_.size()); ++i) {
+            if (!entities_[static_cast<size_t>(i)].meshKey.empty() &&
+                entities_[static_cast<size_t>(i)].spriteTex.empty()) {
+                SetSelection(i);
+                break;
+            }
+        }
+        const bool actionOk =
+            selected_ >= 0 && selected_ < static_cast<int>(entities_.size());
+        bool removed = false;
+        bool healthOk = true;
+        bool scriptOk = true;
+        if (actionOk) {
+            SceneEntity& e = entities_[static_cast<size_t>(selected_)];
+            const std::string oldKey = entities_[static_cast<size_t>(selected_)].meshKey;
+            history_.Push(std::make_unique<EditMeshKeyCommand>(
+                this, &entities_, selected_, oldKey, ""));
+            removed = entities_[static_cast<size_t>(selected_)].meshKey.empty();
+            history_.Undo();
+            // 生命 remove: the command the 移除##health button pushes.
+            if (e.maxHp > 0.0f) {
+                const HealthValue oldV{e.hp, e.maxHp};
+                history_.Push(std::make_unique<EditPropertyCommand<HealthValue>>(
+                    &entities_, selected_, ApplyHealth, oldV, HealthValue{},
+                    /*mergeable=*/false));
+                healthOk = e.maxHp == 0.0f && e.hp == 0.0f;
+                history_.Undo();
+                healthOk = healthOk && e.maxHp == oldV.maxHp;
+            }
+            // 脚本 remove: append one script, then erase it via the command
+            // the 移除##script_N button pushes.
+            std::vector<SceneScriptFields> withScript = e.scripts;
+            withScript.push_back({"lua", "scripts/smoke_remove.lua", {}});
+            history_.Push(std::make_unique<
+                EditPropertyCommand<std::vector<SceneScriptFields>>>(
+                &entities_, selected_, ApplyScriptList, e.scripts, withScript,
+                /*mergeable=*/false));
+            if (e.scripts.size() == 1) {
+                std::vector<SceneScriptFields> after = e.scripts;
+                after.clear();
+                history_.Push(std::make_unique<
+                    EditPropertyCommand<std::vector<SceneScriptFields>>>(
+                    &entities_, selected_, ApplyScriptList, e.scripts, after,
+                    /*mergeable=*/false));
+                scriptOk = e.scripts.empty();
+                history_.Undo();
+                history_.Undo();
+                scriptOk = scriptOk && e.scripts.empty();
+            }
+        }
+        NEON_LOG_INFO("EDITOR-REMOVE-BTN-SMOKE: [%s] remove actions work "
+                      "(mesh=%d health=%d script=%d sel=%d)",
+                      actionOk && removed && healthOk && scriptOk ? "PASS" : "FAIL",
+                      removed ? 1 : 0, healthOk ? 1 : 0, scriptOk ? 1 : 0, selected_);
+        if (!actionOk || !removed || !healthOk || !scriptOk) smokeFailed_ = true;
+    }
     if (smokeMode_ && TimeRef().frameIndex == 29) {
         showHierarchy_ = true;
         showInspector_ = true;
@@ -742,10 +859,12 @@ void EditorApp::OnUpdate(float dt) {
             SceneEntity& sel = entities_[static_cast<size_t>(selected_)];
             core::Json vars;
             vars.type_ = core::Json::Type::Object;
-            const SceneScriptFields oldV{sel.scriptBackend, sel.scriptPath, sel.scriptVars};
-            const SceneScriptFields newV{"lua", "scripts/main.lua", vars};
-            history_.Push(std::make_unique<EditPropertyCommand<SceneScriptFields>>(
-                &entities_, selected_, ApplyScriptFields, oldV, newV, /*mergeable=*/false));
+            std::vector<SceneScriptFields> newList = sel.scripts;
+            newList.push_back({"lua", "scripts/main.lua", vars});
+            history_.Push(std::make_unique<
+                EditPropertyCommand<std::vector<SceneScriptFields>>>(
+                &entities_, selected_, ApplyScriptList, sel.scripts, newList,
+                /*mergeable=*/false));
         }
         hotReload_ = true;
         StartPlaytest();
@@ -1303,14 +1422,28 @@ void EditorApp::UpdateViewport(float dt) {
     math::Vec2 mp = renderer_.ScreenToUI(input->MousePos());
     // ImGui tool windows capture mouse when hovered/active; the 3D viewport
     // area itself has no ImGui window, so camera controls stay responsive.
-    // NOTE: the DockSpace node host window (named "##NeonDockSpace/...") spans
-    // the whole workspace and is reported as hovered over the open viewport,
-    // so io.WantCaptureMouse is true there too. Only hovering an actual tool
-    // panel (a docked leaf window, i.e. DockNodeAsHost == NULL) or an ImGui
-    // widget should disable the camera controls - a dock host is not a panel.
-    const ImGuiWindow* hoveredWin = ImGui::GetCurrentContext()->HoveredWindow;
-    bool overPanel = ImGui::GetIO().WantCaptureMouse && hoveredWin != nullptr &&
-                     hoveredWin->DockNodeAsHost == nullptr;
+    // The DockSpace host spans the workspace and this code runs before
+    // ImGui::NewFrame, so HoveredWindow/WantCaptureMouse are stale here.
+    // Instead: a click belongs to a panel (and never to the viewport picker)
+    // when the mouse is inside ANY visible docked leaf window except the
+    // viewport itself - position-based, independent of hover bookkeeping.
+    ImGuiContext& ictx = *ImGui::GetCurrentContext();
+    const math::Vec2 mousePx = input->MousePos();
+    bool overPanel = false;
+    for (int wi = 0; wi < ictx.Windows.Size; ++wi) {
+        ImGuiWindow* w = ictx.Windows[wi];
+        if (!w || w->Hidden) continue;
+        if (w->DockNodeAsHost != nullptr) continue; // dock host / tab bar
+        if (w->ParentWindow != nullptr) continue;   // child windows
+        if (w->Flags & ImGuiWindowFlags_NoMouseInputs) continue; // overlays (gizmo)
+        if (std::strcmp(w->Name, "视口") == 0) continue; // the 3D viewport
+        if (std::strncmp(w->Name, "##", 2) == 0) continue; // internal windows
+        if (mousePx.x >= w->Pos.x && mousePx.x <= w->Pos.x + w->Size.x &&
+            mousePx.y >= w->Pos.y && mousePx.y <= w->Pos.y + w->Size.y) {
+            overPanel = true;
+            break;
+        }
+    }
     bool inViewport = mp.x >= viewportRect_.x && mp.x <= viewportRect_.x + viewportRect_.w &&
                       mp.y >= viewportRect_.y && mp.y <= viewportRect_.y + viewportRect_.h;
 
@@ -1509,19 +1642,14 @@ void EditorApp::DrawTransformGizmo() {
     }
     SceneEntity& e = entities_[static_cast<size_t>(selected_)];
 
-    // Draw the gizmo into the viewport window's draw list. Over a docked window
-    // the mouse is treated as hovering the DOCK HOST, not the 视口 window (the
-    // viewport is NoInputs, so ImGui's hover hit-test skips it and g.HoveredWindow
-    // becomes the host). For a docked leaf window ParentWindow IS the host
-    // (imgui.cpp:8009), so point ImGuizmo's hover check at it via
-    // SetAlternativeWindow; otherwise GetMoveType/GetRotateType/GetScaleType
-    // all bail on `!mbMouseOver` and the gizmo can never be grabbed.
+    // Draw the gizmo into the viewport window's draw list. The viewport is an
+    // ordinary input-active docked panel (NoInputs was removed so it can be
+    // undocked/re-docked), so ImGui's hover hit-test resolves to the viewport
+    // window itself; point ImGuizmo's hover check at it via
+    // SetAlternativeWindow.
     ImGuiWindow* viewportWindow = ImGui::GetCurrentWindow();
-    ImGuiWindow* hoverWindow =
-        (viewportWindow && viewportWindow->ParentWindow) ? viewportWindow->ParentWindow
-                                                         : viewportWindow;
-    ImGuizmo::SetAlternativeWindow(hoverWindow);
-    gizmoAltWindowSet_ = hoverWindow != nullptr;
+    ImGuizmo::SetAlternativeWindow(viewportWindow);
+    gizmoAltWindowSet_ = viewportWindow != nullptr;
 
     const float aspect = ViewportAspect();
     gfx::Camera cam = ActiveCamera();
@@ -1650,20 +1778,21 @@ void EditorApp::RunGizmoDragSim() {
     const float gx = vr.x + (clip.x / clip.w * 0.5f + 0.5f) * vrW;
     const float gy = vr.y + (0.5f - clip.y / clip.w * 0.5f) * vrH;
 
-    // The docked leaf's parent IS the dock host ImGui reports as hovered; the
-    // same window SetAlternativeWindow points the gizmo at.
+    // The viewport is an input-active docked panel: ImGui reports IT as the
+    // hovered window over the viewport, and SetAlternativeWindow points the
+    // gizmo at it too.
     ImGuiWindow* vpWin = ImGui::FindWindowByName("视口");
-    ImGuiWindow* hostWin = (vpWin && vpWin->ParentWindow) ? vpWin->ParentWindow : vpWin;
-    report(hostWin != nullptr, "drag sim resolves the dock host window");
+    ImGuiWindow* hostWin = vpWin;
+    report(hostWin != nullptr, "drag sim resolves the viewport window");
     if (!hostWin) return;
 
-    // The real hover path relies on ImGui reporting the dock host as the
-    // hovered window when the mouse is over the viewport (OnUpdate parked the
-    // mouse on the viewport center for this smoke frame). If it doesn't match
-    // the host the gizmo is bound to, SetAlternativeWindow is wrong/removed
-    // and the gizmo would be undraggable - fail the smoke here.
+    // The real hover path relies on ImGui reporting the viewport window as
+    // hovered when the mouse is over it (OnUpdate parked the mouse on the
+    // viewport center for this smoke frame). If it doesn't match the window
+    // the gizmo is bound to, SetAlternativeWindow is wrong/removed and the
+    // gizmo would be undraggable - fail the smoke here.
     report(ctx.HoveredWindow == hostWin,
-           "real hover over the viewport resolves to the dock host window");
+           "real hover over the viewport resolves to the viewport window");
 
     // Clear hover/active so CanActivate() sees no other ImGui item.
     ctx.HoveredWindow = hostWin;
@@ -1816,6 +1945,7 @@ void EditorApp::BuildImGuiUI() {
     ImGui::Begin("##NeonDockSpace", nullptr, dsFlags);
     ImGui::PopStyleVar(3);
     ImGuiID dockId = ImGui::GetID("NeonDockSpace");
+    dockspaceId_ = dockId;
     // NOTE: no ImGuiDockNodeFlags_PassthruCentralNode here. That flag makes the
     // DockSpace root paint an opaque ImGuiCol_WindowBg rectangle over the WHOLE
     // workspace when the central node is non-empty (and the 3D viewport window
@@ -1853,7 +1983,7 @@ void EditorApp::BuildImGuiUI() {
                                                  mainVp->WorkSize.y - menuH - toolH));
             // Unity-style layout: Hierarchy (场景) left, Inspector (属性) right,
             // Scene view (视口) center, Project/tools (资产/资源/日志/行为树/脚本/
-            // 打包/性能) docked across the bottom.
+            // 脚本编辑器/打包/性能) docked across the bottom.
             ImGuiID right = ImGui::DockBuilderSplitNode(dockId, ImGuiDir_Right, 0.22f,
                                                         nullptr, &dockId);
             ImGuiID left = ImGui::DockBuilderSplitNode(dockId, ImGuiDir_Left, 0.20f,
@@ -1867,6 +1997,7 @@ void EditorApp::BuildImGuiUI() {
             ImGui::DockBuilderDockWindow("日志", bottom);
             ImGui::DockBuilderDockWindow("行为树", bottom);
             ImGui::DockBuilderDockWindow("脚本", bottom);
+            ImGui::DockBuilderDockWindow("脚本编辑器", bottom);
             ImGui::DockBuilderDockWindow("打包", bottom);
             ImGui::DockBuilderDockWindow("性能", bottom);
             ImGui::DockBuilderDockWindow("视口", dockId);
@@ -1979,6 +2110,26 @@ void EditorApp::BuildImGuiUI() {
     }
     ImGui::End();
 
+    // The DockSpace's Begin/End (above) can overwrite the hover we resolved
+    // after NewFrame, so re-resolve it right before the tool panels build.
+    {
+        ImGuiContext& ictx = *ImGui::GetCurrentContext();
+        ImGuiWindow* best = nullptr;
+        for (int wi = ictx.Windows.Size - 1; wi >= 0; --wi) {
+            ImGuiWindow* w = ictx.Windows[wi];
+            if (!w || w->Hidden) continue;
+            if (w->DockNodeAsHost != nullptr) continue;
+            if (w->ParentWindow != nullptr) continue;
+            if (w->Flags & ImGuiWindowFlags_NoMouseInputs) continue;
+            if (std::strcmp(w->Name, "视口") == 0) continue;
+            if (std::strncmp(w->Name, "##", 2) == 0) continue;
+            if (w->Rect().Contains(ictx.IO.MousePos)) {
+                best = w;
+                break;
+            }
+        }
+        if (best) ictx.HoveredWindow = best;
+    }
     BuildScenePanel();
     BuildAssetPanel();
     BuildResourcePanel();
@@ -2594,22 +2745,25 @@ void EditorApp::RunUISmokeTest() {
             speed.type_ = core::Json::Type::Number;
             speed.number_ = 1.5;
             vars.object_["speed"] = speed;
-            const SceneScriptFields oldV{sel.scriptBackend, sel.scriptPath, sel.scriptVars};
-            const SceneScriptFields newV{"lua", "scripts/good.lua", vars};
-            history_.Push(std::make_unique<EditPropertyCommand<SceneScriptFields>>(
-                &entities_, idx, ApplyScriptFields, oldV, newV, /*mergeable=*/false));
-            check(sel.scriptPath == "scripts/good.lua" && sel.scriptBackend == "lua" &&
-                      sel.scriptVars.IsObject() && sel.scriptVars.Get("speed")->GetNumber() == 1.5,
+            std::vector<SceneScriptFields> newList = sel.scripts;
+            newList.push_back({"lua", "scripts/good.lua", vars});
+            history_.Push(std::make_unique<
+                EditPropertyCommand<std::vector<SceneScriptFields>>>(
+                &entities_, idx, ApplyScriptList, sel.scripts, newList,
+                /*mergeable=*/false));
+            check(sel.scripts.size() == 1 && sel.scripts[0].path == "scripts/good.lua" &&
+                      sel.scripts[0].backend == "lua" && sel.scripts[0].vars.IsObject() &&
+                      sel.scripts[0].vars.Get("speed")->GetNumber() == 1.5,
                   "script panel: attach applies through the command stack");
             history_.Undo();
-            check(sel.scriptPath.empty(),
+            check(sel.scripts.empty(),
                   "script panel: undo detaches the script component");
             history_.Redo();
-            check(sel.scriptPath == "scripts/good.lua",
+            check(sel.scripts.size() == 1 && sel.scripts[0].path == "scripts/good.lua",
                   "script panel: redo re-attaches the script component");
 
-            // Export and assert the script component lands in the scene JSON
-            // (mirrors MakeEntity's script component + the T2.6 factory schema).
+            // Export and assert the mounted scripts land in the scene JSON as
+            // the "scripts" list component (flat, one entry per mounted script).
             const std::string expProj = GetTempDir();
             projectDir_ = expProj;
             core::Status exp = ExportScene();
@@ -2624,18 +2778,20 @@ void EditorApp::RunUISmokeTest() {
                 if (parsed.Ok() && static_cast<size_t>(idx) < parsed.Value().entities.size()) {
                     const scene::ComponentDef* sc = nullptr;
                     for (const auto& c : parsed.Value().entities[static_cast<size_t>(idx)].components) {
-                        if (c.name == "script") {
+                        if (c.name == "scripts") {
                             sc = &c;
                             break;
                         }
                     }
-                    const core::Json* backend = sc ? sc->data.Get("backend") : nullptr;
-                    const core::Json* path = sc ? sc->data.Get("path") : nullptr;
-                    const core::Json* vars = sc ? sc->data.Get("vars") : nullptr;
-                    check(sc != nullptr && backend != nullptr && path != nullptr &&
-                              vars != nullptr && backend->GetString() == "lua" &&
-                              path->GetString() == "scripts/good.lua" &&
-                              vars->Get("speed")->GetNumber() == 1.5,
+                    const core::Json* items = sc ? sc->data.Get("items") : nullptr;
+                    bool scriptOk = items && items->IsArray() && items->Size() == 1;
+                    const core::Json* first = scriptOk ? items->At(0) : nullptr;
+                    scriptOk = scriptOk && first && first->Get("backend") &&
+                               first->Get("path") && first->Get("vars") &&
+                               first->Get("backend")->GetString() == "lua" &&
+                               first->Get("path")->GetString() == "scripts/good.lua" &&
+                               first->Get("vars")->Get("speed")->GetNumber() == 1.5;
+                    check(scriptOk,
                           "script panel: exported JSON carries the script component");
                 }
             }
@@ -2669,17 +2825,19 @@ void EditorApp::RunUISmokeTest() {
             staleMarker.type_ = core::Json::Type::Number;
             staleMarker.number_ = 9.0;
             staleVars.object_["stale"] = staleMarker;
-            const SceneScriptFields staleOld{oldLast.scriptBackend, oldLast.scriptPath,
-                                             oldLast.scriptVars};
-            const SceneScriptFields staleNew{"lua", "scripts/stale.lua", staleVars};
-            history_.Push(std::make_unique<EditPropertyCommand<SceneScriptFields>>(
-                &entities_, last, ApplyScriptFields, staleOld, staleNew,
+            // Replace the entity's mounted list with one distinctive script
+            // (the stale panel state that must not leak to the next entity).
+            std::vector<SceneScriptFields> staleList;
+            staleList.push_back({"lua", "scripts/stale.lua", staleVars});
+            history_.Push(std::make_unique<
+                EditPropertyCommand<std::vector<SceneScriptFields>>>(
+                &entities_, last, ApplyScriptList, oldLast.scripts, staleList,
                 /*mergeable=*/false));
-            check(oldLast.scriptPath == "scripts/stale.lua",
+            check(oldLast.scripts.size() == 1 && oldLast.scripts[0].path == "scripts/stale.lua",
                   "script sync: distinctive script attached to the last entity");
             // The insert below may reallocate the vector, so keep the stale
             // path by value (never hold a reference across AddEntity).
-            const std::string stalePath = oldLast.scriptPath;
+            const std::string stalePath = oldLast.scripts[0].path;
             scriptSyncEntity_ = last; // panel cache now points at the last index
             scriptAttachIndex_ = 0;
 
@@ -2701,22 +2859,91 @@ void EditorApp::RunUISmokeTest() {
             freshMarker.type_ = core::Json::Type::Number;
             freshMarker.number_ = 3.0;
             freshVars.object_["hp"] = freshMarker;
-            const SceneScriptFields freshOld{fresh.scriptBackend, fresh.scriptPath,
-                                             fresh.scriptVars};
-            const SceneScriptFields freshNew{"lua", "scripts/good.lua", freshVars};
-            history_.Push(std::make_unique<EditPropertyCommand<SceneScriptFields>>(
-                &entities_, freshIdx, ApplyScriptFields, freshOld, freshNew,
+            std::vector<SceneScriptFields> freshList = fresh.scripts;
+            freshList.push_back({"lua", "scripts/good.lua", freshVars});
+            history_.Push(std::make_unique<
+                EditPropertyCommand<std::vector<SceneScriptFields>>>(
+                &entities_, freshIdx, ApplyScriptList, fresh.scripts, freshList,
                 /*mergeable=*/false));
-            check(fresh.scriptPath == "scripts/good.lua" &&
-                      fresh.scriptVars.Get("hp")->GetNumber() == 3.0,
+            check(fresh.scripts.size() == 1 && fresh.scripts[0].path == "scripts/good.lua" &&
+                      fresh.scripts[0].vars.Get("hp")->GetNumber() == 3.0,
                   "script sync: attach lands on the new entity");
-            check(entities_[static_cast<size_t>(last)].scriptPath == stalePath,
+            check(entities_[static_cast<size_t>(last)].scripts.size() == 1 &&
+                      entities_[static_cast<size_t>(last)].scripts[0].path == stalePath,
                   "script sync: the previous entity keeps its own script (no stale attach)");
             history_.Undo(); // leave the new cube script-less
-            check(fresh.scriptPath.empty(),
+            check(fresh.scripts.empty(),
                   "script sync: undo clears the new entity's script");
         }
         NEON_LOG_INFO("EDITOR-SCRIPT-SMOKE: sync invalidation checks done");
+    }
+
+    // --- Script mount list (multiple scripts, component-style add/remove) ---
+    // The mounted scripts behave like other components: one list where the
+    // every entry is equal - add appends, remove erases, multiple allowed,
+    // and each change is a single undo step.
+    {
+        const int idx = static_cast<int>(entities_.size()) - 1;
+        check(idx >= 0, "script list: smoke has an entity");
+        if (idx >= 0) {
+            SetSelection(idx);
+            SceneEntity& ent = entities_[static_cast<size_t>(idx)];
+            check(ent.scripts.empty(),
+                  "script list: fresh entity mounts no scripts");
+
+            // First add appends one entry.
+            std::vector<SceneScriptFields> one = ent.scripts;
+            one.push_back({"lua", "scripts/good.lua", {}});
+            history_.Push(std::make_unique<
+                EditPropertyCommand<std::vector<SceneScriptFields>>>(
+                &entities_, idx, ApplyScriptList, ent.scripts, one,
+                /*mergeable=*/false));
+            check(ent.scripts.size() == 1 && ent.scripts[0].path == "scripts/good.lua",
+                  "script list: first mount appends an entry");
+
+            // Second add appends another entry (multiple scripts).
+            std::vector<SceneScriptFields> two = ent.scripts;
+            two.push_back({"lua", "scripts/stale.lua", {}});
+            history_.Push(std::make_unique<
+                EditPropertyCommand<std::vector<SceneScriptFields>>>(
+                &entities_, idx, ApplyScriptList, ent.scripts, two,
+                /*mergeable=*/false));
+            check(ent.scripts.size() == 2 && ent.scripts[0].path == "scripts/good.lua" &&
+                      ent.scripts[1].path == "scripts/stale.lua",
+                  "script list: second mount appends (multiple scripts)");
+
+            // Remove the first entry: the rest stay put, no promotion concept.
+            std::vector<SceneScriptFields> afterRemove = ent.scripts;
+            afterRemove.erase(afterRemove.begin());
+            history_.Push(std::make_unique<
+                EditPropertyCommand<std::vector<SceneScriptFields>>>(
+                &entities_, idx, ApplyScriptList, ent.scripts, afterRemove,
+                /*mergeable=*/false));
+            check(ent.scripts.size() == 1 && ent.scripts[0].path == "scripts/stale.lua",
+                  "script list: removing an entry leaves the rest unchanged");
+
+            // Undo/redo replay the whole list in single steps.
+            history_.Undo();
+            check(ent.scripts.size() == 2 && ent.scripts[0].path == "scripts/good.lua",
+                  "script list: undo restores both mounts");
+            history_.Undo();
+            check(ent.scripts.size() == 1 && ent.scripts[0].path == "scripts/good.lua",
+                  "script list: undo restores the first mount");
+            history_.Redo();
+            check(ent.scripts.size() == 2 && ent.scripts[1].path == "scripts/stale.lua",
+                  "script list: redo replays the second mount");
+            history_.Redo();
+            check(ent.scripts.size() == 1 && ent.scripts[0].path == "scripts/stale.lua",
+                  "script list: redo replays the removal");
+
+            // Leave the entity unmounted so the playtest sandbox stays clean.
+            history_.Undo();
+            history_.Undo();
+            history_.Undo();
+            check(ent.scripts.empty(),
+                  "script list: smoke leaves the entity unmounted");
+        }
+        NEON_LOG_INFO("EDITOR-SCRIPT-SMOKE: script list checks done");
     }
 
     // --- Profiler panel (T4.8): the panel opened at frame 29 and populated its
@@ -2980,18 +3207,7 @@ void EditorApp::RunUISmokeTest() {
         {
             const std::string zhFile =
                 proj + "/materials/\u6d4b\u8bd5\u7403.mat.json";
-#if defined(_WIN32)
-            const int wl = MultiByteToWideChar(CP_UTF8, 0, zhFile.data(),
-                                               static_cast<int>(zhFile.size()), nullptr, 0);
-            std::wstring wp(static_cast<size_t>(wl > 0 ? wl : 0), L'\0');
-            if (wl > 0)
-                MultiByteToWideChar(CP_UTF8, 0, zhFile.data(),
-                                    static_cast<int>(zhFile.size()), &wp[0], wl);
-            std::ofstream out(wp, std::ios::binary);
-#else
-            std::ofstream out(zhFile, std::ios::binary);
-#endif
-            out << R"({"colorHex":"#FF8800","metallic":0.5,"roughness":0.3})";
+            WriteFileUtf8(zhFile, R"({"colorHex":"#FF8800","metallic":0.5,"roughness":0.3})");
         }
         RequestMaterialThumbnail(proj + "/materials/\u6d4b\u8bd5\u7403.mat.json");
         // Scene export carries the reference; reloading expands it again.
@@ -3104,10 +3320,26 @@ void EditorApp::AddEntity(const std::string& meshKey) {
                 }
                 if (const core::Json* s = comps->Get("script")) {
                     if (s->IsObject()) {
-                        e.scriptPath = s->Get("path") ? s->Get("path")->GetString() : "";
-                        e.scriptBackend =
-                            s->Get("backend") ? s->Get("backend")->GetString("lua") : "lua";
-                        if (const core::Json* v = s->Get("vars")) e.scriptVars = *v;
+                        SceneScriptFields f;
+                        f.path = s->Get("path") ? s->Get("path")->GetString() : "";
+                        f.backend = s->Get("backend") ? s->Get("backend")->GetString("lua")
+                                                      : "lua";
+                        if (const core::Json* v = s->Get("vars")) f.vars = *v;
+                        if (!f.path.empty()) e.scripts.push_back(std::move(f));
+                    }
+                }
+                if (const core::Json* list = comps->Get("scripts")) {
+                    if (const core::Json* items = list->Get("items")) {
+                        if (items->IsArray()) {
+                            for (const core::Json& it : items->Items()) {
+                                SceneScriptFields f;
+                                f.backend =
+                                    it.Get("backend") ? it.Get("backend")->GetString("lua") : "lua";
+                                f.path = it.Get("path") ? it.Get("path")->GetString() : "";
+                                if (const core::Json* v = it.Get("vars")) f.vars = *v;
+                                if (!f.path.empty()) e.scripts.push_back(std::move(f));
+                            }
+                        }
                     }
                 }
                 for (const auto& [cname, cdata] : comps->Members()) {
@@ -3229,15 +3461,7 @@ core::Result<core::Json> EditorApp::BuildPlaySceneJson() {
             comps.object_["transform"] = std::move(tf);
             comps.object_["sprite"] = std::move(sp);
             obj.object_["components"] = std::move(comps);
-            if (!e.scriptPath.empty()) {
-                core::Json script;
-                script.type_ = core::Json::Type::Object;
-                script.object_["backend"] = mkStr(e.scriptBackend.empty() ? "lua" : e.scriptBackend);
-                script.object_["path"] = mkStr(e.scriptPath);
-                if (e.scriptVars.IsObject()) script.object_["vars"] = e.scriptVars;
-                obj.object_["components"].object_["script"] = std::move(script);
-            }
-        } else {
+        } else if (!e.meshKey.empty()) {
         std::string meshKey = ExportMeshKey(e.meshKey);
         if (e.meshKey == "npc") {
             // Encode the villager's tunic tint into the mesh key so the runtime
@@ -3252,8 +3476,7 @@ core::Result<core::Json> EditorApp::BuildPlaySceneJson() {
         auto res = scene::SceneFile::MakeEntity(e.name, e.pos, e.rot, e.scale, meshKey,
                                                 e.metallic, e.roughness, e.tint, e.albedoTex,
                                                 e.mrTex, e.aoTex, e.emissiveTex, e.ao,
-                                                e.emissiveIntensity, e.scriptPath,
-                                                e.scriptBackend, e.scriptVars, {},
+                                                e.emissiveIntensity, "", "", core::Json{}, {},
                                                 e.hp, e.maxHp, e.parent);
         if (!res.Ok()) {
             return core::Result<core::Json>::Err("editor: " + res.Error());
@@ -3268,6 +3491,46 @@ core::Result<core::Json> EditorApp::BuildPlaySceneJson() {
             j.string_ = e.materialRef;
             mesh.object_["materialRef"] = std::move(j);
         }
+        } else {
+        // Logical entity (mesh renderer removed or never added): name +
+        // transform + health only; scripts/extra components merge below.
+        auto mkStr = [](const std::string& s) {
+            core::Json j;
+            j.type_ = core::Json::Type::String;
+            j.string_ = s;
+            return j;
+        };
+        auto mkNum = [](double v) {
+            core::Json j;
+            j.type_ = core::Json::Type::Number;
+            j.number_ = v;
+            return j;
+        };
+        auto mkArr = [&mkNum](const std::initializer_list<double>& vals) {
+            core::Json j;
+            j.type_ = core::Json::Type::Array;
+            for (double v : vals) j.array_.push_back(mkNum(v));
+            return j;
+        };
+        obj.type_ = core::Json::Type::Object;
+        obj.object_["name"] = mkStr(e.name);
+        core::Json tf;
+        tf.type_ = core::Json::Type::Object;
+        tf.object_["pos"] = mkArr({e.pos.x, e.pos.y, e.pos.z});
+        tf.object_["rot"] = mkArr({e.rot.x, e.rot.y, e.rot.z, e.rot.w});
+        tf.object_["scale"] = mkArr({e.scale.x, e.scale.y, e.scale.z});
+        if (!e.parent.empty()) tf.object_["parent"] = mkStr(e.parent);
+        core::Json comps;
+        comps.type_ = core::Json::Type::Object;
+        comps.object_["transform"] = std::move(tf);
+        if (e.maxHp > 0.0f) {
+            core::Json health;
+            health.type_ = core::Json::Type::Object;
+            health.object_["hp"] = mkNum(e.hp);
+            health.object_["maxHp"] = mkNum(e.maxHp);
+            comps.object_["health"] = std::move(health);
+        }
+        obj.object_["components"] = std::move(comps);
         }
         if (!e.prefab.empty()) obj.object_["prefab"] = [&e]() {
             core::Json j;
@@ -3287,9 +3550,9 @@ core::Result<core::Json> EditorApp::BuildPlaySceneJson() {
                 comps.object_[cname] = cdata;
             obj.object_["components"] = std::move(comps);
         }
-        // Multiple script components (Unity-style): "scripts": [{backend,path,
-        // vars}, ...]. The primary scriptPath already exports as "script".
-        if (!e.extraScripts.empty()) {
+        // Mounted scripts: one flat "scripts" component [{backend,path,vars},
+        // ...]. Every entry is equal; the runtime attaches each in order.
+        if (!e.scripts.empty()) {
             core::Json comps;
             if (const core::Json* c = obj.Get("components")) {
                 if (c->IsObject()) comps = *c;
@@ -3303,7 +3566,8 @@ core::Result<core::Json> EditorApp::BuildPlaySceneJson() {
             };
             core::Json items;
             items.type_ = core::Json::Type::Array;
-            for (const SceneScriptFields& f : e.extraScripts) {
+            for (const SceneScriptFields& f : e.scripts) {
+                if (f.path.empty()) continue; // unconfigured script block
                 core::Json it;
                 it.type_ = core::Json::Type::Object;
                 it.object_["backend"] = mkStr2(f.backend.empty() ? "lua" : f.backend);
@@ -3921,10 +4185,19 @@ void EditorApp::SaveScene() {
         obj.object_["mrTex"] = str(e.mrTex);
         obj.object_["aoTex"] = str(e.aoTex);
         obj.object_["emissiveTex"] = str(e.emissiveTex);
-        if (!e.scriptPath.empty()) {
-            obj.object_["scriptPath"] = str(e.scriptPath);
-            obj.object_["scriptBackend"] = str(e.scriptBackend);
-            if (e.scriptVars.IsObject()) obj.object_["scriptVars"] = e.scriptVars;
+        if (!e.scripts.empty()) {
+            core::Json scriptsArr;
+            scriptsArr.type_ = core::Json::Type::Array;
+            for (const SceneScriptFields& f : e.scripts) {
+                if (f.path.empty()) continue; // unconfigured script block
+                core::Json it;
+                it.type_ = core::Json::Type::Object;
+                it.object_["backend"] = str(f.backend.empty() ? "lua" : f.backend);
+                it.object_["path"] = str(f.path);
+                if (f.vars.IsObject()) it.object_["vars"] = f.vars;
+                scriptsArr.array_.push_back(std::move(it));
+            }
+            obj.object_["scripts"] = std::move(scriptsArr);
         }
         arr.array_.push_back(obj);
     }
@@ -4021,9 +4294,14 @@ void EditorApp::LoadScene(const std::string& path) {
                 if (const core::Json* v = h->Get("maxHp")) e.maxHp = static_cast<float>(v->GetNumber());
             }
             if (const core::Json* s = comps->Get("script")) {
-                e.scriptPath = s->Get("path") ? s->Get("path")->GetString() : "";
-                e.scriptBackend = s->Get("backend") ? s->Get("backend")->GetString("lua") : "lua";
-                if (const core::Json* v = s->Get("vars")) e.scriptVars = *v;
+                // Legacy single "script" component: one mounted script.
+                if (s->IsObject()) {
+                    SceneScriptFields f;
+                    f.path = s->Get("path") ? s->Get("path")->GetString() : "";
+                    f.backend = s->Get("backend") ? s->Get("backend")->GetString("lua") : "lua";
+                    if (const core::Json* v = s->Get("vars")) f.vars = *v;
+                    if (!f.path.empty()) e.scripts.push_back(std::move(f));
+                }
             }
             if (const core::Json* list = comps->Get("scripts")) {
                 if (const core::Json* items = list->Get("items")) {
@@ -4034,7 +4312,7 @@ void EditorApp::LoadScene(const std::string& path) {
                                                           : "lua";
                             f.path = it.Get("path") ? it.Get("path")->GetString() : "";
                             if (const core::Json* v = it.Get("vars")) f.vars = *v;
-                            if (!f.path.empty()) e.extraScripts.push_back(std::move(f));
+                            if (!f.path.empty()) e.scripts.push_back(std::move(f));
                         }
                     }
                 }
@@ -4109,9 +4387,27 @@ void EditorApp::LoadScene(const std::string& path) {
             if (const core::Json* mt = j->Get("mrTex")) e.mrTex = mt->GetString();
             if (const core::Json* aot = j->Get("aoTex")) e.aoTex = aot->GetString();
             if (const core::Json* et = j->Get("emissiveTex")) e.emissiveTex = et->GetString();
-            if (const core::Json* sp = j->Get("scriptPath")) e.scriptPath = sp->GetString();
-            if (const core::Json* sb = j->Get("scriptBackend")) e.scriptBackend = sb->GetString();
-            if (const core::Json* sv = j->Get("scriptVars")) e.scriptVars = *sv;
+            // Flat editor-scene format: a "scripts" array (new) or the legacy
+            // scriptPath/scriptBackend/scriptVars keys (old saves).
+            if (const core::Json* list = j->Get("scripts")) {
+                if (list->IsArray()) {
+                    for (const core::Json& it : list->Items()) {
+                        SceneScriptFields f;
+                        f.backend =
+                            it.Get("backend") ? it.Get("backend")->GetString("lua") : "lua";
+                        f.path = it.Get("path") ? it.Get("path")->GetString() : "";
+                        if (const core::Json* v = it.Get("vars")) f.vars = *v;
+                        if (!f.path.empty()) e.scripts.push_back(std::move(f));
+                    }
+                }
+            } else if (const core::Json* sp = j->Get("scriptPath")) {
+                SceneScriptFields f;
+                f.path = sp->GetString();
+                if (const core::Json* sb = j->Get("scriptBackend"))
+                    f.backend = sb->GetString();
+                if (const core::Json* sv = j->Get("scriptVars")) f.vars = *sv;
+                if (!f.path.empty()) e.scripts.push_back(std::move(f));
+            }
         }
         if (!e.materialRef.empty()) {
             // Material-ball reference ("materials/x.mat.json"): expand it into
@@ -4273,7 +4569,7 @@ void EditorApp::SavePrefab(const std::string& name) {
                                             ExportMeshKey(e.meshKey), e.metallic, e.roughness,
                                             e.tint, e.albedoTex, e.mrTex, e.aoTex,
                                             e.emissiveTex, e.ao, e.emissiveIntensity,
-                                            e.scriptPath, e.scriptBackend, e.scriptVars, {},
+                                            "", "", core::Json{}, {},
                                             e.hp, e.maxHp, e.parent);
     if (!res.Ok()) {
         NEON_LOG_ERROR("Editor: cannot save prefab: %s", res.Error().c_str());
@@ -4287,6 +4583,29 @@ void EditorApp::SavePrefab(const std::string& name) {
     }
     comps.type_ = core::Json::Type::Object;
     for (const auto& [cname, cdata] : e.extraComponents) comps.object_[cname] = cdata;
+    if (!e.scripts.empty()) {
+        auto mkStr = [](const std::string& v) {
+            core::Json j;
+            j.type_ = core::Json::Type::String;
+            j.string_ = v;
+            return j;
+        };
+        core::Json items;
+        items.type_ = core::Json::Type::Array;
+        for (const SceneScriptFields& f : e.scripts) {
+            if (f.path.empty()) continue; // unconfigured script block
+            core::Json it;
+            it.type_ = core::Json::Type::Object;
+            it.object_["backend"] = mkStr(f.backend.empty() ? "lua" : f.backend);
+            it.object_["path"] = mkStr(f.path);
+            if (f.vars.IsObject()) it.object_["vars"] = f.vars;
+            items.array_.push_back(std::move(it));
+        }
+        core::Json scripts;
+        scripts.type_ = core::Json::Type::Object;
+        scripts.object_["items"] = std::move(items);
+        comps.object_["scripts"] = std::move(scripts);
+    }
     root.object_["components"] = std::move(comps);
 
     const std::string dir = projectDir_ + "/prefabs";
@@ -4398,23 +4717,11 @@ void EditorApp::SaveMaterialAsset(const std::string& name) {
     EnsureDirs(dir + "/");
     const std::string rel = "materials/" + name + ".mat.json";
     const std::string path = projectDir_ + "/" + rel;
-#if defined(_WIN32)
-    // Wide-char open so CJK material names (e.g. "农舍_东") write correctly.
-    const int wl = MultiByteToWideChar(CP_UTF8, 0, path.data(),
-                                       static_cast<int>(path.size()), nullptr, 0);
-    std::wstring wpath(static_cast<size_t>(wl > 0 ? wl : 0), L'\0');
-    if (wl > 0)
-        MultiByteToWideChar(CP_UTF8, 0, path.data(), static_cast<int>(path.size()),
-                            &wpath[0], wl);
-    std::ofstream out(wpath, std::ios::binary);
-#else
-    std::ofstream out(path, std::ios::binary);
-#endif
-    if (!out.is_open()) {
+    // Wide-char open so CJK material names write correctly.
+    if (!WriteFileUtf8(path, core::JsonWriter::Write(root))) {
         NEON_LOG_ERROR("Editor: cannot write material asset '%s'", path.c_str());
         return;
     }
-    out << core::JsonWriter::Write(root);
 
     const MaterialAssetValue oldVal{e.materialRef, ColorToHex(e.tint), e.metallic, e.roughness,
                                     e.ao, e.emissiveIntensity, e.albedoTex, e.mrTex, e.aoTex,
