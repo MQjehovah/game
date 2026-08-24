@@ -271,7 +271,10 @@ std::string AssetManager::TextureCacheKey(const std::string& path,
 gfx::Texture AssetManager::LoadTexture(const std::string& path, const TextureLoadOptions& opts) {
     const std::string key = TextureCacheKey(path, opts);
     auto cached = textures_.find(key);
-    if (cached != textures_.end()) return cached->second;
+    if (cached != textures_.end()) {
+        ++textureRefs_[key];  // every load is an acquisition
+        return cached->second;
+    }
 
     DecodedImage img = DecodeImage(path, opts, opts.compressBc1 && bc1Supported_);
     if (img.channels == 0) {
@@ -285,6 +288,7 @@ gfx::Texture AssetManager::LoadTexture(const std::string& path, const TextureLoa
     }
     textures_[key] = texture;
     textureMtimes_[key] = FileMTime(path);
+    textureRefs_[key] = 1;
     NEON_LOG_INFO("Asset: loaded texture '%s' (%dx%d%s)", path.c_str(), img.width, img.height,
                   img.bc1.empty() ? "" : ", BC1");
     return texture;
@@ -337,7 +341,11 @@ void AssetManager::LoadTextureAsync(const std::string& path, std::function<void(
     }
 }
 
-void AssetManager::PumpAsync() { asyncLoader_.Pump(); }
+void AssetManager::PumpAsync() {
+    asyncLoader_.Pump();
+    ++pumpFrame_;
+    ReclaimRetired(/*frame=*/pumpFrame_);
+}
 
 void AssetManager::FinishAsyncTexture(const std::string& path, DecodedImage img,
                                       const TextureLoadOptions& opts) {
@@ -356,6 +364,7 @@ void AssetManager::FinishAsyncTexture(const std::string& path, DecodedImage img,
             const std::string key = TextureCacheKey(path, opts);
             textures_[key] = tex;
             textureMtimes_[key] = FileMTime(path);
+            textureRefs_[key] = 1;
             ok = true;
             NEON_LOG_INFO("Asset: async texture '%s' loaded (%dx%d%s)", path.c_str(), img.width,
                           img.height, img.bc1.empty() ? "" : ", BC1");
@@ -370,7 +379,10 @@ void AssetManager::FinishAsyncTexture(const std::string& path, DecodedImage img,
 
 gfx::Mesh AssetManager::LoadMeshOBJ(const std::string& path) {
     auto cached = meshes_.find(path);
-    if (cached != meshes_.end()) return cached->second;
+    if (cached != meshes_.end()) {
+        ++meshRefs_[path];  // every load is an acquisition
+        return cached->second;
+    }
 
     std::ifstream in(path);
     if (!in.is_open()) {
@@ -482,6 +494,7 @@ gfx::Mesh AssetManager::LoadMeshOBJ(const std::string& path) {
                                                path);
     meshes_[path] = mesh;
     meshMtimes_[path] = FileMTime(path);
+    meshRefs_[path] = 1;
     NEON_LOG_INFO("Asset: loaded OBJ '%s' (%zu verts)", path.c_str(), verts.size());
     return mesh;
 }
@@ -939,7 +952,9 @@ GltfAsset AssetManager::LoadGLTF(const std::string& path) {
                 // Track under a per-node key so AssetManager::Stats() counts
                 // glTF meshes in the resource panel (meshes_ otherwise only
                 // holds OBJ meshes). Re-parsing the file re-inserts the key.
-                meshes_[path + "#" + std::to_string(idx)] = mesh;
+                const std::string meshKey = path + "#" + std::to_string(idx);
+                meshes_[meshKey] = mesh;
+                meshRefs_[meshKey] = 1;
                 out.nodes.push_back({world, mesh, rm.material});
             }
         }
@@ -1027,7 +1042,157 @@ AssetStats AssetManager::Stats() const {
         stats.meshTriangles += kv.second.TriangleCount();
     }
     stats.fonts = fonts_.size();
+    stats.retiredTextures = retiredTextures_.size();
+    stats.retiredMeshes = retiredMeshes_.size();
+    stats.reclaimedTextures = reclaimedTextures_;
+    stats.reclaimedMeshes = reclaimedMeshes_;
     return stats;
+}
+
+// ---------------------------------------------------------------------------
+// Resource lifecycle (P0-3)
+// ---------------------------------------------------------------------------
+namespace {
+// Frames a retired resource must survive before its GPU storage is destroyed.
+// The renderer submits work asynchronously; a resource released mid-frame can
+// still be referenced by commands queued this frame, so a 2-frame window keeps
+// every in-flight command buffer safe.
+constexpr uint64_t kReclaimDelayFrames = 2;
+} // namespace
+
+gfx::Texture AssetManager::AcquireTexture(const std::string& path,
+                                          const TextureLoadOptions& opts) {
+    const std::string key = TextureCacheKey(path, opts);
+    // A retired (pending-reclaim) entry with the same key is revived instead of
+    // being re-uploaded: pop it from the retire queue and keep the GPU data.
+    for (auto it = retiredTextures_.begin(); it != retiredTextures_.end(); ++it) {
+        if (it->key == key) {
+            gfx::Texture tex = it->tex;
+            textures_[key] = tex;
+            textureRefs_[key] = 1;
+            retiredTextures_.erase(it);
+            return tex;
+        }
+    }
+    return LoadTexture(path, opts);
+}
+
+void AssetManager::ReleaseTexture(const std::string& path, const TextureLoadOptions& opts) {
+    const std::string key = TextureCacheKey(path, opts);
+    auto refIt = textureRefs_.find(key);
+    if (refIt == textureRefs_.end() || refIt->second == 0) return;
+    if (--refIt->second > 0) return;
+
+    auto texIt = textures_.find(key);
+    if (texIt == textures_.end()) {
+        textureRefs_.erase(refIt);
+        return;
+    }
+    retiredTextures_.push_back({key, texIt->second, static_cast<uint32_t>(pumpFrame_)});
+    textureRefs_.erase(refIt);
+    textures_.erase(texIt);
+}
+
+gfx::Mesh AssetManager::AcquireMeshOBJ(const std::string& path) {
+    for (auto it = retiredMeshes_.begin(); it != retiredMeshes_.end(); ++it) {
+        if (it->key == path) {
+            gfx::Mesh mesh = it->mesh;
+            meshes_[path] = mesh;
+            meshRefs_[path] = 1;
+            retiredMeshes_.erase(it);
+            return mesh;
+        }
+    }
+    return LoadMeshOBJ(path);
+}
+
+void AssetManager::ReleaseMeshOBJ(const std::string& path) {
+    auto refIt = meshRefs_.find(path);
+    if (refIt == meshRefs_.end() || refIt->second == 0) return;
+    if (--refIt->second > 0) return;
+
+    auto meshIt = meshes_.find(path);
+    if (meshIt == meshes_.end()) {
+        meshRefs_.erase(refIt);
+        return;
+    }
+    retiredMeshes_.push_back({path, meshIt->second, static_cast<uint32_t>(pumpFrame_)});
+    meshRefs_.erase(refIt);
+    meshes_.erase(meshIt);
+}
+
+size_t AssetManager::AcquireChunkAssets(const std::vector<std::string>& refs) {
+    size_t held = 0;
+    for (const std::string& r : refs) {
+        if (r.empty()) continue;
+        if (r.compare(0, 4, "obj:") == 0) {
+            if (AcquireMeshOBJ(r.substr(4)).Valid()) ++held;
+            continue;
+        }
+        // Procedural mesh keys ("terrain", "cube", ...) are built by the
+        // renderer, not cached here; glTF assets are multi-mesh and not
+        // addressable by a single cache key - both are skipped.
+        if (r.find('/') == std::string::npos && r.find('\\') == std::string::npos &&
+            r.find('.') == std::string::npos)
+            continue;
+        if (r.compare(0, 5, "gltf:") == 0) continue;
+        if (AcquireTexture(r).Valid()) ++held;
+    }
+    return held;
+}
+
+void AssetManager::ReleaseChunkAssets(const std::vector<std::string>& refs) {
+    for (const std::string& r : refs) {
+        if (r.empty()) continue;
+        if (r.compare(0, 4, "obj:") == 0) {
+            ReleaseMeshOBJ(r.substr(4));
+            continue;
+        }
+        if (r.compare(0, 5, "gltf:") == 0) continue;
+        if (r.find('/') == std::string::npos && r.find('\\') == std::string::npos &&
+            r.find('.') == std::string::npos)
+            continue;
+        ReleaseTexture(r);
+    }
+}
+
+size_t AssetManager::TextureRefCount(const std::string& path,
+                                     const TextureLoadOptions& opts) const {
+    auto it = textureRefs_.find(TextureCacheKey(path, opts));
+    return it == textureRefs_.end() ? 0 : it->second;
+}
+
+size_t AssetManager::MeshRefCount(const std::string& path) const {
+    auto it = meshRefs_.find(path);
+    return it == meshRefs_.end() ? 0 : it->second;
+}
+
+void AssetManager::ReclaimRetired(uint64_t frame) {
+    if (renderer_ && renderer_->Backend()) {
+        auto& backend = *renderer_->Backend();
+        for (auto it = retiredTextures_.begin(); it != retiredTextures_.end();) {
+            if (frame - it->frame < kReclaimDelayFrames) {
+                ++it;
+                continue;
+            }
+            backend.DestroyTexture(it->tex.Handle());
+            it = retiredTextures_.erase(it);
+            ++reclaimedTextures_;
+        }
+        for (auto it = retiredMeshes_.begin(); it != retiredMeshes_.end();) {
+            if (frame - it->frame < kReclaimDelayFrames) {
+                ++it;
+                continue;
+            }
+            backend.DestroyMesh(it->mesh.Handle());
+            it = retiredMeshes_.erase(it);
+            ++reclaimedMeshes_;
+        }
+    } else {
+        // No renderer (unit-test fixture): drop the queue entries directly.
+        retiredTextures_.clear();
+        retiredMeshes_.clear();
+    }
 }
 
 bool AssetManager::TextureChangedOnDisk(const std::string& path) const {
@@ -1045,17 +1210,23 @@ bool AssetManager::MeshChangedOnDisk(const std::string& path) const {
 void AssetManager::ReloadTexture(const std::string& path) {
     if (!TextureChangedOnDisk(path)) return;
     NEON_LOG_INFO("Asset: hot-reload texture '%s'", path.c_str());
+    const uint32_t refs = textureRefs_[path];  // preserve owners across reload
     textures_.erase(path);
     textureMtimes_.erase(path);
+    textureRefs_.erase(path);
     LoadTexture(path);
+    if (refs > 0) textureRefs_[path] = refs;
 }
 
 void AssetManager::ReloadMeshOBJ(const std::string& path) {
     if (!MeshChangedOnDisk(path)) return;
     NEON_LOG_INFO("Asset: hot-reload OBJ '%s'", path.c_str());
+    const uint32_t refs = meshRefs_[path];  // preserve owners across reload
     meshes_.erase(path);
     meshMtimes_.erase(path);
+    meshRefs_.erase(path);
     LoadMeshOBJ(path);
+    if (refs > 0) meshRefs_[path] = refs;
 }
 
 } // namespace neon::assets

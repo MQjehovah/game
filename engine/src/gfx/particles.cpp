@@ -7,6 +7,9 @@
 namespace neon::gfx {
 
 void ParticleSystem::Emit(const EmitterConfig& config) {
+    // Reuse capacity across bursts instead of reallocating per Emit (P0-3
+    // memory direction: stable arena for the hot particle path).
+    if (particles_.empty()) particles_.reserve(2048);
     for (uint32_t i = 0; i < config.count; ++i) {
         Particle p;
         p.pos = config.position;
@@ -24,14 +27,20 @@ void ParticleSystem::Emit(const EmitterConfig& config) {
 }
 
 void ParticleSystem::Update(float dt) {
-    for (Particle& p : particles_) {
+    for (size_t i = 0; i < particles_.size();) {
+        Particle& p = particles_[i];
         p.life -= dt;
         p.vel.y += p.gravity * dt;
         p.pos += p.vel * dt;
+        if (p.life <= 0.0f) {
+            // Swap-with-last removal keeps the buffer compact without the
+            // erase/remove_if reallocation churn.
+            particles_[i] = particles_.back();
+            particles_.pop_back();
+            continue;
+        }
+        ++i;
     }
-    particles_.erase(std::remove_if(particles_.begin(), particles_.end(),
-                                    [](const Particle& p) { return p.life <= 0.0f; }),
-                     particles_.end());
 }
 
 void ParticleSystem::Draw(Renderer& renderer, const Texture& texture, float scale) {

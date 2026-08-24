@@ -2,6 +2,9 @@
 
 目标游戏形态参考《魔兽世界》：大世界、海量实体、客户端/服务器分离、海量资产、持续运营。以下按里程碑组织，每阶段都有可验证的验收标准。
 
+> 与 Godot 4.x 的差距分析及各改进方向的**具体实施方案**（Jolt 接入、Vulkan 修复、
+> 资源生命周期、编辑器工作流、Lua 调试器等），见 [`godot-gap-analysis.md`](./godot-gap-analysis.md)。
+
 ## 当前状态（已交付）
 
 - 分层引擎：core / interface / platform / gfx / audio / physics / assets / ui / scene。

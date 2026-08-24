@@ -203,6 +203,10 @@ void ChunkStreamer::CompleteLoad(int cx, int cz, const std::string& text, bool r
     // Best-effort texture preload when an AssetManager is wired in (mesh keys
     // are skipped: there is no async mesh load yet).
     if (cfg_.assets) {
+        // Hold a reference for every asset the chunk references so unload can
+        // release them (the runtime's entity spawn also loads these - cache
+        // hits just bump the refcount).
+        cfg_.assets->AcquireChunkAssets(refs);
         for (const std::string& r : refs) {
             if (r.find("obj:") == 0 || r.find("gltf:") == 0) continue;
             cfg_.assets->LoadTextureAsync(r, [](bool) {});
@@ -214,6 +218,9 @@ void ChunkStreamer::CompleteLoad(int cx, int cz, const std::string& text, bool r
 
 void ChunkStreamer::Unload(const WorldChunk& chunk) {
     if (!cfg_.world) return;
+    // Release the assets this chunk held so the cache can reclaim GPU memory
+    // once the deferred-reclaim window elapses (P0-3).
+    if (cfg_.assets) cfg_.assets->ReleaseChunkAssets(chunk.meshKeys);
     for (ecs::Entity e : chunk.entities) cfg_.world->Destroy(e);
 }
 

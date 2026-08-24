@@ -406,6 +406,7 @@ add_executable(neon_tests tests/test_main.cpp tests/test_serialize.cpp tests/tes
   tests/test_client_sync.cpp
   tests/test_determinism.cpp
   tests/test_aoi.cpp
+  tests/test_asset_lifecycle.cpp
   editor/src/history.cpp editor/src/packager.cpp server/src/game_server.cpp server/src/aoi.cpp
   game/src/client_sync.cpp)
 target_link_libraries(neon_tests PRIVATE neon_engine)

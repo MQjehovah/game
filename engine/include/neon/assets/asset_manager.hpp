@@ -76,6 +76,13 @@ struct AssetStats {
     size_t textureBytes = 0;
     size_t meshTriangles = 0;
     size_t meshVertices = 0;
+    // Resource-lifecycle counters (P0-3): entries whose refcount dropped to
+    // zero and are waiting out the deferred-reclaim window, and how many GPU
+    // resources have actually been reclaimed.
+    size_t retiredTextures = 0;
+    size_t retiredMeshes = 0;
+    size_t reclaimedTextures = 0;
+    size_t reclaimedMeshes = 0;
 };
 
 // Per-load texture options. Default-constructed options reproduce the classic
@@ -155,6 +162,36 @@ public:
     void ReloadTexture(const std::string& path);
     void ReloadMeshOBJ(const std::string& path);
 
+    // Resource lifecycle (P0-3) ------------------------------------------
+    // Every successful load bumps the entry's refcount (first load starts at
+    // 1). Release* drops it; at zero the GPU resource is retired and destroyed
+    // after a short deferral window (see kReclaimDelayFrames) inside PumpAsync,
+    // so a frame that still references it can never read freed memory.
+    //
+    // The existing LoadTexture/LoadMeshOBJ call sites are acquisition points:
+    // callers that load once and hold the asset for the app lifetime simply
+    // never release (identical to the pre-refcount behavior). Streaming
+    // consumers (ChunkStreamer) acquire per load and release on unload so the
+    // cache stops growing as the focus moves.
+    gfx::Texture AcquireTexture(const std::string& path, const TextureLoadOptions& opts = {});
+    void ReleaseTexture(const std::string& path, const TextureLoadOptions& opts = {});
+    gfx::Mesh AcquireMeshOBJ(const std::string& path);
+    void ReleaseMeshOBJ(const std::string& path);
+    // Bumps the refcount of every asset referenced by a SceneFile's MeshKeys()
+    // (texture paths + "obj:" meshes; procedural and "gltf:" keys are skipped -
+    // GLTF assets are multi-mesh and not cached under a single key). Loads the
+    // asset synchronously on first acquisition. Returns the number of refs held.
+    size_t AcquireChunkAssets(const std::vector<std::string>& refs);
+    // Drops the refcount of every asset referenced by a chunk. Safe to call
+    // multiple times / with unknown keys (missing entries are ignored).
+    void ReleaseChunkAssets(const std::vector<std::string>& refs);
+    // Current refcount of a cached asset (0 = not cached / no refs).
+    size_t TextureRefCount(const std::string& path, const TextureLoadOptions& opts = {}) const;
+    size_t MeshRefCount(const std::string& path) const;
+    // Pending (deferred) GPU reclaim queue size.
+    size_t RetiredTextureCount() const { return retiredTextures_.size(); }
+    size_t RetiredMeshCount() const { return retiredMeshes_.size(); }
+
     // Test/tooling hooks ---------------------------------------------------
     // Disables the worker pool so LoadTextureAsync degrades to a synchronous
     // load (callback fires inline). Default: enabled.
@@ -179,6 +216,9 @@ private:
     // Main-thread completion of an async request: cache + fire callbacks.
     void FinishAsyncTexture(const std::string& path, DecodedImage img,
                             const TextureLoadOptions& opts);
+    // Destroys retired GPU resources whose deferral window has elapsed. Called
+    // from PumpAsync (main thread, once per frame).
+    void ReclaimRetired(uint64_t frame);
 
     gfx::Renderer* renderer_ = nullptr;
     std::map<std::string, gfx::Texture> textures_;
@@ -186,6 +226,27 @@ private:
     std::map<std::pair<std::string, int>, gfx::Font> fonts_;
     std::map<std::string, uint64_t> textureMtimes_;
     std::map<std::string, uint64_t> meshMtimes_;
+
+    // Refcount + deferred GPU reclaim (P0-3). PumpAsync is called once per
+    // frame on the main thread, so its frame counter is the authoritative
+    // "frame" for the deferral window.
+    struct RetiredTexture {
+        std::string key;
+        gfx::Texture tex;
+        uint32_t frame = 0;
+    };
+    struct RetiredMesh {
+        std::string key;
+        gfx::Mesh mesh;
+        uint32_t frame = 0;
+    };
+    std::map<std::string, uint32_t> textureRefs_;
+    std::map<std::string, uint32_t> meshRefs_;
+    std::vector<RetiredTexture> retiredTextures_;
+    std::vector<RetiredMesh> retiredMeshes_;
+    uint64_t pumpFrame_ = 0;
+    uint64_t reclaimedTextures_ = 0;
+    uint64_t reclaimedMeshes_ = 0;
 
     // Async state. All of these are touched only from the MAIN thread:
     //   inFlight_ marks paths with a decode running; pendingCallbacks_ holds
