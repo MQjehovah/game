@@ -961,3 +961,88 @@ TEST(ServerRpcRoomsBroadcast) {
     CHECK(gotChat(b.rpcs));
     server.Shutdown();
 }
+
+// P2-4 anti-cheat: input flooding is rate-limited and the client is banned
+// after repeated violations; admin RPCs kick/ban by client id.
+TEST(ServerAntiCheatInputFloodBans) {
+    server::GameServer::Config cfg;
+    cfg.port = 0;
+    cfg.loopback = true;
+    cfg.sceneJson = "{\"entities\": []}";
+    cfg.maxInputsPerSecond = 5;   // tiny window: 5 inputs per second
+    cfg.maxViolations = 2;
+    server::GameServer server;
+    CHECK(server.Start(cfg));
+
+    LoopbackClient c;
+    c.BindAndPeer(server.Port());
+    uint64_t now = 0;
+    c.SendJoin("flooder", 2);
+    for (int i = 0; i < 200 && !c.welcomed; ++i) {
+        now += 17;
+        server.Step(now);
+        c.Pump(now);
+    }
+    CHECK(c.welcomed);
+    CHECK_EQ(server.ClientCount(), 1u);
+
+    // Flood: send 30 inputs inside one 1s window (server only accepts 5).
+    for (int i = 0; i < 30; ++i) {
+        net::MsgInput in;
+        in.seq = static_cast<uint32_t>(i);
+        in.moveX = 0.5f;
+        c.chan.Send(static_cast<uint8_t>(net::MsgType::Input), net::EncodeBody(in));
+    }
+    for (int i = 0; i < 10; ++i) {
+        now += 17;
+        server.Step(now);
+        c.Pump(now);
+    }
+    // Two violations -> kicked + banned.
+    CHECK_EQ(server.ClientCount(), 0u);
+
+    // A banned name cannot rejoin.
+    LoopbackClient c2;
+    c2.BindAndPeer(server.Port());
+    c2.SendJoin("flooder", 2);
+    for (int i = 0; i < 200 && !c2.welcomed; ++i) {
+        now += 17;
+        server.Step(now);
+        c2.Pump(now);
+    }
+    CHECK(!c2.welcomed);
+    server.Shutdown();
+}
+
+// P2-4 anti-cheat: a client receives the deterministic world checksum RPC
+// alongside the snapshot stream.
+TEST(ServerWorldHashChecksum) {
+    server::GameServer::Config cfg;
+    cfg.port = 0;
+    cfg.loopback = true;
+    cfg.sceneJson = "{\"entities\": []}";
+    server::GameServer server;
+    CHECK(server.Start(cfg));
+
+    LoopbackClient c;
+    c.BindAndPeer(server.Port());
+    uint64_t now = 0;
+    c.SendJoin("checker", 2);
+    for (int i = 0; i < 200 && !c.welcomed; ++i) {
+        now += 17;
+        server.Step(now);
+        c.Pump(now);
+    }
+    CHECK(c.welcomed);
+    for (int i = 0; i < 30 && c.rpcs.empty(); ++i) {
+        now += 17;
+        server.Step(now);
+        c.Pump(now);
+    }
+    bool gotHash = false;
+    for (const net::MsgRpc& r : c.rpcs)
+        if (r.name == "world.hash" && r.argsJson.find("hash") != std::string::npos)
+            gotHash = true;
+    CHECK(gotHash);
+    server.Shutdown();
+}

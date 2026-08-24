@@ -94,6 +94,10 @@ public:
         uint64_t clientTimeoutMs = 5000; // disconnect a client silent this long
         uint32_t snapshotEveryTicks = 1; // broadcast a snapshot every N fixed ticks
         int maxClients = 64;
+        // P2-4 anti-cheat: max inputs per second per client, and how many
+        // violations before the client is kicked + banned.
+        uint32_t maxInputsPerSecond = 120;
+        uint32_t maxViolations = 3;
         // AOI (T6.5): each client's snapshot contains only the entities in the
         // (2*aoiRadiusCells+1)^2 cells centered on its controlled entity, in a
         // grid of aoiCellSize world units. Defaults replicate a 96x96-unit
@@ -145,6 +149,7 @@ private:
         net::ReliableChannel chan;
         uint64_t clientId = 0;
         uint64_t accountId = 0; // v0 anonymous account (T6.6); 0 = not logged in
+        std::string name;  // P2-4: display name (used for name-based bans)
         uint64_t lastSeenMs = 0;
         net::MsgInput lastInput;
         NetInput input; // per-client input state fed by THIS client's MsgInput
@@ -155,6 +160,10 @@ private:
         std::set<uint64_t> lastInterest;
         std::string room;  // P2-4: room membership ("" = lobby)
         uint32_t dropLogCount = 0; // throttles the deferred-snapshot log
+        // P2-4 anti-cheat: input-rate limiting counters.
+        uint32_t inputsThisWindow = 0;
+        uint64_t inputWindowStartMs = 0;
+        uint32_t violations = 0;
     };
 
     void PumpNetwork(uint64_t nowMs);
@@ -193,6 +202,9 @@ private:
     std::vector<ScriptedInput> scriptedInputs_; // T6.7 scripted-controller path
     std::map<net::NetAddress, Client, NetAddrLess> clients_;
     net::RpcDispatcher rpc_;
+    // P2-4 anti-cheat: banned accounts / client ids (persisted in-memory).
+    std::set<uint64_t> bannedClientIds_;
+    std::set<std::string> bannedNames_;
     // Multi-player ownership: stable entity key -> client id (set by the
     // scene's BindPlayerToClient inside on_player_join). Drives per-entity
     // input routing and per-client AOI focus.

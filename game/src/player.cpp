@@ -586,7 +586,7 @@ void PlayerApp::HandleRpc(const net::MsgRpc& rpc) {
         NEON_LOG_CAT(neon::core::LogCategory::Net, neon::core::LogLevel::Info,
                      "client: room.chat from=%s: %s", from.c_str(), message.c_str());
     } else if (rpc.name == "room.joined" || rpc.name == "room.left" ||
-               rpc.name == "room.list") {
+               rpc.name == "room.list" || rpc.name == "world.hash") {
         NEON_LOG_CAT(neon::core::LogCategory::Net, neon::core::LogLevel::Info,
                      "client: rpc '%s' %s", rpc.name.c_str(), rpc.argsJson.c_str());
     } else {

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <fstream>
 #include <iterator>
 #include <unordered_map>
@@ -271,6 +272,14 @@ void GameServer::HandleLogin(const net::NetAddress& addr, const net::MsgLogin& l
     if (it == clients_.end()) return; // e.g. server full
 
     Client& c = it->second;
+    // P2-4 anti-cheat: banned names cannot log in.
+    if (bannedNames_.count(login.name) != 0) {
+        NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Warn,
+                     "server: login from %s:%u refused (banned name)", addr.host.c_str(),
+                     addr.port);
+        RemoveClient(addr);
+        return;
+    }
     c.lastSeenMs = nowMs_;
     if (login.name.empty()) {
         NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Warn,
@@ -302,6 +311,13 @@ void GameServer::HandleLogin(const net::NetAddress& addr, const net::MsgLogin& l
 void GameServer::AdmitClient(const net::NetAddress& addr, const std::string& name,
                              uint32_t version) {
     if (clients_.count(addr) != 0) return;
+    // P2-4 anti-cheat: banned names are refused at the door.
+    if (bannedNames_.count(name) != 0) {
+        NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Warn,
+                     "server: join from %s:%u refused (banned name)", addr.host.c_str(),
+                     addr.port);
+        return;
+    }
     if (clients_.size() >= static_cast<size_t>(cfg_.maxClients)) {
         NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Warn,
                      "server: client %s:%u rejected (server full)", addr.host.c_str(),
@@ -311,6 +327,7 @@ void GameServer::AdmitClient(const net::NetAddress& addr, const std::string& nam
 
     Client c;
     c.addr = addr;
+    c.name = name;
     c.clientId = ++nextClientId_;
     c.lastSeenMs = nowMs_;
     c.chan.SetOutbound([this, addr](const std::vector<uint8_t>& bytes) {
@@ -356,6 +373,32 @@ void GameServer::HandleInput(const net::NetAddress& addr, const net::MsgInput& i
     auto it = clients_.find(addr);
     if (it == clients_.end()) return;
     Client& c = it->second;
+    // P2-4 anti-cheat: input-rate limiting. A client flooding inputs faster
+    // than the fixed tick can consume them is throttled; repeated violations
+    // get the client kicked + banned.
+    if (c.inputWindowStartMs == 0) c.inputWindowStartMs = nowMs_;
+    if (nowMs_ - c.inputWindowStartMs >= 1000) {
+        c.inputWindowStartMs = nowMs_;
+        c.inputsThisWindow = 0;
+    }
+    const uint32_t maxPerSec = cfg_.maxInputsPerSecond > 0 ? cfg_.maxInputsPerSecond : 120;
+    if (c.inputsThisWindow >= maxPerSec) {
+        ++c.violations;
+        NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Warn,
+                     "server: client %llu input flood (violation %u/%u)",
+                     static_cast<unsigned long long>(c.clientId), c.violations,
+                     cfg_.maxViolations);
+        if (cfg_.maxViolations > 0 && c.violations >= cfg_.maxViolations) {
+            bannedClientIds_.insert(c.clientId);
+            if (!c.name.empty()) bannedNames_.insert(c.name);
+            NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Warn,
+                         "server: client %llu banned for input flooding",
+                         static_cast<unsigned long long>(c.clientId));
+            RemoveClient(addr);
+        }
+        return;  // drop the excess input
+    }
+    ++c.inputsThisWindow;
     c.lastInput.seq = input.seq;
     c.lastInput.buttons = input.buttons;
     c.lastInput.moveX = std::max(-1.0f, std::min(1.0f, input.moveX));
@@ -495,6 +538,47 @@ void GameServer::SetupRpc() {
             mj.string_ = message;
             chat.object_["message"] = std::move(mj);
             BroadcastRoom(room, "room.chat", core::JsonWriter::Write(chat));
+        }
+        return std::optional<std::pair<std::string, std::string>>();
+    });
+    // P2-4 anti-cheat admin RPCs (placeholder: any connected client may use
+    // them; a real deployment gates this behind an auth/admin role).
+    rpc_.Register("admin.kick", [this](uint64_t, const std::string& argsJson) {
+        std::string perr;
+        core::Json args = core::Json::Parse(argsJson, &perr);
+        const uint64_t target = args.Get("clientId")
+                                    ? static_cast<uint64_t>(args.Get("clientId")->GetNumber())
+                                    : 0;
+        for (auto it = clients_.begin(); it != clients_.end(); ++it) {
+            if (it->second.clientId == target) {
+                NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Warn,
+                             "server: admin kicked client %llu",
+                             static_cast<unsigned long long>(target));
+                RemoveClient(it->first);
+                break;
+            }
+        }
+        return std::optional<std::pair<std::string, std::string>>();
+    });
+    rpc_.Register("admin.ban", [this](uint64_t, const std::string& argsJson) {
+        std::string perr;
+        core::Json args = core::Json::Parse(argsJson, &perr);
+        const uint64_t target = args.Get("clientId")
+                                    ? static_cast<uint64_t>(args.Get("clientId")->GetNumber())
+                                    : 0;
+        if (const core::Json* name = args.Get("name")) {
+            if (name->IsString() && !name->GetString().empty())
+                bannedNames_.insert(name->GetString());
+        }
+        if (target != 0) bannedClientIds_.insert(target);
+        for (auto it = clients_.begin(); it != clients_.end(); ++it) {
+            if (it->second.clientId == target) {
+                NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Warn,
+                             "server: admin banned client %llu",
+                             static_cast<unsigned long long>(target));
+                RemoveClient(it->first);
+                break;
+            }
         }
         return std::optional<std::pair<std::string, std::string>>();
     });
@@ -793,6 +877,41 @@ void GameServer::BroadcastSnapshot() {
         } else {
             c.dropLogCount = 0;
         }
+    }
+    // P2-4 anti-cheat: broadcast a deterministic world checksum alongside the
+    // snapshot stream. Clients can compare it against their local prediction
+    // to detect tampering / desync (client-side verification hook).
+    {
+        std::stable_sort(items.begin(), items.end(),
+                         [](const Item& a, const Item& b) { return a.id < b.id; });
+        uint64_t hash = 1469598103934665603ull;  // FNV-1a 64
+        for (const Item& it : items) {
+            hash ^= it.id;
+            hash *= 1099511628211ull;
+            const float* f = &it.x;
+            for (int k = 0; k < 4; ++k) {
+                uint32_t bits;
+                std::memcpy(&bits, &f[k], sizeof(bits));
+                hash ^= bits;
+                hash *= 1099511628211ull;
+            }
+            for (char ch : it.kind) {
+                hash ^= static_cast<uint8_t>(ch);
+                hash *= 1099511628211ull;
+            }
+        }
+        core::Json msg;
+        msg.type_ = core::Json::Type::Object;
+        core::Json t;
+        t.type_ = core::Json::Type::Number;
+        t.number_ = tick_;
+        msg.object_["tick"] = t;
+        core::Json h;
+        h.type_ = core::Json::Type::Number;
+        h.number_ = static_cast<double>(hash);
+        msg.object_["hash"] = h;
+        for (auto& kv : clients_)
+            SendRpc(kv.second, "world.hash", core::JsonWriter::Write(msg));
     }
 }
 
