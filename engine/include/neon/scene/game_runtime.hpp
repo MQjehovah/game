@@ -22,6 +22,7 @@
 #include "neon/physics/jolt_world.hpp"
 #include "neon/platform/input.hpp"
 #include "neon/scene/scene_file.hpp"
+#include "neon/scene/skinned_model.hpp"
 #include "neon/scene/skills.hpp"
 #include "neon/scene/status.hpp"
 #include "neon/script/bindings.hpp"
@@ -284,6 +285,9 @@ private:
         gfx::Mesh mesh;
         gfx::LodChain chain; // resolved levels+thresholds; empty = single mesh
         gfx::Material mat;
+        // Animated skinned glTF (meshKey "gltf:...") resolved once; when set,
+        // drawing uses the skinned parts + bone matrices instead of `mesh`.
+        std::shared_ptr<SkinnedModel> skinned;
         bool resolved = false;
         bool failed = false;
     };
@@ -321,6 +325,9 @@ private:
                                    uint64_t ent);
     // Advances every entity's StatusComponent (damage/heal ticks + expiry).
     void TickStatuses(float dt);
+    // Advances every resolved skinned model's default clip (fixed-step
+    // animation; deterministic like the rest of the simulation).
+    void TickAnimations(float dt);
     // Decays per-caster skill cooldowns and prunes dead casters.
     void TickSkillCooldowns(float dt);
     // Flushes the script 2D canvas (draw2d_) into the renderer overlay.

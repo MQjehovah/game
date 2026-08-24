@@ -164,6 +164,13 @@ public:
     // fallback when CSM is disabled.
     void DrawProjectedShadow(const Mesh& mesh, const math::Mat4& model,
                              const math::Vec3& lightDir, const Color& color);
+    // Skinned variant: skins the mesh CPU-side with the given bone matrices
+    // (world * inverseBind, as produced by anim::Skeleton::ComputeBoneMatrices)
+    // before projecting onto the ground plane. Falls back to the static
+    // version when the mesh is not skinned.
+    void DrawProjectedShadowSkinned(const Mesh& mesh, const math::Mat4& model,
+                                    const std::vector<math::Mat4>& bones, int boneCount,
+                                    const math::Vec3& lightDir, const Color& color);
 
     struct LineVertex {
         math::Vec3 pos;
@@ -273,6 +280,10 @@ public:
 
 private:
     void InitBuiltinResources();
+    void DrawProjectedShadowVerts(const std::vector<Vertex3D>& verts,
+                                  const std::vector<uint16_t>& indices,
+                                  const math::Mat4& model, const math::Vec3& lightDir,
+                                  const Color& color);
     void ApplyMaterial(const Material& material, const math::Mat4& mvp, const math::Mat4& model,
                        const math::Mat4& normalMat, ShaderHandle shader);
     void PushQuad(const math::Vec2& a, const math::Vec2& b, const math::Vec2& c, const math::Vec2& d,

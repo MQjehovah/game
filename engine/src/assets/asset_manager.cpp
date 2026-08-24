@@ -626,6 +626,24 @@ GltfAsset AssetManager::LoadGLTF(const std::string& path) {
         for (size_t i = 0; i < mats->Size(); ++i) {
             const core::Json* m = mats->At(i);
             gfx::Material mat = gfx::Material::Lit({}, gfx::Color::White, 24.0f);
+            // glTF alpha/blend + double-sided flags: a BLEND/MASK surface
+            // (e.g. fur cards) must render transparent, and doubleSided
+            // surfaces must not be back-face culled or they show holes.
+            if (const core::Json* am = m->Get("alphaMode")) {
+                std::string alpha = am->GetString();
+                if (alpha == "MASK") {
+                    mat.alphaTest = true;
+                    mat.transparent = false;
+                } else if (alpha == "BLEND") {
+                    mat.transparent = true;
+                }
+                if (const core::Json* cf = m->Get("alphaCutoffFactor")) {
+                    mat.alphaCutoff = static_cast<float>(cf->GetNumber(0.5));
+                }
+            }
+            if (const core::Json* ds = m->Get("doubleSided")) {
+                mat.doubleSided = ds->GetBool();
+            }
             if (const core::Json* pbr = m->Get("pbrMetallicRoughness")) {
                 if (const core::Json* bc = pbr->Get("baseColorTexture")) {
                     int idx = bc->Get("index")->GetInt(-1);
@@ -901,7 +919,12 @@ GltfAsset AssetManager::LoadGLTF(const std::string& path) {
                         const float* src =
                             reinterpret_cast<const float*>(ibmBase + m * ibmStride);
                         math::Mat4 mat;
-                        for (int c = 0; c < 16; ++c) mat.m[c] = src[c];
+                        // glTF matrices are column-major; the engine Mat4 is
+                        // row-major, so transpose on load (without this the
+                        // inverse-bind matrices are wrong and every skinned
+                        // mesh is distorted).
+                        for (int c = 0; c < 16; ++c)
+                            mat.m[c] = src[(c % 4) * 4 + (c / 4)];
                         skin.inverseBind[static_cast<size_t>(m)] = mat;
                     }
                 }
@@ -947,8 +970,16 @@ GltfAsset AssetManager::LoadGLTF(const std::string& path) {
                                                        static_cast<uint32_t>(rm.indices.size()),
                                                        "gltf");
             if (mesh.Valid()) {
-                if (rm.skinned)
+                if (rm.skinned) {
+                    // This Blender export writes JOINTS_0 as glTF node indices
+                    // (not the spec's skin.joints subscript), and the engine's
+                    // bone array is node-indexed too, so bind directly
+                    // (bone == node). See skinned_model.cpp: the skin bind on
+                    // this export does not reproduce the authored verts under
+                    // GPU skinning, so the renderer draws the bind mesh
+                    // unbent for now.
                     mesh.AttachSkinData(rm.jointIds, rm.jointWeights, n.skin);
+                }
                 // Track under a per-node key so AssetManager::Stats() counts
                 // glTF meshes in the resource panel (meshes_ otherwise only
                 // holds OBJ meshes). Re-parsing the file re-inserts the key.

@@ -7,6 +7,9 @@
 
 #include "font_data.hpp"
 
+#include <fstream>
+#include <sstream>
+
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 
@@ -209,7 +212,36 @@ void GameScene::SetupWorld() {
     world_.Add<CHealth>(player_, CHealth{maxHp, maxHp});
     world_.Add<CRigidBody>(player_, CRigidBody{physics_.AddSphere(EncodeEntity(player_), playerPos, 0.45f, true)});
 
-    // Wolves.
+    // Wolves: real skinned glTF model + animation (fallback to the procedural
+    // box wolf if the glTF failed to load).
+    const bool wolfOk = !assets.wolfGltf.nodes.empty() &&
+                        assets.wolfGltf.nodes[0].mesh.Skinned();
+    wolfParts_.clear();
+    if (wolfOk) {
+        for (const assets::GltfMeshNode& node : assets.wolfGltf.nodes) {
+            // Skip flat ground-disc nodes (e.g. Blender's shadow/ground plane).
+            const math::AABB& b = node.mesh.Bounds();
+            if (b.max.y - b.min.y < 0.05f) continue;
+            wolfParts_.push_back(node);
+        }
+        for (const anim::AnimationClip& clip : assets.wolfAnim.clips) {
+            if (clip.name.find("01_Run") != std::string::npos) wolfRunClip_ = &clip;
+            if (clip.name.find("04_Idle") != std::string::npos) wolfIdleClip_ = &clip;
+        }
+        if (wolfRunClip_ == nullptr && !assets.wolfAnim.clips.empty()) {
+            wolfRunClip_ = &assets.wolfAnim.clips[0];
+        }
+        if (wolfIdleClip_ == nullptr) wolfIdleClip_ = wolfRunClip_;
+        NEON_LOG_INFO("Wolf: %zu render parts, run=%s idle=%s", wolfParts_.size(),
+                      wolfRunClip_ ? wolfRunClip_->name.c_str() : "?",
+                      wolfIdleClip_ ? wolfIdleClip_->name.c_str() : "?");
+    }
+    const gfx::Mesh wolfMesh =
+        wolfOk ? assets.wolfGltf.nodes[0].mesh : assets.wolfMesh;
+    const gfx::Material wolfMat =
+        wolfOk ? assets.wolfGltf.nodes[0].material
+               : gfx::Material::Lit({}, gfx::Color{0.5f, 0.4f, 0.32f, 1.0f}, 14.0f);
+    const anim::Skeleton& wolfSkel = assets.wolfAnim.skeleton;
     for (int i = 0; i < 9; ++i) {
         float a = rng_.Range(0.0f, math::kTwoPi);
         float r = rng_.Range(22.0f, 62.0f);
@@ -220,11 +252,17 @@ void GameScene::SetupWorld() {
         math::Vec3 pos = home;
         pos.y = home.y;
         world_.Add<CTransform>(e, CTransform{pos, math::Quat::Identity(), {1, 1, 1}});
-        world_.Add<CMesh>(e, CMesh{assets.wolfMesh,
-                                   gfx::Material::Lit({}, gfx::Color{0.5f, 0.4f, 0.32f, 1.0f}, 14.0f)});
+        world_.Add<CMesh>(e, CMesh{wolfMesh, wolfMat});
         world_.Add<CHealth>(e, CHealth{45.0f, 45.0f});
         CEnemy ce;
         ce.home = home;
+        if (wolfOk) {
+            ce.animTime = rng_.Range(
+                0.0f, assets.wolfAnim.clips.empty() ? 1.0f
+                                                     : assets.wolfAnim.clips[0].duration);
+            ce.bones.resize(wolfSkel.bones.size());
+            ce.bones = wolfSkel.ComputeBoneMatrices(wolfSkel.BindPose());
+        }
         world_.Add<CEnemy>(e, ce);
         world_.Add<CRigidBody>(e, CRigidBody{physics_.AddSphere(EncodeEntity(e), pos, 0.6f, true)});
     }
@@ -592,6 +630,17 @@ void GameScene::UpdateMobs(float dt) {
 
         ce.attackCd -= dt;
         ce.bobPhase += dt * 8.0f;
+        // Advance the skinned wolf animation (faster while chasing).
+        const anim::AnimationClip* clip = ce.aggro ? wolfRunClip_ : wolfIdleClip_;
+        if (!ce.bones.empty() && clip) {
+            ce.animTime += dt * (ce.aggro ? 1.2f : 1.0f);
+            const anim::Skeleton& skel = app_.Assets().wolfAnim.skeleton;
+            if (ce.bones.size() == skel.bones.size()) {
+                anim::Pose pose = skel.BindPose();
+                clip->Sample(ce.animTime, pose);
+                ce.bones = skel.ComputeBoneMatrices(pose);
+            }
+        }
         math::Vec3 toPlayer = playerPos - et->pos;
         toPlayer.y = 0.0f;
         float distPlayer = toPlayer.Length();
@@ -924,7 +973,18 @@ void GameScene::Draw(gfx::Renderer& renderer) {
         (void)distSq;
         CMesh* cm = world_.Get<CMesh>(e);
         CTransform* tf = world_.Get<CTransform>(e);
-        if (cm && tf) renderer.DrawMesh(cm->mesh, cm->mat, tf->Model());
+        if (!cm || !tf) continue;
+        CEnemy* ce = world_.Get<CEnemy>(e);
+        if (ce && !ce->bones.empty() && cm->mesh.Skinned()) {
+            const math::Mat4 model = tf->Model();
+            // Blender's skin bind on this glTF doesn't reproduce the authored
+            // verts deterministically, so render the bind mesh unbent.
+            for (const assets::GltfMeshNode& part : wolfParts_) {
+                renderer.DrawMesh(part.mesh, part.material, model);
+            }
+        } else {
+            renderer.DrawMesh(cm->mesh, cm->mat, tf->Model());
+        }
     }
 
     // Note: water plane removed - transparent geometry needs a depth buffer,
@@ -965,7 +1025,19 @@ void GameScene::Draw(gfx::Renderer& renderer) {
                 CEnemy* ce = world_.Get<CEnemy>(e);
                 CTransform* et = world_.Get<CTransform>(e);
                 if (ce && et && !ce->dead) {
-                    renderer.DrawProjectedShadow(assets.wolfMesh, et->Model(), -sunDir, shadowCol);
+                    if (!ce->bones.empty() &&
+                        !assets.wolfGltf.nodes.empty() &&
+                        assets.wolfGltf.nodes[0].mesh.Skinned()) {
+                        const math::Mat4 model = et->Model();
+                        for (const assets::GltfMeshNode& part : wolfParts_) {
+                            renderer.DrawProjectedShadowSkinned(
+                                part.mesh, model, ce->bones,
+                                static_cast<int>(ce->bones.size()), -sunDir, shadowCol);
+                        }
+                    } else {
+                        renderer.DrawProjectedShadow(assets.wolfMesh, et->Model(), -sunDir,
+                                                     shadowCol);
+                    }
                 }
             }
         }
@@ -1266,6 +1338,28 @@ bool NeonApp::OnCreate() {
 
     demo::CreateDemoAssets(renderer_, assetMgr_, assets_);
     helmet_ = assetMgr_.LoadGLTF("assets/models/DamagedHelmet/DamagedHelmet.gltf");
+
+    // Real skinned wolf (Blender glTF export). The animation set is imported
+    // from the same glTF JSON so wolves move with the authored clips.
+    assets_.wolfGltf =
+        assetMgr_.LoadGLTF("assets/models/wolf/Wolf-Blender-2.82a.gltf");
+    {
+        std::ifstream in("assets/models/wolf/Wolf-Blender-2.82a.gltf");
+        std::stringstream ss;
+        ss << in.rdbuf();
+        core::Result<anim::AnimSet> animResult =
+            anim::ImportGltf(ss.str(), assets_.wolfGltf, 0);
+        if (animResult.Ok()) {
+            assets_.wolfAnim = std::move(animResult.Value());
+            NEON_LOG_INFO("Wolf: %zu clips, %zu bones, %zu mesh nodes",
+                          assets_.wolfAnim.clips.size(),
+                          assets_.wolfAnim.skeleton.bones.size(),
+                          assets_.wolfGltf.nodes.size());
+        } else {
+            NEON_LOG_WARN("Wolf: animation import failed: %s",
+                          animResult.Error().c_str());
+        }
+    }
 
     sfxSwing_ = sfx::MakeSwing();
     sfxHit_ = sfx::MakeHit();

@@ -2913,9 +2913,9 @@
       "components": {
         "transform": {
           "pos": [
-            -39.869685981846665,
-            0.55,
-            -27.02197819218615
+            0.0,
+            0.564,
+            0.0
           ],
           "rot": [
             0,
@@ -2924,16 +2924,13 @@
             1
           ],
           "scale": [
-            1,
-            1,
-            1
+            1.6,
+            1.6,
+            1.6
           ]
         },
         "mesh": {
-          "meshKey": "wolf",
-          "colorHex": "#806052",
-          "metallic": 0.0,
-          "roughness": 0.8
+          "meshKey": "gltf:assets/models/wolf/Wolf-Blender-2.82a.gltf"
         },
         "health": {
           "hp": 45,
@@ -2947,7 +2944,7 @@
         "transform": {
           "pos": [
             -52.06491949057779,
-            0.55,
+            0.564,
             -33.14286185479917
           ],
           "rot": [
@@ -2957,16 +2954,13 @@
             1
           ],
           "scale": [
-            1,
-            1,
-            1
+            1.6,
+            1.6,
+            1.6
           ]
         },
         "mesh": {
-          "meshKey": "wolf",
-          "colorHex": "#806052",
-          "metallic": 0.0,
-          "roughness": 0.8
+          "meshKey": "gltf:assets/models/wolf/Wolf-Blender-2.82a.gltf"
         },
         "health": {
           "hp": 45,
@@ -2980,7 +2974,7 @@
         "transform": {
           "pos": [
             -23.754511869544263,
-            0.55,
+            0.564,
             -29.38229907313115
           ],
           "rot": [
@@ -2990,16 +2984,13 @@
             1
           ],
           "scale": [
-            1,
-            1,
-            1
+            1.6,
+            1.6,
+            1.6
           ]
         },
         "mesh": {
-          "meshKey": "wolf",
-          "colorHex": "#806052",
-          "metallic": 0.0,
-          "roughness": 0.8
+          "meshKey": "gltf:assets/models/wolf/Wolf-Blender-2.82a.gltf"
         },
         "health": {
           "hp": 45,
@@ -3013,7 +3004,7 @@
         "transform": {
           "pos": [
             -43.90253226112791,
-            0.55,
+            0.564,
             23.529459774736413
           ],
           "rot": [
@@ -3023,16 +3014,13 @@
             1
           ],
           "scale": [
-            1,
-            1,
-            1
+            1.6,
+            1.6,
+            1.6
           ]
         },
         "mesh": {
-          "meshKey": "wolf",
-          "colorHex": "#806052",
-          "metallic": 0.0,
-          "roughness": 0.8
+          "meshKey": "gltf:assets/models/wolf/Wolf-Blender-2.82a.gltf"
         },
         "health": {
           "hp": 45,
@@ -3046,7 +3034,7 @@
         "transform": {
           "pos": [
             14.028145265911514,
-            0.55,
+            0.564,
             -48.488313017015784
           ],
           "rot": [
@@ -3056,16 +3044,13 @@
             1
           ],
           "scale": [
-            1,
-            1,
-            1
+            1.6,
+            1.6,
+            1.6
           ]
         },
         "mesh": {
-          "meshKey": "wolf",
-          "colorHex": "#806052",
-          "metallic": 0.0,
-          "roughness": 0.8
+          "meshKey": "gltf:assets/models/wolf/Wolf-Blender-2.82a.gltf"
         },
         "health": {
           "hp": 45,
@@ -3079,7 +3064,7 @@
         "transform": {
           "pos": [
             -28.068098778159538,
-            0.55,
+            0.564,
             -17.262680851496647
           ],
           "rot": [
@@ -3089,16 +3074,13 @@
             1
           ],
           "scale": [
-            1,
-            1,
-            1
+            1.6,
+            1.6,
+            1.6
           ]
         },
         "mesh": {
-          "meshKey": "wolf",
-          "colorHex": "#806052",
-          "metallic": 0.0,
-          "roughness": 0.8
+          "meshKey": "gltf:assets/models/wolf/Wolf-Blender-2.82a.gltf"
         },
         "health": {
           "hp": 45,
@@ -3112,7 +3094,7 @@
         "transform": {
           "pos": [
             22.575007744935473,
-            0.55,
+            0.564,
             -33.7939892676994
           ],
           "rot": [
@@ -3122,16 +3104,13 @@
             1
           ],
           "scale": [
-            1,
-            1,
-            1
+            1.6,
+            1.6,
+            1.6
           ]
         },
         "mesh": {
-          "meshKey": "wolf",
-          "colorHex": "#806052",
-          "metallic": 0.0,
-          "roughness": 0.8
+          "meshKey": "gltf:assets/models/wolf/Wolf-Blender-2.82a.gltf"
         },
         "health": {
           "hp": 45,
@@ -3145,7 +3124,7 @@
         "transform": {
           "pos": [
             -36.68479127180433,
-            0.55,
+            0.564,
             15.932972196088942
           ],
           "rot": [
@@ -3155,16 +3134,13 @@
             1
           ],
           "scale": [
-            1,
-            1,
-            1
+            1.6,
+            1.6,
+            1.6
           ]
         },
         "mesh": {
-          "meshKey": "wolf",
-          "colorHex": "#806052",
-          "metallic": 0.0,
-          "roughness": 0.8
+          "meshKey": "gltf:assets/models/wolf/Wolf-Blender-2.82a.gltf"
         },
         "health": {
           "hp": 45,
@@ -3178,7 +3154,7 @@
         "transform": {
           "pos": [
             24.261470484218147,
-            0.55,
+            0.564,
             -54.69237640305866
           ],
           "rot": [
@@ -3188,16 +3164,13 @@
             1
           ],
           "scale": [
-            1,
-            1,
-            1
+            1.6,
+            1.6,
+            1.6
           ]
         },
         "mesh": {
-          "meshKey": "wolf",
-          "colorHex": "#806052",
-          "metallic": 0.0,
-          "roughness": 0.8
+          "meshKey": "gltf:assets/models/wolf/Wolf-Blender-2.82a.gltf"
         },
         "health": {
           "hp": 45,
@@ -3211,7 +3184,7 @@
         "transform": {
           "pos": [
             -1.8617626314047329,
-            0.55,
+            0.564,
             29.648934864286467
           ],
           "rot": [
@@ -3221,16 +3194,13 @@
             1
           ],
           "scale": [
-            1,
-            1,
-            1
+            1.6,
+            1.6,
+            1.6
           ]
         },
         "mesh": {
-          "meshKey": "wolf",
-          "colorHex": "#806052",
-          "metallic": 0.0,
-          "roughness": 0.8
+          "meshKey": "gltf:assets/models/wolf/Wolf-Blender-2.82a.gltf"
         },
         "health": {
           "hp": 45,
@@ -3244,7 +3214,7 @@
         "transform": {
           "pos": [
             51.82963121596449,
-            0.55,
+            0.564,
             33.962321638339766
           ],
           "rot": [
@@ -3254,16 +3224,13 @@
             1
           ],
           "scale": [
-            1,
-            1,
-            1
+            1.6,
+            1.6,
+            1.6
           ]
         },
         "mesh": {
-          "meshKey": "wolf",
-          "colorHex": "#806052",
-          "metallic": 0.0,
-          "roughness": 0.8
+          "meshKey": "gltf:assets/models/wolf/Wolf-Blender-2.82a.gltf"
         },
         "health": {
           "hp": 45,
@@ -3277,7 +3244,7 @@
         "transform": {
           "pos": [
             -11.212277981106217,
-            0.55,
+            0.564,
             25.720595611127052
           ],
           "rot": [
@@ -3287,16 +3254,13 @@
             1
           ],
           "scale": [
-            1,
-            1,
-            1
+            1.6,
+            1.6,
+            1.6
           ]
         },
         "mesh": {
-          "meshKey": "wolf",
-          "colorHex": "#806052",
-          "metallic": 0.0,
-          "roughness": 0.8
+          "meshKey": "gltf:assets/models/wolf/Wolf-Blender-2.82a.gltf"
         },
         "health": {
           "hp": 45,

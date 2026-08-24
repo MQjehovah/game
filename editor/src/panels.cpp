@@ -3639,4 +3639,145 @@ void EditorApp::BuildPackagePanel() {
     ImGui::End();
 }
 
+void EditorApp::OpenModelPreview(const std::string& path) {
+    std::string p = path;
+    if (p.rfind("gltf:", 0) == 0) p = p.substr(5);
+    if (p.empty()) return;
+    core::Result<scene::SkinnedModel> sm = scene::LoadSkinnedModel(assetMgr_, p);
+    if (sm.Ok()) {
+        previewModel_ = std::make_shared<scene::SkinnedModel>(std::move(sm.Value()));
+        previewPath_ = p;
+        previewPlaying_ = true;
+        previewTime_ = 0.0f;
+        previewClip_ = previewModel_->defaultClip >= 0 ? previewModel_->defaultClip : 0;
+        NEON_LOG_INFO("Model preview: '%s' (%zu parts, %zu clips, %zu bones)", p.c_str(),
+                      previewModel_->parts.size(), previewModel_->clips.size(),
+                      previewModel_->skeleton.bones.size());
+    } else {
+        NEON_LOG_ERROR("Model preview: failed to load '%s': %s", p.c_str(),
+                       sm.Error().c_str());
+    }
+}
+
+void EditorApp::RenderModelPreviewPanel() {
+    if (!showModelPreview_ || !previewModel_) return;
+    gfx::IRenderBackend* b = renderer_.Backend();
+    if (!b) return;
+    const int w = static_cast<int>(previewScreenRect_.w);
+    const int h = static_cast<int>(previewScreenRect_.h);
+    if (w < 8 || h < 8) return;
+
+    if (!previewRT_.Valid() || previewRTW_ != w || previewRTH_ != h) {
+        if (previewRT_.Valid()) b->DestroyRenderTarget(previewRT_);
+        if (previewRTId_ != ImTextureID_Invalid) {
+            gfx::ImGuiNeon_UnregisterTexture(previewRTColor_);
+            previewRTId_ = ImTextureID_Invalid;
+        }
+        previewRT_ = b->CreateRenderTarget(w, h, true, 0);
+        previewRTColor_ = b->RenderTargetColorTexture(previewRT_);
+        previewRTW_ = w;
+        previewRTH_ = h;
+        if (previewRTColor_.Valid())
+            previewRTId_ = gfx::ImGuiNeon_RegisterTexture(previewRTColor_);
+    }
+    if (!previewRT_.Valid()) return;
+
+    b->BindRenderTarget(previewRT_);
+    b->Clear({0.30f, 0.34f, 0.40f, 1.0f}, 1.0f);
+
+    math::AABB bounds;
+    bool first = true;
+    for (const scene::SkinnedModel::Part& part : previewModel_->parts) {
+        const math::AABB pb = part.mesh.Bounds();
+        if (first) {
+            bounds = pb;
+            first = false;
+        } else {
+            bounds.min = {std::min(bounds.min.x, pb.min.x), std::min(bounds.min.y, pb.min.y),
+                          std::min(bounds.min.z, pb.min.z)};
+            bounds.max = {std::max(bounds.max.x, pb.max.x), std::max(bounds.max.y, pb.max.y),
+                          std::max(bounds.max.z, pb.max.z)};
+        }
+    }
+    const math::Vec3 center = (bounds.min + bounds.max) * 0.5f;
+    const float size =
+        std::max({bounds.max.x - bounds.min.x, bounds.max.y - bounds.min.y,
+                  bounds.max.z - bounds.min.z, 0.5f});
+    gfx::Camera pcam;
+    pcam.position = center +
+                    math::Vec3{std::sin(previewYaw_) * std::cos(previewPitch_),
+                               std::sin(previewPitch_),
+                               std::cos(previewYaw_) * std::cos(previewPitch_)} *
+                        size * 2.6f;
+    pcam.target = center;
+    renderer_.SetCamera(pcam, static_cast<float>(w) / static_cast<float>(h));
+    renderer_.SetDirectionalLight({-0.4f, -1.0f, -0.3f}, {1.0f, 0.95f, 0.9f}, 0.5f);
+    for (const scene::SkinnedModel::Part& part : previewModel_->parts)
+        renderer_.DrawMesh(part.mesh, part.material, math::Mat4::Identity());
+    b->BindDefaultTarget();
+}
+
+void EditorApp::BuildModelPreviewPanel() {
+    if (!showModelPreview_) return;
+    ImGui::SetNextWindowSize(ImVec2(320.0f, 420.0f), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("模型查看器", &showModelPreview_)) {
+        static char pathBuf[512] = "assets/models/wolf/Wolf-Blender-2.82a.gltf";
+        ImGui::SetNextItemWidth(320.0f);
+        ImGui::InputText("路径", pathBuf, sizeof(pathBuf));
+        ImGui::SameLine();
+        if (ImGui::Button("打开")) OpenModelPreview(pathBuf);
+        ImGui::Separator();
+
+        if (!previewModel_) {
+            ImGui::TextDisabled("未打开模型 — 输入 .gltf 路径后点\"打开\"（右键拖拽旋转）");
+            ImGui::End();
+            return;
+        }
+
+        ImGui::Text("%s", previewPath_.c_str());
+        ImGui::TextDisabled("%zu 部件 | %zu 骨骼 | %zu 动画",
+                            previewModel_->parts.size(), previewModel_->skeleton.bones.size(),
+                            previewModel_->clips.size());
+        if (!previewModel_->clips.empty()) {
+            std::vector<const char*> names;
+            for (const anim::AnimationClip& c : previewModel_->clips) names.push_back(c.name.c_str());
+            if (previewClip_ < 0 || previewClip_ >= static_cast<int>(names.size()))
+                previewClip_ = 0;
+            ImGui::SetNextItemWidth(220.0f);
+            if (ImGui::Combo("动画", &previewClip_, names.data(),
+                             static_cast<int>(names.size()))) {
+                previewTime_ = 0.0f;
+            }
+            ImGui::SameLine();
+            if (ImGui::Button(previewPlaying_ ? "暂停" : "播放")) previewPlaying_ = !previewPlaying_;
+            float t = previewTime_;
+            if (ImGui::SliderFloat("时间", &t, 0.0f,
+                                   std::max(0.01f, previewModel_->clips[static_cast<size_t>(previewClip_)].duration))) {
+                previewTime_ = t;
+            }
+        }
+        if (ImGui::Button("重置视角")) {
+            previewYaw_ = 0.6f;
+            previewPitch_ = 0.3f;
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("预览区右键拖拽旋转");
+
+        // Preview area fills the panel's remaining space. Its screen rect is
+        // consumed by RenderModelPreviewPanel (drawn after the main scene so
+        // it coexists with the edit/playtest viewport).
+        ImGui::BeginChild("##preview_area", ImVec2(0, 0), ImGuiChildFlags_Borders);
+        const ImVec2 pos = ImGui::GetWindowPos();
+        const ImVec2 sz = ImGui::GetWindowSize();
+        previewScreenRect_ = {pos.x, pos.y, sz.x, sz.y};
+        if (previewRTId_ != ImTextureID_Invalid)
+            // FBO color texture is bottom-left origin; flip V so it displays
+            // upright in ImGui (Image assumes top-left).
+            ImGui::Image(previewRTId_, ImVec2(sz.x, sz.y), ImVec2(0.0f, 1.0f),
+                         ImVec2(1.0f, 0.0f));
+        ImGui::EndChild();
+    }
+    ImGui::End();
+}
+
 } // namespace neon::editor

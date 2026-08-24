@@ -1452,11 +1452,10 @@ void Renderer::DrawMeshInstanced(const Mesh& mesh, const Material& material,
     stats_.triangles += mesh.TriangleCount() * static_cast<uint32_t>(visible.size());
 }
 
-void Renderer::DrawProjectedShadow(const Mesh& mesh, const math::Mat4& model,
-                                   const math::Vec3& lightDir, const Color& color) {
-    if (!mesh.Valid()) return;
-    const std::vector<Vertex3D>& verts = mesh.CpuVerts();
-    const std::vector<uint16_t>& indices = mesh.CpuIndices();
+void Renderer::DrawProjectedShadowVerts(const std::vector<Vertex3D>& verts,
+                                        const std::vector<uint16_t>& indices,
+                                        const math::Mat4& model, const math::Vec3& lightDir,
+                                        const Color& color) {
     if (verts.empty() || indices.size() < 3 || std::fabs(lightDir.y) < 1e-4f) return;
 
     std::vector<LineVertex> projected;
@@ -1489,11 +1488,48 @@ void Renderer::DrawProjectedShadow(const Mesh& mesh, const math::Mat4& model,
                              0, PrimitiveTopology::Triangles);
 }
 
+void Renderer::DrawProjectedShadow(const Mesh& mesh, const math::Mat4& model,
+                                   const math::Vec3& lightDir, const Color& color) {
+    if (!mesh.Valid()) return;
+    DrawProjectedShadowVerts(mesh.CpuVerts(), mesh.CpuIndices(), model, lightDir, color);
+}
+
+void Renderer::DrawProjectedShadowSkinned(const Mesh& mesh, const math::Mat4& model,
+                                          const std::vector<math::Mat4>& bones, int boneCount,
+                                          const math::Vec3& lightDir, const Color& color) {
+    if (!mesh.Valid()) return;
+    const std::vector<Vertex3D>& src = mesh.CpuVerts();
+    const std::vector<uint16_t>& indices = mesh.CpuIndices();
+    if (!mesh.Skinned() || src.empty() || boneCount <= 0) {
+        DrawProjectedShadow(mesh, model, lightDir, color);
+        return;
+    }
+
+    std::vector<Vertex3D> skinned = src;
+    for (size_t i = 0; i < src.size(); ++i) {
+        const Vertex3D& v = src[i];
+        math::Vec3 p{0, 0, 0};
+        math::Vec3 n{0, 0, 0};
+        for (int k = 0; k < 4; ++k) {
+            float w = v.w[k];
+            if (w == 0.0f) continue;
+            int j = static_cast<int>(v.j[k]);
+            if (j < 0 || j >= boneCount) continue;
+            const math::Mat4& bm = bones[static_cast<size_t>(j)];
+            p += bm.TransformPoint(v.pos) * w;
+            n += bm.TransformDir(v.normal) * w;
+        }
+        skinned[i].pos = p;
+        skinned[i].normal = n.LengthSq() > 1e-8f ? n.Normalized() : v.normal;
+    }
+    DrawProjectedShadowVerts(skinned, indices, model, lightDir, color);
+}
+
 void Renderer::ApplyMaterial(const Material& material, const math::Mat4& mvp,
                              const math::Mat4& model, const math::Mat4& normalMat,
                              ShaderHandle shader) {
     backend_->UseShader(shader);
-    backend_->SetCullMode(CullMode::Back);
+    backend_->SetCullMode(material.doubleSided ? CullMode::None : CullMode::Back);
     backend_->SetDepthTest(depthAvailable_ ? !material.transparent : false,
                            !material.transparent);
     backend_->SetBlendMode(material.transparent ? BlendMode::Alpha : BlendMode::Opaque);

@@ -21,6 +21,12 @@ struct Material {
     float emissiveIntensity = 1.0f;
     bool lit = true;
     bool transparent = false;
+    // glTF doubleSided: render both faces (disable back-face culling).
+    bool doubleSided = false;
+    // glTF MASK: discard fragments with albedo.a < alphaCutoff (crisp cutout
+    // for foliage/hair cards), instead of soft translucent blending.
+    bool alphaTest = false;
+    float alphaCutoff = 0.5f;
 
     static Material Lit(TextureHandle albedo_, const Color& tint_ = Color::White, float shininess_ = 24.0f) {
         Material m;

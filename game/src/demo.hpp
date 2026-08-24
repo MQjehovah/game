@@ -59,6 +59,10 @@ struct CEnemy {
     float attackCd = 0.0f;
     float respawnTimer = 0.0f;
     float bobPhase = 0.0f;
+    // Skinned-wolf animation state: per-wolf clip time and cached bone
+    // matrices (world * inverseBind) uploaded via Renderer::DrawSkinnedMesh.
+    float animTime = 0.0f;
+    std::vector<math::Mat4> bones;
     bool dead = false;
     bool aggro = false;
 };
@@ -178,6 +182,12 @@ private:
     anim::Pose flagPose_;
     std::vector<math::Mat4> flagBones_;
     float flagAnimTime_ = 0.0f;
+
+    // Skinned wolf: renderable parts (excludes the glTF ground disc) plus the
+    // run/idle clips picked by aggression state.
+    std::vector<assets::GltfMeshNode> wolfParts_;
+    const anim::AnimationClip* wolfRunClip_ = nullptr;
+    const anim::AnimationClip* wolfIdleClip_ = nullptr;
 
     struct Ring {
         math::Vec3 pos;

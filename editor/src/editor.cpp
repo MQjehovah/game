@@ -307,15 +307,35 @@ std::string SceneDisplayName(const std::string& path) {
     return n;
 }
 
+// Resolves a scene mesh asset path to a loadable file. Scene files store
+// project-relative paths ("assets/models/x.gltf"), so when a project is open
+// probe <project>/<rel> first, then fall back to the raw path (repo-root
+// assets used by the default sandbox and bundled demos). Absolute paths pass
+// through unchanged.
+std::string ResolveMeshAssetPath(const std::string& rel, const std::string& projectDir) {
+    const bool absolute = rel.size() >= 2 && rel[1] == ':' ||
+                          (!rel.empty() && (rel[0] == '/' || rel[0] == '\\'));
+    if (absolute) return rel;
+    auto exists = [](const std::string& f) {
+        std::ifstream probe(f, std::ios::binary);
+        return probe.is_open();
+    };
+    if (!projectDir.empty() && projectDir != "." && exists(projectDir + "/" + rel))
+        return projectDir + "/" + rel;
+    return rel;
+}
+
 // Maps a mesh key to the file it loads (file-prefixed keys verbatim and the
 // file-backed built-in "helmet"). "" for procedural primitives ("terrain",
 // "tree", "house", "npc", "bush", "rock", "water", "road", "cube") that have
 // no on-disk asset to hot-reload.
-std::string MeshKeyAssetPath(const std::string& key) {
-    if (key == "helmet") return "assets/models/DamagedHelmet/DamagedHelmet.gltf";
-    if (key.rfind("obj:", 0) == 0) return key.substr(4);
-    if (key.rfind("gltf:", 0) == 0) return key.substr(5);
-    return {};
+std::string MeshKeyAssetPath(const std::string& key, const std::string& projectDir) {
+    std::string rel;
+    if (key == "helmet") rel = "assets/models/DamagedHelmet/DamagedHelmet.gltf";
+    else if (key.rfind("obj:", 0) == 0) rel = key.substr(4);
+    else if (key.rfind("gltf:", 0) == 0) rel = key.substr(5);
+    else return {};
+    return ResolveMeshAssetPath(rel, projectDir);
 }
 
 // Unprojects a point from clip space to a world ray for the given camera.
@@ -510,6 +530,7 @@ void RegisterPanelStateHandler(EditorApp* app) {
         {"资产", &EditorApp::showAssets_},
         {"资源", &EditorApp::showResources_},
         {"日志", &EditorApp::showLog_},
+        {"模型查看器", &EditorApp::showModelPreview_},
         {"行为树", &EditorApp::showBt_},
         {"脚本", &EditorApp::showScripts_},
         {"脚本编辑器", &EditorApp::showScriptEditor_},
@@ -639,6 +660,10 @@ bool EditorApp::OnCreate() {
     // Start the playtest LAST: LoadProjectScene/SwitchProject above stop any
     // running playtest, so --2d-play + --project must start after both.
     if (pvzPlaytestOnStart_) StartPlaytest();
+    if (!previewOnStart_.empty()) {
+        showModelPreview_ = true;
+        OpenModelPreview(previewOnStart_);
+    }
     LoadInputMapEdit(); // Godot-style input panel data
     return true;
 }
@@ -933,6 +958,18 @@ void EditorApp::OnUpdate(float dt) {
     }
     // Drain completed async texture decodes (uploads + callbacks, main thread).
     assetMgr_.PumpAsync();
+    // Advance animated skinned glTF entities (edit-mode pose; the playtest
+    // advances its own animators inside GameRuntime::TickAnimations).
+    for (SceneEntity& e : entities_) {
+        if (e.skinned && e.skinned->Valid()) e.skinned->Update(dt);
+    }
+    // Advance the model-preview playhead.
+    if (showModelPreview_ && previewModel_ && previewPlaying_) {
+        float dur = previewModel_->clips.empty()
+                        ? 1.0f
+                        : previewModel_->clips[static_cast<size_t>(previewClip_)].duration;
+        if (dur > 0.0f) previewTime_ = std::fmod(previewTime_ + dt, dur);
+    }
     // The gizmo drag-sim (frame 30) needs the real mouse to hover the viewport
     // so ImGui's hover hit-test yields the dock host window (the window
     // SetAlternativeWindow points at); headless starts at (0,0) over the menu
@@ -1652,6 +1689,13 @@ void EditorApp::OnRender() {
                         model = model * math::Mat4::Scale({e.spriteFlipX ? -1.0f : 1.0f,
                                                            e.spriteFlipY ? -1.0f : 1.0f, 1.0f});
                     renderer_.DrawMesh(e.spriteMesh, e.spriteMaterial, model);
+                } else if (e.skinned && e.skinned->Valid()) {
+                    // Blender's skin bind on this glTF doesn't reproduce the
+                    // authored vertices deterministically, so draw the bind
+                    // mesh unbent for now (DrawMesh uses the bind vertices).
+                    for (const auto& part : e.skinned->parts)
+                        renderer_.DrawMesh(part.mesh, part.material,
+                                           model * part.localTransform);
                 } else {
                     renderer_.DrawMesh(e.mesh, e.material, model);
                 }
@@ -1757,6 +1801,10 @@ void EditorApp::OnRender() {
 
     renderer_.Flush2D();
     gfx::ImGuiNeon_RenderDrawData(ImGui::GetDrawData());
+
+    // Model viewer renders into its own docked panel (not the main viewport),
+    // so it coexists with the edit/playtest scene.
+    RenderModelPreviewPanel();
 
     if (!screenshotPath_.empty() && TimeRef().frameIndex >= screenshotFrame_) {
         std::vector<uint8_t> pixels;
@@ -2133,6 +2181,17 @@ void EditorApp::DrawCameraFrame() {
 }
 
 void EditorApp::UpdateViewport(float dt) {
+    // Model preview: orbit/zoom on the open glTF instead of the scene.
+    if (showModelPreview_ && previewModel_) {
+        platform::IInput* in = Input();
+        math::Vec2 mp = renderer_.ScreenToUI(in->MousePos());
+        if (in->MouseDown(platform::MouseButton::Right)) {
+            previewYaw_ += -in->MouseDelta().x * 0.005f;
+            previewPitch_ = math::Clamp(previewPitch_ + -in->MouseDelta().y * 0.005f,
+                                        -1.4f, 1.4f);
+        }
+        return;
+    }
     platform::IInput* input = Input();
     math::Vec2 mp = renderer_.ScreenToUI(input->MousePos());
     // ImGui tool windows capture mouse when hovered/active; the 3D viewport
@@ -3125,6 +3184,7 @@ void EditorApp::BuildImGuiUI() {
     BuildResourcePanel();
     BuildInspectorPanel();
     BuildLogPanel();
+    BuildModelPreviewPanel();
     BuildBtPanel();
     BuildScriptPanel();
     BuildScriptEditorPanel();
@@ -5117,7 +5177,7 @@ void EditorApp::PollHotReload() {
         assetMtimes_[path] = m;
     };
     for (const SceneEntity& e : entities_) {
-        const std::string meshPath = MeshKeyAssetPath(e.meshKey);
+        const std::string meshPath = MeshKeyAssetPath(e.meshKey, projectDir_);
         if (!meshPath.empty()) checkFile(meshPath);
         if (!e.shaderPath.empty()) checkFile(e.shaderPath);
         checkFile(e.albedoTex);
@@ -5136,7 +5196,7 @@ void EditorApp::PollHotReload() {
         // Re-resolve only the entities that reference a changed asset.
         for (SceneEntity& e : entities_) {
             const bool touches =
-                changedPaths.count(MeshKeyAssetPath(e.meshKey)) ||
+                changedPaths.count(MeshKeyAssetPath(e.meshKey, projectDir_)) ||
                 changedPaths.count(e.shaderPath) ||
                 changedPaths.count(e.albedoTex) || changedPaths.count(e.mrTex) ||
                 changedPaths.count(e.aoTex) || changedPaths.count(e.emissiveTex);
@@ -5282,10 +5342,11 @@ bool EditorApp::ResolveMesh(SceneEntity& e) {
         e.mesh = gfx::Mesh::CreatePlane(renderer_, 1.0f, 1.0f, 1, 1, "road");
         e.material = gfx::Material::Lit({}, e.tint, 4.0f);
     } else if (key.rfind("obj:", 0) == 0) {
-        e.mesh = assetMgr_.LoadMeshOBJ(key.substr(4));
+        e.mesh = assetMgr_.LoadMeshOBJ(ResolveMeshAssetPath(key.substr(4), projectDir_));
         e.material = gfx::Material::Lit({}, e.tint, 8.0f);
     } else if (key.rfind("gltf:", 0) == 0) {
-        assets::GltfAsset gltf = assetMgr_.LoadGLTF(key.substr(5));
+        const std::string gltfPath = ResolveMeshAssetPath(key.substr(5), projectDir_);
+        assets::GltfAsset gltf = assetMgr_.LoadGLTF(gltfPath);
         if (!gltf.nodes.empty()) {
             e.mesh = gltf.nodes[0].mesh;
             e.material = gltf.nodes[0].material;
@@ -5297,6 +5358,23 @@ bool EditorApp::ResolveMesh(SceneEntity& e) {
             e.ao = e.material.aoStrength;
             e.emissiveIntensity = e.material.emissiveIntensity;
             e.tint = e.material.tint;
+            // Animated skinned glTF: load the full model (all skinned mesh
+            // parts + skeleton + clips) so edit mode animates the entity and
+            // the viewport matches the playtest. The static path above keeps
+            // nodes[0] as the selection/picking mesh.
+            if (e.mesh.Skinned()) {
+                core::Result<scene::SkinnedModel> sm =
+                    scene::LoadSkinnedModel(assetMgr_, gltfPath);
+                if (sm.Ok()) {
+                    e.skinned = std::make_shared<scene::SkinnedModel>(std::move(sm.Value()));
+                } else {
+                    NEON_LOG_WARN("Editor: skinned model '%s' failed to resolve: %s",
+                                  key.c_str(), sm.Error().c_str());
+                    e.skinned.reset();
+                }
+            } else {
+                e.skinned.reset();
+            }
         }
     } else if (key.empty()) {
         if (!e.spriteTex.empty()) {

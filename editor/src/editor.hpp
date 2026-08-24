@@ -13,6 +13,7 @@
 #include "neon/nav/nav_grid.hpp"
 #include "neon/neon.hpp"
 #include "neon/scene/component_schema.hpp"
+#include "neon/scene/skinned_model.hpp"
 #include "neon/scene/game_runtime.hpp"
 #include "neon/ui/system.hpp"
 #include "bt_editor.hpp"
@@ -78,6 +79,10 @@ struct SceneEntity {
     // material's built-in shader.
     std::string shaderPath;
     gfx::Shader customShader;  // editor-side compiled handle
+    // Animated skinned glTF model (meshKey "gltf:..."): loaded by ResolveMesh
+    // when the file contains a skinned mesh. Edit-mode drawing uses the
+    // parts + bone matrices so the viewport matches the playtest.
+    std::shared_ptr<scene::SkinnedModel> skinned;
     gfx::Mesh decalMesh;       // P2-1: flat ground-decal quad (lazy)
     float ao = 1.0f;               // AO strength (0 = ignore AO map, 1 = full)
     float emissiveIntensity = 1.0f;
@@ -191,6 +196,7 @@ public:
     // Lists files (not dirs) under `dir` (relative/absolute path).
     std::vector<std::string> PluginListDir(const std::string& dir) const;
     bool SmokeFailed() const { return smokeFailed_; }
+    void SetPreviewOnStart(const std::string& p) { previewOnStart_ = p; }
     void RequestScreenshot(const std::string& path, uint64_t frame) {
         screenshotPath_ = path;
         screenshotFrame_ = frame;
@@ -206,6 +212,9 @@ private:
     void BuildInspectorPanel();
     void BuildLogPanel();
     void BuildViewportPanel();
+    void BuildModelPreviewPanel();
+    void OpenModelPreview(const std::string& path);
+    void RenderModelPreviewPanel();
     void BuildPluginPanels();
     void BuildPluginsPanel();
     void BuildNavPanel();
@@ -539,6 +548,7 @@ private:
 
     // ImGui tool UI state.
     std::string pendingText_; // UTF-8 characters queued for ImGui this frame
+    std::string previewOnStart_; // "--preview <path>": open the model viewer on launch
     bool showHierarchy_ = true;
     bool showInspector_ = true;
     bool showAssets_ = false;
@@ -613,6 +623,27 @@ private:
     std::vector<core::LogEntry> logEntries_;
     int logFilter_ = 0; // 0 all, 1 info+, 2 warn+, 3 error
     bool logAutoScroll_ = true;
+
+    // Standalone model viewer (single glTF + animation playback) for clean
+    // inspection of geometry/textures/animations independent of a scene.
+    bool showModelPreview_ = false;
+    std::shared_ptr<scene::SkinnedModel> previewModel_;
+    std::string previewPath_;
+    bool previewPlaying_ = true;
+    float previewTime_ = 0.0f;
+    int previewClip_ = 0;
+    float previewYaw_ = 0.6f;
+    float previewPitch_ = 0.3f;
+    // Screen-space rect of the model-viewer panel's preview area (set by
+    // BuildModelPreviewPanel, consumed by RenderModelPreviewPanel).
+    math::Rect2 previewScreenRect_{0, 0, 0, 0};
+    // Offscreen target for the panel preview (rendered once per frame, shown
+    // via ImGui::Image so it coexists with the edit/playtest viewport).
+    gfx::RenderTargetHandle previewRT_;
+    gfx::TextureHandle previewRTColor_;
+    int previewRTW_ = 0;
+    int previewRTH_ = 0;
+    ImTextureID previewRTId_ = ImTextureID_Invalid;
 
     // Transform gizmo (ImGuizmo) state for the viewport.
     ImGuizmo::OPERATION gizmoOp_ = ImGuizmo::TRANSLATE;

@@ -2,7 +2,7 @@
 """Regenerates projects/neon_realm/scenes/realm.json.
 
 The scene is pure data (112 entities): the village + scattered props + a
-12-wolf pool, using the engine's procedural mesh keys. Run from the repo root:
+12-wolf pool, using the animated skinned glTF wolf model. Run from the repo root:
     python tools/gen_realm_scene.py
 """
 
@@ -129,8 +129,8 @@ def scatter_wolves(count):
 
 for i, (x, z) in enumerate(scatter_wolves(12)):
     entities.append(ent("狼_{}".format(i + 1), {
-        **transform((x, 0.55, z)),
-        **mesh("wolf", "#806052"),
+        **transform((x, 0.564, z), (1.6, 1.6, 1.6)),
+        **{"mesh": {"meshKey": "gltf:assets/models/wolf/Wolf-Blender-2.82a.gltf"}},
         **health(45, 45),
     }))
 

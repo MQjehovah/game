@@ -1,5 +1,6 @@
 #pragma once
 #include "neon/neon.hpp"
+#include "neon/anim/anim.hpp"
 
 namespace neon::demo {
 
@@ -19,6 +20,12 @@ struct DemoAssets {
 
     // GPU-skinned demo mesh: a waving flag driven by two bones (see art.cpp).
     gfx::Mesh flagMesh;
+
+    // Real wolf model + animation set (Blender glTF, see
+    // assets/models/wolf). The mesh is skinned; wolves are drawn with
+    // DrawSkinnedMesh using per-wolf bone matrices from wolfAnim.
+    assets::GltfAsset wolfGltf;
+    anim::AnimSet wolfAnim;
 
     // Kenney Nature Kit (CC0) models, loaded through the asset pipeline.
     gfx::Mesh kenneyPine;

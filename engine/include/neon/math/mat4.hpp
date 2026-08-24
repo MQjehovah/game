@@ -101,6 +101,34 @@ struct Mat4 {
                 m[8] * v.x + m[9] * v.y + m[10] * v.z};
     }
 
+    // Inverse of an affine transform (3x3 + translation; the only kind a
+    // TRS/skin matrix needs). Returns Identity for a singular matrix.
+    Mat4 Inverted() const {
+        const float a0 = m[0], a1 = m[1], a2 = m[2];
+        const float a3 = m[4], a4 = m[5], a5 = m[6];
+        const float a6 = m[8], a7 = m[9], a8 = m[10];
+        const float det = a0 * (a4 * a8 - a5 * a7) - a1 * (a3 * a8 - a5 * a6) +
+                          a2 * (a3 * a7 - a4 * a6);
+        if (std::fabs(det) < 1e-12f) return Mat4{};
+        const float inv = 1.0f / det;
+        Mat4 r;
+        r.m[0] = (a4 * a8 - a5 * a7) * inv;
+        r.m[1] = (a2 * a7 - a1 * a8) * inv;
+        r.m[2] = (a1 * a5 - a2 * a4) * inv;
+        r.m[4] = (a5 * a6 - a3 * a8) * inv;
+        r.m[5] = (a0 * a8 - a2 * a6) * inv;
+        r.m[6] = (a2 * a3 - a0 * a5) * inv;
+        r.m[8] = (a3 * a7 - a4 * a6) * inv;
+        r.m[9] = (a1 * a6 - a0 * a7) * inv;
+        r.m[10] = (a0 * a4 - a1 * a3) * inv;
+        r.m[3] = -(r.m[0] * m[3] + r.m[4] * m[7] + r.m[8] * m[11]);
+        r.m[7] = -(r.m[1] * m[3] + r.m[5] * m[7] + r.m[9] * m[11]);
+        r.m[11] = -(r.m[2] * m[3] + r.m[6] * m[7] + r.m[10] * m[11]);
+        r.m[12] = r.m[13] = r.m[14] = 0.0f;
+        r.m[15] = 1.0f;
+        return r;
+    }
+
     Vec4 TransformVec4(const Vec4& v) const {
         return {m[0] * v.x + m[1] * v.y + m[2] * v.z + m[3] * v.w,
                 m[4] * v.x + m[5] * v.y + m[6] * v.z + m[7] * v.w,

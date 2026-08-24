@@ -58,7 +58,9 @@ int main(int argc, char** argv) {
     std::string projectDir;
     std::string backend = "gl";
     std::string screenshot;
+    std::string previewPath;
     uint64_t screenshotFrame = 0;
+    int exitAfterFrames = 0;
     std::string packVersion = "0.1.0";
     std::string packUpdateUrl;
     for (int i = 1; i < argc; ++i) {
@@ -73,6 +75,8 @@ int main(int argc, char** argv) {
             twoDPlay = true;
         } else if (std::strcmp(argv[i], "--project") == 0 && i + 1 < argc) {
             projectDir = argv[++i];
+        } else if (std::strcmp(argv[i], "--preview") == 0 && i + 1 < argc) {
+            previewPath = argv[++i];
         } else if (std::strcmp(argv[i], "--package") == 0 && i + 2 < argc) {
             const std::string projectDir = argv[++i];
             const std::string outDir = argv[++i];
@@ -105,6 +109,8 @@ int main(int argc, char** argv) {
         } else if (std::strcmp(argv[i], "--screenshot") == 0 && i + 2 < argc) {
             screenshot = argv[++i];
             screenshotFrame = static_cast<uint64_t>(std::atoll(argv[++i]));
+        } else if (std::strcmp(argv[i], "--frames") == 0 && i + 1 < argc) {
+            exitAfterFrames = std::atoi(argv[++i]);
         } else if (std::strcmp(argv[i], "--disable-fbo") == 0 ||
                    std::strcmp(argv[i], "--no-shadows") == 0) {
             disableShadows = true;
@@ -158,6 +164,10 @@ int main(int argc, char** argv) {
     if (smokeFrames > 0) {
         app.SetSmokeMode(true);
         app.SetSmokeTestFrames(smokeFrames);
+    } else if (exitAfterFrames > 0) {
+        // Non-smoke run that still exits after a fixed number of frames, so a
+        // real project open (e.g. --project) can be captured with --screenshot.
+        app.SetSmokeTestFrames(exitAfterFrames);
     }
     if (!screenshot.empty()) app.RequestScreenshot(screenshot, screenshotFrame);
     if (disableShadows) app.SetDisableShadows(true);
@@ -169,6 +179,7 @@ int main(int argc, char** argv) {
     if (twoD) app.Set2DMode(true);
     if (twoDPlay) app.SetPvzPlaytestOnStart(true);
     if (!projectDir.empty()) app.SetProjectOnStart(projectDir, true);
+    if (!previewPath.empty()) app.SetPreviewOnStart(previewPath);
     if (backend != "gl") app.SetBackendName(backend);
     int code = app.Run(config);
     return app.SmokeFailed() ? 1 : code;

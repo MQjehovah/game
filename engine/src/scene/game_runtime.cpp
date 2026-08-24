@@ -1023,6 +1023,24 @@ void GameRuntime::ResolveDrawItem(DrawItem& item, gfx::Renderer& renderer) {
     }
     item.mesh = mesh;
 
+    // Animated skinned glTF: resolve the full model (all skinned mesh parts +
+    // skeleton + clips) so Draw() can use bone matrices. LOD chains are not
+    // supported for skinned models (the file's parts are the model).
+    if (mesh.Skinned()) {
+        core::Result<SkinnedModel> sm =
+            LoadSkinnedModel(*cfg_.assets, FullAssetPath(key.substr(5)));
+        if (!sm.Ok()) {
+            NEON_LOG_CAT(core::LogCategory::Scene, core::LogLevel::Warn,
+                         "runtime: skinned model '%s' failed to resolve: %s", key.c_str(),
+                         sm.Error().c_str());
+            item.failed = true;
+            return;
+        }
+        item.skinned = std::make_shared<SkinnedModel>(std::move(sm.Value()));
+        item.resolved = true;
+        return;
+    }
+
     // LOD chain: level 0 is the base mesh; each entry resolves into a lower-
     // detail level at its distance. A level that fails to load is logged and
     // dropped �?the chain degrades to the levels that resolved.
@@ -1276,6 +1294,12 @@ void GameRuntime::TickStatuses(float dt) {
                 h->hp = std::fmax(0.0f, h->hp - magnitude);
             }
         });
+    }
+}
+
+void GameRuntime::TickAnimations(float dt) {
+    for (DrawItem& d : draws_) {
+        if (d.skinned && d.skinned->Valid()) d.skinned->Update(dt);
     }
 }
 
@@ -1539,7 +1563,12 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera) {
             model = model * math::Mat4::Translation({0.0f, 0.02f, 0.0f});
         }
         const math::Vec3 worldPos{model.m[12], model.m[13], model.m[14]};
-        if (item.isSprite) {
+        if (item.skinned && item.skinned->Valid()) {
+            // Blender's skin bind on this glTF doesn't reproduce the authored
+            // vertices deterministically, so render the bind mesh unbent.
+            for (const auto& part : item.skinned->parts)
+                renderer.DrawMesh(part.mesh, part.material, model * part.localTransform);
+        } else if (item.isSprite) {
             // Flip mirrors the quad around its center: a negative local scale
             // keeps the texture upright and needs no UV/shader changes.
             if (item.flipX || item.flipY)
@@ -1753,6 +1782,7 @@ void GameRuntime::Tick(float dt) {
     if (physicsSteps == 4) physicsAccum_ = 0.0f;
     SyncSceneBodies();
     TickTweens(dt);
+    TickAnimations(dt);
     TickStatuses(dt);
     TickSkillCooldowns(dt);
     TickProjectiles(dt);
