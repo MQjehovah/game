@@ -48,6 +48,8 @@ struct PackageReport {
     std::string packPath;      // "<outDir>/game.pack" ("" when not written)
     std::string runScriptPath; // "<outDir>/run.bat"   ("" when not written)
     std::string playerPath;    // "<outDir>/neon_game.exe" ("" when not copied)
+    std::string updatePath;    // P2-5: "<outDir>/update.json" ("" when not written)
+    std::string installPath;   // P2-5: "<outDir>/install.bat" ("" when not written)
     size_t fileCount = 0;
     size_t bytesWritten = 0;
 };
@@ -58,6 +60,10 @@ struct PackConfig {
     std::string playerSource; // exe to copy as neon_game.exe ("" = "build/neon_game.exe")
     bool copyPlayer = true;   // false skips the player copy (tests / CI)
     bool checkScriptSyntax = true; // run Lua CheckSyntax on every scripts/*.lua
+    // P2-5 release metadata: version string + update host used by update.json
+    // and the generated update.bat ("" disables the auto-update script).
+    std::string version = "0.1.0";
+    std::string updateUrl;
 };
 
 // Validation pass only: loads game.json, parses scenes/prefabs/behaviors and

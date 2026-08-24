@@ -277,6 +277,10 @@ add_executable(neon_game
 )
 target_include_directories(neon_game PRIVATE assets/generated third_party/stb)
 target_link_libraries(neon_game PRIVATE neon_engine)
+if(WIN32)
+  # P2-5: Windows app icon + version resource (windres / rc).
+  target_sources(neon_game PRIVATE platform/win32/neon.rc)
+endif()
 if(MSVC)
   target_compile_options(neon_game PRIVATE /W4 /permissive- /utf-8)
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
@@ -411,6 +415,8 @@ target_link_libraries(neon_editor PRIVATE neon_engine neon_imgui)
 if(WIN32)
   # Native open-file dialog for the asset panel's 导入 action.
   target_link_libraries(neon_editor PRIVATE comdlg32 ole32)
+  # P2-5: Windows app icon + version resource.
+  target_sources(neon_editor PRIVATE platform/win32/neon.rc)
 endif()
 if(MSVC)
   target_compile_options(neon_editor PRIVATE /W4 /permissive- /utf-8)

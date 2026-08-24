@@ -149,6 +149,39 @@ TEST(PackagerValidProjectPacks) {
     CHECK(r.bytesWritten > 0u);
 }
 
+// P2-5: the packager emits release artifacts (update.json manifest with a
+// checksum, install.bat, and an update.bat when an update host is configured).
+TEST(PackagerReleaseArtifacts) {
+    test::TempDir tmp;
+    const std::string proj = tmp.Str();
+    BuildSampleProject(proj);
+
+    PackConfig cfg = DefaultCfg(proj, proj + "/out");
+    cfg.version = "1.2.3";
+    cfg.updateUrl = "https://example.com/neon";
+    PackageReport r = PackProject(cfg);
+    CHECK(r.ok);
+    CHECK(!r.updatePath.empty());
+    CHECK(!r.installPath.empty());
+
+    std::string text;
+    CHECK(test::ReadFileAll(cfg.outDir + "/update.json", text));
+    std::string perr;
+    core::Json upd = core::Json::Parse(text, &perr);
+    CHECK(upd.IsObject());
+    CHECK_EQ(upd.Get("version")->GetString(), "1.2.3");
+    CHECK(upd.Get("packChecksum") != nullptr);
+    CHECK_EQ(upd.Get("player")->GetString(), "neon_game.exe");
+
+    CHECK(test::ReadFileAll(cfg.outDir + "/install.bat", text));
+    CHECK(text.find("neon_game.exe") != std::string::npos);
+    CHECK(text.find("CreateShortcut") != std::string::npos);
+
+    CHECK(test::ReadFileAll(cfg.outDir + "/update.bat", text));
+    CHECK(text.find("https://example.com/neon") != std::string::npos);
+    CHECK(text.find("game.pack.new") != std::string::npos);
+}
+
 // ---------------------------------------------------------------------------
 // Validation failures
 // ---------------------------------------------------------------------------

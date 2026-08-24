@@ -21,6 +21,8 @@ int main(int argc, char** argv) {
     std::string backend = "gl";
     std::string screenshot;
     uint64_t screenshotFrame = 0;
+    std::string packVersion = "0.1.0";
+    std::string packUpdateUrl;
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "--smoke-test") == 0 && i + 1 < argc) {
             smokeFrames = std::atoi(argv[++i]);
@@ -40,6 +42,8 @@ int main(int argc, char** argv) {
             cfg.projectDir = projectDir;
             cfg.outDir = outDir;
             cfg.playerSource = "build/neon_game.exe";
+            cfg.version = packVersion;
+            cfg.updateUrl = packUpdateUrl;
             neon::editor::pack::PackageReport r = neon::editor::pack::PackProject(cfg);
             for (const std::string& e : r.errors) std::printf("PACK ERROR: %s\n", e.c_str());
             for (const std::string& w : r.warnings) std::printf("PACK WARN:  %s\n", w.c_str());
@@ -47,6 +51,8 @@ int main(int argc, char** argv) {
                 std::printf("PACK OK: %s (%zu files, %zu bytes)\n", r.packPath.c_str(),
                             r.fileCount, r.bytesWritten);
                 std::printf("PACK RUN: %s\n", r.runScriptPath.c_str());
+                std::printf("PACK UPDATE-MANIFEST: %s\n", r.updatePath.c_str());
+                std::printf("PACK INSTALL: %s\n", r.installPath.c_str());
                 if (!r.playerPath.empty())
                     std::printf("PACK PLAYER: %s\n", r.playerPath.c_str());
             } else {
@@ -54,6 +60,10 @@ int main(int argc, char** argv) {
                             r.warnings.size());
             }
             return r.ok ? 0 : 1;
+        } else if (std::strcmp(argv[i], "--pack-version") == 0 && i + 1 < argc) {
+            packVersion = argv[++i];
+        } else if (std::strcmp(argv[i], "--update-url") == 0 && i + 1 < argc) {
+            packUpdateUrl = argv[++i];
         } else if (std::strcmp(argv[i], "--screenshot") == 0 && i + 2 < argc) {
             screenshot = argv[++i];
             screenshotFrame = static_cast<uint64_t>(std::atoll(argv[++i]));

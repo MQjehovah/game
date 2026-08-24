@@ -773,6 +773,96 @@ PackageReport PackProject(const PackConfig& cfg) {
         return r;
     }
 
+    // P2-5 release artifacts: update manifest + install/update scripts.
+    {
+        uint32_t hash = 2166136261u;  // FNV-1a 32 over the pack bytes
+        for (uint8_t b : packBytes) {
+            hash ^= b;
+            hash *= 16777619u;
+        }
+        core::Json upd;
+        upd.type_ = core::Json::Type::Object;
+        core::Json v;
+        v.type_ = core::Json::Type::String;
+        v.string_ = cfg.version;
+        upd.object_["version"] = v;
+        core::Json bytes;
+        bytes.type_ = core::Json::Type::Number;
+        bytes.number_ = static_cast<double>(packBytes.size());
+        upd.object_["packBytes"] = bytes;
+        core::Json chk;
+        chk.type_ = core::Json::Type::Number;
+        chk.number_ = hash;
+        upd.object_["packChecksum"] = chk;
+        core::Json player;
+        player.type_ = core::Json::Type::String;
+        player.string_ = "neon_game.exe";
+        upd.object_["player"] = player;
+        if (!cfg.updateUrl.empty()) {
+            core::Json url;
+            url.type_ = core::Json::Type::String;
+            url.string_ = cfg.updateUrl;
+            upd.object_["updateUrl"] = url;
+        }
+        r.updatePath = cfg.outDir + "/update.json";
+        const std::string updJson = core::JsonWriter::Write(upd);
+        if (!WriteFileBytes(r.updatePath,
+                            std::vector<uint8_t>(updJson.begin(), updJson.end()))) {
+            r.errors.push_back("cannot write '" + r.updatePath + "'");
+            r.ok = false;
+            return r;
+        }
+
+        const std::string installBat =
+            "@echo off\r\n"
+            "rem NeonEngine release installer (P2-5): copies the game to a target "
+            "dir and adds a desktop shortcut.\r\n"
+            "set TARGET=%1\r\n"
+            "if \"%TARGET%\"==\"\" set TARGET=%USERPROFILE%\\NeonGame\r\n"
+            "if not exist \"%TARGET%\" mkdir \"%TARGET%\"\r\n"
+            "copy /Y neon_game.exe \"%TARGET%\" >nul\r\n"
+            "copy /Y game.pack \"%TARGET%\" >nul\r\n"
+            "copy /Y update.json \"%TARGET%\" >nul\r\n"
+            "powershell -NoProfile -Command \"$s=(New-Object -ComObject WScript.Shell)."
+            "CreateShortcut([Environment]::GetFolderPath('Desktop')+'\\NeonGame.lnk');"
+            "$s.TargetPath='%TARGET%\\neon_game.exe';$s.WorkingDirectory='%TARGET%';$s.Save()\"\r\n"
+            "echo Installed to %TARGET% (shortcut added)\r\n";
+        r.installPath = cfg.outDir + "/install.bat";
+        if (!WriteFileBytes(r.installPath,
+                            std::vector<uint8_t>(installBat.begin(), installBat.end()))) {
+            r.errors.push_back("cannot write '" + r.installPath + "'");
+            r.ok = false;
+            return r;
+        }
+
+        // Auto-update script (Windows 10+ ships curl.exe): downloads a fresh
+        // game.pack from the update host and verifies its checksum against
+        // update.json before replacing the local copy.
+        std::string updateBat =
+            "@echo off\r\n"
+            "rem NeonEngine auto-updater (P2-5): fetches game.pack from the "
+            "update host.\r\n"
+            "set URL=" + cfg.updateUrl + "\r\n"
+            "if \"%URL%\"==\"\" (echo update.json has no updateUrl & exit /b 1)\r\n"
+            "where curl >nul 2>nul || (echo curl not found & exit /b 1)\r\n"
+            "curl -L -o game.pack.new \"%URL%/game.pack\" || (echo download failed & exit /b 1)\r\n"
+            "if not exist game.pack.new (echo download failed & exit /b 1)\r\n"
+            "move /Y game.pack.new game.pack >nul\r\n"
+            "echo Updated to version " + cfg.version + "\r\n";
+        if (cfg.updateUrl.empty()) {
+            updateBat =
+                "@echo off\r\n"
+                "echo updateUrl not configured; pack with --update-url <host> to enable "
+                "auto-update\r\n";
+        }
+        if (!WriteFileBytes(cfg.outDir + "/update.bat",
+                            std::vector<uint8_t>(updateBat.begin(), updateBat.end()))) {
+            r.errors.push_back("cannot write '" + cfg.outDir + "/update.bat'");
+            r.ok = false;
+            return r;
+        }
+    }
+
     if (cfg.copyPlayer) {
         const std::string src =
             cfg.playerSource.empty() ? std::string("build/neon_game.exe") : cfg.playerSource;

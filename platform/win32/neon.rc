@@ -1,0 +1,30 @@
+// NeonEngine Windows resources (P2-5): application icon + version info.
+// Compiled by windres (MinGW) / rc (MSVC) into the editor and player EXEs.
+1 ICON "neon_icon.ico"
+
+1 VERSIONINFO
+FILEVERSION     0,1,0,0
+PRODUCTVERSION  0,1,0,0
+FILEFLAGSMASK   0x3fL
+FILEFLAGS       0x0L
+FILEOS          0x40004L
+FILETYPE        0x1L
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "040904B0"
+    BEGIN
+      VALUE "CompanyName", "NeonEngine"
+      VALUE "FileDescription", "NeonEngine data-driven game"
+      VALUE "FileVersion", "0.1.0"
+      VALUE "InternalName", "neon_game"
+      VALUE "OriginalFilename", "neon_game.exe"
+      VALUE "ProductName", "NeonEngine"
+      VALUE "ProductVersion", "0.1.0"
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x409, 1200
+  END
+END
