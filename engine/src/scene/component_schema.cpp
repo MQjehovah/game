@@ -49,6 +49,11 @@ std::vector<ComponentSchema> BuildSchemas() {
                     {"ortho", "正交", FieldType::Bool, 0, 0, 1, 0}}});
     out.push_back({"sortOrder", "排序",
                    {{"z", "Z 排序 (小在前)", FieldType::Number, 0, -10000, 10000, 0.1}}});
+    out.push_back({"tilemap", "2D 地图",
+                   {{"cols", "列", FieldType::Int, 8, 1, 64, 1},
+                    {"rows", "行", FieldType::Int, 5, 1, 64, 1},
+                    {"cellSize", "格大小", FieldType::Number, 80, 1, 512, 1},
+                    {"tiles", "格 (纹理路径数组)", FieldType::String, 0, 0, 0, 0}}});
     out.push_back({"rigidbody", "刚体",
                    {{"shape", "形状", FieldType::Enum, 0, 0, 0, 0, kRigidBodyShapes, 2},
                     {"radius", "半径", FieldType::Number, 0.5, 0.01, 100, 0.1},

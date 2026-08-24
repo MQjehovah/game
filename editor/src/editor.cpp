@@ -1041,6 +1041,21 @@ void EditorApp::OnUpdate(float dt) {
                       ok ? "PASS" : "FAIL");
         if (!ok) smokeFailed_ = true;
     }
+    // P1-1 tilemap smoke: a "tilemap" entity resolves without a mesh and
+    // carries its cell grid.
+    if (smokeMode_ && TimeRef().frameIndex == 48) {
+        SceneEntity tm;
+        tm.name = "smoke_tilemap";
+        tm.meshKey = "tilemap";
+        tm.tilemapCols_ = 2;
+        tm.tilemapRows_ = 2;
+        tm.tilemapTiles_ = {"a.png", "", "b.png", ""};
+        const bool ok = ResolveMesh(tm) && !tm.mesh.Valid() &&
+                        tm.tilemapTiles_.size() == 4u;
+        NEON_LOG_INFO("EDITOR-TILEMAP-SMOKE: [%s] tilemap entity resolves (cells=%zu)",
+                      ok ? "PASS" : "FAIL", tm.tilemapTiles_.size());
+        if (!ok) smokeFailed_ = true;
+    }
     // Play/Stop smoke: start a playtest at frame 60, verify it ticks, stop at
     // the last frame (119; OnUpdate never runs at 120). Kept at "Play/Stop
     // doesn't crash the editor" level; the real script/BT verification lives
@@ -1195,6 +1210,34 @@ void EditorApp::OnRender() {
                              });
             for (size_t di : drawOrder) {
                 const SceneEntity& e = entities_[di];
+                if (e.meshKey == "tilemap") {
+                    // P1-1: draw every non-empty cell as a sprite quad; the
+                    // entity's scale sets the cell size.
+                    const size_t cellCount =
+                        static_cast<size_t>(e.tilemapCols_) * e.tilemapRows_;
+                    if (!e.tilemapTiles_.empty() && e.tilemapTiles_.size() == cellCount &&
+                        e.spriteMesh.Valid()) {
+                        for (int r = 0; r < e.tilemapRows_; ++r) {
+                            for (int c = 0; c < e.tilemapCols_; ++c) {
+                                const std::string& tex =
+                                    e.tilemapTiles_[static_cast<size_t>(r) * e.tilemapCols_ + c];
+                                if (tex.empty()) continue;
+                                gfx::Material mat = e.spriteMaterial;
+                                mat.albedo = assetMgr_.LoadTexture(tex).Handle();
+                                mat.tint = gfx::Color::White;
+                                const math::Vec3 offset{
+                                    (static_cast<float>(c) + 0.5f) * e.scale.x,
+                                    (static_cast<float>(r) + 0.5f) * e.scale.y, 0.0f};
+                                math::Mat4 cellModel =
+                                    math::Mat4::Translation(e.pos + e.rot.Rotate(offset)) *
+                                    e.rot.ToMat4() *
+                                    math::Mat4::Scale(e.scale);
+                                renderer_.DrawMesh(e.spriteMesh, mat, cellModel);
+                            }
+                        }
+                    }
+                    continue;
+                }
                 math::Mat4 model = math::Mat4::Translation(e.pos) * e.rot.ToMat4() *
                                    math::Mat4::Scale(e.scale);
                 if (!e.spriteTex.empty() && e.spriteMesh.Valid()) {
@@ -2001,6 +2044,7 @@ void EditorApp::BuildImGuiUI() {
             ImGui::MenuItem("属性", nullptr, &showInspector_);
             ImGui::MenuItem("动画时间线", nullptr, &showAnimEditor_);
             ImGui::MenuItem("地形编辑", nullptr, &showTerrain_);
+            ImGui::MenuItem("2D 地图", nullptr, &showTilemap_);
             ImGui::MenuItem("以选中相机为视图", nullptr, &cameraFollowSelected_);
             ImGui::MenuItem("资产", nullptr, &showAssets_);
             ImGui::MenuItem("资源", nullptr, &showResources_);
@@ -3775,6 +3819,23 @@ core::Result<core::Json> EditorApp::BuildPlaySceneJson() {
                 terr.object_["heights"] = std::move(hs);
                 comps.object_["terrain"] = std::move(terr);
             }
+            if (e.meshKey == "tilemap" && !e.tilemapTiles_.empty()) {
+                core::Json tlm;
+                tlm.type_ = core::Json::Type::Object;
+                tlm.object_["cols"] = mkNum(e.tilemapCols_);
+                tlm.object_["rows"] = mkNum(e.tilemapRows_);
+                tlm.object_["cellSize"] = mkNum(e.tilemapCellSize_);
+                core::Json tls;
+                tls.type_ = core::Json::Type::Array;
+                for (const std::string& t : e.tilemapTiles_) {
+                    core::Json s;
+                    s.type_ = core::Json::Type::String;
+                    s.string_ = t;
+                    tls.array_.push_back(std::move(s));
+                }
+                tlm.object_["tiles"] = std::move(tls);
+                comps.object_["tilemap"] = std::move(tlm);
+            }
             obj.object_["components"] = std::move(comps);
         }
         arr.array_.push_back(std::move(obj));
@@ -4235,7 +4296,11 @@ void EditorApp::SaveEditorConfig() {
 
 bool EditorApp::ResolveMesh(SceneEntity& e) {
     const std::string& key = e.meshKey;
-    if (key == "terrain") {
+    if (key == "tilemap") {
+        // 2D tilemap: cells draw as sprite quads in the render loop.
+        e.mesh = {};
+        return true;
+    } else if (key == "terrain") {
         RebuildTerrainMesh(e);
         e.material = gfx::Material::Lit({}, e.tint, 4.0f);
     } else if (key == "helmet") {
@@ -4538,6 +4603,23 @@ void EditorApp::SaveScene() {
             td.object_["heights"] = std::move(hs);
             obj.object_["terrainData"] = std::move(td);
         }
+        if (e.meshKey == "tilemap" && !e.tilemapTiles_.empty()) {
+            core::Json td;
+            td.type_ = core::Json::Type::Object;
+            td.object_["cols"] = num(e.tilemapCols_);
+            td.object_["rows"] = num(e.tilemapRows_);
+            td.object_["cellSize"] = num(e.tilemapCellSize_);
+            core::Json arr;
+            arr.type_ = core::Json::Type::Array;
+            for (const std::string& t : e.tilemapTiles_) {
+                core::Json s;
+                s.type_ = core::Json::Type::String;
+                s.string_ = t;
+                arr.array_.push_back(std::move(s));
+            }
+            td.object_["tiles"] = std::move(arr);
+            obj.object_["tilemapData"] = std::move(td);
+        }
         core::Json tint;
         tint.type_ = core::Json::Type::Array;
         tint.array_ = {num(e.tint.r), num(e.tint.g), num(e.tint.b)};
@@ -4810,6 +4892,19 @@ void EditorApp::LoadScene(const std::string& path) {
                             e.terrainHeights_.push_back(static_cast<float>(v.GetNumber()));
                 }
             }
+            if (const core::Json* tlm = comps->Get("tilemap")) {
+                if (const core::Json* cols = tlm->Get("cols"))
+                    e.tilemapCols_ = cols->GetInt(8);
+                if (const core::Json* rows = tlm->Get("rows"))
+                    e.tilemapRows_ = rows->GetInt(5);
+                if (const core::Json* cs = tlm->Get("cellSize"))
+                    e.tilemapCellSize_ = static_cast<float>(cs->GetNumber());
+                if (const core::Json* tls = tlm->Get("tiles")) {
+                    if (tls->IsArray())
+                        for (const core::Json& v : tls->Items())
+                            e.tilemapTiles_.push_back(v.GetString());
+                }
+            }
             if (const core::Json* s = comps->Get("script")) {
                 // Legacy single "script" component: one mounted script.
                 if (s->IsObject()) {
@@ -4897,6 +4992,19 @@ void EditorApp::LoadScene(const std::string& path) {
                     if (h->IsArray())
                         for (const core::Json& v : h->Items())
                             e.terrainHeights_.push_back(static_cast<float>(v.GetNumber()));
+                }
+            }
+            if (const core::Json* tlm = j->Get("tilemapData")) {
+                if (const core::Json* cols = tlm->Get("cols"))
+                    e.tilemapCols_ = cols->GetInt(8);
+                if (const core::Json* rows = tlm->Get("rows"))
+                    e.tilemapRows_ = rows->GetInt(5);
+                if (const core::Json* cs = tlm->Get("cellSize"))
+                    e.tilemapCellSize_ = static_cast<float>(cs->GetNumber());
+                if (const core::Json* tls = tlm->Get("tiles")) {
+                    if (tls->IsArray())
+                        for (const core::Json& v : tls->Items())
+                            e.tilemapTiles_.push_back(v.GetString());
                 }
             }
             if (const core::Json* st = j->Get("spriteTex")) e.spriteTex = st->GetString();

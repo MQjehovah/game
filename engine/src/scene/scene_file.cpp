@@ -985,6 +985,31 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                      world.Add<SceneTerrain>(ent, std::move(t));
                      return true;
                  });
+
+    reg.Register("tilemap",
+                 [](ecs::World& world, ecs::Entity ent, const core::Json& data,
+                    const core::Json&, std::string* err) {
+                     if (!CheckComponentShape(data, {"cols", "rows", "cellSize", "tiles"},
+                                              "tilemap", err))
+                         return false;
+                     SceneTilemap t;
+                     float cols = 8.0f, rows = 5.0f;
+                     if (!RequireNumber(data, "cols", "tilemap", cols, err)) return false;
+                     if (!RequireNumber(data, "rows", "tilemap", rows, err)) return false;
+                     if (!RequireNumber(data, "cellSize", "tilemap", t.cellSize, err))
+                         return false;
+                     t.cols = static_cast<int>(cols);
+                     t.rows = static_cast<int>(rows);
+                     if (const core::Json* tls = data.Get("tiles")) {
+                         if (tls->IsArray()) {
+                             for (const core::Json& v : tls->Items())
+                                 t.tiles.push_back(v.IsString() ? v.GetString() : "");
+                         }
+                     }
+                     t.tiles.resize(static_cast<size_t>(t.cols) * t.rows);
+                     world.Add<SceneTilemap>(ent, std::move(t));
+                     return true;
+                 });
 }
 
 // --- Instantiate -------------------------------------------------------------

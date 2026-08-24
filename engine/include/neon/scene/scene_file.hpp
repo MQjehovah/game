@@ -270,6 +270,14 @@ struct SceneTerrain {
     float heightScale = 1.0f;
     std::vector<float> heights;
 };
+// 2D tilemap (P1-1): cols x rows of texture paths ("" = empty cell), each
+// cell rendered as a `cellSize` design-unit quad at the entity's position.
+struct SceneTilemap {
+    int cols = 8;
+    int rows = 5;
+    float cellSize = 80.0f;
+    std::vector<std::string> tiles;  // cols*rows, row-major
+};
 
 // A component factory builds a component onto `ent` from its effective JSON
 // data. Args: world, entity, merged component data (prefab already applied),

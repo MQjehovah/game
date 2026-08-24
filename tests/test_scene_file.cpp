@@ -781,3 +781,35 @@ TEST(SceneSortOrderAndCameraComponents) {
         });
     CHECK(camFound);
 }
+
+TEST(SceneTilemapComponent) {
+    const std::string json = R"({
+      "entities": [
+        {"name": "ground", "components": {
+          "transform": {"pos": [0,0,0]},
+          "tilemap": {"cols": 2, "rows": 2, "cellSize": 64, "tiles": ["a.png", "", "b.png", ""]}
+        }}
+      ]
+    })";
+    auto res = scene::SceneFile::Parse(json);
+    CHECK(res.Ok());
+    scene::ComponentRegistry reg;
+    scene::RegisterBuiltinComponents(reg);
+    ecs::World world;
+    scene::PrefabLibrary prefs;
+    auto inst = scene::Instantiate(world, res.Value(), prefs, reg);
+    CHECK(inst.Ok());
+    bool found = false;
+    world.ViewAll<scene::SceneTilemap>().ForEach(
+        [&](ecs::Entity, const scene::SceneTilemap& t) {
+            found = true;
+            CHECK_EQ(t.cols, 2);
+            CHECK_EQ(t.rows, 2);
+            CHECK_NEAR(t.cellSize, 64.0f, 1e-6f);
+            CHECK_EQ(t.tiles.size(), 4u);
+            CHECK_EQ(t.tiles[0], "a.png");
+            CHECK(t.tiles[1].empty());
+            CHECK_EQ(t.tiles[2], "b.png");
+        });
+    CHECK(found);
+}

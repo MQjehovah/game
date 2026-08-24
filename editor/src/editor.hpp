@@ -43,6 +43,11 @@ struct SceneEntity {
     int terrainSegments_ = 48;
     float terrainSize_ = 60.0f;
     float terrainHeightScale_ = 1.0f;
+    // P1-1 2D tilemap editing (meshKey "tilemap").
+    std::vector<std::string> tilemapTiles_;
+    int tilemapCols_ = 8;
+    int tilemapRows_ = 5;
+    float tilemapCellSize_ = 80.0f;
     math::Vec3 pos{};
     math::Quat rot{};
     math::Vec3 scale{1, 1, 1};
@@ -338,6 +343,7 @@ private:
     void BuildScriptEditorPanel();
     void BuildAnimEditorPanel();
     void BuildTerrainPanel();
+    void BuildTilemapPanel();
     void SaveSceneAsChild();
     void ReloadEntityShader(SceneEntity& e);
     void PaintTerrain(const math::Ray& ray);
@@ -597,6 +603,7 @@ private:
     bool showScriptEditor_ = false;
     bool showAnimEditor_ = false;
     bool showTerrain_ = false;
+    bool showTilemap_ = false;
     // P1-1 animation timeline editor state.
     anim::AnimationClip animClip_;
     std::string animClipPath_;

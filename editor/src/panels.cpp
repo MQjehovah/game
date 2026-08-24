@@ -3174,6 +3174,89 @@ void EditorApp::BuildTerrainPanel() {
     ImGui::End();
 }
 
+// P1-1 2D tilemap editor: paint cells with a texture path (or click a texture
+// asset in the palette); cols/rows/cellSize resize the grid.
+void EditorApp::BuildTilemapPanel() {
+    if (!showTilemap_) return;
+    if (ImGui::Begin("2D 地图", &showTilemap_)) {
+        const bool has = selected_ >= 0 && selected_ < static_cast<int>(entities_.size()) &&
+                         entities_[static_cast<size_t>(selected_)].meshKey == "tilemap";
+        if (!has) {
+            ImGui::TextDisabled("请先选中一个 \"tilemap\" 实体 (网格键填 tilemap)");
+            ImGui::End();
+            return;
+        }
+        SceneEntity& e = entities_[static_cast<size_t>(selected_)];
+        const size_t need = static_cast<size_t>(e.tilemapCols_) * e.tilemapRows_;
+        if (e.tilemapTiles_.size() != need) e.tilemapTiles_.resize(need);
+        if (ImGui::DragInt("列", &e.tilemapCols_, 1, 1, 64)) {
+            e.tilemapCols_ = std::max(1, std::min(e.tilemapCols_, 64));
+            e.tilemapTiles_.resize(static_cast<size_t>(e.tilemapCols_) * e.tilemapRows_);
+            sceneDirty_ = true;
+        }
+        if (ImGui::DragInt("行", &e.tilemapRows_, 1, 1, 64)) {
+            e.tilemapRows_ = std::max(1, std::min(e.tilemapRows_, 64));
+            e.tilemapTiles_.resize(static_cast<size_t>(e.tilemapCols_) * e.tilemapRows_);
+            sceneDirty_ = true;
+        }
+        if (ImGui::DragFloat("格大小", &e.tilemapCellSize_, 1.0f, 1.0f, 512.0f)) {
+            e.tilemapCellSize_ = std::max(1.0f, e.tilemapCellSize_);
+            e.scale = {e.tilemapCellSize_, e.tilemapCellSize_, 1.0f};
+            sceneDirty_ = true;
+        }
+        static char texBuf[512] = {};
+        ImGui::SetNextItemWidth(300.0f);
+        ImGui::InputText("贴图路径", texBuf, sizeof(texBuf));
+        // Palette: texture assets in the current project asset dir.
+        if (ImGui::CollapsingHeader("贴图调色板", ImGuiTreeNodeFlags_DefaultOpen)) {
+            if (ImGui::BeginChild("##tile_palette", ImVec2(0, 120), true)) {
+                for (const AssetEntry& a : assetEntries_) {
+                    if (a.isDir) continue;
+                    const std::string lower = ToLower(a.name);
+                    if (lower.find(".png") == std::string::npos &&
+                        lower.find(".jpg") == std::string::npos)
+                        continue;
+                    if (ImGui::Button(a.name.c_str())) {
+                        std::snprintf(texBuf, sizeof(texBuf), "%s", a.path.c_str());
+                    }
+                }
+            }
+            ImGui::EndChild();
+        }
+        ImGui::TextDisabled("点击格子放置当前贴图; 右键格子弹窗菜单请先清除文本后点击");
+        const float cellW = std::max(ImGui::GetContentRegionAvail().x /
+                                         static_cast<float>(std::max(e.tilemapCols_, 1)) - 4.0f,
+                                     20.0f);
+        for (int r = 0; r < e.tilemapRows_; ++r) {
+            for (int c = 0; c < e.tilemapCols_; ++c) {
+                size_t idx = static_cast<size_t>(r) * e.tilemapCols_ + c;
+                ImGui::PushID(static_cast<int>(idx));
+                std::string label = e.tilemapTiles_[idx].empty()
+                                        ? "·"
+                                        : "■";
+                if (ImGui::Button(label.c_str(), ImVec2(cellW, 24))) {
+                    if (texBuf[0] != '\0') {
+                        e.tilemapTiles_[idx] = texBuf;
+                        sceneDirty_ = true;
+                    } else {
+                        e.tilemapTiles_[idx].clear();
+                        sceneDirty_ = true;
+                    }
+                }
+                if (ImGui::IsItemHovered() && !e.tilemapTiles_[idx].empty())
+                    ImGui::SetTooltip("%s", e.tilemapTiles_[idx].c_str());
+                if ((c + 1) % e.tilemapCols_ != 0) ImGui::SameLine();
+                ImGui::PopID();
+            }
+        }
+        if (ImGui::Button("清空地图")) {
+            for (std::string& t : e.tilemapTiles_) t.clear();
+            sceneDirty_ = true;
+        }
+    }
+    ImGui::End();
+}
+
 void EditorApp::BuildPackagePanel() {
     if (!showPackage_) return;
     if (ImGui::Begin("打包", &showPackage_)) {

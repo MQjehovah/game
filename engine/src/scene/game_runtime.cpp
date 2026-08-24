@@ -839,6 +839,29 @@ void GameRuntime::BuildDrawList() {
         item.mat = gfx::Material::Unlit({}, ParseColorHex(s->colorHex));
         draws_.push_back(std::move(item));
     }
+    // P1-1 tilemap: every non-empty cell becomes a sprite draw item offset by
+    // its cell position (the entity scale sets the cell size).
+    auto tileView = world_.ViewAll<SceneTilemap>();
+    for (size_t i = 0; i < tileView.Size(); ++i) {
+        ecs::Entity ent = world_.EntityAt<SceneTilemap>(i);
+        if (contains(ent)) continue;
+        const SceneTilemap* tm = world_.Get<SceneTilemap>(ent);
+        if (!tm) continue;
+        for (int r = 0; r < tm->rows; ++r) {
+            for (int c = 0; c < tm->cols; ++c) {
+                const std::string& tex = tm->tiles[static_cast<size_t>(r) * tm->cols + c];
+                if (tex.empty()) continue;
+                DrawItem item;
+                item.ent = ent;
+                item.isSprite = true;
+                item.spriteTex = tex;
+                item.mat = gfx::Material::Unlit({});
+                item.tileOffset = {static_cast<float>(c) + 0.5f,
+                                   static_cast<float>(r) + 0.5f, 0.0f};
+                draws_.push_back(std::move(item));
+            }
+        }
+    }
 }
 
 void GameRuntime::ResolveDrawItem(DrawItem& item, gfx::Renderer& renderer) {
@@ -1292,6 +1315,8 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera) {
         if (!item.resolved || item.failed) continue;
         if (!world_.Get<SceneTransform>(item.ent)) continue;
         math::Mat4 model = LocalToWorld(item.ent);
+        if (item.tileOffset.LengthSq() > 0.0f)
+            model = model * math::Mat4::Translation(item.tileOffset);
         const math::Vec3 worldPos{model.m[12], model.m[13], model.m[14]};
         if (item.isSprite) {
             // Flip mirrors the quad around its center: a negative local scale
