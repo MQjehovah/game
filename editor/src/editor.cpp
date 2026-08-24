@@ -423,6 +423,73 @@ bool NeedsDefaultLayout() {
     return needs;
 }
 
+// ---------------------------------------------------------------------------
+// Panel open/closed state persistence (neon_editor_imgui.ini).
+// The ImGui ini saves each panel's dock node/size but NOT whether the panel is
+// open, so a panel the user opened and docked vanished on the next launch (its
+// show flag reset to the default while the layout data survived). A custom
+// settings handler persists every panel's open state into the same ini: the
+// next launch restores both the layout and which panels were visible.
+// ---------------------------------------------------------------------------
+struct PanelStateEntry {
+    const char* title;        // ImGui window title / 视图 menu label
+    bool EditorApp::*flag;    // member pointer to the panel's show flag
+};
+
+EditorApp* g_panelStateApp = nullptr;   // app owning the flags (set on register)
+const PanelStateEntry* g_panelStateEntries = nullptr;
+size_t g_panelStateCount = 0;
+
+// Called when the loader enters "[NeonPanels][Panels]"; returning non-null
+// marks the section as present so ReadLine applies the saved states.
+void* NeonPanelsReadOpen(ImGuiContext*, ImGuiSettingsHandler*, const char*) {
+    return g_panelStateApp;
+}
+
+void NeonPanelsReadLine(ImGuiContext*, ImGuiSettingsHandler*, void* entry,
+                        const char* line) {
+    EditorApp* app = static_cast<EditorApp*>(entry);
+    if (!app || !line) return;
+    size_t len = std::strlen(line);
+    while (len > 0 && (line[len - 1] == '\r' || line[len - 1] == ' '))
+        --len;
+    if (len == 0 || line[0] == '#') return; // blank / comment
+    const char* eq = static_cast<const char*>(std::memchr(line, '=', len));
+    if (!eq) return;
+    const bool open = std::atoi(eq + 1) != 0;
+    const std::string title(line, static_cast<size_t>(eq - line));
+    for (size_t i = 0; i < g_panelStateCount; ++i) {
+        if (title == g_panelStateEntries[i].title) {
+            app->*g_panelStateEntries[i].flag = open;
+            return;
+        }
+    }
+    // Plugin-contributed panels are matched by title as well (their open state
+    // is owned by the plugin manager, not a member flag).
+    if (editor::EditorPluginManager* mgr = app->PluginManager()) {
+        for (editor::PluginPanel& p : mgr->Panels()) {
+            if (title == p.title) {
+                p.opened = open;
+                return;
+            }
+        }
+    }
+}
+
+void NeonPanelsWriteAll(ImGuiContext*, ImGuiSettingsHandler* handler,
+                        ImGuiTextBuffer* buf) {
+    EditorApp* app = g_panelStateApp;
+    if (!app || !buf) return;
+    buf->appendf("[%s][Panels]\n", handler->TypeName);
+    for (size_t i = 0; i < g_panelStateCount; ++i)
+        buf->appendf("%s=%d\n", g_panelStateEntries[i].title,
+                     app->*g_panelStateEntries[i].flag ? 1 : 0);
+    if (editor::EditorPluginManager* mgr = app->PluginManager()) {
+        for (const editor::PluginPanel& p : mgr->Panels())
+            buf->appendf("%s=%d\n", p.title.c_str(), p.opened ? 1 : 0);
+    }
+}
+
 // True for props that bake their colors into vertex data (the lit shader
 // multiplies uTint * vColor). Their material tint must stay WHITE so the baked
 // colors show through instead of being double-tinted. npc:r,g,b is the runtime
@@ -433,6 +500,42 @@ bool IsBakedColorKey(const std::string& key) {
 }
 
 } // namespace
+
+// Friend of EditorApp: builds the title -> show-flag table (naming the private
+// members requires friendship) and registers the ini settings handler above.
+void RegisterPanelStateHandler(EditorApp* app) {
+    static const PanelStateEntry kPanels[] = {
+        {"场景", &EditorApp::showHierarchy_},
+        {"属性", &EditorApp::showInspector_},
+        {"资产", &EditorApp::showAssets_},
+        {"资源", &EditorApp::showResources_},
+        {"日志", &EditorApp::showLog_},
+        {"行为树", &EditorApp::showBt_},
+        {"脚本", &EditorApp::showScripts_},
+        {"脚本编辑器", &EditorApp::showScriptEditor_},
+        {"打包", &EditorApp::showPackage_},
+        {"性能", &EditorApp::showProfiler_},
+        {"导航", &EditorApp::showNav_},
+        {"动画时间线", &EditorApp::showAnimEditor_},
+        {"地形编辑", &EditorApp::showTerrain_},
+        {"2D 地图", &EditorApp::showTilemap_},
+        {"本地化", &EditorApp::showLoc_},
+        {"UI 编辑器", &EditorApp::showUIEditor_},
+        {"输入映射", &EditorApp::showInputMap_},
+        {"插件", &EditorApp::showPlugins_},
+    };
+    g_panelStateApp = app;
+    g_panelStateEntries = kPanels;
+    g_panelStateCount = sizeof(kPanels) / sizeof(kPanels[0]);
+
+    ImGuiSettingsHandler panelHandler;
+    panelHandler.TypeName = "NeonPanels";
+    panelHandler.TypeHash = ImHashStr("NeonPanels");
+    panelHandler.ReadOpenFn = &NeonPanelsReadOpen;
+    panelHandler.ReadLineFn = &NeonPanelsReadLine;
+    panelHandler.WriteAllFn = &NeonPanelsWriteAll;
+    ImGui::AddSettingsHandler(&panelHandler);
+}
 
 bool EditorApp::OnCreate() {
     if (disableShadows_) renderer_.SetShadowsEnabled(false);
@@ -456,6 +559,9 @@ bool EditorApp::OnCreate() {
         return false;
     }
     ApplyEditorTheme();
+    // Panel open/close persistence: save which panels are visible into the
+    // same ImGui ini that stores the docking layout (see NeonPanels* above).
+    RegisterPanelStateHandler(this);
     // Toolbar icon glyph self-check: a missing glyph renders as '?' in the
     // toolbar. Log once at startup so icon regressions are caught immediately.
     {
@@ -901,6 +1007,51 @@ void EditorApp::OnUpdate(float dt) {
     }
     BuildImGuiUI();
     ImGui::Render();
+
+    // Smoke: panel open/close state must round-trip through the ini settings
+    // handler (the user's report: a panel opened and docked vanished on the
+    // next launch because only the layout was saved, not whether it was open).
+    // Drive the handler's write path into a buffer, lose the states, then feed
+    // the lines back through the read path exactly as LoadIniSettingsFromDisk
+    // would, and verify the flags come back.
+    if (smokeMode_ && TimeRef().frameIndex == 100) {
+        static bool panelSmokeDone = false;
+        if (!panelSmokeDone) {
+            panelSmokeDone = true;
+            bool ok = g_panelStateApp == this && g_panelStateEntries != nullptr;
+            ImGuiSettingsHandler* h = ImGui::FindSettingsHandler("NeonPanels");
+            ok = ok && h != nullptr;
+            const bool savedAssets = showAssets_;
+            const bool savedLoc = showLoc_;
+            if (ok) {
+                showAssets_ = true;  // open a panel (user docks it in real use)
+                showLoc_ = false;    // close another
+                ImGuiTextBuffer buf;
+                h->WriteAllFn(ImGui::GetCurrentContext(), h, &buf);
+                showAssets_ = false; // "lost" states; the read must restore
+                showLoc_ = true;
+                const char* p = buf.begin();
+                while (p && *p) {
+                    const char* nl = std::strchr(p, '\n');
+                    const std::string line(
+                        p, nl ? static_cast<size_t>(nl - p) : std::strlen(p));
+                    if (!line.empty() && line[0] != '[')
+                        h->ReadLineFn(ImGui::GetCurrentContext(), h,
+                                      g_panelStateApp, line.c_str());
+                    if (!nl) break;
+                    p = nl + 1;
+                }
+                ok = showAssets_ && !showLoc_;
+            }
+            showAssets_ = savedAssets;
+            showLoc_ = savedLoc;
+            NEON_LOG_CAT(core::LogCategory::Script, core::LogLevel::Info,
+                         "EDITOR-PANELS-SMOKE: [%s] panel open/close state "
+                         "round-trips through the ini handler",
+                         ok ? "PASS" : "FAIL");
+            if (!ok) smokeFailed_ = true;
+        }
+    }
 
     // Smoke: the 网格 移除 button's action (the command the button pushes)
     // works through the undo stack. Real mouse input cannot be synthesized
