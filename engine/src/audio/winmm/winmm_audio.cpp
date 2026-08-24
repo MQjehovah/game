@@ -92,6 +92,14 @@ public:
         LeaveCriticalSection(&criticalSection_);
     }
 
+    void PlayMusic(const SoundFx& sound, float volume) override { Play(sound, volume); }
+    void Play3D(const SoundFx& sound, const math::Vec3&, const math::Vec3&,
+                const math::Vec3&, float volume) override {
+        Play(sound, volume);
+    }
+    void SetBusVolume(AudioBus, float) override {}
+    float BusVolume(AudioBus) const override { return 1.0f; }
+
     void StopAll() override {
         EnterCriticalSection(&criticalSection_);
         voices_.clear();

@@ -180,6 +180,10 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     scriptCtx_.input = cfg_.input;
     scriptCtx_.loc = &loc_;
     scriptCtx_.playSfx = cfg_.playSfx;
+    scriptCtx_.playMusic = cfg_.playMusic;
+    scriptCtx_.playSfx3D = cfg_.playSfx3D;
+    scriptCtx_.setAudioListener = cfg_.setAudioListener;
+    scriptCtx_.setBusVolume = cfg_.setBusVolume;
     scriptCtx_.entityKinds.clear();
     // Data files (levels/*.json etc.) resolve like scripts: project dir on
     // disk, or the unpacked dir for packed games (ReadScript honors the pack

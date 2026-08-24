@@ -3680,6 +3680,22 @@ void EditorApp::StartPlaytest() {
     cfg.playSfx = [this](const std::string& name) {
         if (audioBackend_) audioBackend_->Play(MakePvzSfx(name), 0.7f);
     };
+    // P2-2 audio hooks: music bus, 3D positional sfx against the live camera
+    // listener, and bus volume control.
+    cfg.playMusic = [this](const std::string& name, float vol) {
+        if (audioBackend_) audioBackend_->PlayMusic(MakePvzSfx(name), vol);
+    };
+    cfg.playSfx3D = [this](const std::string& name, const math::Vec3& pos) {
+        if (audioBackend_) {
+            const gfx::Camera& cam = ActiveCamera();
+            const math::Vec3 fwd = (cam.target - cam.position).Normalized();
+            audioBackend_->Play3D(MakePvzSfx(name), pos, cam.position, fwd, 0.7f);
+        }
+    };
+    cfg.setBusVolume = [this](int bus, float gain) {
+        if (audioBackend_ && bus >= 0 && bus <= 2)
+            audioBackend_->SetBusVolume(static_cast<neon::audio::AudioBus>(bus), gain);
+    };
     std::string json;
 
     if (projectMode_ == "2d") {

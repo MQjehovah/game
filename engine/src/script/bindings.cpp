@@ -833,6 +833,36 @@ Value NativeGetEntitiesInGroup(IScriptHost& host, void* user) {
     return t;
 }
 
+Value NativePlayMusic(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->playMusic) return Value::Nil();
+    ctx->playMusic(StringArg(host, 0), static_cast<float>(NumberArg(host, 1, 1.0)));
+    return Value::Nil();
+}
+
+Value NativePlaySfx3D(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->playSfx3D) return Value::Nil();
+    ctx->playSfx3D(StringArg(host, 0), Vec3FromValue(host.GetArg(1), math::Vec3{}));
+    return Value::Nil();
+}
+
+Value NativeSetListener(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->setAudioListener) return Value::Nil();
+    ctx->setAudioListener(Vec3FromValue(host.GetArg(0), math::Vec3{}),
+                          Vec3FromValue(host.GetArg(1), math::Vec3{0, 0, -1}));
+    return Value::Nil();
+}
+
+Value NativeSetBusVolume(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->setBusVolume) return Value::Nil();
+    const int bus = static_cast<int>(NumberArg(host, 0, 0.0));
+    ctx->setBusVolume(bus, static_cast<float>(NumberArg(host, 1, 1.0)));
+    return Value::Nil();
+}
+
 Value NativePlaySfx(IScriptHost& host, void* user) {
     auto* ctx = static_cast<ScriptContext*>(user);
     if (!ctx || !ctx->playSfx) return Value::Nil();
@@ -1044,6 +1074,10 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("PhysicsGetCharacterMove", &NativePhysicsGetCharacterMove, &ctx);
     host.Register("Tween", &NativeTween, &ctx);
     host.Register("GetEntitiesInGroup", &NativeGetEntitiesInGroup, &ctx);
+    host.Register("PlayMusic", &NativePlayMusic, &ctx);
+    host.Register("PlaySfx3D", &NativePlaySfx3D, &ctx);
+    host.Register("SetAudioListener", &NativeSetListener, &ctx);
+    host.Register("SetBusVolume", &NativeSetBusVolume, &ctx);
     host.Register("PlaySfx", &NativePlaySfx, &ctx);
     host.Register("InputAxis", &NativeInputAxis, &ctx);
     host.Register("InputKey", &NativeInputKey, &ctx);

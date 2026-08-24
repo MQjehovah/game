@@ -57,6 +57,11 @@ struct GameRuntimeConfig {
     std::string localesDir;                 // locales/*.json tables for Loc()
     std::function<std::string(const std::string& path)> readScript; // optional override
     std::function<void(const std::string&)> playSfx; // optional audio sink for PlaySfx
+    // P2-2 audio hooks (host-owned backend; null -> script no-ops).
+    std::function<void(const std::string&, float)> playMusic;
+    std::function<void(const std::string&, const math::Vec3&)> playSfx3D;
+    std::function<void(const math::Vec3&, const math::Vec3&)> setAudioListener;
+    std::function<void(int, float)> setBusVolume;
     platform::IInput* input = nullptr;      // optional live input for scripts
     gfx::Font font2d;                       // 2D canvas font (on_render text); invalid = skip
     uint64_t rngSeed = 20260821u;           // fixed: playtest RNG is reproducible

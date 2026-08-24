@@ -156,3 +156,60 @@ TEST(AudioMixerContractWithSfx) {
     CHECK_EQ(out[1], -200);
     CHECK_EQ(out[2], 300);
 }
+
+// P2-2: stereo mixer splits a voice by pan and clamps per channel.
+TEST(AudioMixerStereoPan) {
+    const int16_t clip[] = {1000, 1000};
+    audio::MixVoice center;
+    center.samples = clip;
+    center.sampleCount = 2;
+    center.volume = 1.0f;
+    center.pan = 0.0f;
+    int16_t out[4] = {};
+    audio::MixVoicesStereo(&center, 1, out, 2);
+    CHECK_EQ(out[0], 707);  // cos(pi/4)*1000
+    CHECK_EQ(out[1], 707);  // sin(pi/4)*1000
+
+    audio::MixVoice left;
+    left.samples = clip;
+    left.sampleCount = 2;
+    left.volume = 1.0f;
+    left.pan = -1.0f;
+    int16_t outL[4] = {};
+    audio::MixVoicesStereo(&left, 1, outL, 2);
+    CHECK_EQ(outL[0], 1000);  // full left
+    CHECK_EQ(outL[1], 0);
+
+    audio::MixVoice right;
+    right.samples = clip;
+    right.sampleCount = 2;
+    right.volume = 1.0f;
+    right.pan = 1.0f;
+    int16_t outR[4] = {};
+    audio::MixVoicesStereo(&right, 1, outR, 2);
+    CHECK_EQ(outR[0], 0);
+    CHECK_EQ(outR[1], 1000);  // full right
+}
+
+// P2-2: WAV loader parses 16-bit PCM mono and down-mixes stereo.
+TEST(AudioWavLoader) {
+    const char* path = "smoke_tone.wav";
+    // Minimal 44-byte mono PCM WAV: 2 samples (1000, -1000).
+    std::vector<uint8_t> wav = {
+        'R', 'I', 'F', 'F', 36, 0, 0, 0, 'W', 'A', 'V', 'E',
+        'f', 'm', 't', ' ', 16, 0, 0, 0, 1, 0, 1, 0,
+        0x44, 0xAC, 0, 0, 0x88, 0x58, 0x01, 0, 2, 0, 16, 0,
+        'd', 'a', 't', 'a', 4, 0, 0, 0,
+        0xE8, 0x03, 0x18, 0xFC};
+    {
+        std::ofstream out(path, std::ios::binary);
+        out.write(reinterpret_cast<const char*>(wav.data()),
+                  static_cast<std::streamsize>(wav.size()));
+    }
+    audio::SoundFx fx;
+    CHECK(audio::LoadWav(path, fx));
+    CHECK_EQ(fx.samples.size(), 2u);
+    CHECK_EQ(fx.samples[0], 1000);
+    CHECK_EQ(fx.samples[1], -1000);
+    CHECK_EQ(fx.sampleRate, 44100u);
+}

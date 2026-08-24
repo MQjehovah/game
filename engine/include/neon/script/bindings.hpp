@@ -72,6 +72,12 @@ struct ScriptContext {
     physics::World* physics = nullptr;
     GameVars gameVars;
     std::function<void(const std::string&)> playSfx; // optional audio sink
+    // P2-2 audio: music loop / 3D positional sfx / listener / bus volume.
+    // Wired by hosts that own an audio backend; null -> no-ops.
+    std::function<void(const std::string&, float)> playMusic;
+    std::function<void(const std::string&, const math::Vec3&)> playSfx3D;
+    std::function<void(const math::Vec3&, const math::Vec3&)> setAudioListener;
+    std::function<void(int, float)> setBusVolume;
     std::map<ecs::Entity, std::string, EntityLess> entityKinds; // entity -> kind name
     // Optional live input state for the InputAxis/InputKey/InputMouse bindings.
     // Null in headless hosts and unit tests -> every input query returns 0.
