@@ -181,6 +181,7 @@ TEST(GameRuntimeDiskScriptPath) {
     CHECK_EQ(runtime.GameVars().Get("gold").number, 2.0);
 }
 
+#ifdef NEON_ENABLE_JS
 TEST(GameRuntimeMixedLuaAndJsBackends) {
     scene::GameRuntime runtime;
     scene::GameRuntimeConfig cfg;
@@ -216,6 +217,7 @@ TEST(GameRuntimeMixedLuaAndJsBackends) {
     runtime.Stop();
     CHECK(!runtime.Running());
 }
+#endif // NEON_ENABLE_JS
 
 TEST(GameRuntimeMissingScriptIsNonFatal) {
     scene::GameRuntime runtime;

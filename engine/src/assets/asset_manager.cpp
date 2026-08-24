@@ -275,9 +275,17 @@ gfx::Texture AssetManager::LoadTexture(const std::string& path, const TextureLoa
         ++textureRefs_[key];  // every load is an acquisition
         return cached->second;
     }
+    // Negative cache: a previously missing file returns {} silently while it
+    // stays missing (the first failure already logged). If the file appeared
+    // since then, retry the real load once.
+    if (failedTextures_.count(key) != 0) {
+        if (FileMTime(path) == 0) return {};
+        failedTextures_.erase(key);
+    }
 
     DecodedImage img = DecodeImage(path, opts, opts.compressBc1 && bc1Supported_);
     if (img.channels == 0) {
+        failedTextures_.insert(key);
         NEON_LOG_ERROR("Asset: failed to load texture '%s'", path.c_str());
         return {};
     }
@@ -305,6 +313,14 @@ void AssetManager::LoadTextureAsync(const std::string& path, std::function<void(
     if (cached != textures_.end()) {
         cb(true);
         return;
+    }
+    // Negative cache (see LoadTexture): known-missing files skip the worker.
+    if (failedTextures_.count(key) != 0) {
+        if (FileMTime(path) == 0) {
+            cb(false);
+            return;
+        }
+        failedTextures_.erase(key);
     }
 
     if (!asyncEnabled_ || !asyncLoader_.Available()) {
@@ -372,6 +388,7 @@ void AssetManager::FinishAsyncTexture(const std::string& path, DecodedImage img,
             NEON_LOG_ERROR("Asset: async texture '%s' GPU upload failed", path.c_str());
         }
     } else {
+        failedTextures_.insert(TextureCacheKey(path, opts));
         NEON_LOG_ERROR("Asset: async texture '%s' decode failed", path.c_str());
     }
     for (auto& cb : cbs) cb(ok);

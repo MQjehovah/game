@@ -68,9 +68,12 @@ struct GameRuntimeConfig {
     gfx::Font font2d;                       // 2D canvas font (on_render text); invalid = skip
     uint64_t rngSeed = 20260821u;           // fixed: playtest RNG is reproducible
     bool headless = false;                  // skip draw-list build; pure simulation
-    // Physics backend: "custom" (deterministic custom solver, the server
-    // default) or "jolt" (Jolt rigid bodies; compiled when NEON_ENABLE_JOLT).
-    // Unknown values fall back to "custom".
+    // Physics backend: "custom" (deterministic custom sphere/AABB solver) or
+    // "jolt" (Jolt rigid bodies; compiled when NEON_ENABLE_JOLT). The packaged
+    // player and the authoritative server default to "jolt" so client
+    // prediction and server simulation run the same rigid-body code; "custom"
+    // remains the cross-platform bit-exact fallback. Unknown values fall back
+    // to "custom".
     std::string physicsBackend = "custom";
 };
 
@@ -389,6 +392,21 @@ private:
     std::vector<ScriptInst> scripts_;
     std::vector<BtInst> trees_;
     std::vector<DrawItem> draws_;
+    // Instanced-batching scratch for opaque static meshes (per-frame reuse):
+    // each batch groups entities with the same mesh + material so N identical
+    // entities cost one instanced draw call instead of N. Flushed whenever a
+    // non-batchable item (sprite / skinned / transparent / custom shader)
+    // interrupts the run, preserving the original draw order.
+    struct DrawBatch {
+        gfx::Mesh mesh;
+        gfx::Material mat;
+        uint32_t start = 0;
+        uint32_t count = 0;
+    };
+    std::vector<DrawBatch> drawBatches_;
+    std::vector<math::Mat4> batchModels_;
+    // Sprite sort scratch (reused instead of a fresh allocation every frame).
+    std::vector<size_t> drawOrder_;
     std::vector<Projectile> projectiles_;
     // P1-3 tweens: Lua `Tween(ent, prop, from, to, time, easing)` calls append
     // here; TickTweens advances them every frame and writes into the entity's

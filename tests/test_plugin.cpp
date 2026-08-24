@@ -195,7 +195,11 @@ TEST(RuntimePluginManagerLuaAndJsCoexist) {
     cfg.ctx = &fx.ctx;
     cfg.gameVars = &fx.gameVars;
     cfg.rngSeed = 12345;
+#ifdef NEON_ENABLE_JS
     CHECK_EQ(mgr.Load(cfg), 2u); // lua_mod + js_mod (too_new gated by version)
+#else
+    CHECK_EQ(mgr.Load(cfg), 1u); // js backend not compiled -> js_mod skipped
+#endif
 
     mgr.Start();
     CHECK(mgr.Running());
@@ -203,38 +207,47 @@ TEST(RuntimePluginManagerLuaAndJsCoexist) {
     // on_start ran for Lua.
     CHECK(fx.gameVars.Get("plugin:lua_mod:lua_started").type == script::Value::Type::Bool);
 
-    // Three ticks -> both backends' tick handlers ran.
+    // Three ticks -> the Lua backend's tick handler ran.
     mgr.Tick(1.0f / 60.0f);
     mgr.Tick(1.0f / 60.0f);
     mgr.Tick(1.0f / 60.0f);
     CHECK_EQ(fx.gameVars.Get("plugin:lua_mod:lua_tick").number, 3.0);
+#ifdef NEON_ENABLE_JS
     CHECK_EQ(fx.gameVars.Get("plugin:js_mod:js_tick").number, 3.0);
 
     // Events dispatch to the subscribed backend.
     mgr.DispatchEvent("player_join", {script::Value::Num(42)});
     CHECK_EQ(fx.gameVars.Get("plugin:js_mod:joined").number, 42.0);
+#endif
 
-    // Commands (both backends).
+    // Commands.
     std::string err;
     CHECK(mgr.RunCommand("lua_add", {script::Value::Num(2), script::Value::Num(3)}, &err));
+#ifdef NEON_ENABLE_JS
     CHECK(mgr.RunCommand("js_add", {script::Value::Num(20), script::Value::Num(22)}, &err));
+#endif
     CHECK(!mgr.RunCommand("missing", {}, &err));
 
-    // Module API exports (callable across backends via the manager).
+    // Module API exports.
     const auto mul = mgr.CallPluginApi("lua_mod", "mul", {script::Value::Num(6), script::Value::Num(7)});
     CHECK(mul.type == script::Value::Type::Number);
     CHECK_EQ(mul.number, 42.0);
+#ifdef NEON_ENABLE_JS
     const auto add = mgr.CallPluginApi("js_mod", "add", {script::Value::Num(1), script::Value::Num(2)});
     CHECK(add.type == script::Value::Type::Number);
     CHECK_EQ(add.number, 3.0);
+#endif
 
-    // Scoped state: both plugins can use the same key without colliding.
+    // Scoped state.
     CHECK(fx.gameVars.Has("plugin:lua_mod:lua_tick"));
+#ifdef NEON_ENABLE_JS
     CHECK(fx.gameVars.Has("plugin:js_mod:js_tick"));
+#endif
 
     // Component schemas registered by plugins are recorded.
     CHECK(mgr.ComponentSchemas().count("lua_comp") == 1u);
 
+#ifdef NEON_ENABLE_JS
     // Plugin.Info reports the ACTIVE plugin's identity (the manager routes
     // scoped state by which plugin is executing).
     {
@@ -259,6 +272,7 @@ function on_load() {
         CHECK_EQ(fx.gameVars.Get("plugin:js_mod:self_id").str, std::string("js_mod"));
         mgr2.Stop();
     }
+#endif
 
     mgr.Stop();
     CHECK(!mgr.Running());

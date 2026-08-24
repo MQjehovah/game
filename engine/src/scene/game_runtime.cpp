@@ -61,6 +61,22 @@ gfx::Color ParseColorHex(const std::string& hex) {
             byte(hex[5], hex[6]) / 255.0f, 1.0f};
 }
 
+// Two materials render identically (same shader/textures/scalars/flags), so
+// their entities can share one instanced draw. Exact float equality is fine:
+// materials are copied from the same resolved source, and materials that
+// merely have numerically identical values are safe to batch.
+bool SameMaterial(const gfx::Material& a, const gfx::Material& b) {
+    return a.shader.id == b.shader.id && a.albedo.id == b.albedo.id &&
+           a.metallicRoughness.id == b.metallicRoughness.id &&
+           a.occlusion.id == b.occlusion.id && a.emissive.id == b.emissive.id &&
+           a.tint.r == b.tint.r && a.tint.g == b.tint.g && a.tint.b == b.tint.b &&
+           a.tint.a == b.tint.a && a.shininess == b.shininess && a.metallic == b.metallic &&
+           a.roughness == b.roughness && a.aoStrength == b.aoStrength &&
+           a.emissiveIntensity == b.emissiveIntensity && a.lit == b.lit &&
+           a.transparent == b.transparent && a.doubleSided == b.doubleSided &&
+           a.alphaTest == b.alphaTest && a.alphaCutoff == b.alphaCutoff;
+}
+
 // Case-insensitive suffix match ("main.JSON" counts as a .json prefab).
 bool HasSuffix(const std::string& s, const std::string& suffix) {
     if (s.size() < suffix.size()) return false;
@@ -1536,15 +1552,33 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera) {
     BuildDrawList();
     // P2-3: sprites render back-to-front by their sortOrder component (2D
     // games); 3D depth-tested meshes are unaffected by the stable order.
-    std::vector<size_t> order(draws_.size());
-    for (size_t i = 0; i < order.size(); ++i) order[i] = i;
-    std::stable_sort(order.begin(), order.end(), [&](size_t a, size_t b) {
+    drawOrder_.resize(draws_.size());
+    for (size_t i = 0; i < drawOrder_.size(); ++i) drawOrder_[i] = i;
+    std::stable_sort(drawOrder_.begin(), drawOrder_.end(), [&](size_t a, size_t b) {
         const SceneSortOrder* sa = world_.Get<SceneSortOrder>(draws_[a].ent);
         const SceneSortOrder* sb = world_.Get<SceneSortOrder>(draws_[b].ent);
         return (sa ? sa->z : 0.0f) < (sb ? sb->z : 0.0f);
     });
+    // Instanced batching: opaque static meshes with the same mesh + material
+    // group into one instanced draw call. Only when the depth buffer works -
+    // the no-depth fallback relies on painter's order, which batching would
+    // change. Flush whenever a non-batchable item interrupts the run so the
+    // relative order of opaque vs transparent/skinned draws never changes.
+    const bool canBatch = renderer.DepthTestAvailable();
+    drawBatches_.clear();
+    batchModels_.clear();
+    auto flushBatches = [&]() {
+        if (drawBatches_.empty()) return;
+        for (const DrawBatch& b : drawBatches_) {
+            if (b.count == 0) continue;
+            renderer.DrawMeshInstanced(b.mesh, b.mat, batchModels_.data() + b.start, b.count,
+                                       true);
+        }
+        drawBatches_.clear();
+        batchModels_.clear();
+    };
     size_t dead = 0;
-    for (size_t idx : order) {
+    for (size_t idx : drawOrder_) {
         DrawItem& item = draws_[idx];
         if (!world_.Alive(item.ent)) {
             ++dead; // scripts can Despawn entities mid-playtest
@@ -1563,6 +1597,36 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera) {
             model = model * math::Mat4::Translation({0.0f, 0.02f, 0.0f});
         }
         const math::Vec3 worldPos{model.m[12], model.m[13], model.m[14]};
+        // Batchable: opaque static mesh with the built-in shader. Skinned
+        // (per-entity bone matrices), sprites, decals, transparent materials
+        // and custom shaders keep the per-entity path.
+        const bool batchable = canBatch && !item.skinned && !item.isSprite && !item.isDecal &&
+                               !item.mat.transparent && !item.mat.shader.Valid() &&
+                               item.mesh.Valid();
+        if (batchable) {
+            gfx::Mesh drawMesh = SelectLodMesh(item.mesh, item.chain, worldPos, camera.position);
+            if (!drawMesh.Valid()) continue;
+            int batchIndex = -1;
+            for (size_t bi = 0; bi < drawBatches_.size(); ++bi) {
+                if (drawBatches_[bi].mesh.Handle().vao == drawMesh.Handle().vao &&
+                    SameMaterial(drawBatches_[bi].mat, item.mat)) {
+                    batchIndex = static_cast<int>(bi);
+                    break;
+                }
+            }
+            if (batchIndex < 0) {
+                DrawBatch b;
+                b.mesh = drawMesh;
+                b.mat = item.mat;
+                b.start = static_cast<uint32_t>(batchModels_.size());
+                batchIndex = static_cast<int>(drawBatches_.size());
+                drawBatches_.push_back(b);
+            }
+            batchModels_.push_back(model);
+            drawBatches_[static_cast<size_t>(batchIndex)].count++;
+            continue;
+        }
+        flushBatches(); // keep relative order with non-batched draws
         if (item.skinned && item.skinned->Valid()) {
             const std::vector<math::Mat4> bones = item.skinned->BoneMatrices();
             for (const auto& part : item.skinned->parts)
@@ -1580,6 +1644,7 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera) {
                               item.mat, model);
         }
     }
+    flushBatches();
     // Skill projectiles (fireballs): bright glowing orbs.
     if (!projectiles_.empty()) {
         if (!fireballMesh_.Valid()) fireballMesh_ = gfx::MakeFireballMesh(renderer);

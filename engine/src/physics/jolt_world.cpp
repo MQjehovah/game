@@ -33,6 +33,13 @@ namespace neon::physics {
 
 namespace {
 
+// Live JoltWorld count for this process. Jolt's type registration is a global
+// (JPH::Factory::sInstance): the engine's lifecycle creates a new world while
+// an older one may still be alive (GameRuntime::Start replaces physics_), so
+// ~Impl must only UnregisterTypes when the LAST world goes away - otherwise
+// destroying one world clears the type info the surviving world still needs.
+int g_joltWorldCount = 0;
+
 constexpr uint32_t kMaxBodies = 2048;
 constexpr uint32_t kMaxBodyPairs = 32768;
 constexpr uint32_t kMaxContactConstraints = 8192;
@@ -151,7 +158,8 @@ private:
 struct JoltWorld::Impl {
     Impl() {
         if (JPH::Factory::sInstance == nullptr) JPH::Factory::sInstance = new JPH::Factory();
-        JPH::RegisterTypes();
+        if (g_joltWorldCount == 0) JPH::RegisterTypes();
+        ++g_joltWorldCount;
         // Broadphase: layer 0 = static group 0 (non-moving), layer 1 = the rest.
         bpInterface.ConfigureLayer(JPH::BroadPhaseLayer(0), 1u << 0, 0u);
         bpInterface.ConfigureLayer(JPH::BroadPhaseLayer(1), kMaxLayerMask & ~(1u << 0), 0u);
@@ -162,7 +170,10 @@ struct JoltWorld::Impl {
         AddImplicitGround();
     }
 
-    ~Impl() { JPH::UnregisterTypes(); }
+    ~Impl() {
+        --g_joltWorldCount;
+        if (g_joltWorldCount == 0) JPH::UnregisterTypes();
+    }
 
     void AddImplicitGround() {
         // Implicit y=0 ground plane, matching the custom world's built-in
@@ -354,6 +365,12 @@ void JoltWorld::Clear() {
     if (!impl_) return;
     JPH::BodyIDVector all;
     impl_->physics.GetBodies(all);
+    // Jolt requires bodies to leave the broadphase BEFORE they are destroyed
+    // (DestroyBody asserts "not in broadphase"); the implicit ground and any
+    // scene bodies are still active when Clear runs. Remove them all first,
+    // then destroy - Release builds compile the assert out and corrupt state,
+    // which shows up later as an access violation.
+    impl_->Bodies().RemoveBodies(all.data(), static_cast<int>(all.size()));
     impl_->Bodies().DestroyBodies(all.data(), static_cast<int>(all.size()));
     impl_->idMap.clear();
     impl_->enabled.clear();
@@ -480,9 +497,14 @@ bool JoltWorld::IsOnGround(BodyId body) const {
     if (cit != impl_->charOnGround.end()) return cit->second;
     const JPH::BodyID bid = impl_->Find(body);
     if (bid == JPH::BodyID()) return false;
-    JPH::BodyLockRead lock(impl_->physics.GetBodyLockInterface(), bid);
-    if (!lock.Succeeded()) return false;
-    const JPH::Vec3 pos = lock.GetBody().GetPosition();
+    JPH::RVec3 pos;
+    {
+        JPH::BodyLockRead lock(impl_->physics.GetBodyLockInterface(), bid);
+        if (!lock.Succeeded()) return false;
+        pos = lock.GetBody().GetPosition();
+    } // Release the body lock before the probe: CastRay takes its own
+      // BroadPhaseQuery + PerBody locks, and Jolt asserts when the same thread
+      // re-enters a lock of equal priority (deadlock guard).
     // Short downward probe from just above the body's bottom; a hit within the
     // probe distance means the body rests on something. (Contact listeners are
     // unreliable for settled bodies, so this ray probe is the ground truth.)

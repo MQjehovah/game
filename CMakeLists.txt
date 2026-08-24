@@ -5,6 +5,17 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# Optional backends. QuickJS is a vendored C99 codebase that does not compile
+# with the MSVC compiler, so the JS backend follows the same opt-in pattern as
+# Jolt: on MSVC it defaults to OFF (scene scripts fall back to Lua;
+# CreateJsHost() returns nullptr). GCC/Clang toolchains keep it ON.
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+  option(NEON_ENABLE_JS
+         "Build the QuickJS (ES2020) JavaScript script backend (vendored QuickJS does not compile with MSVC)" OFF)
+else()
+  option(NEON_ENABLE_JS "Build the QuickJS (ES2020) JavaScript script backend" ON)
+endif()
+
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
@@ -56,7 +67,6 @@ set(ENGINE_CORE_SOURCES
   engine/src/scene/status.cpp
   engine/src/scene/world_chunk.cpp
   engine/src/script/lua_host.cpp
-  engine/src/script/js_host.cpp
   engine/src/script/script_manager.cpp
   engine/src/script/gamevars.cpp
   engine/src/script/bindings.cpp
@@ -66,6 +76,9 @@ set(ENGINE_CORE_SOURCES
   engine/src/ui/system.cpp
   engine/src/ui/document.cpp
 )
+if(NEON_ENABLE_JS)
+  list(APPEND ENGINE_CORE_SOURCES engine/src/script/js_host.cpp)
+endif()
 
 add_library(neon_engine STATIC ${ENGINE_CORE_SOURCES})
 target_include_directories(neon_engine
@@ -389,32 +402,35 @@ target_link_libraries(neon_engine PUBLIC neon_lua)
 # libbf are compiled as C99 and the JS host (engine/src/script/js_host.cpp)
 # implements the same IScriptHost interface as LuaHost.
 # ---------------------------------------------------------------------------
-set(QUICKJS_SOURCES
-  third_party/quickjs/quickjs.c
-  third_party/quickjs/cutils.c
-  third_party/quickjs/libregexp.c
-  third_party/quickjs/libunicode.c
-  third_party/quickjs/libbf.c
-)
+if(NEON_ENABLE_JS)
+  set(QUICKJS_SOURCES
+    third_party/quickjs/quickjs.c
+    third_party/quickjs/cutils.c
+    third_party/quickjs/libregexp.c
+    third_party/quickjs/libunicode.c
+    third_party/quickjs/libbf.c
+  )
 
-add_library(neon_quickjs STATIC ${QUICKJS_SOURCES})
-target_include_directories(neon_quickjs PUBLIC third_party/quickjs)
-set_target_properties(neon_quickjs PROPERTIES
-  C_STANDARD 99
-  C_STANDARD_REQUIRED ON
-  C_EXTENSIONS ON
-)
-target_compile_definitions(neon_quickjs PRIVATE
-  CONFIG_VERSION="2024-01-13"
-  CONFIG_BIGNUM
-)
-if(MSVC)
-  target_compile_definitions(neon_quickjs PRIVATE _CRT_SECURE_NO_WARNINGS)
-  target_compile_options(neon_quickjs PRIVATE /W3)
-elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-  target_compile_options(neon_quickjs PRIVATE -w)
+  add_library(neon_quickjs STATIC ${QUICKJS_SOURCES})
+  target_include_directories(neon_quickjs PUBLIC third_party/quickjs)
+  set_target_properties(neon_quickjs PROPERTIES
+    C_STANDARD 99
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS ON
+  )
+  target_compile_definitions(neon_quickjs PRIVATE
+    CONFIG_VERSION="2024-01-13"
+    CONFIG_BIGNUM
+  )
+  if(MSVC)
+    target_compile_definitions(neon_quickjs PRIVATE _CRT_SECURE_NO_WARNINGS)
+    target_compile_options(neon_quickjs PRIVATE /W3)
+  elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(neon_quickjs PRIVATE -w)
+  endif()
+  target_link_libraries(neon_engine PUBLIC neon_quickjs)
+  target_compile_definitions(neon_engine PUBLIC NEON_ENABLE_JS=1)
 endif()
-target_link_libraries(neon_engine PUBLIC neon_quickjs)
 
 # ---------------------------------------------------------------------------
 # Headless authoritative server (T6.3): binds a UDP socket, runs the data-driven
@@ -467,11 +483,14 @@ endif()
 # Tests
 # ---------------------------------------------------------------------------
 enable_testing()
+if(NEON_ENABLE_JS)
+  set(NEON_JS_TEST tests/test_script_js.cpp)
+endif()
 add_executable(neon_tests tests/test_main.cpp tests/test_serialize.cpp tests/test_pack.cpp
   tests/test_physics.cpp tests/test_protocol.cpp tests/test_obj.cpp tests/test_gltf.cpp tests/test_json.cpp
   tests/test_ui_document.cpp
   tests/test_script.cpp tests/test_script_bindings.cpp tests/test_script_determinism.cpp
-  tests/test_script_js.cpp
+  ${NEON_JS_TEST}
   tests/test_plugin.cpp
   tests/test_bt.cpp tests/test_scene_file.cpp tests/test_scene_export.cpp tests/test_manifest.cpp
   tests/test_nav.cpp

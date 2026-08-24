@@ -90,6 +90,17 @@ public:
         std::string sceneJson;           // inline scene JSON (overrides sceneJsonPath)
         std::string scriptBaseDir;       // base dir for scripts/behaviors/prefabs
         std::string assetBaseDir;        // asset root (unused headless; parity with player)
+        // Physics backend for the authoritative simulation. Defaults to "jolt"
+        // when Jolt is compiled in so the server matches the client player's
+        // rigid-body simulation (packaged neon_game runs Jolt); "custom" keeps
+        // the deterministic sphere/AABB solver (e.g. for cross-platform
+        // bit-exact determinism requirements). Unknown values fall back to
+        // "custom" inside GameRuntime.
+#ifdef NEON_ENABLE_JOLT
+        std::string physicsBackend = "jolt";
+#else
+        std::string physicsBackend = "custom";
+#endif
         uint64_t rngSeed = 20260821u;    // fixed: the sim is reproducible
         uint64_t clientTimeoutMs = 5000; // disconnect a client silent this long
         uint32_t snapshotEveryTicks = 1; // broadcast a snapshot every N fixed ticks

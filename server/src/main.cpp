@@ -34,6 +34,8 @@ void PrintUsage(const char* prog) {
         "  --assets DIR  asset base dir (unused headless; kept for parity)\n"
         "  --ticks N     run exactly N fixed 60Hz simulation steps then exit 0\n"
         "  --seed N      deterministic simulation seed (default: fixed constant)\n"
+        "  --physics B   physics backend: 'jolt' (default when compiled) or\n"
+        "                'custom' (deterministic sphere/AABB solver)\n"
         "  --loopback    bind 127.0.0.1 instead of 0.0.0.0\n"
         "  --help        show this help\n",
         prog);
@@ -86,6 +88,9 @@ int main(int argc, char** argv) {
         } else if (arg == "--seed") {
             const char* v = value("--seed");
             if (v) cfg.rngSeed = std::strtoull(v, nullptr, 10);
+        } else if (arg == "--physics") {
+            const char* v = value("--physics");
+            if (v) cfg.physicsBackend = v;
         } else if (arg == "--loopback") {
             cfg.loopback = true;
         } else {

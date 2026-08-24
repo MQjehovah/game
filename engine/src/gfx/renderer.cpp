@@ -1084,12 +1084,8 @@ void Renderer::DrawShadowCastersSorted(const math::Mat4& lightVP) {
     // Extract the light view (projection is ortho, translation-only per axis)
     // to sort casters by their distance along the light direction.
     const math::Mat4 lightView = lightVP;
-    struct SortKey {
-        const ShadowDraw* draw;
-        float lightZ;
-    };
-    std::vector<SortKey> keys;
-    keys.reserve(shadowCasters_.size());
+    shadowSortKeys_.clear();
+    shadowSortKeys_.reserve(shadowCasters_.size());
     for (const ShadowDraw& draw : shadowCasters_) {
         math::Vec3 center;
         if (!draw.models.empty()) {
@@ -1100,13 +1096,13 @@ void Renderer::DrawShadowCastersSorted(const math::Mat4& lightVP) {
         } else {
             center = draw.model.TransformPoint(draw.bounds.Center());
         }
-        keys.push_back({&draw, lightView.TransformPoint(center).z});
+        shadowSortKeys_.push_back({&draw, lightView.TransformPoint(center).z});
     }
     // NDC z grows as light-space z goes negative (ortho slope is negative), so
     // the farthest caster has the largest value; draw it first (last wins).
-    std::sort(keys.begin(), keys.end(),
-              [](const SortKey& a, const SortKey& b) { return a.lightZ > b.lightZ; });
-    for (const SortKey& k : keys) DrawShadowCaster(*k.draw, lightVP);
+    std::sort(shadowSortKeys_.begin(), shadowSortKeys_.end(),
+              [](const ShadowSortKey& a, const ShadowSortKey& b) { return a.z > b.z; });
+    for (const ShadowSortKey& k : shadowSortKeys_) DrawShadowCaster(*k.draw, lightVP);
 }
 
 void Renderer::DrawShadowCaster(const ShadowDraw& draw, const math::Mat4& lightVP) {
@@ -1118,11 +1114,11 @@ void Renderer::DrawShadowCaster(const ShadowDraw& draw, const math::Mat4& lightV
                                     static_cast<uint32_t>(draw.models.size()));
     } else if (!draw.bones.empty()) {
         backend_->UseShader(depthSkinnedShader_);
-        std::vector<float> flat(static_cast<size_t>(draw.boneCount) * 16);
+        boneUniformFlat_.resize(static_cast<size_t>(draw.boneCount) * 16);
         for (int i = 0; i < draw.boneCount; ++i)
-            std::memcpy(flat.data() + static_cast<size_t>(i) * 16,
+            std::memcpy(boneUniformFlat_.data() + static_cast<size_t>(i) * 16,
                         draw.bones[static_cast<size_t>(i)].Data(), 16 * sizeof(float));
-        backend_->SetUniformMat4Array("uBoneMatrices", flat.data(), draw.boneCount);
+        backend_->SetUniformMat4Array("uBoneMatrices", boneUniformFlat_.data(), draw.boneCount);
         backend_->SetUniformMat4("uMVP", lightVP * draw.model);
         backend_->DrawMesh(draw.mesh);
     } else {
@@ -1162,12 +1158,8 @@ void Renderer::DrawPointShadowCastersSorted(int lightIndex) {
     // Color-encoded maps have no depth buffer, so draw casters far -> near from
     // the light (last wins = nearest surface). Casters fully outside the
     // light's sphere of influence cannot shadow anything the light reaches.
-    struct SortKey {
-        const ShadowDraw* draw;
-        float dist;
-    };
-    std::vector<SortKey> keys;
-    keys.reserve(shadowCasters_.size());
+    shadowSortKeys_.clear();
+    shadowSortKeys_.reserve(shadowCasters_.size());
     for (const ShadowDraw& draw : shadowCasters_) {
         if (!draw.mesh.Valid()) continue;
         math::Vec3 center;
@@ -1181,10 +1173,10 @@ void Renderer::DrawPointShadowCastersSorted(int lightIndex) {
         const float boxRadius = ext.Length();
         const float dist = (center - lightPos).Length();
         if (dist - boxRadius > range) continue;
-        keys.push_back({&draw, dist});
+        shadowSortKeys_.push_back({&draw, dist});
     }
-    std::sort(keys.begin(), keys.end(),
-              [](const SortKey& a, const SortKey& b) { return a.dist > b.dist; });
+    std::sort(shadowSortKeys_.begin(), shadowSortKeys_.end(),
+              [](const ShadowSortKey& a, const ShadowSortKey& b) { return a.z > b.z; });
 
     backend_->SetBlendMode(BlendMode::Opaque);
     backend_->SetCullMode(CullMode::Back);
@@ -1192,7 +1184,7 @@ void Renderer::DrawPointShadowCastersSorted(int lightIndex) {
     for (int face = 0; face < 6; ++face) {
         backend_->BindRenderTarget(pointShadowRT_[lightIndex][face]);
         backend_->Clear({1.0f, 1.0f, 1.0f, 1.0f}, 1.0f);
-        for (const SortKey& k : keys)
+        for (const ShadowSortKey& k : shadowSortKeys_)
             DrawPointShadowCaster(*k.draw, pointLightViewProj_[lightIndex][face], lightPos, range);
     }
     backend_->BindDefaultTarget();
@@ -1210,11 +1202,11 @@ void Renderer::DrawPointShadowCaster(const ShadowDraw& draw, const math::Mat4& l
                                     static_cast<uint32_t>(draw.models.size()));
     } else if (!draw.bones.empty()) {
         backend_->UseShader(pointDepthSkinnedShader_);
-        std::vector<float> flat(static_cast<size_t>(draw.boneCount) * 16);
+        boneUniformFlat_.resize(static_cast<size_t>(draw.boneCount) * 16);
         for (int i = 0; i < draw.boneCount; ++i)
-            std::memcpy(flat.data() + static_cast<size_t>(i) * 16,
+            std::memcpy(boneUniformFlat_.data() + static_cast<size_t>(i) * 16,
                         draw.bones[static_cast<size_t>(i)].Data(), 16 * sizeof(float));
-        backend_->SetUniformMat4Array("uBoneMatrices", flat.data(), draw.boneCount);
+        backend_->SetUniformMat4Array("uBoneMatrices", boneUniformFlat_.data(), draw.boneCount);
         backend_->SetUniformMat4("uMVP", lightVP * draw.model);
         backend_->SetUniformMat4("uModel", draw.model);
         backend_->SetUniformVec3("uLightPos", lightPos);
@@ -1408,11 +1400,11 @@ void Renderer::DrawSkinnedMesh(const Mesh& mesh, const Material& material,
     ApplyMaterial(material, viewProj_ * model, model, NormalMatrix(model), shader);
 
     if (count > 0) {
-        std::vector<float> flat(static_cast<size_t>(count) * 16);
+        boneUniformFlat_.resize(static_cast<size_t>(count) * 16);
         for (int i = 0; i < count; ++i)
-            std::memcpy(flat.data() + static_cast<size_t>(i) * 16,
+            std::memcpy(boneUniformFlat_.data() + static_cast<size_t>(i) * 16,
                         boneMatrices[static_cast<size_t>(i)].Data(), 16 * sizeof(float));
-        backend_->SetUniformMat4Array("uBoneMatrices", flat.data(), count);
+        backend_->SetUniformMat4Array("uBoneMatrices", boneUniformFlat_.data(), count);
     }
     backend_->DrawMesh(mesh.Handle());
     ++stats_.drawCalls;
@@ -1424,32 +1416,32 @@ void Renderer::DrawMeshInstanced(const Mesh& mesh, const Material& material,
     if (!mesh.Valid() || !models || count == 0) return;
     Flush2D();
 
-    std::vector<math::Mat4> visible;
-    visible.reserve(count);
+    instancedVisible_.clear();
+    instancedVisible_.reserve(count);
     const math::AABB& bounds = mesh.Bounds();
     for (uint32_t i = 0; i < count; ++i) {
         if (frustumCull && frustumValid_ &&
             !frustum_.Intersects(math::TransformAABB(bounds, models[i]))) {
             continue;
         }
-        visible.push_back(models[i]);
+        instancedVisible_.push_back(models[i]);
     }
-    if (visible.empty()) return;
+    if (instancedVisible_.empty()) return;
 
     if (csmEnabled_ && shadowRecording_ && !material.transparent) {
         shadowCasters_.push_back(
-            {mesh.Handle(), math::Mat4::Identity(), visible, {}, 0, mesh.Bounds()});
+            {mesh.Handle(), math::Mat4::Identity(), instancedVisible_, {}, 0, mesh.Bounds()});
     }
 
     ShaderHandle shader = material.shader.Valid()
                               ? material.shader
                               : (material.lit ? litInstancedShader_ : unlitInstancedShader_);
     ApplyMaterial(material, viewProj_, math::Mat4::Identity(), math::Mat4::Identity(), shader);
-    backend_->DrawMeshInstanced(mesh.Handle(), visible.data(),
-                                static_cast<uint32_t>(visible.size()));
+    backend_->DrawMeshInstanced(mesh.Handle(), instancedVisible_.data(),
+                                static_cast<uint32_t>(instancedVisible_.size()));
     ++stats_.drawCalls;
-    stats_.instances += static_cast<uint32_t>(visible.size());
-    stats_.triangles += mesh.TriangleCount() * static_cast<uint32_t>(visible.size());
+    stats_.instances += static_cast<uint32_t>(instancedVisible_.size());
+    stats_.triangles += mesh.TriangleCount() * static_cast<uint32_t>(instancedVisible_.size());
 }
 
 void Renderer::DrawProjectedShadowVerts(const std::vector<Vertex3D>& verts,
@@ -1458,8 +1450,8 @@ void Renderer::DrawProjectedShadowVerts(const std::vector<Vertex3D>& verts,
                                         const Color& color) {
     if (verts.empty() || indices.size() < 3 || std::fabs(lightDir.y) < 1e-4f) return;
 
-    std::vector<LineVertex> projected;
-    projected.reserve(indices.size());
+    projectedShadowVerts_.clear();
+    projectedShadowVerts_.reserve(indices.size());
     for (size_t i = 0; i + 2 < indices.size(); i += 3) {
         math::Vec3 w0 = model.TransformPoint(verts[indices[i]].pos);
         math::Vec3 w1 = model.TransformPoint(verts[indices[i + 1]].pos);
@@ -1472,11 +1464,11 @@ void Renderer::DrawProjectedShadowVerts(const std::vector<Vertex3D>& verts,
         math::Vec3 p0 = projectToGround(w0);
         math::Vec3 p1 = projectToGround(w1);
         math::Vec3 p2 = projectToGround(w2);
-        projected.push_back({p0, color});
-        projected.push_back({p1, color});
-        projected.push_back({p2, color});
+        projectedShadowVerts_.push_back({p0, color});
+        projectedShadowVerts_.push_back({p1, color});
+        projectedShadowVerts_.push_back({p2, color});
     }
-    if (projected.empty()) return;
+    if (projectedShadowVerts_.empty()) return;
 
     Flush2D();
     backend_->SetBlendMode(BlendMode::Alpha);
@@ -1484,8 +1476,9 @@ void Renderer::DrawProjectedShadowVerts(const std::vector<Vertex3D>& verts,
     backend_->SetCullMode(CullMode::None);
     backend_->UseShader(linesShader_);
     backend_->SetUniformMat4("uMVP", viewProj_);
-    backend_->DrawPrimitives(projected.data(), static_cast<uint32_t>(projected.size()), 28, nullptr,
-                             0, PrimitiveTopology::Triangles);
+    backend_->DrawPrimitives(projectedShadowVerts_.data(),
+                             static_cast<uint32_t>(projectedShadowVerts_.size()), 28, nullptr, 0,
+                             PrimitiveTopology::Triangles);
 }
 
 void Renderer::DrawProjectedShadow(const Mesh& mesh, const math::Mat4& model,

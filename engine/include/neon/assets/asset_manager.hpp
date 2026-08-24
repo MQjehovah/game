@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <functional>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 #include "neon/assets/async_loader.hpp"
@@ -226,6 +227,11 @@ private:
     std::map<std::pair<std::string, int>, gfx::Font> fonts_;
     std::map<std::string, uint64_t> textureMtimes_;
     std::map<std::string, uint64_t> meshMtimes_;
+    // Negative texture cache (missing files): a failed load is remembered so
+    // repeated requests (model previews, hot-reload polls) do not re-open the
+    // file and spam the log every frame. Re-validated on each request via
+    // FileMTime, so a file added later is picked up on the next call.
+    std::set<std::string> failedTextures_;
 
     // Refcount + deferred GPU reclaim (P0-3). PumpAsync is called once per
     // frame on the main thread, so its frame counter is the authoritative

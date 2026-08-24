@@ -117,6 +117,12 @@ public:
     bool PointShadowMapActive() const { return pointShadowsActive_; }
     // Shadow map size in pixels per face.
     int PointShadowMapSize() const { return kPointShadowSize; }
+    // True when the backend's depth buffer is usable (self-tested at init).
+    // Callers that rely on depth-tested draw order (e.g. instanced batching of
+    // opaque scene entities) must fall back to per-entity draws when false:
+    // without a depth buffer the scene is painter's-sorted, so batching would
+    // change the result.
+    bool DepthTestAvailable() const { return depthAvailable_; }
 
     // HDR + bloom post-processing (Task 3.6). When the backend supports
     // half-float render targets (self-tested at init), the 3D scene renders
@@ -317,6 +323,13 @@ private:
         int boneCount = 0;
         math::AABB bounds;
     };
+    // Painter's-order key used to sort shadow casters (the color-encoded
+    // shadow pass has no depth buffer). Stored in a member vector so the
+    // per-frame shadow passes do not allocate.
+    struct ShadowSortKey {
+        const ShadowDraw* draw;
+        float z;
+    };
     void RunShadowPass();
     void DrawShadowCaster(const ShadowDraw& draw, const math::Mat4& lightVP);
     void DrawShadowCastersSorted(const math::Mat4& lightVP);
@@ -489,6 +502,15 @@ private:
     };
     std::vector<UIVertex> uiVerts_;
     std::vector<uint16_t> uiIndices_;
+    // Reusable per-frame scratch buffers. The draw paths below used to build a
+    // fresh std::vector on every call (instanced culling, bone-matrix flatten,
+    // shadow-caster sort, projected-shadow projection); they are reused across
+    // calls within a frame (and across frames) so a busy scene stops paying
+    // for heap churn in the hot path.
+    std::vector<math::Mat4> instancedVisible_;
+    std::vector<float> boneUniformFlat_;
+    std::vector<ShadowSortKey> shadowSortKeys_;
+    std::vector<LineVertex> projectedShadowVerts_;
     TextureHandle currentUITexture_;
     BlendMode currentUIBlend_ = BlendMode::Alpha;
     platform::IWindow* window_ = nullptr;

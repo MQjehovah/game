@@ -639,7 +639,9 @@ void ValidateInto(const PackConfig& cfg, ProjectContext& pc) {
     if (pc.syntaxCheck && !scriptsToCheck.empty()) {
         auto luaHost = script::CreateLuaHost();
         auto jsHost = script::CreateJsHost();
-        if ((!luaHost || !luaHost->Init()) || (!jsHost || !jsHost->Init())) {
+        if (luaHost && !luaHost->Init()) luaHost.reset();
+        if (jsHost && !jsHost->Init()) jsHost.reset();
+        if (!luaHost && !jsHost) {
             r.warnings.push_back("script host unavailable; skipping syntax checks");
         } else {
             for (const auto& kv : scriptsToCheck) {
@@ -650,17 +652,27 @@ void ValidateInto(const PackConfig& cfg, ProjectContext& pc) {
                 }
                 const bool isJs = kv.second.size() >= 3 &&
                                   kv.second.compare(kv.second.size() - 3, 3, ".js") == 0;
-                script::IScriptHost& host = isJs ? *jsHost : *luaHost;
-                if (!host.CheckSyntax(source)) {
-                    const script::ScriptError& err = host.LastError();
+                script::IScriptHost* host = isJs ? jsHost.get() : luaHost.get();
+                if (!host) {
+                    // The backend for this file is not compiled in (e.g.
+                    // NEON_ENABLE_JS=OFF). Warn instead of failing the whole
+                    // project, and still pack the script (runtime skips
+                    // unavailable backends the same way).
+                    r.warnings.push_back("script '" + kv.second +
+                                         "' not syntax-checked (no " +
+                                         (isJs ? "js" : "lua") + " host)");
+                    continue;
+                }
+                if (!host->CheckSyntax(source)) {
+                    const script::ScriptError& err = host->LastError();
                     char line[32];
                     std::snprintf(line, sizeof(line), "%d", err.line);
                     r.errors.push_back("script '" + kv.second + "' syntax error (line " + line +
                                        "): " + err.message);
                 }
             }
-            luaHost->Shutdown();
-            jsHost->Shutdown();
+            if (luaHost) luaHost->Shutdown();
+            if (jsHost) jsHost->Shutdown();
         }
     }
 

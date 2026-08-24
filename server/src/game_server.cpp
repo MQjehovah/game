@@ -81,6 +81,7 @@ bool GameServer::Start(const Config& cfg) {
     rcfg.assetBaseDir = cfg_.assetBaseDir;
     rcfg.rngSeed = cfg_.rngSeed;
     rcfg.input = &controllerInput_;
+    rcfg.physicsBackend = cfg_.physicsBackend;
     core::Status st = runtime_.Start(sceneJson, rcfg);
     if (!st.Ok()) {
         NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Error, "server: %s",
@@ -277,7 +278,12 @@ void GameServer::HandleLogin(const net::NetAddress& addr, const net::MsgLogin& l
         NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Warn,
                      "server: login from %s:%u refused (banned name)", addr.host.c_str(),
                      addr.port);
-        RemoveClient(addr);
+        // Defer: this runs inside the client's ReliableChannel deliver
+        // callback (OnClientMessage -> HandleLogin), so destroying the Client
+        // now would free the channel mid-OnDatagram (use-after-free; crashes
+        // on MSVC, "works" by luck on libstdc++). DropTimedOutClients drains
+        // pendingRemovals_ at the end of the same Step.
+        pendingRemovals_.push_back(addr);
         return;
     }
     c.lastSeenMs = nowMs_;
@@ -397,7 +403,10 @@ void GameServer::HandleInput(const net::NetAddress& addr, const net::MsgInput& i
             NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Warn,
                          "server: client %llu banned for input flooding",
                          static_cast<unsigned long long>(c.clientId));
-            RemoveClient(addr);
+            // Deferred (see HandleLogin): this runs inside the channel's
+            // deliver callback; removing the client here frees the channel
+            // while OnDatagram is still executing on it.
+            pendingRemovals_.push_back(addr);
         }
         return;  // drop the excess input
     }
@@ -557,7 +566,9 @@ void GameServer::SetupRpc() {
                 NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Warn,
                              "server: admin kicked client %llu",
                              static_cast<unsigned long long>(target));
-                RemoveClient(it->first);
+                // Deferred (see HandleLogin): admin RPCs are processed inside
+                // the sender's channel deliver callback.
+                pendingRemovals_.push_back(it->first);
                 break;
             }
         }
@@ -579,7 +590,7 @@ void GameServer::SetupRpc() {
                 NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Warn,
                              "server: admin banned client %llu",
                              static_cast<unsigned long long>(target));
-                RemoveClient(it->first);
+                pendingRemovals_.push_back(it->first);
                 break;
             }
         }
@@ -936,7 +947,7 @@ void GameServer::DropTimedOutClients(uint64_t nowMs) {
     }
     for (const net::NetAddress& addr : pendingRemovals_) {
         NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Info,
-                     "server: client %s:%u disconnected (reliable timeout)",
+                     "server: client %s:%u disconnected (queued removal)",
                      addr.host.c_str(), addr.port);
         RemoveClient(addr);
     }
