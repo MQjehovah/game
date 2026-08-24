@@ -9,6 +9,7 @@
 // The canvas UI (EditorApp::BuildBtPanel and friends) lives in bt_editor.cpp
 // and is smoke-tested from the editor itself.
 
+#include <algorithm>
 #include <cstdint>
 #include <functional>
 #include <map>

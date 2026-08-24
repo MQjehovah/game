@@ -18,6 +18,7 @@
 #include "neon/gfx/material.hpp"
 #include "neon/gfx/mesh.hpp"
 #include "neon/physics/physics.hpp"
+#include "neon/physics/jolt_world.hpp"
 #include "neon/platform/input.hpp"
 #include "neon/scene/scene_file.hpp"
 #include "neon/scene/skills.hpp"
@@ -60,6 +61,10 @@ struct GameRuntimeConfig {
     gfx::Font font2d;                       // 2D canvas font (on_render text); invalid = skip
     uint64_t rngSeed = 20260821u;           // fixed: playtest RNG is reproducible
     bool headless = false;                  // skip draw-list build; pure simulation
+    // Physics backend: "custom" (deterministic custom solver, the server
+    // default) or "jolt" (Jolt rigid bodies; compiled when NEON_ENABLE_JOLT).
+    // Unknown values fall back to "custom".
+    std::string physicsBackend = "custom";
 };
 
 // A self-contained, reusable game runtime. The editor embeds one instance for
@@ -129,9 +134,9 @@ public:
     size_t ScriptCount() const { return scripts_.size(); }
     size_t BehaviorTreeCount() const { return trees_.size(); }
     size_t DrawCount() const { return draws_.size(); }
-    size_t PhysicsBodyCount() const { return physics_.BodyCount(); }
-    physics::World& PhysicsWorld() { return physics_; }
-    const physics::World& PhysicsWorld() const { return physics_; }
+    size_t PhysicsBodyCount() const { return physics_ ? physics_->BodyCount() : 0; }
+    physics::World& PhysicsWorld() { return *physics_; }
+    const physics::World& PhysicsWorld() const { return *physics_; }
     double SimTime() const { return simTime_; }
 
     // Observability for tests/debug: the per-entity blackboard value the
@@ -292,6 +297,7 @@ private:
     void CallEntityFunctionHandle(ScriptInst& inst, uint64_t handle,
                                   const char* fn, const std::vector<script::Value>& args);
     void RegisterSceneBodies();
+    void RegisterCharacters();
     void SyncSceneBodies();
     std::string ReadScript(const std::string& path) const;
     std::string FullScriptPath(const std::string& path) const;
@@ -300,7 +306,7 @@ private:
     std::string FullAssetPath(const std::string& path) const;
 
     ecs::World world_;
-    physics::World physics_;
+    std::unique_ptr<physics::World> physics_;
     float physicsAccum_ = 0.0f; // fixed-step accumulator (60 Hz)
     script::ScriptContext scriptCtx_; // owns the GameVars scripts + BT share
     PrefabLibrary prefs_;             // prefabs loaded from <scriptBaseDir>/prefabs/

@@ -48,7 +48,14 @@ std::vector<ComponentSchema> BuildSchemas() {
                     {"restitution", "弹性", FieldType::Number, 0, 0, 1, 0.01},
                     {"friction", "摩擦", FieldType::Number, 0.4, 0, 1, 0.01},
                     {"damping", "线性阻尼", FieldType::Number, 0, 0, 10, 0.01},
-                    {"gravityScale", "重力缩放", FieldType::Number, 1, 0, 10, 0.1}}});
+                    {"gravityScale", "重力缩放", FieldType::Number, 1, 0, 10, 0.1},
+                    {"layer", "碰撞层", FieldType::Int, 1, 0, 255, 1},
+                    {"mask", "碰撞掩码", FieldType::Int, 0xFFFFFFFF, 0, 0xFFFFFFFF, 1}}});
+    out.push_back({"character", "角色控制器",
+                   {{"radius", "半径", FieldType::Number, 0.4, 0.01, 10, 0.05},
+                    {"halfHeight", "半高", FieldType::Number, 0.9, 0.1, 50, 0.1},
+                    {"layer", "碰撞层", FieldType::Int, 1, 0, 255, 1},
+                    {"mask", "碰撞掩码", FieldType::Int, 0xFFFFFFFF, 0, 0xFFFFFFFF, 1}}});
     out.push_back({"plant", "植物",
                    {{"row", "行", FieldType::Int, 0, 0, 4, 1},
                     {"col", "列", FieldType::Int, 0, 0, 8, 1},

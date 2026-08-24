@@ -666,6 +666,8 @@ physics::RigidBodyDesc RigidBodyDescFromValue(IScriptHost& host, int argIndex) {
         else if (kv.first == "friction") desc.friction = f;
         else if (kv.first == "damping") desc.linearDamping = f;
         else if (kv.first == "gravityScale") desc.gravityScale = f;
+        else if (kv.first == "layer") desc.layer = static_cast<uint32_t>(f);
+        else if (kv.first == "mask") desc.mask = static_cast<uint32_t>(f);
     }
     return desc;
 }
@@ -775,6 +777,35 @@ Value NativePhysicsCollisions(IScriptHost& host, void* user) {
         t.table->array.push_back(std::move(pair));
     }
     return t;
+}
+
+Value NativePhysicsAddCharacter(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->physics) return Value::Nil();
+    const math::Vec3 pos = Vec3FromValue(host.GetArg(0), math::Vec3{});
+    const float radius = NumberArg(host, 1, 0.4f);
+    const float halfHeight = NumberArg(host, 2, 0.9f);
+    const physics::RigidBodyDesc desc = RigidBodyDescFromValue(host, 3);
+    const physics::World::BodyId id =
+        ctx->physics->AddCharacter(0, pos, radius, halfHeight, desc);
+    return Value::Num(static_cast<double>(id.id));
+}
+
+Value NativePhysicsSetCharacterMove(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->physics) return Value::Nil();
+    const uint32_t id = SafeU32FromNumber(NumberArg(host, 0, 0.0));
+    if (id != 0)
+        ctx->physics->SetCharacterMove({id}, Vec3FromValue(host.GetArg(1), math::Vec3{}));
+    return Value::Nil();
+}
+
+Value NativePhysicsGetCharacterMove(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->physics) return Value::Nil();
+    const uint32_t id = SafeU32FromNumber(NumberArg(host, 0, 0.0));
+    return id == 0 ? Value::Nil()
+                   : Vec3ToValue(ctx->physics->GetCharacterMove({id}));
 }
 
 Value NativePlaySfx(IScriptHost& host, void* user) {
@@ -983,6 +1014,9 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("PhysicsSetFriction", &NativePhysicsSetFriction, &ctx);
     host.Register("PhysicsIsOnGround", &NativePhysicsIsOnGround, &ctx);
     host.Register("PhysicsCollisions", &NativePhysicsCollisions, &ctx);
+    host.Register("PhysicsAddCharacter", &NativePhysicsAddCharacter, &ctx);
+    host.Register("PhysicsSetCharacterMove", &NativePhysicsSetCharacterMove, &ctx);
+    host.Register("PhysicsGetCharacterMove", &NativePhysicsGetCharacterMove, &ctx);
     host.Register("PlaySfx", &NativePlaySfx, &ctx);
     host.Register("InputAxis", &NativeInputAxis, &ctx);
     host.Register("InputKey", &NativeInputKey, &ctx);

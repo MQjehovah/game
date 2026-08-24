@@ -197,7 +197,21 @@ struct SceneRigidBody {
     float friction = 0.4f;
     float linearDamping = 0.0f;
     float gravityScale = 1.0f;
+    uint32_t layer = 1;                 // collision group (0..255 on Jolt)
+    uint32_t mask = 0xFFFFFFFFu;        // collision mask (which groups to hit)
     uint32_t bodyId = 0;                // physics::World::BodyId (runtime state)
+};
+// Character body component (Jolt CharacterVirtual when the Jolt backend is
+// active). A capsule-shaped kinematic controller that moves with the desired
+// velocity, lands on geometry and reports ground state - the player/NPC
+// movement primitive. The custom (deterministic server) world does not
+// implement characters; entities with this component are skipped there.
+struct SceneCharacter {
+    float radius = 0.4f;
+    float halfHeight = 0.9f;            // capsule half height (total height 2*h+r*2)
+    uint32_t layer = 1;
+    uint32_t mask = 0xFFFFFFFFu;
+    uint32_t bodyId = 0;                // JoltWorld character handle (runtime state)
 };
 struct SceneScript {
     std::string backend;

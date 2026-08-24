@@ -18,6 +18,8 @@ struct RigidBodyDesc {
     float friction = 0.4f;      // tangential impulse coefficient
     float linearDamping = 0.0f; // exponential velocity decay per second
     float gravityScale = 1.0f;  // 0 disables gravity for this body
+    uint32_t layer = 1;         // collision group id
+    uint32_t mask = 0xFFFFFFFFu; // collision mask (which groups this body hits)
 };
 
 // Lightweight deterministic rigid-body engine: dynamic spheres + AABBs against
@@ -27,6 +29,8 @@ struct RigidBodyDesc {
 // Jolt/Bullet later via a separate integration layer.
 class World {
 public:
+    virtual ~World() = default;
+
     struct BodyId {
         uint32_t id = 0;
         bool Valid() const { return id != 0; }
@@ -34,43 +38,53 @@ public:
 
     // Shape spawn helpers. `owner` is an opaque gameplay id (entity key etc.)
     // that comes back in Collisions() so the game layer can react.
-    BodyId AddSphere(uint64_t owner, const math::Vec3& pos, float radius, bool dynamic,
-                     const RigidBodyDesc& desc = {});
-    BodyId AddBox(uint64_t owner, const math::Vec3& center, const math::Vec3& halfExtents,
-                  bool dynamic, const RigidBodyDesc& desc = {});
+    virtual BodyId AddSphere(uint64_t owner, const math::Vec3& pos, float radius, bool dynamic,
+                             const RigidBodyDesc& desc = {});
+    virtual BodyId AddBox(uint64_t owner, const math::Vec3& center, const math::Vec3& halfExtents,
+                          bool dynamic, const RigidBodyDesc& desc = {});
     // Convenience: absolute AABB box (min/max), static by default.
-    BodyId AddBox(uint64_t owner, const math::AABB& box, bool dynamic = false,
-                  const RigidBodyDesc& desc = {});
-    void Remove(BodyId body);
-    void Clear();
+    virtual BodyId AddBox(uint64_t owner, const math::AABB& box, bool dynamic = false,
+                          const RigidBodyDesc& desc = {});
+    // Character controller (Jolt backend): a capsule-shaped kinematic body that
+    // follows the desired velocity each step and lands on geometry. The custom
+    // deterministic world returns an invalid id (characters are a Jolt feature).
+    virtual BodyId AddCharacter(uint64_t owner, const math::Vec3& pos, float radius,
+                                float halfHeight, const RigidBodyDesc& desc = {});
+    // Desired horizontal/vertical velocity for a character body (clamped by the
+    // controller's collision response).
+    virtual void SetCharacterMove(BodyId body, const math::Vec3& move);
+    virtual math::Vec3 GetCharacterMove(BodyId body) const;
+    virtual void Remove(BodyId body);
+    virtual void Clear();
 
-    void SetPosition(BodyId body, const math::Vec3& pos);
-    math::Vec3 GetPosition(BodyId body) const;
-    void SetVelocity(BodyId body, const math::Vec3& vel);
-    math::Vec3 GetVelocity(BodyId body) const;
-    void SetMass(BodyId body, float mass);
-    void SetRestitution(BodyId body, float restitution);
-    void SetFriction(BodyId body, float friction);
-    void SetLinearDamping(BodyId body, float damping);
-    void SetGravityScale(BodyId body, float scale);
-    void SetEnabled(BodyId body, bool enabled);
-    bool IsOnGround(BodyId body) const;
+    virtual void SetPosition(BodyId body, const math::Vec3& pos);
+    virtual math::Vec3 GetPosition(BodyId body) const;
+    virtual void SetVelocity(BodyId body, const math::Vec3& vel);
+    virtual math::Vec3 GetVelocity(BodyId body) const;
+    virtual void SetMass(BodyId body, float mass);
+    virtual void SetRestitution(BodyId body, float restitution);
+    virtual void SetFriction(BodyId body, float friction);
+    virtual void SetLinearDamping(BodyId body, float damping);
+    virtual void SetGravityScale(BodyId body, float scale);
+    virtual void SetEnabled(BodyId body, bool enabled);
+    virtual bool IsOnGround(BodyId body) const;
 
     // Advances the world by `dt` seconds under `gravity` (e.g. {0,-9.81,0}).
     // Deterministic for a fixed dt: same body order + inputs => same result.
-    void Step(float dt, const math::Vec3& gravity);
+    virtual void Step(float dt, const math::Vec3& gravity);
 
     // Number of enabled bodies (editor profiler / debug panels).
-    size_t BodyCount() const;
+    virtual size_t BodyCount() const;
 
     // Pairs of owners that collided this step (a dynamic body is always the
     // first element; both dynamic keeps insertion order).
-    const std::vector<std::pair<uint64_t, uint64_t>>& Collisions() const {
+    virtual const std::vector<std::pair<uint64_t, uint64_t>>& Collisions() const {
         return collisions_;
     }
-    void ClearCollisions() { collisions_.clear(); }
+    virtual void ClearCollisions() { collisions_.clear(); }
 
-    bool Raycast(const math::Ray& ray, float maxDist, float& outT, uint64_t* hitOwner) const;
+    virtual bool Raycast(const math::Ray& ray, float maxDist, float& outT,
+                         uint64_t* hitOwner) const;
 
     // Read-only snapshot for debug rendering (editor collider wireframes).
     enum class ShapeKind : uint8_t { Sphere, Box };
@@ -81,7 +95,12 @@ public:
         math::Vec3 halfExtents{1, 1, 1};
         bool dynamic = true;
     };
-    std::vector<DebugBody> DebugBodies() const;
+    virtual std::vector<DebugBody> DebugBodies() const;
+
+protected:
+    // Collision pairs for the current step (dynamic-first ordering). Backends
+    // append here; ClearCollisions() resets it.
+    std::vector<std::pair<uint64_t, uint64_t>> collisions_;
 
 private:
     struct Body {
@@ -101,6 +120,8 @@ private:
         bool dynamic = true;
         bool enabled = true;
         bool onGround = false;
+        uint32_t layer = 1;
+        uint32_t mask = 0xFFFFFFFFu;
 
         math::AABB Box() const { return {pos - halfExtents, pos + halfExtents}; }
         float Bottom() const {
@@ -116,7 +137,6 @@ private:
     std::vector<Body> bodies_;
     std::vector<BodyId> freeIds_;
     uint32_t nextId_ = 1;
-    std::vector<std::pair<uint64_t, uint64_t>> collisions_;
 };
 
 } // namespace neon::physics

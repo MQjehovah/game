@@ -207,6 +207,9 @@ bool PlayerApp::OnCreate() {
 
     scene::GameRuntimeConfig rcfg;
     rcfg.assets = &assetMgr_;
+#ifdef NEON_ENABLE_JOLT
+    rcfg.physicsBackend = "jolt"; // packaged game uses Jolt rigid bodies
+#endif
     rcfg.scriptBaseDir = cfg_.unpackedDir; // scripts/ + behaviors/ resolve here
     if (!cfg_.looseScenePath.empty()) rcfg.scriptBaseDir = cfg_.scriptsDir;
     rcfg.assetBaseDir = cfg_.unpackedDir;  // obj:/gltf:/texture paths resolve here

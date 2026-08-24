@@ -3594,6 +3594,9 @@ void EditorApp::StartPlaytest() {
 
     scene::GameRuntimeConfig cfg;
     cfg.assets = &assetMgr_;
+#ifdef NEON_ENABLE_JOLT
+    cfg.physicsBackend = "jolt"; // playtest uses Jolt rigid bodies when compiled
+#endif
     cfg.scriptBaseDir = projectDir_.empty() ? "." : projectDir_;
     cfg.localesDir = projectDir_.empty() ? "./locales" : projectDir_ + "/locales";
     cfg.input = Input(); // hero controller reads live WASD/mouse input

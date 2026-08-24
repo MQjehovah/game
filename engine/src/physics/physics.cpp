@@ -130,9 +130,33 @@ World::BodyId World::AddBox(uint64_t owner, const math::AABB& box, bool dynamic,
     return AddBox(owner, box.Center(), box.Extents(), dynamic, desc);
 }
 
+World::BodyId World::AddCharacter(uint64_t owner, const math::Vec3& pos, float radius,
+                                  float halfHeight, const RigidBodyDesc& desc) {
+    // The deterministic custom world has no kinematic character controller;
+    // only the Jolt backend implements characters.
+    (void)owner;
+    (void)pos;
+    (void)radius;
+    (void)halfHeight;
+    (void)desc;
+    return {};
+}
+
+void World::SetCharacterMove(BodyId body, const math::Vec3& move) {
+    (void)body;
+    (void)move;
+}
+
+math::Vec3 World::GetCharacterMove(BodyId body) const {
+    (void)body;
+    return {};
+}
+
 void World::InitBody(Body& b, uint64_t owner, bool dynamic, const RigidBodyDesc& desc) {
     b.owner = owner;
     b.dynamic = dynamic;
+    b.layer = desc.layer;
+    b.mask = desc.mask;
     b.restitution = math::Clamp(desc.restitution, 0.0f, 1.0f);
     b.friction = std::fmax(desc.friction, 0.0f);
     b.linearDamping = std::fmax(desc.linearDamping, 0.0f);
@@ -279,6 +303,8 @@ void World::Step(float dt, const math::Vec3& gravity) {
 }
 
 void World::SolvePair(Body& a, Body& b) {
+    // Collision layer/mask filter (Bullet-style): both directions must match.
+    if ((a.mask & b.layer) == 0 || (b.mask & a.layer) == 0) return;
     math::Vec3 normal{0, 1, 0};
     float penetration = 0.0f;
     bool contact = false;

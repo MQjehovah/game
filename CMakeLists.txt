@@ -209,6 +209,46 @@ endif()
 target_link_libraries(neon_engine PRIVATE neon_miniaudio)
 
 # ---------------------------------------------------------------------------
+# Jolt physics (P0-1): optional rigid-body backend, vendored at third_party/jolt.
+# The deterministic custom physics::World stays compiled as the server fallback;
+# NEON_ENABLE_JOLT adds JoltWorld behind the same interface (game/playtest use
+# it by default when available).
+# ---------------------------------------------------------------------------
+option(NEON_ENABLE_JOLT "Build the Jolt rigid-body physics backend (vendored)" ON)
+if(NEON_ENABLE_JOLT)
+  # Jolt build knobs (see third_party/jolt/Jolt/Jolt.cmake). Keep the baseline
+  # x86-64 instruction set so packaged builds run on any modern CPU.
+  set(DOUBLE_PRECISION OFF)
+  set(CROSS_PLATFORM_DETERMINISTIC OFF)
+  set(OBJECT_LAYER_BITS 16)
+  set(USE_SSE4_1 ON)
+  set(USE_SSE4_2 ON)
+  set(USE_AVX OFF)
+  set(USE_AVX2 OFF)
+  set(USE_AVX512 OFF)
+  set(USE_LZCNT ON)
+  set(USE_TZCNT ON)
+  set(USE_F16C ON)
+  set(USE_FMADD OFF)
+  # Use the CRT allocator everywhere: the engine/editor mix Jolt objects with
+  # their own new/delete, and Jolt's custom operator new hooks conflict with
+  # that (a null allocator call crashes at JoltWorld construction).
+  set(DISABLE_CUSTOM_ALLOCATOR ON)
+  set(ENABLE_ALL_WARNINGS OFF)
+  set(INTERPROCEDURAL_OPTIMIZATION OFF)
+  set(PHYSICS_REPO_ROOT ${CMAKE_SOURCE_DIR}/third_party/jolt)
+  include(${PHYSICS_REPO_ROOT}/Jolt/Jolt.cmake)
+  # Foreign library: do not police its warnings as if it were our code.
+  target_compile_options(Jolt PRIVATE
+    $<$<CXX_COMPILER_ID:GNU,Clang>:-w>
+    $<$<CXX_COMPILER_ID:MSVC>:/W3>)
+  target_compile_definitions(neon_engine PUBLIC NEON_ENABLE_JOLT=1)
+  target_include_directories(neon_engine PUBLIC third_party/jolt)
+  target_link_libraries(neon_engine PRIVATE Jolt)
+  target_sources(neon_engine PRIVATE engine/src/physics/jolt_world.cpp)
+endif()
+
+# ---------------------------------------------------------------------------
 # Demo executable
 # ---------------------------------------------------------------------------
 add_executable(neon_rush
@@ -407,6 +447,7 @@ add_executable(neon_tests tests/test_main.cpp tests/test_serialize.cpp tests/tes
   tests/test_determinism.cpp
   tests/test_aoi.cpp
   tests/test_asset_lifecycle.cpp
+  tests/test_jolt.cpp
   editor/src/history.cpp editor/src/packager.cpp server/src/game_server.cpp server/src/aoi.cpp
   game/src/client_sync.cpp)
 target_link_libraries(neon_tests PRIVATE neon_engine)

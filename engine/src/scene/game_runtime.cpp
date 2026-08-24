@@ -155,6 +155,17 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     // not prefixes �?a scene with an unresolvable key still plays headless.
     // cfg_ must be assigned before LoadPrefabs/AttachScripts read it.
     cfg_ = std::move(cfg);
+    // Create the physics world: Jolt when requested and compiled, else the
+    // deterministic custom solver (server / headless tests).
+    physics_ = std::make_unique<physics::World>();
+#ifdef NEON_ENABLE_JOLT
+    if (cfg_.physicsBackend == "jolt") {
+        physics_ = std::make_unique<physics::JoltWorld>();
+    }
+#endif
+    NEON_LOG_CAT(core::LogCategory::Scene, core::LogLevel::Info,
+                 "runtime: physics backend '%s' (%zu rigid bodies cap)",
+                 cfg_.physicsBackend.c_str(), physics_->BodyCount());
     ComponentRegistry reg;
     RegisterBuiltinComponents(reg, /*assets=*/nullptr);
     LoadPrefabs(); // scene entities may reference prefabs by name (packed games)
@@ -162,9 +173,10 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     auto inst = Instantiate(world_, parsed.Value(), prefs_, reg);
     if (!inst.Ok()) return core::Status::Err("runtime: " + inst.Error());
     RegisterSceneBodies();
+    RegisterCharacters();
 
     scriptCtx_.world = &world_;
-    scriptCtx_.physics = &physics_;
+    scriptCtx_.physics = physics_.get();
     scriptCtx_.input = cfg_.input;
     scriptCtx_.loc = &loc_;
     scriptCtx_.playSfx = cfg_.playSfx;
@@ -380,7 +392,7 @@ void GameRuntime::Stop() {
         host_.reset();
     }
     world_.Clear();
-    physics_.Clear();
+    if (physics_) physics_->Clear();
     scriptCtx_ = script::ScriptContext{};
     prefs_ = PrefabLibrary{};
     running_ = false;
@@ -401,13 +413,30 @@ void GameRuntime::RegisterSceneBodies() {
             desc.friction = rb.friction;
             desc.linearDamping = rb.linearDamping;
             desc.gravityScale = rb.gravityScale;
+            desc.layer = rb.layer;
+            desc.mask = rb.mask;
             physics::World::BodyId body;
             if (rb.shape == "box") {
-                body = physics_.AddBox(EntityKey(e), t.pos, rb.halfExtents, rb.dynamic, desc);
+                body = physics_->AddBox(EntityKey(e), t.pos, rb.halfExtents, rb.dynamic, desc);
             } else {
-                body = physics_.AddSphere(EntityKey(e), t.pos, rb.radius, rb.dynamic, desc);
+                body = physics_->AddSphere(EntityKey(e), t.pos, rb.radius, rb.dynamic, desc);
             }
             rb.bodyId = body.id;
+        });
+}
+
+// Registers every entity with a character component as a Jolt virtual
+// character (capsule controller). The custom deterministic world returns an
+// invalid id, in which case the component is left untouched.
+void GameRuntime::RegisterCharacters() {
+    world_.ViewAll<SceneCharacter, SceneTransform>().ForEach(
+        [this](ecs::Entity e, SceneCharacter& c, const SceneTransform& t) {
+            physics::RigidBodyDesc desc;
+            desc.layer = c.layer;
+            desc.mask = c.mask;
+            physics::World::BodyId body =
+                physics_->AddCharacter(EntityKey(e), t.pos, c.radius, c.halfHeight, desc);
+            c.bodyId = body.id;
         });
 }
 
@@ -417,8 +446,13 @@ void GameRuntime::SyncSceneBodies() {
     world_.ViewAll<SceneRigidBody, SceneTransform>().ForEach(
         [this](ecs::Entity e, const SceneRigidBody& rb, SceneTransform& t) {
             if (rb.bodyId == 0) return;
-            t.pos = physics_.GetPosition({rb.bodyId});
+            t.pos = physics_->GetPosition({rb.bodyId});
             (void)e;
+        });
+    world_.ViewAll<SceneCharacter, SceneTransform>().ForEach(
+        [this](ecs::Entity, const SceneCharacter& c, SceneTransform& t) {
+            if (c.bodyId == 0) return;
+            t.pos = physics_->GetPosition({c.bodyId});
         });
 }
 
@@ -1338,7 +1372,7 @@ void GameRuntime::Tick(float dt) {
     constexpr float kPhysicsStep = 1.0f / 60.0f;
     int physicsSteps = 0;
     while (physicsAccum_ >= kPhysicsStep && physicsSteps < 4) {
-        physics_.Step(kPhysicsStep, math::Vec3{0.0f, kGravityY, 0.0f});
+        physics_->Step(kPhysicsStep, math::Vec3{0.0f, kGravityY, 0.0f});
         physicsAccum_ -= kPhysicsStep;
         ++physicsSteps;
     }

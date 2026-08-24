@@ -734,7 +734,8 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                      if (!CheckComponentShape(
                              data,
                              {"shape", "radius", "halfExtents", "dynamic", "mass",
-                              "restitution", "friction", "damping", "gravityScale"},
+                              "restitution", "friction", "damping", "gravityScale",
+                              "layer", "mask"},
                              "rigidbody", err))
                          return false;
                      SceneRigidBody r;
@@ -778,7 +779,51 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                          return false;
                      if (!RequireNumber(data, "gravityScale", "rigidbody", r.gravityScale, err))
                          return false;
+                     if (const core::Json* l = data.Get("layer")) {
+                         if (!l->IsNumber()) {
+                             if (err) *err = "component 'rigidbody' field 'layer' must be a number";
+                             return false;
+                         }
+                         r.layer = static_cast<uint32_t>(l->GetNumber());
+                     }
+                     if (const core::Json* m = data.Get("mask")) {
+                         if (!m->IsNumber()) {
+                             if (err) *err = "component 'rigidbody' field 'mask' must be a number";
+                             return false;
+                         }
+                         r.mask = static_cast<uint32_t>(m->GetNumber());
+                     }
                      world.Add<SceneRigidBody>(ent, r);
+                     return true;
+                 });
+
+    reg.Register("character",
+                 [](ecs::World& world, ecs::Entity ent, const core::Json& data,
+                    const core::Json&, std::string* err) {
+                     if (!CheckComponentShape(data,
+                                              {"radius", "halfHeight", "layer", "mask"},
+                                              "character", err))
+                         return false;
+                     SceneCharacter c;
+                     if (!RequireNumber(data, "radius", "character", c.radius, err))
+                         return false;
+                     if (!RequireNumber(data, "halfHeight", "character", c.halfHeight, err))
+                         return false;
+                     if (const core::Json* l = data.Get("layer")) {
+                         if (!l->IsNumber()) {
+                             if (err) *err = "component 'character' field 'layer' must be a number";
+                             return false;
+                         }
+                         c.layer = static_cast<uint32_t>(l->GetNumber());
+                     }
+                     if (const core::Json* m = data.Get("mask")) {
+                         if (!m->IsNumber()) {
+                             if (err) *err = "component 'character' field 'mask' must be a number";
+                             return false;
+                         }
+                         c.mask = static_cast<uint32_t>(m->GetNumber());
+                     }
+                     world.Add<SceneCharacter>(ent, c);
                      return true;
                  });
 
