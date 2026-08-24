@@ -255,6 +255,131 @@ struct ScriptFieldEdit {
     std::string field; // "backend" | "path" | "vars"
     core::Json value;
 };
+
+// P2-editor UX: delete several entities in one undo step (indices sorted).
+class MultiDeleteEntityCommand : public Command {
+public:
+    MultiDeleteEntityCommand(std::vector<SceneEntity>* entities, std::vector<int> indices)
+        : entities_(entities), indices_(std::move(indices)) {
+        std::sort(indices_.begin(), indices_.end());
+        for (int i : indices_)
+            removed_.push_back((*entities_)[static_cast<size_t>(i)]);
+    }
+    void Apply() override {
+        for (auto it = indices_.rbegin(); it != indices_.rend(); ++it)
+            entities_->erase(entities_->begin() + *it);
+    }
+    void Undo() override {
+        for (size_t k = 0; k < indices_.size(); ++k)
+            entities_->insert(entities_->begin() + indices_[k], removed_[k]);
+    }
+
+private:
+    std::vector<SceneEntity>* entities_;
+    std::vector<int> indices_;
+    std::vector<SceneEntity> removed_;
+};
+
+// Duplicate several entities (appended together, renamed + nudged).
+class MultiDuplicateEntityCommand : public Command {
+public:
+    MultiDuplicateEntityCommand(std::vector<SceneEntity>* entities, std::vector<int> indices)
+        : entities_(entities), insertAt_(entities->size()) {
+        std::sort(indices.begin(), indices.end());
+        for (int i : indices) {
+            SceneEntity c = (*entities)[static_cast<size_t>(i)];
+            c.name += "_副本";
+            c.pos.z += 0.5f;
+            copies_.push_back(std::move(c));
+        }
+    }
+    void Apply() override {
+        for (size_t k = 0; k < copies_.size(); ++k)
+            entities_->insert(entities_->begin() + static_cast<ptrdiff_t>(insertAt_ + k),
+                              copies_[k]);
+    }
+    void Undo() override {
+        for (size_t k = 0; k < copies_.size(); ++k)
+            entities_->erase(entities_->begin() + static_cast<ptrdiff_t>(insertAt_));
+    }
+
+private:
+    std::vector<SceneEntity>* entities_;
+    size_t insertAt_;
+    std::vector<SceneEntity> copies_;
+};
+
+// Set the parent of several entities in one undo step.
+class MultiSetParentCommand : public Command {
+public:
+    MultiSetParentCommand(std::vector<SceneEntity>* entities, std::vector<int> indices,
+                          std::string parent)
+        : entities_(entities), indices_(std::move(indices)), parent_(std::move(parent)) {
+        for (int i : indices_)
+            oldParents_.push_back((*entities_)[static_cast<size_t>(i)].parent);
+    }
+    void Apply() override {
+        for (size_t k = 0; k < indices_.size(); ++k)
+            (*entities_)[static_cast<size_t>(indices_[k])].parent = parent_;
+    }
+    void Undo() override {
+        for (size_t k = 0; k < indices_.size(); ++k)
+            (*entities_)[static_cast<size_t>(indices_[k])].parent = oldParents_[k];
+    }
+
+private:
+    std::vector<SceneEntity>* entities_;
+    std::vector<int> indices_;
+    std::vector<std::string> oldParents_;
+    std::string parent_;
+};
+
+// Batch transform for multi-selection gizmo drags. Like EditTransformCommand,
+// frames within one drag merge into a single undo step; Seal() ends the merge.
+// Transform3 lives in editor.hpp (editor_history.hpp includes it).
+class BatchTransformCommand : public Command {
+public:
+    BatchTransformCommand(std::vector<SceneEntity>* entities, std::vector<int> indices,
+                          std::vector<Transform3> from, std::vector<Transform3> to)
+        : entities_(entities), indices_(std::move(indices)), from_(std::move(from)),
+          to_(std::move(to)) {}
+    void Apply() override { Write(to_); }
+    void Undo() override { Write(from_); }
+    bool Merge(const Command& incoming) override {
+        const BatchTransformCommand* other =
+            dynamic_cast<const BatchTransformCommand*>(&incoming);
+        if (!other || !mergeable_ || other->indices_ != indices_) return false;
+        // Continuous drag chain: the incoming ORIGINAL must equal our CURRENT.
+        if (other->from_.size() != to_.size()) return false;
+        for (size_t k = 0; k < to_.size(); ++k) {
+            if (!Vec3Eq(other->from_[k].pos, to_[k].pos) ||
+                !Vec3Eq(other->from_[k].scale, to_[k].scale) ||
+                !QuatEq(other->from_[k].rot, to_[k].rot))
+                return false;
+        }
+        to_ = other->to_;
+        return true;
+    }
+    void Seal() { mergeable_ = false; }
+    // Merges a continuation of the same drag: keep the original `from`, adopt
+    // the newer `to`.
+    void MergeTo(std::vector<Transform3> to) { to_ = std::move(to); }
+
+private:
+    void Write(const std::vector<Transform3>& v) {
+        for (size_t k = 0; k < indices_.size() && k < v.size(); ++k) {
+            SceneEntity& e = (*entities_)[static_cast<size_t>(indices_[k])];
+            e.pos = v[k].pos;
+            e.rot = v[k].rot;
+            e.scale = v[k].scale;
+        }
+    }
+    std::vector<SceneEntity>* entities_;
+    std::vector<int> indices_;
+    std::vector<Transform3> from_;
+    std::vector<Transform3> to_;
+    bool mergeable_ = true;
+};
 inline void ApplyScriptField(SceneEntity& e, const ScriptFieldEdit& v) {
     if (v.index >= e.scripts.size()) return;
     SceneScriptFields& f = e.scripts[v.index];

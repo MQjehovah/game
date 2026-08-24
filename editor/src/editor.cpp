@@ -1081,6 +1081,45 @@ void EditorApp::OnUpdate(float dt) {
                       ok ? "PASS" : "FAIL");
         if (!ok) smokeFailed_ = true;
     }
+    // P2-editor UX smoke: multi-selection + batch duplicate/delete + batch
+    // gizmo transform command round-trip.
+    if (smokeMode_ && TimeRef().frameIndex == 50) {
+        bool ok = entities_.size() >= 2;
+        if (ok) {
+            SetSelection(0);
+            ToggleSelection(1);
+            ok = selection_.size() == 2 && IsSelected(0) && IsSelected(1);
+            const size_t before = entities_.size();
+            history_.Push(
+                std::make_unique<MultiDuplicateEntityCommand>(&entities_, SelectedIndices()));
+            ok = ok && entities_.size() == before + 2;
+            ClampSelection();
+            history_.Push(std::make_unique<MultiDeleteEntityCommand>(
+                &entities_, SelectedIndices()));
+            ok = ok && entities_.size() == before;
+            ClampSelection();
+            // Batch transform: move two entities by (1,0,0), then undo.
+            const math::Vec3 p0 = entities_[0].pos;
+            const math::Vec3 p1 = entities_[1].pos;
+            std::vector<int> ids = {0, 1};
+            std::vector<Transform3> from = {
+                {entities_[0].pos, entities_[0].rot, entities_[0].scale},
+                {entities_[1].pos, entities_[1].rot, entities_[1].scale}};
+            std::vector<Transform3> to = from;
+            to[0].pos.x += 1.0f;
+            to[1].pos.x += 1.0f;
+            history_.Push(std::make_unique<BatchTransformCommand>(&entities_, ids, from, to));
+            ok = ok && std::fabs(entities_[0].pos.x - p0.x - 1.0f) < 1e-5f &&
+                 std::fabs(entities_[1].pos.x - p1.x - 1.0f) < 1e-5f;
+            history_.Undo();
+            ok = ok && std::fabs(entities_[0].pos.x - p0.x) < 1e-5f &&
+                 std::fabs(entities_[1].pos.x - p1.x) < 1e-5f;
+            SetSelection(0);
+        }
+        NEON_LOG_INFO("EDITOR-MULTISELECT-SMOKE: [%s] multi-select + batch ops",
+                      ok ? "PASS" : "FAIL");
+        if (!ok) smokeFailed_ = true;
+    }
     // Play/Stop smoke: start a playtest at frame 60, verify it ticks, stop at
     // the last frame (119; OnUpdate never runs at 120). Kept at "Play/Stop
     // doesn't crash the editor" level; the real script/BT verification lives
@@ -1200,6 +1239,23 @@ void EditorApp::OnRender() {
             // SetCamera may run the shadow pass (which rebinds targets and
             // resets the backend viewport), so apply the scene rect after it.
             renderer_.SetSceneViewport(vp.x, vp.y, vp.w, vp.h);
+        }
+        // P2-editor UX: world-space grid overlay (toggle in the viewport
+        // toolbar). Drawn into the scene so it matches the active camera.
+        if (showViewportGrid_) {
+            const float half = 30.0f;
+            const gfx::Color gridC{0.42f, 0.48f, 0.58f, 0.35f};
+            std::vector<gfx::Renderer::LineVertex> gv;
+            for (float x = -half; x <= half; x += 1.0f) {
+                gv.push_back({{x, 0.0f, -half}, gridC});
+                gv.push_back({{x, 0.0f, half}, gridC});
+            }
+            for (float z = -half; z <= half; z += 1.0f) {
+                gv.push_back({{-half, 0.0f, z}, gridC});
+                gv.push_back({{half, 0.0f, z}, gridC});
+            }
+            renderer_.DrawLines(gv.data(), static_cast<uint32_t>(gv.size()),
+                                math::Mat4::Identity());
         }
         renderer_.SetDirectionalLight({-0.4f, -1.0f, -0.3f}, {1.0f, 0.95f, 0.85f}, 0.45f);
         // 2D view = camera lock: mark the ortho camera's visible rect so the
@@ -1754,7 +1810,12 @@ void EditorApp::UpdateViewport(float dt) {
                     picked = static_cast<int>(i);
                 }
             }
-            SetSelection(picked);
+            // P2-editor UX: Ctrl+click adds to the selection, plain click
+            // replaces it (Shift+click in the hierarchy selects ranges).
+            if (ImGui::GetIO().KeyCtrl)
+                ToggleSelection(picked);
+            else
+                SetSelection(picked);
         }
         // Hold-to-paint: the brush applies every frame while the button stays
         // down (drag sculpting).
@@ -1781,7 +1842,57 @@ void EditorApp::UpdateViewport(float dt) {
 
 void EditorApp::SetSelection(int index) {
     selected_ = index;
+    selection_.clear();
+    if (index >= 0) selection_.insert(index);
+    selectionAnchor_ = index;
     scriptSyncEntity_ = -1; // script panel caches by index: force a re-sync
+}
+
+void EditorApp::ToggleSelection(int index) {
+    if (index < 0) return;
+    const auto it = selection_.find(index);
+    if (it != selection_.end()) {
+        selection_.erase(it);
+        if (selected_ == index) {
+            selected_ = selection_.empty() ? -1 : *selection_.rbegin();
+        }
+    } else {
+        selection_.insert(index);
+        selected_ = index;
+        selectionAnchor_ = index;
+    }
+    scriptSyncEntity_ = -1;
+}
+
+void EditorApp::SelectRangeTo(int index) {
+    if (index < 0 || selectionAnchor_ < 0) {
+        SetSelection(index);
+        return;
+    }
+    const int lo = std::min(selectionAnchor_, index);
+    const int hi = std::max(selectionAnchor_, index);
+    selection_.clear();
+    for (int i = lo; i <= hi; ++i) {
+        if (i >= 0 && i < static_cast<int>(entities_.size())) selection_.insert(i);
+    }
+    selected_ = index;
+    scriptSyncEntity_ = -1;
+}
+
+void EditorApp::ClearSelection() {
+    selection_.clear();
+    selected_ = -1;
+    selectionAnchor_ = -1;
+    scriptSyncEntity_ = -1;
+}
+
+bool EditorApp::IsSelected(int idx) const {
+    return selection_.count(idx) != 0;
+}
+
+std::vector<int> EditorApp::SelectedIndices() const {
+    std::vector<int> out(selection_.begin(), selection_.end());
+    return out;
 }
 
 void EditorApp::DrawPlaytestHUD() {
@@ -1917,10 +2028,61 @@ void EditorApp::DrawTransformGizmo() {
         math::Quat rot;
         DecomposeModel(m, pos, scale, rot);
         if (!(Vec3Eq(pos, e.pos) && Vec3Eq(scale, e.scale) && QuatEq(rot, e.rot))) {
-            gizmoDragOriginValid_ = true;
-            history_.Push(std::make_unique<EditTransformCommand>(
-                &entities_, selected_, e.pos, e.rot, e.scale, pos, rot, scale,
-                EditTransformCommand::kAll));
+            if (selection_.size() > 1) {
+                // P2-editor UX: drag the whole selection. On the first changed
+                // frame capture every selected entity's pre-drag transform,
+                // then apply the active entity's delta to the others and push
+                // one BatchTransformCommand (frames merge into a single undo).
+                if (!gizmoBatchCaptured_) {
+                    gizmoBatchIndices_ = SelectedIndices();
+                    gizmoBatchFrom_.clear();
+                    for (int i : gizmoBatchIndices_) {
+                        const SceneEntity& se = entities_[static_cast<size_t>(i)];
+                        gizmoBatchFrom_.push_back({se.pos, se.rot, se.scale});
+                    }
+                    gizmoBatchCaptured_ = true;
+                }
+                int activePos = 0;
+                for (size_t k = 0; k < gizmoBatchIndices_.size(); ++k)
+                    if (gizmoBatchIndices_[k] == selected_) activePos = static_cast<int>(k);
+                const Transform3 activeFrom = gizmoBatchFrom_[static_cast<size_t>(activePos)];
+                const math::Quat activeInv{-activeFrom.rot.x, -activeFrom.rot.y,
+                                           -activeFrom.rot.z, activeFrom.rot.w};
+                std::vector<Transform3> fromNow, to;
+                for (int i : gizmoBatchIndices_) {
+                    const SceneEntity& se = entities_[static_cast<size_t>(i)];
+                    fromNow.push_back({se.pos, se.rot, se.scale});
+                }
+                for (size_t k = 0; k < gizmoBatchIndices_.size(); ++k) {
+                    Transform3 t = fromNow[k];
+                    if (static_cast<int>(k) == activePos) {
+                        t.pos = pos;
+                        t.rot = rot;
+                        t.scale = scale;
+                    } else {
+                        t.pos = t.pos + (pos - activeFrom.pos);
+                        const math::Quat rel = (activeInv * rot).Normalized();
+                        t.rot = (t.rot * rel).Normalized();
+                        t.scale = {t.scale.x * (scale.x / activeFrom.scale.x),
+                                   t.scale.y * (scale.y / activeFrom.scale.y),
+                                   t.scale.z * (scale.z / activeFrom.scale.z)};
+                    }
+                    to.push_back(t);
+                }
+                for (size_t k = 0; k < gizmoBatchIndices_.size(); ++k) {
+                    SceneEntity& se = entities_[static_cast<size_t>(gizmoBatchIndices_[k])];
+                    se.pos = to[k].pos;
+                    se.rot = to[k].rot;
+                    se.scale = to[k].scale;
+                }
+                history_.Push(std::make_unique<BatchTransformCommand>(
+                    &entities_, gizmoBatchIndices_, fromNow, to));
+            } else {
+                gizmoDragOriginValid_ = true;
+                history_.Push(std::make_unique<EditTransformCommand>(
+                    &entities_, selected_, e.pos, e.rot, e.scale, pos, rot, scale,
+                    EditTransformCommand::kAll));
+            }
         }
     }
     gizmoDragActive_ = ImGuizmo::IsUsing();
@@ -1934,6 +2096,14 @@ void EditorApp::DrawTransformGizmo() {
             }
         }
         gizmoDragOriginValid_ = false;
+        if (gizmoBatchCaptured_) {
+            if (BatchTransformCommand* top =
+                    dynamic_cast<BatchTransformCommand*>(history_.TopUndo()))
+                top->Seal();
+            gizmoBatchCaptured_ = false;
+            gizmoBatchIndices_.clear();
+            gizmoBatchFrom_.clear();
+        }
     }
 
     if (smokeMode_ && !gizmoDrawn_) {
@@ -2144,6 +2314,22 @@ void EditorApp::BuildImGuiUI() {
         if (ImGui::IsKeyPressed(ImGuiKey_W)) gizmoOp_ = ImGuizmo::TRANSLATE;
         if (ImGui::IsKeyPressed(ImGuiKey_E)) gizmoOp_ = ImGuizmo::ROTATE;
         if (ImGui::IsKeyPressed(ImGuiKey_R)) gizmoOp_ = ImGuizmo::SCALE;
+        // P2-editor UX shortcuts: Delete = 删除选中, Ctrl+D = 复制选中,
+        // F = 相机聚焦到选中实体.
+        if (ImGui::IsKeyPressed(ImGuiKey_Delete) && !selection_.empty()) {
+            history_.Push(std::make_unique<MultiDeleteEntityCommand>(
+                &entities_, SelectedIndices()));
+            ClampSelection();
+        }
+        if (ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_D, false) &&
+            !selection_.empty()) {
+            history_.Push(std::make_unique<MultiDuplicateEntityCommand>(
+                &entities_, SelectedIndices()));
+            SetSelection(static_cast<int>(entities_.size()) - 1);
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_F) && selected_ < static_cast<int>(entities_.size())) {
+            camTarget_ = entities_[static_cast<size_t>(selected_)].pos;
+        }
     }
 
     // Docking layout: full-workspace dock space below the menu bar.
@@ -2320,6 +2506,8 @@ void EditorApp::BuildImGuiUI() {
         ImGui::SameLine();
         if (ImGui::Button(gizmoMode_ == ImGuizmo::WORLD ? "[世界]" : "世界"))
             gizmoMode_ = ImGuizmo::WORLD;
+        ImGui::SameLine();
+        ImGui::Checkbox("网格", &showViewportGrid_);
         ImGui::SameLine();
         ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
         ImGui::SameLine();
@@ -5631,12 +5819,23 @@ void EditorApp::OpenInExternalEditor(const std::string& path) {
 void EditorApp::ClampSelection() {
     // Undo/redo can move entities under an unchanged selection index (e.g. a
     // reorder), so invalidate the script panel's index-keyed sync cache
-    // unconditionally here, not only when the index changes.
+    // unconditionally here, not only when the index changes. Also keeps the
+    // multi-selection set inside the entity list bounds.
     scriptSyncEntity_ = -1;
+    const int n = static_cast<int>(entities_.size());
+    for (auto it = selection_.begin(); it != selection_.end();) {
+        if (*it >= n)
+            it = selection_.erase(it);
+        else
+            ++it;
+    }
+    if (selected_ >= n) selected_ = selection_.empty() ? -1 : *selection_.rbegin();
+    if (!selection_.empty() && selection_.count(selected_) == 0)
+        selected_ = *selection_.rbegin();
     if (entities_.empty()) {
         selected_ = -1;
-    } else if (selected_ >= static_cast<int>(entities_.size())) {
-        selected_ = static_cast<int>(entities_.size()) - 1;
+        selection_.clear();
+        selectionAnchor_ = -1;
     }
 }
 

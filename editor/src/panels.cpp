@@ -603,32 +603,34 @@ void EditorApp::BuildScenePanel() {
             }
         }
         ImGui::SameLine();
-        if (ImGui::Button("复制") && selected_ >= 0) {
-            history_.Push(std::make_unique<DuplicateEntityCommand>(
-                &entities_, static_cast<size_t>(selected_)));
+        if (ImGui::Button("复制") && !selection_.empty()) {
+            history_.Push(std::make_unique<MultiDuplicateEntityCommand>(
+                &entities_, SelectedIndices()));
             SetSelection(static_cast<int>(entities_.size()) - 1);
         }
         ImGui::SameLine();
-        if (ImGui::Button("删除") && selected_ >= 0 &&
-            selected_ < static_cast<int>(entities_.size())) {
-            history_.Push(std::make_unique<DeleteEntityCommand>(
-                &entities_, static_cast<size_t>(selected_)));
-            if (selected_ >= static_cast<int>(entities_.size()))
-                SetSelection(static_cast<int>(entities_.size()) - 1);
+        if (ImGui::Button("删除") && !selection_.empty()) {
+            history_.Push(std::make_unique<MultiDeleteEntityCommand>(
+                &entities_, SelectedIndices()));
+            ClampSelection();
         }
         ImGui::SameLine();
-        if (ImGui::Button("↑") && selected_ > 0) {
+        if (ImGui::Button("↑") && selection_.size() == 1 && selected_ > 0) {
             history_.Push(std::make_unique<ReorderEntityCommand>(
                 &entities_, static_cast<size_t>(selected_), static_cast<size_t>(selected_ - 1)));
             SetSelection(selected_ - 1);
         }
         ImGui::SameLine();
-        if (ImGui::Button("↓") && selected_ >= 0 &&
+        if (ImGui::Button("↓") && selection_.size() == 1 && selected_ >= 0 &&
             selected_ < static_cast<int>(entities_.size()) - 1) {
             history_.Push(std::make_unique<ReorderEntityCommand>(
                 &entities_, static_cast<size_t>(selected_), static_cast<size_t>(selected_ + 1)));
             SetSelection(selected_ + 1);
         }
+        if (selection_.size() > 1)
+            ImGui::TextColored(ImVec4(0.7f, 0.85f, 1.0f, 1.0f),
+                               "已选中 %zu 个实体 (Ctrl 加选 / Shift 连选)",
+                               selection_.size());
         ImGui::Separator();
         ImGui::BeginChild("##scene_list", ImVec2(0, 0), ImGuiChildFlags_Borders);
         // Godot-style scene tree: entities group under their "parent" name
@@ -640,14 +642,19 @@ void EditorApp::BuildScenePanel() {
             for (const SceneEntity& e : entities_) names.insert(e.name);
             for (size_t i = 0; i < entities_.size(); ++i)
                 childrenByParent[entities_[i].parent].push_back(static_cast<int>(i));
-            auto reparent = [this](int from, const std::string& toParent) {
-                if (from < 0 || from >= static_cast<int>(entities_.size())) return;
-                const std::string oldParent = entities_[static_cast<size_t>(from)].parent;
-                if (oldParent == toParent) return;
-                entities_[static_cast<size_t>(from)].parent = toParent;
-                history_.Push(std::make_unique<EditPropertyCommand<std::string>>(
-                    &entities_, from, ApplyParentProp, oldParent, toParent,
-                    /*mergeable=*/false));
+            auto reparent = [this](const std::vector<int>& from, const std::string& toParent) {
+                if (from.empty()) return;
+                std::vector<int> valid;
+                std::vector<std::string> oldParents;
+                for (int i : from) {
+                    if (i < 0 || i >= static_cast<int>(entities_.size())) continue;
+                    if (entities_[static_cast<size_t>(i)].parent == toParent) continue;
+                    valid.push_back(i);
+                    oldParents.push_back(entities_[static_cast<size_t>(i)].parent);
+                }
+                if (valid.empty()) return;
+                history_.Push(std::make_unique<MultiSetParentCommand>(
+                    &entities_, valid, toParent));
             };
             std::function<void(const std::string&)> drawNode = [&](const std::string& parentName) {
                 const auto it = childrenByParent.find(parentName);
@@ -658,30 +665,74 @@ void EditorApp::BuildScenePanel() {
                     std::snprintf(label, sizeof(label), "%s%s##scene_%d", e.name.c_str(),
                                   e.prefab.empty() ? "" : " (预置体)", idx);
                     const bool hasChildren = childrenByParent.count(e.name) != 0;
+                    const bool selected = IsSelected(idx);
+                    const bool ctrl = ImGui::GetIO().KeyCtrl;
+                    const bool shift = ImGui::GetIO().KeyShift;
+                    // P2-editor UX: right-click context menu on any row.
+                    auto contextMenu = [&]() {
+                        if (ImGui::BeginPopupContextItem("scene_ctx")) {
+                            if (ImGui::MenuItem("复制")) {
+                                std::vector<int> sel = SelectedIndices();
+                                if (sel.empty()) sel.push_back(idx);
+                                history_.Push(std::make_unique<MultiDuplicateEntityCommand>(
+                                    &entities_, sel));
+                                SetSelection(static_cast<int>(entities_.size()) - 1);
+                            }
+                            if (ImGui::MenuItem("删除")) {
+                                std::vector<int> sel = SelectedIndices();
+                                if (sel.empty()) sel.push_back(idx);
+                                history_.Push(std::make_unique<MultiDeleteEntityCommand>(
+                                    &entities_, sel));
+                                ClampSelection();
+                            }
+                            ImGui::EndPopup();
+                        }
+                    };
                     if (hasChildren) {
                         const bool open = ImGui::TreeNodeEx(
                             label, ImGuiTreeNodeFlags_OpenOnArrow |
-                                       (selected_ == idx ? ImGuiTreeNodeFlags_Selected : 0));
-                        if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen())
-                            SetSelection(idx);
+                                       (selected ? ImGuiTreeNodeFlags_Selected : 0));
+                        if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
+                            if (ctrl)
+                                ToggleSelection(idx);
+                            else if (shift)
+                                SelectRangeTo(idx);
+                            else
+                                SetSelection(idx);
+                        }
+                        contextMenu();
                         if (open) {
                             drawNode(e.name);
                             ImGui::TreePop();
                         }
                     } else {
-                        if (ImGui::Selectable(label, selected_ == idx)) SetSelection(idx);
+                        if (ImGui::Selectable(label, selected)) {
+                            if (ctrl)
+                                ToggleSelection(idx);
+                            else if (shift)
+                                SelectRangeTo(idx);
+                            else
+                                SetSelection(idx);
+                        }
+                        contextMenu();
                     }
+                    // P2-editor UX: drag the whole selection to reparent.
                     if (ImGui::BeginDragDropSource()) {
-                        ImGui::SetDragDropPayload("SCENE_ENTITY", &idx, sizeof(int));
-                        ImGui::Text("移动 %s", e.name.c_str());
+                        std::vector<int> drag = SelectedIndices();
+                        if (drag.empty()) drag.push_back(idx);
+                        dragPayload_ = drag;
+                        ImGui::SetDragDropPayload("SCENE_ENTITIES", dragPayload_.data(),
+                                                  static_cast<size_t>(dragPayload_.size()) *
+                                                      sizeof(int));
+                        ImGui::Text("移动 %zu 个实体", dragPayload_.size());
                         ImGui::EndDragDropSource();
                     }
                     if (ImGui::BeginDragDropTarget()) {
                         if (const ImGuiPayload* p =
-                                ImGui::AcceptDragDropPayload("SCENE_ENTITY")) {
-                            int from = 0;
-                            std::memcpy(&from, p->Data, sizeof(from));
-                            reparent(from, e.name);
+                                ImGui::AcceptDragDropPayload("SCENE_ENTITIES")) {
+                            const int* data = static_cast<const int*>(p->Data);
+                            const size_t n = p->DataSize / sizeof(int);
+                            reparent(std::vector<int>(data, data + n), e.name);
                         }
                         ImGui::EndDragDropTarget();
                     }
@@ -691,10 +742,11 @@ void EditorApp::BuildScenePanel() {
             // Detach target: drag an entity here to clear its parent.
             ImGui::TextDisabled("(拖到此处取消父子关系)");
             if (ImGui::BeginDragDropTarget()) {
-                if (const ImGuiPayload* p = ImGui::AcceptDragDropPayload("SCENE_ENTITY")) {
-                    int from = 0;
-                    std::memcpy(&from, p->Data, sizeof(from));
-                    reparent(from, "");
+                if (const ImGuiPayload* p =
+                        ImGui::AcceptDragDropPayload("SCENE_ENTITIES")) {
+                    const int* data = static_cast<const int*>(p->Data);
+                    const size_t n = p->DataSize / sizeof(int);
+                    reparent(std::vector<int>(data, data + n), "");
                 }
                 ImGui::EndDragDropTarget();
             }
@@ -1193,6 +1245,26 @@ void EditorApp::BuildInspectorPanel() {
     }
     if (ImGui::Begin("属性", &showInspector_)) {
         SceneEntity& e = entities_[static_cast<size_t>(selected_)];
+        // P2-editor UX: multi-selection banner + batch operations. Field edits
+        // below always target the ACTIVE (last-clicked) entity.
+        if (selection_.size() > 1) {
+            ImGui::TextColored(ImVec4(0.7f, 0.85f, 1.0f, 1.0f),
+                               "多选: %zu 个实体 (编辑作用于 \"%s\")", selection_.size(),
+                               e.name.c_str());
+            ImGui::SameLine();
+            if (ImGui::SmallButton("批量复制")) {
+                history_.Push(std::make_unique<MultiDuplicateEntityCommand>(
+                    &entities_, SelectedIndices()));
+                SetSelection(static_cast<int>(entities_.size()) - 1);
+            }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("批量删除")) {
+                history_.Push(std::make_unique<MultiDeleteEntityCommand>(
+                    &entities_, SelectedIndices()));
+                ClampSelection();
+            }
+            ImGui::Separator();
+        }
         char buf[160];
         std::snprintf(buf, sizeof(buf), "%s", e.name.c_str());
         // Every field edit routes through the undo/redo command stack; the old
@@ -1549,6 +1621,28 @@ void EditorApp::BuildInspectorPanel() {
                 const TextureSlotValue newVal{"", gfx::TextureHandle{}};
                 history_.Push(std::make_unique<EditPropertyCommand<TextureSlotValue>>(
                     &entities_, selected_, apply, oldVal, newVal));
+            }
+            // P2-editor UX: drag a texture asset from the 资源 panel onto the
+            // slot to assign it.
+            if (ImGui::BeginDragDropTarget()) {
+                if (const ImGuiPayload* p =
+                        ImGui::AcceptDragDropPayload("ASSET_TEXTURE")) {
+                    const char* src = static_cast<const char*>(p->Data);
+                    if (src && *src) {
+                        const std::string newPath(src);
+                        gfx::Texture tex = assetMgr_.LoadTexture(newPath);
+                        if (tex.Valid()) {
+                            const TextureSlotValue oldVal{path, handle};
+                            history_.Push(std::make_unique<EditPropertyCommand<TextureSlotValue>>(
+                                &entities_, selected_, apply, oldVal,
+                                TextureSlotValue{newPath, tex.Handle()}));
+                        } else {
+                            NEON_LOG_WARN("Editor: texture '%s' failed to load (slot '%s')",
+                                          newPath.c_str(), label);
+                        }
+                    }
+                }
+                ImGui::EndDragDropTarget();
             }
             // Trailing label (like the material rows): thumb / input / clear
             // stay aligned regardless of label length.

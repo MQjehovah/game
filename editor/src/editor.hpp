@@ -24,6 +24,13 @@
 
 namespace neon::editor {
 
+// P2-editor UX: a full TRS triple used by the multi-selection batch transform.
+struct Transform3 {
+    math::Vec3 pos;
+    math::Quat rot;
+    math::Vec3 scale;
+};
+
 // Viewport camera presets (T4.8 multi-camera viewport): the perspective orbit
 // camera plus static orthographic top (down -Y) and front (down -Z) views.
 enum class ViewCam { Perspective, Top, Front };
@@ -370,6 +377,14 @@ private:
 
     std::vector<SceneEntity> entities_;
     int selected_ = -1;
+    // P2-editor UX: multi-selection set (active entity = selected_).
+    std::set<int> selection_;
+    int selectionAnchor_ = -1;  // shift-click range anchor
+    void ToggleSelection(int idx);
+    void SelectRangeTo(int idx);
+    void ClearSelection();
+    bool IsSelected(int idx) const;
+    std::vector<int> SelectedIndices() const;  // sorted ascending
     bool playtestActive_ = false;
     std::unique_ptr<scene::GameRuntime> playtest_; // non-null while playtesting
     bool pvzPlaytestOnStart_ = false; // --2d-play: auto-start the playtest
@@ -564,6 +579,13 @@ private:
     bool viewportDockFallbackDone_ = false; // viewport dockId-lost fallback ran
     bool scriptEditorDockFallbackDone_ = false; // script editor dockId-lost fallback
     bool gizmoDrawn_ = false;    // set the first time the gizmo renders (smoke)
+    // P2-editor UX: batch gizmo drag over the multi-selection.
+    bool gizmoBatchCaptured_ = false;
+    std::vector<int> gizmoBatchIndices_;
+    std::vector<Transform3> gizmoBatchFrom_;
+    // Viewport grid overlay toggle.
+    bool showViewportGrid_ = true;
+    std::vector<int> dragPayload_;  // P2-editor UX: multi-drag payload buffer
     bool gizmoBeginFrame_ = false; // set every frame ImGuizmo::BeginFrame runs (smoke)
     bool gizmoAltWindowSet_ = false; // set every frame the hover window is bound (smoke)
     bool gizmoDragActive_ = false;   // ImGuizmo::IsUsing() after the last Manipulate
