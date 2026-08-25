@@ -7,10 +7,12 @@
     "quit": "退出",
     "gameover": "僵尸吃掉了你的脑子！",
     "win": "你赢了！",
-    "select": "选择植物 (1-4)，点击草地种植",
+    "select": "选择植物 (1-6)，点击草地种植；S 铲子；P 暂停",
     "plant_sunflower": "向日葵 50",
     "plant_peashooter": "豌豆射手 100",
     "plant_snowpea": "寒冰射手 175",
-    "plant_wallnut": "坚果墙 50"
+    "plant_wallnut": "坚果墙 50",
+    "plant_repeater": "双发豌豆 200",
+    "plant_cherrybomb": "樱桃炸弹 150"
   }
 }

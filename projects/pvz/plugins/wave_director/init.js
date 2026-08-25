@@ -1,26 +1,29 @@
-// 波次导演 (runtime JS 插件示例)
-// 一个"玩法系统"插件: 每 12 秒推进一波, 通过插件作用域 GameVar
-// (plugin:wave_director:wave) 与游戏脚本通信; 游戏脚本轮询该值并出怪。
-// 插件状态与场景脚本完全隔离 (Plugin.SetVar 自动加 plugin:<id>: 前缀)。
-
+// Wave director (runtime JS plugin). Advances a wave every INTERVAL seconds up
+// to MAX_WAVES, communicating with the game script through the plugin-scoped
+// GameVar ("plugin:wave_director:wave" / "plugin:wave_director:won"). Survive
+// every wave to win.
 var elapsed = 0;
 var wave = 0;
-var INTERVAL = 12; // seconds between waves
+var INTERVAL = 10; // seconds between waves
+var MAX_WAVES = 8; // survive this many waves to win
 
 function on_load() {
   Plugin.On("tick", function (dt) {
+    if (wave >= MAX_WAVES) return; // final wave already launched
     elapsed += dt;
     if (elapsed >= INTERVAL) {
       elapsed = 0;
       wave = wave + 1;
       Plugin.SetVar("wave", wave);
       Plugin.Log("info", "第 " + wave + " 波即将来袭");
+      if (wave >= MAX_WAVES) {
+        Plugin.SetVar("won", true);
+        Plugin.Log("info", "全部波次结束，胜利！");
+      }
     }
   });
 
-  // 模块 API: 其他插件/宿主可经 Plugin.Call("wave_director", "currentWave")
-  // 查询当前波次。
-  Plugin.Export("currentWave", function () {
-    return wave;
-  });
+  // Module API for other plugins / the host.
+  Plugin.Export("currentWave", function () { return wave; });
+  Plugin.Export("maxWaves", function () { return MAX_WAVES; });
 }

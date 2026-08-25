@@ -4,6 +4,9 @@
     "plant_peashooter": ["2"],
     "plant_snowpea": ["3"],
     "plant_wallnut": ["4"],
+    "plant_repeater": ["5"],
+    "plant_cherrybomb": ["6"],
+    "shovel": ["S"],
     "pause": ["P"],
     "restart": ["R"]
   }

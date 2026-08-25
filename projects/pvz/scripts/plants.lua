@@ -22,6 +22,7 @@ end
 
 function on_update(e, dt)
   if GetVar("started") ~= true then return end
+  if GetVar("paused") == true then return end
   local p = EntityComponent(e, "plant")
   if not p then return end
 
@@ -59,6 +60,35 @@ function on_update(e, dt)
       SpawnPrefab(p.type == "snowpea" and "snow_pea" or "pea",
                   { x = pos.x + 46, y = pos.y, z = 0 })
       PlaySfx("shoot")
+    end
+  elseif p.type == "repeater" then
+    -- Double-shot: first pea now, a second 0.5s later.
+    if t >= 1.0 then
+      timers[e.id] = 0.5
+      SpawnPrefab("pea", { x = pos.x + 46, y = pos.y, z = 0 })
+      PlaySfx("shoot")
+    end
+  elseif p.type == "cherrybomb" then
+    -- Fuse then blow up: damage zombies in this row + neighbours.
+    if t >= (p.fuse or 1.1) then
+      local row = rowOf(pos.y)
+      for r = math.max(0, row - 1), math.min(4, row + 1) do
+        local zlist = GetVar("row_zombies_" .. r)
+        if type(zlist) == "table" then
+          for i = #zlist, 1, -1 do
+            local zent = { id = zlist[i].id, gen = zlist[i].gen }
+            local zp = GetPosition(zent)
+            if zp ~= nil and math.abs(zp.x - pos.x) < 110 and math.abs(zp.y - pos.y) < 130 then
+              local zhp = GetHealth(zent)
+              if zhp ~= nil then SetHealth(zent, zhp - 1800) end
+            end
+          end
+        end
+      end
+      PlaySfx("explosion")
+      timers[e.id] = nil
+      Despawn(e)
+      return
     end
   end
 end

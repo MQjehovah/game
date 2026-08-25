@@ -29,6 +29,7 @@ end
 
 function on_update(e, dt)
   if GetVar("started") ~= true then return end
+  if GetVar("paused") == true then return end
   if GetVar("gameover") == true then return end
   local pos = GetPosition(e)
   local row = rowOf(pos.y)

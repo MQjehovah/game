@@ -506,6 +506,7 @@ add_executable(neon_tests tests/test_main.cpp tests/test_serialize.cpp tests/tes
   tests/test_volumetric.cpp
   tests/test_ssr.cpp
   tests/test_fog.cpp
+  tests/test_pvz_project.cpp
   tests/test_profiler.cpp
   tests/test_task_graph.cpp
   tests/test_script.cpp tests/test_script_bindings.cpp tests/test_script_determinism.cpp
