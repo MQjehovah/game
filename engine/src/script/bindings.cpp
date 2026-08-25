@@ -252,7 +252,7 @@ Value NativeHasStatus(IScriptHost& host, void* user) {
     if (!ctx || !ctx->sceneHasStatus) return Value::Num(0);
     const ecs::Entity e = EntityFromValue(host.GetArg(0));
     const uint32_t id = scene::StatusIdByName(StringArg(host, 1));
-    return Value::Num(id != 0 && ctx->sceneHasStatus(e, id) ? 1.0 : 0.0);
+    return Value::Bool(id != 0 && ctx->sceneHasStatus(e, id));
 }
 
 Value NativeStatusMagnitude(IScriptHost& host, void* user) {
@@ -313,23 +313,22 @@ Value NativeAttackBox(IScriptHost& host, void* user) {
 
 Value NativeInputMouseDown(IScriptHost& host, void* user) {
     auto* ctx = static_cast<ScriptContext*>(user);
-    if (!ctx || !ctx->input) return Value::Num(0);
+    if (!ctx || !ctx->input) return Value::Bool(false);
     platform::IInput* in = InputFor(*ctx);
-    if (!in) return Value::Num(0);
+    if (!in) return Value::Bool(false);
     const std::string b = StringArg(host, 0);
     const int idx = b == "right" ? 1 : b == "middle" ? 2 : 0;
-    return Value::Num(in->MouseDown(static_cast<platform::MouseButton>(idx)) ? 1.0 : 0.0);
+    return Value::Bool(in->MouseDown(static_cast<platform::MouseButton>(idx)));
 }
 
 Value NativeInputMousePressed(IScriptHost& host, void* user) {
     auto* ctx = static_cast<ScriptContext*>(user);
-    if (!ctx || !ctx->input) return Value::Num(0);
+    if (!ctx || !ctx->input) return Value::Bool(false);
     platform::IInput* in = InputFor(*ctx);
-    if (!in) return Value::Num(0);
+    if (!in) return Value::Bool(false);
     const std::string b = StringArg(host, 0);
     const int idx = b == "right" ? 1 : b == "middle" ? 2 : 0;
-    return Value::Num(
-        in->MousePressed(static_cast<platform::MouseButton>(idx)) ? 1.0 : 0.0);
+    return Value::Bool(in->MousePressed(static_cast<platform::MouseButton>(idx)));
 }
 
 // BindPlayerToClient(entity, clientId): multi-player ownership — the server
@@ -460,7 +459,7 @@ Value NativeReadText(IScriptHost& host, void* user) {
 Value NativeUIShow(IScriptHost& host, void* user) {
     auto* ctx = static_cast<ScriptContext*>(user);
     if (!ctx || !ctx->uiShow) return Value::Num(0);
-    return Value::Num(ctx->uiShow(StringArg(host, 0)) ? 1.0 : 0.0);
+    return Value::Bool(ctx->uiShow(StringArg(host, 0)));
 }
 
 // UIHide(): hides the currently shown UI document (if any).
@@ -474,7 +473,7 @@ Value NativeUIHide(IScriptHost& host, void* user) {
 Value NativeUIClicked(IScriptHost& host, void* user) {
     auto* ctx = static_cast<ScriptContext*>(user);
     if (!ctx || !ctx->uiClicked) return Value::Num(0);
-    return Value::Num(ctx->uiClicked(StringArg(host, 0)) ? 1.0 : 0.0);
+    return Value::Bool(ctx->uiClicked(StringArg(host, 0)));
 }
 
 // UISetText(name, text) / UISetFill(name, 0..1) / UISetVisible(name, bool):
@@ -520,7 +519,7 @@ Value NativeWriteText(IScriptHost& host, void* user) {
     if (!ctx || !ctx->writeData) return Value::Num(0);
     const std::string path = StringArg(host, 0);
     const std::string content = StringArg(host, 1);
-    return Value::Num(ctx->writeData(path, content) ? 1.0 : 0.0);
+    return Value::Bool(ctx->writeData(path, content));
 }
 
 // FindNamedEntity(name) -> entity handle (invalid handle when not found).
@@ -658,7 +657,7 @@ Value NativeChangeScene(IScriptHost& host, void* user) {
     auto* ctx = static_cast<ScriptContext*>(user);
     if (!ctx || !ctx->changeScene) return Value::Num(0);
     const std::string path = StringArg(host, 0);
-    return Value::Num(ctx->changeScene(path) ? 1.0 : 0.0);
+    return Value::Bool(ctx->changeScene(path));
 }
 
 // SignalConnect(name, fn): registers a Lua function (captured by value, so
@@ -1116,38 +1115,38 @@ Value NativeInputKey(IScriptHost& host, void* user) {
 
 Value NativeActionDown(IScriptHost& host, void* user) {
     auto* ctx = static_cast<ScriptContext*>(user);
-    if (!ctx || !ctx->input) return Value::Num(0);
+    if (!ctx || !ctx->input) return Value::Bool(false);
     platform::IInput* in = InputFor(*ctx);
-    if (!in) return Value::Num(0);
+    if (!in) return Value::Bool(false);
     const std::string name = StringArg(host, 0);
     if (ctx->inputMap && ctx->inputMap->Has(name))
-        return Value::Num(ctx->inputMap->IsDown(name, *in) ? 1.0 : 0.0);
+        return Value::Bool(ctx->inputMap->IsDown(name, *in));
     const platform::Key key = KeyFromName(name);
-    return Value::Num(key != platform::Key::Unknown && in->IsDown(key) ? 1.0 : 0.0);
+    return Value::Bool(key != platform::Key::Unknown && in->IsDown(key));
 }
 
 Value NativeActionPressed(IScriptHost& host, void* user) {
     auto* ctx = static_cast<ScriptContext*>(user);
-    if (!ctx || !ctx->input) return Value::Num(0);
+    if (!ctx || !ctx->input) return Value::Bool(false);
     platform::IInput* in = InputFor(*ctx);
-    if (!in) return Value::Num(0);
+    if (!in) return Value::Bool(false);
     const std::string name = StringArg(host, 0);
     if (ctx->inputMap && ctx->inputMap->Has(name))
-        return Value::Num(ctx->inputMap->Pressed(name, *in) ? 1.0 : 0.0);
+        return Value::Bool(ctx->inputMap->Pressed(name, *in));
     const platform::Key key = KeyFromName(name);
-    return Value::Num(key != platform::Key::Unknown && in->Pressed(key) ? 1.0 : 0.0);
+    return Value::Bool(key != platform::Key::Unknown && in->Pressed(key));
 }
 
 Value NativeActionReleased(IScriptHost& host, void* user) {
     auto* ctx = static_cast<ScriptContext*>(user);
-    if (!ctx || !ctx->input) return Value::Num(0);
+    if (!ctx || !ctx->input) return Value::Bool(false);
     platform::IInput* in = InputFor(*ctx);
-    if (!in) return Value::Num(0);
+    if (!in) return Value::Bool(false);
     const std::string name = StringArg(host, 0);
     if (ctx->inputMap && ctx->inputMap->Has(name))
-        return Value::Num(ctx->inputMap->Released(name, *in) ? 1.0 : 0.0);
+        return Value::Bool(ctx->inputMap->Released(name, *in));
     const platform::Key key = KeyFromName(name);
-    return Value::Num(key != platform::Key::Unknown && in->Released(key) ? 1.0 : 0.0);
+    return Value::Bool(key != platform::Key::Unknown && in->Released(key));
 }
 
 Value NativeActionAxis(IScriptHost& host, void* user) {

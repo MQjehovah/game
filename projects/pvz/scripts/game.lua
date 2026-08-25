@@ -71,7 +71,7 @@ function on_start()
 end
 
 function on_update()
-  if UIClicked("Start") == 1 then
+  if UIClicked("Start") then
     started = true
     SetVar("started", true)
     UIHide()

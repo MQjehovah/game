@@ -180,7 +180,7 @@ end
 function on_update(e, dt)
   clock = clock + dt
   if state == "ready" then
-    if UIClicked("Start") > 0 or InputKey("space") > 0 or InputKey("enter") > 0 then
+    if UIClicked("Start") or InputKey("space") > 0 or InputKey("enter") > 0 then
       start_game()
     elseif DEMO and demoTimer <= 0 then
       start_game()

@@ -143,7 +143,7 @@ local function update_player(dt)
   -- 跳跃（手动重力，地面 y=GROUND_Y）
   local pos = GetPosition(hero)
   if pos == nil then return end
-  if ActionDown("jump") > 0 and grounded then
+  if ActionDown("jump") and grounded then
     yvel = 8
     grounded = false
   end
@@ -177,13 +177,13 @@ local function update_player(dt)
 
   -- 火球（1）与治疗（2）
   local manaNow = vget("mana", 0)
-  if ActionDown("fireball") > 0 and manaNow >= 10 then
+  if ActionDown("fireball") and manaNow >= 10 then
     SetVar("mana", manaNow - 10)
     local origin = { x = pos.x, y = pos.y + 1.2, z = pos.z }
     local dir = { x = math.sin(facing), y = 0, z = -math.cos(facing) }
     SpawnProjectile(origin, dir, 16, 30, 2.0, hero)
   end
-  if ActionDown("heal") > 0 and manaNow >= 15 then
+  if ActionDown("heal") and manaNow >= 15 then
     SetVar("mana", manaNow - 15)
     local hp = vget("hp", 100)
     SetVar("hp", math.min(vget("max_hp", 100), hp + 35))
@@ -279,7 +279,7 @@ local function update_npc(dt)
     dialogue.shown = dialogue.shown - dt
     if dialogue.shown <= 0 then dialogue = nil end
   end
-  if dist2d(pp.x, pp.z, npcPos.x, npcPos.z) < 3 and ActionPressed("interact") > 0
+  if dist2d(pp.x, pp.z, npcPos.x, npcPos.z) < 3 and ActionPressed("interact")
       and dialogue == nil then
     dialogue = {
       lines = {

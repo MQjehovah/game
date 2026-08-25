@@ -475,7 +475,7 @@ TEST(ScriptBindingsWriteFindVisible) {
     b.ctx.hiddenEntities = &hidden;
 
     CHECK(RunScript(*b.host, R"(
-      assert(WriteText("save.json", "level=3") == 1)
+      assert(WriteText("save.json", "level=3") == true)
       local h = FindNamedEntity("hero")
       assert(h ~= nil and h.id == 1 and h.gen == 1)
       assert(FindNamedEntity("ghost") == nil)
@@ -564,9 +564,12 @@ TEST(ScriptBindingsActionQueries) {
     const bool ok = RunScript(*b.host, R"(
       assert(ActionAxis("forward") == 1)
       assert(ActionAxis("strafe") == 0)
-      assert(ActionDown("jump") == 1)
-      assert(ActionPressed("jump") == 1)
-      assert(ActionPressed("forward") == 0)
+      -- Action queries return real booleans (Lua's number 0 is truthy, so a
+      -- numeric 0/1 return made `if ActionPressed(x)` fire every frame).
+      assert(ActionDown("jump") == true)
+      assert(ActionPressed("jump") == true)
+      assert(ActionPressed("forward") == false)
+      assert(not ActionDown("no_such_action"))
       assert(ActionAxis("unknown_action") == 0)
     )");
     if (!ok) std::printf("DIAG ActionQueries error: %s\n",
