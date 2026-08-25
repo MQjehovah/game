@@ -1707,11 +1707,16 @@ void EditorApp::OnRender() {
         }
         // The scene's DirectionalLight object drives the world light (Unity-style).
         const scene::SceneLight* sl = nullptr;
+        float ambientFill = 0.1f;
         for (const SceneEntity& se : entities_) {
-            if (se.hasLight && se.light.type == "directional") { sl = &se.light; break; }
+            if (se.hasLight && se.light.type == "directional" && !sl) sl = &se.light;
+            if (se.hasLight && se.light.type == "ambient") ambientFill = se.light.ambientStrength;
         }
-        if (sl)
-            renderer_.SetDirectionalLight(sl->sunDir, sl->color, sl->ambientStrength);
+        if (sl) {
+            const gfx::Color sun{sl->color.r * sl->intensity, sl->color.g * sl->intensity,
+                                 sl->color.b * sl->intensity, sl->color.a};
+            renderer_.SetDirectionalLight(sl->sunDir, sun, ambientFill);
+        }
         else
             // No directional light object: a dim default so lighting visibly
             // responds to the scene's light objects (no light -> dark-ish).
@@ -1721,7 +1726,10 @@ void EditorApp::OnRender() {
         for (const SceneEntity& se : entities_) {
             if (!se.hasLight || se.light.type != "point") continue;
             if (plIndex >= gfx::Renderer::kMaxPointLights) break;
-            renderer_.SetPointLight(plIndex++, se.pos, se.light.color, se.light.radius);
+            const gfx::Color pc{se.light.color.r * se.light.intensity,
+                                se.light.color.g * se.light.intensity,
+                                se.light.color.b * se.light.intensity, se.light.color.a};
+            renderer_.SetPointLight(plIndex++, se.pos, pc, se.light.radius);
         }
         for (; plIndex < gfx::Renderer::kMaxPointLights; ++plIndex)
             renderer_.SetPointLight(plIndex, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f, 1.0f}, 0.0f);
@@ -5128,6 +5136,7 @@ core::Result<core::Json> EditorApp::BuildPlaySceneJson() {
                     vecJson(e.light.sunDir.x, e.light.sunDir.y, e.light.sunDir.z);
                 li.object_["color"] =
                     colJson(e.light.color.r, e.light.color.g, e.light.color.b, e.light.color.a);
+                li.object_["intensity"] = mkNum(e.light.intensity);
                 li.object_["radius"] = mkNum(e.light.radius);
                 li.object_["ambientColor"] = colJson(e.light.ambientColor.r, e.light.ambientColor.g,
                                                      e.light.ambientColor.b, e.light.ambientColor.a);
@@ -6313,6 +6322,8 @@ void EditorApp::LoadScene(const std::string& path) {
                 }
                 if (const core::Json* v = li->Get("radius"))
                     e.light.radius = static_cast<float>(v->GetNumber());
+                if (const core::Json* v = li->Get("intensity"))
+                    e.light.intensity = static_cast<float>(v->GetNumber());
                 if (const core::Json* v = li->Get("ambientColor")) {
                     float vv[4] = {1, 1, 1, 1};
                     size_t n = 0;

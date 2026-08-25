@@ -277,6 +277,7 @@ struct SceneLight {
     std::string type = "directional";
     math::Vec3 sunDir{-0.4f, -1.0f, -0.3f};
     gfx::Color color{1.0f, 0.95f, 0.85f, 1.0f};
+    float intensity = 1.0f;        // per-light strength (multiplies color at render)
     float radius = 10.0f;               // point light falloff range
     gfx::Color ambientColor{0.55f, 0.70f, 0.88f, 1.0f};
     float ambientStrength = 0.25f;

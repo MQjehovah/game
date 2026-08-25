@@ -1469,26 +1469,30 @@ void EditorApp::BuildInspectorPanel() {
                     e.light.type = sel == 1 ? "point" : (sel == 2 ? "ambient" : "directional");
                     sceneDirty_ = true;
                 }
+                if (e.light.type == "directional") {
+                    if (ImGui::DragFloat3("方向##lt", &e.light.sunDir.x, 0.05f)) sceneDirty_ = true;
+                    if (ImGui::DragFloat("强度##lt", &e.light.intensity, 0.05f, 0.0f, 10.0f))
+                        sceneDirty_ = true;
+                } else if (e.light.type == "point") {
+                    if (ImGui::DragFloat("半径##lt", &e.light.radius, 0.1f, 0.1f, 500.0f))
+                        sceneDirty_ = true;
+                    if (ImGui::DragFloat("强度##lt", &e.light.intensity, 0.05f, 0.0f, 10.0f))
+                        sceneDirty_ = true;
+                } else { // ambient
+                    float amb[4] = {e.light.ambientColor.r, e.light.ambientColor.g,
+                                    e.light.ambientColor.b, e.light.ambientColor.a};
+                    if (ImGui::ColorEdit4("环境光色##lt", amb)) {
+                        e.light.ambientColor = {amb[0], amb[1], amb[2], amb[3]};
+                        sceneDirty_ = true;
+                    }
+                    if (ImGui::DragFloat("环境光强度##lt", &e.light.ambientStrength, 0.01f, 0.0f, 2.0f))
+                        sceneDirty_ = true;
+                }
                 float col[4] = {e.light.color.r, e.light.color.g, e.light.color.b, e.light.color.a};
                 if (ImGui::ColorEdit4("颜色##lt", col)) {
                     e.light.color = {col[0], col[1], col[2], col[3]};
                     sceneDirty_ = true;
                 }
-                if (e.light.type == "directional") {
-                    if (ImGui::DragFloat3("方向##lt", &e.light.sunDir.x, 0.05f)) sceneDirty_ = true;
-                }
-                if (e.light.type == "point") {
-                    if (ImGui::DragFloat("半径##lt", &e.light.radius, 0.1f, 0.1f, 500.0f))
-                        sceneDirty_ = true;
-                }
-                float amb[4] = {e.light.ambientColor.r, e.light.ambientColor.g,
-                                e.light.ambientColor.b, e.light.ambientColor.a};
-                if (ImGui::ColorEdit4("环境光色##lt", amb)) {
-                    e.light.ambientColor = {amb[0], amb[1], amb[2], amb[3]};
-                    sceneDirty_ = true;
-                }
-                if (ImGui::DragFloat("环境光强度##lt", &e.light.ambientStrength, 0.01f, 0.0f, 2.0f))
-                    sceneDirty_ = true;
                 ImGui::Separator();
             }
         }
