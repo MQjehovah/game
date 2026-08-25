@@ -117,6 +117,7 @@ const UniEntry kUniformOffsets[] = {
     {"uPointPos[0]", UniKind::Vec3, 4576, 12, 8},
     {"uPointColor[0]", UniKind::Vec3, 4704, 12, 8},
     {"uPointRadius[0]", UniKind::Float, 4832, 4, 8},
+    {"uAmbientColor", UniKind::Vec3, 4864, 12, 1},
     {"uCamPos", UniKind::Vec3, 4960, 12, 1},
     {"uSunDir", UniKind::Vec3, 4976, 12, 1},
     {"uSunColor", UniKind::Vec3, 4992, 12, 1},

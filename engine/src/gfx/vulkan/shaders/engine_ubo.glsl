@@ -18,6 +18,7 @@ layout(set = 0, binding = 0) uniform EngineUBO {
     layout(offset = 4576) vec3 uPointPos[8];
     layout(offset = 4704) vec3 uPointColor[8];
     layout(offset = 4832) float uPointRadius[8];
+    layout(offset = 4864) vec3 uAmbientColor;
     layout(offset = 4960) vec3 uCamPos;
     layout(offset = 4976) vec3 uSunDir;
     layout(offset = 4992) vec3 uSunColor;

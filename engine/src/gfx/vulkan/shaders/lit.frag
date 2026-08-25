@@ -154,7 +154,8 @@ void main() {
     vec3 prefiltered = texture(uPrefilteredMap, vec2(roughU, R.y * 0.5 + 0.5)).rgb;
     vec2 brdf = texture(uBrdfLUT, vec2(ndv, roughness)).rg;
     vec3 iblSpecular = prefiltered * (f0 * brdf.x + brdf.y) * eng.uIblStrength;
-    vec3 ambientLight = iblDiffuse + iblSpecular + albedo.rgb * eng.uAmbient * (1.0 - eng.uIblStrength);
+    vec3 ambientLight = iblDiffuse + iblSpecular +
+                        albedo.rgb * eng.uAmbientColor * eng.uAmbient * (1.0 - eng.uIblStrength);
     if (eng.uHasAO != 0) ambientLight *= mix(1.0, texture(uOcclusion, vUV).r, eng.uAOStrength);
     vec3 color = (kd * albedo.rgb + spec) * eng.uSunColor * ndl + ambientLight;
     if (eng.uHasEmissive != 0) color += texture(uEmissive, vUV).rgb * eng.uEmissiveIntensity;

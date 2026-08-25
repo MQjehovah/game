@@ -1707,20 +1707,33 @@ void EditorApp::OnRender() {
         }
         // The scene's DirectionalLight object drives the world light (Unity-style).
         const scene::SceneLight* sl = nullptr;
-        float ambientFill = 0.1f;
+        const scene::SceneLight* amb = nullptr;
         for (const SceneEntity& se : entities_) {
             if (se.hasLight && se.light.type == "directional" && !sl) sl = &se.light;
-            if (se.hasLight && se.light.type == "ambient") ambientFill = se.light.ambientStrength;
+            if (se.hasLight && se.light.type == "ambient" && !amb) amb = &se.light;
         }
         if (sl) {
             const gfx::Color sun{sl->color.r * sl->intensity, sl->color.g * sl->intensity,
                                  sl->color.b * sl->intensity, sl->color.a};
-            renderer_.SetDirectionalLight(sl->sunDir, sun, ambientFill);
+            renderer_.SetDirectionalLight(sl->sunDir, sun, 0.0f);
         }
         else
             // No directional light object: a dim default so lighting visibly
             // responds to the scene's light objects (no light -> dark-ish).
-            renderer_.SetDirectionalLight({-0.4f, -1.0f, -0.3f}, {0.8f, 0.8f, 0.8f}, 0.05f);
+            renderer_.SetDirectionalLight({-0.4f, -1.0f, -0.3f}, {0.8f, 0.8f, 0.8f}, 0.0f);
+        // An explicit ambient light object is authoritative for the flat
+        // ambient term (color * strength) and turns off the sky-IBL fill so the
+        // object is actually visible (previously the flat term was suppressed by
+        // IBL=1, which made an ambient object look like it did nothing). Without
+        // one, keep the bright day-sky IBL ambient + a neutral fill (suppressed
+        // by IBL=1 anyway) for the default look.
+        if (amb) {
+            renderer_.SetAmbientLight(amb->ambientColor, amb->ambientStrength);
+            renderer_.SetIblStrength(0.0f);
+        } else {
+            renderer_.SetAmbientLight({1.0f, 1.0f, 1.0f, 1.0f}, 0.1f);
+            renderer_.SetIblStrength(1.0f);
+        }
         // Scene PointLight objects (Unity-style) drive the renderer's point lights.
         int plIndex = 0;
         for (const SceneEntity& se : entities_) {

@@ -93,6 +93,7 @@ uniform float uRoughness;
 uniform vec3 uSunDir;
 uniform vec3 uSunColor;
 uniform float uAmbient;
+uniform vec3 uAmbientColor;
 uniform sampler2D uIrradianceMap;
 uniform sampler2D uPrefilteredMap;
 uniform sampler2D uBrdfLUT;
@@ -273,7 +274,8 @@ void main() {
     vec3 prefiltered = texture(uPrefilteredMap, vec2(roughU, R.y * 0.5 + 0.5)).rgb;
     vec2 brdf = texture(uBrdfLUT, vec2(ndv, roughness)).rg;
     vec3 iblSpecular = prefiltered * (f0 * brdf.x + brdf.y) * uIblStrength;
-    vec3 ambientLight = iblDiffuse + iblSpecular + albedo.rgb * uAmbient * (1.0 - uIblStrength);
+    vec3 ambientLight = iblDiffuse + iblSpecular +
+                        albedo.rgb * uAmbientColor * uAmbient * (1.0 - uIblStrength);
     if (uHasAO) ambientLight *= mix(1.0, texture(uOcclusion, vUV).r, uAOStrength);
     vec3 color = (kd * albedo.rgb + spec) * uSunColor * ndl + ambientLight;
     if (uHasEmissive) color += texture(uEmissive, vUV).rgb * uEmissiveIntensity;
@@ -1050,6 +1052,11 @@ void Renderer::SetDirectionalLight(const math::Vec3& direction, const Color& col
     sunDir_ = direction.Normalized();
     sunColor_ = color;
     ambient_ = ambientStrength;
+}
+
+void Renderer::SetAmbientLight(const Color& color, float strength) {
+    ambientColor_ = color;
+    ambient_ = strength;
 }
 
 void Renderer::SetShadowsEnabled(bool enabled) {
@@ -1967,6 +1974,8 @@ void Renderer::ApplyMaterial(const Material& material, const math::Mat4& mvp,
         backend_->SetUniformVec3("uSunDir", sunDir_);
         backend_->SetUniformVec3("uSunColor", {sunColor_.r, sunColor_.g, sunColor_.b});
         backend_->SetUniformFloat("uAmbient", ambient_);
+        backend_->SetUniformVec3("uAmbientColor",
+                                 {ambientColor_.r, ambientColor_.g, ambientColor_.b});
         backend_->SetUniformInt("uPointCount", pointCount_);
         for (int i = 0; i < pointCount_; ++i) {
             std::string suffix = "[" + std::to_string(i) + "]";

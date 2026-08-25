@@ -78,6 +78,11 @@ public:
     void SetVolumetricFogDensity(float density) { fogDensity_ = density; }
     float VolumetricFogDensity() const { return fogDensity_; }
     void SetDirectionalLight(const math::Vec3& direction, const Color& color, float ambientStrength);
+    // Set the flat ambient term used by the lit shader. `color` tints the
+    // ambient and `strength` scales it; a non-default color lets an explicit
+    // ambient light object control the scene's base fill independently of the
+    // sky-based IBL environment.
+    void SetAmbientLight(const Color& color, float strength);
     void SetPointLight(int index, const math::Vec3& position, const Color& color, float radius);
     void SetPlayerLight(const math::Vec3& position, const Color& color, float radius);
 
@@ -566,6 +571,7 @@ private:
     math::Vec3 sunDir_{-0.4f, -1.0f, -0.3f};
     Color sunColor_{1.0f, 0.95f, 0.85f, 1.0f};
     float ambient_ = 0.25f;
+    Color ambientColor_{1.0f, 1.0f, 1.0f, 1.0f};
     bool shadowRecording_ = true;
     math::Vec3 pointPos_[kMaxPointLights];
     Color pointColor_[kMaxPointLights];
