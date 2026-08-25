@@ -1660,6 +1660,10 @@ void EditorApp::OnRender() {
             renderer_.Set2DViewport(vp.x, vp.y, vp.w, vp.h, canvasZoom_, canvasPan_);
             renderer_.Backend()->SetScissor(static_cast<int>(vp.x), static_cast<int>(vp.y),
                                             static_cast<int>(vp.w), static_cast<int>(vp.h), true);
+            // Same sky + scene lights as the edit view so Play matches what
+            // the edit camera sees (previously the playtest kept the renderer
+            // defaults: no sky, dark default lighting).
+            ApplySceneEnvironment();
             // Rasterize the scene into the panel rect (not a stale/full-window
             // viewport) so the sprite aspect and the 2D UI overlay agree.
             renderer_.SetSceneViewport(vp.x, vp.y, vp.w, vp.h);
@@ -1673,6 +1677,7 @@ void EditorApp::OnRender() {
             renderer_.Backend()->SetScissor(0, 0, 0, 0, false);
         } else {
             // No viewport rect yet (first frame): full-window fallback.
+            ApplySceneEnvironment();
             playtest_->Draw(renderer_, gameCam, canvasZoom_);
         }
         renderer_.Reset2DViewport();
@@ -1693,21 +1698,9 @@ void EditorApp::OnRender() {
             // mapping in the playtest branch above.)
             renderer_.Set2DViewportPixels(vp.x, vp.y);
         }
-        // Day sky: the old near-black zenith made the IBL ambient ~0, so
-        // backfaces and shadowed areas were crushed to black (roofs looked
-        // incomplete, shadows harsh). A bright sky keeps shadows readable.
-        renderer_.SetSky({0.28f, 0.38f, 0.58f, 1.0f}, {0.55f, 0.65f, 0.8f, 1.0f});
-        const bool is2DFog = projectMode_ == "2d" || editMode_ == EditMode::Scene2D;
-        if (is2DFog) {
-            // 2D has no depth: the ortho camera sits at z=100 so a distance
-            // fog would paint a radial gradient centred on the camera axis
-            // (bright/dim circle at the camera position). Disable it by pushing
-            // the fog range far beyond any visible object.
-            renderer_.SetFog({0.45f, 0.55f, 0.7f, 1.0f}, 1e9f, 1e10f);
-        } else {
-            renderer_.SetFog({0.45f, 0.55f, 0.7f, 1.0f}, 60.0f, 140.0f);
-        }
-        renderer_.DrawSky();
+        // Day sky + scene lights: shared with the 2D playtest so edit and
+        // Play render the same environment (see ApplySceneEnvironment).
+        ApplySceneEnvironment();
 
         const float aspect = ViewportAspect();
         cam = ActiveCamera();
@@ -1735,46 +1728,7 @@ void EditorApp::OnRender() {
                                 math::Mat4::Identity());
         }
         // The scene's DirectionalLight object drives the world light (Unity-style).
-        const scene::SceneLight* sl = nullptr;
-        const scene::SceneLight* amb = nullptr;
-        for (const SceneEntity& se : entities_) {
-            if (se.hasLight && se.light.type == "directional" && !sl) sl = &se.light;
-            if (se.hasLight && se.light.type == "ambient" && !amb) amb = &se.light;
-        }
-        if (sl) {
-            const gfx::Color sun{sl->color.r * sl->intensity, sl->color.g * sl->intensity,
-                                 sl->color.b * sl->intensity, sl->color.a};
-            renderer_.SetDirectionalLight(sl->sunDir, sun, 0.0f);
-        }
-        else
-            // No directional light object: a dim default so lighting visibly
-            // responds to the scene's light objects (no light -> dark-ish).
-            renderer_.SetDirectionalLight({-0.4f, -1.0f, -0.3f}, {0.8f, 0.8f, 0.8f}, 0.0f);
-        // An explicit ambient light object is authoritative for the flat
-        // ambient term (color * strength) and turns off the sky-IBL fill so the
-        // object is actually visible (previously the flat term was suppressed by
-        // IBL=1, which made an ambient object look like it did nothing). Without
-        // one, keep the bright day-sky IBL ambient + a neutral fill (suppressed
-        // by IBL=1 anyway) for the default look.
-        if (amb) {
-            renderer_.SetAmbientLight(amb->color, amb->ambientStrength);
-            renderer_.SetIblStrength(0.0f);
-        } else {
-            renderer_.SetAmbientLight({1.0f, 1.0f, 1.0f, 1.0f}, 0.1f);
-            renderer_.SetIblStrength(1.0f);
-        }
-        // Scene PointLight objects (Unity-style) drive the renderer's point lights.
-        int plIndex = 0;
-        for (const SceneEntity& se : entities_) {
-            if (!se.hasLight || se.light.type != "point") continue;
-            if (plIndex >= gfx::Renderer::kMaxPointLights) break;
-            const gfx::Color pc{se.light.color.r * se.light.intensity,
-                                se.light.color.g * se.light.intensity,
-                                se.light.color.b * se.light.intensity, se.light.color.a};
-            renderer_.SetPointLight(plIndex++, se.pos, pc, se.light.radius);
-        }
-        for (; plIndex < gfx::Renderer::kMaxPointLights; ++plIndex)
-            renderer_.SetPointLight(plIndex, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f, 1.0f}, 0.0f);
+        // (Handled inside ApplySceneEnvironment, together with the sky/fog.)
         // G-camera: the camera object's frustum gizmo already shows the real
         // view (and follows the camera), so the fixed design/camera border is
         // no longer needed - the game is driven by the camera's actual view.
@@ -2349,6 +2303,63 @@ gfx::Camera EditorApp::ActiveCamera() const {
             break;
     }
     return cam;
+}
+
+void EditorApp::ApplySceneEnvironment() {
+    // Day sky: the old near-black zenith made the IBL ambient ~0, so
+    // backfaces and shadowed areas were crushed to black (roofs looked
+    // incomplete, shadows harsh). A bright sky keeps shadows readable.
+    renderer_.SetSky({0.28f, 0.38f, 0.58f, 1.0f}, {0.55f, 0.65f, 0.8f, 1.0f});
+    const bool is2DFog = projectMode_ == "2d" || editMode_ == EditMode::Scene2D;
+    if (is2DFog) {
+        // 2D has no depth: the ortho camera sits at z=100 so a distance
+        // fog would paint a radial gradient centred on the camera axis
+        // (bright/dim circle at the camera position). Disable it by pushing
+        // the fog range far beyond any visible object.
+        renderer_.SetFog({0.45f, 0.55f, 0.7f, 1.0f}, 1e9f, 1e10f);
+    } else {
+        renderer_.SetFog({0.45f, 0.55f, 0.7f, 1.0f}, 60.0f, 140.0f);
+    }
+    renderer_.DrawSky();
+    // The scene's DirectionalLight object drives the world light (Unity-style).
+    const scene::SceneLight* sl = nullptr;
+    const scene::SceneLight* amb = nullptr;
+    for (const SceneEntity& se : entities_) {
+        if (se.hasLight && se.light.type == "directional" && !sl) sl = &se.light;
+        if (se.hasLight && se.light.type == "ambient" && !amb) amb = &se.light;
+    }
+    if (sl) {
+        const gfx::Color sun{sl->color.r * sl->intensity, sl->color.g * sl->intensity,
+                             sl->color.b * sl->intensity, sl->color.a};
+        renderer_.SetDirectionalLight(sl->sunDir, sun, 0.0f);
+    } else {
+        // No directional light object: a dim default so lighting visibly
+        // responds to the scene's light objects (no light -> dark-ish).
+        renderer_.SetDirectionalLight({-0.4f, -1.0f, -0.3f}, {0.8f, 0.8f, 0.8f}, 0.0f);
+    }
+    // An explicit ambient light object is authoritative for the flat ambient
+    // term (color * strength) and turns off the sky-IBL fill so the object is
+    // actually visible. Without one, keep the bright day-sky IBL ambient + a
+    // neutral fill for the default look.
+    if (amb) {
+        renderer_.SetAmbientLight(amb->color, amb->ambientStrength);
+        renderer_.SetIblStrength(0.0f);
+    } else {
+        renderer_.SetAmbientLight({1.0f, 1.0f, 1.0f, 1.0f}, 0.1f);
+        renderer_.SetIblStrength(1.0f);
+    }
+    // Scene PointLight objects (Unity-style) drive the renderer's point lights.
+    int plIndex = 0;
+    for (const SceneEntity& se : entities_) {
+        if (!se.hasLight || se.light.type != "point") continue;
+        if (plIndex >= gfx::Renderer::kMaxPointLights) break;
+        const gfx::Color pc{se.light.color.r * se.light.intensity,
+                            se.light.color.g * se.light.intensity,
+                            se.light.color.b * se.light.intensity, se.light.color.a};
+        renderer_.SetPointLight(plIndex++, se.pos, pc, se.light.radius);
+    }
+    for (; plIndex < gfx::Renderer::kMaxPointLights; ++plIndex)
+        renderer_.SetPointLight(plIndex, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f, 1.0f}, 0.0f);
 }
 
 void EditorApp::DrawCameraFrame() {
@@ -5333,21 +5344,28 @@ void EditorApp::StartPlaytest() {
     std::string json;
 
     if (projectMode_ == "2d") {
-        // 2D project (NeonPvZ / NeonSnake): play the project's start scene
-        // directly - the scene file is the single source of truth (there is
-        // no separate editor canvas copy). The runtime's on_render draws the
-        // actual game. Follows the PROJECT type, not the current camera view:
-        // a 2D game plays as a 2D game even in a perspective editor camera.
+        // 2D project (NeonPvZ / NeonSnake): play the EDITOR'S LIVE ENTITIES
+        // (a serialized snapshot, exactly like the 3D playtest) so unsaved
+        // edits - moved sprites, added plants - appear in Play immediately;
+        // the old disk read ignored editor changes until the scene was saved.
+        // The on-disk start scene only backs up the empty-canvas case. Follows
+        // the PROJECT type, not the current camera view: a 2D game plays as a
+        // 2D game even in a perspective editor camera.
         cfg.assetBaseDir = projectDir_;
-        const std::string sceneRel =
-            projectStartScene_.empty() ? "scenes/pvz.json" : projectStartScene_;
-        const std::string scenePath = projectDir_ + "/" + sceneRel;
-        std::ifstream in(scenePath, std::ios::binary);
-        if (!in.is_open()) {
-            NEON_LOG_ERROR("Editor: cannot read play scene '%s'", scenePath.c_str());
-            return;
+        auto root = BuildPlaySceneJson();
+        if (root.Ok()) {
+            json = core::JsonWriter::Write(root.Value());
+        } else {
+            const std::string sceneRel =
+                projectStartScene_.empty() ? "scenes/pvz.json" : projectStartScene_;
+            const std::string scenePath = projectDir_ + "/" + sceneRel;
+            std::ifstream in(scenePath, std::ios::binary);
+            if (!in.is_open()) {
+                NEON_LOG_ERROR("Editor: cannot read play scene '%s'", scenePath.c_str());
+                return;
+            }
+            json.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
         }
-        json.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
     } else {
         // 3D scene: play the editor's current entities (serialized snapshot).
         if (entities_.empty()) {

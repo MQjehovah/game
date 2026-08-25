@@ -289,6 +289,11 @@ private:
     // shows for a 2D/ortho camera): a cyan rect on the plane the camera looks
     // at, so the user can see exactly what the locked camera frames.
     void DrawCameraFrame();
+    // Applies the scene environment (day sky + fog, the scene's
+    // directional/ambient/point light objects) to the renderer. Shared by the
+    // edit view and the 2D playtest so Play shows exactly what the edit camera
+    // sees (same sky, same lighting).
+    void ApplySceneEnvironment();
     // Editor gizmos: draws camera frusta + light icons for scene objects as an
     // ImGui overlay (called from BuildImGuiUI so it draws after the 3D scene and
     // aligns with the transform gizmo).

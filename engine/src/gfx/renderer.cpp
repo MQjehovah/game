@@ -948,6 +948,16 @@ void Renderer::SetCamera(const Camera& camera, float aspect) {
         // RunShadowPass ends with BindDefaultTarget (shadow FBOs unbound);
         // route the main pass back into the HDR target when active.
         RebindMainTarget();
+        // Both rebinds reset the backend viewport to the target's full size.
+        // Restore the active scene viewport (a dock sub-rect in the editor)
+        // so the main pass still rasterizes into the intended rect - hosts
+        // that render into a sub-viewport (e.g. the 2D playtest) would
+        // otherwise see the scene stretched/offset to the full window.
+        if (sceneViewport_.w > 0.0f && sceneViewport_.h > 0.0f)
+            backend_->SetViewport(static_cast<int>(sceneViewport_.x),
+                                  static_cast<int>(sceneViewport_.y),
+                                  static_cast<int>(sceneViewport_.w),
+                                  static_cast<int>(sceneViewport_.h));
     }
 }
 
