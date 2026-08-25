@@ -1479,7 +1479,7 @@ void EditorApp::BuildInspectorPanel() {
                     if (ImGui::DragFloat("强度##lt", &e.light.intensity, 0.05f, 0.0f, 10.0f))
                         sceneDirty_ = true;
                 } else { // ambient
-                    if (ImGui::DragFloat("环境光强度##lt", &e.light.ambientStrength, 0.01f, 0.0f, 2.0f))
+                    if (ImGui::DragFloat("强度##lt", &e.light.ambientStrength, 0.01f, 0.0f, 2.0f))
                         sceneDirty_ = true;
                 }
                 float col[4] = {e.light.color.r, e.light.color.g, e.light.color.b, e.light.color.a};
