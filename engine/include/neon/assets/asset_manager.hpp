@@ -245,6 +245,13 @@ private:
     gfx::Renderer* renderer_ = nullptr;
     std::map<std::string, gfx::Texture> textures_;
     std::map<std::string, gfx::Mesh> meshes_;
+    // Parsed glTF assets (raw JSON layout + uploaded mesh/material nodes),
+    // keyed by path with the file mtime recorded at parse time. LoadGLTF
+    // re-parses only when the on-disk mtime changes, so N entities sharing one
+    // model (editor resolve, playtest starts, thumbnails) reuse the same GPU
+    // meshes instead of re-uploading per entity.
+    std::map<std::string, GltfAsset> gltfs_;
+    std::map<std::string, uint64_t> gltfMtimes_;
     std::map<std::pair<std::string, int>, gfx::Font> fonts_;
     std::map<std::string, uint64_t> textureMtimes_;
     std::map<std::string, uint64_t> meshMtimes_;

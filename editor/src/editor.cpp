@@ -5223,8 +5223,18 @@ void EditorApp::PollHotReload() {
     if (!changedPaths.empty()) {
         for (const std::string& p : changedPaths) {
             const std::string ext = ExtLower(p);
-            if (ext == ".obj") assetMgr_.ReloadMeshOBJ(p);
-            else if (ext != ".gltf") assetMgr_.ReloadTexture(p);
+            if (ext == ".obj") {
+                assetMgr_.ReloadMeshOBJ(p);
+            } else if (ext == ".gltf") {
+                // Drop the resolved-model cache so the next ResolveMesh
+                // re-parses the updated file. (The old GPU meshes are not
+                // explicitly destroyed; same as the pre-existing mesh path.)
+                skinnedModelCache_.erase(p);
+                gltfStaticMeshCache_.erase(p);
+                gltfStaticMaterialCache_.erase(p);
+            } else {
+                assetMgr_.ReloadTexture(p);
+            }
             NEON_LOG_INFO("Editor: hot reload: asset '%s' reloaded", p.c_str());
         }
         ++hotReloadCount_;
@@ -5381,10 +5391,32 @@ bool EditorApp::ResolveMesh(SceneEntity& e) {
         e.material = gfx::Material::Lit({}, e.tint, 8.0f);
     } else if (key.rfind("gltf:", 0) == 0) {
         const std::string gltfPath = ResolveMeshAssetPath(key.substr(5), projectDir_);
-        assets::GltfAsset gltf = assetMgr_.LoadGLTF(gltfPath);
-        if (!gltf.nodes.empty()) {
-            e.mesh = gltf.nodes[0].mesh;
-            e.material = gltf.nodes[0].material;
+        // Cache the resolved model per path: the first entity pays the full
+        // parse + upload, the rest clone the result (GPU handles shared, the
+        // per-entity Animator state is a fresh copy).
+        if (skinnedModelCache_.count(gltfPath) == 0 &&
+            gltfStaticMeshCache_.count(gltfPath) == 0) {
+            assets::GltfAsset gltf = assetMgr_.LoadGLTF(gltfPath);
+            if (!gltf.nodes.empty()) {
+                gltfStaticMeshCache_[gltfPath] = gltf.nodes[0].mesh;
+                gltfStaticMaterialCache_[gltfPath] = gltf.nodes[0].material;
+                if (gltf.nodes[0].mesh.Skinned()) {
+                    core::Result<scene::SkinnedModel> sm =
+                        scene::LoadSkinnedModel(assetMgr_, gltfPath);
+                    if (sm.Ok()) {
+                        skinnedModelCache_[gltfPath] =
+                            std::make_shared<scene::SkinnedModel>(std::move(sm.Value()));
+                    } else {
+                        NEON_LOG_WARN("Editor: skinned model '%s' failed to resolve: %s",
+                                      key.c_str(), sm.Error().c_str());
+                    }
+                }
+            }
+        }
+        const auto meshIt = gltfStaticMeshCache_.find(gltfPath);
+        if (meshIt != gltfStaticMeshCache_.end()) {
+            e.mesh = meshIt->second;
+            e.material = gltfStaticMaterialCache_[gltfPath];
             // glTF materials carry their own PBR params (factors + texture
             // slots); sync them into the flattened fields so ApplyMaterialParams
             // applies the asset's values instead of the editor defaults.
@@ -5393,23 +5425,13 @@ bool EditorApp::ResolveMesh(SceneEntity& e) {
             e.ao = e.material.aoStrength;
             e.emissiveIntensity = e.material.emissiveIntensity;
             e.tint = e.material.tint;
-            // Animated skinned glTF: load the full model (all skinned mesh
-            // parts + skeleton + clips) so edit mode animates the entity and
-            // the viewport matches the playtest. The static path above keeps
-            // nodes[0] as the selection/picking mesh.
-            if (e.mesh.Skinned()) {
-                core::Result<scene::SkinnedModel> sm =
-                    scene::LoadSkinnedModel(assetMgr_, gltfPath);
-                if (sm.Ok()) {
-                    e.skinned = std::make_shared<scene::SkinnedModel>(std::move(sm.Value()));
-                } else {
-                    NEON_LOG_WARN("Editor: skinned model '%s' failed to resolve: %s",
-                                  key.c_str(), sm.Error().c_str());
-                    e.skinned.reset();
-                }
-            } else {
+            // Animated skinned glTF: clone the cached model (per-entity
+            // Animator state, shared skeleton/clips/meshes).
+            const auto smIt = skinnedModelCache_.find(gltfPath);
+            if (e.mesh.Skinned() && smIt != skinnedModelCache_.end())
+                e.skinned = std::make_shared<scene::SkinnedModel>(*smIt->second);
+            else
                 e.skinned.reset();
-            }
         }
     } else if (key.empty()) {
         if (!e.spriteTex.empty()) {

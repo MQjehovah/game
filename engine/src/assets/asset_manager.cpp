@@ -671,6 +671,20 @@ gfx::Mesh AssetManager::LoadMeshOBJ(const std::string& path) {
 }
 
 GltfAsset AssetManager::LoadGLTF(const std::string& path) {
+    // Parse once per file version: a glTF scene is frequently referenced by
+    // many entities (a wolf pack, an instanced prop) and re-parsing it per
+    // entity re-decodes the JSON and re-uploads every mesh. The mtime gate
+    // keeps hot-reload correct: an edited file gets re-parsed on the next
+    // request. A missing file (mtime 0) is not cached, so a file created later
+    // is picked up.
+    const uint64_t mtime = FileMTime(path);
+    const auto gltfIt = gltfs_.find(path);
+    const auto mtimeIt = gltfMtimes_.find(path);
+    if (gltfIt != gltfs_.end() && mtimeIt != gltfMtimes_.end() &&
+        mtimeIt->second == mtime && mtime != 0) {
+        return gltfIt->second;
+    }
+
     const core::Result<std::vector<uint8_t>> fileBytes = ReadAllBytes(fs_, path);
     if (!fileBytes.Ok()) {
         NEON_LOG_ERROR("GLTF: failed to open '%s'", path.c_str());
@@ -1175,6 +1189,12 @@ GltfAsset AssetManager::LoadGLTF(const std::string& path) {
                 }
             }
         }
+    }
+    // Cache the parsed result (mesh/material handles are shared GPU resources;
+    // copying the struct per caller is cheap compared to re-uploading).
+    if (mtime != 0) {
+        gltfs_[path] = out;
+        gltfMtimes_[path] = mtime;
     }
     NEON_LOG_INFO("GLTF: loaded '%s' (%zu nodes)", path.c_str(), out.nodes.size());
     return out;

@@ -517,6 +517,13 @@ private:
     std::map<std::string, MeshThumb> meshThumbs_;
     std::vector<std::string> meshThumbQueue_;
     std::map<std::string, MeshThumb> materialThumbs_;
+    // G1-3 perf: resolving a skinned glTF re-parses the file and re-uploads
+    // meshes on every ResolveMesh, so N copies of one model (e.g. a wolf pack)
+    // each paid the full startup cost. Cache one resolved model per path and
+    // clone it per entity (GPU handles shared, animator state per entity).
+    std::map<std::string, std::shared_ptr<scene::SkinnedModel>> skinnedModelCache_;
+    std::map<std::string, gfx::Mesh> gltfStaticMeshCache_;
+    std::map<std::string, gfx::Material> gltfStaticMaterialCache_;
     std::vector<std::string> materialThumbQueue_;
 
     // Smoke instrumentation (T4.8): the camera used by the last scene render,
