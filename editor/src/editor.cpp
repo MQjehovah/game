@@ -2321,8 +2321,11 @@ void EditorApp::DrawSceneGizmos(const gfx::Camera&) {
             math::Mat4::Translation(e.pos) * e.rot.ToMat4() * math::Mat4::Scale(e.scale);
         if (e.nodeType == "Camera3D") {
             // View frustum: perspective pyramid or ortho box along local -Z.
-            const float aspect = ViewportAspect();
-            const float nearP = 0.1f, farP = 60.0f;
+            // Use the 1280x720 design aspect so a default 2D camera's box
+            // coincides with the design-space border (and the game view).
+            const float aspect = static_cast<float>(gfx::Renderer::kDesignWidth) /
+                                 static_cast<float>(gfx::Renderer::kDesignHeight);
+            const float nearP = 0.1f, farP = 120.0f;
             math::Vec3 c[8];
             if (e.cameraOrtho) {
                 const float hh = e.cameraOrthoSize, hw = hh * aspect;
@@ -6561,6 +6564,7 @@ void EditorApp::EnsureSceneDefaultObjects() {
             // 2D: a locked orthographic camera framing the 1280x720 design space.
             e.cameraOrtho = true;
             e.cameraOrthoSize = 360.0f;
+            e.pos = {640.0f, 360.0f, 100.0f}; // behind the content plane, at the design centre
         }
         entities_.push_back(std::move(e));
         added = true;
