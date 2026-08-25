@@ -1708,12 +1708,14 @@ void EditorApp::OnRender() {
         // The scene's DirectionalLight object drives the world light (Unity-style).
         const scene::SceneLight* sl = nullptr;
         for (const SceneEntity& se : entities_) {
-            if (se.hasLight) { sl = &se.light; break; }
+            if (se.hasLight && se.light.type == "directional") { sl = &se.light; break; }
         }
         if (sl)
             renderer_.SetDirectionalLight(sl->sunDir, sl->color, sl->ambientStrength);
         else
-            renderer_.SetDirectionalLight({-0.4f, -1.0f, -0.3f}, {1.0f, 0.95f, 0.85f}, 0.45f);
+            // No directional light object: a dim default so lighting visibly
+            // responds to the scene's light objects (no light -> dark-ish).
+            renderer_.SetDirectionalLight({-0.4f, -1.0f, -0.3f}, {0.8f, 0.8f, 0.8f}, 0.05f);
         // Scene PointLight objects (Unity-style) drive the renderer's point lights.
         int plIndex = 0;
         for (const SceneEntity& se : entities_) {
