@@ -991,6 +991,63 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                      return true;
                  });
 
+    reg.Register("environment",
+                 [](ecs::World& world, ecs::Entity ent, const core::Json& data,
+                    const core::Json&, std::string* err) {
+                     if (!CheckComponentShape(data,
+                                              {"ambientColor", "ambientStrength", "skyTop",
+                                               "skyHorizon", "sunDir", "sunColor", "cameraFov",
+                                               "cameraOrtho", "orthoSize", "designWidth",
+                                               "designHeight", "letterbox"},
+                                              "environment", err))
+                         return false;
+                     SceneEnvironment e;
+                     auto readColor = [&](const char* key, gfx::Color& out) {
+                         const core::Json* c = data.Get(key);
+                         if (!c || !c->IsArray()) return;
+                         float v[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+                         size_t n = 0;
+                         for (const core::Json& vv : c->Items()) {
+                             if (n < 4) v[n++] = static_cast<float>(vv.GetNumber());
+                         }
+                         out.r = v[0];
+                         out.g = v[1];
+                         out.b = v[2];
+                         out.a = v[3];
+                     };
+                     auto readVec3 = [&](const char* key, math::Vec3& out) {
+                         const core::Json* c = data.Get(key);
+                         if (!c || !c->IsArray()) return;
+                         float v[3] = {0.0f, 0.0f, 0.0f};
+                         size_t n = 0;
+                         for (const core::Json& vv : c->Items()) {
+                             if (n < 3) v[n++] = static_cast<float>(vv.GetNumber());
+                         }
+                         out.x = v[0];
+                         out.y = v[1];
+                         out.z = v[2];
+                     };
+                     readColor("ambientColor", e.ambientColor);
+                     readColor("skyTop", e.skyTop);
+                     readColor("skyHorizon", e.skyHorizon);
+                     readColor("sunColor", e.sunColor);
+                     readVec3("sunDir", e.sunDir);
+                     if (const core::Json* n = data.Get("ambientStrength"))
+                         e.ambientStrength = static_cast<float>(n->GetNumber());
+                     if (const core::Json* n = data.Get("cameraFov"))
+                         e.cameraFov = static_cast<float>(n->GetNumber());
+                     if (const core::Json* b = data.Get("cameraOrtho")) e.cameraOrtho = b->GetBool();
+                     if (const core::Json* n = data.Get("orthoSize"))
+                         e.orthoSize = static_cast<float>(n->GetNumber());
+                     if (const core::Json* n = data.Get("designWidth"))
+                         e.designWidth = static_cast<int>(n->GetNumber());
+                     if (const core::Json* n = data.Get("designHeight"))
+                         e.designHeight = static_cast<int>(n->GetNumber());
+                     if (const core::Json* b = data.Get("letterbox")) e.letterbox = b->GetBool();
+                     world.Add<SceneEnvironment>(ent, e);
+                     return true;
+                 });
+
     reg.Register("tilemap",
                  [](ecs::World& world, ecs::Entity ent, const core::Json& data,
                     const core::Json&, std::string* err) {
