@@ -9,6 +9,7 @@
 #include "neon/core/log.hpp"
 #include "neon/gfx/bloom.hpp"
 #include "neon/gfx/csm.hpp"
+#include "neon/gfx/fog.hpp"
 #include "neon/gfx/point_shadow.hpp"
 #include "neon/gfx/ssao.hpp"
 #include "neon/gfx/ssr.hpp"
@@ -2661,6 +2662,18 @@ void Renderer::CompositeToBackbuffer() {
     }
     backend_->SetUniformInt("uSsr", 4);
     backend_->SetUniformFloat("uSsrStrength", ssrIntensity_);
+    if (volumetricFog_ && ssaoDepthRT_.Valid()) {
+        backend_->BindTexture(5, backend_->RenderTargetColorTexture(ssaoDepthRT_));
+        backend_->SetUniformInt("uFogEnabled", 1);
+    } else {
+        backend_->BindTexture(5, white_);
+        backend_->SetUniformInt("uFogEnabled", 0);
+    }
+    backend_->SetUniformInt("uFogDepth", 5);
+    backend_->SetUniformVec3("uFogColor", {fogColor_.r, fogColor_.g, fogColor_.b});
+    backend_->SetUniformFloat("uFogDensity", fogDensity_);
+    backend_->SetUniformFloat("uNear", camera_.nearPlane);
+    backend_->SetUniformFloat("uFar", camera_.farPlane);
     backend_->SetUniformFloat("uExposure", exposure_);
     backend_->SetUniformInt("uTonemapEnabled", tonemapEnabled_ ? 1 : 0);
     backend_->DrawMesh(postQuadMesh_);
@@ -2674,7 +2687,7 @@ void Renderer::CompositeSceneToBackbuffer() {
     // The scene rendered into the (possibly multisample) HDR target; resolve
     // into the single-sample bloom source before any pass samples it.
     ResolveMainTarget();
-    if (ssaoEnabled_ || ssrEnabled_) RunSceneDepthPass();
+    if (ssaoEnabled_ || ssrEnabled_ || volumetricFog_) RunSceneDepthPass();
     ssaoRanThisFrame_ = ssaoEnabled_ ? RunSsaoPass() : false;
     ssrRanThisFrame_ = ssrEnabled_ ? RunSsrPass() : false;
     volumetricRanThisFrame_ = volumetricEnabled_ ? RunVolumetricPass() : false;

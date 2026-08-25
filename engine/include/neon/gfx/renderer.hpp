@@ -70,6 +70,13 @@ public:
     void SetSky(const Color& top, const Color& horizon);
     void DrawSky();
     void SetFog(const Color& color, float start, float end);
+    // Volumetric exponential distance fog applied at composite time (reads the
+    // scene depth). Off by default; densifies with distance independent of the
+    // lit shader's linear fog. SetVolumetricFogDensity sets the curve rate.
+    void SetVolumetricFogEnabled(bool enabled) { volumetricFog_ = enabled; }
+    bool VolumetricFogEnabled() const { return volumetricFog_; }
+    void SetVolumetricFogDensity(float density) { fogDensity_ = density; }
+    float VolumetricFogDensity() const { return fogDensity_; }
     void SetDirectionalLight(const math::Vec3& direction, const Color& color, float ambientStrength);
     void SetPointLight(int index, const math::Vec3& position, const Color& color, float radius);
     void SetPlayerLight(const math::Vec3& position, const Color& color, float radius);
@@ -528,6 +535,8 @@ private:
     Color fogColor_{0.2f, 0.3f, 0.45f, 1.0f};
     float fogStart_ = 60.0f;
     float fogEnd_ = 200.0f;
+    bool volumetricFog_ = false;
+    float fogDensity_ = 0.02f;
 
     // IBL environment (Task 3.8). ibl.cpp precomputes the three byte maps
     // (irradiance 1x128, prefiltered 24x128, BRDF LUT 128x128) from the sky

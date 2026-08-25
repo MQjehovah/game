@@ -192,6 +192,12 @@ uniform int uVolEnabled;
 uniform sampler2D uSsr;
 uniform float uSsrStrength;
 uniform int uSsrEnabled;
+uniform sampler2D uFogDepth;
+uniform vec3 uFogColor;
+uniform float uFogDensity;
+uniform float uNear;
+uniform float uFar;
+uniform int uFogEnabled;
 uniform float uStrength;
 uniform float uExposure;
 uniform int uBloomEnabled;
@@ -217,6 +223,16 @@ void main() {
     }
     if (uVolEnabled != 0) c += texture(uVol, vUV).rgb * uVolStrength;
     if (uSsrEnabled != 0) c += texture(uSsr, vUV).rgb * uSsrStrength;
+    if (uFogEnabled != 0) {
+        vec4 dp = texture(uFogDepth, vUV);
+        float ndc = dp.r + dp.g / 255.0 + dp.b / 65025.0 + dp.a / 16581375.0;
+        if (ndc < 1.0) {
+            float z = ndc * 2.0 - 1.0;
+            float dist = (2.0 * uNear * uFar) / (uFar + uNear - z * (uFar - uNear));
+            float f = 1.0 - exp(-uFogDensity * uFogDensity * dist * dist);
+            c = mix(c, uFogColor, clamp(f, 0.0, 1.0));
+        }
+    }
     if (uTonemapEnabled != 0) {
         FragColor = vec4(ACESFilm(c * uExposure), 1.0);
     } else {
