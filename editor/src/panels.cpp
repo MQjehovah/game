@@ -1479,12 +1479,6 @@ void EditorApp::BuildInspectorPanel() {
                     if (ImGui::DragFloat("强度##lt", &e.light.intensity, 0.05f, 0.0f, 10.0f))
                         sceneDirty_ = true;
                 } else { // ambient
-                    float amb[4] = {e.light.ambientColor.r, e.light.ambientColor.g,
-                                    e.light.ambientColor.b, e.light.ambientColor.a};
-                    if (ImGui::ColorEdit4("环境光色##lt", amb)) {
-                        e.light.ambientColor = {amb[0], amb[1], amb[2], amb[3]};
-                        sceneDirty_ = true;
-                    }
                     if (ImGui::DragFloat("环境光强度##lt", &e.light.ambientStrength, 0.01f, 0.0f, 2.0f))
                         sceneDirty_ = true;
                 }

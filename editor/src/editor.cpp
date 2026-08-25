@@ -1728,7 +1728,7 @@ void EditorApp::OnRender() {
         // one, keep the bright day-sky IBL ambient + a neutral fill (suppressed
         // by IBL=1 anyway) for the default look.
         if (amb) {
-            renderer_.SetAmbientLight(amb->ambientColor, amb->ambientStrength);
+            renderer_.SetAmbientLight(amb->color, amb->ambientStrength);
             renderer_.SetIblStrength(0.0f);
         } else {
             renderer_.SetAmbientLight({1.0f, 1.0f, 1.0f, 1.0f}, 0.1f);
@@ -5151,8 +5151,6 @@ core::Result<core::Json> EditorApp::BuildPlaySceneJson() {
                     colJson(e.light.color.r, e.light.color.g, e.light.color.b, e.light.color.a);
                 li.object_["intensity"] = mkNum(e.light.intensity);
                 li.object_["radius"] = mkNum(e.light.radius);
-                li.object_["ambientColor"] = colJson(e.light.ambientColor.r, e.light.ambientColor.g,
-                                                     e.light.ambientColor.b, e.light.ambientColor.a);
                 li.object_["ambientStrength"] = mkNum(e.light.ambientStrength);
                 comps.object_["light"] = std::move(li);
             }
@@ -6338,13 +6336,6 @@ void EditorApp::LoadScene(const std::string& path) {
                     e.light.radius = static_cast<float>(v->GetNumber());
                 if (const core::Json* v = li->Get("intensity"))
                     e.light.intensity = static_cast<float>(v->GetNumber());
-                if (const core::Json* v = li->Get("ambientColor")) {
-                    float vv[4] = {1, 1, 1, 1};
-                    size_t n = 0;
-                    for (const core::Json& x : v->Items())
-                        if (n < 4) vv[n++] = static_cast<float>(x.GetNumber());
-                    e.light.ambientColor = {vv[0], vv[1], vv[2], vv[3]};
-                }
                 if (const core::Json* v = li->Get("ambientStrength"))
                     e.light.ambientStrength = static_cast<float>(v->GetNumber());
                 if (e.nodeType.empty()) e.nodeType = "Light3D";

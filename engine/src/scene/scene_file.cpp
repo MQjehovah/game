@@ -944,9 +944,9 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
     reg.Register("light",
                  [](ecs::World& world, ecs::Entity ent, const core::Json& data,
                     const core::Json&, std::string* err) {
-                     if (!CheckComponentShape(data,
+                      if (!CheckComponentShape(data,
                                               {"type", "sunDir", "color", "intensity", "radius",
-                                               "ambientColor", "ambientStrength"},
+                                                "ambientStrength"},
                                               "light", err))
                          return false;
                      SceneLight l;
@@ -980,11 +980,10 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                      readColor("color", l.color);
                      if (const core::Json* n = data.Get("intensity"))
                          l.intensity = static_cast<float>(n->GetNumber());
-                     if (const core::Json* n = data.Get("radius"))
-                         l.radius = static_cast<float>(n->GetNumber());
-                     readColor("ambientColor", l.ambientColor);
-                     if (const core::Json* n = data.Get("ambientStrength"))
-                         l.ambientStrength = static_cast<float>(n->GetNumber());
+                      if (const core::Json* n = data.Get("radius"))
+                          l.radius = static_cast<float>(n->GetNumber());
+                      if (const core::Json* n = data.Get("ambientStrength"))
+                          l.ambientStrength = static_cast<float>(n->GetNumber());
                      world.Add<SceneLight>(ent, l);
                      return true;
                  });
