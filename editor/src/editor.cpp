@@ -1520,6 +1520,44 @@ void EditorApp::OnUpdate(float dt) {
                       ok ? "PASS" : "FAIL");
         if (!ok) smokeFailed_ = true;
     }
+    // Save/load round-trip: SaveScene must write the scene that is actually
+    // loaded (currentScenePath_) in the runtime componentized format, so
+    // hierarchy, ids, rotation and health survive a restart. Regression for
+    // "save, restart, hierarchy lost" (SaveScene used to hardcode
+    // editor_scene.json and never touched the loaded project scene).
+    if (smokeMode_ && TimeRef().frameIndex == 52) {
+        bool ok = entities_.size() >= 2;
+        const std::string prevPath = currentScenePath_;
+        if (ok) {
+            NormalizeEntityIds();
+            const int id0 = entities_[0].id;
+            const int id1 = entities_[1].id;
+            entities_[1].parentId = id0; // parent -> child
+            entities_[1].rot = math::Quat{0.1f, 0.2f, 0.3f, 1.0f};
+            const float hp = entities_[1].maxHp > 0.0f ? entities_[1].hp : 0.0f;
+            const std::string tmpSave = GetTempDir() + "/smoke_save_roundtrip.json";
+            currentScenePath_ = tmpSave;
+            SaveScene();
+            currentScenePath_ = prevPath;
+            LoadScene(tmpSave); // reload exactly what SaveScene wrote
+            int n0 = -1;
+            int n1 = -1;
+            for (size_t i = 0; i < entities_.size(); ++i) {
+                if (entities_[i].id == id0) n0 = static_cast<int>(i);
+                if (entities_[i].id == id1) n1 = static_cast<int>(i);
+            }
+            ok = n0 >= 0 && n1 >= 0 && entities_[static_cast<size_t>(n1)].parentId == id0 &&
+                 entities_[static_cast<size_t>(n1)].rot.x == 0.1f &&
+                 entities_[static_cast<size_t>(n1)].rot.y == 0.2f &&
+                 entities_[static_cast<size_t>(n1)].rot.z == 0.3f;
+            if (ok && hp > 0.0f)
+                ok = entities_[static_cast<size_t>(n1)].hp == hp;
+            if (!prevPath.empty()) LoadScene(prevPath); // restore the scene
+        }
+        NEON_LOG_INFO("EDITOR-SAVESCENE-SMOKE: [%s] save->load keeps hierarchy/id/rot/health",
+                      ok ? "PASS" : "FAIL");
+        if (!ok) smokeFailed_ = true;
+    }
     // Play/Stop smoke: start a playtest at frame 60, verify it ticks, stop at
     // the last frame (119; OnUpdate never runs at 120). Kept at "Play/Stop
     // doesn't crash the editor" level; the real script/BT verification lives
@@ -4917,6 +4955,19 @@ core::Result<core::Json> EditorApp::BuildPlaySceneJson() {
                 dc.object_["alpha"] = mkNum(e.decalAlpha);
                 comps.object_["decal"] = std::move(dc);
             }
+            if (!e.shaderPath.empty()) {
+                // Editor-only custom fragment shader, preserved so the scene
+                // round-trips (the runtime ignores this component).
+                core::Json sh;
+                sh.type_ = core::Json::Type::Object;
+                sh.object_["path"] = [&e]() {
+                    core::Json p;
+                    p.type_ = core::Json::Type::String;
+                    p.string_ = e.shaderPath;
+                    return p;
+                }();
+                comps.object_["shader"] = std::move(sh);
+            }
             obj.object_["components"] = std::move(comps);
         }
         arr.array_.push_back(std::move(obj));
@@ -5665,135 +5716,42 @@ void EditorApp::ReloadEntityShader(SceneEntity& e) {
 
 void EditorApp::SaveScene() {
     NormalizeEntityIds(); // stable ids before serialization
-    core::Json root;
-    root.type_ = core::Json::Type::Object;
+    // Serialize in the runtime componentized format (same as playtest/export)
+    // so project scenes stay loadable by neon_game and no field is dropped
+    // (health, materialRef, prefab, extraComponents, parentId, rotation...).
+    auto rootRes = BuildPlaySceneJson();
+    if (!rootRes.Ok()) {
+        NEON_LOG_ERROR("Scene save aborted: %s", rootRes.Error().c_str());
+        return;
+    }
+    core::Json root = rootRes.Value();
+    // Preserve scene-level metadata from the loaded file (inheritance chain,
+    // gameVars / level / title ...); entities were just rebuilt.
     if (!sceneExtends_.empty()) {
         core::Json ex;
         ex.type_ = core::Json::Type::String;
         ex.string_ = sceneExtends_;
-        root.object_["extends"] = ex;
+        root.object_["extends"] = std::move(ex);
     }
-    core::Json arr;
-    arr.type_ = core::Json::Type::Array;
-    for (const SceneEntity& e : entities_) {
-        core::Json obj;
-        obj.type_ = core::Json::Type::Object;
-        core::Json name;
-        name.type_ = core::Json::Type::String;
-        name.string_ = e.name;
-        obj.object_["name"] = name;
-        auto str = [](const std::string& s) {
-            core::Json j;
-            j.type_ = core::Json::Type::String;
-            j.string_ = s;
-            return j;
-        };
-        auto num = [](double v) {
-            core::Json j;
-            j.type_ = core::Json::Type::Number;
-            j.number_ = v;
-            return j;
-        };
-        auto vec3 = [&](const math::Vec3& v) {
-            core::Json j;
-            j.type_ = core::Json::Type::Array;
-            j.array_ = {num(v.x), num(v.y), num(v.z)};
-            return j;
-        };
-        obj.object_["mesh"] = str(e.meshKey);
-        if (!e.nodeType.empty()) obj.object_["nodeType"] = str(e.nodeType);
-        if (e.nodeType == "Camera3D") {
-            obj.object_["cameraFov"] = num(e.cameraFov);
-            if (e.cameraOrtho) obj.object_["cameraOrtho"] = num(1);
+    if (currentSceneRoot_.IsObject()) {
+        for (const auto& [k, v] : currentSceneRoot_.Members()) {
+            if (k == "entities" || k == "extends") continue;
+            root.object_[k] = v;
         }
-        if (!e.spriteTex.empty()) obj.object_["spriteTex"] = str(e.spriteTex);
-        if (e.spriteFlipX) obj.object_["spriteFlipX"] = num(1);
-        if (e.spriteFlipY) obj.object_["spriteFlipY"] = num(1);
-        obj.object_["id"] = num(e.id);
-        if (e.parentId != 0) obj.object_["parentId"] = num(e.parentId);
-        // Legacy name parent, kept so older editor builds can still read the
-        // hierarchy (the loader migrates it back to parentId).
-        if (e.parentId != 0) {
-            for (const SceneEntity& p : entities_)
-                if (p.id == e.parentId) {
-                    obj.object_["parent"] = str(p.name);
-                    break;
-                }
-        }
-        obj.object_["pos"] = vec3(e.pos);
-        obj.object_["scale"] = vec3(e.scale);
-        if (e.zOrder != 0.0f) obj.object_["zOrder"] = num(e.zOrder);
-        if (e.meshKey == "terrain" && !e.terrainHeights_.empty()) {
-            core::Json td;
-            td.type_ = core::Json::Type::Object;
-            td.object_["segments"] = num(e.terrainSegments_);
-            td.object_["size"] = num(e.terrainSize_);
-            td.object_["heightScale"] = num(e.terrainHeightScale_);
-            core::Json hs;
-            hs.type_ = core::Json::Type::Array;
-            for (float h : e.terrainHeights_) hs.array_.push_back(num(h));
-            td.object_["heights"] = std::move(hs);
-            obj.object_["terrainData"] = std::move(td);
-        }
-        if (e.meshKey == "tilemap" && !e.tilemapTiles_.empty()) {
-            core::Json td;
-            td.type_ = core::Json::Type::Object;
-            td.object_["cols"] = num(e.tilemapCols_);
-            td.object_["rows"] = num(e.tilemapRows_);
-            td.object_["cellSize"] = num(e.tilemapCellSize_);
-            core::Json arr;
-            arr.type_ = core::Json::Type::Array;
-            for (const std::string& t : e.tilemapTiles_) {
-                core::Json s;
-                s.type_ = core::Json::Type::String;
-                s.string_ = t;
-                arr.array_.push_back(std::move(s));
-            }
-            td.object_["tiles"] = std::move(arr);
-            obj.object_["tilemapData"] = std::move(td);
-        }
-        if (!e.decalTex.empty()) {
-            core::Json dd;
-            dd.type_ = core::Json::Type::Object;
-            dd.object_["texture"] = str(e.decalTex);
-            dd.object_["size"] = num(e.decalSize);
-            dd.object_["alpha"] = num(e.decalAlpha);
-            obj.object_["decalData"] = std::move(dd);
-        }
-        core::Json tint;
-        tint.type_ = core::Json::Type::Array;
-        tint.array_ = {num(e.tint.r), num(e.tint.g), num(e.tint.b)};
-        obj.object_["tint"] = tint;
-        obj.object_["metallic"] = num(e.metallic);
-        obj.object_["roughness"] = num(e.roughness);
-        obj.object_["ao"] = num(e.ao);
-        obj.object_["emissiveIntensity"] = num(e.emissiveIntensity);
-        obj.object_["albedoTex"] = str(e.albedoTex);
-        obj.object_["mrTex"] = str(e.mrTex);
-        obj.object_["aoTex"] = str(e.aoTex);
-        obj.object_["emissiveTex"] = str(e.emissiveTex);
-        if (!e.shaderPath.empty()) obj.object_["shaderPath"] = str(e.shaderPath);
-        if (!e.scripts.empty()) {
-            core::Json scriptsArr;
-            scriptsArr.type_ = core::Json::Type::Array;
-            for (const SceneScriptFields& f : e.scripts) {
-                if (f.path.empty()) continue; // unconfigured script block
-                core::Json it;
-                it.type_ = core::Json::Type::Object;
-                it.object_["backend"] = str(f.backend.empty() ? "lua" : f.backend);
-                it.object_["path"] = str(f.path);
-                if (f.vars.IsObject()) it.object_["vars"] = f.vars;
-                scriptsArr.array_.push_back(std::move(it));
-            }
-            obj.object_["scripts"] = std::move(scriptsArr);
-        }
-        arr.array_.push_back(obj);
     }
-    root.object_["entities"] = arr;
-    std::string json = core::JsonWriter::Write(root);
-    if (std::ofstream out("editor_scene.json"); out.is_open()) {
-        out << json;
-        NEON_LOG_INFO("Scene saved (%zu entities)", entities_.size());
+    // Save to the scene file that is actually loaded (project scenes live in
+    // <project>/scenes/*.json). Previously this hardcoded editor_scene.json,
+    // so saving a project scene silently wrote the sandbox file and the
+    // hierarchy (plus every other edit) was lost on restart.
+    const std::string savePath =
+        currentScenePath_.empty() ? "editor_scene.json" : currentScenePath_;
+    if (std::ofstream out(savePath); out.is_open()) {
+        out << core::JsonWriter::Write(root);
+        sceneDirty_ = false;
+        NEON_LOG_INFO("Scene saved (%zu entities) -> %s", entities_.size(),
+                      savePath.c_str());
+    } else {
+        NEON_LOG_ERROR("Scene save failed: cannot write '%s'", savePath.c_str());
     }
 }
 
@@ -6043,6 +6001,11 @@ void EditorApp::LoadScene(const std::string& path) {
                     e.pos = {static_cast<float>(p->At(0)->GetNumber()),
                              static_cast<float>(p->At(1)->GetNumber()),
                              static_cast<float>(p->At(2)->GetNumber())};
+                if (const core::Json* r = t->Get("rot"))
+                    e.rot = {static_cast<float>(r->At(0)->GetNumber()),
+                             static_cast<float>(r->At(1)->GetNumber()),
+                             static_cast<float>(r->At(2)->GetNumber()),
+                             static_cast<float>(r->At(3)->GetNumber())};
                 if (const core::Json* s = t->Get("scale"))
                     e.scale = {static_cast<float>(s->At(0)->GetNumber()),
                                static_cast<float>(s->At(1)->GetNumber()),
@@ -6122,6 +6085,9 @@ void EditorApp::LoadScene(const std::string& path) {
                 if (const core::Json* al = dc->Get("alpha"))
                     e.decalAlpha = static_cast<float>(al->GetNumber());
             }
+            if (const core::Json* sh = comps->Get("shader")) {
+                if (const core::Json* p = sh->Get("path")) e.shaderPath = p->GetString();
+            }
             if (const core::Json* s = comps->Get("script")) {
                 // Legacy single "script" component: one mounted script.
                 if (s->IsObject()) {
@@ -6150,7 +6116,7 @@ void EditorApp::LoadScene(const std::string& path) {
             // (schema-driven inspector; plant/zombie mirror the 2D canvas).
             for (const auto& [cname, cdata] : comps->Members()) {
                 if (cname == "transform" || cname == "mesh" || cname == "health" ||
-                    cname == "script" || cname == "sprite")
+                    cname == "script" || cname == "sprite" || cname == "shader")
                     continue;
                 e.extraComponents[cname] = cdata;
             }
