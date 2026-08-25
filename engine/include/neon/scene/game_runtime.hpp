@@ -132,8 +132,8 @@ public:
     // G1-3 scene-tree API: direct children / all descendants of an entity
     // (via the resolved SceneParentLink graph). O(n) per call; intended for
     // tooling, queries and tests, not per-frame hot paths.
-    std::vector<ecs::Entity> GetChildren(ecs::Entity parent) const;
-    std::vector<ecs::Entity> GetDescendants(ecs::Entity root) const;
+    std::vector<ecs::Entity> GetChildren(ecs::Entity parent);
+    std::vector<ecs::Entity> GetDescendants(ecs::Entity root);
     // G1-3 world-transform cache: rebuilds the parent-before-child pass from
     // the current tree (arbitrary depth, no 8-level cap). Call after any
     // transform-affecting mutation and before reads that need world matrices;

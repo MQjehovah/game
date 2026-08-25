@@ -29,6 +29,7 @@ struct ComponentDef {
 // A scene entity. `prefab` names a PrefabLibrary entry whose components are
 // expanded and deep-merged with `components` (instance fields win).
 struct EntityDef {
+    int id = 0; // stable per-scene id (0 = none; parentId references this)
     std::string name;
     std::string prefab;
     std::vector<ComponentDef> components;
@@ -119,7 +120,9 @@ struct SceneFile {
                                                const std::vector<LodEntry>& lod = {},
                                                float hp = 0.0f,
                                                float maxHp = 0.0f,
-                                               const std::string& parent = "");
+                                               const std::string& parent = "",
+                                               int parentId = 0,
+                                               int id = 0);
 };
 
 // Prefab library: registers prefab component templates parsed from JSON text
@@ -143,6 +146,8 @@ struct SceneTransform {
     math::Quat rot;
     math::Vec3 scale{1, 1, 1};
     std::string parent; // scene-tree parent by entity NAME ("" = root)
+    int parentId = 0;   // G1-3: scene-tree parent by stable entity id (0 = root);
+                        // preferred over `parent` (legacy name fallback).
 };
 // Resolved scene-tree link (set by Instantiate after names resolve): the
 // parent entity whose world transform this entity inherits at render time.

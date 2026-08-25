@@ -4,10 +4,13 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <functional>
 #include <fstream>
 #include <iterator>
 #include <map>
+#include <memory>
+#include <set>
 #include <sstream>
 #include <tuple>
 #include <vector>
@@ -396,6 +399,121 @@ void AssetManager::PumpAsync() {
     ReclaimRetired(/*frame=*/pumpFrame_);
 }
 
+// G1-4 dependency graph ------------------------------------------------
+
+void AssetManager::RecordDependency(const std::string& parent, const std::string& dep) {
+    auto& deps = dependencies_[parent];
+    if (std::find(deps.begin(), deps.end(), dep) == deps.end()) deps.push_back(dep);
+    auto& rev = dependents_[dep];
+    if (std::find(rev.begin(), rev.end(), parent) == rev.end()) rev.push_back(parent);
+}
+
+const std::vector<std::string>& AssetManager::DependenciesOf(const std::string& path) const {
+    static const std::vector<std::string> kEmpty;
+    const auto it = dependencies_.find(path);
+    return it == dependencies_.end() ? kEmpty : it->second;
+}
+
+std::vector<std::string> AssetManager::DependentsOf(const std::string& path) const {
+    std::vector<std::string> out;
+    const auto it = dependents_.find(path);
+    if (it != dependents_.end()) out = it->second;
+    std::sort(out.begin(), out.end());
+    return out;
+}
+
+namespace {
+
+bool FileLoadable(neon::io::IFileSystem* fs, const std::string& path) {
+    if (fs) return fs->Exists(path);
+#if defined(_WIN32)
+    struct _stat64 st;
+    return ::_stat64(path.c_str(), &st) == 0;
+#else
+    struct stat st;
+    return ::stat(path.c_str(), &st) == 0;
+#endif
+}
+
+// Image extensions the texture pipeline can decode (stb_image). Non-image
+// leaves (glTF .bin buffers, .mtl) are file-loaded by the asset loader itself
+// and must not be fed to LoadTextureAsync.
+bool IsImagePath(const std::string& path) {
+    const size_t dot = path.find_last_of('.');
+    if (dot == std::string::npos) return false;
+    std::string ext = path.substr(dot + 1);
+    for (char& c : ext) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return ext == "png" || ext == "jpg" || ext == "jpeg" || ext == "tga" ||
+           ext == "bmp" || ext == "gif" || ext == "webp";
+}
+
+} // namespace
+
+std::vector<std::string> AssetManager::MissingDependencies(const std::string& path) const {
+    std::vector<std::string> missing;
+    std::set<std::string> visited;
+    std::vector<std::string> stack;
+    const auto root = dependencies_.find(path);
+    if (root != dependencies_.end()) stack = root->second;
+    while (!stack.empty()) {
+        const std::string cur = stack.back();
+        stack.pop_back();
+        if (!visited.insert(cur).second) continue;
+        const auto deps = dependencies_.find(cur);
+        if (deps != dependencies_.end()) {
+            // Composite asset: recurse into its dependencies.
+            stack.insert(stack.end(), deps->second.begin(), deps->second.end());
+            continue;
+        }
+        // Leaf (texture / buffer / MTL): missing when the file cannot be read.
+        if (!FileLoadable(fs_, cur)) missing.push_back(cur);
+    }
+    std::sort(missing.begin(), missing.end());
+    missing.erase(std::unique(missing.begin(), missing.end()), missing.end());
+    return missing;
+}
+
+void AssetManager::LoadDependenciesAsync(
+    const std::string& path, std::function<void(bool, const std::string&)> cb) {
+    if (!cb) return;
+    // Collect every transitive LEAF dependency (textures etc.) to load.
+    std::vector<std::string> leaves;
+    std::set<std::string> visited;
+    std::vector<std::string> stack;
+    const auto root = dependencies_.find(path);
+    if (root != dependencies_.end()) stack = root->second;
+    while (!stack.empty()) {
+        const std::string cur = stack.back();
+        stack.pop_back();
+        if (!visited.insert(cur).second) continue;
+        const auto deps = dependencies_.find(cur);
+        if (deps != dependencies_.end()) {
+            stack.insert(stack.end(), deps->second.begin(), deps->second.end());
+            continue;
+        }
+        if (IsImagePath(cur)) leaves.push_back(cur);
+    }
+    if (leaves.empty()) {
+        cb(true, "");
+        return;
+    }
+    struct DepState {
+        int done = 0;
+        int total = 0;
+        std::string firstError;
+    };
+    auto state = std::make_shared<DepState>();
+    state->total = static_cast<int>(leaves.size());
+    for (const std::string& leaf : leaves) {
+        LoadTextureAsync(leaf, [state, cb, leaf](bool ok) {
+            if (!ok && state->firstError.empty())
+                state->firstError = "dependency '" + leaf + "' failed to load";
+            ++state->done;
+            if (state->done == state->total) cb(state->firstError.empty(), state->firstError);
+        });
+    }
+}
+
 void AssetManager::FinishAsyncTexture(const std::string& path, DecodedImage img,
                                       const TextureLoadOptions& opts) {
     inFlight_.erase(path);
@@ -457,7 +575,9 @@ gfx::Mesh AssetManager::LoadMeshOBJ(const std::string& path) {
         if (kind == "mtllib") {
             std::string mtlFile;
             ss >> mtlFile;
-            LoadMaterialColors(fs_, DirName(path) + mtlFile, materialColors);
+            const std::string mtlPath = DirName(path) + mtlFile;
+            RecordDependency(path, mtlPath);
+            LoadMaterialColors(fs_, mtlPath, materialColors);
         } else if (kind == "usemtl") {
             ss >> currentMaterial;
         } else if (kind == "v") {
@@ -573,6 +693,7 @@ GltfAsset AssetManager::LoadGLTF(const std::string& path) {
             std::string uri = b0->Get("uri")->GetString();
             const core::Result<std::vector<uint8_t>> binBytes = ReadAllBytes(fs_, dir + uri);
             if (binBytes.Ok()) {
+                RecordDependency(path, dir + uri);
                 bin = binBytes.Value();
             } else {
                 NEON_LOG_ERROR("GLTF: cannot open buffer '%s'", (dir + uri).c_str());
@@ -665,6 +786,7 @@ GltfAsset AssetManager::LoadGLTF(const std::string& path) {
                 // Khronos sample assets like DamagedHelmet) sample correctly.
                 TextureLoadOptions gltfOpts;
                 gltfOpts.wrap = samplerWrap(samplerIdx);
+                RecordDependency(path, dir + uri);
                 textures.push_back(LoadTexture(dir + uri, gltfOpts));
             }
         }

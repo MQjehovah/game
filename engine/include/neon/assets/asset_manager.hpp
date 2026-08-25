@@ -124,6 +124,18 @@ public:
     // reads fall back to the real filesystem exactly as before.
     void SetFileSystem(neon::io::IFileSystem* fs) { fs_ = fs; }
     neon::io::IFileSystem* FileSystem() const { return fs_; }
+    // G1-4 asset dependency graph: direct dependencies (textures, buffers,
+    // MTL) recorded when a glTF/OBJ asset loads, and the reverse edges.
+    const std::vector<std::string>& DependenciesOf(const std::string& path) const;
+    std::vector<std::string> DependentsOf(const std::string& path) const;
+    // Walks the transitive dependency graph and returns every path that is
+    // MISSING (cannot be loaded), so callers can fail with a precise error
+    // instead of silently falling back. Empty = the whole graph is ready.
+    std::vector<std::string> MissingDependencies(const std::string& path) const;
+    // Recursively loads every transitive dependency (textures async), then
+    // calls cb(true) or cb(false, firstError). Deduplicated per path.
+    void LoadDependenciesAsync(const std::string& path,
+                               std::function<void(bool, const std::string&)> cb);
     // Cache key that distinguishes load options (flip / wrap) so a texture
     // loaded with different settings never shares a stale entry.
     static std::string TextureCacheKey(const std::string& path,
@@ -224,6 +236,8 @@ private:
     // Main-thread completion of an async request: cache + fire callbacks.
     void FinishAsyncTexture(const std::string& path, DecodedImage img,
                             const TextureLoadOptions& opts);
+    // G1-4: records a direct edge parent -> dep in the dependency graph.
+    void RecordDependency(const std::string& parent, const std::string& dep);
     // Destroys retired GPU resources whose deferral window has elapsed. Called
     // from PumpAsync (main thread, once per frame).
     void ReclaimRetired(uint64_t frame);
@@ -256,6 +270,9 @@ private:
     std::map<std::string, uint32_t> textureRefs_;
     std::map<std::string, uint32_t> meshRefs_;
     neon::io::IFileSystem* fs_ = nullptr;
+    // G1-4 dependency graph (path -> direct dependencies, normalized keys).
+    std::unordered_map<std::string, std::vector<std::string>> dependencies_;
+    std::unordered_map<std::string, std::vector<std::string>> dependents_;
     std::vector<RetiredTexture> retiredTextures_;
     std::vector<RetiredMesh> retiredMeshes_;
     uint64_t pumpFrame_ = 0;

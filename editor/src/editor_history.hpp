@@ -207,7 +207,7 @@ inline void ApplyEmissiveIntensityProp(SceneEntity& e, const float& v) {
     e.material.emissiveIntensity = v;
 }
 inline void ApplyNameProp(SceneEntity& e, const std::string& v) { e.name = v; }
-inline void ApplyParentProp(SceneEntity& e, const std::string& v) { e.parent = v; }
+inline void ApplyParentProp(SceneEntity& e, const int& v) { e.parentId = v; }
 inline void ApplyNodeTypeProp(SceneEntity& e, const std::string& v) { e.nodeType = v; }
 inline void ApplyCameraFovProp(SceneEntity& e, const float& v) { e.cameraFov = v; }
 inline void ApplyCameraOrthoProp(SceneEntity& e, const bool& v) { e.cameraOrtho = v; }
@@ -313,25 +313,25 @@ private:
 class MultiSetParentCommand : public Command {
 public:
     MultiSetParentCommand(std::vector<SceneEntity>* entities, std::vector<int> indices,
-                          std::string parent)
-        : entities_(entities), indices_(std::move(indices)), parent_(std::move(parent)) {
+                          int parentId)
+        : entities_(entities), indices_(std::move(indices)), parentId_(parentId) {
         for (int i : indices_)
-            oldParents_.push_back((*entities_)[static_cast<size_t>(i)].parent);
+            oldParents_.push_back((*entities_)[static_cast<size_t>(i)].parentId);
     }
     void Apply() override {
         for (size_t k = 0; k < indices_.size(); ++k)
-            (*entities_)[static_cast<size_t>(indices_[k])].parent = parent_;
+            (*entities_)[static_cast<size_t>(indices_[k])].parentId = parentId_;
     }
     void Undo() override {
         for (size_t k = 0; k < indices_.size(); ++k)
-            (*entities_)[static_cast<size_t>(indices_[k])].parent = oldParents_[k];
+            (*entities_)[static_cast<size_t>(indices_[k])].parentId = oldParents_[k];
     }
 
 private:
     std::vector<SceneEntity>* entities_;
     std::vector<int> indices_;
-    std::vector<std::string> oldParents_;
-    std::string parent_;
+    std::vector<int> oldParents_;
+    int parentId_;
 };
 
 // Batch transform for multi-selection gizmo drags. Like EditTransformCommand,

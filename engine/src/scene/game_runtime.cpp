@@ -1552,6 +1552,10 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera) {
     renderer.SetCamera(cam, renderer.SceneAspect());
     // Scripts may have spawned/despawned sprite entities since the last frame.
     BuildDrawList();
+    // G1-3: refresh the world-transform cache (parent-before-child, arbitrary
+    // depth) once per frame; the BVH pass and the draw loop read it instead of
+    // re-walking parent chains per entity.
+    RebuildWorldTransforms();
     // P2-3: sprites render back-to-front by their sortOrder component (2D
     // games); 3D depth-tested meshes are unaffected by the stable order.
     drawOrder_.resize(draws_.size());
@@ -1584,8 +1588,10 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera) {
             if (item.skinned || item.isSprite || item.isDecal || item.mat.transparent ||
                 item.mat.shader.Valid() || !item.mesh.Valid())
                 continue;
-            const math::Mat4 model = LocalToWorld(item.ent);
-            const math::Vec3 worldPos{model.m[12], model.m[13], model.m[14]};
+            const math::Mat4 model = CachedLocalToWorld(item.ent);
+            // Column-vector convention: the translation is the last COLUMN of
+            // the row-major matrix (m[3], m[7], m[11]), not the last row.
+            const math::Vec3 worldPos{model.m[3], model.m[7], model.m[11]};
             const gfx::Mesh drawMesh =
                 SelectLodMesh(item.mesh, item.chain, worldPos, camera.position);
             if (!drawMesh.Valid()) continue;
@@ -1619,7 +1625,7 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera) {
         if (!item.resolved) ResolveDrawItem(item, renderer);
         if (!item.resolved || item.failed) continue;
         if (!world_.Get<SceneTransform>(item.ent)) continue;
-        math::Mat4 model = LocalToWorld(item.ent);
+        math::Mat4 model = CachedLocalToWorld(item.ent);
         if (item.tileOffset.LengthSq() > 0.0f)
             model = model * math::Mat4::Translation(item.tileOffset);
         if (item.isDecal) {
@@ -1627,7 +1633,10 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera) {
             // testing keeps it visible (no z-fighting on flat ground).
             model = model * math::Mat4::Translation({0.0f, 0.02f, 0.0f});
         }
-        const math::Vec3 worldPos{model.m[12], model.m[13], model.m[14]};
+        // Column-vector convention: translation lives in the last column
+        // (m[3], m[7], m[11]); reading m[12..14] returned ~0 and broke LOD
+        // distance selection + decal placement.
+        const math::Vec3 worldPos{model.m[3], model.m[7], model.m[11]};
         // Batchable: opaque static mesh with the built-in shader. Skinned
         // (per-entity bone matrices), sprites, decals, transparent materials
         // and custom shaders keep the per-entity path.
@@ -1789,6 +1798,92 @@ math::Mat4 GameRuntime::LocalToWorld(ecs::Entity e) const {
         e = link ? link->parent : ecs::Entity{};
     }
     return m;
+}
+
+std::vector<ecs::Entity> GameRuntime::GetChildren(ecs::Entity parent) {
+    std::vector<ecs::Entity> out;
+    if (!parent.IsValid()) return out;
+    auto view = world_.ViewAll<SceneParentLink, SceneTransform>();
+    for (size_t i = 0; i < view.Size(); ++i) {
+        const ecs::Entity child = world_.EntityAt<SceneParentLink>(i);
+        const SceneParentLink* link = world_.Get<SceneParentLink>(child);
+        if (link && link->parent == parent) out.push_back(child);
+    }
+    return out;
+}
+
+std::vector<ecs::Entity> GameRuntime::GetDescendants(ecs::Entity root) {
+    std::vector<ecs::Entity> out;
+    std::vector<ecs::Entity> stack = GetChildren(root);
+    std::set<uint64_t> visited;
+    while (!stack.empty()) {
+        const ecs::Entity e = stack.back();
+        stack.pop_back();
+        if (!visited.insert(EntityKey(e)).second) continue; // cycle guard
+        out.push_back(e);
+        const std::vector<ecs::Entity> kids = GetChildren(e);
+        stack.insert(stack.end(), kids.begin(), kids.end());
+    }
+    return out;
+}
+
+void GameRuntime::RebuildWorldTransforms() {
+    worldTransforms_.clear();
+    if (!running_) return;
+
+    // parent EntityKey -> children (entities with a SceneTransform whose
+    // SceneParentLink points at it). Roots = entities with a SceneTransform
+    // and no live parent link.
+    std::unordered_map<uint64_t, std::vector<ecs::Entity>> children;
+    std::vector<ecs::Entity> roots;
+    auto linkView = world_.ViewAll<SceneParentLink, SceneTransform>();
+    for (size_t i = 0; i < linkView.Size(); ++i) {
+        const ecs::Entity child = world_.EntityAt<SceneParentLink>(i);
+        const SceneParentLink* link = world_.Get<SceneParentLink>(child);
+        if (!link) continue;
+        if (world_.Alive(link->parent))
+            children[EntityKey(link->parent)].push_back(child);
+        else
+            roots.push_back(child); // dangling parent: treat as a root
+    }
+    auto transformView = world_.ViewAll<SceneTransform>();
+    for (size_t i = 0; i < transformView.Size(); ++i) {
+        const ecs::Entity e = world_.EntityAt<SceneTransform>(i);
+        const SceneParentLink* link = world_.Get<SceneParentLink>(e);
+        if (!link || !world_.Alive(link->parent)) roots.push_back(e);
+    }
+
+    // Iterative DFS from roots: a parent's world is always computed before its
+    // children are visited, so arbitrary tree depth is handled without the old
+    // 8-level walk cap.
+    std::vector<ecs::Entity> stack;
+    for (const ecs::Entity& r : roots) {
+        if (worldTransforms_.count(EntityKey(r)) != 0) continue;
+        stack.push_back(r);
+        while (!stack.empty()) {
+            const ecs::Entity e = stack.back();
+            stack.pop_back();
+            if (worldTransforms_.count(EntityKey(e)) != 0) continue; // cycle guard
+            const SceneTransform* t = world_.Get<SceneTransform>(e);
+            if (!t) continue;
+            math::Mat4 world = math::Mat4::Translation(t->pos) * t->rot.ToMat4() *
+                               math::Mat4::Scale(t->scale);
+            const SceneParentLink* link = world_.Get<SceneParentLink>(e);
+            if (link && world_.Alive(link->parent)) {
+                const auto pit = worldTransforms_.find(EntityKey(link->parent));
+                if (pit != worldTransforms_.end()) world = pit->second * world;
+            }
+            worldTransforms_[EntityKey(e)] = world;
+            const auto cit = children.find(EntityKey(e));
+            if (cit != children.end())
+                for (const ecs::Entity& c : cit->second) stack.push_back(c);
+        }
+    }
+}
+
+math::Mat4 GameRuntime::CachedLocalToWorld(ecs::Entity e) const {
+    const auto it = worldTransforms_.find(EntityKey(e));
+    return it == worldTransforms_.end() ? math::Mat4::Identity() : it->second;
 }
 
 void GameRuntime::FlushDraw2D(gfx::Renderer& renderer) {

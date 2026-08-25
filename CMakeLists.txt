@@ -494,6 +494,8 @@ add_executable(neon_tests tests/test_main.cpp tests/test_serialize.cpp tests/tes
   tests/test_physics.cpp tests/test_protocol.cpp tests/test_obj.cpp tests/test_gltf.cpp tests/test_json.cpp
   tests/test_ui_document.cpp
   tests/test_vfs.cpp
+  tests/test_scene_tree.cpp
+  tests/test_asset_deps.cpp
   tests/test_bvh.cpp
   tests/test_profiler.cpp
   tests/test_task_graph.cpp

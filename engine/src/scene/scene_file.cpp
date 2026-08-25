@@ -175,6 +175,12 @@ core::Result<SceneFile> SceneFile::Parse(const std::string& jsonText) {
                 "scene: entity at index " + std::to_string(i) + " must be a JSON object");
 
         EntityDef def;
+        if (const core::Json* id = e->Get("id")) {
+            if (!id->IsNumber() || id->GetInt(0) <= 0)
+                return core::Result<SceneFile>::Err(
+                    "scene: entity 'id' must be a positive number");
+            def.id = id->GetInt(0);
+        }
         if (const core::Json* name = e->Get("name")) {
             if (!name->IsString())
                 return core::Result<SceneFile>::Err("scene: entity 'name' must be a string");
@@ -243,6 +249,7 @@ core::Json SceneFile::ToJson() const {
     arr.type_ = core::Json::Type::Array;
     for (const EntityDef& def : entities) {
         core::Json e = MakeObject();
+        if (def.id != 0) e.object_["id"] = MakeNumber(def.id);
         if (!def.name.empty()) e.object_["name"] = MakeString(def.name);
         if (!def.prefab.empty()) e.object_["prefab"] = MakeString(def.prefab);
         core::Json comps = MakeObject();
@@ -306,7 +313,9 @@ core::Result<core::Json> SceneFile::MakeEntity(const std::string& name,
                                                const std::vector<LodEntry>& lod,
                                                float hp,
                                                float maxHp,
-                                               const std::string& parent) {
+                                               const std::string& parent,
+                                               int parentId,
+                                               int id) {
     if (name.empty())
         return core::Result<core::Json>::Err("scene: exported entity name must not be empty");
     if (meshKey.empty())
@@ -315,12 +324,14 @@ core::Result<core::Json> SceneFile::MakeEntity(const std::string& name,
 
     core::Json e = MakeObject();
     e.object_["name"] = MakeString(name);
+    if (id != 0) e.object_["id"] = MakeNumber(id);
 
     core::Json tf = MakeObject();
     tf.object_["pos"] = MakeVec3(pos);
     tf.object_["rot"] = MakeQuat(rot);
     tf.object_["scale"] = MakeVec3(scale);
     if (!parent.empty()) tf.object_["parent"] = MakeString(parent);
+    if (parentId != 0) tf.object_["parentId"] = MakeNumber(parentId);
 
     core::Json mat = MakeObject();
     mat.object_["metallic"] = MakeNumber(metallic);
@@ -449,7 +460,7 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
     reg.Register("transform",
                  [](ecs::World& world, ecs::Entity ent, const core::Json& data,
                     const core::Json&, std::string* err) {
-                     if (!CheckComponentShape(data, {"pos", "rot", "scale", "parent"},
+                     if (!CheckComponentShape(data, {"pos", "rot", "scale", "parent", "parentId"},
                                               "transform", err))
                          return false;
                      SceneTransform t;
@@ -462,6 +473,13 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                              return false;
                          }
                          t.parent = p->GetString();
+                     }
+                     if (const core::Json* p = data.Get("parentId")) {
+                         if (!p->IsNumber()) {
+                             if (err) *err = "component 'transform' field 'parentId' must be a number";
+                             return false;
+                         }
+                         t.parentId = p->GetInt(0);
                      }
                      world.Add<SceneTransform>(ent, t);
                      return true;
@@ -1073,26 +1091,75 @@ core::Result<int> Instantiate(ecs::World& world, const SceneFile& scene,
         }
     }
 
-    // Scene tree: resolve transform.parent names after every entity exists.
+    // Scene tree: resolve transform.parentId (stable id, preferred) or the
+    // legacy transform.parent name after every entity exists.
+    // id -> created entity (created[i] matches scene.entities[i] by index).
+    // Ids must be unique when present.
+    std::map<int, ecs::Entity> byId;
+    for (size_t i = 0; i < scene.entities.size() && i < created.size(); ++i) {
+        const int id = scene.entities[i].id;
+        if (id == 0) continue;
+        if (byId.count(id) != 0) {
+            for (ecs::Entity e : created) world.Destroy(e);
+            return core::Result<int>::Err("scene: duplicate entity id " + std::to_string(id));
+        }
+        byId[id] = created[i];
+    }
+
     for (ecs::Entity child : created) {
         const SceneTransform* t = world.Get<SceneTransform>(child);
-        if (!t || t->parent.empty()) continue;
+        if (!t || (t->parentId == 0 && t->parent.empty())) continue;
         ecs::Entity parent;
-        auto names = world.ViewAll<SceneName>();
-        for (size_t i = 0; i < names.Size(); ++i) {
-            ecs::Entity cand = world.EntityAt<SceneName>(i);
-            const SceneName* n = world.Get<SceneName>(cand);
-            if (n && n->name == t->parent) {
-                parent = cand;
-                break;
+        if (t->parentId != 0) {
+            const auto it = byId.find(t->parentId);
+            if (it != byId.end()) {
+                parent = it->second;
+            } else {
+                for (ecs::Entity e : created) world.Destroy(e);
+                return core::Result<int>::Err("scene: entity id " +
+                                              std::to_string(t->parentId) +
+                                              " referenced by 'parentId' not found");
+            }
+        } else if (!t->parent.empty()) {
+            // Legacy name fallback (first match, as before).
+            auto names = world.ViewAll<SceneName>();
+            for (size_t i = 0; i < names.Size(); ++i) {
+                ecs::Entity cand = world.EntityAt<SceneName>(i);
+                const SceneName* n = world.Get<SceneName>(cand);
+                if (n && n->name == t->parent) {
+                    parent = cand;
+                    break;
+                }
+            }
+            if (!parent.IsValid()) {
+                for (ecs::Entity e : created) world.Destroy(e);
+                return core::Result<int>::Err("scene: entity '" + t->parent +
+                                              "' referenced by 'parent' not found");
             }
         }
-        if (!parent.IsValid()) {
-            for (ecs::Entity e : created) world.Destroy(e);
-            return core::Result<int>::Err("scene: entity '" + t->parent +
-                                          "' referenced by 'parent' not found");
-        }
         world.Add<SceneParentLink>(child, SceneParentLink{parent});
+    }
+
+    // Cycle guard: with ids (or duplicate names), a scene can express parent
+    // cycles / self-parenting. Walk each entity's chain up; revisiting the
+    // start means a cycle. Bounded by the entity count.
+    for (ecs::Entity start : created) {
+        const SceneParentLink* link = world.Get<SceneParentLink>(start);
+        if (!link) continue;
+        ecs::Entity cur = link->parent;
+        size_t steps = 0;
+        while (cur.IsValid() && steps <= created.size()) {
+            if (cur == start) {
+                const SceneName* sn = world.Get<SceneName>(start);
+                for (ecs::Entity e : created) world.Destroy(e);
+                return core::Result<int>::Err(
+                    "scene: parent cycle involving '" +
+                    (sn ? sn->name : std::string("<unnamed>")) + "'");
+            }
+            const SceneParentLink* l = world.Get<SceneParentLink>(cur);
+            cur = l ? l->parent : ecs::Entity{};
+            ++steps;
+        }
     }
 
     if (outEntities) *outEntities = created;

@@ -934,6 +934,7 @@ void EditorApp::SetupScene() {
     }
     LoadScene("editor_scene.json");
     SetSelection(entities_.empty() ? -1 : 0);
+    NormalizeEntityIds(); // setup-created entities also need stable ids
 }
 
 void EditorApp::OnUpdate(float dt) {
@@ -4589,14 +4590,27 @@ void EditorApp::AddSpriteEntity(const std::string& texPath) {
 }
 
 core::Result<core::Json> EditorApp::BuildPlaySceneJson() {
+    NormalizeEntityIds();
     if (entities_.empty())
         return core::Result<core::Json>::Err("editor: scene is empty");
     core::Json root;
     root.type_ = core::Json::Type::Object;
     core::Json arr;
     arr.type_ = core::Json::Type::Array;
+    auto parentNameOf = [this](int parentId) {
+        if (parentId == 0) return std::string();
+        for (const SceneEntity& p : entities_)
+            if (p.id == parentId) return p.name;
+        return std::string();
+    };
     for (const SceneEntity& e : entities_) {
         core::Json obj;
+        if (e.id != 0) {
+            core::Json id;
+            id.type_ = core::Json::Type::Number;
+            id.number_ = e.id;
+            obj.object_["id"] = std::move(id);
+        }
         if (!e.spriteTex.empty()) {
             // 2D sprite: name + transform + sprite components (no mesh). The
             // runtime renders the image quad with the unlit texture material.
@@ -4625,7 +4639,9 @@ core::Result<core::Json> EditorApp::BuildPlaySceneJson() {
             tf.object_["pos"] = mkArr({e.pos.x, e.pos.y, e.pos.z});
             tf.object_["rot"] = mkArr({e.rot.x, e.rot.y, e.rot.z, e.rot.w});
             tf.object_["scale"] = mkArr({e.scale.x, e.scale.y, e.scale.z});
-            if (!e.parent.empty()) tf.object_["parent"] = mkStr(e.parent);
+            if (e.parentId != 0) tf.object_["parentId"] = mkNum(e.parentId);
+            const std::string pname = parentNameOf(e.parentId);
+            if (!pname.empty()) tf.object_["parent"] = mkStr(pname);
             core::Json sp;
             sp.type_ = core::Json::Type::Object;
             sp.object_["texture"] = mkStr(e.spriteTex);
@@ -4663,7 +4679,8 @@ core::Result<core::Json> EditorApp::BuildPlaySceneJson() {
                                                 e.metallic, e.roughness, e.tint, e.albedoTex,
                                                 e.mrTex, e.aoTex, e.emissiveTex, e.ao,
                                                 e.emissiveIntensity, "", "", core::Json{}, {},
-                                                e.hp, e.maxHp, e.parent);
+                                                e.hp, e.maxHp, parentNameOf(e.parentId),
+                                                e.parentId, e.id);
         if (!res.Ok()) {
             return core::Result<core::Json>::Err("editor: " + res.Error());
         }
@@ -4705,7 +4722,9 @@ core::Result<core::Json> EditorApp::BuildPlaySceneJson() {
         tf.object_["pos"] = mkArr({e.pos.x, e.pos.y, e.pos.z});
         tf.object_["rot"] = mkArr({e.rot.x, e.rot.y, e.rot.z, e.rot.w});
         tf.object_["scale"] = mkArr({e.scale.x, e.scale.y, e.scale.z});
-        if (!e.parent.empty()) tf.object_["parent"] = mkStr(e.parent);
+        if (e.parentId != 0) tf.object_["parentId"] = mkNum(e.parentId);
+        const std::string pname = parentNameOf(e.parentId);
+        if (!pname.empty()) tf.object_["parent"] = mkStr(pname);
         core::Json comps;
         comps.type_ = core::Json::Type::Object;
         comps.object_["transform"] = std::move(tf);
@@ -5571,6 +5590,7 @@ void EditorApp::ReloadEntityShader(SceneEntity& e) {
 }
 
 void EditorApp::SaveScene() {
+    NormalizeEntityIds(); // stable ids before serialization
     core::Json root;
     root.type_ = core::Json::Type::Object;
     if (!sceneExtends_.empty()) {
@@ -5615,7 +5635,17 @@ void EditorApp::SaveScene() {
         if (!e.spriteTex.empty()) obj.object_["spriteTex"] = str(e.spriteTex);
         if (e.spriteFlipX) obj.object_["spriteFlipX"] = num(1);
         if (e.spriteFlipY) obj.object_["spriteFlipY"] = num(1);
-        if (!e.parent.empty()) obj.object_["parent"] = str(e.parent);
+        obj.object_["id"] = num(e.id);
+        if (e.parentId != 0) obj.object_["parentId"] = num(e.parentId);
+        // Legacy name parent, kept so older editor builds can still read the
+        // hierarchy (the loader migrates it back to parentId).
+        if (e.parentId != 0) {
+            for (const SceneEntity& p : entities_)
+                if (p.id == e.parentId) {
+                    obj.object_["parent"] = str(p.name);
+                    break;
+                }
+        }
         obj.object_["pos"] = vec3(e.pos);
         obj.object_["scale"] = vec3(e.scale);
         if (e.zOrder != 0.0f) obj.object_["zOrder"] = num(e.zOrder);
@@ -5772,6 +5802,17 @@ static core::Json MergeSceneJson(const core::Json& parent, const core::Json& chi
     return out;
 }
 
+// G1-3: assign a unique id to every entity missing one (id == 0), using
+// max existing id + 1, so parentId references are always resolvable. Called
+// after scene load/setup and before save/export.
+void EditorApp::NormalizeEntityIds() {
+    int maxId = 0;
+    for (const SceneEntity& e : entities_)
+        if (e.id > maxId) maxId = e.id;
+    for (SceneEntity& e : entities_)
+        if (e.id == 0) e.id = ++maxId;
+}
+
 void EditorApp::LoadScene(const std::string& path) {
     std::ifstream in(path);
     if (!in.is_open()) return;
@@ -5828,6 +5869,7 @@ void EditorApp::LoadScene(const std::string& path) {
     pvzZombies_.clear();
     // Replace entity list, re-resolve meshes.
     std::vector<SceneEntity> loaded;
+    std::vector<std::string> legacyParents; // old name-based parents, resolved below
     // Destroy custom shader handles from the previous scene (P2-6).
     if (renderer_.Backend()) {
         for (SceneEntity& old : entities_) {
@@ -5845,7 +5887,9 @@ void EditorApp::LoadScene(const std::string& path) {
         const core::Json* j = arr->At(i);
         if (!j) continue;
         SceneEntity e;
+        if (const core::Json* id = j->Get("id")) e.id = id->GetInt(0);
         e.name = j->Get("name")->GetString("entity");
+        std::string legacyParent;
         if (componentized) {
             if (const core::Json* pf = j->Get("prefab")) e.prefab = pf->GetString();
             // Effective components = prefab template merged with instance
@@ -5875,7 +5919,8 @@ void EditorApp::LoadScene(const std::string& path) {
                     e.scale = {static_cast<float>(s->At(0)->GetNumber()),
                                static_cast<float>(s->At(1)->GetNumber()),
                                static_cast<float>(s->At(2)->GetNumber())};
-                if (const core::Json* p = t->Get("parent")) e.parent = p->GetString();
+                if (const core::Json* p = t->Get("parentId")) e.parentId = p->GetInt(0);
+                if (const core::Json* p = t->Get("parent")) legacyParent = p->GetString();
             }
             if (const core::Json* m = comps->Get("mesh")) {
                 e.meshKey = m->Get("meshKey") ? m->Get("meshKey")->GetString("cube") : "cube";
@@ -6015,7 +6060,8 @@ void EditorApp::LoadScene(const std::string& path) {
                 }
             }
         } else {
-            if (const core::Json* p = j->Get("parent")) e.parent = p->GetString();
+            if (const core::Json* p = j->Get("parentId")) e.parentId = p->GetInt(0);
+            if (const core::Json* p = j->Get("parent")) legacyParent = p->GetString();
             if (const core::Json* nt = j->Get("nodeType")) e.nodeType = nt->GetString();
             if (const core::Json* cf = j->Get("cameraFov"))
                 e.cameraFov = static_cast<float>(cf->GetNumber());
@@ -6116,6 +6162,7 @@ void EditorApp::LoadScene(const std::string& path) {
             if (!e.shaderPath.empty()) ReloadEntityShader(e);
             ApplyMaterialParams(e);
             loaded.push_back(std::move(e));
+            legacyParents.push_back(std::move(legacyParent));
         }
     }
     if (has2DData) {
@@ -6131,6 +6178,19 @@ void EditorApp::LoadScene(const std::string& path) {
     }
     if (!loaded.empty() || has2DData) {
         entities_ = std::move(loaded);
+        // G1-3: stable ids (0 -> sequential) so the scene tree can reference
+        // parents by id; then migrate legacy name-based parents to ids.
+        NormalizeEntityIds();
+        {
+            std::map<std::string, int> firstIdByName;
+            for (const SceneEntity& e : entities_)
+                if (firstIdByName.count(e.name) == 0) firstIdByName[e.name] = e.id;
+            for (size_t i = 0; i < entities_.size() && i < legacyParents.size(); ++i) {
+                if (entities_[i].parentId != 0 || legacyParents[i].empty()) continue;
+                const auto it = firstIdByName.find(legacyParents[i]);
+                if (it != firstIdByName.end()) entities_[i].parentId = it->second;
+            }
+        }
         SetSelection(-1);
         history_.Clear(); // undo history from the previous scene is invalid
         currentSceneName_ = BaseName(path);
@@ -6269,7 +6329,7 @@ void EditorApp::SavePrefab(const std::string& name) {
                                             e.tint, e.albedoTex, e.mrTex, e.aoTex,
                                             e.emissiveTex, e.ao, e.emissiveIntensity,
                                             "", "", core::Json{}, {},
-                                            e.hp, e.maxHp, e.parent);
+                                            e.hp, e.maxHp);
     if (!res.Ok()) {
         NEON_LOG_ERROR("Editor: cannot save prefab: %s", res.Error().c_str());
         return;

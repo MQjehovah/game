@@ -38,8 +38,9 @@ struct Transform3 {
 enum class ViewCam { Perspective, Top, Front };
 
 struct SceneEntity {
+    int id = 0;       // stable per-scene id (0 = unassigned; parentId references this)
     std::string name;
-    std::string parent; // scene-tree parent by entity name ("" = root)
+    int parentId = 0; // scene-tree parent by entity id (0 = root)
     std::string prefab; // prefabs/<name>.json template reference ("" = none)
     // Node type (P1-1): "Node" | "MeshInstance3D" | "Camera3D" | "CharacterBody"
     // | "Sprite" | "Light3D" | "" (auto-derived from meshKey/sprite).
@@ -275,6 +276,10 @@ private:
     }
     void SaveScene();
     void LoadScene(const std::string& path);
+    // G1-3: assigns a unique id to every entity missing one (id == 0), using
+    // max existing id + 1. Called after scene load and setup so the scene tree
+    // can reference parents by id before the first save.
+    void NormalizeEntityIds();
     // Project switcher (Godot-style): ScanProjects discovers the projects/
     // folders; SwitchProject loads a project's game.json, its scene/level
     // lists and enters the declared edit mode (2d canvas or 3D scene tree).

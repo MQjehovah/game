@@ -23,14 +23,16 @@
 
 ### G1-3 场景树接口与两套实体表示
 
-- [~] 现状：运行时父子层级存在（`SceneParentLink` 组件 + 世界变换合成，`game_runtime.cpp:1662`）；编辑器侧 `SceneEntity.parent` 是名字字符串。
+- [x] 现状：运行时父子层级存在（`SceneParentLink` 组件）；**场景树接口与变换缓存已落地**：`GameRuntime::GetChildren/GetDescendants`（O(n) 遍历，供工具/查询/测试），`RebuildWorldTransforms()`（父先子后的迭代 DFS，任意深度，解除原 8 层上限）+ `CachedLocalToWorld()`（Draw 每帧重建后使用）。单元测试 `tests/test_scene_tree.cpp`（遍历 / 13 层世界变换合成 / 变更后重建）。顺带修复引擎既有 bug：`game_runtime` 从 `m[12..14]` 读世界平移（列向量约定下应为 `m[3,7,11]`，原读取恒为 0，导致 LOD 距离与贴花放置错误）。编辑器 ↔ 运行时转换层（序列化桥）语义对齐留作后续。2026-08-25。
 - 差距：无全局场景树遍历接口（GetChildren/GetDescendants、变换脏标记与缓存）；编辑器与运行时是两套实体表示。
 - 建议：运行时补场景树接口与变换缓存；明确编辑器 ↔ 运行时的转换层（序列化已是桥，但 API 语义需对齐）。
+- [x] 2026-08-25 增补：**编辑器父级已迁移到稳定实体 id**——`SceneEntity.id/parentId`（场景树、拖拽重排、撤销重做按 id；序列化写 id/parentId 并保留旧名字字段兼容）；运行时场景格式新增实体 `id` 与 transform `parentId`（按 id 精确解析，名字回退），Instantiate 拒绝自父/环；编辑器拖拽带 id 防环（不能拖成自己/后代的子级）；属性栏移除父级字段（场景树已可视化层级）。**同名实体不再歧义、改名不破坏父子、环被三层拦截**（编辑器拖拽 / 运行时解析 / 遍历 visited 守卫）。测试：`test_scene_tree.cpp`（重名 + parentId 精确解析、环/自父拒绝）。
+- 后续：变换脏标记（增量失效，当前为逐帧全量重建）——建议只做轻量版（全局变换版本号，未变更时跳过重建）；逐实体脏子树在当前规模非瓶颈且正确性税高。
 
 ### G1-4 资源系统小缺口
 
-- [~] 现状：路径缓存、引用计数 + 延迟回收、异步 worker 线程、chunk 流式加载/卸载、BC1 异步解码、`core::ObjectPool` 均已完成。
-- 差距：**无统一资源依赖图**——glTF 的材质/纹理依赖在解析器内部同步 `LoadTexture`，未形成通用的递归异步依赖加载与失败回滚；资源句柄无弱引用/自动卸载策略（目前手动 Acquire/Release）。
+- [x] 现状：路径缓存、引用计数 + 延迟回收、异步 worker 线程、chunk 流式加载/卸载、BC1 异步解码、`core::ObjectPool` 均已完成；**资产依赖图已落地**：`AssetManager` 在 glTF/OBJ 加载时记录依赖边（纹理/缓冲/MTL）与反向边，`DependenciesOf/DependentsOf` 查询；`MissingDependencies(path)` 递归遍历返回缺失叶子（精确错误传播，替代静默白回退）；`LoadDependenciesAsync(path, cb)` 递归异步加载图片叶子依赖并回报首个失败路径。单元测试 `tests/test_asset_deps.cpp`（真实 glTF 依赖记录与反向边 / 缺失纹理精确定位 / 异步成功与失败）。2026-08-25。
+- 差距：**无统一资源依赖图**——（已落地，见上）；资源句柄无弱引用/自动卸载策略（目前手动 Acquire/Release）。
 - 建议：资源句柄 + 依赖图加载器，统一错误传播与回滚。
 
 ### G1-5 渲染表现缺口（P2-1 遗留）
