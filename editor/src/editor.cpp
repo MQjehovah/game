@@ -1876,7 +1876,6 @@ void EditorApp::OnRender() {
     }
     // G8-3: debug overlay layers (nav walkable area, light probes, audio).
     DrawDebugOverlay(cam);
-    DrawSceneGizmos(cam);
 
     // End the 3D scene phase: composite the HDR frame to the backbuffer and
     // bind the backbuffer so the tool UI (engine UI demo + ImGui) below renders
@@ -2309,8 +2308,35 @@ void EditorApp::DrawCameraFrame() {
     renderer_.DrawLines(verts, 8, math::Mat4::Identity());
 }
 
-void EditorApp::DrawSceneGizmos(const gfx::Camera&) {
+void EditorApp::DrawSceneGizmos() {
     if (playtestActive_) return; // gizmos are an edit-mode planning aid
+    // Draw through ImGui (inside the frame) using the SAME view/projection/rect
+    // as the transform gizmo, so the frusta/icons line up with the gizmo.
+    const gfx::Camera cam = ActiveCamera();
+    const float aspect = ViewportAspect();
+    const math::Mat4 view = cam.View();
+    const math::Mat4 proj = cam.Projection(aspect);
+    const math::Rect2 vp = viewportScreenRect_;
+    ImDrawList* dl = ImGui::GetBackgroundDrawList();
+    if (!dl || vp.w <= 0.0f || vp.h <= 0.0f) return;
+
+    auto screen = [&](const math::Vec3& w, ImVec2& out) -> bool {
+        const math::Vec4 clip =
+            proj.TransformVec4(view.TransformVec4(math::Vec4(w.x, w.y, w.z, 1.0f)));
+        if (clip.w <= 0.0f) return false;
+        const float nx = clip.x / clip.w, ny = clip.y / clip.w;
+        out.x = vp.x + (nx * 0.5f + 0.5f) * vp.w;
+        out.y = vp.y + (0.5f - ny * 0.5f) * vp.h;
+        return true;
+    };
+    auto line = [&](const math::Vec3& a, const math::Vec3& b, const gfx::Color& c) {
+        ImVec2 pa, pb;
+        if (screen(a, pa) && screen(b, pb))
+            dl->AddLine(pa, pb, IM_COL32(static_cast<int>(c.r * 255), static_cast<int>(c.g * 255),
+                                        static_cast<int>(c.b * 255), 235),
+                        1.5f);
+    };
+
     const gfx::Color camCol{0.4f, 0.9f, 1.0f, 0.95f};
     const gfx::Color dirCol{1.0f, 0.9f, 0.4f, 0.95f};
     const gfx::Color ptCol{1.0f, 0.65f, 0.25f, 0.95f};
@@ -2320,76 +2346,62 @@ void EditorApp::DrawSceneGizmos(const gfx::Camera&) {
         const math::Mat4 model =
             math::Mat4::Translation(e.pos) * e.rot.ToMat4() * math::Mat4::Scale(e.scale);
         if (e.nodeType == "Camera3D") {
-            // View frustum: perspective pyramid or ortho box along local -Z.
-            // Use the 1280x720 design aspect so a default 2D camera's box
-            // coincides with the design-space border (and the game view).
-            const float aspect = static_cast<float>(gfx::Renderer::kDesignWidth) /
-                                 static_cast<float>(gfx::Renderer::kDesignHeight);
+            const float dAspect = static_cast<float>(gfx::Renderer::kDesignWidth) /
+                                  static_cast<float>(gfx::Renderer::kDesignHeight);
             const float nearP = 0.1f, farP = 60.0f;
             math::Vec3 c[8];
             if (e.cameraOrtho) {
-                const float hh = e.cameraOrthoSize, hw = hh * aspect;
+                const float hh = e.cameraOrthoSize, hw = hh * dAspect;
                 c[0] = {-hw, hh, -nearP}; c[1] = {hw, hh, -nearP};
                 c[2] = {hw, -hh, -nearP}; c[3] = {-hw, -hh, -nearP};
                 c[4] = {-hw, hh, -farP};  c[5] = {hw, hh, -farP};
                 c[6] = {hw, -hh, -farP};  c[7] = {-hw, -hh, -farP};
             } else {
                 const float t = std::tan(e.cameraFov * 0.5f * math::kDegToRad);
-                const float nh = t * nearP, nw = nh * aspect;
-                const float fh = t * farP, fw = fh * aspect;
+                const float nh = t * nearP, nw = nh * dAspect;
+                const float fh = t * farP, fw = fh * dAspect;
                 c[0] = {-nw, nh, -nearP}; c[1] = {nw, nh, -nearP};
                 c[2] = {nw, -nh, -nearP}; c[3] = {-nw, -nh, -nearP};
                 c[4] = {-fw, fh, -farP};  c[5] = {fw, fh, -farP};
                 c[6] = {fw, -fh, -farP};  c[7] = {-fw, -fh, -farP};
             }
-            std::vector<gfx::Renderer::LineVertex> ln;
-            auto seg = [&](int a, int b) {
-                ln.push_back({model.TransformPoint(c[a]), camCol});
-                ln.push_back({model.TransformPoint(c[b]), camCol});
-            };
             const int q0[4][2] = {{0, 1}, {1, 2}, {2, 3}, {3, 0}};
             const int q1[4][2] = {{4, 5}, {5, 6}, {6, 7}, {7, 4}};
-            for (auto& ed : q0) seg(ed[0], ed[1]);
-            for (auto& ed : q1) seg(ed[0], ed[1]);
-            for (int i = 0; i < 4; ++i) seg(i, 4 + i);
-            renderer_.DrawLines(ln.data(), static_cast<uint32_t>(ln.size()),
-                                math::Mat4::Identity());
-            // Camera position anchor: a small axis cross at the exact origin so
-            // the frustum tip visibly sits on the selection gizmo.
-            gfx::Renderer::LineVertex cross[6];
-            cross[0] = {model.TransformPoint({-0.3f, 0.0f, 0.0f}), camCol};
-            cross[1] = {model.TransformPoint({0.3f, 0.0f, 0.0f}), camCol};
-            cross[2] = {model.TransformPoint({0.0f, -0.3f, 0.0f}), camCol};
-            cross[3] = {model.TransformPoint({0.0f, 0.3f, 0.0f}), camCol};
-            cross[4] = {model.TransformPoint({0.0f, 0.0f, -0.3f}), camCol};
-            cross[5] = {model.TransformPoint({0.0f, 0.0f, 0.3f}), camCol};
-            renderer_.DrawLines(cross, 6, math::Mat4::Identity());
+            for (auto& ed : q0) line(model.TransformPoint(c[ed[0]]), model.TransformPoint(c[ed[1]]), camCol);
+            for (auto& ed : q1) line(model.TransformPoint(c[ed[0]]), model.TransformPoint(c[ed[1]]), camCol);
+            for (int i = 0; i < 4; ++i) line(model.TransformPoint(c[i]), model.TransformPoint(c[4 + i]), camCol);
+            line(model.TransformPoint({-0.3f, 0, 0}), model.TransformPoint({0.3f, 0, 0}), camCol);
+            line(model.TransformPoint({0, -0.3f, 0}), model.TransformPoint({0, 0.3f, 0}), camCol);
+            line(model.TransformPoint({0, 0, -0.3f}), model.TransformPoint({0, 0, 0.3f}), camCol);
         } else if (e.hasLight) {
             const gfx::Color col = e.light.type == "point"
                                        ? ptCol
                                        : (e.light.type == "ambient" ? ambCol : dirCol);
             if (e.light.type == "directional") {
-                // Sun icon: a small body + an arrow along the light direction.
                 const math::Vec3 dir = e.light.sunDir.Normalized();
                 const math::Vec3 tip = e.pos + dir * 2.0f;
-                std::vector<gfx::Renderer::LineVertex> ln;
-                ln.push_back({e.pos, col});
-                ln.push_back({tip, col});
                 math::Vec3 s = math::Cross(dir, math::Vec3::Up());
                 if (s.LengthSq() < 1e-4f) s = {1.0f, 0.0f, 0.0f};
                 s = s.Normalized() * 0.25f;
-                ln.push_back({tip - dir * 0.5f - s, col});
-                ln.push_back({tip, col});
-                ln.push_back({tip - dir * 0.5f + s, col});
-                ln.push_back({tip, col});
-                renderer_.DrawLines(ln.data(), static_cast<uint32_t>(ln.size()),
-                                    math::Mat4::Identity());
-                renderer_.DrawSphere(e.pos, 0.2f, col);
+                line(e.pos, tip, col);
+                line(tip - dir * 0.5f - s, tip, col);
+                line(tip - dir * 0.5f + s, tip, col);
             } else if (e.light.type == "point") {
-                renderer_.DrawSphere(e.pos, e.light.radius, ptCol); // falloff
-                renderer_.DrawSphere(e.pos, 0.2f, gfx::Color{1, 1, 1, 1});
+                const int k = 12;
+                for (int i = 0; i < k; ++i) {
+                    const float a0 = static_cast<float>(i) / k * math::kTwoPi;
+                    const float a1 = static_cast<float>(i + 1) / k * math::kTwoPi;
+                    line(e.pos + math::Vec3{std::cos(a0) * e.light.radius, 0, std::sin(a0) * e.light.radius},
+                         e.pos + math::Vec3{std::cos(a1) * e.light.radius, 0, std::sin(a1) * e.light.radius}, ptCol);
+                }
             } else {
-                renderer_.DrawSphere(e.pos, 0.3f, ambCol); // ambient fill
+                const int k = 12;
+                for (int i = 0; i < k; ++i) {
+                    const float a0 = static_cast<float>(i) / k * math::kTwoPi;
+                    const float a1 = static_cast<float>(i + 1) / k * math::kTwoPi;
+                    line(e.pos + math::Vec3{std::cos(a0) * 0.3f, 0, std::sin(a0) * 0.3f},
+                         e.pos + math::Vec3{std::cos(a1) * 0.3f, 0, std::sin(a1) * 0.3f}, ambCol);
+                }
             }
         }
     }
@@ -3426,6 +3438,7 @@ void EditorApp::BuildImGuiUI() {
     BuildViewportPanel();
     BuildPluginPanels();
     BuildPluginsPanel();
+    DrawSceneGizmos();
 
     if (showImGuiDemo_) ImGui::ShowDemoWindow(&showImGuiDemo_);
 }

@@ -289,9 +289,10 @@ private:
     // shows for a 2D/ortho camera): a cyan rect on the plane the camera looks
     // at, so the user can see exactly what the locked camera frames.
     void DrawCameraFrame();
-    // Editor gizmos: draws camera frusta + light icons for scene objects in
-    // the edit viewport (planning aid).
-    void DrawSceneGizmos(const gfx::Camera& cam);
+    // Editor gizmos: draws camera frusta + light icons for scene objects as an
+    // ImGui overlay (called from BuildImGuiUI so it draws after the 3D scene and
+    // aligns with the transform gizmo).
+    void DrawSceneGizmos();
     // The active viewport dock rect (screen pixels) and its aspect ratio; the
     // 3D camera projection and gizmo use these so the scene fits the panel.
     const math::Rect2& ViewportRect() const { return viewportScreenRect_; }
