@@ -300,30 +300,6 @@ struct SceneTerrain {
     float vegMaxHeight = 3.0f;  // world Y ceiling
     float vegMaxSlope = 0.30f;  // slope (1 - normal.y) plants tolerate
 };
-// Scene-level environment defaults (G2-4 / editor UX). Unlike a Camera3D or
-// Light3D entity these are MANDATORY scene context: the renderer/host always
-// has a camera + ambient/sun + a 2D design mapping, and the editor exposes them
-// here so they are editable (brightness, sun, sky, default camera, 2D design
-// size) instead of being implicit and hard-coded. A scene without the
-// `environment` component gets these defaults at runtime.
-struct SceneEnvironment {
-    // Flat ambient (lit shader's "legacy" term) + the sky/IBL tint.
-    gfx::Color ambientColor{0.55f, 0.70f, 0.88f, 1.0f};
-    float ambientStrength = 0.25f;
-    gfx::Color skyTop{0.05f, 0.07f, 0.12f, 1.0f};
-    gfx::Color skyHorizon{0.2f, 0.3f, 0.45f, 1.0f};
-    // Directional sun (direction the light shines FROM the scene toward).
-    math::Vec3 sunDir{-0.4f, -1.0f, -0.3f};
-    gfx::Color sunColor{1.0f, 0.95f, 0.85f, 1.0f};
-    // Default camera used when no Camera3D entity is in the scene.
-    float cameraFov = 55.0f;        // degrees
-    bool cameraOrtho = false;
-    float orthoSize = 10.0f;        // ortho half-height (world units)
-    // 2D design-space mapping (default 1280x720, fit+centre).
-    int designWidth = 1280;
-    int designHeight = 720;
-    bool letterbox = true;
-};
 // 2D tilemap (P1-1): cols x rows of texture paths ("" = empty cell), each
 // cell rendered as a `cellSize` design-unit quad at the entity's position.
 struct SceneTilemap {
