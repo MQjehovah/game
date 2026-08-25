@@ -1713,7 +1713,20 @@ void EditorApp::OnRender() {
         if (playtestActive_ && playtest_) {
             // Play mode: the viewport renders the runtime's world (a snapshot
             // of the scene taken at Play). The editor scene is untouched.
-            playtest_->Draw(renderer_, cam);
+            // For a 2D project the runtime content must be framed by the same
+            // 1280x720 design space the edit-mode camera frame draws, NOT the
+            // editor's free pan/zoom camera (which would land the game off the
+            // frame). Lock the play camera to the design rect instead.
+            gfx::Camera playCam = cam;
+            if (projectMode_ == "2d" || editMode_ == EditMode::Scene2D) {
+                playCam.position = {640.0f, 360.0f, 100.0f};
+                playCam.target = {640.0f, 360.0f, 0.0f};
+                playCam.up = {0.0f, 1.0f, 0.0f};
+                playCam.ortho = true;
+                playCam.orthoSize = 360.0f; // half the 720 design height
+                playCam.fovY = 60.0f * math::kDegToRad;
+            }
+            playtest_->Draw(renderer_, playCam);
             // Physics debug view: wireframe every collider so the collision
             // shapes are visible while playtesting (dynamic = cyan, static =
             // gray). Uses the physics world's live positions, so resting and
