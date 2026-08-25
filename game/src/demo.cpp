@@ -442,6 +442,186 @@ void GameScene::Heal() {
     }
 }
 
+void GameScene::FrostNova() {
+    CPlayer* pl = world_.Get<CPlayer>(player_);
+    CTransform* pt = world_.Get<CTransform>(player_);
+    if (!pl || !pt || pl->mana < 20.0f) return;
+    pl->mana -= 20.0f;
+    pl->novaCd = 6.0f;
+    const math::Vec3 p = pt->pos + math::Vec3{0, 1.0f, 0};
+    // Radial cyan/white burst outward (OnUnitSphere gives a omnidirectional
+    // base velocity, so a centred emitter with a wide speed range reads as a
+    // nova shell).
+    gfx::EmitterConfig fx;
+    fx.count = 64;
+    fx.position = p;
+    fx.speedMin = 3.0f;
+    fx.speedMax = 10.0f;
+    fx.lifeMin = 0.35f;
+    fx.lifeMax = 0.85f;
+    fx.sizeStart = 0.5f;
+    fx.sizeEnd = 0.05f;
+    fx.colorStart = {0.4f, 0.9f, 1.0f, 1.0f};
+    fx.colorEnd = {0.3f, 0.7f, 1.0f, 0.0f};
+    fx.gravity = -2.0f;
+    particles_.Emit(fx);
+    gfx::EmitterConfig inner = fx;
+    inner.count = 24;
+    inner.sizeStart = 0.3f;
+    inner.speedMin = 1.0f;
+    inner.speedMax = 4.0f;
+    inner.colorStart = {0.9f, 1.0f, 1.0f, 1.0f};
+    inner.colorEnd = {0.6f, 0.9f, 1.0f, 0.0f};
+    particles_.Emit(inner);
+    rings_.push_back({pt->pos, 0.0f, 0.9f, {0.3f, 0.75f, 1.0f, 1.0f}});
+    app_.PlaySfx(app_.sfxFireball_);
+}
+
+void GameScene::LightningZap() {
+    CPlayer* pl = world_.Get<CPlayer>(player_);
+    CTransform* pt = world_.Get<CTransform>(player_);
+    if (!pl || !pt || pl->mana < 16.0f) return;
+    pl->mana -= 16.0f;
+    pl->zapCd = 4.0f;
+    const math::Vec3 p = pt->pos;
+    // A bright column: particles shoot up then gravity snaps them back down.
+    gfx::EmitterConfig up;
+    up.count = 56;
+    up.position = p + math::Vec3{0, 1.0f, 0};
+    up.baseVelocity = {0.0f, 7.0f, 0.0f};
+    up.speedMin = 0.5f;
+    up.speedMax = 1.5f;
+    up.lifeMin = 0.2f;
+    up.lifeMax = 0.55f;
+    up.sizeStart = 0.45f;
+    up.sizeEnd = 0.05f;
+    up.colorStart = {1.0f, 0.95f, 0.45f, 1.0f};
+    up.colorEnd = {1.0f, 0.7f, 0.2f, 0.0f};
+    up.gravity = -9.0f;
+    particles_.Emit(up);
+    rings_.push_back({p, 0.0f, 0.55f, {1.0f, 0.9f, 0.45f, 1.0f}});
+    app_.PlaySfx(app_.sfxFireball_);
+}
+
+void GameScene::SlashSkill() {
+    CPlayer* pl = world_.Get<CPlayer>(player_);
+    CTransform* pt = world_.Get<CTransform>(player_);
+    if (!pl || !pt || pl->mana < 8.0f) return;
+    pl->mana -= 8.0f;
+    pl->slashCd = 1.5f;
+    const math::Vec3 fwd = pt->rot.Rotate(math::Vec3::Forward());
+    // White/cyan arc streaming ahead of the player.
+    gfx::EmitterConfig arc;
+    arc.count = 46;
+    arc.position = pt->pos + fwd * 1.2f + math::Vec3{0, 1.0f, 0};
+    arc.baseVelocity = fwd * 4.0f;
+    arc.speedMin = 1.0f;
+    arc.speedMax = 4.0f;
+    arc.lifeMin = 0.2f;
+    arc.lifeMax = 0.45f;
+    arc.sizeStart = 0.35f;
+    arc.sizeEnd = 0.04f;
+    arc.colorStart = {0.8f, 1.0f, 1.0f, 1.0f};
+    arc.colorEnd = {0.45f, 0.9f, 1.0f, 0.0f};
+    particles_.Emit(arc);
+    // Damage a 100-degree cone in front.
+    const math::Vec3 origin = pt->pos;
+    float damaged = 0.0f;
+    const auto eView = world_.ViewAll<CEnemy>();
+    for (size_t i = 0; i < eView.Size(); ++i) {
+        ecs::Entity e = world_.EntityAt<CEnemy>(i);
+        CTransform* et = world_.Get<CTransform>(e);
+        CHealth* eh = world_.Get<CHealth>(e);
+        CEnemy* ce = world_.Get<CEnemy>(e);
+        if (!et || !eh || !ce || ce->dead) continue;
+        math::Vec3 to = et->pos - origin;
+        to.y = 0.0f;
+        const float dist = to.Length();
+        if (dist > 4.5f) continue;
+        const math::Vec3 dir = dist > 1e-3f ? to * (1.0f / dist) : fwd;
+        if (math::Dot(fwd, dir) < std::cos(55.0f * math::kDegToRad)) continue;
+        eh->hp -= 32.0f;
+        ce->aggro = true;
+        ++damaged;
+        gfx::EmitterConfig hit;
+        hit.count = 8;
+        hit.position = et->pos + math::Vec3{0, 1.0f, 0};
+        hit.speedMin = 2.0f;
+        hit.speedMax = 6.0f;
+        hit.lifeMin = 0.2f;
+        hit.lifeMax = 0.4f;
+        hit.sizeStart = 0.3f;
+        hit.sizeEnd = 0.05f;
+        hit.colorStart = {0.8f, 1.0f, 1.0f, 1.0f};
+        hit.colorEnd = {0.5f, 0.9f, 1.0f, 0.0f};
+        particles_.Emit(hit);
+        if (eh->hp <= 0.0f) KillMob(e);
+    }
+    if (damaged > 0.0f) app_.PlaySfx(app_.sfxHit_, 0.7f);
+    else app_.PlaySfx(app_.sfxSwing_);
+}
+
+void GameScene::NovaSlam() {
+    CPlayer* pl = world_.Get<CPlayer>(player_);
+    CTransform* pt = world_.Get<CTransform>(player_);
+    if (!pl || !pt || pl->mana < 30.0f) return;
+    pl->mana -= 30.0f;
+    pl->slamCd = 8.0f;
+    const math::Vec3 p = pt->pos;
+    // Big radial explosion + a shockwave ring + camera shake + AoE damage.
+    gfx::EmitterConfig boom;
+    boom.count = 90;
+    boom.position = p + math::Vec3{0, 0.5f, 0};
+    boom.speedMin = 2.0f;
+    boom.speedMax = 12.0f;
+    boom.lifeMin = 0.4f;
+    boom.lifeMax = 1.0f;
+    boom.sizeStart = 0.7f;
+    boom.sizeEnd = 0.05f;
+    boom.colorStart = {1.0f, 0.5f, 0.2f, 1.0f};
+    boom.colorEnd = {0.6f, 0.15f, 0.1f, 0.0f};
+    boom.gravity = -3.0f;
+    particles_.Emit(boom);
+    gfx::EmitterConfig flash = boom;
+    flash.count = 30;
+    flash.sizeStart = 0.4f;
+    flash.speedMin = 1.0f;
+    flash.speedMax = 4.0f;
+    flash.colorStart = {1.0f, 1.0f, 0.85f, 1.0f};
+    flash.colorEnd = {1.0f, 0.7f, 0.3f, 0.0f};
+    particles_.Emit(flash);
+    rings_.push_back({p, 0.0f, 1.3f, {1.0f, 0.5f, 0.2f, 1.0f}});
+    shakeTime_ = 0.4f;
+    shakeMag_ = 0.35f;
+    app_.PlaySfx(app_.sfxExplosion_);
+    // AoE damage in a 5.5 unit radius.
+    const auto slamView = world_.ViewAll<CEnemy>();
+    for (size_t i = 0; i < slamView.Size(); ++i) {
+        ecs::Entity e = world_.EntityAt<CEnemy>(i);
+        CTransform* et = world_.Get<CTransform>(e);
+        CHealth* eh = world_.Get<CHealth>(e);
+        CEnemy* ce = world_.Get<CEnemy>(e);
+        if (!et || !eh || !ce || ce->dead) continue;
+        const float dist = (et->pos - p).Length();
+        if (dist > 5.5f) continue;
+        eh->hp -= 55.0f;
+        ce->aggro = true;
+        gfx::EmitterConfig hit;
+        hit.count = 10;
+        hit.position = et->pos + math::Vec3{0, 1.0f, 0};
+        hit.speedMin = 1.0f;
+        hit.speedMax = 4.0f;
+        hit.lifeMin = 0.25f;
+        hit.lifeMax = 0.5f;
+        hit.sizeStart = 0.4f;
+        hit.sizeEnd = 0.05f;
+        hit.colorStart = {1.0f, 0.6f, 0.3f, 1.0f};
+        hit.colorEnd = {0.7f, 0.2f, 0.1f, 0.0f};
+        particles_.Emit(hit);
+        if (eh->hp <= 0.0f) KillMob(e);
+    }
+}
+
 void GameScene::KillMob(ecs::Entity enemy) {
     CTransform* et = world_.Get<CTransform>(enemy);
     CEnemy* ce = world_.Get<CEnemy>(enemy);
@@ -522,6 +702,10 @@ void GameScene::UpdatePlayer(float dt) {
     player->dashTime -= dt;
     player->fireCd -= dt;
     player->healCd -= dt;
+    player->novaCd -= dt;
+    player->zapCd -= dt;
+    player->slashCd -= dt;
+    player->slamCd -= dt;
     player->mana = std::min(player->maxMana, player->mana + 3.0f * dt);
 
     float ix = (input->IsDown(platform::Key::D) ? 1.0f : 0.0f) -
@@ -573,7 +757,31 @@ void GameScene::UpdatePlayer(float dt) {
         MeleeAttack();
     }
     if (input->Pressed(platform::Key::D1) && player->fireCd <= 0.0f) Fireball();
-    if (input->Pressed(platform::Key::D2) && player->healCd <= 0.0f) Heal();
+    if (input->Pressed(platform::Key::D2) && player->novaCd <= 0.0f) FrostNova();
+    if (input->Pressed(platform::Key::D3) && player->zapCd <= 0.0f) LightningZap();
+    if (input->Pressed(platform::Key::D4) && player->slashCd <= 0.0f) SlashSkill();
+    if (input->Pressed(platform::Key::D5) && player->healCd <= 0.0f) Heal();
+    if (input->Pressed(platform::Key::D6) && player->slamCd <= 0.0f) NovaSlam();
+
+    // Smoke mode: cycle every skill so the GL smoke exercises all particle /
+    // ring / damage code paths (no keypresses needed). Mana is topped up so the
+    // whole kit fires regardless of drain.
+    if (app_.SmokeMode()) {
+        skillDemoTimer_ -= dt;
+        if (skillDemoTimer_ <= 0.0f) {
+            skillDemoTimer_ = 0.35f;
+            player->mana = player->maxMana;
+            static int seq = 0;
+            switch (seq++ % 6) {
+                case 0: Fireball(); break;
+                case 1: FrostNova(); break;
+                case 2: LightningZap(); break;
+                case 3: SlashSkill(); break;
+                case 4: Heal(); break;
+                case 5: NovaSlam(); break;
+            }
+        }
+    }
 
     trailTimer_ -= dt;
     if (moveDir.LengthSq() > 0.1f && trailTimer_ <= 0.0f) {
@@ -1137,10 +1345,14 @@ void GameScene::DrawHUD(gfx::Renderer& renderer) {
         ui::DrawLabel(renderer, theme, buf, {rect.x + rect.w * 0.5f, rect.y + rect.h - 10}, 10,
                   theme.text.WithAlpha(0.7f), true, false);
     };
-    drawSlot({540, 640, 110, 56}, "1 火球术", math::Saturate(pl->fireCd / 2.0f), 12, pl->fireCd <= 0.0f);
-    drawSlot({660, 640, 110, 56}, "2 治疗术", math::Saturate(pl->healCd / 5.0f), 15, pl->healCd <= 0.0f);
+    drawSlot({280, 640, 110, 56}, "1 火球术", math::Saturate(pl->fireCd / 2.0f), 12, pl->fireCd <= 0.0f);
+    drawSlot({400, 640, 110, 56}, "2 冰霜新星", math::Saturate(pl->novaCd / 6.0f), 20, pl->novaCd <= 0.0f);
+    drawSlot({520, 640, 110, 56}, "3 雷霆", math::Saturate(pl->zapCd / 4.0f), 16, pl->zapCd <= 0.0f);
+    drawSlot({640, 640, 110, 56}, "4 剑气斩", math::Saturate(pl->slashCd / 1.5f), 8, pl->slashCd <= 0.0f);
+    drawSlot({760, 640, 110, 56}, "5 治疗", math::Saturate(pl->healCd / 5.0f), 15, pl->healCd <= 0.0f);
+    drawSlot({880, 640, 110, 56}, "6 崩雷爆", math::Saturate(pl->slamCd / 8.0f), 30, pl->slamCd <= 0.0f);
 
-    ui::DrawLabel(renderer, theme, "WASD 移动 | 鼠标旋转 | 左键攻击 | 右键冲刺 | F 对话 | 1/2 技能 | Esc 暂停",
+    ui::DrawLabel(renderer, theme, "WASD 移动 | 鼠标旋转 | 左键攻击 | 右键冲刺 | F 对话 | 1-6 技能 | Esc 暂停",
               {640, 712}, 11, theme.text.WithAlpha(0.6f), true, false);
 
     const gfx::Renderer::RenderStats& stats = renderer.Stats();

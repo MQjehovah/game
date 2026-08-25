@@ -48,6 +48,10 @@ struct CPlayer {
     float maxMana = 50.0f;
     float fireCd = 0.0f;
     float healCd = 0.0f;
+    float novaCd = 0.0f;   // D2 frost nova
+    float zapCd = 0.0f;    // D3 lightning
+    float slashCd = 0.0f;  // D4 gale slash
+    float slamCd = 0.0f;   // D6 nova slam
     int level = 1;
     int xp = 0;
     int gold = 0;
@@ -122,6 +126,10 @@ private:
     void MeleeAttack();
     void Fireball();
     void Heal();
+    void FrostNova();
+    void LightningZap();
+    void SlashSkill();
+    void NovaSlam();
     void KillMob(ecs::Entity enemy);
     void GiveXp(int amount);
     void RespawnPlayer();
@@ -164,6 +172,7 @@ private:
     std::string banner_;
     float bannerTime_ = 0.0f;
     float trailTimer_ = 0.0f;
+    float skillDemoTimer_ = 0.0f; // smoke-mode: auto-cast skills to verify VFX
     float dayTime_ = 0.0f;
 
     std::vector<float> heights_;
