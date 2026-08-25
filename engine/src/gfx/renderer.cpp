@@ -2246,8 +2246,13 @@ void Renderer::Set2DViewport(float x, float y, float w, float h, float zoom,
         Reset2DViewport();
         return;
     }
-    const float fitScale =
-        std::min(w / static_cast<float>(kDesignWidth), h / static_cast<float>(kDesignHeight));
+    // Match the 2D orthographic sprite camera: it maps the design height to
+    // the panel height (1 design unit = h/720 px at the default orthoSize=360).
+    // fitScale = min(w/1280, h/720) letterboxes instead, which diverges from
+    // the sprite camera whenever the panel aspect isn't 16:9 and makes the 2D
+    // UI/HUD sit offset / flicker. Using h/720 keeps sprites + UI on one
+    // projection.
+    const float fitScale = h / static_cast<float>(kDesignHeight);
     uiScale_ = fitScale * zoom;
     // The design point (640 + pan, 360 + pan) sits at the viewport rect center.
     const float designCx = static_cast<float>(kDesignWidth) * 0.5f + pan.x;
