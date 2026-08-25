@@ -1805,7 +1805,7 @@ void Renderer::DrawMeshInstancedColored(const Mesh& mesh, const Material& materi
 
 void Renderer::DrawBillboards(const math::Vec3* positions, const float* sizes,
                               const Color* colors, TextureHandle texture, uint32_t count,
-                              BlendMode blend) {
+                              BlendMode blend, float intensity) {
     if (!backend_ || !billboardQuad_.Valid() || !positions || !sizes || !colors || count == 0)
         return;
     Flush2D();
@@ -1834,7 +1834,10 @@ void Renderer::DrawBillboards(const math::Vec3* positions, const float* sizes,
         m.m[7] = positions[i].y;
         m.m[11] = positions[i].z;
         models[i] = m;
-        colc[i] = {colors[i].r, colors[i].g, colors[i].b, colors[i].a};
+        // Multiply RGB by `intensity` so additive glow particles emit HDR
+        // values > 1.0 and the bloom pass picks them up (the "big game" glow).
+        colc[i] = {colors[i].r * intensity, colors[i].g * intensity,
+                   colors[i].b * intensity, colors[i].a};
     }
 
     Material mat = Material::Unlit(texture, Color::White);

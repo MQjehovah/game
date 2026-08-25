@@ -74,7 +74,7 @@ void ParticleSystem::Draw(Renderer& renderer, const Texture& texture, float scal
     if (!addPos.empty())
         renderer.DrawBillboards(addPos.data(), addSize.data(), addCol.data(),
                                 texture.Handle(), static_cast<uint32_t>(addPos.size()),
-                                BlendMode::Additive);
+                                BlendMode::Additive, /*intensity=*/4.0f);
     if (!alphaPos.empty())
         renderer.DrawBillboards(alphaPos.data(), alphaSize.data(), alphaCol.data(),
                                 texture.Handle(), static_cast<uint32_t>(alphaPos.size()),

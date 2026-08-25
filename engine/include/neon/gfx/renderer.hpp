@@ -209,7 +209,7 @@ public:
     // pass with correct depth/fog/light occlusion.
     void DrawBillboards(const math::Vec3* positions, const float* sizes,
                         const Color* colors, TextureHandle texture, uint32_t count,
-                        BlendMode blend = BlendMode::Additive);
+                        BlendMode blend = BlendMode::Additive, float intensity = 1.0f);
     // CPU-side projected shadow: projects the mesh onto the ground plane
     // (y=0) along lightDir. Works without any depth buffer or FBO. Used as the
     // fallback when CSM is disabled.

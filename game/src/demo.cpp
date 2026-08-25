@@ -405,8 +405,22 @@ void GameScene::Fireball() {
     app_.PlaySfx(app_.sfxFireball_);
 
     math::Vec3 fwd = pt->rot.Rotate(math::Vec3::Forward());
+    const math::Vec3 hand = pt->pos + fwd * 1.3f + math::Vec3{0, 1.2f, 0};
+    // Muzzle flash: a hot burst at the cast point.
+    gfx::EmitterConfig flash;
+    flash.count = 34;
+    flash.position = hand;
+    flash.speedMin = 2.0f;
+    flash.speedMax = 6.5f;
+    flash.lifeMin = 0.12f;
+    flash.lifeMax = 0.3f;
+    flash.sizeStart = 0.95f;
+    flash.sizeEnd = 0.1f;
+    flash.colorStart = {1.0f, 0.7f, 0.3f, 1.0f};
+    flash.colorEnd = {1.0f, 0.35f, 0.1f, 0.0f};
+    particles_.Emit(flash);
     ecs::Entity e = world_.Create();
-    math::Vec3 pos = pt->pos + fwd * 1.3f + math::Vec3{0, 1.2f, 0};
+    math::Vec3 pos = hand;
     world_.Add<CTransform>(e, CTransform{pos, math::Quat::Identity(), {0.2f, 0.2f, 0.2f}});
     world_.Add<CMesh>(e, CMesh{app_.Assets().sphere,
                                gfx::Material::Unlit({}, gfx::Color{1.0f, 0.5f, 0.15f, 1.0f})});
@@ -427,18 +441,29 @@ void GameScene::Heal() {
     app_.PlaySfx(app_.sfxPickup_);
     if (pt) {
         gfx::EmitterConfig healFx;
-        healFx.count = 18;
+        healFx.count = 90;
         healFx.position = pt->pos + math::Vec3{0, 1.2f, 0};
-        healFx.speedMin = 1.0f;
-        healFx.speedMax = 3.5f;
-        healFx.lifeMin = 0.3f;
-        healFx.lifeMax = 0.7f;
-        healFx.sizeStart = 0.4f;
-        healFx.sizeEnd = 0.05f;
+        healFx.speedMin = 0.5f;
+        healFx.speedMax = 2.0f;
+        healFx.lifeMin = 0.4f;
+        healFx.lifeMax = 1.6f;
+        healFx.sizeStart = 0.9f;
+        healFx.sizeEnd = 0.08f;
         healFx.colorStart = {0.4f, 1.0f, 0.6f, 1.0f};
-        healFx.colorEnd = {0.4f, 1.0f, 0.6f, 0.0f};
-        healFx.gravity = 2.0f;
+        healFx.colorEnd = {0.3f, 0.9f, 0.5f, 0.0f};
+        healFx.gravity = 1.0f;
         particles_.Emit(healFx);
+        gfx::EmitterConfig core = healFx;
+        core.count = 36;
+        core.sizeStart = 0.4f;
+        core.speedMin = 0.0f;
+        core.speedMax = 0.5f;
+        core.lifeMin = 0.3f;
+        core.lifeMax = 0.9f;
+        core.colorStart = {0.85f, 1.0f, 0.9f, 1.0f};
+        core.colorEnd = {0.5f, 1.0f, 0.7f, 0.0f};
+        core.gravity = 0.5f;
+        particles_.Emit(core);
     }
 }
 
@@ -453,26 +478,37 @@ void GameScene::FrostNova() {
     // base velocity, so a centred emitter with a wide speed range reads as a
     // nova shell).
     gfx::EmitterConfig fx;
-    fx.count = 64;
+    fx.count = 180;
     fx.position = p;
-    fx.speedMin = 3.0f;
-    fx.speedMax = 10.0f;
-    fx.lifeMin = 0.35f;
-    fx.lifeMax = 0.85f;
-    fx.sizeStart = 0.5f;
-    fx.sizeEnd = 0.05f;
+    fx.speedMin = 2.5f;
+    fx.speedMax = 12.0f;
+    fx.lifeMin = 0.4f;
+    fx.lifeMax = 1.2f;
+    fx.sizeStart = 1.4f;
+    fx.sizeEnd = 0.1f;
     fx.colorStart = {0.4f, 0.9f, 1.0f, 1.0f};
     fx.colorEnd = {0.3f, 0.7f, 1.0f, 0.0f};
     fx.gravity = -2.0f;
     particles_.Emit(fx);
     gfx::EmitterConfig inner = fx;
     inner.count = 24;
-    inner.sizeStart = 0.3f;
+    inner.sizeStart = 0.55f;
     inner.speedMin = 1.0f;
     inner.speedMax = 4.0f;
     inner.colorStart = {0.9f, 1.0f, 1.0f, 1.0f};
     inner.colorEnd = {0.6f, 0.9f, 1.0f, 0.0f};
     particles_.Emit(inner);
+    // Lingering icy drift so the nova hangs in the air.
+    gfx::EmitterConfig drift = fx;
+    drift.count = 90;
+    drift.speedMin = 0.3f;
+    drift.speedMax = 1.6f;
+    drift.lifeMin = 1.4f;
+    drift.lifeMax = 2.6f;
+    drift.sizeStart = 0.5f;
+    drift.sizeEnd = 0.08f;
+    drift.gravity = -0.5f;
+    particles_.Emit(drift);
     rings_.push_back({pt->pos, 0.0f, 0.9f, {0.3f, 0.75f, 1.0f, 1.0f}});
     app_.PlaySfx(app_.sfxFireball_);
 }
@@ -486,19 +522,31 @@ void GameScene::LightningZap() {
     const math::Vec3 p = pt->pos;
     // A bright column: particles shoot up then gravity snaps them back down.
     gfx::EmitterConfig up;
-    up.count = 56;
+    up.count = 150;
     up.position = p + math::Vec3{0, 1.0f, 0};
     up.baseVelocity = {0.0f, 7.0f, 0.0f};
-    up.speedMin = 0.5f;
-    up.speedMax = 1.5f;
-    up.lifeMin = 0.2f;
-    up.lifeMax = 0.55f;
-    up.sizeStart = 0.45f;
+    up.speedMin = 1.0f;
+    up.speedMax = 2.5f;
+    up.lifeMin = 0.25f;
+    up.lifeMax = 0.7f;
+    up.sizeStart = 1.0f;
     up.sizeEnd = 0.05f;
     up.colorStart = {1.0f, 0.95f, 0.45f, 1.0f};
     up.colorEnd = {1.0f, 0.7f, 0.2f, 0.0f};
     up.gravity = -9.0f;
     particles_.Emit(up);
+    // Ground corona: a hot spread at the strike point.
+    gfx::EmitterConfig corona = up;
+    corona.count = 46;
+    corona.baseVelocity = {0.0f, 0.0f, 0.0f};
+    corona.speedMin = 2.0f;
+    corona.speedMax = 7.0f;
+    corona.lifeMin = 0.2f;
+    corona.lifeMax = 0.5f;
+    corona.sizeStart = 0.7f;
+    corona.sizeEnd = 0.08f;
+    corona.gravity = -4.0f;
+    particles_.Emit(corona);
     rings_.push_back({p, 0.0f, 0.55f, {1.0f, 0.9f, 0.45f, 1.0f}});
     app_.PlaySfx(app_.sfxFireball_);
 }
@@ -512,18 +560,26 @@ void GameScene::SlashSkill() {
     const math::Vec3 fwd = pt->rot.Rotate(math::Vec3::Forward());
     // White/cyan arc streaming ahead of the player.
     gfx::EmitterConfig arc;
-    arc.count = 46;
+    arc.count = 140;
     arc.position = pt->pos + fwd * 1.2f + math::Vec3{0, 1.0f, 0};
-    arc.baseVelocity = fwd * 4.0f;
-    arc.speedMin = 1.0f;
-    arc.speedMax = 4.0f;
-    arc.lifeMin = 0.2f;
-    arc.lifeMax = 0.45f;
-    arc.sizeStart = 0.35f;
-    arc.sizeEnd = 0.04f;
+    arc.baseVelocity = fwd * 6.0f;
+    arc.speedMin = 1.5f;
+    arc.speedMax = 5.0f;
+    arc.lifeMin = 0.25f;
+    arc.lifeMax = 0.6f;
+    arc.sizeStart = 0.85f;
+    arc.sizeEnd = 0.06f;
     arc.colorStart = {0.8f, 1.0f, 1.0f, 1.0f};
     arc.colorEnd = {0.45f, 0.9f, 1.0f, 0.0f};
     particles_.Emit(arc);
+    gfx::EmitterConfig edge = arc;
+    edge.count = 60;
+    edge.sizeStart = 0.4f;
+    edge.speedMin = 0.5f;
+    edge.speedMax = 2.0f;
+    edge.colorStart = {0.95f, 1.0f, 1.0f, 1.0f};
+    edge.colorEnd = {0.7f, 1.0f, 1.0f, 0.0f};
+    particles_.Emit(edge);
     // Damage a 100-degree cone in front.
     const math::Vec3 origin = pt->pos;
     float damaged = 0.0f;
@@ -570,26 +626,38 @@ void GameScene::NovaSlam() {
     const math::Vec3 p = pt->pos;
     // Big radial explosion + a shockwave ring + camera shake + AoE damage.
     gfx::EmitterConfig boom;
-    boom.count = 90;
+    boom.count = 280;
     boom.position = p + math::Vec3{0, 0.5f, 0};
     boom.speedMin = 2.0f;
-    boom.speedMax = 12.0f;
+    boom.speedMax = 14.0f;
     boom.lifeMin = 0.4f;
-    boom.lifeMax = 1.0f;
-    boom.sizeStart = 0.7f;
-    boom.sizeEnd = 0.05f;
+    boom.lifeMax = 1.6f;
+    boom.sizeStart = 2.2f;
+    boom.sizeEnd = 0.1f;
     boom.colorStart = {1.0f, 0.5f, 0.2f, 1.0f};
     boom.colorEnd = {0.6f, 0.15f, 0.1f, 0.0f};
     boom.gravity = -3.0f;
     particles_.Emit(boom);
     gfx::EmitterConfig flash = boom;
-    flash.count = 30;
-    flash.sizeStart = 0.4f;
-    flash.speedMin = 1.0f;
-    flash.speedMax = 4.0f;
+    flash.count = 70;
+    flash.sizeStart = 0.7f;
+    flash.speedMin = 0.5f;
+    flash.speedMax = 3.0f;
     flash.colorStart = {1.0f, 1.0f, 0.85f, 1.0f};
     flash.colorEnd = {1.0f, 0.7f, 0.3f, 0.0f};
+    flash.gravity = -1.0f;
     particles_.Emit(flash);
+    // Lingering embers that drift up from the blast.
+    gfx::EmitterConfig embers = boom;
+    embers.count = 120;
+    embers.speedMin = 0.2f;
+    embers.speedMax = 1.5f;
+    embers.lifeMin = 1.6f;
+    embers.lifeMax = 3.0f;
+    embers.sizeStart = 0.5f;
+    embers.sizeEnd = 0.05f;
+    embers.gravity = -0.4f;
+    particles_.Emit(embers);
     rings_.push_back({p, 0.0f, 1.3f, {1.0f, 0.5f, 0.2f, 1.0f}});
     shakeTime_ = 0.4f;
     shakeMag_ = 0.35f;
@@ -894,6 +962,22 @@ void GameScene::UpdateProjectiles(float dt) {
         if (!pt) continue;
         proj.life -= dt;
         pt->pos += proj.vel * dt;
+        // Fireball trail: glowing embers left behind so the projectile reads.
+        {
+            gfx::EmitterConfig trail;
+            trail.count = 2;
+            trail.position = pt->pos;
+            trail.speedMin = 0.0f;
+            trail.speedMax = 0.6f;
+            trail.lifeMin = 0.3f;
+            trail.lifeMax = 0.6f;
+            trail.sizeStart = 0.35f;
+            trail.sizeEnd = 0.05f;
+            trail.colorStart = {1.0f, 0.55f, 0.15f, 1.0f};
+            trail.colorEnd = {0.8f, 0.25f, 0.1f, 0.0f};
+            trail.gravity = -1.0f;
+            particles_.Emit(trail);
+        }
 
         bool hit = false;
         auto mobs = world_.ViewAll<CEnemy>();
@@ -908,7 +992,7 @@ void GameScene::UpdateProjectiles(float dt) {
                 ce->aggro = true;
                 hit = true;
                 gfx::EmitterConfig impact;
-                impact.count = 12;
+                impact.count = 22;
                 impact.position = pt->pos;
                 impact.speedMin = 1.5f;
                 impact.speedMax = 5.0f;
