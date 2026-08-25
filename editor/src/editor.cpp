@@ -1704,7 +1704,15 @@ void EditorApp::OnRender() {
             renderer_.DrawLines(gv.data(), static_cast<uint32_t>(gv.size()),
                                 math::Mat4::Identity());
         }
-        renderer_.SetDirectionalLight({-0.4f, -1.0f, -0.3f}, {1.0f, 0.95f, 0.85f}, 0.45f);
+        // The scene's DirectionalLight object drives the world light (Unity-style).
+        const scene::SceneLight* sl = nullptr;
+        for (const SceneEntity& se : entities_) {
+            if (se.hasLight) { sl = &se.light; break; }
+        }
+        if (sl)
+            renderer_.SetDirectionalLight(sl->sunDir, sl->color, sl->ambientStrength);
+        else
+            renderer_.SetDirectionalLight({-0.4f, -1.0f, -0.3f}, {1.0f, 0.95f, 0.85f}, 0.45f);
         // 2D view = camera lock: mark the ortho camera's visible rect so the
         // user sees exactly what the front/top camera frames (Unity-style
         // camera border), no matter which project the view belongs to.
@@ -4938,6 +4946,40 @@ core::Result<core::Json> EditorApp::BuildPlaySceneJson() {
                 cam.object_["ortho"] = ortho;
                 comps.object_["camera"] = std::move(cam);
             }
+            if (e.hasLight) {
+                core::Json li;
+                li.type_ = core::Json::Type::Object;
+                core::Json t;
+                t.type_ = core::Json::Type::String;
+                t.string_ = e.light.type;
+                li.object_["type"] = std::move(t);
+                auto vecJson = [&](float x, float y, float z) {
+                    core::Json a;
+                    a.type_ = core::Json::Type::Array;
+                    a.array_.push_back(mkNum(x));
+                    a.array_.push_back(mkNum(y));
+                    a.array_.push_back(mkNum(z));
+                    return a;
+                };
+                auto colJson = [&](float r, float g, float b, float aa) {
+                    core::Json a;
+                    a.type_ = core::Json::Type::Array;
+                    a.array_.push_back(mkNum(r));
+                    a.array_.push_back(mkNum(g));
+                    a.array_.push_back(mkNum(b));
+                    a.array_.push_back(mkNum(aa));
+                    return a;
+                };
+                li.object_["sunDir"] =
+                    vecJson(e.light.sunDir.x, e.light.sunDir.y, e.light.sunDir.z);
+                li.object_["color"] =
+                    colJson(e.light.color.r, e.light.color.g, e.light.color.b, e.light.color.a);
+                li.object_["radius"] = mkNum(e.light.radius);
+                li.object_["ambientColor"] = colJson(e.light.ambientColor.r, e.light.ambientColor.g,
+                                                     e.light.ambientColor.b, e.light.ambientColor.a);
+                li.object_["ambientStrength"] = mkNum(e.light.ambientStrength);
+                comps.object_["light"] = std::move(li);
+            }
             if (e.zOrder != 0.0f) {
                 core::Json so;
                 so.type_ = core::Json::Type::Object;
@@ -6095,6 +6137,36 @@ void EditorApp::LoadScene(const std::string& path) {
                     e.cameraFov = static_cast<float>(v->GetNumber());
                 if (const core::Json* v = cam->Get("ortho")) e.cameraOrtho = v->GetBool();
                 if (e.nodeType.empty()) e.nodeType = "Camera3D";
+            }
+            if (const core::Json* li = comps->Get("light")) {
+                e.hasLight = true;
+                if (const core::Json* v = li->Get("type")) e.light.type = v->GetString();
+                if (const core::Json* v = li->Get("sunDir")) {
+                    float vv[3] = {0.0f, 0.0f, 0.0f};
+                    size_t n = 0;
+                    for (const core::Json& x : v->Items())
+                        if (n < 3) vv[n++] = static_cast<float>(x.GetNumber());
+                    e.light.sunDir = {vv[0], vv[1], vv[2]};
+                }
+                if (const core::Json* v = li->Get("color")) {
+                    float vv[4] = {1, 1, 1, 1};
+                    size_t n = 0;
+                    for (const core::Json& x : v->Items())
+                        if (n < 4) vv[n++] = static_cast<float>(x.GetNumber());
+                    e.light.color = {vv[0], vv[1], vv[2], vv[3]};
+                }
+                if (const core::Json* v = li->Get("radius"))
+                    e.light.radius = static_cast<float>(v->GetNumber());
+                if (const core::Json* v = li->Get("ambientColor")) {
+                    float vv[4] = {1, 1, 1, 1};
+                    size_t n = 0;
+                    for (const core::Json& x : v->Items())
+                        if (n < 4) vv[n++] = static_cast<float>(x.GetNumber());
+                    e.light.ambientColor = {vv[0], vv[1], vv[2], vv[3]};
+                }
+                if (const core::Json* v = li->Get("ambientStrength"))
+                    e.light.ambientStrength = static_cast<float>(v->GetNumber());
+                if (e.nodeType.empty()) e.nodeType = "Light3D";
             }
             if (const core::Json* so = comps->Get("sortOrder")) {
                 if (const core::Json* z = so->Get("z"))

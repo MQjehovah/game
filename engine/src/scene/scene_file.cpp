@@ -939,6 +939,52 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                      return true;
                  });
 
+    reg.Register("light",
+                 [](ecs::World& world, ecs::Entity ent, const core::Json& data,
+                    const core::Json&, std::string* err) {
+                     if (!CheckComponentShape(data,
+                                              {"type", "sunDir", "color", "radius",
+                                               "ambientColor", "ambientStrength"},
+                                              "light", err))
+                         return false;
+                     SceneLight l;
+                     if (const core::Json* t = data.Get("type")) l.type = t->GetString();
+                     auto readVec3 = [&](const char* key, math::Vec3& out) {
+                         const core::Json* c = data.Get(key);
+                         if (!c || !c->IsArray()) return;
+                         float v[3] = {0.0f, 0.0f, 0.0f};
+                         size_t n = 0;
+                         for (const core::Json& vv : c->Items()) {
+                             if (n < 3) v[n++] = static_cast<float>(vv.GetNumber());
+                         }
+                         out.x = v[0];
+                         out.y = v[1];
+                         out.z = v[2];
+                     };
+                     auto readColor = [&](const char* key, gfx::Color& out) {
+                         const core::Json* c = data.Get(key);
+                         if (!c || !c->IsArray()) return;
+                         float v[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+                         size_t n = 0;
+                         for (const core::Json& vv : c->Items()) {
+                             if (n < 4) v[n++] = static_cast<float>(vv.GetNumber());
+                         }
+                         out.r = v[0];
+                         out.g = v[1];
+                         out.b = v[2];
+                         out.a = v[3];
+                     };
+                     readVec3("sunDir", l.sunDir);
+                     readColor("color", l.color);
+                     if (const core::Json* n = data.Get("radius"))
+                         l.radius = static_cast<float>(n->GetNumber());
+                     readColor("ambientColor", l.ambientColor);
+                     if (const core::Json* n = data.Get("ambientStrength"))
+                         l.ambientStrength = static_cast<float>(n->GetNumber());
+                     world.Add<SceneLight>(ent, l);
+                     return true;
+                 });
+
     reg.Register("sortOrder",
                  [](ecs::World& world, ecs::Entity ent, const core::Json& data,
                     const core::Json&, std::string* err) {

@@ -268,6 +268,18 @@ struct SceneCamera {
     float fov = 60.0f;  // vertical field of view, degrees
     bool ortho = false;
 };
+// The `Light` component on a light object (Unity GameObject -> Light). `type`
+// is exactly one of "directional" / "point" / "ambient". Directional uses
+// `sunDir` + `color`; point uses `color` + `radius` (position from the entity's
+// transform); ambient uses `ambientColor` + `ambientStrength`.
+struct SceneLight {
+    std::string type = "directional";
+    math::Vec3 sunDir{-0.4f, -1.0f, -0.3f};
+    gfx::Color color{1.0f, 0.95f, 0.85f, 1.0f};
+    float radius = 10.0f;               // point light falloff range
+    gfx::Color ambientColor{0.55f, 0.70f, 0.88f, 1.0f};
+    float ambientStrength = 0.25f;
+};
 // 2D sort order (P2-3): sprites draw back-to-front by this value (lower first;
 // default 0 when the component is absent).
 struct SceneSortOrder {

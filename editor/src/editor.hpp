@@ -48,6 +48,11 @@ struct SceneEntity {
     std::string nodeType;
     float cameraFov = 60.0f;  // Camera3D type only (degrees)
     bool cameraOrtho = false; // Camera3D type only
+    // DirectionalLight3D-style light object (Unity): a scene object that lights
+    // the world. The editor auto-creates a default Main Camera + Directional
+    // Light for a new/empty scene so there is always an observer + a light.
+    bool hasLight = false;
+    scene::SceneLight light;
     std::string meshKey; // "terrain" | "helmet" | "cube" | "tree" | "obj:<path>" | "gltf:<path>"
     // P1-1 terrain editing: heightmap canvas for meshKey "terrain".
     std::vector<float> terrainHeights_;
