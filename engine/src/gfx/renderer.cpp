@@ -11,6 +11,8 @@
 #include "neon/gfx/csm.hpp"
 #include "neon/gfx/point_shadow.hpp"
 #include "neon/gfx/ssao.hpp"
+#include "neon/gfx/ssr.hpp"
+#include "neon/gfx/volumetric.hpp"
 
 namespace neon::gfx {
 namespace {
@@ -780,9 +782,15 @@ void Renderer::InitBuiltinResources() {
     ssaoShader_ = backend_->CreateShader(kPostVertexShader, kSsaoFragmentShader, "ssao");
     ssaoBlurShader_ =
         backend_->CreateShader(kPostVertexShader, kSsaoBlurFragmentShader, "ssao_blur");
+    volumetricShader_ =
+        backend_->CreateShader(kPostVertexShader, kVolumetricFragmentShader, "volumetric");
+    ssrShader_ = backend_->CreateShader(kPostVertexShader, kSsrFragmentShader, "ssr");
     NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
-                 "Renderer: SSAO shaders %s",
-                 (ssaoShader_.Valid() && ssaoBlurShader_.Valid()) ? "ok" : "FAILED");
+                 "Renderer: SSAO/SSR/volumetric shaders %s",
+                 (ssaoShader_.Valid() && ssaoBlurShader_.Valid() && volumetricShader_.Valid() &&
+                  ssrShader_.Valid())
+                     ? "ok"
+                     : "FAILED");
     if (std::getenv("NEON_NO_BLOOM")) {
         NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Warn,
                      "Renderer: bloom disabled by NEON_NO_BLOOM");
@@ -894,6 +902,8 @@ void Renderer::BeginFrame(const Color& clearColor, float clearDepth) {
     bloomRanThisFrame_ = false;
     ssaoRanThisFrame_ = false;
     ssaoCasters_.clear();
+    volumetricRanThisFrame_ = false;
+    ssrRanThisFrame_ = false;
     screenW_ = window_ ? window_->Width() : screenW_;
     screenH_ = window_ ? window_->Height() : screenH_;
     uiScale_ = static_cast<float>(screenH_) / static_cast<float>(kDesignHeight);
@@ -1242,6 +1252,19 @@ void Renderer::DrawSsaoDepthCasters(const math::Mat4& viewProj) {
     }
 }
 
+void Renderer::RunSceneDepthPass() {
+    if (!backend_) return;
+    EnsureSsaoTargets();
+    if (!ssaoDepthRT_.Valid()) return;
+    backend_->BindRenderTarget(ssaoDepthRT_);
+    backend_->SetBlendMode(BlendMode::Opaque);
+    backend_->SetDepthTest(false, false);
+    backend_->SetCullMode(CullMode::None);
+    // Far code (1,0,0,0): sky / no-geometry pixels decode to depth 1.0.
+    backend_->Clear({1.0f, 0.0f, 0.0f, 0.0f}, 1.0f);
+    DrawSsaoDepthCasters(viewProj_);
+}
+
 bool Renderer::RunSsaoPass() {
     if (!backend_ || !postQuadMesh_.Valid() || !ssaoShader_.Valid() || ssaoCasters_.empty()) return false;
     EnsureSsaoTargets();
@@ -1249,16 +1272,8 @@ bool Renderer::RunSsaoPass() {
         !ssaoBlurShader_.Valid())
         return false;
 
-    // 1) Colour-encoded scene depth from the main camera. Cleared to the "far"
-    //    code (1,0,0,0) so sky / no-geometry pixels decode to depth 1.0.
-    backend_->BindRenderTarget(ssaoDepthRT_);
-    backend_->SetBlendMode(BlendMode::Opaque);
-    backend_->SetDepthTest(false, false);
-    backend_->SetCullMode(CullMode::None);
-    backend_->Clear({1.0f, 0.0f, 0.0f, 0.0f}, 1.0f);
-    DrawSsaoDepthCasters(viewProj_);
-
-    // 2) AO compute (half res).
+    // The scene depth target (ssaoDepthRT_) is filled by RunSceneDepthPass().
+    // This pass only computes the AO from that shared depth.
     backend_->BindRenderTarget(aoRT_);
     backend_->SetBlendMode(BlendMode::Opaque);
     backend_->SetDepthTest(false, false);
@@ -1292,6 +1307,141 @@ bool Renderer::RunSsaoPass() {
     blur(aoBlurA_, {1.0f, 0.0f});
     backend_->BindTexture(0, backend_->RenderTargetColorTexture(aoBlurA_));
     blur(aoBlurB_, {0.0f, 1.0f});
+
+    backend_->BindDefaultTarget();
+    return true;
+}
+
+void Renderer::EnsureVolumetricTargets() {
+    if (!backend_ || hdrW_ <= 0 || hdrH_ <= 0) return;
+    if (volRT_.Valid() && volBlurA_.Valid() && volBlurB_.Valid()) return;
+    const int aw = std::max(1, hdrW_ / 2);
+    const int ah = std::max(1, hdrH_ / 2);
+    volRT_ = backend_->CreateRenderTarget(aw, ah, true, 0);
+    volBlurA_ = backend_->CreateRenderTarget(aw, ah, true, 0);
+    volBlurB_ = backend_->CreateRenderTarget(aw, ah, true, 0);
+    NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
+                 "Renderer: volumetric targets %s",
+                 (volRT_.Valid() && volBlurA_.Valid() && volBlurB_.Valid()) ? "ok" : "FAILED");
+}
+
+bool Renderer::RunVolumetricPass() {
+    if (!backend_ || !postQuadMesh_.Valid() || !volumetricShader_.Valid() || hdrRT_.Valid() == false)
+        return false;
+    EnsureVolumetricTargets();
+    if (!volRT_.Valid() || !volBlurA_.Valid() || !volBlurB_.Valid()) return false;
+
+    // Project the sun (far along sunDir) to screen UV for the ray origin.
+    math::Vec3 sunWorld = camPos_ + sunDir_ * 5000.0f;
+    math::Vec4 clip = viewProj_.TransformVec4(math::Vec4(sunWorld.x, sunWorld.y, sunWorld.z, 1.0f));
+    math::Vec2 sunUV{0.5f, 0.5f};
+    if (clip.w > 0.0f) {
+        const math::Vec2 ndc{clip.x / clip.w, clip.y / clip.w};
+        sunUV = {ndc.x * 0.5f + 0.5f, ndc.y * 0.5f + 0.5f};
+        sunUV.y = 1.0f - sunUV.y; // texture V is top-down in the post sampler
+    }
+
+    backend_->BindRenderTarget(volRT_);
+    backend_->SetBlendMode(BlendMode::Opaque);
+    backend_->SetDepthTest(false, false);
+    backend_->UseShader(volumetricShader_);
+    backend_->SetUniformMat4("uMVP", math::Mat4::Identity());
+    backend_->BindTexture(0, backend_->RenderTargetColorTexture(hdrRT_));
+    backend_->SetUniformInt("uScene", 0);
+    backend_->SetUniformVec2("uSunScreen", sunUV);
+    backend_->SetUniformVec2("uTexelSize", {1.0f / static_cast<float>(std::max(1, hdrW_ / 2)),
+                                            1.0f / static_cast<float>(std::max(1, hdrH_ / 2))});
+    backend_->SetUniformFloat("uDensity", kVolumetricDensity);
+    backend_->SetUniformFloat("uWeight", kVolumetricWeight);
+    backend_->SetUniformFloat("uDecay", kVolumetricDecay);
+    backend_->SetUniformFloat("uThreshold", kVolumetricThreshold);
+    backend_->SetUniformInt("uSteps", kVolumetricSteps);
+    backend_->DrawMesh(postQuadMesh_);
+
+    // Soften the shafts with the AO blur kernel (H then V).
+    const int aw = std::max(1, hdrW_ / 2);
+    const int ah = std::max(1, hdrH_ / 2);
+    auto blur = [&](RenderTargetHandle dst, const math::Vec2& dir, RenderTargetHandle src) {
+        backend_->BindRenderTarget(dst);
+        backend_->SetBlendMode(BlendMode::Opaque);
+        backend_->SetDepthTest(false, false);
+        backend_->UseShader(ssaoBlurShader_);
+        backend_->SetUniformMat4("uMVP", math::Mat4::Identity());
+        backend_->SetUniformInt("uTex", 0);
+        backend_->SetUniformVec2("uTexelSize", {1.0f / static_cast<float>(aw),
+                                                1.0f / static_cast<float>(ah)});
+        backend_->SetUniformVec2("uDirection", dir);
+        backend_->BindTexture(0, backend_->RenderTargetColorTexture(src));
+        backend_->DrawMesh(postQuadMesh_);
+    };
+    blur(volBlurA_, {1.0f, 0.0f}, volRT_);
+    blur(volBlurB_, {0.0f, 1.0f}, volBlurA_);
+
+    backend_->BindDefaultTarget();
+    return true;
+}
+
+void Renderer::EnsureSsrTargets() {
+    if (!backend_ || hdrW_ <= 0 || hdrH_ <= 0) return;
+    if (ssrRT_.Valid() && ssrBlurA_.Valid() && ssrBlurB_.Valid()) return;
+    const int aw = std::max(1, hdrW_ / 2);
+    const int ah = std::max(1, hdrH_ / 2);
+    ssrRT_ = backend_->CreateRenderTarget(aw, ah, true, 0);
+    ssrBlurA_ = backend_->CreateRenderTarget(aw, ah, true, 0);
+    ssrBlurB_ = backend_->CreateRenderTarget(aw, ah, true, 0);
+    NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
+                 "Renderer: SSR targets %s",
+                 (ssrRT_.Valid() && ssrBlurA_.Valid() && ssrBlurB_.Valid()) ? "ok" : "FAILED");
+}
+
+bool Renderer::RunSsrPass() {
+    if (!backend_ || !postQuadMesh_.Valid() || !ssrShader_.Valid() || !hdrRT_.Valid()) return false;
+    EnsureSsaoTargets();
+    EnsureSsrTargets();
+    if (!ssaoDepthRT_.Valid() || !ssrRT_.Valid() || !ssrBlurA_.Valid() || !ssrBlurB_.Valid() ||
+        !ssaoBlurShader_.Valid())
+        return false;
+
+    const float aspect = viewAspect_ > 0.0f ? viewAspect_ : 1.0f;
+    const float fov = camera_.fovY > 0.0f ? camera_.fovY : 60.0f * math::kDegToRad;
+    (void)aspect;
+    (void)fov;
+
+    backend_->BindRenderTarget(ssrRT_);
+    backend_->SetBlendMode(BlendMode::Opaque);
+    backend_->SetDepthTest(false, false);
+    backend_->UseShader(ssrShader_);
+    backend_->SetUniformMat4("uMVP", math::Mat4::Identity());
+    backend_->BindTexture(0, backend_->RenderTargetColorTexture(hdrRT_));
+    backend_->SetUniformInt("uScene", 0);
+    backend_->BindTexture(1, backend_->RenderTargetColorTexture(ssaoDepthRT_));
+    backend_->SetUniformInt("uDepth", 1);
+    backend_->SetUniformVec2("uTexelSize", {1.0f / static_cast<float>(hdrW_),
+                                            1.0f / static_cast<float>(hdrH_)});
+    backend_->SetUniformFloat("uNear", camera_.nearPlane);
+    backend_->SetUniformFloat("uFar", camera_.farPlane);
+    backend_->SetUniformFloat("uSteps", static_cast<float>(kSsrSteps));
+    backend_->SetUniformFloat("uThickness", kSsrThickness);
+    backend_->SetUniformFloat("uMaxDist", kSsrMaxDist);
+    backend_->DrawMesh(postQuadMesh_);
+
+    const int aw = std::max(1, hdrW_ / 2);
+    const int ah = std::max(1, hdrH_ / 2);
+    auto blur = [&](RenderTargetHandle dst, const math::Vec2& dir, RenderTargetHandle src) {
+        backend_->BindRenderTarget(dst);
+        backend_->SetBlendMode(BlendMode::Opaque);
+        backend_->SetDepthTest(false, false);
+        backend_->UseShader(ssaoBlurShader_);
+        backend_->SetUniformMat4("uMVP", math::Mat4::Identity());
+        backend_->SetUniformInt("uTex", 0);
+        backend_->SetUniformVec2("uTexelSize", {1.0f / static_cast<float>(aw),
+                                                1.0f / static_cast<float>(ah)});
+        backend_->SetUniformVec2("uDirection", dir);
+        backend_->BindTexture(0, backend_->RenderTargetColorTexture(src));
+        backend_->DrawMesh(postQuadMesh_);
+    };
+    blur(ssrBlurA_, {1.0f, 0.0f}, ssrRT_);
+    blur(ssrBlurB_, {0.0f, 1.0f}, ssrBlurA_);
 
     backend_->BindDefaultTarget();
     return true;
@@ -1538,7 +1688,8 @@ void Renderer::DrawMesh(const Mesh& mesh, const Material& material, const math::
 
     if (csmEnabled_ && shadowRecording_ && !material.transparent) {
         shadowCasters_.push_back({mesh.Handle(), model, {}, {}, 0, mesh.Bounds()});
-        if (ssaoEnabled_) ssaoCasters_.push_back({mesh.Handle(), model, {}, {}, 0, mesh.Bounds()});
+        if (ssaoEnabled_ || ssrEnabled_)
+            ssaoCasters_.push_back({mesh.Handle(), model, {}, {}, 0, mesh.Bounds()});
     }
 
     ShaderHandle shader = material.shader.Valid() ? material.shader
@@ -1564,7 +1715,7 @@ void Renderer::DrawSkinnedMesh(const Mesh& mesh, const Material& material,
 
     if (csmEnabled_ && shadowRecording_ && !material.transparent) {
         shadowCasters_.push_back({mesh.Handle(), model, {}, boneMatrices, count, mesh.Bounds()});
-        if (ssaoEnabled_)
+        if (ssaoEnabled_ || ssrEnabled_)
             ssaoCasters_.push_back({mesh.Handle(), model, {}, boneMatrices, count, mesh.Bounds()});
     }
 
@@ -1603,7 +1754,7 @@ void Renderer::DrawMeshInstanced(const Mesh& mesh, const Material& material,
     if (csmEnabled_ && shadowRecording_ && !material.transparent) {
         shadowCasters_.push_back(
             {mesh.Handle(), math::Mat4::Identity(), instancedVisible_, {}, 0, mesh.Bounds()});
-        if (ssaoEnabled_)
+        if (ssaoEnabled_ || ssrEnabled_)
             ssaoCasters_.push_back(
                 {mesh.Handle(), math::Mat4::Identity(), instancedVisible_, {}, 0, mesh.Bounds()});
     }
@@ -2238,6 +2389,8 @@ void Renderer::EnsurePostTargets() {
     hdrW_ = screenW_;
     hdrH_ = screenH_;
     EnsureSsaoTargets();
+    EnsureVolumetricTargets();
+    EnsureSsrTargets();
     NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
                  "Renderer: HDR target %dx%d (RGBA16F%s) + bloom %dx%d / %dx%d", screenW_,
                  screenH_, msaaEnabled_ ? ", MSAA" : "", hw, hh, qw, qh);
@@ -2258,6 +2411,12 @@ void Renderer::DestroyPostTargets() {
     destroy(aoRT_);
     destroy(aoBlurA_);
     destroy(aoBlurB_);
+    destroy(volRT_);
+    destroy(volBlurA_);
+    destroy(volBlurB_);
+    destroy(ssrRT_);
+    destroy(ssrBlurA_);
+    destroy(ssrBlurB_);
     hdrW_ = 0;
     hdrH_ = 0;
 }
@@ -2484,6 +2643,24 @@ void Renderer::CompositeToBackbuffer() {
     }
     backend_->SetUniformInt("uAo", 2);
     backend_->SetUniformFloat("uAoIntensity", ssaoIntensity_);
+    if (volumetricRanThisFrame_ && volBlurB_.Valid()) {
+        backend_->BindTexture(3, backend_->RenderTargetColorTexture(volBlurB_));
+        backend_->SetUniformInt("uVolEnabled", 1);
+    } else {
+        backend_->BindTexture(3, white_);
+        backend_->SetUniformInt("uVolEnabled", 0);
+    }
+    backend_->SetUniformInt("uVol", 3);
+    backend_->SetUniformFloat("uVolStrength", volumetricIntensity_);
+    if (ssrRanThisFrame_ && ssrBlurB_.Valid()) {
+        backend_->BindTexture(4, backend_->RenderTargetColorTexture(ssrBlurB_));
+        backend_->SetUniformInt("uSsrEnabled", 1);
+    } else {
+        backend_->BindTexture(4, white_);
+        backend_->SetUniformInt("uSsrEnabled", 0);
+    }
+    backend_->SetUniformInt("uSsr", 4);
+    backend_->SetUniformFloat("uSsrStrength", ssrIntensity_);
     backend_->SetUniformFloat("uExposure", exposure_);
     backend_->SetUniformInt("uTonemapEnabled", tonemapEnabled_ ? 1 : 0);
     backend_->DrawMesh(postQuadMesh_);
@@ -2497,7 +2674,10 @@ void Renderer::CompositeSceneToBackbuffer() {
     // The scene rendered into the (possibly multisample) HDR target; resolve
     // into the single-sample bloom source before any pass samples it.
     ResolveMainTarget();
+    if (ssaoEnabled_ || ssrEnabled_) RunSceneDepthPass();
     ssaoRanThisFrame_ = ssaoEnabled_ ? RunSsaoPass() : false;
+    ssrRanThisFrame_ = ssrEnabled_ ? RunSsrPass() : false;
+    volumetricRanThisFrame_ = volumetricEnabled_ ? RunVolumetricPass() : false;
     bloomRanThisFrame_ = RunBloom();
     CompositeToBackbuffer();
     Flush2D();

@@ -56,6 +56,8 @@ int main(int argc, char** argv) {
     bool disableTonemap = false;
     bool disableMsaa = false;
     bool aoEnabled = false;
+    bool volumetricEnabled = false;
+    bool ssrEnabled = false;
     float iblStrength = 1.0f;
     std::string backend = "gl";
     for (int i = 1; i < argc; ++i) {
@@ -84,6 +86,10 @@ int main(int argc, char** argv) {
             disableMsaa = true;
         } else if (std::strcmp(argv[i], "--ssao") == 0) {
             aoEnabled = true;
+        } else if (std::strcmp(argv[i], "--volumetric") == 0) {
+            volumetricEnabled = true;
+        } else if (std::strcmp(argv[i], "--ssr") == 0) {
+            ssrEnabled = true;
         } else if (std::strcmp(argv[i], "--no-audio") == 0) {
             noAudio = true;
         } else if (std::strcmp(argv[i], "--disable-fbo") == 0 ||
@@ -123,6 +129,8 @@ int main(int argc, char** argv) {
     if (disableTonemap) app.SetTonemapEnabled(false);
     if (disableMsaa) app.SetMsaaEnabled(false);
     if (aoEnabled) app.Renderer().SetSsaoEnabled(true);
+    if (volumetricEnabled) app.Renderer().SetVolumetricEnabled(true);
+    if (ssrEnabled) app.Renderer().SetSsrEnabled(true);
     if (exposure != 1.0f) app.SetExposure(exposure);
     if (iblStrength != 1.0f) app.SetIblStrength(iblStrength);
     if (backend != "gl") app.SetBackendName(backend);

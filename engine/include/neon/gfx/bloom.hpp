@@ -186,6 +186,12 @@ uniform sampler2D uBloom;
 uniform sampler2D uAo;
 uniform float uAoIntensity;
 uniform int uAoEnabled;
+uniform sampler2D uVol;
+uniform float uVolStrength;
+uniform int uVolEnabled;
+uniform sampler2D uSsr;
+uniform float uSsrStrength;
+uniform int uSsrEnabled;
 uniform float uStrength;
 uniform float uExposure;
 uniform int uBloomEnabled;
@@ -209,6 +215,8 @@ void main() {
         // colour; a modest intensity keeps it from crushing lit surfaces.
         c *= mix(1.0, ao, uAoIntensity);
     }
+    if (uVolEnabled != 0) c += texture(uVol, vUV).rgb * uVolStrength;
+    if (uSsrEnabled != 0) c += texture(uSsr, vUV).rgb * uSsrStrength;
     if (uTonemapEnabled != 0) {
         FragColor = vec4(ACESFilm(c * uExposure), 1.0);
     } else {

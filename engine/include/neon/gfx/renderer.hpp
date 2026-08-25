@@ -112,6 +112,18 @@ public:
     bool SsaoEnabled() const { return ssaoEnabled_; }
     void SetSsaoIntensity(float intensity) { ssaoIntensity_ = intensity; }
     float SsaoIntensity() const { return ssaoIntensity_; }
+    // G1-5 screen-space volumetric light shafts (god rays). Off by default; a
+    // cheap radial accumulation toward the sun over the HDR scene colour.
+    void SetVolumetricEnabled(bool enabled) { volumetricEnabled_ = enabled; }
+    bool VolumetricEnabled() const { return volumetricEnabled_; }
+    void SetVolumetricIntensity(float intensity) { volumetricIntensity_ = intensity; }
+    float VolumetricIntensity() const { return volumetricIntensity_; }
+    // G1-5 screen-space reflections. Off by default; ray-marches the reflected
+    // view ray in screen space against the scene depth, pulling the HDR colour.
+    void SetSsrEnabled(bool enabled) { ssrEnabled_ = enabled; }
+    bool SsrEnabled() const { return ssrEnabled_; }
+    void SetSsrIntensity(float intensity) { ssrIntensity_ = intensity; }
+    float SsrIntensity() const { return ssrIntensity_; }
     // Editor tooling: temporarily suppress shadow-caster recording so a mesh
     // rendered into its own offscreen target (e.g. an asset thumbnail) never
     // pollutes the main scene's shadow pass. Enabled by default.
@@ -372,8 +384,13 @@ private:
     // G1-5 SSAO sub-pipeline: builds the depth/AO/blur targets + shaders and
     // runs the color-encoded depth pass, the AO pass and the separable blur.
     void EnsureSsaoTargets();
+    void RunSceneDepthPass();
     bool RunSsaoPass();
     void DrawSsaoDepthCasters(const math::Mat4& viewProj);
+    void EnsureVolumetricTargets();
+    bool RunVolumetricPass();
+    void EnsureSsrTargets();
+    bool RunSsrPass();
     bool TestFloatTargetCapability();
     // MSAA: multisample HDR render target + resolve self-test (4x then 2x).
     bool TestMsaaCapability();
@@ -422,6 +439,8 @@ private:
     ShaderHandle compositeShader_;
     ShaderHandle ssaoShader_;
     ShaderHandle ssaoBlurShader_;
+    ShaderHandle volumetricShader_;
+    ShaderHandle ssrShader_;
     TextureHandle white_;
     MeshHandle probeQuadMesh_;
     // Fullscreen NDC quad (uv 0..1) for the post passes.
@@ -458,6 +477,14 @@ private:
     RenderTargetHandle aoRT_;
     RenderTargetHandle aoBlurA_;
     RenderTargetHandle aoBlurB_;
+    // G1-5 volumetric shafts (half-res) + blur scratch.
+    RenderTargetHandle volRT_;
+    RenderTargetHandle volBlurA_;
+    RenderTargetHandle volBlurB_;
+    // G1-5 SSR (half-res) + blur scratch.
+    RenderTargetHandle ssrRT_;
+    RenderTargetHandle ssrBlurA_;
+    RenderTargetHandle ssrBlurB_;
     int hdrW_ = 0;
     int hdrH_ = 0;
     bool hdrEnabled_ = false;
@@ -478,6 +505,14 @@ private:
     bool ssaoRanThisFrame_ = false;
     float ssaoIntensity_ = 1.0f; // AO blend amount in [0,1]
     std::vector<ShadowDraw> ssaoCasters_;
+    // G1-5 volumetric shafts state.
+    bool volumetricEnabled_ = false;
+    bool volumetricRanThisFrame_ = false;
+    float volumetricIntensity_ = 1.0f;
+    // G1-5 SSR state.
+    bool ssrEnabled_ = false;
+    bool ssrRanThisFrame_ = false;
+    float ssrIntensity_ = 1.0f;
 
     Camera camera_;
     math::Mat4 viewProj_;
