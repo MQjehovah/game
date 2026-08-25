@@ -281,6 +281,24 @@ struct SceneTerrain {
     float size = 60.0f;
     float heightScale = 1.0f;
     std::vector<float> heights;
+    // G2-3 chunked LOD: when chunkGridDiv > 0 the runtime renders the terrain
+    // as gridDiv x gridDiv patches, each with its own LodChain (near = dense,
+    // far = coarse) instead of one monolithic mesh. 0 keeps the old single-mesh
+    // path. chunkLodLevels is the LOD depth per patch.
+    int chunkGridDiv = 0;
+    int chunkLodLevels = 3;
+    int chunkBaseSubdiv = 16;
+    // G2-3 vegetation: deterministic scatter of a prop over flat/low ground.
+    // vegMeshKey (e.g. "tree"/"bush"/"rock") is resolved for each instance;
+    // beyond vegImpostorDistance an instance draws a cheap billboard card.
+    std::string vegMeshKey;
+    uint32_t vegCount = 0;
+    uint32_t vegSeed = 1;
+    float vegSize = 1.0f;
+    float vegImpostorDistance = 60.0f;
+    float vegMinHeight = 0.0f;  // world Y floor for plantable ground
+    float vegMaxHeight = 3.0f;  // world Y ceiling
+    float vegMaxSlope = 0.30f;  // slope (1 - normal.y) plants tolerate
 };
 // 2D tilemap (P1-1): cols x rows of texture paths ("" = empty cell), each
 // cell rendered as a `cellSize` design-unit quad at the entity's position.

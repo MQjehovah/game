@@ -5,6 +5,7 @@
 
 #include "neon/core/log.hpp"
 #include "neon/gfx/renderer.hpp"
+#include "neon/gfx/terrain.hpp"
 
 namespace neon::gfx {
 namespace {
@@ -175,10 +176,9 @@ Mesh Mesh::CreateTerrain(Renderer& renderer, int segments, float size,
             float hD = heightAt(row + 1, col);
             math::Vec3 normal = math::Cross({cell, hR - y, 0.0f}, {0.0f, hD - y, cell}).Normalized();
             if (normal.y < 0.0f) normal = -normal;
-            // Color by height: low = grass green, high = rocky gray.
-            float t = math::Saturate((y / heightScale) / 4.0f);
-            math::Vec4 color = math::Lerp(
-                math::Vec4{0.35f, 0.62f, 0.30f, 1.0f}, math::Vec4{0.55f, 0.52f, 0.48f, 1.0f}, t);
+            // G2-3: layer-blend by height + slope (grass -> dirt -> rock).
+            const float slope = 1.0f - normal.y;
+            const math::Vec4 color = TerrainLayerColor(y, heightScale, slope);
             verts.push_back({math::Vec3{x, y, z}, normal,
                              {x / cell, z / cell}, color});
         }

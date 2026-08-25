@@ -318,6 +318,16 @@ private:
         // LOD chain spec from the entity's SceneMesh (data-driven: distance +
         // meshKey per level). Resolved into `chain` during ResolveDrawItem.
         std::vector<LodEntry> lod;
+        // G2-3 chunked-LOD terrain: this item is one patch of a grid-split
+        // terrain. The mesh carries its own local position (verts already span
+        // the patch), so the entity transform places it; `chunkCenterLocal` is
+        // used only for camera-distance LOD selection (per-patch, not per
+        // entity). Off for ordinary draw items.
+        bool isTerrainChunk = false;
+        int chunkGridX = 0;
+        int chunkGridZ = 0;
+        int chunkGridDiv = 0;
+        math::Vec3 chunkCenterLocal{0.0f, 0.0f, 0.0f};
         gfx::Mesh mesh;
         gfx::LodChain chain; // resolved levels+thresholds; empty = single mesh
         gfx::Material mat;
@@ -346,6 +356,21 @@ private:
         float hitRadius = 0.8f;
         ecs::Entity caster;   // never damaged by its own projectile
         std::vector<SkillStatus> statuses; // applied to the hit target
+    };
+    // G2-3 vegetation field attached to a terrain entity: deterministic scatter
+    // positions plus lazily-resolved plant + impostor meshes. Built once per
+    // entity per Start (terrain heights are static during play).
+    struct VegField {
+        ecs::Entity ent;
+        std::vector<math::Vec3> positions;
+        gfx::Mesh mesh;     // full plant/bush/rock mesh (near instances)
+        gfx::Mesh impostor; // billboard card (far instances)
+        gfx::Material mat;
+        gfx::Material impostorMat;
+        float size = 1.0f;
+        float impostorDistance = 60.0f;
+        bool built = false;
+        bool failed = false;
     };
 
     void AttachScripts();
@@ -386,6 +411,11 @@ private:
     // primitive) through the runtime's AssetManager; invalid mesh on failure.
     gfx::Mesh ResolveMeshKey(gfx::Renderer& renderer, const std::string& key,
                              const SceneTerrain* terrain = nullptr);
+    // Renders every terrain entity's vegetation field: instanced plant meshes
+    // for near instances plus yaw-billboard impostors past the swap distance.
+    void DrawVegetation(gfx::Renderer& renderer, const gfx::Camera& camera);
+    // Resolves a vegetation meshKey ("tree"/"bush"/"rock"/obj:/gltf:) to a mesh.
+    gfx::Mesh VegetationMesh(gfx::Renderer& renderer, const std::string& meshKey);
     // Invokes one of the instance's captured chunk functions and logs the
     // first failure of the script instance (throttled per Start); failures
     // never abort the runtime. Sets the per-entity input routing context.
@@ -435,6 +465,8 @@ private:
     std::vector<ScriptInst> scripts_;
     std::vector<BtInst> trees_;
     std::vector<DrawItem> draws_;
+    // G2-3 vegetation cache (EntityKey -> VegField); rebuilt lazily per Start.
+    std::unordered_map<uint64_t, VegField> vegCache_;
     // Instanced-batching scratch for opaque static meshes (per-frame reuse):
     // each batch groups entities with the same mesh + material so N identical
     // entities cost one instanced draw call instead of N. Flushed whenever a

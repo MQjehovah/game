@@ -953,7 +953,12 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                  [](ecs::World& world, ecs::Entity ent, const core::Json& data,
                     const core::Json&, std::string* err) {
                      if (!CheckComponentShape(data, {"segments", "size", "heightScale",
-                                                     "heights"},
+                                                     "heights",
+                                                     "chunkGridDiv", "chunkLodLevels",
+                                                     "chunkBaseSubdiv", "vegMeshKey",
+                                                     "vegCount", "vegSeed", "vegSize",
+                                                     "vegImpostorDistance", "vegMinHeight",
+                                                     "vegMaxHeight", "vegMaxSlope"},
                                               "terrain", err))
                          return false;
                      SceneTerrain t;
@@ -969,6 +974,19 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                                  t.heights.push_back(static_cast<float>(v.GetNumber()));
                          }
                      }
+                     // G2-3 optional chunked-LOD + vegetation knobs (defaults
+                     // keep the classic single-mesh terrain when absent).
+                     if (const core::Json* n = data.Get("chunkGridDiv")) t.chunkGridDiv = static_cast<int>(n->GetNumber());
+                     if (const core::Json* n = data.Get("chunkLodLevels")) t.chunkLodLevels = static_cast<int>(n->GetNumber());
+                     if (const core::Json* n = data.Get("chunkBaseSubdiv")) t.chunkBaseSubdiv = static_cast<int>(n->GetNumber());
+                     if (const core::Json* s = data.Get("vegMeshKey")) t.vegMeshKey = s->GetString();
+                     if (const core::Json* n = data.Get("vegCount")) t.vegCount = static_cast<uint32_t>(n->GetNumber());
+                     if (const core::Json* n = data.Get("vegSeed")) t.vegSeed = static_cast<uint32_t>(n->GetNumber());
+                     if (const core::Json* n = data.Get("vegSize")) t.vegSize = static_cast<float>(n->GetNumber());
+                     if (const core::Json* n = data.Get("vegImpostorDistance")) t.vegImpostorDistance = static_cast<float>(n->GetNumber());
+                     if (const core::Json* n = data.Get("vegMinHeight")) t.vegMinHeight = static_cast<float>(n->GetNumber());
+                     if (const core::Json* n = data.Get("vegMaxHeight")) t.vegMaxHeight = static_cast<float>(n->GetNumber());
+                     if (const core::Json* n = data.Get("vegMaxSlope")) t.vegMaxSlope = static_cast<float>(n->GetNumber());
                      world.Add<SceneTerrain>(ent, std::move(t));
                      return true;
                  });

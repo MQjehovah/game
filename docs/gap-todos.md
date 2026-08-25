@@ -59,10 +59,10 @@
 
 ### G2-3 地形与植被
 
-- [ ] 地形 Layer Blend / splatting（按高度/坡度混合岩石、草地、泥土）
-- [ ] 地形 chunked LOD（四叉树）
-- [ ] 植被放置与 Impostor（远处树木转 2D 面片）
-- 现状：高度图程序化生成 + 顶点色 + 笔刷雕刻 + 运行时重建网格已完成。
+- [x] 地形 Layer Blend / splatting（按高度/坡度混合岩石、草地、泥土）——`neon/gfx/terrain.hpp` `TerrainLayerColor`（grass→dirt→rock，按高度 + 坡度=1-法线Y混合），已接入 `Mesh::CreateTerrain` 与 `MakeTerrainMesh`（编辑器/运行时默认地形即分层配色）。
+- [x] 地形 chunked LOD（四叉树）——`BuildTerrainLODChunks`/`BuildTerrainChunk` 将高度场划分为 gridDiv×gridDiv 分块，每块带独立 `LodChain`（近密远疏）；运行时以每块一个 DrawItem 绘制（`SceneTerrain.chunkGridDiv` 开启），边带 skirt 隐藏裂缝。
+- [x] 植被放置与 Impostor（远处树木转 2D 面片）——`ScatterVegetation` 按高度/坡度确定性撒点，`MakeImpostorQuad` 生成朝向相机的 Y-偏航公告板；运行时（`GameRuntime::DrawVegetation`）近处实例化网格、远处自动换 Impostor（`SceneTerrain.vegMeshKey/vegCount` 开启）。编辑器地形面板新增 LOD/植被控制。
+- 现状：高度图程序化生成 + 顶点色 + 笔刷雕刻 + 运行时重建网格已完成；新增 Layer Blend + chunked LOD + 植被 Impostor 落地。单元测试 `tests/test_terrain.cpp`（TerrainLayer* / chunked LOD / scatter / impostor / runtime chunked+veg）。2026-08-25。
 
 ### G2-4 动态全局光照
 

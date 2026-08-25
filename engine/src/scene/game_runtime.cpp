@@ -14,6 +14,7 @@
 #include "neon/core/profiler.hpp"
 #include "neon/gfx/renderer.hpp"
 #include "neon/gfx/scene_props.hpp"
+#include "neon/gfx/terrain.hpp"
 #include "neon/scene/scene_file.hpp"
 
 #if defined(_WIN32)
@@ -889,6 +890,33 @@ void GameRuntime::BuildDrawList() {
         const SceneMesh* m = world_.Get<SceneMesh>(ent);
         const SceneTransform* t = world_.Get<SceneTransform>(ent);
         if (!m || !t) continue; // a mesh without a transform draws nothing
+        // G2-3 chunked-LOD terrain: a terrain entity with chunkGridDiv > 0
+        // becomes gridDiv x gridDiv patch draw items (each with its own LodChain
+        // + per-patch distance LOD), instead of one monolithic terrain mesh.
+        const SceneTerrain* terr = world_.Get<SceneTerrain>(ent);
+        if (m->meshKey == "terrain" && terr && terr->chunkGridDiv > 0 &&
+            !terr->heights.empty()) {
+            const int gd = math::IClamp(terr->chunkGridDiv, 1, 16);
+            const float half = terr->size * 0.5f;
+            const float chunkSize = terr->size / static_cast<float>(gd);
+            for (int gz = 0; gz < gd; ++gz) {
+                for (int gx = 0; gx < gd; ++gx) {
+                    DrawItem c;
+                    c.ent = ent;
+                    c.meshKey = "terrain";
+                    c.isTerrainChunk = true;
+                    c.chunkGridX = gx;
+                    c.chunkGridZ = gz;
+                    c.chunkGridDiv = gd;
+                    c.chunkCenterLocal = {-half + (gx + 0.5f) * chunkSize, 0.0f,
+                                          -half + (gz + 0.5f) * chunkSize};
+                    c.mat = gfx::Material::Lit({}, gfx::Color::White, 24.0f);
+                    c.mat.doubleSided = true; // hide the LOD-crack skirt
+                    draws_.push_back(std::move(c));
+                }
+            }
+            continue;
+        }
         DrawItem item;
         item.ent = ent;
         item.meshKey = m->meshKey;
@@ -1025,6 +1053,30 @@ void GameRuntime::ResolveDrawItem(DrawItem& item, gfx::Renderer& renderer) {
         return;
     }
 
+    // G2-3 chunked-LOD terrain patch: build that chunk's LodChain and remember
+    // its local centre for per-patch distance LOD selection in Draw().
+    if (item.isTerrainChunk) {
+        const SceneTerrain* terr = world_.Get<SceneTerrain>(item.ent);
+        if (!terr || terr->heights.empty()) {
+            item.failed = true;
+            return;
+        }
+        gfx::TerrainChunkMesh chunk = gfx::BuildTerrainChunk(
+            renderer, terr->heights, terr->segments, terr->size, terr->heightScale,
+            item.chunkGridDiv, item.chunkGridX, item.chunkGridZ, terr->chunkLodLevels,
+            terr->chunkBaseSubdiv);
+        if (chunk.chain.levels.empty()) {
+            item.failed = true;
+            return;
+        }
+        item.mesh = chunk.chain.levels[0];
+        item.chain = chunk.chain;
+        item.mat = gfx::Material::Lit({}, gfx::Color::White, 24.0f);
+        item.mat.doubleSided = true; // hide the LOD-crack skirt
+        item.resolved = true;
+        return;
+    }
+
     const std::string& key = item.meshKey;
     const SceneTerrain* terr = key == "terrain" ? world_.Get<SceneTerrain>(item.ent) : nullptr;
     gfx::Mesh mesh = ResolveMeshKey(renderer, key, terr);
@@ -1128,6 +1180,96 @@ gfx::Mesh GameRuntime::ResolveMeshKey(gfx::Renderer& renderer, const std::string
         mesh = gfx::Mesh::CreatePlane(renderer, 1.0f, 1.0f, 1, 1, "road");
     }
     return mesh;
+}
+
+gfx::Mesh GameRuntime::VegetationMesh(gfx::Renderer& renderer, const std::string& meshKey) {
+    return ResolveMeshKey(renderer, meshKey);
+}
+
+void GameRuntime::DrawVegetation(gfx::Renderer& renderer, const gfx::Camera& camera) {
+    if (!cfg_.assets) return;
+    // Prune cache entries whose terrain entity has despawned since the last
+    // frame (script Spawn/Despawn).
+    for (auto it = vegCache_.begin(); it != vegCache_.end();) {
+        if (!world_.Alive(it->second.ent)) {
+            it = vegCache_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
+    auto view = world_.ViewAll<SceneTerrain>();
+    for (size_t i = 0; i < view.Size(); ++i) {
+        ecs::Entity ent = world_.EntityAt<SceneTerrain>(i);
+        const SceneTerrain* terr = world_.Get<SceneTerrain>(ent);
+        if (!terr || terr->vegMeshKey.empty() || terr->vegCount == 0 || terr->heights.empty())
+            continue;
+
+        const uint64_t key = EntityKey(ent);
+        auto it = vegCache_.find(key);
+        VegField* f = nullptr;
+        if (it != vegCache_.end()) {
+            f = &it->second;
+        } else {
+            f = &(vegCache_[key] = VegField{});
+            f->ent = ent;
+        }
+
+        if (!f->built) {
+            f->mesh = ResolveMeshKey(renderer, terr->vegMeshKey);
+            f->size = std::max(terr->vegSize, 0.05f);
+            f->impostorDistance = std::max(terr->vegImpostorDistance, 1.0f);
+            f->mat = gfx::Material::Lit({}, gfx::Color::White, 8.0f);
+            f->mat.doubleSided = true;
+            f->impostorMat = gfx::Material::Lit({}, gfx::Color::White, 8.0f);
+            f->impostorMat.doubleSided = true;
+            if (f->mesh.Valid()) {
+                // Size the billboard card from the plant mesh's bounds.
+                const math::AABB& b = f->mesh.Bounds();
+                float bw = std::max(b.max.x - b.min.x, b.max.z - b.min.z) * f->size;
+                float bh = (b.max.y - b.min.y) * f->size;
+                if (bw < 0.1f) bw = f->size;
+                if (bh < 0.1f) bh = f->size * 2.0f;
+                f->impostor = gfx::MakeImpostorQuad(renderer, bw, bh, {0.16f, 0.48f, 0.16f, 1.0f});
+            }
+            core::Rng rng(terr->vegSeed ? terr->vegSeed : 1u);
+            gfx::VegetationConfig vcfg;
+            vcfg.count = terr->vegCount;
+            vcfg.minHeight = terr->vegMinHeight;
+            vcfg.maxHeight = terr->vegMaxHeight;
+            vcfg.maxSlope = terr->vegMaxSlope;
+            vcfg.size = f->size;
+            f->positions = gfx::ScatterVegetation(terr->heights, terr->segments, terr->size,
+                                                  terr->heightScale, vcfg, rng);
+            f->built = true;
+        }
+        if (f->failed || !f->mesh.Valid() || f->positions.empty()) continue;
+
+        const math::Mat4 terrainModel = CachedLocalToWorld(ent);
+        std::vector<math::Mat4> plantModels;
+        std::vector<math::Mat4> impostorModels;
+        plantModels.reserve(f->positions.size());
+        impostorModels.reserve(f->positions.size() / 4 + 1);
+        for (const math::Vec3& local : f->positions) {
+            const math::Vec3 p = terrainModel.TransformPoint(local);
+            const float dist = math::Distance(p, camera.position);
+            if (dist > f->impostorDistance) {
+                // Y-yaw billboard so the card faces the camera on the XZ plane.
+                const float yaw = std::atan2(camera.position.x - p.x, camera.position.z - p.z);
+                impostorModels.push_back(math::Mat4::Translation(p) *
+                                         math::Quat::FromEuler(0.0f, yaw, 0.0f).ToMat4());
+            } else {
+                plantModels.push_back(math::Mat4::Translation(p) *
+                                      math::Mat4::Scale({f->size, f->size, f->size}));
+            }
+        }
+        if (!plantModels.empty())
+            renderer.DrawMeshInstanced(f->mesh, f->mat, plantModels.data(),
+                                       static_cast<uint32_t>(plantModels.size()));
+        if (!impostorModels.empty())
+            renderer.DrawMeshInstanced(f->impostor, f->impostorMat, impostorModels.data(),
+                                       static_cast<uint32_t>(impostorModels.size()));
+    }
 }
 
 ecs::Entity GameRuntime::SpawnEntity(const std::string& kind, const math::Vec3& pos,
@@ -1633,7 +1775,11 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera) {
             const math::Mat4 model = CachedLocalToWorld(item.ent);
             // Column-vector convention: the translation is the last COLUMN of
             // the row-major matrix (m[3], m[7], m[11]), not the last row.
-            const math::Vec3 worldPos{model.m[3], model.m[7], model.m[11]};
+            // G2-3: a terrain chunk uses its patch centre (not the terrain
+            // origin) so distance LOD is chosen per patch.
+            const math::Vec3 worldPos = item.isTerrainChunk
+                                            ? model.TransformPoint(item.chunkCenterLocal)
+                                            : math::Vec3{model.m[3], model.m[7], model.m[11]};
             const gfx::Mesh drawMesh =
                 SelectLodMesh(item.mesh, item.chain, worldPos, camera.position);
             if (!drawMesh.Valid()) continue;
@@ -1678,7 +1824,11 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera) {
         // Column-vector convention: translation lives in the last column
         // (m[3], m[7], m[11]); reading m[12..14] returned ~0 and broke LOD
         // distance selection + decal placement.
-        const math::Vec3 worldPos{model.m[3], model.m[7], model.m[11]};
+        // G2-3: a terrain chunk uses its patch centre (not the terrain origin)
+        // so distance LOD is chosen per patch.
+        const math::Vec3 worldPos = item.isTerrainChunk
+                                        ? model.TransformPoint(item.chunkCenterLocal)
+                                        : math::Vec3{model.m[3], model.m[7], model.m[11]};
         // Batchable: opaque static mesh with the built-in shader. Skinned
         // (per-entity bone matrices), sprites, decals, transparent materials
         // and custom shaders keep the per-entity path.
@@ -1737,6 +1887,8 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera) {
             renderer.DrawMesh(fireballMesh_, fmat, math::Mat4::Translation(p.pos));
         }
     }
+    // G2-3 vegetation: instanced plant meshes + far yaw-billboard impostors.
+    DrawVegetation(renderer, camera);
     // Compact when a fifth of the draw list belongs to dead entities.
     if (dead && dead * 5 > draws_.size()) {
         draws_.erase(std::remove_if(draws_.begin(), draws_.end(),

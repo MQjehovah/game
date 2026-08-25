@@ -3451,6 +3451,47 @@ void EditorApp::BuildTerrainPanel() {
             RebuildTerrainMesh(e);
             sceneDirty_ = true;
         }
+        ImGui::Separator();
+        if (ImGui::CollapsingHeader("LOD / 植被 (G2-3)", ImGuiTreeNodeFlags_DefaultOpen)) {
+            if (ImGui::InputInt("分块数##lod", &e.chunkGridDiv_, 1, 4)) {
+                e.chunkGridDiv_ = std::max(0, std::min(e.chunkGridDiv_, 16));
+                sceneDirty_ = true;
+            }
+            if (e.chunkGridDiv_ > 0) {
+                if (ImGui::InputInt("LOD 层数##lod", &e.chunkLodLevels_, 1, 1)) {
+                    e.chunkLodLevels_ = std::max(1, std::min(e.chunkLodLevels_, 5));
+                    sceneDirty_ = true;
+                }
+                if (ImGui::InputInt("LOD 细分##lod", &e.chunkBaseSubdiv_, 1, 4)) {
+                    e.chunkBaseSubdiv_ = std::max(2, std::min(e.chunkBaseSubdiv_, 64));
+                    sceneDirty_ = true;
+                }
+                ImGui::TextDisabled("播放时按分块渲染, 近密远疏 (运行时 LOD)");
+            }
+            static char vegKeyBuf[128] = {};
+            std::snprintf(vegKeyBuf, sizeof(vegKeyBuf), "%s", e.vegMeshKey_.c_str());
+            ImGui::SetNextItemWidth(160.0f);
+            if (ImGui::InputText("植被网格##lod", vegKeyBuf, sizeof(vegKeyBuf))) {
+                e.vegMeshKey_ = vegKeyBuf;
+                sceneDirty_ = true;
+            }
+            int vegCount = static_cast<int>(e.vegCount_);
+            if (ImGui::InputInt("植被数量##lod", &vegCount, 1, 20)) {
+                e.vegCount_ = static_cast<uint32_t>(std::max(0, vegCount));
+                sceneDirty_ = true;
+            }
+            if (e.vegCount_ > 0) {
+                if (ImGui::DragFloat("植被尺寸##lod", &e.vegSize_, 0.05f, 0.1f, 8.0f)) {
+                    e.vegSize_ = std::max(0.05f, e.vegSize_);
+                    sceneDirty_ = true;
+                }
+                if (ImGui::DragFloat("Impostor 距离##lod", &e.vegImpostorDistance_, 1.0f, 1.0f, 500.0f)) {
+                    e.vegImpostorDistance_ = std::max(1.0f, e.vegImpostorDistance_);
+                    sceneDirty_ = true;
+                }
+                ImGui::TextDisabled("远处植被自动切换为 2D 面片 (Impostor)");
+            }
+        }
         ImGui::TextDisabled("提示: 雕刻模式下点击/拖拽视口即可塑形");
     }
     ImGui::End();

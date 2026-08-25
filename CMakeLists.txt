@@ -56,6 +56,7 @@ set(ENGINE_CORE_SOURCES
   engine/src/gfx/ibl.cpp
   engine/src/gfx/mesh.cpp
   engine/src/gfx/scene_props.cpp
+  engine/src/gfx/terrain.cpp
   engine/src/gfx/particles.cpp
   engine/src/gfx/renderer.cpp
   engine/src/gfx/gl/gl_loader.cpp
@@ -498,6 +499,7 @@ add_executable(neon_tests tests/test_main.cpp tests/test_serialize.cpp tests/tes
   tests/test_scene_tree.cpp
   tests/test_asset_deps.cpp
   tests/test_bvh.cpp
+  tests/test_terrain.cpp
   tests/test_profiler.cpp
   tests/test_task_graph.cpp
   tests/test_script.cpp tests/test_script_bindings.cpp tests/test_script_determinism.cpp

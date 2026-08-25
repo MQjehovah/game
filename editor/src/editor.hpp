@@ -53,6 +53,20 @@ struct SceneEntity {
     int terrainSegments_ = 48;
     float terrainSize_ = 60.0f;
     float terrainHeightScale_ = 1.0f;
+    // G2-3 chunked LOD + vegetation (serialized into the terrain component;
+    // the runtime renders chunk patches + veg, the editor still paints a flat
+    // heightfield mesh).
+    int chunkGridDiv_ = 0;
+    int chunkLodLevels_ = 3;
+    int chunkBaseSubdiv_ = 16;
+    std::string vegMeshKey_;
+    uint32_t vegCount_ = 0;
+    uint32_t vegSeed_ = 1;
+    float vegSize_ = 1.0f;
+    float vegImpostorDistance_ = 60.0f;
+    float vegMinHeight_ = 0.0f;
+    float vegMaxHeight_ = 3.0f;
+    float vegMaxSlope_ = 0.30f;
     // P1-1 2D tilemap editing (meshKey "tilemap").
     std::vector<std::string> tilemapTiles_;
     int tilemapCols_ = 8;

@@ -4929,6 +4929,26 @@ core::Result<core::Json> EditorApp::BuildPlaySceneJson() {
                 hs.type_ = core::Json::Type::Array;
                 for (float h : e.terrainHeights_) hs.array_.push_back(mkNum(h));
                 terr.object_["heights"] = std::move(hs);
+                // G2-3 chunked LOD + vegetation knobs (written only when the
+                // user enables them; the runtime reads them back verbatim).
+                if (e.chunkGridDiv_ > 0) {
+                    terr.object_["chunkGridDiv"] = mkNum(e.chunkGridDiv_);
+                    terr.object_["chunkLodLevels"] = mkNum(e.chunkLodLevels_);
+                    terr.object_["chunkBaseSubdiv"] = mkNum(e.chunkBaseSubdiv_);
+                }
+                if (!e.vegMeshKey_.empty() && e.vegCount_ > 0) {
+                    core::Json vk;
+                    vk.type_ = core::Json::Type::String;
+                    vk.string_ = e.vegMeshKey_;
+                    terr.object_["vegMeshKey"] = std::move(vk);
+                    terr.object_["vegCount"] = mkNum(e.vegCount_);
+                    terr.object_["vegSeed"] = mkNum(e.vegSeed_);
+                    terr.object_["vegSize"] = mkNum(e.vegSize_);
+                    terr.object_["vegImpostorDistance"] = mkNum(e.vegImpostorDistance_);
+                    terr.object_["vegMinHeight"] = mkNum(e.vegMinHeight_);
+                    terr.object_["vegMaxHeight"] = mkNum(e.vegMaxHeight_);
+                    terr.object_["vegMaxSlope"] = mkNum(e.vegMaxSlope_);
+                }
                 comps.object_["terrain"] = std::move(terr);
             }
             if (e.meshKey == "tilemap" && !e.tilemapTiles_.empty()) {
@@ -6067,6 +6087,18 @@ void EditorApp::LoadScene(const std::string& path) {
                         for (const core::Json& v : h->Items())
                             e.terrainHeights_.push_back(static_cast<float>(v.GetNumber()));
                 }
+                // G2-3 chunked LOD + vegetation knobs (round-trip).
+                if (const core::Json* v = te->Get("chunkGridDiv")) e.chunkGridDiv_ = v->GetInt(0);
+                if (const core::Json* v = te->Get("chunkLodLevels")) e.chunkLodLevels_ = v->GetInt(3);
+                if (const core::Json* v = te->Get("chunkBaseSubdiv")) e.chunkBaseSubdiv_ = v->GetInt(16);
+                if (const core::Json* v = te->Get("vegMeshKey")) e.vegMeshKey_ = v->GetString();
+                if (const core::Json* v = te->Get("vegCount")) e.vegCount_ = static_cast<uint32_t>(v->GetNumber());
+                if (const core::Json* v = te->Get("vegSeed")) e.vegSeed_ = static_cast<uint32_t>(v->GetNumber());
+                if (const core::Json* v = te->Get("vegSize")) e.vegSize_ = static_cast<float>(v->GetNumber());
+                if (const core::Json* v = te->Get("vegImpostorDistance")) e.vegImpostorDistance_ = static_cast<float>(v->GetNumber());
+                if (const core::Json* v = te->Get("vegMinHeight")) e.vegMinHeight_ = static_cast<float>(v->GetNumber());
+                if (const core::Json* v = te->Get("vegMaxHeight")) e.vegMaxHeight_ = static_cast<float>(v->GetNumber());
+                if (const core::Json* v = te->Get("vegMaxSlope")) e.vegMaxSlope_ = static_cast<float>(v->GetNumber());
             }
             if (const core::Json* tlm = comps->Get("tilemap")) {
                 if (const core::Json* cols = tlm->Get("cols"))
@@ -6181,6 +6213,18 @@ void EditorApp::LoadScene(const std::string& path) {
                         for (const core::Json& v : h->Items())
                             e.terrainHeights_.push_back(static_cast<float>(v.GetNumber()));
                 }
+                // G2-3 chunked LOD + vegetation knobs (round-trip).
+                if (const core::Json* v = td->Get("chunkGridDiv")) e.chunkGridDiv_ = v->GetInt(0);
+                if (const core::Json* v = td->Get("chunkLodLevels")) e.chunkLodLevels_ = v->GetInt(3);
+                if (const core::Json* v = td->Get("chunkBaseSubdiv")) e.chunkBaseSubdiv_ = v->GetInt(16);
+                if (const core::Json* v = td->Get("vegMeshKey")) e.vegMeshKey_ = v->GetString();
+                if (const core::Json* v = td->Get("vegCount")) e.vegCount_ = static_cast<uint32_t>(v->GetNumber());
+                if (const core::Json* v = td->Get("vegSeed")) e.vegSeed_ = static_cast<uint32_t>(v->GetNumber());
+                if (const core::Json* v = td->Get("vegSize")) e.vegSize_ = static_cast<float>(v->GetNumber());
+                if (const core::Json* v = td->Get("vegImpostorDistance")) e.vegImpostorDistance_ = static_cast<float>(v->GetNumber());
+                if (const core::Json* v = td->Get("vegMinHeight")) e.vegMinHeight_ = static_cast<float>(v->GetNumber());
+                if (const core::Json* v = td->Get("vegMaxHeight")) e.vegMaxHeight_ = static_cast<float>(v->GetNumber());
+                if (const core::Json* v = td->Get("vegMaxSlope")) e.vegMaxSlope_ = static_cast<float>(v->GetNumber());
             }
             if (const core::Json* tlm = j->Get("tilemapData")) {
                 if (const core::Json* cols = tlm->Get("cols"))
