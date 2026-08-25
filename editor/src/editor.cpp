@@ -1876,6 +1876,7 @@ void EditorApp::OnRender() {
     }
     // G8-3: debug overlay layers (nav walkable area, light probes, audio).
     DrawDebugOverlay(cam);
+    DrawSceneGizmos(cam);
 
     // End the 3D scene phase: composite the HDR frame to the backbuffer and
     // bind the backbuffer so the tool UI (engine UI demo + ImGui) below renders
@@ -2306,6 +2307,81 @@ void EditorApp::DrawCameraFrame() {
         {{c.x - halfW, c.y, c.z}, {0.4f, 0.9f, 1.0f, 0.9f}},
     };
     renderer_.DrawLines(verts, 8, math::Mat4::Identity());
+}
+
+void EditorApp::DrawSceneGizmos(const gfx::Camera&) {
+    if (playtestActive_) return; // gizmos are an edit-mode planning aid
+    const gfx::Color camCol{0.4f, 0.9f, 1.0f, 0.95f};
+    const gfx::Color dirCol{1.0f, 0.9f, 0.4f, 0.95f};
+    const gfx::Color ptCol{1.0f, 0.65f, 0.25f, 0.95f};
+    const gfx::Color ambCol{0.7f, 0.9f, 1.0f, 0.95f};
+
+    for (const SceneEntity& e : entities_) {
+        const math::Mat4 model =
+            math::Mat4::Translation(e.pos) * e.rot.ToMat4() * math::Mat4::Scale(e.scale);
+        if (e.nodeType == "Camera3D") {
+            // View frustum: perspective pyramid or ortho box along local -Z.
+            const float aspect = ViewportAspect();
+            const float nearP = 0.1f, farP = 60.0f;
+            math::Vec3 c[8];
+            if (e.cameraOrtho) {
+                const float hh = e.cameraOrthoSize, hw = hh * aspect;
+                c[0] = {-hw, hh, -nearP}; c[1] = {hw, hh, -nearP};
+                c[2] = {hw, -hh, -nearP}; c[3] = {-hw, -hh, -nearP};
+                c[4] = {-hw, hh, -farP};  c[5] = {hw, hh, -farP};
+                c[6] = {hw, -hh, -farP};  c[7] = {-hw, -hh, -farP};
+            } else {
+                const float t = std::tan(e.cameraFov * 0.5f * math::kDegToRad);
+                const float nh = t * nearP, nw = nh * aspect;
+                const float fh = t * farP, fw = fh * aspect;
+                c[0] = {-nw, nh, -nearP}; c[1] = {nw, nh, -nearP};
+                c[2] = {nw, -nh, -nearP}; c[3] = {-nw, -nh, -nearP};
+                c[4] = {-fw, fh, -farP};  c[5] = {fw, fh, -farP};
+                c[6] = {fw, -fh, -farP};  c[7] = {-fw, -fh, -farP};
+            }
+            std::vector<gfx::Renderer::LineVertex> ln;
+            auto seg = [&](int a, int b) {
+                ln.push_back({model.TransformPoint(c[a]), camCol});
+                ln.push_back({model.TransformPoint(c[b]), camCol});
+            };
+            const int q0[4][2] = {{0, 1}, {1, 2}, {2, 3}, {3, 0}};
+            const int q1[4][2] = {{4, 5}, {5, 6}, {6, 7}, {7, 4}};
+            for (auto& ed : q0) seg(ed[0], ed[1]);
+            for (auto& ed : q1) seg(ed[0], ed[1]);
+            for (int i = 0; i < 4; ++i) seg(i, 4 + i);
+            renderer_.DrawLines(ln.data(), static_cast<uint32_t>(ln.size()),
+                                math::Mat4::Identity());
+            // Camera position marker.
+            renderer_.DrawSphere(e.pos, 0.15f, camCol);
+        } else if (e.hasLight) {
+            const gfx::Color col = e.light.type == "point"
+                                       ? ptCol
+                                       : (e.light.type == "ambient" ? ambCol : dirCol);
+            if (e.light.type == "directional") {
+                // Sun icon: a small body + an arrow along the light direction.
+                const math::Vec3 dir = e.light.sunDir.Normalized();
+                const math::Vec3 tip = e.pos + dir * 2.0f;
+                std::vector<gfx::Renderer::LineVertex> ln;
+                ln.push_back({e.pos, col});
+                ln.push_back({tip, col});
+                math::Vec3 s = math::Cross(dir, math::Vec3::Up());
+                if (s.LengthSq() < 1e-4f) s = {1.0f, 0.0f, 0.0f};
+                s = s.Normalized() * 0.25f;
+                ln.push_back({tip - dir * 0.5f - s, col});
+                ln.push_back({tip, col});
+                ln.push_back({tip - dir * 0.5f + s, col});
+                ln.push_back({tip, col});
+                renderer_.DrawLines(ln.data(), static_cast<uint32_t>(ln.size()),
+                                    math::Mat4::Identity());
+                renderer_.DrawSphere(e.pos, 0.2f, col);
+            } else if (e.light.type == "point") {
+                renderer_.DrawSphere(e.pos, e.light.radius, ptCol); // falloff
+                renderer_.DrawSphere(e.pos, 0.2f, gfx::Color{1, 1, 1, 1});
+            } else {
+                renderer_.DrawSphere(e.pos, 0.3f, ambCol); // ambient fill
+            }
+        }
+    }
 }
 
 void EditorApp::UpdateViewport(float dt) {
