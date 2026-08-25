@@ -1633,12 +1633,29 @@ void EditorApp::OnRender() {
         // the camera frame - zooms together via canvasZoom_; the editor's own
         // camera never leaks into the playtest.
         const math::Rect2& vp = viewportScreenRect_;
+        // The scene's Camera3D object is the runtime view; build the fallback
+        // camera from it too so the game renders the SCENE camera's framing
+        // (ortho 720-height) instead of the tiny preview default.
         gfx::Camera gameCam;
-        gameCam.target = {640.0f, 360.0f, 0.0f};
-        gameCam.position = gameCam.target + math::Vec3{0.0f, 0.0f, 14.0f};
-        gameCam.up = {0.0f, 1.0f, 0.0f};
-        gameCam.ortho = true;
-        gameCam.orthoSize = vp.h * 0.5f / canvasZoom_;
+        bool haveGameCam = false;
+        for (const SceneEntity& se : entities_) {
+            if (se.nodeType != "Camera3D") continue;
+            gameCam.position = se.pos;
+            gameCam.target = se.pos + se.rot.Rotate({0.0f, 0.0f, -1.0f});
+            gameCam.up = {0.0f, 1.0f, 0.0f};
+            gameCam.ortho = se.cameraOrtho;
+            gameCam.orthoSize = se.cameraOrthoSize;
+            gameCam.fovY = se.cameraFov * math::kDegToRad;
+            haveGameCam = true;
+            break;
+        }
+        if (!haveGameCam) {
+            gameCam.target = {640.0f, 360.0f, 0.0f};
+            gameCam.position = gameCam.target + math::Vec3{0.0f, 0.0f, 14.0f};
+            gameCam.up = {0.0f, 1.0f, 0.0f};
+            gameCam.ortho = true;
+            gameCam.orthoSize = 360.0f;
+        }
         if (vp.w > 0.0f && vp.h > 0.0f && renderer_.Backend()) {
             renderer_.Set2DViewport(vp.x, vp.y, vp.w, vp.h, canvasZoom_, canvasPan_);
             renderer_.Backend()->SetScissor(static_cast<int>(vp.x), static_cast<int>(vp.y),
@@ -1646,7 +1663,7 @@ void EditorApp::OnRender() {
             // Rasterize the scene into the panel rect (not a stale/full-window
             // viewport) so the sprite aspect and the 2D UI overlay agree.
             renderer_.SetSceneViewport(vp.x, vp.y, vp.w, vp.h);
-            playtest_->Draw(renderer_, gameCam);
+            playtest_->Draw(renderer_, gameCam, canvasZoom_);
             // Mark the game's camera view (the full 1280x720 design area).
             renderer_.DrawRectOutline(
                 {0.0f, 0.0f, static_cast<float>(gfx::Renderer::kDesignWidth),
@@ -1656,7 +1673,7 @@ void EditorApp::OnRender() {
             renderer_.Backend()->SetScissor(0, 0, 0, 0, false);
         } else {
             // No viewport rect yet (first frame): full-window fallback.
-            playtest_->Draw(renderer_, gameCam);
+            playtest_->Draw(renderer_, gameCam, canvasZoom_);
         }
         renderer_.Reset2DViewport();
     } else {

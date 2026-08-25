@@ -108,7 +108,11 @@ class GameRuntime {
 public:
     core::Status Start(const std::string& sceneJson, GameRuntimeConfig cfg);
     void Tick(float dt);
-    void Draw(gfx::Renderer& renderer, const gfx::Camera& camera);
+    // `previewZoom` lets an editor host zoom the WHOLE runtime view (sprites +
+    // UI) by dividing the scene camera's orthographic size, matching what the
+    // host passes to its 2D overlay (default 1 = no zoom).
+    void Draw(gfx::Renderer& renderer, const gfx::Camera& camera,
+              float previewZoom = 1.0f);
     // Draws the data-driven UI document (UIShow / ui/*.ui.json) on top of the
     // composited frame. Call AFTER Renderer::EndScene so menus/HUD keep their
     // authored colors instead of being ACES tone-mapped with the 3D scene.

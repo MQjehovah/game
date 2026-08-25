@@ -1713,7 +1713,8 @@ float GameRuntime::GameVar(const std::string& name) const {
     return v.type == script::Value::Type::Number ? static_cast<float>(v.number) : 0.0f;
 }
 
-void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera) {
+void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera,
+                       float previewZoom) {
     if (!running_ || !cfg_.assets) return; // sim-only runtime draws nothing
     core::ScopedTimer drawTimer("runtime.draw");
     // P2-3 scene camera: when the world contains a camera entity, its transform
@@ -1729,7 +1730,11 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera) {
             cam.up = {0, 1, 0};
             cam.ortho = c.ortho;
             cam.fovY = c.fov * math::kDegToRad;
-            cam.orthoSize = c.orthoSize;
+            cam.orthoSize = c.orthoSize > 0.0f ? c.orthoSize : 10.0f;
+            // Editor whole-view zoom: shrink the ortho size so sprites grow
+            // with the same factor the host applies to the 2D UI overlay.
+            if (cam.ortho && previewZoom > 0.0f)
+                cam.orthoSize /= previewZoom;
         });
     // Project at the ACTIVE scene viewport's aspect (a dock sub-rect in the
     // editor, the full target in the standalone player) so the runtime render
