@@ -666,6 +666,11 @@ void EditorApp::BuildScenePanel() {
         // Godot-style scene tree: entities group under their parentId
         // (0 = root). Drag one row onto another to reparent; drag onto the
         // empty area to detach back to root. Cycle / self-parent are rejected.
+            // Live ids must be unique and non-zero for the id-based tree and
+            // drag guards: mid-session entities (duplicate command copies the
+            // source id; asset drops start at 0) get normalized here, every
+            // frame, before the tree is built.
+            NormalizeEntityIds();
             std::map<int, std::vector<int>> childrenByParent;
             for (size_t i = 0; i < entities_.size(); ++i)
                 childrenByParent[entities_[i].parentId].push_back(static_cast<int>(i));

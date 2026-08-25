@@ -5809,8 +5809,15 @@ void EditorApp::NormalizeEntityIds() {
     int maxId = 0;
     for (const SceneEntity& e : entities_)
         if (e.id > maxId) maxId = e.id;
-    for (SceneEntity& e : entities_)
-        if (e.id == 0) e.id = ++maxId;
+    std::set<int> used;
+    for (SceneEntity& e : entities_) {
+        // id 0 (unassigned, e.g. entities added mid-session) and DUPLICATE ids
+        // (e.g. the duplicate command copies the source id) both get a fresh
+        // unique id: without this, the id-based tree + drag cycle guards
+        // misbehave (a duplicate id triggers the self-parent rejection).
+        if (e.id == 0 || used.count(e.id) != 0) e.id = ++maxId;
+        used.insert(e.id);
+    }
 }
 
 void EditorApp::LoadScene(const std::string& path) {
