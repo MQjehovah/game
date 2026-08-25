@@ -280,6 +280,9 @@ private:
     // max existing id + 1. Called after scene load and setup so the scene tree
     // can reference parents by id before the first save.
     void NormalizeEntityIds();
+    // Stable per-parent sort of the scene tree by entity name (case-
+    // insensitive, recursive). Pushed as one undoable reorder command.
+    void SortSceneTreeByName();
     // Project switcher (Godot-style): ScanProjects discovers the projects/
     // folders; SwitchProject loads a project's game.json, its scene/level
     // lists and enters the declared edit mode (2d canvas or 3D scene tree).

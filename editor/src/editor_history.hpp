@@ -116,6 +116,35 @@ private:
     size_t to_;
 };
 
+// Full scene-tree reorder (the panel's "按名称排序" button): stores the exact
+// pre-sort entity list and the target index permutation, so one undo step
+// restores the whole tree order. Apply snapshots the current list before
+// rebuilding it from the permutation (the history alternates Apply/Undo from
+// the state this command was constructed on, so the snapshot is always the
+// pre-reorder state).
+class SortSceneTreeCommand : public Command {
+public:
+    SortSceneTreeCommand(std::vector<SceneEntity>* entities, std::vector<size_t> newOrder)
+        : entities_(entities), newOrder_(std::move(newOrder)) {
+        oldEntities_ = *entities_;
+    }
+
+    void Apply() override {
+        oldEntities_ = *entities_;
+        std::vector<SceneEntity> reordered;
+        reordered.reserve(newOrder_.size());
+        for (size_t i : newOrder_)
+            reordered.push_back(std::move((*entities_)[i]));
+        *entities_ = std::move(reordered);
+    }
+    void Undo() override { std::swap(*entities_, oldEntities_); }
+
+private:
+    std::vector<SceneEntity>* entities_;
+    std::vector<SceneEntity> oldEntities_;
+    std::vector<size_t> newOrder_;
+};
+
 // pos/rot/scale edit used by BOTH the gizmo write-back and the inspector.
 // Merges only when the incoming command edits the SAME fields (bitmask), so an
 // inspector position drag cannot swallow a gizmo rotation. Frames within one

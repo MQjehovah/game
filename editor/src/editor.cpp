@@ -1468,6 +1468,58 @@ void EditorApp::OnUpdate(float dt) {
                       ok ? "PASS" : "FAIL");
         if (!ok) smokeFailed_ = true;
     }
+    // Scene-tree smoke: per-parent recursive name sort (multi-level tree:
+    // parent before children, each sibling group alphabetical) and the one
+    // undo step that restores the previous order. The temporary names and
+    // parent links are restored before the frame ends so the playtest smoke
+    // at frame 60 sees the untouched scene.
+    if (smokeMode_ && TimeRef().frameIndex == 51) {
+        bool ok = entities_.size() >= 3;
+        if (ok) {
+            NormalizeEntityIds();
+            const int id0 = entities_[0].id;
+            const int id1 = entities_[1].id;
+            const int id2 = entities_[2].id;
+            const std::string n0 = entities_[0].name;
+            const std::string n1 = entities_[1].name;
+            const std::string n2 = entities_[2].name;
+            const int p1 = entities_[1].parentId;
+            const int p2 = entities_[2].parentId;
+            entities_[0].name = "B_root";
+            entities_[1].name = "A_child";
+            entities_[2].name = "C_child";
+            entities_[1].parentId = id0;
+            entities_[2].parentId = id1; // grandchild: 3 levels deep
+            const size_t undoDepthBefore = history_.UndoDepth();
+            SortSceneTreeByName();
+            size_t i0 = static_cast<size_t>(-1);
+            size_t i1 = static_cast<size_t>(-1);
+            size_t i2 = static_cast<size_t>(-1);
+            for (size_t i = 0; i < entities_.size(); ++i) {
+                if (entities_[i].id == id0) i0 = i;
+                if (entities_[i].id == id1) i1 = i;
+                if (entities_[i].id == id2) i2 = i;
+            }
+            ok = i0 != static_cast<size_t>(-1) && i1 != static_cast<size_t>(-1) &&
+                 i2 != static_cast<size_t>(-1) && i0 < i1 && i1 < i2;
+            if (history_.UndoDepth() > undoDepthBefore)
+                history_.Undo(); // restore the pre-sort order
+            for (SceneEntity& e : entities_) {
+                if (e.id == id0) e.name = n0;
+                if (e.id == id1) {
+                    e.name = n1;
+                    e.parentId = p1;
+                }
+                if (e.id == id2) {
+                    e.name = n2;
+                    e.parentId = p2;
+                }
+            }
+        }
+        NEON_LOG_INFO("EDITOR-SCENETREE-SMOKE: [%s] per-parent recursive sort + undo",
+                      ok ? "PASS" : "FAIL");
+        if (!ok) smokeFailed_ = true;
+    }
     // Play/Stop smoke: start a playtest at frame 60, verify it ticks, stop at
     // the last frame (119; OnUpdate never runs at 120). Kept at "Play/Stop
     // doesn't crash the editor" level; the real script/BT verification lives
@@ -5840,6 +5892,53 @@ void EditorApp::NormalizeEntityIds() {
         if (e.id == 0 || used.count(e.id) != 0) e.id = ++maxId;
         used.insert(e.id);
     }
+}
+
+// Stable per-parent sort of the scene tree by entity name. Root entities come
+// first, then each group's children sorted case-insensitively by name,
+// recursively (depth-first). Entities whose parentId points at a missing
+// entity keep their relative order at the end. One undo step restores the
+// whole previous order.
+void EditorApp::SortSceneTreeByName() {
+    if (entities_.size() < 2) return;
+    NormalizeEntityIds(); // parentId references must resolve for the DFS
+    auto lower = [](const std::string& s) {
+        std::string out = s;
+        std::transform(out.begin(), out.end(), out.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        return out;
+    };
+    std::vector<size_t> order;
+    order.reserve(entities_.size());
+    std::set<int> placed;
+    std::function<void(int)> visit = [&](int parentId) {
+        std::vector<size_t> kids;
+        for (size_t i = 0; i < entities_.size(); ++i)
+            if (entities_[i].parentId == parentId) kids.push_back(i);
+        std::stable_sort(kids.begin(), kids.end(), [&](size_t a, size_t b) {
+            return lower(entities_[a].name) < lower(entities_[b].name);
+        });
+        for (size_t k : kids) {
+            if (placed.count(static_cast<int>(k)) != 0) continue;
+            placed.insert(static_cast<int>(k));
+            order.push_back(k);
+            visit(entities_[k].id);
+        }
+    };
+    visit(0);
+    for (size_t i = 0; i < entities_.size(); ++i)
+        if (placed.count(static_cast<int>(i)) == 0) {
+            placed.insert(static_cast<int>(i));
+            order.push_back(i);
+        }
+    bool changed = false;
+    for (size_t i = 0; i < order.size(); ++i)
+        if (order[i] != i) {
+            changed = true;
+            break;
+        }
+    if (!changed) return;
+    history_.Push(std::make_unique<SortSceneTreeCommand>(&entities_, std::move(order)));
 }
 
 void EditorApp::LoadScene(const std::string& path) {

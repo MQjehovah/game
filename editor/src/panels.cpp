@@ -619,18 +619,36 @@ void EditorApp::BuildScenePanel() {
             ClampSelection();
         }
         ImGui::SameLine();
-        if (ImGui::Button("↑") && selection_.size() == 1 && selected_ > 0) {
-            history_.Push(std::make_unique<ReorderEntityCommand>(
-                &entities_, static_cast<size_t>(selected_), static_cast<size_t>(selected_ - 1)));
-            SetSelection(selected_ - 1);
-        }
+        // ↑/↓ move the selected entity within its OWN sibling group (the tree
+        // groups children by parentId in global-array order, so a global ±1
+        // move could silently reorder another parent's children instead).
+        auto moveSibling = [this](int dir) {
+            if (selection_.size() != 1 || selected_ < 0 ||
+                selected_ >= static_cast<int>(entities_.size()))
+                return;
+            const size_t sel = static_cast<size_t>(selected_);
+            const int parentId = entities_[sel].parentId;
+            std::vector<size_t> sibs;
+            for (size_t i = 0; i < entities_.size(); ++i)
+                if (entities_[i].parentId == parentId) sibs.push_back(i);
+            const auto it = std::find(sibs.begin(), sibs.end(), sel);
+            if (it == sibs.end()) return;
+            const size_t pos = static_cast<size_t>(it - sibs.begin());
+            const size_t none = static_cast<size_t>(-1);
+            const size_t to = dir < 0 ? (pos == 0 ? none : sibs[pos - 1])
+                                      : (pos + 1 >= sibs.size() ? none : sibs[pos + 1]);
+            if (to == none) return;
+            history_.Push(std::make_unique<ReorderEntityCommand>(&entities_, sel, to));
+            SetSelection(static_cast<int>(to));
+        };
         ImGui::SameLine();
-        if (ImGui::Button("↓") && selection_.size() == 1 && selected_ >= 0 &&
-            selected_ < static_cast<int>(entities_.size()) - 1) {
-            history_.Push(std::make_unique<ReorderEntityCommand>(
-                &entities_, static_cast<size_t>(selected_), static_cast<size_t>(selected_ + 1)));
-            SetSelection(selected_ + 1);
-        }
+        if (ImGui::Button("↑")) moveSibling(-1);
+        ImGui::SameLine();
+        if (ImGui::Button("↓")) moveSibling(1);
+        ImGui::SameLine();
+        if (ImGui::Button("按名称排序")) SortSceneTreeByName();
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("对场景树按名称排序（每个父级下递归、可撤销）");
         if (selection_.size() > 1)
             ImGui::TextColored(ImVec4(0.7f, 0.85f, 1.0f, 1.0f),
                                "已选中 %zu 个实体 (Ctrl 加选 / Shift 连选)",
@@ -749,6 +767,33 @@ void EditorApp::BuildScenePanel() {
                                 SetSelection(idx);
                         }
                         contextMenu();
+                        // P2-editor UX: drag the whole selection to reparent.
+                        // The source + target attach to THIS row BEFORE the
+                        // children recurse: ImGui binds drag-drop to the LAST
+                        // item, and after TreePop that is the deepest child
+                        // row, so an expanded parent's own row had no source/
+                        // target (multi-level reparent silently failed).
+                        if (ImGui::BeginDragDropSource()) {
+                            std::vector<int> drag = SelectedIndices();
+                            if (drag.empty()) drag.push_back(idx);
+                            dragPayload_ = drag;
+                            ImGui::SetDragDropPayload("SCENE_ENTITIES",
+                                                      dragPayload_.data(),
+                                                      static_cast<size_t>(
+                                                          dragPayload_.size()) *
+                                                          sizeof(int));
+                            ImGui::Text("移动 %zu 个实体", dragPayload_.size());
+                            ImGui::EndDragDropSource();
+                        }
+                        if (ImGui::BeginDragDropTarget()) {
+                            if (const ImGuiPayload* p =
+                                    ImGui::AcceptDragDropPayload("SCENE_ENTITIES")) {
+                                const int* data = static_cast<const int*>(p->Data);
+                                const size_t n = p->DataSize / sizeof(int);
+                                reparent(std::vector<int>(data, data + n), e.id);
+                            }
+                            ImGui::EndDragDropTarget();
+                        }
                         if (open) {
                             drawNode(e.id);
                             ImGui::TreePop();
@@ -763,26 +808,27 @@ void EditorApp::BuildScenePanel() {
                                 SetSelection(idx);
                         }
                         contextMenu();
-                    }
-                    // P2-editor UX: drag the whole selection to reparent.
-                    if (ImGui::BeginDragDropSource()) {
-                        std::vector<int> drag = SelectedIndices();
-                        if (drag.empty()) drag.push_back(idx);
-                        dragPayload_ = drag;
-                        ImGui::SetDragDropPayload("SCENE_ENTITIES", dragPayload_.data(),
-                                                  static_cast<size_t>(dragPayload_.size()) *
-                                                      sizeof(int));
-                        ImGui::Text("移动 %zu 个实体", dragPayload_.size());
-                        ImGui::EndDragDropSource();
-                    }
-                    if (ImGui::BeginDragDropTarget()) {
-                        if (const ImGuiPayload* p =
-                                ImGui::AcceptDragDropPayload("SCENE_ENTITIES")) {
-                            const int* data = static_cast<const int*>(p->Data);
-                            const size_t n = p->DataSize / sizeof(int);
-                            reparent(std::vector<int>(data, data + n), e.id);
+                        if (ImGui::BeginDragDropSource()) {
+                            std::vector<int> drag = SelectedIndices();
+                            if (drag.empty()) drag.push_back(idx);
+                            dragPayload_ = drag;
+                            ImGui::SetDragDropPayload("SCENE_ENTITIES",
+                                                      dragPayload_.data(),
+                                                      static_cast<size_t>(
+                                                          dragPayload_.size()) *
+                                                          sizeof(int));
+                            ImGui::Text("移动 %zu 个实体", dragPayload_.size());
+                            ImGui::EndDragDropSource();
                         }
-                        ImGui::EndDragDropTarget();
+                        if (ImGui::BeginDragDropTarget()) {
+                            if (const ImGuiPayload* p =
+                                    ImGui::AcceptDragDropPayload("SCENE_ENTITIES")) {
+                                const int* data = static_cast<const int*>(p->Data);
+                                const size_t n = p->DataSize / sizeof(int);
+                                reparent(std::vector<int>(data, data + n), e.id);
+                            }
+                            ImGui::EndDragDropTarget();
+                        }
                     }
                 }
             };
