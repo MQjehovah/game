@@ -379,4 +379,41 @@ function on_render()
       y = y + 24
     end
   end
+
+  -- M1: 实体头顶板（血条 + 名字）。锚点与铭牌数据由引擎每帧投影/登记。
+  local anchors = ScreenAnchors()
+  local plates = EntityPlates()
+  for i = 1, #anchors do
+    local a = anchors[i]
+    if a.onscreen then
+      local key = tostring(a.entity.id) .. "_" .. tostring(a.entity.gen)
+      local p = plates[key]
+      if p ~= nil and p.hp >= 0 then
+        local w, h = 56, 5
+        DrawRect(a.x - w / 2, a.y - h, w, h, 0.05, 0.05, 0.08, 0.8)
+        if p.hp > 0 then
+          DrawRect(a.x - w / 2 + 1, a.y - h + 1, (w - 2) * p.hp, h - 2,
+                   0.85, 0.2, 0.2, 1)
+        end
+        DrawText(p.name, a.x, a.y - h - 16, 12, 0.95, 0.95, 1, 0.9, true, true)
+      end
+    end
+  end
+
+  -- M1: 伤害/提示飘字（世界锚定，上飘淡出）。
+  local texts = FloatTexts()
+  for i = 1, #texts do
+    local f = texts[i]
+    local age = f.age / math.max(0.01, f.life)
+    local s = WorldToScreen(f.world.x, f.world.y + age * 0.8, f.world.z)
+    if s ~= nil and age < 1 then
+      local size = f.crit and 22 or 16
+      local alpha = 1 - age
+      if f.crit then
+        DrawText(f.text, s.x, s.y, size, 1, 0.85, 0.3, alpha, true, true)
+      else
+        DrawText(f.text, s.x, s.y, size, 1, 1, 1, alpha, true, true)
+      end
+    end
+  end
 end

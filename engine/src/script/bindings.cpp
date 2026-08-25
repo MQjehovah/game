@@ -568,6 +568,134 @@ Value NativeSpawnPrefab(IScriptHost& host, void* user) {
     return EntityToValue(ctx->spawnPrefab(name, pos));
 }
 
+// --- M1 gameplay bindings ----------------------------------------------------
+
+// PlayAnimation(entity, clip, loop=true, crossFade=0.2, speed=1): plays a
+// named clip (substring match) on the entity's own animation instance.
+Value NativePlayAnimation(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->playAnimation) return Value::Bool(false);
+    const ecs::Entity e = EntityFromValue(host.GetArg(0));
+    const std::string clip = StringArg(host, 1);
+    auto asBool = [&host](int idx, bool def) {
+        if (host.ArgCount() <= static_cast<size_t>(idx)) return def;
+        const Value v = host.GetArg(idx);
+        return v.type == Value::Type::Bool ? v.boolean : v.number != 0.0;
+    };
+    auto num = [&host](int idx, float def) {
+        if (host.ArgCount() <= static_cast<size_t>(idx)) return def;
+        const Value v = host.GetArg(idx);
+        return v.type == Value::Type::Number ? static_cast<float>(v.number) : def;
+    };
+    return Value::Bool(ctx->playAnimation(e, clip, asBool(2, true), num(3, 0.2f),
+                                          num(4, 1.0f)));
+}
+
+// AnimationProgress(entity) -> [0..1] of the override clip (-1 when none).
+Value NativeAnimProgress(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->animProgress) return Value::Num(-1.0);
+    return Value::Num(ctx->animProgress(EntityFromValue(host.GetArg(0))));
+}
+
+// AnimationFinished(entity) -> true when a one-shot override clip completed.
+Value NativeAnimFinished(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->animFinished) return Value::Bool(false);
+    return Value::Bool(ctx->animFinished(EntityFromValue(host.GetArg(0))));
+}
+
+// WorldToScreen(x, y, z) -> {x=, y=} design coords or nil (behind camera).
+Value NativeWorldToScreen(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->worldToScreen) return Value::Nil();
+    // Accepts either a table {x=,y=,z=} or three numbers x, y, z.
+    math::Vec3 w;
+    const Value& a0 = host.GetArg(0);
+    if (a0.type == Value::Type::Table) {
+        w = Vec3FromValue(a0, math::Vec3{});
+    } else if (host.ArgCount() >= 3) {
+        w = {static_cast<float>(a0.number),
+             static_cast<float>(host.GetArg(1).number),
+             static_cast<float>(host.GetArg(2).number)};
+    }
+    float sx = 0.0f, sy = 0.0f;
+    if (!ctx->worldToScreen(w, sx, sy)) return Value::Nil();
+    Value t = Value::Tbl();
+    t.table->fields.emplace_back("x", Value::Num(sx));
+    t.table->fields.emplace_back("y", Value::Num(sy));
+    return t;
+}
+
+// SpawnFloatText(x, y, z, text, crit=false, life=1.2) or
+// SpawnFloatText({x=,y=,z=}, text, ...): floating combat text.
+Value NativeSpawnFloatText(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->spawnFloatText) return Value::Nil();
+    const Value& a0 = host.GetArg(0);
+    math::Vec3 w;
+    int textIdx = 1;
+    if (a0.type == Value::Type::Table) {
+        w = Vec3FromValue(a0, math::Vec3{});
+    } else if (host.ArgCount() >= 4) {
+        w = {static_cast<float>(a0.number),
+             static_cast<float>(host.GetArg(1).number),
+             static_cast<float>(host.GetArg(2).number)};
+        textIdx = 3;
+    } else {
+        return Value::Nil();
+    }
+    const std::string text = StringArg(host, textIdx);
+    auto asBool = [&host](int idx, bool def) {
+        if (host.ArgCount() <= static_cast<size_t>(idx)) return def;
+        const Value v = host.GetArg(idx);
+        return v.type == Value::Type::Bool ? v.boolean : v.number != 0.0;
+    };
+    auto num = [&host](int idx, float def) {
+        if (host.ArgCount() <= static_cast<size_t>(idx)) return def;
+        const Value v = host.GetArg(idx);
+        return v.type == Value::Type::Number ? static_cast<float>(v.number) : def;
+    };
+    ctx->spawnFloatText(w, text, asBool(textIdx + 1, false), num(textIdx + 2, 1.2f));
+    return Value::Nil();
+}
+
+// SetEntityPlate(entity, name, hpFrac): stamps overhead-bar metadata.
+Value NativeSetEntityPlate(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->setEntityPlate) return Value::Nil();
+    const ecs::Entity e = EntityFromValue(host.GetArg(0));
+    ctx->setEntityPlate(e, StringArg(host, 1),
+                        host.GetArg(2).type == Value::Type::Number
+                            ? static_cast<float>(host.GetArg(2).number)
+                            : -1.0f);
+    return Value::Nil();
+}
+
+// ScreenAnchors() -> array of {entity={id=,gen=}, x=, y=, onscreen=, world=}.
+Value NativeScreenAnchors(IScriptHost& host, void* user) {
+    (void)host;
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->screenAnchors) return Value::Tbl(); // empty array
+    return ctx->screenAnchors();
+}
+
+// EntityPlates() -> map entityKey -> {name=, hp=}.
+Value NativeEntityPlates(IScriptHost& host, void* user) {
+    (void)host;
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->entityPlates) return Value::Tbl();
+    return ctx->entityPlates();
+}
+
+// FloatTexts() -> array of {world=, text=, crit=, age=, life=}.
+Value NativeFloatTexts(IScriptHost& host, void* user) {
+    (void)host;
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->floatTexts) return Value::Tbl();
+    return ctx->floatTexts();
+}
+
 // ZombieInfo(entity) -> {row=, delay=, type=, ...} or nil. The zombie
 // component is now a generic data component stored in SceneData (readable via
 // EntityComponent); this legacy binding reads the same data for older scripts.
@@ -1250,6 +1378,16 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("FindNamedEntity", &NativeFindNamedEntity, &ctx);
     host.Register("SpawnSprite", &NativeSpawnSprite, &ctx);
     host.Register("SpawnPrefab", &NativeSpawnPrefab, &ctx);
+    // M1 gameplay: per-entity animation + world-anchored HUD helpers.
+    host.Register("PlayAnimation", &NativePlayAnimation, &ctx);
+    host.Register("AnimationProgress", &NativeAnimProgress, &ctx);
+    host.Register("AnimationFinished", &NativeAnimFinished, &ctx);
+    host.Register("WorldToScreen", &NativeWorldToScreen, &ctx);
+    host.Register("SpawnFloatText", &NativeSpawnFloatText, &ctx);
+    host.Register("SetEntityPlate", &NativeSetEntityPlate, &ctx);
+    host.Register("ScreenAnchors", &NativeScreenAnchors, &ctx);
+    host.Register("EntityPlates", &NativeEntityPlates, &ctx);
+    host.Register("FloatTexts", &NativeFloatTexts, &ctx);
     host.Register("ZombieInfo", &NativeZombieInfo, &ctx);
     host.Register("EntityComponent", &NativeEntityComponent, &ctx);
     host.Register("SetEntityComponent", &NativeSetEntityComponent, &ctx);

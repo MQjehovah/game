@@ -196,6 +196,19 @@ struct SceneHealth {
     float hp = 0.f;
     float maxHp = 0.f;
 };
+// Per-entity animation override for skinned models (M1): when present on an
+// entity whose mesh is "gltf:..." with animation clips, the runtime plays
+// `clip` (name substring, case-insensitive) instead of the model's default
+// loop. Fields map 1:1 to the PlayAnimation/animation script binding.
+struct SceneAnimOverride {
+    std::string clip;        // clip name (substring match, "" = default loop)
+    bool loop = true;
+    float speed = 1.0f;
+    float crossFade = 0.2f;
+    // Runtime slot: 1 while the override is live (set on PlayAnimation,
+    // cleared by AnimFinished polling); lets scripts re-issue the same clip.
+    bool active = false;
+};
 // Rigid body component (physics::World): describes one collider attached to
 // the entity's transform. GameRuntime::Start registers the body with the
 // physics world and writes `bodyId`; every fixed physics step moves the body

@@ -515,7 +515,7 @@ add_executable(neon_tests tests/test_main.cpp tests/test_serialize.cpp tests/tes
   tests/test_bt.cpp tests/test_scene_file.cpp tests/test_scene_export.cpp tests/test_manifest.cpp
   tests/test_nav.cpp
   tests/test_localization.cpp
-  tests/test_game_runtime.cpp tests/test_gltf_skin.cpp tests/test_anim.cpp
+  tests/test_game_runtime.cpp tests/test_game_runtime_m1.cpp tests/test_gltf_skin.cpp tests/test_anim.cpp
   tests/test_combat.cpp
   tests/test_lagcomp.cpp
   tests/test_skinned.cpp tests/test_shadow.cpp tests/test_log.cpp

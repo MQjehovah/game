@@ -136,6 +136,82 @@ std::vector<math::Mat4> SkinnedModel::BoneMatrices() const {
     return skeleton.ComputeBoneMatrices(pose);
 }
 
+bool SkinnedModel::PlayClip(const std::string& name, bool loop, float crossFade,
+                            float speed) {
+    // Case-insensitive substring match over clip names ("attack" matches
+    // "01_attack_Armature_0"); ties resolve to the first hit for determinism.
+    std::string needle;
+    needle.reserve(name.size());
+    for (char c : name)
+        needle.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+    const anim::AnimationClip* found = nullptr;
+    for (const anim::AnimationClip& c : clips) {
+        std::string hay;
+        hay.reserve(c.name.size());
+        for (char ch : c.name)
+            hay.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(ch))));
+        if (hay.find(needle) != std::string::npos) {
+            found = &c;
+            break;
+        }
+    }
+    if (!found) return false;
+    // Capture the current instance pose as the fade source so the blend is
+    // continuous regardless of what was playing before.
+    if (crossFade > 0.0f && skeleton.bones.size() > 0) {
+        instFromPose_ = skeleton.BindPose();
+        if (instClip_) instClip_->Sample(instTime_, instFromPose_);
+        else if (defaultClip >= 0 && animator.Clip())
+            animator.Clip()->Sample(animator.Time(), instFromPose_);
+    }
+    instClip_ = found;
+    instLoop_ = loop;
+    instTime_ = 0.0f;
+    instSpeed_ = speed > 0.0f ? speed : 1.0f;
+    instFade_ = crossFade > 0.0f ? crossFade : 0.0f;
+    instFadeTotal_ = instFade_;
+    return true;
+}
+
+bool SkinnedModel::ClipFinished() const {
+    if (!instClip_) return false;
+    return !instLoop_ && instTime_ >= instClip_->duration;
+}
+
+float SkinnedModel::ClipProgress() const {
+    if (!instClip_ || instClip_->duration <= 0.0f) return ClipFinished() ? 1.0f : 0.0f;
+    float p = instTime_ / instClip_->duration;
+    if (p > 1.0f) p = 1.0f;
+    return p;
+}
+
+void SkinnedModel::UpdateInstance(float dt) {
+    if (instClip_) {
+        instTime_ += dt * instSpeed_;
+        if (instFade_ > 0.0f) instFade_ = std::max(0.0f, instFade_ - dt);
+        if (instLoop_ && instClip_->duration > 0.0f &&
+            instTime_ >= instClip_->duration) {
+            // Wrap into the loop range to keep the phase deterministic.
+            instTime_ = std::fmod(instTime_, instClip_->duration);
+        }
+        // Clamp one-shots at the end (ClipFinished() reports completion).
+        if (!instLoop_ && instTime_ > instClip_->duration) instTime_ = instClip_->duration;
+    } else {
+        // No override: behave like the shared default-clip animator.
+        Update(dt);
+    }
+}
+
+std::vector<math::Mat4> SkinnedModel::InstanceBoneMatrices() const {
+    if (!instClip_) return BoneMatrices();
+    anim::Pose pose = skeleton.BindPose();
+    instClip_->Sample(instTime_, pose);
+    if (instFade_ > 0.0f && instFadeTotal_ > 0.0f && instFromPose_.t.size() == pose.t.size()) {
+        pose.Lerp(instFromPose_, pose, 1.0f - instFade_ / instFadeTotal_);
+    }
+    return skeleton.ComputeBoneMatrices(pose);
+}
+
 core::Result<SkinnedModel> LoadSkinnedModel(assets::AssetManager& assets,
                                             const std::string& path) {
     assets::GltfAsset gltf = assets.LoadGLTF(path);

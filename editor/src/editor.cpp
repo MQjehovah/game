@@ -660,7 +660,7 @@ bool EditorApp::OnCreate() {
     }
     // Start the playtest LAST: LoadProjectScene/SwitchProject above stop any
     // running playtest, so --2d-play + --project must start after both.
-    if (pvzPlaytestOnStart_) StartPlaytest();
+    if (pvzPlaytestOnStart_ || playOnStart_) StartPlaytest();
     // --ui-editor: open the panel and load the first ui/*.ui.json directly.
     // The panel's own auto-open only runs while its dock tab is visible, which
     // a headless/CI layout cannot guarantee.

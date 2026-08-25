@@ -195,6 +195,29 @@ struct ScriptContext {
     // Group queries (P1-1): returns the scene entities carrying the named
     // group. Wired by GameRuntime; null -> GetEntitiesInGroup returns {}.
     std::function<std::vector<ecs::Entity>(const std::string&)> entitiesInGroup;
+    // --- M1 gameplay bindings (wired by GameRuntime; null = no-ops) -------
+    // Plays a named clip on the entity's OWN animation instance (skinned
+    // models). loop=false for one-shots (attack/death); crossFade in seconds.
+    std::function<bool(ecs::Entity, const std::string&, bool, float, float)> playAnimation;
+    // Progress [0,1] of the entity's override clip (-1 when none playing).
+    std::function<float(ecs::Entity)> animProgress;
+    // True when a one-shot override finished.
+    std::function<bool(ecs::Entity)> animFinished;
+    // Projects a world position into the 2D design space (1280x720) the
+    // on_render canvas draws in. Returns nil behind the camera.
+    std::function<bool(const math::Vec3&, float&, float&)> worldToScreen;
+    // Spawns a floating combat text anchored to a world position (the runtime
+    // ages it; on_render reads it via FloatTexts()).
+    std::function<void(const math::Vec3&, const std::string&, bool, float)> spawnFloatText;
+    // Overhead plate stamp for HUD scripts: name + hp fraction (0..1, <0
+    // hides). Drawn by the game's on_render via ScreenAnchors()/EntityPlates().
+    std::function<void(ecs::Entity, const std::string&, float)> setEntityPlate;
+    // Screen anchors of drawn entities (design units), refreshed every Draw.
+    std::function<script::Value()> screenAnchors;
+    // Entity plates map {entityKey -> {name, hpFrac}} for on_render.
+    std::function<script::Value()> entityPlates;
+    // Active floating texts: {world={x,y,z}, text, crit, age, life}.
+    std::function<script::Value()> floatTexts;
 };
 
 // Registers Spawn/Despawn/GetPosition/SetPosition/GetVar/SetVar/Raycast/

@@ -130,6 +130,53 @@ public:
     void UISetFill(const std::string& name, float fill);
     void UISetVisible(const std::string& name, bool visible);
 
+    // --- M1: per-entity animation + world-screen HUD anchors ---------------
+    // Plays a named clip (substring, case-insensitive) on a skinned entity's
+    // OWN instance state (the shared SkinnedModel is untouched, so many
+    // entities can run different clips from one file). Returns false when
+    // the entity has no skinned model or no clip matches.
+    bool PlayAnimation(ecs::Entity e, const std::string& clip, bool loop = true,
+                       float crossFade = 0.2f, float speed = 1.0f);
+    // Normalized [0,1] progress of the entity's override clip (0 when none,
+    // 1 when a one-shot finished). Poll from on_update to chain attacks.
+    float AnimationProgress(ecs::Entity e) const;
+    // True while an override clip exists AND has finished (one-shots only).
+    bool AnimationFinished(ecs::Entity e) const;
+    // Projects a world position into the CURRENT 2D design space (the same
+    // mapping on_render draws in). Returns false when the point is behind
+    // the camera. Used by scripts for overhead HP bars / nameplates.
+    bool WorldToScreen(const math::Vec3& world, float& outX, float& outY) const;
+    // Spawns a floating combat-text particle anchored to a world position:
+    // the runtime tracks it (rise + fade over `life` seconds) and exposes it
+    // to on_render via FloatTexts(). crit scales the text and tints it.
+    void SpawnFloatText(const math::Vec3& world, const std::string& text, bool crit = false,
+                        float life = 1.2f);
+    struct FloatText {
+        math::Vec3 world;
+        std::string text;
+        bool crit = false;
+        float life = 1.0f;      // total lifetime
+        float age = 0.0f;       // elapsed
+    };
+    const std::vector<FloatText>& FloatTexts() const { return floatTexts_; }
+    // Entity screen anchors cached during the LAST Draw: {entityKey, x, y,
+    // onscreen} in design units. Scripts iterate it to draw overhead bars.
+    struct ScreenAnchor {
+        uint64_t entity;
+        float x = 0.0f, y = 0.0f;
+        bool onscreen = false;
+        math::Vec3 world;
+    };
+    const std::vector<ScreenAnchor>& ScreenAnchors() const { return screenAnchors_; }
+    // Per-entity overhead metadata scripts can stamp when anchoring bars:
+    // name + hp fraction (0..1). Set via SetEntityPlate(e, name, hpFrac).
+    void SetEntityPlate(ecs::Entity e, const std::string& name, float hpFrac);
+    struct EntityPlate {
+        std::string name;
+        float hpFrac = -1.0f; // <0 = hidden
+    };
+    const std::map<uint64_t, EntityPlate>& EntityPlates() const { return plates_; }
+
     bool Running() const { return running_; }
     ecs::World& World() { return world_; }
     script::GameVars& GameVars() { return scriptCtx_.gameVars; }
@@ -338,6 +385,19 @@ private:
         // Animated skinned glTF (meshKey "gltf:...") resolved once; when set,
         // drawing uses the skinned parts + bone matrices instead of `mesh`.
         std::shared_ptr<SkinnedModel> skinned;
+        // M1 per-entity animation state (from SceneAnimOverride): plays
+        // `animClip` on this item instead of the model's shared default loop.
+        // The shared SkinnedModel is never mutated - two wolves can play
+        // different clips from one loaded file.
+        const anim::AnimationClip* animClip = nullptr; // resolved clip ptr
+        std::string animName;                          // requested name (substring)
+        bool animLoop = true;
+        float animSpeed = 1.0f;
+        float animTime = 0.0f;
+        float animFade = 0.0f;       // remaining cross-fade seconds
+        float animFadeTotal = 0.0f;
+        bool animHasOverride = false;
+        anim::Pose animFromPose;     // fade source (captured at switch)
         bool resolved = false;
         bool failed = false;
     };
@@ -469,6 +529,13 @@ private:
     std::vector<ScriptInst> scripts_;
     std::vector<BtInst> trees_;
     std::vector<DrawItem> draws_;
+    // M1 HUD state: floating combat texts (world-anchored) + per-frame
+    // entity screen anchors + script-stamped overhead plates.
+    std::vector<FloatText> floatTexts_;
+    std::vector<ScreenAnchor> screenAnchors_;
+    std::map<uint64_t, EntityPlate> plates_;
+    math::Mat4 lastViewProj_;   // captured in Draw for WorldToScreen
+    bool lastViewProjValid_ = false;
     // G2-3 vegetation cache (EntityKey -> VegField); rebuilt lazily per Start.
     std::unordered_map<uint64_t, VegField> vegCache_;
     // Instanced-batching scratch for opaque static meshes (per-frame reuse):

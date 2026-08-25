@@ -193,6 +193,8 @@ public:
         viewCam_ = v ? ViewCam::Front : ViewCam::Perspective;
     }
     void SetPvzPlaytestOnStart(bool v) { pvzPlaytestOnStart_ = v; }
+    // --play: auto-start the current project's playtest (any mode, not just 2D).
+    void SetPlayOnStart(bool v) { playOnStart_ = v; }
     // --ui-editor: open the UI editor panel at startup (auto-opens the
     // project's first ui/*.ui.json so the viewport preview is testable).
     void SetUIEditorOnStart(bool v) { uiEditorOnStart_ = v; }
@@ -507,6 +509,7 @@ private:
     bool playtestActive_ = false;
     std::unique_ptr<scene::GameRuntime> playtest_; // non-null while playtesting
     bool pvzPlaytestOnStart_ = false; // --2d-play: auto-start the playtest
+    bool playOnStart_ = false;        // --play: auto-start (any project mode)
     bool uiEditorOnStart_ = false;    // --ui-editor: open the UI editor panel
     std::string projectDirOnStart_;    // --project: open this project
     bool loadProjectOnStart_ = false;  // --project also loads its start scene

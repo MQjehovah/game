@@ -373,6 +373,82 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     scriptCtx_.sceneSkillCooldown = [this](const std::string& name, ecs::Entity e) {
         return SkillCooldownLeft(name, e);
     };
+    // M1 gameplay hooks: per-entity animation + HUD anchors + floating text.
+    scriptCtx_.playAnimation = [this](ecs::Entity e, const std::string& clip, bool loop,
+                                      float fade, float speed) {
+        return PlayAnimation(e, clip, loop, fade, speed);
+    };
+    scriptCtx_.animProgress = [this](ecs::Entity e) { return AnimationProgress(e); };
+    scriptCtx_.animFinished = [this](ecs::Entity e) { return AnimationFinished(e); };
+    scriptCtx_.worldToScreen = [this](const math::Vec3& w, float& ox, float& oy) {
+        return WorldToScreen(w, ox, oy);
+    };
+    scriptCtx_.spawnFloatText = [this](const math::Vec3& w, const std::string& t, bool crit,
+                                       float life) { SpawnFloatText(w, t, crit, life); };
+    scriptCtx_.setEntityPlate = [this](ecs::Entity e, const std::string& name, float hp) {
+        SetEntityPlate(e, name, hp);
+    };
+    scriptCtx_.screenAnchors = [this]() -> script::Value {
+        auto vec3 = [](const math::Vec3& v) {
+            script::Value t = script::Value::Tbl();
+            t.table->fields.emplace_back("x", script::Value::Num(v.x));
+            t.table->fields.emplace_back("y", script::Value::Num(v.y));
+            t.table->fields.emplace_back("z", script::Value::Num(v.z));
+            return t;
+        };
+        script::Value arr = script::Value::Tbl();
+        for (const ScreenAnchor& a : screenAnchors_) {
+            script::Value t = script::Value::Tbl();
+            // entity key -> handle table {id, gen}
+            const uint32_t id = static_cast<uint32_t>(a.entity >> 32);
+            const uint32_t gen = static_cast<uint32_t>(a.entity & 0xFFFFFFFFu);
+            script::Value eh = script::Value::Tbl();
+            eh.table->fields.emplace_back("id", script::Value::Num(id));
+            eh.table->fields.emplace_back("gen", script::Value::Num(gen));
+            t.table->fields.emplace_back("entity", std::move(eh));
+            t.table->fields.emplace_back("x", script::Value::Num(a.x));
+            t.table->fields.emplace_back("y", script::Value::Num(a.y));
+            t.table->fields.emplace_back("onscreen", script::Value::Bool(a.onscreen));
+            t.table->fields.emplace_back("world", vec3(a.world));
+            arr.table->array.push_back(std::move(t));
+        }
+        return arr;
+    };
+    scriptCtx_.entityPlates = [this]() -> script::Value {
+        script::Value t = script::Value::Tbl();
+        for (const auto& kv : plates_) {
+            script::Value p = script::Value::Tbl();
+            p.table->fields.emplace_back("name", script::Value::Str(kv.second.name));
+            p.table->fields.emplace_back("hp", script::Value::Num(kv.second.hpFrac));
+            // Script-friendly key: "id_gen" (matches what ScreenAnchors exposes
+            // as the entity handle, so HUD scripts can join the two lists).
+            const uint32_t id = static_cast<uint32_t>(kv.first >> 32);
+            const uint32_t gen = static_cast<uint32_t>(kv.first & 0xFFFFFFFFu);
+            t.table->fields.emplace_back(std::to_string(id) + "_" + std::to_string(gen),
+                                         std::move(p));
+        }
+        return t;
+    };
+    scriptCtx_.floatTexts = [this]() -> script::Value {
+        auto vec3 = [](const math::Vec3& v) {
+            script::Value t = script::Value::Tbl();
+            t.table->fields.emplace_back("x", script::Value::Num(v.x));
+            t.table->fields.emplace_back("y", script::Value::Num(v.y));
+            t.table->fields.emplace_back("z", script::Value::Num(v.z));
+            return t;
+        };
+        script::Value arr = script::Value::Tbl();
+        for (const FloatText& f : floatTexts_) {
+            script::Value t = script::Value::Tbl();
+            t.table->fields.emplace_back("world", vec3(f.world));
+            t.table->fields.emplace_back("text", script::Value::Str(f.text));
+            t.table->fields.emplace_back("crit", script::Value::Bool(f.crit));
+            t.table->fields.emplace_back("age", script::Value::Num(f.age));
+            t.table->fields.emplace_back("life", script::Value::Num(f.life));
+            arr.table->array.push_back(std::move(t));
+        }
+        return arr;
+    };
     scriptCtx_.attackBox = [this](const math::Vec3& center, const math::Vec3& half, float yaw,
                                   float dmg) {
         return AttackBox(center, half, yaw, dmg);
@@ -878,6 +954,25 @@ void GameRuntime::BuildDrawList() {
     draws_.erase(std::remove_if(draws_.begin(), draws_.end(),
                                 [this](const DrawItem& d) { return !world_.Alive(d.ent); }),
                  draws_.end());
+    // M1: sync per-entity animation overrides into their draw items (existing
+    // items get name updates; resolved clip pointers re-resolve on change).
+    for (DrawItem& d : draws_) {
+        const SceneAnimOverride* ov = world_.Get<SceneAnimOverride>(d.ent);
+        if (!ov || !ov->active) {
+            d.animHasOverride = false;
+            d.animClip = nullptr;
+            d.animName.clear();
+            continue;
+        }
+        if (d.animName != ov->clip) {
+            d.animName = ov->clip;
+            d.animClip = nullptr; // re-resolve in TickAnimations
+            d.animLoop = ov->loop;
+            d.animSpeed = ov->speed;
+            d.animFadeTotal = ov->crossFade;
+        }
+        d.animHasOverride = true;
+    }
     auto contains = [this](ecs::Entity e) {
         for (const DrawItem& d : draws_)
             if (d.ent == e) return true;
@@ -958,6 +1053,15 @@ void GameRuntime::BuildDrawList() {
                 item.mat.occlusion = cfg_.assets->LoadTexture(FullAssetPath(m->aoTex)).Handle();
             if (!m->emissiveTex.empty())
                 item.mat.emissive = cfg_.assets->LoadTexture(FullAssetPath(m->emissiveTex)).Handle();
+        }
+        // M1: carry a live animation override onto a newly-tracked item.
+        if (const SceneAnimOverride* ov = world_.Get<SceneAnimOverride>(ent);
+            ov && ov->active) {
+            item.animHasOverride = true;
+            item.animName = ov->clip;
+            item.animLoop = ov->loop;
+            item.animSpeed = ov->speed;
+            item.animFadeTotal = ov->crossFade;
         }
         draws_.push_back(std::move(item));
     }
@@ -1512,7 +1616,52 @@ void GameRuntime::TickStatuses(float dt) {
 
 void GameRuntime::TickAnimations(float dt) {
     for (DrawItem& d : draws_) {
-        if (d.skinned && d.skinned->Valid()) d.skinned->Update(dt);
+        if (!d.skinned || !d.skinned->Valid()) continue;
+        if (d.animHasOverride) {
+            // Resolve the clip pointer on first use (or after a re-resolve).
+            if (!d.animClip) {
+                const std::string needle = d.animName;
+                for (const anim::AnimationClip& c : d.skinned->clips) {
+                    // Case-insensitive substring, first hit wins (deterministic).
+                    std::string hay = c.name;
+                    for (char& ch : hay)
+                        ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+                    std::string low = needle;
+                    for (char& ch : low)
+                        ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+                    if (hay.find(low) != std::string::npos) {
+                        d.animClip = &c;
+                        break;
+                    }
+                }
+                if (d.animClip) {
+                    // Capture the fade source pose from the shared default
+                    // loop so the cross-fade starts where the model is now.
+                    d.animFromPose = d.skinned->skeleton.BindPose();
+                    if (d.skinned->defaultClip >= 0 && d.skinned->animator.Clip())
+                        d.skinned->animator.Clip()->Sample(d.skinned->animator.Time(),
+                                                           d.animFromPose);
+                    d.animTime = 0.0f;
+                    d.animFade = d.animFadeTotal;
+                }
+            }
+            if (d.animClip) {
+                d.animTime += dt * d.animSpeed;
+                if (d.animFade > 0.0f) d.animFade = std::fmax(0.0f, d.animFade - dt);
+                if (d.animLoop && d.animClip->duration > 0.0f)
+                    d.animTime = std::fmod(d.animTime, d.animClip->duration);
+                else if (d.animTime > d.animClip->duration)
+                    d.animTime = d.animClip->duration; // one-shot clamps at end
+            }
+        } else {
+            d.skinned->Update(dt);
+        }
+    }
+    // Floating combat texts age out.
+    for (auto it = floatTexts_.begin(); it != floatTexts_.end();) {
+        it->age += dt;
+        if (it->age >= it->life) it = floatTexts_.erase(it);
+        else ++it;
     }
 }
 
@@ -1713,6 +1862,85 @@ float GameRuntime::GameVar(const std::string& name) const {
     return v.type == script::Value::Type::Number ? static_cast<float>(v.number) : 0.0f;
 }
 
+// --- M1: per-entity animation + HUD anchors ---------------------------------
+
+bool GameRuntime::PlayAnimation(ecs::Entity e, const std::string& clip, bool loop,
+                                float crossFade, float speed) {
+    if (!world_.Alive(e)) return false;
+    // Only skinned entities can play clips; refuse anything else so scripts
+    // can branch on the return value.
+    bool skinned = false;
+    for (const DrawItem& d : draws_)
+        if (d.ent == e && d.skinned && d.skinned->Valid()) skinned = true;
+    const SceneMesh* mesh = world_.Get<SceneMesh>(e);
+    if (!skinned && (!mesh || mesh->meshKey.compare(0, 5, "gltf:") != 0)) return false;
+    SceneAnimOverride* ov = world_.Get<SceneAnimOverride>(e);
+    if (!ov) {
+        ov = &world_.Add<SceneAnimOverride>(e);
+        *ov = SceneAnimOverride{};
+    }
+    ov->clip = clip;
+    ov->loop = loop;
+    ov->crossFade = crossFade;
+    ov->speed = speed;
+    ov->active = true;
+    // Drop any cached instance state so the next BuildDrawList re-issues it
+    // (fresh cross-fade from the current pose).
+    for (DrawItem& d : draws_)
+        if (d.ent == e) {
+            d.animName.clear();
+            d.animClip = nullptr;
+        }
+    return true;
+}
+
+float GameRuntime::AnimationProgress(ecs::Entity e) const {
+    for (const DrawItem& d : draws_) {
+        if (!(d.ent == e) || !d.animHasOverride || !d.animClip) continue;
+        if (d.animClip->duration <= 0.0f) return 1.0f;
+        float p = d.animTime / d.animClip->duration;
+        return p < 0.0f ? 0.0f : (p > 1.0f ? 1.0f : p);
+    }
+    return 0.0f;
+}
+
+bool GameRuntime::AnimationFinished(ecs::Entity e) const {
+    for (const DrawItem& d : draws_) {
+        if (!(d.ent == e) || !d.animHasOverride || !d.animClip) continue;
+        return !d.animLoop && d.animTime >= d.animClip->duration;
+    }
+    return false;
+}
+
+bool GameRuntime::WorldToScreen(const math::Vec3& world, float& outX, float& outY) const {
+    if (!lastViewProjValid_) return false;
+    math::Vec4 clip = lastViewProj_.TransformVec4(math::Vec4(world.x, world.y, world.z, 1.0f));
+    if (clip.w <= 0.01f) return false;
+    const float nx = clip.x / clip.w, ny = clip.y / clip.w;
+    outX = (nx * 0.5f + 0.5f) * gfx::Renderer::kDesignWidth;
+    outY = (0.5f - ny * 0.5f) * gfx::Renderer::kDesignHeight;
+    return true;
+}
+
+void GameRuntime::SpawnFloatText(const math::Vec3& world, const std::string& text, bool crit,
+                                 float life) {
+    FloatText ft;
+    ft.world = world;
+    ft.text = text;
+    ft.crit = crit;
+    ft.life = life > 0.05f ? life : 1.2f;
+    floatTexts_.push_back(ft);
+    if (floatTexts_.size() > 64) floatTexts_.erase(floatTexts_.begin()); // cap
+}
+
+void GameRuntime::SetEntityPlate(ecs::Entity e, const std::string& name, float hpFrac) {
+    if (!world_.Alive(e)) return;
+    EntityPlate p;
+    p.name = name;
+    p.hpFrac = hpFrac;
+    plates_[EntityKey(e)] = p;
+}
+
 void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera,
                        float previewZoom) {
     if (!running_ || !cfg_.assets) return; // sim-only runtime draws nothing
@@ -1747,6 +1975,42 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera,
     // depth) once per frame; the BVH pass and the draw loop read it instead of
     // re-walking parent chains per entity.
     RebuildWorldTransforms();
+    // M1 HUD anchors: project every drawn entity's world position (plus a
+    // per-plate head offset) into design units for on_render scripts. Cached
+    // once per frame; WorldToScreen() below uses the same matrices.
+    {
+        lastViewProj_ = cam.ViewProjection(renderer.SceneAspect());
+        lastViewProjValid_ = true;
+        screenAnchors_.clear();
+        for (const DrawItem& d : draws_) {
+            const math::Mat4 model = CachedLocalToWorld(d.ent);
+            math::Vec3 wp{model.m[3], model.m[7], model.m[11]};
+            // Head offset: lift the anchor above the model bounds when the
+            // entity carries a plate (the script stamps names via
+            // SetEntityPlate; default 0 keeps the raw position).
+            float headY = 0.0f;
+            auto pit = plates_.find(EntityKey(d.ent));
+            if (pit != plates_.end() && pit->second.hpFrac >= 0.0f) {
+                const SceneTransform* tr = world_.Get<SceneTransform>(d.ent);
+                if (tr) headY = 1.9f * tr->scale.y; // approx overhead slot
+            }
+            wp.y += headY;
+            math::Vec4 clip =
+                lastViewProj_.TransformVec4(math::Vec4(wp.x, wp.y, wp.z, 1.0f));
+            ScreenAnchor a;
+            a.entity = EntityKey(d.ent);
+            a.world = wp;
+            if (clip.w > 0.01f) {
+                const float nx = clip.x / clip.w, ny = clip.y / clip.w;
+                // Design-space (1280x720) coordinates: the same mapping the
+                // renderer's 2D overlay (and on_render) draws with.
+                a.x = (nx * 0.5f + 0.5f) * gfx::Renderer::kDesignWidth;
+                a.y = (0.5f - ny * 0.5f) * gfx::Renderer::kDesignHeight;
+                a.onscreen = nx >= -1.2f && nx <= 1.2f && ny >= -1.2f && ny <= 1.2f;
+            }
+            screenAnchors_.push_back(a);
+        }
+    }
     // P2-3: sprites render back-to-front by their sortOrder component (2D
     // games); 3D depth-tested meshes are unaffected by the stable order.
     drawOrder_.resize(draws_.size());
@@ -1868,7 +2132,18 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera,
         }
         flushBatches(); // keep relative order with non-batched draws
         if (item.skinned && item.skinned->Valid()) {
-            const std::vector<math::Mat4> bones = item.skinned->BoneMatrices();
+            std::vector<math::Mat4> bones;
+            if (item.animHasOverride && item.animClip) {
+                anim::Pose pose = item.skinned->skeleton.BindPose();
+                item.animClip->Sample(item.animTime, pose);
+                if (item.animFade > 0.0f && item.animFadeTotal > 0.0f &&
+                    item.animFromPose.t.size() == pose.t.size())
+                    pose.Lerp(item.animFromPose, pose,
+                              1.0f - item.animFade / item.animFadeTotal);
+                bones = item.skinned->skeleton.ComputeBoneMatrices(pose);
+            } else {
+                bones = item.skinned->BoneMatrices();
+            }
             for (const auto& part : item.skinned->parts)
                 renderer.DrawSkinnedMesh(part.mesh, part.material, model * part.localTransform,
                                          bones, static_cast<int>(bones.size()));
