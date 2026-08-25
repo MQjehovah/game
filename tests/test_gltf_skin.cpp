@@ -341,7 +341,8 @@ TEST(GltfSkinJointsWeights) {
     CHECK_EQ(weights.size(), 12u);
     if (joints.size() != 12u || weights.size() != 12u) return;
 
-    const uint16_t kJoints[3][4] = {{0, 1, 0, 1}, {1, 0, 1, 0}, {0, 0, 1, 1}};
+    // Remapped through skin.joints=[1,2] (raw joint 0 -> node 1, 1 -> 2).
+    const uint16_t kJoints[3][4] = {{1, 2, 1, 2}, {2, 1, 2, 1}, {1, 1, 2, 2}};
     const float kWeights[3][4] = {{0.5f, 0.5f, 0, 0}, {1, 0, 0, 0}, {0.25f, 0.25f, 0.25f, 0.25f}};
     for (int v = 0; v < 3; ++v) {
         for (int c = 0; c < 4; ++c) {
@@ -453,7 +454,11 @@ TEST(GltfSkinJointsU8) {
     CHECK_EQ(joints.size(), 12u);
     CHECK_EQ(weights.size(), 12u);
     if (joints.size() != 12u || weights.size() != 12u) return;
-    const uint16_t kJoints[3][4] = {{0, 1, 0, 1}, {1, 0, 1, 0}, {0, 0, 1, 1}};
+
+    // JOINTS_0 stores indices INTO skin.joints; the loader remaps them to the
+    // joint's node index (bone == node). skin.joints = [1, 2], so raw joint
+    // 0 -> node 1 and raw joint 1 -> node 2.
+    const uint16_t kJoints[3][4] = {{1, 2, 1, 2}, {2, 1, 2, 1}, {1, 1, 2, 2}};
     const float kWeights[3][4] = {{0.5f, 0.5f, 0, 0}, {1, 0, 0, 0}, {0.25f, 0.25f, 0.25f, 0.25f}};
     for (int v = 0; v < 3; ++v) {
         for (int c = 0; c < 4; ++c) {

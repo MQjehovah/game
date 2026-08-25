@@ -1161,9 +1161,11 @@ GltfAsset AssetManager::LoadGLTF(const std::string& path) {
                     // while the engine's bone array is indexed by glTF *node*
                     // (bone == node). Remap each vertex's joint id through the
                     // skin's joint table so it picks the right bone matrix.
+                    // NOTE: reads out.skins - the local `skins` vector was
+                    // std::move'd into `out` above and is empty here.
                     std::vector<uint16_t> jids = rm.jointIds;
-                    if (n.skin >= 0 && n.skin < static_cast<int>(skins.size())) {
-                        const gfx::Skin& sk = skins[static_cast<size_t>(n.skin)];
+                    if (n.skin >= 0 && n.skin < static_cast<int>(out.skins.size())) {
+                        const gfx::Skin& sk = out.skins[static_cast<size_t>(n.skin)];
                         for (uint16_t& ji : jids)
                             if (ji < sk.joints.size())
                                 ji = static_cast<uint16_t>(sk.joints[ji]);
