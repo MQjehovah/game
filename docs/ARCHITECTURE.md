@@ -238,3 +238,28 @@ OnRender：
 - **输入映射（Godot 式）**：`script::InputMap` 把动作名映射到按键（down/pressed/released/axis），内建默认（forward/strafe/vertical/jump/…）+ 项目 `input.json` 覆盖（打包时随 game.json 收集）；Lua 新增 `ActionDown/ActionPressed/ActionReleased/ActionAxis`，`InputAxis/InputKey` 优先查映射、未命中回退旧表，旧脚本零改动；编辑器"输入映射"面板可视化改键并写回 `input.json`。示例：`projects/neon_realm/input.json`（WASD/空格/1/2/F 全部动作化）。
 - **场景树（Godot 式）**：实体 `transform.parent`（按实体名引用）在 `Instantiate` 后解析为 `SceneParentLink`，`GameRuntime::LocalToWorld` 沿父链累乘 TRS 渲染（有界深度，未知父名拒绝场景）；编辑器"场景"面板改为按父分组的树形层级，行间拖拽即重新挂父、拖到空白取消父子，检查器提供"父实体"下拉，保存/加载/导出均携带 parent。
 - **信号系统 + 多场景**：`IScriptHost::CaptureStackFunction` 捕获绑定参数的函数值（支持局部/匿名闭包）；Lua `SignalConnect(name, fn)` / `SignalEmit(name, arg)` 按注册序调用（发射时快照）；`ChangeScene(path)` 延迟到 Tick 末尾重启运行时（避免 Lua 调用中销毁宿主），同一配置新世界——pvz 胜负后按 Enter 用其重开本关，构成"标题→关卡→结算"循环的数据驱动基础。
+
+## 7. 视口与坐标体系（渲染目标 / panel 视口 / 2D 设计单位）
+
+编辑器/播放器里"渲染窗口"要分两层概念，很多人（包括我们踩过的坑）混在一起：
+
+### 7.1 渲染目标 vs 渲染视口
+- **渲染目标（render target / framebuffer / HDR target）** = **整个窗口大小**。它是那张画布。
+- **渲染视口（rasterization viewport）** = 3D 场景**真正写入像素**的区域。编辑器里这就是 **dock/panel 矩形**（`viewportScreenRect_`）。
+- 所以"有效渲染区域 = panel 尺寸"，**不是整窗**。整窗只是目标，场景只画在 panel 那一块，外面是菜单栏/其他面板。
+- 实现：`renderer_.SetSceneViewport(x, y, w, h)` 把 panel 矩形（屏幕左上 y）交给后端；GL 后端 `SetViewport` 做 **y 翻转**（`glViewport(x, winH-(y+h), w, h)`，把左上原点转成 GL 的**左下原点**）。
+
+### 7.2 两套坐标
+1. **屏幕像素（screen pixels，`viewportScreenRect_`）**：GL 栅格化 + ImGuizmo `SetRect` 用的就是它。坐标原点在**左上**（ImGui 约定），传给 GL 时由后端翻成**左下**。
+2. **设计单位（design units，`viewportRect_`，1280x720）**：2D 游戏（PvZ/贪吃蛇）的**输入拾取**用设计坐标。经 `renderer_.ScreenToUI(screenPx)` 把屏幕像素转成 1280x720 设计坐标；`ToScreen` 是逆变换。游戏脚本 `InputMousePos()` 返回设计坐标。
+
+### 7.3 为什么之前相机/光源 gizmo 会偏移 ~80px
+- 相机/光源/导航/物理这些覆盖层用 `renderer_.DrawLines`（场景 3D 线）。
+- **根因不是坐标转换写错**，而是**绘制时机**：编辑器渲染循环先 `SetSceneViewport(panel)` → 画网格/线条 → 然后 `renderer_.ResetSceneViewport()`（复位成**整窗**）→ **之后**才调 `DrawDebugOverlay`。
+- 结果：`DrawDebugOverlay` 的线在**整窗视口**下栅格化，而 ImGuizmo/网格用 **panel 视口** → 差一条菜单栏 ≈ 80px。
+- 修复：把 `DrawDebugOverlay` 挪到 `ResetSceneViewport()` **之前**（panel 视口仍生效时），线条就画在 panel 里，和 ImGui 叠层（ImGuizmo）对齐。
+
+### 7.4 结论（别再删这套）
+- `SetSceneViewport` + GL 后端 y 翻转：**必须保留**（让场景画在 panel，并和 ImGui 叠层对正）。
+- `ScreenToUI` / `Set2DViewport` / `viewportRect_`：**必须保留**（2D 游戏设计坐标输入）。
+- gizmo 对齐靠的是**把覆盖层画在正确的视口/投影下**（ImGuizmo 用 panel 的 view/proj/rect；场景线要在 panel 视口生效时画），**不是删除某个转换**。
