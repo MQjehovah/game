@@ -4594,6 +4594,29 @@ void EditorApp::AddEntity(const std::string& meshKey) {
     static int counter = 1;
     math::Vec3 pos = camTarget_ + math::Vec3{0, 1.0f, -3.0f};
     std::string name;
+    if (meshKey == "camera") {
+        SceneEntity e;
+        e.name = "相机" + std::to_string(counter++);
+        e.nodeType = "Camera3D";
+        e.pos = pos;
+        e.cameraFov = 60.0f;
+        const size_t insertAt = entities_.size();
+        history_.Push(std::make_unique<AddEntityCommand>(&entities_, e, insertAt));
+        SetSelection(static_cast<int>(entities_.size()) - 1);
+        return;
+    }
+    if (meshKey == "light:directional") {
+        SceneEntity e;
+        e.name = "方向光" + std::to_string(counter++);
+        e.nodeType = "Light3D";
+        e.hasLight = true;
+        e.light.type = "directional";
+        e.pos = pos;
+        const size_t insertAt = entities_.size();
+        history_.Push(std::make_unique<AddEntityCommand>(&entities_, e, insertAt));
+        SetSelection(static_cast<int>(entities_.size()) - 1);
+        return;
+    }
     if (meshKey.rfind("prefab:", 0) == 0) {
         // Instantiate a project prefab (prefabs/<name>.json): materialize its
         // component template into a new editable entity.

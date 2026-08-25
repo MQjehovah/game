@@ -576,18 +576,19 @@ void EditorApp::BuildScenePanel() {
         // Unity-style: only primitive geometry is created from the toolbar.
         // Helmet / tree / house etc. are resource objects and are dragged in
         // from the 资源 panel (or double-clicked there).
-        const char* types[] = {"地形", "方块", "球体", "平面"};
+        const char* types[] = {"地形", "方块", "球体", "平面", "相机", "方向光"};
         ImGui::SetNextItemWidth(86.0f);
-        ImGui::Combo("##addtype", &addType, types, 4);
+        ImGui::Combo("##addtype", &addType, types, 6);
         ImGui::SameLine();
         if (ImGui::Button("添加")) {
-            const char* keys[] = {"terrain", "cube", "sphere", "plane"};
+            const char* keys[] = {"terrain", "cube", "sphere", "plane",
+                                  "camera", "light:directional"};
             AddEntity(keys[addType]);
         }
         ImGui::SameLine();
-        ImGui::TextDisabled("(模型资源请从 资源 面板拖入)");
+        ImGui::Button("?");
         if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("头盔/松树/房屋等模型资源:在 资源 面板双击导入,或直接拖拽到本面板添加");
+            ImGui::SetTooltip("模型资源(头盔/松树/房屋等)从 资源 面板双击导入或拖入");
         ImGui::SameLine();
         {
             static int prefabSel = 0;
