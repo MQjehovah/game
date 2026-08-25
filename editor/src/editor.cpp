@@ -2306,23 +2306,6 @@ gfx::Camera EditorApp::ActiveCamera() const {
             return cam;
         }
     }
-    // 2D WYSIWYG: the scene's Camera3D object IS the game view, so the editor
-    // tracks it by default (edit == runtime). A manual pan/zoom keeps the free
-    // camera so the user can still work outside the framed area.
-    if (!cameraUserAdjusted_ &&
-        (editMode_ == EditMode::Scene2D || projectMode_ == "2d")) {
-        for (const SceneEntity& se : entities_) {
-            if (se.nodeType != "Camera3D") continue;
-            gfx::Camera cam;
-            cam.position = se.pos;
-            cam.target = se.pos + se.rot.Rotate({0.0f, 0.0f, -1.0f});
-            cam.up = {0.0f, 1.0f, 0.0f};
-            cam.ortho = se.cameraOrtho;
-            cam.orthoSize = se.cameraOrthoSize;
-            cam.fovY = se.cameraFov * math::kDegToRad;
-            return cam;
-        }
-    }
     gfx::Camera cam;
     switch (viewCam_) {
         case ViewCam::Top: // 顶视: orthographic looking down -Y
