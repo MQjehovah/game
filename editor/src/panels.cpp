@@ -1572,7 +1572,7 @@ void EditorApp::BuildInspectorPanel() {
                 EditTransformCommand::kPos));
         }
         math::Vec3 euler = e.rot.ToMat4().TransformDir({0, 0, -1});
-        float rotDeg = std::atan2(euler.x, euler.z) * math::kRadToDeg;
+        float rotDeg = std::atan2(euler.x, -euler.z) * math::kRadToDeg;
         const math::Quat oldRot = e.rot;
         if (ImGui::DragFloat("旋转 Y", &rotDeg, 0.5f, -180.0f, 180.0f)) {
             e.rot = math::Quat::FromEuler(0, rotDeg * math::kDegToRad, 0);
