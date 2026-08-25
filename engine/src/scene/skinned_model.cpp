@@ -168,7 +168,15 @@ core::Result<SkinnedModel> LoadSkinnedModel(assets::AssetManager& assets,
         std::vector<uint32_t> jointNodes;
         if (skinIndex >= 0 && skinIndex < static_cast<int>(gltf.skins.size()))
             jointNodes = gltf.skins[static_cast<size_t>(skinIndex)].joints;
-        EnsureValidSkinBind(out.skeleton, jointNodes);
+        // glTF skinning does NOT require bind-pose identity
+        // (global(joint) * IBM == I): an asset may store a node REST pose
+        // that differs from the bind pose its IBMs were exported against
+        // (the Blender wolf rig does this by 2.0). Rewriting the IBMs to
+        // inverse(node-REST) - the old "FixSkinBind" - breaks assets whose
+        // animation keys are authored against the ORIGINAL global chain,
+        // twisting limbs. The spec formula (global * IBM as authored) is
+        // correct for both cases; just use the file's IBMs verbatim.
+        (void)jointNodes;
     }
     for (const assets::GltfMeshNode& n : gltf.nodes) {
         if (!n.mesh.Skinned()) continue; // skip unskinned decorative nodes

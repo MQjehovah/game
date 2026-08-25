@@ -1149,29 +1149,40 @@ GltfAsset AssetManager::LoadGLTF(const std::string& path) {
         const NodeInfo& n = nodes[static_cast<size_t>(idx)];
         math::Mat4 world = parent * n.transform;
         if (n.mesh >= 0 && n.mesh < static_cast<int>(rawMeshes.size())) {
-            const RawMesh& rm = rawMeshes[static_cast<size_t>(n.mesh)];
+            RawMesh& rm = rawMeshes[static_cast<size_t>(n.mesh)];
+            // glTF spec: JOINTS_0 stores indices *into* skin.joints, while the
+            // engine's bone array is indexed by glTF *node* (bone == node).
+            // Remap each vertex's joint id through the skin's joint table so
+            // it picks the right bone matrix. This runs BEFORE CreateFromData
+            // so the GPU vertex buffer carries the remapped ids too - the
+            // skinned shader reads aJointIds straight from the VBO, and
+            // AttachSkinData only updates the CPU-side copy.
+            // NOTE: reads out.skins - the local `skins` vector was
+            // std::move'd into `out` above and is empty here.
+            std::vector<uint16_t> jids;
+            if (rm.skinned) {
+                jids = rm.jointIds;
+                if (n.skin >= 0 && n.skin < static_cast<int>(out.skins.size())) {
+                    const gfx::Skin& sk = out.skins[static_cast<size_t>(n.skin)];
+                    for (uint16_t& ji : jids)
+                        if (ji < sk.joints.size())
+                            ji = static_cast<uint16_t>(sk.joints[ji]);
+                    // Mirror the remap into the vertex payload (GPU source).
+                    for (size_t vi = 0; vi < rm.verts.size() && vi * 4 + 3 < jids.size();
+                         ++vi)
+                        for (int c = 0; c < 4; ++c)
+                            rm.verts[vi].j[c] =
+                                static_cast<float>(jids[vi * 4 + c]);
+                }
+            }
             gfx::Mesh mesh = gfx::Mesh::CreateFromData(*renderer_, rm.verts.data(),
                                                        static_cast<uint32_t>(rm.verts.size()),
                                                        rm.indices.data(),
                                                        static_cast<uint32_t>(rm.indices.size()),
                                                        "gltf");
             if (mesh.Valid()) {
-                if (rm.skinned) {
-                    // glTF spec: JOINTS_0 stores indices *into* skin.joints,
-                    // while the engine's bone array is indexed by glTF *node*
-                    // (bone == node). Remap each vertex's joint id through the
-                    // skin's joint table so it picks the right bone matrix.
-                    // NOTE: reads out.skins - the local `skins` vector was
-                    // std::move'd into `out` above and is empty here.
-                    std::vector<uint16_t> jids = rm.jointIds;
-                    if (n.skin >= 0 && n.skin < static_cast<int>(out.skins.size())) {
-                        const gfx::Skin& sk = out.skins[static_cast<size_t>(n.skin)];
-                        for (uint16_t& ji : jids)
-                            if (ji < sk.joints.size())
-                                ji = static_cast<uint16_t>(sk.joints[ji]);
-                    }
+                if (rm.skinned)
                     mesh.AttachSkinData(std::move(jids), rm.jointWeights, n.skin);
-                }
                 // Track under a per-node key so AssetManager::Stats() counts
                 // glTF meshes in the resource panel (meshes_ otherwise only
                 // holds OBJ meshes). Re-parsing the file re-inserts the key.

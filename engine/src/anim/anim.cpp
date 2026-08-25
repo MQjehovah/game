@@ -104,6 +104,22 @@ void Pose::Lerp(const Pose& a, const Pose& b, float alpha) {
     }
 }
 
+namespace {
+// Local TRS of bone i from the pose (or the bind pose when not pose-sized).
+math::Mat4 LocalFrom(const Pose& pose, bool poseSized, size_t i,
+                     const std::vector<Bone>& bones) {
+    math::Vec3 t = bones[i].bindT;
+    math::Quat r = bones[i].bindR;
+    math::Vec3 s = bones[i].bindS;
+    if (poseSized) {
+        t = pose.t[i];
+        r = pose.r[i];
+        s = pose.s[i];
+    }
+    return math::Mat4::Translation(t) * r.ToMat4() * math::Mat4::Scale(s);
+}
+} // namespace
+
 int Skeleton::FindBone(const std::string& name) const {
     for (size_t i = 0; i < bones.size(); ++i) {
         if (bones[i].name == name) return static_cast<int>(i);
@@ -127,21 +143,35 @@ std::vector<math::Mat4> Skeleton::ComputeBoneMatrices(const Pose& pose) const {
     bool poseSized = pose.t.size() == n && pose.r.size() == n && pose.s.size() == n;
     std::vector<math::Mat4> skinning(n);
     std::vector<math::Mat4> world(n);
+    // Order-independent parent resolution: glTF does not require parents to
+    // precede children in the node table (the Blender wolf rig lists child
+    // joints before their parents), so a single forward pass would read a
+    // not-yet-computed parent world as identity and break the chain. Iterate
+    // until every bone is resolved (same pattern as FixSkinBind).
+    std::vector<bool> done(n, false);
     for (size_t i = 0; i < n; ++i) {
         const Bone& b = bones[i];
-        math::Vec3 t = b.bindT;
-        math::Quat r = b.bindR;
-        math::Vec3 s = b.bindS;
-        if (poseSized) {
-            t = pose.t[i];
-            r = pose.r[i];
-            s = pose.s[i];
+        if (b.parent < 0 || static_cast<size_t>(b.parent) >= n) {
+            world[i] = LocalFrom(pose, poseSized, i, bones);
+            done[i] = true;
         }
-        math::Mat4 local = math::Mat4::Translation(t) * r.ToMat4() * math::Mat4::Scale(s);
-        world[i] = (b.parent >= 0 && static_cast<size_t>(b.parent) < n)
-                       ? world[static_cast<size_t>(b.parent)] * local
-                       : local;
     }
+    bool changed = true;
+    while (changed) {
+        changed = false;
+        for (size_t i = 0; i < n; ++i) {
+            if (done[i]) continue;
+            const Bone& b = bones[i];
+            const size_t p = static_cast<size_t>(b.parent);
+            if (!done[p]) continue;
+            world[i] = world[p] * LocalFrom(pose, poseSized, i, bones);
+            done[i] = true;
+            changed = true;
+        }
+    }
+    // Cycle / missing parent fallback: local-only (matches the old behavior).
+    for (size_t i = 0; i < n; ++i)
+        if (!done[i]) world[i] = LocalFrom(pose, poseSized, i, bones);
     for (size_t i = 0; i < n; ++i) skinning[i] = world[i] * bones[i].inverseBind;
     return skinning;
 }
