@@ -1677,7 +1677,16 @@ void EditorApp::OnRender() {
         // backfaces and shadowed areas were crushed to black (roofs looked
         // incomplete, shadows harsh). A bright sky keeps shadows readable.
         renderer_.SetSky({0.28f, 0.38f, 0.58f, 1.0f}, {0.55f, 0.65f, 0.8f, 1.0f});
-        renderer_.SetFog({0.45f, 0.55f, 0.7f, 1.0f}, 60.0f, 140.0f);
+        const bool is2DFog = projectMode_ == "2d" || editMode_ == EditMode::Scene2D;
+        if (is2DFog) {
+            // 2D has no depth: the ortho camera sits at z=100 so a distance
+            // fog would paint a radial gradient centred on the camera axis
+            // (bright/dim circle at the camera position). Disable it by pushing
+            // the fog range far beyond any visible object.
+            renderer_.SetFog({0.45f, 0.55f, 0.7f, 1.0f}, 1e9f, 1e10f);
+        } else {
+            renderer_.SetFog({0.45f, 0.55f, 0.7f, 1.0f}, 60.0f, 140.0f);
+        }
         renderer_.DrawSky();
 
         const float aspect = ViewportAspect();
@@ -1759,12 +1768,29 @@ void EditorApp::OnRender() {
             // frame). Lock the play camera to the design rect instead.
             gfx::Camera playCam = cam;
             if (projectMode_ == "2d" || editMode_ == EditMode::Scene2D) {
-                playCam.position = {640.0f, 360.0f, 100.0f};
-                playCam.target = {640.0f, 360.0f, 0.0f};
-                playCam.up = {0.0f, 1.0f, 0.0f};
-                playCam.ortho = true;
-                playCam.orthoSize = 360.0f; // half the 720 design height
-                playCam.fovY = 60.0f * math::kDegToRad;
+                // Unity-style: the scene's Camera3D object defines the runtime
+                // camera (position/orientation/ortho size). Fall back to a
+                // locked design-space rect only when the scene has no camera.
+                const SceneEntity* camEnt = nullptr;
+                for (const SceneEntity& se : entities_) {
+                    if (se.nodeType == "Camera3D") { camEnt = &se; break; }
+                }
+                if (camEnt) {
+                    playCam = gfx::Camera{};
+                    playCam.position = camEnt->pos;
+                    playCam.target = camEnt->pos + camEnt->rot.Rotate({0.0f, 0.0f, -1.0f});
+                    playCam.up = {0.0f, 1.0f, 0.0f};
+                    playCam.ortho = camEnt->cameraOrtho;
+                    playCam.orthoSize = camEnt->cameraOrthoSize;
+                    playCam.fovY = camEnt->cameraFov * math::kDegToRad;
+                } else {
+                    playCam.position = {640.0f, 360.0f, 100.0f};
+                    playCam.target = {640.0f, 360.0f, 0.0f};
+                    playCam.up = {0.0f, 1.0f, 0.0f};
+                    playCam.ortho = true;
+                    playCam.orthoSize = 360.0f; // half the 720 design height
+                    playCam.fovY = 60.0f * math::kDegToRad;
+                }
             }
             playtest_->Draw(renderer_, playCam);
             // Physics debug view: wireframe every collider so the collision
@@ -2272,6 +2298,7 @@ gfx::Camera EditorApp::ActiveCamera() const {
             cam.target = e.pos + e.rot.Rotate({0, 0, -1});
             cam.up = {0, 1, 0};
             cam.ortho = e.cameraOrtho;
+            cam.orthoSize = e.cameraOrthoSize;
             cam.fovY = e.cameraFov * math::kDegToRad;
             return cam;
         }
