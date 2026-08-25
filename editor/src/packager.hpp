@@ -52,6 +52,9 @@ struct PackageReport {
     std::string installPath;   // P2-5: "<outDir>/install.bat" ("" when not written)
     size_t fileCount = 0;
     size_t bytesWritten = 0;
+    // G8-4 incremental packing: true when the previous run's per-file content
+    // hashes matched exactly, so game.pack was kept instead of rebuilt.
+    bool unchanged = false;
 };
 
 struct PackConfig {
@@ -64,6 +67,9 @@ struct PackConfig {
     // and the generated update.bat ("" disables the auto-update script).
     std::string version = "0.1.0";
     std::string updateUrl;
+    // G8-4: when true, skip the unchanged-content check and always rebuild
+    // game.pack (used by explicit "rebuild" actions / tests).
+    bool force = false;
 };
 
 // Validation pass only: loads game.json, parses scenes/prefabs/behaviors and

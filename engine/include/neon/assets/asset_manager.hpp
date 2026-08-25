@@ -11,6 +11,7 @@
 #include "neon/gfx/mesh.hpp"
 #include "neon/gfx/renderer.hpp"
 #include "neon/gfx/texture.hpp"
+#include "neon/io/vfs.hpp"
 #include "neon/math/quat.hpp"
 
 namespace neon::assets {
@@ -117,6 +118,12 @@ public:
     gfx::Texture LoadTexture(const std::string& path);
     // Compression-aware overload; see TextureLoadOptions.
     gfx::Texture LoadTexture(const std::string& path, const TextureLoadOptions& opts);
+    // G7-1: optional read-only file system (VFS mount stack). When set, every
+    // asset read (textures, fonts, OBJ/MTL, glTF + embedded buffers) goes
+    // through this layer (pack container + Mod overlays); when null (default)
+    // reads fall back to the real filesystem exactly as before.
+    void SetFileSystem(neon::io::IFileSystem* fs) { fs_ = fs; }
+    neon::io::IFileSystem* FileSystem() const { return fs_; }
     // Cache key that distinguishes load options (flip / wrap) so a texture
     // loaded with different settings never shares a stale entry.
     static std::string TextureCacheKey(const std::string& path,
@@ -248,6 +255,7 @@ private:
     };
     std::map<std::string, uint32_t> textureRefs_;
     std::map<std::string, uint32_t> meshRefs_;
+    neon::io::IFileSystem* fs_ = nullptr;
     std::vector<RetiredTexture> retiredTextures_;
     std::vector<RetiredMesh> retiredMeshes_;
     uint64_t pumpFrame_ = 0;

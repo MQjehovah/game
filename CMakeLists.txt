@@ -37,6 +37,8 @@ set(ENGINE_CORE_SOURCES
   engine/src/core/profiler.cpp
   engine/src/ecs/world.cpp
   engine/src/ecs/parallel.cpp
+  engine/src/ecs/task_graph.cpp
+  engine/src/io/vfs.cpp
   engine/src/core/json.cpp
   engine/src/core/localization.cpp
   engine/src/core/serialize.cpp
@@ -491,8 +493,10 @@ endif()
 add_executable(neon_tests tests/test_main.cpp tests/test_serialize.cpp tests/test_pack.cpp
   tests/test_physics.cpp tests/test_protocol.cpp tests/test_obj.cpp tests/test_gltf.cpp tests/test_json.cpp
   tests/test_ui_document.cpp
+  tests/test_vfs.cpp
   tests/test_bvh.cpp
   tests/test_profiler.cpp
+  tests/test_task_graph.cpp
   tests/test_script.cpp tests/test_script_bindings.cpp tests/test_script_determinism.cpp
   ${NEON_JS_TEST}
   tests/test_plugin.cpp

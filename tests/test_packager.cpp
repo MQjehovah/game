@@ -507,3 +507,93 @@ TEST(PackagerSceneBomTolerated) {
     CHECK(r.ok);
     CHECK(r.errors.empty());
 }
+
+// G8-4 incremental packing: an unchanged project is detected via the per-file
+// content-hash manifest and game.pack is kept (not rewritten).
+TEST(PackagerIncrementalSkipsUnchanged) {
+    test::TempDir tmp;
+    const std::string proj = tmp.Str();
+    BuildSampleProject(proj);
+    PackConfig cfg = DefaultCfg(proj, proj + "/out");
+    cfg.version = "0.1.0";
+
+    PackageReport first = PackProject(cfg);
+    CHECK(first.ok);
+    CHECK(!first.unchanged);
+    std::string pack1;
+    CHECK(test::ReadFileAll(proj + "/out/game.pack", pack1));
+    std::string manifest;
+    CHECK(test::ReadFileAll(proj + "/out/pack_manifest.json", manifest));
+    CHECK(manifest.find("wood.png") != std::string::npos);
+
+    // Second run with identical inputs: skipped, and the pack on disk is the
+    // same byte stream (kept, not rebuilt).
+    PackageReport second = PackProject(cfg);
+    CHECK(second.ok);
+    CHECK(second.unchanged);
+    CHECK(second.errors.empty());
+    std::string pack2;
+    CHECK(test::ReadFileAll(proj + "/out/game.pack", pack2));
+    CHECK(pack1 == pack2);
+}
+
+// Changing any packed file's content invalidates the manifest and rebuilds.
+TEST(PackagerIncrementalRebuildsOnChange) {
+    test::TempDir tmp;
+    const std::string proj = tmp.Str();
+    BuildSampleProject(proj);
+    PackConfig cfg = DefaultCfg(proj, proj + "/out");
+
+    PackageReport first = PackProject(cfg);
+    CHECK(first.ok);
+    CHECK(!first.unchanged);
+    std::string pack1;
+    CHECK(test::ReadFileAll(proj + "/out/game.pack", pack1));
+
+    Write(proj + "/assets/wood.png", "different texture bytes");
+    PackageReport second = PackProject(cfg);
+    CHECK(second.ok);
+    CHECK(!second.unchanged);
+    std::string pack2;
+    CHECK(test::ReadFileAll(proj + "/out/game.pack", pack2));
+    CHECK(pack1 != pack2);
+
+    // And a third run is unchanged again (manifest re-synced).
+    PackageReport third = PackProject(cfg);
+    CHECK(third.ok);
+    CHECK(third.unchanged);
+}
+
+// A version bump forces a rebuild even when file content is identical.
+TEST(PackagerIncrementalVersionChangeRebuilds) {
+    test::TempDir tmp;
+    const std::string proj = tmp.Str();
+    BuildSampleProject(proj);
+    PackConfig cfg = DefaultCfg(proj, proj + "/out");
+    cfg.version = "0.1.0";
+    CHECK(PackProject(cfg).ok);
+
+    cfg.version = "0.2.0";
+    PackageReport bumped = PackProject(cfg);
+    CHECK(bumped.ok);
+    CHECK(!bumped.unchanged);
+
+    // Back to the recorded version: unchanged again.
+    cfg.version = "0.2.0";
+    PackageReport again = PackProject(cfg);
+    CHECK(again.ok);
+    CHECK(again.unchanged);
+}
+
+// force=true bypasses the unchanged check (explicit rebuild action).
+TEST(PackagerIncrementalForceRebuilds) {
+    test::TempDir tmp;
+    const std::string proj = tmp.Str();
+    BuildSampleProject(proj);
+    PackConfig cfg = DefaultCfg(proj, proj + "/out");
+    CHECK(PackProject(cfg).ok);
+    cfg.force = true;
+    PackageReport forced = PackProject(cfg);
+    CHECK(forced.ok);
+    CHECK(!forced.unchanged);
+}

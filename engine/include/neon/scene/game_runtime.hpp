@@ -129,6 +129,19 @@ public:
     bool Running() const { return running_; }
     ecs::World& World() { return world_; }
     script::GameVars& GameVars() { return scriptCtx_.gameVars; }
+    // G1-3 scene-tree API: direct children / all descendants of an entity
+    // (via the resolved SceneParentLink graph). O(n) per call; intended for
+    // tooling, queries and tests, not per-frame hot paths.
+    std::vector<ecs::Entity> GetChildren(ecs::Entity parent) const;
+    std::vector<ecs::Entity> GetDescendants(ecs::Entity root) const;
+    // G1-3 world-transform cache: rebuilds the parent-before-child pass from
+    // the current tree (arbitrary depth, no 8-level cap). Call after any
+    // transform-affecting mutation and before reads that need world matrices;
+    // GameRuntime::Draw does this automatically every frame.
+    void RebuildWorldTransforms();
+    // World matrix from the cache (identity when unknown / no transform).
+    // Prefer over LocalToWorld inside a frame after RebuildWorldTransforms().
+    math::Mat4 CachedLocalToWorld(ecs::Entity e) const;
     // HUD helpers: finds a named scene entity (e.g. the hero) and reads its
     // health, plus a numeric GameVar read (0 when unset / non-numeric).
     ecs::Entity FindNamedEntity(const std::string& name);
@@ -406,6 +419,9 @@ private:
     };
     std::vector<DrawBatch> drawBatches_;
     std::vector<math::Mat4> batchModels_;
+    // G1-3 world-transform cache (EntityKey -> world matrix), rebuilt by
+    // RebuildWorldTransforms() and consumed by CachedLocalToWorld / Draw.
+    std::unordered_map<uint64_t, math::Mat4> worldTransforms_;
     // G1-2 spatial index: per-frame BVH over batchable draw items, used to
     // pre-cull the camera frustum before instanced draws (id = draw index).
     math::Bvh drawBvh_;

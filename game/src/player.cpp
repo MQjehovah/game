@@ -8,6 +8,7 @@
 
 #include "font_data.hpp"
 #include "neon/core/pack.hpp"
+#include "neon/io/vfs.hpp"
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
@@ -38,6 +39,15 @@ bool ReadFileAll(const std::string& path, std::string& out) {
     if (!in.is_open()) return false;
     out.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
     return !in.bad();
+}
+
+bool FileExists(const std::string& path) {
+#if defined(_WIN32)
+    return GetFileAttributesA(path.c_str()) != INVALID_FILE_ATTRIBUTES;
+#else
+    struct stat st;
+    return ::stat(path.c_str(), &st) == 0;
+#endif
 }
 
 // Strips a leading UTF-8 BOM (EF BB BF), which Windows editors and PowerShell
@@ -132,6 +142,51 @@ void RemoveTree(const std::string& dir) {
 #endif
 }
 
+// Recursive copy of `from` into `to` (directories merged, files overwritten;
+// Mod overlay semantics: later copies win).
+void CopyTree(const std::string& from, const std::string& to) {
+#if defined(_WIN32)
+    CreateDirectoryA(to.c_str(), nullptr);
+    const std::string pattern = from + "\\*";
+    WIN32_FIND_DATAA fd;
+    HANDLE h = FindFirstFileA(pattern.c_str(), &fd);
+    if (h == INVALID_HANDLE_VALUE) return;
+    do {
+        if (fd.cFileName[0] == '.' &&
+            (fd.cFileName[1] == '\0' || (fd.cFileName[1] == '.' && fd.cFileName[2] == '\0')))
+            continue;
+        const std::string src = from + "\\" + fd.cFileName;
+        const std::string dst = to + "\\" + fd.cFileName;
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+            CopyTree(src, dst);
+        else
+            CopyFileA(src.c_str(), dst.c_str(), FALSE); // overwrite: mod wins
+    } while (FindNextFileA(h, &fd));
+    FindClose(h);
+#else
+    ::mkdir(to.c_str(), 0777);
+    DIR* d = ::opendir(from.c_str());
+    if (!d) return;
+    struct dirent* e;
+    while ((e = ::readdir(d)) != nullptr) {
+        if (e->d_name[0] == '.' &&
+            (e->d_name[1] == '\0' || (e->d_name[1] == '.' && e->d_name[2] == '\0')))
+            continue;
+        const std::string src = from + "/" + e->d_name;
+        const std::string dst = to + "/" + e->d_name;
+        struct stat st;
+        if (::lstat(src.c_str(), &st) == 0 && S_ISDIR(st.st_mode))
+            CopyTree(src, dst);
+        else {
+            std::ifstream in(src, std::ios::binary);
+            std::ofstream out(dst, std::ios::binary);
+            out << in.rdbuf();
+        }
+    }
+    ::closedir(d);
+#endif
+}
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -139,7 +194,8 @@ void RemoveTree(const std::string& dir) {
 // the manifest can drive window size/title).
 // ---------------------------------------------------------------------------
 
-core::Result<PackBoot> BootPack(const std::string& packPath) {
+core::Result<PackBoot> BootPack(const std::string& packPath,
+                                const std::vector<std::string>& modDirs) {
     if (packPath.empty()) return core::Result<PackBoot>::Err("player: no --pack file given");
 
     std::string bytes;
@@ -174,11 +230,27 @@ core::Result<PackBoot> BootPack(const std::string& packPath) {
         return core::Result<PackBoot>::Err("player: bad manifest: " + res.Error());
     }
 
+    // G7-1: mount the pack + each Mod directory (later mods win) for asset
+    // reads, and overlay the Mod files onto the unpacked tree so scripts,
+    // prefabs and locales also see Mod overrides.
+    auto vfs = std::make_shared<neon::io::MountStack>();
+    vfs->Mount(std::make_shared<neon::io::PackFileSystem>(std::move(buf)));
+    for (const std::string& modDir : modDirs) {
+        if (!modDir.empty() && FileExists(modDir)) {
+            vfs->Mount(std::make_shared<neon::io::DiskFileSystem>(modDir));
+            CopyTree(modDir, unpackedDir);
+            NEON_LOG_INFO("player: mounted mod '%s' over the base pack", modDir.c_str());
+        } else {
+            NEON_LOG_WARN("player: mod dir '%s' not found; skipped", modDir.c_str());
+        }
+    }
+
     NEON_LOG_INFO("player: unpacked %zu files to '%s'", reader.FileCount(),
                   unpackedDir.c_str());
     PackBoot boot;
     boot.unpackedDir = std::move(unpackedDir);
     boot.manifest = res.Value();
+    boot.vfs = std::move(vfs);
     return core::Result<PackBoot>::Ok(std::move(boot));
 }
 
@@ -196,6 +268,8 @@ bool PlayerApp::OnCreate() {
         return false;
     }
     assetMgr_.Init(&renderer_);
+    // G7-1: asset reads go through the pack + Mod mount stack when present.
+    if (cfg_.vfs) assetMgr_.SetFileSystem(cfg_.vfs.get());
     // Overlay font: embedded ASCII pixel font, upgraded with the system CJK
     // font when available so "Esc 退出" renders (fallback keeps ASCII labels).
     pixelFont_ = renderer_.CreateFontFromMemory(neon_rush::kEmbeddedFontData,
@@ -212,7 +286,10 @@ bool PlayerApp::OnCreate() {
 #endif
     rcfg.scriptBaseDir = cfg_.unpackedDir; // scripts/ + behaviors/ resolve here
     if (!cfg_.looseScenePath.empty()) rcfg.scriptBaseDir = cfg_.scriptsDir;
-    rcfg.assetBaseDir = cfg_.unpackedDir;  // obj:/gltf:/texture paths resolve here
+    // With a VFS installed (pack + Mods), asset paths stay RELATIVE so the
+    // mount stack resolves them (pack-relative keys); without one they resolve
+    // against the unpacked dir as before.
+    rcfg.assetBaseDir = cfg_.vfs ? std::string() : cfg_.unpackedDir;
     // The runtime reads input through ClientInput (a transparent bridge to the
     // real input; SetForceMove synthesizes W for the --ticks smoke run). The
     // same bridge feeds the MsgInput builder, so prediction and the

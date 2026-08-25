@@ -56,14 +56,35 @@ uint64_t FileMTime(const std::string& path) {
 // (gray+alpha / RGBA): BC1 has no alpha, so only opaque images are compressed.
 // Alpha images stay RGBA8.
 //
+// G7-1: whole-file read through the optional VFS layer, falling back to the
+// real filesystem when no layer is set. Returns Err on missing/unreadable.
+core::Result<std::vector<uint8_t>> ReadAllBytes(neon::io::IFileSystem* fs,
+                                                const std::string& path) {
+    if (fs) return fs->ReadFile(path);
+    std::ifstream in(path, std::ios::binary | std::ios::ate);
+    if (!in.is_open()) return core::Result<std::vector<uint8_t>>::Err("cannot open");
+    const std::streamsize size = in.tellg();
+    if (size < 0) return core::Result<std::vector<uint8_t>>::Err("cannot size");
+    in.seekg(0, std::ios::beg);
+    std::vector<uint8_t> bytes(static_cast<size_t>(size));
+    if (size > 0) in.read(reinterpret_cast<char*>(bytes.data()), size);
+    if (in.bad()) return core::Result<std::vector<uint8_t>>::Err("read failed");
+    return core::Result<std::vector<uint8_t>>::Ok(std::move(bytes));
+}
+
 // The produced RGBA8 pixels are byte-identical to the old
 // stbi_load(path, &w, &h, &ch, 4) path: stb_image expands gray->RGB->RGBA with
 // the same replication and alpha=255.
-DecodedImage DecodeImageFile(const std::string& path, bool compressBc1, bool flipVertically) {
+// Pure decode of already-read image bytes (stbi_load_from_memory, native
+// channel count) + optional BC1. Shared by DecodeImageFile (disk) and the
+// AssetManager VFS path (G7-1).
+DecodedImage DecodeImageBytes(const std::vector<uint8_t>& bytes, bool compressBc1,
+                              bool flipVertically) {
     DecodedImage img;
     int w = 0, h = 0, channels = 0;
     if (flipVertically) stbi_set_flip_vertically_on_load(1);
-    unsigned char* data = stbi_load(path.c_str(), &w, &h, &channels, 0);
+    unsigned char* data =
+        stbi_load_from_memory(bytes.data(), static_cast<int>(bytes.size()), &w, &h, &channels, 0);
     if (flipVertically) stbi_set_flip_vertically_on_load(0);
     if (!data) return img;
     img.width = w;
@@ -106,12 +127,19 @@ DecodedImage DecodeImageFile(const std::string& path, bool compressBc1, bool fli
     return img;
 }
 
+DecodedImage DecodeImageFile(const std::string& path, bool compressBc1, bool flipVertically) {
+    const core::Result<std::vector<uint8_t>> bytes = ReadAllBytes(nullptr, path);
+    if (!bytes.Ok()) return {};
+    return DecodeImageBytes(bytes.Value(), compressBc1, flipVertically);
+}
+
 namespace {
 
-void LoadMaterialColors(const std::string& mtlPath,
+void LoadMaterialColors(neon::io::IFileSystem* fs, const std::string& mtlPath,
                         std::map<std::string, math::Vec4>& out) {
-    std::ifstream in(mtlPath);
-    if (!in.is_open()) return;
+    const core::Result<std::vector<uint8_t>> bytes = ReadAllBytes(fs, mtlPath);
+    if (!bytes.Ok()) return;
+    std::istringstream in(std::string(bytes.Value().begin(), bytes.Value().end()));
     std::string line;
     std::string current;
     while (std::getline(in, line)) {
@@ -228,6 +256,11 @@ AssetManager::~AssetManager() {
 DecodedImage AssetManager::DecodeImage(const std::string& path, const TextureLoadOptions& opts,
                                        bool compressed) {
     if (decodeFn_) return decodeFn_(path, opts);
+    if (fs_) {
+        const core::Result<std::vector<uint8_t>> bytes = ReadAllBytes(fs_, path);
+        if (!bytes.Ok()) return {};
+        return DecodeImageBytes(bytes.Value(), compressed, opts.flipVertically);
+    }
     return DecodeImageFile(path, compressed, opts.flipVertically);
 }
 
@@ -401,11 +434,12 @@ gfx::Mesh AssetManager::LoadMeshOBJ(const std::string& path) {
         return cached->second;
     }
 
-    std::ifstream in(path);
-    if (!in.is_open()) {
+    const core::Result<std::vector<uint8_t>> fileBytes = ReadAllBytes(fs_, path);
+    if (!fileBytes.Ok()) {
         NEON_LOG_ERROR("Asset: failed to open OBJ '%s'", path.c_str());
         return {};
     }
+    std::istringstream in(std::string(fileBytes.Value().begin(), fileBytes.Value().end()));
 
     std::vector<math::Vec3> positions;
     std::vector<math::Vec3> normals;
@@ -423,7 +457,7 @@ gfx::Mesh AssetManager::LoadMeshOBJ(const std::string& path) {
         if (kind == "mtllib") {
             std::string mtlFile;
             ss >> mtlFile;
-            LoadMaterialColors(DirName(path) + mtlFile, materialColors);
+            LoadMaterialColors(fs_, DirName(path) + mtlFile, materialColors);
         } else if (kind == "usemtl") {
             ss >> currentMaterial;
         } else if (kind == "v") {
@@ -517,13 +551,12 @@ gfx::Mesh AssetManager::LoadMeshOBJ(const std::string& path) {
 }
 
 GltfAsset AssetManager::LoadGLTF(const std::string& path) {
-    std::ifstream in(path);
-    if (!in.is_open()) {
+    const core::Result<std::vector<uint8_t>> fileBytes = ReadAllBytes(fs_, path);
+    if (!fileBytes.Ok()) {
         NEON_LOG_ERROR("GLTF: failed to open '%s'", path.c_str());
         return {};
     }
-    std::stringstream ss;
-    ss << in.rdbuf();
+    std::stringstream ss(std::string(fileBytes.Value().begin(), fileBytes.Value().end()));
     std::string parseError;
     core::Json root = core::Json::Parse(ss.str(), &parseError);
     if (root.IsNull()) {
@@ -538,9 +571,9 @@ GltfAsset AssetManager::LoadGLTF(const std::string& path) {
         const core::Json* b0 = buffers->At(0);
         if (b0 && b0->Get("uri")) {
             std::string uri = b0->Get("uri")->GetString();
-            std::ifstream binFile(dir + uri, std::ios::binary);
-            if (binFile.is_open()) {
-                bin.assign(std::istreambuf_iterator<char>(binFile), std::istreambuf_iterator<char>());
+            const core::Result<std::vector<uint8_t>> binBytes = ReadAllBytes(fs_, dir + uri);
+            if (binBytes.Ok()) {
+                bin = binBytes.Value();
             } else {
                 NEON_LOG_ERROR("GLTF: cannot open buffer '%s'", (dir + uri).c_str());
                 return {};
@@ -1030,13 +1063,13 @@ gfx::Font AssetManager::LoadFont(const std::string& path, int pixelHeight) {
     auto cached = fonts_.find(key);
     if (cached != fonts_.end()) return cached->second;
 
-    std::ifstream in(path, std::ios::binary);
-    if (!in.is_open()) {
+    const core::Result<std::vector<uint8_t>> bytes = ReadAllBytes(fs_, path);
+    if (!bytes.Ok()) {
         NEON_LOG_ERROR("Asset: failed to open font '%s'", path.c_str());
         return {};
     }
-    std::vector<uint8_t> data((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-    gfx::Font font = renderer_->CreateFontFromMemory(data.data(), data.size(), pixelHeight);
+    gfx::Font font = renderer_->CreateFontFromMemory(bytes.Value().data(), bytes.Value().size(),
+                                                     pixelHeight);
     fonts_[key] = font;
     return font;
 }

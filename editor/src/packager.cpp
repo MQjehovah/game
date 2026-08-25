@@ -204,6 +204,111 @@ bool WriteFileBytes(const std::string& path, const std::vector<uint8_t>& data) {
     return out.good();
 }
 
+// G8-4 incremental packing: FNV-1a 32 over raw bytes (same family as the
+// whole-pack checksum, but computed per file for change detection).
+uint32_t Fnv1a32(const std::vector<uint8_t>& bytes) {
+    uint32_t h = 2166136261u;
+    for (uint8_t b : bytes) {
+        h ^= b;
+        h *= 16777619u;
+    }
+    return h;
+}
+
+// pack_manifest.json layout (written next to game.pack after every rebuild):
+//   { "version", "updateUrl", "packBytes": "12345", "packChecksum": "deadbeef",
+//     "files": { "<virtual path>": { "size": "17", "hash": "8719f3d0" }, ... } }
+// The per-file hashes are computed over the EXACT bytes that go into the pack
+// (game.json uses the normalized manifest text, not the disk file). Sizes and
+// hashes are stored as STRINGS because JsonWriter serializes numbers with %g
+// (6 significant digits), which would round 32-bit hashes and larger sizes.
+bool WritePackManifest(const std::string& path, const PackConfig& cfg, size_t packBytes,
+                       uint32_t packChecksum,
+                       const std::map<std::string, std::vector<uint8_t>>& contents) {
+    core::Json root;
+    root.type_ = core::Json::Type::Object;
+    auto putStr = [&root](const std::string& key, const std::string& value) {
+        core::Json v;
+        v.type_ = core::Json::Type::String;
+        v.string_ = value;
+        root.object_[key] = std::move(v);
+    };
+    putStr("version", cfg.version);
+    putStr("updateUrl", cfg.updateUrl);
+    char numBuf[32];
+    std::snprintf(numBuf, sizeof(numBuf), "%llu",
+                  static_cast<unsigned long long>(packBytes));
+    putStr("packBytes", numBuf);
+    std::snprintf(numBuf, sizeof(numBuf), "%08x", packChecksum);
+    putStr("packChecksum", numBuf);
+    core::Json files;
+    files.type_ = core::Json::Type::Object;
+    for (const auto& kv : contents) {
+        core::Json entry;
+        entry.type_ = core::Json::Type::Object;
+        std::snprintf(numBuf, sizeof(numBuf), "%llu",
+                      static_cast<unsigned long long>(kv.second.size()));
+        core::Json sz;
+        sz.type_ = core::Json::Type::String;
+        sz.string_ = numBuf;
+        entry.object_["size"] = std::move(sz);
+        std::snprintf(numBuf, sizeof(numBuf), "%08x", Fnv1a32(kv.second));
+        core::Json h;
+        h.type_ = core::Json::Type::String;
+        h.string_ = numBuf;
+        entry.object_["hash"] = std::move(h);
+        files.object_[kv.first] = std::move(entry);
+    }
+    root.object_["files"] = std::move(files);
+    const std::string text = core::JsonWriter::Write(root);
+    return WriteFileBytes(path, std::vector<uint8_t>(text.begin(), text.end()));
+}
+
+// True when a previous manifest exists and matches the current version, update
+// URL and every file's content hash. On success also returns the stored
+// whole-pack stats so the unchanged path can regenerate update.json without
+// re-reading game.pack.
+bool ContentsMatchManifest(const PackConfig& cfg,
+                           const std::map<std::string, std::vector<uint8_t>>& contents,
+                           const std::string& path, size_t& packBytes,
+                           uint32_t& packChecksum) {
+    packBytes = 0;
+    packChecksum = 0;
+    std::string text;
+    if (!FileExists(path) || !ReadFileText(path, text)) return false;
+    std::string perr;
+    core::Json root = core::Json::Parse(text, &perr);
+    if (!root.IsObject()) return false;
+    const core::Json* version = root.Get("version");
+    if (!version || !version->IsString() || version->GetString() != cfg.version) return false;
+    const core::Json* url = root.Get("updateUrl");
+    if (!url || !url->IsString() || url->GetString() != cfg.updateUrl) return false;
+    const core::Json* filesNode = root.Get("files");
+    if (!filesNode || !filesNode->IsObject()) return false;
+    if (filesNode->Members().size() != contents.size()) return false;
+    for (const auto& kv : contents) {
+        const core::Json* e = filesNode->Get(kv.first);
+        if (!e || !e->IsObject()) return false;
+        const core::Json* sz = e->Get("size");
+        if (!sz || !sz->IsString() ||
+            std::strtoull(sz->GetString().c_str(), nullptr, 10) != kv.second.size())
+            return false;
+        const core::Json* h = e->Get("hash");
+        if (!h || !h->IsString() ||
+            static_cast<uint32_t>(std::strtoul(h->GetString().c_str(), nullptr, 16)) !=
+                Fnv1a32(kv.second))
+            return false;
+    }
+    if (const core::Json* pb = root.Get("packBytes"))
+        if (pb->IsString())
+            packBytes = static_cast<size_t>(std::strtoull(pb->GetString().c_str(), nullptr, 10));
+    if (const core::Json* pc = root.Get("packChecksum"))
+        if (pc->IsString())
+            packChecksum =
+                static_cast<uint32_t>(std::strtoul(pc->GetString().c_str(), nullptr, 16));
+    return true;
+}
+
 // Case-insensitive suffix match (a "Main.JSON" scene is packed like
 // "main.json"; matching the case-insensitive conventions of ListLuaFiles).
 bool HasExt(const std::string& rel, const std::string& ext) {
@@ -746,18 +851,17 @@ PackageReport PackProject(const PackConfig& cfg) {
         return r;
     }
 
-    // Build the pack: game.json (normalized manifest) + every collected file.
-    core::PackWriter writer;
+    // G8-4: collect the exact bytes that would be packed (game.json comes from
+    // the normalized manifest text, not the disk file), then compare per-file
+    // content hashes against the previous run's manifest. When nothing changed
+    // (same file set, same bytes, same version/updateUrl) game.pack is kept and
+    // only the cheap derived artifacts (run.bat / update.json / player copy)
+    // are refreshed.
+    std::map<std::string, std::vector<uint8_t>> contents;
     for (const auto& kv : pc.packFiles) {
         if (kv.first == "game.json" && pc.manifestOk) {
-            const std::string& text = pc.manifestText;
-            core::Status st = writer.AddFile(kv.first,
-                                             std::vector<uint8_t>(text.begin(), text.end()));
-            if (!st.Ok()) {
-                r.errors.push_back("pack: " + st.Error());
-                r.ok = false;
-                return r;
-            }
+            contents[kv.first] =
+                std::vector<uint8_t>(pc.manifestText.begin(), pc.manifestText.end());
             continue;
         }
         std::vector<uint8_t> bytes;
@@ -766,21 +870,44 @@ PackageReport PackProject(const PackConfig& cfg) {
             r.ok = false;
             return r;
         }
-        core::Status st = writer.AddFile(kv.first, bytes);
-        if (!st.Ok()) {
-            r.errors.push_back("pack: " + st.Error());
+        contents[kv.first] = std::move(bytes);
+    }
+
+    const std::string manifestPath = cfg.outDir + "/pack_manifest.json";
+    size_t packBytes = 0;
+    uint32_t packChecksum = 0;
+    const bool unchanged =
+        !cfg.force && ContentsMatchManifest(cfg, contents, manifestPath, packBytes,
+                                            packChecksum);
+    r.unchanged = unchanged;
+    r.packPath = cfg.outDir + "/game.pack";
+    if (unchanged) {
+        r.bytesWritten = packBytes;
+        r.warnings.push_back("incremental pack: content unchanged; game.pack kept");
+    } else {
+        core::PackWriter writer;
+        for (const auto& kv : contents) {
+            core::Status st = writer.AddFile(kv.first, kv.second);
+            if (!st.Ok()) {
+                r.errors.push_back("pack: " + st.Error());
+                r.ok = false;
+                return r;
+            }
+        }
+        const std::vector<uint8_t> built = writer.Build();
+        packBytes = built.size();
+        packChecksum = Fnv1a32(built);
+        r.bytesWritten = packBytes;
+        if (!WriteFileBytes(r.packPath, built)) {
+            r.errors.push_back("cannot write '" + r.packPath + "'");
             r.ok = false;
             return r;
         }
-    }
-    std::vector<uint8_t> packBytes = writer.Build();
-    r.bytesWritten = packBytes.size();
-
-    r.packPath = cfg.outDir + "/game.pack";
-    if (!WriteFileBytes(r.packPath, packBytes)) {
-        r.errors.push_back("cannot write '" + r.packPath + "'");
-        r.ok = false;
-        return r;
+        if (!WritePackManifest(manifestPath, cfg, packBytes, packChecksum, contents)) {
+            r.errors.push_back("cannot write '" + manifestPath + "'");
+            r.ok = false;
+            return r;
+        }
     }
 
     r.runScriptPath = cfg.outDir + "/run.bat";
@@ -793,11 +920,6 @@ PackageReport PackProject(const PackConfig& cfg) {
 
     // P2-5 release artifacts: update manifest + install/update scripts.
     {
-        uint32_t hash = 2166136261u;  // FNV-1a 32 over the pack bytes
-        for (uint8_t b : packBytes) {
-            hash ^= b;
-            hash *= 16777619u;
-        }
         core::Json upd;
         upd.type_ = core::Json::Type::Object;
         core::Json v;
@@ -806,11 +928,11 @@ PackageReport PackProject(const PackConfig& cfg) {
         upd.object_["version"] = v;
         core::Json bytes;
         bytes.type_ = core::Json::Type::Number;
-        bytes.number_ = static_cast<double>(packBytes.size());
+        bytes.number_ = static_cast<double>(packBytes);
         upd.object_["packBytes"] = bytes;
         core::Json chk;
         chk.type_ = core::Json::Type::Number;
-        chk.number_ = hash;
+        chk.number_ = packChecksum;
         upd.object_["packChecksum"] = chk;
         core::Json player;
         player.type_ = core::Json::Type::String;

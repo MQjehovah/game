@@ -19,13 +19,17 @@ namespace neon::player {
 struct PackBoot {
     std::string unpackedDir;
     scene::GameManifest manifest;
+    // G7-1: layered file system [pack, mod dirs...] kept alive for the
+    // session; mods override base-pack assets via the AssetManager.
+    std::shared_ptr<neon::io::MountStack> vfs;
 };
 
 // Reads, validates and unpacks `packPath` into a fresh OS temp dir, then loads
 // game.json. Returns Err with a message on any failure (missing/invalid pack,
 // unpack failure, bad manifest). The caller owns the unpacked dir's lifecycle
 // (neon_game removes it at exit unless --keep).
-core::Result<PackBoot> BootPack(const std::string& packPath);
+core::Result<PackBoot> BootPack(const std::string& packPath,
+                                const std::vector<std::string>& modDirs);
 
 // Command-line configuration for the generic neon_game player. Everything is
 // data-driven: the pack supplies the manifest, scenes, scripts, behavior trees
@@ -50,6 +54,12 @@ struct PlayerConfig {
     int connectTicks = 0;         // --ticks <n>: run n frames then exit (connect smoke)
     uint64_t rngSeed = 20260821u; // --seed: local prediction RNG (must match the server)
     std::string backend = "gl";   // --backend gl|vulkan: graphics backend (default gl)
+    // G7-1: layered file system (pack + mods) installed on the AssetManager.
+    std::shared_ptr<neon::io::MountStack> vfs;
+    // G7-1 --mod <dir> (repeatable): a Mod overlay directory mounted over the
+    // base pack; later mods win. Overrides both assets (VFS) and the unpacked
+    // script/prefab/locale tree.
+    std::vector<std::string> modDirs;
 };
 
 // The data-driven player: unpack a store-only pack to a temp dir, read the

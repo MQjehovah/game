@@ -22,6 +22,8 @@ void PrintHelp() {
         "  --connect host:port        join a GameServer as the input controller (T6.4):\n"
         "                             local prediction + snapshot interpolation + reconcile\n"
         "  --name <n>                 anonymous login name (T6.6; default neon_player)\n"
+        "  --mod <dir>                Mod overlay dir mounted over the base pack\n"
+        "                             (repeatable; later mods win)\n"
         "  --scripts DIR              scene script base dir (loose --scene mode; defaults\n"
         "                             to the scene file's directory, like neon_server)\n"
         "  --ticks <n>                run n frames then exit; in --connect mode the exit is\n"
@@ -77,6 +79,8 @@ int main(int argc, char** argv) {
             }
         } else if (std::strcmp(argv[i], "--name") == 0 && i + 1 < argc) {
             cfg.playerName = argv[++i];
+        } else if (std::strcmp(argv[i], "--mod") == 0 && i + 1 < argc) {
+            cfg.modDirs.push_back(argv[++i]);
         } else if (std::strcmp(argv[i], "--scripts") == 0 && i + 1 < argc) {
             cfg.scriptsDir = argv[++i];
         } else if (std::strcmp(argv[i], "--ticks") == 0 && i + 1 < argc) {
@@ -116,13 +120,14 @@ int main(int argc, char** argv) {
     }
 
     if (cfg.looseScenePath.empty()) {
-        auto boot = neon::player::BootPack(cfg.packPath);
+        auto boot = neon::player::BootPack(cfg.packPath, cfg.modDirs);
         if (!boot.Ok()) {
             std::fprintf(stderr, "neon_game: %s\n", boot.Error().c_str());
             return 1;
         }
         cfg.unpackedDir = boot.Value().unpackedDir;
         cfg.manifest = boot.Value().manifest;
+        cfg.vfs = std::move(boot.Value().vfs);
     }
     const int frames = cfg.connectTicks > 0 ? cfg.connectTicks : cfg.smokeFrames;
 

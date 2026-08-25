@@ -130,10 +130,10 @@
 
 ### G5-2 依赖图任务调度器（第 2 项）
 
-- [ ] 现状：ECS 有确定性 `ParallelForEach` + 持久线程池（spinlock 队列，**非 lock-free**）；**无任务依赖图调度器**。
+- [x] 现状：ECS 有确定性 `ParallelForEach` + 持久线程池（spinlock 队列，**非 lock-free**）；**任务依赖图调度器已落地**（`neon/ecs/task_graph.hpp`）：任务声明依赖边（支持前向引用），Kahn 拓扑分层 + 环检测，逐层经 `ParallelFor` 并行执行同层独立任务，`Run(false)` 串行路径供确定性校验。单元测试 `tests/test_task_graph.cpp`（依赖顺序 / 并行=串行 / 两次并行确定性 / 环检测 / 越界依赖 / 清空复用 / 渲染-物理-逻辑示例图）。2026-08-25。
 - [ ] 目标：任务声明读写内存区域，调度器自动并行无冲突任务；避免死锁；适配未来数百核。
 - 建议：先实现任务图 + 依赖分析（读/写/独占分区），再考虑 lock-free 队列；`ParallelForEach` 保留为"数据并行"特例接入调度器。
-- 验收：渲染/物理/逻辑三系统的依赖图示例 + 并行正确性测试（复用现有确定性校验）。
+- 验收：渲染/物理/逻辑三系统的依赖图示例 + 并行正确性测试（复用现有确定性校验）——示例与并行正确性测试已在 `test_task_graph.cpp` 落地；读写内存区自动分析（无冲突推断）与 work-stealing 队列留作后续。
 
 ### G5-3 确定性模拟（第 3 项）——已完成
 
@@ -166,9 +166,10 @@
 ### G7-1 虚拟文件系统 VFS（第 7 项）
 
 - [~] 现状：`game.pack` 打包容器 + 播放器加载 ✅；编辑器资产目录 watch 自动刷新 ✅。
-- [ ] 统一虚拟路径（`assets:/textures/char.png`）与平台自动映射——当前为相对/绝对路径直读。
-- [ ] 多层挂载（主包 + 可下载 DLC 包 + 用户 Mod 包，按优先级覆盖）——无 Mod 机制。
+- [x] 统一虚拟路径与多层挂载——已落地 `neon/io/vfs.hpp`：`IFileSystem` 抽象 + `DiskFileSystem`（根目录、防 `..` 逃逸）+ `PackFileSystem`（pack 容器直读，免解包）+ `MountStack`（后挂载优先覆盖）。`AssetManager::SetFileSystem` 让纹理/字体/OBJ/MTL/glTF+bin 全部走 VFS（null 时保持磁盘直读）。单元测试 `tests/test_vfs.cpp`（路径规范化/逃逸拒绝/磁盘/pack/挂载覆盖/List 合并/AssetManager 经 MountStack 读纹理+OBJ）。2026-08-25。
+- [x] 多层挂载（主包 + Mod 覆盖层）——`neon_game --pack X --mod DIR`（可重复，后挂载优先）：Mod 经挂载栈覆盖资产，并叠加到解包目录覆盖脚本/prefab/本地化；端到端冒烟通过（pvz 打包 + mod 覆盖 + 60 帧启动退出 0）。DLC 多包即再 `Mount` 一层。2026-08-25。
 - 建议：定义 `IFileSystem` 抽象（路径规范化 + 只读挂载栈），pack 容器作为一层挂载；Mod 覆盖层复用同一挂载栈。这是"资源市场/Mod 生态"的前置。
+- 后续：`assets:/` 风格 scheme 归一、GameRuntime 脚本读取直通 VFS（当前经覆盖目录）、播放器免解包直读。
 
 ### G7-2 着色器字节码翻译层（第 8 项）
 
@@ -211,7 +212,7 @@
 ### G8-4 增量打包与内容哈希（第 13 项）
 
 - [~] 现状：打包产出 `game.pack` + FNV-1a 校验（`packager.cpp:784`）+ `update.json` 更新管线 ✅。
-- [ ] 增量打包（仅重打包哈希变化的资产）——当前为全量重打。
+- [x] 增量打包——已落地 `pack_manifest.json` 每文件内容哈希清单（FNV-1a，size/hash 以字符串存储规避 JsonWriter 的 %g 精度问题）；`PackProject` 对比新旧哈希，内容/版本/updateUrl 未变时跳过 game.pack 重建（`report.unchanged`，`PackConfig.force` 可强制重打）。单容器格式暂不支持文件级增量写回（需要格式升级），当前为"未变更零重打、变更才全量重建"。单元测试 `tests/test_packager.cpp`（未变更跳过 / 内容变更重建 / 版本变更重建 / force 强制）。2026-08-25。
 - [ ] 分布式构建农场（多机并行打包）——无。
 - 建议：资产清单记录每文件内容哈希，打包器对比新旧哈希只处理变更项；农场可先复用 CI 分发（Windows/Ubuntu/macOS 已有）。
 
