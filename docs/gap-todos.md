@@ -37,8 +37,8 @@
 
 ### G1-5 渲染表现缺口（P2-1 遗留）
 
-- [ ] SSAO（环境光遮蔽）——待做（需深度纹理后处理 pass）。
-- [ ] 体积光 / 体积图——待做（light-shaft ray-march）。
+- [x] SSAO（环境光遮蔽）——已落地：`neon/gfx/ssao.hpp`（AO kernel 数学可单测）+ 渲染器 `RunSsaoPass`：颜色编码场景深度 pass（复用 shadow 深度 shader，规避 FBO 深度纹理在 Intel 上的问题）→ AO（半帧）→ 分离模糊 → 合成乘 AO。默认 `--no-ssao` 可关（关时合成输出不变）；`--ssao` 开启。单元测试 `tests/test_ssao.cpp`（深度编码往返 / 平坦零遮挡 / 遮挡）。`neon_rush --smoke-test 60 --ssao` GL 冒烟通过。
+- [ ] 体积光 / 体积图——待做（light-shaft ray-march；可复用 SSAO 的场景深度 target 做遮挡采样，作为下一步）。
 - [x] GPU 粒子实例化渲染（当前粒子渲染模型需改造）——已落地：`Renderer::DrawBillboards` + `DrawMeshInstancedColored`（GL 每实例 RGBA 属性 location 8 + 新 instanced-colored shader），粒子从逐粒子屏幕空间 billboard 改为**单次 3D 实例化相机朝向广告牌**（depth-aware，additive/alpha 分两组各一次 draw）。`neon_rush --smoke-test 60` GL 冒烟通过。2026-08-25。
 - 现状：PBR / IBL / HDR / Bloom / ACES / MSAA / CSM / 点光源 cubemap 阴影 / 实例化 / GPU 蒙皮 / 贴花均已交付。
 

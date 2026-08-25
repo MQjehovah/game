@@ -102,6 +102,16 @@ public:
     // is false and the game falls back to DrawProjectedShadow.
     void SetShadowsEnabled(bool enabled);
     bool ShadowsEnabled() const { return csmEnabled_; }
+    // G1-5 screen-space ambient occlusion. Off by default (and on drivers where
+    // the colour-encoded depth pass or AO targets fail); a no-op when disabled,
+    // so the composite output is unchanged. SSAO uses a depth pre-pass that
+    // re-renders opaque casters into a colour-encoded linear depth target
+    // (FBO depth TEXTUREs are unreliable on the same drivers that made shadows
+    // use colour-encoded depth), then AO + blur, multiplied into the composite.
+    void SetSsaoEnabled(bool enabled) { ssaoEnabled_ = enabled; }
+    bool SsaoEnabled() const { return ssaoEnabled_; }
+    void SetSsaoIntensity(float intensity) { ssaoIntensity_ = intensity; }
+    float SsaoIntensity() const { return ssaoIntensity_; }
     // Editor tooling: temporarily suppress shadow-caster recording so a mesh
     // rendered into its own offscreen target (e.g. an asset thumbnail) never
     // pollutes the main scene's shadow pass. Enabled by default.
@@ -359,6 +369,11 @@ private:
     // HDR + bloom post-processing.
     void EnsurePostTargets();
     void DestroyPostTargets();
+    // G1-5 SSAO sub-pipeline: builds the depth/AO/blur targets + shaders and
+    // runs the color-encoded depth pass, the AO pass and the separable blur.
+    void EnsureSsaoTargets();
+    bool RunSsaoPass();
+    void DrawSsaoDepthCasters(const math::Mat4& viewProj);
     bool TestFloatTargetCapability();
     // MSAA: multisample HDR render target + resolve self-test (4x then 2x).
     bool TestMsaaCapability();
@@ -405,6 +420,8 @@ private:
     ShaderHandle downsampleShader_;
     ShaderHandle upsampleAddShader_;
     ShaderHandle compositeShader_;
+    ShaderHandle ssaoShader_;
+    ShaderHandle ssaoBlurShader_;
     TextureHandle white_;
     MeshHandle probeQuadMesh_;
     // Fullscreen NDC quad (uv 0..1) for the post passes.
@@ -436,6 +453,11 @@ private:
     RenderTargetHandle bloomHalfB_;    // 1/2 res scratch (blur ping-pong + upsample-add result)
     RenderTargetHandle bloomQuarterA_; // 1/4 res: downsample, then blurred
     RenderTargetHandle bloomQuarterB_; // 1/4 res scratch (blur ping-pong)
+    // G1-5 SSAO: colour-encoded scene depth (full-res) + AO at half-res.
+    RenderTargetHandle ssaoDepthRT_;
+    RenderTargetHandle aoRT_;
+    RenderTargetHandle aoBlurA_;
+    RenderTargetHandle aoBlurB_;
     int hdrW_ = 0;
     int hdrH_ = 0;
     bool hdrEnabled_ = false;
@@ -451,6 +473,11 @@ private:
     // uninitialized content into the composite.
     bool bloomRanThisFrame_ = false;
     bool compositedThisFrame_ = false;
+    // G1-5 SSAO state.
+    bool ssaoEnabled_ = false;
+    bool ssaoRanThisFrame_ = false;
+    float ssaoIntensity_ = 1.0f; // AO blend amount in [0,1]
+    std::vector<ShadowDraw> ssaoCasters_;
 
     Camera camera_;
     math::Mat4 viewProj_;

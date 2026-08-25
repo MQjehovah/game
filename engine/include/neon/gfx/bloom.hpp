@@ -183,6 +183,9 @@ in vec2 vUV;
 out vec4 FragColor;
 uniform sampler2D uHdr;
 uniform sampler2D uBloom;
+uniform sampler2D uAo;
+uniform float uAoIntensity;
+uniform int uAoEnabled;
 uniform float uStrength;
 uniform float uExposure;
 uniform int uBloomEnabled;
@@ -199,6 +202,13 @@ void main() {
     vec3 hdr = texture(uHdr, vUV).rgb;
     vec3 c = hdr;
     if (uBloomEnabled != 0) c += texture(uBloom, vUV).rgb * uStrength;
+    if (uAoEnabled != 0) {
+        float ao = texture(uAo, vUV).r;
+        // SSAO lightens the indirect/diffuse contribution. We have no separate
+        // ambient term in the composite, so the AO scales the whole in-range
+        // colour; a modest intensity keeps it from crushing lit surfaces.
+        c *= mix(1.0, ao, uAoIntensity);
+    }
     if (uTonemapEnabled != 0) {
         FragColor = vec4(ACESFilm(c * uExposure), 1.0);
     } else {
