@@ -1864,6 +1864,13 @@ void EditorApp::OnRender() {
             }
         }
 
+        // G8-3: debug overlay layers (nav walkable area, light probes, audio).
+        // Drawn while the scene viewport is STILL active so screen-space lines
+        // (DrawLines) rasterise inside the dock rect and line up with the ImGui
+        // transform gizmo. Previously this ran after ResetSceneViewport() and
+        // therefore drew at full-window viewport -> a vertical offset.
+        DrawDebugOverlay(cam);
+
         // Rasterize the scene's 2D overlay (sky / billboards / playtest HUD)
         // while the scissor is active so it stays inside the viewport, then
         // restore the full-window mapping for the composite + tool UI.
@@ -1874,8 +1881,6 @@ void EditorApp::OnRender() {
             renderer_.Reset2DViewport();
         }
     }
-    // G8-3: debug overlay layers (nav walkable area, light probes, audio).
-    DrawDebugOverlay(cam);
 
     // End the 3D scene phase: composite the HDR frame to the backbuffer and
     // bind the backbuffer so the tool UI (engine UI demo + ImGui) below renders
