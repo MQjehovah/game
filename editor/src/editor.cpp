@@ -1643,6 +1643,9 @@ void EditorApp::OnRender() {
             renderer_.Set2DViewport(vp.x, vp.y, vp.w, vp.h, canvasZoom_, canvasPan_);
             renderer_.Backend()->SetScissor(static_cast<int>(vp.x), static_cast<int>(vp.y),
                                             static_cast<int>(vp.w), static_cast<int>(vp.h), true);
+            // Rasterize the scene into the panel rect (not a stale/full-window
+            // viewport) so the sprite aspect and the 2D UI overlay agree.
+            renderer_.SetSceneViewport(vp.x, vp.y, vp.w, vp.h);
             playtest_->Draw(renderer_, gameCam);
             // Mark the game's camera view (the full 1280x720 design area).
             renderer_.DrawRectOutline(
@@ -2528,8 +2531,18 @@ void EditorApp::UpdateViewport(float dt) {
     // half the viewport height). This keeps edit view and playtest identical.
     if (editMode_ == EditMode::Scene2D && viewCam_ == ViewCam::Front &&
         !cameraUserAdjusted_) {
-        const float vpH = viewportScreenRect_.h;
-        if (vpH > 0.0f) orthoSize_ = vpH * 0.5f;
+        // Frame 2D like the runtime's SceneCamera does: centre on the design
+        // centre and use the camera object's ortho size (fallback to the
+        // 1280x720 design half-height). The old default target stayed at the 3D
+        // origin and orthoSize = panelHeight/2, so edit and playtest disagreed
+        // whenever the dock wasn't exactly 720px tall.
+        const SceneEntity* sc = nullptr;
+        for (const SceneEntity& se : entities_) {
+            if (se.nodeType == "Camera3D" && !sc) { sc = &se; break; }
+        }
+        camTarget_ = sc ? math::Vec3{sc->pos.x, sc->pos.y, 0.0f}
+                        : math::Vec3{640.0f, 360.0f, 0.0f};
+        orthoSize_ = (sc && sc->cameraOrthoSize > 0.0f) ? sc->cameraOrthoSize : 360.0f;
     }
 
     // 2D playtest: the whole view (entities + UI + camera frame) zooms as one
