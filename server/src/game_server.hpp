@@ -126,6 +126,9 @@ public:
     uint16_t Port() const; // bound local UDP port (0 until Start)
     uint32_t ClientCount() const { return static_cast<uint32_t>(clients_.size()); }
     uint32_t CurrentTick() const { return tick_; }
+    // G3-4: the fixed-tick rewind currently applied to hit tests (derived
+    // from the most latent live client's RTT). Observability for tests/admin.
+    uint32_t AutoLagCompTicks() const { return runtime_.AutoLagCompTicks(); }
     uint64_t ControllerClientId() const;
     // Total anonymous accounts assigned so far (T6.6). A monotonically
     // increasing counter: every accepted MsgLogin bumps it, so it is also the
@@ -162,6 +165,7 @@ private:
         uint64_t accountId = 0; // v0 anonymous account (T6.6); 0 = not logged in
         std::string name;  // P2-4: display name (used for name-based bans)
         uint64_t lastSeenMs = 0;
+        uint64_t rttMs = 0; // G3-4: last measured round-trip (ping), for lag comp
         net::MsgInput lastInput;
         NetInput input; // per-client input state fed by THIS client's MsgInput
         bool hasInput = false;
@@ -204,6 +208,9 @@ private:
     uint64_t EntityKey(ecs::Entity e) const;
     // The NetInput of the client with `clientId` (nullptr when disconnected).
     NetInput* ClientInputById(uint64_t clientId);
+    // G3-4: converts a measured RTT to the fixed-tick rewind used by hit
+    // tests (half-RTT = one-way latency, clamped to the pose-history depth).
+    uint32_t LagTicksForRtt(uint64_t rttMs) const;
 
     Config cfg_;
     net::UdpSocket sock_;

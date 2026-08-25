@@ -1538,6 +1538,10 @@ void EditorApp::OnUpdate(float dt) {
             const std::string tmpSave = GetTempDir() + "/smoke_save_roundtrip.json";
             currentScenePath_ = tmpSave;
             SaveScene();
+            // Guard: the smoke must NEVER write a real scene (the user's
+            // project scenes / sandbox are user data). Verify the write target
+            // was actually the temp file; any deviation fails the smoke.
+            if (currentScenePath_ != tmpSave) ok = false;
             currentScenePath_ = prevPath;
             LoadScene(tmpSave); // reload exactly what SaveScene wrote
             int n0 = -1;

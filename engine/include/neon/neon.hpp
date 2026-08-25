@@ -22,6 +22,7 @@
 #include "neon/ecs/world.hpp"
 #include "neon/ecs/parallel.hpp"
 #include "neon/ecs/task_graph.hpp"
+#include "neon/ecs/system_scheduler.hpp"
 
 #include "neon/io/vfs.hpp"
 

@@ -463,6 +463,8 @@ void GameRuntime::Stop() {
     projectiles_.clear();
     tweens_.clear();
     skillCooldowns_.clear();
+    poseHistory_.clear();
+    autoRewindTicks_ = 0;
     signalHandlers_.clear();
     pendingScene_.clear();
     loadedScripts_.clear();
@@ -1224,8 +1226,31 @@ void GameRuntime::SpawnProjectile(const math::Vec3& pos, const math::Vec3& dir, 
     projectiles_.push_back(p);
 }
 
-int GameRuntime::MeleeAttack(const math::Vec3& origin, const math::Vec3& dir, float range,
-                             float arcDeg, float damage) {
+// G3-4: the position a hit test uses for `ent` - the pose it had
+// `rewindTicks` fixed ticks ago when history exists, else its CURRENT pose
+// (fresh spawns / shallow history degrade gracefully to the plain path).
+bool GameRuntime::LagCompPosition(ecs::Entity e, uint32_t rewindTicks,
+                                  math::Vec3& out) const {
+    if (rewindTicks > 0 && !poseHistory_.empty()) {
+        const size_t n = poseHistory_.size();
+        const size_t idx = rewindTicks >= n ? 0 : n - 1 - rewindTicks;
+        const auto& snap = poseHistory_[idx];
+        const auto it = snap.find(EntityKey(e));
+        if (it != snap.end()) {
+            out = it->second;
+            return true;
+        }
+    }
+    return false;
+}
+
+// Shared arc-hit test used by MeleeAttack (auto rewind), MeleeAttackLagComp
+// (explicit rewind) and CastSkill's melee skill. Damage always lands on the
+// CURRENT entity; only the position test is rewound.
+int GameRuntime::MeleeAttackImpl(const math::Vec3& origin, const math::Vec3& dir, float range,
+                                 float arcDeg, float damage, uint32_t rewindTicks,
+                                 ecs::Entity exclude,
+                                 const std::vector<SkillStatus>& statuses) {
     const math::Vec3 fwd = dir.LengthSq() > 1e-6f ? dir.Normalized() : math::Vec3{0, 0, 1};
     const float cosArc = std::cos(arcDeg * 0.5f * math::kDegToRad);
     int hits = 0;
@@ -1235,20 +1260,36 @@ int GameRuntime::MeleeAttack(const math::Vec3& origin, const math::Vec3& dir, fl
         SceneHealth* h = world_.Get<SceneHealth>(ent);
         const SceneTransform* t = world_.Get<SceneTransform>(ent);
         if (!h || !t || h->hp <= 0.0f) continue;
-        const math::Vec3 to = t->pos - origin;
+        if (ent == exclude) continue; // never self-hit
+        math::Vec3 hitPos = t->pos;
+        if (rewindTicks > 0) LagCompPosition(ent, rewindTicks, hitPos);
+        const math::Vec3 to = hitPos - origin;
         const float dist = to.Length();
         if (dist > range || dist < 1e-4f) continue;
         if (math::Dot(to / dist, fwd) < cosArc) continue; // outside the arc
-        h->hp = std::fmax(0.0f, h->hp - damage);
+        if (statuses.empty())
+            h->hp = std::fmax(0.0f, h->hp - damage);
+        else
+            ApplyHit(ent, damage, statuses);
         ++hits;
     }
     return hits;
 }
 
+int GameRuntime::MeleeAttack(const math::Vec3& origin, const math::Vec3& dir, float range,
+                             float arcDeg, float damage) {
+    return MeleeAttackImpl(origin, dir, range, arcDeg, damage, autoRewindTicks_);
+}
+
+int GameRuntime::MeleeAttackLagComp(const math::Vec3& origin, const math::Vec3& dir, float range,
+                                    float arcDeg, float damage, uint32_t rewindTicks) {
+    return MeleeAttackImpl(origin, dir, range, arcDeg, damage, rewindTicks);
+}
+
 // Oriented attack box (OBB around Y): damages every SceneHealth entity whose
 // position lies inside the yaw-rotated half-extents box. Returns hit count.
-int GameRuntime::AttackBox(const math::Vec3& center, const math::Vec3& half, float yaw,
-                           float damage) {
+int GameRuntime::AttackBoxImpl(const math::Vec3& center, const math::Vec3& half, float yaw,
+                               float damage, uint32_t rewindTicks) {
     const float c = std::cos(yaw);
     const float s = std::sin(yaw);
     int hits = 0;
@@ -1258,7 +1299,9 @@ int GameRuntime::AttackBox(const math::Vec3& center, const math::Vec3& half, flo
         SceneHealth* h = world_.Get<SceneHealth>(ent);
         const SceneTransform* t = world_.Get<SceneTransform>(ent);
         if (!h || !t || h->hp <= 0.0f) continue;
-        const math::Vec3 d = t->pos - center;
+        math::Vec3 hitPos = t->pos;
+        if (rewindTicks > 0) LagCompPosition(ent, rewindTicks, hitPos);
+        const math::Vec3 d = hitPos - center;
         // Rotate the target into box-local space (rotate by -yaw around Y).
         const float lx = c * d.x - s * d.z;
         const float ly = d.y;
@@ -1269,6 +1312,16 @@ int GameRuntime::AttackBox(const math::Vec3& center, const math::Vec3& half, flo
         }
     }
     return hits;
+}
+
+int GameRuntime::AttackBox(const math::Vec3& center, const math::Vec3& half, float yaw,
+                           float damage) {
+    return AttackBoxImpl(center, half, yaw, damage, autoRewindTicks_);
+}
+
+int GameRuntime::AttackBoxLagComp(const math::Vec3& center, const math::Vec3& half, float yaw,
+                                  float damage, uint32_t rewindTicks) {
+    return AttackBoxImpl(center, half, yaw, damage, rewindTicks);
 }
 
 void GameRuntime::ApplySkillStatuses(ecs::Entity target,
@@ -1381,30 +1434,19 @@ int GameRuntime::CastSkill(const std::string& name, const math::Vec3& origin,
     }
 
     if (def->kind == "melee") {
-        const math::Vec3 fwd = dir.LengthSq() > 1e-6f ? dir.Normalized() : math::Vec3{0, 0, 1};
-        const float cosArc = std::cos(def->arcDeg * 0.5f * math::kDegToRad);
-        int hits = 0;
-        auto view = world_.ViewAll<SceneHealth>();
-        for (size_t i = 0; i < view.Size(); ++i) {
-            ecs::Entity ent = world_.EntityAt<SceneHealth>(i);
-            const SceneHealth* h = world_.Get<SceneHealth>(ent);
-            const SceneTransform* t = world_.Get<SceneTransform>(ent);
-            if (!h || !t || h->hp <= 0.0f) continue;
-            if (ent == caster) continue; // never self-hit
-            const math::Vec3 to = t->pos - origin;
-            const float dist = to.Length();
-            if (dist > def->meleeRange || dist < 1e-4f) continue;
-            if (math::Dot(to / dist, fwd) < cosArc) continue;
-            ApplyHit(ent, def->damage, def->statuses);
-            ++hits;
-        }
+        // G3-4: the skill hit test honours the auto lag-comp rewind set by
+        // the server (targets tested at the pose they had `autoRewindTicks_`
+        // ticks ago); damage lands on the current entity.
+        MeleeAttackImpl(origin, dir, def->meleeRange, def->arcDeg, def->damage,
+                        autoRewindTicks_, caster, def->statuses);
         return 1; // the cast happened even when no target was in the arc
     }
 
     // "box": oriented attack box; yaw derived from the facing dir so a
     // script passes a direction vector like every other skill.
     const float yaw = std::atan2(dir.x, dir.z);
-    AttackBox(origin, {def->boxHalfX, def->boxHalfY, def->boxHalfZ}, yaw, def->damage);
+    AttackBoxImpl(origin, {def->boxHalfX, def->boxHalfY, def->boxHalfZ}, yaw, def->damage,
+                  autoRewindTicks_);
     return 1;
 }
 
@@ -1986,6 +2028,27 @@ void GameRuntime::Tick(float dt) {
     TickSkillCooldowns(dt);
     TickProjectiles(dt);
     simTime_ += dt;
+
+    // G3-4: snapshot authoritative poses for lag-compensated hit tests. The
+    // oldest snapshot is dropped once the ring reaches capacity (~1s @60Hz).
+    {
+        std::unordered_map<uint64_t, math::Vec3> snap;
+        auto view = world_.ViewAll<SceneTransform>();
+        for (size_t i = 0; i < view.Size(); ++i) {
+            const ecs::Entity ent = world_.EntityAt<SceneTransform>(i);
+            const SceneTransform* t = world_.Get<SceneTransform>(ent);
+            if (t) snap[EntityKey(ent)] = t->pos;
+        }
+        auto bindView = world_.ViewAll<script::CTransformBind>();
+        for (size_t i = 0; i < bindView.Size(); ++i) {
+            const ecs::Entity ent = world_.EntityAt<script::CTransformBind>(i);
+            const script::CTransformBind* b = world_.Get<script::CTransformBind>(ent);
+            if (b) snap[EntityKey(ent)] = b->pos;
+        }
+        poseHistory_.push_back(std::move(snap));
+        if (poseHistory_.size() > kLagCompHistoryTicks)
+            poseHistory_.erase(poseHistory_.begin());
+    }
 
     // ChangeScene deferral: a script's ChangeScene call must not destroy the
     // Lua host mid-call, so the swap happens here, after every script handler

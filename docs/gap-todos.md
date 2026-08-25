@@ -53,8 +53,9 @@
 ### G2-2 ECS archetype 存储与系统调度
 
 - [~] 现状：SparseSet ECS（实体代际句柄、dense+sparse、双组件视图）、确定性 `ParallelForEach` + 持久线程池已交付；demo 系统保持串行。
-- 差距：跨组件 SoA（archetype）存储未做（接口已预留）；系统级调度器（依赖图 + 并行执行）未做。
-- 建议：保持现有 API 不变，替换存储后端；再补系统调度器。
+- [x] 系统级调度器已落地（`neon/ecs/system_scheduler.hpp`）：系统按注册顺序声明组件读/写访问，调度器对写-写 / 写-读冲突推导依赖边（先注册者先执行），无冲突系统经 TaskGraph（G5-2）并行执行；`Run(false)` 提供串行确定性参考路径。单元测试 `tests/test_system_scheduler.cpp`（写写排序 / 写读依赖 / 读读并行确定性 / 独立写 / 空图 / 清空）。2026-08-25。
+- [ ] 跨组件 SoA（archetype）存储未做（保持现有 API 不变替换存储后端，接口已预留）。
+- 建议：先补系统调度器（已完成），archetype 存储作为下一步替换 World 的 Pool 后端。
 
 ### G2-3 地形与植被
 
@@ -95,9 +96,9 @@
 ### G3-4 网络栈补缺
 
 - [~] 现状：UDP 可靠通道、快照插值、预测回滚、AOI 九宫格、确定性权威服务器、房间/防作弊（RPC、输入限速、kick/ban、world.hash）、客户端脚本 Rpc 绑定均已交付。
-- [ ] 服务器端 lag compensation（历史姿态回溯命中判定）
+- [x] 服务器端 lag compensation（历史姿态回溯命中判定）——已落地：GameRuntime 每固定 tick 记录权威姿态环形缓冲（64 tick ≈ 1s）；`MeleeAttackLagComp` / `AttackBoxLagComp` / `LagCompPosition` 按回滚 tick 用历史姿态判定、伤害落在当前实体；`SetAutoLagComp` 自动回滚模式让普通攻击与 CastSkill 一并生效。GameServer 由 MsgPing 测量客户端 RTT，每 tick 按最活跃客户端半 RTT 折算回滚 tick（`AutoLagCompTicks` 可观测）。单元测试 `tests/test_lagcomp.cpp`（历史命中 / box 回滚 / 自动模式 / 技能 / 容量与新生实体回退 / 服务器 RTT 集成）。2026-08-25。
 - [ ] 分区分服（world server / instance server）
-- [ ] 多玩家输入模型收尾（`on_player_join` + `BindPlayerToClient` 已有，接入正式玩法）
+- [ ] 多玩家输入模型收尾（`on_player_join` + `BindPlayerToClient` 已有，接入正式玩法；per-attacker lag-comp 回滚随攻击上下文细化）
 
 ### G3-5 UI 控件能力
 

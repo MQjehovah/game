@@ -155,6 +155,18 @@ void GameServer::Step(uint64_t nowMs) {
     if (accumulator_ >= kFixedDt) {
         accumulator_ -= kFixedDt;
         ApplyControllerInput();
+        // G3-4 lag compensation: rewind hit tests by the most latent live
+        // client's one-way latency, so a fast-moving target is hit where
+        // the shooter saw it. (v1 shared-rewind auto mode: per-attacker
+        // rewinds are a future refinement with per-entity attack context.)
+        // Timed-out clients are dropped before this point, so every entry
+        // in clients_ is a live player whose latency matters.
+        {
+            uint64_t maxRttMs = 0;
+            for (const auto& kv : clients_)
+                maxRttMs = std::max(maxRttMs, kv.second.rttMs);
+            runtime_.SetAutoLagComp(LagTicksForRtt(maxRttMs));
+        }
         runtime_.Tick(static_cast<float>(kFixedDt));
         ++tick_;
         if (tick_ % cfg_.snapshotEveryTicks == 0) BroadcastSnapshot();
@@ -423,6 +435,11 @@ void GameServer::HandleInput(const net::NetAddress& addr, const net::MsgInput& i
 void GameServer::HandlePing(const net::NetAddress& addr, const net::MsgPing& ping) {
     auto it = clients_.find(addr);
     if (it == clients_.end()) return;
+    // G3-4: measure the round trip (client stamps sendTime at send) and keep
+    // it on the client for lag-compensated hit tests. Sanity-clamped: a
+    // spoofed/stale stamp is ignored rather than rewinding 16+ seconds.
+    if (nowMs_ > ping.sendTime && nowMs_ - ping.sendTime < 60000u)
+        it->second.rttMs = nowMs_ - ping.sendTime;
     SendPong(it->second, ping.sendTime);
 }
 
@@ -1001,6 +1018,13 @@ NetInput* GameServer::ClientInputById(uint64_t clientId) {
     for (auto& kv : clients_)
         if (kv.second.clientId == clientId) return &kv.second.input;
     return nullptr;
+}
+
+uint32_t GameServer::LagTicksForRtt(uint64_t rttMs) const {
+    // One-way latency = half the round trip; 60Hz ticks per millisecond.
+    const uint64_t halfRtt = rttMs / 2;
+    const uint32_t ticks = static_cast<uint32_t>((halfRtt * 60u) / 1000u);
+    return std::min(ticks, scene::GameRuntime::kLagCompHistoryTicks);
 }
 
 uint64_t GameServer::EntityKey(ecs::Entity e) const {

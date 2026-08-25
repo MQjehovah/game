@@ -38,6 +38,7 @@ set(ENGINE_CORE_SOURCES
   engine/src/ecs/world.cpp
   engine/src/ecs/parallel.cpp
   engine/src/ecs/task_graph.cpp
+  engine/src/ecs/system_scheduler.cpp
   engine/src/io/vfs.cpp
   engine/src/core/json.cpp
   engine/src/core/localization.cpp
@@ -507,6 +508,7 @@ add_executable(neon_tests tests/test_main.cpp tests/test_serialize.cpp tests/tes
   tests/test_localization.cpp
   tests/test_game_runtime.cpp tests/test_gltf_skin.cpp tests/test_anim.cpp
   tests/test_combat.cpp
+  tests/test_lagcomp.cpp
   tests/test_skinned.cpp tests/test_shadow.cpp tests/test_log.cpp
   tests/test_spatial.cpp tests/test_post.cpp tests/test_ibl.cpp tests/test_history.cpp
   tests/test_bt_editor.cpp tests/test_script_panel.cpp tests/test_packager.cpp
@@ -516,6 +518,7 @@ add_executable(neon_tests tests/test_main.cpp tests/test_serialize.cpp tests/tes
   tests/test_lod.cpp
   tests/test_world_chunk.cpp
   tests/test_ecs_parallel.cpp
+  tests/test_system_scheduler.cpp
   tests/test_reliable.cpp
   tests/test_server.cpp
   tests/test_client_sync.cpp

@@ -222,6 +222,25 @@ public:
     int AttackBox(const math::Vec3& center, const math::Vec3& half, float yaw, float damage);
     void TickProjectiles(float dt);
 
+    // G3-4 lag compensation (authoritative server). The runtime records every
+    // fixed tick's authoritative poses into a ring buffer
+    // (kLagCompHistoryTicks deep). MeleeAttackLagComp / AttackBoxLagComp test
+    // targets at the pose they had `rewindTicks` fixed ticks ago (while
+    // damaging the CURRENT entity), so a fast-moving target is hit where the
+    // shooter actually SAW it instead of where it is now. SetAutoLagComp makes
+    // the plain MeleeAttack/AttackBox/CastSkill use that rewind - the server
+    // sets it per tick from the most latent active client's measured RTT.
+    // LagCompPosition queries a single entity's historical pose (false when no
+    // snapshot that old exists for it).
+    static constexpr uint32_t kLagCompHistoryTicks = 64;
+    void SetAutoLagComp(uint32_t rewindTicks) { autoRewindTicks_ = rewindTicks; }
+    uint32_t AutoLagCompTicks() const { return autoRewindTicks_; }
+    bool LagCompPosition(ecs::Entity e, uint32_t rewindTicks, math::Vec3& out) const;
+    int MeleeAttackLagComp(const math::Vec3& origin, const math::Vec3& dir, float range,
+                           float arcDeg, float damage, uint32_t rewindTicks);
+    int AttackBoxLagComp(const math::Vec3& center, const math::Vec3& half, float yaw,
+                         float damage, uint32_t rewindTicks);
+
     // Data-driven skills (M2 combat core). LoadSkills replaces the table;
     // CastSkill looks the skill up, checks cooldown/mana, casts it (projectile
     // / melee arc / attack box), applies the skill's status effects to every
@@ -377,6 +396,16 @@ private:
     void RegisterCharacters();
     void SyncSceneBodies();
     void TickTweens(float dt);
+    // G3-4 shared hit-test cores: `rewindTicks` selects the pose used for the
+    // distance/arc/box test (0 = the entity's current pose). Damage always
+    // lands on the current entity. `exclude` is skipped (CastSkill's never
+    // self-hit rule); non-empty `statuses` are applied via ApplyHit.
+    int MeleeAttackImpl(const math::Vec3& origin, const math::Vec3& dir, float range,
+                        float arcDeg, float damage, uint32_t rewindTicks,
+                        ecs::Entity exclude = {},
+                        const std::vector<SkillStatus>& statuses = {});
+    int AttackBoxImpl(const math::Vec3& center, const math::Vec3& half, float yaw,
+                      float damage, uint32_t rewindTicks);
     std::string ReadScript(const std::string& path) const;
     std::string FullScriptPath(const std::string& path) const;
     // Resolves an asset reference (obj:/gltf:/texture path) against
@@ -454,6 +483,12 @@ private:
     std::vector<std::pair<std::string, uint64_t>> signalHandlers_; // Lua signals
     // Per-caster (EntityKey) skill cooldown seconds by skill name.
     std::unordered_map<uint64_t, std::map<std::string, float>> skillCooldowns_;
+    // G3-4 pose history for lag compensation: one snapshot per fixed tick
+    // (EntityKey -> authoritative position), index 0 = oldest. The newest
+    // snapshot is appended at the end of every Tick and the ring is capped at
+    // kLagCompHistoryTicks (~1 second at 60Hz).
+    std::vector<std::unordered_map<uint64_t, math::Vec3>> poseHistory_;
+    uint32_t autoRewindTicks_ = 0; // rewind used by MeleeAttack/AttackBox/CastSkill
     gfx::Mesh fireballMesh_; // lazily built for skill-projectile rendering
     std::set<std::string> loadedScripts_; // resolved paths whose chunk ran (presence only)
     std::set<std::string> scriptFailed_;  // resolved paths that failed (skip later)
