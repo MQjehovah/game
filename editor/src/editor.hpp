@@ -48,6 +48,7 @@ struct SceneEntity {
     std::string nodeType;
     float cameraFov = 60.0f;  // Camera3D type only (degrees)
     bool cameraOrtho = false; // Camera3D type only
+    float cameraOrthoSize = 10.0f; // Camera3D ortho "Size" (half view height)
     // DirectionalLight3D-style light object (Unity): a scene object that lights
     // the world. The editor auto-creates a default Main Camera + Directional
     // Light for a new/empty scene so there is always an observer + a light.
@@ -299,6 +300,10 @@ private:
     }
     void SaveScene();
     void LoadScene(const std::string& path);
+    // Unity default scene: ensures a Main Camera + a Directional Light object
+    // exist (adds them if missing). Called on new/empty and existing scenes so
+    // nothing is observer-less. 2D projects default the camera to orthographic.
+    void EnsureSceneDefaultObjects();
     // G1-3: assigns a unique id to every entity missing one (id == 0), using
     // max existing id + 1. Called after scene load and setup so the scene tree
     // can reference parents by id before the first save.

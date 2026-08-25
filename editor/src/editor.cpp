@@ -936,6 +936,7 @@ void EditorApp::SetupScene() {
     LoadScene("editor_scene.json");
     SetSelection(entities_.empty() ? -1 : 0);
     NormalizeEntityIds(); // setup-created entities also need stable ids
+    EnsureSceneDefaultObjects();
 }
 
 void EditorApp::OnUpdate(float dt) {
@@ -4967,6 +4968,7 @@ core::Result<core::Json> EditorApp::BuildPlaySceneJson() {
                 ortho.type_ = core::Json::Type::Bool;
                 ortho.bool_ = e.cameraOrtho;
                 cam.object_["ortho"] = ortho;
+                cam.object_["orthoSize"] = mkNum(e.cameraOrthoSize);
                 comps.object_["camera"] = std::move(cam);
             }
             if (e.hasLight) {
@@ -6159,6 +6161,8 @@ void EditorApp::LoadScene(const std::string& path) {
                 if (const core::Json* v = cam->Get("fov"))
                     e.cameraFov = static_cast<float>(v->GetNumber());
                 if (const core::Json* v = cam->Get("ortho")) e.cameraOrtho = v->GetBool();
+                if (const core::Json* v = cam->Get("orthoSize"))
+                    e.cameraOrthoSize = static_cast<float>(v->GetNumber());
                 if (e.nodeType.empty()) e.nodeType = "Camera3D";
             }
             if (const core::Json* li = comps->Get("light")) {
@@ -6457,6 +6461,46 @@ void EditorApp::LoadScene(const std::string& path) {
         history_.Clear(); // undo history from the previous scene is invalid
         currentSceneName_ = BaseName(path);
         NEON_LOG_INFO("Scene loaded (%zu entities)", entities_.size());
+        EnsureSceneDefaultObjects();
+    }
+}
+
+void EditorApp::EnsureSceneDefaultObjects() {
+    // Unity default scene: every scene keeps a Main Camera + a Directional
+    // Light object so nothing is observer-less. Old scenes that lack them get
+    // them added on load (and the scene is marked dirty so a save persists it).
+    bool hasCam = false, hasLight = false;
+    for (const SceneEntity& e : entities_) {
+        if (e.nodeType == "Camera3D") hasCam = true;
+        if (e.hasLight) hasLight = true;
+    }
+    bool added = false;
+    if (!hasCam) {
+        SceneEntity e;
+        e.name = "Main Camera";
+        e.nodeType = "Camera3D";
+        e.pos = {0.0f, 3.0f, 10.0f};
+        e.cameraFov = 60.0f;
+        if (projectMode_ == "2d" || editMode_ == EditMode::Scene2D) {
+            // 2D: a locked orthographic camera framing the 1280x720 design space.
+            e.cameraOrtho = true;
+            e.cameraOrthoSize = 360.0f;
+        }
+        entities_.push_back(std::move(e));
+        added = true;
+    }
+    if (!hasLight) {
+        SceneEntity e;
+        e.name = "Directional Light";
+        e.nodeType = "Light3D";
+        e.hasLight = true;
+        e.light.type = "directional";
+        entities_.push_back(std::move(e));
+        added = true;
+    }
+    if (added) {
+        NormalizeEntityIds();
+        sceneDirty_ = true;
     }
 }
 

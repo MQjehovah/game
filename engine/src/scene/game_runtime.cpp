@@ -1728,6 +1728,7 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera) {
             cam.up = {0, 1, 0};
             cam.ortho = c.ortho;
             cam.fovY = c.fov * math::kDegToRad;
+            cam.orthoSize = c.orthoSize;
         });
     // Project at the ACTIVE scene viewport's aspect (a dock sub-rect in the
     // editor, the full target in the standalone player) so the runtime render

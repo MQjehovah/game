@@ -267,6 +267,7 @@ struct SceneNodeType {
 struct SceneCamera {
     float fov = 60.0f;  // vertical field of view, degrees
     bool ortho = false;
+    float orthoSize = 10.0f; // Unity orthographic camera "Size" (half view height)
 };
 // The `Light` component on a light object (Unity GameObject -> Light). `type`
 // is exactly one of "directional" / "point" / "ambient". Directional uses

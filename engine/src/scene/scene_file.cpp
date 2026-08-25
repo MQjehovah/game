@@ -924,10 +924,12 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
     reg.Register("camera",
                  [](ecs::World& world, ecs::Entity ent, const core::Json& data,
                     const core::Json&, std::string* err) {
-                     if (!CheckComponentShape(data, {"fov", "ortho"}, "camera", err))
+                     if (!CheckComponentShape(data, {"fov", "ortho", "orthoSize"}, "camera", err))
                          return false;
                      SceneCamera c;
                      if (!RequireNumber(data, "fov", "camera", c.fov, err)) return false;
+                     if (const core::Json* n = data.Get("orthoSize"))
+                         c.orthoSize = static_cast<float>(n->GetNumber());
                      if (const core::Json* o = data.Get("ortho")) {
                          if (!o->IsBool()) {
                              if (err) *err = "component 'camera' field 'ortho' must be a bool";
