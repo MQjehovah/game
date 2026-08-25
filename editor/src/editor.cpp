@@ -1714,10 +1714,18 @@ void EditorApp::OnRender() {
             renderer_.SetDirectionalLight(sl->sunDir, sl->color, sl->ambientStrength);
         else
             renderer_.SetDirectionalLight({-0.4f, -1.0f, -0.3f}, {1.0f, 0.95f, 0.85f}, 0.45f);
-        // 2D view = camera lock: mark the ortho camera's visible rect so the
-        // user sees exactly what the front/top camera frames (Unity-style
-        // camera border), no matter which project the view belongs to.
-        if (viewCam_ == ViewCam::Front) DrawCameraFrame();
+        // Scene PointLight objects (Unity-style) drive the renderer's point lights.
+        int plIndex = 0;
+        for (const SceneEntity& se : entities_) {
+            if (!se.hasLight || se.light.type != "point") continue;
+            if (plIndex >= gfx::Renderer::kMaxPointLights) break;
+            renderer_.SetPointLight(plIndex++, se.pos, se.light.color, se.light.radius);
+        }
+        for (; plIndex < gfx::Renderer::kMaxPointLights; ++plIndex)
+            renderer_.SetPointLight(plIndex, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f, 1.0f}, 0.0f);
+        // G-camera: the camera object's frustum gizmo already shows the real
+        // view (and follows the camera), so the fixed design/camera border is
+        // no longer needed - the game is driven by the camera's actual view.
 
         if (playtestActive_ && playtest_) {
             // Play mode: the viewport renders the runtime's world (a snapshot
@@ -4717,6 +4725,20 @@ void EditorApp::AddEntity(const std::string& meshKey) {
         e.nodeType = "Light3D";
         e.hasLight = true;
         e.light.type = "directional";
+        e.pos = pos;
+        const size_t insertAt = entities_.size();
+        history_.Push(std::make_unique<AddEntityCommand>(&entities_, e, insertAt));
+        SetSelection(static_cast<int>(entities_.size()) - 1);
+        return;
+    }
+    if (meshKey == "light:point") {
+        SceneEntity e;
+        e.name = "点光源" + std::to_string(counter++);
+        e.nodeType = "Light3D";
+        e.hasLight = true;
+        e.light.type = "point";
+        e.light.color = {1.0f, 0.8f, 0.5f, 1.0f};
+        e.light.radius = 10.0f;
         e.pos = pos;
         const size_t insertAt = entities_.size();
         history_.Push(std::make_unique<AddEntityCommand>(&entities_, e, insertAt));

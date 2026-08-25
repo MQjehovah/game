@@ -576,13 +576,13 @@ void EditorApp::BuildScenePanel() {
         // Unity-style: only primitive geometry is created from the toolbar.
         // Helmet / tree / house etc. are resource objects and are dragged in
         // from the 资源 panel (or double-clicked there).
-        const char* types[] = {"地形", "方块", "球体", "平面", "相机", "方向光"};
+        const char* types[] = {"地形", "方块", "球体", "平面", "相机", "方向光", "点光源"};
         ImGui::SetNextItemWidth(86.0f);
-        ImGui::Combo("##addtype", &addType, types, 6);
+        ImGui::Combo("##addtype", &addType, types, 7);
         ImGui::SameLine();
         if (ImGui::Button("添加")) {
             const char* keys[] = {"terrain", "cube", "sphere", "plane",
-                                  "camera", "light:directional"};
+                                  "camera", "light:directional", "light:point"};
             AddEntity(keys[addType]);
         }
         ImGui::SameLine();
@@ -1453,8 +1453,44 @@ void EditorApp::BuildInspectorPanel() {
                 history_.Push(std::make_unique<EditPropertyCommand<bool>>(
                     &entities_, selected_, ApplyCameraOrthoProp, oldOrtho, e.cameraOrtho));
             }
+            if (e.cameraOrtho) {
+                if (ImGui::DragFloat("正交尺寸", &e.cameraOrthoSize, 0.1f, 0.1f, 2000.0f))
+                    sceneDirty_ = true;
+            }
             ImGui::TextDisabled("将相机实体选中并设为视图: 使用右上角相机菜单的\"跟随选中\"");
             ImGui::Separator();
+        }
+        if (e.hasLight) {
+            if (ImGui::CollapsingHeader("光源##light", ImGuiTreeNodeFlags_DefaultOpen)) {
+                static const char* kLt[] = {"方向光", "点光源", "环境光"};
+                const int typeIdx = e.light.type == "point" ? 1 : (e.light.type == "ambient" ? 2 : 0);
+                int sel = typeIdx;
+                if (ImGui::Combo("类型##lt", &sel, kLt, 3)) {
+                    e.light.type = sel == 1 ? "point" : (sel == 2 ? "ambient" : "directional");
+                    sceneDirty_ = true;
+                }
+                float col[4] = {e.light.color.r, e.light.color.g, e.light.color.b, e.light.color.a};
+                if (ImGui::ColorEdit4("颜色##lt", col)) {
+                    e.light.color = {col[0], col[1], col[2], col[3]};
+                    sceneDirty_ = true;
+                }
+                if (e.light.type == "directional") {
+                    if (ImGui::DragFloat3("方向##lt", &e.light.sunDir.x, 0.05f)) sceneDirty_ = true;
+                }
+                if (e.light.type == "point") {
+                    if (ImGui::DragFloat("半径##lt", &e.light.radius, 0.1f, 0.1f, 500.0f))
+                        sceneDirty_ = true;
+                }
+                float amb[4] = {e.light.ambientColor.r, e.light.ambientColor.g,
+                                e.light.ambientColor.b, e.light.ambientColor.a};
+                if (ImGui::ColorEdit4("环境光色##lt", amb)) {
+                    e.light.ambientColor = {amb[0], amb[1], amb[2], amb[3]};
+                    sceneDirty_ = true;
+                }
+                if (ImGui::DragFloat("环境光强度##lt", &e.light.ambientStrength, 0.01f, 0.0f, 2.0f))
+                    sceneDirty_ = true;
+                ImGui::Separator();
+            }
         }
         if (e.nodeType == "Sprite" && e.spriteTex.empty()) {
             ImGui::TextColored(ImVec4(0.8f, 0.85f, 1.0f, 1.0f),
