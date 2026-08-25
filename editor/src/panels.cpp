@@ -3499,6 +3499,42 @@ void EditorApp::BuildTerrainPanel() {
 
 // P1-1 2D tilemap editor: paint cells with a texture path (or click a texture
 // asset in the palette); cols/rows/cellSize resize the grid.
+void EditorApp::BuildEnvironmentPanel() {
+    if (!showEnvironment_) return;
+    if (ImGui::Begin("环境设置", &showEnvironment_)) {
+        if (ImGui::CollapsingHeader("光照", ImGuiTreeNodeFlags_DefaultOpen)) {
+            ImGui::SliderFloat("环境光强度", &env_.ambientStrength, 0.0f, 2.0f);
+            float a[4] = {env_.ambientColor.r, env_.ambientColor.g,
+                          env_.ambientColor.b, env_.ambientColor.a};
+            if (ImGui::ColorEdit4("环境光色", a))
+                env_.ambientColor = {a[0], a[1], a[2], a[3]};
+            float s[4] = {env_.sunColor.r, env_.sunColor.g,
+                          env_.sunColor.b, env_.sunColor.a};
+            if (ImGui::ColorEdit4("太阳光色", s)) env_.sunColor = {s[0], s[1], s[2], s[3]};
+            ImGui::DragFloat3("太阳方向", &env_.sunDir.x, 0.05f);
+        }
+        if (ImGui::CollapsingHeader("天空", ImGuiTreeNodeFlags_DefaultOpen)) {
+            float t[4] = {env_.skyTop.r, env_.skyTop.g, env_.skyTop.b, env_.skyTop.a};
+            if (ImGui::ColorEdit4("天顶", t)) env_.skyTop = {t[0], t[1], t[2], t[3]};
+            float h[4] = {env_.skyHorizon.r, env_.skyHorizon.g,
+                          env_.skyHorizon.b, env_.skyHorizon.a};
+            if (ImGui::ColorEdit4("地平线", h)) env_.skyHorizon = {h[0], h[1], h[2], h[3]};
+        }
+        if (ImGui::CollapsingHeader("默认相机")) {
+            ImGui::SliderFloat("FOV", &env_.cameraFov, 20.0f, 120.0f);
+            ImGui::Checkbox("正交", &env_.cameraOrtho);
+            if (env_.cameraOrtho) ImGui::DragFloat("正交尺寸", &env_.orthoSize, 0.1f);
+        }
+        if (ImGui::CollapsingHeader("2D 设计空间")) {
+            ImGui::DragInt("宽", &env_.designWidth, 1, 320, 3840);
+            ImGui::DragInt("高", &env_.designHeight, 1, 180, 2160);
+            ImGui::Checkbox("信箱模式", &env_.letterbox);
+        }
+        ImGui::TextDisabled("修改即时作用于视口; 保存场景时写入 environment 组件");
+    }
+    ImGui::End();
+}
+
 void EditorApp::BuildTilemapPanel() {
     if (!showTilemap_) return;
     if (ImGui::Begin("2D 地图", &showTilemap_)) {

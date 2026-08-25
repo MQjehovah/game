@@ -416,6 +416,7 @@ private:
     void BuildScriptEditorPanel();
     void BuildAnimEditorPanel();
     void BuildTerrainPanel();
+    void BuildEnvironmentPanel();
     void BuildTilemapPanel();
     void SaveSceneAsChild();
     void ReloadEntityShader(SceneEntity& e);
@@ -757,6 +758,9 @@ private:
     bool showAnimEditor_ = false;
     bool showTerrain_ = false;
     bool showTilemap_ = false;
+    // G-environment: scene-level ambient/sun/sky/default-camera/2D-design.
+    bool showEnvironment_ = false;
+    scene::SceneEnvironment env_;
     // P1-1 animation timeline editor state.
     anim::AnimationClip animClip_;
     std::string animClipPath_;
