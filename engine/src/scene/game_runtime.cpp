@@ -974,7 +974,8 @@ void GameRuntime::BuildDrawList() {
         item.spriteTex = s->texture;
         item.flipX = s->flipX;
         item.flipY = s->flipY;
-        item.mat = gfx::Material::Unlit({}, ParseColorHex(s->colorHex));
+        // 2D sprites are lit so the scene's ambient/sun/lights affect them.
+        item.mat = gfx::Material::Lit({}, ParseColorHex(s->colorHex), 8.0f);
         draws_.push_back(std::move(item));
     }
     // P1-1 tilemap: every non-empty cell becomes a sprite draw item offset by

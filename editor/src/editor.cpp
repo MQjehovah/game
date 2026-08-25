@@ -5831,7 +5831,8 @@ bool EditorApp::ResolveMesh(SceneEntity& e) {
                 return false;
             }
             e.spriteMesh = gfx::Mesh::CreateQuad(renderer_, 1.0f, 1.0f, "sprite");
-            e.spriteMaterial = gfx::Material::Unlit(tex.Handle(), e.tint);
+            // 2D sprites are lit so the scene's ambient/sun/lights affect them.
+            e.spriteMaterial = gfx::Material::Lit(tex.Handle(), e.tint, 8.0f);
             e.spriteMaterial.transparent = true; // PNG sprites keep their alpha
         }
         // Script-only / logical entities (e.g. a 2D game's entry entity that
