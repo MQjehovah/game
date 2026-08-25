@@ -3219,6 +3219,7 @@ void EditorApp::BuildImGuiUI() {
             ImGui::MenuItem("资产", nullptr, &showAssets_);
             ImGui::MenuItem("资源", nullptr, &showResources_);
             ImGui::MenuItem("日志", nullptr, &showLog_);
+            ImGui::MenuItem("模型查看器", nullptr, &showModelPreview_);
             ImGui::MenuItem("行为树", nullptr, &showBt_);
             ImGui::MenuItem("脚本", nullptr, &showScripts_);
             ImGui::MenuItem("脚本编辑器", nullptr, &showScriptEditor_);
