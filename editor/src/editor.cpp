@@ -540,7 +540,6 @@ void RegisterPanelStateHandler(EditorApp* app) {
         {"调试覆盖层", &EditorApp::showDebugOverlay_},
         {"动画时间线", &EditorApp::showAnimEditor_},
         {"地形编辑", &EditorApp::showTerrain_},
-        {"环境设置", &EditorApp::showEnvironment_},
         {"2D 地图", &EditorApp::showTilemap_},
         {"本地化", &EditorApp::showLoc_},
         {"UI 编辑器", &EditorApp::showUIEditor_},
@@ -1705,9 +1704,7 @@ void EditorApp::OnRender() {
             renderer_.DrawLines(gv.data(), static_cast<uint32_t>(gv.size()),
                                 math::Mat4::Identity());
         }
-        // Scene environment provides the ambient/sun so the user can tune
-        // brightness without touching renderer/editor defaults.
-        renderer_.SetDirectionalLight(env_.sunDir, env_.sunColor, env_.ambientStrength);
+        renderer_.SetDirectionalLight({-0.4f, -1.0f, -0.3f}, {1.0f, 0.95f, 0.85f}, 0.45f);
         // 2D view = camera lock: mark the ortho camera's visible rect so the
         // user sees exactly what the front/top camera frames (Unity-style
         // camera border), no matter which project the view belongs to.
@@ -3323,7 +3320,6 @@ void EditorApp::BuildImGuiUI() {
     BuildScriptEditorPanel();
     BuildAnimEditorPanel();
     BuildTerrainPanel();
-    BuildEnvironmentPanel();
     BuildPackagePanel();
     BuildProfilerPanel();
     BuildInputMapPanel();
