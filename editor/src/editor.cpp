@@ -2325,7 +2325,7 @@ void EditorApp::DrawSceneGizmos(const gfx::Camera&) {
             // coincides with the design-space border (and the game view).
             const float aspect = static_cast<float>(gfx::Renderer::kDesignWidth) /
                                  static_cast<float>(gfx::Renderer::kDesignHeight);
-            const float nearP = 0.1f, farP = 120.0f;
+            const float nearP = 0.1f, farP = 60.0f;
             math::Vec3 c[8];
             if (e.cameraOrtho) {
                 const float hh = e.cameraOrthoSize, hw = hh * aspect;
@@ -2354,8 +2354,16 @@ void EditorApp::DrawSceneGizmos(const gfx::Camera&) {
             for (int i = 0; i < 4; ++i) seg(i, 4 + i);
             renderer_.DrawLines(ln.data(), static_cast<uint32_t>(ln.size()),
                                 math::Mat4::Identity());
-            // Camera position marker.
-            renderer_.DrawSphere(e.pos, 0.15f, camCol);
+            // Camera position anchor: a small axis cross at the exact origin so
+            // the frustum tip visibly sits on the selection gizmo.
+            gfx::Renderer::LineVertex cross[6];
+            cross[0] = {model.TransformPoint({-0.3f, 0.0f, 0.0f}), camCol};
+            cross[1] = {model.TransformPoint({0.3f, 0.0f, 0.0f}), camCol};
+            cross[2] = {model.TransformPoint({0.0f, -0.3f, 0.0f}), camCol};
+            cross[3] = {model.TransformPoint({0.0f, 0.3f, 0.0f}), camCol};
+            cross[4] = {model.TransformPoint({0.0f, 0.0f, -0.3f}), camCol};
+            cross[5] = {model.TransformPoint({0.0f, 0.0f, 0.3f}), camCol};
+            renderer_.DrawLines(cross, 6, math::Mat4::Identity());
         } else if (e.hasLight) {
             const gfx::Color col = e.light.type == "point"
                                        ? ptCol
@@ -6555,16 +6563,24 @@ void EditorApp::EnsureSceneDefaultObjects() {
     }
     bool added = false;
     if (!hasCam) {
-        SceneEntity e;
-        e.name = "Main Camera";
-        e.nodeType = "Camera3D";
-        e.pos = {0.0f, 3.0f, 10.0f};
-        e.cameraFov = 60.0f;
-        if (projectMode_ == "2d" || editMode_ == EditMode::Scene2D) {
-            // 2D: a locked orthographic camera framing the 1280x720 design space.
-            e.cameraOrtho = true;
-            e.cameraOrthoSize = 360.0f;
-            e.pos = {640.0f, 360.0f, 100.0f}; // behind the content plane, at the design centre
+    SceneEntity e;
+    e.name = "Main Camera";
+    e.nodeType = "Camera3D";
+    e.pos = {0.0f, 3.0f, 10.0f};
+    e.cameraFov = 60.0f;
+    // Detect 2D by the scene content (sprites) as well as the project mode:
+    // projectMode_ may not be set yet when the defaults are injected.
+    bool is2D = projectMode_ == "2d" || editMode_ == EditMode::Scene2D;
+    if (!is2D) {
+        for (const SceneEntity& se : entities_) {
+            if (!se.spriteTex.empty()) { is2D = true; break; }
+        }
+    }
+    if (is2D) {
+        // 2D: a locked orthographic camera framing the 1280x720 design space.
+        e.cameraOrtho = true;
+        e.cameraOrthoSize = 360.0f;
+        e.pos = {640.0f, 360.0f, 100.0f}; // behind the content plane, at the design centre
         }
         entities_.push_back(std::move(e));
         added = true;
