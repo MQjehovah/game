@@ -37,9 +37,9 @@
 
 ### G1-5 渲染表现缺口（P2-1 遗留）
 
-- [ ] SSAO（环境光遮蔽）
-- [ ] 体积光 / 体积图
-- [ ] GPU 粒子实例化渲染（当前粒子渲染模型需改造）
+- [ ] SSAO（环境光遮蔽）——待做（需深度纹理后处理 pass）。
+- [ ] 体积光 / 体积图——待做（light-shaft ray-march）。
+- [x] GPU 粒子实例化渲染（当前粒子渲染模型需改造）——已落地：`Renderer::DrawBillboards` + `DrawMeshInstancedColored`（GL 每实例 RGBA 属性 location 8 + 新 instanced-colored shader），粒子从逐粒子屏幕空间 billboard 改为**单次 3D 实例化相机朝向广告牌**（depth-aware，additive/alpha 分两组各一次 draw）。`neon_rush --smoke-test 60` GL 冒烟通过。2026-08-25。
 - 现状：PBR / IBL / HDR / Bloom / ACES / MSAA / CSM / 点光源 cubemap 阴影 / 实例化 / GPU 蒙皮 / 贴花均已交付。
 
 ## 二、进阶扩展（第二阶段）
@@ -66,8 +66,9 @@
 
 ### G2-4 动态全局光照
 
-- [ ] DDGI 或 Voxel Cone Tracing；现状仅静态 IBL（预计算天空）。
-- 建议：排在地形之后；移动端优先 DDGI（不依赖光追硬件）。
+- [~] 现状：仅静态 IBL（预计算天空）。**light-probe 场已落地**（`neon/gfx/light_probe.hpp`：`BuildProbeField`/`SampleProbeField`，按场景 AABB 生成 irradiance 探针网格，太阳/天空/点光衰减采样；供 G8-3 探针可视化 + 未来动态 GI）。单元测试 `tests/test_light_probe.cpp`。
+- [ ] 动态 GI shader 集成（探针采样接入 lit 着色器 / DDGI / Voxel Cone Tracing）——待做；移动端优先探针式（不依赖光追硬件）。
+- 建议：排在地形之后；移动端优先探针式 GI（不依赖光追硬件）。
 
 ### G2-5 自定义 shader 热重载仅限 GL
 
@@ -206,10 +207,10 @@
 ### G8-3 可视化场景调试覆盖层（第 12 项）
 
 - [~] 现状：`DrawBox/DrawSphere/DrawLines` 调试绘制 API ✅；物理碰撞体线框（playtest，动态青/静态灰）✅；导航网格在导航面板内可视化（绿/红格 + 路径）✅；相机边框/选中包围盒/地形笔刷预览 ✅。
-- [ ] 视口内 NavMesh 可行走区域覆盖层（绿/红半透明）——目前只在面板内显示。
-- [ ] 音频源 3D 衰减球体（半透明蓝）——无音频可视化。
-- [ ] 光照探针分布显示——无 light probe 系统（探针本身也待做）。
-- [ ] F3 统一调试面板（图层开关：碰撞/导航/音频/光照）。
+- [x] 视口内 NavMesh 可行走区域覆盖层（绿/红半透明）——`DrawDebugOverlay` 在视口绘制 walkable/blocked 半透明格。
+- [ ] 音频源 3D 衰减球体（半透明蓝）——暂无音频源数据结构（面板提供音频开关占位）。
+- [x] 光照探针分布显示——配合 G2-4 的 `BuildProbeField`，视口按 irradiance 着色绘制探针标记。
+- [x] F3 统一调试面板（图层开关：碰撞/导航/音频/光照）——F3 开关「调试覆盖层」面板，含碰撞线框/导航/光照探针/音频复选框。
 - 建议：定义 DebugOverlay 图层注册表，F3 统一开关；先补导航覆盖层（收益最直接）。
 
 ### G8-4 增量打包与内容哈希（第 13 项）

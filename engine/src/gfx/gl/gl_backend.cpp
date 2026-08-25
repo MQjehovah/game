@@ -154,6 +154,7 @@ public:
         g.GenBuffers(1, &uiVbo_);
         g.GenBuffers(1, &uiEbo_);
         g.GenBuffers(1, &instanceVbo_);
+        g.GenBuffers(1, &instanceColorVbo_);
         g.BindVertexArray(uiVao_);
         g.BindBuffer(glc::ArrayBuffer, uiVbo_);
         g.EnableVertexAttribArray(0);
@@ -281,6 +282,7 @@ public:
         g.DeleteBuffers(1, &uiVbo_);
         g.DeleteBuffers(1, &uiEbo_);
         g.DeleteBuffers(1, &instanceVbo_);
+        g.DeleteBuffers(1, &instanceColorVbo_);
         window_ = nullptr;
     }
 
@@ -893,6 +895,46 @@ public:
         g.BindVertexArray(0);
     }
 
+    void DrawMeshInstancedColored(const MeshHandle& mesh, const math::Mat4* models,
+                                  const math::Vec4* colors, uint32_t count) override {
+        auto it = meshes_.find(mesh.vao);
+        if (it == meshes_.end() || !models || !colors || count == 0) return;
+        auto& g = gl::GetGL();
+        g.BindVertexArray(it->second.vao);
+
+        // Instance matrices (attributes 4..7), transposed row->column-major.
+        g.BindBuffer(glc::ArrayBuffer, instanceVbo_);
+        std::vector<float> flat(static_cast<size_t>(count) * 16);
+        for (uint32_t m = 0; m < count; ++m) {
+            const float* src = models[m].Data();
+            float* dst = flat.data() + static_cast<size_t>(m) * 16;
+            for (int r = 0; r < 4; ++r)
+                for (int c = 0; c < 4; ++c) dst[r * 4 + c] = src[c * 4 + r];
+        }
+        g.BufferData(glc::ArrayBuffer, static_cast<gl::GLsizeiptr>(count * 64), flat.data(),
+                     glc::DynamicDraw);
+        for (int i = 0; i < 4; ++i) {
+            g.EnableVertexAttribArray(4 + i);
+            g.VertexAttribPointer(4 + i, 4, glc::Float, 0, 64,
+                                  reinterpret_cast<const void*>(i * 16));
+            g.VertexAttribDivisor(4 + i, 1);
+        }
+
+        // Per-instance color (attribute 8).
+        g.BindBuffer(glc::ArrayBuffer, instanceColorVbo_);
+        g.BufferData(glc::ArrayBuffer, static_cast<gl::GLsizeiptr>(count * 16), colors,
+                     glc::DynamicDraw);
+        g.EnableVertexAttribArray(8);
+        g.VertexAttribPointer(8, 4, glc::Float, 0, 16, nullptr);
+        g.VertexAttribDivisor(8, 1);
+
+        g.DrawElementsInstanced(glc::Triangles, static_cast<gl::GLsizei>(it->second.indexCount),
+                                glc::UnsignedShort, nullptr, static_cast<gl::GLsizei>(count));
+        for (int i = 0; i < 4; ++i) g.DisableVertexAttribArray(4 + i);
+        g.DisableVertexAttribArray(8);
+        g.BindVertexArray(0);
+    }
+
     void DrawPrimitives(const void* vertices, uint32_t vertexCount, uint32_t stride,
                         const uint16_t* indices, uint32_t indexCount,
                         PrimitiveTopology topology) override {
@@ -984,6 +1026,7 @@ private:
     gl::GLuint linesVao_ = 0, linesVbo_ = 0, linesEbo_ = 0;
     gl::GLuint uiVao_ = 0, uiVbo_ = 0, uiEbo_ = 0;
     gl::GLuint instanceVbo_ = 0;
+    gl::GLuint instanceColorVbo_ = 0;
     std::unordered_map<uint32_t, Program> shaders_;
     std::unordered_map<uint32_t, GLMesh> meshes_;
     std::unordered_map<uint32_t, GLTexture> textures_;

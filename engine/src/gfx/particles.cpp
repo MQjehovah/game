@@ -44,16 +44,41 @@ void ParticleSystem::Update(float dt) {
 }
 
 void ParticleSystem::Draw(Renderer& renderer, const Texture& texture, float scale) {
+    // G1-5: batch every particle into ONE instanced 3D billboard draw per blend
+    // mode (additive vs alpha) instead of one screen-space call per particle.
+    // The billboards are world-sized, camera-facing and depth-tested, so they
+    // occlude/are occluded by the scene (the old path was 2D overlay, unaware
+    // of scene depth).
+    std::vector<math::Vec3> addPos, alphaPos;
+    std::vector<float> addSize, alphaSize;
+    std::vector<Color> addCol, alphaCol;
+    addPos.reserve(particles_.size());
+    alphaPos.reserve(particles_.size());
     for (const Particle& p : particles_) {
-        float t01 = 1.0f - p.life / p.maxLife;
-        float size = math::Lerp(p.size, p.sizeEnd, t01);
+        const float t01 = 1.0f - p.life / p.maxLife;
+        const float size = math::Lerp(p.size, p.sizeEnd, t01) * scale;
         Color c{math::Lerp(p.color.r, p.colorEnd.r, t01),
                 math::Lerp(p.color.g, p.colorEnd.g, t01),
                 math::Lerp(p.color.b, p.colorEnd.b, t01),
                 math::Lerp(p.color.a, p.colorEnd.a, t01)};
-        renderer.DrawBillboard(p.pos, size * scale, c, texture.Handle(),
-                               p.additive ? BlendMode::Additive : BlendMode::Alpha);
+        if (p.additive) {
+            addPos.push_back(p.pos);
+            addSize.push_back(size);
+            addCol.push_back(c);
+        } else {
+            alphaPos.push_back(p.pos);
+            alphaSize.push_back(size);
+            alphaCol.push_back(c);
+        }
     }
+    if (!addPos.empty())
+        renderer.DrawBillboards(addPos.data(), addSize.data(), addCol.data(),
+                                texture.Handle(), static_cast<uint32_t>(addPos.size()),
+                                BlendMode::Additive);
+    if (!alphaPos.empty())
+        renderer.DrawBillboards(alphaPos.data(), alphaSize.data(), alphaCol.data(),
+                                texture.Handle(), static_cast<uint32_t>(alphaPos.size()),
+                                BlendMode::Alpha);
 }
 
 void ParticleSystem::Clear() { particles_.clear(); }

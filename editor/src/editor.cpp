@@ -537,6 +537,7 @@ void RegisterPanelStateHandler(EditorApp* app) {
         {"打包", &EditorApp::showPackage_},
         {"性能", &EditorApp::showProfiler_},
         {"导航", &EditorApp::showNav_},
+        {"调试覆盖层", &EditorApp::showDebugOverlay_},
         {"动画时间线", &EditorApp::showAnimEditor_},
         {"地形编辑", &EditorApp::showTerrain_},
         {"2D 地图", &EditorApp::showTilemap_},
@@ -1717,14 +1718,17 @@ void EditorApp::OnRender() {
             // shapes are visible while playtesting (dynamic = cyan, static =
             // gray). Uses the physics world's live positions, so resting and
             // bouncing bodies show exactly where the simulation puts them.
-            for (const physics::World::DebugBody& db :
-                 playtest_->PhysicsWorld().DebugBodies()) {
-                const gfx::Color c = db.dynamic ? gfx::Color{0.2f, 0.9f, 1.0f, 0.9f}
-                                                : gfx::Color{0.55f, 0.62f, 0.7f, 0.85f};
-                if (db.kind == physics::World::ShapeKind::Sphere)
-                    renderer_.DrawSphere(db.pos, db.radius, c);
-                else
-                    renderer_.DrawBox({db.pos - db.halfExtents, db.pos + db.halfExtents}, c);
+            // G8-3: physics wireframe is one debug-overlay layer (on by default).
+            if (debugColliders_) {
+                for (const physics::World::DebugBody& db :
+                     playtest_->PhysicsWorld().DebugBodies()) {
+                    const gfx::Color c = db.dynamic ? gfx::Color{0.2f, 0.9f, 1.0f, 0.9f}
+                                                    : gfx::Color{0.55f, 0.62f, 0.7f, 0.85f};
+                    if (db.kind == physics::World::ShapeKind::Sphere)
+                        renderer_.DrawSphere(db.pos, db.radius, c);
+                    else
+                        renderer_.DrawBox({db.pos - db.halfExtents, db.pos + db.halfExtents}, c);
+                }
             }
         } else {
             // P2-3: sprites draw back-to-front by zOrder (stable sort keeps the
@@ -1848,6 +1852,9 @@ void EditorApp::OnRender() {
             renderer_.Reset2DViewport();
         }
     }
+    // G8-3: debug overlay layers (nav walkable area, light probes, audio).
+    DrawDebugOverlay(cam);
+
     // End the 3D scene phase: composite the HDR frame to the backbuffer and
     // bind the backbuffer so the tool UI (engine UI demo + ImGui) below renders
     // crisp and unbloomed on top.
@@ -3004,6 +3011,10 @@ void EditorApp::BuildImGuiUI() {
         ImGui::EndMainMenuBar();
     }
 
+    // F3 toggles the unified debug-overlay panel (G8-3). Runs regardless of
+    // selection so the layers can be switched while playtesting.
+    if (ImGui::IsKeyPressed(ImGuiKey_F3)) showDebugOverlay_ = !showDebugOverlay_;
+
     // Transform-gizmo shortcuts: W/E/R switch the operation while an entity is
     // selected (ignored while the user is typing text, e.g. the name field).
     if (selected_ >= 0 && !ImGui::GetIO().WantTextInput) {
@@ -3300,6 +3311,7 @@ void EditorApp::BuildImGuiUI() {
     BuildProfilerPanel();
     BuildInputMapPanel();
     BuildNavPanel();
+    BuildDebugOverlayPanel();
     BuildUIEditorPanel();
     BuildLocPanel();
     BuildViewportPanel();
@@ -7026,6 +7038,97 @@ void EditorApp::BuildPluginsPanel() {
         }
     }
     ImGui::End();
+}
+
+void EditorApp::BuildDebugOverlayPanel() {
+    if (!showDebugOverlay_) return;
+    if (ImGui::Begin("调试覆盖层", &showDebugOverlay_)) {
+        ImGui::TextDisabled("F3 开关本面板; 图层实时作用在视口");
+        ImGui::Checkbox("碰撞线框", &debugColliders_);
+        ImGui::Checkbox("导航可行走区域", &debugNavMesh_);
+        ImGui::Checkbox("光照探针", &debugProbes_);
+        ImGui::Checkbox("音频源", &debugAudio_);
+        ImGui::SameLine();
+        ImGui::TextDisabled("(暂无数据)");
+        ImGui::TextDisabled("提示: 碰撞/导航在编辑与试玩视口即时生效");
+    }
+    ImGui::End();
+}
+
+void EditorApp::DrawDebugOverlay(const gfx::Camera& cam) {
+    (void)cam;
+    if (!renderer_.Backend()) return;
+
+    // Navigation walkable area: translucent green (walkable) / red (blocked)
+    // ground cells so the field is visible in the viewport, not just the panel.
+    if (debugNavMesh_ && navGrid_.Valid()) {
+        static gfx::Mesh cell = gfx::Mesh::CreatePlane(renderer_, 1.0f, 1.0f, 1, 1, "navcell");
+        if (!cell.Valid()) return;
+        gfx::Material walk = gfx::Material::Unlit({}, gfx::Color{0.3f, 0.85f, 0.4f, 0.28f});
+        walk.transparent = true;
+        gfx::Material block = gfx::Material::Unlit({}, gfx::Color{0.9f, 0.3f, 0.3f, 0.28f});
+        block.transparent = true;
+        for (int y = 0; y < navGrid_.Height(); ++y) {
+            for (int x = 0; x < navGrid_.Width(); ++x) {
+                const math::Vec2 c = navGrid_.CellToWorld(x, y);
+                const math::Mat4 m = math::Mat4::Translation({c.x, 0.02f, c.y}) *
+                                     math::Mat4::Scale({navGrid_.CellSize(), 1.0f,
+                                                        navGrid_.CellSize()});
+                renderer_.DrawMesh(cell, navGrid_.Walkable(x, y) ? walk : block, m);
+            }
+        }
+    }
+
+    // Light probes: wireframe sphere markers tinted by probe irradiance, over a
+    // field rebuilt lazily from the scene's 3D meshes' combined AABB. A single
+    // representative light near the scene centre makes the 3D gradient visible;
+    // real scene point lights would feed this list (G2-4).
+    if (debugProbes_) {
+        math::AABB bounds;
+        bool haveBounds = false;
+        for (const SceneEntity& e : entities_) {
+            if (!e.mesh.Valid()) continue;
+            const math::Mat4 model = math::Mat4::Translation(e.pos) * e.rot.ToMat4() *
+                                     math::Mat4::Scale(e.scale);
+            const math::AABB wb = math::TransformAABB(e.mesh.Bounds(), model);
+            if (!haveBounds) {
+                bounds = wb;
+                haveBounds = true;
+            } else {
+                bounds.min.x = std::min(bounds.min.x, wb.min.x);
+                bounds.min.y = std::min(bounds.min.y, wb.min.y);
+                bounds.min.z = std::min(bounds.min.z, wb.min.z);
+                bounds.max.x = std::max(bounds.max.x, wb.max.x);
+                bounds.max.y = std::max(bounds.max.y, wb.max.y);
+                bounds.max.z = std::max(bounds.max.z, wb.max.z);
+            }
+        }
+        if (!haveBounds) {
+            bounds = math::AABB{{-15, 0, -15}, {15, 5, 15}};
+        }
+        const bool same =
+            debugProbeBounds_.min.x == bounds.min.x && debugProbeBounds_.max.x == bounds.max.x &&
+            debugProbeBounds_.min.y == bounds.min.y && debugProbeBounds_.max.y == bounds.max.y &&
+            debugProbeBounds_.min.z == bounds.min.z && debugProbeBounds_.max.z == bounds.max.z;
+        if (debugProbeDirty_ || !same) {
+            gfx::ProbeLightInput in;
+            in.pointLights.push_back({(bounds.min + bounds.max) * 0.5f,
+                                      gfx::Color{1.0f, 0.9f, 0.75f, 1.0f}, 6.0f,
+                                      std::max(bounds.max.x - bounds.min.x, 8.0f)});
+            gfx::BuildProbeField(bounds, debugProbeRes_, in, debugProbeField_);
+            debugProbeBounds_ = bounds;
+            debugProbeDirty_ = false;
+        }
+        const float markerR =
+            std::max(0.08f, (bounds.max.x - bounds.min.x) / (2.0f * static_cast<float>(debugProbeRes_)));
+        for (const gfx::IrradianceProbe& p : debugProbeField_) {
+            const float y = math::Clamp(p.irradiance.y, 0.0f, 1.0f);
+            renderer_.DrawSphere(p.pos, markerR,
+                                 gfx::Color{math::Clamp(p.irradiance.x, 0.0f, 1.0f),
+                                            y,
+                                            math::Clamp(p.irradiance.z, 0.0f, 1.0f), 0.9f});
+        }
+    }
 }
 
 } // namespace neon::editor

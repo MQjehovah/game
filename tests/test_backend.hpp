@@ -79,6 +79,8 @@ public:
 
     void DrawMesh(const neon::gfx::MeshHandle&) override {}
     void DrawMeshInstanced(const neon::gfx::MeshHandle&, const neon::math::Mat4*, uint32_t) override {}
+    void DrawMeshInstancedColored(const neon::gfx::MeshHandle&, const neon::math::Mat4*,
+                                  const neon::math::Vec4*, uint32_t) override {}
     void DrawPrimitives(const void*, uint32_t, uint32_t, const uint16_t*, uint32_t,
                         neon::gfx::PrimitiveTopology) override {}
 

@@ -404,6 +404,42 @@ void main() {
 }
 )";
 
+// Instanced variant with a per-instance RGBA color (attribute 8) for
+// sprite/billboard particles that tint independently per instance.
+const char* kUnlitInstancedColoredVertexShader = R"(
+#version 330 core
+layout(location = 0) in vec3 aPos;
+layout(location = 2) in vec2 aUV;
+layout(location = 3) in vec4 aColor;
+layout(location = 4) in mat4 aInstance;
+layout(location = 8) in vec4 aInstanceColor;
+uniform mat4 uMVP;
+out vec2 vUV;
+out vec4 vColor;
+out vec4 vInstanceColor;
+void main() {
+    vUV = aUV;
+    vColor = aColor;
+    vInstanceColor = aInstanceColor;
+    gl_Position = uMVP * aInstance * vec4(aPos, 1.0);
+}
+)";
+
+const char* kUnlitInstancedColoredFragmentShader = R"(
+#version 330 core
+in vec2 vUV;
+in vec4 vColor;
+in vec4 vInstanceColor;
+out vec4 FragColor;
+uniform sampler2D uAlbedo;
+uniform vec4 uTint;
+uniform bool uHasTexture;
+void main() {
+    vec4 tex = uHasTexture ? texture(uAlbedo, vUV) : vec4(1.0);
+    FragColor = tex * uTint * vColor * vInstanceColor;
+}
+)";
+
 const char* kShadowVertexShader = R"(
 #version 330 core
 layout(location = 0) in vec3 aPos;
@@ -697,6 +733,10 @@ void Renderer::InitBuiltinResources() {
         backend_->CreateShader(kLitInstancedVertexShader, kLitFragmentShader, "lit_instanced");
     unlitInstancedShader_ =
         backend_->CreateShader(kUnlitInstancedVertexShader, kUnlitFragmentShader, "unlit_instanced");
+    unlitInstancedColoredShader_ =
+        backend_->CreateShader(kUnlitInstancedColoredVertexShader,
+                               kUnlitInstancedColoredFragmentShader, "unlit_instanced_colored");
+    billboardQuad_ = Mesh::CreateQuad(*this, 1.0f, 1.0f, "billboard");
     depthShader_ = backend_->CreateShader(kShadowVertexShader, kShadowFragmentShader, "shadow");
     depthInstancedShader_ =
         backend_->CreateShader(kShadowInstancedVertexShader, kShadowFragmentShader, "shadow_inst");
@@ -1442,6 +1482,89 @@ void Renderer::DrawMeshInstanced(const Mesh& mesh, const Material& material,
     ++stats_.drawCalls;
     stats_.instances += static_cast<uint32_t>(instancedVisible_.size());
     stats_.triangles += mesh.TriangleCount() * static_cast<uint32_t>(instancedVisible_.size());
+}
+
+void Renderer::DrawMeshInstancedColored(const Mesh& mesh, const Material& material,
+                                        const math::Mat4* models, const math::Vec4* colors,
+                                        uint32_t count, bool frustumCull) {
+    if (!mesh.Valid() || !models || !colors || count == 0) return;
+    Flush2D();
+    instancedVisible_.clear();
+    instancedVisibleColored_.clear();
+    instancedVisible_.reserve(count);
+    instancedVisibleColored_.reserve(count);
+    const math::AABB& bounds = mesh.Bounds();
+    for (uint32_t i = 0; i < count; ++i) {
+        if (frustumCull && frustumValid_ &&
+            !frustum_.Intersects(math::TransformAABB(bounds, models[i]))) {
+            continue;
+        }
+        instancedVisible_.push_back(models[i]);
+        instancedVisibleColored_.push_back(colors[i]);
+    }
+    if (instancedVisible_.empty()) return;
+
+    ShaderHandle shader =
+        material.shader.Valid() ? material.shader : unlitInstancedColoredShader_;
+    ApplyMaterial(material, viewProj_, math::Mat4::Identity(), math::Mat4::Identity(), shader);
+    backend_->DrawMeshInstancedColored(mesh.Handle(), instancedVisible_.data(),
+                                       instancedVisibleColored_.data(),
+                                       static_cast<uint32_t>(instancedVisible_.size()));
+    ++stats_.drawCalls;
+    stats_.instances += static_cast<uint32_t>(instancedVisible_.size());
+    stats_.triangles +=
+        mesh.TriangleCount() * static_cast<uint32_t>(instancedVisible_.size());
+}
+
+void Renderer::DrawBillboards(const math::Vec3* positions, const float* sizes,
+                              const Color* colors, TextureHandle texture, uint32_t count,
+                              BlendMode blend) {
+    if (!backend_ || !billboardQuad_.Valid() || !positions || !sizes || !colors || count == 0)
+        return;
+    Flush2D();
+
+    // Camera-facing billboard basis (right/up from the camera frame).
+    math::Vec3 fwd = camera_.target - camera_.position;
+    if (fwd.LengthSq() < 1e-6f) fwd = {0.0f, 0.0f, -1.0f};
+    fwd = fwd.Normalized();
+    math::Vec3 up0 = camera_.up;
+    if (up0.LengthSq() < 1e-6f) up0 = {0.0f, 1.0f, 0.0f};
+    math::Vec3 right = math::Cross(fwd, up0);
+    if (right.LengthSq() < 1e-6f) right = {1.0f, 0.0f, 0.0f};
+    right = right.Normalized();
+    const math::Vec3 up = math::Cross(right, fwd).Normalized();
+
+    std::vector<math::Mat4> models(static_cast<size_t>(count));
+    std::vector<math::Vec4> colc(static_cast<size_t>(count));
+    for (uint32_t i = 0; i < count; ++i) {
+        const float s = sizes[i];
+        math::Mat4 m; // identity; fill the basis columns below
+        // Local +X -> camera right, +Y -> camera up, +Z -> toward camera.
+        m.m[0] = right.x * s;  m.m[4] = right.y * s;  m.m[8] = right.z * s;
+        m.m[1] = up.x * s;     m.m[5] = up.y * s;     m.m[9] = up.z * s;
+        m.m[2] = -fwd.x * s;   m.m[6] = -fwd.y * s;   m.m[10] = -fwd.z * s;
+        m.m[3] = positions[i].x;
+        m.m[7] = positions[i].y;
+        m.m[11] = positions[i].z;
+        models[i] = m;
+        colc[i] = {colors[i].r, colors[i].g, colors[i].b, colors[i].a};
+    }
+
+    Material mat = Material::Unlit(texture, Color::White);
+    mat.transparent = true; // pick any; blend mode is overridden below
+    mat.doubleSided = true;
+    ApplyMaterial(mat, viewProj_, math::Mat4::Identity(), math::Mat4::Identity(),
+                  unlitInstancedColoredShader_);
+    // Particles blend appropriately and respect the scene depth (unlike the
+    // screen-space DrawBillboard helper which is depth-unaware).
+    backend_->SetBlendMode(blend);
+    backend_->SetDepthTest(depthAvailable_, false);
+    backend_->SetCullMode(CullMode::None);
+    backend_->DrawMeshInstancedColored(billboardQuad_.Handle(), models.data(), colc.data(),
+                                       count);
+    ++stats_.drawCalls;
+    stats_.instances += count;
+    stats_.triangles += billboardQuad_.TriangleCount() * count;
 }
 
 void Renderer::DrawProjectedShadowVerts(const std::vector<Vertex3D>& verts,

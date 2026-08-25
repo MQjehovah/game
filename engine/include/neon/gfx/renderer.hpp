@@ -169,6 +169,18 @@ public:
                          const std::vector<math::Mat4>& boneMatrices, int boneCount);
     void DrawMeshInstanced(const Mesh& mesh, const Material& material, const math::Mat4* models,
                            uint32_t count, bool frustumCull = true);
+    // Instanced draw with a per-instance RGBA color (sprite-billboard particles
+    // that vary color per instance). `colors` has `count` entries.
+    void DrawMeshInstancedColored(const Mesh& mesh, const Material& material,
+                                  const math::Mat4* models, const math::Vec4* colors,
+                                  uint32_t count, bool frustumCull = true);
+    // GPU-particle billboards: `positions`/`sizes`/`colors` draw as a single
+    // camera-facing instanced quad batch (depth-tested, unlit tinted texture).
+    // Unlike the screen-space DrawBillboard helper this stays in the 3D scene
+    // pass with correct depth/fog/light occlusion.
+    void DrawBillboards(const math::Vec3* positions, const float* sizes,
+                        const Color* colors, TextureHandle texture, uint32_t count,
+                        BlendMode blend = BlendMode::Additive);
     // CPU-side projected shadow: projects the mesh onto the ground plane
     // (y=0) along lightDir. Works without any depth buffer or FBO. Used as the
     // fallback when CSM is disabled.
@@ -379,6 +391,8 @@ private:
     ShaderHandle linesShader_;
     ShaderHandle litInstancedShader_;
     ShaderHandle unlitInstancedShader_;
+    ShaderHandle unlitInstancedColoredShader_;
+    gfx::Mesh billboardQuad_;  // unit XY quad used by DrawBillboards
     ShaderHandle depthShader_;
     ShaderHandle depthInstancedShader_;
     ShaderHandle depthSkinnedShader_;
@@ -512,6 +526,7 @@ private:
     // calls within a frame (and across frames) so a busy scene stops paying
     // for heap churn in the hot path.
     std::vector<math::Mat4> instancedVisible_;
+    std::vector<math::Vec4> instancedVisibleColored_;
     std::vector<float> boneUniformFlat_;
     std::vector<ShadowSortKey> shadowSortKeys_;
     std::vector<LineVertex> projectedShadowVerts_;

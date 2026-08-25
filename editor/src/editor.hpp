@@ -10,6 +10,7 @@
 
 #include "neon/core/log.hpp"
 #include "neon/audio/audio.hpp"
+#include "neon/gfx/light_probe.hpp"
 #include "neon/nav/nav_grid.hpp"
 #include "neon/neon.hpp"
 #include "neon/scene/component_schema.hpp"
@@ -233,6 +234,9 @@ private:
     void BuildPluginPanels();
     void BuildPluginsPanel();
     void BuildNavPanel();
+    // G8-3 debug overlay: unified F3 panel + viewport layers.
+    void BuildDebugOverlayPanel();
+    void DrawDebugOverlay(const gfx::Camera& cam);
     void BuildUIEditorPanel();
     // UI editor viewport input: click selects a node, drag moves it, corner
     // handles resize it (design-space coordinates).
@@ -588,6 +592,17 @@ private:
     bool showLog_ = true;
     bool showImGuiDemo_ = false;
     bool showNav_ = false;
+    // G8-3 debug overlay (F3). Layer toggles drive the viewport overlays.
+    bool showDebugOverlay_ = false;
+    bool debugColliders_ = true;  // physics wireframe (on by default, keeps old UX)
+    bool debugNavMesh_ = false;
+    bool debugProbes_ = false;
+    bool debugAudio_ = false;
+    // Cached light-probe field for the probe layer (rebuilt when stale).
+    std::vector<gfx::IrradianceProbe> debugProbeField_;
+    math::AABB debugProbeBounds_{};
+    int debugProbeRes_ = 4;
+    bool debugProbeDirty_ = true;
     // Data-driven UI editor (ui/*.ui.json): edit a UI document tree and
     // preview it in the viewport. Opens via 视图 → UI 编辑器.
     bool showUIEditor_ = false;

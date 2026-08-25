@@ -19,7 +19,7 @@ namespace neon::gfx {
 
 struct ProbePointLight {
     math::Vec3 position{};
-    math::Color color{1.0f, 1.0f, 1.0f, 1.0f};
+    Color color{1.0f, 1.0f, 1.0f, 1.0f};
     float intensity = 1.0f;
     float radius = 10.0f; // falloff range
 };
@@ -29,10 +29,10 @@ struct ProbeLightInput {
     // Directional sun: direction (away from the light, i.e. the light travels
     // along -sunDir), color and intensity.
     math::Vec3 sunDir{0.4f, 1.0f, 0.3f};
-    math::Color sunColor{1.0f, 0.95f, 0.85f, 1.0f};
+    Color sunColor{1.0f, 0.95f, 0.85f, 1.0f};
     float sunIntensity = 0.45f;
     // Sky/IBL ambient irradiance (flat, applied to every probe).
-    math::Color skyIrradiance{0.55f, 0.70f, 0.88f, 1.0f};
+    Color skyIrradiance{0.55f, 0.70f, 0.88f, 1.0f};
     std::vector<ProbePointLight> pointLights;
 };
 

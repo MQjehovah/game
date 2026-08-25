@@ -161,6 +161,10 @@ public:
     // Draws the mesh once per model matrix (GPU instancing).
     virtual void DrawMeshInstanced(const MeshHandle& mesh, const math::Mat4* models,
                                    uint32_t count) = 0;
+    // GPU instancing with a per-instance RGBA color (particles/skotches that
+    // vary color per instance). `colors` has `count` entries.
+    virtual void DrawMeshInstancedColored(const MeshHandle& mesh, const math::Mat4* models,
+                                          const math::Vec4* colors, uint32_t count) = 0;
     // Immediate vertex submission (stride = bytes per vertex).
     virtual void DrawPrimitives(const void* vertices, uint32_t vertexCount, uint32_t stride,
                                 const uint16_t* indices, uint32_t indexCount,
