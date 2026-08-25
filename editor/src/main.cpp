@@ -57,6 +57,7 @@ int main(int argc, char** argv) {
     bool hotReload = false;
     bool twoD = false;
     bool twoDPlay = false;
+    bool uiEditor = false;
     std::string projectDir;
     std::string backend = "gl";
     std::string screenshot;
@@ -75,6 +76,8 @@ int main(int argc, char** argv) {
         } else if (std::strcmp(argv[i], "--2d-play") == 0) {
             twoD = true;
             twoDPlay = true;
+        } else if (std::strcmp(argv[i], "--ui-editor") == 0) {
+            uiEditor = true;
         } else if (std::strcmp(argv[i], "--project") == 0 && i + 1 < argc) {
             projectDir = argv[++i];
         } else if (std::strcmp(argv[i], "--preview") == 0 && i + 1 < argc) {
@@ -131,7 +134,8 @@ int main(int argc, char** argv) {
                         "  --smoke-test <frames>  run N simulation frames then exit\n"
                         "  --hot                  enable hot reload (scripts/assets on mtime change)\n"
                         "  --2d                   start in the 2D canvas mode (NeonPvZ lawn editor)\n"
-                        "  --2d-play              start 2D mode with the PvZ playtest running\n"
+                         "  --2d-play              start 2D mode with the PvZ playtest running\n"
+                         "  --ui-editor            open the UI editor panel at startup\n"
                         "  --project <dir>        open a data-driven project (game.json startScene)\n"
                         "  --backend <gl|vulkan>  graphics backend (default gl; vulkan is opt-in)\n"
                         "  --package <project> <out>  validate + pack a project into\n"
@@ -180,6 +184,7 @@ int main(int argc, char** argv) {
     if (hotReload) app.SetHotReload(true);
     if (twoD) app.Set2DMode(true);
     if (twoDPlay) app.SetPvzPlaytestOnStart(true);
+    if (uiEditor) app.SetUIEditorOnStart(true);
     if (!projectDir.empty()) app.SetProjectOnStart(projectDir, true);
     if (!previewPath.empty()) app.SetPreviewOnStart(previewPath);
     if (backend != "gl") app.SetBackendName(backend);

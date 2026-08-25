@@ -661,6 +661,33 @@ bool EditorApp::OnCreate() {
     // Start the playtest LAST: LoadProjectScene/SwitchProject above stop any
     // running playtest, so --2d-play + --project must start after both.
     if (pvzPlaytestOnStart_) StartPlaytest();
+    // --ui-editor: open the panel and load the first ui/*.ui.json directly.
+    // The panel's own auto-open only runs while its dock tab is visible, which
+    // a headless/CI layout cannot guarantee.
+    if (uiEditorOnStart_) {
+        showUIEditor_ = true;
+        if (!uiDocOpen_) {
+            std::vector<AssetEntry> entries;
+            if (ListDirectory(projectDir_ + "/ui", entries)) {
+                std::sort(entries.begin(), entries.end(),
+                          [](const AssetEntry& a, const AssetEntry& b) { return a.name < b.name; });
+                for (const AssetEntry& f : entries) {
+                    if (f.isDir || f.name.size() < 9 ||
+                        f.name.compare(f.name.size() - 8, 8, ".ui.json") != 0)
+                        continue;
+                    if (uiDoc_.Load(f.path)) {
+                        uiDocPath_ = f.path;
+                        uiDocOpen_ = true;
+                        uiSelection_.clear();
+                        UISelectNode(uiDoc_.Find("Start") ? uiDoc_.Find("Start") : &uiDoc_.root);
+                        uiDirty_ = false;
+                        NEON_LOG_INFO("UI: opened '%s'", f.path.c_str());
+                    }
+                    break;
+                }
+            }
+        }
+    }
     if (!previewOnStart_.empty()) {
         showModelPreview_ = true;
         OpenModelPreview(previewOnStart_);
@@ -1585,6 +1612,33 @@ void EditorApp::OnUpdate(float dt) {
     }
 }
 
+void EditorApp::BindDock2DMapping(bool designFit) {
+    const math::Rect2& vp = viewportScreenRect_;
+    if (designFit)
+        renderer_.Set2DViewport(vp.x, vp.y, vp.w, vp.h, canvasZoom_, canvasPan_);
+    else
+        renderer_.Set2DViewportPixels(vp.x, vp.y);
+}
+
+EditorApp::DockViewportScope::DockViewportScope(EditorApp& app, bool designFit, bool sceneVp)
+    : app_(app), sceneVp_(sceneVp) {
+    const math::Rect2& vp = app_.viewportScreenRect_;
+    if (!(vp.w > 0.0f && vp.h > 0.0f) || !app_.renderer_.Backend()) return;
+    active_ = true;
+    app_.renderer_.Backend()->SetScissor(static_cast<int>(vp.x), static_cast<int>(vp.y),
+                                         static_cast<int>(vp.w), static_cast<int>(vp.h), true);
+    app_.BindDock2DMapping(designFit);
+    if (sceneVp_) app_.renderer_.SetSceneViewport(vp.x, vp.y, vp.w, vp.h);
+}
+
+EditorApp::DockViewportScope::~DockViewportScope() {
+    if (!active_) return;
+    if (sceneVp_) app_.renderer_.ResetSceneViewport();
+    app_.renderer_.Flush2D();
+    app_.renderer_.Backend()->SetScissor(0, 0, 0, 0, false);
+    app_.renderer_.Reset2DViewport();
+}
+
 void EditorApp::OnRender() {
     renderer_.BeginFrame({0.06f, 0.08f, 0.13f, 1.0f});
     gfx::Camera cam = ActiveCamera(); // the scene branch re-reads after SetCamera
@@ -1593,36 +1647,33 @@ void EditorApp::OnRender() {
         if (!uiEdLogged) {
             uiEdLogged = true;
             NEON_LOG_INFO("UI-EDITOR-PREVIEW: active (doc='%s')", uiDocPath_.c_str());
-        }
-        // UI editor preview: render the edited document into the viewport dock
-        // (1:1 design pixels), with the selected node's outline + resize
-        // handles. No 3D/2D scene is drawn while the UI editor is active.
-        const math::Rect2& vp = viewportScreenRect_;
-        if (vp.w > 0.0f && vp.h > 0.0f && renderer_.Backend()) {
-            renderer_.Backend()->SetScissor(static_cast<int>(vp.x), static_cast<int>(vp.y),
-                                            static_cast<int>(vp.w), static_cast<int>(vp.h), true);
-            renderer_.Set2DViewportPixels(vp.x, vp.y);
-            if (cjkFont_.Valid()) uiDoc_.Draw(renderer_, cjkFont_);
-            // P5-editor UX: outline every selected node; the active one gets
-            // resize handles.
-            for (ui::UiNode* n : uiSelection_) {
-                if (!n) continue;
-                const math::Rect2 sel = n->AbsoluteRect();
-                renderer_.DrawRectOutline(sel, 2.0f,
-                                          {0.4f, 0.9f, 1.0f, 0.9f});
-                if (n != uiSelected_) continue;
-                const float hs = 8.0f;
-                const math::Vec2 corners[4] = {
-                    {sel.x - hs, sel.y - hs},
-                    {sel.x + sel.w, sel.y - hs},
-                    {sel.x - hs, sel.y + sel.h},
-                    {sel.x + sel.w, sel.y + sel.h}};
-                for (const math::Vec2& c : corners)
-                    renderer_.DrawRect(c, {hs * 2, hs * 2}, {0.4f, 0.9f, 1.0f, 1.0f});
+        }        // UI editor preview: render the edited document into the viewport
+        // dock fitted like the 2D canvas (design space + canvas zoom/pan, the
+        // whole 1280x720 document always visible), with the selected node's
+        // outline + resize handles. No 3D/2D scene is drawn while the UI
+        // editor is active.
+        {
+            DockViewportScope dock(*this, /*designFit=*/true, /*sceneVp=*/false);
+            if (dock.Active()) {
+                if (cjkFont_.Valid()) uiDoc_.Draw(renderer_, cjkFont_);
+                // P5-editor UX: outline every selected node; the active one
+                // gets resize handles.
+                for (ui::UiNode* n : uiSelection_) {
+                    if (!n) continue;
+                    const math::Rect2 sel = n->AbsoluteRect();
+                    renderer_.DrawRectOutline(sel, 2.0f,
+                                              {0.4f, 0.9f, 1.0f, 0.9f});
+                    if (n != uiSelected_) continue;
+                    const float hs = 8.0f;
+                    const math::Vec2 corners[4] = {
+                        {sel.x - hs, sel.y - hs},
+                        {sel.x + sel.w, sel.y - hs},
+                        {sel.x - hs, sel.y + sel.h},
+                        {sel.x + sel.w, sel.y + sel.h}};
+                    for (const math::Vec2& c : corners)
+                        renderer_.DrawRect(c, {hs * 2, hs * 2}, {0.4f, 0.9f, 1.0f, 1.0f});
+                }
             }
-            renderer_.Flush2D();
-            renderer_.Backend()->SetScissor(0, 0, 0, 0, false);
-            renderer_.Reset2DViewport();
         }
         renderer_.EndScene();
     } else if (playtestActive_ && playtest_ && projectMode_ == "2d") {
@@ -1632,7 +1683,6 @@ void EditorApp::OnRender() {
         // (1 world unit = 1 design pixel) so the whole view - sprites, UI and
         // the camera frame - zooms together via canvasZoom_; the editor's own
         // camera never leaks into the playtest.
-        const math::Rect2& vp = viewportScreenRect_;
         // The scene's Camera3D object is the runtime view; build the fallback
         // camera from it too so the game renders the SCENE camera's framing
         // (ortho 720-height) instead of the tiny preview default.
@@ -1656,48 +1706,31 @@ void EditorApp::OnRender() {
             gameCam.ortho = true;
             gameCam.orthoSize = 360.0f;
         }
-        if (vp.w > 0.0f && vp.h > 0.0f && renderer_.Backend()) {
-            renderer_.Set2DViewport(vp.x, vp.y, vp.w, vp.h, canvasZoom_, canvasPan_);
-            renderer_.Backend()->SetScissor(static_cast<int>(vp.x), static_cast<int>(vp.y),
-                                            static_cast<int>(vp.w), static_cast<int>(vp.h), true);
+        {
+            DockViewportScope dock(*this, /*designFit=*/true, /*sceneVp=*/true);
             // Same sky + scene lights as the edit view so Play matches what
             // the edit camera sees (previously the playtest kept the renderer
             // defaults: no sky, dark default lighting).
             ApplySceneEnvironment();
-            // Rasterize the scene into the panel rect (not a stale/full-window
-            // viewport) so the sprite aspect and the 2D UI overlay agree.
-            renderer_.SetSceneViewport(vp.x, vp.y, vp.w, vp.h);
-            playtest_->Draw(renderer_, gameCam, canvasZoom_);
-            // Mark the game's camera view (the full 1280x720 design area).
-            renderer_.DrawRectOutline(
-                {0.0f, 0.0f, static_cast<float>(gfx::Renderer::kDesignWidth),
-                 static_cast<float>(gfx::Renderer::kDesignHeight)},
-                2.0f, gfx::Color{0.4f, 0.9f, 1.0f, 0.65f});
-            renderer_.Flush2D();
-            renderer_.Backend()->SetScissor(0, 0, 0, 0, false);
-        } else {
-            // No viewport rect yet (first frame): full-window fallback.
-            ApplySceneEnvironment();
-            playtest_->Draw(renderer_, gameCam, canvasZoom_);
+            if (dock.Active()) {
+                playtest_->Draw(renderer_, gameCam, canvasZoom_);
+                // Mark the game's camera view (the full 1280x720 design area).
+                renderer_.DrawRectOutline(
+                    {0.0f, 0.0f, static_cast<float>(gfx::Renderer::kDesignWidth),
+                     static_cast<float>(gfx::Renderer::kDesignHeight)},
+                    2.0f, gfx::Color{0.4f, 0.9f, 1.0f, 0.65f});
+            } else {
+                // No viewport rect yet (first frame): full-window fallback.
+                playtest_->Draw(renderer_, gameCam, canvasZoom_);
+            }
         }
-        renderer_.Reset2DViewport();
     } else {
         // Render the 3D scene INTO the viewport dock (same idea as the 2D
         // canvas): the camera projection uses the viewport aspect, the
         // rasterization viewport is the dock rect, and the 2D overlay (sky,
         // billboards, playtest HUD) is clipped to it. Nothing bleeds into the
         // dock panels anymore.
-        const math::Rect2& vp = viewportScreenRect_;
-        const bool hasVp = vp.w > 0.0f && vp.h > 0.0f && renderer_.Backend();
-        if (hasVp) {
-            renderer_.Backend()->SetScissor(static_cast<int>(vp.x), static_cast<int>(vp.y),
-                                            static_cast<int>(vp.w), static_cast<int>(vp.h), true);
-            // 3D HUD/billboards draw at design pixel size (1:1) inside the
-            // viewport, matching the packed game; the scissor clips anything
-            // outside the panel. (2D games keep the fit+center design-space
-            // mapping in the playtest branch above.)
-            renderer_.Set2DViewportPixels(vp.x, vp.y);
-        }
+        DockViewportScope dock(*this, /*designFit=*/false, /*sceneVp=*/true);
         // Day sky + scene lights: shared with the 2D playtest so edit and
         // Play render the same environment (see ApplySceneEnvironment).
         ApplySceneEnvironment();
@@ -1705,11 +1738,9 @@ void EditorApp::OnRender() {
         const float aspect = ViewportAspect();
         cam = ActiveCamera();
         renderer_.SetCamera(cam, aspect);
-        if (hasVp) {
-            // SetCamera may run the shadow pass (which rebinds targets and
-            // resets the backend viewport), so apply the scene rect after it.
-            renderer_.SetSceneViewport(vp.x, vp.y, vp.w, vp.h);
-        }
+        // SetCamera's shadow pass restores the scene viewport itself (see
+        // Renderer::SetCamera); DockViewportScope set it before, so nothing
+        // to re-apply here.
         // P2-editor UX: world-space grid overlay (toggle in the viewport
         // toolbar). Drawn into the scene so it matches the active camera.
         if (showViewportGrid_) {
@@ -1902,15 +1933,9 @@ void EditorApp::OnRender() {
         // therefore drew at full-window viewport -> a vertical offset.
         DrawDebugOverlay(cam);
 
-        // Rasterize the scene's 2D overlay (sky / billboards / playtest HUD)
-        // while the scissor is active so it stays inside the viewport, then
-        // restore the full-window mapping for the composite + tool UI.
-        if (hasVp) {
-            renderer_.ResetSceneViewport();
-            renderer_.Flush2D();
-            renderer_.Backend()->SetScissor(0, 0, 0, 0, false);
-            renderer_.Reset2DViewport();
-        }
+        // DockViewportScope (declared at the top of this branch) flushes the
+        // scene's 2D overlay under the scissor, then resets the scene
+        // viewport / scissor / 2D mapping for the composite + tool UI.
     }
 
     // End the 3D scene phase: composite the HDR frame to the backbuffer and
@@ -1923,22 +1948,9 @@ void EditorApp::OnRender() {
     // content stays in the HDR target). Clip it to the viewport like the scene
     // so it never spills over the dock panels, matching the packed game.
     if (playtestActive_ && playtest_) {
-        const math::Rect2& vp = viewportScreenRect_;
-        if (vp.w > 0.0f && vp.h > 0.0f && renderer_.Backend()) {
-            if (projectMode_ == "2d")
-                renderer_.Set2DViewport(vp.x, vp.y, vp.w, vp.h, canvasZoom_, canvasPan_);
-            else
-                renderer_.Set2DViewportPixels(vp.x, vp.y);
-            renderer_.Backend()->SetScissor(static_cast<int>(vp.x), static_cast<int>(vp.y),
-                                            static_cast<int>(vp.w), static_cast<int>(vp.h), true);
-            playtest_->DrawUI(renderer_);
-            renderer_.Flush2D();
-            renderer_.Backend()->SetScissor(0, 0, 0, 0, false);
-            renderer_.Reset2DViewport();
-        } else {
-            playtest_->DrawUI(renderer_);
-            renderer_.Flush2D();
-        }
+        DockViewportScope dock(*this, /*designFit=*/projectMode_ == "2d", /*sceneVp=*/false);
+        playtest_->DrawUI(renderer_);
+        if (!dock.Active()) renderer_.Flush2D(); // full-window fallback
     }
 
     // Game HUD (HP/mana/skill hotbar) overlays the playtest scene. A
@@ -2151,13 +2163,65 @@ void EditorApp::UIAlignSelected(int mode) {
     MarkUIDirty();
 }
 
+bool EditorApp::MouseOverToolPanel() {
+    // Position-based (this runs before ImGui::NewFrame, so hover flags are
+    // stale): the click belongs to a panel - and never to a viewport picker -
+    // when the mouse is inside ANY visible docked leaf window except the
+    // viewport itself.
+    ImGuiContext& ictx = *ImGui::GetCurrentContext();
+    const math::Vec2 mousePx = Input()->MousePos();
+    for (int wi = 0; wi < ictx.Windows.Size; ++wi) {
+        ImGuiWindow* w = ictx.Windows[wi];
+        if (!w || w->Hidden) continue;
+        // A CLOSED panel keeps its stale rect in g.Windows (ImGui never
+        // destroys it), so without this check the old area would keep
+        // hijacking the viewport camera even after the panel is closed.
+        // Active is reset every NewFrame for windows not submitted that frame.
+        if (!w->Active) continue;
+        if (w->DockNodeAsHost != nullptr) continue; // dock host / tab bar
+        if (w->ParentWindow != nullptr) continue;   // child windows
+        if (w->Flags & ImGuiWindowFlags_NoMouseInputs) continue; // overlays (gizmo)
+        if (std::strcmp(w->Name, "视口") == 0) continue; // the 3D viewport
+        if (std::strncmp(w->Name, "##", 2) == 0) continue; // internal windows
+        if (mousePx.x >= w->Pos.x && mousePx.x <= w->Pos.x + w->Size.x &&
+            mousePx.y >= w->Pos.y && mousePx.y <= w->Pos.y + w->Size.y)
+            return true;
+    }
+    return false;
+}
+
 void EditorApp::UpdateUIEditorViewport() {
     const math::Rect2& vp = viewportScreenRect_;
     if (vp.w <= 0.0f || vp.h <= 0.0f) return;
     platform::IInput* input = Input();
     if (!input) return;
-    renderer_.Set2DViewportPixels(vp.x, vp.y);
+    // Clicks/wheel over a tool panel (tree, inspector fields) belong to the
+    // panel, never to the canvas. Without this gate, clicking a DragFloat in
+    // the inspector ALSO ran the canvas hit-test below, which usually missed
+    // and cleared the selection - the "edit a field -> selection lost" bug.
+    const bool overPanel = MouseOverToolPanel();
+    const math::Vec2 mousePx0 = input->MousePos();
+    const bool inViewport =
+        mousePx0.x >= vp.x && mousePx0.x <= vp.x + vp.w &&
+        mousePx0.y >= vp.y && mousePx0.y <= vp.y + vp.h;
+    if (overPanel || !inViewport) return;
+    // Same design-space mapping as the render path (fit + canvas zoom/pan):
+    // ScreenToUI below then reports document coordinates for both picking
+    // and the drag delta, and the two can never disagree again.
+    BindDock2DMapping(/*designFit=*/true);
     const math::Vec2 mouse = renderer_.ScreenToUI(input->MousePos());
+
+    // The UI document is a design-space canvas like the 2D view: wheel zooms
+    // the whole document, middle-drag pans it (shared canvas zoom/pan state).
+    const float wheel = input->WheelDelta();
+    if (std::fabs(wheel) > 0.01f) {
+        canvasZoom_ = math::Clamp(canvasZoom_ * std::pow(1.15f, -wheel), 0.2f, 8.0f);
+        input->ConsumeWheel();
+    }
+    if (input->MouseDown(platform::MouseButton::Middle)) {
+        const float scale = renderer_.UIScale() > 0.0f ? renderer_.UIScale() : 1.0f;
+        canvasPan_ -= input->MouseDelta() / scale;
+    }
 
     auto cornerAt = [](const math::Rect2& r, const math::Vec2& p) {
         const float k = 10.0f;
@@ -2524,33 +2588,8 @@ void EditorApp::UpdateViewport(float dt) {
     math::Vec2 mp = renderer_.ScreenToUI(input->MousePos());
     // ImGui tool windows capture mouse when hovered/active; the 3D viewport
     // area itself has no ImGui window, so camera controls stay responsive.
-    // The DockSpace host spans the workspace and this code runs before
-    // ImGui::NewFrame, so HoveredWindow/WantCaptureMouse are stale here.
-    // Instead: a click belongs to a panel (and never to the viewport picker)
-    // when the mouse is inside ANY visible docked leaf window except the
-    // viewport itself - position-based, independent of hover bookkeeping.
-    ImGuiContext& ictx = *ImGui::GetCurrentContext();
-    const math::Vec2 mousePx = input->MousePos();
-    bool overPanel = false;
-    for (int wi = 0; wi < ictx.Windows.Size; ++wi) {
-        ImGuiWindow* w = ictx.Windows[wi];
-        if (!w || w->Hidden) continue;
-        // A CLOSED panel keeps its stale rect in g.Windows (ImGui never
-        // destroys it), so without this check the old area would keep
-        // hijacking the viewport camera even after the panel is closed.
-        // Active is reset every NewFrame for windows not submitted that frame.
-        if (!w->Active) continue;
-        if (w->DockNodeAsHost != nullptr) continue; // dock host / tab bar
-        if (w->ParentWindow != nullptr) continue;   // child windows
-        if (w->Flags & ImGuiWindowFlags_NoMouseInputs) continue; // overlays (gizmo)
-        if (std::strcmp(w->Name, "视口") == 0) continue; // the 3D viewport
-        if (std::strncmp(w->Name, "##", 2) == 0) continue; // internal windows
-        if (mousePx.x >= w->Pos.x && mousePx.x <= w->Pos.x + w->Size.x &&
-            mousePx.y >= w->Pos.y && mousePx.y <= w->Pos.y + w->Size.y) {
-            overPanel = true;
-            break;
-        }
-    }
+    // See MouseOverToolPanel() for why this is position-based.
+    const bool overPanel = MouseOverToolPanel();
     bool inViewport = mp.x >= viewportRect_.x && mp.x <= viewportRect_.x + viewportRect_.w &&
                       mp.y >= viewportRect_.y && mp.y <= viewportRect_.y + viewportRect_.h;
 

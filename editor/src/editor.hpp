@@ -193,6 +193,9 @@ public:
         viewCam_ = v ? ViewCam::Front : ViewCam::Perspective;
     }
     void SetPvzPlaytestOnStart(bool v) { pvzPlaytestOnStart_ = v; }
+    // --ui-editor: open the UI editor panel at startup (auto-opens the
+    // project's first ui/*.ui.json so the viewport preview is testable).
+    void SetUIEditorOnStart(bool v) { uiEditorOnStart_ = v; }
     void SetProjectOnStart(const std::string& dir, bool loadScene) {
         projectDirOnStart_ = dir;
         loadProjectOnStart_ = loadScene;
@@ -294,6 +297,41 @@ private:
     // edit view and the 2D playtest so Play shows exactly what the edit camera
     // sees (same sky, same lighting).
     void ApplySceneEnvironment();
+    // True when the mouse (screen px) is inside any visible docked TOOL panel
+    // (position-based: this runs before ImGui::NewFrame, so hover flags are
+    // stale). Both viewport input paths (3D canvas + UI editor) use it so a
+    // click on a panel field never leaks into the canvas - previously clicking
+    // a UI-editor inspector field ALSO ran the canvas hit-test, which missed
+    // and cleared the selection ("编辑界面消失").
+    bool MouseOverToolPanel();
+    // === Viewport dock plumbing (SINGLE source of truth) ===================
+    // Every render/input path that targets the viewport dock goes through
+    // these two helpers. Do NOT call Set2DViewport / Set2DViewportPixels /
+    // SetScissor / SetSceneViewport on the renderer directly from feature
+    // code - that is how the mappings drifted apart between edit view / 2D
+    // playtest / UI editor before.
+    //
+    // BindDock2DMapping maps design coordinates onto the dock:
+    //   designFit=true  -> the 1280x720 design space fits the dock with the
+    //                      shared canvas zoom/pan (2D canvas, 2D playtest and
+    //                      the UI editor are all design-space canvases)
+    //   designFit=false -> 1:1 design pixels anchored at the dock origin
+    //                      (3D HUD/billboards)
+    void BindDock2DMapping(bool designFit);
+    // RAII scope: BindDock2DMapping + scissor clip to the dock (+ the 3D
+    // rasterization viewport when sceneVp); the destructor undoes everything
+    // (reset scene viewport, flush 2D, scissor off, reset the 2D mapping).
+    // A no-op while the dock rect is not valid yet (first frame).
+    class DockViewportScope {
+    public:
+        DockViewportScope(EditorApp& app, bool designFit, bool sceneVp);
+        ~DockViewportScope();
+        bool Active() const { return active_; }
+    private:
+        EditorApp& app_;
+        bool sceneVp_;
+        bool active_ = false;
+    };
     // Editor gizmos: draws camera frusta + light icons for scene objects as an
     // ImGui overlay (called from BuildImGuiUI so it draws after the 3D scene and
     // aligns with the transform gizmo).
@@ -469,6 +507,7 @@ private:
     bool playtestActive_ = false;
     std::unique_ptr<scene::GameRuntime> playtest_; // non-null while playtesting
     bool pvzPlaytestOnStart_ = false; // --2d-play: auto-start the playtest
+    bool uiEditorOnStart_ = false;    // --ui-editor: open the UI editor panel
     std::string projectDirOnStart_;    // --project: open this project
     bool loadProjectOnStart_ = false;  // --project also loads its start scene
     // Godot-style input mapping panel: edit project input.json actions.
