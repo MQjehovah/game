@@ -2316,33 +2316,6 @@ void EditorApp::DrawSceneGizmos(const gfx::Camera&) {
     const gfx::Color ptCol{1.0f, 0.65f, 0.25f, 0.95f};
     const gfx::Color ambCol{0.7f, 0.9f, 1.0f, 0.95f};
 
-    // Project world -> screen with the SAME view/projection/rect the transform
-    // gizmo (ImGuizmo) uses, and draw the overlay through ImGui so it lines up
-    // with the gizmo (renderer DrawLines ignores the dock scene viewport in 2D).
-    const gfx::Camera cam = ActiveCamera();
-    const float aspect = ViewportAspect();
-    const math::Mat4 view = cam.View();
-    const math::Mat4 proj = cam.Projection(aspect);
-    const math::Rect2 vp = viewportScreenRect_;
-    ImDrawList* dl = ImGui::GetBackgroundDrawList();
-    if (!dl) return;
-    auto screen = [&](const math::Vec3& w, ImVec2& out) -> bool {
-        const math::Vec4 clip =
-            proj.TransformVec4(view.TransformVec4(math::Vec4(w.x, w.y, w.z, 1.0f)));
-        if (clip.w <= 0.0f) return false;
-        const float ndcX = clip.x / clip.w, ndcY = clip.y / clip.w;
-        out.x = vp.x + (ndcX * 0.5f + 0.5f) * vp.w;
-        out.y = vp.y + (0.5f - ndcY * 0.5f) * vp.h;
-        return true;
-    };
-    auto line = [&](const math::Vec3& a, const math::Vec3& b, const gfx::Color& c) {
-        ImVec2 pa, pb;
-        if (screen(a, pa) && screen(b, pb))
-            dl->AddLine(pa, pb, IM_COL32(static_cast<int>(c.r * 255), static_cast<int>(c.g * 255),
-                                        static_cast<int>(c.b * 255), 235),
-                        1.5f);
-    };
-
     for (const SceneEntity& e : entities_) {
         const math::Mat4 model =
             math::Mat4::Translation(e.pos) * e.rot.ToMat4() * math::Mat4::Scale(e.scale);
@@ -2369,16 +2342,28 @@ void EditorApp::DrawSceneGizmos(const gfx::Camera&) {
                 c[4] = {-fw, fh, -farP};  c[5] = {fw, fh, -farP};
                 c[6] = {fw, -fh, -farP};  c[7] = {-fw, -fh, -farP};
             }
+            std::vector<gfx::Renderer::LineVertex> ln;
+            auto seg = [&](int a, int b) {
+                ln.push_back({model.TransformPoint(c[a]), camCol});
+                ln.push_back({model.TransformPoint(c[b]), camCol});
+            };
             const int q0[4][2] = {{0, 1}, {1, 2}, {2, 3}, {3, 0}};
             const int q1[4][2] = {{4, 5}, {5, 6}, {6, 7}, {7, 4}};
-            for (auto& ed : q0) line(model.TransformPoint(c[ed[0]]), model.TransformPoint(c[ed[1]]), camCol);
-            for (auto& ed : q1) line(model.TransformPoint(c[ed[0]]), model.TransformPoint(c[ed[1]]), camCol);
-            for (int i = 0; i < 4; ++i) line(model.TransformPoint(c[i]), model.TransformPoint(c[4 + i]), camCol);
+            for (auto& ed : q0) seg(ed[0], ed[1]);
+            for (auto& ed : q1) seg(ed[0], ed[1]);
+            for (int i = 0; i < 4; ++i) seg(i, 4 + i);
+            renderer_.DrawLines(ln.data(), static_cast<uint32_t>(ln.size()),
+                                math::Mat4::Identity());
             // Camera position anchor: a small axis cross at the exact origin so
             // the frustum tip visibly sits on the selection gizmo.
-            line(model.TransformPoint({-0.3f, 0, 0}), model.TransformPoint({0.3f, 0, 0}), camCol);
-            line(model.TransformPoint({0, -0.3f, 0}), model.TransformPoint({0, 0.3f, 0}), camCol);
-            line(model.TransformPoint({0, 0, -0.3f}), model.TransformPoint({0, 0, 0.3f}), camCol);
+            gfx::Renderer::LineVertex cross[6];
+            cross[0] = {model.TransformPoint({-0.3f, 0.0f, 0.0f}), camCol};
+            cross[1] = {model.TransformPoint({0.3f, 0.0f, 0.0f}), camCol};
+            cross[2] = {model.TransformPoint({0.0f, -0.3f, 0.0f}), camCol};
+            cross[3] = {model.TransformPoint({0.0f, 0.3f, 0.0f}), camCol};
+            cross[4] = {model.TransformPoint({0.0f, 0.0f, -0.3f}), camCol};
+            cross[5] = {model.TransformPoint({0.0f, 0.0f, 0.3f}), camCol};
+            renderer_.DrawLines(cross, 6, math::Mat4::Identity());
         } else if (e.hasLight) {
             const gfx::Color col = e.light.type == "point"
                                        ? ptCol
@@ -2387,31 +2372,24 @@ void EditorApp::DrawSceneGizmos(const gfx::Camera&) {
                 // Sun icon: a small body + an arrow along the light direction.
                 const math::Vec3 dir = e.light.sunDir.Normalized();
                 const math::Vec3 tip = e.pos + dir * 2.0f;
+                std::vector<gfx::Renderer::LineVertex> ln;
+                ln.push_back({e.pos, col});
+                ln.push_back({tip, col});
                 math::Vec3 s = math::Cross(dir, math::Vec3::Up());
                 if (s.LengthSq() < 1e-4f) s = {1.0f, 0.0f, 0.0f};
                 s = s.Normalized() * 0.25f;
-                line(e.pos, tip, col);
-                line(tip - dir * 0.5f - s, tip, col);
-                line(tip - dir * 0.5f + s, tip, col);
+                ln.push_back({tip - dir * 0.5f - s, col});
+                ln.push_back({tip, col});
+                ln.push_back({tip - dir * 0.5f + s, col});
+                ln.push_back({tip, col});
+                renderer_.DrawLines(ln.data(), static_cast<uint32_t>(ln.size()),
+                                    math::Mat4::Identity());
+                renderer_.DrawSphere(e.pos, 0.2f, col);
             } else if (e.light.type == "point") {
-                // Wireframe falloff sphere projected as a few screen ellipses.
-                const math::Vec3 p = e.pos;
-                const int k = 12;
-                for (int i = 0; i < k; ++i) {
-                    const float a0 = static_cast<float>(i) / k * math::kTwoPi;
-                    const float a1 = static_cast<float>(i + 1) / k * math::kTwoPi;
-                    line(p + math::Vec3{std::cos(a0) * e.light.radius, 0, std::sin(a0) * e.light.radius},
-                         p + math::Vec3{std::cos(a1) * e.light.radius, 0, std::sin(a1) * e.light.radius}, ptCol);
-                }
+                renderer_.DrawSphere(e.pos, e.light.radius, ptCol); // falloff
+                renderer_.DrawSphere(e.pos, 0.2f, gfx::Color{1, 1, 1, 1});
             } else {
-                const math::Vec3 p = e.pos;
-                const int k = 12;
-                for (int i = 0; i < k; ++i) {
-                    const float a0 = static_cast<float>(i) / k * math::kTwoPi;
-                    const float a1 = static_cast<float>(i + 1) / k * math::kTwoPi;
-                    line(p + math::Vec3{std::cos(a0) * 0.3f, 0, std::sin(a0) * 0.3f},
-                         p + math::Vec3{std::cos(a1) * 0.3f, 0, std::sin(a1) * 0.3f}, ambCol);
-                }
+                renderer_.DrawSphere(e.pos, 0.3f, ambCol); // ambient fill
             }
         }
     }
