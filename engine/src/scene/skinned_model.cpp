@@ -184,6 +184,13 @@ core::Result<SkinnedModel> LoadSkinnedModel(assets::AssetManager& assets,
         p.localTransform = n.transform;
         out.parts.push_back(std::move(p));
     }
+    // Painter's order: opaque parts first, transparent last. Alpha-blended
+    // geometry does not write depth (Renderer::ApplyMaterial), so a
+    // transparent part drawn BEFORE an opaque one gets overwritten by it.
+    std::stable_sort(out.parts.begin(), out.parts.end(),
+                     [](const SkinnedModel::Part& a, const SkinnedModel::Part& b) {
+                         return !a.material.transparent && b.material.transparent;
+                     });
     if (!out.clips.empty()) {
         out.defaultClip = 0;
         for (size_t i = 0; i < out.clips.size(); ++i) {

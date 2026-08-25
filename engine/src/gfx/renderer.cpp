@@ -1953,8 +1953,11 @@ void Renderer::ApplyMaterial(const Material& material, const math::Mat4& mvp,
                              ShaderHandle shader) {
     backend_->UseShader(shader);
     backend_->SetCullMode(material.doubleSided ? CullMode::None : CullMode::Back);
-    backend_->SetDepthTest(depthAvailable_ ? !material.transparent : false,
-                           !material.transparent);
+    // Alpha-blended geometry keeps the DEPTH TEST (fragments behind opaque
+    // geometry are still rejected - without it every fur shell / particle
+    // layer stacks from every angle into a dark smear) and only disables the
+    // depth WRITE so blended pixels do not occlude later draws.
+    backend_->SetDepthTest(depthAvailable_, !material.transparent);
     backend_->SetBlendMode(material.transparent ? BlendMode::Alpha : BlendMode::Opaque);
 
     backend_->SetUniformMat4("uMVP", mvp);
