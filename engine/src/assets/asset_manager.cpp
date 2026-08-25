@@ -690,6 +690,45 @@ GltfAsset AssetManager::LoadGLTF(const std::string& path) {
         NEON_LOG_ERROR("GLTF: failed to open '%s'", path.c_str());
         return {};
     }
+
+    // GLB (binary glTF) container: 12-byte header (magic 'glTF', version,
+    // total length) then chunks: [len, type, data]*. Chunk type 0x4E4F534A
+    // is the JSON (padded to 4), 0x004E4942 the binary buffer (padded to 4).
+    // The JSON's buffers[0] has no uri - it refers to the BIN chunk.
+    {
+        const std::vector<uint8_t>& fb = fileBytes.Value();
+        if (fb.size() >= 20 && fb[0] == 'g' && fb[1] == 'l' && fb[2] == 'T' &&
+            fb[3] == 'F') {
+            size_t off = 12;
+            std::string jsonText;
+            std::vector<uint8_t> glbBin;
+            while (off + 8 <= fb.size()) {
+                uint32_t clen = 0, ctype = 0;
+                std::memcpy(&clen, fb.data() + off, 4);
+                std::memcpy(&ctype, fb.data() + off + 4, 4);
+                off += 8;
+                if (off + clen > fb.size()) break;
+                if (ctype == 0x4E4F534A) // 'JSON'
+                    jsonText.assign(reinterpret_cast<const char*>(fb.data() + off), clen);
+                else if (ctype == 0x004E4942) // 'BIN'
+                    glbBin.assign(fb.data() + off, fb.data() + off + clen);
+                off += clen;
+            }
+            std::string parseError;
+            core::Json root = core::Json::Parse(jsonText, &parseError);
+            if (root.IsNull()) {
+                NEON_LOG_ERROR("GLB: JSON parse error in '%s': %s", path.c_str(),
+                               parseError.c_str());
+                return {};
+            }
+            if (glbBin.empty()) {
+                NEON_LOG_ERROR("GLB: no BIN chunk in '%s'", path.c_str());
+                return {};
+            }
+            return LoadGltfJson(root, std::move(glbBin), path, mtime, std::string());
+        }
+    }
+
     std::stringstream ss(std::string(fileBytes.Value().begin(), fileBytes.Value().end()));
     std::string parseError;
     core::Json root = core::Json::Parse(ss.str(), &parseError);
@@ -699,7 +738,7 @@ GltfAsset AssetManager::LoadGLTF(const std::string& path) {
     }
     std::string dir = DirName(path);
 
-    // Binary buffer.
+    // External .bin buffer.
     std::vector<uint8_t> bin;
     if (const core::Json* buffers = root.Get("buffers"); buffers && buffers->Size() > 0) {
         const core::Json* b0 = buffers->At(0);
@@ -719,6 +758,15 @@ GltfAsset AssetManager::LoadGLTF(const std::string& path) {
         NEON_LOG_ERROR("GLTF: empty binary buffer in '%s'", path.c_str());
         return {};
     }
+    return LoadGltfJson(root, std::move(bin), path, mtime, dir);
+}
+
+GltfAsset AssetManager::LoadGltfJson(core::Json& root, std::vector<uint8_t> bin,
+                                    const std::string& path, uint64_t mtime,
+                                    const std::string& dir) {
+    // Shared body for .gltf (JSON + external .bin) and .glb (JSON chunk +
+    // BIN chunk). `bin` may be empty for malformed assets; callers below
+    // already logged the specific failure.
 
     // Parse bufferViews / accessors into plain structs shared by the mesh
     // importer below and GltfAsset::ReadAccessorFloats (animation samplers).

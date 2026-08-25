@@ -8,9 +8,9 @@ local elapsed = 0
 function on_start(e)
   wolf = e
   elapsed = 0
-  local ok = PlayAnimation(e, "idle", true, 0.3)
+  local ok = PlayAnimation(e, "Idle", true, 0.3)
   print("ANIMVERIFY start idle=" .. tostring(ok))
-  SetEntityPlate(e, "验证狼", 1.0)
+  SetEntityPlate(e, "验证骑士", 1.0)
 end
 
 function on_update(e, dt)
@@ -21,18 +21,18 @@ function on_update(e, dt)
   if mode == 0 and timer > 2.5 then
     mode = 1
     timer = 0
-    local ok = PlayAnimation(wolf, "run", true, 0.25)
+    local ok = PlayAnimation(wolf, "Running_A", true, 0.25)
     print("ANIMVERIFY -> run ok=" .. tostring(ok) .. " t=" .. string.format("%.1f", elapsed))
   elseif mode == 1 and timer > 2.5 then
     mode = 2
     timer = 0
-    local ok = PlayAnimation(wolf, "walk", false, 0.15) -- walk one-shot as "attack" stand-in
-    print("ANIMVERIFY -> walk(oneshot) ok=" .. tostring(ok) .. " t=" .. string.format("%.1f", elapsed))
+    local ok = PlayAnimation(wolf, "Unarmed_Melee_Attack_Punch_A", false, 0.15)
+    print("ANIMVERIFY -> punch(oneshot) ok=" .. tostring(ok) .. " t=" .. string.format("%.1f", elapsed))
   elseif mode == 2 then
     if AnimationFinished(wolf) then
       mode = 0
       timer = 0
-      PlayAnimation(wolf, "idle", true, 0.3)
+      PlayAnimation(wolf, "Idle", true, 0.3)
       local p = GetPosition(wolf)
       SpawnFloatText(p.x, p.y + 1.5, p.z, "动作完成", false, 1.5)
       print("ANIMVERIFY oneshot finished t=" .. string.format("%.1f", elapsed))
@@ -40,5 +40,5 @@ function on_update(e, dt)
   end
   -- Keep the plate hp swinging so the bar is visibly alive.
   local t = (math.sin(elapsed * 2) + 1) * 0.5
-  SetEntityPlate(wolf, "验证狼", t)
+  SetEntityPlate(wolf, "验证骑士", t)
 end

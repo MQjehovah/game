@@ -10,6 +10,7 @@
 #include "neon/gfx/font.hpp"
 #include "neon/gfx/mesh.hpp"
 #include "neon/gfx/renderer.hpp"
+#include "neon/core/json.hpp"
 #include "neon/gfx/texture.hpp"
 #include "neon/io/vfs.hpp"
 #include "neon/math/quat.hpp"
@@ -143,7 +144,12 @@ public:
     gfx::Mesh LoadMeshOBJ(const std::string& path);
     // glTF 2.0 importer: POSITION/NORMAL/TEXCOORD_0, PBR metallic-roughness
     // materials (baseColor/metalRoughness/occlusion/emissive), node transforms.
+    // Handles both .gltf (JSON + external .bin) and .glb (binary container).
     GltfAsset LoadGLTF(const std::string& path);
+    // Shared importer body: `root` is the parsed glTF JSON, `bin` the binary
+    // buffer (external .bin contents or the GLB BIN chunk).
+    GltfAsset LoadGltfJson(core::Json& root, std::vector<uint8_t> bin,
+                           const std::string& path, uint64_t mtime, const std::string& dir);
     gfx::Font LoadFont(const std::string& path, int pixelHeight);
     // Loads a system CJK font with DYNAMIC glyphs (stb_truetype atlas grows on
     // demand), so any text renders without declaring a character list.

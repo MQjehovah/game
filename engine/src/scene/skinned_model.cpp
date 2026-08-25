@@ -228,7 +228,28 @@ core::Result<SkinnedModel> LoadSkinnedModel(assets::AssetManager& assets,
     if (skinIndex < 0)
         return core::Result<SkinnedModel>::Err("skinned: no skinned mesh node in " + path);
 
-    const std::string jsonText = ReadFileText(path);
+    // The animation importer needs the glTF JSON text. For a plain .gltf it
+    // is the file itself; a .glb wraps it in a JSON chunk (magic header +
+    // [len,type,data] chunks, type 0x4E4F534A = JSON).
+    std::string jsonText = ReadFileText(path);
+    if (jsonText.size() >= 4 && jsonText[0] == 'g' && jsonText[1] == 'l' &&
+        jsonText[2] == 'T' && jsonText[3] == 'F') {
+        std::vector<uint8_t> raw(jsonText.begin(), jsonText.end());
+        jsonText.clear();
+        size_t off = 12;
+        while (off + 8 <= raw.size()) {
+            uint32_t clen = 0, ctype = 0;
+            std::memcpy(&clen, raw.data() + off, 4);
+            std::memcpy(&ctype, raw.data() + off + 4, 4);
+            off += 8;
+            if (off + clen > raw.size()) break;
+            if (ctype == 0x4E4F534A) {
+                jsonText.assign(reinterpret_cast<const char*>(raw.data() + off), clen);
+                break;
+            }
+            off += clen;
+        }
+    }
     if (jsonText.empty())
         return core::Result<SkinnedModel>::Err("skinned: cannot read " + path);
 
