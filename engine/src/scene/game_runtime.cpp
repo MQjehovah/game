@@ -350,6 +350,7 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
         }
     }
     scriptCtx_.inputMap = &inputMap_;
+    inputMap_.Reset(); // clear G7-3 timing state across playtest restarts
     signalHandlers_.clear();
     scriptCtx_.signalHandlers = &signalHandlers_;
     scriptCtx_.changeScene = [this](const std::string& path) {
@@ -2586,6 +2587,10 @@ void GameRuntime::Tick(float dt) {
     // script call; stop advancing the simulation so the editor can inspect and
     // step before resuming.
     if (hosts_.lua && hosts_.lua->DebuggerPaused()) return;
+
+    // G7-3: advance the input map's timing clock before scripts query actions,
+    // so double-tap / long-press edges are fresh this frame.
+    if (cfg_.input) inputMap_.Update(dt, *cfg_.input);
 
     // Both backends share the engine-injected simulated clock.
     if (hosts_.lua) hosts_.lua->SetSimClock(simTime_);

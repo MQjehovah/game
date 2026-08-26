@@ -2,6 +2,8 @@
 #include "editor_history.hpp"
 #include "editor_util.hpp"
 
+#include <algorithm>
+#include <cstring>
 #include <fstream>
 #include <sstream>
 
@@ -524,6 +526,56 @@ void EditorApp::BuildInputMapPanel() {
     if (!inputMapListenAction_.empty())
         ImGui::TextColored(ImVec4(1.0f, 0.9f, 0.3f, 1.0f),
                            "请按一个新按键绑定到 '%s'...", inputMapListenAction_.c_str());
+    ImGui::Separator();
+    ImGui::TextDisabled("时序规则 (G7-3): 双击窗口/长按阈值 (毫秒, 0=关); 修饰键为需要按住的和弦");
+    for (const std::string& name : inputMapEdit_.Names()) {
+        script::InputAction* a = inputMapEdit_.FindMutable(name);
+        if (!a) continue;
+        if (ImGui::TreeNode(name.c_str())) {
+            int dtMs = static_cast<int>(a->doubleTapMs);
+            if (ImGui::SliderInt("双击窗口 (ms)", &dtMs, 0, 1000, "%d",
+                                 ImGuiSliderFlags_None)) {
+                a->doubleTapMs = static_cast<uint32_t>(dtMs);
+            }
+            int lpMs = static_cast<int>(a->longPressMs);
+            if (ImGui::SliderInt("长按阈值 (ms)", &lpMs, 0, 2000, "%d",
+                                 ImGuiSliderFlags_None)) {
+                a->longPressMs = static_cast<uint32_t>(lpMs);
+            }
+            std::string mods;
+            for (size_t i = 0; i < a->modifiers.size(); ++i)
+                mods += (i == 0 ? "" : ", ") + script::InputMap::KeyToName(a->modifiers[i]);
+            char buf[128] = {};
+            std::strncpy(buf, mods.c_str(), sizeof(buf) - 1);
+            ImGui::SetNextItemWidth(180.0f);
+            if (ImGui::InputText("修饰键", buf, sizeof(buf))) {
+                a->modifiers.clear();
+                std::string cur;
+                for (char c : std::string(buf)) {
+                    if (c == ',' || c == ' ') {
+                        if (!cur.empty()) {
+                            const platform::Key k = script::InputMap::KeyFromName(cur);
+                            if (k != platform::Key::Unknown &&
+                                std::find(a->modifiers.begin(), a->modifiers.end(), k) ==
+                                    a->modifiers.end())
+                                a->modifiers.push_back(k);
+                            cur.clear();
+                        }
+                    } else {
+                        cur += c;
+                    }
+                }
+                if (!cur.empty()) {
+                    const platform::Key k = script::InputMap::KeyFromName(cur);
+                    if (k != platform::Key::Unknown &&
+                        std::find(a->modifiers.begin(), a->modifiers.end(), k) ==
+                            a->modifiers.end())
+                        a->modifiers.push_back(k);
+                }
+            }
+            ImGui::TreePop();
+        }
+    }
     ImGui::End();
 }
 

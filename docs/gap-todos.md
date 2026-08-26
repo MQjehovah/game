@@ -188,6 +188,7 @@
 
 - [x] 现状：Godot 风格 `InputMap`——动作名→多键绑定、positive/negative 轴、`input.json` 数据驱动、编辑器可视化面板改键（`SetPrimaryKey`）、脚本按动作名查询（`ActionDown/Axis`）✅。
 - [ ] 和弦/组合键/长按/双击——无时序类绑定。
+- [x] **输入动作时序绑定（和弦/双击/长按）**——`InputAction` 新增 `modifiers`（和弦：全部按住才触发，作用于所有查询）+ `doubleTapMs`（双击窗口，第 2 次按下触发，第 1 次消耗）+ `longPressMs`（长按阈值，达到一次性触发，释放上报）；`InputMap::Update(dt, in)` 逐帧推进时序时钟（每键独立 press 历史，多动作共享键保持一致），`Reset()` 清理跨场景状态；`input.json` 扩展并 round-trip；`GameRuntime::Tick` 每帧在脚本查询前调 `Update`。编辑器输入映射面板新增"时序规则"节（滑块 + 修饰键文本）。未配时序的动作走原直接读取路径，行为逐位不变。单元测试 `tests/test_input_map.cpp`（和弦门控 / 双击窗口 / 长按单次触发+释放 / round-trip+Reset）。2026-08-26。
 - [ ] 触屏滑动映射——未确认（平台输入以键盘/鼠标为主）。
 - 建议：在 `InputAction` 上增加修饰键与时序规则（chord、double-tap），面板可视化编辑；触屏映射随平台输入层扩展。
 

@@ -136,6 +136,13 @@ bool InputMap::Load(const core::Json& root, std::string* err) {
             readKeys("positive", a.positive);
             readKeys("negative", a.negative);
             readKeys("keys", a.keys);
+            readKeys("modifiers", a.modifiers);
+            if (const core::Json* n = v.Get("doubleTapMs")) {
+                if (n->IsNumber()) a.doubleTapMs = static_cast<uint32_t>(n->GetNumber());
+            }
+            if (const core::Json* n = v.Get("longPressMs")) {
+                if (n->IsNumber()) a.longPressMs = static_cast<uint32_t>(n->GetNumber());
+            }
         } else {
             if (err) *err = "input map: action '" + name + "' must be an array or object";
             return false;
@@ -165,9 +172,26 @@ const InputAction* InputMap::Find(const std::string& name) const {
     return it == actions_.end() ? nullptr : &it->second;
 }
 
+InputAction* InputMap::FindMutable(const std::string& name) {
+    auto it = actions_.find(name);
+    return it == actions_.end() ? nullptr : &it->second;
+}
+
+bool InputMap::ModifiersHeld(const InputAction& a, const platform::IInput& in) {
+    for (platform::Key m : a.modifiers)
+        if (!in.IsDown(m)) return false;
+    return true;
+}
+
 bool InputMap::IsDown(const std::string& name, const platform::IInput& in) const {
     const InputAction* a = Find(name);
     if (!a) return false;
+    if (HasTiming(*a)) {
+        // Double-tap / long-press results are computed per frame in Update.
+        const auto it = frame_.find(name);
+        return it != frame_.end() && it->second.down;
+    }
+    if (!ModifiersHeld(*a, in)) return false;
     for (platform::Key k : a->keys)
         if (in.IsDown(k)) return true;
     for (platform::Key k : a->positive)
@@ -178,6 +202,11 @@ bool InputMap::IsDown(const std::string& name, const platform::IInput& in) const
 bool InputMap::Pressed(const std::string& name, const platform::IInput& in) const {
     const InputAction* a = Find(name);
     if (!a) return false;
+    if (HasTiming(*a)) {
+        const auto it = frame_.find(name);
+        return it != frame_.end() && it->second.pressed;
+    }
+    if (!ModifiersHeld(*a, in)) return false;
     for (platform::Key k : a->keys)
         if (in.Pressed(k)) return true;
     for (platform::Key k : a->positive)
@@ -188,6 +217,11 @@ bool InputMap::Pressed(const std::string& name, const platform::IInput& in) cons
 bool InputMap::Released(const std::string& name, const platform::IInput& in) const {
     const InputAction* a = Find(name);
     if (!a) return false;
+    if (HasTiming(*a)) {
+        const auto it = frame_.find(name);
+        return it != frame_.end() && it->second.released;
+    }
+    if (!ModifiersHeld(*a, in)) return false;
     for (platform::Key k : a->keys)
         if (in.Released(k)) return true;
     for (platform::Key k : a->positive)
@@ -198,11 +232,66 @@ bool InputMap::Released(const std::string& name, const platform::IInput& in) con
 float InputMap::Axis(const std::string& name, const platform::IInput& in) const {
     const InputAction* a = Find(name);
     if (!a) return 0.0f;
+    if (!ModifiersHeld(*a, in)) return 0.0f;
     const bool pos = std::any_of(a->positive.begin(), a->positive.end(),
                                  [&](platform::Key k) { return in.IsDown(k); });
     const bool neg = std::any_of(a->negative.begin(), a->negative.end(),
                                  [&](platform::Key k) { return in.IsDown(k); });
     return (pos ? 1.0f : 0.0f) - (neg ? 1.0f : 0.0f);
+}
+
+void InputMap::Update(float dt, const platform::IInput& in) {
+    timeMs_ += dt * 1000.0f;
+    frame_.clear();
+    for (auto& [name, action] : actions_) {
+        if (!HasTiming(action)) continue;
+        // Trigger keys for edges: the plain keys + the positive side.
+        std::vector<platform::Key> triggers = action.keys;
+        triggers.insert(triggers.end(), action.positive.begin(), action.positive.end());
+        const bool modsHeld = ModifiersHeld(action, in);
+        bool anyDown = false;
+        for (platform::Key k : triggers)
+            if (in.IsDown(k)) anyDown = true;
+        ActionFrame f;
+        f.down = anyDown && modsHeld;
+        // Edges are processed even when the key left the down state this frame
+        // (a long-press release must be reported the frame it happens).
+        for (platform::Key k : triggers) {
+            KeyTiming& t = timing_[k];
+            if (in.Pressed(k)) {
+                if (action.doubleTapMs > 0 &&
+                    timeMs_ - t.lastPressMs <= static_cast<float>(action.doubleTapMs)) {
+                    f.pressed = true;      // 2nd press within the window
+                    t.lastPressMs = -1e9f; // consume the pair
+                } else {
+                    t.lastPressMs = timeMs_; // 1st press (or outside the window)
+                }
+                if (action.longPressMs > 0) {
+                    t.pressStartMs = timeMs_;
+                    t.longFired = false;
+                }
+            }
+            if (action.longPressMs > 0) {
+                if (in.IsDown(k) && !t.longFired &&
+                    timeMs_ - t.pressStartMs >= static_cast<float>(action.longPressMs)) {
+                    f.pressed = true;      // held long enough: fire once
+                    t.longFired = true;
+                }
+                if (in.Released(k) && t.longFired) f.released = true;
+            }
+        }
+        if (!modsHeld) {
+            f.pressed = false;
+            f.released = false;
+        }
+        frame_[name] = f;
+    }
+}
+
+void InputMap::Reset() {
+    timeMs_ = 0.0f;
+    timing_.clear();
+    frame_.clear();
 }
 
 std::vector<std::string> InputMap::Names() const { return order_; }
@@ -244,6 +333,19 @@ std::string InputMap::ToJson() const {
         node.object_["positive"] = keysJson(a.positive);
         node.object_["negative"] = keysJson(a.negative);
         node.object_["keys"] = keysJson(a.keys);
+        node.object_["modifiers"] = keysJson(a.modifiers);
+        if (a.doubleTapMs > 0) {
+            core::Json n;
+            n.type_ = core::Json::Type::Number;
+            n.number_ = static_cast<double>(a.doubleTapMs);
+            node.object_["doubleTapMs"] = std::move(n);
+        }
+        if (a.longPressMs > 0) {
+            core::Json n;
+            n.type_ = core::Json::Type::Number;
+            n.number_ = static_cast<double>(a.longPressMs);
+            node.object_["longPressMs"] = std::move(n);
+        }
         actions.object_[name] = std::move(node);
     }
     root.object_["actions"] = std::move(actions);
