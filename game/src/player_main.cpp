@@ -87,6 +87,8 @@ int main(int argc, char** argv) {
             cfg.connectTicks = std::atoi(argv[++i]);
         } else if (std::strcmp(argv[i], "--seed") == 0 && i + 1 < argc) {
             cfg.rngSeed = std::strtoull(argv[++i], nullptr, 10);
+        } else if (std::strcmp(argv[i], "--variant") == 0 && i + 1 < argc) {
+            cfg.variant = argv[++i];
         } else if (std::strcmp(argv[i], "--backend") == 0 && i + 1 < argc) {
             cfg.backend = argv[++i];
         } else if (std::strcmp(argv[i], "--smoke-test") == 0 && i + 1 < argc) {

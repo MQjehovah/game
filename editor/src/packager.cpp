@@ -795,6 +795,10 @@ void ValidateInto(const PackConfig& cfg, ProjectContext& pc) {
     const std::string inputPath = pc.projectDir + "/input.json";
     if (FileExists(inputPath)) pc.packFiles["input.json"] = inputPath;
 
+    // G6-1: platform/LOD asset variant table (project root, next to input.json).
+    const std::string variantsPath = pc.projectDir + "/variants.json";
+    if (FileExists(variantsPath)) pc.packFiles["variants.json"] = variantsPath;
+
     if (pc.manifestOk) pc.packFiles["game.json"] = manifestPath;
 
     r.ok = r.errors.empty();

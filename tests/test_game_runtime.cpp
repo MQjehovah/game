@@ -11,6 +11,7 @@
 #include "neon/neon.hpp"
 #include "neon/io/vfs.hpp"
 #include "neon/scene/game_runtime.hpp"
+#include "neon/assets/asset_variants.hpp"
 #include "helpers.hpp"
 #include "test_backend.hpp"
 
@@ -995,4 +996,28 @@ TEST(GameRuntimeModOverridesScriptViaVfs) {
     CHECK(runtime.GameVars().Get("modded").type == script::Value::Type::Bool);
     runtime.Tick(1.0f / 60.0f);
     CHECK_EQ(runtime.GameVars().Get("gold").number, 42.0); // Mod behavior, not +1/tick
+}
+
+// G6-1: an asset variant table remaps a logical path to its concrete file
+// before loading. The scene references the LOGICAL path; the asset cache ends
+// up holding the variant file (and never the logical one).
+TEST(GameRuntimeVariantAssetResolution) {
+    assets::AssetVariantTable variants;
+    CHECK(variants.Set("assets/kenney_nature/Models/OBJ format/bed.obj",
+                       "assets/kenney_nature/Models/OBJ format/bed_floor.obj"));
+    const std::string json = R"({"entities":[{"name":"A","components":{
+        "transform":{"pos":[0,0,0]},
+        "mesh":{"meshKey":"obj:assets/kenney_nature/Models/OBJ format/bed.obj"}}}]})";
+    test::HeadlessAssetFixture fix;
+    scene::GameRuntime runtime;
+    scene::GameRuntimeConfig cfg;
+    cfg.assets = &fix.assets;
+    cfg.variantTable = &variants;
+    CHECK(runtime.Start(json, cfg).Ok());
+    gfx::Camera cam;
+    runtime.Draw(fix.renderer, cam);
+
+    // The variant (concrete) file was loaded; the logical path was not.
+    CHECK(fix.assets.Meshes().count("assets/kenney_nature/Models/OBJ format/bed_floor.obj") == 1u);
+    CHECK(fix.assets.Meshes().count("assets/kenney_nature/Models/OBJ format/bed.obj") == 0u);
 }

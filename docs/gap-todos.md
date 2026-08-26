@@ -153,9 +153,9 @@
 ### G6-1 多级资产烘焙与显存自适应（第 4 项）
 
 - [~] 现状：数据驱动 LOD 链（`PickLod` 按距离选择，`game_runtime.cpp:137`）✅；BC1 纹理压缩 + 异步解码 ✅。
-- [ ] 平台级烘焙（PC 4K 贴图 + 高模 vs 移动 1K 贴图 + 减面网格）——无平台变体概念，资产清单无 platform/lod 变体表。
+- [x] **平台/LOD 资产变体表**——`neon/assets/asset_variants.hpp`：`AssetVariantTable`（逻辑路径 → 具体文件，未列入的路径回落自身，JSON 读写 + `LoadVariant` 从 `variants.json` 选命名变体）。`<project>/variants.json`（`{"mobile": {"models/wolf.obj": "models/wolf_low.obj", ...}}`）随包打入（packer 收集）；`neon_game --variant <name>` 加载变体表，`GameRuntime::FullAssetPath` 在加载前解析（`GameRuntimeConfig.variantTable`），mesh/纹理/模型全部走变体。单元测试 `AssetVariantTableResolvesAndFallsBack`（解析/回落/round-trip/缺失变体/坏形状）+ `GameRuntimeVariantAssetResolution`（端到端：场景引用逻辑路径，资产缓存落具体变体文件）。真实打包 e2e：`--package` → `--pack --variant mobile` 日志 "asset variant 'mobile' active (1 overrides)" 退出 0。2026-08-26。
 - [ ] 运行时按显存余量动态切换资产版本——无 GPU 显存预算查询/切换机制。
-- 建议：资产清单（manifest）增加平台/LOD 变体表；渲染器加显存预算 API，流式加载按预算选版本。
+- 建议：资产清单（manifest）增加平台/LOD 变体表；渲染器加显存预算 API，流式加载按预算选版本——变体表已落地（清单=项目 variants.json），显存预算 API 为后续。
 
 ### G6-2 资源依赖图与按需加载（第 5 项）
 

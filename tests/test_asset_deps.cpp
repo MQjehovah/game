@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "neon/neon.hpp"
+#include "neon/assets/asset_variants.hpp"
 #include "helpers.hpp"
 #include "test_backend.hpp"
 
@@ -152,4 +153,45 @@ TEST(AssetDepsAsyncMeshLoad) {
     });
     CHECK(PumpUntil(fx.assets, badFired, 1));
     CHECK(!badOk);
+}
+
+// G6-1: platform/LOD asset variant table — logical paths resolve to concrete
+// files, unlisted paths fall back to themselves, and the JSON (de)serialization
+// plus named-variant selection round-trip.
+TEST(AssetVariantTableResolvesAndFallsBack) {
+    assets::AssetVariantTable t;
+    CHECK(t.Empty());
+    CHECK(t.Set("models/wolf.obj", "models/wolf_low.obj"));
+    CHECK(!t.Empty());
+    CHECK_EQ(t.Resolve("models/wolf.obj"), "models/wolf_low.obj");
+    CHECK_EQ(t.Resolve("models/tree.obj"), "models/tree.obj"); // unlisted -> fallback
+    CHECK_EQ(t.Size(), 1u);
+
+    const std::string json = t.ToJson();
+    assets::AssetVariantTable t2;
+    std::string err;
+    CHECK(t2.LoadJson(json, &err));
+    CHECK(err.empty());
+    CHECK_EQ(t2.Resolve("models/wolf.obj"), "models/wolf_low.obj");
+    CHECK_EQ(t2.Resolve("models/tree.obj"), "models/tree.obj");
+
+    // A named variant selected from a variants.json document.
+    const char* doc = R"({"mobile":{"models/wolf.obj":"models/wolf_mobile.obj"},
+                          "pc":{"models/wolf.obj":"models/wolf_hi.obj"}})";
+    assets::AssetVariantTable mob;
+    CHECK(assets::AssetVariantTable::LoadVariant(doc, "mobile", mob, &err));
+    CHECK_EQ(mob.Resolve("models/wolf.obj"), "models/wolf_mobile.obj");
+    CHECK_EQ(mob.Resolve("models/tree.obj"), "models/tree.obj");
+    assets::AssetVariantTable pc;
+    CHECK(assets::AssetVariantTable::LoadVariant(doc, "pc", pc, &err));
+    CHECK_EQ(pc.Resolve("models/wolf.obj"), "models/wolf_hi.obj");
+
+    // Missing variant / bad shape are rejected with a message.
+    assets::AssetVariantTable missing;
+    CHECK(!assets::AssetVariantTable::LoadVariant(doc, "console", missing, &err));
+    CHECK(!err.empty());
+    assets::AssetVariantTable bad;
+    std::string badErr;
+    CHECK(!bad.LoadJson(R"({"a": 7})", &badErr));
+    CHECK(!badErr.empty());
 }

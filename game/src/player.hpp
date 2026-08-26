@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "neon/neon.hpp"
+#include "neon/assets/asset_variants.hpp"
 #include "neon/scene/game_manifest.hpp"
 #include "neon/scene/game_runtime.hpp"
 #include "neon/net/rpc.hpp"
@@ -60,6 +61,9 @@ struct PlayerConfig {
     // base pack; later mods win. Overrides both assets (VFS) and the unpacked
     // script/prefab/locale tree.
     std::vector<std::string> modDirs;
+    // G6-1 --variant <name>: platform/LOD asset variant selected from the
+    // project's variants.json ("mobile"/"pc"/...). "" = base assets only.
+    std::string variant;
 };
 
 // The data-driven player: unpack a store-only pack to a temp dir, read the
@@ -145,6 +149,9 @@ private:
     float pitch_ = 0.32f;
     float camDist_ = 12.0f;
     bool started_ = false;
+    // G6-1: platform/LOD asset variant table (loaded from variants.json when
+    // cfg_.variant is set; must outlive the runtime, so it lives here).
+    assets::AssetVariantTable variantTable_;
 
     // T6.4 network state.
     bool networked_ = false;

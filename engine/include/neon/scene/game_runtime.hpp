@@ -34,6 +34,7 @@
 
 namespace neon::assets {
 class AssetManager;
+class AssetVariantTable;
 }
 namespace neon::gfx {
 class Renderer;
@@ -92,6 +93,10 @@ struct GameRuntimeConfig {
     // stripped), so a packed game reads scripts straight from the pack and
     // Mod layers override them — no unpacked-dir copy needed.
     neon::io::IFileSystem* fileSystem = nullptr;
+    // G6-1: optional platform/LOD asset variant table. When set, every asset
+    // path is resolved through it (logical -> concrete file) before loading,
+    // so "mobile"/"pc" variants are pure data (see neon/assets/asset_variants.hpp).
+    const assets::AssetVariantTable* variantTable = nullptr;
     // Optional skills.json text (data-driven CastSkill table). The hosts that
     // know their project dir load <dir>/skills.json and pass it here; empty
     // leaves the table empty and CastSkill logs "unknown skill".

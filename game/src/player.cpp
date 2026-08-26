@@ -7,6 +7,7 @@
 #include <iterator>
 
 #include "font_data.hpp"
+#include "neon/assets/asset_variants.hpp"
 #include "neon/core/pack.hpp"
 #include "neon/io/vfs.hpp"
 
@@ -295,6 +296,37 @@ bool PlayerApp::OnCreate() {
     // through the pack + Mod mount stack directly, overriding the unpacked-dir
     // copy — Mods replace base-pack scripts without editing the unpacked tree.
     rcfg.fileSystem = cfg_.vfs ? cfg_.vfs.get() : nullptr;
+    // G6-1: platform/LOD asset variants from the project's variants.json.
+    rcfg.variantTable = cfg_.variant.empty() ? nullptr : &variantTable_;
+    if (!cfg_.variant.empty()) {
+        std::string variantsText;
+        if (cfg_.vfs) {
+            const core::Result<std::vector<uint8_t>> b = cfg_.vfs->ReadFile("variants.json");
+            if (b.Ok()) variantsText.assign(b.Value().begin(), b.Value().end());
+        } else if (!cfg_.unpackedDir.empty()) {
+            std::ifstream vIn(cfg_.unpackedDir + "/variants.json", std::ios::binary);
+            if (vIn.is_open())
+                variantsText.assign(std::istreambuf_iterator<char>(vIn),
+                                    std::istreambuf_iterator<char>());
+        }
+        if (variantsText.empty()) {
+            NEON_LOG_WARN("Player: --variant '%s' but no variants.json found; using base assets",
+                          cfg_.variant.c_str());
+            rcfg.variantTable = nullptr;
+        } else {
+            std::string varErr;
+            if (!assets::AssetVariantTable::LoadVariant(variantsText, cfg_.variant, variantTable_,
+                                                        &varErr)) {
+                NEON_LOG_WARN("Player: --variant '%s' rejected: %s; using base assets",
+                              cfg_.variant.c_str(), varErr.c_str());
+                variantTable_ = assets::AssetVariantTable{};
+                rcfg.variantTable = nullptr;
+            } else {
+                NEON_LOG_INFO("Player: asset variant '%s' active (%zu overrides)",
+                              cfg_.variant.c_str(), variantTable_.Size());
+            }
+        }
+    }
     // M1: skills.json via the same source as scripts (VFS or unpacked dir).
     {
         std::string skillsPath = "skills.json";
