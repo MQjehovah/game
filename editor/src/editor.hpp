@@ -533,6 +533,10 @@ private:
     ecs::World sceneWorld_;
     scene::ComponentRegistry sceneCompReg_;
     void RefreshSceneWorld();
+    // G2-2: play/save output from the runtime World (entities_ -> World via
+    // SyncWorldFromEntities -> canonical SceneFile::FromWorld).
+    void SyncWorldFromEntities();
+    core::Result<core::Json> BuildSceneJsonFromEntities();
     // P2-editor UX: multi-selection set (active entity = selected_).
     std::set<int> selection_;
     int selectionAnchor_ = -1;  // shift-click range anchor

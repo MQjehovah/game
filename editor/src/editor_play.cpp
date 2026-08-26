@@ -89,7 +89,7 @@ void EditorApp::DrawPlayHUD() {
     slot("治疗", "2", healCd, gfx::Color{0.4f, 1.0f, 0.5f, 1.0f});
 }
 
-core::Result<core::Json> EditorApp::BuildPlaySceneJson() {
+core::Result<core::Json> EditorApp::BuildSceneJsonFromEntities() {
     NormalizeEntityIds();
     if (entities_.empty())
         return core::Result<core::Json>::Err("editor: scene is empty");
@@ -400,6 +400,86 @@ core::Result<core::Json> EditorApp::BuildPlaySceneJson() {
         arr.array_.push_back(std::move(obj));
     }
     root.object_["entities"] = std::move(arr);
+    return core::Result<core::Json>::Ok(std::move(root));
+}
+
+// G2-2: rebuild the editor's live sceneWorld_ from entities_ via the canonical
+// builders + runtime Instantiate (the same path the player runs). Editor
+// metadata the runtime would reject (materialRef in mesh, top-level prefab) is
+// stripped here and re-applied by BuildPlaySceneJson afterwards.
+void EditorApp::SyncWorldFromEntities() {
+    sceneWorld_.Clear();
+    sceneCompReg_ = scene::ComponentRegistry{};
+    scene::RegisterBuiltinComponents(sceneCompReg_);
+    auto rootRes = BuildSceneJsonFromEntities();
+    if (!rootRes.Ok()) return;
+    core::Json root = rootRes.Value();
+    auto arrIt = root.object_.find("entities");
+    if (arrIt != root.object_.end() && arrIt->second.IsArray()) {
+        core::Json& arr = arrIt->second;
+        for (size_t i = 0; i < arr.array_.size() && i < entities_.size(); ++i) {
+            const SceneEntity& se = entities_[i];
+            if (se.materialRef.empty() && se.prefab.empty()) continue;
+            core::Json& ent = arr.array_[i];
+            if (!se.materialRef.empty()) {
+                auto compsIt = ent.object_.find("components");
+                if (compsIt != ent.object_.end()) {
+                    auto meshIt = compsIt->second.object_.find("mesh");
+                    if (meshIt != compsIt->second.object_.end())
+                        meshIt->second.object_.erase("materialRef");
+                }
+            }
+            if (!se.prefab.empty()) ent.object_.erase("prefab");
+        }
+    }
+    auto parsed = scene::SceneFile::Parse(core::JsonWriter::Write(root));
+    if (!parsed.Ok()) return;
+    scene::PrefabLibrary prefs;
+    scene::Instantiate(sceneWorld_, parsed.Value(), prefs, sceneCompReg_);
+}
+
+// G2-2: the play/save output is now generated FROM the runtime World the
+// editor hosts (entities_ -> World via SyncWorldFromEntities, then the
+// canonical SceneFile::FromWorld serializer). Editor metadata that the World
+// cannot carry (materialRef, prefab) is re-applied per entity afterwards.
+core::Result<core::Json> EditorApp::BuildPlaySceneJson() {
+    NormalizeEntityIds();
+    if (entities_.empty())
+        return core::Result<core::Json>::Err("editor: scene is empty");
+    SyncWorldFromEntities();
+    auto out = scene::SceneFile::FromWorld(sceneWorld_);
+    if (!out.Ok()) return out;
+    core::Json root = out.Value();
+    auto arrIt = root.object_.find("entities");
+    if (arrIt != root.object_.end() && arrIt->second.IsArray()) {
+        core::Json& arr = arrIt->second;
+        for (size_t i = 0; i < arr.array_.size() && i < entities_.size(); ++i) {
+            const SceneEntity& se = entities_[i];
+            if (se.materialRef.empty() && se.prefab.empty()) continue;
+            core::Json& ent = arr.array_[i];
+            core::Json comps;
+            auto compsIt = ent.object_.find("components");
+            if (compsIt != ent.object_.end() && compsIt->second.IsObject())
+                comps = compsIt->second;
+            comps.type_ = core::Json::Type::Object;
+            if (!se.materialRef.empty()) {
+                auto meshIt = comps.object_.find("mesh");
+                if (meshIt != comps.object_.end()) {
+                    core::Json mr;
+                    mr.type_ = core::Json::Type::String;
+                    mr.string_ = se.materialRef;
+                    meshIt->second.object_["materialRef"] = std::move(mr);
+                }
+            }
+            if (!se.prefab.empty()) {
+                core::Json pr;
+                pr.type_ = core::Json::Type::String;
+                pr.string_ = se.prefab;
+                ent.object_["prefab"] = std::move(pr);
+            }
+            ent.object_["components"] = std::move(comps);
+        }
+    }
     return core::Result<core::Json>::Ok(std::move(root));
 }
 
