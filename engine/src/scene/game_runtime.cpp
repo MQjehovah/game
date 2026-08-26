@@ -1522,9 +1522,17 @@ int GameRuntime::MeleeAttackImpl(const math::Vec3& origin, const math::Vec3& dir
         math::Vec3 hitPos = t->pos;
         if (rewindTicks > 0) LagCompPosition(ent, rewindTicks, hitPos);
         const math::Vec3 to = hitPos - origin;
-        const float dist = to.Length();
-        if (dist > range || dist < 1e-4f) continue;
-        if (math::Dot(to / dist, fwd) < cosArc) continue; // outside the arc
+        // Horizontal-range + vertical-band hit test (like projectiles): the
+        // attack originates at chest height while targets sit on the ground,
+        // so a 3D distance would shrink the effective reach (a wolf at 1.8m
+        // horizontal, 1.5m below the origin, is ~2.3m away in 3D and misses a
+        // 2.2m swing).
+        const float horiz = std::sqrt(to.x * to.x + to.z * to.z);
+        if (horiz > range || horiz < 1e-4f) continue;
+        if (std::fabs(to.y) > 2.0f) continue;
+        const math::Vec3 toDir{to.x / horiz, 0.0f, to.z / horiz};
+        const math::Vec3 fwdDir{fwd.x, 0.0f, fwd.z};
+        if (math::Dot(toDir, fwdDir) < cosArc) continue; // outside the arc
         if (statuses.empty())
             h->hp = std::fmax(0.0f, h->hp - damage);
         else
@@ -1960,6 +1968,46 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera,
     // + camera component become the active view (Godot Camera3D-style).
     gfx::Camera cam = camera;
     bool usedCameraEntity = false;
+    // Script-driven FPS game camera: while the "cameraMouseLock" GameVar is
+    // truthy, the script owns the rendered view through cameraFocus (placed at
+    // eye + viewDir * cameraDist by the controller) plus cameraYaw/cameraPitch/
+    // cameraDist — the same GameVars the host orbit cameras publish. This
+    // overrides any scene Camera3D entity, so the runtime renders through the
+    // player's eye in both the standalone player and the editor playtest.
+    const script::Value fpsLock = scriptCtx_.gameVars.Get("cameraMouseLock");
+    const bool fpsCam = (fpsLock.type == script::Value::Type::Number &&
+                         fpsLock.number != 0.0) ||
+                        (fpsLock.type == script::Value::Type::Bool && fpsLock.boolean);
+    if (fpsCam) {
+        math::Vec3 focus;
+        const script::Value focusVar = scriptCtx_.gameVars.Get("cameraFocus");
+        if (focusVar.type == script::Value::Type::Table && focusVar.table) {
+            for (const auto& kv : focusVar.table->fields) {
+                if (kv.second.type != script::Value::Type::Number) continue;
+                if (kv.first == "x") focus.x = static_cast<float>(kv.second.number);
+                else if (kv.first == "y") focus.y = static_cast<float>(kv.second.number);
+                else if (kv.first == "z") focus.z = static_cast<float>(kv.second.number);
+            }
+        }
+        float yaw = 0.0f, pitch = 0.0f, dist = 2.0f;
+        const script::Value yawVar = scriptCtx_.gameVars.Get("cameraYaw");
+        if (yawVar.type == script::Value::Type::Number) yaw = static_cast<float>(yawVar.number);
+        const script::Value pitchVar = scriptCtx_.gameVars.Get("cameraPitch");
+        if (pitchVar.type == script::Value::Type::Number)
+            pitch = math::Clamp(static_cast<float>(pitchVar.number), -1.3f, 1.3f);
+        const script::Value distVar = scriptCtx_.gameVars.Get("cameraDist");
+        if (distVar.type == script::Value::Type::Number && distVar.number > 0.0)
+            dist = math::Clamp(static_cast<float>(distVar.number), 2.0f, 80.0f);
+        math::Vec3 offset{std::sin(yaw) * std::cos(pitch), std::sin(pitch),
+                          std::cos(yaw) * std::cos(pitch)};
+        cam.position = focus + offset * dist;
+        cam.target = focus;
+        cam.up = {0, 1, 0};
+        cam.ortho = false;
+        usedCameraEntity = true;
+    }
+    // P2-3 scene camera: when the world contains a camera entity, its transform
+    // + camera component become the active view (Godot Camera3D-style).
     world_.ViewAll<SceneCamera, SceneTransform>().ForEach(
         [&](ecs::Entity, const SceneCamera& c, const SceneTransform& t) {
             if (usedCameraEntity) return;
@@ -1999,13 +2047,110 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera,
             // Head offset: lift the anchor above the model bounds when the
             // entity carries a plate (the script stamps names via
             // SetEntityPlate; default 0 keeps the raw position).
-            float headY = 0.0f;
             auto pit = plates_.find(EntityKey(d.ent));
             if (pit != plates_.end() && pit->second.hpFrac >= 0.0f) {
                 const SceneTransform* tr = world_.Get<SceneTransform>(d.ent);
-                if (tr) headY = 1.9f * tr->scale.y; // approx overhead slot
+                if (tr) {
+                    // Plate tracks the RENDERED mesh, which for a skinned rig
+                    // can sit off the entity pivot (the wolf's bones place the
+                    // body away from its origin). Compute the world AABB with
+                    // the same transform chain Draw() uses — model *
+                    // part.localTransform * bone matrix — and center the bar on
+                    // it, just above the top.
+                    math::AABB wb;
+                    bool have = false;
+                    auto expand = [&](const math::Vec3& p) {
+                        if (!have) {
+                            wb.min = wb.max = p;
+                            have = true;
+                        } else {
+                            wb.min.x = std::fmin(wb.min.x, p.x);
+                            wb.min.y = std::fmin(wb.min.y, p.y);
+                            wb.min.z = std::fmin(wb.min.z, p.z);
+                            wb.max.x = std::fmax(wb.max.x, p.x);
+                            wb.max.y = std::fmax(wb.max.y, p.y);
+                            wb.max.z = std::fmax(wb.max.z, p.z);
+                        }
+                    };
+                    auto expandBox = [&](const math::AABB& lb, const math::Mat4& m) {
+                        const math::Vec3 corners[8] = {
+                            {lb.min.x, lb.min.y, lb.min.z}, {lb.max.x, lb.min.y, lb.min.z},
+                            {lb.min.x, lb.max.y, lb.min.z}, {lb.max.x, lb.max.y, lb.min.z},
+                            {lb.min.x, lb.min.y, lb.max.z}, {lb.max.x, lb.min.y, lb.max.z},
+                            {lb.min.x, lb.max.y, lb.max.z}, {lb.max.x, lb.max.y, lb.max.z}};
+                        for (const math::Vec3& c : corners) {
+                            const math::Vec4 q = m.TransformVec4({c.x, c.y, c.z, 1.0f});
+                            if (q.w != 0.0f) expand({q.x / q.w, q.y / q.w, q.z / q.w});
+                        }
+                    };
+                    if (d.skinned && d.skinned->Valid()) {
+                        // Mirror Draw()'s bone selection (override clip vs the
+                        // model's default) so the anchor matches this frame.
+                        std::vector<math::Mat4> bones;
+                        if (d.animHasOverride && d.animClip) {
+                            anim::Pose pose = d.skinned->skeleton.BindPose();
+                            d.animClip->Sample(d.animTime, pose);
+                            if (d.animFade > 0.0f && d.animFadeTotal > 0.0f &&
+                                d.animFromPose.t.size() == pose.t.size())
+                                pose.Lerp(d.animFromPose, pose,
+                                          1.0f - d.animFade / d.animFadeTotal);
+                            bones = d.skinned->skeleton.ComputeBoneMatrices(pose);
+                        } else {
+                            bones = d.skinned->BoneMatrices();
+                        }
+                        if (!bones.empty()) {
+                            // CPU-skin the actual vertices so the plate hugs the
+                            // RENDERED mesh (a rig can place the body off the
+                            // entity pivot; box-corner transforms over all bones
+                            // inflate the bounds, so exact per-vertex is safest).
+                            for (const auto& part : d.skinned->parts) {
+                                const std::vector<gfx::Vertex3D>& verts = part.mesh.CpuVerts();
+                                if (verts.empty()) continue;
+                                const math::Mat4 m = model * part.localTransform;
+                                for (const gfx::Vertex3D& v : verts) {
+                                    math::Vec4 sk{0.0f, 0.0f, 0.0f, 0.0f};
+                                    for (int k = 0; k < 4; ++k) {
+                                        if (v.w[k] <= 0.0f) continue;
+                                        const int ji = static_cast<int>(v.j[k]);
+                                        if (ji < 0 ||
+                                            ji >= static_cast<int>(bones.size()))
+                                            continue;
+                                        const math::Vec4 q =
+                                            bones[static_cast<size_t>(ji)].TransformVec4(
+                                                {v.pos.x, v.pos.y, v.pos.z, 1.0f});
+                                        sk.x += v.w[k] * q.x;
+                                        sk.y += v.w[k] * q.y;
+                                        sk.z += v.w[k] * q.z;
+                                        sk.w += v.w[k] * q.w;
+                                    }
+                                    if (sk.w == 0.0f) continue;
+                                    const math::Vec4 world = m.TransformVec4(
+                                        {sk.x / sk.w, sk.y / sk.w, sk.z / sk.w, 1.0f});
+                                    if (world.w != 0.0f)
+                                        expand({world.x / world.w, world.y / world.w,
+                                                world.z / world.w});
+                                }
+                            }
+                        } else {
+                            for (const auto& part : d.skinned->parts) {
+                                const math::AABB lb = part.mesh.Bounds();
+                                if (lb.max.y <= lb.min.y) continue;
+                                expandBox(lb, model * part.localTransform);
+                            }
+                        }
+                    } else if (d.mesh.Valid()) {
+                        const math::AABB lb = d.mesh.Bounds();
+                        if (lb.max.y > lb.min.y) expandBox(lb, model);
+                    }
+                    if (have) {
+                        wp.x = (wb.min.x + wb.max.x) * 0.5f;
+                        wp.z = (wb.min.z + wb.max.z) * 0.5f;
+                        wp.y = wb.max.y + 0.2f * tr->scale.y;
+                    } else {
+                        wp.y = wp.y + 1.9f * tr->scale.y;
+                    }
+                }
             }
-            wp.y += headY;
             math::Vec4 clip =
                 lastViewProj_.TransformVec4(math::Vec4(wp.x, wp.y, wp.z, 1.0f));
             ScreenAnchor a;

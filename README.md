@@ -225,6 +225,72 @@ build\neon_game.exe --connect 127.0.0.1:26000 --scene tests\data\neon_server_sam
 
 核心承诺：**确定性模拟**——服务器权威模拟与客户端本地预测在相同输入流下逐位一致（`tests/test_determinism.cpp` 哈希验收）。详见 [docs/NETWORKING.md](docs/NETWORKING.md)。
 
+## 学习记录：相机、坐标系统与 HUD 锚点（实战笔记）
+
+记录学习整个引擎过程中踩过、并最终搞懂的关键架构点。这些问题都真实发生在 NeonRealm 的 FPS 试玩里，
+解法已落地到代码中，作为"为什么这样写"的索引。
+
+### 1. 相机分层：场景相机 ≠ Game 相机
+
+编辑器同时存在两套相机：
+
+- **场景相机**：编辑视角（`ActiveCamera()`，由 `camTarget_/yaw_/pitch_/camDist_` 构成），
+  右键旋转、中键平移、滚轮缩放。
+- **Game 相机**：游戏画面**实际渲染**用的相机，由 `GameRuntime::Draw` 决定——
+  它会优先取场景里的 `Camera3D` 实体（"Main Camera"）覆盖调用方传入的相机
+  （`game_runtime.cpp` 的 P2-3 scene camera 逻辑）。
+
+**教训**：要做第一人称，必须驱动 **Game 相机**（即运行时 `Draw` 的取景），
+改场景相机（编辑器 `ActiveCamera` / `neon_game` 的 orbit `camera_`）对游戏画面毫无影响。
+一开始在 `neon_game` 和编辑器场景相机上加 FPS 覆盖，游戏画面纹丝不动，就是这个原因。
+
+### 2. 脚本驱动游戏相机（第一人称）
+
+约定一组 GameVar 让 Lua 脚本全权接管 Game 相机：
+
+- `cameraMouseLock`：置真后脚本独占鼠标（相机不再消费 MouseDelta，脚本读 `InputMouseX/Y` 转视角）。
+- `cameraFocus`：眼睛点（脚本算好：`eye + 视线方向 × cameraDist`）。
+- `cameraYaw / cameraPitch / cameraDist`：由脚本设定，运行时按 `focus + offset(yaw,pitch)*dist`
+  构建渲染视图，并覆盖场景里的 Camera3D 实体。
+
+这样**编辑器 F5 试玩与独立 `neon_game` 共用同一份运行时逻辑**，行为一致。
+
+### 3. 坐标系一致性：3D 投影与 2D design 空间必须同取景（本次最大的坑）
+
+- 2D HUD / 锚点（血条、飘字、`WorldToScreen`）统一在 **1280×720 design 空间**里绘制。
+- 3D 场景投影用**视口矩形的宽高比**。
+
+如果两者宽高比不一致（编辑器 dock 通常不是 16:9），世界锚定的 2D 元素会**系统性偏移**：
+只在视口中心重合，越靠边偏差越大（约 997 宽的 dock 最大偏差约 ±140px）。
+这就是"经常偏、换一个位置又偏"的根因——不是某个模型或某次计算错，而是两套坐标系没对齐。
+
+独立播放器 `neon_game` 窗口恰好 1280×720（16:9），design 1:1 = 窗口，天然一致，所以不偏；
+编辑器 F5 试玩偏，正是因为它**只**在编辑器里发生。
+
+**行业标准解法（已落地）**：统一取景——
+3D 场景视口 = design 空间映射到的矩形（16:9，在 dock 内**居中留黑边**），相机宽高比固定 16:9。
+落地点：`Renderer::DesignSpaceRect()`、编辑器 `sceneRect_ / SceneRect()`、
+`DockViewportScope` 把 `SetSceneViewport` 设为 design 矩形；拾取/小部件/网格的鼠标→NDC 也统一用 `SceneRect()`。
+
+自查方法：`renderer.SceneViewport()` 应**等于** `renderer.DesignSpaceRect()`；
+同一世界点经"NDC→场景视口"和"design→uiScale"两种映射得到的屏幕坐标应完全相等。
+
+### 4. 血条/世界锚点要追踪"渲染出来的 mesh"，不是变换原点
+
+- 锚点不能直接用实体变换原点：模型 pivot 可能不在视觉中心（Blender 导出的狼 pivot 就偏）。
+- 也不能用节点 `localTransform` 近似：蒙皮模型的网格实际由**骨骼矩阵**定位。
+- 也不能对 mesh bounds 用**全部骨骼**求并集：会把包围盒撑爆（狼的 bounds 变成 2.44 宽）。
+- **正确做法**：用与渲染**完全相同**的骨骼矩阵（override 剪辑 vs 默认 idle 要一致），
+  对顶点做 **CPU 蒙皮**，得到渲染 mesh 的世界包围盒，血条锚在包围盒中心、贴顶部。
+
+### 5. Lua 与 C++ 的数值字符串化不一致
+
+Lua `tostring(1.0)` 输出 `"1.0"`，C++ `std::to_string(1)` 输出 `"1"`。
+引擎把实体 key 暴露为 `"id_gen"`，若脚本用 `tostring(id).."_"..tostring(gen)` 拼 key，
+永远是 `"1.0_1.0"`，永远查不到血条。必须用 `string.format("%d_%d", id, gen)`。
+
+---
+
 ## 项目结构
 
 ```

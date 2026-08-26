@@ -341,8 +341,13 @@ private:
     // The active viewport dock rect (screen pixels) and its aspect ratio; the
     // 3D camera projection and gizmo use these so the scene fits the panel.
     const math::Rect2& ViewportRect() const { return viewportScreenRect_; }
+    // The rect the 3D scene renders into (the design-fit sub-rect of the
+    // viewport). Picking / gizmo / camera aspect use this, not the raw dock.
+    const math::Rect2& SceneRect() const {
+        return sceneRect_.w > 0.0f ? sceneRect_ : viewportScreenRect_;
+    }
     float ViewportAspect() const {
-        const math::Rect2& vp = viewportScreenRect_;
+        const math::Rect2& vp = SceneRect();
         if (vp.w > 0.0f && vp.h > 0.0f) return vp.w / vp.h;
         return static_cast<float>(renderer_.ScreenWidth()) /
                static_cast<float>(renderer_.ScreenHeight());
@@ -721,6 +726,10 @@ private:
     // The 视口 window's rect in SCREEN pixels (set by BuildViewportPanel); the
     // 3D pass is scissored to it so the scene never bleeds into the dock area.
     math::Rect2 viewportScreenRect_{0, 0, 0, 0};
+    // The rect the 3D scene actually rasterizes into (design-fit 16:9 sub-rect
+    // of the viewport, or the viewport itself). The camera projection, gizmo
+    // and mouse picking all use this so world-anchored 2D UI never drifts.
+    math::Rect2 sceneRect_{0, 0, 0, 0};
     // 2D canvas camera state (design-space view): zoom 1 = fit the whole
     // 1280x720 design into the viewport; pan = design point at viewport center.
     float canvasZoom_ = 1.0f;

@@ -15,6 +15,16 @@ local yvel = 0
 local grounded = true
 local facing = 0
 
+-- 第一人称视角（FPS）状态：lookYaw/lookPitch 由鼠标驱动，
+-- 引擎侧通过 cameraMouseLock + cameraYaw/cameraPitch/cameraDist GameVar 接管相机。
+local fpsMode = true        -- V 切换第一人称 / 轨道视角
+local vDown = false
+local lookYaw = 0
+local lookPitch = 0.32
+local EYE_H = 1.6           -- 眼睛高度（相对脚底）
+local LOOK_SENS = 0.003
+local CAM_DIST = 2.0        -- 引擎相机最小距离；focus 放到视线前方该距离处，相机即落在眼睛点
+
 local WOLF_MAX = 45
 local GROUND_Y = 0.9 -- 英雄站立高度
 
@@ -28,6 +38,28 @@ local FIRE_CD = 1.6
 local punchCd = 0
 
 local function clamp(v, lo, hi) return math.max(lo, math.min(hi, v)) end
+
+-- 攻击方向：FPS 下沿鼠标视线，轨道下沿英雄朝向。
+-- 注意 facing 约定是 {sin(facing), -cos(facing)}，而相机 yaw 约定是
+-- {-sin(yaw), -cos(yaw)}，两者 x 分量符号相反，不能混用。
+-- 保持水平（y=0）：弹道/近战命中判定是水平距离 + 垂直带，带俯仰的弹道
+-- 会在远处落到目标脚下而打空。
+local function attack_dir()
+  if fpsMode then
+    return { x = -math.sin(lookYaw), y = 0, z = -math.cos(lookYaw) }
+  end
+  return { x = math.sin(facing), y = 0, z = -math.cos(facing) }
+end
+
+-- 加粗描边文字：8 向黑色描边 + 彩色正文，任何背景下都清晰
+local function outlined_text(x, y, size, text, r, g, b)
+  local offs = { { -1, -1 }, { 1, -1 }, { -1, 1 }, { 1, 1 },
+                 { 0, -1 }, { 0, 1 }, { -1, 0 }, { 1, 0 } }
+  for _, o in ipairs(offs) do
+    DrawText(text, x + o[1], y + o[2], size, 0, 0, 0, 0.9, true, true)
+  end
+  DrawText(text, x, y, size, r, g, b, 1, true, true)
+end
 
 local function vget(k, def)
   local v = GetVar(k)
@@ -74,6 +106,8 @@ end
 
 function on_start(e)
   hero = e
+  SetVar("cameraMouseLock", fpsMode and 1 or 0)
+  lookYaw = vget("cameraYaw", 0.6) -- 与引擎默认相机朝向衔接，避免初始跳变
   SetVar("level", 1)
   SetVar("xp", 0)
   SetVar("gold", 0)
@@ -90,6 +124,7 @@ function on_start(e)
   -- M1: 主角是人形 Mage，进入待机
   PlayAnimation(hero, "Idle", true, 0.1)
   SetEntityPlate(hero, nil, -1.0) -- 自己不显示头顶板
+  if fpsMode then SetVisible(hero, false) end -- FPS 隐藏自身模型
 
   -- 收集预摆放的狼（场景里 12 只，脚本管理生死/波次）
   for i = 1, 12 do
@@ -103,6 +138,7 @@ function on_start(e)
       SetEntityPlate(w, "野狼", 1.0)
     end
   end
+
   SetVar("hp", 100)
   SetVar("mana", 50)
 end
@@ -137,8 +173,24 @@ local function update_player(dt)
   local maxMana = vget("max_mana", 50)
   SetVar("mana", math.min(maxMana, mana + 3 * dt))
 
-  -- 相机相对移动
-  local cy = vget("cameraYaw", 0)
+  -- V：切换第一人称 / 轨道视角（轨道模式相机接管鼠标，FPS 模式脚本接管）
+  if InputKey("V") > 0 and not vDown then
+    vDown = true
+    fpsMode = not fpsMode
+    SetVar("cameraMouseLock", fpsMode and 1 or 0)
+    -- FPS 下隐藏自身模型（相机在眼睛处，避免遮挡视线）；轨道模式恢复
+    SetVisible(hero, not fpsMode)
+  elseif InputKey("V") <= 0 then
+    vDown = false
+  end
+
+  -- 相机相对移动（FPS 下用鼠标视角 yaw，轨道下用相机 yaw）
+  if fpsMode then
+    lookYaw = lookYaw - InputMouseX() * LOOK_SENS
+    lookPitch = lookPitch + InputMouseY() * LOOK_SENS
+    lookPitch = clamp(lookPitch, -1.2, 1.2)
+  end
+  local cy = fpsMode and lookYaw or vget("cameraYaw", 0)
   local ix = ActionAxis("move_strafe")
   local iz = ActionAxis("move_forward")
   local fwd = { x = -math.sin(cy), z = -math.cos(cy) }
@@ -156,8 +208,7 @@ local function update_player(dt)
       local pos2 = GetPosition(hero)
       if pos2 ~= nil then
         local origin = { x = pos2.x, y = pos2.y + 1.2, z = pos2.z }
-        local dir = { x = math.sin(facing), y = 0, z = -math.cos(facing) }
-        CastSkill("fireball", origin, dir, hero)
+        CastSkill("fireball", origin, attack_dir(), hero)
       end
       heroAct = nil
       PlayAnimation(hero, "Idle", true, 0.25)
@@ -195,8 +246,11 @@ local function update_player(dt)
   pos.z = clamp(pos.z, -48, 48)
   SetPosition(hero, pos)
 
-  -- 面向移动方向
-  if len > 0.01 then
+  -- 面向：FPS 下英雄始终面向视角方向（攻击/施法对准视线）
+  if fpsMode then
+    facing = lookYaw
+    SetRotationY(hero, facing)
+  elseif len > 0.01 then
     facing = math.atan(dx, -dz)
     SetRotationY(hero, facing)
   end
@@ -207,8 +261,7 @@ local function update_player(dt)
     heroAct = "punch"
     PlayAnimation(hero, "Unarmed_Melee_Attack_Punch_A", false, 0.1)
     local origin = { x = pos.x, y = pos.y + 1.2, z = pos.z }
-    local dir = { x = math.sin(facing), y = 0, z = -math.cos(facing) }
-    MeleeAttack(origin, dir, 2.2, 100, 28)
+    MeleeAttack(origin, attack_dir(), 2.2, 100, 28)
   end
 
   -- 火球（1）：进入读条，满条发射（读条动画 Spellcasting 循环 + 发射瞬间 Spellcast_Shoot）
@@ -370,6 +423,7 @@ local function update_npc(dt)
       lines = {
         "村长：欢迎来到霓虹大陆！",
         "狼群正在威胁村庄，用 WASD 移动、左键近战、1 火球、2 治疗。",
+        "鼠标控制视角，按 V 在第一人称/轨道视角间切换。",
         "击败狼群可获得经验与金币。",
       },
       shown = 6,
@@ -406,6 +460,28 @@ local function update_hero_anim(dt)
   end
 end
 
+local function update_camera()
+  local pos = GetPosition(hero)
+  if pos == nil then return end
+  if fpsMode then
+    -- 第一人称：引擎相机在 focus + offset*camDist 处，offset 由 cameraYaw/Pitch 决定。
+    -- 把 focus 放到视线前方 CAM_DIST 处，相机即精确落在眼睛点 (pos + EYE_H)。
+    local cd = math.cos(lookPitch)
+    local eyeX, eyeY, eyeZ = pos.x, pos.y + EYE_H, pos.z
+    SetVar("cameraFocus", {
+      x = eyeX - math.sin(lookYaw) * cd * CAM_DIST,
+      y = eyeY - math.sin(lookPitch) * CAM_DIST,
+      z = eyeZ - math.cos(lookYaw) * cd * CAM_DIST,
+    })
+    SetVar("cameraYaw", lookYaw)
+    SetVar("cameraPitch", lookPitch)
+    SetVar("cameraDist", CAM_DIST)
+  else
+    -- 轨道视角：相机绕英雄头顶，鼠标拖拽旋转（cameraYaw 由引擎写回）
+    SetVar("cameraFocus", { x = pos.x, y = pos.y + 1.5, z = pos.z })
+  end
+end
+
 function on_update(e, dt)
   update_player(dt)
   update_hero_anim(dt)
@@ -417,11 +493,7 @@ function on_update(e, dt)
     saveTimer = 0
     save_game()
   end
-  -- 相机跟随英雄
-  local pos = GetPosition(hero)
-  if pos ~= nil then
-    SetVar("cameraFocus", { x = pos.x, y = pos.y + 1.5, z = pos.z })
-  end
+  update_camera()
 end
 
 local function bar(x, y, w, h, t, cr, cg, cb)
@@ -542,7 +614,7 @@ function on_render()
   for i = 1, #anchors do
     local a = anchors[i]
     if a.onscreen then
-      local key = tostring(a.entity.id) .. "_" .. tostring(a.entity.gen)
+      local key = string.format("%d_%d", a.entity.id, a.entity.gen)
       local p = plates[key]
       if p ~= nil and p.hp >= 0 then
         local w, h = 56, 5
@@ -551,7 +623,7 @@ function on_render()
           DrawRect(a.x - w / 2 + 1, a.y - h + 1, (w - 2) * p.hp, h - 2,
                    0.85, 0.2, 0.2, 1)
         end
-        DrawText(p.name, a.x, a.y - h - 16, 12, 0.95, 0.95, 1, 0.9, true, true)
+        outlined_text(a.x, a.y - h - 16, 13, p.name, 1, 0.82, 0.2)
       end
     end
   end

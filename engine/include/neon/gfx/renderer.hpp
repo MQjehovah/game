@@ -331,6 +331,17 @@ public:
     // exactly the inverse mapping ScreenToUI uses). Lets hosts snapshot the
     // current 2D mapping without depending on the renderer's live state.
     math::Vec2 UI2DOffset() const { return {uiOffsetX_, uiOffsetY_}; }
+    // The screen rect the 1280x720 design space currently maps to (set by
+    // Set2DViewport/Set2DViewportPixels). Hosts size the 3D scene viewport
+    // with this exact rect so 3D geometry and the 2D HUD/anchor space share one
+    // framing (no drift between world-anchored UI and the rendered scene).
+    math::Rect2 DesignSpaceRect() const {
+        return {uiOffsetX_, uiOffsetY_, static_cast<float>(kDesignWidth) * uiScale_,
+                static_cast<float>(kDesignHeight) * uiScale_};
+    }
+    // The active 3D scene rasterization rect (set by SetSceneViewport). The
+    // design-space rect above should equal this for world-anchored 2D UI.
+    const math::Rect2& SceneViewport() const { return sceneViewport_; }
     int ScreenWidth() const { return screenW_; }
     int ScreenHeight() const { return screenH_; }
 

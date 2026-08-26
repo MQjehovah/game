@@ -1628,12 +1628,42 @@ EditorApp::DockViewportScope::DockViewportScope(EditorApp& app, bool designFit, 
     app_.renderer_.Backend()->SetScissor(static_cast<int>(vp.x), static_cast<int>(vp.y),
                                          static_cast<int>(vp.w), static_cast<int>(vp.h), true);
     app_.BindDock2DMapping(designFit);
-    if (sceneVp_) app_.renderer_.SetSceneViewport(vp.x, vp.y, vp.w, vp.h);
+    // The scene rasterizes into the SAME rect the 1280x720 design space maps
+    // to (fit-to-height, centered), so 3D geometry, the 2D HUD and world-
+    // anchored UI all share one framing. Without this, the 3D projection (dock
+    // aspect) and the 2D anchor space (16:9) disagree and every plate/float
+    // text drifts away from its entity as it moves off-centre.
+    const math::Rect2 sceneVpRect = designFit ? app_.renderer_.DesignSpaceRect() : vp;
+    app_.sceneRect_ = sceneVpRect;
+    if (sceneVp_)
+        app_.renderer_.SetSceneViewport(sceneVpRect.x, sceneVpRect.y, sceneVpRect.w,
+                                        sceneVpRect.h);
 }
 
 EditorApp::DockViewportScope::~DockViewportScope() {
     if (!active_) return;
-    if (sceneVp_) app_.renderer_.ResetSceneViewport();
+    if (sceneVp_) {
+        app_.renderer_.ResetSceneViewport();
+        // Letterbox bars drawn LAST (after the sky/3D), so they cover any
+        // full-window 2D pass that bled into the dock margins — the scene
+        // boundary reads as pure black against the editor background.
+        const math::Rect2& vp = app_.viewportScreenRect_;
+        const math::Rect2& sr = app_.sceneRect_;
+        if (sr.w > 0.0f && sr.h > 0.0f) {
+            auto fill = [&](float x, float y, float w, float h) {
+                if (w <= 0.0f || h <= 0.0f) return;
+                const math::Vec2 a = app_.renderer_.ScreenToUI({x, y});
+                const math::Vec2 b = app_.renderer_.ScreenToUI({x + w, y + h});
+                app_.renderer_.DrawRect(a, b - a, gfx::Color{0.0f, 0.0f, 0.0f, 1.0f});
+            };
+            fill(vp.x, vp.y, sr.x - vp.x, vp.h);      // left bar
+            fill(sr.x + sr.w, vp.y,                   // right bar
+                 vp.x + vp.w - (sr.x + sr.w), vp.h);
+            fill(vp.x, vp.y, vp.w, sr.y - vp.y);      // top bar
+            fill(vp.x, sr.y + sr.h, vp.w,             // bottom bar
+                 vp.y + vp.h - (sr.y + sr.h));
+        }
+    }
     app_.renderer_.Flush2D();
     app_.renderer_.Backend()->SetScissor(0, 0, 0, 0, false);
     app_.renderer_.Reset2DViewport();
@@ -1730,7 +1760,7 @@ void EditorApp::OnRender() {
         // rasterization viewport is the dock rect, and the 2D overlay (sky,
         // billboards, playtest HUD) is clipped to it. Nothing bleeds into the
         // dock panels anymore.
-        DockViewportScope dock(*this, /*designFit=*/false, /*sceneVp=*/true);
+        DockViewportScope dock(*this, /*designFit=*/true, /*sceneVp=*/true);
         // Day sky + scene lights: shared with the 2D playtest so edit and
         // Play render the same environment (see ApplySceneEnvironment).
         ApplySceneEnvironment();
@@ -2474,7 +2504,7 @@ void EditorApp::DrawSceneGizmos() {
     const float aspect = ViewportAspect();
     const math::Mat4 view = cam.View();
     const math::Mat4 proj = cam.Projection(aspect);
-    const math::Rect2 vp = viewportScreenRect_;
+    const math::Rect2 vp = SceneRect();
     ImDrawList* dl = ImGui::GetBackgroundDrawList();
     if (!dl || vp.w <= 0.0f || vp.h <= 0.0f) return;
 
@@ -2646,8 +2676,8 @@ void EditorApp::UpdateViewport(float dt) {
                 math::Vec3 upv = math::Cross(right, fwd);
                 const float worldPerPixel =
                     ortho ? orthoSize_ * 2.0f /
-                                (viewportScreenRect_.h > 0.0f
-                                     ? viewportScreenRect_.h
+                                (SceneRect().h > 0.0f
+                                     ? SceneRect().h
                                      : static_cast<float>(renderer_.ScreenHeight()))
                           : 1.0f;
                 const float k = ortho ? worldPerPixel : 0.02f;
@@ -2680,7 +2710,7 @@ void EditorApp::UpdateViewport(float dt) {
             // Build the ray from the mouse position RELATIVE to the viewport
             // dock, matching the viewport-aspect projection the scene uses.
             const math::Vec2 mousePx = input->MousePos();
-            const math::Rect2& vp = viewportScreenRect_;
+            const math::Rect2& vp = SceneRect();
             const float vpW = vp.w > 0.0f ? vp.w : static_cast<float>(renderer_.ScreenWidth());
             const float vpH = vp.h > 0.0f ? vp.h : static_cast<float>(renderer_.ScreenHeight());
             const float vpX = vp.w > 0.0f ? vp.x : 0.0f;
@@ -2723,7 +2753,7 @@ void EditorApp::UpdateViewport(float dt) {
             const float aspect = ViewportAspect();
             gfx::Camera cam = ActiveCamera();
             const math::Vec2 mousePx = input->MousePos();
-            const math::Rect2& vp = viewportScreenRect_;
+            const math::Rect2& vp = SceneRect();
             const float vpW = vp.w > 0.0f ? vp.w : static_cast<float>(renderer_.ScreenWidth());
             const float vpH = vp.h > 0.0f ? vp.h : static_cast<float>(renderer_.ScreenHeight());
             const float vpX = vp.w > 0.0f ? vp.x : 0.0f;
@@ -2741,7 +2771,7 @@ void EditorApp::UpdateViewport(float dt) {
             const float aspect = ViewportAspect();
             gfx::Camera cam = ActiveCamera();
             const math::Vec2 mousePx = input->MousePos();
-            const math::Rect2& vp = viewportScreenRect_;
+            const math::Rect2& vp = SceneRect();
             const float vpW = vp.w > 0.0f ? vp.w : static_cast<float>(renderer_.ScreenWidth());
             const float vpH = vp.h > 0.0f ? vp.h : static_cast<float>(renderer_.ScreenHeight());
             const float vpX = vp.w > 0.0f ? vp.x : 0.0f;
@@ -2914,9 +2944,9 @@ void EditorApp::DrawTransformGizmo() {
     ImGuizmo::SetOrthographic(cam.ortho);
     ImGuizmo::SetDrawlist(ImGui::GetWindowDrawList());
 
-    // The 3D scene now renders INTO the viewport dock with the viewport aspect
-    // and rasterization rect, so the gizmo uses the same rect + aspect.
-    const math::Rect2& vp = viewportScreenRect_;
+    // The 3D scene renders into the design-fit scene rect with the matching
+    // aspect, so the gizmo uses the same rect + aspect.
+    const math::Rect2& vp = SceneRect();
     const float rx = vp.w > 0.0f ? vp.x : 0.0f;
     const float ry = vp.h > 0.0f ? vp.y : 0.0f;
     const float rw = vp.w > 0.0f ? vp.w : static_cast<float>(renderer_.ScreenWidth());
@@ -3089,7 +3119,7 @@ void EditorApp::RunGizmoDragSim() {
     // rect the gizmo now uses), in y-down ImGui pixels.
     math::Mat4 vp = cam.ViewProjection(aspect);
     math::Vec4 clip = vp.TransformVec4({sel.pos.x, sel.pos.y, sel.pos.z, 1.0f});
-    const math::Rect2& vr = viewportScreenRect_;
+    const math::Rect2& vr = SceneRect();
     const float vrW = vr.w > 0.0f ? vr.w : static_cast<float>(renderer_.ScreenWidth());
     const float vrH = vr.h > 0.0f ? vr.h : static_cast<float>(renderer_.ScreenHeight());
     const float gx = vr.x + (clip.x / clip.w * 0.5f + 0.5f) * vrW;
@@ -3827,13 +3857,13 @@ void EditorApp::RunUISmokeTest() {
         check(gizmoBeginFrame_, "ImGuizmo::BeginFrame called every frame");
         check(gizmoAltWindowSet_, "gizmo hover bound to the dock host window");
         {
-            const math::Rect2& vr = viewportScreenRect_;
+            const math::Rect2 vr = SceneRect();
             const float rw = vr.w > 0.0f ? vr.w : static_cast<float>(renderer_.ScreenWidth());
             const float rh = vr.h > 0.0f ? vr.h : static_cast<float>(renderer_.ScreenHeight());
             check(gizmoRect_[0] == (vr.w > 0.0f ? vr.x : 0.0f) &&
                       gizmoRect_[1] == (vr.h > 0.0f ? vr.y : 0.0f) &&
                       gizmoRect_[2] == rw && gizmoRect_[3] == rh,
-                  "gizmo rect matches the viewport dock (scene render + picker)");
+                  "gizmo rect matches the scene render rect");
         }
     }
     auto nearVec = [](const math::Vec3& a, const math::Vec3& b) {
