@@ -721,7 +721,11 @@ void GameRuntime::TickTweens(float dt) {
 
 bool GameRuntime::ShowUI(const std::string& path) {
     auto doc = std::make_unique<ui::UiDocument>();
-    if (!doc->Load(FullScriptPath(path))) return false;
+    // G7-1 剩余: read the UI document through the same source as scripts
+    // (VFS when installed, else the scriptBaseDir on disk), so packed games
+    // load ui/*.ui.json straight from the pack without an unpacked dir.
+    const std::string text = ReadScript(FullScriptPath(path));
+    if (text.empty() || !doc->LoadJson(text)) return false;
     uiDoc_ = std::move(doc);
     uiClickedNames_.clear();
     return true;

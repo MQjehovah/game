@@ -209,47 +209,36 @@ core::Result<PackBoot> BootPack(const std::string& packPath,
         return core::Result<PackBoot>::Err("player: pack '" + packPath + "' is invalid: " +
                                            reader.Error());
     }
-    std::string unpackedDir = MakeTempDir();
-    if (unpackedDir.empty()) {
-        return core::Result<PackBoot>::Err("player: cannot create temp unpack directory");
-    }
-    core::Status st = core::Unpack(reader, unpackedDir);
-    if (!st.Ok()) {
-        RemoveTree(unpackedDir);
-        return core::Result<PackBoot>::Err("player: unpack failed: " + st.Error());
-    }
 
-    std::string manifestText;
-    if (!ReadFileAll(unpackedDir + "/game.json", manifestText)) {
-        RemoveTree(unpackedDir);
-        return core::Result<PackBoot>::Err("player: game.json missing in pack '" + packPath + "'");
-    }
-    StripBom(manifestText);
-    auto res = scene::GameManifest::Load(manifestText);
-    if (!res.Ok()) {
-        RemoveTree(unpackedDir);
-        return core::Result<PackBoot>::Err("player: bad manifest: " + res.Error());
-    }
-
-    // G7-1: mount the pack + each Mod directory (later mods win) for asset
-    // reads, and overlay the Mod files onto the unpacked tree so scripts,
-    // prefabs and locales also see Mod overrides.
+    // G7-1 剩余: read the pack straight through the VFS — game.json, scenes,
+    // scripts, assets and Mods all resolve via the mount stack, so nothing is
+    // unpacked to disk (boot is faster and leaves no temp dir).
     auto vfs = std::make_shared<neon::io::MountStack>();
     vfs->Mount(std::make_shared<neon::io::PackFileSystem>(std::move(buf)));
     for (const std::string& modDir : modDirs) {
         if (!modDir.empty() && FileExists(modDir)) {
             vfs->Mount(std::make_shared<neon::io::DiskFileSystem>(modDir));
-            CopyTree(modDir, unpackedDir);
             NEON_LOG_INFO("player: mounted mod '%s' over the base pack", modDir.c_str());
         } else {
             NEON_LOG_WARN("player: mod dir '%s' not found; skipped", modDir.c_str());
         }
     }
 
-    NEON_LOG_INFO("player: unpacked %zu files to '%s'", reader.FileCount(),
-                  unpackedDir.c_str());
+    const core::Result<std::vector<uint8_t>> manifestBytes = vfs->ReadFile("game.json");
+    if (!manifestBytes.Ok()) {
+        return core::Result<PackBoot>::Err("player: game.json missing in pack '" + packPath + "'");
+    }
+    std::string manifestText(manifestBytes.Value().begin(), manifestBytes.Value().end());
+    StripBom(manifestText);
+    auto res = scene::GameManifest::Load(manifestText);
+    if (!res.Ok()) {
+        return core::Result<PackBoot>::Err("player: bad manifest: " + res.Error());
+    }
+
+    NEON_LOG_INFO("player: pack '%s' served via VFS (%zu files, no unpack)",
+                  packPath.c_str(), reader.FileCount());
     PackBoot boot;
-    boot.unpackedDir = std::move(unpackedDir);
+    boot.unpackedDir.clear(); // everything is served through the VFS
     boot.manifest = res.Value();
     boot.vfs = std::move(vfs);
     return core::Result<PackBoot>::Ok(std::move(boot));
@@ -418,12 +407,21 @@ bool PlayerApp::LoadSceneJson() {
         }
     }
     // Defense-in-depth: reject a startScene/--scene that could escape the
-    // unpacked dir (a hostile pack's manifest or a hand-typed override).
+    // pack (a hostile pack's manifest or a hand-typed override).
     if (core::IsUnsafeRelPath(scenePath)) {
         NEON_LOG_ERROR("Player: unsafe scene path '%s'", scenePath.c_str());
         return false;
     }
-    if (!ReadFileAll(cfg_.unpackedDir + "/" + scenePath, sceneJson_)) {
+    // G7-1 剩余: with a VFS installed (pack + Mods, no unpack), read the scene
+    // through it; loose mode falls back to the unpacked dir on disk.
+    if (cfg_.vfs) {
+        const core::Result<std::vector<uint8_t>> sceneBytes = cfg_.vfs->ReadFile(scenePath);
+        if (!sceneBytes.Ok()) {
+            NEON_LOG_ERROR("Player: cannot read scene '%s' from pack", scenePath.c_str());
+            return false;
+        }
+        sceneJson_.assign(sceneBytes.Value().begin(), sceneBytes.Value().end());
+    } else if (!ReadFileAll(cfg_.unpackedDir + "/" + scenePath, sceneJson_)) {
         NEON_LOG_ERROR("Player: cannot read scene '%s'", scenePath.c_str());
         return false;
     }
