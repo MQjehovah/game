@@ -20,7 +20,8 @@ function on_start(e)
   local z = EntityComponent(e, "zombie")
   if not z then return end
   local pos = GetPosition(e)
-  local row = (z.row ~= nil and z.row) or rowOf(pos.y)
+  -- 行号统一取整 (组件 row 是浮点 3.0, rowOf 返回整数 3), 保证键一致。
+  local row = math.floor((z.row ~= nil and z.row) or rowOf(pos.y))
   local list = GetVar("row_zombies_" .. row)
   if type(list) ~= "table" then list = {} end
   list[#list + 1] = { id = e.id, gen = e.gen }
@@ -86,8 +87,13 @@ function on_update(e, dt)
     local nx = pos.x - speed * dt
     SetPosition(e, { x = nx, y = pos.y, z = pos.z })
     if nx <= 90 then
-      SetVar("gameover", true)
-      PlaySfx("zombie")
+      -- 该行还有割草机(未消耗)就交给它兜底, 不立即判负。
+      local m = GetVar("mowers")
+      local protected = type(m) == "table" and m[row + 1] ~= nil
+      if not protected then
+        SetVar("gameover", true)
+        PlaySfx("zombie")
+      end
     end
   end
 end

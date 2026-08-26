@@ -12,7 +12,8 @@ function on_start(e)
   local p = EntityComponent(e, "plant")
   if not p then return end
   local pos = GetPosition(e)
-  local row = (p.row ~= nil and p.row) or rowOf(pos.y)
+  -- 行号统一取整: 组件里的 row 是浮点(3.0), rowOf 返回整数(3), 键必须一致。
+  local row = math.floor((p.row ~= nil and p.row) or rowOf(pos.y))
   local list = GetVar("row_plants_" .. row)
   if type(list) ~= "table" then list = {} end
   list[#list + 1] = { id = e.id, gen = e.gen, x = pos.x }
@@ -28,7 +29,7 @@ function on_update(e, dt)
 
   -- 死亡: 从注册表移除并销毁
   if p.hp ~= nil and p.hp <= 0 then
-    local row = (p.row ~= nil and p.row) or rowOf(GetPosition(e).y)
+    local row = math.floor((p.row ~= nil and p.row) or rowOf(GetPosition(e).y))
     local list = GetVar("row_plants_" .. row)
     if type(list) == "table" then
       for i = #list, 1, -1 do
@@ -48,7 +49,7 @@ function on_update(e, dt)
   t = t + dt
   timers[e.id] = t
   local pos = GetPosition(e)
-  local row = (p.row ~= nil and p.row) or rowOf(pos.y)
+  local row = math.floor((p.row ~= nil and p.row) or rowOf(pos.y))
 
   -- 行内是否有僵尸在射手前方(右侧): 标准 PvZ 射手只在有目标时才开火。
   local function rowHasZombieAhead()

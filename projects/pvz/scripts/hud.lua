@@ -3,12 +3,12 @@
 -- 读 game.lua 写入的 GameVar, 前后端解耦。
 
 local PLANTS = {
-  { type = "sunflower",  label = "1 向日葵 50",  maxCd = 4 },
-  { type = "peashooter", label = "2 豌豆 100",   maxCd = 4 },
-  { type = "snowpea",    label = "3 寒冰 175",   maxCd = 4 },
-  { type = "wallnut",    label = "4 坚果 50",    maxCd = 10 },
-  { type = "repeater",   label = "5 双发 200",   maxCd = 6 },
-  { type = "cherrybomb", label = "6 樱桃 150",   maxCd = 30 }
+  { type = "sunflower",  label = "1 向日葵 50",  maxCd = 4,  icon = "sunflower.png" },
+  { type = "peashooter", label = "2 豌豆 100",   maxCd = 4,  icon = "peashooter.png" },
+  { type = "snowpea",    label = "3 寒冰 175",   maxCd = 4,  icon = "snowpea.png" },
+  { type = "wallnut",    label = "4 坚果 50",    maxCd = 10, icon = "wallnut.png" },
+  { type = "repeater",   label = "5 双发 200",   maxCd = 6,  icon = "peashooter.png" },
+  { type = "cherrybomb", label = "6 樱桃 150",   maxCd = 30, icon = "cherry.png" }
 }
 
 local function clamp(v, lo, hi) return math.max(lo, math.min(hi, v)) end
@@ -37,7 +37,8 @@ function on_render()
     local r, g, b = 0.22, 0.40, 0.62
     if not active then r, g, b = 0.16, 0.22, 0.30 end
     DrawRect(bx, 6, 130, 44, r, g, b, 0.95)
-    DrawText(p.label, bx + 6, 13, 15, 0.9, 0.92, 1, 1)
+    DrawSprite("assets/sprites/" .. p.icon, bx + 8, 8, 34, 34, false, false)
+    DrawText(p.label, bx + 46, 13, 15, 0.9, 0.92, 1, 1)
     local cd = GetVar("cooldown_" .. p.type)
     if type(cd) ~= "number" then cd = 0 end
     if cd > 0.01 then

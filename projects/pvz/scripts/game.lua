@@ -25,6 +25,7 @@ local cooldowns = {}   -- type -> seconds remaining before it can be planted aga
 local waveTimer = 0    -- seconds since the last wave launched (self-contained)
 local WAVE_INTERVAL = 10 -- seconds between waves
 local MAX_WAVES = 8      -- survive this many waves to win
+local mowers_ = {}     -- row -> { ent, x, active } (割草机)
 
 local function rowHasPlant(row, x)
   local list = GetVar("row_plants_" .. row)
@@ -84,6 +85,15 @@ function on_start()
   started = false
   cooldowns = {}
   selected = nil
+  mowers_ = {}
+  -- 每行一台割草机, 停在防线左侧 (x=100); 僵尸越过 x=130 触发横扫。
+  local mowerList = {}
+  for r = 0, ROWS - 1 do
+    local m = SpawnPrefab("mower", { x = 100, y = rowY(r), z = -1 })
+    mowers_[r] = { ent = m, x = 100, active = false }
+    mowerList[r + 1] = { active = false }
+  end
+  SetVar("mowers", mowerList)
   UIShow("ui/main.ui.json")
   PlaySfx("click")
 
@@ -183,6 +193,46 @@ function on_update(e, dt)
       PlaySfx("win")
     end
   end
+
+  -- 割草机: 行内僵尸越过 x=130 触发, 快速右扫并击杀沿途僵尸 (标准 PvZ 兜底)。
+  local mowerList = GetVar("mowers")
+  for r = 0, ROWS - 1 do
+    local m = mowers_[r]
+    if m then
+      if not m.active then
+        local zlist = GetVar("row_zombies_" .. r)
+        if type(zlist) == "table" then
+          for i = 1, #zlist do
+            local zp = GetPosition({ id = zlist[i].id, gen = zlist[i].gen })
+            if zp and zp.x <= 130 then
+              m.active = true
+              if type(mowerList) == "table" then mowerList[r + 1].active = true end
+              PlaySfx("mower")
+              break
+            end
+          end
+        end
+      end
+      if m.active then
+        m.x = m.x + 420 * dt
+        SetPosition(m.ent, { x = m.x, y = rowY(r), z = -1 })
+        local zlist = GetVar("row_zombies_" .. r)
+        if type(zlist) == "table" then
+          for i = #zlist, 1, -1 do
+            local zent = { id = zlist[i].id, gen = zlist[i].gen }
+            local zp = GetPosition(zent)
+            if zp and math.abs(zp.x - m.x) < 70 then SetHealth(zent, 0) end
+          end
+        end
+        if m.x > 1180 then
+          Despawn(m.ent)
+          mowers_[r] = nil
+          if type(mowerList) == "table" then mowerList[r + 1] = nil end
+        end
+      end
+    end
+  end
+  SetVar("mowers", mowerList)
 
   -- Click the lawn to plant / shovel. InputMousePos() returns DESIGN coords
   -- (y down); the world is y-up, so convert y before mapping to a row.
