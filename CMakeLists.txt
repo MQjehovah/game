@@ -468,6 +468,7 @@ add_executable(neon_editor
   editor/src/editor_viewport.cpp
   editor/src/editor_scene.cpp
   editor/src/editor_ui.cpp
+  editor/src/editor_assets.cpp
   editor/src/editor_util.cpp
   editor/src/editor_play.cpp
   editor/src/editor_smoke.cpp
