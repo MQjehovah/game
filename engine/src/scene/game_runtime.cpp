@@ -173,6 +173,14 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     // not prefixes �?a scene with an unresolvable key still plays headless.
     // cfg_ must be assigned before LoadPrefabs/AttachScripts read it.
     cfg_ = std::move(cfg);
+    // Data-driven skills table (M1): hosts pass the skills.json text.
+    if (!cfg_.skillsJson.empty()) {
+        std::string err;
+        if (!skills_.Load(cfg_.skillsJson, &err))
+            NEON_LOG_CAT(core::LogCategory::Scene, core::LogLevel::Warn,
+                         "runtime: skills.json rejected (%s); CastSkill table empty",
+                         err.c_str());
+    }
     // Create the physics world: Jolt when requested and compiled, else the
     // deterministic custom solver (server / headless tests).
     physics_ = std::make_unique<physics::World>();
@@ -338,6 +346,9 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
         const math::Quat q = math::Quat::FromAxisAngle({0, 1, 0}, yaw);
         if (SceneTransform* t = world_.Get<SceneTransform>(e)) t->rot = q;
         if (script::CTransformBind* t = world_.Get<script::CTransformBind>(e)) t->rot = q;
+    };
+    scriptCtx_.setScale = [this](ecs::Entity e, const math::Vec3& s) {
+        if (SceneTransform* t = world_.Get<SceneTransform>(e)) t->scale = s;
     };
     scriptCtx_.sceneGetHp = [this](ecs::Entity e) {
         const SceneHealth* h = world_.Get<SceneHealth>(e);

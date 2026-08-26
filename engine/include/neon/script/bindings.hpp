@@ -212,6 +212,9 @@ struct ScriptContext {
     // Overhead plate stamp for HUD scripts: name + hp fraction (0..1, <0
     // hides). Drawn by the game's on_render via ScreenAnchors()/EntityPlates().
     std::function<void(ecs::Entity, const std::string&, float)> setEntityPlate;
+    // Uniform or per-axis scale write (death shrink, pop-in...). Wired by
+    // GameRuntime; null -> SetScale is a no-op.
+    std::function<void(ecs::Entity, const math::Vec3&)> setScale;
     // Screen anchors of drawn entities (design units), refreshed every Draw.
     std::function<script::Value()> screenAnchors;
     // Entity plates map {entityKey -> {name, hpFrac}} for on_render.

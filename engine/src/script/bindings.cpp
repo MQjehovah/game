@@ -181,6 +181,26 @@ Value NativeGetHealth(IScriptHost& host, void* user) {
     return Value::Num(ctx->sceneGetHp(e));
 }
 
+// SetScale(entity, x, y, z) or SetScale(entity, uniform): writes the entity's
+// transform scale (death shrink, spawn pop-in...).
+Value NativeSetScale(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->setScale) return Value::Nil();
+    const ecs::Entity e = EntityFromValue(host.GetArg(0));
+    const Value& a1 = host.GetArg(1);
+    if (a1.type != Value::Type::Number) return Value::Nil();
+    math::Vec3 s{static_cast<float>(a1.number), static_cast<float>(a1.number),
+                 static_cast<float>(a1.number)};
+    const Value& a2 = host.GetArg(2);
+    const Value& a3 = host.GetArg(3);
+    if (a2.type == Value::Type::Number && a3.type == Value::Type::Number) {
+        s.y = static_cast<float>(a2.number);
+        s.z = static_cast<float>(a3.number);
+    }
+    ctx->setScale(e, s);
+    return Value::Nil();
+}
+
 Value NativeSetHealth(IScriptHost& host, void* user) {
     auto* ctx = static_cast<ScriptContext*>(user);
     if (!ctx || !ctx->sceneSetHp) return Value::Nil();
@@ -1385,6 +1405,7 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("WorldToScreen", &NativeWorldToScreen, &ctx);
     host.Register("SpawnFloatText", &NativeSpawnFloatText, &ctx);
     host.Register("SetEntityPlate", &NativeSetEntityPlate, &ctx);
+    host.Register("SetScale", &NativeSetScale, &ctx);
     host.Register("ScreenAnchors", &NativeScreenAnchors, &ctx);
     host.Register("EntityPlates", &NativeEntityPlates, &ctx);
     host.Register("FloatTexts", &NativeFloatTexts, &ctx);

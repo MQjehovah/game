@@ -76,6 +76,10 @@ struct GameRuntimeConfig {
     // remains the cross-platform bit-exact fallback. Unknown values fall back
     // to "custom".
     std::string physicsBackend = "custom";
+    // Optional skills.json text (data-driven CastSkill table). The hosts that
+    // know their project dir load <dir>/skills.json and pass it here; empty
+    // leaves the table empty and CastSkill logs "unknown skill".
+    std::string skillsJson;
 };
 
 // A self-contained, reusable game runtime. The editor embeds one instance for

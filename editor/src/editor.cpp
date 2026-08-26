@@ -5383,6 +5383,15 @@ void EditorApp::StartPlaytest() {
     };
     std::string json;
 
+    // M1: data-driven skills table from <project>/skills.json (optional,
+    // shared by both the 2D and 3D playtest branches).
+    {
+        std::ifstream skillsIn(projectDir_ + "/skills.json", std::ios::binary);
+        if (skillsIn.is_open())
+            cfg.skillsJson.assign(std::istreambuf_iterator<char>(skillsIn),
+                                  std::istreambuf_iterator<char>());
+    }
+
     if (projectMode_ == "2d") {
         // 2D project (NeonPvZ / NeonSnake): play the EDITOR'S LIVE ENTITIES
         // (a serialized snapshot, exactly like the 3D playtest) so unsaved

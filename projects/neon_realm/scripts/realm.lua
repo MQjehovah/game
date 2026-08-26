@@ -18,6 +18,15 @@ local facing = 0
 local WOLF_MAX = 45
 local GROUND_Y = 0.9 -- 英雄站立高度
 
+-- M1 主角动画状态：locomotion（idle/walk/run 按速度）+ 动作一次性播放
+local heroAnim = "Idle"     -- 当前 locomotion 状态
+local heroAct = nil         -- 一次性动作（"cast"/"punch"），播放期间压制移动动画
+local castTime = -1         -- 施法读条进度（<0 = 未在读条）
+local CAST_DUR = 0.9        -- 读条时长（对齐 Spellcast_Shoot 前摇）
+local fireCd = 0            -- 火球冷却
+local FIRE_CD = 1.6
+local punchCd = 0
+
 local function clamp(v, lo, hi) return math.max(lo, math.min(hi, v)) end
 
 local function vget(k, def)
@@ -78,6 +87,10 @@ function on_start(e)
   SetVar("hp", GetVar("max_hp"))
   SetVar("mana", GetVar("max_mana"))
 
+  -- M1: 主角是人形 Mage，进入待机
+  PlayAnimation(hero, "Idle", true, 0.1)
+  SetEntityPlate(hero, nil, -1.0) -- 自己不显示头顶板
+
   -- 收集预摆放的狼（场景里 12 只，脚本管理生死/波次）
   for i = 1, 12 do
     local w = FindNamedEntity("狼_" .. i)
@@ -87,6 +100,7 @@ function on_start(e)
         e = w, home = { x = p.x, y = p.y, z = p.z },
         dead = false, respawn = 0, attackCd = 0, phase = i * 0.7,
       })
+      SetEntityPlate(w, "野狼", 1.0)
     end
   end
   SetVar("hp", 100)
@@ -117,6 +131,8 @@ local function update_player(dt)
   dashCd = math.max(0, dashCd - dt)
   dashTime = math.max(0, dashTime - dt)
   iframes = math.max(0, iframes - dt)
+  fireCd = math.max(0, fireCd - dt)
+  punchCd = math.max(0, punchCd - dt)
   local mana = vget("mana", 50)
   local maxMana = vget("max_mana", 50)
   SetVar("mana", math.min(maxMana, mana + 3 * dt))
@@ -131,6 +147,23 @@ local function update_player(dt)
   local dz = right.z * ix + fwd.z * iz
   local len = math.sqrt(dx * dx + dz * dz)
   if len > 1 then dx, dz = dx / len, dz / len end
+
+  -- 施法读条：锁移动，完成时发射火球（弹道由引擎管理）
+  if castTime >= 0 then
+    castTime = castTime + dt
+    if castTime >= CAST_DUR then
+      castTime = -1
+      local pos2 = GetPosition(hero)
+      if pos2 ~= nil then
+        local origin = { x = pos2.x, y = pos2.y + 1.2, z = pos2.z }
+        local dir = { x = math.sin(facing), y = 0, z = -math.cos(facing) }
+        CastSkill("fireball", origin, dir, hero)
+      end
+      heroAct = nil
+      PlayAnimation(hero, "Idle", true, 0.25)
+    end
+    return -- 读条期间不做移动/其他动作
+  end
 
   -- 冲刺（右键）
   if InputMousePressed("right") and dashCd <= 0 and len > 0.01 then
@@ -168,25 +201,40 @@ local function update_player(dt)
     SetRotationY(hero, facing)
   end
 
-  -- 近战（左键）
-  if InputMousePressed("left") then
+  -- 近战（左键）：出拳一次性动画，命中判定立刻生效
+  if InputMousePressed("left") and punchCd <= 0 then
+    punchCd = 0.55
+    heroAct = "punch"
+    PlayAnimation(hero, "Unarmed_Melee_Attack_Punch_A", false, 0.1)
     local origin = { x = pos.x, y = pos.y + 1.2, z = pos.z }
     local dir = { x = math.sin(facing), y = 0, z = -math.cos(facing) }
     MeleeAttack(origin, dir, 2.2, 100, 28)
   end
 
-  -- 火球（1）与治疗（2）
-  local manaNow = vget("mana", 0)
-  if ActionDown("fireball") and manaNow >= 10 then
-    SetVar("mana", manaNow - 10)
-    local origin = { x = pos.x, y = pos.y + 1.2, z = pos.z }
-    local dir = { x = math.sin(facing), y = 0, z = -math.cos(facing) }
-    SpawnProjectile(origin, dir, 16, 30, 2.0, hero)
+  -- 火球（1）：进入读条，满条发射（读条动画 Spellcasting 循环 + 发射瞬间 Spellcast_Shoot）
+  if ActionPressed("fireball") and fireCd <= 0 then
+    local manaNow = vget("mana", 0)
+    if manaNow >= 10 then
+      SetVar("mana", manaNow - 10)
+      fireCd = FIRE_CD
+      castTime = 0
+      heroAct = "cast"
+      PlayAnimation(hero, "Spellcasting", true, 0.15)
+      return
+    else
+      local pos3 = GetPosition(hero)
+      if pos3 ~= nil then
+        SpawnFloatText(pos3.x, pos3.y + 2.0, pos3.z, "法力不足", false, 1.0)
+      end
+    end
   end
-  if ActionDown("heal") and manaNow >= 15 then
-    SetVar("mana", manaNow - 15)
-    local hp = vget("hp", 100)
-    SetVar("hp", math.min(vget("max_hp", 100), hp + 35))
+  if ActionDown("heal") then
+    local manaNow = vget("mana", 0)
+    if manaNow >= 15 then
+      SetVar("mana", manaNow - 15)
+      local hp = vget("hp", 100)
+      SetVar("hp", math.min(vget("max_hp", 100), hp + 35))
+    end
   end
 
   -- 死亡重生
@@ -202,12 +250,27 @@ local function update_wolves(dt)
   if pp == nil then return end
   for _, w in ipairs(wolves) do
     if w.dead then
-      w.respawn = w.respawn - dt
-      if w.respawn <= 0 then
-        w.dead = false
-        SetVisible(w.e, true)
-        SetHealth(w.e, WOLF_MAX)
-        SetPosition(w.e, { x = w.home.x, y = w.home.y, z = w.home.z })
+      if w.dieFade ~= nil and w.dieFade > 0 then
+        -- 死亡表现：0.6s 内下沉+缩小，随后隐藏
+        w.dieFade = w.dieFade - dt
+        local t = math.max(0, w.dieFade) / 0.6
+        local wp3 = GetPosition(w.e)
+        if wp3 ~= nil then
+          SetScale(w.e, t * 1.6, t * 0.6 + 0.1, t * 1.6)
+          wp3.y = 0.55 * t
+          SetPosition(w.e, wp3)
+        end
+        if w.dieFade <= 0 then SetVisible(w.e, false) end
+      else
+        w.respawn = w.respawn - dt
+        if w.respawn <= 0 then
+          w.dead = false
+          SetVisible(w.e, true)
+          SetScale(w.e, 1.6, 1.6, 1.6)
+          SetEntityPlate(w.e, "野狼", 1.0)
+          SetHealth(w.e, WOLF_MAX)
+          SetPosition(w.e, { x = w.home.x, y = w.home.y, z = w.home.z })
+        end
       end
     else
       w.attackCd = math.max(0, w.attackCd - dt)
@@ -216,10 +279,16 @@ local function update_wolves(dt)
       if wp == nil then return end
       local hp = GetHealth(w.e)
       if hp ~= nil and hp <= 0 then
-        -- 击杀奖励
+        -- 击杀：飘字 + 死亡表现（先缩放塌陷再隐藏，wolf 无死亡动画）
         w.dead = true
         w.respawn = 15
-        SetVisible(w.e, false)
+        w.dieFade = 0.6
+        local wp2 = GetPosition(w.e)
+        if wp2 ~= nil then
+          local crit = vget("last_hit_crit", false)
+          SpawnFloatText(wp2.x, wp2.y + 1.2, wp2.z, "-" .. tostring(math.floor(WOLF_MAX)), true, 1.2)
+        end
+        SetEntityPlate(w.e, nil, -1.0)
         SetVar("kills", vget("kills", 0) + 1)
         SetVar("gold", vget("gold", 0) + 5 + math.floor(vget("wave", 0)))
         local xp = vget("xp", 0) + 20
@@ -234,7 +303,9 @@ local function update_wolves(dt)
         local dh = dist2d(wp.x, wp.z, w.home.x, w.home.z)
         local chase = d < 14 and dh < 30
         local mx, mz = 0, 0
+        local moving = false
         if chase then
+          moving = true
           mx = (pp.x - wp.x) / d
           mz = (pp.z - wp.z) / d
           local vx = mx * 5.5
@@ -245,14 +316,28 @@ local function update_wolves(dt)
           if d < 1.8 and w.attackCd <= 0 and iframes <= 0 then
             w.attackCd = 1.2
             SetVar("hp", math.max(0, vget("hp", 100) - 8))
+            -- 狼扑咬一次性动画（walk 单次代替）
+            PlayAnimation(w.e, "04_Idle", false, 0.1)
           end
         elseif dh > 1 then
+          moving = true
           mx = (w.home.x - wp.x) / dh
           mz = (w.home.z - wp.z) / dh
           wp.x = wp.x + mx * 3 * dt
           wp.z = wp.z + mz * 3 * dt
           SetRotationY(w.e, math.atan(mx, mz))
         end
+        -- 狼 locomotion：追击=跑，回家=走（glb clip 名 01_Run/02_walk）
+        local want = chase and "01_Run" or "02_walk"
+        if moving and w.animState ~= want then
+          w.animState = want
+          PlayAnimation(w.e, want, true, 0.25)
+        elseif not moving and w.animState ~= "03" then
+          w.animState = "03"
+          PlayAnimation(w.e, "03_creep", true, 0.4)
+        end
+        -- 血条板随血量
+        SetEntityPlate(w.e, "野狼", math.max(0, hp) / WOLF_MAX)
         wp.y = 0.55 + math.sin(w.phase) * 0.06
         SetPosition(w.e, wp)
       end
@@ -292,8 +377,38 @@ local function update_npc(dt)
   end
 end
 
+local function update_hero_anim(dt)
+  -- 动作一次性播放期间不切 locomotion
+  if heroAct ~= nil then
+    if AnimationFinished(hero) or AnimationProgress(hero) >= 0.98 then
+      heroAct = nil
+      heroAnim = "" -- 强制下一帧重选 locomotion
+    else
+      return
+    end
+  end
+  -- locomotion：读条中=施法姿态（update_player 已设）；否则按输入速度
+  if castTime >= 0 then return end
+  local ix = ActionAxis("move_strafe")
+  local iz = ActionAxis("move_forward")
+  local speed = math.abs(ix) + math.abs(iz)
+  local want
+  if dashTime > 0 or speed > 0.85 then
+    want = "Running_A"
+  elseif speed > 0.15 then
+    want = "Walking_A"
+  else
+    want = "Idle"
+  end
+  if want ~= heroAnim then
+    heroAnim = want
+    PlayAnimation(hero, want, true, 0.25)
+  end
+end
+
 function on_update(e, dt)
   update_player(dt)
+  update_hero_anim(dt)
   update_wolves(dt)
   update_waves(dt)
   update_npc(dt)
@@ -341,9 +456,50 @@ function on_render()
   DrawText("第 " .. tostring(wave) .. " 波 · 击杀 " .. tostring(kills), 26, 92, 14,
            0.7, 0.9, 0.7, 1, false, false)
 
-  -- 技能栏
-  DrawText("1 火球 (10)   2 治疗 (15)   左键近战   右键冲刺", 26, 120, 15,
-           0.85, 0.9, 1, 1, false, false)
+  -- 技能栏（M1 WoW 风格：图标格子 + CD 遮罩 + 读条条）
+  local barX, barY = 560, 646
+  local cell, gap = 52, 6
+  local skills = {
+    { key = "1", name = "火球", cd = fireCd, cdMax = FIRE_CD, mana = 10 },
+    { key = "2", name = "治疗", cd = 0, cdMax = 1, mana = 15 },
+  }
+  for i, s in ipairs(skills) do
+    local x = barX + (i - 1) * (cell + gap)
+    DrawRect(x, barY, cell, cell, 0.10, 0.12, 0.18, 0.92)
+    DrawRectOutline(x, barY, cell, cell, 1.5, 0.45, 0.55, 0.75, 0.9)
+    -- CD 遮罩（自底向上消退）+ 秒数
+    if s.cd > 0 then
+      local frac = s.cd / s.cdMax
+      DrawRect(x, barY + cell * (1 - frac), cell, cell * frac, 0, 0, 0, 0.72)
+      if s.cd > 0.05 then
+        DrawText(string.format("%.1f", s.cd), x + cell / 2, barY + cell / 2 - 8, 15,
+                 1, 1, 1, 1, true, true)
+      end
+    end
+    DrawText(s.key, x + 4, barY + 2, 11, 0.9, 0.9, 0.9, 0.9)
+    DrawText(s.name, x + cell / 2, barY + cell - 15, 11, 0.85, 0.9, 1, 1, true, true)
+  end
+  -- 左键近战/右键冲刺小格
+  local x2 = barX + 2 * (cell + gap)
+  DrawRect(x2, barY, cell, cell, 0.10, 0.12, 0.18, 0.92)
+  DrawRectOutline(x2, barY, cell, cell, 1.5, 0.45, 0.55, 0.75, 0.9)
+  DrawText("LMB", x2 + cell / 2, barY + cell / 2 - 8, 12, 0.9, 0.9, 0.9, 1, true, true)
+  DrawText("近战", x2 + cell / 2, barY + cell - 15, 11, 0.85, 0.9, 1, 1, true, true)
+  if punchCd > 0 then
+    DrawRect(x2, barY + cell * (1 - punchCd / 0.55), cell, cell * (punchCd / 0.55),
+             0, 0, 0, 0.72)
+  end
+
+  -- 施法读条（屏幕中下）
+  if castTime >= 0 then
+    local w, h = 240, 16
+    local cx, cy = 640 - w / 2, 590
+    DrawRect(cx, cy, w, h, 0.05, 0.05, 0.08, 0.85)
+    DrawRect(cx + 2, cy + 2, (w - 4) * math.min(1, castTime / CAST_DUR), h - 4,
+             1.0, 0.6, 0.15, 0.95)
+    DrawRectOutline(cx, cy, w, h, 1.5, 0.9, 0.7, 0.3, 0.9)
+    DrawText("火球术", cx + w / 2, cy - 18, 13, 1, 0.85, 0.5, 1, true, true)
+  end
 
   -- 小地图（右上角，世界坐标直接缩放）
   local pp = GetPosition(hero)
