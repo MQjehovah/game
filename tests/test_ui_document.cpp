@@ -146,6 +146,58 @@ TEST(UiFilenameSuffixCheck) {
     CHECK_EQ(name.rfind(".ui.json"), 4u);
 }
 
+// G3-5: rich text parsing — [color:#rrggbb]..[/color] splits a label into
+// colored spans; plain text stays one span in the base color; malformed tags
+// render literally.
+TEST(UiRichTextParse) {
+    const gfx::Color base{1.0f, 1.0f, 1.0f, 1.0f};
+    const gfx::Color red{1.0f, 0.0f, 0.0f, 1.0f};
+    const gfx::Color green{0.0f, 1.0f, 0.0f, 1.0f};
+
+    // Plain: one span in the base color.
+    {
+        const std::vector<ui::RichSpan> spans = ui::ParseRichText("hello", base);
+        CHECK_EQ(spans.size(), 1u);
+        if (spans.size() == 1u) {
+            CHECK_EQ(spans[0].text, "hello");
+            CHECK_NEAR(spans[0].color.r, 1.0f, 1e-4f);
+        }
+    }
+
+    // Mixed: colored span + plain span.
+    {
+        const std::vector<ui::RichSpan> spans =
+            ui::ParseRichText("[color:#ff0000]A[/color]B", base);
+        CHECK_EQ(spans.size(), 2u);
+        if (spans.size() == 2u) {
+            CHECK_EQ(spans[0].text, "A");
+            CHECK_NEAR(spans[0].color.r, 1.0f, 1e-4f);
+            CHECK_NEAR(spans[0].color.g, 0.0f, 1e-4f);
+            CHECK_NEAR(spans[0].color.b, 0.0f, 1e-4f);
+            CHECK_EQ(spans[1].text, "B");
+            CHECK_NEAR(spans[1].color.r, base.r, 1e-4f);
+        }
+    }
+
+    // "color=" form + closing restores the base color.
+    {
+        const std::vector<ui::RichSpan> spans =
+            ui::ParseRichText("[color=#00ff00]X[/color]Y", base);
+        CHECK_EQ(spans.size(), 2u);
+        if (spans.size() == 2u) {
+            CHECK_NEAR(spans[0].color.g, 1.0f, 1e-4f);
+            CHECK_NEAR(spans[0].color.r, 0.0f, 1e-4f);
+        }
+    }
+
+    // Malformed tag renders literally (one span, base color).
+    {
+        const std::vector<ui::RichSpan> spans = ui::ParseRichText("[color:#zz]x", base);
+        CHECK_EQ(spans.size(), 1u);
+        if (spans.size() == 1u) CHECK_EQ(spans[0].text, "[color:#zz]x");
+    }
+}
+
 TEST(SystemCjkFontDynamicGlyphs) {
     // The dynamic-glyph path must rasterize common CJK text; a missing glyph
     // makes Measure return ~0 (text renders as nothing/solid blocks).

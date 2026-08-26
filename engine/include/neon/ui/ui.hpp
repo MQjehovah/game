@@ -1,5 +1,6 @@
 #pragma once
 #include <string>
+#include <vector>
 #include "neon/gfx/font.hpp"
 #include "neon/gfx/renderer.hpp"
 #include "neon/math/math.hpp"
@@ -70,6 +71,19 @@ math::Vec2 MeasureText(const gfx::Font& font, const std::string& text, float siz
 void DrawLabel(gfx::Renderer& renderer, const Theme& theme, const std::string& text,
                const math::Vec2& pos, float size, const gfx::Color& color,
                bool centerX = false, bool centerY = false);
+// G3-5 rich text: a label can carry per-segment colors via
+// "[color:#rrggbb]...[/color]" (also "[color=#rrggbb]"). Segments without a tag
+// inherit `baseColor`. Malformed/unclosed tags render literally.
+struct RichSpan {
+    std::string text;
+    gfx::Color color{1.0f, 1.0f, 1.0f, 1.0f};
+};
+std::vector<RichSpan> ParseRichText(const std::string& text, const gfx::Color& baseColor);
+// Draws a rich label: each span in its own color, laid out left-to-right on one
+// baseline; `centerX` centers the combined width around pos.x.
+void DrawRichLabel(gfx::Renderer& renderer, const gfx::Font& font, const std::string& text,
+                   const math::Vec2& pos, float size, const gfx::Color& baseColor,
+                   bool centerX = false);
 void DrawPanel(gfx::Renderer& renderer, const Theme& theme, const math::Rect2& rect);
 bool DrawButton(gfx::Renderer& renderer, const Theme& theme, const std::string& label,
                 const math::Rect2& rect, const platform::IInput& input, bool enabled = true);

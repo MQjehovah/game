@@ -299,8 +299,10 @@ void UiDocument::Draw(gfx::Renderer& renderer, const gfx::Font& font,
                 const float scale = n.fontSize / static_cast<float>(font.BakedSize());
                 const float baseline =
                     clip.y + clip.h * 0.5f + (font.Ascent() + font.Descent()) * 0.5f * scale;
-                renderer.DrawText(font, n.text, {clip.x + clip.w * 0.5f, baseline},
-                                  n.fontSize, n.color, true, false);
+                // G3-5: rich text (["color:#..]..[/color]") renders per-segment
+                // colors; plain text draws exactly as before.
+                DrawRichLabel(renderer, font, n.text, {clip.x + clip.w * 0.5f, baseline},
+                              n.fontSize, n.color, /*centerX=*/true);
                 break;
             }
             case UiNodeType::Button: {

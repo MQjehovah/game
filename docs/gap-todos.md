@@ -105,6 +105,7 @@
 
 - [x] **九宫格切片（9-slice）**——`ui::ComputeNineSlice(rect, slice, texW, texH, out[9])`（纯数学，可单测）：固定四角、单轴拉伸四边、中心填充剩余；UV 按纹理像素换算。`UiNode` 新增 `slice` 字段（设计 px）并随 `.ui.json` round-trip；`UiDocument::Draw` 新增可选 `UiTextureLoader`（加载 `sprite` 纹理）：Panel/Image/Button 带 sprite 时画纹理四边形，`slice>0` 时拆 9 块画（角不变形）；GameRuntime `DrawUI` 与编辑器 UI 预览已接线（asset manager 作 loader）。单元测试 `UiNineSliceLayout`（几何+UV+过小拒绝）+ `UiNineSliceJsonRoundTrip`。2026-08-26。
 - [ ] 富文本标签（颜色/图标/链接/内嵌图片）——未做。
+- [x] **富文本标签（颜色分段）**——`ui::ParseRichText(text, baseColor)`（纯解析，可单测）把 `[color:#rrggbb]...[/color]`（也接受 `[color=#rrggbb]`）拆成 `RichSpan` 段，无标记段继承基础色，畸形/未闭合标签按字面渲染；`ui::DrawRichLabel` 逐段测宽、按各自颜色在同一基线上左到右绘制（centerX 整体居中）；`UiDocument` Label 节点走富文本（纯文本行为不变，UI 编辑器的文本字段直接输入标记即可）。单元测试 `UiRichTextParse`（纯文本单段/混合分段/color= 形式/畸形字面）。2026-08-26。
 - 现状：自研 canvas 控件树已有（Panel/Label/Button/TextField/Slider/VBox/HBox/Window/ScrollArea/List/TreeView/ComboBox/TabBar/DockLayout，Measure/Layout/Draw 三阶段）；ImGui 仅用于编辑器，游戏运行时 UI 不依赖 ImGui。
 
 ## 四、核心建议落实
