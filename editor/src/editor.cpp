@@ -1,4 +1,5 @@
 #include "editor.hpp"
+#include "editor_util.hpp"
 
 #include <algorithm>
 #include <cerrno>
@@ -37,8 +38,6 @@
 #include "stb_image_write.h"
 
 namespace neon::editor {
-// Defined in panels.cpp (asset path helper shared by the editor).
-std::string ToProjectRelPath(const std::string& path, const std::string& projectDir);
 
 namespace {
 // 2D level layout (must match projects/pvz/scripts/pvz.lua: 9x5 cells of 100
@@ -48,376 +47,6 @@ constexpr int kPvzRows = 5;
 constexpr int kPvzCols = 9;
 const char* kPvzPlantNames[5] = {"sunflower", "peashooter", "wallnut", "snowpea", "cherry"};
 const char* kPvzZombieNames[3] = {"basic", "cone", "bucket"};
-
-// --- Playtest SFX: a tiny procedural synth so 2D games (NeonPvZ etc.) have
-// sound without shipping audio files. PlaySfx(name) maps to generated PCM.
-constexpr double kSfxRate = 44100.0;
-uint64_t g_sfxNoise = 0x9E3779B97F4A7C15ull;
-
-double SfxNoise() {
-    g_sfxNoise ^= g_sfxNoise << 13;
-    g_sfxNoise ^= g_sfxNoise >> 7;
-    g_sfxNoise ^= g_sfxNoise << 17;
-    return static_cast<double>((g_sfxNoise >> 11) & 0x7FFFFF) / 4194303.0 * 2.0 - 1.0;
-}
-
-enum class SfxWave { Sine, Square, Saw, Noise };
-
-void SfxTone(std::vector<int16_t>& out, double f0, double f1, float dur, float vol,
-             SfxWave wave, float attack = 0.01f, float release = 0.05f) {
-    const size_t count = static_cast<size_t>(dur * kSfxRate);
-    const size_t start = out.size();
-    out.resize(start + count, 0);
-    for (size_t i = 0; i < count; ++i) {
-        const double t = static_cast<double>(i) / kSfxRate;
-        const double frac = static_cast<double>(i) / static_cast<double>(count);
-        const double freq = f0 + (f1 - f0) * frac;
-        double s = 0.0;
-        switch (wave) {
-            case SfxWave::Sine: s = std::sin(math::kTwoPi * freq * t); break;
-            case SfxWave::Square: s = std::sin(math::kTwoPi * freq * t) >= 0.0 ? 0.6 : -0.6; break;
-            case SfxWave::Saw: s = frac * 2.0 - 1.0; break;
-            case SfxWave::Noise: s = SfxNoise(); break;
-        }
-        double env = 1.0;
-        if (i < count * attack) env = static_cast<double>(i) / (count * attack);
-        if (count - i < count * release)
-            env = static_cast<double>(count - i) / (count * release);
-        out[start + i] = static_cast<int16_t>(s * vol * env * 32767.0);
-    }
-}
-
-neon::audio::SoundFx MakePvzSfx(const std::string& name) {
-    neon::audio::SoundFx fx;
-    fx.sampleRate = 44100;
-    if (name == "click") {
-        SfxTone(fx.samples, 700, 700, 0.05f, 0.35f, SfxWave::Square);
-    } else if (name == "sun") {
-        SfxTone(fx.samples, 1200, 1900, 0.14f, 0.30f, SfxWave::Sine);
-    } else if (name == "plant") {
-        SfxTone(fx.samples, 280, 520, 0.09f, 0.45f, SfxWave::Square);
-    } else if (name == "shoot") {
-        SfxTone(fx.samples, 160, 110, 0.07f, 0.35f, SfxWave::Noise);
-    } else if (name == "boom") {
-        SfxTone(fx.samples, 90, 40, 0.45f, 0.7f, SfxWave::Noise);
-        SfxTone(fx.samples, 220, 60, 0.35f, 0.5f, SfxWave::Sine, 0.01f, 0.3f);
-    } else if (name == "eat") {
-        SfxTone(fx.samples, 120, 90, 0.08f, 0.4f, SfxWave::Square, 0.02f, 0.05f);
-        SfxTone(fx.samples, 110, 85, 0.10f, 0.4f, SfxWave::Square, 0.02f, 0.05f);
-    } else if (name == "mower") {
-        SfxTone(fx.samples, 220, 520, 0.5f, 0.35f, SfxWave::Saw);
-    } else if (name == "zombie") {
-        SfxTone(fx.samples, 90, 65, 0.35f, 0.5f, SfxWave::Sine, 0.05f, 0.2f);
-        SfxTone(fx.samples, 70, 55, 0.4f, 0.4f, SfxWave::Sine, 0.05f, 0.25f);
-    } else if (name == "wave") {
-        SfxTone(fx.samples, 500, 500, 0.18f, 0.35f, SfxWave::Square, 0.01f, 0.15f);
-        SfxTone(fx.samples, 700, 700, 0.18f, 0.35f, SfxWave::Square, 0.01f, 0.15f);
-    } else if (name == "win") {
-        SfxTone(fx.samples, 523, 523, 0.14f, 0.4f, SfxWave::Sine);
-        SfxTone(fx.samples, 659, 659, 0.14f, 0.4f, SfxWave::Sine);
-        SfxTone(fx.samples, 784, 784, 0.24f, 0.4f, SfxWave::Sine);
-    } else if (name == "lose") {
-        SfxTone(fx.samples, 392, 392, 0.18f, 0.4f, SfxWave::Sine);
-        SfxTone(fx.samples, 330, 330, 0.18f, 0.4f, SfxWave::Sine);
-        SfxTone(fx.samples, 262, 230, 0.45f, 0.4f, SfxWave::Sine);
-    }
-    return fx;
-}
-
-gfx::Color ColorFromHex(const std::string& hex) {
-    if (hex.size() < 7 || hex[0] != '#') return gfx::Color::White;
-    auto nibble = [](char c) -> unsigned {
-        if (c >= '0' && c <= '9') return static_cast<unsigned>(c - '0');
-        if (c >= 'a' && c <= 'f') return static_cast<unsigned>(c - 'a' + 10);
-        if (c >= 'A' && c <= 'F') return static_cast<unsigned>(c - 'A' + 10);
-        return 255u;
-    };
-    auto byte = [&](char hi, char lo) {
-        return static_cast<float>(((nibble(hi) << 4) | nibble(lo)) / 255.0);
-    };
-    return {byte(hex[1], hex[2]), byte(hex[3], hex[4]), byte(hex[5], hex[6]), 1.0f};
-}
-
-std::string ColorToHex(const gfx::Color& c) {
-    char buf[16];
-    std::snprintf(buf, sizeof(buf), "#%02X%02X%02X", static_cast<int>(c.r * 255.0f),
-                  static_cast<int>(c.g * 255.0f), static_cast<int>(c.b * 255.0f));
-    return buf;
-}
-
-std::string DirName(const std::string& path) {
-    size_t pos = path.find_last_of("/\\");
-    return pos == std::string::npos ? std::string(".") : path.substr(0, pos + 1);
-}
-
-std::string BaseName(const std::string& path) {
-    size_t pos = path.find_last_of("/\\");
-    return pos == std::string::npos ? path : path.substr(pos + 1);
-}
-
-// Map an editor mesh key to the runtime-loadable key written into an exported
-// scene. File-backed built-ins resolve to their asset paths; procedural
-// primitives ("terrain", "cube") and already-prefixed keys ("obj:", "gltf:")
-// pass through verbatim.
-std::string ExportMeshKey(const std::string& key) {
-    if (key == "helmet") return "gltf:assets/models/DamagedHelmet/DamagedHelmet.gltf";
-    // Procedural props (tree/house/npc/bush/rock/water/road/terrain) keep their
-    // bare key: the runtime regenerates the same meshes via scene_props.
-    return key;
-}
-
-bool MakeDir(const std::string& path) {
-#if defined(_WIN32)
-    return _mkdir(path.c_str()) == 0 || errno == EEXIST;
-#else
-    return ::mkdir(path.c_str(), 0777) == 0 || errno == EEXIST;
-#endif
-}
-
-// Create every missing path component (accepts '/' and '\' separators).
-bool EnsureDirs(const std::string& path) {
-    std::string acc;
-    size_t i = 0;
-    while (i < path.size()) {
-        size_t next = path.find_first_of("/\\", i);
-        if (next == std::string::npos) next = path.size();
-        std::string comp = path.substr(i, next - i);
-        i = next + 1;
-        if (!acc.empty() && !comp.empty()) {
-            acc += "/" + comp;
-        } else if (acc.empty()) {
-            acc = comp;
-        } else {
-            continue; // duplicate separator; keep going
-        }
-        if (acc.empty() || acc == ".") continue;
-        // A Windows drive root like "C:" already exists; skip creation.
-        if (acc.size() == 2 && acc[1] == ':') continue;
-        if (!MakeDir(acc)) return false;
-    }
-    return true;
-}
-
-std::string GetTempDir() {
-#if defined(_WIN32)
-    char buf[MAX_PATH];
-    DWORD n = GetTempPathA(MAX_PATH, buf);
-    if (n == 0 || n >= MAX_PATH) return ".";
-    std::string dir(buf);
-    while (!dir.empty() && (dir.back() == '\\' || dir.back() == '/')) dir.pop_back();
-    return dir.empty() ? "." : dir;
-#else
-    const char* t = std::getenv("TMPDIR");
-    if (t && *t) return t;
-    return "/tmp";
-#endif
-}
-
-// Write a file whose name may contain non-ASCII (CJK) characters. On Windows
-// std::ofstream would use the ANSI codepage, and MinGW's libstdc++ has no
-// std::wstring overload for fstream, so write through the wide API instead.
-bool WriteFileUtf8(const std::string& path, const std::string& content) {
-#if defined(_WIN32)
-    const int wl = MultiByteToWideChar(CP_UTF8, 0, path.data(),
-                                       static_cast<int>(path.size()), nullptr, 0);
-    std::wstring wpath(static_cast<size_t>(wl > 0 ? wl : 0), L'\0');
-    if (wl > 0)
-        MultiByteToWideChar(CP_UTF8, 0, path.data(), static_cast<int>(path.size()),
-                            &wpath[0], wl);
-    FILE* f = _wfopen(wpath.c_str(), L"wb");
-#else
-    FILE* f = std::fopen(path.c_str(), "wb");
-#endif
-    if (!f) return false;
-    const bool ok =
-        content.empty() || std::fwrite(content.data(), 1, content.size(), f) == content.size();
-    std::fclose(f);
-    return ok;
-}
-
-std::string GetWorkingDir() {
-#if defined(_WIN32)
-    char buf[4096];
-    if (_getcwd(buf, sizeof(buf))) return std::string(buf);
-#else
-    char buf[4096];
-    if (::getcwd(buf, sizeof(buf))) return std::string(buf);
-#endif
-    return ".";
-}
-
-// File modification time in seconds (0 when the file does not exist).
-uint64_t FileMTime(const std::string& path) {
-#if defined(_WIN32)
-    struct _stat64 st;
-    if (_stat64(path.c_str(), &st) == 0) return static_cast<uint64_t>(st.st_mtime);
-#else
-    struct stat st;
-    if (::stat(path.c_str(), &st) == 0) return static_cast<uint64_t>(st.st_mtime);
-#endif
-    return 0;
-}
-
-// Pushes a file's mtime forward (hot-reload smoke test uses this to simulate
-// an on-disk edit without relying on same-second filesystem timestamps).
-bool TouchFileMTime(const std::string& path, int64_t offsetSeconds) {
-#if defined(_WIN32)
-    HANDLE h = CreateFileA(path.c_str(), FILE_WRITE_ATTRIBUTES, FILE_SHARE_READ, nullptr,
-                           OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (h == INVALID_HANDLE_VALUE) return false;
-    SYSTEMTIME st;
-    GetSystemTime(&st);
-    FILETIME ft;
-    SystemTimeToFileTime(&st, &ft);
-    ULARGE_INTEGER ul;
-    ul.LowPart = ft.dwLowDateTime;
-    ul.HighPart = ft.dwHighDateTime;
-    ul.QuadPart += static_cast<unsigned __int64>(offsetSeconds) * 10000000ull;
-    FILETIME shifted;
-    shifted.dwLowDateTime = ul.LowPart;
-    shifted.dwHighDateTime = ul.HighPart;
-    SetFileTime(h, nullptr, &shifted, &shifted);
-    CloseHandle(h);
-    return true;
-#else
-    struct utimbuf ub;
-    ub.actime = static_cast<time_t>(std::time(nullptr) + offsetSeconds);
-    ub.modtime = ub.actime;
-    return ::utime(path.c_str(), &ub) == 0;
-#endif
-}
-
-// Lower-cased file extension with the leading dot, e.g. ".obj".
-std::string ExtLower(const std::string& path) {
-    size_t slash = path.find_last_of("/\\");
-    size_t dot = path.find_last_of('.');
-    if (dot == std::string::npos || (slash != std::string::npos && dot < slash)) return {};
-    std::string ext = path.substr(dot);
-    std::transform(ext.begin(), ext.end(), ext.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    return ext;
-}
-
-// Scene picker label: base name WITHOUT the ".json" suffix. Scenes are the
-// editor's primary objects; the extension is UI noise (storage keeps the full
-// name so scene matching logic is unaffected).
-std::string SceneDisplayName(const std::string& path) {
-    std::string n = BaseName(path);
-    if (ExtLower(n) == ".json") n = n.substr(0, n.size() - 5);
-    return n;
-}
-
-// Resolves a scene mesh asset path to a loadable file. Scene files store
-// project-relative paths ("assets/models/x.gltf"), so when a project is open
-// probe <project>/<rel> first, then fall back to the raw path (repo-root
-// assets used by the default sandbox and bundled demos). Absolute paths pass
-// through unchanged.
-std::string ResolveMeshAssetPath(const std::string& rel, const std::string& projectDir) {
-    const bool absolute = rel.size() >= 2 && rel[1] == ':' ||
-                          (!rel.empty() && (rel[0] == '/' || rel[0] == '\\'));
-    if (absolute) return rel;
-    auto exists = [](const std::string& f) {
-        std::ifstream probe(f, std::ios::binary);
-        return probe.is_open();
-    };
-    if (!projectDir.empty() && projectDir != "." && exists(projectDir + "/" + rel))
-        return projectDir + "/" + rel;
-    return rel;
-}
-
-// Maps a mesh key to the file it loads (file-prefixed keys verbatim and the
-// file-backed built-in "helmet"). "" for procedural primitives ("terrain",
-// "tree", "house", "npc", "bush", "rock", "water", "road", "cube") that have
-// no on-disk asset to hot-reload.
-std::string MeshKeyAssetPath(const std::string& key, const std::string& projectDir) {
-    std::string rel;
-    if (key == "helmet") rel = "assets/models/DamagedHelmet/DamagedHelmet.gltf";
-    else if (key.rfind("obj:", 0) == 0) rel = key.substr(4);
-    else if (key.rfind("gltf:", 0) == 0) rel = key.substr(5);
-    else return {};
-    return ResolveMeshAssetPath(rel, projectDir);
-}
-
-// Unprojects a point from clip space to a world ray for the given camera.
-// ndcX/ndcY are in [-1, 1] (y-up, matching the renderer's screen→NDC mapping:
-// ndcX = px*2/width-1, ndcY = 1 - py*2/height).
-math::Ray RayFromNDC(const gfx::Camera& cam, float aspect, float ndcX, float ndcY) {
-    math::Vec3 fwd = (cam.target - cam.position).Normalized();
-    math::Vec3 right = math::Cross(fwd, cam.up).Normalized();
-    math::Vec3 upv = math::Cross(right, fwd);
-    if (cam.ortho) {
-        // Ortho picking: every ray is parallel to the forward axis, through the
-        // mouse point on the camera plane (not through the eye).
-        float halfH = cam.orthoSize;
-        float halfW = halfH * (aspect > 0.01f ? aspect : 0.01f);
-        math::Vec3 origin = cam.position + right * (ndcX * halfW) + upv * (ndcY * halfH);
-        return {origin, fwd};
-    }
-    float tanF = std::tan(cam.fovY * 0.5f);
-    math::Vec3 dir = (fwd + right * ndcX * tanF * aspect + upv * ndcY * tanF).Normalized();
-    return {cam.position, dir};
-}
-
-// Design-space variant used by the smoke tests (design resolution 1280x720).
-// NOTE: picking uses RayFromNDC directly from client-pixel coordinates so it
-// stays correct at any window aspect; converting design→NDC only matches the
-// full-window render when the window is exactly 16:9.
-math::Ray ScreenRay(const gfx::Camera& cam, float aspect, const math::Vec2& designPos) {
-    const float ndcX = designPos.x / static_cast<float>(gfx::Renderer::kDesignWidth) * 2.0f - 1.0f;
-    const float ndcY = 1.0f - designPos.y / static_cast<float>(gfx::Renderer::kDesignHeight) * 2.0f;
-    return RayFromNDC(cam, aspect, ndcX, ndcY);
-}
-
-// ---------------------------------------------------------------------------
-// ImGuizmo matrix boundary.
-//
-// The engine's math::Mat4 is row-major storage: element (row, col) lives at
-// m[row * 4 + col] and translation at m[3]/m[7]/m[11]. ImGuizmo expects the
-// classic column-major float[16] layout used by OpenGL/glm (right/up/forward
-// basis in columns 0/1/2, translation at m[12]/m[13]/m[14]; see ImGuizmo.cpp's
-// matrix_t where v.right = m16[0..3], v.position = m16[12..15]). Converting
-// is therefore a transpose: element (r, c) -> gizmo index c*4 + r.
-void Mat4ToGizmo(const math::Mat4& m, float out[16]) {
-    for (int r = 0; r < 4; ++r) {
-        for (int c = 0; c < 4; ++c) out[c * 4 + r] = m.m[r * 4 + c];
-    }
-}
-
-void GizmoToMat4(const float in[16], math::Mat4& m) {
-    for (int r = 0; r < 4; ++r) {
-        for (int c = 0; c < 4; ++c) m.m[r * 4 + c] = in[c * 4 + r];
-    }
-}
-
-// Rebuild a SceneEntity's TRS from a decomposed row-major matrix. The engine
-// composes model matrices as T*R*S (column-vector convention: v' = M*v), so
-// scale is carried by the COLUMNS of the 3x3 block: column j = scale_j * R_j.
-// Translation is m[3]/m[7]/m[11]. This is the inverse of
-// Translation(pos) * rot.ToMat4() * Scale(scale).
-void DecomposeModel(const math::Mat4& m, math::Vec3& pos, math::Vec3& scale, math::Quat& rot) {
-    pos = {m.m[3], m.m[7], m.m[11]};
-    math::Vec3 col0{m.m[0], m.m[4], m.m[8]};
-    math::Vec3 col1{m.m[1], m.m[5], m.m[9]};
-    math::Vec3 col2{m.m[2], m.m[6], m.m[10]};
-    scale = {col0.Length(), col1.Length(), col2.Length()};
-    math::Vec3 r0 = col0.Normalized();
-    math::Vec3 r1 = col1.Normalized();
-    math::Vec3 r2 = col2.Normalized();
-    // A mirror (det < 0, e.g. a negative scale axis) must be folded into the
-    // scale so the extracted rotation stays proper (det +1) and recomposing
-    // T*R*S reproduces the source matrix exactly.
-    if (math::Dot(r0, math::Cross(r1, r2)) < 0.0f) {
-        r0 = -r0;
-        scale.x = -scale.x;
-    }
-    // Feed Mat4ToQuat a pure rotation matrix built from the normalized columns;
-    // Mat4ToQuat's row-based Shepperd extraction is exact on orthonormal rows.
-    math::Mat4 rotM;
-    rotM.m[0] = r0.x;  rotM.m[4] = r0.y;  rotM.m[8] = r0.z;
-    rotM.m[1] = r1.x;  rotM.m[5] = r1.y;  rotM.m[9] = r1.z;
-    rotM.m[2] = r2.x;  rotM.m[6] = r2.y;  rotM.m[10] = r2.z;
-    rot = math::Mat4ToQuat(rotM);
-}
 
 // Layout version persisted as a versioned marker window in the ImGui ini. When
 // the ini is missing or predates the current layout version, the editor
@@ -510,16 +139,27 @@ void NeonPanelsWriteAll(ImGuiContext*, ImGuiSettingsHandler* handler,
     }
 }
 
-// True for props that bake their colors into vertex data (the lit shader
-// multiplies uTint * vColor). Their material tint must stay WHITE so the baked
-// colors show through instead of being double-tinted. npc:r,g,b is the runtime
-// form of the villager (tunic tint encoded in the mesh key).
-bool IsBakedColorKey(const std::string& key) {
-    return key == "terrain" || key == "tree" || key == "house" || key == "npc" ||
-           key == "bush" || key == "hero" || key == "wolf" || key.compare(0, 4, "npc:") == 0;
+} // namespace
+
+// Single source of truth for the 3D scene framing. Everything that converts
+// between screen pixels, the scene rect and the camera (picking, gizmo,
+// world->screen overlays) routes through this instead of re-reading the dock
+// with its own "rect not laid out yet" fallback.
+math::Rect2 EditorApp::ValidSceneRect() const {
+    const math::Rect2& vp = SceneRect();
+    if (vp.w > 0.0f && vp.h > 0.0f) return vp;
+    return {0.0f, 0.0f, static_cast<float>(renderer_.ScreenWidth()),
+            static_cast<float>(renderer_.ScreenHeight())};
 }
 
-} // namespace
+math::Ray EditorApp::PickRay() {
+    const math::Rect2 vp = ValidSceneRect();
+    const math::Vec2 mousePx = Input() ? Input()->MousePos() : math::Vec2{0.0f, 0.0f};
+    const float ndcX = (mousePx.x - vp.x) / vp.w * 2.0f - 1.0f;
+    const float ndcY = 1.0f - (mousePx.y - vp.y) / vp.h * 2.0f;
+    return RayFromNDC(ActiveCamera(), ViewportAspect(), ndcX, ndcY);
+}
+
 
 // Friend of EditorApp: builds the title -> show-flag table (naming the private
 // members requires friendship) and registers the ini settings handler above.
@@ -574,7 +214,7 @@ bool EditorApp::OnCreate() {
     pixelFont_ = renderer_.CreateFontFromMemory(neon_rush::kEmbeddedFontData,
                                                 neon_rush::kEmbeddedFontSize, 24);
         // System CJK font with DYNAMIC glyphs: scene names, panels and
-    // playtest HUD render any Chinese text without maintaining a list.
+    // play HUD render any Chinese text without maintaining a list.
     cjkFont_ = assetMgr_.LoadSystemCJKFont(24);
     if (!gfx::ImGuiNeon_Init(&renderer_, gfx::ImGuiNeon_SystemCJKPath())) {
         NEON_LOG_ERROR("Editor: Dear ImGui init failed");
@@ -614,7 +254,7 @@ bool EditorApp::OnCreate() {
     if (audioBackend_ && !audioBackend_->Init()) {
         audioBackend_->Shutdown();
         audioBackend_.reset();
-        NEON_LOG_WARN("Editor: audio unavailable, playtest runs silent");
+        NEON_LOG_WARN("Editor: audio unavailable, play runs silent");
     }
 
     SetupScene();
@@ -633,7 +273,7 @@ bool EditorApp::OnCreate() {
     // gizmo/camera assertions see the default scene from frame 0.
     if (smokeMode_) {
         editMode_ = EditMode::Scene3D;
-        pvzPlaytestOnStart_ = false;
+        pvzPlayOnStart_ = false;
         loadProjectOnStart_ = false;
     }
     // Godot-style: restore the last-opened project from the editor config so
@@ -646,7 +286,7 @@ bool EditorApp::OnCreate() {
         if (in.is_open()) SwitchProject(projectDir_);
     }
     // --2d / --2d-play without a 2D project open defaults to the bundled PvZ
-    // project so the demo canvas + playtest have plant/zombie content. The
+    // project so the demo canvas + play have plant/zombie content. The
     // toolbar view switcher never changes the project - 2D is just the camera.
     if (editMode_ == EditMode::Scene2D && projectMode_ != "2d" &&
         std::ifstream("projects/pvz/game.json").is_open()) {
@@ -658,9 +298,9 @@ bool EditorApp::OnCreate() {
         projectDirBuf_[sizeof(projectDirBuf_) - 1] = '\0';
         if (loadProjectOnStart_) LoadProjectScene();
     }
-    // Start the playtest LAST: LoadProjectScene/SwitchProject above stop any
-    // running playtest, so --2d-play + --project must start after both.
-    if (pvzPlaytestOnStart_ || playOnStart_) StartPlaytest();
+    // Start the play LAST: LoadProjectScene/SwitchProject above stop any
+    // running play, so --2d-play + --project must start after both.
+    if (pvzPlayOnStart_ || playOnStart_) StartPlay();
     // --ui-editor: open the panel and load the first ui/*.ui.json directly.
     // The panel's own auto-open only runs while its dock tab is visible, which
     // a headless/CI layout cannot guarantee.
@@ -983,12 +623,12 @@ void EditorApp::OnUpdate(float dt) {
                 static_cast<unsigned long long>(TimeRef().frameIndex), TimeRef().Fps(),
                 benchFrameMsSum_ / static_cast<float>(benchFrames_), benchFrameMsMax_,
                 entities_.size(), renderer_.Stats().drawCalls,
-                playtest_ ? playtest_->PhysicsBodyCount() : 0, st.textures, st.meshes);
+                play_ ? play_->PhysicsBodyCount() : 0, st.textures, st.meshes);
         }
     }
     // Drain completed async texture decodes (uploads + callbacks, main thread).
     assetMgr_.PumpAsync();
-    // Advance animated skinned glTF entities (edit-mode pose; the playtest
+    // Advance animated skinned glTF entities (edit-mode pose; the play
     // advances its own animators inside GameRuntime::TickAnimations).
     for (SceneEntity& e : entities_) {
         if (e.skinned && e.skinned->Valid()) e.skinned->Update(dt);
@@ -1019,20 +659,20 @@ void EditorApp::OnUpdate(float dt) {
         // so middle-drag pans the camera target and the wheel zooms the ortho
         // size (the camera frame moves with it).
         UpdateViewport(dt);
-        if (playtestActive_ && playtest_) {
-            // P1-2 debugger: push edited breakpoints into the playtest host
+        if (playActive_ && play_) {
+            // P1-2 debugger: push edited breakpoints into the play host
             // (cheap, only when the set changed).
-            if (scriptBreakpointsDirty_ && playtest_->ScriptHost()) {
+            if (scriptBreakpointsDirty_ && play_->ScriptHost()) {
                 for (const auto& kv : scriptBreakpoints_) {
                     std::vector<int> lines(kv.second.begin(), kv.second.end());
-                    playtest_->ScriptHost()->SetScriptBreakpoints(kv.first, lines);
+                    play_->ScriptHost()->SetScriptBreakpoints(kv.first, lines);
                 }
                 scriptBreakpointsDirty_ = false;
             }
-            playtest_->Tick(dt);
+            play_->Tick(dt);
         }
     }
-    // Hot reload (T4.8): throttled mtime poll for the playtest's scripts and
+    // Hot reload (T4.8): throttled mtime poll for the play's scripts and
     // the scene's referenced assets. Off unless --hot / the toolbar toggle.
     if (hotReload_ && TimeRef().frameIndex - hotReloadFrame_ >= 30) {
         hotReloadFrame_ = TimeRef().frameIndex;
@@ -1260,8 +900,8 @@ void EditorApp::OnUpdate(float dt) {
     }
 
     // T4.8 smoke: hot reload. Frame 40 wires up a temp project with a script,
-    // attaches it, starts the playtest and records the script mtime baseline.
-    // Frame 41 bumps the file's mtime; frame 42 polls and asserts the playtest
+    // attaches it, starts the play and records the script mtime baseline.
+    // Frame 41 bumps the file's mtime; frame 42 polls and asserts the play
     // was torn down and restarted.
     if (smokeMode_ && TimeRef().frameIndex == 40) {
         const std::string proj = GetTempDir() + "/hotreload_proj";
@@ -1285,10 +925,10 @@ void EditorApp::OnUpdate(float dt) {
                 /*mergeable=*/false));
         }
         hotReload_ = true;
-        StartPlaytest();
+        StartPlay();
         PollHotReload(); // baseline: record the script's mtime (no restart)
-        const bool active = playtestActive_ && playtest_ && playtest_->Running();
-        NEON_LOG_INFO("EDITOR-HOTRELOAD-SMOKE: [%s] playtest running for hot reload",
+        const bool active = playActive_ && play_ && play_->Running();
+        NEON_LOG_INFO("EDITOR-HOTRELOAD-SMOKE: [%s] play running for hot reload",
                       active ? "PASS" : "FAIL");
         if (!active) smokeFailed_ = true;
     }
@@ -1298,8 +938,8 @@ void EditorApp::OnUpdate(float dt) {
     if (smokeMode_ && TimeRef().frameIndex == 42) {
         const int before = hotReloadCount_;
         PollHotReload();
-        const bool restarted = hotReloadCount_ > before && playtestActive_ && playtest_;
-        NEON_LOG_INFO("EDITOR-HOTRELOAD-SMOKE: [%s] script mtime change restarted the playtest",
+        const bool restarted = hotReloadCount_ > before && playActive_ && play_;
+        NEON_LOG_INFO("EDITOR-HOTRELOAD-SMOKE: [%s] script mtime change restarted the play",
                       restarted ? "PASS" : "FAIL");
         if (!restarted) smokeFailed_ = true;
         hotReload_ = false;
@@ -1309,7 +949,7 @@ void EditorApp::OnUpdate(float dt) {
     // Godot-style project switcher smoke: ScanProjects discovers both bundled
     // projects, SwitchProject enters the 2D project's canvas with its level
     // loaded, the 3D project loads its start scene, then we normalize back to
-    // the canonical sandbox (editor_scene.json) so the playtest smoke at
+    // the canonical sandbox (editor_scene.json) so the play smoke at
     // frame 60 sees the deterministic 3D scene regardless of the saved config.
     if (smokeMode_ && TimeRef().frameIndex == 43) {
         ScanProjects();
@@ -1336,7 +976,7 @@ void EditorApp::OnUpdate(float dt) {
         NEON_LOG_INFO("EDITOR-PROJECT-SMOKE: [%s] 3D project switch loaded its scene (%zu)",
                       realmOk ? "PASS" : "FAIL", entities_.size());
         if (!realmOk) smokeFailed_ = true;
-        StopPlaytest();
+        StopPlay();
         editMode_ = EditMode::Scene3D;
         LoadScene("editor_scene.json");
         // The sandbox scene is user data (SaveScene writes it), so only assert
@@ -1500,7 +1140,7 @@ void EditorApp::OnUpdate(float dt) {
     // Scene-tree smoke: per-parent recursive name sort (multi-level tree:
     // parent before children, each sibling group alphabetical) and the one
     // undo step that restores the previous order. The temporary names and
-    // parent links are restored before the frame ends so the playtest smoke
+    // parent links are restored before the frame ends so the play smoke
     // at frame 60 sees the untouched scene.
     if (smokeMode_ && TimeRef().frameIndex == 51) {
         bool ok = entities_.size() >= 3;
@@ -1591,22 +1231,22 @@ void EditorApp::OnUpdate(float dt) {
                       ok ? "PASS" : "FAIL");
         if (!ok) smokeFailed_ = true;
     }
-    // Play/Stop smoke: start a playtest at frame 60, verify it ticks, stop at
+    // Play/Stop smoke: start a play at frame 60, verify it ticks, stop at
     // the last frame (119; OnUpdate never runs at 120). Kept at "Play/Stop
     // doesn't crash the editor" level; the real script/BT verification lives
     // in tests/test_game_runtime.cpp.
-    if (smokeMode_ && TimeRef().frameIndex == 60) StartPlaytest();
+    if (smokeMode_ && TimeRef().frameIndex == 60) StartPlay();
     if (smokeMode_ && TimeRef().frameIndex == 90) {
-        const bool ok = playtestActive_ && playtest_ && playtest_->Running();
-        NEON_LOG_INFO("EDITOR-PLAYTEST-SMOKE: [%s] playtest active (entities=%zu)",
-                      ok ? "PASS" : "FAIL", ok ? playtest_->EntityCount() : 0u);
+        const bool ok = playActive_ && play_ && play_->Running();
+        NEON_LOG_INFO("EDITOR-PLAY-SMOKE: [%s] play active (entities=%zu)",
+                      ok ? "PASS" : "FAIL", ok ? play_->EntityCount() : 0u);
         if (!ok) smokeFailed_ = true;
     }
     if (smokeMode_ && TimeRef().frameIndex == 119) { // last OnUpdate before exit
-        const bool wasActive = playtestActive_ && playtest_;
-        StopPlaytest();
-        const bool clean = !playtest_ && !playtestActive_;
-        NEON_LOG_INFO("EDITOR-PLAYTEST-SMOKE: [%s] playtest stopped cleanly (was %s)",
+        const bool wasActive = playActive_ && play_;
+        StopPlay();
+        const bool clean = !play_ && !playActive_;
+        NEON_LOG_INFO("EDITOR-PLAY-SMOKE: [%s] play stopped cleanly (was %s)",
                       clean ? "PASS" : "FAIL", wasActive ? "active" : "inactive");
         if (!wasActive || !clean) smokeFailed_ = true;
     }
@@ -1706,44 +1346,25 @@ void EditorApp::OnRender() {
             }
         }
         renderer_.EndScene();
-    } else if (playtestActive_ && playtest_ && projectMode_ == "2d") {
-        // 2D game playtest: fit the 1280x720 design space into the viewport
+    } else if (playActive_ && play_ && projectMode_ == "2d") {
+        // 2D game play: fit the 1280x720 design space into the viewport
         // dock so the runtime's on_render (the actual game) draws where the
         // player sees it. Entities render through a FIXED design-space camera
         // (1 world unit = 1 design pixel) so the whole view - sprites, UI and
         // the camera frame - zooms together via canvasZoom_; the editor's own
-        // camera never leaks into the playtest.
+        // camera never leaks into the play.
         // The scene's Camera3D object is the runtime view; build the fallback
         // camera from it too so the game renders the SCENE camera's framing
         // (ortho 720-height) instead of the tiny preview default.
-        gfx::Camera gameCam;
-        bool haveGameCam = false;
-        for (const SceneEntity& se : entities_) {
-            if (se.nodeType != "Camera3D") continue;
-            gameCam.position = se.pos;
-            gameCam.target = se.pos + se.rot.Rotate({0.0f, 0.0f, -1.0f});
-            gameCam.up = {0.0f, 1.0f, 0.0f};
-            gameCam.ortho = se.cameraOrtho;
-            gameCam.orthoSize = se.cameraOrthoSize;
-            gameCam.fovY = se.cameraFov * math::kDegToRad;
-            haveGameCam = true;
-            break;
-        }
-        if (!haveGameCam) {
-            gameCam.target = {640.0f, 360.0f, 0.0f};
-            gameCam.position = gameCam.target + math::Vec3{0.0f, 0.0f, 14.0f};
-            gameCam.up = {0.0f, 1.0f, 0.0f};
-            gameCam.ortho = true;
-            gameCam.orthoSize = 360.0f;
-        }
+        const gfx::Camera gameCam = PlayCamera();
         {
             DockViewportScope dock(*this, /*designFit=*/true, /*sceneVp=*/true);
             // Same sky + scene lights as the edit view so Play matches what
-            // the edit camera sees (previously the playtest kept the renderer
+            // the edit camera sees (previously the play kept the renderer
             // defaults: no sky, dark default lighting).
             ApplySceneEnvironment();
             if (dock.Active()) {
-                playtest_->Draw(renderer_, gameCam, canvasZoom_);
+                play_->Draw(renderer_, gameCam, canvasZoom_);
                 // Mark the game's camera view (the full 1280x720 design area).
                 renderer_.DrawRectOutline(
                     {0.0f, 0.0f, static_cast<float>(gfx::Renderer::kDesignWidth),
@@ -1751,17 +1372,17 @@ void EditorApp::OnRender() {
                     2.0f, gfx::Color{0.4f, 0.9f, 1.0f, 0.65f});
             } else {
                 // No viewport rect yet (first frame): full-window fallback.
-                playtest_->Draw(renderer_, gameCam, canvasZoom_);
+                play_->Draw(renderer_, gameCam, canvasZoom_);
             }
         }
     } else {
         // Render the 3D scene INTO the viewport dock (same idea as the 2D
         // canvas): the camera projection uses the viewport aspect, the
         // rasterization viewport is the dock rect, and the 2D overlay (sky,
-        // billboards, playtest HUD) is clipped to it. Nothing bleeds into the
+        // billboards, play HUD) is clipped to it. Nothing bleeds into the
         // dock panels anymore.
         DockViewportScope dock(*this, /*designFit=*/true, /*sceneVp=*/true);
-        // Day sky + scene lights: shared with the 2D playtest so edit and
+        // Day sky + scene lights: shared with the 2D play so edit and
         // Play render the same environment (see ApplySceneEnvironment).
         ApplySceneEnvironment();
 
@@ -1794,7 +1415,7 @@ void EditorApp::OnRender() {
         // view (and follows the camera), so the fixed design/camera border is
         // no longer needed - the game is driven by the camera's actual view.
 
-        if (playtestActive_ && playtest_) {
+        if (playActive_ && play_) {
             // Play mode: the viewport renders the runtime's world (a snapshot
             // of the scene taken at Play). The editor scene is untouched.
             // For a 2D project the runtime content must be framed by the same
@@ -1806,36 +1427,17 @@ void EditorApp::OnRender() {
                 // Unity-style: the scene's Camera3D object defines the runtime
                 // camera (position/orientation/ortho size). Fall back to a
                 // locked design-space rect only when the scene has no camera.
-                const SceneEntity* camEnt = nullptr;
-                for (const SceneEntity& se : entities_) {
-                    if (se.nodeType == "Camera3D") { camEnt = &se; break; }
-                }
-                if (camEnt) {
-                    playCam = gfx::Camera{};
-                    playCam.position = camEnt->pos;
-                    playCam.target = camEnt->pos + camEnt->rot.Rotate({0.0f, 0.0f, -1.0f});
-                    playCam.up = {0.0f, 1.0f, 0.0f};
-                    playCam.ortho = camEnt->cameraOrtho;
-                    playCam.orthoSize = camEnt->cameraOrthoSize;
-                    playCam.fovY = camEnt->cameraFov * math::kDegToRad;
-                } else {
-                    playCam.position = {640.0f, 360.0f, 100.0f};
-                    playCam.target = {640.0f, 360.0f, 0.0f};
-                    playCam.up = {0.0f, 1.0f, 0.0f};
-                    playCam.ortho = true;
-                    playCam.orthoSize = 360.0f; // half the 720 design height
-                    playCam.fovY = 60.0f * math::kDegToRad;
-                }
+                playCam = PlayCamera();
             }
-            playtest_->Draw(renderer_, playCam);
+            play_->Draw(renderer_, playCam);
             // Physics debug view: wireframe every collider so the collision
-            // shapes are visible while playtesting (dynamic = cyan, static =
+            // shapes are visible while playing (dynamic = cyan, static =
             // gray). Uses the physics world's live positions, so resting and
             // bouncing bodies show exactly where the simulation puts them.
             // G8-3: physics wireframe is one debug-overlay layer (on by default).
             if (debugColliders_) {
                 for (const physics::World::DebugBody& db :
-                     playtest_->PhysicsWorld().DebugBodies()) {
+                     play_->PhysicsWorld().DebugBodies()) {
                     const gfx::Color c = db.dynamic ? gfx::Color{0.2f, 0.9f, 1.0f, 0.9f}
                                                     : gfx::Color{0.55f, 0.62f, 0.7f, 0.85f};
                     if (db.kind == physics::World::ShapeKind::Sphere)
@@ -1973,21 +1575,21 @@ void EditorApp::OnRender() {
     // crisp and unbloomed on top.
     renderer_.EndScene();
 
-    // The playtest's data-driven UI (UIShow menus/HUD) draws on top of the
+    // The play's data-driven UI (UIShow menus/HUD) draws on top of the
     // composited frame so it keeps the authored colors (the 2D canvas / scene
     // content stays in the HDR target). Clip it to the viewport like the scene
     // so it never spills over the dock panels, matching the packed game.
-    if (playtestActive_ && playtest_) {
+    if (playActive_ && play_) {
         DockViewportScope dock(*this, /*designFit=*/projectMode_ == "2d", /*sceneVp=*/false);
-        playtest_->DrawUI(renderer_);
+        play_->DrawUI(renderer_);
         if (!dock.Active()) renderer_.Flush2D(); // full-window fallback
     }
 
-    // Game HUD (HP/mana/skill hotbar) overlays the playtest scene. A
+    // Game HUD (HP/mana/skill hotbar) overlays the play scene. A
     // data-driven game that defines on_render draws its OWN HUD on the 2D
     // canvas, so the built-in HUD is only a fallback for legacy scenes.
-    if (playtestActive_ && playtest_ && !playtest_->HasScriptFunction("on_render"))
-        DrawPlaytestHUD();
+    if (playActive_ && play_ && !play_->HasScriptFunction("on_render"))
+        DrawPlayHUD();
 
     // Scene pass draw calls (before the thumbnail pass adds its own counts).
     if (smokeMode_) {
@@ -2009,7 +1611,7 @@ void EditorApp::OnRender() {
     gfx::ImGuiNeon_RenderDrawData(ImGui::GetDrawData());
 
     // Model viewer renders into its own docked panel (not the main viewport),
-    // so it coexists with the edit/playtest scene.
+    // so it coexists with the edit/play scene.
     RenderModelPreviewPanel();
 
     if (!screenshotPath_.empty() && TimeRef().frameIndex >= screenshotFrame_) {
@@ -2040,7 +1642,7 @@ void EditorApp::OnEvent(const platform::InputEvent& event) {
     }
     // Ctrl+Z (undo) / Ctrl+Y or Ctrl+Shift+Z (redo) on the KeyDown edge only,
     // and never while ImGui owns the keyboard (e.g. typing in the name field)
-    // -- same gating as the F5 playtest shortcut below. When the 行为树 panel
+    // -- same gating as the F5 play shortcut below. When the 行为树 panel
     // has focus AND its graph history has steps, undo/redo drive the BT graph;
     // otherwise they drive the scene history (an empty BT history never
     // swallows the scene shortcuts).
@@ -2066,13 +1668,13 @@ void EditorApp::OnEvent(const platform::InputEvent& event) {
             }
         }
     }
-    // F5 toggles playtest on the KeyDown edge only (Win32 auto-repeats KeyDown
+    // F5 toggles play on the KeyDown edge only (Win32 auto-repeats KeyDown
     // while held, which would otherwise oscillate Play/Stop), and never while
     // ImGui owns the keyboard (e.g. typing in a text field).
     if (event.key == platform::Key::F5) {
         if (event.type == platform::InputEvent::Type::KeyDown) {
             if (!f5Pressed_ && !gfx::ImGuiNeon_WantCaptureKeyboard()) {
-                TogglePlaytest();
+                TogglePlay();
             }
             f5Pressed_ = true;
         } else if (event.type == platform::InputEvent::Type::KeyUp) {
@@ -2458,7 +2060,7 @@ void EditorApp::ApplySceneEnvironment() {
 
 void EditorApp::DrawCameraFrame() {
     // The border marks the ACTUAL runtime view. In 2D projects that is the
-    // fixed 1280x720 design space (the playtest shows exactly this), so the
+    // fixed 1280x720 design space (the play shows exactly this), so the
     // frame is that rectangle on the content plane - zooming scales the frame
     // together with the sprites (whole-view zoom). In 3D front view there is
     // no design space; draw the ortho camera's visible rect instead so the
@@ -2497,7 +2099,7 @@ void EditorApp::DrawCameraFrame() {
 }
 
 void EditorApp::DrawSceneGizmos() {
-    if (playtestActive_) return; // gizmos are an edit-mode planning aid
+    if (playActive_) return; // gizmos are an edit-mode planning aid
     // Draw through ImGui (inside the frame) using the SAME view/projection/rect
     // as the transform gizmo, so the frusta/icons line up with the gizmo.
     const gfx::Camera cam = ActiveCamera();
@@ -2625,13 +2227,13 @@ void EditorApp::UpdateViewport(float dt) {
 
     // 2D view: until the user zooms/pans, keep the camera framed so the
     // 1280x720 design space maps 1:1 onto the viewport (ortho half-height =
-    // half the viewport height). This keeps edit view and playtest identical.
+    // half the viewport height). This keeps edit view and play identical.
     if (editMode_ == EditMode::Scene2D && viewCam_ == ViewCam::Front &&
         !cameraUserAdjusted_) {
         // Frame 2D like the runtime's SceneCamera does: centre on the design
         // centre and use the camera object's ortho size (fallback to the
         // 1280x720 design half-height). The old default target stayed at the 3D
-        // origin and orthoSize = panelHeight/2, so edit and playtest disagreed
+        // origin and orthoSize = panelHeight/2, so edit and play disagreed
         // whenever the dock wasn't exactly 720px tall.
         const SceneEntity* sc = nullptr;
         for (const SceneEntity& se : entities_) {
@@ -2642,9 +2244,9 @@ void EditorApp::UpdateViewport(float dt) {
         orthoSize_ = (sc && sc->cameraOrthoSize > 0.0f) ? sc->cameraOrthoSize : 360.0f;
     }
 
-    // 2D playtest: the whole view (entities + UI + camera frame) zooms as one
+    // 2D play: the whole view (entities + UI + camera frame) zooms as one
     // via canvasZoom_ - never scale sprites without the rest of the view.
-    if (playtestActive_ && editMode_ == EditMode::Scene2D) {
+    if (playActive_ && editMode_ == EditMode::Scene2D) {
         const float wheel = input->WheelDelta();
         if (std::fabs(wheel) > 0.01f) {
             canvasZoom_ = math::Clamp(canvasZoom_ * std::pow(1.15f, -wheel), 0.2f, 8.0f);
@@ -2675,11 +2277,7 @@ void EditorApp::UpdateViewport(float dt) {
                 math::Vec3 right = math::Cross(fwd, cam.up).Normalized();
                 math::Vec3 upv = math::Cross(right, fwd);
                 const float worldPerPixel =
-                    ortho ? orthoSize_ * 2.0f /
-                                (SceneRect().h > 0.0f
-                                     ? SceneRect().h
-                                     : static_cast<float>(renderer_.ScreenHeight()))
-                          : 1.0f;
+                    ortho ? orthoSize_ * 2.0f / ValidSceneRect().h : 1.0f;
                 const float k = ortho ? worldPerPixel : 0.02f;
                 camTarget_ -= right * input->MouseDelta().x * k;
                 camTarget_ += upv * input->MouseDelta().y * k;
@@ -2702,22 +2300,10 @@ void EditorApp::UpdateViewport(float dt) {
             }
         }
         // Play mode keeps camera navigation but not scene editing: left-click
-        // picking would mutate the editor scene selection mid-playtest.
-        if (input->MousePressed(platform::MouseButton::Left) && !playtestActive_ &&
+        // picking would mutate the editor scene selection mid-play.
+        if (input->MousePressed(platform::MouseButton::Left) && !playActive_ &&
             !gizmoBusy) {
-            const float aspect = ViewportAspect();
-            gfx::Camera cam = ActiveCamera();
-            // Build the ray from the mouse position RELATIVE to the viewport
-            // dock, matching the viewport-aspect projection the scene uses.
-            const math::Vec2 mousePx = input->MousePos();
-            const math::Rect2& vp = SceneRect();
-            const float vpW = vp.w > 0.0f ? vp.w : static_cast<float>(renderer_.ScreenWidth());
-            const float vpH = vp.h > 0.0f ? vp.h : static_cast<float>(renderer_.ScreenHeight());
-            const float vpX = vp.w > 0.0f ? vp.x : 0.0f;
-            const float vpY = vp.h > 0.0f ? vp.y : 0.0f;
-            const float ndcX = (mousePx.x - vpX) / vpW * 2.0f - 1.0f;
-            const float ndcY = 1.0f - (mousePx.y - vpY) / vpH * 2.0f;
-            math::Ray ray = RayFromNDC(cam, aspect, ndcX, ndcY);
+            math::Ray ray = PickRay();
             // P1-1 terrain brush: paint instead of picking while enabled.
             if (terrainPaintMode_) {
                 PaintTerrain(ray);
@@ -2750,17 +2336,7 @@ void EditorApp::UpdateViewport(float dt) {
         // Hold-to-paint: the brush applies every frame while the button stays
         // down (drag sculpting).
         if (terrainPaintMode_ && input->MouseDown(platform::MouseButton::Left)) {
-            const float aspect = ViewportAspect();
-            gfx::Camera cam = ActiveCamera();
-            const math::Vec2 mousePx = input->MousePos();
-            const math::Rect2& vp = SceneRect();
-            const float vpW = vp.w > 0.0f ? vp.w : static_cast<float>(renderer_.ScreenWidth());
-            const float vpH = vp.h > 0.0f ? vp.h : static_cast<float>(renderer_.ScreenHeight());
-            const float vpX = vp.w > 0.0f ? vp.x : 0.0f;
-            const float vpY = vp.h > 0.0f ? vp.y : 0.0f;
-            const float ndcX = (mousePx.x - vpX) / vpW * 2.0f - 1.0f;
-            const float ndcY = 1.0f - (mousePx.y - vpY) / vpH * 2.0f;
-            PaintTerrain(RayFromNDC(cam, aspect, ndcX, ndcY));
+            PaintTerrain(PickRay());
         }
         // P2-editor UX: terrain brush hover preview — track where the brush
         // would land every frame while paint mode is on.
@@ -2768,17 +2344,7 @@ void EditorApp::UpdateViewport(float dt) {
         if (terrainPaintMode_ && selected_ >= 0 &&
             selected_ < static_cast<int>(entities_.size()) &&
             entities_[static_cast<size_t>(selected_)].meshKey == "terrain") {
-            const float aspect = ViewportAspect();
-            gfx::Camera cam = ActiveCamera();
-            const math::Vec2 mousePx = input->MousePos();
-            const math::Rect2& vp = SceneRect();
-            const float vpW = vp.w > 0.0f ? vp.w : static_cast<float>(renderer_.ScreenWidth());
-            const float vpH = vp.h > 0.0f ? vp.h : static_cast<float>(renderer_.ScreenHeight());
-            const float vpX = vp.w > 0.0f ? vp.x : 0.0f;
-            const float vpY = vp.h > 0.0f ? vp.y : 0.0f;
-            const float ndcX = (mousePx.x - vpX) / vpW * 2.0f - 1.0f;
-            const float ndcY = 1.0f - (mousePx.y - vpY) / vpH * 2.0f;
-            const math::Ray ray = RayFromNDC(cam, aspect, ndcX, ndcY);
+            const math::Ray ray = PickRay();
             if (std::fabs(ray.dir.y) > 1e-6f) {
                 const float ty = (entities_[static_cast<size_t>(selected_)].pos.y -
                                   ray.origin.y) /
@@ -2790,10 +2356,10 @@ void EditorApp::UpdateViewport(float dt) {
             }
         }
     }
-    // Data-driven playtest scripts use the orbit yaw for camera-relative
+    // Data-driven play scripts use the orbit yaw for camera-relative
     // movement (same GameVar the neon_game player publishes).
-    if (playtestActive_ && playtest_)
-        playtest_->GameVars().Set("cameraYaw", script::Value::Num(yaw_));
+    if (playActive_ && play_)
+        play_->GameVars().Set("cameraYaw", script::Value::Num(yaw_));
     (void)dt;
 }
 
@@ -2852,68 +2418,6 @@ std::vector<int> EditorApp::SelectedIndices() const {
     return out;
 }
 
-void EditorApp::DrawPlaytestHUD() {
-    if (!playtest_ || !playtestActive_) return;
-    scene::GameRuntime& rt = *playtest_;
-    const ecs::Entity hero = rt.FindNamedEntity("英雄");
-    const auto heroHp = rt.EntityHealth(hero);
-    const float hp = heroHp.first, maxHp = heroHp.second;
-    const float mana = rt.GameVar("hero_mana");
-    const float maxMana = rt.GameVar("hero_max_mana");
-    const float fireCd = rt.GameVar("hero_fire_cd");
-    const float healCd = rt.GameVar("hero_heal_cd");
-    const float meleeCd = rt.GameVar("hero_melee_cd");
-    const int level = static_cast<int>(rt.GameVar("hero_level"));
-    const int gold = static_cast<int>(rt.GameVar("hero_gold"));
-
-    ui::Theme theme;
-    theme.font = cjkFont_.Valid() ? cjkFont_ : pixelFont_;
-
-    const int w = renderer_.ScreenWidth();
-    const int h = renderer_.ScreenHeight();
-
-    // HP bar (top-left).
-    ui::DrawLabel(renderer_, theme, "生命", {24, 20}, 14, theme.text, false, true);
-    const float hpFrac = maxHp > 0.0f ? math::Saturate(hp / maxHp) : 0.0f;
-    const gfx::Color hpColor = hpFrac > 0.5f ? gfx::Color{0.2f, 1.0f, 0.35f, 1.0f}
-                               : hpFrac > 0.25f ? gfx::Color{1.0f, 0.85f, 0.2f, 1.0f}
-                                                : gfx::Color{1.0f, 0.2f, 0.2f, 1.0f};
-    ui::DrawBar(renderer_, theme, {70, 14, 280, 22}, hpFrac, hpColor);
-
-    // Mana bar.
-    ui::DrawLabel(renderer_, theme, "法力", {24, 48}, 14, theme.text, false, true);
-    const float manaFrac = maxMana > 0.0f ? math::Saturate(mana / maxMana) : 0.0f;
-    ui::DrawBar(renderer_, theme, {70, 42, 200, 14}, manaFrac, gfx::Color{0.25f, 0.45f, 1.0f, 1.0f});
-
-    char buf[96];
-    std::snprintf(buf, sizeof(buf), "等级 %d", level);
-    ui::DrawLabel(renderer_, theme, buf, {24, 64}, 13, theme.text, false, false);
-    std::snprintf(buf, sizeof(buf), "金币 %d", gold);
-    const math::Vec2 gs = ui::MeasureText(theme.font, buf, 16);
-    ui::DrawLabel(renderer_, theme, buf, {static_cast<float>(w) - gs.x - 8, 18}, 16,
-                  gfx::Color{1.0f, 0.85f, 0.3f, 1.0f}, false, false);
-
-    // Skill hotbar (bottom-left): melee / fireball / heal with cooldowns.
-    float sx = 24.0f, sy = static_cast<float>(h) - 66.0f;
-    const float slotW = 54.0f, slotH = 54.0f, gap = 8.0f;
-    auto slot = [&](const char* name, const char* key, float cd, const gfx::Color& color) {
-        const math::Rect2 r{sx, sy, slotW, slotH};
-        ui::DrawPanel(renderer_, theme, r);
-        ui::DrawLabel(renderer_, theme, key, {sx + 4, sy + 2}, 12, theme.dim, false, false);
-        ui::DrawLabel(renderer_, theme, name, {sx + slotW * 0.5f, sy + slotH * 0.5f}, 15, color,
-                      true, true);
-        if (cd > 0.0f) {
-            ui::DrawBar(renderer_, theme, r, 1.0f, theme.panelBg.WithAlpha(0.65f));
-            std::snprintf(buf, sizeof(buf), "%.1f", cd);
-            ui::DrawLabel(renderer_, theme, buf, {sx + slotW * 0.5f, sy + slotH * 0.5f}, 15,
-                          theme.text, true, true);
-        }
-        sx += slotW + gap;
-    };
-    slot("近战", "左键", meleeCd, gfx::Color{0.92f, 0.92f, 1.0f, 1.0f});
-    slot("火球", "1", fireCd, gfx::Color{1.0f, 0.55f, 0.20f, 1.0f});
-    slot("治疗", "2", healCd, gfx::Color{0.4f, 1.0f, 0.5f, 1.0f});
-}
 
 void EditorApp::DrawTransformGizmo() {
     // ImGuizmo::BeginFrame() must run every frame before Manipulate(): it
@@ -2924,7 +2428,7 @@ void EditorApp::DrawTransformGizmo() {
     ImGuizmo::BeginFrame();
     gizmoBeginFrame_ = true;
 
-    if (playtestActive_ || selected_ < 0 || selected_ >= static_cast<int>(entities_.size())) {
+    if (playActive_ || selected_ < 0 || selected_ >= static_cast<int>(entities_.size())) {
         gizmoDragActive_ = false;
         return;
     }
@@ -2946,11 +2450,11 @@ void EditorApp::DrawTransformGizmo() {
 
     // The 3D scene renders into the design-fit scene rect with the matching
     // aspect, so the gizmo uses the same rect + aspect.
-    const math::Rect2& vp = SceneRect();
-    const float rx = vp.w > 0.0f ? vp.x : 0.0f;
-    const float ry = vp.h > 0.0f ? vp.y : 0.0f;
-    const float rw = vp.w > 0.0f ? vp.w : static_cast<float>(renderer_.ScreenWidth());
-    const float rh = vp.h > 0.0f ? vp.h : static_cast<float>(renderer_.ScreenHeight());
+    const math::Rect2 vp = ValidSceneRect();
+    const float rx = vp.x;
+    const float ry = vp.y;
+    const float rw = vp.w;
+    const float rh = vp.h;
     ImGuizmo::SetRect(rx, ry, rw, rh);
     gizmoRect_[0] = rx;
     gizmoRect_[1] = ry;
@@ -3117,13 +2621,10 @@ void EditorApp::RunGizmoDragSim() {
 
     // Screen position of the entity origin under the viewport rect (the same
     // rect the gizmo now uses), in y-down ImGui pixels.
-    math::Mat4 vp = cam.ViewProjection(aspect);
-    math::Vec4 clip = vp.TransformVec4({sel.pos.x, sel.pos.y, sel.pos.z, 1.0f});
-    const math::Rect2& vr = SceneRect();
-    const float vrW = vr.w > 0.0f ? vr.w : static_cast<float>(renderer_.ScreenWidth());
-    const float vrH = vr.h > 0.0f ? vr.h : static_cast<float>(renderer_.ScreenHeight());
-    const float gx = vr.x + (clip.x / clip.w * 0.5f + 0.5f) * vrW;
-    const float gy = vr.y + (0.5f - clip.y / clip.w * 0.5f) * vrH;
+    math::Vec2 originPx;
+    if (!WorldToScreenImGui(cam, aspect, ValidSceneRect(), sel.pos, originPx)) return;
+    const float gx = originPx.x;
+    const float gy = originPx.y;
 
     // The viewport is an input-active docked panel: ImGui reports IT as the
     // hovered window over the viewport, and SetAlternativeWindow points the
@@ -3157,9 +2658,10 @@ void EditorApp::RunGizmoDragSim() {
     ImGuizmo::BeginFrame();
     ImGuizmo::SetOrthographic(cam.ortho);
     ImGuizmo::SetDrawlist(ImGui::GetWindowDrawList());
-    ImGuizmo::SetRect(vr.w > 0.0f ? vr.x : 0.0f, vr.h > 0.0f ? vr.y : 0.0f,
-                      vr.w > 0.0f ? vr.w : static_cast<float>(renderer_.ScreenWidth()),
-                      vr.h > 0.0f ? vr.h : static_cast<float>(renderer_.ScreenHeight()));
+    {
+        const math::Rect2 vr = ValidSceneRect();
+        ImGuizmo::SetRect(vr.x, vr.y, vr.w, vr.h);
+    }
     // NOTE: deliberately NOT re-arming SetAlternativeWindow here. The real
     // DrawTransformGizmo set it this frame; the activation below only succeeds
     // if that setting matches ctx.HoveredWindow (the dock host), so a removed
@@ -3307,7 +2809,7 @@ void EditorApp::BuildImGuiUI() {
     }
 
     // F3 toggles the unified debug-overlay panel (G8-3). Runs regardless of
-    // selection so the layers can be switched while playtesting.
+    // selection so the layers can be switched while playing.
     if (ImGui::IsKeyPressed(ImGuiKey_F3)) showDebugOverlay_ = !showDebugOverlay_;
 
     // Transform-gizmo shortcuts: W/E/R switch the operation while an entity is
@@ -3490,13 +2992,13 @@ void EditorApp::BuildImGuiUI() {
         ImGui::SameLine();
         ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
         ImGui::SameLine();
-        // --- 运行/视图: 试玩、热重载、相机预设、2D/3D 切换 ---
-        if (ToolbarIcon(playtestActive_ ? "■" : "▶",
-                        playtestActive_ ? "停止试玩 (F5)" : "试玩 (F5)", playtestActive_))
-            TogglePlaytest();
+        // --- 运行/视图: 播放、热重载、相机预设、2D/3D 切换 ---
+        if (ToolbarIcon(playActive_ ? "■" : "▶",
+                        playActive_ ? "停止播放 (F5)" : "播放 (F5)", playActive_))
+            TogglePlay();
         ImGui::SameLine();
         // Hot reload toggle (T4.8): off by default. When on, script/asset mtime
-        // changes restart the playtest / reload the cached assets (throttled).
+        // changes restart the play / reload the cached assets (throttled).
         if (ToolbarIcon(hotReload_ ? "●" : "○", "热重载: 脚本/资源改动自动重载", hotReload_))
             hotReload_ = !hotReload_;
         ImGui::SameLine();
@@ -3692,7 +3194,7 @@ void EditorApp::RunUISmokeTest() {
     };
 
     if (editMode_ != EditMode::Scene3D) {
-        StopPlaytest();
+        StopPlay();
         editMode_ = EditMode::Scene3D;
         NEON_LOG_INFO("EDITOR-UI-SMOKE: forced 3D mode for the canonical smoke run");
     }
@@ -3857,12 +3359,9 @@ void EditorApp::RunUISmokeTest() {
         check(gizmoBeginFrame_, "ImGuizmo::BeginFrame called every frame");
         check(gizmoAltWindowSet_, "gizmo hover bound to the dock host window");
         {
-            const math::Rect2 vr = SceneRect();
-            const float rw = vr.w > 0.0f ? vr.w : static_cast<float>(renderer_.ScreenWidth());
-            const float rh = vr.h > 0.0f ? vr.h : static_cast<float>(renderer_.ScreenHeight());
-            check(gizmoRect_[0] == (vr.w > 0.0f ? vr.x : 0.0f) &&
-                      gizmoRect_[1] == (vr.h > 0.0f ? vr.y : 0.0f) &&
-                      gizmoRect_[2] == rw && gizmoRect_[3] == rh,
+            const math::Rect2 vr = ValidSceneRect();
+            check(gizmoRect_[0] == vr.x && gizmoRect_[1] == vr.y &&
+                      gizmoRect_[2] == vr.w && gizmoRect_[3] == vr.h,
                   "gizmo rect matches the scene render rect");
         }
     }
@@ -4319,7 +3818,7 @@ void EditorApp::RunUISmokeTest() {
             }
         }
         projectDir_ = prevProj;
-        // Leave the script attached on the entity: it exercises the playtest
+        // Leave the script attached on the entity: it exercises the play
         // path (a missing script file is skipped non-fatally by the runtime).
         NEON_LOG_INFO("EDITOR-SCRIPT-SMOKE: script panel checks done");
     }
@@ -4458,7 +3957,7 @@ void EditorApp::RunUISmokeTest() {
             check(ent.scripts.size() == 1 && ent.scripts[0].path == "scripts/stale.lua",
                   "script list: redo replays the removal");
 
-            // Leave the entity unmounted so the playtest sandbox stays clean.
+            // Leave the entity unmounted so the play sandbox stays clean.
             history_.Undo();
             history_.Undo();
             history_.Undo();
@@ -4570,7 +4069,7 @@ void EditorApp::RunUISmokeTest() {
         check(prefabLib_.Has("watchtower_copy"),
               "prefab: SavePrefab registers a new template");
         history_.Undo(); // drop the instanced entity so later smoke checks
-                         // (playtest) run against the canonical scene
+                         // (play) run against the canonical scene
         projectDir_ = prev;
     }
 
@@ -4859,7 +4358,7 @@ void EditorApp::RunUISmokeTest() {
         if (!prevScene.empty()) LoadScene(prevScene);
     }
     // Restore the editor's actual scene (user data) after the deterministic
-    // checks; later smoke frames (project switch / playtest) re-derive theirs.
+    // checks; later smoke frames (project switch / play) re-derive theirs.
     if (!smokePrevScene.empty()) LoadScene(smokePrevScene);
 
     NEON_LOG_INFO("EDITOR-UI-SMOKE: all checks done");
@@ -5028,470 +4527,9 @@ void EditorApp::AddSpriteEntity(const std::string& texPath) {
     }
 }
 
-core::Result<core::Json> EditorApp::BuildPlaySceneJson() {
-    NormalizeEntityIds();
-    if (entities_.empty())
-        return core::Result<core::Json>::Err("editor: scene is empty");
-    core::Json root;
-    root.type_ = core::Json::Type::Object;
-    core::Json arr;
-    arr.type_ = core::Json::Type::Array;
-    auto parentNameOf = [this](int parentId) {
-        if (parentId == 0) return std::string();
-        for (const SceneEntity& p : entities_)
-            if (p.id == parentId) return p.name;
-        return std::string();
-    };
-    for (const SceneEntity& e : entities_) {
-        core::Json obj;
-        if (e.id != 0) {
-            core::Json id;
-            id.type_ = core::Json::Type::Number;
-            id.number_ = e.id;
-            obj.object_["id"] = std::move(id);
-        }
-        if (!e.spriteTex.empty()) {
-            // 2D sprite: name + transform + sprite components (no mesh). The
-            // runtime renders the image quad with the unlit texture material.
-            auto mkStr = [](const std::string& s) {
-                core::Json j;
-                j.type_ = core::Json::Type::String;
-                j.string_ = s;
-                return j;
-            };
-            auto mkNum = [](double v) {
-                core::Json j;
-                j.type_ = core::Json::Type::Number;
-                j.number_ = v;
-                return j;
-            };
-            auto mkArr = [&mkNum](const std::initializer_list<double>& vals) {
-                core::Json j;
-                j.type_ = core::Json::Type::Array;
-                for (double v : vals) j.array_.push_back(mkNum(v));
-                return j;
-            };
-            obj.type_ = core::Json::Type::Object;
-            obj.object_["name"] = mkStr(e.name);
-            core::Json tf;
-            tf.type_ = core::Json::Type::Object;
-            tf.object_["pos"] = mkArr({e.pos.x, e.pos.y, e.pos.z});
-            tf.object_["rot"] = mkArr({e.rot.x, e.rot.y, e.rot.z, e.rot.w});
-            tf.object_["scale"] = mkArr({e.scale.x, e.scale.y, e.scale.z});
-            if (e.parentId != 0) tf.object_["parentId"] = mkNum(e.parentId);
-            const std::string pname = parentNameOf(e.parentId);
-            if (!pname.empty()) tf.object_["parent"] = mkStr(pname);
-            core::Json sp;
-            sp.type_ = core::Json::Type::Object;
-            sp.object_["texture"] = mkStr(e.spriteTex);
-            if (e.spriteFlipX) {
-                core::Json b;
-                b.type_ = core::Json::Type::Bool;
-                b.bool_ = true;
-                sp.object_["flipX"] = std::move(b);
-            }
-            if (e.spriteFlipY) {
-                core::Json b;
-                b.type_ = core::Json::Type::Bool;
-                b.bool_ = true;
-                sp.object_["flipY"] = std::move(b);
-            }
-            sp.object_["colorHex"] = mkStr(ColorToHex(e.tint));
-            core::Json comps;
-            comps.type_ = core::Json::Type::Object;
-            comps.object_["transform"] = std::move(tf);
-            comps.object_["sprite"] = std::move(sp);
-            obj.object_["components"] = std::move(comps);
-        } else if (!e.meshKey.empty()) {
-        std::string meshKey = ExportMeshKey(e.meshKey);
-        if (e.meshKey == "npc") {
-            // Encode the villager's tunic tint into the mesh key so the runtime
-            // bakes it into the NPC mesh (its material tint stays white).
-            char buf[48];
-            std::snprintf(buf, sizeof(buf), "npc:%d,%d,%d",
-                          static_cast<int>(e.tint.r * 255.0f),
-                          static_cast<int>(e.tint.g * 255.0f),
-                          static_cast<int>(e.tint.b * 255.0f));
-            meshKey = buf;
-        }
-        auto res = scene::SceneFile::MakeEntity(e.name, e.pos, e.rot, e.scale, meshKey,
-                                                e.metallic, e.roughness, e.tint, e.albedoTex,
-                                                e.mrTex, e.aoTex, e.emissiveTex, e.ao,
-                                                e.emissiveIntensity, "", "", core::Json{}, {},
-                                                e.hp, e.maxHp, parentNameOf(e.parentId),
-                                                e.parentId, e.id);
-        if (!res.Ok()) {
-            return core::Result<core::Json>::Err("editor: " + res.Error());
-        }
-        obj = res.Value();
-        if (!e.materialRef.empty()) {
-            // Write the material-ball reference alongside the expanded params
-            // (runtime reads the params; the editor keeps the asset link).
-            core::Json& mesh = obj.object_["components"].object_["mesh"];
-            core::Json j;
-            j.type_ = core::Json::Type::String;
-            j.string_ = e.materialRef;
-            mesh.object_["materialRef"] = std::move(j);
-        }
-        } else {
-        // Logical entity (mesh renderer removed or never added): name +
-        // transform + health only; scripts/extra components merge below.
-        auto mkStr = [](const std::string& s) {
-            core::Json j;
-            j.type_ = core::Json::Type::String;
-            j.string_ = s;
-            return j;
-        };
-        auto mkNum = [](double v) {
-            core::Json j;
-            j.type_ = core::Json::Type::Number;
-            j.number_ = v;
-            return j;
-        };
-        auto mkArr = [&mkNum](const std::initializer_list<double>& vals) {
-            core::Json j;
-            j.type_ = core::Json::Type::Array;
-            for (double v : vals) j.array_.push_back(mkNum(v));
-            return j;
-        };
-        obj.type_ = core::Json::Type::Object;
-        obj.object_["name"] = mkStr(e.name);
-        core::Json tf;
-        tf.type_ = core::Json::Type::Object;
-        tf.object_["pos"] = mkArr({e.pos.x, e.pos.y, e.pos.z});
-        tf.object_["rot"] = mkArr({e.rot.x, e.rot.y, e.rot.z, e.rot.w});
-        tf.object_["scale"] = mkArr({e.scale.x, e.scale.y, e.scale.z});
-        if (e.parentId != 0) tf.object_["parentId"] = mkNum(e.parentId);
-        const std::string pname = parentNameOf(e.parentId);
-        if (!pname.empty()) tf.object_["parent"] = mkStr(pname);
-        core::Json comps;
-        comps.type_ = core::Json::Type::Object;
-        comps.object_["transform"] = std::move(tf);
-        if (e.maxHp > 0.0f) {
-            core::Json health;
-            health.type_ = core::Json::Type::Object;
-            health.object_["hp"] = mkNum(e.hp);
-            health.object_["maxHp"] = mkNum(e.maxHp);
-            comps.object_["health"] = std::move(health);
-        }
-        obj.object_["components"] = std::move(comps);
-        }
-        if (!e.prefab.empty()) obj.object_["prefab"] = [&e]() {
-            core::Json j;
-            j.type_ = core::Json::Type::String;
-            j.string_ = e.prefab;
-            return j;
-        }();
-        // Merge schema-editable extra components into the exported entity so
-        // project scenes round-trip without data loss.
-        if (!e.extraComponents.empty()) {
-            core::Json comps;
-            if (const core::Json* c = obj.Get("components")) {
-                if (c->IsObject()) comps = *c;
-            }
-            comps.type_ = core::Json::Type::Object;
-            for (const auto& [cname, cdata] : e.extraComponents)
-                comps.object_[cname] = cdata;
-            obj.object_["components"] = std::move(comps);
-        }
-        // Mounted scripts: one flat "scripts" component [{backend,path,vars},
-        // ...]. Every entry is equal; the runtime attaches each in order.
-        if (!e.scripts.empty()) {
-            core::Json comps;
-            if (const core::Json* c = obj.Get("components")) {
-                if (c->IsObject()) comps = *c;
-            }
-            comps.type_ = core::Json::Type::Object;
-            auto mkStr2 = [](const std::string& v) {
-                core::Json j;
-                j.type_ = core::Json::Type::String;
-                j.string_ = v;
-                return j;
-            };
-            core::Json items;
-            items.type_ = core::Json::Type::Array;
-            for (const SceneScriptFields& f : e.scripts) {
-                if (f.path.empty()) continue; // unconfigured script block
-                core::Json it;
-                it.type_ = core::Json::Type::Object;
-                it.object_["backend"] = mkStr2(f.backend.empty() ? "lua" : f.backend);
-                it.object_["path"] = mkStr2(f.path);
-                if (f.vars.IsObject()) it.object_["vars"] = f.vars;
-                items.array_.push_back(std::move(it));
-            }
-            core::Json scripts;
-            scripts.type_ = core::Json::Type::Object;
-            scripts.object_["items"] = std::move(items);
-            comps.object_["scripts"] = std::move(scripts);
-            obj.object_["components"] = std::move(comps);
-        }
-        // P1-1/P2-3 export: node type, camera, sort order and the authored
-        // terrain heightmap as runtime components.
-        {
-            auto mkNum = [](double v) {
-                core::Json j;
-                j.type_ = core::Json::Type::Number;
-                j.number_ = v;
-                return j;
-            };
-            core::Json comps;
-            if (const core::Json* c = obj.Get("components")) {
-                if (c->IsObject()) comps = *c;
-            }
-            comps.type_ = core::Json::Type::Object;
-            if (!e.nodeType.empty()) {
-                core::Json t;
-                t.type_ = core::Json::Type::Object;
-                core::Json v;
-                v.type_ = core::Json::Type::String;
-                v.string_ = e.nodeType;
-                t.object_["value"] = v;
-                comps.object_["type"] = std::move(t);
-            }
-            if (e.nodeType == "Camera3D") {
-                core::Json cam;
-                cam.type_ = core::Json::Type::Object;
-                cam.object_["fov"] = mkNum(e.cameraFov);
-                core::Json ortho;
-                ortho.type_ = core::Json::Type::Bool;
-                ortho.bool_ = e.cameraOrtho;
-                cam.object_["ortho"] = ortho;
-                cam.object_["orthoSize"] = mkNum(e.cameraOrthoSize);
-                comps.object_["camera"] = std::move(cam);
-            }
-            if (e.hasLight) {
-                core::Json li;
-                li.type_ = core::Json::Type::Object;
-                core::Json t;
-                t.type_ = core::Json::Type::String;
-                t.string_ = e.light.type;
-                li.object_["type"] = std::move(t);
-                auto vecJson = [&](float x, float y, float z) {
-                    core::Json a;
-                    a.type_ = core::Json::Type::Array;
-                    a.array_.push_back(mkNum(x));
-                    a.array_.push_back(mkNum(y));
-                    a.array_.push_back(mkNum(z));
-                    return a;
-                };
-                auto colJson = [&](float r, float g, float b, float aa) {
-                    core::Json a;
-                    a.type_ = core::Json::Type::Array;
-                    a.array_.push_back(mkNum(r));
-                    a.array_.push_back(mkNum(g));
-                    a.array_.push_back(mkNum(b));
-                    a.array_.push_back(mkNum(aa));
-                    return a;
-                };
-                li.object_["sunDir"] =
-                    vecJson(e.light.sunDir.x, e.light.sunDir.y, e.light.sunDir.z);
-                li.object_["color"] =
-                    colJson(e.light.color.r, e.light.color.g, e.light.color.b, e.light.color.a);
-                li.object_["intensity"] = mkNum(e.light.intensity);
-                li.object_["radius"] = mkNum(e.light.radius);
-                li.object_["ambientStrength"] = mkNum(e.light.ambientStrength);
-                comps.object_["light"] = std::move(li);
-            }
-            if (e.zOrder != 0.0f) {
-                core::Json so;
-                so.type_ = core::Json::Type::Object;
-                so.object_["z"] = mkNum(e.zOrder);
-                comps.object_["sortOrder"] = std::move(so);
-            }
-            if (e.meshKey == "terrain" && !e.terrainHeights_.empty()) {
-                core::Json terr;
-                terr.type_ = core::Json::Type::Object;
-                terr.object_["segments"] = mkNum(e.terrainSegments_);
-                terr.object_["size"] = mkNum(e.terrainSize_);
-                terr.object_["heightScale"] = mkNum(e.terrainHeightScale_);
-                core::Json hs;
-                hs.type_ = core::Json::Type::Array;
-                for (float h : e.terrainHeights_) hs.array_.push_back(mkNum(h));
-                terr.object_["heights"] = std::move(hs);
-                // G2-3 chunked LOD + vegetation knobs (written only when the
-                // user enables them; the runtime reads them back verbatim).
-                if (e.chunkGridDiv_ > 0) {
-                    terr.object_["chunkGridDiv"] = mkNum(e.chunkGridDiv_);
-                    terr.object_["chunkLodLevels"] = mkNum(e.chunkLodLevels_);
-                    terr.object_["chunkBaseSubdiv"] = mkNum(e.chunkBaseSubdiv_);
-                }
-                if (!e.vegMeshKey_.empty() && e.vegCount_ > 0) {
-                    core::Json vk;
-                    vk.type_ = core::Json::Type::String;
-                    vk.string_ = e.vegMeshKey_;
-                    terr.object_["vegMeshKey"] = std::move(vk);
-                    terr.object_["vegCount"] = mkNum(e.vegCount_);
-                    terr.object_["vegSeed"] = mkNum(e.vegSeed_);
-                    terr.object_["vegSize"] = mkNum(e.vegSize_);
-                    terr.object_["vegImpostorDistance"] = mkNum(e.vegImpostorDistance_);
-                    terr.object_["vegMinHeight"] = mkNum(e.vegMinHeight_);
-                    terr.object_["vegMaxHeight"] = mkNum(e.vegMaxHeight_);
-                    terr.object_["vegMaxSlope"] = mkNum(e.vegMaxSlope_);
-                }
-                comps.object_["terrain"] = std::move(terr);
-            }
-            if (e.meshKey == "tilemap" && !e.tilemapTiles_.empty()) {
-                core::Json tlm;
-                tlm.type_ = core::Json::Type::Object;
-                tlm.object_["cols"] = mkNum(e.tilemapCols_);
-                tlm.object_["rows"] = mkNum(e.tilemapRows_);
-                tlm.object_["cellSize"] = mkNum(e.tilemapCellSize_);
-                core::Json tls;
-                tls.type_ = core::Json::Type::Array;
-                for (const std::string& t : e.tilemapTiles_) {
-                    core::Json s;
-                    s.type_ = core::Json::Type::String;
-                    s.string_ = t;
-                    tls.array_.push_back(std::move(s));
-                }
-                tlm.object_["tiles"] = std::move(tls);
-                comps.object_["tilemap"] = std::move(tlm);
-            }
-            if (!e.decalTex.empty()) {
-                core::Json dc;
-                dc.type_ = core::Json::Type::Object;
-                core::Json tex;
-                tex.type_ = core::Json::Type::String;
-                tex.string_ = e.decalTex;
-                dc.object_["texture"] = std::move(tex);
-                dc.object_["size"] = mkNum(e.decalSize);
-                dc.object_["alpha"] = mkNum(e.decalAlpha);
-                comps.object_["decal"] = std::move(dc);
-            }
-            if (!e.shaderPath.empty()) {
-                // Editor-only custom fragment shader, preserved so the scene
-                // round-trips (the runtime ignores this component).
-                core::Json sh;
-                sh.type_ = core::Json::Type::Object;
-                sh.object_["path"] = [&e]() {
-                    core::Json p;
-                    p.type_ = core::Json::Type::String;
-                    p.string_ = e.shaderPath;
-                    return p;
-                }();
-                comps.object_["shader"] = std::move(sh);
-            }
-            obj.object_["components"] = std::move(comps);
-        }
-        arr.array_.push_back(std::move(obj));
-    }
-    root.object_["entities"] = std::move(arr);
-    return core::Result<core::Json>::Ok(std::move(root));
-}
 
-void EditorApp::StartPlaytest() {
-    StopPlaytest(); // restart semantics: a fresh snapshot each time
 
-    scene::GameRuntimeConfig cfg;
-    cfg.assets = &assetMgr_;
-#ifdef NEON_ENABLE_JOLT
-    cfg.physicsBackend = "jolt"; // playtest uses Jolt rigid bodies when compiled
-#endif
-    cfg.scriptBaseDir = projectDir_.empty() ? "." : projectDir_;
-    cfg.localesDir = projectDir_.empty() ? "./locales" : projectDir_ + "/locales";
-    cfg.input = Input(); // hero controller reads live WASD/mouse input
-    cfg.font2d = cjkFont_.Valid() ? cjkFont_ : pixelFont_; // 2D HUD / on_render
-    // PlaySfx(name) from game scripts routes to the procedural synth.
-    cfg.playSfx = [this](const std::string& name) {
-        if (audioBackend_) audioBackend_->Play(MakePvzSfx(name), 0.7f);
-    };
-    // P2-2 audio hooks: music bus, 3D positional sfx against the live camera
-    // listener, and bus volume control.
-    cfg.playMusic = [this](const std::string& name, float vol) {
-        if (audioBackend_) audioBackend_->PlayMusic(MakePvzSfx(name), vol);
-    };
-    cfg.playSfx3D = [this](const std::string& name, const math::Vec3& pos) {
-        if (audioBackend_) {
-            const gfx::Camera& cam = ActiveCamera();
-            const math::Vec3 fwd = (cam.target - cam.position).Normalized();
-            audioBackend_->Play3D(MakePvzSfx(name), pos, cam.position, fwd, 0.7f);
-        }
-    };
-    cfg.setBusVolume = [this](int bus, float gain) {
-        if (audioBackend_ && bus >= 0 && bus <= 2)
-            audioBackend_->SetBusVolume(static_cast<neon::audio::AudioBus>(bus), gain);
-    };
-    std::string json;
 
-    // M1: data-driven skills table from <project>/skills.json (optional,
-    // shared by both the 2D and 3D playtest branches).
-    {
-        std::ifstream skillsIn(projectDir_ + "/skills.json", std::ios::binary);
-        if (skillsIn.is_open())
-            cfg.skillsJson.assign(std::istreambuf_iterator<char>(skillsIn),
-                                  std::istreambuf_iterator<char>());
-    }
-
-    if (projectMode_ == "2d") {
-        // 2D project (NeonPvZ / NeonSnake): play the EDITOR'S LIVE ENTITIES
-        // (a serialized snapshot, exactly like the 3D playtest) so unsaved
-        // edits - moved sprites, added plants - appear in Play immediately;
-        // the old disk read ignored editor changes until the scene was saved.
-        // The on-disk start scene only backs up the empty-canvas case. Follows
-        // the PROJECT type, not the current camera view: a 2D game plays as a
-        // 2D game even in a perspective editor camera.
-        cfg.assetBaseDir = projectDir_;
-        auto root = BuildPlaySceneJson();
-        if (root.Ok()) {
-            json = core::JsonWriter::Write(root.Value());
-        } else {
-            const std::string sceneRel =
-                projectStartScene_.empty() ? "scenes/pvz.json" : projectStartScene_;
-            const std::string scenePath = projectDir_ + "/" + sceneRel;
-            std::ifstream in(scenePath, std::ios::binary);
-            if (!in.is_open()) {
-                NEON_LOG_ERROR("Editor: cannot read play scene '%s'", scenePath.c_str());
-                return;
-            }
-            json.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
-        }
-    } else {
-        // 3D scene: play the editor's current entities (serialized snapshot).
-        if (entities_.empty()) {
-            NEON_LOG_WARN("Editor: nothing to play (scene is empty)");
-            return;
-        }
-        auto root = BuildPlaySceneJson();
-        if (!root.Ok()) {
-            NEON_LOG_ERROR("Editor: cannot build play scene: %s", root.Error().c_str());
-            return;
-        }
-        json = core::JsonWriter::Write(root.Value());
-    }
-
-    playtest_ = std::make_unique<scene::GameRuntime>();
-    core::Status st = playtest_->Start(json, cfg);
-    if (!st.Ok()) {
-        NEON_LOG_ERROR("Editor: playtest failed to start: %s", st.Error().c_str());
-        playtest_.reset();
-        return;
-    }
-    playtestActive_ = true;
-    // Detach the input method while the playtest runs so game keys (WASD,
-    // digits, space) arrive as raw key events even with a Chinese/Japanese IME
-    // in composition mode; StopPlaytest re-attaches it for ImGui text input.
-    if (Window()) Window()->SetImeEnabled(false);
-    NEON_LOG_INFO("Editor: playtest started (%zu entities, %zu scripts, %zu trees)",
-                  playtest_->EntityCount(), playtest_->ScriptCount(),
-                  playtest_->BehaviorTreeCount());
-}
-
-void EditorApp::StopPlaytest() {
-    if (!playtest_) return;
-    playtest_->Stop();
-    playtest_.reset();
-    playtestActive_ = false;
-    if (Window()) Window()->SetImeEnabled(true);
-    NEON_LOG_INFO("Editor: playtest stopped");
-}
-
-void EditorApp::TogglePlaytest() {
-    if (playtestActive_) {
-        StopPlaytest();
-    } else {
-        StartPlaytest();
-    }
-}
 
 void EditorApp::RequestMeshThumbnail(const std::string& path) {
     if (path.empty()) return;
@@ -5691,12 +4729,12 @@ void EditorApp::GenerateMaterialThumbnails() {
 void EditorApp::PollHotReload() {
     const std::string base = projectDir_.empty() ? "." : projectDir_;
 
-    // Scripts: only while a playtest runs (that is what executes scripts). A
-    // changed *.lua under <projectDir>/scripts/ is applied as a playtest
+    // Scripts: only while a play runs (that is what executes scripts). A
+    // changed *.lua under <projectDir>/scripts/ is applied as a play
     // restart (Stop + Start), which resets all script/entity/BT state - a safe,
     // deterministic reload for the editor. Shaders are compiled from strings
     // at init and are deliberately NOT hot-reloaded (YAGNI; see T4.8 notes).
-    if (playtestActive_ && playtest_) {
+    if (playActive_ && play_) {
         std::vector<std::string> files;
         ListScriptFiles(ScriptsDir(projectDir_), "scripts", files);
         bool scriptChanged = false;
@@ -5713,10 +4751,10 @@ void EditorApp::PollHotReload() {
         if (scriptChanged) {
             ++hotReloadCount_;
             NEON_LOG_INFO(
-                "Editor: hot reload: a script changed on disk -> restarting playtest "
+                "Editor: hot reload: a script changed on disk -> restarting play "
                 "(play state resets)");
-            StopPlaytest();
-            StartPlaytest();
+            StopPlay();
+            StartPlay();
         }
     }
 
@@ -6136,7 +5174,7 @@ void EditorApp::ReloadEntityShader(SceneEntity& e) {
 
 void EditorApp::SaveScene() {
     NormalizeEntityIds(); // stable ids before serialization
-    // Serialize in the runtime componentized format (same as playtest/export)
+    // Serialize in the runtime componentized format (same as play/export)
     // so project scenes stay loadable by neon_game and no field is dropped
     // (health, materialRef, prefab, extraComponents, parentId, rotation...).
     auto rootRes = BuildPlaySceneJson();
@@ -6734,7 +5772,7 @@ void EditorApp::LoadScene(const std::string& path) {
         editMode_ = EditMode::Scene2D;
         viewCam_ = ViewCam::Front; // 2D canvas view is the front-ortho camera
         // 2D scenes live in the 1280x720 design space: frame that space so the
-        // editor shows exactly what the game sees (same content as playtest).
+        // editor shows exactly what the game sees (same content as play).
         camTarget_ = {640.0f, 360.0f, 0.0f};
         orthoSize_ = 360.0f;
         cameraUserAdjusted_ = false;
@@ -7138,7 +6176,7 @@ void EditorApp::ApplyMaterialAsset(const std::string& path) {
 // Godot-style project switch: loads <dir>/game.json, enters the project's
 // declared edit mode and loads its start scene (3D) or first level (2D).
 void EditorApp::SwitchProject(const std::string& dir) {
-    StopPlaytest();
+    StopPlay();
     projectDir_ = dir.empty() ? "." : dir;
     std::strncpy(projectDirBuf_, projectDir_.c_str(), sizeof(projectDirBuf_) - 1);
     projectDirBuf_[sizeof(projectDirBuf_) - 1] = '\0';
@@ -7188,7 +6226,7 @@ void EditorApp::LoadProjectScene() {
 
 // Loads a specific scene from the current project into the 3D scene tree.
 void EditorApp::LoadProjectScene(const std::string& rel) {
-    StopPlaytest();
+    StopPlay();
     SetSelection(-1);
     history_.Clear();
     LoadScene(projectDir_ + "/" + rel);
@@ -7510,7 +6548,7 @@ void EditorApp::BuildDebugOverlayPanel() {
         ImGui::Checkbox("音频源", &debugAudio_);
         ImGui::SameLine();
         ImGui::TextDisabled("(暂无数据)");
-        ImGui::TextDisabled("提示: 碰撞/导航在编辑与试玩视口即时生效");
+        ImGui::TextDisabled("提示: 碰撞/导航在编辑与播放视口即时生效");
     }
     ImGui::End();
 }

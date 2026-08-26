@@ -2,7 +2,7 @@
 //
 // Canvas rendering + interaction (drag-move, link, delete), the node palette
 // (drag or click-to-place), per-node param editing, toolbar save/open/new, and
-// the playtest debug highlight. The pure node graph model lives inline in
+// the play debug highlight. The pure node graph model lives inline in
 // bt_editor.hpp so tests can include it headlessly; this file is the ImGui
 // layer exercised by the editor smoke test.
 
@@ -274,13 +274,13 @@ bool EditorApp::BtLoadFromFile(const std::string& path) {
     return true;
 }
 
-void EditorApp::BtUpdatePlaytestHighlight() {
+void EditorApp::BtUpdatePlayHighlight() {
     btActivePath_.clear();
-    if (!playtestActive_ || !playtest_) return;
-    auto view = playtest_->World().ViewAll<scene::SceneBehaviorTree>();
+    if (!playActive_ || !play_) return;
+    auto view = play_->World().ViewAll<scene::SceneBehaviorTree>();
     if (view.Size() == 0) return;
-    ecs::Entity e = playtest_->World().EntityAt<scene::SceneBehaviorTree>(0);
-    btActivePath_ = playtest_->ActiveTreePath(e);
+    ecs::Entity e = play_->World().EntityAt<scene::SceneBehaviorTree>(0);
+    btActivePath_ = play_->ActiveTreePath(e);
 }
 
 void EditorApp::BuildBtPanel() {
@@ -288,7 +288,7 @@ void EditorApp::BuildBtPanel() {
         btPanelFocused_ = false; // panel closed: never route undo to a stale focus
         return;
     }
-    BtUpdatePlaytestHighlight();
+    BtUpdatePlayHighlight();
     // The panel hosts a full node canvas: never let a stale saved size (or the
     // auto-size feedback loop between the canvas child and the window) shrink
     // it below a usable area.
@@ -357,7 +357,7 @@ void EditorApp::BuildBtToolbar() {
         BtPushSnapshot(before);
     }
     ImGui::SameLine();
-    if (playtestActive_ && !btActivePath_.empty()) {
+    if (playActive_ && !btActivePath_.empty()) {
         ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.5f, 1.0f), "执行中 %s", btActivePath_.c_str());
     }
     ImGui::Separator();
@@ -423,7 +423,7 @@ void EditorApp::BuildBtCanvas() {
         const ImVec2 p1(toCanvas.x + c->pos.x + kNodeW * 0.5f, toCanvas.y + c->pos.y);
         const ImVec2 cp0(p0.x, p0.y + 46.0f);
         const ImVec2 cp1(p1.x, p1.y - 46.0f);
-        const bool active = playtestActive_ && btGraph_.TreeIdOf(c->id) == btActivePath_;
+        const bool active = playActive_ && btGraph_.TreeIdOf(c->id) == btActivePath_;
         dl->AddBezierCubic(p0, cp0, cp1, p1,
                            active ? IM_COL32(80, 255, 120, 255) : IM_COL32(150, 160, 180, 255),
                            2.0f);
@@ -434,7 +434,7 @@ void EditorApp::BuildBtCanvas() {
         const ImVec2 pos(toCanvas.x + n.pos.x, toCanvas.y + n.pos.y);
         const ImRect rect(pos, ImVec2(pos.x + kNodeW, pos.y + kNodeH));
         const bool selected = btSelected_ == n.id;
-        const bool active = playtestActive_ && btGraph_.TreeIdOf(n.id) == btActivePath_;
+        const bool active = playActive_ && btGraph_.TreeIdOf(n.id) == btActivePath_;
         const bt::NodeTypeInfo* info = FindTypeInfo(n.type);
         const ImU32 cat = CatColor(info ? info->category.c_str() : nullptr);
 

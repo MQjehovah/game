@@ -1,7 +1,7 @@
 #pragma once
 
 // Behavior tree visual editor: node graph model + canvas + palette + param
-// editing + save/load + playtest debug highlight.
+// editing + save/load + play debug highlight.
 //
 // The node GRAPH MODEL (namespace btgraph) is deliberately ImGui-free (pure
 // inline code in this header) so the test binary can exercise it headlessly:
@@ -177,7 +177,7 @@ public:
     // ids: the (single) root is "0"; a composite's children are "0/0", "0/1",
     // ... while a decorator's child is the literal "0/child" (the loader ids a
     // decorator's child as "<parent>/child", see AttachChild). ("" when `id` is
-    // missing.) Used to map the playtest runtime's activePath back to the
+    // missing.) Used to map the play runtime's activePath back to the
     // canvas node.
     std::string TreeIdOf(const std::string& id) const {
         size_t idx = IndexOf(id);

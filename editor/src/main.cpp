@@ -137,8 +137,8 @@ int main(int argc, char** argv) {
                         "  --smoke-test <frames>  run N simulation frames then exit\n"
                         "  --hot                  enable hot reload (scripts/assets on mtime change)\n"
                         "  --2d                   start in the 2D canvas mode (NeonPvZ lawn editor)\n"
-                         "  --2d-play              start 2D mode with the PvZ playtest running\n"
-                         "  --play                 auto-start the open project's playtest (any mode)\n"
+                         "  --2d-play              start 2D mode with the PvZ play running\n"
+                         "  --play                 auto-start the open project's play (any mode)\n"
                          "  --ui-editor            open the UI editor panel at startup\n"
                         "  --project <dir>        open a data-driven project (game.json startScene)\n"
                         "  --backend <gl|vulkan>  graphics backend (default gl; vulkan is opt-in)\n"
@@ -187,7 +187,7 @@ int main(int argc, char** argv) {
     if (benchMode) app.SetBenchMode(true);
     if (hotReload) app.SetHotReload(true);
     if (twoD) app.Set2DMode(true);
-    if (twoDPlay) app.SetPvzPlaytestOnStart(true);
+    if (twoDPlay) app.SetPvzPlayOnStart(true);
     if (play) app.SetPlayOnStart(true);
     if (uiEditor) app.SetUIEditorOnStart(true);
     if (!projectDir.empty()) app.SetProjectOnStart(projectDir, true);

@@ -57,7 +57,7 @@
 | 脚本：按实例函数捕获（跨 chunk 不再互相遮蔽）+ `Spawn(kind, pos, script)` 动态控制器 | ✅ |
 | 战斗核心（M2）：状态效果（燃烧/中毒/回血，确定性 tick）+ 数据驱动技能表（投射物/近战扇形/朝向攻击盒，冷却/法力/命中附加效果） | ✅ |
 | 2D 脚本画布：Lua `on_render()` + `DrawRect/DrawRectOutline/DrawText/DrawSprite`（1280x720 设计坐标 + 贴图），数据驱动 2D 游戏零 C++ 玩法代码 | ✅ |
-| 编辑器 2D 模式：9x5 草坪画布（5 种植物/橡皮/3 种僵尸笔刷），保存/加载关卡 JSON；试玩按钮/F5 统一（3D 与 2D 同一入口） | ✅ `neon_editor` |
+| 编辑器 2D 模式：9x5 草坪画布（5 种植物/橡皮/3 种僵尸笔刷），保存/加载关卡 JSON；播放按钮/F5 统一（3D 与 2D 同一入口） | ✅ `neon_editor` |
 | 数据驱动 3D 游戏：`projects/neon_realm`（魔兽风格 demo 移植：村庄/狼群/波次/任务对话/存档，全 Lua） | ✅ |
 | 输入映射（Godot 式）：动作名→按键 JSON（项目 input.json）+ `ActionDown/ActionPressed/ActionAxis` 绑定 + 编辑器改键面板 | ✅ `neon::script::InputMap` |
 | 组件 Schema（Godot @export / UE UPROPERTY 风格）：组件字段元数据 → 属性面板自动生成编辑器，任意自定义组件（含 plant/zombie）可编辑 | ✅ `neon::scene::ComponentSchema` |
@@ -124,7 +124,7 @@ cmake --build build --target neon_tests -j
 
 编辑器采用停靠式布局：左侧"场景/资产/资源"页签，右侧"属性/日志"页签，中央 3D 视口（右键旋转、中键平移、滚轮缩放、左键拾取）。场景面板增删/复制/排序实体；资产面板浏览项目文件、双击导入 OBJ/glTF、预览贴图；属性面板编辑变换/颜色/金属度/粗糙度；日志面板分级过滤引擎日志。
 
-**项目切换（Godot 风格）**：工具栏左侧是项目选择器，自动扫描 `projects/` 下带 `game.json` 的项目（如 NeonRealm 3D、NeonPvZ 2D），右侧是场景选择器。切换项目会按 `game.json` 的 `editor.mode` 进入对应编辑视图（3D 场景树或 2D 画布）并加载起始场景；上次打开的项目会从 `neon_editor_config.json` 恢复。试玩（`▶ 试玩`）直接运行当前项目的场景。"项目"菜单可手输任意项目目录、重新加载或导出场景。
+**项目切换（Godot 风格）**：工具栏左侧是项目选择器，自动扫描 `projects/` 下带 `game.json` 的项目（如 NeonRealm 3D、NeonPvZ 2D），右侧是场景选择器。切换项目会按 `game.json` 的 `editor.mode` 进入对应编辑视图（3D 场景树或 2D 画布）并加载起始场景；上次打开的项目会从 `neon_editor_config.json` 恢复。播放（`▶ 播放`）直接运行当前项目的场景。"项目"菜单可手输任意项目目录、重新加载或导出场景。
 
 **2D 与 3D 统一由场景维护**：场景文件（`scenes/*.json`）是唯一的编辑/运行单元，与 2D/3D 无关——一关就是一个场景。植物、僵尸和 3D 实体一样是场景里的实体，带 `plant`/`zombie` 组件；编辑器 2D 画布用格子视图编辑这些实体并写回场景文件，运行时 `pvz.lua` 从同一个场景文件读取——"关卡"是游戏概念（关卡列表、波次表由项目脚本/数据表达），引擎只有场景。
 
@@ -176,7 +176,7 @@ build\neon_game.exe --connect 127.0.0.1:26000 --scene tests\data\neon_server_sam
 玩法与绘制全部在 Lua 脚本里（`projects/pvz/scripts/pvz.lua`），精灵贴图在 `projects/pvz/assets/sprites/`，关卡布局由编辑器 2D 模式以场景实体（`plant`/`zombie` 组件）摆放在场景文件 `projects/pvz/scenes/pvz.json`：
 
 ```bat
-:: 1) 打开编辑器，工具栏点"2D模式"（或 --2d 启动）：摆植物/僵尸刷怪点，F5 或 ▶ 试玩直接开打
+:: 1) 打开编辑器，工具栏点"2D模式"（或 --2d 启动）：摆植物/僵尸刷怪点，F5 或 ▶ 播放直接开打
 .\build\neon_editor.exe --2d
 :: 2) 打包项目
 .\build\neon_editor.exe --package projects/pvz build\pvz_out
@@ -194,7 +194,7 @@ build\neon_game.exe --connect 127.0.0.1:26000 --scene tests\data\neon_server_sam
 用于无头验证与观赏），置 0（默认）为手动操作。
 
 ```bat
-:: 编辑器打开项目并 F5 试玩（2D 画布在视口面板内等比显示）
+:: 编辑器打开项目并 F5 播放（2D 画布在视口面板内等比显示）
 .\build\neon_editor.exe --project projects/snake
 :: 打包后由通用播放器全窗口运行
 .\build\neon_editor.exe --package projects/snake build\snake_out
@@ -213,7 +213,7 @@ build\neon_game.exe --connect 127.0.0.1:26000 --scene tests\data\neon_server_sam
 程序化 mesh 由引擎生成，运行方式与 PvZ 完全一致：
 
 ```bat
-:: 编辑器打开项目场景并 F5 试玩（统一试玩按钮）
+:: 编辑器打开项目场景并 F5 播放（统一播放按钮）
 .\build\neon_editor.exe --project projects/neon_realm
 :: 或直接打包运行
 .\build\neon_editor.exe --package projects/neon_realm build\realm_out
@@ -227,7 +227,7 @@ build\neon_game.exe --connect 127.0.0.1:26000 --scene tests\data\neon_server_sam
 
 ## 学习记录：相机、坐标系统与 HUD 锚点（实战笔记）
 
-记录学习整个引擎过程中踩过、并最终搞懂的关键架构点。这些问题都真实发生在 NeonRealm 的 FPS 试玩里，
+记录学习整个引擎过程中踩过、并最终搞懂的关键架构点。这些问题都真实发生在 NeonRealm 的 FPS 播放里，
 解法已落地到代码中，作为"为什么这样写"的索引。
 
 ### 1. 相机分层：场景相机 ≠ Game 相机
@@ -253,7 +253,7 @@ build\neon_game.exe --connect 127.0.0.1:26000 --scene tests\data\neon_server_sam
 - `cameraYaw / cameraPitch / cameraDist`：由脚本设定，运行时按 `focus + offset(yaw,pitch)*dist`
   构建渲染视图，并覆盖场景里的 Camera3D 实体。
 
-这样**编辑器 F5 试玩与独立 `neon_game` 共用同一份运行时逻辑**，行为一致。
+这样**编辑器 F5 播放与独立 `neon_game` 共用同一份运行时逻辑**，行为一致。
 
 ### 3. 坐标系一致性：3D 投影与 2D design 空间必须同取景（本次最大的坑）
 
@@ -265,7 +265,7 @@ build\neon_game.exe --connect 127.0.0.1:26000 --scene tests\data\neon_server_sam
 这就是"经常偏、换一个位置又偏"的根因——不是某个模型或某次计算错，而是两套坐标系没对齐。
 
 独立播放器 `neon_game` 窗口恰好 1280×720（16:9），design 1:1 = 窗口，天然一致，所以不偏；
-编辑器 F5 试玩偏，正是因为它**只**在编辑器里发生。
+编辑器 F5 播放偏，正是因为它**只**在编辑器里发生。
 
 **行业标准解法（已落地）**：统一取景——
 3D 场景视口 = design 空间映射到的矩形（16:9，在 dock 内**居中留黑边**），相机宽高比固定 16:9。
@@ -288,6 +288,24 @@ build\neon_game.exe --connect 127.0.0.1:26000 --scene tests\data\neon_server_sam
 Lua `tostring(1.0)` 输出 `"1.0"`，C++ `std::to_string(1)` 输出 `"1"`。
 引擎把实体 key 暴露为 `"id_gen"`，若脚本用 `tostring(id).."_"..tostring(gen)` 拼 key，
 永远是 `"1.0_1.0"`，永远查不到血条。必须用 `string.format("%d_%d", id, gen)`。
+
+### 6. 编辑器代码架构：God 文件与跨文件重复
+
+对编辑器做的一次架构审计发现两个典型的可维护性坏味道，并已开始治理：
+
+- **God 文件**：`editor.cpp` 一度 7562 行，把场景管理、相机/渲染、拾取、播放、
+  冒烟测试、插件、UI 面板等不同职责塞进一个类。功能簇清晰可拆，但拆分前必须先抽出共享工具。
+- **同一功能写两套**：`panels.cpp` 与 `editor.cpp` 各自维护一套文件/字符串/颜色辅助函数
+  （`ColorFromHex`、`ToProjectRelPath`、`MakeDir`…），口径漂移正是 bug 的来源。
+
+**治理（已落地）**：抽出共享 `editor_util.{hpp,cpp}`——把文件/字符串/颜色/路径/相机反投影/
+ImGuizmo 矩阵转换/播放音效合成统一收口到一个翻译单元，两个 TU 共用一份实现，并删除重复副本。
+**原则**：跨翻译单元共享的"纯工具"应放在独立模块（单一来源），不内联在某一个消费方里；
+被多个场景复用的视口转换（鼠标→NDC→射线、世界→屏幕）抽成单一入口（`PickRay()`/`ValidSceneRect()`），
+避免"改一处、其余三处漂移"。
+
+**后续建议**：继续按职责把 `editor.cpp` 拆成 `editor_viewport.cpp`（相机/渲染/小部件/拾取）、
+`editor_play.cpp`（播放）、`editor_smoke.cpp`（冒烟）——同一类、纯定义搬移，无 API 变化。
 
 ---
 

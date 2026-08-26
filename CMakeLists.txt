@@ -465,6 +465,8 @@ endif()
 add_executable(neon_editor
   editor/src/main.cpp
   editor/src/editor.cpp
+  editor/src/editor_util.cpp
+  editor/src/editor_play.cpp
   editor/src/editor_plugin.cpp
   editor/src/panels.cpp
   editor/src/history.cpp

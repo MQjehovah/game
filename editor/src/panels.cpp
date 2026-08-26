@@ -1,4 +1,5 @@
 #include "editor.hpp"
+#include "editor_util.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -45,36 +46,7 @@ std::string GetCurrentDir() {
 }
 
 // Convert an asset path (absolute or project-root-relative) into a
-// project-relative path ("scripts/foo.lua"); returns the input unchanged when it
-// doesn't live under the project dir.
-std::string ToProjectRelPath(const std::string& path, const std::string& projectDir) {
-    std::string base = projectDir.empty() ? "." : projectDir;
-    if (base == ".") {
-        // Keep paths already relative ("scripts/..."); strip a leading "./".
-        if (path.compare(0, 2, "./") == 0) return path.substr(2);
-        return path;
-    }
-    // The project dir may itself be relative ("projects/pvz") while the asset
-    // panel hands us absolute paths; resolve the project dir against the cwd
-    // so absolute paths under it still convert to project-relative form.
-    std::string absBase = base;
-    const bool baseAbsolute = absBase.size() >= 2 && absBase[1] == ':' ||
-                              (!absBase.empty() && (absBase[0] == '/' || absBase[0] == '\\'));
-    if (!baseAbsolute) absBase = GetCurrentDir() + "/" + absBase;
-    std::string normBase = base;
-    if (normBase.back() != '/' && normBase.back() != '\\') normBase += '/';
-    std::string normPath = path;
-    if (normPath.rfind(normBase, 0) == 0) return normPath.substr(normBase.size());
-    std::string normAbsBase = absBase;
-    if (normAbsBase.back() != '/' && normAbsBase.back() != '\\') normAbsBase += '/';
-    if (normPath.rfind(normAbsBase, 0) == 0) return normPath.substr(normAbsBase.size());
-    // Also match with a leading "./".
-    std::string dotBase = "./" + base;
-    if (normPath.rfind(dotBase, 0) == 0)
-        return normPath.substr(dotBase.size() + 1); // skip "./" + base + "/"
-    return path;
-}
-
+// project-relative path — defined in editor_util.cpp (shared with the editor).
 
 namespace {
 
@@ -119,20 +91,6 @@ std::string ToLower(std::string s) {
     std::transform(s.begin(), s.end(), s.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return s;
-}
-
-gfx::Color ColorFromHex(const std::string& hex) {
-    if (hex.size() < 7 || hex[0] != '#') return gfx::Color::White;
-    auto nibble = [](char c) -> unsigned {
-        if (c >= '0' && c <= '9') return static_cast<unsigned>(c - '0');
-        if (c >= 'a' && c <= 'f') return static_cast<unsigned>(c - 'a' + 10);
-        if (c >= 'A' && c <= 'F') return static_cast<unsigned>(c - 'A' + 10);
-        return 255u;
-    };
-    auto byte = [&](char hi, char lo) {
-        return static_cast<float>(((nibble(hi) << 4) | nibble(lo)) / 255.0);
-    };
-    return {byte(hex[1], hex[2]), byte(hex[3], hex[4]), byte(hex[5], hex[6]), 1.0f};
 }
 
 bool MakeDirSingle(const std::string& path) {
@@ -2286,13 +2244,13 @@ void EditorApp::BuildProfilerPanel() {
         ImGui::Text("Draw 调用 %u | 三角形 %u | 实例 %u", st.drawCalls, st.triangles,
                     st.instances);
 
-        const bool playing = playtestActive_ && playtest_ != nullptr;
+        const bool playing = playActive_ && play_ != nullptr;
         const size_t sceneEnts = entities_.size();
-        const size_t playEnts = playing ? playtest_->EntityCount() : 0;
-        const size_t bodies = playing ? playtest_->PhysicsBodyCount() : 0;
-        const size_t trees = playing ? playtest_->BehaviorTreeCount() : 0;
-        const size_t scripts = playing ? playtest_->ScriptCount() : 0;
-        ImGui::Text("实体 %zu (试玩 %zu) | 物理刚体 %zu", sceneEnts, playEnts, bodies);
+        const size_t playEnts = playing ? play_->EntityCount() : 0;
+        const size_t bodies = playing ? play_->PhysicsBodyCount() : 0;
+        const size_t trees = playing ? play_->BehaviorTreeCount() : 0;
+        const size_t scripts = playing ? play_->ScriptCount() : 0;
+        ImGui::Text("实体 %zu (播放 %zu) | 物理刚体 %zu", sceneEnts, playEnts, bodies);
         ImGui::Text("行为树 %zu | 脚本 %zu", trees, scripts);
 
         const assets::AssetStats a = assetMgr_.Stats();
@@ -2348,16 +2306,16 @@ void EditorApp::BuildViewportPanel() {
 
         ImGui::TextColored(ImVec4(0.65f, 0.85f, 1.0f, 1.0f),
                            "右键旋转 | 中键平移 | 滚轮缩放 | 左键拾取");
-        if (playtestActive_) {
+        if (playActive_) {
             ImGui::SameLine();
-            ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.5f, 1.0f), "试玩中 (F5 停止)");
+            ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.5f, 1.0f), "播放中 (F5 停止)");
         }
                 const char* camLabel = viewCam_ == ViewCam::Top
                                    ? "顶视 (正交)"
                                    : viewCam_ == ViewCam::Front ? "前视 (正交)" : "透视";
         std::string physInfo;
-        if (playtestActive_ && playtest_) {
-            physInfo = " | 物理 " + std::to_string(playtest_->PhysicsBodyCount());
+        if (playActive_ && play_) {
+            physInfo = " | 物理 " + std::to_string(play_->PhysicsBodyCount());
         }
         ImGui::TextDisabled("%s | 实体 %zu%s | 目标 (%.1f, %.1f, %.1f) | 距离 %.1f", camLabel,
                             entities_.size(), physInfo.c_str(), camTarget_.x, camTarget_.y,
@@ -3238,15 +3196,15 @@ void EditorApp::BuildScriptEditorPanel() {
             }
             ImGui::Separator();
         }
-        if (playtest_ && playtest_->DebuggerPaused()) {
-            const script::IScriptHost::DebugFrame& f = playtest_->ScriptHost()->PausedFrame();
+        if (play_ && play_->DebuggerPaused()) {
+            const script::IScriptHost::DebugFrame& f = play_->ScriptHost()->PausedFrame();
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.7f, 0.3f, 1.0f));
             ImGui::Text("⏸ 已暂停: %s 行 %d", f.script.c_str(), f.line);
             ImGui::PopStyleColor();
             ImGui::SameLine();
-            if (ImGui::Button("继续")) playtest_->ScriptHost()->DebuggerResume(false);
+            if (ImGui::Button("继续")) play_->ScriptHost()->DebuggerResume(false);
             ImGui::SameLine();
-            if (ImGui::Button("单步")) playtest_->ScriptHost()->DebuggerResume(true);
+            if (ImGui::Button("单步")) play_->ScriptHost()->DebuggerResume(true);
             if (ImGui::CollapsingHeader("局部变量")) {
                 if (f.locals.empty()) ImGui::TextDisabled("(无)");
                 for (const auto& l : f.locals) {
@@ -3273,7 +3231,7 @@ void EditorApp::BuildScriptEditorPanel() {
 // P1-1 animation timeline editor: opens .anim.json clips (the anim module's
 // data-driven clip format), scrubs a playhead, edits tracks/keyframes and
 // saves. Playback advances the playhead but has no live mesh preview in the
-// editor (clips play in the runtime animator / playtest).
+// editor (clips play in the runtime animator / play).
 void EditorApp::BuildAnimEditorPanel() {
     if (!showAnimEditor_) return;
     if (ImGui::Begin("动画时间线", &showAnimEditor_)) {
@@ -3896,7 +3854,7 @@ void EditorApp::BuildModelPreviewPanel() {
 
         // Preview area fills the panel's remaining space. Its screen rect is
         // consumed by RenderModelPreviewPanel (drawn after the main scene so
-        // it coexists with the edit/playtest viewport).
+        // it coexists with the edit/play viewport).
         ImGui::BeginChild("##preview_area", ImVec2(0, 0), ImGuiChildFlags_Borders);
         const ImVec2 pos = ImGui::GetWindowPos();
         const ImVec2 sz = ImGui::GetWindowSize();

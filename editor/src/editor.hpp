@@ -103,7 +103,7 @@ struct SceneEntity {
     gfx::Shader customShader;  // editor-side compiled handle
     // Animated skinned glTF model (meshKey "gltf:..."): loaded by ResolveMesh
     // when the file contains a skinned mesh. Edit-mode drawing uses the
-    // parts + bone matrices so the viewport matches the playtest.
+    // parts + bone matrices so the viewport matches the play.
     std::shared_ptr<scene::SkinnedModel> skinned;
     gfx::Mesh decalMesh;       // P2-1: flat ground-decal quad (lazy)
     float ao = 1.0f;               // AO strength (0 = ignore AO map, 1 = full)
@@ -122,7 +122,7 @@ struct SceneEntity {
     gfx::Mesh spriteMesh;       // unit XY quad (faces the front camera)
     gfx::Material spriteMaterial; // unlit texture material
     // Health (mirrors the built-in `health` component): maxHp <= 0 means the
-    // entity tracks no health. Used by the playtest for the hero + combat mobs.
+    // entity tracks no health. Used by the play for the hero + combat mobs.
     float hp = 0.0f;
     float maxHp = 0.0f;
     // Script components: one flat list, no "primary" concept. Every mounted
@@ -150,7 +150,7 @@ struct AssetEntry {
 
 // One discovered project (a directory with a game.json), Godot-style. The
 // editor can switch projects from the toolbar, load any of its scenes or 2D
-// levels, and playtest the result.
+// levels, and play the result.
 struct EditorProject {
     std::string name;       // game.json "title" (fallback: directory name)
     std::string dir;        // "projects/pvz" or "." for the default sandbox
@@ -192,8 +192,8 @@ public:
         editMode_ = v ? EditMode::Scene2D : EditMode::Scene3D;
         viewCam_ = v ? ViewCam::Front : ViewCam::Perspective;
     }
-    void SetPvzPlaytestOnStart(bool v) { pvzPlaytestOnStart_ = v; }
-    // --play: auto-start the current project's playtest (any mode, not just 2D).
+    void SetPvzPlayOnStart(bool v) { pvzPlayOnStart_ = v; }
+    // --play: auto-start the current project's play (any mode, not just 2D).
     void SetPlayOnStart(bool v) { playOnStart_ = v; }
     // --ui-editor: open the UI editor panel at startup (auto-opens the
     // project's first ui/*.ui.json so the viewport preview is testable).
@@ -259,7 +259,7 @@ private:
     void BuildLocPanel();
     void BuildProfilerPanel();
     void BuildInputMapPanel();
-    void DrawPlaytestHUD();
+    void DrawPlayHUD();
     void DrawTransformGizmo();
     void RunGizmoDragSim();
     void ApplyMaterialParams(SceneEntity& e);
@@ -296,7 +296,7 @@ private:
     void DrawCameraFrame();
     // Applies the scene environment (day sky + fog, the scene's
     // directional/ambient/point light objects) to the renderer. Shared by the
-    // edit view and the 2D playtest so Play shows exactly what the edit camera
+    // edit view and the 2D play so Play shows exactly what the edit camera
     // sees (same sky, same lighting).
     void ApplySceneEnvironment();
     // True when the mouse (screen px) is inside any visible docked TOOL panel
@@ -311,11 +311,11 @@ private:
     // these two helpers. Do NOT call Set2DViewport / Set2DViewportPixels /
     // SetScissor / SetSceneViewport on the renderer directly from feature
     // code - that is how the mappings drifted apart between edit view / 2D
-    // playtest / UI editor before.
+    // play / UI editor before.
     //
     // BindDock2DMapping maps design coordinates onto the dock:
     //   designFit=true  -> the 1280x720 design space fits the dock with the
-    //                      shared canvas zoom/pan (2D canvas, 2D playtest and
+    //                      shared canvas zoom/pan (2D canvas, 2D play and
     //                      the UI editor are all design-space canvases)
     //   designFit=false -> 1:1 design pixels anchored at the dock origin
     //                      (3D HUD/billboards)
@@ -346,12 +346,25 @@ private:
     const math::Rect2& SceneRect() const {
         return sceneRect_.w > 0.0f ? sceneRect_ : viewportScreenRect_;
     }
+    // The scene rect guaranteed non-empty: falls back to the full window before
+    // the viewport dock is laid out. Every screen<->world transform in the
+    // editor routes through this single source of truth for the 3D framing.
+    math::Rect2 ValidSceneRect() const;
     float ViewportAspect() const {
         const math::Rect2& vp = SceneRect();
         if (vp.w > 0.0f && vp.h > 0.0f) return vp.w / vp.h;
         return static_cast<float>(renderer_.ScreenWidth()) /
                static_cast<float>(renderer_.ScreenHeight());
     }
+    // Unprojects the current mouse position into a world ray through the scene
+    // rect with the active camera. Picking, terrain brush and terrain hover all
+    // share this one viewport transform (they used to each reimplement the
+    // mouse->NDC->ray math and drifted apart).
+    math::Ray PickRay();
+    // Builds the runtime camera for play: the scene's Camera3D entity when one
+    // exists, else the fixed 1280x720 design-space ortho. Shared by the 2D and
+    // 3D play paths (previously written twice, with drift).
+    gfx::Camera PlayCamera() const;
     void SaveScene();
     void LoadScene(const std::string& path);
     // Unity default scene: ensures a Main Camera + a Directional Light object
@@ -390,7 +403,7 @@ private:
     // 2D mode is a camera view (front-ortho), not a separate canvas: the
     // project, scene and content stay identical in 2D and 3D. 2D scenes can
     // still carry plant/zombie components; LoadScene parses them into the
-    // vectors below so playtest/level data stays scene-driven.
+    // vectors below so play/level data stays scene-driven.
     enum class EditMode { Scene3D, Scene2D };
     EditMode editMode_ = EditMode::Scene3D;
     // Sets the active viewport camera and keeps the edit mode in sync with it
@@ -413,11 +426,11 @@ private:
     };
     std::vector<Pvz2DCell> pvzPlants_;
     std::vector<PvzZombieSpawn> pvzZombies_;
-    // In-editor playtest (F5): a GameRuntime snapshot of the editor scene runs
+    // In-editor play (F5): a GameRuntime snapshot of the editor scene runs
     // in the viewport while the editor scene stays untouched.
-    void TogglePlaytest();
-    void StartPlaytest();
-    void StopPlaytest();
+    void TogglePlay();
+    void StartPlay();
+    void StopPlay();
     core::Result<core::Json> BuildPlaySceneJson();
     // Active viewport camera: the perspective orbit (透视) or one of the
     // orthographic presets (顶视 down -Y / 前视 down -Z). Every consumer
@@ -437,8 +450,8 @@ private:
     void GenerateMaterialThumbnails();
 
     // T4.8 hot reload (--hot / toolbar toggle, off by default): polls the
-    // playtest's scripts and the scene's referenced assets (throttled every 30
-    // frames). A changed script restarts the playtest (Stop + Start = state
+    // play's scripts and the scene's referenced assets (throttled every 30
+    // frames). A changed script restarts the play (Stop + Start = state
     // reset); a changed texture/OBJ is re-read through the AssetManager and
     // the owning entities re-resolved. Shaders are compiled from strings at
     // init and are NOT hot-reloaded (documented; see PollHotReload).
@@ -446,7 +459,7 @@ private:
 
     // Behavior tree editor (T4.4): docked 行为树 panel with a node palette,
     // a drag canvas, link creation, param editing, save/load of .bt.json and a
-    // playtest debug highlight driven by bt::Context::activePath.
+    // play debug highlight driven by bt::Context::activePath.
     void BuildBtPanel();
     void BuildBtToolbar();
     void BuildBtPalette();
@@ -456,7 +469,7 @@ private:
     bool BtSaveToFile(const std::string& path);
     bool BtLoadFromFile(const std::string& path);
     void BtPushSnapshot(const btgraph::BtGraph& before);
-    void BtUpdatePlaytestHighlight();
+    void BtUpdatePlayHighlight();
     void BtRefreshBehaviorFiles();
     std::string BtBehaviorsDir() const;
     // Canvas mouse handling, extracted so the smoke can drive the real link
@@ -494,7 +507,7 @@ private:
     void RunPackage();
 
     gfx::Renderer renderer_;
-    // Playtest audio: procedural SoundFx synthesized per PlaySfx(name) and
+    // Play audio: procedural SoundFx synthesized per PlaySfx(name) and
     // played through the platform backend (miniaudio / WinMM / null).
     std::unique_ptr<neon::audio::IAudioBackend> audioBackend_;
     assets::AssetManager assetMgr_;
@@ -511,9 +524,9 @@ private:
     void ClearSelection();
     bool IsSelected(int idx) const;
     std::vector<int> SelectedIndices() const;  // sorted ascending
-    bool playtestActive_ = false;
-    std::unique_ptr<scene::GameRuntime> playtest_; // non-null while playtesting
-    bool pvzPlaytestOnStart_ = false; // --2d-play: auto-start the playtest
+    bool playActive_ = false;
+    std::unique_ptr<scene::GameRuntime> play_; // non-null while playing
+    bool pvzPlayOnStart_ = false; // --2d-play: auto-start the play
     bool playOnStart_ = false;        // --play: auto-start (any project mode)
     bool uiEditorOnStart_ = false;    // --ui-editor: open the UI editor panel
     std::string projectDirOnStart_;    // --project: open this project
@@ -577,7 +590,7 @@ private:
 
     // Hot reload (T4.8): off by default (--hot flag / toolbar toggle). The
     // throttled poll compares recorded mtimes against the disk; scriptMtimes_
-    // gates the playtest restart, assetMtimes_ the texture/mesh reload.
+    // gates the play restart, assetMtimes_ the texture/mesh reload.
     bool hotReload_ = false;
     std::map<std::string, uint64_t> scriptMtimes_;
     std::map<std::string, uint64_t> assetMtimes_;
@@ -752,7 +765,7 @@ private:
     // BuildModelPreviewPanel, consumed by RenderModelPreviewPanel).
     math::Rect2 previewScreenRect_{0, 0, 0, 0};
     // Offscreen target for the panel preview (rendered once per frame, shown
-    // via ImGui::Image so it coexists with the edit/playtest viewport).
+    // via ImGui::Image so it coexists with the edit/play viewport).
     gfx::RenderTargetHandle previewRT_;
     gfx::TextureHandle previewRTColor_;
     int previewRTW_ = 0;
@@ -796,7 +809,7 @@ private:
     char btFileNameBuf_[256]{};
     std::string btSelected_;   // selected canvas node id
     std::string btPendingType_; // armed palette node type (click canvas to place)
-    std::string btActivePath_;  // playtest highlight: tree-path id of the running node
+    std::string btActivePath_;  // play highlight: tree-path id of the running node
     std::vector<std::string> btBehaviorFiles_;
     uint64_t btFilesRefreshFrame_ = 0; // throttle: refresh behaviors/ listing periodically
     bool btCanvasDrawn_ = false; // smoke: the BT canvas emitted geometry this frame
@@ -840,7 +853,7 @@ private:
     bool scriptEditorDirty_ = false;
     ScriptCheckResult scriptEditorCheck_; // last syntax check result
     // P1-2 debugger: breakpoints keyed by the script path being edited, plus
-    // a dirty flag that pushes them into the running playtest host.
+    // a dirty flag that pushes them into the running play host.
     std::map<std::string, std::set<int>> scriptBreakpoints_;
     bool scriptBreakpointsDirty_ = false;
     char breakpointLineBuf_[64] = {};
