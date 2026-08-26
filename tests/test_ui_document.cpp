@@ -73,6 +73,68 @@ TEST(UiDocumentHitTest) {
     CHECK(doc.Find("missing") == nullptr);
 }
 
+// G3-5: 9-slice math — corners keep their size, edges stretch along one axis,
+// the center fills the remainder, and the UVs map the source texture slices.
+TEST(UiNineSliceLayout) {
+    // A 100x100 texture with a 20px border over a 200x80 dest rect.
+    const math::Rect2 rect{10, 20, 200, 80};
+    ui::NineSliceQuad q[9];
+    CHECK(ui::ComputeNineSlice(rect, 20.0f, 100.0f, 100.0f, q));
+
+    // Corners stay 20x20 and sit at the four corners of the dest rect.
+    CHECK_NEAR(q[0].dest.x, 10.0f, 1e-4f);  CHECK_NEAR(q[0].dest.y, 20.0f, 1e-4f);
+    CHECK_NEAR(q[0].dest.w, 20.0f, 1e-4f);  CHECK_NEAR(q[0].dest.h, 20.0f, 1e-4f);
+    CHECK_NEAR(q[2].dest.x, 190.0f, 1e-4f); CHECK_NEAR(q[2].dest.y, 20.0f, 1e-4f);
+    CHECK_NEAR(q[6].dest.x, 10.0f, 1e-4f);  CHECK_NEAR(q[6].dest.y, 80.0f, 1e-4f);
+    CHECK_NEAR(q[8].dest.x, 190.0f, 1e-4f); CHECK_NEAR(q[8].dest.y, 80.0f, 1e-4f);
+
+    // Top edge: full width minus corners, 20px tall.
+    CHECK_NEAR(q[1].dest.x, 30.0f, 1e-4f);
+    CHECK_NEAR(q[1].dest.w, 160.0f, 1e-4f);
+    CHECK_NEAR(q[1].dest.h, 20.0f, 1e-4f);
+
+    // Left edge: 20px wide, full height minus corners.
+    CHECK_NEAR(q[3].dest.x, 10.0f, 1e-4f);
+    CHECK_NEAR(q[3].dest.w, 20.0f, 1e-4f);
+    CHECK_NEAR(q[3].dest.h, 40.0f, 1e-4f);
+
+    // Center: the remainder.
+    CHECK_NEAR(q[4].dest.x, 30.0f, 1e-4f);
+    CHECK_NEAR(q[4].dest.y, 40.0f, 1e-4f);
+    CHECK_NEAR(q[4].dest.w, 160.0f, 1e-4f);
+    CHECK_NEAR(q[4].dest.h, 40.0f, 1e-4f);
+
+    // UVs: corner quads sample the texture corners (0/1), center samples the
+    // interior (0.2..0.8 in a 100px texture with a 20px border).
+    CHECK_NEAR(q[0].uv0.x, 0.0f, 1e-4f); CHECK_NEAR(q[0].uv1.x, 0.2f, 1e-4f);
+    CHECK_NEAR(q[0].uv1.y, 1.0f, 1e-4f);
+    CHECK_NEAR(q[4].uv0.x, 0.2f, 1e-4f); CHECK_NEAR(q[4].uv1.x, 0.8f, 1e-4f);
+    CHECK_NEAR(q[4].uv0.y, 0.2f, 1e-4f); CHECK_NEAR(q[4].uv1.y, 0.8f, 1e-4f);
+
+    // Dest rect smaller than 2*slice on either axis -> false.
+    ui::NineSliceQuad tiny[9];
+    CHECK(!ui::ComputeNineSlice({0, 0, 30, 200}, 20.0f, 100.0f, 100.0f, tiny));
+}
+
+// G3-5: the 9-slice border survives the UI-document JSON round-trip.
+TEST(UiNineSliceJsonRoundTrip) {
+    ui::UiDocument doc;
+    doc.root.rect = {0, 0, 1280, 720};
+    ui::UiNode* frame = doc.root.AddChild(ui::UiNodeType::Panel, "Frame");
+    frame->rect = {100, 100, 400, 300};
+    frame->sprite = "assets/ui/frame.png";
+    frame->slice = 24.0f;
+
+    ui::UiDocument loaded;
+    CHECK(loaded.LoadJson(doc.ToJson()));
+    ui::UiNode* lf = loaded.Find("Frame");
+    CHECK(lf != nullptr);
+    if (lf) {
+        CHECK_EQ(lf->sprite, "assets/ui/frame.png");
+        CHECK_NEAR(lf->slice, 24.0f, 1e-4f);
+    }
+}
+
 TEST(UiFilenameSuffixCheck) {
     // The editor's UI-file scan filters by suffix; the std::string compare
     // must match ".ui.json" on a plain ASCII filename.

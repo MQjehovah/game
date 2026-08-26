@@ -2429,7 +2429,11 @@ void GameRuntime::DrawUI(gfx::Renderer& renderer) {
     scriptCtx_.screenToUi = [this](const math::Vec2& p) {
         return (p - uiOffset_) / uiScale_;
     };
-    uiDoc_->Draw(renderer, cfg_.font2d);
+    uiDoc_->Draw(renderer, cfg_.font2d,
+                 [this](const std::string& p) {
+                     if (!cfg_.assets || p.empty()) return gfx::Texture{};
+                     return cfg_.assets->LoadTexture(FullAssetPath(p));
+                 });
 }
 
 void GameRuntime::LoadLocales() {

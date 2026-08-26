@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -8,6 +9,7 @@
 #include "neon/gfx/font.hpp"
 #include "neon/gfx/renderer.hpp"
 #include "neon/math/math.hpp"
+#include "neon/ui/ui.hpp"
 
 namespace neon::ui {
 
@@ -34,6 +36,10 @@ struct UiNode {
     gfx::Color borderColor{0.25f, 0.55f, 1.0f, 1.0f};
     std::string text;              // label / button text
     std::string sprite;            // image node: sprite path ("" = plain quad)
+    // G3-5 9-slice border (design px): when > 0 and a `sprite` + texture loader
+    // are available, the node's background/image is drawn as 9 quads (fixed
+    // corners, stretched edges) instead of one stretched quad.
+    float slice = 0.0f;
     float fill = 0.0f;             // bar 0..1
     float fontSize = 16.0f;        // label / button text size
     bool visible = true;
@@ -56,6 +62,9 @@ struct UiNode {
     }
 };
 
+// Loads a texture by asset path ("" / null loader = no textured nodes).
+using UiTextureLoader = std::function<gfx::Texture(const std::string&)>;
+
 // A serializable UI document: one root node (usually a full-screen panel)
 // plus its subtree. Saved/loaded as JSON next to the project data
 // (ui/*.ui.json). Rendered through the renderer's 2D overlay, so it works in
@@ -70,8 +79,10 @@ public:
     bool LoadJson(const std::string& text);
     std::string ToJson() const;
 
-    // Renders the tree (top-down, children clipped to parents).
-    void Draw(gfx::Renderer& renderer, const gfx::Font& font) const;
+    // Renders the tree (top-down, children clipped to parents). `loadTexture`
+    // enables sprite-backed image/panel nodes and 9-slice backgrounds.
+    void Draw(gfx::Renderer& renderer, const gfx::Font& font,
+              const UiTextureLoader& loadTexture = {}) const;
     // Deepest visible node containing the point (or nullptr).
     UiNode* HitTest(const math::Vec2& p);
     UiNode* Find(const std::string& name) { return root.Find(name); }

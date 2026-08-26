@@ -167,6 +167,7 @@ bool UiDocument::SerializeNode(const UiNode& node, core::Json& out) {
     Put(out, "border", std::move(border));
     Put(out, "text", MakeString(node.text));
     Put(out, "sprite", MakeString(node.sprite));
+    Put(out, "slice", MakeNumber(node.slice));
     Put(out, "fill", MakeNumber(node.fill));
     Put(out, "fontSize", MakeNumber(node.fontSize));
     Put(out, "visible", MakeBool(node.visible));
@@ -214,6 +215,7 @@ bool UiDocument::ParseNode(const core::Json& in, UiNode& out, std::string& error
     if (ReadVec4(in.Get("border"), c)) out.borderColor = {c[0], c[1], c[2], c[3]};
     if (const core::Json* t = in.Get("text")) out.text = t->GetString();
     if (const core::Json* s = in.Get("sprite")) out.sprite = s->GetString();
+    if (const core::Json* s = in.Get("slice")) out.slice = static_cast<float>(s->GetNumber());
     if (const core::Json* f = in.Get("fill")) out.fill = static_cast<float>(f->GetNumber());
     if (const core::Json* f = in.Get("fontSize")) out.fontSize = static_cast<float>(f->GetNumber());
     if (const core::Json* v = in.Get("visible")) out.visible = v->GetBool(true);
@@ -235,11 +237,36 @@ bool UiDocument::ParseNode(const core::Json& in, UiNode& out, std::string& error
     return true;
 }
 
-void UiDocument::Draw(gfx::Renderer& renderer, const gfx::Font& font) const {
+void UiDocument::Draw(gfx::Renderer& renderer, const gfx::Font& font,
+                      const UiTextureLoader& loadTexture) const {
     struct Frame {
         const UiNode* node;
         math::Rect2 clip;
     };
+    // G3-5: draws a node's background/image. When `sprite` + `loadTexture` are
+    // available it becomes a textured quad; with a `slice` > 0 the texture is
+    // split into 9 quads so corners keep their size and edges stretch.
+    auto drawBackground = [&](const UiNode& n, const math::Rect2& clip) {
+        if (loadTexture && !n.sprite.empty()) {
+            gfx::Texture tex = loadTexture(n.sprite);
+            if (tex.Valid()) {
+                if (n.slice > 0.0f) {
+                    NineSliceQuad quads[9];
+                    if (ComputeNineSlice(clip, n.slice, static_cast<float>(tex.Width()),
+                                         static_cast<float>(tex.Height()), quads)) {
+                        for (const NineSliceQuad& q : quads)
+                            renderer.DrawQuad({q.dest.x, q.dest.y}, {q.dest.w, q.dest.h},
+                                              n.color, tex.Handle(), q.uv0, q.uv1);
+                        return;
+                    }
+                }
+                renderer.DrawQuad({clip.x, clip.y}, {clip.w, clip.h}, n.color, tex.Handle());
+                return;
+            }
+        }
+        renderer.DrawRect({clip.x, clip.y}, {clip.w, clip.h}, n.color);
+    };
+
     std::vector<Frame> stack;
     stack.push_back({&root, root.rect});
     while (!stack.empty()) {
@@ -260,7 +287,7 @@ void UiDocument::Draw(gfx::Renderer& renderer, const gfx::Font& font) const {
 
         switch (n.type) {
             case UiNodeType::Panel: {
-                renderer.DrawRect({clip.x, clip.y}, {clip.w, clip.h}, n.color);
+                drawBackground(n, clip);
                 renderer.DrawRectOutline(clip, 1.0f, n.borderColor);
                 break;
             }
@@ -277,7 +304,7 @@ void UiDocument::Draw(gfx::Renderer& renderer, const gfx::Font& font) const {
                 break;
             }
             case UiNodeType::Button: {
-                renderer.DrawRect({clip.x, clip.y}, {clip.w, clip.h}, n.color);
+                drawBackground(n, clip);
                 renderer.DrawRectOutline(clip, 2.0f, n.borderColor);
                 const float scale = n.fontSize / static_cast<float>(font.BakedSize());
                 const float baseline =
@@ -294,9 +321,7 @@ void UiDocument::Draw(gfx::Renderer& renderer, const gfx::Font& font) const {
                 break;
             }
             case UiNodeType::Image: {
-                // Sprite-backed image nodes need an asset loader; for now draw
-                // a plain colored quad (the sprite path is preserved in JSON).
-                renderer.DrawRect({clip.x, clip.y}, {clip.w, clip.h}, n.color);
+                drawBackground(n, clip);
                 break;
             }
         }

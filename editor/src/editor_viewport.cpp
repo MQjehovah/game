@@ -91,7 +91,12 @@ void EditorApp::OnRender() {
         {
             DockViewportScope dock(*this, /*designFit=*/true, /*sceneVp=*/false);
             if (dock.Active()) {
-                if (cjkFont_.Valid()) uiDoc_.Draw(renderer_, cjkFont_);
+                if (cjkFont_.Valid())
+                    uiDoc_.Draw(renderer_, cjkFont_,
+                                [this](const std::string& p) {
+                                    if (p.empty()) return gfx::Texture{};
+                                    return assetMgr_.LoadTexture(p);
+                                });
                 // P5-editor UX: outline every selected node; the active one
                 // gets resize handles.
                 for (ui::UiNode* n : uiSelection_) {
