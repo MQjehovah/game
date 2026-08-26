@@ -198,6 +198,10 @@ public:
     const std::map<std::string, gfx::Texture>& Textures() const { return textures_; }
     const std::map<std::string, gfx::Mesh>& Meshes() const { return meshes_; }
     const std::map<std::pair<std::string, int>, gfx::Font>& Fonts() const { return fonts_; }
+    // G6-2: cache probes used by async draw streaming — true once the mesh /
+    // glTF has been fully loaded (a completed async load fills the cache).
+    bool HasMesh(const std::string& path) const { return meshes_.count(path) != 0; }
+    bool HasGLTF(const std::string& path) const { return gltfs_.count(path) != 0; }
 
     // Hot-reload support. Every successful load records the file's mtime;
     // ChangedOnDisk compares the on-disk mtime against that record (false when

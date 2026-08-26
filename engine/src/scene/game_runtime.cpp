@@ -1184,6 +1184,28 @@ void GameRuntime::BuildDrawList() {
     }
 }
 
+void GameRuntime::ResolveOrSkip(DrawItem& item, gfx::Renderer& renderer) {
+    if (item.resolved) return;
+    if (item.asyncPending) {
+        // Async mesh load still in flight: probe the cache and resolve from it
+        // the frame it becomes ready; otherwise leave unresolved (skipped).
+        if (cfg_.assets) {
+            const std::string& key = item.meshKey;
+            bool ready = true;
+            if (key.compare(0, 4, "obj:") == 0)
+                ready = cfg_.assets->HasMesh(FullAssetPath(key.substr(4)));
+            else if (key.compare(0, 5, "gltf:") == 0)
+                ready = cfg_.assets->HasGLTF(FullAssetPath(key.substr(5)));
+            if (ready) {
+                item.asyncPending = false;
+                ResolveDrawItem(item, renderer);
+            }
+        }
+        return; // still loading -> skip this frame
+    }
+    ResolveDrawItem(item, renderer);
+}
+
 void GameRuntime::ResolveDrawItem(DrawItem& item, gfx::Renderer& renderer) {
     if (item.resolved || item.failed || !cfg_.assets) return;
 
@@ -1243,6 +1265,23 @@ void GameRuntime::ResolveDrawItem(DrawItem& item, gfx::Renderer& renderer) {
     }
 
     const std::string& key = item.meshKey;
+    // G6-2: async mesh streaming. When enabled, file-backed meshes (obj:/gltf:)
+    // are loaded off the main thread and the item resolves from the cache the
+    // frame it is ready (Draw retries via asyncPending). Until then the item is
+    // skipped — no per-draw hitch.
+    if (cfg_.asyncMeshLoad && cfg_.assets &&
+        (key.compare(0, 4, "obj:") == 0 || key.compare(0, 5, "gltf:") == 0)) {
+        const bool isObj = key.compare(0, 4, "obj:") == 0;
+        const std::string full = FullAssetPath(isObj ? key.substr(4) : key.substr(5));
+        const bool cached = isObj ? cfg_.assets->HasMesh(full) : cfg_.assets->HasGLTF(full);
+        if (!cached) {
+            auto noop = [](bool) {};
+            if (isObj) cfg_.assets->LoadMeshOBJAsync(full, noop);
+            else cfg_.assets->LoadGLTFAsync(full, noop);
+            item.asyncPending = true;
+            return;
+        }
+    }
     const SceneTerrain* terr = key == "terrain" ? world_.Get<SceneTerrain>(item.ent) : nullptr;
     gfx::Mesh mesh = ResolveMeshKey(renderer, key, terr);
     if (!mesh.Valid()) {
@@ -2273,7 +2312,7 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera,
             DrawItem& item = draws_[idx];
             if (!world_.Alive(item.ent)) continue;
             if (hiddenEntities_.count(EntityKey(item.ent)) != 0) continue;
-            if (!item.resolved) ResolveDrawItem(item, renderer);
+            ResolveOrSkip(item, renderer);
             if (!item.resolved || item.failed) continue;
             if (!world_.Get<SceneTransform>(item.ent)) continue;
             if (item.skinned || item.isSprite || item.isDecal || item.mat.transparent ||
@@ -2317,7 +2356,7 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera,
             continue;
         }
         if (hiddenEntities_.count(EntityKey(item.ent)) != 0) continue; // SetVisible(false)
-        if (!item.resolved) ResolveDrawItem(item, renderer);
+        ResolveOrSkip(item, renderer);
         if (!item.resolved || item.failed) continue;
         if (!world_.Get<SceneTransform>(item.ent)) continue;
         math::Mat4 model = CachedLocalToWorld(item.ent);

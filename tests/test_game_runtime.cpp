@@ -1,6 +1,8 @@
+#include <chrono>
 #include <cmath>
 #include <fstream>
 #include <string>
+#include <thread>
 
 #if defined(_WIN32)
 #include <direct.h>
@@ -1038,4 +1040,49 @@ TEST(GameRuntimeAssetSchemeMeshKey) {
     runtime.Draw(fix.renderer, cam);
 
     CHECK(fix.assets.Meshes().count("assets/kenney_nature/Models/OBJ format/bed.obj") == 1u);
+}
+
+// G6-2: async mesh streaming — with cfg.asyncMeshLoad the draw item's mesh is
+// NOT loaded synchronously on the first Draw (no hitch); the item stays pending
+// until the host pumps the async loader, then resolves from the cache.
+TEST(GameRuntimeAsyncMeshStreaming) {
+    const std::string obj = "assets/kenney_nature/Models/OBJ format/bed.obj";
+    const std::string json = R"({"entities":[{"name":"A","components":{
+        "transform":{"pos":[0,0,0]},
+        "mesh":{"meshKey":"obj:assets/kenney_nature/Models/OBJ format/bed.obj"}}}]})";
+    test::HeadlessAssetFixture fix;
+    scene::GameRuntime runtime;
+    scene::GameRuntimeConfig cfg;
+    cfg.assets = &fix.assets;
+    cfg.asyncMeshLoad = true;
+    CHECK(runtime.Start(json, cfg).Ok());
+    gfx::Camera cam;
+
+    // First Draw kicks the async load; the mesh must NOT be in the cache yet
+    // (the worker parse + main-thread upload happen on PumpAsync).
+    runtime.Draw(fix.renderer, cam);
+    runtime.Draw(fix.renderer, cam); // still pending -> skipped, no crash
+    CHECK(!fix.assets.HasMesh(obj));
+
+    // Pump until the OBJ finishes; the mesh enters the cache.
+    for (int i = 0; i < 4000 && !fix.assets.HasMesh(obj); ++i) {
+        fix.assets.PumpAsync();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    CHECK(fix.assets.HasMesh(obj));
+
+    // Next Draw resolves the item from the cache (asyncPending cleared).
+    runtime.Draw(fix.renderer, cam);
+    runtime.Draw(fix.renderer, cam);
+    runtime.Stop();
+
+    // Control: without asyncMeshLoad the mesh loads synchronously on first Draw.
+    scene::GameRuntime sync;
+    scene::GameRuntimeConfig scfg;
+    test::HeadlessAssetFixture sfix;
+    scfg.assets = &sfix.assets;
+    CHECK(sync.Start(json, scfg).Ok());
+    sync.Draw(sfix.renderer, cam);
+    CHECK(sfix.assets.HasMesh(obj));
+    sync.Stop();
 }

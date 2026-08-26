@@ -162,7 +162,8 @@
 ### G6-2 资源依赖图与按需加载（第 5 项）
 
 - [~] 与 [G1-4](#g1-4-资源系统小缺口) 合并：**依赖图已落地**（G1-4：依赖边/反向边、MissingDependencies、LoadDependenciesAsync）；**异步 OBJ 网格加载已落地**（G6-2）：`AssetManager::LoadMeshOBJAsync(path, cb)`——文件读+OBJ 解析（纯 CPU）在 worker 线程，GPU 上传/缓存/回调在主线程 `PumpAsync` 内完成；已缓存或无线程池时内联完成；同路径并发请求合并为一次加载（`meshInFlight_`/`meshPendingCallbacks_`）；OBJ 解析抽取为 `ParseObjMesh`（同步 `LoadMeshOBJ` 与异步共用，行为不变，MTL 依赖边由主线程记录）。单元测试 `AssetDepsAsyncMeshLoad`（成功/并发合并/失败路径 + 缓存命中）。2026-08-26。
-- [ ] 差距（剩余）：glTF 异步加载未做；运行时绘制管线未接异步解析（绘制项仍是同步 resolve，接入需设计异步项生命周期/轮询缓存，留作产品驱动）。
+- [x] **绘制管线异步接入**——`GameRuntimeConfig.asyncMeshLoad`（默认关，行为不变）：`ResolveDrawItem` 对 `obj:`/`gltf:` 文件网格先探缓存（`HasMesh`/`HasGLTF`），未命中则踢 `LoadMeshOBJAsync`/`LoadGLTFAsync` 并置 `DrawItem.asyncPending`；Draw 两个渲染 pass 经 `ResolveOrSkip` 每帧探缓存，就绪则解析、否则跳过该帧（无逐帧卡顿）。`BuildDrawList` 保留已解析项使 asyncPending 跨帧保持。端到端测试 `GameRuntimeAsyncMeshStreaming`（首帧不阻塞、Pump 后缓存就绪、下一帧解析；对照同步路径）。2026-08-26。
+- [ ] 差距（剩余）：异步仅覆盖 obj/gltf 网格；LOD 链等级仍同步；场景/编辑器侧未默认开启（性能敏感 3D 场景可 `asyncMeshLoad=true`）。
 - 建议：导入期构建依赖图（节点 + 边），运行时按需解析；chunk 流式加载（3×3 窗口）已具备基础。
 
 ### G6-3 移动式分配器（第 6 项）

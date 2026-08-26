@@ -97,6 +97,11 @@ struct GameRuntimeConfig {
     // path is resolved through it (logical -> concrete file) before loading,
     // so "mobile"/"pc" variants are pure data (see neon/assets/asset_variants.hpp).
     const assets::AssetVariantTable* variantTable = nullptr;
+    // G6-2: async mesh streaming. When set, file-backed mesh entities (obj:/gltf:)
+    // load off the main thread (LoadMeshOBJAsync/LoadGLTFAsync); the draw item
+    // resolves from the cache the frame it becomes ready and is skipped until
+    // then — no per-draw hitch. The host must pump the async loader each frame.
+    bool asyncMeshLoad = false;
     // Optional skills.json text (data-driven CastSkill table). The hosts that
     // know their project dir load <dir>/skills.json and pass it here; empty
     // leaves the table empty and CastSkill logs "unknown skill".
@@ -425,6 +430,7 @@ private:
         anim::Pose animFromPose;     // fade source (captured at switch)
         bool resolved = false;
         bool failed = false;
+        bool asyncPending = false;   // G6-2: mesh load kicked, waiting on cache
     };
     // Snapshot of the active 2D design-space mapping (captured during Draw,
     // when the host's 2D viewport is live). InputMousePos()/UIClicked() use
@@ -496,6 +502,10 @@ private:
     void LoadLocales(); // locales/*.json string tables for Loc()
     void BuildDrawList();
     void ResolveDrawItem(DrawItem& item, gfx::Renderer& renderer);
+    // G6-2: async-aware item resolution — retries an asyncPending item from the
+    // cache when its mesh is ready, else skips it; non-async items resolve
+    // synchronously. Called from the draw passes.
+    void ResolveOrSkip(DrawItem& item, gfx::Renderer& renderer);
     // Resolves one meshKey ("obj:"/"gltf:" file-backed or a procedural
     // primitive) through the runtime's AssetManager; invalid mesh on failure.
     gfx::Mesh ResolveMeshKey(gfx::Renderer& renderer, const std::string& key,
