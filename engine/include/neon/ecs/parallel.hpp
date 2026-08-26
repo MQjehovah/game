@@ -20,9 +20,10 @@
 //
 // Determinism: ParallelFor(count, fn) splits [0, count) into a FIXED number of
 // contiguous, non-overlapping chunks (chunks <= workers) and hands each chunk
-// to a worker. Each index is visited exactly once no matter how the OS
-// schedules threads; only WHICH worker runs a given chunk varies between runs,
-// and that is irrelevant for independent-item work. Therefore, for workloads
+// to a worker. Every index is visited exactly once no matter how the OS
+// schedules threads or how the pool distributes the chunks (G5-2: workers pull
+// the next chunk from a shared atomic counter — dynamic work distribution — so
+// a fast worker runs the next pending chunk instead of idling). For workloads
 // where fn(start, end) only touches items in [start, end) and private state,
 // the result is bit-identical to running the whole loop serially, and
 // bit-identical across runs.

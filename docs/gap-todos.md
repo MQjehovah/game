@@ -137,9 +137,10 @@
 ### G5-2 依赖图任务调度器（第 2 项）
 
 - [x] 现状：ECS 有确定性 `ParallelForEach` + 持久线程池（spinlock 队列，**非 lock-free**）；**任务依赖图调度器已落地**（`neon/ecs/task_graph.hpp`）：任务声明依赖边（支持前向引用），Kahn 拓扑分层 + 环检测，逐层经 `ParallelFor` 并行执行同层独立任务，`Run(false)` 串行路径供确定性校验。单元测试 `tests/test_task_graph.cpp`（依赖顺序 / 并行=串行 / 两次并行确定性 / 环检测 / 越界依赖 / 清空复用 / 渲染-物理-逻辑示例图）。2026-08-25。
+- [x] **动态工作分发（work-stealing 方向）**——`ThreadPool::ParallelFor` 改为共享原子计数 `next`：每个 worker + 调用线程运行时拉取下一块（`grab()`），空闲 worker 不再空转，加载平衡更好；块边界仍是原静态划分（每索引恰好访问一次 → 逐位确定性不变）。修掉一个 use-after-free 陷阱：chunk 与 grab-job 解耦后 `remaining==0` 不代表 worker 的 grab-job 已退出，故加入 `doneJobs` 计数，join 同时等待全部块完成 + 全部 worker job 退出。单元测试全绿（`TaskGraphParallelMatchesSerial`/`DeterministicAcrossRuns`/`ECSParallel*`/`ParallelForReducerMisSizedDetected`，多轮无 flaky）。2026-08-26。
 - [ ] 目标：任务声明读写内存区域，调度器自动并行无冲突任务；避免死锁；适配未来数百核。
 - 建议：先实现任务图 + 依赖分析（读/写/独占分区），再考虑 lock-free 队列；`ParallelForEach` 保留为"数据并行"特例接入调度器。
-- 验收：渲染/物理/逻辑三系统的依赖图示例 + 并行正确性测试（复用现有确定性校验）——示例与并行正确性测试已在 `test_task_graph.cpp` 落地；读写内存区自动分析（无冲突推断）与 work-stealing 队列留作后续。
+- 验收：渲染/物理/逻辑三系统的依赖图示例 + 并行正确性测试（复用现有确定性校验）——示例与并行正确性测试已在 `test_task_graph.cpp` 落地；读写内存区自动分析（无冲突推断）与每线程 lock-free work-stealing 双端队列留作后续。
 
 ### G5-3 确定性模拟（第 3 项）——已完成
 

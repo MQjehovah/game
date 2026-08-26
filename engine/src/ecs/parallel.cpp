@@ -174,28 +174,54 @@ void ThreadPool::ParallelFor(uint32_t count, std::function<void(uint32_t, uint32
     }
 
     const int workers = static_cast<int>(impl_->threads.size());
-    const uint32_t chunks = static_cast<uint32_t>(std::min<uint64_t>(static_cast<uint64_t>(workers), count));
-    std::atomic<int> remaining{static_cast<int>(chunks)};
+    const uint32_t chunks = static_cast<uint32_t>(
+        std::min<uint64_t>(static_cast<uint64_t>(workers), count));
+    // G5-2: dynamic work distribution. Every grabber (each worker + the calling
+    // thread) pulls the next chunk from a shared atomic counter instead of
+    // owning a pre-assigned slice, so a fast worker runs the next pending chunk
+    // rather than idling ("work stealing" in the load-balancing sense). Chunk
+    // boundaries come from the same static partition as before, so every index
+    // is visited exactly once and the result stays bit-identical to serial for
+    // independent items.
+    std::atomic<uint32_t> next{0};
+    std::atomic<uint32_t> remaining{chunks};
+    std::atomic<uint32_t> doneJobs{0};
 
-    {
-        impl_->lock.Lock();
-        for (uint32_t c = 0; c < chunks; ++c) {
+    auto grab = [&]() {
+        for (;;) {
+            const uint32_t c = next.fetch_add(1, std::memory_order_relaxed);
+            if (c >= chunks) break;
             const uint32_t start = static_cast<uint32_t>(
                 (static_cast<uint64_t>(c) * count) / chunks);
             const uint32_t end = static_cast<uint32_t>(
                 (static_cast<uint64_t>(c + 1) * count) / chunks);
-            impl_->pending.push_back([fn, start, end, &remaining]() {
-                fn(start, end);
-                remaining.fetch_sub(1, std::memory_order_release);
-            });
+            fn(start, end);
+            remaining.fetch_sub(1, std::memory_order_release);
         }
+    };
+    // Worker grab-jobs are separate from the chunks they run: the join below
+    // waits for BOTH every chunk AND every grab-job to finish, so no closure on
+    // the pending queue still references this call's stack when we return.
+    auto workerGrab = [&]() {
+        grab();
+        doneJobs.fetch_add(1, std::memory_order_release);
+    };
+
+    {
+        impl_->lock.Lock();
+        for (int w = 0; w < workers; ++w)
+            impl_->pending.push_back([&]() { workerGrab(); });
         impl_->lock.Unlock();
     }
 
-    // Join: every chunk closure decrements `remaining` as its last action, so
-    // observing zero guarantees all chunks finished AND their writes are
-    // visible (release/acquire pairing) before this call returns.
-    while (remaining.load(std::memory_order_acquire) != 0) {
+    grab(); // the calling thread is a worker too
+
+    // Join: `remaining` reaches zero only after every chunk ran AND its release
+    // decrement is visible (acquire pairing); `doneJobs` reaches `workers` only
+    // after every worker grab-job has exited. Both together guarantee no
+    // pending closure still touches this stack before this call returns.
+    while (remaining.load(std::memory_order_acquire) != 0 ||
+           doneJobs.load(std::memory_order_acquire) != static_cast<uint32_t>(workers)) {
         SleepMs(0);
     }
 }
