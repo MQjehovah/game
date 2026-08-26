@@ -38,6 +38,9 @@ class AssetManager;
 namespace neon::gfx {
 class Renderer;
 }
+namespace neon::io {
+class IFileSystem;
+}
 
 namespace neon::scene {
 
@@ -83,6 +86,12 @@ struct GameRuntimeConfig {
     // Base directory scanned for native backend plugins (G5-1). Empty = no
     // plugin dir, so "plugin:*" backends simply fall back to custom.
     std::string pluginBaseDir;
+    // G7-1: optional virtual file system (pack + Mod mount stack). When set,
+    // script-family reads (scripts/behaviors/prefabs/locales/input.json)
+    // resolve through it with virtual paths (the scriptBaseDir prefix is
+    // stripped), so a packed game reads scripts straight from the pack and
+    // Mod layers override them — no unpacked-dir copy needed.
+    neon::io::IFileSystem* fileSystem = nullptr;
     // Optional skills.json text (data-driven CastSkill table). The hosts that
     // know their project dir load <dir>/skills.json and pass it here; empty
     // leaves the table empty and CastSkill logs "unknown skill".

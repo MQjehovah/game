@@ -291,6 +291,10 @@ bool PlayerApp::OnCreate() {
     // mount stack resolves them (pack-relative keys); without one they resolve
     // against the unpacked dir as before.
     rcfg.assetBaseDir = cfg_.vfs ? std::string() : cfg_.unpackedDir;
+    // G7-1: script reads (scripts/behaviors/prefabs/locales/input.json) go
+    // through the pack + Mod mount stack directly, overriding the unpacked-dir
+    // copy — Mods replace base-pack scripts without editing the unpacked tree.
+    rcfg.fileSystem = cfg_.vfs ? cfg_.vfs.get() : nullptr;
     // M1: skills.json via the same source as scripts (VFS or unpacked dir).
     {
         std::string skillsPath = "skills.json";

@@ -176,7 +176,8 @@
 - [x] 统一虚拟路径与多层挂载——已落地 `neon/io/vfs.hpp`：`IFileSystem` 抽象 + `DiskFileSystem`（根目录、防 `..` 逃逸）+ `PackFileSystem`（pack 容器直读，免解包）+ `MountStack`（后挂载优先覆盖）。`AssetManager::SetFileSystem` 让纹理/字体/OBJ/MTL/glTF+bin 全部走 VFS（null 时保持磁盘直读）。单元测试 `tests/test_vfs.cpp`（路径规范化/逃逸拒绝/磁盘/pack/挂载覆盖/List 合并/AssetManager 经 MountStack 读纹理+OBJ）。2026-08-25。
 - [x] 多层挂载（主包 + Mod 覆盖层）——`neon_game --pack X --mod DIR`（可重复，后挂载优先）：Mod 经挂载栈覆盖资产，并叠加到解包目录覆盖脚本/prefab/本地化；端到端冒烟通过（pvz 打包 + mod 覆盖 + 60 帧启动退出 0）。DLC 多包即再 `Mount` 一层。2026-08-25。
 - 建议：定义 `IFileSystem` 抽象（路径规范化 + 只读挂载栈），pack 容器作为一层挂载；Mod 覆盖层复用同一挂载栈。这是"资源市场/Mod 生态"的前置。
-- 后续：`assets:/` 风格 scheme 归一、GameRuntime 脚本读取直通 VFS（当前经覆盖目录）、播放器免解包直读。
+- [x] **GameRuntime 脚本读取直通 VFS**——`GameRuntimeConfig.fileSystem`（`IFileSystem*`）：`ReadScript` 在 VFS 安装时剥离 scriptBaseDir 前缀、以虚拟路径经挂载栈读取（pack 优先、后挂载 Mod 覆盖），VFS 未命中回退 readScript/磁盘。播放器接入：`cfg_.vfs` 存在时 `rcfg.fileSystem = cfg_.vfs.get()`，脚本/行为树/预制体/本地化/input.json 全部经包直读，Mod 覆盖不再依赖解包目录拷贝。单元测试 `GameRuntimeScriptsViaVfs`（DiskFileSystem 供脚本）+ `GameRuntimeModOverridesScriptViaVfs`（后挂载覆盖，Mod 行为生效）；真实打包 e2e：`neon_editor --package` → `neon_game --pack` 与 `--mod` 均退出 0。2026-08-26。
+- 后续（剩余）：`assets:/` 风格 scheme 归一；播放器免解包直读（资产已走 VFS，解包临时目录仍用于兜底）。
 
 ### G7-2 着色器字节码翻译层（第 8 项）
 

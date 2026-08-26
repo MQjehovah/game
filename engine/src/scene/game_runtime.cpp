@@ -15,6 +15,7 @@
 #include "neon/gfx/renderer.hpp"
 #include "neon/gfx/scene_props.hpp"
 #include "neon/gfx/terrain.hpp"
+#include "neon/io/vfs.hpp"
 #include "neon/scene/scene_file.hpp"
 
 #if defined(_WIN32)
@@ -2754,6 +2755,20 @@ std::string GameRuntime::FullAssetPath(const std::string& path) const {
 }
 
 std::string GameRuntime::ReadScript(const std::string& path) const {
+    // G7-1: when a virtual file system is installed (pack + Mod mount stack),
+    // script reads go through it with virtual paths — the scriptBaseDir prefix
+    // is stripped and the mount stack resolves pack-then-Mod. On a VFS miss we
+    // fall through to the pack-reader override / disk as before.
+    if (cfg_.fileSystem) {
+        std::string rel = path;
+        if (!cfg_.scriptBaseDir.empty()) {
+            const std::string prefix = cfg_.scriptBaseDir + "/";
+            if (path.rfind(prefix, 0) == 0) rel = path.substr(prefix.size());
+        }
+        const core::Result<std::vector<uint8_t>> bytes = cfg_.fileSystem->ReadFile(rel);
+        if (bytes.Ok())
+            return std::string(bytes.Value().begin(), bytes.Value().end());
+    }
     if (cfg_.readScript) return cfg_.readScript(path);
     std::ifstream in(path, std::ios::binary);
     if (!in.is_open()) return {};

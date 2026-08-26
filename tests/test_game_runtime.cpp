@@ -9,6 +9,7 @@
 #endif
 
 #include "neon/neon.hpp"
+#include "neon/io/vfs.hpp"
 #include "neon/scene/game_runtime.hpp"
 #include "helpers.hpp"
 #include "test_backend.hpp"
@@ -944,4 +945,54 @@ TEST(GameRuntimePlaysAudioSources) {
     CHECK_NEAR(playedPos.x, 3.0f, 1e-6);
     CHECK_NEAR(playedPos.y, 4.0f, 1e-6);
     CHECK_NEAR(playedPos.z, 5.0f, 1e-6);
+}
+
+// G7-1: script reads go through a virtual file system when one is installed.
+// A DiskFileSystem rooted at a temp dir serves "counter.lua"; the runtime loads
+// the script from the VFS, not the disk.
+TEST(GameRuntimeScriptsViaVfs) {
+    test::TempDir tmp;
+    CHECK(test::WriteFileAll(tmp.Str() + "/counter.lua", kCounterLua));
+    neon::io::MountStack vfs;
+    vfs.Mount(std::make_shared<neon::io::DiskFileSystem>(tmp.Str()));
+
+    scene::GameRuntime runtime;
+    scene::GameRuntimeConfig cfg;
+    cfg.headless = true;
+    cfg.fileSystem = &vfs; // script "counter.lua" resolves through the VFS
+    core::Status st = runtime.Start(kSimScene, cfg);
+    CHECK(st.Ok());
+    CHECK(runtime.Running());
+    CHECK_EQ(runtime.ScriptCount(), 1u);
+    CHECK(runtime.GameVars().Get("started").type == script::Value::Type::Bool);
+
+    for (int i = 0; i < 60; ++i) runtime.Tick(1.0f / 60.0f);
+    CHECK_EQ(runtime.GameVars().Get("gold").number, 60.0); // one increment per tick
+}
+
+// G7-1: later VFS mounts override earlier ones — a Mod directory replacing a
+// base-pack script wins, with no unpacked-dir copy involved.
+TEST(GameRuntimeModOverridesScriptViaVfs) {
+    const char* modLua = R"(
+      function on_start(e) SetVar("modded", true) end
+      function on_update(e, dt) SetVar("gold", 42) end
+    )";
+    test::TempDir base;
+    test::TempDir mod;
+    CHECK(test::WriteFileAll(base.Str() + "/counter.lua", kCounterLua));
+    CHECK(test::WriteFileAll(mod.Str() + "/counter.lua", modLua));
+    neon::io::MountStack vfs;
+    vfs.Mount(std::make_shared<neon::io::DiskFileSystem>(base.Str()));
+    vfs.Mount(std::make_shared<neon::io::DiskFileSystem>(mod.Str())); // Mod wins
+
+    scene::GameRuntime runtime;
+    scene::GameRuntimeConfig cfg;
+    cfg.headless = true;
+    cfg.fileSystem = &vfs;
+    CHECK(runtime.Start(kSimScene, cfg).Ok());
+
+    // The Mod's on_start ran (base's script has no "modded" var).
+    CHECK(runtime.GameVars().Get("modded").type == script::Value::Type::Bool);
+    runtime.Tick(1.0f / 60.0f);
+    CHECK_EQ(runtime.GameVars().Get("gold").number, 42.0); // Mod behavior, not +1/tick
 }
