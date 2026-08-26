@@ -25,6 +25,62 @@ std::string PathStem(const std::string& path) {
     return ToLower(path.substr(begin, len));
 }
 
+// Shared kind-scoped provider discovery (G5-1): scans the native plugins under
+// <baseDir>/plugins, keeps the first one that exports `getterSymbol`, resolves
+// its C API table and matches the requested backend name. `ApiT` is a POD C
+// function-table struct (PhysicsWorldApi / AudioApi).
+template <typename ApiT>
+struct FoundProvider {
+    std::unique_ptr<NativePlugin> plugin;
+    ApiT api{};
+    bool ok = false;
+};
+
+template <typename ApiT>
+FoundProvider<ApiT> FindProvider(const std::string& backendName, const std::string& baseDir,
+                                 const char* getterSymbol) {
+    const std::string want = ToLower(backendName);
+    const bool any = want.empty() || want == "*";
+
+    for (std::unique_ptr<NativePlugin>& p : LoadNativePlugins(baseDir)) {
+        void* sym = p->Symbol(getterSymbol);
+        if (!sym) continue; // not a provider of this kind
+        using GetterFn = const ApiT* (*)();
+        auto getter = reinterpret_cast<GetterFn>(sym);
+        if (!getter) continue;
+        const ApiT* api = nullptr;
+        try {
+            api = getter();
+        } catch (...) {
+            NEON_LOG_CAT(core::LogCategory::Core, core::LogLevel::Warn,
+                         "backend: %s getter raised in '%s'", getterSymbol, p->Path().c_str());
+            continue;
+        }
+        if (!api) {
+            NEON_LOG_CAT(core::LogCategory::Core, core::LogLevel::Warn,
+                         "backend: plugin '%s' returned a null %s table", p->Path().c_str(),
+                         getterSymbol);
+            continue;
+        }
+        // Required callbacks vary per kind; the kind-specific loader checks the
+        // ones it needs, so we only gate on the table existing here.
+        const std::string reported =
+            api->name ? ToLower(api->name()) : std::string{};
+        const std::string libStem = PathStem(p->Path());
+        const bool matches =
+            any || (!reported.empty() && reported.find(want) != std::string::npos) ||
+            libStem.find(want) != std::string::npos;
+        if (!matches) continue;
+
+        FoundProvider<ApiT> out;
+        out.plugin = std::move(p);
+        out.api = *api;
+        out.ok = true;
+        return out;
+    }
+    return {};
+}
+
 } // namespace
 
 std::unique_ptr<physics::World, std::function<void(physics::World*)>>
@@ -47,45 +103,60 @@ PhysicsBackend::CreateWorld() const {
 
 std::unique_ptr<PhysicsBackend> LoadNativePhysicsBackend(const std::string& backendName,
                                                          const std::string& baseDir) {
-    const std::string want = ToLower(backendName);
-    const bool any = want.empty() || want == "*";
-
-    for (std::unique_ptr<NativePlugin>& p : LoadNativePlugins(baseDir)) {
-        void* sym = p->Symbol("NeonPhysics_GetWorldApi");
-        if (!sym) continue; // not a physics provider
-        auto getter = reinterpret_cast<const PhysicsWorldApi* (*)()>(sym);
-        if (!getter) continue;
-        const PhysicsWorldApi* api = nullptr;
-        try {
-            api = getter();
-        } catch (...) {
-            NEON_LOG_CAT(core::LogCategory::Core, core::LogLevel::Warn,
-                         "backend: physics api getter raised in '%s'", p->Path().c_str());
-            continue;
-        }
-        if (!api || !api->create_world || !api->destroy_world) {
-            NEON_LOG_CAT(core::LogCategory::Core, core::LogLevel::Warn,
-                         "backend: plugin '%s' exports an incomplete physics factory",
-                         p->Path().c_str());
-            continue;
-        }
-        const std::string reported =
-            api->name ? ToLower(api->name()) : std::string{};
-        const std::string libStem = PathStem(p->Path());
-        const bool matches =
-            any || (!reported.empty() && reported.find(want) != std::string::npos) ||
-            libStem.find(want) != std::string::npos;
-        if (!matches) continue;
-
-        auto backend = std::make_unique<PhysicsBackend>();
-        backend->plugin = std::move(p);
-        backend->api = *api;
-        NEON_LOG_CAT(core::LogCategory::Core, core::LogLevel::Info,
-                     "backend: physics provider '%s' loaded from '%s'",
-                     backend->Name().c_str(), libStem.c_str());
-        return backend;
+    FoundProvider<PhysicsWorldApi> found =
+        FindProvider<PhysicsWorldApi>(backendName, baseDir, "NeonPhysics_GetWorldApi");
+    if (!found.ok) return nullptr;
+    if (!found.api.create_world || !found.api.destroy_world) {
+        NEON_LOG_CAT(core::LogCategory::Core, core::LogLevel::Warn,
+                     "backend: plugin '%s' exports an incomplete physics factory",
+                     found.plugin->Path().c_str());
+        return nullptr;
     }
-    return nullptr;
+    auto backend = std::make_unique<PhysicsBackend>();
+    backend->plugin = std::move(found.plugin);
+    backend->api = found.api;
+    NEON_LOG_CAT(core::LogCategory::Core, core::LogLevel::Info,
+                 "backend: physics provider '%s' loaded from '%s'",
+                 backend->Name().c_str(), PathStem(backend->plugin->Path()).c_str());
+    return backend;
+}
+
+std::unique_ptr<neon::audio::IAudioBackend,
+                std::function<void(neon::audio::IAudioBackend*)>>
+AudioBackend::CreateBackend() const {
+    auto del = [this](neon::audio::IAudioBackend* b) {
+        if (b && api.destroy_backend) api.destroy_backend(b);
+    };
+    if (!api.create_backend) return {nullptr, del};
+    void* raw = nullptr;
+    try {
+        raw = api.create_backend();
+    } catch (...) {
+        NEON_LOG_CAT(core::LogCategory::Core, core::LogLevel::Error,
+                     "backend: audio create_backend raised; disabled");
+        return {nullptr, del};
+    }
+    if (!raw) return {nullptr, del};
+    return {static_cast<neon::audio::IAudioBackend*>(raw), std::move(del)};
+}
+
+std::unique_ptr<AudioBackend> LoadNativeAudioBackend(const std::string& backendName,
+                                                     const std::string& baseDir) {
+    FoundProvider<AudioApi> found = FindProvider<AudioApi>(backendName, baseDir, "NeonAudio_GetApi");
+    if (!found.ok) return nullptr;
+    if (!found.api.create_backend || !found.api.destroy_backend) {
+        NEON_LOG_CAT(core::LogCategory::Core, core::LogLevel::Warn,
+                     "backend: plugin '%s' exports an incomplete audio factory",
+                     found.plugin->Path().c_str());
+        return nullptr;
+    }
+    auto backend = std::make_unique<AudioBackend>();
+    backend->plugin = std::move(found.plugin);
+    backend->api = found.api;
+    NEON_LOG_CAT(core::LogCategory::Core, core::LogLevel::Info,
+                 "backend: audio provider '%s' loaded from '%s'",
+                 backend->Name().c_str(), PathStem(backend->plugin->Path()).c_str());
+    return backend;
 }
 
 } // namespace neon::plugin

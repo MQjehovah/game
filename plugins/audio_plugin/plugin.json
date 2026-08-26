@@ -1,0 +1,8 @@
+{
+  "id": "audio_plugin",
+  "name": "示例音频插件",
+  "version": "1.0.0",
+  "type": "native",
+  "backend": "native",
+  "entry": "neon_plugin_audio.dll"
+}

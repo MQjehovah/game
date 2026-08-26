@@ -130,8 +130,9 @@
 - [~] 现状：core/interface 分层，编辑器/播放器/服务器共享同一套核心（`neon_engine`）；插件为 Lua/JS 脚本级（编辑器 + 运行时）+ 原生 DLL/SO（[G4-1](#g4-1-微内核二进制插件)，已落地 ABI 与加载器）。
 - [x] **第三方中间件"即插即用"示范**——`neon/plugin/backend.hpp/cpp`：kind-scoped 后端提供者宿主，`PhysicsWorldApi`（纯 C 函数表）+ `LoadNativePhysicsBackend(name, baseDir)`（按插件名/库名发现 `NeonPhysics_GetWorldApi` 提供者）。示例物理插件 `plugins/physics_plugin` 现把引擎**真实确定性求解器**（`engine/src/physics/physics.cpp`）编译进 DLL，成为自包含物理中间件；创建/销毁都在模块内（跨 CRT 安全）。`GameRuntime` 的 `physicsBackend` 支持 `"plugin:<name>"`（运行时 DLL 后端，无需重链接，失败回退 custom），宿主经 `pluginBaseDir` 配置（编辑器 play / neon_game 已接）。单元测试 `NativeBackendLoadsPhysicsProvider`/`NativeBackendByName` + 端到端 `GameRuntimeNativePhysicsBackendPlugin`（运行时真用 DLL 后端让球落到地面）。2026-08-26。
 - [x] **编辑器加载原生插件**——编辑器"插件"面板新增原生 (DLL/SO) 分节：`LoadNativePlugins(<project>/plugins)` 按 manifest 发现并加载，列出 ABI 信息与库路径；与脚本插件面板并列。2026-08-26。
+- [x] **音频模块插件化（第二个中间件示范）**——`backend.hpp/cpp` 的 kind-scoped 发现通用化为共享模板（`FindProvider<ApiT>`），新增 `AudioApi`/`AudioBackend`/`LoadNativeAudioBackend`。`plugins/audio_plugin` 把引擎真实 WinMM waveOut 软件混音器（`winmm_audio.cpp` + 其依赖的 `log.cpp`）编入 DLL，成为自包含音频中间件（Windows-only，非 Windows 跳过目标）。编辑器启动优先从 `./plugins` 加载音频插件后端（staged 时生效），否则回退平台 miniaudio→WinMM→null；已验证两条路径（staged → "audio backend from native plugin 'winmm'"；未 staged → miniaudio）。单元测试 `tests/test_plugin_audio.cpp`（加载/驱动/名称匹配；Init 失败时接口安全）。2026-08-26。
 - [ ] 运行时切换渲染后端（Vulkan → D3D12，无需重启）——后端在启动时固定，无运行时重建渲染器路径（仍为最大项，需 D3D12 后端 + 渲染器重建路径）。
-- 关联 [G4-1](#g4-1-微内核二进制插件)，建议合并实施：先定 ABI，再以物理/音频做示范插件（ABI + 物理示范 + 运行时接入已达成；音频/渲染接入与真实"运行时热切换"为后续）。
+- 关联 [G4-1](#g4-1-微内核二进制插件)，建议合并实施：先定 ABI，再以物理/音频做示范插件（ABI + 物理/音频示范 + 运行时接入已达成；渲染接入与真实"运行时热切换"为后续）。
 
 ### G5-2 依赖图任务调度器（第 2 项）
 

@@ -10,6 +10,7 @@
 
 #include "neon/core/log.hpp"
 #include "neon/audio/audio.hpp"
+#include "neon/plugin/backend.hpp"
 #include "neon/gfx/light_probe.hpp"
 #include "neon/nav/nav_grid.hpp"
 #include "neon/neon.hpp"
@@ -508,8 +509,17 @@ private:
 
     gfx::Renderer renderer_;
     // Play audio: procedural SoundFx synthesized per PlaySfx(name) and
-    // played through the platform backend (miniaudio / WinMM / null).
-    std::unique_ptr<neon::audio::IAudioBackend> audioBackend_;
+    // played through the backend. Default = platform (miniaudio / WinMM /
+    // null); G5-1: when a native audio plugin is staged under ./plugins the
+    // backend comes from the plugin DLL instead (hot-swappable middleware).
+    // Custom deleter so a plugin-created backend is destroyed via its own
+    // module (destroy_backend) — never a host-side delete across the ABI.
+    // pluginAudio_ is declared first so audioBackend_ dies before the DLL
+    // unloads.
+    std::unique_ptr<plugin::AudioBackend> pluginAudio_;
+    std::unique_ptr<neon::audio::IAudioBackend,
+                    std::function<void(neon::audio::IAudioBackend*)>>
+        audioBackend_;
     assets::AssetManager assetMgr_;
     gfx::Font pixelFont_;
     gfx::Font cjkFont_;

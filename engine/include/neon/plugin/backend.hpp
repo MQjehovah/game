@@ -4,6 +4,7 @@
 #include <memory>
 #include <string>
 
+#include "neon/audio/audio.hpp"
 #include "neon/plugin/native.hpp"
 #include "neon/physics/physics.hpp"
 
@@ -48,5 +49,41 @@ struct PhysicsBackend {
 // provider. Returns null (errors logged, never fatal) when none is found.
 std::unique_ptr<PhysicsBackend> LoadNativePhysicsBackend(const std::string& backendName,
                                                          const std::string& baseDir);
+
+// ---------------------------------------------------------------------------
+// Audio backend provider (G5-1): the same discovery, scoped to audio. A plugin
+// exports NeonAudio_GetApi (see plugins/audio_plugin/api.h); the created
+// backend is an opaque neon::audio::IAudioBackend* driven through the C++
+// interface, destroyed via the plugin's C destroy so memory is freed on the
+// module that allocated it.
+// ---------------------------------------------------------------------------
+
+// C function table mirror of NeonAudioApi, kept engine-side so the host does
+// not depend on a specific plugin's header.
+struct AudioApi {
+    void* (*create_backend)(void) = nullptr;
+    void (*destroy_backend)(void* backend) = nullptr;
+    const char* (*name)(void) = nullptr;
+};
+
+// A loaded audio backend from a native plugin. Owns the NativePlugin (so the
+// library stays resident) and must outlive any backend it created.
+struct AudioBackend {
+    std::unique_ptr<NativePlugin> plugin;
+    AudioApi api{};
+
+    // Creates a backend owned by the plugin; the unique_ptr's deleter calls the
+    // plugin's destroy_backend. Returns null when the plugin has no factory.
+    std::unique_ptr<neon::audio::IAudioBackend,
+                    std::function<void(neon::audio::IAudioBackend*)>>
+    CreateBackend() const;
+
+    std::string Name() const { return api.name ? api.name() : "?"; }
+};
+
+// Loads a native plugin providing an audio backend from <baseDir>/plugins.
+// Matching rules identical to LoadNativePhysicsBackend.
+std::unique_ptr<AudioBackend> LoadNativeAudioBackend(const std::string& backendName,
+                                                     const std::string& baseDir);
 
 } // namespace neon::plugin

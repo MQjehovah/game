@@ -521,6 +521,24 @@ if(NOT WIN32)
     POSITION_INDEPENDENT_CODE ON)
 endif()
 
+# G5-1 audio middleware plugin (Windows: the engine's WinMM waveOut mixer is
+# compiled into the DLL, so the runtime can take audio from a native plugin).
+# winmm is Windows-only, so the target is skipped elsewhere.
+set(NEON_AUDIO_TEST "")
+if(WIN32)
+  set(NEON_AUDIO_TEST tests/test_plugin_audio.cpp)
+  add_library(neon_plugin_audio SHARED plugins/audio_plugin/plugin.cpp
+    engine/src/audio/winmm/winmm_audio.cpp engine/src/core/log.cpp)
+  target_include_directories(neon_plugin_audio PRIVATE engine/include plugins)
+  if(MSVC)
+    target_compile_options(neon_plugin_audio PRIVATE /utf-8)
+  endif()
+  set_target_properties(neon_plugin_audio PROPERTIES
+    OUTPUT_NAME "neon_plugin_audio"
+    PREFIX "")
+  target_link_libraries(neon_plugin_audio PRIVATE winmm)
+endif()
+
 add_executable(neon_tests tests/test_main.cpp tests/test_serialize.cpp tests/test_pack.cpp
   tests/test_physics.cpp tests/test_protocol.cpp tests/test_obj.cpp tests/test_gltf.cpp tests/test_json.cpp
   tests/test_ui_document.cpp
@@ -541,6 +559,7 @@ add_executable(neon_tests tests/test_main.cpp tests/test_serialize.cpp tests/tes
   ${NEON_JS_TEST}
   tests/test_plugin.cpp
   tests/test_plugin_native.cpp
+  ${NEON_AUDIO_TEST}
   tests/test_bt.cpp tests/test_scene_file.cpp tests/test_scene_export.cpp tests/test_manifest.cpp
   tests/test_nav.cpp
   tests/test_localization.cpp
@@ -574,8 +593,14 @@ if(MINGW)
 endif()
 # test_history.cpp includes the editor's generic undo/redo stack header.
 target_include_directories(neon_tests PRIVATE editor/src third_party/stb server/src game/src plugins)
-target_compile_definitions(neon_tests PRIVATE
-  NEON_PLUGIN_PHYSICS_PATH="$<TARGET_FILE:neon_plugin_physics>")
+if(WIN32)
+  target_compile_definitions(neon_tests PRIVATE
+    NEON_PLUGIN_PHYSICS_PATH="$<TARGET_FILE:neon_plugin_physics>"
+    NEON_PLUGIN_AUDIO_PATH="$<TARGET_FILE:neon_plugin_audio>")
+else()
+  target_compile_definitions(neon_tests PRIVATE
+    NEON_PLUGIN_PHYSICS_PATH="$<TARGET_FILE:neon_plugin_physics>")
+endif()
 if(MSVC)
   target_compile_options(neon_tests PRIVATE /W4 /permissive- /utf-8)
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")

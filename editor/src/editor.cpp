@@ -219,7 +219,25 @@ bool EditorApp::OnCreate() {
             }
         }
     }
-    audioBackend_ = neon::audio::CreatePlatformAudioBackend();
+    // G5-1: take the audio backend from a native plugin when one is staged
+    // under ./plugins (hot-swappable middleware DLL); otherwise fall back to
+    // the platform backend (miniaudio -> WinMM -> null).
+    if (std::unique_ptr<plugin::AudioBackend> pab =
+            plugin::LoadNativeAudioBackend("", ".")) {
+        std::unique_ptr<neon::audio::IAudioBackend,
+                        std::function<void(neon::audio::IAudioBackend*)>>
+            b = pab->CreateBackend();
+        if (b && b->Init()) {
+            pluginAudio_ = std::move(pab); // keep the plugin DLL resident
+            audioBackend_ = std::move(b);
+            NEON_LOG_INFO("Editor: audio backend from native plugin '%s'",
+                          pluginAudio_->Name().c_str());
+        }
+    }
+    if (!audioBackend_) {
+        audioBackend_ = {neon::audio::CreatePlatformAudioBackend().release(),
+                         [](neon::audio::IAudioBackend* backend) { delete backend; }};
+    }
     if (audioBackend_ && !audioBackend_->Init()) {
         audioBackend_->Shutdown();
         audioBackend_.reset();
