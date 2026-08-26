@@ -238,6 +238,49 @@ TEST(SceneAudioSourceParse) {
     CHECK(!badInst.Ok());
 }
 
+// G2-1: the reflected component — one field list drives the editor schema, the
+// JSON serializer and the JSON parser, so they cannot drift apart.
+TEST(ReflectedAudioSourceSchemaAndJson) {
+    // Schema comes from SceneAudioSource::kFields and is registered.
+    const scene::ComponentSchema* schema = scene::FindComponentSchema("audio");
+    CHECK(schema != nullptr);
+    if (!schema) return;
+    CHECK_EQ(schema->label, std::string("音频源"));
+    CHECK_EQ(schema->fields.size(), 3u);
+    if (schema->fields.size() < 3u) return;
+    CHECK_EQ(schema->fields[0].key, std::string("sound"));
+    CHECK(schema->fields[0].type == scene::FieldType::String);
+    CHECK_EQ(schema->fields[1].key, std::string("volume"));
+    CHECK(schema->fields[1].type == scene::FieldType::Number);
+    CHECK_EQ(schema->fields[2].key, std::string("radius"));
+    CHECK(schema->fields[2].type == scene::FieldType::Number);
+
+    // JSON round-trip through the reflected helpers.
+    scene::SceneAudioSource a;
+    a.sound = "rain";
+    a.volume = 0.35f;
+    a.radius = 42.0f;
+    core::Json j = a.ToJson();
+    CHECK_EQ(j.Get("sound")->GetString(), std::string("rain"));
+    CHECK_NEAR(j.Get("volume")->GetNumber(), 0.35, 1e-6);
+    CHECK_NEAR(j.Get("radius")->GetNumber(), 42.0, 1e-6);
+
+    scene::SceneAudioSource b;
+    std::string err;
+    CHECK(b.FromJson(j, &err));
+    CHECK_EQ(b.sound, std::string("rain"));
+    CHECK_NEAR(b.volume, 0.35f, 1e-5);
+    CHECK_NEAR(b.radius, 42.0f, 1e-5);
+
+    // Wrong-typed field rejected with a message.
+    core::Json bad = j;
+    bad.object_["volume"] = core::Json::Parse("\"loud\"");
+    std::string err2;
+    scene::SceneAudioSource c;
+    CHECK(!c.FromJson(bad, &err2));
+    CHECK(!err2.empty());
+}
+
 TEST(SceneSpriteComponentRoundTrip) {
     // A 2D sprite: image texture on an XY quad. Parse -> Instantiate -> ECS
     // component -> ToJson round-trips the flip flags and tint, and invalid

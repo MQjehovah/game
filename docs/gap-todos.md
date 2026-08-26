@@ -46,9 +46,9 @@
 
 ### G2-1 反射系统自动化
 
-- [~] 现状：`ComponentSchema` 手写元数据驱动编辑器（Godot `@export` 风格）；脚本绑定手写 `RegisterField`；**无 C++ 编译期反射 / 自动暴露**。
-- 差距：新增 C++ 组件需手写 schema + 绑定，未达到"结构体自动暴露给 Lua/JS"。
-- 建议：模板 + 宏做轻量自动注册（字段名/类型/默认值），生成 schema 与脚本绑定，避免引入重量级反射库。
+- [~] 现状：`ComponentSchema` 手写元数据驱动编辑器（Godot `@export` 风格）；脚本绑定手写 `RegisterField`；**轻量反射已落地**（`neon/scene/component_reflect.hpp`，模板+成员指针，无需宏迭代）：`Field("key","标签",FieldType,T Owner::*,def,min,max,step)` 单条声明字段，`FieldList<Owner>` 一次定义同时派生 `ComponentSchema`（编辑器）与 `ToJson/FromJson`（运行时/脚本层）——schema 与数据结构共用同一字段表，改成员名即编译期断裂，不会漂移。字段类型支持 int/float/double/bool/string（MSVC 用 initializer-list 展开规避 std::apply C1001）。**示范迁移**：`SceneAudioSource` 的 schema（原手写 6 行）与 scene_file 解析工厂（原 ~25 行手写 JSON 读取）改为反射生成/读取，行为与严格性（未知字段拒绝）不变。单元测试 `ReflectedAudioSourceSchemaAndJson`（schema 字段/round-trip/错类型拒绝）。2026-08-26。
+- [ ] 差距：C++ 编译期反射覆盖有限（仅标量字段，无 Vec3/Color/Enum/嵌套）；脚本绑定仍未从字段表自动生成。
+- 建议：模板 + 宏做轻量自动注册（字段名/类型/默认值），生成 schema 与脚本绑定，避免引入重量级反射库——模板层已落地并示范，扩展 Vec3/Enum 与脚本绑定生成为后续。
 
 ### G2-2 ECS archetype 存储与系统调度
 

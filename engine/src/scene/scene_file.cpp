@@ -847,27 +847,7 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                      if (!CheckComponentShape(data, {"sound", "volume", "radius"}, "audio", err))
                          return false;
                      SceneAudioSource a;
-                     if (const core::Json* s = data.Get("sound")) {
-                         if (!s->IsString()) {
-                             if (err) *err = "component 'audio' field 'sound' must be a string";
-                             return false;
-                         }
-                         a.sound = s->GetString();
-                     }
-                     if (const core::Json* v = data.Get("volume")) {
-                         if (!v->IsNumber()) {
-                             if (err) *err = "component 'audio' field 'volume' must be a number";
-                             return false;
-                         }
-                         a.volume = static_cast<float>(v->GetNumber());
-                     }
-                     if (const core::Json* r = data.Get("radius")) {
-                         if (!r->IsNumber()) {
-                             if (err) *err = "component 'audio' field 'radius' must be a number";
-                             return false;
-                         }
-                         a.radius = static_cast<float>(r->GetNumber());
-                     }
+                     if (!a.FromJson(data, err)) return false;
                      world.Add<SceneAudioSource>(ent, a);
                      return true;
                  });

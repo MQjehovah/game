@@ -11,6 +11,8 @@
 #include "neon/gfx/color.hpp"
 #include "neon/math/quat.hpp"
 #include "neon/math/vec3.hpp"
+#include "neon/scene/component_reflect.hpp"
+#include "neon/scene/component_schema.hpp"
 
 namespace neon::assets {
 class AssetManager;
@@ -249,10 +251,21 @@ struct SceneScript {
 // it once at the entity's position through the playSfx3D hook; the editor shows
 // its attenuation sphere in the debug overlay. Looping/ambient playback needs a
 // loop-3D hook (current playSfx3D is one-shot) and is a documented follow-up.
+// G2-1: schema + JSON are reflected from `kFields` (one source of truth).
 struct SceneAudioSource {
     std::string sound;   // SoundFx name (PlaySfx convention)
     float volume = 1.0f; // 0..1
     float radius = 10.0f; // attenuation distance, drives the debug sphere
+
+    // G2-1: schema + JSON are reflected from this single field list.
+    inline static const auto kFields = scene::ReflectFields(
+        scene::Field("sound", "声音名", FieldType::String, &SceneAudioSource::sound, 0, 0, 0),
+        scene::Field("volume", "音量", FieldType::Number, &SceneAudioSource::volume, 1, 0, 1, 0.01),
+        scene::Field("radius", "衰减半径", FieldType::Number, &SceneAudioSource::radius, 10, 0.1,
+                     100, 0.5));
+    static scene::ComponentSchema Schema() { return {"audio", "音频源", kFields.Schemas()}; }
+    core::Json ToJson() const { return kFields.ToJson(*this); }
+    bool FromJson(const core::Json& j, std::string* err) { return kFields.FromJson(j, *this, err); }
 };
 // Multiple script components on one entity (Unity-style): a scene entity can
 // carry several behaviors. Each entry attaches like a single SceneScript.
