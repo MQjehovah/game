@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "neon/neon.hpp"
+#include "neon/assets/asset_path.hpp"
 #include "neon/assets/asset_variants.hpp"
 #include "helpers.hpp"
 #include "test_backend.hpp"
@@ -194,4 +195,13 @@ TEST(AssetVariantTableResolvesAndFallsBack) {
     std::string badErr;
     CHECK(!bad.LoadJson(R"({"a": 7})", &badErr));
     CHECK(!badErr.empty());
+}
+
+// G7-1: the "assets:/" scheme normalizes to a plain relative path.
+TEST(AssetPathSchemeNormalization) {
+    CHECK_EQ(assets::NormalizeAssetPath("assets:/models/x.obj"), "models/x.obj");
+    CHECK_EQ(assets::NormalizeAssetPath("asset:/models/x.obj"), "models/x.obj");
+    CHECK_EQ(assets::NormalizeAssetPath("models/x.obj"), "models/x.obj"); // no scheme
+    CHECK_EQ(assets::NormalizeAssetPath("assets/textures/t.png"), "assets/textures/t.png");
+    CHECK_EQ(assets::NormalizeAssetPath("C:/abs/x.obj"), "C:/abs/x.obj"); // absolute untouched
 }

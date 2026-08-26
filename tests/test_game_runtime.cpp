@@ -1021,3 +1021,21 @@ TEST(GameRuntimeVariantAssetResolution) {
     CHECK(fix.assets.Meshes().count("assets/kenney_nature/Models/OBJ format/bed_floor.obj") == 1u);
     CHECK(fix.assets.Meshes().count("assets/kenney_nature/Models/OBJ format/bed.obj") == 0u);
 }
+
+// G7-1: an "assets:/..." mesh key resolves like its plain relative form — the
+// scheme is stripped before loading, so the cache holds the plain path.
+TEST(GameRuntimeAssetSchemeMeshKey) {
+    const std::string json = R"({"entities":[{"name":"A","components":{
+        "transform":{"pos":[0,0,0]},
+        "mesh":{"meshKey":"obj:assets:/kenney_nature/Models/OBJ format/bed.obj"}}}]})";
+    test::HeadlessAssetFixture fix;
+    scene::GameRuntime runtime;
+    scene::GameRuntimeConfig cfg;
+    cfg.assets = &fix.assets;
+    cfg.assetBaseDir = "assets"; // "assets:/X" == "X" relative to the base dir
+    CHECK(runtime.Start(json, cfg).Ok());
+    gfx::Camera cam;
+    runtime.Draw(fix.renderer, cam);
+
+    CHECK(fix.assets.Meshes().count("assets/kenney_nature/Models/OBJ format/bed.obj") == 1u);
+}

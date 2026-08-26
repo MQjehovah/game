@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "neon/assets/asset_manager.hpp"
+#include "neon/assets/asset_path.hpp"
 #include "neon/assets/asset_variants.hpp"
 #include "neon/core/log.hpp"
 #include "neon/core/pack.hpp"
@@ -2748,9 +2749,11 @@ std::string GameRuntime::FullScriptPath(const std::string& path) const {
 }
 
 std::string GameRuntime::FullAssetPath(const std::string& path) const {
+    // G7-1 剩余: "assets:/..." scheme normalization ("assets:/x.obj" == "x.obj").
+    const std::string p = assets::NormalizeAssetPath(path);
     // G6-1: resolve the logical asset path through the variant table first
     // (unlisted paths fall back to themselves).
-    const std::string resolved = cfg_.variantTable ? cfg_.variantTable->Resolve(path) : path;
+    const std::string resolved = cfg_.variantTable ? cfg_.variantTable->Resolve(p) : p;
     if (resolved.empty() || cfg_.assetBaseDir.empty()) return resolved;
     // Absolute paths (drive letter or leading separator) pass through unchanged.
     if (resolved.size() >= 2 && resolved[1] == ':') return resolved;
