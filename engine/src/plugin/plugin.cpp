@@ -136,8 +136,9 @@ bool PluginManifest::Load(const core::Json& j, std::string* err) {
     id = idJ->GetString();
     entry = entryJ->GetString();
     backend = backendJ->GetString();
-    if (backend != "lua" && backend != "js")
-        return fail("plugin.json 'backend' must be 'lua' or 'js' (got '" + backend + "')");
+    if (backend != "lua" && backend != "js" && backend != "native")
+        return fail("plugin.json 'backend' must be 'lua', 'js' or 'native' (got '" + backend +
+                    "')");
     name = j.Get("name") ? j.Get("name")->GetString(id) : id;
     version = j.Get("version") ? j.Get("version")->GetString("0.0.0") : "0.0.0";
     type = PluginTypeFromName(j.Get("type") ? j.Get("type")->GetString("runtime") : "runtime");

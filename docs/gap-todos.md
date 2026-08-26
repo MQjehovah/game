@@ -112,8 +112,9 @@
 ### G4-1 微内核二进制插件
 
 - [~] 现状：接口化分层（编译期"微内核"）完成，core 不依赖平台实现；所有模块静态链接；插件为 Lua/JS 脚本级（编辑器插件 + 运行时插件）。
-- 差距：**无运行时原生模块**（DLL/SO + 稳定 ABI），渲染器/物理/音频无法独立替换或热插拔。
-- 建议：先以物理（Jolt 已按接口隔离）或音频做原生插件示范，定义 ABI、生命周期与版本兼容策略。
+- [x] **原生 DLL/SO 插件 ABI + 加载器已落地**——`neon/plugin/native.hpp`（`neon::plugin` 命名空间内扩展，复用预留的 `PluginType::Native`，不另起炉灶）：`NativePluginInfo`（版本号 + size 校验 + `create/destroy` 生命周期回调，纯 C ABI、POD + extern "C"，无 C++ 运行时对象跨边界）+ `NativePlugin`（跨平台加载：Windows `LoadLibrary`/`GetProcAddress`、POSIX `dlopen`/`dlsym`；ABI 校验；`Symbol()` 解析模块特定函数；`Reload()` 销毁实例+释放库+重载=热插拔）+ `LoadNativePlugins`（复用 `DiscoverPlugins`，按 `PluginType::Native` 清单加载）。`plugin.json` 的 `backend` 现接受 `"native"`，`entry` 为共享库文件名。**示例物理插件** `plugins/physics_plugin`（独立 DLL，自包含微物理：重力下落/地面碰撞，导出 `NeonPlugin_GetInfo` + 模块特定 `NeonPhysics_GetApi` 函数表）。单元测试 `tests/test_plugin_native.cpp`（加载+驱动物理 / 缺失库错误路径 / 热重载 / 清单发现）。2026-08-26。
+- [ ] 差距（剩余）：渲染/物理后端仍静态链接，未真正做到运行时替换（插件系统已就绪，需把 Jolt/音频适配为插件形态）；编辑器原生插件加载（编辑器 `plugins` 面板接入 native 类型）未做。
+- 建议：以物理（Jolt 已按接口隔离）或音频做原生插件示范，定义 ABI、生命周期与版本兼容策略（ABI+加载器+物理示范已落地；接入真实后端与编辑器为后续）。
 
 ### G4-2 文档同步
 

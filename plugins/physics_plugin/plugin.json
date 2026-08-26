@@ -1,0 +1,8 @@
+{
+  "id": "physics_plugin",
+  "name": "示例物理插件",
+  "version": "1.0.0",
+  "type": "native",
+  "backend": "native",
+  "entry": "neon_plugin_physics.dll"
+}

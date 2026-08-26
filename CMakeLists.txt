@@ -48,9 +48,10 @@ set(ENGINE_CORE_SOURCES
   engine/src/net/socket.cpp
   engine/src/net/reliable.cpp
   engine/src/nav/nav_grid.cpp
-  engine/src/plugin/plugin.cpp
-  engine/src/plugin/runtime_plugin.cpp
-  engine/src/gfx/color.cpp
+engine/src/plugin/plugin.cpp
+engine/src/plugin/runtime_plugin.cpp
+engine/src/plugin/native.cpp
+engine/src/gfx/color.cpp
   engine/src/gfx/csm.cpp
   engine/src/gfx/font.cpp
   engine/src/gfx/ibl.cpp
@@ -501,6 +502,21 @@ enable_testing()
 if(NEON_ENABLE_JS)
   set(NEON_JS_TEST tests/test_script_js.cpp)
 endif()
+# G4-1 native binary plugin demo: a self-contained physics module built as a
+# DLL/SO. Loaded at runtime by the engine's plugin::NativePlugin loader.
+add_library(neon_plugin_physics SHARED plugins/physics_plugin/plugin.cpp)
+target_include_directories(neon_plugin_physics PRIVATE engine/include plugins)
+if(MSVC)
+  target_compile_options(neon_plugin_physics PRIVATE /utf-8)
+endif()
+set_target_properties(neon_plugin_physics PROPERTIES
+  OUTPUT_NAME "neon_plugin_physics"
+  PREFIX "")
+if(NOT WIN32)
+  set_target_properties(neon_plugin_physics PROPERTIES
+    POSITION_INDEPENDENT_CODE ON)
+endif()
+
 add_executable(neon_tests tests/test_main.cpp tests/test_serialize.cpp tests/test_pack.cpp
   tests/test_physics.cpp tests/test_protocol.cpp tests/test_obj.cpp tests/test_gltf.cpp tests/test_json.cpp
   tests/test_ui_document.cpp
@@ -520,6 +536,7 @@ add_executable(neon_tests tests/test_main.cpp tests/test_serialize.cpp tests/tes
   tests/test_script.cpp tests/test_script_bindings.cpp tests/test_script_determinism.cpp
   ${NEON_JS_TEST}
   tests/test_plugin.cpp
+  tests/test_plugin_native.cpp
   tests/test_bt.cpp tests/test_scene_file.cpp tests/test_scene_export.cpp tests/test_manifest.cpp
   tests/test_nav.cpp
   tests/test_localization.cpp
@@ -552,7 +569,9 @@ if(MINGW)
   target_link_libraries(neon_tests PRIVATE dbghelp)
 endif()
 # test_history.cpp includes the editor's generic undo/redo stack header.
-target_include_directories(neon_tests PRIVATE editor/src third_party/stb server/src game/src)
+target_include_directories(neon_tests PRIVATE editor/src third_party/stb server/src game/src plugins)
+target_compile_definitions(neon_tests PRIVATE
+  NEON_PLUGIN_PHYSICS_PATH="$<TARGET_FILE:neon_plugin_physics>")
 if(MSVC)
   target_compile_options(neon_tests PRIVATE /W4 /permissive- /utf-8)
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
