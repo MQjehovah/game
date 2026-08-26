@@ -170,6 +170,11 @@ void RegisterPanelStateHandler(EditorApp* app) {
 
 bool EditorApp::OnCreate() {
     if (disableShadows_) renderer_.SetShadowsEnabled(false);
+    // G5-4: keep the runtime sceneWorld_ authoritative — every committed editor
+    // mutation (Push/Undo/Redo) rebuilds it from the working model, so the World
+    // always reflects the current edit state (and the play/save output is
+    // generated from it via FromWorld).
+    history_.onChanged = [this] { SyncWorldFromEntities(); };
     renderer_.SetBackendName(backendName_);
     renderer_.SetBloomEnabled(bloomEnabled_);
     renderer_.SetMsaaEnabled(msaaEnabled_);

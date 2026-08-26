@@ -12,12 +12,14 @@ void HistoryManager::Push(std::unique_ptr<Command> cmd) {
         // just like a fresh push.
         undo_.back()->Apply();
         redo_.clear();
+        if (onChanged) onChanged();
         return;
     }
     cmd->Apply();
     undo_.push_back(std::move(cmd));
     redo_.clear();
     if (maxDepth_ > 0 && undo_.size() > maxDepth_) undo_.erase(undo_.begin());
+    if (onChanged) onChanged();
 }
 
 bool HistoryManager::Undo() {
@@ -26,6 +28,7 @@ bool HistoryManager::Undo() {
     undo_.pop_back();
     cmd->Undo();
     redo_.push_back(std::move(cmd));
+    if (onChanged) onChanged();
     return true;
 }
 
@@ -35,6 +38,7 @@ bool HistoryManager::Redo() {
     redo_.pop_back();
     cmd->Redo();
     undo_.push_back(std::move(cmd));
+    if (onChanged) onChanged();
     return true;
 }
 

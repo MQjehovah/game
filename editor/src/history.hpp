@@ -1,5 +1,10 @@
 #pragma once
 
+#include <functional>
+#include <memory>
+#include <utility>
+#include <vector>
+
 // Generic undo/redo command stack for the editor.
 //
 // The stack is deliberately editor-independent: `Command` is type-erased and
@@ -77,6 +82,10 @@ public:
     // tweak it, e.g. seal a finished gizmo drag so it stops merging). Null when
     // the undo stack is empty.
     Command* TopUndo() const { return undo_.empty() ? nullptr : undo_.back().get(); }
+
+    // G5-4: invoked after a command applies (Push / Undo / Redo). The editor
+    // uses it to keep the runtime sceneWorld_ in sync with the working model.
+    std::function<void()> onChanged;
 
 private:
     std::vector<std::unique_ptr<Command>> undo_;
