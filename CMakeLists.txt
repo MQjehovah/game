@@ -471,6 +471,7 @@ add_executable(neon_editor
   editor/src/editor_play.cpp
   editor/src/editor_smoke.cpp
   editor/src/editor_plugin.cpp
+  editor/src/editor_plugins.cpp
   editor/src/panels.cpp
   editor/src/history.cpp
   editor/src/bt_editor.cpp
