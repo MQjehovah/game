@@ -22,6 +22,9 @@ local selected = nil
 local lastWave = 0
 local started = false
 local cooldowns = {}   -- type -> seconds remaining before it can be planted again
+local waveTimer = 0    -- seconds since the last wave launched (self-contained)
+local WAVE_INTERVAL = 10 -- seconds between waves
+local MAX_WAVES = 8      -- survive this many waves to win
 
 local function rowHasPlant(row, x)
   local list = GetVar("row_plants_" .. row)
@@ -54,6 +57,20 @@ local function spawnZombie(type, row)
   SpawnPrefab(ZOMBIES[type] or "zombie_basic", { x = 1150, y = rowY(row), z = -0.5 })
 end
 
+-- 场上是否已无僵尸 (所有行清空): 胜利需"最后一波发射"且清光全场。
+local function allZombiesGone()
+  for r = 0, ROWS - 1 do
+    local list = GetVar("row_zombies_" .. r)
+    if type(list) == "table" and #list > 0 then return false end
+  end
+  return true
+end
+
+-- 重开: 重新加载本场景, 所有状态/实体/插件(wave_director)从头再来。
+local function restartGame()
+  ChangeScene("scenes/pvz.json")
+end
+
 function on_start()
   SetVar("sun", 150)
   SetVar("selected", nil)
@@ -63,14 +80,26 @@ function on_start()
   SetVar("wave", 0)
   SetVar("paused", false)
   lastWave = 0
+  waveTimer = 0
   started = false
   cooldowns = {}
   selected = nil
   UIShow("ui/main.ui.json")
   PlaySfx("click")
+
+  -- demo 模式 (场景 Game 实体 vars.demo=1): 自动开始, 供冒烟/演示/无人值守验证。
+  if demo == 1 then
+    started = true
+    SetVar("started", true)
+    UIHide()
+    print("demo mode: auto-started")
+  end
 end
 
-function on_update()
+function on_update(e, dt)
+  -- 重开 (R 键): 任何时候都可从头再来 (含结算画面)。
+  if ActionPressed("restart") then restartGame(); return end
+
   if UIClicked("Start") then
     started = true
     SetVar("started", true)
@@ -99,42 +128,70 @@ function on_update()
     PlaySfx("click")
   end
 
-  if GetVar("gameover") == true then return end
+  if GetVar("gameover") == true then
+    -- 结算画面: 点击任意处重开。
+    if InputMousePressed(0) then restartGame() end
+    return
+  end
   if GetVar("paused") == true then return end
 
-  -- Seed-packet cooldowns (about 60Hz).
+  -- 鼠标点选顶部种子包 (与 hud.js 几何一致: bx=240, 步长 136, 6 植物 + 铲子)。
+  if InputMousePressed(0) then
+    local m = InputMousePos()
+    if m and m.y < 58 then
+      local idx = math.floor((m.x - 240) / 136)
+      if idx >= 0 and idx < 6 then
+        selected = ORDER[idx + 1]
+        SetVar("selected", selected)
+        PlaySfx("click")
+      elseif m.x >= 240 + 6 * 136 + 2 then
+        selected = "shovel"
+        SetVar("selected", "shovel")
+        PlaySfx("click")
+      end
+    end
+  end
+
+  -- Seed-packet cooldowns (real time via dt).
   for type, cd in pairs(cooldowns) do
-    if cd > 0 then cooldowns[type] = cd - 0.016 end
+    if cd > 0 then cooldowns[type] = cd - dt end
     SetVar("cooldown_" .. type, cooldowns[type] or 0)
   end
 
-  -- Win: the wave_director stops after the final wave and flags "won".
-  local won = GetVar("plugin:wave_director:won")
-  if started and won == true then
-    SetVar("gameover", true)
-    PlaySfx("win")
-  end
-
-  -- Waves scale in count and mix harder zombies later.
-  local w = GetVar("plugin:wave_director:wave")
-  if started and type(w) == "number" and w > lastWave then
-    lastWave = w
-    SetVar("wave", w)
-    PlaySfx("wave")
-    local count = 2 + w
-    for i = 1, count do
-      spawnZombie("basic", math.random(0, ROWS - 1))
+  -- 波次(自包含, 不依赖插件, 打包可玩): 每 WAVE_INTERVAL 秒推一波,
+  -- 波数递增并混合更硬的僵尸; 坚持到 MAX_WAVES 且清光全场即胜。
+  if started then
+    waveTimer = waveTimer + dt
+    if waveTimer >= WAVE_INTERVAL and lastWave < MAX_WAVES then
+      waveTimer = 0
+      lastWave = lastWave + 1
+      SetVar("wave", lastWave)
+      PlaySfx("wave")
+      print("wave " .. lastWave .. " spawned " .. (2 + lastWave) .. " zombies")
+      local count = 2 + lastWave
+      for i = 1, count do
+        spawnZombie("basic", math.random(0, ROWS - 1))
+      end
+      if lastWave >= 2 and lastWave % 2 == 0 then spawnZombie("cone", math.random(0, ROWS - 1)) end
+      if lastWave >= 5 and lastWave % 3 == 0 then spawnZombie("bucket", math.random(0, ROWS - 1)) end
     end
-    if w >= 2 and w % 2 == 0 then spawnZombie("cone", math.random(0, ROWS - 1)) end
-    if w >= 5 and w % 3 == 0 then spawnZombie("bucket", math.random(0, ROWS - 1)) end
+
+    -- Win: 最后一波已发射 且 场上所有僵尸清空才算胜利。
+    if lastWave >= MAX_WAVES and allZombiesGone() then
+      SetVar("won", true)
+      SetVar("gameover", true)
+      PlaySfx("win")
+    end
   end
 
-  -- Click the lawn to plant / shovel.
+  -- Click the lawn to plant / shovel. InputMousePos() returns DESIGN coords
+  -- (y down); the world is y-up, so convert y before mapping to a row.
   if InputMousePressed(0) and selected then
     local m = InputMousePos()
     if not m then return end
+    local wy = 720 - m.y
     local col = math.floor((m.x - X0 + CELL_X * 0.5) / CELL_X)
-    local row = math.floor((m.y - Y0 + CELL_Y * 0.5) / CELL_Y)
+    local row = math.floor((wy - Y0 + CELL_Y * 0.5) / CELL_Y)
     if col >= 0 and col < COLS and row >= 0 and row < ROWS then
       if selected == "shovel" then
         local existing = findRowPlant(row, colX(col))

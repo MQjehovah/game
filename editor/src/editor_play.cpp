@@ -162,6 +162,13 @@ core::Result<core::Json> EditorApp::BuildPlaySceneJson() {
             comps.type_ = core::Json::Type::Object;
             comps.object_["transform"] = std::move(tf);
             comps.object_["sprite"] = std::move(sp);
+            if (e.maxHp > 0.0f) {
+                core::Json health;
+                health.type_ = core::Json::Type::Object;
+                health.object_["hp"] = mkNum(e.hp);
+                health.object_["maxHp"] = mkNum(e.maxHp);
+                comps.object_["health"] = std::move(health);
+            }
             obj.object_["components"] = std::move(comps);
         } else if (!e.meshKey.empty()) {
         std::string meshKey = ExportMeshKey(e.meshKey);

@@ -1,0 +1,10 @@
+^E:\GAME\BUILD_JS\CMAKEFILES\7308C94E4159F43125D4CD959A66140E\GENERATE.STAMP.RULE
+setlocal
+D:\cmake-3.23.2-windows-x86_64\bin\cmake.exe -SE:/game -BE:/game/build_js --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file E:/game/build_js/NeonEngine.sln
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

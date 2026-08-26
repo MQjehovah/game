@@ -5,7 +5,8 @@ local timers = {}
 function on_start(e)
   local s = EntityComponent(e, "sun")
   local pos = GetPosition(e)
-  timers[e.id] = { t = 0, targetY = pos.y + 60, value = (s and s.value) or 25 }
+  -- 世界坐标 Y 向上: 阳光向屏幕下方"落" = y 减小, 落到植物下方约 1.3 格。
+  timers[e.id] = { t = 0, targetY = math.max(160, pos.y - 130), value = (s and s.value) or 25 }
 end
 
 function on_update(e, dt)
@@ -16,8 +17,8 @@ function on_update(e, dt)
   local pos = GetPosition(e)
   st.t = st.t + dt
 
-  if pos.y < st.targetY then
-    pos.y = math.min(st.targetY, pos.y + 30 * dt)
+  if pos.y > st.targetY then
+    pos.y = math.max(st.targetY, pos.y - 30 * dt)
     SetPosition(e, { x = pos.x, y = pos.y, z = pos.z })
   end
   if st.t > 10 then
@@ -28,7 +29,8 @@ function on_update(e, dt)
 
   if InputMousePressed(0) then
     local m = InputMousePos()
-    if m ~= nil and math.abs(m.x - pos.x) < 32 and math.abs(m.y - pos.y) < 32 then
+    -- InputMousePos() is DESIGN space (y down); the sun is in world space (y up).
+    if m ~= nil and math.abs(m.x - pos.x) < 32 and math.abs((720 - m.y) - pos.y) < 32 then
       local s = GetVar("sun")
       if type(s) ~= "number" then s = 0 end
       SetVar("sun", s + st.value)

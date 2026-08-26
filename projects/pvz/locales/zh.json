@@ -7,6 +7,7 @@
     "quit": "退出",
     "gameover": "僵尸吃掉了你的脑子！",
     "win": "你赢了！",
+    "restart_hint": "按 R 或点击屏幕重开",
     "select": "选择植物 (1-6)，点击草地种植；S 铲子；P 暂停",
     "plant_sunflower": "向日葵 50",
     "plant_peashooter": "豌豆射手 100",

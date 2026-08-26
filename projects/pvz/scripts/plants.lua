@@ -48,6 +48,18 @@ function on_update(e, dt)
   t = t + dt
   timers[e.id] = t
   local pos = GetPosition(e)
+  local row = (p.row ~= nil and p.row) or rowOf(pos.y)
+
+  -- 行内是否有僵尸在射手前方(右侧): 标准 PvZ 射手只在有目标时才开火。
+  local function rowHasZombieAhead()
+    local zlist = GetVar("row_zombies_" .. row)
+    if type(zlist) ~= "table" then return false end
+    for i = 1, #zlist do
+      local zp = GetPosition({ id = zlist[i].id, gen = zlist[i].gen })
+      if zp ~= nil and zp.x > pos.x - 20 then return true end
+    end
+    return false
+  end
 
   if p.type == "sunflower" then
     if t >= 6 then
@@ -55,17 +67,18 @@ function on_update(e, dt)
       SpawnPrefab("sun", { x = pos.x, y = pos.y, z = 0 })
     end
   elseif p.type == "peashooter" or p.type == "snowpea" then
-    if t >= 1.4 then
+    if t >= 1.4 and rowHasZombieAhead() then
       timers[e.id] = 0
       SpawnPrefab(p.type == "snowpea" and "snow_pea" or "pea",
                   { x = pos.x + 46, y = pos.y, z = 0 })
       PlaySfx("shoot")
     end
   elseif p.type == "repeater" then
-    -- Double-shot: first pea now, a second 0.5s later.
-    if t >= 1.0 then
-      timers[e.id] = 0.5
+    -- 标准双发: 每 1.4s 一次齐射两颗豌豆(间隔 20px), 仅当行内有僵尸。
+    if t >= 1.4 and rowHasZombieAhead() then
+      timers[e.id] = 0
       SpawnPrefab("pea", { x = pos.x + 46, y = pos.y, z = 0 })
+      SpawnPrefab("pea", { x = pos.x + 66, y = pos.y, z = 0 })
       PlaySfx("shoot")
     end
   elseif p.type == "cherrybomb" then

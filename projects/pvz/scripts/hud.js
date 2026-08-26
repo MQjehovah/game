@@ -52,11 +52,13 @@ function on_render() {
 
   // End-of-game screens.
   if (gameover && won) {
-    DrawRect(340, 300, 600, 140, 0.10, 0.35, 0.15, 0.92);
-    DrawText(Loc("win"), 640, 350, 44, 0.8, 1, 0.7, 1, true, true);
+    DrawRect(340, 280, 620, 170, 0.10, 0.35, 0.15, 0.92);
+    DrawText(Loc("win"), 640, 320, 44, 0.8, 1, 0.7, 1, true, true);
+    DrawText(Loc("restart_hint"), 640, 395, 16, 0.85, 0.95, 1, 0.95, true, false);
   } else if (gameover) {
-    DrawRect(340, 300, 600, 120, 0.35, 0.1, 0.1, 0.9);
-    DrawText(Loc("gameover"), 640, 340, 40, 1, 0.5, 0.5, 1, true, true);
+    DrawRect(340, 280, 620, 150, 0.35, 0.1, 0.1, 0.9);
+    DrawText(Loc("gameover"), 640, 315, 40, 1, 0.5, 0.5, 1, true, true);
+    DrawText(Loc("restart_hint"), 640, 385, 16, 0.9, 0.9, 1, 0.95, true, false);
   }
   if (paused && !gameover) {
     DrawRect(0, 0, 1280, 720, 0, 0, 0, 0.4);

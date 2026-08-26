@@ -34,7 +34,7 @@ function on_update(e, dt)
   local pos = GetPosition(e)
   local row = rowOf(pos.y)
 
-  -- 死亡: 移除并销毁
+  -- 死亡: 移除并销�?
   local hp = GetHealth(e)
   if hp ~= nil and hp <= 0 then
     removeFrom("row_zombies_" .. row, e.id)
@@ -49,15 +49,15 @@ function on_update(e, dt)
     if m > 0 and m < 1 then speed = speed * m end
   end
 
-  -- 索敌: 同行前方最近的植物
+  -- 索敌: 同行"已走到"的最右植物 (僵尸左行, 先碰到右边第一个植物就停下吃)。
   local target = nil
   local list = GetVar("row_plants_" .. row)
   if type(list) == "table" then
-    local bestX = 1e9
+    local bestX = -1e9
     for i = 1, #list do
       local p = list[i]
-      local dx = p.x - pos.x
-      if dx > -5 and dx < 70 and p.x < bestX then
+      local dx = pos.x - p.x -- 正值 = 僵尸在植物右侧(已到达/越过)
+      if dx >= -10 and dx <= 45 and p.x > bestX then
         bestX = p.x
         target = p
       end

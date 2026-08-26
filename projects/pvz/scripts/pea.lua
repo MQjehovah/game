@@ -1,4 +1,4 @@
--- 豌豆实体 (prefab 动态生成): 向左飞行, 命中同行僵尸后结算伤害/减速。
+-- 豌豆实体 (prefab 动态生成): 向右飞行(僵尸从右进攻), 命中同行僵尸后结算伤害/减速。
 
 local function rowOf(y)
   return math.max(0, math.min(4, math.floor((y - 110 + 50) / 100)))
@@ -14,8 +14,8 @@ function on_update(e, dt)
   local p = EntityComponent(e, "pea")
   if not p then return end
   local pos = GetPosition(e)
-  local nx = pos.x - p.speed * dt
-  if nx < 60 then
+  local nx = pos.x + p.speed * dt
+  if nx > 1160 then
     Despawn(e)
     return
   end
