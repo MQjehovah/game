@@ -117,3 +117,39 @@ TEST(AssetDepsAsyncLoads) {
     CHECK_EQ(badFired.load(), 1);
     CHECK(badErr.find("missing_tex.png") != std::string::npos);
 }
+
+// G6-2: async OBJ mesh load — the file read + parse run on the worker pool, the
+// upload + cache happen on the main thread inside PumpAsync, and the callback
+// fires with the result. Concurrent requests for the same path coalesce.
+TEST(AssetDepsAsyncMeshLoad) {
+    test::HeadlessAssetFixture fx;
+    const std::string obj = "assets/kenney_nature/Models/OBJ format/flower_redA.obj";
+    std::atomic<int> fired{0};
+    std::atomic<int> fired2{0};
+    bool ok1 = false, ok2 = false;
+    fx.assets.LoadMeshOBJAsync(obj, [&](bool ok) {
+        ok1 = ok;
+        fired.store(1);
+    });
+    // Second concurrent request coalesces onto the in-flight load.
+    fx.assets.LoadMeshOBJAsync(obj, [&](bool ok) {
+        ok2 = ok;
+        fired2.store(1);
+    });
+    CHECK(PumpUntil(fx.assets, fired, 1));
+    CHECK(PumpUntil(fx.assets, fired2, 1));
+    CHECK(ok1);
+    CHECK(ok2);
+    // The mesh is now cached: a sync load hits the cache with a valid mesh.
+    CHECK(fx.assets.LoadMeshOBJ(obj).Valid());
+
+    // Missing file: the async callback reports failure.
+    std::atomic<int> badFired{0};
+    bool badOk = true;
+    fx.assets.LoadMeshOBJAsync("assets/missing_never_there.obj", [&](bool ok) {
+        badOk = ok;
+        badFired.store(1);
+    });
+    CHECK(PumpUntil(fx.assets, badFired, 1));
+    CHECK(!badOk);
+}

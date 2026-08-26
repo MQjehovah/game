@@ -17,6 +17,10 @@
 
 namespace neon::assets {
 
+// G6-2: CPU-parsed OBJ (vertices/indices + the MTL dependency paths); produced
+// on an async worker thread, consumed (uploaded) on the main thread.
+struct ParsedObjMesh;
+
 // Full glTF scene-graph node (every node in the glTF "nodes" array: mesh
 // nodes, joints, and transform-only nodes), in glTF node index order. Skins
 // reference joints and animation channels reference targets by raw glTF node
@@ -142,6 +146,14 @@ public:
     static std::string TextureCacheKey(const std::string& path,
                                        const TextureLoadOptions& opts);
     gfx::Mesh LoadMeshOBJ(const std::string& path);
+    // G6-2: async OBJ mesh load for "load on demand". The file read + parse run
+    // on the async worker pool; the GPU upload, cache fill and callback all
+    // happen on the MAIN thread inside PumpAsync(). Fires cb(ok) on the main
+    // thread (inline when the mesh is already cached or no pool is available),
+    // and concurrent requests for the same path coalesce onto one load. With a
+    // NullBackend the mesh is produced but not GPU-resident, so this is
+    // testable headless.
+    void LoadMeshOBJAsync(const std::string& path, std::function<void(bool)> cb);
     // glTF 2.0 importer: POSITION/NORMAL/TEXCOORD_0, PBR metallic-roughness
     // materials (baseColor/metalRoughness/occlusion/emissive), node transforms.
     // Handles both .gltf (JSON + external .bin) and .glb (binary container).
@@ -242,6 +254,9 @@ private:
     // Main-thread completion of an async request: cache + fire callbacks.
     void FinishAsyncTexture(const std::string& path, DecodedImage img,
                             const TextureLoadOptions& opts);
+    // G6-2: main-thread completion of an async OBJ request (upload + cache +
+    // dependency edges + callbacks).
+    void FinishAsyncMesh(const std::string& path, ParsedObjMesh&& parsed);
     // G1-4: records a direct edge parent -> dep in the dependency graph.
     void RecordDependency(const std::string& parent, const std::string& dep);
     // Destroys retired GPU resources whose deferral window has elapsed. Called
@@ -300,6 +315,10 @@ private:
     std::function<DecodedImage(const std::string&, const TextureLoadOptions&)> decodeFn_;
     std::map<std::string, bool> inFlight_;
     std::map<std::string, std::vector<std::function<void(bool)>>> pendingCallbacks_;
+    // G6-2: async OBJ mesh state, same main-thread-only contract as the texture
+    // async maps (separate key space from textures; mesh paths end in .obj).
+    std::map<std::string, bool> meshInFlight_;
+    std::map<std::string, std::vector<std::function<void(bool)>>> meshPendingCallbacks_;
     // Driver capability learned at runtime: the first rejected compressed
     // upload flips this off and the fallback warning is logged once.
     bool bc1Supported_ = true;

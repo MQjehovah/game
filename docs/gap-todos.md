@@ -159,7 +159,8 @@
 
 ### G6-2 资源依赖图与按需加载（第 5 项）
 
-- [ ] 与 [G1-4](#g1-4-资源系统小缺口) 合并：无全局依赖图；glTF 的材质/纹理依赖在解析器内部同步加载；无"角色进视野只加载骨骼、播放动画时再流式加载动作数据"的分级按需加载。
+- [~] 与 [G1-4](#g1-4-资源系统小缺口) 合并：**依赖图已落地**（G1-4：依赖边/反向边、MissingDependencies、LoadDependenciesAsync）；**异步 OBJ 网格加载已落地**（G6-2）：`AssetManager::LoadMeshOBJAsync(path, cb)`——文件读+OBJ 解析（纯 CPU）在 worker 线程，GPU 上传/缓存/回调在主线程 `PumpAsync` 内完成；已缓存或无线程池时内联完成；同路径并发请求合并为一次加载（`meshInFlight_`/`meshPendingCallbacks_`）；OBJ 解析抽取为 `ParseObjMesh`（同步 `LoadMeshOBJ` 与异步共用，行为不变，MTL 依赖边由主线程记录）。单元测试 `AssetDepsAsyncMeshLoad`（成功/并发合并/失败路径 + 缓存命中）。2026-08-26。
+- [ ] 差距（剩余）：glTF 异步加载未做；运行时绘制管线未接异步解析（绘制项仍是同步 resolve，接入需设计异步项生命周期/轮询缓存，留作产品驱动）。
 - 建议：导入期构建依赖图（节点 + 边），运行时按需解析；chunk 流式加载（3×3 窗口）已具备基础。
 
 ### G6-3 移动式分配器（第 6 项）

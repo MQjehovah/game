@@ -167,6 +167,133 @@ struct FaceIndex {
     FaceIndex(int v_, int t_, int n_) : v(v_), t(t_), n(n_) {}
 };
 
+} // namespace
+
+// G6-2: CPU-only OBJ parse, shared by the sync LoadMeshOBJ and the async
+// LoadMeshOBJAsync (which runs it on a worker thread). Never touches the GPU or
+// the AssetManager's main-thread maps: material *paths* are returned so the
+// caller records dependency edges on the main thread. `error` is non-empty on
+// failure (with the same wording the sync path logged).
+// (Declared in neon::assets so FinishAsyncMesh can take it.)
+struct ParsedObjMesh {
+    std::vector<gfx::Vertex3D> verts;
+    std::vector<uint16_t> indices;
+    std::vector<std::string> mtlPaths; // dependency edges for RecordDependency
+    std::string error;
+};
+
+namespace {
+
+ParsedObjMesh ParseObjMesh(const std::string& path, const std::vector<uint8_t>& bytes,
+                           neon::io::IFileSystem* fs) {
+    ParsedObjMesh out;
+    std::istringstream in(std::string(bytes.begin(), bytes.end()));
+
+    std::vector<math::Vec3> positions;
+    std::vector<math::Vec3> normals;
+    std::vector<math::Vec2> uvs;
+    std::vector<gfx::Vertex3D> verts;
+    std::vector<uint16_t> indices;
+    std::map<std::string, math::Vec4> materialColors;
+    std::string currentMaterial;
+
+    std::string line;
+    while (std::getline(in, line)) {
+        std::istringstream ss(line);
+        std::string kind;
+        ss >> kind;
+        if (kind == "mtllib") {
+            std::string mtlFile;
+            ss >> mtlFile;
+            const std::string mtlPath = DirName(path) + mtlFile;
+            out.mtlPaths.push_back(mtlPath);
+            LoadMaterialColors(fs, mtlPath, materialColors);
+        } else if (kind == "usemtl") {
+            ss >> currentMaterial;
+        } else if (kind == "v") {
+            float x, y, z;
+            ss >> x >> y >> z;
+            positions.push_back({x, y, z});
+        } else if (kind == "vn") {
+            float x, y, z;
+            ss >> x >> y >> z;
+            normals.push_back({x, y, z});
+        } else if (kind == "vt") {
+            float u, v;
+            ss >> u >> v;
+            uvs.push_back({u, v});
+        } else if (kind == "f") {
+            std::vector<FaceIndex> face;
+            std::string token;
+            while (ss >> token) {
+                size_t s1 = token.find('/');
+                size_t s2 = s1 == std::string::npos ? std::string::npos : token.find('/', s1 + 1);
+                int vi = std::atoi(token.substr(0, s1).c_str());
+                int ti = 0;
+                int ni = 0;
+                if (s1 != std::string::npos) {
+                    if (s2 != std::string::npos && s2 != s1 + 1) {
+                        ti = std::atoi(token.substr(s1 + 1, s2 - s1 - 1).c_str());
+                    }
+                    if (s2 != std::string::npos) ni = std::atoi(token.substr(s2 + 1).c_str());
+                }
+                if (vi < 0) vi += static_cast<int>(positions.size()) + 1;
+                if (ti < 0) ti += static_cast<int>(uvs.size()) + 1;
+                if (ni < 0) ni += static_cast<int>(normals.size()) + 1;
+                face.emplace_back(vi, ti, ni);
+            }
+            if (face.size() < 3) continue;
+
+            // Flat normal fallback when the face lacks vertex normals.
+            bool allNormals = true;
+            for (const FaceIndex& f : face) {
+                if (f.n <= 0 || f.n > static_cast<int>(normals.size())) allNormals = false;
+            }
+            math::Vec3 faceNormal{0, 1, 0};
+            if (!allNormals) {
+                if (face[0].v > 0 && face[0].v <= static_cast<int>(positions.size()) &&
+                    face[1].v > 0 && face[1].v <= static_cast<int>(positions.size()) &&
+                    face[2].v > 0 && face[2].v <= static_cast<int>(positions.size())) {
+                    math::Vec3 a = positions[face[0].v - 1];
+                    math::Vec3 b = positions[face[1].v - 1];
+                    math::Vec3 c = positions[face[2].v - 1];
+                    faceNormal = math::Cross(b - a, c - a).Normalized();
+                    if (faceNormal.LengthSq() < 0.5f) faceNormal = {0, 1, 0};
+                }
+            }
+
+            auto colorIt = materialColors.find(currentMaterial);
+            math::Vec4 color = colorIt != materialColors.end() ? colorIt->second
+                                                               : math::Vec4{1, 1, 1, 1};
+            uint16_t base = static_cast<uint16_t>(verts.size());
+            for (size_t i = 0; i < face.size(); ++i) {
+                const FaceIndex& f = face[i];
+                if (f.v <= 0 || f.v > static_cast<int>(positions.size())) {
+                    out.error = "bad vertex index " + std::to_string(f.v);
+                    return out;
+                }
+                math::Vec3 normal = allNormals ? normals[f.n - 1] : faceNormal;
+                math::Vec2 uv{0, 0};
+                if (f.t > 0 && f.t <= static_cast<int>(uvs.size())) uv = uvs[f.t - 1];
+                verts.push_back({positions[f.v - 1], normal, uv, color});
+            }
+            for (size_t i = 1; i + 1 < face.size(); ++i) {
+                indices.push_back(base);
+                indices.push_back(base + static_cast<uint16_t>(i));
+                indices.push_back(base + static_cast<uint16_t>(i + 1));
+            }
+        }
+    }
+
+    if (verts.empty()) {
+        out.error = "no vertices parsed";
+        return out;
+    }
+    out.verts = std::move(verts);
+    out.indices = std::move(indices);
+    return out;
+}
+
 struct GltfAccessorLayout {
     const uint8_t* base = nullptr;
     int stride = 0;
@@ -557,117 +684,87 @@ gfx::Mesh AssetManager::LoadMeshOBJ(const std::string& path) {
         NEON_LOG_ERROR("Asset: failed to open OBJ '%s'", path.c_str());
         return {};
     }
-    std::istringstream in(std::string(fileBytes.Value().begin(), fileBytes.Value().end()));
-
-    std::vector<math::Vec3> positions;
-    std::vector<math::Vec3> normals;
-    std::vector<math::Vec2> uvs;
-    std::vector<gfx::Vertex3D> verts;
-    std::vector<uint16_t> indices;
-    std::map<std::string, math::Vec4> materialColors;
-    std::string currentMaterial;
-
-    std::string line;
-    while (std::getline(in, line)) {
-        std::istringstream ss(line);
-        std::string kind;
-        ss >> kind;
-        if (kind == "mtllib") {
-            std::string mtlFile;
-            ss >> mtlFile;
-            const std::string mtlPath = DirName(path) + mtlFile;
-            RecordDependency(path, mtlPath);
-            LoadMaterialColors(fs_, mtlPath, materialColors);
-        } else if (kind == "usemtl") {
-            ss >> currentMaterial;
-        } else if (kind == "v") {
-            float x, y, z;
-            ss >> x >> y >> z;
-            positions.push_back({x, y, z});
-        } else if (kind == "vn") {
-            float x, y, z;
-            ss >> x >> y >> z;
-            normals.push_back({x, y, z});
-        } else if (kind == "vt") {
-            float u, v;
-            ss >> u >> v;
-            uvs.push_back({u, v});
-        } else if (kind == "f") {
-            std::vector<FaceIndex> face;
-            std::string token;
-            while (ss >> token) {
-                size_t s1 = token.find('/');
-                size_t s2 = s1 == std::string::npos ? std::string::npos : token.find('/', s1 + 1);
-                int vi = std::atoi(token.substr(0, s1).c_str());
-                int ti = 0;
-                int ni = 0;
-                if (s1 != std::string::npos) {
-                    if (s2 != std::string::npos && s2 != s1 + 1) {
-                        ti = std::atoi(token.substr(s1 + 1, s2 - s1 - 1).c_str());
-                    }
-                    if (s2 != std::string::npos) ni = std::atoi(token.substr(s2 + 1).c_str());
-                }
-                if (vi < 0) vi += static_cast<int>(positions.size()) + 1;
-                if (ti < 0) ti += static_cast<int>(uvs.size()) + 1;
-                if (ni < 0) ni += static_cast<int>(normals.size()) + 1;
-                face.emplace_back(vi, ti, ni);
-            }
-            if (face.size() < 3) continue;
-
-            // Flat normal fallback when the face lacks vertex normals.
-            bool allNormals = true;
-            for (const FaceIndex& f : face) {
-                if (f.n <= 0 || f.n > static_cast<int>(normals.size())) allNormals = false;
-            }
-            math::Vec3 faceNormal{0, 1, 0};
-            if (!allNormals) {
-                if (face[0].v > 0 && face[0].v <= static_cast<int>(positions.size()) &&
-                    face[1].v > 0 && face[1].v <= static_cast<int>(positions.size()) &&
-                    face[2].v > 0 && face[2].v <= static_cast<int>(positions.size())) {
-                    math::Vec3 a = positions[face[0].v - 1];
-                    math::Vec3 b = positions[face[1].v - 1];
-                    math::Vec3 c = positions[face[2].v - 1];
-                    faceNormal = math::Cross(b - a, c - a).Normalized();
-                    if (faceNormal.LengthSq() < 0.5f) faceNormal = {0, 1, 0};
-                }
-            }
-
-            auto colorIt = materialColors.find(currentMaterial);
-            math::Vec4 color = colorIt != materialColors.end() ? colorIt->second
-                                                               : math::Vec4{1, 1, 1, 1};
-            uint16_t base = static_cast<uint16_t>(verts.size());
-            for (size_t i = 0; i < face.size(); ++i) {
-                const FaceIndex& f = face[i];
-                if (f.v <= 0 || f.v > static_cast<int>(positions.size())) {
-                    NEON_LOG_WARN("OBJ '%s': bad vertex index %d", path.c_str(), f.v);
-                    return {};
-                }
-                math::Vec3 normal = allNormals ? normals[f.n - 1] : faceNormal;
-                math::Vec2 uv{0, 0};
-                if (f.t > 0 && f.t <= static_cast<int>(uvs.size())) uv = uvs[f.t - 1];
-                verts.push_back({positions[f.v - 1], normal, uv, color});
-            }
-            for (size_t i = 1; i + 1 < face.size(); ++i) {
-                indices.push_back(base);
-                indices.push_back(base + static_cast<uint16_t>(i));
-                indices.push_back(base + static_cast<uint16_t>(i + 1));
-            }
-        }
-    }
-
-    if (verts.empty()) {
-        NEON_LOG_ERROR("OBJ '%s': no vertices parsed", path.c_str());
+    ParsedObjMesh parsed = ParseObjMesh(path, fileBytes.Value(), fs_);
+    for (const std::string& mtl : parsed.mtlPaths) RecordDependency(path, mtl);
+    if (!parsed.error.empty()) {
+        NEON_LOG_ERROR("OBJ '%s': %s", path.c_str(), parsed.error.c_str());
         return {};
     }
-    gfx::Mesh mesh = gfx::Mesh::CreateFromData(*renderer_, verts.data(),
-                                               static_cast<uint32_t>(verts.size()),
-                                               indices.data(), static_cast<uint32_t>(indices.size()),
-                                               path);
+
+    gfx::Mesh mesh = gfx::Mesh::CreateFromData(*renderer_, parsed.verts.data(),
+                                               static_cast<uint32_t>(parsed.verts.size()),
+                                               parsed.indices.data(),
+                                               static_cast<uint32_t>(parsed.indices.size()), path);
     meshes_[path] = mesh;
     meshMtimes_[path] = FileMTime(path);
     meshRefs_[path] = 1;
-    NEON_LOG_INFO("Asset: loaded OBJ '%s' (%zu verts)", path.c_str(), verts.size());
+    NEON_LOG_INFO("Asset: loaded OBJ '%s' (%zu verts)", path.c_str(), parsed.verts.size());
     return mesh;
+}
+
+// G6-2: async OBJ load. The worker reads + parses (pure CPU); the main thread
+// (PumpAsync -> FinishAsyncMesh) uploads, records dependency edges and fires the
+// callbacks. Mirrors the texture async contract: cached hits and degraded
+// (no-pool) loads fire inline, in-flight requests coalesce per path.
+void AssetManager::LoadMeshOBJAsync(const std::string& path, std::function<void(bool)> cb) {
+    if (!cb) return;
+    auto cached = meshes_.find(path);
+    if (cached != meshes_.end()) {
+        ++meshRefs_[path];
+        cb(true);
+        return;
+    }
+    if (!asyncEnabled_ || !asyncLoader_.Available()) {
+        cb(LoadMeshOBJ(path).Valid());
+        return;
+    }
+
+    const bool inFlight = meshInFlight_.count(path) != 0;
+    if (!inFlight) meshInFlight_[path] = true;
+    meshPendingCallbacks_[path].push_back(std::move(cb));
+    if (inFlight) return;
+
+    bool ok = asyncLoader_.Submit([this, path]() {
+        const core::Result<std::vector<uint8_t>> bytes = ReadAllBytes(fs_, path);
+        ParsedObjMesh parsed;
+        if (bytes.Ok()) parsed = ParseObjMesh(path, bytes.Value(), fs_);
+        else parsed.error = "failed to open OBJ";
+        asyncLoader_.Deliver([this, path, parsed = std::move(parsed)]() mutable {
+            FinishAsyncMesh(path, std::move(parsed));
+        });
+    });
+    if (!ok) {
+        // The pool became unavailable mid-request: degrade to a sync load.
+        meshInFlight_.erase(path);
+        auto cbs = std::move(meshPendingCallbacks_[path]);
+        meshPendingCallbacks_.erase(path);
+        const bool loaded = LoadMeshOBJ(path).Valid();
+        for (auto& c : cbs) c(loaded);
+    }
+}
+
+void AssetManager::FinishAsyncMesh(const std::string& path, ParsedObjMesh&& parsed) {
+    for (const std::string& mtl : parsed.mtlPaths) RecordDependency(path, mtl);
+    const bool ok = parsed.error.empty() && !parsed.verts.empty();
+    if (ok) {
+        gfx::Mesh mesh = gfx::Mesh::CreateFromData(*renderer_, parsed.verts.data(),
+                                                   static_cast<uint32_t>(parsed.verts.size()),
+                                                   parsed.indices.data(),
+                                                   static_cast<uint32_t>(parsed.indices.size()),
+                                                   path);
+        meshes_[path] = mesh;
+        meshMtimes_[path] = FileMTime(path);
+        meshRefs_[path] = 1;
+        NEON_LOG_INFO("Asset: loaded OBJ '%s' async (%zu verts)", path.c_str(),
+                      parsed.verts.size());
+    } else {
+        NEON_LOG_ERROR("OBJ '%s': %s", path.c_str(),
+                       parsed.error.empty() ? "no vertices parsed" : parsed.error.c_str());
+    }
+    meshInFlight_.erase(path);
+    auto cbs = std::move(meshPendingCallbacks_[path]);
+    meshPendingCallbacks_.erase(path);
+    for (auto& c : cbs) c(ok);
 }
 
 GltfAsset AssetManager::LoadGLTF(const std::string& path) {
