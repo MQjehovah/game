@@ -487,3 +487,100 @@ TEST(SceneSpriteMakeEntityRoundTrip) {
     CHECK(inst2.Ok());
     CHECK_EQ(world2.ViewAll<scene::SceneHealth>().Size(), 0u);
 }
+
+// G2-2: SceneFile::FromWorld is the reverse of Instantiate — a World
+// serializes back to the scene-file format, and re-parsing + re-instantiating
+// yields an equivalent World (components + stable ids preserved). This is what
+// lets the editor generate output from the runtime World it hosts.
+TEST(SceneFromWorldRoundTrip) {
+    // A scene exercising many factories + a generic component + a parent link.
+    const char* json = R"({"entities":[
+      {"name":"Root","id":1,"components":{
+        "transform":{"pos":[1,2,3],"rot":[0,0,0,1],"scale":[1,1,1]}}},
+      {"name":"Plant","id":2,"components":{
+        "transform":{"pos":[4,0,0],"parentId":1},
+        "sprite":{"texture":"assets/a.png","flipX":true,"colorHex":"#00ff88"},
+        "health":{"hp":80,"maxHp":80},
+        "plant":{"type":"sunflower","row":2,"cost":50},
+        "audio":{"sound":"waterfall","volume":0.5,"radius":20},
+        "script":{"backend":"lua","path":"scripts/a.lua","vars":{"x":1}}}},
+      {"name":"Hero","id":3,"components":{
+        "transform":{"pos":[0,5,0]},
+        "mesh":{"meshKey":"obj:a.obj","material":{"metallic":0.5,"roughness":0.2}},
+        "rigidbody":{"shape":"box","halfExtents":[0.5,1,0.5],"dynamic":true},
+        "groups":{"groups":["player","respawn"]},
+        "type":{"value":"CharacterBody"}}},
+      {"name":"Cam","id":4,"components":{
+        "transform":{"pos":[0,0,10]},
+        "camera":{"fov":70,"ortho":true,"orthoSize":12},
+        "sortOrder":{"z":5}}},
+      {"name":"L","id":5,"components":{
+        "transform":{"pos":[0,0,0]},
+        "light":{"type":"ambient","color":[1,0.9,0.8,1],"ambientStrength":1.5},
+        "decal":{"texture":"assets/d.png","size":3,"alpha":0.6}}}
+    ]})";
+    auto parsed = scene::SceneFile::Parse(json);
+    if (!parsed.Ok()) {
+        std::printf("FromWorld test parse error: %s\n", parsed.Error().c_str());
+        CHECK(false);
+        return;
+    }
+
+    scene::ComponentRegistry reg;
+    scene::RegisterBuiltinComponents(reg);
+    ecs::World w1;
+    scene::PrefabLibrary prefs;
+    CHECK(scene::Instantiate(w1, parsed.Value(), prefs, reg).Ok());
+
+    // World -> JSON -> Parse -> World.
+    auto out = scene::SceneFile::FromWorld(w1);
+    CHECK(out.Ok());
+    if (!out.Ok()) return;
+    const std::string outText = core::JsonWriter::Write(out.Value());
+    auto reparsed = scene::SceneFile::Parse(outText);
+    if (!reparsed.Ok()) {
+        std::printf("FromWorld output reparse error: %s\n---- output ----\n%s\n---- end ----\n",
+                    reparsed.Error().c_str(), outText.c_str());
+        CHECK(false);
+        return;
+    }
+    CHECK_EQ(reparsed.Value().entities.size(), parsed.Value().entities.size());
+
+    ecs::World w2;
+    CHECK(scene::Instantiate(w2, reparsed.Value(), prefs, reg).Ok());
+    CHECK_EQ(w2.ViewAll<scene::SceneTransform>().Size(), 5u);
+    CHECK_EQ(w2.ViewAll<scene::SceneSprite>().Size(), 1u);
+    CHECK_EQ(w2.ViewAll<scene::SceneHealth>().Size(), 1u);
+    CHECK_EQ(w2.ViewAll<scene::SceneRigidBody>().Size(), 1u);
+    CHECK_EQ(w2.ViewAll<scene::SceneCamera>().Size(), 1u);
+    CHECK_EQ(w2.ViewAll<scene::SceneLight>().Size(), 1u);
+    CHECK_EQ(w2.ViewAll<scene::SceneSortOrder>().Size(), 1u);
+    CHECK_EQ(w2.ViewAll<scene::SceneDecal>().Size(), 1u);
+    CHECK_EQ(w2.ViewAll<scene::SceneAudioSource>().Size(), 1u);
+
+    // Sprite entity: sprite + health + generic plant data all survive.
+    auto sview = w2.ViewAll<scene::SceneSprite>();
+    ecs::Entity plant = w2.EntityAt<scene::SceneSprite>(0);
+    const scene::SceneSprite* sp = w2.Get<scene::SceneSprite>(plant);
+    CHECK(sp && sp->flipX && sp->colorHex == "#00ff88");
+    const scene::SceneHealth* h = w2.Get<scene::SceneHealth>(plant);
+    CHECK(h && h->maxHp == 80.0f);
+    const scene::SceneData* sd = w2.Get<scene::SceneData>(plant);
+    bool plantData = false;
+    if (sd)
+        for (const auto& kv : sd->components)
+            if (kv.first == "plant" && kv.second.Get("type") &&
+                kv.second.Get("type")->GetString() == "sunflower")
+                plantData = true;
+    CHECK(plantData);
+
+    // Stable ids: the original ids survive the round-trip.
+    bool sawIds = false;
+    auto nview = w2.ViewAll<scene::SceneId>();
+    CHECK_EQ(nview.Size(), 5u);
+    for (size_t i = 0; i < nview.Size(); ++i) {
+        const scene::SceneId* id = w2.Get<scene::SceneId>(w2.EntityAt<scene::SceneId>(i));
+        if (id && id->id == 1) sawIds = true;
+    }
+    CHECK(sawIds);
+}

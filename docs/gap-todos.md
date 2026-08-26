@@ -30,7 +30,8 @@
 - 后续：变换脏标记（增量失效，当前为逐帧全量重建）——建议只做轻量版（全局变换版本号，未变更时跳过重建）；逐实体脏子树在当前规模非瓶颈且正确性税高。
 - [x] **编辑器↔运行时场景桥无损化（G2-2 场景同构第一步）**——`SceneFile::MakeSpriteEntity`（规范 2D 精灵构建器，镜像 `MakeEntity`）：统一输出 transform/sprite/health/parent/id；编辑器 `BuildPlaySceneJson` 的 sprite 分支（曾手写 JSON 且丢 health）改用它，编辑器导出与运行时解析走同一代码路径，消除漂移源。单元测试 `SceneSpriteMakeEntityRoundTrip`（sprite/health/transform 经 Parse+Instantiate 无损往返；无 health 时不生成组件）——即会捕获"编辑器导出丢血量"那类 bug 的回归网。2026-08-26。
 - [x] **编辑器 ECS 化第一阶段（持有 live ecs::World）**——`EditorApp` 新增 `sceneWorld_`（`ecs::World`）+ `sceneCompReg_`：`LoadScene` 末尾经 `RefreshSceneWorld` 用运行时 `Instantiate` 装载当前场景（与播放器完全相同的组件路径），编辑器持有场景的规范运行时表示；`entities_` 仍为 UI 读写模型（后续阶段迁移面板/视口/历史直读/写 World 组件）。冒烟检查：编辑器 ecs world 镜像 sprite 场景 + 变换（`editor ecs world mirrors the sprite scene`）。单元测试 `PvzSceneHostsInEcsWorld`：pvz 场景经 Instantiate 无损承载（transform 全覆盖 / sprite / health / plant+zombie 经 SceneData 存活）。2026-08-26。
-- 剩余（全量 ECS 化后续）：面板/视口/撤销历史直读 `sceneWorld_` 组件（替换 `entities_` 扁平字段），删除双模型——大项，分阶段迁移。
+- [x] **World→JSON 序列化器 `SceneFile::FromWorld`**——Instantiate 的逆操作：遍历 World 实体把每个组件按工厂读取的字段名原样输出（transform/mesh/sprite/health/scripts(含 items 数组)/behaviorTree/groups/type/camera/light/sortOrder/terrain/tilemap/decal/rigidbody/character/audio/anim + SceneData 通用组件），稳定 id 经新增 `SceneId` 组件精确往返。单元测试 `SceneFromWorldRoundTrip`：多组件场景 Parse→Instantiate→FromWorld→Parse→Instantiate 组件与 id 全存活。这是"编辑器输出从 World 生成"的核心构件。2026-08-26。
+- 剩余（全量 ECS 化后续）：BuildPlaySceneJson 改用 FromWorld（需 FromWorld 覆盖编辑器元数据 materialRef/prefab/nodeType）；面板/视口/撤销历史直读 `sceneWorld_` 组件（替换 `entities_` 扁平字段），删除双模型——大项，分阶段迁移。
 
 ### G1-4 资源系统小缺口
 

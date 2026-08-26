@@ -145,6 +145,12 @@ struct SceneFile {
                                                      const std::string& parent = "",
                                                      int parentId = 0,
                                                      int id = 0);
+    // G2-2: serializes an ecs::World back to the scene-file JSON format (the
+    // reverse of Instantiate). Every factory's component is emitted exactly as
+    // the corresponding factory reads it, so Parse(FromWorld(w)) re-Instantiates
+    // an equivalent World. Stable ids round-trip via SceneId. The editor uses
+    // this to generate play/save output from the runtime World it hosts.
+    static core::Result<core::Json> FromWorld(ecs::World& world);
 };
 
 // Prefab library: registers prefab component templates parsed from JSON text
@@ -297,6 +303,12 @@ struct SceneBehaviorTree {
 };
 struct SceneName {
     std::string name;
+};
+// G2-2: the scene file's stable entity id, preserved through Instantiate so a
+// World can be serialized back (SceneFile::FromWorld) with identical ids and
+// parentId links. 0 = none.
+struct SceneId {
+    int id = 0;
 };
 // Generic storage for scene components WITHOUT a registered factory (plugin
 // or game-data components such as "inventory" / "plant"). Instantiate appends
