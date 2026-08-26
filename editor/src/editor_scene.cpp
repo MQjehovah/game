@@ -497,6 +497,23 @@ void EditorApp::ReloadEntityShader(SceneEntity& e) {
     NEON_LOG_INFO("Editor: shader '%s' compiled", e.shaderPath.c_str());
 }
 
+// G2-2 编辑器 ECS 化：用运行时 Instantiate 把当前场景装载进 sceneWorld_（与
+// 播放器相同的组件表示）。entities_ 仍为 UI 读写模型；本函数使编辑器持有
+// 规范 ecs::World，供后续阶段 UI 直读/直写组件。
+void EditorApp::RefreshSceneWorld() {
+    sceneWorld_.Clear();
+    sceneCompReg_ = scene::ComponentRegistry{};
+    scene::RegisterBuiltinComponents(sceneCompReg_);
+    auto parsed = scene::SceneFile::Parse(core::JsonWriter::Write(currentSceneRoot_));
+    if (!parsed.Ok()) return;
+    scene::PrefabLibrary prefs;
+    auto inst = scene::Instantiate(sceneWorld_, parsed.Value(), prefs, sceneCompReg_);
+    if (inst.Ok()) {
+        NEON_LOG_CAT(neon::core::LogCategory::Scene, neon::core::LogLevel::Debug,
+                     "editor: scene world rebuilt (%zu entities)", inst.Value());
+    }
+}
+
 void EditorApp::SaveScene() {
     NormalizeEntityIds(); // stable ids before serialization
     // Serialize in the runtime componentized format (same as play/export)
@@ -1070,6 +1087,10 @@ void EditorApp::LoadScene(const std::string& path) {
         currentSceneName_ = BaseName(path);
         NEON_LOG_INFO("Scene loaded (%zu entities)", entities_.size());
         EnsureSceneDefaultObjects();
+        // G2-2: hold the scene's canonical runtime representation (ecs::World)
+        // as a live mirror of the loaded file — the same Instantiate the player
+        // runs. The UI still reads entities_; the World is the ECS-ization base.
+        RefreshSceneWorld();
     }
 }
 

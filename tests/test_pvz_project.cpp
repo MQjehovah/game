@@ -62,3 +62,41 @@ TEST(PvzSceneAndPrefabJsonValid) {
         CHECK(!body.empty());
     }
 }
+
+// G2-2 编辑器 ECS 化：pvz 场景能被运行时 Instantiate 无损承载进 ecs::World
+// （编辑器持有的 live sceneWorld_ 用同一路径）——植物/僵尸经通用 SceneData、
+// 精灵/生命/变换经专用组件，全部存活。
+TEST(PvzSceneHostsInEcsWorld) {
+    std::string scene;
+    CHECK(test::ReadFileAll("projects/pvz/scenes/pvz.json", scene));
+    auto parsed = scene::SceneFile::Parse(scene);
+    CHECK(parsed.Ok());
+    if (!parsed.Ok()) return;
+
+    scene::ComponentRegistry reg;
+    scene::RegisterBuiltinComponents(reg);
+    ecs::World world;
+    scene::PrefabLibrary prefs;
+    auto inst = scene::Instantiate(world, parsed.Value(), prefs, reg);
+    CHECK(inst.Ok());
+    if (!inst.Ok()) return;
+    CHECK(inst.Value() >= 13u); // 13 scene entities (plants, zombie, camera, light...)
+
+    // Every entity carries a transform; sprites carry SceneSprite, the zombie
+    // has health, and plant/zombie data survives in generic SceneData.
+    CHECK_EQ(world.ViewAll<scene::SceneTransform>().Size(), inst.Value());
+    CHECK(world.ViewAll<scene::SceneSprite>().Size() >= 8u); // house/lawn/plants/zombie
+    bool sawHealth = false, sawZombieData = false, sawPlantData = false;
+    world.ViewAll<scene::SceneData>().ForEach(
+        [&](ecs::Entity, const scene::SceneData& sd) {
+            for (const auto& [cname, cdata] : sd.components) {
+                if (cname == "plant") sawPlantData = true;
+                if (cname == "zombie") sawZombieData = true;
+            }
+        });
+    world.ViewAll<scene::SceneHealth>().ForEach(
+        [&](ecs::Entity, const scene::SceneHealth&) { sawHealth = true; });
+    CHECK(sawPlantData);  // sunflower/peashooter plant components survive
+    CHECK(sawZombieData); // the pre-placed zombie survives
+    CHECK(sawHealth);     // the zombie's health survives
+}

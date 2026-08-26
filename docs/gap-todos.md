@@ -28,7 +28,9 @@
 - 建议：运行时补场景树接口与变换缓存；明确编辑器 ↔ 运行时的转换层（序列化已是桥，但 API 语义需对齐）。
 - [x] 2026-08-25 增补：**编辑器父级已迁移到稳定实体 id**——`SceneEntity.id/parentId`（场景树、拖拽重排、撤销重做按 id；序列化写 id/parentId 并保留旧名字字段兼容）；运行时场景格式新增实体 `id` 与 transform `parentId`（按 id 精确解析，名字回退），Instantiate 拒绝自父/环；编辑器拖拽带 id 防环（不能拖成自己/后代的子级）；属性栏移除父级字段（场景树已可视化层级）。**同名实体不再歧义、改名不破坏父子、环被三层拦截**（编辑器拖拽 / 运行时解析 / 遍历 visited 守卫）。测试：`test_scene_tree.cpp`（重名 + parentId 精确解析、环/自父拒绝）。
 - 后续：变换脏标记（增量失效，当前为逐帧全量重建）——建议只做轻量版（全局变换版本号，未变更时跳过重建）；逐实体脏子树在当前规模非瓶颈且正确性税高。
-- [x] **编辑器↔运行时场景桥无损化（G2-2 场景同构第一步）**——`SceneFile::MakeSpriteEntity`（规范 2D 精灵构建器，镜像 `MakeEntity`）：统一输出 transform/sprite/health/parent/id；编辑器 `BuildPlaySceneJson` 的 sprite 分支（曾手写 JSON 且丢 health）改用它，编辑器导出与运行时解析走同一代码路径，消除漂移源。单元测试 `SceneSpriteMakeEntityRoundTrip`（sprite/health/transform 经 Parse+Instantiate 无损往返；无 health 时不生成组件）——即会捕获"编辑器导出丢血量"那类 bug 的回归网。2026-08-26。剩余：编辑器工作模型（`SceneEntity` 扁平字段）仍未直接持有运行时 ECS 组件，完全同构需编辑器持 live `ecs::World`（后续大项）。
+- [x] **编辑器↔运行时场景桥无损化（G2-2 场景同构第一步）**——`SceneFile::MakeSpriteEntity`（规范 2D 精灵构建器，镜像 `MakeEntity`）：统一输出 transform/sprite/health/parent/id；编辑器 `BuildPlaySceneJson` 的 sprite 分支（曾手写 JSON 且丢 health）改用它，编辑器导出与运行时解析走同一代码路径，消除漂移源。单元测试 `SceneSpriteMakeEntityRoundTrip`（sprite/health/transform 经 Parse+Instantiate 无损往返；无 health 时不生成组件）——即会捕获"编辑器导出丢血量"那类 bug 的回归网。2026-08-26。
+- [x] **编辑器 ECS 化第一阶段（持有 live ecs::World）**——`EditorApp` 新增 `sceneWorld_`（`ecs::World`）+ `sceneCompReg_`：`LoadScene` 末尾经 `RefreshSceneWorld` 用运行时 `Instantiate` 装载当前场景（与播放器完全相同的组件路径），编辑器持有场景的规范运行时表示；`entities_` 仍为 UI 读写模型（后续阶段迁移面板/视口/历史直读/写 World 组件）。冒烟检查：编辑器 ecs world 镜像 sprite 场景 + 变换（`editor ecs world mirrors the sprite scene`）。单元测试 `PvzSceneHostsInEcsWorld`：pvz 场景经 Instantiate 无损承载（transform 全覆盖 / sprite / health / plant+zombie 经 SceneData 存活）。2026-08-26。
+- 剩余（全量 ECS 化后续）：面板/视口/撤销历史直读 `sceneWorld_` 组件（替换 `entities_` 扁平字段），删除双模型——大项，分阶段迁移。
 
 ### G1-4 资源系统小缺口
 

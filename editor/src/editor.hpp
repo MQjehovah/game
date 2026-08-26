@@ -526,6 +526,13 @@ private:
 
     std::vector<SceneEntity> entities_;
     int selected_ = -1;
+    // G2-2 编辑器 ECS 化（第一阶段）：编辑器持有 live `ecs::World` 作为场景的
+    // 规范运行时表示——`LoadScene` 用运行时的 `Instantiate` 装载（与播放器完全
+    // 相同），entities_ 目前仍是 UI 读写模型；`RefreshSceneWorld` 从当前场景重建
+    // World，后续阶段把面板/视口/历史直接迁移到 World 组件读写，消除双模型。
+    ecs::World sceneWorld_;
+    scene::ComponentRegistry sceneCompReg_;
+    void RefreshSceneWorld();
     // P2-editor UX: multi-selection set (active entity = selected_).
     std::set<int> selection_;
     int selectionAnchor_ = -1;  // shift-click range anchor

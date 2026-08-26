@@ -1175,6 +1175,20 @@ void EditorApp::RunUISmokeTest() {
         NEON_LOG_INFO("EDITOR-SPRITE-SMOKE: [%s] sprite entity parsed, texture + quad resolved",
                       spriteOk ? "PASS" : "FAIL");
         if (!spriteOk) smokeFailed_ = true;
+        // G2-2: the editor holds a live ecs::World mirroring the scene via the
+        // runtime Instantiate — the sprite entity must exist there too.
+        {
+            size_t worldSprites = 0;
+            auto wview = sceneWorld_.ViewAll<scene::SceneSprite>();
+            for (size_t i = 0; i < wview.Size(); ++i) {
+                ecs::Entity ent = sceneWorld_.EntityAt<scene::SceneSprite>(i);
+                const scene::SceneSprite* s = sceneWorld_.Get<scene::SceneSprite>(ent);
+                if (s && !s->texture.empty() && s->flipX && !s->flipY) ++worldSprites;
+            }
+            check(worldSprites == 1u, "editor ecs world mirrors the sprite scene");
+            const size_t worldTransforms = sceneWorld_.ViewAll<scene::SceneTransform>().Size();
+            check(worldTransforms >= 1u, "editor ecs world has transforms");
+        }
         if (!prevScene.empty()) LoadScene(prevScene);
     }
     // Restore the editor's actual scene (user data) after the deterministic
