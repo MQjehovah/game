@@ -2077,6 +2077,37 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera,
     // matches whatever rasterization rect the host set up - otherwise the
     // playtest FOV would differ from the edit-mode viewport.
     renderer.SetCamera(cam, renderer.SceneAspect());
+    // Data-driven scene environment: apply the scene's DirectionalLight +
+    // AmbientLight objects (Unity-style) so every host renders the same scene
+    // the same way (the editor's playtest and the standalone player both go
+    // through Draw). Fog is pushed far for ortho/2D cameras so the flat sprites
+    // are never tinted by a depth gradient.
+    {
+        const scene::SceneLight* directional = nullptr;
+        const scene::SceneLight* ambient = nullptr;
+        world_.ViewAll<scene::SceneLight>().ForEach(
+            [&](ecs::Entity, const scene::SceneLight& l) {
+                if (l.type == "directional" && !directional) directional = &l;
+                else if (l.type == "ambient" && !ambient) ambient = &l;
+            });
+        renderer.SetSky({0.28f, 0.38f, 0.58f, 1.0f}, {0.55f, 0.65f, 0.8f, 1.0f});
+        if (cam.ortho) {
+            renderer.SetFog({0.45f, 0.55f, 0.7f, 1.0f}, 1e9f, 1e10f);
+        } else {
+            renderer.SetFog({0.45f, 0.55f, 0.7f, 1.0f}, 60.0f, 220.0f);
+        }
+        if (directional) {
+            const gfx::Color sun{directional->color.r * directional->intensity,
+                                 directional->color.g * directional->intensity,
+                                 directional->color.b * directional->intensity,
+                                 directional->color.a};
+            renderer.SetDirectionalLight(directional->sunDir, sun, 0.0f);
+        } else {
+            renderer.SetDirectionalLight({-0.4f, -1.0f, -0.3f}, {0.8f, 0.8f, 0.8f}, 0.0f);
+        }
+        if (ambient) renderer.SetAmbientLight(ambient->color, ambient->ambientStrength);
+        renderer.DrawSky();
+    }
     // Scripts may have spawned/despawned sprite entities since the last frame.
     BuildDrawList();
     // G1-3: refresh the world-transform cache (parent-before-child, arbitrary
