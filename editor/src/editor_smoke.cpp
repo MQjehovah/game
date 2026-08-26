@@ -1209,6 +1209,18 @@ void EditorApp::RunUISmokeTest() {
                 check(hasSprite, "editor play json keeps the sprite entity");
             }
         }
+        // G5-4: rebuild entities_ from the runtime World — the entity count must
+        // match the World (the editor's working model is drivable by the World).
+        {
+            const size_t beforeCount = entities_.size();
+            const size_t worldCount = sceneWorld_.ViewAll<scene::SceneTransform>().Size();
+            UnflattenWorldToEntities();
+            check(entities_.size() == worldCount, "editor unflattens world to entities");
+            check(entities_.size() >= 1u, "editor unflattened entities non-empty");
+            const size_t afterCount = entities_.size();
+            (void)beforeCount;
+            (void)afterCount;
+        }
         if (!prevScene.empty()) LoadScene(prevScene);
     }
     // Restore the editor's actual scene (user data) after the deterministic

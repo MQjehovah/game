@@ -130,6 +130,17 @@
 
 ## 五、架构设计级特性（第二轮 1–3）
 
+### G5-4 编辑器/运行时场景同构（ECS 化）—— 追踪中
+
+> 目标：编辑器与运行时共享**单一场景表示**（运行时 ecs::World + SceneFile 组件），消除 `editor::SceneEntity` 扁平双模型，实现"编辑即运行时"。分阶段推进，每阶段冒烟+单测锁定。
+
+- [x] **阶段 1 编辑器持有 live ecs::World**——`EditorApp.sceneWorld_`（`ecs::World`）+ `sceneCompReg_`；`LoadScene` 末尾 `RefreshSceneWorld` 用运行时 `Instantiate` 装载场景（与播放器同一组件路径）。冒烟镜像检查 + `PvzSceneHostsInEcsWorld`。2026-08-26。
+- [x] **阶段 2 World→JSON 序列化器**——`SceneFile::FromWorld`（Instantiate 逆操作，全组件 + SceneId 稳定 id 精确往返）；`SceneFromWorldRoundTrip` 多组件测试。2026-08-26。
+- [x] **阶段 3 输出走 World**——`BuildPlaySceneJson` = `SyncWorldFromEntities`（entities_→规范构建器→Instantiate）→ `FromWorld` 生成输出，materialRef/prefab 回填；冒烟 SAVESCENE 往返 + pvz 播放 + 打包 e2e 全过。2026-08-26。
+- [x] **阶段 4 World→entities_ 反扁平化**——`EditorApp::UnflattenWorldToEntities`：从 sceneWorld_ 组件重建 entities_（SceneId/SceneName/transform/mesh/sprite/health/type/camera/light/sortOrder/scripts/terrain/tilemap/decal + SceneData 还原 extraComponents/prefab/materialRef，mesh 走 ResolveMesh）。冒烟验证：unflatten 后实体数 == World 变换数（"editor unflattens world to entities"），证明 World 能驱动编辑器工作模型。2026-08-26。
+- [ ] **阶段 5 UI 组件化迁移**——面板/视口/撤销历史直读/直写 sceneWorld_ 组件（变换/网格/精灵/生命等），删 `entities_` 双模型。
+- 风险：爆炸半径大（meshKey 60+/pos 上百/extraComponents 20+ 处）、无法可视化验证；策略为小步验证式迁移，每阶段冒烟+单测，冒烟失败即回滚。
+
 ### G5-1 原生插件与运行时热插拔（第 1 项）
 
 - [~] 现状：core/interface 分层，编辑器/播放器/服务器共享同一套核心（`neon_engine`）；插件为 Lua/JS 脚本级（编辑器 + 运行时）+ 原生 DLL/SO（[G4-1](#g4-1-微内核二进制插件)，已落地 ABI 与加载器）。

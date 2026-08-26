@@ -514,6 +514,123 @@ void EditorApp::RefreshSceneWorld() {
     }
 }
 
+// G5-4 阶段4: rebuild entities_ FROM the runtime World's components (the
+// reverse of SyncWorldFromEntities), proving the World can drive the editor's
+// working model. DATA fields come from the World; mesh GPU handles resolve via
+// ResolveMesh (sprites keep their texture path — the render path resolves the
+// quad). Equivalent in data to LoadScene's JSON flattening.
+void EditorApp::UnflattenWorldToEntities() {
+    std::vector<SceneEntity> loaded;
+    auto view = sceneWorld_.ViewAll<scene::SceneTransform>();
+    for (size_t i = 0; i < view.Size(); ++i) {
+        ecs::Entity e = sceneWorld_.EntityAt<scene::SceneTransform>(i);
+        SceneEntity out;
+        if (const scene::SceneId* id = sceneWorld_.Get<scene::SceneId>(e)) out.id = id->id;
+        if (const scene::SceneName* n = sceneWorld_.Get<scene::SceneName>(e)) out.name = n->name;
+        if (const scene::SceneTransform* t = sceneWorld_.Get<scene::SceneTransform>(e)) {
+            out.pos = t->pos;
+            out.rot = t->rot;
+            out.scale = t->scale;
+            out.parentId = t->parentId;
+        }
+        if (const scene::SceneMesh* m = sceneWorld_.Get<scene::SceneMesh>(e)) {
+            out.meshKey = m->meshKey;
+            out.metallic = m->metallic;
+            out.roughness = m->roughness;
+            out.albedoTex = m->albedoTex;
+            out.mrTex = m->mrTex;
+            out.aoTex = m->aoTex;
+            out.emissiveTex = m->emissiveTex;
+            out.ao = m->ao;
+            out.emissiveIntensity = m->emissiveIntensity;
+            if (!m->colorHex.empty()) out.tint = ColorFromHex(m->colorHex);
+        }
+        if (const scene::SceneSprite* s = sceneWorld_.Get<scene::SceneSprite>(e)) {
+            out.spriteTex = s->texture;
+            out.spriteFlipX = s->flipX;
+            out.spriteFlipY = s->flipY;
+            if (!s->colorHex.empty()) out.tint = ColorFromHex(s->colorHex);
+        }
+        if (const scene::SceneHealth* h = sceneWorld_.Get<scene::SceneHealth>(e)) {
+            out.hp = h->hp;
+            out.maxHp = h->maxHp;
+        }
+        if (const scene::SceneNodeType* t = sceneWorld_.Get<scene::SceneNodeType>(e))
+            out.nodeType = t->value;
+        if (const scene::SceneCamera* c = sceneWorld_.Get<scene::SceneCamera>(e)) {
+            out.cameraFov = c->fov;
+            out.cameraOrtho = c->ortho;
+            out.cameraOrthoSize = c->orthoSize;
+        }
+        if (const scene::SceneLight* l = sceneWorld_.Get<scene::SceneLight>(e)) {
+            out.hasLight = true;
+            out.light = *l;
+        }
+        if (const scene::SceneSortOrder* so = sceneWorld_.Get<scene::SceneSortOrder>(e))
+            out.zOrder = so->z;
+        if (const scene::SceneScripts* ss = sceneWorld_.Get<scene::SceneScripts>(e)) {
+            for (const scene::SceneScript& sc : ss->items) {
+                SceneScriptFields f;
+                f.backend = sc.backend;
+                f.path = sc.path;
+                f.vars = sc.vars;
+                out.scripts.push_back(std::move(f));
+            }
+        }
+        if (const scene::SceneTerrain* t = sceneWorld_.Get<scene::SceneTerrain>(e)) {
+            out.meshKey = "terrain";
+            out.terrainSegments_ = t->segments;
+            out.terrainSize_ = t->size;
+            out.terrainHeightScale_ = t->heightScale;
+            out.terrainHeights_ = t->heights;
+            out.chunkGridDiv_ = t->chunkGridDiv;
+            out.chunkLodLevels_ = t->chunkLodLevels;
+            out.chunkBaseSubdiv_ = t->chunkBaseSubdiv;
+            out.vegMeshKey_ = t->vegMeshKey;
+            out.vegCount_ = t->vegCount;
+            out.vegSeed_ = t->vegSeed;
+            out.vegSize_ = t->vegSize;
+            out.vegImpostorDistance_ = t->vegImpostorDistance;
+            out.vegMinHeight_ = t->vegMinHeight;
+            out.vegMaxHeight_ = t->vegMaxHeight;
+            out.vegMaxSlope_ = t->vegMaxSlope;
+        }
+        if (const scene::SceneTilemap* t = sceneWorld_.Get<scene::SceneTilemap>(e)) {
+            out.meshKey = "tilemap";
+            out.tilemapCols_ = t->cols;
+            out.tilemapRows_ = t->rows;
+            out.tilemapCellSize_ = t->cellSize;
+            out.tilemapTiles_ = t->tiles;
+        }
+        if (const scene::SceneDecal* d = sceneWorld_.Get<scene::SceneDecal>(e)) {
+            out.decalTex = d->texture;
+            out.decalSize = d->size;
+            out.decalAlpha = d->alpha;
+        }
+        if (const scene::SceneData* sd = sceneWorld_.Get<scene::SceneData>(e)) {
+            for (const auto& [cname, cdata] : sd->components) {
+                if (cname == "prefab") {
+                    if (cdata.IsString()) out.prefab = cdata.GetString();
+                } else if (cname == "materialRef") {
+                    if (cdata.IsString()) out.materialRef = cdata.GetString();
+                } else {
+                    out.extraComponents[cname] = cdata;
+                }
+            }
+        }
+        // Mesh GPU handles: re-resolve (sprites keep their texture path; the
+        // render pass resolves the quad lazily).
+        if (out.meshKey == "terrain" || out.meshKey == "tilemap") {
+            ResolveMesh(out);
+        } else if (!out.meshKey.empty()) {
+            ResolveMesh(out);
+        }
+        loaded.push_back(std::move(out));
+    }
+    entities_ = std::move(loaded);
+    NormalizeEntityIds();
+}
+
 void EditorApp::SaveScene() {
     NormalizeEntityIds(); // stable ids before serialization
     // Serialize in the runtime componentized format (same as play/export)

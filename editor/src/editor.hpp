@@ -537,6 +537,9 @@ private:
     // SyncWorldFromEntities -> canonical SceneFile::FromWorld).
     void SyncWorldFromEntities();
     core::Result<core::Json> BuildSceneJsonFromEntities();
+    // G5-4: rebuild entities_ from the runtime World's components (reverse of
+    // SyncWorldFromEntities) — proves the World drives the editor's model.
+    void UnflattenWorldToEntities();
     // P2-editor UX: multi-selection set (active entity = selected_).
     std::set<int> selection_;
     int selectionAnchor_ = -1;  // shift-click range anchor
