@@ -138,7 +138,8 @@
 - [x] **阶段 2 World→JSON 序列化器**——`SceneFile::FromWorld`（Instantiate 逆操作，全组件 + SceneId 稳定 id 精确往返）；`SceneFromWorldRoundTrip` 多组件测试。2026-08-26。
 - [x] **阶段 3 输出走 World**——`BuildPlaySceneJson` = `SyncWorldFromEntities`（entities_→规范构建器→Instantiate）→ `FromWorld` 生成输出，materialRef/prefab 回填；冒烟 SAVESCENE 往返 + pvz 播放 + 打包 e2e 全过。2026-08-26。
 - [x] **阶段 4 World→entities_ 反扁平化**——`EditorApp::UnflattenWorldToEntities`：从 sceneWorld_ 组件重建 entities_（SceneId/SceneName/transform/mesh/sprite/health/type/camera/light/sortOrder/scripts/terrain/tilemap/decal + SceneData 还原 extraComponents/prefab/materialRef，mesh 走 ResolveMesh）。冒烟验证：unflatten 后实体数 == World 变换数（"editor unflattens world to entities"），证明 World 能驱动编辑器工作模型。2026-08-26。
-- [ ] **阶段 5 UI 组件化迁移**——面板/视口/撤销历史直读/直写 sceneWorld_ 组件（变换/网格/精灵/生命等），删 `entities_` 双模型。
+- [x] **阶段 5-1 历史命令后同步 World**——`HistoryManager.onChanged` 回调：每次 Push/Undo/Redo 提交后 `SyncWorldFromEntities` 重建 sceneWorld_，World 始终反映编辑状态（为 UI 直读铺路）。编辑器 OnCreate 接线。冒烟/测试全过。2026-08-26。
+- [ ] **阶段 5 UI 组件化迁移（剩余）**——面板/视口/撤销历史直读/直写 sceneWorld_ 组件，删 `entities_` 双模型。
 - 风险：爆炸半径大（meshKey 60+/pos 上百/extraComponents 20+ 处）、无法可视化验证；策略为小步验证式迁移，每阶段冒烟+单测，冒烟失败即回滚。
 
 ### G5-1 原生插件与运行时热插拔（第 1 项）
