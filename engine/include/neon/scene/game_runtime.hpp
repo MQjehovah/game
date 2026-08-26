@@ -19,6 +19,7 @@
 #include "neon/gfx/mesh.hpp"
 #include "neon/math/bvh.hpp"
 #include "neon/plugin/runtime_plugin.hpp"
+#include "neon/plugin/backend.hpp"
 #include "neon/physics/physics.hpp"
 #include "neon/physics/jolt_world.hpp"
 #include "neon/platform/input.hpp"
@@ -74,8 +75,14 @@ struct GameRuntimeConfig {
     // player and the authoritative server default to "jolt" so client
     // prediction and server simulation run the same rigid-body code; "custom"
     // remains the cross-platform bit-exact fallback. Unknown values fall back
-    // to "custom".
+    // to "custom". A "plugin:<name>" value (G5-1) loads the physics backend
+    // from a native plugin found under pluginBaseDir/plugins (see
+    // plugin::LoadNativePhysicsBackend); the plugin ships the solver as
+    // middleware DLL/SO, so the backend can be swapped without relinking.
     std::string physicsBackend = "custom";
+    // Base directory scanned for native backend plugins (G5-1). Empty = no
+    // plugin dir, so "plugin:*" backends simply fall back to custom.
+    std::string pluginBaseDir;
     // Optional skills.json text (data-driven CastSkill table). The hosts that
     // know their project dir load <dir>/skills.json and pass it here; empty
     // leaves the table empty and CastSkill logs "unknown skill".
@@ -511,7 +518,8 @@ private:
     std::string FullAssetPath(const std::string& path) const;
 
     ecs::World world_;
-    std::unique_ptr<physics::World> physics_;
+    std::unique_ptr<plugin::PhysicsBackend> pluginPhysics_;   // native backend owner (G5-1)
+    std::unique_ptr<physics::World, std::function<void(physics::World*)>> physics_;
     float physicsAccum_ = 0.0f; // fixed-step accumulator (60 Hz)
     script::ScriptContext scriptCtx_; // owns the GameVars scripts + BT share
     PrefabLibrary prefs_;             // prefabs loaded from <scriptBaseDir>/prefabs/

@@ -48,9 +48,10 @@ set(ENGINE_CORE_SOURCES
   engine/src/net/socket.cpp
   engine/src/net/reliable.cpp
   engine/src/nav/nav_grid.cpp
-engine/src/plugin/plugin.cpp
-engine/src/plugin/runtime_plugin.cpp
-engine/src/plugin/native.cpp
+  engine/src/plugin/plugin.cpp
+  engine/src/plugin/runtime_plugin.cpp
+  engine/src/plugin/native.cpp
+  engine/src/plugin/backend.cpp
 engine/src/gfx/color.cpp
   engine/src/gfx/csm.cpp
   engine/src/gfx/font.cpp
@@ -503,8 +504,11 @@ if(NEON_ENABLE_JS)
   set(NEON_JS_TEST tests/test_script_js.cpp)
 endif()
 # G4-1 native binary plugin demo: a self-contained physics module built as a
-# DLL/SO. Loaded at runtime by the engine's plugin::NativePlugin loader.
-add_library(neon_plugin_physics SHARED plugins/physics_plugin/plugin.cpp)
+# DLL/SO. Loaded at runtime by the engine's plugin::NativePlugin loader. G5-1:
+# the plugin also compiles the engine's real deterministic solver into the DLL,
+# so the runtime can use this DLL as a drop-in physics *middleware* backend.
+add_library(neon_plugin_physics SHARED plugins/physics_plugin/plugin.cpp
+  engine/src/physics/physics.cpp)
 target_include_directories(neon_plugin_physics PRIVATE engine/include plugins)
 if(MSVC)
   target_compile_options(neon_plugin_physics PRIVATE /utf-8)

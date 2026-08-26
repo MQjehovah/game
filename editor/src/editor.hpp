@@ -710,6 +710,10 @@ private:
     bool showLoc_ = false;
     bool showPlugins_ = false; // plugin management panel
     std::unique_ptr<editor::EditorPluginManager> pluginMgr_; // editor plugins
+    // G5-1: native binary plugins discovered under <project>/plugins (loaded on
+    // demand by the plugins panel). Move-only, so stored as unique_ptr.
+    std::vector<std::unique_ptr<plugin::NativePlugin>> nativePlugins_;
+    std::string nativePluginsDir_;
 
     // Localization editor: merged string tables from <project>/locales/*.json
     // plus the active language for the preview.

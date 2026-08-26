@@ -42,6 +42,28 @@ typedef struct NeonPhysicsApi {
 // Returns the physics API table for the plugin instance (null on mismatch).
 NEON_PHYSICS_API const NeonPhysicsApi* NeonPhysics_GetApi(void* instance);
 
+// ---------------------------------------------------------------------------
+// G5-1 middleware plug-and-play: a "physics backend provider" factory. The
+// plugin compiles the engine's real deterministic solver into itself and hands
+// back an opaque neon::physics::World instance. The host only calls the two C
+// entry points; create/destroy MUST run on the same module (the plugin owns the
+// heap of the object, so destroy_world is a C call into the DLL, never a host
+// `delete`). The opaque pointer is a `neon::physics::World*` and its layout is
+// shared via the same headers, so the object crosses the boundary only under a
+// same-toolchain build (exactly how middleware like PhysX ships binary SDKs).
+// ---------------------------------------------------------------------------
+typedef struct NeonPhysicsWorldApi {
+    // Returns a new world instance (opaque neon::physics::World*), or null.
+    void* (*create_world)(void);
+    // Destroys a world created by create_world (same module).
+    void (*destroy_world)(void* world);
+    // Backend display name (e.g. "custom").
+    const char* (*name)(void);
+} NeonPhysicsWorldApi;
+
+// Returns the world factory table (null on mismatch).
+NEON_PHYSICS_API const NeonPhysicsWorldApi* NeonPhysics_GetWorldApi(void);
+
 #ifdef __cplusplus
 }
 #endif

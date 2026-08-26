@@ -122,7 +122,12 @@ void EditorApp::BuildPluginsPanel() {
     if (ImGui::Begin("插件", &showPlugins_)) {
         ImGui::TextDisabled("项目插件目录: %s/plugins", projectDir_.c_str());
         ImGui::SameLine();
-        if (ImGui::SmallButton("重新加载")) pluginMgr_->Load(projectDir_);
+        if (ImGui::SmallButton("重新加载")) {
+            pluginMgr_->Load(projectDir_);
+            // G5-1: refresh the native plugin list from the same project dir.
+            nativePlugins_.clear();
+            nativePluginsDir_.clear();
+        }
         ImGui::Separator();
         const auto& manifests = pluginMgr_->Manifests();
         if (manifests.empty()) {
@@ -132,6 +137,26 @@ void EditorApp::BuildPluginsPanel() {
             ImGui::BulletText("%s  v%s  [%s/%s]", m.name.c_str(), m.version.c_str(),
                               m.backend.c_str(), plugin::PluginTypeName(m.type));
             ImGui::TextDisabled("  id: %s  entry: %s", m.id.c_str(), m.entry.c_str());
+        }
+
+        // G5-1: native binary plugins (DLL/SO) under <project>/plugins. Loaded
+        // lazily on first open or after 重新加载, then listed with their ABI
+        // info; a module-specific API getter (e.g. physics world factory) is
+        // resolved through the same plugin:: loader the runtime uses.
+        ImGui::Separator();
+        ImGui::TextDisabled("原生插件 (DLL/SO):");
+        const std::string nativeDir = projectDir_.empty() ? std::string(".") : projectDir_;
+        if (nativePluginsDir_ != nativeDir) {
+            nativePlugins_ = plugin::LoadNativePlugins(nativeDir);
+            nativePluginsDir_ = nativeDir;
+        }
+        if (nativePlugins_.empty()) {
+            ImGui::TextDisabled("  (无 %s/plugins 下的 native 插件)", nativeDir.c_str());
+        }
+        for (const std::unique_ptr<plugin::NativePlugin>& p : nativePlugins_) {
+            ImGui::BulletText("%s  v%s", p->Info().name ? p->Info().name : "?",
+                              p->Info().version ? p->Info().version : "?");
+            ImGui::TextDisabled("  api=%u  %s", p->Info().apiVersion, p->Path().c_str());
         }
         ImGui::Separator();
         if (!pluginMgr_->Panels().empty()) {

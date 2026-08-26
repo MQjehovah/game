@@ -182,13 +182,42 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
                          err.c_str());
     }
     // Create the physics world: Jolt when requested and compiled, else the
-    // deterministic custom solver (server / headless tests).
-    physics_ = std::make_unique<physics::World>();
+    // deterministic custom solver (server / headless tests). A "plugin:<name>"
+    // backend (G5-1) loads the solver from a native middleware DLL/SO under
+    // cfg_.pluginBaseDir/plugins — swappable without relinking. The owning
+    // PhysicsBackend is kept alive until this runtime is destroyed (it owns the
+    // DLL), and is declared before physics_ so the world dies before the library.
+    physics_ = std::unique_ptr<physics::World, std::function<void(physics::World*)>>(
+        new physics::World(), [](physics::World* w) { delete w; });
 #ifdef NEON_ENABLE_JOLT
     if (cfg_.physicsBackend == "jolt") {
-        physics_ = std::make_unique<physics::JoltWorld>();
+        physics_ = std::unique_ptr<physics::World, std::function<void(physics::World*)>>(
+            new physics::JoltWorld(), [](physics::World* w) { delete w; });
     }
 #endif
+    if (cfg_.physicsBackend.rfind("plugin:", 0) == 0 && !cfg_.pluginBaseDir.empty()) {
+        const std::string backendName = cfg_.physicsBackend.substr(7);
+        std::unique_ptr<plugin::PhysicsBackend> backend =
+            plugin::LoadNativePhysicsBackend(backendName, cfg_.pluginBaseDir);
+        if (backend) {
+            std::unique_ptr<physics::World, std::function<void(physics::World*)>> world =
+                backend->CreateWorld();
+            if (world) {
+                pluginPhysics_ = std::move(backend); // keep the DLL resident
+                physics_ = std::move(world);
+            } else {
+                NEON_LOG_CAT(core::LogCategory::Scene, core::LogLevel::Warn,
+                             "runtime: plugin physics backend '%s' created no world; "
+                             "falling back to custom",
+                             backendName.c_str());
+            }
+        } else {
+            NEON_LOG_CAT(core::LogCategory::Scene, core::LogLevel::Warn,
+                         "runtime: no native physics backend '%s' under '%s/plugins'; "
+                         "falling back to custom",
+                         backendName.c_str(), cfg_.pluginBaseDir.c_str());
+        }
+    }
     NEON_LOG_CAT(core::LogCategory::Scene, core::LogLevel::Info,
                  "runtime: physics backend '%s' (%zu rigid bodies cap)",
                  cfg_.physicsBackend.c_str(), physics_->BodyCount());

@@ -3,6 +3,7 @@
 #include <vector>
 
 #include "neon/neon.hpp"
+#include "neon/plugin/backend.hpp"
 #include "neon/plugin/native.hpp"
 #include "helpers.hpp"
 #include "physics_plugin/api.h"
@@ -129,4 +130,72 @@ TEST(NativePluginDiscoversViaManifest) {
     CHECK(api != nullptr);
     api->add_sphere(loaded[0]->Instance(), 0.0f, 2.0f, 0.0f, 1.0f, 1);
     CHECK_EQ(api->body_count(loaded[0]->Instance()), 1);
+}
+
+// G5-1: the same DLL also ships a full neon::physics::World via the C factory.
+// The host discovers the provider through LoadNativePhysicsBackend and drives
+// the real solver through the plugin, exactly like a middleware physics SDK.
+TEST(NativeBackendLoadsPhysicsProvider) {
+    test::TempDir tmp;
+    const std::string plugins = tmp.Str() + "/plugins";
+    const std::string dir = plugins + "/physics_plugin";
+    CHECK(Mkdir(plugins));
+    CHECK(Mkdir(dir));
+    WriteText(dir + "/plugin.json",
+              "{\"id\":\"physics_plugin\",\"name\":\"示例物理\",\"version\":\"1.0.0\","
+              "\"type\":\"native\",\"backend\":\"native\",\"entry\":\"neon_plugin_physics.dll\"}");
+    CHECK(CopyFile(NEON_PLUGIN_PHYSICS_PATH, dir + "/neon_plugin_physics.dll"));
+
+    // Discovery by name ("physics" matches the reported backend name "custom"?
+    // no — it matches the library stem neon_plugin_physics / info name
+    // "physics_plugin"); the generic "*" accepts any provider.
+    std::unique_ptr<plugin::PhysicsBackend> backend =
+        plugin::LoadNativePhysicsBackend("*", tmp.Str());
+    CHECK(backend != nullptr);
+    if (!backend) return;
+    CHECK_EQ(backend->Name(), "custom");
+
+    std::unique_ptr<physics::World, std::function<void(physics::World*)>> world =
+        backend->CreateWorld();
+    CHECK(world != nullptr);
+    if (!world) return;
+
+    // The world is the real engine solver: the dynamic sphere falls onto the
+    // static box (box top at y=1.0, so the sphere rests at top + radius = 2.0);
+    // the static box itself never moves.
+    const physics::World::BodyId dyn =
+        world->AddSphere(/*owner=*/1, math::Vec3{0.0f, 10.0f, 0.0f}, /*radius=*/1.0f,
+                         /*dynamic=*/true);
+    CHECK(dyn.Valid());
+    const physics::World::BodyId st =
+        world->AddBox(/*owner=*/2, math::Vec3{0.0f, 0.5f, 0.0f}, math::Vec3{0.5f, 0.5f, 0.5f},
+                      /*dynamic=*/false);
+    CHECK(st.Valid());
+    for (int i = 0; i < 240; ++i) world->Step(1.0f / 60.0f, math::Vec3{0.0f, -9.81f, 0.0f});
+    CHECK_NEAR(world->GetPosition(dyn).y, 2.0f, 0.02f);
+    CHECK_NEAR(world->GetPosition(st).y, 0.5f, 0.02f);
+}
+
+// G5-1: provider lookup by explicit name (matches the info name / library stem,
+// case-insensitive); a wrong name finds nothing and is not fatal.
+TEST(NativeBackendByName) {
+    test::TempDir tmp;
+    const std::string plugins = tmp.Str() + "/plugins";
+    const std::string dir = plugins + "/physics_plugin";
+    CHECK(Mkdir(plugins));
+    CHECK(Mkdir(dir));
+    WriteText(dir + "/plugin.json",
+              "{\"id\":\"physics_plugin\",\"name\":\"示例物理\",\"version\":\"1.0.0\","
+              "\"type\":\"native\",\"backend\":\"native\",\"entry\":\"neon_plugin_physics.dll\"}");
+    CHECK(CopyFile(NEON_PLUGIN_PHYSICS_PATH, dir + "/neon_plugin_physics.dll"));
+
+    std::unique_ptr<plugin::PhysicsBackend> found =
+        plugin::LoadNativePhysicsBackend("PHYSICS", tmp.Str());
+    CHECK(found != nullptr);
+    CHECK(found->plugin->Info().name != nullptr);
+    CHECK(found->plugin->Info().name[0] != '\0');
+
+    std::unique_ptr<plugin::PhysicsBackend> missing =
+        plugin::LoadNativePhysicsBackend("nonexistent", tmp.Str());
+    CHECK(missing == nullptr);
 }

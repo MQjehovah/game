@@ -1,4 +1,5 @@
 #include <cmath>
+#include <fstream>
 #include <string>
 
 #if defined(_WIN32)
@@ -864,4 +865,57 @@ TEST(GameRuntimeChangeSceneDeferred) {
     CHECK(!runtime.FindNamedEntity("A").IsValid());
     CHECK(runtime.FindNamedEntity("B").IsValid());
     CHECK_EQ(runtime.EntityCount(), 1u);
+}
+
+// G5-1: the runtime can take its physics backend from a native plugin DLL
+// (cfg.physicsBackend = "plugin:*" + cfg.pluginBaseDir). A dynamic sphere in
+// the scene falls to the ground exactly like the built-in solver — proving the
+// middleware backend genuinely drives the simulation, not just the factory.
+TEST(GameRuntimeNativePhysicsBackendPlugin) {
+    // Stage <tmp>/plugins/physics_plugin/ with a native manifest + the DLL.
+    test::TempDir tmp;
+    const std::string plugins = tmp.Str() + "/plugins";
+    const std::string dir = plugins + "/physics_plugin";
+#if defined(_WIN32)
+    CHECK(::_mkdir(plugins.c_str()) == 0);
+    CHECK(::_mkdir(dir.c_str()) == 0);
+#else
+    CHECK(::mkdir(plugins.c_str(), 0777) == 0);
+    CHECK(::mkdir(dir.c_str(), 0777) == 0);
+#endif
+    {
+        std::ofstream m(dir + "/plugin.json", std::ios::binary);
+        m << "{\"id\":\"physics_plugin\",\"name\":\"示例物理\",\"version\":\"1.0.0\","
+             "\"type\":\"native\",\"backend\":\"native\",\"entry\":\"neon_plugin_physics.dll\"}";
+    }
+    {
+        std::ifstream in(NEON_PLUGIN_PHYSICS_PATH, std::ios::binary);
+        std::ofstream out(dir + "/neon_plugin_physics.dll", std::ios::binary);
+        CHECK(in.is_open());
+        if (in.is_open()) out << in.rdbuf();
+    }
+
+    const char* scene = R"({
+      "entities": [
+        {"name": "Ball", "components": {
+          "transform": {"pos": [0, 5, 0]},
+          "rigidbody": {"shape": "sphere", "radius": 0.5, "dynamic": true}}}
+      ]
+    })";
+    scene::GameRuntime runtime;
+    scene::GameRuntimeConfig cfg;
+    cfg.headless = true;
+    cfg.physicsBackend = "plugin:*";   // G5-1: physics from the native plugin
+    cfg.pluginBaseDir = tmp.Str();
+    CHECK(runtime.Start(scene, cfg).Ok());
+
+    // ~3s at 60Hz: the ball free-falls from y=5 to rest at y == radius (0.5).
+    for (int i = 0; i < 180; ++i) runtime.Tick(1.0f / 60.0f);
+
+    ecs::Entity ball = runtime.FindNamedEntity("Ball");
+    CHECK(ball.IsValid());
+    if (!ball.IsValid()) return;
+    const scene::SceneTransform* t = runtime.World().Get<scene::SceneTransform>(ball);
+    CHECK(t != nullptr);
+    if (t) CHECK_NEAR(t->pos.y, 0.5f, 0.02f);
 }

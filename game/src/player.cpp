@@ -285,6 +285,7 @@ bool PlayerApp::OnCreate() {
     rcfg.physicsBackend = "jolt"; // packaged game uses Jolt rigid bodies
 #endif
     rcfg.scriptBaseDir = cfg_.unpackedDir; // scripts/ + behaviors/ resolve here
+    rcfg.pluginBaseDir = cfg_.unpackedDir.empty() ? std::string(".") : cfg_.unpackedDir; // G5-1
     if (!cfg_.looseScenePath.empty()) rcfg.scriptBaseDir = cfg_.scriptsDir;
     // With a VFS installed (pack + Mods), asset paths stay RELATIVE so the
     // mount stack resolves them (pack-relative keys); without one they resolve

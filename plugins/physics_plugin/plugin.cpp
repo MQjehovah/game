@@ -10,6 +10,12 @@
 #include "api.h"
 #include "neon/plugin/native.hpp"
 
+// G5-1: the plugin also compiles the engine's real deterministic solver
+// (engine/src/physics/physics.cpp, added to this target) into itself, turning
+// the DLL into a drop-in physics *middleware*. NeonPhysics_GetWorldApi exposes
+// the C factory; the created object is a full neon::physics::World.
+#include "neon/physics/physics.hpp"
+
 #if defined(_WIN32)
 #define NEON_PLUGIN_EXPORT extern "C" __declspec(dllexport)
 #else
@@ -103,3 +109,22 @@ const NeonPhysicsApi* NeonPhysics_GetApi(void* instance) {
     if (!instance) return nullptr;
     return &kApi;
 }
+
+// ---------------------------------------------------------------------------
+// G5-1 world factory: create/destroy a real neon::physics::World (the engine's
+// deterministic solver, compiled into this DLL). Both directions of the
+// lifecycle happen here so new/delete stay on the plugin's CRT.
+// ---------------------------------------------------------------------------
+void* CreateWorld() { return new neon::physics::World(); }
+
+void DestroyWorld(void* world) { delete static_cast<neon::physics::World*>(world); }
+
+const char* WorldName() { return "custom"; }
+
+const NeonPhysicsWorldApi kWorldApi = {
+    /*.create_world=*/CreateWorld,
+    /*.destroy_world=*/DestroyWorld,
+    /*.name=*/WorldName,
+};
+
+const NeonPhysicsWorldApi* NeonPhysics_GetWorldApi() { return &kWorldApi; }

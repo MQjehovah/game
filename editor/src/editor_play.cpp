@@ -449,6 +449,7 @@ void EditorApp::StartPlay() {
     cfg.physicsBackend = "jolt"; // play uses Jolt rigid bodies when compiled
 #endif
     cfg.scriptBaseDir = projectDir_.empty() ? "." : projectDir_;
+    cfg.pluginBaseDir = projectDir_.empty() ? "." : projectDir_; // G5-1 native plugins
     cfg.localesDir = projectDir_.empty() ? "./locales" : projectDir_ + "/locales";
     cfg.input = Input(); // hero controller reads live WASD/mouse input
     cfg.font2d = cjkFont_.Valid() ? cjkFont_ : pixelFont_; // 2D HUD / on_render
