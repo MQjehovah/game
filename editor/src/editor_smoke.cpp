@@ -1189,6 +1189,26 @@ void EditorApp::RunUISmokeTest() {
             const size_t worldTransforms = sceneWorld_.ViewAll<scene::SceneTransform>().Size();
             check(worldTransforms >= 1u, "editor ecs world has transforms");
         }
+        // G2-2: the editor's play/save output flows through the runtime World
+        // (entities_ -> SyncWorldFromEntities -> SceneFile::FromWorld). Verify it
+        // reparses and keeps the sprite entity.
+        {
+            auto playRoot = BuildPlaySceneJson();
+            check(playRoot.Ok(), "editor play json (via ecs world) builds");
+            if (playRoot.Ok()) {
+                auto reparse =
+                    scene::SceneFile::Parse(core::JsonWriter::Write(playRoot.Value()));
+                check(reparse.Ok(), "editor play json reparses");
+                bool hasSprite = false;
+                if (const core::Json* arr = playRoot.Value().Get("entities")) {
+                    for (const core::Json& e : arr->Items()) {
+                        const core::Json* comps = e.Get("components");
+                        if (comps && comps->Get("sprite")) hasSprite = true;
+                    }
+                }
+                check(hasSprite, "editor play json keeps the sprite entity");
+            }
+        }
         if (!prevScene.empty()) LoadScene(prevScene);
     }
     // Restore the editor's actual scene (user data) after the deterministic
