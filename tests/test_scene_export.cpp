@@ -413,3 +413,77 @@ TEST(SceneMakeEntityScriptComponent) {
     CHECK(s->vars.IsObject());
     CHECK_NEAR(s->vars.Get("aggro")->GetNumber(), 10.0, 1e-9);
 }
+
+// G2-2 scene unification: the canonical sprite builder (used by the editor's
+// BuildPlaySceneJson for 2D entities) round-trips through Parse + Instantiate
+// with sprite, transform, parent and health all preserved — the regression net
+// for the historical "sprite export drops health" drift.
+TEST(SceneSpriteMakeEntityRoundTrip) {
+    auto r = scene::SceneFile::MakeSpriteEntity(
+        "Plant", {3, 4, 0}, math::Quat{0, 0, 0, 1}, {2, 2, 1},
+        "assets/sprites/sunflower.png", /*flipX=*/true, /*flipY=*/false, "#ff00aa",
+        /*hp=*/80, /*maxHp=*/80, /*parent=*/"", /*parentId=*/0, /*id=*/7);
+    CHECK(r.Ok());
+    if (!r.Ok()) return;
+
+    // Byte shape: sprite + health components present.
+    const core::Json& e = r.Value();
+    CHECK_EQ(e.Get("name")->GetString(), std::string("Plant"));
+    CHECK_EQ(e.Get("id")->GetNumber(), 7.0);
+    const core::Json* comps = e.Get("components");
+    CHECK(comps->Get("sprite") != nullptr);
+    CHECK(comps->Get("sprite")->Get("flipX")->GetBool());
+    CHECK(comps->Get("sprite")->Get("colorHex")->GetString() == "#ff00aa");
+    CHECK(comps->Get("health") != nullptr);
+    CHECK_NEAR(comps->Get("health")->Get("maxHp")->GetNumber(), 80.0, 1e-9);
+
+    std::vector<core::Json> entities;
+    entities.push_back(r.Value());
+    auto parsed = scene::SceneFile::Parse(core::JsonWriter::Write(MakeSceneRoot(entities)));
+    CHECK(parsed.Ok());
+    CHECK_EQ(parsed.Value().entities.size(), 1u);
+    CHECK_EQ(parsed.Value().entities[0].name, std::string("Plant"));
+
+    // Instantiate -> the ECS carries SceneSprite + SceneHealth + SceneTransform.
+    scene::ComponentRegistry reg;
+    scene::RegisterBuiltinComponents(reg);
+    ecs::World world;
+    scene::PrefabLibrary prefs;
+    auto inst = scene::Instantiate(world, parsed.Value(), prefs, reg);
+    CHECK(inst.Ok());
+    CHECK_EQ(inst.Value(), 1);
+    auto sview = world.ViewAll<scene::SceneSprite>();
+    CHECK_EQ(sview.Size(), 1u);
+    ecs::Entity ent = world.EntityAt<scene::SceneSprite>(0);
+    const scene::SceneSprite* s = world.Get<scene::SceneSprite>(ent);
+    CHECK(s != nullptr);
+    CHECK_EQ(s->texture, std::string("assets/sprites/sunflower.png"));
+    CHECK(s->flipX);
+    CHECK(!s->flipY);
+    CHECK_EQ(s->colorHex, std::string("#ff00aa"));
+    const scene::SceneHealth* h = world.Get<scene::SceneHealth>(ent);
+    CHECK(h != nullptr);
+    if (h) CHECK_NEAR(h->maxHp, 80.0f, 1e-5f);
+    const scene::SceneTransform* t = world.Get<scene::SceneTransform>(ent);
+    CHECK(t != nullptr);
+    if (t) {
+        CHECK_NEAR(t->pos.x, 3.0f, 1e-5f);
+        CHECK_NEAR(t->pos.y, 4.0f, 1e-5f);
+    }
+
+    // No health -> no SceneHealth component (optional field).
+    auto plain = scene::SceneFile::MakeSpriteEntity("Plain", {0, 0, 0}, {}, {1, 1, 1},
+                                                    "assets/sprites/a.png");
+    CHECK(plain.Ok());
+    std::vector<core::Json> plainEnts;
+    plainEnts.push_back(plain.Value());
+    auto plainParsed =
+        scene::SceneFile::Parse(core::JsonWriter::Write(MakeSceneRoot(plainEnts)));
+    CHECK(plainParsed.Ok());
+    scene::ComponentRegistry reg2;
+    scene::RegisterBuiltinComponents(reg2);
+    ecs::World world2;
+    auto inst2 = scene::Instantiate(world2, plainParsed.Value(), prefs, reg2);
+    CHECK(inst2.Ok());
+    CHECK_EQ(world2.ViewAll<scene::SceneHealth>().Size(), 0u);
+}

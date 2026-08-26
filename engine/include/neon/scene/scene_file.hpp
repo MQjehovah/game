@@ -125,6 +125,26 @@ struct SceneFile {
                                                const std::string& parent = "",
                                                int parentId = 0,
                                                int id = 0);
+    // G2-2 scene unification: the canonical 2D sprite entity builder (mirrors
+    // MakeEntity for mesh entities). Emits name + id + components: transform
+    // (pos/rot/scale/parent/parentId), sprite (texture/flipX/flipY/colorHex)
+    // and health (hp/maxHp when maxHp > 0). Both the editor (BuildPlaySceneJson)
+    // and any host export sprites through this, so the runtime parser always
+    // reads what this builder writes — no hand-written drift (the sprite branch
+    // historically dropped health). `colorHex` is "#rrggbb" ("" = white).
+    static core::Result<core::Json> MakeSpriteEntity(const std::string& name,
+                                                     const math::Vec3& pos,
+                                                     const math::Quat& rot,
+                                                     const math::Vec3& scale,
+                                                     const std::string& texture,
+                                                     bool flipX = false,
+                                                     bool flipY = false,
+                                                     const std::string& colorHex = "",
+                                                     float hp = 0.0f,
+                                                     float maxHp = 0.0f,
+                                                     const std::string& parent = "",
+                                                     int parentId = 0,
+                                                     int id = 0);
 };
 
 // Prefab library: registers prefab component templates parsed from JSON text

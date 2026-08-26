@@ -112,64 +112,20 @@ core::Result<core::Json> EditorApp::BuildPlaySceneJson() {
             obj.object_["id"] = std::move(id);
         }
         if (!e.spriteTex.empty()) {
-            // 2D sprite: name + transform + sprite components (no mesh). The
-            // runtime renders the image quad with the unlit texture material.
-            auto mkStr = [](const std::string& s) {
-                core::Json j;
-                j.type_ = core::Json::Type::String;
-                j.string_ = s;
-                return j;
-            };
-            auto mkNum = [](double v) {
-                core::Json j;
-                j.type_ = core::Json::Type::Number;
-                j.number_ = v;
-                return j;
-            };
-            auto mkArr = [&mkNum](const std::initializer_list<double>& vals) {
-                core::Json j;
-                j.type_ = core::Json::Type::Array;
-                for (double v : vals) j.array_.push_back(mkNum(v));
-                return j;
-            };
-            obj.type_ = core::Json::Type::Object;
-            obj.object_["name"] = mkStr(e.name);
-            core::Json tf;
-            tf.type_ = core::Json::Type::Object;
-            tf.object_["pos"] = mkArr({e.pos.x, e.pos.y, e.pos.z});
-            tf.object_["rot"] = mkArr({e.rot.x, e.rot.y, e.rot.z, e.rot.w});
-            tf.object_["scale"] = mkArr({e.scale.x, e.scale.y, e.scale.z});
-            if (e.parentId != 0) tf.object_["parentId"] = mkNum(e.parentId);
-            const std::string pname = parentNameOf(e.parentId);
-            if (!pname.empty()) tf.object_["parent"] = mkStr(pname);
-            core::Json sp;
-            sp.type_ = core::Json::Type::Object;
-            sp.object_["texture"] = mkStr(e.spriteTex);
-            if (e.spriteFlipX) {
-                core::Json b;
-                b.type_ = core::Json::Type::Bool;
-                b.bool_ = true;
-                sp.object_["flipX"] = std::move(b);
+            // G2-2: 2D sprites go through the runtime's canonical sprite
+            // builder (SceneFile::MakeSpriteEntity), so the editor export and
+            // the runtime parser share one code path — no hand-written JSON
+            // drift (this branch historically dropped health).
+            auto res = scene::SceneFile::MakeSpriteEntity(
+                e.name, e.pos, e.rot, e.scale, e.spriteTex, e.spriteFlipX,
+                e.spriteFlipY, ColorToHex(e.tint), e.hp, e.maxHp,
+                parentNameOf(e.parentId), e.parentId, e.id);
+            if (!res.Ok()) {
+                NEON_LOG_ERROR("Editor: sprite export for '%s' failed: %s", e.name.c_str(),
+                               res.Error().c_str());
+                continue;
             }
-            if (e.spriteFlipY) {
-                core::Json b;
-                b.type_ = core::Json::Type::Bool;
-                b.bool_ = true;
-                sp.object_["flipY"] = std::move(b);
-            }
-            sp.object_["colorHex"] = mkStr(ColorToHex(e.tint));
-            core::Json comps;
-            comps.type_ = core::Json::Type::Object;
-            comps.object_["transform"] = std::move(tf);
-            comps.object_["sprite"] = std::move(sp);
-            if (e.maxHp > 0.0f) {
-                core::Json health;
-                health.type_ = core::Json::Type::Object;
-                health.object_["hp"] = mkNum(e.hp);
-                health.object_["maxHp"] = mkNum(e.maxHp);
-                comps.object_["health"] = std::move(health);
-            }
-            obj.object_["components"] = std::move(comps);
+            obj = res.Value();
         } else if (!e.meshKey.empty()) {
         std::string meshKey = ExportMeshKey(e.meshKey);
         if (e.meshKey == "npc") {

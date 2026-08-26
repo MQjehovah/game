@@ -119,6 +119,13 @@ core::Json MakeNumber(double v) {
     return j;
 }
 
+core::Json MakeBool(bool v) {
+    core::Json j;
+    j.type_ = core::Json::Type::Bool;
+    j.bool_ = v;
+    return j;
+}
+
 core::Json MakeVec3(const math::Vec3& v) {
     core::Json j;
     j.type_ = core::Json::Type::Array;
@@ -376,6 +383,53 @@ core::Result<core::Json> SceneFile::MakeEntity(const std::string& name,
 
     // Optional health component (matching the built-in `health` factory
     // schema); omitted when maxHp is <= 0 (no health tracked).
+    if (maxHp > 0.0f) {
+        core::Json health = MakeObject();
+        health.object_["hp"] = MakeNumber(hp > 0.0f ? hp : maxHp);
+        health.object_["maxHp"] = MakeNumber(maxHp);
+        comps.object_["health"] = std::move(health);
+    }
+
+    e.object_["components"] = std::move(comps);
+    return core::Result<core::Json>::Ok(std::move(e));
+}
+
+core::Result<core::Json> SceneFile::MakeSpriteEntity(const std::string& name,
+                                                     const math::Vec3& pos,
+                                                     const math::Quat& rot,
+                                                     const math::Vec3& scale,
+                                                     const std::string& texture,
+                                                     bool flipX, bool flipY,
+                                                     const std::string& colorHex, float hp,
+                                                     float maxHp, const std::string& parent,
+                                                     int parentId, int id) {
+    if (name.empty())
+        return core::Result<core::Json>::Err("scene: exported entity name must not be empty");
+    if (texture.empty())
+        return core::Result<core::Json>::Err("scene: exported sprite '" + name +
+                                             "' has an empty texture");
+
+    core::Json e = MakeObject();
+    e.object_["name"] = MakeString(name);
+    if (id != 0) e.object_["id"] = MakeNumber(id);
+
+    core::Json tf = MakeObject();
+    tf.object_["pos"] = MakeVec3(pos);
+    tf.object_["rot"] = MakeQuat(rot);
+    tf.object_["scale"] = MakeVec3(scale);
+    if (!parent.empty()) tf.object_["parent"] = MakeString(parent);
+    if (parentId != 0) tf.object_["parentId"] = MakeNumber(parentId);
+
+    core::Json sp = MakeObject();
+    sp.object_["texture"] = MakeString(texture);
+    if (flipX) sp.object_["flipX"] = MakeBool(true);
+    if (flipY) sp.object_["flipY"] = MakeBool(true);
+    sp.object_["colorHex"] = MakeString(colorHex.empty() ? "#FFFFFF" : colorHex);
+
+    core::Json comps = MakeObject();
+    comps.object_["transform"] = std::move(tf);
+    comps.object_["sprite"] = std::move(sp);
+
     if (maxHp > 0.0f) {
         core::Json health = MakeObject();
         health.object_["hp"] = MakeNumber(hp > 0.0f ? hp : maxHp);
