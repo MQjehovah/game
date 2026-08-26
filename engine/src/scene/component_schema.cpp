@@ -88,6 +88,10 @@ std::vector<ComponentSchema> BuildSchemas() {
                     {"type", "类型", FieldType::Enum, 0, 0, 0, 0, kZombieTypes, 3},
                     {"speed", "速度", FieldType::Number, 26, 0, 200, 1},
                     {"damage", "伤害", FieldType::Number, 12, 0, 100, 1}}});
+    out.push_back({"audio", "音频源",
+                   {{"sound", "声音名", FieldType::String, 0, 0, 0, 0},
+                    {"volume", "音量", FieldType::Number, 1, 0, 1, 0.01},
+                    {"radius", "衰减半径", FieldType::Number, 10, 0.1, 100, 0.5}}});
     return out;
 }
 

@@ -190,6 +190,54 @@ TEST(SceneRigidBodyShapeTolerance) {
     CHECK_EQ(rb1->shape, std::string("box")); // valid shape preserved
 }
 
+// G8-3: the "audio" component parses into a SceneAudioSource (sound/volume/
+// radius) and round-trips through ToJson; unknown fields are rejected.
+TEST(SceneAudioSourceParse) {
+    scene::ComponentRegistry reg;
+    scene::RegisterBuiltinComponents(reg);
+    const char* json = R"({
+        "entities": [
+            {
+                "name": "Ambience",
+                "components": {
+                    "transform": {"pos": [1, 2, 3]},
+                    "audio": {"sound": "waterfall", "volume": 0.8, "radius": 25}
+                }
+            }
+        ]
+    })";
+    auto res = scene::SceneFile::Parse(json);
+    CHECK(res.Ok());
+    scene::PrefabLibrary prefs;
+    ecs::World world;
+    auto inst = scene::Instantiate(world, res.Value(), prefs, reg);
+    CHECK(inst.Ok());
+    CHECK_EQ(inst.Value(), 1);
+
+    const scene::SceneAudioSource* a =
+        world.Get<scene::SceneAudioSource>(world.EntityAt<scene::SceneAudioSource>(0));
+    CHECK(a != nullptr);
+    if (!a) return;
+    CHECK_EQ(a->sound, std::string("waterfall"));
+    CHECK_NEAR(a->volume, 0.8f, 1e-6);
+    CHECK_NEAR(a->radius, 25.0f, 1e-6);
+
+    // ToJson round-trips the component.
+    core::Json out = res.Value().ToJson();
+    const core::Json* au = out.Get("entities")->At(0)->Get("components")->Get("audio");
+    CHECK(au != nullptr);
+    CHECK_EQ(au->Get("sound")->GetString(), std::string("waterfall"));
+
+    // Unknown field rejected at Instantiate.
+    const char* bad = R"({"entities":[{"name":"B",
+        "components":{"transform":{"pos":[0,0,0]},"audio":{"sound":"x","warp":9}}}]})";
+    auto badRes = scene::SceneFile::Parse(bad);
+    CHECK(badRes.Ok());
+    ecs::World badWorld;
+    auto badInst = scene::Instantiate(badWorld, badRes.Value(), prefs, reg);
+    CHECK(!badInst.Ok());
+}
+
 TEST(SceneSpriteComponentRoundTrip) {
     // A 2D sprite: image texture on an XY quad. Parse -> Instantiate -> ECS
     // component -> ToJson round-trips the flip flags and tint, and invalid

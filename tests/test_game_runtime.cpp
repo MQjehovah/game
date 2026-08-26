@@ -919,3 +919,29 @@ TEST(GameRuntimeNativePhysicsBackendPlugin) {
     CHECK(t != nullptr);
     if (t) CHECK_NEAR(t->pos.y, 0.5f, 0.02f);
 }
+
+// G8-3: scene audio sources are played once at their entity's position through
+// the host's playSfx3D hook at Start.
+TEST(GameRuntimePlaysAudioSources) {
+    const char* scene = R"({
+      "entities": [
+        {"name": "Ambience", "components": {
+          "transform": {"pos": [3, 4, 5]},
+          "audio": {"sound": "waterfall", "volume": 0.8, "radius": 25}}}
+      ]
+    })";
+    scene::GameRuntime runtime;
+    scene::GameRuntimeConfig cfg;
+    cfg.headless = true;
+    std::string played;
+    math::Vec3 playedPos;
+    cfg.playSfx3D = [&](const std::string& name, const math::Vec3& pos) {
+        played = name;
+        playedPos = pos;
+    };
+    CHECK(runtime.Start(scene, cfg).Ok());
+    CHECK_EQ(played, std::string("waterfall"));
+    CHECK_NEAR(playedPos.x, 3.0f, 1e-6);
+    CHECK_NEAR(playedPos.y, 4.0f, 1e-6);
+    CHECK_NEAR(playedPos.z, 5.0f, 1e-6);
+}

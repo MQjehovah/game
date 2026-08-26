@@ -499,6 +499,7 @@ private:
                                   const char* fn, const std::vector<script::Value>& args);
     void RegisterSceneBodies();
     void RegisterCharacters();
+    void RegisterAudioSources(); // G8-3: play SceneAudioSource components once
     void SyncSceneBodies();
     void TickTweens(float dt);
     // G3-4 shared hit-test cores: `rewindTicks` selects the pose used for the

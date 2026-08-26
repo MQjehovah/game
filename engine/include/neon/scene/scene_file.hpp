@@ -245,6 +245,15 @@ struct SceneScript {
     std::string path;
     core::Json vars; // object, or null when absent
 };
+// Audio source component (G8-3): a positioned sound. GameRuntime::Start plays
+// it once at the entity's position through the playSfx3D hook; the editor shows
+// its attenuation sphere in the debug overlay. Looping/ambient playback needs a
+// loop-3D hook (current playSfx3D is one-shot) and is a documented follow-up.
+struct SceneAudioSource {
+    std::string sound;   // SoundFx name (PlaySfx convention)
+    float volume = 1.0f; // 0..1
+    float radius = 10.0f; // attenuation distance, drives the debug sphere
+};
 // Multiple script components on one entity (Unity-style): a scene entity can
 // carry several behaviors. Each entry attaches like a single SceneScript.
 struct SceneScripts {

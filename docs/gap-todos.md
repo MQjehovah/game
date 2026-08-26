@@ -211,6 +211,7 @@
 - [~] 现状：`DrawBox/DrawSphere/DrawLines` 调试绘制 API ✅；物理碰撞体线框（playtest，动态青/静态灰）✅；导航网格在导航面板内可视化（绿/红格 + 路径）✅；相机边框/选中包围盒/地形笔刷预览 ✅。
 - [x] 视口内 NavMesh 可行走区域覆盖层（绿/红半透明）——`DrawDebugOverlay` 在视口绘制 walkable/blocked 半透明格。
 - [ ] 音频源 3D 衰减球体（半透明蓝）——暂无音频源数据结构（面板提供音频开关占位）。
+- [x] **音频源组件 + 3D 衰减球可视化**——新增运行时组件 `SceneAudioSource`（sound/volume/radius，`scene_file.cpp` 注册解析 + 编辑器 schema `component_schema.cpp`，可在 inspector 编辑/添加）；`GameRuntime::Start` 经 `playSfx3D` 钩子在实体位置播放一次（环境循环需 loop-3D 钩子，后续）；编辑器 F3「调试覆盖层」勾选"音频源"即在视口绘制半透明蓝衰减球（radius = 衰减距离）。单元测试 `SceneAudioSourceParse`（解析/round-trip/未知字段拒绝）+ `GameRuntimePlaysAudioSources`（播放钩子按位置触发）。2026-08-26。
 - [x] 光照探针分布显示——配合 G2-4 的 `BuildProbeField`，视口按 irradiance 着色绘制探针标记。
 - [x] F3 统一调试面板（图层开关：碰撞/导航/音频/光照）——F3 开关「调试覆盖层」面板，含碰撞线框/导航/光照探针/音频复选框。
 - 建议：定义 DebugOverlay 图层注册表，F3 统一开关；先补导航覆盖层（收益最直接）。

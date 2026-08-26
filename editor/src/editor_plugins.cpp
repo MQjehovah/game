@@ -181,9 +181,7 @@ void EditorApp::BuildDebugOverlayPanel() {
         ImGui::Checkbox("导航可行走区域", &debugNavMesh_);
         ImGui::Checkbox("光照探针", &debugProbes_);
         ImGui::Checkbox("音频源", &debugAudio_);
-        ImGui::SameLine();
-        ImGui::TextDisabled("(暂无数据)");
-        ImGui::TextDisabled("提示: 碰撞/导航在编辑与播放视口即时生效");
+        ImGui::TextDisabled("提示: 碰撞/导航/音频在编辑与播放视口即时生效");
     }
     ImGui::End();
 }
@@ -191,6 +189,22 @@ void EditorApp::BuildDebugOverlayPanel() {
 void EditorApp::DrawDebugOverlay(const gfx::Camera& cam) {
     (void)cam;
     if (!renderer_.Backend()) return;
+
+    // G8-3 audio sources: translucent blue attenuation spheres at every entity
+    // carrying an "audio" component. Radius = the component's attenuation
+    // distance, so designers see how far a source is audible.
+    if (debugAudio_) {
+        for (const SceneEntity& e : entities_) {
+            auto it = e.extraComponents.find("audio");
+            if (it == e.extraComponents.end() || !it->second.IsObject()) continue;
+            float radius = 10.0f;
+            if (const core::Json* r = it->second.Get("radius")) {
+                if (r->IsNumber()) radius = static_cast<float>(r->GetNumber());
+            }
+            renderer_.DrawSphere(e.pos, radius,
+                                 gfx::Color{0.25f, 0.5f, 1.0f, 0.18f});
+        }
+    }
 
     // Navigation walkable area: translucent green (walkable) / red (blocked)
     // ground cells so the field is visible in the viewport, not just the panel.

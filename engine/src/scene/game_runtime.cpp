@@ -229,6 +229,7 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     if (!inst.Ok()) return core::Status::Err("runtime: " + inst.Error());
     RegisterSceneBodies();
     RegisterCharacters();
+    RegisterAudioSources();
 
     scriptCtx_.world = &world_;
     scriptCtx_.physics = physics_.get();
@@ -660,6 +661,17 @@ void GameRuntime::SyncSceneBodies() {
         [this](ecs::Entity, const SceneCharacter& c, SceneTransform& t) {
             if (c.bodyId == 0) return;
             t.pos = physics_->GetPosition({c.bodyId});
+        });
+}
+
+// G8-3: plays every scene audio source once at its entity's position through
+// the host's playSfx3D hook (one-shot; ambient looping needs a loop-3D hook).
+void GameRuntime::RegisterAudioSources() {
+    if (!cfg_.playSfx3D) return; // headless hosts have no audio sink
+    world_.ViewAll<SceneAudioSource, SceneTransform>().ForEach(
+        [this](ecs::Entity, const SceneAudioSource& a, const SceneTransform& t) {
+            if (a.sound.empty()) return;
+            cfg_.playSfx3D(a.sound, t.pos);
         });
 }
 
