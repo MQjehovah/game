@@ -20,6 +20,9 @@ namespace neon::assets {
 // G6-2: CPU-parsed OBJ (vertices/indices + the MTL dependency paths); produced
 // on an async worker thread, consumed (uploaded) on the main thread.
 struct ParsedObjMesh;
+// G6-2: container-level glTF parse (JSON + binary buffer), produced on an async
+// worker thread; the main thread builds the GPU/asset data from it.
+struct ParsedGltf;
 
 // Full glTF scene-graph node (every node in the glTF "nodes" array: mesh
 // nodes, joints, and transform-only nodes), in glTF node index order. Skins
@@ -154,6 +157,11 @@ public:
     // NullBackend the mesh is produced but not GPU-resident, so this is
     // testable headless.
     void LoadMeshOBJAsync(const std::string& path, std::function<void(bool)> cb);
+    // G6-2: async glTF/GLB load. The file read + container parse (JSON + binary
+    // buffer extraction) run on the async worker; the mesh/texture build, cache
+    // and callback happen on the MAIN thread inside PumpAsync(). Same contract
+    // as LoadMeshOBJAsync (inline when cached / no pool, coalesced per path).
+    void LoadGLTFAsync(const std::string& path, std::function<void(bool)> cb);
     // glTF 2.0 importer: POSITION/NORMAL/TEXCOORD_0, PBR metallic-roughness
     // materials (baseColor/metalRoughness/occlusion/emissive), node transforms.
     // Handles both .gltf (JSON + external .bin) and .glb (binary container).
@@ -257,6 +265,8 @@ private:
     // G6-2: main-thread completion of an async OBJ request (upload + cache +
     // dependency edges + callbacks).
     void FinishAsyncMesh(const std::string& path, ParsedObjMesh&& parsed);
+    // G6-2: main-thread completion of an async glTF request.
+    void FinishAsyncGltf(const std::string& path, uint64_t mtime, ParsedGltf&& parsed);
     // G1-4: records a direct edge parent -> dep in the dependency graph.
     void RecordDependency(const std::string& parent, const std::string& dep);
     // Destroys retired GPU resources whose deferral window has elapsed. Called
@@ -319,6 +329,9 @@ private:
     // async maps (separate key space from textures; mesh paths end in .obj).
     std::map<std::string, bool> meshInFlight_;
     std::map<std::string, std::vector<std::function<void(bool)>>> meshPendingCallbacks_;
+    // G6-2: async glTF state, same contract as the mesh async maps.
+    std::map<std::string, bool> gltfInFlight_;
+    std::map<std::string, std::vector<std::function<void(bool)>>> gltfPendingCallbacks_;
     // Driver capability learned at runtime: the first rejected compressed
     // upload flips this off and the fallback warning is logged once.
     bool bc1Supported_ = true;

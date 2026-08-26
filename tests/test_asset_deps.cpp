@@ -156,6 +156,40 @@ TEST(AssetDepsAsyncMeshLoad) {
     CHECK(!badOk);
 }
 
+// G6-2: async glTF/GLB load — the container parse runs off the main thread, the
+// asset build + cache happen inside PumpAsync, and the callback fires with the
+// result. A GLB (embedded buffer) is parsed the same way as a .gltf.
+TEST(AssetDepsAsyncGltfLoad) {
+    test::HeadlessAssetFixture fx;
+    // A real repo glTF with an external .bin + textures.
+    const std::string gltf = "assets/models/DamagedHelmet/DamagedHelmet.gltf";
+    std::atomic<int> fired{0};
+    bool ok = false;
+    fx.assets.LoadGLTFAsync(gltf, [&](bool o) {
+        ok = o;
+        fired.store(1);
+    });
+    CHECK(PumpUntil(fx.assets, fired, 1));
+    CHECK(ok);
+    // Cached by the async path: a sync LoadGLTF hits the mtime cache.
+    CHECK(fx.assets.LoadGLTF(gltf).Valid());
+
+    // Concurrent request coalesces onto the in-flight load.
+    std::atomic<int> fired2{0};
+    fx.assets.LoadGLTFAsync(gltf, [&](bool) { fired2.store(1); });
+    CHECK(PumpUntil(fx.assets, fired2, 1));
+
+    // Missing file: the async callback reports failure.
+    std::atomic<int> badFired{0};
+    bool badOk = true;
+    fx.assets.LoadGLTFAsync("assets/missing_never_there.gltf", [&](bool o) {
+        badOk = o;
+        badFired.store(1);
+    });
+    CHECK(PumpUntil(fx.assets, badFired, 1));
+    CHECK(!badOk);
+}
+
 // G6-1: platform/LOD asset variant table — logical paths resolve to concrete
 // files, unlisted paths fall back to themselves, and the JSON (de)serialization
 // plus named-variant selection round-trip.
