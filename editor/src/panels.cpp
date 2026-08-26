@@ -8,6 +8,7 @@
 #include <functional>
 #include <cstdio>
 #include <fstream>
+#include "neon/core/mem_stats.hpp"
 #if defined(_WIN32)
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -2254,9 +2255,16 @@ void EditorApp::BuildProfilerPanel() {
         ImGui::Text("行为树 %zu | 脚本 %zu", trees, scripts);
 
         const assets::AssetStats a = assetMgr_.Stats();
-        ImGui::Text("纹理 %zu | 网格 %zu | 三角 %zu", a.textures, a.meshes, a.meshTriangles);
+        ImGui::Text("资产 %zu | 网格 %zu | 三角形 %zu", a.textures, a.meshes, a.meshTriangles);
         ImGui::Text("纹理内存 %.2f MB",
                     static_cast<double>(a.textureBytes) / (1024.0 * 1024.0));
+
+        // G6-3: global heap tracking (operator new/delete overrides).
+        const core::MemStats::Snapshot heap = core::MemStats::SnapshotNow();
+        ImGui::Text("堆: 存活 %.2f MB | 峰值 %.2f MB | 分配 %llu 次",
+                    static_cast<double>(heap.liveBytes) / (1024.0 * 1024.0),
+                    static_cast<double>(heap.peakLiveBytes) / (1024.0 * 1024.0),
+                    static_cast<unsigned long long>(heap.allocCount));
 
         ImGui::Separator();
         // Plot the ring buffer in chronological order (oldest = profilerMsHead_)

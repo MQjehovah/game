@@ -164,8 +164,9 @@
 ### G6-3 移动式分配器（第 6 项）
 
 - [~] 现状：`core::ObjectPool` 固定容量池、ECS dense 数组、粒子稳定 arena（`particles.cpp:11`）——同类对象物理相邻，缓存友好 ✅。
+- [x] **全局堆监控（碎片统计前置）**——`core::MemStats` + 全局 `operator new/delete` 覆写（`mem_stats.cpp`，编入 neon_engine）：纯计数转发 malloc/free，不改分配行为；普通（malloc 支撑）分配按块可用大小精确对称（`_msize`/`malloc_usable_size`），`liveBytes` 不漂移；C++17 对齐分配走 CRT 默认不统计（避免对 `_aligned_malloc` 块取大小）。指标：分配总次数/总字节、存活字节/次数、峰值存活（monotonic 高水位）。编辑器"性能"面板新增"堆: 存活/峰值/分配次数"行。单元测试 `tests/test_mem_stats.cpp`（真实容器分配/释放反映在计数、峰值单调、直接钩子）。为 G6-3 的 compact 工作提供确证数据。2026-08-26。
 - [ ] 通用 relocating allocator（大块连续内存 + 后台 compact 整理）——无；堆碎片仅靠对象池局部规避。
-- 建议：先加碎片统计/监控确证瓶颈，再实现 compact；或按类型分池扩展（粒子/实体/特效各自独立池）。
+- 建议：先加碎片统计/监控确证瓶颈，再实现 compact；或按类型分池扩展（粒子/实体/特效各自独立池）——全局堆监控已落地，compact 分配器为后续。
 
 ## 七、跨平台与兼容性特性（第二轮 7–9）
 

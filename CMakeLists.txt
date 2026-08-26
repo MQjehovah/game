@@ -34,6 +34,7 @@ set(ENGINE_CORE_SOURCES
   engine/src/core/config.cpp
   engine/src/core/crash.cpp
   engine/src/core/log.cpp
+  engine/src/core/mem_stats.cpp
   engine/src/core/profiler.cpp
   engine/src/ecs/world.cpp
   engine/src/ecs/parallel.cpp
@@ -560,6 +561,7 @@ add_executable(neon_tests tests/test_main.cpp tests/test_serialize.cpp tests/tes
   tests/test_plugin.cpp
   tests/test_plugin_native.cpp
   tests/test_input_map.cpp
+  tests/test_mem_stats.cpp
   ${NEON_AUDIO_TEST}
   tests/test_bt.cpp tests/test_scene_file.cpp tests/test_scene_export.cpp tests/test_manifest.cpp
   tests/test_nav.cpp
