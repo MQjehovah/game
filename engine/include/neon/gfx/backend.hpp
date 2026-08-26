@@ -53,9 +53,18 @@ class IRenderBackend {
 public:
     virtual ~IRenderBackend() = default;
 
+    // G6-1: GPU memory budget/usage (bytes). Total 0 = the driver reports no
+    // budget (backend or extension unavailable). Used 0 = not tracked.
+    struct GpuMemStats {
+        uint64_t totalBytes = 0;
+        uint64_t usedBytes = 0;
+    };
+
     virtual bool Init(platform::IWindow* window) = 0;
     virtual void Shutdown() = 0;
     virtual const char* Name() const = 0;
+    // G6-1: driver-reported GPU memory budget/usage; zeros when unavailable.
+    virtual GpuMemStats GpuMemory() const { return {}; }
 
     // Resources
     // Color render target. When floatColor is true the color attachment is a

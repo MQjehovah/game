@@ -2266,6 +2266,16 @@ void EditorApp::BuildProfilerPanel() {
                     static_cast<double>(heap.peakLiveBytes) / (1024.0 * 1024.0),
                     static_cast<unsigned long long>(heap.allocCount));
 
+        // G6-1: driver-reported GPU memory budget/usage (0 = not reported).
+        const gfx::IRenderBackend::GpuMemStats gpu = renderer_.GpuMemory();
+        if (gpu.totalBytes > 0) {
+            ImGui::Text("GPU 显存: 总 %.2f GB | 已用 %.2f MB",
+                        static_cast<double>(gpu.totalBytes) / (1024.0 * 1024.0 * 1024.0),
+                        static_cast<double>(gpu.usedBytes) / (1024.0 * 1024.0));
+        } else {
+            ImGui::Text("GPU 显存: 驱动未报告 (GL_NVX_gpu_memory_info / GL_ATI_meminfo 不可用)");
+        }
+
         ImGui::Separator();
         // Plot the ring buffer in chronological order (oldest = profilerMsHead_)
         // so the graph reads left-to-right instead of jumping when the head

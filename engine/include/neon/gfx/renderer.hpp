@@ -238,10 +238,14 @@ public:
 
     struct RenderStats {
         uint32_t drawCalls = 0;
-        uint32_t instances = 0;
         uint32_t triangles = 0;
+        uint32_t instances = 0;
     };
     const RenderStats& Stats() const { return stats_; }
+    // G6-1: driver-reported GPU memory budget/usage (zeros when unavailable).
+    IRenderBackend::GpuMemStats GpuMemory() const {
+        return backend_ ? backend_->GpuMemory() : IRenderBackend::GpuMemStats{};
+    }
 
     // Resources
     Texture CreateTexture(const TextureDesc& desc);

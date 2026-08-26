@@ -56,6 +56,12 @@ constexpr gl::GLenum ColorBufferBit = 0x00004000;
 constexpr gl::GLenum DepthBufferBit = 0x00000100;
 constexpr gl::GLenum Version = 0x1F02;
 constexpr gl::GLenum RendererStr = 0x1F01;
+constexpr gl::GLenum Extensions = 0x1F03;
+// G6-1 GPU memory query extensions (NVIDIA GL_NVX_gpu_memory_info / AMD
+// GL_ATI_meminfo): glGetIntegerv values, no extension function pointers.
+constexpr gl::GLenum GpuMemInfoTotalNvx = 0x9048;
+constexpr gl::GLenum GpuMemInfoCurrentNvx = 0x9049;
+constexpr gl::GLenum TextureFreeMemoryAti = 0x87FC;
 constexpr gl::GLenum NoError = 0;
 constexpr gl::GLenum Framebuffer = 0x8D40;
 constexpr gl::GLenum ReadFramebuffer = 0x8CA8;
@@ -287,6 +293,30 @@ public:
     }
 
     const char* Name() const override { return "OpenGL 3.3"; }
+
+    // G6-1: driver-reported GPU memory budget/usage. NVIDIA exposes total +
+    // currently available VRAM; AMD exposes free texture memory. Extension
+    // availability is checked once per query (glGetString is cheap enough here;
+    // it is not a per-frame call).
+    IRenderBackend::GpuMemStats GpuMemory() const override {
+        auto& g = gl::GetGL();
+        GpuMemStats out;
+        const char* ext = reinterpret_cast<const char*>(g.GetString(glc::Extensions));
+        if (!ext) return out;
+        if (std::strstr(ext, "GL_NVX_gpu_memory_info") != nullptr) {
+            gl::GLint total = 0, current = 0;
+            g.GetIntegerv(glc::GpuMemInfoTotalNvx, &total);
+            g.GetIntegerv(glc::GpuMemInfoCurrentNvx, &current);
+            out.totalBytes = static_cast<uint64_t>(total) * 1024u; // KiB -> bytes
+            if (total > 0 && current > 0)
+                out.usedBytes = static_cast<uint64_t>(total - current) * 1024u;
+        } else if (std::strstr(ext, "GL_ATI_meminfo") != nullptr) {
+            gl::GLint free[4] = {};
+            g.GetIntegerv(glc::TextureFreeMemoryAti, free);
+            if (free[0] > 0) out.usedBytes = static_cast<uint64_t>(free[0]) * 1024u;
+        }
+        return out;
+    }
 
     RenderTargetHandle CreateRenderTarget(int width, int height, bool floatColor,
                                           int samples) override {

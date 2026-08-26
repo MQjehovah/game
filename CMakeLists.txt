@@ -562,6 +562,7 @@ add_executable(neon_tests tests/test_main.cpp tests/test_serialize.cpp tests/tes
   tests/test_plugin_native.cpp
   tests/test_input_map.cpp
   tests/test_mem_stats.cpp
+  tests/test_gpu_memory.cpp
   ${NEON_AUDIO_TEST}
   tests/test_bt.cpp tests/test_scene_file.cpp tests/test_scene_export.cpp tests/test_manifest.cpp
   tests/test_nav.cpp
