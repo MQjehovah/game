@@ -157,6 +157,12 @@ struct SceneFile {
     // an equivalent World. Stable ids round-trip via SceneId. The editor uses
     // this to generate play/save output from the runtime World it hosts.
     static core::Result<core::Json> FromWorld(ecs::World& world);
+    // G5-4-4(项4): serialize ONE World entity (by SceneId) back to its scene
+    // JSON — the per-entity counterpart of FromWorld (same component output).
+    // The editor's World-backed inspector reads use it so panels are driven by
+    // the runtime representation. Err when the entity or its transform is
+    // absent.
+    static core::Result<core::Json> EntityToJson(ecs::World& world, int entityId);
 };
 
 // Prefab library: registers prefab component templates parsed from JSON text

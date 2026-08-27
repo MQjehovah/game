@@ -988,3 +988,44 @@ TEST(PrefabOverrideDiffAndMerge) {
     const core::Json ov3 = scene::ComputePrefabOverrides(tpl, tpl);
     CHECK(ov3.IsObject() && ov3.object_.empty());
 }
+
+// G5-4-4(项4): SceneFile::EntityToJson serializes ONE World entity back to its
+// scene JSON (per-entity counterpart of FromWorld) — the World-backed inspector
+// read path.
+TEST(SceneEntityToJson) {
+    const std::string json = R"({
+      "entities": [
+        {"name": "hero", "id": 7, "components": {"transform": {"pos": [1,2,3]},
+          "mesh": {"meshKey": "cube"},
+          "health": {"hp": 50, "maxHp": 100}}},
+        {"name": "other", "id": 8, "components": {"transform": {"pos": [0,0,0]}}}
+      ]
+    })";
+    auto parsed = scene::SceneFile::Parse(json);
+    CHECK(parsed.Ok());
+    scene::SceneFile scene = parsed.Value();
+    scene::PrefabLibrary prefs;
+    ecs::World world;
+    scene::ComponentRegistry reg;
+    scene::RegisterBuiltinComponents(reg);
+    auto inst = scene::Instantiate(world, scene, prefs, reg);
+    CHECK(inst.Ok());
+
+    auto one = scene::SceneFile::EntityToJson(world, 7);
+    if (!one.Ok()) std::printf("EntityToJson err: %s\n", one.Error().c_str());
+    CHECK(one.Ok());
+    CHECK_EQ(one.Value().Get("id")->GetInt(), 7);
+    const core::Json* comps = one.Value().Get("components");
+    CHECK(comps);
+    CHECK(comps->Get("transform"));
+    CHECK(comps->Get("mesh"));
+    const core::Json* health = comps->Get("health");
+    CHECK(health);
+    CHECK_EQ(health->Get("hp")->GetInt(), 50);
+    CHECK_EQ(health->Get("maxHp")->GetInt(), 100);
+
+    // Absent entity -> error.
+    CHECK(!scene::SceneFile::EntityToJson(world, 999).Ok());
+    // No transform / id 0 -> error.
+    CHECK(!scene::SceneFile::EntityToJson(world, 0).Ok());
+}

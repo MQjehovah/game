@@ -1973,7 +1973,17 @@ void EditorApp::BuildInspectorPanel() {
                 const bool hOpen = ImGui::CollapsingHeader(
                     (schema->label + "##health").c_str(), ImGuiTreeNodeFlags_DefaultOpen);
                 if (hOpen) {
-                    core::Json compData = ComponentJson(e, "health");
+                    // G5-4-4(项4): read the component from the runtime World
+                    // when the entity is hosted there (single representation);
+                    // fall back to the editor's flattened fields otherwise.
+                    core::Json compData;
+                    if (e.id != 0) {
+                        if (auto wj = scene::SceneFile::EntityToJson(sceneWorld_, e.id); wj.Ok()) {
+                            if (const core::Json* c = wj.Value().Get("components"))
+                                if (const core::Json* h = c->Get("health")) compData = *h;
+                        }
+                    }
+                    if (!compData.IsObject()) compData = ComponentJson(e, "health");
                     renderSchemaFields(*schema, compData);
                     ApplyComponentJson(entities_[static_cast<size_t>(selected_)], "health",
                                        compData);

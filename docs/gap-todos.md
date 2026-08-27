@@ -140,7 +140,7 @@
 - [x] **阶段 4 World→entities_ 反扁平化**——`EditorApp::UnflattenWorldToEntities`：从 sceneWorld_ 组件重建 entities_（SceneId/SceneName/transform/mesh/sprite/health/type/camera/light/sortOrder/scripts/terrain/tilemap/decal + SceneData 还原 extraComponents/prefab/materialRef，mesh 走 ResolveMesh）。冒烟验证：unflatten 后实体数 == World 变换数（"editor unflattens world to entities"），证明 World 能驱动编辑器工作模型。2026-08-26。
 - [x] **阶段 5-1 历史命令后同步 World**——`HistoryManager.onChanged` 回调：每次 Push/Undo/Redo 提交后 `SyncWorldFromEntities` 重建 sceneWorld_，World 始终反映编辑状态（为 UI 直读铺路）。编辑器 OnCreate 接线。冒烟/测试全过。2026-08-26。
 - [x] **层级元数据剥离 transform（`parentId`/`parent` 移到实体顶层）**——`EntityDef.parentId/parent`（与 id/name 同级），`SceneTransform` 不再含层级字段；Parse 兼容旧 `components.transform` 放置（顶层优先），Instantiate 从 EntityDef 解析 SceneParentLink，MakeEntity/MakeSpriteEntity/FromWorld 输出顶层 parentId（FromWorld 从 SceneParentLink→SceneId 推导）；编辑器 LoadScene 顶层优先+旧格式回退、BuildSceneJsonFromEntities 逻辑分支输出顶层。冒烟 SCENETREE/SAVESCENE 层级往返 + 659 测试 + pvz 打包 e2e 全过。2026-08-26。
-- [ ] **阶段 5 UI 组件化迁移（剩余）**——面板/视口/撤销历史直读/直写 sceneWorld_ 组件，删 `entities_` 双模型。
+- [~] **阶段 5 部分落地（G5-4-4 项4）**——新增 `SceneFile::EntityToJson(world, entityId)`（逐实体 World→JSON，FromWorld 的按实体对应物，检查器组件读直通 sceneWorld_：health 块已优先从 World 读取、回退扁平字段）；实体删除(entities_ 双模型)仍为剩余大项。测试 `SceneEntityToJson`。
 - 风险：爆炸半径大（meshKey 60+/pos 上百/extraComponents 20+ 处）、无法可视化验证；策略为小步验证式迁移，每阶段冒烟+单测，冒烟失败即回滚。
 
 ### G5-1 原生插件与运行时热插拔（第 1 项）
