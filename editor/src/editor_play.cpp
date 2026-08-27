@@ -486,6 +486,8 @@ core::Result<core::Json> EditorApp::BuildPlaySceneJson() {
 
 void EditorApp::StartPlay() {
     StopPlay(); // restart semantics: a fresh snapshot each time
+    // G5-4-3: use offline-baked BC1 textures from the project's import_cache.
+    assetMgr_.SetTextureBakeDir(projectDir_ + "/import_cache");
 
     scene::GameRuntimeConfig cfg;
     cfg.assets = &assetMgr_;

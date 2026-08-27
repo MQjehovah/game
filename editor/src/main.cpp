@@ -12,6 +12,7 @@
 #endif
 
 #include "editor.hpp"
+#include "neon/assets/asset_importer.hpp"
 #include "neon/core/config.hpp"
 #include "neon/core/crash.hpp"
 #include "packager.hpp"
@@ -88,6 +89,14 @@ int main(int argc, char** argv) {
         } else if (std::strcmp(argv[i], "--package") == 0 && i + 2 < argc) {
             const std::string projectDir = argv[++i];
             const std::string outDir = argv[++i];
+            // G5-4-3: bake BC1 textures offline before packing so the shipped
+            // game uploads them without a runtime decode/compress hitch.
+            const neon::assets::ImportReport bake =
+                neon::assets::ImportProjectTextures(projectDir);
+            std::printf("PACK BAKE: %zu textures baked (BC1), %zu skipped\n",
+                        bake.bakedCount, bake.skippedCount);
+            for (const std::string& e : bake.errors)
+                std::printf("PACK BAKE WARN: %s\n", e.c_str());
             neon::editor::pack::PackConfig cfg;
             cfg.projectDir = projectDir;
             cfg.outDir = outDir;

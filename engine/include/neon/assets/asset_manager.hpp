@@ -132,6 +132,11 @@ public:
     // reads fall back to the real filesystem exactly as before.
     void SetFileSystem(neon::io::IFileSystem* fs) { fs_ = fs; }
     neon::io::IFileSystem* FileSystem() const { return fs_; }
+    // G5-4-3: point the asset manager at an offline bake cache (produced by
+    // AssetImporter::ImportProjectTextures). When set, LoadTexture first checks
+    // <bakeDir>/<path>.nbc1 and uploads the pre-baked BC1 blocks directly,
+    // skipping the runtime decode+compress.
+    void SetTextureBakeDir(const std::string& dir) { bakeDir_ = dir; }
     // G1-4 asset dependency graph: direct dependencies (textures, buffers,
     // MTL) recorded when a glTF/OBJ asset loads, and the reverse edges.
     const std::vector<std::string>& DependenciesOf(const std::string& path) const;
@@ -312,6 +317,8 @@ private:
     std::map<std::string, uint32_t> textureRefs_;
     std::map<std::string, uint32_t> meshRefs_;
     neon::io::IFileSystem* fs_ = nullptr;
+    // G5-4-3: offline bake cache dir for pre-baked BC1 textures ("" = none).
+    std::string bakeDir_;
     // G1-4 dependency graph (path -> direct dependencies, normalized keys).
     std::unordered_map<std::string, std::vector<std::string>> dependencies_;
     std::unordered_map<std::string, std::vector<std::string>> dependents_;

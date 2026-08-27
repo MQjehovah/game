@@ -257,9 +257,12 @@ bool PlayerApp::OnCreate() {
         CleanupUnpackedDir();
         return false;
     }
-    assetMgr_.Init(&renderer_);
-    // G7-1: asset reads go through the pack + Mod mount stack when present.
-    if (cfg_.vfs) assetMgr_.SetFileSystem(cfg_.vfs.get());
+assetMgr_.Init(&renderer_);
+// G7-1: asset reads go through the pack + Mod mount stack when present.
+if (cfg_.vfs) assetMgr_.SetFileSystem(cfg_.vfs.get());
+// G5-4-3: prefer offline-baked BC1 textures (import_cache in the pack, or on
+// disk for loose scenes) so uploads skip the runtime decode+compress.
+assetMgr_.SetTextureBakeDir(cfg_.vfs ? std::string("import_cache") : "import_cache");
     // Overlay font: embedded ASCII pixel font, upgraded with the system CJK
     // font when available so "Esc 退出" renders (fallback keeps ASCII labels).
     pixelFont_ = renderer_.CreateFontFromMemory(neon_rush::kEmbeddedFontData,

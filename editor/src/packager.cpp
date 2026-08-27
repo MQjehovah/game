@@ -786,6 +786,13 @@ void ValidateInto(const PackConfig& cfg, ProjectContext& pc) {
     ListFilesRecursive(pc.projectDir + "/assets", "assets", assets);
     for (const std::string& rel : assets) pc.packFiles[rel] = pc.projectDir + "/" + rel;
 
+    // G5-4-3: offline BC1 bake cache (AssetImporter::ImportProjectTextures).
+    // Shipped so the player uploads pre-baked textures without a runtime
+    // decode/compress hitch.
+    std::vector<std::string> baked;
+    ListFilesRecursive(pc.projectDir + "/import_cache", "import_cache", baked);
+    for (const std::string& rel : baked) pc.packFiles[rel] = pc.projectDir + "/" + rel;
+
     // UI documents (data-driven .ui.json, consumed by UIShow at runtime).
     std::vector<std::string> uiDocs;
     ListFilesRecursive(pc.projectDir + "/ui", "ui", uiDocs);

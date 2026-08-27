@@ -25,7 +25,9 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
+#include "neon/assets/asset_importer.hpp"
 #include "neon/assets/bc1.hpp"
+#include "neon/assets/image_decode.hpp"
 #include "neon/core/log.hpp"
 #include "neon/core/json.hpp"
 #include "neon/math/quat.hpp"
@@ -81,6 +83,45 @@ core::Result<std::vector<uint8_t>> ReadAllBytes(neon::io::IFileSystem* fs,
 // Pure decode of already-read image bytes (stbi_load_from_memory, native
 // channel count) + optional BC1. Shared by DecodeImageFile (disk) and the
 // AssetManager VFS path (G7-1).
+
+DecodedImage DecodeImageFile(const std::string& path, bool compressBc1, bool flipVertically) {
+    const core::Result<std::vector<uint8_t>> bytes = ReadAllBytes(nullptr, path);
+    if (!bytes.Ok()) return {};
+    return DecodeImageBytes(bytes.Value(), compressBc1, flipVertically);
+}
+
+namespace {
+
+void LoadMaterialColors(neon::io::IFileSystem* fs, const std::string& mtlPath,
+                        std::map<std::string, math::Vec4>& out) {
+    const core::Result<std::vector<uint8_t>> bytes = ReadAllBytes(fs, mtlPath);
+    if (!bytes.Ok()) return;
+    std::istringstream in(std::string(bytes.Value().begin(), bytes.Value().end()));
+    std::string line;
+    std::string current;
+    while (std::getline(in, line)) {
+        std::istringstream ss(line);
+        std::string kind;
+        ss >> kind;
+        if (kind == "newmtl") {
+            ss >> current;
+        } else if (kind == "Kd") {
+            float r = 1, g = 1, b = 1;
+            ss >> r >> g >> b;
+            out[current] = {r, g, b, 1.0f};
+        }
+        // map_Kd (textures) is not consumed by this pipeline yet.
+    }
+}
+
+struct FaceIndex {
+    int v = 0;
+    int t = 0;
+    int n = 0;
+    FaceIndex(int v_, int t_, int n_) : v(v_), t(t_), n(n_) {}
+};
+
+} // namespace
 DecodedImage DecodeImageBytes(const std::vector<uint8_t>& bytes, bool compressBc1,
                               bool flipVertically) {
     DecodedImage img;
@@ -129,45 +170,6 @@ DecodedImage DecodeImageBytes(const std::vector<uint8_t>& bytes, bool compressBc
     stbi_image_free(data);
     return img;
 }
-
-DecodedImage DecodeImageFile(const std::string& path, bool compressBc1, bool flipVertically) {
-    const core::Result<std::vector<uint8_t>> bytes = ReadAllBytes(nullptr, path);
-    if (!bytes.Ok()) return {};
-    return DecodeImageBytes(bytes.Value(), compressBc1, flipVertically);
-}
-
-namespace {
-
-void LoadMaterialColors(neon::io::IFileSystem* fs, const std::string& mtlPath,
-                        std::map<std::string, math::Vec4>& out) {
-    const core::Result<std::vector<uint8_t>> bytes = ReadAllBytes(fs, mtlPath);
-    if (!bytes.Ok()) return;
-    std::istringstream in(std::string(bytes.Value().begin(), bytes.Value().end()));
-    std::string line;
-    std::string current;
-    while (std::getline(in, line)) {
-        std::istringstream ss(line);
-        std::string kind;
-        ss >> kind;
-        if (kind == "newmtl") {
-            ss >> current;
-        } else if (kind == "Kd") {
-            float r = 1, g = 1, b = 1;
-            ss >> r >> g >> b;
-            out[current] = {r, g, b, 1.0f};
-        }
-        // map_Kd (textures) is not consumed by this pipeline yet.
-    }
-}
-
-struct FaceIndex {
-    int v = 0;
-    int t = 0;
-    int n = 0;
-    FaceIndex(int v_, int t_, int n_) : v(v_), t(t_), n(n_) {}
-};
-
-} // namespace
 
 // G6-2: CPU-only OBJ parse, shared by the sync LoadMeshOBJ and the async
 // LoadMeshOBJAsync (which runs it on a worker thread). Never touches the GPU or
@@ -524,7 +526,31 @@ gfx::Texture AssetManager::LoadTexture(const std::string& path, const TextureLoa
         failedTextures_.erase(key);
     }
 
-    DecodedImage img = DecodeImage(path, opts, opts.compressBc1 && bc1Supported_);
+    DecodedImage img;
+    // G5-4-3: prefer a pre-baked BC1 texture (offline AssetImporter cache) —
+    // upload the blocks directly, skipping the runtime decode+compress. Reads
+    // through the VFS when installed (packed game), else the bake dir on disk.
+    if (!bakeDir_.empty() && img.bc1.empty()) {
+        const core::Result<std::vector<uint8_t>> baked =
+            ReadAllBytes(fs_, bakeDir_ + "/" + path + ".nbc1");
+        if (baked.Ok() && baked.Value().size() >= 12 &&
+            baked.Value()[0] == 'N' && baked.Value()[1] == 'B' &&
+            baked.Value()[2] == 'C' && baked.Value()[3] == '1') {
+            const uint8_t* b = baked.Value().data();
+            img.width = static_cast<int>(b[4]) | (static_cast<int>(b[5]) << 8) |
+                        (static_cast<int>(b[6]) << 16) | (static_cast<int>(b[7]) << 24);
+            img.height = static_cast<int>(b[8]) | (static_cast<int>(b[9]) << 8) |
+                         (static_cast<int>(b[10]) << 16) | (static_cast<int>(b[11]) << 24);
+            if (img.width > 0 && img.height > 0) {
+                img.channels = 4;
+                img.bc1.assign(baked.Value().begin() + 12, baked.Value().end());
+                NEON_LOG_INFO("Asset: loaded baked texture '%s' (%dx%d, BC1)",
+                              path.c_str(), img.width, img.height);
+            }
+        }
+    }
+    if (img.channels == 0)
+        img = DecodeImage(path, opts, opts.compressBc1 && bc1Supported_);
     if (img.channels == 0) {
         failedTextures_.insert(key);
         NEON_LOG_ERROR("Asset: failed to load texture '%s'", path.c_str());
