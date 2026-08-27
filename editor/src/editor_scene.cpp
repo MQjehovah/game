@@ -501,17 +501,12 @@ void EditorApp::ReloadEntityShader(SceneEntity& e) {
 // 播放器相同的组件表示）。entities_ 仍为 UI 读写模型；本函数使编辑器持有
 // 规范 ecs::World，供后续阶段 UI 直读/直写组件。
 void EditorApp::RefreshSceneWorld() {
-    sceneWorld_.Clear();
-    sceneCompReg_ = scene::ComponentRegistry{};
-    scene::RegisterBuiltinComponents(sceneCompReg_);
-    auto parsed = scene::SceneFile::Parse(core::JsonWriter::Write(currentSceneRoot_));
-    if (!parsed.Ok()) return;
-    scene::PrefabLibrary prefs;
-    auto inst = scene::Instantiate(sceneWorld_, parsed.Value(), prefs, sceneCompReg_);
-    if (inst.Ok()) {
-        NEON_LOG_CAT(neon::core::LogCategory::Scene, neon::core::LogLevel::Debug,
-                     "editor: scene world rebuilt (%zu entities)", inst.Value());
-    }
+    // G5-4: the World is the canonical runtime store, rebuilt from the editor's
+    // working model (entities_) via the canonical builders + Instantiate. This
+    // works for both the legacy flat scene format and the componentized one —
+    // the editor flattens the file into entities_, then RefreshSceneWorld
+    // canonicalizes them into the runtime World.
+    SyncWorldFromEntities();
 }
 
 // G5-4 阶段4: rebuild entities_ FROM the runtime World's components (the
@@ -521,6 +516,17 @@ void EditorApp::RefreshSceneWorld() {
 // quad). Equivalent in data to LoadScene's JSON flattening.
 void EditorApp::UnflattenWorldToEntities() {
     std::vector<SceneEntity> loaded;
+    // name -> stable id for legacy name-based parents.
+    std::map<std::string, int> nameToId;
+    {
+        auto ids = sceneWorld_.ViewAll<scene::SceneId>();
+        for (size_t i = 0; i < ids.Size(); ++i) {
+            ecs::Entity e = sceneWorld_.EntityAt<scene::SceneId>(i);
+            const scene::SceneId* id = sceneWorld_.Get<scene::SceneId>(e);
+            const scene::SceneName* n = sceneWorld_.Get<scene::SceneName>(e);
+            if (id && n && id->id != 0) nameToId[n->name] = id->id;
+        }
+    }
     auto view = sceneWorld_.ViewAll<scene::SceneTransform>();
     for (size_t i = 0; i < view.Size(); ++i) {
         ecs::Entity e = sceneWorld_.EntityAt<scene::SceneTransform>(i);
@@ -531,7 +537,12 @@ void EditorApp::UnflattenWorldToEntities() {
             out.pos = t->pos;
             out.rot = t->rot;
             out.scale = t->scale;
-            out.parentId = t->parentId;
+            if (t->parentId != 0) {
+                out.parentId = t->parentId;
+            } else if (!t->parent.empty()) { // legacy name-based parent
+                const auto it = nameToId.find(t->parent);
+                if (it != nameToId.end()) out.parentId = it->second;
+            }
         }
         if (const scene::SceneMesh* m = sceneWorld_.Get<scene::SceneMesh>(e)) {
             out.meshKey = m->meshKey;
@@ -625,6 +636,7 @@ void EditorApp::UnflattenWorldToEntities() {
         } else if (!out.meshKey.empty()) {
             ResolveMesh(out);
         }
+        if (!out.meshKey.empty()) ApplyMaterialParams(out);
         loaded.push_back(std::move(out));
     }
     entities_ = std::move(loaded);
