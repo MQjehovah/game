@@ -24,6 +24,7 @@ endif()
 # Engine core (platform-independent)
 # ---------------------------------------------------------------------------
 set(ENGINE_CORE_SOURCES
+  engine/src/assets/asset_db.cpp
   engine/src/assets/asset_importer.cpp
   engine/src/assets/asset_manager.cpp
   engine/src/assets/async_loader.cpp
@@ -547,6 +548,7 @@ add_executable(neon_tests tests/test_main.cpp tests/test_serialize.cpp tests/tes
   tests/test_vfs.cpp
   tests/test_scene_tree.cpp
   tests/test_asset_deps.cpp
+  tests/test_asset_db.cpp
   tests/test_asset_importer.cpp
   tests/test_bvh.cpp
   tests/test_terrain.cpp

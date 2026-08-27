@@ -388,6 +388,11 @@ private:
     void LoadPrefabLibrary();
     // Saves the selected entity's components as prefabs/<name>.json.
     void SavePrefab(const std::string& name);
+    // G5-4-4(项3): asset GUID database (Unity ".meta" model). Builds the
+    // project's GUID map, compares it against the previous run's snapshot, and
+    // rewrites path references in scenes/prefabs/ui JSON for any asset that
+    // moved/renamed (GUID preserved) — a rename never silently breaks a scene.
+    void RefreshAssetDatabase();
     // G5-4-4(项1): materializes a prefab template's components into a fresh
     // entity (mesh/health/scripts/extraComponents; transform left default).
     // Shared by AddEntity("prefab:...") and the inspector's 重置为预制体.

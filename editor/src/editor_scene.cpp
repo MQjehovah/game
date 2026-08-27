@@ -2,10 +2,12 @@
 #include "editor_history.hpp"
 #include "editor_util.hpp"
 
+#include <filesystem>
 #include <fstream>
 #include <set>
 #include <sstream>
 
+#include "neon/assets/asset_db.hpp"
 #include "neon/gfx/scene_props.hpp"
 
 namespace neon::editor {
@@ -1574,6 +1576,9 @@ void EditorApp::SwitchProject(const std::string& dir) {
     projectDirBuf_[sizeof(projectDirBuf_) - 1] = '\0';
     ScanProjects();
     LoadPrefabLibrary();
+    // G5-4-4(项3): detect renamed/moved assets (GUID preserved) and rewrite
+    // path references so scenes never break silently.
+    RefreshAssetDatabase();
     // Editor plugins are project-scoped: reload them for the new project.
     if (pluginMgr_) pluginMgr_->Load(projectDir_);
     history_.Clear();
@@ -1608,6 +1613,55 @@ void EditorApp::SwitchProject(const std::string& dir) {
     SaveEditorConfig();
     NEON_LOG_INFO("Editor: switched project '%s' (mode=%s, %zu scenes)",
                   projectName_.c_str(), projectMode_.c_str(), projectScenes_.size());
+}
+
+void EditorApp::RefreshAssetDatabase() {
+    const std::string snapshotPath = projectDir_ + "/.asset_db.json";
+    const assets::AssetDatabase current = assets::AssetDatabase::Build(projectDir_);
+
+    std::string prevText;
+    if (std::ifstream in(snapshotPath, std::ios::binary); in.is_open()) {
+        prevText.assign((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    }
+    const assets::AssetDatabase prev = assets::AssetDatabase::FromJson(prevText);
+
+    const std::vector<assets::AssetMove> moves = assets::DetectAssetMoves(prev, current);
+    if (!moves.empty()) {
+        NEON_LOG_INFO("Editor: %zu asset(s) moved/renamed — rewriting references",
+                      moves.size());
+        for (const assets::AssetMove& m : moves)
+            NEON_LOG_INFO("  %s -> %s", m.oldPath.c_str(), m.newPath.c_str());
+        // Rewrite path references in scene / prefab / UI JSON documents. The
+        // runtime resolves PATHS, so rewriting the stored text keeps everything
+        // consistent (the .meta GUID made the rename detectable).
+        std::error_code ec;
+        for (const char* sub : {"scenes", "prefabs", "ui"}) {
+            const std::string dir = projectDir_ + "/" + sub;
+            if (!std::filesystem::exists(dir, ec)) continue;
+            for (std::filesystem::recursive_directory_iterator it(dir, ec), end;
+                 it != end && !ec; it.increment(ec)) {
+                if (!it->is_regular_file(ec)) continue;
+                const std::string p = it->path().string();
+                if (p.size() < 5 || p.compare(p.size() - 5, 5, ".json") != 0) continue;
+                std::ifstream rf(p, std::ios::binary);
+                if (!rf.is_open()) continue;
+                std::string text((std::istreambuf_iterator<char>(rf)),
+                                 std::istreambuf_iterator<char>());
+                const std::string out = assets::RewriteJsonReferences(text, moves);
+                if (out != text) {
+                    std::ofstream w(p, std::ios::binary);
+                    if (w.is_open()) {
+                        w << out;
+                        NEON_LOG_INFO("  rewritten '%s'", p.c_str());
+                    }
+                }
+            }
+        }
+    }
+
+    if (std::ofstream out(snapshotPath, std::ios::binary); out.is_open()) {
+        out << current.ToJson();
+    }
 }
 
 void EditorApp::LoadProjectScene() {
