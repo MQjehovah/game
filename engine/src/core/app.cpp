@@ -58,6 +58,10 @@ int Application::Run(const platform::WindowConfig& config) {
             // OnUpdate so readers see the same value as before.
             SetLogFrame(TimeRef().frameIndex + 1);
             OnUpdate(kFixedDt);
+            // Tick-level edge baseline: a press seen by this tick cannot
+            // re-fire next tick, but it SURVIVES 0-tick rendered frames
+            // (EndFrame no longer touches the baseline - see IInput::EndTick).
+            input_->EndTick();
             accumulator -= kFixedDt;
             TimeRef().elapsed += kFixedDt;
             TimeRef().frameIndex++;

@@ -128,6 +128,12 @@ void EditorApp::OnRender() {
         // camera from it too so the game renders the SCENE camera's framing
         // (ortho 720-height) instead of the tiny preview default.
         const gfx::Camera gameCam = PlayCamera();
+        // Play locks the canvas: reset any editor zoom/pan so the FULL
+        // 1280x720 design space always fits the dock (a stale zoom would crop
+        // the game UI). UpdateViewport keeps wheel/middle-drag disabled while
+        // playing, so nothing can change these mid-play.
+        canvasZoom_ = 1.0f;
+        canvasPan_ = {0.0f, 0.0f};
         {
             DockViewportScope dock(*this, /*designFit=*/true, /*sceneVp=*/true);
             // Same sky + scene lights as the edit view so Play matches what
@@ -135,7 +141,7 @@ void EditorApp::OnRender() {
             // defaults: no sky, dark default lighting).
             ApplySceneEnvironment();
             if (dock.Active()) {
-                play_->Draw(renderer_, gameCam, canvasZoom_);
+                play_->Draw(renderer_, gameCam, 1.0f);
                 // Mark the game's camera view (the full 1280x720 design area).
                 renderer_.DrawRectOutline(
                     {0.0f, 0.0f, static_cast<float>(gfx::Renderer::kDesignWidth),
@@ -147,7 +153,7 @@ void EditorApp::OnRender() {
                 play_->FlushCanvas(renderer_);
             } else {
                 // No viewport rect yet (first frame): full-window fallback.
-                play_->Draw(renderer_, gameCam, canvasZoom_);
+                play_->Draw(renderer_, gameCam, 1.0f);
                 renderer_.EndScene();
                 play_->FlushCanvas(renderer_);
             }
@@ -353,8 +359,11 @@ void EditorApp::OnRender() {
     renderer_.EndScene();
 
     // G5-4-4: the runtime's on_render canvas (script HUD) flushes AFTER the
-    // composite so it keeps authored colors, on top of the scene.
-    if (playActive_ && play_) play_->FlushCanvas(renderer_);
+    // composite so it keeps authored colors, on top of the scene. The 2D play
+    // branch above already flushed inside its DockViewportScope (design-fit
+    // mapping); flushing again here would re-draw the same draw2d_ buffer with
+    // the reset full-window mapping, doubling every HUD element at two scales.
+    if (playActive_ && play_ && projectMode_ != "2d") play_->FlushCanvas(renderer_);
 
     // The play's data-driven UI (UIShow menus/HUD) draws on top of the
     // composited frame so it keeps the authored colors (the 2D canvas / scene
@@ -857,15 +866,12 @@ void EditorApp::UpdateViewport(float dt) {
         orthoSize_ = (sc && sc->cameraOrthoSize > 0.0f) ? sc->cameraOrthoSize : 360.0f;
     }
 
-    // 2D play: the whole view (entities + UI + camera frame) zooms as one
-    // via canvasZoom_ - never scale sprites without the rest of the view.
+    // 2D play: fixed whole-view framing - the full 1280x720 design space is
+    // always fit into the dock. Camera zoom/pan is DISABLED while playing
+    // (games like PvZ have no free camera; a stray wheel would crop the UI).
     if (playActive_ && editMode_ == EditMode::Scene2D) {
-        const float wheel = input->WheelDelta();
-        if (std::fabs(wheel) > 0.01f) {
-            canvasZoom_ = math::Clamp(canvasZoom_ * std::pow(1.15f, -wheel), 0.2f, 8.0f);
-            input->ConsumeWheel();
-        }
-        return; // fixed whole-view framing; no per-entity camera navigation
+        if (std::fabs(input->WheelDelta()) > 0.01f) input->ConsumeWheel();
+        return;
     }
 
     const bool ortho = viewCam_ != ViewCam::Perspective;

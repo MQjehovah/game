@@ -2355,28 +2355,35 @@ void EditorApp::BuildViewportPanel() {
             }
         }
         ImVec2 pos = ImGui::GetWindowPos();
-        ImVec2 size = ImGui::GetWindowSize();
-        math::Vec2 uiPos = renderer_.ScreenToUI({pos.x, pos.y});
+        // GetWindowPos returns the OUTER frame (the dock tab bar included).
+        // The design space must map into the VISIBLE content area instead, or
+        // the game HUD's top rows end up hidden behind the tab bar.
+        ImVec2 contentMin = ImGui::GetCursorScreenPos();
+        ImVec2 contentMaxLocal = ImGui::GetContentRegionMax();
+        const math::Rect2 contentRect{
+            contentMin.x, contentMin.y,
+            (pos.x + contentMaxLocal.x) - contentMin.x,
+            (pos.y + contentMaxLocal.y) - contentMin.y};
+        math::Vec2 uiPos = renderer_.ScreenToUI({contentRect.x, contentRect.y});
         float scale = renderer_.UIScale();
-        viewportRect_ = {uiPos.x, uiPos.y, size.x / scale, size.y / scale};
-        viewportScreenRect_ = {pos.x, pos.y, size.x, size.y};
+        viewportRect_ = {uiPos.x, uiPos.y, contentRect.w / scale, contentRect.h / scale};
+        viewportScreenRect_ = contentRect;
 
-        ImGui::TextColored(ImVec4(0.65f, 0.85f, 1.0f, 1.0f),
-                           "右键旋转 | 中键平移 | 滚轮缩放 | 左键拾取");
-        if (playActive_) {
-            ImGui::SameLine();
-            ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.5f, 1.0f), "播放中 (F5 停止)");
-        }
-                const char* camLabel = viewCam_ == ViewCam::Top
+        // Play: the game's own view fills the viewport; the editor hint rows
+        // (camera help + scene stats) would draw on top of it - hide both.
+        if (!playActive_) {
+            ImGui::TextColored(ImVec4(0.65f, 0.85f, 1.0f, 1.0f),
+                               "右键旋转 | 中键平移 | 滚轮缩放 | 左键拾取");
+            const char* camLabel = viewCam_ == ViewCam::Top
                                    ? "顶视 (正交)"
                                    : viewCam_ == ViewCam::Front ? "前视 (正交)" : "透视";
-        std::string physInfo;
-        if (playActive_ && play_) {
-            physInfo = " | 物理 " + std::to_string(play_->PhysicsBodyCount());
+            std::string physInfo;
+            if (play_ && play_->PhysicsBodyCount() > 0)
+                physInfo = " | 物理 " + std::to_string(play_->PhysicsBodyCount());
+            ImGui::TextDisabled("%s | 实体 %zu%s | 目标 (%.1f, %.1f, %.1f) | 距离 %.1f", camLabel,
+                                entities_.size(), physInfo.c_str(), camTarget_.x, camTarget_.y,
+                                camTarget_.z, camDist_);
         }
-        ImGui::TextDisabled("%s | 实体 %zu%s | 目标 (%.1f, %.1f, %.1f) | 距离 %.1f", camLabel,
-                            entities_.size(), physInfo.c_str(), camTarget_.x, camTarget_.y,
-                            camTarget_.z, camDist_);
         // Transform gizmo for the selected entity (drawn into this window's
         // draw list; interacts via ImGui's mouse state).
         DrawTransformGizmo();

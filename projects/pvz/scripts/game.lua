@@ -17,7 +17,8 @@ local PLANTS = {
   cherrybomb = { cost = 150, prefab = "cherrybomb", action = "plant_cherrybomb", cd = 30 },
   wallnut    = { cost = 50,  prefab = "wallnut",    action = "plant_wallnut",    cd = 10 },
 }
-local ORDER = { "sunflower", "peashooter", "snowpea", "repeater", "cherrybomb", "wallnut" }
+-- 与 hud.lua 种子卡绘制顺序一致 (点击卡片按位置索引到这里)。
+local ORDER = { "sunflower", "peashooter", "snowpea", "wallnut", "repeater", "cherrybomb" }
 local ZOMBIES = { basic = "zombie_basic", cone = "zombie_cone", bucket = "zombie_bucket" }
 
 local selected = nil

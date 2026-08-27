@@ -555,6 +555,7 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
 
     loadedScripts_.clear();
     scriptFailed_.clear();
+    chunkHandlers_.clear();
 
     // Runtime plugins: gameplay/system modules in <scriptBaseDir>/plugins
     // (Lua or JS). They get their own isolated hosts sharing the engine
@@ -600,6 +601,7 @@ void GameRuntime::Stop() {
     pendingScene_.clear();
     loadedScripts_.clear();
     scriptFailed_.clear();
+    chunkHandlers_.clear(); // handles die with the hosts below
     if (plugins_) {
         plugins_->Stop();
         plugins_.reset();
@@ -835,8 +837,7 @@ bool GameRuntime::AttachOneScript(ecs::Entity ent, const SceneScript& s) {
         // Per-entity isolation: clear the handler globals before the chunk
         // runs so a chunk that does NOT define on_start/on_update cannot
         // inherit the previous chunk's handlers (a tree/utility script would
-        // otherwise double-run the wrong counter every tick). The captures
-        // below then succeed only for handlers THIS chunk declared.
+        // otherwise double-run the wrong counter every tick).
         host->SetGlobal("on_start", script::Value::Nil());
         host->SetGlobal("on_update", script::Value::Nil());
         if (!host->Run().Ok()) {
@@ -846,6 +847,17 @@ bool GameRuntime::AttachOneScript(ecs::Entity ent, const SceneScript& s) {
             scriptFailed_.insert(loadKey);
             return false;
         }
+        // Capture THIS chunk's handlers right here, while its globals are
+        // still the ones it declared, and cache the handles. A captured
+        // function handle keeps referencing the original function value even
+        // after a later chunk overwrites the globals, so every attach below
+        // reuses its OWN chunk's handlers instead of re-capturing whatever
+        // chunk owns on_start/on_update at attach time (spawned peas/zombies
+        // used to silently run the SUN script and fall out of the sky).
+        ChunkHandlers ch;
+        if (const auto h = host->CaptureFunction("on_start"); h.Ok()) ch.onStart = h.Value();
+        if (const auto h = host->CaptureFunction("on_update"); h.Ok()) ch.onUpdate = h.Value();
+        chunkHandlers_[loadKey] = ch;
         loadedScripts_.insert(loadKey);
     }
 
@@ -861,9 +873,10 @@ bool GameRuntime::AttachOneScript(ecs::Entity ent, const SceneScript& s) {
         }
     }
 
-    // Capture this chunk's handlers so later chunks cannot shadow them.
-    if (const auto h = host->CaptureFunction("on_start"); h.Ok()) inst.onStart = h.Value();
-    if (const auto h = host->CaptureFunction("on_update"); h.Ok()) inst.onUpdate = h.Value();
+    // Reuse the cached handles of THIS chunk (see the capture comment above).
+    const ChunkHandlers& ch = chunkHandlers_[loadKey];
+    inst.onStart = ch.onStart;
+    inst.onUpdate = ch.onUpdate;
     if (inst.onStart != 0) {
         CallEntityFunctionHandle(inst, inst.onStart, "on_start", {EntityToValue(ent)});
     }

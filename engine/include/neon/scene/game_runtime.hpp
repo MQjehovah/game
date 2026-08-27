@@ -660,6 +660,19 @@ private:
     gfx::Mesh fireballMesh_; // lazily built for skill-projectile rendering
     std::set<std::string> loadedScripts_; // resolved paths whose chunk ran (presence only)
     std::set<std::string> scriptFailed_;  // resolved paths that failed (skip later)
+    // Captured handler handles per loaded chunk (keyed like loadedScripts_:
+    // backend + "|" + full path). Lua/JS hosts share ONE global environment,
+    // so a later-loaded chunk overwrites the on_start/on_update globals; a
+    // captured FUNCTION handle keeps pointing at the original function value
+    // regardless. Caching the handles at first load lets every later attach
+    // reuse ITS OWN chunk's handlers instead of re-capturing whatever chunk
+    // happens to own the globals at that moment (the old re-capture made
+    // spawned entities run the WRONG script - peas falling like suns).
+    struct ChunkHandlers {
+        uint64_t onStart = 0;
+        uint64_t onUpdate = 0;
+    };
+    std::map<std::string, ChunkHandlers> chunkHandlers_;
     GameRuntimeConfig cfg_;
     bool running_ = false;
     double simTime_ = 0.0;

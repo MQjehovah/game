@@ -85,7 +85,16 @@ public:
     virtual void ConsumeMouseDelta() {}
     virtual void ConsumeWheel() {}
 
-    // Call once per rendered frame; clears edge flags.
+    // Call at the end of every FIXED-STEP simulation tick: advances the
+    // press/release edge baseline so the NEXT tick sees new edges only. Edge
+    // state must survive rendered frames that run ZERO ticks (the fixed-step
+    // accumulator commonly produces 0-tick frames under vsync) - updating the
+    // baseline per RENDERED frame instead swallowed those frames' clicks and
+    // key presses entirely (PvZ clicks/seed keys died ~half the time).
+    virtual void EndTick() {}
+
+    // Call once per rendered frame; clears per-frame accumulators (mouse
+    // delta / wheel) so the next frame's ImGui pass reads fresh increments.
     virtual void EndFrame() = 0;
 };
 

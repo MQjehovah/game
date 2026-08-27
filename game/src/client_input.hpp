@@ -69,6 +69,10 @@ public:
         if (base_) base_->ConsumeWheel();
     }
 
+    void EndTick() override {
+        if (base_) base_->EndTick();
+    }
+
     void EndFrame() override {
         if (base_) base_->EndFrame();
     }

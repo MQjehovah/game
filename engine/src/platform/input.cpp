@@ -67,9 +67,12 @@ public:
     void ConsumeMouseDelta() override { mouseDelta_ = {0.0f, 0.0f}; }
     void ConsumeWheel() override { wheel_ = 0.0f; }
 
-    void EndFrame() override {
+    void EndTick() override {
         prevKeys_ = keys_;
         prevMouse_ = mouse_;
+    }
+
+    void EndFrame() override {
         wheel_ = 0.0f;
         mouseDelta_ = {0.0f, 0.0f};
     }
