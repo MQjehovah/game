@@ -1,6 +1,7 @@
 #include "neon/anim/anim.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdint>
 
@@ -216,7 +217,24 @@ int AnimationStateMachine::FindState(const std::string& name) const {
 }
 
 void AnimationStateMachine::AddState(const std::string& name, const AnimationClip* clip) {
-    states_.push_back({name, clip});
+    AnimState st;
+    st.name = name;
+    st.clip = clip;
+    if (clip) st.clipName = clip->name;
+    states_.push_back(std::move(st));
+}
+
+void AnimationStateMachine::SetStateClipName(const std::string& state,
+                                             const std::string& clipName) {
+    const int idx = FindState(state);
+    if (idx >= 0) {
+        states_[static_cast<size_t>(idx)].clipName = clipName;
+        states_[static_cast<size_t>(idx)].clip = nullptr; // re-bind required
+    }
+}
+
+const AnimationClip* AnimationStateMachine::StateClip(size_t idx) const {
+    return idx < states_.size() ? states_[idx].clip : nullptr;
 }
 
 void AnimationStateMachine::AddTransition(const std::string& from, const std::string& to,
@@ -715,6 +733,114 @@ core::Result<AnimationClip> LoadClipJson(const std::string& jsonText) {
         }
     }
     return core::Result<AnimationClip>::Ok(std::move(clip));
+}
+
+std::string SaveStateMachineJson(const AnimationStateMachine& sm) {
+    core::Json root;
+    root.type_ = core::Json::Type::Object;
+    core::Json states;
+    states.type_ = core::Json::Type::Array;
+    for (const AnimState& s : sm.States()) {
+        core::Json st;
+        st.type_ = core::Json::Type::Object;
+        st.object_["name"] = JsonStr(s.name);
+        st.object_["clip"] = JsonStr(s.clipName);
+        states.array_.push_back(std::move(st));
+    }
+    root.object_["states"] = std::move(states);
+    core::Json trans;
+    trans.type_ = core::Json::Type::Array;
+    for (const AnimTransition& t : sm.Transitions()) {
+        core::Json tr;
+        tr.type_ = core::Json::Type::Object;
+        tr.object_["from"] = JsonStr(t.from);
+        tr.object_["to"] = JsonStr(t.to);
+        tr.object_["param"] = JsonStr(t.param);
+        tr.object_["threshold"] = JsonNum(t.threshold);
+        tr.object_["duration"] = JsonNum(t.duration);
+        trans.array_.push_back(std::move(tr));
+    }
+    root.object_["transitions"] = std::move(trans);
+    core::Json params;
+    params.type_ = core::Json::Type::Array;
+    for (const auto& [name, value] : sm.Params()) {
+        core::Json p;
+        p.type_ = core::Json::Type::Object;
+        p.object_["name"] = JsonStr(name);
+        p.object_["value"] = JsonNum(value);
+        params.array_.push_back(std::move(p));
+    }
+    root.object_["params"] = std::move(params);
+    return core::JsonWriter::Write(root);
+}
+
+core::Result<AnimationStateMachine> LoadStateMachineJson(const std::string& jsonText) {
+    std::string err;
+    const core::Json root = core::Json::Parse(jsonText, &err);
+    if (!err.empty() || !root.IsObject())
+        return core::Result<AnimationStateMachine>::Err("asm: parse error: " + err);
+    AnimationStateMachine sm;
+    if (const core::Json* states = root.Get("states")) {
+        if (states->IsArray()) {
+            for (const core::Json& s : states->Items()) {
+                if (!s.IsObject()) continue;
+                const std::string name = s.Get("name") ? s.Get("name")->GetString() : "";
+                if (name.empty()) continue;
+                AnimState st;
+                st.name = name;
+                st.clipName = s.Get("clip") ? s.Get("clip")->GetString() : "";
+                st.clip = nullptr;
+                sm.states_.push_back(std::move(st));
+            }
+        }
+    }
+    if (const core::Json* trans = root.Get("transitions")) {
+        if (trans->IsArray()) {
+            for (const core::Json& t : trans->Items()) {
+                if (!t.IsObject()) continue;
+                AnimTransition tr;
+                tr.from = t.Get("from") ? t.Get("from")->GetString() : "";
+                tr.to = t.Get("to") ? t.Get("to")->GetString() : "";
+                tr.param = t.Get("param") ? t.Get("param")->GetString() : "";
+                if (const core::Json* v = t.Get("threshold")) tr.threshold = static_cast<float>(v->GetNumber());
+                if (const core::Json* v = t.Get("duration")) tr.duration = static_cast<float>(v->GetNumber());
+                if (!tr.from.empty() && !tr.to.empty()) sm.transitions_.push_back(std::move(tr));
+            }
+        }
+    }
+    if (const core::Json* params = root.Get("params")) {
+        if (params->IsArray()) {
+            for (const core::Json& p : params->Items()) {
+                if (!p.IsObject()) continue;
+                const std::string name = p.Get("name") ? p.Get("name")->GetString() : "";
+                if (name.empty()) continue;
+                sm.params_[name] = static_cast<float>(p.Get("value")->GetNumber());
+            }
+        }
+    }
+    return core::Result<AnimationStateMachine>::Ok(std::move(sm));
+}
+
+int BindStateMachineClips(AnimationStateMachine& sm, const std::vector<AnimationClip>& clips) {
+    int bound = 0;
+    for (AnimState& st : sm.MutableStates()) {
+        st.clip = nullptr;
+        if (st.clipName.empty()) continue;
+        std::string low = st.clipName;
+        for (char& ch : low)
+            ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+        for (const AnimationClip& c : clips) {
+            std::string hay = c.name;
+            for (char& ch : hay)
+                ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+            if (hay.find(low) != std::string::npos) {
+                st.clip = &c;
+                ++bound;
+                break;
+            }
+        }
+    }
+    return bound;
 }
 
 } // namespace neon::anim

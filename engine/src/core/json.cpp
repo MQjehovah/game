@@ -294,4 +294,29 @@ std::string JsonWriter::Write(const Json& v) {
     return out;
 }
 
+bool JsonEquals(const Json& a, const Json& b) {
+    if (a.type() != b.type()) return false;
+    switch (a.type()) {
+        case Json::Type::Null: return true;
+        case Json::Type::Bool: return a.bool_ == b.bool_;
+        case Json::Type::Number: return a.number_ == b.number_;
+        case Json::Type::String: return a.string_ == b.string_;
+        case Json::Type::Array: {
+            if (a.array_.size() != b.array_.size()) return false;
+            for (size_t i = 0; i < a.array_.size(); ++i)
+                if (!JsonEquals(a.array_[i], b.array_[i])) return false;
+            return true;
+        }
+        case Json::Type::Object: {
+            if (a.object_.size() != b.object_.size()) return false;
+            for (const auto& [k, v] : a.object_) {
+                auto it = b.object_.find(k);
+                if (it == b.object_.end() || !JsonEquals(v, it->second)) return false;
+            }
+            return true;
+        }
+    }
+    return false;
+}
+
 } // namespace neon::core

@@ -948,3 +948,43 @@ TEST(QuatEulerRoundTrip) {
     CHECK_NEAR(q2.z, q.z, 1e-5f);
     CHECK_NEAR(q2.w, q.w, 1e-5f);
 }
+
+// G5-4-4(项1): prefab instance overrides. A prefab instance stores only its
+// field-level diff against the template; MergePrefabOverrides is its inverse.
+TEST(PrefabOverrideDiffAndMerge) {
+    const core::Json tpl = core::Json::Parse(R"({
+      "transform": {"pos": [0,0,0], "scale": [1,1,1]},
+      "health": {"hp": 10, "maxHp": 10},
+      "mesh": {"meshKey": "cube"}
+    })");
+    const core::Json inst = core::Json::Parse(R"({
+      "transform": {"pos": [5,2,0], "scale": [1,1,1]},
+      "health": {"hp": 7, "maxHp": 10},
+      "mesh": {"meshKey": "cube"}
+    })");
+
+    // Field-level diff: only differing fields survive; equal fields inherited;
+    // identical components omitted.
+    const core::Json ov = scene::ComputePrefabOverrides(tpl, inst);
+    const core::Json expect = core::Json::Parse(R"({"transform":{"pos":[5,2,0]},"health":{"hp":7}})");
+    CHECK(core::JsonEquals(ov, expect));
+
+    // Inverse: template expanded with overrides reproduces the instance.
+    const core::Json merged = scene::MergePrefabOverrides(tpl, ov);
+    CHECK(core::JsonEquals(merged, inst));
+
+    // Instance-added component -> whole-component override.
+    const core::Json inst2 = core::Json::Parse(R"({
+      "transform": {"pos": [0,0,0], "scale": [1,1,1]},
+      "health": {"hp": 10, "maxHp": 10},
+      "mesh": {"meshKey": "cube"},
+      "groups": {"groups": "friendly"}
+    })");
+    const core::Json ov2 = scene::ComputePrefabOverrides(tpl, inst2);
+    CHECK(ov2.Get("groups"));
+    CHECK(core::JsonEquals(scene::MergePrefabOverrides(tpl, ov2), inst2));
+
+    // Identical instance -> empty override set.
+    const core::Json ov3 = scene::ComputePrefabOverrides(tpl, tpl);
+    CHECK(ov3.IsObject() && ov3.object_.empty());
+}

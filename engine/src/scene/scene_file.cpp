@@ -1565,4 +1565,42 @@ core::Result<core::Json> SceneFile::FromWorld(ecs::World& world) {
     return core::Result<core::Json>::Ok(std::move(root));
 }
 
+core::Json ComputePrefabOverrides(const core::Json& tpl, const core::Json& inst) {
+    core::Json out;
+    out.type_ = core::Json::Type::Object;
+    if (!tpl.IsObject() || !inst.IsObject()) return inst;
+    for (const auto& [cname, cdata] : inst.Members()) {
+        const core::Json* tcomp = tpl.Get(cname);
+        if (!tcomp) {
+            out.object_[cname] = cdata; // component added by the instance
+            continue;
+        }
+        if (!tcomp->IsObject() || !cdata.IsObject()) {
+            if (!core::JsonEquals(*tcomp, cdata)) out.object_[cname] = cdata;
+            continue;
+        }
+        // Field-level diff: equal fields are inherited from the template.
+        core::Json diff;
+        diff.type_ = core::Json::Type::Object;
+        for (const auto& [fkey, fval] : cdata.Members()) {
+            const core::Json* tf = tcomp->Get(fkey);
+            if (tf && core::JsonEquals(*tf, fval)) continue;
+            diff.object_[fkey] = fval;
+        }
+        if (!diff.object_.empty()) out.object_[cname] = std::move(diff);
+    }
+    return out;
+}
+
+core::Json MergePrefabOverrides(const core::Json& tpl, const core::Json& overrides) {
+    core::Json merged = tpl;
+    if (merged.type_ != core::Json::Type::Object) {
+        merged.type_ = core::Json::Type::Object;
+    }
+    if (overrides.IsObject()) {
+        for (const auto& [k, v] : overrides.Members()) DeepMerge(merged.object_[k], v);
+    }
+    return merged;
+}
+
 } // namespace neon::scene

@@ -388,6 +388,10 @@ private:
     void LoadPrefabLibrary();
     // Saves the selected entity's components as prefabs/<name>.json.
     void SavePrefab(const std::string& name);
+    // G5-4-4(项1): materializes a prefab template's components into a fresh
+    // entity (mesh/health/scripts/extraComponents; transform left default).
+    // Shared by AddEntity("prefab:...") and the inspector's 重置为预制体.
+    SceneEntity MaterializePrefabEntity(const std::string& pfName, const math::Vec3& pos);
     // Reads <dir>/game.json + scene/level lists into `p`; false if no game.json.
     bool ReadProjectMeta(EditorProject& p);
     // Loads the current project's start scene (3D projects) / level (2D).
@@ -493,6 +497,7 @@ private:
     void SaveScriptEditor();
     void BuildScriptEditorPanel();
     void BuildAnimEditorPanel();
+    void BuildStateMachineEditorPanel();
     void BuildTerrainPanel();
     void BuildTilemapPanel();
     void SaveSceneAsChild();
@@ -866,6 +871,7 @@ private:
     std::vector<ScriptCheckResult> scriptChecks_;          // parallel: per-file check results
     bool showScriptEditor_ = false;
     bool showAnimEditor_ = false;
+    bool showStateMachineEditor_ = false;
     bool showTerrain_ = false;
     bool showTilemap_ = false;
     // P1-1 animation timeline editor state.
@@ -875,6 +881,11 @@ private:
     float animPlayhead_ = 0.0f;
     bool animPlaying_ = false;
     char animPathBuf_[512] = {};
+    // G5-4-4(项2) data-driven state machine editor state (.asm.json).
+    anim::AnimationStateMachine asm_;
+    std::string asmPath_;
+    bool asmDirty_ = false;
+    char asmPathBuf_[512] = {};
     std::string scriptEditorPath_;   // file being edited ("" = closed)
     std::string scriptEditorRel_;    // project-relative path for checks
     char scriptEditorBuf_[256 * 1024] = {};

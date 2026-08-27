@@ -428,6 +428,12 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     };
     scriptCtx_.animProgress = [this](ecs::Entity e) { return AnimationProgress(e); };
     scriptCtx_.animFinished = [this](ecs::Entity e) { return AnimationFinished(e); };
+    scriptCtx_.attachStateMachine = [this](ecs::Entity e, const std::string& path) {
+        return AttachStateMachine(e, path);
+    };
+    scriptCtx_.setAnimParam = [this](ecs::Entity e, const std::string& name, float value) {
+        SetAnimParam(e, name, value);
+    };
     scriptCtx_.worldToScreen = [this](const math::Vec3& w, float& ox, float& oy) {
         return WorldToScreen(w, ox, oy);
     };
@@ -1727,6 +1733,55 @@ void GameRuntime::TickStatuses(float dt) {
 void GameRuntime::TickAnimations(float dt) {
     for (DrawItem& d : draws_) {
         if (!d.skinned || !d.skinned->Valid()) continue;
+        // G5-4-4(项2): data-driven animation state machine. Advance it (params
+        // from the script-set map), then map the current state's clip onto the
+        // existing animClip/animTime override path below — no pose surgery.
+        if (d.animSM) {
+            if (!d.animSMBound) {
+                anim::BindStateMachineClips(*d.animSM, d.skinned->clips);
+                d.animSMBound = true;
+                if (!d.animSM->States().empty()) {
+                    // Start on the first state so Update() has a current_.
+                    const std::string first = d.animSM->States()[0].name;
+                    d.animSM->Play(first);
+                    d.animSMState = first;
+                    const anim::AnimationClip* c = d.animSM->StateClip(0);
+                    if (c) {
+                        d.animClip = c;
+                        d.animName = d.animSM->States()[0].clipName;
+                        d.animLoop = true;
+                        d.animSpeed = 1.0f;
+                        d.animTime = 0.0f;
+                        d.animHasOverride = true;
+                    }
+                }
+            }
+            for (const auto& [name, value] : d.animSMParams)
+                d.animSM->SetParam(name, value);
+            d.animSM->Update(dt);
+            const std::string state = d.animSM->CurrentState();
+            if (!state.empty() && state != d.animSMState) {
+                d.animSMState = state;
+                const anim::AnimationClip* clip = nullptr;
+                std::string clipName;
+                for (const anim::AnimState& s : d.animSM->States())
+                    if (s.name == state) {
+                        clip = s.clip;
+                        clipName = s.clipName;
+                        break;
+                    }
+                if (clip) {
+                    d.animClip = clip;
+                    d.animName = clipName;
+                    d.animLoop = true;
+                    d.animSpeed = 1.0f;
+                    d.animTime = 0.0f;
+                    d.animHasOverride = true;
+                }
+            }
+            // Fall through: the override branch below advances animTime for the
+            // current state's clip.
+        }
         if (d.animHasOverride) {
             // Resolve the clip pointer on first use (or after a re-resolve).
             if (!d.animClip) {
@@ -2002,6 +2057,37 @@ bool GameRuntime::PlayAnimation(ecs::Entity e, const std::string& clip, bool loo
             d.animClip = nullptr;
         }
     return true;
+}
+
+bool GameRuntime::AttachStateMachine(ecs::Entity e, const std::string& path) {
+    if (!world_.Alive(e)) return false;
+    DrawItem* d = nullptr;
+    for (DrawItem& di : draws_)
+        if (di.ent == e) {
+            d = &di;
+            break;
+        }
+    if (!d || !d->skinned || !d->skinned->Valid()) return false;
+    const std::string text = ReadScript(FullScriptPath(path));
+    if (text.empty()) return false;
+    auto res = anim::LoadStateMachineJson(text);
+    if (!res.Ok()) {
+        NEON_LOG_ERROR("asm: '%s': %s", path.c_str(), res.Error().c_str());
+        return false;
+    }
+    d->animSM = std::make_shared<anim::AnimationStateMachine>(res.Value());
+    d->animSMState.clear();
+    d->animSMBound = false;
+    d->animSMParams.clear();
+    return true;
+}
+
+void GameRuntime::SetAnimParam(ecs::Entity e, const std::string& name, float value) {
+    for (DrawItem& di : draws_)
+        if (di.ent == e && di.animSM) {
+            di.animSMParams[name] = value;
+            return;
+        }
 }
 
 float GameRuntime::AnimationProgress(ecs::Entity e) const {

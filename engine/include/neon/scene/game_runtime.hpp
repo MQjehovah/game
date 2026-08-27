@@ -272,6 +272,13 @@ public:
         return hosts_.lua && hosts_.lua->DebuggerPaused();
     }
 
+    // G5-4-4(项2) data-driven animation state machine (.asm.json). AttachStateMachine
+    // loads the asset (VFS-aware), binds each state's clip name to the entity's
+    // skinned model, and TickAnimations advances it — the current state's clip
+    // plays through the existing override path. SetAnimParam drives transitions.
+    bool AttachStateMachine(ecs::Entity e, const std::string& path);
+    void SetAnimParam(ecs::Entity e, const std::string& name, float value);
+
     // Stats for the editor profiler / debug panels.
     size_t EntityCount() const { return world_.EntityCount(); }
     size_t ScriptCount() const { return scripts_.size(); }
@@ -439,6 +446,13 @@ private:
         bool resolved = false;
         bool failed = false;
         bool asyncPending = false;   // G6-2: mesh load kicked, waiting on cache
+        // G5-4-4(项2): data-driven animation state machine (AttachStateMachine).
+        // TickAnimations advances it and maps the current state's clip onto the
+        // existing animClip/animTime override path (no pose surgery).
+        std::shared_ptr<anim::AnimationStateMachine> animSM;
+        std::string animSMState;                 // last played state
+        bool animSMBound = false;                // clips resolved
+        std::map<std::string, float> animSMParams; // script-set params
     };
     // Snapshot of the active 2D design-space mapping (captured during Draw,
     // when the host's 2D viewport is live). InputMousePos()/UIClicked() use

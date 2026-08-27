@@ -87,6 +87,7 @@ void EditorApp::BuildImGuiUI() {
             ImGui::MenuItem("场景", nullptr, &showHierarchy_);
             ImGui::MenuItem("属性", nullptr, &showInspector_);
             ImGui::MenuItem("动画时间线", nullptr, &showAnimEditor_);
+            ImGui::MenuItem("动画状态机", nullptr, &showStateMachineEditor_);
             ImGui::MenuItem("地形编辑", nullptr, &showTerrain_);
             ImGui::MenuItem("2D 地图", nullptr, &showTilemap_);
             ImGui::MenuItem("以选中相机为视图", nullptr, &cameraFollowSelected_);
@@ -443,9 +444,10 @@ void EditorApp::BuildImGuiUI() {
     BuildModelPreviewPanel();
     BuildBtPanel();
     BuildScriptPanel();
-    BuildScriptEditorPanel();
-    BuildAnimEditorPanel();
-    BuildTerrainPanel();
+        BuildScriptEditorPanel();
+        BuildAnimEditorPanel();
+        BuildStateMachineEditorPanel();
+        BuildTerrainPanel();
     BuildPackagePanel();
     BuildProfilerPanel();
     BuildInputMapPanel();

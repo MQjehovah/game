@@ -1159,3 +1159,41 @@ TEST(GameRuntimeParallelSystemsDeterminism) {
     CHECK(serial.back().first < 100.0f);
     CHECK_NEAR(serial.back().second, -1.0f, 0.05f);
 }
+
+// G5-4-4(项2): AttachStateMachine/SetAnimParam script bindings surface —
+// negative paths are safe (non-skinned entity refuses; SetAnimParam no-ops).
+TEST(GameRuntimeAnimStateMachineApi) {
+    const char* scene = R"({
+      "entities": [
+        {"name": "hero", "components": {"transform": {"pos": [0,0,0]},
+          "mesh": {"meshKey": "hero"},
+          "health": {"hp": 10, "maxHp": 10},
+          "script": {"backend": "lua", "path": "idle.lua"}}}
+      ]
+    })";
+    const char* lua = R"(
+      function on_start(e)
+        SetVar("attached", AttachStateMachine(e, "idle.asm.json"))
+        SetAnimParam(e, "speed", 1.0)
+        SetVar("ok", true)
+      end
+    )";
+    scene::GameRuntime rt;
+    scene::GameRuntimeConfig cfg;
+    cfg.readScript = [&](const std::string&) { return std::string(lua); };
+    cfg.headless = true;
+    CHECK(rt.Start(scene, cfg).Ok());
+    const ecs::Entity hero = rt.FindNamedEntity("hero");
+    CHECK(hero.IsValid());
+    // The script ran to completion (last var set) — so a non-Bool "attached"
+    // would mean the binding returned a non-Bool (e.g. nil), not a script error.
+    const script::Value ok = rt.GameVars().Get("ok");
+    CHECK(ok.type == script::Value::Type::Bool);
+    CHECK(ok.boolean);
+    // Non-skinned primitive "hero" -> the machine refuses to attach.
+    const script::Value attached = rt.GameVars().Get("attached");
+    CHECK(attached.type == script::Value::Type::Bool);
+    CHECK(!attached.boolean);
+    rt.Tick(1.0f / 60.0f);
+    rt.Stop();
+}

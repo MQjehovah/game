@@ -203,6 +203,11 @@ struct ScriptContext {
     std::function<float(ecs::Entity)> animProgress;
     // True when a one-shot override finished.
     std::function<bool(ecs::Entity)> animFinished;
+    // G5-4-4(项2): data-driven animation state machine (.asm.json). attachStateMachine
+    // loads + binds the asset to the entity's skinned model; setAnimParam drives
+    // the transitions.
+    std::function<bool(ecs::Entity, const std::string&)> attachStateMachine;
+    std::function<void(ecs::Entity, const std::string&, float)> setAnimParam;
     // Projects a world position into the 2D design space (1280x720) the
     // on_render canvas draws in. Returns nil behind the camera.
     std::function<bool(const math::Vec3&, float&, float&)> worldToScreen;

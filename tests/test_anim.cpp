@@ -892,3 +892,45 @@ TEST(AnimClipCubicSplineRotationNormalized) {
     CHECK_NEAR(p.r[0].x, 0.0, 1e-5);
     CHECK_NEAR(p.r[0].z, 0.0, 1e-5);
 }
+
+// G5-4-4(项2): data-driven state machine assets (.asm.json) round-trip and
+// bind clip names against a model's clips.
+TEST(AnimationStateMachineJsonRoundTrip) {
+    anim::AnimationClip idle;
+    idle.name = "idle_Armature";
+    idle.duration = 1.0f;
+    anim::AnimationClip run;
+    run.name = "run_Armature";
+    run.duration = 0.8f;
+
+    anim::AnimationStateMachine sm;
+    sm.AddState("idle", &idle);
+    sm.AddState("run", &run);
+    sm.AddTransition("idle", "run", "speed", 0.5f, 0.2f);
+    sm.AddTransition("run", "idle", "speed", 0.2f, 0.2f);
+    sm.SetParam("speed", 0.0f);
+
+    const std::string json = anim::SaveStateMachineJson(sm);
+    auto loaded = anim::LoadStateMachineJson(json);
+    CHECK(loaded.Ok());
+    CHECK_EQ(loaded.Value().States().size(), 2u);
+    CHECK_EQ(loaded.Value().Transitions().size(), 2u);
+    CHECK_EQ(loaded.Value().Params().size(), 1u);
+    CHECK_EQ(loaded.Value().States()[0].name, "idle");
+    CHECK_EQ(loaded.Value().States()[0].clipName, "idle_Armature");
+    CHECK_EQ(loaded.Value().Transitions()[0].from, "idle");
+    CHECK_EQ(loaded.Value().Transitions()[0].to, "run");
+    CHECK_NEAR(loaded.Value().Transitions()[0].threshold, 0.5f, 1e-6f);
+
+    // Bind resolves clip names against the model's clips (case-insensitive
+    // substring, matching SkinnedModel::PlayClip).
+    anim::AnimationStateMachine sm2;
+    sm2.AddState("idle", nullptr);
+    sm2.AddState("run", nullptr);
+    sm2.SetStateClipName("idle", "IDLE");
+    sm2.SetStateClipName("run", "run_Armature");
+    std::vector<anim::AnimationClip> clips = {idle, run};
+    CHECK_EQ(anim::BindStateMachineClips(sm2, clips), 2);
+    CHECK(sm2.StateClip(0) != nullptr);
+    CHECK(sm2.StateClip(1) != nullptr);
+}

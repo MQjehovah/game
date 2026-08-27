@@ -66,6 +66,9 @@ struct AnimationClip {
 struct AnimState {
     std::string name;
     const AnimationClip* clip = nullptr;
+    // G5-4-4(项2): the clip's NAME as authored — data assets reference clips by
+    // name, resolved against a model's clips at bind time (BindStateMachineClips).
+    std::string clipName;
 };
 
 struct AnimTransition {
@@ -90,6 +93,22 @@ public:
     void Play(const std::string& state);
     const Pose& ResultPose() const { return result_; }
     std::string CurrentState() const;
+
+    // G5-4-4(项2) data-driven state machine assets:
+    //   - States carry the CLIP NAME (authored), not a pointer; clip pointers
+    //     are resolved by BindStateMachineClips against a model's clips.
+    //   - Save/Load round-trip the whole machine as JSON so the editor can
+    //     author .asm.json assets and the runtime can load them.
+    const std::vector<AnimState>& States() const { return states_; }
+    std::vector<AnimState>& MutableStates() { return states_; }
+    const std::vector<AnimTransition>& Transitions() const { return transitions_; }
+    std::vector<AnimTransition>& MutableTransitions() { return transitions_; }
+    const std::map<std::string, float>& Params() const { return params_; }
+    std::map<std::string, float>& MutableParams() { return params_; }
+    void SetStateClipName(const std::string& state, const std::string& clipName);
+    const AnimationClip* StateClip(size_t idx) const;
+
+    friend core::Result<AnimationStateMachine> LoadStateMachineJson(const std::string& jsonText);
 
 private:
     int FindState(const std::string& name) const;
@@ -192,6 +211,21 @@ struct AnimSet {
 // editor and loaded by the runtime/tools.
 std::string SaveClipJson(const AnimationClip& clip);
 core::Result<AnimationClip> LoadClipJson(const std::string& jsonText);
+
+// G5-4-4(项2) data-driven state machine assets (.asm.json):
+// {
+//   "states": [{"name": "idle", "clip": "idle"}, ...],
+//   "transitions": [{"from": "idle", "to": "run", "param": "speed",
+//                    "threshold": 0.5, "duration": 0.2}, ...],
+//   "params": [{"name": "speed", "value": 0.0}, ...]
+// }
+std::string SaveStateMachineJson(const AnimationStateMachine& sm);
+core::Result<AnimationStateMachine> LoadStateMachineJson(const std::string& jsonText);
+// Resolves each state's clipName against the model's clips (case-insensitive
+// substring, first hit — matching SkinnedModel::PlayClip). States without a
+// match keep clip == nullptr (they no-op on Update). Returns the number bound.
+int BindStateMachineClips(AnimationStateMachine& sm,
+                          const std::vector<AnimationClip>& clips);
 
 // Imports glTF animations (channels/samplers, LINEAR/STEP/CUBICSPLINE) into a
 // skeleton + clips. The skeleton gets one bone per glTF node (bone index ==

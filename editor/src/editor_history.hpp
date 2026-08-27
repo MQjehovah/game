@@ -814,8 +814,7 @@ inline void SetComponentField(SceneEntity& e, const std::string& name,
 
 // Applies a whole component JSON as an undoable edit (dedicated components
 // include removable ones — ApplyComponentJson(e, name, {}) detaches).
-class ComponentJsonCommand : public Command {
-public:
+class ComponentJsonCommand : public Command {public:
     ComponentJsonCommand(std::vector<SceneEntity>* entities, int index, std::string name,
                          core::Json oldData, core::Json newData)
         : entities_(entities), index_(index), name_(std::move(name)),
@@ -832,6 +831,26 @@ private:
     std::string name_;
     core::Json old_;
     core::Json new_;
+};
+
+// G5-4-4(项1): replaces a whole entity (used by "重置为预制体" — reverting an
+// instance's component overrides back to the prefab template).
+class ReplaceEntityCommand : public Command {
+public:
+    ReplaceEntityCommand(std::vector<SceneEntity>* entities, int index, SceneEntity newEntity)
+        : entities_(entities), index_(index),
+          old_((*entities)[static_cast<size_t>(index_)]), new_(std::move(newEntity)) {}
+
+    void Apply() override { (*entities_)[static_cast<size_t>(index_)] = new_; }
+    void Undo() override { (*entities_)[static_cast<size_t>(index_)] = old_; }
+    bool Merge(const Command&) override { return false; }
+    bool IsNoop() const override { return false; }
+
+private:
+    std::vector<SceneEntity>* entities_;
+    int index_;
+    SceneEntity old_;
+    SceneEntity new_;
 };
 
 } // namespace neon::editor

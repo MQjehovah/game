@@ -114,66 +114,8 @@ void EditorApp::AddEntity(const std::string& meshKey) {
                            projectDir_.c_str());
             return;
         }
-        SceneEntity e;
-        e.prefab = pfName;
+        SceneEntity e = MaterializePrefabEntity(pfName, pos);
         e.name = pfName + std::to_string(counter++);
-        e.pos = pos;
-        {
-            // PrefabLibrary stores the component map directly (no wrapper).
-            const core::Json* comps = tpl.Value();
-            if (comps && comps->IsObject()) {
-                if (const core::Json* m = comps->Get("mesh")) {
-                    if (m->IsObject()) {
-                        e.meshKey =
-                            m->Get("meshKey") ? m->Get("meshKey")->GetString("cube") : "cube";
-                        if (const core::Json* c = m->Get("colorHex"))
-                            e.tint = ColorFromHex(c->GetString());
-                        if (const core::Json* v = m->Get("metallic"))
-                            e.metallic = static_cast<float>(v->GetNumber());
-                        if (const core::Json* v = m->Get("roughness"))
-                            e.roughness = static_cast<float>(v->GetNumber());
-                    }
-                }
-                if (const core::Json* h = comps->Get("health")) {
-                    if (h->IsObject()) {
-                        if (const core::Json* v = h->Get("hp"))
-                            e.hp = static_cast<float>(v->GetNumber());
-                        if (const core::Json* v = h->Get("maxHp"))
-                            e.maxHp = static_cast<float>(v->GetNumber());
-                    }
-                }
-                if (const core::Json* s = comps->Get("script")) {
-                    if (s->IsObject()) {
-                        SceneScriptFields f;
-                        f.path = s->Get("path") ? s->Get("path")->GetString() : "";
-                        f.backend = s->Get("backend") ? s->Get("backend")->GetString("lua")
-                                                      : "lua";
-                        if (const core::Json* v = s->Get("vars")) f.vars = *v;
-                        if (!f.path.empty()) e.scripts.push_back(std::move(f));
-                    }
-                }
-                if (const core::Json* list = comps->Get("scripts")) {
-                    if (const core::Json* items = list->Get("items")) {
-                        if (items->IsArray()) {
-                            for (const core::Json& it : items->Items()) {
-                                SceneScriptFields f;
-                                f.backend =
-                                    it.Get("backend") ? it.Get("backend")->GetString("lua") : "lua";
-                                f.path = it.Get("path") ? it.Get("path")->GetString() : "";
-                                if (const core::Json* v = it.Get("vars")) f.vars = *v;
-                                if (!f.path.empty()) e.scripts.push_back(std::move(f));
-                            }
-                        }
-                    }
-                }
-                for (const auto& [cname, cdata] : comps->Members()) {
-                    if (cname == "transform" || cname == "mesh" || cname == "health" ||
-                        cname == "script")
-                        continue;
-                    e.extraComponents[cname] = cdata;
-                }
-            }
-        }
         if (ResolveMesh(e)) {
             ApplyMaterialParams(e);
             const size_t insertAt = entities_.size();
@@ -205,6 +147,52 @@ void EditorApp::AddEntity(const std::string& meshKey) {
         history_.Push(std::make_unique<AddEntityCommand>(&entities_, e, insertAt));
         SetSelection(static_cast<int>(entities_.size()) - 1);
     }
+}
+
+SceneEntity EditorApp::MaterializePrefabEntity(const std::string& pfName, const math::Vec3& pos) {
+    SceneEntity e;
+    e.prefab = pfName;
+    e.pos = pos;
+    const core::Json* comps = nullptr;
+    auto tpl = prefabLib_.Get(pfName);
+    if (tpl.Ok() && tpl.Value()->IsObject()) comps = tpl.Value();
+    if (!comps) return e;
+    if (const core::Json* m = comps->Get("mesh")) {
+        if (m->IsObject()) {
+            e.meshKey = m->Get("meshKey") ? m->Get("meshKey")->GetString("cube") : "cube";
+            if (const core::Json* c = m->Get("colorHex")) e.tint = ColorFromHex(c->GetString());
+            if (const core::Json* v = m->Get("metallic")) e.metallic = static_cast<float>(v->GetNumber());
+            if (const core::Json* v = m->Get("roughness")) e.roughness = static_cast<float>(v->GetNumber());
+        }
+    }
+    if (const core::Json* h = comps->Get("health")) {
+        if (h->IsObject()) {
+            if (const core::Json* v = h->Get("hp")) e.hp = static_cast<float>(v->GetNumber());
+            if (const core::Json* v = h->Get("maxHp")) e.maxHp = static_cast<float>(v->GetNumber());
+        }
+    }
+    auto addScript = [&](const core::Json& s) {
+        if (!s.IsObject()) return;
+        SceneScriptFields f;
+        f.path = s.Get("path") ? s.Get("path")->GetString() : "";
+        f.backend = s.Get("backend") ? s.Get("backend")->GetString("lua") : "lua";
+        if (const core::Json* v = s.Get("vars")) f.vars = *v;
+        if (!f.path.empty()) e.scripts.push_back(std::move(f));
+    };
+    if (const core::Json* s = comps->Get("script")) addScript(*s);
+    if (const core::Json* list = comps->Get("scripts")) {
+        if (const core::Json* items = list->Get("items")) {
+            if (items->IsArray()) {
+                for (const core::Json& it : items->Items()) addScript(it);
+            }
+        }
+    }
+    for (const auto& [cname, cdata] : comps->Members()) {
+        if (cname == "transform" || cname == "mesh" || cname == "health" || cname == "script")
+            continue;
+        e.extraComponents[cname] = cdata;
+    }
+    return e;
 }
 
 void EditorApp::AddSpriteEntity(const std::string& texPath) {
@@ -856,7 +844,10 @@ void EditorApp::LoadScene(const std::string& path) {
             }
             if (const core::Json* inst = j->Get("components")) {
                 if (inst->IsObject()) {
-                    for (const auto& [k, v] : inst->Members()) effective.object_[k] = v;
+                    // G5-4-4(项1): deep merge instance overrides over the
+                    // template (field-level), mirroring the runtime's
+                    // Instantiate — so a prefab instance stores only its diff.
+                    effective = scene::MergePrefabOverrides(effective, *inst);
                 }
             }
             const core::Json* comps = &effective;

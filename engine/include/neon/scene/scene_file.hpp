@@ -173,6 +173,24 @@ private:
     std::map<std::string, core::Json> prefs_;
 };
 
+// G5-4-4(项1) prefab instance overrides: the field-level diff/mix pair used by
+// the editor to store ONLY what an instance changed from its prefab template
+// (Unity-style instance variants). DeepMerge already gives "template expanded
+// then instance wins"; these two make it round-trip without storing the whole
+// expansion.
+//
+// ComputePrefabOverrides(template, instance) -> override component map:
+//   - a component absent from the template is emitted wholesale;
+//   - a component present in both is diffed FIELD-WISE (equal fields omitted,
+//     only differing fields emitted);
+//   - a component identical to the template is omitted entirely.
+// MergePrefabOverrides(template, overrides) -> DeepMerge(template, overrides),
+// the inverse for the emitted values (instance == the original).
+core::Json ComputePrefabOverrides(const core::Json& templateComps,
+                                  const core::Json& instanceComps);
+core::Json MergePrefabOverrides(const core::Json& templateComps,
+                                const core::Json& overrides);
+
 // Engine-level component types produced by the built-in factories. These are
 // plain data; nothing here uploads to the GPU or touches the renderer.
 struct SceneTransform {

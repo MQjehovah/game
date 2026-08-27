@@ -625,6 +625,30 @@ Value NativeAnimFinished(IScriptHost& host, void* user) {
     return Value::Bool(ctx->animFinished(EntityFromValue(host.GetArg(0))));
 }
 
+// AttachStateMachine(entity, path) -> bool (loaded + bound to the skinned model).
+Value NativeAttachStateMachine(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->attachStateMachine) return Value::Bool(false);
+    const ecs::Entity e = EntityFromValue(host.GetArg(0));
+    const std::string path = StringArg(host, 1);
+    return Value::Bool(ctx->attachStateMachine(e, path));
+}
+
+// SetAnimParam(entity, name, value) — drives the state machine's transitions.
+Value NativeSetAnimParam(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->setAnimParam) return Value::Bool(false);
+    const ecs::Entity e = EntityFromValue(host.GetArg(0));
+    const std::string name = StringArg(host, 1);
+    float value = 0.0f;
+    if (host.ArgCount() > 2) {
+        const Value v = host.GetArg(2);
+        if (v.type == Value::Type::Number) value = static_cast<float>(v.number);
+    }
+    ctx->setAnimParam(e, name, value);
+    return Value::Bool(true);
+}
+
 // WorldToScreen(x, y, z) -> {x=, y=} design coords or nil (behind camera).
 Value NativeWorldToScreen(IScriptHost& host, void* user) {
     auto* ctx = static_cast<ScriptContext*>(user);
@@ -1402,6 +1426,9 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("PlayAnimation", &NativePlayAnimation, &ctx);
     host.Register("AnimationProgress", &NativeAnimProgress, &ctx);
     host.Register("AnimationFinished", &NativeAnimFinished, &ctx);
+    // G5-4-4(项2): data-driven animation state machine.
+    host.Register("AttachStateMachine", &NativeAttachStateMachine, &ctx);
+    host.Register("SetAnimParam", &NativeSetAnimParam, &ctx);
     host.Register("WorldToScreen", &NativeWorldToScreen, &ctx);
     host.Register("SpawnFloatText", &NativeSpawnFloatText, &ctx);
     host.Register("SetEntityPlate", &NativeSetEntityPlate, &ctx);

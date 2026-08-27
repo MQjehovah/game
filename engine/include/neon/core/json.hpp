@@ -55,6 +55,10 @@ public: // fields are internal to the DOM; use accessors from game code
     std::map<std::string, Json> object_;
 };
 
+// Deep structural equality (type + value, recursively). Prefab override
+// diffing and component merge semantics use it.
+bool JsonEquals(const Json& a, const Json& b);
+
 class JsonWriter {
 public:
     static std::string Write(const Json& value);
