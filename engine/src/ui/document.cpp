@@ -1,16 +1,19 @@
-#include "neon/ui/document.hpp"
+﻿#include "neon/ui/document.hpp"
 
 #include <algorithm>
 #include <fstream>
 #include <sstream>
 
 #include "neon/core/log.hpp"
+#include "neon/ui/layout_solver.hpp"
 
 namespace neon::ui {
 
 const char* UiNodeTypeName(UiNodeType type) {
     switch (type) {
         case UiNodeType::Panel: return "panel";
+        case UiNodeType::Row: return "row";
+        case UiNodeType::Column: return "column";
         case UiNodeType::Label: return "label";
         case UiNodeType::Button: return "button";
         case UiNodeType::Bar: return "bar";
@@ -20,6 +23,8 @@ const char* UiNodeTypeName(UiNodeType type) {
 }
 
 UiNodeType UiNodeTypeFromName(const std::string& name) {
+    if (name == "row" || name == "hbox") return UiNodeType::Row;
+    if (name == "column" || name == "vbox") return UiNodeType::Column;
     if (name == "label") return UiNodeType::Label;
     if (name == "button") return UiNodeType::Button;
     if (name == "bar") return UiNodeType::Bar;
@@ -64,6 +69,75 @@ core::Json MakeObject() {
 
 void Put(core::Json& obj, const std::string& key, core::Json value) {
     obj.object_[key] = std::move(value);
+}
+
+} // namespace
+namespace {
+
+const char* JustifyName(UiJustify j) {
+    switch (j) {
+        case UiJustify::Center: return "center";
+        case UiJustify::End: return "end";
+        case UiJustify::SpaceBetween: return "space-between";
+        case UiJustify::Start: return "start";
+    }
+    return "start";
+}
+
+UiJustify JustifyFromName(const std::string& s, UiJustify fallback) {
+    if (s == "center") return UiJustify::Center;
+    if (s == "end") return UiJustify::End;
+    if (s == "space-between" || s == "between") return UiJustify::SpaceBetween;
+    if (s == "start") return UiJustify::Start;
+    return fallback;
+}
+
+const char* AlignName(UiAlign a) {
+    switch (a) {
+        case UiAlign::Center: return "center";
+        case UiAlign::End: return "end";
+        case UiAlign::Stretch: return "stretch";
+        case UiAlign::Start: return "start";
+    }
+    return "start";
+}
+
+UiAlign AlignFromName(const std::string& s, UiAlign fallback) {
+    if (s == "center") return UiAlign::Center;
+    if (s == "end") return UiAlign::End;
+    if (s == "stretch") return UiAlign::Stretch;
+    if (s == "start") return UiAlign::Start;
+    return fallback;
+}
+
+// Length <-> JSON: number = px; "50%" = percent; "auto"/"center" keywords.
+core::Json LengthToJson(const UiLength& l) {
+    switch (l.unit) {
+        case UiLength::Unit::Px: return MakeNumber(l.value);
+        case UiLength::Unit::Percent: return MakeString(std::to_string(l.value * 100.0f) + "%");
+        case UiLength::Unit::Auto: return MakeString("auto");
+        case UiLength::Unit::Center: return MakeString("center");
+        case UiLength::Unit::Unset: break;
+    }
+    return MakeNumber(0);
+}
+
+UiLength LengthFromJson(const core::Json* j) {
+    UiLength l;
+    if (!j) return l;
+    if (j->type() == core::Json::Type::Number) {
+        l.unit = UiLength::Unit::Px;
+        l.value = static_cast<float>(j->GetNumber());
+    } else if (j->type() == core::Json::Type::String) {
+        const std::string s = j->GetString();
+        if (s == "auto") l.unit = UiLength::Unit::Auto;
+        else if (s == "center") l.unit = UiLength::Unit::Center;
+        else if (!s.empty() && s.back() == '%') {
+            l.unit = UiLength::Unit::Percent;
+            l.value = std::atof(s.c_str()) / 100.0f;
+        }
+    }
+    return l;
 }
 
 } // namespace
@@ -131,6 +205,9 @@ bool UiDocument::LoadJson(const std::string& text) {
     root.name = "root";
     root.rect = {0, 0, 1280, 720};
     root.parent = nullptr;
+    if (const core::Json* s = doc.Get("solver")) {
+        if (s->type() == core::Json::Type::String) solver = s->GetString();
+    }
     std::string parseError;
     if (!ParseNode(*rootJson, root, parseError)) {
         NEON_LOG_ERROR("UI: node error: %s", parseError.c_str());
@@ -143,6 +220,7 @@ std::string UiDocument::ToJson() const {
     core::Json doc = MakeObject();
     Put(doc, "format", MakeString("neon-ui"));
     Put(doc, "version", MakeNumber(1));
+    Put(doc, "solver", MakeString(solver));
     core::Json rootJson = MakeObject();
     SerializeNode(root, rootJson);
     Put(doc, "root", std::move(rootJson));
@@ -159,11 +237,11 @@ bool UiDocument::SerializeNode(const UiNode& node, core::Json& out) {
     Put(out, "rect", std::move(rect));
     core::Json color = MakeArray();
     color.array_ = {MakeNumber(node.color.r), MakeNumber(node.color.g), MakeNumber(node.color.b),
-                    MakeNumber(node.color.a)};
+                     MakeNumber(node.color.a)};
     Put(out, "color", std::move(color));
     core::Json border = MakeArray();
     border.array_ = {MakeNumber(node.borderColor.r), MakeNumber(node.borderColor.g),
-                     MakeNumber(node.borderColor.b), MakeNumber(node.borderColor.a)};
+                      MakeNumber(node.borderColor.b), MakeNumber(node.borderColor.a)};
     Put(out, "border", std::move(border));
     Put(out, "text", MakeString(node.text));
     Put(out, "sprite", MakeString(node.sprite));
@@ -172,6 +250,21 @@ bool UiDocument::SerializeNode(const UiNode& node, core::Json& out) {
     Put(out, "fontSize", MakeNumber(node.fontSize));
     Put(out, "visible", MakeBool(node.visible));
     Put(out, "clip", MakeBool(node.clipChildren));
+    // Box-layout fields (written only when set; legacy nodes stay compact).
+    if (node.left.IsSet()) Put(out, "left", LengthToJson(node.left));
+    if (node.top.IsSet()) Put(out, "top", LengthToJson(node.top));
+    if (node.right.IsSet()) Put(out, "right", LengthToJson(node.right));
+    if (node.bottom.IsSet()) Put(out, "bottom", LengthToJson(node.bottom));
+    if (node.width.IsSet()) Put(out, "width", LengthToJson(node.width));
+    if (node.height.IsSet()) Put(out, "height", LengthToJson(node.height));
+    if (node.gap != 0.0f) Put(out, "gap", MakeNumber(node.gap));
+    if (node.padding != 0.0f) Put(out, "padding", MakeNumber(node.padding));
+    if (node.justify != UiJustify::Start) Put(out, "justify", MakeString(JustifyName(node.justify)));
+    if (node.align != UiAlign::Start) Put(out, "align", MakeString(AlignName(node.align)));
+    // Unrecognized fields ride along verbatim (extension seam).
+    if (node.extra.type_ == core::Json::Type::Object) {
+        for (const auto& [k, v] : node.extra.object_) Put(out, k, v);
+    }
     if (!node.children.empty()) {
         core::Json children = MakeArray();
         for (const auto& c : node.children) {
@@ -220,6 +313,35 @@ bool UiDocument::ParseNode(const core::Json& in, UiNode& out, std::string& error
     if (const core::Json* f = in.Get("fontSize")) out.fontSize = static_cast<float>(f->GetNumber());
     if (const core::Json* v = in.Get("visible")) out.visible = v->GetBool(true);
     if (const core::Json* v = in.Get("clip")) out.clipChildren = v->GetBool(true);
+    // Box-layout fields.
+    out.left = LengthFromJson(in.Get("left"));
+    out.top = LengthFromJson(in.Get("top"));
+    out.right = LengthFromJson(in.Get("right"));
+    out.bottom = LengthFromJson(in.Get("bottom"));
+    out.width = LengthFromJson(in.Get("width"));
+    out.height = LengthFromJson(in.Get("height"));
+    if (const core::Json* g = in.Get("gap")) out.gap = static_cast<float>(g->GetNumber());
+    if (const core::Json* p = in.Get("padding")) out.padding = static_cast<float>(p->GetNumber());
+    if (const core::Json* j = in.Get("justify"))
+        out.justify = JustifyFromName(j->GetString(), out.justify);
+    if (const core::Json* a = in.Get("align"))
+        out.align = AlignFromName(a->GetString(), out.align);
+    // Extension seam: keep UNRECOGNIZED fields verbatim so future layout
+    // strategies (and other tools) round-trip their own attributes.
+    {
+        static const char* kKnown[] = {"type",      "name",  "rect",  "color", "border",
+                                       "text",      "sprite", "slice", "fill",  "fontSize",
+                                       "visible",   "clip",  "left",  "top",   "right",
+                                       "bottom",    "width", "height", "gap",   "padding",
+                                       "justify",   "align", "children"};
+        out.extra = MakeObject();
+        for (const auto& [k, v] : in.object_) {
+            bool known = false;
+            for (const char* kn : kKnown)
+                if (k == kn) { known = true; break; }
+            if (!known) Put(out.extra, k, v);
+        }
+    }
     if (const core::Json* ch = in.Get("children")) {
         if (ch->type() == core::Json::Type::Array) {
             for (size_t i = 0; i < ch->Size(); ++i) {
@@ -238,7 +360,9 @@ bool UiDocument::ParseNode(const core::Json& in, UiNode& out, std::string& error
 }
 
 void UiDocument::Draw(gfx::Renderer& renderer, const gfx::Font& font,
-                      const UiTextureLoader& loadTexture) const {
+                      const UiTextureLoader& loadTexture,
+                      const math::Vec2& viewportSize) const {
+    Layout(viewportSize, &font);
     struct Frame {
         const UiNode* node;
         math::Rect2 clip;
@@ -268,14 +392,14 @@ void UiDocument::Draw(gfx::Renderer& renderer, const gfx::Font& font,
     };
 
     std::vector<Frame> stack;
-    stack.push_back({&root, root.rect});
+    stack.push_back({&root, root.ResolvedRect()});
     while (!stack.empty()) {
         const Frame frame = stack.back();
         stack.pop_back();
         const UiNode& n = *frame.node;
         if (!n.visible) continue;
 
-        const math::Rect2 abs = n.AbsoluteRect();
+        const math::Rect2 abs = n.ResolvedRect();
         const math::Rect2 clip = {
             std::max(frame.clip.x, abs.x),
             std::max(frame.clip.y, abs.y),
@@ -286,7 +410,9 @@ void UiDocument::Draw(gfx::Renderer& renderer, const gfx::Font& font,
         if (clip.w <= 0.0f || clip.h <= 0.0f) continue;
 
         switch (n.type) {
-            case UiNodeType::Panel: {
+            case UiNodeType::Panel:
+            case UiNodeType::Row:
+            case UiNodeType::Column: {
                 drawBackground(n, clip);
                 renderer.DrawRectOutline(clip, 1.0f, n.borderColor);
                 break;
@@ -335,7 +461,9 @@ void UiDocument::Draw(gfx::Renderer& renderer, const gfx::Font& font,
     }
 }
 
-UiNode* UiDocument::HitTest(const math::Vec2& p) {
+UiNode* UiDocument::HitTest(const math::Vec2& p, const math::Vec2& viewportSize) {
+    // Box-layout nodes only have a resolved rect - make sure one is fresh.
+    Layout(viewportSize, nullptr);
     struct Item {
         UiNode* node;
         int depth;
@@ -359,6 +487,14 @@ UiNode* UiDocument::HitTest(const math::Vec2& p) {
         for (auto& c : item.node->children) stack.push_back({c.get(), item.depth + 1});
     }
     return best;
+}
+
+void UiDocument::Layout(const math::Vec2& viewportSize, const gfx::Font* font) const {
+    // Pluggable strategy (layout_solver.hpp): "absolute" keeps the legacy
+    // rect chain; anything else resolves through the registered solver.
+    ILayoutSolver* s = FindLayoutSolver(solver);
+    if (!s) s = AbsoluteLayoutSolver();
+    s->Solve(const_cast<UiNode&>(root), viewportSize, FontTextMeasure(font));
 }
 
 } // namespace neon::ui

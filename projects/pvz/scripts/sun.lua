@@ -29,15 +29,19 @@ function on_update(e, dt)
 
   if InputMousePressed(0) then
     local m = InputMousePos()
-    -- InputMousePos() is DESIGN space (y down); the sun is in world space (y up).
-    if m ~= nil and math.abs(m.x - pos.x) < 32 and math.abs((720 - m.y) - pos.y) < 32 then
-      local s = GetVar("sun")
-      if type(s) ~= "number" then s = 0 end
-      SetVar("sun", s + st.value)
-      SpawnFloatText({ x = pos.x, y = pos.y + 20, z = pos.z }, "+" .. st.value, false, 0.9)
-      timers[e.id] = nil
-      PlaySfx("sun")
-      Despawn(e)
+    -- 鼠标是视口像素; 阳光在世界系(y 向上)。ScreenToWorld 完成换算。
+    if m then
+      local w = ScreenToWorld(m)
+      if w and math.abs(w.x - pos.x) < 32 and math.abs(w.y - pos.y) < 32 then
+        local s = GetVar("sun")
+        if type(s) ~= "number" then s = 0 end
+        SetVar("sun", s + st.value)
+        SpawnFloatText({ x = pos.x, y = pos.y + 20, z = pos.z }, "+" .. st.value, false, 0.9)
+        timers[e.id] = nil
+        PlaySfx("sun")
+        Despawn(e)
+        return
+      end
     end
   end
 end

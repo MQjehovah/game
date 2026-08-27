@@ -253,6 +253,18 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     scriptCtx_.readData = [this](const std::string& path) {
         return ReadScript(FullScriptPath(path));
     };
+    // Replaceable UI system: injected via cfg_.uiSystem wins; otherwise the
+    // default document-backed system reading through the same VFS/disk source
+    // as scripts (G7-1: packed games load ui/*.ui.json straight from the pack).
+    if (cfg_.uiSystem) {
+        ui_ = cfg_.uiSystem;
+    } else {
+        ui::DocumentUiConfig ucfg;
+        ucfg.readFile = [this](const std::string& path) {
+            return ReadScript(FullScriptPath(path));
+        };
+        ui_.reset(ui::CreateDocumentUiSystem(ucfg).release());
+    }
     scriptCtx_.uiShow = [this](const std::string& path) { return ShowUI(path); };
     scriptCtx_.uiHide = [this]() { HideUI(); };
     scriptCtx_.uiClicked = [this](const std::string& name) { return UIClicked(name); };
@@ -265,6 +277,8 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     scriptCtx_.uiSetVisible = [this](const std::string& name, bool visible) {
         UISetVisible(name, visible);
     };
+    scriptCtx_.uiSetColor = [this](const std::string& name, float r, float g, float b,
+                                   float a) { UISetColor(name, r, g, b, a); };
     scriptCtx_.loadTexture = [this](const std::string& path) {
         if (!cfg_.assets || path.empty()) return gfx::TextureHandle{};
         return cfg_.assets->LoadTexture(FullAssetPath(path)).Handle();
@@ -437,6 +451,12 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     scriptCtx_.worldToScreen = [this](const math::Vec3& w, float& ox, float& oy) {
         return WorldToScreen(w, ox, oy);
     };
+    scriptCtx_.worldFromScreen = [this](const math::Vec2& d, float& ox, float& oy) {
+        return ScreenToWorld(d, ox, oy);
+    };
+    scriptCtx_.uiViewportSize = [this]() {
+        return math::Vec2{lastVpW_, lastVpH_};
+    };
     scriptCtx_.spawnFloatText = [this](const math::Vec3& w, const std::string& t, bool crit,
                                        float life) { SpawnFloatText(w, t, crit, life); };
     scriptCtx_.setEntityPlate = [this](ecs::Entity e, const std::string& name, float hp) {
@@ -586,8 +606,7 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
 }
 
 void GameRuntime::Stop() {
-    uiDoc_.reset();
-    uiClickedNames_.clear();
+    ui_.reset();
     physicsAccum_ = 0.0f;
     scripts_.clear();
     trees_.clear();
@@ -731,38 +750,27 @@ void GameRuntime::TickTweens(float dt) {
 }
 
 bool GameRuntime::ShowUI(const std::string& path) {
-    auto doc = std::make_unique<ui::UiDocument>();
-    // G7-1 剩余: read the UI document through the same source as scripts
-    // (VFS when installed, else the scriptBaseDir on disk), so packed games
-    // load ui/*.ui.json straight from the pack without an unpacked dir.
-    const std::string text = ReadScript(FullScriptPath(path));
-    if (text.empty() || !doc->LoadJson(text)) return false;
-    uiDoc_ = std::move(doc);
-    uiClickedNames_.clear();
-    return true;
+    return ui_ && ui_->Show(path);
 }
 
 void GameRuntime::HideUI() {
-    uiDoc_.reset();
-    uiClickedNames_.clear();
+    if (ui_) ui_->Hide();
 }
 
 void GameRuntime::UISetText(const std::string& name, const std::string& text) {
-    if (uiDoc_) {
-        if (ui::UiNode* n = uiDoc_->Find(name)) n->text = text;
-    }
+    if (ui_) ui_->SetText(name, text);
 }
 
 void GameRuntime::UISetFill(const std::string& name, float fill) {
-    if (uiDoc_) {
-        if (ui::UiNode* n = uiDoc_->Find(name)) n->fill = fill;
-    }
+    if (ui_) ui_->SetFill(name, fill);
 }
 
 void GameRuntime::UISetVisible(const std::string& name, bool visible) {
-    if (uiDoc_) {
-        if (ui::UiNode* n = uiDoc_->Find(name)) n->visible = visible;
-    }
+    if (ui_) ui_->SetVisible(name, visible);
+}
+
+void GameRuntime::UISetColor(const std::string& name, float r, float g, float b, float a) {
+    if (ui_) ui_->SetColor(name, r, g, b, a);
 }
 
 void GameRuntime::AttachScripts() {
@@ -2126,9 +2134,28 @@ bool GameRuntime::WorldToScreen(const math::Vec3& world, float& outX, float& out
     math::Vec4 clip = lastViewProj_.TransformVec4(math::Vec4(world.x, world.y, world.z, 1.0f));
     if (clip.w <= 0.01f) return false;
     const float nx = clip.x / clip.w, ny = clip.y / clip.w;
-    outX = (nx * 0.5f + 0.5f) * gfx::Renderer::kDesignWidth;
-    outY = (0.5f - ny * 0.5f) * gfx::Renderer::kDesignHeight;
+    // Viewport PIXELS (top-left origin) - the same space the UI and the
+    // script 2D canvas draw in.
+    outX = (nx * 0.5f + 0.5f) * lastVpW_;
+    outY = (0.5f - ny * 0.5f) * lastVpH_;
     return true;
+}
+
+bool GameRuntime::ScreenToWorld(const math::Vec2& screen, float& outX, float& outY) const {
+    // Inverse of WorldToScreen for the axis-aligned ortho camera shape the 2D
+    // games use (camera on +Z looking -Z, up +Y, no roll). Input: pixels.
+    if (!lastCamValid_ || !lastCam_.ortho) return false;
+    const float nx = (screen.x / lastVpW_) * 2.0f - 1.0f;
+    const float ny = 1.0f - (screen.y / lastVpH_) * 2.0f;
+    const float halfH = lastCam_.orthoSize;
+    const float halfW = halfH * lastAspect_;
+    outX = lastCam_.target.x + nx * halfW;
+    outY = lastCam_.target.y + ny * halfH;
+    return true;
+}
+
+float GameRuntime::DesignWidth() const {
+    return lastVpW_;
 }
 
 void GameRuntime::SpawnFloatText(const math::Vec3& world, const std::string& text, bool crit,
@@ -2213,11 +2240,31 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera,
             if (cam.ortho && previewZoom > 0.0f)
                 cam.orthoSize /= previewZoom;
         });
+    // 2D-play camera fit-outside (host signals 2D play by passing
+    // previewZoom > 0): the world FILLS the viewport (constant-height view),
+    // but the horizontal design extent (1280 world units at zoom 1) must stay
+    // fully visible - on a viewport narrower than 16:9 grow the ortho size so
+    // extra vertical world shows instead of cropping the design area.
+    const float drawAspect = renderer.SceneAspect();
+    if (cam.ortho && previewZoom > 0.0f) {
+        const float halfWNeeded = (gfx::Renderer::kDesignWidth * 0.5f) / previewZoom;
+        cam.orthoSize = std::max(cam.orthoSize, halfWNeeded / drawAspect);
+    }
+    // Snapshot the resolved camera + viewport pixels: WorldToScreen/
+    // ScreenToWorld and GetViewportSize answer script queries between renders
+    // from this state. UI/world space is plain viewport PIXELS (no design
+    // resolution - relative layout adapts, px stays px).
+    lastCam_ = cam;
+    lastCamValid_ = true;
+    lastAspect_ = drawAspect;
+    const math::Rect2& sceneVp = renderer.SceneViewport();
+    lastVpW_ = sceneVp.w > 0.0f ? sceneVp.w : 1280.0f;
+    lastVpH_ = sceneVp.h > 0.0f ? sceneVp.h : 720.0f;
     // Project at the ACTIVE scene viewport's aspect (a dock sub-rect in the
     // editor, the full target in the standalone player) so the runtime render
     // matches whatever rasterization rect the host set up - otherwise the
     // playtest FOV would differ from the edit-mode viewport.
-    renderer.SetCamera(cam, renderer.SceneAspect());
+    renderer.SetCamera(cam, drawAspect);
     // Data-driven scene environment: apply the scene's DirectionalLight +
     // AmbientLight objects (Unity-style) so every host renders the same scene
     // the same way (the editor's playtest and the standalone player both go
@@ -2589,33 +2636,33 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera,
         // FlushDraw2D is called from FlushCanvas (post-EndScene).
     }
 
-    // Data-driven UI document: drawn by DrawUI() AFTER the frame is composited
-    // (menus/HUD keep authored colors instead of being tone-mapped with the
-    // 3D scene). Button clicks are edge-triggered per frame so scripts can
-    // query UIClicked(name) from on_update on the next tick.
-    uiClickedNames_.clear();
-    if (uiDoc_) {
-        if (cfg_.input && cfg_.input->MousePressed(platform::MouseButton::Left)) {
-            math::Vec2 p = cfg_.input->MousePos();
-            if (scriptCtx_.screenToUi) p = scriptCtx_.screenToUi(p);
-            if (ui::UiNode* hit = uiDoc_->HitTest(p);
-                hit && hit->type == ui::UiNodeType::Button) {
-                uiClickedNames_.insert(hit->name);
-            }
-        }
+    // Data-driven UI (IUiSystem): drawn by DrawUI() AFTER the frame is
+    // composited (menus/HUD keep authored colors instead of being tone-mapped
+    // with the 3D scene). Button clicks are edge-triggered per frame so
+    // scripts can query UIClicked(name) from on_update on the next tick.
+    if (ui_) {
+        const bool clickEdge =
+            cfg_.input && cfg_.input->MousePressed(platform::MouseButton::Left);
+        math::Vec2 pointer = cfg_.input ? cfg_.input->MousePos() : math::Vec2{};
+        if (scriptCtx_.screenToUi) pointer = scriptCtx_.screenToUi(pointer);
+        ui_->Update(pointer, clickEdge);
     }
 }
 
 void GameRuntime::DrawUI(gfx::Renderer& renderer) {
-    if (!running_ || !cfg_.assets || !uiDoc_ || !cfg_.font2d.Valid()) return;
+    if (!running_ || !cfg_.assets || !ui_ || !cfg_.font2d.Valid()) return;
     scriptCtx_.screenToUi = [this](const math::Vec2& p) {
         return (p - uiOffset_) / uiScale_;
     };
-    uiDoc_->Draw(renderer, cfg_.font2d,
-                 [this](const std::string& p) {
-                     if (!cfg_.assets || p.empty()) return gfx::Texture{};
-                     return cfg_.assets->LoadTexture(FullAssetPath(p));
-                 });
+    // The live design-space viewport drives layout: the UI adapts to whatever
+    // 2D mapping the host installed (fixed 1280x720 letterbox or a dynamic
+    // width under a constant-height mapping).
+    ui_->Draw(renderer, cfg_.font2d,
+              [this](const std::string& p) {
+                  if (!cfg_.assets || p.empty()) return gfx::Texture{};
+                  return cfg_.assets->LoadTexture(FullAssetPath(p));
+              },
+              renderer.UIDesignSize());
 }
 
 void GameRuntime::LoadLocales() {

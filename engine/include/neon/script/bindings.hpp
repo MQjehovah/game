@@ -147,6 +147,7 @@ struct ScriptContext {
     std::function<void(const std::string&, const std::string&)> uiSetText;
     std::function<void(const std::string&, float)> uiSetFill;
     std::function<void(const std::string&, bool)> uiSetVisible;
+    std::function<void(const std::string&, float, float, float, float)> uiSetColor;
     // Resolves a sprite path (assets/sprites/*.png) to a texture handle.
     // Wired by GameRuntime; null -> DrawSprite draws a plain quad.
     std::function<gfx::TextureHandle(const std::string&)> loadTexture;
@@ -211,6 +212,12 @@ struct ScriptContext {
     // Projects a world position into the 2D design space (1280x720) the
     // on_render canvas draws in. Returns nil behind the camera.
     std::function<bool(const math::Vec3&, float&, float&)> worldToScreen;
+    // Inverse (design point -> world XY) for the ortho 2D camera; null /
+    // false -> ScreenToWorld returns nil (perspective camera, first frame).
+    std::function<bool(const math::Vec2&, float&, float&)> worldFromScreen;
+    // Live UI viewport size in design units (constant-height mapping:
+    // height 720, width follows the viewport aspect).
+    std::function<math::Vec2()> uiViewportSize;
     // Spawns a floating combat text anchored to a world position (the runtime
     // ages it; on_render reads it via FloatTexts()).
     std::function<void(const math::Vec3&, const std::string&, bool, float)> spawnFloatText;

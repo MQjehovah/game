@@ -106,7 +106,7 @@ function on_start()
   if demo == 1 then
     started = true
     SetVar("started", true)
-    UIHide()
+    UIShow("ui/hud.ui.json")
     print("demo mode: auto-started")
   end
 end
@@ -118,7 +118,7 @@ function on_update(e, dt)
   if UIClicked("Start") then
     started = true
     SetVar("started", true)
-    UIHide()
+    UIShow("ui/hud.ui.json")
     PlaySfx("click")
   end
 
@@ -156,24 +156,46 @@ function on_update(e, dt)
   end
   if GetVar("paused") == true then return end
 
-  -- 鼠标点选顶部种子包 (与 hud.js 几何一致: bx=240, 步长 136, 6 植物 + 铲子)。
-  if InputMousePressed(0) then
-    local m = InputMousePos()
-    if m and m.y < 58 then
-      local idx = math.floor((m.x - 240) / 136)
-      if idx >= 0 and idx < 6 then
-        selected = ORDER[idx + 1]
-        SetVar("selected", selected)
-        PlaySfx("click")
-      elseif m.x >= 240 + 6 * 136 + 2 then
-        selected = "shovel"
-        SetVar("selected", "shovel")
-        PlaySfx("click")
-      end
+  -- 点击 HUD 卡片/铲子 (BoxFlex 文档 button 节点, 键盘 1-6/S 并存)。
+  for i, type in ipairs(ORDER) do
+    if UIClicked("card" .. i) then
+      selected = type
+      SetVar("selected", type)
+      PlaySfx("click")
     end
   end
+  if UIClicked("shovel") then
+    selected = "shovel"
+    SetVar("selected", "shovel")
+    PlaySfx("click")
+  end
 
-  -- Seed-packet cooldowns (real time via dt).
+  -- Seed-packet cooldowns (real time via dt) + HUD dynamic values (BoxFlex
+  -- document nodes updated by name; layout itself is declarative).
+  local sunNow = GetVar("sun")
+  if type(sunNow) ~= "number" then sunNow = 0 end
+  UISetText("SunText", tostring(sunNow))
+  local zLeft = 0
+  for r = 0, ROWS - 1 do
+    local zlist = GetVar("row_zombies_" .. r)
+    if type(zlist) == "table" then zLeft = zLeft + #zlist end
+  end
+  local wave = GetVar("wave")
+  if type(wave) ~= "number" then wave = 0 end
+  UISetText("WaveText", "第 " .. wave .. " 波")
+  UISetText("ZombiesText", "僵尸: " .. zLeft)
+  local prog = GetVar("wave_progress")
+  if type(prog) ~= "number" then prog = 0 end
+  UISetFill("WaveBar", prog)
+  for i, type in ipairs(ORDER) do
+    local cd = cooldowns[type] or 0
+    local frac = clamp(cd / PLANTS[type].cd, 0, 1)
+    UISetFill("cd" .. i, frac)
+    local afford = sunNow >= PLANTS[type].cost
+    local pr, pg, pb = 1, 0.95, 0.3
+    if not afford then pr, pg, pb = 1, 0.45, 0.25 end
+    UISetColor("p" .. i, pr, pg, pb, 1)
+  end
   for type, cd in pairs(cooldowns) do
     if cd > 0 then cooldowns[type] = cd - dt end
     SetVar("cooldown_" .. type, cooldowns[type] or 0)
@@ -255,14 +277,16 @@ function on_update(e, dt)
   end
   SetVar("mowers", mowerList)
 
-  -- Click the lawn to plant / shovel. InputMousePos() returns DESIGN coords
-  -- (y down); the world is y-up, so convert y before mapping to a row.
+  -- Click the lawn to plant / shovel. InputMousePos() is viewport pixels;
+  -- ScreenToWorld maps them onto the world plane (y up) - no manual
+  -- design-space flipping anymore.
   if InputMousePressed(0) and selected then
     local m = InputMousePos()
     if not m then return end
-    local wy = 720 - m.y
-    local col = math.floor((m.x - X0 + CELL_X * 0.5) / CELL_X)
-    local row = math.floor((wy - Y0 + CELL_Y * 0.5) / CELL_Y)
+    local w = ScreenToWorld(m)
+    if not w then return end
+    local col = math.floor((w.x - X0 + CELL_X * 0.5) / CELL_X)
+    local row = math.floor((w.y - Y0 + CELL_Y * 0.5) / CELL_Y)
     if col >= 0 and col < COLS and row >= 0 and row < ROWS then
       if selected == "shovel" then
         local existing = findRowPlant(row, colX(col))

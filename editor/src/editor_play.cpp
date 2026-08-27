@@ -43,9 +43,6 @@ void EditorApp::DrawPlayHUD() {
     ui::Theme theme;
     theme.font = cjkFont_.Valid() ? cjkFont_ : pixelFont_;
 
-    const int w = renderer_.ScreenWidth();
-    const int h = renderer_.ScreenHeight();
-
     // HP bar (top-left).
     ui::DrawLabel(renderer_, theme, "生命", {24, 20}, 14, theme.text, false, true);
     const float hpFrac = maxHp > 0.0f ? math::Saturate(hp / maxHp) : 0.0f;
@@ -64,11 +61,13 @@ void EditorApp::DrawPlayHUD() {
     ui::DrawLabel(renderer_, theme, buf, {24, 64}, 13, theme.text, false, false);
     std::snprintf(buf, sizeof(buf), "金币 %d", gold);
     const math::Vec2 gs = ui::MeasureText(theme.font, buf, 16);
-    ui::DrawLabel(renderer_, theme, buf, {static_cast<float>(w) - gs.x - 8, 18}, 16,
+    // Design-space anchor (the HUD draws through the dock's design-fit
+    // mapping, not the full window): 1280x720 canvas, gold top-right.
+    ui::DrawLabel(renderer_, theme, buf, {1276.0f - gs.x, 18}, 16,
                   gfx::Color{1.0f, 0.85f, 0.3f, 1.0f}, false, false);
 
     // Skill hotbar (bottom-left): melee / fireball / heal with cooldowns.
-    float sx = 24.0f, sy = static_cast<float>(h) - 66.0f;
+    float sx = 24.0f, sy = 720.0f - 66.0f;
     const float slotW = 54.0f, slotH = 54.0f, gap = 8.0f;
     auto slot = [&](const char* name, const char* key, float cd, const gfx::Color& color) {
         const math::Rect2 r{sx, sy, slotW, slotH};

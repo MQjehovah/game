@@ -523,6 +523,19 @@ Value NativeUISetVisible(IScriptHost& host, void* user) {
     return Value::Nil();
 }
 
+// UISetColor(name, r, g, b[, a]): tint a node (label text / panel / bar fill).
+Value NativeUISetColor(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (ctx && ctx->uiSetColor) {
+        const float r = static_cast<float>(NumberArg(host, 1, 1.0));
+        const float g = static_cast<float>(NumberArg(host, 2, 1.0));
+        const float b = static_cast<float>(NumberArg(host, 3, 1.0));
+        const float a = static_cast<float>(NumberArg(host, 4, 1.0));
+        ctx->uiSetColor(StringArg(host, 0), r, g, b, a);
+    }
+    return Value::Nil();
+}
+
 // Loc(key): localized string for the active language (fallback chain active ->
 // default -> key). Returns the key itself when no tables are loaded.
 Value NativeLoc(IScriptHost& host, void* user) {
@@ -668,6 +681,47 @@ Value NativeWorldToScreen(IScriptHost& host, void* user) {
     Value t = Value::Tbl();
     t.table->fields.emplace_back("x", Value::Num(sx));
     t.table->fields.emplace_back("y", Value::Num(sy));
+    return t;
+}
+
+// ScreenToWorld(x, y) or ScreenToWorld({x=,y=}) -> world {x=, y=} or nil
+// (perspective camera / before the first render). Design coords in, world XY
+// out - the inverse of WorldToScreen for the ortho 2D camera.
+Value NativeScreenToWorld(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->worldFromScreen) return Value::Nil();
+    math::Vec2 d{0.0f, 0.0f};
+    const Value& a0 = host.GetArg(0);
+    if (a0.type == Value::Type::Table && a0.table) {
+        for (const auto& kv : a0.table->fields) {
+            if (kv.second.type != Value::Type::Number) continue;
+            if (kv.first == "x") d.x = static_cast<float>(kv.second.number);
+            else if (kv.first == "y") d.y = static_cast<float>(kv.second.number);
+        }
+    } else if (host.ArgCount() >= 2) {
+        d = {static_cast<float>(a0.number), static_cast<float>(host.GetArg(1).number)};
+    }
+    float wx = 0.0f, wy = 0.0f;
+    if (!ctx->worldFromScreen(d, wx, wy)) return Value::Nil();
+    Value t = Value::Tbl();
+    t.table->fields.emplace_back("x", Value::Num(wx));
+    t.table->fields.emplace_back("y", Value::Num(wy));
+    return t;
+}
+
+// GetViewportSize() -> {w=, h=} in design units. Constant-height mapping:
+// h is always 720; w follows the live viewport aspect (adaptive UI).
+Value NativeGetViewportSize(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    Value t = Value::Tbl();
+    if (ctx && ctx->uiViewportSize) {
+        const math::Vec2 v = ctx->uiViewportSize();
+        t.table->fields.emplace_back("w", Value::Num(v.x));
+        t.table->fields.emplace_back("h", Value::Num(v.y));
+    } else {
+        t.table->fields.emplace_back("w", Value::Num(1280.0));
+        t.table->fields.emplace_back("h", Value::Num(720.0));
+    }
     return t;
 }
 
@@ -1417,6 +1471,7 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("UISetText", &NativeUISetText, &ctx);
     host.Register("UISetFill", &NativeUISetFill, &ctx);
     host.Register("UISetVisible", &NativeUISetVisible, &ctx);
+    host.Register("UISetColor", &NativeUISetColor, &ctx);
     host.Register("Loc", &NativeLoc, &ctx);
     host.Register("WriteText", &NativeWriteText, &ctx);
     host.Register("FindNamedEntity", &NativeFindNamedEntity, &ctx);
@@ -1430,6 +1485,8 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("AttachStateMachine", &NativeAttachStateMachine, &ctx);
     host.Register("SetAnimParam", &NativeSetAnimParam, &ctx);
     host.Register("WorldToScreen", &NativeWorldToScreen, &ctx);
+    host.Register("ScreenToWorld", &NativeScreenToWorld, &ctx);
+    host.Register("GetViewportSize", &NativeGetViewportSize, &ctx);
     host.Register("SpawnFloatText", &NativeSpawnFloatText, &ctx);
     host.Register("SetEntityPlate", &NativeSetEntityPlate, &ctx);
     host.Register("SetScale", &NativeSetScale, &ctx);

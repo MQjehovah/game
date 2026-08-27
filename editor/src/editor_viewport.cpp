@@ -77,19 +77,25 @@ EditorApp::DockViewportScope::~DockViewportScope() {
 
 void EditorApp::OnRender() {
     renderer_.BeginFrame({0.06f, 0.08f, 0.13f, 1.0f});
+    // Play locks the canvas for BOTH modes: every play viewport/overlay below
+    // derives from viewportScreenRect_ with zoom=1/pan=0, so the whole design
+    // space is always framed (a stale editor zoom/pan must not crop the game).
+    // UpdateViewport keeps wheel/middle-drag disabled while playing.
+    if (playActive_) {
+        canvasZoom_ = 1.0f;
+        canvasPan_ = {0.0f, 0.0f};
+    }
     gfx::Camera cam = ActiveCamera(); // the scene branch re-reads after SetCamera
     if (showUIEditor_ && uiDocOpen_) {
         static bool uiEdLogged = false;
         if (!uiEdLogged) {
             uiEdLogged = true;
             NEON_LOG_INFO("UI-EDITOR-PREVIEW: active (doc='%s')", uiDocPath_.c_str());
-        }        // UI editor preview: render the edited document into the viewport
-        // dock fitted like the 2D canvas (design space + canvas zoom/pan, the
-        // whole 1280x720 document always visible), with the selected node's
-        // outline + resize handles. No 3D/2D scene is drawn while the UI
-        // editor is active.
+        }        // UI editor preview: rendered in PIXELS like the runtime (box layout
+        // adapts, px stays px), with the selected node's outline + resize
+        // handles. No 3D/2D scene is drawn while the UI editor is active.
         {
-            DockViewportScope dock(*this, /*designFit=*/true, /*sceneVp=*/false);
+            DockViewportScope dock(*this, /*designFit=*/false, /*sceneVp=*/false);
             if (dock.Active()) {
                 if (cjkFont_.Valid())
                     uiDoc_.Draw(renderer_, cjkFont_,
@@ -128,28 +134,22 @@ void EditorApp::OnRender() {
         // camera from it too so the game renders the SCENE camera's framing
         // (ortho 720-height) instead of the tiny preview default.
         const gfx::Camera gameCam = PlayCamera();
-        // Play locks the canvas: reset any editor zoom/pan so the FULL
-        // 1280x720 design space always fits the dock (a stale zoom would crop
-        // the game UI). UpdateViewport keeps wheel/middle-drag disabled while
-        // playing, so nothing can change these mid-play.
-        canvasZoom_ = 1.0f;
-        canvasPan_ = {0.0f, 0.0f};
         {
-            DockViewportScope dock(*this, /*designFit=*/true, /*sceneVp=*/true);
-            // Same sky + scene lights as the edit view so Play matches what
-            // the edit camera sees (previously the play kept the renderer
-            // defaults: no sky, dark default lighting).
+            // WORLD pass: the scene fills the WHOLE dock (no letterbox). The
+            // runtime's ortho camera fit-outside guarantees the 1280x720
+            // design area stays inside the view on narrow docks. The 2D
+            // mapping during this pass is pixel passthrough (world-anchored
+            // overlays only).
+            DockViewportScope dock(*this, /*designFit=*/false, /*sceneVp=*/true);
             ApplySceneEnvironment();
             if (dock.Active()) {
                 play_->Draw(renderer_, gameCam, 1.0f);
-                // Mark the game's camera view (the full 1280x720 design area).
-                renderer_.DrawRectOutline(
-                    {0.0f, 0.0f, static_cast<float>(gfx::Renderer::kDesignWidth),
-                     static_cast<float>(gfx::Renderer::kDesignHeight)},
-                    2.0f, gfx::Color{0.4f, 0.9f, 1.0f, 0.65f});
-                // G5-4-4: composite the scene, then flush the on_render HUD
-                // canvas on top (authored colors, not tone-mapped).
                 renderer_.EndScene();
+                // UI pass: pixel passthrough - UI lives in viewport pixels +
+                // relative layout (no design-space scale). draw2d commands
+                // (HUD text/bars) use pixels directly.
+                const math::Rect2& vp = viewportScreenRect_;
+                renderer_.Set2DViewportPixels(vp.x, vp.y);
                 play_->FlushCanvas(renderer_);
             } else {
                 // No viewport rect yet (first frame): full-window fallback.
@@ -159,12 +159,15 @@ void EditorApp::OnRender() {
             }
         }
     } else {
-        // Render the 3D scene INTO the viewport dock (same idea as the 2D
-        // canvas): the camera projection uses the viewport aspect, the
-        // rasterization viewport is the dock rect, and the 2D overlay (sky,
-        // billboards, play HUD) is clipped to it. Nothing bleeds into the
-        // dock panels anymore.
-        DockViewportScope dock(*this, /*designFit=*/true, /*sceneVp=*/true);
+        // 3D (edit or play): the scene FILLS the whole dock content area -
+        // no 16:9 letterbox. The camera aspect is the dock's real aspect and
+        // the 2D overlay runs in pixel-passthrough (Set2DViewportPixels), so
+        // world-anchored billboards project through the exact same rect.
+        // (The 2D branch above is the opposite policy: the fixed 1280x720
+        // design space always fits INSIDE the dock, letterboxed - a 2D game
+        // must show its whole canvas. Both policies derive from the same
+        // viewportScreenRect_ source of truth via DockViewportScope.)
+        DockViewportScope dock(*this, /*designFit=*/false, /*sceneVp=*/true);
         // Day sky + scene lights: shared with the 2D play so edit and
         // Play render the same environment (see ApplySceneEnvironment).
         ApplySceneEnvironment();
@@ -358,28 +361,23 @@ void EditorApp::OnRender() {
     // crisp and unbloomed on top.
     renderer_.EndScene();
 
-    // G5-4-4: the runtime's on_render canvas (script HUD) flushes AFTER the
-    // composite so it keeps authored colors, on top of the scene. The 2D play
-    // branch above already flushed inside its DockViewportScope (design-fit
-    // mapping); flushing again here would re-draw the same draw2d_ buffer with
-    // the reset full-window mapping, doubling every HUD element at two scales.
-    if (playActive_ && play_ && projectMode_ != "2d") play_->FlushCanvas(renderer_);
-
-    // The play's data-driven UI (UIShow menus/HUD) draws on top of the
-    // composited frame so it keeps the authored colors (the 2D canvas / scene
-    // content stays in the HDR target). Clip it to the viewport like the scene
-    // so it never spills over the dock panels, matching the packed game.
+    // Play overlays (script on_render HUD / UI document / fallback HUD) all
+    // draw in DESIGN space on top of the composite, clipped to the dock.
+    // ONE mapping for every mode: the world layer above picked the raster
+    // shape (2D: 16:9 fit-within, 3D: fill the dock), but every overlay is
+    // the same 1280x720 canvas, so it always runs through the same
+    // design-fit mapping - no full-window or pixel-passthrough side paths.
     if (playActive_ && play_) {
-        DockViewportScope dock(*this, /*designFit=*/projectMode_ == "2d", /*sceneVp=*/false);
+        DockViewportScope dock(*this, /*designFit=*/false, /*sceneVp=*/false);
+        // The 2D play branch already flushed its canvas inside its own scope
+        // (same mapping); flushing twice would double every HUD element.
+        if (projectMode_ != "2d") play_->FlushCanvas(renderer_);
         play_->DrawUI(renderer_);
+        // Built-in HUD only as a fallback: a data-driven game that defines
+        // on_render draws its own HUD on the 2D canvas above.
+        if (!play_->HasScriptFunction("on_render")) DrawPlayHUD();
         if (!dock.Active()) renderer_.Flush2D(); // full-window fallback
     }
-
-    // Game HUD (HP/mana/skill hotbar) overlays the play scene. A
-    // data-driven game that defines on_render draws its OWN HUD on the 2D
-    // canvas, so the built-in HUD is only a fallback for legacy scenes.
-    if (playActive_ && play_ && !play_->HasScriptFunction("on_render"))
-        DrawPlayHUD();
 
     // Scene pass draw calls (before the thumbnail pass adds its own counts).
     if (smokeMode_) {

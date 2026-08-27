@@ -84,9 +84,11 @@ engine/src/gfx/color.cpp
   engine/src/script/bindings.cpp
   engine/src/script/input_map.cpp
   engine/src/bt/behavior_tree.cpp
-  engine/src/ui/ui.cpp
-  engine/src/ui/system.cpp
-  engine/src/ui/document.cpp
+engine/src/ui/ui.cpp
+engine/src/ui/system.cpp
+engine/src/ui/document.cpp
+engine/src/ui/layout_solver.cpp
+engine/src/ui/ui_system.cpp
 )
 if(NEON_ENABLE_JS)
   list(APPEND ENGINE_CORE_SOURCES engine/src/script/js_host.cpp)

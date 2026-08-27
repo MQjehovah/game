@@ -32,6 +32,7 @@
 #include "neon/script/gamevars.hpp"
 #include "neon/script/script.hpp"
 #include "neon/ui/document.hpp"
+#include "neon/ui/ui_system.hpp"
 
 namespace neon::assets {
 class AssetManager;
@@ -73,6 +74,12 @@ struct GameRuntimeConfig {
     std::function<void(int, float)> setBusVolume;
     platform::IInput* input = nullptr;      // optional live input for scripts
     gfx::Font font2d;                       // 2D canvas font (on_render text); invalid = skip
+    // Replaceable UI system (IUiSystem): the engine talks to game UI ONLY
+    // through this seam. Null = the default document-backed system
+    // (ui/*.ui.json + pluggable layout solver). Inject a custom implementation
+    // to swap the whole UI stack without touching scripts or the editor.
+    // shared_ptr keeps the config copyable (ChangeScene restarts reuse it).
+    std::shared_ptr<ui::IUiSystem> uiSystem;
     uint64_t rngSeed = 20260821u;           // fixed: playtest RNG is reproducible
     bool headless = false;                  // skip draw-list build; pure simulation
     // Physics backend: "custom" (deterministic custom sphere/AABB solver) or
@@ -159,14 +166,16 @@ public:
 
     // Data-driven UI document (UIShow / ui/*.ui.json): rendered on top of the
     // 2D canvas every frame; button clicks are edge-triggered per frame.
+    // All calls forward to the replaceable IUiSystem (cfg_.uiSystem).
     bool ShowUI(const std::string& path);
     void HideUI();
     bool UIClicked(const std::string& name) const {
-        return uiClickedNames_.count(name) != 0;
+        return ui_ && ui_->Clicked(name);
     }
     void UISetText(const std::string& name, const std::string& text);
     void UISetFill(const std::string& name, float fill);
     void UISetVisible(const std::string& name, bool visible);
+    void UISetColor(const std::string& name, float r, float g, float b, float a);
 
     // --- M1: per-entity animation + world-screen HUD anchors ---------------
     // Plays a named clip (substring, case-insensitive) on a skinned entity's
@@ -184,6 +193,11 @@ public:
     // mapping on_render draws in). Returns false when the point is behind
     // the camera. Used by scripts for overhead HP bars / nameplates.
     bool WorldToScreen(const math::Vec3& world, float& outX, float& outY) const;
+    // Inverse mapping for the axis-aligned ortho 2D camera (viewport pixels ->
+    // world XY). Returns false for perspective cameras / before the first Draw.
+    bool ScreenToWorld(const math::Vec2& screen, float& outX, float& outY) const;
+    // Live viewport width in pixels (GetViewportSize; kept for convenience).
+    float DesignWidth() const;
     // Spawns a floating combat-text particle anchored to a world position:
     // the runtime tracks it (rise + fade over `life` seconds) and exposes it
     // to on_render via FloatTexts(). crit scales the text and tints it.
@@ -601,6 +615,11 @@ private:
     std::map<uint64_t, EntityPlate> plates_;
     math::Mat4 lastViewProj_;   // captured in Draw for WorldToScreen
     bool lastViewProjValid_ = false;
+    gfx::Camera lastCam_;       // resolved camera + viewport snapshot (Draw)
+    bool lastCamValid_ = false;
+    float lastAspect_ = 16.0f / 9.0f;
+    float lastVpW_ = 1280.0f;   // scene viewport pixels (UI/world screen space)
+    float lastVpH_ = 720.0f;
     // G2-3 vegetation cache (EntityKey -> VegField); rebuilt lazily per Start.
     std::unordered_map<uint64_t, VegField> vegCache_;
     // Instanced-batching scratch for opaque static meshes (per-frame reuse):
@@ -643,8 +662,7 @@ private:
     std::unique_ptr<plugin::RuntimePluginManager> plugins_; // runtime plugins
     scene::ComponentRegistry compReg_; // built-in + data component factories
     std::vector<script::Draw2DCmd> draw2d_; // script 2D canvas (on_render)
-    std::unique_ptr<ui::UiDocument> uiDoc_; // data-driven UI document
-    std::set<std::string> uiClickedNames_;  // buttons clicked since last Draw
+    std::shared_ptr<ui::IUiSystem> ui_;     // replaceable game UI system
     std::set<uint64_t> hiddenEntities_;     // SetVisible hide list (EntityKey)
     script::InputMap inputMap_;             // Godot-style actions (input.json)
     std::string pendingScene_;              // ChangeScene deferred to next Tick

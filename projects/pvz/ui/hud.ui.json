@@ -1,0 +1,216 @@
+{
+  "format": "neon-ui",
+  "version": 1,
+  "solver": "boxflex",
+  "root": {
+    "type": "panel",
+    "name": "root",
+    "color": [0, 0, 0, 0],
+    "border": [0, 0, 0, 0],
+    "clip": false,
+    "children": [
+      {
+        "type": "row",
+        "name": "TopBar",
+        "left": 0,
+        "top": 0,
+        "width": "100%",
+        "height": 58,
+        "justify": "space-between",
+        "align": "center",
+        "padding": 7,
+        "gap": 8,
+        "color": [0.07, 0.09, 0.13, 0.96],
+        "border": [0, 0, 0, 0],
+        "children": [
+          {
+            "type": "row",
+            "name": "SunGroup",
+            "gap": 4,
+            "align": "center",
+            "width": "auto",
+            "height": "auto",
+            "color": [0, 0, 0, 0],
+            "border": [0, 0, 0, 0],
+            "children": [
+              {
+                "type": "panel",
+                "name": "SunPlate",
+                "width": 40,
+                "height": 40,
+                "color": [0.1, 0.13, 0.18, 0.9],
+                "border": [0.35, 0.65, 1.0, 0.6],
+                "children": [
+                  {
+                    "type": "image",
+                    "name": "SunIcon",
+                    "left": 3,
+                    "top": 3,
+                    "width": 34,
+                    "height": 34,
+                    "sprite": "assets/sprites/sun.png",
+                    "color": [1, 1, 1, 1]
+                  }
+                ]
+              },
+              {
+                "type": "label",
+                "name": "SunText",
+                "width": 56,
+                "height": 40,
+                "fontSize": 22,
+                "color": [1.0, 0.95, 0.3, 1],
+                "text": "150"
+              }
+            ]
+          },
+          {
+            "type": "row",
+            "name": "Cards",
+            "gap": 6,
+            "align": "center",
+            "width": "auto",
+            "height": "auto",
+            "color": [0, 0, 0, 0],
+            "border": [0, 0, 0, 0],
+            "children": [
+              {
+                "type": "button",
+                "name": "card1",
+                "width": 118,
+                "height": 44,
+                "color": [0.14, 0.2, 0.28, 0.95],
+                "border": [1.0, 0.95, 0.3, 0.55],
+                "children": [
+                  { "type": "label", "name": "n1", "left": 42, "top": 2, "width": 72, "height": 20, "fontSize": 13, "color": [0.92, 0.95, 1, 1], "text": "向日葵" },
+                  { "type": "image", "name": "i1", "left": 4, "top": 5, "width": 34, "height": 34, "sprite": "assets/sprites/sunflower.png", "color": [1, 1, 1, 1] },
+                  { "type": "label", "name": "p1", "left": 42, "top": 24, "width": 72, "height": 18, "fontSize": 12, "color": [1, 0.95, 0.3, 1], "text": "50" },
+                  { "type": "bar", "name": "cd1", "left": 0, "top": 0, "width": "100%", "height": "100%", "fill": 0, "color": [0.05, 0.06, 0.1, 0.82], "border": [0, 0, 0, 0] }
+                ]
+              },
+              {
+                "type": "button",
+                "name": "card2",
+                "width": 118,
+                "height": 44,
+                "color": [0.14, 0.2, 0.28, 0.95],
+                "border": [0.35, 0.9, 0.35, 0.55],
+                "children": [
+                  { "type": "label", "name": "n2", "left": 42, "top": 2, "width": 72, "height": 20, "fontSize": 13, "color": [0.92, 0.95, 1, 1], "text": "豌豆射手" },
+                  { "type": "image", "name": "i2", "left": 4, "top": 5, "width": 34, "height": 34, "sprite": "assets/sprites/peashooter.png", "color": [1, 1, 1, 1] },
+                  { "type": "label", "name": "p2", "left": 42, "top": 24, "width": 72, "height": 18, "fontSize": 12, "color": [1, 0.95, 0.3, 1], "text": "100" },
+                  { "type": "bar", "name": "cd2", "left": 0, "top": 0, "width": "100%", "height": "100%", "fill": 0, "color": [0.05, 0.06, 0.1, 0.82], "border": [0, 0, 0, 0] }
+                ]
+              },
+              {
+                "type": "button",
+                "name": "card3",
+                "width": 118,
+                "height": 44,
+                "color": [0.14, 0.2, 0.28, 0.95],
+                "border": [0.35, 0.8, 1.0, 0.55],
+                "children": [
+                  { "type": "label", "name": "n3", "left": 42, "top": 2, "width": 72, "height": 20, "fontSize": 13, "color": [0.92, 0.95, 1, 1], "text": "寒冰射手" },
+                  { "type": "image", "name": "i3", "left": 4, "top": 5, "width": 34, "height": 34, "sprite": "assets/sprites/snowpea.png", "color": [1, 1, 1, 1] },
+                  { "type": "label", "name": "p3", "left": 42, "top": 24, "width": 72, "height": 18, "fontSize": 12, "color": [1, 0.95, 0.3, 1], "text": "175" },
+                  { "type": "bar", "name": "cd3", "left": 0, "top": 0, "width": "100%", "height": "100%", "fill": 0, "color": [0.05, 0.06, 0.1, 0.82], "border": [0, 0, 0, 0] }
+                ]
+              },
+              {
+                "type": "button",
+                "name": "card4",
+                "width": 118,
+                "height": 44,
+                "color": [0.14, 0.2, 0.28, 0.95],
+                "border": [0.85, 0.6, 0.35, 0.55],
+                "children": [
+                  { "type": "label", "name": "n4", "left": 42, "top": 2, "width": 72, "height": 20, "fontSize": 13, "color": [0.92, 0.95, 1, 1], "text": "坚果墙" },
+                  { "type": "image", "name": "i4", "left": 4, "top": 5, "width": 34, "height": 34, "sprite": "assets/sprites/wallnut.png", "color": [1, 1, 1, 1] },
+                  { "type": "label", "name": "p4", "left": 42, "top": 24, "width": 72, "height": 18, "fontSize": 12, "color": [1, 0.95, 0.3, 1], "text": "50" },
+                  { "type": "bar", "name": "cd4", "left": 0, "top": 0, "width": "100%", "height": "100%", "fill": 0, "color": [0.05, 0.06, 0.1, 0.82], "border": [0, 0, 0, 0] }
+                ]
+              },
+              {
+                "type": "button",
+                "name": "card5",
+                "width": 118,
+                "height": 44,
+                "color": [0.14, 0.2, 0.28, 0.95],
+                "border": [0.95, 0.6, 0.2, 0.55],
+                "children": [
+                  { "type": "label", "name": "n5", "left": 42, "top": 2, "width": 72, "height": 20, "fontSize": 13, "color": [0.92, 0.95, 1, 1], "text": "双发射手" },
+                  { "type": "image", "name": "i5", "left": 4, "top": 5, "width": 34, "height": 34, "sprite": "assets/sprites/peashooter.png", "color": [1, 1, 1, 1] },
+                  { "type": "label", "name": "p5", "left": 42, "top": 24, "width": 72, "height": 18, "fontSize": 12, "color": [1, 0.95, 0.3, 1], "text": "200" },
+                  { "type": "bar", "name": "cd5", "left": 0, "top": 0, "width": "100%", "height": "100%", "fill": 0, "color": [0.05, 0.06, 0.1, 0.82], "border": [0, 0, 0, 0] }
+                ]
+              },
+              {
+                "type": "button",
+                "name": "card6",
+                "width": 118,
+                "height": 44,
+                "color": [0.14, 0.2, 0.28, 0.95],
+                "border": [1.0, 0.35, 0.3, 0.55],
+                "children": [
+                  { "type": "label", "name": "n6", "left": 42, "top": 2, "width": 72, "height": 20, "fontSize": 13, "color": [0.92, 0.95, 1, 1], "text": "樱桃炸弹" },
+                  { "type": "image", "name": "i6", "left": 4, "top": 5, "width": 34, "height": 34, "sprite": "assets/sprites/cherry.png", "color": [1, 1, 1, 1] },
+                  { "type": "label", "name": "p6", "left": 42, "top": 24, "width": 72, "height": 18, "fontSize": 12, "color": [1, 0.95, 0.3, 1], "text": "150" },
+                  { "type": "bar", "name": "cd6", "left": 0, "top": 0, "width": "100%", "height": "100%", "fill": 0, "color": [0.05, 0.06, 0.1, 0.82], "border": [0, 0, 0, 0] }
+                ]
+              },
+              {
+                "type": "button",
+                "name": "shovel",
+                "width": 64,
+                "height": 44,
+                "color": [0.16, 0.14, 0.12, 0.95],
+                "border": [0.72, 0.58, 0.34, 0.8],
+                "children": [
+                  { "type": "label", "name": "shovelName", "left": 0, "top": 4, "width": 64, "height": 18, "fontSize": 12, "color": [0.9, 0.9, 0.85, 1], "text": "铲子" },
+                  { "type": "label", "name": "shovelKey", "left": 0, "top": 24, "width": 64, "height": 16, "fontSize": 11, "color": [0.6, 0.6, 0.6, 1], "text": "S" }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "row",
+            "name": "WaveGroup",
+            "gap": 8,
+            "align": "center",
+            "width": "auto",
+            "height": "auto",
+            "color": [0, 0, 0, 0],
+            "border": [0, 0, 0, 0],
+            "children": [
+              {
+                "type": "panel",
+                "name": "WaveBox",
+                "width": 168,
+                "height": 44,
+                "color": [0.1, 0.13, 0.18, 0.9],
+                "border": [0.35, 0.65, 1.0, 0.6],
+                "children": [
+                  { "type": "label", "name": "WaveText", "left": 4, "top": 1, "width": 160, "height": 18, "fontSize": 13, "color": [0.8, 0.85, 1, 1], "text": "第 0 波" },
+                  { "type": "bar", "name": "WaveBar", "left": 4, "top": 21, "width": 160, "height": 8, "fill": 0, "color": [0.35, 0.65, 1, 0.9], "border": [0, 0, 0, 0] },
+                  { "type": "label", "name": "ZombiesText", "left": 4, "top": 30, "width": 160, "height": 13, "fontSize": 11, "color": [0.95, 0.7, 0.7, 1], "text": "僵尸: 0" }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "label",
+        "name": "HintText",
+        "left": "center",
+        "bottom": 26,
+        "width": 620,
+        "height": 20,
+        "fontSize": 14,
+        "color": [0.85, 0.9, 1, 0.85],
+        "visible": false,
+        "text": ""
+      }
+    ]
+  }
+}
