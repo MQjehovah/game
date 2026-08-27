@@ -3,6 +3,17 @@
 
 namespace neon::editor {
 
+// The play GAME AREA's aspect: the scene camera's configured `aspect`
+// (0/missing = the 16:9 design default). The play viewport letterboxes to
+// THIS whatever the dock looks like - "what the camera frames is the game".
+float EditorApp::PlayCameraAspect() const {
+    for (const SceneEntity& se : entities_) {
+        if (se.nodeType != "Camera3D") continue;
+        if (se.cameraAspect > 0.01f) return se.cameraAspect;
+    }
+    return 16.0f / 9.0f;
+}
+
 gfx::Camera EditorApp::PlayCamera() const {
     for (const SceneEntity& se : entities_) {
         if (se.nodeType != "Camera3D") continue;
@@ -281,6 +292,7 @@ core::Result<core::Json> EditorApp::BuildSceneJsonFromEntities() {
                 ortho.bool_ = e.cameraOrtho;
                 cam.object_["ortho"] = ortho;
                 cam.object_["orthoSize"] = mkNum(e.cameraOrthoSize);
+                if (e.cameraAspect > 0.0f) cam.object_["aspect"] = mkNum(e.cameraAspect);
                 comps.object_["camera"] = std::move(cam);
             }
             if (e.hasLight) {

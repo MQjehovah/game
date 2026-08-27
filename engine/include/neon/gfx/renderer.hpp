@@ -287,7 +287,8 @@ public:
     // zoom/pan camera control. Reset2DViewport restores the default full-window
     // mapping.
     void Set2DViewport(float x, float y, float w, float h, float zoom = 1.0f,
-                       const math::Vec2& pan = {0.0f, 0.0f});
+                       const math::Vec2& pan = {0.0f, 0.0f},
+                       float aspect = 16.0f / 9.0f);
     void Reset2DViewport();
     // Maps the 2D design space 1:1 into the screen with its origin at (x, y):
     // a design pixel is a screen pixel. Used for the 3D playtest overlay so

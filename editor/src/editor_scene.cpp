@@ -910,6 +910,8 @@ void EditorApp::LoadScene(const std::string& path) {
                 if (const core::Json* v = cam->Get("ortho")) e.cameraOrtho = v->GetBool();
                 if (const core::Json* v = cam->Get("orthoSize"))
                     e.cameraOrthoSize = static_cast<float>(v->GetNumber());
+                if (const core::Json* v = cam->Get("aspect"))
+                    e.cameraAspect = static_cast<float>(v->GetNumber());
                 if (e.nodeType.empty()) e.nodeType = "Camera3D";
             }
             if (const core::Json* li = comps->Get("light")) {

@@ -18,27 +18,28 @@
 
 namespace neon::editor {
 
-void EditorApp::BindDock2DMapping(bool designFit) {
+void EditorApp::BindDock2DMapping(bool designFit, float aspect) {
     const math::Rect2& vp = viewportScreenRect_;
     if (designFit)
-        renderer_.Set2DViewport(vp.x, vp.y, vp.w, vp.h, canvasZoom_, canvasPan_);
+        renderer_.Set2DViewport(vp.x, vp.y, vp.w, vp.h, canvasZoom_, canvasPan_, aspect);
     else
         renderer_.Set2DViewportPixels(vp.x, vp.y);
 }
 
-EditorApp::DockViewportScope::DockViewportScope(EditorApp& app, bool designFit, bool sceneVp)
+EditorApp::DockViewportScope::DockViewportScope(EditorApp& app, bool designFit, bool sceneVp,
+                                                float aspect)
     : app_(app), sceneVp_(sceneVp) {
     const math::Rect2& vp = app_.viewportScreenRect_;
     if (!(vp.w > 0.0f && vp.h > 0.0f) || !app_.renderer_.Backend()) return;
     active_ = true;
     app_.renderer_.Backend()->SetScissor(static_cast<int>(vp.x), static_cast<int>(vp.y),
                                          static_cast<int>(vp.w), static_cast<int>(vp.h), true);
-    app_.BindDock2DMapping(designFit);
-    // The scene rasterizes into the SAME rect the 1280x720 design space maps
-    // to (fit-to-height, centered), so 3D geometry, the 2D HUD and world-
-    // anchored UI all share one framing. Without this, the 3D projection (dock
-    // aspect) and the 2D anchor space (16:9) disagree and every plate/float
-    // text drifts away from its entity as it moves off-centre.
+    app_.BindDock2DMapping(designFit, aspect);
+    // The scene rasterizes into the SAME rect the game-area design space maps
+    // to (letterboxed, centered), so 3D geometry, the 2D HUD and world-
+    // anchored UI all share one framing. Without this, the 3D projection and
+    // the 2D anchor space disagree and every plate/float text drifts away
+    // from its entity as it moves off-centre.
     const math::Rect2 sceneVpRect = designFit ? app_.renderer_.DesignSpaceRect() : vp;
     app_.sceneRect_ = sceneVpRect;
     if (sceneVp_)
@@ -141,12 +142,13 @@ void EditorApp::OnRender() {
         // (ortho 720-height) instead of the tiny preview default.
         const gfx::Camera gameCam = PlayCamera();
         {
-            // THE GAME AREA = the editor's blue frame (the camera's 16:9
-            // 1280x720 view): it fits INSIDE the dock (letterbox), and the
-            // world pass AND the UI pass share this one mapping - world,
-            // HUD and input are one space, clicks line up by construction.
-            // The modern box UI adapts WITHIN this 16:9 game area.
-            DockViewportScope dock(*this, /*designFit=*/true, /*sceneVp=*/true);
+            // THE GAME AREA = the camera's view (its configured aspect,
+            // default 16:9), letterboxed inside the dock: world pass AND UI
+            // pass share this one mapping - world, HUD and input are one
+            // space, clicks line up by construction. The modern box UI
+            // adapts WITHIN the game area (whose width follows the aspect).
+            const float gameAspect = PlayCameraAspect();
+            DockViewportScope dock(*this, /*designFit=*/true, /*sceneVp=*/true, gameAspect);
             ApplySceneEnvironment();
             if (dock.Active()) {
                 play_->Draw(renderer_, gameCam, 1.0f);
@@ -163,12 +165,13 @@ void EditorApp::OnRender() {
             }
         }
     } else {
-        // Play (2D or 3D): THE GAME AREA = the scene camera's 16:9 view,
-        // letterboxed inside the dock - what you preview is what you get.
-        // Edit 3D: the scene FILLS the whole dock (free orbit, dock aspect).
-        // Edit 2D: the canvas mapping (the blue 1280x720 frame inside).
-        const bool gameArea = playActive_ || editMode_ == EditMode::Scene2D;
-        DockViewportScope dock(*this, /*designFit=*/gameArea, /*sceneVp=*/true);
+        // Edit mode: the scene FILLS the whole dock (free camera - orbit in
+        // 3D, pan/zoom in 2D); the camera's view is only a preview frame.
+        // Play (2D or 3D): the GAME AREA = the scene camera's view (its
+        // configured aspect), letterboxed inside the dock.
+        const bool gameArea = playActive_;
+        DockViewportScope dock(*this, /*designFit=*/gameArea, /*sceneVp=*/true,
+                               PlayCameraAspect());
         // Day sky + scene lights: shared with the 2D play so edit and
         // Play render the same environment (see ApplySceneEnvironment).
         ApplySceneEnvironment();
@@ -369,7 +372,8 @@ void EditorApp::OnRender() {
     // the same 1280x720 canvas, so it always runs through the same
     // design-fit mapping - no full-window or pixel-passthrough side paths.
     if (playActive_ && play_) {
-        DockViewportScope dock(*this, /*designFit=*/true, /*sceneVp=*/false);
+        DockViewportScope dock(*this, /*designFit=*/true, /*sceneVp=*/false,
+                               PlayCameraAspect());
         // The 2D play branch already flushed its canvas inside its own scope
         // (same mapping); flushing twice would double every HUD element.
         if (projectMode_ != "2d") play_->FlushCanvas(renderer_);
@@ -680,25 +684,29 @@ void EditorApp::ApplySceneEnvironment() {
 }
 
 void EditorApp::DrawCameraFrame() {
-    // The border marks the ACTUAL runtime view. In 2D projects that is the
-    // fixed 1280x720 design space (the play shows exactly this), so the
-    // frame is that rectangle on the content plane - zooming scales the frame
-    // together with the sprites (whole-view zoom). In 3D front view there is
-    // no design space; draw the ortho camera's visible rect instead so the
-    // user can tell what the locked camera frames.
+    // The border marks the ACTUAL runtime view - the scene camera's framing
+    // (its orthoSize + configured aspect, on the camera's position). What the
+    // frame encloses is exactly what running the game shows.
     const float z = 0.0f; // sprite content plane
     if (projectMode_ == "2d" || editMode_ == EditMode::Scene2D) {
-        const float w = static_cast<float>(gfx::Renderer::kDesignWidth);
-        const float h = static_cast<float>(gfx::Renderer::kDesignHeight);
+        const SceneEntity* sc = nullptr;
+        for (const SceneEntity& se : entities_) {
+            if (se.nodeType == "Camera3D") { sc = &se; break; }
+        }
+        const float halfH = (sc && sc->cameraOrthoSize > 0.0f) ? sc->cameraOrthoSize : 360.0f;
+        const float aspect = PlayCameraAspect();
+        const float halfW = halfH * aspect;
+        const float cx = sc ? sc->pos.x : 640.0f;
+        const float cy = sc ? sc->pos.y : 360.0f;
         const gfx::Renderer::LineVertex verts[8] = {
-            {{0.0f, 0.0f, z}, {0.4f, 0.9f, 1.0f, 0.9f}},
-            {{w, 0.0f, z}, {0.4f, 0.9f, 1.0f, 0.9f}},
-            {{w, 0.0f, z}, {0.4f, 0.9f, 1.0f, 0.9f}},
-            {{w, h, z}, {0.4f, 0.9f, 1.0f, 0.9f}},
-            {{w, h, z}, {0.4f, 0.9f, 1.0f, 0.9f}},
-            {{0.0f, h, z}, {0.4f, 0.9f, 1.0f, 0.9f}},
-            {{0.0f, h, z}, {0.4f, 0.9f, 1.0f, 0.9f}},
-            {{0.0f, 0.0f, z}, {0.4f, 0.9f, 1.0f, 0.9f}},
+            {{cx - halfW, cy - halfH, z}, {0.4f, 0.9f, 1.0f, 0.9f}},
+            {{cx + halfW, cy - halfH, z}, {0.4f, 0.9f, 1.0f, 0.9f}},
+            {{cx + halfW, cy - halfH, z}, {0.4f, 0.9f, 1.0f, 0.9f}},
+            {{cx + halfW, cy + halfH, z}, {0.4f, 0.9f, 1.0f, 0.9f}},
+            {{cx + halfW, cy + halfH, z}, {0.4f, 0.9f, 1.0f, 0.9f}},
+            {{cx - halfW, cy + halfH, z}, {0.4f, 0.9f, 1.0f, 0.9f}},
+            {{cx - halfW, cy + halfH, z}, {0.4f, 0.9f, 1.0f, 0.9f}},
+            {{cx - halfW, cy - halfH, z}, {0.4f, 0.9f, 1.0f, 0.9f}},
         };
         renderer_.DrawLines(verts, 8, math::Mat4::Identity());
         return;

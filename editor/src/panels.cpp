@@ -1416,6 +1416,11 @@ void EditorApp::BuildInspectorPanel() {
                 if (ImGui::DragFloat("正交尺寸", &e.cameraOrthoSize, 0.1f, 0.1f, 2000.0f))
                     sceneDirty_ = true;
             }
+            if (ImGui::DragFloat("画面比例", &e.cameraAspect, 0.005f, 0.0f, 4.0f, "%.3f")) {
+                if (e.cameraAspect > 0.001f && e.cameraAspect < 0.5f) e.cameraAspect = 0.5f;
+                sceneDirty_ = true;
+            }
+            ImGui::TextDisabled("画面比例: 运行时游戏区的宽高比(0=默认16:9); 蓝框即此视野预览");
             ImGui::TextDisabled("将相机实体选中并设为视图: 使用右上角相机菜单的\"跟随选中\"");
             ImGui::Separator();
         }

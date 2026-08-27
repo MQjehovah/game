@@ -2254,24 +2254,27 @@ math::Vec2 Renderer::ToScreen(const math::Vec2& design) const {
 }
 
 void Renderer::Set2DViewport(float x, float y, float w, float h, float zoom,
-                             const math::Vec2& pan) {
+                             const math::Vec2& pan, float aspect) {
     if (w <= 0.0f || h <= 0.0f || zoom <= 0.0f) {
         Reset2DViewport();
         return;
     }
-    // CANVAS mapping for editing tools (the UI editor): fit the whole
-    // 1280x720 document INSIDE the rect so the entire canvas is visible and
-    // editable at any dock aspect (letterbox both axes). The runtime does NOT
-    // use this - games run in viewport pixels (Set2DViewportPixels) with
-    // relative layout adapting.
-    const float fitScale = std::fmin(w / static_cast<float>(kDesignWidth),
-                                     h / static_cast<float>(kDesignHeight));
-    uiScale_ = fitScale * zoom;
-    // The design point (640 + pan, 360 + pan) sits at the viewport rect center.
-    const float designCx = static_cast<float>(kDesignWidth) * 0.5f + pan.x;
+    if (aspect <= 0.01f)
+        aspect = static_cast<float>(kDesignWidth) / static_cast<float>(kDesignHeight);
+    // GAME AREA mapping: the camera's aspect (default 16:9) letterboxed
+    // inside the rect; the UI unit base is 720 design units of game-area
+    // HEIGHT, the design width follows the aspect (720 * aspect). The
+    // editor's blue frame, the play view and every overlay share this rect.
+    const float gaW = std::fmin(w, h * aspect);
+    const float gaH = gaW / aspect;
+    const float gaX = x + (w - gaW) * 0.5f;
+    const float gaY = y + (h - gaH) * 0.5f;
+    uiScale_ = (gaH / static_cast<float>(kDesignHeight)) * zoom;
+    const float designW = static_cast<float>(kDesignHeight) * aspect;
+    const float designCx = designW * 0.5f + pan.x;
     const float designCy = static_cast<float>(kDesignHeight) * 0.5f + pan.y;
-    uiOffsetX_ = x + w * 0.5f - designCx * uiScale_;
-    uiOffsetY_ = y + h * 0.5f - designCy * uiScale_;
+    uiOffsetX_ = gaX + gaW * 0.5f - designCx * uiScale_;
+    uiOffsetY_ = gaY + gaH * 0.5f - designCy * uiScale_;
 }
 
 void Renderer::Reset2DViewport() {

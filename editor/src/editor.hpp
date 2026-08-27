@@ -50,6 +50,8 @@ struct SceneEntity {
     float cameraFov = 60.0f;  // Camera3D type only (degrees)
     bool cameraOrtho = false; // Camera3D type only
     float cameraOrthoSize = 10.0f; // Camera3D ortho "Size" (half view height)
+    float cameraAspect = 0.0f; // Camera3D view aspect (0 = 16:9 default); the
+                               // play game area letterboxes to THIS
     // DirectionalLight3D-style light object (Unity): a scene object that lights
     // the world. The editor auto-creates a default Main Camera + Directional
     // Light for a new/empty scene so there is always an observer + a light.
@@ -320,15 +322,16 @@ private:
     //                      the UI editor are all design-space canvases)
     //   designFit=false -> 1:1 design pixels anchored at the dock origin
     //                      (3D HUD/billboards)
-    void BindDock2DMapping(bool designFit);
+    void BindDock2DMapping(bool designFit, float aspect = 16.0f / 9.0f);
     // RAII scope: BindDock2DMapping + scissor clip to the dock (+ the 3D
     // rasterization viewport when sceneVp); the destructor undoes everything
     // (reset scene viewport, flush 2D, scissor off, reset the 2D mapping).
     // A no-op while the dock rect is not valid yet (first frame).
     class DockViewportScope {
     public:
-        DockViewportScope(EditorApp& app, bool designFit, bool sceneVp);
-        ~DockViewportScope();
+    DockViewportScope(EditorApp& app, bool designFit, bool sceneVp,
+                      float aspect = 16.0f / 9.0f);
+    ~DockViewportScope();
         bool Active() const { return active_; }
     private:
         EditorApp& app_;
@@ -366,6 +369,8 @@ private:
     // exists, else the fixed 1280x720 design-space ortho. Shared by the 2D and
     // 3D play paths (previously written twice, with drift).
     gfx::Camera PlayCamera() const;
+    // The play game area's aspect (scene camera `aspect`, default 16:9).
+    float PlayCameraAspect() const;
     void SaveScene();
     void LoadScene(const std::string& path);
     // Unity default scene: ensures a Main Camera + a Directional Light object

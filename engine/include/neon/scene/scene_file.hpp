@@ -362,6 +362,10 @@ struct SceneCamera {
     float fov = 60.0f;  // vertical field of view, degrees
     bool ortho = false;
     float orthoSize = 10.0f; // Unity orthographic camera "Size" (half view height)
+    // View aspect (width/height) the game runs at - the play viewport
+    // letterboxes to THIS, whatever the editor dock looks like. 0 = the
+    // 16:9 design default (1280x720).
+    float aspect = 0.0f;
 };
 // The `Light` component on a light object (Unity GameObject -> Light). `type`
 // is exactly one of "directional" / "point" / "ambient". Directional uses
