@@ -12,6 +12,7 @@
 #include "neon/bt/behavior_tree.hpp"
 #include "neon/core/localization.hpp"
 #include "neon/core/result.hpp"
+#include "neon/ecs/system_scheduler.hpp"
 #include "neon/ecs/world.hpp"
 #include "neon/gfx/camera.hpp"
 #include "neon/gfx/font.hpp"
@@ -102,6 +103,13 @@ struct GameRuntimeConfig {
     // resolves from the cache the frame it becomes ready and is skipped until
     // then — no per-draw hitch. The host must pump the async loader each frame.
     bool asyncMeshLoad = false;
+    // G5-4-4(项1): run the per-frame component sub-tasks (tweens/animations/
+    // statuses/skill cooldowns/projectiles) through the ecs::SystemScheduler
+    // in parallel mode. Default false = serial in registration order (the
+    // deterministic reference path). True lets independent systems overlap on
+    // the shared worker pool; conflict edges come from their declared component
+    // reads/writes, so the parallel result is bit-identical to serial.
+    bool parallelSystems = false;
     // Optional skills.json text (data-driven CastSkill table). The hosts that
     // know their project dir load <dir>/skills.json and pass it here; empty
     // leaves the table empty and CastSkill logs "unknown skill".
@@ -635,6 +643,11 @@ private:
     GameRuntimeConfig cfg_;
     bool running_ = false;
     double simTime_ = 0.0;
+    // G5-4-4(项1): dependency-graph scheduler for the per-frame component
+    // sub-tasks. Registered once in InitSystemGraph() (lazily on first Start).
+    ecs::SystemScheduler systems_;
+    bool systemsReady_ = false;
+    void InitSystemGraph();
 };
 
 } // namespace neon::scene

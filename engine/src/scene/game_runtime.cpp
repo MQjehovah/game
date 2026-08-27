@@ -176,6 +176,9 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     // not prefixes �?a scene with an unresolvable key still plays headless.
     // cfg_ must be assigned before LoadPrefabs/AttachScripts read it.
     cfg_ = std::move(cfg);
+    // G5-4-4(项1): register the per-frame component sub-task system graph once
+    // (idempotent across Stop->Start cycles).
+    InitSystemGraph();
     // Data-driven skills table (M1): hosts pass the skills.json text.
     if (!cfg_.skillsJson.empty()) {
         std::string err;
@@ -2661,6 +2664,50 @@ void GameRuntime::FlushDraw2D(gfx::Renderer& renderer) {
     }
 }
 
+void GameRuntime::InitSystemGraph() {
+    if (systemsReady_) return;
+    systemsReady_ = true;
+
+    // Thin wrappers turn the runtime's per-frame component sub-tasks into
+    // ecs::System instances. Their declared reads/writes are the state each
+    // touches — component typeids for ECS data, and the owning runtime members
+    // (DrawItem / Tween / Projectile / cooldown map) for host-owned state. The
+    // scheduler derives conflict edges from these, so independent systems run
+    // in parallel while write-conflicting ones (statuses/projectiles both write
+    // SceneHealth) stay in registration order — exactly the historical serial
+    // semantics, preserved in both Run modes.
+    struct FnSystem : ecs::System {
+        std::function<void(float, ecs::World&)> fn;
+        void Update(float dt, ecs::World& w) override { fn(dt, w); }
+    };
+    auto sys = [](std::function<void(float, ecs::World&)> fn) {
+        auto s = std::make_shared<FnSystem>();
+        s->fn = std::move(fn);
+        return s;
+    };
+
+    // Registration order IS the serial order: tweens, animations, statuses,
+    // skill cooldowns, projectiles (matches the pre-scheduler Tick body).
+    systems_.Add("tweens",
+                 sys([this](float d, ecs::World&) { TickTweens(d); }),
+                 {typeid(SceneTransform)}, {typeid(SceneTransform), typeid(Tween)});
+    systems_.Add("animations",
+                 sys([this](float d, ecs::World&) { TickAnimations(d); }),
+                 {typeid(SkinnedModel)},
+                 {typeid(DrawItem), typeid(SkinnedModel), typeid(FloatText)});
+    systems_.Add("statuses",
+                 sys([this](float d, ecs::World&) { TickStatuses(d); }),
+                 {typeid(StatusComponent)},
+                 {typeid(StatusComponent), typeid(SceneHealth)});
+    systems_.Add("skillCooldowns",
+                 sys([this](float d, ecs::World&) { TickSkillCooldowns(d); }),
+                 {}, {typeid(skillCooldowns_)});
+    systems_.Add("projectiles",
+                 sys([this](float d, ecs::World&) { TickProjectiles(d); }),
+                 {typeid(SceneHealth), typeid(SceneTransform)},
+                 {typeid(SceneHealth), typeid(Projectile)});
+}
+
 void GameRuntime::Tick(float dt) {
     if (!running_) return;
     core::ScopedTimer tickTimer("runtime.tick");
@@ -2739,11 +2786,16 @@ void GameRuntime::Tick(float dt) {
         if (physicsSteps == 4) physicsAccum_ = 0.0f;
     }
     SyncSceneBodies();
-    TickTweens(dt);
-    TickAnimations(dt);
-    TickStatuses(dt);
-    TickSkillCooldowns(dt);
-    TickProjectiles(dt);
+    // G5-4-4(项1): the per-frame component sub-tasks run as ECS systems through
+    // the SystemScheduler. Serial (default) preserves the exact historical
+    // order (tweens -> animations -> statuses -> cooldowns -> projectiles);
+    // parallelSystems=true lets independent systems overlap on the worker pool.
+    // Conflict edges come from the systems' declared component reads/writes
+    // (e.g. TickStatuses and TickProjectiles both write SceneHealth, so they
+    // stay in registration order even in parallel mode) — the parallel result
+    // is bit-identical to the serial reference (validated by TestRuntimeM1's
+    // determinism check).
+    systems_.Run(dt, world_, cfg_.parallelSystems);
     simTime_ += dt;
 
     // G3-4: snapshot authoritative poses for lag-compensated hit tests. The

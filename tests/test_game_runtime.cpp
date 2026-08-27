@@ -1086,3 +1086,76 @@ TEST(GameRuntimeAsyncMeshStreaming) {
     CHECK(sfix.assets.HasMesh(obj));
     sync.Stop();
 }
+
+// G5-4-4(项1): the per-frame component sub-tasks (tweens/animations/statuses/
+// skill cooldowns/projectiles) run through the ecs::SystemScheduler. Serial is
+// the deterministic reference; parallel must produce a bit-identical evolution.
+// This scene exercises the conflict edges the scheduler must preserve: burning
+// (TickStatuses) and projectiles (TickProjectiles) both write SceneHealth, and
+// the wolf's tween (TickTweens) writes the SceneTransform that projectiles read.
+TEST(GameRuntimeParallelSystemsDeterminism) {
+    const char* scene = R"({
+      "entities": [
+        {"name": "hero", "components": {"transform": {"pos": [0,0,0]},
+          "mesh": {"meshKey": "hero"},
+          "health": {"hp": 100, "maxHp": 100},
+          "script": {"backend": "lua", "path": "par.lua"}}},
+        {"name": "wolf", "components": {"transform": {"pos": [0,0,-3]},
+          "mesh": {"meshKey": "wolf"},
+          "health": {"hp": 100, "maxHp": 100}}}
+      ]
+    })";
+    const char* lua = R"(
+      function on_start(e)
+        local w = FindNamedEntity("wolf")
+        ApplyStatus(w, 1, 5.0, 2.0)
+        Tween(w, 0, {x=0, y=0, z=-3}, {x=0, y=0, z=-1}, 2.0, 2)
+        SetVar("ticks", 0)
+      end
+      function on_update(e, dt)
+        SetVar("ticks", (GetVar("ticks") or 0) + 1)
+        local p = GetPosition(FindNamedEntity("wolf"))
+        SetVar("wolfz", p.z)
+        if GetVar("ticks") % 20 == 0 then
+          SpawnProjectile({x=0,y=1,z=0}, {x=0,y=0,z=-1}, 14, 18, 2.0, e)
+        end
+      end
+    )";
+
+    auto run = [&](bool parallel) {
+        scene::GameRuntime rt;
+        scene::GameRuntimeConfig cfg;
+        cfg.readScript = [&](const std::string&) { return std::string(lua); };
+        cfg.headless = true;
+        cfg.parallelSystems = parallel;
+        CHECK(rt.Start(scene, cfg).Ok());
+        const ecs::Entity wolf = rt.FindNamedEntity("wolf");
+        std::vector<std::pair<float, float>> trace;
+        for (int i = 0; i < 150; ++i) {
+            rt.Tick(1.0f / 60.0f);
+            if (i % 10 == 0) {
+                const auto hp = rt.EntityHealth(wolf);
+                const script::Value z = rt.GameVars().Get("wolfz");
+                trace.push_back({hp.first,
+                                 z.type == script::Value::Type::Number
+                                     ? static_cast<float>(z.number)
+                                     : 0.0f});
+            }
+        }
+        rt.Stop();
+        return trace;
+    };
+
+    const std::vector<std::pair<float, float>> serial = run(false);
+    const std::vector<std::pair<float, float>> parallel = run(true);
+    CHECK_EQ(serial.size(), parallel.size());
+    for (size_t i = 0; i < serial.size(); ++i) {
+        // Burn ticks + projectile hits must land at the SAME frames.
+        CHECK_EQ(serial[i].first, parallel[i].first);
+        // The tween-driven wolf position (SceneTransform write) matches too.
+        CHECK_NEAR(serial[i].second, parallel[i].second, 1e-6f);
+    }
+    // Sanity: the exercise actually moved things (wolf burned + tweened + hit).
+    CHECK(serial.back().first < 100.0f);
+    CHECK_NEAR(serial.back().second, -1.0f, 0.05f);
+}
