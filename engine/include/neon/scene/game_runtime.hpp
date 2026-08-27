@@ -279,6 +279,12 @@ public:
     bool AttachStateMachine(ecs::Entity e, const std::string& path);
     void SetAnimParam(ecs::Entity e, const std::string& name, float value);
 
+    // G5-4-4: flushes the script 2D canvas (on_render) into the renderer's 2D
+    // overlay. The host MUST call this AFTER EndScene (the scene composited) so
+    // the HUD keeps its authored colors instead of being tone-mapped with the
+    // 3D scene. No-op when on_render produced nothing.
+    void FlushCanvas(gfx::Renderer& renderer);
+
     // Stats for the editor profiler / debug panels.
     size_t EntityCount() const { return world_.EntityCount(); }
     size_t ScriptCount() const { return scripts_.size(); }

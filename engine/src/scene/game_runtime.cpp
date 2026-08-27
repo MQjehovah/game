@@ -2570,7 +2570,10 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera,
             }
         }
         scriptCtx_.draw2d = nullptr;
-        FlushDraw2D(renderer);
+        // G5-4-4: the on_render canvas is HUD — the host flushes it AFTER the
+        // scene is composited (FlushCanvas), so its colors stay exactly as
+        // authored instead of being tone-mapped/bloomed with the 3D scene.
+        // FlushDraw2D is called from FlushCanvas (post-EndScene).
     }
 
     // Data-driven UI document: drawn by DrawUI() AFTER the frame is composited
@@ -2748,6 +2751,11 @@ void GameRuntime::FlushDraw2D(gfx::Renderer& renderer) {
                 break;
         }
     }
+}
+
+void GameRuntime::FlushCanvas(gfx::Renderer& renderer) {
+    if (draw2d_.empty()) return;
+    FlushDraw2D(renderer);
 }
 
 void GameRuntime::InitSystemGraph() {

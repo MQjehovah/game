@@ -525,6 +525,9 @@ void PlayerApp::OnRender() {
     }
     renderer_.EndScene();
 
+    // G5-4-4: the on_render HUD canvas flushes AFTER the composite (raw colors,
+    // on top); the data-driven UI draws on top of it.
+    if (started_) runtime_.FlushCanvas(renderer_);
     // Data-driven UI (UIShow menus/HUD) draws on top of the composited frame
     // so its colors are exactly what the author picked (not tone-mapped with
     // the 3D scene). The 2D canvas / scene content stays in the HDR target.

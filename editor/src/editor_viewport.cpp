@@ -141,9 +141,15 @@ void EditorApp::OnRender() {
                     {0.0f, 0.0f, static_cast<float>(gfx::Renderer::kDesignWidth),
                      static_cast<float>(gfx::Renderer::kDesignHeight)},
                     2.0f, gfx::Color{0.4f, 0.9f, 1.0f, 0.65f});
+                // G5-4-4: composite the scene, then flush the on_render HUD
+                // canvas on top (authored colors, not tone-mapped).
+                renderer_.EndScene();
+                play_->FlushCanvas(renderer_);
             } else {
                 // No viewport rect yet (first frame): full-window fallback.
                 play_->Draw(renderer_, gameCam, canvasZoom_);
+                renderer_.EndScene();
+                play_->FlushCanvas(renderer_);
             }
         }
     } else {
@@ -345,6 +351,10 @@ void EditorApp::OnRender() {
     // bind the backbuffer so the tool UI (engine UI demo + ImGui) below renders
     // crisp and unbloomed on top.
     renderer_.EndScene();
+
+    // G5-4-4: the runtime's on_render canvas (script HUD) flushes AFTER the
+    // composite so it keeps authored colors, on top of the scene.
+    if (playActive_ && play_) play_->FlushCanvas(renderer_);
 
     // The play's data-driven UI (UIShow menus/HUD) draws on top of the
     // composited frame so it keeps the authored colors (the 2D canvas / scene
