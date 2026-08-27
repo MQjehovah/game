@@ -38,10 +38,15 @@ public:
     virtual bool Active() const = 0;
 
     // Input: pointer in design units + the frame's left-click edge. Runs the
-    // system's hit-testing and refreshes the Clicked() state.
+    // system's hit-testing and records edge-triggered button clicks.
     virtual void Update(const math::Vec2& pointer, bool clickEdge) = 0;
     // Edge-triggered click query for the named clickable node.
     virtual bool Clicked(const std::string& name) const = 0;
+    // Called at the end of every simulation TICK (after scripts read Clicked):
+    // clears the latched clicks. Latching survives 0-tick rendered frames, so
+    // a click is never lost between the render that recorded it and the tick
+    // that consumes it.
+    virtual void ConsumeClicks() {}
 
     // Script mutation surface (node lookup by name).
     virtual void SetText(const std::string& node, const std::string& text) = 0;

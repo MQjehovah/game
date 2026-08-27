@@ -2896,6 +2896,10 @@ void GameRuntime::Tick(float dt) {
             plugins_->Tick(dt);
         }
     }
+    // UI clicks are latch-until-consumed (see IUiSystem::ConsumeClicks): now
+    // that every on_update has read Clicked() this tick, clear the latch so
+    // the same click never fires twice.
+    if (ui_) ui_->ConsumeClicks();
 
     size_t deadTrees = 0;
     for (BtInst& inst : trees_) {

@@ -32,16 +32,28 @@ public:
     bool Active() const override { return doc_ != nullptr; }
 
     void Update(const math::Vec2& pointer, bool clickEdge) override {
-        clicked_.clear();
+        // LATCH, don't clear: a click recorded by this render frame must
+        // survive until the simulation tick that reads Clicked() (0-tick
+        // rendered frames must not swallow it). ConsumeClicks() clears.
         if (!doc_ || !clickEdge) return;
         if (UiNode* hit = doc_->HitTest(pointer, lastViewport_)) {
-            if (hit->type == UiNodeType::Button) clicked_.insert(hit->name);
+            // Bubble up to the clickable ancestor: clicking a card's icon or
+            // label hits THAT node, not the button - the whole subtree of a
+            // button is its click target.
+            for (UiNode* n = hit; n; n = n->parent) {
+                if (n->type == UiNodeType::Button) {
+                    clicked_.insert(n->name);
+                    break;
+                }
+            }
         }
     }
 
     bool Clicked(const std::string& name) const override {
         return clicked_.count(name) != 0;
     }
+
+    void ConsumeClicks() override { clicked_.clear(); }
 
     void SetText(const std::string& node, const std::string& text) override {
         if (doc_)
