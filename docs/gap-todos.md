@@ -257,3 +257,11 @@
 5. **G4-1/G5-1 原生二进制插件**——把"微内核"从编译期落到运行时，先以物理/音频做示范。
 6. **G8 系列**（Profiler 环形缓冲、可视化覆盖层、增量打包）——见效快、风险低，可与主线并行。
 7. **G3 系列**（LLM / PCG / 视频）——待上述稳定后再碰；LLM 需先设计外部服务边界。
+
+## 架构收尾（2026-08-27，本轮新增）
+
+- [x] 资产导入/烘焙管线第一里程碑（G5-4-3）：AssetImporter 离线 BC1 烘焙（import_cache/*.nbc1），AssetManager 烘焙优先（VFS 感知），打包器打包 import_cache，播放器/编辑器 play 接线；`asset_importer.cpp` 测试 2 个。（`db765e1`）
+- [x] 检查器统一走 schema（G5-4-4）：规范组件 JSON 桥（ComponentJson/ApplyComponentJson/SetComponentField + ComponentJsonCommand），单一 schema 字段渲染器（health 等内置组件经桥接入，复用同一 Json undo），`Quat::ToEulerRad` 往返测试。（`2221d18`）
+- [x] GameRuntime 分解第一里程碑（G5-4-4）：每帧组件子任务（tweens/animations/statuses/skillCooldowns/projectiles）接入 ecs::SystemScheduler；冲突边来自声明组件读写（TickStatuses 与 TickProjectiles 共写 SceneHealth 保持注册序串行）；`cfg.parallelSystems` 可选并行且与串行逐位一致（确定性测试）。（`02d610e`）
+- [ ] GameRuntime 分解后续：脚本/行为树/物理固定步仍为串行（它们读写面广，调度器无法表达"读一切"）；可进一步拆 ScriptSystem（声明写 scene 组件全集）与 BtSystem，但脚本宿主是单线程单提交者，收益有限。优先级中低。
+- [ ] 播放器打包版烘焙：pack 内 import_cache 已随 VFS 读出（LoadTexture 走 ReadAllBytes(fs_, ...)），已验证路径；未做打包端到端验证。低。
