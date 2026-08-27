@@ -2259,18 +2259,19 @@ void Renderer::Set2DViewport(float x, float y, float w, float h, float zoom,
         Reset2DViewport();
         return;
     }
-    // Constant-height mapping (CSS/cocos FIXED_HEIGHT): the design HEIGHT is
-    // the unit (720 -> the rect's height), the design WIDTH is simply
-    // viewport-dependent (UIDesignSize reports it). No letterbox: a wider
-    // viewport shows MORE design-space width, a narrower one less - box-layout
-    // UI (width:"100%"/right-anchored boxes) fills whatever width there is.
-    // The sprite/world layer keeps alignment with the UI through the shared
-    // camera fit (see GameRuntime's ortho fit-outside), not through this rect.
-    const float fitScale = h / static_cast<float>(kDesignHeight);
+    // CANVAS mapping for editing tools (the UI editor): fit the whole
+    // 1280x720 document INSIDE the rect so the entire canvas is visible and
+    // editable at any dock aspect (letterbox both axes). The runtime does NOT
+    // use this - games run in viewport pixels (Set2DViewportPixels) with
+    // relative layout adapting.
+    const float fitScale = std::fmin(w / static_cast<float>(kDesignWidth),
+                                     h / static_cast<float>(kDesignHeight));
     uiScale_ = fitScale * zoom;
-    // Design (0,0) = the viewport's top-left; pan slides the canvas.
-    uiOffsetX_ = x - pan.x * uiScale_;
-    uiOffsetY_ = y - pan.y * uiScale_;
+    // The design point (640 + pan, 360 + pan) sits at the viewport rect center.
+    const float designCx = static_cast<float>(kDesignWidth) * 0.5f + pan.x;
+    const float designCy = static_cast<float>(kDesignHeight) * 0.5f + pan.y;
+    uiOffsetX_ = x + w * 0.5f - designCx * uiScale_;
+    uiOffsetY_ = y + h * 0.5f - designCy * uiScale_;
 }
 
 void Renderer::Reset2DViewport() {

@@ -91,23 +91,29 @@ void EditorApp::OnRender() {
         if (!uiEdLogged) {
             uiEdLogged = true;
             NEON_LOG_INFO("UI-EDITOR-PREVIEW: active (doc='%s')", uiDocPath_.c_str());
-        }        // UI editor preview: rendered in PIXELS like the runtime (box layout
-        // adapts, px stays px), with the selected node's outline + resize
-        // handles. No 3D/2D scene is drawn while the UI editor is active.
+        }        // UI editor preview: an EDITING CANVAS, not the runtime view - the
+        // whole 1280x720 document fits inside the dock (Set2DViewport
+        // fit-within, canvasZoom_/canvasPan_ for wheel zoom / middle-drag),
+        // so every element stays visible and selectable. The document lays
+        // out against the standard 1280x720 viewport; the RUNTIME adaptive
+        // behavior is what the play mode shows.
         {
-            DockViewportScope dock(*this, /*designFit=*/false, /*sceneVp=*/false);
+            DockViewportScope dock(*this, /*designFit=*/true, /*sceneVp=*/false);
             if (dock.Active()) {
                 if (cjkFont_.Valid())
                     uiDoc_.Draw(renderer_, cjkFont_,
                                 [this](const std::string& p) {
                                     if (p.empty()) return gfx::Texture{};
                                     return assetMgr_.LoadTexture(p);
-                                });
+                                },
+                                {static_cast<float>(gfx::Renderer::kDesignWidth),
+                                 static_cast<float>(gfx::Renderer::kDesignHeight)});
                 // P5-editor UX: outline every selected node; the active one
-                // gets resize handles.
+                // gets resize handles. Box-layout nodes only have a resolved
+                // rect, so read ResolvedRect (falls back to the rect chain).
                 for (ui::UiNode* n : uiSelection_) {
                     if (!n) continue;
-                    const math::Rect2 sel = n->AbsoluteRect();
+                    const math::Rect2 sel = n->ResolvedRect();
                     renderer_.DrawRectOutline(sel, 2.0f,
                                               {0.4f, 0.9f, 1.0f, 0.9f});
                     if (n != uiSelected_) continue;
