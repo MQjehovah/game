@@ -516,17 +516,6 @@ void EditorApp::RefreshSceneWorld() {
 // quad). Equivalent in data to LoadScene's JSON flattening.
 void EditorApp::UnflattenWorldToEntities() {
     std::vector<SceneEntity> loaded;
-    // name -> stable id for legacy name-based parents.
-    std::map<std::string, int> nameToId;
-    {
-        auto ids = sceneWorld_.ViewAll<scene::SceneId>();
-        for (size_t i = 0; i < ids.Size(); ++i) {
-            ecs::Entity e = sceneWorld_.EntityAt<scene::SceneId>(i);
-            const scene::SceneId* id = sceneWorld_.Get<scene::SceneId>(e);
-            const scene::SceneName* n = sceneWorld_.Get<scene::SceneName>(e);
-            if (id && n && id->id != 0) nameToId[n->name] = id->id;
-        }
-    }
     auto view = sceneWorld_.ViewAll<scene::SceneTransform>();
     for (size_t i = 0; i < view.Size(); ++i) {
         ecs::Entity e = sceneWorld_.EntityAt<scene::SceneTransform>(i);
@@ -537,12 +526,12 @@ void EditorApp::UnflattenWorldToEntities() {
             out.pos = t->pos;
             out.rot = t->rot;
             out.scale = t->scale;
-            if (t->parentId != 0) {
-                out.parentId = t->parentId;
-            } else if (!t->parent.empty()) { // legacy name-based parent
-                const auto it = nameToId.find(t->parent);
-                if (it != nameToId.end()) out.parentId = it->second;
-            }
+        }
+        // G5-4: hierarchy is entity-level — derive the parent id from the
+        // resolved SceneParentLink (the parent entity's stable SceneId).
+        if (const scene::SceneParentLink* link = sceneWorld_.Get<scene::SceneParentLink>(e)) {
+            if (const scene::SceneId* pid = sceneWorld_.Get<scene::SceneId>(link->parent))
+                out.parentId = pid->id;
         }
         if (const scene::SceneMesh* m = sceneWorld_.Get<scene::SceneMesh>(e)) {
             out.meshKey = m->meshKey;
@@ -885,8 +874,14 @@ void EditorApp::LoadScene(const std::string& path) {
                     e.scale = {static_cast<float>(s->At(0)->GetNumber()),
                                static_cast<float>(s->At(1)->GetNumber()),
                                static_cast<float>(s->At(2)->GetNumber())};
-                if (const core::Json* p = t->Get("parentId")) e.parentId = p->GetInt(0);
-                if (const core::Json* p = t->Get("parent")) legacyParent = p->GetString();
+                // G5-4: hierarchy is entity-level — top-level parentId/parent
+                // win; the legacy transform placement is the fallback.
+                if (const core::Json* p = j->Get("parentId")) e.parentId = p->GetInt(0);
+                if (const core::Json* p = j->Get("parent")) legacyParent = p->GetString();
+                if (e.parentId == 0 && legacyParent.empty()) {
+                    if (const core::Json* p = t->Get("parentId")) e.parentId = p->GetInt(0);
+                    if (const core::Json* p = t->Get("parent")) legacyParent = p->GetString();
+                }
             }
             if (const core::Json* m = comps->Get("mesh")) {
                 e.meshKey = m->Get("meshKey") ? m->Get("meshKey")->GetString("cube") : "cube";

@@ -185,12 +185,13 @@ core::Result<core::Json> EditorApp::BuildSceneJsonFromEntities() {
         tf.object_["pos"] = mkArr({e.pos.x, e.pos.y, e.pos.z});
         tf.object_["rot"] = mkArr({e.rot.x, e.rot.y, e.rot.z, e.rot.w});
         tf.object_["scale"] = mkArr({e.scale.x, e.scale.y, e.scale.z});
-        if (e.parentId != 0) tf.object_["parentId"] = mkNum(e.parentId);
-        const std::string pname = parentNameOf(e.parentId);
-        if (!pname.empty()) tf.object_["parent"] = mkStr(pname);
         core::Json comps;
         comps.type_ = core::Json::Type::Object;
         comps.object_["transform"] = std::move(tf);
+        // G5-4: hierarchy is entity-level (parentId/parent beside id/name).
+        if (e.parentId != 0) obj.object_["parentId"] = mkNum(e.parentId);
+        const std::string pname = parentNameOf(e.parentId);
+        if (!pname.empty()) obj.object_["parent"] = mkStr(pname);
         if (e.maxHp > 0.0f) {
             core::Json health;
             health.type_ = core::Json::Type::Object;

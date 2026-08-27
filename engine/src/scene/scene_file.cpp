@@ -204,10 +204,33 @@ core::Result<SceneFile> SceneFile::Parse(const std::string& jsonText) {
                 return core::Result<SceneFile>::Err("scene: entity 'prefab' must be a string");
             def.prefab = prefab->GetString();
         }
+        // G5-4: hierarchy is entity-level (parentId/parent beside id/name). Read
+        // it top-level first, then fall back to the legacy components.transform
+        // placement so old scenes keep working.
+        if (const core::Json* pid = e->Get("parentId")) {
+            if (!pid->IsNumber())
+                return core::Result<SceneFile>::Err(
+                    "scene: entity 'parentId' must be a number");
+            def.parentId = pid->GetInt(0);
+        }
+        if (const core::Json* pn = e->Get("parent")) {
+            if (!pn->IsString())
+                return core::Result<SceneFile>::Err("scene: entity 'parent' must be a string");
+            def.parent = pn->GetString();
+        }
         const core::Json* comps = e->Get("components");
         if (!comps || !comps->IsObject())
             return core::Result<SceneFile>::Err(
                 "scene: entity '" + def.name + "' requires a 'components' object");
+        // Legacy placement: parent/parentId inside components.transform.
+        if (def.parentId == 0 && def.parent.empty()) {
+            if (const core::Json* tf = comps->Get("transform")) {
+                if (const core::Json* pid = tf->Get("parentId"))
+                    if (pid->IsNumber()) def.parentId = pid->GetInt(0);
+                if (const core::Json* pn = tf->Get("parent"))
+                    if (pn->IsString()) def.parent = pn->GetString();
+            }
+        }
         for (const auto& [cname, cdata] : comps->Members()) {
             if (!cdata.IsObject())
                 return core::Result<SceneFile>::Err(
@@ -338,13 +361,14 @@ core::Result<core::Json> SceneFile::MakeEntity(const std::string& name,
     core::Json e = MakeObject();
     e.object_["name"] = MakeString(name);
     if (id != 0) e.object_["id"] = MakeNumber(id);
+    // G5-4: hierarchy is entity-level (beside id/name), not in transform.
+    if (!parent.empty()) e.object_["parent"] = MakeString(parent);
+    if (parentId != 0) e.object_["parentId"] = MakeNumber(parentId);
 
     core::Json tf = MakeObject();
     tf.object_["pos"] = MakeVec3(pos);
     tf.object_["rot"] = MakeQuat(rot);
     tf.object_["scale"] = MakeVec3(scale);
-    if (!parent.empty()) tf.object_["parent"] = MakeString(parent);
-    if (parentId != 0) tf.object_["parentId"] = MakeNumber(parentId);
 
     core::Json mat = MakeObject();
     mat.object_["metallic"] = MakeNumber(metallic);
@@ -413,18 +437,19 @@ core::Result<core::Json> SceneFile::MakeSpriteEntity(const std::string& name,
         return core::Result<core::Json>::Err("scene: exported entity name must not be empty");
     if (texture.empty())
         return core::Result<core::Json>::Err("scene: exported sprite '" + name +
-                                             "' has an empty texture");
+                                              "' has an empty texture");
 
     core::Json e = MakeObject();
     e.object_["name"] = MakeString(name);
     if (id != 0) e.object_["id"] = MakeNumber(id);
+    // G5-4: hierarchy is entity-level (beside id/name), not in transform.
+    if (!parent.empty()) e.object_["parent"] = MakeString(parent);
+    if (parentId != 0) e.object_["parentId"] = MakeNumber(parentId);
 
     core::Json tf = MakeObject();
     tf.object_["pos"] = MakeVec3(pos);
     tf.object_["rot"] = MakeQuat(rot);
     tf.object_["scale"] = MakeVec3(scale);
-    if (!parent.empty()) tf.object_["parent"] = MakeString(parent);
-    if (parentId != 0) tf.object_["parentId"] = MakeNumber(parentId);
 
     core::Json sp = MakeObject();
     sp.object_["texture"] = MakeString(texture);
@@ -520,6 +545,9 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
     reg.Register("transform",
                  [](ecs::World& world, ecs::Entity ent, const core::Json& data,
                     const core::Json&, std::string* err) {
+                     // G5-4: parent/parentId moved to the ENTITY level (EntityDef).
+                     // Kept in the allowed set so legacy scenes (parentId inside
+                     // transform) still parse; the values are extracted by Parse.
                      if (!CheckComponentShape(data, {"pos", "rot", "scale", "parent", "parentId"},
                                               "transform", err))
                          return false;
@@ -527,20 +555,6 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                      if (!ReadVec3(data, "pos", "transform", t.pos, err)) return false;
                      if (!ReadQuat(data, "rot", "transform", t.rot, err)) return false;
                      if (!ReadVec3(data, "scale", "transform", t.scale, err)) return false;
-                     if (const core::Json* p = data.Get("parent")) {
-                         if (!p->IsString()) {
-                             if (err) *err = "component 'transform' field 'parent' must be a string";
-                             return false;
-                         }
-                         t.parent = p->GetString();
-                     }
-                     if (const core::Json* p = data.Get("parentId")) {
-                         if (!p->IsNumber()) {
-                             if (err) *err = "component 'transform' field 'parentId' must be a number";
-                             return false;
-                         }
-                         t.parentId = p->GetInt(0);
-                     }
                      world.Add<SceneTransform>(ent, t);
                      return true;
                  });
@@ -1245,34 +1259,38 @@ core::Result<int> Instantiate(ecs::World& world, const SceneFile& scene,
         world.Add<SceneId>(created[i], SceneId{id}); // G2-2: preserve the stable id
     }
 
-    for (ecs::Entity child : created) {
-        const SceneTransform* t = world.Get<SceneTransform>(child);
-        if (!t || (t->parentId == 0 && t->parent.empty())) continue;
+    // G5-4: hierarchy is entity-level (EntityDef.parentId/parent) — resolved
+    // into SceneParentLink after every entity exists. created[i] matches
+    // scene.entities[i] by index.
+    for (size_t i = 0; i < created.size() && i < scene.entities.size(); ++i) {
+        const EntityDef& def = scene.entities[i];
+        if (def.parentId == 0 && def.parent.empty()) continue;
+        ecs::Entity child = created[i];
         ecs::Entity parent;
-        if (t->parentId != 0) {
-            const auto it = byId.find(t->parentId);
+        if (def.parentId != 0) {
+            const auto it = byId.find(def.parentId);
             if (it != byId.end()) {
                 parent = it->second;
             } else {
                 for (ecs::Entity e : created) world.Destroy(e);
                 return core::Result<int>::Err("scene: entity id " +
-                                              std::to_string(t->parentId) +
+                                              std::to_string(def.parentId) +
                                               " referenced by 'parentId' not found");
             }
-        } else if (!t->parent.empty()) {
+        } else if (!def.parent.empty()) {
             // Legacy name fallback (first match, as before).
             auto names = world.ViewAll<SceneName>();
-            for (size_t i = 0; i < names.Size(); ++i) {
-                ecs::Entity cand = world.EntityAt<SceneName>(i);
+            for (size_t k = 0; k < names.Size(); ++k) {
+                ecs::Entity cand = world.EntityAt<SceneName>(k);
                 const SceneName* n = world.Get<SceneName>(cand);
-                if (n && n->name == t->parent) {
+                if (n && n->name == def.parent) {
                     parent = cand;
                     break;
                 }
             }
             if (!parent.IsValid()) {
                 for (ecs::Entity e : created) world.Destroy(e);
-                return core::Result<int>::Err("scene: entity '" + t->parent +
+                return core::Result<int>::Err("scene: entity '" + def.parent +
                                               "' referenced by 'parent' not found");
             }
         }
@@ -1341,9 +1359,13 @@ core::Result<core::Json> SceneFile::FromWorld(ecs::World& world) {
             tf.object_["pos"] = MakeVec3(t->pos);
             tf.object_["rot"] = MakeQuat(t->rot);
             tf.object_["scale"] = MakeVec3(t->scale);
-            if (t->parentId != 0) tf.object_["parentId"] = MakeNumber(t->parentId);
-            else if (!t->parent.empty()) tf.object_["parent"] = MakeString(t->parent);
             comps.object_["transform"] = std::move(tf);
+        }
+        // G5-4: hierarchy is entity-level — emit parentId from the resolved
+        // SceneParentLink (the parent entity's stable SceneId).
+        if (const SceneParentLink* link = world.Get<SceneParentLink>(e)) {
+            if (const SceneId* pid = world.Get<SceneId>(link->parent))
+                if (pid->id != 0) ent.object_["parentId"] = MakeNumber(pid->id);
         }
         if (const SceneMesh* m = world.Get<SceneMesh>(e)) {
             core::Json mesh = MakeObject();
