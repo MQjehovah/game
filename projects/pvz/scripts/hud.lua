@@ -171,11 +171,15 @@ function on_render()
             local maxHp = (zc and ZMAX[zc.type]) or 100
             local frac = clamp(hp / maxHp, 0, 1)
             if frac < 0.99 then
-              local sx, sy = pos.x, 720 - pos.y - 46
-              local barCol = frac > 0.5 and { 0.3, 0.9, 0.35 }
-                             or (frac > 0.25 and { 0.95, 0.8, 0.3 } or { 1, 0.3, 0.3 })
-              DrawRect(sx - 22, sy, 44, 5, 0.08, 0.08, 0.08, 0.9)
-              DrawRect(sx - 22, sy, 44 * frac, 5, barCol[1], barCol[2], barCol[3], 1)
+              -- 世界锚定: 用相机投影(WorldToScreen)转设计坐标, 与相机解耦。
+              local s = WorldToScreen(pos)
+              if s and s.x then
+                local sx, sy = s.x, s.y - 46
+                local barCol = frac > 0.5 and { 0.3, 0.9, 0.35 }
+                               or (frac > 0.25 and { 0.95, 0.8, 0.3 } or { 1, 0.3, 0.3 })
+                DrawRect(sx - 22, sy, 44, 5, 0.08, 0.08, 0.08, 0.9)
+                DrawRect(sx - 22, sy, 44 * frac, 5, barCol[1], barCol[2], barCol[3], 1)
+              end
             end
           end
         end
@@ -183,17 +187,20 @@ function on_render()
     end
   end
 
-  -- ============ 飘字 (SpawnFloatText: 世界锚定, 上浮淡出) ============
+  -- ============ 飘字 (SpawnFloatText: 世界锚定, 相机投影, 上浮淡出) ============
   local ft = FloatTexts()
   if type(ft) == "table" then
     for i = 1, #ft do
       local f = ft[i]
       local w = f.world
       if w then
-        local alpha = clamp(1 - (f.age or 0) / (f.life or 1), 0, 1)
-        local sy = 720 - w.y - 20 - (f.age or 0) * 26
-        DrawText(tostring(f.text), w.x, sy, f.crit and 24 or 18, 1, 0.95, 0.35, alpha,
-                 true, true)
+        local s = WorldToScreen({ x = w.x, y = w.y, z = w.z })
+        if s and s.x then
+          local alpha = clamp(1 - (f.age or 0) / (f.life or 1), 0, 1)
+          local sy = s.y - 20 - (f.age or 0) * 26
+          DrawText(tostring(f.text), s.x, sy, f.crit and 24 or 18, 1, 0.95, 0.35, alpha,
+                   true, true)
+        end
       end
     end
   end
