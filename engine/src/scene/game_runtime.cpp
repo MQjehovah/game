@@ -2240,16 +2240,10 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera,
             if (cam.ortho && previewZoom > 0.0f)
                 cam.orthoSize /= previewZoom;
         });
-    // 2D-play camera fit-outside (host signals 2D play by passing
-    // previewZoom > 0): the world FILLS the viewport (constant-height view),
-    // but the horizontal design extent (1280 world units at zoom 1) must stay
-    // fully visible - on a viewport narrower than 16:9 grow the ortho size so
-    // extra vertical world shows instead of cropping the design area.
+    // The camera is FAITHFUL: the scene camera's orthoSize/fov is exactly
+    // what the scene authored (no fit-outside overrides); the aspect follows
+    // the active scene viewport, so the world fills the dock.
     const float drawAspect = renderer.SceneAspect();
-    if (cam.ortho && previewZoom > 0.0f) {
-        const float halfWNeeded = (gfx::Renderer::kDesignWidth * 0.5f) / previewZoom;
-        cam.orthoSize = std::max(cam.orthoSize, halfWNeeded / drawAspect);
-    }
     // Snapshot the resolved camera + viewport pixels: WorldToScreen/
     // ScreenToWorld and GetViewportSize answer script queries between renders
     // from this state. UI/world space is plain viewport PIXELS (no design
