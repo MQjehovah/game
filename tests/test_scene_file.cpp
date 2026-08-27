@@ -932,3 +932,19 @@ TEST(SceneDecalComponent) {
         });
     CHECK(found);
 }
+
+// G5-4-4: Quat::ToEulerRad round-trips with Quat::FromEuler (same convention),
+// which the editor uses to render the transform component schema's rot field.
+TEST(QuatEulerRoundTrip) {
+    const math::Quat q = math::Quat::FromEuler(30.0f * math::kDegToRad, -15.0f * math::kDegToRad,
+                                               45.0f * math::kDegToRad);
+    const math::Vec3 e = q.ToEulerRad();
+    CHECK_NEAR(e.x, 30.0f * math::kDegToRad, 1e-4f);
+    CHECK_NEAR(e.y, -15.0f * math::kDegToRad, 1e-4f);
+    CHECK_NEAR(e.z, 45.0f * math::kDegToRad, 1e-4f);
+    const math::Quat q2 = math::Quat::FromEuler(e.x, e.y, e.z);
+    CHECK_NEAR(q2.x, q.x, 1e-5f);
+    CHECK_NEAR(q2.y, q.y, 1e-5f);
+    CHECK_NEAR(q2.z, q.z, 1e-5f);
+    CHECK_NEAR(q2.w, q.w, 1e-5f);
+}

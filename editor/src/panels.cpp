@@ -1778,30 +1778,6 @@ void EditorApp::BuildInspectorPanel() {
         }
         }
         }
-        // 生命: attached when maxHp > 0; removable (sets maxHp back to 0).
-        if (e.maxHp > 0.0f) {
-        const bool healthOpen =
-            ImGui::CollapsingHeader("生命##health", ImGuiTreeNodeFlags_DefaultOpen);
-        if (healthOpen && e.maxHp > 0.0f) {
-        const float oldHp = e.hp;
-        if (ImGui::DragFloat("当前生命", &e.hp, 1.0f, 0.0f, e.maxHp)) {
-            history_.Push(std::make_unique<EditPropertyCommand<float>>(
-                &entities_, selected_, ApplyHpProp, oldHp, e.hp));
-        }
-        const float oldMaxHp = e.maxHp;
-        if (ImGui::DragFloat("最大生命", &e.maxHp, 1.0f, 0.0f, 1e9f)) {
-            history_.Push(std::make_unique<EditPropertyCommand<float>>(
-                &entities_, selected_, ApplyMaxHpProp, oldMaxHp, e.maxHp));
-        }
-        ImGui::Separator();
-        if (ImGui::Button("移除生命")) {
-            const HealthValue oldV{e.hp, e.maxHp};
-            history_.Push(std::make_unique<EditPropertyCommand<HealthValue>>(
-                &entities_, selected_, ApplyHealth, oldV, HealthValue{},
-                /*mergeable=*/false));
-        }
-        }
-        }
         auto makeNum = [](double v) {
             core::Json j;
             j.type_ = core::Json::Type::Number;
@@ -1826,6 +1802,165 @@ void EditorApp::BuildInspectorPanel() {
             for (double x : v) j.array_.push_back(makeNum(x));
             return j;
         };
+        // G5-4-4: ONE schema-driven field editor for every component (built-in
+        // and data). Renders a component's fields from its ComponentSchema and
+        // pushes an EditComponentCommand (Json-based undo through the canonical
+        // bridge) per changed field. Built-in components (health/groups) pass a
+        // bridged component JSON; data components pass extraComponents[name].
+        auto renderSchemaFields = [&](const scene::ComponentSchema& schema,
+                                      core::Json& compData) {
+            for (const scene::FieldSchema& f : schema.fields) {
+                if (!compData.IsObject()) compData.type_ = core::Json::Type::Object;
+                core::Json& node = compData.object_[f.key];
+                if (node.IsNull()) node = makeNum(f.def);
+                const core::Json oldField = node;
+                bool changed = false;
+                switch (f.type) {
+                    case scene::FieldType::Number: {
+                        float v = static_cast<float>(node.IsNumber() ? node.GetNumber() : f.def);
+                        if (ImGui::DragFloat(f.label.c_str(), &v, static_cast<float>(f.step),
+                                             static_cast<float>(f.min),
+                                             static_cast<float>(f.max)))
+                            node = makeNum(static_cast<double>(v)), changed = true;
+                        break;
+                    }
+                    case scene::FieldType::Int: {
+                        int v = node.IsNumber() ? static_cast<int>(node.GetNumber())
+                                                : static_cast<int>(f.def);
+                        if (ImGui::DragInt(f.label.c_str(), &v, 1, static_cast<int>(f.min),
+                                           static_cast<int>(f.max)))
+                            node = makeNum(v), changed = true;
+                        break;
+                    }
+                    case scene::FieldType::Bool: {
+                        bool v = node.IsBool() ? node.GetBool() : false;
+                        if (ImGui::Checkbox(f.label.c_str(), &v))
+                            node = makeBool(v), changed = true;
+                        break;
+                    }
+                    case scene::FieldType::String: {
+                        char buf[1024];
+                        std::snprintf(buf, sizeof(buf), "%s",
+                                      node.IsString() ? node.GetString().c_str() : "");
+                        if (ImGui::InputText(f.label.c_str(), buf, sizeof(buf))) {
+                            node = makeStr(buf);
+                            changed = true;
+                        }
+                        break;
+                    }
+                    case scene::FieldType::Vec3: {
+                        float v[3] = {static_cast<float>(f.def), static_cast<float>(f.def),
+                                      static_cast<float>(f.def)};
+                        if (node.IsArray() && node.Size() == 3) {
+                            for (int i = 0; i < 3; ++i)
+                                v[i] = static_cast<float>(node.At(static_cast<size_t>(i))
+                                                              ->GetNumber());
+                        }
+                        if (ImGui::DragFloat3(f.label.c_str(), v, static_cast<float>(f.step),
+                                              static_cast<float>(f.min),
+                                              static_cast<float>(f.max))) {
+                            node = makeArr({v[0], v[1], v[2]});
+                            changed = true;
+                        }
+                        break;
+                    }
+                    case scene::FieldType::Color: {
+                        float col[4] = {1, 1, 1, 1};
+                        if (node.IsString()) {
+                            gfx::Color c = ColorFromHex(node.GetString());
+                            col[0] = c.r;
+                            col[1] = c.g;
+                            col[2] = c.b;
+                        }
+                        if (ImGui::ColorEdit3(f.label.c_str(), col)) {
+                            char hex[16];
+                            std::snprintf(hex, sizeof(hex), "#%02X%02X%02X",
+                                          static_cast<int>(col[0] * 255.0f),
+                                          static_cast<int>(col[1] * 255.0f),
+                                          static_cast<int>(col[2] * 255.0f));
+                            node = makeStr(hex);
+                            changed = true;
+                        }
+                        break;
+                    }
+                    case scene::FieldType::Enum: {
+                        int sel = 0;
+                        if (node.IsString() && f.options) {
+                            for (int i = 0; i < f.optionCount; ++i)
+                                if (node.GetString() == f.options[i]) sel = i;
+                        }
+                        if (ImGui::Combo(f.label.c_str(), &sel, f.options, f.optionCount)) {
+                            node = makeStr(f.options[sel]);
+                            changed = true;
+                        }
+                        break;
+                    }
+                    case scene::FieldType::Resource: {
+                        std::string path = node.IsString() ? node.GetString() : "";
+                        char buf[1024];
+                        std::snprintf(buf, sizeof(buf), "%s", path.c_str());
+                        ImGui::SetNextItemWidth(-1.0f);
+                        if (ImGui::InputText(f.label.c_str(), buf, sizeof(buf),
+                                             ImGuiInputTextFlags_EnterReturnsTrue)) {
+                            node = makeStr(buf);
+                            changed = true;
+                        }
+                        const char* payloadKind =
+                            f.resourceKind && std::string(f.resourceKind) == "model"
+                                ? "ASSET_MODEL"
+                                : f.resourceKind && std::string(f.resourceKind) == "script"
+                                      ? "ASSET_SCRIPT"
+                                      : "ASSET_TEXTURE";
+                        if (ImGui::BeginDragDropTarget()) {
+                            if (const ImGuiPayload* payload =
+                                    ImGui::AcceptDragDropPayload(payloadKind)) {
+                                std::string dropped(static_cast<const char*>(payload->Data),
+                                                    static_cast<size_t>(payload->DataSize));
+                                if (!dropped.empty() && dropped.back() == '\0')
+                                    dropped.pop_back();
+                                if (!dropped.empty()) {
+                                    node = makeStr(dropped);
+                                    changed = true;
+                                }
+                            }
+                            ImGui::EndDragDropTarget();
+                        }
+                        break;
+                    }
+                    case scene::FieldType::Json:
+                        ImGui::TextDisabled("%s: %s", f.label.c_str(),
+                                            core::JsonWriter::Write(node).c_str());
+                        break;
+                }
+                if (changed) {
+                    history_.Push(std::make_unique<EditComponentCommand>(
+                        &entities_, selected_, schema.name, f.key, oldField, node));
+                }
+            }
+        };
+
+        // 生命: built-in component (maxHp > 0 = attached), rendered through the
+        // SAME schema editor as data components — the canonical bridge maps the
+        // health fields to the flattened hp/maxHp (G5-4-4).
+        if (ComponentPresent(e, "health")) {
+            const scene::ComponentSchema* schema = scene::FindComponentSchema("health");
+            if (schema) {
+                const bool hOpen = ImGui::CollapsingHeader(
+                    (schema->label + "##health").c_str(), ImGuiTreeNodeFlags_DefaultOpen);
+                if (hOpen) {
+                    core::Json compData = ComponentJson(e, "health");
+                    renderSchemaFields(*schema, compData);
+                    ApplyComponentJson(entities_[static_cast<size_t>(selected_)], "health",
+                                       compData);
+                    ImGui::Separator();
+                    if (ImGui::Button("移除生命")) {
+                        history_.Push(std::make_unique<ComponentJsonCommand>(
+                            &entities_, selected_, "health", ComponentJson(e, "health"),
+                            core::Json{}));
+                    }
+                }
+            }
+        }
         // Script components: ordinary component blocks (schema backend/path/
         // vars), each with its own remove button - exactly like the
         // schema-driven components below. Multiple scripts = multiple blocks.
@@ -1945,138 +2080,7 @@ void EditorApp::BuildInspectorPanel() {
                 ImGui::TextWrapped("%s", core::JsonWriter::Write(compData).c_str());
                 continue;
             }
-            for (const scene::FieldSchema& f : schema->fields) {
-                if (!compData.IsObject()) {
-                    compData.type_ = core::Json::Type::Object;
-                }
-                core::Json& node = compData.object_[f.key];
-                if (node.IsNull()) node = makeNum(f.def);
-                const core::Json oldField = node;
-                bool changed = false;
-                switch (f.type) {
-                    case scene::FieldType::Number: {
-                        float v = static_cast<float>(node.IsNumber() ? node.GetNumber() : f.def);
-                        if (ImGui::DragFloat(f.label.c_str(), &v, static_cast<float>(f.step),
-                                             static_cast<float>(f.min),
-                                             static_cast<float>(f.max)))
-                            node = makeNum(static_cast<double>(v)), changed = true;
-                        break;
-                    }
-                    case scene::FieldType::Int: {
-                        int v = node.IsNumber() ? static_cast<int>(node.GetNumber())
-                                                : static_cast<int>(f.def);
-                        if (ImGui::DragInt(f.label.c_str(), &v, 1, static_cast<int>(f.min),
-                                           static_cast<int>(f.max)))
-                            node = makeNum(v), changed = true;
-                        break;
-                    }
-                    case scene::FieldType::Bool: {
-                        bool v = node.IsBool() ? node.GetBool() : false;
-                        if (ImGui::Checkbox(f.label.c_str(), &v))
-                            node = makeBool(v), changed = true;
-                        break;
-                    }
-                    case scene::FieldType::String: {
-                        char buf[1024];
-                        std::snprintf(buf, sizeof(buf), "%s",
-                                      node.IsString() ? node.GetString().c_str() : "");
-                        if (ImGui::InputText(f.label.c_str(), buf, sizeof(buf))) {
-                            node = makeStr(buf);
-                            changed = true;
-                        }
-                        break;
-                    }
-                    case scene::FieldType::Vec3: {
-                        float v[3] = {static_cast<float>(f.def), static_cast<float>(f.def),
-                                      static_cast<float>(f.def)};
-                        if (node.IsArray() && node.Size() == 3) {
-                            for (int i = 0; i < 3; ++i)
-                                v[i] = static_cast<float>(node.At(static_cast<size_t>(i))
-                                                              ->GetNumber());
-                        }
-                        if (ImGui::DragFloat3(f.label.c_str(), v,
-                                              static_cast<float>(f.step),
-                                              static_cast<float>(f.min),
-                                              static_cast<float>(f.max))) {
-                            node = makeArr({v[0], v[1], v[2]});
-                            changed = true;
-                        }
-                        break;
-                    }
-                    case scene::FieldType::Color: {
-                        float col[4] = {1, 1, 1, 1};
-                        if (node.IsString()) {
-                            gfx::Color c = ColorFromHex(node.GetString());
-                            col[0] = c.r;
-                            col[1] = c.g;
-                            col[2] = c.b;
-                        }
-                        if (ImGui::ColorEdit3(f.label.c_str(), col)) {
-                            char hex[16];
-                            std::snprintf(hex, sizeof(hex), "#%02X%02X%02X",
-                                          static_cast<int>(col[0] * 255.0f),
-                                          static_cast<int>(col[1] * 255.0f),
-                                          static_cast<int>(col[2] * 255.0f));
-                            node = makeStr(hex);
-                            changed = true;
-                        }
-                        break;
-                    }
-                    case scene::FieldType::Enum: {
-                        int sel = 0;
-                        if (node.IsString() && f.options) {
-                            for (int i = 0; i < f.optionCount; ++i)
-                                if (node.GetString() == f.options[i]) sel = i;
-                        }
-                        if (ImGui::Combo(f.label.c_str(), &sel, f.options, f.optionCount)) {
-                            node = makeStr(f.options[sel]);
-                            changed = true;
-                        }
-                        break;
-                    }
-                    case scene::FieldType::Resource: {
-                        std::string path = node.IsString() ? node.GetString() : "";
-                        char buf[1024];
-                        std::snprintf(buf, sizeof(buf), "%s", path.c_str());
-                        ImGui::SetNextItemWidth(-1.0f);
-                        if (ImGui::InputText(f.label.c_str(), buf, sizeof(buf),
-                                             ImGuiInputTextFlags_EnterReturnsTrue)) {
-                            node = makeStr(buf);
-                            changed = true;
-                        }
-                        // Drag a matching asset from the asset panel.
-                        const char* payloadKind =
-                            f.resourceKind && std::string(f.resourceKind) == "model"
-                                ? "ASSET_MODEL"
-                                : f.resourceKind && std::string(f.resourceKind) == "script"
-                                      ? "ASSET_SCRIPT"
-                                      : "ASSET_TEXTURE";
-                        if (ImGui::BeginDragDropTarget()) {
-                            if (const ImGuiPayload* payload =
-                                    ImGui::AcceptDragDropPayload(payloadKind)) {
-                                std::string dropped(static_cast<const char*>(payload->Data),
-                                                    static_cast<size_t>(payload->DataSize));
-                                if (!dropped.empty() && dropped.back() == '\0')
-                                    dropped.pop_back();
-                                if (!dropped.empty()) {
-                                    node = makeStr(dropped);
-                                    changed = true;
-                                }
-                            }
-                            ImGui::EndDragDropTarget();
-                        }
-                        break;
-                    }
-                    case scene::FieldType::Json:
-                        ImGui::TextDisabled("%s: %s", f.label.c_str(),
-                                            core::JsonWriter::Write(node).c_str());
-                        break;
-                }
-                if (changed) {
-                    history_.Push(std::make_unique<EditComponentCommand>(
-                        &entities_, selected_, compName, f.key, oldField, node));
-                }
-            }
+            renderSchemaFields(*schema, compData);
             ImGui::Separator();
             if (ImGui::Button("移除组件")) {
                 history_.Push(std::make_unique<AddComponentCommand>(

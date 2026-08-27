@@ -27,7 +27,6 @@ inline bool Vec3Eq(const math::Vec3& a, const math::Vec3& b) {
 inline bool QuatEq(const math::Quat& a, const math::Quat& b) {
     return a.x == b.x && a.y == b.y && a.z == b.z && a.w == b.w;
 }
-
 inline gfx::Color HexToColor(const std::string& hex) {
     if (hex.size() < 7 || hex[0] != '#') return gfx::Color::White;
     auto nibble = [](char c) -> unsigned {
@@ -545,9 +544,15 @@ private:
     bool mergeable_;
 };
 
-// Schema-driven component field edit: writes one field of
-// SceneEntity::extraComponents[component][fieldKey]. Consecutive edits of the
-// same field merge into a single undo step (like EditPropertyCommand).
+// Forward declaration of the canonical single-field setter (defined below with
+// the rest of the G5-4-4 bridge); EditComponentCommand routes through it.
+inline void SetComponentField(SceneEntity& e, const std::string& name,
+                              const std::string& fieldKey, const core::Json& v);
+
+// Schema-driven component field edit: writes one field of the component's
+// canonical JSON (dedicated built-ins map to flattened fields, data components
+// to extraComponents), routed through the bridge below. Consecutive edits of
+// the same field merge into a single undo step (like EditPropertyCommand).
 class EditComponentCommand : public Command {
 public:
     EditComponentCommand(std::vector<SceneEntity>* entities, int index,
@@ -573,7 +578,10 @@ public:
 private:
     void Set(const core::Json& v) {
         SceneEntity& e = (*entities_)[static_cast<size_t>(index_)];
-        e.extraComponents[component_].object_[fieldKey_] = v;
+        // G5-4-4: route through the canonical bridge so dedicated components
+        // (health/groups/...) and data components (extraComponents) share the
+        // same single-field undo path.
+        SetComponentField(e, component_, fieldKey_, v);
     }
 
     std::vector<SceneEntity>* entities_;
@@ -650,6 +658,180 @@ private:
     int index_;
     std::string old_;
     std::string cur_;
+};
+
+// G5-4-4: canonical component-JSON bridge. Every component — built-in
+// (health/groups/sortOrder/camera/type/transform) or data (extraComponents) —
+// is addressed as {name, fieldKey} JSON, so the inspector renders ALL of them
+// through the SAME schema-driven field editor (one renderer, one undo path).
+// Built-in components map to the editor's flattened fields; data components
+// map to SceneEntity::extraComponents.
+
+namespace {
+inline core::Json JsonNum(double v) {
+    core::Json j;
+    j.type_ = core::Json::Type::Number;
+    j.number_ = v;
+    return j;
+}
+inline core::Json JsonBool(bool b) {
+    core::Json j;
+    j.type_ = core::Json::Type::Bool;
+    j.bool_ = b;
+    return j;
+}
+inline core::Json JsonVec3(const math::Vec3& v) {
+    core::Json j;
+    j.type_ = core::Json::Type::Array;
+    j.array_ = {JsonNum(v.x), JsonNum(v.y), JsonNum(v.z)};
+    return j;
+}
+inline math::Vec3 Vec3From(const core::Json* a) {
+    if (a && a->IsArray() && a->Size() == 3) {
+        return {static_cast<float>(a->At(0)->GetNumber()),
+                static_cast<float>(a->At(1)->GetNumber()),
+                static_cast<float>(a->At(2)->GetNumber())};
+    }
+    return {};
+}
+} // namespace
+
+// Whether the component is currently attached to this entity.
+inline bool ComponentPresent(const SceneEntity& e, const std::string& name) {
+    if (name == "health") return e.maxHp > 0.0f;
+    if (name == "sortOrder") return true; // zOrder always exists (2D sort)
+    if (name == "camera") return e.nodeType == "Camera3D";
+    if (name == "transform") return true;
+    return e.extraComponents.count(name) != 0;
+}
+
+// Current component JSON (the shape its ComponentSchema declares).
+inline core::Json ComponentJson(const SceneEntity& e, const std::string& name) {
+    if (name == "health")
+        return core::Json::Parse("{\"hp\":" + std::to_string(static_cast<double>(e.hp)) +
+                                 ",\"maxHp\":" +
+                                 std::to_string(static_cast<double>(e.maxHp)) + "}");
+    if (name == "sortOrder") {
+        core::Json j;
+        j.type_ = core::Json::Type::Object;
+        j.object_["z"] = JsonNum(e.zOrder);
+        return j;
+    }
+    if (name == "camera") {
+        core::Json j;
+        j.type_ = core::Json::Type::Object;
+        j.object_["fov"] = JsonNum(e.cameraFov);
+        j.object_["ortho"] = JsonBool(e.cameraOrtho);
+        j.object_["orthoSize"] = JsonNum(e.cameraOrthoSize);
+        return j;
+    }
+    if (name == "transform") {
+        core::Json j;
+        j.type_ = core::Json::Type::Object;
+        j.object_["pos"] = JsonVec3(e.pos);
+        j.object_["scale"] = JsonVec3(e.scale);
+        const math::Vec3 euler = e.rot.ToEulerRad();
+        j.object_["rot"] = JsonVec3({euler.x * math::kRadToDeg, euler.y * math::kRadToDeg,
+                                     euler.z * math::kRadToDeg});
+        return j;
+    }
+    auto it = e.extraComponents.find(name);
+    return it != e.extraComponents.end() ? it->second : core::Json{};
+}
+
+// Applies a whole component JSON (dedicated -> flattened fields; empty object
+// resets a dedicated component; data -> extraComponents, empty erases).
+inline void ApplyComponentJson(SceneEntity& e, const std::string& name,
+                               const core::Json& data) {
+    if (name == "health") {
+        if (!data.IsObject()) {
+            e.hp = 0.0f;
+            e.maxHp = 0.0f;
+            return;
+        }
+        if (const core::Json* v = data.Get("hp")) e.hp = static_cast<float>(v->GetNumber());
+        if (const core::Json* v = data.Get("maxHp")) e.maxHp = static_cast<float>(v->GetNumber());
+        return;
+    }
+    if (name == "sortOrder") {
+        if (const core::Json* v = data.Get("z")) e.zOrder = static_cast<float>(v->GetNumber());
+        return;
+    }
+    if (name == "camera") {
+        if (const core::Json* v = data.Get("fov")) e.cameraFov = static_cast<float>(v->GetNumber());
+        if (const core::Json* v = data.Get("ortho")) e.cameraOrtho = v->GetBool();
+        if (const core::Json* v = data.Get("orthoSize"))
+            e.cameraOrthoSize = static_cast<float>(v->GetNumber());
+        return;
+    }
+    if (name == "transform") {
+        if (const core::Json* v = data.Get("pos")) e.pos = Vec3From(v);
+        if (const core::Json* v = data.Get("scale")) e.scale = Vec3From(v);
+        if (const core::Json* v = data.Get("rot")) {
+            const math::Vec3 deg = Vec3From(v);
+            e.rot = math::Quat::FromEuler(deg.x * math::kDegToRad, deg.y * math::kDegToRad,
+                                          deg.z * math::kDegToRad);
+        }
+        return;
+    }
+    // Data component.
+    if (data.IsObject() && data.object_.empty())
+        e.extraComponents.erase(name);
+    else
+        e.extraComponents[name] = data;
+}
+
+// Single-field set (used by EditComponentCommand undo/redo).
+inline void SetComponentField(SceneEntity& e, const std::string& name,
+                              const std::string& fieldKey, const core::Json& v) {
+    if (name == "health") {
+        if (fieldKey == "hp") e.hp = static_cast<float>(v.GetNumber());
+        if (fieldKey == "maxHp") e.maxHp = static_cast<float>(v.GetNumber());
+        return;
+    }
+    if (name == "sortOrder") {
+        if (fieldKey == "z") e.zOrder = static_cast<float>(v.GetNumber());
+        return;
+    }
+    if (name == "camera") {
+        if (fieldKey == "fov") e.cameraFov = static_cast<float>(v.GetNumber());
+        if (fieldKey == "ortho") e.cameraOrtho = v.GetBool();
+        if (fieldKey == "orthoSize") e.cameraOrthoSize = static_cast<float>(v.GetNumber());
+        return;
+    }
+    if (name == "transform") {
+        if (fieldKey == "pos") e.pos = Vec3From(&v);
+        if (fieldKey == "scale") e.scale = Vec3From(&v);
+        if (fieldKey == "rot") {
+            const math::Vec3 deg = Vec3From(&v);
+            e.rot = math::Quat::FromEuler(deg.x * math::kDegToRad, deg.y * math::kDegToRad,
+                                          deg.z * math::kDegToRad);
+        }
+        return;
+    }
+    e.extraComponents[name].object_[fieldKey] = v;
+}
+
+// Applies a whole component JSON as an undoable edit (dedicated components
+// include removable ones — ApplyComponentJson(e, name, {}) detaches).
+class ComponentJsonCommand : public Command {
+public:
+    ComponentJsonCommand(std::vector<SceneEntity>* entities, int index, std::string name,
+                         core::Json oldData, core::Json newData)
+        : entities_(entities), index_(index), name_(std::move(name)),
+          old_(std::move(oldData)), new_(std::move(newData)) {}
+
+    void Apply() override { ApplyComponentJson((*entities_)[static_cast<size_t>(index_)], name_, new_); }
+    void Undo() override { ApplyComponentJson((*entities_)[static_cast<size_t>(index_)], name_, old_); }
+    bool Merge(const Command&) override { return false; }
+    bool IsNoop() const override { return ValuesEqual(old_, new_); }
+
+private:
+    std::vector<SceneEntity>* entities_;
+    int index_;
+    std::string name_;
+    core::Json old_;
+    core::Json new_;
 };
 
 } // namespace neon::editor

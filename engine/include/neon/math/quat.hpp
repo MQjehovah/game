@@ -51,6 +51,26 @@ struct Quat {
         return {t.x, t.y, t.z};
     }
 
+    // Euler angles (yaw/pitch/roll, radians) inverse of FromEuler. Matches the
+    // FromEuler composition R = Rz(yaw) * Ry(pitch) * Rx(roll).
+    Vec3 ToEulerRad() const {
+        Quat q = Normalized();
+        const float sqy = q.y * q.y;
+        const float sqz = q.z * q.z;
+        const float pitch = std::asin(-2.0f * (q.z * q.x - q.w * q.y));
+        if (std::fabs(pitch) < 1.5707964f) {
+            const float yaw = std::atan2(2.0f * (q.x * q.y + q.w * q.z),
+                                         1.0f - 2.0f * (sqy + sqz));
+            const float roll = std::atan2(2.0f * (q.y * q.z + q.w * q.x),
+                                          1.0f - 2.0f * (q.x * q.x + sqy));
+            return {yaw, pitch, roll};
+        }
+        // Gimbal lock (pitch = +-90 deg): zero out roll, derive yaw.
+        const float yaw = std::atan2(2.0f * (q.x * q.z - q.w * q.y),
+                                     1.0f - 2.0f * (sqy + sqz));
+        return {yaw, pitch, 0.0f};
+    }
+
     Mat4 ToMat4() const {
         Quat q = Normalized();
         float xx = q.x * q.x, yy = q.y * q.y, zz = q.z * q.z;
