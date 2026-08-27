@@ -335,11 +335,14 @@ public:
     // exactly the inverse mapping ScreenToUI uses). Lets hosts snapshot the
     // current 2D mapping without depending on the renderer's live state.
     math::Vec2 UI2DOffset() const { return {uiOffsetX_, uiOffsetY_}; }
-    // The viewport size UI layout resolves against: plain PIXELS. Modern box
-    // UI (width:"100%"/right-anchored) adapts through relative layout, not
-    // through a design-resolution scale - there is no design space.
+    // The game area's design size: the letterboxed 16:9 rect the canvas
+    // mapping projects (1280x720 under fit-within). UI layout, WorldToScreen
+    // and GetViewportSize all resolve against THIS - the game area, not the
+    // dock - so the modern box UI adapts within the 16:9 frame.
     math::Vec2 UIDesignSize() const {
-        return {sceneViewport_.w, sceneViewport_.h};
+        if (uiScale_ <= 0.0f) return {static_cast<float>(kDesignWidth),
+                                      static_cast<float>(kDesignHeight)};
+        return {sceneViewport_.w / uiScale_, sceneViewport_.h / uiScale_};
     }
     // The screen rect the 1280x720 design space currently maps to (set by
     // Set2DViewport/Set2DViewportPixels). Hosts size the 3D scene viewport

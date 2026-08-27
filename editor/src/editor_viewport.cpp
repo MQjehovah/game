@@ -141,21 +141,19 @@ void EditorApp::OnRender() {
         // (ortho 720-height) instead of the tiny preview default.
         const gfx::Camera gameCam = PlayCamera();
         {
-            // WORLD pass: the scene fills the WHOLE dock (no letterbox). The
-            // runtime's ortho camera fit-outside guarantees the 1280x720
-            // design area stays inside the view on narrow docks. The 2D
-            // mapping during this pass is pixel passthrough (world-anchored
-            // overlays only).
-            DockViewportScope dock(*this, /*designFit=*/false, /*sceneVp=*/true);
+            // THE GAME AREA = the editor's blue frame (the camera's 16:9
+            // 1280x720 view): it fits INSIDE the dock (letterbox), and the
+            // world pass AND the UI pass share this one mapping - world,
+            // HUD and input are one space, clicks line up by construction.
+            // The modern box UI adapts WITHIN this 16:9 game area.
+            DockViewportScope dock(*this, /*designFit=*/true, /*sceneVp=*/true);
             ApplySceneEnvironment();
             if (dock.Active()) {
                 play_->Draw(renderer_, gameCam, 1.0f);
                 renderer_.EndScene();
-                // UI pass: pixel passthrough - UI lives in viewport pixels +
-                // relative layout (no design-space scale). draw2d commands
-                // (HUD text/bars) use pixels directly.
-                const math::Rect2& vp = viewportScreenRect_;
-                renderer_.Set2DViewportPixels(vp.x, vp.y);
+                // G5-4-4: composite the scene, then flush the on_render HUD
+                // canvas on top (authored colors, not tone-mapped) through
+                // the SAME mapping.
                 play_->FlushCanvas(renderer_);
             } else {
                 // No viewport rect yet (first frame): full-window fallback.
@@ -165,15 +163,12 @@ void EditorApp::OnRender() {
             }
         }
     } else {
-        // 3D (edit or play): the scene FILLS the whole dock content area -
-        // no 16:9 letterbox. The camera aspect is the dock's real aspect and
-        // the 2D overlay runs in pixel-passthrough (Set2DViewportPixels), so
-        // world-anchored billboards project through the exact same rect.
-        // (The 2D branch above is the opposite policy: the fixed 1280x720
-        // design space always fits INSIDE the dock, letterboxed - a 2D game
-        // must show its whole canvas. Both policies derive from the same
-        // viewportScreenRect_ source of truth via DockViewportScope.)
-        DockViewportScope dock(*this, /*designFit=*/false, /*sceneVp=*/true);
+        // Play (2D or 3D): THE GAME AREA = the scene camera's 16:9 view,
+        // letterboxed inside the dock - what you preview is what you get.
+        // Edit 3D: the scene FILLS the whole dock (free orbit, dock aspect).
+        // Edit 2D: the canvas mapping (the blue 1280x720 frame inside).
+        const bool gameArea = playActive_ || editMode_ == EditMode::Scene2D;
+        DockViewportScope dock(*this, /*designFit=*/gameArea, /*sceneVp=*/true);
         // Day sky + scene lights: shared with the 2D play so edit and
         // Play render the same environment (see ApplySceneEnvironment).
         ApplySceneEnvironment();
@@ -374,7 +369,7 @@ void EditorApp::OnRender() {
     // the same 1280x720 canvas, so it always runs through the same
     // design-fit mapping - no full-window or pixel-passthrough side paths.
     if (playActive_ && play_) {
-        DockViewportScope dock(*this, /*designFit=*/false, /*sceneVp=*/false);
+        DockViewportScope dock(*this, /*designFit=*/true, /*sceneVp=*/false);
         // The 2D play branch already flushed its canvas inside its own scope
         // (same mapping); flushing twice would double every HUD element.
         if (projectMode_ != "2d") play_->FlushCanvas(renderer_);
@@ -728,8 +723,11 @@ void EditorApp::DrawSceneGizmos() {
     if (playActive_) return; // gizmos are an edit-mode planning aid
     // Draw through ImGui (inside the frame) using the SAME view/projection/rect
     // as the transform gizmo, so the frusta/icons line up with the gizmo.
+    // The camera FRUSTUM preview uses the PLAY aspect (16:9 game area): what
+    // the gizmo shows is exactly what running the game will frame.
     const gfx::Camera cam = ActiveCamera();
-    const float aspect = ViewportAspect();
+    const float aspect = static_cast<float>(gfx::Renderer::kDesignWidth) /
+                         static_cast<float>(gfx::Renderer::kDesignHeight);
     const math::Mat4 view = cam.View();
     const math::Mat4 proj = cam.Projection(aspect);
     const math::Rect2 vp = SceneRect();

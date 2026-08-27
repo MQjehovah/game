@@ -2252,8 +2252,8 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera,
     lastCamValid_ = true;
     lastAspect_ = drawAspect;
     const math::Rect2& sceneVp = renderer.SceneViewport();
-    lastVpW_ = sceneVp.w > 0.0f ? sceneVp.w : 1280.0f;
-    lastVpH_ = sceneVp.h > 0.0f ? sceneVp.h : 720.0f;
+    lastVpW_ = sceneVp.w > 0.0f ? renderer.UIDesignSize().x : 1280.0f;
+    lastVpH_ = sceneVp.h > 0.0f ? renderer.UIDesignSize().y : 720.0f;
     // Project at the ACTIVE scene viewport's aspect (a dock sub-rect in the
     // editor, the full target in the standalone player) so the runtime render
     // matches whatever rasterization rect the host set up - otherwise the
