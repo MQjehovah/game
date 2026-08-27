@@ -190,6 +190,7 @@ function on_update(e, dt)
   for i, type in ipairs(ORDER) do
     local cd = cooldowns[type] or 0
     local frac = clamp(cd / PLANTS[type].cd, 0, 1)
+    UISetVisible("cd" .. i, frac > 0.01)
     UISetFill("cd" .. i, frac)
     local afford = sunNow >= PLANTS[type].cost
     local pr, pg, pb = 1, 0.95, 0.3
