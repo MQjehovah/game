@@ -34,6 +34,7 @@ function on_update(e, dt)
       local s = GetVar("sun")
       if type(s) ~= "number" then s = 0 end
       SetVar("sun", s + st.value)
+      SpawnFloatText({ x = pos.x, y = pos.y + 20, z = pos.z }, "+" .. st.value, false, 0.9)
       timers[e.id] = nil
       PlaySfx("sun")
       Despawn(e)

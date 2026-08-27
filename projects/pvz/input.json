@@ -8,6 +8,7 @@
     "plant_cherrybomb": ["6"],
     "shovel": ["S"],
     "pause": ["P"],
-    "restart": ["R"]
+    "restart": ["R"],
+    "cancel": ["escape"]
   }
 }

@@ -4,6 +4,8 @@
 local ROWS, COLS = 5, 9
 local X0, Y0, CELL_X, CELL_Y = 140, 110, 100, 100
 
+local function clamp(v, lo, hi) return math.max(lo, math.min(hi, v)) end
+
 local function rowY(row) return Y0 + row * CELL_Y end
 local function colX(col) return X0 + col * CELL_X end
 
@@ -80,6 +82,8 @@ function on_start()
   SetVar("started", false)
   SetVar("wave", 0)
   SetVar("paused", false)
+  SetVar("wave_progress", 0)
+  SetVar("wave_banner", 0)
   lastWave = 0
   waveTimer = 0
   started = false
@@ -130,6 +134,12 @@ function on_update(e, dt)
     SetVar("selected", "shovel")
     PlaySfx("click")
   end
+  -- 取消选择: 右键 或 ESC。
+  if InputMousePressed("right") or ActionPressed("cancel") then
+    selected = nil
+    SetVar("selected", nil)
+    PlaySfx("click")
+  end
 
   -- Pause toggle (P).
   if ActionPressed("pause") then
@@ -170,12 +180,22 @@ function on_update(e, dt)
 
   -- 波次(自包含, 不依赖插件, 打包可玩): 每 WAVE_INTERVAL 秒推一波,
   -- 波数递增并混合更硬的僵尸; 坚持到 MAX_WAVES 且清光全场即胜。
+  -- 波次横幅倒计时 (HUD 显示)。
+  local banner = GetVar("wave_banner")
+  if type(banner) == "number" and banner > 0 then SetVar("wave_banner", banner - dt) end
+
   if started then
     waveTimer = waveTimer + dt
+    if lastWave >= MAX_WAVES then
+      SetVar("wave_progress", 1)
+    else
+      SetVar("wave_progress", clamp(waveTimer / WAVE_INTERVAL, 0, 1))
+    end
     if waveTimer >= WAVE_INTERVAL and lastWave < MAX_WAVES then
       waveTimer = 0
       lastWave = lastWave + 1
       SetVar("wave", lastWave)
+      SetVar("wave_banner", 2.0)
       PlaySfx("wave")
       print("wave " .. lastWave .. " spawned " .. (2 + lastWave) .. " zombies")
       local count = 2 + lastWave

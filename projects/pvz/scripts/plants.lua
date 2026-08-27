@@ -12,6 +12,9 @@ function on_start(e)
   local p = EntityComponent(e, "plant")
   if not p then return end
   local pos = GetPosition(e)
+  -- 种植弹入: 从小放大 (缓出动画)。
+  SetScale(e, 22, 25, 1)
+  Tween(e, 2, { x = 22, y = 25, z = 1 }, { x = 60, y = 68, z = 1 }, 0.22, 2)
   -- 行号统一取整: 组件里的 row 是浮点(3.0), rowOf 返回整数(3), 键必须一致。
   local row = math.floor((p.row ~= nil and p.row) or rowOf(pos.y))
   local list = GetVar("row_plants_" .. row)

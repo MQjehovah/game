@@ -1,8 +1,11 @@
-{"format":"neon-ui","version":1,"root":{"type":"panel","name":"root","rect":[0,0,1280,720],"color":[0,0,0,0],"border":[0,0,0,0],"visible":true,"clip":true,"fill":0,"fontSize":16,"text":"","sprite":"","children":[
-  {"type":"panel","name":"Menu","rect":[390,150,500,420],"color":[0.08,0.12,0.2,0.95],"border":[0.35,0.65,1,0.8],"visible":true,"clip":true,"fill":0,"fontSize":16,"text":"","sprite":"","children":[
-    {"type":"label","name":"Title","rect":[0,28,500,60],"color":[1,0.95,0.25,1],"border":[0,0,0,0],"visible":true,"clip":true,"fill":0,"fontSize":40,"text":"植物大战僵尸","sprite":""},
-    {"type":"label","name":"Subtitle","rect":[0,96,500,30],"color":[0.8,0.85,1,0.85],"border":[0,0,0,0],"visible":true,"clip":true,"fill":0,"fontSize":16,"text":"实体+组件 · Prefab · 双语言脚本 · 插件","sprite":""},
-    {"type":"button","name":"Start","rect":[160,180,180,52],"color":[0.25,0.6,0.35,1],"border":[0.5,1,0.6,0.8],"visible":true,"clip":true,"fill":0,"fontSize":22,"text":"开始游戏","sprite":""},
-    {"type":"button","name":"Quit","rect":[160,250,180,44],"color":[0.4,0.25,0.25,1],"border":[1,0.5,0.5,0.7],"visible":true,"clip":true,"fill":0,"fontSize":18,"text":"退出","sprite":""}
+{"format":"neon-ui","version":1,"root":{"type":"panel","name":"root","rect":[0,0,1280,720],"color":[0.02,0.04,0.08,0.55],"border":[0,0,0,0],"visible":true,"clip":true,"fill":0,"fontSize":16,"text":"","sprite":"","children":[
+  {"type":"panel","name":"TitleBar","rect":[360,110,560,92],"color":[0.05,0.10,0.16,0.88],"border":[0.35,0.65,1,0.6],"visible":true,"clip":true,"fill":0,"fontSize":16,"text":"","sprite":"","children":[
+    {"type":"label","name":"Title","rect":[0,8,560,66],"color":[1,0.95,0.3,1],"border":[0,0,0,0],"visible":true,"clip":true,"fill":0,"fontSize":48,"text":"植物大战僵尸","sprite":""}
+  ]},
+  {"type":"panel","name":"Menu","rect":[390,220,500,360],"color":[0.08,0.12,0.20,0.95],"border":[0.35,0.65,1,0.8],"visible":true,"clip":true,"fill":0,"fontSize":16,"text":"","sprite":"","children":[
+    {"type":"label","name":"Subtitle","rect":[0,24,500,30],"color":[0.8,0.85,1,0.85],"border":[0,0,0,0],"visible":true,"clip":true,"fill":0,"fontSize":16,"text":"NeonEngine 示例 · 实体 + 组件 · 数据驱动","sprite":""},
+    {"type":"button","name":"Start","rect":[150,90,200,56],"color":[0.25,0.6,0.35,1],"border":[0.5,1,0.6,0.9],"visible":true,"clip":true,"fill":0,"fontSize":24,"text":"开始游戏","sprite":""},
+    {"type":"button","name":"Quit","rect":[150,168,200,48],"color":[0.4,0.22,0.22,1],"border":[1,0.5,0.5,0.8],"visible":true,"clip":true,"fill":0,"fontSize":20,"text":"退出","sprite":""},
+    {"type":"label","name":"Hint","rect":[0,258,500,40],"color":[0.7,0.8,1,0.7],"border":[0,0,0,0],"visible":true,"clip":true,"fill":0,"fontSize":14,"text":"种植 1-6 · 铲子 S · 暂停 P · 重开 R · ESC/右键取消","sprite":""}
   ]}
 ]}}
