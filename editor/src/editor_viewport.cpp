@@ -165,17 +165,7 @@ void EditorApp::OnRender() {
 
         const float aspect = ViewportAspect();
         cam = ActiveCamera();
-        // G5-4-4: a 2D-mode ortho camera (Front view) must project the fixed
-        // 1280x720 design space, NOT the viewport aspect — otherwise the camera
-        // frame / world layer diverges from the 2D HUD whenever the dock isn't
-        // 16:9 (the "visible area ratio != camera frame ratio" mismatch). 3D
-        // ortho tool views (Top/Front in a 3D scene) keep the viewport aspect.
-        const bool designOrtho =
-            cam.ortho && (editMode_ == EditMode::Scene2D || projectMode_ == "2d");
-        renderer_.SetCamera(cam, designOrtho
-                                      ? static_cast<float>(gfx::Renderer::kDesignWidth) /
-                                            static_cast<float>(gfx::Renderer::kDesignHeight)
-                                      : aspect);
+        renderer_.SetCamera(cam, aspect);
         // SetCamera's shadow pass restores the scene viewport itself (see
         // Renderer::SetCamera); DockViewportScope set it before, so nothing
         // to re-apply here.

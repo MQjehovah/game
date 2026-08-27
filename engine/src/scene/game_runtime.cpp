@@ -2204,17 +2204,7 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera,
     // editor, the full target in the standalone player) so the runtime render
     // matches whatever rasterization rect the host set up - otherwise the
     // playtest FOV would differ from the edit-mode viewport.
-    //
-    // G5-4-4: an ORTHO camera must project the FIXED 1280x720 design space
-    // (not the viewport aspect) so the 3D/world layer and the 2D canvas HUD
-    // always share one framing. Using the viewport aspect would widen the
-    // frustum whenever the dock isn't 16:9, making the world render narrower
-    // than the HUD (the "two layers / need to zoom" mismatch).
-    const float camAspect =
-        cam.ortho ? static_cast<float>(gfx::Renderer::kDesignWidth) /
-                        static_cast<float>(gfx::Renderer::kDesignHeight)
-                  : renderer.SceneAspect();
-    renderer.SetCamera(cam, camAspect);
+    renderer.SetCamera(cam, renderer.SceneAspect());
     // Data-driven scene environment: apply the scene's DirectionalLight +
     // AmbientLight objects (Unity-style) so every host renders the same scene
     // the same way (the editor's playtest and the standalone player both go

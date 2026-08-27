@@ -2259,15 +2259,12 @@ void Renderer::Set2DViewport(float x, float y, float w, float h, float zoom,
         Reset2DViewport();
         return;
     }
-    // G5-4-4: fit the whole 1280x720 design WITHIN the rect (letterbox both
-    // axes), so the full design is always visible regardless of the dock
-    // aspect — no zooming needed to see it all. The ortho camera projects the
-    // same fixed 16:9 design space (see GameRuntime::Draw / the editor 2D
-    // camera), so the sprite/world layer and the 2D UI/HUD stay on ONE
-    // projection even when the panel isn't 16:9. fit-by-height alone would
-    // clip the design's sides in a tall dock (the "need to zoom" complaint).
-    const float fitScale = std::fmin(w / static_cast<float>(kDesignWidth),
-                                     h / static_cast<float>(kDesignHeight));
+    // Match the 2D orthographic sprite camera: it maps the design height to
+    // the panel height (1 design unit = h/720 px at the default orthoSize=360),
+    // so the sprite/world layer and the 2D UI/HUD stay on ONE projection even
+    // when the panel aspect isn't 16:9. fit-by-height keeps sprites + UI on
+    // one projection.
+    const float fitScale = h / static_cast<float>(kDesignHeight);
     uiScale_ = fitScale * zoom;
     // The design point (640 + pan, 360 + pan) sits at the viewport rect center.
     const float designCx = static_cast<float>(kDesignWidth) * 0.5f + pan.x;
