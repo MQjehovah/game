@@ -584,3 +584,51 @@ TEST(SceneFromWorldRoundTrip) {
     }
     CHECK(sawIds);
 }
+
+// G5-4: hierarchy is ENTITY-LEVEL (parentId beside id/name, not in the
+// transform component). The new format round-trips through Instantiate ->
+// SceneParentLink -> FromWorld (top-level parentId) -> re-Instantiate with the
+// parent link intact.
+TEST(SceneEntityLevelHierarchyRoundTrip) {
+    const char* json = R"({"entities":[
+      {"name":"Root","id":1,"components":{"transform":{"pos":[0,0,0]}}},
+      {"name":"Child","id":2,"parentId":1,
+       "components":{"transform":{"pos":[5,0,0]}}},
+      {"name":"Grand","id":3,"parentId":2,
+       "components":{"transform":{"pos":[10,0,0]}}}
+    ]})";
+    auto parsed = scene::SceneFile::Parse(json);
+    CHECK(parsed.Ok());
+    if (!parsed.Ok()) return;
+
+    scene::ComponentRegistry reg;
+    scene::RegisterBuiltinComponents(reg);
+    ecs::World w1;
+    scene::PrefabLibrary prefs;
+    CHECK(scene::Instantiate(w1, parsed.Value(), prefs, reg).Ok());
+    // Parent links resolved from the entity-level parentId.
+    CHECK_EQ(w1.ViewAll<scene::SceneParentLink>().Size(), 2u);
+    CHECK_EQ(w1.ViewAll<scene::SceneTransform>().Size(), 3u);
+
+    // FromWorld emits parentId at the TOP level (derived from SceneParentLink).
+    auto out = scene::SceneFile::FromWorld(w1);
+    CHECK(out.Ok());
+    if (!out.Ok()) return;
+    const core::Json* outText = out.Value().Get("entities");
+    bool sawTopLevelParent = false;
+    for (const core::Json& e : outText->Items()) {
+        if (e.Get("parentId") && e.Get("parentId")->GetNumber() == 1.0) sawTopLevelParent = true;
+        // No parentId inside the transform component.
+        if (const core::Json* comps = e.Get("components"))
+            if (comps->Get("transform") && comps->Get("transform")->Get("parentId"))
+                sawTopLevelParent = false;
+    }
+    CHECK(sawTopLevelParent);
+
+    // Re-parse + re-instantiate: the parent chain survives.
+    auto reparsed = scene::SceneFile::Parse(core::JsonWriter::Write(out.Value()));
+    CHECK(reparsed.Ok());
+    ecs::World w2;
+    CHECK(scene::Instantiate(w2, reparsed.Value(), prefs, reg).Ok());
+    CHECK_EQ(w2.ViewAll<scene::SceneParentLink>().Size(), 2u);
+}
