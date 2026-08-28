@@ -348,6 +348,12 @@ void EditorApp::OnRender() {
             }
         }
 
+        // Edit mode: the camera-frame preview (2D: the flat z=0 view rect -
+        // exactly the play game area; 3D front/top: the ortho view rect).
+        if (!playActive_ && (projectMode_ == "2d" || editMode_ == EditMode::Scene2D ||
+                             viewCam_ != ViewCam::Perspective))
+            DrawCameraFrame();
+
         // G8-3: debug overlay layers (nav walkable area, light probes, audio).
         // Drawn while the scene viewport is STILL active so screen-space lines
         // (DrawLines) rasterise inside the dock rect and line up with the ImGui
@@ -768,6 +774,10 @@ void EditorApp::DrawSceneGizmos() {
         const math::Mat4 model =
             math::Mat4::Translation(e.pos) * e.rot.ToMat4() * math::Mat4::Scale(e.scale);
         if (e.nodeType == "Camera3D") {
+            // 2D edit shows the flat camera-frame rect instead (see
+            // DrawCameraFrame) - the 3D frustum box's depth lines are noise
+            // on a flat canvas.
+            if (projectMode_ == "2d" || editMode_ == EditMode::Scene2D) continue;
             const float dAspect = static_cast<float>(gfx::Renderer::kDesignWidth) /
                                   static_cast<float>(gfx::Renderer::kDesignHeight);
             const float nearP = 0.1f, farP = 60.0f;
