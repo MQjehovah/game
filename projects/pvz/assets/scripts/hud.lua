@@ -6,7 +6,8 @@
 -- ScreenToWorld, 不再做任何 720-y 之类的手动设计空间翻转。
 
 local ROWS, COLS = 5, 9
-local X0, Y0, CELL_X, CELL_Y = 140, 110, 100, 100
+-- 与 game.lua 同一套网格 (世界 y 向上): 屏幕顶行(row0) 世界 y = 720-134 = 586。
+local X0, Y0, CELL_X, CELL_Y = 140, 134, 100, 125
 
 local PLANTS = {
   { type = "sunflower",  name = "向日葵",   cost = 50,  icon = "sunflower.png" },
@@ -18,7 +19,7 @@ local PLANTS = {
 }
 
 local function clamp(v, lo, hi) return math.max(lo, math.min(hi, v)) end
-local function rowY(row) return Y0 + row * CELL_Y end
+local function rowY(row) return 720 - Y0 - row * CELL_Y end
 local function colX(col) return X0 + col * CELL_X end
 
 local function plantInfo(type)
@@ -55,16 +56,16 @@ local function hoverCell()
   local w = ScreenToWorld(m)
   if not w then return nil end
   local col = math.floor((w.x - X0 + CELL_X * 0.5) / CELL_X)
-  local row = math.floor((w.y - Y0 + CELL_Y * 0.5) / CELL_Y)
+  local row = math.floor((720 - Y0 - w.y + CELL_Y * 0.5) / CELL_Y)
   if col >= 0 and col < COLS and row >= 0 and row < ROWS then return col, row end
   return nil
 end
 
--- 格子的两个屏幕角点(像素): a=左上(世界 -50), b=右下(世界 +50)。
+-- 格子的两个屏幕角点(像素): a=左上, b=右下 (格子 100x125, 世界半格 ±50/±62.5)。
 local function cellCorners(col, row)
   local cx, cy = colX(col), rowY(row)
-  local a = WorldToScreen({ x = cx - 50, y = cy - 50, z = 0 })
-  local b = WorldToScreen({ x = cx + 50, y = cy + 50, z = 0 })
+  local a = WorldToScreen({ x = cx - 50, y = cy - CELL_Y * 0.5, z = 0 })
+  local b = WorldToScreen({ x = cx + 50, y = cy + CELL_Y * 0.5, z = 0 })
   if not (a and a.x and b and b.x) then return nil end
   return a, b
 end

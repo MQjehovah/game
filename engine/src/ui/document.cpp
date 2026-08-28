@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <fstream>
+#include <set>
 #include <sstream>
 
 #include "neon/core/log.hpp"
@@ -374,18 +375,36 @@ void UiDocument::Draw(gfx::Renderer& renderer, const gfx::Font& font,
     auto drawBackground = [&](const UiNode& n, const math::Rect2& clip) {
         if (loadTexture && !n.sprite.empty()) {
             gfx::Texture tex = loadTexture(n.sprite);
+            if (!tex.Valid()) {
+                // One WARN per missing sprite path: a flat-color card where the
+                // design expects art is silent otherwise.
+                static std::set<std::string> warned;
+                if (warned.insert(n.sprite).second)
+                    NEON_LOG_WARN("ui: sprite '%s' failed to load (flat color fallback)",
+                                  n.sprite.c_str());
+            }
             if (tex.Valid()) {
+                // UV convention: textures upload with the image's TOP row first
+                // (v=0), and the UI draw quad maps uv0 to the node's top-left
+                // corner, so v runs DOWNWARD. DrawQuad's DEFAULT uv0={0,1}
+                // assumes the opposite (GL bottom-up) which rendered every UI
+                // image upside down; pass explicit downward-v UVs here.
+                // ComputeNineSlice above emits GL-style v (v=1 at the top), so
+                // its quads are re-mapped to match.
                 if (n.slice > 0.0f) {
                     NineSliceQuad quads[9];
                     if (ComputeNineSlice(clip, n.slice, static_cast<float>(tex.Width()),
                                          static_cast<float>(tex.Height()), quads)) {
                         for (const NineSliceQuad& q : quads)
                             renderer.DrawQuad({q.dest.x, q.dest.y}, {q.dest.w, q.dest.h},
-                                              n.color, tex.Handle(), q.uv0, q.uv1);
+                                              n.color, tex.Handle(),
+                                              {q.uv0.x, 1.0f - q.uv1.y},
+                                              {q.uv1.x, 1.0f - q.uv0.y});
                         return;
                     }
                 }
-                renderer.DrawQuad({clip.x, clip.y}, {clip.w, clip.h}, n.color, tex.Handle());
+                renderer.DrawQuad({clip.x, clip.y}, {clip.w, clip.h}, n.color, tex.Handle(),
+                                  {0.0f, 0.0f}, {1.0f, 1.0f});
                 return;
             }
         }

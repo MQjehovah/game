@@ -2559,8 +2559,11 @@ void GameRuntime::FlushDraw2D(gfx::Renderer& renderer) {
     for (const script::Draw2DCmd& c : draw2d_) {
         switch (c.kind) {
             case script::Draw2DCmd::Kind::Rect:
+                // Textured quads use downward-v UVs (top row = v0): DrawQuad's
+                // DEFAULT is the GL bottom-up convention, which drew every
+                // script-canvas DrawSprite upside down.
                 renderer.DrawQuad({c.x, c.y}, {c.w, c.h}, {c.r, c.g, c.b, c.a},
-                                  c.texture);
+                                  c.texture, {0.0f, 0.0f}, {1.0f, 1.0f});
                 break;
             case script::Draw2DCmd::Kind::RectOutline:
                 renderer.DrawRectOutline({c.x, c.y, c.w, c.h}, c.thickness,

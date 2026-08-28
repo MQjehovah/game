@@ -3,7 +3,7 @@
 -- 实体自行登记到 row_plants_<row> 注册表, 供僵尸索敌与豌豆命中判定。
 
 local function rowOf(y)
-  return math.max(0, math.min(4, math.floor((y - 110 + 50) / 100)))
+  return math.max(0, math.min(4, math.floor((586 - y + 62.5) / 125)))
 end
 
 local timers = {}
@@ -14,7 +14,7 @@ function on_start(e)
   local pos = GetPosition(e)
   -- 种植弹入: 从小放大 (缓出动画)。目标尺寸按原版比例约占格 0.8-0.9。
   SetScale(e, 28, 34, 1)
-  Tween(e, 2, { x = 28, y = 34, z = 1 }, { x = 80, y = 92, z = 1 }, 0.22, 2)
+  Tween(e, 2, { x = 28, y = 34, z = 1 }, { x = 92, y = 92, z = 1 }, 0.22, 2)
   -- 行号统一取整: 组件里的 row 是浮点(3.0), rowOf 返回整数(3), 键必须一致。
   local row = math.floor((p.row ~= nil and p.row) or rowOf(pos.y))
   local list = GetVar("row_plants_" .. row)
@@ -108,7 +108,7 @@ function on_update(e, dt)
         PlaySfx("explosion")
         -- 爆炸动画: 切 Boom spritesheet (13 帧 @ 14fps ≈ 0.93s), 等比放大后消失。
         SetSpriteSheet(e, "assets/sprites/cherryboom.sheet.png", 13, 14)
-        SetScale(e, 200, 184, 1)
+        SetScale(e, 216, 200, 1)
         timers[boomKey] = 0
       end
       local bt = timers[boomKey] + dt

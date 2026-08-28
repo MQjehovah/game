@@ -1,7 +1,7 @@
 -- 豌豆实体 (prefab 动态生成): 向右飞行(僵尸从右进攻), 命中同行僵尸后结算伤害/减速。
 
 local function rowOf(y)
-  return math.max(0, math.min(4, math.floor((y - 110 + 50) / 100)))
+  return math.max(0, math.min(4, math.floor((586 - y + 62.5) / 125)))
 end
 
 function on_start(e)

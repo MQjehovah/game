@@ -28,56 +28,24 @@
                                                            "children":  [
                                                                             {
                                                                                 "border":  [
-                                                                                               0.35,
-                                                                                               0.65,
-                                                                                               1,
-                                                                                               0.6
+                                                                                               0,
+                                                                                               0,
+                                                                                               0,
+                                                                                               0
                                                                                            ],
                                                                                 "children":  [
-                                                                                                 {
-                                                                                                     "border":  [
-                                                                                                                    0.25,
-                                                                                                                    0.55,
-                                                                                                                    1,
-                                                                                                                    1
-                                                                                                                ],
-                                                                                                     "clip":  true,
-                                                                                                     "color":  [
-                                                                                                                   1,
-                                                                                                                   1,
-                                                                                                                   1,
-                                                                                                                   1
-                                                                                                               ],
-                                                                                                     "fill":  0,
-                                                                                                     "fontSize":  16,
-                                                                                                     "height":  34,
-                                                                                                     "left":  3,
-                                                                                                     "name":  "SunIcon",
-                                                                                                     "rect":  [
-                                                                                                                  240,
-                                                                                                                  112,
-                                                                                                                  8,
-                                                                                                                  8
-                                                                                                              ],
-                                                                                                     "slice":  0,
-                                                                                                     "sprite":  "assets/sprites/sun.png",
-                                                                                                     "text":  "",
-                                                                                                     "top":  3,
-                                                                                                     "type":  "image",
-                                                                                                     "visible":  true,
-                                                                                                     "width":  34
-                                                                                                 }
+
                                                                                              ],
                                                                                 "clip":  true,
                                                                                 "color":  [
-                                                                                              0.1,
-                                                                                              0.13,
-                                                                                              0.18,
-                                                                                              0.9
+                                                                                              0,
+                                                                                              0,
+                                                                                              0,
+                                                                                              0
                                                                                           ],
                                                                                 "fill":  0,
                                                                                 "fontSize":  16,
-                                                                                "height":  40,
+                                                                                "height":  76,
                                                                                 "name":  "SunPlate",
                                                                                 "rect":  [
                                                                                              0,
@@ -90,7 +58,7 @@
                                                                                 "text":  "",
                                                                                 "type":  "panel",
                                                                                 "visible":  true,
-                                                                                "width":  40
+                                                                                "width":  48
                                                                             },
                                                                             {
                                                                                 "border":  [
@@ -102,13 +70,13 @@
                                                                                 "clip":  true,
                                                                                 "color":  [
                                                                                               1,
-                                                                                              0.95,
-                                                                                              0.3,
+                                                                                              0.96,
+                                                                                              0.5,
                                                                                               1
                                                                                           ],
                                                                                 "fill":  0,
-                                                                                "fontSize":  22,
-                                                                                "height":  40,
+                                                                                "fontSize":  15,
+                                                                                "height":  16,
                                                                                 "name":  "SunText",
                                                                                 "rect":  [
                                                                                              40,
@@ -121,7 +89,9 @@
                                                                                 "text":  "150",
                                                                                 "type":  "label",
                                                                                 "visible":  true,
-                                                                                "width":  56
+                                                                                "width":  64,
+                                                                                "top":  72,
+                                                                                "left":  16
                                                                             }
                                                                         ],
                                                            "clip":  true,
@@ -133,7 +103,7 @@
                                                                      ],
                                                            "fill":  0,
                                                            "fontSize":  16,
-                                                           "gap":  4,
+                                                           "gap":  2,
                                                            "height":  "auto",
                                                            "name":  "SunGroup",
                                                            "rect":  [
@@ -147,7 +117,9 @@
                                                            "text":  "",
                                                            "type":  "row",
                                                            "visible":  true,
-                                                           "width":  "auto"
+                                                           "width":  "auto",
+                                                           "left":  6,
+                                                           "top":  4
                                                        },
                                                        {
                                                            "align":  "center",
@@ -160,10 +132,10 @@
                                                            "children":  [
                                                                             {
                                                                                 "border":  [
-                                                                                               1,
-                                                                                               0.95,
-                                                                                               0.3,
-                                                                                               0.55
+                                                                                               0.32,
+                                                                                               0.2,
+                                                                                               0.07,
+                                                                                               1
                                                                                            ],
                                                                                 "children":  [
                                                                                                  {
@@ -248,8 +220,8 @@
                                                                                                                ],
                                                                                                      "fill":  0,
                                                                                                      "fontSize":  16,
-                                                                                                     "height":  34,
-                                                                                                     "left":  4,
+                                                                                                     "height":  44,
+                                                                                                     "left":  5,
                                                                                                      "name":  "i1",
                                                                                                      "rect":  [
                                                                                                                   0,
@@ -260,10 +232,10 @@
                                                                                                      "slice":  0,
                                                                                                      "sprite":  "assets/sprites/sunflower.png",
                                                                                                      "text":  "",
-                                                                                                     "top":  5,
+                                                                                                     "top":  8,
                                                                                                      "type":  "image",
-                                                                                                     "visible":  false,
-                                                                                                     "width":  34
+                                                                                                     "visible":  true,
+                                                                                                     "width":  44
                                                                                                  },
                                                                                                  {
                                                                                                      "border":  [
@@ -275,12 +247,12 @@
                                                                                                      "clip":  true,
                                                                                                      "color":  [
                                                                                                                    1,
-                                                                                                                   0.95,
-                                                                                                                   0.3,
+                                                                                                                   1,
+                                                                                                                   1,
                                                                                                                    1
                                                                                                                ],
                                                                                                      "fill":  0,
-                                                                                                     "fontSize":  13,
+                                                                                                     "fontSize":  14,
                                                                                                      "height":  16,
                                                                                                      "left":  0,
                                                                                                      "name":  "p1",
@@ -293,22 +265,22 @@
                                                                                                      "slice":  0,
                                                                                                      "sprite":  "",
                                                                                                      "text":  "50",
-                                                                                                     "top":  54,
+                                                                                                     "top":  58,
                                                                                                      "type":  "label",
                                                                                                      "visible":  true,
-                                                                                                     "width":  52
+                                                                                                     "width":  54
                                                                                                  }
                                                                                              ],
                                                                                 "clip":  true,
                                                                                 "color":  [
-                                                                                              0.14,
-                                                                                              0.2,
-                                                                                              0.28,
-                                                                                              0.95
+                                                                                              1,
+                                                                                              1,
+                                                                                              1,
+                                                                                              1
                                                                                           ],
                                                                                 "fill":  0,
                                                                                 "fontSize":  16,
-                                                                                "height":  72,
+                                                                                "height":  76,
                                                                                 "name":  "card1",
                                                                                 "rect":  [
                                                                                              0,
@@ -317,18 +289,18 @@
                                                                                              0
                                                                                          ],
                                                                                 "slice":  0,
-                                                                                "sprite":  "assets/sprites/card1.png",
+                                                                                "sprite":  "assets/sprites/panel_bg.png",
                                                                                 "text":  "",
                                                                                 "type":  "button",
                                                                                 "visible":  true,
-                                                                                "width":  52
+                                                                                "width":  54
                                                                             },
                                                                             {
                                                                                 "border":  [
-                                                                                               0.35,
-                                                                                               0.9,
-                                                                                               0.35,
-                                                                                               0.55
+                                                                                               0.32,
+                                                                                               0.2,
+                                                                                               0.07,
+                                                                                               1
                                                                                            ],
                                                                                 "children":  [
                                                                                                  {
@@ -413,8 +385,8 @@
                                                                                                                ],
                                                                                                      "fill":  0,
                                                                                                      "fontSize":  16,
-                                                                                                     "height":  34,
-                                                                                                     "left":  4,
+                                                                                                     "height":  44,
+                                                                                                     "left":  5,
                                                                                                      "name":  "i2",
                                                                                                      "rect":  [
                                                                                                                   0,
@@ -425,10 +397,10 @@
                                                                                                      "slice":  0,
                                                                                                      "sprite":  "assets/sprites/peashooter.png",
                                                                                                      "text":  "",
-                                                                                                     "top":  5,
+                                                                                                     "top":  8,
                                                                                                      "type":  "image",
-                                                                                                     "visible":  false,
-                                                                                                     "width":  34
+                                                                                                     "visible":  true,
+                                                                                                     "width":  44
                                                                                                  },
                                                                                                  {
                                                                                                      "border":  [
@@ -440,12 +412,12 @@
                                                                                                      "clip":  true,
                                                                                                      "color":  [
                                                                                                                    1,
-                                                                                                                   0.95,
-                                                                                                                   0.3,
+                                                                                                                   1,
+                                                                                                                   1,
                                                                                                                    1
                                                                                                                ],
                                                                                                      "fill":  0,
-                                                                                                     "fontSize":  13,
+                                                                                                     "fontSize":  14,
                                                                                                      "height":  16,
                                                                                                      "left":  0,
                                                                                                      "name":  "p2",
@@ -458,22 +430,22 @@
                                                                                                      "slice":  0,
                                                                                                      "sprite":  "",
                                                                                                      "text":  "100",
-                                                                                                     "top":  54,
+                                                                                                     "top":  58,
                                                                                                      "type":  "label",
                                                                                                      "visible":  true,
-                                                                                                     "width":  52
+                                                                                                     "width":  54
                                                                                                  }
                                                                                              ],
                                                                                 "clip":  true,
                                                                                 "color":  [
-                                                                                              0.14,
-                                                                                              0.2,
-                                                                                              0.28,
-                                                                                              0.95
+                                                                                              1,
+                                                                                              1,
+                                                                                              1,
+                                                                                              1
                                                                                           ],
                                                                                 "fill":  0,
                                                                                 "fontSize":  16,
-                                                                                "height":  72,
+                                                                                "height":  76,
                                                                                 "name":  "card2",
                                                                                 "rect":  [
                                                                                              0,
@@ -482,18 +454,18 @@
                                                                                              0
                                                                                          ],
                                                                                 "slice":  0,
-                                                                                "sprite":  "assets/sprites/card2.png",
+                                                                                "sprite":  "assets/sprites/panel_bg.png",
                                                                                 "text":  "",
                                                                                 "type":  "button",
                                                                                 "visible":  true,
-                                                                                "width":  52
+                                                                                "width":  54
                                                                             },
                                                                             {
                                                                                 "border":  [
-                                                                                               0.35,
-                                                                                               0.8,
-                                                                                               1,
-                                                                                               0.55
+                                                                                               0.32,
+                                                                                               0.2,
+                                                                                               0.07,
+                                                                                               1
                                                                                            ],
                                                                                 "children":  [
                                                                                                  {
@@ -578,8 +550,8 @@
                                                                                                                ],
                                                                                                      "fill":  0,
                                                                                                      "fontSize":  16,
-                                                                                                     "height":  34,
-                                                                                                     "left":  4,
+                                                                                                     "height":  44,
+                                                                                                     "left":  5,
                                                                                                      "name":  "i3",
                                                                                                      "rect":  [
                                                                                                                   0,
@@ -590,10 +562,10 @@
                                                                                                      "slice":  0,
                                                                                                      "sprite":  "assets/sprites/snowpea.png",
                                                                                                      "text":  "",
-                                                                                                     "top":  5,
+                                                                                                     "top":  8,
                                                                                                      "type":  "image",
-                                                                                                     "visible":  false,
-                                                                                                     "width":  34
+                                                                                                     "visible":  true,
+                                                                                                     "width":  44
                                                                                                  },
                                                                                                  {
                                                                                                      "border":  [
@@ -605,12 +577,12 @@
                                                                                                      "clip":  true,
                                                                                                      "color":  [
                                                                                                                    1,
-                                                                                                                   0.95,
-                                                                                                                   0.3,
+                                                                                                                   1,
+                                                                                                                   1,
                                                                                                                    1
                                                                                                                ],
                                                                                                      "fill":  0,
-                                                                                                     "fontSize":  13,
+                                                                                                     "fontSize":  14,
                                                                                                      "height":  16,
                                                                                                      "left":  0,
                                                                                                      "name":  "p3",
@@ -623,22 +595,22 @@
                                                                                                      "slice":  0,
                                                                                                      "sprite":  "",
                                                                                                      "text":  "175",
-                                                                                                     "top":  54,
+                                                                                                     "top":  58,
                                                                                                      "type":  "label",
                                                                                                      "visible":  true,
-                                                                                                     "width":  52
+                                                                                                     "width":  54
                                                                                                  }
                                                                                              ],
                                                                                 "clip":  true,
                                                                                 "color":  [
-                                                                                              0.14,
-                                                                                              0.2,
-                                                                                              0.28,
-                                                                                              0.95
+                                                                                              1,
+                                                                                              1,
+                                                                                              1,
+                                                                                              1
                                                                                           ],
                                                                                 "fill":  0,
                                                                                 "fontSize":  16,
-                                                                                "height":  72,
+                                                                                "height":  76,
                                                                                 "name":  "card3",
                                                                                 "rect":  [
                                                                                              0,
@@ -647,18 +619,18 @@
                                                                                              0
                                                                                          ],
                                                                                 "slice":  0,
-                                                                                "sprite":  "assets/sprites/card3.png",
+                                                                                "sprite":  "assets/sprites/panel_bg.png",
                                                                                 "text":  "",
                                                                                 "type":  "button",
                                                                                 "visible":  true,
-                                                                                "width":  52
+                                                                                "width":  54
                                                                             },
                                                                             {
                                                                                 "border":  [
-                                                                                               0.85,
-                                                                                               0.6,
-                                                                                               0.35,
-                                                                                               0.55
+                                                                                               0.32,
+                                                                                               0.2,
+                                                                                               0.07,
+                                                                                               1
                                                                                            ],
                                                                                 "children":  [
                                                                                                  {
@@ -743,8 +715,8 @@
                                                                                                                ],
                                                                                                      "fill":  0,
                                                                                                      "fontSize":  16,
-                                                                                                     "height":  34,
-                                                                                                     "left":  4,
+                                                                                                     "height":  44,
+                                                                                                     "left":  5,
                                                                                                      "name":  "i4",
                                                                                                      "rect":  [
                                                                                                                   0,
@@ -755,10 +727,10 @@
                                                                                                      "slice":  0,
                                                                                                      "sprite":  "assets/sprites/wallnut.png",
                                                                                                      "text":  "",
-                                                                                                     "top":  5,
+                                                                                                     "top":  8,
                                                                                                      "type":  "image",
-                                                                                                     "visible":  false,
-                                                                                                     "width":  34
+                                                                                                     "visible":  true,
+                                                                                                     "width":  44
                                                                                                  },
                                                                                                  {
                                                                                                      "border":  [
@@ -770,12 +742,12 @@
                                                                                                      "clip":  true,
                                                                                                      "color":  [
                                                                                                                    1,
-                                                                                                                   0.95,
-                                                                                                                   0.3,
+                                                                                                                   1,
+                                                                                                                   1,
                                                                                                                    1
                                                                                                                ],
                                                                                                      "fill":  0,
-                                                                                                     "fontSize":  13,
+                                                                                                     "fontSize":  14,
                                                                                                      "height":  16,
                                                                                                      "left":  0,
                                                                                                      "name":  "p4",
@@ -788,22 +760,22 @@
                                                                                                      "slice":  0,
                                                                                                      "sprite":  "",
                                                                                                      "text":  "50",
-                                                                                                     "top":  54,
+                                                                                                     "top":  58,
                                                                                                      "type":  "label",
                                                                                                      "visible":  true,
-                                                                                                     "width":  52
+                                                                                                     "width":  54
                                                                                                  }
                                                                                              ],
                                                                                 "clip":  true,
                                                                                 "color":  [
-                                                                                              0.14,
-                                                                                              0.2,
-                                                                                              0.28,
-                                                                                              0.95
+                                                                                              1,
+                                                                                              1,
+                                                                                              1,
+                                                                                              1
                                                                                           ],
                                                                                 "fill":  0,
                                                                                 "fontSize":  16,
-                                                                                "height":  72,
+                                                                                "height":  76,
                                                                                 "name":  "card4",
                                                                                 "rect":  [
                                                                                              0,
@@ -812,18 +784,18 @@
                                                                                              0
                                                                                          ],
                                                                                 "slice":  0,
-                                                                                "sprite":  "assets/sprites/card4.png",
+                                                                                "sprite":  "assets/sprites/panel_bg.png",
                                                                                 "text":  "",
                                                                                 "type":  "button",
                                                                                 "visible":  true,
-                                                                                "width":  52
+                                                                                "width":  54
                                                                             },
                                                                             {
                                                                                 "border":  [
-                                                                                               0.95,
-                                                                                               0.6,
+                                                                                               0.32,
                                                                                                0.2,
-                                                                                               0.55
+                                                                                               0.07,
+                                                                                               1
                                                                                            ],
                                                                                 "children":  [
                                                                                                  {
@@ -908,8 +880,8 @@
                                                                                                                ],
                                                                                                      "fill":  0,
                                                                                                      "fontSize":  16,
-                                                                                                     "height":  40,
-                                                                                                     "left":  6,
+                                                                                                     "height":  44,
+                                                                                                     "left":  5,
                                                                                                      "name":  "i5",
                                                                                                      "rect":  [
                                                                                                                   0,
@@ -920,10 +892,10 @@
                                                                                                      "slice":  0,
                                                                                                      "sprite":  "assets/sprites/peashooter.png",
                                                                                                      "text":  "",
-                                                                                                     "top":  10,
+                                                                                                     "top":  8,
                                                                                                      "type":  "image",
                                                                                                      "visible":  true,
-                                                                                                     "width":  40
+                                                                                                     "width":  44
                                                                                                  },
                                                                                                  {
                                                                                                      "border":  [
@@ -935,12 +907,12 @@
                                                                                                      "clip":  true,
                                                                                                      "color":  [
                                                                                                                    1,
-                                                                                                                   0.95,
-                                                                                                                   0.3,
+                                                                                                                   1,
+                                                                                                                   1,
                                                                                                                    1
                                                                                                                ],
                                                                                                      "fill":  0,
-                                                                                                     "fontSize":  13,
+                                                                                                     "fontSize":  14,
                                                                                                      "height":  16,
                                                                                                      "left":  0,
                                                                                                      "name":  "p5",
@@ -953,22 +925,22 @@
                                                                                                      "slice":  0,
                                                                                                      "sprite":  "",
                                                                                                      "text":  "200",
-                                                                                                     "top":  54,
+                                                                                                     "top":  58,
                                                                                                      "type":  "label",
                                                                                                      "visible":  true,
-                                                                                                     "width":  52
+                                                                                                     "width":  54
                                                                                                  }
                                                                                              ],
                                                                                 "clip":  true,
                                                                                 "color":  [
-                                                                                              0.14,
-                                                                                              0.2,
-                                                                                              0.28,
-                                                                                              0.95
+                                                                                              1,
+                                                                                              1,
+                                                                                              1,
+                                                                                              1
                                                                                           ],
                                                                                 "fill":  0,
                                                                                 "fontSize":  16,
-                                                                                "height":  72,
+                                                                                "height":  76,
                                                                                 "name":  "card5",
                                                                                 "rect":  [
                                                                                              0,
@@ -981,14 +953,14 @@
                                                                                 "text":  "",
                                                                                 "type":  "button",
                                                                                 "visible":  true,
-                                                                                "width":  52
+                                                                                "width":  54
                                                                             },
                                                                             {
                                                                                 "border":  [
-                                                                                               1,
-                                                                                               0.35,
-                                                                                               0.3,
-                                                                                               0.55
+                                                                                               0.32,
+                                                                                               0.2,
+                                                                                               0.07,
+                                                                                               1
                                                                                            ],
                                                                                 "children":  [
                                                                                                  {
@@ -1073,8 +1045,8 @@
                                                                                                                ],
                                                                                                      "fill":  0,
                                                                                                      "fontSize":  16,
-                                                                                                     "height":  40,
-                                                                                                     "left":  6,
+                                                                                                     "height":  44,
+                                                                                                     "left":  5,
                                                                                                      "name":  "i6",
                                                                                                      "rect":  [
                                                                                                                   0,
@@ -1085,10 +1057,10 @@
                                                                                                      "slice":  0,
                                                                                                      "sprite":  "assets/sprites/cherry.png",
                                                                                                      "text":  "",
-                                                                                                     "top":  10,
+                                                                                                     "top":  8,
                                                                                                      "type":  "image",
                                                                                                      "visible":  true,
-                                                                                                     "width":  40
+                                                                                                     "width":  44
                                                                                                  },
                                                                                                  {
                                                                                                      "border":  [
@@ -1100,12 +1072,12 @@
                                                                                                      "clip":  true,
                                                                                                      "color":  [
                                                                                                                    1,
-                                                                                                                   0.95,
-                                                                                                                   0.3,
+                                                                                                                   1,
+                                                                                                                   1,
                                                                                                                    1
                                                                                                                ],
                                                                                                      "fill":  0,
-                                                                                                     "fontSize":  13,
+                                                                                                     "fontSize":  14,
                                                                                                      "height":  16,
                                                                                                      "left":  0,
                                                                                                      "name":  "p6",
@@ -1118,22 +1090,22 @@
                                                                                                      "slice":  0,
                                                                                                      "sprite":  "",
                                                                                                      "text":  "150",
-                                                                                                     "top":  54,
+                                                                                                     "top":  58,
                                                                                                      "type":  "label",
                                                                                                      "visible":  true,
-                                                                                                     "width":  52
+                                                                                                     "width":  54
                                                                                                  }
                                                                                              ],
                                                                                 "clip":  true,
                                                                                 "color":  [
-                                                                                              0.14,
-                                                                                              0.2,
-                                                                                              0.28,
-                                                                                              0.95
+                                                                                              1,
+                                                                                              1,
+                                                                                              1,
+                                                                                              1
                                                                                           ],
                                                                                 "fill":  0,
                                                                                 "fontSize":  16,
-                                                                                "height":  72,
+                                                                                "height":  76,
                                                                                 "name":  "card6",
                                                                                 "rect":  [
                                                                                              0,
@@ -1146,14 +1118,14 @@
                                                                                 "text":  "",
                                                                                 "type":  "button",
                                                                                 "visible":  true,
-                                                                                "width":  52
+                                                                                "width":  54
                                                                             },
                                                                             {
                                                                                 "border":  [
-                                                                                               0.72,
-                                                                                               0.58,
-                                                                                               0.34,
-                                                                                               0.8
+                                                                                               0.32,
+                                                                                               0.2,
+                                                                                               0.07,
+                                                                                               1
                                                                                            ],
                                                                                 "children":  [
                                                                                                  {
@@ -1225,14 +1197,14 @@
                                                                                              ],
                                                                                 "clip":  true,
                                                                                 "color":  [
-                                                                                              0.16,
-                                                                                              0.14,
-                                                                                              0.12,
-                                                                                              0.95
+                                                                                              1,
+                                                                                              1,
+                                                                                              1,
+                                                                                              1
                                                                                           ],
                                                                                 "fill":  0,
                                                                                 "fontSize":  16,
-                                                                                "height":  72,
+                                                                                "height":  76,
                                                                                 "name":  "shovel",
                                                                                 "rect":  [
                                                                                              0,
@@ -1245,7 +1217,7 @@
                                                                                 "text":  "",
                                                                                 "type":  "button",
                                                                                 "visible":  true,
-                                                                                "width":  52
+                                                                                "width":  54
                                                                             }
                                                                         ],
                                                            "clip":  true,
@@ -1257,7 +1229,7 @@
                                                                      ],
                                                            "fill":  0,
                                                            "fontSize":  16,
-                                                           "gap":  6,
+                                                           "gap":  3,
                                                            "height":  "auto",
                                                            "name":  "Cards",
                                                            "rect":  [
@@ -1271,204 +1243,39 @@
                                                            "text":  "",
                                                            "type":  "row",
                                                            "visible":  true,
-                                                           "width":  "auto"
-                                                       },
-                                                       {
-                                                           "align":  "center",
-                                                           "border":  [
-                                                                          0,
-                                                                          0,
-                                                                          0,
-                                                                          0
-                                                                      ],
-                                                           "children":  [
-                                                                            {
-                                                                                "border":  [
-                                                                                               0.35,
-                                                                                               0.65,
-                                                                                               1,
-                                                                                               0.6
-                                                                                           ],
-                                                                                "children":  [
-                                                                                                 {
-                                                                                                     "border":  [
-                                                                                                                    0.25,
-                                                                                                                    0.55,
-                                                                                                                    1,
-                                                                                                                    1
-                                                                                                                ],
-                                                                                                     "clip":  true,
-                                                                                                     "color":  [
-                                                                                                                   0.8,
-                                                                                                                   0.85,
-                                                                                                                   1,
-                                                                                                                   1
-                                                                                                               ],
-                                                                                                     "fill":  0,
-                                                                                                     "fontSize":  13,
-                                                                                                     "height":  18,
-                                                                                                     "left":  4,
-                                                                                                     "name":  "WaveText",
-                                                                                                     "rect":  [
-                                                                                                                  0,
-                                                                                                                  0,
-                                                                                                                  0,
-                                                                                                                  0
-                                                                                                              ],
-                                                                                                     "slice":  0,
-                                                                                                     "sprite":  "",
-                                                                                                     "text":  "第 0 波",
-                                                                                                     "top":  1,
-                                                                                                     "type":  "label",
-                                                                                                     "visible":  true,
-                                                                                                     "width":  160
-                                                                                                 },
-                                                                                                 {
-                                                                                                     "border":  [
-                                                                                                                    0,
-                                                                                                                    0,
-                                                                                                                    0,
-                                                                                                                    0
-                                                                                                                ],
-                                                                                                     "clip":  true,
-                                                                                                     "color":  [
-                                                                                                                   0.35,
-                                                                                                                   0.65,
-                                                                                                                   1,
-                                                                                                                   0.9
-                                                                                                               ],
-                                                                                                     "fill":  0,
-                                                                                                     "fontSize":  16,
-                                                                                                     "height":  8,
-                                                                                                     "left":  4,
-                                                                                                     "name":  "WaveBar",
-                                                                                                     "rect":  [
-                                                                                                                  0,
-                                                                                                                  0,
-                                                                                                                  0,
-                                                                                                                  0
-                                                                                                              ],
-                                                                                                     "slice":  0,
-                                                                                                     "sprite":  "",
-                                                                                                     "text":  "",
-                                                                                                     "top":  21,
-                                                                                                     "type":  "bar",
-                                                                                                     "visible":  true,
-                                                                                                     "width":  160
-                                                                                                 },
-                                                                                                 {
-                                                                                                     "border":  [
-                                                                                                                    0.25,
-                                                                                                                    0.55,
-                                                                                                                    1,
-                                                                                                                    1
-                                                                                                                ],
-                                                                                                     "clip":  true,
-                                                                                                     "color":  [
-                                                                                                                   0.95,
-                                                                                                                   0.7,
-                                                                                                                   0.7,
-                                                                                                                   1
-                                                                                                               ],
-                                                                                                     "fill":  0,
-                                                                                                     "fontSize":  11,
-                                                                                                     "height":  13,
-                                                                                                     "left":  4,
-                                                                                                     "name":  "ZombiesText",
-                                                                                                     "rect":  [
-                                                                                                                  0,
-                                                                                                                  0,
-                                                                                                                  0,
-                                                                                                                  0
-                                                                                                              ],
-                                                                                                     "slice":  0,
-                                                                                                     "sprite":  "",
-                                                                                                     "text":  "僵尸: 0",
-                                                                                                     "top":  30,
-                                                                                                     "type":  "label",
-                                                                                                     "visible":  true,
-                                                                                                     "width":  160
-                                                                                                 }
-                                                                                             ],
-                                                                                "clip":  true,
-                                                                                "color":  [
-                                                                                              0.1,
-                                                                                              0.13,
-                                                                                              0.18,
-                                                                                              0.9
-                                                                                          ],
-                                                                                "fill":  0,
-                                                                                "fontSize":  16,
-                                                                                "height":  44,
-                                                                                "name":  "WaveBox",
-                                                                                "rect":  [
-                                                                                             0,
-                                                                                             0,
-                                                                                             0,
-                                                                                             0
-                                                                                         ],
-                                                                                "slice":  0,
-                                                                                "sprite":  "",
-                                                                                "text":  "",
-                                                                                "type":  "panel",
-                                                                                "visible":  true,
-                                                                                "width":  168
-                                                                            }
-                                                                        ],
-                                                           "clip":  true,
-                                                           "color":  [
-                                                                         0,
-                                                                         0,
-                                                                         0,
-                                                                         0
-                                                                     ],
-                                                           "fill":  0,
-                                                           "fontSize":  16,
-                                                           "gap":  8,
-                                                           "height":  "auto",
-                                                           "name":  "WaveGroup",
-                                                           "rect":  [
-                                                                        0,
-                                                                        0,
-                                                                        0,
-                                                                        0
-                                                                    ],
-                                                           "slice":  0,
-                                                           "sprite":  "",
-                                                           "text":  "",
-                                                           "type":  "row",
-                                                           "visible":  true,
-                                                           "width":  "auto"
+                                                           "width":  "auto",
+                                                           "left":  122,
+                                                           "top":  4
                                                        }
                                                    ],
                                       "clip":  true,
                                       "color":  [
-                                                    0.07,
-                                                    0.09,
-                                                    0.13,
-                                                    0.96
+                                                    1,
+                                                    1,
+                                                    1,
+                                                    1
                                                 ],
                                       "fill":  0,
                                       "fontSize":  16,
                                       "gap":  8,
-                                      "height":  84,
-                                      "justify":  "space-between",
+                                      "height":  92,
+                                      "justify":  "start",
                                       "left":  0,
                                       "name":  "TopBar",
-                                      "padding":  7,
+                                      "padding":  8,
                                       "rect":  [
                                                    176,
                                                    0,
                                                    0,
                                                    0
                                                ],
-                                      "slice":  0,
-                                      "sprite":  "",
+                                      "slice":  30,
+                                      "sprite":  "assets/sprites/tray_bg.png",
                                       "text":  "",
                                       "top":  0,
-                                      "type":  "row",
+                                      "type":  "panel",
                                       "visible":  true,
-                                      "width":  "100.000000%"
+                                      "width":  560
                                   },
                                   {
                                       "border":  [
@@ -1502,6 +1309,175 @@
                                       "type":  "label",
                                       "visible":  false,
                                       "width":  620
+                                  },
+                                  {
+                                      "align":  null,
+                                      "border":  [
+                                                     0,
+                                                     0,
+                                                     0,
+                                                     0
+                                                 ],
+                                      "children":  [
+                                                       {
+                                                           "border":  [
+                                                                          0.35,
+                                                                          0.65,
+                                                                          1,
+                                                                          0.6
+                                                                      ],
+                                                           "children":  [
+                                                                            {
+                                                                                "border":  [
+                                                                                               0.25,
+                                                                                               0.55,
+                                                                                               1,
+                                                                                               1
+                                                                                           ],
+                                                                                "clip":  true,
+                                                                                "color":  [
+                                                                                              0.8,
+                                                                                              0.85,
+                                                                                              1,
+                                                                                              1
+                                                                                          ],
+                                                                                "fill":  0,
+                                                                                "fontSize":  13,
+                                                                                "height":  18,
+                                                                                "left":  4,
+                                                                                "name":  "WaveText",
+                                                                                "rect":  [
+                                                                                             0,
+                                                                                             0,
+                                                                                             0,
+                                                                                             0
+                                                                                         ],
+                                                                                "slice":  0,
+                                                                                "sprite":  "",
+                                                                                "text":  "第 0 波",
+                                                                                "top":  1,
+                                                                                "type":  "label",
+                                                                                "visible":  true,
+                                                                                "width":  160
+                                                                            },
+                                                                            {
+                                                                                "border":  [
+                                                                                               0,
+                                                                                               0,
+                                                                                               0,
+                                                                                               0
+                                                                                           ],
+                                                                                "clip":  true,
+                                                                                "color":  [
+                                                                                              0.35,
+                                                                                              0.65,
+                                                                                              1,
+                                                                                              0.9
+                                                                                          ],
+                                                                                "fill":  0,
+                                                                                "fontSize":  16,
+                                                                                "height":  8,
+                                                                                "left":  4,
+                                                                                "name":  "WaveBar",
+                                                                                "rect":  [
+                                                                                             0,
+                                                                                             0,
+                                                                                             0,
+                                                                                             0
+                                                                                         ],
+                                                                                "slice":  0,
+                                                                                "sprite":  "",
+                                                                                "text":  "",
+                                                                                "top":  21,
+                                                                                "type":  "bar",
+                                                                                "visible":  true,
+                                                                                "width":  160
+                                                                            },
+                                                                            {
+                                                                                "border":  [
+                                                                                               0.25,
+                                                                                               0.55,
+                                                                                               1,
+                                                                                               1
+                                                                                           ],
+                                                                                "clip":  true,
+                                                                                "color":  [
+                                                                                              0.95,
+                                                                                              0.7,
+                                                                                              0.7,
+                                                                                              1
+                                                                                          ],
+                                                                                "fill":  0,
+                                                                                "fontSize":  11,
+                                                                                "height":  13,
+                                                                                "left":  4,
+                                                                                "name":  "ZombiesText",
+                                                                                "rect":  [
+                                                                                             0,
+                                                                                             0,
+                                                                                             0,
+                                                                                             0
+                                                                                         ],
+                                                                                "slice":  0,
+                                                                                "sprite":  "",
+                                                                                "text":  "僵尸: 0",
+                                                                                "top":  30,
+                                                                                "type":  "label",
+                                                                                "visible":  true,
+                                                                                "width":  160
+                                                                            }
+                                                                        ],
+                                                           "clip":  true,
+                                                           "color":  [
+                                                                         0.1,
+                                                                         0.13,
+                                                                         0.18,
+                                                                         0.9
+                                                                     ],
+                                                           "fill":  0,
+                                                           "fontSize":  16,
+                                                           "height":  44,
+                                                           "name":  "WaveBox",
+                                                           "rect":  [
+                                                                        0,
+                                                                        0,
+                                                                        0,
+                                                                        0
+                                                                    ],
+                                                           "slice":  0,
+                                                           "sprite":  "",
+                                                           "text":  "",
+                                                           "type":  "panel",
+                                                           "visible":  true,
+                                                           "width":  168
+                                                       }
+                                                   ],
+                                      "clip":  true,
+                                      "color":  [
+                                                    0,
+                                                    0,
+                                                    0,
+                                                    0
+                                                ],
+                                      "fill":  0,
+                                      "fontSize":  16,
+                                      "gap":  8,
+                                      "height":  "auto",
+                                      "name":  "WaveGroup",
+                                      "rect":  [
+                                                   0,
+                                                   0,
+                                                   0,
+                                                   0
+                                               ],
+                                      "slice":  0,
+                                      "sprite":  "",
+                                      "text":  "",
+                                      "type":  "row",
+                                      "visible":  true,
+                                      "width":  "auto",
+                                      "left":  1090,
+                                      "top":  10
                                   }
                               ],
                  "clip":  false,

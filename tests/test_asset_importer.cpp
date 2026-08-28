@@ -92,3 +92,20 @@ TEST(AssetManagerLoadsBakedTexture) {
     const gfx::Texture tex2 = fx2.assets.LoadTexture(assets + "/tex.png");
     CHECK(tex2.Valid());
 }
+
+// The HUD sprite PNGs (authored via System.Drawing in tools/gif_to_sheet and
+// asset-pack copies) must decode through the standard texture path — the HUD
+// renders them as UI images and silently falls back to a flat color on failure.
+TEST(UiCardTexturesDecode) {
+    test::HeadlessAssetFixture fx;
+    const gfx::Texture tray = fx.assets.LoadTexture("projects/pvz/assets/sprites/tray_bg.png");
+    CHECK(tray.Valid());
+    CHECK_EQ(tray.Width(), 522);
+    CHECK_EQ(tray.Height(), 87);
+    const gfx::Texture panel =
+        fx.assets.LoadTexture("projects/pvz/assets/sprites/panel_bg.png");
+    CHECK(panel.Valid());
+    const gfx::Texture shovel =
+        fx.assets.LoadTexture("projects/pvz/assets/sprites/shovel.png");
+    CHECK(shovel.Valid());
+}

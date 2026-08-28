@@ -1,6 +1,6 @@
 {
   "components": {
-    "transform": {"scale": [112, 97, 1]},
+    "transform": {"scale": [138, 120, 1]},
     "sprite": {"texture": "assets/sprites/zombie.png", "sheet": "assets/sprites/zombie.sheet.png", "sheetFrames": 22, "fps": 8},
     "health": {"hp": 100, "maxHp": 100},
     "zombie": {"type": "basic", "speed": 26, "damage": 12},

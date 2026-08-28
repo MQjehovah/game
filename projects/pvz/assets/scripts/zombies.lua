@@ -1,7 +1,7 @@
 -- 僵尸行为 (Lua 后端): 左行 / 索敌吃植物 / 受"缓慢"状态减速 / 到房子游戏结束。
 
 local function rowOf(y)
-  return math.max(0, math.min(4, math.floor((y - 110 + 50) / 100)))
+  return math.max(0, math.min(4, math.floor((586 - y + 62.5) / 125)))
 end
 
 -- 序列帧动画: 走路/吃两组 spritesheet (水平图集), 按僵尸类型选图集。

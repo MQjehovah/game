@@ -2,11 +2,11 @@
 -- Sun economy / planting (with shovel + seed-packet cooldowns) / waves /
 -- pause / win-loss. The wave_director plugin drives the wave counter.
 local ROWS, COLS = 5, 9
-local X0, Y0, CELL_X, CELL_Y = 140, 110, 100, 100
+local X0, Y0, CELL_X, CELL_Y = 140, 134, 100, 125
 
 local function clamp(v, lo, hi) return math.max(lo, math.min(hi, v)) end
 
-local function rowY(row) return Y0 + row * CELL_Y end
+local function rowY(row) return 720 - Y0 - row * CELL_Y end
 local function colX(col) return X0 + col * CELL_X end
 
 local PLANTS = {
@@ -286,8 +286,8 @@ function on_update(e, dt)
     if not m then return end
     local w = ScreenToWorld(m)
     if not w then return end
-    local col = math.floor((w.x - X0 + CELL_X * 0.5) / CELL_X)
-    local row = math.floor((w.y - Y0 + CELL_Y * 0.5) / CELL_Y)
+  local col = math.floor((w.x - X0 + CELL_X * 0.5) / CELL_X)
+  local row = math.floor((720 - Y0 - w.y + CELL_Y * 0.5) / CELL_Y)
     if col >= 0 and col < COLS and row >= 0 and row < ROWS then
       if selected == "shovel" then
         local existing = findRowPlant(row, colX(col))
