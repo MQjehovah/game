@@ -1234,6 +1234,7 @@ void GameRuntime::BuildDrawList() {
         DrawItem item;
         item.ent = ent;
         item.isSprite = true;
+        item.billboard = s->billboard;
         item.spriteTex = s->texture;
         item.flipX = s->flipX;
         item.flipY = s->flipY;
@@ -2373,12 +2374,38 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera,
                 renderer.DrawSkinnedMesh(part.mesh, part.material, model * part.localTransform,
                                          bones, static_cast<int>(bones.size()));
         } else if (item.isSprite) {
-            // Flip mirrors the quad around its center: a negative local scale
-            // keeps the texture upright and needs no UV/shader changes.
-            if (item.flipX || item.flipY)
-                model = model * math::Mat4::Scale({item.flipX ? -1.0f : 1.0f,
-                                                   item.flipY ? -1.0f : 1.0f, 1.0f});
-            renderer.DrawMesh(item.mesh, item.mat, model);
+            if (item.billboard) {
+                // Camera-facing quad (world-space VFX): rebuild the model
+                // basis from the view vector each frame. A 2D front-ortho
+                // camera degenerates to the identity basis, so 2D sprites are
+                // unaffected.
+                math::Vec3 fwd = camera.position - worldPos;
+                const float fl = std::sqrt(fwd.x * fwd.x + fwd.y * fwd.y + fwd.z * fwd.z);
+                if (fl > 0.0001f) fwd = fwd * (1.0f / fl);
+                math::Vec3 right = math::Cross(math::Vec3{0.0f, 1.0f, 0.0f}, fwd);
+                const float rl = std::sqrt(right.x * right.x + right.y * right.y +
+                                           right.z * right.z);
+                if (rl > 0.0001f) right = right * (1.0f / rl);
+                math::Vec3 up = math::Cross(fwd, right);
+                // Scale magnitude recovered from the composed model matrix.
+                const float sx = std::sqrt(model.m[0] * model.m[0] + model.m[4] * model.m[4] +
+                                           model.m[8] * model.m[8]);
+                const float sy = std::sqrt(model.m[1] * model.m[1] + model.m[5] * model.m[5] +
+                                           model.m[9] * model.m[9]);
+                math::Mat4 bb;
+                bb.m[0] = right.x * sx; bb.m[4] = right.y * sx; bb.m[8] = right.z * sx;
+                bb.m[1] = up.x * sy;    bb.m[5] = up.y * sy;    bb.m[9] = up.z * sy;
+                bb.m[2] = fwd.x;        bb.m[6] = fwd.y;        bb.m[10] = fwd.z;
+                bb.m[12] = worldPos.x;  bb.m[13] = worldPos.y;  bb.m[14] = worldPos.z;
+                renderer.DrawMesh(item.mesh, item.mat, bb);
+            } else {
+                // Flip mirrors the quad around its center: a negative local scale
+                // keeps the texture upright and needs no UV/shader changes.
+                if (item.flipX || item.flipY)
+                    model = model * math::Mat4::Scale({item.flipX ? -1.0f : 1.0f,
+                                                       item.flipY ? -1.0f : 1.0f, 1.0f});
+                renderer.DrawMesh(item.mesh, item.mat, model);
+            }
         } else {
             renderer.DrawMesh(SelectLodMesh(item.mesh, item.chain, worldPos, camera.position),
                               item.mat, model);

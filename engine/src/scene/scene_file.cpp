@@ -726,7 +726,8 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                     const core::Json&, std::string* err) {
                      if (!CheckComponentShape(data,
                                               {"texture", "flipX", "flipY", "colorHex",
-                                               "frames", "fps", "loop", "sheet", "sheetFrames"},
+                                               "frames", "fps", "loop", "sheet", "sheetFrames",
+                                               "billboard"},
                                               "sprite", err))
                          return false;
                      const core::Json* tex = data.Get("texture");
@@ -750,6 +751,13 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                          }
                          s.flipY = fy->GetBool();
                      }
+                      if (const core::Json* bb = data.Get("billboard")) {
+                          if (!bb->IsBool()) {
+                              if (err) *err = "component 'sprite' field 'billboard' must be a bool";
+                              return false;
+                          }
+                          s.billboard = bb->GetBool();
+                      }
                       if (const core::Json* c = data.Get("colorHex")) {
                           if (!c->IsString()) {
                               if (err) *err = "component 'sprite' field 'colorHex' must be a string";

@@ -15,6 +15,113 @@ local yvel = 0
 local grounded = true
 local facing = 0
 
+-- 加粗描边文字：8 向黑色描边 + 彩色正文，任何背景下都清晰
+local function outlined_text(x, y, size, text, r, g, b)
+  local offs = { { -1, -1 }, { 1, -1 }, { -1, 1 }, { 1, 1 },
+                 { 0, -1 }, { 0, 1 }, { -1, 0 }, { 1, 0 } }
+  for _, o in ipairs(offs) do
+    DrawText(text, x + o[1], y + o[2], size, 0, 0, 0, 0.9, true, true)
+  end
+  DrawText(text, x, y, size, r, g, b, 1, true, true)
+end
+
+local function vget(k, def)
+  local v = GetVar(k)
+  if v == nil then return def end
+  return v
+end
+
+local function vset(k, v) SetVar(k, v) end
+
+local function dist2d(ax, az, bx, bz)
+  local dx, dz = ax - bx, az - bz
+  return math.sqrt(dx * dx + dz * dz)
+end
+-- ============ 元素技能 (参照 Elemental Sandbox 的线性/区域施法) ============
+-- Q 冰霜新星(以己为中心 AoE 冻结) / R 陨石术(前方落点 AoE) /
+-- G 圣光束(面朝方向直线) / T 电击陷阱(前方区域 强减速)。
+-- 施法流程: 按键直接施放(带蓝耗+冷却), VFX 全部程序化绘制。
+local SKILLS = {
+  frost  = { cd = 8,  mana = 30, sfx = "frozen" },
+  meteor = { cd = 18, mana = 45, sfx = "explosion" },
+  beam   = { cd = 14, mana = 35, sfx = "jalapeno" },
+  snare  = { cd = 10, mana = 25, sfx = "siren" },
+}
+local skillCd = { frost = 0, meteor = 0, beam = 0, snare = 0 }
+-- 世界锚定 VFX: 每个特效是一个真实实体 (自发光球 / 贴地环 / 贴花), 到期回收
+local vfxEnts, vfxMeteors = {}, {}
+local vfxClock = 0
+local shakeT = 0
+
+local function spawnBurst(wx, wy, wz, n, speed, col, up)
+  for i = 1, n do
+    local a = math.random() * math.pi * 2
+    local sp = speed * (0.4 + math.random() * 0.6)
+    vfxParts[#vfxParts + 1] = {
+      wx = wx, wy = wy, wz = wz,
+      vx = math.cos(a) * sp, vy = (up or 2.5) + math.random() * 2.5, vz = math.sin(a) * sp,
+      g = -9, age = 0, life = 0.5 + math.random() * 0.5,
+      size = 3 + math.random() * 3, col = col,
+    }
+  end
+end
+
+local function shake(t) shakeT = math.max(shakeT, t) end
+
+local function wolvesInRadius(x, z, r)
+  local out = {}
+  for _, w in ipairs(wolves) do
+    if not w.dead then
+      local wp = GetPosition(w.e)
+      if wp ~= nil and dist2d(wp.x, wp.z, x, z) <= r then out[#out + 1] = { e = w.e, wp = wp } end
+    end
+  end
+  return out
+end
+
+local function damageWolf(ent, dmg)
+  local hp = GetHealth(ent)
+  if hp ~= nil then SetHealth(ent, hp - dmg) end
+end
+
+-- 沿两点间画线 (画布无旋转矩形 -> 插值小方块)
+-- 生成一个 VFX 实体并在 life 秒后自动回收
+local function spawnFx(prefab, x, y, z, scale, life)
+  local e = SpawnPrefab(prefab, { x = x, y = y, z = z })
+  if e == nil then return nil end
+  SetScale(e, scale, scale, scale)
+  vfxEnts[#vfxEnts + 1] = { ent = e, dieAt = vfxClock + life }
+  return e
+end
+
+-- 贴地扩张环: 直径 r0 -> r1, 缓出
+local function fxRing(prefab, x, z, r0, r1, life)
+  local e = SpawnPrefab(prefab, { x = x, y = 0.12, z = z })
+  if e == nil then return nil end
+  SetScale(e, r0, r0, r0)
+  Tween(e, 2, { x = r0, y = r0, z = r0 }, { x = r1, y = r1, z = r1 }, life, 2)
+  vfxEnts[#vfxEnts + 1] = { ent = e, dieAt = vfxClock + life + 0.05 }
+  return e
+end
+
+-- 抛射发光球: 从 (x,y,z) 外抛到随机终点 (缓出)
+local function fxOrb(prefab, x, y, z, sp, scale, life)
+  local a = math.random() * math.pi * 2
+  local d = sp * (0.35 + math.random() * 0.65)
+  local e = SpawnPrefab(prefab, { x = x, y = y, z = z })
+  if e == nil then return end
+  SetScale(e, scale, scale, scale)
+  Tween(e, 0, { x = x, y = y, z = z },
+        { x = x + math.cos(a) * d, y = y + 1.0 + math.random() * 1.8, z = z + math.sin(a) * d },
+        life, 2)
+  vfxEnts[#vfxEnts + 1] = { ent = e, dieAt = vfxClock + life + 0.02 }
+end
+
+-- 一圈粒子
+local function fxOrbBurst(prefab, x, y, z, n, sp, scale, life)
+  for i = 1, n do fxOrb(prefab, x, y, z, sp, scale, life + math.random() * 0.2) end
+end
+
 -- 第一人称视角（FPS）状态：lookYaw/lookPitch 由鼠标驱动，
 -- 引擎侧通过 cameraMouseLock + cameraYaw/cameraPitch/cameraDist GameVar 接管相机。
 local fpsMode = true        -- V 切换第一人称 / 轨道视角
@@ -51,28 +158,6 @@ local function attack_dir()
   return { x = math.sin(facing), y = 0, z = -math.cos(facing) }
 end
 
--- 加粗描边文字：8 向黑色描边 + 彩色正文，任何背景下都清晰
-local function outlined_text(x, y, size, text, r, g, b)
-  local offs = { { -1, -1 }, { 1, -1 }, { -1, 1 }, { 1, 1 },
-                 { 0, -1 }, { 0, 1 }, { -1, 0 }, { 1, 0 } }
-  for _, o in ipairs(offs) do
-    DrawText(text, x + o[1], y + o[2], size, 0, 0, 0, 0.9, true, true)
-  end
-  DrawText(text, x, y, size, r, g, b, 1, true, true)
-end
-
-local function vget(k, def)
-  local v = GetVar(k)
-  if v == nil then return def end
-  return v
-end
-
-local function vset(k, v) SetVar(k, v) end
-
-local function dist2d(ax, az, bx, bz)
-  local dx, dz = ax - bx, az - bz
-  return math.sqrt(dx * dx + dz * dz)
-end
 
 local function load_save()
   local text = ReadText("save.json")
@@ -290,6 +375,102 @@ local function update_player(dt)
     end
   end
 
+  -- ============ 元素技能 (Q/R/G/T) ============
+  local function spendMana(cost)
+    local manaNow = vget("mana", 0)
+    if manaNow < cost then
+      local pp4 = GetPosition(hero)
+      if pp4 ~= nil then SpawnFloatText(pp4.x, pp4.y + 2.0, pp4.z, "法力不足", false, 0.8) end
+      return false
+    end
+    SetVar("mana", manaNow - cost)
+    return true
+  end
+
+  -- Q 冰霜新星: 以英雄为中心的冻结冲击
+  if ActionPressed("skill_frost") and skillCd.frost <= 0 and spendMana(SKILLS.frost.mana) then
+    skillCd.frost = SKILLS.frost.cd
+    local pp = GetPosition(hero)
+    if pp ~= nil then
+      for _, hit in ipairs(wolvesInRadius(pp.x, pp.z, 7)) do
+        damageWolf(hit.e, 120)
+        ApplyStatus(hit.e, "slow", 3, 0.25)
+      end
+      fxRing("fx_ring_ice", pp.x, pp.z, 0.5, 7.2, 0.5)
+      fxRing("fx_ring_ice", pp.x, pp.z, 0.3, 5.5, 0.7)
+      fxOrbBurst("fx_orb_ice", pp.x, pp.y + 1, pp.z, 40, 6, 0.55, 0.65)
+      PlaySfx(SKILLS.frost.sfx)
+      shake(0.2)
+    end
+  end
+
+  -- R 陨石术: 前方 9m 落点, 短暂指示后轰击
+  if ActionPressed("skill_meteor") and skillCd.meteor <= 0 and spendMana(SKILLS.meteor.mana) then
+    skillCd.meteor = SKILLS.meteor.cd
+    local dir = attack_dir()
+    local pp = GetPosition(hero)
+    if pp ~= nil then
+      local tx, tz = pp.x + dir.x * 9, pp.z + dir.z * 9
+      vfxMeteors[#vfxMeteors + 1] = { wx = tx, wz = tz, t = 0, hitDone = false }
+      PlayAnimation(hero, "Spellcasting", true, 0.15)
+    end
+  end
+
+  -- G 圣光束: 面朝方向的灼热直线
+  if ActionPressed("skill_beam") and skillCd.beam <= 0 and spendMana(SKILLS.beam.mana) then
+    skillCd.beam = SKILLS.beam.cd
+    local dir = attack_dir()
+    local pp = GetPosition(hero)
+    if pp ~= nil then
+      local fx, fz = pp.x + dir.x * 1.5, pp.z + dir.z * 1.5
+      local tx, tz = pp.x + dir.x * 15, pp.z + dir.z * 15
+      for _, w in ipairs(wolves) do
+        if not w.dead then
+          local wp = GetPosition(w.e)
+          if wp ~= nil then
+            -- 点到线段距离 (2D)
+            local vx, vz = tx - fx, tz - fz
+            local len2 = vx * vx + vz * vz
+            local t = ((wp.x - fx) * vx + (wp.z - fz) * vz) / (len2 > 0.001 and len2 or 1)
+            t = clamp(t, 0, 1)
+            local qx, qz = fx + vx * t, fz + vz * t
+            if dist2d(wp.x, wp.z, qx, qz) < 1.3 then damageWolf(w.e, 260) end
+          end
+        end
+      end
+      for i = 1, 10 do
+        local t = i / 10
+        spawnFx("fx_orb_gold", fx + (tx - fx) * t, pp.y + 1.1, fz + (tz - fz) * t,
+                0.7 + 0.2 * math.random(), 0.5)
+      end
+      spawnFx("fx_orb_fire", tx, pp.y + 1.1, tz, 1.4, 0.55)
+      PlayAnimation(hero, "Spellcast_Shoot", false, 0.15)
+      PlaySfx(SKILLS.beam.sfx)
+      shake(0.15)
+    end
+  end
+
+  -- T 电击陷阱: 前方 6m 区域, 强减速 + 伤害
+  if ActionPressed("skill_snare") and skillCd.snare <= 0 and spendMana(SKILLS.snare.mana) then
+    skillCd.snare = SKILLS.snare.cd
+    local dir = attack_dir()
+    local pp = GetPosition(hero)
+    if pp ~= nil then
+      local tx, tz = pp.x + dir.x * 6, pp.z + dir.z * 6
+      for _, hit in ipairs(wolvesInRadius(tx, tz, 5.5)) do
+        damageWolf(hit.e, 80)
+        ApplyStatus(hit.e, "slow", 2.5, 0.1)
+      end
+      -- 紫环: 越过半径再回弹 (snap)
+      fxRing("fx_ring_volt", tx, tz, 6.4, 5.5, 0.35)
+      fxRing("fx_ring_volt", tx, tz, 5.5, 5.5, 0.6)
+      fxOrbBurst("fx_orb_violet", tx, pp.y + 0.8, tz, 28, 5, 0.5, 0.6)
+      PlayAnimation(hero, "Spellcast_Shoot", false, 0.15)
+      PlaySfx(SKILLS.snare.sfx)
+      shake(0.12)
+    end
+  end
+
   -- 死亡重生
   if vget("hp", 100) <= 0 then
     SetVar("hp", GetVar("max_hp"))
@@ -477,12 +658,66 @@ local function update_camera()
     SetVar("cameraPitch", lookPitch)
     SetVar("cameraDist", CAM_DIST)
   else
-    -- 轨道视角：相机绕英雄头顶，鼠标拖拽旋转（cameraYaw 由引擎写回）
-    SetVar("cameraFocus", { x = pos.x, y = pos.y + 1.5, z = pos.z })
+    -- 轨道视角（第三人称观察位）: 相机绕英雄头顶拉远, 俯角观察特效
+    SetVar("cameraFocus", { x = pos.x, y = pos.y + 1.2, z = pos.z })
+    SetVar("cameraDist", 7.5)
+    SetVar("cameraPitch", 0.42)
+  end
+  -- 施法震屏: 随 shakeT 衰减的随机焦点抖动
+  if shakeT > 0 then
+    local f = GetVar("cameraFocus")
+    if f ~= nil then
+      local m = shakeT * shakeT * 0.6
+      SetVar("cameraFocus", { x = f.x + (math.random() - 0.5) * m,
+                              y = f.y + (math.random() - 0.5) * m * 0.5,
+                              z = f.z + (math.random() - 0.5) * m })
+    end
+    shakeT = math.max(0, shakeT - 0.016)
+  end
+end
+
+-- 世界锚定 VFX 推进: 特效到期回收 + 陨石时序 (指示 -> 落体 -> 轰击)
+local function update_vfx(dt)
+  vfxClock = vfxClock + dt
+  for i = #vfxEnts, 1, -1 do
+    if vfxClock >= vfxEnts[i].dieAt then
+      Despawn(vfxEnts[i].ent)
+      table.remove(vfxEnts, i)
+    end
+  end
+  for i = #vfxMeteors, 1, -1 do
+    local mt = vfxMeteors[i]
+    mt.t = mt.t + dt
+    if not mt.hitDone and mt.t >= 0.9 and not mt.orb then
+      mt.orb = SpawnPrefab("fx_meteor", { x = mt.wx, y = 20, z = mt.wz })
+      if mt.orb ~= nil then
+        SetScale(mt.orb, 0.9, 0.9, 0.9)
+        Tween(mt.orb, 0, { x = mt.wx, y = 20, z = mt.wz }, { x = mt.wx, y = 0.8, z = mt.wz }, 0.35, 1)
+      end
+    end
+    if not mt.hitDone and mt.t >= 1.25 then
+      mt.hitDone = true
+      if mt.orb ~= nil then Despawn(mt.orb) end
+      for _, hit in ipairs(wolvesInRadius(mt.wx, mt.wz, 5)) do
+        damageWolf(hit.e, 400)
+      end
+      fxRing("fx_ring_fire", mt.wx, mt.wz, 1, 6.5, 0.45)
+      fxRing("fx_ring_fire", mt.wx, mt.wz, 0.5, 4.5, 0.3)
+      spawnFx("fx_scorch", mt.wx, 0.06, mt.wz, 9, 3)
+      fxOrbBurst("fx_orb_fire", mt.wx, 1, mt.wz, 34, 8, 0.6, 0.8)
+      PlaySfx(SKILLS.meteor.sfx)
+      shake(0.5)
+    end
+    if mt.hitDone and mt.t >= 1.4 then table.remove(vfxMeteors, i) end
   end
 end
 
 function on_update(e, dt)
+  -- 技能冷却推进
+  for k, v in pairs(skillCd) do
+    if v > 0 then skillCd[k] = math.max(0, v - dt) end
+  end
+  update_vfx(dt)
   update_player(dt)
   update_hero_anim(dt)
   update_wolves(dt)
@@ -505,6 +740,35 @@ local function bar(x, y, w, h, t, cr, cg, cb)
 end
 
 function on_render()
+  -- 技能栏 (左下角: 键位 + 冷却蒙版)
+  local slotW, slotH, gap = 46, 46, 6
+  local bx, by = 14, 720 - slotH - 14
+  local slots = {
+    { k = "Q", id = "frost",  label = "冰" },
+    { k = "R", id = "meteor", label = "陨" },
+    { k = "G", id = "beam",   label = "束" },
+    { k = "T", id = "snare",  label = "阱" },
+  }
+  for i, sl in ipairs(slots) do
+    local x = bx + (i - 1) * (slotW + gap)
+    local ready = skillCd[sl.id] <= 0
+    local bgc = ready and 0.14 or 0.08
+    DrawRect(x, by, slotW, slotH, bgc, bgc + 0.03, bgc + 0.06, 0.9)
+    DrawRectOutline(x, by, slotW, slotH, 1.5,
+                    ready and 0.5 or 0.3, ready and 0.9 or 0.3, ready and 0.9 or 0.4, 0.9)
+    local cdv = skillCd[sl.id]
+    if cdv > 0 then
+      local frac = math.min(1, cdv / SKILLS[sl.id].cd)
+      DrawRect(x, by + slotH * (1 - frac), slotW, slotH * frac, 0, 0, 0, 0.65)
+      DrawText(string.format("%.0f", math.ceil(cdv)), x + slotW / 2, by + slotH * 0.5, 16,
+               1, 1, 1, 1, true, true)
+    else
+      DrawText(sl.label, x + slotW / 2, by + slotH * 0.5, 20, 0.95, 0.98, 1, 1, true, true)
+    end
+    DrawText(sl.k, x + 4, by + 3, 12, 1, 0.85, 0.3, 1, false, false)
+  end
+
+  -- ============ 原有 HUD ============
   -- HUD 面板
   DrawRect(14, 14, 300, 96, 0.10, 0.12, 0.16, 0.82)
   local hp = vget("hp", 100)

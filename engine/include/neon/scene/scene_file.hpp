@@ -255,6 +255,10 @@ struct SceneSprite {
     // wins.
     std::string sheet;
     int sheetFrames = 0;
+    // 3D billboard mode: when true the quad is re-oriented every frame to face
+    // the camera (glow particles, world-space VFX). 2D front-ortho games are
+    // unaffected — the camera-facing basis degenerates to the identity there.
+    bool billboard = false;
 };
 // Data-driven zombie spawn: which row it attacks, when it appears (scene
 // time) and its armor type. Kept as a component so per-entity scripts can

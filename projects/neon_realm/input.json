@@ -6,6 +6,10 @@
     "sprint": ["Shift"],
     "fireball": ["1"],
     "heal": ["2"],
-    "interact": ["F"]
+    "interact": ["F"],
+    "skill_frost": ["Q"],
+    "skill_meteor": ["R"],
+    "skill_beam": ["G"],
+    "skill_snare": ["T"]
   }
 }

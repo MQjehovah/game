@@ -431,6 +431,9 @@ private:
         // 2D sprite: texture path + flips. When isSprite is true the item
         // draws an XY quad with an unlit texture material instead of a mesh.
         bool isSprite = false;
+        // Billboard mode: the quad is re-oriented every frame to face the
+        // camera (world-space glow particles / VFX in 3D scenes).
+        bool billboard = false;
         std::string spriteTex;
         bool flipX = false;
         bool flipY = false;
