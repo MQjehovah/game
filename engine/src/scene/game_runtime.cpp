@@ -1254,6 +1254,11 @@ void GameRuntime::ResolveDrawItem(DrawItem& item, gfx::Renderer& renderer) {
         item.mesh = gfx::Mesh::CreateQuad(renderer, 1.0f, 1.0f, "sprite");
         item.mat.albedo = tex.Handle();
         item.mat.transparent = true; // PNG sprites keep their alpha
+        // flipX/flipY mirror the quad via a NEGATIVE local scale, which flips
+        // the triangle winding; with back-face culling on, a flipped sprite
+        // would be invisible. Sprite quads are flat billboards -- render both
+        // sides so a flipped sprite stays visible.
+        item.mat.doubleSided = true;
         item.resolved = true;
         return;
     }

@@ -80,7 +80,7 @@ TEST(PvzSceneHostsInEcsWorld) {
     auto inst = scene::Instantiate(world, parsed.Value(), prefs, reg);
     CHECK(inst.Ok());
     if (!inst.Ok()) return;
-    CHECK(inst.Value() >= 13u); // 13 scene entities (plants, zombie, camera, light...)
+    CHECK(inst.Value() >= 12u); // 12 scene entities (lawn, plants, zombie, cam...)
 
     // Every entity carries a transform; sprites carry SceneSprite, the zombie
     // has health, and plant/zombie data survives in generic SceneData.

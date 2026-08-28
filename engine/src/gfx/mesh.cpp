@@ -132,11 +132,14 @@ Mesh Mesh::CreateQuad(Renderer& renderer, float width, float height, const std::
     std::vector<Vertex3D> verts;
     std::vector<uint16_t> indices;
     const float hw = width * 0.5f, hh = height * 0.5f;
-    // XY plane, normal +Z. v = 0 is the bottom edge so image textures (whose
-    // first row is the top of the picture) appear upright in the front view.
+    // XY plane, normal +Z. v = 0 maps to the TOP edge (+y): textures are
+    // uploaded top-down (first row = top of the picture, flipVertically=0), so
+    // sampling v=0 at the quad's top edge makes the picture appear upright in
+    // the front view. (The previous mapping put v=0 at the bottom, which
+    // rendered every top-down texture upside down for sprite entities.)
     PushFace(verts, indices, {0, 0, 1},
              {-hw, -hh, 0}, {hw, -hh, 0}, {hw, hh, 0}, {-hw, hh, 0},
-             {0, 0}, {1, 0}, {1, 1}, {0, 1});
+             {0, 1}, {1, 1}, {1, 0}, {0, 0});
     return CreateFromData(renderer, verts.data(), static_cast<uint32_t>(verts.size()),
                           indices.data(), static_cast<uint32_t>(indices.size()), name);
 }
