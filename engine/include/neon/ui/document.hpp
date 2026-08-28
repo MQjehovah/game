@@ -144,9 +144,17 @@ public:
     // Resolves the whole tree against a viewport (design units): fills every
     // node's `resolved` rect (absolute design space). Draw/HitTest call this
     // automatically; the editor preview calls it to show the adapted layout.
+    // B12: the result is memoized on (dirty flag + viewport) so a frame that
+    // draws AND hit-tests with the same viewport only solves the tree once,
+    // and unchanged documents skip layout entirely.
     void Layout(const math::Vec2& viewportSize, const gfx::Font* font) const;
+    // Invalidates the memoized layout. Called by load/add/setters; the editor
+    // calls it when dragging/resizing nodes.
+    void MarkLayoutDirty() const { layoutDirty_ = true; }
 
 private:
+    mutable bool layoutDirty_ = true;
+    mutable math::Vec2 layoutViewport_;
     static bool SerializeNode(const UiNode& node, core::Json& out);
     static bool ParseNode(const core::Json& in, UiNode& out, std::string& error);
 };

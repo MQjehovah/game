@@ -165,6 +165,7 @@ private:
         uint64_t accountId = 0; // v0 anonymous account (T6.6); 0 = not logged in
         std::string name;  // P2-4: display name (used for name-based bans)
         uint64_t lastSeenMs = 0;
+        uint64_t lastSnapshotTick = 0; // B13: last snapshot tick actually sent
         uint64_t rttMs = 0; // G3-4: last measured round-trip (ping), for lag comp
         net::MsgInput lastInput;
         NetInput input; // per-client input state fed by THIS client's MsgInput

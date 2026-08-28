@@ -62,6 +62,9 @@
 
 #define VK_NO_PROTOTYPES
 #define VK_USE_PLATFORM_WIN32_KHR
+#ifndef NOMINMAX
+#define NOMINMAX // windows.h min/max macros break std::min/std::max below
+#endif
 
 #include <windows.h>
 
@@ -202,6 +205,35 @@ void TransposeMat4(float* dst, const float* src) {
         for (int c = 0; c < 4; ++c) dst[c * 4 + r] = src[r * 4 + c];
 }
 
+// IEEE 754 half -> float (A2: HDR target readback conversion).
+float HalfToFloat(uint16_t h) {
+    const uint32_t sign = static_cast<uint32_t>(h >> 15) & 1u;
+    const uint32_t exp = (static_cast<uint32_t>(h) >> 10) & 0x1Fu;
+    const uint32_t frac = static_cast<uint32_t>(h) & 0x3FFu;
+    uint32_t bits = 0;
+    if (exp == 0) {
+        if (frac == 0) {
+            bits = sign << 31; // +/-0
+        } else {
+            // Subnormal half: normalize into a float subnormal.
+            int e = -1;
+            uint32_t f = frac;
+            do {
+                f <<= 1;
+                ++e;
+            } while ((f & 0x400u) == 0);
+            bits = (sign << 31) | (static_cast<uint32_t>(127 - 15 - e) << 23) | ((f & 0x3FFu) << 13);
+        }
+    } else if (exp == 31) {
+        bits = (sign << 31) | 0x7F800000u | (frac << 13); // inf / nan
+    } else {
+        bits = (sign << 31) | ((exp - 15 + 127) << 23) | (frac << 13);
+    }
+    float out;
+    std::memcpy(&out, &bits, 4);
+    return out;
+}
+
 VkFormat SwapchainFormat(const std::vector<VkSurfaceFormatKHR>& formats) {
     for (VkFormat want : kSwapchainFormats) {
         for (const VkSurfaceFormatKHR& f : formats) {
@@ -272,7 +304,7 @@ struct Target {
 };
 
 enum class BlendState : uint8_t { Opaque, Alpha, Additive, Premultiplied };
-enum class VertexVariant : uint8_t { V3d, Instanced, Ui, Lines };
+enum class VertexVariant : uint8_t { V3d, Instanced, InstancedColored, Ui, Lines };
 
 struct Program {
     uint32_t id = 0;
@@ -325,6 +357,12 @@ struct RenderPassPair {
 };
 
 struct Frame {
+    // A1: texture descriptor sets live in a PER-FRAME pool. The frame's own
+    // fence (waited in EnsureFrameStarted) covers exactly the sets it
+    // allocated, so resetting here can never invalidate sets still in flight.
+    // The cache is rebuilt on demand -- allocation churn per frame is bounded
+    // by the number of distinct texture-slot combinations actually drawn.
+    VkDescriptorPool texPool = VK_NULL_HANDLE;
     VkCommandPool pool = VK_NULL_HANDLE;
     VkCommandBuffer cmd = VK_NULL_HANDLE;
     bool cmdOpen = false;
@@ -478,15 +516,14 @@ public:
     RenderTargetHandle CreateRenderTarget(int width, int height, bool floatColor,
                                           int samples) override {
         if (width <= 0 || height <= 0) return {};
-        if (floatColor) {
-            // The Intel Vulkan driver on the test machine cannot sample SFLOAT
-            // images (returns black for valid data), so the HDR targets fall
-            // back to RGBA8. The renderer's HDR self-test still passes via the
-            // readback path and HDR+bloom stay active in LDR.
-            NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
-                         "Vulkan: HDR float target uses RGBA8 (Intel SFLOAT sampling bug)");
-        }
-        const VkFormat colorFormat = VK_FORMAT_R8G8B8A8_UNORM;
+        // A2: honor floatColor with real R16G16B16A16_SFLOAT so the HDR +
+        // bloom pipeline is not silently clamped to LDR. Drivers whose SFLOAT
+        // SAMPLING is broken (the Intel this engine grew up on) are detected
+        // by the renderer's float-target self-test, which then disables HDR
+        // and falls back to the direct composite path (same adaptive pattern
+        // as the GL backend).
+        const VkFormat colorFormat =
+            floatColor ? VK_FORMAT_R16G16B16A16_SFLOAT : VK_FORMAT_R8G8B8A8_UNORM;
         samples = ClampSamples(samples);
         RpKind kind;
         if (floatColor) {
@@ -817,7 +854,44 @@ public:
 
     // Dynamic font atlases are GL-path only today; Vulkan keeps the texture
     // as created (dynamic glyph baking falls back to a static atlas).
-    void UpdateTextureRegion(TextureHandle, int, int, int, int, const void*) override {}
+    // A2: dynamic texture region update (font glyph atlas). Stages through
+    // the frame's host-visible scratch buffer and copies into the sub-rectangle.
+    void UpdateTextureRegion(TextureHandle handle, int x, int y, int width, int height,
+                             const void* data) override {
+        auto it = textures_.find(handle.id);
+        if (it == textures_.end() || !data || width <= 0 || height <= 0) return;
+        Texture& tex = it->second;
+        if (tex.format != VK_FORMAT_R8G8B8A8_UNORM || !tex.owned) return; // RGBA8 uploads only
+        const VkDeviceSize bytes = static_cast<VkDeviceSize>(width) * height * 4;
+
+        Frame& f = CurrentFrame();
+        EnsureFrameStarted();
+        OpenCmd(f);
+        uint64_t off = 0;
+        if (!ScratchAlloc(f, static_cast<size_t>(bytes), 16, &off)) return;
+        std::memcpy(f.scratchPtr + off, data, static_cast<size_t>(bytes));
+
+        const VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT;
+        const VkImageLayout from = TrackedLayout(tex.image);
+        TransitionImage(f.cmd, tex.image, from, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                        VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_TRANSFER_WRITE_BIT, aspect);
+        VkBufferImageCopy region{};
+        region.bufferOffset = off;
+        region.bufferRowLength = 0;
+        region.bufferImageHeight = 0;
+        region.imageSubresource = {aspect, 0, 0, 1};
+        region.imageOffset = {x, y, 0};
+        region.imageExtent = {static_cast<uint32_t>(width), static_cast<uint32_t>(height), 1};
+        vkCmdCopyBufferToImage(f.cmd, f.scratch, tex.image,
+                               VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+        const VkImageLayout back =
+            tex.owned ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_GENERAL;
+        TransitionImage(f.cmd, tex.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, back,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                        VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT, aspect);
+        SetTrackedLayout(tex.image, back);
+    }
 
     TextureHandle CreateTextureCompressed(int width, int height, uint32_t format, const void* data,
                                           size_t size) override {
@@ -1084,6 +1158,27 @@ public:
                           models[i].Data());
         }
         DrawIndexed(it->second, count, offset);
+    }
+
+    // A2/G1-5: instanced draw with per-instance RGBA. Matrices go to binding 1
+    // (transposed), colors to binding 2 (raw vec4s).
+    void DrawMeshInstancedColored(const MeshHandle& mesh, const math::Mat4* models,
+                                  const math::Vec4* colors, uint32_t count) override {
+        auto it = meshes_.find(mesh.vao);
+        if (it == meshes_.end() || !models || !colors || count == 0) return;
+
+        const size_t matBytes = static_cast<size_t>(count) * 64;
+        const size_t colBytes = static_cast<size_t>(count) * 16;
+        Frame& f = CurrentFrame();
+        uint64_t matOffset = 0, colOffset = 0;
+        if (!ScratchAlloc(f, matBytes, 16, &matOffset)) return;
+        if (!ScratchAlloc(f, colBytes, 16, &colOffset)) return;
+        for (uint32_t i = 0; i < count; ++i) {
+            TransposeMat4(reinterpret_cast<float*>(f.scratchPtr + matOffset + i * 64),
+                          models[i].Data());
+            std::memcpy(f.scratchPtr + colOffset + i * 16, &colors[i], 16);
+        }
+        DrawIndexed(it->second, count, matOffset, colOffset);
     }
 
     void DrawPrimitives(const void* vertices, uint32_t vertexCount, uint32_t stride,
@@ -1588,6 +1683,17 @@ private:
 
             if (!CreateDescriptorPool(&f.descPool)) return false;
 
+            // A1: per-frame texture sampler pool (see struct Frame).
+            VkDescriptorPoolSize tps[]{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                                       1024 * kMaxSamplerSlots};
+            VkDescriptorPoolCreateInfo tpci{};
+            tpci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+            tpci.maxSets = 2048;
+            tpci.poolSizeCount = 1;
+            tpci.pPoolSizes = tps;
+            if (vkCreateDescriptorPool(device_, &tpci, nullptr, &f.texPool) != VK_SUCCESS)
+                return false;
+
             if (!CreateHostBuffer(kUboBytes, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, &f.uboRing,
                                   &f.uboMem)) {
                 return false;
@@ -1597,7 +1703,10 @@ private:
             if (!CreateHostBuffer(kScratchBytes,
                                   VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
                                       VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
-                                      VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                      VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+                                      // A2: staging source for texture region
+                                      // updates (dynamic glyph atlas).
+                                      VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                                   &f.scratch, &f.scratchMem)) {
                 return false;
             }
@@ -1617,27 +1726,16 @@ private:
             fci.flags = 0;
             vkCreateFence(device_, &fci, nullptr, &f.readFence);
         }
-        VkDescriptorPoolSize tps[]{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-                                   4096 * kMaxSamplerSlots};
-        VkDescriptorPoolCreateInfo tpci{};
-        tpci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-        tpci.maxSets = 8192;
-        tpci.poolSizeCount = 1;
-        tpci.pPoolSizes = tps;
-        vkCreateDescriptorPool(device_, &tpci, nullptr, &texPool_);
         return true;
     }
 
     void DestroyFrames() {
-        if (texPool_) {
-            vkDestroyDescriptorPool(device_, texPool_, nullptr);
-            texPool_ = VK_NULL_HANDLE;
-        }
         texSetCache_.clear();
         for (Frame& f : frames_) {
             if (f.cmd && f.pool) vkFreeCommandBuffers(device_, f.pool, 1, &f.cmd);
             if (f.pool) vkDestroyCommandPool(device_, f.pool, nullptr);
             if (f.descPool) vkDestroyDescriptorPool(device_, f.descPool, nullptr);
+            if (f.texPool) vkDestroyDescriptorPool(device_, f.texPool, nullptr);
             if (f.uboPtr) vkUnmapMemory(device_, f.uboMem);
             if (f.uboRing) vkDestroyBuffer(device_, f.uboRing, nullptr);
             if (f.uboMem) vkFreeMemory(device_, f.uboMem, nullptr);
@@ -2135,6 +2233,12 @@ private:
         vkResetFences(device_, 1, &f.fence);
         vkResetCommandPool(device_, f.pool, 0);
         vkResetDescriptorPool(device_, f.descPool, 0);
+        // A1: the sampler sets of THIS frame come from its own pool (fence
+        // above covers them); drop the cache so the pool cannot be exhausted
+        // by texture-id churn (dynamic sky / hot reloads used to grow it
+        // unboundedly until every draw silently failed).
+        vkResetDescriptorPool(device_, f.texPool, 0);
+        texSetCache_.clear();
         f.uboCursor = 0;
         f.scratchCursor = 0;
         f.acquiredWaited = false;
@@ -2329,7 +2433,6 @@ private:
     uint64_t AlignUp(uint64_t v, uint64_t a) const { return (v + a - 1) & ~(a - 1); }
 
     VkDescriptorSet EnsureTextureSet(Frame& f) {
-        (void)f;
         Frame::TexKey key;
         for (uint32_t i = 0; i < kMaxSamplerSlots; ++i) key.ids[i] = boundTextures_[i];
         auto it = texSetCache_.find(key);
@@ -2337,7 +2440,7 @@ private:
 
         VkDescriptorSetAllocateInfo ai{};
         ai.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-        ai.descriptorPool = texPool_;
+        ai.descriptorPool = f.texPool; // A1: per-frame pool (reset with its fence)
         ai.descriptorSetCount = 1;
         ai.pSetLayouts = &descLayoutSet1_;
         VkDescriptorSet set;
@@ -2435,7 +2538,8 @@ private:
                                 sets, 1, &dynOffset);
     }
 
-    void DrawIndexed(const Mesh& mesh, uint32_t instanceCount, uint64_t instanceOffset) {
+    void DrawIndexed(const Mesh& mesh, uint32_t instanceCount, uint64_t instanceOffset,
+                     uint64_t colorOffset = UINT64_MAX) {
         Frame& f = CurrentFrame();
         if (!currentProgramId_) return;
         Program* prog = GetProgram(currentProgramId_);
@@ -2446,10 +2550,13 @@ private:
         if (!pipeline) return;
         BindPipeline(f, pipeline);
 
-        const bool instanced = prog->variant == VertexVariant::Instanced;
-        VkBuffer vbs[2] = {mesh.vbo, f.scratch};
-        VkDeviceSize voffs[2] = {0, instanceOffset};
-        vkCmdBindVertexBuffers(f.cmd, 0, instanced ? 2u : 1u, vbs, voffs);
+        const bool colored = prog->variant == VertexVariant::InstancedColored &&
+                             colorOffset != UINT64_MAX;
+        const bool instanced =
+            prog->variant == VertexVariant::Instanced || colored;
+        VkBuffer vbs[3] = {mesh.vbo, f.scratch, f.scratch};
+        VkDeviceSize voffs[3] = {0, instanceOffset, colorOffset};
+        vkCmdBindVertexBuffers(f.cmd, 0, instanced ? (colored ? 3u : 2u) : 1u, vbs, voffs);
         if (mesh.ibo) {
             vkCmdBindIndexBuffer(f.cmd, mesh.ibo, 0, VK_INDEX_TYPE_UINT16);
             vkCmdDrawIndexed(f.cmd, mesh.indexCount, instanceCount, 0, 0, 0);
@@ -2480,9 +2587,11 @@ private:
 
     static VkFormat RpFormat(RpKind rp) {
         switch (rp) {
+            // A2: float render passes carry SFLOAT attachments; pipelines and
+            // render passes must agree on the actual target format.
             case RpKind::Float1:
             case RpKind::Float2:
-            case RpKind::Float4: return VK_FORMAT_R8G8B8A8_UNORM;
+            case RpKind::Float4: return VK_FORMAT_R16G16B16A16_SFLOAT;
             case RpKind::DepthOnly: return VK_FORMAT_UNDEFINED;
             default: return VK_FORMAT_R8G8B8A8_UNORM;
         }
@@ -2503,7 +2612,9 @@ private:
 
         std::vector<VkVertexInputBindingDescription> bindings;
         std::vector<VkVertexInputAttributeDescription> attributes;
-        if (prog->variant == VertexVariant::V3d || prog->variant == VertexVariant::Instanced) {
+        const bool coloredInst = prog->variant == VertexVariant::InstancedColored;
+        if (prog->variant == VertexVariant::V3d || prog->variant == VertexVariant::Instanced ||
+            coloredInst) {
             bindings.push_back({0, 80, VK_VERTEX_INPUT_RATE_VERTEX});
             attributes.push_back({0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0});
             attributes.push_back({1, 0, VK_FORMAT_R32G32B32_SFLOAT, 12});
@@ -2511,12 +2622,17 @@ private:
             attributes.push_back({3, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 32});
             attributes.push_back({4, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 48});
             attributes.push_back({5, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 64});
-            if (prog->variant == VertexVariant::Instanced) {
+            if (prog->variant == VertexVariant::Instanced || coloredInst) {
                 bindings.push_back({1, 64, VK_VERTEX_INPUT_RATE_INSTANCE});
                 attributes[4] = {4, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 0};
                 attributes[5] = {5, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 16};
                 attributes.push_back({6, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 32});
                 attributes.push_back({7, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 48});
+            }
+            if (coloredInst) {
+                // Per-instance RGBA (GL attribute 8): binding 2, instance rate.
+                bindings.push_back({2, 16, VK_VERTEX_INPUT_RATE_INSTANCE});
+                attributes.push_back({8, 2, VK_FORMAT_R32G32B32A32_SFLOAT, 0});
             }
         } else if (prog->variant == VertexVariant::Ui) {
             bindings.push_back({0, 32, VK_VERTEX_INPUT_RATE_VERTEX});
@@ -2669,6 +2785,8 @@ private:
         if (std::strcmp(name, "ui") == 0 || std::strcmp(name, "imgui") == 0)
             return VertexVariant::Ui;
         if (std::strcmp(name, "lines") == 0) return VertexVariant::Lines;
+        if (std::strcmp(name, "unlit_instanced_colored") == 0)
+            return VertexVariant::InstancedColored;
         if (std::strcmp(name, "lit_instanced") == 0 || std::strcmp(name, "unlit_instanced") == 0 ||
             std::strcmp(name, "shadow_inst") == 0 || std::strcmp(name, "point_shadow_inst") == 0)
             return VertexVariant::Instanced;
@@ -2692,7 +2810,9 @@ private:
         EndRenderPassIfActive(f);
         EnsureFrameStarted();
         OpenCmd(f);
-        const size_t dataSize = static_cast<size_t>(readW) * readH * 4;
+        const bool halfFloat = format == VK_FORMAT_R16G16B16A16_SFLOAT;
+        const size_t stagingStride = halfFloat ? 8 : 4; // A2: half4 is 8 B/px
+        const size_t dataSize = static_cast<size_t>(readW) * readH * stagingStride;
         VkBuffer staging;
         VkDeviceMemory mem;
         if (!CreateHostBuffer(dataSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT, &staging, &mem)) return;
@@ -2730,6 +2850,20 @@ private:
                 dst[i * 4 + 1] = src[i * 4 + 1];
                 dst[i * 4 + 2] = src[i * 4 + 0];
                 dst[i * 4 + 3] = src[i * 4 + 3];
+            }
+        } else if (halfFloat) {
+            // A2: convert R16G16B16A16_SFLOAT (half precision) to RGBA8 so
+            // HDR readbacks (self-test probes, screenshots) see real values
+            // instead of raw half bytes.
+            const uint16_t* src = static_cast<const uint16_t*>(mapped);
+            uint8_t* dst = static_cast<uint8_t*>(rgba);
+            const int count = readW * readH;
+            for (int i = 0; i < count; ++i) {
+                for (int c = 0; c < 4; ++c) {
+                    const float v = HalfToFloat(src[i * 4 + c]);
+                    float clamped = v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v);
+                    dst[i * 4 + c] = static_cast<uint8_t>(clamped * 255.0f + 0.5f);
+                }
             }
         } else {
             std::memcpy(rgba, mapped, dataSize);
@@ -2791,7 +2925,6 @@ private:
     VkSampler samplerLinear_ = VK_NULL_HANDLE;
     VkSampler samplerRepeatNearest_ = VK_NULL_HANDLE;
     VkSampler samplerRepeatLinear_ = VK_NULL_HANDLE;
-    VkDescriptorPool texPool_ = VK_NULL_HANDLE;
 
     TextureHandle white_;
     ShaderHandle currentShader_;

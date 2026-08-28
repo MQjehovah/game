@@ -46,7 +46,7 @@ std::vector<uint8_t> EncodeBody(const T& msg) {
 // v2 -> v3: added the account/login + character-select messages
 // (MsgLogin/MsgLoginOk/MsgCharList, T6.6 placeholder auth).
 // v3 -> v4: added MsgRpc (P2-4 production RPC: named call + JSON args).
-inline constexpr uint8_t kProtocolVersion = 4;
+inline constexpr uint8_t kProtocolVersion = 5; // v5: snapshot fragmentation (B13)
 
 // Hard caps applied on decode to hostile input. Strings longer than
 // kMaxStringBytes and snapshots with more than kMaxSnapshotEntities entries
@@ -122,6 +122,11 @@ struct SnapshotEntity {
 struct MsgSnapshot {
     uint32_t tick = 0;
     uint32_t entityCount = 0; // entities.size(), carried on the wire verbatim
+    // B13: fragmentation. A snapshot that exceeds the reliable channel's
+    // maxFrameBytes is split into parts; the client reassembles by (tick).
+    // Unfragmented messages carry partIndex=0, partCount=1.
+    uint32_t partIndex = 0;
+    uint32_t partCount = 1;
     std::vector<SnapshotEntity> entities;
     void Write(core::Serializer& s) const;
     static core::Result<MsgSnapshot> Read(core::Deserializer& d);

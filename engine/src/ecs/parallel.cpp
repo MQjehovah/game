@@ -184,19 +184,36 @@ void ThreadPool::ParallelFor(uint32_t count, std::function<void(uint32_t, uint32
     // is visited exactly once and the result stays bit-identical to serial for
     // independent items.
     std::atomic<uint32_t> next{0};
-    std::atomic<uint32_t> remaining{chunks};
+    std::atomic<uint32_t> remaining{0}; // fetched-but-unfinished chunks
     std::atomic<uint32_t> doneJobs{0};
+    std::atomic<bool> abort{false};
+    SpinLock exLock;
+    std::exception_ptr firstException;
 
     auto grab = [&]() {
         for (;;) {
+            if (abort.load(std::memory_order_relaxed)) break;
             const uint32_t c = next.fetch_add(1, std::memory_order_relaxed);
             if (c >= chunks) break;
             const uint32_t start = static_cast<uint32_t>(
                 (static_cast<uint64_t>(c) * count) / chunks);
             const uint32_t end = static_cast<uint32_t>(
                 (static_cast<uint64_t>(c + 1) * count) / chunks);
-            fn(start, end);
+            remaining.fetch_add(1, std::memory_order_release);
+            try {
+                fn(start, end);
+            } catch (...) {
+                // A4: record the first failure, unwind every grabber, keep the
+                // accounting exact so the join below still terminates; the
+                // exception is rethrown on the calling thread after join.
+                exLock.Lock();
+                if (!firstException) firstException = std::current_exception();
+                exLock.Unlock();
+                abort.store(true, std::memory_order_relaxed);
+                next.store(chunks, std::memory_order_relaxed);
+            }
             remaining.fetch_sub(1, std::memory_order_release);
+            if (abort.load(std::memory_order_relaxed)) break;
         }
     };
     // Worker grab-jobs are separate from the chunks they run: the join below
@@ -216,14 +233,15 @@ void ThreadPool::ParallelFor(uint32_t count, std::function<void(uint32_t, uint32
 
     grab(); // the calling thread is a worker too
 
-    // Join: `remaining` reaches zero only after every chunk ran AND its release
-    // decrement is visible (acquire pairing); `doneJobs` reaches `workers` only
-    // after every worker grab-job has exited. Both together guarantee no
-    // pending closure still touches this stack before this call returns.
+    // Join: every fetched chunk has decremented `remaining` before its grab
+    // loop iteration ends, and `doneJobs` reaches `workers` only after every
+    // worker grab-job has exited. Both together guarantee no pending closure
+    // still touches this stack before this call returns.
     while (remaining.load(std::memory_order_acquire) != 0 ||
            doneJobs.load(std::memory_order_acquire) != static_cast<uint32_t>(workers)) {
         SleepMs(0);
     }
+    if (firstException) std::rethrow_exception(firstException);
 }
 
 ThreadPool& GlobalPool() {

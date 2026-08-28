@@ -61,6 +61,12 @@ public:
     const DebugFrame& PausedFrame() const override;
     void DebuggerResume(bool stepInto) override;
 
+    // Runaway-guard tuning (A5): instruction budget per Run/Call invocation
+    // (0 = keep the 1e9 default) and the Lua allocator's live-byte cap
+    // (default 128 MiB). Overrides the IScriptHost no-op.
+    void SetInstructionBudget(uint64_t budget) override;
+    void SetMemoryLimit(size_t bytes) override;
+
 private:
     // Raw lua_CFunction closures. Each reads its LuaHost from upvalue 1
     // (lightuserdata), exactly like NativeCallClosure; they implement the
@@ -75,6 +81,11 @@ private:
     static int NMathTime(lua_State* L);
     static int Print(lua_State* L);
     static void DebugHook(lua_State* L, lua_Debug* ar);
+    // Combined hook entry: count events enforce the instruction budget (A5),
+    // line events forward to DebugHook. Line masks attach only while the
+    // debugger is active (Impl::UpdateHookMask), so runs without breakpoints
+    // pay no per-line cost (B8).
+    static void HookEntry(lua_State* L, lua_Debug* ar);
     // Captures locals + callstack at the current hook position into frame.
     static void CaptureDebugFrame(lua_State* L, lua_Debug* ar, const std::string& script,
                                   const std::string& topName, int line,

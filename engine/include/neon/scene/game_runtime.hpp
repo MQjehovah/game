@@ -7,6 +7,7 @@
 #include <set>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "neon/bt/behavior_tree.hpp"
@@ -402,6 +403,11 @@ private:
         uint64_t onStart = 0;
         uint64_t onUpdate = 0;
         bool errorLogged = false; // one log per script instance per Start
+        // A6: per-instance snapshot of the component's declared `vars`. The
+        // values are injected into the host globals right before each call and
+        // read back after, so two entities with the same script no longer
+        // overwrite each other's declared vars ("last attach wins" bug).
+        script::Value vars;
     };
     struct BtInst {
         ecs::Entity ent;
@@ -543,6 +549,8 @@ private:
     void LoadPrefabs();
     void LoadLocales(); // locales/*.json string tables for Loc()
     void BuildDrawList();
+    // B6: rebuild drawKeys_ from draws_ (called at the end of BuildDrawList).
+    void SyncDrawKeys();
     void ResolveDrawItem(DrawItem& item, gfx::Renderer& renderer);
     // G6-2: async-aware item resolution — retries an asyncPending item from the
     // cache when its mesh is ready, else skips it; non-async items resolve
@@ -608,6 +616,9 @@ private:
     std::vector<ScriptInst> scripts_;
     std::vector<BtInst> trees_;
     std::vector<DrawItem> draws_;
+    // B6: alive-entity index over draws_ (EntityKey -> tracked). BuildDrawList
+    // used to linear-scan draws_ per candidate entity (O(N*M) per frame).
+    std::unordered_set<uint64_t> drawKeys_;
     // M1 HUD state: floating combat texts (world-anchored) + per-frame
     // entity screen anchors + script-stamped overhead plates.
     std::vector<FloatText> floatTexts_;
@@ -673,7 +684,12 @@ private:
     // (EntityKey -> authoritative position), index 0 = oldest. The newest
     // snapshot is appended at the end of every Tick and the ring is capped at
     // kLagCompHistoryTicks (~1 second at 60Hz).
-    std::vector<std::unordered_map<uint64_t, math::Vec3>> poseHistory_;
+    // G3-4/B10: lag-comp pose history as a fixed-capacity RING of reusable
+    // snapshot maps (one per history tick). The old vector<unordered_map>
+    // heap-allocated a new map every tick and moved the whole ring on eviction.
+    std::vector<std::unordered_map<uint64_t, math::Vec3>> poseSlots_;
+    size_t poseHead_ = 0;   // slot index of the OLDEST snapshot
+    size_t poseCount_ = 0;  // number of valid snapshots (<= capacity)
     uint32_t autoRewindTicks_ = 0; // rewind used by MeleeAttack/AttackBox/CastSkill
     gfx::Mesh fireballMesh_; // lazily built for skill-projectile rendering
     std::set<std::string> loadedScripts_; // resolved paths whose chunk ran (presence only)

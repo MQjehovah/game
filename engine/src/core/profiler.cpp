@@ -2,6 +2,9 @@
 
 #include <chrono>
 #include <cstring>
+#include <deque>
+#include <string>
+#include <unordered_map>
 
 namespace neon::core {
 
@@ -33,20 +36,32 @@ void Profiler::EndFrame() {
     inFrame_ = false;
 }
 
+// B10: profile names are interned once (deque: existing element references
+// survive push_back), so AddTiming compares pointers instead of strcmp-ing
+// every slot every frame.
+const char* InternProfileName(const char* name) {
+    static std::deque<std::string> pool;
+    static std::unordered_map<std::string, size_t> index;
+    if (!name) return nullptr;
+    auto it = index.find(name);
+    if (it != index.end()) return pool[it->second].c_str();
+    const size_t at = pool.size();
+    pool.emplace_back(name);
+    index.emplace(name, at);
+    return pool[at].c_str();
+}
+
 void Profiler::AddTiming(const char* name, double ms) {
     if (!inFrame_ || name == nullptr) return;
+    const char* key = InternProfileName(name);
     for (int i = 0; i < current_.slotCount; ++i) {
-        // Match by content, not pointer: identical string literals are not
-        // guaranteed to share an address (MSVC Debug builds give each a
-        // distinct copy), so pointer comparison would split one slot.
-        if (current_.slots[i].name != nullptr &&
-            std::strcmp(current_.slots[i].name, name) == 0) {
+        if (current_.slots[i].name == key) {
             current_.slots[i].ms += ms;
             return;
         }
     }
     if (current_.slotCount < kMaxSlots) {
-        current_.slots[current_.slotCount].name = name;
+        current_.slots[current_.slotCount].name = key;
         current_.slots[current_.slotCount].ms = ms;
         ++current_.slotCount;
     }

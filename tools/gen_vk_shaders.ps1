@@ -23,6 +23,7 @@ $shaders = @(
     "lines;lines.vert;lines.frag",
     "lit_instanced;lit_instanced.vert;lit.frag",
     "unlit_instanced;unlit_instanced.vert;unlit.frag",
+    "unlit_instanced_colored;unlit_instanced_colored.vert;unlit_instanced_colored.frag",
     "shadow;shadow.vert;shadow.frag",
     "shadow_inst;shadow_instanced.vert;shadow.frag",
     "shadow_skin;shadow_skinned.vert;shadow.frag",

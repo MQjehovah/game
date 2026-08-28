@@ -1,3 +1,4 @@
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <string>
@@ -120,19 +121,21 @@ int main(int argc, char** argv) {
                   scenePath.c_str(), scriptsDir.c_str(), ticksLimit,
                   cfg.loopback ? " loopback" : "");
 
-    // Virtual clock. GameServer::Step runs AT MOST ONE fixed tick per call and
-    // the accumulator residual drains on later calls, so the loop counts tick
-    // consumptions: each iteration advances the clock by >= one fixed step and
-    // runs exactly one tick. `--ticks N` therefore stops at exactly N (no
-    // overshoot from the 17ms advance vs. the 16.667ms fixed step).
-    uint64_t now = 0;
-    constexpr uint64_t kStepMs = 17; // >= one fixed step (1000/60 ~= 16.667ms)
-    constexpr uint64_t kRealSleepMs = 16;
+    // Real-time clock (D7): Step runs AT MOST ONE fixed tick per call and the
+    // accumulator residual drains on later calls, so pacing `now` by the real
+    // steady clock yields exactly 60 ticks/second. The previous virtual clock
+    // (+17ms per iteration against a 16ms sleep) drifted at ~63.75Hz, a ~6%
+    // mismatch with the clients' fixed step. `--ticks N` still stops at
+    // exactly N ticks, now paced by wall time (N/60 seconds).
+    const auto t0 = std::chrono::steady_clock::now();
     while (ticksLimit <= 0 || server.CurrentTick() < static_cast<uint32_t>(ticksLimit)) {
-        now += kStepMs;
+        const uint64_t now = static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - t0)
+                .count());
         server.Step(now);
         if (ticksLimit > 0 && server.CurrentTick() >= static_cast<uint32_t>(ticksLimit)) break;
-        SleepMs(kRealSleepMs);
+        SleepMs(1); // fine-grained so the accumulator can drain precisely
     }
 
     NEON_LOG_CAT(neon::core::LogCategory::Net, neon::core::LogLevel::Info,

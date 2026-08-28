@@ -174,7 +174,12 @@ bool EditorApp::OnCreate() {
     // mutation (Push/Undo/Redo) rebuilds it from the working model, so the World
     // always reflects the current edit state (and the play/save output is
     // generated from it via FromWorld).
-    history_.onChanged = [this] { SyncWorldFromEntities(); };
+    // B11: a gizmo drag pushes a mergeable transform command EVERY frame; the
+    // full World rebuild (JSON build + parse + Instantiate) runs once per drag
+    // instead of once per frame. The mirror stays fresh for the final pose.
+    history_.onChanged = [this] {
+        if (!gizmoDragActive_) SyncWorldFromEntities();
+    };
     renderer_.SetBackendName(backendName_);
     renderer_.SetBloomEnabled(bloomEnabled_);
     renderer_.SetMsaaEnabled(msaaEnabled_);
@@ -1471,7 +1476,7 @@ core::Status EditorApp::ExportScene() {
         return core::Status::Err("editor: cannot create export directory '" + scenesDir + "'");
     }
     std::string path = scenesDir + "/exported_scene.json";
-    std::string json = core::JsonWriter::Write(root);
+    std::string json = core::JsonWriter::WritePretty(root);
     if (std::ofstream out(path); out.is_open()) {
         out << json;
         NEON_LOG_INFO("Editor: exported scene (%zu entities) -> %s", entities_.size(),

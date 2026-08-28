@@ -39,17 +39,37 @@ TEST(JoltBoxStopsBallAndReportsCollision) {
     physics::World::BodyId ball = world.AddSphere(100, {-6, 0.5f, 0}, 0.5f, true);
     world.SetVelocity(ball, {10, 0, 0});
     world.ClearCollisions();
-    StepN(world, 120);
+    // Collisions() is a per-step snapshot (A7): settled bodies stop reporting,
+    // so poll each step instead of inspecting after the whole run.
+    bool found = false;
+    for (int i = 0; i < 120 && !found; ++i) {
+        world.Step(1.0f / 60.0f, {0, -9.81f, 0});
+        for (const auto& c : world.Collisions()) {
+            if ((c.first == 100 && c.second == 200) || (c.first == 200 && c.second == 100))
+                found = true;
+        }
+    }
     // The ball must be stopped by the static box (x stays left of the box edge).
     const math::Vec3 p = world.GetPosition(ball);
     CHECK(p.x < -3.5f);
     CHECK(p.x > -6.0f);
-    bool found = false;
-    for (const auto& c : world.Collisions()) {
-        if ((c.first == 100 && c.second == 200) || (c.first == 200 && c.second == 100))
-            found = true;
-    }
     CHECK(found);
+}
+
+TEST(JoltCollisionsBoundedPerStep) {
+    // A7: Collisions() reports the pairs of the LAST step only (matching the
+    // custom world's clear-per-step contract). It used to append without bound.
+    physics::JoltWorld world;
+    physics::World::BodyId box = world.AddBox(200, {{-4, 0, -4}, {4, 1, 4}}, false);
+    physics::World::BodyId ball = world.AddSphere(100, {-6, 0.5f, 0}, 0.5f, true);
+    world.SetVelocity(ball, {10, 0, 0});
+    StepN(world, 60);
+    const size_t after60 = world.Collisions().size();
+    CHECK(after60 <= 16u); // a resting/impacting pair per contact per step, never 60x accumulated
+    StepN(world, 60);
+    const size_t after120 = world.Collisions().size();
+    CHECK(after120 <= after60 + 16u); // bounded: did not grow by another 60 steps of pairs
+    (void)box;
 }
 
 TEST(JoltLayerMaskFiltering) {

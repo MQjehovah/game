@@ -333,7 +333,7 @@ void EditorApp::SaveEditorConfig() {
     p.type_ = core::Json::Type::String;
     p.string_ = projectDir_;
     root.object_["projectDir"] = p;
-    std::string json = core::JsonWriter::Write(root);
+    std::string json = core::JsonWriter::WritePretty(root);
     if (std::ofstream out("neon_editor_config.json"); out.is_open()) {
         out << json;
         NEON_LOG_INFO("Editor: config saved (project dir '%s')", projectDir_.c_str());

@@ -267,6 +267,14 @@ ParsedObjMesh ParseObjMesh(const std::string& path, const std::vector<uint8_t>& 
             auto colorIt = materialColors.find(currentMaterial);
             math::Vec4 color = colorIt != materialColors.end() ? colorIt->second
                                                                : math::Vec4{1, 1, 1, 1};
+            // A13: the mesh index buffer is 16-bit; beyond 65536 vertices the
+            // wraparound used to silently scramble geometry. Fail the load with
+            // an explicit error instead.
+            if (verts.size() + face.size() > 65536u) {
+                out.error = "OBJ exceeds 16-bit index limit (65536 vertices): " +
+                            std::to_string(verts.size() + face.size());
+                return out;
+            }
             uint16_t base = static_cast<uint16_t>(verts.size());
             for (size_t i = 0; i < face.size(); ++i) {
                 const FaceIndex& f = face[i];
@@ -323,14 +331,18 @@ int GltfComponentCount(const std::string& t) {
 // Resolves an accessor against the parsed buffer views / binary into a
 // contiguous-window descriptor honoring bufferView byteStride and accessor
 // byteOffset. Shared by the mesh importer and GltfAsset::ReadAccessorFloats.
-bool ResolveGltfAccessor(const std::vector<uint8_t>& bin,
-                         const std::vector<assets::GltfBufferView>& views,
+bool ResolveGltfAccessor(const std::vector<std::vector<uint8_t>>& bins,
+                          const std::vector<assets::GltfBufferView>& views,
                          const std::vector<assets::GltfAccessor>& accs,
                          int index, GltfAccessorLayout& out) {
     if (index < 0 || index >= static_cast<int>(accs.size())) return false;
     const assets::GltfAccessor& acc = accs[static_cast<size_t>(index)];
     if (acc.bufferView < 0 || acc.bufferView >= static_cast<int>(views.size())) return false;
     const assets::GltfBufferView& view = views[static_cast<size_t>(acc.bufferView)];
+    // A13: a bufferView names its buffer; honor it (multi-buffer assets used
+    // to silently read everything from buffers[0]).
+    if (view.buffer < 0 || view.buffer >= static_cast<int>(bins.size())) return false;
+    const std::vector<uint8_t>& bin = bins[static_cast<size_t>(view.buffer)];
     int compSize = GltfComponentSize(acc.componentType);
     int compCount = GltfComponentCount(acc.type);
     if (compSize == 0 || compCount == 0 || acc.count < 0) return false;
@@ -354,8 +366,8 @@ bool ResolveGltfAccessor(const std::vector<uint8_t>& bin,
 // failure (same wording as the sync path logged).
 struct ParsedGltf {
     core::Json root;
-    std::vector<uint8_t> bin;
-    std::string binPath; // external .bin for RecordDependency ("" = GLB)
+    std::vector<std::vector<uint8_t>> bins; // glTF buffers by index (A13)
+    std::vector<std::string> binPaths;      // external .bin paths (dependency edges)
     std::string dir;     // directory for relative texture/buffer refs
     std::string error;
 };
@@ -391,7 +403,7 @@ ParsedGltf ParseGltfContainer(const std::string& path, const std::vector<uint8_t
             out.error = "GLB no BIN chunk in '" + path + "'";
             return out;
         }
-        out.bin = std::move(glbBin);
+        out.bins.push_back(std::move(glbBin));
         out.dir = std::string(); // GLB: no external dir
         return out;
     }
@@ -404,22 +416,34 @@ ParsedGltf ParseGltfContainer(const std::string& path, const std::vector<uint8_t
         return out;
     }
     out.dir = DirName(path);
+    // A13: load EVERY declared buffer, not just buffers[0]. Multi-buffer assets
+    // (mesh in one .bin, animation in another) used to lose their tail data.
     if (const core::Json* buffers = out.root.Get("buffers"); buffers && buffers->Size() > 0) {
-        const core::Json* b0 = buffers->At(0);
-        if (b0 && b0->Get("uri")) {
-            const std::string uri = b0->Get("uri")->GetString();
-            const core::Result<std::vector<uint8_t>> binBytes =
-                ReadAllBytes(fs, out.dir + uri);
-            if (binBytes.Ok()) {
-                out.binPath = out.dir + uri;
-                out.bin = binBytes.Value();
+        for (size_t i = 0; i < buffers->Size(); ++i) {
+            const core::Json* b = buffers->At(i);
+            if (!b) {
+                out.bins.emplace_back();
+                continue;
+            }
+            if (const core::Json* uri = b->Get("uri"); uri && uri->IsString()) {
+                const std::string u = uri->GetString();
+                const core::Result<std::vector<uint8_t>> binBytes =
+                    ReadAllBytes(fs, out.dir + u);
+                if (binBytes.Ok()) {
+                    out.binPaths.push_back(out.dir + u);
+                    out.bins.push_back(binBytes.Value());
+                } else {
+                    out.error = "cannot open buffer '" + (out.dir + u) + "'";
+                    return out;
+                }
             } else {
-                out.error = "cannot open buffer '" + (out.dir + uri) + "'";
-                return out;
+                // A buffer without a URI in a .gltf (non-GLB) is malformed per
+                // spec; keep the slot so buffer indices stay aligned.
+                out.bins.emplace_back();
             }
         }
     }
-    if (out.bin.empty()) {
+    if (out.bins.empty() || out.bins[0].empty()) {
         out.error = "empty binary buffer in '" + path + "'";
         return out;
     }
@@ -428,7 +452,7 @@ ParsedGltf ParseGltfContainer(const std::string& path, const std::vector<uint8_t
 
 core::Result<std::vector<float>> GltfAsset::ReadAccessorFloats(int accessorIndex) const {
     GltfAccessorLayout layout;
-    if (!ResolveGltfAccessor(rawBin, bufferViews, accessors, accessorIndex, layout))
+    if (!ResolveGltfAccessor(bins, bufferViews, accessors, accessorIndex, layout))
         return core::Result<std::vector<float>>::Err("gltf: cannot resolve accessor");
     const GltfAccessor& acc = accessors[static_cast<size_t>(accessorIndex)];
     int comps = GltfComponentCount(acc.type);
@@ -509,6 +533,25 @@ std::string AssetManager::TextureCacheKey(const std::string& path,
     if (opts.flipVertically) key += std::string("\x1F") + "f";
     if (opts.wrap == gfx::Wrap::Repeat) key += std::string("\x1F") + "r";
     return key;
+}
+
+// A9: the path part of a cache key (suffixes stripped).
+std::string AssetManager::KeyPathOf(const std::string& key) {
+    const size_t cut = key.find('\x1F');
+    return cut == std::string::npos ? key : key.substr(0, cut);
+}
+
+// A9: reconstructs the load options encoded in a cache key (inverse of
+// TextureCacheKey by construction).
+TextureLoadOptions AssetManager::OptsFromKey(const std::string& key) {
+    TextureLoadOptions opts;
+    const size_t cut = key.find('\x1F');
+    if (cut == std::string::npos) return opts;
+    for (size_t i = cut; i < key.size(); ++i) {
+        if (key[i] == 'f') opts.flipVertically = true;
+        if (key[i] == 'r') opts.wrap = gfx::Wrap::Repeat;
+    }
+    return opts;
 }
 
 gfx::Texture AssetManager::LoadTexture(const std::string& path, const TextureLoadOptions& opts) {
@@ -598,10 +641,12 @@ void AssetManager::LoadTextureAsync(const std::string& path, std::function<void(
         return;
     }
 
-    // Dedupe: one in-flight decode per path; later callers coalesce onto it.
-    const bool inFlight = inFlight_.count(path) != 0;
-    if (!inFlight) inFlight_[path] = true;
-    pendingCallbacks_[path].push_back(std::move(cb));
+    // Dedupe: one in-flight decode per CACHE KEY (A9); later callers asking
+    // for the same path with different options (flip/wrap) no longer coalesce
+    // onto the first request's decode result.
+    const bool inFlight = inFlight_.count(key) != 0;
+    if (!inFlight) inFlight_[key] = true;
+    pendingCallbacks_[key].push_back(std::move(cb));
     if (inFlight) return;
 
     // Compression eligibility is decided HERE on the main thread (reads the
@@ -616,9 +661,9 @@ void AssetManager::LoadTextureAsync(const std::string& path, std::function<void(
     if (!ok) {
         // The pool became unavailable between the check and the submit; fall
         // back to a synchronous load for this one request.
-        inFlight_.erase(path);
-        auto cbs = std::move(pendingCallbacks_[path]);
-        pendingCallbacks_.erase(path);
+        inFlight_.erase(key);
+        auto cbs = std::move(pendingCallbacks_[key]);
+        pendingCallbacks_.erase(key);
         gfx::Texture tex = LoadTexture(path, opts);
         for (auto& c : cbs) c(tex.Valid());
     }
@@ -747,9 +792,10 @@ void AssetManager::LoadDependenciesAsync(
 
 void AssetManager::FinishAsyncTexture(const std::string& path, DecodedImage img,
                                       const TextureLoadOptions& opts) {
-    inFlight_.erase(path);
+    const std::string key = TextureCacheKey(path, opts); // A9: key-based bookkeeping
+    inFlight_.erase(key);
     std::vector<std::function<void(bool)>> cbs;
-    auto cbIt = pendingCallbacks_.find(path);
+    auto cbIt = pendingCallbacks_.find(key);
     if (cbIt != pendingCallbacks_.end()) {
         cbs = std::move(cbIt->second);
         pendingCallbacks_.erase(cbIt);
@@ -897,8 +943,8 @@ GltfAsset AssetManager::LoadGLTF(const std::string& path) {
         NEON_LOG_ERROR("GLTF: %s", parsed.error.c_str());
         return {};
     }
-    if (!parsed.binPath.empty()) RecordDependency(path, parsed.binPath);
-    return LoadGltfJson(parsed.root, std::move(parsed.bin), path, mtime, parsed.dir);
+    for (const std::string& bp : parsed.binPaths) RecordDependency(path, bp);
+    return LoadGltfJson(parsed.root, std::move(parsed.bins), path, mtime, parsed.dir);
 }
 
 // G6-2: async glTF/GLB load. The worker reads + parses the container (JSON +
@@ -943,10 +989,11 @@ void AssetManager::LoadGLTFAsync(const std::string& path, std::function<void(boo
 }
 
 void AssetManager::FinishAsyncGltf(const std::string& path, uint64_t mtime, ParsedGltf&& parsed) {
-    bool ok = parsed.error.empty() && !parsed.root.IsNull() && !parsed.bin.empty();
+    const bool hasBin = !parsed.bins.empty() && !parsed.bins[0].empty();
+    bool ok = parsed.error.empty() && !parsed.root.IsNull() && hasBin;
     if (ok) {
-        if (!parsed.binPath.empty()) RecordDependency(path, parsed.binPath);
-        GltfAsset asset = LoadGltfJson(parsed.root, std::move(parsed.bin), path, mtime,
+        for (const std::string& bp : parsed.binPaths) RecordDependency(path, bp);
+        GltfAsset asset = LoadGltfJson(parsed.root, std::move(parsed.bins), path, mtime,
                                        parsed.dir);
         ok = asset.Valid();
         if (ok)
@@ -960,11 +1007,11 @@ void AssetManager::FinishAsyncGltf(const std::string& path, uint64_t mtime, Pars
     for (auto& c : cbs) c(ok);
 }
 
-GltfAsset AssetManager::LoadGltfJson(core::Json& root, std::vector<uint8_t> bin,
-                                    const std::string& path, uint64_t mtime,
-                                    const std::string& dir) {
+GltfAsset AssetManager::LoadGltfJson(core::Json& root, std::vector<std::vector<uint8_t>> bins,
+                                     const std::string& path, uint64_t mtime,
+                                     const std::string& dir) {
     // Shared body for .gltf (JSON + external .bin) and .glb (JSON chunk +
-    // BIN chunk). `bin` may be empty for malformed assets; callers below
+    // BIN chunk). `bins` may be empty for malformed assets; callers below
     // already logged the specific failure.
 
     // Parse bufferViews / accessors into plain structs shared by the mesh
@@ -999,7 +1046,7 @@ GltfAsset AssetManager::LoadGltfJson(core::Json& root, std::vector<uint8_t> bin,
     auto readAccessor = [&](int accessorIndex, const uint8_t** outBase, int& outStride,
                             int& outCount) -> bool {
         GltfAccessorLayout layout;
-        if (!ResolveGltfAccessor(bin, parsedViews, parsedAccessors, accessorIndex, layout))
+        if (!ResolveGltfAccessor(bins, parsedViews, parsedAccessors, accessorIndex, layout))
             return false;
         *outBase = layout.base;
         outStride = layout.stride;
@@ -1367,7 +1414,8 @@ GltfAsset AssetManager::LoadGltfJson(core::Json& root, std::vector<uint8_t> bin,
     }
 
     GltfAsset out;
-    out.rawBin = std::move(bin);
+    out.rawBin = bins.empty() ? std::vector<uint8_t>{} : bins[0];
+    out.bins = std::move(bins);
     out.bufferViews = std::move(parsedViews);
     out.accessors = std::move(parsedAccessors);
     out.skins = std::move(skins);
@@ -1565,7 +1613,12 @@ gfx::Texture AssetManager::AcquireTexture(const std::string& path,
 }
 
 void AssetManager::ReleaseTexture(const std::string& path, const TextureLoadOptions& opts) {
-    const std::string key = TextureCacheKey(path, opts);
+    ReleaseTextureKey(TextureCacheKey(path, opts));
+}
+
+// A9: release by full cache key (the only correct identity -- a path alone
+// misses flip/wrap variants loaded by glTF or materials).
+void AssetManager::ReleaseTextureKey(const std::string& key) {
     auto refIt = textureRefs_.find(key);
     if (refIt == textureRefs_.end() || refIt->second == 0) return;
     if (--refIt->second > 0) return;
@@ -1623,7 +1676,24 @@ size_t AssetManager::AcquireChunkAssets(const std::vector<std::string>& refs) {
             r.find('.') == std::string::npos)
             continue;
         if (r.compare(0, 5, "gltf:") == 0) continue;
-        if (AcquireTexture(r).Valid()) ++held;
+        // A9: acquire every cached variant of the path (glTF loads textures
+        // with Repeat wrap, materials may load flipped) so re-entering a chunk
+        // revives exactly what the first visit loaded. Variants may sit in the
+        // live cache or in the retire queue (both revive via AcquireTexture).
+        std::vector<std::string> variantKeys;
+        for (const auto& kv : textures_)
+            if (KeyPathOf(kv.first) == r) variantKeys.push_back(kv.first);
+        for (const auto& r2 : retiredTextures_)
+            if (KeyPathOf(r2.key) == r &&
+                std::find(variantKeys.begin(), variantKeys.end(), r2.key) == variantKeys.end())
+                variantKeys.push_back(r2.key);
+        if (variantKeys.empty()) {
+            if (AcquireTexture(r).Valid()) ++held;
+        } else {
+            for (const std::string& k : variantKeys) {
+                if (AcquireTexture(r, OptsFromKey(k)).Valid()) ++held;
+            }
+        }
     }
     return held;
 }
@@ -1639,7 +1709,14 @@ void AssetManager::ReleaseChunkAssets(const std::vector<std::string>& refs) {
         if (r.find('/') == std::string::npos && r.find('\\') == std::string::npos &&
             r.find('.') == std::string::npos)
             continue;
-        ReleaseTexture(r);
+        // A9: release every cached variant -- releasing only the default-opts
+        // key left glTF's Repeat-wrapped entries referenced forever (GPU
+        // memory only grew while streaming chunks). Releasing an uncached
+        // path is a harmless no-op inside ReleaseTextureKey.
+        std::vector<std::string> keys;
+        for (const auto& kv : textureRefs_)
+            if (KeyPathOf(kv.first) == r) keys.push_back(kv.first);
+        for (const std::string& k : keys) ReleaseTextureKey(k);
     }
 }
 
@@ -1683,9 +1760,13 @@ void AssetManager::ReclaimRetired(uint64_t frame) {
 }
 
 bool AssetManager::TextureChangedOnDisk(const std::string& path) const {
-    auto it = textureMtimes_.find(path);
-    if (it == textureMtimes_.end()) return false;
-    return it->second != FileMTime(path);
+    // A9: mtime entries are keyed by full cache key; check every variant of
+    // the path (raw-path lookups missed flip/wrap entries forever).
+    for (const auto& kv : textureMtimes_) {
+        if (KeyPathOf(kv.first) != path) continue;
+        if (kv.second != FileMTime(path)) return true;
+    }
+    return false;
 }
 
 bool AssetManager::MeshChangedOnDisk(const std::string& path) const {
@@ -1697,19 +1778,38 @@ bool AssetManager::MeshChangedOnDisk(const std::string& path) const {
 void AssetManager::ReloadTexture(const std::string& path) {
     if (!TextureChangedOnDisk(path)) return;
     NEON_LOG_INFO("Asset: hot-reload texture '%s'", path.c_str());
-    const uint32_t refs = textureRefs_[path];  // preserve owners across reload
-    textures_.erase(path);
-    textureMtimes_.erase(path);
-    textureRefs_.erase(path);
-    LoadTexture(path);
-    if (refs > 0) textureRefs_[path] = refs;
+    // A9: reload EVERY cached variant (flip/wrap suffixes) and retire the old
+    // GPU handles instead of erasing them -- erasing could destroy a texture
+    // still referenced by commands queued this frame (use-after-free window).
+    std::vector<std::string> keys;
+    for (const auto& kv : textures_)
+        if (KeyPathOf(kv.first) == path) keys.push_back(kv.first);
+    if (keys.empty()) keys.push_back(path); // never loaded: plain reload
+    for (const std::string& key : keys) {
+        const TextureLoadOptions opts = OptsFromKey(key);
+        const uint32_t refs = textureRefs_[key];  // preserve owners across reload
+        auto texIt = textures_.find(key);
+        if (texIt != textures_.end()) {
+            retiredTextures_.push_back({key, texIt->second, static_cast<uint32_t>(pumpFrame_)});
+            textures_.erase(texIt);
+        }
+        textureMtimes_.erase(key);
+        textureRefs_.erase(key);
+        LoadTexture(path, opts);
+        if (refs > 0) textureRefs_[key] = refs;
+    }
 }
 
 void AssetManager::ReloadMeshOBJ(const std::string& path) {
     if (!MeshChangedOnDisk(path)) return;
     NEON_LOG_INFO("Asset: hot-reload OBJ '%s'", path.c_str());
     const uint32_t refs = meshRefs_[path];  // preserve owners across reload
-    meshes_.erase(path);
+    // A9: retire the old GPU mesh instead of dropping the handle outright.
+    auto meshIt = meshes_.find(path);
+    if (meshIt != meshes_.end()) {
+        retiredMeshes_.push_back({path, meshIt->second, static_cast<uint32_t>(pumpFrame_)});
+        meshes_.erase(meshIt);
+    }
     meshMtimes_.erase(path);
     meshRefs_.erase(path);
     LoadMeshOBJ(path);

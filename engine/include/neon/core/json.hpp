@@ -27,7 +27,10 @@ public:
     bool GetBool(bool def = false) const { return type_ == Type::Bool ? bool_ : def; }
     double GetNumber(double def = 0.0) const { return type_ == Type::Number ? number_ : def; }
     int GetInt(int def = 0) const { return type_ == Type::Number ? static_cast<int>(number_) : def; }
-    const std::string& GetString(const std::string& def = "") const {
+    // Returns by value: returning `const std::string&` to a default-argument
+    // temporary would dangle (A3). Binding the result to `const std::string&`
+    // at call sites still works via lifetime extension.
+    std::string GetString(const std::string& def = "") const {
         return type_ == Type::String ? string_ : def;
     }
 
@@ -62,6 +65,10 @@ bool JsonEquals(const Json& a, const Json& b);
 class JsonWriter {
 public:
     static std::string Write(const Json& value);
+    // Multi-line indented output (version-control friendly diffs). Arrays that
+    // contain only scalars and serialize to <= 96 chars stay on one line so
+    // terrain height tables don't explode vertically.
+    static std::string WritePretty(const Json& value, int indentSpaces = 2);
     static std::string Escape(const std::string& s);
 };
 

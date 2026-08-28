@@ -112,6 +112,14 @@ public:
     double CurrentServerTick() const { return currentServerTick_; }
 
 private:
+    // B13: in-progress snapshot reassembly (parts arrive in order over the
+    // reliable channel). Reset whenever the tick changes or the count differs.
+    uint32_t pendingTick_ = 0;
+    bool pendingActive_ = false;
+    uint32_t pendingCount_ = 0;
+    std::vector<net::SnapshotEntity> pendingEntities_;
+
+private:
     static const net::SnapshotEntity* Find(const net::MsgSnapshot& snap, uint64_t entityId);
     static InterpolatedEntity ToInterp(const net::SnapshotEntity& e);
     core::Result<InterpolatedEntity> FindResult(const net::MsgSnapshot& snap,

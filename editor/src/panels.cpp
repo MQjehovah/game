@@ -2442,7 +2442,7 @@ void EditorApp::BuildNavPanel() {
                 if (json.Ok()) {
                     std::ofstream out(path, std::ios::binary);
                     if (out.is_open()) {
-                        out << core::JsonWriter::Write(json.Value());
+                        out << core::JsonWriter::WritePretty(json.Value());
                         navAssetPath_ = path;
                         NEON_LOG_INFO("Nav: saved -> %s", path.c_str());
                     } else {
@@ -2825,7 +2825,7 @@ void EditorApp::BuildLocPanel() {
             const std::string path = dir + "/locales.json";
             std::ofstream out(path, std::ios::binary);
             if (out.is_open()) {
-                out << core::JsonWriter::Write(locEdit_.ToJson());
+                out << core::JsonWriter::WritePretty(locEdit_.ToJson());
                 locPath_ = path;
                 NEON_LOG_INFO("Loc: saved -> %s", path.c_str());
             } else {
@@ -3916,7 +3916,7 @@ void EditorApp::BuildPackagePanel() {
                 root.object_["export"] = ex;
                 std::ofstream out(projectDir_ + "/game.json", std::ios::binary);
                 if (out.is_open()) {
-                    out << core::JsonWriter::Write(root);
+                    out << core::JsonWriter::WritePretty(root);
                     NEON_LOG_INFO("Export: preset saved -> %s/game.json", projectDir_.c_str());
                 } else {
                     NEON_LOG_ERROR("Export: cannot write '%s/game.json'", projectDir_.c_str());

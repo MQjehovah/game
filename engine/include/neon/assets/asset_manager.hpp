@@ -66,7 +66,8 @@ struct GltfAsset {
     std::vector<GltfMeshNode> nodes;
     std::vector<GltfNode> nodesAll;
     std::vector<gfx::Skin> skins;
-    std::vector<uint8_t> rawBin;
+    std::vector<uint8_t> rawBin; // legacy: buffers[0] (kept for compat); use bins
+    std::vector<std::vector<uint8_t>> bins; // glTF buffers by index (A13: multi-buffer)
     std::vector<GltfBufferView> bufferViews;
     std::vector<GltfAccessor> accessors;
     // True when a glTF loaded: at least one renderable mesh node OR a full node
@@ -172,8 +173,9 @@ public:
     // Handles both .gltf (JSON + external .bin) and .glb (binary container).
     GltfAsset LoadGLTF(const std::string& path);
     // Shared importer body: `root` is the parsed glTF JSON, `bin` the binary
-    // buffer (external .bin contents or the GLB BIN chunk).
-    GltfAsset LoadGltfJson(core::Json& root, std::vector<uint8_t> bin,
+    // buffer (external .bin contents or the GLB BIN chunk). A13: takes ALL
+    // declared buffers (multi-buffer assets keep per-bufferView data intact).
+    GltfAsset LoadGltfJson(core::Json& root, std::vector<std::vector<uint8_t>> bins,
                            const std::string& path, uint64_t mtime, const std::string& dir);
     gfx::Font LoadFont(const std::string& path, int pixelHeight);
     // Loads a system CJK font with DYNAMIC glyphs (stb_truetype atlas grows on
@@ -214,8 +216,7 @@ public:
     // stale cached entry and re-reads when the file changed on disk.
     bool TextureChangedOnDisk(const std::string& path) const;
     bool MeshChangedOnDisk(const std::string& path) const;
-    void ReloadTexture(const std::string& path);
-    void ReloadMeshOBJ(const std::string& path);
+    void ReloadTexture(const std::string& path);    void ReloadMeshOBJ(const std::string& path);
 
     // Resource lifecycle (P0-3) ------------------------------------------
     // Every successful load bumps the entry's refcount (first load starts at
@@ -261,6 +262,13 @@ public:
     }
 
 private:
+    // A9: cache-key helpers. Keys are "<path>[\x1F f][\x1F r]" (flip/wrap
+    // suffixes); KeyPathOf strips them, OptsFromKey reconstructs the options.
+    static std::string KeyPathOf(const std::string& key);
+    static TextureLoadOptions OptsFromKey(const std::string& key);
+    // A9: release by full cache key (the only correct identity; path-only
+    // release missed flip/wrap variants loaded by glTF/materials).
+    void ReleaseTextureKey(const std::string& key);
     // Pure-CPU decode (never touches GL). Runs on a worker for async loads and
     // inline for sync loads. `compressed` is the resolved BC1 decision (already
     // gated on driver capability by the caller, on the main thread).

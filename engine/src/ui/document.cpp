@@ -213,6 +213,7 @@ bool UiDocument::LoadJson(const std::string& text) {
         NEON_LOG_ERROR("UI: node error: %s", parseError.c_str());
         return false;
     }
+    MarkLayoutDirty(); // B12: a fresh document needs a fresh layout
     return true;
 }
 
@@ -224,7 +225,7 @@ std::string UiDocument::ToJson() const {
     core::Json rootJson = MakeObject();
     SerializeNode(root, rootJson);
     Put(doc, "root", std::move(rootJson));
-    return core::JsonWriter::Write(doc);
+    return core::JsonWriter::WritePretty(doc);
 }
 
 bool UiDocument::SerializeNode(const UiNode& node, core::Json& out) {
@@ -490,11 +491,19 @@ UiNode* UiDocument::HitTest(const math::Vec2& p, const math::Vec2& viewportSize)
 }
 
 void UiDocument::Layout(const math::Vec2& viewportSize, const gfx::Font* font) const {
+    // B12: memoized -- unchanged documents and same-viewport double solves
+    // (Draw + HitTest in one frame) skip the tree walk entirely.
+    if (!layoutDirty_ && layoutViewport_.x == viewportSize.x &&
+        layoutViewport_.y == viewportSize.y) {
+        return;
+    }
     // Pluggable strategy (layout_solver.hpp): "absolute" keeps the legacy
     // rect chain; anything else resolves through the registered solver.
     ILayoutSolver* s = FindLayoutSolver(solver);
     if (!s) s = AbsoluteLayoutSolver();
     s->Solve(const_cast<UiNode&>(root), viewportSize, FontTextMeasure(font));
+    layoutDirty_ = false;
+    layoutViewport_ = viewportSize;
 }
 
 } // namespace neon::ui

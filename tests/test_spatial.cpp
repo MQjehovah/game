@@ -27,6 +27,14 @@ class FogRecordingBackend : public test::NullBackend {
 public:
     std::set<std::string> floats;
     std::set<std::string> vec3s;
+    int nextShaderId = 1;
+
+    // B1: distinct programs must have distinct handles -- the renderer now
+    // re-applies the scene-uniform block per program, so the mock must reflect
+    // real backends (which give every CreateShader call a unique handle).
+    neon::gfx::ShaderHandle CreateShader(const char*, const char*, const char*) override {
+        return {static_cast<uint32_t>(nextShaderId++)};
+    }
 
     void SetUniformFloat(const char* name, float) override {
         if (name) floats.insert(name);
@@ -213,8 +221,12 @@ TEST(FogUniformsReachSkinnedAndInstancedPaths) {
 
     gfx::Mesh skinned = MakeSkinnedQuad(renderer);
     std::vector<math::Mat4> bones(1, math::Mat4::Identity());
-    renderer.DrawSkinnedMesh(skinned, gfx::Material::Lit({}, gfx::Color::White, 16.0f),
-                             math::Mat4::Identity(), bones, 1);
+    // B1: distinct programs get distinct shader handles (the mock mirrors real
+    // backends); the scene-uniform block re-applies per program.
+    gfx::Shader shaderA = renderer.CreateShader("", "", "s1");
+    gfx::Material matA = gfx::Material::Lit({}, gfx::Color::White, 16.0f);
+    matA.shader = shaderA.Handle();
+    renderer.DrawSkinnedMesh(skinned, matA, math::Mat4::Identity(), bones, 1);
     CHECK(rec->floats.count("uFogStart") == 1);
     CHECK(rec->floats.count("uFogEnd") == 1);
     CHECK(rec->vec3s.count("uFogColor") == 1);
@@ -224,7 +236,10 @@ TEST(FogUniformsReachSkinnedAndInstancedPaths) {
     gfx::Mesh cube = gfx::Mesh::CreateCube(renderer, 1, 1, 1, "cube");
     math::Mat4 models[2] = {math::Mat4::Identity(),
                             math::Mat4::Translation({0.0f, 0.0f, 40.0f})};
-    renderer.DrawMeshInstanced(cube, gfx::Material::Lit({}, gfx::Color::White, 8.0f), models, 2);
+    gfx::Shader shaderB = renderer.CreateShader("", "", "s2");
+    gfx::Material matB = gfx::Material::Lit({}, gfx::Color::White, 8.0f);
+    matB.shader = shaderB.Handle();
+    renderer.DrawMeshInstanced(cube, matB, models, 2);
     CHECK(rec->floats.count("uFogStart") == 1);
     CHECK(rec->floats.count("uFogEnd") == 1);
     CHECK(rec->vec3s.count("uFogColor") == 1);

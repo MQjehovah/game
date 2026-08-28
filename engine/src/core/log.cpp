@@ -32,7 +32,36 @@ struct LogLockGuard {
     ~LogLockGuard() { flag.clear(std::memory_order_release); }
 };
 
-static std::vector<LogEntry> g_logBuffer;
+// B15: fixed-capacity ring (head index) instead of vector::erase(begin()),
+// which moved ~2048 entries per message on a full buffer.
+struct LogRing {
+    std::vector<LogEntry> slots;
+    size_t head = 0;  // oldest entry
+    size_t count = 0;
+    explicit LogRing(size_t capacity) { slots.resize(capacity); }
+    void Push(const LogEntry& e) {
+        slots[(head + count) % slots.size()] = e;
+        if (count < slots.size()) {
+            ++count;
+        } else {
+            head = (head + 1) % slots.size(); // overwrite oldest
+        }
+    }
+    std::vector<LogEntry> Recent(size_t maxCount) const {
+        if (count == 0 || maxCount == 0) return {};
+        const size_t n = maxCount < count ? maxCount : count;
+        std::vector<LogEntry> out;
+        out.reserve(n);
+        for (size_t i = count - n; i < count; ++i) out.push_back(slots[(head + i) % slots.size()]);
+        return out;
+    }
+    void Clear() {
+        head = 0;
+        count = 0;
+    }
+};
+
+static LogRing g_logRing(kLogBufferSize);
 static std::vector<LogSinkEntry> g_logSinks;
 static std::map<LogCategory, LogLevel> g_catLevels;
 static uint64_t g_frame = 0;
@@ -170,24 +199,21 @@ void RemoveLogSink(void (*sink)(const LogEntry&, void*), void* userData) {
 
 std::vector<LogEntry> GetRecentLogs(size_t maxCount) {
     LogLockGuard lock(g_logLock);
-    if (g_logBuffer.empty() || maxCount == 0) return {};
-    size_t start = g_logBuffer.size() > maxCount ? g_logBuffer.size() - maxCount : 0;
-    return std::vector<LogEntry>(g_logBuffer.begin() + static_cast<ptrdiff_t>(start),
-                                 g_logBuffer.end());
+    return g_logRing.Recent(maxCount);
 }
 
 void ClearLogs() {
     LogLockGuard lock(g_logLock);
-    g_logBuffer.clear();
+    g_logRing.Clear();
 }
 
 namespace {
 
-// Shared body for both Log() overloads. Formatting, the runtime gate, the ring
-// buffer, the file sink and the current-frame stamp all happen under the lock;
-// stderr write and sink delivery run after it is released (matching the old
-// "sink delivery after lock release" contract and avoiding lock re-entrancy in
-// user sinks).
+// Shared body for both Log() overloads. B15: the expensive work (vsnprintf,
+// timestamp formatting, string assembly) happens OUTSIDE the spinlock; the
+// lock only covers the level gate + frame stamp, then the ring push + file
+// sink. The wall-clock breakdown caches the tm for the current second (logs
+// burst within one second); the per-line file flush is reserved for Error+.
 void LogImpl(LogLevel level, LogCategory category, const char* file, int line,
              const char* fmt, va_list args) {
     LogEntry entry;
@@ -197,26 +223,42 @@ void LogImpl(LogLevel level, LogCategory category, const char* file, int line,
     entry.line = line;
 
     char buffer[kLogBufferSize] = {};
+    std::vsnprintf(buffer, sizeof(buffer), fmt, args);
+    entry.text = buffer;
+
+    // [HH:MM:SS.mmm] from the wall clock (ms precision) so the prefix reads
+    // naturally and still carries the millisecond fraction for sortability.
+    // The tm for the current second is cached: bursts within one second skip
+    // localtime entirely.
+    const auto sinceEpoch = std::chrono::system_clock::now().time_since_epoch();
+    const auto secs = std::chrono::duration_cast<std::chrono::seconds>(sinceEpoch);
+    const auto millis =
+        std::chrono::duration_cast<std::chrono::milliseconds>(sinceEpoch - secs);
+    std::time_t nowSecs = static_cast<std::time_t>(secs.count());
+    static std::time_t sCachedSecs = 0;
+    static std::tm sCachedTm{};
+    if (nowSecs != sCachedSecs) {
+        sCachedTm = std::tm{};
+#if defined(_WIN32)
+        localtime_s(&sCachedTm, &nowSecs);
+#else
+        localtime_r(&nowSecs, &sCachedTm);
+#endif
+        sCachedSecs = nowSecs;
+    }
+    const std::tm& tm = sCachedTm;
+
     char formatted[4096] = {};
     std::string framePrefix;
     std::string loc;
-    std::string fileOpenWarn;
-    std::vector<LogSinkEntry> sinks;
-    LogEntry entryCopy;
-
     {
+        // Short lock #1: level gate + frame stamp.
         LogLockGuard lock(g_logLock);
-
         LogLevel effective = g_logLevel;
         const auto overrideIt = g_catLevels.find(category);
         if (overrideIt != g_catLevels.end()) effective = overrideIt->second;
         if (level < effective) return;
-
-        std::vsnprintf(buffer, sizeof(buffer), fmt, args);
-        entry.text = buffer;
         entry.frame = g_frame;
-        entryCopy = entry;
-
         if (g_frame > 0) {
             char frameBuf[32];
             std::snprintf(frameBuf, sizeof(frameBuf), "[f%04llu] ",
@@ -228,31 +270,21 @@ void LogImpl(LogLevel level, LogCategory category, const char* file, int line,
             if (entry.line > 0) loc += ":" + std::to_string(entry.line);
             loc += " ";
         }
+    }
 
-        // [HH:MM:SS.mmm] from the wall clock (ms precision) so the prefix reads
-        // naturally and still carries the millisecond fraction for sortability.
-        const auto sinceEpoch = std::chrono::system_clock::now().time_since_epoch();
-        const auto secs = std::chrono::duration_cast<std::chrono::seconds>(sinceEpoch);
-        const auto millis =
-            std::chrono::duration_cast<std::chrono::milliseconds>(sinceEpoch - secs);
-        std::time_t nowSecs = static_cast<std::time_t>(secs.count());
-        std::tm tm{};
-#if defined(_WIN32)
-        localtime_s(&tm, &nowSecs);
-#else
-        localtime_r(&nowSecs, &tm);
-#endif
-        const int written = std::snprintf(
-            formatted, sizeof(formatted), "[%02d:%02d:%02d.%03d] %s[%s] [%s] %s%s",
-            tm.tm_hour, tm.tm_min, tm.tm_sec, static_cast<int>(millis.count()),
-            framePrefix.c_str(), TagFor(level), CategoryName(category), loc.c_str(),
-            buffer);
-        (void)written;
+    const int written = std::snprintf(
+        formatted, sizeof(formatted), "[%02d:%02d:%02d.%03d] %s[%s] [%s] %s%s",
+        tm.tm_hour, tm.tm_min, tm.tm_sec, static_cast<int>(millis.count()),
+        framePrefix.c_str(), TagFor(level), CategoryName(category), loc.c_str(),
+        buffer);
+    (void)written;
 
-        g_logBuffer.push_back(entry);
-        if (g_logBuffer.size() > kLogBufferSize) {
-            g_logBuffer.erase(g_logBuffer.begin());
-        }
+    std::vector<LogSinkEntry> sinks;
+    std::string fileOpenWarn;
+    {
+        // Short lock #2: ring push + file write.
+        LogLockGuard lock(g_logLock);
+        g_logRing.Push(entry);
         sinks = g_logSinks;
 
         if (!g_filePath.empty()) {
@@ -266,7 +298,7 @@ void LogImpl(LogLevel level, LogCategory category, const char* file, int line,
             }
             if (g_fileStream.is_open()) {
                 g_fileStream << formatted << '\n';
-                g_fileStream.flush();
+                if (level >= LogLevel::Error) g_fileStream.flush();
             }
         }
     }
@@ -280,7 +312,7 @@ void LogImpl(LogLevel level, LogCategory category, const char* file, int line,
     std::fflush(stderr);
 
     for (const LogSinkEntry& s : sinks) {
-        if (s.fn) s.fn(entryCopy, s.userData);
+        if (s.fn) s.fn(entry, s.userData);
     }
 }
 

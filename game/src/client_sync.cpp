@@ -40,6 +40,33 @@ core::Result<InterpolatedEntity> ClientSync::FindResult(const net::MsgSnapshot& 
 }
 
 void ClientSync::OnSnapshot(const net::MsgSnapshot& snap) {
+    // B13: fragmented snapshots arrive as consecutive parts (the reliable
+    // channel is ordered and dedupes retransmits by sequence number, so parts
+    // never duplicate). Assemble before the stale/duplicate checks.
+    if (snap.partCount > 1) {
+        if (!pendingActive_ || pendingTick_ != snap.tick || pendingCount_ != snap.partCount) {
+            // A new (or restarted) fragment group: begin assembly.
+            pendingActive_ = true;
+            pendingTick_ = snap.tick;
+            pendingCount_ = snap.partCount;
+            pendingEntities_.clear();
+        }
+        pendingEntities_.insert(pendingEntities_.end(), snap.entities.begin(),
+                                snap.entities.end());
+        if (snap.partIndex + 1 == snap.partCount) {
+            net::MsgSnapshot merged;
+            merged.tick = snap.tick;
+            merged.entities = std::move(pendingEntities_);
+            merged.entityCount = static_cast<uint32_t>(merged.entities.size());
+            pendingActive_ = false;
+            pendingEntities_.clear();
+            OnSnapshot(merged); // reassembled: recurse with the unfragmented path
+        }
+        return; // waiting for more parts
+    }
+    pendingActive_ = false;
+    pendingEntities_.clear();
+
     // Stale or duplicate ticks (e.g. a re-sent reliable frame) are dropped so
     // the buffer stays strictly ascending.
     if (!snapshots_.empty() && static_cast<double>(snap.tick) <= currentServerTick_) return;

@@ -167,3 +167,79 @@ TEST(JsonDeepNesting) {
     const std::string out = core::JsonWriter::Write(v);
     CHECK_EQ(out, text);
 }
+
+// ---------------------------------------------------------------------------
+// 2026-08-28 hardening (A3/A12): hostile inputs must fail cleanly, numbers
+// must round-trip at full double precision, and pretty output stays valid.
+// ---------------------------------------------------------------------------
+
+TEST(JsonTrailingContentRejected) {
+    std::string error;
+    CHECK(core::Json::Parse("{} garbage", &error).IsNull());
+    CHECK(!error.empty());
+    CHECK(core::Json::Parse("[1,2] ]", &error).IsNull());
+    // Whitespace-only trailing content is fine.
+    CHECK(core::Json::Parse("  42  \n").IsNumber());
+}
+
+TEST(JsonMalformedNumbersRejected) {
+    std::string error;
+    CHECK(core::Json::Parse("[1.2.3]", &error).IsNull());
+    CHECK(core::Json::Parse("[1.]", &error).IsNull());
+    CHECK(core::Json::Parse("[.5]", &error).IsNull());
+    CHECK(core::Json::Parse("[e5]", &error).IsNull());
+    CHECK(core::Json::Parse("[1e]", &error).IsNull());
+    CHECK(core::Json::Parse("[1e+]", &error).IsNull());
+    CHECK(core::Json::Parse("[-]", &error).IsNull());
+    CHECK(!error.empty());
+    // Valid forms still accepted.
+    CHECK(core::Json::Parse("[0,-1.5,1e10,2E-3,3.0e+2]").IsArray());
+}
+
+TEST(JsonNestingLimit) {
+    std::string deep;
+    for (int i = 0; i < 2000; ++i) deep += '[';
+    deep += '1';
+    for (int i = 0; i < 2000; ++i) deep += ']';
+    std::string error;
+    CHECK(core::Json::Parse(deep, &error).IsNull());
+    CHECK(!error.empty());
+}
+
+TEST(JsonNumberPrecisionRoundTrip) {
+    const double values[] = {0.123456789012345, 1234567.5, 1e-300, 3.141592653589793,
+                             0.1, -42.0625, 9.999999999999999e22};
+    for (double d : values) {
+        core::Json j;
+        j.type_ = core::Json::Type::Number;
+        j.number_ = d;
+        const std::string text = core::JsonWriter::Write(j);
+        core::Json back = core::Json::Parse(text);
+        CHECK(back.IsNumber());
+        CHECK(back.GetNumber() == d); // bit-exact round trip
+    }
+}
+
+TEST(JsonPrettyWriter) {
+    core::Json j = core::Json::Parse(
+        "{\"name\":\"scene\",\"values\":[1,2,3],\"big\":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20],"
+        "\"nested\":{\"list\":[{\"a\":1}]},\"empty\":[]}");
+    const std::string pretty = core::JsonWriter::WritePretty(j);
+    // Re-parses to the same document.
+    core::Json back = core::Json::Parse(pretty);
+    CHECK(core::JsonEquals(j, back));
+    // Short scalar arrays stay inline.
+    CHECK(pretty.find("[1, 2, 3]") != std::string::npos || pretty.find("[1,2,3]") != std::string::npos);
+    // Multi-line: objects break lines.
+    CHECK(pretty.find('\n') != std::string::npos);
+    CHECK(pretty.find("\"name\": \"scene\"") != std::string::npos);
+}
+
+TEST(JsonGetStringSafeOnNonString) {
+    core::Json j = core::Json::Parse("{\"n\":5}");
+    // No dangling reference when falling back to the default (A3).
+    std::string s = j.Get("n")->GetString();
+    CHECK_EQ(s, std::string());
+    std::string own = j.Get("n")->GetString("fallback");
+    CHECK_EQ(own, std::string("fallback"));
+}

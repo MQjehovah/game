@@ -939,15 +939,33 @@ Value NativeSetVar(IScriptHost& host, void* user) {
     return Value::Nil();
 }
 
+// Raycast(origin, dir [, maxDist]) -> nil on miss; on hit a truthy table
+// { hit=true, dist=<t>, point={x,y,z}, entity={id,gen} } (A8: the distance and
+// the hit entity used to be discarded, leaving scripts unable to aim/select).
+// Legacy truthiness is preserved: miss returns nil (falsy), hit returns a
+// non-nil table (truthy), so `if Raycast(...)` keeps working.
 Value NativeRaycast(IScriptHost& host, void* user) {
     auto* ctx = static_cast<ScriptContext*>(user);
     if (!ctx || !ctx->physics) return Value::Nil();
     math::Vec3 origin = Vec3FromValue(host.GetArg(0), math::Vec3{});
     math::Vec3 dir = Vec3FromValue(host.GetArg(1), math::Vec3{0, -1, 0});
+    const Value& distArg = host.GetArg(2);
+    const float maxDist = distArg.type == Value::Type::Number
+                              ? static_cast<float>(distArg.number)
+                              : kRayMaxDist;
     math::Ray ray{origin, dir};
     float t = 0.0f;
-    bool hit = ctx->physics->Raycast(ray, kRayMaxDist, t, nullptr);
-    return Value::Bool(hit);
+    uint64_t hitOwner = 0;
+    if (!ctx->physics->Raycast(ray, maxDist, t, &hitOwner)) return Value::Nil();
+    Value out = Value::Tbl();
+    out.table->fields.emplace_back("hit", Value::Bool(true));
+    out.table->fields.emplace_back("dist", Value::Num(t));
+    out.table->fields.emplace_back("point", Vec3ToValue(origin + dir * t));
+    ecs::Entity e;
+    e.id = static_cast<uint32_t>(hitOwner >> 32);
+    e.generation = static_cast<uint32_t>(hitOwner & 0xFFFFFFFFu);
+    out.table->fields.emplace_back("entity", EntityToValue(e));
+    return out;
 }
 
 // Reads an optional RigidBodyDesc table ({mass=, restitution=, friction=,

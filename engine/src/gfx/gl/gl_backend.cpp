@@ -1,6 +1,7 @@
 #include "neon/gfx/backend.hpp"
 
 #include <algorithm>
+#include <cstdlib>
 #include <cstring>
 #include <unordered_map>
 #include <vector>
@@ -82,7 +83,23 @@ constexpr gl::GLenum DepthComponent = 0x1902;
 constexpr gl::GLenum CompressedRgbaS3tcDxt1 = 0x83F1;
 } // namespace glc
 
+// B2: glGetError is a synchronous driver round-trip; on per-uniform calls it
+// dominated the GL CPU path. The check stays available in Debug builds and
+// behind NEON_GL_ERRORS=1 (opt-in in Release) for driver debugging.
+static bool GlErrorChecksEnabled() {
+    static const bool enabled = [] {
+#if !defined(NDEBUG)
+        return true;
+#else
+        const char* env = std::getenv("NEON_GL_ERRORS");
+        return env && env[0] == '1';
+#endif
+    }();
+    return enabled;
+}
+
 void CheckError(const char* where) {
+    if (!GlErrorChecksEnabled()) return;
     gl::GLenum err = gl::GetGL().GetError();
     if (err != 0)
         NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Error,
@@ -1042,10 +1059,15 @@ private:
 
     gl::GLint GetUniformLocation(ShaderHandle shader, const char* name) {
         Program& prog = const_cast<Program&>(GetProgram(shader));
-        auto it = prog.uniforms.find(name);
+        // B2: the same uniform names repeat every draw; reuse a thread-local
+        // key so the map lookup stops heap-allocating a temporary std::string
+        // per call (capacity warms up after the first use).
+        static thread_local std::string tlKey;
+        tlKey.assign(name);
+        auto it = prog.uniforms.find(tlKey);
         if (it != prog.uniforms.end()) return it->second;
         gl::GLint loc = gl::GetGL().GetUniformLocation(prog.id, name);
-        prog.uniforms.emplace(name, loc);
+        prog.uniforms.emplace(tlKey, loc);
         return loc;
     }
 

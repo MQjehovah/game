@@ -218,6 +218,13 @@ public:
         return kEmpty;
     }
     virtual void DebuggerResume(bool stepInto) { (void)stepInto; }
+
+    // Runaway-guard tuning (A5). Budget counts VM instructions per Run/Call
+    // invocation (0 keeps the backend default); the memory limit caps the
+    // script allocator's live bytes. Backends without hard guards (or values
+    // they cannot apply) keep the default no-op.
+    virtual void SetInstructionBudget(uint64_t budget) { (void)budget; }
+    virtual void SetMemoryLimit(size_t bytes) { (void)bytes; }
 };
 
 // Factories: create the engine's script hosts (implemented in

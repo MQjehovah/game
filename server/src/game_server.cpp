@@ -859,7 +859,6 @@ void GameServer::BroadcastSnapshot() {
             snap.entities.push_back(se);
         }
         snap.entityCount = static_cast<uint32_t>(snap.entities.size());
-        const std::vector<uint8_t> body = net::EncodeBody(snap);
 
         for (uint64_t id : spawned) {
             const Item* it = itemById(id);
@@ -875,38 +874,79 @@ void GameServer::BroadcastSnapshot() {
         }
         for (uint64_t id : despawned) SendDespawn(c, id);
 
-        // The reliable transport caps every frame at Config().maxFrameBytes
-        // (~1200; the codec adds 8 magic+CRC + 4 version + 1 msgId + 2 seq
-        // bytes on top of the payload). AOI keeps the interest set small, but
-        // a dense neighborhood (or a large radius) can still exceed the cap —
-        // keep the guard.
-        const size_t frameBytes = body.size() + 15;
-        if (frameBytes > c.chan.Config().maxFrameBytes) {
-            // The snapshot cannot fit in one frame: the client would silently
-            // freeze on the previous state. Count it and log at Warn (throttled
-            // so a too-big scene does not spam every tick).
-            ++snapshotTooBig_;
-            if (++c.dropLogCount % 60 == 1)
-                NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Warn,
-                             "server: snapshot with %zu entities exceeds the %u-byte frame "
-                             "cap for client %llu; dropped",
-                             snap.entityCount, c.chan.Config().maxFrameBytes,
-                             static_cast<unsigned long long>(c.clientId));
-            continue;
+        // B13: fragment oversized snapshots instead of dropping them. Each part
+        // fits the reliable channel's maxFrameBytes (header ~19 bytes on top of
+        // the payload); the client reassembles parts by tick (parts arrive in
+        // order over the reliable channel).
+        constexpr size_t kPartHeaderBytes = 19; // magic+crc+version+msgId+seq+part fields
+        const size_t maxPayload =
+            c.chan.Config().maxFrameBytes > kPartHeaderBytes
+                ? c.chan.Config().maxFrameBytes - kPartHeaderBytes
+                : c.chan.Config().maxFrameBytes;
+        // Per-entity wire size (u64 id + 4x f32 = 24) + the 16 bytes of fixed
+        // MsgSnapshot header (tick/part/partCount/entityCount) per part.
+        constexpr size_t kEntityBytes = 24;
+        constexpr size_t kSnapshotHeaderBytes = 16;
+        const size_t maxEntitiesPerPart =
+            maxPayload > kSnapshotHeaderBytes ? (maxPayload - kSnapshotHeaderBytes) / kEntityBytes
+                                              : 1;
+        const size_t totalEntities = snap.entities.size();
+        if (totalEntities <= maxEntitiesPerPart) {
+            const std::vector<uint8_t> body = net::EncodeBody(snap);
+            const size_t frameBytes = body.size() + 15;
+            if (frameBytes > c.chan.Config().maxFrameBytes) {
+                // Still too big (shouldn't happen given the entity math above);
+                // fall through to the fragmentation path.
+                (void)0;
+            } else {
+                core::Status st =
+                    c.chan.Send(static_cast<uint8_t>(net::MsgType::Snapshot), body);
+                if (!st.Ok()) {
+                    // Throttled: a client that never acks fills the window and would
+                    // otherwise log once per tick until it is disconnected.
+                    ++snapshotDrops_;
+                    if (++c.dropLogCount % 60 == 1)
+                        NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Debug,
+                                     "server: snapshot to client %llu deferred (%s)",
+                                     static_cast<unsigned long long>(c.clientId),
+                                     st.Error().c_str());
+                } else {
+                    c.lastSnapshotTick = snap.tick;
+                }
+                continue;
+            }
         }
-        core::Status st =
-            c.chan.Send(static_cast<uint8_t>(net::MsgType::Snapshot), body);
-        if (!st.Ok()) {
-            // Throttled: a client that never acks fills the window and would
-            // otherwise log once per tick until it is disconnected.
-            ++snapshotDrops_;
-            if (++c.dropLogCount % 60 == 1)
-                NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Debug,
-                             "server: snapshot to client %llu deferred (%s)",
-                             static_cast<unsigned long long>(c.clientId),
-                             st.Error().c_str());
-        } else {
-            c.dropLogCount = 0;
+        // Fragmentation path: split the entities into N parts, each under the
+        // frame cap.
+        {
+            const uint32_t partCount = static_cast<uint32_t>(
+                (totalEntities + maxEntitiesPerPart - 1) / maxEntitiesPerPart);
+            for (uint32_t p = 0; p < partCount; ++p) {
+                net::MsgSnapshot part;
+                part.tick = snap.tick;
+                part.partIndex = p;
+                part.partCount = partCount;
+                const size_t begin = static_cast<size_t>(p) * maxEntitiesPerPart;
+                const size_t end = std::min(begin + maxEntitiesPerPart, totalEntities);
+                part.entities.assign(snap.entities.begin() + static_cast<ptrdiff_t>(begin),
+                                     snap.entities.begin() + static_cast<ptrdiff_t>(end));
+                part.entityCount = static_cast<uint32_t>(part.entities.size());
+                const std::vector<uint8_t> partBody = net::EncodeBody(part);
+                core::Status st =
+                    c.chan.Send(static_cast<uint8_t>(net::MsgType::Snapshot), partBody);
+                if (!st.Ok()) {
+                    ++snapshotDrops_;
+                    if (++c.dropLogCount % 60 == 1)
+                        NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Debug,
+                                     "server: snapshot part %u/%u to client %llu deferred (%s)",
+                                     p + 1, partCount,
+                                     static_cast<unsigned long long>(c.clientId),
+                                     st.Error().c_str());
+                    break; // window full: stop emitting parts this tick
+                }
+            }
+            c.lastSnapshotTick = snap.tick;
+            continue;
         }
     }
     // P2-4 anti-cheat: broadcast a deterministic world checksum alongside the
@@ -938,8 +978,16 @@ void GameServer::BroadcastSnapshot() {
         t.number_ = tick_;
         msg.object_["tick"] = t;
         core::Json h;
-        h.type_ = core::Json::Type::Number;
-        h.number_ = static_cast<double>(hash);
+        // A11: a uint64 FNV-1a hash loses its high bits through a JSON double
+        // (53-bit mantissa), so the client's comparison was meaningless.
+        // Hex string, same trick pack_manifest.json already uses.
+        h.type_ = core::Json::Type::String;
+        {
+            char buf[32];
+            std::snprintf(buf, sizeof(buf), "%016llx",
+                          static_cast<unsigned long long>(hash));
+            h.string_ = buf;
+        }
         msg.object_["hash"] = h;
         for (auto& kv : clients_)
             SendRpc(kv.second, "world.hash", core::JsonWriter::Write(msg));

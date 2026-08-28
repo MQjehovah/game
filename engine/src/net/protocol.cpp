@@ -103,6 +103,8 @@ core::Result<MsgInput> MsgInput::Read(core::Deserializer& d) {
 
 void MsgSnapshot::Write(core::Serializer& s) const {
     s.WriteU32(tick);
+    s.WriteU32(partIndex);
+    s.WriteU32(partCount);
     s.WriteU32(static_cast<uint32_t>(entities.size()));
     for (const SnapshotEntity& e : entities) {
         s.WriteU64(e.id);
@@ -118,6 +120,16 @@ core::Result<MsgSnapshot> MsgSnapshot::Read(core::Deserializer& d) {
     core::Result<uint32_t> tick = d.ReadU32();
     if (!tick.Ok()) return core::Result<MsgSnapshot>::Err("net: snapshot tick truncated");
     m.tick = tick.Value();
+    core::Result<uint32_t> partIndex = d.ReadU32();
+    if (!partIndex.Ok())
+        return core::Result<MsgSnapshot>::Err("net: snapshot part index truncated");
+    m.partIndex = partIndex.Value();
+    core::Result<uint32_t> partCount = d.ReadU32();
+    if (!partCount.Ok())
+        return core::Result<MsgSnapshot>::Err("net: snapshot part count truncated");
+    m.partCount = partCount.Value();
+    if (m.partCount == 0 || m.partIndex >= m.partCount)
+        return core::Result<MsgSnapshot>::Err("net: snapshot part index out of range");
     core::Result<uint32_t> count = d.ReadU32();
     if (!count.Ok()) return core::Result<MsgSnapshot>::Err("net: snapshot entity count truncated");
     if (count.Value() > kMaxSnapshotEntities)

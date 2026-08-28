@@ -577,6 +577,45 @@ TEST(GameRuntimeScriptVarsAsGlobals) {
     CHECK_EQ(runtime.GameVars().Get("gold").number, 30.0); // 10 ticks * factor 3
 }
 
+// A6: two entities sharing one script keep INDEPENDENT declared vars (the
+// values are injected per call and saved back; the old code let the last
+// attach win for both).
+TEST(GameRuntimeScriptVarsIsolatedPerEntity) {
+    const char* scene = R"({
+      "entities": [
+        {"name": "Slow", "components": {
+          "transform": {"pos": [0,0,0]},
+          "script": {"backend": "lua", "path": "walker.lua", "vars": {"speed": 1}}
+        }},
+        {"name": "Fast", "components": {
+          "transform": {"pos": [0,0,0]},
+          "script": {"backend": "lua", "path": "walker.lua", "vars": {"speed": 3}}
+        }}
+      ]
+    })";
+    const char* lua = R"(
+      function on_update(e, dt)
+        local p = GetPosition(e)
+        SetPosition(e, {x = p.x + speed * dt, y = p.y, z = p.z})
+      end
+    )";
+    scene::GameRuntime runtime;
+    scene::GameRuntimeConfig cfg;
+    cfg.readScript = [&](const std::string&) { return std::string(lua); };
+    CHECK(runtime.Start(scene, cfg).Ok());
+    for (int i = 0; i < 30; ++i) runtime.Tick(1.0f / 60.0f);
+    auto posOf = [&runtime](const char* name) {
+        const ecs::Entity e = runtime.FindNamedEntity(name);
+        const scene::SceneTransform* t = runtime.World().Get<scene::SceneTransform>(e);
+        return t ? t->pos : math::Vec3{};
+    };
+    const math::Vec3 slow = posOf("Slow");
+    const math::Vec3 fast = posOf("Fast");
+    CHECK_NEAR(fast.x, 3.0f * 0.5f, 1e-3f); // 30 ticks * speed 3 * dt
+    CHECK_NEAR(slow.x, 1.0f * 0.5f, 1e-3f); // 30 ticks * speed 1 * dt
+    CHECK(fast.x > slow.x * 2.0f);          // not the same speed for both
+}
+
 // A failing on_update is logged once per script instance, not every tick.
 TEST(GameRuntimeScriptErrorLoggedOnce) {
     const char* scene = R"({

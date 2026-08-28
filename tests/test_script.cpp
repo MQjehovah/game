@@ -485,3 +485,36 @@ TEST(ScriptDebuggerBreakpointPathMatching) {
     CHECK(!host->DebuggerPaused());
     host->Shutdown();
 }
+
+// A5 (2026-08-28): runaway scripts must abort with a ScriptError instead of
+// freezing the engine forever; the memory cap raises a clean error too.
+TEST(ScriptRunawayLoopAborts) {
+    auto host = script::CreateLuaHost();
+    CHECK(host != nullptr);
+    CHECK(host->Init());
+    host->SetInstructionBudget(200000); // small budget for a fast test
+    CHECK(host->Load("while true do end"));
+    auto r = host->Run();
+    CHECK(!r.Ok());
+    CHECK(host->LastError().message.find("budget") != std::string::npos);
+    // The host survives and still runs healthy scripts afterwards.
+    CHECK(host->Load("return 6*7"));
+    auto ok = host->Run();
+    CHECK(ok.Ok());
+    CHECK_NEAR(ok.Value().number, 42.0, 1e-9);
+    host->Shutdown();
+}
+
+TEST(ScriptMemoryLimitAborts) {
+    auto host = script::CreateLuaHost();
+    CHECK(host != nullptr);
+    CHECK(host->Init());
+    host->SetMemoryLimit(2u * 1024 * 1024); // 2 MiB
+    CHECK(host->Load(
+        "local t = {}\n"
+        "for i = 1, 1000000 do t[i] = {i, i, i} end\n"));
+    auto r = host->Run();
+    CHECK(!r.Ok());
+    CHECK(host->LastError().message.find("memory") != std::string::npos);
+    host->Shutdown();
+}

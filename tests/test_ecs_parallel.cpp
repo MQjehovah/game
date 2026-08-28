@@ -1,8 +1,9 @@
-#include <algorithm>
+﻿#include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <stdexcept>
 #include <vector>
 
 #include "neon/neon.hpp"
@@ -378,4 +379,29 @@ TEST(ParallelForReducerMisSizedDetected) {
     });
     CHECK(!tooSmall.Ok());
 #endif
+}
+
+// A4 (2026-08-28): an exception inside fn must surface on the calling thread
+// AFTER every worker exited its closure -- no dangling stack references, and
+// the pool stays usable afterwards.
+TEST(ParallelForExceptionPropagatesAndPoolSurvives) {
+    bool threw = false;
+    try {
+        ecs::parallel::ParallelFor(10000, [](uint32_t begin, uint32_t end) {
+            (void)end;
+            if (begin == 0) throw std::runtime_error("boom from chunk");
+        });
+    } catch (const std::runtime_error& e) {
+        threw = std::string(e.what()).find("boom") != std::string::npos;
+    }
+    CHECK(threw);
+
+    // Pool still healthy: a follow-up pass produces the serial answer.
+    std::vector<int> out(1000, 0);
+    ecs::parallel::ParallelFor(1000, [&](uint32_t begin, uint32_t end) {
+        for (uint32_t i = begin; i < end; ++i) out[i] = static_cast<int>(i) * 2;
+    });
+    bool allGood = true;
+    for (int i = 0; i < 1000; ++i) allGood = allGood && out[i] == i * 2;
+    CHECK(allGood);
 }

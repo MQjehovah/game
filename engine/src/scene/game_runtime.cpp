@@ -1,4 +1,4 @@
-#include "neon/scene/game_runtime.hpp"
+﻿#include "neon/scene/game_runtime.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -173,10 +173,10 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
 
     // Mesh keys are resolved lazily at Draw time (file-backed "obj:"/"gltf:"
     // plus procedural primitives), so instantiation validates structure but
-    // not prefixes �?a scene with an unresolvable key still plays headless.
+    // not prefixes 锟?a scene with an unresolvable key still plays headless.
     // cfg_ must be assigned before LoadPrefabs/AttachScripts read it.
     cfg_ = std::move(cfg);
-    // G5-4-4(项1): register the per-frame component sub-task system graph once
+    // G5-4-4(椤?): register the per-frame component sub-task system graph once
     // (idempotent across Stop->Start cycles).
     InitSystemGraph();
     // Data-driven skills table (M1): hosts pass the skills.json text.
@@ -190,7 +190,7 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     // Create the physics world: Jolt when requested and compiled, else the
     // deterministic custom solver (server / headless tests). A "plugin:<name>"
     // backend (G5-1) loads the solver from a native middleware DLL/SO under
-    // cfg_.pluginBaseDir/plugins — swappable without relinking. The owning
+    // cfg_.pluginBaseDir/plugins 鈥?swappable without relinking. The owning
     // PhysicsBackend is kept alive until this runtime is destroyed (it owns the
     // DLL), and is declared before physics_ so the world dies before the library.
     physics_ = std::unique_ptr<physics::World, std::function<void(physics::World*)>>(
@@ -392,6 +392,15 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     scriptCtx_.sceneSetPos = [this](ecs::Entity e, const math::Vec3& p) {
         if (SceneTransform* t = world_.Get<SceneTransform>(e)) t->pos = p;
         if (script::CTransformBind* t = world_.Get<script::CTransformBind>(e)) t->pos = p;
+        // A8: a scripted move must also move the physics body, otherwise the
+        // next SyncSceneBodies() snaps the entity back and characters walk
+        // through walls that only physics knows about.
+        if (const SceneRigidBody* rb = world_.Get<SceneRigidBody>(e)) {
+            if (rb->bodyId != 0) physics_->SetPosition({rb->bodyId}, p);
+        }
+        if (const SceneCharacter* c = world_.Get<SceneCharacter>(e)) {
+            if (c->bodyId != 0) physics_->SetPosition({c->bodyId}, p);
+        }
     };
     scriptCtx_.sceneSetYaw = [this](ecs::Entity e, float yaw) {
         const math::Quat q = math::Quat::FromAxisAngle({0, 1, 0}, yaw);
@@ -614,7 +623,9 @@ void GameRuntime::Stop() {
     projectiles_.clear();
     tweens_.clear();
     skillCooldowns_.clear();
-    poseHistory_.clear();
+    poseHead_ = 0;
+    poseCount_ = 0;
+    for (auto& s : poseSlots_) s.clear();
     autoRewindTicks_ = 0;
     signalHandlers_.clear();
     pendingScene_.clear();
@@ -688,6 +699,10 @@ void GameRuntime::SyncSceneBodies() {
     world_.ViewAll<SceneRigidBody, SceneTransform>().ForEach(
         [this](ecs::Entity e, const SceneRigidBody& rb, SceneTransform& t) {
             if (rb.bodyId == 0) return;
+            // B14: static bodies never move after registration -- skip the
+            // per-frame GetPosition (Jolt map lookup) entirely. Dynamic bodies
+            // (and characters below) keep syncing.
+            if (!rb.dynamic) return;
             t.pos = physics_->GetPosition({rb.bodyId});
             (void)e;
         });
@@ -869,15 +884,15 @@ bool GameRuntime::AttachOneScript(ecs::Entity ent, const SceneScript& s) {
         loadedScripts_.insert(loadKey);
     }
 
-    scripts_.push_back({ent, s.path, host, 0, 0, false});
+    scripts_.push_back({ent, s.path, host, 0, 0, false, script::Value::Tbl()});
     ScriptInst& inst = scripts_.back();
 
-    // Per-entity script vars become Lua globals so on_start/on_update can
-    // read them (e.g. `aggro`). Globals persist, so across entities the
-    // last-set value wins for all of them (documented single-host caveat).
+    // A6: the component's declared vars live on the INSTANCE now. They are
+    // injected into the host globals just before each call and read back
+    // after, so entities with the same script keep independent vars.
     if (s.vars.IsObject()) {
         for (const auto& kv : s.vars.Members()) {
-            host->SetGlobal(kv.first, bt::JsonToValue(kv.second));
+            inst.vars.table->fields.emplace_back(kv.first, bt::JsonToValue(kv.second));
         }
     }
 
@@ -899,7 +914,18 @@ void GameRuntime::CallEntityFunctionHandle(ScriptInst& inst, uint64_t handle,
     // updated (multi-player: each player's script reads its OWN client input).
     scriptCtx_.currentEntity = inst.ent;
     inst.host->SetCurrentScript(inst.path);
+    // A6: inject this instance's declared vars before the call and save them
+    // back after, giving per-entity isolation over the shared global namespace.
+    const bool hasVars = inst.vars.type == script::Value::Type::Table && inst.vars.table;
+    if (hasVars) {
+        for (const auto& kv : inst.vars.table->fields) inst.host->SetGlobal(kv.first, kv.second);
+    }
     const auto res = inst.host->CallCaptured(handle, args);
+    if (hasVars) {
+        for (auto& kv : inst.vars.table->fields) {
+            if (auto g = inst.host->GetGlobal(kv.first); g.Ok()) kv.second = g.Value();
+        }
+    }
     scriptCtx_.currentEntity = {};
     if (!res.Ok() && !inst.errorLogged) {
         inst.errorLogged = true;
@@ -1044,6 +1070,10 @@ void GameRuntime::BuildDrawList() {
     draws_.erase(std::remove_if(draws_.begin(), draws_.end(),
                                 [this](const DrawItem& d) { return !world_.Alive(d.ent); }),
                  draws_.end());
+    // B6: rebuild the alive-entity index once (draws_ shrinks above); the
+    // contains() checks below become O(1) lookups instead of O(N) scans.
+    drawKeys_.clear();
+    for (const DrawItem& d : draws_) drawKeys_.insert(EntityKey(d.ent));
     // M1: sync per-entity animation overrides into their draw items (existing
     // items get name updates; resolved clip pointers re-resolve on change).
     for (DrawItem& d : draws_) {
@@ -1063,11 +1093,7 @@ void GameRuntime::BuildDrawList() {
         }
         d.animHasOverride = true;
     }
-    auto contains = [this](ecs::Entity e) {
-        for (const DrawItem& d : draws_)
-            if (d.ent == e) return true;
-        return false;
-    };
+    auto contains = [this](ecs::Entity e) { return drawKeys_.count(EntityKey(e)) != 0; };
     auto view = world_.ViewAll<SceneMesh>();
     for (size_t i = 0; i < view.Size(); ++i) {
         ecs::Entity ent = world_.EntityAt<SceneMesh>(i);
@@ -1212,6 +1238,14 @@ void GameRuntime::BuildDrawList() {
         item.mat.tint = {1, 1, 1, d->alpha};
         draws_.push_back(std::move(item));
     }
+    SyncDrawKeys();
+}
+
+// B6: re-sync the alive-entity index after every append site in BuildDrawList
+// (keys repeat across terrain chunks/tiles; the set dedupes by construction).
+void GameRuntime::SyncDrawKeys() {
+    drawKeys_.clear();
+    for (const DrawItem& d : draws_) drawKeys_.insert(EntityKey(d.ent));
 }
 
 void GameRuntime::ResolveOrSkip(DrawItem& item, gfx::Renderer& renderer) {
@@ -1298,7 +1332,7 @@ void GameRuntime::ResolveDrawItem(DrawItem& item, gfx::Renderer& renderer) {
     // G6-2: async mesh streaming. When enabled, file-backed meshes (obj:/gltf:)
     // are loaded off the main thread and the item resolves from the cache the
     // frame it is ready (Draw retries via asyncPending). Until then the item is
-    // skipped — no per-draw hitch.
+    // skipped 鈥?no per-draw hitch.
     if (cfg_.asyncMeshLoad && cfg_.assets &&
         (key.compare(0, 4, "obj:") == 0 || key.compare(0, 5, "gltf:") == 0)) {
         const bool isObj = key.compare(0, 4, "obj:") == 0;
@@ -1348,7 +1382,7 @@ void GameRuntime::ResolveDrawItem(DrawItem& item, gfx::Renderer& renderer) {
 
     // LOD chain: level 0 is the base mesh; each entry resolves into a lower-
     // detail level at its distance. A level that fails to load is logged and
-    // dropped �?the chain degrades to the levels that resolved.
+    // dropped 锟?the chain degrades to the levels that resolved.
     if (!item.lod.empty()) {
         item.chain.levels.push_back(item.mesh);
         for (const LodEntry& e : item.lod) {
@@ -1607,10 +1641,14 @@ void GameRuntime::SpawnProjectile(const math::Vec3& pos, const math::Vec3& dir, 
 // (fresh spawns / shallow history degrade gracefully to the plain path).
 bool GameRuntime::LagCompPosition(ecs::Entity e, uint32_t rewindTicks,
                                   math::Vec3& out) const {
-    if (rewindTicks > 0 && !poseHistory_.empty()) {
-        const size_t n = poseHistory_.size();
+    if (rewindTicks > 0 && poseCount_ > 0) {
+        // Slot layout: the OLDEST snapshot sits at (head - count) mod N; the
+        // newest is one slot before head. idx counts back from the newest.
+        const size_t n = poseCount_;
         const size_t idx = rewindTicks >= n ? 0 : n - 1 - rewindTicks;
-        const auto& snap = poseHistory_[idx];
+        const size_t slot =
+            (poseHead_ + poseSlots_.size() - poseCount_ + idx) % poseSlots_.size();
+        const auto& snap = poseSlots_[slot];
         const auto it = snap.find(EntityKey(e));
         if (it != snap.end()) {
             out = it->second;
@@ -1754,9 +1792,9 @@ void GameRuntime::TickStatuses(float dt) {
 void GameRuntime::TickAnimations(float dt) {
     for (DrawItem& d : draws_) {
         if (!d.skinned || !d.skinned->Valid()) continue;
-        // G5-4-4(项2): data-driven animation state machine. Advance it (params
+        // G5-4-4(椤?): data-driven animation state machine. Advance it (params
         // from the script-set map), then map the current state's clip onto the
-        // existing animClip/animTime override path below — no pose surgery.
+        // existing animClip/animTime override path below 鈥?no pose surgery.
         if (d.animSM) {
             if (!d.animSMBound) {
                 anim::BindStateMachineClips(*d.animSM, d.skinned->clips);
@@ -2188,7 +2226,7 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera,
     // Script-driven FPS game camera: while the "cameraMouseLock" GameVar is
     // truthy, the script owns the rendered view through cameraFocus (placed at
     // eye + viewDir * cameraDist by the controller) plus cameraYaw/cameraPitch/
-    // cameraDist — the same GameVars the host orbit cameras publish. This
+    // cameraDist 鈥?the same GameVars the host orbit cameras publish. This
     // overrides any scene Camera3D entity, so the runtime renders through the
     // player's eye in both the standalone player and the editor playtest.
     const script::Value fpsLock = scriptCtx_.gameVars.Get("cameraMouseLock");
@@ -2316,8 +2354,8 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera,
                     // Plate tracks the RENDERED mesh, which for a skinned rig
                     // can sit off the entity pivot (the wolf's bones place the
                     // body away from its origin). Compute the world AABB with
-                    // the same transform chain Draw() uses — model *
-                    // part.localTransform * bone matrix — and center the bar on
+                    // the same transform chain Draw() uses 鈥?model *
+                    // part.localTransform * bone matrix 鈥?and center the bar on
                     // it, just above the top.
                     math::AABB wb;
                     bool have = false;
@@ -2624,7 +2662,7 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera,
             }
         }
         scriptCtx_.draw2d = nullptr;
-        // G5-4-4: the on_render canvas is HUD — the host flushes it AFTER the
+        // G5-4-4: the on_render canvas is HUD 鈥?the host flushes it AFTER the
         // scene is composited (FlushCanvas), so its colors stay exactly as
         // authored instead of being tone-mapped/bloomed with the 3D scene.
         // FlushDraw2D is called from FlushCanvas (post-EndScene).
@@ -2809,11 +2847,11 @@ void GameRuntime::InitSystemGraph() {
 
     // Thin wrappers turn the runtime's per-frame component sub-tasks into
     // ecs::System instances. Their declared reads/writes are the state each
-    // touches — component typeids for ECS data, and the owning runtime members
+    // touches 鈥?component typeids for ECS data, and the owning runtime members
     // (DrawItem / Tween / Projectile / cooldown map) for host-owned state. The
     // scheduler derives conflict edges from these, so independent systems run
     // in parallel while write-conflicting ones (statuses/projectiles both write
-    // SceneHealth) stay in registration order — exactly the historical serial
+    // SceneHealth) stay in registration order 鈥?exactly the historical serial
     // semantics, preserved in both Run modes.
     struct FnSystem : ecs::System {
         std::function<void(float, ecs::World&)> fn;
@@ -2940,22 +2978,25 @@ void GameRuntime::Tick(float dt) {
         if (physicsSteps == 4) physicsAccum_ = 0.0f;
     }
     SyncSceneBodies();
-    // G5-4-4(项1): the per-frame component sub-tasks run as ECS systems through
+    // G5-4-4(椤?): the per-frame component sub-tasks run as ECS systems through
     // the SystemScheduler. Serial (default) preserves the exact historical
     // order (tweens -> animations -> statuses -> cooldowns -> projectiles);
     // parallelSystems=true lets independent systems overlap on the worker pool.
     // Conflict edges come from the systems' declared component reads/writes
     // (e.g. TickStatuses and TickProjectiles both write SceneHealth, so they
-    // stay in registration order even in parallel mode) — the parallel result
+    // stay in registration order even in parallel mode) 鈥?the parallel result
     // is bit-identical to the serial reference (validated by TestRuntimeM1's
     // determinism check).
     systems_.Run(dt, world_, cfg_.parallelSystems);
     simTime_ += dt;
 
     // G3-4: snapshot authoritative poses for lag-compensated hit tests. The
-    // oldest snapshot is dropped once the ring reaches capacity (~1s @60Hz).
+    // ring reuses its snapshot maps (B10): no per-tick heap allocation, and
+    // eviction is a head advance, not a vector front-erase.
     {
-        std::unordered_map<uint64_t, math::Vec3> snap;
+        if (poseSlots_.empty()) poseSlots_.resize(kLagCompHistoryTicks);
+        std::unordered_map<uint64_t, math::Vec3>& snap = poseSlots_[poseHead_];
+        snap.clear();
         auto view = world_.ViewAll<SceneTransform>();
         for (size_t i = 0; i < view.Size(); ++i) {
             const ecs::Entity ent = world_.EntityAt<SceneTransform>(i);
@@ -2968,9 +3009,8 @@ void GameRuntime::Tick(float dt) {
             const script::CTransformBind* b = world_.Get<script::CTransformBind>(ent);
             if (b) snap[EntityKey(ent)] = b->pos;
         }
-        poseHistory_.push_back(std::move(snap));
-        if (poseHistory_.size() > kLagCompHistoryTicks)
-            poseHistory_.erase(poseHistory_.begin());
+        poseHead_ = (poseHead_ + 1) % poseSlots_.size();
+        if (poseCount_ < poseSlots_.size()) ++poseCount_;
     }
 
     // ChangeScene deferral: a script's ChangeScene call must not destroy the
@@ -3029,7 +3069,7 @@ std::string GameRuntime::FullScriptPath(const std::string& path) const {
 }
 
 std::string GameRuntime::FullAssetPath(const std::string& path) const {
-    // G7-1 剩余: "assets:/..." scheme normalization ("assets:/x.obj" == "x.obj").
+    // G7-1 鍓╀綑: "assets:/..." scheme normalization ("assets:/x.obj" == "x.obj").
     const std::string p = assets::NormalizeAssetPath(path);
     // G6-1: resolve the logical asset path through the variant table first
     // (unlisted paths fall back to themselves).
@@ -3043,7 +3083,7 @@ std::string GameRuntime::FullAssetPath(const std::string& path) const {
 
 std::string GameRuntime::ReadScript(const std::string& path) const {
     // G7-1: when a virtual file system is installed (pack + Mod mount stack),
-    // script reads go through it with virtual paths — the scriptBaseDir prefix
+    // script reads go through it with virtual paths 鈥?the scriptBaseDir prefix
     // is stripped and the mount stack resolves pack-then-Mod. On a VFS miss we
     // fall through to the pack-reader override / disk as before.
     if (cfg_.fileSystem) {

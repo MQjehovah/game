@@ -1,6 +1,7 @@
-#include "neon/core/json.hpp"
+﻿#include "neon/core/json.hpp"
 
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <functional>
@@ -11,7 +12,13 @@ namespace {
 struct Parser {
     const std::string& text;
     size_t pos = 0;
+    int depth = 0;
     std::string error;
+
+    // Bounded recursion: 1024 levels cover every legitimate document (the
+    // deep-nesting test uses 1000) while rejecting hostile inputs that would
+    // overflow the stack (~10k+ levels).
+    static constexpr int kMaxDepth = 1024;
 
     explicit Parser(const std::string& t) : text(t) {}
 
@@ -46,10 +53,14 @@ struct Parser {
     }
 
     bool ParseObject(Json& out) {
+        if (++depth > kMaxDepth) {
+            error = "nesting too deep";
+            return false;
+        }
         ++pos; // {
         out = Json();
         out.type_ = Json::Type::Object;
-        if (Consume('}')) return true;
+        if (Consume('}')) { --depth; return true; }
         for (;;) {
             SkipWs();
             Json key;
@@ -63,7 +74,7 @@ struct Parser {
             Json value;
             if (!ParseValue(value)) return false;
             out.object_[key.string_] = value;
-            if (Consume('}')) return true;
+            if (Consume('}')) { --depth; return true; }
             if (!Consume(',')) {
                 error = "expected ',' or '}'";
                 return false;
@@ -72,15 +83,19 @@ struct Parser {
     }
 
     bool ParseArray(Json& out) {
+        if (++depth > kMaxDepth) {
+            error = "nesting too deep";
+            return false;
+        }
         ++pos; // [
         out = Json();
         out.type_ = Json::Type::Array;
-        if (Consume(']')) return true;
+        if (Consume(']')) { --depth; return true; }
         for (;;) {
             Json value;
             if (!ParseValue(value)) return false;
             out.array_.push_back(value);
-            if (Consume(']')) return true;
+            if (Consume(']')) { --depth; return true; }
             if (!Consume(',')) {
                 error = "expected ',' or ']'";
                 return false;
@@ -199,10 +214,33 @@ struct Parser {
     bool ParseNumber(Json& out) {
         size_t start = pos;
         if (pos < text.size() && text[pos] == '-') ++pos;
-        while (pos < text.size() &&
-               (std::isdigit(static_cast<unsigned char>(text[pos])) || text[pos] == '.' ||
-                text[pos] == 'e' || text[pos] == 'E' || text[pos] == '+' || text[pos] == '-')) {
+        // Integer part: at least one digit.
+        size_t intStart = pos;
+        while (pos < text.size() && std::isdigit(static_cast<unsigned char>(text[pos]))) ++pos;
+        if (pos == intStart) {
+            error = "invalid number (missing integer digits)";
+            return false;
+        }
+        // Fraction: '.' must be followed by at least one digit.
+        if (pos < text.size() && text[pos] == '.') {
             ++pos;
+            size_t fracStart = pos;
+            while (pos < text.size() && std::isdigit(static_cast<unsigned char>(text[pos]))) ++pos;
+            if (pos == fracStart) {
+                error = "invalid number (missing fraction digits)";
+                return false;
+            }
+        }
+        // Exponent: optional sign, then at least one digit.
+        if (pos < text.size() && (text[pos] == 'e' || text[pos] == 'E')) {
+            ++pos;
+            if (pos < text.size() && (text[pos] == '+' || text[pos] == '-')) ++pos;
+            size_t expStart = pos;
+            while (pos < text.size() && std::isdigit(static_cast<unsigned char>(text[pos]))) ++pos;
+            if (pos == expStart) {
+                error = "invalid number (missing exponent digits)";
+                return false;
+            }
         }
         out = Json();
         out.type_ = Json::Type::Number;
@@ -218,6 +256,12 @@ Json Json::Parse(const std::string& text, std::string* error) {
     Json root;
     if (!p.ParseValue(root)) {
         if (error) *error = p.error;
+        return {};
+    }
+    // Reject trailing garbage ("{} trash" must not parse as {}).
+    p.SkipWs();
+    if (p.pos < text.size()) {
+        if (error) *error = "unexpected trailing content";
         return {};
     }
     return root;
@@ -260,7 +304,17 @@ std::string JsonWriter::Write(const Json& v) {
                 break;
             case Json::Type::Number: {
                 char buf[64];
-                std::snprintf(buf, sizeof(buf), "%g", j.GetNumber());
+                const double d = j.GetNumber();
+                if (std::isfinite(d)) {
+                    // Shortest representation that round-trips exactly
+                    // (%g alone truncates to 6 significant digits, A12).
+                    for (int prec = 15; prec <= 17; ++prec) {
+                        std::snprintf(buf, sizeof(buf), "%.*g", prec, d);
+                        if (std::strtod(buf, nullptr) == d) break;
+                    }
+                } else {
+                    std::snprintf(buf, sizeof(buf), "%g", d);
+                }
                 out += buf;
                 break;
             }
@@ -294,8 +348,71 @@ std::string JsonWriter::Write(const Json& v) {
     return out;
 }
 
-bool JsonEquals(const Json& a, const Json& b) {
-    if (a.type() != b.type()) return false;
+std::string JsonWriter::WritePretty(const Json& v, int indentSpaces) {
+    if (indentSpaces <= 0) return Write(v);
+    static constexpr size_t kInlineArrayBudget = 96;
+    std::string pad(static_cast<size_t>(indentSpaces), ' ');
+    std::string out;
+    std::function<void(const Json&, size_t)> emit = [&](const Json& j, size_t level) {
+        switch (j.type()) {
+            case Json::Type::Null:
+            case Json::Type::Bool:
+            case Json::Type::Number:
+            case Json::Type::String:
+                out += Write(j); // scalars reuse the compact writer
+                break;
+            case Json::Type::Array: {
+                bool scalarOnly = true;
+                for (size_t i = 0; i < j.Size() && scalarOnly; ++i) {
+                    Json::Type t = j.At(i)->type();
+                    scalarOnly = t != Json::Type::Array && t != Json::Type::Object;
+                }
+                const std::string compact = Write(j);
+                if (scalarOnly && compact.size() <= kInlineArrayBudget) {
+                    out += compact;
+                    break;
+                }
+                if (j.Size() == 0) {
+                    out += "[]";
+                    break;
+                }
+                out += "[\n";
+                for (size_t i = 0; i < j.Size(); ++i) {
+                    out.append(pad.size() * (level + 1), ' ');
+                    emit(*j.At(i), level + 1);
+                    if (i + 1 < j.Size()) out += ',';
+                    out += '\n';
+                }
+                out.append(pad.size() * level, ' ');
+                out += ']';
+                break;
+            }
+            case Json::Type::Object: {
+                if (j.Members().empty()) {
+                    out += "{}";
+                    break;
+                }
+                out += "{\n";
+                bool first = true;
+                for (const auto& [key, val] : j.Members()) {
+                    if (!first) out += ",\n";
+                    first = false;
+                    out.append(pad.size() * (level + 1), ' ');
+                    out += '"' + Escape(key) + "\": ";
+                    emit(val, level + 1);
+                }
+                out += '\n';
+                out.append(pad.size() * level, ' ');
+                out += '}';
+                break;
+            }
+        }
+    };
+    emit(v, 0);
+    return out;
+}
+
+bool JsonEquals(const Json& a, const Json& b) {    if (a.type() != b.type()) return false;
     switch (a.type()) {
         case Json::Type::Null: return true;
         case Json::Type::Bool: return a.bool_ == b.bool_;

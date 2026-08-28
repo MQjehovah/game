@@ -654,7 +654,7 @@ void EditorApp::SaveScene() {
     const std::string savePath =
         currentScenePath_.empty() ? "editor_scene.json" : currentScenePath_;
     if (std::ofstream out(savePath); out.is_open()) {
-        out << core::JsonWriter::Write(root);
+        out << core::JsonWriter::WritePretty(root);
         sceneDirty_ = false;
         NEON_LOG_INFO("Scene saved (%zu entities) -> %s", entities_.size(),
                       savePath.c_str());
@@ -668,15 +668,17 @@ void EditorApp::SaveSceneAsChild() {
         NEON_LOG_WARN("Editor: 另存为子场景 needs a loaded scene file");
         return;
     }
-    std::ifstream in(currentScenePath_, std::ios::binary);
-    if (!in.is_open()) return;
-    std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-    std::string perr;
-    core::Json root = core::Json::Parse(text, &perr);
-    if (!root.IsObject()) {
-        NEON_LOG_ERROR("Editor: cannot save child scene (parse error: %s)", perr.c_str());
+    // D6: base the child on the CURRENT edited state (currentSceneRoot_), not
+    // a stale re-read of the file -- the old code silently discarded every
+    // unsaved edit when "另存为子场景" was used.
+    core::Json root = currentSceneRoot_;
+    if (root.IsNull() || !root.IsObject()) {
+        NEON_LOG_ERROR("Editor: cannot save child scene (no current scene state)");
         return;
     }
+    // A child scene overrides the parent; drop any inherited parent link so it
+    // points only at the CURRENT file.
+    root.object_.erase("extends");
     const size_t slash = currentScenePath_.find_last_of("/\\");
     const std::string dir = slash == std::string::npos ? "" : currentScenePath_.substr(0, slash + 1);
     const std::string base =
@@ -689,7 +691,7 @@ void EditorApp::SaveSceneAsChild() {
     root.object_["extends"] = ex;
     const std::string childPath = dir + stem + "_child.json";
     if (std::ofstream out(childPath, std::ios::binary); out.is_open()) {
-        out << core::JsonWriter::Write(root);
+        out << core::JsonWriter::WritePretty(root);
         NEON_LOG_INFO("Editor: child scene saved -> %s (extends %s)", childPath.c_str(),
                       currentScenePath_.c_str());
         LoadScene(childPath);
@@ -755,11 +757,22 @@ void EditorApp::SortSceneTreeByName() {
 
 void EditorApp::LoadScene(const std::string& path) {
     std::ifstream in(path);
-    if (!in.is_open()) return;
+    if (!in.is_open()) {
+        // D6: a missing/unreadable scene is worth a visible log line -- the
+        // old silent return left the editor looking empty with no clue why.
+        NEON_LOG_ERROR("Editor: cannot open scene file '%s'", path.c_str());
+        return;
+    }
     std::stringstream ss;
     ss << in.rdbuf();
     std::string err;
     core::Json root = core::Json::Parse(ss.str(), &err);
+    if (root.IsNull() || !err.empty()) {
+        // D6: a corrupt scene must not silently "load nothing".
+        NEON_LOG_ERROR("Editor: scene '%s' failed to parse: %s", path.c_str(),
+                       err.empty() ? "empty document" : err.c_str());
+        return;
+    }
     // P1-1 scene inheritance: resolve "extends" chains by loading the parent
     // file(s) and overlaying same-named entities (child wins, new names
     // append). The parent path is kept so SaveScene writes it back.
@@ -1431,7 +1444,7 @@ void EditorApp::SavePrefab(const std::string& name) {
         return;
     }
     {
-        out << core::JsonWriter::Write(root);
+        out << core::JsonWriter::WritePretty(root);
         out.close(); // flush before the library reload below reads the file
     }
     LoadPrefabLibrary();
@@ -1528,7 +1541,7 @@ void EditorApp::SaveMaterialAsset(const std::string& name) {
     const std::string rel = "materials/" + name + ".mat.json";
     const std::string path = projectDir_ + "/" + rel;
     // Wide-char open so CJK material names write correctly.
-    if (!WriteFileUtf8(path, core::JsonWriter::Write(root))) {
+    if (!WriteFileUtf8(path, core::JsonWriter::WritePretty(root))) {
         NEON_LOG_ERROR("Editor: cannot write material asset '%s'", path.c_str());
         return;
     }

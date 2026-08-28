@@ -38,13 +38,27 @@ public:
     template <class T>
     struct Pool : IPool {
         void Add(uint32_t id, const T& value) {
+            // C11: a duplicate Add (already-present id) used to clobber the
+            // sparse slot, leaving an orphaned dense entry that iteration
+            // visited twice. Guard it here instead of trusting every caller.
+            if (id < sparse_.size() && sparse_[id] > 0) {
+                dense_[sparse_[id] - 1] = value;
+                return;
+            }
             if (id >= sparse_.size()) sparse_.resize(id + 1, 0);
             sparse_[id] = static_cast<int32_t>(dense_.size()) + 1;
             denseIds_.push_back(id);
             dense_.push_back(value);
         }
 
-        T& Get(uint32_t id) { return dense_[sparse_[id] - 1]; }
+        T& Get(uint32_t id) {
+            // C11: bounds-checked -- a stale id used to index dense_[-1] (UB)
+            // when the sparse slot was 0. Returns a static dummy to keep the
+            // call sites valid (callers guard with TryGet/Alive in practice).
+            static T kEmpty{};
+            if (id >= sparse_.size() || sparse_[id] <= 0) return kEmpty;
+            return dense_[sparse_[id] - 1];
+        }
         T* TryGet(uint32_t id) {
             if (id >= sparse_.size() || sparse_[id] <= 0) return nullptr;
             return &dense_[sparse_[id] - 1];
@@ -214,9 +228,10 @@ public:
         if (inParallelIteration_) {
             // Refused: no-op (no pool access - GetPool may insert). The returned
             // reference is a throwaway never stored; treat it as void.
+            // C11: const so a caller cannot write the shared dummy and race.
             RejectParallelMutation("Add");
-            static T kRejected{};
-            return kRejected;
+            static const T kRejected{};
+            return const_cast<T&>(kRejected);
         }
         Pool<T>& pool = GetPool<T>();
         // Idempotent: a second Add for the same entity leaves the existing

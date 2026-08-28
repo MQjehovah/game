@@ -345,7 +345,7 @@ assert(GetPosition(e2) == nil)
 TEST(ScriptBindingsRaycastMissFalse) {
     Bindings b; // empty physics world: no bodies to hit
     const char* src = R"(
-assert(Raycast({x=0, y=5, z=0}, {x=0, y=-1, z=0}) == false)
+assert(Raycast({x=0, y=5, z=0}, {x=0, y=-1, z=0}) == nil)
 )";
     CHECK(RunScript(*b.host, src));
 }

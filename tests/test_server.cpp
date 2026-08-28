@@ -96,6 +96,11 @@ struct LoopbackClient {
     std::vector<net::MsgSnapshot> snapshots;
     std::vector<uint64_t> despawned;
     std::vector<net::MsgRpc> rpcs;  // P2-4: received RPC messages
+    // B13: in-progress snapshot fragmentation reassembly (mirrors ClientSync).
+    uint32_t partTick = 0;
+    bool partActive = false;
+    uint32_t partCount = 0;
+    std::vector<net::SnapshotEntity> partEntities;
 
     void BindAndPeer(uint16_t serverPort) {
         core::Result<net::UdpSocket> res = net::UdpSocket::Create();
@@ -123,7 +128,30 @@ struct LoopbackClient {
         } else if (m.header.msgId == static_cast<uint8_t>(net::MsgType::CharList)) {
             charLists.push_back(std::get<net::MsgCharList>(m.payload));
         } else if (m.header.msgId == static_cast<uint8_t>(net::MsgType::Snapshot)) {
-            snapshots.push_back(std::get<net::MsgSnapshot>(m.payload));
+            net::MsgSnapshot snap = std::get<net::MsgSnapshot>(m.payload);
+            if (snap.partCount > 1) {
+                // B13: reassemble fragments (arrive in order over the reliable
+                // channel; retransmits are deduped by sequence number).
+                if (!partActive || partTick != snap.tick || partCount != snap.partCount) {
+                    partActive = true;
+                    partTick = snap.tick;
+                    partCount = snap.partCount;
+                    partEntities.clear();
+                }
+                partEntities.insert(partEntities.end(), snap.entities.begin(),
+                                    snap.entities.end());
+                if (snap.partIndex + 1 == snap.partCount) {
+                    net::MsgSnapshot merged;
+                    merged.tick = snap.tick;
+                    merged.entities = std::move(partEntities);
+                    merged.entityCount = static_cast<uint32_t>(merged.entities.size());
+                    snapshots.push_back(std::move(merged));
+                    partActive = false;
+                    partEntities.clear();
+                }
+            } else {
+                snapshots.push_back(std::move(snap));
+            }
         } else if (m.header.msgId == static_cast<uint8_t>(net::MsgType::Despawn)) {
             despawned.push_back(std::get<net::MsgDespawn>(m.payload).entityId);
         } else if (m.header.msgId == static_cast<uint8_t>(net::MsgType::Pong)) {
@@ -861,12 +889,13 @@ TEST(ServerRunsCommittedSampleHeadless) {
 }
 
 // ---------------------------------------------------------------------------
-// Snapshot frame cap: a scene with >~48 entities cannot fit in one reliable
-// frame. Such snapshots are dropped (never sent), counted in SnapshotTooBig()
-// and warned (throttled) — the client stays on its last received state.
+// B13 snapshot fragmentation: a scene with >~48 entities cannot fit in one
+// reliable frame. Instead of dropping the snapshot (which froze the client on
+// stale state), the server splits it into parts and the client reassembles the
+// FULL entity set.
 // ---------------------------------------------------------------------------
 
-TEST(ServerSnapshotTooBigCounted) {
+TEST(ServerSnapshotFragmentedAndDelivered) {
     server::GameServer server;
     server::GameServer::Config cfg;
     cfg.port = 0;
@@ -886,16 +915,21 @@ TEST(ServerSnapshotTooBigCounted) {
     }
     CHECK(client.welcomed);
 
-    const uint64_t tooBigBefore = server.SnapshotTooBig();
     for (int i = 0; i < 30; ++i) {
         now += 17;
         server.Step(now);
         client.Pump(now);
     }
-    // One snapshot per fixed tick, every one too big -> counted, none sent.
-    CHECK((server.SnapshotTooBig()) >= (tooBigBefore + 30));
-    CHECK_EQ(server.SnapshotDrops(), 0u); // dropped for size, not the send window
-    CHECK_EQ(client.snapshots.size(), 0u); // the client never received a snapshot
+    // Fragmented, not dropped: no oversized-snapshot losses, and the client
+    // reassembled a snapshot with MORE than one unfragmented frame's worth of
+    // entities (the old code silently froze on the previous state).
+    CHECK_EQ(server.SnapshotTooBig(), 0u);
+    CHECK(!client.snapshots.empty());
+    CHECK((client.snapshots.back().entities.size()) > (48u));
+    // Reassembly integrity: no entity appears twice across the parts.
+    std::set<uint64_t> seen;
+    for (const auto& e : client.snapshots.back().entities) seen.insert(e.id);
+    CHECK_EQ(seen.size(), client.snapshots.back().entities.size());
     server.Shutdown();
 }
 

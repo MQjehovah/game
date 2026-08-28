@@ -576,6 +576,7 @@ void EditorApp::UpdateUIEditorViewport() {
 
 void EditorApp::MarkUIDirty() {
     uiDirty_ = true;
+    uiDoc_.MarkLayoutDirty(); // B12: force re-layout on edit
     if (!uiDocOpen_ || uiDocPath_.empty()) return;
     // "untitled" documents have no real path yet; the explicit 保存 button
     // assigns one. Everything else auto-saves on every edit so closing the
@@ -1189,6 +1190,9 @@ void EditorApp::DrawTransformGizmo() {
                 if (top->Matches(selected_, EditTransformCommand::kAll)) top->Seal();
             }
         }
+        // B11: the per-frame world rebuild was deferred while dragging; run it
+        // once now so the mirror reflects the final pose.
+        if (gizmoDragOriginValid_ || gizmoBatchCaptured_) SyncWorldFromEntities();
         gizmoDragOriginValid_ = false;
         if (gizmoBatchCaptured_) {
             if (BatchTransformCommand* top =

@@ -165,6 +165,7 @@ private:
     bool welcomed_ = false;
     bool connectedLost_ = false;
     uint32_t inputSeq_ = 0;
+    uint64_t lastPingMs_ = 0; // A10: last heartbeat Ping send time (1 Hz)
     ecs::Entity controlledEntity_;
     uint64_t controlledKey_ = 0;           // stable (id<<32)|generation key
     math::Vec3 controlledStartPos_;

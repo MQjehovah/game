@@ -166,3 +166,30 @@ TEST(AssetChunkRefsAcquireRelease) {
     CHECK_EQ(fx.assets.TextureRefCount("assets/tex/a.png"), 0u);
     CHECK_EQ(fx.assets.RetiredTextureCount(), 1u);
 }
+
+// A9 (2026-08-28): chunk release must free EVERY cached variant of a path.
+// glTF loads textures with Repeat wrap (suffixed cache key); releasing only
+// the default-opts key used to leave the variant referenced forever.
+TEST(AssetChunkReleaseCoversVariants) {
+    test::HeadlessAssetFixture fx;
+    std::atomic<int> decodes{0};
+    SetWhiteDecodeHook(fx.assets, decodes);
+
+    // Load the same path under two option variants (plain + Repeat wrap).
+    neon::assets::TextureLoadOptions repeat;
+    repeat.wrap = gfx::Wrap::Repeat;
+    CHECK(fx.assets.AcquireTexture("assets/tex/v.png").Valid());
+    CHECK(fx.assets.AcquireTexture("assets/tex/v.png", repeat).Valid());
+    CHECK_EQ(decodes.load(), 2); // two cache entries, two decodes
+
+    const std::vector<std::string> refs = {"assets/tex/v.png"};
+    fx.assets.ReleaseChunkAssets(refs);
+    CHECK_EQ(fx.assets.TextureRefCount("assets/tex/v.png"), 0u);            // plain key
+    CHECK_EQ(fx.assets.TextureRefCount("assets/tex/v.png", repeat), 0u);    // variant key
+    CHECK_EQ(fx.assets.RetiredTextureCount(), 2u);                          // both retired
+
+    // Re-acquire revives both variants from the retire queue (no re-decode).
+    const size_t held = fx.assets.AcquireChunkAssets(refs);
+    CHECK_EQ(held, 2u);
+    CHECK_EQ(decodes.load(), 2);
+}

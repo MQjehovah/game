@@ -563,11 +563,12 @@ void JoltWorld::Step(float dt, const math::Vec3& gravity) {
         impl_->charOnGround[kv.first] =
             c->GetGroundState() == JPH::CharacterBase::EGroundState::OnGround;
     }
+    // The interface contract matches custom World::Step: Collisions() returns
+    // the pairs of THIS step (custom world clears at the start of every Step,
+    // physics.cpp:250). Appending here used to grow without bound since no
+    // caller ever invoked ClearCollisions() (A7).
     impl_->collisions = impl_->listener.collisions;
-    // The interface contract: Collisions() returns the pairs of THIS step.
-    // The custom world appends across steps until ClearCollisions(); keep the
-    // same contract by appending rather than replacing.
-    collisions_.insert(collisions_.end(), impl_->collisions.begin(), impl_->collisions.end());
+    collisions_ = std::move(impl_->collisions);
 }
 
 size_t JoltWorld::BodyCount() const {

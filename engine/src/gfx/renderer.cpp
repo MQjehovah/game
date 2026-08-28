@@ -897,6 +897,7 @@ void Renderer::InitBuiltinResources() {
 }
 
 void Renderer::BeginFrame(const Color& clearColor, float clearDepth) {
+    ++sceneUniformStamp_; // B1: a new frame invalidates the scene uniform cache
     stats_ = RenderStats{};
     csmActive_ = false;
     pointShadowsActive_ = false;
@@ -933,6 +934,7 @@ void Renderer::EndFrame() {
 }
 
 void Renderer::SetCamera(const Camera& camera, float aspect) {
+    ++sceneUniformStamp_; // B1: scene uniforms (view/proj/camPos) changed
     camera_ = camera;
     viewAspect_ = aspect > 0.01f ? aspect : viewAspect_;
     viewProj_ = camera.ViewProjection(aspect);
@@ -996,6 +998,7 @@ void Renderer::SetIblStrength(float strength) {
 }
 
 void Renderer::RecomputeIbl(const Color& top, const Color& horizon) {
+    ++sceneUniformStamp_; // B1: IBL uniforms changed
     if (!backend_) return;
     ++iblBuildCount_;
     const auto start = std::chrono::steady_clock::now();
@@ -1053,12 +1056,14 @@ void Renderer::RecomputeIbl(const Color& top, const Color& horizon) {
 }
 
 void Renderer::SetFog(const Color& color, float start, float end) {
+    ++sceneUniformStamp_; // B1
     fogColor_ = color;
     fogStart_ = start;
     fogEnd_ = end;
 }
 
 void Renderer::SetDirectionalLight(const math::Vec3& direction, const Color& color, float ambientStrength) {
+    ++sceneUniformStamp_; // B1
     sunDir_ = direction.Normalized();
     sunColor_ = color;
     ambient_ = ambientStrength;
@@ -1484,6 +1489,7 @@ void Renderer::RunPointShadowPass() {
         if (!allFaces) continue;
         DrawPointShadowCastersSorted(li);
         pointShadowsActive_ = true;
+        ++sceneUniformStamp_; // B1: shadow uniform set changed
     }
 }
 
@@ -1653,6 +1659,7 @@ bool Renderer::TestDepthTargetCapability() {
 }
 
 void Renderer::SetPointLight(int index, const math::Vec3& position, const Color& color, float radius) {
+    ++sceneUniformStamp_; // B1
     if (index < 0 || index >= kMaxPointLights) return;
     pointPos_[index] = position;
     pointColor_[index] = color;
@@ -1661,6 +1668,7 @@ void Renderer::SetPointLight(int index, const math::Vec3& position, const Color&
 }
 
 void Renderer::SetPlayerLight(const math::Vec3& position, const Color& color, float radius) {
+    ++sceneUniformStamp_; // B1
     playerLightPos_ = position;
     playerLightColor_ = color;
     playerLightRadius_ = radius;
@@ -1982,9 +1990,23 @@ void Renderer::ApplyMaterial(const Material& material, const math::Mat4& mvp,
     if (material.lit) {
         backend_->SetUniformMat4("uModel", model);
         backend_->SetUniformMat4("uNormalMat", normalMat);
-        backend_->SetUniformVec3("uCamPos", camPos_);
         backend_->SetUniformFloat("uShininess", material.shininess);
-        backend_->SetUniformVec3("uSunDir", sunDir_);
+        // B1: the per-frame scene uniform block (sun/lights/fog/view/shadow/IBL)
+        // is identical across every draw in a frame -- upload it once, and
+        // re-upload whenever the shader changes (uniform locations are
+        // per-program).
+        if (sceneUniformStamp_ != sceneUniformAppliedStamp_ ||
+            shader.id != lastSceneUniformShader_.id) {
+            sceneUniformAppliedStamp_ = sceneUniformStamp_;
+            ApplySceneUniforms(shader);
+        }
+    }
+}
+
+void Renderer::ApplySceneUniforms(ShaderHandle shader) {
+    lastSceneUniformShader_ = shader;
+    backend_->SetUniformVec3("uCamPos", camPos_);
+    backend_->SetUniformVec3("uSunDir", sunDir_);
         backend_->SetUniformVec3("uSunColor", {sunColor_.r, sunColor_.g, sunColor_.b});
         backend_->SetUniformFloat("uAmbient", ambient_);
         backend_->SetUniformVec3("uAmbientColor",
@@ -2060,7 +2082,6 @@ void Renderer::ApplyMaterial(const Material& material, const math::Mat4& mvp,
             backend_->BindTexture(22, iblBrdfLutTex_);
             backend_->SetUniformInt("uBrdfLUT", 22);
         }
-    }
 }
 
 void Renderer::DrawLines(const LineVertex* vertices, uint32_t count, const math::Mat4& model) {

@@ -429,6 +429,15 @@ private:
     void EnsureSsrTargets();
     bool RunSsrPass();
     bool TestFloatTargetCapability();
+    // A2: probes SFLOAT SAMPLING (broken on some Intel Vulkan drivers: the
+    // sampler returns black for valid float data, which the write/readback
+    // probe cannot catch).
+    bool TestFloatSamplingCapability(int size);
+    // B1: uploads the per-FRAME scene uniforms (sun/lights/fog/view/shadow/IBL)
+    // once per (frame, program) pair -- draws after the first in a frame skip
+    // ~40 redundant SetUniform/Bind calls, but a program switch re-applies so
+    // mixed-path frames (skinned + instanced + terrain) never miss the block.
+    void ApplySceneUniforms(ShaderHandle shader);
     // MSAA: multisample HDR render target + resolve self-test (4x then 2x).
     bool TestMsaaCapability();
     // Binds whichever target the main scene renders into (the HDR float target
@@ -498,6 +507,11 @@ private:
     math::Mat4 pointLightViewProj_[kShadowPointLights][6];
     bool pointShadowsEnabled_ = false;
     bool pointShadowsActive_ = false;
+    // B1: bumped whenever the per-frame scene uniform set changes; the first
+    // lit draw of a frame (or after any change) uploads the whole scene block.
+    uint64_t sceneUniformStamp_ = 0;
+    uint64_t sceneUniformAppliedStamp_ = ~0ull;
+    ShaderHandle lastSceneUniformShader_;
 
     // HDR scene target (window size, RGBA16F) + the bloom pyramid targets.
     // hdrMsaaRT_ is the 4x/2x multisample target the scene renders into when

@@ -1,5 +1,6 @@
 #include "neon/script/lua_host.hpp"
 
+#include <cstdlib>
 #include <exception>
 #include <map>
 #include <set>
@@ -109,6 +110,15 @@ int ParseLineNumber(const std::string& message) {
 // (their offending entry converts to nil) instead of overflowing the C++
 // stack. Mirrors the depth used by test_json.cpp's JsonDeepNesting.
 constexpr int kMaxConversionDepth = 1000;
+
+// Runaway guards (A5), mirroring the QuickJS backend's kInterruptBudget /
+// JS_SetMemoryLimit: a per-invocation VM instruction budget enforced by a
+// count hook (fires every kLuaCountHookStep instructions -- cheap enough to
+// keep installed permanently, unlike a line hook) plus a hard memory cap in
+// the custom allocator.
+constexpr uint64_t kLuaInstructionBudget = 1000000000ull; // per Run/Call entry
+constexpr size_t kLuaMemoryLimit = 128ull * 1024 * 1024;
+constexpr int kLuaCountHookStep = 4096;
 
 // Strips a leading UTF-8 BOM (EF BB BF), which Windows editors and PowerShell
 // often prepend to saved files. luaL_loadbuffer does NOT skip a BOM and would
@@ -249,6 +259,13 @@ struct LuaHost::Impl {
     std::map<std::string, std::set<int>> breakpoints;  // script path -> lines
     IScriptHost::DebugFrame pausedFrame;
     std::string currentScript;  // chunk path set by the runtime before each call
+    // Runaway guards (A5): instruction budget counter + memory accounting.
+    uint64_t instrCount = 0;
+    uint64_t instrBudget = kLuaInstructionBudget;
+    size_t memBytes = 0;
+    size_t memLimit = kLuaMemoryLimit;
+    static void* AllocFn(void* ud, void* ptr, size_t osize, size_t nsize);
+    void UpdateHookMask(); // count-only, or count+line when debugging
 };
 
 // Opens the restricted standard library, then applies the deterministic
@@ -314,19 +331,54 @@ LuaHost::LuaHost() : impl_(std::make_unique<Impl>()) {}
 
 LuaHost::~LuaHost() { Shutdown(); }
 
+// Custom allocator with a hard memory cap: once Lua's footprint exceeds
+// kLuaMemoryLimit the allocation fails and Lua raises a memory error, which
+// CaptureError surfaces as a normal ScriptError (A5; JS backend parity).
+void* LuaHost::Impl::AllocFn(void* ud, void* ptr, size_t osize, size_t nsize) {
+    Impl* impl = static_cast<Impl*>(ud);
+    if (nsize == 0) {
+        if (ptr) {
+            std::free(ptr);
+            impl->memBytes -= osize;
+        }
+        return nullptr;
+    }
+    // For a fresh allocation Lua passes a type tag as osize; count it as 0.
+    const size_t oldSize = ptr ? osize : 0;
+    if (nsize > oldSize && impl->memBytes + (nsize - oldSize) > impl->memLimit) {
+        return nullptr; // over budget: Lua turns this into a memory error
+    }
+    void* p = std::realloc(ptr, nsize);
+    if (p) impl->memBytes += nsize - oldSize;
+    return p;
+}
+
+// Installs the combined hook: the count mask (instruction budget) stays on
+// for the lifetime of the state; line events ride along only while the
+// debugger is active so plain script runs pay no per-line hook cost (B8).
+void LuaHost::Impl::UpdateHookMask() {
+    if (!L) return;
+    const bool lineEvents = debuggerEnabled || stepInto;
+    lua_sethook(L, &LuaHost::HookEntry,
+                lineEvents ? (LUA_MASKCOUNT | LUA_MASKLINE) : LUA_MASKCOUNT,
+                kLuaCountHookStep);
+}
+
 bool LuaHost::Init() {
     if (impl_->L) return true; // already initialized
-    lua_State* L = luaL_newstate();
+    lua_State* L = lua_newstate(&Impl::AllocFn, impl_.get());
     if (!L) return false; // never leaks: nothing has been allocated yet
     impl_->L = L;
     // A fresh state starts with a fresh, fixed-seed RNG and a zero clock, so a
     // re-initialized host behaves like a newly created one.
     impl_->rng = core::Rng(kDefaultRngSeed);
     impl_->simClock = 0.0;
-    // Debugger line hook (installed once; it checks the enabled flag itself).
-    lua_sethook(L, &LuaHost::DebugHook, LUA_MASKLINE, 0);
+    impl_->instrCount = 0;
+    impl_->memBytes = 0;
     lua_pushlightuserdata(L, this);
     lua_setfield(L, LUA_REGISTRYINDEX, "neon_lua_host");
+    // Budget hook (count mask only; line events attach while debugging).
+    impl_->UpdateHookMask();
     OpenSandboxedLibraries(L, this);
     return true;
 }
@@ -338,6 +390,8 @@ void LuaHost::Shutdown() {
     }
     impl_->hasChunk = false;
     impl_->lastError = {};
+    impl_->instrCount = 0;
+    impl_->memBytes = 0;
 }
 
 void LuaHost::CaptureError() {
@@ -446,6 +500,7 @@ bool LuaHost::CheckSyntax(const std::string& source) {
 core::Result<Value> LuaHost::Run() {
     if (!impl_->L) return Fail("script host is not initialized");
     if (!impl_->hasChunk) return Fail("no script chunk loaded");
+    impl_->instrCount = 0; // fresh budget per invocation (A5)
     lua_pushlightuserdata(impl_->L, const_cast<void*>(kChunkKey()));
     lua_rawget(impl_->L, LUA_REGISTRYINDEX);
     if (lua_pcall(impl_->L, 0, 1, 0) != LUA_OK) {
@@ -460,6 +515,7 @@ core::Result<Value> LuaHost::Run() {
 
 core::Result<Value> LuaHost::Call(const std::string& fn, const std::vector<Value>& args) {
     if (!impl_->L) return Fail("script host is not initialized");
+    impl_->instrCount = 0; // fresh budget per invocation (A5)
     lua_getglobal(impl_->L, fn.c_str());
     if (!lua_isfunction(impl_->L, -1)) {
         lua_pop(impl_->L, 1);
@@ -510,6 +566,7 @@ core::Result<uint64_t> LuaHost::CaptureFunction(const std::string& name) {
 
 core::Result<Value> LuaHost::CallCaptured(uint64_t handle, const std::vector<Value>& args) {
     if (!impl_->L) return Fail("script host is not initialized");
+    impl_->instrCount = 0; // fresh budget per invocation (A5)
     lua_pushlightuserdata(impl_->L, const_cast<void*>(kCapturedKey()));
     lua_rawget(impl_->L, LUA_REGISTRYINDEX);
     if (!lua_istable(impl_->L, -1)) {
@@ -770,10 +827,29 @@ int LuaHost::Print(lua_State* L) {
     return 0;
 }
 
-// Debugger line hook (P1-2): installed once at Init with LUA_MASKLINE; it
-// checks the enabled flag itself so toggling the debugger costs nothing while
-// off. On a breakpoint line (or the first line after a step-resume) it latches
-// paused_ and snapshots locals + callstack.
+// Combined hook entry (A5/B8): count events enforce the instruction budget;
+// line events forward to the debugger hook. The line mask is only installed
+// while the debugger is active (see Impl::UpdateHookMask), so regular script
+// execution never pays the per-line hook cost anymore.
+void LuaHost::HookEntry(lua_State* L, lua_Debug* ar) {
+    if (!ar) return;
+    if (ar->event == LUA_HOOKCOUNT) {
+        lua_getfield(L, LUA_REGISTRYINDEX, "neon_lua_host");
+        LuaHost* self = static_cast<LuaHost*>(lua_touserdata(L, -1));
+        lua_pop(L, 1);
+        if (self && self->impl_ && self->impl_->instrBudget != 0 &&
+            ++self->impl_->instrCount > self->impl_->instrBudget) {
+            luaL_error(L, "script instruction budget exceeded (runaway script aborted)");
+        }
+        return;
+    }
+    DebugHook(L, ar);
+}
+
+// Debugger line hook (P1-2): line events arrive only while the debugger is
+// active (Impl::UpdateHookMask installs the line mask). On a breakpoint line
+// (or the first line after a step-resume) it latches paused_ and snapshots
+// locals + callstack.
 void LuaHost::DebugHook(lua_State* L, lua_Debug* ar) {
     if (!ar || ar->event != LUA_HOOKLINE) return;
     lua_getfield(L, LUA_REGISTRYINDEX, "neon_lua_host");
@@ -781,7 +857,7 @@ void LuaHost::DebugHook(lua_State* L, lua_Debug* ar) {
     lua_pop(L, 1);
     if (!self || !self->impl_) return;
     Impl& impl = *self->impl_;
-    if (!impl.debuggerEnabled || impl.paused) return;
+    if ((!impl.debuggerEnabled && !impl.stepInto) || impl.paused) return;
 
     lua_getinfo(L, "S", ar);
     const char* source = ar->source ? ar->source : "";
@@ -856,6 +932,7 @@ void LuaHost::SetScriptBreakpoints(const std::string& path, const std::vector<in
     std::set<int> set(lines.begin(), lines.end());
     impl_->breakpoints[path] = std::move(set);
     impl_->debuggerEnabled = !impl_->breakpoints.empty();
+    impl_->UpdateHookMask();
 }
 
 void LuaHost::SetCurrentScript(const std::string& path) {
@@ -863,7 +940,9 @@ void LuaHost::SetCurrentScript(const std::string& path) {
 }
 
 void LuaHost::SetDebuggerEnabled(bool enabled) {
-    if (impl_) impl_->debuggerEnabled = enabled;
+    if (!impl_) return;
+    impl_->debuggerEnabled = enabled;
+    impl_->UpdateHookMask();
 }
 
 bool LuaHost::DebuggerPaused() const { return impl_ && impl_->paused; }
@@ -877,6 +956,15 @@ void LuaHost::DebuggerResume(bool stepInto) {
     if (!impl_) return;
     impl_->paused = false;
     impl_->stepInto = stepInto;
+    impl_->UpdateHookMask();
+}
+
+void LuaHost::SetInstructionBudget(uint64_t budget) {
+    if (impl_) impl_->instrBudget = budget;
+}
+
+void LuaHost::SetMemoryLimit(size_t bytes) {
+    if (impl_) impl_->memLimit = bytes;
 }
 
 } // namespace neon::script

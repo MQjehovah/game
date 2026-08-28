@@ -555,6 +555,25 @@ void EditorPluginManager::Load(const std::string& baseDir) {
     std::vector<plugin::PluginManifest> all = plugin::DiscoverPlugins(baseDir);
     for (const plugin::PluginManifest& m : all) {
         if (m.type != plugin::PluginType::Editor) continue;
+        // D1: engine version gate (the runtime side has one; the editor
+        // previously loaded plugins with no version check at all).
+        if (!m.minEngineVersion.empty()) {
+            plugin::Version minV, engV;
+            if (plugin::ParseVersion(m.minEngineVersion, &minV) &&
+                plugin::ParseVersion(plugin::kEngineVersion, &engV)) {
+                const bool atLeast =
+                    engV.major > minV.major ||
+                    (engV.major == minV.major &&
+                     (engV.minor > minV.minor ||
+                      (engV.minor == minV.minor && engV.patch >= minV.patch)));
+                if (!atLeast) {
+                    NEON_LOG_WARN("Editor plugin '%s' needs engine >= %s (have %s); skipped",
+                                  m.id.c_str(), m.minEngineVersion.c_str(),
+                                  plugin::kEngineVersion);
+                    continue;
+                }
+            }
+        }
         script::IScriptHost* host = impl_->HostFor(m.backend, this);
         if (!host) {
             NEON_LOG_ERROR("Editor plugin '%s': host for '%s' unavailable; skipped",

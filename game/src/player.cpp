@@ -747,6 +747,13 @@ void PlayerApp::PumpNetwork() {
     // channel only needs a monotonic clock for retransmit/timeout/ack pacing.
     const uint64_t nowMs = static_cast<uint64_t>(TimeRef().elapsed * 1000.0);
     clientChan_.Tick(nowMs);
+    // A10: 1 Hz heartbeat so the server measures a real RTT and automatic lag
+    // compensation actually rewinds (without pings AutoLagCompTicks stays 0).
+    if (nowMs - lastPingMs_ >= 1000u) {
+        lastPingMs_ = nowMs;
+        net::MsgPing ping{nowMs};
+        clientChan_.Send(static_cast<uint8_t>(net::MsgType::Ping), net::EncodeBody(ping));
+    }
     if (connectedLost_ && SmokeActive()) {
         NEON_LOG_WARN("client: connection lost; smoke run will report failure");
     }
