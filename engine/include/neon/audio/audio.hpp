@@ -47,4 +47,14 @@ std::unique_ptr<IAudioBackend> CreatePlatformAudioBackend();
 // down-mixed) into a SoundFx. Returns false on any format error.
 bool LoadWav(const std::string& path, SoundFx& out);
 
+// Full-format loader: WAV via the built-in RIFF parser, everything the
+// vendored miniaudio decoders support (ogg/mp3/flac/...) via ma_decoder.
+// Output is 16-bit PCM mono at the file's native sample rate. Returns false
+// when the file cannot be opened or the format is not available in this build.
+bool LoadSoundFx(const std::string& path, SoundFx& out);
+
+// ma_decoder decode path (defined in the miniaudio backend TU where the
+// vendored implementation lives). Internal; use LoadSoundFx.
+bool LoadSoundFxMiniAudio(const std::string& path, SoundFx& out);
+
 } // namespace neon::audio

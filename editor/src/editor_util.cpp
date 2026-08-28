@@ -438,8 +438,9 @@ neon::audio::SoundFx ResampleTo44100(neon::audio::SoundFx fx) {
 }
 
 neon::audio::SoundFx MakePvzSfx(const std::string& name, const std::string& projectDir) {
-    // 真实音效优先：项目自带 assets/audio/<name>.wav（素材包转码）。
-    // 命中缓存避免每次 stat/parse；sampleRate<=0 表示"无 WAV"，回退程序合成。
+    // 真实音效优先：项目自带 assets/audio/<name>.(wav|ogg|mp3)（素材包直用，
+    // ma_decoder 全格式解码）。命中缓存避免每次 stat/parse；
+    // sampleRate<=0 表示"无文件"，回退程序合成。
     static std::unordered_map<std::string, neon::audio::SoundFx> s_pvzWav;
     const std::string cacheKey = projectDir + "#" + name;
     auto wavIt = s_pvzWav.find(cacheKey);
@@ -448,18 +449,27 @@ neon::audio::SoundFx MakePvzSfx(const std::string& name, const std::string& proj
         bool loaded = false;
         const std::string base =
             projectDir.empty() ? std::string("assets/audio/") : projectDir + "/assets/audio/";
-        if (neon::audio::LoadWav(base + name + ".wav", wav)) loaded = true;
+        static const char* kExts[] = {".wav", ".ogg", ".mp3"};
+        for (const char* ext : kExts) {
+            if (neon::audio::LoadSoundFx(base + name + ext, wav)) {
+                loaded = true;
+                break;
+            }
+        }
         if (!loaded && projectDir != "projects/pvz") {
             // 兼容从仓库根运行的编辑器与项目目录混排。
-            if (neon::audio::LoadWav("projects/" + projectDir + "/assets/audio/" + name + ".wav",
-                                     wav)) {
-                loaded = true;
+            for (const char* ext : kExts) {
+                if (neon::audio::LoadSoundFx(
+                        "projects/" + projectDir + "/assets/audio/" + name + ext, wav)) {
+                    loaded = true;
+                    break;
+                }
             }
         }
         if (loaded) wav = ResampleTo44100(std::move(wav));
         wav.sampleRate = loaded ? wav.sampleRate : 0; // 0 = 回退程序合成
         NEON_LOG_DEBUG("MakePvzSfx: '%s' %s (%zu samples @ %u Hz)", name.c_str(),
-                       loaded ? "loaded from WAV" : "no WAV, synth fallback",
+                       loaded ? "loaded from file" : "no file, synth fallback",
                        wav.samples.size(), wav.sampleRate);
         wavIt = s_pvzWav.emplace(cacheKey, std::move(wav)).first;
     }

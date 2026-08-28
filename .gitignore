@@ -14,6 +14,9 @@ build-*/
 *_save.dat
 # Runtime tool logs (ImGui log-to-file).
 imgui_log.txt
+# Unit-test scratch files (test_audio fixtures).
+smoke_tone_fx.wav
+smoke_bad_audio.bin
 projects/*/save.json
 projects/*/save.json.meta
 neon_editor_config.json

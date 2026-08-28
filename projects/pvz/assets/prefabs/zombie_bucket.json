@@ -1,6 +1,6 @@
 {
   "components": {
-    "transform": {"scale": [84, 73, 1]},
+    "transform": {"scale": [112, 97, 1]},
     "sprite": {"texture": "assets/sprites/bucket.png", "sheet": "assets/sprites/bucket.sheet.png", "sheetFrames": 15, "fps": 8},
     "health": {"hp": 200, "maxHp": 200},
     "zombie": {"type": "bucket", "speed": 26, "damage": 12},

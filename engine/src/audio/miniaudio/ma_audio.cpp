@@ -187,4 +187,45 @@ std::unique_ptr<IAudioBackend> CreateMiniAudioBackend() {
     return std::make_unique<MiniAudioBackend>();
 }
 
+// Full-format asset decoding (ogg/mp3/flac/wav/...) via ma_decoder, whose
+// dr_mp3 + stb_vorbis backends are compiled into ma_impl.cpp. Decodes to the
+// file's native sample rate, down-mixes stereo like LoadWav, and scales f32
+// samples to the SoundFx 16-bit PCM representation. Returns false when the
+// format is not recognized by this build (callers fall back to LoadWav or
+// procedural synthesis).
+bool LoadSoundFxMiniAudio(const std::string& path, SoundFx& out) {
+    ma_decoder_config config = ma_decoder_config_init(ma_format_f32, 0, 0);
+    ma_decoder decoder;
+    if (ma_decoder_init_file(path.c_str(), &config, &decoder) != MA_SUCCESS) return false;
+
+    const ma_uint32 rate = decoder.outputSampleRate;
+    const ma_uint32 channels = decoder.outputChannels;
+    if (rate == 0 || channels < 1 || channels > 2) {
+        ma_decoder_uninit(&decoder);
+        return false;
+    }
+
+    out.samples.clear();
+    constexpr ma_uint64 kChunk = 4096;
+    std::vector<float> frames(static_cast<size_t>(kChunk * channels));
+    for (;;) {
+        ma_uint64 read = 0;
+        if (ma_decoder_read_pcm_frames(&decoder, &frames[0], kChunk, &read) != MA_SUCCESS)
+            break;
+        if (read == 0) break;
+        const size_t start = out.samples.size();
+        out.samples.resize(start + static_cast<size_t>(read));
+        for (ma_uint64 i = 0; i < read; ++i) {
+            const float* f = &frames[static_cast<size_t>(i) * channels];
+            float mono = channels == 2 ? (f[0] + f[1]) * 0.5f : f[0];
+            mono = mono < -1.0f ? -1.0f : (mono > 1.0f ? 1.0f : mono);
+            out.samples[start + static_cast<size_t>(i)] =
+                static_cast<int16_t>(mono * 32767.0f);
+        }
+    }
+    ma_decoder_uninit(&decoder);
+    out.sampleRate = rate;
+    return !out.samples.empty();
+}
+
 } // namespace neon::audio

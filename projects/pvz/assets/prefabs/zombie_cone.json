@@ -1,6 +1,6 @@
 {
   "components": {
-    "transform": {"scale": [84, 73, 1]},
+    "transform": {"scale": [112, 97, 1]},
     "sprite": {"texture": "assets/sprites/cone.png", "sheet": "assets/sprites/cone.sheet.png", "sheetFrames": 21, "fps": 8},
     "health": {"hp": 140, "maxHp": 140},
     "zombie": {"type": "cone", "speed": 26, "damage": 12},

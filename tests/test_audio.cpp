@@ -213,3 +213,41 @@ TEST(AudioWavLoader) {
     CHECK_EQ(fx.samples[1], -1000);
     CHECK_EQ(fx.sampleRate, 44100u);
 }
+
+// Full-format loader: the bundled PvZ project ships real MP3 sound effects
+// (dr_mp3 inside the vendored miniaudio). Decode one and sanity-check the
+// result, then verify the WAV fast path still routes through LoadSoundFx.
+TEST(AudioLoadSoundFxFormats) {
+    // MP3: decode a real asset from the repo (read-only; ctest runs at root).
+    audio::SoundFx mp3;
+    std::string mp3Probe;
+    if (test::ReadFileAll("projects/pvz/assets/audio/click.mp3", mp3Probe)) {
+        CHECK(audio::LoadSoundFx("projects/pvz/assets/audio/click.mp3", mp3));
+        CHECK(mp3.samples.size() > 1000u);   // a real click is ~16KB compressed
+        CHECK(mp3.sampleRate >= 8000u);      // sane sample rate
+    }
+
+    // WAV: byte-identical result whether routed via LoadWav or LoadSoundFx.
+    const char* path = "smoke_tone_fx.wav";
+    std::vector<uint8_t> wav = {
+        'R', 'I', 'F', 'F', 36, 0, 0, 0, 'W', 'A', 'V', 'E',
+        'f', 'm', 't', ' ', 16, 0, 0, 0, 1, 0, 1, 0,
+        0x44, 0xAC, 0, 0, 0x88, 0x58, 0x01, 0, 2, 0, 16, 0,
+        'd', 'a', 't', 'a', 4, 0, 0, 0,
+        0xE8, 0x03, 0x18, 0xFC};
+    {
+        std::ofstream out(path, std::ios::binary);
+        out.write(reinterpret_cast<const char*>(wav.data()),
+                  static_cast<std::streamsize>(wav.size()));
+    }
+    audio::SoundFx viaWav, viaAny;
+    CHECK(audio::LoadWav(path, viaWav));
+    CHECK(audio::LoadSoundFx(path, viaAny));
+    CHECK_EQ(viaAny.samples.size(), viaWav.samples.size());
+    CHECK_EQ(viaAny.samples[0], viaWav.samples[0]);
+
+    // Garbage bytes fail closed on both paths.
+    CHECK(test::WriteFileAll("smoke_bad_audio.bin", "this is not audio"));
+    audio::SoundFx bad;
+    CHECK(!audio::LoadSoundFx("smoke_bad_audio.bin", bad));
+}

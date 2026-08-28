@@ -12,9 +12,9 @@ function on_start(e)
   local p = EntityComponent(e, "plant")
   if not p then return end
   local pos = GetPosition(e)
-  -- 种植弹入: 从小放大 (缓出动画)。
-  SetScale(e, 22, 25, 1)
-  Tween(e, 2, { x = 22, y = 25, z = 1 }, { x = 60, y = 68, z = 1 }, 0.22, 2)
+  -- 种植弹入: 从小放大 (缓出动画)。目标尺寸按原版比例约占格 0.8-0.9。
+  SetScale(e, 28, 34, 1)
+  Tween(e, 2, { x = 28, y = 34, z = 1 }, { x = 80, y = 92, z = 1 }, 0.22, 2)
   -- 行号统一取整: 组件里的 row 是浮点(3.0), rowOf 返回整数(3), 键必须一致。
   local row = math.floor((p.row ~= nil and p.row) or rowOf(pos.y))
   local list = GetVar("row_plants_" .. row)
@@ -44,6 +44,7 @@ function on_update(e, dt)
       SetVar("row_plants_" .. row, list)
     end
     timers[e.id] = nil
+    timers[e.id .. "_boom"] = nil
     Despawn(e)
     return
   end
@@ -87,24 +88,36 @@ function on_update(e, dt)
     end
   elseif p.type == "cherrybomb" then
     -- Fuse then blow up: damage zombies in this row + neighbours.
+    local boomKey = e.id .. "_boom"
     if t >= (p.fuse or 1.1) then
-      local row = rowOf(pos.y)
-      for r = math.max(0, row - 1), math.min(4, row + 1) do
-        local zlist = GetVar("row_zombies_" .. r)
-        if type(zlist) == "table" then
-          for i = #zlist, 1, -1 do
-            local zent = { id = zlist[i].id, gen = zlist[i].gen }
-            local zp = GetPosition(zent)
-            if zp ~= nil and math.abs(zp.x - pos.x) < 110 and math.abs(zp.y - pos.y) < 130 then
-              local zhp = GetHealth(zent)
-              if zhp ~= nil then SetHealth(zent, zhp - 1800) end
+      if timers[boomKey] == nil then
+        local row = rowOf(pos.y)
+        for r = math.max(0, row - 1), math.min(4, row + 1) do
+          local zlist = GetVar("row_zombies_" .. r)
+          if type(zlist) == "table" then
+            for i = #zlist, 1, -1 do
+              local zent = { id = zlist[i].id, gen = zlist[i].gen }
+              local zp = GetPosition(zent)
+              if zp ~= nil and math.abs(zp.x - pos.x) < 110 and math.abs(zp.y - pos.y) < 130 then
+                local zhp = GetHealth(zent)
+                if zhp ~= nil then SetHealth(zent, zhp - 1800) end
+              end
             end
           end
         end
+        PlaySfx("explosion")
+        -- 爆炸动画: 切 Boom spritesheet (13 帧 @ 14fps ≈ 0.93s), 等比放大后消失。
+        SetSpriteSheet(e, "assets/sprites/cherryboom.sheet.png", 13, 14)
+        SetScale(e, 200, 184, 1)
+        timers[boomKey] = 0
       end
-      PlaySfx("explosion")
-      timers[e.id] = nil
-      Despawn(e)
+      local bt = timers[boomKey] + dt
+      timers[boomKey] = bt
+      if bt >= 0.93 then
+        timers[e.id] = nil
+        timers[boomKey] = nil
+        Despawn(e)
+      end
       return
     end
   end

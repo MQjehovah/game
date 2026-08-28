@@ -1,6 +1,6 @@
 {
   "components": {
-    "transform": {"scale": [72, 54, 1]},
+    "transform": {"scale": [88, 70, 1]},
     "sprite": {"texture": "assets/sprites/mower.png"}
   }
 }

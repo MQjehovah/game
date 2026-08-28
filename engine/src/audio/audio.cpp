@@ -128,4 +128,20 @@ bool LoadWav(const std::string& path, SoundFx& out) {
     return false;
 }
 
+bool LoadSoundFx(const std::string& path, SoundFx& out) {
+    // WAV has a dependency-free parser; everything else defers to the
+    // vendored miniaudio decoders (ogg/mp3/flac). The extension only picks
+    // the fast path — ma_decoder sniffs the container either way, so a
+    // mislabeled extension still decodes.
+    if (path.size() >= 4) {
+        const std::string ext = path.substr(path.size() - 4);
+        if (ext == ".wav" || ext == ".WAV") return LoadWav(path, out);
+    }
+    if (LoadSoundFxMiniAudio(path, out)) {
+        out.name = path;
+        return true;
+    }
+    return LoadWav(path, out);
+}
+
 } // namespace neon::audio

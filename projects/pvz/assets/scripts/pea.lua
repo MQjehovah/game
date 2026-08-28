@@ -34,7 +34,12 @@ function on_update(e, dt)
           SetHealth(ent, hp - p.damage)
           SpawnFloatText({ x = zp.x, y = zp.y + 30, z = zp.z },
                          tostring(math.floor(p.damage)), false, 0.5)
-          if p.snow == 1 then ApplyStatus(ent, "slow", 3, 0.5) end
+          if p.snow == 1 then
+            ApplyStatus(ent, "slow", 3, 0.5)
+            PlaySfx("frozen")
+          else
+            PlaySfx("splat")
+          end
         end
         Despawn(e)
         return

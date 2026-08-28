@@ -1,7 +1,7 @@
 {
   "components": {
-    "transform": {"scale": [56, 56, 1]},
-    "sprite": {"texture": "assets/sprites/sun.png"},
+    "transform": {"scale": [70, 70, 1]},
+    "sprite": {"texture": "assets/sprites/sun.png", "sheet": "assets/sprites/sun.sheet.png", "sheetFrames": 29, "fps": 12},
     "sun": {"value": 25},
     "script": {"backend": "lua", "path": "assets/scripts/sun.lua", "vars": {}}
   }
