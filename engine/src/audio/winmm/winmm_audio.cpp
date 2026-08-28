@@ -19,7 +19,10 @@ constexpr int kBufferCount = 4;
 constexpr size_t kMaxVoices = 48;
 
 struct Voice {
-    const SoundFx* fx = nullptr;
+    // OWNED copy of the SoundFx: the caller may pass a temporary
+    // (Play(MakePvzSfx(...))) that dies before the mixer thread reads it, so a
+    // raw pointer here would dangle. Copying keeps the samples alive.
+    SoundFx fx;
     size_t pos = 0;
     float volume = 1.0f;
     bool active = false;
@@ -85,7 +88,7 @@ public:
         EnterCriticalSection(&criticalSection_);
         if (voices_.size() >= kMaxVoices) voices_.erase(voices_.begin());
         Voice voice;
-        voice.fx = &sound;
+        voice.fx = sound; // copy (owns the samples)
         voice.volume = volume * sound.volume;
         voice.active = true;
         voices_.push_back(voice);
@@ -128,8 +131,8 @@ private:
                 auto* data = reinterpret_cast<int16_t*>(hdr.lpData);
                 std::memset(hdr.lpData, 0, kBufferFrames * 2);
                 for (Voice& voice : voices_) {
-                    if (!voice.active || !voice.fx) continue;
-                    const std::vector<int16_t>& samples = voice.fx->samples;
+                    if (!voice.active) continue;
+                    const std::vector<int16_t>& samples = voice.fx.samples;
                     for (size_t i = 0; i < kBufferFrames && voice.pos < samples.size(); ++i, ++voice.pos) {
                         int mixed = static_cast<int>(data[i]) +
                                     static_cast<int>(static_cast<float>(samples[voice.pos]) * voice.volume);
@@ -137,7 +140,7 @@ private:
                     }
                     if (voice.pos >= samples.size()) {
                         voice.pos = 0;
-                        if (!voice.fx->loop) voice.active = false;
+                        if (!voice.fx.loop) voice.active = false;
                     }
                 }
                 voices_.erase(std::remove_if(voices_.begin(), voices_.end(),

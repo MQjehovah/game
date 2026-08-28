@@ -129,7 +129,9 @@ core::Result<core::Json> EditorApp::BuildSceneJsonFromEntities() {
             auto res = scene::SceneFile::MakeSpriteEntity(
                 e.name, e.pos, e.rot, e.scale, e.spriteTex, e.spriteFlipX,
                 e.spriteFlipY, ColorToHex(e.tint), e.hp, e.maxHp,
-                parentNameOf(e.parentId), e.parentId, e.id);
+                parentNameOf(e.parentId), e.parentId, e.id,
+                e.spriteFrames, e.spriteFps, e.spriteLoop,
+                e.spriteSheet, e.spriteSheetFrames);
             if (!res.Ok()) {
                 NEON_LOG_ERROR("Editor: sprite export for '%s' failed: %s", e.name.c_str(),
                                res.Error().c_str());
@@ -512,18 +514,18 @@ void EditorApp::StartPlay() {
     cfg.font2d = cjkFont_.Valid() ? cjkFont_ : pixelFont_; // 2D HUD / on_render
     // PlaySfx(name) from game scripts routes to the procedural synth.
     cfg.playSfx = [this](const std::string& name) {
-        if (audioBackend_) audioBackend_->Play(MakePvzSfx(name), 0.7f);
+        if (audioBackend_) audioBackend_->Play(MakePvzSfx(name, projectDir_), 0.7f);
     };
     // P2-2 audio hooks: music bus, 3D positional sfx against the live camera
     // listener, and bus volume control.
     cfg.playMusic = [this](const std::string& name, float vol) {
-        if (audioBackend_) audioBackend_->PlayMusic(MakePvzSfx(name), vol);
+        if (audioBackend_) audioBackend_->PlayMusic(MakePvzSfx(name, projectDir_), vol);
     };
     cfg.playSfx3D = [this](const std::string& name, const math::Vec3& pos) {
         if (audioBackend_) {
             const gfx::Camera& cam = ActiveCamera();
             const math::Vec3 fwd = (cam.target - cam.position).Normalized();
-            audioBackend_->Play3D(MakePvzSfx(name), pos, cam.position, fwd, 0.7f);
+            audioBackend_->Play3D(MakePvzSfx(name, projectDir_), pos, cam.position, fwd, 0.7f);
         }
     };
     cfg.setBusVolume = [this](int bus, float gain) {

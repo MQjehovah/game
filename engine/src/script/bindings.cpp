@@ -419,6 +419,47 @@ Value NativeDrawSprite(IScriptHost& host, void* user) {
     return Value::Nil();
 }
 
+// SetSpriteFrames(entity, { "assets/.../0.png", "1.png", ... }, fps): switches
+// the entity's sprite to a sequence-frame animation. Empty list restores the
+// static texture. No-op without a setSpriteFrames hook (e.g. the demo host).
+Value NativeSetSpriteFrames(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->setSpriteFrames) return Value::Nil();
+    const ecs::Entity e = EntityFromValue(host.GetArg(0));
+    if (!e.IsValid()) return Value::Nil();
+    std::vector<std::string> frames;
+    const Value& list = host.GetArg(1);
+    if (list.type == Value::Type::Table && list.table) {
+        frames.reserve(list.table->array.size());
+        for (const Value& f : list.table->array)
+            if (f.type == Value::Type::String && !f.str.empty()) frames.push_back(f.str);
+    }
+    const Value& fpsArg = host.GetArg(2);
+    const float fps =
+        fpsArg.type == Value::Type::Number ? static_cast<float>(fpsArg.number) : 0.0f;
+    ctx->setSpriteFrames(e, std::move(frames), fps);
+    return Value::Nil();
+}
+
+// SetSpriteSheet(entity, "assets/.../walk.sheet.png", frameCount, fps): switches
+// the entity's sprite to a horizontal spritesheet atlas animation.
+Value NativeSetSpriteSheet(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->setSpriteSheet) return Value::Nil();
+    const ecs::Entity e = EntityFromValue(host.GetArg(0));
+    if (!e.IsValid()) return Value::Nil();
+    const std::string sheet = StringArg(host, 1);
+    int count = 0;
+    float fps = 8.0f;
+    const Value& c = host.GetArg(2);
+    if (c.type == Value::Type::Number) count = static_cast<int>(c.number);
+    const Value& f = host.GetArg(3);
+    if (f.type == Value::Type::Number) fps = static_cast<float>(f.number);
+    if (sheet.empty() || count <= 0) return Value::Nil();
+    ctx->setSpriteSheet(e, sheet, count, fps);
+    return Value::Nil();
+}
+
 Value NativeDrawRectOutline(IScriptHost& host, void* user) {
     auto* ctx = static_cast<ScriptContext*>(user);
     if (!ctx || !ctx->draw2d) return Value::Nil();
@@ -1460,6 +1501,8 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("BindPlayerToClient", &NativeBindPlayerToClient, &ctx);
     host.Register("DrawRect", &NativeDrawRect, &ctx);
     host.Register("DrawSprite", &NativeDrawSprite, &ctx);
+    host.Register("SetSpriteFrames", &NativeSetSpriteFrames, &ctx);
+    host.Register("SetSpriteSheet", &NativeSetSpriteSheet, &ctx);
     host.Register("DrawRectOutline", &NativeDrawRectOutline, &ctx);
     host.Register("DrawText", &NativeDrawText, &ctx);
     host.Register("ReadText", &NativeReadText, &ctx);

@@ -114,8 +114,12 @@ private:
         ma_spinlock_lock(&lock_);
         if (voices_.size() >= kMaxVoices) voices_.erase(voices_.begin());
         MixVoice voice;
-        voice.samples = sound.samples.data();
-        voice.sampleCount = sound.samples.size();
+        // The caller may pass a TEMPORARY SoundFx (e.g. Play(MakePvzSfx(...)))
+        // that dies right after this call returns; the audio thread would then
+        // mix a freed buffer. Own a copy so the voice's samples stay valid.
+        voice.owned = sound.samples;
+        voice.samples = voice.owned.data();
+        voice.sampleCount = voice.owned.size();
         voice.volume = gain * busGains_[static_cast<size_t>(bus)] *
                        busGains_[static_cast<size_t>(AudioBus::Master)];
         voice.loop = sound.loop;
@@ -127,7 +131,11 @@ private:
                 else ++it;
             }
         }
-        voices_.push_back(voice);
+        // MOVE the voice into the vector. A copy here would re-copy `owned`
+        // while `samples` still pointed at the LOCAL buffer; the local dies at
+        // the end of this call and the audio thread would mix a freed buffer
+        // (the exact WAV-triggered crash this ownership design exists to fix).
+        voices_.push_back(std::move(voice));
         ma_spinlock_unlock(&lock_);
     }
     void StopAll() override {
@@ -148,7 +156,15 @@ private:
         MixVoicesStereo(voices_.data(), voices_.size(), out, frameCount);
         for (size_t i = 0; i < voices_.size();) {
             if (!voices_[i].loop && voices_[i].pos >= voices_[i].sampleCount) {
-                voices_[i] = voices_.back();
+                // MOVE the tail voice into the finished slot: move transfers
+                // the owned sample buffer (address unchanged), so the raw
+                // `samples` pointer stays valid. A copy assignment here would
+                // deep-copy `owned` while `samples` still pointed at the tail's
+                // buffer, which pop_back then frees (dangling mix on the next
+                // callback).
+                if (i != voices_.size() - 1) {
+                    voices_[i] = std::move(voices_.back());
+                }
                 voices_.pop_back();
             } else {
                 ++i;

@@ -1,7 +1,7 @@
 {
   "components": {
-    "transform": {"scale": [62, 60, 1]},
-    "sprite": {"texture": "assets/sprites/repeater.png"},
+    "transform": {"scale": [70, 68, 1]},
+    "sprite": {"texture": "assets/sprites/repeater.png", "sheet": "assets/sprites/repeater.sheet.png", "sheetFrames": 15, "fps": 6},
     "plant": {"type": "repeater", "cost": 200, "cooldown": 6, "hp": 100, "maxHp": 100},
     "script": {"backend": "lua", "path": "scripts/plants.lua", "vars": {}}
   }

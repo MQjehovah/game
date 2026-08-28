@@ -30,6 +30,7 @@
 #endif
 
 #include "neon/gfx/renderer.hpp"
+#include "neon/core/log.hpp"
 
 namespace neon::editor {
 
@@ -411,26 +412,56 @@ void SfxTone(std::vector<int16_t>& out, double f0, double f1, float dur, float v
 
 } // namespace
 
-neon::audio::SoundFx MakePvzSfx(const std::string& name) {
-    // 真实音效优先：NeonPvZ 项目自带 assets/audio/<name>.wav（素材包转码）。
+// Resample a SoundFx to the backend's fixed 44.1 kHz rate. The mixer consumes
+// every voice's samples at the device rate (no per-voice resampling), so a WAV
+// recorded at 22050 Hz must be upsampled or it plays back twice as fast.
+neon::audio::SoundFx ResampleTo44100(neon::audio::SoundFx fx) {
+    if (fx.sampleRate == 44100 || fx.samples.empty()) return fx;
+    const double ratio = static_cast<double>(fx.sampleRate) / 44100.0;
+    const size_t outCount = static_cast<size_t>(static_cast<double>(fx.samples.size()) / ratio);
+    neon::audio::SoundFx out;
+    out.name = std::move(fx.name);
+    out.sampleRate = 44100;
+    out.loop = fx.loop;
+    out.volume = fx.volume;
+    out.samples.reserve(outCount);
+    for (size_t i = 0; i < outCount; ++i) {
+        const double srcPos = static_cast<double>(i) * ratio;
+        const size_t i0 = static_cast<size_t>(srcPos);
+        const size_t i1 = std::min(i0 + 1, fx.samples.size() - 1);
+        const double frac = srcPos - static_cast<double>(i0);
+        const double s = static_cast<double>(fx.samples[i0]) * (1.0 - frac) +
+                         static_cast<double>(fx.samples[i1]) * frac;
+        out.samples.push_back(static_cast<int16_t>(std::max(-32768.0, std::min(32767.0, s))));
+    }
+    return out;
+}
+
+neon::audio::SoundFx MakePvzSfx(const std::string& name, const std::string& projectDir) {
+    // 真实音效优先：项目自带 assets/audio/<name>.wav（素材包转码）。
     // 命中缓存避免每次 stat/parse；sampleRate<=0 表示"无 WAV"，回退程序合成。
     static std::unordered_map<std::string, neon::audio::SoundFx> s_pvzWav;
-    static const char* kPvzAudioDirs[] = {
-        "projects/pvz/assets/audio/", // 编辑器从仓库根运行
-        "assets/audio/",              // 打包/解包项目布局
-    };
-    auto wavIt = s_pvzWav.find(name);
+    const std::string cacheKey = projectDir + "#" + name;
+    auto wavIt = s_pvzWav.find(cacheKey);
     if (wavIt == s_pvzWav.end()) {
         neon::audio::SoundFx wav;
         bool loaded = false;
-        for (const char* d : kPvzAudioDirs) {
-            if (neon::audio::LoadWav(std::string(d) + name + ".wav", wav)) {
+        const std::string base =
+            projectDir.empty() ? std::string("assets/audio/") : projectDir + "/assets/audio/";
+        if (neon::audio::LoadWav(base + name + ".wav", wav)) loaded = true;
+        if (!loaded && projectDir != "projects/pvz") {
+            // 兼容从仓库根运行的编辑器与项目目录混排。
+            if (neon::audio::LoadWav("projects/" + projectDir + "/assets/audio/" + name + ".wav",
+                                     wav)) {
                 loaded = true;
-                break;
             }
         }
-        wav.sampleRate = loaded ? wav.sampleRate : -1; // -1 = 回退程序合成
-        wavIt = s_pvzWav.emplace(name, std::move(wav)).first;
+        if (loaded) wav = ResampleTo44100(std::move(wav));
+        wav.sampleRate = loaded ? wav.sampleRate : 0; // 0 = 回退程序合成
+        NEON_LOG_DEBUG("MakePvzSfx: '%s' %s (%zu samples @ %u Hz)", name.c_str(),
+                       loaded ? "loaded from WAV" : "no WAV, synth fallback",
+                       wav.samples.size(), wav.sampleRate);
+        wavIt = s_pvzWav.emplace(cacheKey, std::move(wav)).first;
     }
     if (wavIt->second.sampleRate > 0) return wavIt->second;
 

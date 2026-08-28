@@ -150,7 +150,12 @@ struct SceneFile {
                                                      float maxHp = 0.0f,
                                                      const std::string& parent = "",
                                                      int parentId = 0,
-                                                     int id = 0);
+                                                     int id = 0,
+                                                     const std::vector<std::string>& frames = {},
+                                                     float fps = 0.0f,
+                                                     bool loop = true,
+                                                     const std::string& sheet = "",
+                                                     int sheetFrames = 0);
     // G2-2: serializes an ecs::World back to the scene-file JSON format (the
     // reverse of Instantiate). Every factory's component is emitted exactly as
     // the corresponding factory reads it, so Parse(FromWorld(w)) re-Instantiates
@@ -238,6 +243,18 @@ struct SceneSprite {
     bool flipX = false;
     bool flipY = false;
     std::string colorHex; // tint, "#rrggbb" (empty = white)
+    // Sequence-frame animation: when `frames` is non-empty the entity plays
+    // them in order at `fps` (looping), swapping the drawn texture each frame.
+    // The static `texture` is used as the first frame if frames[0] is absent.
+    std::vector<std::string> frames;
+    float fps = 0.0f; // frames per second (0 = static texture)
+    bool loop = true;
+    // Spritesheet variant: `sheet` is a horizontal atlas of `sheetFrames`
+    // equal-sized frames (one texture instead of N files -- no per-frame .meta
+    // clutter). Mutually exclusive with `frames`; when both are set, `sheet`
+    // wins.
+    std::string sheet;
+    int sheetFrames = 0;
 };
 // Data-driven zombie spawn: which row it attacks, when it appears (scene
 // time) and its armor type. Kept as a component so per-entity scripts can

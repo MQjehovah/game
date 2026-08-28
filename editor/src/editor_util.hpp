@@ -60,7 +60,10 @@ void GizmoToMat4(const float in[16], math::Mat4& m);
 void DecomposeModel(const math::Mat4& m, math::Vec3& pos, math::Vec3& scale,
                     math::Quat& rot);
 
-// Play procedural SFX synth (2D games have sound without audio files).
-neon::audio::SoundFx MakePvzSfx(const std::string& name);
+// Play SFX for a 2D game project. Tries the project's real WAV clip
+// (<projectDir>/assets/audio/<name>.wav) first, falling back to the
+// procedural synth so games have sound without shipping audio files.
+// Loaded WAVs are cached per project dir + name.
+neon::audio::SoundFx MakePvzSfx(const std::string& name, const std::string& projectDir = "");
 
 } // namespace neon::editor

@@ -432,7 +432,10 @@ core::Result<core::Json> SceneFile::MakeSpriteEntity(const std::string& name,
                                                      bool flipX, bool flipY,
                                                      const std::string& colorHex, float hp,
                                                      float maxHp, const std::string& parent,
-                                                     int parentId, int id) {
+                                                     int parentId, int id,
+                                                     const std::vector<std::string>& frames,
+                                                     float fps, bool loop,
+                                                     const std::string& sheet, int sheetFrames) {
     if (name.empty())
         return core::Result<core::Json>::Err("scene: exported entity name must not be empty");
     if (texture.empty())
@@ -456,6 +459,20 @@ core::Result<core::Json> SceneFile::MakeSpriteEntity(const std::string& name,
     if (flipX) sp.object_["flipX"] = MakeBool(true);
     if (flipY) sp.object_["flipY"] = MakeBool(true);
     sp.object_["colorHex"] = MakeString(colorHex.empty() ? "#FFFFFF" : colorHex);
+    if (!frames.empty()) {
+        core::Json fr;
+        fr.type_ = core::Json::Type::Array;
+        for (const std::string& f : frames) fr.array_.push_back(MakeString(f));
+        sp.object_["frames"] = std::move(fr);
+        sp.object_["fps"] = MakeNumber(fps);
+        sp.object_["loop"] = MakeBool(loop);
+    }
+    if (!sheet.empty()) {
+        sp.object_["sheet"] = MakeString(sheet);
+        sp.object_["sheetFrames"] = MakeNumber(sheetFrames);
+        sp.object_["fps"] = MakeNumber(fps);
+        sp.object_["loop"] = MakeBool(loop);
+    }
 
     core::Json comps = MakeObject();
     comps.object_["transform"] = std::move(tf);
@@ -708,7 +725,8 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                  [](ecs::World& world, ecs::Entity ent, const core::Json& data,
                     const core::Json&, std::string* err) {
                      if (!CheckComponentShape(data,
-                                              {"texture", "flipX", "flipY", "colorHex"},
+                                              {"texture", "flipX", "flipY", "colorHex",
+                                               "frames", "fps", "loop", "sheet", "sheetFrames"},
                                               "sprite", err))
                          return false;
                      const core::Json* tex = data.Get("texture");
@@ -732,16 +750,74 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                          }
                          s.flipY = fy->GetBool();
                      }
-                     if (const core::Json* c = data.Get("colorHex")) {
-                         if (!c->IsString()) {
-                             if (err) *err = "component 'sprite' field 'colorHex' must be a string";
-                             return false;
-                         }
-                         s.colorHex = c->GetString();
-                     }
-                     world.Add<SceneSprite>(ent, s);
-                     return true;
-                 });
+                      if (const core::Json* c = data.Get("colorHex")) {
+                          if (!c->IsString()) {
+                              if (err) *err = "component 'sprite' field 'colorHex' must be a string";
+                              return false;
+                          }
+                          s.colorHex = c->GetString();
+                      }
+                      // Sequence-frame animation (frames/fps/loop).
+                      if (const core::Json* fr = data.Get("frames")) {
+                          if (!fr->IsArray()) {
+                              if (err) *err = "component 'sprite' field 'frames' must be an array";
+                              return false;
+                          }
+                          for (size_t i = 0; i < fr->Size(); ++i) {
+                              const core::Json* item = fr->At(i);
+                              if (!item || !item->IsString() || item->GetString().empty()) {
+                                  if (err) *err = "component 'sprite' field 'frames' must be strings";
+                                  return false;
+                              }
+                              s.frames.push_back(item->GetString());
+                          }
+                          if (const core::Json* fps = data.Get("fps")) {
+                              if (!fps->IsNumber()) {
+                                  if (err) *err = "component 'sprite' field 'fps' must be a number";
+                                  return false;
+                              }
+                              s.fps = static_cast<float>(fps->GetNumber());
+                          }
+                          if (const core::Json* lp = data.Get("loop")) {
+                              if (!lp->IsBool()) {
+                                  if (err) *err = "component 'sprite' field 'loop' must be a bool";
+                                  return false;
+                              }
+                              s.loop = lp->GetBool();
+                          }
+                      }
+                      // Spritesheet atlas (single texture, sub-rects).
+                      if (const core::Json* sh = data.Get("sheet")) {
+                          if (!sh->IsString() || sh->GetString().empty()) {
+                              if (err) *err = "component 'sprite' field 'sheet' must be a string";
+                              return false;
+                          }
+                          s.sheet = sh->GetString();
+                          if (const core::Json* n = data.Get("sheetFrames")) {
+                              if (!n->IsNumber()) {
+                                  if (err) *err = "component 'sprite' field 'sheetFrames' must be a number";
+                                  return false;
+                              }
+                              s.sheetFrames = n->GetInt();
+                          }
+                          if (const core::Json* fps = data.Get("fps")) {
+                              if (!fps->IsNumber()) {
+                                  if (err) *err = "component 'sprite' field 'fps' must be a number";
+                                  return false;
+                              }
+                              s.fps = static_cast<float>(fps->GetNumber());
+                          }
+                          if (const core::Json* lp = data.Get("loop")) {
+                              if (!lp->IsBool()) {
+                                  if (err) *err = "component 'sprite' field 'loop' must be a bool";
+                                  return false;
+                              }
+                              s.loop = lp->GetBool();
+                          }
+                      }
+                      world.Add<SceneSprite>(ent, s);
+                      return true;
+                  });
 
 
     reg.Register("script",
@@ -1397,6 +1473,20 @@ core::Result<core::Json> SceneFile::FromWorld(ecs::World& world) {
             if (s->flipX) sp.object_["flipX"] = MakeBool(true);
             if (s->flipY) sp.object_["flipY"] = MakeBool(true);
             sp.object_["colorHex"] = MakeString(s->colorHex.empty() ? "#FFFFFF" : s->colorHex);
+            if (!s->frames.empty()) {
+                core::Json frames;
+                frames.type_ = core::Json::Type::Array;
+                for (const std::string& f : s->frames) frames.array_.push_back(MakeString(f));
+                sp.object_["frames"] = std::move(frames);
+                sp.object_["fps"] = MakeNumber(s->fps);
+                sp.object_["loop"] = MakeBool(s->loop);
+            }
+            if (!s->sheet.empty()) {
+                sp.object_["sheet"] = MakeString(s->sheet);
+                sp.object_["sheetFrames"] = MakeNumber(s->sheetFrames);
+                sp.object_["fps"] = MakeNumber(s->fps);
+                sp.object_["loop"] = MakeBool(s->loop);
+            }
             comps.object_["sprite"] = std::move(sp);
         }
         if (const SceneHealth* h = world.Get<SceneHealth>(e)) {

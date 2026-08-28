@@ -539,6 +539,11 @@ void EditorApp::UnflattenWorldToEntities() {
             out.spriteTex = s->texture;
             out.spriteFlipX = s->flipX;
             out.spriteFlipY = s->flipY;
+            out.spriteFrames = s->frames;
+            out.spriteFps = s->fps;
+            out.spriteLoop = s->loop;
+            out.spriteSheet = s->sheet;
+            out.spriteSheetFrames = s->sheetFrames;
             if (!s->colorHex.empty()) out.tint = ColorFromHex(s->colorHex);
         }
         if (const scene::SceneHealth* h = sceneWorld_.Get<scene::SceneHealth>(e)) {
@@ -908,6 +913,23 @@ void EditorApp::LoadScene(const std::string& path) {
                 if (const core::Json* fx = sp->Get("flipX")) e.spriteFlipX = fx->GetBool();
                 if (const core::Json* fy = sp->Get("flipY")) e.spriteFlipY = fy->GetBool();
                 if (const core::Json* c = sp->Get("colorHex")) e.tint = ColorFromHex(c->GetString());
+                if (const core::Json* fr = sp->Get("frames")) {
+                    if (fr->IsArray()) {
+                        e.spriteFrames.clear();
+                        for (size_t i = 0; i < fr->Size(); ++i) {
+                            const core::Json* item = fr->At(i);
+                            if (item && item->IsString()) e.spriteFrames.push_back(item->GetString());
+                        }
+                    }
+                    if (const core::Json* fps = sp->Get("fps")) e.spriteFps = static_cast<float>(fps->GetNumber());
+                    if (const core::Json* lp = sp->Get("loop")) e.spriteLoop = lp->GetBool();
+                }
+                if (const core::Json* sh = sp->Get("sheet")) {
+                    e.spriteSheet = sh->GetString();
+                    if (const core::Json* n = sp->Get("sheetFrames")) e.spriteSheetFrames = n->GetInt();
+                    if (const core::Json* fps = sp->Get("fps")) e.spriteFps = static_cast<float>(fps->GetNumber());
+                    if (const core::Json* lp = sp->Get("loop")) e.spriteLoop = lp->GetBool();
+                }
             }
             if (const core::Json* h = comps->Get("health")) {
                 if (const core::Json* v = h->Get("hp")) e.hp = static_cast<float>(v->GetNumber());

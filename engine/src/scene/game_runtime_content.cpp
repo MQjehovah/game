@@ -17,15 +17,26 @@ using namespace detail; // ListFilesRecursive/HasSuffix/FileStem (inline copies)
 
 void GameRuntime::LoadPrefabs() {
     prefs_ = PrefabLibrary{};
-    if (cfg_.scriptBaseDir.empty()) return; // disk-less hosts have no prefab tree
+    if (cfg_.scriptBaseDir.empty() && !cfg_.fileSystem) return; // no prefab source
     std::vector<std::string> files;
-    ListFilesRecursive(cfg_.scriptBaseDir + "/prefabs", "", files);
+    if (cfg_.fileSystem) {
+        // VFS (pack + mod mount stack): enumerate the pack's prefabs/ tree
+        // through the virtual filesystem. The old code only enumerated the OS
+        // dir, which is empty in no-unpack VFS mode (packed games loaded 0
+        // prefabs and every SpawnPrefab failed).
+        files = cfg_.fileSystem->ListFiles("prefabs", /*recursive=*/true);
+    } else {
+        ListFilesRecursive(cfg_.scriptBaseDir + "/prefabs", "", files);
+    }
     size_t loaded = 0;
     for (const std::string& rel : files) {
         if (!HasSuffix(rel, ".json")) continue;
         const std::string name = FileStem(rel);
         if (name.empty()) continue;
-        std::string text = ReadScript(FullScriptPath("prefabs/" + rel));
+        // VFS ListFiles returns FULL pack paths ("prefabs/x.json"); the disk
+        // path returns dir-relative names, so only the disk branch prepends.
+        std::string text = cfg_.fileSystem ? ReadScript(rel)
+                                           : ReadScript(FullScriptPath("prefabs/" + rel));
         if (text.empty()) {
             NEON_LOG_CAT(neon::core::LogCategory::Scene, neon::core::LogLevel::Warn,
                          "runtime: prefab '%s' cannot be read (skipped)", rel.c_str());
@@ -105,6 +116,9 @@ std::string GameRuntime::ReadScript(const std::string& path) const {
             const std::string prefix = cfg_.scriptBaseDir + "/";
             if (path.rfind(prefix, 0) == 0) rel = path.substr(prefix.size());
         }
+        // VFS virtual paths never start with '/'; strip any leading slash
+        // (FullScriptPath adds one when scriptBaseDir is empty in pack mode).
+        while (!rel.empty() && (rel[0] == '/' || rel[0] == '\\')) rel.erase(0, 1);
         const core::Result<std::vector<uint8_t>> bytes = cfg_.fileSystem->ReadFile(rel);
         if (bytes.Ok())
             return std::string(bytes.Value().begin(), bytes.Value().end());

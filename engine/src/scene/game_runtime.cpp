@@ -343,6 +343,57 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
         }
         return e;
     };
+    // Sequence-frame sprite animation: update the entity's SceneSprite frames
+    // and reset its DrawItem frame clock so the new animation starts fresh.
+    scriptCtx_.setSpriteFrames = [this](ecs::Entity e, const std::vector<std::string>& frames,
+                                        float fps) {
+        if (!world_.Alive(e)) return;
+        if (SceneSprite* s = world_.Get<SceneSprite>(e)) {
+            s->frames = frames;
+            s->fps = fps;
+            s->loop = true;
+            s->sheet.clear();
+            s->sheetFrames = 0;
+        }
+        for (DrawItem& d : draws_) {
+            if (d.ent != e) continue;
+            d.spriteFrames = frames;
+            d.spriteFps = fps;
+            d.spriteLoop = true;
+            d.spriteAnimTime = 0.0f;
+            d.spriteFrame = -1;
+            d.spriteTex = frames.empty() || frames[0].empty() ? std::string() : frames[0];
+            d.sheetTex.clear();
+            d.sheetFrames = 0;
+            d.resolved = false;
+            break;
+        }
+    };
+    // Spritesheet variant of the above (one atlas texture, sub-rects).
+    scriptCtx_.setSpriteSheet = [this](ecs::Entity e, const std::string& sheet, int count,
+                                       float fps) {
+        if (!world_.Alive(e) || sheet.empty() || count <= 0) return;
+        if (SceneSprite* s = world_.Get<SceneSprite>(e)) {
+            s->sheet = sheet;
+            s->sheetFrames = count;
+            s->fps = fps;
+            s->loop = true;
+            s->frames.clear();
+        }
+        for (DrawItem& d : draws_) {
+            if (d.ent != e) continue;
+            d.sheetTex = sheet;
+            d.sheetFrames = count;
+            d.spriteFps = fps;
+            d.spriteLoop = true;
+            d.spriteAnimTime = 0.0f;
+            d.spriteFrame = -1;
+            d.spriteTex = sheet;
+            d.spriteFrames.clear();
+            d.resolved = false;
+            break;
+        }
+    };
     scriptCtx_.spawnPrefab = [this](const std::string& name, const math::Vec3& pos) {
         return SpawnPrefab(name, pos);
     };
@@ -913,25 +964,48 @@ void GameRuntime::CallEntityFunctionHandle(ScriptInst& inst, uint64_t handle,
     // The input bindings resolve per-entity input through the entity being
     // updated (multi-player: each player's script reads its OWN client input).
     scriptCtx_.currentEntity = inst.ent;
-    inst.host->SetCurrentScript(inst.path);
+    // Capture everything we need BEFORE the call: the script call below may
+    // SpawnPrefab()/Despawn(), which can reallocate `scripts_` and invalidate
+    // the `inst` reference. host/path/vars are local copies so no code path
+    // touches `inst` after the call.
+    script::IScriptHost* host = inst.host;
+    const std::string path = inst.path;
+    const ecs::Entity ent = inst.ent;
+    host->SetCurrentScript(path);
     // A6: inject this instance's declared vars before the call and save them
     // back after, giving per-entity isolation over the shared global namespace.
-    const bool hasVars = inst.vars.type == script::Value::Type::Table && inst.vars.table;
+    // The vars Value is copied up front: the copy shares the same heap table
+    // (Value holds a shared_ptr), so writes through the copy still reach the
+    // (possibly relocated) instance's vars.
+    const script::Value vars = inst.vars; // shared_ptr copy: same table
+    const bool hasVars = vars.type == script::Value::Type::Table && vars.table;
     if (hasVars) {
-        for (const auto& kv : inst.vars.table->fields) inst.host->SetGlobal(kv.first, kv.second);
+        for (const auto& kv : vars.table->fields) host->SetGlobal(kv.first, kv.second);
     }
-    const auto res = inst.host->CallCaptured(handle, args);
+    const auto res = host->CallCaptured(handle, args);
     if (hasVars) {
-        for (auto& kv : inst.vars.table->fields) {
-            if (auto g = inst.host->GetGlobal(kv.first); g.Ok()) kv.second = g.Value();
+        for (auto& kv : vars.table->fields) {
+            if (auto g = host->GetGlobal(kv.first); g.Ok()) kv.second = g.Value();
         }
     }
     scriptCtx_.currentEntity = {};
-    if (!res.Ok() && !inst.errorLogged) {
-        inst.errorLogged = true;
-        NEON_LOG_CAT(neon::core::LogCategory::Script, neon::core::LogLevel::Error,
-                     "runtime: script '%s' %s() failed: %s", inst.path.c_str(), fn,
-                     inst.host->LastError().message.c_str());
+    // `inst` may be dangling here (the script could have reallocated scripts_
+    // via SpawnPrefab); re-find the instance by entity to preserve the
+    // once-per-instance error-log dedup without touching the stale reference.
+    if (!res.Ok()) {
+        bool logged = false;
+        for (auto& e : scripts_) {
+            if (e.ent == ent) {
+                if (e.errorLogged) logged = true;
+                e.errorLogged = true;
+                break;
+            }
+        }
+        if (!logged) {
+            NEON_LOG_CAT(neon::core::LogCategory::Script, neon::core::LogLevel::Error,
+                         "runtime: script '%s' %s() failed: %s", path.c_str(), fn,
+                         host->LastError().message.c_str());
+        }
     }
 }
 
@@ -1163,6 +1237,22 @@ void GameRuntime::BuildDrawList() {
         item.spriteTex = s->texture;
         item.flipX = s->flipX;
         item.flipY = s->flipY;
+        // Sequence-frame animation: keep the frame list on the draw item so
+        // Draw can advance the clock and swap the texture each frame.
+        item.spriteFrames = s->frames;
+        item.spriteFps = s->fps;
+        item.spriteLoop = s->loop;
+        if (!s->frames.empty() && !s->frames[0].empty()) item.spriteTex = s->frames[0];
+        // Spritesheet atlas wins over per-file frames (single texture).
+        if (!s->sheet.empty()) {
+            item.sheetTex = s->sheet;
+            item.sheetFrames = s->sheetFrames;
+            item.spriteTex = s->sheet;
+            item.spriteFps = s->fps;
+            item.spriteLoop = s->loop;
+            item.spriteFrames.clear();
+        }
+        item.spriteFrame = -1;
         // 2D sprites are lit so the scene's ambient/sun/lights affect them.
         item.mat = gfx::Material::Lit({}, ParseColorHex(s->colorHex), 8.0f);
         draws_.push_back(std::move(item));
@@ -1251,7 +1341,16 @@ void GameRuntime::ResolveDrawItem(DrawItem& item, gfx::Renderer& renderer) {
             item.failed = true;
             return;
         }
-        item.mesh = gfx::Mesh::CreateQuad(renderer, 1.0f, 1.0f, "sprite");
+        // Spritesheet atlas: the quad samples the current frame's sub-rect.
+        if (!item.sheetTex.empty() && item.sheetFrames > 0) {
+            const float fw = 1.0f / static_cast<float>(item.sheetFrames);
+            const int f = item.spriteFrame >= 0 ? item.spriteFrame : 0;
+            const float u0 = fw * static_cast<float>(f);
+            item.mesh = gfx::Mesh::CreateQuadUv(renderer, 1.0f, 1.0f, u0, 0.0f,
+                                                u0 + fw, 1.0f, "sprite_sheet");
+        } else {
+            item.mesh = gfx::Mesh::CreateQuad(renderer, 1.0f, 1.0f, "sprite");
+        }
         item.mat.albedo = tex.Handle();
         item.mat.transparent = true; // PNG sprites keep their alpha
         // flipX/flipY mirror the quad via a NEGATIVE local scale, which flips
@@ -2629,6 +2728,35 @@ void GameRuntime::Tick(float dt) {
     // determinism check).
     systems_.Run(dt, world_, cfg_.parallelSystems);
     simTime_ += dt;
+
+    // Sequence-frame sprite animation: advance each animated sprite draw item's
+    // clock with the FIXED tick dt (deterministic; headless hosts have no
+    // draws_ and simply skip). Draw swaps the texture from the current frame.
+    if (!draws_.empty()) {
+        for (DrawItem& d : draws_) {
+            if (!d.isSprite) continue;
+            const bool sheet = !d.sheetTex.empty() && d.sheetFrames > 0;
+            if (d.spriteFps <= 0.0f) continue;
+            if (!sheet && d.spriteFrames.empty()) continue;
+            d.spriteAnimTime += dt;
+            int frame = static_cast<int>(d.spriteAnimTime * d.spriteFps);
+            const int n = sheet ? d.sheetFrames : static_cast<int>(d.spriteFrames.size());
+            if (d.spriteLoop) {
+                frame = frame % n;
+            } else {
+                frame = frame < n ? frame : n - 1;
+            }
+            if (frame != d.spriteFrame) {
+                d.spriteFrame = frame;
+                if (sheet) {
+                    d.spriteTex = d.sheetTex; // texture unchanged; UV window changes
+                } else {
+                    d.spriteTex = d.spriteFrames[static_cast<size_t>(frame)];
+                }
+                d.resolved = false; // re-resolve (new frame texture / UV quad)
+            }
+        }
+    }
 
     // G3-4: snapshot authoritative poses for lag-compensated hit tests. The
     // ring reuses its snapshot maps (B10): no per-tick heap allocation, and

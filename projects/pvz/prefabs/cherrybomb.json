@@ -1,7 +1,7 @@
 {
   "components": {
-    "transform": {"scale": [76, 55, 1]},
-    "sprite": {"texture": "assets/sprites/cherrybomb.png"},
+    "transform": {"scale": [80, 58, 1]},
+    "sprite": {"texture": "assets/sprites/cherrybomb.png", "sheet": "assets/sprites/cherrybomb.sheet.png", "sheetFrames": 7, "fps": 8},
     "plant": {"type": "cherrybomb", "cost": 150, "cooldown": 30, "hp": 100, "maxHp": 100, "fuse": 1.1},
     "script": {"backend": "lua", "path": "scripts/plants.lua", "vars": {}}
   }

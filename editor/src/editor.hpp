@@ -122,6 +122,15 @@ struct SceneEntity {
     std::string spriteTex;
     bool spriteFlipX = false;
     bool spriteFlipY = false;
+    // Sequence-frame sprite animation (mirrors SceneSprite): non-empty
+    // spriteFrames plays them at spriteFps; the editor round-trips them so
+    // playtest and save keep the animation.
+    std::vector<std::string> spriteFrames;
+    float spriteFps = 0.0f;
+    bool spriteLoop = true;
+    // Spritesheet variant (one atlas texture, sub-rects).
+    std::string spriteSheet;
+    int spriteSheetFrames = 0;
     gfx::Mesh spriteMesh;       // unit XY quad (faces the front camera)
     gfx::Material spriteMaterial; // unlit texture material
     // Health (mirrors the built-in `health` component): maxHp <= 0 means the

@@ -4,6 +4,19 @@ local function rowOf(y)
   return math.max(0, math.min(4, math.floor((y - 110 + 50) / 100)))
 end
 
+-- 序列帧动画: 走路/吃两组 spritesheet (水平图集), 按僵尸类型选图集。
+local WALK = {
+  zombie = "assets/sprites/zombie.sheet.png", bucket = "assets/sprites/bucket.sheet.png",
+  cone = "assets/sprites/cone.sheet.png",
+}
+local WALK_COUNT = { zombie = 22, bucket = 15, cone = 21 }
+local EAT = {
+  zombie = "assets/sprites/zombie_eat.sheet.png", bucket = "assets/sprites/bucket_eat.sheet.png",
+  cone = "assets/sprites/cone_eat.sheet.png",
+}
+local EAT_COUNT = { zombie = 21, bucket = 11, cone = 11 }
+local animState = {} -- e.id -> "walk" | "eat" (只在状态变化时 SetSpriteSheet)
+
 local function removeFrom(rowVar, id)
   local list = GetVar(rowVar)
   if type(list) ~= "table" then return end
@@ -26,6 +39,7 @@ function on_start(e)
   if type(list) ~= "table" then list = {} end
   list[#list + 1] = { id = e.id, gen = e.gen }
   SetVar("row_zombies_" .. row, list)
+  animState[e.id] = "walk"
 end
 
 function on_update(e, dt)
@@ -35,10 +49,11 @@ function on_update(e, dt)
   local pos = GetPosition(e)
   local row = rowOf(pos.y)
 
-  -- 死亡: 移除并销�?
+  -- 死亡: 移除并销毁
   local hp = GetHealth(e)
   if hp ~= nil and hp <= 0 then
     removeFrom("row_zombies_" .. row, e.id)
+    animState[e.id] = nil
     Despawn(e)
     return
   end
@@ -62,6 +77,18 @@ function on_update(e, dt)
         bestX = p.x
         target = p
       end
+    end
+  end
+
+  -- 序列帧动画: 吃植物时切吃动画, 行走时切回走路 (仅状态变化时调用)。
+  local ztype = (z and z.type) or "basic"
+  local want = target and "eat" or "walk"
+  if animState[e.id] ~= want then
+    animState[e.id] = want
+    if want == "eat" then
+      SetSpriteSheet(e, EAT[ztype] or EAT.zombie, EAT_COUNT[ztype] or EAT_COUNT.zombie, 8)
+    else
+      SetSpriteSheet(e, WALK[ztype] or WALK.zombie, WALK_COUNT[ztype] or WALK_COUNT.zombie, 8)
     end
   end
 

@@ -129,6 +129,11 @@ Mesh Mesh::CreatePlane(Renderer& renderer, float width, float depth, int tilesU,
 }
 
 Mesh Mesh::CreateQuad(Renderer& renderer, float width, float height, const std::string& name) {
+    return CreateQuadUv(renderer, width, height, 0.0f, 0.0f, 1.0f, 1.0f, name);
+}
+
+Mesh Mesh::CreateQuadUv(Renderer& renderer, float width, float height,
+                        float u0, float v0, float u1, float v1, const std::string& name) {
     std::vector<Vertex3D> verts;
     std::vector<uint16_t> indices;
     const float hw = width * 0.5f, hh = height * 0.5f;
@@ -139,7 +144,7 @@ Mesh Mesh::CreateQuad(Renderer& renderer, float width, float height, const std::
     // rendered every top-down texture upside down for sprite entities.)
     PushFace(verts, indices, {0, 0, 1},
              {-hw, -hh, 0}, {hw, -hh, 0}, {hw, hh, 0}, {-hw, hh, 0},
-             {0, 1}, {1, 1}, {1, 0}, {0, 0});
+             {u0, v1}, {u1, v1}, {u1, v0}, {u0, v0});
     return CreateFromData(renderer, verts.data(), static_cast<uint32_t>(verts.size()),
                           indices.data(), static_cast<uint32_t>(indices.size()), name);
 }

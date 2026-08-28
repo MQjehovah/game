@@ -67,6 +67,11 @@ public:
     // unit-sized UVs so an image texture maps 1:1. Used by 2D sprites.
     static Mesh CreateQuad(Renderer& renderer, float width, float height,
                            const std::string& name = "quad");
+    // Same quad but samples only the [u0,u1]x[v0,v1] sub-rectangle of the
+    // texture (spritesheet atlas frames).
+    static Mesh CreateQuadUv(Renderer& renderer, float width, float height,
+                             float u0, float v0, float u1, float v1,
+                             const std::string& name = "quad_uv");
     static Mesh CreateCylinder(Renderer& renderer, float radius, float height, int segments = 20,
                                const std::string& name = "cylinder");
     // Heightfield terrain: segments x segments cells spanning size x size,

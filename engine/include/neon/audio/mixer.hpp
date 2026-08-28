@@ -2,15 +2,22 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
+#include <vector>
 
 namespace neon::audio {
 
 // A single active voice ready for mixing. `pos` is both input and output so
 // the caller can persist playback position across buffers. The mixer does NOT
 // own the sample memory; `samples` must outlive the call.
+//
+// `owned` gives a backend the option to take ownership of the sample data when
+// the caller's SoundFx is a temporary (Play stores the pointer, so without a
+// copy the voice would read a freed buffer on the audio thread). When `owned`
+// is populated, `samples` must point into it.
 struct MixVoice {
     const int16_t* samples = nullptr;
     size_t sampleCount = 0;
+    std::vector<int16_t> owned; // optional: owned copy of the sample data
     float volume = 1.0f; // final per-voice gain (already includes fx.volume)
     bool loop = false;
     size_t pos = 0;

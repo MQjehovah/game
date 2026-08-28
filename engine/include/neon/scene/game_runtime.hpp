@@ -433,6 +433,17 @@ private:
         std::string spriteTex;
         bool flipX = false;
         bool flipY = false;
+        // Sequence-frame sprite animation: frames/fps/loop copied from the
+        // SceneSprite component; Draw advances the clock and swaps spriteTex.
+        std::vector<std::string> spriteFrames;
+        float spriteFps = 0.0f;
+        bool spriteLoop = true;
+        float spriteAnimTime = 0.0f;
+        int spriteFrame = -1;
+        // Spritesheet variant: one horizontal atlas texture, `sheetFrames`
+        // equal sub-rects; the quad's UV window is rebuilt per frame.
+        std::string sheetTex;
+        int sheetFrames = 0;
         math::Vec3 tileOffset{};  // P1-1: per-cell offset for tilemap quads
         // P2-1 ground decal: draws a flat XZ-plane quad with the texture.
         bool isDecal = false;

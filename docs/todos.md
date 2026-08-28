@@ -4,6 +4,12 @@
 >
 > - **已修复（`[x]`）**：A1–A13 全部（Vulkan descriptor 泄漏/真 HDR+采样自检+动态纹理更新+彩色实例化、Json 三处 UB+精度、ParallelFor 异常、Lua 指令/内存预算、脚本 vars 隔离、Jolt 碰撞快照语义、SetPosition 物理回写+Raycast 结果、资源变体释放/热重载 retire、客户端 Ping、world.hash 字符串化、OBJ 索引上限、glTF 多 buffer）；B1（场景 uniform 按帧+程序门控）、B2、B6、B8、B10、B11、B12、B13（快照分片）、B14、B15；C11；D4、D6（部分）、D7；D1（版本门）。
 > - **本次未做（`[~]` 保留 / `[ ]`）**：B3（绘制队列）、B4（深度可采样）、B5（VK 提交合并）、B7（骨骼姿势缓存）、B9（绑定 fast path）、C2（动画状态组件化）、C3（编辑器状态解耦）、C4（render graph）、C5（字符串句柄化）、C8（线程池统一）、C9（UI 四轨收敛）、C10（shader 资产化）、D2（插件权限强制）、D3（网络认证加密）、D5（CI 工程化）；C1 已拆 content+combat 两簇（其余簇同模式续拆）。
+> - **PvZ 素材/动画/音频收尾（本轮）**：
+>   - 序列帧动画改为 **spritesheet 图集**（12 张横排 `*.sheet.png`），185 个帧 PNG+meta 全删，目录 meta 从 185→12；`SceneSprite` 增 `sheet/sheetFrames`，运行时按帧重建 quad UV，绑定 `SetSpriteSheet`；编辑器模型/序列化/playtest/save 全链路贯通。
+>   - **修场景 bug**：`projects/pvz/scenes/pvz.json` 所有植物/僵尸实体的 `sheet` 误填 `wallnut.sheet.png`（图集改造批量替换残留）→ 按实体类型改为正确图集（sunflower 18/peashooter 13/snowpea 15/wallnut 16/zombie 22 帧）。
+>   - **修 WAV 音频崩溃（根因）**：miniaudio 后端 `PlayImpl` 的 `owned` 拷贝语义错误——`push_back(voice)` 是拷贝，`MixVoice::samples` 仍指向局部缓冲，局部销毁后音频线程读悬垂内存；短程序音效缓冲小不触发，真实 WAV（22050Hz 长缓冲）必然访问违规。修复：`push_back(std::move(voice))`（samples 指向随 move 转移的 owned buffer）。**WAV 真实音效恢复**：`MakePvzSfx(name, projectDir)` 优先加载 `<project>/assets/audio/<name>.wav`（带缓存+合成回退），并线性重采样 22050→44100 修正音高。崩溃经验证：demo 1000 帧连跑 4 次无崩、打包 900 帧 exit 0。
+>   - **删孤儿资产**：`house.png`（0 引用）+`house.png.meta`+`test_flip.png.meta`（孤儿）删除；其余单帧 PNG 保留（HUD 卡片图标 + prefab `texture` 编辑器视口预览）。
+>   - crash.cpp 增模块基址/RVA/线程 ID 转储（便于后续崩溃定位）；`--2d-play`/`--smoke-test` 全绿；**684/684 测试全绿**。
 > - 附带修复：MSYS2 工具链被破坏（cc1plus 缺失）→ `pacman -S mingw-w64-x86_64-gcc` 恢复；本地主力构建切到 **MSVC**（build-msvc）；VK 补齐 `DrawMeshInstancedColored` + NOMINMAX；新增 12 项回归测试；**682/682 全绿**（GL/VK 冒烟通过）。
 
 

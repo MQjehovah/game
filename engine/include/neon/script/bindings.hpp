@@ -125,6 +125,13 @@ struct ScriptContext {
     std::function<float(const std::string& name, ecs::Entity caster)> sceneSkillCooldown;
     std::function<int(const math::Vec3& center, const math::Vec3& half, float yaw, float damage)>
         attackBox;
+    // Sequence-frame sprite animation: switches an entity's sprite to play the
+    // given frame list at `fps` (loop). The script host keeps the frame paths
+    // as strings; GameRuntime resolves them to asset paths.
+    std::function<void(ecs::Entity, const std::vector<std::string>&, float)> setSpriteFrames;
+    // Spritesheet variant: switches to a horizontal atlas of `frameCount`
+    // equal sub-rects played at `fps`.
+    std::function<void(ecs::Entity, const std::string&, int, float)> setSpriteSheet;
     // Multi-player: a scene script calls BindPlayerToClient(player, clientId)
     // inside on_player_join(clientId) to own that entity; the server then
     // routes the client's input to it. The runtime itself leaves this null.

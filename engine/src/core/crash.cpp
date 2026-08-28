@@ -55,8 +55,24 @@ std::string BuildReport() {
 
 #if defined(_WIN32)
 
-LONG WINAPI CrashFilter(_EXCEPTION_POINTERS*) {
+LONG WINAPI CrashFilter(_EXCEPTION_POINTERS* ep) {
     WriteCrashReport(kCrashReportPath);
+    if (ep && ep->ExceptionRecord) {
+        FILE* f = std::fopen(kCrashReportPath, "a");
+        if (f) {
+            const EXCEPTION_RECORD* er = ep->ExceptionRecord;
+            std::fprintf(f, "\nEXCEPTION code=0x%08X addr=0x%p\n", er->ExceptionCode,
+                         er->ExceptionAddress);
+            HMODULE hmod = GetModuleHandleA(nullptr);
+            if (hmod) {
+                std::fprintf(f, "module_base=%p module_RVA=%p\n", hmod,
+                             reinterpret_cast<const char*>(er->ExceptionAddress) -
+                                 reinterpret_cast<const char*>(hmod));
+            }
+            std::fprintf(f, "thread_id=%lu\n", static_cast<unsigned long>(GetCurrentThreadId()));
+            std::fclose(f);
+        }
+    }
     return EXCEPTION_CONTINUE_SEARCH; // let the OS terminate the process
 }
 
