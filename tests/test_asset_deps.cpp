@@ -45,7 +45,7 @@ const char* kMinimalGltf =
 // edges; every repo-referenced dependency resolves.
 TEST(AssetDepsDamagedHelmetRecorded) {
     test::HeadlessAssetFixture fx;
-    const std::string path = "assets/models/DamagedHelmet/DamagedHelmet.gltf";
+    const std::string path = "projects/default/assets/models/DamagedHelmet/DamagedHelmet.gltf";
     fx.assets.LoadGLTF(path);
 
     const std::vector<std::string> deps = fx.assets.DependenciesOf(path);
@@ -90,7 +90,7 @@ TEST(AssetDepsAsyncLoads) {
 
     // Happy path: the DamagedHelmet's textures were loaded by LoadGLTF, so the
     // async dependency load completes inline with ok=true.
-    const std::string good = "assets/models/DamagedHelmet/DamagedHelmet.gltf";
+    const std::string good = "projects/default/assets/models/DamagedHelmet/DamagedHelmet.gltf";
     fx.assets.LoadGLTF(good);
     std::atomic<int> goodFired{0};
     std::string goodErr;
@@ -125,7 +125,7 @@ TEST(AssetDepsAsyncLoads) {
 // fires with the result. Concurrent requests for the same path coalesce.
 TEST(AssetDepsAsyncMeshLoad) {
     test::HeadlessAssetFixture fx;
-    const std::string obj = "assets/kenney_nature/Models/OBJ format/flower_redA.obj";
+    const std::string obj = "projects/default/assets/kenney_nature/Models/OBJ format/flower_redA.obj";
     std::atomic<int> fired{0};
     std::atomic<int> fired2{0};
     bool ok1 = false, ok2 = false;
@@ -162,7 +162,7 @@ TEST(AssetDepsAsyncMeshLoad) {
 TEST(AssetDepsAsyncGltfLoad) {
     test::HeadlessAssetFixture fx;
     // A real repo glTF with an external .bin + textures.
-    const std::string gltf = "assets/models/DamagedHelmet/DamagedHelmet.gltf";
+    const std::string gltf = "projects/default/assets/models/DamagedHelmet/DamagedHelmet.gltf";
     std::atomic<int> fired{0};
     bool ok = false;
     fx.assets.LoadGLTFAsync(gltf, [&](bool o) {

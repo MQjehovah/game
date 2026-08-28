@@ -309,7 +309,7 @@ void EditorApp::PollHotReload() {
 }
 
 void EditorApp::LoadEditorConfig() {
-    projectDir_ = ".";
+    projectDir_ = kDefaultProjectDir;
     std::ifstream in("neon_editor_config.json");
     if (in.is_open()) {
         std::stringstream ss;
@@ -320,13 +320,15 @@ void EditorApp::LoadEditorConfig() {
             if (const core::Json* p = root.Get("projectDir")) projectDir_ = p->GetString();
         }
     }
-    if (projectDir_.empty()) projectDir_ = ".";
+    // "." is the legacy repo-root sandbox (pre projects/default); normalize it
+    // so a stale config does not anchor the editor to the bare repo root.
+    if (projectDir_.empty() || projectDir_ == ".") projectDir_ = kDefaultProjectDir;
     std::strncpy(projectDirBuf_, projectDir_.c_str(), sizeof(projectDirBuf_) - 1);
     projectDirBuf_[sizeof(projectDirBuf_) - 1] = '\0';
 }
 
 void EditorApp::SaveEditorConfig() {
-    if (projectDir_.empty()) projectDir_ = ".";
+    if (projectDir_.empty() || projectDir_ == ".") projectDir_ = kDefaultProjectDir;
     core::Json root;
     root.type_ = core::Json::Type::Object;
     core::Json p;

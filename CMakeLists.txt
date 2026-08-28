@@ -111,7 +111,7 @@ target_include_directories(neon_engine
     engine/include
   PRIVATE
     third_party/stb
-    assets/generated
+    engine/generated
 )
 
 if(MSVC)
@@ -127,7 +127,7 @@ endif()
 # When NEON_ENABLE_VULKAN=ON the backend is compiled and the app's
 # `--backend vulkan` flag works. The built-in shaders are precompiled to SPIR-V
 # at build time by a vendored glslang (third_party/glslang_tool) into
-# assets/generated/vk_shaders.hpp (a committed generated header, so tool-less
+# engine/generated/vk_shaders.hpp (a committed generated header, so tool-less
 # builds still work). When OFF the Vulkan backend is not compiled; requesting
 # `--backend vulkan` falls back to OpenGL with a log.
 # ---------------------------------------------------------------------------
@@ -159,7 +159,7 @@ if(NEON_ENABLE_VULKAN)
   # header itself is committed so builds without the tool keep working.
   set(VK_GLSLANG ${CMAKE_SOURCE_DIR}/third_party/glslang_tool/bin/glslang.exe)
   set(VK_SHADER_DIR ${CMAKE_SOURCE_DIR}/engine/src/gfx/vulkan/shaders)
-  set(VK_SHADER_OUTPUT ${CMAKE_SOURCE_DIR}/assets/generated/vk_shaders.hpp)
+  set(VK_SHADER_OUTPUT ${CMAKE_SOURCE_DIR}/engine/generated/vk_shaders.hpp)
   add_custom_command(
     OUTPUT ${VK_SHADER_OUTPUT}
     COMMAND powershell -NoProfile -ExecutionPolicy Bypass -File
@@ -299,7 +299,7 @@ add_executable(neon_rush
   game/src/art.cpp
   game/src/sfx.cpp
 )
-target_include_directories(neon_rush PRIVATE assets/generated third_party/stb)
+target_include_directories(neon_rush PRIVATE engine/generated third_party/stb)
 target_link_libraries(neon_rush PRIVATE neon_engine)
 if(MSVC)
   target_compile_options(neon_rush PRIVATE /W4 /permissive- /utf-8)
@@ -317,7 +317,7 @@ add_executable(neon_game
   game/src/player.cpp
   game/src/client_sync.cpp
 )
-target_include_directories(neon_game PRIVATE assets/generated third_party/stb)
+target_include_directories(neon_game PRIVATE engine/generated third_party/stb)
 target_link_libraries(neon_game PRIVATE neon_engine)
 if(WIN32)
   # P2-5: Windows app icon + version resource (windres / rc).
@@ -497,7 +497,7 @@ add_executable(neon_editor
   editor/src/bt_editor.cpp
   editor/src/packager.cpp
 )
-target_include_directories(neon_editor PRIVATE assets/generated third_party/stb)
+target_include_directories(neon_editor PRIVATE engine/generated third_party/stb)
 target_link_libraries(neon_editor PRIVATE neon_engine neon_imgui)
 if(WIN32)
   # Native open-file dialog for the asset panel's 导入 action.

@@ -42,7 +42,8 @@ void EditorApp::BuildImGuiUI() {
     if (ImGui::BeginMainMenuBar()) {
         if (ImGui::BeginMenu("文件")) {
             if (ImGui::MenuItem("保存场景", "Ctrl+S")) SaveScene();
-            if (ImGui::MenuItem("加载场景", "Ctrl+L")) LoadScene("editor_scene.json");
+            if (ImGui::MenuItem("加载场景", "Ctrl+L"))
+                LoadScene(std::string(kDefaultProjectDir) + "/" + kSandboxSceneRel);
             if (ImGui::MenuItem("另存为子场景")) SaveSceneAsChild();
             ImGui::Separator();
             if (ImGui::MenuItem("导出场景", "Ctrl+E")) ExportScene();
@@ -321,10 +322,13 @@ void EditorApp::BuildImGuiUI() {
         if (ImGui::BeginCombo("##scene_picker", currentSceneName_.empty()
                                                     ? "选择场景…"
                                                     : SceneDisplayName(currentSceneName_).c_str())) {
-            if (projectDir_ == ".")
-                if (ImGui::Selectable(SceneDisplayName("editor_scene.json").c_str(),
-                                      currentSceneName_ == "editor_scene.json"))
-                    LoadScene("editor_scene.json");
+            if (projectDir_ == kDefaultProjectDir) {
+                const std::string sandboxScene =
+                    std::string(kDefaultProjectDir) + "/" + kSandboxSceneRel;
+                if (ImGui::Selectable(SceneDisplayName(sandboxScene).c_str(),
+                                      currentSceneName_ == BaseName(sandboxScene)))
+                    LoadScene(sandboxScene);
+            }
             for (const std::string& s : projectScenes_) {
                 if (ImGui::Selectable(SceneDisplayName(s).c_str(),
                                       currentSceneName_ == BaseName(s)))

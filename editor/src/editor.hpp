@@ -165,11 +165,20 @@ struct AssetEntry {
 // levels, and play the result.
 struct EditorProject {
     std::string name;       // game.json "title" (fallback: directory name)
-    std::string dir;        // "projects/pvz" or "." for the default sandbox
+    std::string dir;        // "projects/pvz" (the default sandbox: kDefaultProjectDir)
     std::string startScene; // game.json "startScene" (project-relative)
     std::string mode = "3d"; // game.json "editor.mode": "2d" | "3d" (default 3d)
     std::vector<std::string> scenes; // scenes/*.json (project-relative)
 };
+
+// The default sandbox project: a first-class project under projects/ that
+// hosts the shared demo/sandbox assets (models, kenney nature pack, fonts)
+// and the editor's scratch scene. It replaces the old "repo root as sandbox"
+// layout (root assets/ + editor_scene.json).
+inline constexpr const char* kDefaultProjectDir = "projects/default";
+// The sandbox scratch scene, project-relative inside kDefaultProjectDir.
+// User data (not versioned) — the editor writes it on Ctrl+S like any scene.
+inline constexpr const char* kSandboxSceneRel = "assets/scenes/editor_scene.json";
 
 // Shared UTF-8 directory listing (editor project scanner + asset panel).
 bool ListDirectory(const std::string& dir, std::vector<AssetEntry>& out);
@@ -596,8 +605,8 @@ private:
     HistoryManager history_;
 
     // Project directory: exported scenes are written to
-    // <projectDir>/assets/scenes/.
-    std::string projectDir_{"."};
+    // <projectDir>/assets/scenes/. Defaults to the sandbox project.
+    std::string projectDir_{kDefaultProjectDir};
     char projectDirBuf_[4096]{};
     // Godot-style project switcher state (ScanProjects / SwitchProject).
     std::vector<EditorProject> projects_;

@@ -1046,11 +1046,11 @@ TEST(GameRuntimeModOverridesScriptViaVfs) {
 // up holding the variant file (and never the logical one).
 TEST(GameRuntimeVariantAssetResolution) {
     assets::AssetVariantTable variants;
-    CHECK(variants.Set("assets/kenney_nature/Models/OBJ format/bed.obj",
-                       "assets/kenney_nature/Models/OBJ format/bed_floor.obj"));
+    CHECK(variants.Set("projects/default/assets/kenney_nature/Models/OBJ format/bed.obj",
+                       "projects/default/assets/kenney_nature/Models/OBJ format/bed_floor.obj"));
     const std::string json = R"({"entities":[{"name":"A","components":{
         "transform":{"pos":[0,0,0]},
-        "mesh":{"meshKey":"obj:assets/kenney_nature/Models/OBJ format/bed.obj"}}}]})";
+        "mesh":{"meshKey":"obj:projects/default/assets/kenney_nature/Models/OBJ format/bed.obj"}}}]})";
     test::HeadlessAssetFixture fix;
     scene::GameRuntime runtime;
     scene::GameRuntimeConfig cfg;
@@ -1061,8 +1061,8 @@ TEST(GameRuntimeVariantAssetResolution) {
     runtime.Draw(fix.renderer, cam);
 
     // The variant (concrete) file was loaded; the logical path was not.
-    CHECK(fix.assets.Meshes().count("assets/kenney_nature/Models/OBJ format/bed_floor.obj") == 1u);
-    CHECK(fix.assets.Meshes().count("assets/kenney_nature/Models/OBJ format/bed.obj") == 0u);
+    CHECK(fix.assets.Meshes().count("projects/default/assets/kenney_nature/Models/OBJ format/bed_floor.obj") == 1u);
+    CHECK(fix.assets.Meshes().count("projects/default/assets/kenney_nature/Models/OBJ format/bed.obj") == 0u);
 }
 
 // G7-1: an "assets:/..." mesh key resolves like its plain relative form — the
@@ -1075,22 +1075,22 @@ TEST(GameRuntimeAssetSchemeMeshKey) {
     scene::GameRuntime runtime;
     scene::GameRuntimeConfig cfg;
     cfg.assets = &fix.assets;
-    cfg.assetBaseDir = "assets"; // "assets:/X" == "X" relative to the base dir
+    cfg.assetBaseDir = "projects/default/assets"; // "assets:/X" == "X" relative to the base dir
     CHECK(runtime.Start(json, cfg).Ok());
     gfx::Camera cam;
     runtime.Draw(fix.renderer, cam);
 
-    CHECK(fix.assets.Meshes().count("assets/kenney_nature/Models/OBJ format/bed.obj") == 1u);
+    CHECK(fix.assets.Meshes().count("projects/default/assets/kenney_nature/Models/OBJ format/bed.obj") == 1u);
 }
 
 // G6-2: async mesh streaming — with cfg.asyncMeshLoad the draw item's mesh is
 // NOT loaded synchronously on the first Draw (no hitch); the item stays pending
 // until the host pumps the async loader, then resolves from the cache.
 TEST(GameRuntimeAsyncMeshStreaming) {
-    const std::string obj = "assets/kenney_nature/Models/OBJ format/bed.obj";
+    const std::string obj = "projects/default/assets/kenney_nature/Models/OBJ format/bed.obj";
     const std::string json = R"({"entities":[{"name":"A","components":{
         "transform":{"pos":[0,0,0]},
-        "mesh":{"meshKey":"obj:assets/kenney_nature/Models/OBJ format/bed.obj"}}}]})";
+        "mesh":{"meshKey":"obj:projects/default/assets/kenney_nature/Models/OBJ format/bed.obj"}}}]})";
     test::HeadlessAssetFixture fix;
     scene::GameRuntime runtime;
     scene::GameRuntimeConfig cfg;

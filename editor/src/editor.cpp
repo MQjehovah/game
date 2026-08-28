@@ -278,7 +278,7 @@ bool EditorApp::OnCreate() {
     // (explicit path wins) and smoke runs (the smoke needs the deterministic
     // default sandbox scene). The 2D/3D button is only a camera change, so it
     // never blocks restoring the user's project.
-    if (!smokeMode_ && projectDirOnStart_.empty() && projectDir_ != ".") {
+    if (!smokeMode_ && projectDirOnStart_.empty() && projectDir_ != kDefaultProjectDir) {
         std::ifstream in(projectDir_ + "/game.json", std::ios::binary);
         if (in.is_open()) SwitchProject(projectDir_);
     }
@@ -597,7 +597,7 @@ void EditorApp::SetupScene() {
             entities_.back().maxHp = 40.0f;
         }
     }
-    LoadScene("editor_scene.json");
+    LoadScene(std::string(kDefaultProjectDir) + "/" + kSandboxSceneRel);
     SetSelection(entities_.empty() ? -1 : 0);
     NormalizeEntityIds(); // setup-created entities also need stable ids
     EnsureSceneDefaultObjects();
@@ -943,10 +943,10 @@ void EditorApp::OnUpdate(float dt) {
         projectDir_ = prevProjectDir_;
     }
 
-    // Godot-style project switcher smoke: ScanProjects discovers both bundled
+    // Godot-style project switcher smoke: ScanProjects discovers the bundled
     // projects, SwitchProject enters the 2D project's canvas with its level
     // loaded, the 3D project loads its start scene, then we normalize back to
-    // the canonical sandbox (editor_scene.json) so the play smoke at
+    // the canonical sandbox scene so the play smoke at
     // frame 60 sees the deterministic 3D scene regardless of the saved config.
     if (smokeMode_ && TimeRef().frameIndex == 43) {
         ScanProjects();
@@ -975,7 +975,7 @@ void EditorApp::OnUpdate(float dt) {
         if (!realmOk) smokeFailed_ = true;
         StopPlay();
         editMode_ = EditMode::Scene3D;
-        LoadScene("editor_scene.json");
+        LoadScene(std::string(kDefaultProjectDir) + "/" + kSandboxSceneRel);
         // The sandbox scene is user data (SaveScene writes it), so only assert
         // the 3D scene tree is back and non-empty - not a fixed entity count.
         const bool backOk = editMode_ == EditMode::Scene3D && !entities_.empty();

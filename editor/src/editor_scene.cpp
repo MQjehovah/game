@@ -227,8 +227,10 @@ bool EditorApp::ResolveMesh(SceneEntity& e) {
         RebuildTerrainMesh(e);
         e.material = gfx::Material::Lit({}, e.tint, 4.0f);
     } else if (key == "helmet") {
-        assets::GltfAsset gltf =
-            assetMgr_.LoadGLTF("assets/models/DamagedHelmet/DamagedHelmet.gltf");
+        // Scene files store project-relative mesh paths; resolve against the
+        // active project (the bundled helmet lives in the default project).
+        assets::GltfAsset gltf = assetMgr_.LoadGLTF(
+            projectDir_ + "/assets/models/DamagedHelmet/DamagedHelmet.gltf");
         if (!gltf.nodes.empty()) {
             e.mesh = gltf.nodes[0].mesh;
             e.material = gltf.nodes[0].material;
@@ -658,8 +660,9 @@ void EditorApp::SaveScene() {
     // editor_scene.json,
     // so saving a project scene silently wrote the sandbox file and the
     // hierarchy (plus every other edit) was lost on restart.
-    const std::string savePath =
-        currentScenePath_.empty() ? "editor_scene.json" : currentScenePath_;
+    const std::string savePath = currentScenePath_.empty()
+                                     ? std::string(kDefaultProjectDir) + "/" + kSandboxSceneRel
+                                     : currentScenePath_;
     if (std::ofstream out(savePath); out.is_open()) {
         out << core::JsonWriter::WritePretty(root);
         sceneDirty_ = false;
@@ -1639,7 +1642,8 @@ void EditorApp::SwitchProject(const std::string& dir) {
     if (!projectStartScene_.empty()) {
         LoadScene(projectDir_ + "/" + projectStartScene_);
     } else if (projectMode_ != "2d") {
-        LoadScene("editor_scene.json"); // default sandbox scene
+        // 3D project without a startScene: fall back to the sandbox scene.
+        LoadScene(std::string(projectDir_) + "/" + kSandboxSceneRel);
     }
     // The asset panel always points at the active context's assets/ dir and
     // creates it on demand (so 导入/新建 always have a home). The default
@@ -1656,13 +1660,24 @@ void EditorApp::SwitchProject(const std::string& dir) {
 
 void EditorApp::RefreshAssetDatabase() {
     const std::string snapshotPath = projectDir_ + "/.asset_db.json";
-    const assets::AssetDatabase current = assets::AssetDatabase::Build(projectDir_);
 
     std::string prevText;
     if (std::ifstream in(snapshotPath, std::ios::binary); in.is_open()) {
         prevText.assign((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     }
     const assets::AssetDatabase prev = assets::AssetDatabase::FromJson(prevText);
+
+    // The database IS the identity store (no sidecar files): unchanged files
+    // keep their entry, a new path whose content hash matches a vanished one
+    // inherits its GUID (a move), and legacy <asset>.meta sidecars from older
+    // revisions are adopted once, then deleted.
+    std::vector<std::string> adoptedMetas;
+    const assets::AssetDatabase current = assets::AssetDatabase::Build(projectDir_, prev,
+                                                                       &adoptedMetas);
+    for (const std::string& meta : adoptedMetas) {
+        std::error_code rmEc;
+        std::filesystem::remove(meta, rmEc);
+    }
 
     const std::vector<assets::AssetMove> moves = assets::DetectAssetMoves(prev, current);
     if (!moves.empty()) {
@@ -1672,7 +1687,8 @@ void EditorApp::RefreshAssetDatabase() {
             NEON_LOG_INFO("  %s -> %s", m.oldPath.c_str(), m.newPath.c_str());
         // Rewrite path references in scene / prefab / UI JSON documents. The
         // runtime resolves PATHS, so rewriting the stored text keeps everything
-        // consistent (the .meta GUID made the rename detectable).
+        // consistent (the content hash in .asset_db.json made the rename
+        // detectable).
         std::error_code ec;
         for (const char* sub : {"assets/scenes", "assets/prefabs", "assets/ui"}) {
             const std::string dir = projectDir_ + "/" + sub;

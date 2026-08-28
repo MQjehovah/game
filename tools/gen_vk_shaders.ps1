@@ -9,7 +9,7 @@ param(
 #
 # Compiles the engine's built-in Vulkan GLSL shaders to SPIR-V with a vendored
 # glslang and embeds the result as uint32 word arrays in
-# assets/generated/vk_shaders.hpp, so the runtime needs no external shader
+# engine/generated/vk_shaders.hpp, so the runtime needs no external shader
 # files (matching the project's zero-runtime-assets ethos). The header is
 # committed; this script only re-runs when a shader source changes and the
 # tool is present.

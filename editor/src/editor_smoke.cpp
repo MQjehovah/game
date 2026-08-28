@@ -845,7 +845,8 @@ void EditorApp::RunUISmokeTest() {
     // frame poll above). A texture asset registers the image-preview texture
     // id. ---
     {
-        const std::string kThumbPath = "assets/models/DamagedHelmet/DamagedHelmet.gltf";
+    const std::string kThumbPath =
+        "projects/default/assets/models/DamagedHelmet/DamagedHelmet.gltf";
         smokeThumbPath_ = kThumbPath;
         // Navigate the panel into the model's directory so the listing (one
         // level, like the real UI) contains the asset, then select it.
@@ -868,10 +869,10 @@ void EditorApp::RunUISmokeTest() {
                   meshThumbQueue_.end(),
               "asset thumbnail: mesh thumbnail render requested");
 
-        gfx::Texture tex =
-            assetMgr_.LoadTexture("assets/models/DamagedHelmet/Default_albedo.jpg");
+        gfx::Texture tex = assetMgr_.LoadTexture(
+            "projects/default/assets/models/DamagedHelmet/Default_albedo.jpg");
         check(tex.Valid(), "asset thumbnail: texture asset loads for the preview");
-        ImportAssetPath("assets/models/DamagedHelmet/Default_albedo.jpg");
+        ImportAssetPath("projects/default/assets/models/DamagedHelmet/Default_albedo.jpg");
         check(previewTexId_ != ImTextureID_Invalid,
               "asset thumbnail: image preview texture registered for ImGui");
     }
@@ -1157,8 +1158,7 @@ void EditorApp::RunUISmokeTest() {
             check(entities_.size() == before + 1, "plugin spawn added an entity");
             history_.Undo(); // remove the smoke entity; keep the sandbox intact
             const std::string generated =
-                (projectDir_ == "." ? "assets/generated/" : projectDir_ + "/assets/generated/") +
-                "smoke_plugin_tri.obj";
+                projectDir_ + "/assets/generated/smoke_plugin_tri.obj";
             std::remove(generated.c_str());
         }
     }

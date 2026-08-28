@@ -140,7 +140,7 @@ TEST(ObjMissingFileReturnsInvalidMesh) {
 // endings and scientific-notation floats. Verifies both MTL colors appear in
 // the imported vertex data.
 TEST(ObjKenneyAssetParses) {
-    const char* kenney = "assets/kenney_nature/Models/OBJ format/flower_redA.obj";
+    const char* kenney = "projects/default/assets/kenney_nature/Models/OBJ format/flower_redA.obj";
     test::HeadlessAssetFixture fix;
     gfx::Mesh mesh = fix.assets.LoadMeshOBJ(kenney);
     CHECK(mesh.Valid());

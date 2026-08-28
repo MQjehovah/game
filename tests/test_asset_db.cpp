@@ -7,9 +7,10 @@
 
 using namespace neon;
 
-// G5-4-4(项3): asset GUID database — a .meta file carries a stable GUID that
-// physically travels with the asset, so a rename is detected and scene path
-// references get rewritten.
+// G5-4-4(项3), central-store revision: asset identity lives ONLY in the single
+// .asset_db.json (path -> guid + content hash). Same path keeps its GUID; a
+// new path with identical bytes to a vanished one is a MOVE and inherits the
+// GUID, so scene path references get rewritten.
 TEST(AssetDbStableGuids) {
     test::TempDir tmp;
     const std::string root = tmp.Str();
@@ -18,8 +19,8 @@ TEST(AssetDbStableGuids) {
     CHECK(test::WriteFileAll(root + "/assets/a.png", "aaaa"));
     CHECK(test::WriteFileAll(root + "/assets/b.png", "bbbb"));
 
-    assets::AssetDatabase db1 = assets::AssetDatabase::Build(root);
-    CHECK_EQ(db1.Entries().size(), 3u); // game.json + 2 textures (no .meta entries)
+    const assets::AssetDatabase db1 = assets::AssetDatabase::Build(root);
+    CHECK_EQ(db1.Entries().size(), 3u); // game.json + 2 textures (no sidecar entries)
     const std::string guidA = db1.GuidFor("assets/a.png");
     const std::string guidB = db1.GuidFor("assets/b.png");
     CHECK(!guidA.empty());
@@ -27,15 +28,18 @@ TEST(AssetDbStableGuids) {
     CHECK(guidA != guidB);
     CHECK_EQ(db1.PathFor(guidA), "assets/a.png");
 
-    // The .meta file now exists next to the asset and carries the GUID.
-    std::string metaText;
-    CHECK(test::ReadFileAll(root + "/assets/a.png.meta", metaText));
-    CHECK(metaText.find(guidA) != std::string::npos);
+    // No sidecar files: identity lives in the database only.
+    std::string metaProbe;
+    CHECK(!test::ReadFileAll(root + "/assets/a.png.meta", metaProbe));
 
-    // A fresh scan reuses the persisted GUID (no new .meta written).
-    const assets::AssetDatabase db2 = assets::AssetDatabase::Build(root);
+    // Round-trip through the snapshot preserves identity + hashes.
+    const assets::AssetDatabase db2 = assets::AssetDatabase::FromJson(db1.ToJson());
     CHECK_EQ(db2.GuidFor("assets/a.png"), guidA);
-    CHECK_EQ(db2.GuidFor("assets/b.png"), guidB);
+
+    // A rescan against the previous snapshot reuses the persisted GUIDs.
+    const assets::AssetDatabase db3 = assets::AssetDatabase::Build(root, db2);
+    CHECK_EQ(db3.GuidFor("assets/a.png"), guidA);
+    CHECK_EQ(db3.GuidFor("assets/b.png"), guidB);
 }
 
 TEST(AssetDbDetectMovesAndRewrite) {
@@ -50,14 +54,12 @@ TEST(AssetDbDetectMovesAndRewrite) {
     CHECK(!guidOld.empty());
     CHECK(!guidKeep.empty());
 
-    // Physically move the asset WITH its .meta — the GUID travels.
+    // Physically move the asset — the matching content hash lets the new path
+    // inherit the old entry's GUID (no sidecar needed).
     std::error_code ec;
     std::filesystem::rename(dir + "/assets/old.png", dir + "/assets/renamed.png", ec);
     CHECK(!ec);
-    ec.clear();
-    std::filesystem::rename(dir + "/assets/old.png.meta", dir + "/assets/renamed.png.meta", ec);
-    CHECK(!ec);
-    const assets::AssetDatabase dbAfter = assets::AssetDatabase::Build(dir);
+    const assets::AssetDatabase dbAfter = assets::AssetDatabase::Build(dir, dbBefore);
 
     const std::vector<assets::AssetMove> moves = assets::DetectAssetMoves(dbBefore, dbAfter);
     CHECK_EQ(moves.size(), 1u);
@@ -73,4 +75,45 @@ TEST(AssetDbDetectMovesAndRewrite) {
     const std::string rewritten = assets::RewriteJsonReferences(scene, moves);
     CHECK(rewritten.find("assets/renamed.png") != std::string::npos);
     CHECK(rewritten.find("assets/old.png") == std::string::npos);
+}
+
+TEST(AssetDbEditAndDelete) {
+    test::TempDir root;
+    const std::string dir = root.Str();
+    std::filesystem::create_directories(dir + "/assets");
+    CHECK(test::WriteFileAll(dir + "/assets/a.png", "aaaa"));
+    CHECK(test::WriteFileAll(dir + "/assets/gone.png", "gone"));
+    const assets::AssetDatabase dbBefore = assets::AssetDatabase::Build(dir);
+    const std::string guidA = dbBefore.GuidFor("assets/a.png");
+
+    // Editing a file in place keeps its identity (path is the primary key).
+    CHECK(test::WriteFileAll(dir + "/assets/a.png", "aaaa-edited"));
+    // Deleting an asset just drops its entry (nothing inherits its GUID).
+    std::error_code ec;
+    std::filesystem::remove(dir + "/assets/gone.png", ec);
+    CHECK(!ec);
+    const assets::AssetDatabase dbAfter = assets::AssetDatabase::Build(dir, dbBefore);
+
+    CHECK_EQ(dbAfter.GuidFor("assets/a.png"), guidA);
+    CHECK_EQ(dbAfter.Entries().size(),
+             static_cast<size_t>(dbBefore.Entries().size() - 1));
+    CHECK(dbAfter.PathFor(dbBefore.GuidFor("assets/gone.png")).empty());
+}
+
+TEST(AssetDbLegacyMetaAdopted) {
+    test::TempDir root;
+    const std::string dir = root.Str();
+    std::filesystem::create_directories(dir + "/assets");
+    CHECK(test::WriteFileAll(dir + "/assets/a.png", "aaaa"));
+    // A pre-centralization project carries sidecar metas; their GUID is
+    // adopted once and the redundant sidecar is reported for deletion.
+    CHECK(test::WriteFileAll(dir + "/assets/a.png.meta", "deadbeefdeadbeef\n"));
+
+    const assets::AssetDatabase db = assets::AssetDatabase::Build(dir);
+    CHECK_EQ(db.GuidFor("assets/a.png"), std::string("deadbeefdeadbeef"));
+
+    std::vector<std::string> adopted;
+    const assets::AssetDatabase db2 = assets::AssetDatabase::Build(dir, db, &adopted);
+    CHECK(adopted.empty()); // nothing left to adopt after the first scan
+    CHECK_EQ(db2.GuidFor("assets/a.png"), std::string("deadbeefdeadbeef"));
 }

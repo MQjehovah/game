@@ -241,7 +241,7 @@ TEST(GltfTransformParentNodes) {
 // Khronos DamagedHelmet sample: binary buffers, PBR metallic-roughness
 // material with four textures, 16-bit indices. End-to-end real asset load.
 TEST(GltfDamagedHelmetEndToEnd) {
-    const char* helmet = "assets/models/DamagedHelmet/DamagedHelmet.gltf";
+    const char* helmet = "projects/default/assets/models/DamagedHelmet/DamagedHelmet.gltf";
     test::HeadlessAssetFixture fix;
     assets::GltfAsset asset = fix.assets.LoadGLTF(helmet);
     CHECK(asset.Valid());
@@ -281,10 +281,10 @@ TEST(GltfDamagedHelmetEndToEnd) {
         neon::assets::TextureLoadOptions repeatOpts;
         repeatOpts.wrap = neon::gfx::Wrap::Repeat;
         const std::string albedoKey = assets::AssetManager::TextureCacheKey(
-            "assets/models/DamagedHelmet/Default_albedo.jpg", repeatOpts);
+            "projects/default/assets/models/DamagedHelmet/Default_albedo.jpg", repeatOpts);
         CHECK_EQ(fix.assets.Textures().count(albedoKey), 1u);
         const std::string mrKey = assets::AssetManager::TextureCacheKey(
-            "assets/models/DamagedHelmet/Default_metalRoughness.jpg", repeatOpts);
+            "projects/default/assets/models/DamagedHelmet/Default_metalRoughness.jpg", repeatOpts);
         CHECK_EQ(fix.assets.Textures().count(mrKey), 1u);
     }
 

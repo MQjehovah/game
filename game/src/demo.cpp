@@ -1634,14 +1634,14 @@ bool NeonApp::OnCreate() {
     theme_.font = cjkFont_.Valid() ? cjkFont_ : pixelFont_;
 
     demo::CreateDemoAssets(renderer_, assetMgr_, assets_);
-    helmet_ = assetMgr_.LoadGLTF("assets/models/DamagedHelmet/DamagedHelmet.gltf");
+    helmet_ = assetMgr_.LoadGLTF("projects/default/assets/models/DamagedHelmet/DamagedHelmet.gltf");
 
     // Real skinned wolf (Blender glTF export). The animation set is imported
     // from the same glTF JSON so wolves move with the authored clips.
     assets_.wolfGltf =
-        assetMgr_.LoadGLTF("assets/models/wolf/Wolf-Blender-2.82a.gltf");
+        assetMgr_.LoadGLTF("projects/default/assets/models/wolf/Wolf-Blender-2.82a.gltf");
     {
-        std::ifstream in("assets/models/wolf/Wolf-Blender-2.82a.gltf");
+        std::ifstream in("projects/default/assets/models/wolf/Wolf-Blender-2.82a.gltf");
         std::stringstream ss;
         ss << in.rdbuf();
         core::Result<anim::AnimSet> animResult =

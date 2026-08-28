@@ -42,8 +42,7 @@ std::string EditorApp::PluginBuildMesh(const std::string& name,
         return {};
     }
     const std::string rel =
-        (projectDir_ == "." ? "assets/generated/" : projectDir_ + "/assets/generated/") +
-        name + ".obj";
+        projectDir_ + "/assets/generated/" + name + ".obj";
     const size_t slash = rel.find_last_of("/\\");
     if ((slash != std::string::npos && !EnsureDirs(rel.substr(0, slash))) ||
         (slash == std::string::npos)) {

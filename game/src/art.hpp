@@ -22,7 +22,7 @@ struct DemoAssets {
     gfx::Mesh flagMesh;
 
     // Real wolf model + animation set (Blender glTF, see
-    // assets/models/wolf). The mesh is skinned; wolves are drawn with
+    // projects/default/assets/models/wolf). The mesh is skinned; wolves are drawn with
     // DrawSkinnedMesh using per-wolf bone matrices from wolfAnim.
     assets::GltfAsset wolfGltf;
     anim::AnimSet wolfAnim;

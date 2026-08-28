@@ -2,7 +2,7 @@ build/
 build-*/
 *.o
 *.obj
-!assets/kenney_nature/**/*.obj
+!projects/default/assets/kenney_nature/**/*.obj
 *.exe
 *.pdb
 *.ilk
@@ -12,14 +12,20 @@ build-*/
 # Runtime save games live next to the project while developing, but they are
 # player data, not source data.
 *_save.dat
+# Runtime tool logs (ImGui log-to-file).
+imgui_log.txt
 projects/*/save.json
 projects/*/save.json.meta
 neon_editor_config.json
-editor_scene.json
+# The sandbox scratch scene is user data (kept out of version control on
+# purpose — every other project scene IS versioned).
+projects/default/assets/scenes/editor_scene.json
 scenes/
 # ...but project scenes are first-class project data (2D levels now live in
 # assets/scenes/*.json too), so keep them under version control.
 projects/*
+!projects/default/
+!projects/default/**
 !projects/snake/
 !projects/snake/**
 # NeonPhysics rigid-body demo project
@@ -36,4 +42,5 @@ CMakeUserPresets.json
 # Shadow-map / screenshot debug artifacts (throwaway diagnostics)
 *.raw
 *.png
+!projects/default/assets/**/*.png
 !projects/pvz/assets/sprites/*.png

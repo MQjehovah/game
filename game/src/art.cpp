@@ -308,10 +308,10 @@ void CreateDemoAssets(gfx::Renderer& renderer, assets::AssetManager& assetMgr, D
     }
 
     // Kenney Nature Kit models (CC0, MIT-style license in pack).
-    out.kenneyPine = assetMgr.LoadMeshOBJ("assets/kenney_nature/Models/OBJ format/tree_pineTallA.obj");
-    out.kenneyOak = assetMgr.LoadMeshOBJ("assets/kenney_nature/Models/OBJ format/tree_default.obj");
-    out.kenneyRock = assetMgr.LoadMeshOBJ("assets/kenney_nature/Models/OBJ format/rock_largeA.obj");
-    out.kenneyLog = assetMgr.LoadMeshOBJ("assets/kenney_nature/Models/OBJ format/log.obj");
+    out.kenneyPine = assetMgr.LoadMeshOBJ("projects/default/assets/kenney_nature/Models/OBJ format/tree_pineTallA.obj");
+    out.kenneyOak = assetMgr.LoadMeshOBJ("projects/default/assets/kenney_nature/Models/OBJ format/tree_default.obj");
+    out.kenneyRock = assetMgr.LoadMeshOBJ("projects/default/assets/kenney_nature/Models/OBJ format/rock_largeA.obj");
+    out.kenneyLog = assetMgr.LoadMeshOBJ("projects/default/assets/kenney_nature/Models/OBJ format/log.obj");
 }
 
 } // namespace neon::demo
