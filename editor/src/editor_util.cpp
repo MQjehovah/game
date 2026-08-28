@@ -13,6 +13,7 @@
 #include <cstring>
 #include <ctime>
 #include <fstream>
+#include <unordered_map>
 
 #if defined(_WIN32)
 #ifndef NOMINMAX
@@ -411,6 +412,28 @@ void SfxTone(std::vector<int16_t>& out, double f0, double f1, float dur, float v
 } // namespace
 
 neon::audio::SoundFx MakePvzSfx(const std::string& name) {
+    // 真实音效优先：NeonPvZ 项目自带 assets/audio/<name>.wav（素材包转码）。
+    // 命中缓存避免每次 stat/parse；sampleRate<=0 表示"无 WAV"，回退程序合成。
+    static std::unordered_map<std::string, neon::audio::SoundFx> s_pvzWav;
+    static const char* kPvzAudioDirs[] = {
+        "projects/pvz/assets/audio/", // 编辑器从仓库根运行
+        "assets/audio/",              // 打包/解包项目布局
+    };
+    auto wavIt = s_pvzWav.find(name);
+    if (wavIt == s_pvzWav.end()) {
+        neon::audio::SoundFx wav;
+        bool loaded = false;
+        for (const char* d : kPvzAudioDirs) {
+            if (neon::audio::LoadWav(std::string(d) + name + ".wav", wav)) {
+                loaded = true;
+                break;
+            }
+        }
+        wav.sampleRate = loaded ? wav.sampleRate : -1; // -1 = 回退程序合成
+        wavIt = s_pvzWav.emplace(name, std::move(wav)).first;
+    }
+    if (wavIt->second.sampleRate > 0) return wavIt->second;
+
     neon::audio::SoundFx fx;
     fx.sampleRate = 44100;
     if (name == "click") {

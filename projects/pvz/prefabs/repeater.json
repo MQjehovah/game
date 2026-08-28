@@ -1,7 +1,7 @@
 {
   "components": {
-    "transform": {"scale": [60, 68, 1]},
-    "sprite": {"texture": "assets/sprites/peashooter.png", "colorHex": "#88ff88"},
+    "transform": {"scale": [62, 60, 1]},
+    "sprite": {"texture": "assets/sprites/repeater.png"},
     "plant": {"type": "repeater", "cost": 200, "cooldown": 6, "hp": 100, "maxHp": 100},
     "script": {"backend": "lua", "path": "scripts/plants.lua", "vars": {}}
   }

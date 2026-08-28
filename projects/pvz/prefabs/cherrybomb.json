@@ -1,7 +1,7 @@
 {
   "components": {
-    "transform": {"scale": [60, 68, 1]},
-    "sprite": {"texture": "assets/sprites/peashooter.png", "colorHex": "#ff5533"},
+    "transform": {"scale": [76, 55, 1]},
+    "sprite": {"texture": "assets/sprites/cherrybomb.png"},
     "plant": {"type": "cherrybomb", "cost": 150, "cooldown": 30, "hp": 100, "maxHp": 100, "fuse": 1.1},
     "script": {"backend": "lua", "path": "scripts/plants.lua", "vars": {}}
   }

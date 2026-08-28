@@ -1,6 +1,6 @@
 {
   "components": {
-    "transform": {"scale": [60, 68, 1]},
+    "transform": {"scale": [60, 60, 1]},
     "sprite": {"texture": "assets/sprites/snowpea.png"},
     "plant": {"type": "snowpea", "cost": 175, "cooldown": 4, "hp": 100, "maxHp": 100},
     "script": {"backend": "lua", "path": "scripts/plants.lua", "vars": {}}
