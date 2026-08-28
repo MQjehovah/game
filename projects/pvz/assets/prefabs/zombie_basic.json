@@ -4,6 +4,6 @@
     "sprite": {"texture": "assets/sprites/zombie.png", "sheet": "assets/sprites/zombie.sheet.png", "sheetFrames": 22, "fps": 8},
     "health": {"hp": 100, "maxHp": 100},
     "zombie": {"type": "basic", "speed": 26, "damage": 12},
-    "script": {"backend": "lua", "path": "scripts/zombies.lua", "vars": {}}
+    "script": {"backend": "lua", "path": "assets/scripts/zombies.lua", "vars": {}}
   }
 }

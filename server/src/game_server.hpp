@@ -88,7 +88,7 @@ public:
         bool loopback = false;           // bind 127.0.0.1 instead of 0.0.0.0 (tests)
         std::string sceneJsonPath;       // scene JSON file to load (used when sceneJson is empty)
         std::string sceneJson;           // inline scene JSON (overrides sceneJsonPath)
-        std::string scriptBaseDir;       // base dir for scripts/behaviors/prefabs
+        std::string scriptBaseDir;       // base dir for assets/{scripts,behaviors,prefabs}
         std::string assetBaseDir;        // asset root (unused headless; parity with player)
         // Physics backend for the authoritative simulation. Defaults to "jolt"
         // when Jolt is compiled in so the server matches the client player's

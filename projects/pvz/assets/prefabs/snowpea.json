@@ -3,6 +3,6 @@
     "transform": {"scale": [68, 68, 1]},
     "sprite": {"texture": "assets/sprites/snowpea.png", "sheet": "assets/sprites/snowpea.sheet.png", "sheetFrames": 15, "fps": 6},
     "plant": {"type": "snowpea", "cost": 175, "cooldown": 4, "hp": 100, "maxHp": 100},
-    "script": {"backend": "lua", "path": "scripts/plants.lua", "vars": {}}
+    "script": {"backend": "lua", "path": "assets/scripts/plants.lua", "vars": {}}
   }
 }

@@ -205,13 +205,13 @@ void EditorApp::PollHotReload() {
     const std::string base = projectDir_.empty() ? "." : projectDir_;
 
     // Scripts: only while a play runs (that is what executes scripts). A
-    // changed *.lua under <projectDir>/scripts/ is applied as a play
+    // changed *.lua under <projectDir>/assets/scripts/ is applied as a play
     // restart (Stop + Start), which resets all script/entity/BT state - a safe,
     // deterministic reload for the editor. Shaders are compiled from strings
     // at init and are deliberately NOT hot-reloaded (YAGNI; see T4.8 notes).
     if (playActive_ && play_) {
         std::vector<std::string> files;
-        ListScriptFiles(ScriptsDir(projectDir_), "scripts", files);
+        ListScriptFiles(ScriptsDir(projectDir_), "assets/scripts", files);
         bool scriptChanged = false;
         for (const std::string& rel : files) {
             const std::string full = base + "/" + rel;

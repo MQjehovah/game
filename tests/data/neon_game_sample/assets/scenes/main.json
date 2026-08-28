@@ -19,7 +19,7 @@
       "components": {
         "transform": { "pos": [0, 1.2, 0] },
         "mesh": { "meshKey": "cube", "material": { "colorHex": "#e8c34a", "metallic": 0.4, "roughness": 0.4 } },
-        "script": { "backend": "lua", "path": "scripts/ai.lua" }
+        "script": { "backend": "lua", "path": "assets/scripts/ai.lua" }
       }
     },
     {

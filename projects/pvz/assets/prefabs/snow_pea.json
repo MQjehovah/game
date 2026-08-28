@@ -3,6 +3,6 @@
     "transform": {"scale": [40, 40, 1]},
     "sprite": {"texture": "assets/sprites/snow_pea.png"},
     "pea": {"damage": 10, "speed": 300, "snow": 1},
-    "script": {"backend": "lua", "path": "scripts/pea.lua", "vars": {}}
+    "script": {"backend": "lua", "path": "assets/scripts/pea.lua", "vars": {}}
   }
 }

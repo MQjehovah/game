@@ -13,7 +13,7 @@ namespace neon::assets {
 namespace {
 
 bool IsTrackedFile(const std::string& rel) {
-    for (const char* skip : {".git/", "build/", "out/", "import_cache/", "node_modules/"})
+    for (const char* skip : {".git/", "build/", "out/", ".neon/", "node_modules/"})
         if (rel.rfind(skip, 0) == 0) return false;
     if (rel == ".asset_db.json") return false; // the editor's own snapshot
     return true;

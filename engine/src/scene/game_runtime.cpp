@@ -104,7 +104,7 @@ std::string FileStem(const std::string& p) {
 
 // Recursively lists every file under `absDir` (sorted, forward-slash relative
 // to `absDir`). Missing directories yield an empty list (not an error). Used to
-// load a packed game's prefabs/ tree from the unpacked directory.
+// load a packed game's assets/prefabs/ tree from the unpacked directory.
 void ListFilesRecursive(const std::string& absDir, const std::string& prefix,
                         std::vector<std::string>& out) {
 #if defined(_WIN32)
@@ -1035,9 +1035,9 @@ void GameRuntime::AttachTrees() {
         if (!bt) continue;
 
         // The tree field is either inline JSON ("{...}") or a named reference
-        // ("bt:<name>") resolving to behaviors/<name>.bt.json under the script
-        // base dir. The same ReadScript path used for Lua scripts honors the
-        // readScript override (pack readers) and the disk reader, so packed
+        // ("bt:<name>") resolving to assets/behaviors/<name>.bt.json under the
+        // script base dir. The same ReadScript path used for Lua scripts honors
+        // the readScript override (pack readers) and the disk reader, so packed
         // games load named trees exactly like loose-file projects.
         std::string treeText;
         const std::string& ref = bt->treeJson;
@@ -1057,7 +1057,7 @@ void GameRuntime::AttachTrees() {
                              ref.c_str());
                 continue;
             }
-            treeText = ReadScript(FullScriptPath("behaviors/" + name + ".bt.json"));
+            treeText = ReadScript(FullScriptPath("assets/behaviors/" + name + ".bt.json"));
             if (treeText.empty()) {
                 NEON_LOG_CAT(neon::core::LogCategory::Bt, neon::core::LogLevel::Error,
                              "runtime: cannot read behavior tree '%s' (skipped)", ref.c_str());

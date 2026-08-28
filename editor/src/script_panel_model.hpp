@@ -4,7 +4,8 @@
 // (panels.cpp), the scene export/load paths and the unit tests. Like
 // bt_editor.hpp, everything here is inline + dependency-light (core::Json and
 // the script host interface only), so the test binary can exercise it headlessly:
-//   * script file enumeration under <projectDir>/scripts/ (recursive, relative)
+//   * script file enumeration under <projectDir>/assets/scripts/ (recursive,
+//     relative)
 //   * per-file syntax check through IScriptHost::CheckSyntax (message + line)
 //   * the entity's script component fields (SceneScriptFields) with an equality
 //     helper used by the editor's undo command
@@ -36,7 +37,7 @@ namespace neon::editor {
 // backend/path/vars). An empty `path` means no script is attached.
 struct SceneScriptFields {
     std::string backend; // "lua" (empty means unattached / default)
-    std::string path;    // project-relative, e.g. "scripts/wolf.lua"
+    std::string path;    // project-relative, e.g. "assets/scripts/wolf.lua"
     core::Json vars;     // object, or null when absent
 };
 
@@ -47,21 +48,24 @@ inline bool ScriptFieldsEqual(const SceneScriptFields& a, const SceneScriptField
 
 // Result of a syntax check on one project script.
 struct ScriptCheckResult {
-    std::string path;    // project-relative, e.g. "scripts/foo.lua"
+    std::string path;    // project-relative, e.g. "assets/scripts/foo.lua"
     std::string message; // empty when the script compiles
     int line = 0;        // source line of the error (0 when unknown)
     bool ok = true;
 };
 
-// The project's scripts directory: <projectDir>/scripts ("" base -> "./scripts").
+// The project's scripts directory:
+// <projectDir>/assets/scripts ("" base -> "./assets/scripts").
 inline std::string ScriptsDir(const std::string& projectDir) {
     std::string base = projectDir.empty() ? "." : projectDir;
-    return base + "/scripts";
+    return base + "/assets/scripts";
 }
 
 // Recursively enumerate *.lua (and, when includeJs, *.js) under `dir`,
-// appending project-relative paths ("scripts/foo.lua", "scripts/sub/x.js") to
-// `out`. `prefix` is the relative path of `dir` ("scripts", "scripts/sub",
+// appending project-relative paths ("assets/scripts/foo.lua",
+// "assets/scripts/sub/x.js") to
+// `out`. `prefix` is the relative path of `dir` ("assets/scripts",
+// "assets/scripts/sub",
 // ...). Missing dirs yield an empty list (not an error). Results are sorted
 // for deterministic UI/tests.
 inline void ListScriptFilesImpl(const std::string& dir, const std::string& prefix,
@@ -169,7 +173,8 @@ inline bool ReadTextFile(const std::string& path, std::string& out) {
 }
 
 // Run a syntax check on one project script. `base` is the project directory and
-// `relPath` a project-relative path ("scripts/foo.lua"); the file is read from
+// `relPath` a project-relative path ("assets/scripts/foo.lua"); the file is
+// read from
 // <base>/<relPath> and compiled with the host's CheckSyntax (the editor reuses
 // one throwaway host for all checks, so no script ever runs here).
 inline ScriptCheckResult CheckScriptFile(script::IScriptHost& host, const std::string& base,

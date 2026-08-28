@@ -3,6 +3,6 @@
     "transform": {"scale": [68, 68, 1]},
     "sprite": {"texture": "assets/sprites/peashooter.png", "sheet": "assets/sprites/peashooter.sheet.png", "sheetFrames": 13, "fps": 6},
     "plant": {"type": "peashooter", "cost": 100, "cooldown": 4, "hp": 100, "maxHp": 100},
-    "script": {"backend": "lua", "path": "scripts/plants.lua", "vars": {}}
+    "script": {"backend": "lua", "path": "assets/scripts/plants.lua", "vars": {}}
   }
 }

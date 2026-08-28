@@ -38,7 +38,7 @@
         "transform": { "pos": [0, 6, 2], "rot": [0, 0, 0, 1], "scale": [1, 1, 1] },
         "mesh": { "meshKey": "cube", "colorHex": "#D69E2E", "roughness": 0.6 },
         "rigidbody": { "shape": "box", "halfExtents": [0.5, 0.5, 0.5], "mass": 1, "restitution": 0.3 },
-        "script": { "backend": "lua", "path": "scripts/physics_demo.lua" }
+        "script": { "backend": "lua", "path": "assets/scripts/physics_demo.lua" }
       }
     },
     {

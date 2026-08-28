@@ -137,7 +137,7 @@ void EditorApp::BuildImGuiUI() {
                                  ImGuiInputTextFlags_EnterReturnsTrue)) {
                 SwitchProject(projectDirBuf_);
             }
-            ImGui::TextDisabled("导出场景写入 %s/scenes/exported_scene.json",
+            ImGui::TextDisabled("导出场景写入 %s/assets/scenes/exported_scene.json",
                                 projectDir_.c_str());
             ImGui::Separator();
             if (ImGui::MenuItem("重新加载项目")) SwitchProject(projectDir_);

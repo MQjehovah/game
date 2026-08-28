@@ -56,7 +56,7 @@ TEST(AssetImporterBakesTextures) {
     CHECK_EQ(report.skippedCount, 1u);
     CHECK(report.errors.empty());
 
-    const std::string bakedPath = project + "/import_cache/assets/opaque.png.nbc1";
+    const std::string bakedPath = project + "/.neon/imported/assets/opaque.png.nbc1";
     int w = 0, h = 0;
     std::vector<uint8_t> bc1;
     CHECK(assets::ReadBakedTexture(bakedPath, w, h, bc1));
@@ -65,7 +65,7 @@ TEST(AssetImporterBakesTextures) {
     CHECK(!bc1.empty()); // BC1 blocks present
 
     // No bake for the alpha image.
-    CHECK(!assets::ReadBakedTexture(project + "/import_cache/assets/alpha.png.nbc1",
+    CHECK(!assets::ReadBakedTexture(project + "/.neon/imported/assets/alpha.png.nbc1",
                                     w, h, bc1));
 }
 
@@ -81,7 +81,7 @@ TEST(AssetManagerLoadsBakedTexture) {
     CHECK_EQ(report.bakedCount, 1u);
 
     test::HeadlessAssetFixture fx;
-    fx.assets.SetTextureBakeDir(project + "/import_cache");
+    fx.assets.SetTextureBakeDir(project + "/.neon/imported");
     const gfx::Texture tex = fx.assets.LoadTexture("assets/tex.png");
     CHECK(tex.Valid());
     CHECK_EQ(tex.Width(), 16);

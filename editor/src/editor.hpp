@@ -43,7 +43,7 @@ struct SceneEntity {
     int id = 0;       // stable per-scene id (0 = unassigned; parentId references this)
     std::string name;
     int parentId = 0; // scene-tree parent by entity id (0 = root)
-    std::string prefab; // prefabs/<name>.json template reference ("" = none)
+    std::string prefab; // assets/prefabs/<name>.json template reference ("" = none)
     // Node type (P1-1): "Node" | "MeshInstance3D" | "Camera3D" | "CharacterBody"
     // | "Sprite" | "Light3D" | "" (auto-derived from meshKey/sprite).
     std::string nodeType;
@@ -111,7 +111,7 @@ struct SceneEntity {
     gfx::Mesh decalMesh;       // P2-1: flat ground-decal quad (lazy)
     float ao = 1.0f;               // AO strength (0 = ignore AO map, 1 = full)
     float emissiveIntensity = 1.0f;
-    // Material asset reference (materials/<name>.mat.json): when set, the
+    // Material asset reference (assets/materials/<name>.mat.json): when set, the
     // entity's material params come from that asset (material "ball" like
     // Unity/Godot). LoadScene expands it into the flattened fields below; the
     // export writes both the reference and the expanded params.
@@ -292,7 +292,7 @@ private:
     // the recycle bin (undo-able); POSIX removes recursively after confirm.
     void DeleteSelectedAsset();
     // Material-ball assets (Unity .mat / Godot Material style): save the
-    // selected entity's material as materials/<name>.mat.json and apply a
+    // selected entity's material as assets/materials/<name>.mat.json and apply a
     // material asset to the selected entity (both through undo).
     void SaveMaterialAsset(const std::string& name);
     void ApplyMaterialAsset(const std::string& path);
@@ -398,13 +398,14 @@ private:
     // lists and enters the declared edit mode (2d canvas or 3D scene tree).
     void ScanProjects();
     void SwitchProject(const std::string& dir);
-    // Loads every prefabs/*.json from the current project into prefabLib_.
+    // Loads every assets/prefabs/*.json from the current project into prefabLib_.
     void LoadPrefabLibrary();
-    // Saves the selected entity's components as prefabs/<name>.json.
+    // Saves the selected entity's components as assets/prefabs/<name>.json.
     void SavePrefab(const std::string& name);
     // G5-4-4(项3): asset GUID database (Unity ".meta" model). Builds the
     // project's GUID map, compares it against the previous run's snapshot, and
-    // rewrites path references in scenes/prefabs/ui JSON for any asset that
+    // rewrites path references in assets/scenes + assets/prefabs + assets/ui
+    // JSON for any asset that
     // moved/renamed (GUID preserved) — a rename never silently breaks a scene.
     void RefreshAssetDatabase();
     // G5-4-4(项1): materializes a prefab template's components into a fresh
@@ -504,9 +505,11 @@ private:
     void BtParamBool(const btgraph::BtGraphNode& n, const bt::ParamInfo& p);
     void BtParamJson(const btgraph::BtGraphNode& n, const bt::ParamInfo& p);
 
-    // Script panel (T4.5): docked 脚本 panel listing the project's scripts/
+    // Script panel (T4.5): docked 脚本 panel listing the project's
+    // assets/scripts/
     // with per-file syntax checks, plus attach/configure/detach for the
-    // selected entity. RefreshScriptChecks re-scans <projectDir>/scripts/ and
+    // selected entity. RefreshScriptChecks re-scans
+    // <projectDir>/assets/scripts/ and
     // re-runs CheckSyntax on each file (used by the panel and the smoke).
     void BuildScriptPanel();
     void RefreshScriptChecks();
@@ -592,7 +595,8 @@ private:
     // properties) is routed through it instead of mutating entities_ directly.
     HistoryManager history_;
 
-    // Project directory: exported scenes are written to <projectDir>/scenes/.
+    // Project directory: exported scenes are written to
+    // <projectDir>/assets/scenes/.
     std::string projectDir_{"."};
     char projectDirBuf_[4096]{};
     // Godot-style project switcher state (ScanProjects / SwitchProject).
@@ -763,7 +767,8 @@ private:
     std::vector<std::unique_ptr<plugin::NativePlugin>> nativePlugins_;
     std::string nativePluginsDir_;
 
-    // Localization editor: merged string tables from <project>/locales/*.json
+    // Localization editor: merged string tables from
+    // <project>/assets/locales/*.json
     // plus the active language for the preview.
     core::Localization locEdit_;
     std::string locLanguage_ = "zh";
@@ -886,7 +891,7 @@ private:
     // Returns the throwaway syntax-check host matching a script file's
     // extension (.js -> QuickJS, everything else -> Lua), creating it lazily.
     script::IScriptHost* ScriptCheckHostFor(const std::string& path);
-    std::vector<std::string> scriptFiles_;                 // project-relative "scripts/*.lua"
+    std::vector<std::string> scriptFiles_;      // project-relative "assets/scripts/*.lua"
     std::vector<ScriptCheckResult> scriptChecks_;          // parallel: per-file check results
     bool showScriptEditor_ = false;
     bool showAnimEditor_ = false;

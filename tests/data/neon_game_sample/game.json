@@ -1,5 +1,5 @@
 {
-  "startScene": "scenes/main.json",
+  "startScene": "assets/scenes/main.json",
   "window": { "w": 1280, "h": 720, "title": "Neon Sample Game" },
   "title": "Neon Sample Game"
 }

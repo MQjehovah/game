@@ -173,7 +173,7 @@ end
 function on_start(e)
   if os and os.time then math.randomseed(os.time()) else math.randomseed(0) end
   reset()
-  UIShow("ui/main.ui.json")
+  UIShow("assets/ui/main.ui.json")
   show_menu()
 end
 

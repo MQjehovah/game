@@ -556,10 +556,12 @@ void ValidateBehaviorTree(ProjectContext& pc, const std::string& where,
                                        "' escapes the project directory (contains '..')");
             return;
         }
-        const std::string file = pc.projectDir + "/behaviors/" + name + ".bt.json";
+        const std::string file =
+            pc.projectDir + "/assets/behaviors/" + name + ".bt.json";
         if (!FileExists(file)) {
-            pc.report.errors.push_back(where + ": behavior tree '" + t +
-                                       "' not found (behaviors/" + name + ".bt.json missing)");
+            pc.report.errors.push_back(
+                where + ": behavior tree '" + t +
+                "' not found (assets/behaviors/" + name + ".bt.json missing)");
             return;
         }
         std::string text;
@@ -595,10 +597,12 @@ void ValidateScene(ProjectContext& pc, const std::string& absPath, const std::st
     for (const scene::EntityDef& e : sf.entities) {
         const std::string where = "scene '" + virtualPath + "' entity '" + e.name + "'";
         if (!e.prefab.empty()) {
-            const std::string prefabFile = pc.projectDir + "/prefabs/" + e.prefab + ".json";
+            const std::string prefabFile =
+                pc.projectDir + "/assets/prefabs/" + e.prefab + ".json";
             if (!FileExists(prefabFile))
                 pc.report.errors.push_back(where + ": prefab '" + e.prefab +
-                                           "' not found (prefabs/" + e.prefab + ".json missing)");
+                                           "' not found (assets/prefabs/" + e.prefab +
+                                           ".json missing)");
         }
         for (const scene::ComponentDef& c : e.components) {
             if (c.name == "mesh")
@@ -637,9 +641,10 @@ void ValidateInto(const PackConfig& cfg, ProjectContext& pc) {
         }
     }
 
-    // 2. Scenes: parse every scenes/*.json and pull out its asset references.
+    // 2. Scenes: parse every assets/scenes/*.json and pull out its asset
+    // references.
     std::vector<std::string> scenes;
-    ListFilesRecursive(pc.projectDir + "/scenes", "scenes", scenes);
+    ListFilesRecursive(pc.projectDir + "/assets/scenes", "assets/scenes", scenes);
     for (const std::string& rel : scenes) {
         if (!HasExt(rel, ".json")) continue;
         pc.packFiles[rel] = pc.projectDir + "/" + rel;
@@ -647,12 +652,14 @@ void ValidateInto(const PackConfig& cfg, ProjectContext& pc) {
         pc.walkedScenes.insert(rel);
     }
     if (scenes.empty())
-        r.warnings.push_back("no files under scenes/ (startScene may still reference one)");
+        r.warnings.push_back(
+            "no files under assets/scenes/ (startScene may still reference one)");
 
     // 2b. startScene content: a startScene at an arbitrary path (e.g.
-    // custom/main.json) is validated + collected with the SAME per-entity pass
-    // as the scenes above. A startScene under scenes/ was already walked by the
-    // loop, so it is deduped here and never double-walked.
+    // assets/custom/main.json) is validated + collected with the SAME
+    // per-entity pass
+    // as the scenes above. A startScene under assets/scenes/ was already walked
+    // by the loop, so it is deduped here and never double-walked.
     if (pc.manifestOk && !pc.manifestStartScene.empty()) {
         const std::string startVp = VirtualPathOf(pc.manifestStartScene);
         const std::string startAbs = pc.projectDir + "/" + pc.manifestStartScene;
@@ -670,14 +677,15 @@ void ValidateInto(const PackConfig& cfg, ProjectContext& pc) {
         }
     }
 
-    // 3. Prefabs: parse every prefabs/*.json into one library, then walk each
-    // prefab's component templates with the same mesh/script/behaviorTree
-    // passes. Prefab-referenced assets/scripts are validated and collected too,
-    // not just instance components (a prefab mesh outside assets/ would
-    // otherwise ship an empty pack entry or a missing file silently).
+    // 3. Prefabs: parse every assets/prefabs/*.json into one library, then
+    // walk each prefab's component templates with the same mesh/script/
+    // behaviorTree passes. Prefab-referenced assets/scripts are validated and
+    // collected too, not just instance components (a prefab mesh outside
+    // assets/ would otherwise ship an empty pack entry or a missing file
+    // silently).
     scene::PrefabLibrary prefs;
     std::vector<std::string> prefabs;
-    ListFilesRecursive(pc.projectDir + "/prefabs", "prefabs", prefabs);
+    ListFilesRecursive(pc.projectDir + "/assets/prefabs", "assets/prefabs", prefabs);
     for (const auto& kv : prefabs) {
         if (!HasExt(kv, ".json")) continue;
         std::string text;
@@ -689,10 +697,10 @@ void ValidateInto(const PackConfig& cfg, ProjectContext& pc) {
         if (!st.Ok()) r.errors.push_back("prefab '" + kv + "': " + st.Error());
         pc.packFiles[kv] = pc.projectDir + "/" + kv;
     }
-    // Walk each prefab's component templates with the same passes. Prefab-
-    // referenced assets/scripts are validated and collected too, not just
-    // instance components (a prefab mesh outside assets/ would otherwise ship
-    // an empty pack entry or a missing file silently).
+    // Walk each prefab's component templates with the same passes.
+    // Prefab-referenced assets/scripts are validated and collected too, not
+    // just instance components (a prefab mesh outside assets/ would otherwise
+    // ship an empty pack entry or a missing file silently).
     std::set<std::string> walkedPrefabs;
     for (const std::string& kv : prefabs) {
         if (!HasExt(kv, ".json")) continue;
@@ -711,9 +719,9 @@ void ValidateInto(const PackConfig& cfg, ProjectContext& pc) {
         }
     }
 
-    // 4. Behavior trees: parse every behaviors/*.bt.json.
+    // 4. Behavior trees: parse every assets/behaviors/*.bt.json.
     std::vector<std::string> behaviors;
-    ListFilesRecursive(pc.projectDir + "/behaviors", "behaviors", behaviors);
+    ListFilesRecursive(pc.projectDir + "/assets/behaviors", "assets/behaviors", behaviors);
     for (const std::string& rel : behaviors) {
         if (!HasExt(rel, ".bt.json")) continue;
         std::string text;
@@ -728,12 +736,12 @@ void ValidateInto(const PackConfig& cfg, ProjectContext& pc) {
         pc.packFiles[rel] = pc.projectDir + "/" + rel;
     }
 
-    // 5. Scripts: enumerate scripts/*.lua + scripts/*.js (recursive), plus
-    // every script a scene/prefab references (which may live outside
-    // scripts/), syntax-check each one with its backend host when enabled and
+    // 5. Scripts: enumerate assets/scripts/*.lua + *.js (recursive), plus
+    // every script a scene/prefab references (which may live elsewhere under
+    // assets/), syntax-check each one with its backend host when enabled and
     // collect every one into the pack.
     std::vector<std::string> scripts;
-    ListScriptFiles(pc.projectDir + "/scripts", "scripts", scripts);
+    ListScriptFiles(pc.projectDir + "/assets/scripts", "assets/scripts", scripts);
     for (const std::string& rel : scripts) pc.packFiles[rel] = pc.projectDir + "/" + rel;
 
     // Absolute path -> virtual path, deduped across the enumeration and the
@@ -786,16 +794,16 @@ void ValidateInto(const PackConfig& cfg, ProjectContext& pc) {
     ListFilesRecursive(pc.projectDir + "/assets", "assets", assets);
     for (const std::string& rel : assets) pc.packFiles[rel] = pc.projectDir + "/" + rel;
 
-    // G5-4-3: offline BC1 bake cache (AssetImporter::ImportProjectTextures).
-    // Shipped so the player uploads pre-baked textures without a runtime
-    // decode/compress hitch.
+    // G5-4-3: offline BC1 bake cache (AssetImporter::ImportProjectTextures,
+    // project-local .neon/imported/). Shipped so the player uploads pre-baked
+    // textures without a runtime decode/compress hitch.
     std::vector<std::string> baked;
-    ListFilesRecursive(pc.projectDir + "/import_cache", "import_cache", baked);
+    ListFilesRecursive(pc.projectDir + "/.neon/imported", ".neon/imported", baked);
     for (const std::string& rel : baked) pc.packFiles[rel] = pc.projectDir + "/" + rel;
 
     // UI documents (data-driven .ui.json, consumed by UIShow at runtime).
     std::vector<std::string> uiDocs;
-    ListFilesRecursive(pc.projectDir + "/ui", "ui", uiDocs);
+    ListFilesRecursive(pc.projectDir + "/assets/ui", "assets/ui", uiDocs);
     for (const std::string& rel : uiDocs) pc.packFiles[rel] = pc.projectDir + "/" + rel;
 
     // Godot-style input actions (project root, next to game.json).

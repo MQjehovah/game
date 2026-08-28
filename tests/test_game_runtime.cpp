@@ -283,9 +283,11 @@ TEST(GameRuntimeSpawnPrefabAtRuntime) {
     test::TempDir tmp;
     const std::string dir = tmp.Str();
 #if defined(_WIN32)
-    ::_mkdir((dir + "/prefabs").c_str());
+    ::_mkdir((dir + "/assets").c_str());
+    ::_mkdir((dir + "/assets/prefabs").c_str());
 #else
-    ::mkdir((dir + "/prefabs").c_str(), 0777);
+    ::mkdir((dir + "/assets").c_str(), 0777);
+    ::mkdir((dir + "/assets/prefabs").c_str(), 0777);
 #endif
     const char* peaLua = R"(
 function on_start(e)
@@ -302,7 +304,7 @@ function on_update(e, dt)
 end
 )";
     CHECK(test::WriteFileAll(
-        dir + "/prefabs/pea.json",
+        dir + "/assets/prefabs/pea.json",
         R"({"components": {
              "sprite": {"texture": "assets/sprites/pea.png"},
              "pea": {"damage": 10, "speed": 340},

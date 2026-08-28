@@ -4,6 +4,6 @@
     "sprite": {"texture": "assets/sprites/cone.png", "sheet": "assets/sprites/cone.sheet.png", "sheetFrames": 21, "fps": 8},
     "health": {"hp": 140, "maxHp": 140},
     "zombie": {"type": "cone", "speed": 26, "damage": 12},
-    "script": {"backend": "lua", "path": "scripts/zombies.lua", "vars": {}}
+    "script": {"backend": "lua", "path": "assets/scripts/zombies.lua", "vars": {}}
   }
 }

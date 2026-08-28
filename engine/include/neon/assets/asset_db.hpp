@@ -24,7 +24,8 @@ public:
     // Scans `rootDir` (project dir): ensures a .meta for every tracked asset
     // (reading an existing GUID, generating + writing a fresh one otherwise)
     // and returns the path -> GUID map. Skips .meta files themselves and known
-    // non-asset dirs (import_cache, .git, build, out).
+    // non-asset dirs (.neon — the engine's derived-data cache — .git, build,
+    // out).
     static AssetDatabase Build(const std::string& rootDir);
 
     std::string GuidFor(const std::string& projectRelativePath) const;

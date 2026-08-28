@@ -464,7 +464,7 @@ inline void ApplyEmissiveTexSlot(SceneEntity& e, const TextureSlotValue& v) {
 // A material-ball asset applied to an entity: the reference path plus the
 // expanded params (Unity .mat / Godot Material style).
 struct MaterialAssetValue {
-    std::string ref;          // materials/<name>.mat.json ("" = embedded)
+    std::string ref;          // assets/materials/<name>.mat.json ("" = embedded)
     std::string colorHex;     // "#RRGGBB"
     float metallic = 0.0f;
     float roughness = 0.8f;

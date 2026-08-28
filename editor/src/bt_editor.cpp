@@ -193,7 +193,7 @@ void EditorApp::BtPushSnapshot(const btgraph::BtGraph& before) {
 
 std::string EditorApp::BtBehaviorsDir() const {
     std::string base = projectDir_.empty() ? "." : projectDir_;
-    return base + "/behaviors";
+    return base + "/assets/behaviors";
 }
 
 void EditorApp::BtRefreshBehaviorFiles() {
@@ -370,7 +370,7 @@ void EditorApp::BuildBtToolbar() {
         btFilesRefreshFrame_ = now;
     }
     if (!btBehaviorFiles_.empty()) {
-        ImGui::TextDisabled("behaviors/");
+        ImGui::TextDisabled("assets/behaviors/");
         for (const auto& f : btBehaviorFiles_) {
             char label[512];
             std::snprintf(label, sizeof(label), "%s##btfile_%s", f.c_str(), f.c_str());

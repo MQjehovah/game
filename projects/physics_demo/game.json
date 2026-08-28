@@ -1,5 +1,5 @@
 {
-  "startScene": "scenes/physics_demo.json",
+  "startScene": "assets/scenes/physics_demo.json",
   "window": { "w": 1280, "h": 720, "title": "NeonPhysics - 刚体物理 demo" },
   "title": "NeonPhysics",
   "editor": { "mode": "3d" },

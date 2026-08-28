@@ -65,7 +65,7 @@ struct GameRuntimeConfig {
     assets::AssetManager* assets = nullptr; // mesh loading; null = sim-only
     std::string scriptBaseDir;              // base dir for script paths ("" = cwd)
     std::string assetBaseDir;               // base dir for obj:/gltf:/texture paths ("" = cwd)
-    std::string localesDir;                 // locales/*.json tables for Loc()
+    std::string localesDir;                 // <dir>/assets/locales tables for Loc()
     std::function<std::string(const std::string& path)> readScript; // optional override
     std::function<void(const std::string&)> playSfx; // optional audio sink for PlaySfx
     // P2-2 audio hooks (host-owned backend; null -> script no-ops).
@@ -97,10 +97,11 @@ struct GameRuntimeConfig {
     // plugin dir, so "plugin:*" backends simply fall back to custom.
     std::string pluginBaseDir;
     // G7-1: optional virtual file system (pack + Mod mount stack). When set,
-    // script-family reads (scripts/behaviors/prefabs/locales/input.json)
-    // resolve through it with virtual paths (the scriptBaseDir prefix is
-    // stripped), so a packed game reads scripts straight from the pack and
-    // Mod layers override them — no unpacked-dir copy needed.
+    // script-family reads (assets/scripts + assets/behaviors + assets/prefabs +
+    // assets/locales + input.json) resolve through it with virtual paths (the
+    // scriptBaseDir prefix is stripped), so a packed game reads scripts
+    // straight from the pack and Mod layers override them — no unpacked-dir
+    // copy needed.
     neon::io::IFileSystem* fileSystem = nullptr;
     // G6-1: optional platform/LOD asset variant table. When set, every asset
     // path is resolved through it (logical -> concrete file) before loading,
@@ -277,7 +278,7 @@ public:
     bool RunPluginCommand(const std::string& name,
                           const std::vector<script::Value>& args = {},
                           std::string* error = nullptr);
-    // Instantiates a prefab (prefabs/<name>.json) at `pos` into the live
+    // Instantiates a prefab (assets/prefabs/<name>.json) at `pos` into the live
     // world, attaching its script components and running on_start like a
     // scene-placed entity. Returns the new entity (invalid on failure). The
     // SpawnPrefab binding calls this; game scripts use it for dynamic content
@@ -554,11 +555,12 @@ private:
     void ApplySkillStatuses(ecs::Entity target, const std::vector<SkillStatus>& statuses);
     // Damages `target` (clamped to 0) and applies the skill's statuses.
     void ApplyHit(ecs::Entity target, float damage, const std::vector<SkillStatus>& statuses);
-    // Loads every prefabs/*.json under cfg_.scriptBaseDir into prefs_ (no-op
-    // when the base dir is empty or the prefabs dir is absent). Scene entities
-    // can then reference prefabs by name, matching how packed games ship them.
+    // Loads every assets/prefabs/*.json under cfg_.scriptBaseDir into prefs_
+    // (no-op when the base dir is empty or the prefabs dir is absent). Scene
+    // entities can then reference prefabs by name, matching how packed games
+    // ship them.
     void LoadPrefabs();
-    void LoadLocales(); // locales/*.json string tables for Loc()
+    void LoadLocales(); // <localesDir>/*.json string tables for Loc()
     void BuildDrawList();
     // B6: rebuild drawKeys_ from draws_ (called at the end of BuildDrawList).
     void SyncDrawKeys();
@@ -608,7 +610,7 @@ private:
     std::unique_ptr<physics::World, std::function<void(physics::World*)>> physics_;
     float physicsAccum_ = 0.0f; // fixed-step accumulator (60 Hz)
     script::ScriptContext scriptCtx_; // owns the GameVars scripts + BT share
-    PrefabLibrary prefs_;             // prefabs loaded from <scriptBaseDir>/prefabs/
+    PrefabLibrary prefs_;             // prefabs loaded from <scriptBaseDir>/assets/prefabs/
     core::Localization loc_;          // string tables loaded from cfg_.localesDir
     // Dual script backends: Lua + QuickJS (ES2020). Scene scripts pick a
     // backend via the script component's `backend` field; both hosts share the

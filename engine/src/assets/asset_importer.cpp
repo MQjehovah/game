@@ -57,7 +57,7 @@ bool WriteBakedTexture(const std::string& path, int width, int height,
 ImportReport ImportProjectTextures(const std::string& projectDir) {
     ImportReport report;
     const std::string assetsDir = projectDir + "/assets";
-    const std::string cacheDir = projectDir + "/import_cache";
+    const std::string cacheDir = projectDir + "/.neon/imported";
     std::error_code ec;
     if (!std::filesystem::exists(assetsDir, ec)) return report;
     std::filesystem::create_directories(cacheDir, ec);

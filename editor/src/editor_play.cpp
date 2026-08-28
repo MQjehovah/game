@@ -499,8 +499,8 @@ core::Result<core::Json> EditorApp::BuildPlaySceneJson() {
 
 void EditorApp::StartPlay() {
     StopPlay(); // restart semantics: a fresh snapshot each time
-    // G5-4-3: use offline-baked BC1 textures from the project's import_cache.
-    assetMgr_.SetTextureBakeDir(projectDir_ + "/import_cache");
+    // G5-4-3: use offline-baked BC1 textures from the project's .neon/imported.
+    assetMgr_.SetTextureBakeDir(projectDir_ + "/.neon/imported");
 
     scene::GameRuntimeConfig cfg;
     cfg.assets = &assetMgr_;
@@ -509,7 +509,8 @@ void EditorApp::StartPlay() {
 #endif
     cfg.scriptBaseDir = projectDir_.empty() ? "." : projectDir_;
     cfg.pluginBaseDir = projectDir_.empty() ? "." : projectDir_; // G5-1 native plugins
-    cfg.localesDir = projectDir_.empty() ? "./locales" : projectDir_ + "/locales";
+    cfg.localesDir =
+        projectDir_.empty() ? "./assets/locales" : projectDir_ + "/assets/locales";
     cfg.input = Input(); // hero controller reads live WASD/mouse input
     cfg.font2d = cjkFont_.Valid() ? cjkFont_ : pixelFont_; // 2D HUD / on_render
     // PlaySfx(name) from game scripts routes to the procedural synth.
@@ -556,8 +557,9 @@ void EditorApp::StartPlay() {
         if (root.Ok()) {
             json = core::JsonWriter::Write(root.Value());
         } else {
-            const std::string sceneRel =
-                projectStartScene_.empty() ? "scenes/pvz.json" : projectStartScene_;
+            const std::string sceneRel = projectStartScene_.empty()
+                                             ? "assets/scenes/pvz.json"
+                                             : projectStartScene_;
             const std::string scenePath = projectDir_ + "/" + sceneRel;
             std::ifstream in(scenePath, std::ios::binary);
             if (!in.is_open()) {

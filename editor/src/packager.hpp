@@ -11,28 +11,35 @@
 //   * game.json exists and GameManifest::Load accepts it; startScene resolves
 //     to an existing file and its content is validated with the same per-entity
 //     pass as scenes/ (whatever path it lives at).
-//   * every scenes/*.json parses (SceneFile::Parse); entity prefab references
-//     resolve to prefabs/<name>.json; mesh "obj:"/"gltf:" keys and material
-//     texture slots resolve to existing files; script.path files exist; the
-//     behaviorTree "tree" (inline JSON, or "bt:<name>" -> behaviors/<name>.bt.json)
+//   * every assets/scenes/*.json parses (SceneFile::Parse); entity prefab
+//     references
+//     resolve to assets/prefabs/<name>.json; mesh "obj:"/"gltf:" keys and
+//     material texture slots resolve to existing files; script.path files
+//     exist; the behaviorTree "tree" (inline JSON, or "bt:<name>" ->
+//     assets/behaviors/<name>.bt.json)
 //     loads via bt::BehaviorTree.
-//   * every prefabs/*.json parses AND its component templates are walked for
+//   * every assets/prefabs/*.json parses AND its component templates are
+//     walked for
 //     mesh/script/behaviorTree references (prefab-referenced assets and scripts
 //     are validated and collected, not just instance components); every
-//     behaviors/*.bt.json parses.
-//   * every scripts/*.lua plus every scene/prefab-referenced lua script passes
-//     IScriptHost::CheckSyntax (when enabled).
+//     assets/behaviors/*.bt.json parses.
+//   * every assets/scripts/*.lua plus every scene/prefab-referenced lua script
+//     passes IScriptHost::CheckSyntax (when enabled).
 //   * ".." path segments are rejected in asset/script/behaviorTree/startScene
 //     references so nothing can escape the project directory.
 // Fatal findings are collected into PackageReport::errors (packing is refused);
 // non-fatal notes go to ::warnings (packing still proceeds).
 //
 // Packed file set (virtual paths, forward slashes): game.json (the manifest,
-// re-serialized via GameManifest::ToJson), every scenes/*.json, prefabs/*.json,
-// behaviors/*.bt.json and scripts/*.lua (extension match is case-insensitive),
-// every file under assets/, plus any asset or script referenced by a scene or
-// prefab that lives outside those directories (e.g. an "obj:models/foo.obj"
-// mesh key or a "shared/ai.lua" script path).
+// re-serialized via GameManifest::ToJson), every assets/scenes/*.json,
+// assets/prefabs/*.json,
+// assets/behaviors/*.bt.json and assets/scripts/*.lua (extension match is
+// case-insensitive),
+// every file under assets/ (which now CONTAINS scenes/prefabs/scripts/ui/
+// locales — the Unity-style single content root; the dedicated walks above
+// only add validation, the map dedupes), plus any asset or script referenced
+// by a scene or prefab that lives outside those directories (e.g. an
+// "obj:models/foo.obj" mesh key).
 
 #include <string>
 #include <vector>
@@ -72,7 +79,8 @@ struct PackConfig {
     bool force = false;
 };
 
-// Validation pass only: loads game.json, parses scenes/prefabs/behaviors and
+// Validation pass only: loads game.json, parses assets/scenes + assets/prefabs
+// + assets/behaviors and
 // syntax-checks scripts, collecting the exact file set that would be packed.
 // Never writes anything.
 PackageReport ValidateProject(const PackConfig& cfg);

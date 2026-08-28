@@ -13,7 +13,7 @@ namespace neon::assets {
 // ImportProjectTextures scans <project>/assets for image files, decodes each
 // with the SAME DecodeImageBytes the runtime uses (so the bake is byte-identical
 // to runtime compression), and writes opaque ones to
-// <project>/import_cache/<project-relative-path>.nbc1 (magic "NBC1", u32 width,
+// <project>/.neon/imported/<project-relative-path>.nbc1 (magic "NBC1", u32 width,
 // u32 height, then BC1 blocks). Alpha-bearing images are skipped — they stay
 // RGBA8 at runtime. The runtime prefers the bake via
 // AssetManager::SetTextureBakeDir.
@@ -24,7 +24,7 @@ struct ImportReport {
     std::vector<std::string> errors;
 };
 
-// Bakes <project>/assets images into <project>/import_cache. Idempotent.
+// Bakes <project>/assets images into <project>/.neon/imported. Idempotent.
 ImportReport ImportProjectTextures(const std::string& projectDir);
 
 // .nbc1 cache I/O (magic "NBC1" + u32 w + u32 h + BC1 blocks).

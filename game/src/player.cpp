@@ -70,6 +70,21 @@ std::string DirName(const std::string& path) {
     return path.substr(0, slash);
 }
 
+// Mirrors neon_server's ScriptBaseForLooseScene: walk up from the scene file
+// to the nearest ancestor with game.json (the project root) so an
+// assets/scenes/x.json scene resolves "assets/..." scripts from the project.
+std::string ScriptBaseForLooseScene(const std::string& scenePath) {
+    const std::string fallback = DirName(scenePath);
+    std::string dir = fallback;
+    for (int i = 0; i < 8; ++i) {
+        if (std::ifstream(dir + "/game.json", std::ios::binary).is_open()) return dir;
+        const size_t slash = dir.find_last_of("/\\");
+        if (slash == std::string::npos || slash == 0) break;
+        dir = dir.substr(0, slash);
+    }
+    return fallback;
+}
+
 std::string MakeTempDir() {
 #if defined(_WIN32)
     char base[MAX_PATH];
@@ -260,9 +275,9 @@ bool PlayerApp::OnCreate() {
 assetMgr_.Init(&renderer_);
 // G7-1: asset reads go through the pack + Mod mount stack when present.
 if (cfg_.vfs) assetMgr_.SetFileSystem(cfg_.vfs.get());
-// G5-4-3: prefer offline-baked BC1 textures (import_cache in the pack, or on
+// G5-4-3: prefer offline-baked BC1 textures (.neon/imported in the pack, or on
 // disk for loose scenes) so uploads skip the runtime decode+compress.
-assetMgr_.SetTextureBakeDir(cfg_.vfs ? std::string("import_cache") : "import_cache");
+assetMgr_.SetTextureBakeDir(".neon/imported");
     // Overlay font: embedded ASCII pixel font, upgraded with the system CJK
     // font when available so "Esc 退出" renders (fallback keeps ASCII labels).
     pixelFont_ = renderer_.CreateFontFromMemory(neon_rush::kEmbeddedFontData,
@@ -277,14 +292,14 @@ assetMgr_.SetTextureBakeDir(cfg_.vfs ? std::string("import_cache") : "import_cac
 #ifdef NEON_ENABLE_JOLT
     rcfg.physicsBackend = "jolt"; // packaged game uses Jolt rigid bodies
 #endif
-    rcfg.scriptBaseDir = cfg_.unpackedDir; // scripts/ + behaviors/ resolve here
+    rcfg.scriptBaseDir = cfg_.unpackedDir; // assets/scripts + assets/behaviors resolve here
     rcfg.pluginBaseDir = cfg_.unpackedDir.empty() ? std::string(".") : cfg_.unpackedDir; // G5-1
     if (!cfg_.looseScenePath.empty()) rcfg.scriptBaseDir = cfg_.scriptsDir;
     // With a VFS installed (pack + Mods), asset paths stay RELATIVE so the
     // mount stack resolves them (pack-relative keys); without one they resolve
     // against the unpacked dir as before.
     rcfg.assetBaseDir = cfg_.vfs ? std::string() : cfg_.unpackedDir;
-    // G7-1: script reads (scripts/behaviors/prefabs/locales/input.json) go
+    // G7-1: script reads (assets/ scripts+behaviors+prefabs+locales, input.json) go
     // through the pack + Mod mount stack directly, overriding the unpacked-dir
     // copy — Mods replace base-pack scripts without editing the unpacked tree.
     rcfg.fileSystem = cfg_.vfs ? cfg_.vfs.get() : nullptr;
@@ -393,7 +408,7 @@ bool PlayerApp::LoadSceneJson() {
             return false;
         }
         StripBom(sceneJson_);
-        if (cfg_.scriptsDir.empty()) cfg_.scriptsDir = DirName(cfg_.looseScenePath);
+        if (cfg_.scriptsDir.empty()) cfg_.scriptsDir = ScriptBaseForLooseScene(cfg_.looseScenePath);
         NEON_LOG_INFO("Player: loading loose scene '%s' (scripts from '%s')",
                       cfg_.looseScenePath.c_str(), cfg_.scriptsDir.c_str());
         return true;
@@ -402,11 +417,11 @@ bool PlayerApp::LoadSceneJson() {
     std::string scenePath = cfg_.manifest.startScene;
     if (!cfg_.sceneOverride.empty()) {
         scenePath = cfg_.sceneOverride;
-        // A bare name (no slash, no extension) maps onto scenes/<name>.json.
+        // A bare name (no slash, no extension) maps onto assets/scenes/<name>.json.
         if (scenePath.find('/') == std::string::npos &&
             scenePath.find('\\') == std::string::npos &&
             scenePath.find('.') == std::string::npos) {
-            scenePath = "scenes/" + scenePath + ".json";
+            scenePath = "assets/scenes/" + scenePath + ".json";
         }
     }
     // Defense-in-depth: reject a startScene/--scene that could escape the

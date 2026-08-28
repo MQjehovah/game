@@ -177,7 +177,8 @@ struct ScriptContext {
                               const std::string&)>
         spawnSprite;
     // Runtime prefab instantiation (SpawnPrefab binding): creates a prefab
-    // entity (prefabs/<name>.json) at `pos`, attaching its script components
+    // entity (assets/prefabs/<name>.json) at `pos`, attaching its script
+    // components
     // and running on_start like a scene-placed entity. Wired by GameRuntime;
     // null -> SpawnPrefab is a no-op returning an invalid handle.
     std::function<ecs::Entity(const std::string&, const math::Vec3&)> spawnPrefab;

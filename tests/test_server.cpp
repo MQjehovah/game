@@ -858,7 +858,7 @@ TEST(ServerRunsCommittedSampleHeadless) {
     server::GameServer::Config cfg;
     cfg.port = 0;
     cfg.loopback = true;
-    cfg.sceneJsonPath = base + "/scenes/main.json";
+    cfg.sceneJsonPath = base + "/assets/scenes/main.json";
     cfg.scriptBaseDir = base;
     CHECK(server.Start(cfg));
     CHECK(server.Running());

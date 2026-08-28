@@ -72,7 +72,7 @@ end
 
 -- 重开: 重新加载本场景, 所有状态/实体/插件(wave_director)从头再来。
 local function restartGame()
-  ChangeScene("scenes/pvz.json")
+  ChangeScene("assets/scenes/pvz.json")
 end
 
 function on_start()
@@ -99,14 +99,14 @@ function on_start()
     mowerList[r + 1] = { active = false }
   end
   SetVar("mowers", mowerList)
-  UIShow("ui/main.ui.json")
+  UIShow("assets/ui/main.ui.json")
   PlaySfx("click")
 
   -- demo 模式 (场景 Game 实体 vars.demo=1): 自动开始, 供冒烟/演示/无人值守验证。
   if demo == 1 then
     started = true
     SetVar("started", true)
-    UIShow("ui/hud.ui.json")
+    UIShow("assets/ui/hud.ui.json")
     print("demo mode: auto-started")
   end
 end
@@ -118,7 +118,7 @@ function on_update(e, dt)
   if UIClicked("Start") then
     started = true
     SetVar("started", true)
-    UIShow("ui/hud.ui.json")
+    UIShow("assets/ui/hud.ui.json")
     PlaySfx("click")
   end
 

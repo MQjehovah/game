@@ -305,7 +305,7 @@ bool EditorApp::OnCreate() {
         showUIEditor_ = true;
         if (!uiDocOpen_) {
             std::vector<AssetEntry> entries;
-            if (ListDirectory(projectDir_ + "/ui", entries)) {
+            if (ListDirectory(projectDir_ + "/assets/ui", entries)) {
                 std::sort(entries.begin(), entries.end(),
                           [](const AssetEntry& a, const AssetEntry& b) { return a.name < b.name; });
                 for (const AssetEntry& f : entries) {
@@ -569,7 +569,7 @@ void EditorApp::SetupScene() {
         h.pos = {0.0f, 0.0f, 5.5f};
         h.scale = {1, 1, 1};
         h.tint = gfx::Color::White;
-        h.scripts.push_back({"lua", "scripts/hero.lua", {}});
+        h.scripts.push_back({"lua", "assets/scripts/hero.lua", {}});
         h.hp = 100.0f;
         h.maxHp = 100.0f;
         if (ResolveMesh(h)) {
@@ -796,7 +796,7 @@ void EditorApp::OnUpdate(float dt) {
             // 脚本 remove: append one script, then erase it via the command
             // the 移除##script_N button pushes.
             std::vector<SceneScriptFields> withScript = e.scripts;
-            withScript.push_back({"lua", "scripts/smoke_remove.lua", {}});
+            withScript.push_back({"lua", "assets/scripts/smoke_remove.lua", {}});
             history_.Push(std::make_unique<
                 EditPropertyCommand<std::vector<SceneScriptFields>>>(
                 &entities_, selected_, ApplyScriptList, e.scripts, withScript,
@@ -902,9 +902,9 @@ void EditorApp::OnUpdate(float dt) {
     // was torn down and restarted.
     if (smokeMode_ && TimeRef().frameIndex == 40) {
         const std::string proj = GetTempDir() + "/hotreload_proj";
-        EnsureDirs(proj + "/scripts");
+        EnsureDirs(proj + "/assets/scripts");
         {
-            std::ofstream out(proj + "/scripts/main.lua", std::ios::binary);
+            std::ofstream out(proj + "/assets/scripts/main.lua", std::ios::binary);
             out << "function on_start(ent)\nend\nfunction on_update(ent, dt)\nend\n";
         }
         hotReloadProj_ = proj;
@@ -915,7 +915,7 @@ void EditorApp::OnUpdate(float dt) {
             core::Json vars;
             vars.type_ = core::Json::Type::Object;
             std::vector<SceneScriptFields> newList = sel.scripts;
-            newList.push_back({"lua", "scripts/main.lua", vars});
+            newList.push_back({"lua", "assets/scripts/main.lua", vars});
             history_.Push(std::make_unique<
                 EditPropertyCommand<std::vector<SceneScriptFields>>>(
                 &entities_, selected_, ApplyScriptList, sel.scripts, newList,
@@ -930,7 +930,7 @@ void EditorApp::OnUpdate(float dt) {
         if (!active) smokeFailed_ = true;
     }
     if (smokeMode_ && TimeRef().frameIndex == 41) {
-        TouchFileMTime(hotReloadProj_ + "/scripts/main.lua", 2);
+        TouchFileMTime(hotReloadProj_ + "/assets/scripts/main.lua", 2);
     }
     if (smokeMode_ && TimeRef().frameIndex == 42) {
         const int before = hotReloadCount_;
@@ -987,7 +987,8 @@ void EditorApp::OnUpdate(float dt) {
     // Material-ball sphere preview: queued at frame 30, the offscreen render
     // runs in a later frame's OnRender; verify the cached texture landed.
     if (smokeMode_ && TimeRef().frameIndex == 44) {
-        const std::string path = GetTempDir() + "/asset_proj/materials/smoke_mat.mat.json";
+        const std::string path =
+            GetTempDir() + "/asset_proj/assets/materials/smoke_mat.mat.json";
         const auto it = materialThumbs_.find(path);
         const bool ok = it != materialThumbs_.end() &&
                         it->second.texId != ImTextureID_Invalid;
@@ -995,7 +996,7 @@ void EditorApp::OnUpdate(float dt) {
                       ok ? "PASS" : "FAIL");
         if (!ok) smokeFailed_ = true;
         const std::string zhPath =
-            GetTempDir() + "/asset_proj/materials/\u6d4b\u8bd5\u7403.mat.json";
+            GetTempDir() + "/asset_proj/assets/materials/\u6d4b\u8bd5\u7403.mat.json";
         const auto itZh = materialThumbs_.find(zhPath);
         const bool zhOk = itZh != materialThumbs_.end() &&
                           itZh->second.texId != ImTextureID_Invalid;
@@ -1470,7 +1471,7 @@ core::Status EditorApp::ExportScene() {
     core::Json root = rootRes.Value();
 
     std::string base = projectDir_.empty() ? "." : projectDir_;
-    std::string scenesDir = base + "/scenes";
+    std::string scenesDir = base + "/assets/scenes";
     if (!EnsureDirs(scenesDir)) {
         NEON_LOG_ERROR("Editor: cannot create export directory '%s'", scenesDir.c_str());
         return core::Status::Err("editor: cannot create export directory '" + scenesDir + "'");
@@ -1527,13 +1528,13 @@ core::Status EditorApp::ExportScene() {
 // Discovers every project under projects/ (a directory with a game.json) and
 // keeps the active-project fields in sync with projectDir_.
 
-// Loads every prefabs/*.json from the current project (Godot-style prefab
-// templates referenced by scene entities).
+// Loads every assets/prefabs/*.json from the current project (Godot-style
+// prefab templates referenced by scene entities).
 
-// Saves the selected entity's components as prefabs/<name>.json (a component
-// template other entities can instantiate).
+// Saves the selected entity's components as assets/prefabs/<name>.json (a
+// component template other entities can instantiate).
 
-// Expands a material-ball asset (materials/*.mat.json) into an entity's
+// Expands a material-ball asset (assets/materials/*.mat.json) into an entity's
 // flattened material fields. False when the asset is missing or invalid.
 
 // Saves the selected entity's material as a material-ball asset and links the

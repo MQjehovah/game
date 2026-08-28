@@ -2570,7 +2570,7 @@ void EditorApp::BuildUIEditorPanel() {
             bar->rect = {140, 300, 320, 20};
             bar->fill = 0.7f;
             bar->color = {0.85f, 0.25f, 0.25f, 1.0f};
-            uiDocPath_ = projectDir_ + "/ui/untitled.ui.json";
+            uiDocPath_ = projectDir_ + "/assets/ui/untitled.ui.json";
             uiDocOpen_ = true;
             UISelectNode(&uiDoc_.root);
             uiDirty_ = true; // untitled: wait for the explicit 保存 button
@@ -2578,7 +2578,7 @@ void EditorApp::BuildUIEditorPanel() {
         ImGui::SameLine();
         if (ImGui::Button("保存")) {
             if (uiDocOpen_ && !uiDocPath_.empty()) {
-                MakeDirSingle(projectDir_ + "/ui");
+                MakeDirSingle(projectDir_ + "/assets/ui");
                 if (uiDoc_.Save(uiDocPath_)) {
                     uiDirty_ = false;
                     NEON_LOG_INFO("UI: saved '%s'", uiDocPath_.c_str());
@@ -2615,10 +2615,10 @@ void EditorApp::BuildUIEditorPanel() {
 
         // --- Document list ------------------------------------------------
         ImGui::Separator();
-        ImGui::TextDisabled("项目 UI 文档 (ui/*.ui.json)");
+        ImGui::TextDisabled("项目 UI 文档 (assets/ui/*.ui.json)");
         uiFiles_.clear();
         std::vector<AssetEntry> entries;
-        if (ListDirectory(projectDir_ + "/ui", entries)) {
+        if (ListDirectory(projectDir_ + "/assets/ui", entries)) {
             for (const AssetEntry& f : entries) {
                 if (f.isDir || f.name.size() < 9 ||
                     f.name.compare(f.name.size() - 8, 8, ".ui.json") != 0)
@@ -2786,7 +2786,7 @@ void EditorApp::BuildUIEditorPanel() {
     ImGui::End();
 }
 
-// Localization editor (Godot-style): load <project>/locales/*.json, pick the
+// Localization editor (Godot-style): load <project>/assets/locales/*.json, pick the
 // preview language, edit key/value pairs, save back to locales.json.
 void EditorApp::BuildLocPanel() {
     if (!showLoc_) return;
@@ -2794,7 +2794,7 @@ void EditorApp::BuildLocPanel() {
         if (ImGui::Button("加载项目字符串表")) {
             locEdit_ = core::Localization();
             std::vector<AssetEntry> files;
-            if (ListDirectory(projectDir_ + "/locales", files)) {
+            if (ListDirectory(projectDir_ + "/assets/locales", files)) {
                 for (const AssetEntry& f : files) {
                     if (f.isDir) continue;
                     const std::string& n = f.name;
@@ -2820,7 +2820,7 @@ void EditorApp::BuildLocPanel() {
         }
         ImGui::SameLine();
         if (ImGui::Button("保存 (locales.json)")) {
-            const std::string dir = projectDir_ + "/locales";
+            const std::string dir = projectDir_ + "/assets/locales";
             MakeDirSingle(dir);
             const std::string path = dir + "/locales.json";
             std::ofstream out(path, std::ios::binary);
@@ -2881,14 +2881,15 @@ void EditorApp::BuildLocPanel() {
     ImGui::End();
 }
 
-// Re-scan <projectDir>/scripts/ and run a syntax check on every *.lua / *.js.
+// Re-scan <projectDir>/assets/scripts/ and run a syntax check on every
+// *.lua / *.js.
 // Each file is routed to the matching throwaway host (Lua vs QuickJS);
 // nothing ever runs, so a failed check leaves the host reusable.
 void EditorApp::RefreshScriptChecks() {
     scriptFiles_.clear();
     scriptChecks_.clear();
     std::vector<std::string> files;
-    ListScriptFiles(ScriptsDir(projectDir_), "scripts", files);
+    ListScriptFiles(ScriptsDir(projectDir_), "assets/scripts", files);
     const std::string base = projectDir_.empty() ? "." : projectDir_;
     for (const std::string& rel : files) {
         if (script::IScriptHost* checkHost = ScriptCheckHostFor(rel)) {
@@ -2924,7 +2925,7 @@ void EditorApp::BuildScriptPanel() {
 
         ImGui::BeginChild("##script_list", ImVec2(0, -150.0f), ImGuiChildFlags_Borders);
         if (scriptFiles_.empty()) {
-            ImGui::TextDisabled("scripts/ 目录下没有 .lua 脚本");
+            ImGui::TextDisabled("assets/scripts/ 目录下没有 .lua 脚本");
         }
         for (size_t i = 0; i < scriptFiles_.size(); ++i) {
             const ScriptCheckResult& r = scriptChecks_[i];
@@ -3848,7 +3849,7 @@ void EditorApp::BuildTilemapPanel() {
 void EditorApp::BuildPackagePanel() {
     if (!showPackage_) return;
     if (ImGui::Begin("打包", &showPackage_)) {
-        ImGui::TextDisabled("项目目录 (game.json + scenes/ + prefabs/ + behaviors/ + scripts/ + assets/)");
+        ImGui::TextDisabled("项目目录 (game.json + assets/ 内容根：scenes/ prefabs/ scripts/ ui/ locales/)");
         if (ImGui::InputText("##pack_proj", projectDirBuf_, sizeof(projectDirBuf_),
                              ImGuiInputTextFlags_EnterReturnsTrue)) {
             projectDir_ = projectDirBuf_;

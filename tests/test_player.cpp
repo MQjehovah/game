@@ -128,12 +128,13 @@ const char* kInputScene = R"({
 // bt:<name> resolution in GameRuntime::AttachTrees
 // ---------------------------------------------------------------------------
 
-// A "bt:cycle" reference loads behaviors/cycle.bt.json from scriptBaseDir and
+// A "bt:cycle" reference loads assets/behaviors/cycle.bt.json from
+// scriptBaseDir and
 // ticks (wait + blackboard write), same as an inline tree would.
 TEST(PlayerBtNamedReferenceLoadsFromDisk) {
     test::TempDir tmp;
-    CHECK(MakeDirAll(tmp.Str() + "/behaviors"));
-    CHECK(test::WriteFileAll(tmp.Str() + "/behaviors/cycle.bt.json", kCycleBt));
+    CHECK(MakeDirAll(tmp.Str() + "/assets/behaviors"));
+    CHECK(test::WriteFileAll(tmp.Str() + "/assets/behaviors/cycle.bt.json", kCycleBt));
 
     scene::GameRuntime runtime;
     scene::GameRuntimeConfig cfg;
@@ -490,10 +491,10 @@ TEST(PlayerCommittedSamplePackUnpackRun) {
     core::PackReader reader(packBytes);
     CHECK(reader.Valid());
     CHECK(reader.Has("game.json"));
-    CHECK(reader.Has("scenes/main.json"));
-    CHECK(reader.Has("prefabs/pillar.json"));
-    CHECK(reader.Has("behaviors/cycle.bt.json"));
-    CHECK(reader.Has("scripts/ai.lua"));
+    CHECK(reader.Has("assets/scenes/main.json"));
+    CHECK(reader.Has("assets/prefabs/pillar.json"));
+    CHECK(reader.Has("assets/behaviors/cycle.bt.json"));
+    CHECK(reader.Has("assets/scripts/ai.lua"));
 
     test::TempDir runTmp;
     CHECK(core::Unpack(reader, runTmp.Str()).Ok());
@@ -503,7 +504,7 @@ TEST(PlayerCommittedSamplePackUnpackRun) {
     auto manifest = scene::GameManifest::Load(manifestText);
     CHECK(manifest.Ok());
     if (!manifest.Ok()) return;
-    CHECK_EQ(manifest.Value().startScene, std::string("scenes/main.json"));
+    CHECK_EQ(manifest.Value().startScene, std::string("assets/scenes/main.json"));
 
     std::string sceneJson;
     CHECK(test::ReadFileAll(runTmp.Str() + "/" + manifest.Value().startScene, sceneJson));

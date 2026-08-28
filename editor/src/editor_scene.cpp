@@ -13,8 +13,9 @@
 namespace neon::editor {
 
 namespace {
-// 2D level layout (must match projects/pvz/scripts/pvz.lua: 9x5 cells of 100
-// at (190,160)). LoadScene parses plant/zombie entities into these vectors so
+// 2D level layout (must match projects/pvz/assets/scripts/game.lua: 9x5 cells
+// of 100 at (190,160)). LoadScene parses plant/zombie entities into these
+// vectors so
 // 2D level data stays scene-driven (the editor does not draw a canvas itself).
 constexpr int kPvzRows = 5;
 constexpr int kPvzCols = 9;
@@ -107,7 +108,7 @@ void EditorApp::AddEntity(const std::string& meshKey) {
         return;
     }
     if (meshKey.rfind("prefab:", 0) == 0) {
-        // Instantiate a project prefab (prefabs/<name>.json): materialize its
+        // Instantiate a project prefab (assets/prefabs/<name>.json): materialize its
         // component template into a new editable entity.
         const std::string pfName = meshKey.substr(7);
         auto tpl = prefabLib_.Get(pfName);
@@ -653,7 +654,8 @@ void EditorApp::SaveScene() {
         }
     }
     // Save to the scene file that is actually loaded (project scenes live in
-    // <project>/scenes/*.json). Previously this hardcoded editor_scene.json,
+    // <project>/assets/scenes/*.json). Previously this hardcoded
+    // editor_scene.json,
     // so saving a project scene silently wrote the sandbox file and the
     // hierarchy (plus every other edit) was lost on restart.
     const std::string savePath =
@@ -1199,7 +1201,7 @@ void EditorApp::LoadScene(const std::string& path) {
             }
         }
         if (!e.materialRef.empty()) {
-            // Material-ball reference ("materials/x.mat.json"): expand it into
+            // Material-ball reference ("assets/materials/x.mat.json"): expand it into
             // the flattened fields before resolving the mesh.
             LoadMaterialParamsInto(e, projectDir_ + "/" + e.materialRef);
         }
@@ -1314,14 +1316,14 @@ bool EditorApp::ReadProjectMeta(EditorProject& p) {
                 if (m->IsString() && m->GetString() == "2d") p.mode = "2d";
     }
     std::vector<AssetEntry> files;
-    if (ListDirectory(p.dir + "/scenes", files)) {
+    if (ListDirectory(p.dir + "/assets/scenes", files)) {
         for (const AssetEntry& f : files) {
             if (f.isDir) continue;
             const std::string& n = f.name;
             const bool isJson = n.size() > 5 &&
                                 (n.compare(n.size() - 5, 5, ".json") == 0 ||
                                  n.compare(n.size() - 5, 5, ".JSON") == 0);
-            if (isJson) p.scenes.push_back("scenes/" + n);
+            if (isJson) p.scenes.push_back("assets/scenes/" + n);
         }
     }
     std::sort(p.scenes.begin(), p.scenes.end());
@@ -1379,7 +1381,7 @@ void EditorApp::LoadPrefabLibrary() {
     prefabLib_ = scene::PrefabLibrary();
     projectPrefabs_.clear();
     std::vector<AssetEntry> files;
-    if (!ListDirectory(projectDir_ + "/prefabs", files)) return;
+    if (!ListDirectory(projectDir_ + "/assets/prefabs", files)) return;
     for (const AssetEntry& f : files) {
         if (f.isDir) continue;
         const std::string& n = f.name;
@@ -1457,7 +1459,7 @@ void EditorApp::SavePrefab(const std::string& name) {
     }
     root.object_["components"] = std::move(comps);
 
-    const std::string dir = projectDir_ + "/prefabs";
+    const std::string dir = projectDir_ + "/assets/prefabs";
     EnsureDirs(dir + "/");
     const std::string path = dir + "/" + name + ".json";
     std::ofstream out(path, std::ios::binary);
@@ -1558,9 +1560,9 @@ void EditorApp::SaveMaterialAsset(const std::string& name) {
     root.object_["aoTex"] = str(e.aoTex);
     root.object_["emissiveTex"] = str(e.emissiveTex);
 
-    const std::string dir = projectDir_ + "/materials";
+    const std::string dir = projectDir_ + "/assets/materials";
     EnsureDirs(dir + "/");
-    const std::string rel = "materials/" + name + ".mat.json";
+    const std::string rel = "assets/materials/" + name + ".mat.json";
     const std::string path = projectDir_ + "/" + rel;
     // Wide-char open so CJK material names write correctly.
     if (!WriteFileUtf8(path, core::JsonWriter::WritePretty(root))) {
@@ -1591,8 +1593,8 @@ void EditorApp::ApplyMaterialAsset(const std::string& path) {
     const MaterialAssetValue oldVal{e.materialRef, ColorToHex(e.tint), e.metallic, e.roughness,
                                     e.ao, e.emissiveIntensity, e.albedoTex, e.mrTex, e.aoTex,
                                     e.emissiveTex};
-    // Store the reference project-relative ("materials/x.mat.json") so scenes
-    // round-trip regardless of where the asset panel is browsing.
+    // Store the reference project-relative ("assets/materials/x.mat.json") so
+    // scenes round-trip regardless of where the asset panel is browsing.
     std::string rel = path;
     const std::string base = projectDir_ == "." ? "" : projectDir_ + "/";
     if (!base.empty() && rel.compare(0, base.size(), base) == 0)
@@ -1672,7 +1674,7 @@ void EditorApp::RefreshAssetDatabase() {
         // runtime resolves PATHS, so rewriting the stored text keeps everything
         // consistent (the .meta GUID made the rename detectable).
         std::error_code ec;
-        for (const char* sub : {"scenes", "prefabs", "ui"}) {
+        for (const char* sub : {"assets/scenes", "assets/prefabs", "assets/ui"}) {
             const std::string dir = projectDir_ + "/" + sub;
             if (!std::filesystem::exists(dir, ec)) continue;
             for (std::filesystem::recursive_directory_iterator it(dir, ec), end;

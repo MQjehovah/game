@@ -1,5 +1,5 @@
 {
-  "startScene": "scenes/snake.json",
+  "startScene": "assets/scenes/snake.json",
   "window": { "w": 1280, "h": 720, "title": "NeonSnake - 贪吃蛇" },
   "title": "NeonSnake",
   "editor": { "mode": "2d" },

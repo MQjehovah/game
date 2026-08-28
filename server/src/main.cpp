@@ -1,6 +1,7 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <fstream>
 #include <string>
 
 #include "neon/core/log.hpp"
@@ -32,7 +33,7 @@ void PrintUsage(const char* prog) {
         "Usage: %s [--port N] --scene FILE [options]\n"
         "  --port N      UDP port to bind (default 26000; 0 = OS ephemeral)\n"
         "  --scene FILE  scene JSON file to load (required)\n"
-        "  --scripts DIR base dir for scripts/behaviors/prefabs (default: scene's dir)\n"
+        "  --scripts DIR base dir for assets/{scripts,behaviors,prefabs} (default: scene's dir)\n"
         "  --assets DIR  asset base dir (unused headless; kept for parity)\n"
         "  --ticks N     run exactly N fixed 60Hz simulation steps then exit 0\n"
         "  --seed N      deterministic simulation seed (default: fixed constant)\n"
@@ -48,6 +49,23 @@ std::string DirName(const std::string& path) {
     const size_t slash = path.find_last_of("/\\");
     if (slash == std::string::npos) return ".";
     return path.substr(0, slash);
+}
+
+// Loose-scene script base. Scenes authored by the editor live under a
+// project's assets/ content root (assets/scenes/x.json) while scripts resolve
+// as "assets/..." from the PROJECT root, so walk up to the nearest ancestor
+// containing game.json and use it as the base. A truly loose scene (no
+// project) keeps the old behavior: scripts sit next to the scene file.
+std::string ScriptBaseForLooseScene(const std::string& scenePath) {
+    const std::string fallback = DirName(scenePath);
+    std::string dir = fallback;
+    for (int i = 0; i < 8; ++i) {
+        if (std::ifstream(dir + "/game.json", std::ios::binary).is_open()) return dir;
+        const size_t slash = dir.find_last_of("/\\");
+        if (slash == std::string::npos || slash == 0) break;
+        dir = dir.substr(0, slash);
+    }
+    return fallback;
 }
 
 } // namespace
@@ -109,7 +127,7 @@ int main(int argc, char** argv) {
         return 2;
     }
     cfg.sceneJsonPath = scenePath;
-    if (scriptsDir.empty()) scriptsDir = DirName(scenePath);
+    if (scriptsDir.empty()) scriptsDir = ScriptBaseForLooseScene(scenePath);
     cfg.scriptBaseDir = scriptsDir;
 
     neon::server::GameServer server;

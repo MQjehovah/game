@@ -171,7 +171,7 @@ struct SceneFile {
 };
 
 // Prefab library: registers prefab component templates parsed from JSON text
-// (prefabs/*.json). A prefab file is either a bare component map
+// (assets/prefabs/*.json). A prefab file is either a bare component map
 // ({"transform": {...}, ...}) or an object with a "components" member.
 class PrefabLibrary {
 public:

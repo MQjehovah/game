@@ -631,7 +631,8 @@ Value NativeSpawnSprite(IScriptHost& host, void* user) {
     return EntityToValue(ctx->spawnSprite(tex, pos, w, h, flipX, flipY, script));
 }
 
-// SpawnPrefab(name, pos): instantiates prefabs/<name>.json at runtime (the
+// SpawnPrefab(name, pos): instantiates assets/prefabs/<name>.json at runtime
+// (the
 // prefab's script components attach and on_start fires immediately). Returns
 // the entity handle or nil.
 Value NativeSpawnPrefab(IScriptHost& host, void* user) {

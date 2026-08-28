@@ -61,7 +61,7 @@
 | 数据驱动 3D 游戏：`projects/neon_realm`（魔兽风格 demo 移植：村庄/狼群/波次/任务对话/存档，全 Lua） | ✅ |
 | 输入映射（Godot 式）：动作名→按键 JSON（项目 input.json）+ `ActionDown/ActionPressed/ActionAxis` 绑定 + 编辑器改键面板 | ✅ `neon::script::InputMap` |
 | 组件 Schema（Godot @export / UE UPROPERTY 风格）：组件字段元数据 → 属性面板自动生成编辑器，任意自定义组件（含 plant/zombie）可编辑 | ✅ `neon::scene::ComponentSchema` |
-| 预置体工作流（Godot 场景实例化风格）：`prefabs/*.json` 模板 + 编辑器"插入预置体/另存为预置体"，场景实体带 prefab 引用与实例覆盖 | ✅ 冒烟覆盖 |
+| 预置体工作流（Godot 场景实例化风格）：`assets/prefabs/*.json` 模板 + 编辑器"插入预置体/另存为预置体"，场景实体带 prefab 引用与实例覆盖 | ✅ 冒烟覆盖 |
 | 导航寻路：2D 可行走网格 `NavGrid` + A*（八方向、绕墙、JSON 资产往返）+ 编辑器导航面板（格子编辑/起点终点/路径预览） | ✅ `neon::nav` |
 | 本地化（Godot 风格）：多语言字符串表 JSON + 脚本 `Loc(key)`（激活→默认→键 回退链）+ 编辑器本地化面板 | ✅ `neon::core::Localization` |
 | 导出配置：`game.json` 的 `export` 预设（platform/icon/description）+ 打包面板可视化编辑；manifest 接受 `editor` 元数据字段 | ✅ |
@@ -126,7 +126,7 @@ cmake --build build --target neon_tests -j
 
 **项目切换（Godot 风格）**：工具栏左侧是项目选择器，自动扫描 `projects/` 下带 `game.json` 的项目（如 NeonRealm 3D、NeonPvZ 2D），右侧是场景选择器。切换项目会按 `game.json` 的 `editor.mode` 进入对应编辑视图（3D 场景树或 2D 画布）并加载起始场景；上次打开的项目会从 `neon_editor_config.json` 恢复。播放（`▶ 播放`）直接运行当前项目的场景。"项目"菜单可手输任意项目目录、重新加载或导出场景。
 
-**2D 与 3D 统一由场景维护**：场景文件（`scenes/*.json`）是唯一的编辑/运行单元，与 2D/3D 无关——一关就是一个场景。植物、僵尸和 3D 实体一样是场景里的实体，带 `plant`/`zombie` 组件；编辑器 2D 画布用格子视图编辑这些实体并写回场景文件，运行时 `pvz.lua` 从同一个场景文件读取——"关卡"是游戏概念（关卡列表、波次表由项目脚本/数据表达），引擎只有场景。
+**2D 与 3D 统一由场景维护**：场景文件（`assets/scenes/*.json`）是唯一的编辑/运行单元，与 2D/3D 无关——一关就是一个场景。植物、僵尸和 3D 实体一样是场景里的实体，带 `plant`/`zombie` 组件；编辑器 2D 画布用格子视图编辑这些实体并写回场景文件，运行时 `game.lua` 从同一个场景文件读取——"关卡"是游戏概念（关卡列表、波次表由项目脚本/数据表达），引擎只有场景。
 
 ## 运行与验证
 
@@ -173,7 +173,7 @@ build\neon_game.exe --connect 127.0.0.1:26000 --scene tests\data\neon_server_sam
 
 ### 数据驱动 2D 游戏（NeonPvZ，植物大战僵尸原型）
 
-玩法与绘制全部在 Lua 脚本里（`projects/pvz/scripts/pvz.lua`），精灵贴图在 `projects/pvz/assets/sprites/`，关卡布局由编辑器 2D 模式以场景实体（`plant`/`zombie` 组件）摆放在场景文件 `projects/pvz/scenes/pvz.json`：
+玩法与绘制全部在 Lua 脚本里（`projects/pvz/assets/scripts/game.lua`），精灵贴图在 `projects/pvz/assets/sprites/`，关卡布局由编辑器 2D 模式以场景实体（`plant`/`zombie` 组件）摆放在场景文件 `projects/pvz/assets/scenes/pvz.json`：
 
 ```bat
 :: 1) 打开编辑器，工具栏点"2D模式"（或 --2d 启动）：摆植物/僵尸刷怪点，F5 或 ▶ 播放直接开打
@@ -190,7 +190,7 @@ build\neon_game.exe --connect 127.0.0.1:26000 --scene tests\data\neon_server_sam
 ### 经典小游戏演示（NeonSnake，贪吃蛇）
 `projects/snake` 是纯 Lua 的经典贪吃蛇，作为 2D 脚本画布的能力验证（零贴图、纯 `DrawRect/DrawText` 绘制）：
 方向键 / WASD 转向，空格或 Enter 开始 / 重开，P 暂停；吃食物增长并提速，撞墙或咬到自己结束。
-场景 `scenes/snake.json` 的 script 组件带 `vars.demo`：置 1 时进入自动演示模式（AI 吃食物，
+场景 `assets/scenes/snake.json` 的 script 组件带 `vars.demo`：置 1 时进入自动演示模式（AI 吃食物，
 用于无头验证与观赏），置 0（默认）为手动操作。
 
 ```bat

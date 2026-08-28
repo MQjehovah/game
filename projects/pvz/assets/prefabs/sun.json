@@ -3,6 +3,6 @@
     "transform": {"scale": [56, 56, 1]},
     "sprite": {"texture": "assets/sprites/sun.png"},
     "sun": {"value": 25},
-    "script": {"backend": "lua", "path": "scripts/sun.lua", "vars": {}}
+    "script": {"backend": "lua", "path": "assets/scripts/sun.lua", "vars": {}}
   }
 }

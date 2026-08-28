@@ -20,23 +20,24 @@ void GameRuntime::LoadPrefabs() {
     if (cfg_.scriptBaseDir.empty() && !cfg_.fileSystem) return; // no prefab source
     std::vector<std::string> files;
     if (cfg_.fileSystem) {
-        // VFS (pack + mod mount stack): enumerate the pack's prefabs/ tree
-        // through the virtual filesystem. The old code only enumerated the OS
-        // dir, which is empty in no-unpack VFS mode (packed games loaded 0
-        // prefabs and every SpawnPrefab failed).
-        files = cfg_.fileSystem->ListFiles("prefabs", /*recursive=*/true);
+        // VFS (pack + mod mount stack): enumerate the pack's assets/prefabs/
+        // tree through the virtual filesystem. The old code only enumerated
+        // the OS dir, which is empty in no-unpack VFS mode (packed games
+        // loaded 0 prefabs and every SpawnPrefab failed).
+        files = cfg_.fileSystem->ListFiles("assets/prefabs", /*recursive=*/true);
     } else {
-        ListFilesRecursive(cfg_.scriptBaseDir + "/prefabs", "", files);
+        ListFilesRecursive(cfg_.scriptBaseDir + "/assets/prefabs", "", files);
     }
     size_t loaded = 0;
     for (const std::string& rel : files) {
         if (!HasSuffix(rel, ".json")) continue;
         const std::string name = FileStem(rel);
         if (name.empty()) continue;
-        // VFS ListFiles returns FULL pack paths ("prefabs/x.json"); the disk
-        // path returns dir-relative names, so only the disk branch prepends.
+        // VFS ListFiles returns FULL pack paths ("assets/prefabs/x.json"); the
+        // disk path returns dir-relative names, so only the disk branch
+        // prepends.
         std::string text = cfg_.fileSystem ? ReadScript(rel)
-                                           : ReadScript(FullScriptPath("prefabs/" + rel));
+                                           : ReadScript(FullScriptPath("assets/prefabs/" + rel));
         if (text.empty()) {
             NEON_LOG_CAT(neon::core::LogCategory::Scene, neon::core::LogLevel::Warn,
                          "runtime: prefab '%s' cannot be read (skipped)", rel.c_str());

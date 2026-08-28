@@ -431,7 +431,7 @@ void EditorApp::RunUISmokeTest() {
     projectDir_ = oldProjectDir;
     check(exportStatus.Ok(), "export scene writes componentized JSON");
     if (exportStatus.Ok()) {
-        std::string exportedPath = GetTempDir() + "/scenes/exported_scene.json";
+        std::string exportedPath = GetTempDir() + "/assets/scenes/exported_scene.json";
         std::ifstream fin(exportedPath);
         std::stringstream fss;
         fss << fin.rdbuf();
@@ -552,13 +552,13 @@ void EditorApp::RunUISmokeTest() {
     // component (the same flow the user drives in the 脚本 panel).
     {
         const std::string proj = GetTempDir() + "/script_smoke_proj";
-        EnsureDirs(proj + "/scripts");
+        EnsureDirs(proj + "/assets/scripts");
         {
-            std::ofstream out(proj + "/scripts/good.lua", std::ios::binary);
+            std::ofstream out(proj + "/assets/scripts/good.lua", std::ios::binary);
             out << "function on_update(ent, dt)\n  Log('tick')\nend\n";
         }
         {
-            std::ofstream out(proj + "/scripts/broken.lua", std::ios::binary);
+            std::ofstream out(proj + "/assets/scripts/broken.lua", std::ios::binary);
             out << "function on_update(ent, dt)\n  this is not lua !!!\nend\n";
         }
         const std::string prevProj = projectDir_;
@@ -567,9 +567,9 @@ void EditorApp::RunUISmokeTest() {
         check(!scriptFiles_.empty(), "script panel: project scripts enumerated");
         bool sawGood = false, sawBroken = false, brokenHasLine = false;
         for (size_t i = 0; i < scriptFiles_.size(); ++i) {
-            if (scriptFiles_[i] == "scripts/good.lua")
+            if (scriptFiles_[i] == "assets/scripts/good.lua")
                 sawGood = scriptChecks_[i].ok && scriptChecks_[i].message.empty();
-            else if (scriptFiles_[i] == "scripts/broken.lua") {
+            else if (scriptFiles_[i] == "assets/scripts/broken.lua") {
                 sawBroken = !scriptChecks_[i].ok && !scriptChecks_[i].message.empty();
                 brokenHasLine = scriptChecks_[i].line > 0;
             }
@@ -587,12 +587,13 @@ void EditorApp::RunUISmokeTest() {
             speed.number_ = 1.5;
             vars.object_["speed"] = speed;
             std::vector<SceneScriptFields> newList = sel.scripts;
-            newList.push_back({"lua", "scripts/good.lua", vars});
+            newList.push_back({"lua", "assets/scripts/good.lua", vars});
             history_.Push(std::make_unique<
                 EditPropertyCommand<std::vector<SceneScriptFields>>>(
                 &entities_, idx, ApplyScriptList, sel.scripts, newList,
                 /*mergeable=*/false));
-            check(sel.scripts.size() == 1 && sel.scripts[0].path == "scripts/good.lua" &&
+            check(sel.scripts.size() == 1 &&
+                      sel.scripts[0].path == "assets/scripts/good.lua" &&
                       sel.scripts[0].backend == "lua" && sel.scripts[0].vars.IsObject() &&
                       sel.scripts[0].vars.Get("speed")->GetNumber() == 1.5,
                   "script panel: attach applies through the command stack");
@@ -600,7 +601,8 @@ void EditorApp::RunUISmokeTest() {
             check(sel.scripts.empty(),
                   "script panel: undo detaches the script component");
             history_.Redo();
-            check(sel.scripts.size() == 1 && sel.scripts[0].path == "scripts/good.lua",
+            check(sel.scripts.size() == 1 &&
+                      sel.scripts[0].path == "assets/scripts/good.lua",
                   "script panel: redo re-attaches the script component");
 
             // Export and assert the mounted scripts land in the scene JSON as
@@ -611,7 +613,7 @@ void EditorApp::RunUISmokeTest() {
             projectDir_ = prevProj;
             check(exp.Ok(), "script panel: export with an attached script succeeds");
             if (exp.Ok()) {
-                std::ifstream fin(expProj + "/scenes/exported_scene.json");
+                std::ifstream fin(expProj + "/assets/scenes/exported_scene.json");
                 std::stringstream ss;
                 ss << fin.rdbuf();
                 auto parsed = scene::SceneFile::Parse(ss.str());
@@ -630,7 +632,7 @@ void EditorApp::RunUISmokeTest() {
                     scriptOk = scriptOk && first && first->Get("backend") &&
                                first->Get("path") && first->Get("vars") &&
                                first->Get("backend")->GetString() == "lua" &&
-                               first->Get("path")->GetString() == "scripts/good.lua" &&
+                               first->Get("path")->GetString() == "assets/scripts/good.lua" &&
                                first->Get("vars")->Get("speed")->GetNumber() == 1.5;
                     check(scriptOk,
                           "script panel: exported JSON carries the script component");
@@ -669,12 +671,13 @@ void EditorApp::RunUISmokeTest() {
             // Replace the entity's mounted list with one distinctive script
             // (the stale panel state that must not leak to the next entity).
             std::vector<SceneScriptFields> staleList;
-            staleList.push_back({"lua", "scripts/stale.lua", staleVars});
+            staleList.push_back({"lua", "assets/scripts/stale.lua", staleVars});
             history_.Push(std::make_unique<
                 EditPropertyCommand<std::vector<SceneScriptFields>>>(
                 &entities_, last, ApplyScriptList, oldLast.scripts, staleList,
                 /*mergeable=*/false));
-            check(oldLast.scripts.size() == 1 && oldLast.scripts[0].path == "scripts/stale.lua",
+            check(oldLast.scripts.size() == 1 &&
+                      oldLast.scripts[0].path == "assets/scripts/stale.lua",
                   "script sync: distinctive script attached to the last entity");
             // The insert below may reallocate the vector, so keep the stale
             // path by value (never hold a reference across AddEntity).
@@ -701,12 +704,13 @@ void EditorApp::RunUISmokeTest() {
             freshMarker.number_ = 3.0;
             freshVars.object_["hp"] = freshMarker;
             std::vector<SceneScriptFields> freshList = fresh.scripts;
-            freshList.push_back({"lua", "scripts/good.lua", freshVars});
+            freshList.push_back({"lua", "assets/scripts/good.lua", freshVars});
             history_.Push(std::make_unique<
                 EditPropertyCommand<std::vector<SceneScriptFields>>>(
                 &entities_, freshIdx, ApplyScriptList, fresh.scripts, freshList,
                 /*mergeable=*/false));
-            check(fresh.scripts.size() == 1 && fresh.scripts[0].path == "scripts/good.lua" &&
+            check(fresh.scripts.size() == 1 &&
+                      fresh.scripts[0].path == "assets/scripts/good.lua" &&
                       fresh.scripts[0].vars.Get("hp")->GetNumber() == 3.0,
                   "script sync: attach lands on the new entity");
             check(entities_[static_cast<size_t>(last)].scripts.size() == 1 &&
@@ -734,23 +738,25 @@ void EditorApp::RunUISmokeTest() {
 
             // First add appends one entry.
             std::vector<SceneScriptFields> one = ent.scripts;
-            one.push_back({"lua", "scripts/good.lua", {}});
+            one.push_back({"lua", "assets/scripts/good.lua", {}});
             history_.Push(std::make_unique<
                 EditPropertyCommand<std::vector<SceneScriptFields>>>(
                 &entities_, idx, ApplyScriptList, ent.scripts, one,
                 /*mergeable=*/false));
-            check(ent.scripts.size() == 1 && ent.scripts[0].path == "scripts/good.lua",
+            check(ent.scripts.size() == 1 &&
+                      ent.scripts[0].path == "assets/scripts/good.lua",
                   "script list: first mount appends an entry");
 
             // Second add appends another entry (multiple scripts).
             std::vector<SceneScriptFields> two = ent.scripts;
-            two.push_back({"lua", "scripts/stale.lua", {}});
+            two.push_back({"lua", "assets/scripts/stale.lua", {}});
             history_.Push(std::make_unique<
                 EditPropertyCommand<std::vector<SceneScriptFields>>>(
                 &entities_, idx, ApplyScriptList, ent.scripts, two,
                 /*mergeable=*/false));
-            check(ent.scripts.size() == 2 && ent.scripts[0].path == "scripts/good.lua" &&
-                      ent.scripts[1].path == "scripts/stale.lua",
+            check(ent.scripts.size() == 2 &&
+                      ent.scripts[0].path == "assets/scripts/good.lua" &&
+                      ent.scripts[1].path == "assets/scripts/stale.lua",
                   "script list: second mount appends (multiple scripts)");
 
             // Remove the first entry: the rest stay put, no promotion concept.
@@ -760,21 +766,26 @@ void EditorApp::RunUISmokeTest() {
                 EditPropertyCommand<std::vector<SceneScriptFields>>>(
                 &entities_, idx, ApplyScriptList, ent.scripts, afterRemove,
                 /*mergeable=*/false));
-            check(ent.scripts.size() == 1 && ent.scripts[0].path == "scripts/stale.lua",
+            check(ent.scripts.size() == 1 &&
+                      ent.scripts[0].path == "assets/scripts/stale.lua",
                   "script list: removing an entry leaves the rest unchanged");
 
             // Undo/redo replay the whole list in single steps.
             history_.Undo();
-            check(ent.scripts.size() == 2 && ent.scripts[0].path == "scripts/good.lua",
+            check(ent.scripts.size() == 2 &&
+                      ent.scripts[0].path == "assets/scripts/good.lua",
                   "script list: undo restores both mounts");
             history_.Undo();
-            check(ent.scripts.size() == 1 && ent.scripts[0].path == "scripts/good.lua",
+            check(ent.scripts.size() == 1 &&
+                      ent.scripts[0].path == "assets/scripts/good.lua",
                   "script list: undo restores the first mount");
             history_.Redo();
-            check(ent.scripts.size() == 2 && ent.scripts[1].path == "scripts/stale.lua",
+            check(ent.scripts.size() == 2 &&
+                      ent.scripts[1].path == "assets/scripts/stale.lua",
                   "script list: redo replays the second mount");
             history_.Redo();
-            check(ent.scripts.size() == 1 && ent.scripts[0].path == "scripts/stale.lua",
+            check(ent.scripts.size() == 1 &&
+                      ent.scripts[0].path == "assets/scripts/stale.lua",
                   "script list: redo replays the removal");
 
             // Leave the entity unmounted so the play sandbox stays clean.
@@ -868,9 +879,9 @@ void EditorApp::RunUISmokeTest() {
     // --- Prefab workflow (Godot-style): library load + instantiate + save ---
     {
         const std::string proj = GetTempDir() + "/prefab_proj";
-        EnsureDirs(proj + "/prefabs");
+        EnsureDirs(proj + "/assets/prefabs");
         {
-            std::ofstream out(proj + "/prefabs/watchtower.json", std::ios::binary);
+            std::ofstream out(proj + "/assets/prefabs/watchtower.json", std::ios::binary);
             out << R"({"components":{"transform":{"pos":[0,0,0],"scale":[1,1,1]},
                       "mesh":{"meshKey":"cube","colorHex":"#AABBCC"},
                       "health":{"hp":50,"maxHp":50}}})";
@@ -879,7 +890,7 @@ void EditorApp::RunUISmokeTest() {
         projectDir_ = proj;
         LoadPrefabLibrary();
         check(prefabLib_.Has("watchtower"),
-              "prefab: library loads prefabs/watchtower.json");
+              "prefab: library loads assets/prefabs/watchtower.json");
         const size_t before = entities_.size();
         AddEntity("prefab:watchtower");
         check(entities_.size() == before + 1 && entities_.back().prefab == "watchtower",
@@ -1013,18 +1024,18 @@ void EditorApp::RunUISmokeTest() {
         entities_[static_cast<size_t>(idx)].metallic = 0.42f;
         entities_[static_cast<size_t>(idx)].roughness = 0.31f;
         SaveMaterialAsset("smoke_mat");
-        check(std::ifstream(proj + "/materials/smoke_mat.mat.json").is_open(),
+        check(std::ifstream(proj + "/assets/materials/smoke_mat.mat.json").is_open(),
               "material: SaveMaterialAsset writes the .mat.json");
         check(entities_[static_cast<size_t>(idx)].materialRef ==
-                  "materials/smoke_mat.mat.json",
+                  "assets/materials/smoke_mat.mat.json",
               "material: entity links the asset reference");
         {
-            std::ofstream out(proj + "/materials/other.mat.json", std::ios::binary);
+            std::ofstream out(proj + "/assets/materials/other.mat.json", std::ios::binary);
             out << R"({"colorHex":"#112233","metallic":0.9,"roughness":0.2})";
         }
-        ApplyMaterialAsset(proj + "/materials/other.mat.json");
+        ApplyMaterialAsset(proj + "/assets/materials/other.mat.json");
         SceneEntity& applied = entities_[static_cast<size_t>(idx)];
-        check(applied.materialRef == "materials/other.mat.json" &&
+        check(applied.materialRef == "assets/materials/other.mat.json" &&
                   std::fabs(applied.metallic - 0.9f) < 1e-5f &&
                   std::fabs(applied.roughness - 0.2f) < 1e-5f,
               "material: ApplyMaterialAsset updates the entity");
@@ -1035,22 +1046,22 @@ void EditorApp::RunUISmokeTest() {
             saveE.name = "\u519c\u820d_\u4e1c";
             SaveMaterialAsset("\u519c\u820d_\u4e1c");
             const std::string zhMat =
-                proj + "/materials/\u519c\u820d_\u4e1c.mat.json";
+                proj + "/assets/materials/\u519c\u820d_\u4e1c.mat.json";
             SceneEntity probe;
             check(LoadMaterialParamsInto(probe, zhMat),
                   "material: CJK-named material ball saved to disk");
         }
-        RequestMaterialThumbnail(proj + "/materials/smoke_mat.mat.json");
+        RequestMaterialThumbnail(proj + "/assets/materials/smoke_mat.mat.json");
         check(!materialThumbQueue_.empty(),
               "material: sphere preview queued for the material ball");
         // CJK filename: ifstream on Windows must still open the asset (the
         // realm project's material balls are Chinese-named).
         {
             const std::string zhFile =
-                proj + "/materials/\u6d4b\u8bd5\u7403.mat.json";
+                proj + "/assets/materials/\u6d4b\u8bd5\u7403.mat.json";
             WriteFileUtf8(zhFile, R"({"colorHex":"#FF8800","metallic":0.5,"roughness":0.3})");
         }
-        RequestMaterialThumbnail(proj + "/materials/\u6d4b\u8bd5\u7403.mat.json");
+        RequestMaterialThumbnail(proj + "/assets/materials/\u6d4b\u8bd5\u7403.mat.json");
         // Scene export carries the reference; reloading expands it again.
         history_.Undo(); // remove the temp cube so later checks see the sandbox
         projectDir_ = prevProj;

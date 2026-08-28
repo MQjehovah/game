@@ -1,5 +1,5 @@
 {
-  "startScene": "scenes/realm.json",
+  "startScene": "assets/scenes/realm.json",
   "window": { "w": 1280, "h": 720, "title": "NeonRealm - 数据驱动移植" },
   "title": "NeonRealm",
   "editor": { "mode": "3d" },

@@ -42,12 +42,12 @@ void Write(const std::string& path, const std::string& contents) {
     CHECK(test::WriteFileAll(path, contents));
 }
 
-const char kManifest[] = R"({"startScene": "scenes/main.json", "title": "Pack Test", "window": {"w": 800, "h": 600}})";
+const char kManifest[] = R"({"startScene": "assets/scenes/main.json", "title": "Pack Test", "window": {"w": 800, "h": 600}})";
 
 const char kScene[] = R"({"entities": [{"name": "Wolf", "prefab": "wolf", "components": {
   "transform": {"pos": [0,0,0], "rot": [0,0,0,1], "scale": [1,1,1]},
   "mesh": {"meshKey": "obj:assets/crate.obj", "material": {"albedoTex": "assets/wood.png"}},
-  "script": {"backend": "lua", "path": "scripts/wolf.lua", "vars": {"aggro": 5}},
+  "script": {"backend": "lua", "path": "assets/scripts/wolf.lua", "vars": {"aggro": 5}},
   "behaviorTree": {"tree": "bt:wolf_ai"}
 }}]})";
 
@@ -57,18 +57,20 @@ const char kLua[] = "function on_update(ent, dt)\nend\n";
 const char kObj[] = "v 0 0 0\nv 1 0 0\n";
 
 // A complete, valid sample project: scene with prefab/script/BT refs, an OBJ
-// asset and a PNG texture, a behavior tree and a script.
+// asset and a PNG texture, a behavior tree and a script. All authored content
+// lives under the single assets/ content root (Unity-style layout).
 void BuildSampleProject(const std::string& proj) {
-    const char* dirs[] = {"scenes", "prefabs", "behaviors", "scripts", "assets"};
+    const char* dirs[] = {"assets", "assets/scenes",     "assets/prefabs",
+                          "assets/behaviors", "assets/scripts"};
     for (const char* d : dirs) {
         const bool ok = Mkdir(proj + "/" + d);
         CHECK(ok);
     }
     Write(proj + "/game.json", kManifest);
-    Write(proj + "/scenes/main.json", kScene);
-    Write(proj + "/prefabs/wolf.json", kPrefab);
-    Write(proj + "/behaviors/wolf_ai.bt.json", kTree);
-    Write(proj + "/scripts/wolf.lua", kLua);
+    Write(proj + "/assets/scenes/main.json", kScene);
+    Write(proj + "/assets/prefabs/wolf.json", kPrefab);
+    Write(proj + "/assets/behaviors/wolf_ai.bt.json", kTree);
+    Write(proj + "/assets/scripts/wolf.lua", kLua);
     Write(proj + "/assets/crate.obj", kObj);
     Write(proj + "/assets/wood.png", std::string("\x89PNG\r\n\x1a\nfake png bytes", 20));
 }
@@ -115,14 +117,15 @@ TEST(PackagerValidProjectPacks) {
     CHECK(reader.Valid());
     CHECK_EQ(reader.FileCount(), 7u);
 
-    const char* kVirtual[] = {"game.json",          "scenes/main.json",
-                              "prefabs/wolf.json",  "behaviors/wolf_ai.bt.json",
-                              "scripts/wolf.lua",   "assets/crate.obj",
+    const char* kVirtual[] = {"game.json",            "assets/scenes/main.json",
+                              "assets/prefabs/wolf.json",
+                              "assets/behaviors/wolf_ai.bt.json",
+                              "assets/scripts/wolf.lua", "assets/crate.obj",
                               "assets/wood.png"};
     for (const char* vp : kVirtual) CHECK(reader.Has(vp));
 
     // Scene bytes are stored verbatim (byte-identical round-trip).
-    auto scene = reader.Read("scenes/main.json");
+    auto scene = reader.Read("assets/scenes/main.json");
     CHECK(scene.Ok());
     if (scene.Ok())
         CHECK_EQ(std::string(scene.Value().begin(), scene.Value().end()), std::string(kScene));
@@ -212,7 +215,7 @@ TEST(PackagerMissingAsset) {
       "transform": {"pos": [0,0,0], "rot": [0,0,0,1], "scale": [1,1,1]},
       "mesh": {"meshKey": "obj:assets/gone.obj"}
     }}]})";
-    Write(tmp.Str() + "/scenes/main.json", scene);
+    Write(tmp.Str() + "/assets/scenes/main.json", scene);
     PackConfig cfg = DefaultCfg(tmp.Str(), tmp.Str() + "/out");
     PackageReport r = ValidateProject(cfg);
     CHECK(!r.ok);
@@ -222,7 +225,7 @@ TEST(PackagerMissingAsset) {
 TEST(PackagerScriptSyntaxError) {
     test::TempDir tmp;
     BuildSampleProject(tmp.Str());
-    Write(tmp.Str() + "/scripts/wolf.lua", "function on_update(ent, dt)\n  this is not lua !!!\nend\n");
+    Write(tmp.Str() + "/assets/scripts/wolf.lua", "function on_update(ent, dt)\n  this is not lua !!!\nend\n");
     PackConfig cfg = DefaultCfg(tmp.Str(), tmp.Str() + "/out");
     PackageReport r = ValidateProject(cfg);
     CHECK(!r.ok);
@@ -237,7 +240,7 @@ TEST(PackagerBrokenBehaviorTreeRef) {
       "transform": {"pos": [0,0,0], "rot": [0,0,0,1], "scale": [1,1,1]},
       "behaviorTree": {"tree": "bt:nope"}
     }}]})";
-    Write(tmp.Str() + "/scenes/main.json", scene);
+    Write(tmp.Str() + "/assets/scenes/main.json", scene);
     PackConfig cfg = DefaultCfg(tmp.Str(), tmp.Str() + "/out");
     PackageReport r = ValidateProject(cfg);
     CHECK(!r.ok);
@@ -251,7 +254,7 @@ TEST(PackagerInlineBrokenTree) {
       "transform": {"pos": [0,0,0], "rot": [0,0,0,1], "scale": [1,1,1]},
       "behaviorTree": {"tree": "{not json"}
     }}]})";
-    Write(tmp.Str() + "/scenes/main.json", scene);
+    Write(tmp.Str() + "/assets/scenes/main.json", scene);
     PackConfig cfg = DefaultCfg(tmp.Str(), tmp.Str() + "/out");
     PackageReport r = ValidateProject(cfg);
     CHECK(!r.ok);
@@ -261,7 +264,7 @@ TEST(PackagerInlineBrokenTree) {
 TEST(PackagerBadPrefabFile) {
     test::TempDir tmp;
     BuildSampleProject(tmp.Str());
-    Write(tmp.Str() + "/prefabs/bad.json", "not json at all");
+    Write(tmp.Str() + "/assets/prefabs/bad.json", "not json at all");
     PackConfig cfg = DefaultCfg(tmp.Str(), tmp.Str() + "/out");
     PackageReport r = ValidateProject(cfg);
     CHECK(!r.ok);
@@ -274,7 +277,7 @@ TEST(PackagerMissingPrefabReference) {
     const char scene[] = R"({"entities": [{"name": "Ghost", "prefab": "ghost", "components": {
       "transform": {"pos": [0,0,0], "rot": [0,0,0,1], "scale": [1,1,1]}
     }}]})";
-    Write(tmp.Str() + "/scenes/main.json", scene);
+    Write(tmp.Str() + "/assets/scenes/main.json", scene);
     PackConfig cfg = DefaultCfg(tmp.Str(), tmp.Str() + "/out");
     PackageReport r = ValidateProject(cfg);
     CHECK(!r.ok);
@@ -284,7 +287,7 @@ TEST(PackagerMissingPrefabReference) {
 TEST(PackagerBadBehaviorFile) {
     test::TempDir tmp;
     BuildSampleProject(tmp.Str());
-    Write(tmp.Str() + "/behaviors/bad.bt.json", "{}"); // no "root" node
+    Write(tmp.Str() + "/assets/behaviors/bad.bt.json", "{}"); // no "root" node
     PackConfig cfg = DefaultCfg(tmp.Str(), tmp.Str() + "/out");
     PackageReport r = ValidateProject(cfg);
     CHECK(!r.ok);
@@ -295,7 +298,7 @@ TEST(PackagerBadBehaviorFile) {
 TEST(PackagerFailsClosedWithoutWriting) {
     test::TempDir tmp;
     BuildSampleProject(tmp.Str());
-    Write(tmp.Str() + "/scripts/wolf.lua", "broken !!!");
+    Write(tmp.Str() + "/assets/scripts/wolf.lua", "broken !!!");
     PackConfig cfg = DefaultCfg(tmp.Str(), tmp.Str() + "/out");
     PackageReport r = PackProject(cfg);
     CHECK(!r.ok);
@@ -308,9 +311,10 @@ TEST(PackagerFailsClosedWithoutWriting) {
 TEST(PackagerMinimalProject) {
     test::TempDir tmp;
     const std::string proj = tmp.Str();
-    CHECK(Mkdir(proj + "/scenes"));
+    CHECK(Mkdir(proj + "/assets"));
+    CHECK(Mkdir(proj + "/assets/scenes"));
     Write(proj + "/game.json", kManifest);
-    Write(proj + "/scenes/main.json",
+    Write(proj + "/assets/scenes/main.json",
           R"({"entities": [{"name": "P", "components": {
              "transform": {"pos": [0,0,0], "rot": [0,0,0,1], "scale": [1,1,1]},
              "mesh": {"meshKey": "cube"}
@@ -320,13 +324,13 @@ TEST(PackagerMinimalProject) {
     if (!r.ok)
         for (const std::string& e : r.errors) std::printf("  PACK ERROR: %s\n", e.c_str());
     CHECK(r.ok);
-    CHECK_EQ(r.fileCount, 2u); // game.json + scenes/main.json
+    CHECK_EQ(r.fileCount, 2u); // game.json + assets/scenes/main.json
     std::string text;
     CHECK(test::ReadFileAll(cfg.outDir + "/game.pack", text));
     core::PackReader reader(std::vector<uint8_t>(text.begin(), text.end()));
     CHECK(reader.Valid());
     CHECK(reader.Has("game.json"));
-    CHECK(reader.Has("scenes/main.json"));
+    CHECK(reader.Has("assets/scenes/main.json"));
     CHECK(!reader.Has("assets/crate.obj"));
 }
 
@@ -369,7 +373,7 @@ TEST(PackagerStartSceneUnderScenesNotDoubleWalked) {
     BuildSampleProject(proj);
     // Same missing mesh in the scene (which IS the startScene): the error must
     // appear once, not twice (once from the scenes loop + once from startScene).
-    Write(proj + "/scenes/main.json",
+    Write(proj + "/assets/scenes/main.json",
           R"({"entities": [{"name": "N", "components": {
              "transform": {"pos": [0,0,0], "rot": [0,0,0,1], "scale": [1,1,1]},
              "mesh": {"meshKey": "obj:assets/gone.obj"}
@@ -390,7 +394,7 @@ TEST(PackagerPrefabMeshCollected) {
     const std::string proj = tmp.Str();
     BuildSampleProject(proj);
     CHECK(Mkdir(proj + "/models"));
-    Write(proj + "/prefabs/wolf.json",
+    Write(proj + "/assets/prefabs/wolf.json",
           R"({"components": {"health": {"hp": 50, "maxHp": 50},
               "mesh": {"meshKey": "obj:models/crate.obj"}}})");
     Write(proj + "/models/crate.obj", kObj);
@@ -411,7 +415,7 @@ TEST(PackagerPrefabMissingMesh) {
     test::TempDir tmp;
     const std::string proj = tmp.Str();
     BuildSampleProject(proj);
-    Write(proj + "/prefabs/wolf.json",
+    Write(proj + "/assets/prefabs/wolf.json",
           R"({"components": {"mesh": {"meshKey": "obj:models/gone.obj"}}})");
     PackConfig cfg = DefaultCfg(proj, proj + "/out");
     PackageReport r = ValidateProject(cfg);
@@ -427,7 +431,7 @@ TEST(PackagerScriptOutsideScriptsCollected) {
     BuildSampleProject(proj);
     CHECK(Mkdir(proj + "/ai"));
     Write(proj + "/ai/ai.lua", kLua);
-    Write(proj + "/scenes/main.json",
+    Write(proj + "/assets/scenes/main.json",
           R"({"entities": [{"name": "N", "components": {
              "transform": {"pos": [0,0,0], "rot": [0,0,0,1], "scale": [1,1,1]},
              "script": {"backend": "lua", "path": "ai/ai.lua"}
@@ -451,7 +455,7 @@ TEST(PackagerScriptOutsideScriptsSyntaxError) {
     BuildSampleProject(proj);
     CHECK(Mkdir(proj + "/ai"));
     Write(proj + "/ai/ai.lua", "this is not lua !!!");
-    Write(proj + "/scenes/main.json",
+    Write(proj + "/assets/scenes/main.json",
           R"({"entities": [{"name": "N", "components": {
              "transform": {"pos": [0,0,0], "rot": [0,0,0,1], "scale": [1,1,1]},
              "script": {"backend": "lua", "path": "ai/ai.lua"}
@@ -468,7 +472,7 @@ TEST(PackagerTraversalRejected) {
     test::TempDir tmp;
     const std::string proj = tmp.Str();
     BuildSampleProject(proj);
-    Write(proj + "/scenes/main.json",
+    Write(proj + "/assets/scenes/main.json",
           R"({"entities": [{"name": "N", "components": {
              "transform": {"pos": [0,0,0], "rot": [0,0,0,1], "scale": [1,1,1]},
              "mesh": {"meshKey": "obj:../secret.obj"},
@@ -492,9 +496,10 @@ TEST(PackagerTraversalRejected) {
 TEST(PackagerSceneBomTolerated) {
     test::TempDir tmp;
     const std::string proj = tmp.Str();
-    CHECK(Mkdir(proj + "/scenes"));
+    CHECK(Mkdir(proj + "/assets"));
+    CHECK(Mkdir(proj + "/assets/scenes"));
     Write(proj + "/game.json", kManifest);
-    Write(proj + "/scenes/main.json",
+    Write(proj + "/assets/scenes/main.json",
           std::string("\xEF\xBB\xBF", 3) +
               R"({"entities": [{"name": "P", "components": {
                  "transform": {"pos": [0,0,0], "rot": [0,0,0,1], "scale": [1,1,1]},

@@ -130,8 +130,8 @@ TEST(ScriptPanelListLuaFilesRecursive) {
     CHECK_EQ(files[1], std::string("scripts/good.lua"));
     CHECK_EQ(files[2], std::string("scripts/sub/helper.lua"));
 
-    CHECK_EQ(ScriptsDir("proj"), std::string("proj/scripts"));
-    CHECK_EQ(ScriptsDir(""), std::string("./scripts"));
+    CHECK_EQ(ScriptsDir("proj"), std::string("proj/assets/scripts"));
+    CHECK_EQ(ScriptsDir(""), std::string("./assets/scripts"));
 }
 
 TEST(ScriptPanelListScriptFilesIncludesJs) {

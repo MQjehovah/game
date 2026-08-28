@@ -6,23 +6,28 @@ build-*/
 *.exe
 *.pdb
 *.ilk
-neon_rush_save.dat
+# Engine-local derived data (offline-baked BC1 textures etc.) — regenerated on
+# demand, never versioned. Analogous to Unity's Library/ or Godot's .godot/.
+.neon/
+# Runtime save games live next to the project while developing, but they are
+# player data, not source data.
+*_save.dat
+projects/*/save.json
+projects/*/save.json.meta
 neon_editor_config.json
 editor_scene.json
 scenes/
 # ...but project scenes are first-class project data (2D levels now live in
-# scenes/*.json too), so keep them under version control.
+# assets/scenes/*.json too), so keep them under version control.
 projects/*
-!projects/*/scenes/
-!projects/*/scenes/*.json
-# NeonSnake classic-game demo project (scripts/game.json are first-class data)
 !projects/snake/
 !projects/snake/**
 # NeonPhysics rigid-body demo project
 !projects/physics_demo/
 !projects/physics_demo/**
-# NeonPvZ architecture-showcase project: scenes, scripts, prefabs, UI docs,
-# locales, input map and plugins are all first-class project data.
+# NeonPvZ architecture-showcase project: everything under its assets/ content
+# root (scenes, scripts, prefabs, UI docs, locales, sprites, audio), the input
+# map and plugins are all first-class project data.
 !projects/pvz/
 !projects/pvz/**
 .vs/
