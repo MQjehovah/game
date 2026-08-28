@@ -2630,17 +2630,8 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera,
         // FlushDraw2D is called from FlushCanvas (post-EndScene).
     }
 
-    // Data-driven UI (IUiSystem): drawn by DrawUI() AFTER the frame is
-    // composited (menus/HUD keep authored colors instead of being tone-mapped
-    // with the 3D scene). Button clicks are edge-triggered per frame so
-    // scripts can query UIClicked(name) from on_update on the next tick.
-    if (ui_) {
-        const bool clickEdge =
-            cfg_.input && cfg_.input->MousePressed(platform::MouseButton::Left);
-        math::Vec2 pointer = cfg_.input ? cfg_.input->MousePos() : math::Vec2{};
-        if (scriptCtx_.screenToUi) pointer = scriptCtx_.screenToUi(pointer);
-        ui_->Update(pointer, clickEdge);
-    }
+    // Data-driven UI (IUiSystem) input/click handling runs in Tick (before
+    // on_update) - see the Update call there. DrawUI below only renders.
 }
 
 void GameRuntime::DrawUI(gfx::Renderer& renderer) {
@@ -2867,6 +2858,17 @@ void GameRuntime::Tick(float dt) {
     // G7-3: advance the input map's timing clock before scripts query actions,
     // so double-tap / long-press edges are fresh this frame.
     if (cfg_.input) inputMap_.Update(dt, *cfg_.input);
+
+    // UI input runs INSIDE the tick, BEFORE on_update: the click edge
+    // (IInput::EndTick resets it at the end of every tick) is still live
+    // here, and scripts read UIClicked() in the very same tick.
+    if (ui_) {
+        const bool clickEdge =
+            cfg_.input && cfg_.input->MousePressed(platform::MouseButton::Left);
+        math::Vec2 pointer = cfg_.input ? cfg_.input->MousePos() : math::Vec2{};
+        if (scriptCtx_.screenToUi) pointer = scriptCtx_.screenToUi(pointer);
+        ui_->Update(pointer, clickEdge);
+    }
 
     // Both backends share the engine-injected simulated clock.
     if (hosts_.lua) hosts_.lua->SetSimClock(simTime_);
