@@ -1029,3 +1029,85 @@ TEST(SceneEntityToJson) {
     // No transform / id 0 -> error.
     CHECK(!scene::SceneFile::EntityToJson(world, 0).Ok());
 }
+
+// C6 (2026-08-28): the reflected component machinery now supports Vec3 / Color
+// / Quat field types (JSON arrays) plus the migrated SceneHealth component.
+namespace {
+struct VecColorComp {
+    math::Vec3 pos{0, 0, 0};
+    gfx::Color tint{1, 1, 1, 1};
+    math::Quat rot{};
+    inline static const auto kFields = scene::ReflectFields(
+        scene::Field("pos", "λ��", scene::FieldType::Vec3, &VecColorComp::pos, 0, 0, 0),
+        scene::Field("tint", "��ɫ", scene::FieldType::Color, &VecColorComp::tint, 0, 0, 0),
+        scene::Field("rot", "��ת", scene::FieldType::Vec3, &VecColorComp::rot, 0, 0, 0));
+    core::Json ToJson() const { return kFields.ToJson(*this); }
+    bool FromJson(const core::Json& json, std::string* err) {
+        return kFields.FromJson(json, *this, err);
+    }
+};
+} // namespace
+
+TEST(ReflectedVec3ColorQuat) {
+    VecColorComp a;
+    a.pos = {1.5f, -2.25f, 3.0f};
+    a.tint = {0.1f, 0.2f, 0.3f, 0.4f};
+    a.rot = math::Quat::FromAxisAngle({0, 1, 0}, 0.7f);
+
+    core::Json j = a.ToJson();
+    const core::Json* pos = j.Get("pos");
+    CHECK(pos && pos->IsArray() && pos->Size() == 3u);
+    CHECK_NEAR(pos->At(0)->GetNumber(), 1.5, 1e-6);
+    CHECK_NEAR(pos->At(2)->GetNumber(), 3.0, 1e-6);
+    const core::Json* tint = j.Get("tint");
+    CHECK(tint && tint->IsArray() && tint->Size() == 4u);
+    CHECK_NEAR(tint->At(3)->GetNumber(), 0.4, 1e-6);
+
+    VecColorComp b;
+    std::string err;
+    CHECK(b.FromJson(j, &err));
+    CHECK_NEAR(b.pos.x, 1.5f, 1e-5);
+    CHECK_NEAR(b.pos.z, 3.0f, 1e-5);
+    CHECK_NEAR(b.tint.a, 0.4f, 1e-5);
+    CHECK_NEAR(b.rot.y, a.rot.y, 1e-5);
+    CHECK_NEAR(b.rot.w, a.rot.w, 1e-5);
+
+    // Wrong shapes rejected.
+    core::Json bad = j;
+    bad.object_["pos"] = core::Json::Parse("\"oops\"");
+    VecColorComp c;
+    std::string err2;
+    CHECK(!c.FromJson(bad, &err2));
+}
+
+TEST(ReflectedSceneHealthRoundTrip) {
+    const scene::ComponentSchema* schema = scene::FindComponentSchema("health");
+    CHECK(schema != nullptr);
+    if (!schema) return;
+    CHECK_EQ(schema->name, std::string("health"));
+    CHECK(!schema->label.empty()); // editor label comes from the reflected header
+    if (schema->fields.size() < 2u) return;
+    CHECK_EQ(schema->fields[0].key, std::string("hp"));
+    CHECK(schema->fields[0].type == scene::FieldType::Number);
+
+    scene::SceneHealth h;
+    h.hp = 37.0f;
+    h.maxHp = 100.0f;
+    core::Json j = h.ToJson();
+    CHECK_NEAR(j.Get("hp")->GetNumber(), 37.0, 1e-6);
+    CHECK_NEAR(j.Get("maxHp")->GetNumber(), 100.0, 1e-6);
+
+    scene::SceneHealth out;
+    std::string err;
+    CHECK(out.FromJson(j, &err));
+    CHECK_NEAR(out.hp, 37.0f, 1e-5);
+    CHECK_NEAR(out.maxHp, 100.0f, 1e-5);
+
+    // Wrong type rejected with a message.
+    core::Json bad = j;
+    bad.object_["hp"] = core::Json::Parse("true");
+    scene::SceneHealth badOut;
+    std::string err2;
+    CHECK(!badOut.FromJson(bad, &err2));
+    CHECK(!err2.empty());
+}

@@ -74,6 +74,8 @@ engine/src/gfx/color.cpp
   engine/src/scene/scene_manager.cpp
   engine/src/scene/game_manifest.cpp
   engine/src/scene/game_runtime.cpp
+  engine/src/scene/game_runtime_combat.cpp
+  engine/src/scene/game_runtime_content.cpp
   engine/src/scene/skinned_model.cpp
   engine/src/scene/skills.cpp
   engine/src/scene/status.cpp
@@ -95,6 +97,15 @@ if(NEON_ENABLE_JS)
 endif()
 
 add_library(neon_engine STATIC ${ENGINE_CORE_SOURCES})
+# C12: precompiled headers cut rebuild time on the hot engine + editor +
+# test translation units (MSVC /FI, GCC -include). Standard-library only so no
+# TU is forced to compile an umbrella header.
+if(MSVC OR CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  target_precompile_headers(neon_engine PRIVATE
+    <algorithm> <atomic> <cassert> <cmath> <cstdint> <cstdio> <cstring>
+    <map> <memory> <string> <unordered_map> <vector>
+  )
+endif()
 target_include_directories(neon_engine
   PUBLIC
     engine/include

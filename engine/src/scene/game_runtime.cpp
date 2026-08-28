@@ -1,4 +1,4 @@
-﻿#include "neon/scene/game_runtime.hpp"
+#include "neon/scene/game_runtime.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -1032,37 +1032,6 @@ void GameRuntime::AttachTrees() {
     }
 }
 
-void GameRuntime::LoadPrefabs() {
-    prefs_ = PrefabLibrary{};
-    if (cfg_.scriptBaseDir.empty()) return; // disk-less hosts have no prefab tree
-    std::vector<std::string> files;
-    ListFilesRecursive(cfg_.scriptBaseDir + "/prefabs", "", files);
-    size_t loaded = 0;
-    for (const std::string& rel : files) {
-        if (!HasSuffix(rel, ".json")) continue;
-        const std::string name = FileStem(rel);
-        if (name.empty()) continue;
-        std::string text = ReadScript(FullScriptPath("prefabs/" + rel));
-        if (text.empty()) {
-            NEON_LOG_CAT(neon::core::LogCategory::Scene, neon::core::LogLevel::Warn,
-                         "runtime: prefab '%s' cannot be read (skipped)", rel.c_str());
-            continue;
-        }
-        core::Status st = prefs_.Add(name, text);
-        if (!st.Ok()) {
-            NEON_LOG_CAT(neon::core::LogCategory::Scene, neon::core::LogLevel::Warn,
-                         "runtime: prefab '%s' failed to load: %s (skipped)", rel.c_str(),
-                         st.Error().c_str());
-            continue;
-        }
-        ++loaded;
-    }
-    if (!files.empty()) {
-        NEON_LOG_CAT(neon::core::LogCategory::Scene, neon::core::LogLevel::Debug,
-                     "runtime: loaded %zu prefabs", loaded);
-    }
-}
-
 void GameRuntime::BuildDrawList() {
     // Synchronize with the live entity set: scripts can Spawn/Despawn entities
     // (SpawnSprite, Despawn) while running, so drop dead draws and append new
@@ -1624,171 +1593,6 @@ ecs::Entity GameRuntime::SpawnPrefab(const std::string& name, const math::Vec3& 
     return out;
 }
 
-void GameRuntime::SpawnProjectile(const math::Vec3& pos, const math::Vec3& dir, float speed,
-                                  float damage, float life, ecs::Entity caster) {
-    Projectile p;
-    p.pos = pos;
-    p.dir = dir.LengthSq() > 1e-6f ? dir.Normalized() : math::Vec3{0, 0, 1};
-    p.speed = speed > 0.0f ? speed : 12.0f;
-    p.damage = damage;
-    p.life = life > 0.0f ? life : 2.0f;
-    p.caster = caster;
-    projectiles_.push_back(p);
-}
-
-// G3-4: the position a hit test uses for `ent` - the pose it had
-// `rewindTicks` fixed ticks ago when history exists, else its CURRENT pose
-// (fresh spawns / shallow history degrade gracefully to the plain path).
-bool GameRuntime::LagCompPosition(ecs::Entity e, uint32_t rewindTicks,
-                                  math::Vec3& out) const {
-    if (rewindTicks > 0 && poseCount_ > 0) {
-        // Slot layout: the OLDEST snapshot sits at (head - count) mod N; the
-        // newest is one slot before head. idx counts back from the newest.
-        const size_t n = poseCount_;
-        const size_t idx = rewindTicks >= n ? 0 : n - 1 - rewindTicks;
-        const size_t slot =
-            (poseHead_ + poseSlots_.size() - poseCount_ + idx) % poseSlots_.size();
-        const auto& snap = poseSlots_[slot];
-        const auto it = snap.find(EntityKey(e));
-        if (it != snap.end()) {
-            out = it->second;
-            return true;
-        }
-    }
-    return false;
-}
-
-// Shared arc-hit test used by MeleeAttack (auto rewind), MeleeAttackLagComp
-// (explicit rewind) and CastSkill's melee skill. Damage always lands on the
-// CURRENT entity; only the position test is rewound.
-int GameRuntime::MeleeAttackImpl(const math::Vec3& origin, const math::Vec3& dir, float range,
-                                 float arcDeg, float damage, uint32_t rewindTicks,
-                                 ecs::Entity exclude,
-                                 const std::vector<SkillStatus>& statuses) {
-    const math::Vec3 fwd = dir.LengthSq() > 1e-6f ? dir.Normalized() : math::Vec3{0, 0, 1};
-    const float cosArc = std::cos(arcDeg * 0.5f * math::kDegToRad);
-    int hits = 0;
-    auto view = world_.ViewAll<SceneHealth>();
-    for (size_t i = 0; i < view.Size(); ++i) {
-        ecs::Entity ent = world_.EntityAt<SceneHealth>(i);
-        SceneHealth* h = world_.Get<SceneHealth>(ent);
-        const SceneTransform* t = world_.Get<SceneTransform>(ent);
-        if (!h || !t || h->hp <= 0.0f) continue;
-        if (ent == exclude) continue; // never self-hit
-        math::Vec3 hitPos = t->pos;
-        if (rewindTicks > 0) LagCompPosition(ent, rewindTicks, hitPos);
-        const math::Vec3 to = hitPos - origin;
-        // Horizontal-range + vertical-band hit test (like projectiles): the
-        // attack originates at chest height while targets sit on the ground,
-        // so a 3D distance would shrink the effective reach (a wolf at 1.8m
-        // horizontal, 1.5m below the origin, is ~2.3m away in 3D and misses a
-        // 2.2m swing).
-        const float horiz = std::sqrt(to.x * to.x + to.z * to.z);
-        if (horiz > range || horiz < 1e-4f) continue;
-        if (std::fabs(to.y) > 2.0f) continue;
-        const math::Vec3 toDir{to.x / horiz, 0.0f, to.z / horiz};
-        const math::Vec3 fwdDir{fwd.x, 0.0f, fwd.z};
-        if (math::Dot(toDir, fwdDir) < cosArc) continue; // outside the arc
-        if (statuses.empty())
-            h->hp = std::fmax(0.0f, h->hp - damage);
-        else
-            ApplyHit(ent, damage, statuses);
-        ++hits;
-    }
-    return hits;
-}
-
-int GameRuntime::MeleeAttack(const math::Vec3& origin, const math::Vec3& dir, float range,
-                             float arcDeg, float damage) {
-    return MeleeAttackImpl(origin, dir, range, arcDeg, damage, autoRewindTicks_);
-}
-
-int GameRuntime::MeleeAttackLagComp(const math::Vec3& origin, const math::Vec3& dir, float range,
-                                    float arcDeg, float damage, uint32_t rewindTicks) {
-    return MeleeAttackImpl(origin, dir, range, arcDeg, damage, rewindTicks);
-}
-
-// Oriented attack box (OBB around Y): damages every SceneHealth entity whose
-// position lies inside the yaw-rotated half-extents box. Returns hit count.
-int GameRuntime::AttackBoxImpl(const math::Vec3& center, const math::Vec3& half, float yaw,
-                               float damage, uint32_t rewindTicks) {
-    const float c = std::cos(yaw);
-    const float s = std::sin(yaw);
-    int hits = 0;
-    auto view = world_.ViewAll<SceneHealth>();
-    for (size_t i = 0; i < view.Size(); ++i) {
-        ecs::Entity ent = world_.EntityAt<SceneHealth>(i);
-        SceneHealth* h = world_.Get<SceneHealth>(ent);
-        const SceneTransform* t = world_.Get<SceneTransform>(ent);
-        if (!h || !t || h->hp <= 0.0f) continue;
-        math::Vec3 hitPos = t->pos;
-        if (rewindTicks > 0) LagCompPosition(ent, rewindTicks, hitPos);
-        const math::Vec3 d = hitPos - center;
-        // Rotate the target into box-local space (rotate by -yaw around Y).
-        const float lx = c * d.x - s * d.z;
-        const float ly = d.y;
-        const float lz = s * d.x + c * d.z;
-        if (std::fabs(lx) <= half.x && std::fabs(ly) <= half.y && std::fabs(lz) <= half.z) {
-            h->hp = std::fmax(0.0f, h->hp - damage);
-            ++hits;
-        }
-    }
-    return hits;
-}
-
-int GameRuntime::AttackBox(const math::Vec3& center, const math::Vec3& half, float yaw,
-                           float damage) {
-    return AttackBoxImpl(center, half, yaw, damage, autoRewindTicks_);
-}
-
-int GameRuntime::AttackBoxLagComp(const math::Vec3& center, const math::Vec3& half, float yaw,
-                                  float damage, uint32_t rewindTicks) {
-    return AttackBoxImpl(center, half, yaw, damage, rewindTicks);
-}
-
-void GameRuntime::ApplySkillStatuses(ecs::Entity target,
-                                     const std::vector<SkillStatus>& statuses) {
-    if (statuses.empty() || !world_.Alive(target)) return;
-    if (!world_.Has<StatusComponent>(target)) world_.Add<StatusComponent>(target);
-    StatusComponent* c = world_.Get<StatusComponent>(target);
-    if (!c) return;
-    for (const SkillStatus& st : statuses) {
-        const uint32_t id = StatusIdByName(st.name);
-        if (id != 0) ApplyStatus(*c, id, st.duration, st.magnitude);
-    }
-}
-
-void GameRuntime::ApplyHit(ecs::Entity target, float damage,
-                           const std::vector<SkillStatus>& statuses) {
-    if (!world_.Alive(target)) return;
-    if (SceneHealth* h = world_.Get<SceneHealth>(target)) {
-        h->hp = std::fmax(0.0f, h->hp - damage);
-    }
-    ApplySkillStatuses(target, statuses);
-}
-
-void GameRuntime::TickStatuses(float dt) {
-    auto view = world_.ViewAll<StatusComponent>();
-    for (size_t i = 0; i < view.Size(); ++i) {
-        ecs::Entity ent = world_.EntityAt<StatusComponent>(i);
-        StatusComponent* c = world_.Get<StatusComponent>(ent);
-        if (!c) continue;
-        TickStatus(*c, dt, [this, ent](uint32_t id, float magnitude) {
-            SceneHealth* h = world_.Get<SceneHealth>(ent);
-            if (!h || h->hp <= 0.0f) return;
-            if (id == kStatusRegen) {
-                // Regen magnitude is a heal amount per tick.
-                h->hp = std::fmin(h->maxHp, h->hp + magnitude);
-            } else if (id == kStatusSlow) {
-                // Slow is a movement modifier read by scripts (magnitude =
-                // speed factor); it deals no tick damage.
-            } else {
-                h->hp = std::fmax(0.0f, h->hp - magnitude);
-            }
-        });
-    }
-}
-
 void GameRuntime::TickAnimations(float dt) {
     for (DrawItem& d : draws_) {
         if (!d.skinned || !d.skinned->Valid()) continue;
@@ -1889,100 +1693,6 @@ void GameRuntime::TickAnimations(float dt) {
     }
 }
 
-void GameRuntime::TickSkillCooldowns(float dt) {
-    for (auto it = skillCooldowns_.begin(); it != skillCooldowns_.end();) {
-        // Reconstruct the entity from the stable key; prune destroyed casters.
-        const uint64_t key = it->first;
-        ecs::Entity e{static_cast<uint32_t>(key >> 32), static_cast<uint32_t>(key & 0xFFFFFFFFu)};
-        if (!world_.Alive(e)) {
-            it = skillCooldowns_.erase(it);
-            continue;
-        }
-        bool any = false;
-        for (auto& kv : it->second) {
-            kv.second = std::fmax(0.0f, kv.second - dt);
-            if (kv.second > 0.0f) any = true;
-        }
-        if (!any)
-            it = skillCooldowns_.erase(it);
-        else
-            ++it;
-    }
-}
-
-bool GameRuntime::LoadSkills(const std::string& json, std::string* err) {
-    return skills_.Load(json, err);
-}
-
-int GameRuntime::CastSkill(const std::string& name, const math::Vec3& origin,
-                           const math::Vec3& dir, ecs::Entity caster) {
-    const SkillDef* def = skills_.Find(name);
-    if (!def) return 0;
-
-    const uint64_t key = EntityKey(caster);
-    auto& cds = skillCooldowns_[key];
-    const auto cdIt = cds.find(name);
-    if (cdIt != cds.end() && cdIt->second > 0.0f) return 0; // on cooldown
-
-    // Mana: when the skill has a cost, the convention is a GameVar "mana"
-    // (set by the scene script). Refuse without enough mana, subtract on cast.
-    if (def->manaCost > 0.0f) {
-        const script::Value mana = scriptCtx_.gameVars.Get("mana");
-        const float have =
-            mana.type == script::Value::Type::Number ? static_cast<float>(mana.number) : 0.0f;
-        if (have < def->manaCost) return 0;
-        scriptCtx_.gameVars.Set("mana", script::Value::Num(have - def->manaCost));
-    }
-    if (def->cooldown > 0.0f) cds[name] = def->cooldown;
-
-    if (def->kind == "projectile") {
-        Projectile p;
-        p.pos = origin;
-        p.dir = dir.LengthSq() > 1e-6f ? dir.Normalized() : math::Vec3{0, 0, 1};
-        p.speed = def->speed;
-        p.damage = def->damage;
-        p.life = def->life;
-        p.range = def->range;
-        p.caster = caster;
-        p.statuses = def->statuses;
-        projectiles_.push_back(p);
-        return 1;
-    }
-
-    if (def->kind == "melee") {
-        // G3-4: the skill hit test honours the auto lag-comp rewind set by
-        // the server (targets tested at the pose they had `autoRewindTicks_`
-        // ticks ago); damage lands on the current entity.
-        MeleeAttackImpl(origin, dir, def->meleeRange, def->arcDeg, def->damage,
-                        autoRewindTicks_, caster, def->statuses);
-        return 1; // the cast happened even when no target was in the arc
-    }
-
-    // "box": oriented attack box; yaw derived from the facing dir so a
-    // script passes a direction vector like every other skill.
-    const float yaw = std::atan2(dir.x, dir.z);
-    AttackBoxImpl(origin, {def->boxHalfX, def->boxHalfY, def->boxHalfZ}, yaw, def->damage,
-                  autoRewindTicks_);
-    return 1;
-}
-
-float GameRuntime::SkillCooldownLeft(const std::string& name, ecs::Entity caster) const {
-    const auto it = skillCooldowns_.find(EntityKey(caster));
-    if (it == skillCooldowns_.end()) return 0.0f;
-    const auto cd = it->second.find(name);
-    return cd == it->second.end() ? 0.0f : cd->second;
-}
-
-bool GameRuntime::HasStatus(ecs::Entity ent, uint32_t id) const {
-    const StatusComponent* c = world_.Get<StatusComponent>(ent);
-    return c ? scene::HasStatus(*c, id) : false;
-}
-
-float GameRuntime::StatusMagnitude(ecs::Entity ent, uint32_t id) const {
-    const StatusComponent* c = world_.Get<StatusComponent>(ent);
-    return c ? scene::StatusMagnitude(*c, id) : 0.0f;
-}
-
 bool GameRuntime::HasScriptFunction(const std::string& name) const {
     return (hosts_.lua && hosts_.lua->HasFunction(name)) ||
            (hosts_.js && hosts_.js->HasFunction(name));
@@ -2019,51 +1729,6 @@ bool GameRuntime::RunPluginCommand(const std::string& name,
                                    const std::vector<script::Value>& args,
                                    std::string* error) {
     return plugins_ && plugins_->RunCommand(name, args, error);
-}
-
-void GameRuntime::TickProjectiles(float dt) {
-    for (auto it = projectiles_.begin(); it != projectiles_.end();) {
-        Projectile& p = *it;
-        const float step = p.speed * dt;
-        p.pos += p.dir * step;
-        p.traveled += step;
-        p.life -= dt;
-        // Data-driven skills can bound a projectile by travel distance.
-        if (p.range > 0.0f && p.traveled >= p.range) {
-            it = projectiles_.erase(it);
-            continue;
-        }
-        // Damage the closest SceneHealth entity within the hit radius. Use a
-        // horizontal-radius + vertical-band test (projectiles fly at chest
-        // height while targets sit on the ground), so a fireball passing over
-        // a grounded enemy still connects.
-        float best = p.hitRadius;
-        ecs::Entity target;
-        auto view = world_.ViewAll<SceneHealth>();
-        for (size_t i = 0; i < view.Size(); ++i) {
-            ecs::Entity ent = world_.EntityAt<SceneHealth>(i);
-            SceneHealth* h = world_.Get<SceneHealth>(ent);
-            const SceneTransform* t = world_.Get<SceneTransform>(ent);
-            if (!h || !t || h->hp <= 0.0f) continue;
-            if (ent == p.caster) continue; // never self-hit
-            const math::Vec3 to = t->pos - p.pos;
-            const float horiz = std::sqrt(to.x * to.x + to.z * to.z);
-            if (horiz < best && std::fabs(to.y) < 2.0f) {
-                best = horiz;
-                target = ent;
-            }
-        }
-        if (target.IsValid()) {
-            ApplyHit(target, p.damage, p.statuses);
-            it = projectiles_.erase(it);
-            continue;
-        }
-        if (p.life <= 0.0f) {
-            it = projectiles_.erase(it);
-            continue;
-        }
-        ++it;
-    }
 }
 
 ecs::Entity GameRuntime::FindNamedEntity(const std::string& name) {
@@ -2688,36 +2353,6 @@ void GameRuntime::DrawUI(gfx::Renderer& renderer) {
               renderer.UIDesignSize());
 }
 
-void GameRuntime::LoadLocales() {
-    loc_ = core::Localization();
-    if (cfg_.localesDir.empty()) return;
-    std::vector<std::string> files;
-    ListFilesRecursive(cfg_.localesDir, "", files);
-    size_t loaded = 0;
-    for (const std::string& rel : files) {
-        if (!HasSuffix(rel, ".json")) continue;
-        std::string text = ReadScript(FullScriptPath(rel));
-        if (text.empty()) continue;
-        std::string err;
-        if (!loc_.LoadTable(text, &err)) {
-            NEON_LOG_CAT(neon::core::LogCategory::Scene, neon::core::LogLevel::Warn,
-                         "runtime: locale '%s' failed to load: %s", rel.c_str(), err.c_str());
-            continue;
-        }
-        ++loaded;
-    }
-    if (loaded > 0) {
-        std::string langs;
-        for (const std::string& l : loc_.Languages()) {
-            if (!langs.empty()) langs += ",";
-            langs += l;
-        }
-        NEON_LOG_CAT(neon::core::LogCategory::Scene, neon::core::LogLevel::Info,
-                     "runtime: loaded %zu locale file(s), languages: %s", loaded,
-                     langs.c_str());
-    }
-}
-
 math::Mat4 GameRuntime::LocalToWorld(ecs::Entity e) const {
     math::Mat4 m = math::Mat4::Identity();
     for (int depth = 0; depth < 8 && e.IsValid(); ++depth) {
@@ -3061,47 +2696,6 @@ gfx::Mesh GameRuntime::MeshForEntity(const ecs::Entity& ent,
         return SelectLodMesh(item.mesh, item.chain, t->pos, camera.position);
     }
     return gfx::Mesh{};
-}
-
-std::string GameRuntime::FullScriptPath(const std::string& path) const {
-    if (path.empty() || cfg_.scriptBaseDir.empty()) return path;
-    return cfg_.scriptBaseDir + "/" + path;
-}
-
-std::string GameRuntime::FullAssetPath(const std::string& path) const {
-    // G7-1 鍓╀綑: "assets:/..." scheme normalization ("assets:/x.obj" == "x.obj").
-    const std::string p = assets::NormalizeAssetPath(path);
-    // G6-1: resolve the logical asset path through the variant table first
-    // (unlisted paths fall back to themselves).
-    const std::string resolved = cfg_.variantTable ? cfg_.variantTable->Resolve(p) : p;
-    if (resolved.empty() || cfg_.assetBaseDir.empty()) return resolved;
-    // Absolute paths (drive letter or leading separator) pass through unchanged.
-    if (resolved.size() >= 2 && resolved[1] == ':') return resolved;
-    if (resolved[0] == '/') return resolved;
-    return cfg_.assetBaseDir + "/" + resolved;
-}
-
-std::string GameRuntime::ReadScript(const std::string& path) const {
-    // G7-1: when a virtual file system is installed (pack + Mod mount stack),
-    // script reads go through it with virtual paths 鈥?the scriptBaseDir prefix
-    // is stripped and the mount stack resolves pack-then-Mod. On a VFS miss we
-    // fall through to the pack-reader override / disk as before.
-    if (cfg_.fileSystem) {
-        std::string rel = path;
-        if (!cfg_.scriptBaseDir.empty()) {
-            const std::string prefix = cfg_.scriptBaseDir + "/";
-            if (path.rfind(prefix, 0) == 0) rel = path.substr(prefix.size());
-        }
-        const core::Result<std::vector<uint8_t>> bytes = cfg_.fileSystem->ReadFile(rel);
-        if (bytes.Ok())
-            return std::string(bytes.Value().begin(), bytes.Value().end());
-    }
-    if (cfg_.readScript) return cfg_.readScript(path);
-    std::ifstream in(path, std::ios::binary);
-    if (!in.is_open()) return {};
-    std::string out;
-    out.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
-    return out;
 }
 
 } // namespace neon::scene

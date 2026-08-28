@@ -696,16 +696,10 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
     reg.Register("health",
                  [](ecs::World& world, ecs::Entity ent, const core::Json& data,
                     const core::Json&, std::string* err) {
+                     // C6: reflected factory (schema + parser from one list).
                      if (!CheckComponentShape(data, {"hp", "maxHp"}, "health", err)) return false;
-                     const core::Json* hp = data.Get("hp");
-                     const core::Json* maxHp = data.Get("maxHp");
-                     if (!hp || !hp->IsNumber() || !maxHp || !maxHp->IsNumber()) {
-                         if (err) *err = "component 'health' requires numeric 'hp' and 'maxHp'";
-                         return false;
-                     }
                      SceneHealth h;
-                     h.hp = static_cast<float>(hp->GetNumber());
-                     h.maxHp = static_cast<float>(maxHp->GetNumber());
+                     if (!h.FromJson(data, err)) return false;
                      world.Add<SceneHealth>(ent, h);
                      return true;
                  });
@@ -1406,10 +1400,7 @@ core::Result<core::Json> SceneFile::FromWorld(ecs::World& world) {
             comps.object_["sprite"] = std::move(sp);
         }
         if (const SceneHealth* h = world.Get<SceneHealth>(e)) {
-            core::Json health = MakeObject();
-            health.object_["hp"] = MakeNumber(h->hp);
-            health.object_["maxHp"] = MakeNumber(h->maxHp);
-            comps.object_["health"] = std::move(health);
+            comps.object_["health"] = h->ToJson(); // C6: reflected serializer
         }
         if (const SceneScripts* scripts = world.Get<SceneScripts>(e)) {
             core::Json items;

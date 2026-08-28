@@ -1,4 +1,5 @@
 #include "neon/script/bindings.hpp"
+#include "neon/script/input_map.hpp" // C7: KeyFromName single source of truth
 
 #include <cmath>
 #include <cstdint>
@@ -1290,32 +1291,11 @@ Value NativeJsonParse(IScriptHost& host, void* user) {
 // (headless hosts / unit tests) and returns 0 so scripts never fault.
 // ---------------------------------------------------------------------------
 
-// Single key name -> engine key. "space"/"shift"/"ctrl"/"alt"/"enter"/"esc",
-// arrows ("up"/"down"/"left"/"right"), single letters and digits.
+// C7: single source of truth -- the full InputMap::KeyFromName (which also
+// handles tab/backspace/F1-F12 and lowercases) replaces the old partial table
+// that silently dropped those keys for script bindings.
 platform::Key KeyFromName(const std::string& name) {
-    if (name == "space") return platform::Key::Space;
-    if (name == "shift") return platform::Key::Shift;
-    if (name == "ctrl" || name == "control") return platform::Key::Control;
-    if (name == "alt") return platform::Key::Alt;
-    if (name == "enter" || name == "return") return platform::Key::Enter;
-    if (name == "esc" || name == "escape") return platform::Key::Escape;
-    if (name == "up") return platform::Key::ArrowUp;
-    if (name == "down") return platform::Key::ArrowDown;
-    if (name == "left") return platform::Key::ArrowLeft;
-    if (name == "right") return platform::Key::ArrowRight;
-    if (name.size() == 1) {
-        char c = name[0];
-        if (c >= 'a' && c <= 'z') {
-            return static_cast<platform::Key>(static_cast<int>(platform::Key::A) + (c - 'a'));
-        }
-        if (c >= 'A' && c <= 'Z') {
-            return static_cast<platform::Key>(static_cast<int>(platform::Key::A) + (c - 'A'));
-        }
-        if (c >= '0' && c <= '9') {
-            return static_cast<platform::Key>(static_cast<int>(platform::Key::D0) + (c - '0'));
-        }
-    }
-    return platform::Key::Unknown;
+    return InputMap::KeyFromName(name);
 }
 
 // InputAxis(name): normalized analog-ish axis in [-1, 1]. "forward" is

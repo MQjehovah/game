@@ -250,6 +250,17 @@ struct SceneZombie {
 struct SceneHealth {
     float hp = 0.f;
     float maxHp = 0.f;
+
+    // C6: schema + JSON are reflected from this single field list (editor
+    // properties and the scene file serializer share one source of truth).
+    inline static const auto kFields = scene::ReflectFields(
+        scene::Field("hp", "血量", FieldType::Number, &SceneHealth::hp, 0, 0, 1e9, 1),
+        scene::Field("maxHp", "最大血量", FieldType::Number, &SceneHealth::maxHp, 0, 0, 1e9, 1));
+    static scene::ComponentSchema Schema() { return {"health", "生命", kFields.Schemas()}; }
+    core::Json ToJson() const { return kFields.ToJson(*this); }
+    bool FromJson(const core::Json& json, std::string* err = nullptr) {
+        return kFields.FromJson(json, *this, err);
+    }
 };
 // Per-entity animation override for skinned models (M1): when present on an
 // entity whose mesh is "gltf:..." with animation clips, the runtime plays

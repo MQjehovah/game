@@ -3,7 +3,7 @@
 > ## 2026-08-28 实施状态（本次会话）
 >
 > - **已修复（`[x]`）**：A1–A13 全部（Vulkan descriptor 泄漏/真 HDR+采样自检+动态纹理更新+彩色实例化、Json 三处 UB+精度、ParallelFor 异常、Lua 指令/内存预算、脚本 vars 隔离、Jolt 碰撞快照语义、SetPosition 物理回写+Raycast 结果、资源变体释放/热重载 retire、客户端 Ping、world.hash 字符串化、OBJ 索引上限、glTF 多 buffer）；B1（场景 uniform 按帧+程序门控）、B2、B6、B8、B10、B11、B12、B13（快照分片）、B14、B15；C11；D4、D6（部分）、D7；D1（版本门）。
-> - **本次未做（`[~]` 保留 / `[ ]`）**：B3（绘制队列）、B4（深度可采样）、B5（VK 提交合并）、B7（骨骼姿势缓存）、B9（绑定 fast path）、C1–C10/C12（大重构）、D2（插件权限强制）、D3（网络认证加密）、D5（CI 工程化）。
+> - **本次未做（`[~]` 保留 / `[ ]`）**：B3（绘制队列）、B4（深度可采样）、B5（VK 提交合并）、B7（骨骼姿势缓存）、B9（绑定 fast path）、C2（动画状态组件化）、C3（编辑器状态解耦）、C4（render graph）、C5（字符串句柄化）、C8（线程池统一）、C9（UI 四轨收敛）、C10（shader 资产化）、D2（插件权限强制）、D3（网络认证加密）、D5（CI 工程化）；C1 已拆 content+combat 两簇（其余簇同模式续拆）。
 > - 附带修复：MSYS2 工具链被破坏（cc1plus 缺失）→ `pacman -S mingw-w64-x86_64-gcc` 恢复；本地主力构建切到 **MSVC**（build-msvc）；VK 补齐 `DrawMeshInstancedColored` + NOMINMAX；新增 12 项回归测试；**682/682 全绿**（GL/VK 冒烟通过）。
 
 
@@ -109,17 +109,17 @@
 - 验收：每帧 uniform 提交路径零堆分配；渲染冒烟通过。
 
 ### B3 无绘制队列/排序/合批
-[~] `renderer.cpp:1701-1719` DrawMesh 按调用顺序即时提交；无 opaque 前到后排序（early-z 失效）、无透明距离排序保证、无材质/着色器合批 key。
+- [~] `renderer.cpp:1701-1719` DrawMesh 按调用顺序即时提交；无 opaque 前到后排序（early-z 失效）、无透明距离排序保证、无材质/着色器合批 key。
 - 修复方向：先做透明排序 + opaque 距离排序的轻量提交列表；合批 key（shader/材质/纹理）为后续 render graph（C4）的一部分。
 - 验收：透明物体渲染顺序与相机距离一致；RenderStats 如实统计。
 
 ### B4 主场景深度不可采样 → SSAO 几何画两遍
-[~] `gl_backend.cpp:368-377` HDR 目标深度为 RBO；`renderer.cpp:1273-1284` SSAO 用颜色编码深度把全部 caster 重画一遍（`ssaoCasters_`/`shadowCasters_` 每次双份拷贝）。
+- [~] `gl_backend.cpp:368-377` HDR 目标深度为 RBO；`renderer.cpp:1273-1284` SSAO 用颜色编码深度把全部 caster 重画一遍（`ssaoCasters_`/`shadowCasters_` 每次双份拷贝）。
 - 修复方向：HDR 目标深度改 DEPTH_COMPONENT 纹理（保留 RBO + 颜色编码回退路径防 Intel 驱动坑），SSAO 直接采样深度。
 - 验收：SSAO 开启时几何 pass 次数减半；驱动自检失败时自动回退旧路径。
 
 ### B5 VK 每次目标切换 submit + 等 fence（全串行）
-[~] `vk_backend.cpp:2081-2106, 2111-2127` BindTarget 变化即 SubmitQueue + vkWaitForFences；一帧 10+ 次目标切换，GPU/CPU 零并行。
+- [~] `vk_backend.cpp:2081-2106, 2111-2127` BindTarget 变化即 SubmitQueue + vkWaitForFences；一帧 10+ 次目标切换，GPU/CPU 零并行。
 - 修复方向：帧内多 render pass 用单 cmd buffer + vkCmdNextSubpass/barrier（或 cmd buffer 池延迟提交，帧末一次 submit + 一次 wait）。
 - 验收：`--bench` VK 帧时间下降；截图/冒烟逐像素一致。
 
@@ -129,7 +129,7 @@
 - 验收：万实体基准中 BuildDrawList 耗时线性且常数显著下降。
 
 ### B7 蒙皮矩阵每帧 3~4 遍重算 + HUD 逐顶点 CPU 蒙皮
-[~] `game_runtime.cpp:2348-2402` HUD 锚点逐顶点 CPU 蒙皮；主 Draw/阴影/SSAO 各自 `BindPose→Sample→ComputeBoneMatrices`（每实体每帧 3~4 次完整采样、15+ 次堆分配）。
+- [~] `game_runtime.cpp:2348-2402` HUD 锚点逐顶点 CPU 蒙皮；主 Draw/阴影/SSAO 各自 `BindPose→Sample→ComputeBoneMatrices`（每实体每帧 3~4 次完整采样、15+ 次堆分配）。
 - 修复方向：骨骼姿势每帧每实体计算一次缓存（Tick 内），各 pass 复用；HUD 锚点用 AABB 近似或缓存姿势的 bounds。
 - 验收：蒙皮实体数 ×3（主+阴影+SSAO）下骨骼采样次数不翻倍；HUD 不再逐顶点蒙皮。
 
@@ -139,7 +139,7 @@
 - 验收：无断点运行基准脚本耗时下降 ≥10%；断点功能回归通过。
 
 ### B9 Lua-C++ 边界每参数全量转换
-[~] `lua_host.cpp:169-213, 226-230` GetArg 每次 PopValue 完整转换（新构造 unordered_set 堆分配 + 递归表拷贝）；`lua_host.cpp:379` native 按名字符串查 map（JS 侧是 O(1) 索引）。
+- [~] `lua_host.cpp:169-213, 226-230` GetArg 每次 PopValue 完整转换（新构造 unordered_set 堆分配 + 递归表拷贝）；`lua_host.cpp:379` native 按名字符串查 map（JS 侧是 O(1) 索引）。
 - 修复方向：标量 fast path（不构造 set/不拷贝 table）；native 注册时缓存 upvalue 索引。
 - 验收：脚本密集调用基准提升；行为回归（既有脚本测试全绿）。
 
@@ -180,42 +180,42 @@
 ## 第三部分 C：结构性重构（P1/P2）
 
 ### C1 GameRuntime 上帝类拆分（3067 行）
-[~] 13 个职责簇按审计已可拆：ScriptHostCoordinator / ScriptBindingLayer（50 个 lambda 数据驱动化）/ CombatSystem / LagCompHistory / DrawListBuilder / AnimationSystem / CameraService / HudOverlayService / PhysicsBridge / ContentLoader / TweenSystem / SceneLifecycle / BehaviorTreeRunner。`Start()` 单函数 438 行（168-606）、`Draw()` 单函数 455 行（2180-2635）。
+- [~] 13 个职责簇（2026-08-28 已拆 content+combat 两簇：`game_runtime_content.cpp` / `game_runtime_combat.cpp`，game_runtime.cpp 3107→2701 行；`game_runtime_priv.hpp` 共享 inline 辅助，模式已验证。ScriptHostCoordinator / ScriptBindingLayer / DrawListBuilder / AnimationSystem / CameraService / HudOverlay / PhysicsBridge / SceneLifecycle / BehaviorTreeRunner 待同模式续拆）。
 - 分阶段：先抽纯逻辑簇（LagComp/Tween/ContentLoader），再抽渲染构建（DrawListBuilder），纯定义搬移无 API 变化。
 
 ### C2 动画状态存于 DrawItem → headless 服务器动画空转
-[~] `game_runtime.hpp:421-476` DrawItem 25+ 字段承载动画/ASM 状态；服务器（draws_ 空）TickAnimations 空转，服务器/客户端动画行为分叉。
+- [ ] `game_runtime.hpp:421-476` DrawItem 25+ 字段承载动画/ASM 状态；服务器（draws_ 空）TickAnimations 空转，服务器/客户端动画行为分叉。
 - 修复方向：动画状态迁到 ECS 组件（SceneAnimator 扩展），DrawItem 只留渲染快照。
 
 ### C3 EditorApp 巨类 / panels.cpp 4100 行
-[~] `editor.hpp` 922 行 90+ 成员；panels.cpp 17 个面板一个 TU；拆文件未拆职责（一个类 N 个翻译单元）。编辑器 undo 覆盖洞（灯光/相机参数/地形笔刷/UI 文档不可撤销，`editor_scene.cpp:426-461`、`panels.cpp:1407-1452`）另列 D5。
+- [ ] `editor.hpp` 922 行 90+ 成员；panels.cpp 17 个面板一个 TU；拆文件未拆职责（一个类 N 个翻译单元）。编辑器 undo 覆盖洞（灯光/相机参数/地形笔刷/UI 文档不可撤销，`editor_scene.cpp:426-461`、`panels.cpp:1407-1452`）另列 D5。
 - 方向：面板注册中心化（消除 hpp 字段/表项/菜单 3 处同步），按面板拆分状态。
 
 ### C4 Renderer 上帝类 + 无 render graph
-[~] `renderer.cpp` 2804 行 ~18 个职责；17 个 RT 手工生命周期，新增后处理要改 4 处；三份近似重复的 caster 提交代码（CSM/SSAO 深度/点光 1161-1271 vs 1490-1560）。
+- [ ] `renderer.cpp` 2804 行 ~18 个职责；17 个 RT 手工生命周期，新增后处理要改 4 处；三份近似重复的 caster 提交代码（CSM/SSAO 深度/点光 1161-1271 vs 1490-1560）。
 - 方向：pass 描述结构 + RT 自动生命周期 + caster 提交统一 helper。
 
 ### C5 字符串 key 贯穿全栈
-[~] GameVars/组件名/meshKey/技能冷却/groups/资源路径全 `std::string`（`gamevars.hpp:32`、`asset_manager.hpp:286` 12+ 平行 map）——无 intern/句柄/GUID；GUID 未贯通场景引用（场景内部仍是路径）。
+- [ ] GameVars/组件名/meshKey/技能冷却/groups/资源路径全 `std::string`（`gamevars.hpp:32`、`asset_manager.hpp:286` 12+ 平行 map）——无 intern/句柄/GUID；GUID 未贯通场景引用（场景内部仍是路径）。
 - 方向：热路径先行（GameVars/冷却表句柄化），资源 GUID 贯通列大项。
 
 ### C6 组件序列化三份手写镜像
-[~] `scene_file.cpp:544-1175` vs `1334-1550`：解析/序列化/字段白名单三份；反射系统 G2-1 仅 SceneAudioSource 采用。
+- [x] `scene_file.cpp:544-1175` vs `1334-1550`：解析/序列化/字段白名单三份；反射系统 G2-1 仅 SceneAudioSource 采用。
 - 方向：扩展 G2-1 反射（Vec3/Enum/数组）迁移高频组件，双轨收敛。
 
 ### C7 脚本绑定手写 95 个 ×3 处
-[~] `bindings.cpp` 1389 行：null hook 静默默认值（无 SetError）、双份键名表不一致（bindings.cpp:1277 缺 tab/F1-F12 vs input_map.cpp:22）、表驱动缺失。
+- [x] `bindings.cpp` 1389 行：null hook 静默默认值（无 SetError）、双份键名表不一致（bindings.cpp:1277 缺 tab/F1-F12 vs input_map.cpp:22）、表驱动缺失。
 - 方向：注册表驱动（名字/参数 schema/错误上报统一），键名表单一来源。
 
 ### C8 线程基建复制 3 份
-[~] SpinLock+SleepMs(1) 轮询在 parallel.cpp / async_loader.cpp / log.cpp 各一份；无统一 job 系统（G5-2 任务图已落地，收口到它）。
+- [ ] SpinLock+SleepMs(1) 轮询在 parallel.cpp / async_loader.cpp / log.cpp 各一份；无统一 job 系统（G5-2 任务图已落地，收口到它）。
 
 ### C9 UI 四轨并存
-[~] 控件树（system.cpp）/文档 UI（document.cpp+layout_solver）/立即模式（ui.cpp）/ImGui；文本测量/裁剪/主题两份调色板（`editor.cpp:335-441` vs ui::Theme）。TextField 无光标/选择/IME（`system.cpp:211-229`）。
+- [ ] 控件树（system.cpp）/文档 UI（document.cpp+layout_solver）/立即模式（ui.cpp）/ImGui；文本测量/裁剪/主题两份调色板（`editor.cpp:335-441` vs ui::Theme）。TextField 无光标/选择/IME（`system.cpp:211-229`）。
 - 方向：主题与文本测量单一来源；TextField 补光标/选择（IME 列远期）。
 
 ### C10 着色器系统原始
-[~] 全内嵌 C++ 字符串（`renderer.cpp:24-613`）、无文件加载/磁盘缓存/变体；VK 端 `CreateShader` 忽略传入源码按 debugName 查预编译表（`vk_backend.cpp:2649-2654`）——同一接口两种语义，自定义 shader 在 VK 静默无效（G2-5 关联）。
+- [ ] 全内嵌 C++ 字符串（`renderer.cpp:24-613`）、无文件加载/磁盘缓存/变体；VK 端 `CreateShader` 忽略传入源码按 debugName 查预编译表（`vk_backend.cpp:2649-2654`）——同一接口两种语义，自定义 shader 在 VK 静默无效（G2-5 关联）。
 - 方向：shader 源资产化 + 产物缓存（G7-2 短期建议）；VK 运行时 glslang 编译或显式能力声明。
 
 ### C11 ECS Pool 防护缺失
@@ -223,7 +223,7 @@
 - 方向：debug 断言 + 重复 Add 防护 + rejected 返回 const。
 
 ### C12 CMake 单文件 655 行
-[~] 无模块化拆分/PCH/unity/ccache；neon_tests 单一聚合目标。
+- [~] 无模块化拆分/PCH/unity/ccache；neon_tests 单一聚合目标。
 - 方向：按模块 add_subdirectory + PCH（engine.hpp 聚合头）。
 
 ---
@@ -231,14 +231,14 @@
 ## 第四部分 D：安全与工程化
 
 ### D1 编辑器插件无版本门 + 任意路径访问
-[~] `editor_plugin.cpp:553-595` 不检查 `minEngineVersion`（runtime 侧有）；`importAsset/listDir` 接受任意绝对路径可拷贝机器任意文件进项目（editor_plugins.cpp:97-113）。
+- [~] `editor_plugin.cpp:553-595` 不检查 `minEngineVersion`（runtime 侧有）；`importAsset/listDir` 接受任意绝对路径可拷贝机器任意文件进项目（editor_plugins.cpp:97-113）。
 
 ### D2 插件 permissions 字段不强制
-[ ] `plugin.cpp:156-164` manifest 声明式权限解析后完全不强制，插件拿到全量引擎绑定；同后端插件共享脚本全局命名空间互相覆盖（`runtime_plugin.cpp:186-199`）。
+- [ ] `plugin.cpp:156-164` manifest 声明式权限解析后完全不强制，插件拿到全量引擎绑定；同后端插件共享脚本全局命名空间互相覆盖（`runtime_plugin.cpp:186-199`）。
 - 方向：permissions 白名单执行 + 每插件独立 env/前缀。
 
 ### D3 网络无认证/加密/防重放
-[ ] `game_server.cpp:310-319` 匿名账号、明文 UDP、源地址即身份、`admin.kick/ban` 任何客户端可调；ban 名单仅内存。UDP 收包无预算可被泛洪拖垮（`game_server.cpp:179-227`）。
+- [ ] `game_server.cpp:310-319` 匿名账号、明文 UDP、源地址即身份、`admin.kick/ban` 任何客户端可调；ban 名单仅内存。UDP 收包无预算可被泛洪拖垮（`game_server.cpp:179-227`）。
 - 方向：session token + 管理命令鉴权 + HMAC 防重放（列 G3-4 生产化）；PumpNetwork 每帧收包上限。
 
 ### D4 场景 JSON 不可 diff
@@ -246,14 +246,14 @@
 - 方向：JsonWriter 缩进选项（场景保存用 pretty），键序稳定（已按 map 排序）。
 
 ### D5 CI 与构建工程化
-[~] Vulkan 后端不编译进 CI（NEON_ENABLE_VULKAN 默认 OFF，`ci.yml:62-67`）；
+- [~] Vulkan 后端不编译进 CI（NEON_ENABLE_VULKAN 默认 OFF，`ci.yml:62-67`）；
 - [x] 无 MinGW CI（本地主力工具链，回归不可见）；
 - [x] sanitizer 仅 Linux，Windows/macOS 无；
 - [x] `third_party/glslang_tool/bin/glslang.exe` 二进制工具直接进仓库；
 - [x] 冒烟仅 neon_rush，server/game 联机与打包 e2e 不在 CI。
 
 ### D6 编辑器功能洞（撤销/静默失败）
-[~] 灯光/相机参数编辑不入撤销栈（`editor_scene.cpp:426-461`、`panels.cpp:1407-1452`）；地形笔刷绕过 history（PaintTerrain）；UI 文档每次拖动即时写盘且无撤销（`editor_viewport.cpp:577-588`）。
+- [~] 灯光/相机参数编辑不入撤销栈（`editor_scene.cpp:426-461`、`panels.cpp:1407-1452`）；地形笔刷绕过 history（PaintTerrain）；UI 文档每次拖动即时写盘且无撤销（`editor_viewport.cpp:577-588`）。
 - [x] 场景 JSON parse 错误静默吞掉（`editor_scene.cpp:756-802`）；SaveSceneAsChild 从磁盘读而非当前编辑状态（666-697）。
 - [x] 缩略图主线程同步生成无预算（`editor_assets.cpp:23-107`）。
 

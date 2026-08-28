@@ -34,9 +34,7 @@ std::vector<ComponentSchema> BuildSchemas() {
                     {"aoTex", "AO 贴图", FieldType::Resource, 0, 0, 0, 0, nullptr, 0, "texture"},
                     {"emissiveTex", "自发光贴图", FieldType::Resource, 0, 0, 0, 0, nullptr, 0,
                      "texture"}}});
-    out.push_back({"health", "生命",
-                   {{"hp", "当前生命", FieldType::Number, 0, 0, 1e9, 1},
-                    {"maxHp", "最大生命", FieldType::Number, 0, 0, 1e9, 1}}});
+    out.push_back(SceneHealth::Schema()); // C6: reflected (was hand-written below)
     out.push_back({"script", "脚本",
                      {{"backend", "后端", FieldType::Enum, 0, 0, 0, 0, kScriptBackends, 2},
                     {"path", "脚本路径", FieldType::Resource, 0, 0, 0, 0, nullptr, 0, "script"},

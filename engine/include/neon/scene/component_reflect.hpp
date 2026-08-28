@@ -30,6 +30,8 @@
 #include <vector>
 
 #include "neon/core/json.hpp"
+#include "neon/gfx/color.hpp"
+#include "neon/math/math.hpp"
 #include "neon/scene/component_schema.hpp"
 
 namespace neon::scene {
@@ -77,6 +79,34 @@ inline core::Json ScalarToJson(const std::string& v) {
     j.string_ = v;
     return j;
 }
+// C6: Vec3 -> JSON array [x,y,z]; Color -> JSON array [r,g,b,a].
+inline core::Json ScalarToJson(const math::Vec3& v) {
+    core::Json j;
+    j.type_ = core::Json::Type::Array;
+    j.array_.push_back(ScalarToJson(v.x));
+    j.array_.push_back(ScalarToJson(v.y));
+    j.array_.push_back(ScalarToJson(v.z));
+    return j;
+}
+inline core::Json ScalarToJson(const gfx::Color& c) {
+    core::Json j;
+    j.type_ = core::Json::Type::Array;
+    j.array_.push_back(ScalarToJson(c.r));
+    j.array_.push_back(ScalarToJson(c.g));
+    j.array_.push_back(ScalarToJson(c.b));
+    j.array_.push_back(ScalarToJson(c.a));
+    return j;
+}
+// C6: Quat -> JSON array [x,y,z,w] (row-vector convention used by transforms).
+inline core::Json ScalarToJson(const math::Quat& q) {
+    core::Json j;
+    j.type_ = core::Json::Type::Array;
+    j.array_.push_back(ScalarToJson(q.x));
+    j.array_.push_back(ScalarToJson(q.y));
+    j.array_.push_back(ScalarToJson(q.z));
+    j.array_.push_back(ScalarToJson(q.w));
+    return j;
+}
 
 template <typename T>
 bool ScalarFromJson(const core::Json& j, T& out) {
@@ -92,6 +122,40 @@ inline bool ScalarFromJson(const core::Json& j, bool& out) {
 inline bool ScalarFromJson(const core::Json& j, std::string& out) {
     if (!j.IsString()) return false;
     out = j.GetString();
+    return true;
+}
+// C6: array-form Vec3/Color; out-of-range keeps the value and errors.
+inline bool ScalarFromJson(const core::Json& j, math::Vec3& out) {
+    if (!j.IsArray() || j.Size() < 3) return false;
+    const core::Json* x = j.At(0);
+    const core::Json* y = j.At(1);
+    const core::Json* z = j.At(2);
+    if (!x->IsNumber() || !y->IsNumber() || !z->IsNumber()) return false;
+    out = {static_cast<float>(x->GetNumber()), static_cast<float>(y->GetNumber()),
+           static_cast<float>(z->GetNumber())};
+    return true;
+}
+inline bool ScalarFromJson(const core::Json& j, gfx::Color& out) {
+    if (!j.IsArray() || j.Size() < 4) return false;
+    const core::Json* r = j.At(0);
+    const core::Json* g = j.At(1);
+    const core::Json* b = j.At(2);
+    const core::Json* a = j.At(3);
+    if (!r->IsNumber() || !g->IsNumber() || !b->IsNumber() || !a->IsNumber()) return false;
+    out = {static_cast<float>(r->GetNumber()), static_cast<float>(g->GetNumber()),
+           static_cast<float>(b->GetNumber()), static_cast<float>(a->GetNumber())};
+    return true;
+}
+// C6: array-form Quat [x,y,z,w].
+inline bool ScalarFromJson(const core::Json& j, math::Quat& out) {
+    if (!j.IsArray() || j.Size() < 4) return false;
+    const core::Json* x = j.At(0);
+    const core::Json* y = j.At(1);
+    const core::Json* z = j.At(2);
+    const core::Json* w = j.At(3);
+    if (!x->IsNumber() || !y->IsNumber() || !z->IsNumber() || !w->IsNumber()) return false;
+    out = {static_cast<float>(x->GetNumber()), static_cast<float>(y->GetNumber()),
+           static_cast<float>(z->GetNumber()), static_cast<float>(w->GetNumber())};
     return true;
 }
 
