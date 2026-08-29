@@ -2,6 +2,7 @@
 #include "editor_util.hpp"
 
 #include <algorithm>
+#include <thread>
 #include <cctype>
 #include <cerrno>
 #include <cstring>
@@ -158,24 +159,42 @@ bool CopyDirRecursive(const std::string& src, const std::string& dst) {
 
 // Native open-file dialog for the asset panel's 导入 action. Returns an empty
 // string when cancelled. Non-Windows hosts fall back to the path input row.
-std::string PickImportFile() {
-#if defined(_WIN32)
-    char buf[MAX_PATH] = {};
-    OPENFILENAMEA ofn = {};
-    ofn.lStructSize = sizeof(ofn);
-    ofn.lpstrFilter =
-        "所有文件 (*.*)\0*.*\0"
-        "图片 (*.png;*.jpg;*.bmp;*.tga)\0*.png;*.jpg;*.jpeg;*.bmp;*.tga\0"
-        "模型 (*.obj;*.gltf)\0*.obj;*.gltf\0"
-        "脚本 (*.lua;*.js)\0*.lua;*.js\0";
-    ofn.lpstrFile = buf;
-    ofn.nMaxFile = MAX_PATH;
-    ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_HIDEREADONLY;
-    if (GetOpenFileNameA(&ofn)) return buf;
-#else
-    (void)0;
-#endif
-    return {};
+std::string PickImportFile(void* owner = nullptr) {
+    // 主线程同步执行 (模态循环自己泵消息); owner 已设置, 对话框正常置顶。
+    std::string out;
+    HRESULT hrInit = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    const bool comHere = SUCCEEDED(hrInit);
+    IFileDialog* dialog = nullptr;
+    if (SUCCEEDED(CoCreateInstance(__uuidof(FileOpenDialog), nullptr, CLSCTX_INPROC_SERVER,
+                                   __uuidof(IFileDialog), reinterpret_cast<void**>(&dialog)))) {
+        const COMDLG_FILTERSPEC filters[] = {
+            { L"所有支持的资产",
+              L"*.png;*.jpg;*.jpeg;*.bmp;*.tga;*.obj;*.gltf;*.lua;*.js;*.json;*.wav;*.mp3" },
+            { L"所有文件 (*.*)", L"*.*" },
+        };
+        dialog->SetFileTypes(2, filters);
+        dialog->SetTitle(L"选择要导入的文件");
+        if (SUCCEEDED(dialog->Show(owner ? static_cast<HWND>(owner) : nullptr))) {
+            IShellItem* item = nullptr;
+            if (SUCCEEDED(dialog->GetResult(&item))) {
+                PWSTR path = nullptr;
+                if (SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH, &path))) {
+                    int wlen = WideCharToMultiByte(CP_UTF8, 0, path, -1, nullptr, 0, nullptr, nullptr);
+                    if (wlen > 0) {
+                        std::vector<char> bufA(static_cast<size_t>(wlen));
+                        WideCharToMultiByte(CP_UTF8, 0, path, -1, bufA.data(), wlen, nullptr, nullptr);
+                        out.assign(bufA.data());
+                    }
+                    CoTaskMemFree(path);
+                }
+                item->Release();
+            }
+            dialog->Release();
+        }
+    }
+    if (comHere) CoUninitialize();
+    if (out.empty()) NEON_LOG_INFO("Editor: file picker cancelled");
+    return out;
 }
 
 std::string ParentPath(const std::string& p);
@@ -299,29 +318,38 @@ bool DeletePathRecursive(const std::string& path) {
 
 // Native folder picker for importing a whole resource directory (model +
 // textures + subfolders). Non-Windows hosts fall back to the path input row.
-std::string PickImportDir() {
-#if defined(_WIN32)
+std::string PickImportDir(void* owner = nullptr) {
     std::string out;
-    HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
-    // MinGW-w64's shobjidl.h only forward-declares IFileDialog, so use the
-    // classic SHBrowseForFolderW folder picker instead (same UX, compiles).
-    BROWSEINFOW bi = {};
-    bi.hwndOwner = nullptr;
-    bi.lpszTitle = L"选择要导入的资源目录";
-    bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
-    LPITEMIDLIST pidl = SHBrowseForFolderW(&bi);
-    if (pidl) {
-        wchar_t path[MAX_PATH];
-        if (SHGetPathFromIDListW(pidl, path)) {
-            out = WideToUtf8(path);
+    HRESULT hrInit = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    const bool comHere = SUCCEEDED(hrInit);
+    IFileDialog* dialog = nullptr;
+    if (SUCCEEDED(CoCreateInstance(__uuidof(FileOpenDialog), nullptr, CLSCTX_INPROC_SERVER,
+                                   __uuidof(IFileDialog), reinterpret_cast<void**>(&dialog)))) {
+        DWORD options = 0;
+        dialog->GetOptions(&options);
+        dialog->SetOptions(options | FOS_PICKFOLDERS);
+        dialog->SetTitle(L"选择要导入的资源目录");
+        if (SUCCEEDED(dialog->Show(owner ? static_cast<HWND>(owner) : nullptr))) {
+            IShellItem* item = nullptr;
+            if (SUCCEEDED(dialog->GetResult(&item))) {
+                PWSTR path = nullptr;
+                if (SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH, &path))) {
+                    int wlen = WideCharToMultiByte(CP_UTF8, 0, path, -1, nullptr, 0, nullptr, nullptr);
+                    if (wlen > 0) {
+                        std::vector<char> bufA(static_cast<size_t>(wlen));
+                        WideCharToMultiByte(CP_UTF8, 0, path, -1, bufA.data(), wlen, nullptr, nullptr);
+                        out.assign(bufA.data());
+                    }
+                    CoTaskMemFree(path);
+                }
+                item->Release();
+            }
+            dialog->Release();
         }
-        CoTaskMemFree(pidl);
     }
-    if (SUCCEEDED(hr)) CoUninitialize();
+    if (comHere) CoUninitialize();
+    if (out.empty()) NEON_LOG_INFO("Editor: folder picker cancelled");
     return out;
-#else
-    return {};
-#endif
 }
 
 bool ListDirectory(const std::string& dir, std::vector<AssetEntry>& out) {
@@ -657,7 +685,8 @@ void EditorApp::BuildScenePanel() {
                     if (e.id == id) return e.parentId;
                 return 0;
             };
-            auto reparent = [this, &parentIdOf](const std::vector<int>& from, int toParentId) {
+            auto reparent = [this, &parentIdOf](const std::vector<int>& from,
+                                 int toParentId, int targetIdx = -1) {
                 if (from.empty()) return;
                 // Cycle guard: cannot parent an entity under itself or one of
                 // its descendants (walk the target's ancestor chain by id).
@@ -665,11 +694,17 @@ void EditorApp::BuildScenePanel() {
                 for (int i : from)
                     if (i >= 0 && i < static_cast<int>(entities_.size()))
                         draggedIds.insert(entities_[static_cast<size_t>(i)].id);
-                if (draggedIds.count(toParentId) != 0) return; // self-parent
+                if (draggedIds.count(toParentId) != 0) {
+                    NEON_LOG_INFO("Scene: cannot parent an entity under itself");
+                    return;
+                }
                 int cur = toParentId;
                 int guard = 0;
                 while (cur != 0 && guard++ <= static_cast<int>(entities_.size())) {
-                    if (draggedIds.count(cur) != 0) return; // descendant -> cycle
+                    if (draggedIds.count(cur) != 0) {
+                        NEON_LOG_INFO("Scene: cannot parent under its own descendant (cycle)");
+                        return;
+                    }
                     cur = parentIdOf(cur);
                 }
                 std::vector<int> valid;
@@ -678,7 +713,38 @@ void EditorApp::BuildScenePanel() {
                     if (entities_[static_cast<size_t>(i)].parentId == toParentId) continue;
                     valid.push_back(i);
                 }
-                if (valid.empty()) return;
+                if (valid.empty()) {
+                    // 全部拖拽实体都已是 toParentId 的孩子 = 同父拖拽 = 兄弟重排序:
+                    // 把拖拽实体移动到目标实体之前 (数组顺序, 一个撤销步骤)。
+                    bool allSiblings = targetIdx >= 0 &&
+                                       targetIdx < static_cast<int>(entities_.size());
+                    for (int i : from)
+                        if (i < 0 || i >= static_cast<int>(entities_.size()) ||
+                            entities_[static_cast<size_t>(i)].parentId != toParentId)
+                            allSiblings = false;
+                    if (!allSiblings) {
+                        NEON_LOG_INFO("Scene: nothing to reparent (already in place)");
+                        return;
+                    }
+                    std::set<int> fromSet(from.begin(), from.end());
+                    std::vector<size_t> newOrder;
+                    const size_t targetPos = static_cast<size_t>(targetIdx);
+                    bool inserted = false;
+                    for (size_t i = 0; i < entities_.size(); ++i) {
+                        if (fromSet.count(i) != 0) continue; // 拖拽实体在目标位统一插回
+                        if (!inserted && i == targetPos) {
+                            for (int fi : from) newOrder.push_back(static_cast<size_t>(fi));
+                            inserted = true;
+                        }
+                        newOrder.push_back(i);
+                    }
+                    if (!inserted) {
+                        for (int fi : from) newOrder.push_back(static_cast<size_t>(fi));
+                    }
+                    history_.Push(std::make_unique<SortSceneTreeCommand>(
+                        &entities_, std::move(newOrder)));
+                    return;
+                }
                 history_.Push(std::make_unique<MultiSetParentCommand>(
                     &entities_, valid, toParentId));
             };
@@ -696,7 +762,7 @@ void EditorApp::BuildScenePanel() {
                     const bool shift = ImGui::GetIO().KeyShift;
                     // P2-editor UX: right-click context menu on any row.
                     auto contextMenu = [&]() {
-                        if (ImGui::BeginPopupContextItem("scene_ctx")) {
+                        if (ImGui::BeginPopupContextItem(("scene_ctx_" + std::to_string(idx)).c_str())) {
                             if (ImGui::MenuItem("复制")) {
                                 std::vector<int> sel = SelectedIndices();
                                 if (sel.empty()) sel.push_back(idx);
@@ -746,11 +812,16 @@ void EditorApp::BuildScenePanel() {
                             ImGui::EndDragDropSource();
                         }
                         if (ImGui::BeginDragDropTarget()) {
+            {
+                ImDrawList* dropDl = ImGui::GetWindowDrawList();
+                dropDl->AddRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax(),
+                                IM_COL32(90, 190, 255, 150), 4.0f, 0, 2.0f);
+            }
                             if (const ImGuiPayload* p =
                                     ImGui::AcceptDragDropPayload("SCENE_ENTITIES")) {
                                 const int* data = static_cast<const int*>(p->Data);
                                 const size_t n = p->DataSize / sizeof(int);
-                                reparent(std::vector<int>(data, data + n), e.id);
+                                reparent(std::vector<int>(data, data + n), e.id, idx);
                             }
                             ImGui::EndDragDropTarget();
                         }
@@ -781,11 +852,16 @@ void EditorApp::BuildScenePanel() {
                             ImGui::EndDragDropSource();
                         }
                         if (ImGui::BeginDragDropTarget()) {
+            {
+                ImDrawList* dropDl = ImGui::GetWindowDrawList();
+                dropDl->AddRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax(),
+                                IM_COL32(90, 190, 255, 150), 4.0f, 0, 2.0f);
+            }
                             if (const ImGuiPayload* p =
                                     ImGui::AcceptDragDropPayload("SCENE_ENTITIES")) {
                                 const int* data = static_cast<const int*>(p->Data);
                                 const size_t n = p->DataSize / sizeof(int);
-                                reparent(std::vector<int>(data, data + n), e.id);
+                                reparent(std::vector<int>(data, data + n), e.id, idx);
                             }
                             ImGui::EndDragDropTarget();
                         }
@@ -796,11 +872,16 @@ void EditorApp::BuildScenePanel() {
             // Detach target: drag an entity here to clear its parent.
             ImGui::TextDisabled("(拖到此处取消父子关系)");
             if (ImGui::BeginDragDropTarget()) {
+            {
+                ImDrawList* dropDl = ImGui::GetWindowDrawList();
+                dropDl->AddRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax(),
+                                IM_COL32(90, 190, 255, 150), 4.0f, 0, 2.0f);
+            }
                 if (const ImGuiPayload* p =
                         ImGui::AcceptDragDropPayload("SCENE_ENTITIES")) {
                     const int* data = static_cast<const int*>(p->Data);
                     const size_t n = p->DataSize / sizeof(int);
-                    reparent(std::vector<int>(data, data + n), 0);
+                    reparent(std::vector<int>(data, data + n), 0, -1);
                 }
                 ImGui::EndDragDropTarget();
         }
@@ -810,6 +891,11 @@ void EditorApp::BuildScenePanel() {
         // Drop targets: a model asset adds an entity, a script asset attaches to
         // the selected entity.
         if (ImGui::BeginDragDropTarget()) {
+            {
+                ImDrawList* dropDl = ImGui::GetWindowDrawList();
+                dropDl->AddRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax(),
+                                IM_COL32(90, 190, 255, 150), 4.0f, 0, 2.0f);
+            }
             if (const ImGuiPayload* p = ImGui::AcceptDragDropPayload("ASSET_MODEL")) {
                 const char* path = static_cast<const char*>(p->Data);
                 if (path) {
@@ -823,11 +909,6 @@ void EditorApp::BuildScenePanel() {
             if (const ImGuiPayload* p = ImGui::AcceptDragDropPayload("ASSET_TEXTURE")) {
                 const char* path = static_cast<const char*>(p->Data);
                 if (path && *path) AddSpriteEntity(path);
-            }
-            if (const ImGuiPayload* p =
-                    ImGui::AcceptDragDropPayload("ASSET_BUILTIN_MODEL")) {
-                const char* key = static_cast<const char*>(p->Data);
-                if (key && *key) AddEntity(std::string(key));
             }
             if (const ImGuiPayload* p = ImGui::AcceptDragDropPayload("ASSET_SCRIPT")) {
                 const char* path = static_cast<const char*>(p->Data);
@@ -858,33 +939,50 @@ void EditorApp::BuildAssetPanel() {
     if (ImGui::Begin("资产", &showAssets_)) {
         if (ImGui::SmallButton("刷新")) RefreshAssetDir();
         ImGui::SameLine();
-        if (ImGui::SmallButton("浏览导入")) {
-            const std::string picked = PickImportFile();
+        // 一个入口同时支持文件与目录: 二级菜单选择后, 下一帧开原生对话框
+        // (不能在 popup 模态内直接开)。
+        static bool pendingFile = false;
+        static bool pendingDir = false;
+        if (ImGui::SmallButton("浏览导入")) ImGui::OpenPopup("##import_pick");
+        if (ImGui::BeginPopup("##import_pick")) {
+            if (ImGui::MenuItem("导入文件...")) pendingFile = true;
+            if (ImGui::MenuItem("导入目录...")) pendingDir = true;
+            ImGui::EndPopup();
+        }
+        if (pendingFile) {
+            pendingFile = false;
+            const std::string picked =
+                PickImportFile(Window() ? Window()->NativeHandle() : nullptr);
             if (!picked.empty()) ImportAssetFile(picked);
         }
-        ImGui::SameLine();
-        if (ImGui::SmallButton("浏览目录")) {
-            const std::string picked = PickImportDir();
-            if (!picked.empty()) ImportAssetFile(picked);
+        if (pendingDir) {
+            pendingDir = false;
+            const std::string picked =
+                PickImportDir(Window() ? Window()->NativeHandle() : nullptr);
+            if (!picked.empty()) {
+                // 整目录递归拷入当前浏览目录, 再刷新列表。
+                const std::string dst = assetDir_ + "/" + FileName(picked);
+                if (CopyDirRecursive(picked, dst)) RefreshAssetDir();
+            }
         }
-        ImGui::SameLine();
-        static bool importOpen = false;
-        if (ImGui::SmallButton(importOpen ? "取消路径" : "输入路径")) importOpen = !importOpen;
         ImGui::SameLine();
         static int newKind = -1;
         if (ImGui::SmallButton(newKind >= 0 ? "取消新建" : "新建"))
             newKind = (newKind >= 0) ? -1 : 0;
         ImGui::SameLine();
-        ImGui::TextUnformatted(assetDir_.c_str());
-        // Import row: paste a source path and copy it into the current dir.
-        if (importOpen) {
-            static char importSrc[1024] = {};
-            ImGui::SetNextItemWidth(-110.0f);
-            ImGui::InputText("##import_src", importSrc, sizeof(importSrc));
-            ImGui::SameLine();
-            if (ImGui::SmallButton("导入文件")) {
-                ImportAssetFile(importSrc);
-                importSrc[0] = '\0';
+        if (ImGui::SmallButton(assetGridView_ ? "网格视图" : "列表视图"))
+            assetGridView_ = !assetGridView_;
+        ImGui::SameLine();
+        ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
+        ImGui::SameLine();
+        // Unity-style Project filter tabs: 全部 / 模型 / 贴图 / 脚本.
+        const char* filters[] = {"全部", "模型", "贴图", "脚本", "材质"};
+        for (int f = 0; f < 5; ++f) {
+            if (f) ImGui::SameLine();
+            if (ImGui::SmallButton(filters[f])) assetFilter_ = f;
+            if (assetFilter_ == f) {
+                ImGui::SameLine();
+                ImGui::TextColored(ImVec4(0.5f, 0.8f, 1.0f, 1.0f), "✓");
             }
         }
         // New-asset row: type combo + name + create.
@@ -912,23 +1010,6 @@ void EditorApp::BuildAssetPanel() {
                 }
             }
         }
-        ImGui::Separator();
-
-        // Unity-style Project filter tabs: 全部 / 模型 / 贴图 / 脚本.
-        const char* filters[] = {"全部", "模型", "贴图", "脚本", "材质"};
-        for (int f = 0; f < 5; ++f) {
-            if (f) ImGui::SameLine();
-            if (ImGui::SmallButton(filters[f])) assetFilter_ = f;
-            if (assetFilter_ == f) {
-                ImGui::SameLine();
-                ImGui::TextColored(ImVec4(0.5f, 0.8f, 1.0f, 1.0f), "✓");
-            }
-        }
-        ImGui::SameLine();
-        ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
-        ImGui::SameLine();
-        if (ImGui::SmallButton(assetGridView_ ? "网格视图" : "列表视图"))
-            assetGridView_ = !assetGridView_;
         ImGui::Separator();
 
         // Plugin asset sources (素材市场): plugins contribute read-only
@@ -979,12 +1060,13 @@ void EditorApp::BuildAssetPanel() {
             ImGui::Separator();
         }
 
-        // Split-pane layout: file browsing on the LEFT takes all the height,
-        // the selected asset's details/preview sit in a fixed-width RIGHT
-        // column (no more squeezing the list with a bottom reserve).
-        const float detailW = 250.0f;
+        // 详情面板仅在选中资产后显示 (默认整宽列表).
+        const bool showDetail =
+            selectedAsset_ >= 0 && selectedAsset_ < static_cast<int>(assetEntries_.size());
+        const float detailW = showDetail ? 250.0f : 0.0f;
         const ImVec2 bodyAvail = ImGui::GetContentRegionAvail();
-        ImGui::BeginChild("##asset_list", ImVec2(bodyAvail.x - detailW - 8.0f, 0),
+        ImGui::BeginChild("##asset_list",
+                          ImVec2(bodyAvail.x - detailW - (showDetail ? 8.0f : 0.0f), 0),
                           ImGuiChildFlags_Borders);
         if (assetEntries_.empty()) {
             ImGui::TextWrapped("此目录为空。使用上方 浏览导入 / 浏览目录 添加外部资源，"
@@ -1174,33 +1256,10 @@ void EditorApp::BuildAssetPanel() {
             }
         }
         }
-        // Built-in sample models live at the bottom of the asset list so they
-        // never cover the project files; drag or double-click to add to scene.
-        ImGui::Separator();
-        if (ImGui::CollapsingHeader("内置模型 (拖入场景)",
-                                    ImGuiTreeNodeFlags_DefaultOpen)) {
-            const struct {
-                const char* key;
-                const char* label;
-            } kBuiltinModels[] = {{"helmet", "头盔"}, {"tree", "松树"},
-                                  {"house", "房屋"}, {"bush", "灌木"},
-                                  {"hero", "英雄"}, {"npc", "NPC"}};
-            for (size_t bi = 0; bi < sizeof(kBuiltinModels) / sizeof(kBuiltinModels[0]); ++bi) {
-                if (bi) ImGui::SameLine(0.0f, 2.0f);
-                ImGui::Button(kBuiltinModels[bi].label, ImVec2(52.0f, 0.0f));
-                if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0))
-                    AddEntity(kBuiltinModels[bi].key);
-                if (ImGui::BeginDragDropSource()) {
-                    ImGui::SetDragDropPayload("ASSET_BUILTIN_MODEL", kBuiltinModels[bi].key,
-                                              std::strlen(kBuiltinModels[bi].key) + 1);
-                    ImGui::Text("添加 %s", kBuiltinModels[bi].label);
-                    ImGui::EndDragDropSource();
-                }
-            }
-        }
         ImGui::EndChild();
 
         ImGui::SameLine();
+        if (showDetail) {
         ImGui::BeginChild("##asset_detail", ImVec2(detailW, 0), ImGuiChildFlags_Borders);
         if (selectedAsset_ >= 0 &&
             selectedAsset_ < static_cast<int>(assetEntries_.size())) {
@@ -1286,6 +1345,7 @@ void EditorApp::BuildAssetPanel() {
             if (ImGui::Button("删除资产", ImVec2(-1.0f, 0.0f))) DeleteSelectedAsset();
         }
         ImGui::EndChild();
+        }
     }
     ImGui::End();
 }
@@ -2167,17 +2227,9 @@ void EditorApp::BuildInspectorPanel() {
                     const scene::ComponentSchema* schema =
                         addable[static_cast<size_t>(addCompSel)];
                     if (schema->name == "script") {
-                        // Scripts are a multi-instance list (extraComponents is
-                        // a name-keyed map, so scripts keep their own vector).
-                        // Default path: the script currently selected in the
-                        // script panel (if any); editable in the block.
-                        if (scriptFiles_.empty()) RefreshScriptChecks();
-                        std::string defPath;
-                        if (scriptAttachIndex_ >= 0 &&
-                            scriptAttachIndex_ < static_cast<int>(scriptFiles_.size()))
-                            defPath = scriptFiles_[static_cast<size_t>(scriptAttachIndex_)];
+                        // 新脚本块: 空路径, 在块内编辑 (或从资产面板拖入脚本)。
                         std::vector<SceneScriptFields> newList = e.scripts;
-                        newList.push_back({"lua", defPath, {}});
+                        newList.push_back({"lua", "", {}});
                         history_.Push(std::make_unique<
                             EditPropertyCommand<std::vector<SceneScriptFields>>>(
                             &entities_, selected_, ApplyScriptList, e.scripts, newList,
@@ -2880,173 +2932,6 @@ void EditorApp::BuildLocPanel() {
     }
     ImGui::End();
 }
-
-// Re-scan <projectDir>/assets/scripts/ and run a syntax check on every
-// *.lua / *.js.
-// Each file is routed to the matching throwaway host (Lua vs QuickJS);
-// nothing ever runs, so a failed check leaves the host reusable.
-void EditorApp::RefreshScriptChecks() {
-    scriptFiles_.clear();
-    scriptChecks_.clear();
-    std::vector<std::string> files;
-    ListScriptFiles(ScriptsDir(projectDir_), "assets/scripts", files);
-    const std::string base = projectDir_.empty() ? "." : projectDir_;
-    for (const std::string& rel : files) {
-        if (script::IScriptHost* checkHost = ScriptCheckHostFor(rel)) {
-            scriptChecks_.push_back(CheckScriptFile(*checkHost, base, rel));
-        } else {
-            ScriptCheckResult failed;
-            failed.path = rel;
-            failed.ok = false;
-            failed.message = "脚本宿主不可用";
-            scriptChecks_.push_back(failed);
-        }
-        scriptFiles_.push_back(rel);
-    }
-    if (scriptAttachIndex_ >= static_cast<int>(scriptFiles_.size()))
-        scriptAttachIndex_ = static_cast<int>(scriptFiles_.size()) - 1;
-    if (scriptAttachIndex_ < 0 && !scriptFiles_.empty()) scriptAttachIndex_ = 0;
-}
-
-void EditorApp::BuildScriptPanel() {
-    if (!showScripts_) return;
-    if (ImGui::Begin("脚本", &showScripts_)) {
-        // Throttle the scripts/ scan + syntax checks: run on panel open and
-        // every ~1s of frames (60 @ 60fps), never per frame.
-        const uint64_t now = TimeRef().frameIndex;
-        if (now - scriptRefreshFrame_ >= 60 || scriptFiles_.empty()) {
-            RefreshScriptChecks();
-            scriptRefreshFrame_ = now;
-        }
-        if (ImGui::Button("刷新检查")) RefreshScriptChecks();
-        ImGui::SameLine();
-        ImGui::TextDisabled("项目: %s", projectDir_.c_str());
-        ImGui::Separator();
-
-        ImGui::BeginChild("##script_list", ImVec2(0, -150.0f), ImGuiChildFlags_Borders);
-        if (scriptFiles_.empty()) {
-            ImGui::TextDisabled("assets/scripts/ 目录下没有 .lua 脚本");
-        }
-        for (size_t i = 0; i < scriptFiles_.size(); ++i) {
-            const ScriptCheckResult& r = scriptChecks_[i];
-            char label[320];
-            std::snprintf(label, sizeof(label), "%s##script_%zu", scriptFiles_[i].c_str(), i);
-            if (ImGui::Selectable(label, scriptAttachIndex_ == static_cast<int>(i)))
-                scriptAttachIndex_ = static_cast<int>(i);
-            if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
-                const std::string base = projectDir_.empty() ? "." : projectDir_;
-                OpenScriptEditor(base + "/" + scriptFiles_[i]);
-            }
-            if (r.ok) {
-                ImGui::SameLine();
-                ImGui::TextColored(ImVec4(0.4f, 0.9f, 0.5f, 1.0f), "✓ 语法通过");
-            } else {
-                ImGui::SameLine();
-                ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.4f, 1.0f), "✗ 错误 (行 %d): %s",
-                                   r.line, r.message.c_str());
-            }
-        }
-        ImGui::EndChild();
-        ImGui::Separator();
-
-        ImGui::TextUnformatted("附加到选中实体");
-        if (selected_ < 0 || selected_ >= static_cast<int>(entities_.size())) {
-            ImGui::TextDisabled("未选中实体");
-            ImGui::End();
-            return;
-        }
-        SceneEntity& e = entities_[static_cast<size_t>(selected_)];
-
-        // The vars editor applies to the NEXT 附加: with a flat mounted list
-        // there is no single "the" script whose vars this box would show, so
-        // switching entities just resets the buffer (a too-large buffer still
-        // surfaces a truncation warning).
-        auto reloadVars = [&]() {
-            const int n = std::snprintf(scriptVarsBuf_, sizeof(scriptVarsBuf_), "{}");
-            if (static_cast<size_t>(n) >= sizeof(scriptVarsBuf_)) {
-                char warn[128];
-                std::snprintf(warn, sizeof(warn),
-                              "变量 JSON 过大 (%.1f KB)，已截断到缓冲区上限",
-                              static_cast<double>(sizeof(scriptVarsBuf_)) / 1024.0);
-                scriptVarsError_ = warn;
-            } else {
-                scriptVarsError_.clear();
-            }
-        };
-
-        // Sync the dropdown selection + vars buffer when the selected entity
-        // changes (SetSelection / list mutations reset scriptSyncEntity_ so an
-        // entity re-selected at the same index still re-syncs), so the panel
-        // never shows a previous entity's state.
-        if (scriptSyncEntity_ != selected_) {
-            scriptSyncEntity_ = selected_;
-            scriptAttachIndex_ = -1;
-            if (scriptAttachIndex_ < 0 && !scriptFiles_.empty()) scriptAttachIndex_ = 0;
-            reloadVars();
-        }
-
-        if (scriptFiles_.empty()) {
-            ImGui::TextDisabled("没有可附加的脚本");
-        } else {
-            std::vector<const char*> names;
-            names.reserve(scriptFiles_.size());
-            for (const auto& f : scriptFiles_) names.push_back(f.c_str());
-            ImGui::SetNextItemWidth(-1.0f);
-            ImGui::Combo("##script_attach", &scriptAttachIndex_, names.data(),
-                         static_cast<int>(names.size()));
-        }
-        ImGui::TextUnformatted("变量 (JSON)");
-        ImGui::SetNextItemWidth(-1.0f);
-        ImGui::InputTextMultiline("##script_vars", scriptVarsBuf_, sizeof(scriptVarsBuf_),
-                                  ImVec2(-1.0f, 88.0f));
-        if (!scriptVarsError_.empty())
-            ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.4f, 1.0f), "%s", scriptVarsError_.c_str());
-        // Mounted scripts: one list like the inspector's component section
-        // (flat, no "primary"), each entry removable.
-        {
-            ImGui::TextDisabled("已附加 (%zu)", e.scripts.size());
-            for (size_t si = 0; si < e.scripts.size(); ++si) {
-                ImGui::Text("  %s", e.scripts[si].path.c_str());
-                ImGui::SameLine();
-                if (ImGui::SmallButton(("移除##script_" + std::to_string(si)).c_str())) {
-                    std::vector<SceneScriptFields> newList = e.scripts;
-                    newList.erase(newList.begin() + static_cast<ptrdiff_t>(si));
-                    history_.Push(std::make_unique<
-                        EditPropertyCommand<std::vector<SceneScriptFields>>>(
-                        &entities_, selected_, ApplyScriptList, e.scripts, newList,
-                        /*mergeable=*/false));
-                }
-            }
-        }
-
-        const bool haveScript = !scriptFiles_.empty() && scriptAttachIndex_ >= 0 &&
-                                scriptAttachIndex_ < static_cast<int>(scriptFiles_.size());
-        if (ImGui::Button("附加")) {
-            if (!haveScript) {
-                scriptVarsError_ = "没有可附加的脚本";
-            } else {
-                std::string perr;
-                core::Json parsed = core::Json::Parse(scriptVarsBuf_, &perr);
-                if (!perr.empty()) {
-                    scriptVarsError_ = "变量 JSON 无效: " + perr;
-                } else if (!parsed.IsNull() && !parsed.IsObject()) {
-                    scriptVarsError_ = "变量必须是 JSON 对象";
-                } else {
-                    std::vector<SceneScriptFields> newList = e.scripts;
-                    newList.push_back(
-                        {"lua", scriptFiles_[static_cast<size_t>(scriptAttachIndex_)],
-                         parsed.IsNull() ? core::Json{} : parsed});
-                    history_.Push(std::make_unique<
-                        EditPropertyCommand<std::vector<SceneScriptFields>>>(
-                        &entities_, selected_, ApplyScriptList, e.scripts, newList,
-                        /*mergeable=*/false)); // one click = one undo step
-                }
-            }
-        }
-    }
-    ImGui::End();
-}
-
 void EditorApp::RunPackage() {
     pack::PackConfig cfg;
     cfg.projectDir = projectDir_;
@@ -3064,8 +2949,6 @@ void EditorApp::RunPackage() {
     }
 }
 
-// Built-in script editor (Godot-style): open/save a .lua, live syntax check,
-// and a one-click external-editor binding.
 void EditorApp::BuildScriptEditorPanel() {
     if (!showScriptEditor_) return;
     if (ImGui::Begin("脚本编辑器", &showScriptEditor_)) {
@@ -3095,7 +2978,7 @@ void EditorApp::BuildScriptEditorPanel() {
             }
         }
         if (scriptEditorPath_.empty()) {
-            ImGui::TextDisabled("未打开脚本 — 在资产面板或脚本面板双击 .lua 打开");
+            ImGui::TextDisabled("未打开脚本 — 在资产面板双击 .lua 打开");
             ImGui::End();
             return;
         }
@@ -3120,51 +3003,41 @@ void EditorApp::BuildScriptEditorPanel() {
                                scriptEditorCheck_.message.c_str());
         }
         ImGui::Separator();
-        // P1-2 debugger: breakpoints for the open script + live pause state.
-        if (!scriptEditorPath_.empty()) {
-            ImGui::TextDisabled("断点 (行号，逗号分隔)");
-            ImGui::SetNextItemWidth(180.0f);
-            const bool bpEnter =
-                ImGui::InputText("##bp_add", breakpointLineBuf_, sizeof(breakpointLineBuf_),
-                                 ImGuiInputTextFlags_EnterReturnsTrue);
-            ImGui::SameLine();
-            if (ImGui::Button("添加") || (bpEnter && breakpointLineBuf_[0] != '\0')) {
-                char* p = breakpointLineBuf_;
-                while (*p) {
-                    while (*p == ' ' || *p == ',') ++p;
-                    if (!*p) break;
-                    const int line = std::atoi(p);
-                    if (line > 0) scriptBreakpoints_[scriptEditorPath_].insert(line);
-                    while (*p && *p != ',') ++p;
-                }
-                breakpointLineBuf_[0] = '\0';
-                scriptBreakpointsDirty_ = true;
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("清空断点")) {
-                scriptBreakpoints_[scriptEditorPath_].clear();
-                scriptBreakpointsDirty_ = true;
-            }
-            auto& bps = scriptBreakpoints_[scriptEditorPath_];
-            if (!bps.empty()) {
-                ImGui::SameLine();
-                ImGui::TextDisabled("当前: ");
-                for (auto it = bps.begin(); it != bps.end();) {
-                    ImGui::SameLine();
-                    ImGui::PushID(static_cast<int>(*it));
-                    if (ImGui::SmallButton(("行" + std::to_string(*it)).c_str())) {
-                        it = bps.erase(it);
-                        scriptBreakpointsDirty_ = true;
-                    } else {
-                        ++it;
-                    }
-                    ImGui::PopID();
-                }
-            }
-            ImGui::Separator();
+        // 断点: F9 (或按钮) 在光标所在行切换; 行号栏红点由 TextEditor 绘制。
+        std::set<int>& bps = scriptBreakpoints_[scriptEditorPath_];
+        const int cursorLine = scriptEdit_.GetCursorPosition().mLine + 1; // 1-based
+        const bool toggleF9 = ImGui::IsKeyPressed(ImGuiKey_F9, false) &&
+                              ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
+        if (toggleF9) {
+            if (bps.count(cursorLine)) bps.erase(cursorLine); else bps.insert(cursorLine);
+            scriptBreakpointsDirty_ = true;
         }
-        // P1-2 autocomplete: engine binding reference + prefix completion for
-        // the word being typed.
+        if (ImGui::SmallButton("本行断点 (F9)")) {
+            if (bps.count(cursorLine)) bps.erase(cursorLine); else bps.insert(cursorLine);
+            scriptBreakpointsDirty_ = true;
+        }
+        ImGui::SameLine();
+        if (ImGui::SmallButton("清空断点")) {
+            bps.clear();
+            scriptBreakpointsDirty_ = true;
+        }
+        if (!bps.empty()) {
+            ImGui::SameLine();
+            ImGui::TextDisabled("行:");
+            for (auto it = bps.begin(); it != bps.end();) {
+                ImGui::SameLine();
+                ImGui::PushID(static_cast<int>(*it));
+                if (ImGui::SmallButton(("x" + std::to_string(*it)).c_str())) {
+                    it = bps.erase(it);
+                    scriptBreakpointsDirty_ = true;
+                } else {
+                    ++it;
+                }
+                ImGui::PopID();
+                ImGui::SameLine();
+            }
+            ImGui::TextDisabled("(F9 切换光标行)");
+        }
         {
             static const struct {
                 const char* name;
@@ -3223,35 +3096,30 @@ void EditorApp::BuildScriptEditorPanel() {
                 {"SignalConnect", "SignalConnect(name, fn) 连接信号"},
                 {"SignalEmit", "SignalEmit(name, arg) 发射信号"},
             };
-            const size_t len = std::strlen(scriptEditorBuf_);
-            size_t wordStart = len;
-            while (wordStart > 0) {
-                const char c = scriptEditorBuf_[wordStart - 1];
-                if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-                      (c >= '0' && c <= '9') || c == '_'))
-                    break;
-                --wordStart;
-            }
-            const std::string word(scriptEditorBuf_ + wordStart, len - wordStart);
-            if (ImGui::Button("插入第一个匹配 (Ctrl+Space)") ||
-                (ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Space, false))) {
-                for (const auto& b : kBindings) {
-                    if (word.empty() || std::strncmp(b.name, word.c_str(), word.size()) == 0) {
-                        const std::string rest = b.name + word.size();
-                        if (wordStart + rest.size() < sizeof(scriptEditorBuf_)) {
-                            std::memmove(scriptEditorBuf_ + wordStart + rest.size(),
-                                         scriptEditorBuf_ + len,
-                                         sizeof(scriptEditorBuf_) - len - wordStart);
-                            std::memcpy(scriptEditorBuf_ + wordStart, rest.c_str(), rest.size());
-                            scriptEditorDirty_ = true;
-                        }
-                        break;
-                    }
+            // 光标所在词: 从行首取到光标位置, 回扫标识符字符。
+            const auto cursor = scriptEdit_.GetCursorPosition();
+            const std::string all = scriptEdit_.GetText();
+            // 手动切出第 cursor.mLine 行的前 cursor.mColumn 字符 (GetText(区间) 为 private)。
+            std::string lineText;
+            {
+                size_t ln = 0, i = 0;
+                while (i < all.size() && ln < static_cast<size_t>(cursor.mLine)) {
+                    if (all[i] == '\n') ++ln;
+                    ++i;
                 }
+                lineText.reserve(static_cast<size_t>(cursor.mColumn));
+                for (size_t k = 0; k < static_cast<size_t>(cursor.mColumn) && i < all.size(); ++k, ++i)
+                    lineText += all[i];
             }
-            ImGui::SameLine();
-            ImGui::TextDisabled("前缀: %s", word.c_str());
-            if (ImGui::CollapsingHeader("引擎绑定参考", ImGuiTreeNodeFlags_DefaultOpen)) {
+            std::string word;
+            for (auto it = lineText.rbegin(); it != lineText.rend(); ++it) {
+                const char c = *it;
+                const bool ident = std::isalnum(static_cast<unsigned char>(c)) || c == '_';
+                if (!ident) break;
+                word.insert(word.begin(), c);
+            }
+            if (ImGui::CollapsingHeader("绑定参考 (按词过滤)",
+                                        ImGuiTreeNodeFlags_DefaultOpen)) {
                 if (ImGui::BeginChild("##binding_ref", ImVec2(0, 180), true)) {
                     for (const auto& b : kBindings) {
                         if (!word.empty() &&
@@ -3289,11 +3157,14 @@ void EditorApp::BuildScriptEditorPanel() {
             }
             ImGui::Separator();
         }
-        const ImVec2 editSize = ImGui::GetContentRegionAvail();
-        ImGui::InputTextMultiline(
-            "##script_editor", scriptEditorBuf_, sizeof(scriptEditorBuf_), editSize,
-            ImGuiInputTextFlags_AllowTabInput);
-        if (ImGui::IsItemEdited()) scriptEditorDirty_ = true;
+        // 行号栏断点标记: 同步当前脚本的断点集到 TextEditor (红点可视化)。
+        {
+            TextEditor::Breakpoints bpVis(scriptBreakpoints_[scriptEditorPath_].begin(),
+                                          scriptBreakpoints_[scriptEditorPath_].end());
+            scriptEdit_.SetBreakpoints(bpVis);
+        }        const ImVec2 editSize = ImGui::GetContentRegionAvail();
+        scriptEdit_.Render("##script_editor", editSize, true);
+        if (scriptEdit_.IsTextChanged()) scriptEditorDirty_ = true;
     }
     ImGui::End();
 }

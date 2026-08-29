@@ -1,5 +1,7 @@
 #pragma once
 
+#include "TextEditor.h"
+#include "TextEditor.h"
 #include <array>
 #include <functional>
 #include <map>
@@ -520,8 +522,6 @@ private:
     // selected entity. RefreshScriptChecks re-scans
     // <projectDir>/assets/scripts/ and
     // re-runs CheckSyntax on each file (used by the panel and the smoke).
-    void BuildScriptPanel();
-    void RefreshScriptChecks();
     // Script editor (Godot-style built-in): open/save a .lua with live syntax
     // check, plus a one-click external-editor binding (system default).
     void OpenScriptEditor(const std::string& path);
@@ -795,7 +795,7 @@ private:
     std::vector<AssetEntry> assetEntries_;
     std::string assetDir_;
     int assetFilter_ = 0; // 0 all, 1 models, 2 textures, 3 scripts
-    bool assetGridView_ = false; // thumbnail grid vs list
+    bool assetGridView_ = true;  // thumbnail grid vs list (grid 默认)
     int selectedAsset_ = -1;
     int assetDeletePending_ = -1; // asset index awaiting delete confirmation
     bool deleteAssetRequested_ = false; // Delete key -> confirm in-panel next frame
@@ -884,6 +884,13 @@ private:
     math::Vec2 btDragStart_{0.f, 0.f};
     math::Vec2 btNodeStartPos_{0.f, 0.f};
     bool btDragging_ = false;
+    // Canvas view transform: pan offset (screen px) + zoom factor (no
+    // scrollbars — the canvas only pans/zooms).
+    float btZoom_ = 1.0f;
+    math::Vec2 btPan_{30.f, 30.f};
+    // Anchor-link drag: drawing a connection from a node's output anchor.
+    bool btLinking_ = false;
+    std::string btLinkFrom_;
     // Graph snapshot captured when a node drag began, pushed as one undo step
     // on release (only when the node actually moved).
     btgraph::BtGraph btGraphBeforeDrag_;
@@ -893,15 +900,12 @@ private:
     std::map<std::string, btgraph::BtGraph> btArgDragOrigin_;
 
     // Script panel (T4.5) state.
-    bool showScripts_ = false;
     std::unique_ptr<script::IScriptHost> scriptCheckHost_; // throwaway host for syntax checks
     // Throwaway QuickJS host for .js syntax checks (dual-script backend).
     std::unique_ptr<script::IScriptHost> scriptCheckHostJs_;
     // Returns the throwaway syntax-check host matching a script file's
     // extension (.js -> QuickJS, everything else -> Lua), creating it lazily.
     script::IScriptHost* ScriptCheckHostFor(const std::string& path);
-    std::vector<std::string> scriptFiles_;      // project-relative "assets/scripts/*.lua"
-    std::vector<ScriptCheckResult> scriptChecks_;          // parallel: per-file check results
     bool showScriptEditor_ = false;
     bool showAnimEditor_ = false;
     bool showStateMachineEditor_ = false;
@@ -921,17 +925,13 @@ private:
     char asmPathBuf_[512] = {};
     std::string scriptEditorPath_;   // file being edited ("" = closed)
     std::string scriptEditorRel_;    // project-relative path for checks
-    char scriptEditorBuf_[256 * 1024] = {};
+    TextEditor scriptEdit_;  // 内置脚本编辑器 (Lua/JS 语法高亮)
     bool scriptEditorDirty_ = false;
     ScriptCheckResult scriptEditorCheck_; // last syntax check result
     // P1-2 debugger: breakpoints keyed by the script path being edited, plus
     // a dirty flag that pushes them into the running play host.
     std::map<std::string, std::set<int>> scriptBreakpoints_;
     bool scriptBreakpointsDirty_ = false;
-    char breakpointLineBuf_[64] = {};
-    uint64_t scriptRefreshFrame_ = 0; // throttle: refresh scripts/ listing + checks
-    int scriptAttachIndex_ = -1;      // dropdown/list selection into scriptFiles_
-    int scriptSyncEntity_ = -1;       // entity whose vars the buffer currently shows
     char scriptVarsBuf_[32768]{};     // raw JSON vars editor (32 KB; truncation is detected)
     std::string scriptVarsError_;     // last vars-parse / truncation message (empty when valid)
 

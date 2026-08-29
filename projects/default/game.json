@@ -1,6 +1,6 @@
 {
   "startScene": "assets/scenes/editor_scene.json",
-  "window": { "w": 1280, "h": 720, "title": "Neon Sandbox" },
-  "title": "Neon Sandbox",
+  "window": { "w": 1280, "h": 720, "title": "Neon Default" },
+  "title": "Neon Default",
   "editor": { "mode": "3d" }
 }

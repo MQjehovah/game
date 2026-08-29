@@ -335,6 +335,7 @@ endif()
 # ---------------------------------------------------------------------------
 add_library(neon_imgui STATIC
   third_party/imgui/imgui.cpp
+  third_party/imgui_textedit/TextEditor.cpp
   third_party/imgui/imgui_draw.cpp
   third_party/imgui/imgui_tables.cpp
   third_party/imgui/imgui_widgets.cpp
@@ -344,6 +345,7 @@ add_library(neon_imgui STATIC
 )
 target_include_directories(neon_imgui
   PUBLIC third_party/imgui
+  PUBLIC third_party/imgui_textedit
   PUBLIC third_party/ImGuizmo
   PRIVATE engine/include
 )

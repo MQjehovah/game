@@ -721,6 +721,13 @@ void EditorApp::NormalizeEntityIds() {
         if (e.id == 0 || used.count(e.id) != 0) e.id = ++maxId;
         used.insert(e.id);
     }
+    // Orphaned parent references: a parentId that points at an entity which no
+    // longer exists (its parent was deleted) would hide the whole subtree from
+    // the hierarchy tree and make every drag fail. Re-parent orphans to root.
+    std::set<int> live;
+    for (const SceneEntity& e : entities_) live.insert(e.id);
+    for (SceneEntity& e : entities_)
+        if (e.parentId != 0 && live.count(e.parentId) == 0) e.parentId = 0;
 }
 
 void EditorApp::SortSceneTreeByName() {
@@ -1621,8 +1628,6 @@ void EditorApp::SwitchProject(const std::string& dir) {
     // G5-4-4(项3): detect renamed/moved assets (GUID preserved) and rewrite
     // path references so scenes never break silently.
     RefreshAssetDatabase();
-    // Editor plugins are project-scoped: reload them for the new project.
-    if (pluginMgr_) pluginMgr_->Load(projectDir_);
     history_.Clear();
     SetSelection(-1);
     if (projectMode_ == "2d") {
@@ -1738,14 +1743,7 @@ void EditorApp::OpenScriptEditor(const std::string& path) {
         return;
     }
     std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-    const size_t cap = sizeof(scriptEditorBuf_) - 1;
-    if (text.size() >= cap) {
-        NEON_LOG_WARN("Editor: script '%s' too large for the editor buffer (%.1f KB cap)",
-                      path.c_str(), static_cast<double>(cap) / 1024.0);
-        text.resize(cap);
-    }
-    std::memcpy(scriptEditorBuf_, text.data(), text.size());
-    scriptEditorBuf_[text.size()] = '\0';
+    scriptEdit_.SetText(text);
     scriptEditorPath_ = path;
     scriptEditorRel_ = path;
     const std::string base = projectDir_.empty() ? "." : projectDir_;
@@ -1781,7 +1779,7 @@ void EditorApp::SaveScriptEditor() {
         NEON_LOG_ERROR("Editor: cannot write script '%s'", scriptEditorPath_.c_str());
         return;
     }
-    out << scriptEditorBuf_;
+    out << scriptEdit_.GetText();
     scriptEditorDirty_ = false;
     const std::string base = projectDir_.empty() ? "." : projectDir_;
     script::IScriptHost* checkHost = ScriptCheckHostFor(scriptEditorPath_);
@@ -1790,14 +1788,13 @@ void EditorApp::SaveScriptEditor() {
             scriptEditorCheck_ = CheckScriptFile(*checkHost, base, scriptEditorRel_);
         } else {
             scriptEditorCheck_.path = scriptEditorPath_;
-            scriptEditorCheck_.ok = checkHost->CheckSyntax(scriptEditorBuf_);
+            scriptEditorCheck_.ok = checkHost->CheckSyntax(scriptEdit_.GetText());
             if (!scriptEditorCheck_.ok) {
                 scriptEditorCheck_.message = checkHost->LastError().message;
                 scriptEditorCheck_.line = checkHost->LastError().line;
             }
         }
     }
-    RefreshScriptChecks();
     NEON_LOG_INFO("Editor: script saved '%s'", scriptEditorPath_.c_str());
 }
 
@@ -1816,7 +1813,6 @@ void EditorApp::ClampSelection() {
     // reorder), so invalidate the script panel's index-keyed sync cache
     // unconditionally here, not only when the index changes. Also keeps the
     // multi-selection set inside the entity list bounds.
-    scriptSyncEntity_ = -1;
     const int n = static_cast<int>(entities_.size());
     for (auto it = selection_.begin(); it != selection_.end();) {
         if (*it >= n)
@@ -1835,4 +1831,3 @@ void EditorApp::ClampSelection() {
 }
 
 } // namespace neon::editor
-

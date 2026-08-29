@@ -141,7 +141,6 @@ void RegisterPanelStateHandler(EditorApp* app) {
         {"日志", &EditorApp::showLog_},
         {"模型查看器", &EditorApp::showModelPreview_},
         {"行为树", &EditorApp::showBt_},
-        {"脚本", &EditorApp::showScripts_},
         {"脚本编辑器", &EditorApp::showScriptEditor_},
         {"打包", &EditorApp::showPackage_},
         {"性能", &EditorApp::showProfiler_},
@@ -262,7 +261,7 @@ bool EditorApp::OnCreate() {
     // component schemas) from <projectDir>/plugins (type "editor").
     pluginMgr_ = std::make_unique<editor::EditorPluginManager>();
     pluginMgr_->Init(this);
-    pluginMgr_->Load(projectDir_);
+    pluginMgr_->Load("."); // editor plugins are GLOBAL (engine-level), not per-project
     NEON_LOG_INFO("NeonEditor ready (%zu entities), project dir '%s'", entities_.size(),
                   projectDir_.c_str());
     // The smoke test is the canonical 3D-editor flow: --2d/--2d-play/--project
@@ -827,7 +826,6 @@ void EditorApp::OnUpdate(float dt) {
         showResources_ = true;
         showLog_ = true;
         showBt_ = true;
-        showScripts_ = true;
         showPackage_ = true;
         showProfiler_ = true;
         // Force the BT tab active for the upcoming render: when the persisted

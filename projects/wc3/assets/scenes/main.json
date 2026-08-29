@@ -1,1 +1,400 @@
-{"entities":[{"name":"Game","components":{"transform":{"pos":[0,0,0],"rot":[0,0,0,1],"scale":[1,1,1]},"scripts":{"items":[{"backend":"lua","path":"assets/scripts/wc3.lua","vars":{}}]}}},{"name":"Main Camera","components":{"transform":{"pos":[50,70,107.6],"rot":[-0.3907,0,0,0.9205],"scale":[1,1,1]},"camera":{"fov":55,"ortho":false,"orthoSize":10}}},{"name":"Ground","components":{"transform":{"pos":[50,-0.1,40],"rot":[0,0,0,1],"scale":[130,1,100]},"mesh":{"meshKey":"plane","material":{"colorHex":"#3A7D2C"}}}},{"name":"tree0","components":{"transform":{"pos":[15,0,6],"rot":[0,0,0,1],"scale":[1.6,1.9,1.6]},"mesh":{"meshKey":"tree"}}},{"name":"tree1","components":{"transform":{"pos":[24,0,11],"rot":[0,0,0,1],"scale":[1.6,1.9,1.6]},"mesh":{"meshKey":"tree"}}},{"name":"tree2","components":{"transform":{"pos":[33,0,16],"rot":[0,0,0,1],"scale":[1.6,1.9,1.6]},"mesh":{"meshKey":"tree"}}},{"name":"tree3","components":{"transform":{"pos":[42,0,6],"rot":[0,0,0,1],"scale":[1.6,1.9,1.6]},"mesh":{"meshKey":"tree"}}},{"name":"tree4","components":{"transform":{"pos":[51,0,11],"rot":[0,0,0,1],"scale":[1.6,1.9,1.6]},"mesh":{"meshKey":"tree"}}},{"name":"tree5","components":{"transform":{"pos":[60,0,16],"rot":[0,0,0,1],"scale":[1.6,1.9,1.6]},"mesh":{"meshKey":"tree"}}},{"name":"tree6","components":{"transform":{"pos":[69,0,6],"rot":[0,0,0,1],"scale":[1.6,1.9,1.6]},"mesh":{"meshKey":"tree"}}},{"name":"tree7","components":{"transform":{"pos":[78,0,11],"rot":[0,0,0,1],"scale":[1.6,1.9,1.6]},"mesh":{"meshKey":"tree"}}},{"name":"tree8","components":{"transform":{"pos":[87,0,16],"rot":[0,0,0,1],"scale":[1.6,1.9,1.6]},"mesh":{"meshKey":"tree"}}},{"name":"tree9","components":{"transform":{"pos":[96,0,6],"rot":[0,0,0,1],"scale":[1.6,1.9,1.6]},"mesh":{"meshKey":"tree"}}},{"name":"rock0","components":{"transform":{"pos":[85,0,70],"rot":[0,0,0,1],"scale":[1.2,1,1.2]},"mesh":{"meshKey":"rock"}}},{"name":"rock1","components":{"transform":{"pos":[91,0,74],"rot":[0,0,0,1],"scale":[1.2,1,1.2]},"mesh":{"meshKey":"rock"}}},{"name":"rock2","components":{"transform":{"pos":[97,0,70],"rot":[0,0,0,1],"scale":[1.2,1,1.2]},"mesh":{"meshKey":"rock"}}},{"name":"rock3","components":{"transform":{"pos":[103,0,74],"rot":[0,0,0,1],"scale":[1.2,1,1.2]},"mesh":{"meshKey":"rock"}}},{"name":"rock4","components":{"transform":{"pos":[109,0,70],"rot":[0,0,0,1],"scale":[1.2,1,1.2]},"mesh":{"meshKey":"rock"}}},{"name":"rock5","components":{"transform":{"pos":[115,0,74],"rot":[0,0,0,1],"scale":[1.2,1,1.2]},"mesh":{"meshKey":"rock"}}}]}
+{
+  "entities": [
+    {
+      "components": {
+        "scripts": {
+          "items": [
+            {
+              "backend": "lua",
+              "path": "assets/scripts/wc3.lua",
+              "vars": {}
+            }
+          ]
+        },
+        "transform": {
+          "pos": [0,0,0],
+          "rot": [0,0,0,1],
+          "scale": [1,1,1]
+        }
+      },
+      "id": 1,
+      "name": "Game"
+    },
+    {
+      "components": {
+        "camera": {
+          "fov": 55,
+          "orthoSize": 10
+        },
+        "transform": {
+          "pos": [50,70,107.5999984741211],
+          "rot": [-0.39070001244544983,0,0,0.9204999804496765],
+          "scale": [1,1,1]
+        },
+        "type": {
+          "value": "Camera3D"
+        }
+      },
+      "id": 2,
+      "name": "Main Camera"
+    },
+    {
+      "components": {
+        "mesh": {
+          "material": {
+            "ao": 1,
+            "colorHex": "#FFFFFF",
+            "emissiveIntensity": 1,
+            "metallic": 0,
+            "roughness": 0.800000011920929
+          },
+          "meshKey": "tree"
+        },
+        "transform": {
+          "pos": [15,0,6],
+          "rot": [0,0,0,1],
+          "scale": [1.600000023841858,1.899999976158142,1.600000023841858]
+        }
+      },
+      "id": 3,
+      "name": "tree0"
+    },
+    {
+      "components": {
+        "mesh": {
+          "material": {
+            "ao": 1,
+            "colorHex": "#FFFFFF",
+            "emissiveIntensity": 1,
+            "metallic": 0,
+            "roughness": 0.800000011920929
+          },
+          "meshKey": "tree"
+        },
+        "transform": {
+          "pos": [24,0,11],
+          "rot": [0,0,0,1],
+          "scale": [1.600000023841858,1.899999976158142,1.600000023841858]
+        }
+      },
+      "id": 4,
+      "name": "tree1"
+    },
+    {
+      "components": {
+        "mesh": {
+          "material": {
+            "ao": 1,
+            "colorHex": "#FFFFFF",
+            "emissiveIntensity": 1,
+            "metallic": 0,
+            "roughness": 0.800000011920929
+          },
+          "meshKey": "tree"
+        },
+        "transform": {
+          "pos": [33,0,16],
+          "rot": [0,0,0,1],
+          "scale": [1.600000023841858,1.899999976158142,1.600000023841858]
+        }
+      },
+      "id": 5,
+      "name": "tree2"
+    },
+    {
+      "components": {
+        "mesh": {
+          "material": {
+            "ao": 1,
+            "colorHex": "#FFFFFF",
+            "emissiveIntensity": 1,
+            "metallic": 0,
+            "roughness": 0.800000011920929
+          },
+          "meshKey": "tree"
+        },
+        "transform": {
+          "pos": [42,0,6],
+          "rot": [0,0,0,1],
+          "scale": [1.600000023841858,1.899999976158142,1.600000023841858]
+        }
+      },
+      "id": 6,
+      "name": "tree3"
+    },
+    {
+      "components": {
+        "mesh": {
+          "material": {
+            "ao": 1,
+            "colorHex": "#FFFFFF",
+            "emissiveIntensity": 1,
+            "metallic": 0,
+            "roughness": 0.800000011920929
+          },
+          "meshKey": "tree"
+        },
+        "transform": {
+          "pos": [51,0,11],
+          "rot": [0,0,0,1],
+          "scale": [1.600000023841858,1.899999976158142,1.600000023841858]
+        }
+      },
+      "id": 7,
+      "name": "tree4"
+    },
+    {
+      "components": {
+        "mesh": {
+          "material": {
+            "ao": 1,
+            "colorHex": "#FFFFFF",
+            "emissiveIntensity": 1,
+            "metallic": 0,
+            "roughness": 0.800000011920929
+          },
+          "meshKey": "tree"
+        },
+        "transform": {
+          "pos": [60,0,16],
+          "rot": [0,0,0,1],
+          "scale": [1.600000023841858,1.899999976158142,1.600000023841858]
+        }
+      },
+      "id": 8,
+      "name": "tree5"
+    },
+    {
+      "components": {
+        "mesh": {
+          "material": {
+            "ao": 1,
+            "colorHex": "#FFFFFF",
+            "emissiveIntensity": 1,
+            "metallic": 0,
+            "roughness": 0.800000011920929
+          },
+          "meshKey": "tree"
+        },
+        "transform": {
+          "pos": [69,0,6],
+          "rot": [0,0,0,1],
+          "scale": [1.600000023841858,1.899999976158142,1.600000023841858]
+        }
+      },
+      "id": 9,
+      "name": "tree6"
+    },
+    {
+      "components": {
+        "mesh": {
+          "material": {
+            "ao": 1,
+            "colorHex": "#FFFFFF",
+            "emissiveIntensity": 1,
+            "metallic": 0,
+            "roughness": 0.800000011920929
+          },
+          "meshKey": "tree"
+        },
+        "transform": {
+          "pos": [78,0,11],
+          "rot": [0,0,0,1],
+          "scale": [1.600000023841858,1.899999976158142,1.600000023841858]
+        }
+      },
+      "id": 10,
+      "name": "tree7"
+    },
+    {
+      "components": {
+        "mesh": {
+          "material": {
+            "ao": 1,
+            "colorHex": "#FFFFFF",
+            "emissiveIntensity": 1,
+            "metallic": 0,
+            "roughness": 0.800000011920929
+          },
+          "meshKey": "tree"
+        },
+        "transform": {
+          "pos": [87,0,16],
+          "rot": [0,0,0,1],
+          "scale": [1.600000023841858,1.899999976158142,1.600000023841858]
+        }
+      },
+      "id": 11,
+      "name": "tree8"
+    },
+    {
+      "components": {
+        "mesh": {
+          "material": {
+            "ao": 1,
+            "colorHex": "#FFFFFF",
+            "emissiveIntensity": 1,
+            "metallic": 0,
+            "roughness": 0.800000011920929
+          },
+          "meshKey": "tree"
+        },
+        "transform": {
+          "pos": [96,0,6],
+          "rot": [0,0,0,1],
+          "scale": [1.600000023841858,1.899999976158142,1.600000023841858]
+        }
+      },
+      "id": 12,
+      "name": "tree9"
+    },
+    {
+      "components": {
+        "mesh": {
+          "material": {
+            "ao": 1,
+            "colorHex": "#FFFFFF",
+            "emissiveIntensity": 1,
+            "metallic": 0,
+            "roughness": 0.800000011920929
+          },
+          "meshKey": "rock"
+        },
+        "transform": {
+          "pos": [85,0,70],
+          "rot": [0,0,0,1],
+          "scale": [1.2000000476837158,1,1.2000000476837158]
+        }
+      },
+      "id": 13,
+      "name": "rock0"
+    },
+    {
+      "components": {
+        "mesh": {
+          "material": {
+            "ao": 1,
+            "colorHex": "#FFFFFF",
+            "emissiveIntensity": 1,
+            "metallic": 0,
+            "roughness": 0.800000011920929
+          },
+          "meshKey": "rock"
+        },
+        "transform": {
+          "pos": [91,0,74],
+          "rot": [0,0,0,1],
+          "scale": [1.2000000476837158,1,1.2000000476837158]
+        }
+      },
+      "id": 14,
+      "name": "rock1"
+    },
+    {
+      "components": {
+        "mesh": {
+          "material": {
+            "ao": 1,
+            "colorHex": "#FFFFFF",
+            "emissiveIntensity": 1,
+            "metallic": 0,
+            "roughness": 0.800000011920929
+          },
+          "meshKey": "rock"
+        },
+        "transform": {
+          "pos": [97,0,70],
+          "rot": [0,0,0,1],
+          "scale": [1.2000000476837158,1,1.2000000476837158]
+        }
+      },
+      "id": 15,
+      "name": "rock2"
+    },
+    {
+      "components": {
+        "mesh": {
+          "material": {
+            "ao": 1,
+            "colorHex": "#FFFFFF",
+            "emissiveIntensity": 1,
+            "metallic": 0,
+            "roughness": 0.800000011920929
+          },
+          "meshKey": "rock"
+        },
+        "transform": {
+          "pos": [103,0,74],
+          "rot": [0,0,0,1],
+          "scale": [1.2000000476837158,1,1.2000000476837158]
+        }
+      },
+      "id": 16,
+      "name": "rock3"
+    },
+    {
+      "components": {
+        "mesh": {
+          "material": {
+            "ao": 1,
+            "colorHex": "#FFFFFF",
+            "emissiveIntensity": 1,
+            "metallic": 0,
+            "roughness": 0.800000011920929
+          },
+          "meshKey": "rock"
+        },
+        "transform": {
+          "pos": [109,0,70],
+          "rot": [0,0,0,1],
+          "scale": [1.2000000476837158,1,1.2000000476837158]
+        }
+      },
+      "id": 17,
+      "name": "rock4"
+    },
+    {
+      "components": {
+        "mesh": {
+          "material": {
+            "ao": 1,
+            "colorHex": "#FFFFFF",
+            "emissiveIntensity": 1,
+            "metallic": 0,
+            "roughness": 0.800000011920929
+          },
+          "meshKey": "rock"
+        },
+        "transform": {
+          "pos": [115,0,74],
+          "rot": [0,0,0,1],
+          "scale": [1.2000000476837158,1,1.2000000476837158]
+        }
+      },
+      "id": 18,
+      "name": "rock5"
+    },
+    {
+      "components": {
+        "light": {
+          "ambientStrength": 0.25,
+          "color": [1,0.949999988079071,0.8500000238418579,1],
+          "intensity": 1,
+          "radius": 10,
+          "sunDir": [-0.4000000059604645,-1,-0.30000001192092896],
+          "type": "directional"
+        },
+        "transform": {
+          "pos": [0,0,0],
+          "rot": [0,0,0,1],
+          "scale": [1,1,1]
+        },
+        "type": {
+          "value": "Light3D"
+        }
+      },
+      "id": 19,
+      "name": "Directional Light"
+    }
+  ]
+}

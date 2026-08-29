@@ -305,18 +305,23 @@ void EditorApp::BuildBtPanel() {
 
     const float availW = ImGui::GetContentRegionAvail().x;
     const float availH = ImGui::GetContentRegionAvail().y;
+    // 节点参数面板: 仅在选中画布节点后出现在右侧 (未选中时画布占满).
+    const bool hasSelection = !btSelected_.empty() && btGraph_.Find(btSelected_) != nullptr;
+    const float paramsW = hasSelection ? 260.0f : 0.0f;
     ImGui::BeginChild("##bt_palette", ImVec2(180.0f, availH), ImGuiChildFlags_Borders);
     BuildBtPalette();
     ImGui::EndChild();
     ImGui::SameLine();
-    ImGui::BeginChild("##bt_params", ImVec2(260.0f, availH), ImGuiChildFlags_Borders);
-    BuildBtParams();
-    ImGui::EndChild();
-    ImGui::SameLine();
-    const float canvasW = std::max(160.0f, availW - 180.0f - 260.0f);
+    const float canvasW = std::max(160.0f, availW - 180.0f - paramsW);
     ImGui::BeginChild("##bt_canvas", ImVec2(canvasW, availH), ImGuiChildFlags_Borders);
     BuildBtCanvas();
     ImGui::EndChild();
+    if (hasSelection) {
+        ImGui::SameLine();
+        ImGui::BeginChild("##bt_params", ImVec2(paramsW, availH), ImGuiChildFlags_Borders);
+        BuildBtParams();
+        ImGui::EndChild();
+    }
     ImGui::End();
 }
 
@@ -404,53 +409,95 @@ void EditorApp::BuildBtPalette() {
     ImGui::TextDisabled("点击条目后在画布放置,\n或直接拖入画布.\nCtrl+点击连线,\nShift+点击断开");
 }
 
+namespace {
+inline float BtClamp(float v, float lo, float hi) { return v < lo ? lo : (v > hi ? hi : v); }
+inline float BtDist(float x1, float y1, float x2, float y2) {
+    const float dx = x2 - x1, dy = y2 - y1;
+    return std::sqrt(dx * dx + dy * dy);
+}
+} // namespace
+
 void EditorApp::BuildBtCanvas() {
     btCanvasDrawn_ = false;
     const ImVec2 origin = ImGui::GetCursorScreenPos();
-    ImGui::InvisibleButton("##bt_canvas_region", ImVec2(kCanvasW, kCanvasH));
+    const ImVec2 avail = ImGui::GetContentRegionAvail();
+    // 无滚动条: 画布仅平移 (btPan_, 中键/空白拖拽) + 缩放 (btZoom_, 滚轮以鼠标为中心)。
+    ImGui::InvisibleButton("##bt_canvas_region", avail);
     const bool hovered = ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem);
-    const ImVec2 toCanvas(origin.x - ImGui::GetScrollX(), origin.y - ImGui::GetScrollY());
+
+    const ImVec2 toScreen(origin.x + btPan_.x, origin.y + btPan_.y);
+    auto w2s = [&](const ImVec2& wp) {
+        return ImVec2(toScreen.x + wp.x * btZoom_, toScreen.y + wp.y * btZoom_);
+    };
+    auto s2w = [&](const ImVec2& sp) {
+        return math::Vec2((sp.x - toScreen.x) / btZoom_, (sp.y - toScreen.y) / btZoom_);
+    };
+
+    // --- 锚点 (画布坐标): 输入=顶部中点, 输出=底部中点 ---
+    auto inAnchor = [&](const btgraph::BtGraphNode& n) {
+        return ImVec2(n.pos.x + kNodeW * 0.5f, n.pos.y);
+    };
+    auto outAnchor = [&](const btgraph::BtGraphNode& n) {
+        return ImVec2(n.pos.x + kNodeW * 0.5f, n.pos.y + kNodeH);
+    };
 
     ImDrawList* dl = ImGui::GetWindowDrawList();
     const int vtxBefore = dl->VtxBuffer.Size;
 
-    // --- links: parent bottom -> child top bezier ---
+    // --- 连线: 父输出锚点 -> 子输入锚点 bezier ---
     for (const auto& l : btGraph_.Links()) {
         const btgraph::BtGraphNode* p = btGraph_.Find(l.parent);
         const btgraph::BtGraphNode* c = btGraph_.Find(l.child);
         if (!p || !c) continue;
-        const ImVec2 p0(toCanvas.x + p->pos.x + kNodeW * 0.5f, toCanvas.y + p->pos.y + kNodeH);
-        const ImVec2 p1(toCanvas.x + c->pos.x + kNodeW * 0.5f, toCanvas.y + c->pos.y);
-        const ImVec2 cp0(p0.x, p0.y + 46.0f);
-        const ImVec2 cp1(p1.x, p1.y - 46.0f);
+        const ImVec2 p0 = w2s(outAnchor(*p));
+        const ImVec2 p1 = w2s(inAnchor(*c));
+        const float droop = 46.0f * btZoom_;
+        const ImVec2 cp0(p0.x, p0.y + droop);
+        const ImVec2 cp1(p1.x, p1.y - droop);
         const bool active = playActive_ && btGraph_.TreeIdOf(c->id) == btActivePath_;
         dl->AddBezierCubic(p0, cp0, cp1, p1,
                            active ? IM_COL32(80, 255, 120, 255) : IM_COL32(150, 160, 180, 255),
-                           2.0f);
+                           2.0f * btZoom_);
+        // 锚点圆点
+        dl->AddCircleFilled(p0, 4.0f * btZoom_, IM_COL32(200, 210, 230, 255));
+        dl->AddCircleFilled(p1, 4.0f * btZoom_, IM_COL32(200, 210, 230, 255));
     }
 
-    // --- nodes ---
+    // --- 蓄力连线中 (锚点拖拽): 从输出锚点到鼠标 ---
+    const ImVec2 mouseScr = ImGui::GetIO().MousePos;
+    if (btLinking_) {
+        const btgraph::BtGraphNode* from = btGraph_.Find(btLinkFrom_);
+        if (from) {
+            const ImVec2 pa = w2s(outAnchor(*from));
+            dl->AddBezierCubic(pa, ImVec2(pa.x, pa.y + 40.0f * btZoom_),
+                               ImVec2(mouseScr.x, mouseScr.y + 30.0f), mouseScr,
+                               IM_COL32(120, 200, 255, 220), 2.0f * btZoom_);
+        }
+    }
+
+    // --- 节点 ---
     for (const auto& n : btGraph_.Nodes()) {
-        const ImVec2 pos(toCanvas.x + n.pos.x, toCanvas.y + n.pos.y);
-        const ImRect rect(pos, ImVec2(pos.x + kNodeW, pos.y + kNodeH));
+        const ImVec2 pos = w2s(ImVec2(n.pos.x, n.pos.y));
+        const ImVec2 end = w2s(ImVec2(n.pos.x + kNodeW, n.pos.y + kNodeH));
         const bool selected = btSelected_ == n.id;
         const bool active = playActive_ && btGraph_.TreeIdOf(n.id) == btActivePath_;
         const bt::NodeTypeInfo* info = FindTypeInfo(n.type);
         const ImU32 cat = CatColor(info ? info->category.c_str() : nullptr);
 
-        dl->AddRectFilled(rect.Min, rect.Max, IM_COL32(40, 44, 56, 255), 6.0f);
-        dl->AddRectFilled(rect.Min, ImVec2(rect.Max.x, rect.Min.y + 24.0f), cat, 6.0f);
-        dl->AddRectFilled(ImVec2(rect.Min.x, rect.Min.y + 16.0f),
-                          ImVec2(rect.Max.x, rect.Min.y + 24.0f), IM_COL32(40, 44, 56, 255));
+        dl->AddRectFilled(pos, end, IM_COL32(40, 44, 56, 255), 6.0f * btZoom_);
+        dl->AddRectFilled(pos, ImVec2(end.x, pos.y + 24.0f * btZoom_), cat, 6.0f * btZoom_);
+        dl->AddRectFilled(ImVec2(pos.x, pos.y + 16.0f * btZoom_),
+                          ImVec2(end.x, pos.y + 24.0f * btZoom_),
+                          IM_COL32(40, 44, 56, 255));
         const ImU32 border = active ? IM_COL32(80, 255, 120, 255)
                                     : selected ? IM_COL32(255, 200, 80, 255)
                                                : IM_COL32(120, 130, 150, 255);
-        dl->AddRect(rect.Min, rect.Max, border, 6.0f, ImDrawFlags_None,
+        dl->AddRect(pos, end, border, 6.0f * btZoom_, ImDrawFlags_None,
                     (selected || active) ? 2.5f : 1.0f);
 
         const std::string title = n.name.empty() ? n.type : n.name;
-        dl->AddText(ImVec2(pos.x + 7.0f, pos.y + 4.0f), IM_COL32(255, 255, 255, 255),
-                    title.c_str());
+        dl->AddText(nullptr, 13.0f * btZoom_, ImVec2(pos.x + 7.0f * btZoom_, pos.y + 4.0f * btZoom_),
+                    IM_COL32(255, 255, 255, 255), title.c_str());
         if (info) {
             std::string line;
             for (size_t i = 0; i < info->params.size() && i < 2; ++i) {
@@ -458,7 +505,8 @@ void EditorApp::BuildBtCanvas() {
                 line += info->params[i].name + "=" + ArgText(n, info->params[i]);
             }
             if (!line.empty())
-                dl->AddText(ImVec2(pos.x + 7.0f, pos.y + 30.0f),
+                dl->AddText(nullptr, 12.0f * btZoom_,
+                            ImVec2(pos.x + 7.0f * btZoom_, pos.y + 30.0f * btZoom_),
                             IM_COL32(200, 205, 215, 255), line.c_str());
         }
     }
@@ -466,11 +514,55 @@ void EditorApp::BuildBtCanvas() {
     // one command, so CmdBuffer may not grow even when nodes/links drew.
     btCanvasDrawn_ = dl->VtxBuffer.Size > vtxBefore;
 
-    // --- interaction ---
-    if (hovered) {
-        const ImVec2 mouse = ImGui::GetIO().MousePos;
-        const math::Vec2 cm(mouse.x - toCanvas.x, mouse.y - toCanvas.y);
+    // --- 交互 (视图变换后的世界坐标) ---
+    const ImVec2 mouseScr2 = ImGui::GetIO().MousePos;
+    const math::Vec2 cm = s2w(mouseScr2);
 
+    // 滚轮缩放 (以鼠标为锚点)
+    if (hovered) {
+        const float wheel = ImGui::GetIO().MouseWheel;
+        if (wheel != 0.0f) {
+            const math::Vec2 anchor = s2w(mouseScr2);
+            btZoom_ = BtClamp(btZoom_ * (wheel > 0 ? 1.15f : 1.0f / 1.15f), 0.4f, 2.5f);
+            btPan_.x = mouseScr2.x - origin.x - anchor.x * btZoom_;
+            btPan_.y = mouseScr2.y - origin.y - anchor.y * btZoom_;
+        }
+    }
+    // 中键拖拽 / 空白左键拖拽 = 平移
+    const bool panning =
+        btCanvasDrawn_ &&
+        ((hovered && ImGui::IsMouseDragging(ImGuiMouseButton_Middle, 4.0f)) ||
+         (ImGui::IsMouseDragging(ImGuiMouseButton_Left, 4.0f) && btDragNode_.empty() &&
+          btLinkFrom_.empty() && btSelected_.empty() && btPendingType_.empty()));
+    if (panning) {
+        btPan_.x += ImGui::GetIO().MouseDelta.x;
+        btPan_.y += ImGui::GetIO().MouseDelta.y;
+    }
+
+    // 锚点命中 (屏幕像素距离)
+    auto anchorHit = [&](float px, float py, float maxPx) -> std::string {
+        std::string hitId;
+        float best = maxPx;
+        for (const auto& n : btGraph_.Nodes()) {
+            const ImVec2 so = w2s(outAnchor(n));
+            const float dOut = BtDist(px, py, so.x, so.y);
+            if (dOut < best) { best = dOut; hitId = n.id; }
+        }
+        return hitId;
+    };
+
+    // 锚点拖拽连线: 释放在节点上 = 连接 (SetParent)
+    if (btLinking_ && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+        const std::string hit = HitTest(btGraph_, cm);
+        if (!hit.empty() && hit != btLinkFrom_) {
+            const btgraph::BtGraph before = btGraph_;
+            if (btGraph_.SetParent(hit, btLinkFrom_)) BtPushSnapshot(before);
+        }
+        btLinking_ = false;
+        btLinkFrom_.clear();
+    }
+
+    if (hovered && !btLinking_) {
         if (ImGui::BeginDragDropTarget()) {
             if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("BT_PALETTE")) {
                 std::string type(static_cast<const char*>(payload->Data),
@@ -489,7 +581,17 @@ void EditorApp::BuildBtCanvas() {
 
         const std::string hit = HitTest(btGraph_, cm);
         if (!btDragging_ && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-            BtCanvasClick(cm, ImGui::GetIO().KeyCtrl, ImGui::GetIO().KeyShift);
+            // 输出锚点优先: 从锚点拖出连线
+            if (!hit.empty()) {
+                if (const btgraph::BtGraphNode* hn = btGraph_.Find(hit)) {
+                    const ImVec2 so = w2s(outAnchor(*hn));
+                    if (BtDist(mouseScr2.x, mouseScr2.y, so.x, so.y) < 10.0f * btZoom_) {
+                        btLinking_ = true;
+                        btLinkFrom_ = hit;
+                    }
+                }
+            }
+            if (!btLinking_) BtCanvasClick(cm, ImGui::GetIO().KeyCtrl, ImGui::GetIO().KeyShift);
         }
 
         if (!btSelected_.empty() && ImGui::IsKeyPressed(ImGuiKey_Delete, false) &&
@@ -501,12 +603,20 @@ void EditorApp::BuildBtCanvas() {
         }
     }
 
-    // Drag-move continues even when the pointer leaves the canvas.
+    // 连线拖拽跟随 (即使指针离开画布)
+    if (btLinking_) {
+        if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+            btLinking_ = false;
+            btLinkFrom_.clear();
+        }
+        return;
+    }
+
+    // 节点拖拽跟随 (即使指针离开画布)
     if (btDragging_) {
-        const ImVec2 mouse = ImGui::GetIO().MousePos;
-        const math::Vec2 cm(mouse.x - toCanvas.x, mouse.y - toCanvas.y);
+        const math::Vec2 cm2 = s2w(ImGui::GetIO().MousePos);
         if (ImGui::IsMouseDragging(ImGuiMouseButton_Left, 2.0f) && !btDragNode_.empty()) {
-            const math::Vec2 delta(cm.x - btDragStart_.x, cm.y - btDragStart_.y);
+            const math::Vec2 delta(cm2.x - btDragStart_.x, cm2.y - btDragStart_.y);
             btGraph_.SetPos(btDragNode_, btNodeStartPos_ + delta);
         }
         if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
@@ -520,7 +630,6 @@ void EditorApp::BuildBtCanvas() {
         }
     }
 }
-
 void EditorApp::BtCanvasClick(const math::Vec2& cm, bool ctrl, bool shift) {
     const std::string hit = HitTest(btGraph_, cm);
     if (!hit.empty()) {

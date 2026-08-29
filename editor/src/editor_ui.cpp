@@ -97,7 +97,6 @@ void EditorApp::BuildImGuiUI() {
             ImGui::MenuItem("日志", nullptr, &showLog_);
             ImGui::MenuItem("模型查看器", nullptr, &showModelPreview_);
             ImGui::MenuItem("行为树", nullptr, &showBt_);
-            ImGui::MenuItem("脚本", nullptr, &showScripts_);
             ImGui::MenuItem("脚本编辑器", nullptr, &showScriptEditor_);
             ImGui::MenuItem("打包", nullptr, &showPackage_);
             ImGui::MenuItem("性能", nullptr, &showProfiler_);
@@ -322,13 +321,6 @@ void EditorApp::BuildImGuiUI() {
         if (ImGui::BeginCombo("##scene_picker", currentSceneName_.empty()
                                                     ? "选择场景…"
                                                     : SceneDisplayName(currentSceneName_).c_str())) {
-            if (projectDir_ == kDefaultProjectDir) {
-                const std::string sandboxScene =
-                    std::string(kDefaultProjectDir) + "/" + kSandboxSceneRel;
-                if (ImGui::Selectable(SceneDisplayName(sandboxScene).c_str(),
-                                      currentSceneName_ == BaseName(sandboxScene)))
-                    LoadScene(sandboxScene);
-            }
             for (const std::string& s : projectScenes_) {
                 if (ImGui::Selectable(SceneDisplayName(s).c_str(),
                                       currentSceneName_ == BaseName(s)))
@@ -447,7 +439,6 @@ void EditorApp::BuildImGuiUI() {
     BuildLogPanel();
     BuildModelPreviewPanel();
     BuildBtPanel();
-    BuildScriptPanel();
         BuildScriptEditorPanel();
         BuildAnimEditorPanel();
         BuildStateMachineEditorPanel();

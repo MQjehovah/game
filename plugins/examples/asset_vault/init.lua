@@ -5,7 +5,7 @@
 -- current asset browse dir. Point the vault at a shared network folder to
 -- share a team-wide asset library.
 
-local VAULT = "plugins/examples/asset_vault/vault"
+local VAULT = "plugins/examples/asset_vault/vault" -- 放入素材文件后生效
 
 function on_load()
   NeonEditor.assetSource(

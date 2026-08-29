@@ -563,19 +563,6 @@ void EditorApp::RunUISmokeTest() {
         }
         const std::string prevProj = projectDir_;
         projectDir_ = proj;
-        RefreshScriptChecks();
-        check(!scriptFiles_.empty(), "script panel: project scripts enumerated");
-        bool sawGood = false, sawBroken = false, brokenHasLine = false;
-        for (size_t i = 0; i < scriptFiles_.size(); ++i) {
-            if (scriptFiles_[i] == "assets/scripts/good.lua")
-                sawGood = scriptChecks_[i].ok && scriptChecks_[i].message.empty();
-            else if (scriptFiles_[i] == "assets/scripts/broken.lua") {
-                sawBroken = !scriptChecks_[i].ok && !scriptChecks_[i].message.empty();
-                brokenHasLine = scriptChecks_[i].line > 0;
-            }
-        }
-        check(sawGood && sawBroken && brokenHasLine,
-              "script panel: syntax check passes valid and flags broken with a line");
 
         if (selected_ >= 0 && selected_ < static_cast<int>(entities_.size())) {
             const int idx = selected_;
@@ -643,84 +630,6 @@ void EditorApp::RunUISmokeTest() {
         // Leave the script attached on the entity: it exercises the play
         // path (a missing script file is skipped non-fatally by the runtime).
         NEON_LOG_INFO("EDITOR-SCRIPT-SMOKE: script panel checks done");
-    }
-
-    // --- Script panel sync invalidation on entity-list mutation (T4.5 review) ---
-    // The panel caches its dropdown + vars buffer by the selected INDEX. Any
-    // mutation that appends/removes/moves entities (or reselects after a load)
-    // must invalidate that cache, or the panel shows the PREVIOUS occupant's
-    // script and 附加 silently attaches it to the entity that now sits at the
-    // index. This reproduces the reported flow: select the last entity and sync
-    // the panel to a distinctive script, AddEntity (appends + reselects the new
-    // last), then verify the cache was invalidated and a fresh attach lands on
-    // the NEW entity, not the stale one.
-    {
-        const int last = static_cast<int>(entities_.size()) - 1;
-        check(last >= 0, "script sync: smoke has an entity to select");
-        if (last >= 0) {
-            SetSelection(last);
-            // Emulate the panel having synced to the last entity + a script
-            // attached to it (the stale state that must not leak forward).
-            SceneEntity& oldLast = entities_[static_cast<size_t>(last)];
-            core::Json staleVars;
-            staleVars.type_ = core::Json::Type::Object;
-            core::Json staleMarker;
-            staleMarker.type_ = core::Json::Type::Number;
-            staleMarker.number_ = 9.0;
-            staleVars.object_["stale"] = staleMarker;
-            // Replace the entity's mounted list with one distinctive script
-            // (the stale panel state that must not leak to the next entity).
-            std::vector<SceneScriptFields> staleList;
-            staleList.push_back({"lua", "assets/scripts/stale.lua", staleVars});
-            history_.Push(std::make_unique<
-                EditPropertyCommand<std::vector<SceneScriptFields>>>(
-                &entities_, last, ApplyScriptList, oldLast.scripts, staleList,
-                /*mergeable=*/false));
-            check(oldLast.scripts.size() == 1 &&
-                      oldLast.scripts[0].path == "assets/scripts/stale.lua",
-                  "script sync: distinctive script attached to the last entity");
-            // The insert below may reallocate the vector, so keep the stale
-            // path by value (never hold a reference across AddEntity).
-            const std::string stalePath = oldLast.scripts[0].path;
-            scriptSyncEntity_ = last; // panel cache now points at the last index
-            scriptAttachIndex_ = 0;
-
-            const size_t countBefore = entities_.size();
-            AddEntity("cube"); // appends + reselects the new last entity
-            check(entities_.size() == countBefore + 1,
-                  "script sync: AddEntity appends a new entity");
-            check(selected_ == static_cast<int>(entities_.size()) - 1,
-                  "script sync: AddEntity selects the new last entity");
-            check(scriptSyncEntity_ == -1,
-                  "script sync: entity-list mutation invalidates the panel sync cache");
-
-            // Attach through the real command path: must land on the NEW entity.
-            const int freshIdx = static_cast<int>(entities_.size()) - 1;
-            SceneEntity& fresh = entities_[static_cast<size_t>(freshIdx)];
-            core::Json freshVars;
-            freshVars.type_ = core::Json::Type::Object;
-            core::Json freshMarker;
-            freshMarker.type_ = core::Json::Type::Number;
-            freshMarker.number_ = 3.0;
-            freshVars.object_["hp"] = freshMarker;
-            std::vector<SceneScriptFields> freshList = fresh.scripts;
-            freshList.push_back({"lua", "assets/scripts/good.lua", freshVars});
-            history_.Push(std::make_unique<
-                EditPropertyCommand<std::vector<SceneScriptFields>>>(
-                &entities_, freshIdx, ApplyScriptList, fresh.scripts, freshList,
-                /*mergeable=*/false));
-            check(fresh.scripts.size() == 1 &&
-                      fresh.scripts[0].path == "assets/scripts/good.lua" &&
-                      fresh.scripts[0].vars.Get("hp")->GetNumber() == 3.0,
-                  "script sync: attach lands on the new entity");
-            check(entities_[static_cast<size_t>(last)].scripts.size() == 1 &&
-                      entities_[static_cast<size_t>(last)].scripts[0].path == stalePath,
-                  "script sync: the previous entity keeps its own script (no stale attach)");
-            history_.Undo(); // leave the new cube script-less
-            check(fresh.scripts.empty(),
-                  "script sync: undo clears the new entity's script");
-        }
-        NEON_LOG_INFO("EDITOR-SCRIPT-SMOKE: sync invalidation checks done");
     }
 
     // --- Script mount list (multiple scripts, component-style add/remove) ---
@@ -1081,13 +990,12 @@ void EditorApp::RunUISmokeTest() {
               "script editor: opens the file");
         check(scriptEditorCheck_.ok, "script editor: syntax passes on open");
         // Break the syntax, save, and expect the error to surface.
-        std::snprintf(scriptEditorBuf_, sizeof(scriptEditorBuf_), "function broken( then\n");
+        scriptEdit_.SetText("function broken( then\n");
         SaveScriptEditor();
         check(!scriptEditorCheck_.ok && !scriptEditorCheck_.message.empty(),
               "script editor: syntax error detected after save");
         // Fix and save again.
-        std::snprintf(scriptEditorBuf_, sizeof(scriptEditorBuf_),
-                      "function on_start(ent)\nend\n");
+        scriptEdit_.SetText("function on_start(ent)\nend\n");
         SaveScriptEditor();
         check(scriptEditorCheck_.ok, "script editor: syntax passes after fix");
         std::ifstream verify(path, std::ios::binary);
@@ -1112,12 +1020,11 @@ void EditorApp::RunUISmokeTest() {
         check(showScriptEditor_ && scriptEditorPath_ == path,
               "script editor: opens a .js file");
         check(scriptEditorCheck_.ok, "script editor: JS syntax passes on open");
-        std::snprintf(scriptEditorBuf_, sizeof(scriptEditorBuf_), "function broken( {\n");
+        scriptEdit_.SetText("function broken( {\n");
         SaveScriptEditor();
         check(!scriptEditorCheck_.ok && !scriptEditorCheck_.message.empty(),
               "script editor: JS syntax error detected after save");
-        std::snprintf(scriptEditorBuf_, sizeof(scriptEditorBuf_),
-                      "function on_start(ent) {\n}\n");
+        scriptEdit_.SetText("function on_start(ent) {\n}\n");
         SaveScriptEditor();
         check(scriptEditorCheck_.ok, "script editor: JS syntax passes after fix");
     }

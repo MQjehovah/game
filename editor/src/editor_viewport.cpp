@@ -1008,7 +1008,6 @@ void EditorApp::SetSelection(int index) {
     selection_.clear();
     if (index >= 0) selection_.insert(index);
     selectionAnchor_ = index;
-    scriptSyncEntity_ = -1; // script panel caches by index: force a re-sync
 }
 
 void EditorApp::ToggleSelection(int index) {
@@ -1024,7 +1023,6 @@ void EditorApp::ToggleSelection(int index) {
         selected_ = index;
         selectionAnchor_ = index;
     }
-    scriptSyncEntity_ = -1;
 }
 
 void EditorApp::SelectRangeTo(int index) {
@@ -1039,14 +1037,12 @@ void EditorApp::SelectRangeTo(int index) {
         if (i >= 0 && i < static_cast<int>(entities_.size())) selection_.insert(i);
     }
     selected_ = index;
-    scriptSyncEntity_ = -1;
 }
 
 void EditorApp::ClearSelection() {
     selection_.clear();
     selected_ = -1;
     selectionAnchor_ = -1;
-    scriptSyncEntity_ = -1;
 }
 
 bool EditorApp::IsSelected(int idx) const {
