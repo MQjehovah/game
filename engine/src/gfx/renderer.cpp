@@ -824,6 +824,11 @@ void Renderer::InitBuiltinResources() {
     // half-float FBO, the renderer falls back to the legacy direct-to-backbuffer
     // flow and bloom is skipped.
     hdrEnabled_ = TestFloatTargetCapability();
+    NEON_LOG_CAT(neon::core::LogCategory::Gfx,
+                 hdrEnabled_ ? neon::core::LogLevel::Info : neon::core::LogLevel::Warn,
+                 "Renderer: HDR float-target pipeline %s (bloom %s)",
+                 hdrEnabled_ ? "ACTIVE" : "UNAVAILABLE (legacy backbuffer path)",
+                 hdrEnabled_ && bloomEnabled_ ? "on" : "off");
 
     // MSAA on the HDR scene target (Task 3.7): gated on the float path AND the
     // multisample FBO + blit-resolve self-test. A failure (or --no-msaa) keeps

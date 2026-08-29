@@ -104,17 +104,24 @@ local function fxRing(prefab, x, z, r0, r1, life)
   return e
 end
 
--- 抛射发光球: 从 (x,y,z) 外抛到随机终点 (缓出)
-local function fxOrb(prefab, x, y, z, sp, scale, life)
+-- 抛射发光球: 从 (x,y,z) 外抛到随机终点 (缓出)。
+-- 双层: emissive 球核 (HDR 亮度, 进 bloom) + billboard 光晕面片 (柔边形状)。
+local function fxOrb(family, x, y, z, sp, scale, life)
   local a = math.random() * math.pi * 2
   local d = sp * (0.35 + math.random() * 0.65)
-  local e = SpawnPrefab(prefab, { x = x, y = y, z = z })
-  if e == nil then return end
-  SetScale(e, scale, scale, scale)
-  Tween(e, 0, { x = x, y = y, z = z },
-        { x = x + math.cos(a) * d, y = y + 1.0 + math.random() * 1.8, z = z + math.sin(a) * d },
-        life, 2)
-  vfxEnts[#vfxEnts + 1] = { ent = e, dieAt = vfxClock + life + 0.02 }
+  local tx, ty, tz = x + math.cos(a) * d, y + 1.0 + math.random() * 1.8, z + math.sin(a) * d
+  local core = SpawnPrefab("fx_orb_" .. family, { x = x, y = y, z = z })
+  if core ~= nil then
+    SetScale(core, scale * 0.28, scale * 0.28, scale * 0.28)
+    Tween(core, 0, { x = x, y = y, z = z }, { x = tx, y = ty, z = tz }, life, 2)
+    vfxEnts[#vfxEnts + 1] = { ent = core, dieAt = vfxClock + life + 0.02 }
+  end
+  local halo = SpawnPrefab("fx_glow_" .. family, { x = x, y = y, z = z })
+  if halo ~= nil then
+    SetScale(halo, scale * 1.6, scale * 1.6, scale * 1.6)
+    Tween(halo, 0, { x = x, y = y, z = z }, { x = tx, y = ty, z = tz }, life, 2)
+    vfxEnts[#vfxEnts + 1] = { ent = halo, dieAt = vfxClock + life + 0.02 }
+  end
 end
 
 -- 一圈粒子
@@ -398,7 +405,7 @@ local function update_player(dt)
       end
       fxRing("fx_ring_ice", pp.x, pp.z, 0.5, 7.2, 0.5)
       fxRing("fx_ring_ice", pp.x, pp.z, 0.3, 5.5, 0.7)
-      fxOrbBurst("fx_orb_ice", pp.x, pp.y + 1, pp.z, 40, 6, 0.55, 0.65)
+      fxOrbBurst("ice", pp.x, pp.y + 1, pp.z, 40, 6, 0.35, 0.65)
       PlaySfx(SKILLS.frost.sfx)
       shake(0.2)
     end
@@ -440,10 +447,9 @@ local function update_player(dt)
       end
       for i = 1, 10 do
         local t = i / 10
-        spawnFx("fx_orb_gold", fx + (tx - fx) * t, pp.y + 1.1, fz + (tz - fz) * t,
-                0.7 + 0.2 * math.random(), 0.5)
+        fxOrb("gold", fx + (tx - fx) * t, pp.y + 1.1, fz + (tz - fz) * t, 0, 0.3, 0.5)
       end
-      spawnFx("fx_orb_fire", tx, pp.y + 1.1, tz, 1.4, 0.55)
+      fxOrb("fire", tx, pp.y + 1.1, tz, 0, 0.8, 0.6)
       PlayAnimation(hero, "Spellcast_Shoot", false, 0.15)
       PlaySfx(SKILLS.beam.sfx)
       shake(0.15)
@@ -464,7 +470,7 @@ local function update_player(dt)
       -- 紫环: 越过半径再回弹 (snap)
       fxRing("fx_ring_volt", tx, tz, 6.4, 5.5, 0.35)
       fxRing("fx_ring_volt", tx, tz, 5.5, 5.5, 0.6)
-      fxOrbBurst("fx_orb_violet", tx, pp.y + 0.8, tz, 28, 5, 0.5, 0.6)
+      fxOrbBurst("violet", tx, pp.y + 0.8, tz, 28, 5, 0.3, 0.6)
       PlayAnimation(hero, "Spellcast_Shoot", false, 0.15)
       PlaySfx(SKILLS.snare.sfx)
       shake(0.12)
@@ -704,7 +710,7 @@ local function update_vfx(dt)
       fxRing("fx_ring_fire", mt.wx, mt.wz, 1, 6.5, 0.45)
       fxRing("fx_ring_fire", mt.wx, mt.wz, 0.5, 4.5, 0.3)
       spawnFx("fx_scorch", mt.wx, 0.06, mt.wz, 9, 3)
-      fxOrbBurst("fx_orb_fire", mt.wx, 1, mt.wz, 34, 8, 0.6, 0.8)
+      fxOrbBurst("fire", mt.wx, 1, mt.wz, 34, 8, 0.45, 0.8)
       PlaySfx(SKILLS.meteor.sfx)
       shake(0.5)
     end

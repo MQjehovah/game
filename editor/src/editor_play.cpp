@@ -509,6 +509,9 @@ void EditorApp::StartPlay() {
 #endif
     cfg.scriptBaseDir = projectDir_.empty() ? "." : projectDir_;
     cfg.pluginBaseDir = projectDir_.empty() ? "." : projectDir_; // G5-1 native plugins
+    // Project-relative asset roots apply to BOTH branches: 3D scenes resolve
+    // glTF/textures (and VFX sprites) against the project dir just like 2D.
+    cfg.assetBaseDir = projectDir_;
     cfg.localesDir =
         projectDir_.empty() ? "./assets/locales" : projectDir_ + "/assets/locales";
     cfg.input = Input(); // hero controller reads live WASD/mouse input
@@ -552,7 +555,7 @@ void EditorApp::StartPlay() {
         // The on-disk start scene only backs up the empty-canvas case. Follows
         // the PROJECT type, not the current camera view: a 2D game plays as a
         // 2D game even in a perspective editor camera.
-        cfg.assetBaseDir = projectDir_;
+
         auto root = BuildPlaySceneJson();
         if (root.Ok()) {
             json = core::JsonWriter::Write(root.Value());
