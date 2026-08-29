@@ -1108,6 +1108,19 @@ void EditorApp::BuildAssetPanel() {
                     }
                     ImGui::EndPopup();
                 }
+                // 网格视图拖拽源: 与列表视图一致 (模型→场景, 贴图→材质槽, 脚本→实体)。
+                if (!e.isDir) {
+                    const char* kind = nullptr;
+                    if (IsModelExt(e.name)) kind = "ASSET_MODEL";
+                    else if (IsImageExt(e.name)) kind = "ASSET_TEXTURE";
+                    else if (IsScriptExt(e.name)) kind = "ASSET_SCRIPT";
+                    else if (IsMaterialExt(e.name)) kind = "ASSET_MATERIAL";
+                    if (kind && ImGui::BeginDragDropSource()) {
+                        ImGui::SetDragDropPayload(kind, e.path.c_str(), e.path.size() + 1);
+                        ImGui::Text("%s", e.name.c_str());
+                        ImGui::EndDragDropSource();
+                    }
+                }
                 const bool hovered = ImGui::IsItemHovered();
                 const bool dbl = hovered && ImGui::IsMouseDoubleClicked(0);
                 if (dbl) {
@@ -3933,6 +3946,23 @@ void EditorApp::BuildModelPreviewPanel() {
         ImGui::InputText("路径", pathBuf, sizeof(pathBuf));
         ImGui::SameLine();
         if (ImGui::Button("打开")) OpenModelPreview(pathBuf);
+        // 资产面板拖入模型文件直接预览 (与资产面板的拖拽源 ASSET_MODEL 对接)。
+        // 注意: 查看器的 LoadSkinnedModel 直读文件 (无项目前缀解析), 所以用
+        // 资产面板的原始 CWD 相对路径 (projects/<p>/assets/...), 不要转项目相对。
+        if (ImGui::BeginDragDropTarget()) {
+            if (const ImGuiPayload* p = ImGui::AcceptDragDropPayload("ASSET_MODEL")) {
+                const char* path = static_cast<const char*>(p->Data);
+                if (path && *path) {
+                    std::string lower = ToLower(std::string(path));
+                    if (lower.rfind(".gltf") != std::string::npos ||
+                        lower.rfind(".glb") != std::string::npos) {
+                        std::snprintf(pathBuf, sizeof(pathBuf), "%s", path);
+                        OpenModelPreview(path);
+                    }
+                }
+            }
+            ImGui::EndDragDropTarget();
+        }
         ImGui::Separator();
 
         if (!previewModel_) {

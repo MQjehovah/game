@@ -3,6 +3,63 @@
 -- 拾取: 屏幕空间最近匹配 (选择单位/目标) + 射线-地面求交 (移动落点)。
 
 -- ============ 相机常量 (与 scenes/main.json 的相机严格一致) ============
+-- ============ WC3 式相机: 平移 (方向键/屏幕边缘) + 滚轮缩放 ============
+-- 朝向固定 (俯视斜角), 与 scenes/main.json 相机一致; 位置每帧驱动相机实体。
+local CAM_FWD = { x = 0, y = -0.71934, z = -0.69466 }
+local CAM_RIGHT = { x = 1, y = 0, z = 0 }
+local CAM_UP = { x = 0, y = 0.69466, z = -0.71934 }
+local TAN_Y = 0.5206 -- fov 55°/2
+local TAN_X = 0.9254 -- * 16/9
+local function clamp(v, lo, hi) return math.max(lo, math.min(hi, v)) end
+local camX, camZ = 50, 40   -- 视线焦点 (地面)
+local camDist = 97.3        -- 相机沿视线轴的距离
+local camEnt = nil          -- 场景相机实体
+
+-- 框选: 左键空地按下拖拽 → 释放选中屏幕矩形内所有我方单位
+local boxSel = { active = false, sx = 0, sy = 0, cx = 0, cy = 0 }
+
+local function camPosNow()
+  return { x = camX, y = 0.71934 * camDist, z = camZ + 0.69466 * camDist }
+end
+
+-- 屏幕像素 -> 地面 (y=0) 世界点 (用实时相机位置)
+local function groundPick(sx, sy)
+  local cp = camPosNow()
+  local nx = (sx / 1280) * 2 - 1
+  local ny = 1 - (sy / 720) * 2
+  local dx = CAM_FWD.x + CAM_RIGHT.x * nx * TAN_X + CAM_UP.x * ny * TAN_Y
+  local dy = CAM_FWD.y + CAM_RIGHT.y * nx * TAN_X + CAM_UP.y * ny * TAN_Y
+  local dz = CAM_FWD.z + CAM_RIGHT.z * nx * TAN_X + CAM_UP.z * ny * TAN_Y
+  if dy >= -0.001 then return nil end
+  local t = -cp.y / dy
+  return { x = cp.x + dx * t, z = cp.z + dz * t }
+end
+
+local function updateCamera(dt)
+  -- 方向键平移 (屏幕对齐: 上=-z 下=+z 左=-x 右=+x), 速度随缩放
+  local pan = 42.0 * (camDist / 97.3)
+  if ActionDown("cam_up") then camZ = camZ - pan * dt end
+  if ActionDown("cam_down") then camZ = camZ + pan * dt end
+  if ActionDown("cam_left") then camX = camX - pan * dt end
+  if ActionDown("cam_right") then camX = camX + pan * dt end
+  -- 屏幕边缘平移 (WC3 招牌操作)
+  local m = InputMousePos()
+  if m then
+    local edge = 10
+    if m.x <= edge then camX = camX - pan * dt end
+    if m.x >= 1280 - edge then camX = camX + pan * dt end
+    if m.y <= edge then camZ = camZ - pan * dt end
+    if m.y >= 720 - edge then camZ = camZ + pan * dt end
+  end
+  camX = clamp(camX, 5, 95)
+  camZ = clamp(camZ, 8, 72)
+  -- 滚轮缩放 (拉远/拉近)
+  camDist = clamp(camDist - MouseWheel() * 6.0, 45, 160)
+  -- 驱动场景相机实体
+  if camEnt ~= nil then
+    SetPosition(camEnt, { x = camX, y = 0.71934 * camDist, z = camZ + 0.69466 * camDist })
+  end
+end
 local CAM_POS = { x = 50, y = 70, z = 107.6 }
 local CAM_FWD = { x = 0, y = -0.71934, z = -0.69466 }
 local CAM_RIGHT = { x = 1, y = 0, z = 0 }
@@ -24,16 +81,29 @@ end
 
 -- ============ 数据表 ============
 local UNIT_DEFS = {
-  peon     = { hp = 90,  dmg = 6,  range = 2.2, cd = 1.0, speed = 5.5, r = 0.7, cost = 75,  bt = 6,  name = "苦工", prefab = "unit_knight" },
-  footman  = { hp = 220, dmg = 18, range = 2.4, cd = 1.1, speed = 4.6, r = 0.8, cost = 135, bt = 9,  name = "步兵", prefab = "unit_knight" },
-  rifleman = { hp = 160, dmg = 21, range = 12,  cd = 1.6, speed = 4.2, r = 0.7, cost = 205, bt = 12, name = "火枪手", ranged = true, prefab = "unit_mage" },
-  grunt    = { hp = 240, dmg = 20, range = 2.4, cd = 1.2, speed = 4.8, r = 0.8, name = "兽人步兵", prefab = "unit_knight" },
+  peon     = { hp = 90,  dmg = 6,  range = 2.2, cd = 1.0, speed = 5.5, r = 0.7, cost = 75,  bt = 6,  name = "苦工", prefab = "unit_peon" },
+  footman  = { hp = 260, dmg = 22, range = 2.4, cd = 1.1, speed = 4.6, r = 0.8, cost = 120, bt = 9,  name = "步兵", prefab = "unit_footman" },
+  rifleman = { hp = 160, dmg = 21, range = 12,  cd = 1.6, speed = 4.2, r = 0.7, cost = 180, bt = 12, name = "火枪手", ranged = true, prefab = "unit_rifleman" },
+  grunt    = { hp = 200, dmg = 16, range = 2.4, cd = 1.2, speed = 4.8, r = 0.8, name = "兽人步兵", prefab = "unit_grunt" },
 }
+-- 模型朝向修正: 不同来源的模型默认面朝不同 (Kaykit=-Z 正确, CesiumMan=+Z 需翻转 180)
+local YAW_FIX = { peon = math.pi, footman = 0, rifleman = 0, grunt = 0 }
+
+-- 单位动画剪辑 (Kaykit 骨骼模型内嵌; Wolf/苦工无可用 idle/walk 剪辑则不播)
+local CLIPS = {
+  footman  = { idle = "Idle", move = "Walking_A", atk = "1H_Melee_Attack_Chop", death = "Death_A" },
+  rifleman = { idle = "Idle", move = "Walking_A", atk = "1H_Melee_Attack_Chop", death = "Death_A" },
+  grunt    = { idle = nil, move = "01_Run_Armature_0", atk = nil, death = nil },
+}
+local animState = {}   -- unit.id -> 当前循环 clip
+local dying = {}       -- unit.id -> 死亡动画剩余时间
+
 local BUILD_DEFS = {
   hall     = { hp = 900, w = 5,  d = 5,  cost = 0,   bt = 0,  name = "大本营", prefab = "bld_hall", trains = { "peon" } },
   farm     = { hp = 340, w = 2.6, d = 2.6, cost = 80,  bt = 8,  name = "农场", prefab = "bld_farm" },
   barracks = { hp = 520, w = 3.6, d = 3.2, cost = 160, bt = 14, name = "兵营", prefab = "bld_barracks", trains = { "footman", "rifleman" } },
   mine     = { hp = 1200, w = 3.4, d = 3.4, name = "金矿", prefab = "fx_mine" },
+  tower    = { hp = 620, w = 1.4, d = 1.4, cost = 220, bt = 14, name = "箭塔", tower = true, range = 14, dmg = 18, cd = 1.4, prefab = "bld_tower" },
 }
 
 -- ============ 状态 ============
@@ -41,7 +111,7 @@ local units, buildings = {}, {}
 local selected, selectedBuilding = {}, nil
 local buildMode = nil
 local atkCd = {}
-local waveT, waveN = 25, 0
+local waveT, waveN = 60, 0
 local gameover, won = false, false
 local ids = 0
 
@@ -54,12 +124,43 @@ local function clamp(v, lo, hi) return math.max(lo, math.min(hi, v)) end
 local function dist(x1, z1, x2, z2) return math.sqrt((x1 - x2) ^ 2 + (z1 - z2) ^ 2) end
 local function newId() ids = ids + 1; return ids end
 
+-- 单位循环动画: clip 变化时才重触发 (PlayAnimation 每帧调用会重置进度)
+local function driveAnim(u, wantClip)
+  if u.ent == nil then return end
+  if animState[u.id] ~= wantClip then
+    animState[u.id] = wantClip
+    if wantClip and wantClip ~= "" then
+      PlayAnimation(u.ent, wantClip, true, 0.15)
+    end
+  end
+end
+
+-- 攻击一次性动画
+local function playAttackAnim(u)
+  local c = CLIPS[u.kind]
+  if c and c.atk and u.ent ~= nil then PlayAnimation(u.ent, c.atk, false, 0.1) end
+end
+
+-- 死亡动画 + 延迟移除 + 击杀奖励 (兽人死亡 = 玩家 +8 金)
+local function startDeath(u)
+  local c = CLIPS[u.kind]
+  if c and c.death and u.ent ~= nil then PlayAnimation(u.ent, c.death, false, 0.1) end
+  dying[u.id] = { ent = u.ent, t = (c and c.death) and 1.2 or 0.0 }
+  if u.team == "enemy" then
+    SetVar("gold_player", (GetVar("gold_player") or 0) + 8)
+    SpawnFloatText(u.x, 2.0, u.z, "+8", false, 0.8)
+  else
+    SetVar("gold_enemy", (GetVar("gold_enemy") or 0) + 8)
+  end
+end
+
 local function spawnUnit(kind, team, x, z)
   local d = UNIT_DEFS[kind]
   local ent = SpawnPrefab(d.prefab, { x = x, y = 0, z = z })
   -- 敌方单位转向玩家方向
   if team == "enemy" and ent ~= nil then SetRotationY(ent, math.pi) end
   local u = { id = newId(), ent = ent, kind = kind, team = team, x = x, z = z,
+              yawFix = YAW_FIX[kind] or 0,
               hp = d.hp, maxHp = d.hp, r = d.r, state = "idle", cd = 0,
               tx = x, tz = z, carry = 0 }
   units[#units + 1] = u
@@ -125,6 +226,7 @@ local function attackTick(u, target, isB, dt)
   if u.cd > 0 then return end
   u.cd = UNIT_DEFS[u.kind].cd
   local d = UNIT_DEFS[u.kind]
+  playAttackAnim(u)
   if isB then
     damageBuilding(target, d.dmg)
   else
@@ -144,7 +246,7 @@ local function moveToward(u, tx, tz, speed, dt)
     u.z = u.z + (tz - u.z) / dd * speed * dt
     if u.ent ~= nil then
       SetPosition(u.ent, { x = u.x, y = 0, z = u.z })
-      SetRotationY(u.ent, math.atan((tx - u.x) / math.max(0.001, dd) * -1, (tz - u.z) / dd * -1))
+      SetRotationY(u.ent, math.atan(tx - u.x, -(tz - u.z)) + (u.yawFix or 0))
     end
   end
 end
@@ -206,6 +308,12 @@ local function updateUnit(u, dt)
   end
 
   moveToward(u, u.tx, u.tz, d.speed, dt)
+  -- 移动/待机动画切换
+  local c = CLIPS[u.kind]
+  if c then
+    local moving = dist(u.x, u.z, u.tx, u.tz) > 0.1
+    driveAnim(u, moving and c.move or c.idle)
+  end
 end
 
 -- 敌军攻击单位: 近处索敌, 否则推进玩家大厅
@@ -243,6 +351,27 @@ local function updateBuildings(dt)
         table.remove(b.queue, 1)
       end
     end
+    -- 箭塔自动攻击: 塔建好后索敌开火 (塔顶火球, 引擎投射物带拖尾)
+    if b.done and BUILD_DEFS[b.kind].tower then
+      b.cd = (b.cd or 0) - dt
+      if b.cd <= 0 then
+        local best, bd = nil, BUILD_DEFS[b.kind].range
+        for _, o in ipairs(units) do
+          if o.team ~= b.team then
+            local d = dist(b.x, b.z, o.x, o.z)
+            if d < bd then best, bd = o, d end
+          end
+        end
+        if best then
+          b.cd = BUILD_DEFS[b.kind].cd
+          local dir = { x = (best.x - b.x) / (bd + 0.001), y = -0.12,
+                        z = (best.z - b.z) / (bd + 0.001) }
+          SpawnProjectile({ x = b.x, y = 3.2, z = b.z }, dir, 22,
+                          BUILD_DEFS[b.kind].dmg, 2.5, nil)
+          PlaySfx("shoot")
+        end
+      end
+    end
     if b.hp <= 0 then killBuilding(i) end
   end
 end
@@ -251,11 +380,11 @@ local function updateWaves(dt)
   waveT = waveT - dt
   if waveT <= 0 then
     waveN = waveN + 1
-    waveT = 40
+    waveT = 45
     local hx, hz = 78, 58
     local hall = findBuilding("hall", "enemy")
     if hall then hx, hz = hall.x, hall.z + 4 end
-    local count = 2 + waveN
+    local count = 1 + waveN
     for i = 1, count do
       local u = spawnUnit("grunt", "enemy", hx + (i - count / 2) * 2, hz)
       u.state = "attack"
@@ -295,7 +424,8 @@ local function pickBuilding(sx, sy, team, maxPx)
 end
 
 function on_start()
-  SetVar("gold_player", 300)
+  camEnt = FindNamedEntity("Main Camera")
+  SetVar("gold_player", 350)
   spawnBuilding("hall", "player", 18, 20, true)
   spawnBuilding("mine", "neutral", 10, 62, true)
   spawnBuilding("mine", "neutral", 92, 14, true)
@@ -308,6 +438,7 @@ end
 
 
 function on_update(e, dt)
+  updateCamera(dt)
   if GetVar("paused") == true then return end
   if gameover then
     if InputMousePressed(0) then ChangeScene("assets/scenes/main.json") end
@@ -315,11 +446,20 @@ function on_update(e, dt)
   end
 
   updateBuildings(dt)
+  -- 死亡动画到期回收
+  for id, d in pairs(dying) do
+    d.t = d.t - dt
+    if d.t <= 0 then
+      if d.ent ~= nil then Despawn(d.ent) end
+      dying[id] = nil
+    end
+  end
   for i = #units, 1, -1 do
     local u = units[i]
     if u.hp <= 0 then
-      if u.ent ~= nil then Despawn(u.ent) end
       for j = #selected, 1, -1 do if selected[j] == u then table.remove(selected, j) end end
+      -- 死亡动画 (有 death 剪辑的单位播完再消失)
+      startDeath(u)
       table.remove(units, i)
     else
       if u.state == "attack" and u.team == "enemy" then
@@ -343,6 +483,12 @@ function on_update(e, dt)
 
   local m = InputMousePos()
   if InputMousePressed(0) and m then
+    -- 小地图点击: 跳转相机 (左下角 200x130 区域)
+    if m.x >= 10 and m.x <= 210 and m.y >= 720 - 140 and m.y <= 720 - 10 then
+      camX = clamp((m.x - 10) / 200 * 100, 5, 95)
+      camZ = clamp((m.y - (720 - 140)) / 130 * 80, 8, 72)
+      return
+    end
     local handled = false
     if selectedBuilding and selectedBuilding.done and BUILD_DEFS[selectedBuilding.kind].trains then
       for bi, tkind in ipairs(BUILD_DEFS[selectedBuilding.kind].trains) do
@@ -386,17 +532,57 @@ function on_update(e, dt)
       buildMode = nil
       handled = true
     end
-    -- 选择: 单位优先, 其次建筑
+    -- 选择: 单位优先, 其次建筑; 空地 → 启动框选
     if not handled and m then
       selected = {}
       selectedBuilding = nil
       local u, idx = pickUnit(m.x, m.y, "player", 34)
-      if u then selected = { u } end
+      if u then
+        if InputKey("Control") > 0 then
+          -- Ctrl+点击: 添加/移除到多选
+          local found = false
+          for j, su in ipairs(selected) do
+            if su == u then table.remove(selected, j) found = true break end
+          end
+          if not found then selected[#selected + 1] = u end
+        else
+          selected = { u }
+        end
+      end
       if not u then
         local b = pickBuilding(m.x, m.y, "player", 40)
         if b and b.done then selectedBuilding = b end
       end
-      if u or selectedBuilding then PlaySfx("click") end
+      if u or selectedBuilding then
+        PlaySfx("click")
+      else
+        -- 空地按下: 启动框选拖拽
+        boxSel.active = true
+        boxSel.sx, boxSel.sy = m.x, m.y
+        boxSel.cx, boxSel.cy = m.x, m.y
+      end
+    end
+  end
+
+  -- 框选拖拽: 更新当前角点
+  if boxSel.active and m then boxSel.cx, boxSel.cy = m.x, m.y end
+  -- 左键释放: 选中屏幕矩形内所有我方单位 (含点选兜底)
+  if InputMouseReleased(0) and boxSel.active then
+    boxSel.active = false
+    local x1, x2 = math.min(boxSel.sx, boxSel.cx), math.max(boxSel.sx, boxSel.cx)
+    local y1, y2 = math.min(boxSel.sy, boxSel.cy), math.max(boxSel.sy, boxSel.cy)
+    -- 拖拽超过阈值才算框选 (小于 6px 视为点空地 = 取消选择)
+    if (x2 - x1) > 6 or (y2 - y1) > 6 then
+      selected = {}
+      for _, u in ipairs(units) do
+        if u.team == "player" then
+          local s = WorldToScreen(u.x, 1.0, u.z)
+          if s and s.x and s.x >= x1 and s.x <= x2 and s.y >= y1 and s.y <= y2 then
+            selected[#selected + 1] = u
+          end
+        end
+      end
+      if #selected > 0 then PlaySfx("click") end
     end
   end
 
@@ -533,6 +719,43 @@ function on_render()
     drawGroundRing(selectedBuilding.x, selectedBuilding.z, selectedBuilding.w * 0.75,
                    { 0.3, 1, 0.4, 1 }, 30)
     -- 训练按钮由建筑循环绘制 (上方)
+  end
+
+  -- 小地图 (左下角): 地图 + 单位/建筑/金矿点 + 相机框
+  do
+    local mx, my, mw, mh = 10, 720 - 140, 200, 130
+    DrawRect(mx, my, mw, mh, 0.05, 0.08, 0.06, 0.85)
+    DrawRectOutline(mx, my, mw, mh, 1.5, 0.45, 0.65, 1.0, 0.8)
+    local px = function(wx) return mx + wx / 100 * mw end
+    local pz = function(wz) return my + wz / 80 * mh end
+    for _, b in ipairs(buildings) do
+      if b.kind == "mine" then
+        DrawRect(px(b.x) - 2, pz(b.z) - 2, 4, 4, 1.0, 0.85, 0.2, 1)
+      elseif b.team == "player" then
+        DrawRect(px(b.x) - 2, pz(b.z) - 2, 4, 4, 0.3, 0.6, 1.0, 1)
+      else
+        DrawRect(px(b.x) - 2, pz(b.z) - 2, 4, 4, 1.0, 0.3, 0.3, 1)
+      end
+    end
+    for _, u in ipairs(units) do
+      if u.team == "player" then
+        DrawRect(px(u.x) - 1.5, pz(u.z) - 1.5, 3, 3, 0.35, 0.85, 0.5, 1)
+      else
+        DrawRect(px(u.x) - 1.5, pz(u.z) - 1.5, 3, 3, 1.0, 0.4, 0.35, 1)
+      end
+    end
+    -- 相机视野框 (示意)
+    DrawRectOutline(px(camX) - 18, pz(camZ) - 12, 36, 24, 1, 1, 1, 1, 0.5)
+  end
+
+  -- 框选矩形 (半透明蓝 + 边框)
+  if boxSel.active and (math.abs(boxSel.cx - boxSel.sx) > 2 or math.abs(boxSel.cy - boxSel.sy) > 2) then
+    local x1 = math.min(boxSel.sx, boxSel.cx)
+    local y1 = math.min(boxSel.sy, boxSel.cy)
+    local w = math.abs(boxSel.cx - boxSel.sx)
+    local h = math.abs(boxSel.cy - boxSel.sy)
+    DrawRect(x1, y1, w, h, 0.3, 0.6, 1.0, 0.15)
+    DrawRectOutline(x1, y1, w, h, 1.5, 0.4, 0.8, 1.0, 0.9)
   end
 
   -- 建造幽灵

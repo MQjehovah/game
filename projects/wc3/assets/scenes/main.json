@@ -22,6 +22,17 @@
     },
     {
       "components": {
+        "mesh": {
+          "material": { "albedoTex": "assets/textures/grass.png", "colorHex": "#FFFFFF" },
+          "meshKey": "plane"
+        },
+        "transform": { "pos": [50, -0.1, 40], "rot": [0, 0, 0, 1], "scale": [130, 1, 100] }
+      },
+      "id": 500,
+      "name": "Ground"
+    },
+    {
+      "components": {
         "camera": {
           "fov": 55,
           "orthoSize": 10

@@ -1046,6 +1046,30 @@ Value NativeInputMousePos(IScriptHost& host, void* user) {
     return t;
 }
 
+// MouseWheel() -> accumulated wheel delta this frame (+1 per notch, may be
+// fractional on high-resolution wheels). Requires the input interface.
+Value NativeMouseWheel(IScriptHost& host, void* user) {
+    (void)host;
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->input) return Value::Num(0.0);
+    return Value::Num(static_cast<double>(ctx->input->WheelDelta()));
+}
+
+// InputMouseReleased(btn) -> true the frame the mouse button was released
+// (btn: 0 = left, 1 = right, 2 = middle; mirrors InputMousePressed).
+Value NativeInputMouseReleased(IScriptHost& host, void* user) {
+    (void)host;
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->input) return Value::Bool(false);
+    if (host.ArgCount() < 1) return Value::Bool(false);
+    const int btn = host.GetArg(0).type == Value::Type::Number
+                        ? static_cast<int>(host.GetArg(0).number)
+                        : 0;
+    using MB = platform::MouseButton;
+    return Value::Bool(ctx->input->MouseReleased(
+        btn == 1 ? MB::Right : btn == 2 ? MB::Middle : MB::Left));
+}
+
 Value NativeGetVar(IScriptHost& host, void* user) {
     auto* ctx = static_cast<ScriptContext*>(user);
     if (!ctx) return Value::Nil();
@@ -1621,6 +1645,8 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("SignalConnect", &NativeSignalConnect, &ctx);
     host.Register("SignalEmit", &NativeSignalEmit, &ctx);
     host.Register("InputMousePos", &NativeInputMousePos, &ctx);
+    host.Register("MouseWheel", &NativeMouseWheel, &ctx);
+    host.Register("InputMouseReleased", &NativeInputMouseReleased, &ctx);
     host.RegisterField("Json", "Parse", &NativeJsonParse, &ctx);
 }
 

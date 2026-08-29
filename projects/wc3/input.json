@@ -4,6 +4,10 @@
     "build_barracks": ["B"],
     "pause": ["P"],
     "restart": ["R"],
-    "cancel": ["escape"]
+    "cancel": ["escape"],
+    "cam_up": ["ArrowUp"],
+    "cam_down": ["ArrowDown"],
+    "cam_left": ["ArrowLeft"],
+    "cam_right": ["ArrowRight"]
   }
 }

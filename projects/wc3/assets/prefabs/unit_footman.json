@@ -7,9 +7,9 @@
                                                      0
                                                  ],
                                          "scale":  [
-                                                       1.4,
-                                                       1.4,
-                                                       1.4
+                                                       1,
+                                                       1,
+                                                       1
                                                    ],
                                          "rot":  [
                                                      0,
@@ -19,7 +19,7 @@
                                                  ]
                                      },
                        "mesh":  {
-                                    "meshKey":  "gltf:assets/models/ftk/windmill.glb"
+                                    "meshKey":  "gltf:assets/models/Knight.glb"
                                 }
                    }
 }

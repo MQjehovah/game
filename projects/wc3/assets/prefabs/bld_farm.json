@@ -7,9 +7,9 @@
                                                      0
                                                  ],
                                          "scale":  [
-                                                       2.4,
-                                                       1.5,
-                                                       2.4
+                                                       1.4,
+                                                       1.4,
+                                                       1.4
                                                    ],
                                          "rot":  [
                                                      0,
@@ -19,10 +19,7 @@
                                                  ]
                                      },
                        "mesh":  {
-                                    "material":  {
-                                                     "colorHex":  "#A08A3C"
-                                                 },
-                                    "meshKey":  "cube"
+                                    "meshKey":  "gltf:assets/models/ftk/cart.glb"
                                 }
                    }
 }

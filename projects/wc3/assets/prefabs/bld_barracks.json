@@ -7,9 +7,9 @@
                                                      0
                                                  ],
                                          "scale":  [
-                                                       3.4,
-                                                       2.2,
-                                                       3
+                                                       1.6,
+                                                       1.6,
+                                                       1.6
                                                    ],
                                          "rot":  [
                                                      0,
@@ -19,10 +19,7 @@
                                                  ]
                                      },
                        "mesh":  {
-                                    "material":  {
-                                                     "colorHex":  "#6E5A8A"
-                                                 },
-                                    "meshKey":  "cube"
+                                    "meshKey":  "gltf:assets/models/ftk/stall-red.glb"
                                 }
                    }
 }
