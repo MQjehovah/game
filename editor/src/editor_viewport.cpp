@@ -738,11 +738,13 @@ void EditorApp::DrawSceneGizmos() {
     if (playActive_) return; // gizmos are an edit-mode planning aid
     // Draw through ImGui (inside the frame) using the SAME view/projection/rect
     // as the transform gizmo, so the frusta/icons line up with the gizmo.
-    // The camera FRUSTUM preview uses the PLAY aspect (16:9 game area): what
-    // the gizmo shows is exactly what running the game will frame.
+    // The camera FRUSTUM gizmo's box shape uses the camera's configured
+    // aspect (see below); but this projection is used to draw ALL gizmos into
+    // the viewport, so it must match the scene render's projection
+    // (renderer_.SetCamera(cam, ViewportAspect())) or icons/frusta drift off
+    // the world geometry they annotate.
     const gfx::Camera cam = ActiveCamera();
-    const float aspect = static_cast<float>(gfx::Renderer::kDesignWidth) /
-                         static_cast<float>(gfx::Renderer::kDesignHeight);
+    const float aspect = ViewportAspect();
     const math::Mat4 view = cam.View();
     const math::Mat4 proj = cam.Projection(aspect);
     const math::Rect2 vp = SceneRect();
@@ -779,8 +781,13 @@ void EditorApp::DrawSceneGizmos() {
             // DrawCameraFrame) - the 3D frustum box's depth lines are noise
             // on a flat canvas.
             if (projectMode_ == "2d" || editMode_ == EditMode::Scene2D) continue;
-            const float dAspect = static_cast<float>(gfx::Renderer::kDesignWidth) /
-                                  static_cast<float>(gfx::Renderer::kDesignHeight);
+            // 视野框比例 = 相机实体的画面比例设置 (0 = 16:9 设计默认), 与
+            // PlayCameraAspect 一致: 框住的就是运行时游戏区画面。
+            const float dAspect =
+                e.cameraAspect > 0.01f
+                    ? e.cameraAspect
+                    : static_cast<float>(gfx::Renderer::kDesignWidth) /
+                          static_cast<float>(gfx::Renderer::kDesignHeight);
             const float nearP = 0.1f, farP = 60.0f;
             math::Vec3 c[8];
             if (e.cameraOrtho) {

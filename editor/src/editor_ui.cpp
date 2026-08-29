@@ -213,6 +213,21 @@ void EditorApp::BuildImGuiUI() {
     // transparent, so the scene shows through the central viewport while the
     // opaque tool panels cover the rest.
     ImGui::DockSpace(dockId, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_None);
+    // 全局兜底: 模型资产拖到编辑器任何空白处 (dock 分割条/标签栏/空闲区) 都
+    // 打开模型查看器, 保证拖拽一定有反馈。只当鼠标落在其他窗口 (有各自目标)
+    // 之外才命中, 不与场景/层级/预览面板的目标冲突。
+    if (ImGui::BeginDragDropTarget()) {
+        if (const ImGuiPayload* p = ImGui::AcceptDragDropPayload("ASSET_MODEL")) {
+            const char* path = static_cast<const char*>(p->Data);
+            NEON_LOG_INFO("DockSpace: model dropped '%s'", path ? path : "");
+            if (path && *path) {
+                showModelPreview_ = true;
+                std::snprintf(previewPathBuf_, sizeof(previewPathBuf_), "%s", path);
+                OpenModelPreview(previewPathBuf_);
+            }
+        }
+        ImGui::EndDragDropTarget();
+    }
     ImGui::End();
 
     // Persist a layout-version marker in the ini (offscreen, invisible). Its

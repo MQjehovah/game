@@ -524,6 +524,7 @@ public:
         auto it = renderTargets_.find(target.id);
         if (it == renderTargets_.end()) return;
         currentFBO_ = it->second.fbo;
+        targetHeight_ = it->second.height;
         auto& g = gl::GetGL();
         g.BindFramebuffer(glc::Framebuffer, it->second.fbo);
         g.Viewport(0, 0, it->second.width, it->second.height);
@@ -537,6 +538,7 @@ public:
         // them for the window's default framebuffer (double-buffered => GL_BACK).
         g.DrawBuffer(glc::Back);
         g.ReadBuffer(glc::Back);
+        targetHeight_ = window_ ? window_->Height() : 0;
         if (window_) g.Viewport(0, 0, window_->Width(), window_->Height());
     }
 
@@ -796,8 +798,8 @@ public:
     }
 
     void SetViewport(int x, int y, int width, int height) override {
-        const int winH = window_ ? window_->Height() : height;
-        gl::GetGL().Viewport(x, winH - (y + height), width, height);
+        const int baseH = targetHeight_ > 0 ? targetHeight_ : height;
+        gl::GetGL().Viewport(x, baseH - (y + height), width, height);
     }
 
     void SetScissor(int x, int y, int width, int height, bool enabled) override {
@@ -807,8 +809,8 @@ public:
             return;
         }
         g.Enable(glc::ScissorTest);
-        int winH = window_ ? window_->Height() : height;
-        g.Scissor(x, winH - (y + height), width, height);
+        const int baseH = targetHeight_ > 0 ? targetHeight_ : height;
+        g.Scissor(x, baseH - (y + height), width, height);
     }
 
     void Clear(const Color& color, float depth) override {
@@ -1090,6 +1092,12 @@ private:
     bool depthUsable_ = false;
     bool compressedTexSupported_ = false;
     gl::GLuint currentFBO_ = 0;
+    // Height of the currently bound render target (window or FBO). SetViewport/
+    // SetScissor flip a top-left-origin Y into GL's bottom-left origin using
+    // THIS, not the window height - otherwise drawing into a sub-size FBO
+    // (model-viewer preview) lands at y = windowH - size and renders into the
+    // wrong region (everything crammed toward the top).
+    int targetHeight_ = 0;
 };
 
 } // namespace

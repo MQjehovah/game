@@ -404,7 +404,10 @@ ParsedGltf ParseGltfContainer(const std::string& path, const std::vector<uint8_t
             return out;
         }
         out.bins.push_back(std::move(glbBin));
-        out.dir = std::string(); // GLB: no external dir
+        // GLB images may still be EXTERNAL URIs relative to the file (Kenney
+        // FTK glb references "Textures/colormap.png"), so keep the containing
+        // directory like the .gltf branch; only the buffer bytes are embedded.
+        out.dir = DirName(path);
         return out;
     }
 
@@ -1290,6 +1293,13 @@ GltfAsset AssetManager::LoadGltfJson(core::Json& root, std::vector<std::vector<u
                             }
                             rm.indices[static_cast<size_t>(i)] = static_cast<uint16_t>(src[i]);
                         }
+                    } else if (idxStride == 1) {
+                        // uint8 indices (componentType 5121): Kenney FTK glb
+                        // files pack <256-vertex meshes as bytes. Without this
+                        // branch the vector stays zero-filled and every
+                        // triangle collapses onto vertex 0 (invisible).
+                        const uint8_t* src = reinterpret_cast<const uint8_t*>(idxBase);
+                        for (int i = 0; i < idxCount; ++i) rm.indices[static_cast<size_t>(i)] = src[i];
                     }
                 }
                 rawMeshes.push_back(std::move(rm));

@@ -822,6 +822,10 @@ private:
     bool showModelPreview_ = false;
     std::shared_ptr<scene::SkinnedModel> previewModel_;
     std::string previewPath_;
+    char previewPathBuf_[512] = "assets/models/wolf/Wolf-Blender-2.82a.gltf";
+    // Points the preview camera at the model's largest face (along the
+    // flattest AABB axis) so thin models (banners/walls) are not shown edge-on.
+    void FrameModelPreview();
     bool previewPlaying_ = true;
     float previewTime_ = 0.0f;
     int previewClip_ = 0;

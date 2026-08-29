@@ -209,7 +209,7 @@ bool IsImageExt(const std::string& name) {
 
 bool IsModelExt(const std::string& name) {
     std::string ext = ToLower(FileExt(name));
-    return ext == ".obj" || ext == ".gltf";
+    return ext == ".obj" || ext == ".gltf" || ext == ".glb";
 }
 
 bool IsScriptExt(const std::string& name) {
@@ -1116,8 +1116,6 @@ void EditorApp::BuildAssetPanel() {
                     else if (IsScriptExt(e.name)) kind = "ASSET_SCRIPT";
                     else if (IsMaterialExt(e.name)) kind = "ASSET_MATERIAL";
                     if (kind && ImGui::BeginDragDropSource()) {
-                        NEON_LOG_INFO("Asset grid: drag source started '%s'",
-                                      e.name.c_str());
                         ImGui::SetDragDropPayload(kind, e.path.c_str(), e.path.size() + 1);
                         ImGui::Text("%s", e.name.c_str());
                         ImGui::EndDragDropSource();
@@ -2184,6 +2182,12 @@ void EditorApp::BuildInspectorPanel() {
             const std::string& compName = it->first;
             core::Json& compData = it->second;
             if (compName == "plant" || compName == "zombie") continue; // 2D canvas edits
+            // camera 组件是 nodeType=Camera3D 的序列化载体 (加载时数据并入
+            // e.cameraFov 等字段, 播放时再导出回去) — 节点区已展示同一份数据,
+            // 组件列表里重复显示会误导 (改一处丢一处)。
+            if (compName == "camera" && e.nodeType == "Camera3D") continue;
+            // "type" 组件同理: 它存储 nodeType 本身, 已由上方的类型下拉编辑。
+            if (compName == "type" && !e.nodeType.empty()) continue;
             const scene::ComponentSchema* schema = scene::FindComponentSchema(compName);
             if (!schema && pluginMgr_) schema = pluginMgr_->FindSchema(compName);
             const std::string header =
@@ -2459,6 +2463,21 @@ void EditorApp::BuildViewportPanel() {
         // Transform gizmo for the selected entity (drawn into this window's
         // draw list; interacts via ImGui's mouse state).
         DrawTransformGizmo();
+        // 模型拖到 3D 视口 → 打开模型查看器 (资产面板拖拽源的 ASSET_MODEL)。
+        // 注意: 层级面板已用 ASSET_MODEL 添加实体, 这里只做预览兜底, 避免
+        // 用户拖到视口没反应的困惑。
+        if (ImGui::BeginDragDropTarget()) {
+            if (const ImGuiPayload* p = ImGui::AcceptDragDropPayload("ASSET_MODEL")) {
+                const char* path = static_cast<const char*>(p->Data);
+                NEON_LOG_INFO("Viewport: model dropped '%s'", path ? path : "");
+                if (path && *path) {
+                    showModelPreview_ = true;
+                    std::snprintf(previewPathBuf_, sizeof(previewPathBuf_), "%s", path);
+                    OpenModelPreview(previewPathBuf_);
+                }
+            }
+            ImGui::EndDragDropTarget();
+        }
     }
     ImGui::End();
 }
@@ -3851,6 +3870,40 @@ void EditorApp::BuildPackagePanel() {
     ImGui::End();
 }
 
+void EditorApp::FrameModelPreview() {
+    math::AABB b;
+    bool first = true;
+    if (previewModel_) {
+        for (const scene::SkinnedModel::Part& part : previewModel_->parts) {
+            const math::AABB pb =
+                math::TransformAABB(part.mesh.Bounds(), part.localTransform);
+            if (first) {
+                b = pb;
+                first = false;
+            } else {
+                b.min = {std::min(b.min.x, pb.min.x), std::min(b.min.y, pb.min.y),
+                         std::min(b.min.z, pb.min.z)};
+                b.max = {std::max(b.max.x, pb.max.x), std::max(b.max.y, pb.max.y),
+                         std::max(b.max.z, pb.max.z)};
+            }
+        }
+    }
+    if (first) b = {{-0.5f, -0.5f, -0.5f}, {0.5f, 0.5f, 0.5f}};
+    const float dx = b.max.x - b.min.x;
+    const float dy = b.max.y - b.min.y;
+    const float dz = b.max.z - b.min.z;
+    if (dy <= dx && dy <= dz) { // flattest in Y -> top view
+        previewYaw_ = 0.0f;
+        previewPitch_ = math::kPi * 0.5f;
+    } else if (dx <= dy && dx <= dz) { // flattest in X -> look along +X
+        previewYaw_ = math::kPi * 0.5f;
+        previewPitch_ = 0.0f;
+    } else { // flattest in Z (or balanced) -> look along +Z
+        previewYaw_ = 0.0f;
+        previewPitch_ = 0.0f;
+    }
+}
+
 void EditorApp::OpenModelPreview(const std::string& path) {
     std::string p = path;
     if (p.rfind("gltf:", 0) == 0) p = p.substr(5);
@@ -3861,7 +3914,13 @@ void EditorApp::OpenModelPreview(const std::string& path) {
         previewPath_ = p;
         previewPlaying_ = true;
         previewTime_ = 0.0f;
-        previewClip_ = previewModel_->defaultClip >= 0 ? previewModel_->defaultClip : 0;
+        previewClip_ = previewModel_->clips.empty() ? -1
+                        : previewModel_->defaultClip >= 0 ? previewModel_->defaultClip
+                                                          : 0;
+        // 自动初始视角: 相机正对模型最大面积面 (沿最小维度轴方向观察)。
+        // 薄片模型 (banner/墙/栅栏等 Kenney 建筑) 默认斜视角以边缘示人,
+        // 几乎不可见; 从最大面正对看就能看清。
+        FrameModelPreview();
         NEON_LOG_INFO("Model preview: '%s' (%zu parts, %zu clips, %zu bones)", p.c_str(),
                       previewModel_->parts.size(), previewModel_->clips.size(),
                       previewModel_->skeleton.bones.size());
@@ -3900,7 +3959,12 @@ void EditorApp::RenderModelPreviewPanel() {
     math::AABB bounds;
     bool first = true;
     for (const scene::SkinnedModel::Part& part : previewModel_->parts) {
-        const math::AABB pb = part.mesh.Bounds();
+        // Use the WORLD-space bounds (mesh local bounds transformed by the
+        // node transform): static models (Kenney .glb) often place their mesh
+        // off the root (a translation/scale on the node), so framing against
+        // the raw local bounds would aim the camera at empty space.
+        const math::AABB pb =
+            math::TransformAABB(part.mesh.Bounds(), part.localTransform);
         if (first) {
             bounds = pb;
             first = false;
@@ -3923,6 +3987,14 @@ void EditorApp::RenderModelPreviewPanel() {
                         size * 2.6f;
     pcam.target = center;
     renderer_.SetCamera(pcam, static_cast<float>(w) / static_cast<float>(h));
+    // SetCamera's CSM shadow pass may rebind the HDR/default target and reset
+    // the viewport to the main scene rect (when the main viewport did not run
+    // its own SetCamera this frame, e.g. it is covered or hidden). That would
+    // silently steal our preview FBO - the model would draw into the main
+    // window and the preview stays blank. Re-assert the FBO + full size here.
+    b->BindRenderTarget(previewRT_);
+    b->SetViewport(0, 0, w, h);
+    b->SetScissor(0, 0, w, h, true);
     renderer_.SetDirectionalLight({-0.4f, -1.0f, -0.3f}, {1.0f, 0.95f, 0.9f}, 0.5f);
     anim::Pose pose = previewModel_->skeleton.BindPose();
     if (previewClip_ >= 0 &&
@@ -3933,38 +4005,52 @@ void EditorApp::RenderModelPreviewPanel() {
     }
     const std::vector<math::Mat4> bones =
         previewModel_->skeleton.ComputeBoneMatrices(pose);
-    for (const scene::SkinnedModel::Part& part : previewModel_->parts)
-        renderer_.DrawSkinnedMesh(part.mesh, part.material, math::Mat4::Identity(), bones,
-                                  static_cast<int>(bones.size()));
+    if (bones.empty()) {
+        // Static (non-skinned) model: no skeleton to feed the skinned shader;
+        // draw each part through the regular lit path.
+        for (const scene::SkinnedModel::Part& part : previewModel_->parts)
+            renderer_.DrawMesh(part.mesh, part.material, part.localTransform);
+    } else {
+        for (const scene::SkinnedModel::Part& part : previewModel_->parts)
+            renderer_.DrawSkinnedMesh(part.mesh, part.material, part.localTransform, bones,
+                                      static_cast<int>(bones.size()));
+    }
     b->BindDefaultTarget();
+    // The preview enabled a full-FBO scissor above (shadow-pass state can
+    // bleed stale scissor/viewport). Disable it so the next frame's BeginFrame
+    // clear and the EndFrame composite are not cropped to the preview rect
+    // (which otherwise blanks the main viewport's models).
+    b->SetScissor(0, 0, 0, 0, false);
 }
 
 void EditorApp::BuildModelPreviewPanel() {
     if (!showModelPreview_) return;
     ImGui::SetNextWindowSize(ImVec2(320.0f, 420.0f), ImGuiCond_FirstUseEver);
     if (ImGui::Begin("模型查看器", &showModelPreview_)) {
-        static char pathBuf[512] = "assets/models/wolf/Wolf-Blender-2.82a.gltf";
-        ImGui::SetNextItemWidth(320.0f);
-        ImGui::InputText("路径", pathBuf, sizeof(pathBuf));
-        ImGui::SameLine();
-        if (ImGui::Button("打开")) OpenModelPreview(pathBuf);
+        // 窗口级拖放目标: 放在最前面, 保证"未打开模型"的提前 return 之前也
+        // 生效 (之前目标在 EndChild 之后, 空状态根本执行不到 → 拖拽没反应)。
         // 资产面板拖入模型文件直接预览 (与资产面板的拖拽源 ASSET_MODEL 对接)。
         // 注意: 查看器的 LoadSkinnedModel 直读文件 (无项目前缀解析), 所以用
         // 资产面板的原始 CWD 相对路径 (projects/<p>/assets/...), 不要转项目相对。
         if (ImGui::BeginDragDropTarget()) {
             if (const ImGuiPayload* p = ImGui::AcceptDragDropPayload("ASSET_MODEL")) {
                 const char* path = static_cast<const char*>(p->Data);
+                NEON_LOG_INFO("Model preview: drop accepted '%s'", path ? path : "");
                 if (path && *path) {
                     std::string lower = ToLower(std::string(path));
                     if (lower.rfind(".gltf") != std::string::npos ||
                         lower.rfind(".glb") != std::string::npos) {
-                        std::snprintf(pathBuf, sizeof(pathBuf), "%s", path);
-                        OpenModelPreview(path);
+                        std::snprintf(previewPathBuf_, sizeof(previewPathBuf_), "%s", path);
+                        OpenModelPreview(previewPathBuf_);
                     }
                 }
             }
             ImGui::EndDragDropTarget();
         }
+        ImGui::SetNextItemWidth(320.0f);
+        ImGui::InputText("路径", previewPathBuf_, sizeof(previewPathBuf_));
+        ImGui::SameLine();
+        if (ImGui::Button("打开")) OpenModelPreview(previewPathBuf_);
         ImGui::Separator();
 
         if (!previewModel_) {
@@ -4004,8 +4090,11 @@ void EditorApp::BuildModelPreviewPanel() {
 
         // Preview area fills the panel's remaining space. Its screen rect is
         // consumed by RenderModelPreviewPanel (drawn after the main scene so
-        // it coexists with the edit/play viewport).
-        ImGui::BeginChild("##preview_area", ImVec2(0, 0), ImGuiChildFlags_Borders);
+        // it coexists with the edit/play viewport). Height reduced by a few
+        // px so the border+padding never overflows the parent window and
+        // re-triggers its scrollbar.
+        ImGui::BeginChild("##preview_area", ImVec2(0.0f, -6.0f), ImGuiChildFlags_Borders,
+                          ImGuiWindowFlags_NoScrollbar);
         const ImVec2 pos = ImGui::GetWindowPos();
         const ImVec2 sz = ImGui::GetWindowSize();
         previewScreenRect_ = {pos.x, pos.y, sz.x, sz.y};
@@ -4014,6 +4103,22 @@ void EditorApp::BuildModelPreviewPanel() {
             // upright in ImGui (Image assumes top-left).
             ImGui::Image(previewRTId_, ImVec2(sz.x, sz.y), ImVec2(0.0f, 1.0f),
                          ImVec2(1.0f, 0.0f));
+        // 预览区子窗口也接收拖放 (拖到已渲染的模型画面上也能换模型)。
+        if (ImGui::BeginDragDropTarget()) {
+            if (const ImGuiPayload* p = ImGui::AcceptDragDropPayload("ASSET_MODEL")) {
+                const char* path = static_cast<const char*>(p->Data);
+                NEON_LOG_INFO("Model preview: drop accepted '%s'", path ? path : "");
+                if (path && *path) {
+                    std::string lower = ToLower(std::string(path));
+                    if (lower.rfind(".gltf") != std::string::npos ||
+                        lower.rfind(".glb") != std::string::npos) {
+                        std::snprintf(previewPathBuf_, sizeof(previewPathBuf_), "%s", path);
+                        OpenModelPreview(previewPathBuf_);
+                    }
+                }
+            }
+            ImGui::EndDragDropTarget();
+        }
         ImGui::EndChild();
     }
     ImGui::End();

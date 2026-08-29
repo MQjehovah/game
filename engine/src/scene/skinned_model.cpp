@@ -225,8 +225,30 @@ core::Result<SkinnedModel> LoadSkinnedModel(assets::AssetManager& assets,
             break;
         }
     }
-    if (skinIndex < 0)
-        return core::Result<SkinnedModel>::Err("skinned: no skinned mesh node in " + path);
+    // A static model (e.g. a Kenney building .glb) has no skin: keep the
+    // model viewer usable for it — parts from every mesh node, empty skeleton
+    // and clips. Skinned usage (scene units) still requires a skin; the
+    // caller decides what it does with a static SkinnedModel.
+    if (skinIndex < 0) {
+        SkinnedModel out;
+        for (const assets::GltfMeshNode& n : gltf.nodes) {
+            if (!n.mesh.Valid()) continue;
+            if (n.material.transparent && !n.material.albedo.Valid()) continue;
+            SkinnedModel::Part p;
+            p.mesh = n.mesh;
+            p.material = n.material;
+            p.localTransform = n.transform;
+            out.parts.push_back(std::move(p));
+        }
+        std::stable_sort(out.parts.begin(), out.parts.end(),
+                         [](const SkinnedModel::Part& a, const SkinnedModel::Part& b) {
+                             return !a.material.transparent && b.material.transparent;
+                         });
+        if (out.parts.empty())
+            return core::Result<SkinnedModel>::Err(
+                "skinned: no mesh node in " + path);
+        return core::Result<SkinnedModel>::Ok(std::move(out));
+    }
 
     // The animation importer needs the glTF JSON text. For a plain .gltf it
     // is the file itself; a .glb wraps it in a JSON chunk (magic header +
