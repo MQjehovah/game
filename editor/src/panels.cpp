@@ -1116,6 +1116,8 @@ void EditorApp::BuildAssetPanel() {
                     else if (IsScriptExt(e.name)) kind = "ASSET_SCRIPT";
                     else if (IsMaterialExt(e.name)) kind = "ASSET_MATERIAL";
                     if (kind && ImGui::BeginDragDropSource()) {
+                        NEON_LOG_INFO("Asset grid: drag source started '%s'",
+                                      e.name.c_str());
                         ImGui::SetDragDropPayload(kind, e.path.c_str(), e.path.size() + 1);
                         ImGui::Text("%s", e.name.c_str());
                         ImGui::EndDragDropSource();

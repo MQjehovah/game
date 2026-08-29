@@ -2,37 +2,6 @@
   "entities": [
     {
       "components": {
-        "scripts": {
-          "items": [
-            {
-              "backend": "lua",
-              "path": "assets/scripts/wc3.lua",
-              "vars": {}
-            }
-          ]
-        },
-        "transform": {
-          "pos": [0,0,0],
-          "rot": [0,0,0,1],
-          "scale": [1,1,1]
-        }
-      },
-      "id": 1,
-      "name": "Game"
-    },
-    {
-      "components": {
-        "mesh": {
-          "material": { "albedoTex": "assets/textures/grass.png", "colorHex": "#FFFFFF" },
-          "meshKey": "plane"
-        },
-        "transform": { "pos": [50, -0.1, 40], "rot": [0, 0, 0, 1], "scale": [130, 1, 100] }
-      },
-      "id": 500,
-      "name": "Ground"
-    },
-    {
-      "components": {
         "camera": {
           "fov": 55,
           "orthoSize": 10
