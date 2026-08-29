@@ -420,6 +420,15 @@ void EditorApp::RefreshAssetDir() {
                    assetEntries_.size());
 }
 
+bool EditorApp::InPrefabsDir() const {
+    // Normalize separators then compare the final path component.
+    std::string d = assetDir_;
+    std::replace(d.begin(), d.end(), '\\', '/');
+    const size_t last = d.find_last_of('/');
+    const std::string base = last == std::string::npos ? d : d.substr(last + 1);
+    return ToLower(base) == "prefabs";
+}
+
 // Copies a file into the current asset dir (skipping a duplicate name by
 // appending _1/_2/...), then refreshes the listing.
 void EditorApp::ImportAssetFile(const std::string& srcPath) {
@@ -576,24 +585,6 @@ void EditorApp::BuildScenePanel() {
         ImGui::Button("?");
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("模型资源(头盔/松树/房屋等)从 资源 面板双击导入或拖入");
-        ImGui::SameLine();
-        {
-            static int prefabSel = 0;
-            if (prefabLib_.Size() > 0) {
-                std::vector<const char*> prefabNames;
-                for (const auto& entry : projectPrefabs_) prefabNames.push_back(entry.c_str());
-                if (prefabSel >= static_cast<int>(prefabNames.size())) prefabSel = 0;
-                ImGui::SetNextItemWidth(110.0f);
-                if (ImGui::Combo("##prefab_pick", &prefabSel, prefabNames.data(),
-                                 static_cast<int>(prefabNames.size())))
-                    ;
-                ImGui::SameLine();
-                if (ImGui::Button("插入预置体"))
-                    AddEntity("prefab:" + projectPrefabs_[static_cast<size_t>(prefabSel)]);
-            } else {
-                ImGui::TextDisabled("无预置体");
-            }
-        }
         ImGui::SameLine();
         if (ImGui::Button("复制") && !selection_.empty()) {
             history_.Push(std::make_unique<MultiDuplicateEntityCommand>(
@@ -777,6 +768,13 @@ void EditorApp::BuildScenePanel() {
                                     &entities_, sel));
                                 ClampSelection();
                             }
+                            if (ImGui::MenuItem("保存为预置体")) {
+                                const SceneEntity& t = entities_[static_cast<size_t>(idx)];
+                                std::snprintf(prefabSaveBuf_, sizeof(prefabSaveBuf_), "%s",
+                                              t.name.c_str());
+                                prefabSaveTarget_ = idx;
+                                prefabSavePrompt_ = true;
+                            }
                             ImGui::EndPopup();
                         }
                     };
@@ -910,6 +908,17 @@ void EditorApp::BuildScenePanel() {
                 const char* path = static_cast<const char*>(p->Data);
                 if (path && *path) AddSpriteEntity(path);
             }
+            if (const ImGuiPayload* p = ImGui::AcceptDragDropPayload("ASSET_PREFAB")) {
+                const char* path = static_cast<const char*>(p->Data);
+                if (path && *path) {
+                    // payload is the prefab file path; extract the template name
+                    // (assets/prefabs/<name>.json) and spawn an instance.
+                    std::string nm = FileName(path);
+                    const size_t dot = nm.find_last_of('.');
+                    if (dot != std::string::npos) nm = nm.substr(0, dot);
+                    if (!nm.empty()) AddEntity("prefab:" + nm);
+                }
+            }
             if (const ImGuiPayload* p = ImGui::AcceptDragDropPayload("ASSET_SCRIPT")) {
                 const char* path = static_cast<const char*>(p->Data);
                 if (path && selected_ >= 0 &&
@@ -925,6 +934,35 @@ void EditorApp::BuildScenePanel() {
                 }
             }
             ImGui::EndDragDropTarget();
+        }
+        // "保存为预置体" name prompt (scene right-click): confirm the template
+        // name, then save the target entity as assets/prefabs/<name>.json.
+        if (prefabSavePrompt_) {
+            if (ImGui::Begin("保存为预置体", &prefabSavePrompt_,
+                             ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoDocking)) {
+                ImGui::TextDisabled("把选中实体存为可复用的预置体模板");
+                ImGui::InputText("名称", prefabSaveBuf_, sizeof(prefabSaveBuf_));
+                ImGui::SameLine();
+                ImGui::TextDisabled(".json");
+                ImGui::Spacing();
+                bool ok = false;
+                if (ImGui::Button("保存")) ok = true;
+                ImGui::SameLine();
+                if (ImGui::Button("取消")) { prefabSavePrompt_ = false; prefabSaveTarget_ = -1; }
+                if (ok) {
+                    SetSelection(prefabSaveTarget_);
+                    const std::string nm(prefabSaveBuf_);
+                    if (!nm.empty()) {
+                        std::string t = nm;
+                        const size_t dot = t.find_last_of('.');
+                        if (dot != std::string::npos) t = t.substr(0, dot);
+                        SavePrefab(t);
+                    }
+                    prefabSavePrompt_ = false;
+                    prefabSaveTarget_ = -1;
+                }
+            }
+            ImGui::End();
         }
     }
     ImGui::End();
@@ -1204,7 +1242,9 @@ void EditorApp::BuildAssetPanel() {
                                        : IsModelExt(e.name) ? "ASSET_MODEL"
                                        : IsScriptExt(e.name) ? "ASSET_SCRIPT"
                                        : IsMaterialExt(e.name) ? "ASSET_MATERIAL"
-                                                               : nullptr;
+                                       : (InPrefabsDir() && ToLower(ExtLower(e.name)) == ".json")
+                                             ? "ASSET_PREFAB"
+                                             : nullptr;
                     if (kind) {
                         ImGui::SetDragDropPayload(kind, e.path.c_str(), e.path.size() + 1);
                         ImGui::Text("%s", e.name.c_str());
@@ -1264,6 +1304,11 @@ void EditorApp::BuildAssetPanel() {
             } else if (IsMaterialExt(e.name) && ImGui::BeginDragDropSource()) {
                 ImGui::SetDragDropPayload("ASSET_MATERIAL", e.path.c_str(),
                                           e.path.size() + 1);
+                ImGui::Text("%s", e.name.c_str());
+                ImGui::EndDragDropSource();
+            } else if (InPrefabsDir() && ToLower(ExtLower(e.name)) == ".json" &&
+                       ImGui::BeginDragDropSource()) {
+                ImGui::SetDragDropPayload("ASSET_PREFAB", e.path.c_str(), e.path.size() + 1);
                 ImGui::Text("%s", e.name.c_str());
                 ImGui::EndDragDropSource();
             }
@@ -1531,36 +1576,6 @@ void EditorApp::BuildInspectorPanel() {
             ImGui::TextColored(ImVec4(0.8f, 0.85f, 1.0f, 1.0f),
                                "精灵类型: 在下方\"精灵\"区块设置贴图");
         }
-        // P2-1 ground decal: a flat textured quad projected onto the ground.
-        if (ImGui::CollapsingHeader("贴花##decal")) {
-            static char decalBuf[512] = {};
-            std::snprintf(decalBuf, sizeof(decalBuf), "%s", e.decalTex.c_str());
-            ImGui::SetNextItemWidth(300.0f);
-            if (ImGui::InputText("贴图", decalBuf, sizeof(decalBuf))) {
-                const std::string old = e.decalTex;
-                e.decalTex = decalBuf;
-                e.decalMesh = {};
-                history_.Push(std::make_unique<EditPropertyCommand<std::string>>(
-                    &entities_, selected_, ApplyDecalTexProp, old, e.decalTex,
-                    /*mergeable=*/false));
-            }
-            if (!e.decalTex.empty()) {
-                const float oldSize = e.decalSize;
-                if (ImGui::DragFloat("尺寸", &e.decalSize, 0.1f, 0.1f, 100.0f)) {
-                    e.decalMesh = {};
-                    history_.Push(std::make_unique<EditPropertyCommand<float>>(
-                        &entities_, selected_, ApplyDecalSizeProp, oldSize, e.decalSize));
-                }
-                const float oldAlpha = e.decalAlpha;
-                if (ImGui::DragFloat("不透明度", &e.decalAlpha, 0.01f, 0.0f, 1.0f)) {
-                    history_.Push(std::make_unique<EditPropertyCommand<float>>(
-                        &entities_, selected_, ApplyDecalAlphaProp, oldAlpha, e.decalAlpha));
-                }
-            } else {
-                ImGui::TextDisabled("填入贴图路径后保存/导出即生成地面贴花");
-            }
-            ImGui::Separator();
-        }
         if (!e.spriteTex.empty()) {
             ImGui::TextDisabled("精灵贴图: %s", e.spriteTex.c_str());
             const SpriteFlipValue oldFlip{e.spriteFlipX, e.spriteFlipY};
@@ -1579,21 +1594,6 @@ void EditorApp::BuildInspectorPanel() {
 
         if (!e.prefab.empty()) {
             ImGui::TextDisabled("预置体: %s", e.prefab.c_str());
-        }
-        {
-            static char prefabName[128] = {};
-            std::snprintf(prefabName, sizeof(prefabName), "%s", e.name.c_str());
-            ImGui::SetNextItemWidth(140.0f);
-            ImGui::InputText("预置体名", prefabName, sizeof(prefabName));
-            ImGui::SameLine();
-            if (ImGui::Button("另存为预置体")) {
-                std::string name(prefabName);
-                if (!name.empty()) {
-                    const size_t dot = name.find_last_of('.');
-                    if (dot != std::string::npos) name = name.substr(0, dot);
-                    SavePrefab(name);
-                }
-            }
         }
         ImGui::Separator();
         // G5-4-4(项1): prefab instance overrides. The instance stores only the
@@ -1827,7 +1827,11 @@ void EditorApp::BuildInspectorPanel() {
                     gfx::Texture tex =
                         newPath.empty() ? gfx::Texture{} : assetMgr_.LoadTexture(newPath);
                     if (newPath.empty() || tex.Valid()) {
-                        const TextureSlotValue newVal{newPath, tex.Handle()};
+                        // Store the project-relative path (so it survives a save
+                        // + restart and resolves through the runtime's
+                        // FullAssetPath), even though LoadTexture used `newPath`.
+                        const std::string storePath = ToProjectRelPath(newPath, projectDir_);
+                        const TextureSlotValue newVal{storePath, tex.Handle()};
                         history_.Push(std::make_unique<EditPropertyCommand<TextureSlotValue>>(
                             &entities_, selected_, apply, oldVal, newVal));
                     } else {
@@ -1853,10 +1857,13 @@ void EditorApp::BuildInspectorPanel() {
                         const std::string newPath(src);
                         gfx::Texture tex = assetMgr_.LoadTexture(newPath);
                         if (tex.Valid()) {
+                            // Store project-relative so the path survives a save
+                            // + restart and resolves via FullAssetPath in play.
+                            const std::string storePath = ToProjectRelPath(newPath, projectDir_);
                             const TextureSlotValue oldVal{path, handle};
                             history_.Push(std::make_unique<EditPropertyCommand<TextureSlotValue>>(
                                 &entities_, selected_, apply, oldVal,
-                                TextureSlotValue{newPath, tex.Handle()}));
+                                TextureSlotValue{storePath, tex.Handle()}));
                         } else {
                             NEON_LOG_WARN("Editor: texture '%s' failed to load (slot '%s')",
                                           newPath.c_str(), label);
@@ -1880,6 +1887,38 @@ void EditorApp::BuildInspectorPanel() {
                 this, &entities_, selected_, e.meshKey, ""));
         }
         }
+        }
+        // P2-1 ground decal: a flat textured quad projected onto the ground.
+        // A component like mesh/health; only shows when a decal texture is set
+        // (or via 添加组件 -> 贴花 to add one).
+        if (ImGui::CollapsingHeader("贴花##decal")) {
+            static char decalBuf[512] = {};
+            std::snprintf(decalBuf, sizeof(decalBuf), "%s", e.decalTex.c_str());
+            ImGui::SetNextItemWidth(300.0f);
+            if (ImGui::InputText("贴图", decalBuf, sizeof(decalBuf))) {
+                const std::string old = e.decalTex;
+                e.decalTex = decalBuf;
+                e.decalMesh = {};
+                history_.Push(std::make_unique<EditPropertyCommand<std::string>>(
+                    &entities_, selected_, ApplyDecalTexProp, old, e.decalTex,
+                    /*mergeable=*/false));
+            }
+            if (!e.decalTex.empty()) {
+                const float oldSize = e.decalSize;
+                if (ImGui::DragFloat("尺寸", &e.decalSize, 0.1f, 0.1f, 100.0f)) {
+                    e.decalMesh = {};
+                    history_.Push(std::make_unique<EditPropertyCommand<float>>(
+                        &entities_, selected_, ApplyDecalSizeProp, oldSize, e.decalSize));
+                }
+                const float oldAlpha = e.decalAlpha;
+                if (ImGui::DragFloat("不透明度", &e.decalAlpha, 0.01f, 0.0f, 1.0f)) {
+                    history_.Push(std::make_unique<EditPropertyCommand<float>>(
+                        &entities_, selected_, ApplyDecalAlphaProp, oldAlpha, e.decalAlpha));
+                }
+            } else {
+                ImGui::TextDisabled("填入贴图路径后保存/导出即生成地面贴花");
+            }
+            ImGui::Separator();
         }
         auto makeNum = [](double v) {
             core::Json j;
@@ -2474,6 +2513,17 @@ void EditorApp::BuildViewportPanel() {
                     showModelPreview_ = true;
                     std::snprintf(previewPathBuf_, sizeof(previewPathBuf_), "%s", path);
                     OpenModelPreview(previewPathBuf_);
+                }
+            }
+            // 资产面板的预置体 (assets/prefabs/*.json) 拖到 3D 视口 → 生成实例。
+            if (const ImGuiPayload* p = ImGui::AcceptDragDropPayload("ASSET_PREFAB")) {
+                const char* path = static_cast<const char*>(p->Data);
+                NEON_LOG_INFO("Viewport: prefab dropped '%s'", path ? path : "");
+                if (path && *path) {
+                    std::string nm = FileName(path);
+                    const size_t dot = nm.find_last_of('.');
+                    if (dot != std::string::npos) nm = nm.substr(0, dot);
+                    if (!nm.empty()) AddEntity("prefab:" + nm);
                 }
             }
             ImGui::EndDragDropTarget();

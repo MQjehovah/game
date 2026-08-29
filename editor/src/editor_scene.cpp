@@ -1,6 +1,7 @@
 #include "editor.hpp"
 #include "editor_history.hpp"
 #include "editor_util.hpp"
+#include "neon/assets/asset_path.hpp"
 
 #include <filesystem>
 #include <fstream>
@@ -241,6 +242,11 @@ bool EditorApp::ResolveMesh(SceneEntity& e) {
     } else if (key == "tree") {
         e.mesh = gfx::MakeTreeMesh(renderer_);
         e.material = gfx::Material::Lit({}, gfx::Color::White, 8.0f);
+    } else if (key == "plane") {
+        // Ground / floor surface: a 20x20 quad, scaled by the entity transform
+        // (wc3's Ground uses scale 130x100 to span the map).
+        e.mesh = gfx::Mesh::CreatePlane(renderer_, 20.0f, 20.0f, 4, 4, "plane");
+        e.material = gfx::Material::Lit({}, e.tint, 8.0f);
     } else if (key == "house") {
         e.mesh = gfx::MakeHouseMesh(renderer_);
         e.material = gfx::Material::Lit({}, gfx::Color::White, 8.0f);
@@ -273,10 +279,10 @@ bool EditorApp::ResolveMesh(SceneEntity& e) {
         e.mesh = gfx::Mesh::CreatePlane(renderer_, 1.0f, 1.0f, 1, 1, "road");
         e.material = gfx::Material::Lit({}, e.tint, 4.0f);
     } else if (key.rfind("obj:", 0) == 0) {
-        e.mesh = assetMgr_.LoadMeshOBJ(ResolveMeshAssetPath(key.substr(4), projectDir_));
+        e.mesh = assetMgr_.LoadMeshOBJ(assets::NormalizeAssetPath(key.substr(4)));
         e.material = gfx::Material::Lit({}, e.tint, 8.0f);
     } else if (key.rfind("gltf:", 0) == 0) {
-        const std::string gltfPath = ResolveMeshAssetPath(key.substr(5), projectDir_);
+        const std::string gltfPath = assets::NormalizeAssetPath(key.substr(5));
         // Cache the resolved model per path: the first entity pays the full
         // parse + upload, the rest clone the result (GPU handles shared, the
         // per-entity Animator state is a fresh copy).
@@ -395,10 +401,19 @@ void EditorApp::ApplyMaterialParams(SceneEntity& e) {
     // Texture slots: load any non-empty path through the cached AssetManager.
     // Empty paths leave the existing handle untouched (e.g. a glTF material's
     // baked PBR textures survive until the user explicitly overrides/clears).
-    if (!e.albedoTex.empty()) e.material.albedo = assetMgr_.LoadTexture(e.albedoTex).Handle();
-    if (!e.mrTex.empty()) e.material.metallicRoughness = assetMgr_.LoadTexture(e.mrTex).Handle();
-    if (!e.aoTex.empty()) e.material.occlusion = assetMgr_.LoadTexture(e.aoTex).Handle();
-    if (!e.emissiveTex.empty()) e.material.emissive = assetMgr_.LoadTexture(e.emissiveTex).Handle();
+    // Paths are stored project-relative ("assets/x.png"); resolve against the
+    // project dir so the editor viewport finds them (CWD is the repo root).
+    // Asset paths are normalized ("@assets/x" -> "assets/x") then resolved by
+    // the AssetManager against the project root VFS (IoRead). No per-call
+    // project-dir prefixing — the unified asset path model handles all forms.
+    if (!e.albedoTex.empty())
+        e.material.albedo = assetMgr_.LoadTexture(assets::NormalizeAssetPath(e.albedoTex)).Handle();
+    if (!e.mrTex.empty())
+        e.material.metallicRoughness = assetMgr_.LoadTexture(assets::NormalizeAssetPath(e.mrTex)).Handle();
+    if (!e.aoTex.empty())
+        e.material.occlusion = assetMgr_.LoadTexture(assets::NormalizeAssetPath(e.aoTex)).Handle();
+    if (!e.emissiveTex.empty())
+        e.material.emissive = assetMgr_.LoadTexture(assets::NormalizeAssetPath(e.emissiveTex)).Handle();
 }
 
 void EditorApp::RebuildTerrainMesh(SceneEntity& e) {
@@ -910,15 +925,22 @@ void EditorApp::LoadScene(const std::string& path) {
                 e.meshKey = m->Get("meshKey") ? m->Get("meshKey")->GetString("cube") : "cube";
                 if (const core::Json* mr = m->Get("materialRef"))
                     e.materialRef = mr->GetString();
-                if (const core::Json* c = m->Get("colorHex")) e.tint = ColorFromHex(c->GetString());
-                if (const core::Json* v = m->Get("metallic")) e.metallic = static_cast<float>(v->GetNumber());
-                if (const core::Json* v = m->Get("roughness")) e.roughness = static_cast<float>(v->GetNumber());
-                if (const core::Json* v = m->Get("ao")) e.ao = static_cast<float>(v->GetNumber());
-                if (const core::Json* v = m->Get("emissiveIntensity")) e.emissiveIntensity = static_cast<float>(v->GetNumber());
-                if (const core::Json* v = m->Get("albedoTex")) e.albedoTex = v->GetString();
-                if (const core::Json* v = m->Get("mrTex")) e.mrTex = v->GetString();
-                if (const core::Json* v = m->Get("aoTex")) e.aoTex = v->GetString();
-                if (const core::Json* v = m->Get("emissiveTex")) e.emissiveTex = v->GetString();
+                // Material params live in the nested "material" object
+                // (mesh.material.{colorHex,metallic,roughness,ao,albedoTex,...}).
+                const core::Json* mat = m->Get("material");
+                auto matVal = [&](const char* k) -> const core::Json* {
+                    if (mat) if (const core::Json* v = mat->Get(k)) return v;
+                    return m->Get(k); // fall back to a mesh-level field if present
+                };
+                if (const core::Json* c = matVal("colorHex")) e.tint = ColorFromHex(c->GetString());
+                if (const core::Json* v = matVal("metallic")) e.metallic = static_cast<float>(v->GetNumber());
+                if (const core::Json* v = matVal("roughness")) e.roughness = static_cast<float>(v->GetNumber());
+                if (const core::Json* v = matVal("ao")) e.ao = static_cast<float>(v->GetNumber());
+                if (const core::Json* v = matVal("emissiveIntensity")) e.emissiveIntensity = static_cast<float>(v->GetNumber());
+                if (const core::Json* v = matVal("albedoTex")) e.albedoTex = assets::NormalizeAssetPath(v->GetString());
+                if (const core::Json* v = matVal("mrTex")) e.mrTex = assets::NormalizeAssetPath(v->GetString());
+                if (const core::Json* v = matVal("aoTex")) e.aoTex = assets::NormalizeAssetPath(v->GetString());
+                if (const core::Json* v = matVal("emissiveTex")) e.emissiveTex = assets::NormalizeAssetPath(v->GetString());
             }
             if (const core::Json* sp = comps->Get("sprite")) {
                 e.spriteTex = sp->Get("texture") ? sp->Get("texture")->GetString() : "";
@@ -1184,10 +1206,10 @@ void EditorApp::LoadScene(const std::string& path) {
             if (const core::Json* r = j->Get("roughness")) e.roughness = static_cast<float>(r->GetNumber());
             if (const core::Json* a = j->Get("ao")) e.ao = static_cast<float>(a->GetNumber());
             if (const core::Json* ei = j->Get("emissiveIntensity")) e.emissiveIntensity = static_cast<float>(ei->GetNumber());
-            if (const core::Json* at = j->Get("albedoTex")) e.albedoTex = at->GetString();
-            if (const core::Json* mt = j->Get("mrTex")) e.mrTex = mt->GetString();
-            if (const core::Json* aot = j->Get("aoTex")) e.aoTex = aot->GetString();
-            if (const core::Json* et = j->Get("emissiveTex")) e.emissiveTex = et->GetString();
+            if (const core::Json* at = j->Get("albedoTex")) e.albedoTex = assets::NormalizeAssetPath(at->GetString());
+            if (const core::Json* mt = j->Get("mrTex")) e.mrTex = assets::NormalizeAssetPath(mt->GetString());
+            if (const core::Json* aot = j->Get("aoTex")) e.aoTex = assets::NormalizeAssetPath(aot->GetString());
+            if (const core::Json* et = j->Get("emissiveTex")) e.emissiveTex = assets::NormalizeAssetPath(et->GetString());
             // Flat editor-scene format: a "scripts" array (new) or the legacy
             // scriptPath/scriptBackend/scriptVars keys (old saves).
             if (const core::Json* list = j->Get("scripts")) {
@@ -1415,6 +1437,52 @@ void EditorApp::LoadPrefabLibrary() {
     NEON_LOG_INFO("Editor: prefab library loaded (%zu prefabs)", prefabLib_.Size());
 }
 
+void EditorApp::NormalizeEntityAssetPaths() {
+    // Convert any path that lives under the project root into the portable
+    // project-relative "assets/..." form. A path that is NOT under the project
+    // (e.g. a bare "assets/..." reference, an external path, or an already
+    // relative one) is left unchanged — do NOT prepend CWD, which would turn a
+    // correct "assets/x.png" into a bogus absolute "E:\game\assets\x.png".
+    const std::string projPrefix =
+        projectDir_.empty() ? std::string() : projectDir_ + "/";
+    auto toRel = [this, &projPrefix](const std::string& p) {
+        if (p.empty()) return p;
+        std::string abs = p;
+        const bool isAbs = p.size() >= 2 && p[1] == ':' ||
+                           (!p.empty() && (p[0] == '/' || p[0] == '\\'));
+        if (!isAbs) abs = GetWorkingDir() + "/" + p;
+        if (!projPrefix.empty() && abs.size() >= projPrefix.size() &&
+            abs.rfind(projPrefix, 0) == 0) {
+            // Under the project root: emit the portable "@assets/..." virtual
+            // form. "@assets/" already denotes the project's assets/ root, so
+            // strip a leading "assets/" from the remainder to avoid "@assets/
+            // assets/..." duplication.
+            std::string rel = abs.substr(projPrefix.size());
+            std::string rl = rel;
+            for (char& c : rl) c = (c == '\\' ? '/' : c);
+            if (rl.rfind("assets/", 0) == 0) rel = rel.substr(7);
+            return "@assets/" + rel;
+        }
+        // Not under the project root: keep the reference verbatim (it may be a
+        // bare "assets/..." or an external/absolute path).
+        return p;
+    };
+    for (SceneEntity& e : entities_) {
+        // File-backed mesh keys carry a path after "obj:"/"gltf:".
+        if (e.meshKey.rfind("obj:", 0) == 0)
+            e.meshKey = "obj:" + toRel(e.meshKey.substr(4));
+        else if (e.meshKey.rfind("gltf:", 0) == 0)
+            e.meshKey = "gltf:" + toRel(e.meshKey.substr(5));
+        auto norm = [&toRel](std::string& p) { if (!p.empty()) p = toRel(p); };
+        norm(e.albedoTex);
+        norm(e.mrTex);
+        norm(e.aoTex);
+        norm(e.emissiveTex);
+        norm(e.decalTex);
+        norm(e.spriteTex);
+    }
+}
+
 void EditorApp::SavePrefab(const std::string& name) {
     if (selected_ < 0 || selected_ >= static_cast<int>(entities_.size())) return;
     const SceneEntity& e = entities_[static_cast<size_t>(selected_)];
@@ -1618,11 +1686,32 @@ void EditorApp::ApplyMaterialAsset(const std::string& path) {
     NEON_LOG_INFO("Editor: material asset '%s' applied", path.c_str());
 }
 
+void EditorApp::MountAssetVfs() {
+    // Mount a project-root virtual file system so asset references can use the
+    // "@assets/..." scheme and resolve against the current project dir. The
+    // AssetManager reads through it (IoRead/IoMTime), falling back to a direct
+    // CWD read for absolute/legacy paths during the gradual cutover.
+    const std::string root = projectDir_.empty() ? "." : projectDir_;
+    assetVfs_ = std::make_unique<neon::io::DiskFileSystem>(root);
+    assetMgr_.SetFileSystem(assetVfs_.get());
+}
+
 void EditorApp::SwitchProject(const std::string& dir) {
     StopPlay();
-    projectDir_ = dir.empty() ? "." : dir;
+    // Store the project dir as an ABSOLUTE path so asset/path resolution
+    // (ResolveMeshAssetPath, FullAssetPath, ToProjectRelPath) never depends on
+    // the current working directory — a relative "projects/wc3" would silently
+    // break after a restart launched from a different CWD.
+    std::string abs = dir.empty() ? "." : dir;
+    if (abs != ".") {
+        const bool isAbs = abs.size() >= 2 && abs[1] == ':' ||
+                           (!abs.empty() && (abs[0] == '/' || abs[0] == '\\'));
+        if (!isAbs) abs = GetWorkingDir() + "/" + abs;
+    }
+    projectDir_ = abs;
     std::strncpy(projectDirBuf_, projectDir_.c_str(), sizeof(projectDirBuf_) - 1);
     projectDirBuf_[sizeof(projectDirBuf_) - 1] = '\0';
+    MountAssetVfs();
     ScanProjects();
     LoadPrefabLibrary();
     // G5-4-4(项3): detect renamed/moved assets (GUID preserved) and rewrite

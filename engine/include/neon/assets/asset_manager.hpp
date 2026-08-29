@@ -133,6 +133,12 @@ public:
     // reads fall back to the real filesystem exactly as before.
     void SetFileSystem(neon::io::IFileSystem* fs) { fs_ = fs; }
     neon::io::IFileSystem* FileSystem() const { return fs_; }
+    // Unified asset read: normalizes the "@assets/..." / "assets:/..." scheme,
+    // reads through the mounted VFS (project root) when set, and falls back to
+    // a direct CWD read for absolute / legacy paths. All asset loads route here
+    // so a single path model (project-relative "@assets/...") works everywhere.
+    core::Result<std::vector<uint8_t>> IoRead(const std::string& path) const;
+    uint64_t IoMTime(const std::string& path) const;
     // G5-4-3: point the asset manager at an offline bake cache (produced by
     // AssetImporter::ImportProjectTextures). When set, LoadTexture first checks
     // <bakeDir>/<path>.nbc1 and uploads the pre-baked BC1 blocks directly,

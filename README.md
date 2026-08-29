@@ -223,7 +223,7 @@ build\neon_game.exe --connect 127.0.0.1:26000 --scene tests\data\neon_server_sam
 操作：WASD 移动（相机相对）、左键近战、1 火球、2 治疗、右键冲刺、空格跳跃；
 靠近村长按 F 对话；击败狼群获得经验/金币并触发下一波。
 
-核心承诺：**确定性模拟**——服务器权威模拟与客户端本地预测在相同输入流下逐位一致（`tests/test_determinism.cpp` 哈希验收）。详见 [docs/NETWORKING.md](docs/NETWORKING.md)。
+核心承诺：**确定性模拟**——服务器权威模拟与客户端本地预测在相同输入流下逐位一致（`tests/test_determinism.cpp` 哈希验收）。详见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) §9。
 
 ## 学习记录：相机、坐标系统与 HUD 锚点（实战笔记）
 
@@ -334,7 +334,7 @@ third_party/           # stb、字体、lua、imgui（均已 vendored）
 docs/                  # 架构/路线图/网络说明/规范文档
 ```
 
-详细设计见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)，路线图见 [docs/ROADMAP.md](docs/ROADMAP.md)。
+详细设计见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)（架构/模块/子系统），路线图与差距见 DEVELOPMENT §14，待办见 [docs/TODO.md](docs/TODO.md)。
 
 ## 许可
 

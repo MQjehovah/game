@@ -354,9 +354,10 @@ core::Result<core::Json> SceneFile::MakeEntity(const std::string& name,
                                                int id) {
     if (name.empty())
         return core::Result<core::Json>::Err("scene: exported entity name must not be empty");
-    if (meshKey.empty())
-        return core::Result<core::Json>::Err("scene: exported entity '" + name +
-                                             "' has an empty meshKey");
+    // NOTE: a pure-logic entity (e.g. a game script host like wc3's `Game`) has
+    // an EMPTY meshKey — that is valid: it exports with a transform + script
+    // component but no mesh. Do not reject it here or saving a scene silently
+    // drops the script host and the game logic stops running.
 
     core::Json e = MakeObject();
     e.object_["name"] = MakeString(name);
@@ -399,7 +400,9 @@ core::Result<core::Json> SceneFile::MakeEntity(const std::string& name,
 
     core::Json comps = MakeObject();
     comps.object_["transform"] = std::move(tf);
-    comps.object_["mesh"] = std::move(mesh);
+    // mesh component emitted only when a meshKey is present (a pure-logic
+    // script host carries none).
+    if (!meshKey.empty()) comps.object_["mesh"] = std::move(mesh);
 
     // Optional script component: emitted only when a path is attached, exactly
     // matching the built-in `script` factory schema (backend/path/vars).

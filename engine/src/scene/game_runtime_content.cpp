@@ -94,16 +94,18 @@ std::string GameRuntime::FullScriptPath(const std::string& path) const {
 }
 
 std::string GameRuntime::FullAssetPath(const std::string& path) const {
-    // G7-1: "assets:/..." scheme normalization ("assets:/x.obj" == "x.obj").
+    // Normalize the asset scheme ("@assets/x"/"assets:/x" -> "assets/x").
     const std::string p = assets::NormalizeAssetPath(path);
     // G6-1: resolve the logical asset path through the variant table first
     // (unlisted paths fall back to themselves).
     const std::string resolved = cfg_.variantTable ? cfg_.variantTable->Resolve(p) : p;
-    if (resolved.empty() || cfg_.assetBaseDir.empty()) return resolved;
-    // Absolute paths (drive letter or leading separator) pass through unchanged.
-    if (resolved.size() >= 2 && resolved[1] == ':') return resolved;
-    if (resolved[0] == '/') return resolved;
-    return cfg_.assetBaseDir + "/" + resolved;
+    // Asset references stay as the project-relative virtual path ("assets/x") —
+    // the AssetManager reads through the project-root VFS (IoRead), which also
+    // falls back to a direct read for absolute/external paths. NO project-dir
+    // prefix is added here: that would break the .gltf external buffer/images
+    // (which resolve relative to the .gltf via the VFS) and double up on the
+    // VFS root that is already mounted at the project dir.
+    return resolved;
 }
 
 std::string GameRuntime::ReadScript(const std::string& path) const {

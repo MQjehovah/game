@@ -458,6 +458,9 @@ void EditorApp::SyncWorldFromEntities() {
 // cannot carry (materialRef, prefab) is re-applied per entity afterwards.
 core::Result<core::Json> EditorApp::BuildPlaySceneJson() {
     NormalizeEntityIds();
+    // Serialize asset paths in the portable project-relative form (a "projects/
+    // wc3/..." CWD-relative path double-prefixes in play's FullAssetPath).
+    NormalizeEntityAssetPaths();
     if (entities_.empty())
         return core::Result<core::Json>::Err("editor: scene is empty");
     SyncWorldFromEntities();

@@ -1,4 +1,5 @@
 #include "neon/assets/asset_manager.hpp"
+#include "neon/assets/asset_path.hpp"
 
 #include "system_cjk_codepoints.hpp"
 
@@ -63,9 +64,16 @@ uint64_t FileMTime(const std::string& path) {
 //
 // G7-1: whole-file read through the optional VFS layer, falling back to the
 // real filesystem when no layer is set. Returns Err on missing/unreadable.
+// When a VFS is set but rejects the path (an absolute path, or a reference
+// that escapes the mounted root), it falls back to a direct CWD read of the
+// ORIGINAL path — so relative/absolute/legacy references all resolve through
+// this one entry point without per-call path munging.
 core::Result<std::vector<uint8_t>> ReadAllBytes(neon::io::IFileSystem* fs,
                                                 const std::string& path) {
-    if (fs) return fs->ReadFile(path);
+    if (fs) {
+        auto r = fs->ReadFile(path);
+        if (r.Ok()) return r;
+    }
     std::ifstream in(path, std::ios::binary | std::ios::ate);
     if (!in.is_open()) return core::Result<std::vector<uint8_t>>::Err("cannot open");
     const std::streamsize size = in.tellg();
@@ -88,6 +96,28 @@ DecodedImage DecodeImageFile(const std::string& path, bool compressBc1, bool fli
     const core::Result<std::vector<uint8_t>> bytes = ReadAllBytes(nullptr, path);
     if (!bytes.Ok()) return {};
     return DecodeImageBytes(bytes.Value(), compressBc1, flipVertically);
+}
+
+core::Result<std::vector<uint8_t>> AssetManager::IoRead(const std::string& path) const {
+    // "@assets/x" / "assets:/x" -> "assets/x" (project-relative virtual path).
+    const std::string norm = assets::NormalizeAssetPath(path);
+    if (fs_) {
+        auto r = fs_->ReadFile(norm);
+        if (r.Ok()) return r;
+        // VFS miss (absolute path, or a path outside the mounted root): fall
+        // through to a direct read of the ORIGINAL path so legacy/external
+        // references keep working during the gradual cutover.
+    }
+    return ReadAllBytes(nullptr, path);
+}
+
+uint64_t AssetManager::IoMTime(const std::string& path) const {
+    const std::string norm = assets::NormalizeAssetPath(path);
+    if (fs_) {
+        const uint64_t m = fs_->FileMTime(norm);
+        if (m != 0) return m;
+    }
+    return FileMTime(path); // CWD direct fallback (absolute / legacy paths)
 }
 
 namespace {
@@ -494,7 +524,7 @@ DecodedImage AssetManager::DecodeImage(const std::string& path, const TextureLoa
                                        bool compressed) {
     if (decodeFn_) return decodeFn_(path, opts);
     if (fs_) {
-        const core::Result<std::vector<uint8_t>> bytes = ReadAllBytes(fs_, path);
+        const core::Result<std::vector<uint8_t>> bytes = IoRead(path);
         if (!bytes.Ok()) return {};
         return DecodeImageBytes(bytes.Value(), compressed, opts.flipVertically);
     }
@@ -568,7 +598,7 @@ gfx::Texture AssetManager::LoadTexture(const std::string& path, const TextureLoa
     // stays missing (the first failure already logged). If the file appeared
     // since then, retry the real load once.
     if (failedTextures_.count(key) != 0) {
-        if (FileMTime(path) == 0) return {};
+        if (IoMTime(path) == 0) return {};
         failedTextures_.erase(key);
     }
 
@@ -578,7 +608,7 @@ gfx::Texture AssetManager::LoadTexture(const std::string& path, const TextureLoa
     // through the VFS when installed (packed game), else the bake dir on disk.
     if (!bakeDir_.empty() && img.bc1.empty()) {
         const core::Result<std::vector<uint8_t>> baked =
-            ReadAllBytes(fs_, bakeDir_ + "/" + path + ".nbc1");
+            IoRead(bakeDir_ + "/" + path + ".nbc1");
         if (baked.Ok() && baked.Value().size() >= 12 &&
             baked.Value()[0] == 'N' && baked.Value()[1] == 'B' &&
             baked.Value()[2] == 'C' && baked.Value()[3] == '1') {
@@ -608,7 +638,7 @@ gfx::Texture AssetManager::LoadTexture(const std::string& path, const TextureLoa
         return {};
     }
     textures_[key] = texture;
-    textureMtimes_[key] = FileMTime(path);
+    textureMtimes_[key] = IoMTime(path);
     textureRefs_[key] = 1;
     NEON_LOG_INFO("Asset: loaded texture '%s' (%dx%d%s)", path.c_str(), img.width, img.height,
                   img.bc1.empty() ? "" : ", BC1");
@@ -629,7 +659,7 @@ void AssetManager::LoadTextureAsync(const std::string& path, std::function<void(
     }
     // Negative cache (see LoadTexture): known-missing files skip the worker.
     if (failedTextures_.count(key) != 0) {
-        if (FileMTime(path) == 0) {
+        if (IoMTime(path) == 0) {
             cb(false);
             return;
         }
@@ -810,7 +840,7 @@ void AssetManager::FinishAsyncTexture(const std::string& path, DecodedImage img,
         if (tex.Valid()) {
             const std::string key = TextureCacheKey(path, opts);
             textures_[key] = tex;
-            textureMtimes_[key] = FileMTime(path);
+            textureMtimes_[key] = IoMTime(path);
             textureRefs_[key] = 1;
             ok = true;
             NEON_LOG_INFO("Asset: async texture '%s' loaded (%dx%d%s)", path.c_str(), img.width,
@@ -832,7 +862,7 @@ gfx::Mesh AssetManager::LoadMeshOBJ(const std::string& path) {
         return cached->second;
     }
 
-    const core::Result<std::vector<uint8_t>> fileBytes = ReadAllBytes(fs_, path);
+    const core::Result<std::vector<uint8_t>> fileBytes = IoRead(path);
     if (!fileBytes.Ok()) {
         NEON_LOG_ERROR("Asset: failed to open OBJ '%s'", path.c_str());
         return {};
@@ -849,7 +879,7 @@ gfx::Mesh AssetManager::LoadMeshOBJ(const std::string& path) {
                                                parsed.indices.data(),
                                                static_cast<uint32_t>(parsed.indices.size()), path);
     meshes_[path] = mesh;
-    meshMtimes_[path] = FileMTime(path);
+    meshMtimes_[path] = IoMTime(path);
     meshRefs_[path] = 1;
     NEON_LOG_INFO("Asset: loaded OBJ '%s' (%zu verts)", path.c_str(), parsed.verts.size());
     return mesh;
@@ -878,7 +908,7 @@ void AssetManager::LoadMeshOBJAsync(const std::string& path, std::function<void(
     if (inFlight) return;
 
     bool ok = asyncLoader_.Submit([this, path]() {
-        const core::Result<std::vector<uint8_t>> bytes = ReadAllBytes(fs_, path);
+        const core::Result<std::vector<uint8_t>> bytes = IoRead(path);
         ParsedObjMesh parsed;
         if (bytes.Ok()) parsed = ParseObjMesh(path, bytes.Value(), fs_);
         else parsed.error = "failed to open OBJ";
@@ -906,7 +936,7 @@ void AssetManager::FinishAsyncMesh(const std::string& path, ParsedObjMesh&& pars
                                                    static_cast<uint32_t>(parsed.indices.size()),
                                                    path);
         meshes_[path] = mesh;
-        meshMtimes_[path] = FileMTime(path);
+        meshMtimes_[path] = IoMTime(path);
         meshRefs_[path] = 1;
         NEON_LOG_INFO("Asset: loaded OBJ '%s' async (%zu verts)", path.c_str(),
                       parsed.verts.size());
@@ -927,7 +957,7 @@ GltfAsset AssetManager::LoadGLTF(const std::string& path) {
     // keeps hot-reload correct: an edited file gets re-parsed on the next
     // request. A missing file (mtime 0) is not cached, so a file created later
     // is picked up.
-    const uint64_t mtime = FileMTime(path);
+    const uint64_t mtime = IoMTime(path);
     const auto gltfIt = gltfs_.find(path);
     const auto mtimeIt = gltfMtimes_.find(path);
     if (gltfIt != gltfs_.end() && mtimeIt != gltfMtimes_.end() &&
@@ -935,7 +965,7 @@ GltfAsset AssetManager::LoadGLTF(const std::string& path) {
         return gltfIt->second;
     }
 
-    const core::Result<std::vector<uint8_t>> fileBytes = ReadAllBytes(fs_, path);
+    const core::Result<std::vector<uint8_t>> fileBytes = IoRead(path);
     if (!fileBytes.Ok()) {
         NEON_LOG_ERROR("GLTF: failed to open '%s'", path.c_str());
         return {};
@@ -956,7 +986,7 @@ GltfAsset AssetManager::LoadGLTF(const std::string& path) {
 // inline-fallback contract as LoadMeshOBJAsync.
 void AssetManager::LoadGLTFAsync(const std::string& path, std::function<void(bool)> cb) {
     if (!cb) return;
-    const uint64_t mtime = FileMTime(path);
+    const uint64_t mtime = IoMTime(path);
     const auto it = gltfs_.find(path);
     const auto mit = gltfMtimes_.find(path);
     if (it != gltfs_.end() && mit != gltfMtimes_.end() && mit->second == mtime && mtime != 0) {
@@ -974,7 +1004,7 @@ void AssetManager::LoadGLTFAsync(const std::string& path, std::function<void(boo
     if (inFlight) return;
 
     bool ok = asyncLoader_.Submit([this, path, mtime]() {
-        const core::Result<std::vector<uint8_t>> bytes = ReadAllBytes(fs_, path);
+        const core::Result<std::vector<uint8_t>> bytes = IoRead(path);
         ParsedGltf parsed;
         if (bytes.Ok()) parsed = ParseGltfContainer(path, bytes.Value(), fs_);
         else parsed.error = "failed to open '" + path + "'";
@@ -1523,7 +1553,7 @@ gfx::Font AssetManager::LoadFont(const std::string& path, int pixelHeight) {
     auto cached = fonts_.find(key);
     if (cached != fonts_.end()) return cached->second;
 
-    const core::Result<std::vector<uint8_t>> bytes = ReadAllBytes(fs_, path);
+    const core::Result<std::vector<uint8_t>> bytes = IoRead(path);
     if (!bytes.Ok()) {
         NEON_LOG_ERROR("Asset: failed to open font '%s'", path.c_str());
         return {};
@@ -1774,7 +1804,7 @@ bool AssetManager::TextureChangedOnDisk(const std::string& path) const {
     // the path (raw-path lookups missed flip/wrap entries forever).
     for (const auto& kv : textureMtimes_) {
         if (KeyPathOf(kv.first) != path) continue;
-        if (kv.second != FileMTime(path)) return true;
+        if (kv.second != IoMTime(path)) return true;
     }
     return false;
 }
@@ -1782,7 +1812,7 @@ bool AssetManager::TextureChangedOnDisk(const std::string& path) const {
 bool AssetManager::MeshChangedOnDisk(const std::string& path) const {
     auto it = meshMtimes_.find(path);
     if (it == meshMtimes_.end()) return false;
-    return it->second != FileMTime(path);
+    return it->second != IoMTime(path);
 }
 
 void AssetManager::ReloadTexture(const std::string& path) {

@@ -94,14 +94,6 @@ void FixSkinBindImpl(anim::Skeleton& sk, const std::vector<uint32_t>& jointNodes
     }
 }
 
-std::string ReadFileText(const std::string& path) {
-    std::ifstream in(path, std::ios::binary);
-    if (!in) return {};
-    std::stringstream ss;
-    ss << in.rdbuf();
-    return ss.str();
-}
-
 } // namespace
 
 void FixSkinBind(anim::Skeleton& sk, const std::vector<uint32_t>& jointNodes) {
@@ -266,8 +258,15 @@ core::Result<SkinnedModel> LoadSkinnedModel(assets::AssetManager& assets,
 
     // The animation importer needs the glTF JSON text. For a plain .gltf it
     // is the file itself; a .glb wraps it in a JSON chunk (magic header +
-    // [len,type,data] chunks, type 0x4E4F534A = JSON).
-    std::string jsonText = ReadFileText(path);
+    // [len,type,data] chunks, type 0x4E4F534A = JSON). Read through the asset
+    // VFS (NormalizeAssetPath + project-root + direct fallback) so the path is
+    // resolved by one layer, not a raw CWD read.
+    std::string jsonText;
+    {
+        auto bytes = assets.IoRead(path);
+        if (bytes.Ok())
+            jsonText.assign(bytes.Value().begin(), bytes.Value().end());
+    }
     if (jsonText.size() >= 4 && jsonText[0] == 'g' && jsonText[1] == 'l' &&
         jsonText[2] == 'T' && jsonText[3] == 'F') {
         std::vector<uint8_t> raw(jsonText.begin(), jsonText.end());

@@ -188,6 +188,7 @@ bool EditorApp::OnCreate() {
         return false;
     }
     assetMgr_.Init(&renderer_);
+    MountAssetVfs();
 
     pixelFont_ = renderer_.CreateFontFromMemory(neon_rush::kEmbeddedFontData,
                                                 neon_rush::kEmbeddedFontSize, 24);
@@ -289,7 +290,11 @@ bool EditorApp::OnCreate() {
         SwitchProject("projects/pvz");
     }
     if (!projectDirOnStart_.empty()) {
-        projectDir_ = projectDirOnStart_;
+        std::string abs = projectDirOnStart_;
+        const bool isAbs = abs.size() >= 2 && abs[1] == ':' ||
+                           (!abs.empty() && (abs[0] == '/' || abs[0] == '\\'));
+        if (!isAbs) abs = GetWorkingDir() + "/" + abs;
+        projectDir_ = abs;
         std::strncpy(projectDirBuf_, projectDir_.c_str(), sizeof(projectDirBuf_) - 1);
         projectDirBuf_[sizeof(projectDirBuf_) - 1] = '\0';
         if (loadProjectOnStart_) LoadProjectScene();

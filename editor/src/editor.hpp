@@ -15,6 +15,7 @@
 #include "neon/plugin/backend.hpp"
 #include "neon/gfx/light_probe.hpp"
 #include "neon/nav/nav_grid.hpp"
+#include "neon/io/vfs.hpp"
 #include "neon/neon.hpp"
 #include "neon/scene/component_schema.hpp"
 #include "neon/scene/skinned_model.hpp"
@@ -294,6 +295,9 @@ private:
     // entity's script (the panel re-syncs on the next frame it runs).
     void SetSelection(int index);
     void RefreshAssetDir();
+    // True when the asset panel is browsing this project's assets/prefabs dir
+    // (a .json there is a prefab template, draggable to spawn an instance).
+    bool InPrefabsDir() const;
     std::string assetDirSignature_;  // P1-1: cached asset-dir listing signature
     // Asset panel actions: copy a file into the current asset dir and create
     // a new asset (dir / lua / json / empty text). Both refresh the listing.
@@ -413,6 +417,10 @@ private:
     void LoadPrefabLibrary();
     // Saves the selected entity's components as assets/prefabs/<name>.json.
     void SavePrefab(const std::string& name);
+    // Rewrites every entity's asset paths (mesh/obj/gltf keys, albedoTex/mrTex/
+    // aoTex/emissiveTex, decalTex, spriteTex) into the project-relative "@assets/..."
+    // form. Called before saving so a scene always stores portable paths.
+    void NormalizeEntityAssetPaths();
     // G5-4-4(项3): asset GUID database (Unity ".meta" model). Builds the
     // project's GUID map, compares it against the previous run's snapshot, and
     // rewrites path references in assets/scenes + assets/prefabs + assets/ui
@@ -557,6 +565,13 @@ private:
                     std::function<void(neon::audio::IAudioBackend*)>>
         audioBackend_;
     assets::AssetManager assetMgr_;
+    // Project-root virtual file system mounted at the current project dir.
+    // Asset references use the "@assets/..." scheme; AssetManager resolves them
+    // against this root so editor + play share one path model. Recreated on
+    // project open so the root follows projectDir_.
+    std::unique_ptr<neon::io::DiskFileSystem> assetVfs_;
+    // (Re)mounts assetVfs_ at projectDir_ and points the AssetManager at it.
+    void MountAssetVfs();
     gfx::Font pixelFont_;
     gfx::Font cjkFont_;
 
@@ -618,6 +633,12 @@ private:
     std::string currentSceneName_; // scene picker label (loaded scene file)
     scene::PrefabLibrary prefabLib_; // current project's prefab templates
     std::vector<std::string> projectPrefabs_; // prefab names (sorted, for UI)
+    // "保存为预置体" name-prompt state (scene right-click): when pendingSaveName_
+    // is open, the hierarchy panel shows a small modal asking for the template
+    // name (default = entity name). On confirm it calls SavePrefab.
+    bool prefabSavePrompt_ = false;
+    char prefabSaveBuf_[128] = {};
+    int prefabSaveTarget_ = -1; // entity index being saved ("" none)
     // The parsed root of the scene currently in the editor + its file path.
     // 2D levels are scene entities (plant/zombie components); the scene file
     // is the single source of truth for both the editor and the runtime.

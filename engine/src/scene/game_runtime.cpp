@@ -1196,7 +1196,8 @@ void GameRuntime::BuildDrawList() {
         // so explicit material edits still win over the file's defaults.
         const bool gltfBase = m->meshKey.compare(0, 5, "gltf:") == 0 && cfg_.assets;
         if (gltfBase) {
-            assets::GltfAsset gltf = cfg_.assets->LoadGLTF(FullAssetPath(m->meshKey.substr(5)));
+            assets::GltfAsset gltf =
+                cfg_.assets->LoadGLTF(FullAssetPath(m->meshKey.substr(5)));
             if (!gltf.nodes.empty())
                 item.mat = gltf.nodes[0].material;
             else
@@ -1217,14 +1218,17 @@ void GameRuntime::BuildDrawList() {
         item.mat.emissiveIntensity = m->emissiveIntensity;
         if (cfg_.assets) {
             if (!m->albedoTex.empty())
-                item.mat.albedo = cfg_.assets->LoadTexture(FullAssetPath(m->albedoTex)).Handle();
+                item.mat.albedo =
+                    cfg_.assets->LoadTexture(FullAssetPath(m->albedoTex)).Handle();
             if (!m->mrTex.empty())
                 item.mat.metallicRoughness =
                     cfg_.assets->LoadTexture(FullAssetPath(m->mrTex)).Handle();
             if (!m->aoTex.empty())
-                item.mat.occlusion = cfg_.assets->LoadTexture(FullAssetPath(m->aoTex)).Handle();
+                item.mat.occlusion =
+                    cfg_.assets->LoadTexture(FullAssetPath(m->aoTex)).Handle();
             if (!m->emissiveTex.empty())
-                item.mat.emissive = cfg_.assets->LoadTexture(FullAssetPath(m->emissiveTex)).Handle();
+                item.mat.emissive =
+                    cfg_.assets->LoadTexture(FullAssetPath(m->emissiveTex)).Handle();
         }
         // M1: carry a live animation override onto a newly-tracked item.
         if (const SceneAnimOverride* ov = world_.Get<SceneAnimOverride>(ent);
@@ -1423,6 +1427,9 @@ void GameRuntime::ResolveDrawItem(DrawItem& item, gfx::Renderer& renderer) {
     if (cfg_.asyncMeshLoad && cfg_.assets &&
         (key.compare(0, 4, "obj:") == 0 || key.compare(0, 5, "gltf:") == 0)) {
         const bool isObj = key.compare(0, 4, "obj:") == 0;
+        // Use the project-relative virtual path (assets/...), NOT a project-dir-
+        // absolute one: glTF's external buffers/images resolve relative to the
+        // .gltf via the VFS, and an absolute path is rejected by it.
         const std::string full = FullAssetPath(isObj ? key.substr(4) : key.substr(5));
         const bool cached = isObj ? cfg_.assets->HasMesh(full) : cfg_.assets->HasGLTF(full);
         if (!cached) {
@@ -1493,7 +1500,8 @@ gfx::Mesh GameRuntime::ResolveMeshKey(gfx::Renderer& renderer, const std::string
     if (key.compare(0, 4, "obj:") == 0) {
         mesh = cfg_.assets->LoadMeshOBJ(FullAssetPath(key.substr(4)));
     } else if (key.compare(0, 5, "gltf:") == 0) {
-        assets::GltfAsset gltf = cfg_.assets->LoadGLTF(FullAssetPath(key.substr(5)));
+        assets::GltfAsset gltf =
+            cfg_.assets->LoadGLTF(FullAssetPath(key.substr(5)));
         if (!gltf.nodes.empty()) mesh = gltf.nodes[0].mesh;
     } else if (key == "cube") {
         mesh = gfx::Mesh::CreateCube(renderer, 1.0f, 1.0f, 1.0f, "cube");
