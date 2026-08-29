@@ -8,6 +8,7 @@
 
 #include "neon/ecs/world.hpp"
 #include "neon/gfx/backend.hpp"
+#include "neon/gfx/particles.hpp"
 #include "neon/script/input_map.hpp"
 #include "neon/math/quat.hpp"
 #include "neon/math/vec3.hpp"
@@ -76,6 +77,9 @@ struct ScriptContext {
     // Wired by hosts that own an audio backend; null -> no-ops.
     std::function<void(const std::string&, float)> playMusic;
     std::function<void(const std::string&, const math::Vec3&)> playSfx3D;
+    // World-space particle burst (engine billboard particle system — the
+    // neon_rush-quality additive VFX path). Wired by GameRuntime; null -> no-op.
+    std::function<void(const gfx::EmitterConfig&)> emitParticles;
     std::function<void(const math::Vec3&, const math::Vec3&)> setAudioListener;
     std::function<void(int, float)> setBusVolume;
     // P2-4 production RPC: sends a named remote call with a JSON args payload

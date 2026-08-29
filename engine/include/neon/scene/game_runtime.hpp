@@ -19,6 +19,7 @@
 #include "neon/gfx/font.hpp"
 #include "neon/gfx/material.hpp"
 #include "neon/gfx/mesh.hpp"
+#include "neon/gfx/particles.hpp"
 #include "neon/math/bvh.hpp"
 #include "neon/plugin/runtime_plugin.hpp"
 #include "neon/plugin/backend.hpp"
@@ -367,6 +368,11 @@ public:
     bool LoadSkills(const std::string& json, std::string* err);
     int CastSkill(const std::string& name, const math::Vec3& origin, const math::Vec3& dir,
                   ecs::Entity caster = {});
+
+    // World-space particle burst (gfx::ParticleSystem, camera-facing
+    // billboards, additive/alpha batches) — the neon_rush-quality VFX path.
+    // Exposed to scripts through the EmitParticles binding.
+    void EmitParticles(const gfx::EmitterConfig& cfg);
     // Remaining cooldown seconds for `caster`'s skill (0 = ready / unknown).
     float SkillCooldownLeft(const std::string& name, ecs::Entity caster) const;
 
@@ -515,6 +521,10 @@ private:
         ecs::Entity caster;   // never damaged by its own projectile
         std::vector<SkillStatus> statuses; // applied to the hit target
     };
+    // Projectile VFX (EmitParticles path): one trail ember per tick + an
+    // impact burst when the projectile dies.
+    void ProjectileTrail(const Projectile& p);
+    void ProjectileBurst(const Projectile& p);
     // G2-3 vegetation field attached to a terrain entity: deterministic scatter
     // positions plus lazily-resolved plant + impostor meshes. Built once per
     // entity per Start (terrain heights are static during play).
@@ -708,6 +718,8 @@ private:
     size_t poseCount_ = 0;  // number of valid snapshots (<= capacity)
     uint32_t autoRewindTicks_ = 0; // rewind used by MeleeAttack/AttackBox/CastSkill
     gfx::Mesh fireballMesh_; // lazily built for skill-projectile rendering
+    gfx::ParticleSystem particles_; // world-space billboard particles (scripts)
+    gfx::Texture particleTex_;      // soft radial glow sprite for the particles
     std::set<std::string> loadedScripts_; // resolved paths whose chunk ran (presence only)
     std::set<std::string> scriptFailed_;  // resolved paths that failed (skip later)
     // Captured handler handles per loaded chunk (keyed like loadedScripts_:

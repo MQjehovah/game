@@ -635,6 +635,83 @@ Value NativeSpawnSprite(IScriptHost& host, void* user) {
 // (the
 // prefab's script components attach and on_start fires immediately). Returns
 // the entity handle or nil.
+// EmitParticles(table): one world-space particle burst from the engine's
+// pooled billboard system (additive glow quads, size/color-over-life, the
+// same path neon_rush effects use). Table keys, all optional:
+//   pos {x,y,z}            burst origin (default 0,0,0)
+//   count N                particle count (default 20)
+//   vel {x,y,z}            base velocity added to every particle
+//   speedMin/speedMax      random radial speed range (default 1..3)
+//   lifeMin/lifeMax        seconds (default 0.4..0.9)
+//   sizeStart/sizeEnd      world-space billboard size over life (0.5 -> 0.05)
+//   color {r,g,b,a}        start color (default white)
+//   colorEnd {r,g,b,a}     end color (default white -> alpha 0)
+//   gravity                y acceleration (default 0)
+//   additive               true = additive blend (default true)
+Value NativeEmitParticles(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->emitParticles) return Value::Nil();
+    const Value& a0 = host.GetArg(0);
+    if (a0.type != Value::Type::Table || !a0.table) return Value::Nil();
+
+    auto find = [&](const char* key) -> const Value* {
+        for (const auto& f : a0.table->fields)
+            if (f.first == key) return &f.second;
+        return nullptr;
+    };
+    auto num = [&](const char* key, float def) {
+        const Value* v = find(key);
+        return (v && v->type == Value::Type::Number) ? static_cast<float>(v->number) : def;
+    };
+    auto vec3 = [&](const char* key, float dx, float dy, float dz) {
+        math::Vec3 out{dx, dy, dz};
+        const Value* v = find(key);
+        if (v && v->type == Value::Type::Table && v->table) {
+            for (const auto& f : v->table->fields) {
+                if (f.second.type != Value::Type::Number) continue;
+                const float n = static_cast<float>(f.second.number);
+                if (f.first == "x") out.x = n;
+                else if (f.first == "y") out.y = n;
+                else if (f.first == "z") out.z = n;
+            }
+        }
+        return out;
+    };
+    auto color = [&](const char* key, float dr, float dg, float db, float da) {
+        gfx::Color c{dr, dg, db, da};
+        const Value* v = find(key);
+        if (v && v->type == Value::Type::Table && v->table) {
+            for (const auto& f : v->table->fields) {
+                if (f.second.type != Value::Type::Number) continue;
+                const float n = static_cast<float>(f.second.number);
+                if (f.first == "r") c.r = n;
+                else if (f.first == "g") c.g = n;
+                else if (f.first == "b") c.b = n;
+                else if (f.first == "a") c.a = n;
+            }
+        }
+        return c;
+    };
+
+    gfx::EmitterConfig cfg;
+    cfg.count = static_cast<uint32_t>(std::max(0.0f, num("count", 20)));
+    cfg.position = vec3("pos", 0.0f, 0.0f, 0.0f);
+    cfg.baseVelocity = vec3("vel", 0.0f, 0.0f, 0.0f);
+    cfg.speedMin = num("speedMin", 1.0f);
+    cfg.speedMax = num("speedMax", 3.0f);
+    cfg.lifeMin = num("lifeMin", 0.4f);
+    cfg.lifeMax = num("lifeMax", 0.9f);
+    cfg.sizeStart = num("sizeStart", 0.5f);
+    cfg.sizeEnd = num("sizeEnd", 0.05f);
+    cfg.colorStart = color("color", 1.0f, 1.0f, 1.0f, 1.0f);
+    cfg.colorEnd = color("colorEnd", 1.0f, 1.0f, 1.0f, 0.0f);
+    cfg.gravity = num("gravity", 0.0f);
+    if (const Value* ad = find("additive"))
+        cfg.additive = !(ad->type == Value::Type::Bool && !ad->boolean);
+    ctx->emitParticles(cfg);
+    return Value::Nil();
+}
+
 Value NativeSpawnPrefab(IScriptHost& host, void* user) {
     auto* ctx = static_cast<ScriptContext*>(user);
     if (!ctx || !ctx->spawnPrefab) return Value::Nil();
@@ -1502,6 +1579,7 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("BindPlayerToClient", &NativeBindPlayerToClient, &ctx);
     host.Register("DrawRect", &NativeDrawRect, &ctx);
     host.Register("DrawSprite", &NativeDrawSprite, &ctx);
+    host.Register("EmitParticles", &NativeEmitParticles, &ctx);
     host.Register("SetSpriteFrames", &NativeSetSpriteFrames, &ctx);
     host.Register("SetSpriteSheet", &NativeSetSpriteSheet, &ctx);
     host.Register("DrawRectOutline", &NativeDrawRectOutline, &ctx);
@@ -1547,3 +1625,4 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
 }
 
 } // namespace neon::script
+

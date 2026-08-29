@@ -104,29 +104,30 @@ local function fxRing(prefab, x, z, r0, r1, life)
   return e
 end
 
--- 抛射发光球: 从 (x,y,z) 外抛到随机终点 (缓出)。
--- 双层: emissive 球核 (HDR 亮度, 进 bloom) + billboard 光晕面片 (柔边形状)。
-local function fxOrb(family, x, y, z, sp, scale, life)
-  local a = math.random() * math.pi * 2
-  local d = sp * (0.35 + math.random() * 0.65)
-  local tx, ty, tz = x + math.cos(a) * d, y + 1.0 + math.random() * 1.8, z + math.sin(a) * d
-  local core = SpawnPrefab("fx_orb_" .. family, { x = x, y = y, z = z })
-  if core ~= nil then
-    SetScale(core, scale * 0.28, scale * 0.28, scale * 0.28)
-    Tween(core, 0, { x = x, y = y, z = z }, { x = tx, y = ty, z = tz }, life, 2)
-    vfxEnts[#vfxEnts + 1] = { ent = core, dieAt = vfxClock + life + 0.02 }
-  end
-  local halo = SpawnPrefab("fx_glow_" .. family, { x = x, y = y, z = z })
-  if halo ~= nil then
-    SetScale(halo, scale * 1.6, scale * 1.6, scale * 1.6)
-    Tween(halo, 0, { x = x, y = y, z = z }, { x = tx, y = ty, z = tz }, life, 2)
-    vfxEnts[#vfxEnts + 1] = { ent = halo, dieAt = vfxClock + life + 0.02 }
-  end
-end
 
--- 一圈粒子
-local function fxOrbBurst(prefab, x, y, z, n, sp, scale, life)
-  for i = 1, n do fxOrb(prefab, x, y, z, sp, scale, life + math.random() * 0.2) end
+-- 粒子爆发: 引擎 billboard 粒子系统 (additive 泛光, 尺寸/颜色随生命衰减)
+local function burst(x, y, z, n, sp, col, life, grav)
+  EmitParticles({
+    pos = { x = x, y = y, z = z }, count = n,
+    speedMin = sp * 0.35, speedMax = sp,
+    lifeMin = life * 0.6, lifeMax = life,
+    sizeStart = 0.55, sizeEnd = 0.05,
+    color = { r = col[1], g = col[2], b = col[3], a = 1 },
+    colorEnd = { r = col[1], g = col[2], b = col[3], a = 0 },
+    gravity = grav or -6, additive = true,
+  })
+end
+-- 兼容旧调用点: fxOrbBurst(色族, x, y, z, n, sp, scale, life)
+local FAMILIES = {
+  ice    = { { 0.62, 0.91, 1.0 } },
+  fire   = { { 1.0, 0.62, 0.2 }, { 1.0, 0.85, 0.35 } },
+  violet = { { 0.82, 0.55, 1.0 } },
+  gold   = { { 1.0, 0.88, 0.45 } },
+}
+local function fxOrbBurst(family, x, y, z, n, sp, scale, life)
+  local cols = FAMILIES[family] or FAMILIES.ice
+  local col = cols[math.random(#cols)]
+  burst(x, y, z, n, sp, col, life or 0.7)
 end
 
 -- 第一人称视角（FPS）状态：lookYaw/lookPitch 由鼠标驱动，
@@ -447,9 +448,9 @@ local function update_player(dt)
       end
       for i = 1, 10 do
         local t = i / 10
-        fxOrb("gold", fx + (tx - fx) * t, pp.y + 1.1, fz + (tz - fz) * t, 0, 0.3, 0.5)
+        burst(fx + (tx - fx) * t, pp.y + 1.1, fz + (tz - fz) * t, 4, 2, FAMILIES.gold[1], 0.5)
       end
-      fxOrb("fire", tx, pp.y + 1.1, tz, 0, 0.8, 0.6)
+      burst(tx, pp.y + 1.1, tz, 24, 7, FAMILIES.fire[1], 0.7)
       PlayAnimation(hero, "Spellcast_Shoot", false, 0.15)
       PlaySfx(SKILLS.beam.sfx)
       shake(0.15)

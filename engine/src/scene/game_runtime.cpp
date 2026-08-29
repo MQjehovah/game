@@ -187,6 +187,10 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
                          "runtime: skills.json rejected (%s); CastSkill table empty",
                          err.c_str());
     }
+    // Script VFX particle sprite: a soft radial glow (project assets ship one
+    // at assets/sprites/glow.png; missing file degrades to a white quad).
+    if (cfg_.assets)
+        particleTex_ = cfg_.assets->LoadTexture(FullAssetPath("assets/sprites/glow.png"));
     // Create the physics world: Jolt when requested and compiled, else the
     // deterministic custom solver (server / headless tests). A "plugin:<name>"
     // backend (G5-1) loads the solver from a native middleware DLL/SO under
@@ -246,6 +250,9 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     scriptCtx_.playSfx3D = cfg_.playSfx3D;
     scriptCtx_.setAudioListener = cfg_.setAudioListener;
     scriptCtx_.setBusVolume = cfg_.setBusVolume;
+    scriptCtx_.emitParticles = [this](const gfx::EmitterConfig& cfg) {
+        particles_.Emit(cfg);
+    };
     scriptCtx_.entityKinds.clear();
     // Data files (levels/*.json etc.) resolve like scripts: project dir on
     // disk, or the unpacked dir for packed games (ReadScript honors the pack
@@ -665,6 +672,10 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     return core::Status::Ok(true);
 }
 
+void GameRuntime::EmitParticles(const gfx::EmitterConfig& cfg) {
+    particles_.Emit(cfg);
+}
+
 void GameRuntime::Stop() {
     ui_.reset();
     physicsAccum_ = 0.0f;
@@ -674,6 +685,8 @@ void GameRuntime::Stop() {
     projectiles_.clear();
     tweens_.clear();
     skillCooldowns_.clear();
+    particles_.Clear();
+    particleTex_ = {};
     poseHead_ = 0;
     poseCount_ = 0;
     for (auto& s : poseSlots_) s.clear();
@@ -2423,6 +2436,10 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera,
     }
     // G2-3 vegetation: instanced plant meshes + far yaw-billboard impostors.
     DrawVegetation(renderer, camera);
+    // Script VFX particles: world-space camera-facing billboards (additive +
+    // alpha batches), drawn INSIDE the HDR target so bright particles bloom.
+    if (particleTex_.Valid() && particles_.Count() > 0)
+        particles_.Draw(renderer, particleTex_);
     // Compact when a fifth of the draw list belongs to dead entities.
     if (dead && dead * 5 > draws_.size()) {
         draws_.erase(std::remove_if(draws_.begin(), draws_.end(),
@@ -2661,6 +2678,8 @@ void GameRuntime::Tick(float dt) {
     // script call; stop advancing the simulation so the editor can inspect and
     // step before resuming.
     if (hosts_.lua && hosts_.lua->DebuggerPaused()) return;
+
+    particles_.Update(dt); // world-space VFX particles (script EmitParticles)
 
     // G7-3: advance the input map's timing clock before scripts query actions,
     // so double-tap / long-press edges are fresh this frame.

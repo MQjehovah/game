@@ -271,6 +271,44 @@ float GameRuntime::StatusMagnitude(ecs::Entity ent, uint32_t id) const {
     return c ? scene::StatusMagnitude(*c, id) : 0.0f;
 }
 
+// Projectile trail ember: one short-lived additive particle per tick, drifting
+// back along the flight path (bloom picks it up — HDR color > 1).
+void GameRuntime::ProjectileTrail(const Projectile& p) {
+    gfx::EmitterConfig cfg;
+    cfg.count = 1;
+    cfg.position = p.pos;
+    cfg.baseVelocity = math::Vec3{-p.dir.x * 2.0f, 0.6f, -p.dir.z * 2.0f};
+    cfg.speedMin = 0.2f;
+    cfg.speedMax = 1.2f;
+    cfg.lifeMin = 0.16f;
+    cfg.lifeMax = 0.32f;
+    cfg.sizeStart = 0.45f;
+    cfg.sizeEnd = 0.02f;
+    cfg.colorStart = gfx::Color{1.0f, 0.72f, 0.25f, 1.0f};
+    cfg.colorEnd = gfx::Color{0.9f, 0.2f, 0.05f, 0.0f};
+    cfg.gravity = -2.0f;
+    cfg.additive = true;
+    particles_.Emit(cfg);
+}
+
+// Impact burst when a projectile dies (hit, range-out or timeout).
+void GameRuntime::ProjectileBurst(const Projectile& p) {
+    gfx::EmitterConfig cfg;
+    cfg.count = 14;
+    cfg.position = p.pos;
+    cfg.speedMin = 2.0f;
+    cfg.speedMax = 6.5f;
+    cfg.lifeMin = 0.25f;
+    cfg.lifeMax = 0.5f;
+    cfg.sizeStart = 0.6f;
+    cfg.sizeEnd = 0.03f;
+    cfg.colorStart = gfx::Color{1.0f, 0.8f, 0.3f, 1.0f};
+    cfg.colorEnd = gfx::Color{0.9f, 0.25f, 0.05f, 0.0f};
+    cfg.gravity = -5.0f;
+    cfg.additive = true;
+    particles_.Emit(cfg);
+}
+
 void GameRuntime::TickProjectiles(float dt) {
     for (auto it = projectiles_.begin(); it != projectiles_.end();) {
         Projectile& p = *it;
@@ -278,8 +316,10 @@ void GameRuntime::TickProjectiles(float dt) {
         p.pos += p.dir * step;
         p.traveled += step;
         p.life -= dt;
+        ProjectileTrail(p);
         // Data-driven skills can bound a projectile by travel distance.
         if (p.range > 0.0f && p.traveled >= p.range) {
+            ProjectileBurst(p);
             it = projectiles_.erase(it);
             continue;
         }
@@ -305,6 +345,7 @@ void GameRuntime::TickProjectiles(float dt) {
         }
         if (target.IsValid()) {
             ApplyHit(target, p.damage, p.statuses);
+            ProjectileBurst(p);
             it = projectiles_.erase(it);
             continue;
         }
