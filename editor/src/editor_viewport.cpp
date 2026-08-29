@@ -303,7 +303,7 @@ void EditorApp::OnRender() {
                     const std::vector<math::Mat4> bones = e.skinned->BoneMatrices();
                     for (const auto& part : e.skinned->parts)
                         renderer_.DrawSkinnedMesh(part.mesh, part.material,
-                                                  model * part.localTransform, bones,
+                                                  model, bones,
                                                   static_cast<int>(bones.size()));
                 } else {
                     renderer_.DrawMesh(e.mesh, e.material, model);

@@ -2384,7 +2384,7 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera,
                 bones = item.skinned->BoneMatrices();
             }
             for (const auto& part : item.skinned->parts)
-                renderer.DrawSkinnedMesh(part.mesh, part.material, model * part.localTransform,
+                renderer.DrawSkinnedMesh(part.mesh, part.material, model,
                                          bones, static_cast<int>(bones.size()));
         } else if (item.isSprite) {
             if (item.billboard) {

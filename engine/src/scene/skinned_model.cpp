@@ -118,6 +118,20 @@ void EnsureValidSkinBind(anim::Skeleton& sk, const std::vector<uint32_t>& jointN
                 const float e = (r == c) ? 1.0f : 0.0f;
                 worst = std::max(worst, std::fabs(m.m[r * 4 + c] - e));
             }
+    // A ROOT bone with a non-identity rotation is a legit coordinate-fixup
+    // node (e.g. CesiumMan's "Z_UP" rotates the whole rig Z-up -> Y-up). The
+    // bind-go matrices are then deliberately non-identity — rebinding to
+    // identity would strip the correction and render the mesh in its raw
+    // (Lying/Z-up) orientation. Only rebind when the rig genuinely uses a
+    // node-REST pose that differs from inverseBind (the Blender wolf case).
+    for (const anim::Bone& b : sk.bones) {
+        if (b.parent < 0) {
+            const math::Quat& q = b.bindR;
+            const float rotDev = std::fabs(q.w - 1.0f) + std::fabs(q.x) + std::fabs(q.y) +
+                                 std::fabs(q.z);
+            if (rotDev > 1e-3f) return; // coordinate-fixup root: keep IBM verbatim
+        }
+    }
     if (worst > 1e-3f) {
         FixSkinBind(sk, jointNodes);
         NEON_LOG_INFO("Skin: non-standard bind (offset %.3f); rebound from node-REST", worst);
@@ -319,11 +333,12 @@ core::Result<SkinnedModel> LoadSkinnedModel(assets::AssetManager& assets,
                          return !a.material.transparent && b.material.transparent;
                      });
     if (!out.clips.empty()) {
+        // Default clip: prefer an idle (a locomotion/one-shot clip played in
+        // place drags the rig off its authored stance); otherwise fall back to
+        // clips[0] so the model still animates in the editor unless a script
+        // drives it explicitly (wc3 plays clips by name).
         out.defaultClip = 0;
         for (size_t i = 0; i < out.clips.size(); ++i) {
-            // Idle first: a locomotion clip (walk/run) often carries root
-            // translation which, played in place, drags the rig off its bind
-            // pose. Idle keeps the model at its authored bind stance.
             if (NameHasIdle(out.clips[i].name)) {
                 out.defaultClip = static_cast<int>(i);
                 break;

@@ -4011,8 +4011,13 @@ void EditorApp::RenderModelPreviewPanel() {
         for (const scene::SkinnedModel::Part& part : previewModel_->parts)
             renderer_.DrawMesh(part.mesh, part.material, part.localTransform);
     } else {
+        // Skinned: bones already map mesh-local vertices to world space
+        // (globalJoint * inverseBind per the glTF skin spec). A mesh node's own
+        // transform is NOT applied to a skinned mesh (it is baked into the
+        // inverseBind), so multiplying part.localTransform would double-apply
+        // it — CesiumMan's Z_UP root flips the rig (lying down). Identity here.
         for (const scene::SkinnedModel::Part& part : previewModel_->parts)
-            renderer_.DrawSkinnedMesh(part.mesh, part.material, part.localTransform, bones,
+            renderer_.DrawSkinnedMesh(part.mesh, part.material, math::Mat4::Identity(), bones,
                                       static_cast<int>(bones.size()));
     }
     b->BindDefaultTarget();

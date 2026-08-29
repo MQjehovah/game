@@ -40,18 +40,29 @@ void EditorApp::GenerateMeshThumbnails() {
         // Resolve the asset's first mesh; a failed load caches a "miss" (same
         // mtime) so the panel only retries when the file actually changes.
         const std::string ext = ExtLower(path);
-        gfx::Mesh mesh;
-        gfx::Material mat = gfx::Material::Lit({}, gfx::Color{0.85f, 0.85f, 0.92f, 1.0f}, 16.0f);
+        // LoadSkinnedModel handles .gltf AND .glb, static (no skin) AND skinned
+        // models, and renders the SKINNED bind pose (skinning can flip a model
+        // upright from its raw vertex orientation — a plain DrawMesh of the raw
+        // vertices would show e.g. CesiumMan upside down).
+        scene::SkinnedModel sm;
+        bool loaded = false;
         if (ext == ".obj") {
-            mesh = assetMgr_.LoadMeshOBJ(path);
-        } else if (ext == ".gltf") {
-            assets::GltfAsset gltf = assetMgr_.LoadGLTF(path);
-            if (!gltf.nodes.empty()) {
-                mesh = gltf.nodes[0].mesh;
-                mat = gltf.nodes[0].material;
+            gfx::Mesh m = assetMgr_.LoadMeshOBJ(path);
+            if (m.Valid()) {
+                scene::SkinnedModel::Part p;
+                p.mesh = m;
+                p.material = gfx::Material::Lit({}, gfx::Color{0.85f, 0.85f, 0.92f, 1.0f}, 16.0f);
+                sm.parts.push_back(std::move(p));
+                loaded = true;
+            }
+        } else if (ext == ".gltf" || ext == ".glb") {
+            core::Result<scene::SkinnedModel> r = scene::LoadSkinnedModel(assetMgr_, path);
+            if (r.Ok()) {
+                sm = std::move(r.Value());
+                loaded = true;
             }
         }
-        if (!mesh.Valid()) {
+        if (!loaded || sm.parts.empty()) {
             if (it != meshThumbs_.end()) {
                 if (it->second.texId != ImTextureID_Invalid)
                     gfx::ImGuiNeon_UnregisterTexture(it->second.texHandle);
@@ -62,8 +73,22 @@ void EditorApp::GenerateMeshThumbnails() {
             continue;
         }
 
-        // Orthographic front camera framing the mesh's bounds.
-        const math::AABB& b = mesh.Bounds();
+        // World-space bounds over all parts (mesh local bounds * node transform).
+        math::AABB b;
+        bool first = true;
+        for (const scene::SkinnedModel::Part& part : sm.parts) {
+            const math::AABB pb = math::TransformAABB(part.mesh.Bounds(), part.localTransform);
+            if (first) {
+                b = pb;
+                first = false;
+            } else {
+                b.min = {std::min(b.min.x, pb.min.x), std::min(b.min.y, pb.min.y),
+                         std::min(b.min.z, pb.min.z)};
+                b.max = {std::max(b.max.x, pb.max.x), std::max(b.max.y, pb.max.y),
+                         std::max(b.max.z, pb.max.z)};
+            }
+        }
+        if (first) b = {{-0.5f, -0.5f, -0.5f}, {0.5f, 0.5f, 0.5f}};
         const math::Vec3 center = (b.min + b.max) * 0.5f;
         const math::Vec3 extents = b.max - b.min;
         const float size = std::max({extents.x, extents.y, extents.z, 0.001f}) * 1.2f;
@@ -83,8 +108,26 @@ void EditorApp::GenerateMeshThumbnails() {
         backend->BindRenderTarget(rt); // sets the 96x96 viewport
         backend->Clear({0.10f, 0.11f, 0.14f, 1.0f}, 1.0f);
         renderer_.SetCamera(cam, 1.0f);
-        renderer_.DrawMesh(mesh, mat, math::Mat4::Identity());
+        // SetCamera's CSM shadow pass may rebind the main HDR target (when the
+        // viewport did not run first this frame), silently stealing our thumb
+        // FBO. Re-assert it + full viewport like the model-viewer preview.
+        backend->BindRenderTarget(rt);
+        backend->SetViewport(0, 0, kThumb, kThumb);
+        backend->SetScissor(0, 0, kThumb, kThumb, true);
+        // Bind pose (static models have an empty skeleton -> DrawMesh path).
+        const anim::Pose pose = sm.skeleton.BindPose();
+        const std::vector<math::Mat4> bones = sm.skeleton.ComputeBoneMatrices(pose);
+        if (bones.empty()) {
+            for (const scene::SkinnedModel::Part& part : sm.parts)
+                renderer_.DrawMesh(part.mesh, part.material, part.localTransform);
+        } else {
+            for (const scene::SkinnedModel::Part& part : sm.parts)
+                renderer_.DrawSkinnedMesh(part.mesh, part.material, part.localTransform, bones,
+                                          static_cast<int>(bones.size()));
+        }
         const gfx::TextureHandle tex = backend->RenderTargetColorTexture(rt);
+        // Leave the GL scissor disabled for the ImGui pass / next frame.
+        backend->SetScissor(0, 0, 0, 0, false);
 
         if (it != meshThumbs_.end()) {
             if (it->second.texId != ImTextureID_Invalid)
