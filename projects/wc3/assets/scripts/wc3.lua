@@ -69,14 +69,15 @@ local TAN_X = 0.9254 -- * 16/9
 
 -- 屏幕像素 -> 地面 (y=0) 世界点
 local function groundPick(sx, sy)
+  local cp = camPosNow()
   local nx = (sx / 1280) * 2 - 1
   local ny = 1 - (sy / 720) * 2
   local dx = CAM_FWD.x + CAM_RIGHT.x * nx * TAN_X + CAM_UP.x * ny * TAN_Y
   local dy = CAM_FWD.y + CAM_RIGHT.y * nx * TAN_X + CAM_UP.y * ny * TAN_Y
   local dz = CAM_FWD.z + CAM_RIGHT.z * nx * TAN_X + CAM_UP.z * ny * TAN_Y
   if dy >= -0.001 then return nil end
-  local t = -CAM_POS.y / dy
-  return { x = CAM_POS.x + dx * t, z = CAM_POS.z + dz * t }
+  local t = -cp.y / dy
+  return { x = cp.x + dx * t, z = cp.z + dz * t }
 end
 
 -- ============ 数据表 ============
@@ -256,8 +257,8 @@ local function updateUnit(u, dt)
   u.cd = math.max(0, u.cd - dt)
 
   if u.kind == "peon" and u.state == "tomine" then
-    local mine = MINES[1]
-    if u.team == "enemy" then mine = MINES[2] end
+    -- 敌方没有右击目标: 默认去第二个矿 (己方去第一个)
+    local mine = MINES[u.mineIdx or (u.team == "enemy" and 2 or 1)]
     if dist(u.x, u.z, mine.x, mine.z) < 3.2 then
       u.state = "mining"; u.t = 0
     else
@@ -286,8 +287,7 @@ local function updateUnit(u, dt)
       SetVar(key, (GetVar(key) or 0) + (u.carry or 10))
       u.carry = 0
       u.state = "tomine"
-      local mine = MINES[1]
-      if u.team == "enemy" then mine = MINES[2] end
+      local mine = MINES[u.mineIdx or (u.team == "enemy" and 2 or 1)]
       u.tx, u.tz = mine.x + 1.5, mine.z - 1
       SpawnFloatText(u.x, 1.6, u.z, "+10", false, 0.6)
     else
@@ -401,7 +401,7 @@ local function pickUnit(sx, sy, team, maxPx)
     if team == nil or u.team == team then
       local s = WorldToScreen(u.x, 1.1, u.z)
       if s and s.x then
-        local d = dist(sx, s.y, s.x, s.y)
+        local d = dist(sx, sy, s.x, s.y)
         if d < bd then best, bd, idx = u, d, i end
       end
     end
@@ -415,7 +415,7 @@ local function pickBuilding(sx, sy, team, maxPx)
     if team == nil or b.team == team then
       local s = WorldToScreen(b.x, 1.5, b.z)
       if s and s.x then
-        local d = dist(sx, s.y, s.x, s.y)
+        local d = dist(sx, sy, s.x, s.y)
         if d < bd then best, bd = b, d end
       end
     end
@@ -590,20 +590,21 @@ function on_update(e, dt)
   if InputMousePressed("right") and m then
     if buildMode then buildMode = nil return end
     if #selected > 0 then
-      -- 点金矿 -> 采集
+      -- 点金矿 -> 采集 (记录命中的矿, 单位去那个矿而非固定 MINES[1])
       local gp = groundPick(m.x, m.y)
-      local mineHit = false
+      local mineIdx = nil
       if gp then
-        for _, mn in ipairs(MINES) do
-          if dist(gp.x, gp.z, mn.x, mn.z) < 3.4 then mineHit = true end
+        for mi, mn in ipairs(MINES) do
+          if dist(gp.x, gp.z, mn.x, mn.z) < 3.4 then mineIdx = mi break end
         end
       end
       -- 点敌对单位 -> 攻击该目标
       local eu, eidx = pickUnit(m.x, m.y, "enemy", 30)
       for _, u in ipairs(selected) do
-        if u.kind == "peon" and mineHit then
+        if u.kind == "peon" and mineIdx then
           u.state = "tomine"
-          local mn = MINES[1]
+          u.mineIdx = mineIdx
+          local mn = MINES[mineIdx]
           u.tx, u.tz = mn.x + 1.5, mn.z - 1
         elseif eu then
           u.state = "attack"
