@@ -1,0 +1,28 @@
+{
+    "components":  {
+                       "transform":  {
+                                         "pos":  [
+                                                     0,
+                                                     0,
+                                                     0
+                                                 ],
+                                         "scale":  [
+                                                       3.4,
+                                                       2.2,
+                                                       3
+                                                   ],
+                                         "rot":  [
+                                                     0,
+                                                     0,
+                                                     0,
+                                                     1
+                                                 ]
+                                     },
+                       "mesh":  {
+                                    "material":  {
+                                                     "colorHex":  "#6E5A8A"
+                                                 },
+                                    "meshKey":  "cube"
+                                }
+                   }
+}

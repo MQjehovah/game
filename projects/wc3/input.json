@@ -1,0 +1,9 @@
+{
+  "actions": {
+    "build_farm": ["F"],
+    "build_barracks": ["B"],
+    "pause": ["P"],
+    "restart": ["R"],
+    "cancel": ["escape"]
+  }
+}

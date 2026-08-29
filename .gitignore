@@ -32,7 +32,11 @@ projects/*
 !projects/snake/
 !projects/snake/**
 # NeonPhysics rigid-body demo project
+!projects/wc3/
+!projects/wc3/**
 !projects/physics_demo/
+!projects/wc3/
+!projects/wc3/**
 !projects/physics_demo/**
 # NeonPvZ architecture-showcase project: everything under its assets/ content
 # root (scenes, scripts, prefabs, UI docs, locales, sprites, audio), the input

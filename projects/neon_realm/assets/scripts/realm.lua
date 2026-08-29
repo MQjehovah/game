@@ -68,6 +68,13 @@ end
 
 local function shake(t) shakeT = math.max(shakeT, t) end
 
+-- 延时调度: after(sec, fn) —— 多节拍技能序列的时间线
+local scheduled = {}
+local function after(sec, fn) scheduled[#scheduled + 1] = { at = vfxClock + sec, fn = fn } end
+-- 全屏冲击闪光: { age, life, col }
+local flashes = {}
+local function flash(col, life) flashes[#flashes + 1] = { age = 0, life = life, col = col } end
+
 local function wolvesInRadius(x, z, r)
   local out = {}
   for _, w in ipairs(wolves) do
@@ -128,6 +135,16 @@ local function fxOrbBurst(family, x, y, z, n, sp, scale, life)
   local cols = FAMILIES[family] or FAMILIES.ice
   local col = cols[math.random(#cols)]
   burst(x, y, z, n, sp, col, life or 0.7)
+end
+
+-- 光柱: 从地面拔起 (billboard 竖纹贴图), hold 秒后回收
+local function fxPillar(prefab, x, z, w, h, life)
+  local e = SpawnPrefab(prefab, { x = x, y = h * 0.5, z = z })
+  if e == nil then return nil end
+  SetScale(e, w, 0.08, w)
+  Tween(e, 2, { x = w, y = 0.08, z = w }, { x = w, y = h, z = w }, 0.16, 1)
+  vfxEnts[#vfxEnts + 1] = { ent = e, dieAt = vfxClock + life }
+  return e
 end
 
 -- 第一人称视角（FPS）状态：lookYaw/lookPitch 由鼠标驱动，
@@ -400,15 +417,45 @@ local function update_player(dt)
     skillCd.frost = SKILLS.frost.cd
     local pp = GetPosition(hero)
     if pp ~= nil then
-      for _, hit in ipairs(wolvesInRadius(pp.x, pp.z, 7)) do
-        damageWolf(hit.e, 120)
-        ApplyStatus(hit.e, "slow", 3, 0.25)
+      -- 第 0 拍 (0s): 环绕 8 点的冰粒向内汇聚
+      for i = 0, 7 do
+        local a = i / 8 * math.pi * 2
+        local px, pz = pp.x + math.cos(a) * 3.2, pp.z + math.sin(a) * 3.2
+        after(0.0, function()
+          EmitParticles({
+            pos = { x = px, y = 1.0, z = pz }, count = 6,
+            vel = { x = -math.cos(a) * 6, y = 1.0, z = -math.sin(a) * 6 },
+            speedMin = 0.3, speedMax = 1.2, lifeMin = 0.3, lifeMax = 0.45,
+            sizeStart = 0.4, sizeEnd = 0.03,
+            color = { r = 0.65, g = 0.92, b = 1.0, a = 1 },
+            colorEnd = { r = 0.65, g = 0.92, b = 1.0, a = 0 },
+            additive = true,
+          })
+        end)
       end
-      fxRing("fx_ring_ice", pp.x, pp.z, 0.5, 7.2, 0.5)
-      fxRing("fx_ring_ice", pp.x, pp.z, 0.3, 5.5, 0.7)
-      fxOrbBurst("ice", pp.x, pp.y + 1, pp.z, 40, 6, 0.35, 0.65)
-      PlaySfx(SKILLS.frost.sfx)
-      shake(0.2)
+      -- 第 1 拍 (0.4s): 冻结爆发
+      after(0.4, function()
+        for _, hit in ipairs(wolvesInRadius(pp.x, pp.z, 7)) do
+          damageWolf(hit.e, 120)
+          ApplyStatus(hit.e, "slow", 3, 0.25)
+        end
+        fxRing("fx_ring_ice", pp.x, pp.z, 0.5, 7.2, 0.5)
+        fxRing("fx_ring_ice", pp.x, pp.z, 0.3, 5.5, 0.7)
+        burst(pp.x, pp.y + 1, pp.z, 40, 6, FAMILIES.ice[1], 0.7)
+        spawnFx("fx_frost", pp.x, 0.07, pp.z, 14, 2.5)
+        for i = 0, 5 do
+          local a = i / 6 * math.pi * 2
+          fxPillar("fx_pillar_ice", pp.x + math.cos(a) * 5.2, pp.z + math.sin(a) * 5.2, 1.6, 2.6, 1.8)
+        end
+        fxPillar("fx_pillar_ice", pp.x, pp.z, 2.0, 3.2, 2.0)
+        flash({ 0.6, 0.85, 1.0 }, 0.35)
+        PlaySfx(SKILLS.frost.sfx)
+        shake(0.3)
+      end)
+      -- 第 2 拍 (0.9s): 余韵碎晶
+      after(0.9, function()
+        burst(pp.x, pp.y + 1.5, pp.z, 14, 2.5, FAMILIES.ice[1], 0.9)
+      end)
     end
   end
 
@@ -421,6 +468,12 @@ local function update_player(dt)
       local tx, tz = pp.x + dir.x * 9, pp.z + dir.z * 9
       vfxMeteors[#vfxMeteors + 1] = { wx = tx, wz = tz, t = 0, hitDone = false }
       PlayAnimation(hero, "Spellcasting", true, 0.15)
+      -- 分层余韵 (引爆时序由 update_vfx 驱动, 这里追加延迟节拍)
+      after(1.32, function() burst(tx, pp.y + 0.8, tz, 16, 4, FAMILIES.fire[2], 0.8) end)
+      after(1.5, function()
+        burst(tx, pp.y + 0.6, tz, 10, 2, { 0.35, 0.2, 0.12 }, 1.1)
+        shake(0.18)
+      end)
     end
   end
 
@@ -452,6 +505,15 @@ local function update_player(dt)
       end
       burst(tx, pp.y + 1.1, tz, 24, 7, FAMILIES.fire[1], 0.7)
       PlayAnimation(hero, "Spellcast_Shoot", false, 0.15)
+      -- 保持期扫射: 沿线每 0.09s 一处小爆 (0..0.45s)
+      for k = 0, 5 do
+        after(k * 0.09, function()
+          local t = math.random()
+          burst(fx + (tx - fx) * t, pp.y + 1.1, fz + (tz - fz) * t, 5, 2.5, FAMILIES.gold[1], 0.4)
+        end)
+      end
+      burst(tx, pp.y + 1.1, tz, 24, 7, FAMILIES.fire[1], 0.7)
+      flash({ 1.0, 0.95, 0.7 }, 0.25)
       PlaySfx(SKILLS.beam.sfx)
       shake(0.15)
     end
@@ -471,7 +533,21 @@ local function update_player(dt)
       -- 紫环: 越过半径再回弹 (snap)
       fxRing("fx_ring_volt", tx, tz, 6.4, 5.5, 0.35)
       fxRing("fx_ring_volt", tx, tz, 5.5, 5.5, 0.6)
-      fxOrbBurst("violet", tx, pp.y + 0.8, tz, 28, 5, 0.3, 0.6)
+      -- 第 1 拍 (0.12s): 中心柱爆
+      after(0.12, function()
+        fxPillar("fx_pillar_volt", tx, tz, 1.6, 5, 1.2)
+        burst(tx, pp.y + 1.2, tz, 26, 3, FAMILIES.violet[1], 0.6)
+        flash({ 0.8, 0.55, 1.0 }, 0.25)
+        shake(0.15)
+      end)
+      -- 第 2 拍 (0.3s): 半径 8 点环绕 tendrils
+      after(0.3, function()
+        for i = 0, 7 do
+          local a = i / 8 * math.pi * 2
+          burst(tx + math.cos(a) * 5.5, pp.y + 0.5, tz + math.sin(a) * 5.5, 4, 1.5,
+                FAMILIES.violet[1], 0.45)
+        end
+      end)
       PlayAnimation(hero, "Spellcast_Shoot", false, 0.15)
       PlaySfx(SKILLS.snare.sfx)
       shake(0.12)
@@ -686,6 +762,18 @@ end
 -- 世界锚定 VFX 推进: 特效到期回收 + 陨石时序 (指示 -> 落体 -> 轰击)
 local function update_vfx(dt)
   vfxClock = vfxClock + dt
+  -- 多节拍时间线: 到点的延迟节拍出队执行
+  for i = #scheduled, 1, -1 do
+    if vfxClock >= scheduled[i].at then
+      local fn = table.remove(scheduled, i).fn
+      fn()
+    end
+  end
+  -- 冲击闪光衰减
+  for i = #flashes, 1, -1 do
+    flashes[i].age = flashes[i].age + dt
+    if flashes[i].age >= flashes[i].life then table.remove(flashes, i) end
+  end
   for i = #vfxEnts, 1, -1 do
     if vfxClock >= vfxEnts[i].dieAt then
       Despawn(vfxEnts[i].ent)
@@ -773,6 +861,11 @@ function on_render()
       DrawText(sl.label, x + slotW / 2, by + slotH * 0.5, 20, 0.95, 0.98, 1, 1, true, true)
     end
     DrawText(sl.k, x + 4, by + 3, 12, 1, 0.85, 0.3, 1, false, false)
+  end
+  -- 全屏冲击闪光 (各技能色 tint)
+  for _, fl in ipairs(flashes) do
+    local a = (1 - fl.age / fl.life) * 0.22
+    DrawRect(0, 0, 1280, 720, fl.col[1], fl.col[2], fl.col[3], a)
   end
 
   -- ============ 原有 HUD ============

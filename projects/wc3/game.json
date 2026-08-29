@@ -1,0 +1,6 @@
+{
+  "startScene": "assets/scenes/main.json",
+  "window": { "w": 1280, "h": 720, "title": "Warcraft RTS Demo (WC3-like)" },
+  "title": "Warcraft RTS Demo",
+  "editor": { "mode": "2d" }
+}
