@@ -485,6 +485,8 @@ private:
     ShaderHandle compositeShader_;
     ShaderHandle ssaoShader_;
     ShaderHandle ssaoBlurShader_;
+    ShaderHandle ssaoDepthShader_;   // SSAO depth pre-pass (linear camera depth)
+    ShaderHandle ssaoDepthMeshShader_;   // non-instanced variant
     ShaderHandle volumetricShader_;
     ShaderHandle ssrShader_;
     TextureHandle white_;

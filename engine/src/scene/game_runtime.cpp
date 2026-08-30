@@ -2006,10 +2006,28 @@ void GameRuntime::SetEntityPlate(ecs::Entity e, const std::string& name, float h
     plates_[EntityKey(e)] = p;
 }
 
+void GameRuntime::SetPostFx(bool ssao, bool volumetric, bool ssr,
+                            float ssaoIntensity, float volIntensity,
+                            float ssrIntensity) {
+    postSsao_ = ssao;
+    postVolumetric_ = volumetric;
+    postSsr_ = ssr;
+    postSsaoIntensity_ = ssaoIntensity;
+    postVolumetricIntensity_ = volIntensity;
+    postSsrIntensity_ = ssrIntensity;
+}
+
 void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera,
                        float previewZoom) {
     if (!running_ || !cfg_.assets) return; // sim-only runtime draws nothing
     core::ScopedTimer drawTimer("runtime.draw");
+    // Post-process FX overrides (mirrors the editor toggles so play matches).
+    renderer.SetSsaoEnabled(postSsao_);
+    renderer.SetSsaoIntensity(postSsaoIntensity_);
+    renderer.SetVolumetricEnabled(postVolumetric_);
+    renderer.SetVolumetricIntensity(postVolumetricIntensity_);
+    renderer.SetSsrEnabled(postSsr_);
+    renderer.SetSsrIntensity(postSsrIntensity_);
     // P2-3 scene camera: when the world contains a camera entity, its transform
     // + camera component become the active view (Godot Camera3D-style).
     gfx::Camera cam = camera;

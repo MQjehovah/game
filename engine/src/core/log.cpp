@@ -298,7 +298,7 @@ void LogImpl(LogLevel level, LogCategory category, const char* file, int line,
             }
             if (g_fileStream.is_open()) {
                 g_fileStream << formatted << '\n';
-                if (level >= LogLevel::Error) g_fileStream.flush();
+                if (level >= LogLevel::Warn) g_fileStream.flush();
             }
         }
     }

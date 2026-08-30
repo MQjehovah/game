@@ -95,6 +95,19 @@ void main() {
 }
 )";
 
+// Non-instanced variant for a single-mesh draw (no per-instance matrix).
+inline constexpr const char* kSsaoDepthMeshVertexShader = R"(
+#version 330 core
+layout(location = 0) in vec3 aPos;
+uniform mat4 uMVP;
+out float vViewDepth;
+void main() {
+    vec4 clip = uMVP * vec4(aPos, 1.0);
+    vViewDepth = -clip.w; // linear view-space depth (perspective W)
+    gl_Position = clip;
+}
+)";
+
 inline constexpr const char* kSsaoDepthFragmentShader = R"(
 #version 330 core
 in float vViewDepth;

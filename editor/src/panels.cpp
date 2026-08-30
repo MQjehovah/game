@@ -568,6 +568,24 @@ void EditorApp::ImportSelectedAsset() {
 void EditorApp::BuildScenePanel() {
     if (!showHierarchy_) return;
     if (ImGui::Begin("场景", &showHierarchy_)) {
+        // Post-process FX toggles (SSAO / volumetric / SSR). Applied to both
+        // the editor viewport and the play runtime; intensity sliders expose the
+        // per-effect strength.
+        if (ImGui::CollapsingHeader("后处理效果##postfx", ImGuiTreeNodeFlags_DefaultOpen)) {
+            ImGui::Checkbox("SSAO (环境光遮蔽)", &postSsao_);
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(120.0f);
+            ImGui::SliderFloat("强度##ssao", &postSsaoIntensity_, 0.1f, 3.0f, "%.2f");
+            ImGui::Checkbox("体积雾光", &postVolumetric_);
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(120.0f);
+            ImGui::SliderFloat("强度##vol", &postVolumetricIntensity_, 0.1f, 3.0f, "%.2f");
+            ImGui::Checkbox("屏幕空间反射", &postSsr_);
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(120.0f);
+            ImGui::SliderFloat("强度##ssr", &postSsrIntensity_, 0.1f, 2.0f, "%.2f");
+            ImGui::Separator();
+        }
         static int addType = 0;
         // Unity-style: only primitive geometry is created from the toolbar.
         // Helmet / tree / house etc. are resource objects and are dragged in

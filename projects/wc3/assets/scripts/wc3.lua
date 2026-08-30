@@ -60,25 +60,6 @@ local function updateCamera(dt)
     SetPosition(camEnt, { x = camX, y = 0.71934 * camDist, z = camZ + 0.69466 * camDist })
   end
 end
-local CAM_POS = { x = 50, y = 70, z = 107.6 }
-local CAM_FWD = { x = 0, y = -0.71934, z = -0.69466 }
-local CAM_RIGHT = { x = 1, y = 0, z = 0 }
-local CAM_UP = { x = 0, y = 0.69466, z = -0.71934 }
-local TAN_Y = 0.5206 -- fov 55°/2
-local TAN_X = 0.9254 -- * 16/9
-
--- 屏幕像素 -> 地面 (y=0) 世界点
-local function groundPick(sx, sy)
-  local cp = camPosNow()
-  local nx = (sx / 1280) * 2 - 1
-  local ny = 1 - (sy / 720) * 2
-  local dx = CAM_FWD.x + CAM_RIGHT.x * nx * TAN_X + CAM_UP.x * ny * TAN_Y
-  local dy = CAM_FWD.y + CAM_RIGHT.y * nx * TAN_X + CAM_UP.y * ny * TAN_Y
-  local dz = CAM_FWD.z + CAM_RIGHT.z * nx * TAN_X + CAM_UP.z * ny * TAN_Y
-  if dy >= -0.001 then return nil end
-  local t = -cp.y / dy
-  return { x = cp.x + dx * t, z = cp.z + dz * t }
-end
 
 -- ============ 数据表 ============
 local UNIT_DEFS = {
@@ -121,7 +102,6 @@ local MINES = {
   { x = 92, z = 14 },
 }
 
-local function clamp(v, lo, hi) return math.max(lo, math.min(hi, v)) end
 local function dist(x1, z1, x2, z2) return math.sqrt((x1 - x2) ^ 2 + (z1 - z2) ^ 2) end
 local function newId() ids = ids + 1; return ids end
 

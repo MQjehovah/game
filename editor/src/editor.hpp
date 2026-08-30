@@ -879,6 +879,13 @@ private:
     std::vector<Transform3> gizmoBatchFrom_;
     // Viewport grid overlay toggle.
     bool showViewportGrid_ = true;
+    // Post-process FX toggles (applied to both the editor viewport and play).
+    bool postSsao_ = false;
+    bool postVolumetric_ = false;
+    bool postSsr_ = false;
+    float postSsaoIntensity_ = 1.0f;
+    float postVolumetricIntensity_ = 1.0f;
+    float postSsrIntensity_ = 0.8f;
     std::vector<int> dragPayload_;  // P2-editor UX: multi-drag payload buffer
     std::string tileDragPath_;      // P2-editor UX: tilemap palette drag payload
     bool gizmoBeginFrame_ = false; // set every frame ImGuizmo::BeginFrame runs (smoke)

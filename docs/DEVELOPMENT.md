@@ -428,10 +428,25 @@ glTF 依赖（buffers/images URI 一并入包）、程序化 mesh key 校验放�
 
 1. **渲染管线深度**（收益最高）：SSAO → 体积雾 → 光照贴图/GI。需先补"深度贴图 + 后处理链"
    基建（当前 HDR 目标深度是 RBO，shader 无法采样）；GPU 粒子、任意表面贴花次之。
+   - **已完成**：SSAO/SSR/体积雾代码本就存在但无启用入口；已接入编辑器「后处理效果」
+     面板开关 + 强度，并同步到 play（`GameRuntime::SetPostFx`）。SSAO 深度 shader 修复：
+     `DrawSsaoDepthCasters` 原错用 CSM 阴影 shader（非线性 `gl_FragCoord.z`），已改为线性
+     相机深度 shader（`ssaoDepthShader_` 实例 / `ssaoDepthMeshShader_` 单 mesh，
+     `vViewDepth/uFar` 编码）。
+   - **遗留（待跟进）**：编辑器视口 `drawCalls=1`（validMesh=17 但只 1 个真正收集），
+     致 `ssaoCasters_` 覆盖极少 → SSAO 深度目标大部分为远码 → AO 效果不可见。需查
+     编辑器渲染实体为何多数被 `frustum culled` / mesh 未入收集，以及静态网格合批
+     （DrawMeshInstanced 合并 caster）对覆盖的影响。
 2. **编辑器打磨**：动画多轨时间线、UI 锚点/容器布局、检查器曲线编辑等深度工具。
 3. **脚本体验**：JS 调试器、Lua 完整调用栈、悬停文档/补全、远程调试。
 4. **音频/2D 纵深**：效果器（低通/混响）、流式背景音乐；2D 光照与 2D 物理工具。
 5. **平台扩张**：WASM/WebGPU、macOS/Linux 实机验证、TLS/WebSocket 传输。
+6. **场景级环境/后处理（待跟进，参照 Godot 范式）**：当前天空/雾/IBL/曝光是引擎硬编码，
+   场景无法差异化氛围。计划按 Godot 做法做——**Environment 作为独立资源**
+   （`environments/*.env.json`，含 sky/fog/ibl/tonemap 参数，像材质球可复用），
+   场景用 **`WorldEnvironment` 组件实体**引用它，渲染器读组件 → 加载环境资源 → 应用。
+   **注意**：切勿自创"场景根内联 environment block"方案（曾尝试后否决）；用 Godot 式
+   资源 + 节点，才能可复用、可多环境、为将来体积混合（PostProcessVolume）铺路。
 
 ### 9.4 建议顺序
 

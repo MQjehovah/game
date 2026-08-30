@@ -49,6 +49,9 @@ int main(int argc, char** argv) {
     }
 #endif
     neon::core::ApplyLogCli(argc, argv);
+    // Persist the engine log to a fixed file in the repo root so the tooling
+    // can read it back for diagnosis (logs also print to the console).
+    neon::core::EnableFileLog("neon_log.txt");
     int smokeFrames = 0;
     bool disableShadows = false;
     bool disableBloom = false;

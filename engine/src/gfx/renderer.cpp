@@ -782,6 +782,10 @@ void Renderer::InitBuiltinResources() {
                      : "FAILED");
     // G1-5 SSAO: the AO + blur programs. The depth pass reuses the shadow
     // depth shaders with the main-camera VP (colour-encoded gl_FragCoord.z).
+    ssaoDepthShader_ = backend_->CreateShader(kSsaoDepthVertexShader, kSsaoDepthFragmentShader,
+                                              "ssao_depth");
+    ssaoDepthMeshShader_ = backend_->CreateShader(kSsaoDepthMeshVertexShader,
+                                                  kSsaoDepthFragmentShader, "ssao_depth_mesh");
     ssaoShader_ = backend_->CreateShader(kPostVertexShader, kSsaoFragmentShader, "ssao");
     ssaoBlurShader_ =
         backend_->CreateShader(kPostVertexShader, kSsaoBlurFragmentShader, "ssao_blur");
@@ -1259,8 +1263,9 @@ void Renderer::DrawSsaoDepthCasters(const math::Mat4& viewProj) {
         const ShadowDraw& draw = *k.draw;
         if (!draw.mesh.Valid()) continue;
         if (!draw.models.empty()) {
-            backend_->UseShader(depthInstancedShader_);
+            backend_->UseShader(ssaoDepthShader_);
             backend_->SetUniformMat4("uMVP", viewProj);
+            backend_->SetUniformFloat("uFar", camera_.farPlane);
             backend_->DrawMeshInstanced(draw.mesh, draw.models.data(),
                                         static_cast<uint32_t>(draw.models.size()));
         } else if (!draw.bones.empty()) {
@@ -1273,8 +1278,9 @@ void Renderer::DrawSsaoDepthCasters(const math::Mat4& viewProj) {
             backend_->SetUniformMat4("uMVP", viewProj * draw.model);
             backend_->DrawMesh(draw.mesh);
         } else {
-            backend_->UseShader(depthShader_);
+            backend_->UseShader(ssaoDepthMeshShader_);
             backend_->SetUniformMat4("uMVP", viewProj * draw.model);
+            backend_->SetUniformFloat("uFar", camera_.farPlane);
             backend_->DrawMesh(draw.mesh);
         }
     }
@@ -1717,11 +1723,12 @@ void Renderer::DrawMesh(const Mesh& mesh, const Material& material, const math::
 
     if (frustumValid_ && !frustum_.Intersects(math::TransformAABB(mesh.Bounds(), model))) return;
 
-    if (csmEnabled_ && shadowRecording_ && !material.transparent) {
+    if (csmEnabled_ && shadowRecording_ && !material.transparent)
         shadowCasters_.push_back({mesh.Handle(), model, {}, {}, 0, mesh.Bounds()});
-        if (ssaoEnabled_ || ssrEnabled_)
-            ssaoCasters_.push_back({mesh.Handle(), model, {}, {}, 0, mesh.Bounds()});
-    }
+    // SSAO/SSR have their own colour-encoded depth pre-pass and do NOT depend
+    // on CSM being enabled: collect the caster whenever one is active.
+    if ((ssaoEnabled_ || ssrEnabled_) && !material.transparent)
+        ssaoCasters_.push_back({mesh.Handle(), model, {}, {}, 0, mesh.Bounds()});
 
     ShaderHandle shader = material.shader.Valid() ? material.shader
                                                   : (material.lit ? litShader_ : unlitShader_);
@@ -1744,11 +1751,10 @@ void Renderer::DrawSkinnedMesh(const Mesh& mesh, const Material& material,
                                : static_cast<int>(boneMatrices.size());
     count = std::min(count, 64);
 
-    if (csmEnabled_ && shadowRecording_ && !material.transparent) {
+    if (csmEnabled_ && shadowRecording_ && !material.transparent)
         shadowCasters_.push_back({mesh.Handle(), model, {}, boneMatrices, count, mesh.Bounds()});
-        if (ssaoEnabled_ || ssrEnabled_)
-            ssaoCasters_.push_back({mesh.Handle(), model, {}, boneMatrices, count, mesh.Bounds()});
-    }
+    if ((ssaoEnabled_ || ssrEnabled_) && !material.transparent)
+        ssaoCasters_.push_back({mesh.Handle(), model, {}, boneMatrices, count, mesh.Bounds()});
 
     ShaderHandle shader = material.shader.Valid() ? material.shader : skinnedLitShader_;
     ApplyMaterial(material, viewProj_ * model, model, NormalMatrix(model), shader);
@@ -1782,13 +1788,12 @@ void Renderer::DrawMeshInstanced(const Mesh& mesh, const Material& material,
     }
     if (instancedVisible_.empty()) return;
 
-    if (csmEnabled_ && shadowRecording_ && !material.transparent) {
+    if (csmEnabled_ && shadowRecording_ && !material.transparent)
         shadowCasters_.push_back(
             {mesh.Handle(), math::Mat4::Identity(), instancedVisible_, {}, 0, mesh.Bounds()});
-        if (ssaoEnabled_ || ssrEnabled_)
-            ssaoCasters_.push_back(
-                {mesh.Handle(), math::Mat4::Identity(), instancedVisible_, {}, 0, mesh.Bounds()});
-    }
+    if ((ssaoEnabled_ || ssrEnabled_) && !material.transparent)
+        ssaoCasters_.push_back(
+            {mesh.Handle(), math::Mat4::Identity(), instancedVisible_, {}, 0, mesh.Bounds()});
 
     ShaderHandle shader = material.shader.Valid()
                               ? material.shader

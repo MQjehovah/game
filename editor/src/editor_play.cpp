@@ -595,6 +595,9 @@ void EditorApp::StartPlay() {
         play_.reset();
         return;
     }
+    // Mirror the editor's post-process FX toggles into the play runtime.
+    play_->SetPostFx(postSsao_, postVolumetric_, postSsr_, postSsaoIntensity_,
+                     postVolumetricIntensity_, postSsrIntensity_);
     playActive_ = true;
     // Detach the input method while the play runs so game keys (WASD,
     // digits, space) arrive as raw key events even with a Chinese/Japanese IME

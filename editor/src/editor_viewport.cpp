@@ -175,6 +175,14 @@ void EditorApp::OnRender() {
         // Day sky + scene lights: shared with the 2D play so edit and
         // Play render the same environment (see ApplySceneEnvironment).
         ApplySceneEnvironment();
+        // Post-process FX toggles (applied to the shared renderer so the
+        // editor viewport previews exactly what play will show).
+        renderer_.SetSsaoEnabled(postSsao_);
+        renderer_.SetSsaoIntensity(postSsaoIntensity_);
+        renderer_.SetVolumetricEnabled(postVolumetric_);
+        renderer_.SetVolumetricIntensity(postVolumetricIntensity_);
+        renderer_.SetSsrEnabled(postSsr_);
+        renderer_.SetSsrIntensity(postSsrIntensity_);
 
         const float aspect = ViewportAspect();
         cam = ActiveCamera();
@@ -305,9 +313,9 @@ void EditorApp::OnRender() {
                         renderer_.DrawSkinnedMesh(part.mesh, part.material,
                                                   model, bones,
                                                   static_cast<int>(bones.size()));
-                } else {
-                    renderer_.DrawMesh(e.mesh, e.material, model);
-                }
+            } else {
+                renderer_.DrawMesh(e.mesh, e.material, model);
+            }
             }
             static bool dbg = false;
             if (!dbg && smokeMode_) {

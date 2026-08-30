@@ -161,6 +161,10 @@ public:
     // host passes to its 2D overlay (default 1 = no zoom).
     void Draw(gfx::Renderer& renderer, const gfx::Camera& camera,
               float previewZoom = 1.0f);
+    // Post-process FX overrides (SSAO / volumetric / SSR), applied at the start
+    // of each Draw. The editor passes its toggles so play matches the editor.
+    void SetPostFx(bool ssao, bool volumetric, bool ssr, float ssaoIntensity,
+                   float volIntensity, float ssrIntensity);
     // Draws the data-driven UI document (UIShow / ui/*.ui.json) on top of the
     // composited frame. Call AFTER Renderer::EndScene so menus/HUD keep their
     // authored colors instead of being ACES tone-mapped with the 3D scene.
@@ -623,6 +627,13 @@ private:
     std::unique_ptr<physics::World, std::function<void(physics::World*)>> physics_;
     float physicsAccum_ = 0.0f; // fixed-step accumulator (60 Hz)
     script::ScriptContext scriptCtx_; // owns the GameVars scripts + BT share
+    // Post-process FX overrides (applied at Draw); see SetPostFx.
+    bool postSsao_ = false;
+    bool postVolumetric_ = false;
+    bool postSsr_ = false;
+    float postSsaoIntensity_ = 1.0f;
+    float postVolumetricIntensity_ = 1.0f;
+    float postSsrIntensity_ = 0.8f;
     PrefabLibrary prefs_;             // prefabs loaded from <scriptBaseDir>/assets/prefabs/
     core::Localization loc_;          // string tables loaded from cfg_.localesDir
     // Dual script backends: Lua + QuickJS (ES2020). Scene scripts pick a
