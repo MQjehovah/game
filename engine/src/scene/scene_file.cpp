@@ -587,7 +587,8 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                      if (!CheckComponentShape(data,
                                     {"meshKey", "lod", "material", "metallic", "roughness", "colorHex",
                                      "albedoTex", "mrTex", "aoTex", "emissiveTex",
-                                     "ao", "emissiveIntensity"},
+                                     "ao", "emissiveIntensity", "uvRepeat",
+                                     "dirtColorHex", "rockColorHex"},
                                     "mesh", err))
                          return false;
                      const core::Json* key = data.Get("meshKey");
@@ -668,7 +669,7 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                           if (!CheckComponentShape(*mat,
                                          {"metallic", "roughness", "colorHex", "albedoTex", "mrTex",
                                           "aoTex", "emissiveTex", "ao", "emissiveIntensity",
-                                          "uvRepeat"},
+                                          "uvRepeat", "dirtColorHex", "rockColorHex"},
                                          "mesh.material", err))
                               return false;
                          if (!RequireNumber(*mat, "metallic", "mesh.material", m.metallic, err))
@@ -688,7 +689,9 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                                             m.emissiveIntensity, err))
                              return false;
                          if (const core::Json* ur = mat->Get("uvRepeat"))
-                             m.uvRepeat = static_cast<float>(ur->GetNumber(1.0f));
+                              m.uvRepeat = static_cast<float>(ur->GetNumber(1.0f));
+                         if (const core::Json* dc = mat->Get("dirtColorHex")) m.dirtColorHex = dc->GetString();
+                         if (const core::Json* rc = mat->Get("rockColorHex")) m.rockColorHex = rc->GetString();
                          if (const core::Json* col = mat->Get("colorHex")) {
                              if (!col->IsString()) {
                                  if (err)
@@ -707,8 +710,10 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                      if (!RequireNumber(data, "ao", "mesh", m.ao, err)) return false;
                      if (!RequireNumber(data, "emissiveIntensity", "mesh", m.emissiveIntensity, err))
                          return false;
-                     if (const core::Json* ur = data.Get("uvRepeat"))
-                         m.uvRepeat = static_cast<float>(ur->GetNumber(1.0f));
+                      if (const core::Json* ur = data.Get("uvRepeat"))
+                          m.uvRepeat = static_cast<float>(ur->GetNumber(1.0f));
+                      if (const core::Json* dc = data.Get("dirtColorHex")) m.dirtColorHex = dc->GetString();
+                      if (const core::Json* rc = data.Get("rockColorHex")) m.rockColorHex = rc->GetString();
                      if (const core::Json* col = data.Get("colorHex")) {
                          if (!col->IsString()) {
                              if (err) *err = "component 'mesh' field 'colorHex' must be a string";
@@ -1468,6 +1473,8 @@ core::Result<core::Json> SceneFile::FromWorld(ecs::World& world) {
             mat.object_["ao"] = MakeNumber(m->ao);
             mat.object_["emissiveIntensity"] = MakeNumber(m->emissiveIntensity);
             if (m->uvRepeat != 1.0f) mat.object_["uvRepeat"] = MakeNumber(m->uvRepeat);
+            if (!m->dirtColorHex.empty()) mat.object_["dirtColorHex"] = MakeString(m->dirtColorHex);
+            if (!m->rockColorHex.empty()) mat.object_["rockColorHex"] = MakeString(m->rockColorHex);
             if (!m->albedoTex.empty()) mat.object_["albedoTex"] = MakeString(m->albedoTex);
             if (!m->mrTex.empty()) mat.object_["mrTex"] = MakeString(m->mrTex);
             if (!m->aoTex.empty()) mat.object_["aoTex"] = MakeString(m->aoTex);

@@ -30,6 +30,11 @@ public:
     bool Init(platform::IWindow* window);
     void Shutdown();
 
+    // G4: the terrain splatmap shader variant (grass texture + dirt/rock colors
+    // blended by the vertex splat weights). Terrain chunks set this on their
+    // material so the Draw path selects it instead of the plain lit shader.
+    ShaderHandle TerrainShader() const { return terrainShader_; }
+
     // Selects the graphics backend before Init. "gl" (default) uses OpenGL;
     // "vulkan" uses the Vulkan backend when built with NEON_ENABLE_VULKAN=ON
     // (falls back to OpenGL with a log otherwise).
@@ -59,6 +64,12 @@ public:
 
     // 3D camera
     void SetCamera(const Camera& camera, float aspect);
+    // Re-runs the cascade shadow pass for the CURRENT camera, even if one was
+    // already run this frame (e.g. the editor pre-ran it with its free/orbit
+    // camera before the play runtime resolved the game camera). Frames that
+    // render through two cameras with different views need the shadow maps
+    // recomputed for the ACTUAL render camera.
+    void RefreshShadowPass();
     const math::Mat4& ViewProjection() const { return viewProj_; }
     const math::Vec3& CameraPosition() const { return camPos_; }
     // Frustum of the active camera (valid after SetCamera). Exposed so callers
@@ -463,6 +474,7 @@ private:
     std::string backendName_ = "gl";
 
     ShaderHandle litShader_;
+    ShaderHandle terrainShader_;
     ShaderHandle skinnedLitShader_;
     ShaderHandle unlitShader_;
     ShaderHandle uiShader_;

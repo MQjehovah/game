@@ -186,6 +186,11 @@ struct ScriptContext {
     // and running on_start like a scene-placed entity. Wired by GameRuntime;
     // null -> SpawnPrefab is a no-op returning an invalid handle.
     std::function<ecs::Entity(const std::string&, const math::Vec3&)> spawnPrefab;
+    // Samples the scene terrain height at a WORLD (x,z). Returns the terrain's
+    // world Y (heights[;] * heightScale + terrain entity pos.y), or 0 when there
+    // is no terrain/heightmap. Wired by GameRuntime; null -> GetGroundHeight is
+    // a no-op returning 0 (script authors fall back to a flat-ground assumption).
+    std::function<float(float, float)> groundHeight;
     // Reads an entity's data-driven "zombie" component (row/delay/type) as a
     // Lua table, or nil. Wired by GameRuntime; null -> ZombieInfo returns nil.
     std::function<script::Value(ecs::Entity)> zombieInfo;

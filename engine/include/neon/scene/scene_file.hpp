@@ -232,6 +232,10 @@ struct SceneMesh {
     std::string mrTex;
     std::string aoTex;
     std::string emissiveTex;
+    // G4 terrain splatmap: per-layer colors for the dirt and rock bands (grass
+    // uses albedoTex as its realistic texture). Empty = engine default color.
+    std::string dirtColorHex;
+    std::string rockColorHex;
     float ao = 1.f;               // occlusion strength (0 = ignore AO, 1 = full)
     float emissiveIntensity = 1.f;
     // UV tiling multiplier applied to the material's base UVs (default 1 = no

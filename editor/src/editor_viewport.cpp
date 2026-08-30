@@ -185,7 +185,12 @@ void EditorApp::OnRender() {
         renderer_.SetSsrIntensity(postSsrIntensity_);
 
         const float aspect = ViewportAspect();
-        cam = ActiveCamera();
+        // In play mode the scene's Camera3D object (driven by the game script
+        // every frame) is the authoritative view. Use it for SetCamera too so
+        // the cascade shadow pass is computed from the GAME camera, not the
+        // editor's free/orbit camera - otherwise right-drag orbited the light
+        // frusta and the shadows slid around a stationary world.
+        cam = playActive_ ? PlayCamera() : ActiveCamera();
         renderer_.SetCamera(cam, aspect);
         // SetCamera's shadow pass restores the scene viewport itself (see
         // Renderer::SetCamera); DockViewportScope set it before, so nothing

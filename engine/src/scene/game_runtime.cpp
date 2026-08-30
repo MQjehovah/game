@@ -173,10 +173,10 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
 
     // Mesh keys are resolved lazily at Draw time (file-backed "obj:"/"gltf:"
     // plus procedural primitives), so instantiation validates structure but
-    // not prefixes 锟?a scene with an unresolvable key still plays headless.
+    // not prefixes �?a scene with an unresolvable key still plays headless.
     // cfg_ must be assigned before LoadPrefabs/AttachScripts read it.
     cfg_ = std::move(cfg);
-    // G5-4-4(椤?): register the per-frame component sub-task system graph once
+    // G5-4-4(�?): register the per-frame component sub-task system graph once
     // (idempotent across Stop->Start cycles).
     InitSystemGraph();
     // Data-driven skills table (M1): hosts pass the skills.json text.
@@ -194,7 +194,7 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     // Create the physics world: Jolt when requested and compiled, else the
     // deterministic custom solver (server / headless tests). A "plugin:<name>"
     // backend (G5-1) loads the solver from a native middleware DLL/SO under
-    // cfg_.pluginBaseDir/plugins 鈥?swappable without relinking. The owning
+    // cfg_.pluginBaseDir/plugins �?swappable without relinking. The owning
     // PhysicsBackend is kept alive until this runtime is destroyed (it owns the
     // DLL), and is declared before physics_ so the world dies before the library.
     physics_ = std::unique_ptr<physics::World, std::function<void(physics::World*)>>(
@@ -324,6 +324,26 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     };
     scriptCtx_.findEntity = [this](const std::string& name) {
         return FindNamedEntity(name);
+    };
+    // GetGroundHeight(x, z): sample the first scene terrain's world Y at a
+    // WORLD (x,z). The terrain heightmap is stored in local [-size/2, size/2]
+    // coordinates, so we offset by the terrain entity's world position before
+    // sampling. Returns 0 when no terrain/heightmap exists.
+    scriptCtx_.groundHeight = [this](float x, float z) -> float {
+        auto view = world_.ViewAll<SceneTerrain>();
+        for (size_t i = 0; i < view.Size(); ++i) {
+            ecs::Entity ent = world_.EntityAt<SceneTerrain>(i);
+            const SceneTerrain* terr = world_.Get<SceneTerrain>(ent);
+            if (!terr || terr->heights.empty() || terr->segments < 1) continue;
+            const SceneTransform* t = world_.Get<SceneTransform>(ent);
+            const float localX = x - (t ? t->pos.x : 0.0f);
+            const float localZ = z - (t ? t->pos.z : 0.0f);
+            return gfx::SampleTerrainHeight(terr->heights, terr->segments, terr->size,
+                                            localX, localZ) *
+                       terr->heightScale +
+                   (t ? t->pos.y : 0.0f);
+        }
+        return 0.0f;
     };
     // SpawnSprite: create a renderable sprite entity (2D games). The texture
     // resolves at draw time through the same path as scene sprites, so dynamic
@@ -1179,6 +1199,20 @@ void GameRuntime::BuildDrawList() {
                                           -half + (gz + 0.5f) * chunkSize};
                     c.mat = gfx::Material::Lit({}, gfx::Color::White, 24.0f);
                     c.mat.doubleSided = true; // hide the LOD-crack skirt
+                    // G4: overlay a material's albedo texture on the terrain.
+                    // The terrain mesh carves its UV in world units and bakes
+                    // grass/dirt/rock vertex colors; sampling the scene's albedoTex
+                    // and multiplying (albedo *= uTint * vColor) layers the
+                    // realistic texture on top of the layer-blended tint.
+                    if (!m->albedoTex.empty()) {
+                        assets::TextureLoadOptions opts;
+                        opts.wrap = gfx::Wrap::Repeat; // terrain UV spans > [0,1]
+                        c.mat.albedo =
+                            cfg_.assets
+                                ->LoadTexture(FullAssetPath(m->albedoTex), opts)
+                                .Handle();
+                        c.mat.uvRepeat = std::max(m->uvRepeat, 1.0f);
+                    }
                     draws_.push_back(std::move(c));
                 }
             }
@@ -1420,6 +1454,23 @@ void GameRuntime::ResolveDrawItem(DrawItem& item, gfx::Renderer& renderer) {
         item.chain = chunk.chain;
         item.mat = gfx::Material::Lit({}, gfx::Color::White, 24.0f);
         item.mat.doubleSided = true; // hide the LOD-crack skirt
+        // G4 splatmap terrain: select the terrain shader and seed the grass
+        // texture (realistic) + dirt/rock colors (procedural). The vertex splat
+        // weights (r=grass, g=dirt, b=rock) blend them in the fragment shader.
+        item.mat.shader = renderer.TerrainShader();
+        if (const SceneMesh* sm = world_.Get<SceneMesh>(item.ent); sm) {
+            if (!sm->albedoTex.empty()) {
+                assets::TextureLoadOptions opts;
+                opts.wrap = gfx::Wrap::Repeat; // terrain UV spans > [0,1]
+                item.mat.grassTex =
+                    cfg_.assets->LoadTexture(FullAssetPath(sm->albedoTex), opts).Handle();
+                item.mat.uvRepeat = std::max(sm->uvRepeat, 1.0f);
+            }
+            if (!sm->dirtColorHex.empty())
+                item.mat.dirtColor = ParseColorHex(sm->dirtColorHex);
+            if (!sm->rockColorHex.empty())
+                item.mat.rockColor = ParseColorHex(sm->rockColorHex);
+        }
         item.resolved = true;
         return;
     }
@@ -1428,7 +1479,7 @@ void GameRuntime::ResolveDrawItem(DrawItem& item, gfx::Renderer& renderer) {
     // G6-2: async mesh streaming. When enabled, file-backed meshes (obj:/gltf:)
     // are loaded off the main thread and the item resolves from the cache the
     // frame it is ready (Draw retries via asyncPending). Until then the item is
-    // skipped 鈥?no per-draw hitch.
+    // skipped �?no per-draw hitch.
     if (cfg_.asyncMeshLoad && cfg_.assets &&
         (key.compare(0, 4, "obj:") == 0 || key.compare(0, 5, "gltf:") == 0)) {
         const bool isObj = key.compare(0, 4, "obj:") == 0;
@@ -1481,7 +1532,7 @@ void GameRuntime::ResolveDrawItem(DrawItem& item, gfx::Renderer& renderer) {
 
     // LOD chain: level 0 is the base mesh; each entry resolves into a lower-
     // detail level at its distance. A level that fails to load is logged and
-    // dropped 锟?the chain degrades to the levels that resolved.
+    // dropped �?the chain degrades to the levels that resolved.
     if (!item.lod.empty()) {
         item.chain.levels.push_back(item.mesh);
         for (const LodEntry& e : item.lod) {
@@ -1727,9 +1778,9 @@ ecs::Entity GameRuntime::SpawnPrefab(const std::string& name, const math::Vec3& 
 void GameRuntime::TickAnimations(float dt) {
     for (DrawItem& d : draws_) {
         if (!d.skinned || !d.skinned->Valid()) continue;
-        // G5-4-4(椤?): data-driven animation state machine. Advance it (params
+        // G5-4-4(�?): data-driven animation state machine. Advance it (params
         // from the script-set map), then map the current state's clip onto the
-        // existing animClip/animTime override path below 鈥?no pose surgery.
+        // existing animClip/animTime override path below �?no pose surgery.
         if (d.animSM) {
             if (!d.animSMBound) {
                 anim::BindStateMachineClips(*d.animSM, d.skinned->clips);
@@ -2040,7 +2091,7 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera,
     // Script-driven FPS game camera: while the "cameraMouseLock" GameVar is
     // truthy, the script owns the rendered view through cameraFocus (placed at
     // eye + viewDir * cameraDist by the controller) plus cameraYaw/cameraPitch/
-    // cameraDist 鈥?the same GameVars the host orbit cameras publish. This
+    // cameraDist �?the same GameVars the host orbit cameras publish. This
     // overrides any scene Camera3D entity, so the runtime renders through the
     // player's eye in both the standalone player and the editor playtest.
     const script::Value fpsLock = scriptCtx_.gameVars.Get("cameraMouseLock");
@@ -2111,6 +2162,11 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera,
     // matches whatever rasterization rect the host set up - otherwise the
     // playtest FOV would differ from the edit-mode viewport.
     renderer.SetCamera(cam, drawAspect);
+    // G3: the editor may have already run the cascade shadow pass with its free
+    // orbit camera this frame (before play resolved its game camera). Re-run it
+    // for the RESOLVED camera so the shadow frusta track the game view, not the
+    // editor's; otherwise orbiting the editor camera slides the shadows.
+    renderer.RefreshShadowPass();
     // Data-driven scene environment: apply the scene's DirectionalLight +
     // AmbientLight objects (Unity-style) so every host renders the same scene
     // the same way (the editor's playtest and the standalone player both go
@@ -2168,8 +2224,8 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera,
                     // Plate tracks the RENDERED mesh, which for a skinned rig
                     // can sit off the entity pivot (the wolf's bones place the
                     // body away from its origin). Compute the world AABB with
-                    // the same transform chain Draw() uses 鈥?model *
-                    // part.localTransform * bone matrix 鈥?and center the bar on
+                    // the same transform chain Draw() uses �?model *
+                    // part.localTransform * bone matrix �?and center the bar on
                     // it, just above the top.
                     math::AABB wb;
                     bool have = false;
@@ -2322,7 +2378,7 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera,
                                             ? model.TransformPoint(item.chunkCenterLocal)
                                             : math::Vec3{model.m[3], model.m[7], model.m[11]};
             const gfx::Mesh drawMesh =
-                SelectLodMesh(item.mesh, item.chain, worldPos, camera.position);
+                SelectLodMesh(item.mesh, item.chain, worldPos, cam.position);
             if (!drawMesh.Valid()) continue;
             drawBvh_.Insert(static_cast<math::Bvh::Id>(idx),
                             math::TransformAABB(drawMesh.Bounds(), model));
@@ -2378,7 +2434,7 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera,
                                item.mesh.Valid();
         if (batchable) {
             if (!bvhVisible_.empty() && bvhVisible_[idx] == 0) continue; // pre-culled
-            gfx::Mesh drawMesh = SelectLodMesh(item.mesh, item.chain, worldPos, camera.position);
+            gfx::Mesh drawMesh = SelectLodMesh(item.mesh, item.chain, worldPos, cam.position);
             if (!drawMesh.Valid()) continue;
             int batchIndex = -1;
             for (size_t bi = 0; bi < drawBatches_.size(); ++bi) {
@@ -2423,7 +2479,7 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera,
                 // basis from the view vector each frame. A 2D front-ortho
                 // camera degenerates to the identity basis, so 2D sprites are
                 // unaffected.
-                math::Vec3 fwd = camera.position - worldPos;
+                math::Vec3 fwd = cam.position - worldPos;
                 const float fl = std::sqrt(fwd.x * fwd.x + fwd.y * fwd.y + fwd.z * fwd.z);
                 if (fl > 0.0001f) fwd = fwd * (1.0f / fl);
                 math::Vec3 right = math::Cross(math::Vec3{0.0f, 1.0f, 0.0f}, fwd);
@@ -2451,7 +2507,7 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera,
                 renderer.DrawMesh(item.mesh, item.mat, model);
             }
         } else {
-            renderer.DrawMesh(SelectLodMesh(item.mesh, item.chain, worldPos, camera.position),
+            renderer.DrawMesh(SelectLodMesh(item.mesh, item.chain, worldPos, cam.position),
                               item.mat, model);
         }
     }
@@ -2466,7 +2522,12 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera,
         }
     }
     // G2-3 vegetation: instanced plant meshes + far yaw-billboard impostors.
-    DrawVegetation(renderer, camera);
+    // Use the RESOLVED scene camera (`cam`, which may have been overridden by a
+    // scene Camera3D entity driven by the game script) rather than the raw
+    // fallback `camera` param. Otherwise the far-tree impostor cards (which
+    // yaw to face the camera) would follow the host's free/orbit camera, so
+    // right-drag orbits the foliage billboards while the world stays put.
+    DrawVegetation(renderer, cam);
     // Script VFX particles: world-space camera-facing billboards (additive +
     // alpha batches), drawn INSIDE the HDR target so bright particles bloom.
     if (particleTex_.Valid() && particles_.Count() > 0)
@@ -2506,7 +2567,7 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera,
             }
         }
         scriptCtx_.draw2d = nullptr;
-        // G5-4-4: the on_render canvas is HUD 鈥?the host flushes it AFTER the
+        // G5-4-4: the on_render canvas is HUD �?the host flushes it AFTER the
         // scene is composited (FlushCanvas), so its colors stay exactly as
         // authored instead of being tone-mapped/bloomed with the 3D scene.
         // FlushDraw2D is called from FlushCanvas (post-EndScene).
@@ -2664,11 +2725,11 @@ void GameRuntime::InitSystemGraph() {
 
     // Thin wrappers turn the runtime's per-frame component sub-tasks into
     // ecs::System instances. Their declared reads/writes are the state each
-    // touches 鈥?component typeids for ECS data, and the owning runtime members
+    // touches �?component typeids for ECS data, and the owning runtime members
     // (DrawItem / Tween / Projectile / cooldown map) for host-owned state. The
     // scheduler derives conflict edges from these, so independent systems run
     // in parallel while write-conflicting ones (statuses/projectiles both write
-    // SceneHealth) stay in registration order 鈥?exactly the historical serial
+    // SceneHealth) stay in registration order �?exactly the historical serial
     // semantics, preserved in both Run modes.
     struct FnSystem : ecs::System {
         std::function<void(float, ecs::World&)> fn;
@@ -2797,13 +2858,13 @@ void GameRuntime::Tick(float dt) {
         if (physicsSteps == 4) physicsAccum_ = 0.0f;
     }
     SyncSceneBodies();
-    // G5-4-4(椤?): the per-frame component sub-tasks run as ECS systems through
+    // G5-4-4(�?): the per-frame component sub-tasks run as ECS systems through
     // the SystemScheduler. Serial (default) preserves the exact historical
     // order (tweens -> animations -> statuses -> cooldowns -> projectiles);
     // parallelSystems=true lets independent systems overlap on the worker pool.
     // Conflict edges come from the systems' declared component reads/writes
     // (e.g. TickStatuses and TickProjectiles both write SceneHealth, so they
-    // stay in registration order even in parallel mode) 鈥?the parallel result
+    // stay in registration order even in parallel mode) �?the parallel result
     // is bit-identical to the serial reference (validated by TestRuntimeM1's
     // determinism check).
     systems_.Run(dt, world_, cfg_.parallelSystems);

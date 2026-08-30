@@ -721,6 +721,17 @@ Value NativeSpawnPrefab(IScriptHost& host, void* user) {
     return EntityToValue(ctx->spawnPrefab(name, pos));
 }
 
+// GetGroundHeight(x, z): samples the scene terrain's world Y at (x,z). Falls
+// back to 0 when no terrain/heightmap exists so flat-ground scripts keep
+// working unchanged.
+Value NativeGetGroundHeight(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->groundHeight) return Value::Num(0.0);
+    const float x = static_cast<float>(host.GetArg(0).number);
+    const float z = static_cast<float>(host.GetArg(1).number);
+    return Value::Num(ctx->groundHeight(x, z));
+}
+
 // --- M1 gameplay bindings ----------------------------------------------------
 
 // PlayAnimation(entity, clip, loop=true, crossFade=0.2, speed=1): plays a
@@ -1621,6 +1632,7 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("FindNamedEntity", &NativeFindNamedEntity, &ctx);
     host.Register("SpawnSprite", &NativeSpawnSprite, &ctx);
     host.Register("SpawnPrefab", &NativeSpawnPrefab, &ctx);
+    host.Register("GetGroundHeight", &NativeGetGroundHeight, &ctx);
     // M1 gameplay: per-entity animation + world-anchored HUD helpers.
     host.Register("PlayAnimation", &NativePlayAnimation, &ctx);
     host.Register("AnimationProgress", &NativeAnimProgress, &ctx);

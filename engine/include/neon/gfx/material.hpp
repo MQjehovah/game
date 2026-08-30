@@ -10,6 +10,12 @@ struct Material {
     TextureHandle metallicRoughness; // G=roughness, B=metallic
     TextureHandle occlusion;         // R channel
     TextureHandle emissive;
+    // G4 terrain splatmap layers: grass uses a realistic albedo texture, dirt
+    // and rock use flat colors. Blended by the vertex splat weights (r=grass,
+    // g=dirt, b=rock). Only read when the terrain shader is active.
+    TextureHandle grassTex;
+    Color dirtColor{0.50f, 0.42f, 0.28f, 1.0f};
+    Color rockColor{0.55f, 0.52f, 0.48f, 1.0f};
     Color tint{1.0f, 1.0f, 1.0f, 1.0f};
     float shininess = 24.0f;
     float metallic = 0.0f;

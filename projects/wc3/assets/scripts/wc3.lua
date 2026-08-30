@@ -11,6 +11,11 @@ local CAM_UP = { x = 0, y = 0.69466, z = -0.71934 }
 local TAN_Y = 0.5206 -- fov 55°/2
 local TAN_X = 0.9254 -- * 16/9
 local function clamp(v, lo, hi) return math.max(lo, math.min(hi, v)) end
+-- 地形高度采样: 返回世界 (x,z) 处的地面 Y (含地形实体偏移; 无地形时 0)。
+-- 单位出生/移动/建筑放置都靠它贴地, 避免悬空或陷地。
+local function groundY(x, z)
+  return GetGroundHeight(x, z)
+end
 local camX, camZ = 50, 40   -- 视线焦点 (地面)
 local camDist = 38.0        -- 相机沿视线轴的距离 (拉近, 单位更清晰)
 local camEnt = nil          -- 场景相机实体
@@ -31,8 +36,22 @@ local function groundPick(sx, sy)
   local dy = CAM_FWD.y + CAM_RIGHT.y * nx * TAN_X + CAM_UP.y * ny * TAN_Y
   local dz = CAM_FWD.z + CAM_RIGHT.z * nx * TAN_X + CAM_UP.z * ny * TAN_Y
   if dy >= -0.001 then return nil end
+  -- 与地形高度场求交: 从相机沿射线步进, 找射线高度降到地形高度之下的第一个点。
+  -- 初始 t 用平地近似 (y=0), 再迭代向地形收敛 (起伏地形上选点/落点正确)。
   local t = -cp.y / dy
-  return { x = cp.x + dx * t, z = cp.z + dz * t }
+  for _ = 1, 10 do
+    local px = cp.x + dx * t
+    local py = cp.y + dy * t
+    local pz = cp.z + dz * t
+    local g = groundY(px, pz)
+    if py <= g then break end
+    -- 线性收敛到下个穿越点
+    local step = (py - g) / (-dy)
+    t = t + step
+  end
+  local gx = cp.x + dx * t
+  local gz = cp.z + dz * t
+  return { x = gx, z = gz }
 end
 
 local function updateCamera(dt)
@@ -137,7 +156,7 @@ end
 
 local function spawnUnit(kind, team, x, z)
   local d = UNIT_DEFS[kind]
-  local ent = SpawnPrefab(d.prefab, { x = x, y = 0, z = z })
+  local ent = SpawnPrefab(d.prefab, { x = x, y = groundY(x, z), z = z })
   -- 敌方单位转向玩家方向
   if team == "enemy" and ent ~= nil then SetRotationY(ent, math.pi) end
   local u = { id = newId(), ent = ent, kind = kind, team = team, x = x, z = z,
@@ -150,7 +169,7 @@ end
 
 local function spawnBuilding(kind, team, x, z, done)
   local d = BUILD_DEFS[kind]
-  local ent = SpawnPrefab(d.prefab, { x = x, y = 0, z = z })
+  local ent = SpawnPrefab(d.prefab, { x = x, y = groundY(x, z), z = z })
   local b = { id = newId(), ent = ent, kind = kind, team = team, x = x, z = z,
               hp = done and d.hp or math.max(60, d.hp * 0.15), maxHp = d.hp,
               w = d.w, d2 = d.d, done = done and true or false, progress = 0, queue = {} }
@@ -228,7 +247,7 @@ local function moveToward(u, tx, tz, speed, dt)
     u.x = u.x + (tx - u.x) / dd * speed * dt
     u.z = u.z + (tz - u.z) / dd * speed * dt
     if u.ent ~= nil then
-      SetPosition(u.ent, { x = u.x, y = 0, z = u.z })
+      SetPosition(u.ent, { x = u.x, y = groundY(u.x, u.z), z = u.z })
       SetRotationY(u.ent, math.atan(tx - u.x, -(tz - u.z)) + (u.yawFix or 0))
     end
   end

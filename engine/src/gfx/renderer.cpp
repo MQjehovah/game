@@ -81,6 +81,10 @@ uniform sampler2D uAlbedo;
 uniform sampler2D uMR;
 uniform sampler2D uOcclusion;
 uniform sampler2D uEmissive;
+uniform sampler2D uGrassTex;
+uniform vec4 uDirtColor;
+uniform vec4 uRockColor;
+uniform bool uHasGrassTex;
 uniform vec4 uTint;
 uniform bool uHasTexture;
 uniform bool uHasMR;
@@ -241,8 +245,18 @@ float PointShadowForLight(int light, vec3 worldPos, vec3 lightPos, float range) 
     return PointShadowFactor(uPointShadowMap11, uv, current, taps);
 }
 void main() {
+#ifdef TERRAIN_SPLAT
+    // G4 terrain splatmap: layer a realistic grass texture, dirt color and rock
+    // color by the vertex splat weights (vColor.r = grass, .g = dirt, .b = rock).
+    vec3 grassAlbedo = uHasGrassTex ? texture(uGrassTex, vUV).rgb : vec3(1.0);
+    vec3 albedoSplat = grassAlbedo * vColor.r + uDirtColor.rgb * vColor.g +
+                       uRockColor.rgb * vColor.b;
+    vec4 albedo = vec4(albedoSplat, 1.0);
+    albedo *= uTint;
+#else
     vec4 albedo = uHasTexture ? texture(uAlbedo, vUV) : vec4(1.0);
     albedo *= uTint * vColor;
+#endif
     vec3 N = normalize(vNormal);
     vec3 V = normalize(uCamPos - vWorldPos);
     vec3 L = normalize(-uSunDir);
@@ -734,6 +748,20 @@ void Renderer::InitBuiltinResources() {
                      skinnedLitShader_.Valid() ? "ok" : "FAILED");
     }
     unlitShader_ = backend_->CreateShader(kUnlitVertexShader, kUnlitFragmentShader, "unlit");
+    {
+        // G4 terrain splatmap variant: same lit source with #define TERRAIN_SPLAT
+        // to blend grass/dirt/rock layers by the vertex splat weights. Terrain
+        // chunks use this; every other mesh keeps the plain lit shader.
+        std::string fragSrc(kLitFragmentShader);
+        size_t v = fragSrc.find("#version");
+        size_t ve = fragSrc.find('\n', v);
+        fragSrc.insert(ve + 1, "#define TERRAIN_SPLAT 1\n");
+        terrainShader_ =
+            backend_->CreateShader(kLitVertexShader, fragSrc.c_str(), "lit_terrain");
+        NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
+                     "Renderer: terrain lit shader %s",
+                     terrainShader_.Valid() ? "ok" : "FAILED");
+    }
     uiShader_ = backend_->CreateShader(kUIVertexShader, kUIFragmentShader, "ui");
     linesShader_ = backend_->CreateShader(kLineVertexShader, kLineFragmentShader, "lines");
     litInstancedShader_ =
@@ -973,6 +1001,22 @@ void Renderer::SetCamera(const Camera& camera, float aspect) {
     }
 }
 
+void Renderer::RefreshShadowPass() {
+    // Re-run the cascade shadow pass for the current camera_ even when a shadow
+    // pass already ran this frame (e.g. the editor pre-ran one with its free
+    // orbit camera before play resolved the game camera). This keeps the light
+    // frusta locked to the ACTUAL render view so orbiting the editor camera
+    // slides the shadows incorrectly.
+    if (!csmEnabled_) return;
+    RunShadowPass();
+    RebindMainTarget();
+    if (sceneViewport_.w > 0.0f && sceneViewport_.h > 0.0f)
+        backend_->SetViewport(static_cast<int>(sceneViewport_.x),
+                              static_cast<int>(sceneViewport_.y),
+                              static_cast<int>(sceneViewport_.w),
+                              static_cast<int>(sceneViewport_.h));
+}
+
 void Renderer::SetSky(const Color& top, const Color& horizon) {
     skyTop_ = top;
     skyHorizon_ = horizon;
@@ -1117,7 +1161,6 @@ void Renderer::SetMsaaEnabled(bool enabled) {
 void Renderer::RunShadowPass() {
     if (!csmEnabled_) return;
     shadowPassRanThisFrame_ = true;
-
     ComputeCascadeSplits(camera_.nearPlane, camera_.farPlane, cascadeSplits_);
     // Cascade frusta must match the camera projection (which may use the
     // viewport rect's aspect when the editor renders into a sub-viewport).
@@ -1983,6 +2026,17 @@ void Renderer::ApplyMaterial(const Material& material, const math::Mat4& mvp,
     backend_->SetUniformVec2("uTiling", {material.uvRepeat, material.uvRepeat});
     backend_->BindTexture(0, material.albedo.Valid() ? material.albedo : white_);
     backend_->SetUniformInt("uAlbedo", 0);
+    // G4 terrain splatmap: bind the grass texture + dirt/rock colors when the
+    // terrain shader variant is active (other shaders ignore these uniforms).
+    backend_->BindTexture(1, material.grassTex.Valid() ? material.grassTex : white_);
+    backend_->SetUniformInt("uGrassTex", 1);
+    backend_->SetUniformInt("uHasGrassTex", material.grassTex.Valid() ? 1 : 0);
+    backend_->SetUniformVec4("uDirtColor",
+                             {material.dirtColor.r, material.dirtColor.g,
+                              material.dirtColor.b, material.dirtColor.a});
+    backend_->SetUniformVec4("uRockColor",
+                             {material.rockColor.r, material.rockColor.g,
+                              material.rockColor.b, material.rockColor.a});
         backend_->SetUniformInt("uHasTexture", material.albedo.Valid() ? 1 : 0);
         backend_->SetUniformInt("uHasMR", material.metallicRoughness.Valid() ? 1 : 0);
         backend_->SetUniformInt("uHasAO", material.occlusion.Valid() ? 1 : 0);
