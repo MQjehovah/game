@@ -128,9 +128,10 @@ struct SceneFile {
                                                const std::vector<LodEntry>& lod = {},
                                                float hp = 0.0f,
                                                float maxHp = 0.0f,
-                                               const std::string& parent = "",
-                                               int parentId = 0,
-                                               int id = 0);
+                                                const std::string& parent = "",
+                                                int parentId = 0,
+                                                int id = 0,
+                                                float uvRepeat = 1.0f);
     // G2-2 scene unification: the canonical 2D sprite entity builder (mirrors
     // MakeEntity for mesh entities). Emits name + id + components: transform
     // (pos/rot/scale/parent/parentId), sprite (texture/flipX/flipY/colorHex)
@@ -233,6 +234,10 @@ struct SceneMesh {
     std::string emissiveTex;
     float ao = 1.f;               // occlusion strength (0 = ignore AO, 1 = full)
     float emissiveIntensity = 1.f;
+    // UV tiling multiplier applied to the material's base UVs (default 1 = no
+    // repeat). For a large ground plane set this to the world-size so a small
+    // texture tiles instead of stretching across the whole surface.
+    float uvRepeat = 1.0f;
 };
 // 2D sprite component: an image texture drawn on an XY quad facing +Z (the
 // front-ortho camera). Display size comes from SceneTransform::scale, so the

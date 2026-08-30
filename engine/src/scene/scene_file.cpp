@@ -349,9 +349,10 @@ core::Result<core::Json> SceneFile::MakeEntity(const std::string& name,
                                                const std::vector<LodEntry>& lod,
                                                float hp,
                                                float maxHp,
-                                               const std::string& parent,
-                                               int parentId,
-                                               int id) {
+                                                const std::string& parent,
+                                                int parentId,
+                                                int id,
+                                                float uvRepeat) {
     if (name.empty())
         return core::Result<core::Json>::Err("scene: exported entity name must not be empty");
     // NOTE: a pure-logic entity (e.g. a game script host like wc3's `Game`) has
@@ -377,6 +378,7 @@ core::Result<core::Json> SceneFile::MakeEntity(const std::string& name,
     mat.object_["colorHex"] = MakeString(MakeColorHex(color));
     mat.object_["ao"] = MakeNumber(ao);
     mat.object_["emissiveIntensity"] = MakeNumber(emissiveIntensity);
+    if (uvRepeat != 1.0f) mat.object_["uvRepeat"] = MakeNumber(uvRepeat);
     if (!albedoTex.empty()) mat.object_["albedoTex"] = MakeString(albedoTex);
     if (!mrTex.empty()) mat.object_["mrTex"] = MakeString(mrTex);
     if (!aoTex.empty()) mat.object_["aoTex"] = MakeString(aoTex);
@@ -663,11 +665,12 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                              if (err) *err = "component 'mesh' field 'material' must be an object";
                              return false;
                          }
-                         if (!CheckComponentShape(*mat,
-                                        {"metallic", "roughness", "colorHex", "albedoTex", "mrTex",
-                                         "aoTex", "emissiveTex", "ao", "emissiveIntensity"},
-                                        "mesh.material", err))
-                             return false;
+                          if (!CheckComponentShape(*mat,
+                                         {"metallic", "roughness", "colorHex", "albedoTex", "mrTex",
+                                          "aoTex", "emissiveTex", "ao", "emissiveIntensity",
+                                          "uvRepeat"},
+                                         "mesh.material", err))
+                              return false;
                          if (!RequireNumber(*mat, "metallic", "mesh.material", m.metallic, err))
                              return false;
                          if (!RequireNumber(*mat, "roughness", "mesh.material", m.roughness, err))
@@ -684,6 +687,8 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                          if (!RequireNumber(*mat, "emissiveIntensity", "mesh.material",
                                             m.emissiveIntensity, err))
                              return false;
+                         if (const core::Json* ur = mat->Get("uvRepeat"))
+                             m.uvRepeat = static_cast<float>(ur->GetNumber(1.0f));
                          if (const core::Json* col = mat->Get("colorHex")) {
                              if (!col->IsString()) {
                                  if (err)
@@ -702,6 +707,8 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                      if (!RequireNumber(data, "ao", "mesh", m.ao, err)) return false;
                      if (!RequireNumber(data, "emissiveIntensity", "mesh", m.emissiveIntensity, err))
                          return false;
+                     if (const core::Json* ur = data.Get("uvRepeat"))
+                         m.uvRepeat = static_cast<float>(ur->GetNumber(1.0f));
                      if (const core::Json* col = data.Get("colorHex")) {
                          if (!col->IsString()) {
                              if (err) *err = "component 'mesh' field 'colorHex' must be a string";
@@ -1460,6 +1467,7 @@ core::Result<core::Json> SceneFile::FromWorld(ecs::World& world) {
             if (!m->colorHex.empty()) mat.object_["colorHex"] = MakeString(m->colorHex);
             mat.object_["ao"] = MakeNumber(m->ao);
             mat.object_["emissiveIntensity"] = MakeNumber(m->emissiveIntensity);
+            if (m->uvRepeat != 1.0f) mat.object_["uvRepeat"] = MakeNumber(m->uvRepeat);
             if (!m->albedoTex.empty()) mat.object_["albedoTex"] = MakeString(m->albedoTex);
             if (!m->mrTex.empty()) mat.object_["mrTex"] = MakeString(m->mrTex);
             if (!m->aoTex.empty()) mat.object_["aoTex"] = MakeString(m->aoTex);

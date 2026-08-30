@@ -96,6 +96,7 @@ struct SceneEntity {
     gfx::Color tint{1, 1, 1, 1};
     float metallic = 0.0f;
     float roughness = 0.8f;
+    float uvRepeat = 1.0f; // UV tiling multiplier for the entity's material
     // Material texture slots: file paths (empty = none) resolved through the
     // AssetManager into the entity's gfx::Material texture handles below.
     std::string albedoTex;

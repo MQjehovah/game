@@ -1214,21 +1214,26 @@ void GameRuntime::BuildDrawList() {
         item.mat.tint = bakedColor ? gfx::Color::White : ParseColorHex(m->colorHex);
         item.mat.metallic = m->metallic;
         item.mat.roughness = m->roughness;
+        item.mat.uvRepeat = m->uvRepeat;
         item.mat.aoStrength = m->ao;
         item.mat.emissiveIntensity = m->emissiveIntensity;
         if (cfg_.assets) {
+            // UV tiling: when uvRepeat > 1 the sampler must use REPEAT, else
+            // clamp pulls edge pixels and the tiling collapses into streaks.
+            assets::TextureLoadOptions opts;
+            if (m->uvRepeat > 1.01f) opts.wrap = gfx::Wrap::Repeat;
             if (!m->albedoTex.empty())
                 item.mat.albedo =
-                    cfg_.assets->LoadTexture(FullAssetPath(m->albedoTex)).Handle();
+                    cfg_.assets->LoadTexture(FullAssetPath(m->albedoTex), opts).Handle();
             if (!m->mrTex.empty())
                 item.mat.metallicRoughness =
-                    cfg_.assets->LoadTexture(FullAssetPath(m->mrTex)).Handle();
+                    cfg_.assets->LoadTexture(FullAssetPath(m->mrTex), opts).Handle();
             if (!m->aoTex.empty())
                 item.mat.occlusion =
-                    cfg_.assets->LoadTexture(FullAssetPath(m->aoTex)).Handle();
+                    cfg_.assets->LoadTexture(FullAssetPath(m->aoTex), opts).Handle();
             if (!m->emissiveTex.empty())
                 item.mat.emissive =
-                    cfg_.assets->LoadTexture(FullAssetPath(m->emissiveTex)).Handle();
+                    cfg_.assets->LoadTexture(FullAssetPath(m->emissiveTex), opts).Handle();
         }
         // M1: carry a live animation override onto a newly-tracked item.
         if (const SceneAnimOverride* ov = world_.Get<SceneAnimOverride>(ent);

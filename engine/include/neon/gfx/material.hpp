@@ -14,6 +14,8 @@ struct Material {
     float shininess = 24.0f;
     float metallic = 0.0f;
     float roughness = 0.8f;
+    // UV repeat multiplier applied to the material's base UVs (1 = no tiling).
+    float uvRepeat = 1.0f;
     // Scalar strength multipliers applied in the lit shader: occlusion scales
     // the ambient contribution (0 = ignore the AO map, 1 = full occlusion),
     // emissive scales the emissive texture contribution.

@@ -1785,6 +1785,12 @@ void EditorApp::BuildInspectorPanel() {
             history_.Push(std::make_unique<EditPropertyCommand<float>>(
                 &entities_, selected_, ApplyRoughnessProp, oldRoughness, e.roughness));
         }
+        const float oldUv = e.uvRepeat;
+        if (ImGui::DragFloat("UV 重复", &e.uvRepeat, 0.05f, 0.1f, 64.0f, "%.1f")) {
+            e.material.uvRepeat = e.uvRepeat;
+            history_.Push(std::make_unique<EditPropertyCommand<float>>(
+                &entities_, selected_, ApplyUvRepeatProp, oldUv, e.uvRepeat));
+        }
         const float oldAO = e.ao;
         if (ImGui::DragFloat("环境光遮蔽", &e.ao, 0.01f, 0.0f, 1.0f)) {
             e.material.aoStrength = e.ao;

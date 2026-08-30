@@ -23,20 +23,20 @@
       "components": {
         "mesh": {
           "material": {
-            "albedoTex": "@assets/textures/grass.png",
+            "albedoTex": "assets/textures/wc3_grass.png",
             "ao": 1,
             "colorHex": "#FFFFFF",
             "emissiveIntensity": 1,
             "metallic": 0,
-            "mrTex": "@assets/textures/grass.png",
-            "roughness": 0.800000011920929
+            "roughness": 0.800000011920929,
+            "uvRepeat": 30
           },
           "meshKey": "plane"
         },
         "transform": {
           "pos": [50,-0.10000000149011612,40],
           "rot": [0,0,0,1],
-          "scale": [130,1,100]
+          "scale": [30,1,30]
         }
       },
       "id": 500,
@@ -385,7 +385,7 @@
           "orthoSize": 10
         },
         "transform": {
-          "pos": [50,70,107.5999984741211],
+          "pos": [50,27.4,66.4],
           "rot": [-0.39070001244544983,0,0,0.9204999804496765],
           "scale": [1,1,1]
         },

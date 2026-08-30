@@ -12,7 +12,7 @@ local TAN_Y = 0.5206 -- fov 55°/2
 local TAN_X = 0.9254 -- * 16/9
 local function clamp(v, lo, hi) return math.max(lo, math.min(hi, v)) end
 local camX, camZ = 50, 40   -- 视线焦点 (地面)
-local camDist = 97.3        -- 相机沿视线轴的距离
+local camDist = 38.0        -- 相机沿视线轴的距离 (拉近, 单位更清晰)
 local camEnt = nil          -- 场景相机实体
 
 -- 框选: 左键空地按下拖拽 → 释放选中屏幕矩形内所有我方单位
@@ -37,7 +37,7 @@ end
 
 local function updateCamera(dt)
   -- 方向键平移 (屏幕对齐: 上=-z 下=+z 左=-x 右=+x), 速度随缩放
-  local pan = 42.0 * (camDist / 97.3)
+  local pan = 30.0 * (camDist / 38.0)
   if ActionDown("cam_up") then camZ = camZ - pan * dt end
   if ActionDown("cam_down") then camZ = camZ + pan * dt end
   if ActionDown("cam_left") then camX = camX - pan * dt end
@@ -54,7 +54,7 @@ local function updateCamera(dt)
   camX = clamp(camX, 5, 95)
   camZ = clamp(camZ, 8, 72)
   -- 滚轮缩放 (拉远/拉近)
-  camDist = clamp(camDist - MouseWheel() * 6.0, 45, 160)
+  camDist = clamp(camDist - MouseWheel() * 5.0, 24, 130)
   -- 驱动场景相机实体
   if camEnt ~= nil then
     SetPosition(camEnt, { x = camX, y = 0.71934 * camDist, z = camZ + 0.69466 * camDist })
@@ -210,8 +210,10 @@ local function attackTick(u, target, isB, dt)
   playAttackAnim(u)
   if isB then
     damageBuilding(target, d.dmg)
+    SpawnFloatText(target.x, 2.0, target.z, "-" .. d.dmg, false, 0.7)
   else
     damageUnit(target, d.dmg)
+    SpawnFloatText(target.x, 2.2, target.z, "-" .. d.dmg, false, 0.7)
     if d.ranged then
       PlaySfx("shoot")
     else
@@ -753,12 +755,18 @@ function on_render()
     end
   end
 
-  -- 资源/提示
-  DrawRect(0, 0, 1280, 26, 0.05, 0.07, 0.1, 0.95)
-  DrawText("黄金: " .. tostring(GetVar("gold_player") or 0), 20, 13, 16, 1, 0.85, 0.2, 1, false, true)
-  DrawText("波次: " .. tostring(waveN), 220, 13, 15, 0.9, 0.9, 0.9, 1, false, true)
+  -- 资源/提示: WC3 风格顶部资源条 (深色底 + 金色黄金数字 + 底部金线)
+  DrawRect(0, 0, 1280, 30, 0.045, 0.06, 0.09, 0.95)
+  DrawRect(0, 0, 1280, 1, 0.55, 0.45, 0.15, 0.9)              -- 顶金线
+  DrawRect(0, 29, 1280, 1, 0.35, 0.30, 0.10, 0.8)             -- 底金线
+  -- 金币图标 (金色小方块) + 数量
+  DrawRect(18, 12, 12, 7, 0.95, 0.72, 0.15, 1)
+  DrawText(tostring(GetVar("gold_player") or 0), 36, 20, 17, 1, 0.86, 0.25, 1, false, true)
+  -- 波次
+  DrawText("波次 " .. tostring(waveN), 180, 20, 15, 0.92, 0.92, 0.94, 1, false, true)
+  -- 操作提示 (右侧, 弱化)
   DrawText("左键选择 · 右键移动/攻击/采集 (点金矿) · 选中苦工 F 农场 B 兵营",
-           420, 13, 12, 0.75, 0.8, 0.85, 1, false, true)
+           1280, 20, 12, 0.65, 0.70, 0.76, 0.9, false, true)
 
   -- 全屏闪光
   for _, fl in ipairs(flashes or {}) do

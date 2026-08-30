@@ -27,6 +27,7 @@ layout(location = 0) in vec3 aPos;
 layout(location = 1) in vec3 aNormal;
 layout(location = 2) in vec2 aUV;
 layout(location = 3) in vec4 aColor;
+uniform vec2 uTiling; // UV repeat multiplier (default 1,1)
 #ifdef SKINNED
 layout(location = 4) in vec4 aJointIds;
 layout(location = 5) in vec4 aWeights;
@@ -53,14 +54,14 @@ void main() {
     vec4 n = skin * vec4(aNormal, 0.0);
     vWorldPos = (uModel * p).xyz;
     vNormal = (uNormalMat * n).xyz;
-    vUV = aUV;
+    vUV = aUV * uTiling;
     vColor = aColor;
     vViewZ = (uViewMatrix * vec4(vWorldPos, 1.0)).z;
     gl_Position = uMVP * p;
 #else
     vWorldPos = (uModel * vec4(aPos, 1.0)).xyz;
     vNormal = (uNormalMat * vec4(aNormal, 0.0)).xyz;
-    vUV = aUV;
+    vUV = aUV * uTiling;
     vColor = aColor;
     vViewZ = (uViewMatrix * vec4(vWorldPos, 1.0)).z;
     gl_Position = uMVP * vec4(aPos, 1.0);
@@ -1979,6 +1980,7 @@ void Renderer::ApplyMaterial(const Material& material, const math::Mat4& mvp,
     backend_->SetBlendMode(material.transparent ? BlendMode::Alpha : BlendMode::Opaque);
 
     backend_->SetUniformMat4("uMVP", mvp);
+    backend_->SetUniformVec2("uTiling", {material.uvRepeat, material.uvRepeat});
     backend_->BindTexture(0, material.albedo.Valid() ? material.albedo : white_);
     backend_->SetUniformInt("uAlbedo", 0);
         backend_->SetUniformInt("uHasTexture", material.albedo.Valid() ? 1 : 0);

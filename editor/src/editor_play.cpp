@@ -155,7 +155,7 @@ core::Result<core::Json> EditorApp::BuildSceneJsonFromEntities() {
                                                 e.mrTex, e.aoTex, e.emissiveTex, e.ao,
                                                 e.emissiveIntensity, "", "", core::Json{}, {},
                                                 e.hp, e.maxHp, parentNameOf(e.parentId),
-                                                e.parentId, e.id);
+                                                e.parentId, e.id, e.uvRepeat);
         if (!res.Ok()) {
             return core::Result<core::Json>::Err("editor: " + res.Error());
         }

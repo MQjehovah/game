@@ -396,6 +396,7 @@ void EditorApp::ApplyMaterialParams(SceneEntity& e) {
     e.material.tint = IsBakedColorKey(e.meshKey) ? gfx::Color::White : e.tint;
     e.material.metallic = e.metallic;
     e.material.roughness = e.roughness;
+    e.material.uvRepeat = e.uvRepeat;
     e.material.aoStrength = e.ao;
     e.material.emissiveIntensity = e.emissiveIntensity;
     // Texture slots: load any non-empty path through the cached AssetManager.
@@ -406,10 +407,18 @@ void EditorApp::ApplyMaterialParams(SceneEntity& e) {
     // Asset paths are normalized ("@assets/x" -> "assets/x") then resolved by
     // the AssetManager against the project root VFS (IoRead). No per-call
     // project-dir prefixing — the unified asset path model handles all forms.
+    // Load a texture, using REPEAT wrap when the material tiles UVs (uvRepeat>1)
+    // so a small texture repeats across the surface instead of stretching
+    // (Clamp would smear the edge pixels over the whole UV>1 range).
+    auto loadTex = [this](const std::string& p, float repeat) {
+        assets::TextureLoadOptions o;
+        o.wrap = repeat > 1.01f ? gfx::Wrap::Repeat : gfx::Wrap::Clamp;
+        return assetMgr_.LoadTexture(assets::NormalizeAssetPath(p), o);
+    };
     if (!e.albedoTex.empty())
-        e.material.albedo = assetMgr_.LoadTexture(assets::NormalizeAssetPath(e.albedoTex)).Handle();
+        e.material.albedo = loadTex(e.albedoTex, e.uvRepeat).Handle();
     if (!e.mrTex.empty())
-        e.material.metallicRoughness = assetMgr_.LoadTexture(assets::NormalizeAssetPath(e.mrTex)).Handle();
+        e.material.metallicRoughness = loadTex(e.mrTex, e.uvRepeat).Handle();
     if (!e.aoTex.empty())
         e.material.occlusion = assetMgr_.LoadTexture(assets::NormalizeAssetPath(e.aoTex)).Handle();
     if (!e.emissiveTex.empty())
@@ -935,6 +944,7 @@ void EditorApp::LoadScene(const std::string& path) {
                 if (const core::Json* c = matVal("colorHex")) e.tint = ColorFromHex(c->GetString());
                 if (const core::Json* v = matVal("metallic")) e.metallic = static_cast<float>(v->GetNumber());
                 if (const core::Json* v = matVal("roughness")) e.roughness = static_cast<float>(v->GetNumber());
+                if (const core::Json* v = matVal("uvRepeat")) e.uvRepeat = static_cast<float>(v->GetNumber(1.0f));
                 if (const core::Json* v = matVal("ao")) e.ao = static_cast<float>(v->GetNumber());
                 if (const core::Json* v = matVal("emissiveIntensity")) e.emissiveIntensity = static_cast<float>(v->GetNumber());
                 if (const core::Json* v = matVal("albedoTex")) e.albedoTex = assets::NormalizeAssetPath(v->GetString());

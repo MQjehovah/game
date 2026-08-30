@@ -226,6 +226,10 @@ inline void ApplyRoughnessProp(SceneEntity& e, const float& v) {
     e.roughness = v;
     e.material.roughness = v;
 }
+inline void ApplyUvRepeatProp(SceneEntity& e, const float& v) {
+    e.uvRepeat = v;
+    e.material.uvRepeat = v;
+}
 inline void ApplyAOProp(SceneEntity& e, const float& v) {
     e.ao = v;
     e.material.aoStrength = v;
