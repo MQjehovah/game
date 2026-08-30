@@ -12,6 +12,35 @@
 
 namespace neon::assets {
 
+namespace {
+// Convert a ufbx 3x4 column-major double matrix (v[12], no perspective row)
+// into the engine's 4x4 row-storage float Mat4 (m[16], translation in the last
+// column). They share the "translation in the last column" convention, so the
+// copy is a straight per-column fill; only the width (3x4 vs 4x4) and element
+// type (double vs float) differ.
+neon::math::Mat4 UfbxMatToEngine(const ufbx_matrix& M) {
+    neon::math::Mat4 out = neon::math::Mat4::Identity();
+    const double* v = M.v;
+    // Column 0 (X axis).
+    out.m[0] = static_cast<float>(v[0]);
+    out.m[4] = static_cast<float>(v[1]);
+    out.m[8] = static_cast<float>(v[2]);
+    // Column 1 (Y axis).
+    out.m[1] = static_cast<float>(v[3]);
+    out.m[5] = static_cast<float>(v[4]);
+    out.m[9] = static_cast<float>(v[5]);
+    // Column 2 (Z axis).
+    out.m[2] = static_cast<float>(v[6]);
+    out.m[6] = static_cast<float>(v[7]);
+    out.m[10] = static_cast<float>(v[8]);
+    // Column 3 (translation).
+    out.m[3] = static_cast<float>(v[9]);
+    out.m[7] = static_cast<float>(v[10]);
+    out.m[11] = static_cast<float>(v[11]);
+    return out;
+}
+} // namespace
+
 // AssetManager::LoadFBX: load an FBX via ufbx and merge every mesh-bearing node
 // into ONE gfx::Mesh. The engine's render model is one entity = one mesh, so a
 // multi-part FBX (e.g. an ancient village) is baked into a single geometry by
@@ -83,9 +112,12 @@ FbxAsset AssetManager::LoadFBX(const std::string& path) {
                     v.uv = {static_cast<float>(tuv.x), static_cast<float>(tuv.y)};
                 }
             }
-            // Bake the node's world transform into the vertex position.
-            const ::neon::math::Mat4& nm =
-                reinterpret_cast<const ::neon::math::Mat4&>(node->node_to_world);
+            // Bake the node's world transform into the vertex position. The
+            // ufbx matrix is a 3x4 double column-major array with translation
+            // in the last column — convert it to the engine's Mat4 rather than
+            // reinterpreting the memory (a reinterpret of a double/3x4 array
+            // as a float/4x4 would scramble the transform).
+            const neon::math::Mat4 nm = UfbxMatToEngine(node->node_to_world);
             v.pos = nm.TransformPoint(v.pos);
             allVerts.push_back(v);
         }
