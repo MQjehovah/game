@@ -1,5 +1,8 @@
 #include "editor.hpp"
 #include "editor_util.hpp"
+#include "neon/assets/asset_manager.hpp"
+#include "neon/assets/asset_path.hpp"
+#include "neon/assets/mesh_format.hpp"
 
 #include <algorithm>
 #include <thread>
@@ -68,8 +71,10 @@ std::string TypeLabel(const std::string& key) {
     if (key == "water") return "水面";
     if (key == "road") return "道路";
     if (key == "tree") return "松树 (OBJ)";
-    if (key.rfind("obj:", 0) == 0) return "OBJ 模型";
-    if (key.rfind("gltf:", 0) == 0) return "glTF 模型";
+    // File-backed mesh formats get their registered display label (obj/gltf/
+    // fbx/...). Adding a format auto-appears here.
+    if (const std::string p = assets::MeshFormatRegistry::Instance().MatchPrefix(key); !p.empty())
+        return assets::MeshFormatRegistry::Instance().DisplayName(p);
     return key;
 }
 
@@ -167,9 +172,16 @@ std::string PickImportFile(void* owner = nullptr) {
     IFileDialog* dialog = nullptr;
     if (SUCCEEDED(CoCreateInstance(__uuidof(FileOpenDialog), nullptr, CLSCTX_INPROC_SERVER,
                                    __uuidof(IFileDialog), reinterpret_cast<void**>(&dialog)))) {
+        // Build the model extension filter from the mesh-format registry so new
+        // formats appear in the import dialog automatically.
+        std::string modelPattern;
+        for (const std::string& ext : assets::MeshFormatRegistry::Instance().Extensions())
+            modelPattern += "*" + ext + ";";
+        std::wstring allAssets = L"*.png;*.jpg;*.jpeg;*.bmp;*.tga;" +
+                                 std::wstring(modelPattern.begin(), modelPattern.end()) +
+                                 L"*.lua;*.js;*.json;*.wav;*.mp3";
         const COMDLG_FILTERSPEC filters[] = {
-            { L"所有支持的资产",
-              L"*.png;*.jpg;*.jpeg;*.bmp;*.tga;*.obj;*.gltf;*.lua;*.js;*.json;*.wav;*.mp3" },
+            { L"所有支持的资产", allAssets.c_str() },
             { L"所有文件 (*.*)", L"*.*" },
         };
         dialog->SetFileTypes(2, filters);
@@ -208,8 +220,9 @@ bool IsImageExt(const std::string& name) {
 }
 
 bool IsModelExt(const std::string& name) {
-    std::string ext = ToLower(FileExt(name));
-    return ext == ".obj" || ext == ".gltf" || ext == ".glb";
+    // Any registered mesh format (obj/gltf/glb/fbx/...) is a model. New formats
+    // registered in the mesh-format registry are auto-recognized here.
+    return !assets::MeshFormatRegistry::Instance().FormatFromExt(name).empty();
 }
 
 bool IsScriptExt(const std::string& name) {
@@ -511,13 +524,15 @@ void EditorApp::CreateAssetFile(const std::string& name, int kind) {
 }
 
 void EditorApp::ImportAssetPath(const std::string& path) {
-    std::string lower = ToLower(path);
-    if (lower.rfind(".obj") != std::string::npos) {
-        AddEntity("obj:" + path);
-        NEON_LOG_INFO("Editor: imported OBJ '%s'", path.c_str());
-    } else if (lower.rfind(".gltf") != std::string::npos) {
-        AddEntity("gltf:" + path);
-        NEON_LOG_INFO("Editor: imported glTF '%s'", path.c_str());
+    // Mesh models are dispatched through the mesh-format registry: any
+    // registered extension (.obj/.gltf/.glb/.fbx/...) becomes a draft entity
+    // with the format's meshKey prefix. Adding a new format here is automatic.
+    const std::string prefix =
+        assets::MeshFormatRegistry::Instance().FormatFromExt(path);
+    if (!prefix.empty()) {
+        AddEntity(prefix + ":" + path);
+        const std::string label = assets::MeshFormatRegistry::Instance().DisplayName(prefix);
+        NEON_LOG_INFO("Editor: imported %s '%s'", label.c_str(), path.c_str());
     } else if (IsImageExt(path)) {
         gfx::Texture tex = assetMgr_.LoadTexture(path);
         if (tex.Valid()) {
@@ -915,11 +930,9 @@ void EditorApp::BuildScenePanel() {
             if (const ImGuiPayload* p = ImGui::AcceptDragDropPayload("ASSET_MODEL")) {
                 const char* path = static_cast<const char*>(p->Data);
                 if (path) {
-                    std::string lower = ToLower(std::string(path));
-                    if (lower.rfind(".obj") != std::string::npos)
-                        AddEntity("obj:" + std::string(path));
-                    else if (lower.rfind(".gltf") != std::string::npos)
-                        AddEntity("gltf:" + std::string(path));
+                    const std::string prefix =
+                        assets::MeshFormatRegistry::Instance().FormatFromExt(path);
+                    if (!prefix.empty()) AddEntity(prefix + ":" + std::string(path));
                 }
             }
             if (const ImGuiPayload* p = ImGui::AcceptDragDropPayload("ASSET_TEXTURE")) {
@@ -1700,10 +1713,10 @@ void EditorApp::BuildInspectorPanel() {
                                  static_cast<size_t>(payload->DataSize));
                 if (!path.empty() && path.back() == '\0') path.pop_back();
                 if (!path.empty()) {
-                    const std::string lower = ToLower(path);
-                    const std::string key =
-                        lower.rfind(".obj") != std::string::npos ? "obj:" + path
-                                                                 : "gltf:" + path;
+                    const std::string prefix =
+                        assets::MeshFormatRegistry::Instance().FormatFromExt(path);
+                    if (prefix.empty()) return; // not a mesh model
+                    const std::string key = prefix + ":" + path;
                     const std::string oldKey = e.meshKey;
                     history_.Push(std::make_unique<EditMeshKeyCommand>(
                         this, &entities_, selected_, oldKey, key));
@@ -3980,8 +3993,40 @@ void EditorApp::FrameModelPreview() {
 
 void EditorApp::OpenModelPreview(const std::string& path) {
     std::string p = path;
+    const bool isFbx = p.rfind("fbx:", 0) == 0 || p.size() >= 4 &&
+                       (p.compare(p.size() - 4, 4, ".fbx") == 0 ||
+                        p.compare(p.size() - 4, 4, ".FBX") == 0);
     if (p.rfind("gltf:", 0) == 0) p = p.substr(5);
+    if (p.rfind("fbx:", 0) == 0) p = p.substr(4);
     if (p.empty()) return;
+
+    // FBX/OBJ static models have no skeleton/clips: build a single-part,
+    // skeleton-less SkinnedModel so the preview's "static (non-skinned)" path
+    // (RenderModelPreviewPanel, bones.empty()) draws it through the lit shader.
+    if (isFbx) {
+        assets::FbxAsset fbx = assetMgr_.LoadFBX(assets::NormalizeAssetPath(p));
+        if (fbx.nodes.empty()) {
+            NEON_LOG_ERROR("Model preview: failed to load FBX '%s'", p.c_str());
+            return;
+        }
+        auto m = std::make_shared<scene::SkinnedModel>();
+        for (assets::FbxMeshNode& n : fbx.nodes) {
+            scene::SkinnedModel::Part part;
+            part.mesh = std::move(n.mesh);
+            part.material = std::move(n.material);
+            part.localTransform = math::Mat4::Identity();
+            m->parts.push_back(std::move(part));
+        }
+        previewModel_ = m;
+        previewPath_ = p;
+        previewPlaying_ = true;
+        previewTime_ = 0.0f;
+        previewClip_ = -1;
+        FrameModelPreview();
+        NEON_LOG_INFO("Model preview (FBX): '%s' (%zu parts)", p.c_str(), m->parts.size());
+        return;
+    }
+
     core::Result<scene::SkinnedModel> sm = scene::LoadSkinnedModel(assetMgr_, p);
     if (sm.Ok()) {
         previewModel_ = std::make_shared<scene::SkinnedModel>(std::move(sm.Value()));
@@ -4116,9 +4161,7 @@ void EditorApp::BuildModelPreviewPanel() {
                 const char* path = static_cast<const char*>(p->Data);
                 NEON_LOG_INFO("Model preview: drop accepted '%s'", path ? path : "");
                 if (path && *path) {
-                    std::string lower = ToLower(std::string(path));
-                    if (lower.rfind(".gltf") != std::string::npos ||
-                        lower.rfind(".glb") != std::string::npos) {
+                    if (!assets::MeshFormatRegistry::Instance().FormatFromExt(path).empty()) {
                         std::snprintf(previewPathBuf_, sizeof(previewPathBuf_), "%s", path);
                         OpenModelPreview(previewPathBuf_);
                     }
@@ -4188,9 +4231,7 @@ void EditorApp::BuildModelPreviewPanel() {
                 const char* path = static_cast<const char*>(p->Data);
                 NEON_LOG_INFO("Model preview: drop accepted '%s'", path ? path : "");
                 if (path && *path) {
-                    std::string lower = ToLower(std::string(path));
-                    if (lower.rfind(".gltf") != std::string::npos ||
-                        lower.rfind(".glb") != std::string::npos) {
+                    if (!assets::MeshFormatRegistry::Instance().FormatFromExt(path).empty()) {
                         std::snprintf(previewPathBuf_, sizeof(previewPathBuf_), "%s", path);
                         OpenModelPreview(previewPathBuf_);
                     }

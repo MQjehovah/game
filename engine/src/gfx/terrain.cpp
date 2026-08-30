@@ -90,7 +90,11 @@ PlaneMesh BuildChunkSurface(const std::vector<float>& heights, int segments, flo
             math::Vec3 normal = math::Cross({cw, hR - y, 0.0f}, {0.0f, hD - y, cd}).Normalized();
             if (normal.y < 0.0f) normal = -normal;
             const float slope = 1.0f - normal.y;
-            const math::Vec4 color = TerrainLayerColor(y, heightScale, slope, layer);
+            // Splat WEIGHTS (R=grass, G=dirt, B=rock sum to 1), not the final
+            // layered color: the terrain splatmap shader mixes a grass texture
+            // + dirt/rock colors by these weights. (The editor's non-chunk
+            // CreateTerrain mesh uses the final TerrainLayerColor instead.)
+            const math::Vec4 color = TerrainLayerWeights(y, heightScale, slope, layer);
             pm.verts.push_back({math::Vec3{x, y, z}, normal, {x / cw, z / cd}, color});
         }
     }
@@ -155,7 +159,7 @@ math::Vec4 TerrainLayerColor(float height, float heightScale, float slope,
     math::Vec4 color = math::Lerp(config.grass, config.dirt, tDirt);
     color = math::Lerp(color, config.rock, tRock);
     const float tSlope =
-        math::SmoothStep(config.rockSlope, config.rockSlope + config.blendWidth, slope);
+        math::SmoothStep(config.rockSlope, config.rockSlope + config.slopeBlend, slope);
     color = math::Lerp(color, config.rock, tSlope);
     color.w = 1.0f;
     return color;
@@ -171,7 +175,7 @@ math::Vec4 TerrainLayerWeights(float height, float heightScale, float slope,
         math::SmoothStep(config.dirtMaxHeight - config.blendWidth,
                          config.dirtMaxHeight + config.blendWidth, h);
     const float tSlope =
-        math::SmoothStep(config.rockSlope, config.rockSlope + config.blendWidth, slope);
+        math::SmoothStep(config.rockSlope, config.rockSlope + config.slopeBlend, slope);
     // Slope pulls weight toward rock; otherwise grass->dirt->rock by height.
     float wR = tDirt;                        // rock from the height ramp
     wR = std::max(wR, tSlope);

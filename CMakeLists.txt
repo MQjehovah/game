@@ -91,12 +91,19 @@ engine/src/ui/system.cpp
 engine/src/ui/document.cpp
 engine/src/ui/layout_solver.cpp
 engine/src/ui/ui_system.cpp
+engine/src/assets/fbx_loader.cpp
+engine/src/assets/mesh_format.cpp
 )
 if(NEON_ENABLE_JS)
   list(APPEND ENGINE_CORE_SOURCES engine/src/script/js_host.cpp)
 endif()
 
 add_library(neon_engine STATIC ${ENGINE_CORE_SOURCES})
+# FBX model loading via the vendored single-file ufbx library (MIT). It is a
+# C library; keep it in its own target so it is compiled as C (not C++).
+add_library(neon_ufbx STATIC engine/third_party/ufbx/ufbx.c)
+target_include_directories(neon_ufbx PUBLIC engine/third_party/ufbx)
+target_link_libraries(neon_engine PRIVATE neon_ufbx)
 # C12: precompiled headers cut rebuild time on the hot engine + editor +
 # test translation units (MSVC /FI, GCC -include). Standard-library only so no
 # TU is forced to compile an umbrella header.
@@ -111,6 +118,7 @@ target_include_directories(neon_engine
     engine/include
   PRIVATE
     third_party/stb
+    engine/third_party/ufbx
     engine/generated
 )
 

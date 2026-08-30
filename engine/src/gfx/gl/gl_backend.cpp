@@ -18,6 +18,7 @@ namespace glc {
 constexpr gl::GLenum Triangles = 0x0004;
 constexpr gl::GLenum Lines = 0x0001;
 constexpr gl::GLenum UnsignedShort = 0x1403;
+constexpr gl::GLenum UnsignedInt = 0x1405;
 constexpr gl::GLenum Float = 0x1406;
 constexpr gl::GLenum Texture2D = 0x0DE1;
 constexpr gl::GLenum Rgba = 0x1908;
@@ -116,6 +117,7 @@ struct GLMesh {
     gl::GLuint vbo = 0;
     gl::GLuint ibo = 0;
     uint32_t indexCount = 0;
+    uint32_t indexType = 0; // 0 = uint16, 1 = uint32
 };
 
 struct GLTexture {
@@ -734,8 +736,49 @@ public:
                      indices, glc::StaticDraw);
         g.BindVertexArray(0);
         mesh.indexCount = indexCount;
+        mesh.indexType = 0;
         meshes_[mesh.vao] = mesh;
-        return {mesh.vao, mesh.vbo, mesh.ibo, mesh.indexCount};
+        return {mesh.vao, mesh.vbo, mesh.ibo, mesh.indexCount, 0};
+    }
+
+    MeshHandle CreateMeshU32(const void* vertices, uint32_t vertexCount,
+                             const uint32_t* indices, uint32_t indexCount) override {
+        auto& g = gl::GetGL();
+        constexpr gl::GLsizei kStride = static_cast<gl::GLsizei>(sizeof(Vertex3D));
+        GLMesh mesh;
+        g.GenVertexArrays(1, &mesh.vao);
+        g.GenBuffers(1, &mesh.vbo);
+        g.GenBuffers(1, &mesh.ibo);
+        g.BindVertexArray(mesh.vao);
+        g.BindBuffer(glc::ArrayBuffer, mesh.vbo);
+        g.BufferData(glc::ArrayBuffer,
+                     static_cast<gl::GLsizeiptr>(vertexCount * static_cast<size_t>(kStride)),
+                     vertices, glc::StaticDraw);
+        g.EnableVertexAttribArray(0);
+        g.VertexAttribPointer(0, 3, glc::Float, 0, kStride, nullptr);
+        g.EnableVertexAttribArray(1);
+        g.VertexAttribPointer(1, 3, glc::Float, 0, kStride,
+                              reinterpret_cast<const void*>(offsetof(Vertex3D, normal)));
+        g.EnableVertexAttribArray(2);
+        g.VertexAttribPointer(2, 2, glc::Float, 0, kStride,
+                              reinterpret_cast<const void*>(offsetof(Vertex3D, uv)));
+        g.EnableVertexAttribArray(3);
+        g.VertexAttribPointer(3, 4, glc::Float, 0, kStride,
+                              reinterpret_cast<const void*>(offsetof(Vertex3D, color)));
+        g.EnableVertexAttribArray(4);
+        g.VertexAttribPointer(4, 4, glc::Float, 0, kStride,
+                              reinterpret_cast<const void*>(offsetof(Vertex3D, j)));
+        g.EnableVertexAttribArray(5);
+        g.VertexAttribPointer(5, 4, glc::Float, 0, kStride,
+                              reinterpret_cast<const void*>(offsetof(Vertex3D, w)));
+        g.BindBuffer(glc::ElementArrayBuffer, mesh.ibo);
+        g.BufferData(glc::ElementArrayBuffer, static_cast<gl::GLsizeiptr>(indexCount * 4),
+                     indices, glc::StaticDraw);
+        g.BindVertexArray(0);
+        mesh.indexCount = indexCount;
+        mesh.indexType = 1;
+        meshes_[mesh.vao] = mesh;
+        return {mesh.vao, mesh.vbo, mesh.ibo, mesh.indexCount, 1};
     }
 
     void DestroyMesh(const MeshHandle& mesh) override {
@@ -906,7 +949,7 @@ public:
         auto& g = gl::GetGL();
         g.BindVertexArray(it->second.vao);
         g.DrawElements(glc::Triangles, static_cast<gl::GLsizei>(it->second.indexCount),
-                       glc::UnsignedShort, nullptr);
+                       it->second.indexType ? glc::UnsignedInt : glc::UnsignedShort, nullptr);
         CheckError("DrawMesh");
         g.BindVertexArray(0);
     }
@@ -939,7 +982,8 @@ public:
             g.VertexAttribDivisor(4 + i, 1);
         }
         g.DrawElementsInstanced(glc::Triangles, static_cast<gl::GLsizei>(it->second.indexCount),
-                                glc::UnsignedShort, nullptr, static_cast<gl::GLsizei>(count));
+                                it->second.indexType ? glc::UnsignedInt : glc::UnsignedShort,
+                                nullptr, static_cast<gl::GLsizei>(count));
         for (int i = 0; i < 4; ++i) g.DisableVertexAttribArray(4 + i);
         g.BindVertexArray(0);
     }
@@ -978,7 +1022,8 @@ public:
         g.VertexAttribDivisor(8, 1);
 
         g.DrawElementsInstanced(glc::Triangles, static_cast<gl::GLsizei>(it->second.indexCount),
-                                glc::UnsignedShort, nullptr, static_cast<gl::GLsizei>(count));
+                                it->second.indexType ? glc::UnsignedInt : glc::UnsignedShort,
+                                nullptr, static_cast<gl::GLsizei>(count));
         for (int i = 0; i < 4; ++i) g.DisableVertexAttribArray(4 + i);
         g.DisableVertexAttribArray(8);
         g.BindVertexArray(0);

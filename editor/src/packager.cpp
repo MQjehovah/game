@@ -27,6 +27,7 @@
 #include "neon/bt/behavior_tree.hpp"
 #include "neon/core/json.hpp"
 #include "neon/core/pack.hpp"
+#include "neon/assets/mesh_format.hpp"
 #include "neon/scene/game_manifest.hpp"
 #include "neon/scene/scene_file.hpp"
 #include "neon/script/script.hpp"
@@ -475,9 +476,12 @@ void ValidateMesh(ProjectContext& pc, const std::string& where, const core::Json
     const std::string& k = key->GetString();
     if (k.compare(0, 4, "obj:") == 0) {
         CheckAssetRef(pc, k.substr(4));
-    } else if (k.compare(0, 5, "gltf:") == 0) {
-        CheckAssetRef(pc, k.substr(5));
-        CollectGltfDeps(pc, k.substr(5));
+    } else if (k.compare(0, 5, "gltf:") == 0 || k.compare(0, 4, "fbx:") == 0) {
+        CheckAssetRef(pc, k.substr(k.find(':') + 1));
+        if (k.compare(0, 5, "gltf:") == 0) CollectGltfDeps(pc, k.substr(5));
+    } else if (assets::MeshFormatRegistry::Instance().HasPrefix(k)) {
+        // Any other registered file-backed format.
+        CheckAssetRef(pc, k.substr(k.find(':') + 1));
     } else if (k != "terrain" && k != "cube" && k != "sphere" && k != "plane" &&
                k != "tree" && k != "house" && k != "bush" && k != "hero" &&
                k != "wolf" && k != "rock" && k != "water" && k != "road" &&

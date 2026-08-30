@@ -81,48 +81,160 @@ local function updateCamera(dt)
 end
 
 -- ============ 数据表 ============
+-- 兵种属性: armor(护甲类型 light/medium/heavy) + atk(攻击类型 normal/pierce/magic)
+-- 克制表 MOD[atk][armor] 决定实际伤害倍率 (见下方 MODIFIER)。
 local UNIT_DEFS = {
-  peon     = { hp = 90,  dmg = 6,  range = 2.2, cd = 1.0, speed = 5.5, r = 0.7, cost = 75,  bt = 6,  name = "苦工", prefab = "unit_peon" },
-  footman  = { hp = 260, dmg = 22, range = 2.4, cd = 1.1, speed = 4.6, r = 0.8, cost = 120, bt = 9,  name = "步兵", prefab = "unit_footman" },
-  rifleman = { hp = 160, dmg = 21, range = 12,  cd = 1.6, speed = 4.2, r = 0.7, cost = 180, bt = 12, name = "火枪手", ranged = true, prefab = "unit_rifleman" },
-  grunt    = { hp = 200, dmg = 16, range = 2.4, cd = 1.2, speed = 4.8, r = 0.8, name = "兽人步兵", prefab = "unit_grunt" },
+  peon     = { hp = 90,  dmg = 6,  range = 2.2, cd = 1.0, speed = 5.5, r = 0.7, cost = 75,  bt = 6,  name = "苦工", prefab = "unit_peon",     armor = "light",  atk = "normal" },
+  footman  = { hp = 260, dmg = 22, range = 2.4, cd = 1.1, speed = 4.6, r = 0.8, cost = 120, bt = 9,  name = "步兵", prefab = "unit_footman", armor = "medium", atk = "normal" },
+  rifleman = { hp = 160, dmg = 21, range = 12,  cd = 1.6, speed = 4.2, r = 0.7, cost = 180, bt = 12, name = "火枪手", ranged = true, prefab = "unit_rifleman", armor = "medium", atk = "pierce" },
+  knight   = { hp = 420, dmg = 28, range = 2.4, cd = 1.3, speed = 4.4, r = 0.9, cost = 260, bt = 14, name = "骑士", prefab = "unit_knight", armor = "heavy",  atk = "normal" },
+  mage     = { hp = 130, dmg = 34, range = 13,  cd = 1.8, speed = 4.0, r = 0.7, cost = 300, bt = 16, name = "法师", ranged = true, prefab = "unit_mage", armor = "light",  atk = "magic" },
+  grunt    = { hp = 200, dmg = 16, range = 2.4, cd = 1.2, speed = 4.8, r = 0.8, name = "兽人步兵", prefab = "unit_grunt", armor = "medium", atk = "normal" },
+  hero     = { hp = 500, dmg = 30, range = 10,  cd = 1.4, speed = 4.8, r = 0.9, name = "英雄·法师", ranged = true, prefab = "unit_mage", armor = "medium", atk = "magic" },
 }
--- 模型朝向修正: 不同来源的模型默认面朝不同 (Kaykit=-Z 正确, CesiumMan=+Z 需翻转 180)
-local YAW_FIX = { peon = math.pi, footman = 0, rifleman = 0, grunt = 0 }
-
+-- 攻击类型 vs 护甲类型的伤害倍率 (norm/pierce/magic × light/medium/heavy)
+local MODIFIER = {
+  normal = { light = 1.0, medium = 1.0, heavy = 0.75 },
+  pierce = { light = 1.3, medium = 1.0, heavy = 0.85 },
+  magic  = { light = 1.0, medium = 1.15, heavy = 1.35 },
+}
 -- 单位动画剪辑 (Kaykit 骨骼模型内嵌; Wolf/苦工无可用 idle/walk 剪辑则不播)
 local CLIPS = {
   footman  = { idle = "Idle", move = "Walking_A", atk = "1H_Melee_Attack_Chop", death = "Death_A" },
   rifleman = { idle = "Idle", move = "Walking_A", atk = "1H_Melee_Attack_Chop", death = "Death_A" },
+  knight   = { idle = "Idle", move = "Walking_A", atk = "1H_Melee_Attack_Chop", death = "Death_A" },
+  mage     = { idle = "Idle", move = "Walking_A", atk = "1H_Melee_Attack_Chop", death = "Death_A" },
   grunt    = { idle = nil, move = "01_Run_Armature_0", atk = nil, death = nil },
+  hero     = { idle = "Idle", move = "Walking_A", atk = "1H_Melee_Attack_Chop", death = "Death_A" },
 }
+-- 模型朝向修正: 不同来源的模型默认面朝不同 (Kaykit=-Z 正确, CesiumMan=+Z 需翻转 180)
+local YAW_FIX = { peon = math.pi, footman = 0, rifleman = 0, knight = 0, mage = 0, grunt = 0, hero = 0 }
 local animState = {}   -- unit.id -> 当前循环 clip
 local dying = {}       -- unit.id -> 死亡动画剩余时间
-
-local BUILD_DEFS = {
-  hall     = { hp = 900, w = 5,  d = 5,  cost = 0,   bt = 0,  name = "大本营", prefab = "bld_hall", trains = { "peon" } },
-  farm     = { hp = 340, w = 2.6, d = 2.6, cost = 80,  bt = 8,  name = "农场", prefab = "bld_farm" },
-  barracks = { hp = 520, w = 3.6, d = 3.2, cost = 160, bt = 14, name = "兵营", prefab = "bld_barracks", trains = { "footman", "rifleman" } },
-  mine     = { hp = 1200, w = 3.4, d = 3.4, name = "金矿", prefab = "fx_mine" },
-  tower    = { hp = 620, w = 1.4, d = 1.4, cost = 220, bt = 14, name = "箭塔", tower = true, range = 14, dmg = 18, cd = 1.4, prefab = "bld_tower" },
-}
-
 -- ============ 状态 ============
 local units, buildings = {}, {}
 local selected, selectedBuilding = {}, nil
 local buildMode = nil
 local atkCd = {}
-local waveT, waveN = 60, 0
+local waveT, waveN = 25, 0
 local gameover, won = false, false
 local ids = 0
+local function dist(x1, z1, x2, z2) return math.sqrt((x1 - x2) ^ 2 + (z1 - z2) ^ 2) end
+local function newId() ids = ids + 1; return ids end
 
+-- ============ 科技 (兵营升级) ============
+-- 玩家科技等级: 每级全体攻击 +12%、生命 +12% (敌方无科技, 纯玩家成长线)。
+local techAtk, techDef = 0, 0
+local TECH_COST = 250       -- 每次升级的金币成本 (随等级递增)
+local function techAtkMul() return 1.0 + techAtk * 0.12 end
+local function techDefMul() return 1.0 + techDef * 0.12 end
+
+-- ============ 英雄技能 ============
+-- 选中英雄时屏幕底部显示技能栏; Q=火球 AoE, W=治疗光环。
+local skillCd = { fire = 0, heal = 0 }   -- 冷却计时
+local SKILL_COOLDOWN = { fire = 6.0, heal = 10.0 }
+local function heroCaster()   -- 当前选中的英雄单位
+  if #selected == 1 and selected[1].kind == "hero" then return selected[1] end
+  return nil
+end
+local function fireball(h)
+  local best, bd = nil, 1e9
+  for _, o in ipairs(units) do if o.team ~= h.team and dist(h.x, h.z, o.x, o.z) < 8 then
+    if dist(h.x, h.z, o.x, o.z) < bd then best, bd = o, dist(h.x, h.z, o.x, o.z) end end end
+  if not best then return end
+  local u = UNIT_DEFS[h.kind]
+  local dir = { x = (best.x - h.x) / (bd + 0.001), y = -0.10, z = (best.z - h.z) / (bd + 0.001) }
+  SpawnProjectile({ x = h.x, y = 2.6, z = h.z }, dir, 26, u.dmg * 1.6, 2.6, h.ent)
+  PlaySfx("shoot")
+end
+local function healHalo(h)
+  for _, o in ipairs(units) do
+    if o.team == h.team and dist(h.x, h.z, o.x, o.z) < 9 and o.hp > 0 and o.hp < o.maxHp then
+      o.hp = math.min(o.maxHp, o.hp + 40)
+      SpawnFloatText(o.x, 2.0, o.z, "+40", false, 0.8)
+    end
+  end
+  SpawnFloatText(h.x, 2.2, h.z, "治疗", false, 1.0)
+end
+-- 技能冷却推进 + 施放入口 (on_update 调用)
+local function updateSkills(dt)
+  for k, v in pairs(skillCd) do skillCd[k] = math.max(0, v - dt) end
+end
+local function tryCast(h, key)
+  if skillCd[key] > 0 then return end
+  skillCd[key] = SKILL_COOLDOWN[key]
+  if key == "fire" then fireball(h) else healHalo(h) end
+end
+-- 英雄技能栏 (选中英雄时, 屏幕右下角两个按钮): Q=火球, W=治疗
+local SKILL_SLOTS = {
+  { key = "fire", name = "火球(Q)", x = 1030, y = 640, w = 110, h = 46 },
+  { key = "heal", name = "治疗(W)", x = 1150, y = 640, w = 110, h = 46 },
+}
+local function skillHit(mx, my)
+  for _, s in ipairs(SKILL_SLOTS) do
+    if mx >= s.x and mx <= s.x + s.w and my >= s.y and my <= s.y + s.h then return s end
+  end
+  return nil
+end
+
+local BUILD_DEFS = {
+  hall     = { hp = 900, w = 5,  d = 5,  cost = 0,   bt = 0,  name = "大本营", prefab = "bld_hall", trains = { "peon" } },
+  farm     = { hp = 340, w = 2.6, d = 2.6, cost = 80,  bt = 8,  name = "农场", prefab = "bld_farm" },
+  barracks = { hp = 520, w = 3.6, d = 3.2, cost = 160, bt = 14, name = "兵营", prefab = "bld_barracks", trains = { "footman", "rifleman", "knight" } },
+  mine     = { hp = 1200, w = 3.4, d = 3.4, name = "金矿", prefab = "fx_mine" },
+  tower    = { hp = 620, w = 1.4, d = 1.4, cost = 220, bt = 14, name = "箭塔", tower = true, range = 14, dmg = 18, cd = 1.4, prefab = "bld_tower" },
+}
+
+-- ============ 状态 ============
 local MINES = {
   { x = 10, z = 62 },
   { x = 92, z = 14 },
 }
 
-local function dist(x1, z1, x2, z2) return math.sqrt((x1 - x2) ^ 2 + (z1 - z2) ^ 2) end
-local function newId() ids = ids + 1; return ids end
+-- ============ 战斗特效 ============
+-- 命中火花: 加色粒子四溅 (单位受击/攻击命中的打击感)
+local function hitFx(x, z, sharp)
+  local y = groundY(x, z) + 0.8
+  EmitParticles({
+    pos = { x = x, y = y, z = z },
+    count = sharp and 10 or 6,
+    speedMin = 2, speedMax = 5,
+    lifeMin = 0.2, lifeMax = 0.45,
+    sizeStart = sharp and 0.35 or 0.25, sizeEnd = 0.04,
+    color = { 1.0, 0.85, 0.35, 0.9 },
+    colorEnd = { 1.0, 0.4, 0.1, 0.0 },
+    gravity = -6,
+    additive = true,
+  })
+end
+-- 死亡爆炸: 大范围粒子 + 冲击波 (单位被击杀)
+local function deathFx(x, z, big)
+  local y = groundY(x, z) + 0.6
+  EmitParticles({
+    pos = { x = x, y = y, z = z },
+    count = big and 22 or 12,
+    speedMin = 3, speedMax = 8,
+    lifeMin = 0.4, lifeMax = 0.9,
+    sizeStart = big and 0.6 or 0.4, sizeEnd = 0.05,
+    color = { 0.9, 0.4, 0.2, 0.95 },
+    colorEnd = { 0.3, 0.2, 0.1, 0.0 },
+    gravity = -8,
+    additive = true,
+  })
+end
+-- 远程攻击弹道火花 (射手开火)
+local function muzzleFx(x, z)
+  local y = groundY(x, z) + 1.2
+  EmitParticles({
+    pos = { x = x, y = y, z = z },
+    count = 4, speedMin = 1, speedMax = 3,
+    lifeMin = 0.1, lifeMax = 0.25,
+    sizeStart = 0.3, sizeEnd = 0.03,
+    color = { 1.0, 0.9, 0.4, 0.9 },
+    colorEnd = { 1.0, 0.5, 0.1, 0.0 },
+    additive = true,
+  })
+end
 
 -- 单位循环动画: clip 变化时才重触发 (PlayAnimation 每帧调用会重置进度)
 local function driveAnim(u, wantClip)
@@ -146,6 +258,7 @@ local function startDeath(u)
   local c = CLIPS[u.kind]
   if c and c.death and u.ent ~= nil then PlayAnimation(u.ent, c.death, false, 0.1) end
   dying[u.id] = { ent = u.ent, t = (c and c.death) and 1.2 or 0.0 }
+  deathFx(u.x, u.z, false)
   if u.team == "enemy" then
     SetVar("gold_player", (GetVar("gold_player") or 0) + 8)
     SpawnFloatText(u.x, 2.0, u.z, "+8", false, 0.8)
@@ -163,6 +276,16 @@ local function spawnUnit(kind, team, x, z)
               yawFix = YAW_FIX[kind] or 0,
               hp = d.hp, maxHp = d.hp, r = d.r, state = "idle", cd = 0,
               tx = x, tz = z, carry = 0 }
+  -- 英雄单位放大 + 更高选中环 (醒目)
+  if ent ~= nil and kind == "hero" then SetScale(ent, 1.35, 1.35, 1.35) end
+  -- 玩家科技: 攻击/生命乘科技加成 (敌方单位不享受)
+  if team == "player" then
+    u.hp = math.floor(u.hp * techDefMul() + 0.5)
+    u.maxHp = u.hp
+    u.atkMul = techAtkMul()
+  else
+    u.atkMul = 1.0
+  end
   units[#units + 1] = u
   return u
 end
@@ -186,6 +309,8 @@ end
 
 local function killBuilding(idx)
   local b = buildings[idx]
+  deathFx(b.x, b.z, true)
+  PlaySfx("splat")
   if b.kind == "hall" then
     gameover = true
     won = (b.team == "enemy")
@@ -227,12 +352,21 @@ local function attackTick(u, target, isB, dt)
   u.cd = UNIT_DEFS[u.kind].cd
   local d = UNIT_DEFS[u.kind]
   playAttackAnim(u)
+  local px, pz = target.x, target.z
+  if d.ranged and u.ent ~= nil then muzzleFx(u.x, u.z) end
+  -- 克制伤害: 攻击类型 × 目标护甲类型的倍率
+  local dtgt = isB and { armor = "medium" } or UNIT_DEFS[target.kind]
+  local mod = (MODIFIER[d.atk] and MODIFIER[d.atk][dtgt.armor]) or 1.0
+  local dmg = math.floor(d.dmg * mod * (u.atkMul or 1.0) + 0.5)
   if isB then
-    damageBuilding(target, d.dmg)
-    SpawnFloatText(target.x, 2.0, target.z, "-" .. d.dmg, false, 0.7)
+    damageBuilding(target, dmg)
+    SpawnFloatText(target.x, 2.0, target.z, "-" .. dmg, false, 0.7)
+    hitFx(px, pz, d.ranged)
+    PlaySfx("splat")
   else
-    damageUnit(target, d.dmg)
-    SpawnFloatText(target.x, 2.2, target.z, "-" .. d.dmg, false, 0.7)
+    damageUnit(target, dmg)
+    SpawnFloatText(target.x, 2.2, target.z, "-" .. dmg, false, 0.7)
+    hitFx(px, pz, d.ranged)
     if d.ranged then
       PlaySfx("shoot")
     else
@@ -381,7 +515,7 @@ local function updateWaves(dt)
   waveT = waveT - dt
   if waveT <= 0 then
     waveN = waveN + 1
-    waveT = 45
+    waveT = 32
     local hx, hz = 78, 58
     local hall = findBuilding("hall", "enemy")
     if hall then hx, hz = hall.x, hall.z + 4 end
@@ -431,6 +565,7 @@ function on_start()
   spawnBuilding("mine", "neutral", 10, 62, true)
   spawnBuilding("mine", "neutral", 92, 14, true)
   for i = 1, 3 do spawnUnit("peon", "player", 20 + i * 2, 30) end
+  spawnUnit("hero", "player", 26, 34)   -- 英雄·法师: 带主动技能, 玩家主力
   spawnBuilding("hall", "enemy", 82, 62, true)
   spawnUnit("peon", "enemy", 78, 58)
   spawnUnit("grunt", "enemy", 80, 55)
@@ -471,6 +606,7 @@ function on_update(e, dt)
     end
   end
   updateWaves(dt)
+  updateSkills(dt)
 
   if not findBuilding("hall", "player") then gameover = true; won = false end
   if not findBuilding("hall", "enemy") then gameover = true; won = true end
@@ -491,6 +627,15 @@ function on_update(e, dt)
       return
     end
     local handled = false
+    -- 英雄技能栏点击 (选中英雄时, 右下角按钮)
+    local hc = heroCaster()
+    if hc then
+      local slot = skillHit(m.x, m.y)
+      if slot then
+        tryCast(hc, slot.key)
+        handled = true
+      end
+    end
     if selectedBuilding and selectedBuilding.done and BUILD_DEFS[selectedBuilding.kind].trains then
       for bi, tkind in ipairs(BUILD_DEFS[selectedBuilding.kind].trains) do
         local s = WorldToScreen(selectedBuilding.x, 0.2, selectedBuilding.z)
@@ -506,6 +651,26 @@ function on_update(e, dt)
             end
             handled = true
           end
+        end
+      end
+    end
+    -- 兵营升级科技按钮 (在训练按钮下方, 竖排)
+    if selectedBuilding and selectedBuilding.done and selectedBuilding.kind == "barracks" then
+      local s = WorldToScreen(selectedBuilding.x, 0.2, selectedBuilding.z)
+      if s and s.x then
+        local bi = #(BUILD_DEFS[selectedBuilding.kind].trains)
+        local by = s.y - 20 + bi * 34 + 6
+        local bx = s.x + 40
+        if m.x >= bx and m.x <= bx + 200 and m.y >= by and m.y <= by + 30 then
+          local cost = TECH_COST * (math.max(techAtk, techDef) + 1)
+          local g = GetVar("gold_player") or 0
+          if g >= cost then
+            SetVar("gold_player", g - cost)
+            -- 交替提升攻击/防御科技
+            if (techAtk + techDef) % 2 == 0 then techAtk = techAtk + 1 else techDef = techDef + 1 end
+            PlaySfx("click")
+          end
+          handled = true
         end
       end
     end
@@ -698,6 +863,17 @@ function on_render()
           DrawRectOutline(bx, by, 170, 30, 1.5, afford and 0.4 or 0.6, afford and 0.9 or 0.4, afford and 1 or 0.4, 0.9)
           DrawText(UNIT_DEFS[tkind].name .. " " .. UNIT_DEFS[tkind].cost .. "金", bx + 10, by + 15, 13,
                    afford and 1 or 0.6, afford and 1 or 0.6, afford and 1 or 0.6, 1, false, true)
+         end
+        -- 兵营升级科技按钮 (训练按钮下方): 交替升攻/防
+        if b.kind == "barracks" then
+          local bi = #(BUILD_DEFS[b.kind].trains)
+          local bx, by = s2.x + 46, s2.y - 24 + bi * 32
+          local cost = TECH_COST * (math.max(techAtk, techDef) + 1)
+          local afford = (GetVar("gold_player") or 0) >= cost
+          DrawRect(bx, by, 200, 30, 0.1, 0.15, 0.22, 0.95)
+          DrawRectOutline(bx, by, 200, 30, 1.5, afford and 0.4 or 0.6, afford and 0.9 or 0.4, afford and 1 or 0.4, 0.9)
+          DrawText(("升级 攻 Lv%d | 防 Lv%d  %d金"):format(techAtk, techDef, cost), bx + 10, by + 15, 13,
+                   afford and 1 or 0.6, afford and 1 or 0.6, afford and 1 or 0.6, 1, false, true)
         end
       end
     end
@@ -721,6 +897,22 @@ function on_render()
     drawGroundRing(selectedBuilding.x, selectedBuilding.z, selectedBuilding.w * 0.75,
                    { 0.3, 1, 0.4, 1 }, 30)
     -- 训练按钮由建筑循环绘制 (上方)
+  end
+
+  -- 英雄技能栏 (选中英雄时, 右下角): Q=火球 W=治疗 (带冷却遮罩)
+  local hc2 = heroCaster()
+  if hc2 then
+    for _, s in ipairs(SKILL_SLOTS) do
+      local cd = skillCd[s.key]
+      local ready = cd <= 0
+      DrawRect(s.x, s.y, s.w, s.h, 0.1, 0.15, 0.22, 0.95)
+      DrawRectOutline(s.x, s.y, s.w, s.h, 1.5, ready and 0.4 or 0.6, ready and 0.9 or 0.4, ready and 1 or 0.4, 0.9)
+      DrawText(s.name, s.x + 10, s.y + 23, 14, ready and 1 or 0.5, ready and 1 or 0.5, ready and 1 or 0.5, 1, false, true)
+      if not ready then
+        local f = clamp(cd / SKILL_COOLDOWN[s.key], 0, 1)
+        DrawRect(s.x, s.y, s.w * f, s.h, 0.0, 0.0, 0.0, 0.55)
+      end
+    end
   end
 
   -- 小地图 (左下角): 地图 + 单位/建筑/金矿点 + 相机框

@@ -79,6 +79,24 @@ struct GltfAsset {
     core::Result<std::vector<float>> ReadAccessorFloats(int accessorIndex) const;
 };
 
+// One renderable part of an FBX model: its world transform, the uploaded GPU
+// mesh (32-bit indices when it exceeds 65535 verts) and a default material.
+// ufbx loads the scene as many mesh parts; the runtime turns each into a
+// DrawItem so a whole "ancient village" model renders as its parts.
+struct FbxMeshNode {
+    math::Mat4 transform;
+    gfx::Mesh mesh;
+    gfx::Material material;
+    std::string name;
+};
+
+// FBX asset loaded via the vendored ufbx library. Geometry is merged per part;
+// materials default to a tinted lit material (the scene config can override).
+struct FbxAsset {
+    std::vector<FbxMeshNode> nodes;
+    bool Valid() const { return !nodes.empty(); }
+};
+
 // Aggregate statistics for the editor "resource" panel.
 struct AssetStats {
     size_t textures = 0;
@@ -123,6 +141,10 @@ public:
     ~AssetManager();
 
     void Init(gfx::Renderer* renderer) { renderer_ = renderer; }
+
+    // The renderer used to upload GPU meshes/textures. Mesh-format loaders need
+    // it to build gfx::Mesh from parsed geometry (see MeshFormatRegistry).
+    gfx::Renderer* Renderer() { return renderer_; }
 
     gfx::Texture LoadTexture(const std::string& path);
     // Compression-aware overload; see TextureLoadOptions.
@@ -178,6 +200,11 @@ public:
     // materials (baseColor/metalRoughness/occlusion/emissive), node transforms.
     // Handles both .gltf (JSON + external .bin) and .glb (binary container).
     GltfAsset LoadGLTF(const std::string& path);
+    // FBX importer via the vendored ufbx library: reads binary/ASCII FBX and
+    // returns one FbxMeshNode per mesh part (world transform applied, 32-bit
+    // indices when a part exceeds 65535 verts). Materials default to a white
+    // lit tint; the scene's mesh.material can override per-entity.
+    FbxAsset LoadFBX(const std::string& path);
     // Shared importer body: `root` is the parsed glTF JSON, `bin` the binary
     // buffer (external .bin contents or the GLB BIN chunk). A13: takes ALL
     // declared buffers (multi-buffer assets keep per-bufferView data intact).
@@ -306,6 +333,9 @@ private:
     // meshes instead of re-uploading per entity.
     std::map<std::string, GltfAsset> gltfs_;
     std::map<std::string, uint64_t> gltfMtimes_;
+    // FBX assets (vendored ufbx loader): cached by path like glTF so a model
+    // referenced by several entities shares one set of GPU meshes.
+    std::map<std::string, FbxAsset> fbxCache_;
     std::map<std::pair<std::string, int>, gfx::Font> fonts_;
     std::map<std::string, uint64_t> textureMtimes_;
     std::map<std::string, uint64_t> meshMtimes_;

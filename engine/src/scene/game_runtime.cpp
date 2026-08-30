@@ -10,6 +10,7 @@
 
 #include "neon/assets/asset_manager.hpp"
 #include "neon/assets/asset_path.hpp"
+#include "neon/assets/mesh_format.hpp"
 #include "neon/assets/asset_variants.hpp"
 #include "neon/core/log.hpp"
 #include "neon/core/pack.hpp"
@@ -1499,8 +1500,9 @@ void GameRuntime::ResolveDrawItem(DrawItem& item, gfx::Renderer& renderer) {
     const SceneTerrain* terr = key == "terrain" ? world_.Get<SceneTerrain>(item.ent) : nullptr;
     gfx::Mesh mesh = ResolveMeshKey(renderer, key, terr);
     if (!mesh.Valid()) {
-        const bool knownPrefix = key.compare(0, 4, "obj:") == 0 || key.compare(0, 5, "gltf:") == 0 ||
-                                 key == "cube" || key == "sphere" || key == "plane" ||
+        const bool knownPrefix =
+            assets::MeshFormatRegistry::Instance().HasPrefix(key) || key == "cube" ||
+            key == "sphere" || key == "plane" ||
                                  key == "terrain";
         NEON_LOG_CAT(neon::core::LogCategory::Scene, neon::core::LogLevel::Warn,
                      knownPrefix ? "runtime: mesh '%s' failed to load (skipped)"
@@ -1553,12 +1555,13 @@ void GameRuntime::ResolveDrawItem(DrawItem& item, gfx::Renderer& renderer) {
 gfx::Mesh GameRuntime::ResolveMeshKey(gfx::Renderer& renderer, const std::string& key,
                                       const SceneTerrain* terrain) {
     gfx::Mesh mesh;
-    if (key.compare(0, 4, "obj:") == 0) {
-        mesh = cfg_.assets->LoadMeshOBJ(FullAssetPath(key.substr(4)));
-    } else if (key.compare(0, 5, "gltf:") == 0) {
-        assets::GltfAsset gltf =
-            cfg_.assets->LoadGLTF(FullAssetPath(key.substr(5)));
-        if (!gltf.nodes.empty()) mesh = gltf.nodes[0].mesh;
+    // File-backed formats (obj/gltf/fbx/...) resolve through the mesh-format
+    // registry, so adding a format only needs a Register() call. `renderer` is
+    // passed to procedural primitives below.
+    if (assets::MeshFormatRegistry::Instance().HasPrefix(key)) {
+        assets::MeshLoadResult res =
+            assets::MeshFormatRegistry::Instance().Load(*cfg_.assets, key);
+        mesh = res.mesh;
     } else if (key == "cube") {
         mesh = gfx::Mesh::CreateCube(renderer, 1.0f, 1.0f, 1.0f, "cube");
     } else if (key == "sphere") {

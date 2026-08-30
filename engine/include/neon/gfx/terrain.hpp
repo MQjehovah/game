@@ -21,10 +21,11 @@ struct TerrainLayerConfig {
     math::Vec4 grass{0.35f, 0.62f, 0.30f, 1.0f};
     math::Vec4 dirt{0.50f, 0.42f, 0.28f, 1.0f};
     math::Vec4 rock{0.55f, 0.52f, 0.48f, 1.0f};
-    float grassMaxHeight = 4.5f;  // world Y where grass fades to dirt
-    float dirtMaxHeight = 8.0f;   // world Y where dirt fades to rock
-    float rockSlope = 0.30f;      // slope (1 - normal.y) where rock starts
-    float blendWidth = 0.8f;      // smoothstep band width (world Y / slope)
+    float grassMaxHeight = 6.0f;   // world Y where grass fades to dirt
+    float dirtMaxHeight = 12.0f;   // world Y where dirt fades to rock
+    float rockSlope = 0.35f;       // slope (1 - normal.y) where rock starts
+    float blendWidth = 2.5f;       // smoothstep band (world Y) for the height ramp
+    float slopeBlend = 0.15f;      // smoothstep band for the slope ramp (0..1)
 };
 
 // Albedo colour of a terrain vertex after the layered height/slope blend.

@@ -43,6 +43,10 @@ struct MeshData {
     uint32_t triangleCount = 0;
     std::vector<Vertex3D> cpuVerts;
     std::vector<uint16_t> cpuIndices;
+    // 32-bit index variant for meshes that exceed 65535 vertices (FBX). When
+    // non-empty, indexType=1 and cpuIndicesU32 holds the triangle indices.
+    std::vector<uint32_t> cpuIndicesU32;
+    uint32_t indexType = 0;
     // Skinned-mesh CPU data: 4 joints + 4 weights per vertex, tightly packed.
     bool skinned = false;
     int skinIndex = -1;
@@ -82,6 +86,11 @@ public:
     static Mesh CreateFromData(Renderer& renderer, const Vertex3D* vertices, uint32_t vertexCount,
                                const uint16_t* indices, uint32_t indexCount,
                                const std::string& name = "mesh");
+    // 32-bit index variant for meshes with >65535 vertices (FBX). Built via the
+    // backend's CreateMeshU32; the handle records indexType=1 for DrawMesh.
+    static Mesh CreateFromDataU32(Renderer& renderer, const Vertex3D* vertices,
+                                  uint32_t vertexCount, const uint32_t* indices,
+                                  uint32_t indexCount, const std::string& name = "mesh");
 
     bool Valid() const { return data_ && data_->handle.Valid(); }
     // Accessors are null-safe: an invalid (default-constructed) mesh returns
@@ -106,6 +115,10 @@ public:
     const std::vector<uint16_t>& CpuIndices() const {
         static const std::vector<uint16_t> kEmpty;
         return data_ ? data_->cpuIndices : kEmpty;
+    }
+    const std::vector<uint32_t>& CpuIndicesU32() const {
+        static const std::vector<uint32_t> kEmpty;
+        return data_ ? data_->cpuIndicesU32 : kEmpty;
     }
     bool Skinned() const { return data_ ? data_->skinned : false; }
     int SkinIndex() const { return data_ ? data_->skinIndex : -1; }

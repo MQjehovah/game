@@ -38,6 +38,10 @@ struct MeshHandle {
     uint32_t vbo = 0;
     uint32_t ibo = 0;
     uint32_t indexCount = 0;
+    // 0 = uint16 indices (legacy, all procedural/OBJ/glTF meshes), 1 = uint32
+    // indices (large FBX geometry merged into one mesh). DrawMesh selects the
+    // GL element type from this so the existing 16-bit pipeline is untouched.
+    uint32_t indexType = 0;
     bool Valid() const { return vao != 0; }
 };
 
@@ -134,6 +138,12 @@ public:
     // joints(4f) weights(4f) = 80 bytes (see gfx::Vertex3D).
     virtual MeshHandle CreateMesh(const void* vertices, uint32_t vertexCount,
                                   const uint16_t* indices, uint32_t indexCount) = 0;
+
+    // Same fixed vertex layout but with 32-bit indices (meshes with more than
+    // 65535 vertices — e.g. a merged FBX model). The returned handle carries
+    // indexType=1 so DrawMesh uses GL_UNSIGNED_INT.
+    virtual MeshHandle CreateMeshU32(const void* vertices, uint32_t vertexCount,
+                                     const uint32_t* indices, uint32_t indexCount) = 0;
     virtual void DestroyMesh(const MeshHandle& mesh) = 0;
     // Replaces the vertex buffer contents of an existing mesh (same layout as
     // CreateMesh). Used when skinned joint/weight data is attached after the

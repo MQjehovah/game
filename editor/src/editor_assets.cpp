@@ -1,6 +1,6 @@
 #include "editor.hpp"
 #include "editor_util.hpp"
-
+#include "neon/assets/mesh_format.hpp"
 #include <cstdio>
 #include <fstream>
 #include <sstream>
@@ -40,22 +40,28 @@ void EditorApp::GenerateMeshThumbnails() {
         // Resolve the asset's first mesh; a failed load caches a "miss" (same
         // mtime) so the panel only retries when the file actually changes.
         const std::string ext = ExtLower(path);
-        // LoadSkinnedModel handles .gltf AND .glb, static (no skin) AND skinned
-        // models, and renders the SKINNED bind pose (skinning can flip a model
-        // upright from its raw vertex orientation — a plain DrawMesh of the raw
-        // vertices would show e.g. CesiumMan upside down).
+        // Mesh models dispatch through the mesh-format registry (unified). The
+        // thumbnail wraps the first mesh into a skeleton-less SkinnedModel so
+        // the shared preview path draws it (static path, bones.empty()).
         scene::SkinnedModel sm;
         bool loaded = false;
-        if (ext == ".obj") {
-            gfx::Mesh m = assetMgr_.LoadMeshOBJ(path);
-            if (m.Valid()) {
+        const std::string prefix =
+            assets::MeshFormatRegistry::Instance().FormatFromExt(path);
+        if (!prefix.empty()) {
+            assets::MeshLoadResult res =
+                assets::MeshFormatRegistry::Instance().Load(assetMgr_, prefix + ":" + path);
+            if (res.mesh.Valid()) {
                 scene::SkinnedModel::Part p;
-                p.mesh = m;
-                p.material = gfx::Material::Lit({}, gfx::Color{0.85f, 0.85f, 0.92f, 1.0f}, 16.0f);
+                p.mesh = res.mesh;
+                p.material = gfx::Material::Lit({}, gfx::Color::White, 16.0f);
                 sm.parts.push_back(std::move(p));
                 loaded = true;
             }
         } else if (ext == ".gltf" || ext == ".glb") {
+            // LoadSkinnedModel handles .gltf AND .glb, static (no skin) AND skinned
+            // models, and renders the SKINNED bind pose (skinning can flip a model
+            // upright from its raw vertex orientation — a plain DrawMesh of the raw
+            // vertices would show e.g. CesiumMan upside down).
             core::Result<scene::SkinnedModel> r = scene::LoadSkinnedModel(assetMgr_, path);
             if (r.Ok()) {
                 sm = std::move(r.Value());
@@ -301,15 +307,23 @@ void EditorApp::PollHotReload() {
     if (!changedPaths.empty()) {
         for (const std::string& p : changedPaths) {
             const std::string ext = ExtLower(p);
-            if (ext == ".obj") {
+            const std::string prefix =
+                assets::MeshFormatRegistry::Instance().FormatFromExt(p);
+            if (prefix == "obj") {
                 assetMgr_.ReloadMeshOBJ(p);
-            } else if (ext == ".gltf") {
+            } else if (prefix == "gltf" || ext == ".glb") {
                 // Drop the resolved-model cache so the next ResolveMesh
                 // re-parses the updated file. (The old GPU meshes are not
                 // explicitly destroyed; same as the pre-existing mesh path.)
                 skinnedModelCache_.erase(p);
                 gltfStaticMeshCache_.erase(p);
                 gltfStaticMaterialCache_.erase(p);
+            } else if (!prefix.empty()) {
+                // FBX / future formats have no per-format reload API yet: fall
+                // back to a texture reload no-op is wrong, so log it. (Hot reload
+                // for these formats can be added with the format's loader.)
+                NEON_LOG_INFO("Editor: hot reload '%s' (format '%s') — full reload",
+                              p.c_str(), prefix.c_str());
             } else {
                 assetMgr_.ReloadTexture(p);
             }

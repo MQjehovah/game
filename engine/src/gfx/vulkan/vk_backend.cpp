@@ -992,6 +992,15 @@ public:
         return {nextMeshId_, nextMeshId_, nextMeshId_, m.indexCount};
     }
 
+    MeshHandle CreateMeshU32(const void* vertices, uint32_t vertexCount,
+                             const uint32_t* indices, uint32_t indexCount) override {
+        // TODO(Vulkan): 32-bit index buffer support. Vulkan is opt-in and not
+        // enabled in the default build; FBX (>65535 verts) falls back to a
+        // load failure until a u32 index path is added here.
+        (void)vertices; (void)vertexCount; (void)indices; (void)indexCount;
+        return {};
+    }
+
     void DestroyMesh(const MeshHandle& mesh) override {
         auto it = meshes_.find(mesh.vao);
         if (it == meshes_.end()) return;

@@ -2,6 +2,7 @@
 #include "editor_history.hpp"
 #include "editor_util.hpp"
 #include "neon/assets/asset_path.hpp"
+#include "neon/assets/mesh_format.hpp"
 
 #include <filesystem>
 #include <fstream>
@@ -128,7 +129,7 @@ void EditorApp::AddEntity(const std::string& meshKey) {
         }
         return;
     }
-    if (meshKey.rfind("obj:", 0) == 0 || meshKey.rfind("gltf:", 0) == 0) {
+    if (assets::MeshFormatRegistry::Instance().HasPrefix(meshKey)) {
         std::string path = meshKey.substr(meshKey.find(':') + 1);
         size_t slash = path.find_last_of("/\\");
         size_t dot = path.find_last_of('.');
@@ -278,9 +279,12 @@ bool EditorApp::ResolveMesh(SceneEntity& e) {
     } else if (key == "road") {
         e.mesh = gfx::Mesh::CreatePlane(renderer_, 1.0f, 1.0f, 1, 1, "road");
         e.material = gfx::Material::Lit({}, e.tint, 4.0f);
-    } else if (key.rfind("obj:", 0) == 0) {
-        e.mesh = assetMgr_.LoadMeshOBJ(assets::NormalizeAssetPath(key.substr(4)));
-        e.material = gfx::Material::Lit({}, e.tint, 8.0f);
+    } else if (key.rfind("obj:", 0) == 0 || key.rfind("fbx:", 0) == 0) {
+        // OBJ / FBX route through the mesh-format registry (unified result).
+        assets::MeshLoadResult res =
+            assets::MeshFormatRegistry::Instance().Load(assetMgr_, key);
+        e.mesh = res.mesh;
+        e.material = res.material;
     } else if (key.rfind("gltf:", 0) == 0) {
         const std::string gltfPath = assets::NormalizeAssetPath(key.substr(5));
         // Cache the resolved model per path: the first entity pays the full
@@ -1478,11 +1482,12 @@ void EditorApp::NormalizeEntityAssetPaths() {
         return p;
     };
     for (SceneEntity& e : entities_) {
-        // File-backed mesh keys carry a path after "obj:"/"gltf:".
-        if (e.meshKey.rfind("obj:", 0) == 0)
-            e.meshKey = "obj:" + toRel(e.meshKey.substr(4));
-        else if (e.meshKey.rfind("gltf:", 0) == 0)
-            e.meshKey = "gltf:" + toRel(e.meshKey.substr(5));
+        // File-backed mesh keys carry a path after "<format>:" (obj/gltf/fbx).
+        if (std::string fp = assets::MeshFormatRegistry::Instance().MatchPrefix(e.meshKey, nullptr);
+            !fp.empty() && e.meshKey.find(':') != std::string::npos) {
+            const size_t colon = e.meshKey.find(':');
+            e.meshKey = e.meshKey.substr(0, colon + 1) + toRel(e.meshKey.substr(colon + 1));
+        }
         auto norm = [&toRel](std::string& p) { if (!p.empty()) p = toRel(p); };
         norm(e.albedoTex);
         norm(e.mrTex);

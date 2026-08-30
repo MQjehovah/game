@@ -5,6 +5,7 @@
 #include <utility>
 
 #include "neon/assets/asset_manager.hpp"
+#include "neon/assets/mesh_format.hpp"
 #include "neon/core/log.hpp"
 
 namespace neon::scene {
@@ -600,10 +601,10 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                      m.meshKey = key->GetString();
                      if (assets) {
                          const std::string& k = m.meshKey;
-                         if (k.compare(0, 4, "obj:") != 0 && k.compare(0, 5, "gltf:") != 0) {
+                         if (!assets::MeshFormatRegistry::Instance().HasPrefix(k)) {
                              if (err)
                                  *err = "component 'mesh' meshKey '" + k +
-                                        "' has no known loader prefix (expected 'obj:' or 'gltf:')";
+                                        "' has no known mesh-format loader prefix";
                              return false;
                          }
                      }
@@ -647,12 +648,10 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                              }
                              if (assets) {
                                  const std::string& lkStr = lk->GetString();
-                                 if (lkStr.compare(0, 4, "obj:") != 0 &&
-                                     lkStr.compare(0, 5, "gltf:") != 0) {
+                                 if (!assets::MeshFormatRegistry::Instance().HasPrefix(lkStr)) {
                                      if (err)
                                          *err = "component 'mesh' lod meshKey '" + lkStr +
-                                                "' has no known loader prefix (expected 'obj:' or "
-                                                "'gltf:')";
+                                                "' has no known mesh-format loader prefix";
                                      return false;
                                  }
                              }

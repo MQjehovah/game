@@ -228,6 +228,28 @@ Mesh Mesh::CreateFromData(Renderer& renderer, const Vertex3D* vertices, uint32_t
     return mesh;
 }
 
+Mesh Mesh::CreateFromDataU32(Renderer& renderer, const Vertex3D* vertices,
+                             uint32_t vertexCount, const uint32_t* indices,
+                             uint32_t indexCount, const std::string& name) {
+    Mesh mesh;
+    mesh.data_ = std::make_shared<MeshData>();
+    mesh.data_->name = name;
+    mesh.data_->backend = renderer.Backend();
+    mesh.data_->handle =
+        renderer.Backend()->CreateMeshU32(vertices, vertexCount, indices, indexCount);
+    mesh.data_->indexType = 1;
+    mesh.data_->triangleCount = indexCount / 3;
+    mesh.data_->cpuVerts.assign(vertices, vertices + vertexCount);
+    mesh.data_->cpuIndicesU32.assign(indices, indices + indexCount);
+    math::AABB bounds;
+    bounds.min = {1e30f, 1e30f, 1e30f};
+    bounds.max = {-1e30f, -1e30f, -1e30f};
+    for (uint32_t i = 0; i < vertexCount; ++i) bounds.Expand(vertices[i].pos);
+    if (vertexCount == 0) bounds = {};
+    mesh.data_->bounds = bounds;
+    return mesh;
+}
+
 void Mesh::AttachSkinData(std::vector<uint16_t> jointIds, std::vector<float> jointWeights,
                           int skinIndex) {
     if (!data_) return;

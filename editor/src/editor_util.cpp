@@ -29,6 +29,7 @@
 #include <utime.h>
 #endif
 
+#include "neon/assets/mesh_format.hpp"
 #include "neon/gfx/renderer.hpp"
 #include "neon/core/log.hpp"
 
@@ -267,9 +268,9 @@ std::string ResolveMeshAssetPath(const std::string& rel, const std::string& proj
 std::string MeshKeyAssetPath(const std::string& key, const std::string& projectDir) {
     std::string rel;
     if (key == "helmet") rel = "assets/models/DamagedHelmet/DamagedHelmet.gltf";
-    else if (key.rfind("obj:", 0) == 0) rel = key.substr(4);
-    else if (key.rfind("gltf:", 0) == 0) rel = key.substr(5);
-    else return {};
+    else if (assets::MeshFormatRegistry::Instance().MatchPrefix(key, &rel).empty())
+        return {};  // not a file-backed mesh key
+    // obj/gltf/fbx: the meshKey's path suffix IS the asset path.
     return ResolveMeshAssetPath(rel, projectDir);
 }
 
