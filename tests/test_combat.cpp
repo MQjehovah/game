@@ -16,9 +16,11 @@
 #include "neon/scene/systems/prefab_system.hpp"
 #include "neon/scene/systems/projectile_system.hpp"
 #include "neon/scene/systems/scene_tree_system.hpp"
+#include "neon/scene/systems/script_canvas.hpp"
 #include "neon/scene/systems/status_system.hpp"
 #include "neon/scene/systems/tween_system.hpp"
 #include "helpers.hpp"
+#include "test_backend.hpp"
 
 using namespace neon;
 
@@ -1461,4 +1463,56 @@ TEST(SceneTreeSystemStandalone) {
 
     // Unknown entity -> identity.
     CHECK(translation(tree.CachedLocalToWorld(ecs::Entity{})).x == 0.0f);
+}
+
+// Task 10: ScriptCanvas 独立单测（脱离 GameRuntime，直接测拆分后的脚本 2D
+// 画布子系统）：命令容器（Begin/Add/Count/Empty）、Commands() 指针接线
+// （on_render 期间 scriptCtx_.draw2d 指向它）、Flush 把命令刷进 renderer
+// overlay（headless NullBackend，无窗口无 GPU）。
+TEST(ScriptCanvasStandalone) {
+    scene::ScriptCanvas canvas;
+    CHECK(canvas.Empty());
+    CHECK_EQ(canvas.Count(), 0u);
+
+    // Commands() exposes the live buffer the script bindings push into.
+    std::vector<script::Draw2DCmd>* cmds = canvas.Commands();
+    CHECK(cmds != nullptr);
+    CHECK_EQ(cmds->size(), 0u);
+
+    script::Draw2DCmd rect;
+    rect.kind = script::Draw2DCmd::Kind::Rect;
+    rect.x = 10.0f;
+    rect.y = 20.0f;
+    rect.w = 30.0f;
+    rect.h = 40.0f;
+    canvas.Add(rect);
+
+    script::Draw2DCmd outline;
+    outline.kind = script::Draw2DCmd::Kind::RectOutline;
+    outline.thickness = 2.0f;
+    canvas.Add(outline);
+
+    script::Draw2DCmd text;
+    text.kind = script::Draw2DCmd::Kind::Text;
+    text.text = "hi";
+    text.size = 16.0f;
+    canvas.Add(text);
+
+    CHECK(!canvas.Empty());
+    CHECK_EQ(canvas.Count(), 3u);
+    CHECK_EQ(cmds->size(), 3u); // same buffer as Add
+
+    // Flush into a headless renderer: Rect/RectOutline push overlay quads, Text
+    // is skipped (invalid default font). No window/GPU needed.
+    gfx::Renderer renderer;
+    renderer.AttachBackendForTesting(std::make_unique<test::NullBackend>());
+    gfx::Font font;
+    CHECK(!font.Valid());
+    canvas.Flush(renderer, font);
+    CHECK_EQ(canvas.Count(), 3u); // Flush does not consume the buffer
+
+    canvas.Begin();
+    CHECK(canvas.Empty());
+    CHECK_EQ(canvas.Count(), 0u);
+    CHECK_EQ(cmds->size(), 0u);
 }

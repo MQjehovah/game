@@ -1934,7 +1934,7 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera,
     // runtime flushes the buffer into the renderer's 2D overlay so 2D games
     // (e.g. the PvZ project) need zero C++ gameplay code.
     if (hosts_.lua || hosts_.js) {
-        scriptCtx_.draw2d = &draw2d_;
+        scriptCtx_.draw2d = scriptCanvas_.Commands();
         // Snapshot the host's live 2D mapping (Set2DViewport) so on_update's
         // InputMousePos() and UI hit-tests keep design coordinates between
         // renders (the renderer resets its 2D viewport after the frame).
@@ -1943,7 +1943,7 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera,
         scriptCtx_.screenToUi = [this](const math::Vec2& p) {
             return (p - uiOffset_) / uiScale_;
         };
-        draw2d_.clear();
+        scriptCanvas_.Begin();
         scriptCtx_.currentEntity = {};
         // Global handlers can be defined by either backend; Lua wins ties
         // (deterministic order).
@@ -1960,7 +1960,7 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera,
         // G5-4-4: the on_render canvas is HUD �?the host flushes it AFTER the
         // scene is composited (FlushCanvas), so its colors stay exactly as
         // authored instead of being tone-mapped/bloomed with the 3D scene.
-        // FlushDraw2D is called from FlushCanvas (post-EndScene).
+        // ScriptCanvas::Flush is called from FlushCanvas (post-EndScene).
     }
 
     // Data-driven UI (IUiSystem) input/click handling runs in Tick (before
@@ -2001,32 +2001,9 @@ math::Mat4 GameRuntime::CachedLocalToWorld(ecs::Entity e) const {
     return sceneTree_.CachedLocalToWorld(e);
 }
 
-void GameRuntime::FlushDraw2D(gfx::Renderer& renderer) {
-    for (const script::Draw2DCmd& c : draw2d_) {
-        switch (c.kind) {
-            case script::Draw2DCmd::Kind::Rect:
-                // Textured quads use downward-v UVs (top row = v0): DrawQuad's
-                // DEFAULT is the GL bottom-up convention, which drew every
-                // script-canvas DrawSprite upside down.
-                renderer.DrawQuad({c.x, c.y}, {c.w, c.h}, {c.r, c.g, c.b, c.a},
-                                  c.texture, {0.0f, 0.0f}, {1.0f, 1.0f});
-                break;
-            case script::Draw2DCmd::Kind::RectOutline:
-                renderer.DrawRectOutline({c.x, c.y, c.w, c.h}, c.thickness,
-                                         {c.r, c.g, c.b, c.a});
-                break;
-            case script::Draw2DCmd::Kind::Text:
-                if (cfg_.font2d.Valid())
-                    renderer.DrawText(cfg_.font2d, c.text, {c.x, c.y}, c.size,
-                                      {c.r, c.g, c.b, c.a}, c.centerX, c.centerY);
-                break;
-        }
-    }
-}
-
 void GameRuntime::FlushCanvas(gfx::Renderer& renderer) {
-    if (draw2d_.empty()) return;
-    FlushDraw2D(renderer);
+    if (scriptCanvas_.Empty()) return;
+    scriptCanvas_.Flush(renderer, cfg_.font2d);
 }
 
 void GameRuntime::InitSystemGraph() {

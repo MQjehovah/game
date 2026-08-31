@@ -35,6 +35,7 @@
 #include "neon/scene/systems/projectile_system.hpp"
 #include "neon/scene/systems/scene_particle_system.hpp"
 #include "neon/scene/systems/scene_tree_system.hpp"
+#include "neon/scene/systems/script_canvas.hpp"
 #include "neon/scene/systems/status_system.hpp"
 #include "neon/scene/systems/tween_system.hpp"
 #include "neon/script/bindings.hpp"
@@ -298,7 +299,8 @@ public:
     // G5-4-4: flushes the script 2D canvas (on_render) into the renderer's 2D
     // overlay. The host MUST call this AFTER EndScene (the scene composited) so
     // the HUD keeps its authored colors instead of being tone-mapped with the
-    // 3D scene. No-op when on_render produced nothing.
+    // 3D scene. No-op when on_render produced nothing. Forwards to
+    // scriptCanvas_ (ScriptCanvas; Task 10).
     void FlushCanvas(gfx::Renderer& renderer);
 
     // Stats for the editor profiler / debug panels.
@@ -530,8 +532,6 @@ private:
     // Advances every resolved skinned model's default clip (fixed-step
     // animation; deterministic like the rest of the simulation).
     void TickAnimations(float dt);
-    // Flushes the script 2D canvas (draw2d_) into the renderer overlay.
-    void FlushDraw2D(gfx::Renderer& renderer);
     // Loads every assets/prefabs/*.json under cfg_.scriptBaseDir into the
     // PrefabSystem (no-op when the base dir is empty or the prefabs dir is
     // absent). Scene entities can then reference prefabs by name, matching how
@@ -660,7 +660,10 @@ private:
     StatusSystem status_;
     PluginSystem plugins_; // runtime plugins (load/tick/stop lifecycle; Task 8)
     scene::ComponentRegistry compReg_; // built-in + data component factories
-    std::vector<script::Draw2DCmd> draw2d_; // script 2D canvas (on_render)
+    // Script 2D canvas (on_render immediate-mode draw commands; Task 10):
+    // GameRuntime wires scriptCtx_.draw2d to its Commands() during on_render
+    // and forwards FlushCanvas to it after the scene is composited.
+    ScriptCanvas scriptCanvas_;
     std::shared_ptr<ui::IUiSystem> ui_;     // replaceable game UI system
     std::set<uint64_t> hiddenEntities_;     // SetVisible hide list (EntityKey)
     script::InputMap inputMap_;             // Godot-style actions (input.json)
