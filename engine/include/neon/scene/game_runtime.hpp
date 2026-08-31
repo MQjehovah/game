@@ -28,6 +28,7 @@
 #include "neon/scene/scene_file.hpp"
 #include "neon/scene/skinned_model.hpp"
 #include "neon/scene/status.hpp"
+#include "neon/scene/systems/animation_system.hpp"
 #include "neon/scene/systems/hud_system.hpp"
 #include "neon/scene/systems/lagcomp_system.hpp"
 #include "neon/scene/systems/plugin_system.hpp"
@@ -460,30 +461,14 @@ private:
         gfx::Material mat;
         // Animated skinned glTF (meshKey "gltf:...") resolved once; when set,
         // drawing uses the skinned parts + bone matrices instead of `mesh`.
+        // The per-entity ANIMATION state (override clip / ASM / pose clock)
+        // lives in AnimationSystem (entityKey -> State, registered at
+        // ResolveDrawItem), NOT here - DrawItem is a render reference only, so
+        // headless hosts (no draw items) carry no idle animation state (C2).
         std::shared_ptr<SkinnedModel> skinned;
-        // M1 per-entity animation state (from SceneAnimOverride): plays
-        // `animClip` on this item instead of the model's shared default loop.
-        // The shared SkinnedModel is never mutated - two wolves can play
-        // different clips from one loaded file.
-        const anim::AnimationClip* animClip = nullptr; // resolved clip ptr
-        std::string animName;                          // requested name (substring)
-        bool animLoop = true;
-        float animSpeed = 1.0f;
-        float animTime = 0.0f;
-        float animFade = 0.0f;       // remaining cross-fade seconds
-        float animFadeTotal = 0.0f;
-        bool animHasOverride = false;
-        anim::Pose animFromPose;     // fade source (captured at switch)
         bool resolved = false;
         bool failed = false;
         bool asyncPending = false;   // G6-2: mesh load kicked, waiting on cache
-        // G5-4-4(项2): data-driven animation state machine (AttachStateMachine).
-        // TickAnimations advances it and maps the current state's clip onto the
-        // existing animClip/animTime override path (no pose surgery).
-        std::shared_ptr<anim::AnimationStateMachine> animSM;
-        std::string animSMState;                 // last played state
-        bool animSMBound = false;                // clips resolved
-        std::map<std::string, float> animSMParams; // script-set params
     };
     // Snapshot of the active 2D design-space mapping (captured during Draw,
     // when the host's 2D viewport is live). InputMousePos()/UI hit-tests use
@@ -518,8 +503,11 @@ private:
     // Nil when the function is missing or the call failed.
     script::Value CallScriptOnTree(const BtInst& inst, const std::string& fn,
                                    uint64_t ent);
-    // Advances every resolved skinned model's default clip (fixed-step
-    // animation; deterministic like the rest of the simulation).
+    // Advances every registered animation state (override clips + state
+    // machines) and the default clips of skinned entities without an override
+    // (fixed-step animation; deterministic like the rest of the simulation).
+    // Thin wrapper over animations_.Tick + hud_.Tick so the SystemScheduler
+    // keeps a single per-frame hook (registered in InitSystemGraph).
     void TickAnimations(float dt);
     // Loads every assets/prefabs/*.json under cfg_.scriptBaseDir into the
     // PrefabSystem (no-op when the base dir is empty or the prefabs dir is
@@ -647,6 +635,14 @@ private:
     // per-interval ticks to Lua OnStatusTick). GameRuntime ticks it through
     // the SystemScheduler and forwards HasStatus/StatusMagnitude to it.
     StatusSystem status_;
+    // Per-entity animation subsystem (M1 override clips + G5-4-4 state
+    // machines; Task 12): owns the animation state that used to live on
+    // DrawItem in an entityKey -> State table. GameRuntime registers states at
+    // ResolveDrawItem (render path only), mirrors SceneAnimOverride into them
+    // per frame, ticks them through the SystemScheduler and forwards
+    // PlayAnimation/AnimationProgress/AnimationFinished/AttachStateMachine/
+    // SetAnimParam to it. Draw reads poses via PoseFor.
+    AnimationSystem animations_;
     PluginSystem plugins_; // runtime plugins (load/tick/stop lifecycle; Task 8)
     scene::ComponentRegistry compReg_; // built-in + data component factories
     // Script 2D canvas (on_render immediate-mode draw commands; Task 10):

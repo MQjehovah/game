@@ -27,24 +27,23 @@ void GameRuntime::BuildDrawList() {
     // contains() checks below become O(1) lookups instead of O(N) scans.
     drawKeys_.clear();
     for (const DrawItem& d : draws_) drawKeys_.insert(EntityKey(d.ent));
-    // M1: sync per-entity animation overrides into their draw items (existing
-    // items get name updates; resolved clip pointers re-resolve on change).
-    for (DrawItem& d : draws_) {
+    // Task 12: per-entity animation state lives in AnimationSystem (not the
+    // draw items). Drop the state+binding of every entity whose draw item is
+    // gone - the binding points at the item's SkinnedModel, which is freed
+    // with the item above (a stale binding would dangle on the next Tick).
+    animations_.Prune([this](uint64_t key) { return drawKeys_.count(key) != 0; });
+    // M1: mirror each entity's SceneAnimOverride component into its animation
+    // state (clip-name changes re-resolve; a deactivated override is dropped).
+    // Entities without a registered state (unresolved skinned items) no-op;
+    // ResolveDrawItem seeds their state from the component when it resolves.
+    for (const DrawItem& d : draws_) {
         const SceneAnimOverride* ov = world_.Get<SceneAnimOverride>(d.ent);
         if (!ov || !ov->active) {
-            d.animHasOverride = false;
-            d.animClip = nullptr;
-            d.animName.clear();
+            animations_.SyncOverride(EntityKey(d.ent), {});
             continue;
         }
-        if (d.animName != ov->clip) {
-            d.animName = ov->clip;
-            d.animClip = nullptr; // re-resolve in TickAnimations
-            d.animLoop = ov->loop;
-            d.animSpeed = ov->speed;
-            d.animFadeTotal = ov->crossFade;
-        }
-        d.animHasOverride = true;
+        animations_.SyncOverride(EntityKey(d.ent),
+                                 {ov->clip, ov->loop, ov->speed, ov->crossFade, true});
     }
     auto contains = [this](ecs::Entity e) { return drawKeys_.count(EntityKey(e)) != 0; };
     auto view = world_.ViewAll<SceneMesh>();
@@ -146,15 +145,9 @@ void GameRuntime::BuildDrawList() {
                 item.mat.emissive =
                     cfg_.assets->LoadTexture(FullAssetPath(m->emissiveTex), opts).Handle();
         }
-        // M1: carry a live animation override onto a newly-tracked item.
-        if (const SceneAnimOverride* ov = world_.Get<SceneAnimOverride>(ent);
-            ov && ov->active) {
-            item.animHasOverride = true;
-            item.animName = ov->clip;
-            item.animLoop = ov->loop;
-            item.animSpeed = ov->speed;
-            item.animFadeTotal = ov->crossFade;
-        }
+        // M1: the animation override lives on the SceneAnimOverride component;
+        // ResolveDrawItem seeds the entity's AnimationSystem state from it, so
+        // a newly-tracked item needs no animation fields on the draw item.
         draws_.push_back(std::move(item));
     }
     auto spriteView = world_.ViewAll<SceneSprite>();
@@ -404,6 +397,24 @@ void GameRuntime::ResolveDrawItem(DrawItem& item, gfx::Renderer& renderer) {
             return;
         }
         item.skinned = std::make_shared<SkinnedModel>(std::move(sm.Value()));
+        // Task 12: register the entity's animation state in AnimationSystem
+        // (entityKey -> AnimState). Seeded from the SceneAnimOverride component
+        // so a freshly-resolved item plays its override from the first Tick.
+        // The state lives OUTSIDE the draw item, so Draw and Tick share it via
+        // the entity key while DrawItem stays a pure render reference (C2).
+        {
+            const SceneAnimOverride* ov = world_.Get<SceneAnimOverride>(item.ent);
+            AnimationSystem::OverrideSpec spec;
+            if (ov && ov->active) {
+                spec.clip = ov->clip;
+                spec.loop = ov->loop;
+                spec.speed = ov->speed;
+                spec.crossFade = ov->crossFade;
+                spec.active = true;
+            }
+            animations_.InitState(EntityKey(item.ent),
+                                  AnimationSystem::ModelBinding{item.skinned.get()}, spec);
+        }
         item.resolved = true;
         return;
     }

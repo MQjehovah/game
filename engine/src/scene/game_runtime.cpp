@@ -810,6 +810,7 @@ void GameRuntime::Stop() {
     scripts_.clear();
     trees_.clear();
     draws_.clear();
+    animations_.Clear();
     projectiles_.Clear();
     tweens_.Clear();
     sceneParticles_.Reset();
@@ -1196,97 +1197,11 @@ ecs::Entity GameRuntime::SpawnPrefab(const std::string& name, const math::Vec3& 
 }
 
 void GameRuntime::TickAnimations(float dt) {
-    for (DrawItem& d : draws_) {
-        if (!d.skinned || !d.skinned->Valid()) continue;
-        // G5-4-4(�?): data-driven animation state machine. Advance it (params
-        // from the script-set map), then map the current state's clip onto the
-        // existing animClip/animTime override path below �?no pose surgery.
-        if (d.animSM) {
-            if (!d.animSMBound) {
-                anim::BindStateMachineClips(*d.animSM, d.skinned->clips);
-                d.animSMBound = true;
-                if (!d.animSM->States().empty()) {
-                    // Start on the first state so Update() has a current_.
-                    const std::string first = d.animSM->States()[0].name;
-                    d.animSM->Play(first);
-                    d.animSMState = first;
-                    const anim::AnimationClip* c = d.animSM->StateClip(0);
-                    if (c) {
-                        d.animClip = c;
-                        d.animName = d.animSM->States()[0].clipName;
-                        d.animLoop = true;
-                        d.animSpeed = 1.0f;
-                        d.animTime = 0.0f;
-                        d.animHasOverride = true;
-                    }
-                }
-            }
-            for (const auto& [name, value] : d.animSMParams)
-                d.animSM->SetParam(name, value);
-            d.animSM->Update(dt);
-            const std::string state = d.animSM->CurrentState();
-            if (!state.empty() && state != d.animSMState) {
-                d.animSMState = state;
-                const anim::AnimationClip* clip = nullptr;
-                std::string clipName;
-                for (const anim::AnimState& s : d.animSM->States())
-                    if (s.name == state) {
-                        clip = s.clip;
-                        clipName = s.clipName;
-                        break;
-                    }
-                if (clip) {
-                    d.animClip = clip;
-                    d.animName = clipName;
-                    d.animLoop = true;
-                    d.animSpeed = 1.0f;
-                    d.animTime = 0.0f;
-                    d.animHasOverride = true;
-                }
-            }
-            // Fall through: the override branch below advances animTime for the
-            // current state's clip.
-        }
-        if (d.animHasOverride) {
-            // Resolve the clip pointer on first use (or after a re-resolve).
-            if (!d.animClip) {
-                const std::string needle = d.animName;
-                for (const anim::AnimationClip& c : d.skinned->clips) {
-                    // Case-insensitive substring, first hit wins (deterministic).
-                    std::string hay = c.name;
-                    for (char& ch : hay)
-                        ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
-                    std::string low = needle;
-                    for (char& ch : low)
-                        ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
-                    if (hay.find(low) != std::string::npos) {
-                        d.animClip = &c;
-                        break;
-                    }
-                }
-                if (d.animClip) {
-                    // Capture the fade source pose from the shared default
-                    // loop so the cross-fade starts where the model is now.
-                    d.animFromPose = d.skinned->skeleton.BindPose();
-                    if (d.skinned->defaultClip >= 0 && d.skinned->animator.Clip())
-                        d.skinned->animator.Clip()->Sample(d.skinned->animator.Time(),
-                                                           d.animFromPose);
-                    d.animTime = 0.0f;
-                    d.animFade = d.animFadeTotal;
-                }
-            }
-            if (d.animClip) {
-                d.animTime += dt * d.animSpeed;
-                if (d.animFade > 0.0f) d.animFade = std::fmax(0.0f, d.animFade - dt);
-                if (d.animLoop && d.animClip->duration > 0.0f)
-                    d.animTime = std::fmod(d.animTime, d.animClip->duration);
-                else if (d.animTime > d.animClip->duration)
-                    d.animTime = d.animClip->duration; // one-shot clamps at end
-            }
-        } else {
-            d.skinned->Update(dt);
-        }
-    }
+    // Task 12: the per-entity animation subsystem moved into AnimationSystem
+    // (entityKey -> AnimState, registered at ResolveDrawItem). Headless hosts
+    // never register states, so this iterates an empty table - no idle
+    // animation work (C2).
+    animations_.Tick(dt);
     // Floating combat texts age out.
     hud_.Tick(dt);
 }
@@ -1369,25 +1284,19 @@ bool GameRuntime::PlayAnimation(ecs::Entity e, const std::string& clip, bool loo
     ov->crossFade = crossFade;
     ov->speed = speed;
     ov->active = true;
-    // Drop any cached instance state so the next BuildDrawList re-issues it
-    // (fresh cross-fade from the current pose).
-    for (DrawItem& d : draws_)
-        if (d.ent == e) {
-            d.animName.clear();
-            d.animClip = nullptr;
-        }
+    // Drop any cached instance state so the next BuildDrawList sync re-issues
+    // it (fresh cross-fade from the current pose). Same semantics as the old
+    // DrawItem clear (animName/animClip reset on the entity's draw item).
+    animations_.InvalidateOverride(EntityKey(e));
     return true;
 }
 
 bool GameRuntime::AttachStateMachine(ecs::Entity e, const std::string& path) {
     if (!world_.Alive(e)) return false;
-    DrawItem* d = nullptr;
-    for (DrawItem& di : draws_)
-        if (di.ent == e) {
-            d = &di;
-            break;
-        }
-    if (!d || !d->skinned || !d->skinned->Valid()) return false;
+    const uint64_t key = EntityKey(e);
+    // Requires a RESOLVED skinned draw item (equivalent to the old draw-item
+    // lookup: d && d->skinned && d->skinned->Valid()).
+    if (!animations_.HasBinding(key)) return false;
     const std::string text = ReadScript(FullScriptPath(path));
     if (text.empty()) return false;
     auto res = anim::LoadStateMachineJson(text);
@@ -1395,37 +1304,20 @@ bool GameRuntime::AttachStateMachine(ecs::Entity e, const std::string& path) {
         NEON_LOG_ERROR("asm: '%s': %s", path.c_str(), res.Error().c_str());
         return false;
     }
-    d->animSM = std::make_shared<anim::AnimationStateMachine>(res.Value());
-    d->animSMState.clear();
-    d->animSMBound = false;
-    d->animSMParams.clear();
-    return true;
+    return animations_.AttachStateMachine(
+        key, std::make_shared<anim::AnimationStateMachine>(res.Value()));
 }
 
 void GameRuntime::SetAnimParam(ecs::Entity e, const std::string& name, float value) {
-    for (DrawItem& di : draws_)
-        if (di.ent == e && di.animSM) {
-            di.animSMParams[name] = value;
-            return;
-        }
+    animations_.SetParam(EntityKey(e), name, value);
 }
 
 float GameRuntime::AnimationProgress(ecs::Entity e) const {
-    for (const DrawItem& d : draws_) {
-        if (!(d.ent == e) || !d.animHasOverride || !d.animClip) continue;
-        if (d.animClip->duration <= 0.0f) return 1.0f;
-        float p = d.animTime / d.animClip->duration;
-        return p < 0.0f ? 0.0f : (p > 1.0f ? 1.0f : p);
-    }
-    return 0.0f;
+    return animations_.Progress(EntityKey(e));
 }
 
 bool GameRuntime::AnimationFinished(ecs::Entity e) const {
-    for (const DrawItem& d : draws_) {
-        if (!(d.ent == e) || !d.animHasOverride || !d.animClip) continue;
-        return !d.animLoop && d.animTime >= d.animClip->duration;
-    }
-    return false;
+    return animations_.Finished(EntityKey(e));
 }
 
 bool GameRuntime::WorldToScreen(const math::Vec3& world, float& outX, float& outY) const {
@@ -1643,18 +1535,12 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera,
                     if (d.skinned && d.skinned->Valid()) {
                         // Mirror Draw()'s bone selection (override clip vs the
                         // model's default) so the anchor matches this frame.
+                        // Task 12: the override pose now comes from the
+                        // AnimationSystem state table (PoseFor); the default
+                        // path falls back to the model's own BoneMatrices().
                         std::vector<math::Mat4> bones;
-                        if (d.animHasOverride && d.animClip) {
-                            anim::Pose pose = d.skinned->skeleton.BindPose();
-                            d.animClip->Sample(d.animTime, pose);
-                            if (d.animFade > 0.0f && d.animFadeTotal > 0.0f &&
-                                d.animFromPose.t.size() == pose.t.size())
-                                pose.Lerp(d.animFromPose, pose,
-                                          1.0f - d.animFade / d.animFadeTotal);
-                            bones = d.skinned->skeleton.ComputeBoneMatrices(pose);
-                        } else {
+                        if (!animations_.PoseFor(EntityKey(d.ent), d.skinned->skeleton, bones))
                             bones = d.skinned->BoneMatrices();
-                        }
                         if (!bones.empty()) {
                             // CPU-skin the actual vertices so the plate hugs the
                             // RENDERED mesh (a rig can place the body off the
@@ -1833,18 +1719,12 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera,
         }
         flushBatches(); // keep relative order with non-batched draws
         if (item.skinned && item.skinned->Valid()) {
+            // Task 12: the override pose comes from the AnimationSystem state
+            // table (PoseFor); the default path falls back to the model's own
+            // BoneMatrices(), matching the old DrawItem override branch.
             std::vector<math::Mat4> bones;
-            if (item.animHasOverride && item.animClip) {
-                anim::Pose pose = item.skinned->skeleton.BindPose();
-                item.animClip->Sample(item.animTime, pose);
-                if (item.animFade > 0.0f && item.animFadeTotal > 0.0f &&
-                    item.animFromPose.t.size() == pose.t.size())
-                    pose.Lerp(item.animFromPose, pose,
-                              1.0f - item.animFade / item.animFadeTotal);
-                bones = item.skinned->skeleton.ComputeBoneMatrices(pose);
-            } else {
+            if (!animations_.PoseFor(EntityKey(item.ent), item.skinned->skeleton, bones))
                 bones = item.skinned->BoneMatrices();
-            }
             for (const auto& part : item.skinned->parts)
                 renderer.DrawSkinnedMesh(part.mesh, part.material, model,
                                          bones, static_cast<int>(bones.size()));
@@ -2014,7 +1894,7 @@ void GameRuntime::InitSystemGraph() {
     systems_.Add("animations",
                  sys([this](float d, ecs::World&) { TickAnimations(d); }),
                  {typeid(SkinnedModel)},
-                 {typeid(DrawItem), typeid(SkinnedModel), typeid(HudSystem::FloatText)});
+                 {typeid(SkinnedModel), typeid(HudSystem::FloatText)});
     systems_.Add("statuses",
                  sys([this](float d, ecs::World& w) { status_.Tick(d, w, hosts_.lua.get()); }),
                  {typeid(StatusComponent)},
