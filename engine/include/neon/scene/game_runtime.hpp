@@ -37,6 +37,7 @@
 #include "neon/scene/systems/scene_particle_system.hpp"
 #include "neon/scene/systems/scene_tree_system.hpp"
 #include "neon/scene/systems/script_canvas.hpp"
+#include "neon/scene/systems/script_runtime.hpp"
 #include "neon/scene/systems/status_system.hpp"
 #include "neon/scene/systems/tween_system.hpp"
 #include "neon/scene/systems/ui_system.hpp"
@@ -295,7 +296,7 @@ public:
 
     // Stats for the editor profiler / debug panels.
     size_t EntityCount() const { return world_.EntityCount(); }
-    size_t ScriptCount() const { return scripts_.size(); }
+    size_t ScriptCount() const { return scriptRuntime_.Count(); }
     size_t BehaviorTreeCount() const { return trees_.size(); }
     size_t DrawCount() const { return draws_.size(); }
     size_t PhysicsBodyCount() const { return physics_ ? physics_->BodyCount() : 0; }
@@ -382,25 +383,6 @@ public:
                             const std::string& scriptPath = {});
 
 private:
-    struct ScriptInst {
-        ecs::Entity ent;
-        std::string path; // used for error logging; source is loaded once per path
-        // The backend host this instance's chunk runs on (resolved from the
-        // component's `backend` field: "lua" / "js"). Null never happens for
-        // an attached instance.
-        script::IScriptHost* host = nullptr;
-        // Captured chunk function handles (0 = this chunk defines none). Each
-        // instance calls ITS OWN chunk's handlers, so a later-loaded script
-        // cannot shadow an earlier one (per-entity script isolation).
-        uint64_t onStart = 0;
-        uint64_t onUpdate = 0;
-        bool errorLogged = false; // one log per script instance per Start
-        // A6: per-instance snapshot of the component's declared `vars`. The
-        // values are injected into the host globals right before each call and
-        // read back after, so two entities with the same script no longer
-        // overwrite each other's declared vars ("last attach wins" bug).
-        script::Value vars;
-    };
     struct BtInst {
         ecs::Entity ent;
         std::unique_ptr<bt::BehaviorTree> tree;
@@ -493,10 +475,6 @@ private:
     };
 
     void AttachScripts();
-    // Attaches ONE script component to an entity (shared by AttachScripts and
-    // SpawnEntity/Spawn's 3rd arg). Returns false when skipped (missing file,
-    // compile error, unsafe path, previous failure).
-    bool AttachOneScript(ecs::Entity ent, const SceneScript& s);
     void AttachTrees();
     // Behavior-tree script hook: invokes the named global function on the
     // tree entity's backend host (run_script / script_bool nodes). Returns
@@ -532,12 +510,6 @@ private:
     void DrawVegetation(gfx::Renderer& renderer, const gfx::Camera& camera);
     // Resolves a vegetation meshKey ("tree"/"bush"/"rock"/obj:/gltf:) to a mesh.
     gfx::Mesh VegetationMesh(gfx::Renderer& renderer, const std::string& meshKey);
-    // Invokes one of the instance's captured chunk functions and logs the
-    // first failure of the script instance (throttled per Start); failures
-    // never abort the runtime. Sets the per-entity input routing context.
-    // `fn` names the handler for the log ("on_start" / "on_update").
-    void CallEntityFunctionHandle(ScriptInst& inst, uint64_t handle,
-                                  const char* fn, const std::vector<script::Value>& args);
     void RegisterSceneBodies();
     void RegisterCharacters();
     void RegisterAudioSources(); // G8-3: play SceneAudioSource components once
@@ -585,7 +557,12 @@ private:
     // True when hosts_.lua was injected from the service registry (non-owning);
     // Stop() must then skip its Shutdown — the owning module tears it down.
     bool injectedScriptHost_ = false;
-    std::vector<ScriptInst> scripts_;
+    // Script subsystem (Task 13): drives scene-script loading + per-entity
+    // on_start/on_update dispatch. GameRuntime forwards the public script API
+    // (ScriptHost/ScriptContext/SpawnEntity/HasScriptFunction/CallScriptFunction)
+    // and wires the shared scriptCtx_/hosts_ in as call parameters; it keeps
+    // the script instances, load-dedup state and the input action map.
+    ScriptRuntime scriptRuntime_;
     std::vector<BtInst> trees_;
     std::vector<DrawItem> draws_;
     // B6: alive-entity index over draws_ (EntityKey -> tracked). BuildDrawList
@@ -656,7 +633,6 @@ private:
     // 调用方），脚本直接走 scriptCtx_ 接线。
     UiSystem uiSystem_;
     std::set<uint64_t> hiddenEntities_;     // SetVisible hide list (EntityKey)
-    script::InputMap inputMap_;             // Godot-style actions (input.json)
     std::string pendingScene_;              // ChangeScene deferred to next Tick
     std::vector<std::pair<std::string, uint64_t>> signalHandlers_; // Lua signals
     // G3-4 pose history for lag compensation: LagCompSystem owns the per-tick
@@ -667,21 +643,6 @@ private:
     // Scene-level particle subsystem (world-space billboards + soft glow
     // sprite): GameRuntime forwards EmitParticles and ticks/draws it per frame.
     SceneParticleSystem sceneParticles_;
-    std::set<std::string> loadedScripts_; // resolved paths whose chunk ran (presence only)
-    std::set<std::string> scriptFailed_;  // resolved paths that failed (skip later)
-    // Captured handler handles per loaded chunk (keyed like loadedScripts_:
-    // backend + "|" + full path). Lua/JS hosts share ONE global environment,
-    // so a later-loaded chunk overwrites the on_start/on_update globals; a
-    // captured FUNCTION handle keeps pointing at the original function value
-    // regardless. Caching the handles at first load lets every later attach
-    // reuse ITS OWN chunk's handlers instead of re-capturing whatever chunk
-    // happens to own the globals at that moment (the old re-capture made
-    // spawned entities run the WRONG script - peas falling like suns).
-    struct ChunkHandlers {
-        uint64_t onStart = 0;
-        uint64_t onUpdate = 0;
-    };
-    std::map<std::string, ChunkHandlers> chunkHandlers_;
     GameRuntimeConfig cfg_;
     bool running_ = false;
     double simTime_ = 0.0;

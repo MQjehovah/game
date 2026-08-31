@@ -17,6 +17,7 @@
 #include "neon/scene/systems/projectile_system.hpp"
 #include "neon/scene/systems/scene_tree_system.hpp"
 #include "neon/scene/systems/script_canvas.hpp"
+#include "neon/scene/systems/script_runtime.hpp"
 #include "neon/scene/systems/status_system.hpp"
 #include "neon/scene/systems/tween_system.hpp"
 #include "neon/scene/systems/ui_system.hpp"
@@ -1648,4 +1649,100 @@ TEST(UiSystemStandalone) {
     CHECK(ui.Raw() == nullptr);
     CHECK(!ui.Show("x"));
     CHECK(!ui.Active());
+}
+
+TEST(ScriptRuntimeStandalone) {
+    // A fresh Lua host + world wired like GameRuntime::Start: ScriptRuntime
+    // drives the load/dedup/capture + per-entity dispatch on its own (Task 13).
+    std::unique_ptr<script::IScriptHost> host = script::CreateLuaHost();
+    CHECK(host != nullptr);
+    CHECK(host->Init());
+
+    scene::ScriptRuntime rt;
+    scene::ScriptRuntime::Content content;
+    content.readScript = [](const std::string& path) -> std::string {
+        if (path == "counter.lua") return R"(
+function on_start(e)
+  SetVar("started", true)
+end
+function on_update(e, dt)
+  local g = GetVar("gold")
+  if g == nil then g = 0 end
+  SetVar("gold", g + 1)
+end
+)";
+        if (path == "vars.lua") return R"(
+function on_start(e)
+  local m = msg
+  if m == nil then m = "default" end
+  SetVar("msg", m)
+end
+)";
+        return "";
+    };
+    rt.Configure(std::move(content));
+
+    ecs::World world;
+    script::ScriptContext ctx;
+    ctx.world = &world;
+    script::RegisterEngineBindings(*host, ctx);
+
+    scene::ScriptRuntime::Hosts hosts{host.get(), nullptr};
+
+    // Two entities attach to the same chunk: it loads once, both get instances,
+    // on_start runs for each, on_update ticks per entity.
+    ecs::Entity a = world.Create();
+    ecs::Entity b = world.Create();
+    scene::SceneScript s;
+    s.backend = "lua";
+    s.path = "counter.lua";
+    CHECK(rt.AttachOne(a, s, ctx, hosts));
+    CHECK(rt.AttachOne(b, s, ctx, hosts));
+    CHECK_EQ(rt.Count(), 2u);
+    CHECK(ctx.gameVars.Get("started").type == script::Value::Type::Bool);
+    CHECK(ctx.gameVars.Get("started").boolean);
+
+    rt.Tick(1.0f / 60.0f, world, ctx);
+    CHECK_EQ(ctx.gameVars.Get("gold").number, 2.0); // one per entity per tick
+
+    // HasFunction / CallFunction drive the shared global namespace directly
+    // (Lua-first lookup) — the server-facing on_player_join plumbing.
+    CHECK(rt.HasFunction(hosts, "on_update"));
+    CHECK(!rt.HasFunction(hosts, "no_such_fn"));
+    CHECK(rt.CallFunction(ctx, hosts, "on_update",
+                          {script::Value::Num(0), script::Value::Num(1.0f)}));
+    CHECK_EQ(ctx.gameVars.Get("gold").number, 3.0);
+    CHECK(!rt.CallFunction(ctx, hosts, "no_such_fn", {}));
+
+    // A missing file is skipped without failing or registering an instance.
+    scene::SceneScript missing;
+    missing.backend = "lua";
+    missing.path = "nope.lua";
+    CHECK(!rt.AttachOne(world.Create(), missing, ctx, hosts));
+    CHECK_EQ(rt.Count(), 2u);
+
+    // Unsafe paths (".." / absolute) are rejected outright.
+    scene::SceneScript evil;
+    evil.backend = "lua";
+    evil.path = "../secret.lua";
+    CHECK(!rt.AttachOne(world.Create(), evil, ctx, hosts));
+    CHECK_EQ(rt.Count(), 2u);
+
+    // Clear resets instances AND load state: a re-attach reloads the chunk.
+    rt.Clear();
+    CHECK_EQ(rt.Count(), 0u);
+    CHECK(rt.AttachOne(world.Create(), s, ctx, hosts));
+    CHECK_EQ(rt.Count(), 1u);
+
+    // Per-instance declared vars (A6): two entities of one script keep
+    // independent injected globals, so on_start reads its OWN declared value.
+    scene::SceneScript vars;
+    vars.backend = "lua";
+    vars.path = "vars.lua";
+    vars.vars = core::Json::Parse(R"({"msg":"hello"})");
+    CHECK(rt.AttachOne(world.Create(), vars, ctx, hosts));
+    CHECK_EQ(rt.Instances().back().vars.table->fields.size(), 1u);
+    CHECK_EQ(ctx.gameVars.Get("msg").str, std::string("hello"));
+
+    host->Shutdown();
 }

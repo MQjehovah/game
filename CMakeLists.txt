@@ -136,6 +136,7 @@ add_library(neon_scene STATIC
   engine/src/scene/systems/scene_particle_system.cpp
   engine/src/scene/systems/scene_tree_system.cpp
   engine/src/scene/systems/script_canvas.cpp
+  engine/src/scene/systems/script_runtime.cpp
   engine/src/scene/systems/status_system.cpp
   engine/src/scene/systems/tween_system.cpp
   engine/src/scene/systems/ui_system.cpp
