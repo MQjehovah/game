@@ -82,26 +82,53 @@ Gameplay.BoxAttack = function(center, half, yawDeg, damage)
   return n
 end
 
--- 投射物：SpawnProjectile 薄包装
+-- 投射物：SpawnProjectile 薄包装（statuses 为 name 格式，解析成 id 格式透传）
 Gameplay.Projectile = function(origin, dir, speed, damage, life, range, hitRadius, caster, statuses)
-  SpawnProjectile(origin, dir, speed, damage, life, caster, range, hitRadius, statuses)
+  local resolved = {}
+  for _, st in ipairs(statuses or {}) do
+    local d = Gameplay.statusDefs[st.name]
+    if d then
+      resolved[#resolved + 1] = { id = d.id, duration = st.duration, magnitude = st.magnitude,
+                                  tickInterval = d.interval }
+    end
+  end
+  SpawnProjectile(origin, dir, speed, damage, life, caster, range, hitRadius, resolved)
 end
 
--- 状态效果定义 + 默认 tick 规则（名称对应 C++ 的 kStatusBurning=1 等 id 常量）。
+-- 状态效果定义表：name -> { id, interval, tick }（名称对应 C++ 的 kStatusBurning=1 等 id 常量）。
 -- 引擎 TickStatuses 在每个 interval 边界调用全局 OnStatusTick(entity, id, magnitude)；
 -- 项目脚本可覆盖 OnStatusTick 以改写默认 tick 行为。
 Gameplay.statusDefs = {
-  burning = { id = 1, tick = function(ent, mag) local h = GetHealth(ent); if h > 0 then SetHealth(ent, math.max(0, h - mag)) end end },
-  poison  = { id = 2, tick = function(ent, mag) local h = GetHealth(ent); if h > 0 then SetHealth(ent, math.max(0, h - mag)) end end },
-  regen   = { id = 3, tick = function(ent, mag) local h = GetHealth(ent); if h > 0 then SetHealth(ent, math.min(GetMaxHealth(ent), h + mag)) end end },
-  slow    = { id = 4, tick = function() end },
+  burning = { id = 1, interval = 1.0, tick = function(ent, mag) local h = GetHealth(ent); if h > 0 then SetHealth(ent, math.max(0, h - mag)) end end },
+  poison  = { id = 2, interval = 1.0, tick = function(ent, mag) local h = GetHealth(ent); if h > 0 then SetHealth(ent, math.max(0, h - mag)) end end },
+  regen   = { id = 3, interval = 1.0, tick = function(ent, mag) local h = GetHealth(ent); if h > 0 then SetHealth(ent, math.min(GetMaxHealth(ent), h + mag)) end end },
+  slow    = { id = 4, interval = 1.0, tick = function() end },
 }
--- 覆盖已有状态的 tick 规则（项目脚本可 RegisterStatus("burning", myTick) 改写引擎默认）。
-Gameplay.RegisterStatus = function(name, tick)
-  local def = Gameplay.statusDefs[name]
-  if def then def.tick = tick end
+-- 注册新状态（项目可扩展）：name -> 数字 id + 自定义 tick 间隔 + tick 规则。
+Gameplay.RegisterStatus = function(name, id, interval, tick)
+  Gameplay.statusDefs[name] = { id = id, interval = interval or 1.0, tick = tick or function() end }
 end
--- 引擎每个状态 tick 调用此全局函数；默认实现按 statusDefs 分发。
+-- name -> id 解析包装（引擎原语只认数字 id）。
+Gameplay.ApplyStatus = function(ent, name, duration, magnitude)
+  local d = Gameplay.statusDefs[name]
+  if d == nil then return end
+  ApplyStatus(ent, d.id, duration, magnitude, d.interval)
+end
+Gameplay.HasStatus = function(ent, name)
+  local d = Gameplay.statusDefs[name]
+  if d == nil then return false end
+  return HasStatus(ent, d.id)
+end
+Gameplay.StatusMagnitude = function(ent, name)
+  local d = Gameplay.statusDefs[name]
+  if d == nil then return 0 end
+  return StatusMagnitude(ent, d.id)
+end
+Gameplay.RemoveStatus = function(ent, name)
+  local d = Gameplay.statusDefs[name]
+  if d == nil then return end
+  RemoveStatus(ent, d.id)
+end
 function OnStatusTick(ent, id, mag)
   for _, d in pairs(Gameplay.statusDefs) do
     if d.id == id and d.tick then d.tick(ent, mag) end

@@ -69,9 +69,10 @@ struct Draw2DCmd {
 // scene::SkillStatus). Kept scene-free so the script layer never links against
 // the scene module (breaks the scene <-> script dependency cycle).
 struct SkillStatusData {
-    std::string name;
+    uint32_t id = 0;
     float duration = 0.0f;
     float magnitude = 0.0f;
+    float tickInterval = 1.0f;
 };
 
 // The state engine bindings operate on. Created by the game/demo and passed to
@@ -123,18 +124,13 @@ struct ScriptContext {
                        float life, ecs::Entity caster, float range, float hitRadius,
                        const std::vector<SkillStatusData>& statuses)>
         spawnProjectile;
-    // Status-effect hooks (M2 combat core): names are resolved to ids by the
-    // caller (the bindings) through the built-in status table before calling.
-    std::function<void(ecs::Entity, uint32_t id, float duration, float magnitude)>
+    // Status-effect hooks (M2 combat core): the bindings pass numeric ids
+    // directly (name -> id resolution lives in the Lua Gameplay library).
+    std::function<void(ecs::Entity, uint32_t id, float duration, float magnitude, float tickInterval)>
         sceneApplyStatus;
     std::function<bool(ecs::Entity, uint32_t id)> sceneHasStatus;
     std::function<float(ecs::Entity, uint32_t id)> sceneStatusMagnitude;
     std::function<void(ecs::Entity, uint32_t id)> sceneRemoveStatus;
-    // Resolves a status name to its built-in id (0 = unknown). Wired by the
-    // scene runtime; null -> 0, so the status bindings degrade to no-ops. Kept
-    // as a hook so the script layer never links against the scene's status
-    // table (breaks the scene <-> script dependency cycle).
-    std::function<uint32_t(const std::string&)> statusIdByName;
     // Reads an arbitrary data component (the scene's SceneData) by name into
     // `out` (JSON). Returns false when the entity lacks it. Wired by GameRuntime
     // so the script layer stays scene-free.

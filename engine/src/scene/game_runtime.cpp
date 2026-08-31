@@ -523,10 +523,12 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     };
     // Status-effect hooks (M2 combat core): scripts apply/query/remove
     // buffs+debuffs through ApplyStatus/HasStatus/StatusMagnitude/RemoveStatus.
-    scriptCtx_.sceneApplyStatus = [this](ecs::Entity e, uint32_t id, float dur, float mag) {
+    scriptCtx_.sceneApplyStatus = [this](ecs::Entity e, uint32_t id, float dur, float mag,
+                                         float interval) {
         if (!world_.Alive(e)) return;
         if (!world_.Has<StatusComponent>(e)) world_.Add<StatusComponent>(e);
-        if (StatusComponent* c = world_.Get<StatusComponent>(e)) ApplyStatus(*c, id, dur, mag);
+        if (StatusComponent* c = world_.Get<StatusComponent>(e))
+            ApplyStatus(*c, id, dur, mag, interval);
     };
     scriptCtx_.sceneHasStatus = [this](ecs::Entity e, uint32_t id) {
         const StatusComponent* c = world_.Get<StatusComponent>(e);
@@ -539,12 +541,9 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     scriptCtx_.sceneRemoveStatus = [this](ecs::Entity e, uint32_t id) {
         if (StatusComponent* c = world_.Get<StatusComponent>(e)) RemoveStatus(*c, id);
     };
-    // Status name -> id resolution and arbitrary data-component access are
-    // wired here so the script layer never links against the scene module
-    // (breaks the scene <-> script dependency cycle).
-    scriptCtx_.statusIdByName = [](const std::string& name) {
-        return scene::StatusIdByName(name);
-    };
+    // Arbitrary data-component access is wired here so the script layer never
+    // links against the scene module (breaks the scene <-> script dependency
+    // cycle).
     scriptCtx_.entityComponent = [this](ecs::Entity e, const std::string& name,
                                         core::Json* out) {
         if (!out || !world_.Alive(e)) return false;
@@ -682,7 +681,12 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
         std::vector<scene::SkillStatus> sceneStatuses;
         sceneStatuses.reserve(statuses.size());
         for (const script::SkillStatusData& s : statuses) {
-            sceneStatuses.push_back({s.name, s.duration, s.magnitude});
+            scene::SkillStatus st;
+            st.id = s.id;
+            st.duration = s.duration;
+            st.magnitude = s.magnitude;
+            st.tickInterval = s.tickInterval;
+            sceneStatuses.push_back(st);
         }
         SpawnProjectile(pos, dir, speed, damage, life, caster, range, hitRadius, sceneStatuses);
     };
