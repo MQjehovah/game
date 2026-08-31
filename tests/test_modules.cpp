@@ -1,10 +1,12 @@
 #include "neon/neon.hpp"
+#include "neon/kernel/kernel.hpp"
 #include "neon/kernel/module.hpp"
 #include "neon/kernel/registry.hpp"
 #include "neon/modules/subsystem_modules.hpp"
 #include "neon/scene/game_runtime.hpp"
 #include "neon/scene/scene_file.hpp"
 #include "helpers.hpp"
+#include "test_backend.hpp"
 
 #include <memory>
 
@@ -108,4 +110,39 @@ TEST(GameRuntimeInjectsScriptService) {
 
     runtime.Stop();        // does NOT shut down the injected host (module owns it)
     mgr.ShutdownAll();     // the module shuts it down exactly once
+}
+
+// P-E: the microkernel (Kernel) wires the whole engine stack — gfx + physics +
+// script — and the runtime consumes its services. This is the thin
+// Application-replacement pattern the demo/game/editor adopt.
+TEST(KernelWiresFullEngineStack) {
+    Kernel kernel;
+
+    auto renderer = std::make_unique<gfx::Renderer>();
+    renderer->AttachBackendForTesting(std::make_unique<test::NullBackend>());
+    kernel.Add(std::make_unique<GfxModule>(std::move(renderer)));
+    kernel.Add(std::make_unique<PhysicsModule>(std::make_unique<physics::World>()));
+    kernel.Add(std::make_unique<ScriptModule>(script::CreateLuaHost()));
+
+    CHECK(kernel.Init());
+    CHECK(kernel.Services().Get<gfx::Renderer>() != nullptr);
+    CHECK(kernel.Services().Get<physics::World>() != nullptr);
+    CHECK(kernel.Services().Get<script::IScriptHost>() != nullptr);
+
+    const char* scene = R"({
+      "entities": [
+        {"name": "Ball", "components": {
+          "transform": {"pos": [0, 5, 0]},
+          "rigidbody": {"shape": "sphere", "radius": 0.5, "dynamic": true}}}
+      ]
+    })";
+    scene::GameRuntime runtime;
+    scene::GameRuntimeConfig cfg;
+    cfg.headless = true;
+    cfg.services = &kernel.Services();
+    CHECK(runtime.Start(scene, cfg).Ok());
+    CHECK_EQ(runtime.PhysicsBodyCount(), 1u);
+
+    runtime.Stop();
+    kernel.Shutdown();
 }
