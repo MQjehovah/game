@@ -310,6 +310,8 @@ function Gameplay.FirstPerson.tick(c, dt)
   local right = { x = math.cos(cy), z = -math.sin(cy) }
   local dx = right.x * ix + fwd.x * iz
   local dz = right.z * ix + fwd.z * iz
+  local dlen = math.sqrt(dx * dx + dz * dz)
+  if dlen > 1 then dx, dz = dx / dlen, dz / dlen end
   local pos = GetPosition(c.hero)
   if pos == nil then return end
   if ActionDown("jump") and c.grounded then c.yvel = 8; c.grounded = false end
@@ -346,6 +348,7 @@ function Gameplay.ThirdPerson.tick(c, dt)
   local dx = right.x * ix + fwd.x * iz
   local dz = right.z * ix + fwd.z * iz
   local len = math.sqrt(dx * dx + dz * dz)
+  if len > 1 then dx, dz = dx / len, dz / len end
   local pos = GetPosition(c.hero)
   if pos == nil then return end
   if ActionDown("jump") and c.grounded then c.yvel = 8; c.grounded = false end
