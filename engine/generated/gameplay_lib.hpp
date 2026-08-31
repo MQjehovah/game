@@ -107,6 +107,41 @@ function OnStatusTick(ent, id, mag)
     if d.id == id and d.tick then d.tick(ent, mag) end
   end
 end
+
+-- 技能系统：JSON 文本 -> 技能表；cast 检查冷却/mana，按 kind 分发
+Gameplay.SkillTable = {}
+function Gameplay.SkillTable.fromJson(json)
+  local parsed = Json.Parse(json)          -- 引擎 Json.Parse binding（返回 Lua table）
+  local tbl = { skills = {}, cds = Gameplay.Cooldowns.new() }
+  for name, def in pairs(parsed.skills or {}) do
+    tbl.skills[name] = def
+  end
+  return tbl
+end
+function Gameplay.SkillTable.cast(tbl, name, origin, dir, caster)
+  local def = tbl.skills[name]
+  if def == nil then return 0 end
+  if not Gameplay.Cooldowns.ready(tbl.cds, name) then return 0 end
+  local manaCost = def.manaCost or 0
+  if manaCost > 0 then
+    local mana = Gameplay.Stats.Get("mana") or 0
+    if mana < manaCost then return 0 end
+    Gameplay.Stats.Set("mana", mana - manaCost)
+  end
+  if (def.cooldown or 0) > 0 then Gameplay.Cooldowns.set(tbl.cds, name, def.cooldown) end
+  if def.kind == "projectile" then
+    Gameplay.Projectile(origin, dir, def.speed or 12, def.damage or 0, def.life or 2,
+                        def.range or 0, 0.8, caster, def.statuses or {})
+  elseif def.kind == "melee" then
+    Gameplay.MeleeArc(origin, dir, def.meleeRange or 2, def.arcDeg or 90, def.damage or 0, caster)
+  else -- "box"
+    local yaw = math.atan(dir.x, dir.z)
+    Gameplay.BoxAttack(origin,
+                       { def.boxHalfX or 1, def.boxHalfY or 1, def.boxHalfZ or 1 },
+                       math.deg(yaw), def.damage or 0)
+  end
+  return 1
+end
 )LUA";
 
 } // namespace neon::embedded

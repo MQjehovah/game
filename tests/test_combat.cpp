@@ -832,3 +832,62 @@ TEST(GameplayProjectileLua) {
     CHECK_NEAR(runtime.EntityHealth(front).first, 40.0f, 1e-3); // 50 - 10
     CHECK(runtime.HasStatus(front, scene::kStatusBurning));
 }
+
+// ---------------------------------------------------------------------------
+// Gameplay.SkillTable：JSON 技能表解析 + cast 分发（冷却/mana/kind）
+// ---------------------------------------------------------------------------
+
+// Builds a Lua script that embeds `kSkillsJson` as a long-string literal, then
+// runs the caller-provided body (which sees `json` in scope).
+static std::string SkillTableScript(const std::string& body) {
+    return std::string(R"(
+      local json = [=[)") + kSkillsJson + std::string(R"(]=]
+      )") + body;
+}
+
+TEST(SkillTableCastMelee) {
+    const std::string lua = SkillTableScript(R"(
+      function on_start(e)
+        local t = Gameplay.SkillTable.fromJson(json)
+        Gameplay.SkillTable.cast(t, "cleave", {x=0,y=0,z=0}, {x=0,y=0,z=-1}, e)
+      end
+    )");
+    scene::GameRuntime runtime;
+    scene::GameRuntimeConfig cfg;
+    cfg.headless = true;
+    cfg.readScript = [&](const std::string&) { return lua; };
+    CHECK(runtime.Start(kGameplayCombatScene, cfg).Ok());
+
+    const ecs::Entity front = runtime.FindNamedEntity("wolf_front");
+    const ecs::Entity side = runtime.FindNamedEntity("wolf_side");
+    CHECK_NEAR(runtime.EntityHealth(front).first, 38.0f, 1e-3); // 50 - 12
+    CHECK_NEAR(runtime.EntityHealth(side).first, 50.0f, 1e-3);  // out of the arc
+}
+
+TEST(SkillTableManaAndCooldown) {
+    const std::string lua = SkillTableScript(R"(
+      function on_start(e)
+        local t = Gameplay.SkillTable.fromJson(json)
+        -- No mana: fireball (manaCost 8) is refused, no cooldown recorded.
+        SetVar("noMana", Gameplay.SkillTable.cast(t, "fireball", {x=0,y=1,z=0},
+                                                  {x=0,y=0,z=-1}, e))
+        Gameplay.Stats.Set("mana", 10)
+        SetVar("castOk", Gameplay.SkillTable.cast(t, "fireball", {x=0,y=1,z=0},
+                                                  {x=0,y=0,z=-1}, e))
+        SetVar("manaAfter", Gameplay.Stats.Get("mana"))
+        -- 0.5s cooldown still active -> immediate re-cast refused.
+        SetVar("cdBlocked", Gameplay.SkillTable.cast(t, "fireball", {x=0,y=1,z=0},
+                                                     {x=0,y=0,z=-1}, e))
+      end
+    )");
+    scene::GameRuntime runtime;
+    scene::GameRuntimeConfig cfg;
+    cfg.headless = true;
+    cfg.readScript = [&](const std::string&) { return lua; };
+    CHECK(runtime.Start(kGameplayCombatScene, cfg).Ok());
+
+    CHECK_NEAR(runtime.GameVar("noMana"), 0.0, 1e-6);
+    CHECK_NEAR(runtime.GameVar("castOk"), 1.0, 1e-6);
+    CHECK_NEAR(runtime.GameVar("manaAfter"), 2.0, 1e-6); // 10 - 8
+    CHECK_NEAR(runtime.GameVar("cdBlocked"), 0.0, 1e-6);
+}
