@@ -38,6 +38,7 @@
 #include "neon/scene/systems/script_canvas.hpp"
 #include "neon/scene/systems/status_system.hpp"
 #include "neon/scene/systems/tween_system.hpp"
+#include "neon/scene/systems/ui_system.hpp"
 #include "neon/script/bindings.hpp"
 #include "neon/script/gamevars.hpp"
 #include "neon/script/script.hpp"
@@ -180,21 +181,9 @@ public:
     // Draws the data-driven UI document (UIShow / ui/*.ui.json) on top of the
     // composited frame. Call AFTER Renderer::EndScene so menus/HUD keep their
     // authored colors instead of being ACES tone-mapped with the 3D scene.
+    // Forwards to uiSystem_ (UiSystem; Task 11).
     void DrawUI(gfx::Renderer& renderer);
     void Stop();
-
-    // Data-driven UI document (UIShow / ui/*.ui.json): rendered on top of the
-    // 2D canvas every frame; button clicks are edge-triggered per frame.
-    // All calls forward to the replaceable IUiSystem (cfg_.uiSystem).
-    bool ShowUI(const std::string& path);
-    void HideUI();
-    bool UIClicked(const std::string& name) const {
-        return ui_ && ui_->Clicked(name);
-    }
-    void UISetText(const std::string& name, const std::string& text);
-    void UISetFill(const std::string& name, float fill);
-    void UISetVisible(const std::string& name, bool visible);
-    void UISetColor(const std::string& name, float r, float g, float b, float a);
 
     // --- M1: per-entity animation + world-screen HUD anchors ---------------
     // Plays a named clip (substring, case-insensitive) on a skinned entity's
@@ -497,7 +486,7 @@ private:
         std::map<std::string, float> animSMParams; // script-set params
     };
     // Snapshot of the active 2D design-space mapping (captured during Draw,
-    // when the host's 2D viewport is live). InputMousePos()/UIClicked() use
+    // when the host's 2D viewport is live). InputMousePos()/UI hit-tests use
     // this between renders so coordinates stay in design units even after the
     // renderer resets its 2D mapping at the end of the frame.
     float uiScale_ = 1.0f;
@@ -664,7 +653,12 @@ private:
     // GameRuntime wires scriptCtx_.draw2d to its Commands() during on_render
     // and forwards FlushCanvas to it after the scene is composited.
     ScriptCanvas scriptCanvas_;
-    std::shared_ptr<ui::IUiSystem> ui_;     // replaceable game UI system
+    // Game UI subsystem (data-driven ui/*.ui.json documents behind the
+    // replaceable IUiSystem seam; Task 11): GameRuntime wires the UI script
+    // bindings (scriptCtx_.ui*) to it and forwards DrawUI + Tick input/click
+    // handling. ShowUI/HideUI/UIClicked/UISet* 从运行时公共接口移除（无外部
+    // 调用方），脚本直接走 scriptCtx_ 接线。
+    UiSystem uiSystem_;
     std::set<uint64_t> hiddenEntities_;     // SetVisible hide list (EntityKey)
     script::InputMap inputMap_;             // Godot-style actions (input.json)
     std::string pendingScene_;              // ChangeScene deferred to next Tick

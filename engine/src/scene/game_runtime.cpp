@@ -315,29 +315,31 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     // Replaceable UI system: injected via cfg_.uiSystem wins; otherwise the
     // default document-backed system reading through the same VFS/disk source
     // as scripts (G7-1: packed games load ui/*.ui.json straight from the pack).
+    // Owned by uiSystem_ (UiSystem; Task 11) - a thin forwarder to the seam.
     if (cfg_.uiSystem) {
-        ui_ = cfg_.uiSystem;
+        uiSystem_.Set(cfg_.uiSystem);
     } else {
         ui::DocumentUiConfig ucfg;
         ucfg.readFile = [this](const std::string& path) {
             return ReadScript(FullScriptPath(path));
         };
-        ui_.reset(ui::CreateDocumentUiSystem(ucfg).release());
+        uiSystem_.Set(
+            std::shared_ptr<ui::IUiSystem>(ui::CreateDocumentUiSystem(ucfg).release()));
     }
-    scriptCtx_.uiShow = [this](const std::string& path) { return ShowUI(path); };
-    scriptCtx_.uiHide = [this]() { HideUI(); };
-    scriptCtx_.uiClicked = [this](const std::string& name) { return UIClicked(name); };
+    scriptCtx_.uiShow = [this](const std::string& path) { return uiSystem_.Show(path); };
+    scriptCtx_.uiHide = [this]() { uiSystem_.Hide(); };
+    scriptCtx_.uiClicked = [this](const std::string& name) { return uiSystem_.Clicked(name); };
     scriptCtx_.uiSetText = [this](const std::string& name, const std::string& text) {
-        UISetText(name, text);
+        uiSystem_.SetText(name, text);
     };
     scriptCtx_.uiSetFill = [this](const std::string& name, float fill) {
-        UISetFill(name, fill);
+        uiSystem_.SetFill(name, fill);
     };
     scriptCtx_.uiSetVisible = [this](const std::string& name, bool visible) {
-        UISetVisible(name, visible);
+        uiSystem_.SetVisible(name, visible);
     };
     scriptCtx_.uiSetColor = [this](const std::string& name, float r, float g, float b,
-                                   float a) { UISetColor(name, r, g, b, a); };
+                                   float a) { uiSystem_.SetColor(name, r, g, b, a); };
     scriptCtx_.loadTexture = [this](const std::string& path) {
         if (!cfg_.assets || path.empty()) return gfx::TextureHandle{};
         return cfg_.assets->LoadTexture(FullAssetPath(path)).Handle();
@@ -803,7 +805,7 @@ void GameRuntime::SpawnProjectile(const math::Vec3& pos, const math::Vec3& dir, 
 }
 
 void GameRuntime::Stop() {
-    ui_.reset();
+    uiSystem_.Set(nullptr);
     physicsAccum_ = 0.0f;
     scripts_.clear();
     trees_.clear();
@@ -905,30 +907,6 @@ void GameRuntime::RegisterAudioSources() {
             if (a.sound.empty()) return;
             cfg_.playSfx3D(a.sound, t.pos);
         });
-}
-
-bool GameRuntime::ShowUI(const std::string& path) {
-    return ui_ && ui_->Show(path);
-}
-
-void GameRuntime::HideUI() {
-    if (ui_) ui_->Hide();
-}
-
-void GameRuntime::UISetText(const std::string& name, const std::string& text) {
-    if (ui_) ui_->SetText(name, text);
-}
-
-void GameRuntime::UISetFill(const std::string& name, float fill) {
-    if (ui_) ui_->SetFill(name, fill);
-}
-
-void GameRuntime::UISetVisible(const std::string& name, bool visible) {
-    if (ui_) ui_->SetVisible(name, visible);
-}
-
-void GameRuntime::UISetColor(const std::string& name, float r, float g, float b, float a) {
-    if (ui_) ui_->SetColor(name, r, g, b, a);
 }
 
 void GameRuntime::AttachScripts() {
@@ -1968,19 +1946,19 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera,
 }
 
 void GameRuntime::DrawUI(gfx::Renderer& renderer) {
-    if (!running_ || !cfg_.assets || !ui_ || !cfg_.font2d.Valid()) return;
+    if (!running_ || !cfg_.assets || !uiSystem_.Raw() || !cfg_.font2d.Valid()) return;
     scriptCtx_.screenToUi = [this](const math::Vec2& p) {
         return (p - uiOffset_) / uiScale_;
     };
     // The live design-space viewport drives layout: the UI adapts to whatever
     // 2D mapping the host installed (fixed 1280x720 letterbox or a dynamic
     // width under a constant-height mapping).
-    ui_->Draw(renderer, cfg_.font2d,
-              [this](const std::string& p) {
-                  if (!cfg_.assets || p.empty()) return gfx::Texture{};
-                  return cfg_.assets->LoadTexture(FullAssetPath(p));
-              },
-              renderer.UIDesignSize());
+    uiSystem_.Draw(renderer, cfg_.font2d,
+                   [this](const std::string& p) {
+                       if (!cfg_.assets || p.empty()) return gfx::Texture{};
+                       return cfg_.assets->LoadTexture(FullAssetPath(p));
+                   },
+                   renderer.UIDesignSize());
 }
 
 // G1-3 scene-tree API + world-transform cache: forwarded to sceneTree_
@@ -2066,12 +2044,12 @@ void GameRuntime::Tick(float dt) {
     // UI input runs INSIDE the tick, BEFORE on_update: the click edge
     // (IInput::EndTick resets it at the end of every tick) is still live
     // here, and scripts read UIClicked() in the very same tick.
-    if (ui_) {
+    if (uiSystem_.Raw()) {
         const bool clickEdge =
             cfg_.input && cfg_.input->MousePressed(platform::MouseButton::Left);
         math::Vec2 pointer = cfg_.input ? cfg_.input->MousePos() : math::Vec2{};
         if (scriptCtx_.screenToUi) pointer = scriptCtx_.screenToUi(pointer);
-        ui_->Update(pointer, clickEdge);
+        uiSystem_.Update(pointer, clickEdge);
     }
 
     // Both backends share the engine-injected simulated clock.
@@ -2096,7 +2074,7 @@ void GameRuntime::Tick(float dt) {
     // UI clicks are latch-until-consumed (see IUiSystem::ConsumeClicks): now
     // that every on_update has read Clicked() this tick, clear the latch so
     // the same click never fires twice.
-    if (ui_) ui_->ConsumeClicks();
+    uiSystem_.ConsumeClicks();
 
     size_t deadTrees = 0;
     for (BtInst& inst : trees_) {

@@ -19,6 +19,7 @@
 #include "neon/scene/systems/script_canvas.hpp"
 #include "neon/scene/systems/status_system.hpp"
 #include "neon/scene/systems/tween_system.hpp"
+#include "neon/scene/systems/ui_system.hpp"
 #include "helpers.hpp"
 #include "test_backend.hpp"
 
@@ -1515,4 +1516,136 @@ TEST(ScriptCanvasStandalone) {
     CHECK(canvas.Empty());
     CHECK_EQ(canvas.Count(), 0u);
     CHECK_EQ(cmds->size(), 0u);
+}
+
+namespace {
+
+// Minimal IUiSystem fake for the UiSystem thin-wrapper test (Task 11): every
+// call is recorded so the test asserts forwarding without touching the real
+// document-backed system (no VFS / ui/*.ui.json files needed).
+class FakeUi : public ui::IUiSystem {
+public:
+    bool Show(const std::string& path) override {
+        shown = path;
+        return active = true;
+    }
+    void Hide() override { active = false; }
+    bool Active() const override { return active; }
+    void Update(const math::Vec2&, bool clickEdge) override { lastClickEdge = clickEdge; }
+    bool Clicked(const std::string& name) const override {
+        lastClicked = name;
+        return name == "Start";
+    }
+    void SetText(const std::string& n, const std::string& t) override {
+        textNode = n;
+        textValue = t;
+    }
+    void SetFill(const std::string& n, float f) override {
+        fillNode = n;
+        fillValue = f;
+    }
+    void SetVisible(const std::string& n, bool v) override {
+        visibleNode = n;
+        visibleValue = v;
+    }
+    void SetColor(const std::string& n, float r, float g, float b, float a) override {
+        colorNode = n;
+        colorValue[0] = r;
+        colorValue[1] = g;
+        colorValue[2] = b;
+        colorValue[3] = a;
+    }
+    void Draw(gfx::Renderer&, const gfx::Font&, const ui::UiTextureLoader&,
+              const math::Vec2& viewportSize) override {
+        drawViewport = viewportSize;
+    }
+
+    std::string shown;
+    bool active = false;
+    bool lastClickEdge = false;
+    mutable std::string lastClicked;
+    std::string textNode, textValue;
+    std::string fillNode;
+    float fillValue = 0.0f;
+    std::string visibleNode;
+    bool visibleValue = false;
+    std::string colorNode;
+    float colorValue[4] = {};
+    math::Vec2 drawViewport;
+};
+
+} // namespace
+
+// Task 11: UiSystem 独立单测（脱离 GameRuntime，直接测拆分后的游戏 UI 薄包装）：
+// 未安装系统时所有调用安全 no-op（不崩、返回 false）；安装 FakeUi 后
+// Set/Show/Hide/Active/Update/Clicked/SetText/SetFill/SetVisible/SetColor/
+// ConsumeClicks/Draw 逐项转发到底层 IUiSystem，Raw() 暴露裸指针，Set(nullptr)
+// 清空系统回到 no-op。
+TEST(UiSystemStandalone) {
+    scene::UiSystem ui;
+
+    // No system installed: safe no-ops with sane defaults (no crash).
+    CHECK(!ui.Show("ui/menu.ui.json"));
+    CHECK(!ui.Active());
+    CHECK(!ui.Clicked("Start"));
+    CHECK(ui.Raw() == nullptr);
+    ui.Hide();
+    ui.SetText("Start", "GO");
+    ui.SetFill("Hp", 0.5f);
+    ui.SetVisible("Panel", false);
+    ui.SetColor("Start", 1.0f, 0.0f, 0.0f, 1.0f);
+    ui.ConsumeClicks();
+    ui.Update({100.0f, 200.0f}, false);
+
+    // Install a fake IUiSystem: every call forwards to it.
+    auto fake = std::make_shared<FakeUi>();
+    ui.Set(fake);
+    CHECK_EQ(ui.Raw(), fake.get());
+
+    CHECK(ui.Show("ui/menu.ui.json"));
+    CHECK_EQ(fake->shown, "ui/menu.ui.json");
+    CHECK(ui.Active());
+    ui.Hide();
+    CHECK(!ui.Active());
+
+    ui.Update({100.0f, 200.0f}, true);
+    CHECK(fake->lastClickEdge);
+
+    CHECK(ui.Clicked("Start"));
+    CHECK_EQ(fake->lastClicked, "Start");
+    CHECK(!ui.Clicked("Other"));
+    CHECK_EQ(fake->lastClicked, "Other");
+
+    ui.SetText("Start", "GO");
+    CHECK_EQ(fake->textNode, "Start");
+    CHECK_EQ(fake->textValue, "GO");
+    ui.SetFill("Hp", 0.75f);
+    CHECK_EQ(fake->fillNode, "Hp");
+    CHECK_NEAR(fake->fillValue, 0.75f, 1e-6f);
+    ui.SetVisible("Panel", false);
+    CHECK_EQ(fake->visibleNode, "Panel");
+    CHECK(!fake->visibleValue);
+    ui.SetColor("Start", 0.2f, 0.4f, 0.6f, 0.8f);
+    CHECK_EQ(fake->colorNode, "Start");
+    CHECK_NEAR(fake->colorValue[0], 0.2f, 1e-6f);
+    CHECK_NEAR(fake->colorValue[1], 0.4f, 1e-6f);
+    CHECK_NEAR(fake->colorValue[3], 0.8f, 1e-6f);
+
+    ui.ConsumeClicks();
+    CHECK(ui.Show("ui/pause.ui.json")); // ConsumeClicks leaves the doc usable
+    CHECK(ui.Active());
+
+    // Draw forwards the design-space viewport to the fake (headless renderer).
+    gfx::Renderer renderer;
+    renderer.AttachBackendForTesting(std::make_unique<test::NullBackend>());
+    gfx::Font font;
+    ui.Draw(renderer, font, {}, {1280.0f, 720.0f});
+    CHECK_NEAR(fake->drawViewport.x, 1280.0f, 1e-6f);
+    CHECK_NEAR(fake->drawViewport.y, 720.0f, 1e-6f);
+
+    // Set(nullptr) clears the system: back to safe no-ops.
+    ui.Set(nullptr);
+    CHECK(ui.Raw() == nullptr);
+    CHECK(!ui.Show("x"));
+    CHECK(!ui.Active());
 }
