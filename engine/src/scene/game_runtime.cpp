@@ -202,7 +202,8 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     // Script VFX particle sprite: a soft radial glow (project assets ship one
     // at assets/sprites/glow.png; missing file degrades to a white quad).
     if (cfg_.assets)
-        particleTex_ = cfg_.assets->LoadTexture(FullAssetPath("assets/sprites/glow.png"));
+        sceneParticles_.InitParticleTexture(*cfg_.assets,
+                                            FullAssetPath("assets/sprites/glow.png"));
     // Create the physics world: Jolt when requested and compiled, else the
     // deterministic custom solver (server / headless tests). A "plugin:<name>"
     // backend (G5-1) loads the solver from a native middleware DLL/SO under
@@ -273,7 +274,7 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     scriptCtx_.setAudioListener = cfg_.setAudioListener;
     scriptCtx_.setBusVolume = cfg_.setBusVolume;
     scriptCtx_.emitParticles = [this](const gfx::EmitterConfig& cfg) {
-        particles_.Emit(cfg);
+        sceneParticles_.Emit(cfg);
     };
     scriptCtx_.entityKinds.clear();
     // Data files (levels/*.json etc.) resolve like scripts: project dir on
@@ -775,7 +776,7 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
 }
 
 void GameRuntime::EmitParticles(const gfx::EmitterConfig& cfg) {
-    particles_.Emit(cfg);
+    sceneParticles_.Emit(cfg);
 }
 
 // Script-facing forwarder to the ProjectileSystem (the bindings and the
@@ -795,8 +796,7 @@ void GameRuntime::Stop() {
     draws_.clear();
     projectiles_.Clear();
     tweens_.clear();
-    particles_.Clear();
-    particleTex_ = {};
+    sceneParticles_.Reset();
     poseHead_ = 0;
     poseCount_ = 0;
     for (auto& s : poseSlots_) s.clear();
@@ -2020,8 +2020,7 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera,
     DrawVegetation(renderer, cam);
     // Script VFX particles: world-space camera-facing billboards (additive +
     // alpha batches), drawn INSIDE the HDR target so bright particles bloom.
-    if (particleTex_.Valid() && particles_.Count() > 0)
-        particles_.Draw(renderer, particleTex_);
+    sceneParticles_.Draw(renderer);
     // Compact when a fifth of the draw list belongs to dead entities.
     if (dead && dead * 5 > draws_.size()) {
         draws_.erase(std::remove_if(draws_.begin(), draws_.end(),
@@ -2245,7 +2244,9 @@ void GameRuntime::InitSystemGraph() {
                  {typeid(StatusComponent)},
                  {typeid(StatusComponent), typeid(SceneHealth)});
     systems_.Add("projectiles",
-                 sys([this](float d, ecs::World& w) { projectiles_.Tick(d, w, particles_); }),
+                 sys([this](float d, ecs::World& w) {
+                     projectiles_.Tick(d, w, sceneParticles_.Particles());
+                 }),
                  {typeid(SceneHealth), typeid(SceneTransform)},
                  {typeid(SceneHealth), typeid(ProjectileSystem::Projectile)});
 }
@@ -2258,7 +2259,7 @@ void GameRuntime::Tick(float dt) {
     // step before resuming.
     if (hosts_.lua && hosts_.lua->DebuggerPaused()) return;
 
-    particles_.Update(dt); // world-space VFX particles (script EmitParticles)
+    sceneParticles_.Update(dt); // world-space VFX particles (script EmitParticles)
 
     // G7-3: advance the input map's timing clock before scripts query actions,
     // so double-tap / long-press edges are fresh this frame.

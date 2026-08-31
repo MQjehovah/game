@@ -129,6 +129,7 @@ add_library(neon_scene STATIC
   engine/src/scene/game_runtime_draw.cpp
   engine/src/scene/systems/projectile_system.cpp
   engine/src/scene/systems/hud_system.cpp
+  engine/src/scene/systems/scene_particle_system.cpp
   engine/src/scene/skinned_model.cpp
   engine/src/scene/status.cpp
   engine/src/scene/world_chunk.cpp

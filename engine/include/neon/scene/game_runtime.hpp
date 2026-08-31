@@ -19,7 +19,6 @@
 #include "neon/gfx/font.hpp"
 #include "neon/gfx/material.hpp"
 #include "neon/gfx/mesh.hpp"
-#include "neon/gfx/particles.hpp"
 #include "neon/math/bvh.hpp"
 #include "neon/plugin/runtime_plugin.hpp"
 #include "neon/plugin/backend.hpp"
@@ -31,6 +30,7 @@
 #include "neon/scene/status.hpp"
 #include "neon/scene/systems/hud_system.hpp"
 #include "neon/scene/systems/projectile_system.hpp"
+#include "neon/scene/systems/scene_particle_system.hpp"
 #include "neon/script/bindings.hpp"
 #include "neon/script/gamevars.hpp"
 #include "neon/script/script.hpp"
@@ -354,7 +354,7 @@ public:
     uint32_t AutoLagCompTicks() const { return autoRewindTicks_; }
     bool LagCompPosition(ecs::Entity e, uint32_t rewindTicks, math::Vec3& out) const;
 
-    // World-space particle burst (gfx::ParticleSystem, camera-facing
+    // World-space particle burst (SceneParticleSystem, camera-facing
     // billboards, additive/alpha batches) — the neon_rush-quality VFX path.
     // Exposed to scripts through the EmitParticles binding.
     void EmitParticles(const gfx::EmitterConfig& cfg);
@@ -676,8 +676,9 @@ private:
     size_t poseHead_ = 0;   // slot index of the OLDEST snapshot
     size_t poseCount_ = 0;  // number of valid snapshots (<= capacity)
     uint32_t autoRewindTicks_ = 0; // rewind used by overlap queries / hit tests
-    gfx::ParticleSystem particles_; // world-space billboard particles (scripts)
-    gfx::Texture particleTex_;      // soft radial glow sprite for the particles
+    // Scene-level particle subsystem (world-space billboards + soft glow
+    // sprite): GameRuntime forwards EmitParticles and ticks/draws it per frame.
+    SceneParticleSystem sceneParticles_;
     std::set<std::string> loadedScripts_; // resolved paths whose chunk ran (presence only)
     std::set<std::string> scriptFailed_;  // resolved paths that failed (skip later)
     // Captured handler handles per loaded chunk (keyed like loadedScripts_:
