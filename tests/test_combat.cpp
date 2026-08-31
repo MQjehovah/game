@@ -260,6 +260,64 @@ TEST(GameplayLibInjected) {
     CHECK_NEAR(runtime.GameVar("gp"), 1.0, 1e-6);
 }
 
+TEST(GameplayStatsRoundTrip) {
+    const char* scene = R"({
+      "entities": [
+        {"name": "hero", "components": {
+          "transform": {"pos": [0,0,0]},
+          "health": {"hp": 100, "maxHp": 100},
+          "script": {"backend": "lua", "path": "gameplay.lua"}}}
+      ]
+    })";
+    const char* lua = R"(
+      function on_start(e)
+        Gameplay.Stats.Set("x", 10)
+        Gameplay.Stats.Add("x", 5)
+        Gameplay.Stats.Set("y", 100)
+        SetVar("sum", Gameplay.Stats.Get("x") + Gameplay.Stats.Get("y"))
+        Gameplay.Stats.Add("missing", 7) -- uninitialized key treated as 0
+        SetVar("m", Gameplay.Stats.Get("missing"))
+      end
+    )";
+    scene::GameRuntime runtime;
+    scene::GameRuntimeConfig cfg;
+    cfg.headless = true;
+    cfg.readScript = [&](const std::string&) { return std::string(lua); };
+    CHECK(runtime.Start(scene, cfg).Ok());
+    CHECK_NEAR(runtime.GameVar("sum"), 115.0, 1e-6);
+    CHECK_NEAR(runtime.GameVar("m"), 7.0, 1e-6);
+}
+
+TEST(GameplayCooldownsTick) {
+    const char* scene = R"({
+      "entities": [
+        {"name": "hero", "components": {
+          "transform": {"pos": [0,0,0]},
+          "health": {"hp": 100, "maxHp": 100},
+          "script": {"backend": "lua", "path": "gameplay.lua"}}}
+      ]
+    })";
+    const char* lua = R"(
+      function on_start(e)
+        cd = Gameplay.Cooldowns.new()
+        Gameplay.Cooldowns.set(cd, "fire", 2.0)
+        SetVar("ready0", Gameplay.Cooldowns.ready(cd, "fire") and 1 or 0)
+        Gameplay.Cooldowns.tick(cd, 1.5)
+        SetVar("left", Gameplay.Cooldowns.left(cd, "fire"))
+        Gameplay.Cooldowns.tick(cd, 0.6)
+        SetVar("ready1", Gameplay.Cooldowns.ready(cd, "fire") and 1 or 0)
+      end
+    )";
+    scene::GameRuntime runtime;
+    scene::GameRuntimeConfig cfg;
+    cfg.headless = true;
+    cfg.readScript = [&](const std::string&) { return std::string(lua); };
+    CHECK(runtime.Start(scene, cfg).Ok());
+    CHECK_NEAR(runtime.GameVar("ready0"), 0.0, 1e-6);
+    CHECK_NEAR(runtime.GameVar("left"), 0.5, 1e-6);
+    CHECK_NEAR(runtime.GameVar("ready1"), 1.0, 1e-6);
+}
+
 TEST(CombatStatusBindingsViaLua) {
     const char* scene = R"({
       "entities": [
