@@ -235,8 +235,8 @@ Value NativeSpawnProjectile(IScriptHost& host, void* user) {
         host.ArgCount() >= 6 ? EntityFromValue(host.GetArg(5)) : ecs::Entity{};
     // Optional 7th/8th args: max travel distance (0 = life-bounded) and the
     // hit radius; both default to data-driven-safe values.
-    const float range = host.ArgCount() >= 7 ? NumberArg(host, 6, 0.0f) : 0.0f;
-    const float hitRadius = host.ArgCount() >= 8 ? NumberArg(host, 7, 0.8f) : 0.8f;
+    const float range = NumberArg(host, 6, 0.0f);
+    const float hitRadius = NumberArg(host, 7, 0.8f);
     // Optional 9th arg: status effects applied to the hit target, as an array
     // of {name=..., duration=..., magnitude=...} tables.
     std::vector<SkillStatusData> statuses;

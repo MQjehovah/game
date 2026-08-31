@@ -479,3 +479,49 @@ TEST(SpawnProjectileStatusesViaLua) {
     CHECK_NEAR(runtime.EntityHealth(wolf).first, 40.0f, 1e-3);
     CHECK(runtime.HasStatus(wolf, scene::kStatusBurning));
 }
+
+TEST(SpawnProjectileRangeLimitsTravel) {
+    scene::GameRuntime runtime;
+    scene::GameRuntimeConfig cfg; cfg.headless = true;
+    CHECK(runtime.Start(kCombatScene, cfg).Ok());
+    const ecs::Entity wolf = runtime.FindNamedEntity("wolf_front");
+    const ecs::Entity hero = runtime.FindNamedEntity("hero");
+    // range=0.5: the projectile expires after 0.5 units, short of the wolf at
+    // 2 units, so the target is never reached.
+    runtime.SpawnProjectile({0,1,0}, {0,0,-1}, 14, 10, 2.0f, hero, 0.5f);
+    for (int i = 0; i < 30; ++i) runtime.Tick(1.0f/60.0f);
+    CHECK_NEAR(runtime.EntityHealth(wolf).first, 50.0f, 1e-3);
+}
+
+TEST(SpawnProjectileHitRadiusGatesHit) {
+    const char* scene = R"({
+      "entities": [
+        {"name": "hero", "components": {"transform": {"pos": [0,0,0]}, "health": {"hp": 100, "maxHp": 100}}},
+        {"name": "target", "components": {"transform": {"pos": [1.2,0,-2]}, "health": {"hp": 50, "maxHp": 50}}}
+      ]
+    })";
+
+    // hitRadius 0.8 < the target's 1.2 horizontal offset -> miss (hp stays 50).
+    {
+        scene::GameRuntime runtime;
+        scene::GameRuntimeConfig cfg; cfg.headless = true;
+        CHECK(runtime.Start(scene, cfg).Ok());
+        const ecs::Entity hero = runtime.FindNamedEntity("hero");
+        const ecs::Entity target = runtime.FindNamedEntity("target");
+        runtime.SpawnProjectile({0,1,0}, {0,0,-1}, 14, 10, 2.0f, hero, 0.0f, 0.8f);
+        for (int i = 0; i < 30; ++i) runtime.Tick(1.0f/60.0f);
+        CHECK_NEAR(runtime.EntityHealth(target).first, 50.0f, 1e-3);
+    }
+
+    // hitRadius 1.5 > 1.2 -> hit (50 - 10 = 40).
+    {
+        scene::GameRuntime runtime;
+        scene::GameRuntimeConfig cfg; cfg.headless = true;
+        CHECK(runtime.Start(scene, cfg).Ok());
+        const ecs::Entity hero = runtime.FindNamedEntity("hero");
+        const ecs::Entity target = runtime.FindNamedEntity("target");
+        runtime.SpawnProjectile({0,1,0}, {0,0,-1}, 14, 10, 2.0f, hero, 0.0f, 1.5f);
+        for (int i = 0; i < 30; ++i) runtime.Tick(1.0f/60.0f);
+        CHECK_NEAR(runtime.EntityHealth(target).first, 40.0f, 1e-3);
+    }
+}

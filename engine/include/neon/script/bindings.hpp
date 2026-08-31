@@ -49,15 +49,6 @@ struct EntityLess {
 // flushes them into the renderer's 2D overlay every frame. This is how
 // data-driven 2D games (e.g. the editor-authored PvZ project) draw without
 // any C++ gameplay code.
-// Status effect data (script <-> engine neutral type; GameRuntime wires it into
-// scene::SkillStatus). Kept scene-free so the script layer never links against
-// the scene module (breaks the scene <-> script dependency cycle).
-struct SkillStatusData {
-    std::string name;
-    float duration = 0.0f;
-    float magnitude = 0.0f;
-};
-
 struct Draw2DCmd {
     enum class Kind : uint8_t { Rect, RectOutline, Text };
     Kind kind = Kind::Rect;
@@ -72,6 +63,15 @@ struct Draw2DCmd {
     bool centerY = false;
     gfx::TextureHandle texture; // sprite (DrawSprite); invalid = plain quad
     std::string text;
+};
+
+// Status effect data (script <-> engine neutral type; GameRuntime wires it into
+// scene::SkillStatus). Kept scene-free so the script layer never links against
+// the scene module (breaks the scene <-> script dependency cycle).
+struct SkillStatusData {
+    std::string name;
+    float duration = 0.0f;
+    float magnitude = 0.0f;
 };
 
 // The state engine bindings operate on. Created by the game/demo and passed to
