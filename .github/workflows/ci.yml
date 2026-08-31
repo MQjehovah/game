@@ -77,4 +77,4 @@ jobs:
 
       - name: Smoke test (Windows Release)
         if: runner.os == 'Windows' && matrix.config == 'Release'
-        run: .\build\Release\neon_rush.exe --smoke-test 240
+        run: .\build\Release\neon_editor.exe --smoke-test 240

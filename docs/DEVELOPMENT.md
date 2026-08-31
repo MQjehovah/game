@@ -40,7 +40,7 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│ 应用层    neon_rush(demo) / neon_game(播放器) / neon_server / neon_editor │
+│ 应用层    neon_game(播放器) / neon_server(服务器) / neon_editor(编辑器)  │
 ├─────────────────────────────────────────────────────────────────┤
 │ neon_scene  (L3)  assets / scene(GameRuntime) / script / bt / anim │
 │                   physics / ui / audio / plugin(runtime) / modules │
@@ -273,7 +273,8 @@ MSAA 多重采样 + `glBlitFramebuffer` 解析。能力自检失败自动回退�
 | `neon_editor`（F5 试玩） | `PhysicsModule(Jolt)` + `ScriptModule(Lua)`（每试玩会话新建 Kernel，`StopPlay` 回收） |
 | `neon_server`（服务器） | `PhysicsModule(custom/Jolt 按 `--physics`)` + `ScriptModule(Lua)`；`plugin:<name>` 原生后端保留字符串回退 |
 
-`neon_rush` 是硬编码 demo（不走 `GameRuntime`），不在"数据驱动可替换"范畴内。
+`neon_rush`（原硬编码 NeonRealm demo）已移除——数据驱动版本由 `projects/neon_realm`（场景 JSON + Lua）
+经 `neon_game`/`neon_editor` 运行，不再有独立的硬编码 demo 入口。
 
 ---
 
@@ -439,7 +440,7 @@ glTF 依赖（buffers/images URI 一并入包）、程序化 mesh key 校验放�
   矩阵改动必须补单测。
 - **分层纪律**：游戏层禁 `windows.h`/GL/X11/Cocoa 头；平台后端按 OS 编译；新增跨平台先加接口。
 - **提交前**：`cmake --build build -j` 无警告（`-Wall -Wextra`）；`neon_tests` 全绿；
-  `neon_rush --smoke-test 240` 退出码 0。
+  `neon_editor --smoke-test 240` 退出码 0。
 
 ---
 

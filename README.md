@@ -83,7 +83,7 @@
 ```bat
 cmake -S . -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
-.\build\neon_rush.exe
+.\build\neon_editor.exe
 ```
 
 MSVC：把 `-G "MinGW Makefiles"` 换成 `-G "Visual Studio 17 2022"` 即可。
@@ -93,7 +93,7 @@ MSVC：把 `-G "MinGW Makefiles"` 换成 `-G "Visual Studio 17 2022"` 即可。
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
-./build/neon_rush
+./build/neon_editor
 ```
 
 ### Linux
@@ -104,7 +104,7 @@ cmake --build build -j
 sudo apt install build-essential cmake libx11-dev libgl1-mesa-dev
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
-./build/neon_rush
+./build/neon_editor
 ```
 
 ### 测试
@@ -131,29 +131,15 @@ cmake --build build --target neon_tests -j
 ## 运行与验证
 
 ```bash
-# 正常运行
-./build/neon_rush
+# 启动编辑器
+./build/neon_editor
 
-# 无头冒烟测试（跑 N 个固定步长后自动退出，0 表示成功）
-./build/neon_rush --smoke-test 600
+# 编辑器 UI 冒烟测试（跑 N 个固定步长后自动退出，0 表示成功）
+./build/neon_editor --smoke-test 600
 
 # 指定帧截图（PNG）
-./build/neon_rush --smoke-test 400 --screenshot shot.png 300
+./build/neon_editor --screenshot shot.png 300
 ```
-
-### Demo《NeonRealm》操作
-
-| 输入          | 动作                  |
-| ------------- | --------------------- |
-| WASD / 方向键 | 移动（相对相机）      |
-| 鼠标拖动      | 环绕相机              |
-| 左键          | 近战攻击（60° 扇形） |
-| 右键          | 冲刺（带无敌帧）      |
-| 空格          | 跳跃                  |
-| Esc           | 暂停 / 返回           |
-
-目标：在开放世界中帮助村长猎杀野狼、完成主线任务，升级并收集金币。
-存档自动写入 `neon_realm_save.dat`（等级/经验/金币）。
 
 ### 素材与许可
 

@@ -163,8 +163,8 @@ target_include_directories(neon_ufbx PUBLIC engine/third_party/ufbx)
 target_link_libraries(neon_scene PRIVATE neon_ufbx)
 
 # neon_engine stays as a facade so every existing consumer links the full
-# layered stack unchanged (neon_rush / neon_game / neon_server / neon_editor /
-# neon_tests). New code can depend on a specific layer instead.
+# layered stack unchanged (neon_game / neon_server / neon_editor / neon_tests).
+# New code can depend on a specific layer instead.
 add_library(neon_engine INTERFACE)
 target_link_libraries(neon_engine INTERFACE neon_core neon_gfx neon_scene)
 
@@ -338,24 +338,6 @@ if(NEON_ENABLE_JOLT)
   target_include_directories(neon_scene PUBLIC third_party/jolt)
   target_link_libraries(neon_scene PRIVATE Jolt)
   target_sources(neon_scene PRIVATE engine/src/physics/jolt_world.cpp)
-endif()
-
-# ---------------------------------------------------------------------------
-# Demo executable
-# ---------------------------------------------------------------------------
-add_executable(neon_rush
-  game/src/main.cpp
-  game/src/demo.cpp
-  game/src/art.cpp
-  game/src/sfx.cpp
-)
-target_include_directories(neon_rush PRIVATE engine/generated third_party/stb)
-target_link_libraries(neon_rush PRIVATE neon_engine)
-if(MSVC)
-  target_compile_options(neon_rush PRIVATE /W4 /permissive- /utf-8)
-elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-  target_compile_options(neon_rush PRIVATE -Wall -Wextra
-    -finput-charset=UTF-8 -fexec-charset=UTF-8)
 endif()
 
 # ---------------------------------------------------------------------------

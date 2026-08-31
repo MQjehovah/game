@@ -197,8 +197,8 @@ bool EditorApp::OnCreate() {
     assetMgr_.Init(&renderer_);
     MountAssetVfs();
 
-    pixelFont_ = renderer_.CreateFontFromMemory(neon_rush::kEmbeddedFontData,
-                                                neon_rush::kEmbeddedFontSize, 24);
+    pixelFont_ = renderer_.CreateFontFromMemory(neon::embedded::kEmbeddedFontData,
+                                                neon::embedded::kEmbeddedFontSize, 24);
         // System CJK font with DYNAMIC glyphs: scene names, panels and
     // play HUD render any Chinese text without maintaining a list.
     cjkFont_ = assetMgr_.LoadSystemCJKFont(24);

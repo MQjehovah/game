@@ -280,8 +280,8 @@ if (cfg_.vfs) assetMgr_.SetFileSystem(cfg_.vfs.get());
 assetMgr_.SetTextureBakeDir(".neon/imported");
     // Overlay font: embedded ASCII pixel font, upgraded with the system CJK
     // font when available so "Esc 退出" renders (fallback keeps ASCII labels).
-    pixelFont_ = renderer_.CreateFontFromMemory(neon_rush::kEmbeddedFontData,
-                                                neon_rush::kEmbeddedFontSize, 24);
+    pixelFont_ = renderer_.CreateFontFromMemory(neon::embedded::kEmbeddedFontData,
+                                                neon::embedded::kEmbeddedFontSize, 24);
     // System CJK font with DYNAMIC glyphs: any text (HUD, dialogue, scripts)
     // renders without maintaining a character list.
     cjkFont_ = assetMgr_.LoadSystemCJKFont(24);

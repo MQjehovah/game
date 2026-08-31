@@ -295,7 +295,7 @@
 - [x] 无 MinGW CI（本地主力工具链，回归不可见）；
 - [x] sanitizer 仅 Linux，Windows/macOS 无；
 - [x] `third_party/glslang_tool/bin/glslang.exe` 二进制工具直接进仓库；
-- [x] 冒烟仅 neon_rush，server/game 联机与打包 e2e 不在 CI。
+- [x] 冒烟仅 neon_editor，server/game 联机与打包 e2e 不在 CI。
 
 ### D6 编辑器功能洞（撤销/静默失败）
 - [~] 灯光/相机参数编辑不入撤销栈（`editor_scene.cpp:426-461`、`panels.cpp:1407-1452`）；地形笔刷绕过 history（PaintTerrain）；UI 文档每次拖动即时写盘且无撤销（`editor_viewport.cpp:577-588`）。
