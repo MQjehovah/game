@@ -34,6 +34,7 @@
 #include "neon/scene/systems/prefab_system.hpp"
 #include "neon/scene/systems/projectile_system.hpp"
 #include "neon/scene/systems/scene_particle_system.hpp"
+#include "neon/scene/systems/scene_tree_system.hpp"
 #include "neon/scene/systems/status_system.hpp"
 #include "neon/scene/systems/tween_system.hpp"
 #include "neon/script/bindings.hpp"
@@ -234,7 +235,8 @@ public:
     script::GameVars& GameVars() { return scriptCtx_.gameVars; }
     // G1-3 scene-tree API: direct children / all descendants of an entity
     // (via the resolved SceneParentLink graph). O(n) per call; intended for
-    // tooling, queries and tests, not per-frame hot paths.
+    // tooling, queries and tests, not per-frame hot paths. Forwarded to
+    // sceneTree_ (SceneTreeSystem; Task 9).
     std::vector<ecs::Entity> GetChildren(ecs::Entity parent);
     std::vector<ecs::Entity> GetDescendants(ecs::Entity root);
     // G1-3 world-transform cache: rebuilds the parent-before-child pass from
@@ -530,9 +532,6 @@ private:
     void TickAnimations(float dt);
     // Flushes the script 2D canvas (draw2d_) into the renderer overlay.
     void FlushDraw2D(gfx::Renderer& renderer);
-    // Scene-tree world transform: walks SceneParentLink ancestors (bounded
-    // depth) composing local TRS. Identity for unlinked entities.
-    math::Mat4 LocalToWorld(ecs::Entity e) const;
     // Loads every assets/prefabs/*.json under cfg_.scriptBaseDir into the
     // PrefabSystem (no-op when the base dir is empty or the prefabs dir is
     // absent). Scene entities can then reference prefabs by name, matching how
@@ -638,7 +637,9 @@ private:
     std::vector<math::Mat4> batchModels_;
     // G1-3 world-transform cache (EntityKey -> world matrix), rebuilt by
     // RebuildWorldTransforms() and consumed by CachedLocalToWorld / Draw.
-    std::unordered_map<uint64_t, math::Mat4> worldTransforms_;
+    // Scene-tree subsystem (SceneParentLink hierarchy + world-transform cache;
+    // Task 9): GameRuntime forwards the G1-3 scene-tree API to it.
+    SceneTreeSystem sceneTree_;
     // G1-2 spatial index: per-frame BVH over batchable draw items, used to
     // pre-cull the camera frustum before instanced draws (id = draw index).
     math::Bvh drawBvh_;

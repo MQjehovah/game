@@ -15,6 +15,7 @@
 #include "neon/scene/systems/plugin_system.hpp"
 #include "neon/scene/systems/prefab_system.hpp"
 #include "neon/scene/systems/projectile_system.hpp"
+#include "neon/scene/systems/scene_tree_system.hpp"
 #include "neon/scene/systems/status_system.hpp"
 #include "neon/scene/systems/tween_system.hpp"
 #include "helpers.hpp"
@@ -1401,4 +1402,63 @@ end
     CHECK(ps.Manager() == nullptr);
     CHECK(!ps.DispatchEvent("player_join", {}));
     ps.Shutdown(); // idempotent
+}
+
+// Task 9: SceneTreeSystem 独立子系统 —— 直接用 ecs::World 驱动（不经过
+// GameRuntime），验证层级遍历与世界变换缓存（父先子后、任意深度）。
+TEST(SceneTreeSystemStandalone) {
+    ecs::World world;
+    scene::SceneTreeSystem tree;
+
+    const ecs::Entity root = world.Create();
+    const ecs::Entity child = world.Create();
+    const ecs::Entity grand = world.Create();
+    std::vector<ecs::Entity> deep;
+    for (int i = 0; i < 9; ++i) deep.push_back(world.Create()); // 11-level chain
+
+    world.Add<scene::SceneTransform>(root, {{1, 2, 3}});
+    world.Add<scene::SceneTransform>(child, {{10, 0, 0}});
+    world.Add<scene::SceneParentLink>(child, {root});
+    world.Add<scene::SceneTransform>(grand, {{0, 5, 0}});
+    world.Add<scene::SceneParentLink>(grand, {child});
+
+    ecs::Entity prev = root;
+    for (const ecs::Entity& d : deep) {
+        world.Add<scene::SceneTransform>(d, {{1, 0, 0}});
+        world.Add<scene::SceneParentLink>(d, {prev});
+        prev = d;
+    }
+
+    auto translation = [](const math::Mat4& m) {
+        return math::Vec3{m.m[3], m.m[7], m.m[11]};
+    };
+
+    const std::vector<ecs::Entity> children = tree.GetChildren(world, root);
+    CHECK_EQ(children.size(), 2u); // child + deep[0]
+    bool hasChild = false, hasDeep = false;
+    for (const ecs::Entity& e : children) {
+        if (e == child) hasChild = true;
+        if (e == deep[0]) hasDeep = true;
+    }
+    CHECK(hasChild);
+    CHECK(hasDeep);
+
+    const std::vector<ecs::Entity> desc = tree.GetDescendants(world, root);
+    CHECK_EQ(desc.size(), 11u); // child, grand, deep[0..8]
+
+    tree.Rebuild(world);
+    CHECK_NEAR(translation(tree.CachedLocalToWorld(root)).x, 1.0f, 1e-5f);
+    CHECK_NEAR(translation(tree.CachedLocalToWorld(child)).x, 11.0f, 1e-5f);
+    CHECK_NEAR(translation(tree.CachedLocalToWorld(grand)).x, 11.0f, 1e-5f);
+    CHECK_NEAR(translation(tree.CachedLocalToWorld(grand)).y, 7.0f, 1e-5f);
+    // 1 (root) + 9 * 1 = 10: beyond the old 8-level walk cap.
+    CHECK_NEAR(translation(tree.CachedLocalToWorld(deep[8])).x, 10.0f, 1e-5f);
+
+    // Mutations are reflected after a rebuild.
+    world.Get<scene::SceneTransform>(child)->pos = {100.0f, 0.0f, 0.0f};
+    tree.Rebuild(world);
+    CHECK_NEAR(translation(tree.CachedLocalToWorld(grand)).x, 101.0f, 1e-5f);
+
+    // Unknown entity -> identity.
+    CHECK(translation(tree.CachedLocalToWorld(ecs::Entity{})).x == 0.0f);
 }
