@@ -85,26 +85,15 @@ void EditorApp::BuildImGuiUI() {
             ImGui::EndMenu();
         }
         if (ImGui::BeginMenu("视图")) {
-            ImGui::MenuItem("场景", nullptr, &showHierarchy_);
-            ImGui::MenuItem("属性", nullptr, &showInspector_);
-            ImGui::MenuItem("动画时间线", nullptr, &showAnimEditor_);
-            ImGui::MenuItem("动画状态机", nullptr, &showStateMachineEditor_);
-            ImGui::MenuItem("地形编辑", nullptr, &showTerrain_);
-            ImGui::MenuItem("2D 地图", nullptr, &showTilemap_);
+            // Built-in toggleable panels come from the shared registry (C3):
+            // one list drives both this menu and the ini persistence, so the
+            // two can no longer drift apart.
+            for (int i = 0; i < PanelCount(); ++i) {
+                const PanelDef& p = Panels()[i];
+                if (!p.inMenu) continue;
+                ImGui::MenuItem(p.title, nullptr, &(this->*p.flag));
+            }
             ImGui::MenuItem("以选中相机为视图", nullptr, &cameraFollowSelected_);
-            ImGui::MenuItem("资产", nullptr, &showAssets_);
-            ImGui::MenuItem("资源", nullptr, &showResources_);
-            ImGui::MenuItem("日志", nullptr, &showLog_);
-            ImGui::MenuItem("模型查看器", nullptr, &showModelPreview_);
-            ImGui::MenuItem("行为树", nullptr, &showBt_);
-            ImGui::MenuItem("脚本编辑器", nullptr, &showScriptEditor_);
-            ImGui::MenuItem("打包", nullptr, &showPackage_);
-            ImGui::MenuItem("性能", nullptr, &showProfiler_);
-            ImGui::MenuItem("输入映射", nullptr, &showInputMap_);
-            ImGui::MenuItem("导航", nullptr, &showNav_);
-            ImGui::MenuItem("UI 编辑器", nullptr, &showUIEditor_);
-            ImGui::MenuItem("本地化", nullptr, &showLoc_);
-            ImGui::MenuItem("插件", nullptr, &showPlugins_);
             // Plugin-contributed panels appear in the same menu (docked like
             // built-in panels; the manager owns their open state).
             if (pluginMgr_) {

@@ -11,6 +11,8 @@
 #include <vector>
 
 #include "neon/gfx/color.hpp"
+#include "neon/gfx/material.hpp"
+#include "neon/gfx/mesh.hpp"
 #include "neon/math/math.hpp"
 #include "neon/script/script.hpp"
 
@@ -124,6 +126,33 @@ inline void ListFilesRecursive(const std::string& absDir, const std::string& pre
             out.push_back(rel);
     }
 #endif
+}
+
+// Two materials render identically (same shader/textures/scalars/flags), so
+// their entities can share one instanced draw. Exact float equality is fine:
+// materials are copied from the same resolved source, and materials that
+// merely have numerically identical values are safe to batch.
+inline bool SameMaterial(const gfx::Material& a, const gfx::Material& b) {
+    return a.shader.id == b.shader.id && a.albedo.id == b.albedo.id &&
+           a.metallicRoughness.id == b.metallicRoughness.id &&
+           a.occlusion.id == b.occlusion.id && a.emissive.id == b.emissive.id &&
+           a.tint.r == b.tint.r && a.tint.g == b.tint.g && a.tint.b == b.tint.b &&
+           a.tint.a == b.tint.a && a.shininess == b.shininess && a.metallic == b.metallic &&
+           a.roughness == b.roughness && a.aoStrength == b.aoStrength &&
+           a.emissiveIntensity == b.emissiveIntensity && a.lit == b.lit &&
+           a.transparent == b.transparent && a.doubleSided == b.doubleSided &&
+           a.alphaTest == b.alphaTest && a.alphaCutoff == b.alphaCutoff;
+}
+
+// Returns the mesh to draw for one entity given a camera position: the single
+// resolved mesh when the item has no LOD chain, else the chain level selected
+// by PickLod. Falls back to the base mesh for a malformed/missing selection.
+inline const gfx::Mesh& SelectLodMesh(const gfx::Mesh& base, const gfx::LodChain& chain,
+                                      const math::Vec3& pos, const math::Vec3& camPos) {
+    if (chain.levels.empty()) return base;
+    const int level = PickLod(chain, math::Distance(pos, camPos));
+    if (level < 0 || static_cast<size_t>(level) >= chain.levels.size()) return base;
+    return chain.levels[static_cast<size_t>(level)];
 }
 
 } // namespace detail

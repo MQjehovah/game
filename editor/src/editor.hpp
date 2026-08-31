@@ -552,6 +552,21 @@ private:
     void BuildPackagePanel();
     void RunPackage();
 
+    // Single source of truth for the toggleable editor panels: one entry per
+    // panel drives the 视图 menu, the ini persistence table and the panel
+    // dispatch. `inMenu` hides settings-only panels (e.g. the debug overlay,
+    // toggled by F3). Replaces the former three-way sync (show-flag field +
+    // menu item + settings table) that kept drifting apart (C3).
+public:
+    struct PanelDef {
+        const char* title;
+        bool EditorApp::*flag;
+        bool inMenu = true;
+    };
+    static const PanelDef* Panels();
+    static int PanelCount();
+
+private:
     gfx::Renderer renderer_;
     // Play audio: procedural SoundFx synthesized per PlaySfx(name) and
     // played through the backend. Default = platform (miniaudio / WinMM /

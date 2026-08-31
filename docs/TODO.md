@@ -186,7 +186,10 @@
 ## 第三部分 C：结构性重构（P1/P2）
 
 ### C1 GameRuntime 上帝类拆分（3067 行）
-- [~] 13 个职责簇（2026-08-28 已拆 content+combat 两簇：`game_runtime_content.cpp` / `game_runtime_combat.cpp`，game_runtime.cpp 3107→2701 行；`game_runtime_priv.hpp` 共享 inline 辅助，模式已验证。ScriptHostCoordinator / ScriptBindingLayer / DrawListBuilder / AnimationSystem / CameraService / HudOverlay / PhysicsBridge / SceneLifecycle / BehaviorTreeRunner 待同模式续拆）。
+- [~] 13 个职责簇（2026-08-28 已拆 content+combat 两簇；2026-08-31 再拆 draw 簇 →
+  `game_runtime_draw.cpp`（BuildDrawList/Resolve*/DrawVegetation，573 行），game_runtime.cpp
+  2897→2457 行。ScriptHostCoordinator / AnimationSystem / CameraService / HudOverlay /
+  PhysicsBridge / SceneLifecycle / BehaviorTreeRunner 待同模式续拆）。
 - 分阶段：先抽纯逻辑簇（LagComp/Tween/ContentLoader），再抽渲染构建（DrawListBuilder），纯定义搬移无 API 变化。
 
 ### C2 动画状态存于 DrawItem → headless 服务器动画空转
@@ -194,8 +197,12 @@
 - 修复方向：动画状态迁到 ECS 组件（SceneAnimator 扩展），DrawItem 只留渲染快照。
 
 ### C3 EditorApp 巨类 / panels.cpp 4100 行
-- [ ] `editor.hpp` 922 行 90+ 成员；panels.cpp 17 个面板一个 TU；拆文件未拆职责（一个类 N 个翻译单元）。编辑器 undo 覆盖洞（灯光/相机参数/地形笔刷/UI 文档不可撤销，`editor_scene.cpp:426-461`、`panels.cpp:1407-1452`）另列 D5。
-- 方向：面板注册中心化（消除 hpp 字段/表项/菜单 3 处同步），按面板拆分状态。
+- [~] 2026-08-31 已做：panels.cpp 4143 行拆为 9 个 `.inc`（按面板，主文件 428 行）+ 面板注册
+  中心化（`EditorApp::PanelDef` 注册表统一驱动 视图菜单 + ini 持久化，消除 hpp 字段/表项/菜单
+  3 处同步，并修复"动画状态机"未持久化的漂移）。editor.hpp 仍 ~990 行 90+ 成员。
+- [ ] 未做：EditorApp 状态按面板进一步拆分；undo 覆盖洞（灯光/相机参数/地形笔刷/UI 文档不可撤销，
+  `editor_scene.cpp:426-461`、`panels.cpp:1407-1452`）另列 D5。
+- 方向：面板状态按面板拆分（PanelDef 已铺路），undo 覆盖洞归 D5。
 
 ### C4 Renderer 上帝类 + 无 render graph
 - [ ] `renderer.cpp` 2804 行 ~18 个职责；17 个 RT 手工生命周期，新增后处理要改 4 处；三份近似重复的 caster 提交代码（CSM/SSAO 深度/点光 1161-1271 vs 1490-1560）。

@@ -49,10 +49,10 @@ namespace {
 // settings handler persists every panel's open state into the same ini: the
 // next launch restores both the layout and which panels were visible.
 // ---------------------------------------------------------------------------
-struct PanelStateEntry {
-    const char* title;        // ImGui window title / 视图 menu label
-    bool EditorApp::*flag;    // member pointer to the panel's show flag
-};
+// The shared panel registry entry (title + show-flag member pointer + menu
+// visibility). Lives in EditorApp so the 视图 menu and the ini persistence both
+// iterate the same list instead of drifting apart (C3).
+using PanelStateEntry = EditorApp::PanelDef;
 
 EditorApp* g_panelStateApp = nullptr;   // app owning the flags (set on register)
 const PanelStateEntry* g_panelStateEntries = nullptr;
@@ -133,9 +133,14 @@ math::Ray EditorApp::PickRay() {
 // Friend of EditorApp: builds the title -> show-flag table (naming the private
 // members requires friendship) and registers the ini settings handler above.
 void RegisterPanelStateHandler(EditorApp* app) {
+    // Ordered to match the 视图 menu (the settings handler is order-agnostic).
     static const PanelStateEntry kPanels[] = {
         {"场景", &EditorApp::showHierarchy_},
         {"属性", &EditorApp::showInspector_},
+        {"动画时间线", &EditorApp::showAnimEditor_},
+        {"动画状态机", &EditorApp::showStateMachineEditor_},
+        {"地形编辑", &EditorApp::showTerrain_},
+        {"2D 地图", &EditorApp::showTilemap_},
         {"资产", &EditorApp::showAssets_},
         {"资源", &EditorApp::showResources_},
         {"日志", &EditorApp::showLog_},
@@ -144,15 +149,12 @@ void RegisterPanelStateHandler(EditorApp* app) {
         {"脚本编辑器", &EditorApp::showScriptEditor_},
         {"打包", &EditorApp::showPackage_},
         {"性能", &EditorApp::showProfiler_},
-        {"导航", &EditorApp::showNav_},
-        {"调试覆盖层", &EditorApp::showDebugOverlay_},
-        {"动画时间线", &EditorApp::showAnimEditor_},
-        {"地形编辑", &EditorApp::showTerrain_},
-        {"2D 地图", &EditorApp::showTilemap_},
-        {"本地化", &EditorApp::showLoc_},
-        {"UI 编辑器", &EditorApp::showUIEditor_},
         {"输入映射", &EditorApp::showInputMap_},
+        {"导航", &EditorApp::showNav_},
+        {"UI 编辑器", &EditorApp::showUIEditor_},
+        {"本地化", &EditorApp::showLoc_},
         {"插件", &EditorApp::showPlugins_},
+        {"调试覆盖层", &EditorApp::showDebugOverlay_, false},
     };
     g_panelStateApp = app;
     g_panelStateEntries = kPanels;
@@ -166,6 +168,11 @@ void RegisterPanelStateHandler(EditorApp* app) {
     panelHandler.WriteAllFn = &NeonPanelsWriteAll;
     ImGui::AddSettingsHandler(&panelHandler);
 }
+
+// C3: the panel registry accessor shared by the 视图 menu (editor_ui.cpp) and
+// this persistence handler. Points at the static array registered above.
+const EditorApp::PanelDef* EditorApp::Panels() { return g_panelStateEntries; }
+int EditorApp::PanelCount() { return static_cast<int>(g_panelStateCount); }
 
 bool EditorApp::OnCreate() {
     if (disableShadows_) renderer_.SetShadowsEnabled(false);
