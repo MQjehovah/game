@@ -668,8 +668,15 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
         AttachOneScript(e, s);
     };
     scriptCtx_.spawnProjectile = [this](const math::Vec3& pos, const math::Vec3& dir, float speed,
-                                        float damage, float life, ecs::Entity caster) {
-        SpawnProjectile(pos, dir, speed, damage, life, caster);
+                                        float damage, float life, ecs::Entity caster, float range,
+                                        float hitRadius,
+                                        const std::vector<script::SkillStatusData>& statuses) {
+        std::vector<scene::SkillStatus> sceneStatuses;
+        sceneStatuses.reserve(statuses.size());
+        for (const script::SkillStatusData& s : statuses) {
+            sceneStatuses.push_back({s.name, s.duration, s.magnitude});
+        }
+        SpawnProjectile(pos, dir, speed, damage, life, caster, range, hitRadius, sceneStatuses);
     };
     scriptCtx_.meleeAttack = [this](const math::Vec3& origin, const math::Vec3& dir, float range,
                                     float arcDeg, float damage) {

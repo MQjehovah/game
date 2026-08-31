@@ -347,7 +347,9 @@ public:
     // SceneHealth entity inside a yaw-oriented box (half extents) and returns
     // how many were hit.
     void SpawnProjectile(const math::Vec3& pos, const math::Vec3& dir, float speed, float damage,
-                         float life, ecs::Entity caster = {});
+                         float life, ecs::Entity caster = {}, float range = 0.0f,
+                         float hitRadius = 0.8f,
+                         const std::vector<SkillStatus>& statuses = {});
     int MeleeAttack(const math::Vec3& origin, const math::Vec3& dir, float range, float arcDeg,
                     float damage);
     int AttackBox(const math::Vec3& center, const math::Vec3& half, float yaw, float damage);

@@ -13,7 +13,8 @@ namespace neon::scene {
 using namespace detail; // EntityKey
 
 void GameRuntime::SpawnProjectile(const math::Vec3& pos, const math::Vec3& dir, float speed,
-                                  float damage, float life, ecs::Entity caster) {
+                                  float damage, float life, ecs::Entity caster, float range,
+                                  float hitRadius, const std::vector<SkillStatus>& statuses) {
     Projectile p;
     p.pos = pos;
     p.dir = dir.LengthSq() > 1e-6f ? dir.Normalized() : math::Vec3{0, 0, 1};
@@ -21,6 +22,9 @@ void GameRuntime::SpawnProjectile(const math::Vec3& pos, const math::Vec3& dir, 
     p.damage = damage;
     p.life = life > 0.0f ? life : 2.0f;
     p.caster = caster;
+    p.range = range;
+    p.hitRadius = hitRadius;
+    p.statuses = statuses;
     projectiles_.push_back(p);
 }
 

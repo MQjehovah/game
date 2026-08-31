@@ -428,3 +428,54 @@ TEST(OverlapSphereRewindUsesHistoricalPose) {
     CHECK(wolfHit != nullptr);
     CHECK_NEAR(wolfHit->pos.z, -2.0f, 1e-4);
 }
+
+// ---------------------------------------------------------------------------
+// SpawnProjectile generalization: range / hitRadius / statuses (data-driven)
+// ---------------------------------------------------------------------------
+
+TEST(SpawnProjectileWithRangeHitRadiusAndStatuses) {
+    scene::GameRuntime runtime;
+    scene::GameRuntimeConfig cfg; cfg.headless = true;
+    CHECK(runtime.Start(kCombatScene, cfg).Ok());
+    const ecs::Entity wolf = runtime.FindNamedEntity("wolf_front");
+    const ecs::Entity hero = runtime.FindNamedEntity("hero");
+    runtime.SpawnProjectile({0,1,0}, {0,0,-1}, 14, 10, 2.0f, hero, 30.0f, 1.0f,
+                            {{"burning", 3.0f, 2.0f}});
+    for (int i = 0; i < 30; ++i) runtime.Tick(1.0f/60.0f);
+    CHECK_NEAR(runtime.EntityHealth(wolf).first, 40.0f, 1e-3); // 50 - 10
+    CHECK(runtime.HasStatus(wolf, scene::kStatusBurning));
+}
+
+TEST(SpawnProjectileStatusesViaLua) {
+    const char* scene = R"({
+      "entities": [
+        {"name": "hero", "components": {
+          "transform": {"pos": [0,0,0]},
+          "health": {"hp": 100, "maxHp": 100},
+          "script": {"backend": "lua", "path": "combat.lua"}}},
+        {"name": "wolf_front", "components": {
+          "transform": {"pos": [0,0,-2]},
+          "health": {"hp": 50, "maxHp": 50}}}
+      ]
+    })";
+    const char* lua = R"(
+      function on_start(e)
+        SpawnProjectile({x=0,y=1,z=0}, {x=0,y=0,z=-1}, 14, 10, 2.0, e, 30, 1.0,
+                        {{name="burning", duration=3, magnitude=2}})
+      end
+    )";
+    scene::GameRuntime runtime;
+    scene::GameRuntimeConfig cfg;
+    cfg.headless = true;
+    cfg.readScript = [&](const std::string&) { return std::string(lua); };
+    CHECK(runtime.Start(scene, cfg).Ok());
+
+    const ecs::Entity wolf = runtime.FindNamedEntity("wolf_front");
+    const ecs::Entity hero = runtime.FindNamedEntity("hero");
+    CHECK(wolf.IsValid());
+    CHECK(hero.IsValid());
+
+    for (int i = 0; i < 30; ++i) runtime.Tick(1.0f / 60.0f);
+    CHECK_NEAR(runtime.EntityHealth(wolf).first, 40.0f, 1e-3);
+    CHECK(runtime.HasStatus(wolf, scene::kStatusBurning));
+}

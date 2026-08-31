@@ -233,7 +233,32 @@ Value NativeSpawnProjectile(IScriptHost& host, void* user) {
     // Optional 6th arg: the caster entity (never hit by its own projectile).
     const ecs::Entity caster =
         host.ArgCount() >= 6 ? EntityFromValue(host.GetArg(5)) : ecs::Entity{};
-    ctx->spawnProjectile(pos, dir, speed, damage, life, caster);
+    // Optional 7th/8th args: max travel distance (0 = life-bounded) and the
+    // hit radius; both default to data-driven-safe values.
+    const float range = host.ArgCount() >= 7 ? NumberArg(host, 6, 0.0f) : 0.0f;
+    const float hitRadius = host.ArgCount() >= 8 ? NumberArg(host, 7, 0.8f) : 0.8f;
+    // Optional 9th arg: status effects applied to the hit target, as an array
+    // of {name=..., duration=..., magnitude=...} tables.
+    std::vector<SkillStatusData> statuses;
+    if (host.ArgCount() >= 9) {
+        const Value& sArg = host.GetArg(8);
+        if (sArg.type == Value::Type::Table && sArg.table) {
+            for (const Value& item : sArg.table->array) {
+                if (item.type != Value::Type::Table || !item.table) continue;
+                SkillStatusData st;
+                for (const auto& f : item.table->fields) {
+                    if (f.first == "name" && f.second.type == Value::Type::String)
+                        st.name = f.second.str;
+                    else if (f.first == "duration" && f.second.type == Value::Type::Number)
+                        st.duration = static_cast<float>(f.second.number);
+                    else if (f.first == "magnitude" && f.second.type == Value::Type::Number)
+                        st.magnitude = static_cast<float>(f.second.number);
+                }
+                if (!st.name.empty()) statuses.push_back(std::move(st));
+            }
+        }
+    }
+    ctx->spawnProjectile(pos, dir, speed, damage, life, caster, range, hitRadius, statuses);
     return Value::Nil();
 }
 
