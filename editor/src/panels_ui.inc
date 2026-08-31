@@ -247,7 +247,7 @@ void EditorApp::BuildLocPanel() {
     if (!showLoc_) return;
     if (ImGui::Begin("本地化", &showLoc_)) {
         if (ImGui::Button("加载项目字符串表")) {
-            locEdit_ = core::Localization();
+            locState_.edit = core::Localization();
             std::vector<AssetEntry> files;
             if (ListDirectory(projectDir_ + "/assets/locales", files)) {
                 for (const AssetEntry& f : files) {
@@ -262,16 +262,16 @@ void EditorApp::BuildLocPanel() {
                     std::string text((std::istreambuf_iterator<char>(in)),
                                      std::istreambuf_iterator<char>());
                     std::string err;
-                    if (!locEdit_.LoadTable(text, &err)) {
+                    if (!locState_.edit.LoadTable(text, &err)) {
                         NEON_LOG_WARN("Loc: '%s' failed to load: %s", f.path.c_str(),
                                       err.c_str());
                         continue;
                     }
-                    locPath_ = f.path;
+                    locState_.path = f.path;
                 }
             }
-            locEdit_.SetLanguage(locLanguage_);
-            NEON_LOG_INFO("Loc: loaded project strings (%zu keys)", locEdit_.Keys().size());
+            locState_.edit.SetLanguage(locState_.language);
+            NEON_LOG_INFO("Loc: loaded project strings (%zu keys)", locState_.edit.Keys().size());
         }
         ImGui::SameLine();
         if (ImGui::Button("保存 (locales.json)")) {
@@ -280,32 +280,32 @@ void EditorApp::BuildLocPanel() {
             const std::string path = dir + "/locales.json";
             std::ofstream out(path, std::ios::binary);
             if (out.is_open()) {
-                out << core::JsonWriter::WritePretty(locEdit_.ToJson());
-                locPath_ = path;
+                out << core::JsonWriter::WritePretty(locState_.edit.ToJson());
+                locState_.path = path;
                 NEON_LOG_INFO("Loc: saved -> %s", path.c_str());
             } else {
                 NEON_LOG_ERROR("Loc: cannot write '%s'", path.c_str());
             }
         }
         ImGui::SameLine();
-        ImGui::TextDisabled("路径: %s", locPath_.c_str());
+        ImGui::TextDisabled("路径: %s", locState_.path.c_str());
         ImGui::Separator();
 
-        const std::vector<std::string> langs = locEdit_.Languages();
+        const std::vector<std::string> langs = locState_.edit.Languages();
         if (!langs.empty()) {
             std::vector<const char*> langLabels;
             for (const std::string& l : langs) langLabels.push_back(l.c_str());
             int sel = 0;
             for (size_t i = 0; i < langs.size(); ++i)
-                if (langs[i] == locLanguage_) sel = static_cast<int>(i);
+                if (langs[i] == locState_.language) sel = static_cast<int>(i);
             ImGui::SetNextItemWidth(120.0f);
             if (ImGui::Combo("语言", &sel, langLabels.data(),
                              static_cast<int>(langLabels.size()))) {
-                locLanguage_ = langs[static_cast<size_t>(sel)];
-                locEdit_.SetLanguage(locLanguage_);
+                locState_.language = langs[static_cast<size_t>(sel)];
+                locState_.edit.SetLanguage(locState_.language);
             }
             ImGui::SameLine();
-            ImGui::TextDisabled("默认: %s", locEdit_.DefaultLanguage().c_str());
+            ImGui::TextDisabled("默认: %s", locState_.edit.DefaultLanguage().c_str());
         } else {
             ImGui::TextDisabled("未加载字符串表");
         }
@@ -315,20 +315,20 @@ void EditorApp::BuildLocPanel() {
         ImGui::InputText("新键", newKey, sizeof(newKey));
         ImGui::SameLine();
         if (ImGui::Button("添加键") && newKey[0] != '\0') {
-            locEdit_.Set(locLanguage_, newKey, "");
+            locState_.edit.Set(locState_.language, newKey, "");
             newKey[0] = '\0';
         }
         ImGui::Separator();
 
         ImGui::BeginChild("##loc_list", ImVec2(0, 0), ImGuiChildFlags_Borders);
-        const std::vector<std::string> keys = locEdit_.Keys();
+        const std::vector<std::string> keys = locState_.edit.Keys();
         for (const std::string& key : keys) {
             char buf[2048];
             std::snprintf(buf, sizeof(buf), "%s",
-                          locEdit_.GetIn(locLanguage_, key).c_str());
-            const std::string label = key + "##" + locLanguage_;
+                          locState_.edit.GetIn(locState_.language, key).c_str());
+            const std::string label = key + "##" + locState_.language;
             if (ImGui::InputText(label.c_str(), buf, sizeof(buf))) {
-                locEdit_.Set(locLanguage_, key, buf);
+                locState_.edit.Set(locState_.language, key, buf);
             }
         }
         ImGui::EndChild();

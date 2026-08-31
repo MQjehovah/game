@@ -642,11 +642,11 @@ void EditorApp::OnUpdate(float dt) {
         if (e.skinned && e.skinned->Valid()) e.skinned->Update(dt);
     }
     // Advance the model-preview playhead.
-    if (showModelPreview_ && previewModel_ && previewPlaying_) {
-        float dur = previewModel_->clips.empty()
+    if (showModelPreview_ && preview_.model && preview_.playing) {
+        float dur = preview_.model->clips.empty()
                         ? 1.0f
-                        : previewModel_->clips[static_cast<size_t>(previewClip_)].duration;
-        if (dur > 0.0f) previewTime_ = std::fmod(previewTime_ + dt, dur);
+                        : preview_.model->clips[static_cast<size_t>(preview_.clip)].duration;
+        if (dur > 0.0f) preview_.time = std::fmod(preview_.time + dt, dur);
     }
     // The gizmo drag-sim (frame 30) needs the real mouse to hover the viewport
     // so ImGui's hover hit-test yields the dock host window (the window
@@ -670,12 +670,12 @@ void EditorApp::OnUpdate(float dt) {
         if (playActive_ && play_) {
             // P1-2 debugger: push edited breakpoints into the play host
             // (cheap, only when the set changed).
-            if (scriptBreakpointsDirty_ && play_->ScriptHost()) {
-                for (const auto& kv : scriptBreakpoints_) {
+            if (scriptEditor_.breakpointsDirty && play_->ScriptHost()) {
+                for (const auto& kv : scriptEditor_.breakpoints) {
                     std::vector<int> lines(kv.second.begin(), kv.second.end());
                     play_->ScriptHost()->SetScriptBreakpoints(kv.first, lines);
                 }
-                scriptBreakpointsDirty_ = false;
+                scriptEditor_.breakpointsDirty = false;
             }
             play_->Tick(dt);
         }
@@ -1267,14 +1267,14 @@ void EditorApp::OnUpdate(float dt) {
 void EditorApp::OnEvent(const platform::InputEvent& event) {
     // Input-map panel: while listening for a rebind, the next raw key wins
     // (checked before the F5/gizmo shortcuts so rebinding works while playing).
-    if (!inputMapListenAction_.empty() &&
+    if (!inputMapState_.listenAction.empty() &&
         event.type == platform::InputEvent::Type::KeyDown &&
         event.key != platform::Key::Unknown &&
         !gfx::ImGuiNeon_WantCaptureKeyboard()) {
-        if (inputMapEdit_.SetPrimaryKey(inputMapListenAction_, event.key))
-            NEON_LOG_INFO("Editor: input action '%s' -> %s", inputMapListenAction_.c_str(),
+        if (inputMapState_.edit.SetPrimaryKey(inputMapState_.listenAction, event.key))
+            NEON_LOG_INFO("Editor: input action '%s' -> %s", inputMapState_.listenAction.c_str(),
                           script::InputMap::KeyToName(event.key).c_str());
-        inputMapListenAction_ = "";
+        inputMapState_.listenAction = "";
         return;
     }
     // Ctrl+Z (undo) / Ctrl+Y or Ctrl+Shift+Z (redo) on the KeyDown edge only,

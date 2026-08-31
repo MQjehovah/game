@@ -6,16 +6,16 @@ void EditorApp::BuildTerrainPanel() {
             entities_[static_cast<size_t>(selected_)].meshKey == "terrain";
         if (!hasTerrain) {
             ImGui::TextDisabled("请先选中一个 \"terrain\" 实体");
-            ImGui::Checkbox("雕刻模式", &terrainPaintMode_);
+            ImGui::Checkbox("雕刻模式", &terrain_.paintMode);
             ImGui::End();
             return;
         }
-        ImGui::Checkbox("雕刻模式", &terrainPaintMode_);
+        ImGui::Checkbox("雕刻模式", &terrain_.paintMode);
         ImGui::SameLine();
-        ImGui::Checkbox("抬高", &terrainRaise_);
+        ImGui::Checkbox("抬高", &terrain_.raise);
         ImGui::SameLine();
         if (ImGui::Button("降低")) {
-            terrainRaise_ = false;
+            terrain_.raise = false;
         }
         if (ImGui::Button("重置为平地")) {
             SceneEntity& e = entities_[static_cast<size_t>(selected_)];
@@ -23,8 +23,8 @@ void EditorApp::BuildTerrainPanel() {
             RebuildTerrainMesh(e);
             sceneDirty_ = true;
         }
-        ImGui::DragFloat("笔刷半径", &terrainBrushRadius_, 0.1f, 0.5f, 30.0f);
-        ImGui::DragFloat("笔刷强度", &terrainBrushStrength_, 0.01f, 0.005f, 2.0f);
+        ImGui::DragFloat("笔刷半径", &terrain_.brushRadius, 0.1f, 0.5f, 30.0f);
+        ImGui::DragFloat("笔刷强度", &terrain_.brushStrength, 0.01f, 0.005f, 2.0f);
         SceneEntity& e = entities_[static_cast<size_t>(selected_)];
         if (ImGui::DragInt("细分", &e.terrainSegments_, 1, 4, 128)) {
             e.terrainSegments_ = std::max(4, std::min(e.terrainSegments_, 128));
@@ -206,7 +206,7 @@ void EditorApp::BuildPackagePanel() {
         }
         ImGui::TextDisabled("输出目录");
         ImGui::SetNextItemWidth(-1.0f);
-        ImGui::InputText("##pack_out", packOutDirBuf_, sizeof(packOutDirBuf_));
+        ImGui::InputText("##pack_out", package_.outDirBuf, sizeof(package_.outDirBuf));
         ImGui::Separator();
         // Export presets (Godot-style): edit game.json's "export" block.
         ImGui::TextUnformatted("导出配置 (game.json \"export\")");
@@ -280,28 +280,28 @@ void EditorApp::BuildPackagePanel() {
         ImGui::TextDisabled("生成 game.pack + run.bat + neon_game.exe");
         ImGui::Separator();
 
-        if (packRan_) {
-            if (packReport_.ok) {
+        if (package_.ran) {
+            if (package_.report.ok) {
                 ImGui::TextColored(ImVec4(0.4f, 0.9f, 0.5f, 1.0f), "打包成功");
             } else {
                 ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.4f, 1.0f), "打包失败 (%zu 个错误)",
-                                   packReport_.errors.size());
+                                   package_.report.errors.size());
             }
-            ImGui::TextDisabled("文件: %zu    字节: %zu", packReport_.fileCount,
-                                packReport_.bytesWritten);
-            if (!packReport_.packPath.empty()) ImGui::TextUnformatted(packReport_.packPath.c_str());
-            if (!packReport_.runScriptPath.empty())
-                ImGui::TextUnformatted(packReport_.runScriptPath.c_str());
-            if (!packReport_.playerPath.empty())
-                ImGui::TextUnformatted(packReport_.playerPath.c_str());
-            if (!packReport_.errors.empty()) {
+            ImGui::TextDisabled("文件: %zu    字节: %zu", package_.report.fileCount,
+                                package_.report.bytesWritten);
+            if (!package_.report.packPath.empty()) ImGui::TextUnformatted(package_.report.packPath.c_str());
+            if (!package_.report.runScriptPath.empty())
+                ImGui::TextUnformatted(package_.report.runScriptPath.c_str());
+            if (!package_.report.playerPath.empty())
+                ImGui::TextUnformatted(package_.report.playerPath.c_str());
+            if (!package_.report.errors.empty()) {
                 ImGui::TextUnformatted("错误:");
-                for (const std::string& e : packReport_.errors)
+                for (const std::string& e : package_.report.errors)
                     ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.4f, 1.0f), "- %s", e.c_str());
             }
-            if (!packReport_.warnings.empty()) {
+            if (!package_.report.warnings.empty()) {
                 ImGui::TextUnformatted("警告:");
-                for (const std::string& w : packReport_.warnings)
+                for (const std::string& w : package_.report.warnings)
                     ImGui::TextColored(ImVec4(0.9f, 0.8f, 0.4f, 1.0f), "- %s", w.c_str());
             }
             ImGui::Separator();

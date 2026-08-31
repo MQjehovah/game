@@ -1,17 +1,17 @@
 void EditorApp::RunPackage() {
     pack::PackConfig cfg;
     cfg.projectDir = projectDir_;
-    cfg.outDir = packOutDirBuf_;
+    cfg.outDir = package_.outDirBuf;
     cfg.playerSource = "build/neon_game.exe";
-    packReport_ = pack::PackProject(cfg);
-    packRan_ = true;
-    if (packReport_.ok) {
+    package_.report = pack::PackProject(cfg);
+    package_.ran = true;
+    if (package_.report.ok) {
         NEON_LOG_INFO("Editor: packaged '%s' -> %s (%zu files, %zu bytes)",
-                      projectDir_.c_str(), packReport_.packPath.c_str(),
-                      packReport_.fileCount, packReport_.bytesWritten);
+                      projectDir_.c_str(), package_.report.packPath.c_str(),
+                      package_.report.fileCount, package_.report.bytesWritten);
     } else {
         NEON_LOG_ERROR("Editor: package failed for '%s' (%zu errors)",
-                       projectDir_.c_str(), packReport_.errors.size());
+                       projectDir_.c_str(), package_.report.errors.size());
     }
 }
 
@@ -43,49 +43,49 @@ void EditorApp::BuildScriptEditorPanel() {
                 }
             }
         }
-        if (scriptEditorPath_.empty()) {
+        if (scriptEditor_.path.empty()) {
             ImGui::TextDisabled("未打开脚本 — 在资产面板双击 .lua 打开");
             ImGui::End();
             return;
         }
         if (ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_S, false))
             SaveScriptEditor();
-        ImGui::TextDisabled("文件: %s", scriptEditorPath_.c_str());
+        ImGui::TextDisabled("文件: %s", scriptEditor_.path.c_str());
         ImGui::SameLine();
         if (ImGui::Button("保存")) SaveScriptEditor();
         ImGui::SameLine();
-        if (ImGui::Button("外部编辑器打开")) OpenInExternalEditor(scriptEditorPath_);
+        if (ImGui::Button("外部编辑器打开")) OpenInExternalEditor(scriptEditor_.path);
         ImGui::SameLine();
-        if (scriptEditorDirty_) {
+        if (scriptEditor_.dirty) {
             ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f), "● 未保存");
         } else {
             ImGui::TextColored(ImVec4(0.5f, 0.8f, 0.6f, 1.0f), "已保存");
         }
-        if (scriptEditorCheck_.ok) {
+        if (scriptEditor_.check.ok) {
             ImGui::TextColored(ImVec4(0.4f, 0.9f, 0.5f, 1.0f), "✓ 语法通过");
         } else {
             ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.4f, 1.0f),
-                               "✗ 语法错误 (行 %d): %s", scriptEditorCheck_.line,
-                               scriptEditorCheck_.message.c_str());
+                               "✗ 语法错误 (行 %d): %s", scriptEditor_.check.line,
+                               scriptEditor_.check.message.c_str());
         }
         ImGui::Separator();
         // 断点: F9 (或按钮) 在光标所在行切换; 行号栏红点由 TextEditor 绘制。
-        std::set<int>& bps = scriptBreakpoints_[scriptEditorPath_];
-        const int cursorLine = scriptEdit_.GetCursorPosition().mLine + 1; // 1-based
+        std::set<int>& bps = scriptEditor_.breakpoints[scriptEditor_.path];
+        const int cursorLine = scriptEditor_.edit.GetCursorPosition().mLine + 1; // 1-based
         const bool toggleF9 = ImGui::IsKeyPressed(ImGuiKey_F9, false) &&
                               ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
         if (toggleF9) {
             if (bps.count(cursorLine)) bps.erase(cursorLine); else bps.insert(cursorLine);
-            scriptBreakpointsDirty_ = true;
+            scriptEditor_.breakpointsDirty = true;
         }
         if (ImGui::SmallButton("本行断点 (F9)")) {
             if (bps.count(cursorLine)) bps.erase(cursorLine); else bps.insert(cursorLine);
-            scriptBreakpointsDirty_ = true;
+            scriptEditor_.breakpointsDirty = true;
         }
         ImGui::SameLine();
         if (ImGui::SmallButton("清空断点")) {
             bps.clear();
-            scriptBreakpointsDirty_ = true;
+            scriptEditor_.breakpointsDirty = true;
         }
         if (!bps.empty()) {
             ImGui::SameLine();
@@ -95,7 +95,7 @@ void EditorApp::BuildScriptEditorPanel() {
                 ImGui::PushID(static_cast<int>(*it));
                 if (ImGui::SmallButton(("x" + std::to_string(*it)).c_str())) {
                     it = bps.erase(it);
-                    scriptBreakpointsDirty_ = true;
+                    scriptEditor_.breakpointsDirty = true;
                 } else {
                     ++it;
                 }
@@ -163,8 +163,8 @@ void EditorApp::BuildScriptEditorPanel() {
                 {"SignalEmit", "SignalEmit(name, arg) 发射信号"},
             };
             // 光标所在词: 从行首取到光标位置, 回扫标识符字符。
-            const auto cursor = scriptEdit_.GetCursorPosition();
-            const std::string all = scriptEdit_.GetText();
+            const auto cursor = scriptEditor_.edit.GetCursorPosition();
+            const std::string all = scriptEditor_.edit.GetText();
             // 手动切出第 cursor.mLine 行的前 cursor.mColumn 字符 (GetText(区间) 为 private)。
             std::string lineText;
             {
@@ -225,12 +225,12 @@ void EditorApp::BuildScriptEditorPanel() {
         }
         // 行号栏断点标记: 同步当前脚本的断点集到 TextEditor (红点可视化)。
         {
-            TextEditor::Breakpoints bpVis(scriptBreakpoints_[scriptEditorPath_].begin(),
-                                          scriptBreakpoints_[scriptEditorPath_].end());
-            scriptEdit_.SetBreakpoints(bpVis);
+            TextEditor::Breakpoints bpVis(scriptEditor_.breakpoints[scriptEditor_.path].begin(),
+                                          scriptEditor_.breakpoints[scriptEditor_.path].end());
+            scriptEditor_.edit.SetBreakpoints(bpVis);
         }        const ImVec2 editSize = ImGui::GetContentRegionAvail();
-        scriptEdit_.Render("##script_editor", editSize, true);
-        if (scriptEdit_.IsTextChanged()) scriptEditorDirty_ = true;
+        scriptEditor_.edit.Render("##script_editor", editSize, true);
+        if (scriptEditor_.edit.IsTextChanged()) scriptEditor_.dirty = true;
     }
     ImGui::End();
 }
@@ -243,126 +243,126 @@ void EditorApp::BuildAnimEditorPanel() {
     if (!showAnimEditor_) return;
     if (ImGui::Begin("动画时间线", &showAnimEditor_)) {
         ImGui::SetNextItemWidth(340.0f);
-        ImGui::InputText("##anim_path", animPathBuf_, sizeof(animPathBuf_));
+        ImGui::InputText("##anim_path", anim_.pathBuf, sizeof(anim_.pathBuf));
         ImGui::SameLine();
         if (ImGui::Button("打开")) {
-            std::ifstream in(animPathBuf_, std::ios::binary);
+            std::ifstream in(anim_.pathBuf, std::ios::binary);
             if (in.is_open()) {
                 std::string text((std::istreambuf_iterator<char>(in)),
                                  std::istreambuf_iterator<char>());
                 auto res = anim::LoadClipJson(text);
                 if (res.Ok()) {
-                    animClip_ = res.Value();
-                    animClipPath_ = animPathBuf_;
-                    animPlayhead_ = 0.0f;
-                    animPlaying_ = false;
-                    animClipDirty_ = false;
+                    anim_.clip = res.Value();
+                    anim_.clipPath = anim_.pathBuf;
+                    anim_.playhead = 0.0f;
+                    anim_.playing = false;
+                    anim_.clipDirty = false;
                 } else {
                     NEON_LOG_ERROR("Anim editor: %s", res.Error().c_str());
                 }
             }
         }
         ImGui::SameLine();
-        if (ImGui::Button("保存") && !animClipPath_.empty()) {
-            if (std::ofstream out(animClipPath_, std::ios::binary); out.is_open()) {
-                out << anim::SaveClipJson(animClip_);
-                animClipDirty_ = false;
-                NEON_LOG_INFO("Anim editor: saved '%s'", animClipPath_.c_str());
+        if (ImGui::Button("保存") && !anim_.clipPath.empty()) {
+            if (std::ofstream out(anim_.clipPath, std::ios::binary); out.is_open()) {
+                out << anim::SaveClipJson(anim_.clip);
+                anim_.clipDirty = false;
+                NEON_LOG_INFO("Anim editor: saved '%s'", anim_.clipPath.c_str());
             }
         }
-        if (animClipPath_.empty()) {
+        if (anim_.clipPath.empty()) {
             ImGui::TextDisabled("未打开 clip — 输入 .anim.json 路径后点\"打开\"");
             ImGui::End();
             return;
         }
-        ImGui::TextDisabled("文件: %s", animClipPath_.c_str());
+        ImGui::TextDisabled("文件: %s", anim_.clipPath.c_str());
         ImGui::SameLine();
-        if (animClipDirty_) ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f), "● 未保存");
+        if (anim_.clipDirty) ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f), "● 未保存");
 
         char nameBuf[128];
-        std::snprintf(nameBuf, sizeof(nameBuf), "%s", animClip_.name.c_str());
+        std::snprintf(nameBuf, sizeof(nameBuf), "%s", anim_.clip.name.c_str());
         if (ImGui::InputText("名称", nameBuf, sizeof(nameBuf))) {
-            animClip_.name = nameBuf;
-            animClipDirty_ = true;
+            anim_.clip.name = nameBuf;
+            anim_.clipDirty = true;
         }
-        if (ImGui::DragFloat("时长 (秒)", &animClip_.duration, 0.01f, 0.01f, 1000.0f)) {
-            animClip_.duration = std::fmax(animClip_.duration, 0.01f);
-            animClipDirty_ = true;
+        if (ImGui::DragFloat("时长 (秒)", &anim_.clip.duration, 0.01f, 0.01f, 1000.0f)) {
+            anim_.clip.duration = std::fmax(anim_.clip.duration, 0.01f);
+            anim_.clipDirty = true;
         }
 
         // Playhead transport.
-        if (ImGui::Button(animPlaying_ ? "暂停" : "播放")) animPlaying_ = !animPlaying_;
+        if (ImGui::Button(anim_.playing ? "暂停" : "播放")) anim_.playing = !anim_.playing;
         ImGui::SameLine();
         if (ImGui::Button("回到起点")) {
-            animPlayhead_ = 0.0f;
-            animPlaying_ = false;
+            anim_.playhead = 0.0f;
+            anim_.playing = false;
         }
         ImGui::SameLine();
-        if (ImGui::DragFloat("时间", &animPlayhead_, 0.01f, 0.0f, animClip_.duration)) {
-            animPlayhead_ = std::fmax(0.0f, animPlayhead_);
-            animClipDirty_ = true;
+        if (ImGui::DragFloat("时间", &anim_.playhead, 0.01f, 0.0f, anim_.clip.duration)) {
+            anim_.playhead = std::fmax(0.0f, anim_.playhead);
+            anim_.clipDirty = true;
         }
-        if (animPlaying_) {
-            animPlayhead_ += ImGui::GetIO().DeltaTime;
-            if (animPlayhead_ > animClip_.duration) animPlayhead_ = 0.0f;
+        if (anim_.playing) {
+            anim_.playhead += ImGui::GetIO().DeltaTime;
+            if (anim_.playhead > anim_.clip.duration) anim_.playhead = 0.0f;
         }
 
         ImGui::Separator();
         if (ImGui::Button("添加轨道")) {
             anim::Track tr;
-            tr.bone = static_cast<int>(animClip_.tracks.size());
-            animClip_.tracks.push_back(std::move(tr));
-            animClipDirty_ = true;
+            tr.bone = static_cast<int>(anim_.clip.tracks.size());
+            anim_.clip.tracks.push_back(std::move(tr));
+            anim_.clipDirty = true;
         }
         ImGui::SameLine();
-        if (ImGui::Button("移除最后轨道") && !animClip_.tracks.empty()) {
-            animClip_.tracks.pop_back();
-            animClipDirty_ = true;
+        if (ImGui::Button("移除最后轨道") && !anim_.clip.tracks.empty()) {
+            anim_.clip.tracks.pop_back();
+            anim_.clipDirty = true;
         }
         ImGui::Separator();
 
         const char* kInterp[] = {"linear", "step", "cubic"};
-        for (size_t ti = 0; ti < animClip_.tracks.size(); ++ti) {
-            anim::Track& tr = animClip_.tracks[ti];
+        for (size_t ti = 0; ti < anim_.clip.tracks.size(); ++ti) {
+            anim::Track& tr = anim_.clip.tracks[ti];
             char header[64];
             std::snprintf(header, sizeof(header), "轨道 %zu##anim_tr%zu", ti, ti);
             if (!ImGui::CollapsingHeader(header, ImGuiTreeNodeFlags_DefaultOpen)) continue;
             ImGui::PushID(static_cast<int>(ti));
-            if (ImGui::InputInt("骨骼", &tr.bone)) animClipDirty_ = true;
+            if (ImGui::InputInt("骨骼", &tr.bone)) anim_.clipDirty = true;
             int ip = tr.interp == anim::Interp::Step
                          ? 1
                          : (tr.interp == anim::Interp::CubicSpline ? 2 : 0);
             if (ImGui::Combo("插值", &ip, kInterp, 3)) {
                 tr.interp = ip == 1 ? anim::Interp::Step
                                     : (ip == 2 ? anim::Interp::CubicSpline : anim::Interp::Linear);
-                animClipDirty_ = true;
+                anim_.clipDirty = true;
             }
             // Keyframe rows: translations / rotations / scales share times.
             auto keyRow = [&](const char* label, std::vector<math::Vec3>& values, size_t comps) {
                 if (values.size() != tr.times.size()) values.resize(tr.times.size());
                 if (ImGui::TreeNodeEx(label, ImGuiTreeNodeFlags_DefaultOpen)) {
                     if (ImGui::SmallButton("在此处添加关键帧")) {
-                        tr.times.push_back(animPlayhead_);
+                        tr.times.push_back(anim_.playhead);
                         values.push_back(comps == 4 ? math::Vec3{0, 0, 0} : math::Vec3{});
-                        animClipDirty_ = true;
+                        anim_.clipDirty = true;
                     }
                     for (size_t k = 0; k < tr.times.size(); ++k) {
                         ImGui::PushID(static_cast<int>(k));
                         float t = tr.times[k];
-                        if (ImGui::DragFloat("时间", &t, 0.01f, 0.0f, animClip_.duration)) {
+                        if (ImGui::DragFloat("时间", &t, 0.01f, 0.0f, anim_.clip.duration)) {
                             tr.times[k] = std::fmax(0.0f, t);
-                            animClipDirty_ = true;
+                            anim_.clipDirty = true;
                         }
                         float v[3] = {values[k].x, values[k].y, values[k].z};
                         if (ImGui::DragFloat3("值", v, 0.01f)) {
                             values[k] = {v[0], v[1], v[2]};
-                            animClipDirty_ = true;
+                            anim_.clipDirty = true;
                         }
                         ImGui::SameLine();
                         if (ImGui::SmallButton("删除")) {
                             tr.times.erase(tr.times.begin() + static_cast<ptrdiff_t>(k));
                             values.erase(values.begin() + static_cast<ptrdiff_t>(k));
-                            animClipDirty_ = true;
+                            anim_.clipDirty = true;
                             ImGui::PopID();
                             break;
                         }
@@ -375,9 +375,9 @@ void EditorApp::BuildAnimEditorPanel() {
             if (ImGui::TreeNodeEx("旋转##r", ImGuiTreeNodeFlags_DefaultOpen)) {
                 if (tr.rotations.size() != tr.times.size()) tr.rotations.resize(tr.times.size());
                 if (ImGui::SmallButton("在此处添加关键帧")) {
-                    tr.times.push_back(animPlayhead_);
+                    tr.times.push_back(anim_.playhead);
                     tr.rotations.push_back({0, 0, 0, 1});
-                    animClipDirty_ = true;
+                    anim_.clipDirty = true;
                 }
                 for (size_t k = 0; k < tr.times.size(); ++k) {
                     ImGui::PushID(static_cast<int>(k + 1000));
@@ -386,13 +386,13 @@ void EditorApp::BuildAnimEditorPanel() {
                     if (ImGui::DragFloat4("四元数", q, 0.01f)) {
                         tr.rotations[k] = {q[0], q[1], q[2], q[3]};
                         tr.rotations[k] = tr.rotations[k].Normalized();
-                        animClipDirty_ = true;
+                        anim_.clipDirty = true;
                     }
                     ImGui::SameLine();
                     if (ImGui::SmallButton("删除")) {
                         tr.times.erase(tr.times.begin() + static_cast<ptrdiff_t>(k));
                         tr.rotations.erase(tr.rotations.begin() + static_cast<ptrdiff_t>(k));
-                        animClipDirty_ = true;
+                        anim_.clipDirty = true;
                         ImGui::PopID();
                         break;
                     }
@@ -416,72 +416,72 @@ void EditorApp::BuildStateMachineEditorPanel() {
     if (!showStateMachineEditor_) return;
     if (ImGui::Begin("动画状态机", &showStateMachineEditor_)) {
         ImGui::SetNextItemWidth(340.0f);
-        ImGui::InputText("##asm_path", asmPathBuf_, sizeof(asmPathBuf_));
+        ImGui::InputText("##asm_path", asmEdit_.pathBuf, sizeof(asmEdit_.pathBuf));
         ImGui::SameLine();
         if (ImGui::Button("打开")) {
-            std::ifstream in(asmPathBuf_, std::ios::binary);
+            std::ifstream in(asmEdit_.pathBuf, std::ios::binary);
             if (in.is_open()) {
                 std::string text((std::istreambuf_iterator<char>(in)),
                                  std::istreambuf_iterator<char>());
                 auto res = anim::LoadStateMachineJson(text);
                 if (res.Ok()) {
-                    asm_ = res.Value();
-                    asmPath_ = asmPathBuf_;
-                    asmDirty_ = false;
+                    asmEdit_.machine = res.Value();
+                    asmEdit_.path = asmEdit_.pathBuf;
+                    asmEdit_.dirty = false;
                 } else {
                     NEON_LOG_ERROR("状态机编辑器: %s", res.Error().c_str());
                 }
             }
         }
         ImGui::SameLine();
-        if (ImGui::Button("保存") && !asmPath_.empty()) {
-            if (std::ofstream out(asmPath_, std::ios::binary); out.is_open()) {
-                out << anim::SaveStateMachineJson(asm_);
-                asmDirty_ = false;
-                NEON_LOG_INFO("状态机编辑器: saved '%s'", asmPath_.c_str());
+        if (ImGui::Button("保存") && !asmEdit_.path.empty()) {
+            if (std::ofstream out(asmEdit_.path, std::ios::binary); out.is_open()) {
+                out << anim::SaveStateMachineJson(asmEdit_.machine);
+                asmEdit_.dirty = false;
+                NEON_LOG_INFO("状态机编辑器: saved '%s'", asmEdit_.path.c_str());
             }
         }
-        if (asmPath_.empty()) {
+        if (asmEdit_.path.empty()) {
             ImGui::TextDisabled("未打开状态机 — 输入 .asm.json 路径后点\"打开\"");
             ImGui::End();
             return;
         }
-        ImGui::TextDisabled("文件: %s", asmPath_.c_str());
+        ImGui::TextDisabled("文件: %s", asmEdit_.path.c_str());
         ImGui::SameLine();
-        if (asmDirty_) ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f), "● 未保存");
+        if (asmEdit_.dirty) ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f), "● 未保存");
 
         // 状态 (state = clip name)
         ImGui::Separator();
         ImGui::Text("状态 (clip 名)");
         int removeState = -1;
-        for (size_t si = 0; si < asm_.States().size(); ++si) {
-            const std::string stName = asm_.States()[si].name;
-            std::string clipName = asm_.States()[si].clipName;
+        for (size_t si = 0; si < asmEdit_.machine.States().size(); ++si) {
+            const std::string stName = asmEdit_.machine.States()[si].name;
+            std::string clipName = asmEdit_.machine.States()[si].clipName;
             char nameBuf[128];
             std::snprintf(nameBuf, sizeof(nameBuf), "%s", stName.c_str());
             if (ImGui::InputText(("状态名##s" + std::to_string(si)).c_str(), nameBuf,
                                  sizeof(nameBuf))) {
-                asm_.MutableStates()[si].name = nameBuf;
-                asmDirty_ = true;
+                asmEdit_.machine.MutableStates()[si].name = nameBuf;
+                asmEdit_.dirty = true;
             }
             char clipBuf[256];
             std::snprintf(clipBuf, sizeof(clipBuf), "%s", clipName.c_str());
             if (ImGui::InputText(("clip##c" + std::to_string(si)).c_str(), clipBuf,
                                  sizeof(clipBuf))) {
-                asm_.SetStateClipName(stName, clipBuf);
-                asmDirty_ = true;
+                asmEdit_.machine.SetStateClipName(stName, clipBuf);
+                asmEdit_.dirty = true;
             }
             if (ImGui::Button(("移除##s" + std::to_string(si)).c_str()))
                 removeState = static_cast<int>(si);
         }
         if (removeState >= 0) {
-            auto& sts = asm_.MutableStates();
+            auto& sts = asmEdit_.machine.MutableStates();
             sts.erase(sts.begin() + removeState);
-            asmDirty_ = true;
+            asmEdit_.dirty = true;
         }
         if (ImGui::Button("添加状态")) {
-            asm_.AddState("state" + std::to_string(asm_.States().size() + 1), nullptr);
-            asmDirty_ = true;
+            asmEdit_.machine.AddState("state" + std::to_string(asmEdit_.machine.States().size() + 1), nullptr);
+            asmEdit_.dirty = true;
         }
         // 从选中实体的蒙皮模型导入 clip 名（作为下拉提示）。
         if (selected_ >= 0 && selected_ < static_cast<int>(entities_.size())) {
@@ -502,51 +502,51 @@ void EditorApp::BuildStateMachineEditorPanel() {
         ImGui::Separator();
         ImGui::Text("过渡 (参数阈值)");
         int removeTr = -1;
-        for (size_t ti = 0; ti < asm_.Transitions().size(); ++ti) {
+        for (size_t ti = 0; ti < asmEdit_.machine.Transitions().size(); ++ti) {
             const std::string id = "##t" + std::to_string(ti);
             char fromBuf[128], toBuf[128], paramBuf[128];
-            const anim::AnimTransition& tr = asm_.Transitions()[ti];
+            const anim::AnimTransition& tr = asmEdit_.machine.Transitions()[ti];
             std::snprintf(fromBuf, sizeof(fromBuf), "%s", tr.from.c_str());
             std::snprintf(toBuf, sizeof(toBuf), "%s", tr.to.c_str());
             std::snprintf(paramBuf, sizeof(paramBuf), "%s", tr.param.c_str());
             float threshold = tr.threshold, duration = tr.duration;
             if (ImGui::InputText(("从##f" + std::to_string(ti)).c_str(), fromBuf,
                                  sizeof(fromBuf))) {
-                asm_.MutableTransitions()[ti].from = fromBuf;
-                asmDirty_ = true;
+                asmEdit_.machine.MutableTransitions()[ti].from = fromBuf;
+                asmEdit_.dirty = true;
             }
             if (ImGui::InputText(("到##to" + std::to_string(ti)).c_str(), toBuf,
                                  sizeof(toBuf))) {
-                asm_.MutableTransitions()[ti].to = toBuf;
-                asmDirty_ = true;
+                asmEdit_.machine.MutableTransitions()[ti].to = toBuf;
+                asmEdit_.dirty = true;
             }
             if (ImGui::InputText(("参数##p" + std::to_string(ti)).c_str(), paramBuf,
                                  sizeof(paramBuf))) {
-                asm_.MutableTransitions()[ti].param = paramBuf;
-                asmDirty_ = true;
+                asmEdit_.machine.MutableTransitions()[ti].param = paramBuf;
+                asmEdit_.dirty = true;
             }
             if (ImGui::DragFloat(("阈值##th" + std::to_string(ti)).c_str(), &threshold,
                                  0.01f, -1000.0f, 1000.0f)) {
-                asm_.MutableTransitions()[ti].threshold = threshold;
-                asmDirty_ = true;
+                asmEdit_.machine.MutableTransitions()[ti].threshold = threshold;
+                asmEdit_.dirty = true;
             }
             if (ImGui::DragFloat(("混合时长##du" + std::to_string(ti)).c_str(), &duration,
                                  0.01f, 0.0f, 10.0f)) {
-                asm_.MutableTransitions()[ti].duration = duration;
-                asmDirty_ = true;
+                asmEdit_.machine.MutableTransitions()[ti].duration = duration;
+                asmEdit_.dirty = true;
             }
             if (ImGui::Button(("移除##t" + std::to_string(ti)).c_str()))
                 removeTr = static_cast<int>(ti);
             ImGui::Separator();
         }
         if (removeTr >= 0) {
-            asm_.MutableTransitions().erase(
-                asm_.MutableTransitions().begin() + removeTr);
-            asmDirty_ = true;
+            asmEdit_.machine.MutableTransitions().erase(
+                asmEdit_.machine.MutableTransitions().begin() + removeTr);
+            asmEdit_.dirty = true;
         }
         if (ImGui::Button("添加过渡")) {
-            asm_.AddTransition("idle", "run", "speed", 0.5f, 0.2f);
-            asmDirty_ = true;
+            asmEdit_.machine.AddTransition("idle", "run", "speed", 0.5f, 0.2f);
+            asmEdit_.dirty = true;
         }
 
         // 参数
@@ -554,32 +554,32 @@ void EditorApp::BuildStateMachineEditorPanel() {
         ImGui::Text("参数");
         std::string removeParam;
         std::vector<std::string> paramKeys;
-        for (const auto& [k, v] : asm_.Params()) paramKeys.push_back(k);
+        for (const auto& [k, v] : asmEdit_.machine.Params()) paramKeys.push_back(k);
         for (const std::string& k : paramKeys) {
-            float value = asm_.Params().at(k);
+            float value = asmEdit_.machine.Params().at(k);
             char keyBuf[128];
             std::snprintf(keyBuf, sizeof(keyBuf), "%s", k.c_str());
             if (ImGui::InputText(("参数名##k" + k).c_str(), keyBuf, sizeof(keyBuf))) {
                 // rename: move value to the new key, erase the old.
-                const float v = asm_.Params().at(k);
-                asm_.SetParam(keyBuf, v);
-                asm_.MutableParams().erase(k);
-                asmDirty_ = true;
+                const float v = asmEdit_.machine.Params().at(k);
+                asmEdit_.machine.SetParam(keyBuf, v);
+                asmEdit_.machine.MutableParams().erase(k);
+                asmEdit_.dirty = true;
                 continue;
             }
             if (ImGui::DragFloat(("值##v" + k).c_str(), &value, 0.01f, -1000.0f, 1000.0f)) {
-                asm_.SetParam(k, value);
-                asmDirty_ = true;
+                asmEdit_.machine.SetParam(k, value);
+                asmEdit_.dirty = true;
             }
             if (ImGui::Button(("移除##p" + k).c_str())) removeParam = k;
         }
         if (!removeParam.empty()) {
-            asm_.MutableParams().erase(removeParam);
-            asmDirty_ = true;
+            asmEdit_.machine.MutableParams().erase(removeParam);
+            asmEdit_.dirty = true;
         }
         if (ImGui::Button("添加参数")) {
-            asm_.SetParam("param" + std::to_string(asm_.Params().size() + 1), 0.0f);
-            asmDirty_ = true;
+            asmEdit_.machine.SetParam("param" + std::to_string(asmEdit_.machine.Params().size() + 1), 0.0f);
+            asmEdit_.dirty = true;
         }
     }
     ImGui::End();

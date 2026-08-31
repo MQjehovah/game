@@ -472,9 +472,9 @@ void EditorApp::PaintTerrain(const math::Ray& ray) {
     const float localZ = hit.z - e.pos.z;
     if (localX < -half || localX > half || localZ < -half || localZ > half) return;
     const int seg = e.terrainSegments_;
-    const float radius = terrainBrushRadius_;
+    const float radius = terrain_.brushRadius;
     const float r2 = radius * radius;
-    const float delta = terrainBrushStrength_ * (terrainRaise_ ? 1.0f : -1.0f) / e.terrainHeightScale_;
+    const float delta = terrain_.brushStrength * (terrain_.raise ? 1.0f : -1.0f) / e.terrainHeightScale_;
     for (int row = 0; row <= seg; ++row) {
         for (int col = 0; col <= seg; ++col) {
             const float x = -half + col * cell - localX;
@@ -1847,59 +1847,59 @@ void EditorApp::OpenScriptEditor(const std::string& path) {
         return;
     }
     std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-    scriptEdit_.SetText(text);
-    scriptEditorPath_ = path;
-    scriptEditorRel_ = path;
+    scriptEditor_.edit.SetText(text);
+    scriptEditor_.path = path;
+    scriptEditor_.rel = path;
     const std::string base = projectDir_.empty() ? "." : projectDir_;
     if (path.compare(0, base.size(), base) == 0 && path.size() > base.size() &&
         (path[base.size()] == '/' || path[base.size()] == '\\'))
-        scriptEditorRel_ = path.substr(base.size() + 1);
-    scriptEditorCheck_ = ScriptCheckResult{};
+        scriptEditor_.rel = path.substr(base.size() + 1);
+    scriptEditor_.check = ScriptCheckResult{};
     script::IScriptHost* checkHost = ScriptCheckHostFor(path);
     if (checkHost) {
-        if (scriptEditorRel_ != path) {
-            scriptEditorCheck_ = CheckScriptFile(*checkHost, base, scriptEditorRel_);
+        if (scriptEditor_.rel != path) {
+            scriptEditor_.check = CheckScriptFile(*checkHost, base, scriptEditor_.rel);
         } else {
             std::ifstream src(path, std::ios::binary);
             std::string text((std::istreambuf_iterator<char>(src)),
                              std::istreambuf_iterator<char>());
-            scriptEditorCheck_.path = path;
-            scriptEditorCheck_.ok = checkHost->CheckSyntax(text);
-            if (!scriptEditorCheck_.ok) {
-                scriptEditorCheck_.message = checkHost->LastError().message;
-                scriptEditorCheck_.line = checkHost->LastError().line;
+            scriptEditor_.check.path = path;
+            scriptEditor_.check.ok = checkHost->CheckSyntax(text);
+            if (!scriptEditor_.check.ok) {
+                scriptEditor_.check.message = checkHost->LastError().message;
+                scriptEditor_.check.line = checkHost->LastError().line;
             }
         }
     }
-    scriptEditorDirty_ = false;
+    scriptEditor_.dirty = false;
     showScriptEditor_ = true;
     NEON_LOG_INFO("Editor: script editor opened '%s'", path.c_str());
 }
 
 void EditorApp::SaveScriptEditor() {
-    if (scriptEditorPath_.empty()) return;
-    std::ofstream out(scriptEditorPath_, std::ios::binary);
+    if (scriptEditor_.path.empty()) return;
+    std::ofstream out(scriptEditor_.path, std::ios::binary);
     if (!out.is_open()) {
-        NEON_LOG_ERROR("Editor: cannot write script '%s'", scriptEditorPath_.c_str());
+        NEON_LOG_ERROR("Editor: cannot write script '%s'", scriptEditor_.path.c_str());
         return;
     }
-    out << scriptEdit_.GetText();
-    scriptEditorDirty_ = false;
+    out << scriptEditor_.edit.GetText();
+    scriptEditor_.dirty = false;
     const std::string base = projectDir_.empty() ? "." : projectDir_;
-    script::IScriptHost* checkHost = ScriptCheckHostFor(scriptEditorPath_);
+    script::IScriptHost* checkHost = ScriptCheckHostFor(scriptEditor_.path);
     if (checkHost) {
-        if (scriptEditorRel_ != scriptEditorPath_) {
-            scriptEditorCheck_ = CheckScriptFile(*checkHost, base, scriptEditorRel_);
+        if (scriptEditor_.rel != scriptEditor_.path) {
+            scriptEditor_.check = CheckScriptFile(*checkHost, base, scriptEditor_.rel);
         } else {
-            scriptEditorCheck_.path = scriptEditorPath_;
-            scriptEditorCheck_.ok = checkHost->CheckSyntax(scriptEdit_.GetText());
-            if (!scriptEditorCheck_.ok) {
-                scriptEditorCheck_.message = checkHost->LastError().message;
-                scriptEditorCheck_.line = checkHost->LastError().line;
+            scriptEditor_.check.path = scriptEditor_.path;
+            scriptEditor_.check.ok = checkHost->CheckSyntax(scriptEditor_.edit.GetText());
+            if (!scriptEditor_.check.ok) {
+                scriptEditor_.check.message = checkHost->LastError().message;
+                scriptEditor_.check.line = checkHost->LastError().line;
             }
         }
     }
-    NEON_LOG_INFO("Editor: script saved '%s'", scriptEditorPath_.c_str());
+    NEON_LOG_INFO("Editor: script saved '%s'", scriptEditor_.path.c_str());
 }
 
 void EditorApp::OpenInExternalEditor(const std::string& path) {

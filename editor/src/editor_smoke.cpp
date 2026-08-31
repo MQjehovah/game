@@ -712,7 +712,7 @@ void EditorApp::RunUISmokeTest() {
     check(profilerDrawn_, "profiler panel rendered its stats");
     {
         bool anyMs = false;
-        for (float v : profilerMs_) {
+        for (float v : profiler_.ms) {
             if (v > 0.0f) {
                 anyMs = true;
                 break;
@@ -986,18 +986,18 @@ void EditorApp::RunUISmokeTest() {
             out << "function on_start(ent)\nend\n";
         }
         OpenScriptEditor(path);
-        check(showScriptEditor_ && scriptEditorPath_ == path,
+        check(showScriptEditor_ && scriptEditor_.path == path,
               "script editor: opens the file");
-        check(scriptEditorCheck_.ok, "script editor: syntax passes on open");
+        check(scriptEditor_.check.ok, "script editor: syntax passes on open");
         // Break the syntax, save, and expect the error to surface.
-        scriptEdit_.SetText("function broken( then\n");
+        scriptEditor_.edit.SetText("function broken( then\n");
         SaveScriptEditor();
-        check(!scriptEditorCheck_.ok && !scriptEditorCheck_.message.empty(),
+        check(!scriptEditor_.check.ok && !scriptEditor_.check.message.empty(),
               "script editor: syntax error detected after save");
         // Fix and save again.
-        scriptEdit_.SetText("function on_start(ent)\nend\n");
+        scriptEditor_.edit.SetText("function on_start(ent)\nend\n");
         SaveScriptEditor();
-        check(scriptEditorCheck_.ok, "script editor: syntax passes after fix");
+        check(scriptEditor_.check.ok, "script editor: syntax passes after fix");
         std::ifstream verify(path, std::ios::binary);
         std::string saved((std::istreambuf_iterator<char>(verify)),
                           std::istreambuf_iterator<char>());
@@ -1017,16 +1017,16 @@ void EditorApp::RunUISmokeTest() {
             out << "function on_start(ent) {\n}\n";
         }
         OpenScriptEditor(path);
-        check(showScriptEditor_ && scriptEditorPath_ == path,
+        check(showScriptEditor_ && scriptEditor_.path == path,
               "script editor: opens a .js file");
-        check(scriptEditorCheck_.ok, "script editor: JS syntax passes on open");
-        scriptEdit_.SetText("function broken( {\n");
+        check(scriptEditor_.check.ok, "script editor: JS syntax passes on open");
+        scriptEditor_.edit.SetText("function broken( {\n");
         SaveScriptEditor();
-        check(!scriptEditorCheck_.ok && !scriptEditorCheck_.message.empty(),
+        check(!scriptEditor_.check.ok && !scriptEditor_.check.message.empty(),
               "script editor: JS syntax error detected after save");
-        scriptEdit_.SetText("function on_start(ent) {\n}\n");
+        scriptEditor_.edit.SetText("function on_start(ent) {\n}\n");
         SaveScriptEditor();
-        check(scriptEditorCheck_.ok, "script editor: JS syntax passes after fix");
+        check(scriptEditor_.check.ok, "script editor: JS syntax passes after fix");
     }
 #endif // NEON_ENABLE_JS
 

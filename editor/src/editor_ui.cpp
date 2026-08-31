@@ -211,8 +211,8 @@ void EditorApp::BuildImGuiUI() {
             NEON_LOG_INFO("DockSpace: model dropped '%s'", path ? path : "");
             if (path && *path) {
                 showModelPreview_ = true;
-                std::snprintf(previewPathBuf_, sizeof(previewPathBuf_), "%s", path);
-                OpenModelPreview(previewPathBuf_);
+                std::snprintf(preview_.pathBuf, sizeof(preview_.pathBuf), "%s", path);
+                OpenModelPreview(preview_.pathBuf);
             }
         }
         ImGui::EndDragDropTarget();
@@ -463,15 +463,15 @@ void EditorApp::BuildImGuiUI() {
 }
 
 void EditorApp::LoadInputMapEdit() {
-    inputMapEdit_ = script::InputMap::Defaults();
+    inputMapState_.edit = script::InputMap::Defaults();
     std::ifstream in(projectDir_ + "/input.json", std::ios::binary);
     if (in.is_open()) {
         std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
         std::string err;
-        if (!inputMapEdit_.Load(text, &err))
+        if (!inputMapState_.edit.Load(text, &err))
             NEON_LOG_ERROR("Editor: input.json parse failed: %s", err.c_str());
     }
-    inputMapListenAction_ = "";
+    inputMapState_.listenAction = "";
 }
 
 void EditorApp::SaveInputMapEdit() {
@@ -480,8 +480,8 @@ void EditorApp::SaveInputMapEdit() {
         NEON_LOG_ERROR("Editor: cannot write '%s/input.json'", projectDir_.c_str());
         return;
     }
-    out << inputMapEdit_.ToJson();
-    NEON_LOG_INFO("Editor: input.json saved (%zu actions)", inputMapEdit_.Names().size());
+    out << inputMapState_.edit.ToJson();
+    NEON_LOG_INFO("Editor: input.json saved (%zu actions)", inputMapState_.edit.Names().size());
 }
 
 void EditorApp::BuildInputMapPanel() {
@@ -501,8 +501,8 @@ void EditorApp::BuildInputMapPanel() {
         ImGui::TableSetupColumn("按键");
         ImGui::TableSetupColumn("绑定");
         ImGui::TableHeadersRow();
-        for (const std::string& name : inputMapEdit_.Names()) {
-            const script::InputAction* a = inputMapEdit_.Find(name);
+        for (const std::string& name : inputMapState_.edit.Names()) {
+            const script::InputAction* a = inputMapState_.edit.Find(name);
             if (!a) continue;
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0);
@@ -517,20 +517,20 @@ void EditorApp::BuildInputMapPanel() {
                 keys += (keys.empty() ? "" : " / ") + script::InputMap::KeyToName(k);
             ImGui::TextUnformatted(keys.empty() ? "(无)" : keys.c_str());
             ImGui::TableSetColumnIndex(2);
-            const bool listening = inputMapListenAction_ == name;
+            const bool listening = inputMapState_.listenAction == name;
             if (ImGui::Button(listening ? "等待按键..." : "改键", ImVec2(92.0f, 0.0f))) {
-                inputMapListenAction_ = listening ? "" : name;
+                inputMapState_.listenAction = listening ? "" : name;
             }
         }
         ImGui::EndTable();
     }
-    if (!inputMapListenAction_.empty())
+    if (!inputMapState_.listenAction.empty())
         ImGui::TextColored(ImVec4(1.0f, 0.9f, 0.3f, 1.0f),
-                           "请按一个新按键绑定到 '%s'...", inputMapListenAction_.c_str());
+                           "请按一个新按键绑定到 '%s'...", inputMapState_.listenAction.c_str());
     ImGui::Separator();
     ImGui::TextDisabled("时序规则 (G7-3): 双击窗口/长按阈值 (毫秒, 0=关); 修饰键为需要按住的和弦");
-    for (const std::string& name : inputMapEdit_.Names()) {
-        script::InputAction* a = inputMapEdit_.FindMutable(name);
+    for (const std::string& name : inputMapState_.edit.Names()) {
+        script::InputAction* a = inputMapState_.edit.FindMutable(name);
         if (!a) continue;
         if (ImGui::TreeNode(name.c_str())) {
             int dtMs = static_cast<int>(a->doubleTapMs);

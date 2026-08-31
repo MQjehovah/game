@@ -207,20 +207,20 @@ void EditorApp::DrawDebugOverlay(const gfx::Camera& cam) {
 
     // Navigation walkable area: translucent green (walkable) / red (blocked)
     // ground cells so the field is visible in the viewport, not just the panel.
-    if (debugNavMesh_ && navGrid_.Valid()) {
+    if (debugNavMesh_ && nav_.grid.Valid()) {
         static gfx::Mesh cell = gfx::Mesh::CreatePlane(renderer_, 1.0f, 1.0f, 1, 1, "navcell");
         if (!cell.Valid()) return;
         gfx::Material walk = gfx::Material::Unlit({}, gfx::Color{0.3f, 0.85f, 0.4f, 0.28f});
         walk.transparent = true;
         gfx::Material block = gfx::Material::Unlit({}, gfx::Color{0.9f, 0.3f, 0.3f, 0.28f});
         block.transparent = true;
-        for (int y = 0; y < navGrid_.Height(); ++y) {
-            for (int x = 0; x < navGrid_.Width(); ++x) {
-                const math::Vec2 c = navGrid_.CellToWorld(x, y);
+        for (int y = 0; y < nav_.grid.Height(); ++y) {
+            for (int x = 0; x < nav_.grid.Width(); ++x) {
+                const math::Vec2 c = nav_.grid.CellToWorld(x, y);
                 const math::Mat4 m = math::Mat4::Translation({c.x, 0.02f, c.y}) *
-                                     math::Mat4::Scale({navGrid_.CellSize(), 1.0f,
-                                                        navGrid_.CellSize()});
-                renderer_.DrawMesh(cell, navGrid_.Walkable(x, y) ? walk : block, m);
+                                     math::Mat4::Scale({nav_.grid.CellSize(), 1.0f,
+                                                        nav_.grid.CellSize()});
+                renderer_.DrawMesh(cell, nav_.grid.Walkable(x, y) ? walk : block, m);
             }
         }
     }

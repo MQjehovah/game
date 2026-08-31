@@ -199,10 +199,12 @@
 ### C3 EditorApp 巨类 / panels.cpp 4100 行
 - [~] 2026-08-31 已做：panels.cpp 4143 行拆为 9 个 `.inc`（按面板，主文件 428 行）+ 面板注册
   中心化（`EditorApp::PanelDef` 注册表统一驱动 视图菜单 + ini 持久化，消除 hpp 字段/表项/菜单
-  3 处同步，并修复"动画状态机"未持久化的漂移）。editor.hpp 仍 ~990 行 90+ 成员。
-- [ ] 未做：EditorApp 状态按面板进一步拆分；undo 覆盖洞（灯光/相机参数/地形笔刷/UI 文档不可撤销，
-  `editor_scene.cpp:426-461`、`panels.cpp:1407-1452`）另列 D5。
-- 方向：面板状态按面板拆分（PanelDef 已铺路），undo 覆盖洞归 D5。
+  3 处同步，并修复"动画状态机"未持久化的漂移）+ **面板状态按面板拆分**（terrain/model-preview/
+  anim/asm/script/nav/package/profiler/loc/inputmap 十簇状态抽成嵌套 struct，~55 个扁平成员收敛为
+  10 个 struct 实例）。editor.hpp 仍 ~970 行（余下 gizmo/BT/UI-editor/视口相机等状态未拆）。
+- [ ] 未做：gizmo/BT/UI-editor 状态继续按面板拆分；undo 覆盖洞（灯光/相机参数/地形笔刷/UI 文档
+  不可撤销，`editor_scene.cpp:426-461`、`panels.cpp:1407-1452`）另列 D5。
+- 方向：gizmo/BT/UI-editor 状态按面板拆分（PanelDef 已铺路），undo 覆盖洞归 D5。
 
 ### C4 Renderer 上帝类 + 无 render graph
 - [ ] `renderer.cpp` 2804 行 ~18 个职责；17 个 RT 手工生命周期，新增后处理要改 4 处；三份近似重复的 caster 提交代码（CSM/SSAO 深度/点光 1161-1271 vs 1490-1560）。

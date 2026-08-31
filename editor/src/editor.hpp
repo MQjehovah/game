@@ -567,6 +567,88 @@ public:
     static int PanelCount();
 
 private:
+    // ---------------------------------------------------------------------
+    // Per-panel editor state (C3): extracted from the flat EditorApp members.
+    // Each panel owns its state; EditorApp holds one instance per panel instead
+    // of ~55 flat members that sat directly on the god class.
+    // ---------------------------------------------------------------------
+    static constexpr int kProfilerSamples = 180; // profiler ring buffer size
+
+    struct TerrainState {
+        bool paintMode = false;
+        float brushRadius = 5.0f;
+        float brushStrength = 0.12f;
+        bool raise = true;
+        math::Vec3 hoverPos{};
+        bool hoverValid = false;
+    };
+    struct ModelPreviewState {
+        std::shared_ptr<scene::SkinnedModel> model;
+        std::string path;
+        char pathBuf[512] = "assets/models/wolf/Wolf-Blender-2.82a.gltf";
+        bool playing = true;
+        float time = 0.0f;
+        int clip = 0;
+        float yaw = 0.6f;
+        float pitch = 0.3f;
+        math::Rect2 screenRect{0, 0, 0, 0};
+        gfx::RenderTargetHandle rt;
+        gfx::TextureHandle rtColor;
+        int rtW = 0;
+        int rtH = 0;
+        ImTextureID rtId = ImTextureID_Invalid;
+    };
+    struct AnimEditorState {
+        anim::AnimationClip clip;
+        std::string clipPath;
+        bool clipDirty = false;
+        float playhead = 0.0f;
+        bool playing = false;
+        char pathBuf[512] = {};
+    };
+    struct AsmEditorState {
+        anim::AnimationStateMachine machine;
+        std::string path;
+        bool dirty = false;
+        char pathBuf[512] = {};
+    };
+    struct ScriptEditorState {
+        std::string path;   // file being edited ("" = closed)
+        std::string rel;    // project-relative path for checks
+        TextEditor edit;    // built-in editor (Lua/JS syntax highlight)
+        bool dirty = false;
+        ScriptCheckResult check; // last syntax check result
+        std::map<std::string, std::set<int>> breakpoints;
+        bool breakpointsDirty = false;
+        char varsBuf[32768]{};   // raw JSON vars editor (32 KB; truncation detected)
+        std::string varsError;   // last vars-parse / truncation message
+    };
+    struct NavState {
+        std::string assetPath;   // project nav/<name>.json ("" = unsaved)
+        nav::NavGrid grid;
+        math::Vec2 start{-5, -5}; // cell-space markers (invalid when < 0)
+        math::Vec2 goal{-5, -5};
+        std::vector<math::Vec2> path;
+    };
+    struct PackageState {
+        char outDirBuf[4096]{}; // output dir for the pack ("" = none yet)
+        pack::PackageReport report; // last run's report
+        bool ran = false;           // the 打包 button ran at least once
+    };
+    struct ProfilerState {
+        std::array<float, kProfilerSamples> ms{};
+        int msHead = 0;
+    };
+    struct LocState {
+        core::Localization edit;
+        std::string language = "zh";
+        std::string path; // last loaded/saved locales file
+    };
+    struct InputMapState {
+        script::InputMap edit;
+        std::string listenAction; // "listening" action, "" = idle
+    };
+
     gfx::Renderer renderer_;
     // Play audio: procedural SoundFx synthesized per PlaySfx(name) and
     // played through the backend. Default = platform (miniaudio / WinMM /
@@ -624,8 +706,7 @@ private:
     bool loadProjectOnStart_ = false;  // --project also loads its start scene
     // Godot-style input mapping panel: edit project input.json actions.
     bool showInputMap_ = false;
-    script::InputMap inputMapEdit_;
-    std::string inputMapListenAction_; // "listening" action, "" = idle
+    InputMapState inputMapState_;
     void LoadInputMapEdit();
     void SaveInputMapEdit();
     bool f5Pressed_ = false; // edge-trigger: Win32 repeats KeyDown while held
@@ -663,14 +744,7 @@ private:
     std::string sceneExtends_; // P1-1: parent scene path ("" = no inheritance)
     bool sceneDirty_ = false;  // scene edited since last save (terrain brush etc.)
     bool cameraFollowSelected_ = false; // P1-1: view through the selected Camera3D
-    // P1-1 terrain brush state.
-    bool terrainPaintMode_ = false;
-    float terrainBrushRadius_ = 5.0f;
-    float terrainBrushStrength_ = 0.12f;
-    bool terrainRaise_ = true;
-    // P2-editor UX: terrain brush hover preview.
-    math::Vec3 terrainHoverPos_{};
-    bool terrainHoverValid_ = false;
+    TerrainState terrain_; // P1-1 terrain brush + hover preview
 
     float yaw_ = 0.7f;
     float pitch_ = 0.35f;
@@ -699,9 +773,7 @@ private:
     // ImGui plot API plus per-frame renderer/ECS/physics/BT/memory stats.
     bool showProfiler_ = false;
     bool profilerDrawn_ = false; // smoke: the panel rendered its stats
-    static constexpr int kProfilerSamples = 180;
-    std::array<float, kProfilerSamples> profilerMs_{};
-    int profilerMsHead_ = 0;
+    ProfilerState profiler_;
 
     // Asset thumbnail cache (T4.8): per-path GPU render target (kept alive so
     // its color texture stays sampleable) + the ImGui texture id, keyed by
@@ -813,20 +885,9 @@ private:
     std::vector<std::unique_ptr<plugin::NativePlugin>> nativePlugins_;
     std::string nativePluginsDir_;
 
-    // Localization editor: merged string tables from
-    // <project>/assets/locales/*.json
-    // plus the active language for the preview.
-    core::Localization locEdit_;
-    std::string locLanguage_ = "zh";
-    std::string locPath_; // last loaded/saved locales file
+    LocState locState_; // localization editor (string tables + language)
 
-    // Navigation tool (A* on a 2D walkability grid): asset path, grid, and
-    // the current start/goal/path for viewport visualization.
-    std::string navAssetPath_; // project nav/<name>.json ("" = unsaved)
-    nav::NavGrid navGrid_;
-    math::Vec2 navStart_{-5, -5}; // cell-space markers (invalid when < 0)
-    math::Vec2 navGoal_{-5, -5};
-    std::vector<math::Vec2> navPath_;
+    NavState nav_; // navigation tool (A* grid + start/goal/path)
 
     // Tool panel state.
     std::vector<AssetEntry> assetEntries_;
@@ -857,27 +918,10 @@ private:
     // Standalone model viewer (single glTF + animation playback) for clean
     // inspection of geometry/textures/animations independent of a scene.
     bool showModelPreview_ = false;
-    std::shared_ptr<scene::SkinnedModel> previewModel_;
-    std::string previewPath_;
-    char previewPathBuf_[512] = "assets/models/wolf/Wolf-Blender-2.82a.gltf";
+    ModelPreviewState preview_; // standalone model viewer state
     // Points the preview camera at the model's largest face (along the
     // flattest AABB axis) so thin models (banners/walls) are not shown edge-on.
     void FrameModelPreview();
-    bool previewPlaying_ = true;
-    float previewTime_ = 0.0f;
-    int previewClip_ = 0;
-    float previewYaw_ = 0.6f;
-    float previewPitch_ = 0.3f;
-    // Screen-space rect of the model-viewer panel's preview area (set by
-    // BuildModelPreviewPanel, consumed by RenderModelPreviewPanel).
-    math::Rect2 previewScreenRect_{0, 0, 0, 0};
-    // Offscreen target for the panel preview (rendered once per frame, shown
-    // via ImGui::Image so it coexists with the edit/play viewport).
-    gfx::RenderTargetHandle previewRT_;
-    gfx::TextureHandle previewRTColor_;
-    int previewRTW_ = 0;
-    int previewRTH_ = 0;
-    ImTextureID previewRTId_ = ImTextureID_Invalid;
 
     // Transform gizmo (ImGuizmo) state for the viewport.
     ImGuizmo::OPERATION gizmoOp_ = ImGuizmo::TRANSLATE;
@@ -959,35 +1003,13 @@ private:
     bool showStateMachineEditor_ = false;
     bool showTerrain_ = false;
     bool showTilemap_ = false;
-    // P1-1 animation timeline editor state.
-    anim::AnimationClip animClip_;
-    std::string animClipPath_;
-    bool animClipDirty_ = false;
-    float animPlayhead_ = 0.0f;
-    bool animPlaying_ = false;
-    char animPathBuf_[512] = {};
-    // G5-4-4(项2) data-driven state machine editor state (.asm.json).
-    anim::AnimationStateMachine asm_;
-    std::string asmPath_;
-    bool asmDirty_ = false;
-    char asmPathBuf_[512] = {};
-    std::string scriptEditorPath_;   // file being edited ("" = closed)
-    std::string scriptEditorRel_;    // project-relative path for checks
-    TextEditor scriptEdit_;  // 内置脚本编辑器 (Lua/JS 语法高亮)
-    bool scriptEditorDirty_ = false;
-    ScriptCheckResult scriptEditorCheck_; // last syntax check result
-    // P1-2 debugger: breakpoints keyed by the script path being edited, plus
-    // a dirty flag that pushes them into the running play host.
-    std::map<std::string, std::set<int>> scriptBreakpoints_;
-    bool scriptBreakpointsDirty_ = false;
-    char scriptVarsBuf_[32768]{};     // raw JSON vars editor (32 KB; truncation is detected)
-    std::string scriptVarsError_;     // last vars-parse / truncation message (empty when valid)
+    AnimEditorState anim_;   // P1-1 animation timeline editor state
+    AsmEditorState asmEdit_; // data-driven state machine editor (.asm.json)
+    ScriptEditorState scriptEditor_; // script editor + debugger + vars state
 
     // Package panel (T4.6) state.
     bool showPackage_ = false;
-    char packOutDirBuf_[4096]{};      // output dir for the pack ("" = none yet)
-    pack::PackageReport packReport_;  // last run's report (rendered by the panel)
-    bool packRan_ = false;            // the 打包 button ran at least once
+    PackageState package_;
 };
 
 } // namespace neon::editor

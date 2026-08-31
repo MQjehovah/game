@@ -329,7 +329,7 @@ void EditorApp::OnRender() {
                               renderer_.Stats().drawCalls);
             }
             // P2-editor UX: terrain brush footprint preview at the hover point.
-            if (terrainPaintMode_ && terrainHoverValid_) {
+            if (terrain_.paintMode && terrain_.hoverValid) {
                 const gfx::Color ringC{0.95f, 0.65f, 0.2f, 0.9f};
                 const int segs = 36;
                 const float y = entities_[static_cast<size_t>(selected_)].pos.y + 0.05f;
@@ -338,11 +338,11 @@ void EditorApp::OnRender() {
                 for (int i = 0; i < segs; ++i) {
                     const float a0 = static_cast<float>(i) / segs * 6.2831853f;
                     const float a1 = static_cast<float>(i + 1) / segs * 6.2831853f;
-                    rv.push_back({{terrainHoverPos_.x + std::cos(a0) * terrainBrushRadius_, y,
-                                   terrainHoverPos_.z + std::sin(a0) * terrainBrushRadius_},
+                    rv.push_back({{terrain_.hoverPos.x + std::cos(a0) * terrain_.brushRadius, y,
+                                   terrain_.hoverPos.z + std::sin(a0) * terrain_.brushRadius},
                                   ringC});
-                    rv.push_back({{terrainHoverPos_.x + std::cos(a1) * terrainBrushRadius_, y,
-                                   terrainHoverPos_.z + std::sin(a1) * terrainBrushRadius_},
+                    rv.push_back({{terrain_.hoverPos.x + std::cos(a1) * terrain_.brushRadius, y,
+                                   terrain_.hoverPos.z + std::sin(a1) * terrain_.brushRadius},
                                   ringC});
                 }
                 renderer_.DrawLines(rv.data(), static_cast<uint32_t>(rv.size()),
@@ -864,16 +864,16 @@ void EditorApp::UpdateViewport(float dt) {
     // Model preview camera: only when the mouse is actually over the preview
     // panel; otherwise this falls through and the main viewport camera keeps
     // driving (right-drag in the 3D view must not rotate the preview).
-    if (showModelPreview_ && previewModel_ && previewScreenRect_.w > 0.0f) {
+    if (showModelPreview_ && preview_.model && preview_.screenRect.w > 0.0f) {
         platform::IInput* in = Input();
         const math::Vec2 mpx = in->MousePos();
         const bool overPreview =
-            mpx.x >= previewScreenRect_.x && mpx.x <= previewScreenRect_.x + previewScreenRect_.w &&
-            mpx.y >= previewScreenRect_.y && mpx.y <= previewScreenRect_.y + previewScreenRect_.h;
+            mpx.x >= preview_.screenRect.x && mpx.x <= preview_.screenRect.x + preview_.screenRect.w &&
+            mpx.y >= preview_.screenRect.y && mpx.y <= preview_.screenRect.y + preview_.screenRect.h;
         if (overPreview) {
             if (in->MouseDown(platform::MouseButton::Right)) {
-                previewYaw_ += -in->MouseDelta().x * 0.005f;
-                previewPitch_ = math::Clamp(previewPitch_ + -in->MouseDelta().y * 0.005f,
+                preview_.yaw += -in->MouseDelta().x * 0.005f;
+                preview_.pitch = math::Clamp(preview_.pitch + -in->MouseDelta().y * 0.005f,
                                             -1.4f, 1.4f);
             }
             return;
@@ -965,7 +965,7 @@ void EditorApp::UpdateViewport(float dt) {
             !gizmoBusy) {
             math::Ray ray = PickRay();
             // P1-1 terrain brush: paint instead of picking while enabled.
-            if (terrainPaintMode_) {
+            if (terrain_.paintMode) {
                 PaintTerrain(ray);
                 return;
             }
@@ -995,13 +995,13 @@ void EditorApp::UpdateViewport(float dt) {
         }
         // Hold-to-paint: the brush applies every frame while the button stays
         // down (drag sculpting).
-        if (terrainPaintMode_ && input->MouseDown(platform::MouseButton::Left)) {
+        if (terrain_.paintMode && input->MouseDown(platform::MouseButton::Left)) {
             PaintTerrain(PickRay());
         }
         // P2-editor UX: terrain brush hover preview — track where the brush
         // would land every frame while paint mode is on.
-        terrainHoverValid_ = false;
-        if (terrainPaintMode_ && selected_ >= 0 &&
+        terrain_.hoverValid = false;
+        if (terrain_.paintMode && selected_ >= 0 &&
             selected_ < static_cast<int>(entities_.size()) &&
             entities_[static_cast<size_t>(selected_)].meshKey == "terrain") {
             const math::Ray ray = PickRay();
@@ -1010,8 +1010,8 @@ void EditorApp::UpdateViewport(float dt) {
                                   ray.origin.y) /
                                  ray.dir.y;
                 if (ty >= 0.0f) {
-                    terrainHoverPos_ = ray.origin + ray.dir * ty;
-                    terrainHoverValid_ = true;
+                    terrain_.hoverPos = ray.origin + ray.dir * ty;
+                    terrain_.hoverValid = true;
                 }
             }
         }

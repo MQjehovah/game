@@ -42,8 +42,8 @@ void EditorApp::BuildProfilerPanel() {
     if (ImGui::Begin("性能", &showProfiler_)) {
         const float ms = TimeRef().delta * 1000.0f;
         const gfx::Renderer::RenderStats& st = renderer_.Stats();
-        profilerMs_[profilerMsHead_] = ms;
-        profilerMsHead_ = (profilerMsHead_ + 1) % kProfilerSamples;
+        profiler_.ms[profiler_.msHead] = ms;
+        profiler_.msHead = (profiler_.msHead + 1) % kProfilerSamples;
 
         ImGui::Text("帧时间 %.2f ms | %.1f FPS", ms, TimeRef().Fps());
         ImGui::Text("Draw 调用 %u | 三角形 %u | 实例 %u", st.drawCalls, st.triangles,
@@ -81,12 +81,12 @@ void EditorApp::BuildProfilerPanel() {
         }
 
         ImGui::Separator();
-        // Plot the ring buffer in chronological order (oldest = profilerMsHead_)
+        // Plot the ring buffer in chronological order (oldest = profiler_.msHead)
         // so the graph reads left-to-right instead of jumping when the head
         // wraps around the fixed array.
         float wrapped[kProfilerSamples];
         for (int i = 0; i < kProfilerSamples; ++i)
-            wrapped[i] = profilerMs_[(profilerMsHead_ + i) % kProfilerSamples];
+            wrapped[i] = profiler_.ms[(profiler_.msHead + i) % kProfilerSamples];
         ImGui::PlotLines("##frame_ms", wrapped, kProfilerSamples, 0, "帧时间 (ms)",
                          0.0f, 40.0f, ImVec2(-1.0f, 88.0f));
         profilerDrawn_ = true;
@@ -161,8 +161,8 @@ void EditorApp::BuildViewportPanel() {
                 NEON_LOG_INFO("Viewport: model dropped '%s'", path ? path : "");
                 if (path && *path) {
                     showModelPreview_ = true;
-                    std::snprintf(previewPathBuf_, sizeof(previewPathBuf_), "%s", path);
-                    OpenModelPreview(previewPathBuf_);
+                    std::snprintf(preview_.pathBuf, sizeof(preview_.pathBuf), "%s", path);
+                    OpenModelPreview(preview_.pathBuf);
                 }
             }
             // 资产面板的预置体 (assets/prefabs/*.json) 拖到 3D 视口 → 生成实例。
@@ -189,16 +189,16 @@ void EditorApp::BuildNavPanel() {
     if (!showNav_) return;
     if (ImGui::Begin("导航", &showNav_)) {
         char navBuf[512];
-        std::snprintf(navBuf, sizeof(navBuf), "%s", navAssetPath_.c_str());
+        std::snprintf(navBuf, sizeof(navBuf), "%s", nav_.assetPath.c_str());
         ImGui::SetNextItemWidth(260.0f);
         if (ImGui::InputText("导航资产", navBuf, sizeof(navBuf),
                              ImGuiInputTextFlags_EnterReturnsTrue)) {
-            navAssetPath_ = navBuf;
+            nav_.assetPath = navBuf;
         }
         if (ImGui::Button("加载")) {
-            std::ifstream in(navAssetPath_, std::ios::binary);
+            std::ifstream in(nav_.assetPath, std::ios::binary);
             if (!in.is_open()) {
-                NEON_LOG_ERROR("Nav: cannot open '%s'", navAssetPath_.c_str());
+                NEON_LOG_ERROR("Nav: cannot open '%s'", nav_.assetPath.c_str());
             } else {
                 std::string text((std::istreambuf_iterator<char>(in)),
                                  std::istreambuf_iterator<char>());
@@ -206,30 +206,30 @@ void EditorApp::BuildNavPanel() {
                 if (!r.Ok()) {
                     NEON_LOG_ERROR("Nav: parse failed: %s", r.Error().c_str());
                 } else {
-                    navGrid_ = r.Value();
-                    navAssetPath_.clear();
-                    navStart_ = {-5, -5};
-                    navGoal_ = {-5, -5};
-                    NEON_LOG_INFO("Nav: loaded '%s' (%dx%d)", navBuf, navGrid_.Width(),
-                                  navGrid_.Height());
+                    nav_.grid = r.Value();
+                    nav_.assetPath.clear();
+                    nav_.start = {-5, -5};
+                    nav_.goal = {-5, -5};
+                    NEON_LOG_INFO("Nav: loaded '%s' (%dx%d)", navBuf, nav_.grid.Width(),
+                                  nav_.grid.Height());
                 }
             }
         }
         ImGui::SameLine();
         if (ImGui::Button("保存")) {
-            if (!navGrid_.Valid()) {
+            if (!nav_.grid.Valid()) {
                 NEON_LOG_ERROR("Nav: nothing to save");
             } else {
                 const std::string path =
-                    navAssetPath_.empty() ? projectDir_ + "/nav/grid.json" : navAssetPath_;
+                    nav_.assetPath.empty() ? projectDir_ + "/nav/grid.json" : nav_.assetPath;
                 const std::string dir = ParentPath(path);
                 if (!dir.empty() && dir != "." && dir != "/") MakeDirSingle(dir);
-                auto json = navGrid_.ToJson();
+                auto json = nav_.grid.ToJson();
                 if (json.Ok()) {
                     std::ofstream out(path, std::ios::binary);
                     if (out.is_open()) {
                         out << core::JsonWriter::WritePretty(json.Value());
-                        navAssetPath_ = path;
+                        nav_.assetPath = path;
                         NEON_LOG_INFO("Nav: saved -> %s", path.c_str());
                     } else {
                         NEON_LOG_ERROR("Nav: cannot write '%s'", path.c_str());
@@ -238,34 +238,34 @@ void EditorApp::BuildNavPanel() {
             }
         }
         ImGui::SameLine();
-        if (ImGui::Button("新建 16x16")) navGrid_ = nav::NavGrid::Create(16, 16, 1.0f, {0, 0});
+        if (ImGui::Button("新建 16x16")) nav_.grid = nav::NavGrid::Create(16, 16, 1.0f, {0, 0});
 
         ImGui::Separator();
         ImGui::TextDisabled("左键: 翻转可行走 | Shift+左键: 起点 | Ctrl+左键: 终点");
-        if (!navGrid_.Valid()) {
+        if (!nav_.grid.Valid()) {
             ImGui::TextDisabled("未加载导航网格 (加载或新建)");
             ImGui::End();
             return;
         }
         const float cellPx = 18.0f;
         const ImVec2 canvasOrigin = ImGui::GetCursorScreenPos();
-        const ImVec2 canvasSize(cellPx * navGrid_.Width(), cellPx * navGrid_.Height());
+        const ImVec2 canvasSize(cellPx * nav_.grid.Width(), cellPx * nav_.grid.Height());
         ImDrawList* dl = ImGui::GetWindowDrawList();
-        for (int y = 0; y < navGrid_.Height(); ++y) {
-            for (int x = 0; x < navGrid_.Width(); ++x) {
+        for (int y = 0; y < nav_.grid.Height(); ++y) {
+            for (int x = 0; x < nav_.grid.Width(); ++x) {
                 const ImVec2 a(canvasOrigin.x + x * cellPx, canvasOrigin.y + y * cellPx);
                 const ImVec2 b(a.x + cellPx, a.y + cellPx);
-                dl->AddRectFilled(a, b, navGrid_.Walkable(x, y)
+                dl->AddRectFilled(a, b, nav_.grid.Walkable(x, y)
                                             ? IM_COL32(30, 90, 40, 255)
                                             : IM_COL32(150, 40, 40, 255));
                 dl->AddRect(a, b, IM_COL32(20, 20, 20, 160));
             }
         }
         // A* path preview (yellow polyline through cell centers).
-        if (!navPath_.empty()) {
-            for (size_t i = 1; i < navPath_.size(); ++i) {
-                const math::Vec2& p0 = navPath_[i - 1];
-                const math::Vec2& p1 = navPath_[i];
+        if (!nav_.path.empty()) {
+            for (size_t i = 1; i < nav_.path.size(); ++i) {
+                const math::Vec2& p0 = nav_.path[i - 1];
+                const math::Vec2& p1 = nav_.path[i];
                 dl->AddLine(ImVec2(canvasOrigin.x + p0.x * cellPx,
                                    canvasOrigin.y + p0.y * cellPx),
                             ImVec2(canvasOrigin.x + p1.x * cellPx,
@@ -278,49 +278,49 @@ void EditorApp::BuildNavPanel() {
             const ImVec2 mouse = ImGui::GetIO().MousePos;
             const int cx = static_cast<int>((mouse.x - canvasOrigin.x) / cellPx);
             const int cy = static_cast<int>((mouse.y - canvasOrigin.y) / cellPx);
-            if (navGrid_.InBounds(cx, cy)) {
+            if (nav_.grid.InBounds(cx, cy)) {
                 if (ImGui::GetIO().KeyShift) {
-                    navStart_ = {static_cast<float>(cx), static_cast<float>(cy)};
+                    nav_.start = {static_cast<float>(cx), static_cast<float>(cy)};
                 } else if (ImGui::GetIO().KeyCtrl) {
-                    navGoal_ = {static_cast<float>(cx), static_cast<float>(cy)};
+                    nav_.goal = {static_cast<float>(cx), static_cast<float>(cy)};
                 } else {
-                    navGrid_.SetWalkable(cx, cy, !navGrid_.Walkable(cx, cy));
+                    nav_.grid.SetWalkable(cx, cy, !nav_.grid.Walkable(cx, cy));
                 }
                 // Recompute the path whenever the input state changes.
-                navPath_.clear();
-                if (navStart_.x >= 0 && navGoal_.x >= 0) {
-                    navPath_ = navGrid_.FindPath(
-                        navGrid_.CellToWorld(static_cast<int>(navStart_.x),
-                                             static_cast<int>(navStart_.y)),
-                        navGrid_.CellToWorld(static_cast<int>(navGoal_.x),
-                                             static_cast<int>(navGoal_.y)));
+                nav_.path.clear();
+                if (nav_.start.x >= 0 && nav_.goal.x >= 0) {
+                    nav_.path = nav_.grid.FindPath(
+                        nav_.grid.CellToWorld(static_cast<int>(nav_.start.x),
+                                             static_cast<int>(nav_.start.y)),
+                        nav_.grid.CellToWorld(static_cast<int>(nav_.goal.x),
+                                             static_cast<int>(nav_.goal.y)));
                     // Convert world -> canvas pixel cells for the preview.
-                    for (size_t i = 0; i < navPath_.size(); ++i) {
-                        math::Vec2& p = navPath_[i];
+                    for (size_t i = 0; i < nav_.path.size(); ++i) {
+                        math::Vec2& p = nav_.path[i];
                         int cx2 = 0, cy2 = 0;
-                        navGrid_.WorldToCell(p, &cx2, &cy2);
+                        nav_.grid.WorldToCell(p, &cx2, &cy2);
                         p = {static_cast<float>(cx2) + 0.5f,
                              static_cast<float>(cy2) + 0.5f};
                     }
                 }
             }
         }
-        if (navStart_.x >= 0) {
+        if (nav_.start.x >= 0) {
             dl->AddCircleFilled(
-                ImVec2(canvasOrigin.x + (navStart_.x + 0.5f) * cellPx,
-                       canvasOrigin.y + (navStart_.y + 0.5f) * cellPx),
+                ImVec2(canvasOrigin.x + (nav_.start.x + 0.5f) * cellPx,
+                       canvasOrigin.y + (nav_.start.y + 0.5f) * cellPx),
                 cellPx * 0.35f, IM_COL32(80, 220, 255, 255));
         }
-        if (navGoal_.x >= 0) {
+        if (nav_.goal.x >= 0) {
             dl->AddCircleFilled(
-                ImVec2(canvasOrigin.x + (navGoal_.x + 0.5f) * cellPx,
-                       canvasOrigin.y + (navGoal_.y + 0.5f) * cellPx),
+                ImVec2(canvasOrigin.x + (nav_.goal.x + 0.5f) * cellPx,
+                       canvasOrigin.y + (nav_.goal.y + 0.5f) * cellPx),
                 cellPx * 0.35f, IM_COL32(255, 120, 80, 255));
         }
         ImGui::Text("起点 (%d,%d)  终点 (%d,%d)  路径 %zu 段",
-                    static_cast<int>(navStart_.x), static_cast<int>(navStart_.y),
-                    static_cast<int>(navGoal_.x), static_cast<int>(navGoal_.y),
-                    navPath_.size());
+                    static_cast<int>(nav_.start.x), static_cast<int>(nav_.start.y),
+                    static_cast<int>(nav_.goal.x), static_cast<int>(nav_.goal.y),
+                    nav_.path.size());
     }
     ImGui::End();
 }
