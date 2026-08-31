@@ -617,6 +617,11 @@ local function update_wolves(dt)
         end
         save_game()
       else
+        local slowFactor = 1.0
+        if Gameplay.HasStatus(w.e, "slow") then
+          local m = Gameplay.StatusMagnitude(w.e, "slow")
+          if m > 0 and m < 1 then slowFactor = m end
+        end
         local d = dist2d(wp.x, wp.z, pp.x, pp.z)
         local dh = dist2d(wp.x, wp.z, w.home.x, w.home.z)
         local chase = d < 14 and dh < 30
@@ -626,8 +631,8 @@ local function update_wolves(dt)
           moving = true
           mx = (pp.x - wp.x) / d
           mz = (pp.z - wp.z) / d
-          local vx = mx * 5.5
-          local vz = mz * 5.5
+          local vx = mx * 5.5 * slowFactor
+          local vz = mz * 5.5 * slowFactor
           wp.x = wp.x + vx * dt
           wp.z = wp.z + vz * dt
           SetRotationY(w.e, math.atan(mx, mz))
@@ -641,8 +646,8 @@ local function update_wolves(dt)
           moving = true
           mx = (w.home.x - wp.x) / dh
           mz = (w.home.z - wp.z) / dh
-          wp.x = wp.x + mx * 3 * dt
-          wp.z = wp.z + mz * 3 * dt
+          wp.x = wp.x + mx * 3 * slowFactor * dt
+          wp.z = wp.z + mz * 3 * slowFactor * dt
           SetRotationY(w.e, math.atan(mx, mz))
         end
         -- 狼 locomotion：追击=跑，回家=走（glb clip 名 01_Run/02_walk）
