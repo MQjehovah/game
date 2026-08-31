@@ -21,6 +21,7 @@
 #include "neon/io/vfs.hpp"
 #include "neon/kernel/registry.hpp"
 #include "neon/scene/scene_file.hpp"
+#include "gameplay_lib.hpp"
 
 #if defined(_WIN32)
 #ifndef NOMINMAX
@@ -734,6 +735,15 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     script::RegisterEngineBindings(*hosts_.lua, scriptCtx_);
     hosts_.lua->SetRngSeed(cfg_.rngSeed ? cfg_.rngSeed : 1u); // 0 aliases seed 1
     hosts_.lua->SetSimClock(0.0);
+
+    // 注入引擎内嵌 Gameplay 基础库（项目脚本之前执行）。
+    if (hosts_.lua) {
+        if (hosts_.lua->Load(neon::embedded::kGameplayLibLua))
+            (void)hosts_.lua->Run();
+        else
+            NEON_LOG_ERROR("runtime: Gameplay 基础库加载失败: %s",
+                           hosts_.lua->LastError().message.c_str());
+    }
 
     hosts_.js = script::CreateJsHost();
     if (hosts_.js && hosts_.js->Init()) {

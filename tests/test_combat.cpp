@@ -238,6 +238,28 @@ TEST(CombatAttackBoxOriented) {
 // Lua bindings + World::Add idempotency regression
 // ---------------------------------------------------------------------------
 
+TEST(GameplayLibInjected) {
+    const char* scene = R"({
+      "entities": [
+        {"name": "hero", "components": {
+          "transform": {"pos": [0,0,0]},
+          "health": {"hp": 100, "maxHp": 100},
+          "script": {"backend": "lua", "path": "gameplay.lua"}}}
+      ]
+    })";
+    const char* lua = R"(
+      function on_start(e)
+        SetVar("gp", Gameplay.version)
+      end
+    )";
+    scene::GameRuntime runtime;
+    scene::GameRuntimeConfig cfg;
+    cfg.headless = true;
+    cfg.readScript = [&](const std::string&) { return std::string(lua); };
+    CHECK(runtime.Start(scene, cfg).Ok());
+    CHECK_NEAR(runtime.GameVar("gp"), 1.0, 1e-6);
+}
+
 TEST(CombatStatusBindingsViaLua) {
     const char* scene = R"({
       "entities": [
