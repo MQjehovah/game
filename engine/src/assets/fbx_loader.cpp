@@ -13,32 +13,8 @@
 namespace neon::assets {
 
 namespace {
-// Convert a ufbx 3x4 column-major double matrix (v[12], no perspective row)
-// into the engine's 4x4 row-storage float Mat4 (m[16], translation in the last
-// column). They share the "translation in the last column" convention, so the
-// copy is a straight per-column fill; only the width (3x4 vs 4x4) and element
-// type (double vs float) differ.
-neon::math::Mat4 UfbxMatToEngine(const ufbx_matrix& M) {
-    neon::math::Mat4 out = neon::math::Mat4::Identity();
-    const double* v = M.v;
-    // Column 0 (X axis).
-    out.m[0] = static_cast<float>(v[0]);
-    out.m[4] = static_cast<float>(v[1]);
-    out.m[8] = static_cast<float>(v[2]);
-    // Column 1 (Y axis).
-    out.m[1] = static_cast<float>(v[3]);
-    out.m[5] = static_cast<float>(v[4]);
-    out.m[9] = static_cast<float>(v[5]);
-    // Column 2 (Z axis).
-    out.m[2] = static_cast<float>(v[6]);
-    out.m[6] = static_cast<float>(v[7]);
-    out.m[10] = static_cast<float>(v[8]);
-    // Column 3 (translation).
-    out.m[3] = static_cast<float>(v[9]);
-    out.m[7] = static_cast<float>(v[10]);
-    out.m[11] = static_cast<float>(v[11]);
-    return out;
-}
+// (ubx transform helpers — ufbx_transform_position / ufbx_transform_direction
+// are called directly below; no engine-matrix conversion is needed.)
 } // namespace
 
 // AssetManager::LoadFBX: load an FBX via ufbx and merge every mesh-bearing node
@@ -76,6 +52,7 @@ FbxAsset AssetManager::LoadFBX(const std::string& path) {
     std::vector<gfx::Vertex3D> allVerts;
     std::vector<uint32_t> allIndices;
     allVerts.reserve(1024);
+    bool anyUfbxNormal = false;
 
     // Walk every mesh-bearing node (a mesh can be shared by several nodes, that
     // is fine: each becomes a copy of the geometry at its transform).
@@ -103,6 +80,7 @@ FbxAsset AssetManager::LoadFBX(const std::string& path) {
                     const ufbx_vec3& nn = m->vertex_normal.values.data[mv];
                     v.normal = {static_cast<float>(nn.x), static_cast<float>(nn.y),
                                 static_cast<float>(nn.z)};
+                    anyUfbxNormal = true;
                 }
             }
             if (m->vertex_uv.exists) {
@@ -112,19 +90,43 @@ FbxAsset AssetManager::LoadFBX(const std::string& path) {
                     v.uv = {static_cast<float>(tuv.x), static_cast<float>(tuv.y)};
                 }
             }
-            // Bake the node's world transform into the vertex position. The
-            // ufbx matrix is a 3x4 double column-major array with translation
-            // in the last column — convert it to the engine's Mat4 rather than
-            // reinterpreting the memory (a reinterpret of a double/3x4 array
-            // as a float/4x4 would scramble the transform).
-            const neon::math::Mat4 nm = UfbxMatToEngine(node->node_to_world);
-            v.pos = nm.TransformPoint(v.pos);
+            // Bake the node's geometry->world transform into the vertex. ufbx
+            // computes geometry_to_world as the correct matrix (it accounts for
+            // geometric transforms); node_to_world does NOT and mis-places /
+            // stretches multi-mesh models. Use ufbx's own transform helpers so
+            // the axis conversion + matrix layout are handled correctly rather
+            // than reimplemented with a Mat4 reinterpret.
+            const ufbx_vec3 wp = ufbx_transform_position(&node->geometry_to_world, p);
+            v.pos = {static_cast<float>(wp.x), static_cast<float>(wp.y),
+                     static_cast<float>(wp.z)};
+            const ufbx_vec3 n0 = {(float)v.normal.x, (float)v.normal.y, (float)v.normal.z};
+            const ufbx_vec3 wn = ufbx_transform_direction(&node->geometry_to_world, n0);
+            v.normal = {static_cast<float>(wn.x), static_cast<float>(wn.y),
+                        static_cast<float>(wn.z)};
             allVerts.push_back(v);
         }
-        // Copy triangle indices (sanitize strip-restart sentinels).
-        for (size_t ii = 0; ii < m->vertex_indices.count; ++ii) {
-            uint32_t idx = m->vertex_indices.data[ii];
-            if (idx != 0xFFFFFFFFu && idx != 0xFFFFFFFEu) allIndices.push_back(base + idx);
+        // Two cases:
+        //  - Already-triangulated mesh (vertex_indices.count == num_faces*3):
+        //    the buffer IS the triangle index list — copy it verbatim. Using a
+        //    per-face triangulator here would re-cut already-good triangles.
+        //  - Non-triangle mesh (has quads/polygons): ufbx_triangulate_face
+        //    slices each face into triangles (offsets relative to the face's
+        //    index_begin), which we rebase to the merged vertex array.
+        const bool alreadyTri = m->num_faces > 0 &&
+                                m->vertex_indices.count == m->num_faces * 3;
+        if (alreadyTri) {
+            for (size_t ii = 0; ii < m->vertex_indices.count; ++ii)
+                allIndices.push_back(base + m->vertex_indices.data[ii]);
+        } else {
+            const size_t maxTri = m->max_face_triangles > 1 ? m->max_face_triangles : 1;
+            std::vector<uint32_t> triBuf(maxTri * 3);
+            for (size_t fi = 0; fi < m->faces.count; ++fi) {
+                const ufbx_face face = m->faces.data[fi];
+                const uint32_t triCount =
+                    ufbx_triangulate_face(triBuf.data(), triBuf.size(), m, face);
+                for (uint32_t ti = 0; ti < triCount * 3; ++ti)
+                    allIndices.push_back(base + face.index_begin + triBuf[ti]);
+            }
         }
     }
 
@@ -137,22 +139,27 @@ FbxAsset AssetManager::LoadFBX(const std::string& path) {
         return out;
     }
 
-    // Recompute flat normals (robust regardless of the source normal stream):
-    // for each triangle accumulate its edge-cross into the three verts.
-    std::vector<neon::math::Vec3> accum(allVerts.size(), math::Vec3{0, 0, 0});
-    for (size_t ii = 0; ii + 2 < allIndices.size(); ii += 3) {
-        uint32_t a = allIndices[ii], b = allIndices[ii + 1], c = allIndices[ii + 2];
-        if (a >= allVerts.size() || b >= allVerts.size() || c >= allVerts.size()) continue;
-        const neon::math::Vec3& pa = allVerts[a].pos;
-        const neon::math::Vec3& pb = allVerts[b].pos;
-        const neon::math::Vec3& pc = allVerts[c].pos;
-        neon::math::Vec3 n = neon::math::Cross(pb - pa, pc - pa);
-        accum[a] += n;
-        accum[b] += n;
-        accum[c] += n;
-    }
-    for (size_t i = 0; i < allVerts.size(); ++i) {
-        if (accum[i].Length() > 1e-6f) allVerts[i].normal = accum[i].Normalized();
+    // Trust the source vertex normals when the FBX provides them (they encode
+    // the author's smoothed shading + winding). Only fall back to computing
+    // flat normals when the file has no normal stream — a recomputed average
+    // over merged, possibly-mixed-winding meshes flips faces and shows as
+    // torn/black patches.
+    if (!anyUfbxNormal) {
+        std::vector<neon::math::Vec3> accum(allVerts.size(), math::Vec3{0, 0, 0});
+        for (size_t ii = 0; ii + 2 < allIndices.size(); ii += 3) {
+            uint32_t a = allIndices[ii], b = allIndices[ii + 1], c = allIndices[ii + 2];
+            if (a >= allVerts.size() || b >= allVerts.size() || c >= allVerts.size()) continue;
+            const neon::math::Vec3& pa = allVerts[a].pos;
+            const neon::math::Vec3& pb = allVerts[b].pos;
+            const neon::math::Vec3& pc = allVerts[c].pos;
+            neon::math::Vec3 n = neon::math::Cross(pb - pa, pc - pa);
+            accum[a] += n;
+            accum[b] += n;
+            accum[c] += n;
+        }
+        for (size_t i = 0; i < allVerts.size(); ++i) {
+            if (accum[i].Length() > 1e-6f) allVerts[i].normal = accum[i].Normalized();
+        }
     }
 
     // Normalize to a canonical unit footprint: FBX files come from many tools
