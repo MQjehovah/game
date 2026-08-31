@@ -1,10 +1,18 @@
 #include <cmath>
+#include <fstream>
+#include <iterator>
 #include <string>
+
+#if defined(_WIN32)
+#include <direct.h>
+#include <sys/stat.h>
+#endif
 
 #include "neon/neon.hpp"
 #include "neon/scene/game_runtime.hpp"
 #include "neon/scene/status.hpp"
 #include "neon/scene/systems/hud_system.hpp"
+#include "neon/scene/systems/prefab_system.hpp"
 #include "neon/scene/systems/projectile_system.hpp"
 #include "neon/scene/systems/status_system.hpp"
 #include "neon/scene/systems/tween_system.hpp"
@@ -1233,4 +1241,84 @@ TEST(TweenSystemStartTickWriteTransform) {
     ts.Start(e, 0, {0, 0, 0}, {1, 1, 1}, 1.0f, 0);
     ts.Clear();
     CHECK_EQ(ts.Count(), 0u);
+}
+
+// Task 7: PrefabSystem owns the prefab library + the Spawn instance builder;
+// GameRuntime injects the world-level instantiate callback. Standalone here:
+// Load registers only *.json files (stem = prefab name) via the injected
+// enumeration/read callbacks, and Spawn hands the parsed single-entity
+// SceneFile (prefab + unique name + transform override) to the callback.
+TEST(PrefabSystemLoadAndSpawn) {
+    test::TempDir tmp;
+    const std::string dir = tmp.Str();
+#if defined(_WIN32)
+    ::_mkdir((dir + "/assets").c_str());
+    ::_mkdir((dir + "/assets/prefabs").c_str());
+#else
+    ::mkdir((dir + "/assets").c_str(), 0777);
+    ::mkdir((dir + "/assets/prefabs").c_str(), 0777);
+#endif
+    CHECK(test::WriteFileAll(
+        dir + "/assets/prefabs/pea.json",
+        R"({"components": {"sprite": {"texture": "assets/sprites/pea.png"}}})"));
+    CHECK(test::WriteFileAll(dir + "/assets/prefabs/readme.txt", "ignore me"));
+
+    auto readFile = [&](const std::string& p) {
+        std::ifstream in(p, std::ios::binary);
+        return std::string((std::istreambuf_iterator<char>(in)),
+                           std::istreambuf_iterator<char>());
+    };
+
+    // Load scans <base>/assets/prefabs via injected callbacks; only .json
+    // files register, non-json entries are skipped silently.
+    scene::PrefabSystem prefs;
+    prefs.Load(
+        dir,
+        [&](const std::string& d) {
+            return std::vector<std::string>{d + "/pea.json", d + "/readme.txt"};
+        },
+        readFile);
+    CHECK_EQ(prefs.Count(), 1u);
+    CHECK(prefs.Library().Has("pea"));
+    CHECK(!prefs.Library().Has("readme"));
+
+    // Unknown name -> no-op; without an instantiate callback Spawn also no-ops.
+    CHECK(!prefs.Spawn("nope", {0, 0, 0}).IsValid());
+    CHECK(!prefs.Spawn("pea", {0, 0, 0}).IsValid());
+
+    // With a callback, Spawn forwards the parsed single-entity SceneFile:
+    // prefab name, unique instance name and the transform override position.
+    ecs::World world;
+    ecs::Entity created;
+    scene::PrefabSystem live;
+    live.SetInstantiate([&](const scene::SceneFile& scene) {
+        CHECK_EQ(scene.entities.size(), 1u);
+        CHECK_EQ(scene.entities[0].prefab, std::string("pea"));
+        CHECK(!scene.entities[0].name.empty());
+        bool sawTransform = false;
+        for (const auto& c : scene.entities[0].components) {
+            if (c.name != "transform") continue;
+            const core::Json* pos = c.data.Get("pos");
+            CHECK(pos && pos->IsArray() && pos->Size() == 3);
+            if (pos) {
+                CHECK_NEAR(pos->At(0)->GetNumber(), 1.0, 1e-6);
+                CHECK_NEAR(pos->At(1)->GetNumber(), 2.0, 1e-6);
+                CHECK_NEAR(pos->At(2)->GetNumber(), 3.0, 1e-6);
+            }
+            sawTransform = true;
+        }
+        CHECK(sawTransform);
+        created = world.Create();
+        return created;
+    });
+    live.Load(
+        dir,
+        [&](const std::string& d) { return std::vector<std::string>{d + "/pea.json"}; },
+        readFile);
+    const ecs::Entity e = live.Spawn("pea", {1, 2, 3});
+    CHECK(e.IsValid());
+    CHECK_EQ(e.id, created.id);
+    CHECK_EQ(live.Count(), 1u);
+    live.Clear();
+    CHECK_EQ(live.Count(), 0u);
 }

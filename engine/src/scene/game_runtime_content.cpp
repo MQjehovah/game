@@ -1,6 +1,6 @@
 // C1: GameRuntime content-loading subsystem (prefabs / locales / script &
 // asset path resolution). Split out of the former single game_runtime.cpp TU:
-// these functions only touch cfg_/prefs_/loc_ and the shared detail helpers.
+// these functions only touch cfg_/prefabs_/loc_ and the shared detail helpers.
 #include "neon/scene/game_runtime.hpp"
 #include "game_runtime_priv.hpp"
 
@@ -16,45 +16,35 @@ namespace neon::scene {
 using namespace detail; // ListFilesRecursive/HasSuffix/FileStem (inline copies)
 
 void GameRuntime::LoadPrefabs() {
-    prefs_ = PrefabLibrary{};
-    if (cfg_.scriptBaseDir.empty() && !cfg_.fileSystem) return; // no prefab source
-    std::vector<std::string> files;
+    // The PrefabSystem owns the library; here we only parameterize HOW files
+    // are enumerated/read (VFS pack vs disk) and forward. The no-source check
+    // mirrors the original (empty scriptBaseDir AND no VFS = nothing to load).
+    if (cfg_.scriptBaseDir.empty() && !cfg_.fileSystem) return;
     if (cfg_.fileSystem) {
         // VFS (pack + mod mount stack): enumerate the pack's assets/prefabs/
         // tree through the virtual filesystem. The old code only enumerated
         // the OS dir, which is empty in no-unpack VFS mode (packed games
         // loaded 0 prefabs and every SpawnPrefab failed).
-        files = cfg_.fileSystem->ListFiles("assets/prefabs", /*recursive=*/true);
+        prefabs_.Load(
+            cfg_.scriptBaseDir,
+            [this](const std::string&) {
+                return cfg_.fileSystem->ListFiles("assets/prefabs", /*recursive=*/true);
+            },
+            [this](const std::string& p) { return ReadScript(p); });
     } else {
-        ListFilesRecursive(cfg_.scriptBaseDir + "/assets/prefabs", "", files);
-    }
-    size_t loaded = 0;
-    for (const std::string& rel : files) {
-        if (!HasSuffix(rel, ".json")) continue;
-        const std::string name = FileStem(rel);
-        if (name.empty()) continue;
-        // VFS ListFiles returns FULL pack paths ("assets/prefabs/x.json"); the
-        // disk path returns dir-relative names, so only the disk branch
-        // prepends.
-        std::string text = cfg_.fileSystem ? ReadScript(rel)
-                                           : ReadScript(FullScriptPath("assets/prefabs/" + rel));
-        if (text.empty()) {
-            NEON_LOG_CAT(neon::core::LogCategory::Scene, neon::core::LogLevel::Warn,
-                         "runtime: prefab '%s' cannot be read (skipped)", rel.c_str());
-            continue;
-        }
-        core::Status st = prefs_.Add(name, text);
-        if (!st.Ok()) {
-            NEON_LOG_CAT(neon::core::LogCategory::Scene, neon::core::LogLevel::Warn,
-                         "runtime: prefab '%s' failed to load: %s (skipped)", rel.c_str(),
-                         st.Error().c_str());
-            continue;
-        }
-        ++loaded;
-    }
-    if (!files.empty()) {
-        NEON_LOG_CAT(neon::core::LogCategory::Scene, neon::core::LogLevel::Debug,
-                     "runtime: loaded %zu prefabs", loaded);
+        // Disk: enumerate <scriptBaseDir>/assets/prefabs (dir-relative names)
+        // and hand the PrefabSystem absolute disk paths to read.
+        prefabs_.Load(
+            cfg_.scriptBaseDir,
+            [this](const std::string& dir) {
+                std::vector<std::string> rels;
+                ListFilesRecursive(dir, "", rels);
+                std::vector<std::string> full;
+                full.reserve(rels.size());
+                for (const std::string& rel : rels) full.push_back(dir + "/" + rel);
+                return full;
+            },
+            [this](const std::string& p) { return ReadScript(p); });
     }
 }
 

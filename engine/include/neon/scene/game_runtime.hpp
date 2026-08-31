@@ -30,6 +30,7 @@
 #include "neon/scene/status.hpp"
 #include "neon/scene/systems/hud_system.hpp"
 #include "neon/scene/systems/lagcomp_system.hpp"
+#include "neon/scene/systems/prefab_system.hpp"
 #include "neon/scene/systems/projectile_system.hpp"
 #include "neon/scene/systems/scene_particle_system.hpp"
 #include "neon/scene/systems/status_system.hpp"
@@ -531,10 +532,10 @@ private:
     // Scene-tree world transform: walks SceneParentLink ancestors (bounded
     // depth) composing local TRS. Identity for unlinked entities.
     math::Mat4 LocalToWorld(ecs::Entity e) const;
-    // Loads every assets/prefabs/*.json under cfg_.scriptBaseDir into prefs_
-    // (no-op when the base dir is empty or the prefabs dir is absent). Scene
-    // entities can then reference prefabs by name, matching how packed games
-    // ship them.
+    // Loads every assets/prefabs/*.json under cfg_.scriptBaseDir into the
+    // PrefabSystem (no-op when the base dir is empty or the prefabs dir is
+    // absent). Scene entities can then reference prefabs by name, matching how
+    // packed games ship them.
     void LoadPrefabs();
     void LoadLocales(); // <localesDir>/*.json string tables for Loc()
     void BuildDrawList();
@@ -582,7 +583,7 @@ private:
     float postSsaoIntensity_ = 1.0f;
     float postVolumetricIntensity_ = 1.0f;
     float postSsrIntensity_ = 0.8f;
-    PrefabLibrary prefs_;             // prefabs loaded from <scriptBaseDir>/assets/prefabs/
+    PrefabSystem prefabs_;            // prefab library loaded from <scriptBaseDir>/assets/prefabs/
     core::Localization loc_;          // string tables loaded from cfg_.localesDir
     // Dual script backends: Lua + QuickJS (ES2020). Scene scripts pick a
     // backend via the script component's `backend` field; both hosts share the

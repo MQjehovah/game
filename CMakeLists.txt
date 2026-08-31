@@ -130,6 +130,7 @@ add_library(neon_scene STATIC
   engine/src/scene/systems/projectile_system.cpp
   engine/src/scene/systems/hud_system.cpp
   engine/src/scene/systems/lagcomp_system.cpp
+  engine/src/scene/systems/prefab_system.cpp
   engine/src/scene/systems/scene_particle_system.cpp
   engine/src/scene/systems/status_system.cpp
   engine/src/scene/systems/tween_system.cpp

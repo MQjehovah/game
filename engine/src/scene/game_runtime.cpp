@@ -256,9 +256,38 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
                  cfg_.physicsBackend.c_str(), physics_->BodyCount());
     compReg_ = ComponentRegistry{};
     RegisterBuiltinComponents(compReg_, /*assets=*/nullptr);
+    // The PrefabSystem only knows how to build the instance SceneFile; the
+    // world/component-factory/script-attach half stays here (it needs world_,
+    // compReg_, AttachOneScript) and is injected as the instantiate callback.
+    prefabs_.SetInstantiate([this](const SceneFile& scene) -> ecs::Entity {
+        auto inst = Instantiate(world_, scene, prefabs_.Library(), compReg_);
+        if (!inst.Ok() || inst.Value() != 1) return {};
+        // Locate the created entity by its unique name (baked into the entity
+        // name by PrefabSystem::Spawn), then attach its script components
+        // (AttachScripts only runs at Start for scene entities; the prefab's
+        // on_start fires here, with its custom components already set).
+        if (scene.entities.empty()) return {};
+        const std::string& uniqueName = scene.entities.front().name;
+        ecs::Entity out;
+        auto names = world_.ViewAll<SceneName>();
+        for (size_t i = 0; i < names.Size(); ++i) {
+            ecs::Entity ent2 = world_.EntityAt<SceneName>(i);
+            const SceneName* sn = world_.Get<SceneName>(ent2);
+            if (sn && sn->name == uniqueName) {
+                out = ent2;
+                break;
+            }
+        }
+        if (!out.IsValid()) return {};
+        if (const SceneScript* s = world_.Get<SceneScript>(out)) AttachOneScript(out, *s);
+        if (const SceneScripts* list = world_.Get<SceneScripts>(out)) {
+            for (const SceneScript& s : list->items) AttachOneScript(out, s);
+        }
+        return out;
+    });
     LoadPrefabs(); // scene entities may reference prefabs by name (packed games)
     LoadLocales(); // Loc() string tables (best effort; missing dir = no-op)
-    auto inst = Instantiate(world_, parsed.Value(), prefs_, compReg_);
+    auto inst = Instantiate(world_, parsed.Value(), prefabs_.Library(), compReg_);
     if (!inst.Ok()) return core::Status::Err("runtime: " + inst.Error());
     RegisterSceneBodies();
     RegisterCharacters();
@@ -810,7 +839,7 @@ void GameRuntime::Stop() {
     world_.Clear();
     if (physics_) physics_->Clear();
     scriptCtx_ = script::ScriptContext{};
-    prefs_ = PrefabLibrary{};
+    prefabs_.Clear();
     running_ = false;
     simTime_ = 0.0;
 }
@@ -1194,72 +1223,7 @@ ecs::Entity GameRuntime::SpawnEntity(const std::string& kind, const math::Vec3& 
 }
 
 ecs::Entity GameRuntime::SpawnPrefab(const std::string& name, const math::Vec3& pos) {
-    if (name.empty() || !prefs_.Get(name).Ok()) {
-        NEON_LOG_CAT(core::LogCategory::Scene, core::LogLevel::Warn,
-                     "runtime: SpawnPrefab: unknown prefab '%s'", name.c_str());
-        return {};
-    }
-    // Build a one-entity scene that references the prefab and overrides the
-    // transform, then reuse the exact Instantiate pipeline (prefab expansion,
-    // component factories, custom-component SceneData storage).
-    static uint64_t spawnCounter = 1;
-    const std::string uniqueName = name + "_" + std::to_string(spawnCounter++);
-    core::Json root;
-    root.type_ = core::Json::Type::Object;
-    core::Json arr;
-    arr.type_ = core::Json::Type::Array;
-    core::Json ent;
-    ent.type_ = core::Json::Type::Object;
-    core::Json nameJ;
-    nameJ.type_ = core::Json::Type::String;
-    nameJ.string_ = uniqueName;
-    ent.object_["name"] = std::move(nameJ);
-    core::Json prefabJ;
-    prefabJ.type_ = core::Json::Type::String;
-    prefabJ.string_ = name;
-    ent.object_["prefab"] = std::move(prefabJ);
-    core::Json comps;
-    comps.type_ = core::Json::Type::Object;
-    core::Json tr;
-    tr.type_ = core::Json::Type::Object;
-    core::Json posArr;
-    posArr.type_ = core::Json::Type::Array;
-    for (float v : {pos.x, pos.y, pos.z}) {
-        core::Json num;
-        num.type_ = core::Json::Type::Number;
-        num.number_ = v;
-        posArr.array_.push_back(std::move(num));
-    }
-    tr.object_["pos"] = std::move(posArr);
-    comps.object_["transform"] = std::move(tr);
-    ent.object_["components"] = std::move(comps);
-    arr.array_.push_back(std::move(ent));
-    root.object_["entities"] = std::move(arr);
-
-    auto parsed = SceneFile::Parse(core::JsonWriter::Write(root));
-    if (!parsed.Ok()) return {};
-    auto inst = Instantiate(world_, parsed.Value(), prefs_, compReg_);
-    if (!inst.Ok() || inst.Value() != 1) return {};
-
-    // Locate the created entity by its unique name, then attach its script
-    // components (AttachScripts only runs at Start for scene entities; the
-    // prefab's on_start fires here, with its custom components already set).
-    ecs::Entity out;
-    auto names = world_.ViewAll<SceneName>();
-    for (size_t i = 0; i < names.Size(); ++i) {
-        ecs::Entity ent2 = world_.EntityAt<SceneName>(i);
-        const SceneName* sn = world_.Get<SceneName>(ent2);
-        if (sn && sn->name == uniqueName) {
-            out = ent2;
-            break;
-        }
-    }
-    if (!out.IsValid()) return {};
-    if (const SceneScript* s = world_.Get<SceneScript>(out)) AttachOneScript(out, *s);
-    if (const SceneScripts* list = world_.Get<SceneScripts>(out)) {
-        for (const SceneScript& s : list->items) AttachOneScript(out, s);
-    }
-    return out;
+    return prefabs_.Spawn(name, pos);
 }
 
 void GameRuntime::TickAnimations(float dt) {
