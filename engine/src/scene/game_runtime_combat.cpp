@@ -192,7 +192,7 @@ void GameRuntime::TickProjectiles(float dt) {
         }
         if (target.IsValid()) {
             // Damage the hit entity (clamped to 0) and apply the projectile's
-            // status effects (name resolved through the built-in status table).
+            // status effects (numeric id resolved by the caller).
             if (SceneHealth* h = world_.Get<SceneHealth>(target)) {
                 h->hp = std::fmax(0.0f, h->hp - p.damage);
             }
@@ -200,8 +200,7 @@ void GameRuntime::TickProjectiles(float dt) {
                 if (!world_.Has<StatusComponent>(target)) world_.Add<StatusComponent>(target);
                 if (StatusComponent* c = world_.Get<StatusComponent>(target)) {
                     for (const SkillStatus& st : p.statuses) {
-                        const uint32_t id = StatusIdByName(st.name);
-                        if (id != 0) ApplyStatus(*c, id, st.duration, st.magnitude);
+                        ApplyStatus(*c, st.id, st.duration, st.magnitude, st.tickInterval);
                     }
                 }
             }

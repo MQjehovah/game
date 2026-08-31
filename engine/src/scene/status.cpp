@@ -1,45 +1,12 @@
 #include "neon/scene/status.hpp"
 
 #include <algorithm>
-#include <cstring>
 
 namespace neon::scene {
 
-namespace {
-
-const StatusDef kStatusDefs[] = {
-    {kStatusBurning, "burning", 1.0f},
-    {kStatusPoison, "poison", 1.0f},
-    {kStatusRegen, "regen", 1.0f},
-    {kStatusSlow, "slow", 1.0f},
-};
-
-} // namespace
-
-const StatusDef* StatusDefs() {
-    return kStatusDefs;
-}
-
-const StatusDef* FindStatusDef(uint32_t id) {
-    for (const StatusDef& d : kStatusDefs)
-        if (d.id == id) return &d;
-    return nullptr;
-}
-
-uint32_t StatusIdByName(const std::string& name) {
-    for (const StatusDef& d : kStatusDefs)
-        if (name == d.name) return d.id;
-    return 0;
-}
-
-const char* StatusNameById(uint32_t id) {
-    if (const StatusDef* d = FindStatusDef(id)) return d->name;
-    return "";
-}
-
-void ApplyStatus(StatusComponent& c, uint32_t id, float duration, float magnitude) {
+void ApplyStatus(StatusComponent& c, uint32_t id, float duration, float magnitude,
+                 float tickInterval) {
     if (id == 0 || duration <= 0.0f) return;
-    const StatusDef* def = FindStatusDef(id);
     for (StatusEffect& e : c.effects) {
         if (e.id == id) {
             e.remaining = duration;
@@ -52,7 +19,7 @@ void ApplyStatus(StatusComponent& c, uint32_t id, float duration, float magnitud
     e.id = id;
     e.remaining = duration;
     e.magnitude = magnitude;
-    e.tickInterval = def ? def->tickInterval : 1.0f;
+    e.tickInterval = tickInterval;
     c.effects.push_back(e);
 }
 

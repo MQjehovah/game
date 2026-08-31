@@ -17,12 +17,6 @@ constexpr float kRayMaxDist = 100000.0f;
 Value JsonToValue(const core::Json& j);
 core::Json ValueToJson(const Value& v);
 
-// Resolves a status name through the ScriptContext hook (wired by the scene
-// runtime), so this translation unit never includes/link the scene module.
-uint32_t StatusIdOf(ScriptContext* ctx, const std::string& name) {
-    return ctx && ctx->statusIdByName ? ctx->statusIdByName(name) : 0;
-}
-
 // Lua numbers are doubles; casting one directly to uint32_t is UB for
 // negative, NaN, or >= 2^32 values. Range-check first; anything out of range
 // maps to 0 (an invalid entity id).
@@ -245,7 +239,8 @@ Value NativeSpawnProjectile(IScriptHost& host, void* user) {
     const float range = NumberArg(host, 6, 0.0f);
     const float hitRadius = NumberArg(host, 7, 0.8f);
     // Optional 9th arg: status effects applied to the hit target, as an array
-    // of {name=..., duration=..., magnitude=...} tables.
+    // of {id=..., duration=..., magnitude=..., tickInterval=...} tables
+    // (tickInterval optional, defaults to 1.0).
     std::vector<SkillStatusData> statuses;
     if (host.ArgCount() >= 9) {
         const Value& sArg = host.GetArg(8);
@@ -254,14 +249,16 @@ Value NativeSpawnProjectile(IScriptHost& host, void* user) {
                 if (item.type != Value::Type::Table || !item.table) continue;
                 SkillStatusData st;
                 for (const auto& f : item.table->fields) {
-                    if (f.first == "name" && f.second.type == Value::Type::String)
-                        st.name = f.second.str;
+                    if (f.first == "id" && f.second.type == Value::Type::Number)
+                        st.id = static_cast<uint32_t>(f.second.number);
                     else if (f.first == "duration" && f.second.type == Value::Type::Number)
                         st.duration = static_cast<float>(f.second.number);
                     else if (f.first == "magnitude" && f.second.type == Value::Type::Number)
                         st.magnitude = static_cast<float>(f.second.number);
+                    else if (f.first == "tickInterval" && f.second.type == Value::Type::Number)
+                        st.tickInterval = static_cast<float>(f.second.number);
                 }
-                if (!st.name.empty()) statuses.push_back(std::move(st));
+                if (st.id != 0) statuses.push_back(std::move(st));
             }
         }
     }
@@ -269,20 +266,22 @@ Value NativeSpawnProjectile(IScriptHost& host, void* user) {
     return Value::Nil();
 }
 
-// Status effects (M2 combat core): ApplyStatus(ent, "burning", 3, 2) applies
-// 3s of burning dealing 2 damage/tick; HasStatus/StatusMagnitude/RemoveStatus
-// query and remove. Names resolve through the built-in status table.
+// Status effects (M2 combat core): ApplyStatus(ent, id, 3, 2[, interval])
+// applies 3s of effect id dealing 2 damage/tick; HasStatus/StatusMagnitude/
+// RemoveStatus query and remove by id. Name -> id resolution lives in the Lua
+// Gameplay library, not here.
 Value NativeApplyStatus(IScriptHost& host, void* user) {
     auto* ctx = static_cast<ScriptContext*>(user);
     if (!ctx || !ctx->sceneApplyStatus) return Value::Nil();
     const ecs::Entity e = EntityFromValue(host.GetArg(0));
-    const uint32_t id = StatusIdOf(ctx, StringArg(host, 1));
+    const uint32_t id = static_cast<uint32_t>(host.GetArg(1).number);
     const float duration =
         host.GetArg(2).type == Value::Type::Number ? static_cast<float>(host.GetArg(2).number) : 0.0f;
     const float magnitude =
         host.GetArg(3).type == Value::Type::Number ? static_cast<float>(host.GetArg(3).number) : 0.0f;
+    const float tickInterval = NumberArg(host, 4, 1.0f);
     if (id == 0 || duration <= 0.0f) return Value::Nil();
-    ctx->sceneApplyStatus(e, id, duration, magnitude);
+    ctx->sceneApplyStatus(e, id, duration, magnitude, tickInterval);
     return Value::Nil();
 }
 
@@ -290,7 +289,7 @@ Value NativeHasStatus(IScriptHost& host, void* user) {
     auto* ctx = static_cast<ScriptContext*>(user);
     if (!ctx || !ctx->sceneHasStatus) return Value::Num(0);
     const ecs::Entity e = EntityFromValue(host.GetArg(0));
-    const uint32_t id = StatusIdOf(ctx, StringArg(host, 1));
+    const uint32_t id = static_cast<uint32_t>(host.GetArg(1).number);
     return Value::Bool(id != 0 && ctx->sceneHasStatus(e, id));
 }
 
@@ -298,7 +297,7 @@ Value NativeStatusMagnitude(IScriptHost& host, void* user) {
     auto* ctx = static_cast<ScriptContext*>(user);
     if (!ctx || !ctx->sceneStatusMagnitude) return Value::Num(0);
     const ecs::Entity e = EntityFromValue(host.GetArg(0));
-    const uint32_t id = StatusIdOf(ctx, StringArg(host, 1));
+    const uint32_t id = static_cast<uint32_t>(host.GetArg(1).number);
     return Value::Num(id != 0 ? ctx->sceneStatusMagnitude(e, id) : 0.0);
 }
 
@@ -306,7 +305,7 @@ Value NativeRemoveStatus(IScriptHost& host, void* user) {
     auto* ctx = static_cast<ScriptContext*>(user);
     if (!ctx || !ctx->sceneRemoveStatus) return Value::Nil();
     const ecs::Entity e = EntityFromValue(host.GetArg(0));
-    const uint32_t id = StatusIdOf(ctx, StringArg(host, 1));
+    const uint32_t id = static_cast<uint32_t>(host.GetArg(1).number);
     if (id != 0) ctx->sceneRemoveStatus(e, id);
     return Value::Nil();
 }
