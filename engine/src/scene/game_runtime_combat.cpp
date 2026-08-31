@@ -134,6 +134,44 @@ int GameRuntime::AttackBoxLagComp(const math::Vec3& center, const math::Vec3& ha
     return AttackBoxImpl(center, half, yaw, damage, rewindTicks);
 }
 
+std::vector<GameRuntime::HealthHit> GameRuntime::OverlapSphere(
+    const math::Vec3& center, float radius, uint32_t rewindTicks) const {
+    std::vector<HealthHit> out;
+    ecs::World& world = const_cast<ecs::World&>(world_); // ECS has no const ViewAll
+    auto view = world.ViewAll<SceneHealth>();
+    for (size_t i = 0; i < view.Size(); ++i) {
+        ecs::Entity ent = world.EntityAt<SceneHealth>(i);
+        const SceneHealth* h = world_.Get<SceneHealth>(ent);
+        const SceneTransform* t = world_.Get<SceneTransform>(ent);
+        if (!h || !t || h->hp <= 0.0f) continue;
+        math::Vec3 p = t->pos;
+        if (rewindTicks > 0) LagCompPosition(ent, rewindTicks, p);
+        if ((p - center).LengthSq() <= radius * radius) out.push_back({ent, p});
+    }
+    return out;
+}
+
+std::vector<GameRuntime::HealthHit> GameRuntime::OverlapBox(
+    const math::Vec3& center, const math::Vec3& half, float yaw, uint32_t rewindTicks) const {
+    const float c = std::cos(yaw), s = std::sin(yaw);
+    std::vector<HealthHit> out;
+    ecs::World& world = const_cast<ecs::World&>(world_); // ECS has no const ViewAll
+    auto view = world.ViewAll<SceneHealth>();
+    for (size_t i = 0; i < view.Size(); ++i) {
+        ecs::Entity ent = world.EntityAt<SceneHealth>(i);
+        const SceneHealth* h = world_.Get<SceneHealth>(ent);
+        const SceneTransform* t = world_.Get<SceneTransform>(ent);
+        if (!h || !t || h->hp <= 0.0f) continue;
+        math::Vec3 p = t->pos;
+        if (rewindTicks > 0) LagCompPosition(ent, rewindTicks, p);
+        const math::Vec3 d = p - center;
+        const float lx = c * d.x - s * d.z, ly = d.y, lz = s * d.x + c * d.z;
+        if (std::fabs(lx) <= half.x && std::fabs(ly) <= half.y && std::fabs(lz) <= half.z)
+            out.push_back({ent, p});
+    }
+    return out;
+}
+
 void GameRuntime::ApplySkillStatuses(ecs::Entity target,
                                      const std::vector<SkillStatus>& statuses) {
     if (statuses.empty() || !world_.Alive(target)) return;

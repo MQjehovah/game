@@ -282,3 +282,18 @@ TEST(WorldAddIdempotent) {
     w.Remove<scene::StatusComponent>(e);
     CHECK_EQ(w.ViewAll<scene::StatusComponent>().Size(), 0u);
 }
+
+// ---------------------------------------------------------------------------
+// Spatial overlap queries (OverlapSphere / OverlapBox)
+// ---------------------------------------------------------------------------
+
+TEST(OverlapSphereQueriesHealthEntities) {
+    scene::GameRuntime runtime;
+    scene::GameRuntimeConfig cfg; cfg.headless = true;
+    CHECK(runtime.Start(kCombatScene, cfg).Ok());
+    // kCombatScene: hero(0,0,0) hp100, wolf_front(0,0,-2) hp50, wolf_side(3,0,0)
+    // hp50. The hero is itself a SceneHealth entity, so it is returned too.
+    CHECK_EQ(runtime.OverlapSphere({0,0,0}, 2.5f).size(), 2u); // hero + wolf_front
+    CHECK_EQ(runtime.OverlapSphere({0,0,0}, 4.0f).size(), 3u); // all three
+    CHECK_EQ(runtime.OverlapBox({0,0,0}, {0.5f,10.0f,2.5f}, 0.0f).size(), 2u); // hero + front
+}

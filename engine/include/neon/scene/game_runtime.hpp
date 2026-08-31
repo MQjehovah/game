@@ -353,6 +353,19 @@ public:
     int AttackBox(const math::Vec3& center, const math::Vec3& half, float yaw, float damage);
     void TickProjectiles(float dt);
 
+    // Spatial overlap queries (script-facing). Return every SceneHealth entity
+    // with hp > 0 whose position lies inside the sphere / yaw-oriented box,
+    // together with the position used for the test (lag-compensated when
+    // rewindTicks > 0). Building block for combat gameplay lowered into Lua.
+    struct HealthHit {
+        ecs::Entity entity;
+        math::Vec3 pos;
+    };
+    std::vector<HealthHit> OverlapSphere(const math::Vec3& center, float radius,
+                                         uint32_t rewindTicks = 0) const;
+    std::vector<HealthHit> OverlapBox(const math::Vec3& center, const math::Vec3& half,
+                                      float yaw, uint32_t rewindTicks = 0) const;
+
     // G3-4 lag compensation (authoritative server). The runtime records every
     // fixed tick's authoritative poses into a ring buffer
     // (kLagCompHistoryTicks deep). MeleeAttackLagComp / AttackBoxLagComp test
