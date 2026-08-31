@@ -49,6 +49,8 @@ projects/*
 .vs/
 .vscode/
 CMakeUserPresets.json
+# Editor runtime window/layout state (regenerated every launch).
+neon_editor_imgui.ini
 # Shadow-map / screenshot debug artifacts (throwaway diagnostics)
 *.raw
 /*.png
