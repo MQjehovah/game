@@ -361,6 +361,35 @@ Value NativeAttackBox(IScriptHost& host, void* user) {
     return Value::Num(ctx->attackBox(center, half, yawDeg, damage));
 }
 
+// OverlapSphere(center{x,y,z}, radius [, rewind]) -> array of {entity=, x=, y=,
+// z=} for every live SceneHealth entity inside the sphere. rewind is the
+// lag-comp rollback tick count (0 = current pose).
+Value NativeOverlapSphere(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->overlapSphere) return Value::Nil();
+    const math::Vec3 center = Vec3FromValue(host.GetArg(0), math::Vec3{});
+    const float radius = host.GetArg(1).type == Value::Type::Number
+                             ? static_cast<float>(host.GetArg(1).number) : 1.0f;
+    const uint32_t rewind = host.ArgCount() >= 3 && host.GetArg(2).type == Value::Type::Number
+                                ? SafeU32FromNumber(host.GetArg(2).number) : 0u;
+    return ctx->overlapSphere(center, radius, rewind);
+}
+
+// OverlapBox(center{x,y,z}, half{x,y,z}, yawDeg [, rewind]) -> array of
+// {entity=, x=, y=, z=}. yawDeg rotates the box around Y (the wiring layer
+// converts degrees to radians); rewind is the lag-comp rollback tick count.
+Value NativeOverlapBox(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->overlapBox) return Value::Nil();
+    const math::Vec3 center = Vec3FromValue(host.GetArg(0), math::Vec3{});
+    const math::Vec3 half = Vec3FromValue(host.GetArg(1), math::Vec3{1, 1, 1});
+    const float yawDeg = host.GetArg(2).type == Value::Type::Number
+                             ? static_cast<float>(host.GetArg(2).number) : 0.0f;
+    const uint32_t rewind = host.ArgCount() >= 4 && host.GetArg(3).type == Value::Type::Number
+                                ? SafeU32FromNumber(host.GetArg(3).number) : 0u;
+    return ctx->overlapBox(center, half, yawDeg, rewind);
+}
+
 Value NativeInputMouseDown(IScriptHost& host, void* user) {
     auto* ctx = static_cast<ScriptContext*>(user);
     if (!ctx || !ctx->input) return Value::Bool(false);
@@ -1630,6 +1659,8 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("CastSkill", &NativeCastSkill, &ctx);
     host.Register("SkillCooldown", &NativeSkillCooldown, &ctx);
     host.Register("AttackBox", &NativeAttackBox, &ctx);
+    host.Register("OverlapSphere", &NativeOverlapSphere, &ctx);
+    host.Register("OverlapBox", &NativeOverlapBox, &ctx);
     host.Register("BindPlayerToClient", &NativeBindPlayerToClient, &ctx);
     host.Register("DrawRect", &NativeDrawRect, &ctx);
     host.Register("DrawSprite", &NativeDrawSprite, &ctx);

@@ -429,6 +429,48 @@ TEST(OverlapSphereRewindUsesHistoricalPose) {
     CHECK_NEAR(wolfHit->pos.z, -2.0f, 1e-4);
 }
 
+TEST(OverlapBindingsViaLua) {
+    // Three 50-hp SceneHealth entities (hero carries the script). OverlapSphere
+    // radius 5 catches all three; the returned entity handles round-trip back
+    // through GetHealth, and OverlapBox exercises the yawDeg -> radians path.
+    const char* scene = R"({
+      "entities": [
+        {"name": "hero", "components": {
+          "transform": {"pos": [0,0,0]},
+          "health": {"hp": 50, "maxHp": 50},
+          "script": {"backend": "lua", "path": "overlap.lua"}}},
+        {"name": "wolf_front", "components": {"transform": {"pos": [0,0,-2]}, "health": {"hp": 50, "maxHp": 50}}},
+        {"name": "wolf_side", "components": {"transform": {"pos": [3,0,0]}, "health": {"hp": 50, "maxHp": 50}}}
+      ]
+    })";
+    const char* lua = R"(
+      function on_start(e)
+        local hits = OverlapSphere({x=0,y=0,z=0}, 5)
+        SetVar("n", #hits)
+        local totalHp = 0
+        for _, h in ipairs(hits) do
+          local hp = GetHealth(h.entity)
+          if hp ~= nil then totalHp = totalHp + hp end
+        end
+        SetVar("total", totalHp)
+        -- yaw-0 box (half 2,10,0.5): |z|<=0.5 excludes the front wolf (z=-2).
+        SetVar("box0", #OverlapBox({x=0,y=0,z=0}, {x=2,y=10,z=0.5}, 0))
+        -- yaw-90 box: the rotation swaps half-extents -> |z|<=2 catches it.
+        SetVar("box90", #OverlapBox({x=0,y=0,z=0}, {x=2,y=10,z=0.5}, 90))
+      end
+    )";
+    scene::GameRuntime runtime;
+    scene::GameRuntimeConfig cfg;
+    cfg.headless = true;
+    cfg.readScript = [&](const std::string&) { return std::string(lua); };
+    CHECK(runtime.Start(scene, cfg).Ok());
+
+    CHECK_NEAR(runtime.GameVar("n"), 3.0, 1e-6);
+    CHECK_NEAR(runtime.GameVar("total"), 150.0, 1e-6);
+    CHECK_NEAR(runtime.GameVar("box0"), 1.0, 1e-6);
+    CHECK_NEAR(runtime.GameVar("box90"), 2.0, 1e-6);
+}
+
 // ---------------------------------------------------------------------------
 // SpawnProjectile generalization: range / hitRadius / statuses (data-driven)
 // ---------------------------------------------------------------------------

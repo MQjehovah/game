@@ -152,6 +152,10 @@ struct ScriptContext {
     std::function<float(const std::string& name, ecs::Entity caster)> sceneSkillCooldown;
     std::function<int(const math::Vec3& center, const math::Vec3& half, float yaw, float damage)>
         attackBox;
+    // Spatial overlap queries (script-facing): return {entity=, x=, y=, z=}
+    // arrays. rewind is the lag-comp rollback tick count (0 = current pose).
+    std::function<script::Value(const math::Vec3&, float, uint32_t)> overlapSphere;
+    std::function<script::Value(const math::Vec3&, const math::Vec3&, float, uint32_t)> overlapBox;
     // Sequence-frame sprite animation: switches an entity's sprite to play the
     // given frame list at `fps` (loop). The script host keeps the frame paths
     // as strings; GameRuntime resolves them to asset paths.

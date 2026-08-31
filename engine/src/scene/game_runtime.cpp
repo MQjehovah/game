@@ -46,6 +46,23 @@ script::Value EntityToValue(const ecs::Entity& e) {
     return t;
 }
 
+// OverlapSphere/OverlapBox hits -> Lua array of {entity={id,gen}, x=, y=, z=}.
+// The entity is serialized with the same {id, gen} shape EntityFromValue parses,
+// so scripts can round-trip `h.entity` into GetHealth/SetPosition/ApplyStatus.
+script::Value OverlapHitsToValue(const std::vector<GameRuntime::HealthHit>& hits) {
+    script::Value out = script::Value::Tbl();
+    out.table->array.reserve(hits.size());
+    for (const auto& h : hits) {
+        script::Value item = script::Value::Tbl();
+        item.table->fields.emplace_back("entity", EntityToValue(h.entity));
+        item.table->fields.emplace_back("x", script::Value::Num(h.pos.x));
+        item.table->fields.emplace_back("y", script::Value::Num(h.pos.y));
+        item.table->fields.emplace_back("z", script::Value::Num(h.pos.z));
+        out.table->array.push_back(std::move(item));
+    }
+    return out;
+}
+
 // Stable 64-bit key for per-entity BT/blackboard scoping: id occupies the high
 // half so an id reused across generations still keys uniquely.
 uint64_t EntityKey(const ecs::Entity& e) {
@@ -658,6 +675,13 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     scriptCtx_.attackBox = [this](const math::Vec3& center, const math::Vec3& half, float yaw,
                                   float dmg) {
         return AttackBox(center, half, yaw, dmg);
+    };
+    scriptCtx_.overlapSphere = [this](const math::Vec3& c, float r, uint32_t rewind) {
+        return OverlapHitsToValue(OverlapSphere(c, r, rewind));
+    };
+    scriptCtx_.overlapBox = [this](const math::Vec3& c, const math::Vec3& half, float yawDeg,
+                                   uint32_t rewind) {
+        return OverlapHitsToValue(OverlapBox(c, half, yawDeg * math::kDegToRad, rewind));
     };
     scriptCtx_.spawnScript = [this](ecs::Entity e, const std::string& path) {
         if (!world_.Alive(e)) return;
