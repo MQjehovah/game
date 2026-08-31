@@ -6,6 +6,8 @@
 
 #include "neon/neon.hpp"
 #include "neon/assets/asset_variants.hpp"
+#include "neon/kernel/kernel.hpp"
+#include "neon/modules/subsystem_modules.hpp"
 #include "neon/scene/game_manifest.hpp"
 #include "neon/scene/game_runtime.hpp"
 #include "neon/net/rpc.hpp"
@@ -137,6 +139,10 @@ private:
     PlayerConfig cfg_;
     gfx::Renderer renderer_;
     assets::AssetManager assetMgr_;
+    // Microkernel (P-E): owns the replaceable physics/script modules; declared
+    // before runtime_ so it outlives the runtime (which holds non-owning
+    // pointers into its services).
+    kernel::Kernel kernel_;
     scene::GameRuntime runtime_;
     ui::Theme theme_;
     gfx::Font pixelFont_;

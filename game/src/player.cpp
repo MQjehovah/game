@@ -287,11 +287,20 @@ assetMgr_.SetTextureBakeDir(".neon/imported");
     cjkFont_ = assetMgr_.LoadSystemCJKFont(24);
     theme_.font = cjkFont_.Valid() ? cjkFont_ : pixelFont_;
 
+    // Microkernel (P-E): wire the replaceable physics + script services through
+    // the Kernel. GameRuntime fetches them from the registry (non-owning); any
+    // absent service falls back to the runtime's self-contained creation.
+#ifdef NEON_ENABLE_JOLT
+    kernel_.Add(std::make_unique<modules::PhysicsModule>(
+        std::make_unique<physics::JoltWorld>()));  // packaged game = Jolt
+#endif
+    if (auto lua = script::CreateLuaHost())
+        kernel_.Add(std::make_unique<modules::ScriptModule>(std::move(lua)));
+    kernel_.Init();
+
     scene::GameRuntimeConfig rcfg;
     rcfg.assets = &assetMgr_;
-#ifdef NEON_ENABLE_JOLT
-    rcfg.physicsBackend = "jolt"; // packaged game uses Jolt rigid bodies
-#endif
+    rcfg.services = &kernel_.Services();
     rcfg.scriptBaseDir = cfg_.unpackedDir; // assets/scripts + assets/behaviors resolve here
     rcfg.pluginBaseDir = cfg_.unpackedDir.empty() ? std::string(".") : cfg_.unpackedDir; // G5-1
     if (!cfg_.looseScenePath.empty()) rcfg.scriptBaseDir = cfg_.scriptsDir;
@@ -901,6 +910,7 @@ void PlayerApp::OnShutdown() {
         if (cfg_.dumpVars) DumpGameVars();
         runtime_.Stop();
     }
+    kernel_.Shutdown();  // microkernel: tear down the physics/script modules
     if (networked_) {
         NEON_LOG_CAT(neon::core::LogCategory::Net, neon::core::LogLevel::Info,
                      "client: shutting down (welcomed=%d snapshots=%u controlledMoved=%d "
