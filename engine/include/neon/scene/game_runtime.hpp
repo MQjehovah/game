@@ -29,6 +29,7 @@
 #include "neon/scene/scene_file.hpp"
 #include "neon/scene/skinned_model.hpp"
 #include "neon/scene/status.hpp"
+#include "neon/scene/systems/projectile_system.hpp"
 #include "neon/script/bindings.hpp"
 #include "neon/script/gamevars.hpp"
 #include "neon/script/script.hpp"
@@ -342,7 +343,6 @@ public:
                          float life, ecs::Entity caster = {}, float range = 0.0f,
                          float hitRadius = 0.8f,
                          const std::vector<SkillStatus>& statuses = {});
-    void TickProjectiles(float dt);
 
     // Spatial overlap queries (script-facing). Return every SceneHealth entity
     // with hp > 0 whose position lies inside the sphere / yaw-oriented box,
@@ -506,24 +506,6 @@ private:
     // renderer resets its 2D mapping at the end of the frame.
     float uiScale_ = 1.0f;
     math::Vec2 uiOffset_{0.0f, 0.0f};
-    // A skill projectile (fireball): moved each tick, damages the first SceneHealth
-    // entity within a small radius, and expires on time/travel-distance.
-    struct Projectile {
-        math::Vec3 pos;
-        math::Vec3 dir;
-        float speed = 0.0f;
-        float damage = 0.0f;
-        float life = 0.0f;    // seconds remaining
-        float traveled = 0.0f; // distance travelled
-        float range = 0.0f;    // max travel before expiring (0 = life-bounded only)
-        float hitRadius = 0.8f;
-        ecs::Entity caster;   // never damaged by its own projectile
-        std::vector<SkillStatus> statuses; // applied to the hit target
-    };
-    // Projectile VFX (EmitParticles path): one trail ember per tick + an
-    // impact burst when the projectile dies.
-    void ProjectileTrail(const Projectile& p);
-    void ProjectileBurst(const Projectile& p);
     // G2-3 vegetation field attached to a terrain entity: deterministic scatter
     // positions plus lazily-resolved plant + impostor meshes. Built once per
     // entity per Start (terrain heights are static during play).
@@ -680,7 +662,10 @@ private:
     std::vector<uint8_t> bvhVisible_;
     // Sprite sort scratch (reused instead of a fresh allocation every frame).
     std::vector<size_t> drawOrder_;
-    std::vector<Projectile> projectiles_;
+    // Skill-projectile subsystem (spawn/tick/draw/VFX): owns the in-flight
+    // projectiles + fireball mesh; GameRuntime forwards SpawnProjectile and
+    // ticks/draws it every frame.
+    ProjectileSystem projectiles_;
     // P1-3 tweens: Lua `Tween(ent, prop, from, to, time, easing)` calls append
     // here; TickTweens advances them every frame and writes into the entity's
     // SceneTransform. prop: 0=pos 1=rot(euler degrees) 2=scale.
@@ -713,7 +698,6 @@ private:
     size_t poseHead_ = 0;   // slot index of the OLDEST snapshot
     size_t poseCount_ = 0;  // number of valid snapshots (<= capacity)
     uint32_t autoRewindTicks_ = 0; // rewind used by overlap queries / hit tests
-    gfx::Mesh fireballMesh_; // lazily built for skill-projectile rendering
     gfx::ParticleSystem particles_; // world-space billboard particles (scripts)
     gfx::Texture particleTex_;      // soft radial glow sprite for the particles
     std::set<std::string> loadedScripts_; // resolved paths whose chunk ran (presence only)

@@ -4,6 +4,7 @@
 #include "neon/neon.hpp"
 #include "neon/scene/game_runtime.hpp"
 #include "neon/scene/status.hpp"
+#include "neon/scene/systems/projectile_system.hpp"
 #include "helpers.hpp"
 
 using namespace neon;
@@ -614,6 +615,56 @@ TEST(SpawnProjectileHitRadiusGatesHit) {
         for (int i = 0; i < 30; ++i) runtime.Tick(1.0f/60.0f);
         CHECK_NEAR(runtime.EntityHealth(target).first, 40.0f, 1e-3);
     }
+}
+
+// ---------------------------------------------------------------------------
+// ProjectileSystem standalone (C1 split): the subsystem runs against a bare
+// ecs::World + gfx::ParticleSystem with no GameRuntime, proving the migration
+// extracted a self-contained component rather than a runtime-bound shim.
+// ---------------------------------------------------------------------------
+
+TEST(ProjectileSystemStandaloneHitsAndAppliesStatuses) {
+    ecs::World world;
+    ecs::Entity caster = world.Create();
+    world.Add<scene::SceneHealth>(caster, scene::SceneHealth{100, 100});
+    world.Add<scene::SceneTransform>(caster, scene::SceneTransform{{0, 0, 0}});
+    ecs::Entity target = world.Create();
+    world.Add<scene::SceneHealth>(target, scene::SceneHealth{50, 50});
+    world.Add<scene::SceneTransform>(target, scene::SceneTransform{{0, 0, -2}});
+
+    scene::ProjectileSystem ps;
+    ps.Spawn({0, 1, 0}, {0, 0, -1}, 14, 10, 2.0f, caster, 30.0f, 1.0f,
+             {{scene::kStatusBurning, 3.0f, 2.0f}});
+    CHECK_EQ(ps.Count(), 1u);
+
+    gfx::ParticleSystem particles;
+    for (int i = 0; i < 30; ++i) ps.Tick(1.0f / 60.0f, world, particles);
+
+    // The target took the direct damage and inherited the burning status; the
+    // projectile was consumed by the hit (same rules as the GameRuntime path).
+    scene::SceneHealth* h = world.Get<scene::SceneHealth>(target);
+    CHECK(h != nullptr);
+    CHECK_NEAR(h->hp, 40.0f, 1e-3); // 50 - 10
+    const scene::StatusComponent* sc = world.Get<scene::StatusComponent>(target);
+    CHECK(sc != nullptr);
+    CHECK(scene::HasStatus(*sc, scene::kStatusBurning));
+    CHECK_EQ(ps.Count(), 0u);
+}
+
+TEST(ProjectileSystemStandaloneCasterSelfHitFiltered) {
+    ecs::World world;
+    ecs::Entity caster = world.Create();
+    world.Add<scene::SceneHealth>(caster, scene::SceneHealth{100, 100});
+    world.Add<scene::SceneTransform>(caster, scene::SceneTransform{{0, 0, -2}});
+
+    scene::ProjectileSystem ps;
+    // Fired straight at the caster's own position; the never-self-hit rule
+    // keeps the caster at full health even as the projectile overlaps it.
+    ps.Spawn({0, 1, 0}, {0, 0, -1}, 14, 10, 2.0f, caster, 30.0f, 1.0f, {});
+    gfx::ParticleSystem particles;
+    for (int i = 0; i < 30; ++i) ps.Tick(1.0f / 60.0f, world, particles);
+
+    CHECK_NEAR(world.Get<scene::SceneHealth>(caster)->hp, 100.0f, 1e-3);
 }
 
 // ---------------------------------------------------------------------------

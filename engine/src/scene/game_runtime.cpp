@@ -777,13 +777,22 @@ void GameRuntime::EmitParticles(const gfx::EmitterConfig& cfg) {
     particles_.Emit(cfg);
 }
 
+// Script-facing forwarder to the ProjectileSystem (the bindings and the
+// spawnProjectile ScriptContext hook call this; the simulation + rendering
+// live entirely inside ProjectileSystem).
+void GameRuntime::SpawnProjectile(const math::Vec3& pos, const math::Vec3& dir, float speed,
+                                  float damage, float life, ecs::Entity caster, float range,
+                                  float hitRadius, const std::vector<SkillStatus>& statuses) {
+    projectiles_.Spawn(pos, dir, speed, damage, life, caster, range, hitRadius, statuses);
+}
+
 void GameRuntime::Stop() {
     ui_.reset();
     physicsAccum_ = 0.0f;
     scripts_.clear();
     trees_.clear();
     draws_.clear();
-    projectiles_.clear();
+    projectiles_.Clear();
     tweens_.clear();
     particles_.Clear();
     particleTex_ = {};
@@ -2041,15 +2050,9 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera,
         }
     }
     flushBatches();
-    // Skill projectiles (fireballs): bright glowing orbs.
-    if (!projectiles_.empty()) {
-        if (!fireballMesh_.Valid()) fireballMesh_ = gfx::MakeFireballMesh(renderer);
-        gfx::Material fmat = gfx::Material::Lit({}, gfx::Color::White, 8.0f);
-        fmat.emissiveIntensity = 2.5f;
-        for (const Projectile& p : projectiles_) {
-            renderer.DrawMesh(fireballMesh_, fmat, math::Mat4::Translation(p.pos));
-        }
-    }
+    // Skill projectiles (fireballs): bright glowing orbs (ProjectileSystem
+    // lazily builds the shared fireball mesh on first use).
+    projectiles_.Draw(renderer);
     // G2-3 vegetation: instanced plant meshes + far yaw-billboard impostors.
     // Use the RESOLVED scene camera (`cam`, which may have been overridden by a
     // scene Camera3D entity driven by the game script) rather than the raw
@@ -2284,9 +2287,9 @@ void GameRuntime::InitSystemGraph() {
                  {typeid(StatusComponent)},
                  {typeid(StatusComponent), typeid(SceneHealth)});
     systems_.Add("projectiles",
-                 sys([this](float d, ecs::World&) { TickProjectiles(d); }),
+                 sys([this](float d, ecs::World& w) { projectiles_.Tick(d, w, particles_); }),
                  {typeid(SceneHealth), typeid(SceneTransform)},
-                 {typeid(SceneHealth), typeid(Projectile)});
+                 {typeid(SceneHealth), typeid(ProjectileSystem::Projectile)});
 }
 
 void GameRuntime::Tick(float dt) {
@@ -2389,10 +2392,10 @@ void GameRuntime::Tick(float dt) {
     // order (tweens -> animations -> statuses -> projectiles);
     // parallelSystems=true lets independent systems overlap on the worker pool.
     // Conflict edges come from the systems' declared component reads/writes
-    // (e.g. TickStatuses and TickProjectiles both write SceneHealth, so they
-    // stay in registration order even in parallel mode) �?the parallel result
-    // is bit-identical to the serial reference (validated by TestRuntimeM1's
-    // determinism check).
+    // (e.g. TickStatuses and the projectile system both write SceneHealth, so
+    // they stay in registration order even in parallel mode) �?the parallel
+    // result is bit-identical to the serial reference (validated by
+    // TestRuntimeM1's determinism check).
     systems_.Run(dt, world_, cfg_.parallelSystems);
     simTime_ += dt;
 
