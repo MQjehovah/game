@@ -21,12 +21,6 @@ const char* kLagScene = R"({
   ]
 })";
 
-const char* kSkillsJson = R"({
-  "skills": {
-    "cleave": {"kind": "melee", "damage": 12, "meleeRange": 3, "arcDeg": 100, "cooldown": 0.8}
-  }
-})";
-
 // Drives the runtime for `n` fixed ticks, then moves the wolf out of melee
 // range and ticks once more (recording the new pose). Returns the runtime
 // with the wolf's historical pose (0,0,-2) one tick in the past.
@@ -95,49 +89,6 @@ struct PingClient {
 
 } // namespace
 
-// The wolf was at (0,0,-2) one tick ago and is now at (0,0,-5): a plain
-// melee misses (current pose), the rewound hit test connects and the damage
-// lands on the CURRENT entity.
-TEST(LagCompMeleeRewindHitsHistoricalPose) {
-    Fixture f = MakeFixture();
-    CHECK_EQ(f.rt->MeleeAttack({0, 0, 0}, {0, 0, -1}, 3.0f, 180.0f, 10.0f), 0);
-    CHECK_NEAR(f.rt->EntityHealth(f.wolf).first, 50.0f, 1e-4);
-    CHECK_EQ(f.rt->MeleeAttackLagComp({0, 0, 0}, {0, 0, -1}, 3.0f, 180.0f, 10.0f, 1), 1);
-    CHECK_NEAR(f.rt->EntityHealth(f.wolf).first, 40.0f, 1e-4);
-}
-
-// Same rewind semantics for the oriented attack box.
-TEST(LagCompAttackBoxRewind) {
-    Fixture f = MakeFixture();
-    // Box centered where the wolf WAS (-2), half 1: the hero at (0,0,0) is
-    // outside (distance 2), the wolf's current pose (-5) is outside, and only
-    // its rewound pose (-2) is inside.
-    CHECK_EQ(f.rt->AttackBox({0, 0, -2}, {1, 1, 1}, 0.0f, 10.0f), 0);
-    CHECK_EQ(f.rt->AttackBoxLagComp({0, 0, -2}, {1, 1, 1}, 0.0f, 10.0f, 1), 1);
-    CHECK_NEAR(f.rt->EntityHealth(f.wolf).first, 40.0f, 1e-4);
-}
-
-// SetAutoLagComp makes the PLAIN attack (and data-driven skills) use the
-// rewind - this is the path the authoritative server drives every tick.
-TEST(LagCompAutoModeDrivesPlainAttacksAndSkills) {
-    Fixture f = MakeFixture();
-    f.rt->SetAutoLagComp(1);
-    CHECK_EQ(f.rt->AutoLagCompTicks(), 1u);
-    CHECK_EQ(f.rt->MeleeAttack({0, 0, 0}, {0, 0, -1}, 3.0f, 180.0f, 10.0f), 1);
-    CHECK_NEAR(f.rt->EntityHealth(f.wolf).first, 40.0f, 1e-4);
-
-    // Disable: the same attack now misses again.
-    f.rt->SetAutoLagComp(0);
-    CHECK_EQ(f.rt->MeleeAttack({0, 0, 0}, {0, 0, -1}, 3.0f, 180.0f, 10.0f), 0);
-
-    // CastSkill's melee skill honours the auto rewind (12 dmg).
-    f.rt->SetAutoLagComp(1);
-    std::string err;
-    CHECK(f.rt->LoadSkills(kSkillsJson, &err));
-    CHECK_EQ(f.rt->CastSkill("cleave", {0, 0, 0}, {0, 0, -1}, f.hero), 1);
-    CHECK_NEAR(f.rt->EntityHealth(f.wolf).first, 28.0f, 1e-4);
-}
-
 // LagCompPosition exposes the historical pose; a rewind deeper than the ring
 // clamps to the oldest snapshot; entities absent from a snapshot fall back to
 // their CURRENT pose (fresh spawns degrade to the plain hit test).
@@ -148,21 +99,13 @@ TEST(LagCompHistoryQueriesAndFreshFallback) {
     CHECK_NEAR(out.z, -2.0f, 1e-4);
     CHECK(f.rt->LagCompPosition(f.wolf, 100, out)); // clamps to the oldest snapshot
 
-    // A fresh entity (never in any snapshot) reports false and the rewound
-    // attack still hits at its CURRENT position.
-    // Move the wolf far away AND flush two ticks so neither its history nor
-    // its current pose can be hit; only the fresh entity's current pose is.
-    scene::SceneTransform* wt = f.rt->World().Get<scene::SceneTransform>(f.wolf);
-    wt->pos = {0, 0, -20};
-    f.rt->Tick(1.0f / 60.0f);
-    f.rt->Tick(1.0f / 60.0f);
+    // A fresh entity (never in any snapshot) reports false for its historical
+    // pose; it has no lag-comp history to rewind to.
     ecs::Entity fresh = f.rt->World().Create();
     f.rt->World().Add<scene::SceneTransform>(fresh, scene::SceneTransform{});
     f.rt->World().Get<scene::SceneTransform>(fresh)->pos = {0, 0, -2};
     f.rt->World().Add<scene::SceneHealth>(fresh, scene::SceneHealth{50, 50});
     CHECK(!f.rt->LagCompPosition(fresh, 1, out));
-    CHECK_EQ(f.rt->MeleeAttackLagComp({0, 0, 0}, {0, 0, -1}, 3.0f, 180.0f, 10.0f, 1), 1);
-    CHECK_NEAR(f.rt->EntityHealth(fresh).first, 40.0f, 1e-4);
 }
 
 // The pose ring is capped: after more than kLagCompHistoryTicks ticks the

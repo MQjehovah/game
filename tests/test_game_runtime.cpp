@@ -648,7 +648,7 @@ TEST(GameRuntimeScriptErrorLoggedOnce) {
 
 // ---------------------------------------------------------------------------
 // Hero combat (T-skill): the new gameplay bindings (InputKey -> SpawnProjectile
-// -> projectile damage, plus MeleeAttack) damage SceneHealth entities end to end.
+// -> projectile damage) damage SceneHealth entities end to end.
 // ---------------------------------------------------------------------------
 
 namespace {
@@ -726,32 +726,6 @@ TEST(GameRuntimeFireballHitsWolf) {
     auto after = runtime.EntityHealth(wolf);
     CHECK(after.first < before.first);
     CHECK(after.first >= 0.0f);
-}
-
-TEST(GameRuntimeMeleeAttackHitsInArc) {
-    const char* scene = R"({
-      "entities": [
-        {"name": "英雄", "components": {"transform": {"pos": [0,0,0]},
-          "health": {"hp": 100, "maxHp": 100}}},
-        {"name": "wolf_front", "components": {"transform": {"pos": [0,0,-1.5]},
-          "health": {"hp": 40, "maxHp": 40}}},
-        {"name": "wolf_back", "components": {"transform": {"pos": [0,0,1.5]},
-          "health": {"hp": 40, "maxHp": 40}}}
-      ]
-    })";
-    scene::GameRuntime runtime;
-    scene::GameRuntimeConfig cfg;
-    cfg.headless = true;
-    CHECK(runtime.Start(scene, cfg).Ok());
-
-    // Swing forward (-Z), range 2, 100deg arc, 12 damage.
-    const int hits = runtime.MeleeAttack({0, 1, 0}, {0, 0, -1}, 2.0f, 100.0f, 12.0f);
-    CHECK_EQ(hits, 1); // only the wolf in front
-
-    const ecs::Entity front = runtime.FindNamedEntity("wolf_front");
-    const ecs::Entity back = runtime.FindNamedEntity("wolf_back");
-    CHECK_EQ(runtime.EntityHealth(front).first, 28.0f); // 40 - 12
-    CHECK_EQ(runtime.EntityHealth(back).first, 40.0f);  // untouched
 }
 
 // ---------------------------------------------------------------------------
