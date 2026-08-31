@@ -4,6 +4,7 @@
 #include "neon/neon.hpp"
 #include "neon/scene/game_runtime.hpp"
 #include "neon/scene/status.hpp"
+#include "neon/scene/systems/hud_system.hpp"
 #include "neon/scene/systems/projectile_system.hpp"
 #include "helpers.hpp"
 
@@ -1086,4 +1087,72 @@ TEST(NeonRealmScriptLoadsAndRuns) {
     // 约 1 秒（60 帧），覆盖 on_update 的 update_player / update_wolves /
     // update_waves / update_npc / update_hero_anim / update_camera / update_vfx。
     for (int i = 0; i < 60; ++i) runtime.Tick(1.0f / 60.0f);
+}
+
+// ---------------------------------------------------------------------------
+// Task 2: HudSystem 独立单测（脱离 GameRuntime，直接测拆分后的 HUD 子系统）：
+// 飘字 age 推进 / 头顶板查询 / WorldToScreen 投影 sanity。
+// ---------------------------------------------------------------------------
+
+TEST(HudSystemFloatTextAgesAndExpires) {
+    scene::HudSystem hud;
+    hud.SpawnFloatText({0, 1, 0}, "crit", true, 3.0f);
+    hud.SpawnFloatText({3, 4, 5}, "dmg", false, 0.5f);
+    CHECK_EQ(hud.FloatTexts().size(), 2u);
+    CHECK(hud.FloatTexts()[0].crit);
+    CHECK_EQ(hud.FloatTexts()[0].text, std::string("crit"));
+    CHECK_NEAR(hud.FloatTexts()[0].age, 0.0f, 1e-6);
+
+    hud.Tick(0.25f);
+    CHECK_EQ(hud.FloatTexts().size(), 2u);
+    CHECK_NEAR(hud.FloatTexts()[0].age, 0.25f, 1e-6);
+
+    for (int i = 0; i < 20; ++i) hud.Tick(0.1f); // 2.25s total
+    CHECK_EQ(hud.FloatTexts().size(), 1u);      // 0.5s "dmg" expired
+    CHECK_EQ(hud.FloatTexts()[0].text, std::string("crit"));
+    CHECK_NEAR(hud.FloatTexts()[0].age, 2.25f, 1e-6);
+
+    for (int i = 0; i < 20; ++i) hud.Tick(0.1f); // 4.25s total > 3.0s
+    CHECK(hud.FloatTexts().empty());
+}
+
+TEST(HudSystemEntityPlateRoundTrip) {
+    ecs::World world;
+    ecs::Entity e = world.Create();
+    scene::HudSystem hud;
+    hud.SetEntityPlate(e, "Wolf", 0.75f);
+    CHECK_EQ(hud.EntityPlates().size(), 1u);
+    const uint64_t key = (static_cast<uint64_t>(e.id) << 32) |
+                         static_cast<uint64_t>(e.generation);
+    const auto it = hud.EntityPlates().find(key);
+    CHECK(it != hud.EntityPlates().end());
+    CHECK_EQ(it->second.name, std::string("Wolf"));
+    CHECK_NEAR(it->second.hpFrac, 0.75f, 1e-6);
+}
+
+TEST(HudSystemWorldToScreenProjection) {
+    scene::HudSystem hud;
+    // Before any CaptureView, the projection is unavailable (matches the
+    // runtime's pre-Draw behavior).
+    float x = -1.0f, y = -1.0f;
+    CHECK(!hud.WorldToScreen({0, 0, 0}, x, y));
+
+    // Ortho camera on +Z looking -Z: world origin lands at the viewport
+    // centre (640, 360) for a 1280x720 design viewport.
+    gfx::Camera cam;
+    cam.position = {0, 0, 10};
+    cam.target = {0, 0, 0};
+    cam.up = {0, 1, 0};
+    cam.ortho = true;
+    cam.orthoSize = 5.0f;
+    hud.CaptureView(cam, 16.0f / 9.0f, 1280.0f, 720.0f);
+
+    CHECK(hud.WorldToScreen({0, 0, 0}, x, y));
+    CHECK_NEAR(x, 640.0f, 1e-3f);
+    CHECK_NEAR(y, 360.0f, 1e-3f);
+    // An off-axis point moves right / up in viewport pixels.
+    CHECK(hud.WorldToScreen({2, 0, 0}, x, y));
+    CHECK(x > 640.0f);
+    CHECK_NEAR(y, 360.0f, 1e-3f);
+    CHECK_EQ(hud.DesignWidth(), 1280.0f);
 }

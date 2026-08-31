@@ -585,18 +585,19 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
         SetAnimParam(e, name, value);
     };
     scriptCtx_.worldToScreen = [this](const math::Vec3& w, float& ox, float& oy) {
-        return WorldToScreen(w, ox, oy);
+        return hud_.WorldToScreen(w, ox, oy);
     };
     scriptCtx_.worldFromScreen = [this](const math::Vec2& d, float& ox, float& oy) {
-        return ScreenToWorld(d, ox, oy);
+        return hud_.ScreenToWorld(d, ox, oy);
     };
     scriptCtx_.uiViewportSize = [this]() {
-        return math::Vec2{lastVpW_, lastVpH_};
+        return math::Vec2{hud_.DesignWidth(), hud_.DesignHeight()};
     };
     scriptCtx_.spawnFloatText = [this](const math::Vec3& w, const std::string& t, bool crit,
-                                       float life) { SpawnFloatText(w, t, crit, life); };
+                                       float life) { hud_.SpawnFloatText(w, t, crit, life); };
     scriptCtx_.setEntityPlate = [this](ecs::Entity e, const std::string& name, float hp) {
-        SetEntityPlate(e, name, hp);
+        if (!world_.Alive(e)) return;
+        hud_.SetEntityPlate(e, name, hp);
     };
     scriptCtx_.screenAnchors = [this]() -> script::Value {
         auto vec3 = [](const math::Vec3& v) {
@@ -607,7 +608,7 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
             return t;
         };
         script::Value arr = script::Value::Tbl();
-        for (const ScreenAnchor& a : screenAnchors_) {
+        for (const HudSystem::ScreenAnchor& a : hud_.ScreenAnchors()) {
             script::Value t = script::Value::Tbl();
             // entity key -> handle table {id, gen}
             const uint32_t id = static_cast<uint32_t>(a.entity >> 32);
@@ -626,7 +627,7 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     };
     scriptCtx_.entityPlates = [this]() -> script::Value {
         script::Value t = script::Value::Tbl();
-        for (const auto& kv : plates_) {
+        for (const auto& kv : hud_.EntityPlates()) {
             script::Value p = script::Value::Tbl();
             p.table->fields.emplace_back("name", script::Value::Str(kv.second.name));
             p.table->fields.emplace_back("hp", script::Value::Num(kv.second.hpFrac));
@@ -648,7 +649,7 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
             return t;
         };
         script::Value arr = script::Value::Tbl();
-        for (const FloatText& f : floatTexts_) {
+        for (const HudSystem::FloatText& f : hud_.FloatTexts()) {
             script::Value t = script::Value::Tbl();
             t.table->fields.emplace_back("world", vec3(f.world));
             t.table->fields.emplace_back("text", script::Value::Str(f.text));
@@ -1406,11 +1407,7 @@ void GameRuntime::TickAnimations(float dt) {
         }
     }
     // Floating combat texts age out.
-    for (auto it = floatTexts_.begin(); it != floatTexts_.end();) {
-        it->age += dt;
-        if (it->age >= it->life) it = floatTexts_.erase(it);
-        else ++it;
-    }
+    hud_.Tick(dt);
 }
 
 bool GameRuntime::HasScriptFunction(const std::string& name) const {
@@ -1553,51 +1550,25 @@ bool GameRuntime::AnimationFinished(ecs::Entity e) const {
 }
 
 bool GameRuntime::WorldToScreen(const math::Vec3& world, float& outX, float& outY) const {
-    if (!lastViewProjValid_) return false;
-    math::Vec4 clip = lastViewProj_.TransformVec4(math::Vec4(world.x, world.y, world.z, 1.0f));
-    if (clip.w <= 0.01f) return false;
-    const float nx = clip.x / clip.w, ny = clip.y / clip.w;
-    // Viewport PIXELS (top-left origin) - the same space the UI and the
-    // script 2D canvas draw in.
-    outX = (nx * 0.5f + 0.5f) * lastVpW_;
-    outY = (0.5f - ny * 0.5f) * lastVpH_;
-    return true;
+    return hud_.WorldToScreen(world, outX, outY);
 }
 
 bool GameRuntime::ScreenToWorld(const math::Vec2& screen, float& outX, float& outY) const {
-    // Inverse of WorldToScreen for the axis-aligned ortho camera shape the 2D
-    // games use (camera on +Z looking -Z, up +Y, no roll). Input: pixels.
-    if (!lastCamValid_ || !lastCam_.ortho) return false;
-    const float nx = (screen.x / lastVpW_) * 2.0f - 1.0f;
-    const float ny = 1.0f - (screen.y / lastVpH_) * 2.0f;
-    const float halfH = lastCam_.orthoSize;
-    const float halfW = halfH * lastAspect_;
-    outX = lastCam_.target.x + nx * halfW;
-    outY = lastCam_.target.y + ny * halfH;
-    return true;
+    return hud_.ScreenToWorld(screen, outX, outY);
 }
 
 float GameRuntime::DesignWidth() const {
-    return lastVpW_;
+    return hud_.DesignWidth();
 }
 
 void GameRuntime::SpawnFloatText(const math::Vec3& world, const std::string& text, bool crit,
                                  float life) {
-    FloatText ft;
-    ft.world = world;
-    ft.text = text;
-    ft.crit = crit;
-    ft.life = life > 0.05f ? life : 1.2f;
-    floatTexts_.push_back(ft);
-    if (floatTexts_.size() > 64) floatTexts_.erase(floatTexts_.begin()); // cap
+    hud_.SpawnFloatText(world, text, crit, life);
 }
 
 void GameRuntime::SetEntityPlate(ecs::Entity e, const std::string& name, float hpFrac) {
     if (!world_.Alive(e)) return;
-    EntityPlate p;
-    p.name = name;
-    p.hpFrac = hpFrac;
-    plates_[EntityKey(e)] = p;
+    hud_.SetEntityPlate(e, name, hpFrac);
 }
 
 void GameRuntime::SetPostFx(bool ssao, bool volumetric, bool ssr,
@@ -1689,12 +1660,10 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera,
     // ScreenToWorld and GetViewportSize answer script queries between renders
     // from this state. UI/world space is plain viewport PIXELS (no design
     // resolution - relative layout adapts, px stays px).
-    lastCam_ = cam;
-    lastCamValid_ = true;
-    lastAspect_ = drawAspect;
     const math::Rect2& sceneVp = renderer.SceneViewport();
-    lastVpW_ = sceneVp.w > 0.0f ? renderer.UIDesignSize().x : 1280.0f;
-    lastVpH_ = sceneVp.h > 0.0f ? renderer.UIDesignSize().y : 720.0f;
+    hud_.CaptureView(cam, drawAspect,
+                     sceneVp.w > 0.0f ? renderer.UIDesignSize().x : 1280.0f,
+                     sceneVp.h > 0.0f ? renderer.UIDesignSize().y : 720.0f);
     // Project at the ACTIVE scene viewport's aspect (a dock sub-rect in the
     // editor, the full target in the standalone player) so the runtime render
     // matches whatever rasterization rect the host set up - otherwise the
@@ -1744,19 +1713,20 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera,
     RebuildWorldTransforms();
     // M1 HUD anchors: project every drawn entity's world position (plus a
     // per-plate head offset) into design units for on_render scripts. Cached
-    // once per frame; WorldToScreen() below uses the same matrices.
+    // once per frame; WorldToScreen() below uses the same matrices. The
+    // world-position pass (plate AABB head offsets) stays here; HudSystem
+    // projects the resulting entity+world pairs into screen anchors.
     {
-        lastViewProj_ = cam.ViewProjection(renderer.SceneAspect());
-        lastViewProjValid_ = true;
-        screenAnchors_.clear();
+        std::vector<std::pair<ecs::Entity, math::Vec3>> anchorEnts;
+        anchorEnts.reserve(draws_.size());
         for (const DrawItem& d : draws_) {
             const math::Mat4 model = CachedLocalToWorld(d.ent);
             math::Vec3 wp{model.m[3], model.m[7], model.m[11]};
             // Head offset: lift the anchor above the model bounds when the
             // entity carries a plate (the script stamps names via
             // SetEntityPlate; default 0 keeps the raw position).
-            auto pit = plates_.find(EntityKey(d.ent));
-            if (pit != plates_.end() && pit->second.hpFrac >= 0.0f) {
+            auto pit = hud_.EntityPlates().find(EntityKey(d.ent));
+            if (pit != hud_.EntityPlates().end() && pit->second.hpFrac >= 0.0f) {
                 const SceneTransform* tr = world_.Get<SceneTransform>(d.ent);
                 if (tr) {
                     // Plate tracks the RENDERED mesh, which for a skinned rig
@@ -1859,21 +1829,9 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera,
                     }
                 }
             }
-            math::Vec4 clip =
-                lastViewProj_.TransformVec4(math::Vec4(wp.x, wp.y, wp.z, 1.0f));
-            ScreenAnchor a;
-            a.entity = EntityKey(d.ent);
-            a.world = wp;
-            if (clip.w > 0.01f) {
-                const float nx = clip.x / clip.w, ny = clip.y / clip.w;
-                // Design-space (1280x720) coordinates: the same mapping the
-                // renderer's 2D overlay (and on_render) draws with.
-                a.x = (nx * 0.5f + 0.5f) * gfx::Renderer::kDesignWidth;
-                a.y = (0.5f - ny * 0.5f) * gfx::Renderer::kDesignHeight;
-                a.onscreen = nx >= -1.2f && nx <= 1.2f && ny >= -1.2f && ny <= 1.2f;
-            }
-            screenAnchors_.push_back(a);
+            anchorEnts.emplace_back(d.ent, wp);
         }
+        hud_.UpdateAnchors(anchorEnts);
     }
     // P2-3: sprites render back-to-front by their sortOrder component (2D
     // games); 3D depth-tested meshes are unaffected by the stable order.
@@ -2281,7 +2239,7 @@ void GameRuntime::InitSystemGraph() {
     systems_.Add("animations",
                  sys([this](float d, ecs::World&) { TickAnimations(d); }),
                  {typeid(SkinnedModel)},
-                 {typeid(DrawItem), typeid(SkinnedModel), typeid(FloatText)});
+                 {typeid(DrawItem), typeid(SkinnedModel), typeid(HudSystem::FloatText)});
     systems_.Add("statuses",
                  sys([this](float d, ecs::World&) { TickStatuses(d); }),
                  {typeid(StatusComponent)},

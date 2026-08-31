@@ -29,6 +29,7 @@
 #include "neon/scene/scene_file.hpp"
 #include "neon/scene/skinned_model.hpp"
 #include "neon/scene/status.hpp"
+#include "neon/scene/systems/hud_system.hpp"
 #include "neon/scene/systems/projectile_system.hpp"
 #include "neon/script/bindings.hpp"
 #include "neon/script/gamevars.hpp"
@@ -214,31 +215,14 @@ public:
     // to on_render via FloatTexts(). crit scales the text and tints it.
     void SpawnFloatText(const math::Vec3& world, const std::string& text, bool crit = false,
                         float life = 1.2f);
-    struct FloatText {
-        math::Vec3 world;
-        std::string text;
-        bool crit = false;
-        float life = 1.0f;      // total lifetime
-        float age = 0.0f;       // elapsed
-    };
-    const std::vector<FloatText>& FloatTexts() const { return floatTexts_; }
+    const std::vector<HudSystem::FloatText>& FloatTexts() const { return hud_.FloatTexts(); }
     // Entity screen anchors cached during the LAST Draw: {entityKey, x, y,
     // onscreen} in design units. Scripts iterate it to draw overhead bars.
-    struct ScreenAnchor {
-        uint64_t entity;
-        float x = 0.0f, y = 0.0f;
-        bool onscreen = false;
-        math::Vec3 world;
-    };
-    const std::vector<ScreenAnchor>& ScreenAnchors() const { return screenAnchors_; }
+    const std::vector<HudSystem::ScreenAnchor>& ScreenAnchors() const { return hud_.ScreenAnchors(); }
     // Per-entity overhead metadata scripts can stamp when anchoring bars:
     // name + hp fraction (0..1). Set via SetEntityPlate(e, name, hpFrac).
     void SetEntityPlate(ecs::Entity e, const std::string& name, float hpFrac);
-    struct EntityPlate {
-        std::string name;
-        float hpFrac = -1.0f; // <0 = hidden
-    };
-    const std::map<uint64_t, EntityPlate>& EntityPlates() const { return plates_; }
+    const std::map<uint64_t, HudSystem::EntityPlate>& EntityPlates() const { return hud_.EntityPlates(); }
 
     bool Running() const { return running_; }
     ecs::World& World() { return world_; }
@@ -626,18 +610,12 @@ private:
     // B6: alive-entity index over draws_ (EntityKey -> tracked). BuildDrawList
     // used to linear-scan draws_ per candidate entity (O(N*M) per frame).
     std::unordered_set<uint64_t> drawKeys_;
-    // M1 HUD state: floating combat texts (world-anchored) + per-frame
-    // entity screen anchors + script-stamped overhead plates.
-    std::vector<FloatText> floatTexts_;
-    std::vector<ScreenAnchor> screenAnchors_;
-    std::map<uint64_t, EntityPlate> plates_;
-    math::Mat4 lastViewProj_;   // captured in Draw for WorldToScreen
-    bool lastViewProjValid_ = false;
-    gfx::Camera lastCam_;       // resolved camera + viewport snapshot (Draw)
-    bool lastCamValid_ = false;
-    float lastAspect_ = 16.0f / 9.0f;
-    float lastVpW_ = 1280.0f;   // scene viewport pixels (UI/world screen space)
-    float lastVpH_ = 720.0f;
+    // M1 HUD subsystem (world<->screen projection + floating combat texts +
+    // entity screen anchors + overhead plates): owns floatTexts_/screenAnchors_/
+    // plates_ and the last camera/view-projection snapshot. GameRuntime forwards
+    // SpawnFloatText/SetEntityPlate/WorldToScreen etc. and refreshes it from
+    // Draw each frame.
+    HudSystem hud_;
     // G2-3 vegetation cache (EntityKey -> VegField); rebuilt lazily per Start.
     std::unordered_map<uint64_t, VegField> vegCache_;
     // Instanced-batching scratch for opaque static meshes (per-frame reuse):
