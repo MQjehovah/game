@@ -19,6 +19,7 @@
 #include "neon/gfx/scene_props.hpp"
 #include "neon/gfx/terrain.hpp"
 #include "neon/io/vfs.hpp"
+#include "neon/kernel/registry.hpp"
 #include "neon/scene/scene_file.hpp"
 
 #if defined(_WIN32)
@@ -198,6 +199,15 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     // cfg_.pluginBaseDir/plugins �?swappable without relinking. The owning
     // PhysicsBackend is kept alive until this runtime is destroyed (it owns the
     // DLL), and is declared before physics_ so the world dies before the library.
+    // Microkernel seam (P-B): prefer an injected physics world from the service
+    // registry (non-owning — the module owns it). Falls back to the
+    // self-contained creation below when no service is registered.
+    if (cfg_.services) {
+        if (physics::World* w = cfg_.services->Get<physics::World>())
+            physics_ = std::unique_ptr<physics::World, std::function<void(physics::World*)>>(
+                w, [](physics::World*) {});  // non-owning
+    }
+    if (!physics_) {
     physics_ = std::unique_ptr<physics::World, std::function<void(physics::World*)>>(
         new physics::World(), [](physics::World* w) { delete w; });
 #ifdef NEON_ENABLE_JOLT
@@ -229,6 +239,7 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
                          backendName.c_str(), cfg_.pluginBaseDir.c_str());
         }
     }
+    }  // if (!physics_)
     NEON_LOG_CAT(core::LogCategory::Scene, core::LogLevel::Info,
                  "runtime: physics backend '%s' (%zu rigid bodies cap)",
                  cfg_.physicsBackend.c_str(), physics_->BodyCount());

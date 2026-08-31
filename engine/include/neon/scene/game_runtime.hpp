@@ -46,6 +46,9 @@ class Renderer;
 namespace neon::io {
 class IFileSystem;
 }
+namespace neon::kernel {
+class ServiceRegistry;
+}
 
 namespace neon::scene {
 
@@ -64,6 +67,11 @@ namespace neon::scene {
 // window, or audio. Draw() stays a safe no-op whenever assets is null.
 struct GameRuntimeConfig {
     assets::AssetManager* assets = nullptr; // mesh loading; null = sim-only
+    // Microkernel seam (P-B): when set, the runtime fetches its replaceable
+    // services (physics world / script host / UI system) from this registry
+    // instead of creating its own. Null (default) keeps the self-contained
+    // ad-hoc path, so existing hosts are unaffected.
+    kernel::ServiceRegistry* services = nullptr;
     std::string scriptBaseDir;              // base dir for script paths ("" = cwd)
     std::string assetBaseDir;               // base dir for obj:/gltf:/texture paths ("" = cwd)
     std::string localesDir;                 // <dir>/assets/locales tables for Loc()
