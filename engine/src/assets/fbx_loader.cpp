@@ -3,7 +3,10 @@
 #include "neon/gfx/mesh.hpp"
 
 #include <algorithm>
+#include <cstdint>
 #include <cstring>
+#include <functional>
+#include <unordered_map>
 #include <vector>
 
 // ufbx: single-file FBX loader (vendored, MIT). Compiled as C in its own
@@ -15,6 +18,28 @@ namespace neon::assets {
 namespace {
 // (ubx transform helpers — ufbx_transform_position / ufbx_transform_direction
 // are called directly below; no engine-matrix conversion is needed.)
+
+// FBX stores positions, normals and UVs in independent arrays; every face
+// corner points into each array through its own index map. A single interleaved
+// Vertex3D is therefore keyed on the (position, normal, uv) index triple of a
+// corner: a position shared by two faces with different normals (hard edges) or
+// UVs (seams) must split into two vertices or the model tears/shades wrong.
+struct CornerKey {
+    uint32_t pos = 0;
+    uint32_t nrm = 0;
+    uint32_t uv = 0;
+    bool operator==(const CornerKey& o) const {
+        return pos == o.pos && nrm == o.nrm && uv == o.uv;
+    }
+};
+struct CornerKeyHash {
+    size_t operator()(const CornerKey& k) const {
+        size_t h = std::hash<uint32_t>{}(k.pos);
+        h = h * 0x9e3779b97f4a7c15ull ^ std::hash<uint32_t>{}(k.nrm);
+        h = h * 0x9e3779b97f4a7c15ull ^ std::hash<uint32_t>{}(k.uv);
+        return h;
+    }
+};
 } // namespace
 
 // AssetManager::LoadFBX: load an FBX via ufbx and merge every mesh-bearing node
@@ -60,79 +85,77 @@ FbxAsset AssetManager::LoadFBX(const std::string& path) {
         const ufbx_node* node = scene->nodes.data[ni];
         if (!node) continue;
         const ufbx_mesh* m = node->mesh;
-        if (!m || m->vertices.count == 0 || m->vertex_indices.count == 0) continue;
+        if (!m || m->num_vertices == 0 || m->num_indices == 0) continue;
 
-        const uint32_t base = static_cast<uint32_t>(allVerts.size());
-        for (size_t vi = 0; vi < m->vertices.count; ++vi) {
-            const ufbx_vec3& p = m->vertices.data[vi];
-            gfx::Vertex3D v;
-            v.pos = {static_cast<float>(p.x), static_cast<float>(p.y),
-                     static_cast<float>(p.z)};
-            v.normal = {0.0f, 1.0f, 0.0f};
-            v.uv = {0.0f, 0.0f};
-            // Per-vertex normal/uv are stored as a typed list with a per-vertex
-            // index map; fall back to flat normals below when absent.
-            if (m->vertex_normal.exists) {
-                size_t mv = m->vertex_normal.indices.count > vi
-                                ? m->vertex_normal.indices.data[vi]
-                                : vi;
-                if (mv < m->vertex_normal.values.count) {
-                    const ufbx_vec3& nn = m->vertex_normal.values.data[mv];
-                    v.normal = {static_cast<float>(nn.x), static_cast<float>(nn.y),
-                                static_cast<float>(nn.z)};
-                    anyUfbxNormal = true;
-                }
-            }
-            if (m->vertex_uv.exists) {
-                size_t mu = m->vertex_uv.indices.count > vi ? m->vertex_uv.indices.data[vi] : vi;
-                if (mu < m->vertex_uv.values.count) {
-                    const ufbx_vec2& tuv = m->vertex_uv.values.data[mu];
-                    v.uv = {static_cast<float>(tuv.x), static_cast<float>(tuv.y)};
-                }
-            }
+        // Dedup (position, normal, uv) triples so adjacent triangles share a
+        // single interleaved vertex and split only where the attributes do.
+        std::unordered_map<CornerKey, uint32_t, CornerKeyHash> remap;
+        remap.reserve(m->num_indices * 2);
+
+        // Emit one merged Vertex3D for a mesh corner index (`ci` indexes the
+        // mesh's combined corner array, i.e. `ufbx_mesh.num_indices`).
+        auto emit = [&](uint32_t ci) -> uint32_t {
+            const uint32_t pi = m->vertex_indices.data[ci]; // corner -> position
+            const uint32_t ni = m->vertex_normal.exists
+                                    ? m->vertex_normal.indices.data[ci]
+                                    : UINT32_MAX;
+            const uint32_t ui = m->vertex_uv.exists
+                                    ? m->vertex_uv.indices.data[ci]
+                                    : UINT32_MAX;
+
+            const CornerKey key{pi, ni, ui};
+            auto it = remap.find(key);
+            if (it != remap.end()) return it->second;
+
             // Bake the node's geometry->world transform into the vertex. ufbx
             // computes geometry_to_world as the correct matrix (it accounts for
             // geometric transforms); node_to_world does NOT and mis-places /
             // stretches multi-mesh models. Use ufbx's own transform helpers so
             // the axis conversion + matrix layout are handled correctly rather
             // than reimplemented with a Mat4 reinterpret.
+            const ufbx_vec3& p = m->vertices.data[pi];
             const ufbx_vec3 wp = ufbx_transform_position(&node->geometry_to_world, p);
+
+            gfx::Vertex3D v{};
             v.pos = {static_cast<float>(wp.x), static_cast<float>(wp.y),
                      static_cast<float>(wp.z)};
-            const ufbx_vec3 n0 = {(float)v.normal.x, (float)v.normal.y, (float)v.normal.z};
-            const ufbx_vec3 wn = ufbx_transform_direction(&node->geometry_to_world, n0);
-            v.normal = {static_cast<float>(wn.x), static_cast<float>(wn.y),
-                        static_cast<float>(wn.z)};
-            allVerts.push_back(v);
-        }
-        // Two cases:
-        //  - Already-triangulated mesh (vertex_indices.count == num_faces*3):
-        //    the buffer IS the triangle index list — copy it verbatim. Using a
-        //    per-face triangulator here would re-cut already-good triangles.
-        //  - Non-triangle mesh (has quads/polygons): ufbx_triangulate_face
-        //    slices each face into triangles (offsets relative to the face's
-        //    index_begin), which we rebase to the merged vertex array.
-        const bool alreadyTri = m->num_faces > 0 &&
-                                m->vertex_indices.count == m->num_faces * 3;
-        if (alreadyTri) {
-            for (size_t ii = 0; ii < m->vertex_indices.count; ++ii)
-                allIndices.push_back(base + m->vertex_indices.data[ii]);
-        } else {
-            const size_t maxTri = m->max_face_triangles > 1 ? m->max_face_triangles : 1;
-            std::vector<uint32_t> triBuf(maxTri * 3);
-            for (size_t fi = 0; fi < m->faces.count; ++fi) {
-                const ufbx_face face = m->faces.data[fi];
-                const uint32_t triCount =
-                    ufbx_triangulate_face(triBuf.data(), triBuf.size(), m, face);
-                for (uint32_t ti = 0; ti < triCount * 3; ++ti)
-                    allIndices.push_back(base + face.index_begin + triBuf[ti]);
+            v.normal = {0.0f, 1.0f, 0.0f};
+            v.uv = {0.0f, 0.0f};
+            if (ni != UINT32_MAX) {
+                const ufbx_vec3& nn = m->vertex_normal.values.data[ni];
+                const ufbx_vec3 n0 = {(float)nn.x, (float)nn.y, (float)nn.z};
+                const ufbx_vec3 wn = ufbx_transform_direction(&node->geometry_to_world, n0);
+                v.normal = {static_cast<float>(wn.x), static_cast<float>(wn.y),
+                            static_cast<float>(wn.z)};
+                anyUfbxNormal = true;
             }
+            if (ui != UINT32_MAX) {
+                const ufbx_vec2& tuv = m->vertex_uv.values.data[ui];
+                v.uv = {static_cast<float>(tuv.x), static_cast<float>(tuv.y)};
+            }
+
+            const uint32_t out = static_cast<uint32_t>(allVerts.size());
+            allVerts.push_back(v);
+            remap.emplace(key, out);
+            return out;
+        };
+
+        // Triangulate every face. ufbx_triangulate_face writes ABSOLUTE corner
+        // indices (already offset by face.index_begin), so they are fed straight
+        // into `emit`. The previous code added face.index_begin a second time
+        // and skipped the corner->position map, which read indices past the
+        // face and mis-connected triangles — the source of torn faces and
+        // stretched triangles on quad/ngon meshes.
+        std::vector<uint32_t> triBuf(m->max_face_triangles * 3);
+        for (size_t fi = 0; fi < m->faces.count; ++fi) {
+            const ufbx_face face = m->faces.data[fi];
+            if (face.num_indices < 3) continue;
+            const uint32_t triCount =
+                ufbx_triangulate_face(triBuf.data(), triBuf.size(), m, face);
+            for (uint32_t ti = 0; ti < triCount * 3; ++ti)
+                allIndices.push_back(emit(triBuf[ti]));
         }
     }
-
-    // Transform normals correctly: apply the normal matrix (upper-3x3 of the
-    // node matrix) to each vertex's stored normal. Revisit per-vertex.
-    // (Kept simple: recompute flat normals below from the triangles.)
 
     if (allVerts.empty() || allIndices.size() < 3) {
         ufbx_free_scene(scene);
