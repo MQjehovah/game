@@ -1,8 +1,0 @@
-{
-  "skills": {
-    "fireball": {"kind": "projectile", "damage": 30, "cooldown": 0.1, "speed": 16,
-                 "range": 40, "life": 2.5, "manaCost": 10,
-                 "statuses": [{"name": "burning", "duration": 3, "magnitude": 3}]},
-    "heal": {"kind": "box", "damage": -35, "boxHalfX": 0.1, "boxHalfY": 0.1, "boxHalfZ": 0.1}
-  }
-}

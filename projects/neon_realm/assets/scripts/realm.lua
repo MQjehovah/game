@@ -318,7 +318,8 @@ local function update_player(dt)
       local pos2 = GetPosition(hero)
       if pos2 ~= nil then
         local origin = { x = pos2.x, y = pos2.y + 1.2, z = pos2.z }
-        CastSkill("fireball", origin, attack_dir(), hero)
+        Gameplay.Projectile(origin, attack_dir(), 16, 30, 2.5, 40, 0.8, hero,
+                            {{name="burning", duration=3, magnitude=3}})
       end
       heroAct = nil
       PlayAnimation(hero, "Idle", true, 0.25)
@@ -371,7 +372,7 @@ local function update_player(dt)
     heroAct = "punch"
     PlayAnimation(hero, "Unarmed_Melee_Attack_Punch_A", false, 0.1)
     local origin = { x = pos.x, y = pos.y + 1.2, z = pos.z }
-    MeleeAttack(origin, attack_dir(), 2.2, 100, 28)
+    Gameplay.MeleeArc(origin, attack_dir(), 2.2, 100, 28, hero)
   end
 
   -- 火球（1）：进入读条，满条发射（读条动画 Spellcasting 循环 + 发射瞬间 Spellcast_Shoot）

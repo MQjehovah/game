@@ -1004,3 +1004,40 @@ TEST(GameplayThirdPersonCameraVars) {
     CHECK_NEAR(runtime.GameVar("hasFocus"), 1.0, 1e-6);
     CHECK_NEAR(runtime.GameVar("fy"), 1.2, 1e-6);
 }
+
+// ---------------------------------------------------------------------------
+// Task 13: realm.lua 迁移到 Gameplay 库后，至少能加载 + 运行不报错。
+// 直接读项目的 realm.lua 实际文本注入最小场景（hero 携带脚本），确认
+// on_start 的 FindNamedEntity("狼_i") 返回 nil 是安全的，on_update 跑若干帧
+// 不崩溃。文件缺失（cwd 不在仓库根）时跳过，避免误报。
+// ---------------------------------------------------------------------------
+
+TEST(NeonRealmScriptLoadsAndRuns) {
+    std::string realm;
+    const char* kPath = "projects/neon_realm/assets/scripts/realm.lua";
+    if (!test::ReadFileAll(kPath, realm) || realm.empty()) return;
+
+    const char* scene = R"({
+      "entities": [
+        {"name": "hero", "components": {
+          "transform": {"pos": [0,0,0]},
+          "health": {"hp": 100, "maxHp": 100},
+          "script": {"backend": "lua", "path": "realm.lua"}}}
+      ]
+    })";
+    scene::GameRuntime runtime;
+    scene::GameRuntimeConfig cfg;
+    cfg.headless = true;
+    cfg.readScript = [&](const std::string&) { return realm; };
+    CHECK(runtime.Start(scene, cfg).Ok());
+
+    const ecs::Entity hero = runtime.FindNamedEntity("hero");
+    CHECK(hero.IsValid());
+
+    // on_start 已执行：realm.lua 会写入 level=1 等 GameVar，证明脚本真实加载。
+    CHECK_NEAR(runtime.GameVar("level"), 1.0, 1e-6);
+
+    // 约 1 秒（60 帧），覆盖 on_update 的 update_player / update_wolves /
+    // update_waves / update_npc / update_hero_anim / update_camera / update_vfx。
+    for (int i = 0; i < 60; ++i) runtime.Tick(1.0f / 60.0f);
+}
