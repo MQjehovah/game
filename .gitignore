@@ -51,6 +51,5 @@ projects/*
 CMakeUserPresets.json
 # Shadow-map / screenshot debug artifacts (throwaway diagnostics)
 *.raw
-*.png
-!projects/default/assets/**/*.png
-!projects/pvz/assets/sprites/*.png
+/*.png
+
