@@ -8,6 +8,7 @@
 #include <unordered_map>
 
 #include "neon/core/log.hpp"
+#include "neon/physics/jolt_world.hpp"
 #include "neon/script/bindings.hpp"
 
 namespace neon::server {

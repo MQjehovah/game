@@ -10,6 +10,7 @@
 #include "neon/assets/asset_variants.hpp"
 #include "neon/core/pack.hpp"
 #include "neon/io/vfs.hpp"
+#include "neon/physics/jolt_world.hpp"
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"

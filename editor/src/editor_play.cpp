@@ -2,6 +2,7 @@
 #include "editor_util.hpp"
 
 #include "neon/modules/subsystem_modules.hpp"
+#include "neon/physics/jolt_world.hpp"
 
 namespace neon::editor {
 

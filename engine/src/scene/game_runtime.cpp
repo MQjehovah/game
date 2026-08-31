@@ -20,6 +20,8 @@
 #include "neon/gfx/terrain.hpp"
 #include "neon/io/vfs.hpp"
 #include "neon/kernel/registry.hpp"
+#include "neon/physics/jolt_world.hpp"
+#include "neon/plugin/backend.hpp"
 #include "neon/scene/scene_file.hpp"
 #include "gameplay_lib.hpp"
 
@@ -214,37 +216,41 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     // Create the physics world: Jolt when requested and compiled, else the
     // deterministic custom solver (server / headless tests). A "plugin:<name>"
     // backend (G5-1) loads the solver from a native middleware DLL/SO under
-    // cfg_.pluginBaseDir/plugins �?swappable without relinking. The owning
+    // cfg_.pluginBaseDir/plugins — swappable without relinking. The owning
     // PhysicsBackend is kept alive until this runtime is destroyed (it owns the
     // DLL), and is declared before physics_ so the world dies before the library.
     // Microkernel seam (P-B): prefer an injected physics world from the service
     // registry (non-owning — the module owns it). Falls back to the
-    // self-contained creation below when no service is registered.
+    // self-contained creation below when no service is registered. Ownership
+    // (world + optional plugin backend) is handed to the PhysicsBridge, which
+    // preserves the destroy ordering (world before library).
     if (cfg_.services) {
         if (physics::World* w = cfg_.services->Get<physics::World>())
-            physics_ = std::unique_ptr<physics::World, std::function<void(physics::World*)>>(
-                w, [](physics::World*) {});  // non-owning
+            physics_.SetWorld(
+                std::unique_ptr<physics::World, std::function<void(physics::World*)>>(
+                    w, [](physics::World*) {}),  // non-owning
+                nullptr);
     }
-    if (!physics_) {
-    physics_ = std::unique_ptr<physics::World, std::function<void(physics::World*)>>(
+    if (!physics_.World()) {
+    std::unique_ptr<physics::World, std::function<void(physics::World*)>> world(
         new physics::World(), [](physics::World* w) { delete w; });
 #ifdef NEON_ENABLE_JOLT
     if (cfg_.physicsBackend == "jolt") {
-        physics_ = std::unique_ptr<physics::World, std::function<void(physics::World*)>>(
+        world = std::unique_ptr<physics::World, std::function<void(physics::World*)>>(
             new physics::JoltWorld(), [](physics::World* w) { delete w; });
     }
 #endif
+    std::unique_ptr<plugin::PhysicsBackend> pluginBackend;
     if (cfg_.physicsBackend.rfind("plugin:", 0) == 0 && !cfg_.pluginBaseDir.empty()) {
         const std::string backendName = cfg_.physicsBackend.substr(7);
-        std::unique_ptr<plugin::PhysicsBackend> backend =
-            plugin::LoadNativePhysicsBackend(backendName, cfg_.pluginBaseDir);
-        if (backend) {
-            std::unique_ptr<physics::World, std::function<void(physics::World*)>> world =
-                backend->CreateWorld();
-            if (world) {
-                pluginPhysics_ = std::move(backend); // keep the DLL resident
-                physics_ = std::move(world);
+        pluginBackend = plugin::LoadNativePhysicsBackend(backendName, cfg_.pluginBaseDir);
+        if (pluginBackend) {
+            std::unique_ptr<physics::World, std::function<void(physics::World*)>> pluginWorld =
+                pluginBackend->CreateWorld();
+            if (pluginWorld) {
+                world = std::move(pluginWorld);
             } else {
+                pluginBackend.reset();
                 NEON_LOG_CAT(core::LogCategory::Scene, core::LogLevel::Warn,
                              "runtime: plugin physics backend '%s' created no world; "
                              "falling back to custom",
@@ -257,10 +263,11 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
                          backendName.c_str(), cfg_.pluginBaseDir.c_str());
         }
     }
-    }  // if (!physics_)
+    physics_.SetWorld(std::move(world), std::move(pluginBackend));
+    }  // if (!physics_.World())
     NEON_LOG_CAT(core::LogCategory::Scene, core::LogLevel::Info,
                  "runtime: physics backend '%s' (%zu rigid bodies cap)",
-                 cfg_.physicsBackend.c_str(), physics_->BodyCount());
+                 cfg_.physicsBackend.c_str(), physics_.BodyCount());
     compReg_ = ComponentRegistry{};
     RegisterBuiltinComponents(compReg_, /*assets=*/nullptr);
     // The PrefabSystem only knows how to build the instance SceneFile; the
@@ -299,12 +306,12 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     LoadLocales(); // Loc() string tables (best effort; missing dir = no-op)
     auto inst = Instantiate(world_, parsed.Value(), prefabs_.Library(), compReg_);
     if (!inst.Ok()) return core::Status::Err("runtime: " + inst.Error());
-    RegisterSceneBodies();
-    RegisterCharacters();
+    physics_.RegisterBodies(world_);
+    physics_.RegisterCharacters(world_);
     RegisterAudioSources();
 
     scriptCtx_.world = &world_;
-    scriptCtx_.physics = physics_.get();
+    scriptCtx_.physics = physics_.World();
     scriptCtx_.input = cfg_.input;
     scriptCtx_.loc = &loc_;
     scriptCtx_.playSfx = cfg_.playSfx;
@@ -529,14 +536,9 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
         if (SceneTransform* t = world_.Get<SceneTransform>(e)) t->pos = p;
         if (script::CTransformBind* t = world_.Get<script::CTransformBind>(e)) t->pos = p;
         // A8: a scripted move must also move the physics body, otherwise the
-        // next SyncSceneBodies() snaps the entity back and characters walk
+        // next SyncBodies() snaps the entity back and characters walk
         // through walls that only physics knows about.
-        if (const SceneRigidBody* rb = world_.Get<SceneRigidBody>(e)) {
-            if (rb->bodyId != 0) physics_->SetPosition({rb->bodyId}, p);
-        }
-        if (const SceneCharacter* c = world_.Get<SceneCharacter>(e)) {
-            if (c->bodyId != 0) physics_->SetPosition({c->bodyId}, p);
-        }
+        physics_.SetBodyPosition(world_, e, p);
     };
     scriptCtx_.sceneSetYaw = [this](ecs::Entity e, float yaw) {
         const math::Quat q = math::Quat::FromAxisAngle({0, 1, 0}, yaw);
@@ -819,7 +821,6 @@ void GameRuntime::SpawnProjectile(const math::Vec3& pos, const math::Vec3& dir, 
 
 void GameRuntime::Stop() {
     uiSystem_.Set(nullptr);
-    physicsAccum_ = 0.0f;
     scriptRuntime_.Clear();
     btRuntime_.Clear();
     draws_.clear();
@@ -841,76 +842,17 @@ void GameRuntime::Stop() {
         hosts_.js.reset();
     }
     world_.Clear();
-    if (physics_) physics_->Clear();
+    physics_.Clear();
     scriptCtx_ = script::ScriptContext{};
     prefabs_.Clear();
     running_ = false;
     simTime_ = 0.0;
 }
 
-// Registers every scene entity that carries a rigidbody component with the
-// physics world. The entity's transform provides the initial position; the
-// generated physics body id is stored back on the component so per-step
-// SyncSceneBodies can follow it.
-void GameRuntime::RegisterSceneBodies() {
-    world_.ViewAll<SceneRigidBody, SceneTransform>().ForEach(
-        [this](ecs::Entity e, SceneRigidBody& rb, const SceneTransform& t) {
-            physics::RigidBodyDesc desc;
-            desc.dynamic = rb.dynamic;
-            desc.mass = rb.mass;
-            desc.restitution = rb.restitution;
-            desc.friction = rb.friction;
-            desc.linearDamping = rb.linearDamping;
-            desc.gravityScale = rb.gravityScale;
-            desc.layer = rb.layer;
-            desc.mask = rb.mask;
-            physics::World::BodyId body;
-            if (rb.shape == "box") {
-                body = physics_->AddBox(EntityKey(e), t.pos, rb.halfExtents, rb.dynamic, desc);
-            } else {
-                body = physics_->AddSphere(EntityKey(e), t.pos, rb.radius, rb.dynamic, desc);
-            }
-            rb.bodyId = body.id;
-        });
-}
-
-// Registers every entity with a character component as a Jolt virtual
-// character (capsule controller). The custom deterministic world returns an
-// invalid id, in which case the component is left untouched.
-void GameRuntime::RegisterCharacters() {
-    world_.ViewAll<SceneCharacter, SceneTransform>().ForEach(
-        [this](ecs::Entity e, SceneCharacter& c, const SceneTransform& t) {
-            physics::RigidBodyDesc desc;
-            desc.layer = c.layer;
-            desc.mask = c.mask;
-            physics::World::BodyId body =
-                physics_->AddCharacter(EntityKey(e), t.pos, c.radius, c.halfHeight, desc);
-            c.bodyId = body.id;
-        });
-}
-
-// Writes the physics bodies' positions back into their entities' transforms
-// so rendered meshes follow the simulation. Called after every physics step.
-void GameRuntime::SyncSceneBodies() {
-    world_.ViewAll<SceneRigidBody, SceneTransform>().ForEach(
-        [this](ecs::Entity e, const SceneRigidBody& rb, SceneTransform& t) {
-            if (rb.bodyId == 0) return;
-            // B14: static bodies never move after registration -- skip the
-            // per-frame GetPosition (Jolt map lookup) entirely. Dynamic bodies
-            // (and characters below) keep syncing.
-            if (!rb.dynamic) return;
-            t.pos = physics_->GetPosition({rb.bodyId});
-            (void)e;
-        });
-    world_.ViewAll<SceneCharacter, SceneTransform>().ForEach(
-        [this](ecs::Entity, const SceneCharacter& c, SceneTransform& t) {
-            if (c.bodyId == 0) return;
-            t.pos = physics_->GetPosition({c.bodyId});
-        });
-}
-
 // G8-3: plays every scene audio source once at its entity's position through
 // the host's playSfx3D hook (one-shot; ambient looping needs a loop-3D hook).
+// Entity/audio initialization — NOT physics — so it stays on GameRuntime
+// (Task 15: the physics bridge owns rigidbody/character registration only).
 void GameRuntime::RegisterAudioSources() {
     if (!cfg_.playSfx3D) return; // headless hosts have no audio sink
     world_.ViewAll<SceneAudioSource, SceneTransform>().ForEach(
@@ -1705,22 +1647,13 @@ void GameRuntime::Tick(float dt) {
     // compaction); GameRuntime forwards with the shared world_/scriptCtx_.
     btRuntime_.Tick(dt, world_, scriptCtx_);
 
-    // Fixed-step physics: accumulate the frame delta and advance the world at
-    // 60 Hz so collision resolution and scripts stay deterministic regardless
-    // of frame rate. Cap the catch-up to avoid a spiral of death after a hitch.
-    {
-        core::ScopedTimer physicsTimer("runtime.physics");
-        physicsAccum_ += dt;
-        constexpr float kPhysicsStep = 1.0f / 60.0f;
-        int physicsSteps = 0;
-        while (physicsAccum_ >= kPhysicsStep && physicsSteps < 4) {
-            physics_->Step(kPhysicsStep, math::Vec3{0.0f, kGravityY, 0.0f});
-            physicsAccum_ -= kPhysicsStep;
-            ++physicsSteps;
-        }
-        if (physicsSteps == 4) physicsAccum_ = 0.0f;
-    }
-    SyncSceneBodies();
+    // Fixed-step physics (PhysicsBridge, Task 15): accumulate the frame delta
+    // and advance the world at 60 Hz so collision resolution and scripts stay
+    // deterministic regardless of frame rate. The catch-up cap (4 steps) avoids
+    // a spiral of death after a hitch. SyncBodies writes the simulated
+    // positions back into the entities' transforms.
+    physics_.Step(dt, math::Vec3{0.0f, kGravityY, 0.0f});
+    physics_.SyncBodies(world_);
     // G5-4-4(�?): the per-frame component sub-tasks run as ECS systems through
     // the SystemScheduler. Serial (default) preserves the exact historical
     // order (tweens -> animations -> statuses -> projectiles);

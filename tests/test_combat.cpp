@@ -12,6 +12,7 @@
 #include "neon/scene/game_runtime.hpp"
 #include "neon/scene/status.hpp"
 #include "neon/scene/systems/hud_system.hpp"
+#include "neon/scene/systems/physics_bridge.hpp"
 #include "neon/scene/systems/plugin_system.hpp"
 #include "neon/scene/systems/prefab_system.hpp"
 #include "neon/scene/systems/projectile_system.hpp"
@@ -1745,4 +1746,110 @@ end
     CHECK_EQ(ctx.gameVars.Get("msg").str, std::string("hello"));
 
     host->Shutdown();
+}
+
+// ---------------------------------------------------------------------------
+// PhysicsBridge (Task 15): bridges ECS rigidbody/character components to a
+// physics::World — registration, fixed-step advance, transform writeback, and
+// scripted teleport sync (A8). Standalone; no GameRuntime dependency.
+// ---------------------------------------------------------------------------
+
+TEST(PhysicsBridgeRegistersStepsAndSyncsBodies) {
+    scene::PhysicsBridge bridge;
+    std::unique_ptr<physics::World, std::function<void(physics::World*)>> world(
+        new physics::World(), [](physics::World* w) { delete w; });
+    bridge.SetWorld(std::move(world), nullptr);
+    CHECK(bridge.World() != nullptr);
+
+    ecs::World ew;
+    ecs::Entity ball = ew.Create();
+    ew.Add<scene::SceneRigidBody>(ball);
+    scene::SceneRigidBody* rb = ew.Get<scene::SceneRigidBody>(ball);
+    rb->dynamic = true;
+    rb->radius = 0.5f;
+    ew.Add<scene::SceneTransform>(ball);
+    ew.Get<scene::SceneTransform>(ball)->pos = {0, 5, 0};
+
+    bridge.RegisterBodies(ew);
+    CHECK_EQ(bridge.BodyCount(), 1u);
+    CHECK(rb->bodyId != 0); // body id stored back on the component
+
+    // Fixed 60 Hz steps: 3s of sim -> the ball rests on the ground (y = radius).
+    for (int i = 0; i < 180; ++i) {
+        bridge.Step(1.0f / 60.0f, {0, -9.81f, 0});
+        bridge.SyncBodies(ew);
+    }
+    CHECK_NEAR(ew.Get<scene::SceneTransform>(ball)->pos.y, 0.5f, 0.02f);
+
+    // A8: scripted teleport also moves the physics body (next SyncBodies keeps
+    // the transform; the body does not fall back during the writeback).
+    bridge.SetBodyPosition(ew, ball, {3, 2, 0});
+    bridge.SyncBodies(ew);
+    CHECK_NEAR(ew.Get<scene::SceneTransform>(ball)->pos.x, 3.0f, 1e-5);
+    CHECK_NEAR(ew.Get<scene::SceneTransform>(ball)->pos.y, 2.0f, 1e-5);
+
+    bridge.Clear();
+    CHECK_EQ(bridge.BodyCount(), 0u);
+    CHECK(bridge.World() != nullptr); // world object survives; bodies cleared
+}
+
+TEST(PhysicsBridgeStaticBodiesAndCharacters) {
+    scene::PhysicsBridge bridge;
+    std::unique_ptr<physics::World, std::function<void(physics::World*)>> world(
+        new physics::World(), [](physics::World* w) { delete w; });
+    bridge.SetWorld(std::move(world), nullptr);
+
+    // Character: the custom deterministic world has no controller -> invalid id.
+    ecs::World ew;
+    ecs::Entity ch = ew.Create();
+    ew.Add<scene::SceneCharacter>(ch);
+    scene::SceneCharacter* c = ew.Get<scene::SceneCharacter>(ch);
+    c->radius = 0.4f;
+    c->halfHeight = 0.9f;
+    ew.Add<scene::SceneTransform>(ch);
+    ew.Get<scene::SceneTransform>(ch)->pos = {1, 0, 0};
+    bridge.RegisterCharacters(ew);
+    CHECK_EQ(c->bodyId, 0u);
+    CHECK_EQ(bridge.BodyCount(), 0u);
+
+    // Static body: registered, but never synced (B14) and never moved.
+    ecs::Entity box = ew.Create();
+    ew.Add<scene::SceneRigidBody>(box);
+    scene::SceneRigidBody* b = ew.Get<scene::SceneRigidBody>(box);
+    b->dynamic = false;
+    b->shape = "box";
+    b->halfExtents = {1, 1, 1};
+    ew.Add<scene::SceneTransform>(box);
+    ew.Get<scene::SceneTransform>(box)->pos = {10, 0, 0};
+    bridge.RegisterBodies(ew);
+    CHECK_EQ(bridge.BodyCount(), 1u);
+
+    for (int i = 0; i < 60; ++i) {
+        bridge.Step(1.0f / 60.0f, {0, -9.81f, 0});
+        bridge.SyncBodies(ew);
+    }
+    CHECK_NEAR(ew.Get<scene::SceneTransform>(box)->pos.x, 10.0f, 1e-6);
+    CHECK_NEAR(ew.Get<scene::SceneTransform>(box)->pos.y, 0.0f, 1e-6);
+}
+
+TEST(PhysicsBridgeAcceptsInjectedWorld) {
+    scene::PhysicsBridge bridge;
+    physics::World injected; // owned by the test; the bridge must not delete it
+    bridge.SetWorld(
+        std::unique_ptr<physics::World, std::function<void(physics::World*)>>(
+            &injected, [](physics::World*) {}),
+        nullptr);
+    CHECK(bridge.World() == &injected);
+
+    ecs::World ew;
+    ecs::Entity ball = ew.Create();
+    ew.Add<scene::SceneRigidBody>(ball);
+    scene::SceneRigidBody* rb = ew.Get<scene::SceneRigidBody>(ball);
+    rb->dynamic = true;
+    rb->radius = 0.5f;
+    ew.Add<scene::SceneTransform>(ball);
+    ew.Get<scene::SceneTransform>(ball)->pos = {0, 5, 0};
+
+    bridge.RegisterBodies(ew);
+    CHECK_EQ(injected.BodyCount(), 1u); // registered in the injected world
 }

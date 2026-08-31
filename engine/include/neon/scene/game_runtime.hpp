@@ -20,9 +20,7 @@
 #include "neon/gfx/mesh.hpp"
 #include "neon/math/bvh.hpp"
 #include "neon/plugin/runtime_plugin.hpp"
-#include "neon/plugin/backend.hpp"
 #include "neon/physics/physics.hpp"
-#include "neon/physics/jolt_world.hpp"
 #include "neon/platform/input.hpp"
 #include "neon/scene/scene_file.hpp"
 #include "neon/scene/skinned_model.hpp"
@@ -31,6 +29,7 @@
 #include "neon/scene/systems/bt_runtime.hpp"
 #include "neon/scene/systems/hud_system.hpp"
 #include "neon/scene/systems/lagcomp_system.hpp"
+#include "neon/scene/systems/physics_bridge.hpp"
 #include "neon/scene/systems/plugin_system.hpp"
 #include "neon/scene/systems/prefab_system.hpp"
 #include "neon/scene/systems/projectile_system.hpp"
@@ -299,9 +298,9 @@ public:
     size_t ScriptCount() const { return scriptRuntime_.Count(); }
     size_t BehaviorTreeCount() const { return btRuntime_.Count(); }
     size_t DrawCount() const { return draws_.size(); }
-    size_t PhysicsBodyCount() const { return physics_ ? physics_->BodyCount() : 0; }
-    physics::World& PhysicsWorld() { return *physics_; }
-    const physics::World& PhysicsWorld() const { return *physics_; }
+    size_t PhysicsBodyCount() const { return physics_.BodyCount(); }
+    physics::World& PhysicsWorld() { return *physics_.World(); }
+    const physics::World& PhysicsWorld() const { return *physics_.World(); }
     double SimTime() const { return simTime_; }
 
     // Observability for tests/debug: the per-entity blackboard value the
@@ -489,10 +488,7 @@ private:
     void DrawVegetation(gfx::Renderer& renderer, const gfx::Camera& camera);
     // Resolves a vegetation meshKey ("tree"/"bush"/"rock"/obj:/gltf:) to a mesh.
     gfx::Mesh VegetationMesh(gfx::Renderer& renderer, const std::string& meshKey);
-    void RegisterSceneBodies();
-    void RegisterCharacters();
     void RegisterAudioSources(); // G8-3: play SceneAudioSource components once
-    void SyncSceneBodies();
     std::string ReadScript(const std::string& path) const;
     std::string FullScriptPath(const std::string& path) const;
     // Resolves an asset reference (obj:/gltf:/texture path) against
@@ -500,9 +496,12 @@ private:
     std::string FullAssetPath(const std::string& path) const;
 
     ecs::World world_;
-    std::unique_ptr<plugin::PhysicsBackend> pluginPhysics_;   // native backend owner (G5-1)
-    std::unique_ptr<physics::World, std::function<void(physics::World*)>> physics_;
-    float physicsAccum_ = 0.0f; // fixed-step accumulator (60 Hz)
+    // Physics bridge subsystem (Task 15): owns the physics::World + fixed-step
+    // accumulator + G5-1 native backend, and bridges ECS rigidbody/character
+    // components to/from the simulation. GameRuntime forwards
+    // RegisterBodies/RegisterCharacters/SyncBodies/PhysicsWorld/BodyCount and
+    // the fixed-step physics block in Tick to it.
+    PhysicsBridge physics_;
     script::ScriptContext scriptCtx_; // owns the GameVars scripts + BT share
     // Post-process FX overrides (applied at Draw); see SetPostFx.
     bool postSsao_ = false;

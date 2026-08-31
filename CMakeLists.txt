@@ -134,6 +134,7 @@ add_library(neon_scene STATIC
   engine/src/scene/systems/lagcomp_system.cpp
   engine/src/scene/systems/prefab_system.cpp
   engine/src/scene/systems/plugin_system.cpp
+  engine/src/scene/systems/physics_bridge.cpp
   engine/src/scene/systems/scene_particle_system.cpp
   engine/src/scene/systems/scene_tree_system.cpp
   engine/src/scene/systems/script_canvas.cpp
