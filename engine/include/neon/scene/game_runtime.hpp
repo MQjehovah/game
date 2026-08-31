@@ -28,7 +28,6 @@
 #include "neon/platform/input.hpp"
 #include "neon/scene/scene_file.hpp"
 #include "neon/scene/skinned_model.hpp"
-#include "neon/scene/skills.hpp"
 #include "neon/scene/status.hpp"
 #include "neon/script/bindings.hpp"
 #include "neon/script/gamevars.hpp"
@@ -122,16 +121,12 @@ struct GameRuntimeConfig {
     // then — no per-draw hitch. The host must pump the async loader each frame.
     bool asyncMeshLoad = false;
     // G5-4-4(项1): run the per-frame component sub-tasks (tweens/animations/
-    // statuses/skill cooldowns/projectiles) through the ecs::SystemScheduler
+    // statuses/projectiles) through the ecs::SystemScheduler
     // in parallel mode. Default false = serial in registration order (the
     // deterministic reference path). True lets independent systems overlap on
     // the shared worker pool; conflict edges come from their declared component
     // reads/writes, so the parallel result is bit-identical to serial.
     bool parallelSystems = false;
-    // Optional skills.json text (data-driven CastSkill table). The hosts that
-    // know their project dir load <dir>/skills.json and pass it here; empty
-    // leaves the table empty and CastSkill logs "unknown skill".
-    std::string skillsJson;
 };
 
 // A self-contained, reusable game runtime. The editor embeds one instance for
@@ -342,17 +337,11 @@ public:
     gfx::Mesh MeshForEntity(const ecs::Entity& ent, const gfx::Camera& camera) const;
 
     // Combat (script-facing gameplay hooks). SpawnProjectile queues a fireball
-    // the runtime advances and renders; MeleeAttack damages SceneHealth entities
-    // in the arc and returns how many were hit; AttackBox damages every
-    // SceneHealth entity inside a yaw-oriented box (half extents) and returns
-    // how many were hit.
+    // the runtime advances and renders (statuses are applied to the hit target).
     void SpawnProjectile(const math::Vec3& pos, const math::Vec3& dir, float speed, float damage,
                          float life, ecs::Entity caster = {}, float range = 0.0f,
                          float hitRadius = 0.8f,
                          const std::vector<SkillStatus>& statuses = {});
-    int MeleeAttack(const math::Vec3& origin, const math::Vec3& dir, float range, float arcDeg,
-                    float damage);
-    int AttackBox(const math::Vec3& center, const math::Vec3& half, float yaw, float damage);
     void TickProjectiles(float dt);
 
     // Spatial overlap queries (script-facing). Return every SceneHealth entity
@@ -370,38 +359,21 @@ public:
 
     // G3-4 lag compensation (authoritative server). The runtime records every
     // fixed tick's authoritative poses into a ring buffer
-    // (kLagCompHistoryTicks deep). MeleeAttackLagComp / AttackBoxLagComp test
-    // targets at the pose they had `rewindTicks` fixed ticks ago (while
-    // damaging the CURRENT entity), so a fast-moving target is hit where the
-    // shooter actually SAW it instead of where it is now. SetAutoLagComp makes
-    // the plain MeleeAttack/AttackBox/CastSkill use that rewind - the server
-    // sets it per tick from the most latent active client's measured RTT.
-    // LagCompPosition queries a single entity's historical pose (false when no
-    // snapshot that old exists for it).
+    // (kLagCompHistoryTicks deep). Spatial overlap queries and hit tests can
+    // rewind to the pose a target had `rewindTicks` fixed ticks ago (while
+    // querying the CURRENT entity). SetAutoLagComp lets the authoritative
+    // server set a per-tick rewind from the most latent active client's
+    // measured RTT; LagCompPosition queries a single entity's historical pose
+    // (false when no snapshot that old exists for it).
     static constexpr uint32_t kLagCompHistoryTicks = 64;
     void SetAutoLagComp(uint32_t rewindTicks) { autoRewindTicks_ = rewindTicks; }
     uint32_t AutoLagCompTicks() const { return autoRewindTicks_; }
     bool LagCompPosition(ecs::Entity e, uint32_t rewindTicks, math::Vec3& out) const;
-    int MeleeAttackLagComp(const math::Vec3& origin, const math::Vec3& dir, float range,
-                           float arcDeg, float damage, uint32_t rewindTicks);
-    int AttackBoxLagComp(const math::Vec3& center, const math::Vec3& half, float yaw,
-                         float damage, uint32_t rewindTicks);
-
-    // Data-driven skills (M2 combat core). LoadSkills replaces the table;
-    // CastSkill looks the skill up, checks cooldown/mana, casts it (projectile
-    // / melee arc / attack box), applies the skill's status effects to every
-    // hit target and records the cooldown for `caster`. Returns 1 when the
-    // skill was cast, 0 when unknown / on cooldown / out of mana.
-    bool LoadSkills(const std::string& json, std::string* err);
-    int CastSkill(const std::string& name, const math::Vec3& origin, const math::Vec3& dir,
-                  ecs::Entity caster = {});
 
     // World-space particle burst (gfx::ParticleSystem, camera-facing
     // billboards, additive/alpha batches) — the neon_rush-quality VFX path.
     // Exposed to scripts through the EmitParticles binding.
     void EmitParticles(const gfx::EmitterConfig& cfg);
-    // Remaining cooldown seconds for `caster`'s skill (0 = ready / unknown).
-    float SkillCooldownLeft(const std::string& name, ecs::Entity caster) const;
 
     // Status-effect observability (tests / HUD).
     bool HasStatus(ecs::Entity ent, uint32_t id) const;
@@ -584,17 +556,11 @@ private:
     // Advances every resolved skinned model's default clip (fixed-step
     // animation; deterministic like the rest of the simulation).
     void TickAnimations(float dt);
-    // Decays per-caster skill cooldowns and prunes dead casters.
-    void TickSkillCooldowns(float dt);
     // Flushes the script 2D canvas (draw2d_) into the renderer overlay.
     void FlushDraw2D(gfx::Renderer& renderer);
     // Scene-tree world transform: walks SceneParentLink ancestors (bounded
     // depth) composing local TRS. Identity for unlinked entities.
     math::Mat4 LocalToWorld(ecs::Entity e) const;
-    // Applies a skill's status effects to `target` (creates the component).
-    void ApplySkillStatuses(ecs::Entity target, const std::vector<SkillStatus>& statuses);
-    // Damages `target` (clamped to 0) and applies the skill's statuses.
-    void ApplyHit(ecs::Entity target, float damage, const std::vector<SkillStatus>& statuses);
     // Loads every assets/prefabs/*.json under cfg_.scriptBaseDir into prefs_
     // (no-op when the base dir is empty or the prefabs dir is absent). Scene
     // entities can then reference prefabs by name, matching how packed games
@@ -629,16 +595,6 @@ private:
     void RegisterAudioSources(); // G8-3: play SceneAudioSource components once
     void SyncSceneBodies();
     void TickTweens(float dt);
-    // G3-4 shared hit-test cores: `rewindTicks` selects the pose used for the
-    // distance/arc/box test (0 = the entity's current pose). Damage always
-    // lands on the current entity. `exclude` is skipped (CastSkill's never
-    // self-hit rule); non-empty `statuses` are applied via ApplyHit.
-    int MeleeAttackImpl(const math::Vec3& origin, const math::Vec3& dir, float range,
-                        float arcDeg, float damage, uint32_t rewindTicks,
-                        ecs::Entity exclude = {},
-                        const std::vector<SkillStatus>& statuses = {});
-    int AttackBoxImpl(const math::Vec3& center, const math::Vec3& half, float yaw,
-                      float damage, uint32_t rewindTicks);
     std::string ReadScript(const std::string& path) const;
     std::string FullScriptPath(const std::string& path) const;
     // Resolves an asset reference (obj:/gltf:/texture path) against
@@ -738,7 +694,6 @@ private:
         int easing = 0;  // 0=linear 1=in 2=out 3=inout
     };
     std::vector<Tween> tweens_;
-    SkillTable skills_;
     std::unique_ptr<plugin::RuntimePluginManager> plugins_; // runtime plugins
     scene::ComponentRegistry compReg_; // built-in + data component factories
     std::vector<script::Draw2DCmd> draw2d_; // script 2D canvas (on_render)
@@ -747,8 +702,6 @@ private:
     script::InputMap inputMap_;             // Godot-style actions (input.json)
     std::string pendingScene_;              // ChangeScene deferred to next Tick
     std::vector<std::pair<std::string, uint64_t>> signalHandlers_; // Lua signals
-    // Per-caster (EntityKey) skill cooldown seconds by skill name.
-    std::unordered_map<uint64_t, std::map<std::string, float>> skillCooldowns_;
     // G3-4 pose history for lag compensation: one snapshot per fixed tick
     // (EntityKey -> authoritative position), index 0 = oldest. The newest
     // snapshot is appended at the end of every Tick and the ring is capped at
@@ -759,7 +712,7 @@ private:
     std::vector<std::unordered_map<uint64_t, math::Vec3>> poseSlots_;
     size_t poseHead_ = 0;   // slot index of the OLDEST snapshot
     size_t poseCount_ = 0;  // number of valid snapshots (<= capacity)
-    uint32_t autoRewindTicks_ = 0; // rewind used by MeleeAttack/AttackBox/CastSkill
+    uint32_t autoRewindTicks_ = 0; // rewind used by overlap queries / hit tests
     gfx::Mesh fireballMesh_; // lazily built for skill-projectile rendering
     gfx::ParticleSystem particles_; // world-space billboard particles (scripts)
     gfx::Texture particleTex_;      // soft radial glow sprite for the particles

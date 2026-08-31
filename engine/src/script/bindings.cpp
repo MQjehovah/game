@@ -269,24 +269,6 @@ Value NativeSpawnProjectile(IScriptHost& host, void* user) {
     return Value::Nil();
 }
 
-// MeleeAttack(origin{x,y,z}, dir{x,y,z}, range, arcDeg, damage) -> entities hit.
-Value NativeMeleeAttack(IScriptHost& host, void* user) {
-    auto* ctx = static_cast<ScriptContext*>(user);
-    if (!ctx || !ctx->meleeAttack) return Value::Num(0);
-    const math::Vec3 origin = Vec3FromValue(host.GetArg(0), math::Vec3{});
-    const math::Vec3 dir = Vec3FromValue(host.GetArg(1), math::Vec3{0, 0, 1});
-    const float range = host.GetArg(2).type == Value::Type::Number
-                            ? static_cast<float>(host.GetArg(2).number)
-                            : 2.0f;
-    const float arcDeg = host.GetArg(3).type == Value::Type::Number
-                             ? static_cast<float>(host.GetArg(3).number)
-                             : 90.0f;
-    const float damage = host.GetArg(4).type == Value::Type::Number
-                             ? static_cast<float>(host.GetArg(4).number)
-                             : 15.0f;
-    return Value::Num(ctx->meleeAttack(origin, dir, range, arcDeg, damage));
-}
-
 // Status effects (M2 combat core): ApplyStatus(ent, "burning", 3, 2) applies
 // 3s of burning dealing 2 damage/tick; HasStatus/StatusMagnitude/RemoveStatus
 // query and remove. Names resolve through the built-in status table.
@@ -329,45 +311,6 @@ Value NativeRemoveStatus(IScriptHost& host, void* user) {
     return Value::Nil();
 }
 
-// CastSkill(name, origin{x,y,z}, dir{x,y,z}, caster) -> 1 cast / 0 failed
-// (unknown skill, on cooldown, out of mana). SkillCooldown(caster, name)
-// returns the remaining seconds (0 = ready).
-Value NativeCastSkill(IScriptHost& host, void* user) {
-    auto* ctx = static_cast<ScriptContext*>(user);
-    if (!ctx || !ctx->castSkill) return Value::Num(0);
-    const std::string name = StringArg(host, 0);
-    const math::Vec3 origin = Vec3FromValue(host.GetArg(1), math::Vec3{});
-    const math::Vec3 dir = Vec3FromValue(host.GetArg(2), math::Vec3{0, 0, 1});
-    const ecs::Entity caster =
-        host.ArgCount() >= 4 ? EntityFromValue(host.GetArg(3)) : ecs::Entity{};
-    return Value::Num(ctx->castSkill(name, origin, dir, caster));
-}
-
-Value NativeSkillCooldown(IScriptHost& host, void* user) {
-    auto* ctx = static_cast<ScriptContext*>(user);
-    if (!ctx || !ctx->sceneSkillCooldown) return Value::Num(0);
-    const ecs::Entity caster = EntityFromValue(host.GetArg(0));
-    const std::string name = StringArg(host, 1);
-    return Value::Num(ctx->sceneSkillCooldown(name, caster));
-}
-
-// AttackBox(center{x,y,z}, half{x,y,z}, yawDeg, damage) -> entities hit. The
-// box is centered at `center`, half-extents `half` along the local axes, and
-// rotated `yawDeg` degrees around Y.
-Value NativeAttackBox(IScriptHost& host, void* user) {
-    auto* ctx = static_cast<ScriptContext*>(user);
-    if (!ctx || !ctx->attackBox) return Value::Num(0);
-    const math::Vec3 center = Vec3FromValue(host.GetArg(0), math::Vec3{});
-    const math::Vec3 half = Vec3FromValue(host.GetArg(1), math::Vec3{1, 1, 1});
-    const float yawDeg =
-        host.GetArg(2).type == Value::Type::Number
-            ? static_cast<float>(host.GetArg(2).number) * math::kDegToRad
-            : 0.0f;
-    const float damage =
-        host.GetArg(3).type == Value::Type::Number ? static_cast<float>(host.GetArg(3).number) : 0.0f;
-    return Value::Num(ctx->attackBox(center, half, yawDeg, damage));
-}
-
 // OverlapSphere(center{x,y,z}, radius [, rewind]) -> array of {entity=, x=, y=,
 // z=} for every live SceneHealth entity inside the sphere. rewind is the
 // lag-comp rollback tick count (0 = current pose).
@@ -384,7 +327,7 @@ Value NativeOverlapSphere(IScriptHost& host, void* user) {
 
 // OverlapBox(center{x,y,z}, half{x,y,z}, yawDeg [, rewind]) -> array of
 // {entity=, x=, y=, z=}. yawDeg rotates the box around Y (converted to radians
-// here, matching AttackBox); rewind is the lag-comp rollback tick count.
+// here); rewind is the lag-comp rollback tick count.
 Value NativeOverlapBox(IScriptHost& host, void* user) {
     auto* ctx = static_cast<ScriptContext*>(user);
     if (!ctx || !ctx->overlapBox) return Value::Nil();
@@ -1661,14 +1604,10 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("GetMaxHealth", &NativeGetMaxHealth, &ctx);
     host.Register("SetHealth", &NativeSetHealth, &ctx);
     host.Register("SpawnProjectile", &NativeSpawnProjectile, &ctx);
-    host.Register("MeleeAttack", &NativeMeleeAttack, &ctx);
     host.Register("ApplyStatus", &NativeApplyStatus, &ctx);
     host.Register("HasStatus", &NativeHasStatus, &ctx);
     host.Register("StatusMagnitude", &NativeStatusMagnitude, &ctx);
     host.Register("RemoveStatus", &NativeRemoveStatus, &ctx);
-    host.Register("CastSkill", &NativeCastSkill, &ctx);
-    host.Register("SkillCooldown", &NativeSkillCooldown, &ctx);
-    host.Register("AttackBox", &NativeAttackBox, &ctx);
     host.Register("OverlapSphere", &NativeOverlapSphere, &ctx);
     host.Register("OverlapBox", &NativeOverlapBox, &ctx);
     host.Register("BindPlayerToClient", &NativeBindPlayerToClient, &ctx);

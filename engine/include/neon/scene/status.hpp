@@ -16,6 +16,15 @@
 
 namespace neon::scene {
 
+// A status effect spec applied to a hit target (name resolved via the built-in
+// status table: burning / poison / regen / slow). Used by projectiles and
+// data-driven skills to carry their on-hit effects.
+struct SkillStatus {
+    std::string name;
+    float duration = 0.0f;
+    float magnitude = 0.0f;
+};
+
 // Stable built-in effect ids (resolved by name; extend the table for more).
 enum : uint32_t {
     kStatusBurning = 1, // fire: damage tick every interval

@@ -343,21 +343,6 @@ assetMgr_.SetTextureBakeDir(".neon/imported");
             }
         }
     }
-    // M1: skills.json via the same source as scripts (VFS or unpacked dir).
-    {
-        std::string skillsPath = "skills.json";
-        if (!cfg_.vfs && !cfg_.unpackedDir.empty()) skillsPath = cfg_.unpackedDir + "/" + skillsPath;
-        if (cfg_.vfs) {
-            const core::Result<std::vector<uint8_t>> b = cfg_.vfs->ReadFile("skills.json");
-            if (b.Ok())
-                rcfg.skillsJson.assign(b.Value().begin(), b.Value().end());
-        } else {
-            std::ifstream skillsIn(skillsPath, std::ios::binary);
-            if (skillsIn.is_open())
-                rcfg.skillsJson.assign(std::istreambuf_iterator<char>(skillsIn),
-                                       std::istreambuf_iterator<char>());
-        }
-    }
     // The runtime reads input through ClientInput (a transparent bridge to the
     // real input; SetForceMove synthesizes W for the --ticks smoke run). The
     // same bridge feeds the MsgInput builder, so prediction and the

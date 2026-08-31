@@ -199,14 +199,6 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     // G5-4-4(�?): register the per-frame component sub-task system graph once
     // (idempotent across Stop->Start cycles).
     InitSystemGraph();
-    // Data-driven skills table (M1): hosts pass the skills.json text.
-    if (!cfg_.skillsJson.empty()) {
-        std::string err;
-        if (!skills_.Load(cfg_.skillsJson, &err))
-            NEON_LOG_CAT(core::LogCategory::Scene, core::LogLevel::Warn,
-                         "runtime: skills.json rejected (%s); CastSkill table empty",
-                         err.c_str());
-    }
     // Script VFX particle sprite: a soft radial glow (project assets ship one
     // at assets/sprites/glow.png; missing file degrades to a white quad).
     if (cfg_.assets)
@@ -580,15 +572,6 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
             sd->components.emplace_back(name, data);
         }
     };
-    // Skill hooks (M2 combat core): data-driven CastSkill / SkillCooldown and
-    // the oriented attack box.
-    scriptCtx_.castSkill = [this](const std::string& name, const math::Vec3& origin,
-                                  const math::Vec3& dir, ecs::Entity caster) {
-        return CastSkill(name, origin, dir, caster);
-    };
-    scriptCtx_.sceneSkillCooldown = [this](const std::string& name, ecs::Entity e) {
-        return SkillCooldownLeft(name, e);
-    };
     // M1 gameplay hooks: per-entity animation + HUD anchors + floating text.
     scriptCtx_.playAnimation = [this](ecs::Entity e, const std::string& clip, bool loop,
                                       float fade, float speed) {
@@ -677,10 +660,6 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
         }
         return arr;
     };
-    scriptCtx_.attackBox = [this](const math::Vec3& center, const math::Vec3& half, float yaw,
-                                  float dmg) {
-        return AttackBox(center, half, yaw, dmg);
-    };
     scriptCtx_.overlapSphere = [this](const math::Vec3& c, float r, uint32_t rewind) {
         return OverlapHitsToValue(OverlapSphere(c, r, rewind));
     };
@@ -706,10 +685,6 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
             sceneStatuses.push_back({s.name, s.duration, s.magnitude});
         }
         SpawnProjectile(pos, dir, speed, damage, life, caster, range, hitRadius, sceneStatuses);
-    };
-    scriptCtx_.meleeAttack = [this](const math::Vec3& origin, const math::Vec3& dir, float range,
-                                    float arcDeg, float damage) {
-        return MeleeAttack(origin, dir, range, arcDeg, damage);
     };
 
     // Lua is the canonical backend (the editor's debugger targets it); a
@@ -806,7 +781,6 @@ void GameRuntime::Stop() {
     draws_.clear();
     projectiles_.clear();
     tweens_.clear();
-    skillCooldowns_.clear();
     particles_.Clear();
     particleTex_ = {};
     poseHead_ = 0;
@@ -2293,7 +2267,7 @@ void GameRuntime::InitSystemGraph() {
     };
 
     // Registration order IS the serial order: tweens, animations, statuses,
-    // skill cooldowns, projectiles (matches the pre-scheduler Tick body).
+    // projectiles (matches the pre-scheduler Tick body).
     systems_.Add("tweens",
                  sys([this](float d, ecs::World&) { TickTweens(d); }),
                  {typeid(SceneTransform)}, {typeid(SceneTransform), typeid(Tween)});
@@ -2305,9 +2279,6 @@ void GameRuntime::InitSystemGraph() {
                  sys([this](float d, ecs::World&) { TickStatuses(d); }),
                  {typeid(StatusComponent)},
                  {typeid(StatusComponent), typeid(SceneHealth)});
-    systems_.Add("skillCooldowns",
-                 sys([this](float d, ecs::World&) { TickSkillCooldowns(d); }),
-                 {}, {typeid(skillCooldowns_)});
     systems_.Add("projectiles",
                  sys([this](float d, ecs::World&) { TickProjectiles(d); }),
                  {typeid(SceneHealth), typeid(SceneTransform)},
@@ -2411,7 +2382,7 @@ void GameRuntime::Tick(float dt) {
     SyncSceneBodies();
     // G5-4-4(�?): the per-frame component sub-tasks run as ECS systems through
     // the SystemScheduler. Serial (default) preserves the exact historical
-    // order (tweens -> animations -> statuses -> cooldowns -> projectiles);
+    // order (tweens -> animations -> statuses -> projectiles);
     // parallelSystems=true lets independent systems overlap on the worker pool.
     // Conflict edges come from the systems' declared component reads/writes
     // (e.g. TickStatuses and TickProjectiles both write SceneHealth, so they

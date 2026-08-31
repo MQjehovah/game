@@ -78,7 +78,7 @@ function on_update(e, dt)
   local dir = { x = math.sin(yaw), y = 0, z = -math.cos(yaw) }
 
   if InputMousePressed("left") and melee_cd <= 0 then
-    local hits = MeleeAttack({ x = pos.x, y = pos.y + 0.8, z = pos.z }, dir, 2.4, 100, 12)
+    local hits = Gameplay.MeleeArc({ x = pos.x, y = pos.y + 0.8, z = pos.z }, dir, 2.4, 100, 12, e)
     melee_cd = 0.5
     SetVar("hero_melee_cd", melee_cd)
     if hits > 0 then PlaySfx("melee") end

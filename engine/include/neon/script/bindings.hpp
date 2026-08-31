@@ -123,9 +123,6 @@ struct ScriptContext {
                        float life, ecs::Entity caster, float range, float hitRadius,
                        const std::vector<SkillStatusData>& statuses)>
         spawnProjectile;
-    std::function<int(const math::Vec3& origin, const math::Vec3& dir, float range, float arcDeg,
-                      float damage)>
-        meleeAttack; // returns the number of entities hit
     // Status-effect hooks (M2 combat core): names are resolved to ids by the
     // caller (the bindings) through the built-in status table before calling.
     std::function<void(ecs::Entity, uint32_t id, float duration, float magnitude)>
@@ -145,19 +142,11 @@ struct ScriptContext {
     // Writes/replaces an arbitrary data component (SceneData). Wired by
     // GameRuntime; null -> SetEntityComponent is a no-op.
     std::function<void(ecs::Entity, const std::string&, const core::Json&)> setEntityComponent;
-    // Skill hooks (M2 combat core): data-driven CastSkill / SkillCooldown and
-    // the oriented attack box.
-    std::function<int(const std::string& name, const math::Vec3& origin, const math::Vec3& dir,
-                      ecs::Entity caster)>
-        castSkill;
-    std::function<float(const std::string& name, ecs::Entity caster)> sceneSkillCooldown;
-    std::function<int(const math::Vec3& center, const math::Vec3& half, float yaw, float damage)>
-        attackBox;
     // Spatial overlap queries (script-facing): return {entity=, x=, y=, z=}
     // arrays. rewind is the lag-comp rollback tick count (0 = current pose).
     std::function<script::Value(const math::Vec3&, float, uint32_t)> overlapSphere;
     // The box is oriented by `yaw` radians around Y (bindings convert yawDeg
-    // degrees -> radians, same convention as attackBox above).
+    // degrees -> radians).
     std::function<script::Value(const math::Vec3&, const math::Vec3&, float yaw, uint32_t)>
         overlapBox;
     // Sequence-frame sprite animation: switches an entity's sprite to play the
