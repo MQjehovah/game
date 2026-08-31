@@ -12,6 +12,7 @@
 
 #include "neon/core/log.hpp"
 #include "neon/audio/audio.hpp"
+#include "neon/kernel/kernel.hpp"
 #include "neon/plugin/backend.hpp"
 #include "neon/gfx/light_probe.hpp"
 #include "neon/nav/nav_grid.hpp"
@@ -698,6 +699,10 @@ private:
     bool IsSelected(int idx) const;
     std::vector<int> SelectedIndices() const;  // sorted ascending
     bool playActive_ = false;
+    // Microkernel (P-E): the playtest's replaceable physics/script modules.
+    // Created fresh per play session so it outlives play_ (which holds
+    // non-owning pointers into its services) and is torn down with it.
+    std::unique_ptr<kernel::Kernel> kernel_;
     std::unique_ptr<scene::GameRuntime> play_; // non-null while playing
     bool pvzPlayOnStart_ = false; // --2d-play: auto-start the play
     bool playOnStart_ = false;        // --play: auto-start (any project mode)

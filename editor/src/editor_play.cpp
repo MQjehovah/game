@@ -1,6 +1,8 @@
 #include "editor.hpp"
 #include "editor_util.hpp"
 
+#include "neon/modules/subsystem_modules.hpp"
+
 namespace neon::editor {
 
 // The play GAME AREA's aspect: the scene camera's configured `aspect`
@@ -505,11 +507,20 @@ void EditorApp::StartPlay() {
     // G5-4-3: use offline-baked BC1 textures from the project's .neon/imported.
     assetMgr_.SetTextureBakeDir(projectDir_ + "/.neon/imported");
 
+    // Microkernel (P-E): wire the playtest's replaceable physics + script
+    // services through the Kernel (fresh per play session, outlives play_).
+    kernel_ = std::make_unique<kernel::Kernel>();
+#ifdef NEON_ENABLE_JOLT
+    kernel_->Add(std::make_unique<modules::PhysicsModule>(
+        std::make_unique<physics::JoltWorld>()));  // play uses Jolt
+#endif
+    if (auto lua = script::CreateLuaHost())
+        kernel_->Add(std::make_unique<modules::ScriptModule>(std::move(lua)));
+    kernel_->Init();
+
     scene::GameRuntimeConfig cfg;
     cfg.assets = &assetMgr_;
-#ifdef NEON_ENABLE_JOLT
-    cfg.physicsBackend = "jolt"; // play uses Jolt rigid bodies when compiled
-#endif
+    cfg.services = &kernel_->Services();
     cfg.scriptBaseDir = projectDir_.empty() ? "." : projectDir_;
     cfg.pluginBaseDir = projectDir_.empty() ? "." : projectDir_; // G5-1 native plugins
     // Project-relative asset roots apply to BOTH branches: 3D scenes resolve
@@ -593,6 +604,10 @@ void EditorApp::StartPlay() {
     if (!st.Ok()) {
         NEON_LOG_ERROR("Editor: play failed to start: %s", st.Error().c_str());
         play_.reset();
+        if (kernel_) {
+            kernel_->Shutdown();
+            kernel_.reset();
+        }
         return;
     }
     // Mirror the editor's post-process FX toggles into the play runtime.
@@ -612,6 +627,10 @@ void EditorApp::StopPlay() {
     if (!play_) return;
     play_->Stop();
     play_.reset();
+    if (kernel_) {
+        kernel_->Shutdown();  // microkernel: tear down the physics/script modules
+        kernel_.reset();
+    }
     playActive_ = false;
     if (Window()) Window()->SetImeEnabled(true);
     NEON_LOG_INFO("Editor: play stopped");
