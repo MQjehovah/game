@@ -679,14 +679,26 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     // Lua is the canonical backend (the editor's debugger targets it); a
     // failure there aborts the runtime. The JS backend is optional: when its
     // host fails to initialize, JS-scripted entities are skipped with a log.
-    hosts_.lua = script::CreateLuaHost();
-    if (!hosts_.lua) {
-        Stop();
-        return core::Status::Err("runtime: failed to create script host");
+    //
+    // Microkernel seam (P-B): prefer an injected script host (Lua backend) from
+    // the service registry. The module already Init()'d it; here we only wire
+    // bindings + deterministic seed/clock. Falls back to self-contained creation.
+    if (cfg_.services) {
+        if (script::IScriptHost* h = cfg_.services->Get<script::IScriptHost>()) {
+            hosts_.lua = ScriptHosts::NonOwning(h);
+            injectedScriptHost_ = true;
+        }
     }
-    if (!hosts_.lua->Init()) {
-        Stop();
-        return core::Status::Err("runtime: failed to initialize script host");
+    if (!hosts_.lua) {
+        hosts_.lua = script::CreateLuaHost();
+        if (!hosts_.lua) {
+            Stop();
+            return core::Status::Err("runtime: failed to create script host");
+        }
+        if (!hosts_.lua->Init()) {
+            Stop();
+            return core::Status::Err("runtime: failed to initialize script host");
+        }
     }
     script::RegisterEngineBindings(*hosts_.lua, scriptCtx_);
     hosts_.lua->SetRngSeed(cfg_.rngSeed ? cfg_.rngSeed : 1u); // 0 aliases seed 1
@@ -766,8 +778,9 @@ void GameRuntime::Stop() {
         plugins_.reset();
     }
     if (hosts_.lua) {
-        hosts_.lua->Shutdown();
+        if (!injectedScriptHost_) hosts_.lua->Shutdown();  // the module owns an injected host
         hosts_.lua.reset();
+        injectedScriptHost_ = false;
     }
     if (hosts_.js) {
         hosts_.js->Shutdown();

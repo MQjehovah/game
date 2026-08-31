@@ -86,3 +86,26 @@ TEST(GameRuntimeInjectsPhysicsService) {
     runtime.Stop();
     mgr.ShutdownAll();
 }
+
+// P-B: the script host is also injected from the registry (Lua backend); the
+// runtime wires bindings onto the module-owned host instead of creating its own.
+TEST(GameRuntimeInjectsScriptService) {
+    ModuleRegistry mgr;
+    auto scriptModule = std::make_unique<ScriptModule>(script::CreateLuaHost());
+    script::IScriptHost* host = scriptModule->Host();
+    mgr.Add(std::move(scriptModule));
+    ServiceRegistry reg;
+    CHECK(mgr.InitAll(reg));
+
+    const char* scene = R"({"entities": []})";
+    scene::GameRuntime runtime;
+    scene::GameRuntimeConfig cfg;
+    cfg.headless = true;
+    cfg.services = &reg;
+    CHECK(runtime.Start(scene, cfg).Ok());
+
+    CHECK(runtime.ScriptHost() == host);  // the injected host is the live one
+
+    runtime.Stop();        // does NOT shut down the injected host (module owns it)
+    mgr.ShutdownAll();     // the module shuts it down exactly once
+}

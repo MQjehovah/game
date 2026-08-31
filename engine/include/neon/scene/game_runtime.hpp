@@ -648,8 +648,14 @@ private:
     // backend via the script component's `backend` field; both hosts share the
     // same bindings, RNG seed and sim clock, so one scene can mix languages.
     struct ScriptHosts {
-        std::unique_ptr<script::IScriptHost> lua;
-        std::unique_ptr<script::IScriptHost> js;
+        using HostPtr = std::unique_ptr<script::IScriptHost,
+                                        std::function<void(script::IScriptHost*)>>;
+        HostPtr lua;
+        HostPtr js;
+        // Non-owning wrapper for a registry-injected host (the module owns it).
+        static HostPtr NonOwning(script::IScriptHost* h) {
+            return HostPtr(h, [](script::IScriptHost*) {});
+        }
         script::IScriptHost* Get(const std::string& backend) {
             return backend == "js" ? js.get() : lua.get();
         }
@@ -658,6 +664,9 @@ private:
         }
         script::IScriptHost* First() { return lua.get(); }
     } hosts_;
+    // True when hosts_.lua was injected from the service registry (non-owning);
+    // Stop() must then skip its Shutdown — the owning module tears it down.
+    bool injectedScriptHost_ = false;
     std::vector<ScriptInst> scripts_;
     std::vector<BtInst> trees_;
     std::vector<DrawItem> draws_;
