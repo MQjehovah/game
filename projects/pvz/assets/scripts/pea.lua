@@ -35,7 +35,7 @@ function on_update(e, dt)
           SpawnFloatText({ x = zp.x, y = zp.y + 30, z = zp.z },
                          tostring(math.floor(p.damage)), false, 0.5)
           if p.snow == 1 then
-            ApplyStatus(ent, "slow", 3, 0.5)
+            Gameplay.ApplyStatus(ent, "slow", 3, 0.5)
             PlaySfx("frozen")
           else
             PlaySfx("splat")

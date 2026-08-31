@@ -60,8 +60,8 @@ function on_update(e, dt)
 
   local z = EntityComponent(e, "zombie")
   local speed = (z and z.speed) or 26
-  if HasStatus(e, "slow") then
-    local m = StatusMagnitude(e, "slow")
+  if Gameplay.HasStatus(e, "slow") then
+    local m = Gameplay.StatusMagnitude(e, "slow")
     if m > 0 and m < 1 then speed = speed * m end
   end
 

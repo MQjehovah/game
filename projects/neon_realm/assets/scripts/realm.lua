@@ -438,7 +438,7 @@ local function update_player(dt)
       after(0.4, function()
         for _, hit in ipairs(wolvesInRadius(pp.x, pp.z, 7)) do
           damageWolf(hit.e, 120)
-          ApplyStatus(hit.e, "slow", 3, 0.25)
+          Gameplay.ApplyStatus(hit.e, "slow", 3, 0.25)
         end
         fxRing("fx_ring_ice", pp.x, pp.z, 0.5, 7.2, 0.5)
         fxRing("fx_ring_ice", pp.x, pp.z, 0.3, 5.5, 0.7)
@@ -529,7 +529,7 @@ local function update_player(dt)
       local tx, tz = pp.x + dir.x * 6, pp.z + dir.z * 6
       for _, hit in ipairs(wolvesInRadius(tx, tz, 5.5)) do
         damageWolf(hit.e, 80)
-        ApplyStatus(hit.e, "slow", 2.5, 0.1)
+        Gameplay.ApplyStatus(hit.e, "slow", 2.5, 0.1)
       end
       -- 紫环: 越过半径再回弹 (snap)
       fxRing("fx_ring_volt", tx, tz, 6.4, 5.5, 0.35)

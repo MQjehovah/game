@@ -70,11 +70,6 @@ TEST(StatusApplyQueryRemove) {
     scene::RemoveStatus(c, scene::kStatusBurning);
     CHECK(!scene::HasStatus(c, scene::kStatusBurning));
     CHECK(scene::HasStatus(c, scene::kStatusPoison));
-
-    // Name resolution through the built-in table.
-    CHECK_EQ(scene::StatusIdByName("burning"), scene::kStatusBurning);
-    CHECK_EQ(scene::StatusIdByName("regen"), scene::kStatusRegen);
-    CHECK_EQ(scene::StatusIdByName("mystery"), 0u);
 }
 
 TEST(StatusTicksAndExpires) {
@@ -189,10 +184,10 @@ TEST(CombatStatusBindingsViaLua) {
     })";
     const char* lua = R"(
       function on_start(e)
-        ApplyStatus(e, "burning", 2, 3)
+        Gameplay.ApplyStatus(e, "burning", 2, 3)
       end
       function on_update(e, dt)
-        if HasStatus(e, "burning") then
+        if Gameplay.HasStatus(e, "burning") then
           SetVar("burn_active", 1)
         end
       end
@@ -235,7 +230,7 @@ TEST(StatusTickCustomHandlerOverridesDefault) {
         if hp ~= nil then SetHealth(ent, math.max(0, hp - 7)) end
       end
       function on_start(e)
-        ApplyStatus(e, "burning", 2, 3)
+        Gameplay.ApplyStatus(e, "burning", 2, 3)
       end
     )";
     scene::GameRuntime runtime;
@@ -298,8 +293,8 @@ TEST(RegenTickCapsAtMaxHpAndSkipsDead) {
     const char* lua = R"(
       function on_start(e)
         SetHealth(e, 40)
-        ApplyStatus(e, "regen", 2, 100)
-        ApplyStatus(FindNamedEntity("dead"), "regen", 2, 100)
+        Gameplay.ApplyStatus(e, "regen", 2, 100)
+        Gameplay.ApplyStatus(FindNamedEntity("dead"), "regen", 2, 100)
       end
     )";
     scene::GameRuntime runtime;
@@ -535,7 +530,7 @@ TEST(SpawnProjectileWithRangeHitRadiusAndStatuses) {
     const ecs::Entity wolf = runtime.FindNamedEntity("wolf_front");
     const ecs::Entity hero = runtime.FindNamedEntity("hero");
     runtime.SpawnProjectile({0,1,0}, {0,0,-1}, 14, 10, 2.0f, hero, 30.0f, 1.0f,
-                            {{"burning", 3.0f, 2.0f}});
+                            {{scene::kStatusBurning, 3.0f, 2.0f}});
     for (int i = 0; i < 30; ++i) runtime.Tick(1.0f/60.0f);
     CHECK_NEAR(runtime.EntityHealth(wolf).first, 40.0f, 1e-3); // 50 - 10
     CHECK(runtime.HasStatus(wolf, scene::kStatusBurning));
@@ -556,7 +551,7 @@ TEST(SpawnProjectileStatusesViaLua) {
     const char* lua = R"(
       function on_start(e)
         SpawnProjectile({x=0,y=1,z=0}, {x=0,y=0,z=-1}, 14, 10, 2.0, e, 30, 1.0,
-                        {{name="burning", duration=3, magnitude=2}})
+                        {{id=1, duration=3, magnitude=2}})
       end
     )";
     scene::GameRuntime runtime;
