@@ -128,6 +128,7 @@ add_library(neon_scene STATIC
   engine/src/scene/game_runtime_content.cpp
   engine/src/scene/game_runtime_draw.cpp
   engine/src/scene/systems/animation_system.cpp
+  engine/src/scene/systems/bt_runtime.cpp
   engine/src/scene/systems/projectile_system.cpp
   engine/src/scene/systems/hud_system.cpp
   engine/src/scene/systems/lagcomp_system.cpp
@@ -660,6 +661,7 @@ add_executable(neon_tests tests/test_main.cpp tests/test_serialize.cpp tests/tes
   tests/test_localization.cpp
   tests/test_game_runtime.cpp tests/test_game_runtime_m1.cpp tests/test_gltf_skin.cpp tests/test_anim.cpp
   tests/test_animation_system.cpp
+  tests/test_bt_runtime.cpp
   tests/test_kernel.cpp
   tests/test_modules.cpp
   tests/test_combat.cpp

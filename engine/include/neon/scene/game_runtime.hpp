@@ -10,7 +10,6 @@
 #include <unordered_set>
 #include <vector>
 
-#include "neon/bt/behavior_tree.hpp"
 #include "neon/core/localization.hpp"
 #include "neon/core/result.hpp"
 #include "neon/ecs/system_scheduler.hpp"
@@ -29,6 +28,7 @@
 #include "neon/scene/skinned_model.hpp"
 #include "neon/scene/status.hpp"
 #include "neon/scene/systems/animation_system.hpp"
+#include "neon/scene/systems/bt_runtime.hpp"
 #include "neon/scene/systems/hud_system.hpp"
 #include "neon/scene/systems/lagcomp_system.hpp"
 #include "neon/scene/systems/plugin_system.hpp"
@@ -297,7 +297,7 @@ public:
     // Stats for the editor profiler / debug panels.
     size_t EntityCount() const { return world_.EntityCount(); }
     size_t ScriptCount() const { return scriptRuntime_.Count(); }
-    size_t BehaviorTreeCount() const { return trees_.size(); }
+    size_t BehaviorTreeCount() const { return btRuntime_.Count(); }
     size_t DrawCount() const { return draws_.size(); }
     size_t PhysicsBodyCount() const { return physics_ ? physics_->BodyCount() : 0; }
     physics::World& PhysicsWorld() { return *physics_; }
@@ -383,21 +383,6 @@ public:
                             const std::string& scriptPath = {});
 
 private:
-    struct BtInst {
-        ecs::Entity ent;
-        std::unique_ptr<bt::BehaviorTree> tree;
-        script::Blackboard board;
-        // Persistent per-entity timer state. bt::Context owns its timers map
-        // but is rebuilt per tick, so the map is parked here between ticks and
-        // swapped in/out of the fresh Context (a Context cannot be stored: it
-        // binds a GameVars reference and the board address may move).
-        std::map<uint64_t, std::map<std::string, float>> timers;
-        // bt::Context::activePath captured after the last Tick (debug highlight).
-        std::string activePath;
-        // The host run_script/script_bool nodes call through (the tree
-        // entity's script backend, defaulting to Lua).
-        script::IScriptHost* host = nullptr;
-    };
     struct DrawItem {
         ecs::Entity ent;
         std::string meshKey;
@@ -475,12 +460,6 @@ private:
     };
 
     void AttachScripts();
-    void AttachTrees();
-    // Behavior-tree script hook: invokes the named global function on the
-    // tree entity's backend host (run_script / script_bool nodes). Returns
-    // Nil when the function is missing or the call failed.
-    script::Value CallScriptOnTree(const BtInst& inst, const std::string& fn,
-                                   uint64_t ent);
     // Advances every registered animation state (override clips + state
     // machines) and the default clips of skinned entities without an override
     // (fixed-step animation; deterministic like the rest of the simulation).
@@ -563,7 +542,10 @@ private:
     // and wires the shared scriptCtx_/hosts_ in as call parameters; it keeps
     // the script instances, load-dedup state and the input action map.
     ScriptRuntime scriptRuntime_;
-    std::vector<BtInst> trees_;
+    // Behavior-tree subsystem (Task 14): owns trees_ (attached BT instances).
+    // GameRuntime forwards AttachAll/Tick and the public blackboard/active-path
+    // observability, and wires the shared scriptCtx_/hosts_ in as call params.
+    BtRuntime btRuntime_;
     std::vector<DrawItem> draws_;
     // B6: alive-entity index over draws_ (EntityKey -> tracked). BuildDrawList
     // used to linear-scan draws_ per candidate entity (O(N*M) per frame).
