@@ -788,10 +788,7 @@ void GameRuntime::Stop() {
     projectiles_.Clear();
     tweens_.Clear();
     sceneParticles_.Reset();
-    poseHead_ = 0;
-    poseCount_ = 0;
-    for (auto& s : poseSlots_) s.clear();
-    autoRewindTicks_ = 0;
+    lagComp_.Clear();
     signalHandlers_.clear();
     pendingScene_.clear();
     loadedScripts_.clear();
@@ -2342,23 +2339,20 @@ void GameRuntime::Tick(float dt) {
     // ring reuses its snapshot maps (B10): no per-tick heap allocation, and
     // eviction is a head advance, not a vector front-erase.
     {
-        if (poseSlots_.empty()) poseSlots_.resize(kLagCompHistoryTicks);
-        std::unordered_map<uint64_t, math::Vec3>& snap = poseSlots_[poseHead_];
-        snap.clear();
+        std::vector<std::pair<uint64_t, math::Vec3>> poses;
         auto view = world_.ViewAll<SceneTransform>();
         for (size_t i = 0; i < view.Size(); ++i) {
             const ecs::Entity ent = world_.EntityAt<SceneTransform>(i);
             const SceneTransform* t = world_.Get<SceneTransform>(ent);
-            if (t) snap[EntityKey(ent)] = t->pos;
+            if (t) poses.emplace_back(EntityKey(ent), t->pos);
         }
         auto bindView = world_.ViewAll<script::CTransformBind>();
         for (size_t i = 0; i < bindView.Size(); ++i) {
             const ecs::Entity ent = world_.EntityAt<script::CTransformBind>(i);
             const script::CTransformBind* b = world_.Get<script::CTransformBind>(ent);
-            if (b) snap[EntityKey(ent)] = b->pos;
+            if (b) poses.emplace_back(EntityKey(ent), b->pos);
         }
-        poseHead_ = (poseHead_ + 1) % poseSlots_.size();
-        if (poseCount_ < poseSlots_.size()) ++poseCount_;
+        lagComp_.Record(poses);
     }
 
     // ChangeScene deferral: a script's ChangeScene call must not destroy the

@@ -2,6 +2,7 @@
 #include <string>
 
 #include "neon/neon.hpp"
+#include "neon/scene/systems/lagcomp_system.hpp"
 #include "game_server.hpp"
 #include "helpers.hpp"
 
@@ -163,4 +164,40 @@ TEST(LagCompServerRewindsByClientRtt) {
     CHECK_EQ(ticks, 6u); // (204/2) * 60 / 1000 = 6
     CHECK(server.Running());
     server.Shutdown();
+}
+
+// Standalone LagCompSystem: Record + Position roll back to the pose the entity
+// had `rewindTicks` snapshots ago; a rewind deeper than the ring clamps to the
+// oldest snapshot; entities absent from a snapshot report false.
+TEST(LagCompSystemStandaloneRollback) {
+    scene::LagCompSystem lag;
+    ecs::Entity wolf{7, 1};
+    const uint64_t key = (static_cast<uint64_t>(7) << 32) | 1u;
+    for (int i = 0; i < 5; ++i) lag.Record({{key, {0, 0, -2}}});
+    lag.Record({{key, {0, 0, -5}}}); // moved out of range; history still at -2
+
+    math::Vec3 out;
+    CHECK(lag.Position(wolf, 1, out));
+    CHECK_NEAR(out.z, -2.0f, 1e-4);
+    CHECK(lag.Position(wolf, 100, out)); // clamps to the oldest snapshot
+    CHECK_NEAR(out.z, -2.0f, 1e-4);
+
+    ecs::Entity fresh{9, 0}; // never in any snapshot
+    CHECK(!lag.Position(fresh, 1, out));
+}
+
+// The pose ring is capped: after more than kHistoryTicks records the oldest
+// snapshot is dropped and the ring stops growing.
+TEST(LagCompSystemRingCapped) {
+    scene::LagCompSystem lag;
+    ecs::Entity wolf{3, 0};
+    const uint64_t key = static_cast<uint64_t>(3) << 32;
+    for (uint32_t i = 0; i < scene::LagCompSystem::kHistoryTicks + 20; ++i)
+        lag.Record({{key, {static_cast<float>(i), 0, 0}}});
+    CHECK_EQ(lag.Size(), scene::LagCompSystem::kHistoryTicks);
+
+    math::Vec3 out;
+    CHECK(lag.Position(wolf, scene::LagCompSystem::kHistoryTicks - 1, out));
+    CHECK(lag.Position(wolf, 500, out)); // clamps to the oldest kept snapshot
+    CHECK_NEAR(out.x, static_cast<float>(20), 1e-4); // newest kept = tick 20
 }

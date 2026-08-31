@@ -29,6 +29,7 @@
 #include "neon/scene/skinned_model.hpp"
 #include "neon/scene/status.hpp"
 #include "neon/scene/systems/hud_system.hpp"
+#include "neon/scene/systems/lagcomp_system.hpp"
 #include "neon/scene/systems/projectile_system.hpp"
 #include "neon/scene/systems/scene_particle_system.hpp"
 #include "neon/scene/systems/tween_system.hpp"
@@ -344,16 +345,19 @@ public:
 
     // G3-4 lag compensation (authoritative server). The runtime records every
     // fixed tick's authoritative poses into a ring buffer
-    // (kLagCompHistoryTicks deep). Spatial overlap queries and hit tests can
-    // rewind to the pose a target had `rewindTicks` fixed ticks ago (while
-    // querying the CURRENT entity). SetAutoLagComp lets the authoritative
-    // server set a per-tick rewind from the most latent active client's
-    // measured RTT; LagCompPosition queries a single entity's historical pose
-    // (false when no snapshot that old exists for it).
-    static constexpr uint32_t kLagCompHistoryTicks = 64;
-    void SetAutoLagComp(uint32_t rewindTicks) { autoRewindTicks_ = rewindTicks; }
-    uint32_t AutoLagCompTicks() const { return autoRewindTicks_; }
-    bool LagCompPosition(ecs::Entity e, uint32_t rewindTicks, math::Vec3& out) const;
+    // (kLagCompHistoryTicks deep) via the lagComp_ subsystem. Spatial overlap
+    // queries and hit tests can rewind to the pose a target had `rewindTicks`
+    // fixed ticks ago (while querying the CURRENT entity). SetAutoLagComp lets
+    // the authoritative server set a per-tick rewind from the most latent
+    // active client's measured RTT; LagCompPosition queries a single entity's
+    // historical pose (false when no snapshot that old exists for it). These
+    // methods forward to LagCompSystem.
+    static constexpr uint32_t kLagCompHistoryTicks = LagCompSystem::kHistoryTicks;
+    void SetAutoLagComp(uint32_t rewindTicks) { lagComp_.SetAutoRewind(rewindTicks); }
+    uint32_t AutoLagCompTicks() const { return lagComp_.AutoRewindTicks(); }
+    bool LagCompPosition(ecs::Entity e, uint32_t rewindTicks, math::Vec3& out) const {
+        return lagComp_.Position(e, rewindTicks, out);
+    }
 
     // World-space particle burst (SceneParticleSystem, camera-facing
     // billboards, additive/alpha batches) — the neon_rush-quality VFX path.
@@ -656,17 +660,11 @@ private:
     script::InputMap inputMap_;             // Godot-style actions (input.json)
     std::string pendingScene_;              // ChangeScene deferred to next Tick
     std::vector<std::pair<std::string, uint64_t>> signalHandlers_; // Lua signals
-    // G3-4 pose history for lag compensation: one snapshot per fixed tick
-    // (EntityKey -> authoritative position), index 0 = oldest. The newest
-    // snapshot is appended at the end of every Tick and the ring is capped at
-    // kLagCompHistoryTicks (~1 second at 60Hz).
-    // G3-4/B10: lag-comp pose history as a fixed-capacity RING of reusable
-    // snapshot maps (one per history tick). The old vector<unordered_map>
-    // heap-allocated a new map every tick and moved the whole ring on eviction.
-    std::vector<std::unordered_map<uint64_t, math::Vec3>> poseSlots_;
-    size_t poseHead_ = 0;   // slot index of the OLDEST snapshot
-    size_t poseCount_ = 0;  // number of valid snapshots (<= capacity)
-    uint32_t autoRewindTicks_ = 0; // rewind used by overlap queries / hit tests
+    // G3-4 pose history for lag compensation: LagCompSystem owns the per-tick
+    // authoritative pose ring (EntityKey -> position) + the auto-rewind state.
+    // Tick records into it (lagComp_.Record) and OverlapSphere/OverlapBox
+    // rewind through it (lagComp_.Position).
+    LagCompSystem lagComp_;
     // Scene-level particle subsystem (world-space billboards + soft glow
     // sprite): GameRuntime forwards EmitParticles and ticks/draws it per frame.
     SceneParticleSystem sceneParticles_;
