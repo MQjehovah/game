@@ -1061,3 +1061,86 @@ TEST(InventoryUseOnUseFalseDoesNotConsume) {
     CHECK_NEAR(runtime.GameVar("useResult"), 0.0, 1e-6);
     CHECK_NEAR(runtime.GameVar("countAfter"), 1.0, 1e-6);
 }
+
+// ---------------------------------------------------------------------------
+// Gameplay.FirstPerson / Gameplay.ThirdPerson：带状态控制器（相机 GameVar 语义）
+//
+// headless 下 InputMouseX/Y、ActionAxis、ActionDown 均返回 0（无输入），所以
+// tick 后位置基本不变，但相机 GameVar 会被正确写入——这是可验证的核心行为。
+// cameraFocus 是 table 型 GameVar（C++ 的 GameVar(name) 只读 number），所以
+// 脚本侧把它转成 number 再回传（hasFocus / fx / fy / fz）。
+// ---------------------------------------------------------------------------
+
+TEST(GameplayFirstPersonCameraVars) {
+    const char* scene = R"({
+      "entities": [
+        {"name": "hero", "components": {
+          "transform": {"pos": [0,0,0]},
+          "health": {"hp": 100, "maxHp": 100},
+          "script": {"backend": "lua", "path": "fps.lua"}}}
+      ]
+    })";
+    const char* lua = R"(
+      function on_start(e)
+        local c = Gameplay.FirstPerson.new(e)
+        Gameplay.FirstPerson.tick(c, 0.016)
+        SetVar("lock", GetVar("cameraMouseLock"))
+        SetVar("dist", GetVar("cameraDist"))
+        SetVar("yawEq", (GetVar("cameraYaw") == c.yaw) and 1 or 0)
+        local f = GetVar("cameraFocus")
+        SetVar("hasFocus", (f ~= nil) and 1 or 0)
+        if f ~= nil then
+          SetVar("fx", f.x or -1)
+          SetVar("fy", f.y or -1)
+          SetVar("fz", f.z or -1)
+        end
+      end
+    )";
+    scene::GameRuntime runtime;
+    scene::GameRuntimeConfig cfg;
+    cfg.headless = true;
+    cfg.readScript = [&](const std::string&) { return std::string(lua); };
+    CHECK(runtime.Start(scene, cfg).Ok());
+
+    CHECK_NEAR(runtime.GameVar("lock"), 1.0, 1e-6);
+    CHECK_NEAR(runtime.GameVar("dist"), 2.0, 1e-6);
+    CHECK_NEAR(runtime.GameVar("yawEq"), 1.0, 1e-6);
+    CHECK_NEAR(runtime.GameVar("hasFocus"), 1.0, 1e-6);
+    // yaw=0：focus = eye - sin(yaw)*cd*dist（x 分量 0）、-cos(yaw)*cd*dist（z 负）。
+    CHECK_NEAR(runtime.GameVar("fx"), 0.0, 1e-6);
+    CHECK(runtime.GameVar("fz") < 0.0);
+}
+
+TEST(GameplayThirdPersonCameraVars) {
+    const char* scene = R"({
+      "entities": [
+        {"name": "hero", "components": {
+          "transform": {"pos": [0,0,0]},
+          "health": {"hp": 100, "maxHp": 100},
+          "script": {"backend": "lua", "path": "third.lua"}}}
+      ]
+    })";
+    const char* lua = R"(
+      function on_start(e)
+        local c = Gameplay.ThirdPerson.new(e)
+        Gameplay.ThirdPerson.tick(c, 0.016)
+        SetVar("lock", GetVar("cameraMouseLock"))
+        SetVar("dist", GetVar("cameraDist"))
+        local f = GetVar("cameraFocus")
+        SetVar("hasFocus", (f ~= nil) and 1 or 0)
+        if f ~= nil then
+          SetVar("fy", f.y or -1)
+        end
+      end
+    )";
+    scene::GameRuntime runtime;
+    scene::GameRuntimeConfig cfg;
+    cfg.headless = true;
+    cfg.readScript = [&](const std::string&) { return std::string(lua); };
+    CHECK(runtime.Start(scene, cfg).Ok());
+
+    CHECK_NEAR(runtime.GameVar("lock"), 0.0, 1e-6);
+    CHECK_NEAR(runtime.GameVar("dist"), 7.5, 1e-6);
+    CHECK_NEAR(runtime.GameVar("hasFocus"), 1.0, 1e-6);
+    CHECK_NEAR(runtime.GameVar("fy"), 1.2, 1e-6);
+}

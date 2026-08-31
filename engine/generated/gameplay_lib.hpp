@@ -294,6 +294,79 @@ function Gameplay.Inventory.load(bag, json, defs)
   end
   return bag
 end
+
+-- 第一人称（带状态对象）：鼠标视角 + 相对移动 + 相机在眼睛处
+Gameplay.FirstPerson = {}
+function Gameplay.FirstPerson.new(hero)
+  return { hero = hero, yaw = 0, pitch = 0.32, eyeH = 1.6, camDist = 2.0,
+           sens = 0.003, grounded = true, yvel = 0, groundY = 0.9, speed = 6 }
+end
+function Gameplay.FirstPerson.tick(c, dt)
+  c.yaw = c.yaw - InputMouseX() * c.sens
+  c.pitch = math.max(-1.2, math.min(1.2, c.pitch + InputMouseY() * c.sens))
+  local cy = c.yaw
+  local ix, iz = ActionAxis("move_strafe"), ActionAxis("move_forward")
+  local fwd = { x = -math.sin(cy), z = -math.cos(cy) }
+  local right = { x = math.cos(cy), z = -math.sin(cy) }
+  local dx = right.x * ix + fwd.x * iz
+  local dz = right.z * ix + fwd.z * iz
+  local pos = GetPosition(c.hero)
+  if pos == nil then return end
+  if ActionDown("jump") and c.grounded then c.yvel = 8; c.grounded = false end
+  if not c.grounded then
+    c.yvel = c.yvel - 20 * dt
+    pos.y = pos.y + c.yvel * dt
+    if pos.y <= c.groundY then pos.y = c.groundY; c.yvel = 0; c.grounded = true end
+  end
+  pos.x = pos.x + dx * c.speed * dt
+  pos.z = pos.z + dz * c.speed * dt
+  SetPosition(c.hero, pos)
+  SetRotationY(c.hero, c.yaw)
+  local cd = math.cos(c.pitch)
+  local ex, ey, ez = pos.x, pos.y + c.eyeH, pos.z
+  SetVar("cameraMouseLock", 1)
+  SetVar("cameraYaw", c.yaw)
+  SetVar("cameraPitch", c.pitch)
+  SetVar("cameraDist", c.camDist)
+  SetVar("cameraFocus", { x = ex - math.sin(c.yaw) * cd * c.camDist,
+                          y = ey - math.sin(c.pitch) * c.camDist,
+                          z = ez - math.cos(c.yaw) * cd * c.camDist })
+end
+
+-- 第三人称：轨道相机 + 面向移动方向
+Gameplay.ThirdPerson = {}
+function Gameplay.ThirdPerson.new(hero)
+  return { hero = hero, yaw = 0, grounded = true, yvel = 0, groundY = 0.9, speed = 6,
+           camDist = 7.5, camPitch = 0.42 }
+end
+function Gameplay.ThirdPerson.tick(c, dt)
+  local ix, iz = ActionAxis("move_strafe"), ActionAxis("move_forward")
+  local fwd = { x = -math.sin(c.yaw), z = -math.cos(c.yaw) }
+  local right = { x = math.cos(c.yaw), z = -math.sin(c.yaw) }
+  local dx = right.x * ix + fwd.x * iz
+  local dz = right.z * ix + fwd.z * iz
+  local len = math.sqrt(dx * dx + dz * dz)
+  local pos = GetPosition(c.hero)
+  if pos == nil then return end
+  if ActionDown("jump") and c.grounded then c.yvel = 8; c.grounded = false end
+  if not c.grounded then
+    c.yvel = c.yvel - 20 * dt
+    pos.y = pos.y + c.yvel * dt
+    if pos.y <= c.groundY then pos.y = c.groundY; c.yvel = 0; c.grounded = true end
+  end
+  pos.x = pos.x + dx * c.speed * dt
+  pos.z = pos.z + dz * c.speed * dt
+  if len > 0.01 then
+    c.yaw = math.atan(dx, -dz)
+    SetRotationY(c.hero, c.yaw)
+  end
+  SetPosition(c.hero, pos)
+  SetVar("cameraMouseLock", 0)
+  SetVar("cameraYaw", c.yaw)
+  SetVar("cameraPitch", c.camPitch)
+  SetVar("cameraDist", c.camDist)
+  SetVar("cameraFocus", { x = pos.x, y = pos.y + 1.2, z = pos.z })
+end
 )LUA";
 
 } // namespace neon::embedded
