@@ -9,6 +9,8 @@
 
 #include "neon/core/result.hpp"
 #include "neon/ecs/world.hpp"
+#include "neon/kernel/kernel.hpp"
+#include "neon/modules/subsystem_modules.hpp"
 #include "neon/net/protocol.hpp"
 #include "neon/net/reliable.hpp"
 #include "neon/net/rpc.hpp"
@@ -216,6 +218,10 @@ private:
     Config cfg_;
     net::UdpSocket sock_;
     net::MessageCodec codec_; // decodes datagrams from unknown senders (join path)
+    // Microkernel (P-E): owns the replaceable physics/script modules; created
+    // fresh per Start and torn down in Stop (outlives runtime_'s non-owning
+    // service pointers).
+    std::unique_ptr<kernel::Kernel> kernel_;
     scene::GameRuntime runtime_;
     NetInput controllerInput_; // wired into the runtime; fed by the controller client
     std::vector<ScriptedInput> scriptedInputs_; // T6.7 scripted-controller path

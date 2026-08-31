@@ -74,14 +74,32 @@ bool GameServer::Start(const Config& cfg) {
     }
 
     // Headless runtime: no renderer/audio/assets, just scripts + BT + physics.
+    // Microkernel (P-E): wire physics (custom/Jolt) + script through the Kernel.
+    // The native "plugin:<name>" backend keeps the string fallback (rare).
+    kernel_ = std::make_unique<kernel::Kernel>();
+    if (cfg_.physicsBackend.rfind("plugin:", 0) != 0) {
+#ifdef NEON_ENABLE_JOLT
+        if (cfg_.physicsBackend == "jolt")
+            kernel_->Add(std::make_unique<modules::PhysicsModule>(
+                std::make_unique<physics::JoltWorld>()));
+        else
+#endif
+            kernel_->Add(std::make_unique<modules::PhysicsModule>(
+                std::make_unique<physics::World>()));
+    }
+    if (auto lua = script::CreateLuaHost())
+        kernel_->Add(std::make_unique<modules::ScriptModule>(std::move(lua)));
+    kernel_->Init();
+
     scene::GameRuntimeConfig rcfg;
     rcfg.assets = nullptr;
     rcfg.headless = true;
+    rcfg.services = &kernel_->Services();
     rcfg.scriptBaseDir = cfg_.scriptBaseDir;
     rcfg.assetBaseDir = cfg_.assetBaseDir;
     rcfg.rngSeed = cfg_.rngSeed;
     rcfg.input = &controllerInput_;
-    rcfg.physicsBackend = cfg_.physicsBackend;
+    rcfg.physicsBackend = cfg_.physicsBackend; // only used for the "plugin:" fallback
     core::Status st = runtime_.Start(sceneJson, rcfg);
     if (!st.Ok()) {
         NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Error, "server: %s",
@@ -1052,6 +1070,10 @@ void GameServer::Shutdown() {
     running_ = false;
     clients_.clear();
     runtime_.Stop();
+    if (kernel_) {
+        kernel_->Shutdown();  // microkernel: tear down the physics/script modules
+        kernel_.reset();
+    }
     sock_.Close();
 }
 
