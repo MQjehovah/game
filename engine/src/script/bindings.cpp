@@ -376,18 +376,20 @@ Value NativeOverlapSphere(IScriptHost& host, void* user) {
 }
 
 // OverlapBox(center{x,y,z}, half{x,y,z}, yawDeg [, rewind]) -> array of
-// {entity=, x=, y=, z=}. yawDeg rotates the box around Y (the wiring layer
-// converts degrees to radians); rewind is the lag-comp rollback tick count.
+// {entity=, x=, y=, z=}. yawDeg rotates the box around Y (converted to radians
+// here, matching AttackBox); rewind is the lag-comp rollback tick count.
 Value NativeOverlapBox(IScriptHost& host, void* user) {
     auto* ctx = static_cast<ScriptContext*>(user);
     if (!ctx || !ctx->overlapBox) return Value::Nil();
     const math::Vec3 center = Vec3FromValue(host.GetArg(0), math::Vec3{});
     const math::Vec3 half = Vec3FromValue(host.GetArg(1), math::Vec3{1, 1, 1});
-    const float yawDeg = host.GetArg(2).type == Value::Type::Number
-                             ? static_cast<float>(host.GetArg(2).number) : 0.0f;
+    const float yaw =
+        host.GetArg(2).type == Value::Type::Number
+            ? static_cast<float>(host.GetArg(2).number) * math::kDegToRad
+            : 0.0f;
     const uint32_t rewind = host.ArgCount() >= 4 && host.GetArg(3).type == Value::Type::Number
                                 ? SafeU32FromNumber(host.GetArg(3).number) : 0u;
-    return ctx->overlapBox(center, half, yawDeg, rewind);
+    return ctx->overlapBox(center, half, yaw, rewind);
 }
 
 Value NativeInputMouseDown(IScriptHost& host, void* user) {

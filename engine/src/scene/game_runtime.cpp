@@ -679,9 +679,9 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     scriptCtx_.overlapSphere = [this](const math::Vec3& c, float r, uint32_t rewind) {
         return OverlapHitsToValue(OverlapSphere(c, r, rewind));
     };
-    scriptCtx_.overlapBox = [this](const math::Vec3& c, const math::Vec3& half, float yawDeg,
+    scriptCtx_.overlapBox = [this](const math::Vec3& c, const math::Vec3& half, float yaw,
                                    uint32_t rewind) {
-        return OverlapHitsToValue(OverlapBox(c, half, yawDeg * math::kDegToRad, rewind));
+        return OverlapHitsToValue(OverlapBox(c, half, yaw, rewind));
     };
     scriptCtx_.spawnScript = [this](ecs::Entity e, const std::string& path) {
         if (!world_.Alive(e)) return;

@@ -155,7 +155,10 @@ struct ScriptContext {
     // Spatial overlap queries (script-facing): return {entity=, x=, y=, z=}
     // arrays. rewind is the lag-comp rollback tick count (0 = current pose).
     std::function<script::Value(const math::Vec3&, float, uint32_t)> overlapSphere;
-    std::function<script::Value(const math::Vec3&, const math::Vec3&, float, uint32_t)> overlapBox;
+    // The box is oriented by `yaw` radians around Y (bindings convert yawDeg
+    // degrees -> radians, same convention as attackBox above).
+    std::function<script::Value(const math::Vec3&, const math::Vec3&, float yaw, uint32_t)>
+        overlapBox;
     // Sequence-frame sprite animation: switches an entity's sprite to play the
     // given frame list at `fps` (loop). The script host keeps the frame paths
     // as strings; GameRuntime resolves them to asset paths.

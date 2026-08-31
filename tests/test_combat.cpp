@@ -448,11 +448,17 @@ TEST(OverlapBindingsViaLua) {
         local hits = OverlapSphere({x=0,y=0,z=0}, 5)
         SetVar("n", #hits)
         local totalHp = 0
+        local hasFront = 0
+        local hasSide = 0
         for _, h in ipairs(hits) do
           local hp = GetHealth(h.entity)
           if hp ~= nil then totalHp = totalHp + hp end
+          if h.x == 0 and h.z == -2 then hasFront = 1 end   -- wolf_front pos
+          if h.x == 3 and h.z == 0 then hasSide = 1 end     -- wolf_side pos
         end
         SetVar("total", totalHp)
+        SetVar("hasFront", hasFront)
+        SetVar("hasSide", hasSide)
         -- yaw-0 box (half 2,10,0.5): |z|<=0.5 excludes the front wolf (z=-2).
         SetVar("box0", #OverlapBox({x=0,y=0,z=0}, {x=2,y=10,z=0.5}, 0))
         -- yaw-90 box: the rotation swaps half-extents -> |z|<=2 catches it.
@@ -467,6 +473,8 @@ TEST(OverlapBindingsViaLua) {
 
     CHECK_NEAR(runtime.GameVar("n"), 3.0, 1e-6);
     CHECK_NEAR(runtime.GameVar("total"), 150.0, 1e-6);
+    CHECK_NEAR(runtime.GameVar("hasFront"), 1.0, 1e-6);
+    CHECK_NEAR(runtime.GameVar("hasSide"), 1.0, 1e-6);
     CHECK_NEAR(runtime.GameVar("box0"), 1.0, 1e-6);
     CHECK_NEAR(runtime.GameVar("box90"), 2.0, 1e-6);
 }
