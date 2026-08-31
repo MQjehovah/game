@@ -30,6 +30,7 @@
 #include "neon/scene/status.hpp"
 #include "neon/scene/systems/hud_system.hpp"
 #include "neon/scene/systems/lagcomp_system.hpp"
+#include "neon/scene/systems/plugin_system.hpp"
 #include "neon/scene/systems/prefab_system.hpp"
 #include "neon/scene/systems/projectile_system.hpp"
 #include "neon/scene/systems/scene_particle_system.hpp"
@@ -264,8 +265,8 @@ public:
     }
     // Runtime plugin manager (gameplay/system modules loaded from
     // <scriptBaseDir>/plugins). Null until Start() and after Stop().
-    plugin::RuntimePluginManager* PluginManager() { return plugins_.get(); }
-    const plugin::RuntimePluginManager* PluginManager() const { return plugins_.get(); }
+    plugin::RuntimePluginManager* PluginManager() { return plugins_.Manager(); }
+    const plugin::RuntimePluginManager* PluginManager() const { return plugins_.Manager(); }
     // Dispatches a named event to every subscribed runtime plugin (the server
     // uses this for player_join etc.). No-op when no plugins are loaded.
     bool DispatchPluginEvent(const std::string& name,
@@ -656,7 +657,7 @@ private:
     // per-interval ticks to Lua OnStatusTick). GameRuntime ticks it through
     // the SystemScheduler and forwards HasStatus/StatusMagnitude to it.
     StatusSystem status_;
-    std::unique_ptr<plugin::RuntimePluginManager> plugins_; // runtime plugins
+    PluginSystem plugins_; // runtime plugins (load/tick/stop lifecycle; Task 8)
     scene::ComponentRegistry compReg_; // built-in + data component factories
     std::vector<script::Draw2DCmd> draw2d_; // script 2D canvas (on_render)
     std::shared_ptr<ui::IUiSystem> ui_;     // replaceable game UI system

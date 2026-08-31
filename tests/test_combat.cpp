@@ -12,6 +12,7 @@
 #include "neon/scene/game_runtime.hpp"
 #include "neon/scene/status.hpp"
 #include "neon/scene/systems/hud_system.hpp"
+#include "neon/scene/systems/plugin_system.hpp"
 #include "neon/scene/systems/prefab_system.hpp"
 #include "neon/scene/systems/projectile_system.hpp"
 #include "neon/scene/systems/status_system.hpp"
@@ -1321,4 +1322,83 @@ TEST(PrefabSystemLoadAndSpawn) {
     CHECK_EQ(live.Count(), 1u);
     live.Clear();
     CHECK_EQ(live.Count(), 0u);
+}
+
+// Task 8: PluginSystem owns the runtime plugin lifecycle (create manager,
+// scan <scriptBaseDir>/plugins in dependency order -> on_load/on_start, tick,
+// stop). GameRuntime just forwards event/command access; standalone here we
+// verify the whole lifecycle through the wrapper + its forwarders.
+TEST(PluginSystemLifecycle) {
+    test::TempDir tmp;
+    const std::string dir = tmp.Str();
+#if defined(_WIN32)
+    ::_mkdir((dir + "/plugins").c_str());
+    ::_mkdir((dir + "/plugins/lua_mod").c_str());
+#else
+    ::mkdir((dir + "/plugins").c_str(), 0777);
+    ::mkdir((dir + "/plugins/lua_mod").c_str(), 0777);
+#endif
+    CHECK(test::WriteFileAll(
+        dir + "/plugins/lua_mod/plugin.json",
+        R"({"id":"lua_mod","type":"runtime","backend":"lua","entry":"init.lua"})"));
+    CHECK(test::WriteFileAll(
+        dir + "/plugins/lua_mod/init.lua",
+        R"(function on_load()
+  Plugin.SetVar("ticks", 0)
+  Plugin.On("tick", function(dt)
+    Plugin.SetVar("ticks", Plugin.GetVar("ticks") + 1)
+  end)
+  Plugin.On("player_join", function(cid)
+    Plugin.SetVar("joined", cid)
+  end)
+  Plugin.OnCommand("set_greeting", function(g)
+    Plugin.SetVar("greeting", g)
+    return true
+  end)
+end
+function on_start()
+  Plugin.SetVar("started", true)
+end
+)"));
+
+    auto readFile = [&](const std::string& p) {
+        std::ifstream in(p, std::ios::binary);
+        return std::string((std::istreambuf_iterator<char>(in)),
+                           std::istreambuf_iterator<char>());
+    };
+
+    // Idle state: no manager, forwarders no-op.
+    script::ScriptContext ctx;
+    scene::PluginSystem ps;
+    CHECK(!ps.Active());
+    CHECK(ps.Manager() == nullptr);
+    std::string err;
+    CHECK(!ps.DispatchEvent("player_join", {script::Value::Num(1)}));
+    CHECK(!ps.RunCommand("set_greeting", {script::Value::Str("hi")}, &err));
+
+    // Load scans <base>/plugins (injected reader), runs on_load + on_start.
+    ps.Load(dir, readFile, &ctx, 12345);
+    CHECK(ps.Active());
+    CHECK(ps.Manager() != nullptr);
+    CHECK_EQ(ps.Manager()->Count(), 1u);
+    CHECK(ctx.gameVars.Get("plugin:lua_mod:started").type == script::Value::Type::Bool);
+
+    // Tick dispatches to the subscribed handler with the sim clock injected.
+    ps.Tick(1.0f / 60.0f, 0.0);
+    ps.Tick(1.0f / 60.0f, 1.0 / 60.0);
+    CHECK_EQ(ctx.gameVars.Get("plugin:lua_mod:ticks").number, 2.0);
+
+    // Event + command forwarders reach the loaded manager.
+    CHECK(ps.DispatchEvent("player_join", {script::Value::Num(42)}));
+    CHECK_EQ(ctx.gameVars.Get("plugin:lua_mod:joined").number, 42.0);
+    CHECK(ps.RunCommand("set_greeting", {script::Value::Str("hello")}, &err));
+    CHECK_EQ(ctx.gameVars.Get("plugin:lua_mod:greeting").str, std::string("hello"));
+    CHECK(!ps.RunCommand("missing", {}, &err));
+
+    // Shutdown dispatches stop and reclaims the manager; forwarders no-op.
+    ps.Shutdown();
+    CHECK(!ps.Active());
+    CHECK(ps.Manager() == nullptr);
+    CHECK(!ps.DispatchEvent("player_join", {}));
+    ps.Shutdown(); // idempotent
 }

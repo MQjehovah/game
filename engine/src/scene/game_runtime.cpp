@@ -769,16 +769,10 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
 
     // Runtime plugins: gameplay/system modules in <scriptBaseDir>/plugins
     // (Lua or JS). They get their own isolated hosts sharing the engine
-    // bindings; failures are logged per plugin, never fatal.
-    plugins_ = std::make_unique<plugin::RuntimePluginManager>();
-    plugin::RuntimePluginManager::Config pc;
-    pc.baseDir = cfg_.scriptBaseDir.empty() ? "." : cfg_.scriptBaseDir;
-    pc.readFile = [this](const std::string& p) { return ReadScript(p); };
-    pc.ctx = &scriptCtx_;
-    pc.gameVars = &scriptCtx_.gameVars;
-    pc.rngSeed = cfg_.rngSeed ? cfg_.rngSeed : 1u;
-    plugins_->Load(pc);
-    plugins_->Start();
+    // bindings; failures are logged per plugin, never fatal. PluginSystem
+    // owns the whole lifecycle (load -> on_load/on_start, tick, stop).
+    plugins_.Load(cfg_.scriptBaseDir, [this](const std::string& p) { return ReadScript(p); },
+                  &scriptCtx_, cfg_.rngSeed ? cfg_.rngSeed : 1u);
 
     AttachScripts();
     AttachTrees();
@@ -823,10 +817,7 @@ void GameRuntime::Stop() {
     loadedScripts_.clear();
     scriptFailed_.clear();
     chunkHandlers_.clear(); // handles die with the hosts below
-    if (plugins_) {
-        plugins_->Stop();
-        plugins_.reset();
-    }
+    plugins_.Shutdown();
     if (hosts_.lua) {
         if (!injectedScriptHost_) hosts_.lua->Shutdown();  // the module owns an injected host
         hosts_.lua.reset();
@@ -1349,15 +1340,13 @@ bool GameRuntime::CallScriptFunction(const std::string& name,
 
 bool GameRuntime::DispatchPluginEvent(const std::string& name,
                                       const std::vector<script::Value>& args) {
-    if (!plugins_) return false;
-    plugins_->DispatchEvent(name, args);
-    return true;
+    return plugins_.DispatchEvent(name, args);
 }
 
 bool GameRuntime::RunPluginCommand(const std::string& name,
                                    const std::vector<script::Value>& args,
                                    std::string* error) {
-    return plugins_ && plugins_->RunCommand(name, args, error);
+    return plugins_.RunCommand(name, args, error);
 }
 
 ecs::Entity GameRuntime::FindNamedEntity(const std::string& name) {
@@ -2205,10 +2194,7 @@ void GameRuntime::Tick(float dt) {
                                      {EntityToValue(inst.ent), script::Value::Num(dt)});
         }
         // Runtime plugin systems tick after scene scripts (same sim clock).
-        if (plugins_) {
-            plugins_->SetSimTime(simTime_);
-            plugins_->Tick(dt);
-        }
+        plugins_.Tick(dt, simTime_);
     }
     // UI clicks are latch-until-consumed (see IUiSystem::ConsumeClicks): now
     // that every on_update has read Clicked() this tick, clear the latch so
