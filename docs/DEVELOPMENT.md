@@ -574,6 +574,14 @@ glTF 蒙皮导入（JOINTS/WEIGHTS/IBM，含 `FixSkinBind` 处理非标准导出
 引擎内置的确定性内容运行时（纯逻辑），非可替换后端。详见
 [`plans/2026-08-31-microkernel-design.md`](./plans/2026-08-31-microkernel-design.md)。
 
+**可替换边界（重要，避免"半成品"误读）**：微内核的**运行时替换**只对「被 GameRuntime
+消费的服务」有意义——物理世界、脚本宿主（它们经 `cfg.services` 非拥有注入）。**渲染/音频/
+平台/UI** 是**源码级或构造时替换**（`IRenderBackend` 的 GL/Vulkan 走编译开关、`IAudioBackend`
+的 miniaudio/winmm/null 走构造、`IWindow`/`IInput`、`IUiSystem` 走注入），它们的生命周期与
+窗口/Draw 循环深度绑定，运行时替换需求不强，故生产入口**刻意只接 `PhysicsModule` +
+`ScriptModule`**；`GfxModule`/`AudioModule` 保留为接口包装（`test_modules.cpp` 验证），供
+未来需要运行时热替换时启用。BT/动画/资产是确定性内容运行时（纯逻辑），非可替换后端。
+
 ---
 
 ## 4. 数据流（一帧 / 一个固定步）
@@ -879,8 +887,8 @@ C5 字符串 key 贯穿全栈（无 intern/GUID）；C6 组件序列化三份手
 C7 脚本绑定手写 95 个 ×3 处（hook 化后脚本层零 scene 依赖）；C8 线程基建 3 份复制；
 C9 UI 四轨并存；C10 着色器系统原始（全内嵌字符串）；C11 ECS Pool 防护；C12 CMake 单文件
 （三层库拆分完成，未按模块 add_subdirectory）；C13 scene↔script 循环；C14 玩法混进引擎核心
-（已下沉 Lua 重评）；C15 editor/server/game 未库化（editor 已库化，server/game 未）。
-→ C6/C7/C11/C13 `[x]`；C1/C3/C12/C14/C15 `[~]`；C2/C4/C5/C8/C9/C10 `[ ]`。
+（战斗/技能/状态已全部下沉 `Gameplay` 基础库 + Lua，引擎只留通用原语）；C15 editor/server/game 未库化（editor 已库化，server/game 未）。
+→ C6/C7/C11/C13/C14 `[x]`；C1/C3/C12/C15 `[~]`；C2/C4/C5/C8/C9/C10 `[ ]`。
 
 ### 10.4 D 系列 · 安全与工程化
 
