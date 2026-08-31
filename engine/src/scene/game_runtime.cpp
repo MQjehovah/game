@@ -2188,7 +2188,7 @@ void GameRuntime::InitSystemGraph() {
                  {typeid(SkinnedModel)},
                  {typeid(DrawItem), typeid(SkinnedModel), typeid(HudSystem::FloatText)});
     systems_.Add("statuses",
-                 sys([this](float d, ecs::World&) { TickStatuses(d); }),
+                 sys([this](float d, ecs::World& w) { status_.Tick(d, w, hosts_.lua.get()); }),
                  {typeid(StatusComponent)},
                  {typeid(StatusComponent), typeid(SceneHealth)});
     systems_.Add("projectiles",
@@ -2299,7 +2299,7 @@ void GameRuntime::Tick(float dt) {
     // order (tweens -> animations -> statuses -> projectiles);
     // parallelSystems=true lets independent systems overlap on the worker pool.
     // Conflict edges come from the systems' declared component reads/writes
-    // (e.g. TickStatuses and the projectile system both write SceneHealth, so
+    // (e.g. StatusSystem and the projectile system both write SceneHealth, so
     // they stay in registration order even in parallel mode) �?the parallel
     // result is bit-identical to the serial reference (validated by
     // TestRuntimeM1's determinism check).

@@ -32,6 +32,7 @@
 #include "neon/scene/systems/lagcomp_system.hpp"
 #include "neon/scene/systems/projectile_system.hpp"
 #include "neon/scene/systems/scene_particle_system.hpp"
+#include "neon/scene/systems/status_system.hpp"
 #include "neon/scene/systems/tween_system.hpp"
 #include "neon/script/bindings.hpp"
 #include "neon/script/gamevars.hpp"
@@ -364,7 +365,7 @@ public:
     // Exposed to scripts through the EmitParticles binding.
     void EmitParticles(const gfx::EmitterConfig& cfg);
 
-    // Status-effect observability (tests / HUD).
+    // Status-effect observability (tests / HUD). Forwarders to StatusSystem.
     bool HasStatus(ecs::Entity ent, uint32_t id) const;
     float StatusMagnitude(ecs::Entity ent, uint32_t id) const;
 
@@ -522,8 +523,6 @@ private:
     // Nil when the function is missing or the call failed.
     script::Value CallScriptOnTree(const BtInst& inst, const std::string& fn,
                                    uint64_t ent);
-    // Advances every entity's StatusComponent (damage/heal ticks + expiry).
-    void TickStatuses(float dt);
     // Advances every resolved skinned model's default clip (fixed-step
     // animation; deterministic like the rest of the simulation).
     void TickAnimations(float dt);
@@ -652,6 +651,10 @@ private:
     // here; TweenSystem advances them every frame and writes into the entity's
     // SceneTransform. prop: 0=pos 1=rot(euler degrees) 2=scale.
     TweenSystem tweens_;
+    // Status-effect subsystem (drives every StatusComponent tick + forwards
+    // per-interval ticks to Lua OnStatusTick). GameRuntime ticks it through
+    // the SystemScheduler and forwards HasStatus/StatusMagnitude to it.
+    StatusSystem status_;
     std::unique_ptr<plugin::RuntimePluginManager> plugins_; // runtime plugins
     scene::ComponentRegistry compReg_; // built-in + data component factories
     std::vector<script::Draw2DCmd> draw2d_; // script 2D canvas (on_render)

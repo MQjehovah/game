@@ -52,34 +52,12 @@ std::vector<GameRuntime::HealthHit> GameRuntime::OverlapBox(
     return out;
 }
 
-void GameRuntime::TickStatuses(float dt) {
-    auto view = world_.ViewAll<StatusComponent>();
-    for (size_t i = 0; i < view.Size(); ++i) {
-        ecs::Entity ent = world_.EntityAt<StatusComponent>(i);
-        StatusComponent* c = world_.Get<StatusComponent>(ent);
-        if (!c) continue;
-        TickStatus(*c, dt, [this, ent](uint32_t id, float magnitude) {
-            // 状态 tick 效果下沉 Lua：调用脚本全局 OnStatusTick(entity, id, magnitude)。
-            // 具体掉血/回血/减速规则由基础库 Gameplay（或项目脚本覆盖）定义。
-            if (auto* host = hosts_.lua.get()) {
-                if (host->HasFunction("OnStatusTick")) {
-                    (void)host->Call("OnStatusTick",
-                        { EntityToValue(ent), script::Value::Num(static_cast<double>(id)),
-                          script::Value::Num(static_cast<double>(magnitude)) });
-                }
-            }
-        });
-    }
-}
-
 bool GameRuntime::HasStatus(ecs::Entity ent, uint32_t id) const {
-    const StatusComponent* c = world_.Get<StatusComponent>(ent);
-    return c ? scene::HasStatus(*c, id) : false;
+    return status_.Has(const_cast<ecs::World&>(world_), ent, id);
 }
 
 float GameRuntime::StatusMagnitude(ecs::Entity ent, uint32_t id) const {
-    const StatusComponent* c = world_.Get<StatusComponent>(ent);
-    return c ? scene::StatusMagnitude(*c, id) : 0.0f;
+    return status_.Magnitude(const_cast<ecs::World&>(world_), ent, id);
 }
 
 } // namespace neon::scene

@@ -131,6 +131,7 @@ add_library(neon_scene STATIC
   engine/src/scene/systems/hud_system.cpp
   engine/src/scene/systems/lagcomp_system.cpp
   engine/src/scene/systems/scene_particle_system.cpp
+  engine/src/scene/systems/status_system.cpp
   engine/src/scene/systems/tween_system.cpp
   engine/src/scene/skinned_model.cpp
   engine/src/scene/status.cpp

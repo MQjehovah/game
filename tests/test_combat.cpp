@@ -6,6 +6,7 @@
 #include "neon/scene/status.hpp"
 #include "neon/scene/systems/hud_system.hpp"
 #include "neon/scene/systems/projectile_system.hpp"
+#include "neon/scene/systems/status_system.hpp"
 #include "neon/scene/systems/tween_system.hpp"
 #include "helpers.hpp"
 
@@ -90,6 +91,45 @@ TEST(StatusTicksAndExpires) {
     CHECK_EQ(ticks, 3);
     CHECK_NEAR(total, 6.0, 1e-6);
     CHECK(!scene::HasStatus(c, scene::kStatusBurning)); // expired
+}
+
+// StatusSystem (the GameRuntime combat split): drives StatusComponents in an
+// arbitrary ecs::World (no GameRuntime dependency) and forwards per-interval
+// ticks to the Lua OnStatusTick global when a host is supplied. Mirrors the
+// GameRuntime::TickStatuses/HasStatus/StatusMagnitude semantics.
+TEST(StatusSystemTicksWorld) {
+    scene::StatusSystem sys;
+    ecs::World world;
+    ecs::Entity e = world.Create();
+    world.Add<scene::StatusComponent>(e);
+    scene::ApplyStatus(*world.Get<scene::StatusComponent>(e), scene::kStatusBurning, 1.0f, 2.0f);
+    CHECK(sys.Has(world, e, scene::kStatusBurning));
+    CHECK_NEAR(sys.Magnitude(world, e, scene::kStatusBurning), 2.0, 1e-6);
+
+    for (int i = 0; i < 60; ++i) sys.Tick(1.0f / 60.0f, world, nullptr); // 1s @ 60Hz
+    CHECK(!sys.Has(world, e, scene::kStatusBurning));                     // expired
+    CHECK_NEAR(sys.Magnitude(world, e, scene::kStatusBurning), 0.0, 1e-6);
+}
+
+TEST(StatusSystemTicksLuaOnStatusTick) {
+    scene::StatusSystem sys;
+    ecs::World world;
+    ecs::Entity e = world.Create();
+    world.Add<scene::StatusComponent>(e);
+    scene::ApplyStatus(*world.Get<scene::StatusComponent>(e), scene::kStatusBurning, 2.0f, 5.0f);
+
+    auto host = script::CreateLuaHost();
+    CHECK(host != nullptr);
+    CHECK(host->Init());
+    CHECK(host->Load("ticks = 0\nfunction OnStatusTick(e, id, mag) ticks = ticks + 1 end"));
+    CHECK(host->Run().Ok());
+
+    for (int i = 0; i < 120; ++i) sys.Tick(1.0f / 60.0f, world, host.get()); // 2s @ 60Hz
+    const auto ticks = host->GetGlobal("ticks");
+    CHECK(ticks.Ok());
+    CHECK_NEAR(ticks.Value().number, 2.0, 1e-6);
+    CHECK(!sys.Has(world, e, scene::kStatusBurning)); // expired after 2s
+    host->Shutdown();
 }
 
 // ---------------------------------------------------------------------------
