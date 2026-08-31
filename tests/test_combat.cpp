@@ -36,6 +36,15 @@ const char* kSkillsJson = R"({
   }
 })";
 
+// Returns the hit entry for `e` (nullptr when `e` is absent from `hits`).
+const scene::GameRuntime::HealthHit* FindHit(
+    const std::vector<scene::GameRuntime::HealthHit>& hits, ecs::Entity e) {
+    for (const auto& h : hits) {
+        if (h.entity == e) return &h;
+    }
+    return nullptr;
+}
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -293,7 +302,129 @@ TEST(OverlapSphereQueriesHealthEntities) {
     CHECK(runtime.Start(kCombatScene, cfg).Ok());
     // kCombatScene: hero(0,0,0) hp100, wolf_front(0,0,-2) hp50, wolf_side(3,0,0)
     // hp50. The hero is itself a SceneHealth entity, so it is returned too.
-    CHECK_EQ(runtime.OverlapSphere({0,0,0}, 2.5f).size(), 2u); // hero + wolf_front
-    CHECK_EQ(runtime.OverlapSphere({0,0,0}, 4.0f).size(), 3u); // all three
-    CHECK_EQ(runtime.OverlapBox({0,0,0}, {0.5f,10.0f,2.5f}, 0.0f).size(), 2u); // hero + front
+    const ecs::Entity hero = runtime.FindNamedEntity("hero");
+    const ecs::Entity front = runtime.FindNamedEntity("wolf_front");
+    const ecs::Entity side = runtime.FindNamedEntity("wolf_side");
+    CHECK(hero.IsValid());
+    CHECK(front.IsValid());
+    CHECK(side.IsValid());
+
+    // radius 2.5: hero + wolf_front (wolf_side at 3 is out).
+    const auto hits = runtime.OverlapSphere({0,0,0}, 2.5f);
+    CHECK_EQ(hits.size(), 2u);
+    const scene::GameRuntime::HealthHit* heroHit = FindHit(hits, hero);
+    const scene::GameRuntime::HealthHit* frontHit = FindHit(hits, front);
+    CHECK(heroHit != nullptr);
+    CHECK(frontHit != nullptr);
+    CHECK(FindHit(hits, side) == nullptr);
+    // The hit position matches the entity's SceneTransform pos.
+    const scene::SceneTransform* ft = runtime.World().Get<scene::SceneTransform>(front);
+    CHECK(ft != nullptr);
+    CHECK_NEAR(frontHit->pos.x, ft->pos.x, 1e-4);
+    CHECK_NEAR(frontHit->pos.y, ft->pos.y, 1e-4);
+    CHECK_NEAR(frontHit->pos.z, ft->pos.z, 1e-4);
+    CHECK_NEAR(frontHit->pos.z, -2.0f, 1e-4);
+
+    // radius 4: all three are returned.
+    const auto all = runtime.OverlapSphere({0,0,0}, 4.0f);
+    CHECK_EQ(all.size(), 3u);
+    CHECK(FindHit(all, hero) != nullptr);
+    CHECK(FindHit(all, front) != nullptr);
+    CHECK(FindHit(all, side) != nullptr);
+
+    // yaw-0 box (|x|<=0.5, |y|<=10, |z|<=2.5): hero + wolf_front only.
+    const auto box = runtime.OverlapBox({0,0,0}, {0.5f,10.0f,2.5f}, 0.0f);
+    CHECK_EQ(box.size(), 2u);
+    CHECK(FindHit(box, hero) != nullptr);
+    CHECK(FindHit(box, front) != nullptr);
+    CHECK(FindHit(box, side) == nullptr);
+}
+
+TEST(OverlapExcludesDeadEntities) {
+    scene::GameRuntime runtime;
+    scene::GameRuntimeConfig cfg; cfg.headless = true;
+    CHECK(runtime.Start(kCombatScene, cfg).Ok());
+    const ecs::Entity side = runtime.FindNamedEntity("wolf_side");
+    CHECK(side.IsValid());
+
+    // Alive: wolf_side is inside the 4-unit sphere.
+    CHECK(FindHit(runtime.OverlapSphere({0,0,0}, 4.0f), side) != nullptr);
+
+    // hp 0 entities are filtered out of every overlap query.
+    scene::SceneHealth* h = runtime.World().Get<scene::SceneHealth>(side);
+    CHECK(h != nullptr);
+    h->hp = 0.0f;
+    CHECK(FindHit(runtime.OverlapSphere({0,0,0}, 4.0f), side) == nullptr);
+    CHECK_EQ(runtime.OverlapSphere({0,0,0}, 4.0f).size(), 2u); // hero + wolf_front
+}
+
+TEST(OverlapBoxRotatedYaw90) {
+    const char* boxScene = R"({
+      "entities": [
+        {"name": "a", "components": {"transform": {"pos": [0,0,-1]}, "health": {"hp": 50, "maxHp": 50}}},
+        {"name": "b", "components": {"transform": {"pos": [0,0,-2.5]}, "health": {"hp": 50, "maxHp": 50}}},
+        {"name": "c", "components": {"transform": {"pos": [2.5,0,0]}, "health": {"hp": 50, "maxHp": 50}}}
+      ]
+    })";
+    scene::GameRuntime runtime;
+    scene::GameRuntimeConfig cfg; cfg.headless = true;
+    CHECK(runtime.Start(boxScene, cfg).Ok());
+    const ecs::Entity a = runtime.FindNamedEntity("a");
+    const ecs::Entity b = runtime.FindNamedEntity("b");
+    const ecs::Entity c = runtime.FindNamedEntity("c");
+    CHECK(a.IsValid());
+    CHECK(b.IsValid());
+    CHECK(c.IsValid());
+
+    // yaw 0 box (half 2x2x1.5): |x|<=2, |y|<=2, |z|<=1.5 -> only "a".
+    const auto yaw0 = runtime.OverlapBox({0,0,0}, {2,2,1.5f}, 0.0f);
+    CHECK_EQ(yaw0.size(), 1u);
+    CHECK(FindHit(yaw0, a) != nullptr);
+    CHECK(FindHit(yaw0, b) == nullptr);
+    CHECK(FindHit(yaw0, c) == nullptr);
+
+    // yaw 90 deg: the box rotates to face +X -> |x|<=1.5, |z|<=2. "a" is still
+    // inside (|z|=1 <= 2), "b" (|z|=2.5) and "c" (|x|=2.5) are outside.
+    const auto yaw90 = runtime.OverlapBox({0,0,0}, {2,2,1.5f}, math::kPi * 0.5f);
+    CHECK_EQ(yaw90.size(), 1u);
+    CHECK(FindHit(yaw90, a) != nullptr);
+    CHECK(FindHit(yaw90, b) == nullptr);
+    CHECK(FindHit(yaw90, c) == nullptr);
+}
+
+TEST(OverlapSphereRewindUsesHistoricalPose) {
+    const char* lagScene = R"({
+      "entities": [
+        {"name": "hero", "components": {"transform": {"pos": [0,0,0]}, "health": {"hp": 100, "maxHp": 100}}},
+        {"name": "wolf", "components": {"transform": {"pos": [0,0,-2]}, "health": {"hp": 50, "maxHp": 50}}}
+      ]
+    })";
+    scene::GameRuntime runtime;
+    scene::GameRuntimeConfig cfg; cfg.headless = true;
+    CHECK(runtime.Start(lagScene, cfg).Ok());
+    const ecs::Entity hero = runtime.FindNamedEntity("hero");
+    const ecs::Entity wolf = runtime.FindNamedEntity("wolf");
+    CHECK(hero.IsValid());
+    CHECK(wolf.IsValid());
+
+    for (int i = 0; i < 5; ++i) runtime.Tick(1.0f / 60.0f); // record wolf at (0,0,-2)
+    scene::SceneTransform* t = runtime.World().Get<scene::SceneTransform>(wolf);
+    CHECK(t != nullptr);
+    t->pos = {0, 0, -5};
+    runtime.Tick(1.0f / 60.0f); // record the new pose
+
+    // Current pose (0,0,-5) is outside the 3-unit sphere; only the hero hits.
+    const auto current = runtime.OverlapSphere({0,0,0}, 3.0f);
+    CHECK_EQ(current.size(), 1u);
+    CHECK(FindHit(current, hero) != nullptr);
+    CHECK(FindHit(current, wolf) == nullptr);
+
+    // Rewound 1 tick, the wolf's historical pose (0,0,-2) is inside and is
+    // reported at that position.
+    const auto rewound = runtime.OverlapSphere({0,0,0}, 3.0f, 1);
+    CHECK_EQ(rewound.size(), 2u);
+    CHECK(FindHit(rewound, hero) != nullptr);
+    const scene::GameRuntime::HealthHit* wolfHit = FindHit(rewound, wolf);
+    CHECK(wolfHit != nullptr);
+    CHECK_NEAR(wolfHit->pos.z, -2.0f, 1e-4);
 }
