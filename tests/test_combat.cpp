@@ -356,6 +356,45 @@ TEST(CombatStatusBindingsViaLua) {
     CHECK(!runtime.HasStatus(hero, scene::kStatusBurning));
 }
 
+// Task 7: a project script's own OnStatusTick overrides the base library's
+// default (last-write-wins over the shared global). The custom handler applies
+// a fixed -7 per tick regardless of the burning magnitude, so the default
+// burning rule (-mag) is bypassed entirely.
+TEST(StatusTickCustomHandlerOverridesDefault) {
+    const char* scene = R"({
+      "entities": [
+        {"name": "hero", "components": {
+          "transform": {"pos": [0,0,0]},
+          "health": {"hp": 100, "maxHp": 100},
+          "script": {"backend": "lua", "path": "custom.lua"}}}
+      ]
+    })";
+    const char* lua = R"(
+      function OnStatusTick(ent, id, mag)
+        local hp = GetHealth(ent)
+        if hp ~= nil then SetHealth(ent, math.max(0, hp - 7)) end
+      end
+      function on_start(e)
+        ApplyStatus(e, "burning", 2, 3)
+      end
+    )";
+    scene::GameRuntime runtime;
+    scene::GameRuntimeConfig cfg;
+    cfg.headless = true;
+    cfg.readScript = [&](const std::string&) { return std::string(lua); };
+    CHECK(runtime.Start(scene, cfg).Ok());
+
+    const ecs::Entity hero = runtime.FindNamedEntity("hero");
+    CHECK(hero.IsValid());
+    CHECK(runtime.HasStatus(hero, scene::kStatusBurning));
+
+    // 2 seconds: burning ticks twice. Default burning would be -3/tick = -6;
+    // the custom override applies -7/tick = -14 -> 100 - 14 = 86.
+    for (int i = 0; i < 120; ++i) runtime.Tick(1.0f / 60.0f);
+    CHECK_NEAR(runtime.EntityHealth(hero).first, 86.0f, 1e-3);
+    CHECK(!runtime.HasStatus(hero, scene::kStatusBurning));
+}
+
 // World::Add must be idempotent: a second Add for the same entity+type must
 // not orphan the pool's dense entry (double-add previously corrupted the
 // SparseSet). The combat hooks rely on this when applying statuses.

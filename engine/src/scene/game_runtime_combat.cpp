@@ -204,16 +204,14 @@ void GameRuntime::TickStatuses(float dt) {
         StatusComponent* c = world_.Get<StatusComponent>(ent);
         if (!c) continue;
         TickStatus(*c, dt, [this, ent](uint32_t id, float magnitude) {
-            SceneHealth* h = world_.Get<SceneHealth>(ent);
-            if (!h || h->hp <= 0.0f) return;
-            if (id == kStatusRegen) {
-                // Regen magnitude is a heal amount per tick.
-                h->hp = std::fmin(h->maxHp, h->hp + magnitude);
-            } else if (id == kStatusSlow) {
-                // Slow is a movement modifier read by scripts (magnitude =
-                // speed factor); it deals no tick damage.
-            } else {
-                h->hp = std::fmax(0.0f, h->hp - magnitude);
+            // 状态 tick 效果下沉 Lua：调用脚本全局 OnStatusTick(entity, id, magnitude)。
+            // 具体掉血/回血/减速规则由基础库 Gameplay（或项目脚本覆盖）定义。
+            if (auto* host = hosts_.lua.get()) {
+                if (host->HasFunction("OnStatusTick")) {
+                    (void)host->Call("OnStatusTick",
+                        { EntityToValue(ent), script::Value::Num(static_cast<double>(id)),
+                          script::Value::Num(static_cast<double>(magnitude)) });
+                }
             }
         });
     }
