@@ -24,6 +24,65 @@ function Gameplay.Cooldowns.tick(self, dt)
     if v > 0 then self.cds[k] = math.max(0, v - dt) end
   end
 end
+
+-- 命中/AoE/投射物（依赖 OverlapSphere/OverlapBox/SpawnProjectile/GetHealth/SetHealth）
+local function SameEntity(a, b)
+  if a == nil or b == nil then return false end
+  return a.id == b.id and a.gen == b.gen
+end
+
+-- 弧线近战：原点+方向+范围+张角(度)+伤害，命中返回数量（caster 不伤己）
+Gameplay.MeleeArc = function(origin, dir, range, arcDeg, damage, caster)
+  local cosArc = math.cos(math.rad(arcDeg * 0.5))
+  local hits = OverlapSphere(origin, range)
+  local n = 0
+  for _, h in ipairs(hits) do
+    if not SameEntity(h.entity, caster) then
+      local dx, dz = h.x - origin.x, h.z - origin.z
+      local horiz = math.sqrt(dx*dx + dz*dz)
+      if horiz > 1e-4 and math.abs(h.y - origin.y) <= 2.0 then
+        local dot = (dx/horiz)*dir.x + (dz/horiz)*dir.z
+        if dot >= cosArc then
+          local hp = GetHealth(h.entity)
+          if hp ~= nil then SetHealth(h.entity, math.max(0, hp - damage)) end
+          n = n + 1
+        end
+      end
+    end
+  end
+  return n
+end
+
+-- 圆形 AoE
+Gameplay.AoE = function(origin, radius, damage, caster)
+  local hits = OverlapSphere(origin, radius)
+  local n = 0
+  for _, h in ipairs(hits) do
+    if not SameEntity(h.entity, caster) then
+      local hp = GetHealth(h.entity)
+      if hp ~= nil then SetHealth(h.entity, math.max(0, hp - damage)) end
+      n = n + 1
+    end
+  end
+  return n
+end
+
+-- 盒攻击（yawDeg 角度）
+Gameplay.BoxAttack = function(center, half, yawDeg, damage)
+  local hits = OverlapBox(center, half, yawDeg)
+  local n = 0
+  for _, h in ipairs(hits) do
+    local hp = GetHealth(h.entity)
+    if hp ~= nil then SetHealth(h.entity, math.max(0, hp - damage)) end
+    n = n + 1
+  end
+  return n
+end
+
+-- 投射物：SpawnProjectile 薄包装
+Gameplay.Projectile = function(origin, dir, speed, damage, life, range, hitRadius, caster, statuses)
+  SpawnProjectile(origin, dir, speed, damage, life, caster, range, hitRadius, statuses)
+end
 )LUA";
 
 } // namespace neon::embedded

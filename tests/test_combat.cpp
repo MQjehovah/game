@@ -655,3 +655,75 @@ TEST(SpawnProjectileHitRadiusGatesHit) {
         CHECK_NEAR(runtime.EntityHealth(target).first, 40.0f, 1e-3);
     }
 }
+
+// ---------------------------------------------------------------------------
+// Gameplay 内嵌库：MeleeArc / AoE / BoxAttack / Projectile（纯 Lua 玩法函数）
+// ---------------------------------------------------------------------------
+
+// Hero carries the gameplay.lua script; the two wolves are pure SceneHealth
+// targets (hero caster is filtered out of its own hits via SameEntity).
+const char* kGameplayCombatScene = R"({
+  "entities": [
+    {"name": "hero", "components": {
+      "transform": {"pos": [0,0,0]},
+      "health": {"hp": 100, "maxHp": 100},
+      "script": {"backend": "lua", "path": "gameplay.lua"}}},
+    {"name": "wolf_front", "components": {"transform": {"pos": [0,0,-2]}, "health": {"hp": 50, "maxHp": 50}}},
+    {"name": "wolf_side", "components": {"transform": {"pos": [3,0,0]}, "health": {"hp": 50, "maxHp": 50}}}
+  ]
+})";
+
+TEST(GameplayMeleeArcLua) {
+    const char* lua = R"(
+      function on_start(e)
+        Gameplay.MeleeArc({x=0,y=0,z=0}, {x=0,y=0,z=-1}, 3, 100, 28, e)
+      end
+    )";
+    scene::GameRuntime runtime;
+    scene::GameRuntimeConfig cfg;
+    cfg.headless = true;
+    cfg.readScript = [&](const std::string&) { return std::string(lua); };
+    CHECK(runtime.Start(kGameplayCombatScene, cfg).Ok());
+
+    const ecs::Entity front = runtime.FindNamedEntity("wolf_front");
+    const ecs::Entity side = runtime.FindNamedEntity("wolf_side");
+    CHECK_NEAR(runtime.EntityHealth(front).first, 22.0f, 1e-3); // 50 - 28
+    CHECK_NEAR(runtime.EntityHealth(side).first, 50.0f, 1e-3); // out of the 100-deg arc
+}
+
+TEST(GameplayAoeLua) {
+    const char* lua = R"(
+      function on_start(e)
+        Gameplay.AoE({x=0,y=0,z=0}, 2.5, 10, e)
+      end
+    )";
+    scene::GameRuntime runtime;
+    scene::GameRuntimeConfig cfg;
+    cfg.headless = true;
+    cfg.readScript = [&](const std::string&) { return std::string(lua); };
+    CHECK(runtime.Start(kGameplayCombatScene, cfg).Ok());
+
+    const ecs::Entity front = runtime.FindNamedEntity("wolf_front");
+    const ecs::Entity side = runtime.FindNamedEntity("wolf_side");
+    CHECK_NEAR(runtime.EntityHealth(front).first, 40.0f, 1e-3); // dist 2 <= 2.5
+    CHECK_NEAR(runtime.EntityHealth(side).first, 50.0f, 1e-3);  // dist 3 > 2.5
+}
+
+TEST(GameplayProjectileLua) {
+    const char* lua = R"(
+      function on_start(e)
+        Gameplay.Projectile({x=0,y=1,z=0}, {x=0,y=0,z=-1}, 14, 10, 2, 30, 1.0, e,
+                            {{name="burning",duration=3,magnitude=2}})
+      end
+    )";
+    scene::GameRuntime runtime;
+    scene::GameRuntimeConfig cfg;
+    cfg.headless = true;
+    cfg.readScript = [&](const std::string&) { return std::string(lua); };
+    CHECK(runtime.Start(kGameplayCombatScene, cfg).Ok());
+
+    const ecs::Entity front = runtime.FindNamedEntity("wolf_front");
+    for (int i = 0; i < 30; ++i) runtime.Tick(1.0f / 60.0f);
+    CHECK_NEAR(runtime.EntityHealth(front).first, 40.0f, 1e-3); // 50 - 10
+    CHECK(runtime.HasStatus(front, scene::kStatusBurning));
+}
