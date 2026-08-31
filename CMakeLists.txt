@@ -126,9 +126,9 @@ add_library(neon_scene STATIC
   engine/src/scene/game_runtime.cpp
   engine/src/scene/game_runtime_combat.cpp
   engine/src/scene/game_runtime_content.cpp
-  engine/src/scene/game_runtime_draw.cpp
   engine/src/scene/systems/animation_system.cpp
   engine/src/scene/systems/bt_runtime.cpp
+  engine/src/scene/systems/draw_system.cpp
   engine/src/scene/systems/projectile_system.cpp
   engine/src/scene/systems/hud_system.cpp
   engine/src/scene/systems/lagcomp_system.cpp

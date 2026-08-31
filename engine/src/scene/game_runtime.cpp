@@ -434,7 +434,8 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
         return e;
     };
     // Sequence-frame sprite animation: update the entity's SceneSprite frames
-    // and reset its DrawItem frame clock so the new animation starts fresh.
+    // and reset its draw item's frame clock so the new animation starts fresh
+    // (the draw-item half lives in DrawSystem::SetSpriteFrames; Task 16).
     scriptCtx_.setSpriteFrames = [this](ecs::Entity e, const std::vector<std::string>& frames,
                                         float fps) {
         if (!world_.Alive(e)) return;
@@ -445,19 +446,7 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
             s->sheet.clear();
             s->sheetFrames = 0;
         }
-        for (DrawItem& d : draws_) {
-            if (d.ent != e) continue;
-            d.spriteFrames = frames;
-            d.spriteFps = fps;
-            d.spriteLoop = true;
-            d.spriteAnimTime = 0.0f;
-            d.spriteFrame = -1;
-            d.spriteTex = frames.empty() || frames[0].empty() ? std::string() : frames[0];
-            d.sheetTex.clear();
-            d.sheetFrames = 0;
-            d.resolved = false;
-            break;
-        }
+        drawSystem_.SetSpriteFrames(e, frames, fps);
     };
     // Spritesheet variant of the above (one atlas texture, sub-rects).
     scriptCtx_.setSpriteSheet = [this](ecs::Entity e, const std::string& sheet, int count,
@@ -470,19 +459,7 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
             s->loop = true;
             s->frames.clear();
         }
-        for (DrawItem& d : draws_) {
-            if (d.ent != e) continue;
-            d.sheetTex = sheet;
-            d.sheetFrames = count;
-            d.spriteFps = fps;
-            d.spriteLoop = true;
-            d.spriteAnimTime = 0.0f;
-            d.spriteFrame = -1;
-            d.spriteTex = sheet;
-            d.spriteFrames.clear();
-            d.resolved = false;
-            break;
-        }
+        drawSystem_.SetSpriteSheet(e, sheet, count, fps);
     };
     scriptCtx_.spawnPrefab = [this](const std::string& name, const math::Vec3& pos) {
         return SpawnPrefab(name, pos);
@@ -793,16 +770,21 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
 
     AttachScripts();
     btRuntime_.AttachAll(world_, scriptCtx_, {hosts_.lua.get(), hosts_.js.get()});
+    // Draw subsystem (Task 16): inject the cfg_-derived asset/path state (fresh
+    // per Start; ChangeScene restarts reuse the same DrawSystem instance) so the
+    // draw-list build + Draw resolve through the runtime's AssetManager.
+    drawSystem_.Configure({cfg_.assets, cfg_.asyncMeshLoad,
+                           [this](const std::string& p) { return FullAssetPath(p); }});
     // Headless hosts (servers / sim tests) have no renderer: skip the draw
     // list entirely. Draw() is also a no-op without cfg_.assets, so both the
     // flag and a null AssetManager keep the runtime window-free.
-    if (!cfg_.headless) BuildDrawList();
+    if (!cfg_.headless) drawSystem_.Build(world_, animations_);
 
     running_ = true;
     simTime_ = 0.0;
     NEON_LOG_CAT(neon::core::LogCategory::Scene, neon::core::LogLevel::Info,
                  "runtime: started (%zu entities, %zu scripts, %zu trees, %zu draws)",
-                 EntityCount(), ScriptCount(), BehaviorTreeCount(), draws_.size());
+                 EntityCount(), ScriptCount(), BehaviorTreeCount(), drawSystem_.DrawCount());
     return core::Status::Ok(true);
 }
 
@@ -823,7 +805,7 @@ void GameRuntime::Stop() {
     uiSystem_.Set(nullptr);
     scriptRuntime_.Clear();
     btRuntime_.Clear();
-    draws_.clear();
+    drawSystem_.Clear();
     animations_.Clear();
     projectiles_.Clear();
     tweens_.Clear();
@@ -961,10 +943,8 @@ bool GameRuntime::PlayAnimation(ecs::Entity e, const std::string& clip, bool loo
                                 float crossFade, float speed) {
     if (!world_.Alive(e)) return false;
     // Only skinned entities can play clips; refuse anything else so scripts
-    // can branch on the return value.
-    bool skinned = false;
-    for (const DrawItem& d : draws_)
-        if (d.ent == e && d.skinned && d.skinned->Valid()) skinned = true;
+    // can branch on the return value (DrawSystem::HasSkinned, Task 16).
+    bool skinned = drawSystem_.HasSkinned(e);
     const SceneMesh* mesh = world_.Get<SceneMesh>(e);
     if (!skinned && (!mesh || mesh->meshKey.compare(0, 5, "gltf:") != 0)) return false;
     SceneAnimOverride* ov = world_.Get<SceneAnimOverride>(e);
@@ -1049,473 +1029,19 @@ void GameRuntime::SetPostFx(bool ssao, bool volumetric, bool ssr,
 void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera,
                        float previewZoom) {
     if (!running_ || !cfg_.assets) return; // sim-only runtime draws nothing
-    core::ScopedTimer drawTimer("runtime.draw");
-    // Post-process FX overrides (mirrors the editor toggles so play matches).
-    renderer.SetSsaoEnabled(postSsao_);
-    renderer.SetSsaoIntensity(postSsaoIntensity_);
-    renderer.SetVolumetricEnabled(postVolumetric_);
-    renderer.SetVolumetricIntensity(postVolumetricIntensity_);
-    renderer.SetSsrEnabled(postSsr_);
-    renderer.SetSsrIntensity(postSsrIntensity_);
-    // P2-3 scene camera: when the world contains a camera entity, its transform
-    // + camera component become the active view (Godot Camera3D-style).
-    gfx::Camera cam = camera;
-    bool usedCameraEntity = false;
-    // Script-driven FPS game camera: while the "cameraMouseLock" GameVar is
-    // truthy, the script owns the rendered view through cameraFocus (placed at
-    // eye + viewDir * cameraDist by the controller) plus cameraYaw/cameraPitch/
-    // cameraDist �?the same GameVars the host orbit cameras publish. This
-    // overrides any scene Camera3D entity, so the runtime renders through the
-    // player's eye in both the standalone player and the editor playtest.
-    const script::Value fpsLock = scriptCtx_.gameVars.Get("cameraMouseLock");
-    const bool fpsCam = (fpsLock.type == script::Value::Type::Number &&
-                         fpsLock.number != 0.0) ||
-                        (fpsLock.type == script::Value::Type::Bool && fpsLock.boolean);
-    if (fpsCam) {
-        math::Vec3 focus;
-        const script::Value focusVar = scriptCtx_.gameVars.Get("cameraFocus");
-        if (focusVar.type == script::Value::Type::Table && focusVar.table) {
-            for (const auto& kv : focusVar.table->fields) {
-                if (kv.second.type != script::Value::Type::Number) continue;
-                if (kv.first == "x") focus.x = static_cast<float>(kv.second.number);
-                else if (kv.first == "y") focus.y = static_cast<float>(kv.second.number);
-                else if (kv.first == "z") focus.z = static_cast<float>(kv.second.number);
-            }
-        }
-        float yaw = 0.0f, pitch = 0.0f, dist = 2.0f;
-        const script::Value yawVar = scriptCtx_.gameVars.Get("cameraYaw");
-        if (yawVar.type == script::Value::Type::Number) yaw = static_cast<float>(yawVar.number);
-        const script::Value pitchVar = scriptCtx_.gameVars.Get("cameraPitch");
-        if (pitchVar.type == script::Value::Type::Number)
-            pitch = math::Clamp(static_cast<float>(pitchVar.number), -1.3f, 1.3f);
-        const script::Value distVar = scriptCtx_.gameVars.Get("cameraDist");
-        if (distVar.type == script::Value::Type::Number && distVar.number > 0.0)
-            dist = math::Clamp(static_cast<float>(distVar.number), 2.0f, 80.0f);
-        math::Vec3 offset{std::sin(yaw) * std::cos(pitch), std::sin(pitch),
-                          std::cos(yaw) * std::cos(pitch)};
-        cam.position = focus + offset * dist;
-        cam.target = focus;
-        cam.up = {0, 1, 0};
-        cam.ortho = false;
-        usedCameraEntity = true;
-    }
-    // P2-3 scene camera: when the world contains a camera entity, its transform
-    // + camera component become the active view (Godot Camera3D-style).
-    world_.ViewAll<SceneCamera, SceneTransform>().ForEach(
-        [&](ecs::Entity, const SceneCamera& c, const SceneTransform& t) {
-            if (usedCameraEntity) return;
-            usedCameraEntity = true;
-            cam.position = t.pos;
-            cam.target = t.pos + t.rot.Rotate({0, 0, -1});
-            cam.up = {0, 1, 0};
-            cam.ortho = c.ortho;
-            cam.fovY = c.fov * math::kDegToRad;
-            cam.orthoSize = c.orthoSize > 0.0f ? c.orthoSize : 10.0f;
-            // Editor whole-view zoom: shrink the ortho size so sprites grow
-            // with the same factor the host applies to the 2D UI overlay.
-            if (cam.ortho && previewZoom > 0.0f)
-                cam.orthoSize /= previewZoom;
-        });
-    // The camera is FAITHFUL: the scene camera's orthoSize/fov is exactly
-    // what the scene authored (no fit-outside overrides); the aspect follows
-    // the active scene viewport, so the world fills the dock.
-    const float drawAspect = renderer.SceneAspect();
-    // Snapshot the resolved camera + viewport pixels: WorldToScreen/
-    // ScreenToWorld and GetViewportSize answer script queries between renders
-    // from this state. UI/world space is plain viewport PIXELS (no design
-    // resolution - relative layout adapts, px stays px).
-    const math::Rect2& sceneVp = renderer.SceneViewport();
-    hud_.CaptureView(cam, drawAspect,
-                     sceneVp.w > 0.0f ? renderer.UIDesignSize().x : 1280.0f,
-                     sceneVp.h > 0.0f ? renderer.UIDesignSize().y : 720.0f);
-    // Project at the ACTIVE scene viewport's aspect (a dock sub-rect in the
-    // editor, the full target in the standalone player) so the runtime render
-    // matches whatever rasterization rect the host set up - otherwise the
-    // playtest FOV would differ from the edit-mode viewport.
-    renderer.SetCamera(cam, drawAspect);
-    // G3: the editor may have already run the cascade shadow pass with its free
-    // orbit camera this frame (before play resolved its game camera). Re-run it
-    // for the RESOLVED camera so the shadow frusta track the game view, not the
-    // editor's; otherwise orbiting the editor camera slides the shadows.
-    renderer.RefreshShadowPass();
-    // Data-driven scene environment: apply the scene's DirectionalLight +
-    // AmbientLight objects (Unity-style) so every host renders the same scene
-    // the same way (the editor's playtest and the standalone player both go
-    // through Draw). Fog is pushed far for ortho/2D cameras so the flat sprites
-    // are never tinted by a depth gradient.
-    {
-        const scene::SceneLight* directional = nullptr;
-        const scene::SceneLight* ambient = nullptr;
-        world_.ViewAll<scene::SceneLight>().ForEach(
-            [&](ecs::Entity, const scene::SceneLight& l) {
-                if (l.type == "directional" && !directional) directional = &l;
-                else if (l.type == "ambient" && !ambient) ambient = &l;
-            });
-        renderer.SetSky({0.28f, 0.38f, 0.58f, 1.0f}, {0.55f, 0.65f, 0.8f, 1.0f});
-        if (cam.ortho) {
-            renderer.SetFog({0.45f, 0.55f, 0.7f, 1.0f}, 1e9f, 1e10f);
-        } else {
-            renderer.SetFog({0.45f, 0.55f, 0.7f, 1.0f}, 60.0f, 220.0f);
-        }
-        if (directional) {
-            const gfx::Color sun{directional->color.r * directional->intensity,
-                                 directional->color.g * directional->intensity,
-                                 directional->color.b * directional->intensity,
-                                 directional->color.a};
-            renderer.SetDirectionalLight(directional->sunDir, sun, 0.0f);
-        } else {
-            renderer.SetDirectionalLight({-0.4f, -1.0f, -0.3f}, {0.8f, 0.8f, 0.8f}, 0.0f);
-        }
-        if (ambient) renderer.SetAmbientLight(ambient->color, ambient->ambientStrength);
-        renderer.DrawSky();
-    }
-    // Scripts may have spawned/despawned sprite entities since the last frame.
-    BuildDrawList();
-    // G1-3: refresh the world-transform cache (parent-before-child, arbitrary
-    // depth) once per frame; the BVH pass and the draw loop read it instead of
-    // re-walking parent chains per entity.
-    sceneTree_.Rebuild(world_);
-    // M1 HUD anchors: project every drawn entity's world position (plus a
-    // per-plate head offset) into design units for on_render scripts. Cached
-    // once per frame; WorldToScreen() below uses the same matrices. The
-    // world-position pass (plate AABB head offsets) stays here; HudSystem
-    // projects the resulting entity+world pairs into screen anchors.
-    {
-        std::vector<std::pair<ecs::Entity, math::Vec3>> anchorEnts;
-        anchorEnts.reserve(draws_.size());
-        for (const DrawItem& d : draws_) {
-            const math::Mat4 model = sceneTree_.CachedLocalToWorld(d.ent);
-            math::Vec3 wp{model.m[3], model.m[7], model.m[11]};
-            // Head offset: lift the anchor above the model bounds when the
-            // entity carries a plate (the script stamps names via
-            // SetEntityPlate; default 0 keeps the raw position).
-            auto pit = hud_.EntityPlates().find(EntityKey(d.ent));
-            if (pit != hud_.EntityPlates().end() && pit->second.hpFrac >= 0.0f) {
-                const SceneTransform* tr = world_.Get<SceneTransform>(d.ent);
-                if (tr) {
-                    // Plate tracks the RENDERED mesh, which for a skinned rig
-                    // can sit off the entity pivot (the wolf's bones place the
-                    // body away from its origin). Compute the world AABB with
-                    // the same transform chain Draw() uses �?model *
-                    // part.localTransform * bone matrix �?and center the bar on
-                    // it, just above the top.
-                    math::AABB wb;
-                    bool have = false;
-                    auto expand = [&](const math::Vec3& p) {
-                        if (!have) {
-                            wb.min = wb.max = p;
-                            have = true;
-                        } else {
-                            wb.min.x = std::fmin(wb.min.x, p.x);
-                            wb.min.y = std::fmin(wb.min.y, p.y);
-                            wb.min.z = std::fmin(wb.min.z, p.z);
-                            wb.max.x = std::fmax(wb.max.x, p.x);
-                            wb.max.y = std::fmax(wb.max.y, p.y);
-                            wb.max.z = std::fmax(wb.max.z, p.z);
-                        }
-                    };
-                    auto expandBox = [&](const math::AABB& lb, const math::Mat4& m) {
-                        const math::Vec3 corners[8] = {
-                            {lb.min.x, lb.min.y, lb.min.z}, {lb.max.x, lb.min.y, lb.min.z},
-                            {lb.min.x, lb.max.y, lb.min.z}, {lb.max.x, lb.max.y, lb.min.z},
-                            {lb.min.x, lb.min.y, lb.max.z}, {lb.max.x, lb.min.y, lb.max.z},
-                            {lb.min.x, lb.max.y, lb.max.z}, {lb.max.x, lb.max.y, lb.max.z}};
-                        for (const math::Vec3& c : corners) {
-                            const math::Vec4 q = m.TransformVec4({c.x, c.y, c.z, 1.0f});
-                            if (q.w != 0.0f) expand({q.x / q.w, q.y / q.w, q.z / q.w});
-                        }
-                    };
-                    if (d.skinned && d.skinned->Valid()) {
-                        // Mirror Draw()'s bone selection (override clip vs the
-                        // model's default) so the anchor matches this frame.
-                        // Task 12: the override pose now comes from the
-                        // AnimationSystem state table (PoseFor); the default
-                        // path falls back to the model's own BoneMatrices().
-                        std::vector<math::Mat4> bones;
-                        if (!animations_.PoseFor(EntityKey(d.ent), d.skinned->skeleton, bones))
-                            bones = d.skinned->BoneMatrices();
-                        if (!bones.empty()) {
-                            // CPU-skin the actual vertices so the plate hugs the
-                            // RENDERED mesh (a rig can place the body off the
-                            // entity pivot; box-corner transforms over all bones
-                            // inflate the bounds, so exact per-vertex is safest).
-                            for (const auto& part : d.skinned->parts) {
-                                const std::vector<gfx::Vertex3D>& verts = part.mesh.CpuVerts();
-                                if (verts.empty()) continue;
-                                const math::Mat4 m = model * part.localTransform;
-                                for (const gfx::Vertex3D& v : verts) {
-                                    math::Vec4 sk{0.0f, 0.0f, 0.0f, 0.0f};
-                                    for (int k = 0; k < 4; ++k) {
-                                        if (v.w[k] <= 0.0f) continue;
-                                        const int ji = static_cast<int>(v.j[k]);
-                                        if (ji < 0 ||
-                                            ji >= static_cast<int>(bones.size()))
-                                            continue;
-                                        const math::Vec4 q =
-                                            bones[static_cast<size_t>(ji)].TransformVec4(
-                                                {v.pos.x, v.pos.y, v.pos.z, 1.0f});
-                                        sk.x += v.w[k] * q.x;
-                                        sk.y += v.w[k] * q.y;
-                                        sk.z += v.w[k] * q.z;
-                                        sk.w += v.w[k] * q.w;
-                                    }
-                                    if (sk.w == 0.0f) continue;
-                                    const math::Vec4 world = m.TransformVec4(
-                                        {sk.x / sk.w, sk.y / sk.w, sk.z / sk.w, 1.0f});
-                                    if (world.w != 0.0f)
-                                        expand({world.x / world.w, world.y / world.w,
-                                                world.z / world.w});
-                                }
-                            }
-                        } else {
-                            for (const auto& part : d.skinned->parts) {
-                                const math::AABB lb = part.mesh.Bounds();
-                                if (lb.max.y <= lb.min.y) continue;
-                                expandBox(lb, model * part.localTransform);
-                            }
-                        }
-                    } else if (d.mesh.Valid()) {
-                        const math::AABB lb = d.mesh.Bounds();
-                        if (lb.max.y > lb.min.y) expandBox(lb, model);
-                    }
-                    if (have) {
-                        wp.x = (wb.min.x + wb.max.x) * 0.5f;
-                        wp.z = (wb.min.z + wb.max.z) * 0.5f;
-                        wp.y = wb.max.y + 0.2f * tr->scale.y;
-                    } else {
-                        wp.y = wp.y + 1.9f * tr->scale.y;
-                    }
-                }
-            }
-            anchorEnts.emplace_back(d.ent, wp);
-        }
-        hud_.UpdateAnchors(anchorEnts);
-    }
-    // P2-3: sprites render back-to-front by their sortOrder component (2D
-    // games); 3D depth-tested meshes are unaffected by the stable order.
-    drawOrder_.resize(draws_.size());
-    for (size_t i = 0; i < drawOrder_.size(); ++i) drawOrder_[i] = i;
-    std::stable_sort(drawOrder_.begin(), drawOrder_.end(), [&](size_t a, size_t b) {
-        const SceneSortOrder* sa = world_.Get<SceneSortOrder>(draws_[a].ent);
-        const SceneSortOrder* sb = world_.Get<SceneSortOrder>(draws_[b].ent);
-        return (sa ? sa->z : 0.0f) < (sb ? sb->z : 0.0f);
-    });
-    // Instanced batching: opaque static meshes with the same mesh + material
-    // group into one instanced draw call. Only when the depth buffer works -
-    // the no-depth fallback relies on painter's order, which batching would
-    // change. Flush whenever a non-batchable item interrupts the run so the
-    // relative order of opaque vs transparent/skinned draws never changes.
-    const bool canBatch = renderer.DepthTestAvailable();
-    // G1-2: build a per-frame BVH of batchable items and pre-cull the camera
-    // frustum, so instanced draws only receive visible instances (the
-    // renderer then skips its own per-instance test). Uses the renderer's own
-    // Frustum::Intersects test, so the visible set is identical to before.
-    drawBvh_.Clear();
-    bvhVisible_.assign(draws_.size(), 0);
-    if (canBatch) {
-        for (size_t idx : drawOrder_) {
-            DrawItem& item = draws_[idx];
-            if (!world_.Alive(item.ent)) continue;
-            if (hiddenEntities_.count(EntityKey(item.ent)) != 0) continue;
-            ResolveOrSkip(item, renderer);
-            if (!item.resolved || item.failed) continue;
-            if (!world_.Get<SceneTransform>(item.ent)) continue;
-            if (item.skinned || item.isSprite || item.isDecal || item.mat.transparent ||
-                item.mat.shader.Valid() || !item.mesh.Valid())
-                continue;
-            const math::Mat4 model = sceneTree_.CachedLocalToWorld(item.ent);
-            // Column-vector convention: the translation is the last COLUMN of
-            // the row-major matrix (m[3], m[7], m[11]), not the last row.
-            // G2-3: a terrain chunk uses its patch centre (not the terrain
-            // origin) so distance LOD is chosen per patch.
-            const math::Vec3 worldPos = item.isTerrainChunk
-                                            ? model.TransformPoint(item.chunkCenterLocal)
-                                            : math::Vec3{model.m[3], model.m[7], model.m[11]};
-            const gfx::Mesh drawMesh =
-                SelectLodMesh(item.mesh, item.chain, worldPos, cam.position);
-            if (!drawMesh.Valid()) continue;
-            drawBvh_.Insert(static_cast<math::Bvh::Id>(idx),
-                            math::TransformAABB(drawMesh.Bounds(), model));
-        }
-        if (!drawBvh_.Empty())
-            drawBvh_.QueryFrustum(renderer.ViewFrustum(),
-                                  [&](math::Bvh::Id id) { bvhVisible_[id] = 1; });
-    }
-    drawBatches_.clear();
-    batchModels_.clear();
-    auto flushBatches = [&]() {
-        if (drawBatches_.empty()) return;
-        for (const DrawBatch& b : drawBatches_) {
-            if (b.count == 0) continue;
-            renderer.DrawMeshInstanced(b.mesh, b.mat, batchModels_.data() + b.start, b.count,
-                                       /*frustumCull=*/false);
-        }
-        drawBatches_.clear();
-        batchModels_.clear();
-    };
-    size_t dead = 0;
-    for (size_t idx : drawOrder_) {
-        DrawItem& item = draws_[idx];
-        if (!world_.Alive(item.ent)) {
-            ++dead; // scripts can Despawn entities mid-playtest
-            continue;
-        }
-        if (hiddenEntities_.count(EntityKey(item.ent)) != 0) continue; // SetVisible(false)
-        ResolveOrSkip(item, renderer);
-        if (!item.resolved || item.failed) continue;
-        if (!world_.Get<SceneTransform>(item.ent)) continue;
-        math::Mat4 model = sceneTree_.CachedLocalToWorld(item.ent);
-        if (item.tileOffset.LengthSq() > 0.0f)
-            model = model * math::Mat4::Translation(item.tileOffset);
-        if (item.isDecal) {
-            // Lift the quad a hair above the surface it projects onto so depth
-            // testing keeps it visible (no z-fighting on flat ground).
-            model = model * math::Mat4::Translation({0.0f, 0.02f, 0.0f});
-        }
-        // Column-vector convention: translation lives in the last column
-        // (m[3], m[7], m[11]); reading m[12..14] returned ~0 and broke LOD
-        // distance selection + decal placement.
-        // G2-3: a terrain chunk uses its patch centre (not the terrain origin)
-        // so distance LOD is chosen per patch.
-        const math::Vec3 worldPos = item.isTerrainChunk
-                                        ? model.TransformPoint(item.chunkCenterLocal)
-                                        : math::Vec3{model.m[3], model.m[7], model.m[11]};
-        // Batchable: opaque static mesh with the built-in shader. Skinned
-        // (per-entity bone matrices), sprites, decals, transparent materials
-        // and custom shaders keep the per-entity path.
-        const bool batchable = canBatch && !item.skinned && !item.isSprite && !item.isDecal &&
-                               !item.mat.transparent && !item.mat.shader.Valid() &&
-                               item.mesh.Valid();
-        if (batchable) {
-            if (!bvhVisible_.empty() && bvhVisible_[idx] == 0) continue; // pre-culled
-            gfx::Mesh drawMesh = SelectLodMesh(item.mesh, item.chain, worldPos, cam.position);
-            if (!drawMesh.Valid()) continue;
-            int batchIndex = -1;
-            for (size_t bi = 0; bi < drawBatches_.size(); ++bi) {
-                if (drawBatches_[bi].mesh.Handle().vao == drawMesh.Handle().vao &&
-                    SameMaterial(drawBatches_[bi].mat, item.mat)) {
-                    batchIndex = static_cast<int>(bi);
-                    break;
-                }
-            }
-            if (batchIndex < 0) {
-                DrawBatch b;
-                b.mesh = drawMesh;
-                b.mat = item.mat;
-                b.start = static_cast<uint32_t>(batchModels_.size());
-                batchIndex = static_cast<int>(drawBatches_.size());
-                drawBatches_.push_back(b);
-            }
-            batchModels_.push_back(model);
-            drawBatches_[static_cast<size_t>(batchIndex)].count++;
-            continue;
-        }
-        flushBatches(); // keep relative order with non-batched draws
-        if (item.skinned && item.skinned->Valid()) {
-            // Task 12: the override pose comes from the AnimationSystem state
-            // table (PoseFor); the default path falls back to the model's own
-            // BoneMatrices(), matching the old DrawItem override branch.
-            std::vector<math::Mat4> bones;
-            if (!animations_.PoseFor(EntityKey(item.ent), item.skinned->skeleton, bones))
-                bones = item.skinned->BoneMatrices();
-            for (const auto& part : item.skinned->parts)
-                renderer.DrawSkinnedMesh(part.mesh, part.material, model,
-                                         bones, static_cast<int>(bones.size()));
-        } else if (item.isSprite) {
-            if (item.billboard) {
-                // Camera-facing quad (world-space VFX): rebuild the model
-                // basis from the view vector each frame. A 2D front-ortho
-                // camera degenerates to the identity basis, so 2D sprites are
-                // unaffected.
-                math::Vec3 fwd = cam.position - worldPos;
-                const float fl = std::sqrt(fwd.x * fwd.x + fwd.y * fwd.y + fwd.z * fwd.z);
-                if (fl > 0.0001f) fwd = fwd * (1.0f / fl);
-                math::Vec3 right = math::Cross(math::Vec3{0.0f, 1.0f, 0.0f}, fwd);
-                const float rl = std::sqrt(right.x * right.x + right.y * right.y +
-                                           right.z * right.z);
-                if (rl > 0.0001f) right = right * (1.0f / rl);
-                math::Vec3 up = math::Cross(fwd, right);
-                // Scale magnitude recovered from the composed model matrix.
-                const float sx = std::sqrt(model.m[0] * model.m[0] + model.m[4] * model.m[4] +
-                                           model.m[8] * model.m[8]);
-                const float sy = std::sqrt(model.m[1] * model.m[1] + model.m[5] * model.m[5] +
-                                           model.m[9] * model.m[9]);
-                math::Mat4 bb;
-                bb.m[0] = right.x * sx; bb.m[4] = right.y * sx; bb.m[8] = right.z * sx;
-                bb.m[1] = up.x * sy;    bb.m[5] = up.y * sy;    bb.m[9] = up.z * sy;
-                bb.m[2] = fwd.x;        bb.m[6] = fwd.y;        bb.m[10] = fwd.z;
-                bb.m[12] = worldPos.x;  bb.m[13] = worldPos.y;  bb.m[14] = worldPos.z;
-                renderer.DrawMesh(item.mesh, item.mat, bb);
-            } else {
-                // Flip mirrors the quad around its center: a negative local scale
-                // keeps the texture upright and needs no UV/shader changes.
-                if (item.flipX || item.flipY)
-                    model = model * math::Mat4::Scale({item.flipX ? -1.0f : 1.0f,
-                                                       item.flipY ? -1.0f : 1.0f, 1.0f});
-                renderer.DrawMesh(item.mesh, item.mat, model);
-            }
-        } else {
-            renderer.DrawMesh(SelectLodMesh(item.mesh, item.chain, worldPos, cam.position),
-                              item.mat, model);
-        }
-    }
-    flushBatches();
-    // Skill projectiles (fireballs): bright glowing orbs (ProjectileSystem
-    // lazily builds the shared fireball mesh on first use).
-    projectiles_.Draw(renderer);
-    // G2-3 vegetation: instanced plant meshes + far yaw-billboard impostors.
-    // Use the RESOLVED scene camera (`cam`, which may have been overridden by a
-    // scene Camera3D entity driven by the game script) rather than the raw
-    // fallback `camera` param. Otherwise the far-tree impostor cards (which
-    // yaw to face the camera) would follow the host's free/orbit camera, so
-    // right-drag orbits the foliage billboards while the world stays put.
-    DrawVegetation(renderer, cam);
-    // Script VFX particles: world-space camera-facing billboards (additive +
-    // alpha batches), drawn INSIDE the HDR target so bright particles bloom.
-    sceneParticles_.Draw(renderer);
-    // Compact when a fifth of the draw list belongs to dead entities.
-    if (dead && dead * 5 > draws_.size()) {
-        draws_.erase(std::remove_if(draws_.begin(), draws_.end(),
-                                    [this](const DrawItem& i) { return !world_.Alive(i.ent); }),
-                     draws_.end());
-    }
-
-    // 2D script canvas: a global on_render() handler draws the game with the
-    // DrawRect/DrawRectOutline/DrawText bindings (design units 1280x720). The
-    // runtime flushes the buffer into the renderer's 2D overlay so 2D games
-    // (e.g. the PvZ project) need zero C++ gameplay code.
-    if (hosts_.lua || hosts_.js) {
-        scriptCtx_.draw2d = scriptCanvas_.Commands();
-        // Snapshot the host's live 2D mapping (Set2DViewport) so on_update's
-        // InputMousePos() and UI hit-tests keep design coordinates between
-        // renders (the renderer resets its 2D viewport after the frame).
-        uiScale_ = renderer.UIScale();
-        uiOffset_ = renderer.UI2DOffset();
-        scriptCtx_.screenToUi = [this](const math::Vec2& p) {
-            return (p - uiOffset_) / uiScale_;
-        };
-        scriptCanvas_.Begin();
-        scriptCtx_.currentEntity = {};
-        // Global handlers can be defined by either backend; Lua wins ties
-        // (deterministic order).
-        for (script::IScriptHost* h : {hosts_.lua.get(), hosts_.js.get()}) {
-            if (!h || !h->HasFunction("on_render")) continue;
-            const core::Result<script::Value> res = h->Call("on_render", {});
-            if (!res.Ok()) {
-                NEON_LOG_CAT(core::LogCategory::Script, core::LogLevel::Error,
-                             "runtime: on_render() failed: %s",
-                             h->LastError().message.c_str());
-            }
-        }
-        scriptCtx_.draw2d = nullptr;
-        // G5-4-4: the on_render canvas is HUD �?the host flushes it AFTER the
-        // scene is composited (FlushCanvas), so its colors stay exactly as
-        // authored instead of being tone-mapped/bloomed with the 3D scene.
-        // ScriptCanvas::Flush is called from FlushCanvas (post-EndScene).
-    }
-
-    // Data-driven UI (IUiSystem) input/click handling runs in Tick (before
-    // on_update) - see the Update call there. DrawUI below only renders.
+    // DrawSystem owns the draw-list build + the whole render orchestration
+    // (Task 16). The already-split systems and the shared runtime state
+    // (world_/scriptCtx_/hosts_/hiddenEntities_/uiScale_/uiOffset_ + the post-FX
+    // toggles from SetPostFx) are wired in as parameters; the runtime keeps the
+    // public entry point so the editor/player call sites are unchanged.
+    drawSystem_.Draw(
+        renderer, camera,
+        DrawSystem::DrawParams{previewZoom, postSsao_, postVolumetric_, postSsr_,
+                               postSsaoIntensity_, postVolumetricIntensity_,
+                               postSsrIntensity_},
+        world_, scriptCtx_, hosts_.lua.get(), hosts_.js.get(), hiddenEntities_, hud_,
+        sceneTree_, animations_, projectiles_, sceneParticles_, scriptCanvas_,
+        uiScale_, uiOffset_);
 }
 
 void GameRuntime::DrawUI(gfx::Renderer& renderer) {
@@ -1667,33 +1193,10 @@ void GameRuntime::Tick(float dt) {
     simTime_ += dt;
 
     // Sequence-frame sprite animation: advance each animated sprite draw item's
-    // clock with the FIXED tick dt (deterministic; headless hosts have no
-    // draws_ and simply skip). Draw swaps the texture from the current frame.
-    if (!draws_.empty()) {
-        for (DrawItem& d : draws_) {
-            if (!d.isSprite) continue;
-            const bool sheet = !d.sheetTex.empty() && d.sheetFrames > 0;
-            if (d.spriteFps <= 0.0f) continue;
-            if (!sheet && d.spriteFrames.empty()) continue;
-            d.spriteAnimTime += dt;
-            int frame = static_cast<int>(d.spriteAnimTime * d.spriteFps);
-            const int n = sheet ? d.sheetFrames : static_cast<int>(d.spriteFrames.size());
-            if (d.spriteLoop) {
-                frame = frame % n;
-            } else {
-                frame = frame < n ? frame : n - 1;
-            }
-            if (frame != d.spriteFrame) {
-                d.spriteFrame = frame;
-                if (sheet) {
-                    d.spriteTex = d.sheetTex; // texture unchanged; UV window changes
-                } else {
-                    d.spriteTex = d.spriteFrames[static_cast<size_t>(frame)];
-                }
-                d.resolved = false; // re-resolve (new frame texture / UV quad)
-            }
-        }
-    }
+    // clock with the FIXED tick dt (deterministic; headless hosts have no draw
+    // items and simply skip). Draw swaps the texture from the current frame.
+    // Forwards to drawSystem_ (DrawSystem; Task 16).
+    drawSystem_.AdvanceSprites(dt);
 
     // G3-4: snapshot authoritative poses for lag-compensated hit tests. The
     // ring reuses its snapshot maps (B10): no per-tick heap allocation, and
@@ -1746,17 +1249,6 @@ script::Value GameRuntime::EntityBlackboardValue(const ecs::Entity& ent,
 
 std::string GameRuntime::ActiveTreePath(const ecs::Entity& ent) const {
     return btRuntime_.ActivePath(ent);
-}
-
-gfx::Mesh GameRuntime::MeshForEntity(const ecs::Entity& ent,
-                                     const gfx::Camera& camera) const {
-    for (const DrawItem& item : draws_) {
-        if (item.ent != ent || !item.resolved || item.failed) continue;
-        const SceneTransform* t = world_.Get<SceneTransform>(ent);
-        if (!t) return gfx::Mesh{};
-        return SelectLodMesh(item.mesh, item.chain, t->pos, camera.position);
-    }
-    return gfx::Mesh{};
 }
 
 } // namespace neon::scene

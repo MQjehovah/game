@@ -27,6 +27,7 @@
 #include "neon/scene/status.hpp"
 #include "neon/scene/systems/animation_system.hpp"
 #include "neon/scene/systems/bt_runtime.hpp"
+#include "neon/scene/systems/draw_system.hpp"
 #include "neon/scene/systems/hud_system.hpp"
 #include "neon/scene/systems/lagcomp_system.hpp"
 #include "neon/scene/systems/physics_bridge.hpp"
@@ -297,7 +298,7 @@ public:
     size_t EntityCount() const { return world_.EntityCount(); }
     size_t ScriptCount() const { return scriptRuntime_.Count(); }
     size_t BehaviorTreeCount() const { return btRuntime_.Count(); }
-    size_t DrawCount() const { return draws_.size(); }
+    size_t DrawCount() const { return drawSystem_.DrawCount(); }
     size_t PhysicsBodyCount() const { return physics_.BodyCount(); }
     physics::World& PhysicsWorld() { return *physics_.World(); }
     const physics::World& PhysicsWorld() const { return *physics_.World(); }
@@ -318,7 +319,10 @@ public:
     // given `camera` — the LOD level selected by camera distance when the
     // entity's SceneMesh carries a chain, else the single resolved mesh.
     // Invalid when `ent` has no resolved draw item (call Draw once first).
-    gfx::Mesh MeshForEntity(const ecs::Entity& ent, const gfx::Camera& camera) const;
+    // Forwards to drawSystem_ (DrawSystem; Task 16).
+    gfx::Mesh MeshForEntity(const ecs::Entity& ent, const gfx::Camera& camera) const {
+        return drawSystem_.MeshForEntity(ent, camera, world_);
+    }
 
     // Combat (script-facing gameplay hooks). SpawnProjectile queues a fireball
     // the runtime advances and renders (statuses are applied to the hit target).
@@ -382,81 +386,12 @@ public:
                             const std::string& scriptPath = {});
 
 private:
-    struct DrawItem {
-        ecs::Entity ent;
-        std::string meshKey;
-        // 2D sprite: texture path + flips. When isSprite is true the item
-        // draws an XY quad with an unlit texture material instead of a mesh.
-        bool isSprite = false;
-        // Billboard mode: the quad is re-oriented every frame to face the
-        // camera (world-space glow particles / VFX in 3D scenes).
-        bool billboard = false;
-        std::string spriteTex;
-        bool flipX = false;
-        bool flipY = false;
-        // Sequence-frame sprite animation: frames/fps/loop copied from the
-        // SceneSprite component; Draw advances the clock and swaps spriteTex.
-        std::vector<std::string> spriteFrames;
-        float spriteFps = 0.0f;
-        bool spriteLoop = true;
-        float spriteAnimTime = 0.0f;
-        int spriteFrame = -1;
-        // Spritesheet variant: one horizontal atlas texture, `sheetFrames`
-        // equal sub-rects; the quad's UV window is rebuilt per frame.
-        std::string sheetTex;
-        int sheetFrames = 0;
-        math::Vec3 tileOffset{};  // P1-1: per-cell offset for tilemap quads
-        // P2-1 ground decal: draws a flat XZ-plane quad with the texture.
-        bool isDecal = false;
-        float decalSize = 2.0f;
-        // LOD chain spec from the entity's SceneMesh (data-driven: distance +
-        // meshKey per level). Resolved into `chain` during ResolveDrawItem.
-        std::vector<LodEntry> lod;
-        // G2-3 chunked-LOD terrain: this item is one patch of a grid-split
-        // terrain. The mesh carries its own local position (verts already span
-        // the patch), so the entity transform places it; `chunkCenterLocal` is
-        // used only for camera-distance LOD selection (per-patch, not per
-        // entity). Off for ordinary draw items.
-        bool isTerrainChunk = false;
-        int chunkGridX = 0;
-        int chunkGridZ = 0;
-        int chunkGridDiv = 0;
-        math::Vec3 chunkCenterLocal{0.0f, 0.0f, 0.0f};
-        gfx::Mesh mesh;
-        gfx::LodChain chain; // resolved levels+thresholds; empty = single mesh
-        gfx::Material mat;
-        // Animated skinned glTF (meshKey "gltf:...") resolved once; when set,
-        // drawing uses the skinned parts + bone matrices instead of `mesh`.
-        // The per-entity ANIMATION state (override clip / ASM / pose clock)
-        // lives in AnimationSystem (entityKey -> State, registered at
-        // ResolveDrawItem), NOT here - DrawItem is a render reference only, so
-        // headless hosts (no draw items) carry no idle animation state (C2).
-        std::shared_ptr<SkinnedModel> skinned;
-        bool resolved = false;
-        bool failed = false;
-        bool asyncPending = false;   // G6-2: mesh load kicked, waiting on cache
-    };
     // Snapshot of the active 2D design-space mapping (captured during Draw,
     // when the host's 2D viewport is live). InputMousePos()/UI hit-tests use
     // this between renders so coordinates stay in design units even after the
     // renderer resets its 2D mapping at the end of the frame.
     float uiScale_ = 1.0f;
     math::Vec2 uiOffset_{0.0f, 0.0f};
-    // G2-3 vegetation field attached to a terrain entity: deterministic scatter
-    // positions plus lazily-resolved plant + impostor meshes. Built once per
-    // entity per Start (terrain heights are static during play).
-    struct VegField {
-        ecs::Entity ent;
-        std::vector<math::Vec3> positions;
-        gfx::Mesh mesh;     // full plant/bush/rock mesh (near instances)
-        gfx::Mesh impostor; // billboard card (far instances)
-        gfx::Material mat;
-        gfx::Material impostorMat;
-        float size = 1.0f;
-        float impostorDistance = 60.0f;
-        bool built = false;
-        bool failed = false;
-    };
 
     void AttachScripts();
     // Advances every registered animation state (override clips + state
@@ -471,23 +406,6 @@ private:
     // packed games ship them.
     void LoadPrefabs();
     void LoadLocales(); // <localesDir>/*.json string tables for Loc()
-    void BuildDrawList();
-    // B6: rebuild drawKeys_ from draws_ (called at the end of BuildDrawList).
-    void SyncDrawKeys();
-    void ResolveDrawItem(DrawItem& item, gfx::Renderer& renderer);
-    // G6-2: async-aware item resolution — retries an asyncPending item from the
-    // cache when its mesh is ready, else skips it; non-async items resolve
-    // synchronously. Called from the draw passes.
-    void ResolveOrSkip(DrawItem& item, gfx::Renderer& renderer);
-    // Resolves one meshKey ("obj:"/"gltf:" file-backed or a procedural
-    // primitive) through the runtime's AssetManager; invalid mesh on failure.
-    gfx::Mesh ResolveMeshKey(gfx::Renderer& renderer, const std::string& key,
-                             const SceneTerrain* terrain = nullptr);
-    // Renders every terrain entity's vegetation field: instanced plant meshes
-    // for near instances plus yaw-billboard impostors past the swap distance.
-    void DrawVegetation(gfx::Renderer& renderer, const gfx::Camera& camera);
-    // Resolves a vegetation meshKey ("tree"/"bush"/"rock"/obj:/gltf:) to a mesh.
-    gfx::Mesh VegetationMesh(gfx::Renderer& renderer, const std::string& meshKey);
     void RegisterAudioSources(); // G8-3: play SceneAudioSource components once
     std::string ReadScript(const std::string& path) const;
     std::string FullScriptPath(const std::string& path) const;
@@ -545,46 +463,30 @@ private:
     // GameRuntime forwards AttachAll/Tick and the public blackboard/active-path
     // observability, and wires the shared scriptCtx_/hosts_ in as call params.
     BtRuntime btRuntime_;
-    std::vector<DrawItem> draws_;
-    // B6: alive-entity index over draws_ (EntityKey -> tracked). BuildDrawList
-    // used to linear-scan draws_ per candidate entity (O(N*M) per frame).
-    std::unordered_set<uint64_t> drawKeys_;
     // M1 HUD subsystem (world<->screen projection + floating combat texts +
     // entity screen anchors + overhead plates): owns floatTexts_/screenAnchors_/
     // plates_ and the last camera/view-projection snapshot. GameRuntime forwards
     // SpawnFloatText/SetEntityPlate/WorldToScreen etc. and refreshes it from
     // Draw each frame.
     HudSystem hud_;
-    // G2-3 vegetation cache (EntityKey -> VegField); rebuilt lazily per Start.
-    std::unordered_map<uint64_t, VegField> vegCache_;
-    // Instanced-batching scratch for opaque static meshes (per-frame reuse):
-    // each batch groups entities with the same mesh + material so N identical
-    // entities cost one instanced draw call instead of N. Flushed whenever a
-    // non-batchable item (sprite / skinned / transparent / custom shader)
-    // interrupts the run, preserving the original draw order.
-    struct DrawBatch {
-        gfx::Mesh mesh;
-        gfx::Material mat;
-        uint32_t start = 0;
-        uint32_t count = 0;
-    };
-    std::vector<DrawBatch> drawBatches_;
-    std::vector<math::Mat4> batchModels_;
     // G1-3 world-transform cache (EntityKey -> world matrix), rebuilt by
     // RebuildWorldTransforms() and consumed by CachedLocalToWorld / Draw.
     // Scene-tree subsystem (SceneParentLink hierarchy + world-transform cache;
     // Task 9): GameRuntime forwards the G1-3 scene-tree API to it.
     SceneTreeSystem sceneTree_;
-    // G1-2 spatial index: per-frame BVH over batchable draw items, used to
-    // pre-cull the camera frustum before instanced draws (id = draw index).
-    math::Bvh drawBvh_;
-    std::vector<uint8_t> bvhVisible_;
-    // Sprite sort scratch (reused instead of a fresh allocation every frame).
-    std::vector<size_t> drawOrder_;
     // Skill-projectile subsystem (spawn/tick/draw/VFX): owns the in-flight
     // projectiles + fireball mesh; GameRuntime forwards SpawnProjectile and
     // ticks/draws it every frame.
     ProjectileSystem projectiles_;
+    // Draw subsystem (Task 16): the render orchestration split out of
+    // GameRuntime. Owns the draw list (draws_/drawKeys_/drawBatches_/batchModels_/
+    // drawBvh_/bvhVisible_/drawOrder_) + the vegetation cache (vegCache_) and the
+    // whole Draw body. GameRuntime forwards Draw/DrawCount/MeshForEntity to it and
+    // wires the shared world_/cfg_/scriptCtx_/hosts_/hud_/sceneTree_/animations_/
+    // projectiles_/sceneParticles_/scriptCanvas_/hiddenEntities_/uiScale_/uiOffset_
+    // in as call parameters; the sprite hook + PlayAnimation skinned check forward
+    // to SetSpriteFrames/SetSpriteSheet/AdvanceSprites/HasSkinned.
+    DrawSystem drawSystem_;
     // P1-3 tweens: Lua `Tween(ent, prop, from, to, time, easing)` calls append
     // here; TweenSystem advances them every frame and writes into the entity's
     // SceneTransform. prop: 0=pos 1=rot(euler degrees) 2=scale.

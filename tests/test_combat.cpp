@@ -11,6 +11,7 @@
 #include "neon/neon.hpp"
 #include "neon/scene/game_runtime.hpp"
 #include "neon/scene/status.hpp"
+#include "neon/scene/systems/draw_system.hpp"
 #include "neon/scene/systems/hud_system.hpp"
 #include "neon/scene/systems/physics_bridge.hpp"
 #include "neon/scene/systems/plugin_system.hpp"
@@ -1852,4 +1853,90 @@ TEST(PhysicsBridgeAcceptsInjectedWorld) {
 
     bridge.RegisterBodies(ew);
     CHECK_EQ(injected.BodyCount(), 1u); // registered in the injected world
+}
+
+// ---------------------------------------------------------------------------
+// DrawSystem (Task 16): 渲染编排子系统独立单测（脱离 GameRuntime，直接测拆分后的
+// 绘制系统）：Build 收集 draw items、Resolve 解析网格 + LOD 链、MeshForEntity 按
+// 相机距离选 LOD 级、整帧 Draw 走 NullBackend 不崩、SetSpriteFrames/SetSpriteSheet/
+// AdvanceSprites 对 sprite 项安全、HasSkinned/Clear/Despawn 修剪生命周期。
+// ---------------------------------------------------------------------------
+
+TEST(DrawSystemStandaloneBuildResolveDraw) {
+    test::HeadlessAssetFixture fix;
+
+    ecs::World world;
+    scene::AnimationSystem anims;
+    scene::DrawSystem draw;
+
+    // One LOD-chained mesh entity (cube -> sphere at 10u -> plane at 50u) and
+    // one sprite entity whose texture is missing (resolve -> failed, skipped).
+    ecs::Entity lodEnt = world.Create();
+    world.Add<scene::SceneTransform>(lodEnt, scene::SceneTransform{{5, 0, 0}});
+    world.Add<scene::SceneMesh>(lodEnt);
+    scene::SceneMesh* mesh = world.Get<scene::SceneMesh>(lodEnt);
+    mesh->meshKey = "cube";
+    mesh->lod = {{10.0f, "sphere"}, {50.0f, "plane"}};
+
+    ecs::Entity spriteEnt = world.Create();
+    world.Add<scene::SceneTransform>(spriteEnt, scene::SceneTransform{{0, 0, 0}});
+    world.Add<scene::SceneSprite>(spriteEnt);
+    world.Get<scene::SceneSprite>(spriteEnt)->texture = "assets/sprites/__missing__.png";
+
+    // The runtime's asset/path plumbing, injected the way GameRuntime does at
+    // Start (identity path here; the fixture's AssetManager serves the cache).
+    draw.Configure({&fix.assets, /*asyncMeshLoad=*/false,
+                    [](const std::string& p) { return p; }});
+
+    draw.Build(world, anims);
+    CHECK_EQ(draw.DrawCount(), 2u);
+    CHECK(!draw.HasSkinned(lodEnt)); // cube is not a skinned model
+
+    // Resolve everything once: the cube resolves through the procedural path
+    // plus its LOD chain; the sprite's missing texture marks it failed.
+    gfx::Renderer& renderer = fix.renderer;
+    draw.Resolve(world, renderer, anims);
+
+    // MeshForEntity picks the LOD level by camera distance (GameRuntime parity).
+    gfx::Camera cam;
+    cam.position = {0, 0, 0};   // dist 5 -> level 0 (cube)
+    CHECK_EQ(draw.MeshForEntity(lodEnt, cam, world).Name(), std::string("cube"));
+    cam.position = {30, 0, 0};  // dist 25 -> [10, 50) -> sphere
+    CHECK_EQ(draw.MeshForEntity(lodEnt, cam, world).Name(), std::string("sphere"));
+    cam.position = {100, 0, 0}; // dist 95 -> plane
+    CHECK_EQ(draw.MeshForEntity(lodEnt, cam, world).Name(), std::string("plane"));
+    // Unknown entity -> invalid mesh.
+    CHECK(!draw.MeshForEntity(world.Create(), cam, world).Valid());
+
+    // A full Draw frame through the NullBackend (empty hosts / projectiles /
+    // particles / canvas): must not crash and must keep the draw list intact.
+    scene::HudSystem hud;
+    scene::SceneTreeSystem sceneTree;
+    scene::ProjectileSystem projectiles;
+    scene::SceneParticleSystem particles;
+    scene::ScriptCanvas canvas;
+    script::ScriptContext ctx;
+    std::set<uint64_t> hidden;
+    float uiScale = 1.0f;
+    math::Vec2 uiOffset;
+    cam.position = {0, 0, 0};
+    draw.Draw(renderer, cam, scene::DrawSystem::DrawParams{}, world, ctx,
+              /*luaHost=*/nullptr, /*jsHost=*/nullptr, hidden, hud, sceneTree,
+              anims, projectiles, particles, canvas, uiScale, uiOffset);
+    CHECK_EQ(draw.DrawCount(), 2u);
+
+    // Sprite-frame hooks are safe on the failed sprite item (no-op, no crash).
+    draw.SetSpriteFrames(spriteEnt, {"a.png", "b.png"}, 2.0f);
+    draw.SetSpriteSheet(spriteEnt, "atlas.png", 4, 8.0f);
+    draw.AdvanceSprites(1.0f / 60.0f);
+
+    // Despawn + rebuild drops the dead entity's draw item (Build prunes dead
+    // draws, mirroring the runtime's script Spawn/Despawn handling).
+    world.Destroy(lodEnt);
+    draw.Build(world, anims);
+    CHECK_EQ(draw.DrawCount(), 1u);
+    CHECK(!draw.MeshForEntity(lodEnt, cam, world).Valid());
+
+    draw.Clear();
+    CHECK_EQ(draw.DrawCount(), 0u);
 }
