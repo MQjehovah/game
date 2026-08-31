@@ -71,10 +71,10 @@ C++ `GameRuntime` 移出，下沉到 Lua 脚本层。引擎只保留「通用能
 `SpawnProjectile` 从「火球」泛化成「可编程飞行弹道」：
 
 - 保留引擎实现的 fixed-step 移动 + 命中检测 + 渲染 + 粒子（这是性能/确定性敏感的引擎能力）。
-- 增加可选 `onHit(entity)` Lua 回调：命中时调用，Lua 在此施加附加状态或覆盖伤害。
-- `damage` 退化为「命中后对 SceneHealth 的默认伤害」，`onHit` 存在时可忽略或叠加。
+- 增加 `range`（0 = 按 life）、`hitRadius`、`statuses`（`{name,duration,magnitude}` 列表）
+  参数，数据驱动（YAGNI：不引入 `onHit` 回调，`statuses` 已覆盖「命中施加状态」需求）。
 
-火球在 Lua 侧定义为：`SpawnProjectile{speed=14, damage=18, onHit=施加burning}`。
+火球在 Lua 侧定义为：`SpawnProjectile(origin, dir, 14, 18, 2, caster, 30, 0.8, {{"burning",3,2}})`。
 
 ### 4.3 状态 tick 规则下沉
 
@@ -86,23 +86,42 @@ C++ `GameRuntime` 移出，下沉到 Lua 脚本层。引擎只保留「通用能
 `kStatusDefs`（名称→id、tickInterval）从 C++ 内置表改为数据：由 Lua/数据层在启动时注册
 （`RegisterStatus(name, tickInterval)`），或直接约定 id 与 tickInterval 由 Lua 表维护。
 
-### 4.4 Lua 战斗库（引擎内置脚本能力层）
+### 4.4 基础玩法库（引擎内嵌 Gameplay 脚本层）
 
-新增 `combat.lua`（随引擎分发，项目 `require`）：
+沙箱关闭了 `require`/`dofile`，但 `IScriptHost::Load(source)+Run()` 可执行任意内嵌源码。
+因此基础玩法库走**引擎内嵌 Lua 字符串**（`engine/generated/gameplay_lib.hpp` 的
+`kGameplayLibLua`），在 `GameRuntime::Start` 里于项目脚本之前执行一次，注入全局
+`Gameplay` 表。项目脚本（`realm.lua` 及未来项目）直接调用，无需 `require`。
 
-- `Combat.SkillTable`：从 JSON 文本加载技能表（`{name, kind, damage, cooldown, manaCost, ...}`）。
-- `Combat.CastSkill(name, origin, dir, caster)`：检查冷却/mana，按 kind 分发到
-  `projectile`（`SpawnProjectile`）/ `melee`（`OverlapSphere` + 弧线过滤）/ `box`（`OverlapBox`）。
-- `Combat.Tick(dt)`：冷却衰减。
-- `Combat.OnStatusTick`：状态 tick 规则（burning/poison 伤害、regen 回血、slow 减速）。
+抽象出的通用玩法原语（跨游戏复用，不含 NeonRealm 数值/流程细节）：
+
+| 模块 | 函数 | 抽象来源 |
+|---|---|---|
+| 命中/AoE | `Gameplay.MeleeArc` / `Gameplay.AoE` / `Gameplay.BoxAttack` | C++ `MeleeAttackImpl` + realm.lua `wolvesInRadius` |
+| 投射物 | `Gameplay.Projectile(...)` | `SpawnProjectile` 薄包装 |
+| 冷却 | `Gameplay.Cooldowns`（set/ready/left/tick） | realm.lua `skillCd` 表 |
+| 状态效果 | `Gameplay.RegisterStatus(name, tickInterval, onTick)` + 内置 burning/poison/regen/slow | C++ `kStatusDefs` + `TickStatuses` |
+| 技能系统 | `Gameplay.SkillTable.fromJson` / `.cast(table,name,origin,dir,caster)`（含冷却/mana 分发） | C++ `SkillTable` + `CastSkill` |
+| 属性 | `Gameplay.Stats`（HP/MP/XP/level/gold，基于 GameVar） | realm.lua `SetVar/GetVar` 用法 |
+| 背包 | `Gameplay.Inventory`（物品定义 id/name/stackable/maxStack + add/remove/count/use 回调 + 堆叠/上限/货币 + 存档） | 全新抽象（通用容器） |
+| 第一人称控制 | `Gameplay.FirstPerson.new(hero)`（带状态对象：鼠标视角 + 相对移动 + 相机在眼睛处） | realm.lua `fpsMode`/`lookYaw`/`lookPitch` |
+| 第三人称控制 | `Gameplay.ThirdPerson.new(hero)`（带状态对象：轨道相机 + 角色面向移动方向） | realm.lua 轨道视角 |
+
+控制器沿引擎既有约定：相机 GameVar（`cameraFocus`/`cameraYaw`/`cameraPitch`/`cameraDist`/`cameraMouseLock`）+ `input.json` action（`move_forward`/`move_strafe`/`jump`）。
+
+这些函数全部基于阶段 1 的通用原语（`OverlapSphere`/`OverlapBox`/`SpawnProjectile`/
+`SetHealth`/`GetHealth`/`ApplyStatus`/`GetVar`/`SetVar`）组合实现。
 
 ## 5. 分阶段实施
 
-- **阶段 1（纯新增，零回归）**：`OverlapSphere`/`OverlapBox`（含 lag-comp 回滚）原语 +
-  脚本 binding + 单测。`SpawnProjectile` 加 `onHit` 回调（向后兼容）。现有 C++ 玩法 API 不动。
-- **阶段 2**：`combat.lua` 库 + `RegisterStatus`/`onStatusTick` 状态下沉机制。
-- **阶段 3**：删 C++ 玩法 API（§3.3）；迁移 `test_combat.cpp`/`test_lagcomp.cpp` 及相关
-  `test_game_runtime*.cpp` 战斗用例到「Overlap 原语 + combat.lua」测试；NeonRealm 项目脚本改到能跑。
+- **阶段 1（引擎原语，零回归）**：`OverlapSphere`/`OverlapBox`（含 lag-comp 回滚）+ 脚本
+  binding + 单测；`SpawnProjectile` 泛化（`range`/`hitRadius`/`statuses` 数据驱动）。现有 C++
+  玩法 API 不动。
+- **阶段 2（基础玩法库）**：内嵌 `Gameplay` 库加载机制（`engine/generated/gameplay_lib.hpp`
+  → `GameRuntime::Start` 注入）；逐模块实现 Stats / Cooldowns / 命中AoE / 投射物 / 状态 /
+  技能系统 / 背包 / 第一人称 / 第三人称控制，每个带 Lua 测试。
+- **阶段 3（删 C++ 玩法 + 迁移）**：删 C++ 玩法 API（§3.3）；迁移 `test_combat.cpp`/
+  `test_lagcomp.cpp` 到「Overlap 原语 + Gameplay 库」测试；`realm.lua` 改用基础库。
 
 ## 6. 验收
 
