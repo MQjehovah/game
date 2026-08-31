@@ -522,6 +522,10 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
         const SceneHealth* h = world_.Get<SceneHealth>(e);
         return h ? h->hp : -1.0f;
     };
+    scriptCtx_.sceneGetMaxHp = [this](ecs::Entity e) {
+        const SceneHealth* h = world_.Get<SceneHealth>(e);
+        return h ? h->maxHp : -1.0f;
+    };
     scriptCtx_.sceneSetHp = [this](ecs::Entity e, float hp) {
         if (SceneHealth* h = world_.Get<SceneHealth>(e)) h->hp = hp;
     };

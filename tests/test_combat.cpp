@@ -395,6 +395,72 @@ TEST(StatusTickCustomHandlerOverridesDefault) {
     CHECK(!runtime.HasStatus(hero, scene::kStatusBurning));
 }
 
+// Task 7 review fix: GetMaxHealth exposes the entity's real SceneHealth.maxHp
+// (symmetric with GetHealth). The hero's maxHp (250) differs from hp (100) to
+// prove we are not just returning hp.
+TEST(GetMaxHealthBindingViaLua) {
+    const char* scene = R"({
+      "entities": [
+        {"name": "hero", "components": {
+          "transform": {"pos": [0,0,0]},
+          "health": {"hp": 100, "maxHp": 250},
+          "script": {"backend": "lua", "path": "maxhp.lua"}}}
+      ]
+    })";
+    const char* lua = R"(
+      function on_start(e)
+        SetVar("maxhp", GetMaxHealth(e))
+        SetVar("hp", GetHealth(e))
+      end
+    )";
+    scene::GameRuntime runtime;
+    scene::GameRuntimeConfig cfg;
+    cfg.headless = true;
+    cfg.readScript = [&](const std::string&) { return std::string(lua); };
+    CHECK(runtime.Start(scene, cfg).Ok());
+    CHECK_NEAR(runtime.GameVar("maxhp"), 250.0, 1e-6);
+    CHECK_NEAR(runtime.GameVar("hp"), 100.0, 1e-6);
+}
+
+// Task 7 review fix: regen caps at the entity's real maxHp (not GetVar), and
+// the h > 0 guard keeps regen from reviving a dead entity (hp <= 0).
+TEST(RegenTickCapsAtMaxHpAndSkipsDead) {
+    const char* scene = R"({
+      "entities": [
+        {"name": "hero", "components": {
+          "transform": {"pos": [0,0,0]},
+          "health": {"hp": 100, "maxHp": 100},
+          "script": {"backend": "lua", "path": "regen.lua"}}},
+        {"name": "dead", "components": {"transform": {"pos": [0,0,-2]},
+          "health": {"hp": 0, "maxHp": 100}}}
+      ]
+    })";
+    const char* lua = R"(
+      function on_start(e)
+        SetHealth(e, 40)
+        ApplyStatus(e, "regen", 2, 100)
+        ApplyStatus(FindNamedEntity("dead"), "regen", 2, 100)
+      end
+    )";
+    scene::GameRuntime runtime;
+    scene::GameRuntimeConfig cfg;
+    cfg.headless = true;
+    cfg.readScript = [&](const std::string&) { return std::string(lua); };
+    CHECK(runtime.Start(scene, cfg).Ok());
+
+    const ecs::Entity hero = runtime.FindNamedEntity("hero");
+    const ecs::Entity dead = runtime.FindNamedEntity("dead");
+    CHECK(hero.IsValid());
+    CHECK(dead.IsValid());
+
+    // 2 seconds: regen ticks twice (+100 each); the hero caps at maxHp 100,
+    // the dead entity stays dead (h > 0 guard).
+    for (int i = 0; i < 120; ++i) runtime.Tick(1.0f / 60.0f);
+    CHECK_NEAR(runtime.EntityHealth(hero).first, 100.0f, 1e-3);
+    CHECK_NEAR(runtime.EntityHealth(dead).first, 0.0f, 1e-3);
+    CHECK(!runtime.HasStatus(hero, scene::kStatusRegen));
+}
+
 // World::Add must be idempotent: a second Add for the same entity+type must
 // not orphan the pool's dense entry (double-add previously corrupted the
 // SparseSet). The combat hooks rely on this when applying statuses.

@@ -117,6 +117,7 @@ struct ScriptContext {
     std::function<void(ecs::Entity, const math::Vec3&)> sceneSetPos;
     std::function<void(ecs::Entity, float)> sceneSetYaw;  // radians, Y-up
     std::function<float(ecs::Entity)> sceneGetHp;         // -1 when no health
+    std::function<float(ecs::Entity)> sceneGetMaxHp;      // -1 when no health
     std::function<void(ecs::Entity, float)> sceneSetHp;
     std::function<void(const math::Vec3& pos, const math::Vec3& dir, float speed, float damage,
                        float life, ecs::Entity caster, float range, float hitRadius,

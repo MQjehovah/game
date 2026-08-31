@@ -91,14 +91,15 @@ end
 -- 引擎 TickStatuses 在每个 interval 边界调用全局 OnStatusTick(entity, id, magnitude)；
 -- 项目脚本可覆盖 OnStatusTick 以改写默认 tick 行为。
 Gameplay.statusDefs = {
-  burning = { id = 1, tick = function(ent, mag) local h = GetHealth(ent); if h ~= nil then SetHealth(ent, math.max(0, h - mag)) end end },
-  poison  = { id = 2, tick = function(ent, mag) local h = GetHealth(ent); if h ~= nil then SetHealth(ent, math.max(0, h - mag)) end end },
-  regen   = { id = 3, tick = function(ent, mag) local h = GetHealth(ent); if h ~= nil then SetHealth(ent, math.min((GetVar("max_hp") or 100), h + mag)) end end },
+  burning = { id = 1, tick = function(ent, mag) local h = GetHealth(ent); if h > 0 then SetHealth(ent, math.max(0, h - mag)) end end },
+  poison  = { id = 2, tick = function(ent, mag) local h = GetHealth(ent); if h > 0 then SetHealth(ent, math.max(0, h - mag)) end end },
+  regen   = { id = 3, tick = function(ent, mag) local h = GetHealth(ent); if h > 0 then SetHealth(ent, math.min(GetMaxHealth(ent), h + mag)) end end },
   slow    = { id = 4, tick = function() end },
 }
--- 注册自定义状态（项目脚本扩展：id 暂为 0，仅登记 interval/tick 规则）。
-Gameplay.RegisterStatus = function(name, interval, tick)
-  Gameplay.statusDefs[name] = { id = 0, interval = interval, tick = tick }
+-- 覆盖已有状态的 tick 规则（项目脚本可 RegisterStatus("burning", myTick) 改写引擎默认）。
+Gameplay.RegisterStatus = function(name, tick)
+  local def = Gameplay.statusDefs[name]
+  if def then def.tick = tick end
 end
 -- 引擎每个状态 tick 调用此全局函数；默认实现按 statusDefs 分发。
 function OnStatusTick(ent, id, mag)

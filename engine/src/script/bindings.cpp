@@ -186,6 +186,13 @@ Value NativeGetHealth(IScriptHost& host, void* user) {
     return Value::Num(ctx->sceneGetHp(e));
 }
 
+Value NativeGetMaxHealth(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->sceneGetMaxHp) return Value::Num(-1);
+    ecs::Entity e = EntityFromValue(host.GetArg(0));
+    return Value::Num(ctx->sceneGetMaxHp(e));
+}
+
 // SetScale(entity, x, y, z) or SetScale(entity, uniform): writes the entity's
 // transform scale (death shrink, spawn pop-in...).
 Value NativeSetScale(IScriptHost& host, void* user) {
@@ -1651,6 +1658,7 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("InputMousePressed", &NativeInputMousePressed, &ctx);
     host.Register("SetRotationY", &NativeSetRotationY, &ctx);
     host.Register("GetHealth", &NativeGetHealth, &ctx);
+    host.Register("GetMaxHealth", &NativeGetMaxHealth, &ctx);
     host.Register("SetHealth", &NativeSetHealth, &ctx);
     host.Register("SpawnProjectile", &NativeSpawnProjectile, &ctx);
     host.Register("MeleeAttack", &NativeMeleeAttack, &ctx);
