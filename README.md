@@ -9,70 +9,70 @@
 
 ## 特性
 
-| 模块 | 状态 |
-| --- | --- |
-| 自研数学库（Vec2/3/4、Mat4、Quat、Transform、Ray/AABB） | ✅ |
-| ECS（SparseSet 实体-组件-系统） | ✅ |
-| 固定步长游戏循环（60Hz）+ 可变渲染 | ✅ |
-| 跨平台窗口/输入抽象（`IWindow`/`IInput`） | ✅ Win32 已实测；X11/Cocoa 代码就绪，CI 验证 |
-| OpenGL 3.3/4.x 渲染后端（自研 GL 加载器，无 GLEW/glad） | ✅ 已实测（Intel 4.6） |
-| Vulkan 渲染后端 | ⚠️ 实验性：可构建/运行/截图，但渲染结果为灰度（顶点色/材质未正确应用），待修复；GL 为默认后端 |
-| 3D 渲染：相机、方向光+点光、雾、网格、调试线框 | ✅ |
-| PBR 材质：Cook-Torrance BRDF（金属度/粗糙度/AO/自发光） | ✅ |
-| 阴影：投影阴影（CPU 接触阴影，兼容损坏深度缓冲的驱动） | ✅ |
-| 实例化渲染 + 视锥剔除（大批树木/岩石单次 draw call） | ✅ |
-| 高度图地形网格（程序化噪声地形 + 顶点色） | ✅ |
-| 深度缓冲可用性检测，不可用时自动降级画家算法排序 | ✅（兼容问题驱动） |
-| 字体渲染（stb_truetype 图集，像素字体内嵌 + 系统 CJK 字体） | ✅ 中文 UI |
-| 控件树 UI 系统（布局/命中测试/焦点/拖拽/Window/List/TextField/Slider） | ✅ 编辑器实测 |
-| 2D 立即模式 UI（按钮/面板/进度条，HUD） | ✅ |
-| Dear ImGui 工具层（docking 停靠布局，CJK 中文） | ✅ `neon_imgui` 模块，编辑器实测 |
-| 编辑器五面板：场景/资产/资源/属性/日志 | ✅ 停靠、可开关、位置持久化 |
-| 资产面板：目录浏览/模型导入/图片预览（跨平台 UTF-8） | ✅ |
-| 资源面板：已加载纹理/网格/字体统计 | ✅ `AssetManager::Stats` |
-| 日志面板：引擎日志环形缓冲 + 分级过滤 | ✅ `core::GetRecentLogs` |
-| 3D 场景编辑器（场景 JSON 保存加载 + 拾取/相机 + glTF/OBJ 导入） | ✅ `neon_editor.exe` |
-| 引擎控件树深化（TreeView/ComboBox/TabBar/DockLayout/ScrollArea） | ✅ 编辑器演示窗口 |
-| UI 自动化冒烟测试（ImGui + 自研控件命中/点击/状态校验） | ✅ `--smoke-test` |
-| 粒子系统（3D 公告板粒子） | ✅ |
-| 物理（动态球 vs 静态 AABB + 重力 + 射线） | ✅ 简易内置，可替换 Jolt/Bullet |
-| 资源管线（stb_image、OBJ+MTL、glTF 2.0 导入、Kenney CC0、程序化生成） | ✅ |
-| glTF 2.0：JSON DOM 解析器、PBR 材质、节点变换（Khronos 样例模型验证） | ✅ |
-| 单元测试（13 项：数学/ECS/配置/RNG） | ✅ 现 461 项 |
-| 截图/冒烟测试（`--smoke-test` / `--screenshot`） | ✅ |
-| 网络：UDP 传输 + 可靠通道（ACK/重传/乱序重排）、版本化消息编解码 | ✅ `neon::net` |
-| 网络：无头权威服务器 `neon_server`（固定 60Hz + 确定性沙箱） | ✅ |
-| 网络：快照插值 + 预测回滚 + AOI 九宫格兴趣管理 | ✅ |
-| 网络：v0 匿名登录 + 角色选择占位 | ✅ |
-| 网络：确定性模拟验收（服务器权威模拟 ≡ 客户端本地预测） | ✅ `tests/test_determinism.cpp` |
-| 网络：多玩家输入模型（每客户端一个角色；场景定义 `on_player_join` + `BindPlayerToClient`） | ✅ |
-| 骨骼动画：glTF 蒙皮导入 + 动画状态机（含过渡/混合）+ GPU 蒙皮着色 | ✅ |
-| 阴影映射：方向光 CSM + 点光 cubemap（颜色编码深度，兼容损坏深度缓冲的驱动） | ✅ |
-| 后处理：HDR 浮点管线 + Bloom + ACES 色调映射 + MSAA | ✅ |
-| IBL 环境光（天空梯度 → 辐照度/预过滤/BRDF LUT） | ✅ |
-| LOD 资产链（按距离切换网格，数据驱动） | ✅ |
-| 世界分区流式（chunk 3×3 窗口异步加载/卸载） | ✅ |
-| ECS 批量迭代 + 确定性并行 job（串行/并行逐位一致） | ✅ |
-| 脚本：Lua 5.4 沙箱（确定性 RNG/时钟）+ 引擎绑定 + 行为树引擎 | ✅ `neon::script`/`neon::bt` |
-| 脚本：按实例函数捕获（跨 chunk 不再互相遮蔽）+ `Spawn(kind, pos, script)` 动态控制器 | ✅ |
-| 战斗核心（M2）：状态效果（燃烧/中毒/回血，确定性 tick）+ 数据驱动技能表（投射物/近战扇形/朝向攻击盒，冷却/法力/命中附加效果） | ✅ |
-| 2D 脚本画布：Lua `on_render()` + `DrawRect/DrawRectOutline/DrawText/DrawSprite`（1280x720 设计坐标 + 贴图），数据驱动 2D 游戏零 C++ 玩法代码 | ✅ |
-| 编辑器 2D 模式：9x5 草坪画布（5 种植物/橡皮/3 种僵尸笔刷），保存/加载关卡 JSON；播放按钮/F5 统一（3D 与 2D 同一入口） | ✅ `neon_editor` |
-| 数据驱动 3D 游戏：`projects/neon_realm`（魔兽风格 demo 移植：村庄/狼群/波次/任务对话/存档，全 Lua） | ✅ |
-| 输入映射（Godot 式）：动作名→按键 JSON（项目 input.json）+ `ActionDown/ActionPressed/ActionAxis` 绑定 + 编辑器改键面板 | ✅ `neon::script::InputMap` |
-| 组件 Schema（Godot @export / UE UPROPERTY 风格）：组件字段元数据 → 属性面板自动生成编辑器，任意自定义组件（含 plant/zombie）可编辑 | ✅ `neon::scene::ComponentSchema` |
-| 预置体工作流（Godot 场景实例化风格）：`assets/prefabs/*.json` 模板 + 编辑器"插入预置体/另存为预置体"，场景实体带 prefab 引用与实例覆盖 | ✅ 冒烟覆盖 |
-| 导航寻路：2D 可行走网格 `NavGrid` + A*（八方向、绕墙、JSON 资产往返）+ 编辑器导航面板（格子编辑/起点终点/路径预览） | ✅ `neon::nav` |
-| 本地化（Godot 风格）：多语言字符串表 JSON + 脚本 `Loc(key)`（激活→默认→键 回退链）+ 编辑器本地化面板 | ✅ `neon::core::Localization` |
-| 导出配置：`game.json` 的 `export` 预设（platform/icon/description）+ 打包面板可视化编辑；manifest 接受 `editor` 元数据字段 | ✅ |
-| 材质球资产（Unity .mat / Godot Material 风格）：`materials/*.mat.json`（颜色/金属度/粗糙度/AO/自发光/四张贴图），资产面板新建/过滤/拖拽到实体，属性面板"另存为材质球"，场景导出带引用并展开 | ✅ `materialRef` |
-| 内置脚本编辑器（Godot 风格）：资产面板/脚本面板双击 `.lua` 打开，多行编辑 + Ctrl+S 保存 + 实时语法检查（行号/错误信息），一键"外部编辑器打开"（系统默认编辑器） | ✅ `脚本编辑器` 面板 |
-| 场景树（Godot 式）：实体 `transform.parent` 父子变换继承 + 编辑器树形层级面板 + 拖拽排父子 | ✅ |
-| 信号系统：`SignalConnect(name, fn)` / `SignalEmit(name, arg)`（支持局部闭包）+ 多场景 `ChangeScene(path)` | ✅ |
-| 数据驱动场景：组件化 JSON + 预制体 + `game.json` 清单 | ✅ |
-| 编辑器深化：gizmo / 撤销重做 / 材质编辑器 / 行为树可视化 / 脚本面板 / 缩略图 / 多相机 / 热重载 / 性能面板 | ✅ |
-| 一键打包 + 通用播放器：`neon_editor --package` → `game.pack` → `neon_game` 运行数据驱动游戏 | ✅ 编辑→打包→运行闭环 |
-| 音频：miniaudio 软件混音器 + 程序化音效/音乐 | ✅ 三平台统一，Windows 失败回退 WinMM |
+| 模块                                                                                                                                                                                          | 状态                                                                                            |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| 自研数学库（Vec2/3/4、Mat4、Quat、Transform、Ray/AABB）                                                                                                                                       | ✅                                                                                              |
+| ECS（SparseSet 实体-组件-系统）                                                                                                                                                               | ✅                                                                                              |
+| 固定步长游戏循环（60Hz）+ 可变渲染                                                                                                                                                            | ✅                                                                                              |
+| 跨平台窗口/输入抽象（`IWindow`/`IInput`）                                                                                                                                                 | ✅ Win32 已实测；X11/Cocoa 代码就绪，CI 验证                                                    |
+| OpenGL 3.3/4.x 渲染后端（自研 GL 加载器，无 GLEW/glad）                                                                                                                                       | ✅ 已实测（Intel 4.6）                                                                          |
+| Vulkan 渲染后端                                                                                                                                                                               | ⚠️ 实验性：可构建/运行/截图，但渲染结果为灰度（顶点色/材质未正确应用），待修复；GL 为默认后端 |
+| 3D 渲染：相机、方向光+点光、雾、网格、调试线框                                                                                                                                                | ✅                                                                                              |
+| PBR 材质：Cook-Torrance BRDF（金属度/粗糙度/AO/自发光）                                                                                                                                       | ✅                                                                                              |
+| 阴影：投影阴影（CPU 接触阴影，兼容损坏深度缓冲的驱动）                                                                                                                                        | ✅                                                                                              |
+| 实例化渲染 + 视锥剔除（大批树木/岩石单次 draw call）                                                                                                                                          | ✅                                                                                              |
+| 高度图地形网格（程序化噪声地形 + 顶点色）                                                                                                                                                     | ✅                                                                                              |
+| 深度缓冲可用性检测，不可用时自动降级画家算法排序                                                                                                                                              | ✅（兼容问题驱动）                                                                              |
+| 字体渲染（stb_truetype 图集，像素字体内嵌 + 系统 CJK 字体）                                                                                                                                   | ✅ 中文 UI                                                                                      |
+| 控件树 UI 系统（布局/命中测试/焦点/拖拽/Window/List/TextField/Slider）                                                                                                                        | ✅ 编辑器实测                                                                                   |
+| 2D 立即模式 UI（按钮/面板/进度条，HUD）                                                                                                                                                       | ✅                                                                                              |
+| Dear ImGui 工具层（docking 停靠布局，CJK 中文）                                                                                                                                               | ✅`neon_imgui` 模块，编辑器实测                                                               |
+| 编辑器五面板：场景/资产/资源/属性/日志                                                                                                                                                        | ✅ 停靠、可开关、位置持久化                                                                     |
+| 资产面板：目录浏览/模型导入/图片预览（跨平台 UTF-8）                                                                                                                                          | ✅                                                                                              |
+| 资源面板：已加载纹理/网格/字体统计                                                                                                                                                            | ✅`AssetManager::Stats`                                                                       |
+| 日志面板：引擎日志环形缓冲 + 分级过滤                                                                                                                                                         | ✅`core::GetRecentLogs`                                                                       |
+| 3D 场景编辑器（场景 JSON 保存加载 + 拾取/相机 + glTF/OBJ 导入）                                                                                                                               | ✅`neon_editor.exe`                                                                           |
+| 引擎控件树深化（TreeView/ComboBox/TabBar/DockLayout/ScrollArea）                                                                                                                              | ✅ 编辑器演示窗口                                                                               |
+| UI 自动化冒烟测试（ImGui + 自研控件命中/点击/状态校验）                                                                                                                                       | ✅`--smoke-test`                                                                              |
+| 粒子系统（3D 公告板粒子）                                                                                                                                                                     | ✅                                                                                              |
+| 物理（动态球 vs 静态 AABB + 重力 + 射线）                                                                                                                                                     | ✅ 简易内置，可替换 Jolt/Bullet                                                                 |
+| 资源管线（stb_image、OBJ+MTL、glTF 2.0 导入、Kenney CC0、程序化生成）                                                                                                                         | ✅                                                                                              |
+| glTF 2.0：JSON DOM 解析器、PBR 材质、节点变换（Khronos 样例模型验证）                                                                                                                         | ✅                                                                                              |
+| 单元测试（13 项：数学/ECS/配置/RNG）                                                                                                                                                          | ✅ 现 461 项                                                                                    |
+| 截图/冒烟测试（`--smoke-test` / `--screenshot`）                                                                                                                                          | ✅                                                                                              |
+| 网络：UDP 传输 + 可靠通道（ACK/重传/乱序重排）、版本化消息编解码                                                                                                                              | ✅`neon::net`                                                                                 |
+| 网络：无头权威服务器`neon_server`（固定 60Hz + 确定性沙箱）                                                                                                                                 | ✅                                                                                              |
+| 网络：快照插值 + 预测回滚 + AOI 九宫格兴趣管理                                                                                                                                                | ✅                                                                                              |
+| 网络：v0 匿名登录 + 角色选择占位                                                                                                                                                              | ✅                                                                                              |
+| 网络：确定性模拟验收（服务器权威模拟 ≡ 客户端本地预测）                                                                                                                                      | ✅`tests/test_determinism.cpp`                                                                |
+| 网络：多玩家输入模型（每客户端一个角色；场景定义`on_player_join` + `BindPlayerToClient`）                                                                                                 | ✅                                                                                              |
+| 骨骼动画：glTF 蒙皮导入 + 动画状态机（含过渡/混合）+ GPU 蒙皮着色                                                                                                                             | ✅                                                                                              |
+| 阴影映射：方向光 CSM + 点光 cubemap（颜色编码深度，兼容损坏深度缓冲的驱动）                                                                                                                   | ✅                                                                                              |
+| 后处理：HDR 浮点管线 + Bloom + ACES 色调映射 + MSAA                                                                                                                                           | ✅                                                                                              |
+| IBL 环境光（天空梯度 → 辐照度/预过滤/BRDF LUT）                                                                                                                                              | ✅                                                                                              |
+| LOD 资产链（按距离切换网格，数据驱动）                                                                                                                                                        | ✅                                                                                              |
+| 世界分区流式（chunk 3×3 窗口异步加载/卸载）                                                                                                                                                  | ✅                                                                                              |
+| ECS 批量迭代 + 确定性并行 job（串行/并行逐位一致）                                                                                                                                            | ✅                                                                                              |
+| 脚本：Lua 5.4 沙箱（确定性 RNG/时钟）+ 引擎绑定 + 行为树引擎                                                                                                                                  | ✅`neon::script`/`neon::bt`                                                                 |
+| 脚本：按实例函数捕获（跨 chunk 不再互相遮蔽）+`Spawn(kind, pos, script)` 动态控制器                                                                                                         | ✅                                                                                              |
+| 战斗核心（M2）：状态效果（燃烧/中毒/回血，确定性 tick）+ 数据驱动技能表（投射物/近战扇形/朝向攻击盒，冷却/法力/命中附加效果）                                                                 | ✅                                                                                              |
+| 2D 脚本画布：Lua`on_render()` + `DrawRect/DrawRectOutline/DrawText/DrawSprite`（1280x720 设计坐标 + 贴图），数据驱动 2D 游戏零 C++ 玩法代码                                               | ✅                                                                                              |
+| 编辑器 2D 模式：9x5 草坪画布（5 种植物/橡皮/3 种僵尸笔刷），保存/加载关卡 JSON；播放按钮/F5 统一（3D 与 2D 同一入口）                                                                         | ✅`neon_editor`                                                                               |
+| 数据驱动 3D 游戏：`projects/neon_realm`（魔兽风格 demo 移植：村庄/狼群/波次/任务对话/存档，全 Lua）                                                                                         | ✅                                                                                              |
+| 输入映射（Godot 式）：动作名→按键 JSON（项目 input.json）+`ActionDown/ActionPressed/ActionAxis` 绑定 + 编辑器改键面板                                                                      | ✅`neon::script::InputMap`                                                                    |
+| 组件 Schema（Godot @export / UE UPROPERTY 风格）：组件字段元数据 → 属性面板自动生成编辑器，任意自定义组件（含 plant/zombie）可编辑                                                           | ✅`neon::scene::ComponentSchema`                                                              |
+| 预置体工作流（Godot 场景实例化风格）：`assets/prefabs/*.json` 模板 + 编辑器"插入预置体/另存为预置体"，场景实体带 prefab 引用与实例覆盖                                                      | ✅ 冒烟覆盖                                                                                     |
+| 导航寻路：2D 可行走网格`NavGrid` + A*（八方向、绕墙、JSON 资产往返）+ 编辑器导航面板（格子编辑/起点终点/路径预览）                                                                          | ✅`neon::nav`                                                                                 |
+| 本地化（Godot 风格）：多语言字符串表 JSON + 脚本`Loc(key)`（激活→默认→键 回退链）+ 编辑器本地化面板                                                                                       | ✅`neon::core::Localization`                                                                  |
+| 导出配置：`game.json` 的 `export` 预设（platform/icon/description）+ 打包面板可视化编辑；manifest 接受 `editor` 元数据字段                                                              | ✅                                                                                              |
+| 材质球资产（Unity .mat / Godot Material 风格）：`materials/*.mat.json`（颜色/金属度/粗糙度/AO/自发光/四张贴图），资产面板新建/过滤/拖拽到实体，属性面板"另存为材质球"，场景导出带引用并展开 | ✅`materialRef`                                                                               |
+| 内置脚本编辑器（Godot 风格）：资产面板/脚本面板双击`.lua` 打开，多行编辑 + Ctrl+S 保存 + 实时语法检查（行号/错误信息），一键"外部编辑器打开"（系统默认编辑器）                              | ✅`脚本编辑器` 面板                                                                           |
+| 场景树（Godot 式）：实体`transform.parent` 父子变换继承 + 编辑器树形层级面板 + 拖拽排父子                                                                                                   | ✅                                                                                              |
+| 信号系统：`SignalConnect(name, fn)` / `SignalEmit(name, arg)`（支持局部闭包）+ 多场景 `ChangeScene(path)`                                                                               | ✅                                                                                              |
+| 数据驱动场景：组件化 JSON + 预制体 +`game.json` 清单                                                                                                                                        | ✅                                                                                              |
+| 编辑器深化：gizmo / 撤销重做 / 材质编辑器 / 行为树可视化 / 脚本面板 / 缩略图 / 多相机 / 热重载 / 性能面板                                                                                     | ✅                                                                                              |
+| 一键打包 + 通用播放器：`neon_editor --package` → `game.pack` → `neon_game` 运行数据驱动游戏                                                                                           | ✅ 编辑→打包→运行闭环                                                                         |
+| 音频：miniaudio 软件混音器 + 程序化音效/音乐                                                                                                                                                  | ✅ 三平台统一，Windows 失败回退 WinMM                                                           |
 
 ## 构建
 
@@ -143,14 +143,14 @@ cmake --build build --target neon_tests -j
 
 ### Demo《NeonRealm》操作
 
-| 输入 | 动作 |
-| --- | --- |
-| WASD / 方向键 | 移动（相对相机） |
-| 鼠标拖动 | 环绕相机 |
-| 左键 | 近战攻击（60° 扇形） |
-| 右键 | 冲刺（带无敌帧） |
-| 空格 | 跳跃 |
-| Esc | 暂停 / 返回 |
+| 输入          | 动作                  |
+| ------------- | --------------------- |
+| WASD / 方向键 | 移动（相对相机）      |
+| 鼠标拖动      | 环绕相机              |
+| 左键          | 近战攻击（60° 扇形） |
+| 右键          | 冲刺（带无敌帧）      |
+| 空格          | 跳跃                  |
+| Esc           | 暂停 / 返回           |
 
 目标：在开放世界中帮助村长猎杀野狼、完成主线任务，升级并收集金币。
 存档自动写入 `neon_realm_save.dat`（等级/经验/金币）。
@@ -188,6 +188,7 @@ build\neon_game.exe --connect 127.0.0.1:26000 --scene tests\data\neon_server_sam
 僵尸（普通/路障/铁桶）到达房屋左侧时该行推草机触发，无推草机则失败；胜负后按 Enter 重新开始。
 
 ### 经典小游戏演示（NeonSnake，贪吃蛇）
+
 `projects/snake` 是纯 Lua 的经典贪吃蛇，作为 2D 脚本画布的能力验证（零贴图、纯 `DrawRect/DrawText` 绘制）：
 方向键 / WASD 转向，空格或 Enter 开始 / 重开，P 暂停；吃食物增长并提速，撞墙或咬到自己结束。
 场景 `assets/scenes/snake.json` 的 script 组件带 `vars.demo`：置 1 时进入自动演示模式（AI 吃食物，
@@ -202,6 +203,7 @@ build\neon_game.exe --connect 127.0.0.1:26000 --scene tests\data\neon_server_sam
 ```
 
 ### UI 编辑器（数据驱动界面）
+
 引擎内置可视化 UI 编辑器(视图菜单 →「UI 编辑器」):项目 `ui/*.ui.json` 文档按节点树编辑
 (面板/文本/按钮/进度条),支持属性检查器、视口内 1:1 预览、鼠标拖动移动/角点缩放、增删节点与保存。
 运行时由 Lua 加载展示:`UIShow("ui/main.ui.json")` 显示文档、`UIClicked("按钮名")` 查询点击、
