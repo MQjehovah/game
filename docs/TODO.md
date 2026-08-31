@@ -229,8 +229,38 @@
 - 方向：debug 断言 + 重复 Add 防护 + rejected 返回 const。
 
 ### C12 CMake 单文件 655 行
-- [~] 无模块化拆分/PCH/unity/ccache；neon_tests 单一聚合目标。
+- [~] 已拆（2026-08-31）：neon_engine 拆为 neon_core/neon_gfx/neon_scene 三层库 +
+  neon_engine INTERFACE 门面；依赖方向 core←gfx←scene 由构建强制。未做：每模块独立
+  add_subdirectory（当前按层组织，非按目录）。
 - 方向：按模块 add_subdirectory + PCH（engine.hpp 聚合头）。
+
+> 以下 C13–C15 来自 2026-08-31 架构评审（分层/依赖方向，详见
+> [`plans/2026-08-31-architecture-review.md`](./plans/2026-08-31-architecture-review.md)）。
+
+### C13 scene ↔ script 循环依赖
+- [x] `game_runtime.hpp` → `script/bindings.hpp`（scene 依赖 script）；`bindings.cpp` →
+  `scene/scene_file.hpp` + `scene/status.hpp`（script 依赖 scene）；`bindings.hpp` 同时依赖
+  `gfx/physics/platform/ecs`。靠头文件顺序"刚好能编过"，无规则约束会持续腐化。
+- 已修复（2026-08-31）：`ScriptContext` 新增 `statusIdByName` / `entityComponent` /
+  `setEntityComponent` 三个依赖注入 hook，`bindings.cpp` 改走 hook 并移除全部 `neon/scene/`
+  include；`game_runtime.cpp` 负责接线。script 模块现在零 scene 依赖，依赖方向单向化
+  （scene → script）。
+
+### C14 玩法逻辑混进引擎核心（内聚）
+- [~] 重评（2026-08-31）：`skills.hpp`/`status.hpp`/`game_runtime_combat.cpp` 实为
+  **数据驱动运行时能力**（skills.json 定义技能、状态表驱动 buff/debuff），非某具体游戏
+  的硬编码玩法——与物理/动画同为运行时子系统。真正的问题是 C1（GameRuntime 上帝类
+  承载所有子系统），combat 已作为职责簇拆到独立 TU。将其"移出引擎"需把 GameRuntime
+  的战斗状态（skillCooldowns_/projectiles_/poseSlots_）抽成独立子系统（CombatSystem
+  组合），属 C1 后续，需谨慎避免破坏确定性/战斗测试。
+- 方向：并入 C1——GameRuntime 按子系统抽 facade，combat 子系统作为组合成员，而非迁出引擎。
+
+### C15 editor/server/game 未库化（测试跨层抓源码）
+- [~] editor 已库化（2026-08-31）：`neon_editor_common`（history+packager）+ `neon_editor_lib`
+  + `neon_editor` 薄壳；`neon_tests` 链接 `neon_editor_common` 而非抓源码。
+- [ ] 未做：`server/src/game_server.cpp`/`aoi.cpp` 与 `game/src/client_sync.cpp` 仍被
+  `neon_tests` 直接编译——server/game 尚未库化。
+- 方向：server/game 抽公共 lib，测试链接库而非抓源码。
 
 ---
 

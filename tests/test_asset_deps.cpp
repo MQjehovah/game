@@ -231,10 +231,10 @@ TEST(AssetVariantTableResolvesAndFallsBack) {
     CHECK(!badErr.empty());
 }
 
-// G7-1: the "assets:/" scheme normalizes to a plain relative path.
+// G7-1: the "assets:/" scheme normalizes to the canonical "assets/..." form.
 TEST(AssetPathSchemeNormalization) {
-    CHECK_EQ(assets::NormalizeAssetPath("assets:/models/x.obj"), "models/x.obj");
-    CHECK_EQ(assets::NormalizeAssetPath("asset:/models/x.obj"), "models/x.obj");
+    CHECK_EQ(assets::NormalizeAssetPath("assets:/models/x.obj"), "assets/models/x.obj");
+    CHECK_EQ(assets::NormalizeAssetPath("asset:/models/x.obj"), "assets/models/x.obj");
     CHECK_EQ(assets::NormalizeAssetPath("models/x.obj"), "models/x.obj"); // no scheme
     CHECK_EQ(assets::NormalizeAssetPath("assets/textures/t.png"), "assets/textures/t.png");
     CHECK_EQ(assets::NormalizeAssetPath("C:/abs/x.obj"), "C:/abs/x.obj"); // absolute untouched

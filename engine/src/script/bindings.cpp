@@ -6,8 +6,6 @@
 
 #include "neon/core/json.hpp"
 #include "neon/core/localization.hpp"
-#include "neon/scene/scene_file.hpp"
-#include "neon/scene/status.hpp"
 
 namespace neon::script {
 namespace {
@@ -18,6 +16,12 @@ constexpr float kRayMaxDist = 100000.0f;
 // JSON into a script Value.
 Value JsonToValue(const core::Json& j);
 core::Json ValueToJson(const Value& v);
+
+// Resolves a status name through the ScriptContext hook (wired by the scene
+// runtime), so this translation unit never includes/link the scene module.
+uint32_t StatusIdOf(ScriptContext* ctx, const std::string& name) {
+    return ctx && ctx->statusIdByName ? ctx->statusIdByName(name) : 0;
+}
 
 // Lua numbers are doubles; casting one directly to uint32_t is UB for
 // negative, NaN, or >= 2^32 values. Range-check first; anything out of range
@@ -258,7 +262,7 @@ Value NativeApplyStatus(IScriptHost& host, void* user) {
     auto* ctx = static_cast<ScriptContext*>(user);
     if (!ctx || !ctx->sceneApplyStatus) return Value::Nil();
     const ecs::Entity e = EntityFromValue(host.GetArg(0));
-    const uint32_t id = scene::StatusIdByName(StringArg(host, 1));
+    const uint32_t id = StatusIdOf(ctx, StringArg(host, 1));
     const float duration =
         host.GetArg(2).type == Value::Type::Number ? static_cast<float>(host.GetArg(2).number) : 0.0f;
     const float magnitude =
@@ -272,7 +276,7 @@ Value NativeHasStatus(IScriptHost& host, void* user) {
     auto* ctx = static_cast<ScriptContext*>(user);
     if (!ctx || !ctx->sceneHasStatus) return Value::Num(0);
     const ecs::Entity e = EntityFromValue(host.GetArg(0));
-    const uint32_t id = scene::StatusIdByName(StringArg(host, 1));
+    const uint32_t id = StatusIdOf(ctx, StringArg(host, 1));
     return Value::Bool(id != 0 && ctx->sceneHasStatus(e, id));
 }
 
@@ -280,7 +284,7 @@ Value NativeStatusMagnitude(IScriptHost& host, void* user) {
     auto* ctx = static_cast<ScriptContext*>(user);
     if (!ctx || !ctx->sceneStatusMagnitude) return Value::Num(0);
     const ecs::Entity e = EntityFromValue(host.GetArg(0));
-    const uint32_t id = scene::StatusIdByName(StringArg(host, 1));
+    const uint32_t id = StatusIdOf(ctx, StringArg(host, 1));
     return Value::Num(id != 0 ? ctx->sceneStatusMagnitude(e, id) : 0.0);
 }
 
@@ -288,7 +292,7 @@ Value NativeRemoveStatus(IScriptHost& host, void* user) {
     auto* ctx = static_cast<ScriptContext*>(user);
     if (!ctx || !ctx->sceneRemoveStatus) return Value::Nil();
     const ecs::Entity e = EntityFromValue(host.GetArg(0));
-    const uint32_t id = scene::StatusIdByName(StringArg(host, 1));
+    const uint32_t id = StatusIdOf(ctx, StringArg(host, 1));
     if (id != 0) ctx->sceneRemoveStatus(e, id);
     return Value::Nil();
 }
@@ -939,10 +943,9 @@ Value NativeZombieInfo(IScriptHost& host, void* user) {
         const Value v = ctx->zombieInfo(e);
         if (v.type != Value::Type::Nil) return v;
     }
-    const scene::SceneData* sd = ctx->world->Get<scene::SceneData>(e);
-    if (!sd) return Value::Nil();
-    for (const auto& kv : sd->components) {
-        if (kv.first == "zombie") return JsonToValue(kv.second);
+    if (ctx->entityComponent) {
+        core::Json data;
+        if (ctx->entityComponent(e, "zombie", &data)) return JsonToValue(data);
     }
     return Value::Nil();
 }
@@ -956,10 +959,9 @@ Value NativeEntityComponent(IScriptHost& host, void* user) {
     const ecs::Entity e = EntityFromValue(host.GetArg(0));
     const std::string name = StringArg(host, 1);
     if (!e.IsValid() || !ctx->world->Alive(e) || name.empty()) return Value::Nil();
-    const scene::SceneData* sd = ctx->world->Get<scene::SceneData>(e);
-    if (!sd) return Value::Nil();
-    for (const auto& kv : sd->components) {
-        if (kv.first == name) return JsonToValue(kv.second);
+    if (ctx->entityComponent) {
+        core::Json data;
+        if (ctx->entityComponent(e, name, &data)) return JsonToValue(data);
     }
     return Value::Nil();
 }
@@ -974,17 +976,9 @@ Value NativeSetEntityComponent(IScriptHost& host, void* user) {
     const ecs::Entity e = EntityFromValue(host.GetArg(0));
     const std::string name = StringArg(host, 1);
     if (!e.IsValid() || !ctx->world->Alive(e) || name.empty()) return Value::Nil();
-    if (!ctx->world->Has<scene::SceneData>(e)) ctx->world->Add<scene::SceneData>(e);
-    scene::SceneData* sd = ctx->world->Get<scene::SceneData>(e);
-    if (!sd) return Value::Nil();
+    if (!ctx->setEntityComponent) return Value::Nil();
     const core::Json data = ValueToJson(host.GetArg(2));
-    for (auto& kv : sd->components) {
-        if (kv.first == name) {
-            kv.second = data;
-            return Value::Nil();
-        }
-    }
-    sd->components.emplace_back(name, data);
+    ctx->setEntityComponent(e, name, data);
     return Value::Nil();
 }
 

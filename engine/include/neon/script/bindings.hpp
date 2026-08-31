@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "neon/core/json.hpp"
 #include "neon/ecs/world.hpp"
 #include "neon/gfx/backend.hpp"
 #include "neon/gfx/particles.hpp"
@@ -121,6 +122,18 @@ struct ScriptContext {
     std::function<bool(ecs::Entity, uint32_t id)> sceneHasStatus;
     std::function<float(ecs::Entity, uint32_t id)> sceneStatusMagnitude;
     std::function<void(ecs::Entity, uint32_t id)> sceneRemoveStatus;
+    // Resolves a status name to its built-in id (0 = unknown). Wired by the
+    // scene runtime; null -> 0, so the status bindings degrade to no-ops. Kept
+    // as a hook so the script layer never links against the scene's status
+    // table (breaks the scene <-> script dependency cycle).
+    std::function<uint32_t(const std::string&)> statusIdByName;
+    // Reads an arbitrary data component (the scene's SceneData) by name into
+    // `out` (JSON). Returns false when the entity lacks it. Wired by GameRuntime
+    // so the script layer stays scene-free.
+    std::function<bool(ecs::Entity, const std::string&, core::Json*)> entityComponent;
+    // Writes/replaces an arbitrary data component (SceneData). Wired by
+    // GameRuntime; null -> SetEntityComponent is a no-op.
+    std::function<void(ecs::Entity, const std::string&, const core::Json&)> setEntityComponent;
     // Skill hooks (M2 combat core): data-driven CastSkill / SkillCooldown and
     // the oriented attack box.
     std::function<int(const std::string& name, const math::Vec3& origin, const math::Vec3& dir,

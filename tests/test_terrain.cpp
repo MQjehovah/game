@@ -22,8 +22,8 @@ TEST(TerrainLayerColorBlend) {
     CHECK_NEAR(grass.x, cfg.grass.x, 1e-5);
     CHECK_NEAR(grass.y, cfg.grass.y, 1e-5);
     CHECK_NEAR(grass.z, cfg.grass.z, 1e-5);
-    // High, flat ground -> rock.
-    math::Vec4 rock = gfx::TerrainLayerColor(10.0f, 1.0f, 0.0f, cfg);
+    // High, flat ground -> rock (above dirtMaxHeight + blendWidth).
+    math::Vec4 rock = gfx::TerrainLayerColor(20.0f, 1.0f, 0.0f, cfg);
     CHECK_NEAR(rock.x, cfg.rock.x, 1e-5);
     CHECK_NEAR(rock.y, cfg.rock.y, 1e-5);
     CHECK_NEAR(rock.z, cfg.rock.z, 1e-5);
@@ -32,8 +32,8 @@ TEST(TerrainLayerColorBlend) {
     CHECK_NEAR(steep.x, cfg.rock.x, 1e-5);
     CHECK_NEAR(steep.y, cfg.rock.y, 1e-5);
     CHECK_NEAR(steep.z, cfg.rock.z, 1e-5);
-    // Dirt midpoint (h=0.5): between grass and rock, distinct from both.
-    math::Vec4 mid = gfx::TerrainLayerColor(0.5f, 1.0f, 0.0f, cfg);
+    // Grass-dirt blend midpoint (h = grassMaxHeight): between grass and dirt.
+    math::Vec4 mid = gfx::TerrainLayerColor(6.0f, 1.0f, 0.0f, cfg);
     CHECK(mid.y < cfg.grass.y && mid.y > cfg.dirt.y);
     CHECK_NEAR(mid.w, 1.0f, 1e-6);
 }

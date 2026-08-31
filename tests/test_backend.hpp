@@ -57,6 +57,10 @@ public:
                                      uint32_t indexCount) override {
         return {1, 1, 1, indexCount};
     }
+    neon::gfx::MeshHandle CreateMeshU32(const void*, uint32_t vertexCount, const uint32_t*,
+                                        uint32_t indexCount) override {
+        return {1, 1, 1, indexCount};
+    }
     void DestroyMesh(const neon::gfx::MeshHandle&) override {}
     void UpdateMeshVertices(const neon::gfx::MeshHandle&, const void*, uint32_t) override {}
 

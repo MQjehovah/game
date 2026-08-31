@@ -65,6 +65,21 @@
 3. 后端（platform/gfx/audio）实现接口且只在对应平台编译。
 4. 高层（Renderer/Material/Mesh）只通过 `IRenderBackend` 触达 GPU。
 
+> **执行状态（2026-08-31 架构评审，详见
+> [`2026-08-31-architecture-review.md`](./plans/2026-08-31-architecture-review.md)）**：
+> 上述规则是**意图**，但尚未被**强制**——所有引擎代码编译进单一 `neon_engine` 静态库，
+> 无 target 级依赖白名单，越层 include 靠自觉。已知违规（已列入 TODO C13–C15）：
+>
+> - **`scene ↔ script` 循环依赖**：`game_runtime.hpp` 依赖 `script/bindings.hpp`，
+>   而 `bindings.cpp` 反向依赖 `scene/scene_file.hpp` + `scene/status.hpp`（C13）。
+> - **玩法逻辑混进引擎核心**：`scene/skills.cpp`、`scene/status.cpp`、
+>   `scene/game_runtime_combat.cpp` 承载技能/状态/弹道/攻击盒——类型专属玩法，非引擎通用能力（C14）。
+> - **editor/server/game 未库化**：`neon_tests` 直接编译 `editor/src`/`server/src`/`game/src`
+>   的 `.cpp` 源码（C15）。
+>
+> 目标分层：`neon_math → neon_core → neon_gfx → neon_scene`，`neon_script` 只依赖 core，
+> 应用层（editor/game/server/plugins）只依赖公开库，用 CMake target 依赖强制单向。
+
 **模块规模（粗略）**：core ~2.1k、gfx ~5.5k、assets ~1.6k、scene ~4.3k、script ~2.8k、
 bt ~1.3k、anim ~0.8k、physics ~1.2k(+Jolt)、net ~1.6k、ui ~1.6k、audio ~0.4k、
 editor(含 ImGui) ~12k。
@@ -524,6 +539,8 @@ G8-4 增量打包、G6-1/6-2/6-3 平台/异步/堆监控、BC1 离线烘焙/检�
 
 - [`README.md`](./README.md) — 项目介绍 / 快速上手（仓库根）
 - [`TODO.md`](./TODO.md) — 缺陷与差距清单（`[ ]/[~]/[x]` 速查更新基线；详细项见 §10）
+- [`plans/2026-08-31-architecture-review.md`](./plans/2026-08-31-architecture-review.md) —
+  架构评审（分层 / 依赖方向 / 内聚耦合分析 + 分阶段改进计划）
 
 > `docs/` 归档为唯一主文档；各主题（渲染/Vulkan/插件/网络/路线图/代码规范）均已按章节并入，
 > 不再保留独立副本。

@@ -9,7 +9,6 @@
 #include <cstring>
 
 #include "neon/core/log.hpp"
-#include "neon/gfx/gl/gl_loader.hpp"
 
 // X11 / GLX window backend. Compiled on Linux; validated in CI.
 namespace neon::platform {

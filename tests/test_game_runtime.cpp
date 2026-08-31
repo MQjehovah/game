@@ -1065,22 +1065,25 @@ TEST(GameRuntimeVariantAssetResolution) {
     CHECK(fix.assets.Meshes().count("projects/default/assets/kenney_nature/Models/OBJ format/bed.obj") == 0u);
 }
 
-// G7-1: an "assets:/..." mesh key resolves like its plain relative form — the
-// scheme is stripped before loading, so the cache holds the plain path.
+// G7-1: an "assets:/..." mesh key normalizes to the canonical "assets/..."
+// form and resolves through the project-root VFS.
 TEST(GameRuntimeAssetSchemeMeshKey) {
     const std::string json = R"({"entities":[{"name":"A","components":{
         "transform":{"pos":[0,0,0]},
         "mesh":{"meshKey":"obj:assets:/kenney_nature/Models/OBJ format/bed.obj"}}}]})";
     test::HeadlessAssetFixture fix;
+    // Mount the project root so the canonical "assets/..." path resolves.
+    io::MountStack vfs;
+    vfs.Mount(std::make_shared<io::DiskFileSystem>("projects/default"));
+    fix.assets.SetFileSystem(&vfs);
     scene::GameRuntime runtime;
     scene::GameRuntimeConfig cfg;
     cfg.assets = &fix.assets;
-    cfg.assetBaseDir = "projects/default/assets"; // "assets:/X" == "X" relative to the base dir
     CHECK(runtime.Start(json, cfg).Ok());
     gfx::Camera cam;
     runtime.Draw(fix.renderer, cam);
 
-    CHECK(fix.assets.Meshes().count("projects/default/assets/kenney_nature/Models/OBJ format/bed.obj") == 1u);
+    CHECK(fix.assets.Meshes().count("assets/kenney_nature/Models/OBJ format/bed.obj") == 1u);
 }
 
 // G6-2: async mesh streaming — with cfg.asyncMeshLoad the draw item's mesh is

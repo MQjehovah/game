@@ -82,9 +82,13 @@ TEST(SceneMakeEntityErrors) {
     CHECK(!noName.Ok());
     CHECK(!noName.Error().empty());
 
-    auto noMesh = scene::SceneFile::MakeEntity("Ghost", {0, 0, 0}, {}, {1, 1, 1}, "", 0, 1);
-    CHECK(!noMesh.Ok());
-    CHECK(noMesh.Error().find("Ghost") != std::string::npos);
+    // An empty meshKey is a VALID pure-logic entity (e.g. a script host): it
+    // exports a transform + script but no mesh component.
+    auto logic = scene::SceneFile::MakeEntity("Ghost", {0, 0, 0}, {}, {1, 1, 1}, "", 0, 1);
+    CHECK(logic.Ok());
+    const core::Json* comps = logic.Value().Get("components");
+    CHECK(comps != nullptr);
+    CHECK(comps->Get("mesh") == nullptr);
 }
 
 // ---------------------------------------------------------------------------

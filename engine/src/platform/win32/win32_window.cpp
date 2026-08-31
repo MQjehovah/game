@@ -5,7 +5,6 @@
 #include <imm.h>
 
 #include "neon/core/log.hpp"
-#include "neon/gfx/gl/gl_loader.hpp"
 
 namespace neon::platform {
 namespace {
@@ -44,6 +43,20 @@ constexpr int kWglContextCoreProfileBit = 0x00000001;
 typedef BOOL(APIENTRY* PFN_wglChoosePixelFormatARB)(HDC, const int*, const FLOAT*, UINT, int*, UINT*);
 typedef HGLRC(APIENTRY* PFN_wglCreateContextAttribsARB)(HDC, HGLRC, const int*);
 typedef BOOL(APIENTRY* PFN_wglSwapIntervalEXT)(int);
+
+// Local WGL extension loader (wglGetProcAddress with an opengl32.dll fallback).
+// Inlined here so the platform layer never depends on gfx/gl (the GL function
+// loader lives in the rendering layer); the window only needs these WGL entry
+// points to create its GL context.
+void* LoadWglProc(const char* name) {
+    void* p = reinterpret_cast<void*>(wglGetProcAddress(name));
+    if (!p || p == reinterpret_cast<void*>(1) || p == reinterpret_cast<void*>(2) ||
+        p == reinterpret_cast<void*>(3) || p == reinterpret_cast<void*>(-1)) {
+        static HMODULE module = GetModuleHandleA("opengl32.dll");
+        p = module ? reinterpret_cast<void*>(GetProcAddress(module, name)) : nullptr;
+    }
+    return p;
+}
 
 Key VkToKey(WPARAM vk) {
     if (vk >= 'A' && vk <= 'Z') return static_cast<Key>(static_cast<int>(Key::A) + (vk - 'A'));
@@ -408,11 +421,11 @@ private:
         wglMakeCurrent(helperHdc_, helperGlrc_);
 
         auto wglChoosePixelFormatARB =
-            reinterpret_cast<PFN_wglChoosePixelFormatARB>(gfx::gl::LoadProc("wglChoosePixelFormatARB"));
+            reinterpret_cast<PFN_wglChoosePixelFormatARB>(LoadWglProc("wglChoosePixelFormatARB"));
         auto wglCreateContextAttribsARB =
-            reinterpret_cast<PFN_wglCreateContextAttribsARB>(gfx::gl::LoadProc("wglCreateContextAttribsARB"));
+            reinterpret_cast<PFN_wglCreateContextAttribsARB>(LoadWglProc("wglCreateContextAttribsARB"));
         auto wglSwapIntervalEXT =
-            reinterpret_cast<PFN_wglSwapIntervalEXT>(gfx::gl::LoadProc("wglSwapIntervalEXT"));
+            reinterpret_cast<PFN_wglSwapIntervalEXT>(LoadWglProc("wglSwapIntervalEXT"));
 
         if (!wglChoosePixelFormatARB || !wglCreateContextAttribsARB) {
             NEON_LOG_ERROR("Win32: WGL_ARB_pixel_format/context extensions unavailable");

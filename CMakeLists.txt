@@ -21,41 +21,70 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 # ---------------------------------------------------------------------------
-# Engine core (platform-independent)
+# Engine layers (P3): a strict three-layer split with dependency edges enforced
+# by the build system (not convention):
+#
+#   neon_core  (L0/L1) math + core + io + ecs + net + nav + platform + plugin-core
+#   neon_gfx   (L2)    rendering (GL / Vulkan)
+#   neon_scene (L3)    assets + scene + script + bt + anim + physics + ui + audio
+#                      + plugin runtime/backend
+#
+# Dependency direction: core <- gfx <- scene. Each target links only the layer
+# below it; a layer reaching upward is a compile/link error.
 # ---------------------------------------------------------------------------
-set(ENGINE_CORE_SOURCES
-  engine/src/assets/asset_db.cpp
-  engine/src/assets/asset_importer.cpp
-  engine/src/assets/asset_manager.cpp
-  engine/src/assets/async_loader.cpp
-  engine/src/assets/bc1.cpp
-  engine/src/anim/anim.cpp
-  engine/src/audio/audio.cpp
-  engine/src/audio/miniaudio/ma_audio.cpp
+
+# Shared compile options + PCH list for the three layer targets.
+set(NEON_LAYER_COMPILE_OPTIONS "")
+if(MSVC)
+  list(APPEND NEON_LAYER_COMPILE_OPTIONS /W4 /permissive- /utf-8)
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  list(APPEND NEON_LAYER_COMPILE_OPTIONS -Wall -Wextra
+    -finput-charset=UTF-8 -fexec-charset=UTF-8)
+endif()
+# C12: precompiled headers cut rebuild time on the hot engine + editor + test
+# translation units (MSVC /FI, GCC -include). Standard-library only so no TU is
+# forced to compile an umbrella header.
+set(NEON_LAYER_PCH
+  <algorithm> <atomic> <cassert> <cmath> <cstdint> <cstdio> <cstring>
+  <map> <memory> <string> <unordered_map> <vector>
+)
+
+# --- neon_core (L0/L1): platform-independent foundation ----------------------
+add_library(neon_core STATIC
   engine/src/core/app.cpp
   engine/src/core/config.cpp
   engine/src/core/crash.cpp
   engine/src/core/log.cpp
   engine/src/core/mem_stats.cpp
   engine/src/core/profiler.cpp
-  engine/src/ecs/world.cpp
-  engine/src/ecs/parallel.cpp
-  engine/src/ecs/task_graph.cpp
-  engine/src/ecs/system_scheduler.cpp
   engine/src/io/vfs.cpp
   engine/src/core/json.cpp
   engine/src/core/localization.cpp
   engine/src/core/serialize.cpp
   engine/src/core/pack.cpp
+  engine/src/ecs/world.cpp
+  engine/src/ecs/parallel.cpp
+  engine/src/ecs/task_graph.cpp
+  engine/src/ecs/system_scheduler.cpp
   engine/src/net/protocol.cpp
   engine/src/net/socket.cpp
   engine/src/net/reliable.cpp
   engine/src/nav/nav_grid.cpp
   engine/src/plugin/plugin.cpp
-  engine/src/plugin/runtime_plugin.cpp
   engine/src/plugin/native.cpp
-  engine/src/plugin/backend.cpp
-engine/src/gfx/color.cpp
+  engine/src/platform/input.cpp
+)
+if(MSVC OR CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  target_precompile_headers(neon_core PRIVATE ${NEON_LAYER_PCH})
+endif()
+target_include_directories(neon_core
+  PUBLIC engine/include
+  PRIVATE engine/generated)
+target_compile_options(neon_core PRIVATE ${NEON_LAYER_COMPILE_OPTIONS})
+
+# --- neon_gfx (L2): rendering -------------------------------------------------
+add_library(neon_gfx STATIC
+  engine/src/gfx/color.cpp
   engine/src/gfx/csm.cpp
   engine/src/gfx/font.cpp
   engine/src/gfx/ibl.cpp
@@ -67,8 +96,28 @@ engine/src/gfx/color.cpp
   engine/src/gfx/renderer.cpp
   engine/src/gfx/gl/gl_loader.cpp
   engine/src/gfx/gl/gl_backend.cpp
+)
+if(MSVC OR CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  target_precompile_headers(neon_gfx PRIVATE ${NEON_LAYER_PCH})
+endif()
+target_include_directories(neon_gfx
+  PRIVATE engine/include engine/generated third_party/stb)
+target_link_libraries(neon_gfx PUBLIC neon_core)
+target_compile_options(neon_gfx PRIVATE ${NEON_LAYER_COMPILE_OPTIONS})
+
+# --- neon_scene (L3): content/runtime ----------------------------------------
+add_library(neon_scene STATIC
+  engine/src/assets/asset_db.cpp
+  engine/src/assets/asset_importer.cpp
+  engine/src/assets/asset_manager.cpp
+  engine/src/assets/async_loader.cpp
+  engine/src/assets/bc1.cpp
+  engine/src/assets/fbx_loader.cpp
+  engine/src/assets/mesh_format.cpp
+  engine/src/anim/anim.cpp
+  engine/src/audio/audio.cpp
+  engine/src/audio/miniaudio/ma_audio.cpp
   engine/src/physics/physics.cpp
-  engine/src/platform/input.cpp
   engine/src/scene/scene_file.cpp
   engine/src/scene/component_schema.cpp
   engine/src/scene/scene_manager.cpp
@@ -86,48 +135,36 @@ engine/src/gfx/color.cpp
   engine/src/script/bindings.cpp
   engine/src/script/input_map.cpp
   engine/src/bt/behavior_tree.cpp
-engine/src/ui/ui.cpp
-engine/src/ui/system.cpp
-engine/src/ui/document.cpp
-engine/src/ui/layout_solver.cpp
-engine/src/ui/ui_system.cpp
-engine/src/assets/fbx_loader.cpp
-engine/src/assets/mesh_format.cpp
+  engine/src/ui/ui.cpp
+  engine/src/ui/system.cpp
+  engine/src/ui/document.cpp
+  engine/src/ui/layout_solver.cpp
+  engine/src/ui/ui_system.cpp
+  engine/src/plugin/runtime_plugin.cpp
+  engine/src/plugin/backend.cpp
 )
 if(NEON_ENABLE_JS)
-  list(APPEND ENGINE_CORE_SOURCES engine/src/script/js_host.cpp)
+  target_sources(neon_scene PRIVATE engine/src/script/js_host.cpp)
 endif()
+if(MSVC OR CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  target_precompile_headers(neon_scene PRIVATE ${NEON_LAYER_PCH})
+endif()
+target_include_directories(neon_scene
+  PRIVATE engine/include engine/generated third_party/stb engine/third_party/ufbx)
+target_link_libraries(neon_scene PUBLIC neon_core neon_gfx)
+target_compile_options(neon_scene PRIVATE ${NEON_LAYER_COMPILE_OPTIONS})
 
-add_library(neon_engine STATIC ${ENGINE_CORE_SOURCES})
 # FBX model loading via the vendored single-file ufbx library (MIT). It is a
 # C library; keep it in its own target so it is compiled as C (not C++).
 add_library(neon_ufbx STATIC engine/third_party/ufbx/ufbx.c)
 target_include_directories(neon_ufbx PUBLIC engine/third_party/ufbx)
-target_link_libraries(neon_engine PRIVATE neon_ufbx)
-# C12: precompiled headers cut rebuild time on the hot engine + editor +
-# test translation units (MSVC /FI, GCC -include). Standard-library only so no
-# TU is forced to compile an umbrella header.
-if(MSVC OR CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-  target_precompile_headers(neon_engine PRIVATE
-    <algorithm> <atomic> <cassert> <cmath> <cstdint> <cstdio> <cstring>
-    <map> <memory> <string> <unordered_map> <vector>
-  )
-endif()
-target_include_directories(neon_engine
-  PUBLIC
-    engine/include
-  PRIVATE
-    third_party/stb
-    engine/third_party/ufbx
-    engine/generated
-)
+target_link_libraries(neon_scene PRIVATE neon_ufbx)
 
-if(MSVC)
-  target_compile_options(neon_engine PRIVATE /W4 /permissive- /utf-8)
-elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-  target_compile_options(neon_engine PRIVATE -Wall -Wextra
-    -finput-charset=UTF-8 -fexec-charset=UTF-8)
-endif()
+# neon_engine stays as a facade so every existing consumer links the full
+# layered stack unchanged (neon_rush / neon_game / neon_server / neon_editor /
+# neon_tests). New code can depend on a specific layer instead.
+add_library(neon_engine INTERFACE)
+target_link_libraries(neon_engine INTERFACE neon_core neon_gfx neon_scene)
 
 # ---------------------------------------------------------------------------
 # Vulkan backend (T7.1): opt-in, SDK-free via volk.
@@ -153,14 +190,14 @@ if(NEON_ENABLE_VULKAN)
   elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(neon_volk PRIVATE -w)
   endif()
-  target_link_libraries(neon_engine PRIVATE neon_volk)
-  target_include_directories(neon_engine PUBLIC
+  target_link_libraries(neon_gfx PRIVATE neon_volk)
+  target_include_directories(neon_gfx PUBLIC
     third_party/volk
     third_party/vulkan_headers/include
   )
-  target_compile_definitions(neon_engine PUBLIC NEON_ENABLE_VULKAN=1)
-  target_sources(neon_engine PRIVATE engine/src/gfx/vulkan/vk_backend.cpp)
-  target_include_directories(neon_engine PRIVATE engine/src/gfx/vulkan)
+  target_compile_definitions(neon_gfx PUBLIC NEON_ENABLE_VULKAN=1)
+  target_sources(neon_gfx PRIVATE engine/src/gfx/vulkan/vk_backend.cpp)
+  target_include_directories(neon_gfx PRIVATE engine/src/gfx/vulkan)
 
   # Build-time SPIR-V generation (glslang vendored in third_party/glslang_tool).
   # Only re-runs when a shader source is newer than the committed header; the
@@ -209,7 +246,7 @@ if(NEON_ENABLE_VULKAN)
     VERBATIM
   )
   add_custom_target(neon_vk_shaders ALL DEPENDS ${VK_SHADER_OUTPUT})
-  add_dependencies(neon_engine neon_vk_shaders)
+  add_dependencies(neon_gfx neon_vk_shaders)
 endif()
 
 # ---------------------------------------------------------------------------
@@ -218,22 +255,25 @@ endif()
 if(WIN32)
   # winmm stays compiled as the Windows fallback when miniaudio cannot open a
   # device (see engine/src/audio/audio.cpp backend selection).
-  target_sources(neon_engine PRIVATE
-    engine/src/platform/win32/win32_window.cpp
-    engine/src/audio/winmm/winmm_audio.cpp
-  )
-  target_compile_definitions(neon_engine PUBLIC NEONRUSH_PLATFORM_WINDOWS)
-  target_link_libraries(neon_engine PUBLIC opengl32 winmm user32 gdi32 shell32 ole32 ws2_32 imm32)
+  target_sources(neon_core PRIVATE engine/src/platform/win32/win32_window.cpp)
+  target_sources(neon_scene PRIVATE engine/src/audio/winmm/winmm_audio.cpp)
+  target_compile_definitions(neon_core PUBLIC NEONRUSH_PLATFORM_WINDOWS)
+  # Platform window/input + sockets on the core layer; GL + audio on their layers.
+  target_link_libraries(neon_core PUBLIC user32 gdi32 shell32 ole32 imm32 ws2_32)
+  target_link_libraries(neon_gfx PUBLIC opengl32)
+  target_link_libraries(neon_scene PRIVATE winmm)
 elseif(APPLE)
-  target_sources(neon_engine PRIVATE engine/src/platform/cocoa/cocoa_window.mm)
+  target_sources(neon_core PRIVATE engine/src/platform/cocoa/cocoa_window.mm)
   set_source_files_properties(engine/src/platform/cocoa/cocoa_window.mm PROPERTIES LANGUAGE OBJCXX)
-  target_compile_definitions(neon_engine PUBLIC NEONRUSH_PLATFORM_MACOS)
-  target_link_libraries(neon_engine PUBLIC "-framework Cocoa" "-framework OpenGL")
+  target_compile_definitions(neon_core PUBLIC NEONRUSH_PLATFORM_MACOS)
+  target_link_libraries(neon_core PUBLIC "-framework Cocoa")
+  target_link_libraries(neon_gfx PUBLIC "-framework OpenGL")
 else()
   find_package(X11 REQUIRED)
-  target_sources(neon_engine PRIVATE engine/src/platform/x11/x11_window.cpp)
-  target_compile_definitions(neon_engine PUBLIC NEONRUSH_PLATFORM_LINUX)
-  target_link_libraries(neon_engine PUBLIC ${X11_LIBRARIES} GL)
+  target_sources(neon_core PRIVATE engine/src/platform/x11/x11_window.cpp)
+  target_compile_definitions(neon_core PUBLIC NEONRUSH_PLATFORM_LINUX)
+  target_link_libraries(neon_core PUBLIC ${X11_LIBRARIES})
+  target_link_libraries(neon_gfx PUBLIC GL)
 endif()
 
 # ---------------------------------------------------------------------------
@@ -256,7 +296,7 @@ endif()
 if(UNIX)
   target_link_libraries(neon_miniaudio PRIVATE m dl)
 endif()
-target_link_libraries(neon_engine PRIVATE neon_miniaudio)
+target_link_libraries(neon_scene PRIVATE neon_miniaudio)
 
 # ---------------------------------------------------------------------------
 # Jolt physics (P0-1): optional rigid-body backend, vendored at third_party/jolt.
@@ -292,10 +332,10 @@ if(NEON_ENABLE_JOLT)
   target_compile_options(Jolt PRIVATE
     $<$<CXX_COMPILER_ID:GNU,Clang>:-w>
     $<$<CXX_COMPILER_ID:MSVC>:/W3>)
-  target_compile_definitions(neon_engine PUBLIC NEON_ENABLE_JOLT=1)
-  target_include_directories(neon_engine PUBLIC third_party/jolt)
-  target_link_libraries(neon_engine PRIVATE Jolt)
-  target_sources(neon_engine PRIVATE engine/src/physics/jolt_world.cpp)
+  target_compile_definitions(neon_scene PUBLIC NEON_ENABLE_JOLT=1)
+  target_include_directories(neon_scene PUBLIC third_party/jolt)
+  target_link_libraries(neon_scene PRIVATE Jolt)
+  target_sources(neon_scene PRIVATE engine/src/physics/jolt_world.cpp)
 endif()
 
 # ---------------------------------------------------------------------------
@@ -427,9 +467,9 @@ elseif(UNIX)
   # loadlib.c needs dlopen/dlsym; lmathlib.c needs libm.
   target_link_libraries(neon_lua PRIVATE m dl)
 endif()
-# The script backend is part of the engine core; consumers inherit neon_lua's
+# The script backend is part of the scene layer; consumers inherit neon_lua's
 # include dirs and link flow (PUBLIC because neon_lua's include dir is PUBLIC).
-target_link_libraries(neon_engine PUBLIC neon_lua)
+target_link_libraries(neon_scene PUBLIC neon_lua)
 
 # ---------------------------------------------------------------------------
 # QuickJS (ES2020 JavaScript runtime): the second script backend (JS host).
@@ -463,8 +503,8 @@ if(NEON_ENABLE_JS)
   elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(neon_quickjs PRIVATE -w)
   endif()
-  target_link_libraries(neon_engine PUBLIC neon_quickjs)
-  target_compile_definitions(neon_engine PUBLIC NEON_ENABLE_JS=1)
+  target_link_libraries(neon_scene PUBLIC neon_quickjs)
+  target_compile_definitions(neon_scene PUBLIC NEON_ENABLE_JS=1)
 endif()
 
 # ---------------------------------------------------------------------------
@@ -490,8 +530,25 @@ endif()
 # ---------------------------------------------------------------------------
 # Editor
 # ---------------------------------------------------------------------------
-add_executable(neon_editor
-  editor/src/main.cpp
+# Editor utilities reused by neon_tests (generic undo stack + packager): a
+# dedicated target so tests link the library instead of compiling the .cpp
+# sources directly (C15). Self-contained — no EditorApp / ImGui dependency.
+add_library(neon_editor_common STATIC
+  editor/src/history.cpp
+  editor/src/packager.cpp
+)
+target_include_directories(neon_editor_common PUBLIC editor/src)
+target_link_libraries(neon_editor_common PUBLIC neon_engine)
+if(MSVC)
+  target_compile_options(neon_editor_common PRIVATE /W4 /permissive- /utf-8)
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(neon_editor_common PRIVATE -Wall -Wextra
+    -finput-charset=UTF-8 -fexec-charset=UTF-8)
+endif()
+
+# The editor body as a library (C3/C15): all editor logic lives in
+# neon_editor_lib; neon_editor is a thin main() that links it.
+add_library(neon_editor_lib STATIC
   editor/src/editor.cpp
   editor/src/editor_viewport.cpp
   editor/src/editor_scene.cpp
@@ -503,12 +560,23 @@ add_executable(neon_editor
   editor/src/editor_plugin.cpp
   editor/src/editor_plugins.cpp
   editor/src/panels.cpp
-  editor/src/history.cpp
   editor/src/bt_editor.cpp
-  editor/src/packager.cpp
 )
-target_include_directories(neon_editor PRIVATE engine/generated third_party/stb)
-target_link_libraries(neon_editor PRIVATE neon_engine neon_imgui)
+target_include_directories(neon_editor_lib
+  PRIVATE editor/src engine/generated third_party/stb)
+target_link_libraries(neon_editor_lib
+  PUBLIC neon_editor_common neon_imgui
+  PRIVATE neon_engine)
+if(MSVC)
+  target_compile_options(neon_editor_lib PRIVATE /W4 /permissive- /utf-8)
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(neon_editor_lib PRIVATE -Wall -Wextra
+    -finput-charset=UTF-8 -fexec-charset=UTF-8)
+endif()
+
+add_executable(neon_editor editor/src/main.cpp)
+target_include_directories(neon_editor PRIVATE editor/src engine/generated third_party/stb)
+target_link_libraries(neon_editor PRIVATE neon_editor_lib)
 if(WIN32)
   # Native open-file dialog for the asset panel's 导入 action.
   target_link_libraries(neon_editor PRIVATE comdlg32 ole32)
@@ -614,16 +682,20 @@ add_executable(neon_tests tests/test_main.cpp tests/test_serialize.cpp tests/tes
   tests/test_aoi.cpp
   tests/test_asset_lifecycle.cpp
   tests/test_jolt.cpp
-  editor/src/history.cpp editor/src/packager.cpp server/src/game_server.cpp server/src/aoi.cpp
+  server/src/game_server.cpp server/src/aoi.cpp
   game/src/client_sync.cpp)
-target_link_libraries(neon_tests PRIVATE neon_engine)
+# C15: link the editor utility lib instead of compiling history.cpp/packager.cpp
+# sources directly.
+target_link_libraries(neon_tests PRIVATE neon_engine neon_editor_common)
 if(MINGW)
   # test_main.cpp's crash handler calls SymInitialize (dbghelp.h), which
   # MSVC's #pragma comment(lib) does not carry over to MinGW links.
   target_link_libraries(neon_tests PRIVATE dbghelp)
 endif()
-# test_history.cpp includes the editor's generic undo/redo stack header.
-target_include_directories(neon_tests PRIVATE editor/src third_party/stb server/src game/src plugins)
+# test_history.cpp / test_packager.cpp include the editor utility headers via
+# neon_editor_common's PUBLIC include dir; the server/game sources are still
+# compiled directly (library-ification of those layers is a follow-up).
+target_include_directories(neon_tests PRIVATE third_party/stb server/src game/src plugins)
 if(WIN32)
   target_compile_definitions(neon_tests PRIVATE
     NEON_PLUGIN_PHYSICS_PATH="$<TARGET_FILE:neon_plugin_physics>"
@@ -646,7 +718,7 @@ set_tests_properties(unit PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
 if(NOT WIN32)
   find_package(Threads REQUIRED)
-  target_link_libraries(neon_engine PUBLIC Threads::Threads)
+  target_link_libraries(neon_core PUBLIC Threads::Threads)
 endif()
 
 # ---------------------------------------------------------------------------

@@ -514,6 +514,39 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     scriptCtx_.sceneRemoveStatus = [this](ecs::Entity e, uint32_t id) {
         if (StatusComponent* c = world_.Get<StatusComponent>(e)) RemoveStatus(*c, id);
     };
+    // Status name -> id resolution and arbitrary data-component access are
+    // wired here so the script layer never links against the scene module
+    // (breaks the scene <-> script dependency cycle).
+    scriptCtx_.statusIdByName = [](const std::string& name) {
+        return scene::StatusIdByName(name);
+    };
+    scriptCtx_.entityComponent = [this](ecs::Entity e, const std::string& name,
+                                        core::Json* out) {
+        if (!out || !world_.Alive(e)) return false;
+        const scene::SceneData* sd = world_.Get<scene::SceneData>(e);
+        if (!sd) return false;
+        for (const auto& kv : sd->components) {
+            if (kv.first == name) {
+                *out = kv.second;
+                return true;
+            }
+        }
+        return false;
+    };
+    scriptCtx_.setEntityComponent = [this](ecs::Entity e, const std::string& name,
+                                           const core::Json& data) {
+        if (!world_.Alive(e)) return;
+        if (!world_.Has<scene::SceneData>(e)) world_.Add<scene::SceneData>(e);
+        if (scene::SceneData* sd = world_.Get<scene::SceneData>(e)) {
+            for (auto& kv : sd->components) {
+                if (kv.first == name) {
+                    kv.second = data;
+                    return;
+                }
+            }
+            sd->components.emplace_back(name, data);
+        }
+    };
     // Skill hooks (M2 combat core): data-driven CastSkill / SkillCooldown and
     // the oriented attack box.
     scriptCtx_.castSkill = [this](const std::string& name, const math::Vec3& origin,
@@ -1559,8 +1592,14 @@ gfx::Mesh GameRuntime::ResolveMeshKey(gfx::Renderer& renderer, const std::string
     // registry, so adding a format only needs a Register() call. `renderer` is
     // passed to procedural primitives below.
     if (assets::MeshFormatRegistry::Instance().HasPrefix(key)) {
+        // Apply the same path normalization + variant resolution the async
+        // loader path uses, so "assets:/x" and variant-mapped mesh keys resolve
+        // identically on the sync path.
+        std::string path;
+        const std::string prefix = assets::MeshFormatRegistry::Instance().MatchPrefix(key, &path);
+        const std::string resolved = FullAssetPath(path);
         assets::MeshLoadResult res =
-            assets::MeshFormatRegistry::Instance().Load(*cfg_.assets, key);
+            assets::MeshFormatRegistry::Instance().Load(*cfg_.assets, prefix + ":" + resolved);
         mesh = res.mesh;
     } else if (key == "cube") {
         mesh = gfx::Mesh::CreateCube(renderer, 1.0f, 1.0f, 1.0f, "cube");
