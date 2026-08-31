@@ -1033,3 +1033,31 @@ TEST(InventorySaveLoadRoundTrip) {
     CHECK_NEAR(runtime.GameVar("usedAfter"), 1.0, 1e-6);
     CHECK_NEAR(runtime.GameVar("potionAfterUse"), 6.0, 1e-6);
 }
+
+TEST(InventoryUseOnUseFalseDoesNotConsume) {
+    const char* scene = R"({
+      "entities": [
+        {"name": "hero", "components": {
+          "transform": {"pos": [0,0,0]},
+          "health": {"hp": 100, "maxHp": 100},
+          "script": {"backend": "lua", "path": "inventory.lua"}}}
+      ]
+    })";
+    const char* lua = R"(
+      function on_start(e)
+        local bag = Gameplay.Inventory.new(24)
+        local key = {id="key", stackable=false, onUse=function(ent) return false end}
+        Gameplay.Inventory.add(bag, key, 1)
+        SetVar("useResult", Gameplay.Inventory.use(bag, "key", e) and 1 or 0)
+        SetVar("countAfter", Gameplay.Inventory.count(bag, "key"))
+      end
+    )";
+    scene::GameRuntime runtime;
+    scene::GameRuntimeConfig cfg;
+    cfg.headless = true;
+    cfg.readScript = [&](const std::string&) { return std::string(lua); };
+    CHECK(runtime.Start(scene, cfg).Ok());
+
+    CHECK_NEAR(runtime.GameVar("useResult"), 0.0, 1e-6);
+    CHECK_NEAR(runtime.GameVar("countAfter"), 1.0, 1e-6);
+}
