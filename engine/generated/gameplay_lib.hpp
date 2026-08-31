@@ -34,6 +34,9 @@ end
 -- 弧线近战：原点+方向+范围+张角(度)+伤害，命中返回数量（caster 不伤己）
 Gameplay.MeleeArc = function(origin, dir, range, arcDeg, damage, caster)
   local cosArc = math.cos(math.rad(arcDeg * 0.5))
+  local dlen = math.sqrt(dir.x*dir.x + dir.y*dir.y + dir.z*dir.z)
+  local fx, fz = dir.x, dir.z
+  if dlen > 1e-3 then fx, fz = dir.x / dlen, dir.z / dlen end
   local hits = OverlapSphere(origin, range)
   local n = 0
   for _, h in ipairs(hits) do
@@ -41,7 +44,7 @@ Gameplay.MeleeArc = function(origin, dir, range, arcDeg, damage, caster)
       local dx, dz = h.x - origin.x, h.z - origin.z
       local horiz = math.sqrt(dx*dx + dz*dz)
       if horiz > 1e-4 and math.abs(h.y - origin.y) <= 2.0 then
-        local dot = (dx/horiz)*dir.x + (dz/horiz)*dir.z
+        local dot = (dx/horiz)*fx + (dz/horiz)*fz
         if dot >= cosArc then
           local hp = GetHealth(h.entity)
           if hp ~= nil then SetHealth(h.entity, math.max(0, hp - damage)) end
