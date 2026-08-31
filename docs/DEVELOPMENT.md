@@ -40,45 +40,41 @@
 ## 2. 架构分层
 
 ```
-┌───────────────────────────────────────────────────────────┐
-│ game       demo / NeonRealm（玩法、场景、HUD、存档）          │
-├───────────────────────────────────────────────────────────┤
-│ engine::core    平台无关核心                                  │
-│   应用循环/时间/日志/配置/RNG  ECS  SceneManager             │
-├───────────────────────────────────────────────────────────┤
-│ engine::interface  纯抽象接口（无平台头文件）                  │
-│   IWindow  IInput  IRenderBackend  IAudioBackend            │
-├──────────┬──────────┬──────────┬──────────┬────────────────┤
-│ platform │ gfx      │ audio    │ assets   │ scene/script   │
-│ Win32 ✅ │ OpenGL ✅│ miniaudio│ stb 系   │ GameRuntime    │
-│ X11  ⃝  │ Vulkan ⃝ │ WinMM ✅ │ OBJ 解析 │ Lua/BT/anim    │
-│ Cocoa ⃝ │          │ Null ✅  │ 程序化   │                │
-└──────────┴──────────┴──────────┴──────────┴────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│ 应用层    neon_rush(demo) / neon_game(播放器) / neon_server / neon_editor │
+├─────────────────────────────────────────────────────────────────┤
+│ neon_scene  (L3)  assets / scene(GameRuntime) / script / bt / anim │
+│                   physics / ui / audio / plugin(runtime) / modules │
+├─────────────────────────────────────────────────────────────────┤
+│ neon_gfx    (L2)  渲染（IRenderBackend：GL / Vulkan）              │
+├─────────────────────────────────────────────────────────────────┤
+│ neon_core   (L0/L1) math / core / io / ecs / net / nav / kernel    │
+│                     plugin(core) / platform(IWindow/IInput)        │
+└─────────────────────────────────────────────────────────────────┘
+neon_engine = INTERFACE 门面，聚合 core/gfx/scene（现有消费者链接不变）
 ```
 
-✅ = 本机实测；⃝ = 代码就绪，CI 编译验证，未实机运行。
+**依赖规则（已由 CMake `target_link_libraries` 白名单强制，非靠自觉）**：
 
-**依赖规则**：
+1. `neon_core ← neon_gfx ← neon_scene`：只能向下依赖，越层 include/link 直接编译失败。
+2. `game`/`editor`/`server`/`plugins` 只链接公开库（`neon_engine` 门面或具体层）。
+3. 后端（platform/gfx/audio）实现接口，只在对应平台编译。
+4. 高层只通过 `IRenderBackend` 触达 GPU。
 
-1. `game` 只能依赖 `engine::` 公共头文件；禁包含平台/GL 头文件。
-2. `engine::core` 不依赖平台实现与第三方库。
-3. 后端（platform/gfx/audio）实现接口且只在对应平台编译。
-4. 高层（Renderer/Material/Mesh）只通过 `IRenderBackend` 触达 GPU。
+**微内核（microkernel）**：`neon_core` 内的 `kernel::`（`IModule` + `ServiceRegistry` +
+`ModuleRegistry` + `Kernel`）是统一模块系统。可替换子系统（渲染/物理/音频/脚本/平台/UI）各实现
+`IModule`，通过 `ServiceRegistry` 拿依赖、发布服务——替换模块 = 换注册表一项。已落地：
+`neon/modules/subsystem_modules.hpp`（Gfx/Physics/Audio/Script 模块包装）+
+`GameRuntimeConfig.services`（运行时从注册表注入物理世界/脚本宿主，回退自建）。
 
-> **执行状态（2026-08-31 架构评审，详见
-> [`2026-08-31-architecture-review.md`](./plans/2026-08-31-architecture-review.md)）**：
-> 上述规则是**意图**，但尚未被**强制**——所有引擎代码编译进单一 `neon_engine` 静态库，
-> 无 target 级依赖白名单，越层 include 靠自觉。已知违规（已列入 TODO C13–C15）：
->
-> - **`scene ↔ script` 循环依赖**：`game_runtime.hpp` 依赖 `script/bindings.hpp`，
->   而 `bindings.cpp` 反向依赖 `scene/scene_file.hpp` + `scene/status.hpp`（C13）。
-> - **玩法逻辑混进引擎核心**：`scene/skills.cpp`、`scene/status.cpp`、
->   `scene/game_runtime_combat.cpp` 承载技能/状态/弹道/攻击盒——类型专属玩法，非引擎通用能力（C14）。
-> - **editor/server/game 未库化**：`neon_tests` 直接编译 `editor/src`/`server/src`/`game/src`
->   的 `.cpp` 源码（C15）。
->
-> 目标分层：`neon_math → neon_core → neon_gfx → neon_scene`，`neon_script` 只依赖 core，
-> 应用层（editor/game/server/plugins）只依赖公开库，用 CMake target 依赖强制单向。
+> **状态（2026-08-31 架构重构后）**：
+> - 三层库拆分已完成（原单一 `neon_engine` 拆为 core/gfx/scene，依赖方向由构建强制）。
+> - 两处循环已破：`scene↔script`（bindings 依赖注入 3 个 hook）、`platform↔gfx`（窗口内联 WGL/GLX 加载）。
+> - 微内核 P-A/P-B/P-C/P-E 已落地并验证（698 项测试含 9 项微内核专项）。
+> - 剩余：GameRuntime 上帝类按子系统组合服务化（C1，机制已就绪）、Renderer 上帝类（C4）、
+>   server/game 未库化（C15）。详见 §10 与
+>   [`plans/2026-08-31-architecture-review.md`](./plans/2026-08-31-architecture-review.md)、
+>   [`plans/2026-08-31-microkernel-design.md`](./plans/2026-08-31-microkernel-design.md)。
 
 **模块规模（粗略）**：core ~2.1k、gfx ~5.5k、assets ~1.6k、scene ~4.3k、script ~2.8k、
 bt ~1.3k、anim ~0.8k、physics ~1.2k(+Jolt)、net ~1.6k、ui ~1.6k、audio ~0.4k、
@@ -248,6 +244,27 @@ MSAA 多重采样 + `glBlitFramebuffer` 解析。能力自检失败自动回退�
 - **`GameRuntime`**：解析 → 实例化 → 挂脚本/行为树 → tick → 绘制；headless 供服务器复用。
   含 `WorldChunk`/`ChunkStreamer`、LOD 资产链。`SceneManager` 处理场景切换（帧边界延迟生效）。
 
+### 3.11 微内核（`neon::kernel` / `neon::modules`）
+
+统一模块系统，实现"每个模块可重写/替换"：
+
+- **`IModule`**（`neon/kernel/module.hpp`）：统一模块契约——`Info()`（id/version/依赖）、
+  `Init(ServiceRegistry&)`（注册服务 + 拿依赖）、`Shutdown()`。模块间不直接 include/link。
+- **`ServiceRegistry`**：类型擦除的服务表（接口类型 → 实现指针），`Register<T>`/`Get<T>`；
+  替换模块 = 覆盖注册一项。
+- **`ModuleRegistry`**：按 `requires` 拓扑序初始化、逆序关闭、环/缺依赖检测。
+- **`Kernel`**：微内核本体（`ModuleRegistry` + `ServiceRegistry` 打包），应用层驱动的
+  `core::Application` 替代——加载模块 + 主循环生命周期。
+- **子系统模块**（`neon/modules/subsystem_modules.hpp`）：`GfxModule`/`PhysicsModule`/
+  `AudioModule`/`ScriptModule` 包装已有接口（`IRenderBackend`/`physics::World`/
+  `IAudioBackend`/`IScriptHost`）。
+- **运行时接线**：`GameRuntimeConfig.services`（`ServiceRegistry*`）——运行时从注册表注入
+  物理世界/脚本宿主（非拥有，回退自建，`injectedScriptHost_` 守卫生命周期）。
+
+可替换的 I/O 服务（渲染/物理/音频/脚本/平台/UI）均已接口化并接成模块；BT/动画/资产是
+引擎内置的确定性内容运行时（纯逻辑），非可替换后端。详见
+[`plans/2026-08-31-microkernel-design.md`](./plans/2026-08-31-microkernel-design.md)。
+
 ---
 
 ## 4. 数据流（一帧）
@@ -393,6 +410,9 @@ glTF 依赖（buffers/images URI 一并入包）、程序化 mesh key 校验放�
 | 资产路径统一`@assets/` + VFS | 一处解析、可读可区分、绝对/相对兼容回退                  |
 | 接入 Jolt 物理                 | Godot 4 同库，MMO 所需刚体/角色/碰撞层；保留接口抽象可换 |
 | 编辑器用 ImGui                 | 工具 UI 惯例（游戏内 HUD 用自研控件树，分开）            |
+| 三层库拆分 core/gfx/scene      | 依赖方向由 CMake 强制（只能向下），越层引用编译失败       |
+| 微内核（IModule + ServiceRegistry） | 每个可替换子系统一个模块，替换 = 换注册表一项；C++ 接口为主、原生插件包 C ABI |
+| 运行时依赖注入（`cfg.services`） | 物理/脚本从注册表拿（非拥有 + 回退自建），模块与运行时解耦 |
 
 ---
 
@@ -497,12 +517,12 @@ B13 网络快照全量 + 48 实体上限 + 全走可靠通道；B14 物理同步
 
 ### 10.3 C 系列 · 结构性重构（P1/P2）
 
-C1 GameRuntime 上帝类拆分（已拆 content+combat 两簇）；C2 动画状态存 DrawItem → headless 空转；
+C1 GameRuntime 上帝类拆分（已拆 content+combat+draw 三簇）；C2 动画状态存 DrawItem → headless 空转；
 C3 EditorApp 巨类 / panels.cpp 4100 行；C4 Renderer 上帝类 + 无 render graph；C5 字符串 key
 贯穿全栈（无 intern/GUID）；C6 组件序列化三份手写镜像；C7 脚本绑定手写 95 个 ×3 处；
 C8 线程基建 3 份复制；C9 UI 四轨并存；C10 着色器系统原始（全内嵌字符串）；C11 ECS Pool 防护；
-C12 CMake 单文件 655 行。
-→ C1/C6/C7/C11 [x]；C12 [~]；C2/C3/C4/C5/C8/C9/C10 [ ]。
+C12 CMake 单文件 655 行；C13 scene↔script 循环；C14 玩法混进引擎核心；C15 editor/server/game 未库化。
+→ C6/C7/C11/C13 [x]；C1/C3/C12/C14/C15 [~]；C2/C4/C5/C8/C9/C10 [ ]。
 
 ### 10.4 D 系列 · 安全与工程化
 
@@ -541,6 +561,8 @@ G8-4 增量打包、G6-1/6-2/6-3 平台/异步/堆监控、BC1 离线烘焙/检�
 - [`TODO.md`](./TODO.md) — 缺陷与差距清单（`[ ]/[~]/[x]` 速查更新基线；详细项见 §10）
 - [`plans/2026-08-31-architecture-review.md`](./plans/2026-08-31-architecture-review.md) —
   架构评审（分层 / 依赖方向 / 内聚耦合分析 + 分阶段改进计划）
+- [`plans/2026-08-31-microkernel-design.md`](./plans/2026-08-31-microkernel-design.md) —
+  微内核模块化设计（IModule / ServiceRegistry / 子系统模块 / 增量路径）
 
 > `docs/` 归档为唯一主文档；各主题（渲染/Vulkan/插件/网络/路线图/代码规范）均已按章节并入，
 > 不再保留独立副本。
