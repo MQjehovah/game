@@ -6,6 +6,7 @@
 #include "neon/scene/status.hpp"
 #include "neon/scene/systems/hud_system.hpp"
 #include "neon/scene/systems/projectile_system.hpp"
+#include "neon/scene/systems/tween_system.hpp"
 #include "helpers.hpp"
 
 using namespace neon;
@@ -1155,4 +1156,41 @@ TEST(HudSystemWorldToScreenProjection) {
     CHECK(x > 640.0f);
     CHECK_NEAR(y, 360.0f, 1e-3f);
     CHECK_EQ(hud.DesignWidth(), 1280.0f);
+}
+
+// P1-3: TweenSystem drives the same easing as the runtime's old TickTweens —
+// linear pos / ease-in scale advance over time and finished tweens are dropped.
+TEST(TweenSystemStartTickWriteTransform) {
+    ecs::World world;
+    ecs::Entity e = world.Create();
+    world.Add<scene::SceneTransform>(e, scene::SceneTransform{{0, 0, 0}});
+    scene::TweenSystem ts;
+
+    // time <= 0 is rejected (matches the old tweenStart guard).
+    ts.Start(e, 0, {0, 0, 0}, {0, 0, 10}, 0.0f, 0);
+    CHECK_EQ(ts.Count(), 0u);
+
+    // Linear position tween: 0 -> z=10 over 1s.
+    ts.Start(e, 0, {0, 0, 0}, {0, 0, 10}, 1.0f, 0);
+    CHECK_EQ(ts.Count(), 1u);
+    ts.Tick(0.5f, world);
+    CHECK_NEAR(world.Get<scene::SceneTransform>(e)->pos.z, 5.0f, 1e-5f);
+    ts.Tick(0.5f, world);
+    CHECK_NEAR(world.Get<scene::SceneTransform>(e)->pos.z, 10.0f, 1e-5f);
+    CHECK_EQ(ts.Count(), 0u); // finished tweens dropped
+
+    // Ease-in scale tween: at a=0.5 the eased factor is 0.25 -> scale 1.25.
+    ts.Start(e, 2, {1, 1, 1}, {2, 2, 2}, 1.0f, 1);
+    ts.Tick(0.5f, world);
+    const auto& sc = world.Get<scene::SceneTransform>(e)->scale;
+    CHECK_NEAR(sc.x, 1.25f, 1e-5f);
+    CHECK_NEAR(sc.y, 1.25f, 1e-5f);
+    ts.Tick(0.5f, world);
+    CHECK_NEAR(world.Get<scene::SceneTransform>(e)->scale.x, 2.0f, 1e-5f);
+    CHECK_EQ(ts.Count(), 0u);
+
+    // Clear drops pending tweens (Stop lifecycle).
+    ts.Start(e, 0, {0, 0, 0}, {1, 1, 1}, 1.0f, 0);
+    ts.Clear();
+    CHECK_EQ(ts.Count(), 0u);
 }
