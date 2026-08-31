@@ -142,6 +142,158 @@ function Gameplay.SkillTable.cast(tbl, name, origin, dir, caster)
   end
   return 1
 end
+
+-- 背包系统：物品定义 def = { id, name, stackable, maxStack, onUse }，onUse 是可选
+-- 回调 function(ent)。slots 为 map[slotKey] = { def=..., count=... }：堆叠物品
+-- slotKey = def.id，非堆叠物品 slotKey = def.id .. "#" .. n（每个占一个独立槽）。
+Gameplay.Inventory = {}
+
+local function CountSlots(bag)
+  local n = 0
+  for _ in pairs(bag.slots) do n = n + 1 end
+  return n
+end
+
+-- 非堆叠物品的下一个空闲槽键（避开 remove 留下的空洞）。
+local function NextNonStackKey(bag, id)
+  local prefix = id .. "#"
+  local maxN = 0
+  for key in pairs(bag.slots) do
+    if key:sub(1, #prefix) == prefix then
+      local n = tonumber(key:sub(#prefix + 1))
+      if n and n > maxN then maxN = n end
+    end
+  end
+  return prefix .. (maxN + 1)
+end
+
+function Gameplay.Inventory.new(capacity)
+  return { slots = {}, capacity = capacity or 24, currency = {} }
+end
+
+function Gameplay.Inventory.add(bag, def, count)
+  count = count or 1
+  if count <= 0 then return true end
+  local id = def.id
+  if def.stackable then
+    local maxStack = def.maxStack or 1
+    local slot = bag.slots[id]
+    if slot then
+      if slot.count + count > maxStack then return false end
+      slot.count = slot.count + count
+      return true
+    end
+    if CountSlots(bag) >= bag.capacity then return false end
+    if count > maxStack then return false end
+    bag.slots[id] = { def = def, count = count }
+    return true
+  end
+  if CountSlots(bag) + count > bag.capacity then return false end
+  for _ = 1, count do
+    bag.slots[NextNonStackKey(bag, id)] = { def = def, count = 1 }
+  end
+  return true
+end
+
+function Gameplay.Inventory.remove(bag, itemId, count)
+  count = count or 1
+  local removed = 0
+  local toClear = {}
+  for key, s in pairs(bag.slots) do
+    if removed < count and s.def.id == itemId then
+      local take = math.min(s.count, count - removed)
+      s.count = s.count - take
+      removed = removed + take
+      if s.count <= 0 then toClear[key] = true end
+    end
+  end
+  for key in pairs(toClear) do bag.slots[key] = nil end
+  return removed
+end
+
+function Gameplay.Inventory.count(bag, itemId)
+  local total = 0
+  for _, s in pairs(bag.slots) do
+    if s.def.id == itemId then total = total + s.count end
+  end
+  return total
+end
+
+function Gameplay.Inventory.use(bag, itemId, ent)
+  local foundKey, foundSlot = nil, nil
+  for key, s in pairs(bag.slots) do
+    if s.def.id == itemId then foundKey, foundSlot = key, s break end
+  end
+  if foundSlot == nil then return false end
+  if foundSlot.def.onUse then
+    if foundSlot.def.onUse(ent) == false then return false end
+  end
+  foundSlot.count = foundSlot.count - 1
+  if foundSlot.count <= 0 then bag.slots[foundKey] = nil end
+  return true
+end
+
+function Gameplay.Inventory.addCurrency(bag, name, amount)
+  bag.currency[name] = (bag.currency[name] or 0) + amount
+end
+
+function Gameplay.Inventory.getCurrency(bag, name)
+  return bag.currency[name] or 0
+end
+
+-- 最小 JSON 字符串转义（物品 id / 货币名）。回调 onUse 不序列化。
+local function JsonQuote(s)
+  s = tostring(s)
+  s = s:gsub("\\", "\\\\")
+  s = s:gsub('"', '\\"')
+  s = s:gsub("\n", "\\n"):gsub("\r", "\\r"):gsub("\t", "\\t")
+  return '"' .. s .. '"'
+end
+
+function Gameplay.Inventory.save(bag)
+  local out = { '{"slots":[' }
+  local first = true
+  for _, s in pairs(bag.slots) do
+    if not first then out[#out + 1] = "," end
+    first = false
+    out[#out + 1] = '{"id":' .. JsonQuote(s.def.id) .. ',"count":' .. s.count .. '}'
+  end
+  out[#out + 1] = '],"currency":{'
+  first = true
+  for name, amount in pairs(bag.currency) do
+    if not first then out[#out + 1] = "," end
+    first = false
+    out[#out + 1] = JsonQuote(name) .. ":" .. (tonumber(amount) or 0)
+  end
+  out[#out + 1] = '}}'
+  return table.concat(out)
+end
+
+-- load(bag, json, defs)：defs 为 { [id] = def }，用于恢复 def 引用与 onUse 回调。
+function Gameplay.Inventory.load(bag, json, defs)
+  local data = Json.Parse(json)
+  bag.slots = {}
+  bag.currency = {}
+  if data == nil then return bag end
+  if data.slots then
+    for _, s in pairs(data.slots) do
+      local def = defs and s and s.id and defs[s.id]
+      if def then
+        if def.stackable then
+          bag.slots[def.id] = { def = def, count = s.count or 0 }
+        else
+          for _ = 1, (s.count or 0) do
+            bag.slots[NextNonStackKey(bag, def.id)] = { def = def, count = 1 }
+          end
+        end
+      end
+    end
+  end
+  if data.currency then
+    for name, amount in pairs(data.currency) do bag.currency[name] = amount end
+  end
+  return bag
+end
 )LUA";
 
 } // namespace neon::embedded

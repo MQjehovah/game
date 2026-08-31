@@ -891,3 +891,145 @@ TEST(SkillTableManaAndCooldown) {
     CHECK_NEAR(runtime.GameVar("manaAfter"), 2.0, 1e-6); // 10 - 8
     CHECK_NEAR(runtime.GameVar("cdBlocked"), 0.0, 1e-6);
 }
+
+// ---------------------------------------------------------------------------
+// Gameplay.Inventory：通用背包（堆叠/上限/容量、remove/count、use 回调、货币、
+// save/load 往返）。纯 Lua，仅依赖 Json.Parse。
+// ---------------------------------------------------------------------------
+
+TEST(InventoryStackingAndCapacity) {
+    const char* scene = R"({
+      "entities": [
+        {"name": "hero", "components": {
+          "transform": {"pos": [0,0,0]},
+          "health": {"hp": 100, "maxHp": 100},
+          "script": {"backend": "lua", "path": "inventory.lua"}}}
+      ]
+    })";
+    const char* lua = R"(
+      function on_start(e)
+        local bag = Gameplay.Inventory.new(24)
+        local potion = {id="potion", stackable=true, maxStack=10}
+        SetVar("add1", Gameplay.Inventory.add(bag, potion, 3) and 1 or 0)
+        SetVar("add2", Gameplay.Inventory.add(bag, potion, 7) and 1 or 0)
+        SetVar("count10", Gameplay.Inventory.count(bag, "potion"))
+        -- stack is full at 10; a further add would exceed maxStack -> false
+        SetVar("addOver", Gameplay.Inventory.add(bag, potion, 1) and 1 or 0)
+        SetVar("countStill10", Gameplay.Inventory.count(bag, "potion"))
+        -- remove decrements and reports the actual amount taken
+        SetVar("removed", Gameplay.Inventory.remove(bag, "potion", 4))
+        SetVar("count6", Gameplay.Inventory.count(bag, "potion"))
+        -- non-stackable: each item occupies its own slot; capacity 1 -> second refused
+        local sword = {id="sword", stackable=false}
+        local bag2 = Gameplay.Inventory.new(1)
+        SetVar("sword1", Gameplay.Inventory.add(bag2, sword, 1) and 1 or 0)
+        SetVar("sword2", Gameplay.Inventory.add(bag2, sword, 1) and 1 or 0)
+        SetVar("swordCount", Gameplay.Inventory.count(bag2, "sword"))
+      end
+    )";
+    scene::GameRuntime runtime;
+    scene::GameRuntimeConfig cfg;
+    cfg.headless = true;
+    cfg.readScript = [&](const std::string&) { return std::string(lua); };
+    CHECK(runtime.Start(scene, cfg).Ok());
+
+    CHECK_NEAR(runtime.GameVar("add1"), 1.0, 1e-6);
+    CHECK_NEAR(runtime.GameVar("add2"), 1.0, 1e-6);
+    CHECK_NEAR(runtime.GameVar("count10"), 10.0, 1e-6);
+    CHECK_NEAR(runtime.GameVar("addOver"), 0.0, 1e-6);
+    CHECK_NEAR(runtime.GameVar("countStill10"), 10.0, 1e-6);
+    CHECK_NEAR(runtime.GameVar("removed"), 4.0, 1e-6);
+    CHECK_NEAR(runtime.GameVar("count6"), 6.0, 1e-6);
+    CHECK_NEAR(runtime.GameVar("sword1"), 1.0, 1e-6);
+    CHECK_NEAR(runtime.GameVar("sword2"), 0.0, 1e-6);
+    CHECK_NEAR(runtime.GameVar("swordCount"), 1.0, 1e-6);
+}
+
+TEST(InventoryUseAndCurrency) {
+    const char* scene = R"({
+      "entities": [
+        {"name": "hero", "components": {
+          "transform": {"pos": [0,0,0]},
+          "health": {"hp": 100, "maxHp": 100},
+          "script": {"backend": "lua", "path": "inventory.lua"}}}
+      ]
+    })";
+    const char* lua = R"(
+      function on_start(e)
+        local bag = Gameplay.Inventory.new(24)
+        local potion = {id="potion", stackable=true, maxStack=10,
+          onUse=function(ent) SetVar("used", (GetVar("used") or 0) + 1) end}
+        Gameplay.Inventory.add(bag, potion, 2)
+        SetVar("use1", Gameplay.Inventory.use(bag, "potion", e) and 1 or 0)
+        SetVar("use2", Gameplay.Inventory.use(bag, "potion", e) and 1 or 0)
+        SetVar("countAfterUse", Gameplay.Inventory.count(bag, "potion"))
+        SetVar("useEmpty", Gameplay.Inventory.use(bag, "potion", e) and 1 or 0)
+        SetVar("used", GetVar("used") or 0)
+        -- currency add/subtract/query
+        Gameplay.Inventory.addCurrency(bag, "gold", 100)
+        Gameplay.Inventory.addCurrency(bag, "gold", -30)
+        SetVar("gold", Gameplay.Inventory.getCurrency(bag, "gold"))
+        SetVar("gems", Gameplay.Inventory.getCurrency(bag, "gems"))
+      end
+    )";
+    scene::GameRuntime runtime;
+    scene::GameRuntimeConfig cfg;
+    cfg.headless = true;
+    cfg.readScript = [&](const std::string&) { return std::string(lua); };
+    CHECK(runtime.Start(scene, cfg).Ok());
+
+    CHECK_NEAR(runtime.GameVar("use1"), 1.0, 1e-6);
+    CHECK_NEAR(runtime.GameVar("use2"), 1.0, 1e-6);
+    CHECK_NEAR(runtime.GameVar("countAfterUse"), 0.0, 1e-6);
+    CHECK_NEAR(runtime.GameVar("useEmpty"), 0.0, 1e-6);
+    CHECK_NEAR(runtime.GameVar("used"), 2.0, 1e-6);
+    CHECK_NEAR(runtime.GameVar("gold"), 70.0, 1e-6);
+    CHECK_NEAR(runtime.GameVar("gems"), 0.0, 1e-6);
+}
+
+TEST(InventorySaveLoadRoundTrip) {
+    const char* scene = R"({
+      "entities": [
+        {"name": "hero", "components": {
+          "transform": {"pos": [0,0,0]},
+          "health": {"hp": 100, "maxHp": 100},
+          "script": {"backend": "lua", "path": "inventory.lua"}}}
+      ]
+    })";
+    const char* lua = R"(
+      function on_start(e)
+        local bag = Gameplay.Inventory.new(24)
+        Gameplay.Inventory.add(bag, {id="potion", stackable=true, maxStack=10}, 7)
+        Gameplay.Inventory.add(bag, {id="sword", stackable=false}, 3)
+        Gameplay.Inventory.addCurrency(bag, "gold", 55)
+        local json = Gameplay.Inventory.save(bag)
+        SetVar("isStr", type(json) == "string" and 1 or 0)
+        local defs = {
+          potion = {id="potion", stackable=true, maxStack=10,
+            onUse=function(ent) SetVar("usedAfter", (GetVar("usedAfter") or 0) + 1) end},
+          sword = {id="sword", stackable=false},
+        }
+        local bag2 = Gameplay.Inventory.new(24)
+        Gameplay.Inventory.load(bag2, json, defs)
+        SetVar("potionCount", Gameplay.Inventory.count(bag2, "potion"))
+        SetVar("swordCount", Gameplay.Inventory.count(bag2, "sword"))
+        SetVar("goldAfter", Gameplay.Inventory.getCurrency(bag2, "gold"))
+        -- defs re-attaches onUse after load (callbacks are never serialized)
+        Gameplay.Inventory.use(bag2, "potion", e)
+        SetVar("usedAfter", GetVar("usedAfter") or 0)
+        SetVar("potionAfterUse", Gameplay.Inventory.count(bag2, "potion"))
+      end
+    )";
+    scene::GameRuntime runtime;
+    scene::GameRuntimeConfig cfg;
+    cfg.headless = true;
+    cfg.readScript = [&](const std::string&) { return std::string(lua); };
+    CHECK(runtime.Start(scene, cfg).Ok());
+
+    CHECK_NEAR(runtime.GameVar("isStr"), 1.0, 1e-6);
+    CHECK_NEAR(runtime.GameVar("potionCount"), 7.0, 1e-6);
+    CHECK_NEAR(runtime.GameVar("swordCount"), 3.0, 1e-6);
+    CHECK_NEAR(runtime.GameVar("goldAfter"), 55.0, 1e-6);
+    CHECK_NEAR(runtime.GameVar("usedAfter"), 1.0, 1e-6);
+    CHECK_NEAR(runtime.GameVar("potionAfterUse"), 6.0, 1e-6);
+}
