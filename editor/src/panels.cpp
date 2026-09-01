@@ -374,6 +374,5 @@ void EditorApp::InitToolPanels() {
 #include "panels_ui.inc"
 #include "panels_script.inc"
 #include "panels_world.inc"
-#include "panels_preview.inc"
 
 } // namespace neon::editor

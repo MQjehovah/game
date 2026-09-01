@@ -5,6 +5,7 @@
 #include "panels/inspector_panel.hpp"
 #include "panels/log_panel.hpp"
 #include "panels/resource_panel.hpp"
+#include "panels/model_preview_panel.hpp"
 
 #include <algorithm>
 #include <cerrno>
@@ -302,6 +303,13 @@ bool EditorApp::OnCreate() {
     // 资源面板（Task 6）：数据源是 AssetManager 统计与缓存枚举（经 ctx.assetMgr），
     // 面板无自有状态，只需注入可见标志 showResources_。
     panels_.Register(std::make_unique<ResourcePanel>(&showResources_));
+    // 模型查看器（Task 7）：有渲染 + 外部交互（Open/Render/Tick/HandleViewportMouse），
+    // 注入可见标志 + renderer + assetMgr；EditorApp 保留转发器（见下）。
+    {
+        auto panel = std::make_unique<ModelPreviewPanel>(&showModelPreview_, &renderer_, &assetMgr_);
+        modelPreviewPanel_ = panel.get();
+        panels_.Register(std::move(panel));
+    }
     panels_.OpenAll(ctx_);
     // Toolbar icon glyph self-check: a missing glyph renders as '?' in the
     // toolbar. Log once at startup so icon regressions are caught immediately.
@@ -550,6 +558,17 @@ void EditorApp::ApplyEditorTheme() {
     c[ImGuiCol_ModalWindowDimBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.55f);
 }
 
+// 模型查看器转发器（Task 7）：状态与实现已迁入 ModelPreviewPanel，这里保留薄
+// 转发供外部调用点（editor_ui 右键菜单 / 调试覆盖层 / editor_viewport /
+// --preview 启动参数）零改动。
+void EditorApp::OpenModelPreview(const std::string& path) {
+    if (modelPreviewPanel_) modelPreviewPanel_->Open(path);
+}
+
+void EditorApp::RenderModelPreviewPanel() {
+    if (modelPreviewPanel_) modelPreviewPanel_->Render();
+}
+
 void EditorApp::OnShutdown() {
     SaveEditorConfig();
     panels_.Shutdown();
@@ -736,13 +755,8 @@ void EditorApp::OnUpdate(float dt) {
     for (SceneEntity& e : entities_) {
         if (e.skinned && e.skinned->Valid()) e.skinned->Update(dt);
     }
-    // Advance the model-preview playhead.
-    if (showModelPreview_ && preview_.model && preview_.playing) {
-        float dur = preview_.model->clips.empty()
-                        ? 1.0f
-                        : preview_.model->clips[static_cast<size_t>(preview_.clip)].duration;
-        if (dur > 0.0f) preview_.time = std::fmod(preview_.time + dt, dur);
-    }
+    // Advance the model-preview playhead（Task 7 已迁入 ModelPreviewPanel::Tick）。
+    if (modelPreviewPanel_) modelPreviewPanel_->Tick(dt);
     // The gizmo drag-sim (frame 30) needs the real mouse to hover the viewport
     // so ImGui's hover hit-test yields the dock host window (the window
     // SetAlternativeWindow points at); headless starts at (0,0) over the menu

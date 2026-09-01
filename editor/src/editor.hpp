@@ -33,6 +33,10 @@
 
 namespace neon::editor {
 
+// 面板插件化（Task 7）：模型查看器迁移后的独立面板类（panels/model_preview_panel.hpp）。
+// 仅转发器需要指针，故只前向声明；完整类型由 editor.cpp include。
+class ModelPreviewPanel;
+
 // P2-editor UX: a full TRS triple used by the multi-selection batch transform.
 struct Transform3 {
     math::Vec3 pos;
@@ -261,7 +265,9 @@ private:
     void InitToolPanels();
     void BuildImGuiUI();
     void BuildViewportPanel();
-    void BuildModelPreviewPanel();
+    // 模型查看器（Task 7）已迁入 panels/model_preview_panel.hpp；OpenModelPreview /
+    // RenderModelPreviewPanel 保留为薄转发（editor_ui 右键菜单 / 调试覆盖层 /
+    // editor_viewport / --preview 启动参数仍调用），实现一行转 modelPreviewPanel_。
     void OpenModelPreview(const std::string& path);
     void RenderModelPreviewPanel();
     void BuildPluginPanels();
@@ -578,22 +584,6 @@ private:
         bool raise = true;
         math::Vec3 hoverPos{};
         bool hoverValid = false;
-    };
-    struct ModelPreviewState {
-        std::shared_ptr<scene::SkinnedModel> model;
-        std::string path;
-        char pathBuf[512] = "assets/models/wolf/Wolf-Blender-2.82a.gltf";
-        bool playing = true;
-        float time = 0.0f;
-        int clip = 0;
-        float yaw = 0.6f;
-        float pitch = 0.3f;
-        math::Rect2 screenRect{0, 0, 0, 0};
-        gfx::RenderTargetHandle rt;
-        gfx::TextureHandle rtColor;
-        int rtW = 0;
-        int rtH = 0;
-        ImTextureID rtId = ImTextureID_Invalid;
     };
     struct AnimEditorState {
         anim::AnimationClip clip;
@@ -916,11 +906,11 @@ private:
 
     // Standalone model viewer (single glTF + animation playback) for clean
     // inspection of geometry/textures/animations independent of a scene.
+    // 面板插件化（Task 7）：状态与四个方法已整体迁入 panels/model_preview_panel.hpp
+    // （ModelPreviewPanel : IPanel）；showModelPreview_ 仍在此（窗口菜单勾选 +
+    // ini 持久化 + 冒烟强制开启），过渡期经构造注入面板作可见标志。
     bool showModelPreview_ = false;
-    ModelPreviewState preview_; // standalone model viewer state
-    // Points the preview camera at the model's largest face (along the
-    // flattest AABB axis) so thin models (banners/walls) are not shown edge-on.
-    void FrameModelPreview();
+    ModelPreviewPanel* modelPreviewPanel_ = nullptr; // 不拥有；OnCreate 注册时设置
 
     // Transform gizmo (ImGuizmo) state for the viewport.
     ImGuizmo::OPERATION gizmoOp_ = ImGuizmo::TRANSLATE;

@@ -864,21 +864,8 @@ void EditorApp::UpdateViewport(float dt) {
     // Model preview camera: only when the mouse is actually over the preview
     // panel; otherwise this falls through and the main viewport camera keeps
     // driving (right-drag in the 3D view must not rotate the preview).
-    if (showModelPreview_ && preview_.model && preview_.screenRect.w > 0.0f) {
-        platform::IInput* in = Input();
-        const math::Vec2 mpx = in->MousePos();
-        const bool overPreview =
-            mpx.x >= preview_.screenRect.x && mpx.x <= preview_.screenRect.x + preview_.screenRect.w &&
-            mpx.y >= preview_.screenRect.y && mpx.y <= preview_.screenRect.y + preview_.screenRect.h;
-        if (overPreview) {
-            if (in->MouseDown(platform::MouseButton::Right)) {
-                preview_.yaw += -in->MouseDelta().x * 0.005f;
-                preview_.pitch = math::Clamp(preview_.pitch + -in->MouseDelta().y * 0.005f,
-                                            -1.4f, 1.4f);
-            }
-            return;
-        }
-    }
+    // Task 7：状态与命中/环绕逻辑已迁入 ModelPreviewPanel::HandleViewportMouse。
+    if (modelPreviewPanel_ && modelPreviewPanel_->HandleViewportMouse(*Input())) return;
     platform::IInput* input = Input();
     math::Vec2 mp = renderer_.ScreenToUI(input->MousePos());
     // ImGui tool windows capture mouse when hovered/active; the 3D viewport

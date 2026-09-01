@@ -569,6 +569,7 @@ add_library(neon_editor_lib STATIC
   editor/src/panels/inspector_panel.cpp
   editor/src/panels/log_panel.cpp
   editor/src/panels/resource_panel.cpp
+  editor/src/panels/model_preview_panel.cpp
   editor/src/bt_editor.cpp
 )
 target_include_directories(neon_editor_lib
