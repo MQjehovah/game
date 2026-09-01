@@ -1,41 +1,8 @@
-void EditorApp::BuildLogPanel() {
-    if (!showLog_) return;
-    logEntries_ = core::GetRecentLogs(800);
-    if (ImGui::Begin("日志", &showLog_)) {
-        const char* filters[] = {"全部", "INFO+", "WARN+", "ERROR"};
-        ImGui::SetNextItemWidth(80.0f);
-        ImGui::Combo("级别", &logFilter_, filters, 4);
-        ImGui::SameLine();
-        ImGui::Checkbox("自动滚动", &logAutoScroll_);
-        ImGui::SameLine();
-        if (ImGui::Button("清空")) core::ClearLogs();
-        ImGui::Separator();
-
-        static bool wasAtBottom = true;
-        ImGui::BeginChild("##log_list", ImVec2(0, 0), ImGuiChildFlags_Borders);
-        const ImVec4 colors[4] = {
-            ImVec4(0.55f, 0.58f, 0.65f, 1.0f), // debug
-            ImVec4(0.90f, 0.95f, 1.00f, 1.0f), // info
-            ImVec4(1.00f, 0.85f, 0.35f, 1.0f), // warn
-            ImVec4(1.00f, 0.40f, 0.35f, 1.0f), // error
-        };
-        size_t shown = 0;
-        for (const core::LogEntry& entry : logEntries_) {
-            if (logFilter_ == 1 && entry.level < core::LogLevel::Info) continue;
-            if (logFilter_ == 2 && entry.level < core::LogLevel::Warn) continue;
-            if (logFilter_ == 3 && entry.level < core::LogLevel::Error) continue;
-            ImGui::PushStyleColor(ImGuiCol_Text,
-                                  colors[static_cast<int>(entry.level)]);
-            ImGui::TextWrapped("%s", entry.text.c_str());
-            ImGui::PopStyleColor();
-            ++shown;
-        }
-        if (logAutoScroll_ && wasAtBottom && shown > 0) ImGui::SetScrollHereY(1.0f);
-        wasAtBottom = ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 4.0f;
-        ImGui::EndChild();
-    }
-    ImGui::End();
-}
+// 日志面板（原 EditorApp::BuildLogPanel）已整体迁移为独立面板类
+// editor/src/panels/log_panel.hpp/.cpp（LogPanel : IPanel，Task 5，沿用
+// Task 2-4 迁移样板）。EditorApp 在 OnCreate 注册它；editor_ui.cpp 的
+// BuildImGuiUI 经 panels_.DrawAll(ctx_) 分发。此占位注释保留迁移痕迹，
+// 待性能/导航等其余面板迁移完成后整体删除本 inc。
 
 void EditorApp::BuildProfilerPanel() {
     if (!showProfiler_) return;

@@ -3,6 +3,7 @@
 #include "panels/scene_panel.hpp"
 #include "panels/asset_panel.hpp"
 #include "panels/inspector_panel.hpp"
+#include "panels/log_panel.hpp"
 
 #include <algorithm>
 #include <cerrno>
@@ -294,6 +295,9 @@ bool EditorApp::OnCreate() {
     ctx_.applyMaterialAsset = [this](const std::string& path) { ApplyMaterialAsset(path); };
     // 可见标志过渡期注入 showInspector_（窗口菜单勾选 + ini 持久化 + 冒烟强制开启）。
     panels_.Register(std::make_unique<InspectorPanel>(&showInspector_));
+    // 日志面板（Task 5）：日志数据源是 core::Log 全局环形缓冲，面板私有状态
+    // 已全部迁入 LogPanel，只需注入可见标志 showLog_。
+    panels_.Register(std::make_unique<LogPanel>(&showLog_));
     panels_.OpenAll(ctx_);
     // Toolbar icon glyph self-check: a missing glyph renders as '?' in the
     // toolbar. Log once at startup so icon regressions are caught immediately.

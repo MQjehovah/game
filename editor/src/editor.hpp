@@ -261,7 +261,6 @@ private:
     void InitToolPanels();
     void BuildImGuiUI();
     void BuildResourcePanel();
-    void BuildLogPanel();
     void BuildViewportPanel();
     void BuildModelPreviewPanel();
     void OpenModelPreview(const std::string& path);
@@ -915,9 +914,6 @@ private:
     // 1280x720 design into the viewport; pan = design point at viewport center.
     float canvasZoom_ = 1.0f;
     math::Vec2 canvasPan_{0.0f, 0.0f};
-    std::vector<core::LogEntry> logEntries_;
-    int logFilter_ = 0; // 0 all, 1 info+, 2 warn+, 3 error
-    bool logAutoScroll_ = true;
 
     // Standalone model viewer (single glTF + animation playback) for clean
     // inspection of geometry/textures/animations independent of a scene.
