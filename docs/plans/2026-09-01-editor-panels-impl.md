@@ -223,3 +223,15 @@ Commit: `refactor: 鏃ュ織闈㈡澘鎷嗕负鐙珛 LogPanel`
 eon_tests 757 全绿；
 eon_editor --smoke-test 240 fail-delta = 0
   （11 项预存环境失败与改动无关）。
+
+## 完成记录（2026-09-01 收尾，追加）
+
+- **全部 21 个面板独立化**：Task 1-17 的 19 个 + 视口（ViewportPanel，Task 18a）+
+  行为树编辑器（BtPanel，Task 18b）均拆为独立 IPanel，经 PanelRegistry 注册。
+- editor.hpp：1020 → 890 行（门面尺寸：共享状态 + 相机/gizmo/undo/播放/插件转发）。
+- 保留（文档化）：BuildImGuiUI（门面入口）、BuildPluginPanels（插件动态面板转发，
+  独立机制）、oid* editorApp 逃生舱（EditMeshKeyCommand undo 命令需要 EditorApp*）、
+  ini 持久化（Panels() 成员指针表——show 标志在 EditorApp，机制统一合理）。
+- 验证：
+eon_tests 757 全绿；
+eon_editor --smoke-test 240 fail-delta = 0。

@@ -885,10 +885,11 @@ C1 GameRuntime 上帝类拆分（已拆成编排器 + 16 个组合服务：proje
 lagcomp/status/prefab/plugin/sceneTree/scriptCanvas/ui/animation/scriptRuntime/btRuntime/
 physicsBridge/drawSystem，各系统独立可测，`game_runtime.cpp` 2395→1178 行）；
 C2 动画状态存 DrawItem → headless 空转（已解：动画状态移入 AnimationSystem 独立表，DrawItem
-只留渲染引用）；C3 EditorApp 巨类（已面板插件化：19 个面板拆为独立 `IPanel` 类 +
+只留渲染引用）；C3 EditorApp 巨类（已面板插件化：**21 个面板**拆为独立 `IPanel` 类 +
 `PanelRegistry` 注册表，`editor/src/panels/*`，可独立加载/卸载（Register/Unregister），
-`editor.hpp` 1020→926 行；视口与行为树编辑器保留为「核心面板」——渲染 3D 视图 +
-gizmo + 节点画布，与 EditorApp 输入/相机深度耦合）；C4 Renderer 上帝类 + 无 render graph（已解：后处理全链改造为 Frostbite 式 FrameGraph
+含视口与行为树编辑器（原「核心面板」，后继续拆出）；`editor.hpp` 1020→890 行，
+剩余为门面职责——共享状态、相机/gizmo/undo/播放/插件转发、资产 VFS。插件动态注册的
+面板（BuildPluginPanels，EditorPluginManager::Panels()）是独立机制，保留）；C4 Renderer 上帝类 + 无 render graph（已解：后处理全链改造为 Frostbite 式 FrameGraph
 （18-pass，`neon/gfx/frame_graph.hpp` + `post_graph.hpp`，临时 RT 自动池 + 版本化读取），
 Renderer 门面化拆出 ShadowSystem/SceneState/DrawBatch2D，`renderer.cpp` 2828→1174 行，
 渲染逐像素等价）；
