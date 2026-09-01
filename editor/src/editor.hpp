@@ -260,7 +260,6 @@ private:
     void SetupScene();
     void InitToolPanels();
     void BuildImGuiUI();
-    void BuildResourcePanel();
     void BuildViewportPanel();
     void BuildModelPreviewPanel();
     void OpenModelPreview(const std::string& path);

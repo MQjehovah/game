@@ -4,6 +4,7 @@
 #include "panels/asset_panel.hpp"
 #include "panels/inspector_panel.hpp"
 #include "panels/log_panel.hpp"
+#include "panels/resource_panel.hpp"
 
 #include <algorithm>
 #include <cerrno>
@@ -298,6 +299,9 @@ bool EditorApp::OnCreate() {
     // 日志面板（Task 5）：日志数据源是 core::Log 全局环形缓冲，面板私有状态
     // 已全部迁入 LogPanel，只需注入可见标志 showLog_。
     panels_.Register(std::make_unique<LogPanel>(&showLog_));
+    // 资源面板（Task 6）：数据源是 AssetManager 统计与缓存枚举（经 ctx.assetMgr），
+    // 面板无自有状态，只需注入可见标志 showResources_。
+    panels_.Register(std::make_unique<ResourcePanel>(&showResources_));
     panels_.OpenAll(ctx_);
     // Toolbar icon glyph self-check: a missing glyph renders as '?' in the
     // toolbar. Log once at startup so icon regressions are caught immediately.

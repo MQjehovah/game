@@ -1,7 +1,18 @@
-void EditorApp::BuildResourcePanel() {
-    if (!showResources_) return;
-    if (ImGui::Begin("资源", &showResources_)) {
-        assets::AssetStats s = assetMgr_.Stats();
+#include "panels/resource_panel.hpp"
+
+// 资源面板实现 = 原 EditorApp::BuildResourcePanel（panels_inspector.inc）方法体
+// 逐行迁移：EditorApp 成员访问（assetMgr_/showResources_）改 ctx.assetMgr / 本类
+// visible_。数据源是 AssetManager 的统计与缓存枚举，行为零变化。
+
+#include "imgui.h"
+#include "neon/assets/asset_manager.hpp"
+
+namespace neon::editor {
+
+void ResourcePanel::Draw(EditorContext& ctx) {
+    if (!visible_ || !*visible_) return;
+    if (ImGui::Begin("资源", visible_)) {
+        assets::AssetStats s = ctx.assetMgr->Stats();
         ImGui::Text("纹理 %zu | 网格 %zu | 字体 %zu", s.textures, s.meshes, s.fonts);
         ImGui::Text("纹理内存 %.2f MB | 三角形 %zu",
                     static_cast<double>(s.textureBytes) / (1024.0 * 1024.0),
@@ -10,7 +21,7 @@ void EditorApp::BuildResourcePanel() {
         if (ImGui::BeginTabBar("##res_tabs")) {
             if (ImGui::BeginTabItem("纹理")) {
                 ImGui::BeginChild("##res_tex");
-                for (const auto& kv : assetMgr_.Textures()) {
+                for (const auto& kv : ctx.assetMgr->Textures()) {
                     if (!kv.second.Valid()) continue;
                     // Strip the load-option cache suffix ("\x1Ff" = glTF flip)
                     // when displaying the asset path.
@@ -26,7 +37,7 @@ void EditorApp::BuildResourcePanel() {
             }
             if (ImGui::BeginTabItem("网格")) {
                 ImGui::BeginChild("##res_mesh");
-                for (const auto& kv : assetMgr_.Meshes()) {
+                for (const auto& kv : ctx.assetMgr->Meshes()) {
                     if (!kv.second.Valid()) continue;
                     ImGui::Text("%s", kv.first.c_str());
                     ImGui::SameLine();
@@ -37,7 +48,7 @@ void EditorApp::BuildResourcePanel() {
             }
             if (ImGui::BeginTabItem("字体")) {
                 ImGui::BeginChild("##res_font");
-                for (const auto& kv : assetMgr_.Fonts()) {
+                for (const auto& kv : ctx.assetMgr->Fonts()) {
                     if (!kv.second.Valid()) continue;
                     ImGui::Text("%s (%dpx)", kv.first.first.c_str(), kv.first.second);
                 }
@@ -50,8 +61,4 @@ void EditorApp::BuildResourcePanel() {
     ImGui::End();
 }
 
-// 属性面板（原 EditorApp::BuildInspectorPanel，本文件最大面板）已整体迁移为
-// 独立面板类 panels/inspector_panel.hpp/.cpp（InspectorPanel : IPanel，Task 4，
-// 沿用 Task 2/3 样板）。EditorApp 在 OnCreate 注册它；editor_ui.cpp 的
-// BuildImGuiUI 经 panels_.DrawAll(ctx_) 分发。此占位注释保留迁移痕迹，
-// 待资源面板等后续迁移完成后整体删除本 inc。
+} // namespace neon::editor
