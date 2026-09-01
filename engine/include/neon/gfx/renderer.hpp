@@ -11,6 +11,7 @@
 #include "neon/gfx/ibl.hpp"
 #include "neon/gfx/material.hpp"
 #include "neon/gfx/mesh.hpp"
+#include "neon/gfx/post_graph.hpp"
 #include "neon/gfx/shader.hpp"
 #include "neon/gfx/texture.hpp"
 #include "neon/math/math.hpp"
@@ -430,16 +431,13 @@ private:
     // HDR + bloom post-processing.
     void EnsurePostTargets();
     void DestroyPostTargets();
-    // G1-5 SSAO sub-pipeline: builds the depth/AO/blur targets + shaders and
-    // runs the color-encoded depth pass, the AO pass and the separable blur.
-    void EnsureSsaoTargets();
-    void RunSceneDepthPass();
-    bool RunSsaoPass();
+    // G1-5 SSAO/volumetric/SSR + the shared scene-depth pre-pass: one FrameGraph
+    // (postGraph_) that runs the depth casters, the AO chain, the volumetric
+    // chain and the SSR chain. The final RTs are exported and sampled by
+    // CompositeToBackbuffer. Returns true when the graph executed this frame
+    // (whether each chain actually ran is exposed per-chain on PostGraph).
+    bool RunPostPasses();
     void DrawSsaoDepthCasters(const math::Mat4& viewProj);
-    void EnsureVolumetricTargets();
-    bool RunVolumetricPass();
-    void EnsureSsrTargets();
-    bool RunSsrPass();
     bool TestFloatTargetCapability();
     // A2: probes SFLOAT SAMPLING (broken on some Intel Vulkan drivers: the
     // sampler returns black for valid float data, which the write/readback
@@ -538,19 +536,12 @@ private:
     RenderTargetHandle hdrRT_;
     RenderTargetHandle hdrMsaaRT_;
     BloomGraph bloomGraph_;
-    // G1-5 SSAO: colour-encoded scene depth (full-res) + AO at half-res.
-    RenderTargetHandle ssaoDepthRT_;
-    RenderTargetHandle aoRT_;
-    RenderTargetHandle aoBlurA_;
-    RenderTargetHandle aoBlurB_;
-    // G1-5 volumetric shafts (half-res) + blur scratch.
-    RenderTargetHandle volRT_;
-    RenderTargetHandle volBlurA_;
-    RenderTargetHandle volBlurB_;
-    // G1-5 SSR (half-res) + blur scratch.
-    RenderTargetHandle ssrRT_;
-    RenderTargetHandle ssrBlurA_;
-    RenderTargetHandle ssrBlurB_;
+    // G1-5 SSAO/volumetric/SSR + the shared scene-depth pre-pass: the depth/AO/
+    // blur/vol/ssr targets live in postGraph_'s FrameGraph transient pool (the
+    // old ssaoDepthRT_/aoRT_/aoBlurA_/B_, volRT_/volBlurA_/B_, ssrRT_/ssrBlurA_/B_
+    // are now in-graph resources). The finals are exported per frame and sampled
+    // by CompositeToBackbuffer via the PostGraph texture accessors.
+    PostGraph postGraph_;
     int hdrW_ = 0;
     int hdrH_ = 0;
     bool hdrEnabled_ = false;
@@ -568,16 +559,13 @@ private:
     bool compositedThisFrame_ = false;
     // G1-5 SSAO state.
     bool ssaoEnabled_ = false;
-    bool ssaoRanThisFrame_ = false;
     float ssaoIntensity_ = 1.0f; // AO blend amount in [0,1]
     std::vector<ShadowDraw> ssaoCasters_;
     // G1-5 volumetric shafts state.
     bool volumetricEnabled_ = false;
-    bool volumetricRanThisFrame_ = false;
     float volumetricIntensity_ = 1.0f;
     // G1-5 SSR state.
     bool ssrEnabled_ = false;
-    bool ssrRanThisFrame_ = false;
     float ssrIntensity_ = 1.0f;
 
     Camera camera_;

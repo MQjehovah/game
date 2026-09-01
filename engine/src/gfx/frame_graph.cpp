@@ -27,6 +27,10 @@ bool FrameGraph::AddPass(FramePass pass) {
     return true;
 }
 
+void FrameGraph::SetPassEnabled(size_t index, bool enabled) {
+    if (index < passes_.size()) passes_[index].enabled = enabled;
+}
+
 void FrameGraph::SetExternalInput(ResourceId id, RenderTargetHandle rt) {
     if (id >= resources_.size()) return;
     if (rt.Valid())

@@ -3,6 +3,7 @@
 
 #include "neon/gfx/bloom_graph.hpp"
 #include "neon/gfx/frame_graph.hpp"
+#include "neon/gfx/post_graph.hpp"
 #include "helpers.hpp"
 #include "test_backend.hpp"
 
@@ -357,4 +358,200 @@ TEST(FrameGraphSamplesConventionTranslation) {
     CHECK_EQ(backend.sampleArgs.size(), 2u);
     CHECK_EQ(backend.sampleArgs[0], 0);
     CHECK_EQ(backend.sampleArgs[1], 4);
+}
+
+namespace {
+
+// Builds a fully-enabled PostGraph with all four chains (depth + ssao + vol +
+// ssr) at 640x360 and a depth-caster callback that counts invocations.
+gfx::PostGraph BuildFullPostGraph(CountingNullBackend& backend, int& depthCasterCalls) {
+    gfx::PostGraph post;
+    post.Build(gfx::ShaderHandle{1}, gfx::ShaderHandle{2}, gfx::ShaderHandle{3},
+               gfx::ShaderHandle{4}, gfx::MeshHandle{1, 1, 1, 6}, 640, 360,
+               [&] { ++depthCasterCalls; });
+    CHECK_EQ(post.PassCount(), 10u);
+    return post;
+}
+
+gfx::PostGraph::FrameParams PostFrameParams(int w, int h, bool depth, bool ssao, bool vol,
+                                            bool ssr) {
+    gfx::PostGraph::FrameParams p;
+    p.hdrScene = {100};
+    p.hdrW = w;
+    p.hdrH = h;
+    p.depthPass = depth;
+    p.ssaoPass = ssao;
+    p.volumetricPass = vol;
+    p.ssrPass = ssr;
+    p.camPos = {0.0f, 3.0f, 10.0f};
+    p.sunDir = {-0.4f, -1.0f, -0.3f};
+    p.viewProj = neon::math::Mat4::Identity();
+    p.camera = {};
+    return p;
+}
+
+} // namespace
+
+// The full post chain (depth -> ssao -> blur -> volumetric -> blur -> ssr ->
+// blur) as a FrameGraph: 10 passes must execute in EXACTLY the order of the
+// hand-written chain, with each reader wired to its immediate producer's target
+// (the ping-pong versions), the scene HDR injected as the external input of the
+// volumetric/ssr passes, and the depth pre-pass drawing the casters through the
+// injected callback instead of a fullscreen quad.
+TEST(PostGraphPassOrderAndWiring) {
+    CountingNullBackend backend;
+    int depthCasterCalls = 0;
+    gfx::PostGraph post = BuildFullPostGraph(backend, depthCasterCalls);
+
+    CHECK(post.Execute(backend, PostFrameParams(640, 360, true, true, true, true)));
+    CHECK(post.Ran());
+    CHECK_EQ(depthCasterCalls, 1); // the depth pass drew the casters exactly once
+
+    const auto& trace = post.LastTrace();
+    CHECK_EQ(trace.size(), 10u);
+    const char* expected[] = {"post.depth",     "post.ssao",     "post.ssaoBlurH",
+                              "post.ssaoBlurV", "post.volumetric", "post.volBlurH",
+                              "post.volBlurV",  "post.ssr",      "post.ssrBlurH",
+                              "post.ssrBlurV"};
+    for (size_t i = 0; i < 10; ++i) CHECK_EQ(trace[i].name, std::string(expected[i]));
+
+    // The depth pass has NO inputs (casters are drawn directly) and writes the
+    // scene depth; ssao/ssr bind that same target as their depth input.
+    CHECK_EQ(trace[0].inputs.size(), 0u);
+    CHECK_EQ(trace[0].outputs.size(), 1u);
+    CHECK_EQ(trace[1].inputs[0].target.id, trace[0].outputs[0].target.id); // ssao <- depth
+    CHECK_EQ(trace[7].inputs[1].target.id, trace[0].outputs[0].target.id); // ssr  <- depth
+
+    // AO ping-pong: ao -> aoBlurA -> aoBlurB.
+    CHECK_EQ(trace[1].outputs[0].target.id, trace[2].inputs[0].target.id); // blurH <- ao
+    CHECK_EQ(trace[2].outputs[0].target.id, trace[3].inputs[0].target.id); // blurV <- aoBlurA
+
+    // Volumetric reads the external HDR, blurs vol -> volBlurA -> volBlurB.
+    CHECK_EQ(trace[4].inputs[0].target.id, 100u); // external hdrScene
+    CHECK_EQ(trace[4].outputs[0].target.id, trace[5].inputs[0].target.id);
+    CHECK_EQ(trace[5].outputs[0].target.id, trace[6].inputs[0].target.id);
+
+    // SSR reads BOTH the external HDR and the scene depth, blurs ssr ->
+    // ssrBlurA -> ssrBlurB.
+    CHECK_EQ(trace[7].inputs.size(), 2u);
+    CHECK_EQ(trace[7].inputs[0].target.id, 100u); // external hdrScene
+    CHECK_EQ(trace[7].outputs[0].target.id, trace[8].inputs[0].target.id);
+    CHECK_EQ(trace[8].outputs[0].target.id, trace[9].inputs[0].target.id);
+
+    // The exported finals are sampleable right after Execute: scene depth, the
+    // raw AO, and the blurred volumetric / SSR results (what composite reads).
+    CHECK(post.SceneDepthTexture(backend).Valid());
+    CHECK(post.AoTex(backend).Valid());
+    CHECK(post.VolTex(backend).Valid());
+    CHECK(post.SsrTex(backend).Valid());
+
+    // ResetFrame returns the exports to the pool; composite sampled them already.
+    post.ResetFrame();
+    CHECK(!post.SceneDepthTexture(backend).Valid());
+    CHECK(!post.AoTex(backend).Valid());
+    CHECK(!post.VolTex(backend).Valid());
+    CHECK(!post.SsrTex(backend).Valid());
+}
+
+// Disabled chains must neither run nor produce: with only the ssao chain on,
+// just 4 passes execute (depth + ao + blurH + blurV), the depth-caster callback
+// still runs once, and the volumetric/ssr exports are absent while the ao
+// export stays live for the composite.
+TEST(PostGraphChainDisabling) {
+    CountingNullBackend backend;
+    int depthCasterCalls = 0;
+    gfx::PostGraph post = BuildFullPostGraph(backend, depthCasterCalls);
+
+    // Only the SSAO chain requested (renderer: ssaoEnabled && casters present).
+    CHECK(post.Execute(backend, PostFrameParams(640, 360, true, true, false, false)));
+    CHECK(post.Ran());
+    CHECK(post.DepthRan());
+    CHECK(post.SsaoRan());
+    CHECK(!post.VolumetricRan());
+    CHECK(!post.SsrRan());
+    CHECK_EQ(depthCasterCalls, 1);
+
+    const auto& trace = post.LastTrace();
+    CHECK_EQ(trace.size(), 4u);
+    CHECK_EQ(trace[0].name, std::string("post.depth"));
+    CHECK_EQ(trace[1].name, std::string("post.ssao"));
+    CHECK_EQ(trace[2].name, std::string("post.ssaoBlurH"));
+    CHECK_EQ(trace[3].name, std::string("post.ssaoBlurV"));
+
+    CHECK(post.SceneDepthTexture(backend).Valid());
+    CHECK(post.AoTex(backend).Valid());
+    CHECK(!post.VolTex(backend).Valid());
+    CHECK(!post.SsrTex(backend).Valid());
+    post.ResetFrame();
+
+    // Next frame: only SSR runs; depth still needed for the depth read.
+    CHECK(post.Execute(backend, PostFrameParams(640, 360, true, false, false, true)));
+    CHECK(post.DepthRan());
+    CHECK(!post.SsaoRan());
+    CHECK(!post.VolumetricRan());
+    CHECK(post.SsrRan());
+    CHECK_EQ(post.LastTrace().size(), 4u); // depth + ssr + ssrBlurH + ssrBlurV
+    CHECK(post.SceneDepthTexture(backend).Valid());
+    CHECK(!post.AoTex(backend).Valid());
+    CHECK(post.SsrTex(backend).Valid());
+    post.ResetFrame();
+}
+
+// depthPass=false but a chain that needs the depth is on: the graph must still
+// run the depth pre-pass (the depth is only needed when ssao/ssr sample it).
+TEST(PostGraphDepthDrivenByConsumers) {
+    CountingNullBackend backend;
+    int depthCasterCalls = 0;
+    gfx::PostGraph post = BuildFullPostGraph(backend, depthCasterCalls);
+
+    // ssr on, depthPass flag missed (defensive path): depth still executes.
+    CHECK(post.Execute(backend, PostFrameParams(640, 360, false, false, false, true)));
+    CHECK(post.DepthRan());
+    CHECK(post.SsrRan());
+    CHECK_EQ(depthCasterCalls, 1);
+    CHECK_EQ(post.LastTrace().size(), 4u); // depth + ssr chain
+    post.ResetFrame();
+}
+
+// Everything disabled: the graph runs nothing (no casters drawn, no targets
+// allocated) and every chain reports off.
+TEST(PostGraphAllDisabled) {
+    CountingNullBackend backend;
+    int depthCasterCalls = 0;
+    gfx::PostGraph post = BuildFullPostGraph(backend, depthCasterCalls);
+
+    CHECK(post.Execute(backend, PostFrameParams(640, 360, false, false, false, false)));
+    CHECK(!post.Ran());
+    CHECK(!post.DepthRan());
+    CHECK(!post.SsaoRan());
+    CHECK(!post.VolumetricRan());
+    CHECK(!post.SsrRan());
+    CHECK_EQ(depthCasterCalls, 0);
+    CHECK_EQ(post.LastTrace().size(), 0u);
+    CHECK_EQ(backend.createCount, 0); // nothing ran, nothing allocated
+    post.ResetFrame();
+}
+
+// The full chain allocates a handful of pooled transient targets (the AO/blur/
+// vol/ssr descriptors are all identical half-res float, so they share one pool
+// bucket and get recycled aggressively), and a rebuild releases every target.
+TEST(PostGraphTransientPoolAndRebuild) {
+    CountingNullBackend backend;
+    int depthCasterCalls = 0;
+    gfx::PostGraph post = BuildFullPostGraph(backend, depthCasterCalls);
+
+    CHECK(post.Execute(backend, PostFrameParams(640, 360, true, true, true, true)));
+    post.ResetFrame();
+    const int created = backend.createCount;
+    CHECK_EQ(created, 5); // 1 full-res depth + 4 half-res float (pool-recycled)
+
+    // A second frame reuses the same pooled targets: no new allocations.
+    CHECK(post.Execute(backend, PostFrameParams(640, 360, true, true, true, true)));
+    post.ResetFrame();
+    CHECK_EQ(backend.createCount, created);
+    CHECK_EQ(backend.destroyCount, 0);
+
+    // Rebuild at a new resolution: Destroy releases everything first.
+    post.Destroy(backend);
+    CHECK_EQ(backend.destroyCount, created);
 }

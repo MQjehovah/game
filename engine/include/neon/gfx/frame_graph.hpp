@@ -113,6 +113,14 @@ public:
     // a resource are ordered after its most recent prior writer (see above).
     bool AddPass(FramePass pass);
 
+    // Enables/disables the pass registered at `index` (0-based declaration
+    // order; use PassCount() - 1 for the last one). Default is enabled. A
+    // disabled pass neither produces nor consumes resources in the next
+    // Execute(), letting a pipeline keep one graph structure and skip whole
+    // chains per frame (e.g. SSAO off while SSR runs). Out-of-range indexes are
+    // ignored.
+    void SetPassEnabled(size_t index, bool enabled);
+
     // Wires a caller-owned render target into resource `id` (declared but never
     // written by any pass). The target's colour texture is what reads of the
     // resource sample. Pass an invalid handle to clear. The graph never pools
