@@ -446,7 +446,6 @@ void EditorApp::BuildImGuiUI() {
     BuildPackagePanel();
     BuildProfilerPanel();
     BuildInputMapPanel();
-    BuildNavPanel();
     BuildDebugOverlayPanel();
     BuildUIEditorPanel();
     BuildLocPanel();

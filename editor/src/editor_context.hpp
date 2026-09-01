@@ -17,10 +17,22 @@
 #include "neon/assets/asset_manager.hpp"
 #include "neon/ecs/world.hpp"
 #include "neon/gfx/renderer.hpp"
+#include "neon/nav/nav_grid.hpp"
 // scene::ComponentRegistry 定义在 scene_file.hpp（不在 component_schema.hpp）。
 #include "neon/scene/scene_file.hpp"
 
 namespace neon::editor {
+
+// 导航工具状态（A* 网格 + 起点/终点/路径）。原 EditorApp::NavState 嵌套结构，
+// Task 9 提升为共享结构：被导航面板（panels/nav_panel）与调试覆盖层
+// （DrawDebugOverlay 画导航格）共用，故经 EditorContext::nav 指针访问。
+struct NavState {
+    std::string assetPath;   // project nav/<name>.json ("" = unsaved)
+    nav::NavGrid grid;
+    math::Vec2 start{-5, -5}; // cell-space markers (invalid when < 0)
+    math::Vec2 goal{-5, -5};
+    std::vector<math::Vec2> path;
+};
 
 // 定义在 editor.hpp（依赖 ImGui/TextEditor 等编辑器内部头，这里只持有指针，
 // 前向声明即可——std::vector<SceneEntity>* 不要求完整类型）。
@@ -41,6 +53,8 @@ struct EditorContext {
     assets::AssetManager* assetMgr = nullptr;
     scene::ComponentRegistry* compReg = nullptr;
     std::string* projectDir = nullptr;
+    // 导航工具状态（Task 9）：导航面板 + 调试覆盖层共用，EditorApp 持有，注入指针。
+    NavState* nav = nullptr;
     // 跨面板操作（EditorApp 注入回调）
     std::function<void()> refreshAssetDir;
     std::function<void(int)> setSelection;

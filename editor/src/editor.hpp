@@ -39,6 +39,8 @@ class ModelPreviewPanel;
 // 面板插件化（Task 8）：插件管理面板（panels/plugins_panel.hpp）。经 ctx.pluginMgr
 // 访问 EditorPluginManager，无转发器指针。
 class PluginsPanel;
+// 面板插件化（Task 9）：导航面板（panels/nav_panel.hpp）。经 ctx.nav 访问 NavState。
+class NavPanel;
 
 // P2-editor UX: a full TRS triple used by the multi-selection batch transform.
 struct Transform3 {
@@ -275,7 +277,7 @@ private:
     void RenderModelPreviewPanel();
     void BuildPluginPanels();
     // 插件管理面板（Task 8）已迁入 panels/plugins_panel.hpp；BuildPluginsPanel 删除。
-    void BuildNavPanel();
+    // 导航面板（Task 9）已迁入 panels/nav_panel.hpp；BuildNavPanel 删除。
     // G8-3 debug overlay: unified F3 panel + viewport layers.
     void BuildDebugOverlayPanel();
     void DrawDebugOverlay(const gfx::Camera& cam);
@@ -612,13 +614,6 @@ private:
         bool breakpointsDirty = false;
         char varsBuf[32768]{};   // raw JSON vars editor (32 KB; truncation detected)
         std::string varsError;   // last vars-parse / truncation message
-    };
-    struct NavState {
-        std::string assetPath;   // project nav/<name>.json ("" = unsaved)
-        nav::NavGrid grid;
-        math::Vec2 start{-5, -5}; // cell-space markers (invalid when < 0)
-        math::Vec2 goal{-5, -5};
-        std::vector<math::Vec2> path;
     };
     struct PackageState {
         char outDirBuf[4096]{}; // output dir for the pack ("" = none yet)

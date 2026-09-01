@@ -7,6 +7,7 @@
 #include "panels/resource_panel.hpp"
 #include "panels/model_preview_panel.hpp"
 #include "panels/plugins_panel.hpp"
+#include "panels/nav_panel.hpp"
 
 #include <algorithm>
 #include <cerrno>
@@ -314,6 +315,10 @@ bool EditorApp::OnCreate() {
     // 插件管理面板（Task 8）：经 ctx.pluginMgr 访问 EditorPluginManager；
     // 原生插件列表（nativePlugins_/nativePluginsDir_）已迁入面板私有状态。
     panels_.Register(std::make_unique<PluginsPanel>(&showPlugins_));
+    // 导航面板（Task 9）：导航状态 NavState 被导航面板 + 调试覆盖层共用，
+    // 仍由 EditorApp 持有（nav_），注入指针经 ctx.nav 共享。
+    ctx_.nav = &nav_;
+    panels_.Register(std::make_unique<NavPanel>(&showNav_));
     panels_.OpenAll(ctx_);
     // Toolbar icon glyph self-check: a missing glyph renders as '?' in the
     // toolbar. Log once at startup so icon regressions are caught immediately.
