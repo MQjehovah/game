@@ -114,10 +114,11 @@ neon_engine = INTERFACE 门面，聚合 core/gfx/scene（旧消费者链接不�
   已删除，`scene/skills.hpp` 移除；引擎只保留通用原语（`OverlapSphere`/`OverlapBox`/
   `SpawnProjectile`/状态容器/lag-comp），规则逻辑在**内嵌 Gameplay Lua 基础库**
   （`engine/generated/gameplay_lib.hpp`）。
-- `GameRuntime` 已按职责拆 content+combat+draw 三簇；`panels.cpp` 4143 行拆为主文件 ~390 行 +
+- `GameRuntime` 已拆成**编排器 + 16 个组合服务**（`scene/systems/`：projectile/hud/particle/
+  tween/lagcomp/status/prefab/plugin/sceneTree/scriptCanvas/ui/animation/scriptRuntime/btRuntime/
+  physicsBridge/drawSystem）；`panels.cpp` 4143 行拆为主文件 ~390 行 +
   9 个 `.inc`；编辑器已库化（`neon_editor_common`/`neon_editor_lib`）。
-- 剩余：GameRuntime 按子系统组合服务化（C1 续拆）、Renderer 上帝类（C4）、
-  server/game 未库化（C15）。详见 §10 与
+- 剩余：Renderer 上帝类（C4）、server/game 未库化（C15）。详见 §10 与
   [`plans/2026-08-31-architecture-review.md`](./plans/2026-08-31-architecture-review.md)、
   [`plans/2026-08-31-microkernel-design.md`](./plans/2026-08-31-microkernel-design.md)。
 
@@ -880,15 +881,18 @@ B13 网络快照全量 + 48 实体上限 + 全走可靠通道；B14 物理同步
 
 ### 10.3 C 系列 · 结构性重构（P1/P2）
 
-C1 GameRuntime 上帝类拆分（已拆 content+combat+draw 三簇；战斗玩法进一步下沉 Lua）；
-C2 动画状态存 DrawItem → headless 空转；C3 EditorApp 巨类（panels.cpp 已拆主文件 ~390 行 +
+C1 GameRuntime 上帝类拆分（已拆成编排器 + 16 个组合服务：projectile/hud/particle/tween/
+lagcomp/status/prefab/plugin/sceneTree/scriptCanvas/ui/animation/scriptRuntime/btRuntime/
+physicsBridge/drawSystem，各系统独立可测，`game_runtime.cpp` 2395→1178 行）；
+C2 动画状态存 DrawItem → headless 空转（已解：动画状态移入 AnimationSystem 独立表，DrawItem
+只留渲染引用）；C3 EditorApp 巨类（panels.cpp 已拆主文件 ~390 行 +
 9 个 `.inc`，面板状态按簇分组；editor.hpp 仍 ~970 行）；C4 Renderer 上帝类 + 无 render graph；
 C5 字符串 key 贯穿全栈（无 intern/GUID）；C6 组件序列化三份手写镜像（反射系统 G2-1 收敛中）；
 C7 脚本绑定手写 95 个 ×3 处（hook 化后脚本层零 scene 依赖）；C8 线程基建 3 份复制；
 C9 UI 四轨并存；C10 着色器系统原始（全内嵌字符串）；C11 ECS Pool 防护；C12 CMake 单文件
 （三层库拆分完成，未按模块 add_subdirectory）；C13 scene↔script 循环；C14 玩法混进引擎核心
 （战斗/技能/状态已全部下沉 `Gameplay` 基础库 + Lua，引擎只留通用原语）；C15 editor/server/game 未库化（editor 已库化，server/game 未）。
-→ C6/C7/C11/C13/C14 `[x]`；C1/C3/C12/C15 `[~]`；C2/C4/C5/C8/C9/C10 `[ ]`。
+→ C1/C2/C6/C7/C11/C13/C14 `[x]`；C3/C12/C15 `[~]`；C4/C5/C8/C9/C10 `[ ]`。
 
 ### 10.4 D 系列 · 安全与工程化
 
