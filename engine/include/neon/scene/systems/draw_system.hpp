@@ -26,6 +26,7 @@
 
 #include "neon/ecs/world.hpp"
 #include "neon/gfx/material.hpp"
+#include "neon/assets/asset_manager.hpp"
 #include "neon/gfx/mesh.hpp"
 #include "neon/math/bvh.hpp"
 #include "neon/math/mat4.hpp"
@@ -177,6 +178,10 @@ private:
         // ResolveDrawItem), NOT here - DrawItem is a render reference only, so
         // headless hosts (no draw items) carry no idle animation state (C2).
         std::shared_ptr<SkinnedModel> skinned;
+        // 多 mesh glTF 场景（如 Sponza）：主 mesh 是 nodes[0]，这里是第 2+ 个
+        // mesh 节点（自带累积变换 + 材质）。Draw 时用 itemModel * sub.transform
+        // 绘制，使一个 `gltf:` 实体渲染整个场景（大型场景渲染，C15 延伸）。
+        std::vector<assets::GltfMeshNode> gltfSubNodes;
         bool resolved = false;
         bool failed = false;
         bool asyncPending = false;   // G6-2: mesh load kicked, waiting on cache

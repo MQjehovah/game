@@ -1202,14 +1202,20 @@ GltfAsset AssetManager::LoadGltfJson(core::Json& root, std::vector<std::vector<u
         bool skinned = false;
     };
     std::vector<RawMesh> rawMeshes;
+    // C15 延伸（多 mesh glTF 场景，如 Sponza）：每个 mesh 的 primitive 在
+    // rawMeshes 中的起始索引与数量。一个 node 引用一个 mesh 时，它的全部
+    // primitives（各自材质）都要成为 GltfMeshNode，而非只取第一个。
+    std::vector<std::pair<int, int>> meshPrimRange;  // mesh index -> (start, count)
     if (const core::Json* meshes = root.Get("meshes")) {
         for (size_t mi = 0; mi < meshes->Size(); ++mi) {
             const core::Json* prims = meshes->At(mi)->Get("primitives");
-            if (!prims) continue;
-            for (size_t pi = 0; pi < prims->Size(); ++pi) {
-                const core::Json* prim = prims->At(pi);
-                const core::Json* attrs = prim->Get("attributes");
-                if (!attrs) continue;
+            const int start = static_cast<int>(rawMeshes.size());
+            int count = 0;
+            if (prims) {
+                for (size_t pi = 0; pi < prims->Size(); ++pi) {
+                    const core::Json* prim = prims->At(pi);
+                    const core::Json* attrs = prim->Get("attributes");
+                    if (!attrs) continue;
                 RawMesh rm;
                 int matIdx = -1;
                 if (const core::Json* matNode = prim->Get("material")) matIdx = matNode->GetInt(-1);
@@ -1333,7 +1339,10 @@ GltfAsset AssetManager::LoadGltfJson(core::Json& root, std::vector<std::vector<u
                     }
                 }
                 rawMeshes.push_back(std::move(rm));
+                ++count;
             }
+            }
+            meshPrimRange.emplace_back(start, count);
         }
     }
 
@@ -1484,7 +1493,16 @@ GltfAsset AssetManager::LoadGltfJson(core::Json& root, std::vector<std::vector<u
         const NodeInfo& n = nodes[static_cast<size_t>(idx)];
         math::Mat4 world = parent * n.transform;
         if (n.mesh >= 0 && n.mesh < static_cast<int>(rawMeshes.size())) {
-            RawMesh& rm = rawMeshes[static_cast<size_t>(n.mesh)];
+            // C15 延伸：一个 node 引用一个 mesh，该 mesh 的全部 primitives
+            //（各自材质）都要成为 GltfMeshNode，而非只取第一个（Sponza 类
+            // 单 mesh / 多 primitive 的建筑场景）。
+            int pStart = n.mesh, pCount = 1;
+            if (n.mesh < static_cast<int>(meshPrimRange.size())) {
+                pStart = meshPrimRange[static_cast<size_t>(n.mesh)].first;
+                pCount = meshPrimRange[static_cast<size_t>(n.mesh)].second;
+            }
+            for (int r = pStart; r < pStart + pCount && r < static_cast<int>(rawMeshes.size()); ++r) {
+            RawMesh& rm = rawMeshes[static_cast<size_t>(r)];
             // glTF spec: JOINTS_0 stores indices *into* skin.joints, while the
             // engine's bone array is indexed by glTF *node* (bone == node).
             // Remap each vertex's joint id through the skin's joint table so
@@ -1521,11 +1539,13 @@ GltfAsset AssetManager::LoadGltfJson(core::Json& root, std::vector<std::vector<u
                 // Track under a per-node key so AssetManager::Stats() counts
                 // glTF meshes in the resource panel (meshes_ otherwise only
                 // holds OBJ meshes). Re-parsing the file re-inserts the key.
-                const std::string meshKey = path + "#" + std::to_string(idx);
+                const std::string meshKey =
+                    path + "#" + std::to_string(idx) + ":" + std::to_string(r);
                 meshes_[meshKey] = mesh;
                 meshRefs_[meshKey] = 1;
                 out.nodes.push_back({world, mesh, rm.material});
             }
+            }  // for r: 该 mesh 的所有 primitives
         }
         for (int child : n.children) visit(child, world);
     };

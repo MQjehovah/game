@@ -321,6 +321,18 @@ void EditorApp::OnRender() {
                                                   static_cast<int>(bones.size()));
             } else {
                 renderer_.DrawMesh(e.mesh, e.material, model);
+                // 多 mesh glTF 场景（C15 延伸）：实体 meshKey "gltf:..." 时绘制
+                // 第 2+ 个 mesh 节点（自带累积变换 + 材质），使编辑器视口也能
+                // 渲染 Sponza 类单 mesh / 多 primitive 的建筑场景。
+                if (!e.skinned && e.meshKey.compare(0, 5, "gltf:") == 0) {
+                    assets::GltfAsset g =
+                        assetMgr_.LoadGLTF(e.meshKey.substr(5));
+                    for (size_t si = 1; si < g.nodes.size(); ++si) {
+                        const assets::GltfMeshNode& sub = g.nodes[si];
+                        if (!sub.mesh.Valid()) continue;
+                        renderer_.DrawMesh(sub.mesh, sub.material, model * sub.transform);
+                    }
+                }
             }
             }
             static bool dbg = false;

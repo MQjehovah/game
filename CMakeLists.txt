@@ -737,7 +737,8 @@ add_executable(neon_tests tests/test_main.cpp tests/test_serialize.cpp tests/tes
   tests/test_determinism.cpp
   tests/test_aoi.cpp
   tests/test_asset_lifecycle.cpp
-  tests/test_jolt.cpp)
+  tests/test_jolt.cpp
+  tests/test_gltf_multimesh.cpp)
 # C15: link the editor/server/game core libs instead of compiling their
 # .cpp sources directly (game_server.cpp/aoi.cpp/client_sync.cpp were previously
 # "grabbed" into the test binary).

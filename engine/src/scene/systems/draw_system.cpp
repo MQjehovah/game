@@ -415,6 +415,15 @@ void DrawSystem::ResolveDrawItem(DrawItem& item, gfx::Renderer& renderer, ecs::W
     }
     item.mesh = mesh;
 
+    // 多 mesh glTF 场景（C15 延伸）：`gltf:` 实体的第 2+ 个 mesh 节点（自带
+    // 累积变换 + 材质）作为子项存储，Draw 时整体渲染（Sponza 类建筑场景）。
+    if (!mesh.Skinned() && key.compare(0, 5, "gltf:") == 0 && content_.assets) {
+        assets::GltfAsset g = content_.assets->LoadGLTF(content_.fullAssetPath(key.substr(5)));
+        if (g.nodes.size() > 1) {
+            item.gltfSubNodes.assign(g.nodes.begin() + 1, g.nodes.end());
+        }
+    }
+
     // Animated skinned glTF: resolve the full model (all skinned mesh parts +
     // skeleton + clips) so Draw() can use bone matrices. LOD chains are not
     // supported for skinned models (the file's parts are the model).
@@ -1036,6 +1045,11 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
         } else {
             renderer.DrawMesh(SelectLodMesh(item.mesh, item.chain, worldPos, cam.position),
                               item.mat, model);
+        }
+        // 多 mesh glTF 场景的子节点（第 2+ mesh，自带累积变换 + 材质）。
+        for (const assets::GltfMeshNode& sub : item.gltfSubNodes) {
+            if (!sub.mesh.Valid()) continue;
+            renderer.DrawMesh(sub.mesh, sub.material, model * sub.transform);
         }
     }
     flushBatches();
