@@ -261,7 +261,6 @@ private:
     void InitToolPanels();
     void BuildImGuiUI();
     void BuildResourcePanel();
-    void BuildInspectorPanel();
     void BuildLogPanel();
     void BuildViewportPanel();
     void BuildModelPreviewPanel();

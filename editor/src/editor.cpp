@@ -2,6 +2,7 @@
 #include "editor_util.hpp"
 #include "panels/scene_panel.hpp"
 #include "panels/asset_panel.hpp"
+#include "panels/inspector_panel.hpp"
 
 #include <algorithm>
 #include <cerrno>
@@ -277,6 +278,22 @@ bool EditorApp::OnCreate() {
     panels_.Register(std::make_unique<ScenePanel>(&showHierarchy_));
     // 可见标志过渡期注入 showAssets_（窗口菜单勾选 + ini 持久化 + 冒烟强制开启）。
     panels_.Register(std::make_unique<AssetPanel>(&showAssets_));
+    // 属性面板（Task 4）：场景脏标志 + 预置体库指针 + 实体重指令回调（原面板
+    // 直接调用的 EditorApp 方法——被视口/播放/加载/冒烟多处共用，故保留在本类，
+    // 经回调访问，行为一致）。
+    ctx_.sceneDirty = &sceneDirty_;
+    ctx_.prefabLib = &prefabLib_;
+    ctx_.editorApp = this; // 过渡期逃生舱：EditMeshKeyCommand 需要 EditorApp*
+    ctx_.resolveMesh = [this](SceneEntity& e) { return ResolveMesh(e); };
+    ctx_.applyMaterialParams = [this](SceneEntity& e) { ApplyMaterialParams(e); };
+    ctx_.materializePrefab = [this](const std::string& pfName, const math::Vec3& pos) {
+        return MaterializePrefabEntity(pfName, pos);
+    };
+    ctx_.reloadEntityShader = [this](SceneEntity& e) { ReloadEntityShader(e); };
+    ctx_.saveMaterialAsset = [this](const std::string& name) { SaveMaterialAsset(name); };
+    ctx_.applyMaterialAsset = [this](const std::string& path) { ApplyMaterialAsset(path); };
+    // 可见标志过渡期注入 showInspector_（窗口菜单勾选 + ini 持久化 + 冒烟强制开启）。
+    panels_.Register(std::make_unique<InspectorPanel>(&showInspector_));
     panels_.OpenAll(ctx_);
     // Toolbar icon glyph self-check: a missing glyph renders as '?' in the
     // toolbar. Log once at startup so icon regressions are caught immediately.

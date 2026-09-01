@@ -86,6 +86,21 @@ struct EditorContext {
     std::function<bool()> inPrefabsDir;                 // 浏览目录是否 prefabs（.json = 预置体）
     std::function<void(const std::string&)> openScriptEditor;     // .lua -> 内置脚本编辑器
     std::function<void(const std::string&)> openInExternalEditor; // 系统外部编辑器
+    // --- 属性面板（Task 4）扩展：场景脏标志 + 预置体库 + 实体重指令回调 ----
+    // 共享状态：场景脏标志（相机/光源等非撤销字段编辑置位，保存时清除）与
+    // 预置体库（实例检测 + 重置为预制体的模板来源）仍由 EditorApp 拥有，
+    // 注入指针。
+    bool* sceneDirty = nullptr;
+    scene::PrefabLibrary* prefabLib = nullptr;
+    // 回调：实体级重指令（原面板直接调用的 EditorApp 方法；这些方法被视口/
+    // 播放/场景加载/冒烟测试等多处共用，故保留在 EditorApp，经回调访问，
+    // 行为一致）。SceneEntity 定义在 editor.hpp（指针/引用即可，前向声明）。
+    std::function<bool(SceneEntity&)> resolveMesh;             // meshKey -> 网格解析
+    std::function<void(SceneEntity&)> applyMaterialParams;     // 展开材质参数到渲染材质
+    std::function<SceneEntity(const std::string&, const math::Vec3&)> materializePrefab;
+    std::function<void(SceneEntity&)> reloadEntityShader;      // 重编译自定义着色器
+    std::function<void(const std::string&)> saveMaterialAsset; // 另存为材质球资产
+    std::function<void(const std::string&)> applyMaterialAsset; // 材质球资产 -> 选中实体
     // 缩略图查询：登记/刷新渲染请求（幂等），返回缓存条目的 ImGui 纹理 id
     // （0 = 无条目或尚未生成）。ImTextureID 在本头文件刻意不可见（ImGui-free），
     // 以整数形式传递（ImTextureID 即 ImU64，0 == ImTextureID_Invalid）。

@@ -436,10 +436,8 @@ void EditorApp::BuildImGuiUI() {
             if (best) ictx.HoveredWindow = best;
         }
     }
-    panels_.DrawAll(ctx_); // 已迁移的独立面板（ScenePanel）；其余仍走 BuildXxxPanel
-    BuildAssetPanel();
+    panels_.DrawAll(ctx_); // 已迁移的独立面板（ScenePanel、AssetPanel、InspectorPanel）；其余仍走 BuildXxxPanel
     BuildResourcePanel();
-    BuildInspectorPanel();
     BuildLogPanel();
     BuildModelPreviewPanel();
     BuildBtPanel();

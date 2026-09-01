@@ -55,44 +55,8 @@ std::string GetCurrentDir() {
 
 namespace {
 
-std::string TypeLabel(const std::string& key) {
-    if (key.empty()) return "实体";
-    if (key == "terrain") return "地形";
-    if (key == "helmet") return "头盔 (glTF PBR)";
-    if (key == "cube") return "方块";
-    if (key == "sphere") return "球体";
-    if (key == "plane") return "平面";
-    if (key == "hero") return "英雄";
-    if (key == "wolf") return "狼";
-    if (key == "npc" || key.compare(0, 4, "npc:") == 0) return "村民";
-    if (key == "house") return "房屋";
-    if (key == "bush") return "灌木";
-    if (key == "rock") return "岩石";
-    if (key == "water") return "水面";
-    if (key == "road") return "道路";
-    if (key == "tree") return "松树 (OBJ)";
-    // File-backed mesh formats get their registered display label (obj/gltf/
-    // fbx/...). Adding a format auto-appears here.
-    if (const std::string p = assets::MeshFormatRegistry::Instance().MatchPrefix(key); !p.empty())
-        return assets::MeshFormatRegistry::Instance().DisplayName(p);
-    return key;
-}
-
-// Unity-like entity type: what the selected object IS, derived from its
-// components / mesh kind (plant/zombie from the 2D canvas, sprite, prefab,
-// or the mesh type).
-std::string EntityTypeLabel(const SceneEntity& e) {
-    if (!e.nodeType.empty()) return e.nodeType;
-    if (e.extraComponents.count("plant")) return "植物";
-    if (e.extraComponents.count("zombie")) return "僵尸";
-    if (!e.spriteTex.empty()) return "精灵";
-    if (!e.prefab.empty()) return "预制体: " + e.prefab;
-    return TypeLabel(e.meshKey);
-}
-
-// Node type table (P1-1): the combo list for the inspector.
-const char* kNodeTypes[] = {"Node", "MeshInstance3D", "Camera3D",
-                            "CharacterBody", "Sprite", "Light3D"};
+// Mesh-key 显示标签（TypeLabel）原在此处（匿名命名空间），仅属性面板的
+// EntityTypeLabel 使用——已随属性面板迁移进 panels/inspector_panel.cpp（Task 4）。
 
 std::string ToLower(std::string s) {
     std::transform(s.begin(), s.end(), s.begin(),
