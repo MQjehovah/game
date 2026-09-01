@@ -10,9 +10,8 @@
 //   管理器/插件管理器/场景 World）经 EditorContext 指针访问；
 // - 跨面板操作与被多处共用的 EditorApp 方法（ResolveMesh/ApplyMaterialParams/
 //   SaveMaterialAsset/ApplyMaterialAsset/MaterializePrefabEntity/ReloadEntityShader，
-//   视口/播放/加载/冒烟同样调用）走 ctx 注入回调；EditMeshKeyCommand 需要
-//   EditorApp*（命令 undo/redo 内调 ResolveMesh）——经过渡期逃生舱
-//   ctx.editorApp 取得（阶段 3 收编后移除）；
+//   视口/播放/加载/冒烟同样调用）走 ctx 注入回调；EditMeshKeyCommand 也改为
+//   持 resolve/apply 回调（不再依赖 EditorApp*，无逃生舱）；
 // - 可见标志在过渡期指向 EditorApp::showInspector_（窗口菜单勾选 + ini 持久化
 //   + 冒烟强制开启都读写它，阶段 3 收编到 PanelRegistry 后改为自有 bool）。
 //

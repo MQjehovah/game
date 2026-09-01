@@ -251,7 +251,6 @@ bool DeletePathRecursive(const std::string& path);
 
 class EditorApp : public core::Application {
 public:
-    friend class EditMeshKeyCommand;
     // Registers the ImGui ini settings handler that persists each panel's
     // open/closed state across launches (needs private member access to build
     // the title -> show-flag table).

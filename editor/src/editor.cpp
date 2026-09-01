@@ -301,7 +301,6 @@ bool EditorApp::OnCreate() {
     // 经回调访问，行为一致）。
     ctx_.sceneDirty = &sceneDirty_;
     ctx_.prefabLib = &prefabLib_;
-    ctx_.editorApp = this; // 过渡期逃生舱：EditMeshKeyCommand 需要 EditorApp*
     ctx_.resolveMesh = [this](SceneEntity& e) { return ResolveMesh(e); };
     ctx_.applyMaterialParams = [this](SceneEntity& e) { ApplyMaterialParams(e); };
     ctx_.materializePrefab = [this](const std::string& pfName, const math::Vec3& pos) {
@@ -1040,7 +1039,9 @@ void EditorApp::OnUpdate(float dt) {
             SceneEntity& e = entities_[static_cast<size_t>(selected_)];
             const std::string oldKey = entities_[static_cast<size_t>(selected_)].meshKey;
             history_.Push(std::make_unique<EditMeshKeyCommand>(
-                this, &entities_, selected_, oldKey, ""));
+                [this](SceneEntity& e) { return ResolveMesh(e); },
+                [this](SceneEntity& e) { ApplyMaterialParams(e); },
+                &entities_, selected_, oldKey, ""));
             removed = entities_[static_cast<size_t>(selected_)].meshKey.empty();
             history_.Undo();
             // 生命 remove: the command the 移除##health button pushes.

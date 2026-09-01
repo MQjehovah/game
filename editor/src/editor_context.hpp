@@ -271,8 +271,6 @@ struct EditorContext {
     std::function<std::uint64_t(const std::string&)> materialThumbnail;
     // 原生文件对话框的 owner 窗口句柄（无窗口时回调可返回 nullptr）。
     std::function<void*()> nativeWindowHandle;
-    // 过渡期逃生舱：面板迁移初期访问未进 ctx 的状态；阶段 3 移除。
-    void* editorApp = nullptr;
 };
 
 // 面板接口：独立状态 + ImGui 渲染 + 生命周期。

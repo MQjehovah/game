@@ -68,9 +68,6 @@ const char* kNodeTypes[] = {"Node", "MeshInstance3D", "Camera3D",
 } // namespace
 
 void InspectorPanel::Draw(EditorContext& ctx) {
-    // 过渡期逃生舱：EditMeshKeyCommand 需要 EditorApp*（undo/redo 内经它调
-    // ResolveMesh/ApplyMaterialParams）。OnCreate 注入，Draw 期必然有效。
-    auto* app = static_cast<EditorApp*>(ctx.editorApp);
     std::vector<SceneEntity>& entities = *ctx.entities;
     std::set<int>& selection = *ctx.selection;
     int& selected = *ctx.selected;
@@ -290,7 +287,7 @@ void InspectorPanel::Draw(EditorContext& ctx) {
             if (newKey != e.meshKey) {
                 const std::string oldKey = e.meshKey;
                 history.Push(std::make_unique<EditMeshKeyCommand>(
-                    app, &entities, selected, oldKey, newKey));
+                    ctx.resolveMesh, ctx.applyMaterialParams, &entities, selected, oldKey, newKey));
             }
         }
         // Drag a model from the asset panel to replace the mesh.
@@ -306,7 +303,7 @@ void InspectorPanel::Draw(EditorContext& ctx) {
                     const std::string key = prefix + ":" + path;
                     const std::string oldKey = e.meshKey;
                     history.Push(std::make_unique<EditMeshKeyCommand>(
-                        app, &entities, selected, oldKey, key));
+                        ctx.resolveMesh, ctx.applyMaterialParams, &entities, selected, oldKey, key));
                 }
             }
             ImGui::EndDragDropTarget();
@@ -506,7 +503,7 @@ void InspectorPanel::Draw(EditorContext& ctx) {
         ImGui::Separator();
         if (ImGui::Button("移除网格")) {
             history.Push(std::make_unique<EditMeshKeyCommand>(
-                app, &entities, selected, e.meshKey, ""));
+                ctx.resolveMesh, ctx.applyMaterialParams, &entities, selected, e.meshKey, ""));
         }
         }
         }
@@ -915,7 +912,7 @@ void InspectorPanel::Draw(EditorContext& ctx) {
                     } else if (schema->name == "mesh") {
                         // Re-add the mesh renderer (default cube).
                         history.Push(std::make_unique<EditMeshKeyCommand>(
-                            app, &entities, selected, "", "cube"));
+                            ctx.resolveMesh, ctx.applyMaterialParams, &entities, selected, "", "cube"));
                     } else if (schema->name == "health") {
                         const HealthValue oldV{e.hp, e.maxHp};
                         history.Push(std::make_unique<EditPropertyCommand<HealthValue>>(

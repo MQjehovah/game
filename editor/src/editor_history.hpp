@@ -10,6 +10,7 @@
 // `selected_` after history operations.
 
 #include <cstddef>
+#include <functional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -631,12 +632,16 @@ private:
 };
 
 // Mesh-key edit: swaps an entity's mesh and re-resolves it (mesh + material
-// stay in sync on both undo and redo). Needs the editor app for ResolveMesh.
+// stay in sync on both undo and redo). The resolve/apply steps are injected as
+// callbacks so the command never links against EditorApp (面板解耦，无逃生舱)。
 class EditMeshKeyCommand : public Command {
 public:
-    EditMeshKeyCommand(EditorApp* app, std::vector<SceneEntity>* entities, int index,
+    EditMeshKeyCommand(std::function<bool(SceneEntity&)> resolve,
+                       std::function<void(SceneEntity&)> apply,
+                       std::vector<SceneEntity>* entities, int index,
                        std::string oldKey, std::string newKey)
-        : app_(app), entities_(entities), index_(index), old_(std::move(oldKey)),
+        : resolve_(std::move(resolve)), apply_(std::move(apply)),
+          entities_(entities), index_(index), old_(std::move(oldKey)),
           cur_(std::move(newKey)) {}
 
     void Apply() override { Set(cur_); }
@@ -654,10 +659,11 @@ private:
             e.mesh = gfx::Mesh{};
             e.material = gfx::Material{};
         }
-        if (app_ && app_->ResolveMesh(e)) app_->ApplyMaterialParams(e);
+        if (resolve_ && resolve_(e)) apply_(e);
     }
 
-    EditorApp* app_;
+    std::function<bool(SceneEntity&)> resolve_;
+    std::function<void(SceneEntity&)> apply_;
     std::vector<SceneEntity>* entities_;
     int index_;
     std::string old_;
