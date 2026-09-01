@@ -121,6 +121,8 @@ struct ScriptEditorState;
 // 打包报告（定义在 editor/src/packager.hpp，neon::editor::pack 命名空间）；
 // 经引用出入参，面板持完整类型，editor_context 只前向声明。
 namespace pack { struct PackageReport; }
+// 行为树编辑器画布图（定义在 bt_editor.hpp，纯模型无 ImGui；只经指针访问）。
+namespace btgraph { class BtGraph; }
 
 // 面板共享的编辑器上下文：聚合 EditorApp 暴露给面板的共享状态（指针）。
 // 面板不持有 EditorApp*——一切共享访问经此上下文。
@@ -195,6 +197,13 @@ struct EditorContext {
     int* viewCam = nullptr;        // ViewCam 枚举（0 透视, 1 顶视, 2 前视）
     math::Vec3* camTarget = nullptr;
     float* camDist = nullptr;
+    // 行为树面板（Task 18b）：btGraph_ 由 EditorApp 持有（OnCreate 播种 + 冒烟
+    // 测试直接读写），注入指针；BT 文件 IO（EditorApp 方法，冒烟测试也调）经
+    // 回调；播放高亮（play_ 是 GameRuntime，面板不直接持有）经回调。
+    btgraph::BtGraph* btGraph = nullptr;
+    std::function<bool(const std::string&)> btLoadFromFile;
+    std::function<bool(const std::string&)> btSaveToFile;
+    std::function<std::string()> playActiveTreePath;
     // 跨面板操作（EditorApp 注入回调）
     std::function<void()> refreshAssetDir;
     std::function<void(int)> setSelection;

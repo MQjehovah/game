@@ -14,6 +14,15 @@
 #include "imgui_internal.h"
 
 namespace neon::editor {
+namespace {
+
+// 本地 basename 帮助函数（ScenePanel/AssetPanel 同款 TU 本地定义）。
+std::string FileName(const std::string& p) {
+    size_t pos = p.find_last_of("/\\");
+    return pos == std::string::npos ? p : p.substr(pos + 1);
+}
+
+} // namespace
 
 bool ViewportPanel::kAlwaysVisible = true;
 

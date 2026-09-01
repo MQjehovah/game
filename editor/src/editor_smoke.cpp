@@ -1,6 +1,7 @@
 #include "editor.hpp"
 #include "editor_history.hpp"
 #include "editor_util.hpp"
+#include "panels/bt_panel.hpp"
 
 #include <fstream>
 #include <sstream>
@@ -486,7 +487,7 @@ void EditorApp::RunUISmokeTest() {
 
     // --- Behavior tree editor: canvas + save/load + link path + undo ---
     {
-        check(btCanvasDrawn_, "bt canvas renders the seeded tree");
+        check(btPanel_ && btPanel_->CanvasDrawn(), "bt canvas renders the seeded tree");
         check(btGraph_.NodeCount() == 3u && btGraph_.LinkCount() == 2u,
               "bt panel seeded a 3-node linked tree");
 
@@ -513,8 +514,8 @@ void EditorApp::RunUISmokeTest() {
         btGraph_ = btgraph::BtGraph{};
         const std::string a = btGraph_.AddNode("sequence", math::Vec2{20.f, 20.f});
         const std::string b = btGraph_.AddNode("wait", math::Vec2{240.f, 240.f});
-        btSelected_ = a;
-        BtCanvasClick(math::Vec2{245.f, 245.f}, /*ctrl=*/true, /*shift=*/false);
+        btPanel_->SetSelected(a);
+        btPanel_->CanvasClick(ctx_, math::Vec2{245.f, 245.f}, /*ctrl=*/true, /*shift=*/false);
         check(btGraph_.LinkCount() == 1u, "bt smoke: ctrl+click creates a link");
         if (btGraph_.LinkCount() == 1u) {
             const btgraph::BtGraphLink& link = btGraph_.Links()[0];
@@ -534,14 +535,14 @@ void EditorApp::RunUISmokeTest() {
         const size_t nodesBefore = btGraph_.NodeCount();
         const btgraph::BtGraph before = btGraph_;
         const std::string nid = btGraph_.AddNode("in_range", math::Vec2{0.f, 0.f});
-        BtPushSnapshot(before);
+        btPanel_->PushSnapshot(ctx_, before);
         check(!nid.empty() && btGraph_.NodeCount() == nodesBefore + 1,
               "bt smoke: canvas add node");
-        btHistory_.Undo();
+        btPanel_->UndoBt();
         check(btGraph_.NodeCount() == nodesBefore, "bt smoke: undo restores the graph");
-        btHistory_.Redo();
+        btPanel_->RedoBt();
         check(btGraph_.NodeCount() == nodesBefore + 1, "bt smoke: redo reapplies the add");
-        btHistory_.Undo();
+        btPanel_->UndoBt();
         check(btGraph_.NodeCount() == nodesBefore, "bt smoke: graph left clean after undo");
     }
 

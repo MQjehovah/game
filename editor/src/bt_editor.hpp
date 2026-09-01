@@ -6,8 +6,8 @@
 // The node GRAPH MODEL (namespace btgraph) is deliberately ImGui-free (pure
 // inline code in this header) so the test binary can exercise it headlessly:
 // graph -> {"root": ...} JSON -> graph round-trips, link validation, path ids.
-// The canvas UI (EditorApp::BuildBtPanel and friends) lives in bt_editor.cpp
-// and is smoke-tested from the editor itself.
+// The canvas UI lives in panels/bt_panel.cpp (Task 18b: BtPanel : IPanel) and
+// is smoke-tested from the editor itself.
 
 #include <algorithm>
 #include <cstdint>

@@ -20,6 +20,7 @@
 #include "panels/anim_editor_panel.hpp"
 #include "panels/asm_editor_panel.hpp"
 #include "panels/viewport_panel.hpp"
+#include "panels/bt_panel.hpp"
 
 #include <algorithm>
 #include <cerrno>
@@ -405,6 +406,24 @@ bool EditorApp::OnCreate() {
     ctx_.camDist = &camDist_;
     // playBodyCount 已在性能面板注入（复用）。
     panels_.Register(std::make_unique<ViewportPanel>());
+    // 行为树面板（Task 18b）：btGraph_ 由 EditorApp 持有（OnCreate 播种 + 冒烟
+    // 测试直接读写），注入指针；BT 文件 IO（EditorApp 方法，冒烟测试也调）与
+    // 播放高亮（play_ 是 GameRuntime，面板不直接持有）经回调。
+    ctx_.btGraph = &btGraph_;
+    ctx_.btLoadFromFile = [this](const std::string& p) { return BtLoadFromFile(p); };
+    ctx_.btSaveToFile = [this](const std::string& p) { return BtSaveToFile(p); };
+    ctx_.playActiveTreePath = [this]() -> std::string {
+        if (!playActive_ || !play_) return "";
+        auto view = play_->World().ViewAll<scene::SceneBehaviorTree>();
+        if (view.Size() == 0) return "";
+        ecs::Entity e = play_->World().EntityAt<scene::SceneBehaviorTree>(0);
+        return play_->ActiveTreePath(e);
+    };
+    {
+        auto panel = std::make_unique<BtPanel>(&showBt_);
+        btPanel_ = panel.get();
+        panels_.Register(std::move(panel));
+    }
     panels_.OpenAll(ctx_);
     // Toolbar icon glyph self-check: a missing glyph renders as '?' in the
     // toolbar. Log once at startup so icon regressions are caught immediately.
@@ -1091,7 +1110,7 @@ void EditorApp::OnUpdate(float dt) {
         btGraph_.SetArg(a, "speed", speed);
         btGraph_.SetParent(c, r);
         btGraph_.SetParent(a, r);
-        btSelected_ = r;
+        if (btPanel_) btPanel_->SetSelected(r);
     }
     if (smokeMode_ && TimeRef().frameIndex == 30) RunUISmokeTest();
 
@@ -1518,17 +1537,20 @@ void EditorApp::OnEvent(const platform::InputEvent& event) {
         if (Input()->IsDown(platform::Key::Control)) {
             if (event.key == platform::Key::Z) {
                 if (Input()->IsDown(platform::Key::Shift)) {
-                    if (btPanelFocused_ && btHistory_.CanRedo()) btHistory_.Redo();
+                    if (btPanel_ && btPanel_->PanelFocused() && btPanel_->CanRedoBt())
+                        btPanel_->RedoBt();
                     else history_.Redo();
                 } else {
-                    if (btPanelFocused_ && btHistory_.CanUndo()) btHistory_.Undo();
+                    if (btPanel_ && btPanel_->PanelFocused() && btPanel_->CanUndoBt())
+                        btPanel_->UndoBt();
                     else history_.Undo();
                 }
                 ClampSelection();
                 return;
             }
             if (event.key == platform::Key::Y) {
-                if (btPanelFocused_ && btHistory_.CanRedo()) btHistory_.Redo();
+                if (btPanel_ && btPanel_->PanelFocused() && btPanel_->CanRedoBt())
+                    btPanel_->RedoBt();
                 else history_.Redo();
                 ClampSelection();
                 return;

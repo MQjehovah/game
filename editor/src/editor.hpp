@@ -86,6 +86,10 @@ class AsmEditorPanel;
 // 面板插件化（Task 18a）：视口面板（panels/viewport_panel.hpp）。viewportRect 等
 // 引擎视图状态经 ctx 指针共享，无转发器。
 class ViewportPanel;
+// 面板插件化（Task 18b）：行为树面板（panels/bt_panel.hpp）。btGraph_ 经 ctx
+// 指针共享，面板状态全迁入面板；EditorApp 仅留 btPanel_ 指针（undo/redo 路由 +
+// 冒烟测试访问）与 BtLoadFromFile/BtSaveToFile（冒烟测试直接调）。
+class BtPanel;
 
 // P2-editor UX: a full TRS triple used by the multi-selection batch transform.
 struct Transform3 {
@@ -553,28 +557,11 @@ private:
     // init and are NOT hot-reloaded (documented; see PollHotReload).
     void PollHotReload();
 
-    // Behavior tree editor (T4.4): docked 行为树 panel with a node palette,
-    // a drag canvas, link creation, param editing, save/load of .bt.json and a
-    // play debug highlight driven by bt::Context::activePath.
-    void BuildBtPanel();
-    void BuildBtToolbar();
-    void BuildBtPalette();
-    void BuildBtCanvas();
-    void BuildBtParams();
-    void BtNewTree();
+    // 行为树编辑器（T4.4）：面板 UI 已迁入 panels/bt_panel.hpp（Task 18b：
+    // BtPanel : IPanel）；BtLoadFromFile/BtSaveToFile 保留（冒烟测试直接调，
+    // 面板经 ctx 回调访问）。
     bool BtSaveToFile(const std::string& path);
     bool BtLoadFromFile(const std::string& path);
-    void BtPushSnapshot(const btgraph::BtGraph& before);
-    void BtUpdatePlayHighlight();
-    void BtRefreshBehaviorFiles();
-    std::string BtBehaviorsDir() const;
-    // Canvas mouse handling, extracted so the smoke can drive the real link
-    // path: `cm` is a canvas-space point, ctrl/shift carry the modifier state.
-    void BtCanvasClick(const math::Vec2& cm, bool ctrl, bool shift);
-    void BtParamNumber(const btgraph::BtGraphNode& n, const bt::ParamInfo& p);
-    void BtParamString(const btgraph::BtGraphNode& n, const bt::ParamInfo& p);
-    void BtParamBool(const btgraph::BtGraphNode& n, const bt::ParamInfo& p);
-    void BtParamJson(const btgraph::BtGraphNode& n, const bt::ParamInfo& p);
 
     // Script panel (T4.5): docked 脚本 panel listing the project's
     // assets/scripts/
@@ -915,38 +902,13 @@ private:
     // undo step.
     bool gizmoDragOriginValid_ = false;
 
-    // Behavior tree editor (T4.4) state.
+    // 行为树编辑器（T4.4）状态：btGraph_ 保留（OnCreate 播种 + 冒烟测试直接
+    // 读写，面板经 ctx.btGraph 指针访问）；其余状态（btHistory_/btFileName_/
+    // 选中/拖拽/视图变换）全部迁入 panels/bt_panel.hpp（Task 18b）。
     bool showBt_ = false;
-    bool btPanelFocused_ = false; // undo/redo routing: BT panel owns Ctrl+Z while focused
     btgraph::BtGraph btGraph_;
-    HistoryManager btHistory_;
-    std::string btFileName_ = "behavior";
-    char btFileNameBuf_[256]{};
-    std::string btSelected_;   // selected canvas node id
-    std::string btPendingType_; // armed palette node type (click canvas to place)
-    std::string btActivePath_;  // play highlight: tree-path id of the running node
-    std::vector<std::string> btBehaviorFiles_;
-    uint64_t btFilesRefreshFrame_ = 0; // throttle: refresh behaviors/ listing periodically
-    bool btCanvasDrawn_ = false; // smoke: the BT canvas emitted geometry this frame
-    // Canvas drag state.
-    std::string btDragNode_;
-    math::Vec2 btDragStart_{0.f, 0.f};
-    math::Vec2 btNodeStartPos_{0.f, 0.f};
-    bool btDragging_ = false;
-    // Canvas view transform: pan offset (screen px) + zoom factor (no
-    // scrollbars — the canvas only pans/zooms).
-    float btZoom_ = 1.0f;
-    math::Vec2 btPan_{30.f, 30.f};
-    // Anchor-link drag: drawing a connection from a node's output anchor.
-    bool btLinking_ = false;
-    std::string btLinkFrom_;
-    // Graph snapshot captured when a node drag began, pushed as one undo step
-    // on release (only when the node actually moved).
-    btgraph::BtGraph btGraphBeforeDrag_;
-    bool btHasGraphBeforeDrag_ = false;
-    // Per-param drag origin: args snapshot captured when a slider drag began,
-    // so the undo step reverts to the pre-drag value (one drag = one undo step).
-    std::map<std::string, btgraph::BtGraph> btArgDragOrigin_;
+    // 不拥有；OnCreate 注册 BtPanel 时设置（undo/redo 路由 + 冒烟测试经此访问）。
+    BtPanel* btPanel_ = nullptr;
 
     // Script panel (T4.5) state.
     std::unique_ptr<script::IScriptHost> scriptCheckHost_; // throwaway host for syntax checks
