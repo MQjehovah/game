@@ -252,6 +252,9 @@ private:
     std::vector<size_t> drawOrder_;
     // G2-3 vegetation cache (EntityKey -> VegField); rebuilt lazily per Start.
     std::unordered_map<uint64_t, VegField> vegCache_;
+    // 写实天空贴图缓存（SceneLight.skyTexture 配置）：按路径懒加载一次。
+    gfx::Texture skyTex_;
+    std::string skyTexPath_;
 };
 
 } // namespace neon::scene

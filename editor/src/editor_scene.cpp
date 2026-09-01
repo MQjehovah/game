@@ -1020,6 +1020,8 @@ void EditorApp::LoadScene(const std::string& path) {
                     e.light.intensity = static_cast<float>(v->GetNumber());
                 if (const core::Json* v = li->Get("ambientStrength"))
                     e.light.ambientStrength = static_cast<float>(v->GetNumber());
+                if (const core::Json* v = li->Get("skyTexture"))
+                    e.light.skyTexture = v->GetString();
                 if (e.nodeType.empty()) e.nodeType = "Light3D";
             }
             if (const core::Json* so = comps->Get("sortOrder")) {

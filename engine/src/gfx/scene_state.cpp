@@ -159,6 +159,12 @@ void SceneState::SetPlayerLight(const math::Vec3& position, const Color& color, 
 }
 
 void SceneState::DrawSky(DrawBatch2D& overlay) {
+    // 写实天空贴图（HDRI tonemapped JPG）：全屏纹理 quad 替代纯色渐变。
+    if (skyTexture_.Valid()) {
+        overlay.DrawQuad({0.0f, 0.0f}, {1280.0f, 720.0f}, {1.0f, 1.0f, 1.0f, 1.0f},
+                         skyTexture_, {0.0f, 0.0f}, {1.0f, 1.0f});
+        return;
+    }
     overlay.DrawFullscreenGradient(skyTop_, skyHorizon_);
 }
 

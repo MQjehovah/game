@@ -419,6 +419,9 @@ struct SceneLight {
     float intensity = 1.0f;        // per-light strength (multiplies color at render)
     float radius = 10.0f;               // point light falloff range
     float ambientStrength = 0.25f;
+    // 写实天空贴图（HDRI tonemapped JPG 的虚拟路径）。非空时 DrawSystem 加载
+    // 并作为全屏天空背景替代纯色渐变。
+    std::string skyTexture;
 };
 // 2D sort order (P2-3): sprites draw back-to-front by this value (lower first;
 // default 0 when the component is absent).

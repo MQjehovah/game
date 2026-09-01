@@ -90,6 +90,7 @@ public:
 
     // Atmosphere / lights
     void SetSky(const Color& top, const Color& horizon);
+    void SetSkyTexture(TextureHandle tex) { sceneState_.SetSkyTexture(tex); }
     void DrawSky();
     void SetFog(const Color& color, float start, float end);
     // Volumetric exponential distance fog applied at composite time (reads the

@@ -759,6 +759,18 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
                 else if (l.type == "ambient" && !ambient) ambient = &l;
             });
         renderer.SetSky({0.28f, 0.38f, 0.58f, 1.0f}, {0.55f, 0.65f, 0.8f, 1.0f});
+        // 写实天空贴图：SceneLight.skyTexture 配置的 HDRI tonemapped JPG。
+        // 懒加载一次并缓存（按路径），非空则 DrawSky 用纹理替代纯色渐变。
+        if (content_.assets) {
+            const std::string skyPath =
+                directional && !directional->skyTexture.empty() ? directional->skyTexture
+                                                                : std::string();
+            if (!skyPath.empty() && skyPath != skyTexPath_) {
+                skyTex_ = content_.assets->LoadTexture(content_.fullAssetPath(skyPath));
+                skyTexPath_ = skyPath;
+            }
+            if (skyTex_.Valid()) renderer.SetSkyTexture(skyTex_.Handle());
+        }
         if (cam.ortho) {
             renderer.SetFog({0.45f, 0.55f, 0.7f, 1.0f}, 1e9f, 1e10f);
         } else {

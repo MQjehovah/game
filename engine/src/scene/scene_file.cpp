@@ -1126,7 +1126,7 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                     const core::Json&, std::string* err) {
                       if (!CheckComponentShape(data,
                                               {"type", "sunDir", "color", "intensity", "radius",
-                                                "ambientStrength"},
+                                                "ambientStrength", "skyTexture"},
                                               "light", err))
                          return false;
                      SceneLight l;
@@ -1162,8 +1162,10 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                          l.intensity = static_cast<float>(n->GetNumber());
                       if (const core::Json* n = data.Get("radius"))
                           l.radius = static_cast<float>(n->GetNumber());
-                      if (const core::Json* n = data.Get("ambientStrength"))
-                          l.ambientStrength = static_cast<float>(n->GetNumber());
+                     if (const core::Json* n = data.Get("ambientStrength"))
+                         l.ambientStrength = static_cast<float>(n->GetNumber());
+                     if (const core::Json* s = data.Get("skyTexture"))
+                         l.skyTexture = s->GetString();
                      world.Add<SceneLight>(ent, l);
                      return true;
                  });
@@ -1579,6 +1581,8 @@ core::Result<core::Json> SceneFile::FromWorld(ecs::World& world) {
             li.object_["intensity"] = MakeNumber(l->intensity);
             li.object_["radius"] = MakeNumber(l->radius);
             li.object_["ambientStrength"] = MakeNumber(l->ambientStrength);
+            if (!l->skyTexture.empty())
+                li.object_["skyTexture"] = MakeString(l->skyTexture);
             comps.object_["light"] = std::move(li);
         }
         if (const SceneSortOrder* so = world.Get<SceneSortOrder>(e)) {

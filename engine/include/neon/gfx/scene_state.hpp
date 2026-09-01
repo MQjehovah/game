@@ -58,6 +58,10 @@ public:
     void DrawSky(DrawBatch2D& overlay);
     const Color& SkyTop() const { return skyTop_; }
     const Color& SkyHorizon() const { return skyHorizon_; }
+    // 写实天空贴图：非空时 DrawSky 用全屏纹理 quad 替代纯色渐变（HDRI
+    // tonemapped 天空 JPG），IBL 仍基于 SetSky 的渐变环境色。
+    void SetSkyTexture(TextureHandle tex) { skyTexture_ = tex; }
+    TextureHandle SkyTexture() const { return skyTexture_; }
 
     // Fog (linear lit-shader fog + the composite-time volumetric curve).
     void SetFog(const Color& color, float start, float end);
@@ -124,6 +128,7 @@ private:
 
     Color skyTop_{0.05f, 0.07f, 0.12f, 1.0f};
     Color skyHorizon_{0.2f, 0.3f, 0.45f, 1.0f};
+    TextureHandle skyTexture_;
     Color fogColor_{0.2f, 0.3f, 0.45f, 1.0f};
     float fogStart_ = 60.0f;
     float fogEnd_ = 200.0f;

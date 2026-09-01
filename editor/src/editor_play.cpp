@@ -331,6 +331,12 @@ core::Result<core::Json> EditorApp::BuildSceneJsonFromEntities() {
                 li.object_["intensity"] = mkNum(e.light.intensity);
                 li.object_["radius"] = mkNum(e.light.radius);
                 li.object_["ambientStrength"] = mkNum(e.light.ambientStrength);
+                if (!e.light.skyTexture.empty()) {
+                    core::Json st;
+                    st.type_ = core::Json::Type::String;
+                    st.string_ = e.light.skyTexture;
+                    li.object_["skyTexture"] = std::move(st);
+                }
                 comps.object_["light"] = std::move(li);
             }
             if (e.zOrder != 0.0f) {
