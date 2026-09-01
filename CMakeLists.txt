@@ -87,12 +87,15 @@ target_compile_options(neon_core PRIVATE ${NEON_LAYER_COMPILE_OPTIONS})
 add_library(neon_gfx STATIC
   engine/src/gfx/color.cpp
   engine/src/gfx/csm.cpp
+  engine/src/gfx/draw_batch2d.cpp
   engine/src/gfx/font.cpp
   engine/src/gfx/frame_graph.cpp
   engine/src/gfx/post_graph.cpp
   engine/src/gfx/ibl.cpp
   engine/src/gfx/mesh.cpp
   engine/src/gfx/scene_props.cpp
+  engine/src/gfx/scene_state.cpp
+  engine/src/gfx/shadow_system.cpp
   engine/src/gfx/terrain.cpp
   engine/src/gfx/light_probe.cpp
   engine/src/gfx/particles.cpp

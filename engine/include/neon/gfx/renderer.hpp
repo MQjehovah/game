@@ -6,24 +6,34 @@
 #include "neon/gfx/backend.hpp"
 #include "neon/gfx/camera.hpp"
 #include "neon/gfx/color.hpp"
+#include "neon/gfx/draw_batch2d.hpp"
 #include "neon/gfx/font.hpp"
 #include "neon/gfx/ibl.hpp"
 #include "neon/gfx/material.hpp"
 #include "neon/gfx/mesh.hpp"
 #include "neon/gfx/post_graph.hpp"
+#include "neon/gfx/scene_state.hpp"
 #include "neon/gfx/shader.hpp"
+#include "neon/gfx/shadow_system.hpp"
 #include "neon/gfx/texture.hpp"
 #include "neon/math/math.hpp"
 
 namespace neon::gfx {
 
-// High-level renderer: owns the backend, built-in shaders, lights, fog,
-// 3D camera pass and a 2D immediate-mode overlay in "design units".
+// High-level renderer: owns the backend, built-in shaders, and delegates to
+// three composition services - ShadowSystem (CSM + point-light shadows),
+// SceneState (camera/lights/sky/fog/IBL) and DrawBatch2D (immediate-mode 2D
+// overlay + billboards) - plus the unified post-processing FrameGraph
+// (postGraph_). The Renderer is a FACADE: every public method forwards to the
+// service that owns the state, and the facade itself wires the shared state
+// between them (the scene-uniform stamp, the shadow maps bound by the lit
+// shader, the scene viewport rect, ...). The public API is unchanged from
+// before the split, so callers (DrawSystem/editor/tests) are untouched.
 class Renderer {
 public:
     static constexpr int kDesignWidth = 1280;
     static constexpr int kDesignHeight = 720;
-    static constexpr int kMaxPointLights = 8;
+    static constexpr int kMaxPointLights = 8; // must match SceneState::kMaxPointLights
 
     Renderer() = default;
     ~Renderer();
@@ -71,12 +81,12 @@ public:
     // render through two cameras with different views need the shadow maps
     // recomputed for the ACTUAL render camera.
     void RefreshShadowPass();
-    const math::Mat4& ViewProjection() const { return viewProj_; }
-    const math::Vec3& CameraPosition() const { return camPos_; }
+    const math::Mat4& ViewProjection() const { return sceneState_.ViewProjection(); }
+    const math::Vec3& CameraPosition() const { return sceneState_.CamPos(); }
     // Frustum of the active camera (valid after SetCamera). Exposed so callers
     // that pre-cull with a spatial index before instanced draws use the exact
     // same test the renderer would.
-    const math::Frustum& ViewFrustum() const { return frustum_; }
+    const math::Frustum& ViewFrustum() const { return sceneState_.Frustum(); }
 
     // Atmosphere / lights
     void SetSky(const Color& top, const Color& horizon);
@@ -85,10 +95,10 @@ public:
     // Volumetric exponential distance fog applied at composite time (reads the
     // scene depth). Off by default; densifies with distance independent of the
     // lit shader's linear fog. SetVolumetricFogDensity sets the curve rate.
-    void SetVolumetricFogEnabled(bool enabled) { volumetricFog_ = enabled; }
-    bool VolumetricFogEnabled() const { return volumetricFog_; }
-    void SetVolumetricFogDensity(float density) { fogDensity_ = density; }
-    float VolumetricFogDensity() const { return fogDensity_; }
+    void SetVolumetricFogEnabled(bool enabled) { sceneState_.SetVolumetricFogEnabled(enabled); }
+    bool VolumetricFogEnabled() const { return sceneState_.VolumetricFogEnabled(); }
+    void SetVolumetricFogDensity(float density) { sceneState_.SetVolumetricFogDensity(density); }
+    float VolumetricFogDensity() const { return sceneState_.VolumetricFogDensity(); }
     void SetDirectionalLight(const math::Vec3& direction, const Color& color, float ambientStrength);
     // Set the flat ambient term used by the lit shader. `color` tints the
     // ambient and `strength` scales it; a non-default color lets an explicit
@@ -106,16 +116,16 @@ public:
     // reference), 1 replaces it with the full environment lighting. Because
     // the demo animates the sky every frame, the environment is recomputed
     // lazily (only when the sky moved enough AND at most once every ~20 SetSky
-    // calls) - see RecomputeIbl.
+    // calls) - see SceneState::RecomputeIbl.
     void SetIblStrength(float strength);
-    float IblStrength() const { return iblStrength_; }
+    float IblStrength() const { return sceneState_.IblStrength(); }
     // True once the IBL environment textures exist (first SetSky with a
     // positive strength).
-    bool IblValid() const { return iblValid_; }
+    bool IblValid() const { return sceneState_.IblValid(); }
     // Number of times the IBL environment was actually recomputed (SetSky
     // rebuilds lazily: only when the sky moved enough and the throttle elapsed).
     // Exposed so tests can assert that a recompute really happened.
-    uint64_t IblBuildCount() const { return iblBuildCount_; }
+    uint64_t IblBuildCount() const { return sceneState_.IblBuildCount(); }
 
     // 3D drawing
     // Cascaded shadow mapping. When enabled, shadow casters are recorded
@@ -125,7 +135,7 @@ public:
     // unavailable (broken FBO/depth driver, or --disable-fbo) ShadowsEnabled()
     // is false and the game falls back to DrawProjectedShadow.
     void SetShadowsEnabled(bool enabled);
-    bool ShadowsEnabled() const { return csmEnabled_; }
+    bool ShadowsEnabled() const { return shadowSystem_.Enabled(); }
     // G1-5 screen-space ambient occlusion. Off by default (and on drivers where
     // the colour-encoded depth pass or AO targets fail); a no-op when disabled,
     // so the composite output is unchanged. SSAO uses a depth pre-pass that
@@ -151,28 +161,28 @@ public:
     // Editor tooling: temporarily suppress shadow-caster recording so a mesh
     // rendered into its own offscreen target (e.g. an asset thumbnail) never
     // pollutes the main scene's shadow pass. Enabled by default.
-    void SetShadowRecording(bool enabled) { shadowRecording_ = enabled; }
-    bool ShadowRecording() const { return shadowRecording_; }
+    void SetShadowRecording(bool enabled) { shadowSystem_.SetShadowRecording(enabled); }
+    bool ShadowRecording() const { return shadowSystem_.Recording(); }
     // True when a shadow map pass actually ran this frame (maps are valid).
-    bool ShadowMapActive() const { return csmActive_; }
+    bool ShadowMapActive() const { return shadowSystem_.CsmActive(); }
     // Shadow map size in pixels per cascade.
-    int ShadowMapSize() const { return shadowSize_; }
+    int ShadowMapSize() const { return shadowSystem_.ShadowSize(); }
     // Point-light (cubemap) shadows. Engage only when the CSM capability
     // self-test passed (same FBO/color-encoded-depth path) and the scene has
     // point lights; the lit shader shadows the first kShadowPointLights point
     // lights by sampling a 6-face depth map computed from the fragment->light
     // direction. Disabled by --no-shadows like CSM.
-    bool PointShadowsEnabled() const { return pointShadowsEnabled_; }
+    bool PointShadowsEnabled() const { return shadowSystem_.PointShadowsEnabled(); }
     // True when a point-light shadow pass actually ran this frame.
-    bool PointShadowMapActive() const { return pointShadowsActive_; }
+    bool PointShadowMapActive() const { return shadowSystem_.PointShadowsActive(); }
     // Shadow map size in pixels per face.
-    int PointShadowMapSize() const { return kPointShadowSize; }
+    int PointShadowMapSize() const { return ShadowSystem::kPointShadowSize; }
     // True when the backend's depth buffer is usable (self-tested at init).
     // Callers that rely on depth-tested draw order (e.g. instanced batching of
     // opaque scene entities) must fall back to per-entity draws when false:
     // without a depth buffer the scene is painter's-sorted, so batching would
     // change the result.
-    bool DepthTestAvailable() const { return depthAvailable_; }
+    bool DepthTestAvailable() const { return sceneState_.DepthAvailable(); }
 
     // HDR + bloom post-processing (Task 3.6). When the backend supports
     // half-float render targets (self-tested at init), the 3D scene renders
@@ -343,31 +353,33 @@ public:
     // the tone-mapping operator.
     bool CaptureTonemapComparison(std::vector<uint8_t>& clamped,
                                   std::vector<uint8_t>& tonemapped);
-    float UIScale() const { return uiScale_; }
+    float UIScale() const { return draw2d_.UiScale(); }
     // Top-left offset of the 2D design space inside the screen (with UIScale,
     // exactly the inverse mapping ScreenToUI uses). Lets hosts snapshot the
     // current 2D mapping without depending on the renderer's live state.
-    math::Vec2 UI2DOffset() const { return {uiOffsetX_, uiOffsetY_}; }
+    math::Vec2 UI2DOffset() const { return {draw2d_.UiOffsetX(), draw2d_.UiOffsetY()}; }
     // The game area's design size: the letterboxed 16:9 rect the canvas
     // mapping projects (1280x720 under fit-within). UI layout, WorldToScreen
     // and GetViewportSize all resolve against THIS - the game area, not the
     // dock - so the modern box UI adapts within the 16:9 frame.
     math::Vec2 UIDesignSize() const {
-        if (uiScale_ <= 0.0f) return {static_cast<float>(kDesignWidth),
-                                      static_cast<float>(kDesignHeight)};
-        return {sceneViewport_.w / uiScale_, sceneViewport_.h / uiScale_};
+        if (draw2d_.UiScale() <= 0.0f) return {static_cast<float>(kDesignWidth),
+                                               static_cast<float>(kDesignHeight)};
+        return {draw2d_.SceneViewport().w / draw2d_.UiScale(),
+                draw2d_.SceneViewport().h / draw2d_.UiScale()};
     }
     // The screen rect the 1280x720 design space currently maps to (set by
     // Set2DViewport/Set2DViewportPixels). Hosts size the 3D scene viewport
     // with this exact rect so 3D geometry and the 2D HUD/anchor space share one
     // framing (no drift between world-anchored UI and the rendered scene).
     math::Rect2 DesignSpaceRect() const {
-        return {uiOffsetX_, uiOffsetY_, static_cast<float>(kDesignWidth) * uiScale_,
-                static_cast<float>(kDesignHeight) * uiScale_};
+        return {draw2d_.UiOffsetX(), draw2d_.UiOffsetY(),
+                static_cast<float>(kDesignWidth) * draw2d_.UiScale(),
+                static_cast<float>(kDesignHeight) * draw2d_.UiScale()};
     }
     // The active 3D scene rasterization rect (set by SetSceneViewport). The
     // design-space rect above should equal this for world-anchored 2D UI.
-    const math::Rect2& SceneViewport() const { return sceneViewport_; }
+    const math::Rect2& SceneViewport() const { return draw2d_.SceneViewport(); }
     int ScreenWidth() const { return screenW_; }
     int ScreenHeight() const { return screenH_; }
 
@@ -379,53 +391,9 @@ private:
                                   const Color& color);
     void ApplyMaterial(const Material& material, const math::Mat4& mvp, const math::Mat4& model,
                        const math::Mat4& normalMat, ShaderHandle shader);
-    void PushQuad(const math::Vec2& a, const math::Vec2& b, const math::Vec2& c, const math::Vec2& d,
-                  const Color& color, const math::Vec2& uv0, const math::Vec2& uv1,
-                  TextureHandle texture, BlendMode blend);
-    void PushQuadColored(const math::Vec2& a, const math::Vec2& b, const math::Vec2& c,
-                         const math::Vec2& d, const Color& ca, const Color& cb, const Color& cc,
-                         const Color& cd, const math::Vec2& uv0, const math::Vec2& uv1,
-                         TextureHandle texture, BlendMode blend);
-
-    // CSM
-    static constexpr int kShadowCascades = 3;
-    static constexpr int kShadowMapSize = 1024;
-    // Point-light shadows: the first kShadowPointLights point lights each get 6
-    // faces (2D maps; layered cubemap FBOs are unreliable on the tested Intel
-    // driver). The lit shader computes the face + uv from the fragment->light
-    // direction and samples the matching 2D map.
-    static constexpr int kShadowPointLights = 2;
-    static constexpr int kPointShadowSize = 512;
-    static constexpr float kPointShadowNear = 0.1f;
-    // One recorded shadow caster per 3D draw call. Exactly one of models/bones
-    // is non-empty: plain meshes use neither, instanced use `models`,
-    // skinned use `bones`. bounds is the mesh AABB in object space (used to
-    // painter-sort casters since the color-encoded shadow pass has no depth
-    // buffer - the window/FBO depth path is broken on some Intel drivers).
-    struct ShadowDraw {
-        MeshHandle mesh;
-        math::Mat4 model;
-        std::vector<math::Mat4> models;
-        std::vector<math::Mat4> bones;
-        int boneCount = 0;
-        math::AABB bounds;
-    };
-    // Painter's-order key used to sort shadow casters (the color-encoded
-    // shadow pass has no depth buffer). Stored in a member vector so the
-    // per-frame shadow passes do not allocate.
-    struct ShadowSortKey {
-        const ShadowDraw* draw;
-        float z;
-    };
-    void RunShadowPass();
-    void DrawShadowCaster(const ShadowDraw& draw, const math::Mat4& lightVP);
-    void DrawShadowCastersSorted(const math::Mat4& lightVP);
-    bool TestDepthTargetCapability();
-    // Point-light cubemap shadows (see RunShadowPass).
-    void RunPointShadowPass();
-    void DrawPointShadowCastersSorted(int lightIndex);
-    void DrawPointShadowCaster(const ShadowDraw& draw, const math::Mat4& lightVP,
-                               const math::Vec3& lightPos, float range);
+    // Wires the backend + the shared scene-uniform stamp into the subsystems
+    // (called from Init and AttachBackendForTesting).
+    void ConnectSubsystems();
 
     // HDR + bloom post-processing.
     // (Re)creates the main-scene HDR targets (hdrRT_/hdrMsaaRT_) at the current
@@ -442,10 +410,6 @@ private:
     PostGraph::FrameParams MakePostParams(bool chains) const;
     void DrawSsaoDepthCasters(const math::Mat4& viewProj);
     bool TestFloatTargetCapability();
-    // A2: probes SFLOAT SAMPLING (broken on some Intel Vulkan drivers: the
-    // sampler returns black for valid float data, which the write/readback
-    // probe cannot catch).
-    bool TestFloatSamplingCapability(int size);
     // B1: uploads the per-FRAME scene uniforms (sun/lights/fog/view/shadow/IBL)
     // once per (frame, program) pair -- draws after the first in a frame skip
     // ~40 redundant SetUniform/Bind calls, but a program switch re-applies so
@@ -472,22 +436,21 @@ private:
     std::unique_ptr<IRenderBackend> backend_;
     std::string backendName_ = "gl";
 
+    // Composition services (see the class comment): shadow pass, scene state
+    // and the 2D overlay. The facade owns them and forwards every public call.
+    ShadowSystem shadowSystem_;
+    SceneState sceneState_;
+    DrawBatch2D draw2d_;
+
     ShaderHandle litShader_;
     ShaderHandle terrainShader_;
     ShaderHandle skinnedLitShader_;
     ShaderHandle unlitShader_;
-    ShaderHandle uiShader_;
     ShaderHandle linesShader_;
     ShaderHandle litInstancedShader_;
     ShaderHandle unlitInstancedShader_;
     ShaderHandle unlitInstancedColoredShader_;
     gfx::Mesh billboardQuad_;  // unit XY quad used by DrawBillboards
-    ShaderHandle depthShader_;
-    ShaderHandle depthInstancedShader_;
-    ShaderHandle depthSkinnedShader_;
-    ShaderHandle pointDepthShader_;
-    ShaderHandle pointDepthInstancedShader_;
-    ShaderHandle pointDepthSkinnedShader_;
     // Post-processing (HDR + bloom).
     ShaderHandle brightPassShader_;
     ShaderHandle blurShader_;
@@ -504,24 +467,10 @@ private:
     MeshHandle probeQuadMesh_;
     // Fullscreen NDC quad (uv 0..1) for the post passes.
     MeshHandle postQuadMesh_;
-    RenderTargetHandle shadowRT_[kShadowCascades];
-    TextureHandle shadowDepthTex_[kShadowCascades];
-    int shadowSize_ = kShadowMapSize;
-    math::Mat4 lightViewProj_[kShadowCascades];
-    float cascadeSplits_[kShadowCascades + 1] = {0.1f, 20.0f, 60.0f, 100.0f};
-    bool csmEnabled_ = false;
-    bool csmActive_ = false;
-    bool shadowsForcedOff_ = false;
-    bool shadowPassRanThisFrame_ = false;
-    std::vector<ShadowDraw> shadowCasters_;
-
-    RenderTargetHandle pointShadowRT_[kShadowPointLights][6];
-    TextureHandle pointShadowDepthTex_[kShadowPointLights][6];
-    math::Mat4 pointLightViewProj_[kShadowPointLights][6];
-    bool pointShadowsEnabled_ = false;
-    bool pointShadowsActive_ = false;
     // B1: bumped whenever the per-frame scene uniform set changes; the first
     // lit draw of a frame (or after any change) uploads the whole scene block.
+    // Shared with the subsystems (SceneState light/fog/IBL setters and the
+    // ShadowSystem point-light pass bump it via ConnectSubsystems).
     uint64_t sceneUniformStamp_ = 0;
     uint64_t sceneUniformAppliedStamp_ = ~0ull;
     ShaderHandle lastSceneUniformShader_;
@@ -553,7 +502,7 @@ private:
     // G1-5 SSAO state.
     bool ssaoEnabled_ = false;
     float ssaoIntensity_ = 1.0f; // AO blend amount in [0,1]
-    std::vector<ShadowDraw> ssaoCasters_;
+    std::vector<ShadowSystem::ShadowDraw> ssaoCasters_;
     // G1-5 volumetric shafts state.
     bool volumetricEnabled_ = false;
     float volumetricIntensity_ = 1.0f;
@@ -561,77 +510,8 @@ private:
     bool ssrEnabled_ = false;
     float ssrIntensity_ = 1.0f;
 
-    Camera camera_;
-    math::Mat4 viewProj_;
-    math::Mat4 view_;
-    math::Vec3 camPos_;
-    math::Frustum frustum_;
-    bool frustumValid_ = false;
-    bool depthAvailable_ = true;
     RenderStats stats_;
 
-    Color skyTop_{0.05f, 0.07f, 0.12f, 1.0f};
-    Color skyHorizon_{0.2f, 0.3f, 0.45f, 1.0f};
-    Color fogColor_{0.2f, 0.3f, 0.45f, 1.0f};
-    float fogStart_ = 60.0f;
-    float fogEnd_ = 200.0f;
-    bool volumetricFog_ = false;
-    float fogDensity_ = 0.02f;
-
-    // IBL environment (Task 3.8). ibl.cpp precomputes the three byte maps
-    // (irradiance 1x128, prefiltered 24x128, BRDF LUT 128x128) from the sky
-    // gradient; they upload as plain RGBA8 2D textures (units 20..22) and the
-    // lit shader samples them with the map conventions documented in ibl.hpp.
-    // The environment is recomputed from SetSky when the accumulated sky delta
-    // passes a small epsilon and at most once every kIblRecomputeInterval SetSky
-    // calls, so the animated day/night sky tracks smoothly without a per-frame
-    // hitch; the BRDF LUT is sky-independent and built once.
-    static constexpr float kIblGradientPower = 0.65f;
-    static constexpr float kIblSkyEpsilon = 0.008f;
-    static constexpr uint64_t kIblRecomputeInterval = 20;
-    TextureHandle iblIrradianceTex_;
-    TextureHandle iblPrefilteredTex_;
-    TextureHandle iblBrdfLutTex_;
-    bool iblValid_ = false;
-    bool iblBrdfLutReady_ = false;
-    float iblStrength_ = 1.0f;
-    Color iblLastTop_{};
-    Color iblLastHorizon_{};
-    float iblAccumDelta_ = 0.0f;
-    uint64_t iblFrameCounter_ = 0;
-    uint64_t iblLastRecomputeFrame_ = 0;
-    uint64_t iblBuildCount_ = 0;
-    void RecomputeIbl(const Color& top, const Color& horizon);
-
-    math::Vec3 sunDir_{-0.4f, -1.0f, -0.3f};
-    Color sunColor_{1.0f, 0.95f, 0.85f, 1.0f};
-    float ambient_ = 0.25f;
-    Color ambientColor_{1.0f, 1.0f, 1.0f, 1.0f};
-    bool shadowRecording_ = true;
-    math::Vec3 pointPos_[kMaxPointLights];
-    Color pointColor_[kMaxPointLights];
-    float pointRadius_[kMaxPointLights];
-    int pointCount_ = 0;
-    math::Vec3 playerLightPos_{};
-    Color playerLightColor_{1.0f, 0.8f, 0.6f, 1.0f};
-    float playerLightRadius_ = 14.0f;
-    bool playerLightEnabled_ = false;
-
-    int screenW_ = 1280;
-    int screenH_ = 720;
-    float uiScale_ = 1.0f;
-    float uiOffsetX_ = 0.0f;
-    float uiOffsetY_ = 0.0f;
-    // 3D scene rasterization rect (defaults to the full target).
-    math::Rect2 sceneViewport_{0.0f, 0.0f, 0.0f, 0.0f};
-    float viewAspect_ = 16.0f / 9.0f; // last SetCamera aspect (shadow frusta)
-
-    struct UIVertex {
-        float x, y, u, v;
-        float r, g, b, a;
-    };
-    std::vector<UIVertex> uiVerts_;
-    std::vector<uint16_t> uiIndices_;
     // Reusable per-frame scratch buffers. The draw paths below used to build a
     // fresh std::vector on every call (instanced culling, bone-matrix flatten,
     // shadow-caster sort, projected-shadow projection); they are reused across
@@ -640,11 +520,12 @@ private:
     std::vector<math::Mat4> instancedVisible_;
     std::vector<math::Vec4> instancedVisibleColored_;
     std::vector<float> boneUniformFlat_;
-    std::vector<ShadowSortKey> shadowSortKeys_;
+    std::vector<ShadowSystem::ShadowSortKey> shadowSortKeys_;
     std::vector<LineVertex> projectedShadowVerts_;
-    TextureHandle currentUITexture_;
-    BlendMode currentUIBlend_ = BlendMode::Alpha;
+
     platform::IWindow* window_ = nullptr;
+    int screenW_ = 1280;
+    int screenH_ = 720;
 };
 
 } // namespace neon::gfx

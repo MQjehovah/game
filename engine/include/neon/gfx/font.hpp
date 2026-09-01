@@ -70,6 +70,7 @@ public:
 
 private:
     friend class Renderer;
+    friend class DrawBatch2D;
 
     struct FontFace;
     std::shared_ptr<FontFace> face_; // font file + stbtt parse + dynamic atlas

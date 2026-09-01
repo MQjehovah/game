@@ -1,631 +1,20 @@
-#include "neon/gfx/renderer.hpp"
+﻿#include "neon/gfx/renderer.hpp"
 
 #include <algorithm>
-#include <chrono>
 #include <cmath>
-#include <cstring>
 #include <cstdlib>
+#include <cstring>
 
 #include "neon/core/log.hpp"
 #include "neon/gfx/bloom.hpp"
-#include "neon/gfx/csm.hpp"
+#include "neon/gfx/builtin_shaders.hpp"
 #include "neon/gfx/fog.hpp"
-#include "neon/gfx/point_shadow.hpp"
 #include "neon/gfx/ssao.hpp"
 #include "neon/gfx/ssr.hpp"
 #include "neon/gfx/volumetric.hpp"
 
 namespace neon::gfx {
 namespace {
-
-constexpr uint32_t kMaxQuads = 4096;
-constexpr uint32_t kMaxUIVertices = kMaxQuads * 4;
-
-const char* kLitVertexShader = R"(
-#version 330 core
-layout(location = 0) in vec3 aPos;
-layout(location = 1) in vec3 aNormal;
-layout(location = 2) in vec2 aUV;
-layout(location = 3) in vec4 aColor;
-uniform vec2 uTiling; // UV repeat multiplier (default 1,1)
-#ifdef SKINNED
-layout(location = 4) in vec4 aJointIds;
-layout(location = 5) in vec4 aWeights;
-uniform mat4 uBoneMatrices[64];
-#endif
-uniform mat4 uMVP;
-uniform mat4 uModel;
-uniform mat4 uNormalMat;
-uniform mat4 uViewMatrix;
-uniform vec3 uCamPos;
-out vec3 vWorldPos;
-out vec3 vNormal;
-out vec2 vUV;
-out vec4 vColor;
-out float vViewZ;
-void main() {
-#ifdef SKINNED
-    mat4 skin = mat4(0.0);
-    for (int i = 0; i < 4; ++i) {
-        int id = int(aJointIds[i]);
-        if (id >= 0 && id < 64) skin += aWeights[i] * uBoneMatrices[id];
-    }
-    vec4 p = skin * vec4(aPos, 1.0);
-    vec4 n = skin * vec4(aNormal, 0.0);
-    vWorldPos = (uModel * p).xyz;
-    vNormal = (uNormalMat * n).xyz;
-    vUV = aUV * uTiling;
-    vColor = aColor;
-    vViewZ = (uViewMatrix * vec4(vWorldPos, 1.0)).z;
-    gl_Position = uMVP * p;
-#else
-    vWorldPos = (uModel * vec4(aPos, 1.0)).xyz;
-    vNormal = (uNormalMat * vec4(aNormal, 0.0)).xyz;
-    vUV = aUV * uTiling;
-    vColor = aColor;
-    vViewZ = (uViewMatrix * vec4(vWorldPos, 1.0)).z;
-    gl_Position = uMVP * vec4(aPos, 1.0);
-#endif
-}
-)";
-
-const char* kLitFragmentShader = R"(
-#version 330 core
-in vec3 vWorldPos;
-in vec3 vNormal;
-in vec2 vUV;
-in vec4 vColor;
-in float vViewZ;
-out vec4 FragColor;
-uniform sampler2D uAlbedo;
-uniform sampler2D uMR;
-uniform sampler2D uOcclusion;
-uniform sampler2D uEmissive;
-uniform sampler2D uGrassTex;
-uniform vec4 uDirtColor;
-uniform vec4 uRockColor;
-uniform bool uHasGrassTex;
-uniform vec4 uTint;
-uniform bool uHasTexture;
-uniform bool uHasMR;
-uniform bool uHasAO;
-uniform bool uHasEmissive;
-uniform float uAOStrength;
-uniform float uEmissiveIntensity;
-uniform float uShininess;
-uniform float uMetallic;
-uniform float uRoughness;
-uniform vec3 uSunDir;
-uniform vec3 uSunColor;
-uniform float uAmbient;
-uniform vec3 uAmbientColor;
-uniform sampler2D uIrradianceMap;
-uniform sampler2D uPrefilteredMap;
-uniform sampler2D uBrdfLUT;
-uniform float uIblStrength;
-uniform float uRoughnessMin;
-uniform vec3 uPointPos[8];
-uniform vec3 uPointColor[8];
-uniform float uPointRadius[8];
-uniform int uPointCount;
-uniform vec3 uPlayerLightPos;
-uniform vec3 uPlayerLightColor;
-uniform float uPlayerLightRadius;
-uniform bool uPlayerLightEnabled;
-uniform vec3 uFogColor;
-uniform float uFogStart;
-uniform float uFogEnd;
-uniform vec3 uCamPos;
-uniform sampler2D uShadowMap0;
-uniform sampler2D uShadowMap1;
-uniform sampler2D uShadowMap2;
-uniform mat4 uLightVP[3];
-uniform vec4 uCascadeSplits;
-uniform vec2 uShadowTexel;
-uniform bool uShadowEnabled;
-uniform sampler2D uPointShadowMap0;
-uniform sampler2D uPointShadowMap1;
-uniform sampler2D uPointShadowMap2;
-uniform sampler2D uPointShadowMap3;
-uniform sampler2D uPointShadowMap4;
-uniform sampler2D uPointShadowMap5;
-uniform sampler2D uPointShadowMap6;
-uniform sampler2D uPointShadowMap7;
-uniform sampler2D uPointShadowMap8;
-uniform sampler2D uPointShadowMap9;
-uniform sampler2D uPointShadowMap10;
-uniform sampler2D uPointShadowMap11;
-uniform vec2 uPointShadowTexel;
-uniform bool uPointShadowEnabled;
-uniform int uPointShadowLightCount;
-float DecodeDepth(vec4 v) {
-    return dot(v, vec4(1.0, 1.0 / 255.0, 1.0 / 65025.0, 1.0 / 16581375.0));
-}
-float D_GGX(float ndh, float a) {
-    float a2 = a * a;
-    float d = ndh * ndh * (a2 - 1.0) + 1.0;
-    return a2 / (3.14159265 * d * d);
-}
-float G_Schlick(float ndl, float ndv, float a) {
-    float k = a * a * 0.5;
-    return (ndl / (ndl * (1.0 - k) + k)) * (ndv / (ndv * (1.0 - k) + k));
-}
-vec3 F_Schlick(float vdh, vec3 f0) {
-    return f0 + (1.0 - f0) * pow(1.0 - vdh, 5.0);
-}
-float ShadowFactor(sampler2D sm, vec2 uv, float lightDepth) {
-    // Bias scaled by the shadow map's own per-texel depth gradient. The map is
-    // stored at texel centers while the compared fragment depth is continuous,
-    // so on a sloped receiver the two differ by up to half a texel of depth;
-    // a bias of one gradient step (measured from the same map, so it tracks
-    // any surface orientation) keeps coplanar receivers lit without a large
-    // constant bias that would peter-pan shadows on the thin cascade boxes.
-    float d0 = DecodeDepth(texture(sm, uv));
-    float dx = DecodeDepth(texture(sm, uv + vec2(uShadowTexel.x, 0.0)));
-    float dy = DecodeDepth(texture(sm, uv + vec2(0.0, uShadowTexel.y)));
-    float slope = max(abs(dx - d0), abs(dy - d0));
-    float bias = clamp(0.002 + slope, 0.002, 0.02);
-
-    float lit = 0.0;
-    for (int x = 0; x < 2; ++x) {
-        for (int y = 0; y < 2; ++y) {
-            vec2 off = (vec2(float(x), float(y)) - vec2(0.5)) * uShadowTexel;
-            lit += DecodeDepth(texture(sm, uv + off)) > lightDepth - bias ? 1.0 : 0.0;
-        }
-    }
-    return lit / 4.0;
-}
-// Maps the light->fragment direction to a cube face + uv. Same convention as
-// the CPU-side CubemapFaceAndUV (GL cube-map spec table 8.19), which is how
-// the 6 per-face shadow maps were rendered.
-vec2 PointCubemapFaceUV(vec3 dir, out int face) {
-    vec3 ad = abs(dir);
-    float ma = max(max(ad.x, ad.y), ad.z);
-    vec2 uv;
-    if (ad.x >= ad.y && ad.x >= ad.z) {
-        if (dir.x >= 0.0) { face = 0; uv = vec2(-dir.z, -dir.y); }
-        else              { face = 1; uv = vec2( dir.z, -dir.y); }
-    } else if (ad.y >= ad.x && ad.y >= ad.z) {
-        if (dir.y >= 0.0) { face = 2; uv = vec2( dir.x,  dir.z); }
-        else              { face = 3; uv = vec2( dir.x, -dir.z); }
-    } else {
-        if (dir.z >= 0.0) { face = 4; uv = vec2( dir.x, -dir.y); }
-        else              { face = 5; uv = vec2(-dir.x, -dir.y); }
-    }
-    return uv / ma * 0.5 + 0.5;
-}
-// Point-light shadow factor for one face map: manual depth compare + PCF. The
-// map stores linear dist/range, so the compared depth is current = dist/range.
-// Bias is the map's own per-texel depth gradient (like the CSM path) so sloped
-// receivers stay lit without peter-panning. taps=1 keeps secondary lights
-// cheap (4 fetches); taps=4 (2x2 PCF) is used for the primary point light.
-float PointShadowFactor(sampler2D sm, vec2 uv, float current, int taps) {
-    float d0 = DecodeDepth(texture(sm, uv));
-    float dx = DecodeDepth(texture(sm, uv + vec2(uPointShadowTexel.x, 0.0)));
-    float dy = DecodeDepth(texture(sm, uv + vec2(0.0, uPointShadowTexel.y)));
-    float slope = max(abs(dx - d0), abs(dy - d0));
-    float bias = clamp(0.003 + slope, 0.003, 0.03);
-    float lit = 0.0;
-    if (taps == 1) {
-        lit = d0 > current - bias ? 1.0 : 0.0;
-    } else {
-        for (int x = 0; x < 2; ++x) {
-            for (int y = 0; y < 2; ++y) {
-                vec2 off = (vec2(float(x), float(y)) - vec2(0.5)) * uPointShadowTexel;
-                lit += DecodeDepth(texture(sm, uv + off)) > current - bias ? 1.0 : 0.0;
-            }
-        }
-        lit /= 4.0;
-    }
-    return lit;
-}
-// Selects the 2D shadow map for (light, face) and applies PCF. The face index
-// is static per branch, so every sampler reference is constant-resolved.
-float PointShadowForLight(int light, vec3 worldPos, vec3 lightPos, float range) {
-    vec3 dir = worldPos - lightPos;
-    float dist = length(dir);
-    if (dist < 1e-4) return 1.0;
-    int face;
-    vec2 uv = PointCubemapFaceUV(dir / dist, face);
-    float current = dist / max(range, 1e-4);
-    int taps = light == 0 ? 4 : 1;
-    if (light == 0) {
-        if (face == 0) return PointShadowFactor(uPointShadowMap0, uv, current, taps);
-        if (face == 1) return PointShadowFactor(uPointShadowMap1, uv, current, taps);
-        if (face == 2) return PointShadowFactor(uPointShadowMap2, uv, current, taps);
-        if (face == 3) return PointShadowFactor(uPointShadowMap3, uv, current, taps);
-        if (face == 4) return PointShadowFactor(uPointShadowMap4, uv, current, taps);
-        return PointShadowFactor(uPointShadowMap5, uv, current, taps);
-    }
-    if (face == 0) return PointShadowFactor(uPointShadowMap6, uv, current, taps);
-    if (face == 1) return PointShadowFactor(uPointShadowMap7, uv, current, taps);
-    if (face == 2) return PointShadowFactor(uPointShadowMap8, uv, current, taps);
-    if (face == 3) return PointShadowFactor(uPointShadowMap9, uv, current, taps);
-    if (face == 4) return PointShadowFactor(uPointShadowMap10, uv, current, taps);
-    return PointShadowFactor(uPointShadowMap11, uv, current, taps);
-}
-void main() {
-#ifdef TERRAIN_SPLAT
-    // G4 terrain splatmap: layer a realistic grass texture, dirt color and rock
-    // color by the vertex splat weights (vColor.r = grass, .g = dirt, .b = rock).
-    vec3 grassAlbedo = uHasGrassTex ? texture(uGrassTex, vUV).rgb : vec3(1.0);
-    vec3 albedoSplat = grassAlbedo * vColor.r + uDirtColor.rgb * vColor.g +
-                       uRockColor.rgb * vColor.b;
-    vec4 albedo = vec4(albedoSplat, 1.0);
-    albedo *= uTint;
-#else
-    vec4 albedo = uHasTexture ? texture(uAlbedo, vUV) : vec4(1.0);
-    albedo *= uTint * vColor;
-#endif
-    vec3 N = normalize(vNormal);
-    vec3 V = normalize(uCamPos - vWorldPos);
-    vec3 L = normalize(-uSunDir);
-    float ndl = max(dot(N, L), 0.0);
-    vec3 H = normalize(L + V);
-    float metallic = uHasMR ? texture(uMR, vUV).b : uMetallic;
-    float roughness = uHasMR ? texture(uMR, vUV).g : uRoughness;
-    roughness = clamp(roughness, 0.045, 1.0);
-    float a = roughness * roughness;
-    float ndv = max(dot(N, V), 1e-4);
-    float ndh = max(dot(N, H), 0.0);
-    float vdh = max(dot(V, H), 0.0);
-    vec3 f0 = mix(vec3(0.04), albedo.rgb, metallic);
-    float D = D_GGX(ndh, a);
-    float G = G_Schlick(ndl, ndv, a);
-    vec3 F = F_Schlick(vdh, f0);
-    vec3 spec = D * G * F / (4.0 * ndl * ndv + 1e-3);
-    vec3 kd = (1.0 - F) * (1.0 - metallic);
-    // IBL environment ambient (Task 3.8): diffuse irradiance + prefiltered
-    // specular via the split-sum BRDF LUT. Both maps are baked from the sky
-    // gradient and, because that environment is a vertical gradient, sampled
-    // by direction.y only (see ibl.hpp). The legacy flat `uAmbient` fades out
-    // as uIblStrength -> 1, so `--ibl 0` reproduces the pre-IBL look exactly
-    // while the shadows/AO interplay below is unchanged (only the sun term is
-    // shadowed; ambient stays unshadowed so shadows read as dim, not black).
-    vec3 iblIrradiance = texture(uIrradianceMap, vec2(0.5, N.y * 0.5 + 0.5)).rgb;
-    vec3 iblDiffuse = kd * iblIrradiance * albedo.rgb * uIblStrength;
-    vec3 R = reflect(-V, N);
-    float roughU = clamp((roughness - uRoughnessMin) / (1.0 - uRoughnessMin), 0.0, 1.0);
-    vec3 prefiltered = texture(uPrefilteredMap, vec2(roughU, R.y * 0.5 + 0.5)).rgb;
-    vec2 brdf = texture(uBrdfLUT, vec2(ndv, roughness)).rg;
-    vec3 iblSpecular = prefiltered * (f0 * brdf.x + brdf.y) * uIblStrength;
-    vec3 ambientLight = iblDiffuse + iblSpecular +
-                        albedo.rgb * uAmbientColor * uAmbient * (1.0 - uIblStrength);
-    if (uHasAO) ambientLight *= mix(1.0, texture(uOcclusion, vUV).r, uAOStrength);
-    vec3 color = (kd * albedo.rgb + spec) * uSunColor * ndl + ambientLight;
-    if (uHasEmissive) color += texture(uEmissive, vUV).rgb * uEmissiveIntensity;
-    for (int i = 0; i < 8; ++i) {
-        if (i >= uPointCount) break;
-        vec3 toL = uPointPos[i] - vWorldPos;
-        float d = length(toL);
-        float atten = clamp(1.0 - d / uPointRadius[i], 0.0, 1.0);
-        atten *= atten;
-        vec3 pl = toL / max(d, 1e-4);
-        float pndl = max(dot(N, pl), 0.0);
-        vec3 ph = normalize(pl + V);
-        float pndh = max(dot(N, ph), 0.0);
-        float pvdh = max(dot(V, ph), 0.0);
-        float pD = D_GGX(pndh, a);
-        float pG = G_Schlick(pndl, ndv, a);
-        vec3 pF = F_Schlick(pvdh, f0);
-        vec3 pSpec = pD * pG * pF / (4.0 * pndl * ndv + 1e-3);
-        vec3 pKd = (1.0 - pF) * (1.0 - metallic);
-        vec3 pContrib = (pKd * albedo.rgb + pSpec) * uPointColor[i] * pndl * atten;
-        if (uPointShadowEnabled && i < uPointShadowLightCount) {
-            pContrib *= PointShadowForLight(i, vWorldPos, uPointPos[i], uPointRadius[i]);
-        }
-        color += pContrib;
-    }
-    if (uPlayerLightEnabled) {
-        vec3 toL = uPlayerLightPos - vWorldPos;
-        float d = length(toL);
-        float atten = clamp(1.0 - d / uPlayerLightRadius, 0.0, 1.0);
-        atten *= atten;
-        vec3 pl = toL / max(d, 1e-4);
-        float pndl = max(dot(N, pl), 0.0);
-        color += albedo.rgb * uPlayerLightColor * pndl * atten;
-    }
-    float dist = length(vWorldPos - uCamPos);
-    float fog = smoothstep(uFogStart, uFogEnd, dist);
-    color = mix(color, uFogColor, fog);
-
-    float shadow = 1.0;
-    if (uShadowEnabled) {
-        // Cascade selection by positive view-space depth (distance along the
-        // camera forward axis), matching the CPU-side split computation.
-        float viewDepth = -vViewZ;
-        int cascade = viewDepth < uCascadeSplits.x ? 0 : (viewDepth < uCascadeSplits.y ? 1 : 2);
-        vec4 sp;
-        if (cascade == 0) sp = uLightVP[0] * vec4(vWorldPos, 1.0);
-        else if (cascade == 1) sp = uLightVP[1] * vec4(vWorldPos, 1.0);
-        else sp = uLightVP[2] * vec4(vWorldPos, 1.0);
-        vec3 ndc = sp.xyz / sp.w;
-        if (ndc.x > -1.0 && ndc.x < 1.0 && ndc.y > -1.0 && ndc.y < 1.0 && ndc.z > -1.0 &&
-            ndc.z < 1.0) {
-            vec3 sc = ndc * 0.5 + 0.5;
-            if (cascade == 0) shadow = ShadowFactor(uShadowMap0, sc.xy, sc.z);
-            else if (cascade == 1) shadow = ShadowFactor(uShadowMap1, sc.xy, sc.z);
-            else shadow = ShadowFactor(uShadowMap2, sc.xy, sc.z);
-        }
-    }
-    // The sun term is shadowed; ambient/sky stays unshadowed so shadowed areas
-    // read as dim (not black) and match the CPU projected-shadow fallback look.
-    color = (color - ambientLight) * shadow + ambientLight;
-    FragColor = vec4(color, albedo.a);
-}
-)";
-
-const char* kUnlitVertexShader = R"(
-#version 330 core
-layout(location = 0) in vec3 aPos;
-layout(location = 2) in vec2 aUV;
-layout(location = 3) in vec4 aColor;
-uniform mat4 uMVP;
-out vec2 vUV;
-out vec4 vColor;
-void main() {
-    vUV = aUV;
-    vColor = aColor;
-    gl_Position = uMVP * vec4(aPos, 1.0);
-}
-)";
-
-const char* kUnlitFragmentShader = R"(
-#version 330 core
-in vec2 vUV;
-in vec4 vColor;
-out vec4 FragColor;
-uniform sampler2D uAlbedo;
-uniform vec4 uTint;
-uniform bool uHasTexture;
-void main() {
-    vec4 albedo = uHasTexture ? texture(uAlbedo, vUV) : vec4(1.0);
-    FragColor = albedo * uTint * vColor;
-}
-)";
-
-const char* kLitInstancedVertexShader = R"(
-#version 330 core
-layout(location = 0) in vec3 aPos;
-layout(location = 1) in vec3 aNormal;
-layout(location = 2) in vec2 aUV;
-layout(location = 3) in vec4 aColor;
-layout(location = 4) in mat4 aInstance;
-uniform mat4 uMVP;
-uniform mat4 uViewMatrix;
-uniform vec3 uCamPos;
-out vec3 vWorldPos;
-out vec3 vNormal;
-out vec2 vUV;
-out vec4 vColor;
-out float vViewZ;
-void main() {
-    vWorldPos = (aInstance * vec4(aPos, 1.0)).xyz;
-    vNormal = mat3(aInstance) * aNormal;
-    vUV = aUV;
-    vColor = aColor;
-    vViewZ = (uViewMatrix * vec4(vWorldPos, 1.0)).z;
-    gl_Position = uMVP * aInstance * vec4(aPos, 1.0);
-}
-)";
-
-const char* kUnlitInstancedVertexShader = R"(
-#version 330 core
-layout(location = 0) in vec3 aPos;
-layout(location = 2) in vec2 aUV;
-layout(location = 3) in vec4 aColor;
-layout(location = 4) in mat4 aInstance;
-uniform mat4 uMVP;
-out vec2 vUV;
-out vec4 vColor;
-void main() {
-    vUV = aUV;
-    vColor = aColor;
-    gl_Position = uMVP * aInstance * vec4(aPos, 1.0);
-}
-)";
-
-// Instanced variant with a per-instance RGBA color (attribute 8) for
-// sprite/billboard particles that tint independently per instance.
-const char* kUnlitInstancedColoredVertexShader = R"(
-#version 330 core
-layout(location = 0) in vec3 aPos;
-layout(location = 2) in vec2 aUV;
-layout(location = 3) in vec4 aColor;
-layout(location = 4) in mat4 aInstance;
-layout(location = 8) in vec4 aInstanceColor;
-uniform mat4 uMVP;
-out vec2 vUV;
-out vec4 vColor;
-out vec4 vInstanceColor;
-void main() {
-    vUV = aUV;
-    vColor = aColor;
-    vInstanceColor = aInstanceColor;
-    gl_Position = uMVP * aInstance * vec4(aPos, 1.0);
-}
-)";
-
-const char* kUnlitInstancedColoredFragmentShader = R"(
-#version 330 core
-in vec2 vUV;
-in vec4 vColor;
-in vec4 vInstanceColor;
-out vec4 FragColor;
-uniform sampler2D uAlbedo;
-uniform vec4 uTint;
-uniform bool uHasTexture;
-void main() {
-    vec4 tex = uHasTexture ? texture(uAlbedo, vUV) : vec4(1.0);
-    FragColor = tex * uTint * vColor * vInstanceColor;
-}
-)";
-
-const char* kShadowVertexShader = R"(
-#version 330 core
-layout(location = 0) in vec3 aPos;
-uniform mat4 uMVP;
-void main() {
-    gl_Position = uMVP * vec4(aPos, 1.0);
-}
-)";
-
-const char* kShadowInstancedVertexShader = R"(
-#version 330 core
-layout(location = 0) in vec3 aPos;
-layout(location = 4) in mat4 aInstance;
-uniform mat4 uMVP;
-void main() {
-    gl_Position = uMVP * aInstance * vec4(aPos, 1.0);
-}
-)";
-
-const char* kShadowSkinnedVertexShader = R"(
-#version 330 core
-layout(location = 0) in vec3 aPos;
-layout(location = 4) in vec4 aJointIds;
-layout(location = 5) in vec4 aWeights;
-uniform mat4 uBoneMatrices[64];
-uniform mat4 uMVP;
-void main() {
-    mat4 skin = mat4(0.0);
-    for (int i = 0; i < 4; ++i) {
-        int id = int(aJointIds[i]);
-        if (id >= 0 && id < 64) skin += aWeights[i] * uBoneMatrices[id];
-    }
-    gl_Position = uMVP * skin * vec4(aPos, 1.0);
-}
-)";
-
-// Depth is packed into an RGBA8 color target (EncodeDepth) because the
-// window depth buffer AND FBO depth textures are broken on the tested Intel
-// driver while color FBO rendering works. 24 bits of precision is ample.
-const char* kShadowFragmentShader = R"(
-#version 330 core
-out vec4 FragColor;
-vec4 EncodeDepth(float d) {
-    vec4 bits = vec4(1.0, 255.0, 65025.0, 16581375.0) * d;
-    bits = fract(bits);
-    bits -= bits.yzww * vec4(1.0 / 255.0, 1.0 / 255.0, 1.0 / 255.0, 0.0);
-    return bits;
-}
-void main() {
-    FragColor = EncodeDepth(gl_FragCoord.z);
-}
-)";
-
-// Point-light shadow variants. The depth is NOT gl_FragCoord.z: for a point
-// light the per-face map must store a single linear distance (dist from the
-// light) so the lit shader can compare it against the per-fragment distance in
-// every direction of that face. The vertex shaders therefore output the world
-// position and the fragment shader encodes length(worldPos - uLightPos)/range.
-const char* kPointShadowVertexShader = R"(
-#version 330 core
-layout(location = 0) in vec3 aPos;
-uniform mat4 uMVP;
-uniform mat4 uModel;
-out vec3 vWorldPos;
-void main() {
-    vWorldPos = (uModel * vec4(aPos, 1.0)).xyz;
-    gl_Position = uMVP * vec4(aPos, 1.0);
-}
-)";
-
-const char* kPointShadowInstancedVertexShader = R"(
-#version 330 core
-layout(location = 0) in vec3 aPos;
-layout(location = 4) in mat4 aInstance;
-uniform mat4 uMVP;
-out vec3 vWorldPos;
-void main() {
-    vWorldPos = (aInstance * vec4(aPos, 1.0)).xyz;
-    gl_Position = uMVP * aInstance * vec4(aPos, 1.0);
-}
-)";
-
-const char* kPointShadowSkinnedVertexShader = R"(
-#version 330 core
-layout(location = 0) in vec3 aPos;
-layout(location = 4) in vec4 aJointIds;
-layout(location = 5) in vec4 aWeights;
-uniform mat4 uBoneMatrices[64];
-uniform mat4 uMVP;
-uniform mat4 uModel;
-out vec3 vWorldPos;
-void main() {
-    mat4 skin = mat4(0.0);
-    for (int i = 0; i < 4; ++i) {
-        int id = int(aJointIds[i]);
-        if (id >= 0 && id < 64) skin += aWeights[i] * uBoneMatrices[id];
-    }
-    vWorldPos = (uModel * skin * vec4(aPos, 1.0)).xyz;
-    gl_Position = uMVP * skin * vec4(aPos, 1.0);
-}
-)";
-
-const char* kPointShadowFragmentShader = R"(
-#version 330 core
-in vec3 vWorldPos;
-out vec4 FragColor;
-uniform vec3 uLightPos;
-uniform float uLightRange;
-vec4 EncodeDepth(float d) {
-    vec4 bits = vec4(1.0, 255.0, 65025.0, 16581375.0) * d;
-    bits = fract(bits);
-    bits -= bits.yzww * vec4(1.0 / 255.0, 1.0 / 255.0, 1.0 / 255.0, 0.0);
-    return bits;
-}
-void main() {
-    FragColor = EncodeDepth(clamp(length(vWorldPos - uLightPos) / uLightRange, 0.0, 1.0));
-}
-)";
-
-const char* kUIVertexShader = R"(
-#version 330 core
-layout(location = 0) in vec2 aPos;
-layout(location = 1) in vec2 aUV;
-layout(location = 2) in vec4 aColor;
-uniform mat4 uMVP;
-out vec2 vUV;
-out vec4 vColor;
-void main() {
-    vUV = aUV;
-    vColor = aColor;
-    gl_Position = uMVP * vec4(aPos, 0.0, 1.0);
-}
-)";
-
-const char* kUIFragmentShader = R"(
-#version 330 core
-in vec2 vUV;
-in vec4 vColor;
-out vec4 FragColor;
-uniform sampler2D uTex;
-void main() {
-    FragColor = vColor * texture(uTex, vUV);
-}
-)";
-
-const char* kLineVertexShader = R"(
-#version 330 core
-layout(location = 0) in vec3 aPos;
-layout(location = 1) in vec4 aColor;
-uniform mat4 uMVP;
-out vec4 vColor;
-void main() {
-    vColor = aColor;
-    gl_Position = uMVP * vec4(aPos, 1.0);
-}
-)";
-
-const char* kLineFragmentShader = R"(
-#version 330 core
-in vec4 vColor;
-out vec4 FragColor;
-void main() {
-    FragColor = vColor;
-}
-)";
 
 // Inverse-transpose of the upper 3x3 of a model matrix (normal matrix).
 math::Mat4 NormalMatrix(const math::Mat4& m) {
@@ -670,18 +59,26 @@ bool Renderer::Init(platform::IWindow* window) {
                      backendName_ == "vulkan" ? "Vulkan" : "OpenGL");
         return false;
     }
+    ConnectSubsystems();
     InitBuiltinResources();
 
-    uiIndices_.reserve(kMaxQuads * 6);
-    uiVerts_.reserve(kMaxUIVertices);
     screenW_ = window_->Width();
     screenH_ = window_->Height();
-    depthAvailable_ = backend_->DepthAvailable();
+    draw2d_.Resize(screenW_, screenH_);
     return true;
 }
 
 void Renderer::AttachBackendForTesting(std::unique_ptr<IRenderBackend> backend) {
     backend_ = std::move(backend);
+    ConnectSubsystems();
+}
+
+void Renderer::ConnectSubsystems() {
+    shadowSystem_.SetBackend(backend_.get());
+    shadowSystem_.SetSceneUniformStamp(&sceneUniformStamp_);
+    sceneState_.SetBackend(backend_.get());
+    sceneState_.SetSceneUniformStamp(&sceneUniformStamp_);
+    draw2d_.SetBackend(backend_.get());
 }
 
 void Renderer::Shutdown() {
@@ -689,16 +86,9 @@ void Renderer::Shutdown() {
     if (litShader_.Valid()) backend_->DestroyShader(litShader_);
     if (skinnedLitShader_.Valid()) backend_->DestroyShader(skinnedLitShader_);
     if (unlitShader_.Valid()) backend_->DestroyShader(unlitShader_);
-    if (uiShader_.Valid()) backend_->DestroyShader(uiShader_);
     if (linesShader_.Valid()) backend_->DestroyShader(linesShader_);
     if (litInstancedShader_.Valid()) backend_->DestroyShader(litInstancedShader_);
     if (unlitInstancedShader_.Valid()) backend_->DestroyShader(unlitInstancedShader_);
-    if (depthShader_.Valid()) backend_->DestroyShader(depthShader_);
-    if (depthInstancedShader_.Valid()) backend_->DestroyShader(depthInstancedShader_);
-    if (depthSkinnedShader_.Valid()) backend_->DestroyShader(depthSkinnedShader_);
-    if (pointDepthShader_.Valid()) backend_->DestroyShader(pointDepthShader_);
-    if (pointDepthInstancedShader_.Valid()) backend_->DestroyShader(pointDepthInstancedShader_);
-    if (pointDepthSkinnedShader_.Valid()) backend_->DestroyShader(pointDepthSkinnedShader_);
     if (brightPassShader_.Valid()) backend_->DestroyShader(brightPassShader_);
     if (blurShader_.Valid()) backend_->DestroyShader(blurShader_);
     if (downsampleShader_.Valid()) backend_->DestroyShader(downsampleShader_);
@@ -706,20 +96,11 @@ void Renderer::Shutdown() {
     if (compositeShader_.Valid()) backend_->DestroyShader(compositeShader_);
     if (probeQuadMesh_.Valid()) backend_->DestroyMesh(probeQuadMesh_);
     if (postQuadMesh_.Valid()) backend_->DestroyMesh(postQuadMesh_);
-    for (int i = 0; i < kShadowCascades; ++i) {
-        if (shadowRT_[i].Valid()) backend_->DestroyRenderTarget(shadowRT_[i]);
-    }
-    for (int li = 0; li < kShadowPointLights; ++li) {
-        for (int face = 0; face < 6; ++face) {
-            if (pointShadowRT_[li][face].Valid())
-                backend_->DestroyRenderTarget(pointShadowRT_[li][face]);
-        }
-    }
+    shadowSystem_.Shutdown(*backend_);
+    sceneState_.Shutdown(*backend_);
+    draw2d_.Shutdown(*backend_);
     DestroyHdrTargets();
     if (white_.Valid()) backend_->DestroyTexture(white_);
-    if (iblIrradianceTex_.Valid()) backend_->DestroyTexture(iblIrradianceTex_);
-    if (iblPrefilteredTex_.Valid()) backend_->DestroyTexture(iblPrefilteredTex_);
-    if (iblBrdfLutTex_.Valid()) backend_->DestroyTexture(iblBrdfLutTex_);
     backend_->Shutdown();
     backend_.reset();
 }
@@ -762,7 +143,6 @@ void Renderer::InitBuiltinResources() {
                      "Renderer: terrain lit shader %s",
                      terrainShader_.Valid() ? "ok" : "FAILED");
     }
-    uiShader_ = backend_->CreateShader(kUIVertexShader, kUIFragmentShader, "ui");
     linesShader_ = backend_->CreateShader(kLineVertexShader, kLineFragmentShader, "lines");
     litInstancedShader_ =
         backend_->CreateShader(kLitInstancedVertexShader, kLitFragmentShader, "lit_instanced");
@@ -772,25 +152,6 @@ void Renderer::InitBuiltinResources() {
         backend_->CreateShader(kUnlitInstancedColoredVertexShader,
                                kUnlitInstancedColoredFragmentShader, "unlit_instanced_colored");
     billboardQuad_ = Mesh::CreateQuad(*this, 1.0f, 1.0f, "billboard");
-    depthShader_ = backend_->CreateShader(kShadowVertexShader, kShadowFragmentShader, "shadow");
-    depthInstancedShader_ =
-        backend_->CreateShader(kShadowInstancedVertexShader, kShadowFragmentShader, "shadow_inst");
-    depthSkinnedShader_ =
-        backend_->CreateShader(kShadowSkinnedVertexShader, kShadowFragmentShader, "shadow_skin");
-    pointDepthShader_ =
-        backend_->CreateShader(kPointShadowVertexShader, kPointShadowFragmentShader, "point_shadow");
-    pointDepthInstancedShader_ = backend_->CreateShader(kPointShadowInstancedVertexShader,
-                                                        kPointShadowFragmentShader,
-                                                        "point_shadow_inst");
-    pointDepthSkinnedShader_ = backend_->CreateShader(kPointShadowSkinnedVertexShader,
-                                                      kPointShadowFragmentShader,
-                                                      "point_shadow_skin");
-    NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
-                 "Renderer: point shadow shaders %s",
-                 (pointDepthShader_.Valid() && pointDepthInstancedShader_.Valid() &&
-                  pointDepthSkinnedShader_.Valid())
-                     ? "ok"
-                     : "FAILED");
 
     // Post-processing shaders (HDR + bloom). Sources live in bloom.hpp so the
     // pure math and the shader tokens are unit-testable headlessly.
@@ -852,6 +213,9 @@ void Renderer::InitBuiltinResources() {
     };
     postQuadMesh_ = backend_->CreateMesh(postVerts, 4, quadIndices, 6);
 
+    // 2D overlay: UI program + batch buffers (DrawBatch2D).
+    draw2d_.Init(*backend_, white_);
+
     // HDR float-target capability (independent of the shadow path, so
     // --no-shadows still gets HDR + bloom). If the driver cannot render into a
     // half-float FBO, the renderer falls back to the legacy direct-to-backbuffer
@@ -877,69 +241,15 @@ void Renderer::InitBuiltinResources() {
                      "Renderer: MSAA disabled by flag -> single-sample HDR path");
     }
 
-    if (shadowsForcedOff_) {
-        NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Warn,
-                     "Renderer: CSM disabled by flag (--disable-fbo/--no-shadows)");
-        return;
-    }
-    depthAvailable_ = backend_->DepthAvailable();
-    for (int i = 0; i < kShadowCascades; ++i) {
-        shadowRT_[i] = backend_->CreateRenderTarget(shadowSize_, shadowSize_);
-        shadowDepthTex_[i] = backend_->RenderTargetColorTexture(shadowRT_[i]);
-        if (!shadowRT_[i].Valid() || !shadowDepthTex_[i].Valid()) {
-            NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Warn,
-                         "Renderer: cascade %d shadow target failed", i);
-            csmEnabled_ = false;
-            return;
-        }
-    }
-    csmEnabled_ = TestDepthTargetCapability();
-    NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
-                 "Renderer: CSM shadow maps %dx%d x3 (%s)", shadowSize_, shadowSize_,
-                 csmEnabled_ ? "ok" : "FAILED -> CPU projected shadows fallback");
-
-    // Point-light cubemap shadows reuse the same color-encoded-depth FBO path,
-    // so they engage only when the CSM capability self-test passed. Six 2D
-    // maps per light (layered cubemap FBOs are unreliable on the Intel driver);
-    // the lit shader picks the face from the fragment->light direction.
-    if (csmEnabled_) {
-        pointShadowsEnabled_ = true;
-        for (int li = 0; li < kShadowPointLights && pointShadowsEnabled_; ++li) {
-            for (int face = 0; face < 6; ++face) {
-                pointShadowRT_[li][face] =
-                    backend_->CreateRenderTarget(kPointShadowSize, kPointShadowSize);
-                pointShadowDepthTex_[li][face] =
-                    backend_->RenderTargetColorTexture(pointShadowRT_[li][face]);
-                if (!pointShadowRT_[li][face].Valid() || !pointShadowDepthTex_[li][face].Valid()) {
-                    NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Warn,
-                                 "Renderer: point light %d face %d shadow target failed", li, face);
-                    pointShadowsEnabled_ = false;
-                    break;
-                }
-            }
-        }
-        NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
-                     "Renderer: point light shadow maps %dx%d x%d lights (%s)",
-                     kPointShadowSize, kPointShadowSize, kShadowPointLights,
-                     pointShadowsEnabled_ ? "ok" : "FAILED");
-    } else {
-        pointShadowsEnabled_ = false;
-    }
-    // Diagnostic override (not public API): isolate the point-light shadow
-    // contribution for verification (screenshot diffs) without touching CSM.
-    if (pointShadowsEnabled_ && std::getenv("NEON_NO_POINT_SHADOWS")) {
-        NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Warn,
-                     "Renderer: point light shadows disabled by NEON_NO_POINT_SHADOWS");
-        pointShadowsEnabled_ = false;
-    }
+    // Shadow subsystem: depth/point-depth shaders + cascade/point render
+    // targets + the FBO capability self-tests (ShadowSystem).
+    shadowSystem_.Init(*backend_, probeQuadMesh_, unlitShader_);
 }
 
 void Renderer::BeginFrame(const Color& clearColor, float clearDepth) {
     ++sceneUniformStamp_; // B1: a new frame invalidates the scene uniform cache
     stats_ = RenderStats{};
-    csmActive_ = false;
-    pointShadowsActive_ = false;
-    shadowPassRanThisFrame_ = false;
+    shadowSystem_.BeginFrame();
     // Previous frame's post graph is fully consumed (the composite pass sampled
     // its finals); return its exported/pooled targets and clear the "already
     // composited this frame" latch.
@@ -947,9 +257,7 @@ void Renderer::BeginFrame(const Color& clearColor, float clearDepth) {
     ssaoCasters_.clear();
     screenW_ = window_ ? window_->Width() : screenW_;
     screenH_ = window_ ? window_->Height() : screenH_;
-    uiScale_ = static_cast<float>(screenH_) / static_cast<float>(kDesignHeight);
-    uiOffsetX_ = (static_cast<float>(screenW_) - static_cast<float>(kDesignWidth) * uiScale_) * 0.5f;
-    uiOffsetY_ = 0.0f;
+    draw2d_.Resize(screenW_, screenH_);
     RebuildHdrTargets();
     if (hdrEnabled_ && hdrRT_.Valid()) {
         // Scene + sky draw into the (multisample when MSAA is active) HDR
@@ -972,164 +280,71 @@ void Renderer::EndFrame() {
 
 void Renderer::SetCamera(const Camera& camera, float aspect) {
     ++sceneUniformStamp_; // B1: scene uniforms (view/proj/camPos) changed
-    camera_ = camera;
-    viewAspect_ = aspect > 0.01f ? aspect : viewAspect_;
-    viewProj_ = camera.ViewProjection(aspect);
-    view_ = camera.View();
-    camPos_ = camera.position;
-    frustum_ = math::Frustum::FromViewProjection(viewProj_);
-    frustumValid_ = true;
+    sceneState_.SetCamera(camera, aspect);
     // Render the cascade shadow maps now: they are sampled by the main-pass
     // draws that follow this SetCamera. Uses the previous frame's recorded
     // casters (one frame of staleness, imperceptible) and the current camera.
-    if (csmEnabled_ && !shadowPassRanThisFrame_) {
-        RunShadowPass();
-        // RunShadowPass ends with BindDefaultTarget (shadow FBOs unbound);
-        // route the main pass back into the HDR target when active.
+    if (shadowSystem_.Enabled() && !shadowSystem_.ShadowPassRanThisFrame()) {
+        shadowSystem_.RunPass(sceneState_.ActiveCamera(), sceneState_.ViewAspect(),
+                              sceneState_.SunDir(), sceneState_.PointPos(),
+                              sceneState_.PointRadius(), sceneState_.PointCount());
+        // RunPass ends with BindDefaultTarget (shadow FBOs unbound); route the
+        // main pass back into the HDR target when active.
         RebindMainTarget();
         // Both rebinds reset the backend viewport to the target's full size.
         // Restore the active scene viewport (a dock sub-rect in the editor)
         // so the main pass still rasterizes into the intended rect - hosts
         // that render into a sub-viewport (e.g. the 2D playtest) would
         // otherwise see the scene stretched/offset to the full window.
-        if (sceneViewport_.w > 0.0f && sceneViewport_.h > 0.0f)
-            backend_->SetViewport(static_cast<int>(sceneViewport_.x),
-                                  static_cast<int>(sceneViewport_.y),
-                                  static_cast<int>(sceneViewport_.w),
-                                  static_cast<int>(sceneViewport_.h));
+        if (draw2d_.SceneViewportActive()) {
+            const math::Rect2& vp = draw2d_.SceneViewport();
+            backend_->SetViewport(static_cast<int>(vp.x), static_cast<int>(vp.y),
+                                  static_cast<int>(vp.w), static_cast<int>(vp.h));
+        }
     }
 }
 
 void Renderer::RefreshShadowPass() {
-    // Re-run the cascade shadow pass for the current camera_ even when a shadow
+    // Re-run the cascade shadow pass for the current camera even when a shadow
     // pass already ran this frame (e.g. the editor pre-ran one with its free
     // orbit camera before play resolved the game camera). This keeps the light
     // frusta locked to the ACTUAL render view so orbiting the editor camera
     // slides the shadows incorrectly.
-    if (!csmEnabled_) return;
-    RunShadowPass();
+    if (!shadowSystem_.Enabled()) return;
+    shadowSystem_.RunPass(sceneState_.ActiveCamera(), sceneState_.ViewAspect(),
+                          sceneState_.SunDir(), sceneState_.PointPos(),
+                          sceneState_.PointRadius(), sceneState_.PointCount());
     RebindMainTarget();
-    if (sceneViewport_.w > 0.0f && sceneViewport_.h > 0.0f)
-        backend_->SetViewport(static_cast<int>(sceneViewport_.x),
-                              static_cast<int>(sceneViewport_.y),
-                              static_cast<int>(sceneViewport_.w),
-                              static_cast<int>(sceneViewport_.h));
+    if (draw2d_.SceneViewportActive()) {
+        const math::Rect2& vp = draw2d_.SceneViewport();
+        backend_->SetViewport(static_cast<int>(vp.x), static_cast<int>(vp.y),
+                              static_cast<int>(vp.w), static_cast<int>(vp.h));
+    }
 }
 
 void Renderer::SetSky(const Color& top, const Color& horizon) {
-    skyTop_ = top;
-    skyHorizon_ = horizon;
-    // Lazy IBL recompute. The demo animates the sky every frame (a day/night
-    // cycle), so the environment is rebuilt only when the sky has actually
-    // moved by a cumulative epsilon AND enough SetSky calls have elapsed since
-    // the last rebuild - an animated sky then re-precomputes at most once every
-    // kIblRecomputeInterval frames (~20ms, logged) and a static sky never does.
-    // Re-enabling IBL (strength 0 -> >0) forces a rebuild via iblValid_.
-    if (iblStrength_ <= 0.0f) return;
-    ++iblFrameCounter_;
-    if (!iblValid_) {
-        RecomputeIbl(top, horizon);
-        return;
-    }
-    const float delta = std::max({
-        std::fabs(top.r - iblLastTop_.r),     std::fabs(top.g - iblLastTop_.g),
-        std::fabs(top.b - iblLastTop_.b),     std::fabs(horizon.r - iblLastHorizon_.r),
-        std::fabs(horizon.g - iblLastHorizon_.g), std::fabs(horizon.b - iblLastHorizon_.b),
-    });
-    iblAccumDelta_ += delta;
-    if (iblAccumDelta_ >= kIblSkyEpsilon &&
-        iblFrameCounter_ - iblLastRecomputeFrame_ >= kIblRecomputeInterval) {
-        RecomputeIbl(top, horizon);
-    }
+    sceneState_.SetSky(top, horizon);
 }
 
 void Renderer::SetIblStrength(float strength) {
-    strength = std::max(0.0f, std::min(1.0f, strength));
-    const bool wasZero = iblStrength_ <= 0.0f;
-    iblStrength_ = strength;
-    if (wasZero && strength > 0.0f) iblValid_ = false; // rebuild on next SetSky
-}
-
-void Renderer::RecomputeIbl(const Color& top, const Color& horizon) {
-    ++sceneUniformStamp_; // B1: IBL uniforms changed
-    if (!backend_) return;
-    ++iblBuildCount_;
-    const auto start = std::chrono::steady_clock::now();
-
-    // BRDF LUT is a pure material term (roughness x NoV), independent of the
-    // sky - build and upload it once.
-    if (!iblBrdfLutReady_) {
-        const std::vector<uint8_t> lut = ibl::BuildBrdfLut();
-        if (!lut.empty()) {
-            if (iblBrdfLutTex_.Valid()) backend_->DestroyTexture(iblBrdfLutTex_);
-            TextureDesc desc;
-            desc.width = ibl::kBrdfLutSize;
-            desc.height = ibl::kBrdfLutSize;
-            desc.rgba = lut.data();
-            desc.filter = Filter::Linear;
-            iblBrdfLutTex_ = backend_->CreateTexture(desc);
-            iblBrdfLutReady_ = iblBrdfLutTex_.Valid();
-        }
-    }
-
-    // Sky-dependent maps: irradiance (diffuse) + prefiltered specular. Both are
-    // RGBA8: the sky gradient is an LDR environment (all texels <= 1) so the
-    // 8-bit upload loses nothing; a future HDR environment would need a
-    // float-texture path in the backend.
-    const std::vector<uint8_t> irr = ibl::BuildIrradianceMap(top, horizon, kIblGradientPower);
-    const std::vector<uint8_t> pf = ibl::BuildPrefilteredMap(top, horizon, kIblGradientPower);
-    if (iblIrradianceTex_.Valid()) backend_->DestroyTexture(iblIrradianceTex_);
-    if (iblPrefilteredTex_.Valid()) backend_->DestroyTexture(iblPrefilteredTex_);
-    TextureDesc irrDesc;
-    irrDesc.width = 1;
-    irrDesc.height = ibl::kEnvRows;
-    irrDesc.rgba = irr.data();
-    irrDesc.filter = Filter::Linear;
-    iblIrradianceTex_ = backend_->CreateTexture(irrDesc);
-    TextureDesc pfDesc;
-    pfDesc.width = ibl::kRoughnessCols;
-    pfDesc.height = ibl::kEnvRows;
-    pfDesc.rgba = pf.data();
-    pfDesc.filter = Filter::Linear;
-    iblPrefilteredTex_ = backend_->CreateTexture(pfDesc);
-
-    iblValid_ = iblIrradianceTex_.Valid() && iblPrefilteredTex_.Valid() && iblBrdfLutTex_.Valid();
-    iblLastTop_ = top;
-    iblLastHorizon_ = horizon;
-    iblAccumDelta_ = 0.0f;
-    iblLastRecomputeFrame_ = iblFrameCounter_;
-
-    const double ms =
-        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
-    NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
-                 "Renderer: IBL environment recomputed (sky %.2f,%.2f,%.2f -> %.2f,%.2f,%.2f) in "
-                 "%.1f ms (%s)",
-                 top.r, top.g, top.b, horizon.r, horizon.g, horizon.b, ms,
-                 iblValid_ ? "ok" : "FAILED");
+    sceneState_.SetIblStrength(strength);
 }
 
 void Renderer::SetFog(const Color& color, float start, float end) {
-    ++sceneUniformStamp_; // B1
-    fogColor_ = color;
-    fogStart_ = start;
-    fogEnd_ = end;
+    sceneState_.SetFog(color, start, end);
 }
 
-void Renderer::SetDirectionalLight(const math::Vec3& direction, const Color& color, float ambientStrength) {
-    ++sceneUniformStamp_; // B1
-    sunDir_ = direction.Normalized();
-    sunColor_ = color;
-    ambient_ = ambientStrength;
+void Renderer::SetDirectionalLight(const math::Vec3& direction, const Color& color,
+                                   float ambientStrength) {
+    sceneState_.SetDirectionalLight(direction, color, ambientStrength);
 }
 
 void Renderer::SetAmbientLight(const Color& color, float strength) {
-    ambientColor_ = color;
-    ambient_ = strength;
+    sceneState_.SetAmbientLight(color, strength);
 }
 
 void Renderer::SetShadowsEnabled(bool enabled) {
-    shadowsForcedOff_ = !enabled;
-    if (!enabled) csmEnabled_ = false;
+    shadowSystem_.SetShadowsEnabled(enabled);
 }
 
 void Renderer::SetBloomEnabled(bool enabled) {
@@ -1157,402 +372,29 @@ void Renderer::SetMsaaEnabled(bool enabled) {
                  "Renderer: MSAA %s", enabled ? "requested" : "disabled by flag");
 }
 
-void Renderer::RunShadowPass() {
-    if (!csmEnabled_) return;
-    shadowPassRanThisFrame_ = true;
-    ComputeCascadeSplits(camera_.nearPlane, camera_.farPlane, cascadeSplits_);
-    // Cascade frusta must match the camera projection (which may use the
-    // viewport rect's aspect when the editor renders into a sub-viewport).
-    const float aspect = viewAspect_;
-
-    // Union of all shadow-caster world AABBs: the cascade light frusta are
-    // tightened to it so a small scene fills the shadow maps instead of being
-    // squished into a corner.
-    math::AABB sceneBounds;
-    sceneBounds.min = {1e30f, 1e30f, 1e30f};
-    sceneBounds.max = {-1e30f, -1e30f, -1e30f};
-    bool hasScene = false;
-    for (const ShadowDraw& draw : shadowCasters_) {
-        if (!draw.mesh.Valid()) continue;
-        if (!draw.models.empty()) {
-            for (const math::Mat4& m : draw.models) {
-                sceneBounds.Expand(math::TransformAABB(draw.bounds, m).min);
-                sceneBounds.Expand(math::TransformAABB(draw.bounds, m).max);
-                hasScene = true;
-            }
-        } else {
-            math::AABB w = math::TransformAABB(draw.bounds, draw.model);
-            sceneBounds.Expand(w.min);
-            sceneBounds.Expand(w.max);
-            hasScene = true;
-        }
-    }
-    const math::AABB* scenePtr = hasScene ? &sceneBounds : nullptr;
-
-    for (int i = 0; i < kShadowCascades; ++i) {
-        lightViewProj_[i] =
-            ComputeCascadeLightViewProj(sunDir_, camera_, aspect, cascadeSplits_[i],
-                                        cascadeSplits_[i + 1], scenePtr);
-    }
-
-    for (int i = 0; i < kShadowCascades; ++i) {
-        if (!shadowRT_[i].Valid()) continue;
-        backend_->BindRenderTarget(shadowRT_[i]);
-        // Encoded far depth by default: anything not drawn is lit.
-        backend_->Clear({1.0f, 1.0f, 1.0f, 1.0f}, 1.0f);
-        backend_->SetBlendMode(BlendMode::Opaque);
-        backend_->SetCullMode(CullMode::Back);
-        // No depth buffer in the color-encoded map (the window/FBO depth path
-        // is broken on the tested Intel driver); painter's-order (far to near
-        // in light space) gives the correct nearest-surface per texel.
-        backend_->SetDepthTest(false, false);
-        DrawShadowCastersSorted(lightViewProj_[i]);
-    }
-    // Point-light cubemap faces reuse the same caster list (cleared below).
-    RunPointShadowPass();
-    backend_->BindDefaultTarget();
-    shadowCasters_.clear();
-    csmActive_ = true;
-}
-
-void Renderer::DrawShadowCastersSorted(const math::Mat4& lightVP) {
-    if (shadowCasters_.empty()) return;
-    // Extract the light view (projection is ortho, translation-only per axis)
-    // to sort casters by their distance along the light direction.
-    const math::Mat4 lightView = lightVP;
-    shadowSortKeys_.clear();
-    shadowSortKeys_.reserve(shadowCasters_.size());
-    for (const ShadowDraw& draw : shadowCasters_) {
-        math::Vec3 center;
-        if (!draw.models.empty()) {
-            for (const math::Mat4& m : draw.models) {
-                center += m.TransformPoint(draw.bounds.Center());
-            }
-            center = center * (1.0f / static_cast<float>(draw.models.size()));
-        } else {
-            center = draw.model.TransformPoint(draw.bounds.Center());
-        }
-        shadowSortKeys_.push_back({&draw, lightView.TransformPoint(center).z});
-    }
-    // NDC z grows as light-space z goes negative (ortho slope is negative), so
-    // the farthest caster has the largest value; draw it first (last wins).
-    std::sort(shadowSortKeys_.begin(), shadowSortKeys_.end(),
-              [](const ShadowSortKey& a, const ShadowSortKey& b) { return a.z > b.z; });
-    for (const ShadowSortKey& k : shadowSortKeys_) DrawShadowCaster(*k.draw, lightVP);
-}
-
-void Renderer::DrawShadowCaster(const ShadowDraw& draw, const math::Mat4& lightVP) {
-    if (!draw.mesh.Valid()) return;
-    if (!draw.models.empty()) {
-        backend_->UseShader(depthInstancedShader_);
-        backend_->SetUniformMat4("uMVP", lightVP);
-        backend_->DrawMeshInstanced(draw.mesh, draw.models.data(),
-                                    static_cast<uint32_t>(draw.models.size()));
-    } else if (!draw.bones.empty()) {
-        backend_->UseShader(depthSkinnedShader_);
-        boneUniformFlat_.resize(static_cast<size_t>(draw.boneCount) * 16);
-        for (int i = 0; i < draw.boneCount; ++i)
-            std::memcpy(boneUniformFlat_.data() + static_cast<size_t>(i) * 16,
-                        draw.bones[static_cast<size_t>(i)].Data(), 16 * sizeof(float));
-        backend_->SetUniformMat4Array("uBoneMatrices", boneUniformFlat_.data(), draw.boneCount);
-        backend_->SetUniformMat4("uMVP", lightVP * draw.model);
-        backend_->DrawMesh(draw.mesh);
-    } else {
-        backend_->UseShader(depthShader_);
-        backend_->SetUniformMat4("uMVP", lightVP * draw.model);
-        backend_->DrawMesh(draw.mesh);
-    }
-}
-
-void Renderer::DrawSsaoDepthCasters(const math::Mat4& viewProj) {
-    if (ssaoCasters_.empty()) return;
-    // Painter's order far->near (the colour-encoded depth target has no depth
-    // buffer), mirroring the shadow encoder.
-    shadowSortKeys_.clear();
-    shadowSortKeys_.reserve(ssaoCasters_.size());
-    for (const ShadowDraw& draw : ssaoCasters_) {
-        math::Vec3 center;
-        if (!draw.models.empty()) {
-            for (const math::Mat4& m : draw.models) center += m.TransformPoint(draw.bounds.Center());
-            center = center * (1.0f / static_cast<float>(draw.models.size()));
-        } else {
-            center = draw.model.TransformPoint(draw.bounds.Center());
-        }
-        shadowSortKeys_.push_back({&draw, viewProj.TransformPoint(center).z});
-    }
-    std::sort(shadowSortKeys_.begin(), shadowSortKeys_.end(),
-              [](const ShadowSortKey& a, const ShadowSortKey& b) { return a.z > b.z; });
-    for (const ShadowSortKey& k : shadowSortKeys_) {
-        const ShadowDraw& draw = *k.draw;
-        if (!draw.mesh.Valid()) continue;
-        if (!draw.models.empty()) {
-            backend_->UseShader(ssaoDepthShader_);
-            backend_->SetUniformMat4("uMVP", viewProj);
-            backend_->SetUniformFloat("uFar", camera_.farPlane);
-            backend_->DrawMeshInstanced(draw.mesh, draw.models.data(),
-                                        static_cast<uint32_t>(draw.models.size()));
-        } else if (!draw.bones.empty()) {
-            backend_->UseShader(depthSkinnedShader_);
-            boneUniformFlat_.resize(static_cast<size_t>(draw.boneCount) * 16);
-            for (int i = 0; i < draw.boneCount; ++i)
-                std::memcpy(boneUniformFlat_.data() + static_cast<size_t>(i) * 16,
-                            draw.bones[static_cast<size_t>(i)].Data(), 16 * sizeof(float));
-            backend_->SetUniformMat4Array("uBoneMatrices", boneUniformFlat_.data(), draw.boneCount);
-            backend_->SetUniformMat4("uMVP", viewProj * draw.model);
-            backend_->DrawMesh(draw.mesh);
-        } else {
-            backend_->UseShader(ssaoDepthMeshShader_);
-            backend_->SetUniformMat4("uMVP", viewProj * draw.model);
-            backend_->SetUniformFloat("uFar", camera_.farPlane);
-            backend_->DrawMesh(draw.mesh);
-        }
-    }
-}
-
-void Renderer::RunPointShadowPass() {
-    if (!pointShadowsEnabled_) return;
-    pointShadowsActive_ = false;
-    const int lightCount = std::min(pointCount_, kShadowPointLights);
-    for (int li = 0; li < lightCount; ++li) {
-        if (pointRadius_[li] <= 0.0f) continue;
-        const float range = pointRadius_[li];
-        bool allFaces = true;
-        for (int face = 0; face < 6; ++face) {
-            if (!pointShadowRT_[li][face].Valid()) {
-                allFaces = false;
-                break;
-            }
-            pointLightViewProj_[li][face] =
-                ComputePointLightFaceViewProj(pointPos_[li], face, kPointShadowNear, range);
-        }
-        if (!allFaces) continue;
-        DrawPointShadowCastersSorted(li);
-        pointShadowsActive_ = true;
-        ++sceneUniformStamp_; // B1: shadow uniform set changed
-    }
-}
-
-void Renderer::DrawPointShadowCastersSorted(int lightIndex) {
-    if (shadowCasters_.empty()) return;
-    const math::Vec3 lightPos = pointPos_[lightIndex];
-    const float range = pointRadius_[lightIndex];
-
-    // Color-encoded maps have no depth buffer, so draw casters far -> near from
-    // the light (last wins = nearest surface). Casters fully outside the
-    // light's sphere of influence cannot shadow anything the light reaches.
-    shadowSortKeys_.clear();
-    shadowSortKeys_.reserve(shadowCasters_.size());
-    for (const ShadowDraw& draw : shadowCasters_) {
-        if (!draw.mesh.Valid()) continue;
-        math::Vec3 center;
-        if (!draw.models.empty()) {
-            for (const math::Mat4& m : draw.models) center += m.TransformPoint(draw.bounds.Center());
-            center = center * (1.0f / static_cast<float>(draw.models.size()));
-        } else {
-            center = draw.model.TransformPoint(draw.bounds.Center());
-        }
-        const math::Vec3 ext = draw.bounds.Extents();
-        const float boxRadius = ext.Length();
-        const float dist = (center - lightPos).Length();
-        if (dist - boxRadius > range) continue;
-        shadowSortKeys_.push_back({&draw, dist});
-    }
-    std::sort(shadowSortKeys_.begin(), shadowSortKeys_.end(),
-              [](const ShadowSortKey& a, const ShadowSortKey& b) { return a.z > b.z; });
-
-    backend_->SetBlendMode(BlendMode::Opaque);
-    backend_->SetCullMode(CullMode::Back);
-    backend_->SetDepthTest(false, false);
-    for (int face = 0; face < 6; ++face) {
-        backend_->BindRenderTarget(pointShadowRT_[lightIndex][face]);
-        backend_->Clear({1.0f, 1.0f, 1.0f, 1.0f}, 1.0f);
-        for (const ShadowSortKey& k : shadowSortKeys_)
-            DrawPointShadowCaster(*k.draw, pointLightViewProj_[lightIndex][face], lightPos, range);
-    }
-    backend_->BindDefaultTarget();
-}
-
-void Renderer::DrawPointShadowCaster(const ShadowDraw& draw, const math::Mat4& lightVP,
-                                     const math::Vec3& lightPos, float range) {
-    if (!draw.mesh.Valid()) return;
-    if (!draw.models.empty()) {
-        backend_->UseShader(pointDepthInstancedShader_);
-        backend_->SetUniformMat4("uMVP", lightVP);
-        backend_->SetUniformVec3("uLightPos", lightPos);
-        backend_->SetUniformFloat("uLightRange", range);
-        backend_->DrawMeshInstanced(draw.mesh, draw.models.data(),
-                                    static_cast<uint32_t>(draw.models.size()));
-    } else if (!draw.bones.empty()) {
-        backend_->UseShader(pointDepthSkinnedShader_);
-        boneUniformFlat_.resize(static_cast<size_t>(draw.boneCount) * 16);
-        for (int i = 0; i < draw.boneCount; ++i)
-            std::memcpy(boneUniformFlat_.data() + static_cast<size_t>(i) * 16,
-                        draw.bones[static_cast<size_t>(i)].Data(), 16 * sizeof(float));
-        backend_->SetUniformMat4Array("uBoneMatrices", boneUniformFlat_.data(), draw.boneCount);
-        backend_->SetUniformMat4("uMVP", lightVP * draw.model);
-        backend_->SetUniformMat4("uModel", draw.model);
-        backend_->SetUniformVec3("uLightPos", lightPos);
-        backend_->SetUniformFloat("uLightRange", range);
-        backend_->DrawMesh(draw.mesh);
-    } else {
-        backend_->UseShader(pointDepthShader_);
-        backend_->SetUniformMat4("uMVP", lightVP * draw.model);
-        backend_->SetUniformMat4("uModel", draw.model);
-        backend_->SetUniformVec3("uLightPos", lightPos);
-        backend_->SetUniformFloat("uLightRange", range);
-        backend_->DrawMesh(draw.mesh);
-    }
-}
-
-bool Renderer::TestDepthTargetCapability() {
-    if (!backend_ || !depthShader_.Valid() || !probeQuadMesh_.Valid()) return false;
-    constexpr int kSize = 64;
-
-    // --- Part A: DrawElements writes into a color FBO (encoded depth reaches
-    // the render target). Uses the color readback path, which is reliable even
-    // on the Intel driver whose GL_DEPTH readback returns garbage.
-    bool fboWrites = false;
-    {
-        RenderTargetHandle rt = backend_->CreateRenderTarget(kSize, kSize);
-        if (rt.Valid()) {
-            backend_->BindRenderTarget(rt);
-            backend_->Clear({1.0f, 1.0f, 1.0f, 1.0f}, 1.0f);
-            backend_->UseShader(depthShader_);
-            backend_->SetUniformMat4("uMVP", math::Mat4::Identity());
-            backend_->SetCullMode(CullMode::None);
-            backend_->SetDepthTest(false, false);
-            backend_->SetBlendMode(BlendMode::Opaque);
-            backend_->DrawMesh(probeQuadMesh_);
-            unsigned char px[4] = {0, 0, 0, 0};
-            backend_->ReadCurrentTargetPixel(kSize / 2, kSize / 2, px);
-            backend_->DestroyRenderTarget(rt);
-            const float decoded = static_cast<float>(px[0]) / 255.0f +
-                                  static_cast<float>(px[1]) / 255.0f / 255.0f +
-                                  static_cast<float>(px[2]) / 255.0f / 65025.0f +
-                                  static_cast<float>(px[3]) / 255.0f / 16581375.0f;
-            fboWrites = decoded > 0.1f && decoded < 0.99f;
-            NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
-                         "Renderer: CSM FBO write self-test: px=%d,%d,%d,%d decoded=%.3f -> %s",
-                         px[0], px[1], px[2], px[3], decoded,
-                         fboWrites ? "PASS" : "FAIL");
-        }
-    }
-    if (!fboWrites) {
-        NEON_LOG_CAT(
-            neon::core::LogCategory::Gfx, neon::core::LogLevel::Warn,
-            "Renderer: FBO DrawElements does not write -> CSM disabled, CPU projected shadows");
-        return false;
-    }
-
-    // --- Part B: using an FBO must not corrupt later backbuffer VAO rendering
-    // (the documented Intel FBO/VAO defect). Draw a reference red quad into the
-    // backbuffer, exercise a 3-cascade pass, then redraw and confirm unchanged.
-    auto drawRedQuad = [&]() {
-        backend_->UseShader(unlitShader_);
-        backend_->SetUniformMat4("uMVP", math::Mat4::Identity());
-        backend_->SetUniformInt("uHasTexture", 0);
-        backend_->SetUniformVec4("uTint", {1.0f, 0.0f, 0.0f, 1.0f});
-        backend_->SetCullMode(CullMode::None);
-        backend_->SetDepthTest(false, false);
-        backend_->SetBlendMode(BlendMode::Opaque);
-        backend_->DrawMesh(probeQuadMesh_);
-    };
-    unsigned char refPx[4] = {0, 0, 0, 0};
-    unsigned char postPx[4] = {0, 0, 0, 0};
-    backend_->BindDefaultTarget();
-    drawRedQuad();
-    backend_->ReadCurrentTargetPixel(kSize, kSize, refPx);
-    {
-        RenderTargetHandle rt = backend_->CreateRenderTarget(kSize, kSize);
-        if (rt.Valid()) {
-            for (int c = 0; c < kShadowCascades; ++c) { // mimic the 3-cascade pass
-                backend_->BindRenderTarget(rt);
-                backend_->Clear({1.0f, 1.0f, 1.0f, 1.0f}, 1.0f);
-                backend_->UseShader(depthShader_);
-                backend_->SetUniformMat4("uMVP", math::Mat4::Identity());
-                backend_->SetCullMode(CullMode::None);
-                backend_->SetDepthTest(false, false);
-                backend_->SetBlendMode(BlendMode::Opaque);
-                backend_->DrawMesh(probeQuadMesh_);
-            }
-            backend_->DestroyRenderTarget(rt);
-        }
-        backend_->BindDefaultTarget();
-        drawRedQuad();
-        backend_->ReadCurrentTargetPixel(kSize, kSize, postPx);
-    }
-    const bool backbufferIntact = refPx[0] > 200 && postPx[0] > 200 && postPx[0] >= refPx[0] - 32;
-    NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
-                 "Renderer: CSM backbuffer integrity after FBO: ref=%d,%d,%d post=%d,%d,%d -> %s",
-                 refPx[0], refPx[1], refPx[2], postPx[0], postPx[1], postPx[2],
-                 backbufferIntact ? "PASS" : "FAIL");
-    if (!backbufferIntact) {
-        NEON_LOG_CAT(
-            neon::core::LogCategory::Gfx, neon::core::LogLevel::Warn,
-            "Renderer: FBO usage corrupts backbuffer rendering -> CSM disabled, CPU projected shadows");
-        return false;
-    }
-    NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
-                 "Renderer: CSM shadow-map self-test PASS");
-    return true;
-}
-
-void Renderer::SetPointLight(int index, const math::Vec3& position, const Color& color, float radius) {
-    ++sceneUniformStamp_; // B1
-    if (index < 0 || index >= kMaxPointLights) return;
-    pointPos_[index] = position;
-    pointColor_[index] = color;
-    pointRadius_[index] = radius;
-    pointCount_ = std::max(pointCount_, index + 1);
+void Renderer::SetPointLight(int index, const math::Vec3& position, const Color& color,
+                             float radius) {
+    sceneState_.SetPointLight(index, position, color, radius);
 }
 
 void Renderer::SetPlayerLight(const math::Vec3& position, const Color& color, float radius) {
-    ++sceneUniformStamp_; // B1
-    playerLightPos_ = position;
-    playerLightColor_ = color;
-    playerLightRadius_ = radius;
-    playerLightEnabled_ = true;
+    sceneState_.SetPlayerLight(position, color, radius);
 }
 
 void Renderer::DrawSky() {
-    // Full-screen gradient in screen pixels (depth already cleared).
-    if (uiVerts_.size() >= kMaxUIVertices) Flush2D();
-    auto push = [&](float x, float y, const Color& c) {
-        UIVertex v;
-        v.x = x;
-        v.y = y;
-        v.u = 0.0f;
-        v.v = 0.0f;
-        v.r = c.r;
-        v.g = c.g;
-        v.b = c.b;
-        v.a = 1.0f;
-        uiVerts_.push_back(v);
-    };
-    float w = static_cast<float>(screenW_);
-    float h = static_cast<float>(screenH_);
-    push(0, 0, skyTop_);
-    push(w, 0, skyTop_);
-    push(w, h, skyHorizon_);
-    push(0, h, skyHorizon_);
-    uint16_t base = static_cast<uint16_t>(uiVerts_.size() - 4);
-    uiIndices_.push_back(base + 0);
-    uiIndices_.push_back(base + 1);
-    uiIndices_.push_back(base + 2);
-    uiIndices_.push_back(base + 2);
-    uiIndices_.push_back(base + 3);
-    uiIndices_.push_back(base + 0);
-    Flush2D();
+    sceneState_.DrawSky(draw2d_);
 }
 
 void Renderer::DrawMesh(const Mesh& mesh, const Material& material, const math::Mat4& model) {
     if (!mesh.Valid()) return;
     Flush2D();
 
-    if (frustumValid_ && !frustum_.Intersects(math::TransformAABB(mesh.Bounds(), model))) return;
+    if (sceneState_.FrustumValid() &&
+        !sceneState_.Frustum().Intersects(math::TransformAABB(mesh.Bounds(), model)))
+        return;
 
-    if (csmEnabled_ && shadowRecording_ && !material.transparent)
-        shadowCasters_.push_back({mesh.Handle(), model, {}, {}, 0, mesh.Bounds()});
+    if (shadowSystem_.Enabled() && shadowSystem_.Recording() && !material.transparent)
+        shadowSystem_.RecordCaster({mesh.Handle(), model, {}, {}, 0, mesh.Bounds()});
     // SSAO/SSR have their own colour-encoded depth pre-pass and do NOT depend
     // on CSM being enabled: collect the caster whenever one is active.
     if ((ssaoEnabled_ || ssrEnabled_) && !material.transparent)
@@ -1560,7 +402,8 @@ void Renderer::DrawMesh(const Mesh& mesh, const Material& material, const math::
 
     ShaderHandle shader = material.shader.Valid() ? material.shader
                                                   : (material.lit ? litShader_ : unlitShader_);
-    ApplyMaterial(material, viewProj_ * model, model, NormalMatrix(model), shader);
+    ApplyMaterial(material, sceneState_.ViewProjection() * model, model, NormalMatrix(model),
+                  shader);
     backend_->DrawMesh(mesh.Handle());
     ++stats_.drawCalls;
     stats_.triangles += mesh.TriangleCount();
@@ -1572,20 +415,23 @@ void Renderer::DrawSkinnedMesh(const Mesh& mesh, const Material& material,
     if (!mesh.Valid()) return;
     Flush2D();
 
-    if (frustumValid_ && !frustum_.Intersects(math::TransformAABB(mesh.Bounds(), model))) return;
+    if (sceneState_.FrustumValid() &&
+        !sceneState_.Frustum().Intersects(math::TransformAABB(mesh.Bounds(), model)))
+        return;
 
     // Upload up to 64 bone matrices as one contiguous row-major array.
     int count = boneCount >= 0 ? std::min(boneCount, static_cast<int>(boneMatrices.size()))
                                : static_cast<int>(boneMatrices.size());
     count = std::min(count, 64);
 
-    if (csmEnabled_ && shadowRecording_ && !material.transparent)
-        shadowCasters_.push_back({mesh.Handle(), model, {}, boneMatrices, count, mesh.Bounds()});
+    if (shadowSystem_.Enabled() && shadowSystem_.Recording() && !material.transparent)
+        shadowSystem_.RecordCaster({mesh.Handle(), model, {}, boneMatrices, count, mesh.Bounds()});
     if ((ssaoEnabled_ || ssrEnabled_) && !material.transparent)
         ssaoCasters_.push_back({mesh.Handle(), model, {}, boneMatrices, count, mesh.Bounds()});
 
     ShaderHandle shader = material.shader.Valid() ? material.shader : skinnedLitShader_;
-    ApplyMaterial(material, viewProj_ * model, model, NormalMatrix(model), shader);
+    ApplyMaterial(material, sceneState_.ViewProjection() * model, model, NormalMatrix(model),
+                  shader);
 
     if (count > 0) {
         boneUniformFlat_.resize(static_cast<size_t>(count) * 16);
@@ -1608,16 +454,16 @@ void Renderer::DrawMeshInstanced(const Mesh& mesh, const Material& material,
     instancedVisible_.reserve(count);
     const math::AABB& bounds = mesh.Bounds();
     for (uint32_t i = 0; i < count; ++i) {
-        if (frustumCull && frustumValid_ &&
-            !frustum_.Intersects(math::TransformAABB(bounds, models[i]))) {
+        if (frustumCull && sceneState_.FrustumValid() &&
+            !sceneState_.Frustum().Intersects(math::TransformAABB(bounds, models[i]))) {
             continue;
         }
         instancedVisible_.push_back(models[i]);
     }
     if (instancedVisible_.empty()) return;
 
-    if (csmEnabled_ && shadowRecording_ && !material.transparent)
-        shadowCasters_.push_back(
+    if (shadowSystem_.Enabled() && shadowSystem_.Recording() && !material.transparent)
+        shadowSystem_.RecordCaster(
             {mesh.Handle(), math::Mat4::Identity(), instancedVisible_, {}, 0, mesh.Bounds()});
     if ((ssaoEnabled_ || ssrEnabled_) && !material.transparent)
         ssaoCasters_.push_back(
@@ -1626,7 +472,8 @@ void Renderer::DrawMeshInstanced(const Mesh& mesh, const Material& material,
     ShaderHandle shader = material.shader.Valid()
                               ? material.shader
                               : (material.lit ? litInstancedShader_ : unlitInstancedShader_);
-    ApplyMaterial(material, viewProj_, math::Mat4::Identity(), math::Mat4::Identity(), shader);
+    ApplyMaterial(material, sceneState_.ViewProjection(), math::Mat4::Identity(),
+                  math::Mat4::Identity(), shader);
     backend_->DrawMeshInstanced(mesh.Handle(), instancedVisible_.data(),
                                 static_cast<uint32_t>(instancedVisible_.size()));
     ++stats_.drawCalls;
@@ -1645,8 +492,8 @@ void Renderer::DrawMeshInstancedColored(const Mesh& mesh, const Material& materi
     instancedVisibleColored_.reserve(count);
     const math::AABB& bounds = mesh.Bounds();
     for (uint32_t i = 0; i < count; ++i) {
-        if (frustumCull && frustumValid_ &&
-            !frustum_.Intersects(math::TransformAABB(bounds, models[i]))) {
+        if (frustumCull && sceneState_.FrustumValid() &&
+            !sceneState_.Frustum().Intersects(math::TransformAABB(bounds, models[i]))) {
             continue;
         }
         instancedVisible_.push_back(models[i]);
@@ -1656,7 +503,8 @@ void Renderer::DrawMeshInstancedColored(const Mesh& mesh, const Material& materi
 
     ShaderHandle shader =
         material.shader.Valid() ? material.shader : unlitInstancedColoredShader_;
-    ApplyMaterial(material, viewProj_, math::Mat4::Identity(), math::Mat4::Identity(), shader);
+    ApplyMaterial(material, sceneState_.ViewProjection(), math::Mat4::Identity(),
+                  math::Mat4::Identity(), shader);
     backend_->DrawMeshInstancedColored(mesh.Handle(), instancedVisible_.data(),
                                        instancedVisibleColored_.data(),
                                        static_cast<uint32_t>(instancedVisible_.size()));
@@ -1674,10 +522,11 @@ void Renderer::DrawBillboards(const math::Vec3* positions, const float* sizes,
     Flush2D();
 
     // Camera-facing billboard basis (right/up from the camera frame).
-    math::Vec3 fwd = camera_.target - camera_.position;
+    const Camera& cam = sceneState_.ActiveCamera();
+    math::Vec3 fwd = cam.target - cam.position;
     if (fwd.LengthSq() < 1e-6f) fwd = {0.0f, 0.0f, -1.0f};
     fwd = fwd.Normalized();
-    math::Vec3 up0 = camera_.up;
+    math::Vec3 up0 = cam.up;
     if (up0.LengthSq() < 1e-6f) up0 = {0.0f, 1.0f, 0.0f};
     math::Vec3 right = math::Cross(fwd, up0);
     if (right.LengthSq() < 1e-6f) right = {1.0f, 0.0f, 0.0f};
@@ -1706,12 +555,12 @@ void Renderer::DrawBillboards(const math::Vec3* positions, const float* sizes,
     Material mat = Material::Unlit(texture, Color::White);
     mat.transparent = true; // pick any; blend mode is overridden below
     mat.doubleSided = true;
-    ApplyMaterial(mat, viewProj_, math::Mat4::Identity(), math::Mat4::Identity(),
-                  unlitInstancedColoredShader_);
+    ApplyMaterial(mat, sceneState_.ViewProjection(), math::Mat4::Identity(),
+                  math::Mat4::Identity(), unlitInstancedColoredShader_);
     // Particles blend appropriately and respect the scene depth (unlike the
     // screen-space DrawBillboard helper which is depth-unaware).
     backend_->SetBlendMode(blend);
-    backend_->SetDepthTest(depthAvailable_, false);
+    backend_->SetDepthTest(sceneState_.DepthAvailable(), false);
     backend_->SetCullMode(CullMode::None);
     backend_->DrawMeshInstancedColored(billboardQuad_.Handle(), models.data(), colc.data(),
                                        count);
@@ -1751,7 +600,7 @@ void Renderer::DrawProjectedShadowVerts(const std::vector<Vertex3D>& verts,
     backend_->SetDepthTest(false, false);
     backend_->SetCullMode(CullMode::None);
     backend_->UseShader(linesShader_);
-    backend_->SetUniformMat4("uMVP", viewProj_);
+    backend_->SetUniformMat4("uMVP", sceneState_.ViewProjection());
     backend_->DrawPrimitives(projectedShadowVerts_.data(),
                              static_cast<uint32_t>(projectedShadowVerts_.size()), 28, nullptr, 0,
                              PrimitiveTopology::Triangles);
@@ -1803,7 +652,7 @@ void Renderer::ApplyMaterial(const Material& material, const math::Mat4& mvp,
     // geometry are still rejected - without it every fur shell / particle
     // layer stacks from every angle into a dark smear) and only disables the
     // depth WRITE so blended pixels do not occlude later draws.
-    backend_->SetDepthTest(depthAvailable_, !material.transparent);
+    backend_->SetDepthTest(sceneState_.DepthAvailable(), !material.transparent);
     backend_->SetBlendMode(material.transparent ? BlendMode::Alpha : BlendMode::Opaque);
 
     backend_->SetUniformMat4("uMVP", mvp);
@@ -1821,21 +670,21 @@ void Renderer::ApplyMaterial(const Material& material, const math::Mat4& mvp,
     backend_->SetUniformVec4("uRockColor",
                              {material.rockColor.r, material.rockColor.g,
                               material.rockColor.b, material.rockColor.a});
-        backend_->SetUniformInt("uHasTexture", material.albedo.Valid() ? 1 : 0);
-        backend_->SetUniformInt("uHasMR", material.metallicRoughness.Valid() ? 1 : 0);
-        backend_->SetUniformInt("uHasAO", material.occlusion.Valid() ? 1 : 0);
-        backend_->SetUniformInt("uHasEmissive", material.emissive.Valid() ? 1 : 0);
-        backend_->SetUniformFloat("uAOStrength", material.aoStrength);
-        backend_->SetUniformFloat("uEmissiveIntensity", material.emissiveIntensity);
-        backend_->SetUniformVec4("uTint", {material.tint.r, material.tint.g, material.tint.b, material.tint.a});
-        backend_->SetUniformFloat("uMetallic", material.metallic);
-        backend_->SetUniformFloat("uRoughness", material.roughness);
-        backend_->BindTexture(2, material.metallicRoughness);
-        backend_->SetUniformInt("uMR", 2);
-        backend_->BindTexture(3, material.occlusion);
-        backend_->SetUniformInt("uOcclusion", 3);
-        backend_->BindTexture(4, material.emissive);
-        backend_->SetUniformInt("uEmissive", 4);
+    backend_->SetUniformInt("uHasTexture", material.albedo.Valid() ? 1 : 0);
+    backend_->SetUniformInt("uHasMR", material.metallicRoughness.Valid() ? 1 : 0);
+    backend_->SetUniformInt("uHasAO", material.occlusion.Valid() ? 1 : 0);
+    backend_->SetUniformInt("uHasEmissive", material.emissive.Valid() ? 1 : 0);
+    backend_->SetUniformFloat("uAOStrength", material.aoStrength);
+    backend_->SetUniformFloat("uEmissiveIntensity", material.emissiveIntensity);
+    backend_->SetUniformVec4("uTint", {material.tint.r, material.tint.g, material.tint.b, material.tint.a});
+    backend_->SetUniformFloat("uMetallic", material.metallic);
+    backend_->SetUniformFloat("uRoughness", material.roughness);
+    backend_->BindTexture(2, material.metallicRoughness);
+    backend_->SetUniformInt("uMR", 2);
+    backend_->BindTexture(3, material.occlusion);
+    backend_->SetUniformInt("uOcclusion", 3);
+    backend_->BindTexture(4, material.emissive);
+    backend_->SetUniformInt("uEmissive", 4);
 
     if (material.lit) {
         backend_->SetUniformMat4("uModel", model);
@@ -1855,93 +704,102 @@ void Renderer::ApplyMaterial(const Material& material, const math::Mat4& mvp,
 
 void Renderer::ApplySceneUniforms(ShaderHandle shader) {
     lastSceneUniformShader_ = shader;
-    backend_->SetUniformVec3("uCamPos", camPos_);
-    backend_->SetUniformVec3("uSunDir", sunDir_);
-        backend_->SetUniformVec3("uSunColor", {sunColor_.r, sunColor_.g, sunColor_.b});
-        backend_->SetUniformFloat("uAmbient", ambient_);
-        backend_->SetUniformVec3("uAmbientColor",
-                                 {ambientColor_.r, ambientColor_.g, ambientColor_.b});
-        backend_->SetUniformInt("uPointCount", pointCount_);
-        for (int i = 0; i < pointCount_; ++i) {
-            std::string suffix = "[" + std::to_string(i) + "]";
-            backend_->SetUniformVec3(("uPointPos" + suffix).c_str(), pointPos_[i]);
-            backend_->SetUniformVec3(("uPointColor" + suffix).c_str(),
-                                     {pointColor_[i].r, pointColor_[i].g, pointColor_[i].b});
-            backend_->SetUniformFloat(("uPointRadius" + suffix).c_str(), pointRadius_[i]);
-        }
-        backend_->SetUniformVec3("uPlayerLightPos", playerLightPos_);
-        backend_->SetUniformVec3("uPlayerLightColor",
-                                 {playerLightColor_.r, playerLightColor_.g, playerLightColor_.b});
-        backend_->SetUniformFloat("uPlayerLightRadius", playerLightRadius_);
-        backend_->SetUniformInt("uPlayerLightEnabled", playerLightEnabled_ ? 1 : 0);
-        backend_->SetUniformVec3("uFogColor", {fogColor_.r, fogColor_.g, fogColor_.b});
-        backend_->SetUniformFloat("uFogStart", fogStart_);
-        backend_->SetUniformFloat("uFogEnd", fogEnd_);
-        backend_->SetUniformMat4("uViewMatrix", view_);
-        {
-            float flatVP[3 * 16];
-            for (int i = 0; i < kShadowCascades; ++i)
-                std::memcpy(flatVP + i * 16, lightViewProj_[i].Data(), 16 * sizeof(float));
-            backend_->SetUniformMat4Array("uLightVP", flatVP, kShadowCascades);
-        }
-        backend_->SetUniformVec4("uCascadeSplits",
-                                 {cascadeSplits_[1], cascadeSplits_[2], cascadeSplits_[3],
-                                  cascadeSplits_[0]});
-        backend_->SetUniformVec2("uShadowTexel",
-                                 {1.0f / static_cast<float>(shadowSize_),
-                                  1.0f / static_cast<float>(shadowSize_)});
-        backend_->SetUniformInt("uShadowEnabled", csmActive_ ? 1 : 0);
-        backend_->BindTexture(5, shadowDepthTex_[0]);
-        backend_->SetUniformInt("uShadowMap0", 5);
-        backend_->BindTexture(6, shadowDepthTex_[1]);
-        backend_->SetUniformInt("uShadowMap1", 6);
-        backend_->BindTexture(7, shadowDepthTex_[2]);
-        backend_->SetUniformInt("uShadowMap2", 7);
+    backend_->SetUniformVec3("uCamPos", sceneState_.CamPos());
+    backend_->SetUniformVec3("uSunDir", sceneState_.SunDir());
+    const Color& sunColor = sceneState_.SunColor();
+    backend_->SetUniformVec3("uSunColor", {sunColor.r, sunColor.g, sunColor.b});
+    backend_->SetUniformFloat("uAmbient", sceneState_.Ambient());
+    const Color& ambientColor = sceneState_.AmbientColor();
+    backend_->SetUniformVec3("uAmbientColor",
+                             {ambientColor.r, ambientColor.g, ambientColor.b});
+    backend_->SetUniformInt("uPointCount", sceneState_.PointCount());
+    for (int i = 0; i < sceneState_.PointCount(); ++i) {
+        std::string suffix = "[" + std::to_string(i) + "]";
+        backend_->SetUniformVec3(("uPointPos" + suffix).c_str(), sceneState_.PointPos()[i]);
+        const Color& pc = sceneState_.PointColor()[i];
+        backend_->SetUniformVec3(("uPointColor" + suffix).c_str(), {pc.r, pc.g, pc.b});
+        backend_->SetUniformFloat(("uPointRadius" + suffix).c_str(), sceneState_.PointRadius()[i]);
+    }
+    backend_->SetUniformVec3("uPlayerLightPos", sceneState_.PlayerLightPos());
+    const Color& plc = sceneState_.PlayerLightColor();
+    backend_->SetUniformVec3("uPlayerLightColor",
+                             {plc.r, plc.g, plc.b});
+    backend_->SetUniformFloat("uPlayerLightRadius", sceneState_.PlayerLightRadius());
+    backend_->SetUniformInt("uPlayerLightEnabled", sceneState_.PlayerLightEnabled() ? 1 : 0);
+    const Color& fogColor = sceneState_.FogColor();
+    backend_->SetUniformVec3("uFogColor", {fogColor.r, fogColor.g, fogColor.b});
+    backend_->SetUniformFloat("uFogStart", sceneState_.FogStart());
+    backend_->SetUniformFloat("uFogEnd", sceneState_.FogEnd());
+    backend_->SetUniformMat4("uViewMatrix", sceneState_.View());
+    {
+        float flatVP[3 * 16];
+        for (int i = 0; i < ShadowSystem::kShadowCascades; ++i)
+            std::memcpy(flatVP + i * 16, shadowSystem_.LightViewProj()[i].Data(),
+                        16 * sizeof(float));
+        backend_->SetUniformMat4Array("uLightVP", flatVP, ShadowSystem::kShadowCascades);
+    }
+    const float* splits = shadowSystem_.CascadeSplits();
+    backend_->SetUniformVec4("uCascadeSplits",
+                             {splits[1], splits[2], splits[3], splits[0]});
+    backend_->SetUniformVec2("uShadowTexel",
+                             {1.0f / static_cast<float>(shadowSystem_.ShadowSize()),
+                              1.0f / static_cast<float>(shadowSystem_.ShadowSize())});
+    backend_->SetUniformInt("uShadowEnabled", shadowSystem_.CsmActive() ? 1 : 0);
+    const TextureHandle* shadowTex = shadowSystem_.ShadowDepthTex();
+    backend_->BindTexture(5, shadowTex[0]);
+    backend_->SetUniformInt("uShadowMap0", 5);
+    backend_->BindTexture(6, shadowTex[1]);
+    backend_->SetUniformInt("uShadowMap1", 6);
+    backend_->BindTexture(7, shadowTex[2]);
+    backend_->SetUniformInt("uShadowMap2", 7);
 
-        // Point-light cubemap shadows: 2 lights x 6 faces on texture units
-        // 8..19. When the pass is inactive the uniforms are set to valid units
-        // anyway (harmless: the shader never samples them), so inactive lights
-        // only leave their units unbound.
-        const int psLightCount =
-            pointShadowsActive_ ? std::min(pointCount_, kShadowPointLights) : 0;
-        backend_->SetUniformInt("uPointShadowEnabled", pointShadowsActive_ ? 1 : 0);
-        backend_->SetUniformInt("uPointShadowLightCount", psLightCount);
-        backend_->SetUniformVec2("uPointShadowTexel",
-                                 {1.0f / static_cast<float>(kPointShadowSize),
-                                  1.0f / static_cast<float>(kPointShadowSize)});
-        for (int li = 0; li < kShadowPointLights; ++li) {
-            for (int face = 0; face < 6; ++face) {
-                const int slot = 8 + li * 6 + face;
-                const std::string name = "uPointShadowMap" + std::to_string(li * 6 + face);
-                if (li < psLightCount) backend_->BindTexture(slot, pointShadowDepthTex_[li][face]);
-                backend_->SetUniformInt(name.c_str(), slot);
-            }
+    // Point-light cubemap shadows: 2 lights x 6 faces on texture units
+    // 8..19. When the pass is inactive the uniforms are set to valid units
+    // anyway (harmless: the shader never samples them), so inactive lights
+    // only leave their units unbound.
+    const int psLightCount =
+        shadowSystem_.PointShadowsActive()
+            ? std::min(sceneState_.PointCount(), ShadowSystem::kShadowPointLights)
+            : 0;
+    backend_->SetUniformInt("uPointShadowEnabled", shadowSystem_.PointShadowsActive() ? 1 : 0);
+    backend_->SetUniformInt("uPointShadowLightCount", psLightCount);
+    backend_->SetUniformVec2("uPointShadowTexel",
+                             {1.0f / static_cast<float>(ShadowSystem::kPointShadowSize),
+                              1.0f / static_cast<float>(ShadowSystem::kPointShadowSize)});
+    const TextureHandle* pointShadowTex = shadowSystem_.PointShadowDepthTex();
+    for (int li = 0; li < ShadowSystem::kShadowPointLights; ++li) {
+        for (int face = 0; face < 6; ++face) {
+            const int slot = 8 + li * 6 + face;
+            const std::string name = "uPointShadowMap" + std::to_string(li * 6 + face);
+            if (li < psLightCount) backend_->BindTexture(slot, pointShadowTex[li * 6 + face]);
+            backend_->SetUniformInt(name.c_str(), slot);
         }
+    }
 
-        // IBL environment maps (texture units 20..22): irradiance, prefiltered
-        // specular, BRDF LUT. When no environment exists yet (IBL off, or
-        // recompute pending) the uniforms stay at their GLSL defaults
-        // (uIblStrength = 0) so the shader contributes no IBL term.
-        if (iblValid_) {
-            backend_->SetUniformFloat("uIblStrength", iblStrength_);
-            backend_->SetUniformFloat("uRoughnessMin", ibl::kRoughnessMin);
-            backend_->BindTexture(20, iblIrradianceTex_);
-            backend_->SetUniformInt("uIrradianceMap", 20);
-            backend_->BindTexture(21, iblPrefilteredTex_);
-            backend_->SetUniformInt("uPrefilteredMap", 21);
-            backend_->BindTexture(22, iblBrdfLutTex_);
-            backend_->SetUniformInt("uBrdfLUT", 22);
-        }
+    // IBL environment maps (texture units 20..22): irradiance, prefiltered
+    // specular, BRDF LUT. When no environment exists yet (IBL off, or
+    // recompute pending) the uniforms stay at their GLSL defaults
+    // (uIblStrength = 0) so the shader contributes no IBL term.
+    if (sceneState_.IblValid()) {
+        backend_->SetUniformFloat("uIblStrength", sceneState_.IblStrength());
+        backend_->SetUniformFloat("uRoughnessMin", ibl::kRoughnessMin);
+        backend_->BindTexture(20, sceneState_.IblIrradianceTex());
+        backend_->SetUniformInt("uIrradianceMap", 20);
+        backend_->BindTexture(21, sceneState_.IblPrefilteredTex());
+        backend_->SetUniformInt("uPrefilteredMap", 21);
+        backend_->BindTexture(22, sceneState_.IblBrdfLutTex());
+        backend_->SetUniformInt("uBrdfLUT", 22);
+    }
 }
 
 void Renderer::DrawLines(const LineVertex* vertices, uint32_t count, const math::Mat4& model) {
     if (!vertices || count == 0) return;
     Flush2D();
     backend_->SetBlendMode(BlendMode::Alpha);
-    backend_->SetDepthTest(depthAvailable_, false);
+    backend_->SetDepthTest(sceneState_.DepthAvailable(), false);
     backend_->SetCullMode(CullMode::None);
     backend_->UseShader(linesShader_);
-    backend_->SetUniformMat4("uMVP", viewProj_ * model);
+    backend_->SetUniformMat4("uMVP", sceneState_.ViewProjection() * model);
     backend_->DrawPrimitives(vertices, count, 28, nullptr, 0, PrimitiveTopology::Lines);
 }
 
@@ -1997,7 +855,7 @@ Shader Renderer::CreateShader(const char* vertexSource, const char* fragmentSour
 }
 
 Shader Renderer::CreateUnlitFragmentShader(const std::string& fragmentSource,
-                                             const std::string& name) {
+                                           const std::string& name) {
     if (fragmentSource.empty() || !backend_) return {};
     return CreateShader(kUnlitVertexShader, fragmentSource.c_str(), name.c_str());
 }
@@ -2005,107 +863,35 @@ Shader Renderer::CreateUnlitFragmentShader(const std::string& fragmentSource,
 void Renderer::DrawQuad(const math::Vec2& pos, const math::Vec2& size, const Color& color,
                         TextureHandle texture, const math::Vec2& uv0, const math::Vec2& uv1,
                         BlendMode blend) {
-    PushQuad(pos, {pos.x + size.x, pos.y}, pos + size, {pos.x, pos.y + size.y},
-             color, uv0, uv1, texture, blend);
+    draw2d_.DrawQuad(pos, size, color, texture, uv0, uv1, blend);
 }
 
 void Renderer::DrawRect(const math::Vec2& pos, const math::Vec2& size, const Color& color) {
-    DrawQuad(pos, size, color, {}, {0, 0}, {1, 1}, BlendMode::Alpha);
+    draw2d_.DrawRect(pos, size, color);
 }
 
 void Renderer::DrawRectOutline(const math::Rect2& rect, float thickness, const Color& color) {
-    DrawRect({rect.x, rect.y}, {rect.w, thickness}, color);
-    DrawRect({rect.x, rect.y + rect.h - thickness}, {rect.w, thickness}, color);
-    DrawRect({rect.x, rect.y}, {thickness, rect.h}, color);
-    DrawRect({rect.x + rect.w - thickness, rect.y}, {thickness, rect.h}, color);
+    draw2d_.DrawRectOutline(rect, thickness, color);
 }
 
 void Renderer::DrawTriangle2D(const math::Vec2& a, const math::Vec2& b, const math::Vec2& c,
                               const Color& color) {
-    if (currentUITexture_.Valid() || currentUIBlend_ != BlendMode::Alpha) Flush2D();
-    if (uiVerts_.size() + 3 > kMaxUIVertices) Flush2D();
-    currentUITexture_ = {};
-    currentUIBlend_ = BlendMode::Alpha;
-
-    const math::Vec2 s[3] = {ToScreen(a), ToScreen(b), ToScreen(c)};
-    uint16_t base = static_cast<uint16_t>(uiVerts_.size());
-    for (int i = 0; i < 3; ++i) {
-        UIVertex v;
-        v.x = s[i].x;
-        v.y = s[i].y;
-        v.u = 0.0f;
-        v.v = 0.0f;
-        v.r = color.r;
-        v.g = color.g;
-        v.b = color.b;
-        v.a = color.a;
-        uiVerts_.push_back(v);
-    }
-    uiIndices_.push_back(base + 0);
-    uiIndices_.push_back(base + 1);
-    uiIndices_.push_back(base + 2);
+    draw2d_.DrawTriangle2D(a, b, c, color);
 }
 
-void Renderer::DrawText(const Font& font, const std::string& text, const math::Vec2& pos, float size,
-                        const Color& color, bool centerX, bool centerY) {
-    if (!font.Valid() || text.empty()) return;
-    math::Vec2 p = pos;
-    if (centerX || centerY) {
-        math::Vec2 m = font.Measure(text, size);
-        if (centerX) p.x -= m.x * 0.5f;
-        if (centerY) p.y -= m.y * 0.5f;
-    }
-    float scale = size / static_cast<float>(font.bakedSize_);
-    float cursorX = 0.0f;
-    float cursorY = 0.0f;
-    const char* it = text.data();
-    const char* end = it + text.size();
-    while (it < end) {
-        int32_t cp = DecodeUTF8Next(it, end);
-        if (cp == 0) continue;
-        if (cp == '\n') {
-            cursorX = 0.0f;
-            cursorY += font.LineHeight(size);
-            continue;
-        }
-        const Font::Glyph* g = font.FindGlyph(cp);
-        if (!g) {
-            // Dynamic glyphs: rasterize the missing codepoint into the atlas.
-            const_cast<Font&>(font).EnsureGlyph(cp);
-            g = font.FindGlyph(cp);
-        }
-        if (!g) continue;
-        math::Vec2 a{p.x + cursorX + g->xoff * scale, p.y + cursorY + g->yoff * scale};
-        math::Vec2 b{p.x + cursorX + g->xoff2 * scale, p.y + cursorY + g->yoff2 * scale};
-        PushQuad(a, {b.x, a.y}, b, {a.x, b.y}, color, {g->u0, g->v0}, {g->u1, g->v1},
-                 font.Atlas(), BlendMode::Alpha);
-        cursorX += g->advance * scale;
-    }
+void Renderer::DrawText(const Font& font, const std::string& text, const math::Vec2& pos,
+                        float size, const Color& color, bool centerX, bool centerY) {
+    draw2d_.DrawText(font, text, pos, size, color, centerX, centerY);
 }
 
 void Renderer::DrawBillboard(const math::Vec3& worldPos, float size, const Color& color,
                              TextureHandle texture, BlendMode blend) {
-    math::Vec4 clip = viewProj_.TransformVec4(math::Vec4(worldPos.x, worldPos.y, worldPos.z, 1.0f));
-    if (clip.w <= 0.1f) return;
-    const float ndcX = clip.x / clip.w;
-    const float ndcY = clip.y / clip.w;
-    const math::Rect2& r = sceneViewport_.w > 0.0f
-                               ? sceneViewport_
-                               : math::Rect2{0.0f, 0.0f, static_cast<float>(screenW_),
-                                             static_cast<float>(screenH_)};
-    const float px = r.x + (ndcX * 0.5f + 0.5f) * r.w;
-    const float py = r.y + (0.5f - ndcY * 0.5f) * r.h;
-    float pixelSize = size * r.h * 0.5f /
-                      (std::tan(camera_.fovY * 0.5f) * clip.w);
-    math::Vec2 design = ScreenToUI({px, py});
-    float designSize = pixelSize / uiScale_;
-    DrawQuad(design - math::Vec2{designSize * 0.5f, designSize * 0.5f},
-             {designSize, designSize}, color, texture, {0, 1}, {1, 0}, blend);
+    draw2d_.DrawBillboard(worldPos, size, color, texture, blend, sceneState_.ActiveCamera(),
+                          sceneState_.ViewProjection());
 }
 
 math::Vec2 Renderer::ScreenToUI(const math::Vec2& screenPixels) const {
-    return {(screenPixels.x - uiOffsetX_) / uiScale_,
-            (screenPixels.y - uiOffsetY_) / uiScale_};
+    return draw2d_.ScreenToUI(screenPixels);
 }
 
 bool Renderer::CaptureFrame(std::vector<uint8_t>& out) {
@@ -2121,142 +907,36 @@ bool Renderer::CaptureFrame(std::vector<uint8_t>& out) {
 }
 
 math::Vec2 Renderer::ToScreen(const math::Vec2& design) const {
-    return {design.x * uiScale_ + uiOffsetX_, design.y * uiScale_ + uiOffsetY_};
+    return draw2d_.ToScreen(design);
 }
 
 void Renderer::Set2DViewport(float x, float y, float w, float h, float zoom,
                              const math::Vec2& pan, float aspect) {
-    if (w <= 0.0f || h <= 0.0f || zoom <= 0.0f) {
-        Reset2DViewport();
-        return;
-    }
-    if (aspect <= 0.01f)
-        aspect = static_cast<float>(kDesignWidth) / static_cast<float>(kDesignHeight);
-    // GAME AREA mapping: the camera's aspect (default 16:9) letterboxed
-    // inside the rect; the UI unit base is 720 design units of game-area
-    // HEIGHT, the design width follows the aspect (720 * aspect). The
-    // editor's blue frame, the play view and every overlay share this rect.
-    const float gaW = std::fmin(w, h * aspect);
-    const float gaH = gaW / aspect;
-    const float gaX = x + (w - gaW) * 0.5f;
-    const float gaY = y + (h - gaH) * 0.5f;
-    uiScale_ = (gaH / static_cast<float>(kDesignHeight)) * zoom;
-    const float designW = static_cast<float>(kDesignHeight) * aspect;
-    const float designCx = designW * 0.5f + pan.x;
-    const float designCy = static_cast<float>(kDesignHeight) * 0.5f + pan.y;
-    uiOffsetX_ = gaX + gaW * 0.5f - designCx * uiScale_;
-    uiOffsetY_ = gaY + gaH * 0.5f - designCy * uiScale_;
+    draw2d_.Set2DViewport(x, y, w, h, zoom, pan, aspect);
 }
 
 void Renderer::Reset2DViewport() {
-    uiScale_ = static_cast<float>(screenH_) / static_cast<float>(kDesignHeight);
-    uiOffsetX_ = (static_cast<float>(screenW_) - static_cast<float>(kDesignWidth) * uiScale_) * 0.5f;
-    uiOffsetY_ = 0.0f;
+    draw2d_.Reset2DViewport();
 }
 
 void Renderer::Set2DViewportPixels(float x, float y) {
-    uiScale_ = 1.0f;
-    uiOffsetX_ = x;
-    uiOffsetY_ = y;
+    draw2d_.Set2DViewportPixels(x, y);
 }
 
 void Renderer::SetSceneViewport(float x, float y, float w, float h) {
-    if (w <= 0.0f || h <= 0.0f) {
-        ResetSceneViewport();
-        return;
-    }
-    sceneViewport_ = {x, y, w, h};
-    backend_->SetViewport(static_cast<int>(x), static_cast<int>(y),
-                          static_cast<int>(w), static_cast<int>(h));
+    draw2d_.SetSceneViewport(x, y, w, h);
 }
 
 void Renderer::ResetSceneViewport() {
-    sceneViewport_ = {0.0f, 0.0f, static_cast<float>(screenW_), static_cast<float>(screenH_)};
-    backend_->SetViewport(0, 0, screenW_, screenH_);
+    draw2d_.ResetSceneViewport();
 }
 
 float Renderer::SceneAspect() const {
-    if (sceneViewport_.w > 0.0f && sceneViewport_.h > 0.0f) {
-        return sceneViewport_.w / sceneViewport_.h;
-    }
-    return screenH_ > 0 ? static_cast<float>(screenW_) / static_cast<float>(screenH_) : 1.0f;
-}
-
-void Renderer::PushQuad(const math::Vec2& a, const math::Vec2& b, const math::Vec2& c,
-                        const math::Vec2& d, const Color& color, const math::Vec2& uv0,
-                        const math::Vec2& uv1, TextureHandle texture, BlendMode blend) {
-    PushQuadColored(a, b, c, d, color, color, color, color, uv0, uv1, texture, blend);
-}
-
-void Renderer::PushQuadColored(const math::Vec2& a, const math::Vec2& b, const math::Vec2& c,
-                               const math::Vec2& d, const Color& ca, const Color& cb, const Color& cc,
-                               const Color& cd, const math::Vec2& uv0, const math::Vec2& uv1,
-                               TextureHandle texture, BlendMode blend) {
-    if (texture.id != currentUITexture_.id || blend != currentUIBlend_) Flush2D();
-    if (uiVerts_.size() + 4 > kMaxUIVertices) Flush2D();
-    currentUITexture_ = texture;
-    currentUIBlend_ = blend;
-
-    math::Vec2 s[4] = {ToScreen(a), ToScreen(b), ToScreen(c), ToScreen(d)};
-    const Color cols[4] = {ca, cb, cc, cd};
-    // a -> uv0, b -> (u1, v0), c -> uv1, d -> (u0, v1)
-    const math::Vec2 uvs[4] = {uv0, {uv1.x, uv0.y}, uv1, {uv0.x, uv1.y}};
-    uint16_t base = static_cast<uint16_t>(uiVerts_.size());
-    for (int i = 0; i < 4; ++i) {
-        UIVertex v;
-        v.x = s[i].x;
-        v.y = s[i].y;
-        v.u = uvs[i].x;
-        v.v = uvs[i].y;
-        v.r = cols[i].r;
-        v.g = cols[i].g;
-        v.b = cols[i].b;
-        v.a = cols[i].a;
-        uiVerts_.push_back(v);
-    }
-    uiIndices_.push_back(base + 0);
-    uiIndices_.push_back(base + 1);
-    uiIndices_.push_back(base + 2);
-    uiIndices_.push_back(base + 2);
-    uiIndices_.push_back(base + 3);
-    uiIndices_.push_back(base + 0);
+    return draw2d_.SceneAspect();
 }
 
 void Renderer::Flush2D() {
-    if (uiVerts_.empty()) return;
-    // The 2D overlay uses full-window pixel coordinates with a full-screen
-    // ortho, so it must always rasterize with the FULL backend viewport even
-    // when the 3D scene is rendering into a sub-rect (editor viewport dock).
-    // Otherwise an early flush (e.g. ApplyMaterial switching to the 3D shader)
-    // would squash the overlay into the scene rect. Restore the scene viewport
-    // afterwards so the next 3D draw is unaffected.
-    const bool sceneVpActive = sceneViewport_.w > 0.0f && sceneViewport_.h > 0.0f &&
-                               (sceneViewport_.x != 0.0f || sceneViewport_.y != 0.0f ||
-                                sceneViewport_.w != static_cast<float>(screenW_) ||
-                                sceneViewport_.h != static_cast<float>(screenH_));
-    if (sceneVpActive) backend_->SetViewport(0, 0, screenW_, screenH_);
-    backend_->SetBlendMode(currentUIBlend_);
-    backend_->SetDepthTest(false, false);
-    backend_->SetCullMode(CullMode::None);
-    backend_->UseShader(uiShader_);
-    backend_->SetUniformMat4("uMVP",
-                             math::Mat4::Ortho(0, static_cast<float>(screenW_),
-                                               static_cast<float>(screenH_), 0, -1, 1));
-    backend_->BindTexture(0, currentUITexture_.Valid() ? currentUITexture_ : white_);
-    backend_->SetUniformInt("uTex", 0);
-    backend_->DrawPrimitives(uiVerts_.data(), static_cast<uint32_t>(uiVerts_.size()), 32,
-                             uiIndices_.data(), static_cast<uint32_t>(uiIndices_.size()),
-                             PrimitiveTopology::Triangles);
-    if (sceneVpActive) {
-        backend_->SetViewport(static_cast<int>(sceneViewport_.x),
-                              static_cast<int>(sceneViewport_.y),
-                              static_cast<int>(sceneViewport_.w),
-                              static_cast<int>(sceneViewport_.h));
-    }
-    uiVerts_.clear();
-    uiIndices_.clear();
-    currentUITexture_ = {};
-    currentUIBlend_ = BlendMode::Alpha;
+    draw2d_.Flush2D();
 }
 
 void Renderer::RebuildHdrTargets() {
@@ -2309,7 +989,7 @@ void Renderer::RebuildHdrTargets() {
     shaders.compositeShader = compositeShader_;
     shaders.white = white_;
     postGraph_.Build(shaders, postQuadMesh_, screenW_, screenH_,
-                     [this] { DrawSsaoDepthCasters(viewProj_); });
+                     [this] { DrawSsaoDepthCasters(sceneState_.ViewProjection()); });
     NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
                  "Renderer: HDR target %dx%d (RGBA16F%s) + bloom %dx%d / %dx%d", screenW_,
                  screenH_, msaaEnabled_ ? ", MSAA" : "", hw, hh, qw, qh);
@@ -2443,21 +1123,22 @@ PostGraph::FrameParams Renderer::MakePostParams(bool chains) const {
     // would produce an all-far depth whose AO is a no-op white). chains=false
     // forces every chain off (the old CaptureBloom/TonemapComparison path never
     // ran the post graph, so its composites had no AO/vol/SSR/fog terms).
-    p.depthPass = chains && (ssaoEnabled_ || ssrEnabled_ || volumetricFog_);
+    p.depthPass = chains && (ssaoEnabled_ || ssrEnabled_ || sceneState_.VolumetricFogEnabled());
     p.ssaoPass = chains && ssaoEnabled_ && !ssaoCasters_.empty();
     p.volumetricPass = chains && volumetricEnabled_;
     p.ssrPass = chains && ssrEnabled_;
     p.bloomPass = bloomEnabled_;
-    p.camPos = camPos_;
-    p.sunDir = sunDir_;
-    p.viewProj = viewProj_;
-    p.camera = camera_;
+    p.camPos = sceneState_.CamPos();
+    p.sunDir = sceneState_.SunDir();
+    p.viewProj = sceneState_.ViewProjection();
+    p.camera = sceneState_.ActiveCamera();
     p.composite.ssaoIntensity = ssaoIntensity_;
     p.composite.volStrength = volumetricIntensity_;
     p.composite.ssrStrength = ssrIntensity_;
-    p.composite.volumetricFog = chains && volumetricFog_;
-    p.composite.fogColor = {fogColor_.r, fogColor_.g, fogColor_.b};
-    p.composite.fogDensity = fogDensity_;
+    p.composite.volumetricFog = chains && sceneState_.VolumetricFogEnabled();
+    const Color& fogColor = sceneState_.FogColor();
+    p.composite.fogColor = {fogColor.r, fogColor.g, fogColor.b};
+    p.composite.fogDensity = sceneState_.VolumetricFogDensity();
     p.composite.exposure = exposure_;
     p.composite.tonemapEnabled = tonemapEnabled_;
     p.composite.white = white_;
@@ -2547,6 +1228,53 @@ bool Renderer::CaptureTonemapComparison(std::vector<uint8_t>& clamped,
     backend_->CaptureFrame(screenW_, screenH_, tonemapped.data());
     Flush2D();
     return true;
+}
+
+void Renderer::DrawSsaoDepthCasters(const math::Mat4& viewProj) {
+    if (ssaoCasters_.empty()) return;
+    // Painter's order far->near (the colour-encoded depth target has no depth
+    // buffer), mirroring the shadow encoder.
+    shadowSortKeys_.clear();
+    shadowSortKeys_.reserve(ssaoCasters_.size());
+    for (const ShadowSystem::ShadowDraw& draw : ssaoCasters_) {
+        math::Vec3 center;
+        if (!draw.models.empty()) {
+            for (const math::Mat4& m : draw.models) center += m.TransformPoint(draw.bounds.Center());
+            center = center * (1.0f / static_cast<float>(draw.models.size()));
+        } else {
+            center = draw.model.TransformPoint(draw.bounds.Center());
+        }
+        shadowSortKeys_.push_back({&draw, viewProj.TransformPoint(center).z});
+    }
+    std::sort(shadowSortKeys_.begin(), shadowSortKeys_.end(),
+              [](const ShadowSystem::ShadowSortKey& a, const ShadowSystem::ShadowSortKey& b) {
+                  return a.z > b.z;
+              });
+    for (const ShadowSystem::ShadowSortKey& k : shadowSortKeys_) {
+        const ShadowSystem::ShadowDraw& draw = *k.draw;
+        if (!draw.mesh.Valid()) continue;
+        if (!draw.models.empty()) {
+            backend_->UseShader(ssaoDepthShader_);
+            backend_->SetUniformMat4("uMVP", viewProj);
+            backend_->SetUniformFloat("uFar", sceneState_.ActiveCamera().farPlane);
+            backend_->DrawMeshInstanced(draw.mesh, draw.models.data(),
+                                        static_cast<uint32_t>(draw.models.size()));
+        } else if (!draw.bones.empty()) {
+            backend_->UseShader(shadowSystem_.SkinnedDepthShader());
+            boneUniformFlat_.resize(static_cast<size_t>(draw.boneCount) * 16);
+            for (int i = 0; i < draw.boneCount; ++i)
+                std::memcpy(boneUniformFlat_.data() + static_cast<size_t>(i) * 16,
+                            draw.bones[static_cast<size_t>(i)].Data(), 16 * sizeof(float));
+            backend_->SetUniformMat4Array("uBoneMatrices", boneUniformFlat_.data(), draw.boneCount);
+            backend_->SetUniformMat4("uMVP", viewProj * draw.model);
+            backend_->DrawMesh(draw.mesh);
+        } else {
+            backend_->UseShader(ssaoDepthMeshShader_);
+            backend_->SetUniformMat4("uMVP", viewProj * draw.model);
+            backend_->SetUniformFloat("uFar", sceneState_.ActiveCamera().farPlane);
+            backend_->DrawMesh(draw.mesh);
+        }
+    }
 }
 
 } // namespace neon::gfx
