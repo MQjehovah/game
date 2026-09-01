@@ -715,7 +715,7 @@ void Renderer::Shutdown() {
                 backend_->DestroyRenderTarget(pointShadowRT_[li][face]);
         }
     }
-    DestroyPostTargets();
+    DestroyHdrTargets();
     if (white_.Valid()) backend_->DestroyTexture(white_);
     if (iblIrradianceTex_.Valid()) backend_->DestroyTexture(iblIrradianceTex_);
     if (iblPrefilteredTex_.Valid()) backend_->DestroyTexture(iblPrefilteredTex_);
@@ -940,12 +940,9 @@ void Renderer::BeginFrame(const Color& clearColor, float clearDepth) {
     csmActive_ = false;
     pointShadowsActive_ = false;
     shadowPassRanThisFrame_ = false;
-    compositedThisFrame_ = false;
-    bloomRanThisFrame_ = false;
-    // Previous frame's bloom + post graphs are fully consumed (composite
-    // sampled them); return their exported targets (and any stragglers) to the
-    // pools.
-    bloomGraph_.ResetFrame();
+    // Previous frame's post graph is fully consumed (the composite pass sampled
+    // its finals); return its exported/pooled targets and clear the "already
+    // composited this frame" latch.
     postGraph_.ResetFrame();
     ssaoCasters_.clear();
     screenW_ = window_ ? window_->Width() : screenW_;
@@ -953,7 +950,7 @@ void Renderer::BeginFrame(const Color& clearColor, float clearDepth) {
     uiScale_ = static_cast<float>(screenH_) / static_cast<float>(kDesignHeight);
     uiOffsetX_ = (static_cast<float>(screenW_) - static_cast<float>(kDesignWidth) * uiScale_) * 0.5f;
     uiOffsetY_ = 0.0f;
-    EnsurePostTargets();
+    RebuildHdrTargets();
     if (hdrEnabled_ && hdrRT_.Valid()) {
         // Scene + sky draw into the (multisample when MSAA is active) HDR
         // target; the final composite (bloom -> backbuffer) happens in
@@ -1310,26 +1307,6 @@ void Renderer::DrawSsaoDepthCasters(const math::Mat4& viewProj) {
             backend_->DrawMesh(draw.mesh);
         }
     }
-}
-
-bool Renderer::RunPostPasses() {
-    if (!backend_ || !hdrRT_.Valid()) return false;
-    PostGraph::FrameParams params;
-    params.hdrScene = hdrRT_;
-    params.hdrW = hdrW_;
-    params.hdrH = hdrH_;
-    // Depth pre-pass is needed by SSAO/SSR and by the composite's volumetric
-    // fog; the SSAO chain additionally requires scene casters (an empty scene
-    // would produce an all-far depth whose AO is a no-op white).
-    params.depthPass = ssaoEnabled_ || ssrEnabled_ || volumetricFog_;
-    params.ssaoPass = ssaoEnabled_ && !ssaoCasters_.empty();
-    params.volumetricPass = volumetricEnabled_;
-    params.ssrPass = ssrEnabled_;
-    params.camPos = camPos_;
-    params.sunDir = sunDir_;
-    params.viewProj = viewProj_;
-    params.camera = camera_;
-    return postGraph_.Execute(*backend_, params);
 }
 
 void Renderer::RunPointShadowPass() {
@@ -2135,8 +2112,8 @@ bool Renderer::CaptureFrame(std::vector<uint8_t>& out) {
     if (!backend_) return false;
     // The scene lives in the HDR target at this point; composite it (bloom +
     // clamp) to the backbuffer first so the captured pixels are the FINAL
-    // rendered image, then flush any pending 2D on top. EndFrame will see
-    // compositedThisFrame_ and just swap.
+    // rendered image, then flush any pending 2D on top. EndFrame will see the
+    // post graph already ran (CompositeRan) and just swap.
     CompositeFrame();
     out.resize(static_cast<size_t>(screenW_) * screenH_ * 4);
     backend_->CaptureFrame(screenW_, screenH_, out.data());
@@ -2282,11 +2259,11 @@ void Renderer::Flush2D() {
     currentUIBlend_ = BlendMode::Alpha;
 }
 
-void Renderer::EnsurePostTargets() {
+void Renderer::RebuildHdrTargets() {
     if (!hdrEnabled_) return;
     if (screenW_ <= 0 || screenH_ <= 0) return;
     if (hdrRT_.Valid() && hdrW_ == screenW_ && hdrH_ == screenH_) return;
-    DestroyPostTargets();
+    DestroyHdrTargets();
     const int hw = std::max(screenW_ / 2, 1);
     const int hh = std::max(screenH_ / 2, 1);
     const int qw = std::max(screenW_ / 4, 1);
@@ -2300,8 +2277,8 @@ void Renderer::EnsurePostTargets() {
         return;
     }
     if (msaaEnabled_) {
-        // MSAA scene target: resolves into hdrRT_ (the bloom source) before
-        // the bright pass. Only the HDR main target is multisampled.
+        // MSAA scene target: resolves into hdrRT_ (the post-chain source)
+        // before the graph executes. Only the HDR main target is multisampled.
         hdrMsaaRT_ = backend_->CreateRenderTarget(screenW_, screenH_, true, msaaSamples_);
         if (!hdrMsaaRT_.Valid()) {
             NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Warn,
@@ -2312,35 +2289,41 @@ void Renderer::EnsurePostTargets() {
     }
     hdrW_ = screenW_;
     hdrH_ = screenH_;
-    // The bloom pyramid targets now live in the FrameGraph's transient pool:
-    // rebuild the graph at the new resolution (Destroy first releases the old
-    // graph's GPU allocations). Shaders/mesh were created in InitBuiltinResources.
-    bloomGraph_.Destroy(*backend_);
-    bloomGraph_.Build(brightPassShader_, blurShader_, downsampleShader_, upsampleAddShader_,
-                      postQuadMesh_, screenW_, screenH_);
-    // Same for the SSAO/volumetric/SSR/depth post graph: its depth/AO/blur/vol/
-    // ssr targets live in postGraph_'s pool. The depth pass draws the scene's
-    // casters directly through DrawSsaoDepthCasters (its execute lambda is the
-    // renderer's viewProj at draw time, so per-frame camera changes are picked
-    // up without rebuilding).
+    // Every post target (bloom pyramid + depth/AO/blur/vol/SSR) lives in the
+    // unified post graph's transient pool: rebuild the graph at the new
+    // resolution (Destroy first releases the old graph's GPU allocations).
+    // Shaders/mesh were created in InitBuiltinResources. The depth pass draws
+    // the scene's casters directly through DrawSsaoDepthCasters (its execute
+    // lambda is the renderer's viewProj at draw time, so per-frame camera
+    // changes are picked up without rebuilding).
     postGraph_.Destroy(*backend_);
-    postGraph_.Build(ssaoShader_, ssaoBlurShader_, volumetricShader_, ssrShader_, postQuadMesh_,
-                     screenW_, screenH_, [this] { DrawSsaoDepthCasters(viewProj_); });
+    PostGraph::Shaders shaders;
+    shaders.ssaoShader = ssaoShader_;
+    shaders.ssaoBlur = ssaoBlurShader_;
+    shaders.volumetricShader = volumetricShader_;
+    shaders.ssrShader = ssrShader_;
+    shaders.brightPass = brightPassShader_;
+    shaders.blur = blurShader_;
+    shaders.downsample = downsampleShader_;
+    shaders.upsampleAdd = upsampleAddShader_;
+    shaders.compositeShader = compositeShader_;
+    shaders.white = white_;
+    postGraph_.Build(shaders, postQuadMesh_, screenW_, screenH_,
+                     [this] { DrawSsaoDepthCasters(viewProj_); });
     NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
                  "Renderer: HDR target %dx%d (RGBA16F%s) + bloom %dx%d / %dx%d", screenW_,
                  screenH_, msaaEnabled_ ? ", MSAA" : "", hw, hh, qw, qh);
 }
 
-void Renderer::DestroyPostTargets() {
+void Renderer::DestroyHdrTargets() {
     auto destroy = [this](RenderTargetHandle& t) {
         if (t.Valid() && backend_) backend_->DestroyRenderTarget(t);
         t = {};
     };
     destroy(hdrMsaaRT_);
     destroy(hdrRT_);
-    // The bloom + post pyramid targets are owned by the FrameGraph pools;
-    // release every allocation they still hold (also covers a pending result).
-    if (backend_) bloomGraph_.Destroy(*backend_);
+    // The post pyramid targets are owned by the FrameGraph pool; release every
+    // allocation it still holds (also covers a pending result).
     if (backend_) postGraph_.Destroy(*backend_);
     hdrW_ = 0;
     hdrH_ = 0;
@@ -2450,102 +2433,35 @@ void Renderer::RebindMainTarget() {
     }
 }
 
-bool Renderer::RunBloom() {
-    if (!bloomEnabled_) return false;
-    if (!hdrRT_.Valid() || !postQuadMesh_.Valid() ||
-        !brightPassShader_.Valid() || !blurShader_.Valid() || !downsampleShader_.Valid() ||
-        !upsampleAddShader_.Valid()) {
-        NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Warn,
-                     "Renderer: bloom skipped - post shader missing");
-        return false;
-    }
-    // The bloom chain (bright -> blur h/v -> downsample -> blur h/v ->
-    // upsample-add) runs inside bloomGraph_'s FrameGraph. The transient
-    // half/quarter targets live in its pool; the result is exported for the
-    // composite pass to sample via BloomColorTexture.
-    bloomRanThisFrame_ = bloomGraph_.Execute(*backend_, hdrRT_, hdrW_, hdrH_, bloomEnabled_);
-    return bloomRanThisFrame_;
-}
-
-void Renderer::CompositeToBackbuffer() {
-    if (!compositeShader_.Valid() || !postQuadMesh_.Valid() || !hdrRT_.Valid()) return;
-    backend_->BindDefaultTarget();
-    backend_->SetBlendMode(BlendMode::Opaque);
-    backend_->SetDepthTest(false, false);
-    backend_->SetCullMode(CullMode::None);
-    backend_->UseShader(compositeShader_);
-    backend_->SetUniformMat4("uMVP", math::Mat4::Identity());
-    backend_->BindTexture(0, backend_->RenderTargetColorTexture(hdrRT_));
-    backend_->SetUniformInt("uHdr", 0);
-    // The bloom term samples the graph's exported bloomAcc target (written by
-    // RunBloom's FrameGraph execute); when bloom is off / unavailable, bind the
-    // HDR texture on the bloom slot too (the program still references the
-    // sampler) and skip the term, so the `--no-bloom` image differs only by
-    // the bloom contribution.
-    const TextureHandle bloomTex = bloomGraph_.BloomColorTexture(*backend_);
-    const bool bloomActive = bloomRanThisFrame_ && bloomTex.Valid();
-    if (bloomActive) {
-        backend_->BindTexture(1, bloomTex);
-    } else {
-        backend_->BindTexture(1, backend_->RenderTargetColorTexture(hdrRT_));
-    }
-    backend_->SetUniformFloat("uStrength", kBloomStrength);
-    backend_->SetUniformInt("uBloomEnabled", bloomActive ? 1 : 0);
-    backend_->SetUniformInt("uBloom", 1);
-    // G1-5 terms sample the post graph's exported finals: raw AO (ssao), the
-    // blurred volumetric (volBlurB) and blurred SSR (ssrBlurB). Each term binds
-    // white + uXEnabled=0 when its chain did not run / has no live target, so a
-    // failed shader or empty-caster frame never blends stale data in.
-    const TextureHandle aoTex = postGraph_.AoTex(*backend_);
-    const bool aoActive = postGraph_.SsaoRan() && aoTex.Valid();
-    if (aoActive) {
-        backend_->BindTexture(2, aoTex);
-        backend_->SetUniformInt("uAoEnabled", 1);
-    } else {
-        backend_->BindTexture(2, white_);
-        backend_->SetUniformInt("uAoEnabled", 0);
-    }
-    backend_->SetUniformInt("uAo", 2);
-    backend_->SetUniformFloat("uAoIntensity", ssaoIntensity_);
-    const TextureHandle volTex = postGraph_.VolTex(*backend_);
-    const bool volActive = postGraph_.VolumetricRan() && volTex.Valid();
-    if (volActive) {
-        backend_->BindTexture(3, volTex);
-        backend_->SetUniformInt("uVolEnabled", 1);
-    } else {
-        backend_->BindTexture(3, white_);
-        backend_->SetUniformInt("uVolEnabled", 0);
-    }
-    backend_->SetUniformInt("uVol", 3);
-    backend_->SetUniformFloat("uVolStrength", volumetricIntensity_);
-    const TextureHandle ssrTex = postGraph_.SsrTex(*backend_);
-    const bool ssrActive = postGraph_.SsrRan() && ssrTex.Valid();
-    if (ssrActive) {
-        backend_->BindTexture(4, ssrTex);
-        backend_->SetUniformInt("uSsrEnabled", 1);
-    } else {
-        backend_->BindTexture(4, white_);
-        backend_->SetUniformInt("uSsrEnabled", 0);
-    }
-    backend_->SetUniformInt("uSsr", 4);
-    backend_->SetUniformFloat("uSsrStrength", ssrIntensity_);
-    const TextureHandle depthTex = postGraph_.SceneDepthTexture(*backend_);
-    const bool fogDepthActive = volumetricFog_ && depthTex.Valid();
-    if (fogDepthActive) {
-        backend_->BindTexture(5, depthTex);
-        backend_->SetUniformInt("uFogEnabled", 1);
-    } else {
-        backend_->BindTexture(5, white_);
-        backend_->SetUniformInt("uFogEnabled", 0);
-    }
-    backend_->SetUniformInt("uFogDepth", 5);
-    backend_->SetUniformVec3("uFogColor", {fogColor_.r, fogColor_.g, fogColor_.b});
-    backend_->SetUniformFloat("uFogDensity", fogDensity_);
-    backend_->SetUniformFloat("uNear", camera_.nearPlane);
-    backend_->SetUniformFloat("uFar", camera_.farPlane);
-    backend_->SetUniformFloat("uExposure", exposure_);
-    backend_->SetUniformInt("uTonemapEnabled", tonemapEnabled_ ? 1 : 0);
-    backend_->DrawMesh(postQuadMesh_);
+PostGraph::FrameParams Renderer::MakePostParams(bool chains) const {
+    PostGraph::FrameParams p;
+    p.hdrScene = hdrRT_;
+    p.hdrW = hdrW_;
+    p.hdrH = hdrH_;
+    // Depth pre-pass is needed by SSAO/SSR and by the composite's volumetric
+    // fog; the SSAO chain additionally requires scene casters (an empty scene
+    // would produce an all-far depth whose AO is a no-op white). chains=false
+    // forces every chain off (the old CaptureBloom/TonemapComparison path never
+    // ran the post graph, so its composites had no AO/vol/SSR/fog terms).
+    p.depthPass = chains && (ssaoEnabled_ || ssrEnabled_ || volumetricFog_);
+    p.ssaoPass = chains && ssaoEnabled_ && !ssaoCasters_.empty();
+    p.volumetricPass = chains && volumetricEnabled_;
+    p.ssrPass = chains && ssrEnabled_;
+    p.bloomPass = bloomEnabled_;
+    p.camPos = camPos_;
+    p.sunDir = sunDir_;
+    p.viewProj = viewProj_;
+    p.camera = camera_;
+    p.composite.ssaoIntensity = ssaoIntensity_;
+    p.composite.volStrength = volumetricIntensity_;
+    p.composite.ssrStrength = ssrIntensity_;
+    p.composite.volumetricFog = chains && volumetricFog_;
+    p.composite.fogColor = {fogColor_.r, fogColor_.g, fogColor_.b};
+    p.composite.fogDensity = fogDensity_;
+    p.composite.exposure = exposure_;
+    p.composite.tonemapEnabled = tonemapEnabled_;
+    p.composite.white = white_;
+    return p;
 }
 
 void Renderer::CompositeSceneToBackbuffer() {
@@ -2554,26 +2470,25 @@ void Renderer::CompositeSceneToBackbuffer() {
         return;
     }
     // The scene rendered into the (possibly multisample) HDR target; resolve
-    // into the single-sample bloom source before any pass samples it.
+    // into the single-sample source before any pass samples it.
     ResolveMainTarget();
-    // The SSAO/volumetric/SSR/depth chain runs as one FrameGraph (postGraph_):
-    // each chain executes only when its enabled flag is on, and the finals
-    // (scene depth, raw AO, blurred vol/SSR) stay exported for the composite.
-    RunPostPasses();
-    bloomRanThisFrame_ = RunBloom();
-    CompositeToBackbuffer();
+    // The SSAO/volumetric/SSR/depth/bloom chain + the terminal composite run as
+    // one FrameGraph (postGraph_): each chain executes only when its enabled
+    // flag is on, and the composite pass samples the finals in-graph and draws
+    // the result to the backbuffer.
+    postGraph_.Execute(*backend_, MakePostParams(true));
     Flush2D();
 }
 
 void Renderer::EndScene() {
     if (!hdrEnabled_ || !hdrRT_.Valid()) return; // legacy: 2D already to backbuffer
-    if (!compositedThisFrame_) {
+    if (!postGraph_.CompositeRan()) {
         // Any 2D still queued at this point is scene content (billboards,
         // particles, ground marker): flush it into the HDR target so it is
-        // bloomed with the scene, then composite to the backbuffer.
+        // bloomed with the scene, then run the post chain (whose composite
+        // draws to the backbuffer).
         Flush2D();
         CompositeSceneToBackbuffer();
-        compositedThisFrame_ = true;
     }
     // From here on every 2D flush goes straight to the backbuffer (unbloomed,
     // on top of the composite): HUD/nameplates/minimap/editor UI.
@@ -2581,9 +2496,8 @@ void Renderer::EndScene() {
 }
 
 void Renderer::CompositeFrame() {
-    if (!compositedThisFrame_) {
+    if (!postGraph_.CompositeRan()) {
         CompositeSceneToBackbuffer();
-        compositedThisFrame_ = true;
     } else {
         // EndScene already composited this frame; just draw any 2D the app
         // pushed after EndScene (the HUD) onto the backbuffer.
@@ -2598,19 +2512,17 @@ bool Renderer::CaptureBloomComparison(std::vector<uint8_t>& bloomOff,
     // Both captures composite the same (resolved) HDR target WITHOUT the 2D
     // overlay, so the two buffers differ only by the bloom term; the HUD is
     // flushed once at the end (it is drawn on top of the composite and is not
-    // bloomed).
+    // bloomed). The post chains are forced off (chains=false) exactly like the
+    // old path, which never ran the post graph during the comparison.
     ResolveMainTarget();
     bloomEnabled_ = false;
-    bloomRanThisFrame_ = false;
-    CompositeToBackbuffer();
+    postGraph_.Execute(*backend_, MakePostParams(false));
     bloomOff.resize(static_cast<size_t>(screenW_) * screenH_ * 4);
     backend_->CaptureFrame(screenW_, screenH_, bloomOff.data());
     bloomEnabled_ = savedBloom;
-    bloomRanThisFrame_ = RunBloom();
-    CompositeToBackbuffer();
+    postGraph_.Execute(*backend_, MakePostParams(false));
     bloomOn.resize(static_cast<size_t>(screenW_) * screenH_ * 4);
     backend_->CaptureFrame(screenW_, screenH_, bloomOn.data());
-    compositedThisFrame_ = true;
     Flush2D();
     return true;
 }
@@ -2621,18 +2533,18 @@ bool Renderer::CaptureTonemapComparison(std::vector<uint8_t>& clamped,
     const bool savedTonemap = tonemapEnabled_;
     // Same-frame diff of the tone-mapping operator: composite the SAME
     // resolved HDR target twice, once with ACES+exposure and once with the
-    // T3.6 clamp reference. Bloom runs once so it is identical in both images.
+    // T3.6 clamp reference. Bloom runs in both Executes on the same HDR input,
+    // so its contribution is identical; the post chains are off (chains=false)
+    // as in the old comparison path.
     ResolveMainTarget();
-    bloomRanThisFrame_ = RunBloom();
     tonemapEnabled_ = false;
-    CompositeToBackbuffer();
+    postGraph_.Execute(*backend_, MakePostParams(false));
     clamped.resize(static_cast<size_t>(screenW_) * screenH_ * 4);
     backend_->CaptureFrame(screenW_, screenH_, clamped.data());
     tonemapEnabled_ = savedTonemap;
-    CompositeToBackbuffer();
+    postGraph_.Execute(*backend_, MakePostParams(false));
     tonemapped.resize(static_cast<size_t>(screenW_) * screenH_ * 4);
     backend_->CaptureFrame(screenW_, screenH_, tonemapped.data());
-    compositedThisFrame_ = true;
     Flush2D();
     return true;
 }

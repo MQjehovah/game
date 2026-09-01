@@ -4,7 +4,6 @@
 #include <string>
 #include <vector>
 #include "neon/gfx/backend.hpp"
-#include "neon/gfx/bloom_graph.hpp"
 #include "neon/gfx/camera.hpp"
 #include "neon/gfx/color.hpp"
 #include "neon/gfx/font.hpp"
@@ -429,14 +428,18 @@ private:
                                const math::Vec3& lightPos, float range);
 
     // HDR + bloom post-processing.
-    void EnsurePostTargets();
-    void DestroyPostTargets();
-    // G1-5 SSAO/volumetric/SSR + the shared scene-depth pre-pass: one FrameGraph
-    // (postGraph_) that runs the depth casters, the AO chain, the volumetric
-    // chain and the SSR chain. The final RTs are exported and sampled by
-    // CompositeToBackbuffer. Returns true when the graph executed this frame
-    // (whether each chain actually ran is exposed per-chain on PostGraph).
-    bool RunPostPasses();
+    // (Re)creates the main-scene HDR targets (hdrRT_/hdrMsaaRT_) at the current
+    // window resolution and rebuilds the unified post-processing FrameGraph
+    // (postGraph_) at that resolution. Called from BeginFrame when the size
+    // changed; the post graph's transient targets (bloom pyramid / depth/AO/
+    // vol/SSR) all live in its own pool, so nothing else manages them.
+    void RebuildHdrTargets();
+    void DestroyHdrTargets();
+    // Builds the per-frame post graph input from the current renderer state.
+    // chains=false forces every post chain (ssao/vol/ssr/depth/fog) off while
+    // keeping bloom + composite, matching the old CaptureBloom/TonemapComparison
+    // behaviour (they never ran the post graph, only bloom + composite).
+    PostGraph::FrameParams MakePostParams(bool chains) const;
     void DrawSsaoDepthCasters(const math::Mat4& viewProj);
     bool TestFloatTargetCapability();
     // A2: probes SFLOAT SAMPLING (broken on some Intel Vulkan drivers: the
@@ -457,18 +460,14 @@ private:
     // (no-op when MSAA is inactive). Called before any pass that samples the
     // HDR target: CompositeSceneToBackbuffer and the capture helpers.
     void ResolveMainTarget();
-    // Bloom pyramid (all fullscreen passes on RGBA16F targets). Delegates to
-    // bloomGraph_ (a FrameGraph pass chain); the accumulated bloom stays in the
-    // graph's exported bloomAcc resource, sampled by CompositeToBackbuffer.
-    bool RunBloom();
     // Composite HDR (+ bloom) to the backbuffer with the composite shader.
-    void CompositeToBackbuffer();
-    // Runs bloom + composite + Flush2D unless the frame was already composited
-    // (CaptureFrame composited early so the screenshot is the final image).
-    void CompositeFrame();
-    // Bloom + composite + Flush2D unconditionally (no compositedThisFrame_
-    // latch); used by CompositeFrame and CaptureBloomComparison.
+    // Runs the whole unified post chain (postGraph_) once: the SSAO/vol/SSR/
+    // depth/bloom chains execute only when their enabled flags are on, and the
+    // final composite pass draws the result to the backbuffer.
     void CompositeSceneToBackbuffer();
+    // Bloom + composite + Flush2D unless the frame was already composited
+    // (EndScene composited early so the HUD is drawn on top, unbloomed).
+    void CompositeFrame();
 
     std::unique_ptr<IRenderBackend> backend_;
     std::string backendName_ = "gl";
@@ -530,17 +529,17 @@ private:
     // HDR scene target (window size, RGBA16F). hdrMsaaRT_ is the 4x/2x
     // multisample target the scene renders into when MSAA is active; hdrRT_ is
     // the single-sample target the MSAA target is resolved into and the source
-    // the bloom pyramid + composite sample from. The bloom pyramid's own
-    // targets (half/quarter-res RGBA16F) are owned by bloomGraph_'s FrameGraph
-    // pool, not the renderer.
+    // the post chain samples from. Both are MAIN-SCENE targets owned by the
+    // renderer (the scene draws into them); every post target (bloom pyramid /
+    // depth/AO/vol/SSR) lives in postGraph_'s FrameGraph transient pool.
     RenderTargetHandle hdrRT_;
     RenderTargetHandle hdrMsaaRT_;
-    BloomGraph bloomGraph_;
-    // G1-5 SSAO/volumetric/SSR + the shared scene-depth pre-pass: the depth/AO/
-    // blur/vol/ssr targets live in postGraph_'s FrameGraph transient pool (the
-    // old ssaoDepthRT_/aoRT_/aoBlurA_/B_, volRT_/volBlurA_/B_, ssrRT_/ssrBlurA_/B_
-    // are now in-graph resources). The finals are exported per frame and sampled
-    // by CompositeToBackbuffer via the PostGraph texture accessors.
+    // G1-5 SSAO/volumetric/SSR/depth + Task 2 bloom + Task 4 composite: one
+    // unified post-processing FrameGraph. The depth/AO/blur/vol/ssr targets and
+    // the bloom pyramid live in its transient pool; the composite pass reads
+    // the scene HDR (hdrRT_, injected as the external input) plus each chain's
+    // final and draws the result to the backbuffer. hdrScene is resolved (MSAA)
+    // before Execute.
     PostGraph postGraph_;
     int hdrW_ = 0;
     int hdrH_ = 0;
@@ -551,12 +550,6 @@ private:
     bool msaaRequested_ = true;
     bool msaaEnabled_ = false;
     int msaaSamples_ = 0;
-    // True once RunBloom wrote the accumulated bloom into the graph's exported
-    // bloomAcc this frame (set by RunBloom, reset in BeginFrame);
-    // CompositeToBackbuffer only adds the bloom term when it ran, so a failed
-    // shader/target never blends uninitialized content into the composite.
-    bool bloomRanThisFrame_ = false;
-    bool compositedThisFrame_ = false;
     // G1-5 SSAO state.
     bool ssaoEnabled_ = false;
     float ssaoIntensity_ = 1.0f; // AO blend amount in [0,1]

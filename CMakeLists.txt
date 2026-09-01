@@ -89,7 +89,6 @@ add_library(neon_gfx STATIC
   engine/src/gfx/csm.cpp
   engine/src/gfx/font.cpp
   engine/src/gfx/frame_graph.cpp
-  engine/src/gfx/bloom_graph.cpp
   engine/src/gfx/post_graph.cpp
   engine/src/gfx/ibl.cpp
   engine/src/gfx/mesh.cpp

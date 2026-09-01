@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include "neon/gfx/bloom.hpp"
 #include "neon/gfx/ssao.hpp"
 #include "neon/gfx/ssr.hpp"
 #include "neon/gfx/volumetric.hpp"
@@ -10,28 +11,36 @@ namespace neon::gfx {
 
 namespace {
 // Non-zero format tag => backend's floatColor (RGBA16F) target, matching the
-// renderer's `CreateRenderTarget(w, h, true)` for the AO/vol/SSR half-res RTs.
+// renderer's `CreateRenderTarget(w, h, true)` for the AO/vol/SSR/bloom RTs.
 constexpr uint32_t kFloatFormat = 1;
 // Far code (1,0,0,0): sky / no-geometry pixels decode to depth 1.0 (matches
 // the renderer's RunSceneDepthPass clear).
 constexpr Color kFarDepth{1.0f, 0.0f, 0.0f, 0.0f};
 } // namespace
 
-void PostGraph::Build(ShaderHandle ssaoShader, ShaderHandle ssaoBlur,
-                      ShaderHandle volumetricShader, ShaderHandle ssrShader, MeshHandle postQuad,
-                      int w, int h, std::function<void()> drawDepthCasters) {
-    ssaoShader_ = ssaoShader;
-    ssaoBlur_ = ssaoBlur;
-    volumetricShader_ = volumetricShader;
-    ssrShader_ = ssrShader;
+void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
+                      std::function<void()> drawDepthCasters) {
+    ssaoShader_ = shaders.ssaoShader;
+    ssaoBlur_ = shaders.ssaoBlur;
+    volumetricShader_ = shaders.volumetricShader;
+    ssrShader_ = shaders.ssrShader;
+    bright_ = shaders.brightPass;
+    blur_ = shaders.blur;
+    downsample_ = shaders.downsample;
+    upsampleAdd_ = shaders.upsampleAdd;
+    compositeShader_ = shaders.compositeShader;
     postQuad_ = postQuad;
     drawDepthCasters_ = std::move(drawDepthCasters);
     hdrW_ = w;
     hdrH_ = h;
     const int aw = std::max(w / 2, 1);
     const int ah = std::max(h / 2, 1);
+    const int qw = std::max(w / 4, 1);
+    const int qh = std::max(h / 4, 1);
     halfTexelX_ = 1.0f / static_cast<float>(aw);
     halfTexelY_ = 1.0f / static_cast<float>(ah);
+    quarterTexelX_ = 1.0f / static_cast<float>(qw);
+    quarterTexelY_ = 1.0f / static_cast<float>(qh);
 
     FrameGraph fresh;
     // hdrScene_ is declared (so reads validate) but never written by a pass:
@@ -48,13 +57,10 @@ void PostGraph::Build(ShaderHandle ssaoShader, ShaderHandle ssaoBlur,
     ssr_ = fresh.AddResource({static_cast<uint32_t>(aw), static_cast<uint32_t>(ah), kFloatFormat, 1u});
     ssrBlurA_ = fresh.AddResource({static_cast<uint32_t>(aw), static_cast<uint32_t>(ah), kFloatFormat, 1u});
     ssrBlurB_ = fresh.AddResource({static_cast<uint32_t>(aw), static_cast<uint32_t>(ah), kFloatFormat, 1u});
-
-    // Exports: the composite samples the scene depth (volumetric fog), the raw
-    // AO (not the blurred one), and the final blurred volumetric / SSR results.
-    fresh.ExportResource(sceneDepth_);
-    fresh.ExportResource(ao_);
-    fresh.ExportResource(volBlurB_);
-    fresh.ExportResource(ssrBlurB_);
+    bloomHalfA_ = fresh.AddResource({static_cast<uint32_t>(aw), static_cast<uint32_t>(ah), kFloatFormat, 1u});
+    bloomHalfB_ = fresh.AddResource({static_cast<uint32_t>(aw), static_cast<uint32_t>(ah), kFloatFormat, 1u});
+    bloomQuarterA_ = fresh.AddResource({static_cast<uint32_t>(qw), static_cast<uint32_t>(qh), kFloatFormat, 1u});
+    bloomQuarterB_ = fresh.AddResource({static_cast<uint32_t>(qw), static_cast<uint32_t>(qh), kFloatFormat, 1u});
 
     size_t nextPass = 0;
     const auto add = [&](FramePass p) {
@@ -104,16 +110,16 @@ void PostGraph::Build(ShaderHandle ssaoShader, ShaderHandle ssaoBlur,
     ssaoPassIndex_ = add(std::move(ssao));
 
     // 3/4. Separable AO blur (H then V), ping-ponging ao/aoBlurA/aoBlurB.
-    auto blurPass = [this](const char* name, ResourceId src, ResourceId dst,
+    auto blurPass = [this](const char* name, ShaderHandle shader, ResourceId src, ResourceId dst,
                            const math::Vec2& dir) {
         FramePass p;
         p.name = name;
         p.reads = {src};
         p.writes = {dst};
-        p.execute = [this, src, dst, dir](FrameGraphContext& ctx) {
+        p.execute = [this, shader, src, dst, dir](FrameGraphContext& ctx) {
             auto& backend = ctx.Backend();
             backend.BindRenderTarget(ctx.GetOutput(dst));
-            Fullscreen(backend, ssaoBlur_);
+            Fullscreen(backend, shader);
             backend.BindTexture(0, backend.RenderTargetColorTexture(ctx.GetInput(src)));
             backend.SetUniformInt("uTex", 0);
             backend.SetUniformVec2("uTexelSize", math::Vec2{halfTexelX_, halfTexelY_});
@@ -122,8 +128,8 @@ void PostGraph::Build(ShaderHandle ssaoShader, ShaderHandle ssaoBlur,
         };
         return p;
     };
-    ssaoBlurHIndex_ = add(blurPass("post.ssaoBlurH", ao_, aoBlurA_, math::Vec2{1.0f, 0.0f}));
-    ssaoBlurVIndex_ = add(blurPass("post.ssaoBlurV", aoBlurA_, aoBlurB_, math::Vec2{0.0f, 1.0f}));
+    ssaoBlurHIndex_ = add(blurPass("post.ssaoBlurH", ssaoBlur_, ao_, aoBlurA_, math::Vec2{1.0f, 0.0f}));
+    ssaoBlurVIndex_ = add(blurPass("post.ssaoBlurV", ssaoBlur_, aoBlurA_, aoBlurB_, math::Vec2{0.0f, 1.0f}));
 
     // 5. Volumetric: samples the HDR scene radially toward the sun (sunUV
     //    recomputed in Execute from camPos/sunDir/viewProj), writes vol.
@@ -149,8 +155,8 @@ void PostGraph::Build(ShaderHandle ssaoShader, ShaderHandle ssaoBlur,
     volPassIndex_ = add(std::move(vol));
 
     // 6/7. Volumetric blur (H then V), ping-ponging vol/volBlurA/volBlurB.
-    volBlurHIndex_ = add(blurPass("post.volBlurH", vol_, volBlurA_, math::Vec2{1.0f, 0.0f}));
-    volBlurVIndex_ = add(blurPass("post.volBlurV", volBlurA_, volBlurB_, math::Vec2{0.0f, 1.0f}));
+    volBlurHIndex_ = add(blurPass("post.volBlurH", ssaoBlur_, vol_, volBlurA_, math::Vec2{1.0f, 0.0f}));
+    volBlurVIndex_ = add(blurPass("post.volBlurV", ssaoBlur_, volBlurA_, volBlurB_, math::Vec2{0.0f, 1.0f}));
 
     // 8. SSR: ray-marches the reflected view ray in screen space against the
     //    scene depth, pulling the HDR colour.
@@ -178,8 +184,176 @@ void PostGraph::Build(ShaderHandle ssaoShader, ShaderHandle ssaoBlur,
     ssrPassIndex_ = add(std::move(ssr));
 
     // 9/10. SSR blur (H then V), ping-ponging ssr/ssrBlurA/ssrBlurB.
-    ssrBlurHIndex_ = add(blurPass("post.ssrBlurH", ssr_, ssrBlurA_, math::Vec2{1.0f, 0.0f}));
-    ssrBlurVIndex_ = add(blurPass("post.ssrBlurV", ssrBlurA_, ssrBlurB_, math::Vec2{0.0f, 1.0f}));
+    ssrBlurHIndex_ = add(blurPass("post.ssrBlurH", ssaoBlur_, ssr_, ssrBlurA_, math::Vec2{1.0f, 0.0f}));
+    ssrBlurVIndex_ = add(blurPass("post.ssrBlurV", ssaoBlur_, ssrBlurA_, ssrBlurB_, math::Vec2{0.0f, 1.0f}));
+
+    // 11. Bloom bright pass: HDR -> bloomHalfA (thresholded, only pixels above
+    //     1.0).
+    FramePass bright;
+    bright.name = "bloom.bright";
+    bright.reads = {hdrScene_};
+    bright.writes = {bloomHalfA_};
+    bright.execute = [this](FrameGraphContext& ctx) {
+        auto& backend = ctx.Backend();
+        backend.BindRenderTarget(ctx.GetOutput(bloomHalfA_));
+        Fullscreen(backend, bright_);
+        backend.BindTexture(0, backend.RenderTargetColorTexture(ctx.GetInput(hdrScene_)));
+        backend.SetUniformInt("uTex", 0);
+        backend.SetUniformFloat("uThreshold", kBloomThreshold);
+        backend.DrawMesh(postQuad_);
+    };
+    brightPassIndex_ = add(std::move(bright));
+
+    // 12/13. Blur the half-res bright (H then V), ping-ponging bloomHalfA/B.
+    auto bloomBlur = [this](const char* name, ResourceId src, ResourceId dst, bool half,
+                            float dx, float dy) {
+        FramePass p;
+        p.name = name;
+        p.reads = {src};
+        p.writes = {dst};
+        p.execute = [this, src, dst, half, dx, dy](FrameGraphContext& ctx) {
+            auto& backend = ctx.Backend();
+            backend.BindRenderTarget(ctx.GetOutput(dst));
+            Fullscreen(backend, blur_);
+            backend.BindTexture(0, backend.RenderTargetColorTexture(ctx.GetInput(src)));
+            backend.SetUniformInt("uTex", 0);
+            const math::Vec2 texel = half ? math::Vec2{halfTexelX_, halfTexelY_}
+                                          : math::Vec2{quarterTexelX_, quarterTexelY_};
+            backend.SetUniformVec2("uTexelSize", texel);
+            backend.SetUniformVec2("uDirection", math::Vec2{dx, dy});
+            backend.DrawMesh(postQuad_);
+        };
+        return p;
+    };
+    blurHalfHIndex_ = add(bloomBlur("bloom.blurHalfH", bloomHalfA_, bloomHalfB_, true, 1.0f, 0.0f));
+    blurHalfVIndex_ = add(bloomBlur("bloom.blurHalfV", bloomHalfB_, bloomHalfA_, true, 0.0f, 1.0f));
+
+    // 14. Downsample: bloomHalfA -> bloomQuarterA (2x2 box).
+    FramePass downsamplePass;
+    downsamplePass.name = "bloom.downsample";
+    downsamplePass.reads = {bloomHalfA_};
+    downsamplePass.writes = {bloomQuarterA_};
+    downsamplePass.execute = [this](FrameGraphContext& ctx) {
+        auto& backend = ctx.Backend();
+        backend.BindRenderTarget(ctx.GetOutput(bloomQuarterA_));
+        Fullscreen(backend, downsample_);
+        backend.BindTexture(0, backend.RenderTargetColorTexture(ctx.GetInput(bloomHalfA_)));
+        backend.SetUniformInt("uTex", 0);
+        backend.SetUniformVec2("uSrcTexelSize", math::Vec2{halfTexelX_, halfTexelY_});
+        backend.DrawMesh(postQuad_);
+    };
+    downsamplePassIndex_ = add(std::move(downsamplePass));
+
+    // 15/16. Blur the quarter-res level (H then V), ping-ponging quarterA/B.
+    blurQuarterHIndex_ =
+        add(bloomBlur("bloom.blurQuarterH", bloomQuarterA_, bloomQuarterB_, false, 1.0f, 0.0f));
+    blurQuarterVIndex_ =
+        add(bloomBlur("bloom.blurQuarterV", bloomQuarterB_, bloomQuarterA_, false, 0.0f, 1.0f));
+
+    // 17. Upsample-add (progressive bloom): bloomHalfB = bloomHalfA +
+    //     up(bloomQuarterA). The output (bloomHalfB) is the accumulated bloom
+    //     the composite pass samples.
+    FramePass upsample;
+    upsample.name = "bloom.upsampleAdd";
+    upsample.reads = {bloomHalfA_, bloomQuarterA_};
+    upsample.writes = {bloomHalfB_};
+    upsample.execute = [this](FrameGraphContext& ctx) {
+        auto& backend = ctx.Backend();
+        backend.BindRenderTarget(ctx.GetOutput(bloomHalfB_));
+        Fullscreen(backend, upsampleAdd_);
+        backend.BindTexture(0, backend.RenderTargetColorTexture(ctx.GetInput(bloomHalfA_)));
+        backend.SetUniformInt("uHalf", 0);
+        backend.BindTexture(1, backend.RenderTargetColorTexture(ctx.GetInput(bloomQuarterA_)));
+        backend.SetUniformInt("uQuarter", 1);
+        backend.DrawMesh(postQuad_);
+    };
+    upsampleAddIndex_ = add(std::move(upsample));
+
+    // 18. Composite: draws the final image to the DEFAULT target (backbuffer,
+    //     an out-of-graph target) sampling the scene HDR plus the exported
+    //     finals (bloom accumulation, raw AO, blurred volumetric / SSR, scene
+    //     depth for volumetric fog). Each term binds its texture only when the
+    //     corresponding chain produced a live target this frame (invalid
+    //     otherwise), so a disabled chain blends white + uXEnabled=0 exactly
+    //     like the old hand-written composite.
+    FramePass composite;
+    composite.name = "post.composite";
+    composite.reads = {hdrScene_, sceneDepth_, ao_, volBlurB_, ssrBlurB_, bloomHalfB_};
+    composite.execute = [this](FrameGraphContext& ctx) {
+        auto& backend = ctx.Backend();
+        if (!compositeShader_.Valid() || !postQuad_.Valid()) return;
+        backend.BindDefaultTarget();
+        backend.SetBlendMode(BlendMode::Opaque);
+        backend.SetDepthTest(false, false);
+        backend.SetCullMode(CullMode::None);
+        backend.UseShader(compositeShader_);
+        backend.SetUniformMat4("uMVP", math::Mat4::Identity());
+        const TextureHandle hdr = backend.RenderTargetColorTexture(ctx.GetInput(hdrScene_));
+        if (!hdr.Valid()) return; // no live scene -> nothing to composite
+        backend.BindTexture(0, hdr);
+        backend.SetUniformInt("uHdr", 0);
+        // The bloom term samples the graph's bloomHalfB_ (upsample-add output);
+        // when bloom is off / unavailable, bind the HDR texture on the bloom
+        // slot too (the program still references the sampler) and skip the
+        // term, so the `--no-bloom` image differs only by the bloom term.
+        const RenderTargetHandle bloomRt = ctx.GetInput(bloomHalfB_);
+        const bool bloomActive = bloomRt.Valid();
+        if (bloomActive) {
+            backend.BindTexture(1, backend.RenderTargetColorTexture(bloomRt));
+        } else {
+            backend.BindTexture(1, hdr);
+        }
+        backend.SetUniformFloat("uStrength", kBloomStrength);
+        backend.SetUniformInt("uBloomEnabled", bloomActive ? 1 : 0);
+        backend.SetUniformInt("uBloom", 1);
+        const RenderTargetHandle aoRt = ctx.GetInput(ao_);
+        const bool aoActive = aoRt.Valid();
+        if (aoActive) {
+            backend.BindTexture(2, backend.RenderTargetColorTexture(aoRt));
+        } else {
+            backend.BindTexture(2, comp_.white);
+        }
+        backend.SetUniformInt("uAoEnabled", aoActive ? 1 : 0);
+        backend.SetUniformInt("uAo", 2);
+        backend.SetUniformFloat("uAoIntensity", comp_.ssaoIntensity);
+        const RenderTargetHandle volRt = ctx.GetInput(volBlurB_);
+        const bool volActive = volRt.Valid();
+        if (volActive) {
+            backend.BindTexture(3, backend.RenderTargetColorTexture(volRt));
+        } else {
+            backend.BindTexture(3, comp_.white);
+        }
+        backend.SetUniformInt("uVolEnabled", volActive ? 1 : 0);
+        backend.SetUniformInt("uVol", 3);
+        backend.SetUniformFloat("uVolStrength", comp_.volStrength);
+        const RenderTargetHandle ssrRt = ctx.GetInput(ssrBlurB_);
+        const bool ssrActive = ssrRt.Valid();
+        if (ssrActive) {
+            backend.BindTexture(4, backend.RenderTargetColorTexture(ssrRt));
+        } else {
+            backend.BindTexture(4, comp_.white);
+        }
+        backend.SetUniformInt("uSsrEnabled", ssrActive ? 1 : 0);
+        backend.SetUniformInt("uSsr", 4);
+        backend.SetUniformFloat("uSsrStrength", comp_.ssrStrength);
+        const RenderTargetHandle depthRt = ctx.GetInput(sceneDepth_);
+        const bool fogDepthActive = comp_.volumetricFog && depthRt.Valid();
+        if (fogDepthActive) {
+            backend.BindTexture(5, backend.RenderTargetColorTexture(depthRt));
+        } else {
+            backend.BindTexture(5, comp_.white);
+        }
+        backend.SetUniformInt("uFogEnabled", fogDepthActive ? 1 : 0);
+        backend.SetUniformInt("uFogDepth", 5);
+        backend.SetUniformVec3("uFogColor", comp_.fogColor);
+        backend.SetUniformFloat("uFogDensity", comp_.fogDensity);
+        backend.SetUniformFloat("uNear", nearPlane_);
+        backend.SetUniformFloat("uFar", farPlane_);
+        backend.SetUniformFloat("uExposure", comp_.exposure);
+        backend.SetUniformInt("uTonemapEnabled", comp_.tonemapEnabled ? 1 : 0);
+        backend.DrawMesh(postQuad_);
+    };
+    compositePassIndex_ = add(std::move(composite));
 
     graph_ = std::move(fresh);
     built_ = true;
@@ -188,6 +362,8 @@ void PostGraph::Build(ShaderHandle ssaoShader, ShaderHandle ssaoBlur,
     ssaoRan_ = false;
     volRan_ = false;
     ssrRan_ = false;
+    bloomRan_ = false;
+    compositeRan_ = false;
 }
 
 void PostGraph::Destroy(IRenderBackend& backend) {
@@ -198,6 +374,8 @@ void PostGraph::Destroy(IRenderBackend& backend) {
     ssaoRan_ = false;
     volRan_ = false;
     ssrRan_ = false;
+    bloomRan_ = false;
+    compositeRan_ = false;
 }
 
 bool PostGraph::Execute(IRenderBackend& backend, const FrameParams& params) {
@@ -206,6 +384,8 @@ bool PostGraph::Execute(IRenderBackend& backend, const FrameParams& params) {
     ssaoRan_ = false;
     volRan_ = false;
     ssrRan_ = false;
+    bloomRan_ = false;
+    compositeRan_ = false;
     if (!built_ || !postQuad_.Valid()) return false;
     if (params.hdrW <= 0 || params.hdrH <= 0) return false;
 
@@ -216,9 +396,11 @@ bool PostGraph::Execute(IRenderBackend& backend, const FrameParams& params) {
                      params.hdrScene.Valid();
     const bool ssr = params.ssrPass && ssrShader_.Valid() && ssaoBlur_.Valid() &&
                      params.hdrScene.Valid();
+    const bool bloom = params.bloomPass && bright_.Valid() && blur_.Valid() &&
+                       downsample_.Valid() && upsampleAdd_.Valid() && params.hdrScene.Valid();
     // Depth must run whenever any chain samples the scene depth (belt and
     // braces on top of the renderer's own depthPass flag).
-    const bool depth = params.depthPass || ssao || ssr;
+    const bool depth = params.depthPass || ssao || ssr || params.composite.volumetricFog;
 
     graph_.SetPassEnabled(depthPassIndex_, depth);
     graph_.SetPassEnabled(ssaoPassIndex_, ssao);
@@ -230,7 +412,19 @@ bool PostGraph::Execute(IRenderBackend& backend, const FrameParams& params) {
     graph_.SetPassEnabled(ssrPassIndex_, ssr);
     graph_.SetPassEnabled(ssrBlurHIndex_, ssr);
     graph_.SetPassEnabled(ssrBlurVIndex_, ssr);
+    graph_.SetPassEnabled(brightPassIndex_, bloom);
+    graph_.SetPassEnabled(blurHalfHIndex_, bloom);
+    graph_.SetPassEnabled(blurHalfVIndex_, bloom);
+    graph_.SetPassEnabled(downsamplePassIndex_, bloom);
+    graph_.SetPassEnabled(blurQuarterHIndex_, bloom);
+    graph_.SetPassEnabled(blurQuarterVIndex_, bloom);
+    graph_.SetPassEnabled(upsampleAddIndex_, bloom);
+    // The composite is the chain's terminal pass: it always runs so the HDR
+    // scene reaches the backbuffer (its execute guards on shader/input validity
+    // and draws nothing when the composite program is missing).
+    graph_.SetPassEnabled(compositePassIndex_, true);
 
+    comp_ = params.composite;
     if (vol) {
         // Project the sun (far along sunDir) to screen UV for the ray origin,
         // mirroring the renderer's RunVolumetricPass.
@@ -255,27 +449,9 @@ bool PostGraph::Execute(IRenderBackend& backend, const FrameParams& params) {
     ssaoRan_ = ok && ssao;
     volRan_ = ok && vol;
     ssrRan_ = ok && ssr;
+    bloomRan_ = ok && bloom;
+    compositeRan_ = ok;
     return ok;
-}
-
-TextureHandle PostGraph::SceneDepthTexture(IRenderBackend& backend) const {
-    const RenderTargetHandle rt = graph_.GetResourceTarget(sceneDepth_);
-    return rt.Valid() ? backend.RenderTargetColorTexture(rt) : TextureHandle{};
-}
-
-TextureHandle PostGraph::AoTex(IRenderBackend& backend) const {
-    const RenderTargetHandle rt = graph_.GetResourceTarget(ao_);
-    return rt.Valid() ? backend.RenderTargetColorTexture(rt) : TextureHandle{};
-}
-
-TextureHandle PostGraph::VolTex(IRenderBackend& backend) const {
-    const RenderTargetHandle rt = graph_.GetResourceTarget(volBlurB_);
-    return rt.Valid() ? backend.RenderTargetColorTexture(rt) : TextureHandle{};
-}
-
-TextureHandle PostGraph::SsrTex(IRenderBackend& backend) const {
-    const RenderTargetHandle rt = graph_.GetResourceTarget(ssrBlurB_);
-    return rt.Valid() ? backend.RenderTargetColorTexture(rt) : TextureHandle{};
 }
 
 void PostGraph::Fullscreen(IRenderBackend& backend, ShaderHandle shader) {

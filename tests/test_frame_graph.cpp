@@ -1,7 +1,6 @@
 #include <string>
 #include <vector>
 
-#include "neon/gfx/bloom_graph.hpp"
 #include "neon/gfx/frame_graph.hpp"
 #include "neon/gfx/post_graph.hpp"
 #include "helpers.hpp"
@@ -245,88 +244,6 @@ TEST(FrameGraphUnknownResourceRejected) {
     graph.ResetFrame();
 }
 
-// The full bloom chain as a FrameGraph: 7 passes (bright -> blur h/v ->
-// downsample -> blur h/v -> upsample-add) must execute in EXACTLY the order of
-// the hand-written chain, with each pass wired to its immediate producer's
-// target (the ping-pong versions) and the scene HDR injected as the bright
-// pass's external input. The accumulated bloom is exported for the composite.
-TEST(BloomGraphPassOrderAndWiring) {
-    CountingNullBackend backend;
-    gfx::BloomGraph bloom;
-
-    bloom.Build(gfx::ShaderHandle{1}, gfx::ShaderHandle{2}, gfx::ShaderHandle{3},
-                gfx::ShaderHandle{4}, gfx::MeshHandle{1, 1, 1, 6}, 640, 360);
-    CHECK_EQ(bloom.PassCount(), 7u);
-
-    const gfx::RenderTargetHandle hdrScene{100};
-    CHECK(bloom.Execute(backend, hdrScene, 640, 360, true));
-    CHECK(bloom.Ran());
-
-    const auto& trace = bloom.LastTrace();
-    CHECK_EQ(trace.size(), 7u);
-    const char* expected[] = {"bloom.bright",      "bloom.blurHalfH",  "bloom.blurHalfV",
-                              "bloom.downsample",  "bloom.blurQuarterH", "bloom.blurQuarterV",
-                              "bloom.upsampleAdd"};
-    for (size_t i = 0; i < 7; ++i) CHECK_EQ(trace[i].name, std::string(expected[i]));
-
-    // External input injection: the bright pass samples the caller's HDR RT.
-    CHECK_EQ(trace[0].inputs.size(), 1u);
-    CHECK_EQ(trace[0].inputs[0].target.id, hdrScene.id);
-
-    // Ping-pong wiring: each reader binds to its immediate producer's output.
-    CHECK_EQ(trace[1].inputs[0].target.id, trace[0].outputs[0].target.id); // blurH <- bright
-    CHECK_EQ(trace[2].inputs[0].target.id, trace[1].outputs[0].target.id); // blurV <- blurH
-    CHECK_EQ(trace[3].inputs[0].target.id, trace[2].outputs[0].target.id); // downsample <- blurV
-    CHECK_EQ(trace[4].inputs[0].target.id, trace[3].outputs[0].target.id); // blurQH <- downsample
-    CHECK_EQ(trace[5].inputs[0].target.id, trace[4].outputs[0].target.id); // blurQV <- blurQH
-    // Upsample-add reads halfA (blurV's output) and quarterA (blurQV's output).
-    CHECK_EQ(trace[6].inputs.size(), 2u);
-    CHECK_EQ(trace[6].inputs[0].target.id, trace[2].outputs[0].target.id);
-    CHECK_EQ(trace[6].inputs[1].target.id, trace[5].outputs[0].target.id);
-
-    // The chain allocates exactly 4 transient targets (halfA/B + quarterA/B),
-    // the same count as the renderer's hand-managed bloom RTs; all are pooled.
-    CHECK_EQ(backend.createCount, 4);
-    CHECK_EQ(backend.destroyCount, 0);
-
-    // The upsample-add output is exported: the composite can sample it right
-    // after Execute, and it is gone once the frame's pool is reset.
-    CHECK(bloom.BloomColorTexture(backend).Valid());
-    bloom.ResetFrame();
-    CHECK(!bloom.BloomColorTexture(backend).Valid());
-}
-
-// enabled=false must skip the whole chain (bloom off), and a resize-style
-// rebuild (Build -> Destroy -> Build) must release the old graph's GPU targets
-// so the transient pool does not leak across resolutions.
-TEST(BloomGraphDisabledAndRebuild) {
-    CountingNullBackend backend;
-    gfx::BloomGraph bloom;
-    bloom.Build(gfx::ShaderHandle{1}, gfx::ShaderHandle{2}, gfx::ShaderHandle{3},
-                gfx::ShaderHandle{4}, gfx::MeshHandle{1, 1, 1, 6}, 640, 360);
-
-    const gfx::RenderTargetHandle hdrScene{100};
-    CHECK(!bloom.Execute(backend, hdrScene, 640, 360, false)); // bloom off
-    CHECK(!bloom.Ran());
-    CHECK_EQ(backend.createCount, 0); // nothing ran, nothing allocated
-
-    // Two pooled passes: exactly the 4 pyramid targets, released on Destroy.
-    CHECK(bloom.Execute(backend, hdrScene, 640, 360, true));
-    CHECK(bloom.Ran());
-    const int created = backend.createCount;
-    CHECK_EQ(created, 4);
-    bloom.Destroy(backend);
-    CHECK_EQ(backend.destroyCount, created);
-
-    // Rebuild at a new resolution: fresh allocations, no reuse of old targets.
-    bloom.Build(gfx::ShaderHandle{1}, gfx::ShaderHandle{2}, gfx::ShaderHandle{3},
-                gfx::ShaderHandle{4}, gfx::MeshHandle{1, 1, 1, 6}, 1280, 720);
-    CHECK(bloom.Execute(backend, hdrScene, 1280, 720, true));
-    CHECK_EQ(backend.createCount, created + 4);
-    CHECK_EQ(backend.destroyCount, created);
-    bloom.ResetFrame();
-}
-
 // FrameGraphResourceDesc uses the convention "samples > 1 = multisampled,
 // 1 = single-sample", while IRenderBackend::CreateRenderTarget uses "samples >
 // 0 = multisampled, 0 = single-sample". AcquireTarget must translate: a
@@ -362,19 +279,35 @@ TEST(FrameGraphSamplesConventionTranslation) {
 
 namespace {
 
-// Builds a fully-enabled PostGraph with all four chains (depth + ssao + vol +
-// ssr) at 640x360 and a depth-caster callback that counts invocations.
-gfx::PostGraph BuildFullPostGraph(CountingNullBackend& backend, int& depthCasterCalls) {
+// All 10 post shaders + composite + the white fallback texture, distinct
+// handles so the Build() wiring can be sanity-checked via LastTrace.
+gfx::PostGraph::Shaders MakeTestShaders() {
+    gfx::PostGraph::Shaders s;
+    s.ssaoShader = {1};
+    s.ssaoBlur = {2};
+    s.volumetricShader = {3};
+    s.ssrShader = {4};
+    s.brightPass = {5};
+    s.blur = {6};
+    s.downsample = {7};
+    s.upsampleAdd = {8};
+    s.compositeShader = {9};
+    s.white = {1}; // TextureHandle
+    return s;
+}
+
+// Builds a fully-enabled PostGraph (depth + ssao + vol + ssr + bloom +
+// composite) at 640x360 and a depth-caster callback that counts invocations.
+gfx::PostGraph BuildFullPostGraph(int& depthCasterCalls) {
     gfx::PostGraph post;
-    post.Build(gfx::ShaderHandle{1}, gfx::ShaderHandle{2}, gfx::ShaderHandle{3},
-               gfx::ShaderHandle{4}, gfx::MeshHandle{1, 1, 1, 6}, 640, 360,
+    post.Build(MakeTestShaders(), gfx::MeshHandle{1, 1, 1, 6}, 640, 360,
                [&] { ++depthCasterCalls; });
-    CHECK_EQ(post.PassCount(), 10u);
+    CHECK_EQ(post.PassCount(), 18u);
     return post;
 }
 
 gfx::PostGraph::FrameParams PostFrameParams(int w, int h, bool depth, bool ssao, bool vol,
-                                            bool ssr) {
+                                            bool ssr, bool bloom = false) {
     gfx::PostGraph::FrameParams p;
     p.hdrScene = {100};
     p.hdrW = w;
@@ -383,37 +316,47 @@ gfx::PostGraph::FrameParams PostFrameParams(int w, int h, bool depth, bool ssao,
     p.ssaoPass = ssao;
     p.volumetricPass = vol;
     p.ssrPass = ssr;
+    p.bloomPass = bloom;
     p.camPos = {0.0f, 3.0f, 10.0f};
     p.sunDir = {-0.4f, -1.0f, -0.3f};
     p.viewProj = neon::math::Mat4::Identity();
     p.camera = {};
+    p.composite.white = {1};
     return p;
 }
 
 } // namespace
 
 // The full post chain (depth -> ssao -> blur -> volumetric -> blur -> ssr ->
-// blur) as a FrameGraph: 10 passes must execute in EXACTLY the order of the
-// hand-written chain, with each reader wired to its immediate producer's target
-// (the ping-pong versions), the scene HDR injected as the external input of the
-// volumetric/ssr passes, and the depth pre-pass drawing the casters through the
-// injected callback instead of a fullscreen quad.
+// blur -> bloom pyramid -> composite) as ONE FrameGraph: 18 passes must execute
+// in EXACTLY the order of the hand-written chain, with each reader wired to its
+// immediate producer's target (the ping-pong versions), the scene HDR injected
+// as the external input, and the terminal composite pass consuming every chain
+// final in-graph (scene depth, raw AO, blurred vol/SSR, accumulated bloom).
 TEST(PostGraphPassOrderAndWiring) {
     CountingNullBackend backend;
     int depthCasterCalls = 0;
-    gfx::PostGraph post = BuildFullPostGraph(backend, depthCasterCalls);
+    gfx::PostGraph post = BuildFullPostGraph(depthCasterCalls);
 
-    CHECK(post.Execute(backend, PostFrameParams(640, 360, true, true, true, true)));
+    CHECK(post.Execute(backend, PostFrameParams(640, 360, true, true, true, true, true)));
     CHECK(post.Ran());
+    CHECK(post.DepthRan());
+    CHECK(post.SsaoRan());
+    CHECK(post.VolumetricRan());
+    CHECK(post.SsrRan());
+    CHECK(post.BloomRan());
+    CHECK(post.CompositeRan());
     CHECK_EQ(depthCasterCalls, 1); // the depth pass drew the casters exactly once
 
     const auto& trace = post.LastTrace();
-    CHECK_EQ(trace.size(), 10u);
-    const char* expected[] = {"post.depth",     "post.ssao",     "post.ssaoBlurH",
-                              "post.ssaoBlurV", "post.volumetric", "post.volBlurH",
-                              "post.volBlurV",  "post.ssr",      "post.ssrBlurH",
-                              "post.ssrBlurV"};
-    for (size_t i = 0; i < 10; ++i) CHECK_EQ(trace[i].name, std::string(expected[i]));
+    CHECK_EQ(trace.size(), 18u);
+    const char* expected[] = {
+        "post.depth",          "post.ssao",       "post.ssaoBlurH",   "post.ssaoBlurV",
+        "post.volumetric",     "post.volBlurH",   "post.volBlurV",    "post.ssr",
+        "post.ssrBlurH",       "post.ssrBlurV",   "bloom.bright",     "bloom.blurHalfH",
+        "bloom.blurHalfV",     "bloom.downsample", "bloom.blurQuarterH", "bloom.blurQuarterV",
+        "bloom.upsampleAdd",   "post.composite"};
+    for (size_t i = 0; i < 18; ++i) CHECK_EQ(trace[i].name, std::string(expected[i]));
 
     // The depth pass has NO inputs (casters are drawn directly) and writes the
     // scene depth; ssao/ssr bind that same target as their depth input.
@@ -438,29 +381,49 @@ TEST(PostGraphPassOrderAndWiring) {
     CHECK_EQ(trace[7].outputs[0].target.id, trace[8].inputs[0].target.id);
     CHECK_EQ(trace[8].outputs[0].target.id, trace[9].inputs[0].target.id);
 
-    // The exported finals are sampleable right after Execute: scene depth, the
-    // raw AO, and the blurred volumetric / SSR results (what composite reads).
-    CHECK(post.SceneDepthTexture(backend).Valid());
-    CHECK(post.AoTex(backend).Valid());
-    CHECK(post.VolTex(backend).Valid());
-    CHECK(post.SsrTex(backend).Valid());
+    // Bloom chain: bright <- hdr, blur ping-pong on the half res, downsample,
+    // quarter blur ping-pong, upsample-add reading halfA + quarterA.
+    CHECK_EQ(trace[10].inputs[0].target.id, 100u);                         // bright <- hdr
+    CHECK_EQ(trace[11].inputs[0].target.id, trace[10].outputs[0].target.id); // blurH <- bright
+    CHECK_EQ(trace[12].inputs[0].target.id, trace[11].outputs[0].target.id); // blurV <- blurH
+    CHECK_EQ(trace[13].inputs[0].target.id, trace[12].outputs[0].target.id); // downsample <- blurV
+    CHECK_EQ(trace[14].inputs[0].target.id, trace[13].outputs[0].target.id); // blurQH <- downsample
+    CHECK_EQ(trace[15].inputs[0].target.id, trace[14].outputs[0].target.id); // blurQV <- blurQH
+    CHECK_EQ(trace[16].inputs.size(), 2u);
+    // upsample-add reads halfA (blurV's output) and quarterA (blurQV's output).
+    CHECK_EQ(trace[16].inputs[0].target.id, trace[12].outputs[0].target.id);
+    CHECK_EQ(trace[16].inputs[1].target.id, trace[15].outputs[0].target.id);
 
-    // ResetFrame returns the exports to the pool; composite sampled them already.
+    // Composite is the last pass and consumes every chain final IN-GRAPH: the
+    // external HDR, the scene depth (volumetric fog), the raw AO, the blurred
+    // volumetric / SSR, and the accumulated bloom.
+    CHECK_EQ(trace[17].inputs.size(), 6u);
+    CHECK_EQ(trace[17].inputs[0].target.id, 100u);                           // hdrScene
+    CHECK_EQ(trace[17].inputs[1].target.id, trace[0].outputs[0].target.id);  // sceneDepth
+    CHECK_EQ(trace[17].inputs[2].target.id, trace[1].outputs[0].target.id);  // raw ao
+    CHECK_EQ(trace[17].inputs[3].target.id, trace[6].outputs[0].target.id);  // volBlurB
+    CHECK_EQ(trace[17].inputs[4].target.id, trace[9].outputs[0].target.id);  // ssrBlurB
+    CHECK_EQ(trace[17].inputs[5].target.id, trace[16].outputs[0].target.id); // bloomAcc
+
+    // The whole chain allocates 8 pooled targets (full-res depth + half-res
+    // float pyramid reused aggressively + quarter-res float); composite itself
+    // writes nothing (it draws to the backbuffer), so all are pooled.
+    CHECK_EQ(backend.createCount, 8);
+    CHECK_EQ(backend.destroyCount, 0);
+
     post.ResetFrame();
-    CHECK(!post.SceneDepthTexture(backend).Valid());
-    CHECK(!post.AoTex(backend).Valid());
-    CHECK(!post.VolTex(backend).Valid());
-    CHECK(!post.SsrTex(backend).Valid());
+    CHECK(!post.CompositeRan()); // latch cleared at the frame boundary
 }
 
 // Disabled chains must neither run nor produce: with only the ssao chain on,
-// just 4 passes execute (depth + ao + blurH + blurV), the depth-caster callback
-// still runs once, and the volumetric/ssr exports are absent while the ao
-// export stays live for the composite.
+// just depth + ao + blurH + blurV + composite execute, the depth-caster callback
+// still runs once, and the composite receives only the live finals (hdr, depth,
+// raw AO) - the vol/ssr/bloom inputs are absent. A second frame running ssr +
+// bloom wires the composite to those finals instead.
 TEST(PostGraphChainDisabling) {
     CountingNullBackend backend;
     int depthCasterCalls = 0;
-    gfx::PostGraph post = BuildFullPostGraph(backend, depthCasterCalls);
+    gfx::PostGraph post = BuildFullPostGraph(depthCasterCalls);
 
     // Only the SSAO chain requested (renderer: ssaoEnabled && casters present).
     CHECK(post.Execute(backend, PostFrameParams(640, 360, true, true, false, false)));
@@ -469,31 +432,43 @@ TEST(PostGraphChainDisabling) {
     CHECK(post.SsaoRan());
     CHECK(!post.VolumetricRan());
     CHECK(!post.SsrRan());
+    CHECK(!post.BloomRan());
+    CHECK(post.CompositeRan());
     CHECK_EQ(depthCasterCalls, 1);
 
     const auto& trace = post.LastTrace();
-    CHECK_EQ(trace.size(), 4u);
+    CHECK_EQ(trace.size(), 5u);
     CHECK_EQ(trace[0].name, std::string("post.depth"));
     CHECK_EQ(trace[1].name, std::string("post.ssao"));
     CHECK_EQ(trace[2].name, std::string("post.ssaoBlurH"));
     CHECK_EQ(trace[3].name, std::string("post.ssaoBlurV"));
-
-    CHECK(post.SceneDepthTexture(backend).Valid());
-    CHECK(post.AoTex(backend).Valid());
-    CHECK(!post.VolTex(backend).Valid());
-    CHECK(!post.SsrTex(backend).Valid());
+    CHECK_EQ(trace[4].name, std::string("post.composite"));
+    // Composite reads hdr + depth + raw ao (the only live finals).
+    CHECK_EQ(trace[4].inputs.size(), 3u);
+    CHECK_EQ(trace[4].inputs[0].target.id, 100u);
+    CHECK_EQ(trace[4].inputs[1].target.id, trace[0].outputs[0].target.id);
+    CHECK_EQ(trace[4].inputs[2].target.id, trace[1].outputs[0].target.id);
     post.ResetFrame();
 
-    // Next frame: only SSR runs; depth still needed for the depth read.
-    CHECK(post.Execute(backend, PostFrameParams(640, 360, true, false, false, true)));
+    // Next frame: SSR + bloom run; depth still needed for the depth read. The
+    // composite now receives the blurred SSR and the bloom accumulation.
+    CHECK(post.Execute(backend, PostFrameParams(640, 360, true, false, false, true, true)));
     CHECK(post.DepthRan());
     CHECK(!post.SsaoRan());
-    CHECK(!post.VolumetricRan());
     CHECK(post.SsrRan());
-    CHECK_EQ(post.LastTrace().size(), 4u); // depth + ssr + ssrBlurH + ssrBlurV
-    CHECK(post.SceneDepthTexture(backend).Valid());
-    CHECK(!post.AoTex(backend).Valid());
-    CHECK(post.SsrTex(backend).Valid());
+    CHECK(post.BloomRan());
+    CHECK(post.CompositeRan());
+    const auto& trace2 = post.LastTrace();
+    CHECK_EQ(trace2.size(), 12u); // depth + ssr chain + bloom chain + composite
+    CHECK_EQ(trace2[0].name, std::string("post.depth"));
+    CHECK_EQ(trace2[1].name, std::string("post.ssr"));
+    CHECK_EQ(trace2[10].name, std::string("bloom.upsampleAdd"));
+    CHECK_EQ(trace2[11].name, std::string("post.composite"));
+    CHECK_EQ(trace2[11].inputs.size(), 4u); // hdr + depth + ssrBlurB + bloomAcc
+    CHECK_EQ(trace2[11].inputs[0].target.id, 100u);
+    CHECK_EQ(trace2[11].inputs[1].target.id, trace2[0].outputs[0].target.id);
+    CHECK_EQ(trace2[11].inputs[2].target.id, trace2[3].outputs[0].target.id); // ssrBlurV
+    CHECK_EQ(trace2[11].inputs[3].target.id, trace2[10].outputs[0].target.id); // upsampleAdd
     post.ResetFrame();
 }
 
@@ -502,23 +477,24 @@ TEST(PostGraphChainDisabling) {
 TEST(PostGraphDepthDrivenByConsumers) {
     CountingNullBackend backend;
     int depthCasterCalls = 0;
-    gfx::PostGraph post = BuildFullPostGraph(backend, depthCasterCalls);
+    gfx::PostGraph post = BuildFullPostGraph(depthCasterCalls);
 
     // ssr on, depthPass flag missed (defensive path): depth still executes.
     CHECK(post.Execute(backend, PostFrameParams(640, 360, false, false, false, true)));
     CHECK(post.DepthRan());
     CHECK(post.SsrRan());
     CHECK_EQ(depthCasterCalls, 1);
-    CHECK_EQ(post.LastTrace().size(), 4u); // depth + ssr chain
+    CHECK_EQ(post.LastTrace().size(), 5u); // depth + ssr chain + composite
     post.ResetFrame();
 }
 
-// Everything disabled: the graph runs nothing (no casters drawn, no targets
-// allocated) and every chain reports off.
+// Everything disabled: the graph runs no chain (no casters drawn, no transient
+// targets allocated) but the terminal composite still executes (drawing the
+// raw HDR to the backbuffer) and reports CompositeRan() until ResetFrame.
 TEST(PostGraphAllDisabled) {
     CountingNullBackend backend;
     int depthCasterCalls = 0;
-    gfx::PostGraph post = BuildFullPostGraph(backend, depthCasterCalls);
+    gfx::PostGraph post = BuildFullPostGraph(depthCasterCalls);
 
     CHECK(post.Execute(backend, PostFrameParams(640, 360, false, false, false, false)));
     CHECK(!post.Ran());
@@ -526,27 +502,34 @@ TEST(PostGraphAllDisabled) {
     CHECK(!post.SsaoRan());
     CHECK(!post.VolumetricRan());
     CHECK(!post.SsrRan());
+    CHECK(!post.BloomRan());
+    CHECK(post.CompositeRan());
     CHECK_EQ(depthCasterCalls, 0);
-    CHECK_EQ(post.LastTrace().size(), 0u);
+    CHECK_EQ(post.LastTrace().size(), 1u);
+    CHECK_EQ(post.LastTrace()[0].name, std::string("post.composite"));
+    CHECK_EQ(post.LastTrace()[0].inputs.size(), 1u); // just the external HDR
+    CHECK_EQ(post.LastTrace()[0].inputs[0].target.id, 100u);
     CHECK_EQ(backend.createCount, 0); // nothing ran, nothing allocated
     post.ResetFrame();
+    CHECK(!post.CompositeRan());
 }
 
 // The full chain allocates a handful of pooled transient targets (the AO/blur/
-// vol/ssr descriptors are all identical half-res float, so they share one pool
-// bucket and get recycled aggressively), and a rebuild releases every target.
+// vol/ssr/bloom descriptors are all identical half-res float, so they share one
+// pool bucket and get recycled aggressively), and a rebuild releases every
+// target. A second frame reuses the same pooled targets: no new allocations.
 TEST(PostGraphTransientPoolAndRebuild) {
     CountingNullBackend backend;
     int depthCasterCalls = 0;
-    gfx::PostGraph post = BuildFullPostGraph(backend, depthCasterCalls);
+    gfx::PostGraph post = BuildFullPostGraph(depthCasterCalls);
 
-    CHECK(post.Execute(backend, PostFrameParams(640, 360, true, true, true, true)));
+    CHECK(post.Execute(backend, PostFrameParams(640, 360, true, true, true, true, true)));
     post.ResetFrame();
     const int created = backend.createCount;
-    CHECK_EQ(created, 5); // 1 full-res depth + 4 half-res float (pool-recycled)
+    CHECK_EQ(created, 8); // 1 full-res depth + half-res float (recycled) + quarter-res float
 
     // A second frame reuses the same pooled targets: no new allocations.
-    CHECK(post.Execute(backend, PostFrameParams(640, 360, true, true, true, true)));
+    CHECK(post.Execute(backend, PostFrameParams(640, 360, true, true, true, true, true)));
     post.ResetFrame();
     CHECK_EQ(backend.createCount, created);
     CHECK_EQ(backend.destroyCount, 0);
