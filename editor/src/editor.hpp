@@ -46,6 +46,9 @@ class NavPanel;
 class DebugOverlayPanel;
 // 面板插件化（Task 11）：本地化面板（panels/loc_panel.hpp）。状态全迁入面板。
 class LocPanel;
+// 面板插件化（Task 12）：性能面板（panels/profiler_panel.hpp）。经 ctx 指针访问
+// ProfilerState / 模拟时钟 / 播放统计。
+class ProfilerPanel;
 
 // P2-editor UX: a full TRS triple used by the multi-selection batch transform.
 struct Transform3 {
@@ -295,7 +298,7 @@ private:
     // (untitled docs wait for the explicit 保存 button).
     void MarkUIDirty();
     // 本地化面板（Task 11）已迁入 panels/loc_panel.hpp；BuildLocPanel 删除。
-    void BuildProfilerPanel();
+    // 性能面板（Task 12）已迁入 panels/profiler_panel.hpp；BuildProfilerPanel 删除。
     void BuildInputMapPanel();
     void DrawPlayHUD();
     void DrawTransformGizmo();
@@ -585,8 +588,6 @@ private:
     // Each panel owns its state; EditorApp holds one instance per panel instead
     // of ~55 flat members that sat directly on the god class.
     // ---------------------------------------------------------------------
-    static constexpr int kProfilerSamples = 180; // profiler ring buffer size
-
     struct TerrainState {
         bool paintMode = false;
         float brushRadius = 5.0f;
@@ -624,10 +625,6 @@ private:
         char outDirBuf[4096]{}; // output dir for the pack ("" = none yet)
         pack::PackageReport report; // last run's report
         bool ran = false;           // the 打包 button ran at least once
-    };
-    struct ProfilerState {
-        std::array<float, kProfilerSamples> ms{};
-        int msHead = 0;
     };
     struct InputMapState {
         script::InputMap edit;

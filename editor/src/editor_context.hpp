@@ -8,6 +8,7 @@
 //（见 CMakeLists.txt），单测可在无 ImGui context 的环境下运行。
 
 #include <cstdint>
+#include <array>
 #include <functional>
 #include <set>
 #include <string>
@@ -15,6 +16,7 @@
 
 #include "history.hpp"
 #include "neon/assets/asset_manager.hpp"
+#include "neon/core/time.hpp"
 #include "neon/ecs/world.hpp"
 #include "neon/gfx/renderer.hpp"
 #include "neon/nav/nav_grid.hpp"
@@ -22,6 +24,15 @@
 #include "neon/scene/scene_file.hpp"
 
 namespace neon::editor {
+
+// 性能面板的帧时间环形缓冲。原 EditorApp::ProfilerState 嵌套结构，Task 12 提升
+// 为共享结构：面板写入，冒烟测试（editor_smoke.cpp）直接读 profiler_.ms，故
+// EditorApp 仍持有 profiler_ 实例，经 EditorContext::profiler 指针访问。
+struct ProfilerState {
+    static constexpr int kSamples = 180; // profiler ring buffer size
+    std::array<float, kSamples> ms{};
+    int msHead = 0;
+};
 
 // 导航工具状态（A* 网格 + 起点/终点/路径）。原 EditorApp::NavState 嵌套结构，
 // Task 9 提升为共享结构：被导航面板（panels/nav_panel）与调试覆盖层
@@ -61,6 +72,17 @@ struct EditorContext {
     bool* debugNavMesh = nullptr;
     bool* debugProbes = nullptr;
     bool* debugAudio = nullptr;
+    // 性能面板（Task 12）：模拟时钟（帧时间/FPS）+ 帧时间环形缓冲 + 播放状态
+    // 计数。profiler_ 与 profilerDrawn_ 仍由 EditorApp 持有（冒烟测试直接读），
+    // 注入指针；播放统计经回调（play_ 是 GameRuntime 成员，面板不直接持有）。
+    core::Time* time = nullptr;
+    ProfilerState* profiler = nullptr;
+    bool* profilerDrawn = nullptr;
+    bool* playActive = nullptr;
+    std::function<std::size_t()> playEntityCount;
+    std::function<std::size_t()> playBodyCount;
+    std::function<std::size_t()> playBtCount;
+    std::function<std::size_t()> playScriptCount;
     // 跨面板操作（EditorApp 注入回调）
     std::function<void()> refreshAssetDir;
     std::function<void(int)> setSelection;

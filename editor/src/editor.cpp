@@ -10,6 +10,7 @@
 #include "panels/nav_panel.hpp"
 #include "panels/debug_overlay_panel.hpp"
 #include "panels/loc_panel.hpp"
+#include "panels/profiler_panel.hpp"
 
 #include <algorithm>
 #include <cerrno>
@@ -334,6 +335,17 @@ bool EditorApp::OnCreate() {
     }
     // 本地化面板（Task 11）：LocState 全部迁入面板私有状态，仅注入可见标志 showLoc_。
     panels_.Register(std::make_unique<LocPanel>(&showLoc_));
+    // 性能面板（Task 12）：帧时间环形缓冲 + profilerDrawn_ 仍由 EditorApp 持有
+    // （冒烟测试直接读 profiler_.ms），注入指针；模拟时钟 + 播放统计经 ctx。
+    ctx_.time = &TimeRef();
+    ctx_.profiler = &profiler_;
+    ctx_.profilerDrawn = &profilerDrawn_;
+    ctx_.playActive = &playActive_;
+    ctx_.playEntityCount = [this]() { return play_ ? play_->EntityCount() : 0; };
+    ctx_.playBodyCount = [this]() { return play_ ? play_->PhysicsBodyCount() : 0; };
+    ctx_.playBtCount = [this]() { return play_ ? play_->BehaviorTreeCount() : 0; };
+    ctx_.playScriptCount = [this]() { return play_ ? play_->ScriptCount() : 0; };
+    panels_.Register(std::make_unique<ProfilerPanel>(&showProfiler_));
     panels_.OpenAll(ctx_);
     // Toolbar icon glyph self-check: a missing glyph renders as '?' in the
     // toolbar. Log once at startup so icon regressions are caught immediately.
