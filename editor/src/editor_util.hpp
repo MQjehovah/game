@@ -32,6 +32,24 @@ std::string BaseName(const std::string& path);
 std::string ExtLower(const std::string& path);
 std::string GetWorkingDir();
 
+// Asset file-type classification (extension based; models dispatch through
+// the mesh-format registry). Shared by the asset panel + import paths.
+// Definitions stay in panels.cpp (formerly its anonymous namespace); they
+// were promoted to external linkage when the asset panel became its own class.
+bool IsImageExt(const std::string& name);
+bool IsModelExt(const std::string& name);
+bool IsScriptExt(const std::string& name);
+bool IsMaterialExt(const std::string& name);
+// Parent directory of `path` (unchanged when there is no separator).
+std::string ParentPath(const std::string& path);
+// Recursively copies a source directory tree into `dst` (created on demand;
+// files keep their layout, name collisions get _N suffixes).
+bool CopyDirRecursive(const std::string& src, const std::string& dst);
+// Native open-file / open-folder dialogs for the asset panel's 导入 action
+// (Windows COM; "" when cancelled; `owner` = parent native window handle).
+std::string PickImportFile(void* owner = nullptr);
+std::string PickImportDir(void* owner = nullptr);
+
 // Filesystem helpers.
 bool MakeDir(const std::string& path);
 bool EnsureDirs(const std::string& path);

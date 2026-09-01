@@ -7,6 +7,7 @@
 // neon_editor_common 保持 "Self-contained — no EditorApp / ImGui dependency"
 //（见 CMakeLists.txt），单测可在无 ImGui context 的环境下运行。
 
+#include <cstdint>
 #include <functional>
 #include <set>
 #include <string>
@@ -24,6 +25,10 @@ namespace neon::editor {
 // 定义在 editor.hpp（依赖 ImGui/TextEditor 等编辑器内部头，这里只持有指针，
 // 前向声明即可——std::vector<SceneEntity>* 不要求完整类型）。
 struct SceneEntity;
+// 同上：资产面板的条目表（定义在 editor.hpp）。
+struct AssetEntry;
+// 资产面板的插件素材源区块（定义在 editor_plugin.hpp；只经指针访问）。
+class EditorPluginManager;
 
 // 面板共享的编辑器上下文：聚合 EditorApp 暴露给面板的共享状态（指针）。
 // 面板不持有 EditorApp*——一切共享访问经此上下文。
@@ -61,6 +66,33 @@ struct EditorContext {
     std::function<void()> sortSceneTreeByName;               // 场景树按名称排序
     std::function<void()> normalizeEntityIds;                // 稳定实体 id（树/拖拽守卫）
     std::function<void(const std::string&)> savePrefab;      // 保存预置体模板
+    // --- 资产面板（Task 3）扩展：浏览状态指针 + 资产操作回调 ----------------
+    // 共享状态：当前浏览目录/条目表/过滤页签/网格视图/选中/Delete 键待处理标志
+    // 仍由 EditorApp 拥有（核心 RefreshAssetDir/Import*/Create/DeleteSelectedAsset、
+    // 资产目录监视与冒烟测试都直接读写它们），经指针共享。
+    std::string* assetDir = nullptr;
+    std::vector<AssetEntry>* assetEntries = nullptr;
+    int* assetFilter = nullptr;           // 0 全部, 1 模型, 2 贴图, 3 脚本, 4 材质
+    bool* assetGridView = nullptr;        // 缩略图网格 vs 列表
+    int* selectedAsset = nullptr;
+    bool* deleteAssetRequested = nullptr; // Delete 键布防 -> 面板下一帧消费
+    // 插件素材源区块（可空；EditorApp 在 OnCreate 创建插件管理器后注入）。
+    EditorPluginManager* pluginMgr = nullptr;
+    // 回调：资产操作（原面板直接调用的 EditorApp 方法，行为一致）。
+    std::function<void(const std::string&)> importAssetFile;      // 拷入当前浏览目录
+    std::function<void(const std::string&, int)> createAssetFile; // 新建资产（kind 0..5）
+    std::function<void()> deleteSelectedAsset;                    // 删除选中资产
+    std::function<void(const std::string&)> importAssetPath;      // 双击/导入到场景/预览
+    std::function<bool()> inPrefabsDir;                 // 浏览目录是否 prefabs（.json = 预置体）
+    std::function<void(const std::string&)> openScriptEditor;     // .lua -> 内置脚本编辑器
+    std::function<void(const std::string&)> openInExternalEditor; // 系统外部编辑器
+    // 缩略图查询：登记/刷新渲染请求（幂等），返回缓存条目的 ImGui 纹理 id
+    // （0 = 无条目或尚未生成）。ImTextureID 在本头文件刻意不可见（ImGui-free），
+    // 以整数形式传递（ImTextureID 即 ImU64，0 == ImTextureID_Invalid）。
+    std::function<std::uint64_t(const std::string&)> meshThumbnail;
+    std::function<std::uint64_t(const std::string&)> materialThumbnail;
+    // 原生文件对话框的 owner 窗口句柄（无窗口时回调可返回 nullptr）。
+    std::function<void*()> nativeWindowHandle;
     // 过渡期逃生舱：面板迁移初期访问未进 ctx 的状态；阶段 3 移除。
     void* editorApp = nullptr;
 };

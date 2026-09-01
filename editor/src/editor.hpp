@@ -260,7 +260,6 @@ private:
     void SetupScene();
     void InitToolPanels();
     void BuildImGuiUI();
-    void BuildAssetPanel();
     void BuildResourcePanel();
     void BuildInspectorPanel();
     void BuildLogPanel();

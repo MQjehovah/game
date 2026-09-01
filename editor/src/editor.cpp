@@ -1,6 +1,7 @@
 #include "editor.hpp"
 #include "editor_util.hpp"
 #include "panels/scene_panel.hpp"
+#include "panels/asset_panel.hpp"
 
 #include <algorithm>
 #include <cerrno>
@@ -241,7 +242,41 @@ bool EditorApp::OnCreate() {
     ctx_.sortSceneTreeByName = [this]() { SortSceneTreeByName(); };
     ctx_.normalizeEntityIds = [this]() { NormalizeEntityIds(); };
     ctx_.savePrefab = [this](const std::string& name) { SavePrefab(name); };
+    // 资产面板（Task 3）：浏览状态指针 + 资产操作回调（全部指向本类成员/方法）。
+    ctx_.assetDir = &assetDir_;
+    ctx_.assetEntries = &assetEntries_;
+    ctx_.assetFilter = &assetFilter_;
+    ctx_.assetGridView = &assetGridView_;
+    ctx_.selectedAsset = &selectedAsset_;
+    ctx_.deleteAssetRequested = &deleteAssetRequested_;
+    ctx_.importAssetFile = [this](const std::string& src) { ImportAssetFile(src); };
+    ctx_.createAssetFile = [this](const std::string& name, int kind) {
+        CreateAssetFile(name, kind);
+    };
+    ctx_.deleteSelectedAsset = [this]() { DeleteSelectedAsset(); };
+    ctx_.importAssetPath = [this](const std::string& path) { ImportAssetPath(path); };
+    ctx_.inPrefabsDir = [this]() { return InPrefabsDir(); };
+    ctx_.openScriptEditor = [this](const std::string& path) { OpenScriptEditor(path); };
+    ctx_.openInExternalEditor = [this](const std::string& path) {
+        OpenInExternalEditor(path);
+    };
+    // 缩略图查询 = 登记/刷新请求（幂等）+ 读缓存条目的纹理 id（0 = 未就绪）。
+    ctx_.meshThumbnail = [this](const std::string& path) -> std::uint64_t {
+        RequestMeshThumbnail(path);
+        const auto it = meshThumbs_.find(path);
+        return it != meshThumbs_.end() ? static_cast<std::uint64_t>(it->second.texId) : 0;
+    };
+    ctx_.materialThumbnail = [this](const std::string& path) -> std::uint64_t {
+        RequestMaterialThumbnail(path);
+        const auto it = materialThumbs_.find(path);
+        return it != materialThumbs_.end() ? static_cast<std::uint64_t>(it->second.texId) : 0;
+    };
+    ctx_.nativeWindowHandle = [this]() -> void* {
+        return Window() ? Window()->NativeHandle() : nullptr;
+    };
     panels_.Register(std::make_unique<ScenePanel>(&showHierarchy_));
+    // 可见标志过渡期注入 showAssets_（窗口菜单勾选 + ini 持久化 + 冒烟强制开启）。
+    panels_.Register(std::make_unique<AssetPanel>(&showAssets_));
     panels_.OpenAll(ctx_);
     // Toolbar icon glyph self-check: a missing glyph renders as '?' in the
     // toolbar. Log once at startup so icon regressions are caught immediately.
@@ -303,6 +338,7 @@ bool EditorApp::OnCreate() {
     pluginMgr_ = std::make_unique<editor::EditorPluginManager>();
     pluginMgr_->Init(this);
     pluginMgr_->Load("."); // editor plugins are GLOBAL (engine-level), not per-project
+    ctx_.pluginMgr = pluginMgr_.get(); // 资产面板的插件素材源区块
     NEON_LOG_INFO("NeonEditor ready (%zu entities), project dir '%s'", entities_.size(),
                   projectDir_.c_str());
     // The smoke test is the canonical 3D-editor flow: --2d/--2d-play/--project

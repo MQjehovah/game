@@ -145,6 +145,80 @@ std::string UniqueNameIn(const std::string& dir, const std::string& base) {
     return name;
 }
 
+std::string FileName(const std::string& p) {
+    size_t pos = p.find_last_of("/\\");
+    return pos == std::string::npos ? p : p.substr(pos + 1);
+}
+
+std::string FileStem(const std::string& p) {
+    std::string name = FileName(p);
+    size_t dot = name.find_last_of('.');
+    return dot == std::string::npos ? name : name.substr(0, dot);
+}
+
+std::string FileExt(const std::string& p) {
+    std::string name = FileName(p);
+    size_t dot = name.find_last_of('.');
+    return dot == std::string::npos ? std::string() : name.substr(dot);
+}
+
+#if defined(_WIN32)
+std::string WideToUtf8(const std::wstring& w) {
+    if (w.empty()) return {};
+    int n = WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()), nullptr, 0,
+                                nullptr, nullptr);
+    std::string out(static_cast<size_t>(n), '\0');
+    WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()), &out[0], n, nullptr,
+                        nullptr);
+    return out;
+}
+
+std::wstring Utf8ToWide(const std::string& s) {
+    if (s.empty()) return {};
+    int n = MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), nullptr, 0);
+    std::wstring out(static_cast<size_t>(n), L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), &out[0], n);
+    return out;
+}
+#endif
+
+} // namespace
+
+// --- 资产面板/导入共享工具（原匿名命名空间助手） ----------------------------
+// AssetPanel（editor/src/panels/asset_panel.cpp）迁移时从上面的匿名命名空间
+// 提升到外部链接（声明在 editor_util.hpp），实现保持在本 TU 与原实现逐行一致。
+
+bool IsImageExt(const std::string& name) {
+    std::string ext = ToLower(FileExt(name));
+    return ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".bmp" || ext == ".tga";
+}
+
+bool IsModelExt(const std::string& name) {
+    // Any registered mesh format (obj/gltf/glb/fbx/...) is a model. New formats
+    // registered in the mesh-format registry are auto-recognized here.
+    return !assets::MeshFormatRegistry::Instance().FormatFromExt(name).empty();
+}
+
+bool IsScriptExt(const std::string& name) {
+    std::string ext = ToLower(FileExt(name));
+    return ext == ".lua" || ext == ".js";
+}
+
+// Material ball asset: materials/*.mat.json.
+bool IsMaterialExt(const std::string& name) {
+    const std::string lower = ToLower(name);
+    // ".mat.json" is NINE characters; comparing 8 made every material ball
+    // fail the asset filter (no grid tile, no thumbnail preview).
+    return lower.size() > 9 && lower.compare(lower.size() - 9, 9, ".mat.json") == 0;
+}
+
+std::string ParentPath(const std::string& p) {
+    size_t pos = p.find_last_of("/\\");
+    if (pos == std::string::npos) return p;
+    if (pos == 0) return p.substr(0, 1);
+    return p.substr(0, pos);
+}
+
 // Recursively copies a source directory tree into `dst` (created on demand).
 // Files keep their relative layout; name collisions get _N suffixes.
 bool CopyDirRecursive(const std::string& src, const std::string& dst) {
@@ -164,7 +238,7 @@ bool CopyDirRecursive(const std::string& src, const std::string& dst) {
 
 // Native open-file dialog for the asset panel's 导入 action. Returns an empty
 // string when cancelled. Non-Windows hosts fall back to the path input row.
-std::string PickImportFile(void* owner = nullptr) {
+std::string PickImportFile(void* owner) {
     // 主线程同步执行 (模态循环自己泵消息); owner 已设置, 对话框正常置顶。
     std::string out;
     HRESULT hrInit = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
@@ -209,92 +283,6 @@ std::string PickImportFile(void* owner = nullptr) {
     return out;
 }
 
-std::string ParentPath(const std::string& p);
-std::string FileName(const std::string& p);
-std::string FileStem(const std::string& p);
-std::string FileExt(const std::string& p);
-
-bool IsImageExt(const std::string& name) {
-    std::string ext = ToLower(FileExt(name));
-    return ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".bmp" || ext == ".tga";
-}
-
-bool IsModelExt(const std::string& name) {
-    // Any registered mesh format (obj/gltf/glb/fbx/...) is a model. New formats
-    // registered in the mesh-format registry are auto-recognized here.
-    return !assets::MeshFormatRegistry::Instance().FormatFromExt(name).empty();
-}
-
-bool IsScriptExt(const std::string& name) {
-    std::string ext = ToLower(FileExt(name));
-    return ext == ".lua" || ext == ".js";
-}
-
-// Material ball asset: materials/*.mat.json.
-bool IsMaterialExt(const std::string& name) {
-    const std::string lower = ToLower(name);
-    // ".mat.json" is NINE characters; comparing 8 made every material ball
-    // fail the asset filter (no grid tile, no thumbnail preview).
-    return lower.size() > 9 && lower.compare(lower.size() - 9, 9, ".mat.json") == 0;
-}
-
-// Asset listing filter: 0 all, 1 models, 2 textures, 3 scripts.
-bool AssetMatchesFilter(const AssetEntry& e, int filter) {
-    if (e.isDir || filter == 0) return true;
-    if (filter == 1) return IsModelExt(e.name);
-    if (filter == 2) return IsImageExt(e.name);
-    if (filter == 3) return IsScriptExt(e.name);
-    if (filter == 4) return IsMaterialExt(e.name);
-    return true;
-}
-
-
-std::string ParentPath(const std::string& p) {
-    size_t pos = p.find_last_of("/\\");
-    if (pos == std::string::npos) return p;
-    if (pos == 0) return p.substr(0, 1);
-    return p.substr(0, pos);
-}
-
-std::string FileName(const std::string& p) {
-    size_t pos = p.find_last_of("/\\");
-    return pos == std::string::npos ? p : p.substr(pos + 1);
-}
-
-std::string FileStem(const std::string& p) {
-    std::string name = FileName(p);
-    size_t dot = name.find_last_of('.');
-    return dot == std::string::npos ? name : name.substr(0, dot);
-}
-
-std::string FileExt(const std::string& p) {
-    std::string name = FileName(p);
-    size_t dot = name.find_last_of('.');
-    return dot == std::string::npos ? std::string() : name.substr(dot);
-}
-
-#if defined(_WIN32)
-std::string WideToUtf8(const std::wstring& w) {
-    if (w.empty()) return {};
-    int n = WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()), nullptr, 0,
-                                nullptr, nullptr);
-    std::string out(static_cast<size_t>(n), '\0');
-    WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()), &out[0], n, nullptr,
-                        nullptr);
-    return out;
-}
-
-std::wstring Utf8ToWide(const std::string& s) {
-    if (s.empty()) return {};
-    int n = MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), nullptr, 0);
-    std::wstring out(static_cast<size_t>(n), L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), &out[0], n);
-    return out;
-}
-#endif
-
-} // namespace
-
 // Deletes a file or a whole directory tree. Windows moves it to the recycle
 // bin (recoverable); POSIX removes it recursively (caller confirms first).
 bool DeletePathRecursive(const std::string& path) {
@@ -331,7 +319,7 @@ bool DeletePathRecursive(const std::string& path) {
 
 // Native folder picker for importing a whole resource directory (model +
 // textures + subfolders). Non-Windows hosts fall back to the path input row.
-std::string PickImportDir(void* owner = nullptr) {
+std::string PickImportDir(void* owner) {
     std::string out;
     HRESULT hrInit = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
     const bool comHere = SUCCEEDED(hrInit);
