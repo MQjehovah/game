@@ -363,13 +363,27 @@ endif()
 # Generic data-driven player (T4.7): loads a game.pack and runs it with no
 # hardcoded gameplay. Reuses the engine renderer + GameRuntime.
 # ---------------------------------------------------------------------------
-add_executable(neon_game
-  game/src/player_main.cpp
+# C15: neon_game 库化——核心逻辑（Player/ClientSync）抽成 neon_game_core，
+# exe 变薄壳（只含 main），测试/工具可链接库而非抓源码。
+# ---------------------------------------------------------------------------
+add_library(neon_game_core STATIC
   game/src/player.cpp
   game/src/client_sync.cpp
 )
+target_include_directories(neon_game_core PUBLIC game/src PRIVATE engine/generated third_party/stb)
+target_link_libraries(neon_game_core PUBLIC neon_engine)
+if(MSVC)
+  target_compile_options(neon_game_core PRIVATE /W4 /permissive- /utf-8)
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(neon_game_core PRIVATE -Wall -Wextra
+    -finput-charset=UTF-8 -fexec-charset=UTF-8)
+endif()
+
+add_executable(neon_game
+  game/src/player_main.cpp
+)
 target_include_directories(neon_game PRIVATE engine/generated third_party/stb)
-target_link_libraries(neon_game PRIVATE neon_engine)
+target_link_libraries(neon_game PRIVATE neon_engine neon_game_core)
 if(WIN32)
   # P2-5: Windows app icon + version resource (windres / rc).
   target_sources(neon_game PRIVATE platform/win32/neon.rc)
@@ -514,15 +528,26 @@ endif()
 # Headless authoritative server (T6.3): binds a UDP socket, runs the data-driven
 # scene at a fixed 60Hz step and replicates MsgSnapshot streams. No window, no
 # GL, no audio — the engine's platform/gfx code is linked (static lib) but never
-# called. game_server.cpp is also compiled into neon_tests for loopback tests.
+# called. C15: 核心逻辑（GameServer/AoiGrid）抽成 neon_server_core，exe 变薄壳，
+# neon_tests 链接库而非把 game_server.cpp 重复编译进测试。
 # ---------------------------------------------------------------------------
-add_executable(neon_server
-  server/src/main.cpp
+add_library(neon_server_core STATIC
   server/src/game_server.cpp
   server/src/aoi.cpp
 )
-target_include_directories(neon_server PRIVATE server/src)
-target_link_libraries(neon_server PRIVATE neon_engine)
+target_include_directories(neon_server_core PUBLIC server/src)
+target_link_libraries(neon_server_core PUBLIC neon_engine)
+if(MSVC)
+  target_compile_options(neon_server_core PRIVATE /W4 /permissive- /utf-8)
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(neon_server_core PRIVATE -Wall -Wextra
+    -finput-charset=UTF-8 -fexec-charset=UTF-8)
+endif()
+
+add_executable(neon_server
+  server/src/main.cpp
+)
+target_link_libraries(neon_server PRIVATE neon_engine neon_server_core)
 if(MSVC)
   target_compile_options(neon_server PRIVATE /W4 /permissive- /utf-8)
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
@@ -712,21 +737,19 @@ add_executable(neon_tests tests/test_main.cpp tests/test_serialize.cpp tests/tes
   tests/test_determinism.cpp
   tests/test_aoi.cpp
   tests/test_asset_lifecycle.cpp
-  tests/test_jolt.cpp
-  server/src/game_server.cpp server/src/aoi.cpp
-  game/src/client_sync.cpp)
-# C15: link the editor utility lib instead of compiling history.cpp/packager.cpp
-# sources directly.
-target_link_libraries(neon_tests PRIVATE neon_engine neon_editor_common)
+  tests/test_jolt.cpp)
+# C15: link the editor/server/game core libs instead of compiling their
+# .cpp sources directly (game_server.cpp/aoi.cpp/client_sync.cpp were previously
+# "grabbed" into the test binary).
+target_link_libraries(neon_tests PRIVATE neon_engine neon_editor_common
+  neon_server_core neon_game_core)
 if(MINGW)
   # test_main.cpp's crash handler calls SymInitialize (dbghelp.h), which
   # MSVC's #pragma comment(lib) does not carry over to MinGW links.
   target_link_libraries(neon_tests PRIVATE dbghelp)
 endif()
-# test_history.cpp / test_packager.cpp include the editor utility headers via
-# neon_editor_common's PUBLIC include dir; the server/game sources are still
-# compiled directly (library-ification of those layers is a follow-up).
-target_include_directories(neon_tests PRIVATE third_party/stb server/src game/src plugins)
+# server/game headers via the core libs' PUBLIC include dirs.
+target_include_directories(neon_tests PRIVATE third_party/stb plugins)
 if(WIN32)
   target_compile_definitions(neon_tests PRIVATE
     NEON_PLUGIN_PHYSICS_PATH="$<TARGET_FILE:neon_plugin_physics>"
