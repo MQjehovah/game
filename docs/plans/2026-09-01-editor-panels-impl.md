@@ -204,3 +204,22 @@ Commit: `refactor: æ—¥å¿—é¢æ¿æ‹†ä¸ºç‹¬ç«‹ LogPanel`
 - é¢æ¿å¯¹ EditorApp ç§æœ‰çŠ¶æ€è®¿é—®é¢å¤§ï¼š`EditorContext` é€é¢æ¿æ‰©å±•ï¼ˆé˜¶æ®µ 1 çš„ 4 ä¸ªé¢æ¿å®šä¸‹ ctx å½¢æ€ï¼Œåç»­é¢æ¿æ²¿ç”¨ï¼‰ï¼›`void* editorApp` é€ƒç”Ÿèˆ±å…œåº•ï¼Œé˜¶æ®µ 3 ç§»é™¤ã€‚
 - è§†å£é¢æ¿ä¸è¾“å…¥/ç›¸æœºå¼ºè€¦åˆï¼Œé˜¶æ®µ 3 å•ç‹¬è¯„ä¼°ã€‚
 - æ¯ä»»åŠ¡ç‹¬ç«‹ commit + å†’çƒŸï¼Œå¯å•ç‹¬å›æ»šã€‚
+
+---
+
+## Íê³É¼ÇÂ¼£¨2026-09-01 ÊÕÎ²£©
+
+- Task 1-17£º19 ¸öÃæ°å£¨Scene/Asset/Inspector/Log/Resource/ModelPreview/Plugins/Nav/
+  DebugOverlay/Loc/Profiler/InputMap/Terrain/Tilemap/Package/ScriptEditor/UIEditor/
+  AnimEditor/AsmEditor£©È«²¿²ğÎª¶ÀÁ¢ IPanel Àà£¬¾­ PanelRegistry ×¢²á£¨¿É¶ÀÁ¢¼ÓÔØ/Ğ¶ÔØ£©¡£
+- Task 18 ¾ö²ß£ºÊÓ¿ÚÃæ°å£¨BuildViewportPanel£©ÓëĞĞÎªÊ÷±à¼­Æ÷£¨BuildBtPanel ¼° 4 ¸ö
+  Bt* ×ÓÃæ°å£©±£ÁôÎª¡¸ºËĞÄÃæ°å¡¹¡ª¡ªäÖÈ¾ 3D ÊÓÍ¼ + gizmo + ½Úµã»­²¼£¬Óë EditorApp µÄ
+  ÊäÈë/Ïà»ú/undo Éî¶ÈñîºÏ£¬²ğ·ÖµÄñîºÏÊÕÒæ±ÈµÍ¡£documented in DEVELOPMENT.md C3¡£
+- Task 19£ºini ³Ö¾Ã»¯£¨Panels()/RegisterPanelStateHandler ¾­³ÉÔ±Ö¸Õë±í£©±£Áô¡ª¡ªshow
+  ±êÖ¾ÈÔÔÚ EditorApp£»oid* editorApp ÌÓÉú²Õ±£Áô£¨EditMeshKeyCommand ĞèÒª EditorApp*£©¡£
+- Task 20£ºDEVELOPMENT.md C3 ±ê¼Ç [x]¡£
+- editor.hpp£º1020 ¡ú 926 ĞĞ£¨Ãæ°å×´Ì¬ÒÆ³ö£»ÊÓÍ¼/BT/¹²Ïí×´Ì¬±£Áô£©¡£
+- ÑéÖ¤£º
+eon_tests 757 È«ÂÌ£»
+eon_editor --smoke-test 240 fail-delta = 0
+  £¨11 ÏîÔ¤´æ»·¾³Ê§°ÜÓë¸Ä¶¯ÎŞ¹Ø£©¡£
