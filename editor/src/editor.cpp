@@ -9,6 +9,7 @@
 #include "panels/plugins_panel.hpp"
 #include "panels/nav_panel.hpp"
 #include "panels/debug_overlay_panel.hpp"
+#include "panels/loc_panel.hpp"
 
 #include <algorithm>
 #include <cerrno>
@@ -331,6 +332,8 @@ bool EditorApp::OnCreate() {
         debugOverlayPanel_ = panel.get();
         panels_.Register(std::move(panel));
     }
+    // 本地化面板（Task 11）：LocState 全部迁入面板私有状态，仅注入可见标志 showLoc_。
+    panels_.Register(std::make_unique<LocPanel>(&showLoc_));
     panels_.OpenAll(ctx_);
     // Toolbar icon glyph self-check: a missing glyph renders as '?' in the
     // toolbar. Log once at startup so icon regressions are caught immediately.

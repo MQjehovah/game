@@ -44,6 +44,8 @@ class NavPanel;
 // 面板插件化（Task 10）：调试覆盖层面板（panels/debug_overlay_panel.hpp）。
 // DrawDebugOverlay 保留为薄转发（editor_viewport 画视口图层），经指针访问。
 class DebugOverlayPanel;
+// 面板插件化（Task 11）：本地化面板（panels/loc_panel.hpp）。状态全迁入面板。
+class LocPanel;
 
 // P2-editor UX: a full TRS triple used by the multi-selection batch transform.
 struct Transform3 {
@@ -292,7 +294,7 @@ private:
     // saves it immediately so edits survive closing the panel / the editor
     // (untitled docs wait for the explicit 保存 button).
     void MarkUIDirty();
-    void BuildLocPanel();
+    // 本地化面板（Task 11）已迁入 panels/loc_panel.hpp；BuildLocPanel 删除。
     void BuildProfilerPanel();
     void BuildInputMapPanel();
     void DrawPlayHUD();
@@ -627,11 +629,6 @@ private:
         std::array<float, kProfilerSamples> ms{};
         int msHead = 0;
     };
-    struct LocState {
-        core::Localization edit;
-        std::string language = "zh";
-        std::string path; // last loaded/saved locales file
-    };
     struct InputMapState {
         script::InputMap edit;
         std::string listenAction; // "listening" action, "" = idle
@@ -871,8 +868,6 @@ private:
     bool showLoc_ = false;
     bool showPlugins_ = false; // plugin management panel
     std::unique_ptr<editor::EditorPluginManager> pluginMgr_; // editor plugins
-
-    LocState locState_; // localization editor (string tables + language)
 
     NavState nav_; // navigation tool (A* grid + start/goal/path)
 
