@@ -41,6 +41,9 @@ class ModelPreviewPanel;
 class PluginsPanel;
 // 面板插件化（Task 9）：导航面板（panels/nav_panel.hpp）。经 ctx.nav 访问 NavState。
 class NavPanel;
+// 面板插件化（Task 10）：调试覆盖层面板（panels/debug_overlay_panel.hpp）。
+// DrawDebugOverlay 保留为薄转发（editor_viewport 画视口图层），经指针访问。
+class DebugOverlayPanel;
 
 // P2-editor UX: a full TRS triple used by the multi-selection batch transform.
 struct Transform3 {
@@ -278,8 +281,8 @@ private:
     void BuildPluginPanels();
     // 插件管理面板（Task 8）已迁入 panels/plugins_panel.hpp；BuildPluginsPanel 删除。
     // 导航面板（Task 9）已迁入 panels/nav_panel.hpp；BuildNavPanel 删除。
-    // G8-3 debug overlay: unified F3 panel + viewport layers.
-    void BuildDebugOverlayPanel();
+    // G8-3 debug overlay: F3 面板已迁入 panels/debug_overlay_panel.hpp（Task 10）；
+    // DrawDebugOverlay 保留为薄转发（editor_viewport 画视口图层）。
     void DrawDebugOverlay(const gfx::Camera& cam);
     void BuildUIEditorPanel();
     // UI editor viewport input: click selects a node, drag moves it, corner
@@ -832,16 +835,14 @@ private:
     bool showImGuiDemo_ = false;
     bool showNav_ = false;
     // G8-3 debug overlay (F3). Layer toggles drive the viewport overlays.
+    // 开关状态保留在此（视口画物理线框 editor_viewport:241 直接读 debugColliders_）；
+    // 探针字段缓存（原 debugProbeField_ 等）已迁入 DebugOverlayPanel（Task 10）。
     bool showDebugOverlay_ = false;
     bool debugColliders_ = true;  // physics wireframe (on by default, keeps old UX)
     bool debugNavMesh_ = false;
     bool debugProbes_ = false;
     bool debugAudio_ = false;
-    // Cached light-probe field for the probe layer (rebuilt when stale).
-    std::vector<gfx::IrradianceProbe> debugProbeField_;
-    math::AABB debugProbeBounds_{};
-    int debugProbeRes_ = 4;
-    bool debugProbeDirty_ = true;
+    DebugOverlayPanel* debugOverlayPanel_ = nullptr; // 不拥有；OnCreate 注册时设置
     // Data-driven UI editor (ui/*.ui.json): edit a UI document tree and
     // preview it in the viewport. Opens via 视图 → UI 编辑器.
     bool showUIEditor_ = false;

@@ -8,6 +8,7 @@
 #include "panels/model_preview_panel.hpp"
 #include "panels/plugins_panel.hpp"
 #include "panels/nav_panel.hpp"
+#include "panels/debug_overlay_panel.hpp"
 
 #include <algorithm>
 #include <cerrno>
@@ -319,6 +320,17 @@ bool EditorApp::OnCreate() {
     // 仍由 EditorApp 持有（nav_），注入指针经 ctx.nav 共享。
     ctx_.nav = &nav_;
     panels_.Register(std::make_unique<NavPanel>(&showNav_));
+    // 调试覆盖层（Task 10）：图层开关状态仍由 EditorApp 持有（视口画物理线框
+    // 直接读 debugColliders_），注入指针；探针字段缓存迁入面板私有状态。
+    ctx_.debugColliders = &debugColliders_;
+    ctx_.debugNavMesh = &debugNavMesh_;
+    ctx_.debugProbes = &debugProbes_;
+    ctx_.debugAudio = &debugAudio_;
+    {
+        auto panel = std::make_unique<DebugOverlayPanel>(&showDebugOverlay_);
+        debugOverlayPanel_ = panel.get();
+        panels_.Register(std::move(panel));
+    }
     panels_.OpenAll(ctx_);
     // Toolbar icon glyph self-check: a missing glyph renders as '?' in the
     // toolbar. Log once at startup so icon regressions are caught immediately.
@@ -576,6 +588,12 @@ void EditorApp::OpenModelPreview(const std::string& path) {
 
 void EditorApp::RenderModelPreviewPanel() {
     if (modelPreviewPanel_) modelPreviewPanel_->Render();
+}
+
+// 调试覆盖层转发器（Task 10）：图层绘制逻辑已迁入 DebugOverlayPanel::DrawOverlay，
+// 这里保留薄转发供 editor_viewport（主场景之后画视口图层）调用。
+void EditorApp::DrawDebugOverlay(const gfx::Camera& cam) {
+    if (debugOverlayPanel_) debugOverlayPanel_->DrawOverlay(ctx_, cam);
 }
 
 void EditorApp::OnShutdown() {

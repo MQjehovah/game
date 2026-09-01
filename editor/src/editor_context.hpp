@@ -55,6 +55,12 @@ struct EditorContext {
     std::string* projectDir = nullptr;
     // 导航工具状态（Task 9）：导航面板 + 调试覆盖层共用，EditorApp 持有，注入指针。
     NavState* nav = nullptr;
+    // 调试覆盖层开关（Task 10）：被调试覆盖面板（勾选）与视口（画物理线框 /
+    // DrawDebugOverlay 画图层）共用，EditorApp 持有，注入指针。
+    bool* debugColliders = nullptr;
+    bool* debugNavMesh = nullptr;
+    bool* debugProbes = nullptr;
+    bool* debugAudio = nullptr;
     // 跨面板操作（EditorApp 注入回调）
     std::function<void()> refreshAssetDir;
     std::function<void(int)> setSelection;

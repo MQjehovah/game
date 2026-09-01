@@ -572,6 +572,7 @@ add_library(neon_editor_lib STATIC
   editor/src/panels/model_preview_panel.cpp
   editor/src/panels/plugins_panel.cpp
   editor/src/panels/nav_panel.cpp
+  editor/src/panels/debug_overlay_panel.cpp
   editor/src/bt_editor.cpp
 )
 target_include_directories(neon_editor_lib

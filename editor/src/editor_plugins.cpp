@@ -122,110 +122,12 @@ void EditorApp::BuildPluginPanels() {
 // BuildImGuiUI 经 panels_.DrawAll(ctx_) 分发。原生插件列表状态
 // （nativePlugins_/nativePluginsDir_）随面板迁入。
 
-void EditorApp::BuildDebugOverlayPanel() {
-    if (!showDebugOverlay_) return;
-    if (ImGui::Begin("调试覆盖层", &showDebugOverlay_)) {
-        ImGui::TextDisabled("F3 开关本面板; 图层实时作用在视口");
-        ImGui::Checkbox("碰撞线框", &debugColliders_);
-        ImGui::Checkbox("导航可行走区域", &debugNavMesh_);
-        ImGui::Checkbox("光照探针", &debugProbes_);
-        ImGui::Checkbox("音频源", &debugAudio_);
-        ImGui::TextDisabled("提示: 碰撞/导航/音频在编辑与播放视口即时生效");
-    }
-    ImGui::End();
-}
-
-void EditorApp::DrawDebugOverlay(const gfx::Camera& cam) {
-    (void)cam;
-    if (!renderer_.Backend()) return;
-
-    // G8-3 audio sources: translucent blue attenuation spheres at every entity
-    // carrying an "audio" component. Radius = the component's attenuation
-    // distance, so designers see how far a source is audible.
-    if (debugAudio_) {
-        for (const SceneEntity& e : entities_) {
-            auto it = e.extraComponents.find("audio");
-            if (it == e.extraComponents.end() || !it->second.IsObject()) continue;
-            float radius = 10.0f;
-            if (const core::Json* r = it->second.Get("radius")) {
-                if (r->IsNumber()) radius = static_cast<float>(r->GetNumber());
-            }
-            renderer_.DrawSphere(e.pos, radius,
-                                 gfx::Color{0.25f, 0.5f, 1.0f, 0.18f});
-        }
-    }
-
-    // Navigation walkable area: translucent green (walkable) / red (blocked)
-    // ground cells so the field is visible in the viewport, not just the panel.
-    if (debugNavMesh_ && nav_.grid.Valid()) {
-        static gfx::Mesh cell = gfx::Mesh::CreatePlane(renderer_, 1.0f, 1.0f, 1, 1, "navcell");
-        if (!cell.Valid()) return;
-        gfx::Material walk = gfx::Material::Unlit({}, gfx::Color{0.3f, 0.85f, 0.4f, 0.28f});
-        walk.transparent = true;
-        gfx::Material block = gfx::Material::Unlit({}, gfx::Color{0.9f, 0.3f, 0.3f, 0.28f});
-        block.transparent = true;
-        for (int y = 0; y < nav_.grid.Height(); ++y) {
-            for (int x = 0; x < nav_.grid.Width(); ++x) {
-                const math::Vec2 c = nav_.grid.CellToWorld(x, y);
-                const math::Mat4 m = math::Mat4::Translation({c.x, 0.02f, c.y}) *
-                                     math::Mat4::Scale({nav_.grid.CellSize(), 1.0f,
-                                                        nav_.grid.CellSize()});
-                renderer_.DrawMesh(cell, nav_.grid.Walkable(x, y) ? walk : block, m);
-            }
-        }
-    }
-
-    // Light probes: wireframe sphere markers tinted by probe irradiance, over a
-    // field rebuilt lazily from the scene's 3D meshes' combined AABB. A single
-    // representative light near the scene centre makes the 3D gradient visible;
-    // real scene point lights would feed this list (G2-4).
-    if (debugProbes_) {
-        math::AABB bounds;
-        bool haveBounds = false;
-        for (const SceneEntity& e : entities_) {
-            if (!e.mesh.Valid()) continue;
-            const math::Mat4 model = math::Mat4::Translation(e.pos) * e.rot.ToMat4() *
-                                     math::Mat4::Scale(e.scale);
-            const math::AABB wb = math::TransformAABB(e.mesh.Bounds(), model);
-            if (!haveBounds) {
-                bounds = wb;
-                haveBounds = true;
-            } else {
-                bounds.min.x = std::min(bounds.min.x, wb.min.x);
-                bounds.min.y = std::min(bounds.min.y, wb.min.y);
-                bounds.min.z = std::min(bounds.min.z, wb.min.z);
-                bounds.max.x = std::max(bounds.max.x, wb.max.x);
-                bounds.max.y = std::max(bounds.max.y, wb.max.y);
-                bounds.max.z = std::max(bounds.max.z, wb.max.z);
-            }
-        }
-        if (!haveBounds) {
-            bounds = math::AABB{{-15, 0, -15}, {15, 5, 15}};
-        }
-        const bool same =
-            debugProbeBounds_.min.x == bounds.min.x && debugProbeBounds_.max.x == bounds.max.x &&
-            debugProbeBounds_.min.y == bounds.min.y && debugProbeBounds_.max.y == bounds.max.y &&
-            debugProbeBounds_.min.z == bounds.min.z && debugProbeBounds_.max.z == bounds.max.z;
-        if (debugProbeDirty_ || !same) {
-            gfx::ProbeLightInput in;
-            in.pointLights.push_back({(bounds.min + bounds.max) * 0.5f,
-                                      gfx::Color{1.0f, 0.9f, 0.75f, 1.0f}, 6.0f,
-                                      std::max(bounds.max.x - bounds.min.x, 8.0f)});
-            gfx::BuildProbeField(bounds, debugProbeRes_, in, debugProbeField_);
-            debugProbeBounds_ = bounds;
-            debugProbeDirty_ = false;
-        }
-        const float markerR =
-            std::max(0.08f, (bounds.max.x - bounds.min.x) / (2.0f * static_cast<float>(debugProbeRes_)));
-        for (const gfx::IrradianceProbe& p : debugProbeField_) {
-            const float y = math::Clamp(p.irradiance.y, 0.0f, 1.0f);
-            renderer_.DrawSphere(p.pos, markerR,
-                                 gfx::Color{math::Clamp(p.irradiance.x, 0.0f, 1.0f),
-                                            y,
-                                            math::Clamp(p.irradiance.z, 0.0f, 1.0f), 0.9f});
-        }
-    }
-}
+// 调试覆盖层（原 EditorApp::BuildDebugOverlayPanel / DrawDebugOverlay）已整体迁移为
+// 独立面板类 editor/src/panels/debug_overlay_panel.hpp/.cpp（DebugOverlayPanel :
+// IPanel，Task 10，沿用 Task 2-9 样板）。F3 面板（Draw）经 panels_.DrawAll(ctx_)
+// 分发；视口图层（DrawOverlay）经 EditorApp::DrawDebugOverlay 转发
+// （editor_viewport:375 主场景后调用）。图层开关状态保留在 EditorApp（视口画
+// 物理线框直接读 debugColliders_），探针字段缓存迁入面板。
 
 } // namespace neon::editor
 
