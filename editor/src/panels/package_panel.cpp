@@ -101,7 +101,7 @@ void PackagePanel::Draw(EditorContext& ctx) {
         ImGui::TextDisabled("windows | linux | macos | web");
         ImGui::Separator();
         if (ImGui::Button("一键打包")) {
-            report = ctx.runPackage(outDirBuf);
+            ctx.runPackage(outDirBuf, report);
             ran = true;
         }
         ImGui::SameLine();

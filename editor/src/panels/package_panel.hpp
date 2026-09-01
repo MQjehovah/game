@@ -14,7 +14,7 @@
 #include <string>
 
 #include "editor_context.hpp"
-#include "neon/core/pack.hpp"
+#include "packager.hpp"
 
 namespace neon::editor {
 

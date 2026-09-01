@@ -21,7 +21,7 @@
 
 #include "editor_context.hpp"
 #include "neon/gfx/light_probe.hpp"
-#include "neon/math/aabb.hpp"
+#include "neon/math/math.hpp"
 
 namespace neon::gfx {
 class Camera;
