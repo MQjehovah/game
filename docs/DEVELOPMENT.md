@@ -886,13 +886,16 @@ lagcomp/status/prefab/plugin/sceneTree/scriptCanvas/ui/animation/scriptRuntime/b
 physicsBridge/drawSystem，各系统独立可测，`game_runtime.cpp` 2395→1178 行）；
 C2 动画状态存 DrawItem → headless 空转（已解：动画状态移入 AnimationSystem 独立表，DrawItem
 只留渲染引用）；C3 EditorApp 巨类（panels.cpp 已拆主文件 ~390 行 +
-9 个 `.inc`，面板状态按簇分组；editor.hpp 仍 ~970 行）；C4 Renderer 上帝类 + 无 render graph；
+9 个 `.inc`，面板状态按簇分组；editor.hpp 仍 ~970 行）；C4 Renderer 上帝类 + 无 render graph（已解：后处理全链改造为 Frostbite 式 FrameGraph
+（18-pass，`neon/gfx/frame_graph.hpp` + `post_graph.hpp`，临时 RT 自动池 + 版本化读取），
+Renderer 门面化拆出 ShadowSystem/SceneState/DrawBatch2D，`renderer.cpp` 2828→1174 行，
+渲染逐像素等价）；
 C5 字符串 key 贯穿全栈（无 intern/GUID）；C6 组件序列化三份手写镜像（反射系统 G2-1 收敛中）；
 C7 脚本绑定手写 95 个 ×3 处（hook 化后脚本层零 scene 依赖）；C8 线程基建 3 份复制；
 C9 UI 四轨并存；C10 着色器系统原始（全内嵌字符串）；C11 ECS Pool 防护；C12 CMake 单文件
 （三层库拆分完成，未按模块 add_subdirectory）；C13 scene↔script 循环；C14 玩法混进引擎核心
 （战斗/技能/状态已全部下沉 `Gameplay` 基础库 + Lua，引擎只留通用原语）；C15 editor/server/game 未库化（editor 已库化，server/game 未）。
-→ C1/C2/C6/C7/C11/C13/C14 `[x]`；C3/C12/C15 `[~]`；C4/C5/C8/C9/C10 `[ ]`。
+→ C1/C2/C4/C6/C7/C11/C13/C14 `[x]`；C3/C12/C15 `[~]`；C5/C8/C9/C10 `[ ]`。
 
 ### 10.4 D 系列 · 安全与工程化
 
