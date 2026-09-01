@@ -1149,7 +1149,10 @@ void EditorApp::LoadScene(const std::string& path) {
             if (const core::Json* co = j->Get("cameraOrtho"))
                 e.cameraOrtho = co->GetBool() || co->GetNumber() != 0;
             if (const core::Json* sp = j->Get("shaderPath")) e.shaderPath = sp->GetString();
-            e.meshKey = j->Get("mesh")->GetString("cube");
+            if (const core::Json* mj = j->Get("mesh"))
+                e.meshKey = mj->GetString("cube");
+            else if (e.nodeType.empty())
+                e.meshKey = "cube";
             if (const core::Json* zo = j->Get("zOrder"))
                 e.zOrder = static_cast<float>(zo->GetNumber());
             if (const core::Json* td = j->Get("terrainData")) {

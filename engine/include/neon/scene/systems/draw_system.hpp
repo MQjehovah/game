@@ -182,6 +182,11 @@ private:
         // mesh 节点（自带累积变换 + 材质）。Draw 时用 itemModel * sub.transform
         // 绘制，使一个 `gltf:` 实体渲染整个场景（大型场景渲染，C15 延伸）。
         std::vector<assets::GltfMeshNode> gltfSubNodes;
+        // 多 mesh glTF 场景的合并 AABB（主 mesh + 全部子节点），用于视锥剔除。
+        // 若只按 nodes[0] 的 bounds 剔除，相机看向宫殿中心（nodes[0] 是边缘小
+        // 块）时整个 item 被错误剔除，导致 Sponza 不可见（draws=1）。
+        math::AABB gltfBounds;
+        bool hasGltfBounds = false;
         bool resolved = false;
         bool failed = false;
         bool asyncPending = false;   // G6-2: mesh load kicked, waiting on cache

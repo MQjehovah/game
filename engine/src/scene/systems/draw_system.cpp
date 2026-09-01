@@ -422,6 +422,25 @@ void DrawSystem::ResolveDrawItem(DrawItem& item, gfx::Renderer& renderer, ecs::W
         if (g.nodes.size() > 1) {
             item.gltfSubNodes.assign(g.nodes.begin() + 1, g.nodes.end());
         }
+        // 多 mesh 场景合并 AABB（主 mesh + 全部子节点的世界包围盒），供视锥
+        // 剔除使用。单个 nodes[0] 的 bounds 只覆盖场景一角，用它剔除会把
+        // 面向场景中心的相机错误剔除（Sponza draws=1 的根因）。
+        item.hasGltfBounds = false;
+        if (mesh.Valid()) {
+            item.gltfBounds = mesh.Bounds();
+            item.hasGltfBounds = true;
+        }
+        for (const assets::GltfMeshNode& sub : item.gltfSubNodes) {
+            if (!sub.mesh.Valid()) continue;
+            const math::AABB sb = TransformAABB(sub.mesh.Bounds(), sub.transform);
+            if (!item.hasGltfBounds) {
+                item.gltfBounds = sb;
+                item.hasGltfBounds = true;
+            } else {
+                item.gltfBounds.Expand(sb.min);
+                item.gltfBounds.Expand(sb.max);
+            }
+        }
     }
 
     // Animated skinned glTF: resolve the full model (all skinned mesh parts +
@@ -923,7 +942,9 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
                 SelectLodMesh(item.mesh, item.chain, worldPos, cam.position);
             if (!drawMesh.Valid()) continue;
             drawBvh_.Insert(static_cast<math::Bvh::Id>(idx),
-                            math::TransformAABB(drawMesh.Bounds(), model));
+                            math::TransformAABB(item.hasGltfBounds ? item.gltfBounds
+                                                                   : drawMesh.Bounds(),
+                                                model));
         }
         if (!drawBvh_.Empty())
             drawBvh_.QueryFrustum(renderer.ViewFrustum(),
@@ -973,7 +994,7 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
         // and custom shaders keep the per-entity path.
         const bool batchable = canBatch && !item.skinned && !item.isSprite && !item.isDecal &&
                                !item.mat.transparent && !item.mat.shader.Valid() &&
-                               item.mesh.Valid();
+                               item.mesh.Valid() && item.gltfSubNodes.empty();
         if (batchable) {
             if (!bvhVisible_.empty() && bvhVisible_[idx] == 0) continue; // pre-culled
             gfx::Mesh drawMesh = SelectLodMesh(item.mesh, item.chain, worldPos, cam.position);
