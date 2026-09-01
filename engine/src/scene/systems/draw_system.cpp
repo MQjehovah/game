@@ -781,7 +781,8 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
                                  directional->color.g * directional->intensity,
                                  directional->color.b * directional->intensity,
                                  directional->color.a};
-            renderer.SetDirectionalLight(directional->sunDir, sun, 0.0f);
+            renderer.SetDirectionalLight(directional->sunDir, sun,
+                                         directional->ambientStrength);
         } else {
             renderer.SetDirectionalLight({-0.4f, -1.0f, -0.3f}, {0.8f, 0.8f, 0.8f}, 0.0f);
         }
