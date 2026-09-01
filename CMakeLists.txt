@@ -88,6 +88,7 @@ add_library(neon_gfx STATIC
   engine/src/gfx/color.cpp
   engine/src/gfx/csm.cpp
   engine/src/gfx/font.cpp
+  engine/src/gfx/frame_graph.cpp
   engine/src/gfx/ibl.cpp
   engine/src/gfx/mesh.cpp
   engine/src/gfx/scene_props.cpp
@@ -656,6 +657,7 @@ add_executable(neon_tests tests/test_main.cpp tests/test_serialize.cpp tests/tes
   tests/test_input_map.cpp
   tests/test_mem_stats.cpp
   tests/test_gpu_memory.cpp
+  tests/test_frame_graph.cpp
   ${NEON_AUDIO_TEST}
   tests/test_bt.cpp tests/test_scene_file.cpp tests/test_scene_export.cpp tests/test_manifest.cpp
   tests/test_nav.cpp
