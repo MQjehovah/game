@@ -942,6 +942,9 @@ void Renderer::BeginFrame(const Color& clearColor, float clearDepth) {
     shadowPassRanThisFrame_ = false;
     compositedThisFrame_ = false;
     bloomRanThisFrame_ = false;
+    // Previous frame's bloom graph is fully consumed (composite sampled it);
+    // return the exported bloomAcc target (and any stragglers) to the pool.
+    bloomGraph_.ResetFrame();
     ssaoRanThisFrame_ = false;
     ssaoCasters_.clear();
     volumetricRanThisFrame_ = false;
@@ -2503,12 +2506,14 @@ void Renderer::EnsurePostTargets() {
             msaaEnabled_ = false;
         }
     }
-    bloomHalfA_ = backend_->CreateRenderTarget(hw, hh, true);
-    bloomHalfB_ = backend_->CreateRenderTarget(hw, hh, true);
-    bloomQuarterA_ = backend_->CreateRenderTarget(qw, qh, true);
-    bloomQuarterB_ = backend_->CreateRenderTarget(qw, qh, true);
     hdrW_ = screenW_;
     hdrH_ = screenH_;
+    // The bloom pyramid targets now live in the FrameGraph's transient pool:
+    // rebuild the graph at the new resolution (Destroy first releases the old
+    // graph's GPU allocations). Shaders/mesh were created in InitBuiltinResources.
+    bloomGraph_.Destroy(*backend_);
+    bloomGraph_.Build(brightPassShader_, blurShader_, downsampleShader_, upsampleAddShader_,
+                      postQuadMesh_, screenW_, screenH_);
     EnsureSsaoTargets();
     EnsureVolumetricTargets();
     EnsureSsrTargets();
@@ -2524,10 +2529,9 @@ void Renderer::DestroyPostTargets() {
     };
     destroy(hdrMsaaRT_);
     destroy(hdrRT_);
-    destroy(bloomHalfA_);
-    destroy(bloomHalfB_);
-    destroy(bloomQuarterA_);
-    destroy(bloomQuarterB_);
+    // The bloom pyramid's targets are owned by the FrameGraph pool; release
+    // every allocation it still holds (also covers a pending bloom result).
+    if (backend_) bloomGraph_.Destroy(*backend_);
     destroy(ssaoDepthRT_);
     destroy(aoRT_);
     destroy(aoBlurA_);
@@ -2648,88 +2652,19 @@ void Renderer::RebindMainTarget() {
 
 bool Renderer::RunBloom() {
     if (!bloomEnabled_) return false;
-    if (!hdrRT_.Valid() || !bloomHalfA_.Valid() || !bloomHalfB_.Valid() ||
-        !bloomQuarterA_.Valid() || !bloomQuarterB_.Valid() || !postQuadMesh_.Valid()) {
-        return false;
-    }
-    if (!brightPassShader_.Valid() || !blurShader_.Valid() || !downsampleShader_.Valid() ||
+    if (!hdrRT_.Valid() || !postQuadMesh_.Valid() ||
+        !brightPassShader_.Valid() || !blurShader_.Valid() || !downsampleShader_.Valid() ||
         !upsampleAddShader_.Valid()) {
         NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Warn,
                      "Renderer: bloom skipped - post shader missing");
         return false;
     }
-    const float halfTexelX = 1.0f / static_cast<float>(std::max(hdrW_ / 2, 1));
-    const float halfTexelY = 1.0f / static_cast<float>(std::max(hdrH_ / 2, 1));
-    const float quarterTexelX = 1.0f / static_cast<float>(std::max(hdrW_ / 4, 1));
-    const float quarterTexelY = 1.0f / static_cast<float>(std::max(hdrH_ / 4, 1));
-
-    auto fullscreen = [this](ShaderHandle shader) {
-        backend_->SetBlendMode(BlendMode::Opaque);
-        backend_->SetDepthTest(false, false);
-        backend_->SetCullMode(CullMode::None);
-        backend_->UseShader(shader);
-        backend_->SetUniformMat4("uMVP", math::Mat4::Identity());
-    };
-
-    // 1. Bright pass: HDR -> halfA (thresholded, only pixels above 1.0).
-    backend_->BindRenderTarget(bloomHalfA_);
-    fullscreen(brightPassShader_);
-    backend_->BindTexture(0, backend_->RenderTargetColorTexture(hdrRT_));
-    backend_->SetUniformInt("uTex", 0);
-    backend_->SetUniformFloat("uThreshold", kBloomThreshold);
-    backend_->DrawMesh(postQuadMesh_);
-
-    // 2. Blur the half-res bright (H then V), ping-ponging halfA/halfB.
-    backend_->BindRenderTarget(bloomHalfB_);
-    fullscreen(blurShader_);
-    backend_->BindTexture(0, backend_->RenderTargetColorTexture(bloomHalfA_));
-    backend_->SetUniformInt("uTex", 0);
-    backend_->SetUniformVec2("uTexelSize", {halfTexelX, halfTexelY});
-    backend_->SetUniformVec2("uDirection", {1.0f, 0.0f});
-    backend_->DrawMesh(postQuadMesh_);
-    backend_->BindRenderTarget(bloomHalfA_);
-    fullscreen(blurShader_);
-    backend_->BindTexture(0, backend_->RenderTargetColorTexture(bloomHalfB_));
-    backend_->SetUniformInt("uTex", 0);
-    backend_->SetUniformVec2("uTexelSize", {halfTexelX, halfTexelY});
-    backend_->SetUniformVec2("uDirection", {0.0f, 1.0f});
-    backend_->DrawMesh(postQuadMesh_);
-
-    // 3. Downsample: halfA -> quarterA (2x2 box).
-    backend_->BindRenderTarget(bloomQuarterA_);
-    fullscreen(downsampleShader_);
-    backend_->BindTexture(0, backend_->RenderTargetColorTexture(bloomHalfA_));
-    backend_->SetUniformInt("uTex", 0);
-    backend_->SetUniformVec2("uSrcTexelSize", {halfTexelX, halfTexelY});
-    backend_->DrawMesh(postQuadMesh_);
-
-    // 4. Blur the quarter-res level (H then V), ping-ponging quarterA/quarterB.
-    backend_->BindRenderTarget(bloomQuarterB_);
-    fullscreen(blurShader_);
-    backend_->BindTexture(0, backend_->RenderTargetColorTexture(bloomQuarterA_));
-    backend_->SetUniformInt("uTex", 0);
-    backend_->SetUniformVec2("uTexelSize", {quarterTexelX, quarterTexelY});
-    backend_->SetUniformVec2("uDirection", {1.0f, 0.0f});
-    backend_->DrawMesh(postQuadMesh_);
-    backend_->BindRenderTarget(bloomQuarterA_);
-    fullscreen(blurShader_);
-    backend_->BindTexture(0, backend_->RenderTargetColorTexture(bloomQuarterB_));
-    backend_->SetUniformInt("uTex", 0);
-    backend_->SetUniformVec2("uTexelSize", {quarterTexelX, quarterTexelY});
-    backend_->SetUniformVec2("uDirection", {0.0f, 1.0f});
-    backend_->DrawMesh(postQuadMesh_);
-
-    // 5. Upsample-add (progressive bloom): halfB = halfA + up(quarterA).
-    backend_->BindRenderTarget(bloomHalfB_);
-    fullscreen(upsampleAddShader_);
-    backend_->BindTexture(0, backend_->RenderTargetColorTexture(bloomHalfA_));
-    backend_->SetUniformInt("uHalf", 0);
-    backend_->BindTexture(1, backend_->RenderTargetColorTexture(bloomQuarterA_));
-    backend_->SetUniformInt("uQuarter", 1);
-    backend_->DrawMesh(postQuadMesh_);
-
-    bloomRanThisFrame_ = true;
-    return true;
+    // The bloom chain (bright -> blur h/v -> downsample -> blur h/v ->
+    // upsample-add) runs inside bloomGraph_'s FrameGraph. The transient
+    // half/quarter targets live in its pool; the result is exported for the
+    // composite pass to sample via BloomColorTexture.
+    bloomRanThisFrame_ = bloomGraph_.Execute(*backend_, hdrRT_, hdrW_, hdrH_, bloomEnabled_);
+    return bloomRanThisFrame_;
 }
 
 void Renderer::CompositeToBackbuffer() {
@@ -2742,18 +2677,20 @@ void Renderer::CompositeToBackbuffer() {
     backend_->SetUniformMat4("uMVP", math::Mat4::Identity());
     backend_->BindTexture(0, backend_->RenderTargetColorTexture(hdrRT_));
     backend_->SetUniformInt("uHdr", 0);
-    if (bloomRanThisFrame_ && bloomHalfB_.Valid()) {
-        backend_->BindTexture(1, backend_->RenderTargetColorTexture(bloomHalfB_));
-        backend_->SetUniformFloat("uStrength", kBloomStrength);
-        backend_->SetUniformInt("uBloomEnabled", 1);
+    // The bloom term samples the graph's exported bloomAcc target (written by
+    // RunBloom's FrameGraph execute); when bloom is off / unavailable, bind the
+    // HDR texture on the bloom slot too (the program still references the
+    // sampler) and skip the term, so the `--no-bloom` image differs only by
+    // the bloom contribution.
+    const TextureHandle bloomTex = bloomGraph_.BloomColorTexture(*backend_);
+    const bool bloomActive = bloomRanThisFrame_ && bloomTex.Valid();
+    if (bloomActive) {
+        backend_->BindTexture(1, bloomTex);
     } else {
-        // Bloom off / unavailable: bind the HDR texture on the bloom slot too
-        // (the program still references the sampler) and skip the term, so the
-        // `--no-bloom` image differs only by the bloom contribution.
         backend_->BindTexture(1, backend_->RenderTargetColorTexture(hdrRT_));
-        backend_->SetUniformFloat("uStrength", kBloomStrength);
-        backend_->SetUniformInt("uBloomEnabled", 0);
     }
+    backend_->SetUniformFloat("uStrength", kBloomStrength);
+    backend_->SetUniformInt("uBloomEnabled", bloomActive ? 1 : 0);
     backend_->SetUniformInt("uBloom", 1);
     if (ssaoRanThisFrame_ && aoRT_.Valid()) {
         backend_->BindTexture(2, backend_->RenderTargetColorTexture(aoRT_));

@@ -16,6 +16,7 @@ namespace neon::gfx {
 // each pass through FrameGraphContext.
 
 using ResourceId = uint32_t;
+inline constexpr ResourceId kInvalidResource = ~ResourceId(0);
 
 // Description of a transient render target resource. `format` is an opaque tag
 // (0 = default RGBA8 target, non-zero = half-float RGBA16F color attachment via
@@ -63,32 +64,85 @@ struct FramePass {
     std::function<void(FrameGraphContext&)> execute;
 };
 
+// Per-pass execution trace: the input/output RenderTargetHandles a pass was
+// wired with, recorded by the last Execute() (same order as it ran). Lets tests
+// and tooling verify the dependency wiring (which producer's output feeds which
+// consumer's input) instead of only the pass order.
+struct FrameGraphBinding {
+    ResourceId resource = kInvalidResource;
+    RenderTargetHandle target;
+};
+struct FrameGraphPassTrace {
+    std::string name;
+    std::vector<FrameGraphBinding> inputs;
+    std::vector<FrameGraphBinding> outputs;
+};
+
 // Declare resources/passes once, then Execute() per frame. A target's lifetime
 // spans its last reader/writer in declaration order; earlier uses return it to
 // the pool so the next same-descriptor target reuses the GPU allocation. Call
 // ResetFrame() once per frame after Execute() to return any still-live targets
 // to the pool (and do so before destroying the graph, which owns no backend).
+//
+// Two integration hooks keep the graph usable for real pipelines:
+//   - SetExternalInput(): wires a caller-owned target into a resource that no
+//     pass writes (e.g. the scene's HDR texture). Reads bind to it; it is never
+//     pooled or destroyed by the graph.
+//   - ExportResource(): keeps a resource's target live (NOT returned to the
+//     pool) after its last reader/writer, so the caller can keep sampling it
+//     (e.g. the bloom result read by the composite pass) until ResetFrame().
+//
+// Resources may be written by MULTIPLE passes (ping-pong). A read binds to the
+// version produced by the most recent writer declared BEFORE the reader; a
+// writer declared after the reader is a later overwrite and creates no edge,
+// so the declaration order is always a valid topological order. State the
+// passes in dataflow order.
 class FrameGraph {
 public:
     FrameGraph() = default;
     FrameGraph(const FrameGraph&) = delete;
     FrameGraph& operator=(const FrameGraph&) = delete;
+    FrameGraph(FrameGraph&&) noexcept = default;
+    FrameGraph& operator=(FrameGraph&&) noexcept = default;
 
     // Allocates the next resource id; records the target descriptor.
     ResourceId AddResource(const FrameGraphResourceDesc& desc);
 
     // Validates every read/write id against the declared resources; on any
     // out-of-range id nothing is added and false is returned. Passes that read
-    // a resource are ordered after its last writer.
+    // a resource are ordered after its most recent prior writer (see above).
     bool AddPass(FramePass pass);
 
+    // Wires a caller-owned render target into resource `id` (declared but never
+    // written by any pass). The target's colour texture is what reads of the
+    // resource sample. Pass an invalid handle to clear. The graph never pools
+    // or destroys it. Valid only when Execute() runs.
+    void SetExternalInput(ResourceId id, RenderTargetHandle rt);
+
+    // Marks a resource as exported: its target stays live after its last use so
+    // the caller can sample it (GetResourceTarget) until ResetFrame().
+    void ExportResource(ResourceId id);
+
+    // Live target of an exported (or still-live) resource. Valid between the
+    // Execute() that produced it and ResetFrame().
+    RenderTargetHandle GetResourceTarget(ResourceId id) const;
+
     // Topologically sorts the enabled passes (Kahn, cycle -> false), runs each
-    // one with the transient targets wired into FrameGraphContext and returns
-    // targets whose last use is over back into the pool.
+    // one with the transient targets wired into FrameGraphContext, records the
+    // per-pass bindings in LastTrace() and returns targets whose last use is
+    // over back into the pool (except exported ones).
     bool Execute(IRenderBackend& backend);
+
+    // Trace of the last Execute(): the executed pass names in order plus each
+    // pass's input/output target handles. Cleared at the start of Execute.
+    const std::vector<FrameGraphPassTrace>& LastTrace() const { return trace_; }
 
     // Returns every target still live this frame to the pool.
     void ResetFrame();
+
+    // Destroys every pooled + live target (GPU objects). Call when the graph is
+    // discarded or rebuilt so stale allocations are not leaked.
+    void DestroyResources(IRenderBackend& backend);
 
     size_t PassCount() const { return passes_.size(); }
     size_t ResourceCount() const { return resources_.size(); }
@@ -118,8 +172,10 @@ private:
 
     std::vector<FrameGraphResourceDesc> resources_;
     std::vector<FramePass> passes_;
-    std::vector<int> lastUse_;
+    std::vector<bool> exported_;
+    std::unordered_map<ResourceId, RenderTargetHandle> externalInputs_;
     std::unordered_map<ResourceId, RenderTargetHandle> liveRTs_;
+    std::vector<FrameGraphPassTrace> trace_;
     std::unordered_map<PoolKey, std::vector<RenderTargetHandle>, PoolKeyHash> pool_;
 };
 

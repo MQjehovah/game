@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include "neon/gfx/backend.hpp"
+#include "neon/gfx/bloom_graph.hpp"
 #include "neon/gfx/camera.hpp"
 #include "neon/gfx/color.hpp"
 #include "neon/gfx/font.hpp"
@@ -458,8 +459,9 @@ private:
     // (no-op when MSAA is inactive). Called before any pass that samples the
     // HDR target: CompositeSceneToBackbuffer and the capture helpers.
     void ResolveMainTarget();
-    // Bloom pyramid (all fullscreen passes on RGBA16F targets). Ends with
-    // bloomHalfA_ holding the accumulated bloom at half resolution.
+    // Bloom pyramid (all fullscreen passes on RGBA16F targets). Delegates to
+    // bloomGraph_ (a FrameGraph pass chain); the accumulated bloom stays in the
+    // graph's exported bloomAcc resource, sampled by CompositeToBackbuffer.
     bool RunBloom();
     // Composite HDR (+ bloom) to the backbuffer with the composite shader.
     void CompositeToBackbuffer();
@@ -527,16 +529,15 @@ private:
     uint64_t sceneUniformAppliedStamp_ = ~0ull;
     ShaderHandle lastSceneUniformShader_;
 
-    // HDR scene target (window size, RGBA16F) + the bloom pyramid targets.
-    // hdrMsaaRT_ is the 4x/2x multisample target the scene renders into when
-    // MSAA is active; hdrRT_ is the single-sample target the MSAA target is
-    // resolved into and the source the bloom pyramid + composite sample from.
+    // HDR scene target (window size, RGBA16F). hdrMsaaRT_ is the 4x/2x
+    // multisample target the scene renders into when MSAA is active; hdrRT_ is
+    // the single-sample target the MSAA target is resolved into and the source
+    // the bloom pyramid + composite sample from. The bloom pyramid's own
+    // targets (half/quarter-res RGBA16F) are owned by bloomGraph_'s FrameGraph
+    // pool, not the renderer.
     RenderTargetHandle hdrRT_;
     RenderTargetHandle hdrMsaaRT_;
-    RenderTargetHandle bloomHalfA_;    // 1/2 res: bright pass, then blurred, then accumulated
-    RenderTargetHandle bloomHalfB_;    // 1/2 res scratch (blur ping-pong + upsample-add result)
-    RenderTargetHandle bloomQuarterA_; // 1/4 res: downsample, then blurred
-    RenderTargetHandle bloomQuarterB_; // 1/4 res scratch (blur ping-pong)
+    BloomGraph bloomGraph_;
     // G1-5 SSAO: colour-encoded scene depth (full-res) + AO at half-res.
     RenderTargetHandle ssaoDepthRT_;
     RenderTargetHandle aoRT_;
@@ -559,10 +560,10 @@ private:
     bool msaaRequested_ = true;
     bool msaaEnabled_ = false;
     int msaaSamples_ = 0;
-    // True once RunBloom wrote the accumulated bloom into bloomHalfB_ this
-    // frame (set by RunBloom, reset in BeginFrame); CompositeToBackbuffer only
-    // adds the bloom term when it ran, so a failed shader/target never blends
-    // uninitialized content into the composite.
+    // True once RunBloom wrote the accumulated bloom into the graph's exported
+    // bloomAcc this frame (set by RunBloom, reset in BeginFrame);
+    // CompositeToBackbuffer only adds the bloom term when it ran, so a failed
+    // shader/target never blends uninitialized content into the composite.
     bool bloomRanThisFrame_ = false;
     bool compositedThisFrame_ = false;
     // G1-5 SSAO state.
