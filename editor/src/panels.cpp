@@ -367,10 +367,12 @@ void EditorApp::InitToolPanels() {
     RefreshAssetDir();
 }
 
+// 资产操作方法（RefreshAssetDir/ImportAssetFile/CreateAssetFile/ImportAssetPath/
+// DeleteSelectedAsset/ImportSelectedAsset）实现在 panels_assets.inc（EditorApp
+// 成员；Task 3 迁移 AssetPanel 时保留在 EditorApp，经 ctx 回调访问）。
 #include "panels_assets.inc"
-#include "panels_scene.inc"
-#include "panels_asset_panel.inc"
+// 视口面板（BuildViewportPanel）尚未迁移（Task 18 评估），实现保留在
+// panels_debug.inc（EditorApp 成员）。
 #include "panels_debug.inc"
-#include "panels_script.inc"
 
 } // namespace neon::editor

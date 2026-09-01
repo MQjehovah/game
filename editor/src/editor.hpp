@@ -80,6 +80,9 @@ class ScriptEditorPanel;
 // 面板插件化（Task 16）：UI 编辑器面板（panels/ui_editor_panel.hpp）。经
 // ctx.uiEditor（UiEditorState 提升为共享结构）+ 辅助方法回调访问。
 class UIEditorPanel;
+// 面板插件化（Task 17）：动画时间线 / 状态机编辑器面板。状态全迁入面板。
+class AnimEditorPanel;
+class AsmEditorPanel;
 
 // P2-editor UX: a full TRS triple used by the multi-selection batch transform.
 struct Transform3 {
@@ -582,8 +585,8 @@ private:
     void SaveScriptEditor();
     // 脚本编辑器面板（Task 15）已迁入 panels/script_editor_panel.hpp；
     // BuildScriptEditorPanel 删除。
-    void BuildAnimEditorPanel();
-    void BuildStateMachineEditorPanel();
+    // 动画时间线 / 状态机编辑器（Task 17）已迁入 panels/anim_editor_panel.hpp +
+    // panels/asm_editor_panel.hpp；BuildAnimEditorPanel/BuildStateMachineEditorPanel 删除。
     // 世界面板（Task 14）：BuildTerrainPanel/BuildTilemapPanel/BuildPackagePanel
     // 已迁入 panels/{terrain,tilemap,package}_panel.hpp，声明删除。
     void SaveSceneAsChild();
@@ -617,21 +620,6 @@ private:
     // Each panel owns its state; EditorApp holds one instance per panel instead
     // of ~55 flat members that sat directly on the god class.
     // ---------------------------------------------------------------------
-    struct AnimEditorState {
-        anim::AnimationClip clip;
-        std::string clipPath;
-        bool clipDirty = false;
-        float playhead = 0.0f;
-        bool playing = false;
-        char pathBuf[512] = {};
-    };
-    struct AsmEditorState {
-        anim::AnimationStateMachine machine;
-        std::string path;
-        bool dirty = false;
-        char pathBuf[512] = {};
-    };
-
     gfx::Renderer renderer_;
     // Play audio: procedural SoundFx synthesized per PlaySfx(name) and
     // played through the backend. Default = platform (miniaudio / WinMM /
@@ -970,8 +958,8 @@ private:
     bool showStateMachineEditor_ = false;
     bool showTerrain_ = false;
     bool showTilemap_ = false;
-    AnimEditorState anim_;   // P1-1 animation timeline editor state
-    AsmEditorState asmEdit_; // data-driven state machine editor (.asm.json)
+    // 动画/状态机编辑器状态（AnimEditorState/AsmEditorState）已迁入
+    // panels/anim_editor_panel.hpp + panels/asm_editor_panel.hpp（Task 17）。
     ScriptEditorState scriptEditor_; // script editor + debugger + vars state
 
     // Package panel (T4.6) state. PackageState 已迁入 panels/package_panel.hpp

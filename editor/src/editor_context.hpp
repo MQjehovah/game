@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "history.hpp"
+#include "neon/anim/anim.hpp"
 #include "neon/assets/asset_manager.hpp"
 #include "neon/core/pack.hpp"
 #include "neon/core/time.hpp"
@@ -49,6 +50,23 @@ struct UiEditorState {
     bool uiDragging = false;
     int uiResizeHandle = -1;          // -1 none, 0..3 corner handles
     math::Vec2 uiDragPos{0.0f, 0.0f}; // mouse in design space
+};
+
+// 动画时间线 / 状态机编辑器状态。原 EditorApp::AnimEditorState / AsmEditorState
+// 嵌套结构，Task 17 提升为共享结构（仅动画/状态机编辑器面板使用，全迁入面板）。
+struct AnimEditorState {
+    anim::AnimationClip clip;
+    std::string clipPath;
+    bool clipDirty = false;
+    float playhead = 0.0f;
+    bool playing = false;
+    char pathBuf[512] = {};
+};
+struct AsmEditorState {
+    anim::AnimationStateMachine machine;
+    std::string path;
+    bool dirty = false;
+    char pathBuf[512] = {};
 };
 
 // 输入映射编辑状态。原 EditorApp::InputMapState 嵌套结构，Task 13 提升为共享

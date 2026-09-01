@@ -17,6 +17,8 @@
 #include "panels/package_panel.hpp"
 #include "panels/script_editor_panel.hpp"
 #include "panels/ui_editor_panel.hpp"
+#include "panels/anim_editor_panel.hpp"
+#include "panels/asm_editor_panel.hpp"
 
 #include <algorithm>
 #include <cerrno>
@@ -387,6 +389,9 @@ bool EditorApp::OnCreate() {
     ctx_.uiAlignSelected = [this](int m) { UIAlignSelected(m); };
     ctx_.markUiDirty = [this]() { MarkUIDirty(); };
     panels_.Register(std::make_unique<UIEditorPanel>(&showUIEditor_));
+    // 动画时间线 / 状态机编辑器（Task 17）：状态全迁入面板，仅注入可见标志。
+    panels_.Register(std::make_unique<AnimEditorPanel>(&showAnimEditor_));
+    panels_.Register(std::make_unique<AsmEditorPanel>(&showStateMachineEditor_));
     panels_.OpenAll(ctx_);
     // Toolbar icon glyph self-check: a missing glyph renders as '?' in the
     // toolbar. Log once at startup so icon regressions are caught immediately.

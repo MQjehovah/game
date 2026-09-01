@@ -1,4 +1,4 @@
-void EditorApp::RefreshAssetDir() {
+﻿void EditorApp::RefreshAssetDir() {
     assetEntries_.clear();
     selectedAsset_ = -1;
     ListDirectory(assetDir_, assetEntries_);

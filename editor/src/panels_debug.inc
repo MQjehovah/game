@@ -78,7 +78,7 @@ void EditorApp::BuildViewportPanel() {
                 NEON_LOG_INFO("Viewport: model dropped '%s'", path ? path : "");
                 if (path && *path) {
                     showModelPreview_ = true;
-                    OpenModelPreview(path);  // ModelPreviewPanel::Open（Task 7 转发器）
+                    OpenModelPreview(path);  // ModelPreviewPanel::Open (Task 7 转发器)
                 }
             }
             // 资产面板的预置体 (assets/prefabs/*.json) 拖到 3D 视口 → 生成实例。
