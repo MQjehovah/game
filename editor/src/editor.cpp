@@ -11,6 +11,7 @@
 #include "panels/debug_overlay_panel.hpp"
 #include "panels/loc_panel.hpp"
 #include "panels/profiler_panel.hpp"
+#include "panels/input_map_panel.hpp"
 
 #include <algorithm>
 #include <cerrno>
@@ -346,6 +347,12 @@ bool EditorApp::OnCreate() {
     ctx_.playBtCount = [this]() { return play_ ? play_->BehaviorTreeCount() : 0; };
     ctx_.playScriptCount = [this]() { return play_ ? play_->ScriptCount() : 0; };
     panels_.Register(std::make_unique<ProfilerPanel>(&showProfiler_));
+    // 输入映射面板（Task 13）：InputMapState 仍由 EditorApp 持有（OnEvent 监听
+    // 按键写回 listenAction），注入指针；Load/Save 经回调（OnCreate:481 已调 Load）。
+    ctx_.inputMap = &inputMapState_;
+    ctx_.loadInputMapEdit = [this]() { LoadInputMapEdit(); };
+    ctx_.saveInputMapEdit = [this]() { SaveInputMapEdit(); };
+    panels_.Register(std::make_unique<InputMapPanel>(&showInputMap_));
     panels_.OpenAll(ctx_);
     // Toolbar icon glyph self-check: a missing glyph renders as '?' in the
     // toolbar. Log once at startup so icon regressions are caught immediately.

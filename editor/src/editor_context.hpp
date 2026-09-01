@@ -20,10 +20,19 @@
 #include "neon/ecs/world.hpp"
 #include "neon/gfx/renderer.hpp"
 #include "neon/nav/nav_grid.hpp"
+#include "neon/script/input_map.hpp"
 // scene::ComponentRegistry 定义在 scene_file.hpp（不在 component_schema.hpp）。
 #include "neon/scene/scene_file.hpp"
 
 namespace neon::editor {
+
+// 输入映射编辑状态。原 EditorApp::InputMapState 嵌套结构，Task 13 提升为共享
+// 结构：面板编辑，OnEvent（editor.cpp 监听按键写回 listenAction）也读写，故
+// EditorApp 仍持有 inputMapState_ 实例，经 EditorContext::inputMap 指针访问。
+struct InputMapState {
+    script::InputMap edit;
+    std::string listenAction; // "listening" action, "" = idle
+};
 
 // 性能面板的帧时间环形缓冲。原 EditorApp::ProfilerState 嵌套结构，Task 12 提升
 // 为共享结构：面板写入，冒烟测试（editor_smoke.cpp）直接读 profiler_.ms，故
@@ -83,6 +92,12 @@ struct EditorContext {
     std::function<std::size_t()> playBodyCount;
     std::function<std::size_t()> playBtCount;
     std::function<std::size_t()> playScriptCount;
+    // 输入映射面板（Task 13）：InputMapState 仍由 EditorApp 持有（OnEvent 监听
+    // 按键写回 listenAction），注入指针；Load/Save 保留为 EditorApp 方法
+    // （OnCreate 也调 Load），经回调访问。
+    InputMapState* inputMap = nullptr;
+    std::function<void()> loadInputMapEdit;
+    std::function<void()> saveInputMapEdit;
     // 跨面板操作（EditorApp 注入回调）
     std::function<void()> refreshAssetDir;
     std::function<void(int)> setSelection;

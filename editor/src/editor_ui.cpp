@@ -476,101 +476,12 @@ void EditorApp::SaveInputMapEdit() {
     NEON_LOG_INFO("Editor: input.json saved (%zu actions)", inputMapState_.edit.Names().size());
 }
 
-void EditorApp::BuildInputMapPanel() {
-    if (!showInputMap_) return;
-    if (!ImGui::Begin("输入映射", &showInputMap_)) {
-        ImGui::End();
-        return;
-    }
-    ImGui::TextDisabled("项目: %s/input.json", projectDir_.c_str());
-    ImGui::SameLine();
-    if (ImGui::Button("重新加载")) LoadInputMapEdit();
-    ImGui::SameLine();
-    if (ImGui::Button("保存")) SaveInputMapEdit();
-    ImGui::Separator();
-    if (ImGui::BeginTable("##inputmap", 3, ImGuiTableFlags_Borders)) {
-        ImGui::TableSetupColumn("动作");
-        ImGui::TableSetupColumn("按键");
-        ImGui::TableSetupColumn("绑定");
-        ImGui::TableHeadersRow();
-        for (const std::string& name : inputMapState_.edit.Names()) {
-            const script::InputAction* a = inputMapState_.edit.Find(name);
-            if (!a) continue;
-            ImGui::TableNextRow();
-            ImGui::TableSetColumnIndex(0);
-            ImGui::TextUnformatted(name.c_str());
-            ImGui::TableSetColumnIndex(1);
-            std::string keys;
-            for (platform::Key k : a->positive)
-                keys += (keys.empty() ? "" : " / ") + script::InputMap::KeyToName(k) + "+";
-            for (platform::Key k : a->negative)
-                keys += (keys.empty() ? "" : " / ") + script::InputMap::KeyToName(k) + "-";
-            for (platform::Key k : a->keys)
-                keys += (keys.empty() ? "" : " / ") + script::InputMap::KeyToName(k);
-            ImGui::TextUnformatted(keys.empty() ? "(无)" : keys.c_str());
-            ImGui::TableSetColumnIndex(2);
-            const bool listening = inputMapState_.listenAction == name;
-            if (ImGui::Button(listening ? "等待按键..." : "改键", ImVec2(92.0f, 0.0f))) {
-                inputMapState_.listenAction = listening ? "" : name;
-            }
-        }
-        ImGui::EndTable();
-    }
-    if (!inputMapState_.listenAction.empty())
-        ImGui::TextColored(ImVec4(1.0f, 0.9f, 0.3f, 1.0f),
-                           "请按一个新按键绑定到 '%s'...", inputMapState_.listenAction.c_str());
-    ImGui::Separator();
-    ImGui::TextDisabled("时序规则 (G7-3): 双击窗口/长按阈值 (毫秒, 0=关); 修饰键为需要按住的和弦");
-    for (const std::string& name : inputMapState_.edit.Names()) {
-        script::InputAction* a = inputMapState_.edit.FindMutable(name);
-        if (!a) continue;
-        if (ImGui::TreeNode(name.c_str())) {
-            int dtMs = static_cast<int>(a->doubleTapMs);
-            if (ImGui::SliderInt("双击窗口 (ms)", &dtMs, 0, 1000, "%d",
-                                 ImGuiSliderFlags_None)) {
-                a->doubleTapMs = static_cast<uint32_t>(dtMs);
-            }
-            int lpMs = static_cast<int>(a->longPressMs);
-            if (ImGui::SliderInt("长按阈值 (ms)", &lpMs, 0, 2000, "%d",
-                                 ImGuiSliderFlags_None)) {
-                a->longPressMs = static_cast<uint32_t>(lpMs);
-            }
-            std::string mods;
-            for (size_t i = 0; i < a->modifiers.size(); ++i)
-                mods += (i == 0 ? "" : ", ") + script::InputMap::KeyToName(a->modifiers[i]);
-            char buf[128] = {};
-            std::strncpy(buf, mods.c_str(), sizeof(buf) - 1);
-            ImGui::SetNextItemWidth(180.0f);
-            if (ImGui::InputText("修饰键", buf, sizeof(buf))) {
-                a->modifiers.clear();
-                std::string cur;
-                for (char c : std::string(buf)) {
-                    if (c == ',' || c == ' ') {
-                        if (!cur.empty()) {
-                            const platform::Key k = script::InputMap::KeyFromName(cur);
-                            if (k != platform::Key::Unknown &&
-                                std::find(a->modifiers.begin(), a->modifiers.end(), k) ==
-                                    a->modifiers.end())
-                                a->modifiers.push_back(k);
-                            cur.clear();
-                        }
-                    } else {
-                        cur += c;
-                    }
-                }
-                if (!cur.empty()) {
-                    const platform::Key k = script::InputMap::KeyFromName(cur);
-                    if (k != platform::Key::Unknown &&
-                        std::find(a->modifiers.begin(), a->modifiers.end(), k) ==
-                            a->modifiers.end())
-                        a->modifiers.push_back(k);
-                }
-            }
-            ImGui::TreePop();
-        }
-    }
-    ImGui::End();
-}
+// 输入映射面板（原 EditorApp::BuildInputMapPanel）已整体迁移为独立面板类
+// editor/src/panels/input_map_panel.hpp/.cpp（InputMapPanel : IPanel，Task 13，
+// 沿用 Task 2-12 样板）。InputMapState 提升为共享结构（editor_context.hpp）并
+// 仍由 EditorApp 持有（OnEvent 监听按键写回 listenAction），经 ctx.inputMap 指针
+// 访问；Load/Save 保留为本类方法（OnCreate 也调 Load），经 ctx 回调访问。
+// EditorApp 在 OnCreate 注册它；BuildImGuiUI 经 panels_.DrawAll(ctx_) 分发。
 
 } // namespace neon::editor
 
