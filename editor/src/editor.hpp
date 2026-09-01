@@ -33,6 +33,23 @@
 
 namespace neon::editor {
 
+// 脚本编辑器状态。原 EditorApp::ScriptEditorState 嵌套结构，Task 15 提升为
+// 共享结构：脚本面板（BuildScriptEditorPanel）编辑，OpenScriptFile / SaveScriptEditor
+// （editor_scene）与 OnUpdate 断点同步（editor.cpp）也读写。因含 TextEditor
+//（TextEditor.h 依赖），留在 editor.hpp（不提升到 ImGui-free 的 editor_context.hpp），
+// EditorContext 只前向声明 + 指针访问。
+struct ScriptEditorState {
+    std::string path;   // file being edited ("" = closed)
+    std::string rel;    // project-relative path for checks
+    TextEditor edit;    // built-in editor (Lua/JS syntax highlight)
+    bool dirty = false;
+    ScriptCheckResult check; // last syntax check result
+    std::map<std::string, std::set<int>> breakpoints;
+    bool breakpointsDirty = false;
+    char varsBuf[32768]{};   // raw JSON vars editor (32 KB; truncation detected)
+    std::string varsError;   // last vars-parse / truncation message
+};
+
 // 面板插件化（Task 7）：模型查看器迁移后的独立面板类（panels/model_preview_panel.hpp）。
 // 仅转发器需要指针，故只前向声明；完整类型由 editor.cpp include。
 class ModelPreviewPanel;
@@ -57,6 +74,9 @@ class InputMapPanel;
 class TerrainPanel;
 class TilemapPanel;
 class PackagePanel;
+// 面板插件化（Task 15）：脚本编辑器面板（panels/script_editor_panel.hpp）。经
+// ctx.scriptEditor（ScriptEditorState 提升为共享结构）+ ctx 回调访问。
+class ScriptEditorPanel;
 
 // P2-editor UX: a full TRS triple used by the multi-selection batch transform.
 struct Transform3 {
@@ -560,7 +580,8 @@ private:
     // check, plus a one-click external-editor binding (system default).
     void OpenScriptEditor(const std::string& path);
     void SaveScriptEditor();
-    void BuildScriptEditorPanel();
+    // 脚本编辑器面板（Task 15）已迁入 panels/script_editor_panel.hpp；
+    // BuildScriptEditorPanel 删除。
     void BuildAnimEditorPanel();
     void BuildStateMachineEditorPanel();
     // 世界面板（Task 14）：BuildTerrainPanel/BuildTilemapPanel/BuildPackagePanel
@@ -609,17 +630,6 @@ private:
         std::string path;
         bool dirty = false;
         char pathBuf[512] = {};
-    };
-    struct ScriptEditorState {
-        std::string path;   // file being edited ("" = closed)
-        std::string rel;    // project-relative path for checks
-        TextEditor edit;    // built-in editor (Lua/JS syntax highlight)
-        bool dirty = false;
-        ScriptCheckResult check; // last syntax check result
-        std::map<std::string, std::set<int>> breakpoints;
-        bool breakpointsDirty = false;
-        char varsBuf[32768]{};   // raw JSON vars editor (32 KB; truncation detected)
-        std::string varsError;   // last vars-parse / truncation message
     };
 
     gfx::Renderer renderer_;
@@ -898,7 +908,6 @@ private:
     // float over the Inspector and swallow its clicks.
     ImGuiID dockspaceId_ = 0;      // the DockSpace id (for the central node)
     bool viewportDockFallbackDone_ = false; // viewport dockId-lost fallback ran
-    bool scriptEditorDockFallbackDone_ = false; // script editor dockId-lost fallback
     bool gizmoDrawn_ = false;    // set the first time the gizmo renders (smoke)
     // P2-editor UX: batch gizmo drag over the multi-selection.
     bool gizmoBatchCaptured_ = false;

@@ -579,6 +579,7 @@ add_library(neon_editor_lib STATIC
   editor/src/panels/terrain_panel.cpp
   editor/src/panels/tilemap_panel.cpp
   editor/src/panels/package_panel.cpp
+  editor/src/panels/script_editor_panel.cpp
   editor/src/bt_editor.cpp
 )
 target_include_directories(neon_editor_lib

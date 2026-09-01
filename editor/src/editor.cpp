@@ -15,6 +15,7 @@
 #include "panels/terrain_panel.hpp"
 #include "panels/tilemap_panel.hpp"
 #include "panels/package_panel.hpp"
+#include "panels/script_editor_panel.hpp"
 
 #include <algorithm>
 #include <cerrno>
@@ -365,6 +366,16 @@ bool EditorApp::OnCreate() {
     panels_.Register(std::make_unique<TerrainPanel>(&showTerrain_));
     panels_.Register(std::make_unique<TilemapPanel>(&showTilemap_));
     panels_.Register(std::make_unique<PackagePanel>(&showPackage_));
+    // 脚本编辑器（Task 15）：ScriptEditorState 提升为共享结构仍由 EditorApp 持有
+    //（OpenScriptFile/SaveScriptEditor/OnUpdate 断点同步共用），注入指针 + 回调；
+    // dock 恢复 + 播放调试器经 ctx 访问。openScriptEditor 已在资产面板注入。
+    ctx_.scriptEditor = &scriptEditor_;
+    ctx_.saveScriptEditor = [this]() { SaveScriptEditor(); };
+    ctx_.dockspaceId = &dockspaceId_;
+    ctx_.playScriptHost = [this]() -> script::IScriptHost* {
+        return play_ ? play_->ScriptHost() : nullptr;
+    };
+    panels_.Register(std::make_unique<ScriptEditorPanel>(&showScriptEditor_));
     panels_.OpenAll(ctx_);
     // Toolbar icon glyph self-check: a missing glyph renders as '?' in the
     // toolbar. Log once at startup so icon regressions are caught immediately.

@@ -74,6 +74,9 @@ struct SceneEntity;
 struct AssetEntry;
 // 资产面板的插件素材源区块（定义在 editor_plugin.hpp；只经指针访问）。
 class EditorPluginManager;
+// 脚本编辑器状态（定义在 editor.hpp，含 TextEditor 依赖）；只经指针访问。
+struct ScriptEditorState;
+namespace script { class IScriptHost; }
 
 // 面板共享的编辑器上下文：聚合 EditorApp 暴露给面板的共享状态（指针）。
 // 面板不持有 EditorApp*——一切共享访问经此上下文。
@@ -118,6 +121,15 @@ struct EditorContext {
     // 打包：传入输出目录，返回本次打包报告（面板自行设置 ran/report）。
     std::function<pack::PackageReport(const char*)> runPackage;
     std::function<void()> saveEditorConfig;
+    // 脚本面板（Task 15）：ScriptEditorState 仍由 EditorApp 持有（OpenScriptFile /
+    // SaveScriptEditor / OnUpdate 断点同步共用），注入指针；保存经回调（冒烟
+    // 测试也调 SaveScriptEditor）。
+    ScriptEditorState* scriptEditor = nullptr;
+    std::function<void()> saveScriptEditor;
+    std::function<void(const std::string&)> openScriptEditor;
+    // 脚本面板的 dock 恢复 + 播放调试器访问（play_ 是 GameRuntime，面板不直接持有）。
+    uint32_t* dockspaceId = nullptr;
+    std::function<script::IScriptHost*()> playScriptHost;
     // 跨面板操作（EditorApp 注入回调）
     std::function<void()> refreshAssetDir;
     std::function<void(int)> setSelection;
