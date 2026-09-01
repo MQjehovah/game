@@ -116,61 +116,11 @@ void EditorApp::BuildPluginPanels() {
     for (editor::PluginPanel& p : pluginMgr_->Panels()) pluginMgr_->DrawPanel(p);
 }
 
-void EditorApp::BuildPluginsPanel() {
-    if (!showPlugins_ || !pluginMgr_) return;
-    if (ImGui::Begin("插件", &showPlugins_)) {
-        ImGui::TextDisabled("全局插件目录: plugins/");
-        ImGui::SameLine();
-        if (ImGui::SmallButton("重新加载")) {
-            pluginMgr_->Load(".");
-            // G5-1: refresh the native plugin list from the same global dir.
-            nativePlugins_.clear();
-            nativePluginsDir_.clear();
-        }
-        ImGui::Separator();
-        const auto& manifests = pluginMgr_->Manifests();
-        if (manifests.empty()) {
-            ImGui::TextDisabled("未发现编辑器插件 (type=editor)");
-        }
-        for (const plugin::PluginManifest& m : manifests) {
-            ImGui::BulletText("%s  v%s  [%s/%s]", m.name.c_str(), m.version.c_str(),
-                              m.backend.c_str(), plugin::PluginTypeName(m.type));
-            ImGui::TextDisabled("  id: %s  entry: %s", m.id.c_str(), m.entry.c_str());
-        }
-
-        // G5-1: native binary plugins (DLL/SO) under the global plugins/. Loaded
-        // lazily on first open or after 重新加载, then listed with their ABI
-        // info; a module-specific API getter (e.g. physics world factory) is
-        // resolved through the same plugin:: loader the runtime uses.
-        ImGui::Separator();
-        ImGui::TextDisabled("原生插件 (DLL/SO):");
-        const std::string nativeDir = std::string(".");
-        if (nativePluginsDir_ != nativeDir) {
-            nativePlugins_ = plugin::LoadNativePlugins(nativeDir);
-            nativePluginsDir_ = nativeDir;
-        }
-        if (nativePlugins_.empty()) {
-            ImGui::TextDisabled("  (无 %s/plugins 下的 native 插件)", nativeDir.c_str());
-        }
-        for (const std::unique_ptr<plugin::NativePlugin>& p : nativePlugins_) {
-            ImGui::BulletText("%s  v%s", p->Info().name ? p->Info().name : "?",
-                              p->Info().version ? p->Info().version : "?");
-            ImGui::TextDisabled("  api=%u  %s", p->Info().apiVersion, p->Path().c_str());
-        }
-        ImGui::Separator();
-        if (!pluginMgr_->Panels().empty()) {
-            ImGui::TextDisabled("面板 (%zu):", pluginMgr_->Panels().size());
-            for (const editor::PluginPanel& p : pluginMgr_->Panels())
-                ImGui::TextDisabled("  %s", p.title.c_str());
-        }
-        if (!pluginMgr_->AssetSources().empty()) {
-            ImGui::TextDisabled("资产源 (%zu):", pluginMgr_->AssetSources().size());
-            for (const editor::PluginAssetSource& s : pluginMgr_->AssetSources())
-                ImGui::TextDisabled("  %s", s.name.c_str());
-        }
-    }
-    ImGui::End();
-}
+// 插件管理面板（原 EditorApp::BuildPluginsPanel）已整体迁移为独立面板类
+// editor/src/panels/plugins_panel.hpp/.cpp（PluginsPanel : IPanel，Task 8，
+// 沿用 Task 2-7 样板）。EditorApp 在 OnCreate 注册它；editor_ui.cpp 的
+// BuildImGuiUI 经 panels_.DrawAll(ctx_) 分发。原生插件列表状态
+// （nativePlugins_/nativePluginsDir_）随面板迁入。
 
 void EditorApp::BuildDebugOverlayPanel() {
     if (!showDebugOverlay_) return;

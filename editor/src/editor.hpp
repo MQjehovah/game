@@ -36,6 +36,9 @@ namespace neon::editor {
 // 面板插件化（Task 7）：模型查看器迁移后的独立面板类（panels/model_preview_panel.hpp）。
 // 仅转发器需要指针，故只前向声明；完整类型由 editor.cpp include。
 class ModelPreviewPanel;
+// 面板插件化（Task 8）：插件管理面板（panels/plugins_panel.hpp）。经 ctx.pluginMgr
+// 访问 EditorPluginManager，无转发器指针。
+class PluginsPanel;
 
 // P2-editor UX: a full TRS triple used by the multi-selection batch transform.
 struct Transform3 {
@@ -271,7 +274,7 @@ private:
     void OpenModelPreview(const std::string& path);
     void RenderModelPreviewPanel();
     void BuildPluginPanels();
-    void BuildPluginsPanel();
+    // 插件管理面板（Task 8）已迁入 panels/plugins_panel.hpp；BuildPluginsPanel 删除。
     void BuildNavPanel();
     // G8-3 debug overlay: unified F3 panel + viewport layers.
     void BuildDebugOverlayPanel();
@@ -872,10 +875,6 @@ private:
     bool showLoc_ = false;
     bool showPlugins_ = false; // plugin management panel
     std::unique_ptr<editor::EditorPluginManager> pluginMgr_; // editor plugins
-    // G5-1: native binary plugins discovered under <project>/plugins (loaded on
-    // demand by the plugins panel). Move-only, so stored as unique_ptr.
-    std::vector<std::unique_ptr<plugin::NativePlugin>> nativePlugins_;
-    std::string nativePluginsDir_;
 
     LocState locState_; // localization editor (string tables + language)
 

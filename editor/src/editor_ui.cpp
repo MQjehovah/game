@@ -452,7 +452,6 @@ void EditorApp::BuildImGuiUI() {
     BuildLocPanel();
     BuildViewportPanel();
     BuildPluginPanels();
-    BuildPluginsPanel();
     DrawSceneGizmos();
 
     if (showImGuiDemo_) ImGui::ShowDemoWindow(&showImGuiDemo_);

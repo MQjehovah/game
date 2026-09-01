@@ -6,6 +6,7 @@
 #include "panels/log_panel.hpp"
 #include "panels/resource_panel.hpp"
 #include "panels/model_preview_panel.hpp"
+#include "panels/plugins_panel.hpp"
 
 #include <algorithm>
 #include <cerrno>
@@ -310,6 +311,9 @@ bool EditorApp::OnCreate() {
         modelPreviewPanel_ = panel.get();
         panels_.Register(std::move(panel));
     }
+    // 插件管理面板（Task 8）：经 ctx.pluginMgr 访问 EditorPluginManager；
+    // 原生插件列表（nativePlugins_/nativePluginsDir_）已迁入面板私有状态。
+    panels_.Register(std::make_unique<PluginsPanel>(&showPlugins_));
     panels_.OpenAll(ctx_);
     // Toolbar icon glyph self-check: a missing glyph renders as '?' in the
     // toolbar. Log once at startup so icon regressions are caught immediately.
