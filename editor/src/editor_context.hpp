@@ -22,10 +22,34 @@
 #include "neon/gfx/renderer.hpp"
 #include "neon/nav/nav_grid.hpp"
 #include "neon/script/input_map.hpp"
+#include "neon/script/script.hpp"
+#include "neon/ui/document.hpp"
 // scene::ComponentRegistry 定义在 scene_file.hpp（不在 component_schema.hpp）。
 #include "neon/scene/scene_file.hpp"
 
 namespace neon::editor {
+
+// UI 文档编辑器状态。原 EditorApp::UI 编辑器私有成员（uiFiles_/uiDocPath_/
+// uiDoc_/uiDocOpen_/uiSelected_/uiSelection_/uiSnapToGrid_/uiGridSize_/
+// uiDirty_/uiDragging_/uiResizeHandle_/uiDragPos_），Task 16 提升为共享结构：
+// UI 编辑器面板（BuildUIEditorPanel）与视口交互（UpdateUIEditorViewport /
+// editor_viewport 的 UI 拖拽）共用，EditorApp 仍持有 ui_ 实例，经
+// EditorContext::uiEditor 指针访问。辅助方法（UISelectNode 等）保留 EditorApp，
+// 经 ctx 回调访问。
+struct UiEditorState {
+    std::vector<std::string> uiFiles; // ui/*.ui.json in the active project
+    std::string uiDocPath;            // absolute path of the open document
+    ui::UiDocument uiDoc;             // document being edited
+    bool uiDocOpen = false;           // a document is loaded/created
+    ui::UiNode* uiSelected = nullptr; // selected node (owned by uiDoc)
+    std::set<ui::UiNode*> uiSelection; // multi-selection (active = uiSelected)
+    bool uiSnapToGrid = true;
+    float uiGridSize = 8.0f;
+    bool uiDirty = false;
+    bool uiDragging = false;
+    int uiResizeHandle = -1;          // -1 none, 0..3 corner handles
+    math::Vec2 uiDragPos{0.0f, 0.0f}; // mouse in design space
+};
 
 // 输入映射编辑状态。原 EditorApp::InputMapState 嵌套结构，Task 13 提升为共享
 // 结构：面板编辑，OnEvent（editor.cpp 监听按键写回 listenAction）也读写，故
@@ -76,7 +100,9 @@ struct AssetEntry;
 class EditorPluginManager;
 // 脚本编辑器状态（定义在 editor.hpp，含 TextEditor 依赖）；只经指针访问。
 struct ScriptEditorState;
-namespace script { class IScriptHost; }
+// 打包报告（定义在 editor/src/packager.hpp，neon::editor::pack 命名空间）；
+// 经引用出入参，面板持完整类型，editor_context 只前向声明。
+namespace pack { struct PackageReport; }
 
 // 面板共享的编辑器上下文：聚合 EditorApp 暴露给面板的共享状态（指针）。
 // 面板不持有 EditorApp*——一切共享访问经此上下文。
@@ -118,18 +144,27 @@ struct EditorContext {
     // + 地形网格重建 / 打包回调（EditorApp 方法）。
     TerrainState* terrain = nullptr;
     std::function<void(SceneEntity&)> rebuildTerrainMesh;
-    // 打包：传入输出目录，返回本次打包报告（面板自行设置 ran/report）。
-    std::function<pack::PackageReport(const char*)> runPackage;
+    // 打包：输出目录 + 报告出入参（面板持完整 PackageReport 类型，回调填充）。
+    std::function<void(const char*, pack::PackageReport&)> runPackage;
     std::function<void()> saveEditorConfig;
     // 脚本面板（Task 15）：ScriptEditorState 仍由 EditorApp 持有（OpenScriptFile /
     // SaveScriptEditor / OnUpdate 断点同步共用），注入指针；保存经回调（冒烟
     // 测试也调 SaveScriptEditor）。
     ScriptEditorState* scriptEditor = nullptr;
     std::function<void()> saveScriptEditor;
-    std::function<void(const std::string&)> openScriptEditor;
     // 脚本面板的 dock 恢复 + 播放调试器访问（play_ 是 GameRuntime，面板不直接持有）。
     uint32_t* dockspaceId = nullptr;
     std::function<script::IScriptHost*()> playScriptHost;
+    // UI 编辑器（Task 16）：UiEditorState 提升为共享结构（视口交互共用），
+    // EditorApp 持有，注入指针；辅助方法（UISelectNode 等 + MarkUIDirty）保留
+    // EditorApp（视口/冒烟共用），经回调访问。
+    UiEditorState* uiEditor = nullptr;
+    std::function<void(ui::UiNode*)> uiSelectNode;
+    std::function<void(ui::UiNode*)> uiToggleSelectNode;
+    std::function<void()> uiDeleteSelectedNodes;
+    std::function<void()> uiDuplicateSelectedNodes;
+    std::function<void(int)> uiAlignSelected;
+    std::function<void()> markUiDirty;
     // 跨面板操作（EditorApp 注入回调）
     std::function<void()> refreshAssetDir;
     std::function<void(int)> setSelection;

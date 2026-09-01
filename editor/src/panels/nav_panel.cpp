@@ -5,10 +5,14 @@
 // ctx.nav / ctx.projectDir。行为零变化。
 
 #include <algorithm>
+#include <cerrno>
 #include <cstdio>
 #include <fstream>
 #include <iterator>
 #include <string>
+#if defined(_WIN32)
+#include <direct.h>
+#endif
 
 #include "editor_util.hpp"
 #include "imgui.h"

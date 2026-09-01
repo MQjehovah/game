@@ -77,6 +77,9 @@ class PackagePanel;
 // 面板插件化（Task 15）：脚本编辑器面板（panels/script_editor_panel.hpp）。经
 // ctx.scriptEditor（ScriptEditorState 提升为共享结构）+ ctx 回调访问。
 class ScriptEditorPanel;
+// 面板插件化（Task 16）：UI 编辑器面板（panels/ui_editor_panel.hpp）。经
+// ctx.uiEditor（UiEditorState 提升为共享结构）+ 辅助方法回调访问。
+class UIEditorPanel;
 
 // P2-editor UX: a full TRS triple used by the multi-selection batch transform.
 struct Transform3 {
@@ -317,14 +320,11 @@ private:
     // G8-3 debug overlay: F3 面板已迁入 panels/debug_overlay_panel.hpp（Task 10）；
     // DrawDebugOverlay 保留为薄转发（editor_viewport 画视口图层）。
     void DrawDebugOverlay(const gfx::Camera& cam);
-    void BuildUIEditorPanel();
-    // UI editor viewport input: click selects a node, drag moves it, corner
-    // handles resize it (design-space coordinates).
-    void UpdateUIEditorViewport();
-    // Marks the open UI document dirty and, when it has a real file path,
-    // saves it immediately so edits survive closing the panel / the editor
-    // (untitled docs wait for the explicit 保存 button).
     void MarkUIDirty();
+    // UI 编辑器视口交互（视口点击选节点/拖拽移动/角柄缩放，OnUpdate 调用）。
+    void UpdateUIEditorViewport();
+    // UI 编辑器面板（Task 16）已迁入 panels/ui_editor_panel.hpp；
+    // BuildUIEditorPanel 删除。
     // 本地化面板（Task 11）已迁入 panels/loc_panel.hpp；BuildLocPanel 删除。
     // 性能面板（Task 12）已迁入 panels/profiler_panel.hpp；BuildProfilerPanel 删除。
     // 输入映射面板（Task 13）已迁入 panels/input_map_panel.hpp；BuildInputMapPanel
@@ -840,29 +840,21 @@ private:
     DebugOverlayPanel* debugOverlayPanel_ = nullptr; // 不拥有；OnCreate 注册时设置
     // Data-driven UI editor (ui/*.ui.json): edit a UI document tree and
     // preview it in the viewport. Opens via 视图 → UI 编辑器.
+    // UiEditorState 提升为共享结构（editor_context.hpp），视口交互共用，仍由
+    // EditorApp 持有（ui_）。辅助方法 UISelectNode/UIAlignSelected/... 保留
+    // （视口/冒烟共用）。
     bool showUIEditor_ = false;
-    std::vector<std::string> uiFiles_; // ui/*.ui.json in the active project
-    std::string uiDocPath_;            // absolute path of the open document
-    ui::UiDocument uiDoc_;             // document being edited
-    bool uiDocOpen_ = false;           // a document is loaded/created
-    ui::UiNode* uiSelected_ = nullptr; // selected node (owned by uiDoc_)
-    // P5-editor UX: UI-editor multi-selection (active = uiSelected_).
-    std::set<ui::UiNode*> uiSelection_;
-    bool uiSnapToGrid_ = true;
-    float uiGridSize_ = 8.0f;
+    UiEditorState ui_;
     void UISelectNode(ui::UiNode* n);
     void UIToggleSelectNode(ui::UiNode* n);
     void UIDeleteSelectedNodes();
     void UIDuplicateSelectedNodes();
     ui::UiNode* UICloneNode(const ui::UiNode& src);
     void UIAlignSelected(int mode);  // 0=left 1=hcenter 2=right 3=top 4=vcenter 5=bottom
+    // 网格吸附（viewport 拖拽 + UIAlignSelected 共用；用提升后的 UiEditorState）。
     float UISnap(float v) const {
-        return uiSnapToGrid_ ? std::round(v / uiGridSize_) * uiGridSize_ : v;
+        return ui_.uiSnapToGrid ? std::round(v / ui_.uiGridSize) * ui_.uiGridSize : v;
     }
-    bool uiDirty_ = false;
-    bool uiDragging_ = false;
-    int uiResizeHandle_ = -1;          // -1 none, 0..3 corner handles
-    math::Vec2 uiDragPos_{0.0f, 0.0f}; // mouse in design space
     bool showLoc_ = false;
     bool showPlugins_ = false; // plugin management panel
     std::unique_ptr<editor::EditorPluginManager> pluginMgr_; // editor plugins

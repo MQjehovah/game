@@ -5,10 +5,14 @@
 // 本类成员 / ctx.projectDir。函数内 static newKey 保留为函数内 static（同原）。
 // 行为零变化。AssetEntry/ListDirectory 完整定义经 editor.hpp（同其它面板模式）。
 
+#include <cerrno>
 #include <cstdio>
 #include <fstream>
 #include <iterator>
 #include <vector>
+#if defined(_WIN32)
+#include <direct.h>
+#endif
 
 #include "editor.hpp"
 #include "editor_util.hpp"

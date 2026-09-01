@@ -1,6 +1,7 @@
 #include "editor.hpp"
 #include "editor_history.hpp"
 #include "editor_util.hpp"
+#include "panels/model_preview_panel.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -87,11 +88,11 @@ void EditorApp::OnRender() {
         canvasPan_ = {0.0f, 0.0f};
     }
     gfx::Camera cam = ActiveCamera(); // the scene branch re-reads after SetCamera
-    if (showUIEditor_ && uiDocOpen_) {
+    if (showUIEditor_ && ui_.uiDocOpen) {
         static bool uiEdLogged = false;
         if (!uiEdLogged) {
             uiEdLogged = true;
-            NEON_LOG_INFO("UI-EDITOR-PREVIEW: active (doc='%s')", uiDocPath_.c_str());
+            NEON_LOG_INFO("UI-EDITOR-PREVIEW: active (doc='%s')", ui_.uiDocPath.c_str());
         }        // UI editor preview: an EDITING CANVAS, not the runtime view - the
         // whole 1280x720 document fits inside the dock (Set2DViewport
         // fit-within, canvasZoom_/canvasPan_ for wheel zoom / middle-drag),
@@ -102,7 +103,7 @@ void EditorApp::OnRender() {
             DockViewportScope dock(*this, /*designFit=*/true, /*sceneVp=*/false);
             if (dock.Active()) {
                 if (cjkFont_.Valid())
-                    uiDoc_.Draw(renderer_, cjkFont_,
+                    ui_.uiDoc.Draw(renderer_, cjkFont_,
                                 [this](const std::string& p) {
                                     if (p.empty()) return gfx::Texture{};
                                     return assetMgr_.LoadTexture(p);
@@ -112,12 +113,12 @@ void EditorApp::OnRender() {
                 // P5-editor UX: outline every selected node; the active one
                 // gets resize handles. Box-layout nodes only have a resolved
                 // rect, so read ResolvedRect (falls back to the rect chain).
-                for (ui::UiNode* n : uiSelection_) {
+                for (ui::UiNode* n : ui_.uiSelection) {
                     if (!n) continue;
                     const math::Rect2 sel = n->ResolvedRect();
                     renderer_.DrawRectOutline(sel, 2.0f,
                                               {0.4f, 0.9f, 1.0f, 0.9f});
-                    if (n != uiSelected_) continue;
+                    if (n != ui_.uiSelected) continue;
                     const float hs = 8.0f;
                     const math::Vec2 corners[4] = {
                         {sel.x - hs, sel.y - hs},
@@ -511,19 +512,19 @@ void EditorApp::UpdateUIEditorViewport() {
     };
 
     if (input->MousePressed(platform::MouseButton::Left)) {
-        uiDragging_ = false;
-        uiResizeHandle_ = -1;
+        ui_.uiDragging = false;
+        ui_.uiResizeHandle = -1;
         const math::Rect2 selRect =
-            uiSelected_ ? uiSelected_->AbsoluteRect() : math::Rect2{};
-        if (uiSelected_ && cornerAt(selRect, mouse) >= 0) {
-            uiResizeHandle_ = cornerAt(selRect, mouse);
-            uiDragging_ = true;
+            ui_.uiSelected ? ui_.uiSelected->AbsoluteRect() : math::Rect2{};
+        if (ui_.uiSelected && cornerAt(selRect, mouse) >= 0) {
+            ui_.uiResizeHandle = cornerAt(selRect, mouse);
+            ui_.uiDragging = true;
             return;
         }
-        ui::UiNode* hit = uiDoc_.HitTest(mouse);
+        ui::UiNode* hit = ui_.uiDoc.HitTest(mouse);
         // P5-editor UX: Ctrl+click toggles multi-selection.
         const bool ctrl = ImGui::GetIO().KeyCtrl;
-        if (hit && hit != &uiDoc_.root) {
+        if (hit && hit != &ui_.uiDoc.root) {
             if (ctrl)
                 UIToggleSelectNode(hit);
             else
@@ -531,15 +532,15 @@ void EditorApp::UpdateUIEditorViewport() {
         } else if (!ctrl) {
             UISelectNode(nullptr);
         }
-        uiDragging_ = uiSelected_ != nullptr;
+        ui_.uiDragging = ui_.uiSelected != nullptr;
         return;
     }
 
-    if (input->MouseDown(platform::MouseButton::Left) && uiDragging_ && uiSelected_) {
+    if (input->MouseDown(platform::MouseButton::Left) && ui_.uiDragging && ui_.uiSelected) {
         const math::Vec2 delta = input->MouseDelta() / renderer_.UIScale();
-        math::Rect2& r = uiSelected_->rect;
-        if (uiResizeHandle_ >= 0) {
-            switch (uiResizeHandle_) {
+        math::Rect2& r = ui_.uiSelected->rect;
+        if (ui_.uiResizeHandle >= 0) {
+            switch (ui_.uiResizeHandle) {
                 case 0: r.x += delta.x; r.y += delta.y; r.w -= delta.x; r.h -= delta.y; break;
                 case 1: r.w += delta.x; r.y += delta.y; r.h -= delta.y; break;
                 case 2: r.x += delta.x; r.w -= delta.x; r.h += delta.y; break;
@@ -561,8 +562,8 @@ void EditorApp::UpdateUIEditorViewport() {
     }
 
     if (input->MouseReleased(platform::MouseButton::Left)) {
-        uiDragging_ = false;
-        uiResizeHandle_ = -1;
+        ui_.uiDragging = false;
+        ui_.uiResizeHandle = -1;
     }
 
     // P5-editor UX shortcuts: Delete 删除选中, Ctrl+D 复制, 方向键 微调.
@@ -570,14 +571,14 @@ void EditorApp::UpdateUIEditorViewport() {
         if (input->Pressed(platform::Key::Delete)) UIDeleteSelectedNodes();
         if (input->Pressed(platform::Key::D) && ImGui::GetIO().KeyCtrl)
             UIDuplicateSelectedNodes();
-        const float nudge = uiGridSize_;
+        const float nudge = ui_.uiGridSize;
         math::Vec2 dir{};
         if (input->Pressed(platform::Key::ArrowLeft)) dir.x = -nudge;
         if (input->Pressed(platform::Key::ArrowRight)) dir.x = nudge;
         if (input->Pressed(platform::Key::ArrowUp)) dir.y = -nudge;
         if (input->Pressed(platform::Key::ArrowDown)) dir.y = nudge;
         if (dir.x != 0.0f || dir.y != 0.0f) {
-            for (ui::UiNode* n : uiSelection_) {
+            for (ui::UiNode* n : ui_.uiSelection) {
                 if (!n) continue;
                 n->rect.x += dir.x;
                 n->rect.y += dir.y;
@@ -588,17 +589,17 @@ void EditorApp::UpdateUIEditorViewport() {
 }
 
 void EditorApp::MarkUIDirty() {
-    uiDirty_ = true;
-    uiDoc_.MarkLayoutDirty(); // B12: force re-layout on edit
-    if (!uiDocOpen_ || uiDocPath_.empty()) return;
+    ui_.uiDirty = true;
+    ui_.uiDoc.MarkLayoutDirty(); // B12: force re-layout on edit
+    if (!ui_.uiDocOpen || ui_.uiDocPath.empty()) return;
     // "untitled" documents have no real path yet; the explicit 保存 button
     // assigns one. Everything else auto-saves on every edit so closing the
     // panel or restarting the editor never loses changes.
     const bool isUntitled =
-        uiDocPath_.size() >= 15 &&
-        uiDocPath_.compare(uiDocPath_.size() - 15, 15, "untitled.ui.json") == 0;
+        ui_.uiDocPath.size() >= 15 &&
+        ui_.uiDocPath.compare(ui_.uiDocPath.size() - 15, 15, "untitled.ui.json") == 0;
     if (isUntitled) return;
-    if (uiDoc_.Save(uiDocPath_)) uiDirty_ = false;
+    if (ui_.uiDoc.Save(ui_.uiDocPath)) ui_.uiDirty = false;
 }
 
 gfx::Camera EditorApp::ActiveCamera() const {

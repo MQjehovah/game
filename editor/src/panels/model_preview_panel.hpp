@@ -25,7 +25,8 @@
 #include "imgui.h"
 #include "neon/gfx/backend.hpp"
 #include "neon/gfx/camera.hpp"
-#include "neon/math/rect.hpp"
+#include "neon/math/math.hpp"
+#include "neon/scene/skinned_model.hpp"
 
 namespace neon::gfx {
 class Renderer;

@@ -14,6 +14,7 @@
 
 #include "editor.hpp"
 #include "imgui.h"
+#include "imgui_internal.h"
 #include "neon/script/script.hpp"
 
 namespace neon::editor {

@@ -211,8 +211,7 @@ void EditorApp::BuildImGuiUI() {
             NEON_LOG_INFO("DockSpace: model dropped '%s'", path ? path : "");
             if (path && *path) {
                 showModelPreview_ = true;
-                std::snprintf(preview_.pathBuf, sizeof(preview_.pathBuf), "%s", path);
-                OpenModelPreview(preview_.pathBuf);
+                OpenModelPreview(path);  // ModelPreviewPanel::Open（Task 7 转发器）
             }
         }
         ImGui::EndDragDropTarget();
@@ -436,11 +435,10 @@ void EditorApp::BuildImGuiUI() {
             if (best) ictx.HoveredWindow = best;
         }
     }
-    panels_.DrawAll(ctx_); // 已迁移的独立面板（…/ScriptEditor）；其余仍走 BuildXxxPanel
+    panels_.DrawAll(ctx_); // 已迁移的独立面板（…/ScriptEditor/UIEditor）；其余仍走 BuildXxxPanel
     BuildBtPanel();
         BuildAnimEditorPanel();
         BuildStateMachineEditorPanel();
-    BuildUIEditorPanel(); // Task 16 迁移
     BuildViewportPanel();
     BuildPluginPanels();
     DrawSceneGizmos();

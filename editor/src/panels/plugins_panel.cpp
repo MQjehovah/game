@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include "editor_plugin.hpp"
 #include "imgui.h"
 #include "neon/plugin/plugin.hpp"
 

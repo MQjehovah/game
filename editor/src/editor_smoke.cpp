@@ -92,50 +92,50 @@ void EditorApp::RunUISmokeTest() {
     // --- UI editor auto-save: editing a doc with a real path persists ---
     {
         const std::string tmpDoc = GetTempDir() + "/ui_autosave.ui.json";
-        uiDoc_ = ui::UiDocument{};
-        uiDoc_.root.rect = {0, 0, 1280, 720};
-        ui::UiNode* label = uiDoc_.root.AddChild(ui::UiNodeType::Label, "T");
+        ui_.uiDoc = ui::UiDocument{};
+        ui_.uiDoc.root.rect = {0, 0, 1280, 720};
+        ui::UiNode* label = ui_.uiDoc.root.AddChild(ui::UiNodeType::Label, "T");
         label->text = "hello";
-        uiDocPath_ = tmpDoc;
-        uiDocOpen_ = true;
+        ui_.uiDocPath = tmpDoc;
+        ui_.uiDocOpen = true;
         label->text = "world"; // simulate an edit through the inspector
         MarkUIDirty();         // should write the file immediately
         ui::UiDocument reloaded;
         check(reloaded.Load(tmpDoc) && reloaded.Find("T") &&
                   reloaded.Find("T")->text == "world",
               "UI auto-save persists edits to disk");
-        uiDocOpen_ = false;
-        uiDocPath_.clear();
-        uiSelected_ = nullptr;
+        ui_.uiDocOpen = false;
+        ui_.uiDocPath.clear();
+        ui_.uiSelected = nullptr;
     }
 
     // --- UI editor multi-select / align / duplicate (P5-editor UX) ---
     {
-        uiDoc_ = ui::UiDocument{};
-        uiDoc_.root.rect = {0, 0, 1280, 720};
-        ui::UiNode* a = uiDoc_.root.AddChild(ui::UiNodeType::Label, "A");
+        ui_.uiDoc = ui::UiDocument{};
+        ui_.uiDoc.root.rect = {0, 0, 1280, 720};
+        ui::UiNode* a = ui_.uiDoc.root.AddChild(ui::UiNodeType::Label, "A");
         a->rect = {10, 20, 100, 24};
-        ui::UiNode* b = uiDoc_.root.AddChild(ui::UiNodeType::Label, "B");
+        ui::UiNode* b = ui_.uiDoc.root.AddChild(ui::UiNodeType::Label, "B");
         b->rect = {300, 400, 120, 30};
-        ui::UiNode* c = uiDoc_.root.AddChild(ui::UiNodeType::Label, "C");
+        ui::UiNode* c = ui_.uiDoc.root.AddChild(ui::UiNodeType::Label, "C");
         c->rect = {500, 600, 80, 20};
 
         UISelectNode(a);
-        check(uiSelection_.size() == 1 && uiSelected_ == a,
+        check(ui_.uiSelection.size() == 1 && ui_.uiSelected == a,
               "UI select sets the active node");
         UIToggleSelectNode(b);
-        check(uiSelection_.count(a) == 1 && uiSelection_.count(b) == 1 &&
-                  uiSelection_.size() == 2,
+        check(ui_.uiSelection.count(a) == 1 && ui_.uiSelection.count(b) == 1 &&
+                  ui_.uiSelection.size() == 2,
               "UI ctrl-click multi-select accumulates a second node");
         UIToggleSelectNode(b);
-        check(uiSelection_.size() == 1 && uiSelected_ == a,
+        check(ui_.uiSelection.size() == 1 && ui_.uiSelected == a,
               "UI ctrl-click again deselects");
         UIToggleSelectNode(b);
         UIToggleSelectNode(c);
-        check(uiSelection_.size() == 3, "UI multi-select holds three nodes");
+        check(ui_.uiSelection.size() == 3, "UI multi-select holds three nodes");
 
-        const bool oldSnap = uiSnapToGrid_;
-        uiSnapToGrid_ = false; // exact math for the align assertions
+        const bool oldSnap = ui_.uiSnapToGrid;
+        ui_.uiSnapToGrid = false; // exact math for the align assertions
         UIAlignSelected(0);    // left
         check(a->rect.x == 0.0f && b->rect.x == 0.0f && c->rect.x == 0.0f,
               "UI align-left snaps every selected x to the parent edge");
@@ -149,18 +149,18 @@ void EditorApp::RunUISmokeTest() {
                   std::fabs(b->rect.y - (720.0f - b->rect.h)) < 0.01f &&
                   std::fabs(c->rect.y - (720.0f - c->rect.h)) < 0.01f,
               "UI align bottom snaps every selected y to the parent bottom");
-        uiSnapToGrid_ = oldSnap;
+        ui_.uiSnapToGrid = oldSnap;
 
-        const size_t childCount = uiDoc_.root.children.size();
+        const size_t childCount = ui_.uiDoc.root.children.size();
         UIDuplicateSelectedNodes();
-        check(uiDoc_.root.children.size() == childCount + 3 &&
-                  uiSelection_.size() == 3,
+        check(ui_.uiDoc.root.children.size() == childCount + 3 &&
+                  ui_.uiSelection.size() == 3,
               "UI duplicate clones every selected node");
         UIDeleteSelectedNodes();
-        check(uiDoc_.root.children.size() == childCount && uiSelection_.empty(),
+        check(ui_.uiDoc.root.children.size() == childCount && ui_.uiSelection.empty(),
               "UI delete removes the cloned selection");
-        uiDocOpen_ = false;
-        uiDocPath_.clear();
+        ui_.uiDocOpen = false;
+        ui_.uiDocPath.clear();
     }
 
     // --- Tool panels ---

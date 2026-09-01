@@ -16,6 +16,7 @@
 #include "panels/tilemap_panel.hpp"
 #include "panels/package_panel.hpp"
 #include "panels/script_editor_panel.hpp"
+#include "panels/ui_editor_panel.hpp"
 
 #include <algorithm>
 #include <cerrno>
@@ -361,7 +362,7 @@ bool EditorApp::OnCreate() {
     // 保存配置经回调（PackageState 已迁入 PackagePanel，RunPackage 返回报告）。
     ctx_.terrain = &terrain_;
     ctx_.rebuildTerrainMesh = [this](SceneEntity& e) { RebuildTerrainMesh(e); };
-    ctx_.runPackage = [this](const char* outDir) { return RunPackage(outDir); };
+    ctx_.runPackage = [this](const char* outDir, pack::PackageReport& out) { out = RunPackage(outDir); };
     ctx_.saveEditorConfig = [this]() { SaveEditorConfig(); };
     panels_.Register(std::make_unique<TerrainPanel>(&showTerrain_));
     panels_.Register(std::make_unique<TilemapPanel>(&showTilemap_));
@@ -376,6 +377,16 @@ bool EditorApp::OnCreate() {
         return play_ ? play_->ScriptHost() : nullptr;
     };
     panels_.Register(std::make_unique<ScriptEditorPanel>(&showScriptEditor_));
+    // UI 编辑器（Task 16）：UiEditorState 提升为共享结构仍由 EditorApp 持有
+    //（视口交互 UpdateUIEditorViewport 共用），注入指针；辅助方法经回调。
+    ctx_.uiEditor = &ui_;
+    ctx_.uiSelectNode = [this](ui::UiNode* n) { UISelectNode(n); };
+    ctx_.uiToggleSelectNode = [this](ui::UiNode* n) { UIToggleSelectNode(n); };
+    ctx_.uiDeleteSelectedNodes = [this]() { UIDeleteSelectedNodes(); };
+    ctx_.uiDuplicateSelectedNodes = [this]() { UIDuplicateSelectedNodes(); };
+    ctx_.uiAlignSelected = [this](int m) { UIAlignSelected(m); };
+    ctx_.markUiDirty = [this]() { MarkUIDirty(); };
+    panels_.Register(std::make_unique<UIEditorPanel>(&showUIEditor_));
     panels_.OpenAll(ctx_);
     // Toolbar icon glyph self-check: a missing glyph renders as '?' in the
     // toolbar. Log once at startup so icon regressions are caught immediately.
@@ -482,7 +493,7 @@ bool EditorApp::OnCreate() {
     // a headless/CI layout cannot guarantee.
     if (uiEditorOnStart_) {
         showUIEditor_ = true;
-        if (!uiDocOpen_) {
+        if (!ui_.uiDocOpen) {
             std::vector<AssetEntry> entries;
             if (ListDirectory(projectDir_ + "/assets/ui", entries)) {
                 std::sort(entries.begin(), entries.end(),
@@ -491,12 +502,12 @@ bool EditorApp::OnCreate() {
                     if (f.isDir || f.name.size() < 9 ||
                         f.name.compare(f.name.size() - 8, 8, ".ui.json") != 0)
                         continue;
-                    if (uiDoc_.Load(f.path)) {
-                        uiDocPath_ = f.path;
-                        uiDocOpen_ = true;
-                        uiSelection_.clear();
-                        UISelectNode(uiDoc_.Find("Start") ? uiDoc_.Find("Start") : &uiDoc_.root);
-                        uiDirty_ = false;
+                    if (ui_.uiDoc.Load(f.path)) {
+                        ui_.uiDocPath = f.path;
+                        ui_.uiDocOpen = true;
+                        ui_.uiSelection.clear();
+                        UISelectNode(ui_.uiDoc.Find("Start") ? ui_.uiDoc.Find("Start") : &ui_.uiDoc.root);
+                        ui_.uiDirty = false;
                         NEON_LOG_INFO("UI: opened '%s'", f.path.c_str());
                     }
                     break;
@@ -860,7 +871,7 @@ void EditorApp::OnUpdate(float dt) {
         e.y = renderer_.ScreenHeight() / 2;
         Input()->HandleEvent(e);
     }
-    if (showUIEditor_ && uiDocOpen_) {
+    if (showUIEditor_ && ui_.uiDocOpen) {
         // UI editor: the viewport edits the UI document (select/move/resize).
         UpdateUIEditorViewport();
     } else {
@@ -1541,21 +1552,21 @@ void EditorApp::OnEvent(const platform::InputEvent& event) {
 // --- P5-editor UX: UI-editor selection / align / snap helpers -------------
 
 void EditorApp::UISelectNode(ui::UiNode* n) {
-    uiSelection_.clear();
-    if (n) uiSelection_.insert(n);
-    uiSelected_ = n;
+    ui_.uiSelection.clear();
+    if (n) ui_.uiSelection.insert(n);
+    ui_.uiSelected = n;
 }
 
 void EditorApp::UIToggleSelectNode(ui::UiNode* n) {
     if (!n) return;
-    const auto it = uiSelection_.find(n);
-    if (it != uiSelection_.end()) {
-        uiSelection_.erase(it);
-        if (uiSelected_ == n)
-            uiSelected_ = uiSelection_.empty() ? nullptr : *uiSelection_.rbegin();
+    const auto it = ui_.uiSelection.find(n);
+    if (it != ui_.uiSelection.end()) {
+        ui_.uiSelection.erase(it);
+        if (ui_.uiSelected == n)
+            ui_.uiSelected = ui_.uiSelection.empty() ? nullptr : *ui_.uiSelection.rbegin();
     } else {
-        uiSelection_.insert(n);
-        uiSelected_ = n;
+        ui_.uiSelection.insert(n);
+        ui_.uiSelected = n;
     }
 }
 
@@ -1581,25 +1592,25 @@ ui::UiNode* EditorApp::UICloneNode(const ui::UiNode& src) {
 }
 
 void EditorApp::UIDuplicateSelectedNodes() {
-    if (uiSelection_.empty()) return;
-    std::vector<ui::UiNode*> sel(uiSelection_.begin(), uiSelection_.end());
-    uiSelection_.clear();
+    if (ui_.uiSelection.empty()) return;
+    std::vector<ui::UiNode*> sel(ui_.uiSelection.begin(), ui_.uiSelection.end());
+    ui_.uiSelection.clear();
     for (ui::UiNode* n : sel) {
         if (!n || !n->parent) continue;
         ui::UiNode* copy = UICloneNode(*n);
         n->parent->children.push_back(std::unique_ptr<ui::UiNode>(copy));
         copy->parent = n->parent;
-        uiSelection_.insert(copy);
+        ui_.uiSelection.insert(copy);
     }
-    uiSelected_ = uiSelection_.empty() ? nullptr : *uiSelection_.rbegin();
+    ui_.uiSelected = ui_.uiSelection.empty() ? nullptr : *ui_.uiSelection.rbegin();
     MarkUIDirty();
 }
 
 void EditorApp::UIDeleteSelectedNodes() {
-    if (uiSelection_.empty()) return;
-    std::vector<ui::UiNode*> sel(uiSelection_.begin(), uiSelection_.end());
-    uiSelection_.clear();
-    uiSelected_ = nullptr;
+    if (ui_.uiSelection.empty()) return;
+    std::vector<ui::UiNode*> sel(ui_.uiSelection.begin(), ui_.uiSelection.end());
+    ui_.uiSelection.clear();
+    ui_.uiSelected = nullptr;
     for (ui::UiNode* n : sel) {
         if (!n || !n->parent) continue;
         std::vector<std::unique_ptr<ui::UiNode>>& kids = n->parent->children;
@@ -1614,8 +1625,8 @@ void EditorApp::UIDeleteSelectedNodes() {
 }
 
 void EditorApp::UIAlignSelected(int mode) {
-    if (uiSelection_.empty()) return;
-    for (ui::UiNode* n : uiSelection_) {
+    if (ui_.uiSelection.empty()) return;
+    for (ui::UiNode* n : ui_.uiSelection) {
         if (!n || !n->parent) continue;
         const math::Rect2& p = n->parent->rect;
         switch (mode) {
