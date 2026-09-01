@@ -1196,6 +1196,10 @@ GltfAsset AssetManager::LoadGltfJson(core::Json& root, std::vector<std::vector<u
     struct RawMesh {
         std::vector<gfx::Vertex3D> verts;
         std::vector<uint16_t> indices;
+        // 大型 glTF mesh（>65535 顶点，如 Poly Haven 扫描树）用 32 位索引。
+        // 底层 Mesh::CreateFromDataU32 已支持；此前导入器直接丢弃这类 mesh。
+        std::vector<uint32_t> indicesU32;
+        bool needsU32 = false;
         gfx::Material material;
         std::vector<uint16_t> jointIds;   // 4 per vertex
         std::vector<float> jointWeights;  // 4 per vertex
@@ -1320,14 +1324,22 @@ GltfAsset AssetManager::LoadGltfJson(core::Json& root, std::vector<std::vector<u
                         const uint16_t* src = reinterpret_cast<const uint16_t*>(idxBase);
                         for (int i = 0; i < idxCount; ++i) rm.indices[static_cast<size_t>(i)] = src[i];
                     } else if (idxStride == 4) {
+                        // 大型 mesh（>65535 顶点）：保留 32 位索引，经
+                        // CreateFromDataU32 上传（扫描高模 glTF 必备，此前
+                        // 直接丢弃导致 Poly Haven 树木等不可见）。
                         const uint32_t* src = reinterpret_cast<const uint32_t*>(idxBase);
+                        bool big = false;
                         for (int i = 0; i < idxCount; ++i) {
-                            if (src[i] > 65535u) {
-                                NEON_LOG_WARN("GLTF: index %u exceeds 16-bit range", src[i]);
-                                rm.indices.clear();
-                                break;
-                            }
-                            rm.indices[static_cast<size_t>(i)] = static_cast<uint16_t>(src[i]);
+                            if (src[i] > 65535u) { big = true; break; }
+                        }
+                        if (big) {
+                            rm.indicesU32.assign(src, src + idxCount);
+                            rm.needsU32 = true;
+                        } else {
+                            rm.indices.resize(static_cast<size_t>(idxCount));
+                            for (int i = 0; i < idxCount; ++i)
+                                rm.indices[static_cast<size_t>(i)] =
+                                    static_cast<uint16_t>(src[i]);
                         }
                     } else if (idxStride == 1) {
                         // uint8 indices (componentType 5121): Kenney FTK glb
@@ -1528,11 +1540,18 @@ GltfAsset AssetManager::LoadGltfJson(core::Json& root, std::vector<std::vector<u
                                 static_cast<float>(jids[vi * 4 + c]);
                 }
             }
-            gfx::Mesh mesh = gfx::Mesh::CreateFromData(*renderer_, rm.verts.data(),
-                                                       static_cast<uint32_t>(rm.verts.size()),
-                                                       rm.indices.data(),
-                                                       static_cast<uint32_t>(rm.indices.size()),
-                                                       "gltf");
+            gfx::Mesh mesh =
+                rm.needsU32
+                    ? gfx::Mesh::CreateFromDataU32(*renderer_, rm.verts.data(),
+                                                    static_cast<uint32_t>(rm.verts.size()),
+                                                    rm.indicesU32.data(),
+                                                    static_cast<uint32_t>(rm.indicesU32.size()),
+                                                    "gltf")
+                    : gfx::Mesh::CreateFromData(*renderer_, rm.verts.data(),
+                                                static_cast<uint32_t>(rm.verts.size()),
+                                                rm.indices.data(),
+                                                static_cast<uint32_t>(rm.indices.size()),
+                                                "gltf");
             if (mesh.Valid()) {
                 if (rm.skinned)
                     mesh.AttachSkinData(std::move(jids), rm.jointWeights, n.skin);
