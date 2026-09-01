@@ -564,6 +564,7 @@ add_library(neon_editor_lib STATIC
   editor/src/editor_plugin.cpp
   editor/src/editor_plugins.cpp
   editor/src/panels.cpp
+  editor/src/panels/scene_panel.cpp
   editor/src/bt_editor.cpp
 )
 target_include_directories(neon_editor_lib

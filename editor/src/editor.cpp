@@ -1,5 +1,6 @@
 #include "editor.hpp"
 #include "editor_util.hpp"
+#include "panels/scene_panel.hpp"
 
 #include <algorithm>
 #include <cerrno>
@@ -210,6 +211,38 @@ bool EditorApp::OnCreate() {
     // Panel open/close persistence: save which panels are visible into the
     // same ImGui ini that stores the docking layout (see NeonPanels* above).
     RegisterPanelStateHandler(this);
+    // 面板插件化（阶段 1）：构建面板共享上下文（指针 + 回调全部指向/调用本类
+    // 成员，行为与原 EditorApp 方法一致），再注册已迁移的独立面板。可见标志
+    // 注入 showHierarchy_（窗口菜单勾选 + ini 持久化 + 冒烟强制开启都读写它）。
+    ctx_.sceneWorld = &sceneWorld_;
+    ctx_.entities = &entities_;
+    ctx_.selected = &selected_;
+    ctx_.selection = &selection_;
+    ctx_.renderer = &renderer_;
+    ctx_.assetMgr = &assetMgr_;
+    ctx_.compReg = &sceneCompReg_;
+    ctx_.projectDir = &projectDir_;
+    ctx_.history = &history_;
+    ctx_.postSsao = &postSsao_;
+    ctx_.postSsaoIntensity = &postSsaoIntensity_;
+    ctx_.postVolumetric = &postVolumetric_;
+    ctx_.postVolumetricIntensity = &postVolumetricIntensity_;
+    ctx_.postSsr = &postSsr_;
+    ctx_.postSsrIntensity = &postSsrIntensity_;
+    ctx_.refreshAssetDir = [this]() { RefreshAssetDir(); };
+    ctx_.setSelection = [this](int index) { SetSelection(index); };
+    ctx_.toggleSelection = [this](int index) { ToggleSelection(index); };
+    ctx_.selectRangeTo = [this](int index) { SelectRangeTo(index); };
+    ctx_.isSelected = [this](int index) { return IsSelected(index); };
+    ctx_.selectedIndices = [this]() { return SelectedIndices(); };
+    ctx_.clampSelection = [this]() { ClampSelection(); };
+    ctx_.addEntity = [this](const std::string& meshKey) { AddEntity(meshKey); };
+    ctx_.addSpriteEntity = [this](const std::string& path) { AddSpriteEntity(path); };
+    ctx_.sortSceneTreeByName = [this]() { SortSceneTreeByName(); };
+    ctx_.normalizeEntityIds = [this]() { NormalizeEntityIds(); };
+    ctx_.savePrefab = [this](const std::string& name) { SavePrefab(name); };
+    panels_.Register(std::make_unique<ScenePanel>(&showHierarchy_));
+    panels_.OpenAll(ctx_);
     // Toolbar icon glyph self-check: a missing glyph renders as '?' in the
     // toolbar. Log once at startup so icon regressions are caught immediately.
     {
@@ -458,6 +491,7 @@ void EditorApp::ApplyEditorTheme() {
 
 void EditorApp::OnShutdown() {
     SaveEditorConfig();
+    panels_.Shutdown();
     if (pluginMgr_) pluginMgr_->Shutdown();
     if (audioBackend_) {
         audioBackend_->Shutdown();

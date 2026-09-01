@@ -29,6 +29,7 @@
 #include "packager.hpp"
 #include "script_panel_model.hpp"
 #include "editor_plugin.hpp"
+#include "panel_registry.hpp"
 
 namespace neon::editor {
 
@@ -259,7 +260,6 @@ private:
     void SetupScene();
     void InitToolPanels();
     void BuildImGuiUI();
-    void BuildScenePanel();
     void BuildAssetPanel();
     void BuildResourcePanel();
     void BuildInspectorPanel();
@@ -721,6 +721,13 @@ private:
     // properties) is routed through it instead of mutating entities_ directly.
     HistoryManager history_;
 
+    // 面板插件化（阶段 1）：独立面板注册表 + 面板共享上下文。已迁移的面板
+    // （ScenePanel）在 OnCreate 注册进 panels_；ctx_ 在 OnCreate 填充
+    // （共享状态指针 + 回调注入，全部指向 EditorApp 成员/方法）。尚未迁移的
+    // 面板仍走 BuildXxxPanel；BuildImGuiUI 只替换已迁移面板的调用点。
+    PanelRegistry panels_;
+    EditorContext ctx_;
+
     // Project directory: exported scenes are written to
     // <projectDir>/assets/scenes/. Defaults to the sandbox project.
     std::string projectDir_{kDefaultProjectDir};
@@ -735,12 +742,6 @@ private:
     std::string currentSceneName_; // scene picker label (loaded scene file)
     scene::PrefabLibrary prefabLib_; // current project's prefab templates
     std::vector<std::string> projectPrefabs_; // prefab names (sorted, for UI)
-    // "保存为预置体" name-prompt state (scene right-click): when pendingSaveName_
-    // is open, the hierarchy panel shows a small modal asking for the template
-    // name (default = entity name). On confirm it calls SavePrefab.
-    bool prefabSavePrompt_ = false;
-    char prefabSaveBuf_[128] = {};
-    int prefabSaveTarget_ = -1; // entity index being saved ("" none)
     // The parsed root of the scene currently in the editor + its file path.
     // 2D levels are scene entities (plant/zombie components); the scene file
     // is the single source of truth for both the editor and the runtime.
@@ -951,7 +952,6 @@ private:
     float postSsaoIntensity_ = 1.0f;
     float postVolumetricIntensity_ = 1.0f;
     float postSsrIntensity_ = 0.8f;
-    std::vector<int> dragPayload_;  // P2-editor UX: multi-drag payload buffer
     std::string tileDragPath_;      // P2-editor UX: tilemap palette drag payload
     bool gizmoBeginFrame_ = false; // set every frame ImGuizmo::BeginFrame runs (smoke)
     bool gizmoAltWindowSet_ = false; // set every frame the hover window is bound (smoke)

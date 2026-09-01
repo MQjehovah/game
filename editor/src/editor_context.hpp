@@ -8,9 +8,11 @@
 //（见 CMakeLists.txt），单测可在无 ImGui context 的环境下运行。
 
 #include <functional>
+#include <set>
 #include <string>
 #include <vector>
 
+#include "history.hpp"
 #include "neon/assets/asset_manager.hpp"
 #include "neon/ecs/world.hpp"
 #include "neon/gfx/renderer.hpp"
@@ -37,6 +39,28 @@ struct EditorContext {
     // 跨面板操作（EditorApp 注入回调）
     std::function<void()> refreshAssetDir;
     std::function<void(int)> setSelection;
+    // --- 场景面板（Task 2，迁移样板）扩展：后续面板按需复用 ----------------
+    // 共享状态：多选集合（active 实体 = *selected）、撤销栈、后处理开关
+    // （面板 UI 读写，视口/播放也消费——所以仍由 EditorApp 持有，注入指针）。
+    std::set<int>* selection = nullptr;
+    HistoryManager* history = nullptr;
+    bool* postSsao = nullptr;
+    float* postSsaoIntensity = nullptr;
+    bool* postVolumetric = nullptr;
+    float* postVolumetricIntensity = nullptr;
+    bool* postSsr = nullptr;
+    float* postSsrIntensity = nullptr;
+    // 回调：实体级操作（全部经撤销栈，与原 EditorApp 方法行为一致）。
+    std::function<void(const std::string&)> addEntity;       // meshKey 添加实体
+    std::function<void(const std::string&)> addSpriteEntity; // 纹理 -> 2D 精灵实体
+    std::function<bool(int)> isSelected;                     // 行选中高亮
+    std::function<void(int)> toggleSelection;                // Ctrl 加/减选
+    std::function<void(int)> selectRangeTo;                  // Shift 连选
+    std::function<std::vector<int>()> selectedIndices;       // 选区快照（升序）
+    std::function<void()> clampSelection;                    // 删除后清理越界选区
+    std::function<void()> sortSceneTreeByName;               // 场景树按名称排序
+    std::function<void()> normalizeEntityIds;                // 稳定实体 id（树/拖拽守卫）
+    std::function<void(const std::string&)> savePrefab;      // 保存预置体模板
     // 过渡期逃生舱：面板迁移初期访问未进 ctx 的状态；阶段 3 移除。
     void* editorApp = nullptr;
 };
