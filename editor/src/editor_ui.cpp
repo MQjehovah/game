@@ -435,9 +435,8 @@ void EditorApp::BuildImGuiUI() {
             if (best) ictx.HoveredWindow = best;
         }
     }
-    panels_.DrawAll(ctx_); // 全部面板已迁移为独立 IPanel（panels/*，Task 1-17）
+    panels_.DrawAll(ctx_); // 全部面板已迁移为独立 IPanel（panels/*，Task 1-18a）
     BuildBtPanel();
-    BuildViewportPanel();
     BuildPluginPanels();
     DrawSceneGizmos();
 

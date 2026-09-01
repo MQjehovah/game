@@ -83,6 +83,9 @@ class UIEditorPanel;
 // 面板插件化（Task 17）：动画时间线 / 状态机编辑器面板。状态全迁入面板。
 class AnimEditorPanel;
 class AsmEditorPanel;
+// 面板插件化（Task 18a）：视口面板（panels/viewport_panel.hpp）。viewportRect 等
+// 引擎视图状态经 ctx 指针共享，无转发器。
+class ViewportPanel;
 
 // P2-editor UX: a full TRS triple used by the multi-selection batch transform.
 struct Transform3 {
@@ -311,7 +314,7 @@ private:
     void SetupScene();
     void InitToolPanels();
     void BuildImGuiUI();
-    void BuildViewportPanel();
+    // 视口面板（Task 18a）已迁入 panels/viewport_panel.hpp；BuildViewportPanel 删除。
     // 模型查看器（Task 7）已迁入 panels/model_preview_panel.hpp；OpenModelPreview /
     // RenderModelPreviewPanel 保留为薄转发（editor_ui 右键菜单 / 调试覆盖层 /
     // editor_viewport / --preview 启动参数仍调用），实现一行转 modelPreviewPanel_。
@@ -887,7 +890,6 @@ private:
     // rebuilt default layout, used to force-dock windows that can otherwise
     // float over the Inspector and swallow its clicks.
     ImGuiID dockspaceId_ = 0;      // the DockSpace id (for the central node)
-    bool viewportDockFallbackDone_ = false; // viewport dockId-lost fallback ran
     bool gizmoDrawn_ = false;    // set the first time the gizmo renders (smoke)
     // P2-editor UX: batch gizmo drag over the multi-selection.
     bool gizmoBatchCaptured_ = false;

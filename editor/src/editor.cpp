@@ -19,6 +19,7 @@
 #include "panels/ui_editor_panel.hpp"
 #include "panels/anim_editor_panel.hpp"
 #include "panels/asm_editor_panel.hpp"
+#include "panels/viewport_panel.hpp"
 
 #include <algorithm>
 #include <cerrno>
@@ -392,6 +393,18 @@ bool EditorApp::OnCreate() {
     // 动画时间线 / 状态机编辑器（Task 17）：状态全迁入面板，仅注入可见标志。
     panels_.Register(std::make_unique<AnimEditorPanel>(&showAnimEditor_));
     panels_.Register(std::make_unique<AsmEditorPanel>(&showStateMachineEditor_));
+    // 视口面板（Task 18a）：viewportRect/viewportScreenRect/相机状态仍由 EditorApp
+    // 持有（OnRender/OnEvent/相机输入用），注入指针；gizmo/打开模型/添加实体经回调。
+    ctx_.viewportRect = &viewportRect_;
+    ctx_.viewportScreenRect = &viewportScreenRect_;
+    ctx_.drawTransformGizmo = [this]() { DrawTransformGizmo(); };
+    ctx_.openModelPreview = [this](const std::string& p) { OpenModelPreview(p); };
+    ctx_.showModelPreview = &showModelPreview_;
+    ctx_.viewCam = reinterpret_cast<int*>(&viewCam_);
+    ctx_.camTarget = &camTarget_;
+    ctx_.camDist = &camDist_;
+    // playBodyCount 已在性能面板注入（复用）。
+    panels_.Register(std::make_unique<ViewportPanel>());
     panels_.OpenAll(ctx_);
     // Toolbar icon glyph self-check: a missing glyph renders as '?' in the
     // toolbar. Log once at startup so icon regressions are caught immediately.

@@ -183,6 +183,18 @@ struct EditorContext {
     std::function<void()> uiDuplicateSelectedNodes;
     std::function<void(int)> uiAlignSelected;
     std::function<void()> markUiDirty;
+    // 视口面板（Task 18a）：viewportRect/viewportScreenRect 是引擎视图矩形
+    //（OnRender/OnEvent 用），仍由 EditorApp 持有，注入指针；gizmo/打开模型
+    // /添加实体经回调。
+    math::Rect2* viewportRect = nullptr;
+    math::Rect2* viewportScreenRect = nullptr;
+    std::function<void()> drawTransformGizmo;
+    std::function<void(const std::string&)> openModelPreview;
+    bool* showModelPreview = nullptr;
+    // 视口提示行（相机标签/目标/距离 + 播放物理刚体数，playBodyCount 复用 Task 12）。
+    int* viewCam = nullptr;        // ViewCam 枚举（0 透视, 1 顶视, 2 前视）
+    math::Vec3* camTarget = nullptr;
+    float* camDist = nullptr;
     // 跨面板操作（EditorApp 注入回调）
     std::function<void()> refreshAssetDir;
     std::function<void(int)> setSelection;
