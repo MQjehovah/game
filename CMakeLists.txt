@@ -539,6 +539,7 @@ endif()
 add_library(neon_editor_common STATIC
   editor/src/history.cpp
   editor/src/packager.cpp
+  editor/src/panel_registry.cpp
 )
 target_include_directories(neon_editor_common PUBLIC editor/src)
 target_link_libraries(neon_editor_common PUBLIC neon_engine)
@@ -676,6 +677,7 @@ add_executable(neon_tests tests/test_main.cpp tests/test_serialize.cpp tests/tes
   tests/test_skinned.cpp tests/test_shadow.cpp tests/test_log.cpp
   tests/test_spatial.cpp tests/test_post.cpp tests/test_ibl.cpp tests/test_history.cpp
   tests/test_bt_editor.cpp tests/test_script_panel.cpp tests/test_packager.cpp
+  tests/test_panel_registry.cpp
   tests/test_player.cpp
   tests/test_audio.cpp
   tests/test_async.cpp
