@@ -1,19 +1,5 @@
-void EditorApp::RunPackage() {
-    pack::PackConfig cfg;
-    cfg.projectDir = projectDir_;
-    cfg.outDir = package_.outDirBuf;
-    cfg.playerSource = "build/neon_game.exe";
-    package_.report = pack::PackProject(cfg);
-    package_.ran = true;
-    if (package_.report.ok) {
-        NEON_LOG_INFO("Editor: packaged '%s' -> %s (%zu files, %zu bytes)",
-                      projectDir_.c_str(), package_.report.packPath.c_str(),
-                      package_.report.fileCount, package_.report.bytesWritten);
-    } else {
-        NEON_LOG_ERROR("Editor: package failed for '%s' (%zu errors)",
-                       projectDir_.c_str(), package_.report.errors.size());
-    }
-}
+// RunPackage（原本文件开头）已迁至 editor.cpp（Task 14）：PackageState 迁入
+// panels/package_panel.hpp，签名改为 RunPackage(const char* outDir) 返回报告。
 
 void EditorApp::BuildScriptEditorPanel() {
     if (!showScriptEditor_) return;

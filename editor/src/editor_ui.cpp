@@ -436,17 +436,12 @@ void EditorApp::BuildImGuiUI() {
             if (best) ictx.HoveredWindow = best;
         }
     }
-    panels_.DrawAll(ctx_); // 已迁移的独立面板（ScenePanel、AssetPanel、InspectorPanel、LogPanel、ResourcePanel）；其余仍走 BuildXxxPanel
-    BuildModelPreviewPanel();
+    panels_.DrawAll(ctx_); // 已迁移的独立面板（ScenePanel/AssetPanel/InspectorPanel/LogPanel/ResourcePanel/ModelPreview/Plugins/Nav/DebugOverlay/Loc/Profiler/InputMap/Terrain/Tilemap/Package）；其余仍走 BuildXxxPanel
     BuildBtPanel();
         BuildScriptEditorPanel();
         BuildAnimEditorPanel();
         BuildStateMachineEditorPanel();
-        BuildTerrainPanel();
-    BuildPackagePanel();
-    BuildInputMapPanel();
-    BuildUIEditorPanel();
-    BuildLocPanel();
+    BuildUIEditorPanel(); // Task 16 迁移
     BuildViewportPanel();
     BuildPluginPanels();
     DrawSceneGizmos();

@@ -52,6 +52,11 @@ class ProfilerPanel;
 // 面板插件化（Task 13）：输入映射面板（panels/input_map_panel.hpp）。经 ctx.inputMap
 // 访问共享 InputMapState（OnEvent 也读写）。
 class InputMapPanel;
+// 面板插件化（Task 14）：地形 / 瓦片 / 打包面板（panels/{terrain,tilemap,package}_panel.hpp）。
+// 地形状态经 ctx.terrain 共享；打包经 ctx.runPackage 回调（RunPackage 返回报告）。
+class TerrainPanel;
+class TilemapPanel;
+class PackagePanel;
 
 // P2-editor UX: a full TRS triple used by the multi-selection batch transform.
 struct Transform3 {
@@ -558,8 +563,8 @@ private:
     void BuildScriptEditorPanel();
     void BuildAnimEditorPanel();
     void BuildStateMachineEditorPanel();
-    void BuildTerrainPanel();
-    void BuildTilemapPanel();
+    // 世界面板（Task 14）：BuildTerrainPanel/BuildTilemapPanel/BuildPackagePanel
+    // 已迁入 panels/{terrain,tilemap,package}_panel.hpp，声明删除。
     void SaveSceneAsChild();
     void ReloadEntityShader(SceneEntity& e);
     void ApplyEditorTheme();
@@ -567,10 +572,9 @@ private:
     void RebuildTerrainMesh(SceneEntity& e);
     void OpenInExternalEditor(const std::string& path);
 
-    // Package panel (T4.6): docked 打包 panel with project/out dir inputs, a
-    // one-click 打包 button and the last PackageReport rendered.
-    void BuildPackagePanel();
-    void RunPackage();
+    // Package panel (T4.6) 已迁入 panels/package_panel.hpp（Task 14）；RunPackage
+    // 保留（ctx.runPackage 回调 + 冒烟测试用），输出目录由调用方传入。
+    pack::PackageReport RunPackage(const char* outDir);
 
     // Single source of truth for the toggleable editor panels: one entry per
     // panel drives the 视图 menu, the ini persistence table and the panel
@@ -592,14 +596,6 @@ private:
     // Each panel owns its state; EditorApp holds one instance per panel instead
     // of ~55 flat members that sat directly on the god class.
     // ---------------------------------------------------------------------
-    struct TerrainState {
-        bool paintMode = false;
-        float brushRadius = 5.0f;
-        float brushStrength = 0.12f;
-        bool raise = true;
-        math::Vec3 hoverPos{};
-        bool hoverValid = false;
-    };
     struct AnimEditorState {
         anim::AnimationClip clip;
         std::string clipPath;
@@ -624,11 +620,6 @@ private:
         bool breakpointsDirty = false;
         char varsBuf[32768]{};   // raw JSON vars editor (32 KB; truncation detected)
         std::string varsError;   // last vars-parse / truncation message
-    };
-    struct PackageState {
-        char outDirBuf[4096]{}; // output dir for the pack ("" = none yet)
-        pack::PackageReport report; // last run's report
-        bool ran = false;           // the 打包 button ran at least once
     };
 
     gfx::Renderer renderer_;
@@ -982,9 +973,9 @@ private:
     AsmEditorState asmEdit_; // data-driven state machine editor (.asm.json)
     ScriptEditorState scriptEditor_; // script editor + debugger + vars state
 
-    // Package panel (T4.6) state.
+    // Package panel (T4.6) state. PackageState 已迁入 panels/package_panel.hpp
+    // （Task 14）；showPackage_ 保留（窗口菜单勾选 + ini 持久化）。
     bool showPackage_ = false;
-    PackageState package_;
 };
 
 } // namespace neon::editor

@@ -12,6 +12,9 @@
 #include "panels/loc_panel.hpp"
 #include "panels/profiler_panel.hpp"
 #include "panels/input_map_panel.hpp"
+#include "panels/terrain_panel.hpp"
+#include "panels/tilemap_panel.hpp"
+#include "panels/package_panel.hpp"
 
 #include <algorithm>
 #include <cerrno>
@@ -353,6 +356,15 @@ bool EditorApp::OnCreate() {
     ctx_.loadInputMapEdit = [this]() { LoadInputMapEdit(); };
     ctx_.saveInputMapEdit = [this]() { SaveInputMapEdit(); };
     panels_.Register(std::make_unique<InputMapPanel>(&showInputMap_));
+    // 世界面板（Task 14）：地形状态（视口/场景塑形共用）注入指针；重建/打包/
+    // 保存配置经回调（PackageState 已迁入 PackagePanel，RunPackage 返回报告）。
+    ctx_.terrain = &terrain_;
+    ctx_.rebuildTerrainMesh = [this](SceneEntity& e) { RebuildTerrainMesh(e); };
+    ctx_.runPackage = [this](const char* outDir) { return RunPackage(outDir); };
+    ctx_.saveEditorConfig = [this]() { SaveEditorConfig(); };
+    panels_.Register(std::make_unique<TerrainPanel>(&showTerrain_));
+    panels_.Register(std::make_unique<TilemapPanel>(&showTilemap_));
+    panels_.Register(std::make_unique<PackagePanel>(&showPackage_));
     panels_.OpenAll(ctx_);
     // Toolbar icon glyph self-check: a missing glyph renders as '?' in the
     // toolbar. Log once at startup so icon regressions are caught immediately.
@@ -616,6 +628,26 @@ void EditorApp::RenderModelPreviewPanel() {
 // 这里保留薄转发供 editor_viewport（主场景之后画视口图层）调用。
 void EditorApp::DrawDebugOverlay(const gfx::Camera& cam) {
     if (debugOverlayPanel_) debugOverlayPanel_->DrawOverlay(ctx_, cam);
+}
+
+// 打包（原 panels_script.inc 的 RunPackage，Task 14 迁入并改签名）：PackageState
+// 已迁入 PackagePanel，故输出目录由调用方（面板 ctx.runPackage 回调）传入，
+// 报告直接返回，面板自行设置 ran/report。
+pack::PackageReport EditorApp::RunPackage(const char* outDir) {
+    pack::PackConfig cfg;
+    cfg.projectDir = projectDir_;
+    cfg.outDir = outDir ? outDir : "";
+    cfg.playerSource = "build/neon_game.exe";
+    pack::PackageReport report = pack::PackProject(cfg);
+    if (report.ok) {
+        NEON_LOG_INFO("Editor: packaged '%s' -> %s (%zu files, %zu bytes)",
+                      projectDir_.c_str(), report.packPath.c_str(),
+                      report.fileCount, report.bytesWritten);
+    } else {
+        NEON_LOG_ERROR("Editor: package failed for '%s' (%zu errors)",
+                       projectDir_.c_str(), report.errors.size());
+    }
+    return report;
 }
 
 void EditorApp::OnShutdown() {

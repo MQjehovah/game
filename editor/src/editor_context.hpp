@@ -16,6 +16,7 @@
 
 #include "history.hpp"
 #include "neon/assets/asset_manager.hpp"
+#include "neon/core/pack.hpp"
 #include "neon/core/time.hpp"
 #include "neon/ecs/world.hpp"
 #include "neon/gfx/renderer.hpp"
@@ -32,6 +33,18 @@ namespace neon::editor {
 struct InputMapState {
     script::InputMap edit;
     std::string listenAction; // "listening" action, "" = idle
+};
+
+// 地形雕刻状态。原 EditorApp::TerrainState 嵌套结构，Task 14 提升为共享结构：
+// 视口雕刻交互（editor_viewport）与场景塑形（editor_scene）都读写它，故
+// EditorApp 仍持有 terrain_ 实例，经 EditorContext::terrain 指针访问。
+struct TerrainState {
+    bool paintMode = false;
+    float brushRadius = 5.0f;
+    float brushStrength = 0.12f;
+    bool raise = true;
+    math::Vec3 hoverPos{};
+    bool hoverValid = false;
 };
 
 // 性能面板的帧时间环形缓冲。原 EditorApp::ProfilerState 嵌套结构，Task 12 提升
@@ -98,6 +111,13 @@ struct EditorContext {
     InputMapState* inputMap = nullptr;
     std::function<void()> loadInputMapEdit;
     std::function<void()> saveInputMapEdit;
+    // 世界面板（Task 14）：地形雕刻状态（视口/场景塑形共用，EditorApp 持有）
+    // + 地形网格重建 / 打包回调（EditorApp 方法）。
+    TerrainState* terrain = nullptr;
+    std::function<void(SceneEntity&)> rebuildTerrainMesh;
+    // 打包：传入输出目录，返回本次打包报告（面板自行设置 ran/report）。
+    std::function<pack::PackageReport(const char*)> runPackage;
+    std::function<void()> saveEditorConfig;
     // 跨面板操作（EditorApp 注入回调）
     std::function<void()> refreshAssetDir;
     std::function<void(int)> setSelection;
