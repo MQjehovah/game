@@ -1,8 +1,23 @@
 # 渲染线程化设计（Render Thread Architecture）
 
 日期：2026-09-02
-状态：待批准
+状态：阶段 1 已完成（commit a5597d0），阶段 4 帧间重叠待实施
 前置：共享 GL 上下文 + UploadThread 已完成（commit e796229）；平台线程原语 threading.hpp 已完成（7360c19）。IRenderBackend 立即式接口、主线程独占 GL。
+
+## 0. 实施进度
+
+- ✅ **阶段 1-3（commit a5597d0）**：`ThreadedBackend : IRenderBackend` 全方法命令化。
+  ThreadedBackend 把每个 backend 调用录制为值语义闭包（数组/像素参数拷贝），由专用渲染
+  线程持窗口 GL 上下文按序回放；无句柄方法 Enqueue 异步，句柄/查询/回读方法 Run 同步往返
+  （reply 信号量），EndFrame frame-lock（swap 后返回）。因 ImGui / 编辑器 / GameRuntime 全部
+  经 IRenderBackend，它们自动被命令化（阶段 3 无额外工作）。`--render-thread` 开关（默认关，
+  现状不变）。
+- ✅ **等价验证**：forest（780万顶点）+ Sponza（103 mesh）渲染线程 vs 主线程截图 SHA-256
+  完全一致；play 模式正常；300 帧无 GL error；777 单测全绿；冒烟 fail-delta=0。
+- ⏳ **阶段 4（帧间重叠）**：去掉 EndFrame frame-lock，让主线程不等 swap（PumpEvents/UI 不被
+  vsync/渲染拖住）。卡点：PostGraph 的 RT 池跨帧复用（ResetFrame 在主线程逻辑、渲染线程可能
+  还在用上一帧 RT）——需要 RT 生命周期按帧分代/双缓冲，且渲染慢于录制时需限帧背压。这是
+  收益与边界都明确的独立下一步。
 
 ## 1. 目标
 
