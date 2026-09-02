@@ -58,6 +58,7 @@ int main(int argc, char** argv) {
     bool disableMsaa = false;
     bool disableTonemap = false;
     bool benchMode = false;
+    bool renderThread = false;
     bool hotReload = false;
     bool twoD = false;
     bool twoDPlay = false;
@@ -144,6 +145,8 @@ int main(int argc, char** argv) {
             benchMode = true;
         } else if (std::strcmp(argv[i], "--backend") == 0 && i + 1 < argc) {
             backend = argv[++i];
+        } else if (std::strcmp(argv[i], "--render-thread") == 0) {
+            renderThread = true;
         } else if (std::strcmp(argv[i], "--help") == 0) {
             std::printf("NeonEditor - NeonEngine scene editor\n"
                         "  --smoke-test <frames>  run N simulation frames then exit\n"
@@ -163,6 +166,7 @@ int main(int argc, char** argv) {
                         "  --no-msaa              force the single-sample HDR target (for diffing)\n"
                         "  --no-tonemap           composite with the legacy clamp instead of ACES (for diffing)\n"
                         "  --bench                log frame-time/draw stats every 60 frames and a summary at exit\n"
+                        "  --render-thread        run the GL backend on a dedicated render thread\n"
                         "  --log-level <level>    log filter: debug|info|warn|error\n"
                         "  --log-cat <n>:<level>  per-category override (repeatable,\n"
                         "                         comma-separated, e.g. gfx:debug)\n");
@@ -205,6 +209,7 @@ int main(int argc, char** argv) {
     if (!projectDir.empty()) app.SetProjectOnStart(projectDir, true);
     if (!previewPath.empty()) app.SetPreviewOnStart(previewPath);
     if (backend != "gl") app.SetBackendName(backend);
+    if (renderThread) app.SetRenderThreadEnabled(true);
     int code = app.Run(config);
     return app.SmokeFailed() ? 1 : code;
 }

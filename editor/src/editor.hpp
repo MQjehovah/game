@@ -287,6 +287,10 @@ public:
         loadProjectOnStart_ = loadScene;
     }
     void SetBackendName(const std::string& name) { backendName_ = name; }
+    // Runs the GL backend on a dedicated render thread (see
+    // gfx::Renderer::SetRenderThreadEnabled). Set before the editor window is
+    // created.
+    void SetRenderThreadEnabled(bool enabled) { renderThreadEnabled_ = enabled; }
 
     // --- Editor plugin API (NeonEditor.* native bindings) ------------------
     editor::EditorPluginManager* PluginManager() { return pluginMgr_.get(); }
@@ -806,6 +810,7 @@ private:
     float benchFrameMsMax_ = 0.0f;
     uint64_t benchLastLogFrame_ = 0;
     std::string backendName_ = "gl";
+    bool renderThreadEnabled_ = false;  // ThreadedBackend on a render thread
     std::string screenshotPath_;
     uint64_t screenshotFrame_ = 0;
 

@@ -208,6 +208,7 @@ bool EditorApp::OnCreate() {
         if (!gizmoDragActive_) SyncWorldFromEntities();
     };
     renderer_.SetBackendName(backendName_);
+    renderer_.SetRenderThreadEnabled(renderThreadEnabled_);
     renderer_.SetBloomEnabled(bloomEnabled_);
     renderer_.SetMsaaEnabled(msaaEnabled_);
     renderer_.SetTonemapEnabled(tonemapEnabled_);

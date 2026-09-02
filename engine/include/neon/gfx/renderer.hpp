@@ -13,6 +13,7 @@
 #include "neon/gfx/mesh.hpp"
 #include "neon/gfx/post_graph.hpp"
 #include "neon/gfx/scene_state.hpp"
+#include "neon/gfx/threaded_backend.hpp"
 #include "neon/gfx/upload_thread.hpp"
 #include "neon/gfx/shader.hpp"
 #include "neon/gfx/shadow_system.hpp"
@@ -51,6 +52,11 @@ public:
     // "vulkan" uses the Vulkan backend when built with NEON_ENABLE_VULKAN=ON
     // (falls back to OpenGL with a log otherwise).
     void SetBackendName(const std::string& name) { backendName_ = name; }
+    // Runs the GL backend on a dedicated render thread (command-marshaled via
+    // ThreadedBackend) instead of the calling thread. Set BEFORE Init(). See
+    // gfx/threaded_backend.hpp.
+    void SetRenderThreadEnabled(bool enabled) { renderThreadEnabled_ = enabled; }
+    bool RenderThreadEnabled() const { return renderThreadEnabled_; }
 
     // Headless hook used by unit tests and tooling: installs a backend
     // directly, bypassing window/GL-context creation so the CPU-side asset
@@ -445,6 +451,9 @@ private:
 
     std::unique_ptr<IRenderBackend> backend_;
     std::string backendName_ = "gl";
+    // When true, backend_ is wrapped in a ThreadedBackend that replays all
+    // rendering on a dedicated thread. Defaults off (unchanged behavior).
+    bool renderThreadEnabled_ = false;
 
     // Composition services (see the class comment): shadow pass, scene state
     // and the 2D overlay. The facade owns them and forwards every public call.

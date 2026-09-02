@@ -107,6 +107,7 @@ add_library(neon_gfx STATIC
   engine/src/gfx/csm.cpp
   engine/src/gfx/draw_batch2d.cpp
   engine/src/gfx/upload_thread.cpp
+  engine/src/gfx/threaded_backend.cpp
   engine/src/gfx/font.cpp
   engine/src/gfx/frame_graph.cpp
   engine/src/gfx/post_graph.cpp

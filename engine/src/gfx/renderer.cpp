@@ -53,6 +53,12 @@ bool Renderer::Init(platform::IWindow* window) {
     if (!backend_) {
         backend_ = CreateOpenGLBackend();
     }
+    // Render thread: wrap the real (GL) backend so every call is marshaled to
+    // a dedicated thread that owns the window's GL context. Disabled for
+    // Vulkan (the shared-context migration is GL-specific).
+    if (renderThreadEnabled_ && backend_->Name()[0] == 'O') {  // "OpenGL 3.3"
+        backend_ = std::make_unique<ThreadedBackend>(std::move(backend_));
+    }
     if (!backend_ || !backend_->Init(window)) {
         NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Error,
                      "Renderer: %s backend initialization failed",
