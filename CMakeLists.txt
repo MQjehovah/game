@@ -126,6 +126,7 @@ add_library(neon_scene STATIC
   engine/src/physics/physics.cpp
   engine/src/scene/scene_file.cpp
   engine/src/scene/component_schema.cpp
+  engine/src/scene/type_registry.cpp
   engine/src/scene/scene_manager.cpp
   engine/src/scene/game_manifest.cpp
   engine/src/scene/game_runtime.cpp
@@ -720,7 +721,8 @@ add_executable(neon_tests tests/test_main.cpp tests/test_serialize.cpp tests/tes
   tests/test_modules.cpp
   tests/test_combat.cpp
   tests/test_lagcomp.cpp
-  tests/test_skinned.cpp tests/test_shadow.cpp tests/test_log.cpp
+  tests/test_skinned.cpp tests/test_shadow.cpp   tests/test_log.cpp
+  tests/test_reflect.cpp
   tests/test_spatial.cpp tests/test_post.cpp tests/test_ibl.cpp tests/test_history.cpp
   tests/test_bt_editor.cpp tests/test_script_panel.cpp tests/test_packager.cpp
   tests/test_panel_registry.cpp

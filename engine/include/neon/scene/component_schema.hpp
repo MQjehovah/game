@@ -12,7 +12,8 @@ namespace neon::scene {
 // an editor for ANY component - built-in (transform/mesh/health/script) or
 // data components (plant/zombie/...). The runtime keeps using ComponentFactory
 // registrations; schemas are editor tooling that lives beside them.
-enum class FieldType { Number, Int, Bool, String, Vec3, Color, Enum, Resource, Json };
+enum class FieldType { Number, Int, Bool, String, Vec3, Color, Enum, Resource, Json,
+                       Array, Vec4, Struct };
 
 struct FieldSchema {
     std::string key;        // JSON field name
@@ -25,6 +26,9 @@ struct FieldSchema {
     const char* const* options = nullptr; // Enum values
     int optionCount = 0;
     const char* resourceKind = nullptr;   // "texture" | "model" | "script" | "scene"
+    const char* header = nullptr;         // Godot @export_group / Unity [Header]
+    const char* tooltip = nullptr;        // Unity [Tooltip] hover text
+    const char* widget = nullptr;         // optional custom inspector widget name
 };
 
 struct ComponentSchema {

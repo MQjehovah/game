@@ -216,10 +216,13 @@
 
 ### C6 组件序列化三份手写镜像
 - [x] `scene_file.cpp:544-1175` vs `1334-1550`：解析/序列化/字段白名单三份；反射系统 G2-1 仅 SceneAudioSource 采用。
-- 方向：扩展 G2-1 反射（Vec3/Enum/数组）迁移高频组件，双轨收敛。
+- [~] 反射框架（全类型码 + Serialize/EditorOnly/Transient）已落地，`scene_file.cpp` 的 `FromWorld`/`EntityToJson`
+  仍按组件保留（其**条件省略**与**自定义校验/回退**不能被通用反射复现，见 `docs/reflection.md` §6）。
+- 方向：迁移高频组件到 `kFields`，给条件省略字段配置自定义 codec，双轨收敛。
 
 ### C7 脚本绑定手写 95 个 ×3 处
 - [x] `bindings.cpp` 1389 行：null hook 静默默认值（无 SetError）、双份键名表不一致（bindings.cpp:1277 缺 tab/F1-F12 vs input_map.cpp:22）、表驱动缺失。
+- [~] 反射提供按名字段访问能力（`FieldList`/`TypeRegistry`），Lua/JS get/set 绑定生成列下一阶段（见 `docs/reflection.md` §6）。
 - 方向：注册表驱动（名字/参数 schema/错误上报统一），键名表单一来源。
 
 ### C8 线程基建复制 3 份
@@ -310,8 +313,9 @@
 ## 第五部分 G 系列遗留（原 gap-todos 未完成项，编号保留）
 
 ### G1-1 [~] 渲染后端覆盖：D3D12/Metal 空白（有意搁置，保留后端注册机制即可）
-### G2-1 [~] 反射系统：仅标量字段；Vec3/Enum/嵌套 + 脚本绑定生成未做（并入 C6/C7 推进）
+### G2-1 [x] 反射系统：标量/Vec2-4/Quat/Color/枚举/数组/嵌套/Json + Transient 分类已落地（`component_reflect.hpp`+`enum_reflect.hpp`+`type_registry.hpp`，见 `docs/reflection.md`；`NEO_ENUM` 取代不兼容 GCC 8.1 的 magic_enum）；脚本绑定生成未做（并入 C7 推进）
 ### G2-2 [ ] ECS archetype 存储未做（调度器已落地；接口已预留）
+### G2-2 [~] 组件类型按名注册：`TypeRegistry`（schema+类型擦除序列化+clone）已落地（`RegisterBuiltinReflectedTypes` 注册 SceneHealth/SceneAudioSource，接入 `RegisterBuiltinComponentSchemas`）；运行时 `ComponentRegistry`（工厂）与 TypeRegistry 未合并（见 reflection.md §6）
 ### G2-4 [~] 动态 GI：probe 场已落地；shader 集成/DDGI 未做
 ### G2-5 [ ] Vulkan 自定义 shader 热重载（并入 C10）
 ### G3-1 [ ] LLM 集成（远期；需先设计确定性沙箱边界）

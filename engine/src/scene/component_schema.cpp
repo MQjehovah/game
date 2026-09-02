@@ -1,5 +1,6 @@
 #include "neon/scene/component_schema.hpp"
 #include "neon/scene/scene_file.hpp"
+#include "neon/scene/type_registry.hpp"
 
 namespace neon::scene {
 namespace {
@@ -109,8 +110,10 @@ const std::vector<ComponentSchema>& AllComponentSchemas() {
 }
 
 void RegisterBuiltinComponentSchemas() {
-    // Schemas are a static table; this call exists for symmetry with the
-    // runtime component registry and as a future extension point.
+    // Schemas for the reflected components (SceneHealth, SceneAudioSource) also
+    // register into the TypeRegistry, so their JSON coders + clone are available
+    // beyond the static editor table (G2-2). Idempotent.
+    RegisterBuiltinReflectedTypes();
     AllComponentSchemas();
 }
 

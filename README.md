@@ -323,7 +323,8 @@ docs/                  # 架构/路线图/网络说明/规范文档
 ```
 
 详细设计见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)（架构/模块/子系统），架构评审（分层/依赖方向/内聚耦合）见
-[docs/plans/2026-08-31-architecture-review.md](docs/plans/2026-08-31-architecture-review.md)，路线图与差距见
+[docs/plans/2026-08-31-architecture-review.md](docs/plans/2026-08-31-architecture-review.md)，反射系统（C6/G2-1/G2-2，一处声明→schema+序列化+TypeRegistry）见
+[docs/reflection.md](docs/reflection.md)，路线图与差距见
 DEVELOPMENT §9，待办见 [docs/TODO.md](docs/TODO.md)。
 
 ## 许可
