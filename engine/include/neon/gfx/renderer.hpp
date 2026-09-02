@@ -13,6 +13,7 @@
 #include "neon/gfx/mesh.hpp"
 #include "neon/gfx/post_graph.hpp"
 #include "neon/gfx/scene_state.hpp"
+#include "neon/gfx/upload_thread.hpp"
 #include "neon/gfx/shader.hpp"
 #include "neon/gfx/shadow_system.hpp"
 #include "neon/gfx/texture.hpp"
@@ -58,6 +59,9 @@ public:
     void AttachBackendForTesting(std::unique_ptr<IRenderBackend> backend);
 
     IRenderBackend* Backend() { return backend_.get(); }
+    // Background GPU-upload worker (shared GL context); null when the platform
+    // has no shared-context support (uploads stay on the main thread).
+    UploadThread* Uploads() { return uploadThread_.get(); }
 
     // Frame
     void BeginFrame(const Color& clearColor, float clearDepth = 1.0f);
@@ -534,6 +538,10 @@ private:
     platform::IWindow* window_ = nullptr;
     int screenW_ = 1280;
     int screenH_ = 720;
+    // Background GPU-upload worker on a shared GL context. Available only when
+    // the platform supports shared contexts; AssetManager uploads may route
+    // through it (gfx/upload_thread.hpp).
+    std::unique_ptr<UploadThread> uploadThread_;
 };
 
 } // namespace neon::gfx

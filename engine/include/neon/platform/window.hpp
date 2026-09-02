@@ -32,6 +32,22 @@ public:
     virtual void SwapBuffers() = 0;
     virtual bool MakeGLContextCurrent() = 0;
 
+    // --- Shared GL context (background upload / future render thread) ------
+    // Creates a SECOND GL context that shares objects (textures/buffers/
+    // shaders) with the window's main context, so a worker thread can build
+    // GPU resources while the main thread renders. Standard multi-threaded GL
+    // resource-upload pattern. Default implementations return false so
+    // platforms without support fall back to main-thread-only uploads.
+    virtual bool CreateSharedContext() { return false; }
+    virtual void DestroySharedContext() {}
+    // Makes the SHARED context current on the CALLING thread (the upload
+    // worker calls this once at thread start). WGL/GLX contexts are
+    // thread-affine: one context must not be current in two threads.
+    virtual bool MakeSharedContextCurrent() { return false; }
+    // Detaches whatever context is current on the calling thread (a worker
+    // calls this before exiting so the context can migrate).
+    virtual void MakeNoContextCurrent() {}
+
     virtual bool ShouldClose() const = 0;
     virtual void RequestClose() = 0;
 

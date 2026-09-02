@@ -65,6 +65,15 @@ bool Renderer::Init(platform::IWindow* window) {
     screenW_ = window_->Width();
     screenH_ = window_->Height();
     draw2d_.Resize(screenW_, screenH_);
+    // Background GPU-upload worker on a shared GL context (resource context).
+    // OpenGL-only (the shared-context abstraction is GL-specific); optional —
+    // on platforms without shared-context support Start() fails and uploads
+    // stay on the main thread.
+    const char* bn = backend_->Name();
+    if (bn && std::strncmp(bn, "OpenGL", 6) == 0) {
+        uploadThread_ = std::make_unique<UploadThread>();
+        if (!uploadThread_->Start(window_)) uploadThread_.reset();
+    }
     return true;
 }
 
@@ -83,6 +92,12 @@ void Renderer::ConnectSubsystems() {
 
 void Renderer::Shutdown() {
     if (!backend_) return;
+    // Stop the background upload worker before destroying any shared GL
+    // resources or the window's context (the worker holds the shared context).
+    if (uploadThread_) {
+        uploadThread_->Shutdown();
+        uploadThread_.reset();
+    }
     if (litShader_.Valid()) backend_->DestroyShader(litShader_);
     if (skinnedLitShader_.Valid()) backend_->DestroyShader(skinnedLitShader_);
     if (unlitShader_.Valid()) backend_->DestroyShader(unlitShader_);

@@ -139,6 +139,11 @@ public:
 
     void Destroy() override {
         if (display_) {
+            if (sharedContext_) {
+                glXMakeCurrent(display_, None, nullptr);
+                glXDestroyContext(display_, sharedContext_);
+                sharedContext_ = nullptr;
+            }
             if (context_) {
                 glXMakeCurrent(display_, None, nullptr);
                 glXDestroyContext(display_, context_);
@@ -263,6 +268,47 @@ public:
         }
     }
 
+    // --- Shared GL context (IWindow overrides) -----------------------------
+    // GLX object-sharing context for background upload workers. glX exactly
+    // mirrors the WGL pattern: createAttribs' share parameter links object
+    // visibility between the two contexts.
+    bool CreateSharedContext() override {
+        if (!context_ || sharedContext_) return false;
+        PFN_glXCreateContextAttribsARB createAttribs =
+            reinterpret_cast<PFN_glXCreateContextAttribsARB>(
+                glXGetProcAddressARB(reinterpret_cast<const GLubyte*>("glXCreateContextAttribsARB")));
+        if (createAttribs) {
+            int contextAttribs[] = {
+                GLX_CONTEXT_MAJOR_VERSION_ARB, 3,
+                GLX_CONTEXT_MINOR_VERSION_ARB, 3,
+                GLX_CONTEXT_PROFILE_MASK_ARB, GLX_CONTEXT_CORE_PROFILE_BIT_ARB,
+                None};
+            sharedContext_ = createAttribs(display_, fbConfig_, context_, True, contextAttribs);
+        }
+        if (!sharedContext_)
+            sharedContext_ = glXCreateNewContext(display_, fbConfig_, GLX_RGBA_TYPE, context_, True);
+        if (!sharedContext_) {
+            NEON_LOG_WARN("X11: shared GLX context creation failed; background uploads disabled");
+            return false;
+        }
+        NEON_LOG_INFO("X11: shared GLX context created (background uploads enabled)");
+        return true;
+    }
+
+    void DestroySharedContext() override {
+        if (!sharedContext_) return;
+        glXMakeCurrent(display_, None, nullptr);
+        glXDestroyContext(display_, sharedContext_);
+        sharedContext_ = nullptr;
+    }
+
+    bool MakeSharedContextCurrent() override {
+        if (!sharedContext_) return false;
+        return glXMakeCurrent(display_, window_, sharedContext_) == True;
+    }
+
+    void MakeNoContextCurrent() override { glXMakeCurrent(display_, None, nullptr); }
+
 private:
     Display* display_ = nullptr;
     int screen_ = 0;
@@ -270,6 +316,7 @@ private:
     Window window_ = 0;
     GLXFBConfig fbConfig_ = nullptr;
     GLXContext context_ = nullptr;
+    GLXContext sharedContext_ = nullptr; // object-sharing context for upload workers
     Atom wmDeleteMessage_ = 0;
     int width_ = 1280;
     int height_ = 720;

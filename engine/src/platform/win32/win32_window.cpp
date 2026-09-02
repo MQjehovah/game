@@ -144,6 +144,11 @@ public:
     }
 
     void Destroy() override {
+        if (sharedGlrc_) {
+            wglMakeCurrent(nullptr, nullptr);
+            wglDeleteContext(sharedGlrc_);
+            sharedGlrc_ = nullptr;
+        }
         if (glrc_) {
             wglMakeCurrent(nullptr, nullptr);
             wglDeleteContext(glrc_);
@@ -543,9 +548,52 @@ private:
         return true;
     }
 
+    // --- Shared GL context (IWindow overrides) -----------------------------
+    // WGL shared context: objects created in either context are visible in
+    // both. wglCreateContextAttribsARB allows the share context to be current
+    // in another thread, so the main context may stay current on the main
+    // thread while we create this one.
+    bool CreateSharedContext() override {
+        if (!glrc_ || sharedGlrc_) return false;
+        auto wglCreateContextAttribsARB =
+            reinterpret_cast<PFN_wglCreateContextAttribsARB>(LoadWglProc("wglCreateContextAttribsARB"));
+        if (!wglCreateContextAttribsARB) return false;
+        const int contextAttribs[] = {
+            kWglContextMajorVersion, 3,
+            kWglContextMinorVersion, 3,
+            kWglContextProfileMask, kWglContextCoreProfileBit,
+            0};
+        sharedGlrc_ = wglCreateContextAttribsARB(hdc_, glrc_, contextAttribs);
+        if (!sharedGlrc_) {
+            NEON_LOG_WARN("Win32: shared GL context creation failed (error=%lu); "
+                          "background uploads disabled",
+                          GetLastError());
+            return false;
+        }
+        NEON_LOG_INFO("Win32: shared GL context created (background uploads enabled)");
+        return true;
+    }
+
+    void DestroySharedContext() override {
+        if (!sharedGlrc_) return;
+        // Detach from the calling thread first (the upload worker detaches
+        // before exit; this path also guards a same-thread destroy).
+        wglMakeCurrent(hdc_, nullptr);
+        wglDeleteContext(sharedGlrc_);
+        sharedGlrc_ = nullptr;
+    }
+
+    bool MakeSharedContextCurrent() override {
+        if (!sharedGlrc_) return false;
+        return wglMakeCurrent(hdc_, sharedGlrc_) != 0;
+    }
+
+    void MakeNoContextCurrent() override { wglMakeCurrent(nullptr, nullptr); }
+
     HWND hwnd_ = nullptr;
     HDC hdc_ = nullptr;
     HGLRC glrc_ = nullptr;
+    HGLRC sharedGlrc_ = nullptr; // object-sharing context for upload workers
     HWND helperHwnd_ = nullptr;
     HDC helperHdc_ = nullptr;
     HGLRC helperGlrc_ = nullptr;
