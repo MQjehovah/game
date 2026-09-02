@@ -173,6 +173,7 @@ add_library(neon_scene STATIC
   engine/src/ui/ui_system.cpp
   engine/src/plugin/runtime_plugin.cpp
   engine/src/plugin/backend.cpp
+  engine/src/mcp/mcp_server.cpp
 )
 if(NEON_ENABLE_JS)
   target_sources(neon_scene PRIVATE engine/src/script/js_host.cpp)
@@ -565,6 +566,17 @@ elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     -finput-charset=UTF-8 -fexec-charset=UTF-8)
 endif()
 
+# D: standalone MCP stdio server (list/get/set component on a scene file via the
+# reflection schema). Links the engine (scene_file + TypeRegistry reflection).
+add_executable(neon_mcp tools/neon_mcp.cpp)
+target_link_libraries(neon_mcp PRIVATE neon_engine)
+if(MSVC)
+  target_compile_options(neon_mcp PRIVATE /W4 /permissive- /utf-8)
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(neon_mcp PRIVATE -Wall -Wextra
+    -finput-charset=UTF-8 -fexec-charset=UTF-8)
+endif()
+
 # ---------------------------------------------------------------------------
 # Editor
 # ---------------------------------------------------------------------------
@@ -732,6 +744,8 @@ add_executable(neon_tests tests/test_main.cpp tests/test_serialize.cpp tests/tes
   tests/test_lagcomp.cpp
   tests/test_skinned.cpp tests/test_shadow.cpp   tests/test_log.cpp
   tests/test_reflect.cpp
+  tests/test_mcp.cpp
+  tests/test_script_host.cpp
   tests/test_spatial.cpp tests/test_post.cpp tests/test_ibl.cpp tests/test_history.cpp
   tests/test_bt_editor.cpp tests/test_script_panel.cpp tests/test_packager.cpp
   tests/test_panel_registry.cpp

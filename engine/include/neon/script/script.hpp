@@ -231,7 +231,17 @@ public:
 // script_manager.cpp). Lua is the original backend; the QuickJS host is the
 // second-class citizen with identical IScriptHost semantics, so scene scripts
 // pick a backend by file extension (.lua / .js) and share the same bindings.
+// E (multi-language host): callers that want a host by language name go through
+// CreateScriptHost(kind) so "lua" / "js" / "python" are switched identically;
+// a backend that is not compiled returns nullptr (the caller falls back).
 std::unique_ptr<IScriptHost> CreateLuaHost();
 std::unique_ptr<IScriptHost> CreateJsHost();
+std::unique_ptr<IScriptHost> CreatePythonHost();
+
+// Create a script host by language name ("lua" / "js" / "python"). Unknown or
+// not-yet-built backends return nullptr. Backends that support playing ALSO
+// serve editor tooling: the same IScriptHost is given a different binding set
+// (gameplay bindings vs. editor bindings) by whichever side wires it.
+std::unique_ptr<IScriptHost> CreateScriptHost(const std::string& kind);
 
 } // namespace neon::script

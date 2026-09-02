@@ -199,7 +199,7 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
         Fullscreen(backend, bright_);
         backend.BindTexture(0, backend.RenderTargetColorTexture(ctx.GetInput(hdrScene_)));
         backend.SetUniformInt("uTex", 0);
-        backend.SetUniformFloat("uThreshold", kBloomThreshold);
+        backend.SetUniformFloat("uThreshold", comp_.bloomThreshold);
         backend.DrawMesh(postQuad_);
     };
     brightPassIndex_ = add(std::move(bright));
@@ -303,7 +303,7 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
         } else {
             backend.BindTexture(1, hdr);
         }
-        backend.SetUniformFloat("uStrength", kBloomStrength);
+        backend.SetUniformFloat("uStrength", comp_.bloomStrength);
         backend.SetUniformInt("uBloomEnabled", bloomActive ? 1 : 0);
         backend.SetUniformInt("uBloom", 1);
         const RenderTargetHandle aoRt = ctx.GetInput(ao_);

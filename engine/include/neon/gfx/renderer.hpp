@@ -195,6 +195,11 @@ public:
     // only by the bloom contribution).
     void SetBloomEnabled(bool enabled);
     bool BloomEnabled() const { return bloomEnabled_; }
+    // A/RenderStack: data-driven bloom threshold + add-back strength (defaults to
+    // the original constants). The RenderStack component drives these each frame.
+    void SetBloomParams(float threshold, float strength);
+    float BloomThreshold() const { return bloomThreshold_; }
+    float BloomStrength() const { return bloomStrength_; }
     // T3.7: the composite applies the ACES fitted tonemapper to
     // ACES((hdr + bloom*strength) * exposure). exposure_ defaults to 1.0
     // (identity); SetExposure lets the editor/T4.7 tune later. tonemapEnabled_
@@ -495,6 +500,8 @@ private:
     int hdrH_ = 0;
     bool hdrEnabled_ = false;
     bool bloomEnabled_ = true;
+    float bloomThreshold_ = kBloomThreshold;
+    float bloomStrength_ = kBloomStrength;
     float exposure_ = 1.0f;
     bool tonemapEnabled_ = true;
     bool msaaRequested_ = true;

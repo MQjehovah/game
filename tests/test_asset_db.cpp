@@ -28,6 +28,14 @@ TEST(AssetDbStableGuids) {
     CHECK(guidA != guidB);
     CHECK_EQ(db1.PathFor(guidA), "assets/a.png");
 
+    // B: ResolveAssetRef is GUID-first with path fallback — a known GUID maps to
+    // its path, a path (or unknown GUID) is returned literally.
+    CHECK_EQ(db1.ResolveAssetRef(guidA), "assets/a.png");
+    CHECK_EQ(db1.ResolveAssetRef("assets/b.png"), "assets/b.png");      // literal path
+    CHECK_EQ(db1.ResolveAssetRef("ab12cd34ef56ab12"), "ab12cd34ef56ab12"); // unknown GUID -> literal
+    CHECK(!assets::AssetDatabase::IsGuidToken("assets/a.png"));
+    CHECK(assets::AssetDatabase::IsGuidToken(guidA));
+
     // No sidecar files: identity lives in the database only.
     std::string metaProbe;
     CHECK(!test::ReadFileAll(root + "/assets/a.png.meta", metaProbe));

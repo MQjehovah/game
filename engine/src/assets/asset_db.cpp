@@ -207,6 +207,15 @@ std::string AssetDatabase::PathFor(const std::string& guid) const {
     return {};
 }
 
+bool AssetDatabase::IsGuidToken(const std::string& ref) {
+    if (ref.size() != 16) return false;
+    for (char c : ref) {
+        const bool hex = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+        if (!hex) return false;
+    }
+    return true;
+}
+
 std::string AssetDatabase::ToJson() const {
     core::Json root;
     root.type_ = core::Json::Type::Object;

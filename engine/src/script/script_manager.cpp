@@ -1,6 +1,8 @@
 #include "neon/script/script.hpp"
 
+#include "neon/core/log.hpp"
 #include "neon/script/lua_host.hpp"
+#include "neon/script/python_host.hpp"
 #ifdef NEON_ENABLE_JS
 #include "neon/script/js_host.hpp"
 #endif
@@ -24,5 +26,24 @@ std::unique_ptr<IScriptHost> CreateJsHost() {
     return nullptr;
 }
 #endif
+
+#ifdef NEON_ENABLE_PYTHON
+std::unique_ptr<IScriptHost> CreatePythonHost() {
+    return std::make_unique<PythonHost>();
+}
+#else
+// Python (CPython) host is not compiled by default (needs a Python runtime +
+// headers). Callers fall back to Lua; enable NEON_ENABLE_PYTHON to build it.
+std::unique_ptr<IScriptHost> CreatePythonHost() {
+    return nullptr;
+}
+#endif
+
+std::unique_ptr<IScriptHost> CreateScriptHost(const std::string& kind) {
+    if (kind == "lua") return CreateLuaHost();
+    if (kind == "js") return CreateJsHost();
+    if (kind == "python") return CreatePythonHost();
+    return nullptr; // unknown language
+}
 
 } // namespace neon::script

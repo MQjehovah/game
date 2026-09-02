@@ -45,6 +45,22 @@ public:
 
     std::string GuidFor(const std::string& projectRelativePath) const;
     std::string PathFor(const std::string& guid) const;
+
+    // Resolve a reference token that is EITHER a 16-hex GUID or a literal
+    // project-relative path (B: GUID-first, path fallback). A token that looks
+    // like a GUID and is a known asset resolves to its path; anything else
+    // (a path, an unknown GUID) is returned unchanged so a loader can fall back
+    // to treating it as a path. This gives future GUID-ified scene references a
+    // single resolution point without breaking existing path references.
+    std::string ResolveAssetRef(const std::string& ref) const {
+        if (ref.empty() || !IsGuidToken(ref)) return ref; // path (or empty): literal
+        const std::string p = PathFor(ref);
+        return p.empty() ? ref : p; // known GUID -> path; else fall back to literal
+    }
+
+    // True when `ref` is shaped like a 16-hex GUID.
+    static bool IsGuidToken(const std::string& ref);
+
     const std::vector<AssetDbEntry>& Entries() const { return entries_; }
     bool Empty() const { return entries_.empty(); }
 

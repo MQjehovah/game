@@ -354,6 +354,11 @@ void Renderer::SetBloomEnabled(bool enabled) {
                      "Renderer: bloom disabled");
 }
 
+void Renderer::SetBloomParams(float threshold, float strength) {
+    bloomThreshold_ = threshold;
+    bloomStrength_ = strength;
+}
+
 void Renderer::SetExposure(float exposure) {
     exposure_ = exposure;
     NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
@@ -1141,6 +1146,8 @@ PostGraph::FrameParams Renderer::MakePostParams(bool chains) const {
     p.composite.fogDensity = sceneState_.VolumetricFogDensity();
     p.composite.exposure = exposure_;
     p.composite.tonemapEnabled = tonemapEnabled_;
+    p.composite.bloomThreshold = bloomThreshold_;
+    p.composite.bloomStrength = bloomStrength_;
     p.composite.white = white_;
     return p;
 }

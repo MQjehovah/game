@@ -3,6 +3,7 @@
 #include <functional>
 
 #include "neon/gfx/backend.hpp"
+#include "neon/gfx/bloom.hpp"
 #include "neon/gfx/camera.hpp"
 #include "neon/gfx/frame_graph.hpp"
 #include "neon/math/math.hpp"
@@ -54,6 +55,10 @@ public:
         float fogDensity = 0.02f;
         float exposure = 1.0f;
         bool tonemapEnabled = true;
+        // Data-driven bloom (A/RenderStack): bright threshold + add-back strength,
+        // defaulting to the original constants so existing scenes are unchanged.
+        float bloomThreshold = kBloomThreshold;
+        float bloomStrength = kBloomStrength;
         TextureHandle white; // 与 Shaders::white 同源（Execute 逐帧重给，防句柄过期）
     };
 
