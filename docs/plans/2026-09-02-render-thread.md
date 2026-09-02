@@ -12,12 +12,15 @@
   （reply 信号量），EndFrame frame-lock（swap 后返回）。因 ImGui / 编辑器 / GameRuntime 全部
   经 IRenderBackend，它们自动被命令化（阶段 3 无额外工作）。`--render-thread` 开关（默认关，
   现状不变）。
-- ✅ **等价验证**：forest（780万顶点）+ Sponza（103 mesh）渲染线程 vs 主线程截图 SHA-256
-  完全一致；play 模式正常；300 帧无 GL error；777 单测全绿；冒烟 fail-delta=0。
-- ⏳ **阶段 4（帧间重叠）**：去掉 EndFrame frame-lock，让主线程不等 swap（PumpEvents/UI 不被
-  vsync/渲染拖住）。卡点：PostGraph 的 RT 池跨帧复用（ResetFrame 在主线程逻辑、渲染线程可能
-  还在用上一帧 RT）——需要 RT 生命周期按帧分代/双缓冲，且渲染慢于录制时需限帧背压。这是
-  收益与边界都明确的独立下一步。
+- ✅ **阶段 4 帧间重叠（commit 3c447f9）**：EndFrame 改异步提交 + 帧计数背压
+  （kMaxFramesAhead=2）。正确性依据：命令全局有序 + 值语义 → 跨帧 RT 复用/销毁走命令序列
+  无竞态（逐像素 SHA 验证一致）。UI/逻辑不再被 GPU/vsync 阻塞（主线程可领先渲染线程 2 帧）。
+- ✅ **等价与稳定性验证**：forest（780万顶点）+ Sponza（103 mesh）渲染线程 vs 主线程截图
+  SHA-256 完全一致（frame-lock 与异步 EndFrame 都验证）；600 帧无 GL error；play 模式正常；
+  777 单测全绿；冒烟 fail-delta=0。
+- ⏳ **已知边界**：GPU 瓶颈场景（本机 Intel Iris Xe）下总吞吐受 GPU 物理限制，异步 EndFrame
+  不提升吞吐（背压限制在渲染速度）——其价值在 GPU 未满载时让主线程逻辑/UI 领先渲染。
+  若需验证该收益：低负载场景 + 关 vsync 时主线程帧率应高于渲染帧率。
 
 ## 1. 目标
 
