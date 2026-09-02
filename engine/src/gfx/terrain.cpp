@@ -161,6 +161,15 @@ math::Vec4 TerrainLayerColor(float height, float heightScale, float slope,
     const float tSlope =
         math::SmoothStep(config.rockSlope, config.rockSlope + config.slopeBlend, slope);
     color = math::Lerp(color, config.rock, tSlope);
+    // Snow cap: above snowStartHeight the rock fades to snow. Uses the same
+    // normalized height (h = height/heightScale) as the grass/dirt/rock bands,
+    // so snowStartHeight is expressed in the same band units. Off by default
+    // (snowBlend <= 0 disables the cap entirely).
+    if (config.snowBlend > 0.0f && config.snowStartHeight > 0.0f) {
+        const float tSnow = math::SmoothStep(config.snowStartHeight - config.snowBlend,
+                                             config.snowStartHeight + config.snowBlend, h);
+        color = math::Lerp(color, config.snow, math::Clamp(tSnow, 0.0f, 1.0f));
+    }
     color.w = 1.0f;
     return color;
 }

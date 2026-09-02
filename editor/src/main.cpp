@@ -59,6 +59,7 @@ int main(int argc, char** argv) {
     bool disableTonemap = false;
     bool benchMode = false;
     bool renderThread = false;
+    bool fxAtmosphere = false;
     bool hotReload = false;
     bool twoD = false;
     bool twoDPlay = false;
@@ -147,6 +148,8 @@ int main(int argc, char** argv) {
             backend = argv[++i];
         } else if (std::strcmp(argv[i], "--render-thread") == 0) {
             renderThread = true;
+        } else if (std::strcmp(argv[i], "--fx") == 0) {
+            fxAtmosphere = true;
         } else if (std::strcmp(argv[i], "--help") == 0) {
             std::printf("NeonEditor - NeonEngine scene editor\n"
                         "  --smoke-test <frames>  run N simulation frames then exit\n"
@@ -167,6 +170,7 @@ int main(int argc, char** argv) {
                         "  --no-tonemap           composite with the legacy clamp instead of ACES (for diffing)\n"
                         "  --bench                log frame-time/draw stats every 60 frames and a summary at exit\n"
                         "  --render-thread        run the GL backend on a dedicated render thread\n"
+                        "  --fx                   enable SSAO + volumetric + SSR atmosphere\n"
                         "  --log-level <level>    log filter: debug|info|warn|error\n"
                         "  --log-cat <n>:<level>  per-category override (repeatable,\n"
                         "                         comma-separated, e.g. gfx:debug)\n");
@@ -210,6 +214,7 @@ int main(int argc, char** argv) {
     if (!previewPath.empty()) app.SetPreviewOnStart(previewPath);
     if (backend != "gl") app.SetBackendName(backend);
     if (renderThread) app.SetRenderThreadEnabled(true);
+    if (fxAtmosphere) app.SetPostAtmosphere(true, true, true);
     int code = app.Run(config);
     return app.SmokeFailed() ? 1 : code;
 }

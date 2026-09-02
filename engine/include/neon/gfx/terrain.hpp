@@ -21,6 +21,13 @@ struct TerrainLayerConfig {
     math::Vec4 grass{0.35f, 0.62f, 0.30f, 1.0f};
     math::Vec4 dirt{0.50f, 0.42f, 0.28f, 1.0f};
     math::Vec4 rock{0.55f, 0.52f, 0.48f, 1.0f};
+    // Snow cap (programmatic snowfield): above snowStartHeight the surface
+    // fades from rock to pure snow over snowBlend world-units of height.
+    // `snow` == rock (or disabled via snowBlend <= 0) turns the cap off, so a
+    // grassland or desert terrain needs no extra config.
+    math::Vec4 snow{0.92f, 0.94f, 0.97f, 1.0f};
+    float snowStartHeight = 0.0f;   // world Y where the snow cap begins (0 = off)
+    float snowBlend = 3.0f;         // height band over which rock -> snow (0 = off)
     float grassMaxHeight = 6.0f;   // world Y where grass fades to dirt
     float dirtMaxHeight = 12.0f;   // world Y where dirt fades to rock
     float rockSlope = 0.35f;       // slope (1 - normal.y) where rock starts

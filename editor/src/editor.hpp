@@ -291,6 +291,13 @@ public:
     // gfx::Renderer::SetRenderThreadEnabled). Set before the editor window is
     // created.
     void SetRenderThreadEnabled(bool enabled) { renderThreadEnabled_ = enabled; }
+    // Ambient-occlusion / volumetric-light atmosphere (Showcase scenes). Set
+    // before the renderer inits so the viewport previews match.
+    void SetPostAtmosphere(bool ssao, bool volumetric, bool ssr) {
+        postSsao_ = ssao;
+        postVolumetric_ = volumetric;
+        postSsr_ = ssr;
+    }
 
     // --- Editor plugin API (NeonEditor.* native bindings) ------------------
     editor::EditorPluginManager* PluginManager() { return pluginMgr_.get(); }
