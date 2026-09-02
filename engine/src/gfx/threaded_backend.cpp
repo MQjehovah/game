@@ -110,12 +110,15 @@ bool ThreadedBackend::Init(platform::IWindow* window) {
     // Release the context on the main thread so the render thread can bind it
     // (a context may be current on at most one thread at a time).
     window_->MakeNoContextCurrent();
-    if (!wake_.Create()) {
+    if (!wake_.Create() || !frameDone_.Create()) {
+        if (frameDone_.Valid()) frameDone_.Destroy();
+        if (wake_.Valid()) wake_.Destroy();
         window_->MakeGLContextCurrent();
         real_->Shutdown();
         return false;
     }
     if (!renderThread_.Start(&ThreadedBackend::RenderThreadEntry, this)) {
+        frameDone_.Destroy();
         wake_.Destroy();
         window_->MakeGLContextCurrent();
         real_->Shutdown();
@@ -141,6 +144,7 @@ void ThreadedBackend::Shutdown() {
         stopping_.store(true, std::memory_order_relaxed);
         wake_.Post();
         renderThread_.Join();
+        frameDone_.Destroy();
         wake_.Destroy();
     } else {
         real_->Shutdown();
@@ -279,10 +283,33 @@ void ThreadedBackend::DrawPrimitives(const void* vertices, uint32_t vertexCount,
 void ThreadedBackend::BeginFrame() { Enqueue([this]() { real_->BeginFrame(); }); }
 
 void ThreadedBackend::EndFrame() {
-    // Frame-lock: run the swap + wait. Guarantees the render thread finished
-    // every prior command and presented before this returns, so the next
-    // BeginFrame cannot race frame state.
-    Run([this]() { real_->EndFrame(); });
+    if (!running_.load(std::memory_order_acquire) ||
+        failed_.load(std::memory_order_acquire))
+        return;
+    // Async swap: the main thread does not wait on the GPU/vsync. The render
+    // thread posts frameDone_ after each completed swap.
+    while (lock_.test_and_set(std::memory_order_acquire)) {
+    }
+    queue_.push_back([this]() {
+        real_->EndFrame();
+        framesCompleted_.fetch_add(1, std::memory_order_release);
+        frameDone_.Post();
+    });
+    lock_.clear(std::memory_order_release);
+    framesSubmitted_.fetch_add(1, std::memory_order_release);
+    wake_.Post();
+    // Backpressure: never run more than kMaxFramesAhead frames ahead of the
+    // render thread. When the render thread is slower (GPU/vsync bound) this
+    // blocks the main thread here — but command/value semantics + per-frame
+    // ordering keep the replay safe, and the render thread owns the GL context.
+    const uint32_t submitted = framesSubmitted_.load(std::memory_order_acquire);
+    const uint32_t completed = framesCompleted_.load(std::memory_order_acquire);
+    const int ahead = static_cast<int>(submitted) - static_cast<int>(completed);
+    while (ahead > kMaxFramesAhead) {
+        frameDone_.Wait(100);
+        const uint32_t c2 = framesCompleted_.load(std::memory_order_acquire);
+        if (static_cast<int>(submitted) - static_cast<int>(c2) <= kMaxFramesAhead) break;
+    }
 }
 
 // ---------------------------------------------------------------------------

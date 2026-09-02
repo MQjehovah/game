@@ -48,6 +48,7 @@ public:
     void Destroy();
     void Post();
     void Wait(int timeoutMs);
+    bool Valid() const { return impl_ != nullptr; }
 
 private:
     void* impl_ = nullptr;  // opaque: HANDLE (win32) / heap sem_t (posix)

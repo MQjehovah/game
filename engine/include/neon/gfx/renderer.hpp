@@ -22,6 +22,7 @@
 
 namespace neon::gfx {
 
+
 // High-level renderer: owns the backend, built-in shaders, and delegates to
 // three composition services - ShadowSystem (CSM + point-light shadows),
 // SceneState (camera/lights/sky/fog/IBL) and DrawBatch2D (immediate-mode 2D

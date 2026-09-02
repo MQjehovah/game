@@ -100,7 +100,10 @@ public:
                         PrimitiveTopology topology) override;
 
     void BeginFrame() override;
-    void EndFrame() override;  // frame-lock: run swap + block until presented
+    // Submits the frame's swap asynchronously; the main thread does NOT block
+    // on the GPU/vsync here. Backpressure (bounded frames-ahead) keeps the
+    // command queue from growing unboundedly when the render thread is slower.
+    void EndFrame() override;
     void CaptureFrame(int width, int height, void* rgba) override;
     void ReadCurrentTargetPixel(int x, int y, unsigned char* rgba) override;
     bool DepthAvailable() const override;
@@ -119,6 +122,12 @@ private:
     std::atomic<bool> running_{false};
     std::atomic<bool> stopping_{false};
     std::atomic<bool> failed_{false};  // render thread could not bind context
+    // Frames ahead backpressure: the main thread records at most this many
+    // frames ahead of the render thread before blocking in EndFrame.
+    static constexpr int kMaxFramesAhead = 2;
+    std::atomic<uint32_t> framesSubmitted_{0};
+    std::atomic<uint32_t> framesCompleted_{0};
+    platform::Semaphore frameDone_;  // posted once per completed frame
 
     // Command queue + render-thread wake.
     std::atomic_flag lock_ = ATOMIC_FLAG_INIT;
