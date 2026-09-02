@@ -45,6 +45,8 @@ struct TypeInfo {
 class TypeRegistry {
 public:
     // Register a reflected component (T must declare a static `kFields`).
+    // Idempotent: re-registering a name replaces the previous entry, so
+    // RegisterBuiltinReflectedTypes can be called any number of times.
     template <typename T>
     static void Register(const char* name, const char* label) {
         static_assert(IsReflected_v<T>, "TypeRegistry::Register<T> requires T::kFields");
@@ -61,7 +63,14 @@ public:
         info.clone = [](const void* src, void* dst) {
             T::kFields.Clone(*static_cast<const T*>(src), *static_cast<T*>(dst));
         };
-        Mutate().emplace_back(name ? name : "", std::move(info));
+        auto& reg = Mutate();
+        for (auto& [n, existing] : reg) {
+            if (n == (name ? name : "")) {
+                existing = std::move(info);
+                return;
+            }
+        }
+        reg.emplace_back(name ? name : "", std::move(info));
     }
 
     static const TypeInfo* Find(const std::string& name);

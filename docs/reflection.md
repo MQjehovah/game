@@ -108,23 +108,47 @@ const TypeInfo* info = TypeRegistry::Find("mycomp");     // schema + toJson/from
 
 ### 已落地
 - 反射框架：全类型码 + 三类字段 + 嵌套/数组/枚举/Json + transient。
-- `TypeRegistry`：类型擦除的 schema + 序列化 + clone，接入 `RegisterBuiltinComponentSchemas`。
-- `FieldSchema` 增 `header/tooltip/widget`；`FieldType` 增 `Array/Struct/Vec4`（向后兼容，编辑器 switch 已覆盖）。
-- 单测 `tests/test_reflect.cpp`（7 项：schema 过滤 transient/枚举 options/JSON 往返含 transient 外漏/
-  枚举码/嵌套/数组/TypeRegistry 擦除往返），`failures=0`。
+- `TypeRegistry`：类型擦除的 schema + 序列化 + clone，**幂等注册**，接入 `RegisterBuiltinComponentSchemas`。
+- **编辑器 schema 单一来源（A2）**：`AllComponentSchemas()/FindComponentSchema` 现在优先取
+  `TypeRegistry`（反射即权威），再并入无损的手写表（去重），所以反射组件不会再被手写孪生覆盖。
+- **inspector 渲染补齐（A1）**：`FieldType::Vec4`（DragFloat4）、`Array`（列表编辑：数字/字符串
+  内联 + 增减）、`Struct`（折叠 + 只读 JSON）可在编辑器渲染；"添加组件"默认构造也给出合法初值。
+- **C6 序列化收敛**：`scene_file.cpp` 把 `FromWorld` 与 `EntityToJson` 的两个手写序列化块
+  **收敛为共享的 `SerializeEntityComponents(world, entity)`**（唯一来源，二者用同一函数），
+  并顺势修复了实际漂移 bug：原先 `EntityToJson` 漏写 `mesh` 的 `lod/uvRepeat/dirtColorHex/rockColorHex`、
+  `sprite` 的 `frames/sheet`、以及 `rigidbody/terrain/tilemap/character/SceneData`，现在与 `FromWorld` 完全一致。
+- **C7 脚本字段访问**：新增 `EntityComponentField(entity, comp, field)` / `SetEntityComponentField(...)`
+  反射驱动的**单字段**读写绑定（复用 `EntityComponent`/`SetEntityComponent` 的 JSON hook 通道），
+  脚本可改一个字段而不整表重写，字段名与反射 schema 一致。
+- `FieldSchema` 增 `header/tooltip/widget`；`FieldType` 增 `Array/Struct/Vec4`（向后兼容）。
+- **已迁移真实组件（编辑器 schema + JSON codec 走反射，共 10 个）**：`SceneHealth`、`SceneAudioSource`、
+  `SceneSortOrder`、`SceneDecal`、`SceneCharacter`、`SceneRigidBody`、`SceneTransform`、`SceneGroups`、
+  `SceneNodeType`、`SceneCamera`。`SceneAnimOverride` 已声明 `kFields`（含 Transient `active`）但暂不注册
+  ——它没有场景工厂，注册会在编辑器"添加组件"里出现一个不生效的条目（先补工厂再注册）。
+  - 演示的技巧：
+    - **键名↔成员名别名**——`SceneRigidBody` 的 `damping` 键 → `linearDamping` 成员；`behaviorTree` 同理。
+    - **字符串枚举下拉**——`shape`/`type` 用 `FieldMeta{options}`。
+    - **运行时字段 `Transient`**——`bodyId`/`active` 不存盘、不渲染。
+    - **以结构体为准**——`SceneTransform::rot` 是真 `Quat`，编辑器用四元数输入（不再造假"欧拉角"）。
+  - 序列化器顺带修复：补写 `camera.aspect`、`sprite.billboard`（此前被序列化丢弃，按"以结构体为准"补上）。
+- 单测 `tests/test_reflect.cpp`（10 项），`failures=0`。
+- **剩余组件（mesh/sprite/script/light/name/plant/zombie/terrain/tilemap）**：每个都因一个已知冲突暂未收口
+  ——mesh/sprite 的嵌套 `material{...}`/节点区特判、light 颜色"字符串 hex 与 [r,g,b,a] 数组两套并存"、
+  plant/zombie 结构体比 schema 少字段、terrain/tilemap 大数组、script 编辑器特判面板。
+  引擎里这类"专项呈现/专项序列化"是通用引擎的常态（等价于 Unity 的 CustomPropertyDrawer / 自定义序列化），
+  反射按通用做法保留其专项、只补 schema；建议在能完整链接 `neon_tests`/`neon_editor` 的环境下逐个体收口
+  （本机 MinGW GCC 8.1 无法完整链接，见文末验收说明）。
 
 ### 后续（按 TODO 项）
-- **C6 收敛**：把 `scene_file.cpp` 的 `FromWorld`/`EntityToJson` 逐步改用 `kFields.ToJson`。
-  ⚠️ 注意：现有序列化有**条件省略**（如 `if (rb->dynamic)` 省略 true 值、`if (!s->sheet.empty())`）
-  及自定义校验/回退（如 rigidbody 非法 shape → 回退 sphere），**不能被通用反射复现**。
-  迁移时应给这些字段配置自定义 codec（`ReflectTraits<T>` 特化或字段级读取钩子），或以"保留 + 标注"过渡。
-- **C7 脚本绑定**：由 `TypeRegistry`/`FieldList` 逐字段生成 Lua/JS 的 get/set 名访问
-  （替换 `bindings.cpp` 手写块）。需要宿主一个 `FieldAccessor`（按名读写 T 的成员），
-  不影响确定性（纯数据访问）。本轮已提供按名反射能力，绑定生成列为下一阶段。
+- **字段级 codec**：共享序列化器内部仍保留部分**条件省略**（如 `if (rb->dynamic)` 省略 true 值、
+  `if (!s->sheet.empty())`）与**校验/回退**（rigidbody 非法 shape→sphere）。这些是**语义化**的，
+  通用反射无法自动复现；如要彻底交给 `kFields`，需给这些字段配 `ReflectTraits<T>` 特化或字段级读写钩子。
+- **Struct 递归字段编辑**：`FieldSchema::Struct` 尚未携带子字段 schema（inspector 现以只读 JSON
+  展示）；递归可编辑需在 `FieldSchema` 里挂子 `ComponentSchema`/`FieldList` 指针。
 - **G2-2**：把 `ComponentRegistry`（运行时工厂）与 `TypeRegistry`（元数据）进一步合并，
   让 `Instantiate` 对反射组件走统一创建。
-- **编辑器**：为 `FieldType::Array/Struct` 补可视化渲染（列表编辑器 + 可折叠嵌套树），
-  使全部反射字段可编辑，而非仅回退为无损 JSON。
+- **顺带发现的既有隐藏缺陷（本次未改，避免回归）**：`sprite` 组件的 `billboard` 字段在
+  `FromWorld`/共享序列化器里都未写出（与 schema 不一致）——迁移 sprite 到 `kFields` 时一并修。
 
 ## 7. 如何给引擎加一个可反射组件（示例）
 

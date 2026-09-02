@@ -20,6 +20,15 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
 
+# MSVC: use the conforming preprocessor (/Zc:preprocessor). The legacy MSVC
+# preprocessor mishandles variadic macros with token-paste (it collapses
+# __VA_ARGS__ into a single argument), which breaks the NEO_ENUM reflection
+# macro in enum_reflect.hpp (G2-1). The conforming preprocessor is the modern
+# MSVC default and is required here.
+if(MSVC)
+  add_compile_options(/Zc:preprocessor)
+endif()
+
 # ---------------------------------------------------------------------------
 # Engine layers (P3): a strict three-layer split with dependency edges enforced
 # by the build system (not convention):

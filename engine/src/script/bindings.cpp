@@ -987,6 +987,47 @@ Value NativeSetEntityComponent(IScriptHost& host, void* user) {
     return Value::Nil();
 }
 
+// EntityComponentField(entity, name, field) -> field value, or nil. The
+// reflection-driven (C7) counterpart of EntityComponent: reads a SINGLE field
+// of an arbitrary data component instead of the whole JSON, so scripts touch
+// one property without re-serializing the rest in Lua. Field names come from
+// the component's reflection schema (ComponentSchema / kFields).
+Value NativeEntityComponentField(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->world) return Value::Nil();
+    const ecs::Entity e = EntityFromValue(host.GetArg(0));
+    const std::string comp = StringArg(host, 1);
+    const std::string field = StringArg(host, 2);
+    if (!e.IsValid() || !ctx->world->Alive(e) || comp.empty() || field.empty())
+        return Value::Nil();
+    if (!ctx->entityComponent) return Value::Nil();
+    core::Json data;
+    if (!ctx->entityComponent(e, comp, &data)) return Value::Nil();
+    const core::Json* v = data.Get(field);
+    return v ? JsonToValue(*v) : Value::Nil();
+}
+
+// SetEntityComponentField(entity, name, field, value): writes ONE field of an
+// arbitrary data component, preserving the component's other fields. Reads the
+// current component JSON first (so unrelated fields survive), replaces `field`,
+// then writes it back through the same hook as SetEntityComponent.
+Value NativeSetEntityComponentField(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->world) return Value::Nil();
+    const ecs::Entity e = EntityFromValue(host.GetArg(0));
+    const std::string comp = StringArg(host, 1);
+    const std::string field = StringArg(host, 2);
+    if (!e.IsValid() || !ctx->world->Alive(e) || comp.empty() || field.empty())
+        return Value::Nil();
+    if (!ctx->setEntityComponent) return Value::Nil();
+    core::Json data;
+    if (!ctx->entityComponent || !ctx->entityComponent(e, comp, &data))
+        data.type_ = core::Json::Type::Object; // start from just this field
+    data.object_[field] = ValueToJson(host.GetArg(3));
+    ctx->setEntityComponent(e, comp, data);
+    return Value::Nil();
+}
+
 // SetVisible(entity, true|false): hides/shows an entity in the runtime's
 // render pass (dead mobs, spawn markers, toggled props). Works on any entity
 // with a mesh; the world state itself is untouched.
@@ -1650,6 +1691,8 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("ZombieInfo", &NativeZombieInfo, &ctx);
     host.Register("EntityComponent", &NativeEntityComponent, &ctx);
     host.Register("SetEntityComponent", &NativeSetEntityComponent, &ctx);
+    host.Register("EntityComponentField", &NativeEntityComponentField, &ctx);
+    host.Register("SetEntityComponentField", &NativeSetEntityComponentField, &ctx);
     host.Register("SetVisible", &NativeSetVisible, &ctx);
     host.Register("ChangeScene", &NativeChangeScene, &ctx);
     host.Register("SignalConnect", &NativeSignalConnect, &ctx);

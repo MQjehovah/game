@@ -1420,11 +1420,252 @@ core::Result<int> Instantiate(ecs::World& world, const SceneFile& scene,
     return core::Result<int>::Ok(static_cast<int>(created.size()));
 }
 
+// C6: shared per-entity scene-component serializer — the single source of
+// truth for the entity JSON. Both FromWorld (whole scene) and EntityToJson
+// (one entity) call it, so the two blocks can never drift apart. Emits the same
+// field names the factories read, so Parse(FromWorld(w)) re-instantiates an
+// equivalent World. Returns {"name"?,"id"?,"parentId"?,"components":{...}}.
+static core::Json SerializeEntityComponents(ecs::World& world, ecs::Entity e) {
+    core::Json ent = MakeObject();
+    if (const SceneName* n = world.Get<SceneName>(e))
+        ent.object_["name"] = MakeString(n->name);
+    if (const SceneId* id = world.Get<SceneId>(e))
+        if (id->id != 0) ent.object_["id"] = MakeNumber(id->id);
+    // G5-4: hierarchy is entity-level — emit parentId from the resolved
+    // SceneParentLink (the parent entity's stable SceneId).
+    if (const SceneParentLink* link = world.Get<SceneParentLink>(e)) {
+        if (const SceneId* pid = world.Get<SceneId>(link->parent))
+            if (pid->id != 0) ent.object_["parentId"] = MakeNumber(pid->id);
+    }
+    core::Json comps = MakeObject();
+
+    if (const SceneTransform* t = world.Get<SceneTransform>(e)) {
+        core::Json tf = MakeObject();
+        tf.object_["pos"] = MakeVec3(t->pos);
+        tf.object_["rot"] = MakeQuat(t->rot);
+        tf.object_["scale"] = MakeVec3(t->scale);
+        comps.object_["transform"] = std::move(tf);
+    }
+    if (const SceneMesh* m = world.Get<SceneMesh>(e)) {
+        core::Json mesh = MakeObject();
+        mesh.object_["meshKey"] = MakeString(m->meshKey);
+        core::Json mat = MakeObject();
+        mat.object_["metallic"] = MakeNumber(m->metallic);
+        mat.object_["roughness"] = MakeNumber(m->roughness);
+        if (!m->colorHex.empty()) mat.object_["colorHex"] = MakeString(m->colorHex);
+        mat.object_["ao"] = MakeNumber(m->ao);
+        mat.object_["emissiveIntensity"] = MakeNumber(m->emissiveIntensity);
+        if (m->uvRepeat != 1.0f) mat.object_["uvRepeat"] = MakeNumber(m->uvRepeat);
+        if (!m->dirtColorHex.empty()) mat.object_["dirtColorHex"] = MakeString(m->dirtColorHex);
+        if (!m->rockColorHex.empty()) mat.object_["rockColorHex"] = MakeString(m->rockColorHex);
+        if (!m->albedoTex.empty()) mat.object_["albedoTex"] = MakeString(m->albedoTex);
+        if (!m->mrTex.empty()) mat.object_["mrTex"] = MakeString(m->mrTex);
+        if (!m->aoTex.empty()) mat.object_["aoTex"] = MakeString(m->aoTex);
+        if (!m->emissiveTex.empty()) mat.object_["emissiveTex"] = MakeString(m->emissiveTex);
+        mesh.object_["material"] = std::move(mat);
+        if (!m->lod.empty()) {
+            core::Json lodArr;
+            lodArr.type_ = core::Json::Type::Array;
+            for (const LodEntry& entry : m->lod) {
+                core::Json item = MakeObject();
+                item.object_["distance"] = MakeNumber(entry.distance);
+                item.object_["meshKey"] = MakeString(entry.meshKey);
+                lodArr.array_.push_back(std::move(item));
+            }
+            mesh.object_["lod"] = std::move(lodArr);
+        }
+        comps.object_["mesh"] = std::move(mesh);
+    }
+    if (const SceneSprite* s = world.Get<SceneSprite>(e)) {
+        core::Json sp = MakeObject();
+        sp.object_["texture"] = MakeString(s->texture);
+        if (s->flipX) sp.object_["flipX"] = MakeBool(true);
+        if (s->flipY) sp.object_["flipY"] = MakeBool(true);
+        sp.object_["colorHex"] = MakeString(s->colorHex.empty() ? "#FFFFFF" : s->colorHex);
+        if (s->billboard) sp.object_["billboard"] = MakeBool(true);
+        if (!s->frames.empty()) {
+            core::Json frames;
+            frames.type_ = core::Json::Type::Array;
+            for (const std::string& f : s->frames) frames.array_.push_back(MakeString(f));
+            sp.object_["frames"] = std::move(frames);
+            sp.object_["fps"] = MakeNumber(s->fps);
+            sp.object_["loop"] = MakeBool(s->loop);
+        }
+        if (!s->sheet.empty()) {
+            sp.object_["sheet"] = MakeString(s->sheet);
+            sp.object_["sheetFrames"] = MakeNumber(s->sheetFrames);
+            sp.object_["fps"] = MakeNumber(s->fps);
+            sp.object_["loop"] = MakeBool(s->loop);
+        }
+        comps.object_["sprite"] = std::move(sp);
+    }
+    if (const SceneHealth* h = world.Get<SceneHealth>(e)) {
+        comps.object_["health"] = h->ToJson(); // C6: reflected serializer
+    }
+    if (const SceneScripts* scripts = world.Get<SceneScripts>(e)) {
+        core::Json items;
+        items.type_ = core::Json::Type::Array;
+        for (const SceneScript& sc : scripts->items) {
+            core::Json item = MakeObject();
+            item.object_["backend"] = MakeString(sc.backend.empty() ? "lua" : sc.backend);
+            item.object_["path"] = MakeString(sc.path);
+            if (sc.vars.IsObject()) item.object_["vars"] = sc.vars;
+            items.array_.push_back(std::move(item));
+        }
+        core::Json sc = MakeObject();
+        sc.object_["items"] = std::move(items);
+        comps.object_["scripts"] = std::move(sc);
+    } else if (const SceneScript* sc = world.Get<SceneScript>(e)) {
+        core::Json item = MakeObject();
+        item.object_["backend"] = MakeString(sc->backend.empty() ? "lua" : sc->backend);
+        item.object_["path"] = MakeString(sc->path);
+        if (sc->vars.IsObject()) item.object_["vars"] = sc->vars;
+        core::Json items;
+        items.type_ = core::Json::Type::Array;
+        items.array_.push_back(std::move(item));
+        core::Json scs = MakeObject();
+        scs.object_["items"] = std::move(items);
+        comps.object_["scripts"] = std::move(scs);
+    }
+    if (const SceneBehaviorTree* b = world.Get<SceneBehaviorTree>(e)) {
+        core::Json bt = MakeObject();
+        bt.object_["tree"] = MakeString(b->treeJson);
+        comps.object_["behaviorTree"] = std::move(bt);
+    }
+    if (const SceneGroups* g = world.Get<SceneGroups>(e)) {
+        core::Json groups;
+        groups.type_ = core::Json::Type::Array;
+        for (const std::string& grp : g->groups)
+            groups.array_.push_back(MakeString(grp));
+        core::Json gc = MakeObject();
+        gc.object_["groups"] = std::move(groups);
+        comps.object_["groups"] = std::move(gc);
+    }
+    if (const SceneNodeType* t = world.Get<SceneNodeType>(e)) {
+        core::Json tc = MakeObject();
+        tc.object_["value"] = MakeString(t->value);
+        comps.object_["type"] = std::move(tc);
+    }
+    if (const SceneCamera* c = world.Get<SceneCamera>(e)) {
+        core::Json cam = MakeObject();
+        cam.object_["fov"] = MakeNumber(c->fov);
+        if (c->ortho) cam.object_["ortho"] = MakeBool(true);
+        cam.object_["orthoSize"] = MakeNumber(c->orthoSize);
+        if (c->aspect != 0.0f) cam.object_["aspect"] = MakeNumber(c->aspect);
+        comps.object_["camera"] = std::move(cam);
+    }
+    if (const SceneLight* l = world.Get<SceneLight>(e)) {
+        core::Json li = MakeObject();
+        li.object_["type"] = MakeString(l->type);
+        li.object_["sunDir"] = MakeVec3(l->sunDir);
+        core::Json col = MakeArray();
+        col.array_ = {MakeNumber(l->color.r), MakeNumber(l->color.g), MakeNumber(l->color.b),
+                      MakeNumber(l->color.a)};
+        li.object_["color"] = std::move(col);
+        li.object_["intensity"] = MakeNumber(l->intensity);
+        li.object_["radius"] = MakeNumber(l->radius);
+        li.object_["ambientStrength"] = MakeNumber(l->ambientStrength);
+        if (!l->skyTexture.empty())
+            li.object_["skyTexture"] = MakeString(l->skyTexture);
+        comps.object_["light"] = std::move(li);
+    }
+    if (const SceneSortOrder* so = world.Get<SceneSortOrder>(e)) {
+        core::Json s = MakeObject();
+        s.object_["z"] = MakeNumber(so->z);
+        comps.object_["sortOrder"] = std::move(s);
+    }
+    if (const SceneTerrain* t = world.Get<SceneTerrain>(e)) {
+        core::Json te = MakeObject();
+        te.object_["segments"] = MakeNumber(t->segments);
+        te.object_["size"] = MakeNumber(t->size);
+        te.object_["heightScale"] = MakeNumber(t->heightScale);
+        core::Json hArr;
+        hArr.type_ = core::Json::Type::Array;
+        for (float h : t->heights) hArr.array_.push_back(MakeNumber(h));
+        te.object_["heights"] = std::move(hArr);
+        te.object_["chunkGridDiv"] = MakeNumber(t->chunkGridDiv);
+        te.object_["chunkLodLevels"] = MakeNumber(t->chunkLodLevels);
+        te.object_["chunkBaseSubdiv"] = MakeNumber(t->chunkBaseSubdiv);
+        if (!t->vegMeshKey.empty()) te.object_["vegMeshKey"] = MakeString(t->vegMeshKey);
+        te.object_["vegCount"] = MakeNumber(t->vegCount);
+        te.object_["vegSeed"] = MakeNumber(t->vegSeed);
+        te.object_["vegSize"] = MakeNumber(t->vegSize);
+        te.object_["vegImpostorDistance"] = MakeNumber(t->vegImpostorDistance);
+        te.object_["vegMinHeight"] = MakeNumber(t->vegMinHeight);
+        te.object_["vegMaxHeight"] = MakeNumber(t->vegMaxHeight);
+        te.object_["vegMaxSlope"] = MakeNumber(t->vegMaxSlope);
+        comps.object_["terrain"] = std::move(te);
+    }
+    if (const SceneTilemap* t = world.Get<SceneTilemap>(e)) {
+        core::Json tlm = MakeObject();
+        tlm.object_["cols"] = MakeNumber(t->cols);
+        tlm.object_["rows"] = MakeNumber(t->rows);
+        tlm.object_["cellSize"] = MakeNumber(t->cellSize);
+        core::Json tiles;
+        tiles.type_ = core::Json::Type::Array;
+        for (const std::string& tile : t->tiles) tiles.array_.push_back(MakeString(tile));
+        tlm.object_["tiles"] = std::move(tiles);
+        comps.object_["tilemap"] = std::move(tlm);
+    }
+    if (const SceneDecal* d = world.Get<SceneDecal>(e)) {
+        core::Json dc = MakeObject();
+        dc.object_["texture"] = MakeString(d->texture);
+        dc.object_["size"] = MakeNumber(d->size);
+        dc.object_["alpha"] = MakeNumber(d->alpha);
+        comps.object_["decal"] = std::move(dc);
+    }
+    if (const SceneRigidBody* rb = world.Get<SceneRigidBody>(e)) {
+        core::Json r = MakeObject();
+        r.object_["shape"] = MakeString(rb->shape);
+        r.object_["radius"] = MakeNumber(rb->radius);
+        r.object_["halfExtents"] = MakeVec3(rb->halfExtents);
+        if (rb->dynamic) r.object_["dynamic"] = MakeBool(true);
+        r.object_["mass"] = MakeNumber(rb->mass);
+        r.object_["restitution"] = MakeNumber(rb->restitution);
+        r.object_["friction"] = MakeNumber(rb->friction);
+        r.object_["damping"] = MakeNumber(rb->linearDamping);
+        r.object_["gravityScale"] = MakeNumber(rb->gravityScale);
+        r.object_["layer"] = MakeNumber(rb->layer);
+        r.object_["mask"] = MakeNumber(rb->mask);
+        comps.object_["rigidbody"] = std::move(r);
+    }
+    if (const SceneCharacter* c = world.Get<SceneCharacter>(e)) {
+        core::Json ch = MakeObject();
+        ch.object_["radius"] = MakeNumber(c->radius);
+        ch.object_["halfHeight"] = MakeNumber(c->halfHeight);
+        ch.object_["layer"] = MakeNumber(c->layer);
+        ch.object_["mask"] = MakeNumber(c->mask);
+        comps.object_["character"] = std::move(ch);
+    }
+    if (const SceneAudioSource* a = world.Get<SceneAudioSource>(e)) {
+        comps.object_["audio"] = a->ToJson();
+    }
+    if (const SceneAnimOverride* ao = world.Get<SceneAnimOverride>(e)) {
+        core::Json an = MakeObject();
+        an.object_["clip"] = MakeString(ao->clip);
+        if (ao->loop) an.object_["loop"] = MakeBool(true);
+        an.object_["speed"] = MakeNumber(ao->speed);
+        an.object_["crossFade"] = MakeNumber(ao->crossFade);
+        comps.object_["anim"] = std::move(an);
+    }
+    // Generic components (plant/zombie/plugin data...) from SceneData.
+    if (const SceneData* sd = world.Get<SceneData>(e)) {
+        for (const auto& [cname, cdata] : sd->components)
+            comps.object_[cname] = cdata;
+    }
+
+    ent.object_["components"] = std::move(comps);
+    return ent;
+}
+
 // G2-2: serialize an ecs::World back to the scene-file JSON format — the
 // reverse of Instantiate. Every factory's component is emitted with the exact
 // field names it reads, so Parse(FromWorld(w)) re-Instantiates an equivalent
 // World. Stable ids round-trip via SceneId; generic components live in
 // SceneData. The editor generates play/save output from the World it hosts.
+//
+// C6: the per-entity component -> JSON writer is shared with EntityToJson below
+// (SerializeEntityComponents), so the two callers can never drift apart.
 core::Result<core::Json> SceneFile::FromWorld(ecs::World& world) {
     core::Json root = MakeObject();
     core::Json arr;
@@ -1444,234 +1685,8 @@ core::Result<core::Json> SceneFile::FromWorld(ecs::World& world) {
     }
 
     for (ecs::Entity e : ents) {
-        core::Json ent = MakeObject();
-        if (const SceneName* n = world.Get<SceneName>(e))
-            ent.object_["name"] = MakeString(n->name);
-        if (const SceneId* id = world.Get<SceneId>(e))
-            if (id->id != 0) ent.object_["id"] = MakeNumber(id->id);
-        core::Json comps = MakeObject();
-
-        if (const SceneTransform* t = world.Get<SceneTransform>(e)) {
-            core::Json tf = MakeObject();
-            tf.object_["pos"] = MakeVec3(t->pos);
-            tf.object_["rot"] = MakeQuat(t->rot);
-            tf.object_["scale"] = MakeVec3(t->scale);
-            comps.object_["transform"] = std::move(tf);
-        }
-        // G5-4: hierarchy is entity-level — emit parentId from the resolved
-        // SceneParentLink (the parent entity's stable SceneId).
-        if (const SceneParentLink* link = world.Get<SceneParentLink>(e)) {
-            if (const SceneId* pid = world.Get<SceneId>(link->parent))
-                if (pid->id != 0) ent.object_["parentId"] = MakeNumber(pid->id);
-        }
-        if (const SceneMesh* m = world.Get<SceneMesh>(e)) {
-            core::Json mesh = MakeObject();
-            mesh.object_["meshKey"] = MakeString(m->meshKey);
-            core::Json mat = MakeObject();
-            mat.object_["metallic"] = MakeNumber(m->metallic);
-            mat.object_["roughness"] = MakeNumber(m->roughness);
-            if (!m->colorHex.empty()) mat.object_["colorHex"] = MakeString(m->colorHex);
-            mat.object_["ao"] = MakeNumber(m->ao);
-            mat.object_["emissiveIntensity"] = MakeNumber(m->emissiveIntensity);
-            if (m->uvRepeat != 1.0f) mat.object_["uvRepeat"] = MakeNumber(m->uvRepeat);
-            if (!m->dirtColorHex.empty()) mat.object_["dirtColorHex"] = MakeString(m->dirtColorHex);
-            if (!m->rockColorHex.empty()) mat.object_["rockColorHex"] = MakeString(m->rockColorHex);
-            if (!m->albedoTex.empty()) mat.object_["albedoTex"] = MakeString(m->albedoTex);
-            if (!m->mrTex.empty()) mat.object_["mrTex"] = MakeString(m->mrTex);
-            if (!m->aoTex.empty()) mat.object_["aoTex"] = MakeString(m->aoTex);
-            if (!m->emissiveTex.empty()) mat.object_["emissiveTex"] = MakeString(m->emissiveTex);
-            mesh.object_["material"] = std::move(mat);
-            if (!m->lod.empty()) {
-                core::Json lodArr;
-                lodArr.type_ = core::Json::Type::Array;
-                for (const LodEntry& entry : m->lod) {
-                    core::Json item = MakeObject();
-                    item.object_["distance"] = MakeNumber(entry.distance);
-                    item.object_["meshKey"] = MakeString(entry.meshKey);
-                    lodArr.array_.push_back(std::move(item));
-                }
-                mesh.object_["lod"] = std::move(lodArr);
-            }
-            comps.object_["mesh"] = std::move(mesh);
-        }
-        if (const SceneSprite* s = world.Get<SceneSprite>(e)) {
-            core::Json sp = MakeObject();
-            sp.object_["texture"] = MakeString(s->texture);
-            if (s->flipX) sp.object_["flipX"] = MakeBool(true);
-            if (s->flipY) sp.object_["flipY"] = MakeBool(true);
-            sp.object_["colorHex"] = MakeString(s->colorHex.empty() ? "#FFFFFF" : s->colorHex);
-            if (!s->frames.empty()) {
-                core::Json frames;
-                frames.type_ = core::Json::Type::Array;
-                for (const std::string& f : s->frames) frames.array_.push_back(MakeString(f));
-                sp.object_["frames"] = std::move(frames);
-                sp.object_["fps"] = MakeNumber(s->fps);
-                sp.object_["loop"] = MakeBool(s->loop);
-            }
-            if (!s->sheet.empty()) {
-                sp.object_["sheet"] = MakeString(s->sheet);
-                sp.object_["sheetFrames"] = MakeNumber(s->sheetFrames);
-                sp.object_["fps"] = MakeNumber(s->fps);
-                sp.object_["loop"] = MakeBool(s->loop);
-            }
-            comps.object_["sprite"] = std::move(sp);
-        }
-        if (const SceneHealth* h = world.Get<SceneHealth>(e)) {
-            comps.object_["health"] = h->ToJson(); // C6: reflected serializer
-        }
-        if (const SceneScripts* scripts = world.Get<SceneScripts>(e)) {
-            core::Json items;
-            items.type_ = core::Json::Type::Array;
-            for (const SceneScript& sc : scripts->items) {
-                core::Json item = MakeObject();
-                item.object_["backend"] = MakeString(sc.backend.empty() ? "lua" : sc.backend);
-                item.object_["path"] = MakeString(sc.path);
-                if (sc.vars.IsObject()) item.object_["vars"] = sc.vars;
-                items.array_.push_back(std::move(item));
-            }
-            core::Json sc = MakeObject();
-            sc.object_["items"] = std::move(items);
-            comps.object_["scripts"] = std::move(sc);
-        } else if (const SceneScript* sc = world.Get<SceneScript>(e)) {
-            core::Json item = MakeObject();
-            item.object_["backend"] = MakeString(sc->backend.empty() ? "lua" : sc->backend);
-            item.object_["path"] = MakeString(sc->path);
-            if (sc->vars.IsObject()) item.object_["vars"] = sc->vars;
-            core::Json items;
-            items.type_ = core::Json::Type::Array;
-            items.array_.push_back(std::move(item));
-            core::Json scs = MakeObject();
-            scs.object_["items"] = std::move(items);
-            comps.object_["scripts"] = std::move(scs);
-        }
-        if (const SceneBehaviorTree* b = world.Get<SceneBehaviorTree>(e)) {
-            core::Json bt = MakeObject();
-            bt.object_["tree"] = MakeString(b->treeJson);
-            comps.object_["behaviorTree"] = std::move(bt);
-        }
-        if (const SceneGroups* g = world.Get<SceneGroups>(e)) {
-            core::Json groups;
-            groups.type_ = core::Json::Type::Array;
-            for (const std::string& grp : g->groups)
-                groups.array_.push_back(MakeString(grp));
-            core::Json gc = MakeObject();
-            gc.object_["groups"] = std::move(groups);
-            comps.object_["groups"] = std::move(gc);
-        }
-        if (const SceneNodeType* t = world.Get<SceneNodeType>(e)) {
-            core::Json tc = MakeObject();
-            tc.object_["value"] = MakeString(t->value);
-            comps.object_["type"] = std::move(tc);
-        }
-        if (const SceneCamera* c = world.Get<SceneCamera>(e)) {
-            core::Json cam = MakeObject();
-            cam.object_["fov"] = MakeNumber(c->fov);
-            if (c->ortho) cam.object_["ortho"] = MakeBool(true);
-            cam.object_["orthoSize"] = MakeNumber(c->orthoSize);
-            comps.object_["camera"] = std::move(cam);
-        }
-        if (const SceneLight* l = world.Get<SceneLight>(e)) {
-            core::Json li = MakeObject();
-            li.object_["type"] = MakeString(l->type);
-            li.object_["sunDir"] = MakeVec3(l->sunDir);
-            core::Json col = MakeArray();
-            col.array_ = {MakeNumber(l->color.r), MakeNumber(l->color.g), MakeNumber(l->color.b),
-                          MakeNumber(l->color.a)};
-            li.object_["color"] = std::move(col);
-            li.object_["intensity"] = MakeNumber(l->intensity);
-            li.object_["radius"] = MakeNumber(l->radius);
-            li.object_["ambientStrength"] = MakeNumber(l->ambientStrength);
-            if (!l->skyTexture.empty())
-                li.object_["skyTexture"] = MakeString(l->skyTexture);
-            comps.object_["light"] = std::move(li);
-        }
-        if (const SceneSortOrder* so = world.Get<SceneSortOrder>(e)) {
-            core::Json s = MakeObject();
-            s.object_["z"] = MakeNumber(so->z);
-            comps.object_["sortOrder"] = std::move(s);
-        }
-        if (const SceneTerrain* t = world.Get<SceneTerrain>(e)) {
-            core::Json te = MakeObject();
-            te.object_["segments"] = MakeNumber(t->segments);
-            te.object_["size"] = MakeNumber(t->size);
-            te.object_["heightScale"] = MakeNumber(t->heightScale);
-            core::Json hArr;
-            hArr.type_ = core::Json::Type::Array;
-            for (float h : t->heights) hArr.array_.push_back(MakeNumber(h));
-            te.object_["heights"] = std::move(hArr);
-            te.object_["chunkGridDiv"] = MakeNumber(t->chunkGridDiv);
-            te.object_["chunkLodLevels"] = MakeNumber(t->chunkLodLevels);
-            te.object_["chunkBaseSubdiv"] = MakeNumber(t->chunkBaseSubdiv);
-            if (!t->vegMeshKey.empty()) te.object_["vegMeshKey"] = MakeString(t->vegMeshKey);
-            te.object_["vegCount"] = MakeNumber(t->vegCount);
-            te.object_["vegSeed"] = MakeNumber(t->vegSeed);
-            te.object_["vegSize"] = MakeNumber(t->vegSize);
-            te.object_["vegImpostorDistance"] = MakeNumber(t->vegImpostorDistance);
-            te.object_["vegMinHeight"] = MakeNumber(t->vegMinHeight);
-            te.object_["vegMaxHeight"] = MakeNumber(t->vegMaxHeight);
-            te.object_["vegMaxSlope"] = MakeNumber(t->vegMaxSlope);
-            comps.object_["terrain"] = std::move(te);
-        }
-        if (const SceneTilemap* t = world.Get<SceneTilemap>(e)) {
-            core::Json tlm = MakeObject();
-            tlm.object_["cols"] = MakeNumber(t->cols);
-            tlm.object_["rows"] = MakeNumber(t->rows);
-            tlm.object_["cellSize"] = MakeNumber(t->cellSize);
-            core::Json tiles;
-            tiles.type_ = core::Json::Type::Array;
-            for (const std::string& tile : t->tiles) tiles.array_.push_back(MakeString(tile));
-            tlm.object_["tiles"] = std::move(tiles);
-            comps.object_["tilemap"] = std::move(tlm);
-        }
-        if (const SceneDecal* d = world.Get<SceneDecal>(e)) {
-            core::Json dc = MakeObject();
-            dc.object_["texture"] = MakeString(d->texture);
-            dc.object_["size"] = MakeNumber(d->size);
-            dc.object_["alpha"] = MakeNumber(d->alpha);
-            comps.object_["decal"] = std::move(dc);
-        }
-        if (const SceneRigidBody* rb = world.Get<SceneRigidBody>(e)) {
-            core::Json r = MakeObject();
-            r.object_["shape"] = MakeString(rb->shape);
-            r.object_["radius"] = MakeNumber(rb->radius);
-            r.object_["halfExtents"] = MakeVec3(rb->halfExtents);
-            if (rb->dynamic) r.object_["dynamic"] = MakeBool(true);
-            r.object_["mass"] = MakeNumber(rb->mass);
-            r.object_["restitution"] = MakeNumber(rb->restitution);
-            r.object_["friction"] = MakeNumber(rb->friction);
-            r.object_["damping"] = MakeNumber(rb->linearDamping);
-            r.object_["gravityScale"] = MakeNumber(rb->gravityScale);
-            r.object_["layer"] = MakeNumber(rb->layer);
-            r.object_["mask"] = MakeNumber(rb->mask);
-            comps.object_["rigidbody"] = std::move(r);
-        }
-        if (const SceneCharacter* c = world.Get<SceneCharacter>(e)) {
-            core::Json ch = MakeObject();
-            ch.object_["radius"] = MakeNumber(c->radius);
-            ch.object_["halfHeight"] = MakeNumber(c->halfHeight);
-            ch.object_["layer"] = MakeNumber(c->layer);
-            ch.object_["mask"] = MakeNumber(c->mask);
-            comps.object_["character"] = std::move(ch);
-        }
-        if (const SceneAudioSource* a = world.Get<SceneAudioSource>(e)) {
-            comps.object_["audio"] = a->ToJson();
-        }
-        if (const SceneAnimOverride* ao = world.Get<SceneAnimOverride>(e)) {
-            core::Json an = MakeObject();
-            an.object_["clip"] = MakeString(ao->clip);
-            if (ao->loop) an.object_["loop"] = MakeBool(true);
-            an.object_["speed"] = MakeNumber(ao->speed);
-            an.object_["crossFade"] = MakeNumber(ao->crossFade);
-            comps.object_["anim"] = std::move(an);
-        }
-        // Generic components (plant/zombie/plugin data...) from SceneData.
-        if (const SceneData* sd = world.Get<SceneData>(e)) {
-            for (const auto& [cname, cdata] : sd->components)
-                comps.object_[cname] = cdata;
-        }
-
-        ent.object_["components"] = std::move(comps);
-        arr.array_.push_back(std::move(ent));
+        // C6: single shared per-entity serializer (also used by EntityToJson).
+        arr.array_.push_back(SerializeEntityComponents(world, e));
     }
 
     root.object_["entities"] = std::move(arr);
@@ -1696,130 +1711,8 @@ core::Result<core::Json> SceneFile::EntityToJson(ecs::World& world, int entityId
         return core::Result<core::Json>::Err("scene: entity " + std::to_string(entityId) +
                                               " not found");
 
-    // Serialize the entity's scene JSON (same component output as FromWorld,
-    // but for one entity — the World-backed inspector read path, G5-4-4 项4).
-    core::Json ent = MakeObject();
-    if (const SceneName* n = world.Get<SceneName>(found))
-        ent.object_["name"] = MakeString(n->name);
-    ent.object_["id"] = MakeNumber(entityId);
-    if (const SceneParentLink* link = world.Get<SceneParentLink>(found)) {
-        if (const SceneId* pid = world.Get<SceneId>(link->parent))
-            if (pid->id != 0) ent.object_["parentId"] = MakeNumber(pid->id);
-    }
-    core::Json comps = MakeObject();
-
-    if (const SceneTransform* t = world.Get<SceneTransform>(found)) {
-        core::Json tf = MakeObject();
-        tf.object_["pos"] = MakeVec3(t->pos);
-        tf.object_["rot"] = MakeQuat(t->rot);
-        tf.object_["scale"] = MakeVec3(t->scale);
-        comps.object_["transform"] = std::move(tf);
-    }
-    if (const SceneMesh* m = world.Get<SceneMesh>(found)) {
-        core::Json mesh = MakeObject();
-        mesh.object_["meshKey"] = MakeString(m->meshKey);
-        core::Json mat = MakeObject();
-        mat.object_["metallic"] = MakeNumber(m->metallic);
-        mat.object_["roughness"] = MakeNumber(m->roughness);
-        if (!m->colorHex.empty()) mat.object_["colorHex"] = MakeString(m->colorHex);
-        mat.object_["ao"] = MakeNumber(m->ao);
-        mat.object_["emissiveIntensity"] = MakeNumber(m->emissiveIntensity);
-        if (!m->albedoTex.empty()) mat.object_["albedoTex"] = MakeString(m->albedoTex);
-        if (!m->mrTex.empty()) mat.object_["mrTex"] = MakeString(m->mrTex);
-        if (!m->aoTex.empty()) mat.object_["aoTex"] = MakeString(m->aoTex);
-        if (!m->emissiveTex.empty()) mat.object_["emissiveTex"] = MakeString(m->emissiveTex);
-        mesh.object_["material"] = std::move(mat);
-        comps.object_["mesh"] = std::move(mesh);
-    }
-    if (const SceneSprite* s = world.Get<SceneSprite>(found)) {
-        core::Json sp = MakeObject();
-        sp.object_["texture"] = MakeString(s->texture);
-        if (s->flipX) sp.object_["flipX"] = MakeBool(true);
-        if (s->flipY) sp.object_["flipY"] = MakeBool(true);
-        sp.object_["colorHex"] = MakeString(s->colorHex.empty() ? "#FFFFFF" : s->colorHex);
-        comps.object_["sprite"] = std::move(sp);
-    }
-    if (const SceneHealth* h = world.Get<SceneHealth>(found)) {
-        core::Json health = MakeObject();
-        health.object_["hp"] = MakeNumber(h->hp);
-        health.object_["maxHp"] = MakeNumber(h->maxHp);
-        comps.object_["health"] = std::move(health);
-    }
-    if (const SceneScripts* scripts = world.Get<SceneScripts>(found)) {
-        core::Json items;
-        items.type_ = core::Json::Type::Array;
-        for (const SceneScript& sc : scripts->items) {
-            core::Json item = MakeObject();
-            item.object_["backend"] = MakeString(sc.backend.empty() ? "lua" : sc.backend);
-            item.object_["path"] = MakeString(sc.path);
-            if (sc.vars.IsObject()) item.object_["vars"] = sc.vars;
-            items.array_.push_back(std::move(item));
-        }
-        core::Json sc = MakeObject();
-        sc.object_["items"] = std::move(items);
-        comps.object_["scripts"] = std::move(sc);
-    }
-    if (const SceneGroups* g = world.Get<SceneGroups>(found)) {
-        core::Json groups;
-        groups.type_ = core::Json::Type::Array;
-        for (const std::string& grp : g->groups) groups.array_.push_back(MakeString(grp));
-        core::Json gc = MakeObject();
-        gc.object_["groups"] = std::move(groups);
-        comps.object_["groups"] = std::move(gc);
-    }
-    if (const SceneNodeType* t = world.Get<SceneNodeType>(found)) {
-        core::Json tc = MakeObject();
-        tc.object_["value"] = MakeString(t->value);
-        comps.object_["type"] = std::move(tc);
-    }
-    if (const SceneCamera* c = world.Get<SceneCamera>(found)) {
-        core::Json cam = MakeObject();
-        cam.object_["fov"] = MakeNumber(c->fov);
-        if (c->ortho) cam.object_["ortho"] = MakeBool(true);
-        cam.object_["orthoSize"] = MakeNumber(c->orthoSize);
-        comps.object_["camera"] = std::move(cam);
-    }
-    if (const SceneLight* l = world.Get<SceneLight>(found)) {
-        core::Json li = MakeObject();
-        li.object_["type"] = MakeString(l->type);
-        li.object_["sunDir"] = MakeVec3(l->sunDir);
-        core::Json col = MakeArray();
-        col.array_ = {MakeNumber(l->color.r), MakeNumber(l->color.g), MakeNumber(l->color.b),
-                      MakeNumber(l->color.a)};
-        li.object_["color"] = std::move(col);
-        li.object_["intensity"] = MakeNumber(l->intensity);
-        li.object_["radius"] = MakeNumber(l->radius);
-        li.object_["ambientStrength"] = MakeNumber(l->ambientStrength);
-        comps.object_["light"] = std::move(li);
-    }
-    if (const SceneSortOrder* so = world.Get<SceneSortOrder>(found)) {
-        core::Json s = MakeObject();
-        s.object_["z"] = MakeNumber(so->z);
-        comps.object_["sortOrder"] = std::move(s);
-    }
-    if (const SceneAudioSource* a = world.Get<SceneAudioSource>(found)) {
-        comps.object_["audio"] = a->ToJson();
-    }
-    if (const SceneAnimOverride* ao = world.Get<SceneAnimOverride>(found)) {
-        core::Json an = MakeObject();
-        an.object_["clip"] = MakeString(ao->clip);
-        if (ao->loop) an.object_["loop"] = MakeBool(true);
-        an.object_["speed"] = MakeNumber(ao->speed);
-        an.object_["crossFade"] = MakeNumber(ao->crossFade);
-        comps.object_["anim"] = std::move(an);
-    }
-    if (const SceneDecal* d = world.Get<SceneDecal>(found)) {
-        core::Json dc = MakeObject();
-        dc.object_["texture"] = MakeString(d->texture);
-        dc.object_["size"] = MakeNumber(d->size);
-        dc.object_["alpha"] = MakeNumber(d->alpha);
-        comps.object_["decal"] = std::move(dc);
-    }
-    if (const SceneData* sd = world.Get<SceneData>(found)) {
-        for (const auto& [cname, cdata] : sd->components) comps.object_[cname] = cdata;
-    }
-    ent.object_["components"] = std::move(comps);
-    return core::Result<core::Json>::Ok(std::move(ent));
+    // C6: same per-entity serializer as FromWorld (shared source of truth).
+    return core::Result<core::Json>::Ok(SerializeEntityComponents(world, found));
 }
 
 core::Json ComputePrefabOverrides(const core::Json& tpl, const core::Json& inst) {

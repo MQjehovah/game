@@ -216,13 +216,16 @@
 
 ### C6 组件序列化三份手写镜像
 - [x] `scene_file.cpp:544-1175` vs `1334-1550`：解析/序列化/字段白名单三份；反射系统 G2-1 仅 SceneAudioSource 采用。
-- [~] 反射框架（全类型码 + Serialize/EditorOnly/Transient）已落地，`scene_file.cpp` 的 `FromWorld`/`EntityToJson`
-  仍按组件保留（其**条件省略**与**自定义校验/回退**不能被通用反射复现，见 `docs/reflection.md` §6）。
-- 方向：迁移高频组件到 `kFields`，给条件省略字段配置自定义 codec，双轨收敛。
+- [x] 序列化收敛（2026-09-02 反射落地）：`FromWorld`/`EntityToJson` 两个手写块**合并为共享
+  `SerializeEntityComponents`**（唯一来源），并修复 `EntityToJson` 漏写 mesh-lod/uvRepeat/dirt/rock、
+  sprite-frames/sheet、rigidbody/terrain/tilemap/character/SceneData 的漂移；`schema` 单一来源见 A2。
+- [~] 字段级 codec：部分语义性**条件省略**（`if(rb->dynamic)` 等）与**校验/回退**（rigidbody 非法 shape→sphere）
+  尚未完全交给 `kFields`，需字段级 `ReflectTraits<T>` 特化或读写钩子（见 `docs/reflection.md` §6）。
 
 ### C7 脚本绑定手写 95 个 ×3 处
 - [x] `bindings.cpp` 1389 行：null hook 静默默认值（无 SetError）、双份键名表不一致（bindings.cpp:1277 缺 tab/F1-F12 vs input_map.cpp:22）、表驱动缺失。
-- [~] 反射提供按名字段访问能力（`FieldList`/`TypeRegistry`），Lua/JS get/set 绑定生成列下一阶段（见 `docs/reflection.md` §6）。
+- [x] 反射字段访问（2026-09-02）：新增 `EntityComponentField`/`SetEntityComponentField` 单字段读写绑定，
+  字段名与反射 schema 一致；脚本无需整表重写。（其余 95 个业务绑定仍为独立 native，非反射生成。）
 - 方向：注册表驱动（名字/参数 schema/错误上报统一），键名表单一来源。
 
 ### C8 线程基建复制 3 份

@@ -51,6 +51,10 @@ std::vector<ComponentSchema> BuildSchemas() {
                     {"ortho", "正交", FieldType::Bool, 0, 0, 1, 0}}});
     out.push_back({"sortOrder", "排序",
                    {{"z", "Z 排序 (小在前)", FieldType::Number, 0, -10000, 10000, 0.1}}});
+    // NOTE: "sortOrder"/"decal" schemas are reflection-driven (SceneSortOrder::
+    // kFields / SceneDecal::kFields, registered in the TypeRegistry, A2). These
+    // hand-written entries remain as a fallback; the TypeRegistry version wins
+    // via AllComponentSchemas() dedup.
     out.push_back({"tilemap", "2D 地图",
                    {{"cols", "列", FieldType::Int, 8, 1, 64, 1},
                     {"rows", "行", FieldType::Int, 5, 1, 64, 1},
@@ -61,6 +65,7 @@ std::vector<ComponentSchema> BuildSchemas() {
                      "texture"},
                     {"size", "尺寸", FieldType::Number, 2, 0.1, 100, 0.1},
                     {"alpha", "不透明度", FieldType::Number, 1, 0, 1, 0.01}}});
+    // NOTE: "decal" is reflection-driven (see the sortOrder NOTE above).
     out.push_back({"rigidbody", "刚体",
                    {{"shape", "形状", FieldType::Enum, 0, 0, 0, 0, kRigidBodyShapes, 2},
                     {"radius", "半径", FieldType::Number, 0.5, 0.01, 100, 0.1},
@@ -105,7 +110,25 @@ const ComponentSchema* FindComponentSchema(const std::string& name) {
 }
 
 const std::vector<ComponentSchema>& AllComponentSchemas() {
-    static const std::vector<ComponentSchema> kSchemas = BuildSchemas();
+    // Single source: the reflected TypeRegistry first (authoritative for any
+    // component declared with kFields), then the static BuildSchemas table for
+    // the data components that are still hand-written (plant/zombie/...). Drops
+    // duplicate names so a reflected component's schema is never shadowed by a
+    // hand-written twin (G2-1/C6). Built once; callers must read the pointer.
+    static const std::vector<ComponentSchema> kSchemas = [] {
+        RegisterBuiltinReflectedTypes(); // idempotent; populates the registry
+        std::vector<ComponentSchema> out;
+        for (const TypeInfo& t : TypeRegistry::All())
+            out.push_back({t.name, t.label, t.fields});
+        const auto dup = [&](const std::string& n) {
+            for (const auto& s : out)
+                if (s.name == n) return true;
+            return false;
+        };
+        for (const ComponentSchema& s : BuildSchemas())
+            if (!dup(s.name)) out.push_back(s);
+        return out;
+    }();
     return kSchemas;
 }
 

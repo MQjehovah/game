@@ -56,9 +56,11 @@ struct EnumStore {
 } // namespace neon::scene
 
 // ---- Variadic FOR_EACH (tokenizing stringify), up to 16 enumerators --------
+// Both MSVC and GCC need an EXPAND wrapper around the token-paste + count step;
+// MSVC does not macro-expand a `##` operand, so the count must be resolved by an
+// intermediate macro whose arguments are expanded first (P99/Boost-style).
 #define NEO_ENUM_STR(x) #x
-// Two-level token paste: a `##` operand is not macro-expanded, so the count
-// must be resolved by an intermediate CAT that expands its arguments first.
+#define NEO_ENUM_EXPAND(...) __VA_ARGS__
 #define NEO_ENUM_CAT_I(a, b) a##b
 #define NEO_ENUM_CAT(a, b) NEO_ENUM_CAT_I(a, b)
 #define NEO_ENUM_FE_1(f, x) f(x)
@@ -88,9 +90,18 @@ struct EnumStore {
 #define NEO_ENUM_FE_4(f, a, b, c, d) f(a), NEO_ENUM_FE_3(f, b, c, d)
 #define NEO_ENUM_FE_3(f, a, b, c) f(a), NEO_ENUM_FE_2(f, b, c)
 #define NEO_ENUM_FE_2(f, a, b) f(a), NEO_ENUM_FE_1(f, b)
-#define NEO_ENUM_NARG(...) NEO_ENUM_NARG_(__VA_ARGS__, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0)
-#define NEO_ENUM_NARG_(_1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11, _12, _13, _14, _15, _16, N, ...) N
-#define NEO_ENUM_PICK_FE(f, ...) NEO_ENUM_CAT(NEO_ENUM_FE_, NEO_ENUM_NARG(__VA_ARGS__))(f, __VA_ARGS__)
+#define NEO_ENUM_RSEQ 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0
+#define NEO_ENUM_NARG_(...) NEO_ENUM_EXPAND(NEO_ENUM_ARG_N(__VA_ARGS__))
+#define NEO_ENUM_ARG_N(_1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11, _12, _13, _14, _15, _16, N, \
+                        ...) \
+    N
+#define NEO_ENUM_NARG(...) \
+    NEO_ENUM_EXPAND(NEO_ENUM_NARG_(__VA_ARGS__, NEO_ENUM_RSEQ))
+#define NEO_ENUM_PICK_FE(f, ...) NEO_ENUM_PICK_FE_I(f, __VA_ARGS__)
+// MSVC needs the variadic list re-scanned through an extra macro before it is
+// passed to the selected FE_x; otherwise it collapses `None, Cone, Bucket`.
+#define NEO_ENUM_PICK_FE_I(f, ...) \
+    NEO_ENUM_EXPAND(NEO_ENUM_CAT(NEO_ENUM_FE_, NEO_ENUM_NARG(__VA_ARGS__)))(f, __VA_ARGS__)
 
 // Defines the EnumSpecs<E> specialization. `TYPE` is the enum; the rest are the
 // enumerators in declaration order (index == static_cast<int>(value), contiguous

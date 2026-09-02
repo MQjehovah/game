@@ -626,20 +626,117 @@ void InspectorPanel::Draw(EditorContext& ctx) {
                     }
                     case scene::FieldType::Color: {
                         float col[4] = {1, 1, 1, 1};
+                        bool writeArray = false;
                         if (node.IsString()) {
                             gfx::Color c = ColorFromHex(node.GetString());
                             col[0] = c.r;
                             col[1] = c.g;
                             col[2] = c.b;
+                        } else if (node.IsArray() && node.Size() >= 4) {
+                            // Some components (e.g. SceneLight) store color as
+                            // a [r,g,b,a] array, matching gfx::Color. Read it and
+                            // write back the same array form so the format stays.
+                            for (int i = 0; i < 4; ++i)
+                                col[i] = static_cast<float>(node.At(static_cast<size_t>(i))
+                                                                ->GetNumber());
+                            writeArray = true;
                         }
                         if (ImGui::ColorEdit3(f.label.c_str(), col)) {
-                            char hex[16];
-                            std::snprintf(hex, sizeof(hex), "#%02X%02X%02X",
-                                          static_cast<int>(col[0] * 255.0f),
-                                          static_cast<int>(col[1] * 255.0f),
-                                          static_cast<int>(col[2] * 255.0f));
-                            node = makeStr(hex);
+                            if (writeArray) {
+                                core::Json c;
+                                c.type_ = core::Json::Type::Array;
+                                for (float fv : col) c.array_.push_back(makeNum(fv));
+                                node = std::move(c);
+                            } else {
+                                char hex[16];
+                                std::snprintf(hex, sizeof(hex), "#%02X%02X%02X",
+                                              static_cast<int>(col[0] * 255.0f),
+                                              static_cast<int>(col[1] * 255.0f),
+                                              static_cast<int>(col[2] * 255.0f));
+                                node = makeStr(hex);
+                            }
                             changed = true;
+                        }
+                        break;
+                    }
+                    case scene::FieldType::Vec4: {
+                        float v[4] = {static_cast<float>(f.def), static_cast<float>(f.def),
+                                      static_cast<float>(f.def), static_cast<float>(f.def)};
+                        if (node.IsArray() && node.Size() == 4) {
+                            for (int i = 0; i < 4; ++i)
+                                v[i] = static_cast<float>(node.At(static_cast<size_t>(i))
+                                                              ->GetNumber());
+                        }
+                        if (ImGui::DragFloat4(f.label.c_str(), v, static_cast<float>(f.step),
+                                              static_cast<float>(f.min),
+                                              static_cast<float>(f.max))) {
+                            node = makeArr({v[0], v[1], v[2], v[3]});
+                            changed = true;
+                        }
+                        break;
+                    }
+                    case scene::FieldType::Array: {
+                        // List editor for reflected std::vector<T> fields
+                        // (numbers edit inline, strings edit inline, anything
+                        // else shown as readonly JSON). Add/remove per element.
+                        if (!node.IsArray()) node.type_ = core::Json::Type::Array;
+                        const core::Json::Type elemType =
+                            node.Size() ? node.At(0)->type() : core::Json::Type::Number;
+                        std::string lbl = f.label + " [" + std::to_string(node.Size()) + "]";
+                        if (ImGui::CollapsingHeader(lbl.c_str(),
+                                                    ImGuiTreeNodeFlags_DefaultOpen)) {
+                            ImGui::PushID(f.key.c_str());
+                            size_t n = node.Size();
+                            for (size_t i = 0; i < n; ++i) {
+                                ImGui::PushID(static_cast<int>(i));
+                                core::Json& e = node.array_[i];
+                                if (e.IsNumber()) {
+                                    float v = static_cast<float>(e.GetNumber());
+                                    if (ImGui::DragFloat("", &v, static_cast<float>(f.step),
+                                                         static_cast<float>(f.min),
+                                                         static_cast<float>(f.max))) {
+                                        e = makeNum(static_cast<double>(v));
+                                        changed = true;
+                                    }
+                                } else if (e.IsString()) {
+                                    char buf[1024];
+                                    std::snprintf(buf, sizeof(buf), "%s", e.GetString().c_str());
+                                    if (ImGui::InputText("", buf, sizeof(buf))) {
+                                        e = makeStr(buf);
+                                        changed = true;
+                                    }
+                                } else {
+                                    ImGui::TextDisabled("%s",
+                                                        core::JsonWriter::Write(e).c_str());
+                                }
+                                ImGui::SameLine();
+                                if (ImGui::SmallButton("-")) {
+                                    node.array_.erase(node.array_.begin() +
+                                                      static_cast<std::ptrdiff_t>(i));
+                                    changed = true;
+                                    ImGui::PopID();
+                                    break;
+                                }
+                                ImGui::PopID();
+                            }
+                            if (ImGui::SmallButton("+")) {
+                                node.array_.push_back(elemType == core::Json::Type::String
+                                                          ? makeStr("")
+                                                          : makeNum(f.def));
+                                changed = true;
+                            }
+                            ImGui::PopID();
+                        }
+                        break;
+                    }
+                    case scene::FieldType::Struct: {
+                        // A nested reflected struct (FieldSchema::Struct). Its
+                        // child fields are not carried by the schema yet, so it
+                        // renders as readonly JSON (editable via raw JSON tooling);
+                        // recursive field editing is a follow-up (reflection.md §6).
+                        if (ImGui::CollapsingHeader(f.label.c_str(),
+                                                    ImGuiTreeNodeFlags_DefaultOpen)) {
+                            ImGui::TextWrapped("%s", core::JsonWriter::Write(node).c_str());
                         }
                         break;
                     }
@@ -948,6 +1045,22 @@ void InspectorPanel::Draw(EditorContext& ctx) {
                                     data.object_[f.key] = makeStr(
                                         f.options && f.optionCount > 0 ? f.options[0] : "");
                                     break;
+                                case scene::FieldType::Vec4:
+                                    data.object_[f.key] =
+                                        makeArr({f.def, f.def, f.def, f.def});
+                                    break;
+                                case scene::FieldType::Array: {
+                                    core::Json a;
+                                    a.type_ = core::Json::Type::Array;
+                                    data.object_[f.key] = std::move(a);
+                                    break;
+                                }
+                                case scene::FieldType::Struct: {
+                                    core::Json o;
+                                    o.type_ = core::Json::Type::Object;
+                                    data.object_[f.key] = std::move(o);
+                                    break;
+                                }
                                 default:
                                     data.object_[f.key] = makeStr("");
                                     break;

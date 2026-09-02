@@ -209,6 +209,16 @@ struct SceneTransform {
     math::Vec3 pos;
     math::Quat rot;
     math::Vec3 scale{1, 1, 1};
+
+    // G2-1: reflection drives the editor schema + JSON + script field access.
+    // The `rot` member is a Quat (the runtime's real representation); the editor
+    // edits it as a 4-component quaternion, matching how the serialized JSON
+    // stores it ([x,y,z,w]) — "reflect the struct, don't invent a display type".
+    inline static const auto kFields = ReflectFields(
+        Field("pos", "位置", FieldType::Vec3, &SceneTransform::pos, 0, -100000, 100000, 0.1),
+        Field("rot", "旋转 (四元数 x,y,z,w)", FieldType::Vec4, &SceneTransform::rot,
+              0, -1, 1, 0.01),
+        Field("scale", "缩放", FieldType::Vec3, &SceneTransform::scale, 1, 0.01, 1000, 0.05));
 };
 // Resolved scene-tree link (set by Instantiate after names resolve): the
 // parent entity whose world transform this entity inherits at render time.
@@ -304,6 +314,15 @@ struct SceneAnimOverride {
     // Runtime slot: 1 while the override is live (set on PlayAnimation,
     // cleared by AnimFinished polling); lets scripts re-issue the same clip.
     bool active = false;
+
+    // G2-1: reflection drives the editor schema + JSON + script field access.
+    inline static const auto kFields = ReflectFields(
+        Field("clip", "动画片段", FieldType::String, &SceneAnimOverride::clip),
+        Field("loop", "循环", FieldType::Bool, &SceneAnimOverride::loop),
+        Field("speed", "速度", FieldType::Number, &SceneAnimOverride::speed, 1, 0, 10, 0.05),
+        Field("crossFade", "过渡", FieldType::Number, &SceneAnimOverride::crossFade, 0.2, 0, 5, 0.05),
+        Field("active", "激活", FieldType::Bool, &SceneAnimOverride::active,
+              FieldMeta{FieldCategory::Transient}));
 };
 // Rigid body component (physics::World): describes one collider attached to
 // the entity's transform. GameRuntime::Start registers the body with the
@@ -323,6 +342,29 @@ struct SceneRigidBody {
     uint32_t layer = 1;                 // collision group (0..255 on Jolt)
     uint32_t mask = 0xFFFFFFFFu;        // collision mask (which groups to hit)
     uint32_t bodyId = 0;                // physics::World::BodyId (runtime state)
+
+    // G2-1: reflection drives the editor schema + JSON + script field access.
+    // NOTE: the scene-file key for the damping field is "damping" (the member is
+    // `linearDamping`); Field lets us map a serialized key to a differently-named
+    // member so the reflection schema matches what the factory reads.
+    inline static const char* const kShapeOptions[2] = {"sphere", "box"};
+    inline static const auto kFields = ReflectFields(
+        Field("shape", "形状", FieldType::Enum, &SceneRigidBody::shape, 0, 0, 0, 0,
+              FieldMeta{FieldCategory::Serialize, nullptr, nullptr, nullptr, nullptr,
+                        kShapeOptions, 2}),
+        Field("radius", "半径", FieldType::Number, &SceneRigidBody::radius, 0.5, 0.01, 100, 0.1),
+        Field("halfExtents", "半尺寸", FieldType::Vec3, &SceneRigidBody::halfExtents,
+              0.5, 0.01, 100, 0.1),
+        Field("dynamic", "动态", FieldType::Bool, &SceneRigidBody::dynamic, 1, 0, 1, 0),
+        Field("mass", "质量 (0=自动)", FieldType::Number, &SceneRigidBody::mass, 0, 0, 1e6, 0.5),
+        Field("restitution", "弹性", FieldType::Number, &SceneRigidBody::restitution, 0, 0, 1, 0.01),
+        Field("friction", "摩擦", FieldType::Number, &SceneRigidBody::friction, 0.4, 0, 1, 0.01),
+        Field("damping", "线性阻尼", FieldType::Number, &SceneRigidBody::linearDamping, 0, 0, 10, 0.01),
+        Field("gravityScale", "重力缩放", FieldType::Number, &SceneRigidBody::gravityScale, 1, 0, 10, 0.1),
+        Field("layer", "碰撞层", FieldType::Int, &SceneRigidBody::layer, 1, 0, 255, 1),
+        Field("mask", "碰撞掩码", FieldType::Int, &SceneRigidBody::mask, 1, 0, 0xFFFFFFFF, 1),
+        Field("bodyId", "物理体", FieldType::Int, &SceneRigidBody::bodyId,
+              FieldMeta{FieldCategory::Transient}));
 };
 // Character body component (Jolt CharacterVirtual when the Jolt backend is
 // active). A capsule-shaped kinematic controller that moves with the desired
@@ -335,11 +377,33 @@ struct SceneCharacter {
     uint32_t layer = 1;
     uint32_t mask = 0xFFFFFFFFu;
     uint32_t bodyId = 0;                // JoltWorld character handle (runtime state)
+
+    // G2-1: reflection drives the editor schema + JSON + script field access.
+    inline static const auto kFields = ReflectFields(
+        Field("radius", "半径", FieldType::Number, &SceneCharacter::radius, 0.4, 0.01, 10, 0.05),
+        Field("halfHeight", "半高", FieldType::Number, &SceneCharacter::halfHeight, 0.9, 0.1, 50, 0.1),
+        Field("layer", "碰撞层", FieldType::Int, &SceneCharacter::layer, 1, 0, 255, 1),
+        Field("mask", "碰撞掩码", FieldType::Int, &SceneCharacter::mask, 0xFFFFFFFF, 0, 0xFFFFFFFF, 1),
+        Field("bodyId", "物理体", FieldType::Int, &SceneCharacter::bodyId,
+              FieldMeta{FieldCategory::Transient}));
 };
 struct SceneScript {
     std::string backend;
     std::string path;
     core::Json vars; // object, or null when absent
+
+    // G2-1: reflection drives the editor schema + JSON + script field access.
+    // The editor's script panel reads schema->fields (backend Enum / path
+    // Resource / vars Json), so keep exactly these three, in this order.
+    inline static const char* const kScriptBackends[2] = {"lua", "js"};
+    inline static const auto kFields = ReflectFields(
+        Field("backend", "后端", FieldType::Enum, &SceneScript::backend, 0, 0, 0, 0,
+              FieldMeta{FieldCategory::Serialize, nullptr, nullptr, nullptr, nullptr,
+                        kScriptBackends, 2}),
+        Field("path", "脚本路径", FieldType::Resource, &SceneScript::path, 0, 0, 0, 0,
+              FieldMeta{FieldCategory::Serialize, nullptr, nullptr, "script"}),
+        Field("vars", "变量", FieldType::Json, &SceneScript::vars));
+    core::Json ToJson() const { return kFields.ToJson(*this); }
 };
 // Audio source component (G8-3): a positioned sound. GameRuntime::Start plays
 // it once at the entity's position through the playSfx3D hook; the editor shows
@@ -390,12 +454,26 @@ struct SceneData {
 // GetEntitiesInGroup(name); the editor edits them as a comma-separated list.
 struct SceneGroups {
     std::vector<std::string> groups;
+
+    // G2-1: reflection (generic "groups" data component; the factory accepts
+    // either a JSON array or a comma-separated string, and the Array editor
+    // emits an array).
+    inline static const auto kFields = ReflectFields(
+        Field("groups", "组 (逗号分隔)", FieldType::Array, &SceneGroups::groups));
 };
 // Node type table (P1-1): an explicit type for the inspector/editor (Node /
 // MeshInstance3D / Camera3D / CharacterBody / Sprite / Light3D). Empty = the
 // editor auto-derives the type from the mesh key / sprite.
 struct SceneNodeType {
     std::string value;
+
+    // G2-1: reflection (scene-file key "value"; the editor shows it as an enum).
+    inline static const char* const kNodeTypeOptions[6] = {
+        "Node", "MeshInstance3D", "Camera3D", "CharacterBody", "Sprite", "Light3D"};
+    inline static const auto kFields = ReflectFields(
+        Field("value", "类型", FieldType::Enum, &SceneNodeType::value, 0, 0, 0, 0,
+              FieldMeta{FieldCategory::Serialize, nullptr, nullptr, nullptr, nullptr,
+                        kNodeTypeOptions, 6}));
 };
 // Camera3D component: view parameters for a camera entity (used by editors /
 // tools; the runtime reads the active camera from the scene when present).
@@ -407,6 +485,14 @@ struct SceneCamera {
     // letterboxes to THIS, whatever the editor dock looks like. 0 = the
     // 16:9 design default (1280x720).
     float aspect = 0.0f;
+
+    // G2-1: reflection (scene-file keys fov/ortho/orthoSize/aspect, all of which
+    // the camera factory reads — the serializer writes them too).
+    inline static const auto kFields = ReflectFields(
+        Field("fov", "视野 (度)", FieldType::Number, &SceneCamera::fov, 60, 20, 120, 1),
+        Field("ortho", "正交", FieldType::Bool, &SceneCamera::ortho),
+        Field("orthoSize", "正交尺寸", FieldType::Number, &SceneCamera::orthoSize, 10, 0, 1e4, 0.5),
+        Field("aspect", "宽高比", FieldType::Number, &SceneCamera::aspect, 0, 0, 4, 0.01));
 };
 // The `Light` component on a light object (Unity GameObject -> Light). `type`
 // is exactly one of "directional" / "point" / "ambient". Directional uses
@@ -422,11 +508,35 @@ struct SceneLight {
     // 写实天空贴图（HDRI tonemapped JPG 的虚拟路径）。非空时 DrawSystem 加载
     // 并作为全屏天空背景替代纯色渐变。
     std::string skyTexture;
+
+    // G2-1: reflection drives the editor schema + JSON + script field access.
+    // `color` is a gfx::Color (serialized as [r,g,b,a]); the editor's Color
+    // control reads BOTH forms (hex string for mesh material, array for light).
+    inline static const char* const kLightTypes[3] = {"directional", "point", "ambient"};
+    inline static const auto kFields = ReflectFields(
+        Field("type", "类型", FieldType::Enum, &SceneLight::type, 0, 0, 0, 0,
+              FieldMeta{FieldCategory::Serialize, nullptr, nullptr, nullptr, nullptr,
+                        kLightTypes, 3}),
+        Field("sunDir", "太阳方向", FieldType::Vec3, &SceneLight::sunDir),
+        Field("color", "颜色", FieldType::Color, &SceneLight::color),
+        Field("intensity", "强度", FieldType::Number, &SceneLight::intensity, 1, 0, 100, 0.05),
+        Field("radius", "范围", FieldType::Number, &SceneLight::radius, 10, 0, 1e4, 0.5),
+        Field("ambientStrength", "环境强度", FieldType::Number, &SceneLight::ambientStrength,
+              0.25, 0, 1, 0.01),
+        Field("skyTexture", "天空贴图", FieldType::Resource, &SceneLight::skyTexture,
+              0, 0, 0, 0, FieldMeta{FieldCategory::Serialize, nullptr, nullptr, "texture"}));
 };
 // 2D sort order (P2-3): sprites draw back-to-front by this value (lower first;
 // default 0 when the component is absent).
 struct SceneSortOrder {
     float z = 0.0f;
+
+    // G2-1: this single list drives the editor schema + JSON + script field
+    // access (reflection). Registered into the TypeRegistry (see
+    // RegisterBuiltinReflectedTypes) so the editor edits it from reflection.
+    inline static const auto kFields = ReflectFields(
+        Field("z", "Z 排序 (小在前)", FieldType::Number, &SceneSortOrder::z, 0, -10000, 10000, 0.1));
+    core::Json ToJson() const { return kFields.ToJson(*this); }
 };
 // Authorable terrain (P1-1 world editor): a (segments+1)^2 heightmap over a
 // size x size area. The runtime builds the terrain mesh from these heights;
@@ -470,6 +580,14 @@ struct SceneDecal {
     std::string texture;
     float size = 2.0f;
     float alpha = 1.0f;
+
+    // G2-1: reflection drives the editor schema + JSON + script field access.
+    inline static const auto kFields = ReflectFields(
+        Field("texture", "贴图", FieldType::Resource, &SceneDecal::texture, 0, 0, 0, 0,
+              FieldMeta{FieldCategory::Serialize, nullptr, nullptr, "texture"}),
+        Field("size", "尺寸", FieldType::Number, &SceneDecal::size, 2, 0.1, 100, 0.1),
+        Field("alpha", "不透明度", FieldType::Number, &SceneDecal::alpha, 1, 0, 1, 0.01));
+    core::Json ToJson() const { return kFields.ToJson(*this); }
 };
 
 // A component factory builds a component onto `ent` from its effective JSON
