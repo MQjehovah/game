@@ -1,20 +1,10 @@
 #include "neon/assets/async_loader.hpp"
+#include "neon/platform/threading.hpp"
 
 #include <algorithm>
 #include <atomic>
 #include <cstddef>
 #include <deque>
-
-#if defined(_WIN32)
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
-#else
-#include <pthread.h>
-#include <sched.h>
-#include <unistd.h>
-#endif
 
 namespace neon::assets {
 
@@ -32,16 +22,6 @@ struct SpinLock {
     void Unlock() { flag.clear(std::memory_order_release); }
 };
 
-void SleepMs(int ms) {
-#if defined(_WIN32)
-    ::Sleep(static_cast<DWORD>(ms));
-#else
-    // sched_yield then a short sleep so an idle worker never hammers the CPU.
-    ::sched_yield();
-    ::usleep(static_cast<useconds_t>(ms) * 1000);
-#endif
-}
-
 } // namespace
 
 struct AsyncLoader::Impl {
@@ -52,11 +32,11 @@ struct AsyncLoader::Impl {
     int workerCount = 2;
     bool available = false;
 
-#if defined(_WIN32)
-    std::vector<HANDLE> threads;
-#else
-    std::vector<pthread_t> threads;
-#endif
+    std::vector<platform::Thread> threads;
+    // Counting semaphore: Submit() posts one count per job; workers block in
+    // Semaphore::Wait instead of polling with Sleep(1) — wakeups are immediate
+    // and idle workers cost zero CPU.
+    platform::Semaphore wake;
 };
 
 void AsyncLoader::WorkerLoop(Impl* impl) {
@@ -75,59 +55,46 @@ void AsyncLoader::WorkerLoop(Impl* impl) {
         }
         if (hasJob) {
             job();
-        } else {
-            SleepMs(1);
+            continue;
         }
+        // Block until Submit() posts a wake count (or a short timeout elapses,
+        // which doubles as the stop-flag poll while shutting down). A spurious
+        // wake with an empty queue is harmless: the loop re-locks, finds
+        // nothing, and waits again.
+        impl->wake.Wait(100);
     }
 }
 
-#if defined(_WIN32)
-unsigned long __stdcall AsyncLoader::WinWorkerEntry(void* param) {
+void AsyncLoader::WorkerEntryTrampoline(void* param) {
     WorkerLoop(static_cast<Impl*>(param));
-    return 0;
 }
-#else
-void* AsyncLoader::PosixWorkerEntry(void* param) {
-    WorkerLoop(static_cast<Impl*>(param));
-    return nullptr;
-}
-#endif
 
 AsyncLoader::AsyncLoader(int workerCount) : impl_(std::make_unique<Impl>()) {
     impl_->workerCount = std::max(workerCount, 0);
     if (impl_->workerCount == 0) return;
+    if (!impl_->wake.Create()) return;
     impl_->available = true;
 
     for (int i = 0; i < impl_->workerCount; ++i) {
-#if defined(_WIN32)
-        HANDLE h = ::CreateThread(nullptr, 0, &AsyncLoader::WinWorkerEntry, impl_.get(), 0, nullptr);
-        if (!h) {
+        platform::Thread t;
+        // Start before moving into the vector: Start() runs workers that may
+        // touch impl_ fields immediately, so the semaphore above must already
+        // be live (it is) and the push_back below only stores the handle.
+        if (!t.Start(&AsyncLoader::WorkerEntryTrampoline, impl_.get())) {
             impl_->available = false;
             break;
         }
-        impl_->threads.push_back(h);
-#else
-        pthread_t t;
-        if (::pthread_create(&t, nullptr, &AsyncLoader::PosixWorkerEntry, impl_.get()) != 0) {
-            impl_->available = false;
-            break;
-        }
-        impl_->threads.push_back(t);
-#endif
+        impl_->threads.push_back(std::move(t));
     }
 
     if (!impl_->available) {
         // Some workers started before the failure: stop + join them so the
         // pool shuts down cleanly (available stays false afterwards).
         impl_->stop.store(true, std::memory_order_relaxed);
-        for (auto& t : impl_->threads) {
-#if defined(_WIN32)
-            ::WaitForSingleObject(t, INFINITE);
-            ::CloseHandle(t);
-#else
-            ::pthread_join(t, nullptr);
-#endif
-        }
+        // Wake every blocked worker so they observe the stop flag now instead
+        // of at the next wait timeout.
+        for (size_t i = 0; i < impl_->threads.size(); ++i) impl_->wake.Post();
+        for (auto& t : impl_->threads) t.Join();
         impl_->threads.clear();
     }
 }
@@ -141,6 +108,7 @@ bool AsyncLoader::Submit(std::function<void()> work) {
     impl_->lock.Lock();
     impl_->pending.push_back(std::move(work));
     impl_->lock.Unlock();
+    impl_->wake.Post();
     return true;
 }
 
@@ -173,14 +141,10 @@ void AsyncLoader::Shutdown() {
     if (!impl_) return;
     if (impl_->available || !impl_->threads.empty()) {
         impl_->stop.store(true, std::memory_order_relaxed);
-        for (auto& t : impl_->threads) {
-#if defined(_WIN32)
-            ::WaitForSingleObject(t, INFINITE);
-            ::CloseHandle(t);
-#else
-            ::pthread_join(t, nullptr);
-#endif
-        }
+        // Wake every blocked worker so they observe the stop flag now instead
+        // of at the next wait timeout.
+        for (size_t i = 0; i < impl_->threads.size(); ++i) impl_->wake.Post();
+        for (auto& t : impl_->threads) t.Join();
         impl_->threads.clear();
     }
     {
@@ -189,6 +153,7 @@ void AsyncLoader::Shutdown() {
         impl_->ready.clear();
         impl_->lock.Unlock();
     }
+    impl_->wake.Destroy();
     impl_->available = false;
 }
 

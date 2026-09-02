@@ -531,6 +531,65 @@ DecodedImage AssetManager::DecodeImage(const std::string& path, const TextureLoa
     return DecodeImageFile(path, compressed, opts.flipVertically);
 }
 
+DecodedImage AssetManager::DecodeImageForPath(const std::string& path, bool compressBc1) {
+    // Worker-safe (pure CPU: VFS/disk reads + stbi + optional BC1 compress —
+    // no GL, no shared caches). Prefer a pre-baked BC1 texture (offline
+    // AssetImporter cache): upload the blocks directly, skipping the runtime
+    // decode+compress. Reads through the VFS when installed (packed game),
+    // else the bake dir on disk.
+    DecodedImage img;
+    if (!bakeDir_.empty()) {
+        const core::Result<std::vector<uint8_t>> baked = IoRead(bakeDir_ + "/" + path + ".nbc1");
+        if (baked.Ok() && baked.Value().size() >= 12 &&
+            baked.Value()[0] == 'N' && baked.Value()[1] == 'B' &&
+            baked.Value()[2] == 'C' && baked.Value()[3] == '1') {
+            const uint8_t* b = baked.Value().data();
+            img.width = static_cast<int>(b[4]) | (static_cast<int>(b[5]) << 8) |
+                        (static_cast<int>(b[6]) << 16) | (static_cast<int>(b[7]) << 24);
+            img.height = static_cast<int>(b[8]) | (static_cast<int>(b[9]) << 8) |
+                         (static_cast<int>(b[10]) << 16) | (static_cast<int>(b[11]) << 24);
+            if (img.width > 0 && img.height > 0) {
+                img.channels = 4;
+                img.bc1.assign(baked.Value().begin() + 12, baked.Value().end());
+                NEON_LOG_INFO("Asset: loaded baked texture '%s' (%dx%d, BC1)",
+                              path.c_str(), img.width, img.height);
+            }
+        }
+    }
+    if (img.channels == 0) {
+        TextureLoadOptions opts;  // decode is wrap-independent; glTF never flips
+        img = DecodeImage(path, opts, compressBc1);
+    }
+    return img;
+}
+
+gfx::Texture AssetManager::LoadTexturePredecoded(const std::string& path,
+                                                 const TextureLoadOptions& opts,
+                                                 DecodedImage&& img) {
+    const std::string key = TextureCacheKey(path, opts);
+    auto cached = textures_.find(key);
+    if (cached != textures_.end()) {
+        ++textureRefs_[key];  // every load is an acquisition
+        return cached->second;
+    }
+    if (img.channels == 0) {
+        failedTextures_.insert(key);
+        NEON_LOG_ERROR("Asset: failed to load texture '%s'", path.c_str());
+        return {};
+    }
+    gfx::Texture texture = UploadDecoded(img, opts.wrap);
+    if (!texture.Valid()) {
+        NEON_LOG_ERROR("Asset: failed to upload texture '%s'", path.c_str());
+        return {};
+    }
+    textures_[key] = texture;
+    textureMtimes_[key] = IoMTime(path);
+    textureRefs_[key] = 1;
+    NEON_LOG_INFO("Asset: loaded texture '%s' (%dx%d%s, predecoded)", path.c_str(),
+                  img.width, img.height, img.bc1.empty() ? "" : ", BC1");
+    return texture;
+}
+
 gfx::Texture AssetManager::UploadDecoded(const DecodedImage& img, gfx::Wrap wrap) {
     if (!img.bc1.empty()) {
         gfx::Texture tex = renderer_->CreateTextureCompressed(
@@ -606,27 +665,7 @@ gfx::Texture AssetManager::LoadTexture(const std::string& path, const TextureLoa
     // G5-4-3: prefer a pre-baked BC1 texture (offline AssetImporter cache) —
     // upload the blocks directly, skipping the runtime decode+compress. Reads
     // through the VFS when installed (packed game), else the bake dir on disk.
-    if (!bakeDir_.empty() && img.bc1.empty()) {
-        const core::Result<std::vector<uint8_t>> baked =
-            IoRead(bakeDir_ + "/" + path + ".nbc1");
-        if (baked.Ok() && baked.Value().size() >= 12 &&
-            baked.Value()[0] == 'N' && baked.Value()[1] == 'B' &&
-            baked.Value()[2] == 'C' && baked.Value()[3] == '1') {
-            const uint8_t* b = baked.Value().data();
-            img.width = static_cast<int>(b[4]) | (static_cast<int>(b[5]) << 8) |
-                        (static_cast<int>(b[6]) << 16) | (static_cast<int>(b[7]) << 24);
-            img.height = static_cast<int>(b[8]) | (static_cast<int>(b[9]) << 8) |
-                         (static_cast<int>(b[10]) << 16) | (static_cast<int>(b[11]) << 24);
-            if (img.width > 0 && img.height > 0) {
-                img.channels = 4;
-                img.bc1.assign(baked.Value().begin() + 12, baked.Value().end());
-                NEON_LOG_INFO("Asset: loaded baked texture '%s' (%dx%d, BC1)",
-                              path.c_str(), img.width, img.height);
-            }
-        }
-    }
-    if (img.channels == 0)
-        img = DecodeImage(path, opts, opts.compressBc1 && bc1Supported_);
+    img = DecodeImageForPath(path, opts.compressBc1 && bc1Supported_);
     if (img.channels == 0) {
         failedTextures_.insert(key);
         NEON_LOG_ERROR("Asset: failed to load texture '%s'", path.c_str());
@@ -1003,13 +1042,34 @@ void AssetManager::LoadGLTFAsync(const std::string& path, std::function<void(boo
     gltfPendingCallbacks_[path].push_back(std::move(cb));
     if (inFlight) return;
 
-    bool ok = asyncLoader_.Submit([this, path, mtime]() {
+    bool ok =     asyncLoader_.Submit([this, path, mtime]() {
         const core::Result<std::vector<uint8_t>> bytes = IoRead(path);
         ParsedGltf parsed;
         if (bytes.Ok()) parsed = ParseGltfContainer(path, bytes.Value(), fs_);
         else parsed.error = "failed to open '" + path + "'";
-        asyncLoader_.Deliver([this, path, mtime, parsed = std::move(parsed)]() mutable {
-            FinishAsyncGltf(path, mtime, std::move(parsed));
+        // Decode the glTF's images HERE (worker, pure CPU via
+        // DecodeImageForPath) so the main-thread Finish only uploads to the
+        // GPU. Sponza-class assets carry dozens of 1024x1024 JPEGs — decoding
+        // them on the main thread was a multi-frame stall per asset.
+        // Memory note: decoded RGBA is transient until Finish uploads it (the
+        // upload frees nothing — the map is released when this closure ends).
+        std::unordered_map<std::string, DecodedImage> decoded;
+        if (parsed.error.empty() && !parsed.dir.empty()) {
+            if (const core::Json* images = parsed.root.Get("images")) {
+                for (size_t i = 0; i < images->Size(); ++i) {
+                    const core::Json* im = images->At(i);
+                    if (!im || !im->Get("uri")) continue;
+                    const std::string uri = im->Get("uri")->GetString();
+                    if (uri.empty()) continue;
+                    const std::string abs = parsed.dir + uri;
+                    if (decoded.count(abs) != 0) continue;
+                    decoded[abs] = DecodeImageForPath(abs, /*compressBc1=*/false);
+                }
+            }
+        }
+        asyncLoader_.Deliver([this, path, mtime, parsed = std::move(parsed),
+                              decoded = std::move(decoded)]() mutable {
+            FinishAsyncGltf(path, mtime, std::move(parsed), std::move(decoded));
         });
     });
     if (!ok) {
@@ -1021,13 +1081,14 @@ void AssetManager::LoadGLTFAsync(const std::string& path, std::function<void(boo
     }
 }
 
-void AssetManager::FinishAsyncGltf(const std::string& path, uint64_t mtime, ParsedGltf&& parsed) {
+void AssetManager::FinishAsyncGltf(const std::string& path, uint64_t mtime, ParsedGltf&& parsed,
+                                   std::unordered_map<std::string, DecodedImage>&& predecoded) {
     const bool hasBin = !parsed.bins.empty() && !parsed.bins[0].empty();
     bool ok = parsed.error.empty() && !parsed.root.IsNull() && hasBin;
     if (ok) {
         for (const std::string& bp : parsed.binPaths) RecordDependency(path, bp);
         GltfAsset asset = LoadGltfJson(parsed.root, std::move(parsed.bins), path, mtime,
-                                       parsed.dir);
+                                       parsed.dir, &predecoded);
         ok = asset.Valid();
         if (ok)
             NEON_LOG_INFO("Asset: loaded GLTF '%s' async", path.c_str());
@@ -1041,8 +1102,9 @@ void AssetManager::FinishAsyncGltf(const std::string& path, uint64_t mtime, Pars
 }
 
 GltfAsset AssetManager::LoadGltfJson(core::Json& root, std::vector<std::vector<uint8_t>> bins,
-                                     const std::string& path, uint64_t mtime,
-                                     const std::string& dir) {
+                                      const std::string& path, uint64_t mtime,
+                                      const std::string& dir,
+                                      std::unordered_map<std::string, DecodedImage>* predecodedImgs) {
     // Shared body for .gltf (JSON + external .bin) and .glb (JSON chunk +
     // BIN chunk). `bins` may be empty for malformed assets; callers below
     // already logged the specific failure.
@@ -1128,7 +1190,20 @@ GltfAsset AssetManager::LoadGltfJson(core::Json& root, std::vector<std::vector<u
                 TextureLoadOptions gltfOpts;
                 gltfOpts.wrap = samplerWrap(samplerIdx);
                 RecordDependency(path, dir + uri);
-                textures.push_back(LoadTexture(dir + uri, gltfOpts));
+                // Async path: consume the worker's predecoded image (GPU
+                // upload only). Sync path / cache miss: decode inline.
+                gfx::Texture tex;
+                bool handled = false;
+                if (predecodedImgs) {
+                    auto it = predecodedImgs->find(dir + uri);
+                    if (it != predecodedImgs->end()) {
+                        tex = LoadTexturePredecoded(dir + uri, gltfOpts,
+                                                    std::move(it->second));
+                        handled = true;
+                    }
+                }
+                if (!handled) tex = LoadTexture(dir + uri, gltfOpts);
+                textures.push_back(tex);
             }
         }
     }

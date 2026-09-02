@@ -4,6 +4,7 @@
 #include <map>
 #include <set>
 #include <string>
+#include <unordered_map>
 #include <vector>
 #include "neon/assets/async_loader.hpp"
 #include "neon/core/result.hpp"
@@ -208,8 +209,22 @@ public:
     // Shared importer body: `root` is the parsed glTF JSON, `bin` the binary
     // buffer (external .bin contents or the GLB BIN chunk). A13: takes ALL
     // declared buffers (multi-buffer assets keep per-bufferView data intact).
+    // `predecodedImgs` (optional): image decodes produced OFF the main thread
+    // by LoadGLTFAsync's worker (keyed by absolute path, same strings the
+    // texture loop builds). When a path is present its decode is consumed via
+    // GPU upload only — no main-thread stbi decode. The synchronous LoadGLTF
+    // path passes nullptr and decodes inline as before.
     GltfAsset LoadGltfJson(core::Json& root, std::vector<std::vector<uint8_t>> bins,
-                           const std::string& path, uint64_t mtime, const std::string& dir);
+                            const std::string& path, uint64_t mtime, const std::string& dir,
+                            std::unordered_map<std::string, DecodedImage>* predecodedImgs = nullptr);
+    // Worker-safe texture decode: bake-cache read + CPU decode ONLY (no GL, no
+    // texture caches). Runs on AsyncLoader workers; LoadTexture shares this via
+    // its inline path.
+    DecodedImage DecodeImageForPath(const std::string& path, bool compressBc1);
+    // Cache-check + GPU upload of a worker-decoded image (the main-thread half
+    // of DecodeImageForPath). Mirrors LoadTexture's bookkeeping minus decode.
+    gfx::Texture LoadTexturePredecoded(const std::string& path, const TextureLoadOptions& opts,
+                                       DecodedImage&& img);
     gfx::Font LoadFont(const std::string& path, int pixelHeight);
     // Loads a system CJK font with DYNAMIC glyphs (stb_truetype atlas grows on
     // demand), so any text renders without declaring a character list.
@@ -316,7 +331,8 @@ private:
     // dependency edges + callbacks).
     void FinishAsyncMesh(const std::string& path, ParsedObjMesh&& parsed);
     // G6-2: main-thread completion of an async glTF request.
-    void FinishAsyncGltf(const std::string& path, uint64_t mtime, ParsedGltf&& parsed);
+    void FinishAsyncGltf(const std::string& path, uint64_t mtime, ParsedGltf&& parsed,
+                         std::unordered_map<std::string, DecodedImage>&& predecoded);
     // G1-4: records a direct edge parent -> dep in the dependency graph.
     void RecordDependency(const std::string& parent, const std::string& dep);
     // Destroys retired GPU resources whose deferral window has elapsed. Called

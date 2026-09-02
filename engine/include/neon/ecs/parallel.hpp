@@ -142,11 +142,9 @@ public:
 private:
     struct Impl;
     static void WorkerLoop(Impl* impl);
-#if defined(_WIN32)
-    static unsigned long __stdcall WinWorkerEntry(void* param);
-#else
-    static void* PosixWorkerEntry(void* param);
-#endif
+    // Platform-neutral trampoline handed to the platform thread; forwards the
+    // Impl pointer to WorkerLoop.
+    static void WorkerEntryTrampoline(void* param);
     std::unique_ptr<Impl> impl_;
 };
 

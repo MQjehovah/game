@@ -34,13 +34,14 @@ DecodedImage DecodeImageFile(const std::string& path, bool compressBc1,
 
 // Bounded worker pool that runs pure-CPU decode work off the main thread.
 //
-// Threading: this toolchain (MinGW 8.1 win32 model) has NO std::thread
-// (__STDCPP_THREADS__ is undefined), so the pool uses the OS primitive
-// directly - Win32 CreateThread here, a POSIX pthread branch for CI. The
-// pending/ready queues are guarded by the engine's atomic_flag spinlock
-// pattern (see log.cpp); there is no condition variable. Workers poll the
-// pending queue and sleep ~1 ms when idle, which is fine because decode work
-// is chunky (image load) rather than latency-critical.
+// Threading: OS threads + a counting semaphore come from the portable
+// platform layer (neon/platform/threading.hpp — this toolchain's MinGW win32
+// model lacks std::thread/std::mutex, and platform selection belongs there,
+// not here). The pending/ready queues are guarded by the engine's atomic_flag
+// spinlock pattern (see log.cpp); there is no condition variable. Workers
+// block in Semaphore::Wait(100) — Submit() posts a wake count immediately and
+// the bounded timeout doubles as the shutdown-flag poll, so idle workers cost
+// no CPU.
 //
 // Ownership model: work submitted via Submit() runs on a worker thread, and
 // typically ends by calling Deliver() to enqueue a completion. completions
@@ -81,15 +82,10 @@ public:
 
 private:
     struct Impl;
-    // Platform thread entry trampolines (async_loader.cpp): each forwards the
-    // Impl pointer to WorkerLoop. Per-platform because the thread API entry
-    // signatures differ (Win32 __stdcall vs POSIX void*).
-#if defined(_WIN32)
-    static unsigned long __stdcall WinWorkerEntry(void* param);
-#else
-    static void* PosixWorkerEntry(void* param);
-#endif
-    // Worker body shared by the platform entry points.
+    // Platform-neutral trampoline handed to the platform thread; forwards the
+    // Impl pointer to WorkerLoop.
+    static void WorkerEntryTrampoline(void* param);
+    // Worker body shared by every platform.
     static void WorkerLoop(Impl* impl);
 
     std::unique_ptr<Impl> impl_;

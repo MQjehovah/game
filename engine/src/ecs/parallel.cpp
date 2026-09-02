@@ -1,18 +1,8 @@
 #include "neon/ecs/parallel.hpp"
+#include "neon/platform/threading.hpp"
 
 #include <algorithm>
 #include <deque>
-
-#if defined(_WIN32)
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
-#else
-#include <pthread.h>
-#include <sched.h>
-#include <unistd.h>
-#endif
 
 namespace neon::ecs {
 namespace parallel {
@@ -31,28 +21,6 @@ struct SpinLock {
     void Unlock() { flag.clear(std::memory_order_release); }
 };
 
-void SleepMs(int ms) {
-#if defined(_WIN32)
-    ::Sleep(static_cast<DWORD>(ms));
-#else
-    // sched_yield then a short sleep so an idle worker never hammers the CPU.
-    ::sched_yield();
-    ::usleep(static_cast<useconds_t>(ms) * 1000);
-#endif
-}
-
-int DefaultWorkerCount() {
-#if defined(_WIN32)
-    SYSTEM_INFO si;
-    ::GetSystemInfo(&si);
-    const DWORD n = si.dwNumberOfProcessors;
-    return n > 0 ? static_cast<int>(n) : 2;
-#else
-    const long n = ::sysconf(_SC_NPROCESSORS_ONLN);
-    return n > 0 ? static_cast<int>(n) : 2;
-#endif
-}
-
 } // namespace
 
 struct ThreadPool::Impl {
@@ -61,11 +29,7 @@ struct ThreadPool::Impl {
     std::atomic<bool> stop{false};
     bool available = false;
 
-#if defined(_WIN32)
-    std::vector<HANDLE> threads;
-#else
-    std::vector<pthread_t> threads;
-#endif
+    std::vector<platform::Thread> threads;
 };
 
 void ThreadPool::WorkerLoop(Impl* impl) {
@@ -85,59 +49,35 @@ void ThreadPool::WorkerLoop(Impl* impl) {
         if (hasJob) {
             job();
         } else {
-            SleepMs(1);
+            platform::SleepMs(1);
         }
     }
 }
 
-#if defined(_WIN32)
-unsigned long __stdcall ThreadPool::WinWorkerEntry(void* param) {
+void ThreadPool::WorkerEntryTrampoline(void* param) {
     WorkerLoop(static_cast<Impl*>(param));
-    return 0;
 }
-#else
-void* ThreadPool::PosixWorkerEntry(void* param) {
-    WorkerLoop(static_cast<Impl*>(param));
-    return nullptr;
-}
-#endif
 
 ThreadPool::ThreadPool(int workerCount) : impl_(std::make_unique<Impl>()) {
     if (workerCount == 0) return;
-    if (workerCount < 0) workerCount = DefaultWorkerCount();
+    if (workerCount < 0) workerCount = platform::CpuCount();
     const int requested = std::max(workerCount, 0);
     impl_->available = true;
 
     for (int i = 0; i < requested; ++i) {
-#if defined(_WIN32)
-        HANDLE h = ::CreateThread(nullptr, 0, &ThreadPool::WinWorkerEntry, impl_.get(), 0, nullptr);
-        if (!h) {
+        platform::Thread t;
+        if (!t.Start(&ThreadPool::WorkerEntryTrampoline, impl_.get())) {
             impl_->available = false;
             break;
         }
-        impl_->threads.push_back(h);
-#else
-        pthread_t t;
-        if (::pthread_create(&t, nullptr, &ThreadPool::PosixWorkerEntry, impl_.get()) != 0) {
-            impl_->available = false;
-            break;
-        }
-        impl_->threads.push_back(t);
-#endif
+        impl_->threads.push_back(std::move(t));
     }
 
     if (!impl_->available) {
         // Some workers started before the failure: stop + join them so the
         // pool shuts down cleanly (available stays false afterwards).
         impl_->stop.store(true, std::memory_order_relaxed);
-        for (auto& t : impl_->threads) {
-#if defined(_WIN32)
-            ::WaitForSingleObject(t, INFINITE);
-            ::CloseHandle(t);
-#else
-            ::pthread_join(t, nullptr);
-#endif
-        }
+        for (auto& t : impl_->threads) t.Join();
         impl_->threads.clear();
     }
 }
@@ -145,14 +85,7 @@ ThreadPool::ThreadPool(int workerCount) : impl_(std::make_unique<Impl>()) {
 ThreadPool::~ThreadPool() {
     if (!impl_ || impl_->threads.empty()) return;
     impl_->stop.store(true, std::memory_order_relaxed);
-    for (auto& t : impl_->threads) {
-#if defined(_WIN32)
-        ::WaitForSingleObject(t, INFINITE);
-        ::CloseHandle(t);
-#else
-        ::pthread_join(t, nullptr);
-#endif
-    }
+    for (auto& t : impl_->threads) t.Join();
     impl_->threads.clear();
     impl_->lock.Lock();
     impl_->pending.clear();
@@ -239,7 +172,7 @@ void ThreadPool::ParallelFor(uint32_t count, std::function<void(uint32_t, uint32
     // still touches this stack before this call returns.
     while (remaining.load(std::memory_order_acquire) != 0 ||
            doneJobs.load(std::memory_order_acquire) != static_cast<uint32_t>(workers)) {
-        SleepMs(0);
+        platform::SleepMs(0);
     }
     if (firstException) std::rethrow_exception(firstException);
 }

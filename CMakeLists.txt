@@ -298,7 +298,8 @@ endif()
 if(WIN32)
   # winmm stays compiled as the Windows fallback when miniaudio cannot open a
   # device (see engine/src/audio/audio.cpp backend selection).
-  target_sources(neon_core PRIVATE engine/src/platform/win32/win32_window.cpp)
+  target_sources(neon_core PRIVATE engine/src/platform/win32/win32_window.cpp
+                                   engine/src/platform/win32/win32_threading.cpp)
   target_sources(neon_scene PRIVATE engine/src/audio/winmm/winmm_audio.cpp)
   target_compile_definitions(neon_core PUBLIC NEONRUSH_PLATFORM_WINDOWS)
   # Platform window/input + sockets on the core layer; GL + audio on their layers.
@@ -306,16 +307,18 @@ if(WIN32)
   target_link_libraries(neon_gfx PUBLIC opengl32)
   target_link_libraries(neon_scene PRIVATE winmm)
 elseif(APPLE)
-  target_sources(neon_core PRIVATE engine/src/platform/cocoa/cocoa_window.mm)
+  target_sources(neon_core PRIVATE engine/src/platform/cocoa/cocoa_window.mm
+                                   engine/src/platform/posix/posix_threading.cpp)
   set_source_files_properties(engine/src/platform/cocoa/cocoa_window.mm PROPERTIES LANGUAGE OBJCXX)
   target_compile_definitions(neon_core PUBLIC NEONRUSH_PLATFORM_MACOS)
   target_link_libraries(neon_core PUBLIC "-framework Cocoa")
   target_link_libraries(neon_gfx PUBLIC "-framework OpenGL")
 else()
   find_package(X11 REQUIRED)
-  target_sources(neon_core PRIVATE engine/src/platform/x11/x11_window.cpp)
+  target_sources(neon_core PRIVATE engine/src/platform/x11/x11_window.cpp
+                                   engine/src/platform/posix/posix_threading.cpp)
   target_compile_definitions(neon_core PUBLIC NEONRUSH_PLATFORM_LINUX)
-  target_link_libraries(neon_core PUBLIC ${X11_LIBRARIES})
+  target_link_libraries(neon_core PUBLIC ${X11_LIBRARIES} pthread)
   target_link_libraries(neon_gfx PUBLIC GL)
 endif()
 
@@ -775,7 +778,8 @@ add_executable(neon_tests tests/test_main.cpp tests/test_serialize.cpp tests/tes
   tests/test_asset_lifecycle.cpp
   tests/test_jolt.cpp
   tests/test_gltf_multimesh.cpp
-  tests/test_meshopt_lod.cpp)
+  tests/test_meshopt_lod.cpp
+  tests/test_gltf_async.cpp)
 # C15: link the editor/server/game core libs instead of compiling their
 # .cpp sources directly (game_server.cpp/aoi.cpp/client_sync.cpp were previously
 # "grabbed" into the test binary).
