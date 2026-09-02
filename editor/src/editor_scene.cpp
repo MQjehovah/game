@@ -1939,4 +1939,20 @@ void EditorApp::ClampSelection() {
     }
 }
 
+// 编辑视口 LOD 降载：高面扫描模型（编辑高面场景时卡 UI 的根因）远处用
+// meshoptimizer 简化版。懒构建缓存一次（同 meshKey 的多个实体共享）。
+gfx::Mesh EditorApp::LodMeshFor(const std::string& meshKey, const gfx::Mesh& source) {
+    if (!source.Valid()) return source;
+    const size_t verts = source.CpuVerts().size();
+    // 顶点很少的 mesh 不简化（没必要）。
+    if (verts < 40000u) return source;
+    auto it = gltfLodCache_.find(meshKey);
+    if (it != gltfLodCache_.end()) return it->second;
+    // 简化到 ~1500 顶点：编辑预览的轮廓级精度足够，GPU 顶点负载降 ~98%。
+    gfx::Mesh lod = gfx::Mesh::CreateSimplifyLod(renderer_, source, 1500, meshKey + "#lod");
+    NEON_LOG_INFO("EDITOR-LOD: '%s' verts=%zu -> %zu", meshKey.c_str(), verts,
+                  lod.Valid() ? lod.CpuVerts().size() : 0);
+    return (gltfLodCache_[meshKey] = lod);
+}
+
 } // namespace neon::editor

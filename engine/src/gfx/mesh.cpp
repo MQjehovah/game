@@ -6,6 +6,7 @@
 #include "neon/core/log.hpp"
 #include "neon/gfx/renderer.hpp"
 #include "neon/gfx/terrain.hpp"
+#include "meshoptimizer.h"
 
 namespace neon::gfx {
 namespace {
@@ -272,9 +273,73 @@ void Mesh::BakeSkinDataIntoVerts() {
         for (int c = 0; c < 4; ++c) {
             const size_t idx = i * 4 + static_cast<size_t>(c);
             v.j[c] = idx < jointCount ? static_cast<float>(data_->cpuJointIds[idx]) : 0.0f;
-            v.w[c] = idx < weightCount ? data_->cpuJointWeights[idx] : 0.0f;
+            v.w[c] = idx < weightCount ? static_cast<float>(data_->cpuJointWeights[idx]) : 0.0f;
         }
     }
+}
+
+Mesh Mesh::CreateSimplifyLod(Renderer& renderer, const Mesh& source, uint32_t targetVerts,
+                             const std::string& name) {
+    if (!source.Valid() || source.CpuVerts().empty()) return Mesh{};
+    const std::vector<Vertex3D>& srcV = source.CpuVerts();
+    const size_t srcVertCount = srcV.size();
+    // meshopt_simplify operates on positions only (float3 stream).
+    std::vector<float> positions;
+    positions.reserve(srcVertCount * 3);
+    for (const Vertex3D& v : srcV) {
+        positions.push_back(v.pos.x);
+        positions.push_back(v.pos.y);
+        positions.push_back(v.pos.z);
+    }
+    // Use the u32 index set when present (meshes > 65535 vertices); otherwise the
+    // u16 set widened to u32.
+    std::vector<unsigned int> srcIdx;
+    if (!source.CpuIndicesU32().empty()) {
+        srcIdx.reserve(source.CpuIndicesU32().size());
+        for (uint32_t i : source.CpuIndicesU32()) srcIdx.push_back(i);
+    } else {
+        srcIdx.reserve(source.CpuIndices().size());
+        for (uint16_t i : source.CpuIndices()) srcIdx.push_back(i);
+    }
+    if (srcIdx.empty()) return Mesh{};
+
+    const size_t targetIndexCount = static_cast<size_t>(targetVerts) * 3;
+    std::vector<unsigned int> lodIdx(srcIdx.size());
+    std::vector<unsigned int> curIdx = srcIdx;
+    float resultError = 0.0f;
+    // meshopt_simplify stops at the FIRST of {target index count, error budget}.
+    // Retry with an increasing error budget, feeding each round's result back in,
+    // until the triangle count actually reaches the target — heavy scanned meshes
+    // (foliage cards etc.) can stall at one error level.
+    float errorBudget = 1e-3f;
+    size_t outIdxCount = srcIdx.size();
+    const unsigned int opts =
+        meshopt_SimplifySparse;  // 独立 LOD mesh 不需 LockBorder（扫描树无缝合接缝需求）
+    while (outIdxCount > targetIndexCount && errorBudget < 1e6f) {
+        outIdxCount = meshopt_simplify(lodIdx.data(), curIdx.data(), curIdx.size(),
+                                       positions.data(), srcVertCount, sizeof(float) * 3,
+                                       targetIndexCount, errorBudget, opts, &resultError);
+        // Feed the result back as the next round's index buffer so successive
+        // rounds keep collapsing instead of stalling at the same count.
+        curIdx.assign(lodIdx.data(), lodIdx.data() + outIdxCount);
+        errorBudget *= 10.0f;
+    }
+    if (outIdxCount == 0 || outIdxCount > lodIdx.size()) return Mesh{};
+
+    // Remap the simplified index set back to the source vertex attributes, then
+    // compact the vertex buffer so the LOD mesh carries only referenced verts.
+    std::vector<unsigned int> remap(srcVertCount);
+    const size_t lodVertCount =
+        meshopt_generateVertexRemap(remap.data(), lodIdx.data(), outIdxCount, srcV.data(),
+                                    srcVertCount, sizeof(Vertex3D));
+    if (lodVertCount == 0) return Mesh{};
+    std::vector<unsigned int> remappedIdx(outIdxCount);
+    meshopt_remapIndexBuffer(remappedIdx.data(), lodIdx.data(), outIdxCount, remap.data());
+    std::vector<Vertex3D> lodVerts(lodVertCount);
+    meshopt_remapVertexBuffer(lodVerts.data(), srcV.data(), srcVertCount, sizeof(Vertex3D),
+                              remap.data());
+    return CreateFromDataU32(renderer, lodVerts.data(), static_cast<uint32_t>(lodVerts.size()),
+                             remappedIdx.data(), static_cast<uint32_t>(remappedIdx.size()), name);
 }
 
 } // namespace neon::gfx

@@ -93,6 +93,15 @@ target_include_directories(neon_core
 target_compile_options(neon_core PRIVATE ${NEON_LAYER_COMPILE_OPTIONS})
 
 # --- neon_gfx (L2): rendering -------------------------------------------------
+# meshoptimizer: mesh simplification + vertex cache optimization (MIT, vendored).
+# Only the files required by meshopt_simplify are compiled; header exposed so
+# neon_scene/neon_gfx can build LOD meshes for scanned glTF geometry.
+add_library(neon_meshopt STATIC
+  third_party/meshoptimizer/src/simplifier.cpp
+  third_party/meshoptimizer/src/indexgenerator.cpp
+  third_party/meshoptimizer/src/allocator.cpp)
+target_include_directories(neon_meshopt PUBLIC third_party/meshoptimizer/src)
+
 add_library(neon_gfx STATIC
   engine/src/gfx/color.cpp
   engine/src/gfx/csm.cpp
@@ -116,8 +125,9 @@ if(MSVC OR CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
   target_precompile_headers(neon_gfx PRIVATE ${NEON_LAYER_PCH})
 endif()
 target_include_directories(neon_gfx
-  PRIVATE engine/include engine/generated third_party/stb)
+  PRIVATE engine/include engine/generated third_party/stb third_party/meshoptimizer/src)
 target_link_libraries(neon_gfx PUBLIC neon_core)
+target_link_libraries(neon_gfx PRIVATE neon_meshopt)
 target_compile_options(neon_gfx PRIVATE ${NEON_LAYER_COMPILE_OPTIONS})
 
 # --- neon_scene (L3): content/runtime ----------------------------------------
@@ -182,15 +192,16 @@ if(MSVC OR CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
   target_precompile_headers(neon_scene PRIVATE ${NEON_LAYER_PCH})
 endif()
 target_include_directories(neon_scene
-  PRIVATE engine/include engine/generated third_party/stb engine/third_party/ufbx)
+  PRIVATE engine/include engine/generated third_party/stb third_party/ufbx)
 target_link_libraries(neon_scene PUBLIC neon_core neon_gfx)
 target_compile_options(neon_scene PRIVATE ${NEON_LAYER_COMPILE_OPTIONS})
 
 # FBX model loading via the vendored single-file ufbx library (MIT). It is a
 # C library; keep it in its own target so it is compiled as C (not C++).
-add_library(neon_ufbx STATIC engine/third_party/ufbx/ufbx.c)
-target_include_directories(neon_ufbx PUBLIC engine/third_party/ufbx)
+add_library(neon_ufbx STATIC third_party/ufbx/ufbx.c)
+target_include_directories(neon_ufbx PUBLIC third_party/ufbx)
 target_link_libraries(neon_scene PRIVATE neon_ufbx)
+target_link_libraries(neon_scene PRIVATE neon_meshopt)
 
 # neon_engine stays as a facade so every existing consumer links the full
 # layered stack unchanged (neon_game / neon_server / neon_editor / neon_tests).
@@ -763,7 +774,8 @@ add_executable(neon_tests tests/test_main.cpp tests/test_serialize.cpp tests/tes
   tests/test_aoi.cpp
   tests/test_asset_lifecycle.cpp
   tests/test_jolt.cpp
-  tests/test_gltf_multimesh.cpp)
+  tests/test_gltf_multimesh.cpp
+  tests/test_meshopt_lod.cpp)
 # C15: link the editor/server/game core libs instead of compiling their
 # .cpp sources directly (game_server.cpp/aoi.cpp/client_sync.cpp were previously
 # "grabbed" into the test binary).

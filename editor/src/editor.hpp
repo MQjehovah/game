@@ -344,6 +344,9 @@ private:
     void ApplyMaterialParams(SceneEntity& e);
     void ClampSelection();
     bool ResolveMesh(SceneEntity& e);
+    // 编辑视口 LOD 降载：返回源 mesh 的简化版（meshoptimizer）。高面 glTF 模型
+    // 远处渲染用它；懒构建一次并缓存（按 meshKey）。源 mesh 需带 CPU 顶点。
+    gfx::Mesh LodMeshFor(const std::string& meshKey, const gfx::Mesh& source);
     // Reassign the selected entity index. Also invalidates the script panel's
     // index-keyed sync cache (scriptSyncEntity_), so a mutation that shifts or
     // reappoints the selection can never leave the 脚本 panel showing a stale
@@ -757,6 +760,19 @@ private:
     // each paid the full startup cost. Cache one resolved model per path and
     // clone it per entity (GPU handles shared, animator state per entity).
     std::map<std::string, std::shared_ptr<scene::SkinnedModel>> skinnedModelCache_;
+    // 编辑视口 gltf LOD 降载：高面扫描模型（>kGltfLodVertexThreshold）在远处
+    // 用 meshoptimizer 简化 mesh（懒构建缓存），否则编辑高面场景时视口渲染
+    // 拖垮主线程（UI 卡死）。
+    std::unordered_map<std::string, gfx::Mesh> gltfLodCache_;
+    // gltf 子节点渲染缓存：LoadGLTF 每次返回 GltfAsset 值拷贝（含 58MB 级
+    // rawBin/bins 深拷贝，实测 ~25ms/次），每帧调用会拖垮主线程。按 meshKey
+    // 缓存一次解析结果，之后每帧直接取渲染引用。
+    struct GltfChildDraw {
+        gfx::Mesh mesh;
+        gfx::Material material;
+        math::Mat4 transform;
+    };
+    std::unordered_map<std::string, std::vector<GltfChildDraw>> gltfChildCache_;
     std::map<std::string, gfx::Mesh> gltfStaticMeshCache_;
     std::map<std::string, gfx::Material> gltfStaticMaterialCache_;
     std::vector<std::string> materialThumbQueue_;

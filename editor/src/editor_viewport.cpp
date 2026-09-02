@@ -4,6 +4,7 @@
 #include "panels/model_preview_panel.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 
@@ -325,12 +326,30 @@ void EditorApp::OnRender() {
                 // 第 2+ 个 mesh 节点（自带累积变换 + 材质），使编辑器视口也能
                 // 渲染 Sponza 类单 mesh / 多 primitive 的建筑场景。
                 if (!e.skinned && e.meshKey.compare(0, 5, "gltf:") == 0) {
-                    assets::GltfAsset g =
-                        assetMgr_.LoadGLTF(e.meshKey.substr(5));
-                    for (size_t si = 1; si < g.nodes.size(); ++si) {
-                        const assets::GltfMeshNode& sub = g.nodes[si];
+                    // 子节点渲染列表缓存：LoadGLTF 每帧调用会有 58MB 级深拷贝
+                    // （实测 ~25ms/次），只在首次解析，之后每帧直接取引用渲染。
+                    auto cacheIt = gltfChildCache_.find(e.meshKey);
+                    if (cacheIt == gltfChildCache_.end()) {
+                        assets::GltfAsset g = assetMgr_.LoadGLTF(e.meshKey.substr(5));
+                        std::vector<GltfChildDraw> children;
+                        for (size_t si = 1; si < g.nodes.size(); ++si) {
+                            if (!g.nodes[si].mesh.Valid()) continue;
+                            children.push_back({g.nodes[si].mesh, g.nodes[si].material,
+                                                g.nodes[si].transform});
+                        }
+                        cacheIt =
+                            gltfChildCache_.emplace(e.meshKey, std::move(children)).first;
+                    }
+                    for (size_t ci = 0; ci < cacheIt->second.size(); ++ci) {
+                        const GltfChildDraw& sub = cacheIt->second[ci];
                         if (!sub.mesh.Valid()) continue;
-                        renderer_.DrawMesh(sub.mesh, sub.material, model * sub.transform);
+                        // 编辑视口 LOD 降载：>40k 顶点的子 mesh（扫描模型的主体）
+                        // 用 meshoptimizer 简化版渲染，避免编辑高面场景时拖垮 UI。
+                        const gfx::Mesh subMesh =
+                            sub.mesh.CpuVerts().size() >= 40000u
+                                ? LodMeshFor(e.meshKey + "#" + std::to_string(ci + 1), sub.mesh)
+                                : sub.mesh;
+                        renderer_.DrawMesh(subMesh, sub.material, model * sub.transform);
                     }
                 }
             }

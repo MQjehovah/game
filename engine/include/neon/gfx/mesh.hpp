@@ -91,6 +91,11 @@ public:
     static Mesh CreateFromDataU32(Renderer& renderer, const Vertex3D* vertices,
                                   uint32_t vertexCount, const uint32_t* indices,
                                   uint32_t indexCount, const std::string& name = "mesh");
+    // meshoptimizer 简化 LOD：把高面数 mesh（扫描 glTF）用 QEM 边折叠降面到
+    // ~targetVerts 顶点，供编辑视口/远距离渲染降载（源 mesh 需保留 CPU 顶点，
+    // 即所有 CreateFromData 路径）。返回的 mesh 已上传 GPU 并缓存 CPU 数据。
+    static Mesh CreateSimplifyLod(Renderer& renderer, const Mesh& source, uint32_t targetVerts,
+                                  const std::string& name = "mesh_lod");
 
     bool Valid() const { return data_ && data_->handle.Valid(); }
     // Accessors are null-safe: an invalid (default-constructed) mesh returns

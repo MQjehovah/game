@@ -879,11 +879,11 @@ void EditorApp::OnUpdate(float dt) {
             const assets::AssetStats st = assetMgr_.Stats();
             NEON_LOG_CAT(
                 core::LogCategory::Core, core::LogLevel::Info,
-                "BENCH frame=%llu fps=%.1f avgMs=%.2f maxMs=%.2f ents=%zu draws=%u bodies=%zu "
-                "tex=%zu mesh=%zu",
+                "BENCH frame=%llu fps=%.1f avgMs=%.2f maxMs=%.2f ents=%zu draws=%u tris=%u "
+                "bodies=%zu tex=%zu mesh=%zu",
                 static_cast<unsigned long long>(TimeRef().frameIndex), TimeRef().Fps(),
                 benchFrameMsSum_ / static_cast<float>(benchFrames_), benchFrameMsMax_,
-                entities_.size(), renderer_.Stats().drawCalls,
+                entities_.size(), renderer_.Stats().drawCalls, renderer_.Stats().triangles,
                 play_ ? play_->PhysicsBodyCount() : 0, st.textures, st.meshes);
         }
     }
