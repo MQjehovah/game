@@ -1,6 +1,9 @@
 # 反射系统设计（NeonEngine Reflection）
 
-> 状态：✅ 已落地（框架 + TypeRegistry + 单测）。治理 C6 / G2-1 / G2-2，为 C7（脚本绑定生成）铺路。
+> 状态：✅ 已落地（框架 + TypeRegistry + 12 组件 + RenderStack，MSVC 775 测试全绿）。
+> 治理 C6 / G2-1 / G2-2，完成 C7 字段访问；并延伸出 A（RenderStack 数据驱动）、B（资产 GUID 路径回退）、
+> D（MCP）、E（多语言脚本宿主 + Python 门控）。
+> A3（全量几何 FrameGraph）与 E-Python（CPython 运行时绑定）为需 GPU / CPython 运行时的专项（见 §6）。
 >
 > 相关代码：`engine/include/neon/scene/component_reflect.hpp`、`enum_reflect.hpp`、
 > `type_registry.hpp`（+`engine/src/scene/type_registry.cpp`）。
@@ -121,23 +124,33 @@ const TypeInfo* info = TypeRegistry::Find("mycomp");     // schema + toJson/from
   反射驱动的**单字段**读写绑定（复用 `EntityComponent`/`SetEntityComponent` 的 JSON hook 通道），
   脚本可改一个字段而不整表重写，字段名与反射 schema 一致。
 - `FieldSchema` 增 `header/tooltip/widget`；`FieldType` 增 `Array/Struct/Vec4`（向后兼容）。
-- **已迁移真实组件（编辑器 schema + JSON codec 走反射，共 10 个）**：`SceneHealth`、`SceneAudioSource`、
-  `SceneSortOrder`、`SceneDecal`、`SceneCharacter`、`SceneRigidBody`、`SceneTransform`、`SceneGroups`、
-  `SceneNodeType`、`SceneCamera`。`SceneAnimOverride` 已声明 `kFields`（含 Transient `active`）但暂不注册
-  ——它没有场景工厂，注册会在编辑器"添加组件"里出现一个不生效的条目（先补工厂再注册）。
+- **已迁移真实组件（编辑器 schema + JSON codec 走反射，共 12 个引擎组件 + RenderStack）**：
+  `SceneHealth`、`SceneAudioSource`、`SceneSortOrder`、`SceneDecal`、`SceneCharacter`、`SceneRigidBody`、
+  `SceneTransform`、`SceneGroups`、`SceneNodeType`、`SceneCamera`、`SceneLight`、`SceneScript`，
+  以及数据驱动的 **`RenderStack`**（后处理栈，见下）注册为 `renderstack`。`SceneAnimOverride` 已声明
+  `kFields`（含 Transient `active`）但暂不注册——它没有场景工厂（注册会在"添加组件"里出现不生效条目）。
   - 演示的技巧：
-    - **键名↔成员名别名**——`SceneRigidBody` 的 `damping` 键 → `linearDamping` 成员；`behaviorTree` 同理。
-    - **字符串枚举下拉**——`shape`/`type` 用 `FieldMeta{options}`。
+    - **键名↔成员名别名**——`SceneRigidBody` 的 `damping` 键 → `linearDamping` 成员。
+    - **字符串枚举下拉**——`shape`/`type`/`light.type` 用 `FieldMeta{options}`。
     - **运行时字段 `Transient`**——`bodyId`/`active` 不存盘、不渲染。
     - **以结构体为准**——`SceneTransform::rot` 是真 `Quat`，编辑器用四元数输入（不再造假"欧拉角"）。
-  - 序列化器顺带修复：补写 `camera.aspect`、`sprite.billboard`（此前被序列化丢弃，按"以结构体为准"补上）。
-- 单测 `tests/test_reflect.cpp`（10 项），`failures=0`。
-- **剩余组件（mesh/sprite/script/light/name/plant/zombie/terrain/tilemap）**：每个都因一个已知冲突暂未收口
-  ——mesh/sprite 的嵌套 `material{...}`/节点区特判、light 颜色"字符串 hex 与 [r,g,b,a] 数组两套并存"、
-  plant/zombie 结构体比 schema 少字段、terrain/tilemap 大数组、script 编辑器特判面板。
-  引擎里这类"专项呈现/专项序列化"是通用引擎的常态（等价于 Unity 的 CustomPropertyDrawer / 自定义序列化），
-  反射按通用做法保留其专项、只补 schema；建议在能完整链接 `neon_tests`/`neon_editor` 的环境下逐个体收口
-  （本机 MinGW GCC 8.1 无法完整链接，见文末验收说明）。
+  - 序列化器顺带修复：补写 `camera.aspect`、`sprite.billboard`（此前被序列化丢弃）。
+- **RenderStack（渲染数据驱动，A）**：`render_stack.hpp` 用反射描述后处理效果（SSAO/体积光/SSR/
+  bloom/tonemap/雾 的开关+参数），注册进 `TypeRegistry`；编辑器属性面板自动生成、JSON 往返、脚本单字段访问。
+  bloom 的 `threshold/strength` 已参数化进 `PostGraph::CompositeParams`/`Renderer::SetBloomParams`
+  （默认=原常量，零回归）——"渲染开放给前端"的数据层。
+- **D·MCP**：`neon/mcp/mcp_server.hpp` 提供 JSON-RPC 2.0（`initialize/tools/list/tools/call`），
+  工具 `list_entities/get_component/set_component`，**set 用反射 schema 校验字段类型**；
+  `tools/neon_mcp.cpp` 是 stdio server（`--scene` 加载、改动后漂亮化写盘）。AI 助手经标准 MCP 读写引擎组件。
+- **E·多语言宿主**：`script_manager.cpp` 的 `CreateScriptHost(kind)` 统一按语言名建宿主；
+  `python_host.hpp` 提供 **CPython 宿主**（`NEON_ENABLE_PYTHON` 门控，未编译则回落 Lua）。
+- **B·资产 GUID**：中心式 `.asset_db.json`（`asset_db.hpp`，无 .meta）已存在；补 `ResolveAssetRef`
+  （GUID 优先、路径回退）+ `IsGuidToken`，供未来 GUID 化引用解析。
+- 构建：MSVC 加 **`/Zc:preprocessor`**（修复 legacy 预处理器对 `NEO_ENUM` 变参宏的计数缺陷）。
+- 单测：`tests/test_reflect.cpp`（13 项反射）+ `tests/test_mcp.cpp`（2 项）+ `tests/test_script_host.cpp`
+  （2 项）；MSVC 下 **775 项测试全部通过**、`neon_mcp` stdio 实机工作、`neon_editor` 编译通过。
+- **剩余组件（mesh/sprite）**：因编辑器**专项实体区**渲染（网格/精灵区块，非通用 schema 字段区，
+  schema 仅供"添加组件"下拉），迁移字段反射无编辑收益——维持专项，属通用引擎的 Custom 面板常态。
 
 ### 后续（按 TODO 项）
 - **字段级 codec**：共享序列化器内部仍保留部分**条件省略**（如 `if (rb->dynamic)` 省略 true 值、
@@ -147,8 +160,15 @@ const TypeInfo* info = TypeRegistry::Find("mycomp");     // schema + toJson/from
   展示）；递归可编辑需在 `FieldSchema` 里挂子 `ComponentSchema`/`FieldList` 指针。
 - **G2-2**：把 `ComponentRegistry`（运行时工厂）与 `TypeRegistry`（元数据）进一步合并，
   让 `Instantiate` 对反射组件走统一创建。
+- **A3·全量几何 FrameGraph**：把主场景/阴影/SSAO 等从**立即模式逐实体绘制流**（GameRuntime→renderer）
+  重构为声明式 pass 图。跨 renderer/game_runtime/draw_system，且**必须 GPU 逐帧验证画面**——
+  需在能跑 `--screenshot` 的环境专项迭代（第一步：逐实体绘制捕获→可重放列表 + `scene.geometry` pass）。
+- **E·Python 运行时绑定**：`python_host.cpp`（CPython C-API + 确定性沙箱：指令/内存预算、确定性
+  时钟+RNG，对齐 Lua/JS 守卫）需在**有 CPython ≥3 运行时**的环境实现+验证（`NEON_ENABLE_PYTHON` 开启）。
 - **顺带发现的既有隐藏缺陷（本次未改，避免回归）**：`sprite` 组件的 `billboard` 字段在
   `FromWorld`/共享序列化器里都未写出（与 schema 不一致）——迁移 sprite 到 `kFields` 时一并修。
+- **D2 插件权限**：`plugin.cpp:156` 已解析 `permissions` 但未强制执行（编辑器插件版本门 D1 同样）——
+  插件隔离/权限白名单执行列为安全专项。
 
 ## 7. 如何给引擎加一个可反射组件（示例）
 

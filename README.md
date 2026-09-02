@@ -323,9 +323,12 @@ docs/                  # 架构/路线图/网络说明/规范文档
 ```
 
 详细设计见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)（架构/模块/子系统），架构评审（分层/依赖方向/内聚耦合）见
-[docs/plans/2026-08-31-architecture-review.md](docs/plans/2026-08-31-architecture-review.md)，反射系统（C6/G2-1/G2-2，一处声明→schema+序列化+TypeRegistry）见
+[docs/plans/2026-08-31-architecture-review.md](docs/plans/2026-08-31-architecture-review.md)，反射系统（C6/G2-1/G2-2 + RenderStack 渲染数据驱动 + 脚本字段访问 + 多语言宿主）见
 [docs/reflection.md](docs/reflection.md)，路线图与差距见
 DEVELOPMENT §9，待办见 [docs/TODO.md](docs/TODO.md)。
+
+**工具**：`neon_mcp`（`tools/neon_mcp.cpp`）是一个标准 MCP（JSON-RPC 2.0）stdio 服务器，让 AI 助手能列出实体、
+读/写组件字段（经反射 schema 校验、可落盘）：`\build\neon_mcp.exe --scene <场景.json>`（构建见 MSVC `build-msvc`）。
 
 ## 许可
 

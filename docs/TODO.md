@@ -25,6 +25,22 @@
 > - **C 系列 = 结构性重构**（可维护性税）
 > - **D 系列 = 安全与工程化**
 
+> ## 2026-09-02 反射落地批（A/B/D/E，MSVC 775 测试全绿）
+>
+> - **反射全体系** ✅：框架（全类型码+Serialize/EditorOnly/Transient+枚举 NEO_ENUM+嵌套/数组/Json+键名别名）、
+>   `TypeRegistry`（schema 单一来源+JSON codec+clone，幂等）、inspector Vec4/Array/Struct 渲染、
+>   `SceneFile` 序列化收敛为共享 `SerializeEntityComponents`、脚本字段访问 `EntityComponentField` 等。
+>   已迁移 12 个引擎组件 + `RenderStack`。详见 [docs/reflection.md](reflection.md)。
+> - **A·RenderStack 数据驱动** ✅（数据层）：`render_stack.hpp` 反射描述后处理（SSAO/体积光/SSR/bloom/tonemap/雾），
+>   bloom 阈值/强度参数化进 `PostGraph`（默认不变，零回归）。**A3 全量几何 FrameGraph** ⏳ 需 GPU 逐帧验证（跨 renderer/
+>   game_runtime/draw_system，从立即模式逐实体绘制流重构为声明式 pass）。
+> - **B·资产 GUID** ✅：中心式 `.asset_db.json` 库（无 .meta）已存在；补 `ResolveAssetRef`（GUID 优先+路径回退）。
+> - **D·MCP** ✅：`neon/mcp/mcp_server.hpp`（JSON-RPC 2.0，list/get/set_component 经反射校验）+ `neon_mcp` stdio server。
+> - **E·多语言宿主** ✅（骨架）：`CreateScriptHost(kind)` 统一工厂 + `PythonHost`（`NEON_ENABLE_PYTHON` 门控，否则回落 Lua）。
+>   **E-Python 运行时绑定** ⏳（CPython C-API + 确定性沙箱）需 CPython 运行时实现+验证。
+> - 构建：MSVC 加 **`/Zc:preprocessor`**（修复 legacy 预处理器对 `NEO_ENUM` 变参宏计数缺陷）。
+> - ⚠️ MinGW GCC 8.1 因既有工具链问题（`_stat64`、quickjs 汇编器）无法完整链接，反射/MCP 在 **MSVC** 验证。
+
 ---
 
 ## 第一部分 A：正确性缺陷（P0）
@@ -345,14 +361,14 @@
 
 | 领域 | 差距评级 | 对标要点 | 本清单对应项 |
 |------|---------|---------|-------------|
-| 渲染架构 | 大 | 无 render graph/compute/TAA/GI 烘焙；深度不可采样 | B1/B3/B4/C4/C10, G2-4 |
+| 渲染架构 | 大→中 | RenderStack 数据驱动雏形已做（后处理参数反射+bloom参数化，A3 全量几何 FrameGraph 未做）；深度可采样/SSAO 已修 | A3 + B1/B3/B4/C4/C10, G2-4 |
 | Vulkan 成熟度 | 中→大 | descriptor 泄漏/无内存子分配/串行提交/伪 HDR | A1/A2/B5/P1 系列 |
 | ECS/并行 | 中 | 无 archetype/job 依赖分析/burst 级优化 | C11/G2-2/G5-2 |
 | 动画 | 中 | 无动画事件/重定向；>64 骨骼上限；BlendSpace 相位漂移 | B7/C2 + 新增：AnimEvent、骨骼上限 |
 | 物理 | 中→大 | Jolt 同库但封装最小子集（无旋转/关节/触发器/shape cast、隐式地面、2048 上限、单线程） | A7/A8 + Jolt 封装扩展 |
-| 脚本工具链 | 中 | JS 无调试、无远程调试、报错无堆栈、绑定静默失败 | B8/B9/C7 |
+| 脚本工具链 | 中→小 | 反射字段访问（EntityComponentField）已做；多语言宿主（JS/Python 门控）已做；JS 无调试/绑定静默失败仍存 | B8/B9/C7 + E |
 | 网络 | 强项+硬上限 | 确定性+AOI 强；48 实体上限/delta/认证/重连/分区分服缺 | B13/D3/G3-4 |
-| 资产管线 | 中→大 | 无 FBX/USD；GUID 未贯通；BC1 无 mip | A13/C5 + 导入格式扩展 |
+| 资产管线 | 中→大 | 有中心式 GUID 库（.asset_db.json）+ ResolveAssetRef 路径回退；仍无 FBX/USD、GUID 未贯通场景引用 | A13/C5 + 导入格式扩展 |
 | UI | 中 | 无锚点/容器布局；TextField 不可用 | C9/G3-5 |
 | 编辑器 | 中 | undo 洞/无 profiler 时间线/GPU 捕获 | C3/D6 |
 | 音频 | 中 | 3D 一次性计算/无流式/无效果器/锁纪律 | 新增：音频流式与 3D 追踪 |
