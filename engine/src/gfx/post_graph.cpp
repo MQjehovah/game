@@ -131,11 +131,14 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
     ssaoBlurHIndex_ = add(blurPass("post.ssaoBlurH", ssaoBlur_, ao_, aoBlurA_, math::Vec2{1.0f, 0.0f}));
     ssaoBlurVIndex_ = add(blurPass("post.ssaoBlurV", ssaoBlur_, aoBlurA_, aoBlurB_, math::Vec2{0.0f, 1.0f}));
 
-    // 5. Volumetric: samples the HDR scene radially toward the sun (sunUV
-    //    recomputed in Execute from camPos/sunDir/viewProj), writes vol.
+    // 5. Volumetric: depth-aware volume ray-march toward the sun. Each pixel
+    //    steps along its view ray, accumulating the sun's phase-scattered light
+    //    attenuated by the scene depth (geometry in front of a step occludes it,
+    //    so tree canopies leave dark shafts and open sky glows — the god-ray
+    //    look). Sampled at full/vol res via the post quad's normalized UV.
     FramePass vol;
     vol.name = "post.volumetric";
-    vol.reads = {hdrScene_};
+    vol.reads = {hdrScene_, sceneDepth_};
     vol.writes = {vol_};
     vol.execute = [this](FrameGraphContext& ctx) {
         auto& backend = ctx.Backend();
@@ -143,8 +146,16 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
         Fullscreen(backend, volumetricShader_);
         backend.BindTexture(0, backend.RenderTargetColorTexture(ctx.GetInput(hdrScene_)));
         backend.SetUniformInt("uScene", 0);
-        backend.SetUniformVec2("uSunScreen", sunUV_);
+        backend.BindTexture(1, backend.RenderTargetColorTexture(ctx.GetInput(sceneDepth_)));
+        backend.SetUniformInt("uDepth", 1);
         backend.SetUniformVec2("uTexelSize", math::Vec2{halfTexelX_, halfTexelY_});
+        backend.SetUniformVec2("uSunScreen", sunUV_);
+        backend.SetUniformVec3("uCamPos", camPos_);
+        backend.SetUniformVec3("uSunDir", sunDir_);
+        backend.SetUniformVec3("uSunColor", sunColor_);
+        backend.SetUniformMat4("uViewProj", viewProj_);
+        backend.SetUniformFloat("uNear", nearPlane_);
+        backend.SetUniformFloat("uFar", farPlane_);
         backend.SetUniformFloat("uDensity", kVolumetricDensity);
         backend.SetUniformFloat("uWeight", kVolumetricWeight);
         backend.SetUniformFloat("uDecay", kVolumetricDecay);
@@ -440,6 +451,10 @@ bool PostGraph::Execute(IRenderBackend& backend, const FrameParams& params) {
     }
     nearPlane_ = params.camera.nearPlane;
     farPlane_ = params.camera.farPlane;
+    viewProj_ = params.viewProj;
+    camPos_ = params.camPos;
+    sunDir_ = params.sunDir;
+    sunColor_ = params.sunColor;
 
     graph_.SetExternalInput(hdrScene_, params.hdrScene);
     const bool ok = graph_.Execute(backend);

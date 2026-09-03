@@ -1150,13 +1150,16 @@ PostGraph::FrameParams Renderer::MakePostParams(bool chains) const {
     // would produce an all-far depth whose AO is a no-op white). chains=false
     // forces every chain off (the old CaptureBloom/TonemapComparison path never
     // ran the post graph, so its composites had no AO/vol/SSR/fog terms).
-    p.depthPass = chains && (ssaoEnabled_ || ssrEnabled_ || sceneState_.VolumetricFogEnabled());
+    p.depthPass = chains && (ssaoEnabled_ || ssrEnabled_ || volumetricEnabled_ ||
+                             sceneState_.VolumetricFogEnabled());
     p.ssaoPass = chains && ssaoEnabled_ && !ssaoCasters_.empty();
     p.volumetricPass = chains && volumetricEnabled_;
     p.ssrPass = chains && ssrEnabled_;
     p.bloomPass = bloomEnabled_;
     p.camPos = sceneState_.CamPos();
     p.sunDir = sceneState_.SunDir();
+    const Color& sunC = sceneState_.SunColor();
+    p.sunColor = {sunC.r, sunC.g, sunC.b};
     p.viewProj = sceneState_.ViewProjection();
     p.camera = sceneState_.ActiveCamera();
     p.composite.ssaoIntensity = ssaoIntensity_;

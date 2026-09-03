@@ -76,6 +76,7 @@ public:
         bool bloomPass = false;
         math::Vec3 camPos; // volumetric 太阳投影
         math::Vec3 sunDir;
+        math::Vec3 sunColor; // volumetric light-shaft colour (sun * intensity)
         math::Mat4 viewProj;
         Camera camera; // SSR / composite 的 near/far
         CompositeParams composite;
@@ -176,6 +177,11 @@ private:
     int hdrW_ = 0;
     int hdrH_ = 0;
     math::Vec2 sunUV_{0.5f, 0.5f}; // volumetric 太阳屏幕 UV（Execute 时重算）
+    // Volume god-ray ray-march state (Execute snapshot from FrameParams).
+    math::Mat4 viewProj_;  // camera view-proj (invert in shader for view ray)
+    math::Vec3 camPos_{};
+    math::Vec3 sunDir_{0.0f, -1.0f, 0.0f};
+    math::Vec3 sunColor_{1.0f, 1.0f, 1.0f};
     float nearPlane_ = 0.1f;       // SSR / composite 的 near/far（Execute 时从 camera 复制）
     float farPlane_ = 800.0f;
     CompositeParams comp_; // 上一次 Execute 的 composite 快照
