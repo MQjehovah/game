@@ -255,6 +255,8 @@ private:
     // 写实天空贴图缓存（SceneLight.skyTexture 配置）：按路径懒加载一次。
     gfx::Texture skyTex_;
     std::string skyTexPath_;
+    // IBL 已从 skyTex_ 提取（照片天空色喂 SetSky），避免每帧重复 CPU 解码。
+    bool skyIblFromTex_ = false;
 };
 
 } // namespace neon::scene

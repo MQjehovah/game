@@ -29,6 +29,10 @@ struct Material {
     float emissiveIntensity = 1.0f;
     bool lit = true;
     bool transparent = false;
+    // Casts a directional-light (CSM) shadow. Default true so trees/props cast;
+    // set false on large receivers (ground plane, water, terrain) that would
+    // otherwise self-shadow into a black swath.
+    bool castShadow = true;
     // glTF doubleSided: render both faces (disable back-face culling).
     bool doubleSided = false;
     // glTF MASK: discard fragments with albedo.a < alphaCutoff (crisp cutout

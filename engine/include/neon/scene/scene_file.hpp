@@ -252,6 +252,12 @@ struct SceneMesh {
     // repeat). For a large ground plane set this to the world-size so a small
     // texture tiles instead of stretching across the whole surface.
     float uvRepeat = 1.0f;
+    // Casts a directional-light (CSM) shadow. Large receivers such as a ground
+    // plane must NOT be a caster: a big plane projecting onto itself lands the
+    // cascade depth within the bias band and blackens the whole surface (the
+    // "half the map is shadowed" bug). Default true so trees/props cast; set
+    // false on ground/water/terrain to keep it receiver-only.
+    bool castShadow = true;
 };
 // 2D sprite component: an image texture drawn on an XY quad facing +Z (the
 // front-ortho camera). Display size comes from SceneTransform::scale, so the
@@ -508,6 +514,20 @@ struct SceneLight {
     // 写实天空贴图（HDRI tonemapped JPG 的虚拟路径）。非空时 DrawSystem 加载
     // 并作为全屏天空背景替代纯色渐变。
     std::string skyTexture;
+    // 自定义氛围覆盖（showcase 场景整场色调）：useAtmosphere=true 时两个渲染宿主
+    // （编辑器 edit 视图 + runtime draw_system）用 skyTop/skyHorizon 渐变、
+    // fogColor/fogNear/fogFar 替代默认白天天空 + 灰蓝雾，使黄昏/雪地/极光等
+    // 场景能在 scene JSON 里数据驱动地表达整场氛围。默认值 = 现有硬编码
+    // （不覆盖，保回归等价）；fog 默认取 runtime 的 60-220。
+    bool useAtmosphere = false;
+    gfx::Color skyTop{0.28f, 0.38f, 0.58f, 1.0f};
+    gfx::Color skyHorizon{0.55f, 0.65f, 0.80f, 1.0f};
+    gfx::Color fogColor{0.45f, 0.55f, 0.70f, 1.0f};
+    float fogNear = 60.0f;
+    float fogFar = 220.0f;
+    // 曝光（tonemap 前乘子）：<0 表示未设置（宿主保留自身曝光）。夜晚场景
+    // 需要 >1 提亮月光/火光氛围，黄昏可微调避免死黑/泛白。
+    float exposure = -1.0f;
 
     // G2-1: reflection drives the editor schema + JSON + script field access.
     // `color` is a gfx::Color (serialized as [r,g,b,a]); the editor's Color
@@ -524,7 +544,14 @@ struct SceneLight {
         Field("ambientStrength", "环境强度", FieldType::Number, &SceneLight::ambientStrength,
               0.25, 0, 1, 0.01),
         Field("skyTexture", "天空贴图", FieldType::Resource, &SceneLight::skyTexture,
-              0, 0, 0, 0, FieldMeta{FieldCategory::Serialize, nullptr, nullptr, "texture"}));
+              0, 0, 0, 0, FieldMeta{FieldCategory::Serialize, nullptr, nullptr, "texture"}),
+        Field("useAtmosphere", "自定义氛围", FieldType::Bool, &SceneLight::useAtmosphere),
+        Field("skyTop", "天空顶部", FieldType::Color, &SceneLight::skyTop),
+        Field("skyHorizon", "天空地平", FieldType::Color, &SceneLight::skyHorizon),
+        Field("fogColor", "雾颜色", FieldType::Color, &SceneLight::fogColor),
+        Field("fogNear", "雾起点", FieldType::Number, &SceneLight::fogNear, 60, 0, 1e4, 1),
+        Field("fogFar", "雾终点", FieldType::Number, &SceneLight::fogFar, 220, 0, 1e5, 1),
+        Field("exposure", "曝光", FieldType::Number, &SceneLight::exposure, -1, -1, 100, 0.05));
 };
 // 2D sort order (P2-3): sprites draw back-to-front by this value (lower first;
 // default 0 when the component is absent).

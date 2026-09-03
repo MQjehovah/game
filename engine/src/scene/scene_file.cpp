@@ -585,11 +585,11 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
     reg.Register("mesh",
                  [assets](ecs::World& world, ecs::Entity ent, const core::Json& data,
                           const core::Json&, std::string* err) {
-                     if (!CheckComponentShape(data,
+                      if (!CheckComponentShape(data,
                                     {"meshKey", "lod", "material", "metallic", "roughness", "colorHex",
                                      "albedoTex", "mrTex", "aoTex", "emissiveTex",
                                      "ao", "emissiveIntensity", "uvRepeat",
-                                     "dirtColorHex", "rockColorHex"},
+                                     "dirtColorHex", "rockColorHex", "castShadow"},
                                     "mesh", err))
                          return false;
                      const core::Json* key = data.Get("meshKey");
@@ -720,6 +720,8 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                          }
                          m.colorHex = col->GetString();
                      }
+                     if (const core::Json* cs = data.Get("castShadow"))
+                         m.castShadow = cs->IsBool() && cs->GetBool();
                      world.Add<SceneMesh>(ent, m);
                      return true;
                  });
@@ -1126,7 +1128,9 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                     const core::Json&, std::string* err) {
                       if (!CheckComponentShape(data,
                                               {"type", "sunDir", "color", "intensity", "radius",
-                                                "ambientStrength", "skyTexture"},
+                                                "ambientStrength", "skyTexture",
+                                                "useAtmosphere", "skyTop", "skyHorizon",
+                                                "fogColor", "fogNear", "fogFar", "exposure"},
                                               "light", err))
                          return false;
                      SceneLight l;
@@ -1166,6 +1170,28 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                          l.ambientStrength = static_cast<float>(n->GetNumber());
                      if (const core::Json* s = data.Get("skyTexture"))
                          l.skyTexture = s->GetString();
+                     if (const core::Json* b = data.Get("useAtmosphere"))
+                         l.useAtmosphere = b->IsBool() && b->GetBool();
+                     auto readColorOr = [&](const char* key, gfx::Color& out) {
+                         if (const core::Json* c = data.Get(key)) {
+                             if (c->IsArray()) {
+                                 float vv[4] = {out.r, out.g, out.b, out.a};
+                                 size_t n = 0;
+                                 for (const core::Json& x : c->Items())
+                                     if (n < 4) vv[n++] = static_cast<float>(x.GetNumber());
+                                 out = {vv[0], vv[1], vv[2], vv[3]};
+                             }
+                         }
+                     };
+                     readColorOr("skyTop", l.skyTop);
+                     readColorOr("skyHorizon", l.skyHorizon);
+                     readColorOr("fogColor", l.fogColor);
+                     if (const core::Json* n = data.Get("fogNear"))
+                         l.fogNear = static_cast<float>(n->GetNumber());
+                     if (const core::Json* n = data.Get("fogFar"))
+                         l.fogFar = static_cast<float>(n->GetNumber());
+                     if (const core::Json* n = data.Get("exposure"))
+                         l.exposure = static_cast<float>(n->GetNumber());
                      world.Add<SceneLight>(ent, l);
                      return true;
                  });
@@ -1463,6 +1489,7 @@ static core::Json SerializeEntityComponents(ecs::World& world, ecs::Entity e) {
         if (!m->aoTex.empty()) mat.object_["aoTex"] = MakeString(m->aoTex);
         if (!m->emissiveTex.empty()) mat.object_["emissiveTex"] = MakeString(m->emissiveTex);
         mesh.object_["material"] = std::move(mat);
+        if (!m->castShadow) mesh.object_["castShadow"] = MakeBool(false);
         if (!m->lod.empty()) {
             core::Json lodArr;
             lodArr.type_ = core::Json::Type::Array;
@@ -1567,6 +1594,21 @@ static core::Json SerializeEntityComponents(ecs::World& world, ecs::Entity e) {
         li.object_["ambientStrength"] = MakeNumber(l->ambientStrength);
         if (!l->skyTexture.empty())
             li.object_["skyTexture"] = MakeString(l->skyTexture);
+        if (l->useAtmosphere) {
+            li.object_["useAtmosphere"] = MakeBool(true);
+            auto mkColor = [](const gfx::Color& c) {
+                core::Json a = MakeArray();
+                a.array_ = {MakeNumber(c.r), MakeNumber(c.g), MakeNumber(c.b),
+                            MakeNumber(c.a)};
+                return a;
+            };
+            li.object_["skyTop"] = mkColor(l->skyTop);
+            li.object_["skyHorizon"] = mkColor(l->skyHorizon);
+            li.object_["fogColor"] = mkColor(l->fogColor);
+            li.object_["fogNear"] = MakeNumber(l->fogNear);
+            li.object_["fogFar"] = MakeNumber(l->fogFar);
+            if (l->exposure >= 0.0f) li.object_["exposure"] = MakeNumber(l->exposure);
+        }
         comps.object_["light"] = std::move(li);
     }
     if (const SceneSortOrder* so = world.Get<SceneSortOrder>(e)) {

@@ -66,6 +66,7 @@ int main(int argc, char** argv) {
     bool play = false;
     bool uiEditor = false;
     std::string projectDir;
+    std::string sceneRel;
     std::string backend = "gl";
     std::string screenshot;
     std::string previewPath;
@@ -89,6 +90,8 @@ int main(int argc, char** argv) {
             uiEditor = true;
         } else if (std::strcmp(argv[i], "--project") == 0 && i + 1 < argc) {
             projectDir = argv[++i];
+        } else if (std::strcmp(argv[i], "--scene") == 0 && i + 1 < argc) {
+            sceneRel = argv[++i];
         } else if (std::strcmp(argv[i], "--preview") == 0 && i + 1 < argc) {
             previewPath = argv[++i];
         } else if (std::strcmp(argv[i], "--package") == 0 && i + 2 < argc) {
@@ -158,7 +161,8 @@ int main(int argc, char** argv) {
                          "  --2d-play              start 2D mode with the PvZ play running\n"
                          "  --play                 auto-start the open project's play (any mode)\n"
                          "  --ui-editor            open the UI editor panel at startup\n"
-                        "  --project <dir>        open a data-driven project (game.json startScene)\n"
+                         "  --project <dir>        open a data-driven project (game.json startScene)\n"
+                         "  --scene <rel>          with --project, open this scene instead of startScene\n"
                         "  --backend <gl|vulkan>  graphics backend (default gl; vulkan is opt-in)\n"
                         "  --package <project> <out>  validate + pack a project into\n"
                         "                         <out>/game.pack (run.bat + neon_game.exe)\n"
@@ -211,6 +215,7 @@ int main(int argc, char** argv) {
     if (play) app.SetPlayOnStart(true);
     if (uiEditor) app.SetUIEditorOnStart(true);
     if (!projectDir.empty()) app.SetProjectOnStart(projectDir, true);
+    if (!sceneRel.empty()) app.SetSceneOnStart(sceneRel);
     if (!previewPath.empty()) app.SetPreviewOnStart(previewPath);
     if (backend != "gl") app.SetBackendName(backend);
     if (renderThread) app.SetRenderThreadEnabled(true);

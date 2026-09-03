@@ -157,6 +157,7 @@ struct SceneEntity {
     float metallic = 0.0f;
     float roughness = 0.8f;
     float uvRepeat = 1.0f; // UV tiling multiplier for the entity's material
+    bool castShadow = true; // CSM caster; false on ground/terrain receivers
     // Material texture slots: file paths (empty = none) resolved through the
     // AssetManager into the entity's gfx::Material texture handles below.
     std::string albedoTex;
@@ -286,6 +287,9 @@ public:
         projectDirOnStart_ = dir;
         loadProjectOnStart_ = loadScene;
     }
+    // --scene <rel>: after opening --project, load this scene path (relative
+    // to the project dir) instead of the game.json startScene.
+    void SetSceneOnStart(const std::string& rel) { sceneOnStart_ = rel; }
     void SetBackendName(const std::string& name) { backendName_ = name; }
     // Runs the GL backend on a dedicated render thread (see
     // gfx::Renderer::SetRenderThreadEnabled). Set before the editor window is
@@ -624,6 +628,11 @@ private:
     // of ~55 flat members that sat directly on the god class.
     // ---------------------------------------------------------------------
     gfx::Renderer renderer_;
+    // HDRI 天空 IBL 缓存（edit 视图 ApplySceneEnvironment）：skyTexture 路径
+    // 变化才重新加载贴图 + CPU 采样天光色，避免每帧重解码大 JPG。
+    std::string skyIblPath_;
+    bool skyIblReady_ = false;
+    gfx::Texture skyTexCache_;
     // Play audio: procedural SoundFx synthesized per PlaySfx(name) and
     // played through the backend. Default = platform (miniaudio / WinMM /
     // null); G5-1: when a native audio plugin is staged under ./plugins the
@@ -681,6 +690,7 @@ private:
     bool playOnStart_ = false;        // --play: auto-start (any project mode)
     bool uiEditorOnStart_ = false;    // --ui-editor: open the UI editor panel
     std::string projectDirOnStart_;    // --project: open this project
+    std::string sceneOnStart_;         // --scene: scene under the project to open
     bool loadProjectOnStart_ = false;  // --project also loads its start scene
     // Godot-style input mapping panel: edit project input.json actions.
     bool showInputMap_ = false;

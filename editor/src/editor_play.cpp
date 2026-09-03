@@ -163,6 +163,13 @@ core::Result<core::Json> EditorApp::BuildSceneJsonFromEntities() {
             return core::Result<core::Json>::Err("editor: " + res.Error());
         }
         obj = res.Value();
+        if (!e.castShadow) {
+            core::Json& mesh = obj.object_["components"].object_["mesh"];
+            core::Json cs;
+            cs.type_ = core::Json::Type::Bool;
+            cs.bool_ = false;
+            mesh.object_["castShadow"] = std::move(cs);
+        }
         if (!e.materialRef.empty()) {
             // Write the material-ball reference alongside the expanded params
             // (runtime reads the params; the editor keeps the asset link).
@@ -336,6 +343,22 @@ core::Result<core::Json> EditorApp::BuildSceneJsonFromEntities() {
                     st.type_ = core::Json::Type::String;
                     st.string_ = e.light.skyTexture;
                     li.object_["skyTexture"] = std::move(st);
+                }
+                if (e.light.useAtmosphere) {
+                    core::Json ub;
+                    ub.type_ = core::Json::Type::Bool;
+                    ub.bool_ = true;
+                    li.object_["useAtmosphere"] = std::move(ub);
+                    auto colorArr = [&](const gfx::Color& c) {
+                        return colJson(c.r, c.g, c.b, c.a);
+                    };
+                    li.object_["skyTop"] = colorArr(e.light.skyTop);
+                    li.object_["skyHorizon"] = colorArr(e.light.skyHorizon);
+                    li.object_["fogColor"] = colorArr(e.light.fogColor);
+                    li.object_["fogNear"] = mkNum(e.light.fogNear);
+                    li.object_["fogFar"] = mkNum(e.light.fogFar);
+                    if (e.light.exposure >= 0.0f)
+                        li.object_["exposure"] = mkNum(e.light.exposure);
                 }
                 comps.object_["light"] = std::move(li);
             }

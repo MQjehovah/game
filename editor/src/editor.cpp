@@ -521,6 +521,11 @@ bool EditorApp::OnCreate() {
         std::strncpy(projectDirBuf_, projectDir_.c_str(), sizeof(projectDirBuf_) - 1);
         projectDirBuf_[sizeof(projectDirBuf_) - 1] = '\0';
         if (loadProjectOnStart_) LoadProjectScene();
+        if (!sceneOnStart_.empty()) {
+            // --scene <rel>: open a specific scene under the project instead of
+            // the game.json startScene (showcase demos live as siblings).
+            LoadScene(projectDir_ + "/" + sceneOnStart_);
+        }
     }
     // Start the play LAST: LoadProjectScene/SwitchProject above stop any
     // running play, so --2d-play + --project must start after both.

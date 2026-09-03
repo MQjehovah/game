@@ -401,6 +401,7 @@ void EditorApp::ApplyMaterialParams(SceneEntity& e) {
     e.material.metallic = e.metallic;
     e.material.roughness = e.roughness;
     e.material.uvRepeat = e.uvRepeat;
+    e.material.castShadow = e.castShadow;
     e.material.aoStrength = e.ao;
     e.material.emissiveIntensity = e.emissiveIntensity;
     // Texture slots: load any non-empty path through the cached AssetManager.
@@ -936,6 +937,8 @@ void EditorApp::LoadScene(const std::string& path) {
             }
             if (const core::Json* m = comps->Get("mesh")) {
                 e.meshKey = m->Get("meshKey") ? m->Get("meshKey")->GetString("cube") : "cube";
+                if (const core::Json* cs = m->Get("castShadow"))
+                    e.castShadow = cs->IsBool() && cs->GetBool();
                 if (const core::Json* mr = m->Get("materialRef"))
                     e.materialRef = mr->GetString();
                 // Material params live in the nested "material" object
@@ -1022,6 +1025,25 @@ void EditorApp::LoadScene(const std::string& path) {
                     e.light.ambientStrength = static_cast<float>(v->GetNumber());
                 if (const core::Json* v = li->Get("skyTexture"))
                     e.light.skyTexture = v->GetString();
+                if (const core::Json* v = li->Get("useAtmosphere"))
+                    e.light.useAtmosphere = v->IsBool() && v->GetBool();
+                auto readCol4 = [](const core::Json* c, gfx::Color& out) {
+                    if (!c || !c->IsArray()) return;
+                    float vv[4] = {out.r, out.g, out.b, out.a};
+                    size_t n = 0;
+                    for (const core::Json& x : c->Items())
+                        if (n < 4) vv[n++] = static_cast<float>(x.GetNumber());
+                    out = {vv[0], vv[1], vv[2], vv[3]};
+                };
+                readCol4(li->Get("skyTop"), e.light.skyTop);
+                readCol4(li->Get("skyHorizon"), e.light.skyHorizon);
+                readCol4(li->Get("fogColor"), e.light.fogColor);
+                if (const core::Json* v = li->Get("fogNear"))
+                    e.light.fogNear = static_cast<float>(v->GetNumber());
+                if (const core::Json* v = li->Get("fogFar"))
+                    e.light.fogFar = static_cast<float>(v->GetNumber());
+                if (const core::Json* v = li->Get("exposure"))
+                    e.light.exposure = static_cast<float>(v->GetNumber());
                 if (e.nodeType.empty()) e.nodeType = "Light3D";
             }
             if (const core::Json* so = comps->Get("sortOrder")) {

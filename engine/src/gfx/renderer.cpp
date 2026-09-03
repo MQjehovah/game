@@ -419,7 +419,8 @@ void Renderer::DrawMesh(const Mesh& mesh, const Material& material, const math::
         !sceneState_.Frustum().Intersects(math::TransformAABB(mesh.Bounds(), model)))
         return;
 
-    if (shadowSystem_.Enabled() && shadowSystem_.Recording() && !material.transparent)
+    if (shadowSystem_.Enabled() && shadowSystem_.Recording() && !material.transparent &&
+        material.castShadow)
         shadowSystem_.RecordCaster({mesh.Handle(), model, {}, {}, 0, mesh.Bounds()});
     // SSAO/SSR have their own colour-encoded depth pre-pass and do NOT depend
     // on CSM being enabled: collect the caster whenever one is active.

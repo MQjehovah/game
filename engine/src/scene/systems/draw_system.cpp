@@ -148,6 +148,7 @@ void DrawSystem::Build(ecs::World& world, AnimationSystem& anims) {
         item.mat.uvRepeat = m->uvRepeat;
         item.mat.aoStrength = m->ao;
         item.mat.emissiveIntensity = m->emissiveIntensity;
+        item.mat.castShadow = m->castShadow;
         if (content_.assets) {
             // UV tiling: when uvRepeat > 1 the sampler must use REPEAT, else
             // clamp pulls edge pixels and the tiling collapses into streaks.
@@ -758,9 +759,14 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
                 if (l.type == "directional" && !directional) directional = &l;
                 else if (l.type == "ambient" && !ambient) ambient = &l;
             });
-        renderer.SetSky({0.28f, 0.38f, 0.58f, 1.0f}, {0.55f, 0.65f, 0.8f, 1.0f});
-        // 写实天空贴图：SceneLight.skyTexture 配置的 HDRI tonemapped JPG。
-        // 懒加载一次并缓存（按路径），非空则 DrawSky 用纹理替代纯色渐变。
+        // 自定义氛围（useAtmosphere）：showcase 场景在 scene JSON 里用
+        // skyTop/skyHorizon 渐变 + fogColor/fogNear/fogFar 表达整场色调
+        // （黄昏/沙漠/雪地/极光夜）。未开时保持默认白天天空 + 灰蓝雾。
+        // 写实天空贴图（SceneLight.skyTexture）：非空时 DrawSky 用 HDRI
+        // 当全屏背景，且 IBL 优先从照片 CPU 采样真实天顶/地平色喂 SetSky
+        // （物体受光跟随照片天空，而非手填色/默认渐变——HDRI 之前只当背景、
+        //  光照仍偏蓝，是"贴图感/假"的最大来源）。无 skyTexture 时才用
+        // useAtmosphere 手动渐变。
         if (content_.assets) {
             const std::string skyPath =
                 directional && !directional->skyTexture.empty() ? directional->skyTexture
@@ -768,11 +774,34 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
             if (!skyPath.empty() && skyPath != skyTexPath_) {
                 skyTex_ = content_.assets->LoadTexture(content_.fullAssetPath(skyPath));
                 skyTexPath_ = skyPath;
+                skyIblFromTex_ = false;  // re-extract on texture change
             }
             if (skyTex_.Valid()) renderer.SetSkyTexture(skyTex_.Handle());
+            if (!skyTexPath_.empty() && !skyIblFromTex_) {
+                const assets::DecodedImage img = assets::DecodeImageFile(
+                    content_.fullAssetPath(skyTexPath_), /*compressBc1=*/false);
+                if (img.channels > 0 && img.width > 0 && img.height > 0) {
+                    gfx::Color z, h;
+                    gfx::ibl::SkyDominantColors(img.rgba.data(), img.width, img.height, z, h);
+                    renderer.SetSky(z, h);
+                    skyIblFromTex_ = true;
+                }
+            }
         }
+        if (!skyIblFromTex_) {
+            if (directional && directional->useAtmosphere) {
+                renderer.SetSky(directional->skyTop, directional->skyHorizon);
+            } else {
+                renderer.SetSky({0.28f, 0.38f, 0.58f, 1.0f}, {0.55f, 0.65f, 0.8f, 1.0f});
+            }
+        }
+        // 曝光：scene 显式设置时覆盖宿主默认（夜晚 >1 提亮，黄昏微调）。
+        if (directional && directional->useAtmosphere && directional->exposure >= 0.0f)
+            renderer.SetExposure(directional->exposure);
         if (cam.ortho) {
             renderer.SetFog({0.45f, 0.55f, 0.7f, 1.0f}, 1e9f, 1e10f);
+        } else if (directional && directional->useAtmosphere) {
+            renderer.SetFog(directional->fogColor, directional->fogNear, directional->fogFar);
         } else {
             renderer.SetFog({0.45f, 0.55f, 0.7f, 1.0f}, 60.0f, 220.0f);
         }
@@ -787,6 +816,21 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
             renderer.SetDirectionalLight({-0.4f, -1.0f, -0.3f}, {0.8f, 0.8f, 0.8f}, 0.0f);
         }
         if (ambient) renderer.SetAmbientLight(ambient->color, ambient->ambientStrength);
+        // PointLight objects (Unity-style) drive the renderer's point lights, so
+        // campfire/firefly glows authored in a scene show up in the standalone
+        // player too (the editor viewport already fed them). Up to
+        // kMaxPointLights, position from the entity's transform.
+        int plIndex = 0;
+        world.ViewAll<scene::SceneLight, SceneTransform>().ForEach(
+            [&](ecs::Entity, const scene::SceneLight& pl, const SceneTransform& pt) {
+                if (pl.type != "point") return;
+                if (plIndex >= gfx::Renderer::kMaxPointLights) return;
+                const gfx::Color pc{pl.color.r * pl.intensity, pl.color.g * pl.intensity,
+                                    pl.color.b * pl.intensity, pl.color.a};
+                renderer.SetPointLight(plIndex++, pt.pos, pc, pl.radius);
+            });
+        for (; plIndex < gfx::Renderer::kMaxPointLights; ++plIndex)
+            renderer.SetPointLight(plIndex, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f, 1.0f}, 0.0f);
         renderer.DrawSky();
     }
     // Scripts may have spawned/despawned sprite entities since the last frame.

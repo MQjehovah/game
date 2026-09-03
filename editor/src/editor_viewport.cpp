@@ -12,6 +12,9 @@
 #include "imgui_internal.h"
 #include "neon/gfx/imgui_neon.hpp"
 #include "neon/gfx/scene_props.hpp"
+#include "neon/assets/async_loader.hpp"
+#include "neon/assets/asset_path.hpp"
+#include "neon/gfx/ibl.hpp"
 
 // stbi_write_png declaration only: the implementation is compiled once in
 // editor.cpp (STB_IMAGE_WRITE_IMPLEMENTATION), so OnRender's screenshot capture
@@ -682,7 +685,43 @@ void EditorApp::ApplySceneEnvironment() {
     // Day sky: the old near-black zenith made the IBL ambient ~0, so
     // backfaces and shadowed areas were crushed to black (roofs looked
     // incomplete, shadows harsh). A bright sky keeps shadows readable.
-    renderer_.SetSky({0.28f, 0.38f, 0.58f, 1.0f}, {0.55f, 0.65f, 0.8f, 1.0f});
+    // A directional light with useAtmosphere overrides sky/fog with the
+    // scene's authored values (dusk/desert/snow/night showcase scenes).
+    const scene::SceneLight* sl = nullptr;
+    const scene::SceneLight* amb = nullptr;
+    for (const SceneEntity& se : entities_) {
+        if (se.hasLight && se.light.type == "directional" && !sl) sl = &se.light;
+        if (se.hasLight && se.light.type == "ambient" && !amb) amb = &se.light;
+    }
+    // 天空/IBL：HDRI 天空（skyTexture）优先——加载贴图当全屏背景 + 从照片
+    // CPU 采样真实天顶/地平色喂 SetSky，让 edit 视图物体受光跟随照片天空
+    // （play 的 DrawSystem 同逻辑；之前编辑预览始终假白天渐变）。仅无
+    // skyTexture 时，useAtmosphere 手动渐变才作 IBL。缓存按路径避免每帧
+    // 重解码大图；NormalizeAssetPath 映射 assetBase 相对路径。
+    const bool hasSkyTex = sl && !sl->skyTexture.empty();
+    if (hasSkyTex) {
+        const std::string path = assets::NormalizeAssetPath(sl->skyTexture);
+        if (path != skyIblPath_) {
+            skyIblPath_ = path;
+            skyIblReady_ = false;
+            skyTexCache_ = assetMgr_.LoadTexture(path);
+        }
+        if (skyTexCache_.Valid()) renderer_.SetSkyTexture(skyTexCache_.Handle());
+        if (!skyIblReady_) {
+            const assets::DecodedImage img =
+                assets::DecodeImageFile(path, /*compressBc1=*/false);
+            if (img.channels > 0 && img.width > 0 && img.height > 0) {
+                gfx::Color z, h;
+                gfx::ibl::SkyDominantColors(img.rgba.data(), img.width, img.height, z, h);
+                renderer_.SetSky(z, h);
+                skyIblReady_ = true;
+            }
+        }
+    } else if (sl && sl->useAtmosphere) {
+        renderer_.SetSky(sl->skyTop, sl->skyHorizon);
+    } else {
+        renderer_.SetSky({0.28f, 0.38f, 0.58f, 1.0f}, {0.55f, 0.65f, 0.8f, 1.0f});
+    }
     const bool is2DFog = projectMode_ == "2d" || editMode_ == EditMode::Scene2D;
     if (is2DFog) {
         // 2D has no depth: the ortho camera sits at z=100 so a distance
@@ -690,17 +729,17 @@ void EditorApp::ApplySceneEnvironment() {
         // (bright/dim circle at the camera position). Disable it by pushing
         // the fog range far beyond any visible object.
         renderer_.SetFog({0.45f, 0.55f, 0.7f, 1.0f}, 1e9f, 1e10f);
+    } else if (sl && sl->useAtmosphere) {
+        renderer_.SetFog(sl->fogColor, sl->fogNear, sl->fogFar);
     } else {
         renderer_.SetFog({0.45f, 0.55f, 0.7f, 1.0f}, 60.0f, 140.0f);
     }
     renderer_.DrawSky();
+    // Scene-authored exposure (showcase night/dawn scenes): authoritative when
+    // the directional light sets it, otherwise keep the editor default.
+    if (sl && sl->useAtmosphere && sl->exposure >= 0.0f)
+        renderer_.SetExposure(sl->exposure);
     // The scene's DirectionalLight object drives the world light (Unity-style).
-    const scene::SceneLight* sl = nullptr;
-    const scene::SceneLight* amb = nullptr;
-    for (const SceneEntity& se : entities_) {
-        if (se.hasLight && se.light.type == "directional" && !sl) sl = &se.light;
-        if (se.hasLight && se.light.type == "ambient" && !amb) amb = &se.light;
-    }
     if (sl) {
         const gfx::Color sun{sl->color.r * sl->intensity, sl->color.g * sl->intensity,
                              sl->color.b * sl->intensity, sl->color.a};

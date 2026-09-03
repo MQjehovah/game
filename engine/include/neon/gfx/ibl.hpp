@@ -59,6 +59,16 @@ math::Vec3 PrefilteredForReflection(const Color& top, const Color& horizon,
 // roughness in [0,1]. Pure model term - independent of the sky.
 math::Vec2 BrdfLutValue(float ndv, float roughness);
 
+// --- HDRI sky extraction (photographed atmosphere drives the scene IBL) -----
+// Samples a decoded equirect RGBA8 sky frame (row 0 = top = zenith, mid rows =
+// horizon) and returns two representative colours: `zenith` = average of the
+// upper sky rows (the dome above the camera), `horizon` = average of a band
+// just above the horizon line (the low-angle haze/sunset tint). These feed
+// SceneState's vertical sky gradient so the flat ambient/IBL follows the
+// photographed sky's actual colours instead of a hardcoded blue. Pure CPU.
+void SkyDominantColors(const uint8_t* rgba, int width, int height, Color& zenith,
+                       Color& horizon);
+
 // --- RGBA8 byte encoders (row 0 = first uploaded row = texture v=0) --------
 // All deterministic: identical inputs produce identical bytes.
 //

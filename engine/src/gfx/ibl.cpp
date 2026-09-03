@@ -191,8 +191,7 @@ std::vector<uint8_t> BuildPrefilteredMap(const Color& top, const Color& horizon,
     return out;
 }
 
-std::vector<uint8_t> BuildBrdfLut() {
-    std::vector<uint8_t> out;
+std::vector<uint8_t> BuildBrdfLut() {    std::vector<uint8_t> out;
     out.reserve(static_cast<size_t>(kBrdfLutSize) * kBrdfLutSize * 4);
     for (int r = 0; r < kBrdfLutSize; ++r) {
         const float roughness = (static_cast<float>(r) + 0.5f) / kBrdfLutSize;
@@ -206,6 +205,35 @@ std::vector<uint8_t> BuildBrdfLut() {
         }
     }
     return out;
+}
+
+void SkyDominantColors(const uint8_t* rgba, int width, int height, Color& zenith,
+                       Color& horizon) {
+    if (!rgba || width <= 0 || height <= 0) return;
+    // Equirect: v=0 row is the zenith pole, v~0.5 the horizon. Sample the upper
+    // hemisphere only (sky/terrain in the photo's lower half is ignored) so the
+    // extracted colours are pure atmosphere, not ground.
+    const int zenithEnd = std::max(1, static_cast<int>(height * 0.20f));
+    const int horizLo = std::max(0, static_cast<int>(height * 0.42f));
+    const int horizHi = std::min(height, static_cast<int>(height * 0.55f));
+    if (horizHi <= horizLo) return;
+    auto avg = [&](int y0, int y1, math::Vec3& acc) {
+        float r = 0.0f, g = 0.0f, b = 0.0f;
+        int n = 0;
+        for (int y = y0; y < y1; ++y) {
+            for (int x = 0; x < width; x += 2) {
+                const uint8_t* p = rgba + (static_cast<size_t>(y) * width + x) * 4;
+                r += p[0]; g += p[1]; b += p[2]; ++n;
+            }
+        }
+        if (n > 0) { acc = {r / n, g / n, b / n}; }
+    };
+    math::Vec3 z{}, hz{};
+    avg(0, zenithEnd, z);
+    avg(horizLo, horizHi, hz);
+    const float k = 1.0f / 255.0f;
+    zenith = {z.x * k, z.y * k, z.z * k, 1.0f};
+    horizon = {hz.x * k, hz.y * k, hz.z * k, 1.0f};
 }
 
 } // namespace neon::gfx::ibl
