@@ -397,6 +397,9 @@ public:
     // The active 3D scene rasterization rect (set by SetSceneViewport). The
     // design-space rect above should equal this for world-anchored 2D UI.
     const math::Rect2& SceneViewport() const { return draw2d_.SceneViewport(); }
+    // Last non-reset scene viewport (see sceneVpLast_). Post FX bound
+    // themselves to this rect even after the live viewport is reset.
+    const math::Rect2& SceneVpLastRect() const { return sceneVpLast_; }
     int ScreenWidth() const { return screenW_; }
     int ScreenHeight() const { return screenH_; }
 
@@ -461,6 +464,12 @@ private:
     ShadowSystem shadowSystem_;
     SceneState sceneState_;
     DrawBatch2D draw2d_;
+    // Most recent SetSceneViewport rect (pixels). Kept across ResetSceneViewport
+    // so per-frame post FX (volume god-rays) can bound themselves to the rect
+    // the 3D scene actually rasterized into, even though the host resets the
+    // live viewport after the scene pass. A zero width/height means "full
+    // target" (no letterbox), in which case effects sample the whole HDR frame.
+    math::Rect2 sceneVpLast_{0.0f, 0.0f, 0.0f, 0.0f};
 
     ShaderHandle litShader_;
     ShaderHandle terrainShader_;

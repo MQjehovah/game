@@ -952,6 +952,7 @@ void Renderer::Set2DViewportPixels(float x, float y) {
 
 void Renderer::SetSceneViewport(float x, float y, float w, float h) {
     draw2d_.SetSceneViewport(x, y, w, h);
+    sceneVpLast_ = {x, y, w, h};
 }
 
 void Renderer::ResetSceneViewport() {
@@ -1161,7 +1162,7 @@ PostGraph::FrameParams Renderer::MakePostParams(bool chains) const {
     const Color& sunC = sceneState_.SunColor();
     p.sunColor = {sunC.r, sunC.g, sunC.b};
     p.viewProj = sceneState_.ViewProjection();
-    const math::Rect2& svp = SceneViewport();
+    const math::Rect2& svp = SceneVpLastRect();
     if (svp.w > 0.0f && svp.h > 0.0f) {
         p.sceneVpRect = {svp.x, svp.y, svp.w, svp.h};
     } else {
