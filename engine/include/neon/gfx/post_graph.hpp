@@ -78,6 +78,12 @@ public:
         math::Vec3 sunDir;
         math::Vec3 sunColor; // volumetric light-shaft colour (sun * intensity)
         math::Mat4 viewProj;
+        // Scene viewport rect within the (full-window) HDR target, in pixels.
+        // The 3D scene draws only into this centred sub-rect (letterboxed), so
+        // a screen-space effect's fullscreen UV must be mapped into it before
+        // reconstructing the view ray — otherwise the letterbox bars read as a
+        // mis-aligned ghost copy of the scene.
+        math::Vec4 sceneVpRect{0.0f, 0.0f, 0.0f, 0.0f};
         Camera camera; // SSR / composite 的 near/far
         CompositeParams composite;
     };
@@ -182,6 +188,7 @@ private:
     math::Vec3 camPos_{};
     math::Vec3 sunDir_{0.0f, -1.0f, 0.0f};
     math::Vec3 sunColor_{1.0f, 1.0f, 1.0f};
+    math::Vec4 sceneVpRect_{0.0f, 0.0f, 0.0f, 0.0f}; // px, within the HDR target
     float nearPlane_ = 0.1f;       // SSR / composite 的 near/far（Execute 时从 camera 复制）
     float farPlane_ = 800.0f;
     CompositeParams comp_; // 上一次 Execute 的 composite 快照

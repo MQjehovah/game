@@ -54,6 +54,7 @@ uniform vec3 uCamPos;
 uniform vec3 uSunDir;       // light propagation dir; toward sun = -uSunDir
 uniform vec3 uSunColor;
 uniform mat4 uViewProj;
+uniform vec4 uSceneVpRect;  // scene viewport rect in normalized [0,1] HDR-tgt UV
 uniform float uNear;
 uniform float uFar;
 uniform float uDensity;
@@ -70,12 +71,22 @@ float ViewDepth(float ndc) {
     return (2.0 * uNear * uFar) / (uFar + uNear - z * (uFar - uNear));
 }
 void main() {
+    // The 3D scene draws only into the centred letterboxed sub-rect; a ray
+    // reconstructed from the FULL-WINDOW UV would be wrong (and ghost into the
+    // black bars). Map vUV into the sub-rect's local UV and bail on the bars.
+    vec2 uv = (vUV - uSceneVpRect.xy) / max(uSceneVpRect.zw, vec2(1e-4));
+    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
+        FragColor = vec4(0.0);
+        return;
+    }
+
     // Nearest surface along this pixel (view space). Sky (ndc>=1) = open.
-    float ndc = LoadDepth(vUV);
+    float ndc = LoadDepth(uv);
     float viewZ = ndc >= 1.0 ? uFar : ViewDepth(ndc);
 
-    // World-space view ray for this pixel.
-    vec4 clip = inverse(uViewProj) * vec4(vUV.x * 2.0 - 1.0, vUV.y * 2.0 - 1.0, 1.0, 1.0);
+    // World-space view ray for this pixel (from the sub-rect local UV, which
+    // the camera viewProj was built for).
+    vec4 clip = inverse(uViewProj) * vec4(uv.x * 2.0 - 1.0, uv.y * 2.0 - 1.0, 1.0, 1.0);
     vec3 rayEnd = clip.xyz / clip.w;
     vec3 rayDir = normalize(rayEnd - uCamPos);
 

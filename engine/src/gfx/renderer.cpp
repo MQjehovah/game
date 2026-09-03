@@ -1161,6 +1161,13 @@ PostGraph::FrameParams Renderer::MakePostParams(bool chains) const {
     const Color& sunC = sceneState_.SunColor();
     p.sunColor = {sunC.r, sunC.g, sunC.b};
     p.viewProj = sceneState_.ViewProjection();
+    const math::Rect2& svp = SceneViewport();
+    if (svp.w > 0.0f && svp.h > 0.0f) {
+        p.sceneVpRect = {svp.x, svp.y, svp.w, svp.h};
+    } else {
+        p.sceneVpRect = {0.0f, 0.0f, static_cast<float>(screenW_),
+                         static_cast<float>(screenH_)};
+    }
     p.camera = sceneState_.ActiveCamera();
     p.composite.ssaoIntensity = ssaoIntensity_;
     p.composite.volStrength = volumetricIntensity_;

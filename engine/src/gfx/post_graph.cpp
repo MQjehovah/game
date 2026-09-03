@@ -154,6 +154,14 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
         backend.SetUniformVec3("uSunDir", sunDir_);
         backend.SetUniformVec3("uSunColor", sunColor_);
         backend.SetUniformMat4("uViewProj", viewProj_);
+        // Scene viewport rect, normalised to the HDR target (full-window) UV
+        // space, so the shader maps its fullscreen UV into the letterboxed
+        // scene sub-rect before ray-reconstruction (bars -> no ghost).
+        const float hw = static_cast<float>(hdrW_ > 0 ? hdrW_ : 1);
+        const float hh = static_cast<float>(hdrH_ > 0 ? hdrH_ : 1);
+        backend.SetUniformVec4("uSceneVpRect",
+                               {sceneVpRect_.x / hw, sceneVpRect_.y / hh,
+                                sceneVpRect_.z / hw, sceneVpRect_.w / hh});
         backend.SetUniformFloat("uNear", nearPlane_);
         backend.SetUniformFloat("uFar", farPlane_);
         backend.SetUniformFloat("uDensity", kVolumetricDensity);
@@ -455,6 +463,7 @@ bool PostGraph::Execute(IRenderBackend& backend, const FrameParams& params) {
     camPos_ = params.camPos;
     sunDir_ = params.sunDir;
     sunColor_ = params.sunColor;
+    sceneVpRect_ = params.sceneVpRect;
 
     graph_.SetExternalInput(hdrScene_, params.hdrScene);
     const bool ok = graph_.Execute(backend);
