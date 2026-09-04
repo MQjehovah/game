@@ -16,15 +16,19 @@ using namespace neon;
 // carry valid texture handles (proves the predecoded upload path works).
 TEST(GltfAsyncPredecodedTextures) {
     test::HeadlessAssetFixture fx;
-    const std::string path = "projects/forest/assets/models/island_tree_01/island_tree_01.gltf";
+    // DamagedHelmet is a committed sample with 4 PBR textures (albedo / MR /
+    // AO / emissive) — exercises the async predecoded-upload path. The original
+    // test used a 58MB forest glTF that was never committed, so it failed on
+    // fresh checkouts.
+    const std::string path = "projects/default/assets/models/DamagedHelmet/DamagedHelmet.gltf";
     bool done = false;
     bool ok = false;
     fx.assets.LoadGLTFAsync(path, [&](bool success) {
         done = true;
         ok = success;
     });
-    // Worker decode (58MB bin parse + texture stbi) takes real wall time:
-    // wait on a deadline, sleeping between Pump rounds.
+    // Worker decode (bin parse + texture stbi) takes real wall time: wait on a
+    // deadline, sleeping between Pump rounds.
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
     while (!done && std::chrono::steady_clock::now() < deadline) {
         fx.assets.PumpAsync();
