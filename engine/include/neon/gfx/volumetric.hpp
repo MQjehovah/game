@@ -71,17 +71,22 @@ float ViewDepth(float ndc) {
     return (2.0 * uNear * uFar) / (uFar + uNear - z * (uFar - uNear));
 }
 void main() {
-    // The 3D scene draws only into the centred letterboxed sub-rect; a ray
-    // reconstructed from the FULL-WINDOW UV would be wrong (and ghost into the
-    // black bars). Map vUV into the sub-rect's local UV and bail on the bars.
+    // The 3D scene draws only into the centred letterboxed sub-rect. Two UV
+    // spaces: `uv` is the sub-rect LOCAL UV (used to reconstruct the view ray,
+    // which the camera viewProj was built against); the DEPTH texture is a
+    // full-window resource (the scene rasterizes into the sub-rect but the RT
+    // spans the whole frame), so depth must be sampled with the FULL-WINDOW
+    // `vUV` — using the local uv here is what made the canopy "hollow" offset
+    // from the visible tree.
     vec2 uv = (vUV - uSceneVpRect.xy) / max(uSceneVpRect.zw, vec2(1e-4));
     if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
         FragColor = vec4(0.0);
         return;
     }
 
-    // Nearest surface along this pixel (view space). Sky (ndc>=1) = open.
-    float ndc = LoadDepth(uv);
+    // Nearest surface along this pixel (view space), sampled at the FULL-window
+    // UV (the depth RT is whole-frame). Sky (ndc>=1) = open.
+    float ndc = LoadDepth(vUV);
     float viewZ = ndc >= 1.0 ? uFar : ViewDepth(ndc);
 
     // World-space view ray for this pixel (from the sub-rect local UV, which
