@@ -214,6 +214,27 @@ TwoBoneIKResult TwoBoneIK(const math::Vec3& hip, const math::Vec3& knee,
                           const math::Vec3& ankle, const math::Vec3& target,
                           const math::Vec3& pole);
 
+// B3c Foot IK: repositions a two-bone leg chain (hip -> knee -> ankle/ball) so
+// the plant lands on `footTarget` (e.g. ground height at the foot's XZ), then
+// bakes the solved rotations back into a POSE so the skin follows. Pure pose
+// math (no GPU / no render), fully unit-testable.
+//
+// `pose` is mutated in place: bone[thigh] and bone[shin] get the solved local
+// rotations (from the output FK positions). The foot/ball bone is left at the
+// solved ankle position (further toe roll is a content/procedural concern).
+//
+// Params:
+//   skeleton  - the bind skeleton (parent indices + bind transforms)
+//   pose      - current pose (world-space positions computed from it)
+//   thighName/shinName - the two IK bones ("Leg_Upper", "Leg_Lower", ...)
+//   footTarget - desired world position of the ankle/ball (XZ kept, Y = ground)
+//   pole     - knee-forward hint (world space)
+// Returns the solved ankle world position, or a degenerate NaN-free fallback
+// (the pose's current foot position) when the bones aren't found.
+math::Vec3 FootIK(const Skeleton& skeleton, Pose& pose, const std::string& thighName,
+                  const std::string& shinName, const math::Vec3& footTarget,
+                  const math::Vec3& pole);
+
 struct AnimSet {
     Skeleton skeleton;
     std::vector<AnimationClip> clips;

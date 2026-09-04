@@ -595,6 +595,84 @@ TwoBoneIKResult TwoBoneIK(const math::Vec3& hip, const math::Vec3& knee,
     return out;
 }
 
+math::Vec3 FootIK(const Skeleton& skeleton, Pose& pose, const std::string& thighName,
+                  const std::string& shinName, const math::Vec3& footTarget,
+                  const math::Vec3& pole) {
+    const size_t n = skeleton.bones.size();
+    if (pose.t.size() != n || pose.r.size() != n || pose.s.size() != n)
+        return math::Vec3{0, 0, 0};
+    const int thigh = skeleton.FindBone(thighName);
+    const int shin = skeleton.FindBone(shinName);
+    if (thigh < 0 || shin < 0 || thigh >= static_cast<int>(n) ||
+        shin >= static_cast<int>(n))
+        return math::Vec3{0, 0, 0};
+
+    // FK: world transforms (order-independent parent resolution, as Skeleton).
+    std::vector<math::Mat4> world(n);
+    std::vector<bool> done(n, false);
+    for (size_t i = 0; i < n; ++i)
+        if (skeleton.bones[i].parent < 0) {
+            world[i] = LocalFrom(pose, true, i, skeleton.bones);
+            done[i] = true;
+        }
+    bool changed = true;
+    while (changed) {
+        changed = false;
+        for (size_t i = 0; i < n; ++i) {
+            if (done[i]) continue;
+            const int p = skeleton.bones[i].parent;
+            if (p < 0 || static_cast<size_t>(p) >= n || !done[static_cast<size_t>(p)]) continue;
+            world[i] = world[static_cast<size_t>(p)] * LocalFrom(pose, true, i, skeleton.bones);
+            done[i] = true;
+            changed = true;
+        }
+    }
+
+    const math::Vec3 hip = world[static_cast<size_t>(thigh)].TransformPoint({0, 0, 0});
+    const math::Vec3 knee = world[static_cast<size_t>(shin)].TransformPoint({0, 0, 0});
+    // The shin's rest ankle = knee + the shin's local +Y (rest dir) scaled by
+    // its length (legs are typically a straight +Y chain at rest).
+    const math::Vec3 shinRestDir = world[static_cast<size_t>(shin)].TransformDir({0, 1, 0});
+    const float l2 = skeleton.bones[static_cast<size_t>(shin)].bindT.Length();
+    const math::Vec3 ankle = knee + shinRestDir * (l2 > 1e-5f ? l2 : 1.0f);
+
+    const TwoBoneIKResult r = TwoBoneIK(hip, knee, ankle, footTarget, pole);
+    if (l2 <= 1e-5f) return r.c;
+
+    // Bake solved world rotations back into the pose. Build each bone's desired
+    // WORLD rotation from its solved direction (bone +Y along the chain) with a
+    // stable up from the pole/else world-Y, then local = parentWorldR^-1 * worldR.
+    const math::Vec3 up = (pole - hip).LengthSq() > 1e-6f
+                              ? (pole - hip).Normalized()
+                              : math::Vec3{0, 1, 0};
+    auto orient = [](const math::Vec3& dir, const math::Vec3& upHint) {
+        const math::Vec3 d = dir.Normalized();
+        math::Vec3 right = math::Cross(upHint, d);
+        if (right.LengthSq() < 1e-6f) right = math::Cross(math::Vec3{1, 0, 0}, d);
+        right = right.Normalized();
+        const math::Vec3 fwd = math::Cross(d, right).Normalized();
+        // Columns = right | d(+Y) | fwd -> row-major [m0..].
+        math::Mat4 m;
+        m.m[0] = right.x; m.m[1] = d.x; m.m[2] = fwd.x;
+        m.m[4] = right.y; m.m[5] = d.y; m.m[6] = fwd.y;
+        m.m[8] = right.z; m.m[9] = d.z; m.m[10] = fwd.z;
+        return m;
+    };
+
+    const math::Mat4 thighW = orient(r.b - hip, up);
+    const math::Mat4 shinW = orient(r.c - r.b, up);
+    // Local rotation = parentWorldR^-1 * worldR (parent of shin == thigh).
+    const math::Mat4 thighParentR =
+        skeleton.bones[static_cast<size_t>(thigh)].parent >= 0
+            ? world[static_cast<size_t>(skeleton.bones[static_cast<size_t>(thigh)].parent)]
+            : math::Mat4::Identity();
+    const math::Quat localThigh = Mat4ToQuat(thighParentR.Inverted() * thighW);
+    const math::Quat localShin = Mat4ToQuat(world[static_cast<size_t>(thigh)].Inverted() * shinW);
+    pose.r[static_cast<size_t>(thigh)] = localThigh.Normalized();
+    pose.r[static_cast<size_t>(shin)] = localShin.Normalized();
+    return r.c;
+}
+
 // ---------------------------------------------------------------------------
 // Clip JSON (P1-1 animation timeline editor)
 // ---------------------------------------------------------------------------

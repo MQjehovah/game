@@ -128,6 +128,32 @@ TEST(TwoBoneIKUnreachableClamps) {
     CHECK_NEAR((r.c - r.a).Length(), 2.0f, 1e-3f);
 }
 
+TEST(FootIKPlantsOnGround) {
+    // A straight-down leg: hip(1,2,0) -> thigh(1,1,0) -> shin(1,0,0), each bone
+    // +Y of length 1 (bindT.y = -1 makes the chain descend). FootIK should bend
+    // the leg so the ankle reaches the ground target while the hip stays put.
+    anim::Skeleton skel;
+    skel.bones.resize(3);
+    skel.bones[0].name = "hip";   skel.bones[0].parent = -1;
+    skel.bones[1].name = "thigh"; skel.bones[1].parent = 0; skel.bones[1].bindT = {0, -1, 0};
+    skel.bones[2].name = "shin";  skel.bones[2].parent = 1; skel.bones[2].bindT = {0, -1, 0};
+    for (auto& b : skel.bones) b.inverseBind = math::Mat4::Identity();
+
+    anim::Pose pose = skel.BindPose();
+    // Move the whole leg DOWN so hip is at (1,2,0) straight above the ankle.
+    // BindPose gives hip at rest origin; place the hip by translating the root.
+    // Simpler: build a pose whose world hip/knee/ankle sit at the rest offsets.
+    // Set root translation so hip = (1, 2, 0).
+    pose.t[0] = {1, 2, 0};
+    // ground target: directly below the hip.
+    const math::Vec3 target = {1, 0, 0};
+    const math::Vec3 solved = anim::FootIK(skel, pose, "thigh", "shin", target, {1, 0, 1});
+    // The solved ankle should land at (or near) the ground target.
+    CHECK_NEAR(solved.x, target.x, 0.05f);
+    CHECK_NEAR(solved.y, target.y, 0.05f);
+    CHECK_NEAR(solved.z, target.z, 0.05f);
+}
+
 TEST(ClipJsonRoundTrip) {
     anim::AnimationClip clip;
     clip.name = "walk";
