@@ -137,7 +137,7 @@
 
 ### B4 主场景深度不可采样 → SSAO 几何画两遍
 - [~] `gl_backend.cpp:368-377` HDR 目标深度为 RBO；`renderer.cpp:1273-1284` SSAO 用颜色编码深度把全部 caster 重画一遍（`ssaoCasters_`/`shadowCasters_` 每次双份拷贝）。
-- 修复方向：HDR 目标深度改 DEPTH_COMPONENT 纹理（保留 RBO + 颜色编码回退路径防 Intel 驱动坑），SSAO 直接采样深度。
+- 修复方向：HDR 目标深度改 DEPTH_COMPONENT 纹理（保留 RBO + 颜色编码回退路径），SSAO 直接采样深度。
 - 验收：SSAO 开启时几何 pass 次数减半；驱动自检失败时自动回退旧路径。
 
 ### B5 VK 每次目标切换 submit + 等 fence（全串行）

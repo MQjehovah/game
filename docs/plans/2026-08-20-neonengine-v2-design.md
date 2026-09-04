@@ -101,7 +101,7 @@
 
 ### 3.4 渲染演进（M1）
 
-- 阴影贴图：方向光 **CSM**（3 级 cascade）+ 点光 cubemap；FBO 深度渲染（修复/绕过 Intel 驱动 VAO 缺陷，提供 `--disable-fbo` 回退 CPU 接触阴影）。
+- 阴影贴图：方向光 **CSM**（3 级 cascade）+ 点光 cubemap；FBO 深度渲染，另提供 `--disable-fbo` 回退 CPU 接触阴影。
 - 后处理：**HDR + Bloom**（降采样/升采样 + 高斯模糊）、色调映射（ACES）、可选 MSAA。
 - **IBL**：天空渐变 → 预过滤环境贴图（diffuse irradiance + prefiltered specular + BRDF LUT），离线或启动时生成。
 - **Vulkan 后端**：实现冻结的 `IRenderBackend`；与 GL 后端共享渲染器高层；CI 一致性冒烟（同帧截图对比灰度/哈希）。
@@ -167,4 +167,3 @@ Stop → 销毁 GameRuntime，编辑器状态不受影响
 - 范围跨多阶段：严格按阶段验收，避免蔓延。
 - CPython 可选后端体积/依赖：通过 IScriptHost 隔离，默认不打包。
 - Vulkan 与网络为独立大块：置于 P6/P7，先保证内容闭环。
-- Intel 驱动 FBO 缺陷：保留 `--disable-fbo` 回退路径，新功能不阻塞。
