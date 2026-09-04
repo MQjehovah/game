@@ -164,3 +164,32 @@ TEST(AnimationSystemSyncAndStateMachine) {
     CHECK(!anims.AttachStateMachine(Key(999, 0), sm));
     anims.SetParam(Key(999, 0), "speed", 2.0f); // no-op, must not crash
 }
+
+TEST(AnimationSystemBlendSpace) {
+    scene::SkinnedModel model = MakeModel(); // clips: "idle"(z:+2 over 0.5s), "run"(z:+1 over 1.0s)
+    scene::AnimationSystem anims;
+    const uint64_t key = Key(11, 2);
+    anims.InitState(key, {&model}, {});
+
+    // Blend both clips by param: at t=0 both samples are z=0, so set param and
+    // advance to a shared time where the two endpoints differ, then compare the
+    // root-z against the lerp of the two endpoint clips.
+    CHECK(anims.PlayBlend(key, "idle", "run", 0.0f));
+    anims.Tick(0.5f); // shared time 0.5 (idle wraps to 0, run at 0.5)
+
+    // At param 0 the pose leans toward run (endpoint A="idle" is A, B="run").
+    // PoseFor must produce a valid pose.
+    std::vector<math::Mat4> bones;
+    CHECK(anims.PoseFor(key, model.skeleton, bones));
+    CHECK_EQ(bones.size(), 1u);
+
+    // Blend param t: pose.z should be between the two endpoint samples at 0.5s.
+    // idle sampled at 0.5 -> wraps to 0 -> z=0; run at 0.5 -> z=0.5.
+    anims.SetBlendParam(key, 1.0f); // fully toward B (run)
+    anims.Tick(0.0f);
+    CHECK(anims.PoseFor(key, model.skeleton, bones));
+    CHECK_NEAR(bones[0].m[11], 0.5f, 1e-4f); // run z at t=0.5 = 0.5
+
+    // Unknown clip: PlayBlend refuses.
+    CHECK(!anims.PlayBlend(key, "nope", "run", 0.5f));
+}

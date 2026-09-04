@@ -629,6 +629,14 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     scriptCtx_.pollAnimEvents = [this](ecs::Entity e) {
         return animations_.ConsumeEvents(EntityKey(e));
     };
+    // B3 BlendSpace1D: two clips blended by a param (locomotion idle<->run).
+    scriptCtx_.playAnimBlend = [this](ecs::Entity e, const std::string& a,
+                                      const std::string& b, float t) {
+        return animations_.PlayBlend(EntityKey(e), a, b, t);
+    };
+    scriptCtx_.setAnimBlendParam = [this](ecs::Entity e, float t) {
+        animations_.SetBlendParam(EntityKey(e), t);
+    };
     scriptCtx_.attachStateMachine = [this](ecs::Entity e, const std::string& path) {
         return AttachStateMachine(e, path);
     };

@@ -1649,6 +1649,28 @@ Value NativePollAnimEvents(IScriptHost& host, void* user) {
     return t;
 }
 
+// B3 BlendSpace1D: AnimBlend(entity, a, b, t) -> true when both clips resolved;
+// AnimBlendParam(entity, t) sets the blend on an active blend.
+Value NativeAnimBlend(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->playAnimBlend) return Value::Bool(false);
+    const ecs::Entity e = EntityFromValue(host.GetArg(0));
+    if (!e.IsValid()) return Value::Bool(false);
+    const std::string a = StringArg(host, 1);
+    const std::string b = StringArg(host, 2);
+    const float t = static_cast<float>(NumberArg(host, 3, 0.0));
+    return Value::Bool(ctx->playAnimBlend(e, a, b, t));
+}
+
+Value NativeAnimBlendParam(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->setAnimBlendParam) return Value::Nil();
+    const ecs::Entity e = EntityFromValue(host.GetArg(0));
+    if (!e.IsValid()) return Value::Nil();
+    ctx->setAnimBlendParam(e, static_cast<float>(NumberArg(host, 1, 0.0)));
+    return Value::Nil();
+}
+
 } // namespace
 
 void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
@@ -1679,6 +1701,8 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("NavFindPath", &NativeNavFindPath, &ctx);
     host.Register("LoadDataTable", &NativeLoadDataTable, &ctx);
     host.Register("PollAnimEvents", &NativePollAnimEvents, &ctx);
+    host.Register("AnimBlend", &NativeAnimBlend, &ctx);
+    host.Register("AnimBlendParam", &NativeAnimBlendParam, &ctx);
     host.Register("PlayMusic", &NativePlayMusic, &ctx);
     host.Register("PlaySfx3D", &NativePlaySfx3D, &ctx);
     host.Register("SetAudioListener", &NativeSetListener, &ctx);

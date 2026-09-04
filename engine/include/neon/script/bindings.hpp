@@ -193,6 +193,12 @@ struct ScriptContext {
     // fired since the last poll (names). GameRuntime wires it to the
     // AnimationSystem; null -> PollAnimEvents returns an empty array.
     std::function<std::vector<std::string>(ecs::Entity)> pollAnimEvents;
+    // B3 BlendSpace1D: plays two clips blended by t [0,1] (locomotion) on an
+    // entity's pose; returns whether both clips resolved. GameRuntime wires it
+    // to the AnimationSystem; null -> AnimBlend returns false.
+    std::function<bool(ecs::Entity, const std::string&, const std::string&, float)> playAnimBlend;
+    // Updates the blend parameter on an entity's active blend.
+    std::function<void(ecs::Entity, float)> setAnimBlendParam;
     // Tween hook (P1-3): starts a property tween on a scene entity.
     // prop: 0=pos 1=rot(euler degrees) 2=scale; easing: 0=linear 1=in 2=out
     // 3=inout. Wired by GameRuntime; null -> Tween is a no-op.

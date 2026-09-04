@@ -48,10 +48,18 @@ public:
         std::string animSMState;                 // last played state
         bool animSMBound = false;                // clips resolved
         std::map<std::string, float> animSMParams; // script-set params
+        // B3 BlendSpace1D: two clip endpoints + a blend param [0,1]. When
+        // blendClipA is set it supersedes the single-override/SM clip for the
+        // pose (locomotion: idle<->run by speed). Clips are resolved at
+        // PlayBlend time against the binding's model unless not yet bound.
+        std::string blendA, blendB;              // names (for binding)
+        const anim::AnimationClip* blendClipA = nullptr;
+        const anim::AnimationClip* blendClipB = nullptr;
+        float blendParam = 0.0f;
+        bool blendActive = false;
         // B3 animation events: the previous tick's clip time (to detect a
         // crossing this tick) and the events fired since the last ConsumeEvents.
         float animPrevTime = 0.0f;
-        float animPrevLoop = 0.0f; // duration of the clip we last advanced
         std::vector<std::string> animEvents;
     };
 
@@ -110,6 +118,13 @@ public:
                             const std::shared_ptr<anim::AnimationStateMachine>& sm);
     // Sets a parameter on the entity's state machine (no-op without one).
     void SetParam(uint64_t key, const std::string& name, float value);
+    // B3 BlendSpace1D: plays two clips blended by `t` [0,1] on the entity's
+    // override pose (locomotion). Names are substring matches against the
+    // model's clips; returns false when either fails to resolve or the key has
+    // no binding.
+    bool PlayBlend(uint64_t key, const std::string& clipA, const std::string& clipB, float t);
+    // Updates the blend parameter [0,1] of an active blend on the entity.
+    void SetBlendParam(uint64_t key, float t);
 
     // Advances every registered entity's animation: the state machine (if
     // attached), the override clip (or the model's default loop otherwise).

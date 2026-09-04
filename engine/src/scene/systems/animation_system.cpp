@@ -128,6 +128,36 @@ void AnimationSystem::SetParam(uint64_t key, const std::string& name, float valu
     it->second.animSMParams[name] = value;
 }
 
+bool AnimationSystem::PlayBlend(uint64_t key, const std::string& clipA,
+                                const std::string& clipB, float t) {
+    auto it = states_.find(key);
+    if (it == states_.end()) return false;
+    auto bit = bindings_.find(key);
+    if (bit == bindings_.end() || !bit->second.model) return false;
+    // Resolve both endpoints against the binding's model clips (empty until the
+    // draw item resolves the model; Tick will re-resolve once bound).
+    const std::vector<anim::AnimationClip>& clips = bit->second.model->clips;
+    const anim::AnimationClip* a = FindClip(clips, clipA);
+    const anim::AnimationClip* b = FindClip(clips, clipB);
+    if (!a || !b) return false;
+    State& st = it->second;
+    st.blendA = clipA;
+    st.blendB = clipB;
+    st.blendClipA = a;
+    st.blendClipB = b;
+    st.blendParam = t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t);
+    st.blendActive = true;
+    st.animTime = 0.0f;
+    st.animHasOverride = true;
+    return true;
+}
+
+void AnimationSystem::SetBlendParam(uint64_t key, float t) {
+    auto it = states_.find(key);
+    if (it == states_.end()) return;
+    it->second.blendParam = t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t);
+}
+
 void AnimationSystem::Tick(float dt) {
     for (auto& kv : states_) {
         State& st = kv.second;
@@ -135,6 +165,14 @@ void AnimationSystem::Tick(float dt) {
         if (bit == bindings_.end() || !bit->second.model || !bit->second.model->Valid())
             continue;
         SkinnedModel* skinned = bit->second.model;
+        // B3 BlendSpace1D: advance shared time (wrap in the shorter clip) and
+        // continue — the pose is computed in PoseFor from the two blend clips.
+        if (st.blendActive && st.blendClipA && st.blendClipB) {
+            float dur = st.blendClipA->duration;
+            if (st.blendClipB->duration > 0.0f) dur = std::max(dur, st.blendClipB->duration);
+            if (dur > 0.0f) st.animTime = std::fmod(st.animTime + dt, dur);
+            continue;
+        }
         // G5-4-4(项2): data-driven animation state machine. Advance it (params
         // from the script-set map), then map the current state's clip onto the
         // existing override path below - no pose surgery.
@@ -233,6 +271,18 @@ bool AnimationSystem::PoseFor(uint64_t key, const anim::Skeleton& skeleton,
     auto it = states_.find(key);
     if (it == states_.end()) return false;
     const State& st = it->second;
+    // B3 BlendSpace1D: blend endpoint clips (resolved at PlayBlend time) sampled
+    // at the shared state time, lerped by blendParam.
+    if (st.blendActive && st.blendClipA && st.blendClipB) {
+        anim::Pose pose = skeleton.BindPose();
+        anim::Pose wa = skeleton.BindPose();
+        anim::Pose wb = skeleton.BindPose();
+        st.blendClipA->Sample(st.animTime, wa);
+        st.blendClipB->Sample(st.animTime, wb);
+        pose.Lerp(wa, wb, st.blendParam);
+        out = skeleton.ComputeBoneMatrices(pose);
+        return true;
+    }
     if (!st.animHasOverride || !st.animClip) return false;
     anim::Pose pose = skeleton.BindPose();
     st.animClip->Sample(st.animTime, pose);
