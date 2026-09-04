@@ -148,6 +148,7 @@ add_library(neon_scene STATIC
   engine/src/scene/scene_file.cpp
   engine/src/scene/component_schema.cpp
   engine/src/scene/type_registry.cpp
+  engine/src/scene/data_table.cpp
   engine/src/scene/scene_manager.cpp
   engine/src/scene/game_manifest.cpp
   engine/src/scene/game_runtime.cpp

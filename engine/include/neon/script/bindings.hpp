@@ -183,6 +183,12 @@ struct ScriptContext {
     // when the scene has no .navgrid.json). The NavFindPath binding reads it
     // (null -> empty path); GameRuntime loads the asset and wires it here.
     const nav::NavGrid* navGrid = nullptr;
+    // B2 data tables: loads + validates a JSON row array against a registered
+    // reflected type, returning the rows as JSON array elements. GameRuntime
+    // wires this to scene::LoadDataTable; null -> LoadDataTable returns empty.
+    // Kept off the script module's own #include graph so the script layer stays
+    // scene-free (C13).
+    std::function<std::vector<core::Json>(const std::string&, const std::string&)> loadDataTable;
     // Tween hook (P1-3): starts a property tween on a scene entity.
     // prop: 0=pos 1=rot(euler degrees) 2=scale; easing: 0=linear 1=in 2=out
     // 3=inout. Wired by GameRuntime; null -> Tween is a no-op.

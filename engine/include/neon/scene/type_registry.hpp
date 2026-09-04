@@ -38,6 +38,11 @@ struct TypeInfo {
     std::function<core::Json(const void*)> toJson;
     std::function<bool(const core::Json&, void*, std::string*)> fromJson;
     std::function<void(const void*, void*)> clone;
+    // B2: validates + normalizes a row JSON through the registry (construct a T,
+    // FromJson into it, then ToJson back). Returns the normalized JSON, or a
+    // null Json when the row is invalid. Lets a DataTable loader validate rows
+    // without knowing sizeof(T) / a factory for T's storage.
+    std::function<core::Json(const core::Json&)> normalize;
 };
 
 // Registry of the reflected component types. Static, single source of truth for
@@ -62,6 +67,12 @@ public:
         };
         info.clone = [](const void* src, void* dst) {
             T::kFields.Clone(*static_cast<const T*>(src), *static_cast<T*>(dst));
+        };
+        info.normalize = [](const core::Json& j) -> core::Json {
+            T row;
+            std::string err;
+            if (!T::kFields.FromJson(j, row, &err)) return core::Json{};
+            return T::kFields.ToJson(row);
         };
         auto& reg = Mutate();
         for (auto& [n, existing] : reg) {

@@ -1,0 +1,6 @@
+[
+  { "id": "frost",  "label": "冰霜新星", "cooldown": 8,  "cost": 30, "sfx": "frozen",    "tag": "aoe" },
+  { "id": "meteor", "label": "陨石术",   "cooldown": 18, "cost": 45, "sfx": "explosion", "tag": "impact" },
+  { "id": "beam",   "label": "圣光束",   "cooldown": 14, "cost": 35, "sfx": "jalapeno",  "tag": "line" },
+  { "id": "snare",  "label": "电击陷阱", "cooldown": 10, "cost": 25, "sfx": "siren",     "tag": "trap" }
+]

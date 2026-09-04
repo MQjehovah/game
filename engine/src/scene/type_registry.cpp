@@ -4,6 +4,7 @@
 
 #include "neon/scene/render_stack.hpp"
 #include "neon/scene/scene_file.hpp"
+#include "neon/scene/data_table.hpp"
 
 namespace neon::scene {
 
@@ -48,6 +49,10 @@ void RegisterBuiltinReflectedTypes() {
     TypeRegistry::Register<SceneLight>("light", "光照");
     TypeRegistry::Register<SceneScript>("script", "脚本");
     TypeRegistry::Register<RenderStack>("renderstack", "渲染栈");
+    // B2: a reflected game-data row type (skills). A project registers its own
+    // data rows here (or a data component) and loads `[{...}]` JSON via
+    // LoadDataTable so content is schema-checked + editor-editable.
+    TypeRegistry::Register<SkillData>("skill", "技能");
 }
 
 } // namespace neon::scene

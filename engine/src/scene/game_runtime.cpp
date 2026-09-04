@@ -23,6 +23,7 @@
 #include "neon/physics/jolt_world.hpp"
 #include "neon/plugin/backend.hpp"
 #include "neon/scene/scene_file.hpp"
+#include "neon/scene/data_table.hpp"
 #include "gameplay_lib.hpp"
 
 #if defined(_WIN32)
@@ -346,6 +347,19 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     // reader override).
     scriptCtx_.readData = [this](const std::string& path) {
         return ReadScript(FullScriptPath(path));
+    };
+    // B2 data tables: route the LoadDataTable binding to scene::LoadDataTable,
+    // which validates rows against the registered reflected type via the
+    // TypeRegistry. Scripts load game content as schema-checked data assets.
+    scriptCtx_.loadDataTable = [](const std::string& typeName,
+                                  const std::string& jsonText) {
+        auto table = scene::LoadDataTable(typeName, jsonText);
+        if (!table.Ok()) {
+            NEON_LOG_WARN("runtime: data table '%s': %s", typeName.c_str(),
+                          table.Error().c_str());
+            return std::vector<core::Json>{};
+        }
+        return table.Value().rows;
     };
     // Replaceable UI system: injected via cfg_.uiSystem wins; otherwise the
     // default document-backed system reading through the same VFS/disk source

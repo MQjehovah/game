@@ -3,6 +3,7 @@
 #include "neon/neon.hpp"
 #include "neon/nav/nav_grid.hpp"
 #include "neon/script/bindings.hpp"
+#include "neon/scene/data_table.hpp"
 #include "helpers.hpp"
 
 using namespace neon;
@@ -126,4 +127,59 @@ TEST(NavFindPathBinding) {
     auto noPath = host->Call("p3", {});
     CHECK(noPath.Ok());
     CHECK_NEAR(noPath.Value().number, 0.0, 1e-6);
+}
+
+// B2: LoadDataTable validates a JSON row array against a registered reflected
+// type (SkillData via TypeRegistry) and returns typed rows.
+TEST(DataTableLoadAndValidate) {
+    // Register the "skill" row type (idempotent), the same call the engine does.
+    scene::TypeRegistry::Register<scene::SkillData>("skill", "技能");
+
+    // A valid table: two rows load, fields normalize.
+    const std::string valid = R"([
+      {"id":"frost","label":"冰霜","cooldown":8,"cost":30,"sfx":"frozen","tag":"aoe"},
+      {"id":"meteor","label":"陨石","cooldown":18,"cost":45,"sfx":"explosion","tag":"impact"}
+    ])";
+    auto ok = scene::LoadDataTable("skill", valid);
+    CHECK(ok.Ok());
+    CHECK_EQ(ok.Value().Count(), 2u);
+    CHECK_EQ(ok.Value().rows[0].Get("id")->GetString(), std::string("frost"));
+    CHECK_NEAR(ok.Value().rows[0].Get("cooldown")->GetNumber(), 8.0, 1e-6);
+
+    // Unknown type -> Err.
+    CHECK(!scene::LoadDataTable("nope", valid).Ok());
+    // Bad JSON -> Err.
+    CHECK(!scene::LoadDataTable("skill", "{ not json").Ok());
+    // Not an array -> Err.
+    CHECK(!scene::LoadDataTable("skill", R"({"id":"x"})").Ok());
+    // A malformed row (non-object) is rejected -> Err.
+    CHECK(!scene::LoadDataTable("skill", R"([{"id":"a","cooldown":1}, 5, null])").Ok());
+}
+
+// B2: the LoadDataTable Lua binding returns rows as tables via the wired hook.
+TEST(DataTableLuaBinding) {
+    auto host = script::CreateLuaHost();
+    CHECK(host != nullptr);
+    CHECK(host->Init());
+    script::ScriptContext ctx;
+    script::RegisterEngineBindings(*host, ctx);
+    // No hook -> empty table (graceful), then wire a hook and re-check.
+    host->Load("function dl() local t = LoadDataTable('skill','[]') return #t end");
+    CHECK(host->Run().Ok());
+    auto empty = host->Call("dl", {});
+    CHECK(empty.Ok());
+    CHECK_NEAR(empty.Value().number, 0.0, 1e-6);
+
+    ctx.loadDataTable = [](const std::string&, const std::string& jsonText) {
+        auto table = scene::LoadDataTable("skill", jsonText);
+        if (!table.Ok()) return std::vector<core::Json>{};
+        return table.Value().rows;
+    };
+    host->Load("function dl2() local t = LoadDataTable('skill','["
+               "{\"id\":\"frost\",\"cooldown\":8},{\"id\":\"meteor\",\"cooldown\":18}]')"
+               " return #t, t[1].id, t[2].cooldown end");
+    CHECK(host->Run().Ok());
+    auto r = host->Call("dl2", {});
+    CHECK(r.Ok());
+    CHECK_NEAR(r.Value().number, 2.0, 1e-6); // #t from first return
 }

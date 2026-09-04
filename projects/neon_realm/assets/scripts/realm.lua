@@ -41,12 +41,15 @@ end
 -- Q 冰霜新星(以己为中心 AoE 冻结) / R 陨石术(前方落点 AoE) /
 -- G 圣光束(面朝方向直线) / T 电击陷阱(前方区域 强减速)。
 -- 施法流程: 按键直接施放(带蓝耗+冷却), VFX 全部程序化绘制。
-local SKILLS = {
-  frost  = { cd = 8,  mana = 30, sfx = "frozen" },
-  meteor = { cd = 18, mana = 45, sfx = "explosion" },
-  beam   = { cd = 14, mana = 35, sfx = "jalapeno" },
-  snare  = { cd = 10, mana = 25, sfx = "siren" },
-}
+-- B2 数据驱动: 技能表从 assets/data/skills.json 加载(LoadDataTable 经反射
+-- "skill" schema 校验/归一化), 不再写死在脚本里——可在编辑器属性面板编辑。
+local SKILLS = {}
+do
+  local skillRows = LoadDataTable("skill", ReadText("assets/data/skills.json"))
+  for _, row in ipairs(skillRows) do
+    SKILLS[row.id] = { label = row.label, cd = row.cooldown, mana = row.cost, sfx = row.sfx, tag = row.tag }
+  end
+end
 local skillCd = { frost = 0, meteor = 0, beam = 0, snare = 0 }
 -- 世界锚定 VFX: 每个特效是一个真实实体 (自发光球 / 贴地环 / 贴花), 到期回收
 local vfxEnts, vfxMeteors = {}, {}

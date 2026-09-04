@@ -62,6 +62,13 @@
 >   平均；composite 由 `keyValue/avgLum` 推导曝光乘子并夹到 [min,max]，默认禁用零回归）+ **暗角**（composite
 >   径向暗化）。`RenderStack` 反射新增 autoExposure/autoExposureKey/vignette/vignetteRadius/vignetteIntensity。
 >   因该后端 float 回读在 Intel 上不可靠，自动曝光采用**纯 shader 每帧适应**（无 CPU 回读/时间平滑）。
+> - **B1 NavGrid 寻路** ✅：`ScriptContext.navGrid` + `NavFindPath(from,to)` Lua 绑定（无网格/不可达→空数组）；
+>   `GameRuntime::Start` 从场景 `level.navgrid` 资产路径加载 `.navgrid.json` 并 wire。狼群 AI 用路点绕障
+>   追击/回巢，无网格时优雅回退直线 beeline（场景省略 navgrid 行为不变）。
+> - **B2 数据表** ✅：`scene::DataTable` + `LoadDataTable(typeName, jsonText)`（经 `TypeRegistry` 反射
+>   `normalize` 校验+归一化每行）；`ScriptContext.loadDataTable` 钩子（脚本层保持 scene-free，C13）+ `LoadDataTable`
+>   Lua 绑定（返回类型化行表）。参考行类型 `SkillData`（id/label/cooldown/cost/sfx/tag）注册为 `skill`；
+>   realm.lua 技能表改为从 `assets/data/skills.json` 经反射加载，可在编辑器属性面板编辑。
 > - ⚠️ 遗留 2 个**基线失败**：`MeshoptLodSimplify` / `GltfAsyncPredecodedTextures`（stash 复测证不与本批相关）。
 
 

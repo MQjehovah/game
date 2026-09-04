@@ -1618,6 +1618,23 @@ Value NativeNavFindPath(IScriptHost& host, void* user) {
     return t;
 }
 
+// B2: LoadDataTable(typeName, jsonText) -> array of typed row tables. `jsonText`
+// is a JSON array of row objects; each row is validated + normalized against the
+// registered reflected `typeName` via the wired loadDataTable hook (GameRuntime
+// -> scene::LoadDataTable). Returns the rows as Lua tables (or nil when the type
+// is unknown / JSON bad / no hook).
+Value NativeLoadDataTable(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    Value t = Value::Tbl();
+    if (!ctx || !ctx->loadDataTable) return t;
+    const std::string typeName = StringArg(host, 0);
+    const std::string jsonText = StringArg(host, 1);
+    if (typeName.empty() || jsonText.empty()) return t;
+    for (const core::Json& row : ctx->loadDataTable(typeName, jsonText))
+        t.table->array.push_back(JsonToValue(row));
+    return t;
+}
+
 } // namespace
 
 void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
@@ -1646,6 +1663,7 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("Tween", &NativeTween, &ctx);
     host.Register("GetEntitiesInGroup", &NativeGetEntitiesInGroup, &ctx);
     host.Register("NavFindPath", &NativeNavFindPath, &ctx);
+    host.Register("LoadDataTable", &NativeLoadDataTable, &ctx);
     host.Register("PlayMusic", &NativePlayMusic, &ctx);
     host.Register("PlaySfx3D", &NativePlaySfx3D, &ctx);
     host.Register("SetAudioListener", &NativeSetListener, &ctx);
