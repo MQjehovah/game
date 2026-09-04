@@ -244,6 +244,9 @@ function on_start(e)
       table.insert(wolves, {
         e = w, home = { x = p.x, y = p.y, z = p.z },
         dead = false, respawn = 0, attackCd = 0, phase = i * 0.7,
+        -- B1 NavGrid pathfinding: cached waypoint list + current target while
+        -- chasing/returning. Empty = beeline (no navgrid wired, or no path).
+        path = {}, pathIdx = 1,
       })
       SetEntityPlate(w, "野狼", 1.0)
     end
@@ -266,6 +269,7 @@ local function spawn_wave(wave)
     w.dead = false
     w.respawn = 0
     w.attackCd = 0
+    w.path = {}; w.pathIdx = 1
     SetVisible(w.e, true)
     SetHealth(w.e, WOLF_MAX)
     SetPosition(w.e, { x = w.home.x, y = w.home.y, z = w.home.z })
@@ -627,28 +631,64 @@ local function update_wolves(dt)
         local chase = d < 14 and dh < 30
         local mx, mz = 0, 0
         local moving = false
-        if chase then
-          moving = true
-          mx = (pp.x - wp.x) / d
-          mz = (pp.z - wp.z) / d
-          local vx = mx * 5.5 * slowFactor
-          local vz = mz * 5.5 * slowFactor
-          wp.x = wp.x + vx * dt
-          wp.z = wp.z + vz * dt
-          SetRotationY(w.e, math.atan(mx, mz))
-          if d < 1.8 and w.attackCd <= 0 and iframes <= 0 then
-            w.attackCd = 1.2
-            SetVar("hp", math.max(0, vget("hp", 100) - 8))
-            -- 狼扑咬一次性动画（walk 单次代替）
-            PlayAnimation(w.e, "04_Idle", false, 0.1)
+        local speed = chase and 5.5 or 3
+        -- B1 NavGrid: when a grid is wired (scene has level.navgrid + NavFindPath
+        -- binding), route around obstacles instead of beelining. If no grid or no
+        -- path is found we fall back to the legacy beeline so behaviour degrades
+        -- gracefully (and the demo is unchanged when a scene omits a navgrid).
+        local target = chase and { x = pp.x, z = pp.z } or { x = w.home.x, z = w.home.z }
+        if w.path and #w.path > 0 then
+          -- Advance along the cached path toward the target waypoint; re-query only
+          -- when the path is exhausted or the target moved far (cheap enough at
+          -- wolf count). A path is a 2D array of {x,y,z} from NavFindPath.
+          local arrived = math.abs(wp.x - w.path[w.pathIdx].x) < 1.2 and
+                          math.abs(wp.z - w.path[w.pathIdx].z) < 1.2
+          if arrived then
+            w.pathIdx = w.pathIdx + 1
+            if w.pathIdx > #w.path then
+              w.path = {}; w.pathIdx = 1
+            end
           end
+        end
+        local usePath = w.path and #w.path > 0 and w.pathIdx <= #w.path
+        if usePath then
+          local tx, tz = w.path[w.pathIdx].x, w.path[w.pathIdx].z
+          moving = true
+          local td = dist2d(wp.x, wp.z, tx, tz)
+          if td > 0.01 then
+            mx = (tx - wp.x) / td; mz = (tz - wp.z) / td
+          end
+        elseif chase then
+          -- Beeline fallback (no navgrid / no path). Preserve the original look.
+          moving = true
+          mx = (pp.x - wp.x) / d; mz = (pp.z - wp.z) / d
         elseif dh > 1 then
           moving = true
-          mx = (w.home.x - wp.x) / dh
-          mz = (w.home.z - wp.z) / dh
-          wp.x = wp.x + mx * 3 * slowFactor * dt
-          wp.z = wp.z + mz * 3 * slowFactor * dt
-          SetRotationY(w.e, math.atan(mx, mz))
+          mx = (w.home.x - wp.x) / dh; mz = (w.home.z - wp.z) / dh
+        end
+        -- Recompute the path when moving toward a target and the current one is
+        -- empty (a fresh NavFindPath each arrival). Only when a grid exists.
+        if moving and (not w.path or #w.path == 0) then
+          local p = NavFindPath({ x = wp.x, y = 0, z = wp.z },
+                                { x = target.x, y = 0, z = target.z })
+          if p ~= nil and #p > 0 then
+            w.path = p; w.pathIdx = 1
+          end
+        end
+        -- Move along the resolved direction (path waypoint or beeline). The
+        -- beeline arm moves directly; the path arm also moves (to the waypoint).
+        if moving then
+          wp.x = wp.x + mx * speed * slowFactor * dt
+          wp.z = wp.z + mz * speed * slowFactor * dt
+        end
+        if moving then SetRotationY(w.e, math.atan(mx, mz)) end
+        -- Attack whenever close (pathfinding OR beeline), so a wolf that routed
+        -- around an obstacle still bites on reaching the player.
+        if chase and d < 1.8 and w.attackCd <= 0 and iframes <= 0 then
+          w.attackCd = 1.2
+          SetVar("hp", math.max(0, vget("hp", 100) - 8))
+          -- 狼扑咬一次性动画（walk 单次代替）
+          PlayAnimation(w.e, "04_Idle", false, 0.1)
         end
         -- 狼 locomotion：追击=跑，回家=走（glb clip 名 01_Run/02_walk）
         local want = chase and "01_Run" or "02_walk"

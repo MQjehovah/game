@@ -198,6 +198,24 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     // not prefixes �?a scene with an unresolvable key still plays headless.
     // cfg_ must be assigned before LoadPrefabs/AttachScripts read it.
     cfg_ = std::move(cfg);
+    // B1 NavGrid: a scene can declare a data-driven navigation grid via
+    // level.navgrid (a .navgrid.json asset path). Load it and wire it into the
+    // script context so the NavFindPath Lua binding can path-find around world
+    // obstacles. A missing/invalid asset just leaves the grid unset (the AI
+    // falls back to beeline movement).
+    {
+        const core::Json* lv = parsed.Value().level.IsObject() ? &parsed.Value().level : nullptr;
+        const core::Json* ng = lv ? lv->Get("navgrid") : nullptr;
+        if (ng && ng->IsString() && !ng->GetString().empty()) {
+            const std::string text = ReadScript(FullScriptPath(ng->GetString()));
+            if (!text.empty()) {
+                auto parsedNav = nav::NavGrid::FromJson(text);
+                if (parsedNav.Ok()) SetNavGrid(parsedNav.Value());
+                else NEON_LOG_WARN("runtime: nav grid '%s' invalid: %s", ng->GetString().c_str(),
+                                   parsedNav.Error().c_str());
+            }
+        }
+    }
     // ScriptRuntime reads sources through the same cfg_-backed readers as the
     // rest of the runtime (ReadScript honors the pack override + VFS).
     scriptRuntime_.Configure(

@@ -13,6 +13,7 @@
 #include "neon/script/input_map.hpp"
 #include "neon/math/quat.hpp"
 #include "neon/math/vec3.hpp"
+#include "neon/nav/nav_grid.hpp"
 #include "neon/physics/physics.hpp"
 #include "neon/platform/input.hpp"
 #include "neon/script/gamevars.hpp"
@@ -178,6 +179,10 @@ struct ScriptContext {
     // Resolves a sprite path (assets/sprites/*.png) to a texture handle.
     // Wired by GameRuntime; null -> DrawSprite draws a plain quad.
     std::function<gfx::TextureHandle(const std::string&)> loadTexture;
+    // B1 NavGrid pathfinding: the scene's loaded navigation grid (may be null
+    // when the scene has no .navgrid.json). The NavFindPath binding reads it
+    // (null -> empty path); GameRuntime loads the asset and wires it here.
+    const nav::NavGrid* navGrid = nullptr;
     // Tween hook (P1-3): starts a property tween on a scene entity.
     // prop: 0=pos 1=rot(euler degrees) 2=scale; easing: 0=linear 1=in 2=out
     // 3=inout. Wired by GameRuntime; null -> Tween is a no-op.

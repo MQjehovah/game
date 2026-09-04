@@ -2,6 +2,7 @@
 
 #include "neon/neon.hpp"
 #include "neon/nav/nav_grid.hpp"
+#include "neon/script/bindings.hpp"
 #include "helpers.hpp"
 
 using namespace neon;
@@ -85,4 +86,44 @@ TEST(NavGridJsonRoundTrip) {
     // Grid covers x: [-10, 2], y: [5, 13]; pick in-bounds endpoints.
     auto p = back.Value().FindPath({-9.0f, 6.0f}, {1.0f, 12.0f});
     CHECK(!p.empty());
+}
+
+// B1: the NavFindPath Lua binding wires ScriptContext::navGrid -> NavGrid and
+// returns the waypoint array (or empty when no grid is wired / no path).
+TEST(NavFindPathBinding) {
+    auto host = script::CreateLuaHost();
+    CHECK(host != nullptr);
+    CHECK(host->Init());
+    script::ScriptContext ctx;
+    script::RegisterEngineBindings(*host, ctx);
+
+    // Scene WITHOUT a navgrid: binding returns an empty array (no crash).
+    CHECK(host->Load("function path_len() local p = NavFindPath({x=0,y=0,z=0},"
+                     " {x=9,y=0,z=9}) return #p end"));
+    CHECK(host->Run().Ok());
+    auto noGrid = host->Call("path_len", {});
+    CHECK(noGrid.Ok());
+    CHECK_NEAR(noGrid.Value().number, 0.0, 1e-6);
+
+    // Scene WITH a walled grid binding set: NavFindPath routes around the wall.
+    nav::NavGrid g = nav::NavGrid::Create(9, 5, 1.0f, {0, 0});
+    for (int x = 0; x < 9; ++x) g.SetWalkable(x, 2, false); // horizontal wall
+    ctx.navGrid = &g;
+    host->Load("function path2() local p = NavFindPath({x=0.5,y=0,z=0.5},"
+               " {x=8.5,y=0,z=0.5}) return #p end");
+    CHECK(host->Run().Ok());
+    auto withGrid = host->Call("path2", {});
+    CHECK(withGrid.Ok());
+    CHECK(withGrid.Value().number > 0.0); // found a path around the wall
+
+    // A wall-sealed start is unwalkable -> empty path.
+    nav::NavGrid sealed = nav::NavGrid::Create(5, 5, 1.0f, {0, 0});
+    for (int y = 0; y < 5; ++y) sealed.SetWalkable(2, y, false);
+    ctx.navGrid = &sealed;
+    host->Load("function p3() local p = NavFindPath({x=0.5,y=0,z=0.5},"
+               " {x=4.5,y=0,z=0.5}) return #p end");
+    CHECK(host->Run().Ok());
+    auto noPath = host->Call("p3", {});
+    CHECK(noPath.Ok());
+    CHECK_NEAR(noPath.Value().number, 0.0, 1e-6);
 }

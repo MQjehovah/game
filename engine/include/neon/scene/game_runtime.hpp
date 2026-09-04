@@ -19,6 +19,7 @@
 #include "neon/gfx/material.hpp"
 #include "neon/gfx/mesh.hpp"
 #include "neon/math/bvh.hpp"
+#include "neon/nav/nav_grid.hpp"
 #include "neon/plugin/runtime_plugin.hpp"
 #include "neon/physics/physics.hpp"
 #include "neon/platform/input.hpp"
@@ -249,6 +250,15 @@ public:
     // server's AOI replication, debug panels).
     script::ScriptContext& ScriptContext() { return scriptCtx_; }
     const script::ScriptContext& ScriptContext() const { return scriptCtx_; }
+    // B1 NavGrid: wire a scene navigation grid (parsed from level.navgrid or
+    // supplied by the host). Exposed both for the ScriptContext wiring (the
+    // NavFindPath Lua binding) and for headless tests to inject a grid.
+    void SetNavGrid(const nav::NavGrid& grid) {
+        navGrid_ = grid;
+        navGridValid_ = grid.Valid();
+        scriptCtx_.navGrid = navGridValid_ ? &navGrid_ : nullptr;
+    }
+    bool NavGridValid() const { return navGridValid_; }
     // P1-2 debugger passthrough for the editor playtest.
     // The Lua host (the canonical debugger backend; the editor's breakpoint /
     // step UI talks to it). JS scripts route internally through the same
@@ -421,6 +431,12 @@ private:
     // the fixed-step physics block in Tick to it.
     PhysicsBridge physics_;
     script::ScriptContext scriptCtx_; // owns the GameVars scripts + BT share
+    // B1 NavGrid: the scene's data-driven navigation grid, parsed from the
+    // scene's level.navgrid asset path (or set via SetNavGrid). Wired as
+    // scriptCtx_.navGrid so the NavFindPath Lua binding can path-find around
+    // obstacles; null when the scene has no associated grid.
+    nav::NavGrid navGrid_;
+    bool navGridValid_ = false;
     // Post-process FX overrides (applied at Draw); see SetPostFx.
     bool postSsao_ = false;
     bool postVolumetric_ = false;

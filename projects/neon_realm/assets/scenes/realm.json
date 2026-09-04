@@ -4663,5 +4663,8 @@
       "id": 102,
       "name": "Directional Light"
     }
-  ]
+  ],
+  "level": {
+    "navgrid": "assets/navgrid/realm.navgrid.json"
+  }
 }

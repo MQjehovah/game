@@ -1596,6 +1596,28 @@ Value NativeInputMouseY(IScriptHost& host, void* user) {
     return Value::Num(in ? in->MouseDelta().y : 0.0);
 }
 
+// B1 NavGrid -> gameplay: NavFindPath(from, to) -> array of {x,y,z} waypoints
+// (cell centers, XZ plane; y = 0). Returns an empty array when no navgrid is
+// wired, either endpoint is unwalkable, or no path exists. Scripts drive the
+// entity toward consecutive waypoints and re-query on arrival, so AI moves
+// around obstacles instead of beelining through them.
+Value NativeNavFindPath(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    Value t = Value::Tbl();
+    if (!ctx || !ctx->navGrid || !ctx->navGrid->Valid()) return t;
+    const math::Vec3 from = Vec3FromValue(host.GetArg(0), math::Vec3{});
+    const math::Vec3 to = Vec3FromValue(host.GetArg(1), math::Vec3{});
+    // Sample the path at the grid's last cell (returns when 1-waypoint already).
+    for (const math::Vec2& wp : ctx->navGrid->FindPath({from.x, from.z}, {to.x, to.z})) {
+        Value p = Value::Tbl();
+        p.table->fields.emplace_back("x", Value::Num(wp.x));
+        p.table->fields.emplace_back("y", Value::Num(0.0));
+        p.table->fields.emplace_back("z", Value::Num(wp.y));
+        t.table->array.push_back(std::move(p));
+    }
+    return t;
+}
+
 } // namespace
 
 void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
@@ -1623,6 +1645,7 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("PhysicsGetCharacterMove", &NativePhysicsGetCharacterMove, &ctx);
     host.Register("Tween", &NativeTween, &ctx);
     host.Register("GetEntitiesInGroup", &NativeGetEntitiesInGroup, &ctx);
+    host.Register("NavFindPath", &NativeNavFindPath, &ctx);
     host.Register("PlayMusic", &NativePlayMusic, &ctx);
     host.Register("PlaySfx3D", &NativePlaySfx3D, &ctx);
     host.Register("SetAudioListener", &NativeSetListener, &ctx);
