@@ -13,12 +13,11 @@ namespace {
 void PrintHelp() {
     std::printf(
         "neon_game - NeonEngine generic data-driven player\n"
-        "Usage: neon_game --pack <file> [options]\n"
-        "  --pack <file>              game.pack to run (required unless --connect uses\n"
-        "                             a loose --scene file)\n"
-        "  --scene <name|path>        override the manifest startScene; a bare name maps\n"
-        "                             to scenes/<name>.json, a file path is loaded directly\n"
-        "                             (loose scene, --connect mode)\n"
+        "Usage: neon_game --pack <file> [options]  |  --scene <file> [--scripts DIR]\n"
+        "  --pack <file>              game.pack to run\n"
+        "  --scene <name|path>        a file path loads it as a loose scene (standalone,\n"
+        "                             no --pack). a bare name maps to scenes/<name>.json\n"
+        "                             inside the pack (with --pack)\n"
         "  --connect host:port        join a GameServer as the input controller (T6.4):\n"
         "                             local prediction + snapshot interpolation + reconcile\n"
         "  --name <n>                 anonymous login name (T6.6; default neon_player)\n"
@@ -107,17 +106,15 @@ int main(int argc, char** argv) {
     }
 
     const bool connectMode = !cfg.connectHost.empty() && cfg.connectPort != 0;
-    // A --scene that looks like a file path is a loose scene loaded directly
-    // from disk (the client runs the SAME scene JSON as the server); a bare
-    // name still resolves inside the pack.
-    if (connectMode && !cfg.sceneOverride.empty() && LooksLikePath(cfg.sceneOverride)) {
+    // 单机松散场景: `--scene <file>` 且像文件路径 -> 直接加载该场景文件(无需 pack/网络)。
+    // (联网模式同样把 --connect --scene <file> 当松散场景, 与原语义一致。)
+    if (!cfg.sceneOverride.empty() && LooksLikePath(cfg.sceneOverride)) {
         cfg.looseScenePath = cfg.sceneOverride;
         cfg.sceneOverride.clear();
     }
 
     if (cfg.packPath.empty() && cfg.looseScenePath.empty()) {
-        std::fprintf(stderr, "neon_game: no --pack (or --connect --scene <file>) given "
-                             "(see --help)\n");
+        std::fprintf(stderr, "neon_game: no --pack (or --scene <file>) given (see --help)\n");
         return 1;
     }
 

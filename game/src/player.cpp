@@ -406,6 +406,17 @@ bool PlayerApp::LoadSceneJson() {
         if (cfg_.scriptsDir.empty()) cfg_.scriptsDir = ScriptBaseForLooseScene(cfg_.looseScenePath);
         NEON_LOG_INFO("Player: loading loose scene '%s' (scripts from '%s')",
                       cfg_.looseScenePath.c_str(), cfg_.scriptsDir.c_str());
+        // Loose (no-pack) mode: mount the project root (--scripts) as a VFS so
+        // asset paths like "assets/kenney/..." resolve from the project dir,
+        // matching how the editor/pack serve assets (asset reads via SetFileSystem
+        // in OnCreate pick this up). Without it `assets/...` resolves against the
+        // process CWD and breaks external glTF/OBJ/texture refs.
+        if (!cfg_.vfs && !cfg_.scriptsDir.empty()) {
+            cfg_.vfs = std::make_shared<neon::io::MountStack>();
+            cfg_.vfs->Mount(std::make_shared<neon::io::DiskFileSystem>(cfg_.scriptsDir));
+            NEON_LOG_INFO("Player: loose scene mounted '%s' as asset root (VFS)",
+                          cfg_.scriptsDir.c_str());
+        }
         return true;
     }
 

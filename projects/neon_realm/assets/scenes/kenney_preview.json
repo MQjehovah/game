@@ -2,7 +2,7 @@
   "entities": [
     { "id": 1, "name": "地面",
       "components": { "transform": { "pos": [0, -0.2, 0] },
-        "mesh": { "meshKey": "terrain", "material": { "castShadow": false } } } },
+        "mesh": { "meshKey": "terrain", "castShadow": false } } },
     { "id": 2, "name": "树_普通",
       "components": { "transform": { "pos": [-6, 0, 0] },
         "mesh": { "meshKey": "gltf:assets/kenney/fantasy-town/tree.glb" } } },
