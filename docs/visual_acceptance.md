@@ -57,8 +57,10 @@ DamagedHelmet 自带动法线贴图（`Default_Normal.jpg`）。对比 `castShad
 ## Demo 玩法升级（B1/B2/B3 应用到 NeonRealm）
 - **B1 NavGrid 绕过障碍**：狼群用 `NavFindPath` 路点绕障追击/回巢（`level.navgrid` 声明）。
 - **B2 数据驱动技能**：技能表从 `assets/data/skills.json` 经反射 `LoadDataTable` 加载。
+- **B2 物品掉落**：狼击杀掉落物品（`assets/data/items.json`，经 `LoadDataTable("item")`），
+  银币加金币、浆果回血，HUD 物品栏计数。
 - **B3b BlendSpace1D locomotion**：英雄 `AnimBlend("Idle","Running_A",t)` 与狼
   `AnimBlend("02_walk","01_Run",t)` 连续混合走/跑（替代硬切），移动时角色平滑过渡。
 - 验证：跑 `neon_game --scene <neon_realm 场景>`，拖动输入看角色走跑连续过渡，
-  狼群追击时从走平滑到跑。
+  狼群追击时从走平滑到跑；击杀狼看物品飘字 + HUD 计数。
 

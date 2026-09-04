@@ -51,6 +51,15 @@ do
   end
 end
 local skillCd = { frost = 0, meteor = 0, beam = 0, snare = 0 }
+-- B2 物品表: 从 assets/data/items.json 经反射 LoadDataTable("item") 加载.
+-- 击杀狼随机掉落一件物品(gold/月亮草/浆果->治疗), 存入 inventory 并HUD显示.
+local ITEMS = {}
+do
+  for _, row in ipairs(LoadDataTable("item", ReadText("assets/data/items.json"))) do
+    ITEMS[row.id] = { label = row.label, value = row.value, tag = row.tag, icon = row.icon }
+  end
+end
+local inventory = {} -- itemId -> count
 -- 世界锚定 VFX: 每个特效是一个真实实体 (自发光球 / 贴地环 / 贴花), 到期回收
 local vfxEnts, vfxMeteors = {}, {}
 local vfxClock = 0
@@ -616,6 +625,22 @@ local function update_wolves(dt)
         SetEntityPlate(w.e, nil, -1.0)
         SetVar("kills", vget("kills", 0) + 1)
         SetVar("gold", vget("gold", 0) + 5 + math.floor(vget("wave", 0)))
+        -- B2 物品掉落: 随机掉落一件物品(银币/月亮草/浆果), 计入 inventory.
+        local lootIds = {}
+        for k in pairs(ITEMS) do lootIds[#lootIds + 1] = k end
+        if #lootIds > 0 then
+          local id = lootIds[math.random(#lootIds)]
+          local it = ITEMS[id]
+          inventory[id] = (inventory[id] or 0) + 1
+          if it and it.tag == "currency" then
+            SetVar("gold", vget("gold", 0) + math.floor(it.value))
+          elseif it and it.tag == "collectible" and it.value > 0 then
+            -- 治疗浆果等: 直接回血(演示数据表->玩法)
+            SetVar("hp", math.min(vget("max_hp", 100), vget("hp", 100) + math.floor(it.value)))
+          end
+          local pt = GetPosition(w.e)
+          if pt ~= nil then SpawnFloatText(pt.x, pt.y + 1.6, pt.z, "+" .. it.label, false, 1.0) end
+        end
         local xp = vget("xp", 0) + 20
         SetVar("xp", xp)
         if xp >= vget("level", 1) * 100 then
@@ -923,6 +948,19 @@ function on_render()
       DrawText(sl.label, x + slotW / 2, by + slotH * 0.5, 20, 0.95, 0.98, 1, 1, true, true)
     end
     DrawText(sl.k, x + 4, by + 3, 12, 1, 0.85, 0.3, 1, false, false)
+  end
+  -- B2 物品栏: 显示采集/掉落物品计数 (数据表驱动)
+  local invCount = 0
+  for _ in pairs(inventory) do invCount = invCount + 1 end
+  if invCount > 0 then
+    local iy = by - 22
+    local ix = bx
+    for id_, cnt in pairs(inventory) do
+      local it_ = ITEMS[id_]
+      local label = it_ and it_.label or id_
+      DrawText(string.format("%s x%d", label, cnt), ix, iy, 14, 0.9, 0.95, 1.0, 1, false, false)
+      ix = ix + 96
+    end
   end
   -- 全屏冲击闪光 (各技能色 tint)
   for _, fl in ipairs(flashes) do

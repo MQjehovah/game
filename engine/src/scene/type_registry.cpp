@@ -53,6 +53,7 @@ void RegisterBuiltinReflectedTypes() {
     // data rows here (or a data component) and loads `[{...}]` JSON via
     // LoadDataTable so content is schema-checked + editor-editable.
     TypeRegistry::Register<SkillData>("skill", "技能");
+    TypeRegistry::Register<ItemData>("item", "物品");
 }
 
 } // namespace neon::scene

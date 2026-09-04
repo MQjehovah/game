@@ -77,4 +77,27 @@ struct SkillData {
     }
 };
 
+// A generic item row (B2), the counterpart to SkillData for loot/props (herbs,
+// currency, gear). A project loads `[{...}]` via LoadDataTable("item", ...) so
+// collectible content is data-driven + editor-editable, registered as "item".
+struct ItemData {
+    std::string id;    // stable key ("herb", "silver", ...)
+    std::string label; // display name
+    float value = 0.0f; // value / weight / healing amount
+    std::string tag;   // optional gameplay tag ("collectible"/"currency"/...)
+    std::string icon;  // optional sprite path (HUD/gather pickup)
+
+    inline static const auto kFields = ReflectFields(
+        Field("id", "ID", FieldType::String, &ItemData::id),
+        Field("label", "名称", FieldType::String, &ItemData::label),
+        Field("value", "数值", FieldType::Number, &ItemData::value, 0, 0, 1e7, 1),
+        Field("tag", "标签", FieldType::String, &ItemData::tag),
+        Field("icon", "图标", FieldType::String, &ItemData::icon));
+    static scene::ComponentSchema Schema() { return {"item", "物品", kFields.Schemas()}; }
+    core::Json ToJson() const { return kFields.ToJson(*this); }
+    bool FromJson(const core::Json& j, std::string* err = nullptr) {
+        return kFields.FromJson(j, *this, err);
+    }
+};
+
 } // namespace neon::scene

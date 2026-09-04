@@ -156,6 +156,21 @@ TEST(DataTableLoadAndValidate) {
     CHECK(!scene::LoadDataTable("skill", R"([{"id":"a","cooldown":1}, 5, null])").Ok());
 }
 
+// B2: the ItemData row type (registered as "item") validates a real item table.
+TEST(DataTableItemLoad) {
+    scene::TypeRegistry::Register<scene::ItemData>("item", "物品");
+    const std::string items = R"([
+      {"id":"herb","label":"月亮草","value":10,"tag":"collectible","icon":"assets/sprites/glow.png"},
+      {"id":"silver","label":"银币","value":5,"tag":"currency","icon":""}
+    ])";
+    auto ok = scene::LoadDataTable("item", items);
+    CHECK(ok.Ok());
+    CHECK_EQ(ok.Value().Count(), 2u);
+    CHECK_EQ(ok.Value().rows[0].Get("id")->GetString(), std::string("herb"));
+    CHECK_NEAR(ok.Value().rows[0].Get("value")->GetNumber(), 10.0, 1e-6);
+    CHECK_EQ(ok.Value().rows[1].Get("tag")->GetString(), std::string("currency"));
+}
+
 // B2: the LoadDataTable Lua binding returns rows as tables via the wired hook.
 TEST(DataTableLuaBinding) {
     auto host = script::CreateLuaHost();
