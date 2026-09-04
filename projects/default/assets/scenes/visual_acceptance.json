@@ -1,0 +1,89 @@
+{
+  "entities": [
+    {
+      "id": 1,
+      "name": "地面",
+      "components": {
+        "transform": { "pos": [0, 0, 0] },
+        "mesh": { "meshKey": "terrain", "material": { "castShadow": false } }
+      }
+    },
+    {
+      "id": 2,
+      "name": "展示平台",
+      "components": {
+        "transform": { "pos": [0, 0.45, 0] },
+        "mesh": { "meshKey": "cube", "material": { "colorHex": "#553311", "roughness": 0.4 } }
+      }
+    },
+    {
+      "id": 3,
+      "name": "头盔样例",
+      "components": {
+        "transform": { "pos": [0, 0.95, 0] },
+        "mesh": { "meshKey": "gltf:assets/models/DamagedHelmet/DamagedHelmet.gltf" }
+      }
+    },
+    {
+      "id": 4,
+      "name": "相机",
+      "components": {
+        "transform": { "pos": [0, 2.2, 4.5] },
+        "camera": { "fov": 60, "orthoSize": 5 },
+        "type": { "value": "Camera3D" }
+      }
+    },
+    {
+      "id": 5,
+      "name": "太阳光",
+      "components": {
+        "transform": { "pos": [0, 0, 0] },
+        "light": {
+          "type": "directional",
+          "sunDir": [-0.4, -1, -0.3],
+          "color": [1, 0.95, 0.85, 1],
+          "intensity": 1,
+          "ambientStrength": 0.25,
+          "useAtmosphere": true,
+          "skybox": true,
+          "skyTop": [0.05, 0.09, 0.18, 1],
+          "skyHorizon": [0.35, 0.45, 0.6, 1],
+          "fogColor": [0.4, 0.5, 0.65, 1],
+          "fogNear": 20,
+          "fogFar": 120
+        },
+        "type": { "value": "Light3D" }
+      }
+    },
+    {
+      "id": 6,
+      "name": "渲染栈",
+      "components": {
+        "transform": { "pos": [0, 0, 0] },
+        "renderstack": {
+          "ssao": true,
+          "ssaoIntensity": 0.8,
+          "volumetric": true,
+          "bloom": true,
+          "bloomThreshold": 0.9,
+          "bloomStrength": 0.45,
+          "tonemap": true,
+          "exposure": 1.0,
+          "grade": true,
+          "gradeSaturation": 1.12,
+          "gradeContrast": 0.06,
+          "gradeGain": 1.05,
+          "gradeTint": [1.0, 0.98, 0.94, 1],
+          "autoExposure": true,
+          "autoExposureKey": 0.18,
+          "vignette": true,
+          "vignetteRadius": 0.6,
+          "vignetteIntensity": 0.4
+        }
+      }
+    }
+  ],
+  "level": {
+    "navgrid": ""
+  }
+}
