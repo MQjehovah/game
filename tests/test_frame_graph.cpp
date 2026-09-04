@@ -302,7 +302,8 @@ gfx::PostGraph BuildFullPostGraph(int& depthCasterCalls) {
     gfx::PostGraph post;
     post.Build(MakeTestShaders(), gfx::MeshHandle{1, 1, 1, 6}, 640, 360,
                [&] { ++depthCasterCalls; });
-    CHECK_EQ(post.PassCount(), 18u);
+    // 18 post/bloom passes + 2 A5 auto-exposure passes (luminance + 1x1 average).
+    CHECK_EQ(post.PassCount(), 20u);
     return post;
 }
 

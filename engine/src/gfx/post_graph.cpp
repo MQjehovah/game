@@ -28,6 +28,8 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
     blur_ = shaders.blur;
     downsample_ = shaders.downsample;
     upsampleAdd_ = shaders.upsampleAdd;
+    luminanceShader_ = shaders.luminanceShader;
+    luminanceReduceShader_ = shaders.luminanceReduceShader;
     compositeShader_ = shaders.compositeShader;
     postQuad_ = postQuad;
     drawDepthCasters_ = std::move(drawDepthCasters);
@@ -61,6 +63,12 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
     bloomHalfB_ = fresh.AddResource({static_cast<uint32_t>(aw), static_cast<uint32_t>(ah), kFloatFormat, 1u});
     bloomQuarterA_ = fresh.AddResource({static_cast<uint32_t>(qw), static_cast<uint32_t>(qh), kFloatFormat, 1u});
     bloomQuarterB_ = fresh.AddResource({static_cast<uint32_t>(qw), static_cast<uint32_t>(qh), kFloatFormat, 1u});
+    // A5 auto-exposure: a small log-luminance target (1/32 res, clamped >=1) whose
+    // 1x1 box average feeds the composite. Both are float (log can be negative).
+    const int lumW = std::max(w / 32, 1);
+    const int lumH = std::max(h / 32, 1);
+    lum_ = fresh.AddResource({static_cast<uint32_t>(lumW), static_cast<uint32_t>(lumH), kFloatFormat, 1u});
+    lumAvg_ = fresh.AddResource({1u, 1u, kFloatFormat, 1u});
 
     size_t nextPass = 0;
     const auto add = [&](FramePass p) {
@@ -288,6 +296,39 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
     };
     upsampleAddIndex_ = add(std::move(upsample));
 
+    // 18. Auto-exposure measure: convert the HDR scene to a small log-luminance
+    //     target. 19. reduce it to a 1x1 average. The composite samples that
+    //     single texel to derive the exposure multiplier (A5).
+    FramePass lum;
+    lum.name = "post.luminance";
+    lum.reads = {hdrScene_};
+    lum.writes = {lum_};
+    lum.execute = [this](FrameGraphContext& ctx) {
+        auto& backend = ctx.Backend();
+        backend.BindRenderTarget(ctx.GetOutput(lum_));
+        Fullscreen(backend, luminanceShader_);
+        backend.BindTexture(0, backend.RenderTargetColorTexture(ctx.GetInput(hdrScene_)));
+        backend.SetUniformInt("uHdr", 0);
+        backend.DrawMesh(postQuad_);
+    };
+    luminanceIndex_ = add(std::move(lum));
+
+    FramePass lumAvg;
+    lumAvg.name = "post.luminanceAvg";
+    lumAvg.reads = {lum_};
+    lumAvg.writes = {lumAvg_};
+    lumAvg.execute = [this, lumW, lumH](FrameGraphContext& ctx) {
+        auto& backend = ctx.Backend();
+        backend.BindRenderTarget(ctx.GetOutput(lumAvg_));
+        Fullscreen(backend, luminanceReduceShader_);
+        backend.BindTexture(0, backend.RenderTargetColorTexture(ctx.GetInput(lum_)));
+        backend.SetUniformInt("uLum", 0);
+        backend.SetUniformVec2("uSrcTexelSize", math::Vec2{1.0f / static_cast<float>(lumW),
+                                                            1.0f / static_cast<float>(lumH)});
+        backend.DrawMesh(postQuad_);
+    };
+    luminanceAvgIndex_ = add(std::move(lumAvg));
+
     // 18. Composite: draws the final image to the DEFAULT target (backbuffer,
     //     an out-of-graph target) sampling the scene HDR plus the exported
     //     finals (bloom accumulation, raw AO, blurred volumetric / SSR, scene
@@ -297,7 +338,7 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
     //     like the old hand-written composite.
     FramePass composite;
     composite.name = "post.composite";
-    composite.reads = {hdrScene_, sceneDepth_, ao_, volBlurB_, ssrBlurB_, bloomHalfB_};
+    composite.reads = {hdrScene_, sceneDepth_, ao_, volBlurB_, ssrBlurB_, bloomHalfB_, lumAvg_};
     composite.execute = [this](FrameGraphContext& ctx) {
         auto& backend = ctx.Backend();
         if (!compositeShader_.Valid() || !postQuad_.Valid()) return;
@@ -378,6 +419,26 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
         backend.SetUniformFloat("uGamma", g.gamma);
         backend.SetUniformFloat("uLift", g.lift);
         backend.SetUniformVec3("uTint", g.tint);
+        // A5 auto-exposure + vignette. The 1x1 avg log-luminance is bound on a
+        // dedicated unit (6 clean); when off the composite ignores it entirely.
+        const AutoExposure& ae = comp_.autoExposure;
+        const Vignette& vg = comp_.vignette;
+        const RenderTargetHandle lumRt = ctx.GetInput(lumAvg_);
+        const bool lumLive = lumRt.Valid();
+        if (lumLive && ae.enabled) {
+            backend.BindTexture(6, backend.RenderTargetColorTexture(lumRt));
+        } else {
+            backend.BindTexture(6, comp_.white);
+        }
+        backend.SetUniformInt("uAvgLum", 6);
+        backend.SetUniformInt("uAutoExposure", (lumLive && ae.enabled) ? 1 : 0);
+        backend.SetUniformFloat("uKeyValue", ae.keyValue);
+        backend.SetUniformFloat("uExposureMin", ae.minExposure);
+        backend.SetUniformFloat("uExposureMax", ae.maxExposure);
+        backend.SetUniformInt("uVignette", vg.enabled ? 1 : 0);
+        backend.SetUniformFloat("uVignetteRadius", vg.radius);
+        backend.SetUniformFloat("uVignetteSoftness", vg.softness);
+        backend.SetUniformFloat("uVignetteIntensity", vg.intensity);
         backend.DrawMesh(postQuad_);
     };
     compositePassIndex_ = add(std::move(composite));
@@ -446,6 +507,13 @@ bool PostGraph::Execute(IRenderBackend& backend, const FrameParams& params) {
     graph_.SetPassEnabled(blurQuarterHIndex_, bloom);
     graph_.SetPassEnabled(blurQuarterVIndex_, bloom);
     graph_.SetPassEnabled(upsampleAddIndex_, bloom);
+    // A5 auto-exposure measure chain runs only when requested AND the HDR scene
+    // is live AND the measure shaders exist. When off, the composite's
+    // uAutoExposure=0 keeps the authored scalar exposure.
+    const bool ae = params.composite.autoExposure.enabled && luminanceShader_.Valid() &&
+                    luminanceReduceShader_.Valid() && params.hdrScene.Valid();
+    graph_.SetPassEnabled(luminanceIndex_, ae);
+    graph_.SetPassEnabled(luminanceAvgIndex_, ae);
     // The composite is the chain's terminal pass: it always runs so the HDR
     // scene reaches the backbuffer (its execute guards on shader/input validity
     // and draws nothing when the composite program is missing).

@@ -184,6 +184,10 @@ void Renderer::InitBuiltinResources() {
         backend_->CreateShader(kPostVertexShader, kDownsampleFragmentShader, "bloom_downsample");
     upsampleAddShader_ =
         backend_->CreateShader(kPostVertexShader, kUpsampleAddFragmentShader, "bloom_upsample_add");
+    luminanceShader_ =
+        backend_->CreateShader(kPostVertexShader, kLuminanceShader, "autoexposure_lum");
+    luminanceReduceShader_ =
+        backend_->CreateShader(kPostVertexShader, kLuminanceReduceShader, "autoexposure_avg");
     compositeShader_ =
         backend_->CreateShader(kPostVertexShader, kCompositeFragmentShader, "bloom_composite");
     NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
@@ -1135,6 +1139,8 @@ void Renderer::RebuildHdrTargets() {
     shaders.blur = blurShader_;
     shaders.downsample = downsampleShader_;
     shaders.upsampleAdd = upsampleAddShader_;
+    shaders.luminanceShader = luminanceShader_;
+    shaders.luminanceReduceShader = luminanceReduceShader_;
     shaders.compositeShader = compositeShader_;
     shaders.white = white_;
     postGraph_.Build(shaders, postQuadMesh_, screenW_, screenH_,
@@ -1303,6 +1309,8 @@ PostGraph::FrameParams Renderer::MakePostParams(bool chains) const {
     p.composite.bloomThreshold = bloomThreshold_;
     p.composite.bloomStrength = bloomStrength_;
     p.composite.colorGrade = colorGrade_;
+    p.composite.autoExposure = autoExposure_;
+    p.composite.vignette = vignette_;
     p.composite.white = white_;
     return p;
 }

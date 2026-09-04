@@ -41,6 +41,9 @@ public:
         ShaderHandle downsample;
         ShaderHandle upsampleAdd;
         ShaderHandle compositeShader; // 最终 composite
+        // A5 auto-exposure measure shaders (HDR -> log-lum -> 1x1 average).
+        ShaderHandle luminanceShader;
+        ShaderHandle luminanceReduceShader;
         TextureHandle white;          // 未启用链的占位纹理（composite 绑定）
     };
 
@@ -62,6 +65,10 @@ public:
         // A1 color grading (procedural LUT-free "film look", applied post-tonemap).
         // Default (disabled) leaves the composite pixel-identical to the old path.
         ColorGrade colorGrade;
+        // A5 auto-exposure + vignette (post-tonemap). Off by default so existing
+        // scenes are unchanged; the composite only lifts/brightens when enabled.
+        AutoExposure autoExposure;
+        Vignette vignette;
         TextureHandle white; // 与 Shaders::white 同源（Execute 逐帧重给，防句柄过期）
     };
 
@@ -150,6 +157,9 @@ private:
     ResourceId bloomHalfB_ = kInvalidResource;    // == bloomAcc_（upsample-add 输出）
     ResourceId bloomQuarterA_ = kInvalidResource; // 四分之一尺寸
     ResourceId bloomQuarterB_ = kInvalidResource;
+    // A5 auto-exposure: a small log-luminance intermediate + a 1x1 average.
+    ResourceId lum_ = kInvalidResource;      // 1/32 尺寸 log-luminance（luminance 写）
+    ResourceId lumAvg_ = kInvalidResource;   // 1x1 平均 log-luminance（reduce 写）
     size_t depthPassIndex_ = 0;
     size_t ssaoPassIndex_ = 0;
     size_t ssaoBlurHIndex_ = 0;
@@ -167,6 +177,8 @@ private:
     size_t blurQuarterHIndex_ = 0;
     size_t blurQuarterVIndex_ = 0;
     size_t upsampleAddIndex_ = 0;
+    size_t luminanceIndex_ = 0;
+    size_t luminanceAvgIndex_ = 0;
     size_t compositePassIndex_ = 0;
     ShaderHandle ssaoShader_;
     ShaderHandle ssaoBlur_;
@@ -176,6 +188,8 @@ private:
     ShaderHandle blur_;
     ShaderHandle downsample_;
     ShaderHandle upsampleAdd_;
+    ShaderHandle luminanceShader_;
+    ShaderHandle luminanceReduceShader_;
     ShaderHandle compositeShader_;
     MeshHandle postQuad_;
     std::function<void()> drawDepthCasters_;

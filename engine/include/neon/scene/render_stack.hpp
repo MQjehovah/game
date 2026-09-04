@@ -60,6 +60,14 @@ struct RenderStack {
     float gradeGamma = 1.0f;
     float gradeLift = 0.0f;
     gfx::Color gradeTint{1.0f, 1.0f, 1.0f, 1.0f};
+    // A5 auto-exposure + vignette (composite post-tonemap). autoExposure adapts
+    // the exposure to the scene's average luminance (key value); vignette darkens
+    // the frame corners.
+    bool autoExposure = false;
+    float autoExposureKey = 0.18f;
+    bool vignette = false;
+    float vignetteRadius = 0.6f;
+    float vignetteIntensity = 0.5f;
 
     inline static const auto kFields = ReflectFields(
         Field("ssao", "SSAO", FieldType::Bool, &RenderStack::ssao),
@@ -89,7 +97,15 @@ struct RenderStack {
         Field("gradeGamma", "伽马(中间调)", FieldType::Number, &RenderStack::gradeGamma,
               1, 0.1, 4, 0.01),
         Field("gradeLift", "抬升(阴影)", FieldType::Number, &RenderStack::gradeLift, 0, 0, 1, 0.01),
-        Field("gradeTint", "白平衡", FieldType::Color, &RenderStack::gradeTint));
+        Field("gradeTint", "白平衡", FieldType::Color, &RenderStack::gradeTint),
+        Field("autoExposure", "自动曝光", FieldType::Bool, &RenderStack::autoExposure),
+        Field("autoExposureKey", "自动曝光目标灰度", FieldType::Number,
+              &RenderStack::autoExposureKey, 0.18, 0.01, 1, 0.01),
+        Field("vignette", "暗角", FieldType::Bool, &RenderStack::vignette),
+        Field("vignetteRadius", "暗角内径", FieldType::Number, &RenderStack::vignetteRadius,
+              0.6, 0, 1, 0.01),
+        Field("vignetteIntensity", "暗角强度", FieldType::Number, &RenderStack::vignetteIntensity,
+              0.5, 0, 1, 0.01));
 
     core::Json ToJson() const { return kFields.ToJson(*this); }
     bool FromJson(const core::Json& j, std::string* err = nullptr) {

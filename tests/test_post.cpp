@@ -234,6 +234,50 @@ TEST(BloomGaussianKernelNormalized) {
         CHECK_NEAR(gfx::kBloomKernel[2 - k], gfx::kBloomKernel[2 + k], 1e-9);
 }
 
+TEST(AutoExposureMath) {
+    // AutoExposure disabled (default) is always neutral exposure.
+    gfx::AutoExposure off;
+    CHECK(!off.enabled);
+    CHECK_NEAR(gfx::AutoExposureExposure(0.5f, off), 1.0f, 1e-6);
+
+    // Enabled: average luminance BELOW the key lifts the scene (exposure > 1).
+    gfx::AutoExposure on;
+    on.enabled = true;
+    on.keyValue = 0.18f;
+    CHECK_NEAR(gfx::AutoExposureExposure(0.18f, on), 1.0f, 1e-3); // avg == key -> neutral
+    CHECK(gfx::AutoExposureExposure(0.045f, on) > 1.0f);          // dark scene lifts (brightens)
+    CHECK(gfx::AutoExposureExposure(0.72f, on) < 1.0f);           // bright scene compresses
+
+    // Clamped: a very bright scene DROPS exposure to the min; a very dark scene
+    // RISES exposure to the max.
+    CHECK_NEAR(gfx::AutoExposureExposure(1e6f, on), on.minExposure, 1e-3);
+    CHECK_NEAR(gfx::AutoExposureExposure(1e-4f, on), on.maxExposure, 1e-3);
+    // Degenerate (near-zero) average stays neutral (the guard keeps it finite).
+    CHECK_NEAR(gfx::AutoExposureExposure(0.0f, on), 1.0f, 1e-6);
+}
+
+TEST(VignetteMath) {
+    gfx::Vignette off;
+    CHECK(!off.enabled);
+    CHECK_NEAR(gfx::VignetteFactor({0.5f, 0.5f}, off), 1.0f, 1e-6); // disabled -> full
+    CHECK_NEAR(gfx::VignetteFactor({0.0f, 0.0f}, off), 1.0f, 1e-6);
+
+    gfx::Vignette on;
+    on.enabled = true;
+    on.intensity = 0.5f;
+    on.radius = 0.6f;
+    on.softness = 0.5f;
+    // Center (dist ~0) unscaled.
+    CHECK_NEAR(gfx::VignetteFactor({0.5f, 0.5f}, on), 1.0f, 1e-3);
+    // Far corner darkened by ~intensity.
+    const float corner = gfx::VignetteFactor({0.0f, 0.0f}, on);
+    CHECK(corner < 1.0f);
+    CHECK_NEAR(corner, 1.0f - on.intensity, 0.15f);
+    // Monotonic: moving away from center only darkens or stays.
+    const float mid = gfx::VignetteFactor({0.8f, 0.5f}, on);
+    CHECK(mid <= 1.0f + 1e-5f);
+}
+
 // --- Shader source guards (string-token, headless) --------------------------
 // The built-in post shaders live in bloom.hpp precisely so tests can pin the
 // source without a GL context (same idea as the CSM math headers).
@@ -280,6 +324,24 @@ TEST(BloomShaderSourceTokens) {
     CHECK(composite.find("uGamma") != std::string::npos);
     CHECK(composite.find("uLift") != std::string::npos);
     CHECK(composite.find("uTint") != std::string::npos);
+    // A5 auto-exposure + vignette uniforms.
+    CHECK(composite.find("uAvgLum") != std::string::npos);
+    CHECK(composite.find("uAutoExposure") != std::string::npos);
+    CHECK(composite.find("uKeyValue") != std::string::npos);
+    CHECK(composite.find("uExposureMin") != std::string::npos);
+    CHECK(composite.find("uExposureMax") != std::string::npos);
+    CHECK(composite.find("uVignette") != std::string::npos);
+    CHECK(composite.find("uVignetteRadius") != std::string::npos);
+    CHECK(composite.find("uVignetteIntensity") != std::string::npos);
+
+    // A5 luminance-measure shaders exist and reference their inputs.
+    const std::string lum(gfx::kLuminanceShader);
+    CHECK(lum.find("uHdr") != std::string::npos);
+    CHECK(lum.find("0.2126") != std::string::npos);
+    CHECK(lum.find("log(") != std::string::npos);
+    const std::string reduce(gfx::kLuminanceReduceShader);
+    CHECK(reduce.find("uLum") != std::string::npos);
+    CHECK(reduce.find("uSrcTexelSize") != std::string::npos);
 
     const std::string vertex(gfx::kPostVertexShader);
     CHECK(vertex.find("layout(location = 0) in vec3 aPos") != std::string::npos);

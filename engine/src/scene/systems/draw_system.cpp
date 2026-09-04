@@ -704,6 +704,10 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
             renderer.SetColorGrade({stack->grade, stack->gradeSaturation, stack->gradeContrast,
                                     stack->gradeGain, stack->gradeGamma, stack->gradeLift,
                                     {stack->gradeTint.r, stack->gradeTint.g, stack->gradeTint.b}});
+            renderer.SetAutoExposure({stack->autoExposure, stack->autoExposureKey, 0.05f, 20.0f,
+                                      0.5f});
+            renderer.SetVignette({stack->vignette, stack->vignetteRadius, 0.5f,
+                                  stack->vignetteIntensity});
         }
     }
     // P2-3 scene camera: when the world contains a camera entity, its transform

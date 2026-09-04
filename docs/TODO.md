@@ -58,6 +58,10 @@
 >   ——太阳圆盘+光环、锁定对侧的月亮、FBM 程序云，取代旧的屏幕空间渐变（此前不随相机转动）。
 >   `SceneLight.skybox`（反射布尔）+ draw/editor 宿主动 `EnableSkyBox(sunDir)` 按平行光方向瞄准；
 >   HDRI 天空贴图仍可作 equirect 源。GLSL 经 glslang 验证通过。
+> - **A5 自动曝光 + 暗角** ✅：**GPU 自动曝光**（post_graph 新增 2 个 pass：HDR→log 平均亮度小目标→1x1
+>   平均；composite 由 `keyValue/avgLum` 推导曝光乘子并夹到 [min,max]，默认禁用零回归）+ **暗角**（composite
+>   径向暗化）。`RenderStack` 反射新增 autoExposure/autoExposureKey/vignette/vignetteRadius/vignetteIntensity。
+>   因该后端 float 回读在 Intel 上不可靠，自动曝光采用**纯 shader 每帧适应**（无 CPU 回读/时间平滑）。
 > - ⚠️ 遗留 2 个**基线失败**：`MeshoptLodSimplify` / `GltfAsyncPredecodedTextures`（stash 复测证不与本批相关）。
 
 

@@ -264,6 +264,13 @@ public:
     // a Lua-driven script) applies it each frame so grading is data-driven.
     void SetColorGrade(const ColorGrade& grade) { colorGrade_ = grade; }
     const ColorGrade& GetColorGrade() const { return colorGrade_; }
+    // A5 auto-exposure + vignette setters (composite post-tonemap). autoExposure
+    // adapts the exposure to the scene's average luminance; vignette darkens the
+    // frame corners. Both off by default -> existing scenes unchanged.
+    void SetAutoExposure(const AutoExposure& ae) { autoExposure_ = ae; }
+    const AutoExposure& GetAutoExposure() const { return autoExposure_; }
+    void SetVignette(const Vignette& v) { vignette_ = v; }
+    const Vignette& GetVignette() const { return vignette_; }
     // MSAA (Task 3.7): when requested AND the driver passes the multisample
     // FBO + blit-resolve self-test, the HDR scene renders into a samples-per-
     // pixel multisample target and EndScene/CompositeFrame resolve it into the
@@ -529,6 +536,8 @@ private:
     ShaderHandle blurShader_;
     ShaderHandle downsampleShader_;
     ShaderHandle upsampleAddShader_;
+    ShaderHandle luminanceShader_;
+    ShaderHandle luminanceReduceShader_;
     ShaderHandle compositeShader_;
     ShaderHandle ssaoShader_;
     ShaderHandle ssaoBlurShader_;
@@ -577,6 +586,11 @@ private:
     bool tonemapEnabled_ = true;
     // A1 color grading (post-tonemap procedural "film look"); default disabled.
     ColorGrade colorGrade_;
+    // A5 auto-exposure + vignette (composite). autoExposure_/vignette_ drive
+    // the composite; the exposure is adapted per-frame in the shader from the
+    // measured average log-luminance (no CPU readback).
+    AutoExposure autoExposure_;
+    Vignette vignette_;
     // A3 probe-field GI: the baked irradiance atlas + its grid metadata. When
     // disabled (invalid texture) the lit shader contributes no GI term.
     TextureHandle lightProbeAtlas_;

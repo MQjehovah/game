@@ -135,6 +135,58 @@ inline math::Vec3 GradeColor(const math::Vec3& c, const ColorGrade& g) {
             std::fmin(std::fmax(x.z, 0.0f), 1.0f)};
 }
 
+// --- A5 auto-exposure + vignette (post-tonemap LUT-free) ---------------------
+// Auto-exposure targets a middle-grey average luminance: the scene's HDR
+// average log-luminance is computed by a downsample chain (see PostGraph), and
+// the composite derives an exposure multiplier that drives it toward a key
+// value. Smoothing (lerp toward the target) is applied in the composite via the
+// previous frame's exposure. The CPU models below mirror the GLSL so the
+// operators are unit-testable headlessly (same convention as AcesFilm).
+
+// Auto-exposure params (RenderStack / CompositeParams / Renderer state).
+struct AutoExposure {
+    bool enabled = false;       // off = keep the authored scalar exposure
+    float keyValue = 0.18f;     // middle-grey target
+    float minExposure = 0.05f;  // clamp the multiplier
+    float maxExposure = 20.0f;
+    float adaptationSpeed = 0.5f; // lerp factor per frame toward target [0,1]
+};
+
+// Vignette params: radial darkening toward the frame corners/edges.
+struct Vignette {
+    bool enabled = false;
+    float radius = 0.6f;   // [0,1] inner radius (1 = no vignette)
+    float softness = 0.5f; // blur of the darkening edge
+    float intensity = 0.5f;// 0 = none, 1 = strong edge dark
+};
+
+// Exposure multiplier from the scene's average log-luminance: scale the HDR
+// average so the key value lands mid-grey. avgLum is the average LUMINANCE
+// (not log) already averaged by the downsample chain; a degenerate (near-zero)
+// average keeps a neutral exposure, and the result is clamped to [min,max].
+inline float AutoExposureExposure(float avgLum, const AutoExposure& a) {
+    if (!a.enabled || avgLum <= 1e-5f) return 1.0f;
+    // EV-based: exposure = key / avgLum, clamped. log2 keeps the perceptual scale
+    // so a dark scene lifts and a bright scene compresses symmetrically.
+    float ev = std::log2(a.keyValue / avgLum);
+    return std::clamp(std::exp2(ev), a.minExposure, a.maxExposure);
+}
+
+// Vignette factor at a screen-space UV in [0,1]: 1 in the center, falling to
+// (1 - intensity) at the edges. Inner radius + softness shape the falloff;
+// intensity scales how dark the edge becomes.
+inline float VignetteFactor(const math::Vec2& uv, const Vignette& v) {
+    if (!v.enabled) return 1.0f;
+    const math::Vec2 d{uv.x - 0.5f, uv.y - 0.5f};
+    const float dist = std::sqrt(d.x * d.x + d.y * d.y) * 2.0f; // 0 center, ~1.41 corners
+    const float inner = v.radius;
+    const float falloff = std::fmax(0.0f, (dist - inner) / std::max(v.softness, 1e-4f));
+    const float t = std::clamp(falloff, 0.0f, 1.0f);
+    // Smoothstep for a soft edge.
+    const float st = t * t * (3.0f - 2.0f * t);
+    return 1.0f - st * v.intensity;
+}
+
 // --- Built-in post-process shaders ------------------------------------------
 // Fullscreen NDC quad (postQuadMesh_ in the renderer) drawn with uMVP =
 // identity. Location 0 = position, 2 = uv (matches the engine vertex layout).
@@ -200,6 +252,46 @@ void main() {
 }
 )";
 
+// A5 auto-exposure measurement. Two explicit passes:
+//   1. kLuminanceShader: converts HDR -> a 1-channel log-averaged luminance in
+//      .x (we average log luminance, the perceptual scalar that auto-exposure
+//      keys on). Written into a small (e.g. 16x16) RGBA target.
+//   2. kLuminanceReduceShader: box-averages that down to 1x1. The composite then
+//      reads that single texel as the scene's average LOG luminance, exponentiates
+//      it, and derives the exposure multiplier.
+// The log-luminance histogram is approximated by a single average (no histogram,
+// fine for a lightweight per-frame estimate). Empty (black) scene yields log ~ -inf;
+// the shader clamps the min luminance so it degrades to a neutral exposure.
+inline constexpr const char* kLuminanceShader = R"(
+#version 330 core
+in vec2 vUV;
+out vec4 FragColor;
+uniform sampler2D uHdr;     // the scene HDR (composite input)
+void main() {
+    vec3 c = texture(uHdr, vUV).rgb;
+    // Perceptual luminance (Rec.709), with a floor to keep log finite on black.
+    float lum = max(dot(c, vec3(0.2126, 0.7152, 0.0722)), 1e-4);
+    // Average LOG luminance (writes the log so the reduce pass can average it).
+    FragColor = vec4(log(lum), 0.0, 0.0, 1.0);
+}
+)";
+
+inline constexpr const char* kLuminanceReduceShader = R"(
+#version 330 core
+in vec2 vUV;
+out vec4 FragColor;
+uniform sampler2D uLum;     // the log-luminance target (small)
+uniform vec2 uSrcTexelSize; // 1 / source dimensions
+void main() {
+    vec2 o = uSrcTexelSize * 0.5;
+    vec4 s = texture(uLum, vUV + vec2(-o.x, -o.y))
+           + texture(uLum, vUV + vec2( o.x, -o.y))
+           + texture(uLum, vUV + vec2(-o.x,  o.y))
+           + texture(uLum, vUV + vec2( o.x,  o.y));
+    FragColor = vec4(s.rgb * 0.25, 1.0); // averaged log luminance
+}
+)";
+
 // Progressive bloom accumulation: half-res bloom + upsampled quarter-res bloom.
 // The bilinear texture sampler does the upsampling; the quarter pass only ever
 // holds 1/4-res data, so its contribution is added at 1/4 resolution and then
@@ -255,6 +347,15 @@ uniform float uGain;
 uniform float uGamma;
 uniform float uLift;
 uniform vec3 uTint;
+uniform sampler2D uAvgLum;     // A5 1x1 average log-luminance (auto-exposure)
+uniform int uAutoExposure;
+uniform float uKeyValue;
+uniform float uExposureMin;
+uniform float uExposureMax;
+uniform float uVignetteRadius;
+uniform float uVignetteSoftness;
+uniform float uVignetteIntensity;
+uniform int uVignette;
 vec3 ACESFilm(vec3 x) {
     float a = 2.51, b = 0.03, c = 2.43, d = 0.59, e = 0.14;
     // Clamp the input to the half-float max before the curve: an Inf/NaN HDR
@@ -287,7 +388,17 @@ void main() {
         }
     }
     if (uTonemapEnabled != 0) {
-        vec3 graded = ACESFilm(c * uExposure);
+        // A5 auto-exposure: derive the exposure multiplier from the measured
+        // average log-luminance (uAvgLum), smoothed toward the target key value
+        // from the previous frame's exposure. When disabled the authored scalar
+        // uExposure is used verbatim (the historical pipeline).
+        float exposure = uExposure;
+        if (uAutoExposure != 0) {
+            float avgLog = texture(uAvgLum, vec2(0.5)).r;
+            float avgLum = exp(avgLog);
+            if (avgLum > 1e-5) exposure = clamp(uKeyValue / avgLum, uExposureMin, uExposureMax);
+        }
+        vec3 graded = ACESFilm(c * exposure);
         // A1 color grading (post-tonemap, display space). Skipped when disabled
         // so the default RenderStack is pixel-identical (matches GradeColor).
         if (uGradeEnabled != 0) {
@@ -300,6 +411,16 @@ void main() {
             float ck = 1.0 + uContrast;
             graded = (graded - vec3(0.5)) * ck + vec3(0.5);
             graded = clamp(graded, vec3(0.0), vec3(1.0));
+        }
+        // A5 vignette: radial darken toward the frame corners (display space).
+        if (uVignette != 0) {
+            float dx = vUV.x - 0.5;
+            float dy = vUV.y - 0.5;
+            float dist = length(vec2(dx, dy)) * 2.0;
+            float fall = max((dist - uVignetteRadius) / max(uVignetteSoftness, 1e-4), 0.0);
+            float t = clamp(fall, 0.0, 1.0);
+            float st = t * t * (3.0 - 2.0 * t);
+            graded *= 1.0 - st * uVignetteIntensity;
         }
         FragColor = vec4(graded, 1.0);
     } else {
