@@ -206,10 +206,19 @@ build\neon_game.exe --connect 127.0.0.1:26000 --scene tests\data\neon_server_sam
 :: 或直接打包运行
 .\build\neon_editor.exe --package projects/neon_realm build\realm_out
 .\build\neon_game.exe --pack build\realm_out\game.pack
+:: 或用 neon_game 直接跑 loose scene（免打包，最快验收）
+.\build\neon_game.exe --scene projects\neon_realm\assets\scenes\realm.json --scripts projects\neon_realm
 ```
 
 操作：WASD 移动（相机相对）、左键近战、1 火球、2 治疗、右键冲刺、空格跳跃；
 靠近村长按 F 对话；击败狼群获得经验/金币并触发下一波。
+
+玩法系统（数据驱动）：
+- **技能表** `assets/data/skills.json` + **物品表** `assets/data/items.json` 经反射
+  `LoadDataTable` 加载；狼击杀随机掉落物品（银币加钱、浆果回血），HUD 物品栏计数。
+- **狼群 NavGrid 寻路**（`level.navgrid`）：绕障追击/回巢，而非直线穿墙。
+- **BlendSpace locomotion**：英雄/狼移动时按速度连续混合 idle↔run。
+  这三项都是数据/脚本层（B1/B2/B3），可在 `neon_editor` 属性面板编辑内容。
 
 核心承诺：**确定性模拟**——服务器权威模拟与客户端本地预测在相同输入流下逐位一致（`tests/test_determinism.cpp` 哈希验收）。详见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) §9。
 
