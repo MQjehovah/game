@@ -964,6 +964,12 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
         const SceneSortOrder* sb = world.Get<SceneSortOrder>(draws_[b].ent);
         return (sa ? sa->z : 0.0f) < (sb ? sb->z : 0.0f);
     });
+    // Re-run the cascade shadow pass NOW: the earlier SetCamera/RefreshShadowPass
+    // ran BEFORE Build recorded this frame's casters, so the shadow maps were
+    // rendered empty and every receiver sampled factor=1 (no tree shadows on
+    // the ground in play). After Build the casters exist; re-render the maps so
+    // the main draw loop below samples this frame's real occluders.
+    renderer.RefreshShadowPass();
     // Instanced batching: opaque static meshes with the same mesh + material
     // group into one instanced draw call. Only when the depth buffer works -
     // the no-depth fallback relies on painter's order, which batching would
