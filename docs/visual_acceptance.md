@@ -53,3 +53,12 @@ DamagedHelmet 自带动法线贴图（`Default_Normal.jpg`）。对比 `castShad
 > 提示：跑一次 `neon_game --scene <视觉验收场景> --screenshot out.png 60` 即可得到单帧，
 > 反复用不同 `--screenshot` 帧号可做时间轴采样。A1/A5 的 `renderstack` 是场景数据驱动，
 > 在编辑器"属性面板"可直接改（反射生成），改完保存再截图即 A/B。
+
+## Demo 玩法升级（B1/B2/B3 应用到 NeonRealm）
+- **B1 NavGrid 绕过障碍**：狼群用 `NavFindPath` 路点绕障追击/回巢（`level.navgrid` 声明）。
+- **B2 数据驱动技能**：技能表从 `assets/data/skills.json` 经反射 `LoadDataTable` 加载。
+- **B3b BlendSpace1D locomotion**：英雄 `AnimBlend("Idle","Running_A",t)` 与狼
+  `AnimBlend("02_walk","01_Run",t)` 连续混合走/跑（替代硬切），移动时角色平滑过渡。
+- 验证：跑 `neon_game --scene <neon_realm 场景>`，拖动输入看角色走跑连续过渡，
+  狼群追击时从走平滑到跑。
+

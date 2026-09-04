@@ -693,12 +693,20 @@ local function update_wolves(dt)
           -- 狼扑咬一次性动画（walk 单次代替）
           PlayAnimation(w.e, "04_Idle", false, 0.1)
         end
-        -- 狼 locomotion：追击=跑，回家=走（glb clip 名 01_Run/02_walk）
-        local want = chase and "01_Run" or "02_walk"
-        if moving and w.animState ~= want then
-          w.animState = want
-          PlayAnimation(w.e, want, true, 0.25)
-        elseif not moving and w.animState ~= "03" then
+        -- 狼 locomotion：追击=跑，回家=走（glb clip 名 01_Run/02_walk）。
+        -- B3b BlendSpace1D: moving 时用 AnimBlend(02_walk, 01_Run, chase?1:0)
+        -- 连续混合走跑,静止回退 03_creep。
+        if moving then
+          -- 目标方向决定 blend 参数: 追击(跑)为1, 回家(走)为0。
+          local wt = chase and 1 or 0
+          local ok = AnimBlend(w.e, "02_walk", "01_Run", wt)
+          if ok then
+            w.animState = (wt > 0.5) and "01_Run" or "02_walk"
+          elseif w.animState ~= (wt > 0.5 and "01_Run" or "02_walk") then
+            w.animState = wt > 0.5 and "01_Run" or "02_walk"
+            PlayAnimation(w.e, w.animState, true, 0.25)
+          end
+        elseif w.animState ~= "03" then
           w.animState = "03"
           PlayAnimation(w.e, "03_creep", true, 0.4)
         end
@@ -759,17 +767,22 @@ local function update_hero_anim(dt)
   local ix = ActionAxis("move_strafe")
   local iz = ActionAxis("move_forward")
   local speed = math.abs(ix) + math.abs(iz)
-  local want
-  if dashTime > 0 or speed > 0.85 then
-    want = "Running_A"
-  elseif speed > 0.15 then
-    want = "Walking_A"
+  -- B3b BlendSpace1D: 把 idle<->run 的硬切改为按输入速度的连续混合。
+  -- 移动时 AnimBlend(Idle, Running_A, t)（t 由 0.15..1 映射到 0..1），静止时
+  -- 回退单 clip Idle（避免 blend 残留在站姿）。dash 时全速压向 run 端。
+  if speed > 0.15 or dashTime > 0 then
+    local t = clamp((speed - 0.15) / 0.85, 0, 1)
+    if dashTime > 0 then t = 1 end
+    local ok = AnimBlend(hero, "Idle", "Running_A", t)
+    heroAnim = ok and (t > 0.6 and "Running_A" or (t > 0.2 and "Walking_A" or "Idle")) or ""
+    -- 记录 blend 目标态以便动作结束后恢复（不覆盖一次性动作）。
   else
-    want = "Idle"
-  end
-  if want ~= heroAnim then
-    heroAnim = want
-    PlayAnimation(hero, want, true, 0.25)
+    local ok = AnimBlend(hero, "Idle", "Running_A", 0)
+    if ok then heroAnim = "Idle"
+    elseif heroAnim ~= "Idle" then
+      heroAnim = "Idle"
+      PlayAnimation(hero, "Idle", true, 0.25)
+    end
   end
 end
 
