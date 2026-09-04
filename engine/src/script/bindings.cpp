@@ -1635,6 +1635,20 @@ Value NativeLoadDataTable(IScriptHost& host, void* user) {
     return t;
 }
 
+// B3: PollAnimEvents(entity) -> array of animation event names fired since the
+// last poll (footstep/hit/VFX cues on the exact anim frame). Wired by
+// GameRuntime to the AnimationSystem; empty when no hook / no event.
+Value NativePollAnimEvents(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    Value t = Value::Tbl();
+    if (!ctx || !ctx->pollAnimEvents) return t;
+    const ecs::Entity e = EntityFromValue(host.GetArg(0));
+    if (!e.IsValid()) return t;
+    for (const std::string& name : ctx->pollAnimEvents(e))
+        t.table->array.push_back(Value::Str(name));
+    return t;
+}
+
 } // namespace
 
 void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
@@ -1664,6 +1678,7 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("GetEntitiesInGroup", &NativeGetEntitiesInGroup, &ctx);
     host.Register("NavFindPath", &NativeNavFindPath, &ctx);
     host.Register("LoadDataTable", &NativeLoadDataTable, &ctx);
+    host.Register("PollAnimEvents", &NativePollAnimEvents, &ctx);
     host.Register("PlayMusic", &NativePlayMusic, &ctx);
     host.Register("PlaySfx3D", &NativePlaySfx3D, &ctx);
     host.Register("SetAudioListener", &NativeSetListener, &ctx);

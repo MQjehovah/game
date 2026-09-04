@@ -189,6 +189,10 @@ struct ScriptContext {
     // Kept off the script module's own #include graph so the script layer stays
     // scene-free (C13).
     std::function<std::vector<core::Json>(const std::string&, const std::string&)> loadDataTable;
+    // B3 animation events: returns (and clears) the entity's animation events
+    // fired since the last poll (names). GameRuntime wires it to the
+    // AnimationSystem; null -> PollAnimEvents returns an empty array.
+    std::function<std::vector<std::string>(ecs::Entity)> pollAnimEvents;
     // Tween hook (P1-3): starts a property tween on a scene entity.
     // prop: 0=pos 1=rot(euler degrees) 2=scale; easing: 0=linear 1=in 2=out
     // 3=inout. Wired by GameRuntime; null -> Tween is a no-op.

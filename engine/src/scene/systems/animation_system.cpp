@@ -200,12 +200,27 @@ void AnimationSystem::Tick(float dt) {
                 }
             }
             if (st.animClip) {
+                const float prev = st.animTime;
                 st.animTime += dt * st.animSpeed;
                 if (st.animFade > 0.0f) st.animFade = std::fmax(0.0f, st.animFade - dt);
-                if (st.animLoop && st.animClip->duration > 0.0f)
-                    st.animTime = std::fmod(st.animTime, st.animClip->duration);
-                else if (st.animTime > st.animClip->duration)
-                    st.animTime = st.animClip->duration; // one-shot clamps at end
+                float dur = st.animClip->duration;
+                if (st.animLoop && dur > 0.0f) {
+                    st.animTime = std::fmod(st.animTime, dur);
+                } else if (st.animTime > dur) {
+                    st.animTime = dur; // one-shot clamps at end
+                } else if (dur <= 0.0f) {
+                    dur = st.animTime;
+                }
+                // B3 animation events: fire any event whose time was crossed
+                // between prev and this tick's (loop-wrapped) time. Only when
+                // the clip actually advanced (dt>0) and not mid cross-fade skip.
+                if (dur > 0.0f) {
+                    for (const anim::AnimEvent& ev : st.animClip->events) {
+                        if (st.animClip->EventCrossed(ev, prev, st.animTime))
+                            st.animEvents.push_back(ev.name);
+                    }
+                }
+                st.animPrevTime = st.animTime;
             }
         } else {
             skinned->Update(dt);
@@ -242,6 +257,14 @@ void AnimationSystem::Prune(const std::function<bool(uint64_t)>& alive) {
 void AnimationSystem::Clear() {
     states_.clear();
     bindings_.clear();
+}
+
+std::vector<std::string> AnimationSystem::ConsumeEvents(uint64_t key) {
+    auto it = states_.find(key);
+    if (it == states_.end()) return {};
+    std::vector<std::string> out = std::move(it->second.animEvents);
+    it->second.animEvents.clear();
+    return out;
 }
 
 } // namespace neon::scene

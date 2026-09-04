@@ -177,6 +177,18 @@ std::vector<math::Mat4> Skeleton::ComputeBoneMatrices(const Pose& pose) const {
     return skinning;
 }
 
+bool AnimationClip::EventCrossed(const AnimEvent& e, float from, float to) const {
+    // A looped clip wraps; an event fires when the moving time passes its
+    // position, either directly (from <= t <= to) or across the wrap (to < from
+    // covers [from, duration) and [0, to)). Non-looping one-shots clamp at the
+    // end, so [from, to] with from <= to is the (already monotonic) case.
+    const float t = e.time;
+    if (t <= from) return false;
+    if (from <= to) return t <= to; // no wrap
+    // Wrap: either in the tail (from, duration) or the head [0, to].
+    return t > from || t <= to;
+}
+
 void AnimationClip::Sample(float t, Pose& out) const {
     t = WrapT(t, duration);
     for (const Track& tr : tracks) {
@@ -677,6 +689,19 @@ std::string SaveClipJson(const AnimationClip& clip) {
         tracks.array_.push_back(std::move(t));
     }
     root.object_["tracks"] = std::move(tracks);
+    // B3 animation events: optional {name, time} list, emitted in order.
+    if (!clip.events.empty()) {
+        core::Json evs;
+        evs.type_ = core::Json::Type::Array;
+        for (const AnimEvent& ev : clip.events) {
+            core::Json e;
+            e.type_ = core::Json::Type::Object;
+            e.object_["name"] = JsonStr(ev.name);
+            e.object_["time"] = JsonNum(ev.time);
+            evs.array_.push_back(std::move(e));
+        }
+        root.object_["events"] = std::move(evs);
+    }
     return core::JsonWriter::Write(root);
 }
 
@@ -731,6 +756,17 @@ core::Result<AnimationClip> LoadClipJson(const std::string& jsonText) {
             }
             clip.tracks.push_back(std::move(tr));
         }
+    }
+    // B3 animation events: optional {name, time} list on the clip.
+    if (const core::Json* evs = root.Get("events"); evs && evs->IsArray()) {
+        for (const core::Json& e : evs->Items()) {
+            AnimEvent ev;
+            if (const core::Json* n = e.Get("name")) ev.name = n->GetString();
+            if (const core::Json* tm = e.Get("time")) ev.time = static_cast<float>(tm->GetNumber());
+            clip.events.push_back(std::move(ev));
+        }
+        std::sort(clip.events.begin(), clip.events.end(),
+                  [](const AnimEvent& a, const AnimEvent& b) { return a.time < b.time; });
     }
     return core::Result<AnimationClip>::Ok(std::move(clip));
 }

@@ -48,6 +48,11 @@ public:
         std::string animSMState;                 // last played state
         bool animSMBound = false;                // clips resolved
         std::map<std::string, float> animSMParams; // script-set params
+        // B3 animation events: the previous tick's clip time (to detect a
+        // crossing this tick) and the events fired since the last ConsumeEvents.
+        float animPrevTime = 0.0f;
+        float animPrevLoop = 0.0f; // duration of the clip we last advanced
+        std::vector<std::string> animEvents;
     };
 
     // Skinned-model binding for one entity (registered at ResolveDrawItem).
@@ -124,6 +129,10 @@ public:
     void Prune(const std::function<bool(uint64_t)>& alive);
     // Drops all state + bindings (Stop lifecycle).
     void Clear();
+    // B3: returns (and clears) the animation events fired since the last call for
+    // this entity's override clip — the names of events whose clip time crossed
+    // this tick. Scripts poll it to trigger gameplay on the exact anim frame.
+    std::vector<std::string> ConsumeEvents(uint64_t key);
     size_t Count() const { return states_.size(); }
     bool HasBinding(uint64_t key) const { return bindings_.count(key) != 0; }
 

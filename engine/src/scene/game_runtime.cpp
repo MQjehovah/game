@@ -625,6 +625,10 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     };
     scriptCtx_.animProgress = [this](ecs::Entity e) { return AnimationProgress(e); };
     scriptCtx_.animFinished = [this](ecs::Entity e) { return AnimationFinished(e); };
+    // B3 animation events: poll fired events (footstep/HIT/VFX cues) per entity.
+    scriptCtx_.pollAnimEvents = [this](ecs::Entity e) {
+        return animations_.ConsumeEvents(EntityKey(e));
+    };
     scriptCtx_.attachStateMachine = [this](ecs::Entity e, const std::string& path) {
         return AttachStateMachine(e, path);
     };

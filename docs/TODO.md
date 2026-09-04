@@ -69,6 +69,11 @@
 >   `normalize` 校验+归一化每行）；`ScriptContext.loadDataTable` 钩子（脚本层保持 scene-free，C13）+ `LoadDataTable`
 >   Lua 绑定（返回类型化行表）。参考行类型 `SkillData`（id/label/cooldown/cost/sfx/tag）注册为 `skill`；
 >   realm.lua 技能表改为从 `assets/data/skills.json` 经反射加载，可在编辑器属性面板编辑。
+> - **B3 动画事件系统** ✅：`AnimationClip` 加 `events`（{name,time}）+ `EventCrossed`（处理循环回绕）；
+>   `SaveClipJson/LoadClipJson` 序列化事件。`AnimationSystem::Tick` 检测跨过事件时间放入每实体缓冲，
+>   `ConsumeEvents(key)` 取出；`ScriptContext.pollAnimEvents` 钩子 + `PollAnimEvents(entity)` Lua 绑定
+>   （脚本层保持 scene-free，C13）。脚本在动画精确帧触发 gameplay（落地/音效/VFX 判定）。注：BlendSpace/
+>   TwoBoneIK 仍为纯库级（P1-3 单测覆盖），未接运行时——需各 animator 的姿势空间接入 + GPU 验证，留后续。
 > - ⚠️ 遗留 2 个**基线失败**：`MeshoptLodSimplify` / `GltfAsyncPredecodedTextures`（stash 复测证不与本批相关）。
 
 

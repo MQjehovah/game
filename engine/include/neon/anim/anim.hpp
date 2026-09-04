@@ -54,13 +54,26 @@ struct Track {
     std::vector<math::Vec3> scales;
 };
 
+// B3: an animation event fired at a point in the clip's timeline (seconds).
+// The runtime detects when the clip's time crosses `time` (handling loop wrap)
+// and reports the event to the script layer by name, so gameplay can trigger
+// on the exact frame the animation reaches a key (hit lands, footstep, weapon
+// draw, VFX, sound cue) instead of polling time in the script.
+struct AnimEvent {
+    std::string name; // event id ("hit", "footstep_L", ...)
+    float time = 0.f; // seconds into the clip
+};
+
 struct AnimationClip {
     std::string name;
     float duration = 0.f;
     std::vector<Track> tracks;
+    std::vector<AnimEvent> events; // B3, optional; sorted by time
     // Writes TRS for every track bone into out (pre-sized by the caller).
     // t is loop-wrapped into [0, duration). Bones without tracks are untouched.
     void Sample(float t, Pose& out) const;
+    // True when `from` -> `to` crosses this event's time (handles loop wrap).
+    bool EventCrossed(const AnimEvent& e, float from, float to) const;
 };
 
 struct AnimState {

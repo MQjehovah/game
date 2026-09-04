@@ -45,6 +45,48 @@ TEST(BlendSpace1DMixesClips) {
     CHECK_NEAR(bs.ResultPose().t[0].x, 0.0f, 1e-4f);
 }
 
+TEST(AnimEventCrossedNoWrap) {
+    anim::AnimationClip clip = MakeClip(0, 0, 0, 2.0f);
+    clip.events.push_back({"hit", 1.0f});
+    // Crossing 0.8 -> 1.2 passes the 1.0 event.
+    CHECK(clip.EventCrossed(clip.events[0], 0.8f, 1.2f));
+    // Before the event (0.0 -> 0.9) does not.
+    CHECK(!clip.EventCrossed(clip.events[0], 0.0f, 0.9f));
+    // Starting exactly at the event: not re-fired (previous same time).
+    CHECK(!clip.EventCrossed(clip.events[0], 1.0f, 1.5f));
+    // Behind the event in the same non-wrapping span.
+    CHECK(!clip.EventCrossed(clip.events[0], 1.5f, 1.9f));
+}
+
+TEST(AnimEventCrossedWrap) {
+    anim::AnimationClip clip = MakeClip(0, 0, 0, 2.0f);
+    clip.events.push_back({"hit", 1.8f});
+    const anim::AnimEvent& ev = clip.events[0];
+    // Direct non-wrap crossing (1.7 -> 1.9) crosses the 1.8 event.
+    CHECK(clip.EventCrossed(ev, 1.7f, 1.9f));
+    // A wrap from 1.0 -> 0.1 advances 1.0..2.0..0.1, crossing 1.8.
+    CHECK(clip.EventCrossed(ev, 1.0f, 0.1f));
+    // A wrap that ONLY crosses the tail after the event (1.9 -> 0.1) does NOT
+    // cross 1.8: 1.9 advances away from it, then wraps into the head.
+    CHECK(!clip.EventCrossed(ev, 1.9f, 0.1f));
+    // A monotonic span entirely before the event (0.0 -> 0.9) does not cross.
+    CHECK(!clip.EventCrossed(ev, 0.0f, 0.9f));
+}
+
+TEST(AnimClipEventsJsonRoundTrip) {
+    anim::AnimationClip clip = MakeClip(0, 0, 0, 1.5f);
+    clip.events.push_back({"hit", 0.5f});
+    clip.events.push_back({"footstep", 1.0f});
+    const std::string json = anim::SaveClipJson(clip);
+    auto back = anim::LoadClipJson(json);
+    CHECK(back.Ok());
+    CHECK_EQ(back.Value().events.size(), 2u);
+    CHECK_EQ(back.Value().events[0].name, std::string("hit"));
+    CHECK_NEAR(back.Value().events[0].time, 0.5f, 1e-5);
+    CHECK_EQ(back.Value().events[1].name, std::string("footstep"));
+    CHECK_NEAR(back.Value().events[1].time, 1.0f, 1e-5);
+}
+
 TEST(BlendSpace2DBilinear) {
     anim::AnimationClip ll = MakeClip(0.0f, 0.0f, 0.0f);
     anim::AnimationClip lr = MakeClip(1.0f, 0.0f, 0.0f);
