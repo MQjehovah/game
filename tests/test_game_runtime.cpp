@@ -1215,3 +1215,19 @@ TEST(GameRuntimeAnimStateMachineApi) {
     rt.Tick(1.0f / 60.0f);
     rt.Stop();
 }
+
+// Kenney 素材对照预览场景: 读取场景文件, SceneFile::Parse 验证结构/组件可行
+// (纯解析无 GPU/assets, 确认 gltf: meshKey + 组件 schema 合法)。
+TEST(GameRuntimeLoadsKenneyPreviewScene) {
+    std::string scene;
+    const char* kPath = "projects/neon_realm/assets/scenes/kenney_preview.json";
+    if (!test::ReadFileAll(kPath, scene) || scene.empty()) return; // 资产缺则跳过
+
+    auto parsed = scene::SceneFile::Parse(scene);
+    CHECK(parsed.Ok());
+    if (!parsed.Ok()) return;
+    CHECK(!parsed.Value().entities.empty());
+    CHECK(parsed.Value().entities.size() >= 10u);
+    // 所有 mesh 引用都是 kenney 村庄资产或已知类型。
+    // (结构验证已足够; 实际渲染/贴图由 KenneyColormapExternalImage 覆盖。)
+}

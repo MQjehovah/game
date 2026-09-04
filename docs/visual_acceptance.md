@@ -64,3 +64,18 @@ DamagedHelmet 自带动法线贴图（`Default_Normal.jpg`）。对比 `castShad
 - 验证：跑 `neon_game --scene <neon_realm 场景>`，拖动输入看角色走跑连续过渡，
   狼群追击时从走平滑到跑；击杀狼看物品飘字 + HUD 计数。
 
+## Kenney 村庄资产就地重摆（带贴图真实模型，替代程序化纯色）
+
+从 GitHub CC0 镜像 `shorepine/kenney` 拉取 **fantasy-town 村庄 kit（167 个带贴图 GLB +
+共享 `colormap.png`）**，落地 `neon_realm/assets/kenney/fantasy-town/`。引擎加载器原生支持
+这种"GLB 外部相对 image URI"（源码注释即提到 Kenney），已用 `KenneyColormapExternalImage`
+测试证明材质 albedo 有效。
+
+**预览验收**（你跑一张截图，决定每个类别用哪个模型 / 多大 / 摆哪）：
+```bat
+.\build\release\neon_game.exe --scene projects\neon_realm\assets\scenes\kenney_preview.json --scripts projects\neon_realm --screenshot preview.png 10
+```
+预览场景横向摆 9 个候选（tree / tree-high / rock-large / rock-small / lantern / cart / stall /
+windmill / wall / road / fountain），相机正对。截图后告诉我：树用哪个、石用哪个、路要多宽、
+墙/马车/摊/风车/喷泉各留哪个——我据此批量重摆 `realm.json` 村庄。
+
