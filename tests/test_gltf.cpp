@@ -300,3 +300,21 @@ TEST(GltfDamagedHelmetEndToEnd) {
     math::Vec3 z = asset.nodes[0].transform.TransformDir({0, 0, 1});
     CHECK_NEAR(z.y, -1.0, 1e-4);
 }
+
+// Kenney-colormap asset: a GLB with an EXTERNAL image URI (Textures/colormap.png)
+// relative to the file — the same structure the village kit uses. The engine
+// resolves `dir + uri`, so loading must succeed and the material's albedo must
+// carry the colormap texture (proves the real-texture path, not flat colors).
+TEST(KenneyColormapExternalImage) {
+    test::HeadlessAssetFixture fix;
+    assets::GltfAsset asset =
+        fix.assets.LoadGLTF("projects/neon_realm/assets/kenney/fantasy-town/lantern.glb");
+    CHECK(asset.Valid());
+    if (!asset.Valid()) return;
+    CHECK(!asset.nodes.empty());
+    // The lantern's material samples Textures/colormap.png -> albedo valid.
+    bool anyAlbedo = false;
+    for (const auto& n : asset.nodes)
+        if (n.material.albedo.Valid()) anyAlbedo = true;
+    CHECK(anyAlbedo);
+}
