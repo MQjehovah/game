@@ -428,6 +428,10 @@ void EditorApp::ApplyMaterialParams(SceneEntity& e) {
         e.material.occlusion = assetMgr_.LoadTexture(assets::NormalizeAssetPath(e.aoTex)).Handle();
     if (!e.emissiveTex.empty())
         e.material.emissive = assetMgr_.LoadTexture(assets::NormalizeAssetPath(e.emissiveTex)).Handle();
+    if (!e.normalTex.empty())
+        e.material.normalMap =
+            assetMgr_.LoadTexture(assets::NormalizeAssetPath(e.normalTex)).Handle();
+    e.material.normalScale = e.normalScale;
 }
 
 void EditorApp::RebuildTerrainMesh(SceneEntity& e) {
@@ -563,6 +567,8 @@ void EditorApp::UnflattenWorldToEntities() {
             out.mrTex = m->mrTex;
             out.aoTex = m->aoTex;
             out.emissiveTex = m->emissiveTex;
+            out.normalTex = m->normalTex;
+            out.normalScale = m->normalScale;
             out.ao = m->ao;
             out.emissiveIntensity = m->emissiveIntensity;
             if (!m->colorHex.empty()) out.tint = ColorFromHex(m->colorHex);
@@ -958,6 +964,8 @@ void EditorApp::LoadScene(const std::string& path) {
                 if (const core::Json* v = matVal("mrTex")) e.mrTex = assets::NormalizeAssetPath(v->GetString());
                 if (const core::Json* v = matVal("aoTex")) e.aoTex = assets::NormalizeAssetPath(v->GetString());
                 if (const core::Json* v = matVal("emissiveTex")) e.emissiveTex = assets::NormalizeAssetPath(v->GetString());
+                if (const core::Json* v = matVal("normalTex")) e.normalTex = assets::NormalizeAssetPath(v->GetString());
+                if (const core::Json* v = matVal("normalScale")) e.normalScale = static_cast<float>(v->GetNumber(1.0f));
             }
             if (const core::Json* sp = comps->Get("sprite")) {
                 e.spriteTex = sp->Get("texture") ? sp->Get("texture")->GetString() : "";
@@ -1251,6 +1259,8 @@ void EditorApp::LoadScene(const std::string& path) {
             if (const core::Json* mt = j->Get("mrTex")) e.mrTex = assets::NormalizeAssetPath(mt->GetString());
             if (const core::Json* aot = j->Get("aoTex")) e.aoTex = assets::NormalizeAssetPath(aot->GetString());
             if (const core::Json* et = j->Get("emissiveTex")) e.emissiveTex = assets::NormalizeAssetPath(et->GetString());
+            if (const core::Json* nt = j->Get("normalTex")) e.normalTex = assets::NormalizeAssetPath(nt->GetString());
+            if (const core::Json* ns = j->Get("normalScale")) e.normalScale = static_cast<float>(ns->GetNumber(1.0f));
             // Flat editor-scene format: a "scripts" array (new) or the legacy
             // scriptPath/scriptBackend/scriptVars keys (old saves).
             if (const core::Json* list = j->Get("scripts")) {
@@ -1520,6 +1530,7 @@ void EditorApp::NormalizeEntityAssetPaths() {
         norm(e.mrTex);
         norm(e.aoTex);
         norm(e.emissiveTex);
+        norm(e.normalTex);
         norm(e.decalTex);
         norm(e.spriteTex);
     }
@@ -1541,7 +1552,8 @@ void EditorApp::SavePrefab(const std::string& name) {
                                             e.tint, e.albedoTex, e.mrTex, e.aoTex,
                                             e.emissiveTex, e.ao, e.emissiveIntensity,
                                             "", "", core::Json{}, {},
-                                            e.hp, e.maxHp);
+                                            e.hp, e.maxHp, "", 0, 0, e.uvRepeat, e.normalTex,
+                                            e.normalScale);
     if (!res.Ok()) {
         NEON_LOG_ERROR("Editor: cannot save prefab: %s", res.Error().c_str());
         return;
@@ -1642,6 +1654,9 @@ bool EditorApp::LoadMaterialParamsInto(SceneEntity& e, const std::string& path) 
     if (const core::Json* v = root.Get("mrTex")) e.mrTex = v->GetString();
     if (const core::Json* v = root.Get("aoTex")) e.aoTex = v->GetString();
     if (const core::Json* v = root.Get("emissiveTex")) e.emissiveTex = v->GetString();
+    if (const core::Json* v = root.Get("normalTex")) e.normalTex = v->GetString();
+    if (const core::Json* v = root.Get("normalScale"))
+        e.normalScale = static_cast<float>(v->GetNumber(1.0));
     return true;
 }
 
@@ -1679,6 +1694,8 @@ void EditorApp::SaveMaterialAsset(const std::string& name) {
     root.object_["mrTex"] = str(e.mrTex);
     root.object_["aoTex"] = str(e.aoTex);
     root.object_["emissiveTex"] = str(e.emissiveTex);
+    root.object_["normalTex"] = str(e.normalTex);
+    if (e.normalScale != 1.0f) root.object_["normalScale"] = num(e.normalScale);
 
     const std::string dir = projectDir_ + "/assets/materials";
     EnsureDirs(dir + "/");
@@ -1692,10 +1709,10 @@ void EditorApp::SaveMaterialAsset(const std::string& name) {
 
     const MaterialAssetValue oldVal{e.materialRef, ColorToHex(e.tint), e.metallic, e.roughness,
                                     e.ao, e.emissiveIntensity, e.albedoTex, e.mrTex, e.aoTex,
-                                    e.emissiveTex};
+                                    e.emissiveTex, e.normalTex, e.normalScale};
     const MaterialAssetValue newVal{rel, ColorToHex(e.tint), e.metallic, e.roughness, e.ao,
                                     e.emissiveIntensity, e.albedoTex, e.mrTex, e.aoTex,
-                                    e.emissiveTex};
+                                    e.emissiveTex, e.normalTex, e.normalScale};
     history_.Push(std::make_unique<EditPropertyCommand<MaterialAssetValue>>(
         &entities_, selected_, ApplyMaterialAssetProp, oldVal, newVal));
     if (assetDir_ == dir) RefreshAssetDir();
@@ -1712,7 +1729,7 @@ void EditorApp::ApplyMaterialAsset(const std::string& path) {
     }
     const MaterialAssetValue oldVal{e.materialRef, ColorToHex(e.tint), e.metallic, e.roughness,
                                     e.ao, e.emissiveIntensity, e.albedoTex, e.mrTex, e.aoTex,
-                                    e.emissiveTex};
+                                    e.emissiveTex, e.normalTex, e.normalScale};
     // Store the reference project-relative ("assets/materials/x.mat.json") so
     // scenes round-trip regardless of where the asset panel is browsing.
     std::string rel = path;
@@ -1721,7 +1738,7 @@ void EditorApp::ApplyMaterialAsset(const std::string& path) {
         rel = rel.substr(base.size());
     const MaterialAssetValue newVal{rel, ColorToHex(tmp.tint), tmp.metallic, tmp.roughness,
                                     tmp.ao, tmp.emissiveIntensity, tmp.albedoTex, tmp.mrTex,
-                                    tmp.aoTex, tmp.emissiveTex};
+                                    tmp.aoTex, tmp.emissiveTex, tmp.normalTex, tmp.normalScale};
     history_.Push(std::make_unique<EditPropertyCommand<MaterialAssetValue>>(
         &entities_, selected_, ApplyMaterialAssetProp, oldVal, newVal));
     ApplyMaterialParams(entities_[static_cast<size_t>(selected_)]);

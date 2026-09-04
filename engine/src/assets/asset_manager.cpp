@@ -1263,6 +1263,16 @@ GltfAsset AssetManager::LoadGltfJson(core::Json& root, std::vector<std::vector<u
                 int idx = emi->Get("index")->GetInt(-1);
                 if (idx >= 0 && idx < static_cast<int>(textures.size())) mat.emissive = textures[idx].Handle();
             }
+            if (const core::Json* nm = m->Get("normalTexture")) {
+                int idx = nm->Get("index")->GetInt(-1);
+                if (idx >= 0 && idx < static_cast<int>(textures.size()))
+                    mat.normalMap = textures[idx].Handle();
+                // glTF normalTextureScale (default 1) controls perturbation
+                // strength; `scale` may be absent in some exporters.
+                if (const core::Json* sc = nm->Get("scale")) {
+                    mat.normalScale = static_cast<float>(sc->GetNumber(1.0));
+                }
+            }
             materials.push_back(mat);
         }
     }

@@ -19,6 +19,7 @@
 #include "neon/gfx/renderer.hpp"
 #include "neon/gfx/scene_props.hpp"
 #include "neon/gfx/terrain.hpp"
+#include "neon/scene/render_stack.hpp"
 #include "neon/scene/scene_file.hpp"
 #include "neon/scene/skinned_model.hpp"
 #include "neon/scene/systems/animation_system.hpp"
@@ -170,6 +171,16 @@ void DrawSystem::Build(ecs::World& world, AnimationSystem& anims) {
                 item.mat.emissive =
                     content_.assets->LoadTexture(content_.fullAssetPath(m->emissiveTex), opts)
                         .Handle();
+            // A2 normal map: uses the DEFAULT clamp wrap (no tiling) since a
+            // normal map shouldn't repeat like the base texture. The lit shader
+            // perturbs N in tangent space; normalScale is authored per material.
+            if (!m->normalTex.empty())
+                item.mat.normalMap =
+                    content_.assets
+                        ->LoadTexture(content_.fullAssetPath(m->normalTex),
+                                      assets::TextureLoadOptions{})
+                        .Handle();
+            item.mat.normalScale = m->normalScale;
         }
         // M1: the animation override lives on the SceneAnimOverride component;
         // ResolveDrawItem seeds the entity's AnimationSystem state from it, so
@@ -665,6 +676,36 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
     renderer.SetVolumetricIntensity(params.volumetricIntensity);
     renderer.SetSsrEnabled(params.ssr);
     renderer.SetSsrIntensity(params.ssrIntensity);
+    // A/RenderStack: a scene can carry one scene-level RenderStack component that
+    // overrides the FX toggles + bloom/tonemap/exposure/color-grade. This is the
+    // runtime application point that was missing (SetBloomParams etc. existed but
+    // nothing fed them) — now the data-driven stack actually drives the renderer.
+    {
+        const RenderStack* stack = nullptr;
+        world.ViewAll<RenderStack>().ForEach(
+            [&](ecs::Entity, const RenderStack& s) { if (!stack) stack = &s; });
+        if (stack) {
+            renderer.SetSsaoEnabled(stack->ssao);
+            renderer.SetSsaoIntensity(stack->ssaoIntensity);
+            renderer.SetVolumetricEnabled(stack->volumetric);
+            renderer.SetVolumetricIntensity(stack->volumetricStrength);
+            renderer.SetSsrEnabled(stack->ssr);
+            renderer.SetSsrIntensity(stack->ssrStrength);
+            renderer.SetBloomEnabled(stack->bloom);
+            renderer.SetBloomParams(stack->bloomThreshold, stack->bloomStrength);
+            renderer.SetTonemapEnabled(stack->tonemap);
+            renderer.SetExposure(stack->exposure);
+            // RenderStack fog is the density-based volumetric fog (composite
+            // pass), not the lit shader's linear near/far fog (SceneLight owns
+            // that). fogColor feeds the composite through FogColor().
+            renderer.SetFog(stack->fogColor, 0.0f, 0.0f);
+            renderer.SetVolumetricFogEnabled(stack->fog);
+            renderer.SetVolumetricFogDensity(stack->fogDensity);
+            renderer.SetColorGrade({stack->grade, stack->gradeSaturation, stack->gradeContrast,
+                                    stack->gradeGain, stack->gradeGamma, stack->gradeLift,
+                                    {stack->gradeTint.r, stack->gradeTint.g, stack->gradeTint.b}});
+        }
+    }
     // P2-3 scene camera: when the world contains a camera entity, its transform
     // + camera component become the active view (Godot Camera3D-style).
     gfx::Camera cam = camera;
@@ -812,6 +853,10 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
                                  directional->color.a};
             renderer.SetDirectionalLight(directional->sunDir, sun,
                                          directional->ambientStrength);
+            // A4: a useAtmosphere scene can opt into the procedural view-ray
+            // skybox (sun/moon/clouds), aimed from the directional-light sun dir.
+            if (directional->useAtmosphere && directional->skybox)
+                renderer.EnableSkyBox(directional->sunDir, /*clouds=*/true);
         } else {
             renderer.SetDirectionalLight({-0.4f, -1.0f, -0.3f}, {0.8f, 0.8f, 0.8f}, 0.0f);
         }

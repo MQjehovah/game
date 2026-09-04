@@ -77,12 +77,20 @@ public:
     void SetDirectionalLight(const math::Vec3& direction, const Color& color,
                              float ambientStrength);
     void SetAmbientLight(const Color& color, float strength);
+    // A3 hemisphere ambient: the legacy flat ambient is split into a sky/ground
+    // gradient driven by the world normal's Y so upward-facing surfaces take the
+    // sky tint and downward-facing take a ground bounce (the biggest cheap
+    // indirect-lighting quality step). groundColor defaults to a dark sky-tinted
+    // bounce; SetAmbientGroundColor overrides it; "strength" from SetAmbientLight
+    // scales both. Empty/invalid ground color falls back to the sky color * 0.5.
+    void SetAmbientGroundColor(const Color& color);
     void SetPointLight(int index, const math::Vec3& position, const Color& color, float radius);
     void SetPlayerLight(const math::Vec3& position, const Color& color, float radius);
     const math::Vec3& SunDir() const { return sunDir_; }
     const Color& SunColor() const { return sunColor_; }
     float Ambient() const { return ambient_; }
     const Color& AmbientColor() const { return ambientColor_; }
+    const Color& AmbientGroundColor() const { return ambientGroundColor_; }
     const math::Vec3* PointPos() const { return pointPos_; }
     const Color* PointColor() const { return pointColor_; }
     const float* PointRadius() const { return pointRadius_; }
@@ -139,6 +147,7 @@ private:
     Color sunColor_{1.0f, 0.95f, 0.85f, 1.0f};
     float ambient_ = 0.25f;
     Color ambientColor_{1.0f, 1.0f, 1.0f, 1.0f};
+    Color ambientGroundColor_{0.5f, 0.5f, 0.5f, 1.0f};
     math::Vec3 pointPos_[kMaxPointLights];
     Color pointColor_[kMaxPointLights];
     float pointRadius_[kMaxPointLights];

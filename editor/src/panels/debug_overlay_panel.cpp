@@ -106,6 +106,11 @@ void DebugOverlayPanel::DrawOverlay(EditorContext& ctx, const gfx::Camera& cam) 
             gfx::BuildProbeField(bounds, probeRes_, in, probeField_);
             probeBounds_ = bounds;
             probeDirty_ = false;
+            // A3: bake + upload the probe field into the renderer so play mode
+            // (and the editor viewport) actually sample probe GI, not just draw
+            // the debug markers. Falls back to visualization-only when the field
+            // is empty (e.g. headless backend).
+            ctx.renderer->BakeLightProbes(bounds, probeRes_, in);
         }
         const float markerR =
             std::max(0.08f, (bounds.max.x - bounds.min.x) / (2.0f * static_cast<float>(probeRes_)));

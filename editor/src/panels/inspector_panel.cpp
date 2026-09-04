@@ -500,6 +500,7 @@ void InspectorPanel::Draw(EditorContext& ctx) {
         textureSlot("金属度/粗糙度", e.mrTex, e.material.metallicRoughness, ApplyMRTexSlot);
         textureSlot("环境光遮蔽图", e.aoTex, e.material.occlusion, ApplyAOTexSlot);
         textureSlot("自发光图", e.emissiveTex, e.material.emissive, ApplyEmissiveTexSlot);
+        textureSlot("法线贴图", e.normalTex, e.material.normalMap, ApplyNormalTexSlot);
         ImGui::Separator();
         if (ImGui::Button("移除网格")) {
             history.Push(std::make_unique<EditMeshKeyCommand>(

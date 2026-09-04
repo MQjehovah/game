@@ -40,6 +40,26 @@
 >   **E-Python 运行时绑定** ⏳（CPython C-API + 确定性沙箱）需 CPython 运行时实现+验证。
 > - 构建：MSVC 加 **`/Zc:preprocessor`**（修复 legacy 预处理器对 `NEO_ENUM` 变参宏计数缺陷）。
 > - ⚠️ MinGW GCC 8.1 因既有工具链问题（`_stat64`、quickjs 汇编器）无法完整链接，反射/MCP 在 **MSVC** 验证。
+>
+> ## 2026-09-04 高品质视觉批（A1/A2/A3/A4，MSVC 784/786 全绿，2 个失败为基线既有）
+>
+> - **A1 颜色分级** ✅：`ColorGrade`（白平衡→Lift/Gamma/Gain→饱和度→对比度→钳制），作为程序化
+>   LUT-free 调色接入 `post.composite`（后 ACES 显示空间，默认禁用零回归）；`RenderStack` 反射新增
+>   grade/saturation/contrast/gain/gamma/lift/tint。**并修复 RenderStack 运行时死代码**：补 `renderstack`
+>   工厂+序列化+DrawSystem 逐帧应用（此前 SetBloomParams 等从未被调用）。
+> - **A2 法线贴图** ✅：**屏幕空间导数 TBN**（`dFdx/dFdy` 重建切线基，零顶点布局改动）；`Material.normalMap`
+>   +`normalScale`；glTF `normalTexture` + `normalTexture.scale` 导入；SceneMesh/editor/mat.json/inspector
+>   面板/历史命令贯通；绑定单元 23（20-22 为 IBL）。DamagedHelmet 真实资产法线导入验证通过。
+> - **A3 间接光** ✅：**半球光**（`uAmbientGroundColor` 按世界法线 Y 把平面 ambient 分裂成天/地渐变，
+>   `--ibl 0` 仍可复现旧平面）；**光探针场 GPU GI**（`BakeProbeAtlas` 把 res³ 探针烘焙成 2D RGBA8
+>   atlas，lit shader 按世界位置三线性采样做间接漫反射；`Renderer::BakeLightProbes` 端点并接编辑器
+>   调试探针面板）。VK 侧因 descriptor 布局未扩展而标注 GL-only（A1/A2/B5 待清后补）。
+> - **A4 程序化天空盒** ✅：`skybox.hpp` 提供 view-ray 背景 pass（`InverseViewProjRay` 逐像素重建世界射线）
+>   ——太阳圆盘+光环、锁定对侧的月亮、FBM 程序云，取代旧的屏幕空间渐变（此前不随相机转动）。
+>   `SceneLight.skybox`（反射布尔）+ draw/editor 宿主动 `EnableSkyBox(sunDir)` 按平行光方向瞄准；
+>   HDRI 天空贴图仍可作 equirect 源。GLSL 经 glslang 验证通过。
+> - ⚠️ 遗留 2 个**基线失败**：`MeshoptLodSimplify` / `GltfAsyncPredecodedTextures`（stash 复测证不与本批相关）。
+
 
 ---
 

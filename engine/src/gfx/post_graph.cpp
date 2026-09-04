@@ -370,6 +370,14 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
         backend.SetUniformFloat("uFar", farPlane_);
         backend.SetUniformFloat("uExposure", comp_.exposure);
         backend.SetUniformInt("uTonemapEnabled", comp_.tonemapEnabled ? 1 : 0);
+        const ColorGrade& g = comp_.colorGrade;
+        backend.SetUniformInt("uGradeEnabled", g.enabled ? 1 : 0);
+        backend.SetUniformFloat("uSaturation", g.saturation);
+        backend.SetUniformFloat("uContrast", g.contrast);
+        backend.SetUniformFloat("uGain", g.gain);
+        backend.SetUniformFloat("uGamma", g.gamma);
+        backend.SetUniformFloat("uLift", g.lift);
+        backend.SetUniformVec3("uTint", g.tint);
         backend.DrawMesh(postQuad_);
     };
     compositePassIndex_ = add(std::move(composite));

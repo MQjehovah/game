@@ -136,9 +136,14 @@ const TypeInfo* info = TypeRegistry::Find("mycomp");     // schema + toJson/from
     - **以结构体为准**——`SceneTransform::rot` 是真 `Quat`，编辑器用四元数输入（不再造假"欧拉角"）。
   - 序列化器顺带修复：补写 `camera.aspect`、`sprite.billboard`（此前被序列化丢弃）。
 - **RenderStack（渲染数据驱动，A）**：`render_stack.hpp` 用反射描述后处理效果（SSAO/体积光/SSR/
-  bloom/tonemap/雾 的开关+参数），注册进 `TypeRegistry`；编辑器属性面板自动生成、JSON 往返、脚本单字段访问。
-  bloom 的 `threshold/strength` 已参数化进 `PostGraph::CompositeParams`/`Renderer::SetBloomParams`
-  （默认=原常量，零回归）——"渲染开放给前端"的数据层。
+  bloom/tonemap/雾 的开关+参数 + **A1 颜色分级** 的饱和度/对比度/增益/伽马/抬升/白平衡），注册进
+  `TypeRegistry`；编辑器属性面板自动生成、JSON 往返、脚本单字段访问。bloom 的 `threshold/strength`
+  参数化进 `PostGraph::CompositeParams`/`Renderer::SetBloomParams`（默认=原常量，零回归）。
+  **运行时已接线**（2026-09-04）：前一轮 `SetBloomParams` 等 setter 存在但从未被调用（RenderStack 无
+  工厂、无场景声明 → 死代码）。本轮补 `renderstack` 的 `ComponentFactory`（scene_file.cpp）+ 序列化
+  （FromWorld 写 `renderstack`），并在 `DrawSystem::Draw` 逐帧读取首个 RenderStack 组件应用到 renderer
+  （覆盖 FX 开关/bloom/tonemap/exposure/fog/color-grade）——数据驱动的渲染栈现在真正驱动帧。需 GPU
+  截图验收视觉效果。
 - **D·MCP**：`neon/mcp/mcp_server.hpp` 提供 JSON-RPC 2.0（`initialize/tools/list/tools/call`），
   工具 `list_entities/get_component/set_component`，**set 用反射 schema 校验字段类型**；
   `tools/neon_mcp.cpp` 是 stdio server（`--scene` 加载、改动后漂亮化写盘）。AI 助手经标准 MCP 读写引擎组件。

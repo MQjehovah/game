@@ -3,6 +3,7 @@
 #include <string>
 
 #include "neon/neon.hpp"
+#include "neon/gfx/skybox.hpp"
 #include "helpers.hpp"
 #include "test_backend.hpp"
 
@@ -127,6 +128,99 @@ TEST(BloomCombine) {
     CHECK_NEAR(e.x, gfx::AcesFilm(0.5f), 1e-6);
 }
 
+TEST(ColorGradeIdentity) {
+    // Default grade (disabled) is a byte-identical pass-through -> default
+    // RenderStack leaves existing scenes pixel-identical.
+    gfx::ColorGrade g;
+    CHECK(!g.enabled);
+    const math::Vec3 in{0.3f, 0.55f, 0.82f};
+    const math::Vec3 out = gfx::GradeColor(in, g);
+    CHECK_NEAR(out.x, in.x, 1e-6);
+    CHECK_NEAR(out.y, in.y, 1e-6);
+    CHECK_NEAR(out.z, in.z, 1e-6);
+}
+
+TEST(ColorGradeNeutralOperators) {
+    // Enabled but every operator neutral (sat=1, contrast=0, gain=1, gamma=1,
+    // lift=0, tint=1) is also identity.
+    gfx::ColorGrade g;
+    g.enabled = true;
+    const math::Vec3 in{0.25f, 0.6f, 0.9f};
+    const math::Vec3 out = gfx::GradeColor(in, g);
+    CHECK_NEAR(out.x, in.x, 1e-5);
+    CHECK_NEAR(out.y, in.y, 1e-5);
+    CHECK_NEAR(out.z, in.z, 1e-5);
+}
+
+TEST(ColorGradePreservesGreyscale) {
+    // Saturation (any value) on a pure grey pixel must not shift hue/neutrality.
+    gfx::ColorGrade g;
+    g.enabled = true;
+    g.saturation = 0.5f;
+    const math::Vec3 grey = gfx::GradeColor({0.5f, 0.5f, 0.5f}, g);
+    CHECK_NEAR(grey.x, grey.y, 1e-5);
+    CHECK_NEAR(grey.y, grey.z, 1e-5);
+    // A tinted grey (colour cast) become neutral at saturation 0 -> luma only.
+    g.saturation = 0.0f;
+    const math::Vec3 cast = gfx::GradeColor({0.7f, 0.4f, 0.2f}, g);
+    CHECK_NEAR(cast.x, cast.y, 1e-5);
+    CHECK_NEAR(cast.y, cast.z, 1e-5);
+}
+
+TEST(ColorGradeMonotonic) {
+    // A positive gain/contrast must not invert ordering (no banding).
+    gfx::ColorGrade g;
+    g.enabled = true;
+    g.contrast = 0.4f;
+    g.gain = 1.2f;
+    const float xs[] = {0.0f, 0.2f, 0.5f, 0.8f, 1.0f};
+    for (int i = 1; i < 5; ++i) {
+        const float a = gfx::GradeColor({xs[i - 1], xs[i - 1], xs[i - 1]}, g).x;
+        const float b = gfx::GradeColor({xs[i], xs[i], xs[i]}, g).x;
+        CHECK(b >= a - 1e-5f);
+    }
+}
+
+TEST(ColorGradeClampsToDisplayRange) {
+    gfx::ColorGrade g;
+    g.enabled = true;
+    g.lift = 2.0f;   // would push > 1
+    g.gain = 3.0f;   // would blow out
+    g.gamma = 0.2f;  // would brighten mid-tones hard
+    const math::Vec3 c = gfx::GradeColor({0.9f, 0.9f, 0.9f}, g);
+    CHECK(c.x >= 0.0f && c.x <= 1.0f);
+    CHECK(c.y >= 0.0f && c.y <= 1.0f);
+    CHECK(c.z >= 0.0f && c.z <= 1.0f);
+}
+
+TEST(SkyboxInverseViewProjRay) {
+    // The skybox reconstructs the world ray from the inverse(view*proj). For an
+    // identity view-proj, NDC (0,0,1) should map toward -Z (the camera forward),
+    // matching the CPU InverseViewProjRay used by tests/hosts.
+    math::Mat4 inv = math::Mat4::Identity();
+    math::Vec3 r = gfx::InverseViewProjRay(inv, 0.0f, 0.0f);
+    CHECK_NEAR(std::fabs(r.z), 1.0f, 1e-4); // forward along ±Z for identity
+    CHECK_NEAR(r.Length(), 1.0f, 1e-4);     // normalized
+    // For a perspective-like matrix we can't pin exact values headlessly without
+    // replicating the projection, but the ray must be finite and unit-length.
+    // Center of the screen for an identity Proj (near=0.1, far=800) -> ray
+    // points toward -Z; the two points' w are both 1 so the difference is finite.
+    CHECK(std::isfinite(r.x) && std::isfinite(r.y) && std::isfinite(r.z));
+}
+
+TEST(SkyboxShaderSourceTokens) {
+    const std::string frag(gfx::kSkyboxFragmentShader);
+    CHECK(frag.find("#version 330 core") != std::string::npos);
+    CHECK(frag.find("InverseViewProjRay") != std::string::npos);
+    CHECK(frag.find("uSkyTop") != std::string::npos);
+    CHECK(frag.find("uSkyHorizon") != std::string::npos);
+    CHECK(frag.find("uSunYaw") != std::string::npos);
+    CHECK(frag.find("uSunPitch") != std::string::npos);
+    CHECK(frag.find("uCloudCoverage") != std::string::npos);
+    CHECK(frag.find("fbm") != std::string::npos);
+    CHECK(frag.find("uSkyTextureValid") != std::string::npos);
+}
+
 TEST(BloomGaussianKernelNormalized) {
     // The 5-tap separable kernel baked into kBlurFragmentShader must sum to 1
     // (a blur must not change overall brightness).
@@ -178,6 +272,14 @@ TEST(BloomShaderSourceTokens) {
     CHECK(composite.find("2.51") != std::string::npos);
     CHECK(composite.find("2.43") != std::string::npos);
     CHECK(composite.find("min(c, vec3(1.0))") != std::string::npos); // clamp reference kept
+    // A1 color grading: every uniform the renderer uploads is declared.
+    CHECK(composite.find("uGradeEnabled") != std::string::npos);
+    CHECK(composite.find("uSaturation") != std::string::npos);
+    CHECK(composite.find("uContrast") != std::string::npos);
+    CHECK(composite.find("uGain") != std::string::npos);
+    CHECK(composite.find("uGamma") != std::string::npos);
+    CHECK(composite.find("uLift") != std::string::npos);
+    CHECK(composite.find("uTint") != std::string::npos);
 
     const std::string vertex(gfx::kPostVertexShader);
     CHECK(vertex.find("layout(location = 0) in vec3 aPos") != std::string::npos);

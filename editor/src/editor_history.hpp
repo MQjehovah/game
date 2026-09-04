@@ -465,6 +465,11 @@ inline void ApplyEmissiveTexSlot(SceneEntity& e, const TextureSlotValue& v) {
     e.emissiveTex = v.path;
     e.material.emissive = v.handle;
 }
+inline void ApplyNormalTexSlot(SceneEntity& e, const TextureSlotValue& v) {
+    e.normalTex = v.path;
+    e.material.normalMap = v.handle;
+    e.material.normalScale = e.normalScale;
+}
 
 // A material-ball asset applied to an entity: the reference path plus the
 // expanded params (Unity .mat / Godot Material style).
@@ -475,7 +480,8 @@ struct MaterialAssetValue {
     float roughness = 0.8f;
     float ao = 1.0f;
     float emissiveIntensity = 1.0f;
-    std::string albedoTex, mrTex, aoTex, emissiveTex;
+    std::string albedoTex, mrTex, aoTex, emissiveTex, normalTex;
+    float normalScale = 1.0f;
 };
 
 inline void ApplyMaterialAssetProp(SceneEntity& e, const MaterialAssetValue& v) {
@@ -489,6 +495,8 @@ inline void ApplyMaterialAssetProp(SceneEntity& e, const MaterialAssetValue& v) 
     e.mrTex = v.mrTex;
     e.aoTex = v.aoTex;
     e.emissiveTex = v.emissiveTex;
+    e.normalTex = v.normalTex;
+    e.normalScale = v.normalScale;
 }
 
 namespace {
@@ -498,7 +506,8 @@ inline bool ValuesEqual(const MaterialAssetValue& a, const MaterialAssetValue& b
     return a.ref == b.ref && a.colorHex == b.colorHex && a.metallic == b.metallic &&
            a.roughness == b.roughness && a.ao == b.ao &&
            a.emissiveIntensity == b.emissiveIntensity && a.albedoTex == b.albedoTex &&
-           a.mrTex == b.mrTex && a.aoTex == b.aoTex && a.emissiveTex == b.emissiveTex;
+           a.mrTex == b.mrTex && a.aoTex == b.aoTex && a.emissiveTex == b.emissiveTex &&
+           a.normalTex == b.normalTex && a.normalScale == b.normalScale;
 }
 inline bool ValuesEqual(const TextureSlotValue& a, const TextureSlotValue& b) {
     return a.path == b.path;

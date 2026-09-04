@@ -35,6 +35,11 @@ layout(set = 1, binding = 19) uniform sampler2D uPointShadowMap11;
 layout(set = 1, binding = 20) uniform sampler2D uIrradianceMap;
 layout(set = 1, binding = 21) uniform sampler2D uPrefilteredMap;
 layout(set = 1, binding = 22) uniform sampler2D uBrdfLUT;
+// A2/A3 (normal map + probe GI + hemisphere ambient) are GL-only for now: the
+// VK descriptor set layout is compiled for the fixed set=1 bindings above, and
+// this renderer's VK backend is still experimental (descriptor reuse / pseudo-
+// HDR / serial submit are open - see TODO A1/A2/B5). Adding bindings here would
+// reference descriptors the layout does not declare.
 
 float DecodeDepth(vec4 v) {
     return dot(v, vec4(1.0, 1.0 / 255.0, 1.0 / 65025.0, 1.0 / 16581375.0));

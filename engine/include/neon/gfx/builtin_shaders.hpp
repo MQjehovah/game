@@ -72,6 +72,7 @@ uniform sampler2D uMR;
 uniform sampler2D uOcclusion;
 uniform sampler2D uEmissive;
 uniform sampler2D uGrassTex;
+uniform sampler2D uNormalMap;
 uniform vec4 uDirtColor;
 uniform vec4 uRockColor;
 uniform bool uHasGrassTex;
@@ -80,6 +81,8 @@ uniform bool uHasTexture;
 uniform bool uHasMR;
 uniform bool uHasAO;
 uniform bool uHasEmissive;
+uniform bool uHasNormalMap;
+uniform float uNormalScale;
 uniform float uAOStrength;
 uniform float uEmissiveIntensity;
 uniform float uShininess;
@@ -89,10 +92,17 @@ uniform vec3 uSunDir;
 uniform vec3 uSunColor;
 uniform float uAmbient;
 uniform vec3 uAmbientColor;
+uniform vec3 uAmbientGroundColor;
 uniform sampler2D uIrradianceMap;
 uniform sampler2D uPrefilteredMap;
 uniform sampler2D uBrdfLUT;
+uniform sampler2D uLightProbeAtlas;
 uniform float uIblStrength;
+uniform float uLightProbeRes;
+uniform float uLightProbeInvMax;
+uniform int uLightProbeEnabled;
+uniform vec3 uLightProbeMin;
+uniform vec3 uLightProbeExtent;
 uniform float uRoughnessMin;
 uniform vec3 uPointPos[8];
 uniform vec3 uPointColor[8];
@@ -234,6 +244,44 @@ float PointShadowForLight(int light, vec3 worldPos, vec3 lightPos, float range) 
     if (face == 4) return PointShadowFactor(uPointShadowMap10, uv, current, taps);
     return PointShadowFactor(uPointShadowMap11, uv, current, taps);
 }
+)" R"(
+// A3 probe-field GI: trilinear-sample the baked 2D irradiance atlas by world
+// position (mirrors CPU light_probe.cpp SampleProbeField exactly). The atlas is
+// res x (res*res): tile (i,j,k) at texel (i, k*res + j). Irradiance is encoded
+// LDR (value * uLightProbeInvMax). Disabled when uLightProbeEnabled == 0.
+vec3 SampleLightProbeAtlas(vec3 wp) {
+    vec3 u = clamp((wp - uLightProbeMin) / max(uLightProbeExtent, vec3(1e-5)) * uLightProbeRes -
+                       0.5,
+                   vec3(0.0), vec3(uLightProbeRes - 1.0));
+    ivec3 i0 = ivec3(floor(u));
+    ivec3 i1 = min(i0 + ivec3(1), ivec3(ivec3(uLightProbeRes) - 1));
+    vec3 f = u - vec3(i0);
+    float invRes = 1.0 / uLightProbeRes;
+    float invRsq = 1.0 / (uLightProbeRes * uLightProbeRes);
+    vec3 c000 = texture(uLightProbeAtlas, vec2((float(i0.x) + 0.5) * invRes,
+                        (float(i0.z) * uLightProbeRes + float(i0.y) + 0.5) * invRsq)).rgb;
+    vec3 c100 = texture(uLightProbeAtlas, vec2((float(i1.x) + 0.5) * invRes,
+                        (float(i0.z) * uLightProbeRes + float(i0.y) + 0.5) * invRsq)).rgb;
+    vec3 c010 = texture(uLightProbeAtlas, vec2((float(i0.x) + 0.5) * invRes,
+                        (float(i0.z) * uLightProbeRes + float(i1.y) + 0.5) * invRsq)).rgb;
+    vec3 c110 = texture(uLightProbeAtlas, vec2((float(i1.x) + 0.5) * invRes,
+                        (float(i0.z) * uLightProbeRes + float(i1.y) + 0.5) * invRsq)).rgb;
+    vec3 c001 = texture(uLightProbeAtlas, vec2((float(i0.x) + 0.5) * invRes,
+                        (float(i1.z) * uLightProbeRes + float(i0.y) + 0.5) * invRsq)).rgb;
+    vec3 c101 = texture(uLightProbeAtlas, vec2((float(i1.x) + 0.5) * invRes,
+                        (float(i1.z) * uLightProbeRes + float(i0.y) + 0.5) * invRsq)).rgb;
+    vec3 c011 = texture(uLightProbeAtlas, vec2((float(i0.x) + 0.5) * invRes,
+                        (float(i1.z) * uLightProbeRes + float(i1.y) + 0.5) * invRsq)).rgb;
+    vec3 c111 = texture(uLightProbeAtlas, vec2((float(i1.x) + 0.5) * invRes,
+                        (float(i1.z) * uLightProbeRes + float(i1.y) + 0.5) * invRsq)).rgb;
+    vec3 x00 = mix(c000, c100, f.x);
+    vec3 x01 = mix(c010, c110, f.x);
+    vec3 x10 = mix(c001, c101, f.x);
+    vec3 x11 = mix(c011, c111, f.x);
+    vec3 y0 = mix(x00, x01, f.y);
+    vec3 y1 = mix(x10, x11, f.y);
+    return mix(y0, y1, f.z) * uLightProbeInvMax;
+}
 void main() {
 #ifdef TERRAIN_SPLAT
     // G4 terrain splatmap: layer a realistic grass texture, dirt color and rock
@@ -248,6 +296,31 @@ void main() {
     albedo *= uTint * vColor;
 #endif
     vec3 N = normalize(vNormal);
+    // A2 normal mapping without per-vertex tangents: reconstruct the tangent
+    // basis from screen-space derivatives of world position + UV (the standard
+    // dFdx/dFdy triangle method, good for the common single-UV mesh). The
+    // normal map's z is the geometric normal axis by construction, so
+    // orthonormalizing against N (rather than using B directly) avoids the
+    // flipping artifact along UV seams for a backfacing/ignoring pitch. When no
+    // map is bound (uHasNormalMap == 0) N is left as-authored.
+    if (uHasNormalMap) {
+        vec3 dp1 = dFdx(vWorldPos);
+        vec3 dp2 = dFdy(vWorldPos);
+        vec2 duv1 = dFdx(vUV);
+        vec2 duv2 = dFdy(vUV);
+        vec3 dp2perp = cross(dp2, N);
+        vec3 dp1perp = cross(N, dp1);
+        vec3 tangent = dp2perp * duv1.x + dp1perp * duv2.x;
+        vec3 bitangent = dp2perp * duv1.y + dp1perp * duv2.y;
+        float invMax = inversesqrt(max(dot(tangent, tangent), dot(bitangent, bitangent)));
+        tangent *= invMax;
+        bitangent *= invMax;
+        // Re-orthonormalize bitangent against N so frames align with the
+        // geometry normal (avoids shear on smoothed/skinned meshes).
+        vec3 nrm = normalize(texture(uNormalMap, vUV).rgb * 2.0 - 1.0);
+        nrm.xy *= uNormalScale;
+        N = normalize(nrm.x * tangent + nrm.y * bitangent + nrm.z * N);
+    }
     vec3 V = normalize(uCamPos - vWorldPos);
     vec3 L = normalize(-uSunDir);
     float ndl = max(dot(N, L), 0.0);
@@ -279,8 +352,22 @@ void main() {
     vec3 prefiltered = texture(uPrefilteredMap, vec2(roughU, R.y * 0.5 + 0.5)).rgb;
     vec2 brdf = texture(uBrdfLUT, vec2(ndv, roughness)).rg;
     vec3 iblSpecular = prefiltered * (f0 * brdf.x + brdf.y) * uIblStrength;
+    // A3 hemisphere ambient: split the legacy flat ambient into a sky/ground
+    // gradient by the world normal's Y so upward-facing surfaces take the sky
+    // tint (uAmbientColor) and downward-facing take a ground bounce
+    // (uAmbientGroundColor). This is the cheap indirect-lighting quality step
+    // that removes the flat grey-shaded look; a flat ambient is reproduced when
+    // the ground color equals the sky color.
+    vec3 hemiAmbient = mix(uAmbientGroundColor, uAmbientColor, clamp(N.y * 0.5 + 0.5, 0.0, 1.0));
     vec3 ambientLight = iblDiffuse + iblSpecular +
-                        albedo.rgb * uAmbientColor * uAmbient * (1.0 - uIblStrength);
+                        albedo.rgb * hemiAmbient * uAmbient * (1.0 - uIblStrength);
+    // A3 probe-field GI: the baked light-probe irradiance adds scene-local
+    // indirect light (point-light / sun bounce baked per probe) on top of the
+    // sky-based IBL. Weighted by iblDiffuse's diffuse term only (kd) so it
+    // fills the indirect contribution without double-counting specular.
+    if (uLightProbeEnabled != 0) {
+        ambientLight += kd * SampleLightProbeAtlas(vWorldPos) * albedo.rgb;
+    }
     if (uHasAO) ambientLight *= mix(1.0, texture(uOcclusion, vUV).r, uAOStrength);
     vec3 color = (kd * albedo.rgb + spec) * uSunColor * ndl + ambientLight;
     if (uHasEmissive) color += texture(uEmissive, vUV).rgb * uEmissiveIntensity;

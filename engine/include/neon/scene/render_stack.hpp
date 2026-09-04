@@ -50,6 +50,16 @@ struct RenderStack {
     bool fog = false;
     gfx::Color fogColor{1.0f, 1.0f, 1.0f, 1.0f};
     float fogDensity = 0.02f;
+    // A1 color grading (procedural "film look", applied post-tonemap). grade
+    // master toggles it; below are the operators (each default neutral so the
+    // stack is a no-op unless intentionally authored).
+    bool grade = false;
+    float gradeSaturation = 1.0f;
+    float gradeContrast = 0.0f;
+    float gradeGain = 1.0f;
+    float gradeGamma = 1.0f;
+    float gradeLift = 0.0f;
+    gfx::Color gradeTint{1.0f, 1.0f, 1.0f, 1.0f};
 
     inline static const auto kFields = ReflectFields(
         Field("ssao", "SSAO", FieldType::Bool, &RenderStack::ssao),
@@ -69,7 +79,17 @@ struct RenderStack {
         Field("exposure", "曝光", FieldType::Number, &RenderStack::exposure, 1, 0, 10, 0.01),
         Field("fog", "雾", FieldType::Bool, &RenderStack::fog),
         Field("fogColor", "雾色", FieldType::Color, &RenderStack::fogColor),
-        Field("fogDensity", "雾密度", FieldType::Number, &RenderStack::fogDensity, 0.02, 0, 1, 0.001));
+        Field("fogDensity", "雾密度", FieldType::Number, &RenderStack::fogDensity, 0.02, 0, 1, 0.001),
+        Field("grade", "颜色分级", FieldType::Bool, &RenderStack::grade),
+        Field("gradeSaturation", "饱和度", FieldType::Number, &RenderStack::gradeSaturation,
+              1, 0, 2, 0.01),
+        Field("gradeContrast", "对比度", FieldType::Number, &RenderStack::gradeContrast,
+              0, -1, 2, 0.01),
+        Field("gradeGain", "增益(高光)", FieldType::Number, &RenderStack::gradeGain, 1, 0, 2, 0.01),
+        Field("gradeGamma", "伽马(中间调)", FieldType::Number, &RenderStack::gradeGamma,
+              1, 0.1, 4, 0.01),
+        Field("gradeLift", "抬升(阴影)", FieldType::Number, &RenderStack::gradeLift, 0, 0, 1, 0.01),
+        Field("gradeTint", "白平衡", FieldType::Color, &RenderStack::gradeTint));
 
     core::Json ToJson() const { return kFields.ToJson(*this); }
     bool FromJson(const core::Json& j, std::string* err = nullptr) {

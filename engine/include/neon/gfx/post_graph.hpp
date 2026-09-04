@@ -59,6 +59,9 @@ public:
         // defaulting to the original constants so existing scenes are unchanged.
         float bloomThreshold = kBloomThreshold;
         float bloomStrength = kBloomStrength;
+        // A1 color grading (procedural LUT-free "film look", applied post-tonemap).
+        // Default (disabled) leaves the composite pixel-identical to the old path.
+        ColorGrade colorGrade;
         TextureHandle white; // 与 Shaders::white 同源（Execute 逐帧重给，防句柄过期）
     };
 

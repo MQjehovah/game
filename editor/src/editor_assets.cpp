@@ -208,6 +208,9 @@ void EditorApp::GenerateMaterialThumbnails() {
             mat.occlusion = assetMgr_.LoadTexture(params.aoTex).Handle();
         if (!params.emissiveTex.empty())
             mat.emissive = assetMgr_.LoadTexture(params.emissiveTex).Handle();
+        if (!params.normalTex.empty())
+            mat.normalMap = assetMgr_.LoadTexture(params.normalTex).Handle();
+        mat.normalScale = params.normalScale;
 
         gfx::Mesh sphere = gfx::Mesh::CreateSphere(renderer_, 0.8f, 16, 12, "matball");
         const math::AABB& b = sphere.Bounds();
@@ -303,6 +306,7 @@ void EditorApp::PollHotReload() {
         checkFile(e.mrTex);
         checkFile(e.aoTex);
         checkFile(e.emissiveTex);
+        checkFile(e.normalTex);
     }
     if (!changedPaths.empty()) {
         for (const std::string& p : changedPaths) {
@@ -336,7 +340,8 @@ void EditorApp::PollHotReload() {
                 changedPaths.count(MeshKeyAssetPath(e.meshKey, projectDir_)) ||
                 changedPaths.count(e.shaderPath) ||
                 changedPaths.count(e.albedoTex) || changedPaths.count(e.mrTex) ||
-                changedPaths.count(e.aoTex) || changedPaths.count(e.emissiveTex);
+                changedPaths.count(e.aoTex) || changedPaths.count(e.emissiveTex) ||
+                changedPaths.count(e.normalTex);
             if (touches) {
                 if (changedPaths.count(e.shaderPath)) ReloadEntityShader(e);
                 ResolveMesh(e);

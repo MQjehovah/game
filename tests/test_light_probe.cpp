@@ -60,3 +60,40 @@ TEST(LightProbeUniformFieldSampling) {
     math::Vec3 black = gfx::SampleProbeField(empty, 2, bounds, {1, 1, 1});
     CHECK_NEAR(black.x, 0.0f, 1e-6);
 }
+
+TEST(LightProbeAtlasBakeSizeAndEncoding) {
+    // A flat-sky field (no sun/points) baked into the LDR atlas must encode the
+    // exact sky irradiance in every texel (clamped to [0,1] via the inverse max).
+    math::AABB bounds{{0, 0, 0}, {8, 8, 8}};
+    std::vector<gfx::IrradianceProbe> probes;
+    gfx::ProbeLightInput input;
+    input.sunIntensity = 0.0f;
+    input.skyIrradiance = {0.2f, 0.3f, 0.4f, 1.0f};
+    gfx::BuildProbeField(bounds, 3, input, probes); // 27 probes
+
+    std::vector<uint8_t> atlas;
+    // maxIrradiance = 0.4 (the sky's blue channel) -> maps 0.4 -> 0xFF.
+    const size_t n = gfx::BakeProbeAtlas(probes, 3, bounds, 0.4f, atlas);
+    CHECK(n == 27u * 4);
+    // Atlas is res x (res*res) = 3x9.
+    // Tile (0,0,0) is at texel (0, 0); expect sky irradiance encoded.
+    const float r = atlas[0 + 0] / 255.0f; // x channel of probe (0,0,0)
+    CHECK_NEAR(r, 0.2f / 0.4f, 1e-2);
+    const float b = atlas[2 + 0] / 255.0f; // z channel
+    CHECK_NEAR(b, 0.4f / 0.4f, 1e-2);
+    // Tile (i=0, j=0, k=2) is at texel (0, 2*3 + 0 = 6): same flat sky.
+    const float bTop = atlas[2 + 6 * 4] / 255.0f;
+    CHECK_NEAR(bTop, 1.0f, 1e-2);
+}
+
+TEST(LightProbeAtlasRejectsBadArgs) {
+    math::AABB bounds{{0, 0, 0}, {8, 8, 8}};
+    std::vector<gfx::IrradianceProbe> probes;
+    gfx::ProbeLightInput input;
+    gfx::BuildProbeField(bounds, 2, input, probes);
+    std::vector<uint8_t> atlas;
+    // Zero/invalid max -> 0 texels (no encode).
+    CHECK_EQ(gfx::BakeProbeAtlas(probes, 2, bounds, 0.0f, atlas), 0u);
+    CHECK_EQ(gfx::BakeProbeAtlas(probes, 3, bounds, 1.0f, atlas), 0u); // res mismatch
+    CHECK_EQ(gfx::BakeProbeAtlas({}, 2, bounds, 1.0f, atlas), 0u);     // empty
+}

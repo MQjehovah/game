@@ -102,4 +102,34 @@ math::Vec3 SampleProbeField(const std::vector<IrradianceProbe>& probes, int res,
     return math::Lerp(y0, y1, fw);
 }
 
+size_t BakeProbeAtlas(const std::vector<IrradianceProbe>& probes, int res,
+                      const math::AABB& bounds, float maxIrradiance,
+                      std::vector<uint8_t>& out) {
+    if (probes.empty() || res <= 0 || maxIrradiance <= 0.0f) return 0;
+    if (static_cast<size_t>(res) * res * res != probes.size()) return 0;
+    // Tile (i, j, k) -> texel (i, k*res + j) in a res x (res*res) atlas, one
+    // row per z-slice. Irradiance is clamped to [0,1] (LDR atlas).
+    const size_t tileCount = static_cast<size_t>(res) * res * res;
+    out.assign(tileCount * 4, 0);
+    for (int k = 0; k < res; ++k) {
+        for (int j = 0; j < res; ++j) {
+            for (int i = 0; i < res; ++i) {
+                const size_t idx = static_cast<size_t>(k) * res * res +
+                                   static_cast<size_t>(j) * res + static_cast<size_t>(i);
+                const math::Vec3 irr = probes[idx].irradiance;
+                const float inv = 1.0f / maxIrradiance;
+                out[(static_cast<size_t>(i) + (static_cast<size_t>(k) * res + j) * res) * 4 + 0] =
+                    static_cast<uint8_t>(math::Clamp(irr.x * inv, 0.0f, 1.0f) * 255.0f);
+                out[(static_cast<size_t>(i) + (static_cast<size_t>(k) * res + j) * res) * 4 + 1] =
+                    static_cast<uint8_t>(math::Clamp(irr.y * inv, 0.0f, 1.0f) * 255.0f);
+                out[(static_cast<size_t>(i) + (static_cast<size_t>(k) * res + j) * res) * 4 + 2] =
+                    static_cast<uint8_t>(math::Clamp(irr.z * inv, 0.0f, 1.0f) * 255.0f);
+                out[(static_cast<size_t>(i) + (static_cast<size_t>(k) * res + j) * res) * 4 + 3] =
+                    255;
+            }
+        }
+    }
+    return out.size();
+}
+
 } // namespace neon::gfx

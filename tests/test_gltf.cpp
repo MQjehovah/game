@@ -269,6 +269,10 @@ TEST(GltfDamagedHelmetEndToEnd) {
     CHECK(mat.metallicRoughness.Valid());
     CHECK(mat.occlusion.Valid());
     CHECK(mat.emissive.Valid());
+    // A2: the DamagedHelmet's normalTexture (Default_Normal.jpg) must import and
+    // populate the material's tangent-space normal map slot.
+    CHECK(mat.normalMap.Valid());
+    CHECK_NEAR(mat.normalScale, 1.0, 1e-6);
     CHECK_NEAR(mat.metallic, 0.0, 1e-6);
     CHECK_NEAR(mat.roughness, 1.0, 1e-6);
     CHECK_NEAR(mat.tint.r, 1.0, 1e-6);

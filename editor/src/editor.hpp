@@ -164,6 +164,10 @@ struct SceneEntity {
     std::string mrTex;
     std::string aoTex;
     std::string emissiveTex;
+    // A2: tangent-space normal map (lit shader reconstructs TBN from screen-
+    // space derivatives; no per-vertex tangents). Empty = none.
+    std::string normalTex;
+    float normalScale = 1.0f;
     // Custom fragment shader file (P2-6 shader hot reload): compiled against
     // the built-in unlit vertex contract (vUV/vColor + uTex). Empty = the
     // material's built-in shader.

@@ -12,6 +12,7 @@
 #include "neon/gfx/ssao.hpp"
 #include "neon/gfx/ssr.hpp"
 #include "neon/gfx/volumetric.hpp"
+#include "neon/gfx/skybox.hpp"
 
 namespace neon::gfx {
 namespace {
@@ -203,6 +204,7 @@ void Renderer::InitBuiltinResources() {
     volumetricShader_ =
         backend_->CreateShader(kPostVertexShader, kVolumetricFragmentShader, "volumetric");
     ssrShader_ = backend_->CreateShader(kPostVertexShader, kSsrFragmentShader, "ssr");
+    skyboxShader_ = backend_->CreateShader(kSkyboxVertexShader, kSkyboxFragmentShader, "skybox");
     NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
                  "Renderer: SSAO/SSR/volumetric shaders %s",
                  (ssaoShader_.Valid() && ssaoBlurShader_.Valid() && volumetricShader_.Valid() &&
@@ -269,6 +271,7 @@ void Renderer::InitBuiltinResources() {
 
 void Renderer::BeginFrame(const Color& clearColor, float clearDepth) {
     ++sceneUniformStamp_; // B1: a new frame invalidates the scene uniform cache
+    skyTime_ += 1.0f / 60.0f; // cloud drift clock (close enough for a sky)
     stats_ = RenderStats{};
     shadowSystem_.BeginFrame();
     // Previous frame's post graph is fully consumed (the composite pass sampled
@@ -380,6 +383,44 @@ void Renderer::SetBloomParams(float threshold, float strength) {
     bloomStrength_ = strength;
 }
 
+void Renderer::SetLightProbes(TextureHandle atlas, const math::AABB& bounds, int res,
+                              float maxIrradiance) {
+    lightProbeAtlas_ = atlas;
+    lightProbeBounds_ = bounds;
+    lightProbeRes_ = res;
+    lightProbeMaxIrr_ = maxIrradiance > 0.0f ? maxIrradiance : 1.0f;
+    if (atlas.Valid()) NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
+                                    "Renderer: light-probe GI atlas bound (%dx%d grid, res=%d)",
+                                    bounds.max.x - bounds.min.x, bounds.max.z - bounds.min.z, res);
+}
+
+bool Renderer::BakeLightProbes(const math::AABB& bounds, int res, const ProbeLightInput& input) {
+    std::vector<IrradianceProbe> probes;
+    if (BuildProbeField(bounds, res, input, probes) == 0) return false;
+    // Scale the LDR atlas by the largest probe irradiance so the brightest probe
+    // maps to 1.0; the shader multiplies back by the same factor.
+    float maxIrr = 1e-4f;
+    for (const IrradianceProbe& p : probes)
+        maxIrr = std::max({maxIrr, std::fabs(p.irradiance.x), std::fabs(p.irradiance.y),
+                           std::fabs(p.irradiance.z)});
+    std::vector<uint8_t> atlas;
+    if (BakeProbeAtlas(probes, res, bounds, maxIrr, atlas) == 0) return false;
+    if (auto* backend = Backend()) {
+        TextureDesc desc;
+        desc.width = res;
+        desc.height = res * res;
+        desc.rgba = atlas.data();
+        desc.filter = Filter::Linear;
+        desc.wrap = Wrap::Clamp;
+        const TextureHandle tex = backend->CreateTexture(desc);
+        if (tex.Valid()) {
+            SetLightProbes(tex, bounds, res, maxIrr);
+            return true;
+        }
+    }
+    return false;
+}
+
 void Renderer::SetExposure(float exposure) {
     exposure_ = exposure;
     NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
@@ -408,7 +449,56 @@ void Renderer::SetPlayerLight(const math::Vec3& position, const Color& color, fl
 }
 
 void Renderer::DrawSky() {
+    // A4 procedural skybox: a view-ray fullscreen background pass with a sun
+    // disc + halo, a locked moon and procedural clouds. Drawn into the CURRENT
+    // scene target (HDR or backbuffer); the sky quad has depth test OFF and the
+    // target was cleared to depth=1, so the sky at depth=1 never blocks the
+    // geometry drawn on top. Replaces the old screen-space vertical gradient,
+    // which did not follow the camera. When disabled (default) the legacy
+    // gradient/HDRI path runs.
+    draw2d_.Flush2D();
+    if (skyBox_.enabled && skyboxShader_.Valid() && postQuadMesh_.Valid()) {
+        backend_->UseShader(skyboxShader_);
+        backend_->SetBlendMode(BlendMode::Opaque);
+        backend_->SetDepthTest(false, false);
+        backend_->SetCullMode(CullMode::None);
+        backend_->SetUniformMat4("uMVP", math::Mat4::Identity());
+        // Reconstruct world rays with the inverse(view*proj) of the rendered
+        // camera; the sky texture (optional HDRI) is sampled when valid.
+        backend_->SetUniformMat4("uInvViewProj", sceneState_.ViewProjection().Inverted());
+        const math::Vec3 camPos = sceneState_.CamPos();
+        backend_->SetUniformVec3("uCamPos", camPos);
+        const gfx::TextureHandle skyTex = sceneState_.SkyTexture();
+        backend_->BindTexture(0, skyTex.Valid() ? skyTex : white_);
+        backend_->SetUniformInt("uSkyTexture", 0);
+        backend_->SetUniformInt("uSkyTextureValid", skyTex.Valid() ? 1 : 0);
+        const Color& top = sceneState_.SkyTop();
+        const Color& hor = sceneState_.SkyHorizon();
+        backend_->SetUniformVec3("uSkyTop", {top.r, top.g, top.b});
+        backend_->SetUniformVec3("uSkyHorizon", {hor.r, hor.g, hor.b});
+        backend_->SetUniformFloat("uSunYaw", skyBox_.sunYaw);
+        backend_->SetUniformFloat("uSunPitch", skyBox_.sunPitch);
+        backend_->SetUniformInt("uSunVisible", skyBox_.sunVisible ? 1 : 0);
+        backend_->SetUniformInt("uMoonVisible", skyBox_.moonVisible ? 1 : 0);
+        backend_->SetUniformInt("uCloudsEnabled", skyBox_.cloudsEnabled ? 1 : 0);
+        backend_->SetUniformFloat("uCloudCoverage", skyBox_.cloudCoverage);
+        backend_->SetUniformFloat("uCloudScale", skyBox_.cloudScale);
+        backend_->SetUniformFloat("uTime", skyTime_);
+        backend_->DrawMesh(postQuadMesh_);
+        return;
+    }
     sceneState_.DrawSky(draw2d_);
+}
+
+void Renderer::EnableSkyBox(const math::Vec3& sunDir, bool clouds) {
+    skyBox_.enabled = true;
+    skyBox_.cloudsEnabled = clouds;
+    // Derive yaw/pitch (radians) from a world sun direction so the disc matches
+    // the directional light. sunDir points AWAY from the sun (light travels its
+    // negative), so negate to get "toward the sun".
+    const math::Vec3 s = (-sunDir).Normalized();
+    skyBox_.sunPitch = std::asin(std::max(-1.0f, std::min(1.0f, s.y)));
+    skyBox_.sunYaw = std::atan2(s.z, s.x);
 }
 
 void Renderer::DrawMesh(const Mesh& mesh, const Material& material, const math::Mat4& model) {
@@ -712,6 +802,14 @@ void Renderer::ApplyMaterial(const Material& material, const math::Mat4& mvp,
     backend_->SetUniformInt("uOcclusion", 3);
     backend_->BindTexture(4, material.emissive);
     backend_->SetUniformInt("uEmissive", 4);
+    // A2 normal map: bound on texture unit 23 (20..22 are the IBL irradiance/
+    // prefiltered/BRDF-LUT maps, 5..7 CSM shadows, 8..19 point shadows) and
+    // disabled by default so the Lit shader samples it only when the material
+    // carries one. Perturbation strength is authored per material.
+    backend_->BindTexture(23, material.normalMap.Valid() ? material.normalMap : white_);
+    backend_->SetUniformInt("uNormalMap", 23);
+    backend_->SetUniformInt("uHasNormalMap", material.normalMap.Valid() ? 1 : 0);
+    backend_->SetUniformFloat("uNormalScale", material.normalScale);
 
     if (material.lit) {
         backend_->SetUniformMat4("uModel", model);
@@ -739,6 +837,9 @@ void Renderer::ApplySceneUniforms(ShaderHandle shader) {
     const Color& ambientColor = sceneState_.AmbientColor();
     backend_->SetUniformVec3("uAmbientColor",
                              {ambientColor.r, ambientColor.g, ambientColor.b});
+    const Color& groundColor = sceneState_.AmbientGroundColor();
+    backend_->SetUniformVec3("uAmbientGroundColor",
+                             {groundColor.r, groundColor.g, groundColor.b});
     backend_->SetUniformInt("uPointCount", sceneState_.PointCount());
     for (int i = 0; i < sceneState_.PointCount(); ++i) {
         std::string suffix = "[" + std::to_string(i) + "]";
@@ -816,6 +917,26 @@ void Renderer::ApplySceneUniforms(ShaderHandle shader) {
         backend_->SetUniformInt("uPrefilteredMap", 21);
         backend_->BindTexture(22, sceneState_.IblBrdfLutTex());
         backend_->SetUniformInt("uBrdfLUT", 22);
+    }
+    // A3 probe-field GI atlas (texture unit 24, after normalMap on 23 and IBL on
+    // 20..22): sampled by world position for indirect diffuse, blended into the
+    // IBL ambient. Disabled when no atlas is bound (invalid handle): the GLSL
+    // defaults (uLightProbeEnabled = 0, empty texture) make the term a no-op.
+    if (lightProbeAtlas_.Valid()) {
+        backend_->BindTexture(24, lightProbeAtlas_);
+        backend_->SetUniformInt("uLightProbeAtlas", 24);
+        backend_->SetUniformInt("uLightProbeEnabled", 1);
+        const math::Vec3 mn = lightProbeBounds_.min;
+        const math::Vec3 ex = lightProbeBounds_.max - lightProbeBounds_.min;
+        backend_->SetUniformVec3("uLightProbeMin", mn);
+        backend_->SetUniformVec3("uLightProbeExtent", ex);
+        backend_->SetUniformFloat("uLightProbeRes", static_cast<float>(lightProbeRes_));
+        backend_->SetUniformFloat("uLightProbeInvMax",
+                                  1.0f / (lightProbeMaxIrr_ > 0.0f ? lightProbeMaxIrr_ : 1.0f));
+    } else {
+        backend_->SetUniformInt("uLightProbeEnabled", 0);
+        backend_->BindTexture(24, white_);
+        backend_->SetUniformInt("uLightProbeAtlas", 24);
     }
 }
 
@@ -1181,6 +1302,7 @@ PostGraph::FrameParams Renderer::MakePostParams(bool chains) const {
     p.composite.tonemapEnabled = tonemapEnabled_;
     p.composite.bloomThreshold = bloomThreshold_;
     p.composite.bloomStrength = bloomStrength_;
+    p.composite.colorGrade = colorGrade_;
     p.composite.white = white_;
     return p;
 }

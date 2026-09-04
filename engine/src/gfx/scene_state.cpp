@@ -140,6 +140,11 @@ void SceneState::SetAmbientLight(const Color& color, float strength) {
     ambient_ = strength;
 }
 
+void SceneState::SetAmbientGroundColor(const Color& color) {
+    if (sceneUniformStamp_) ++*sceneUniformStamp_; // B1
+    ambientGroundColor_ = color;
+}
+
 void SceneState::SetPointLight(int index, const math::Vec3& position, const Color& color,
                                float radius) {
     if (sceneUniformStamp_) ++*sceneUniformStamp_; // B1

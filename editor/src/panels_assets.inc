@@ -94,7 +94,8 @@ void EditorApp::CreateAssetFile(const std::string& name, int kind) {
         content = "{\n  \"colorHex\": \"#FFFFFF\",\n  \"metallic\": 0.0,\n"
                   "  \"roughness\": 0.8,\n  \"ao\": 1.0,\n"
                   "  \"emissiveIntensity\": 1.0,\n  \"albedoTex\": \"\",\n"
-                  "  \"mrTex\": \"\",\n  \"aoTex\": \"\",\n  \"emissiveTex\": \"\"\n}\n";
+                  "  \"mrTex\": \"\",\n  \"aoTex\": \"\",\n  \"emissiveTex\": \"\",\n"
+                  "  \"normalTex\": \"\",\n  \"normalScale\": 1.0\n}\n";
     }
     std::ofstream out(path, std::ios::binary);
     if (!out.is_open()) {

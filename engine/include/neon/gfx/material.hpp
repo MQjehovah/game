@@ -10,6 +10,13 @@ struct Material {
     TextureHandle metallicRoughness; // G=roughness, B=metallic
     TextureHandle occlusion;         // R channel
     TextureHandle emissive;
+    // A2: tangent-space normal map. No per-vertex tangents are stored; the lit
+    // shader reconstructs a per-fragment TBN from screen-space derivatives of
+    // world position + UV (MikkTSpace-quality for the common case, zero layout
+    // change, works for every existing mesh). normalScale controls the
+    // perturbation strength (1 = authored, <1 flattened, >1 exaggerated).
+    TextureHandle normalMap;
+    float normalScale = 1.0f;
     // G4 terrain splatmap layers: grass uses a realistic albedo texture, dirt
     // and rock use flat colors. Blended by the vertex splat weights (r=grass,
     // g=dirt, b=rock). Only read when the terrain shader is active.

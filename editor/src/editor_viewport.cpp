@@ -719,6 +719,16 @@ void EditorApp::ApplySceneEnvironment() {
         }
     } else if (sl && sl->useAtmosphere) {
         renderer_.SetSky(sl->skyTop, sl->skyHorizon);
+        // A4: opt into the procedural view-ray skybox (sun/moon/clouds) aimed
+        // from the scene's directional-light sun dir.
+        if (sl->skybox) {
+            renderer_.SetDirectionalLight(sl->sunDir,
+                                          {sl->color.r * sl->intensity,
+                                           sl->color.g * sl->intensity,
+                                           sl->color.b * sl->intensity, 1.0f},
+                                          sl->ambientStrength);
+            renderer_.EnableSkyBox(sl->sunDir, /*clouds=*/true);
+        }
     } else {
         renderer_.SetSky({0.28f, 0.38f, 0.58f, 1.0f}, {0.55f, 0.65f, 0.8f, 1.0f});
     }

@@ -128,10 +128,12 @@ struct SceneFile {
                                                const std::vector<LodEntry>& lod = {},
                                                float hp = 0.0f,
                                                float maxHp = 0.0f,
-                                                const std::string& parent = "",
-                                                int parentId = 0,
-                                                int id = 0,
-                                                float uvRepeat = 1.0f);
+                                                 const std::string& parent = "",
+                                                 int parentId = 0,
+                                                 int id = 0,
+                                                 float uvRepeat = 1.0f,
+                                                 const std::string& normalTex = "",
+                                                 float normalScale = 1.0f);
     // G2-2 scene unification: the canonical 2D sprite entity builder (mirrors
     // MakeEntity for mesh entities). Emits name + id + components: transform
     // (pos/rot/scale/parent/parentId), sprite (texture/flipX/flipY/colorHex)
@@ -242,6 +244,10 @@ struct SceneMesh {
     std::string mrTex;
     std::string aoTex;
     std::string emissiveTex;
+    // A2: tangent-space normal map (reconstructed via screen-space derivatives
+    // in the lit shader — no per-vertex tangents needed). Empty = none.
+    std::string normalTex;
+    float normalScale = 1.0f;
     // G4 terrain splatmap: per-layer colors for the dirt and rock bands (grass
     // uses albedoTex as its realistic texture). Empty = engine default color.
     std::string dirtColorHex;
@@ -520,6 +526,8 @@ struct SceneLight {
     // 场景能在 scene JSON 里数据驱动地表达整场氛围。默认值 = 现有硬编码
     // （不覆盖，保回归等价）；fog 默认取 runtime 的 60-220。
     bool useAtmosphere = false;
+    // A4 程序化天空盒：useAtmosphere 场景可额外开启 view-ray 太阳/月亮/云。
+    bool skybox = false;
     gfx::Color skyTop{0.28f, 0.38f, 0.58f, 1.0f};
     gfx::Color skyHorizon{0.55f, 0.65f, 0.80f, 1.0f};
     gfx::Color fogColor{0.45f, 0.55f, 0.70f, 1.0f};
@@ -546,6 +554,7 @@ struct SceneLight {
         Field("skyTexture", "天空贴图", FieldType::Resource, &SceneLight::skyTexture,
               0, 0, 0, 0, FieldMeta{FieldCategory::Serialize, nullptr, nullptr, "texture"}),
         Field("useAtmosphere", "自定义氛围", FieldType::Bool, &SceneLight::useAtmosphere),
+        Field("skybox", "天空盒(程序化)", FieldType::Bool, &SceneLight::skybox),
         Field("skyTop", "天空顶部", FieldType::Color, &SceneLight::skyTop),
         Field("skyHorizon", "天空地平", FieldType::Color, &SceneLight::skyHorizon),
         Field("fogColor", "雾颜色", FieldType::Color, &SceneLight::fogColor),

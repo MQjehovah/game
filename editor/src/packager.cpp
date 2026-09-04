@@ -491,7 +491,7 @@ void ValidateMesh(ProjectContext& pc, const std::string& where, const core::Json
                                      "' has no file / known loader prefix (skipped)");
     }
 
-    const char* slots[] = {"albedoTex", "mrTex", "aoTex", "emissiveTex"};
+    const char* slots[] = {"albedoTex", "mrTex", "aoTex", "emissiveTex", "normalTex"};
     const core::Json* mat = data.Get("material");
     if (mat) {
         if (!mat->IsObject()) {

@@ -52,4 +52,17 @@ size_t BuildProbeField(const math::AABB& bounds, int res, const ProbeLightInput&
 math::Vec3 SampleProbeField(const std::vector<IrradianceProbe>& probes, int res,
                             const math::AABB& bounds, const math::Vec3& pos);
 
+// A3 GPU GI: the probe field is baked into a 2D RGBA8 atlas `res x res tiles`,
+// tile k (the z-slice) at column k, row 0..(res-1) stacked vertically isn't
+// needed - instead tile (i,j,k) is at texel (i, k*res + j) so one row per
+// z-slice. The lit shader re-samples it by world position with the same
+// trilinear scheme as SampleProbeField. Irradiance is clamped to [0,1] since
+// the atlas is LDR (a sky+point-light indirect field is < 1). Returns the
+// encoded texel count (res*res*res*4) written into `out`, or 0 on error. The
+// CPU SampleProbeField above is the source-of-truth reference; the shader
+// mirrors it exactly so headless tests pin both to the same result.
+size_t BakeProbeAtlas(const std::vector<IrradianceProbe>& probes, int res,
+                      const math::AABB& bounds, float maxIrradiance,
+                      std::vector<uint8_t>& out);
+
 } // namespace neon::gfx

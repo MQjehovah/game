@@ -4,11 +4,13 @@
 #include <string>
 #include <vector>
 #include "neon/gfx/backend.hpp"
+#include "neon/gfx/bloom.hpp"
 #include "neon/gfx/camera.hpp"
 #include "neon/gfx/color.hpp"
 #include "neon/gfx/draw_batch2d.hpp"
 #include "neon/gfx/font.hpp"
 #include "neon/gfx/ibl.hpp"
+#include "neon/gfx/light_probe.hpp"
 #include "neon/gfx/material.hpp"
 #include "neon/gfx/mesh.hpp"
 #include "neon/gfx/post_graph.hpp"
@@ -103,6 +105,26 @@ public:
     void SetSky(const Color& top, const Color& horizon);
     void SetSkyTexture(TextureHandle tex) { sceneState_.SetSkyTexture(tex); }
     void DrawSky();
+    // A4 procedural skybox overrides the static gradient: a view-ray sky with a
+    // sun disc + halo, a moon, and procedural clouds. sunYaw/sunPitch in
+    // radians; set enabled=true to replace the plain gradient. Defaults fill a
+    // healthy daytime look so callers opt-in with one line.
+    struct SkyBoxParams {
+        bool enabled = false;
+        float sunYaw = 0.6f;
+        float sunPitch = 0.8f;      // above horizon
+        bool sunVisible = true;
+        bool moonVisible = true;
+        bool cloudsEnabled = true;
+        float cloudCoverage = 0.35f;
+        float cloudScale = 2.0f;
+    };
+    void SetSkyBox(const SkyBoxParams& params) { skyBox_ = params; }
+    const SkyBoxParams& SkyBox() const { return skyBox_; }
+    // Convenience: enable the procedural skybox and aim the sun/moon from a
+    // world-space sun direction (the same dir the directional light uses), so a
+    // scene's DirectionalLight drives the sky disc placement automatically.
+    void EnableSkyBox(const math::Vec3& sunDir, bool clouds = true);
     void SetFog(const Color& color, float start, float end);
     // Volumetric exponential distance fog applied at composite time (reads the
     // scene depth). Off by default; densifies with distance independent of the
@@ -117,6 +139,10 @@ public:
     // ambient light object control the scene's base fill independently of the
     // sky-based IBL environment.
     void SetAmbientLight(const Color& color, float strength);
+    // A3 hemisphere ambient: ground-bounce color for downward-facing surfaces
+    // (sky color still sets the up-facing tint via SetAmbientLight). Defaults to
+    // a dark sky-tinted bounce; override per scene or leave default.
+    void SetAmbientGroundColor(const Color& color) { sceneState_.SetAmbientGroundColor(color); }
     void SetPointLight(int index, const math::Vec3& position, const Color& color, float radius);
     void SetPlayerLight(const math::Vec3& position, const Color& color, float radius);
 
@@ -131,6 +157,19 @@ public:
     // calls) - see SceneState::RecomputeIbl.
     void SetIblStrength(float strength);
     float IblStrength() const { return sceneState_.IblStrength(); }
+    // A3 probe-field GI: bind a baked 2D irradiance atlas (light_probe.hpp's
+    // BakeProbeAtlas) and sample it in the lit shader for indirect diffuse,
+    // blended into the IBL ambient. Empty/invalid texture disables the GI term.
+    // `bounds` is the world AABB the probe grid spans, `res` the grid dims,
+    // `maxIrradiance` the value that maps to 1.0 in the LDR atlas.
+    void SetLightProbes(TextureHandle atlas, const math::AABB& bounds, int res,
+                        float maxIrradiance);
+    // A3 convenience: build a probe field from `input` spread over `bounds`,
+    // bake it to an LDR 2D atlas, upload a texture and call SetLightProbes. A
+    // single entry point for the scene host / editor / test to enable probe GI
+    // without touching texture plumbing. res is the grid resolution per axis.
+    // Returns false when the field/atlas is empty (nothing baked).
+    bool BakeLightProbes(const math::AABB& bounds, int res, const ProbeLightInput& input);
     // True once the IBL environment textures exist (first SetSky with a
     // positive strength).
     bool IblValid() const { return sceneState_.IblValid(); }
@@ -220,6 +259,11 @@ public:
     float Exposure() const { return exposure_; }
     void SetTonemapEnabled(bool enabled);
     bool TonemapEnabled() const { return tonemapEnabled_; }
+    // A1 color grading: procedural (LUT-free) post-tonemap grade driving the
+    // composite. SetColorGrade copies the params; the RenderStack component (or
+    // a Lua-driven script) applies it each frame so grading is data-driven.
+    void SetColorGrade(const ColorGrade& grade) { colorGrade_ = grade; }
+    const ColorGrade& GetColorGrade() const { return colorGrade_; }
     // MSAA (Task 3.7): when requested AND the driver passes the multisample
     // FBO + blit-resolve self-test, the HDR scene renders into a samples-per-
     // pixel multisample target and EndScene/CompositeFrame resolve it into the
@@ -492,10 +536,14 @@ private:
     ShaderHandle ssaoDepthMeshShader_;   // non-instanced variant
     ShaderHandle volumetricShader_;
     ShaderHandle ssrShader_;
+    ShaderHandle skyboxShader_;
     TextureHandle white_;
     MeshHandle probeQuadMesh_;
     // Fullscreen NDC quad (uv 0..1) for the post passes.
     MeshHandle postQuadMesh_;
+    // A4 procedural skybox state (view-ray sun/moon/clouds; off = old gradient).
+    SkyBoxParams skyBox_;
+    float skyTime_ = 0.0f; // monotonically increasing (cloud drift)
     // B1: bumped whenever the per-frame scene uniform set changes; the first
     // lit draw of a frame (or after any change) uploads the whole scene block.
     // Shared with the subsystems (SceneState light/fog/IBL setters and the
@@ -527,6 +575,14 @@ private:
     float bloomStrength_ = kBloomStrength;
     float exposure_ = 1.0f;
     bool tonemapEnabled_ = true;
+    // A1 color grading (post-tonemap procedural "film look"); default disabled.
+    ColorGrade colorGrade_;
+    // A3 probe-field GI: the baked irradiance atlas + its grid metadata. When
+    // disabled (invalid texture) the lit shader contributes no GI term.
+    TextureHandle lightProbeAtlas_;
+    math::AABB lightProbeBounds_{};
+    int lightProbeRes_ = 0;
+    float lightProbeMaxIrr_ = 1.0f;
     bool msaaRequested_ = true;
     bool msaaEnabled_ = false;
     int msaaSamples_ = 0;

@@ -89,6 +89,52 @@ inline math::Vec3 BloomCombine(const math::Vec3& hdr, const math::Vec3& bloom, f
     return ToneMap(exposure, hdr + bloom * strength);
 }
 
+// --- Procedural color grading (A1 / LUT-free "film look") --------------------
+// Applied AFTER the ACES tonemap, in display space [0,1], by the composite.
+// The CPU model below mirrors the GLSL in kCompositeFragmentShader exactly so
+// the grade can be unit-tested headlessly (same idea as BloomCombine/AcesFilm
+// being CPU mirrors of shaders). Chosen operators are monotonic per component
+// (no banding / no hue flip), and the identity set returns the input unchanged
+// so the default RenderStack leaves every existing scene pixel-identical.
+//
+// Order: white-balance tint -> photographic Lift/Gamma/Gain -> luminance-
+// preserving saturation -> contrast around a fixed 0.5 pivot -> clamp.
+struct ColorGrade {
+    bool enabled = false;      // master switch; off = identity
+    float saturation = 1.0f;   // 1 neutral; <1 toward grey; >1 punchier
+    float contrast = 0.0f;     // 0 neutral; >0 spreads around the 0.5 pivot
+    float gain = 1.0f;         // scales highlights
+    float gamma = 1.0f;        // >1 darkens mid-tones; <1 brightens them
+    float lift = 0.0f;         // offsets shadows upward (0 = neutral)
+    math::Vec3 tint{1.0f, 1.0f, 1.0f}; // per-channel white balance (colour temp)
+};
+
+// Neutral-grade fast path: returns the input untouched (matches the shader
+// skipping grading when uGradeEnabled == 0).
+inline math::Vec3 GradeColor(const math::Vec3& c, const ColorGrade& g) {
+    if (!g.enabled) return c;
+    // Clamp to display space first so LGG pow() never sees a negative base.
+    math::Vec3 x{std::fmin(std::fmax(c.x, 0.0f), 1.0f),
+                 std::fmin(std::fmax(c.y, 0.0f), 1.0f),
+                 std::fmin(std::fmax(c.z, 0.0f), 1.0f)};
+    // White balance.
+    x = {x.x * g.tint.x, x.y * g.tint.y, x.z * g.tint.z};
+    // Lift/Gamma/Gain (photographic): gamma -> gain -> lift.
+    const float invGamma = 1.0f / std::max(g.gamma, 1e-4f);
+    x = {std::pow(std::fmin(std::fmax(x.x, 0.0f), 1.0f), invGamma) * g.gain + g.lift,
+         std::pow(std::fmin(std::fmax(x.y, 0.0f), 1.0f), invGamma) * g.gain + g.lift,
+         std::pow(std::fmin(std::fmax(x.z, 0.0f), 1.0f), invGamma) * g.gain + g.lift};
+    // Luminance-preserving saturation.
+    const float luma = 0.2126f * x.x + 0.7152f * x.y + 0.0722f * x.z;
+    x = {luma + (x.x - luma) * g.saturation, luma + (x.y - luma) * g.saturation,
+         luma + (x.z - luma) * g.saturation};
+    // Contrast around a 0.5 pivot.
+    const float ck = 1.0f + g.contrast;
+    x = {(x.x - 0.5f) * ck + 0.5f, (x.y - 0.5f) * ck + 0.5f, (x.z - 0.5f) * ck + 0.5f};
+    return {std::fmin(std::fmax(x.x, 0.0f), 1.0f), std::fmin(std::fmax(x.y, 0.0f), 1.0f),
+            std::fmin(std::fmax(x.z, 0.0f), 1.0f)};
+}
+
 // --- Built-in post-process shaders ------------------------------------------
 // Fullscreen NDC quad (postQuadMesh_ in the renderer) drawn with uMVP =
 // identity. Location 0 = position, 2 = uv (matches the engine vertex layout).
@@ -202,6 +248,13 @@ uniform float uStrength;
 uniform float uExposure;
 uniform int uBloomEnabled;
 uniform int uTonemapEnabled;
+uniform int uGradeEnabled;
+uniform float uSaturation;
+uniform float uContrast;
+uniform float uGain;
+uniform float uGamma;
+uniform float uLift;
+uniform vec3 uTint;
 vec3 ACESFilm(vec3 x) {
     float a = 2.51, b = 0.03, c = 2.43, d = 0.59, e = 0.14;
     // Clamp the input to the half-float max before the curve: an Inf/NaN HDR
@@ -234,7 +287,21 @@ void main() {
         }
     }
     if (uTonemapEnabled != 0) {
-        FragColor = vec4(ACESFilm(c * uExposure), 1.0);
+        vec3 graded = ACESFilm(c * uExposure);
+        // A1 color grading (post-tonemap, display space). Skipped when disabled
+        // so the default RenderStack is pixel-identical (matches GradeColor).
+        if (uGradeEnabled != 0) {
+            graded = clamp(graded, vec3(0.0), vec3(1.0));
+            graded *= uTint;
+            float ig = 1.0 / max(uGamma, 1e-4);
+            graded = pow(clamp(graded, vec3(0.0), vec3(1.0)), vec3(ig)) * uGain + vec3(uLift);
+            float luma = dot(graded, vec3(0.2126, 0.7152, 0.0722));
+            graded = mix(vec3(luma), graded, uSaturation);
+            float ck = 1.0 + uContrast;
+            graded = (graded - vec3(0.5)) * ck + vec3(0.5);
+            graded = clamp(graded, vec3(0.0), vec3(1.0));
+        }
+        FragColor = vec4(graded, 1.0);
     } else {
         FragColor = vec4(min(c, vec3(1.0)), 1.0);
     }

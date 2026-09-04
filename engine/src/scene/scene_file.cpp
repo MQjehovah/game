@@ -7,6 +7,7 @@
 #include "neon/assets/asset_manager.hpp"
 #include "neon/assets/mesh_format.hpp"
 #include "neon/core/log.hpp"
+#include "neon/scene/render_stack.hpp"
 
 namespace neon::scene {
 namespace {
@@ -350,10 +351,12 @@ core::Result<core::Json> SceneFile::MakeEntity(const std::string& name,
                                                const std::vector<LodEntry>& lod,
                                                float hp,
                                                float maxHp,
-                                                const std::string& parent,
-                                                int parentId,
-                                                int id,
-                                                float uvRepeat) {
+                                                 const std::string& parent,
+                                                 int parentId,
+                                                 int id,
+                                                 float uvRepeat,
+                                                 const std::string& normalTex,
+                                                 float normalScale) {
     if (name.empty())
         return core::Result<core::Json>::Err("scene: exported entity name must not be empty");
     // NOTE: a pure-logic entity (e.g. a game script host like wc3's `Game`) has
@@ -384,6 +387,8 @@ core::Result<core::Json> SceneFile::MakeEntity(const std::string& name,
     if (!mrTex.empty()) mat.object_["mrTex"] = MakeString(mrTex);
     if (!aoTex.empty()) mat.object_["aoTex"] = MakeString(aoTex);
     if (!emissiveTex.empty()) mat.object_["emissiveTex"] = MakeString(emissiveTex);
+    if (!normalTex.empty()) mat.object_["normalTex"] = MakeString(normalTex);
+    if (normalScale != 1.0f) mat.object_["normalScale"] = MakeNumber(normalScale);
 
     core::Json mesh = MakeObject();
     mesh.object_["meshKey"] = MakeString(meshKey);
@@ -588,6 +593,7 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                       if (!CheckComponentShape(data,
                                     {"meshKey", "lod", "material", "metallic", "roughness", "colorHex",
                                      "albedoTex", "mrTex", "aoTex", "emissiveTex",
+                                     "normalTex", "normalScale",
                                      "ao", "emissiveIntensity", "uvRepeat",
                                      "dirtColorHex", "rockColorHex", "castShadow"},
                                     "mesh", err))
@@ -665,11 +671,12 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                              if (err) *err = "component 'mesh' field 'material' must be an object";
                              return false;
                          }
-                          if (!CheckComponentShape(*mat,
-                                         {"metallic", "roughness", "colorHex", "albedoTex", "mrTex",
-                                          "aoTex", "emissiveTex", "ao", "emissiveIntensity",
-                                          "uvRepeat", "dirtColorHex", "rockColorHex"},
-                                         "mesh.material", err))
+                           if (!CheckComponentShape(*mat,
+                                          {"metallic", "roughness", "colorHex", "albedoTex", "mrTex",
+                                           "aoTex", "emissiveTex", "normalTex", "normalScale",
+                                           "ao", "emissiveIntensity",
+                                           "uvRepeat", "dirtColorHex", "rockColorHex"},
+                                          "mesh.material", err))
                               return false;
                          if (!RequireNumber(*mat, "metallic", "mesh.material", m.metallic, err))
                              return false;
@@ -683,6 +690,10 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                              return false;
                          if (!RequireString(*mat, "emissiveTex", "mesh.material", m.emissiveTex, err))
                              return false;
+                         if (!RequireString(*mat, "normalTex", "mesh.material", m.normalTex, err))
+                             return false;
+                         if (const core::Json* nsc = mat->Get("normalScale"))
+                             m.normalScale = static_cast<float>(nsc->GetNumber(1.0f));
                          if (!RequireNumber(*mat, "ao", "mesh.material", m.ao, err)) return false;
                          if (!RequireNumber(*mat, "emissiveIntensity", "mesh.material",
                                             m.emissiveIntensity, err))
@@ -706,6 +717,9 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                      if (!RequireString(data, "mrTex", "mesh", m.mrTex, err)) return false;
                      if (!RequireString(data, "aoTex", "mesh", m.aoTex, err)) return false;
                      if (!RequireString(data, "emissiveTex", "mesh", m.emissiveTex, err)) return false;
+                     if (!RequireString(data, "normalTex", "mesh", m.normalTex, err)) return false;
+                     if (const core::Json* ns = data.Get("normalScale"))
+                         m.normalScale = static_cast<float>(ns->GetNumber(1.0f));
                      if (!RequireNumber(data, "ao", "mesh", m.ao, err)) return false;
                      if (!RequireNumber(data, "emissiveIntensity", "mesh", m.emissiveIntensity, err))
                          return false;
@@ -734,6 +748,19 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                      SceneHealth h;
                      if (!h.FromJson(data, err)) return false;
                      world.Add<SceneHealth>(ent, h);
+                     return true;
+                 });
+
+    // A/RenderStack: a scene-level RenderStack (post-process + color grade) is
+    // instantiated from one reflected component so it round-trips the scene file
+    // AND drives the renderer each frame (see DrawSystem). Registered alongside
+    // the other reflected factories; unknown fields fail loudly via FromJson.
+    reg.Register("renderstack",
+                 [](ecs::World& world, ecs::Entity ent, const core::Json& data,
+                    const core::Json&, std::string* err) {
+                     RenderStack rs;
+                     if (!rs.FromJson(data, err)) return false;
+                     world.Add<RenderStack>(ent, rs);
                      return true;
                  });
 
@@ -1129,7 +1156,7 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                       if (!CheckComponentShape(data,
                                               {"type", "sunDir", "color", "intensity", "radius",
                                                 "ambientStrength", "skyTexture",
-                                                "useAtmosphere", "skyTop", "skyHorizon",
+                                                "useAtmosphere", "skybox", "skyTop", "skyHorizon",
                                                 "fogColor", "fogNear", "fogFar", "exposure"},
                                               "light", err))
                          return false;
@@ -1170,8 +1197,10 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                          l.ambientStrength = static_cast<float>(n->GetNumber());
                      if (const core::Json* s = data.Get("skyTexture"))
                          l.skyTexture = s->GetString();
-                     if (const core::Json* b = data.Get("useAtmosphere"))
-                         l.useAtmosphere = b->IsBool() && b->GetBool();
+                      if (const core::Json* b = data.Get("useAtmosphere"))
+                          l.useAtmosphere = b->IsBool() && b->GetBool();
+                      if (const core::Json* sb = data.Get("skybox"))
+                          l.skybox = sb->IsBool() && sb->GetBool();
                      auto readColorOr = [&](const char* key, gfx::Color& out) {
                          if (const core::Json* c = data.Get(key)) {
                              if (c->IsArray()) {
@@ -1488,6 +1517,8 @@ static core::Json SerializeEntityComponents(ecs::World& world, ecs::Entity e) {
         if (!m->mrTex.empty()) mat.object_["mrTex"] = MakeString(m->mrTex);
         if (!m->aoTex.empty()) mat.object_["aoTex"] = MakeString(m->aoTex);
         if (!m->emissiveTex.empty()) mat.object_["emissiveTex"] = MakeString(m->emissiveTex);
+        if (!m->normalTex.empty()) mat.object_["normalTex"] = MakeString(m->normalTex);
+        if (m->normalScale != 1.0f) mat.object_["normalScale"] = MakeNumber(m->normalScale);
         mesh.object_["material"] = std::move(mat);
         if (!m->castShadow) mesh.object_["castShadow"] = MakeBool(false);
         if (!m->lod.empty()) {
@@ -1596,6 +1627,7 @@ static core::Json SerializeEntityComponents(ecs::World& world, ecs::Entity e) {
             li.object_["skyTexture"] = MakeString(l->skyTexture);
         if (l->useAtmosphere) {
             li.object_["useAtmosphere"] = MakeBool(true);
+            if (l->skybox) li.object_["skybox"] = MakeBool(true);
             auto mkColor = [](const gfx::Color& c) {
                 core::Json a = MakeArray();
                 a.array_ = {MakeNumber(c.r), MakeNumber(c.g), MakeNumber(c.b),
@@ -1681,6 +1713,9 @@ static core::Json SerializeEntityComponents(ecs::World& world, ecs::Entity e) {
     }
     if (const SceneAudioSource* a = world.Get<SceneAudioSource>(e)) {
         comps.object_["audio"] = a->ToJson();
+    }
+    if (const RenderStack* rs = world.Get<RenderStack>(e)) {
+        comps.object_["renderstack"] = rs->ToJson();
     }
     if (const SceneAnimOverride* ao = world.Get<SceneAnimOverride>(e)) {
         core::Json an = MakeObject();
