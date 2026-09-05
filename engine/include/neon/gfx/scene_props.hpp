@@ -42,4 +42,9 @@ Mesh MakeWolfMesh(Renderer& renderer, const std::string& name = "wolf");
 // Small glowing fireball projectile.
 Mesh MakeFireballMesh(Renderer& renderer, const std::string& name = "fireball");
 
+// Stylised grass tuft: crossed blades with a dark-base -> light-tip gradient,
+// vertex-coloured (no texture). Instanced by the terrain vegetation scatter to
+// carpet large areas of ground with grass.
+Mesh MakeGrassMesh(Renderer& renderer, const std::string& name = "grass");
+
 } // namespace neon::gfx

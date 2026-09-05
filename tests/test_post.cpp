@@ -221,6 +221,21 @@ TEST(SkyboxShaderSourceTokens) {
     CHECK(frag.find("uSkyTextureValid") != std::string::npos);
 }
 
+TEST(ProceduralGrassMesh) {
+    test::HeadlessAssetFixture fx;
+    gfx::Mesh grass = gfx::MakeGrassMesh(fx.renderer, "grass_test");
+    // A grass tuft is a cluster of crossed blades: must have several triangles
+    // and sit on the ground (min y ~ 0).
+    CHECK(grass.Valid());
+    CHECK(grass.TriangleCount() >= 4u);
+    if (!grass.Valid()) return;
+    const auto& verts = grass.CpuVerts();
+    CHECK(!verts.empty());
+    float minY = 1e9f;
+    for (const auto& v : verts) minY = std::fmin(minY, v.pos.y);
+    CHECK(minY >= -0.05f); // grounded blades
+}
+
 TEST(BloomGaussianKernelNormalized) {
     // The 5-tap separable kernel baked into kBlurFragmentShader must sum to 1
     // (a blur must not change overall brightness).

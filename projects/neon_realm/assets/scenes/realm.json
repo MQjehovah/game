@@ -2422,13 +2422,14 @@
           ],
           "segments": 48,
           "size": 60,
-          "vegCount": 0,
-          "vegImpostorDistance": 60,
-          "vegMaxHeight": 3,
-          "vegMaxSlope": 0.30000001192092896,
-          "vegMinHeight": 0,
-          "vegSeed": 1,
-          "vegSize": 1
+          "vegMeshKey": "grass",
+          "vegCount": 2200,
+          "vegImpostorDistance": 80,
+          "vegMaxHeight": 6,
+          "vegMaxSlope": 0.5,
+          "vegMinHeight": -1,
+          "vegSeed": 7,
+          "vegSize": 0.9
         },
         "transform": {
           "pos": [0,0,0],

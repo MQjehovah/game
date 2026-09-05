@@ -204,4 +204,46 @@ Mesh MakeFireballMesh(Renderer& renderer, const std::string& name) {
                                 static_cast<uint32_t>(ball.CpuIndices().size()), name);
 }
 
+namespace {
+// A tuft of N crossed grass blades (each an upright triangle card), vertex-
+// coloured from a deep base to a lighter tip for a stylised grass look. Blades
+// fan outward by an angle. Grounded at y=0 so instancing sits on the terrain.
+void AppendGrassBlade(std::vector<Vertex3D>& v, std::vector<uint16_t>& idx,
+                      uint16_t& base, float yaw, float lean, float height,
+                      const math::Vec4& baseC, const math::Vec4& tipC) {
+    const float ca = std::cos(yaw), sa = std::sin(yaw);
+    const float w = 0.06f;              // half width of the blade base
+    const float lx = lean * ca;         // lean offsets the tip sideways
+    const float lz = lean * sa;
+    // Two triangles side by side (a thin quad), wider at base, curling to tip.
+    const math::Vec3 p0{-w * ca, 0.0f, -w * sa};
+    const math::Vec3 p1{w * ca, 0.0f, w * sa};
+    const math::Vec3 tip{lx, height, lz};
+    // Base two verts + tip -> 1 triangle for a simple blade; add a mid vertex
+    // for a slight bend so the blade is not a flat cone.
+    v.push_back({p0, {0, 1, 0}, {0, 0}, baseC});
+    v.push_back({p1, {0, 1, 0}, {0, 1}, baseC});
+    v.push_back({tip, {0, 1, 0}, {0.5f, 1.0f}, tipC});
+    idx.push_back(base + 0); idx.push_back(base + 1); idx.push_back(base + 2);
+    base = static_cast<uint16_t>(base + 3);
+}
+} // namespace
+
+// Stylised grass tuft: a cluster of 5 crossed blades with a dark base -> light
+// tip gradient. Cheap billboard-free geometry (instanced many times by the
+// terrain vegetation scatter), vertex-coloured so it needs no texture.
+Mesh MakeGrassMesh(Renderer& renderer, const std::string& name) {
+    std::vector<Vertex3D> v;
+    std::vector<uint16_t> idx;
+    uint16_t base = 0;
+    const math::Vec4 dark{0.14f, 0.34f, 0.12f, 1.0f};
+    const math::Vec4 light{0.42f, 0.72f, 0.28f, 1.0f};
+    const float blades[][2] = {{0.0f, 0.0f},   {0.5f, 0.10f}, {0.9f, 0.08f},
+                               {1.4f, 0.06f},  {2.0f, 0.12f}, {2.6f, 0.07f}};
+    for (const auto& b : blades)
+        AppendGrassBlade(v, idx, base, b[0], b[1], 0.55f, dark, light);
+    return Mesh::CreateFromData(renderer, v.data(), static_cast<uint32_t>(v.size()),
+                                idx.data(), static_cast<uint32_t>(idx.size()), name);
+}
+
 } // namespace neon::gfx

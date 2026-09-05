@@ -548,6 +548,8 @@ gfx::Mesh DrawSystem::ResolveMeshKey(gfx::Renderer& renderer, const std::string&
         mesh = gfx::MakeHouseMesh(renderer);
     } else if (key == "bush") {
         mesh = gfx::MakeBushMesh(renderer);
+    } else if (key == "grass") {
+        mesh = gfx::MakeGrassMesh(renderer);
     } else if (key == "hero") {
         mesh = gfx::MakeHeroMesh(renderer);
     } else if (key == "wolf") {
