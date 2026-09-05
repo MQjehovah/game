@@ -151,6 +151,7 @@ void DrawSystem::Build(ecs::World& world, AnimationSystem& anims) {
         item.mat.aoStrength = m->ao;
         item.mat.emissiveIntensity = m->emissiveIntensity;
         item.mat.castShadow = m->castShadow;
+        item.mat.receiveShadow = m->receiveShadow;
         if (content_.assets) {
             // UV tiling: when uvRepeat > 1 the sampler must use REPEAT, else
             // clamp pulls edge pixels and the tiling collapses into streaks.

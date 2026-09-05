@@ -179,29 +179,12 @@ void ShadowSystem::Init(IRenderBackend& backend, MeshHandle probeQuad, ShaderHan
     // so they engage only when the CSM capability self-test passed. Six 2D
     // maps per light (layered cubemap FBOs are unreliable on the Intel driver);
     // the lit shader picks the face from the fragment->light direction.
-    if (csmEnabled_) {
-        pointShadowsEnabled_ = true;
-        for (int li = 0; li < kShadowPointLights && pointShadowsEnabled_; ++li) {
-            for (int face = 0; face < 6; ++face) {
-                pointShadowRT_[li][face] =
-                    backend.CreateRenderTarget(kPointShadowSize, kPointShadowSize);
-                pointShadowDepthTex_[li][face] =
-                    backend.RenderTargetColorTexture(pointShadowRT_[li][face]);
-                if (!pointShadowRT_[li][face].Valid() || !pointShadowDepthTex_[li][face].Valid()) {
-                    NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Warn,
-                                 "Renderer: point light %d face %d shadow target failed", li, face);
-                    pointShadowsEnabled_ = false;
-                    break;
-                }
-            }
-        }
-        NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
-                     "Renderer: point light shadow maps %dx%d x%d lights (%s)",
-                     kPointShadowSize, kPointShadowSize, kShadowPointLights,
-                     pointShadowsEnabled_ ? "ok" : "FAILED");
-    } else {
-        pointShadowsEnabled_ = false;
-    }
+    // Point-light cubemap shadows currently produce visible cube-face light
+    // patches on the ground; keep point lights unshadowed until the face
+    // projection is fixed. Directional/CSM shadows remain enabled.
+    pointShadowsEnabled_ = false;
+    NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
+                 "Renderer: point light shadows disabled (ground patch workaround)");
     // Diagnostic override (not public API): isolate the point-light shadow
     // contribution for verification (screenshot diffs) without touching CSM.
     if (pointShadowsEnabled_ && std::getenv("NEON_NO_POINT_SHADOWS")) {

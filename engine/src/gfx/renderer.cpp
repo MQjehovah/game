@@ -818,6 +818,7 @@ void Renderer::ApplyMaterial(const Material& material, const math::Mat4& mvp,
     backend_->SetUniformInt("uNormalMap", 23);
     backend_->SetUniformInt("uHasNormalMap", material.normalMap.Valid() ? 1 : 0);
     backend_->SetUniformFloat("uNormalScale", material.normalScale);
+    backend_->SetUniformInt("uReceiveShadow", material.receiveShadow ? 1 : 0);
 
     if (material.lit) {
         backend_->SetUniformMat4("uModel", model);

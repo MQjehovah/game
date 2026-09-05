@@ -286,6 +286,7 @@ struct SceneMesh {
     // "half the map is shadowed" bug). Default true so trees/props cast; set
     // false on ground/water/terrain to keep it receiver-only.
     bool castShadow = true;
+    bool receiveShadow = true;
 };
 // 2D sprite component: an image texture drawn on an XY quad facing +Z (the
 // front-ortho camera). Display size comes from SceneTransform::scale, so the

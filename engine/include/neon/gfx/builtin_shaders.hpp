@@ -127,6 +127,7 @@ uniform mat4 uLightVP[3];
 uniform vec4 uCascadeSplits;
 uniform vec2 uShadowTexel;
 uniform bool uShadowEnabled;
+uniform bool uReceiveShadow;
 uniform sampler2D uPointShadowMap0;
 uniform sampler2D uPointShadowMap1;
 uniform sampler2D uPointShadowMap2;
@@ -432,6 +433,7 @@ void main() {
             else shadow = ShadowFactor(uShadowMap2, sc.xy, sc.z);
         }
     }
+    if (!uReceiveShadow) shadow = 1.0;
     // The sun term is shadowed; ambient/sky stays unshadowed so shadowed areas
     // read as dim (not black) and match the CPU projected-shadow fallback look.
     color = (color - ambientLight) * shadow + ambientLight;

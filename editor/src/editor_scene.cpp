@@ -102,7 +102,8 @@ void EditorApp::AddEntity(const std::string& meshKey) {
         e.hasLight = true;
         e.light.type = "point";
         e.light.color = {1.0f, 0.8f, 0.5f, 1.0f};
-        e.light.radius = 10.0f;
+        e.light.intensity = 5.0f;
+        e.light.radius = 15.0f;
         e.pos = pos;
         const size_t insertAt = entities_.size();
         history_.Push(std::make_unique<AddEntityCommand>(&entities_, e, insertAt));

@@ -40,6 +40,7 @@ struct Material {
     // set false on large receivers (ground plane, water, terrain) that would
     // otherwise self-shadow into a black swath.
     bool castShadow = true;
+    bool receiveShadow = true;
     // glTF doubleSided: render both faces (disable back-face culling).
     bool doubleSided = false;
     // glTF MASK: discard fragments with albedo.a < alphaCutoff (crisp cutout

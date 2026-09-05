@@ -659,7 +659,8 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                                      "albedoTex", "mrTex", "aoTex", "emissiveTex",
                                      "normalTex", "normalScale",
                                      "ao", "emissiveIntensity", "uvRepeat",
-                                     "dirtColorHex", "rockColorHex", "castShadow"},
+                                     "dirtColorHex", "rockColorHex", "castShadow",
+                                     "receiveShadow"},
                                     "mesh", err))
                          return false;
                      const core::Json* key = data.Get("meshKey");
@@ -798,8 +799,10 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                          }
                          m.colorHex = col->GetString();
                      }
-                     if (const core::Json* cs = data.Get("castShadow"))
-                         m.castShadow = cs->IsBool() && cs->GetBool();
+                    if (const core::Json* cs = data.Get("castShadow"))
+                        m.castShadow = cs->IsBool() && cs->GetBool();
+                    if (const core::Json* rs = data.Get("receiveShadow"))
+                        m.receiveShadow = rs->IsBool() && rs->GetBool();
                      world.Add<SceneMesh>(ent, m);
                      return true;
                  });
@@ -1638,6 +1641,7 @@ static core::Json SerializeEntityComponents(ecs::World& world, ecs::Entity e) {
         if (m->normalScale != 1.0f) mat.object_["normalScale"] = MakeNumber(m->normalScale);
         mesh.object_["material"] = std::move(mat);
         if (!m->castShadow) mesh.object_["castShadow"] = MakeBool(false);
+        if (!m->receiveShadow) mesh.object_["receiveShadow"] = MakeBool(false);
         if (!m->lod.empty()) {
             core::Json lodArr;
             lodArr.type_ = core::Json::Type::Array;
