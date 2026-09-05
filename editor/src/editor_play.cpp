@@ -18,6 +18,7 @@ float EditorApp::PlayCameraAspect() const {
 }
 
 gfx::Camera EditorApp::PlayCamera() const {
+    if (playActive_ && play_ && fpsCameraActive_) return fpsPlayCamera_;
     for (const SceneEntity& se : entities_) {
         if (se.nodeType != "Camera3D") continue;
         gfx::Camera cam;
@@ -38,6 +39,69 @@ gfx::Camera EditorApp::PlayCamera() const {
     cam.orthoSize = 360.0f;
     cam.fovY = 60.0f * math::kDegToRad;
     return cam;
+}
+
+void EditorApp::UpdatePlayCameraFromScript() {
+    if (!playActive_ || !play_) {
+        if (lastPlayMouseLocked_) {
+            Window()->SetCaptureMouse(false);
+            lastPlayMouseLocked_ = false;
+        }
+        fpsCameraActive_ = false;
+        return;
+    }
+
+    const script::Value lockVal = play_->GameVars().Get("cameraMouseLock");
+    const bool locked = (lockVal.type == script::Value::Type::Number &&
+                         lockVal.number != 0.0) ||
+                        (lockVal.type == script::Value::Type::Bool &&
+                         lockVal.boolean);
+    if (!locked) {
+        if (lastPlayMouseLocked_) {
+            Window()->SetCaptureMouse(false);
+            lastPlayMouseLocked_ = false;
+        }
+        fpsCameraActive_ = false;
+        return;
+    }
+
+    if (!lastPlayMouseLocked_) {
+        Window()->SetCaptureMouse(true);
+        lastPlayMouseLocked_ = true;
+    }
+
+    math::Vec3 focus = camTarget_;
+    const script::Value f = play_->GameVars().Get("cameraFocus");
+    if (f.type == script::Value::Type::Table && f.table) {
+        for (const auto& kv : f.table->fields) {
+            if (kv.second.type != script::Value::Type::Number) continue;
+            if (kv.first == "x") focus.x = static_cast<float>(kv.second.number);
+            else if (kv.first == "y") focus.y = static_cast<float>(kv.second.number);
+            else if (kv.first == "z") focus.z = static_cast<float>(kv.second.number);
+        }
+    }
+
+    float yaw = yaw_;
+    float pitch = pitch_;
+    float dist = camDist_;
+    const script::Value yv = play_->GameVars().Get("cameraYaw");
+    const script::Value pv = play_->GameVars().Get("cameraPitch");
+    const script::Value dv = play_->GameVars().Get("cameraDist");
+    if (yv.type == script::Value::Type::Number) yaw = static_cast<float>(yv.number);
+    if (pv.type == script::Value::Type::Number) pitch = static_cast<float>(pv.number);
+    if (dv.type == script::Value::Type::Number)
+        dist = math::Clamp(static_cast<float>(dv.number), 0.5f, 80.0f);
+
+    gfx::Camera cam;
+    cam.position = focus + math::Vec3{std::sin(yaw) * std::cos(pitch),
+                                      std::sin(pitch),
+                                      std::cos(yaw) * std::cos(pitch)} *
+                               dist;
+    cam.target = focus;
+    cam.up = {0.0f, 1.0f, 0.0f};
+    cam.fovY = 65.0f * math::kDegToRad;
+    fpsPlayCamera_ = cam;
+    fpsCameraActive_ = true;
 }
 
 void EditorApp::DrawPlayHUD() {
@@ -647,6 +711,11 @@ void EditorApp::StartPlay() {
 
 void EditorApp::StopPlay() {
     if (!play_) return;
+    if (lastPlayMouseLocked_) {
+        Window()->SetCaptureMouse(false);
+        lastPlayMouseLocked_ = false;
+    }
+    fpsCameraActive_ = false;
     play_->Stop();
     play_.reset();
     if (kernel_) {

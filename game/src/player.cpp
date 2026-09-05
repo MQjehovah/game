@@ -507,6 +507,10 @@ void PlayerApp::UpdateCamera(float dt) {
     const bool mouseLocked = (lock.type == script::Value::Type::Number &&
                               lock.number != 0.0) ||
                              (lock.type == script::Value::Type::Bool && lock.boolean);
+    if (mouseLocked != lastMouseLocked_) {
+        Window()->SetCaptureMouse(mouseLocked);
+        lastMouseLocked_ = mouseLocked;
+    }
     if (!mouseLocked) {
         yaw_ += -input->MouseDelta().x * 0.004f;
         pitch_ += -input->MouseDelta().y * 0.004f;

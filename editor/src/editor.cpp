@@ -932,6 +932,7 @@ void EditorApp::OnUpdate(float dt) {
                 scriptEditor_.breakpointsDirty = false;
             }
             play_->Tick(dt);
+            UpdatePlayCameraFromScript();
         }
     }
     // Hot reload (T4.8): throttled mtime poll for the play's scripts and
@@ -1563,6 +1564,13 @@ void EditorApp::OnEvent(const platform::InputEvent& event) {
                 return;
             }
         }
+    }
+    // While the FPS camera owns and hides the mouse, Esc is the quick exit
+    // back to editor mode (F5 remains the standard Play/Stop toggle).
+    if (event.type == platform::InputEvent::Type::KeyDown &&
+        event.key == platform::Key::Escape && playActive_ && fpsCameraActive_) {
+        StopPlay();
+        return;
     }
     // F5 toggles play on the KeyDown edge only (Win32 auto-repeats KeyDown
     // while held, which would otherwise oscillate Play/Stop), and never while

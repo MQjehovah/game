@@ -155,6 +155,7 @@ private:
     float pitch_ = 0.32f;
     float camDist_ = 12.0f;
     bool started_ = false;
+    bool lastMouseLocked_ = false;
     // G6-1: platform/LOD asset variant table (loaded from variants.json when
     // cfg_.variant is set; must outlive the runtime, so it lives here).
     assets::AssetVariantTable variantTable_;

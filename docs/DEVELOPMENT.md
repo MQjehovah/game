@@ -740,6 +740,10 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
 - **RTS 复刻**（`projects/wc3`，3D 模式）：`wc3.lua` 驱动——WC3 式相机、屏幕空间拾取、
   框选、右击移动/采矿/攻击、小地图、经济、建筑放置/生产队列、敌军 AI 波次、胜负；
   `Game` 实体为脚本宿主（script 挂 wc3.lua，无 mesh）。
+- **FPS 产品样例**（`projects/fps`，NeonOps）：`menu.lua` + `game.lua` 组成完整游戏闭环，
+  主菜单/设置/三关卡/波次导演/三武器/三敌人/拾取物/存档/暂停/结算；武器、敌人、关卡均
+  由 `assets/data/*.json` 驱动，UI 由 `assets/ui/*.ui.json` 驱动，敌人生成与覆盖物用
+  `assets/prefabs/*.json` 预制体。
 - **经典小游戏**（`projects/snake`）：纯 Lua 贪吃蛇，零贴图（`DrawRect/DrawText`），
   `vars.demo=1` 自动演示模式；UI 用数据驱动文档（`UIShow`/`UIClicked`）。
 - **物理 demo**（`projects/physics_demo`）：Jolt 刚体质量/弹性/摩擦/碰撞演示。

@@ -557,6 +557,10 @@ private:
     // orthographic presets (顶视 down -Y / 前视 down -Z). Every consumer
     // (renderer, gizmo, picking) uses this so the tool always matches the view.
     gfx::Camera ActiveCamera() const;
+    // FPS play: when the runtime sets cameraMouseLock, derive the play camera
+    // from cameraFocus/cameraYaw/cameraPitch/cameraDist instead of the editor
+    // orbit camera (the neon_game player equivalent inside the editor).
+    void UpdatePlayCameraFromScript();
 
     // T4.8 asset thumbnails: a mesh asset (OBJ/glTF) selected in the asset
     // panel is rendered into a small offscreen target once per path+mtime;
@@ -743,6 +747,9 @@ private:
     float pitch_ = 0.35f;
     float camDist_ = 14.0f;
     math::Vec3 camTarget_{0, 1.2f, 0};
+    gfx::Camera fpsPlayCamera_{};
+    bool fpsCameraActive_ = false;
+    bool lastPlayMouseLocked_ = false;
 
     // Multi-camera viewport (T4.8): the active preset plus the ortho zoom
     // level (half-height of the ortho frustum in world units).
