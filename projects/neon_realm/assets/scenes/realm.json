@@ -2887,9 +2887,9 @@
             "colorHex": "#C7472E",
             "emissiveIntensity": 1,
             "metallic": 0,
-            "roughness": 0.800000011920929
+            "roughness": 0.7
           },
-          "meshKey": "npc:199,71,46"
+          "meshKey": "gltf:assets/models/kaykit/Knight.glb"
         },
         "transform": {
           "pos": [
@@ -2922,9 +2922,9 @@
             "colorHex": "#4D8CC7",
             "emissiveIntensity": 1,
             "metallic": 0,
-            "roughness": 0.800000011920929
+            "roughness": 0.7
           },
-          "meshKey": "npc:77,140,199"
+          "meshKey": "gltf:assets/models/kaykit/Knight.glb"
         },
         "transform": {
           "pos": [
@@ -2957,9 +2957,9 @@
             "colorHex": "#7A6B33",
             "emissiveIntensity": 1,
             "metallic": 0,
-            "roughness": 0.800000011920929
+            "roughness": 0.7
           },
-          "meshKey": "npc:122,107,51"
+          "meshKey": "gltf:assets/models/kaykit/Knight.glb"
         },
         "transform": {
           "pos": [
@@ -2992,9 +2992,9 @@
             "colorHex": "#995CB8",
             "emissiveIntensity": 1,
             "metallic": 0,
-            "roughness": 0.800000011920929
+            "roughness": 0.7
           },
-          "meshKey": "npc:153,92,184"
+          "meshKey": "gltf:assets/models/kaykit/Knight.glb"
         },
         "transform": {
           "pos": [
@@ -3027,9 +3027,9 @@
             "colorHex": "#8C8C94",
             "emissiveIntensity": 1,
             "metallic": 0,
-            "roughness": 0.800000011920929
+            "roughness": 0.7
           },
-          "meshKey": "npc:140,140,148"
+          "meshKey": "gltf:assets/models/kaykit/Knight.glb"
         },
         "transform": {
           "pos": [
@@ -3062,9 +3062,9 @@
             "colorHex": "#D99959",
             "emissiveIntensity": 1,
             "metallic": 0,
-            "roughness": 0.800000011920929
+            "roughness": 0.7
           },
-          "meshKey": "npc:217,153,89"
+          "meshKey": "gltf:assets/models/kaykit/Knight.glb"
         },
         "transform": {
           "pos": [
