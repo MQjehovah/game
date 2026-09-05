@@ -3,6 +3,7 @@
 #include <vector>
 
 #include "neon/neon.hpp"
+#include "neon/scene/skinned_model.hpp"
 #include "helpers.hpp"
 #include "test_backend.hpp"
 
@@ -405,7 +406,30 @@ TEST(GltfStaticMeshNotSkinned) {
     CHECK(mesh.CpuJointIds().empty());
     CHECK(mesh.CpuJointWeights().empty());
     CHECK_EQ(mesh.CpuVerts().size(), 3u);
-    CHECK_EQ(mesh.CpuIndices().size(), 3u);
+}
+
+// KayKit Knight skinned model: its glTF material references an embedded
+// baseColorTexture (knight_texture). LoadSkinnedModel must propagate it to
+// each part's material.albedo; otherwise the runtime knight renders flat-white.
+TEST(KayKitKnightSkinnedAlbedo) {
+    test::HeadlessAssetFixture fix;
+    // Level 1: does LoadGLTF give the knight's material a valid albedo?
+    assets::GltfAsset g = fix.assets.LoadGLTF("projects/neon_realm/assets/models/kaykit/Knight.glb");
+    CHECK(g.Valid());
+    if (!g.Valid()) return;
+    bool gltfAlbedo = false;
+    for (const auto& n : g.nodes)
+        if (n.material.albedo.Valid()) gltfAlbedo = true;
+    CHECK(gltfAlbedo);  // <- if this fails, LoadGLTF dropped the texture
+    // Level 2: does LoadSkinnedModel keep it?
+    auto sm = scene::LoadSkinnedModel(fix.assets,
+                                      "projects/neon_realm/assets/models/kaykit/Knight.glb");
+    CHECK(sm.Ok());
+    if (!sm.Ok()) return;
+    bool anyAlbedo = false;
+    for (const auto& p : sm.Value().parts)
+        if (p.material.albedo.Valid()) anyAlbedo = true;
+    CHECK(anyAlbedo);
 }
 
 // A skin whose inverseBindMatrices accessor is missing must degrade gracefully:

@@ -1180,6 +1180,38 @@ GltfAsset AssetManager::LoadGltfJson(core::Json& root, std::vector<std::vector<u
             if (images && src >= 0 && images->At(src) && images->At(src)->Get("uri")) {
                 uri = images->At(src)->Get("uri")->GetString();
             }
+            // GLB embedded image: an image without a URI stores its bytes in a
+            // bufferView (mimeType buffers). External-URI images are handled
+            // below; this extracts the bufferView bytes and decodes them inline,
+            // so GLB assets whose textures are embedded (KayKit Knight, etc.)
+            // show their real albedo instead of flat-white.
+            if (uri.empty() && images && src >= 0 && src < static_cast<int>(images->Size()) &&
+                images->At(src)) {
+                if (const core::Json* bv = images->At(src)->Get("bufferView")) {
+                    const int view = bv->GetInt(-1);
+                    if (view >= 0 && view < static_cast<int>(parsedViews.size())) {
+                        const GltfBufferView& v = parsedViews[static_cast<size_t>(view)];
+                        if (v.buffer >= 0 && v.buffer < static_cast<int>(bins.size())) {
+                            const std::vector<uint8_t>& bin = bins[static_cast<size_t>(v.buffer)];
+                            const size_t start = static_cast<size_t>(v.byteOffset);
+                            const size_t len = static_cast<size_t>(v.byteLength);
+                            if (start + len <= bin.size()) {
+                                const std::vector<uint8_t> bytes(bin.begin() + start,
+                                                                 bin.begin() + start + len);
+                                const DecodedImage img =
+                                    DecodeImageBytes(bytes, /*compressBc1=*/false,
+                                                     /*flipVertically=*/false);
+                                if (img.channels > 0 && img.width > 0 && img.height > 0) {
+                                    textures.push_back(UploadDecoded(img, gfx::Wrap::Repeat));
+                                } else {
+                                    textures.push_back(gfx::Texture{});
+                                }
+                                continue;
+                            }
+                        }
+                    }
+                }
+            }
             if (uri.empty()) {
                 textures.push_back(gfx::Texture{});
             } else {
