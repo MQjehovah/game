@@ -1241,11 +1241,12 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                      if (!CheckComponentShape(data, {"segments", "size", "heightScale",
                                                      "heights",
                                                      "chunkGridDiv", "chunkLodLevels",
-                                                     "chunkBaseSubdiv", "vegMeshKey",
-                                                     "vegCount", "vegSeed", "vegSize",
-                                                     "vegImpostorDistance", "vegMinHeight",
-                                                     "vegMaxHeight", "vegMaxSlope"},
-                                              "terrain", err))
+                                                      "chunkBaseSubdiv", "vegMeshKey",
+                                                      "vegCount", "vegSeed", "vegSize",
+                                                      "vegImpostorDistance", "vegMinHeight",
+                                                      "vegMaxHeight", "vegMaxSlope",
+                                                      "vegExcludeRadius", "vegExcludeCenter"},
+                                               "terrain", err))
                          return false;
                      SceneTerrain t;
                      float seg = 48.0f;
