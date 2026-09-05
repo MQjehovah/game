@@ -695,6 +695,7 @@ void EditorApp::ApplySceneEnvironment() {
         if (se.hasLight && se.light.type == "ambient" && !amb) amb = &se.light;
         if (se.hasEnvironment && !env) env = &se.environment;
     }
+    if (hasSceneEnvironment_) env = &sceneEnvironment_;
     // 天空/IBL：HDRI 天空（skyTexture）优先——加载贴图当全屏背景 + 从照片
     // CPU 采样真实天顶/地平色喂 SetSky，让 edit 视图物体受光跟随照片天空
     // （play 的 DrawSystem 同逻辑；之前编辑预览始终假白天渐变）。仅无

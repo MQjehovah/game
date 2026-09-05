@@ -62,6 +62,69 @@ void ScenePanel::Draw(EditorContext& ctx) {
             ImGui::SliderFloat("强度##ssr", ctx.postSsrIntensity, 0.1f, 2.0f, "%.2f");
             ImGui::Separator();
         }
+        if (ctx.hasSceneEnvironment && ctx.sceneEnvironment) {
+            *ctx.hasSceneEnvironment = true;
+            if (ImGui::CollapsingHeader("场景环境##scene_env", ImGuiTreeNodeFlags_DefaultOpen)) {
+                scene::SceneEnvironment& env = *ctx.sceneEnvironment;
+                float amb[4] = {env.ambientColor.r, env.ambientColor.g,
+                                env.ambientColor.b, env.ambientColor.a};
+                if (ImGui::ColorEdit4("环境光颜色", amb)) {
+                    env.ambientColor = {amb[0], amb[1], amb[2], amb[3]};
+                    *ctx.sceneDirty = true;
+                }
+                if (ImGui::DragFloat("环境光强度", &env.ambientStrength, 0.01f, 0.0f, 2.0f))
+                    *ctx.sceneDirty = true;
+                bool useAtmo = env.useAtmosphere;
+                if (ImGui::Checkbox("使用自定义氛围", &useAtmo)) {
+                    env.useAtmosphere = useAtmo;
+                    *ctx.sceneDirty = true;
+                }
+                if (env.useAtmosphere) {
+                    bool skybox = env.skybox;
+                    if (ImGui::Checkbox("程序化天空盒", &skybox)) {
+                        env.skybox = skybox;
+                        *ctx.sceneDirty = true;
+                    }
+                    float top[4] = {env.skyTop.r, env.skyTop.g, env.skyTop.b, env.skyTop.a};
+                    if (ImGui::ColorEdit4("天空顶部", top)) {
+                        env.skyTop = {top[0], top[1], top[2], top[3]};
+                        *ctx.sceneDirty = true;
+                    }
+                    float hor[4] = {env.skyHorizon.r, env.skyHorizon.g,
+                                    env.skyHorizon.b, env.skyHorizon.a};
+                    if (ImGui::ColorEdit4("天空地平线", hor)) {
+                        env.skyHorizon = {hor[0], hor[1], hor[2], hor[3]};
+                        *ctx.sceneDirty = true;
+                    }
+                    float fog[4] = {env.fogColor.r, env.fogColor.g,
+                                    env.fogColor.b, env.fogColor.a};
+                    if (ImGui::ColorEdit4("雾颜色", fog)) {
+                        env.fogColor = {fog[0], fog[1], fog[2], fog[3]};
+                        *ctx.sceneDirty = true;
+                    }
+                    if (ImGui::DragFloat("雾近端", &env.fogNear, 0.1f, 0.0f, 2000.0f))
+                        *ctx.sceneDirty = true;
+                    if (ImGui::DragFloat("雾远端", &env.fogFar, 0.1f, 0.0f, 5000.0f))
+                        *ctx.sceneDirty = true;
+                    if (ImGui::DragFloat("曝光", &env.exposure, 0.01f, 0.0f, 5.0f))
+                        *ctx.sceneDirty = true;
+                }
+                ImGui::Separator();
+            }
+        }
+        if (ctx.hasSceneRenderStack && ctx.sceneRenderStack) {
+            *ctx.hasSceneRenderStack = true;
+            if (ImGui::CollapsingHeader("渲染栈##scene_renderstack", ImGuiTreeNodeFlags_DefaultOpen)) {
+                scene::RenderStack& rs = *ctx.sceneRenderStack;
+                if (ImGui::Checkbox("泛光 Bloom", &rs.bloom)) *ctx.sceneDirty = true;
+                if (ImGui::Checkbox("色调映射 Tonemap", &rs.tonemap)) *ctx.sceneDirty = true;
+                if (ImGui::Checkbox("SSAO", &rs.ssao)) *ctx.sceneDirty = true;
+                if (ImGui::Checkbox("体积光", &rs.volumetric)) *ctx.sceneDirty = true;
+                if (ImGui::Checkbox("SSR", &rs.ssr)) *ctx.sceneDirty = true;
+                if (ImGui::DragFloat("曝光", &rs.exposure, 0.01f, 0.0f, 5.0f)) *ctx.sceneDirty = true;
+                ImGui::Separator();
+            }
+        }
         // Unity-style: only primitive geometry is created from the toolbar.
         // Helmet / tree / house etc. are resource objects and are dragged in
         // from the 资源 panel (or double-clicked there).

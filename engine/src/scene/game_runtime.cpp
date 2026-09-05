@@ -325,6 +325,15 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     LoadLocales(); // Loc() string tables (best effort; missing dir = no-op)
     auto inst = Instantiate(world_, parsed.Value(), prefabs_.Library(), compReg_);
     if (!inst.Ok()) return core::Status::Err("runtime: " + inst.Error());
+    const scene::SceneFile& sceneFile = parsed.Value();
+    if (sceneFile.hasEnvironment) {
+        ecs::Entity e = world_.Create();
+        world_.Add<scene::SceneEnvironment>(e, sceneFile.environment);
+    }
+    if (sceneFile.hasRenderStack) {
+        ecs::Entity e = world_.Create();
+        world_.Add<scene::RenderStack>(e, sceneFile.renderStack);
+    }
     physics_.RegisterBodies(world_);
     physics_.RegisterCharacters(world_);
     RegisterAudioSources();

@@ -742,6 +742,10 @@ private:
     std::string currentScenePath_;
     std::string sceneExtends_; // P1-1: parent scene path ("" = no inheritance)
     bool sceneDirty_ = false;  // scene edited since last save (terrain brush etc.)
+    scene::SceneEnvironment sceneEnvironment_;
+    bool hasSceneEnvironment_ = false;
+    scene::RenderStack sceneRenderStack_;
+    bool hasSceneRenderStack_ = false;
     bool cameraFollowSelected_ = false; // P1-1: view through the selected Camera3D
     TerrainState terrain_; // P1-1 terrain brush + hover preview
 

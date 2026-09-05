@@ -255,6 +255,10 @@ struct EditorContext {
     // 注入指针。
     bool* sceneDirty = nullptr;
     scene::PrefabLibrary* prefabLib = nullptr;
+    scene::SceneEnvironment* sceneEnvironment = nullptr;
+    bool* hasSceneEnvironment = nullptr;
+    scene::RenderStack* sceneRenderStack = nullptr;
+    bool* hasSceneRenderStack = nullptr;
     // 回调：实体级重指令（原面板直接调用的 EditorApp 方法；这些方法被视口/
     // 播放/场景加载/冒烟测试等多处共用，故保留在 EditorApp，经回调访问，
     // 行为一致）。SceneEntity 定义在 editor.hpp（指针/引用即可，前向声明）。

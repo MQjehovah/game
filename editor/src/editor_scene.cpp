@@ -704,6 +704,54 @@ void EditorApp::SaveScene() {
             root.object_[k] = v;
         }
     }
+    if (hasSceneEnvironment_) {
+        core::Json en;
+        en.type_ = core::Json::Type::Object;
+        auto num = [](double v) {
+            core::Json j;
+            j.type_ = core::Json::Type::Number;
+            j.number_ = v;
+            return j;
+        };
+        auto mkColor = [&](const gfx::Color& c) {
+            core::Json a;
+            a.type_ = core::Json::Type::Array;
+            a.array_.push_back(num(c.r));
+            a.array_.push_back(num(c.g));
+            a.array_.push_back(num(c.b));
+            a.array_.push_back(num(c.a));
+            return a;
+        };
+        en.object_["ambientColor"] = mkColor(sceneEnvironment_.ambientColor);
+        en.object_["ambientStrength"] = num(sceneEnvironment_.ambientStrength);
+        if (!sceneEnvironment_.skyTexture.empty()) {
+            core::Json s;
+            s.type_ = core::Json::Type::String;
+            s.string_ = sceneEnvironment_.skyTexture;
+            en.object_["skyTexture"] = std::move(s);
+        }
+        if (sceneEnvironment_.useAtmosphere) {
+            core::Json b;
+            b.type_ = core::Json::Type::Bool;
+            b.bool_ = true;
+            en.object_["useAtmosphere"] = std::move(b);
+        }
+        if (sceneEnvironment_.skybox) {
+            core::Json b;
+            b.type_ = core::Json::Type::Bool;
+            b.bool_ = true;
+            en.object_["skybox"] = std::move(b);
+        }
+        en.object_["skyTop"] = mkColor(sceneEnvironment_.skyTop);
+        en.object_["skyHorizon"] = mkColor(sceneEnvironment_.skyHorizon);
+        en.object_["fogColor"] = mkColor(sceneEnvironment_.fogColor);
+        en.object_["fogNear"] = num(sceneEnvironment_.fogNear);
+        en.object_["fogFar"] = num(sceneEnvironment_.fogFar);
+        if (sceneEnvironment_.exposure >= 0.0f)
+            en.object_["exposure"] = num(sceneEnvironment_.exposure);
+        root.object_["environment"] = std::move(en);
+    }
+    if (hasSceneRenderStack_) root.object_["renderstack"] = sceneRenderStack_.ToJson();
     // Save to the scene file that is actually loaded (project scenes live in
     // <project>/assets/scenes/*.json). Previously this hardcoded
     // editor_scene.json,
@@ -875,6 +923,46 @@ void EditorApp::LoadScene(const std::string& path) {
                 }
             }
             root.object_.erase("extends");
+        }
+    }
+    hasSceneEnvironment_ = false;
+    hasSceneRenderStack_ = false;
+    if (const core::Json* en = root.Get("environment")) {
+        if (en->IsObject()) {
+            hasSceneEnvironment_ = true;
+            auto readColor = [&](const char* key, gfx::Color& c) {
+                const core::Json* j = en->Get(key);
+                if (!j || !j->IsArray()) return;
+                float v[4] = {c.r, c.g, c.b, c.a};
+                size_t n = 0;
+                for (const core::Json& x : j->Items())
+                    if (n < 4) v[n++] = static_cast<float>(x.GetNumber());
+                c = {v[0], v[1], v[2], v[3]};
+            };
+            readColor("ambientColor", sceneEnvironment_.ambientColor);
+            if (const core::Json* v = en->Get("ambientStrength"))
+                sceneEnvironment_.ambientStrength = static_cast<float>(v->GetNumber());
+            if (const core::Json* v = en->Get("skyTexture"))
+                sceneEnvironment_.skyTexture = v->GetString();
+            if (const core::Json* v = en->Get("useAtmosphere"))
+                sceneEnvironment_.useAtmosphere = v->IsBool() && v->GetBool();
+            if (const core::Json* v = en->Get("skybox"))
+                sceneEnvironment_.skybox = v->IsBool() && v->GetBool();
+            readColor("skyTop", sceneEnvironment_.skyTop);
+            readColor("skyHorizon", sceneEnvironment_.skyHorizon);
+            readColor("fogColor", sceneEnvironment_.fogColor);
+            if (const core::Json* v = en->Get("fogNear"))
+                sceneEnvironment_.fogNear = static_cast<float>(v->GetNumber());
+            if (const core::Json* v = en->Get("fogFar"))
+                sceneEnvironment_.fogFar = static_cast<float>(v->GetNumber());
+            if (const core::Json* v = en->Get("exposure"))
+                sceneEnvironment_.exposure = static_cast<float>(v->GetNumber());
+        }
+    }
+    if (const core::Json* rs = root.Get("renderstack")) {
+        if (rs->IsObject()) {
+            std::string err;
+            hasSceneRenderStack_ = sceneRenderStack_.FromJson(*rs, &err);
         }
     }
     const core::Json* arr = root.Get("entities");

@@ -13,12 +13,30 @@
 #include "neon/math/vec3.hpp"
 #include "neon/scene/component_reflect.hpp"
 #include "neon/scene/component_schema.hpp"
+#include "neon/scene/render_stack.hpp"
 
 namespace neon::assets {
 class AssetManager;
 }
 
 namespace neon::scene {
+
+// Environment component: owns ambient light, atmosphere, skybox, fog and
+// exposure. Kept separate from Light so scene authors can change the world
+// mood without touching light objects (and vice versa).
+struct SceneEnvironment {
+    gfx::Color ambientColor{0.45f, 0.55f, 0.72f, 1.0f};
+    float ambientStrength = 0.25f;
+    std::string skyTexture;
+    bool useAtmosphere = false;
+    bool skybox = false;
+    gfx::Color skyTop{0.28f, 0.38f, 0.58f, 1.0f};
+    gfx::Color skyHorizon{0.55f, 0.65f, 0.80f, 1.0f};
+    gfx::Color fogColor{0.45f, 0.55f, 0.70f, 1.0f};
+    float fogNear = 60.0f;
+    float fogFar = 220.0f;
+    float exposure = -1.0f;
+};
 
 // A single component of an entity: the component name plus its raw JSON data.
 // Component data is always a JSON object; the component factory validates its
@@ -66,6 +84,10 @@ struct SceneFile {
     // {"plants": [...], "zombies": [...]}). Editors and scripts read/write it
     // as part of the scene file, so 2D and 3D scenes live in scenes/*.json.
     core::Json level; // object, or null when absent
+    SceneEnvironment environment;
+    bool hasEnvironment = false;
+    RenderStack renderStack;
+    bool hasRenderStack = false;
 
     // Parse + structural validation (entities array, entity/component shapes,
     // gameVars type). Semantic checks (transform presence, prefab resolution,
@@ -563,22 +585,6 @@ struct SceneLight {
         Field("exposure", "曝光", FieldType::Number, &SceneLight::exposure, -1, -1, 100, 0.05));
 };
 
-// Environment component: owns ambient light, atmosphere, skybox, fog and
-// exposure. Kept separate from Light so scene authors can change the world
-// mood without touching light objects (and vice versa).
-struct SceneEnvironment {
-    gfx::Color ambientColor{0.45f, 0.55f, 0.72f, 1.0f};
-    float ambientStrength = 0.25f;
-    std::string skyTexture;
-    bool useAtmosphere = false;
-    bool skybox = false;
-    gfx::Color skyTop{0.28f, 0.38f, 0.58f, 1.0f};
-    gfx::Color skyHorizon{0.55f, 0.65f, 0.80f, 1.0f};
-    gfx::Color fogColor{0.45f, 0.55f, 0.70f, 1.0f};
-    float fogNear = 60.0f;
-    float fogFar = 220.0f;
-    float exposure = -1.0f;
-};
 // 2D sort order (P2-3): sprites draw back-to-front by this value (lower first;
 // default 0 when the component is absent).
 struct SceneSortOrder {

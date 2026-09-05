@@ -302,6 +302,10 @@ bool EditorApp::OnCreate() {
     // 经回调访问，行为一致）。
     ctx_.sceneDirty = &sceneDirty_;
     ctx_.prefabLib = &prefabLib_;
+    ctx_.sceneEnvironment = &sceneEnvironment_;
+    ctx_.hasSceneEnvironment = &hasSceneEnvironment_;
+    ctx_.sceneRenderStack = &sceneRenderStack_;
+    ctx_.hasSceneRenderStack = &hasSceneRenderStack_;
     ctx_.resolveMesh = [this](SceneEntity& e) { return ResolveMesh(e); };
     ctx_.applyMaterialParams = [this](SceneEntity& e) { ApplyMaterialParams(e); };
     ctx_.materializePrefab = [this](const std::string& pfName, const math::Vec3& pos) {
