@@ -2423,13 +2423,13 @@
      "segments": 48,
      "size": 60,
      "vegMeshKey": "grass",
-     "vegCount": 3000,
+     "vegCount": 6500,
      "vegImpostorDistance": 80,
      "vegMaxHeight": 6,
      "vegMaxSlope": 0.5,
      "vegMinHeight": -1,
      "vegSeed": 7,
-     "vegSize": 1.1,
+     "vegSize": 1.4,
      "vegExcludeRadius": 4.5,
      "vegExcludeCenter": [
       0,
@@ -2748,8 +2748,8 @@
       "emissiveIntensity": 1,
       "metallic": 0,
       "roughness": 0.800000011920929,
-      "albedoTex": "assets/textures/stone.png",
-      "uvRepeat": 2.0
+      "albedoTex": "assets/textures/plaster.png",
+      "uvRepeat": 3.0
      },
      "meshKey": "house"
     },
@@ -2822,8 +2822,8 @@
       "emissiveIntensity": 1,
       "metallic": 0,
       "roughness": 0.800000011920929,
-      "albedoTex": "assets/textures/stone.png",
-      "uvRepeat": 2.0
+      "albedoTex": "assets/textures/plaster.png",
+      "uvRepeat": 3.0
      },
      "meshKey": "house"
     },

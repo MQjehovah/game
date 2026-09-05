@@ -6,6 +6,7 @@ local hero = nil
 local wolves = {}     -- { e, home{x,y,z}, dead, respawn, hp, phase, attackCd, bob }
 local npcPos = { x = 0, y = 0, z = 0 }
 local dialogue = nil  -- { lines = {...}, shown = 0 }
+local banner = nil    -- { title = "...", sub = "...", t = seconds } wave banner
 local waveTimer = 18
 local saveTimer = 0
 local dashTime = 0
@@ -629,6 +630,8 @@ local function update_wolves(dt)
         if wp2 ~= nil then
           local crit = vget("last_hit_crit", false)
           SpawnFloatText(wp2.x, wp2.y + 1.2, wp2.z, "-" .. tostring(math.floor(w.maxHp)), true, 1.2)
+          burst(wp2.x, wp2.y + 0.9, wp2.z, w.boss and 44 or 18, w.boss and 8.5 or 5,
+                FAMILIES.gold[1], 0.6)
         end
         SetEntityPlate(w.e, nil, -1.0)
         SetVar("kills", vget("kills", 0) + 1)
@@ -762,13 +765,21 @@ local function update_wolves(dt)
 end
 
 local function update_waves(dt)
+  if banner ~= nil then
+    banner.t = banner.t - dt
+    if banner.t <= 0 then banner = nil end
+  end
   waveTimer = waveTimer - dt
   if waveTimer <= 0 then
     local wave = vget("wave", 0) + 1
     SetVar("wave", wave)
     spawn_wave(wave)
     waveTimer = 22 + wave * 2
-    dialogue = { lines = { "第 " .. tostring(wave) .. " 波狼群来袭！" }, shown = 2.5 }
+    local bossWave = (wave % 5 == 0)
+    banner = bossWave
+      and { title = "狼王降临", sub = "第 " .. tostring(wave) .. " 波 · 击败狼王", t = 3.2 }
+      or { title = "第 " .. tostring(wave) .. " 波狼群来袭！", sub = "守住村庄", t = 2.2 }
+    dialogue = { lines = { banner.title .. " " .. banner.sub }, shown = 2.5 }
     save_game()
   end
 end
@@ -939,6 +950,37 @@ local function bar(x, y, w, h, t, cr, cg, cb)
 end
 
 function on_render()
+  -- 波次横幅: 屏幕上方居中大字报(狼王波用红色调)
+  if banner ~= nil then
+    local a = math.max(0, math.min(1, banner.t / 0.5))
+    local isBoss = string.find(banner.title, "狼王") ~= nil
+    local w, h = 560, 62
+    local x, y = 640 - w / 2, 108
+    DrawRect(x, y, w, h, 0.04, 0.04, 0.08, 0.82 * a)
+    DrawRectOutline(x, y, w, h, 2, isBoss and 0.9 or 0.55, isBoss and 0.25 or 0.6,
+                    isBoss and 0.2 or 0.8, 0.9 * a)
+    DrawText(banner.title, 640, y + 10, isBoss and 30 or 26,
+             isBoss and 1.0 or 0.95, isBoss and 0.62 or 0.9, isBoss and 0.35 or 0.7, a, true, true)
+    DrawText(banner.sub, 640, y + 42, 15, 0.85, 0.9, 1.0, a, true, true)
+  end
+  -- 狼王 Boss 血条: 狼王存活时屏幕顶部深色大血条
+  for _, w in ipairs(wolves) do
+    if w.boss and not w.dead then
+      local hp = GetHealth(w.e)
+      if hp ~= nil then
+        local frac = math.max(0, math.min(1, hp / math.max(1, w.maxHp)))
+        local bw, bh = 560, 18
+        local bx2, by2 = 640 - bw / 2, 56
+        DrawRect(bx2, by2, bw, bh, 0.06, 0.05, 0.10, 0.88)
+        DrawText("狼王", bx2 - 4, by2 - 4, 15, 0.95, 0.3, 0.28, 1, false, true)
+        if frac > 0 then
+          DrawRect(bx2 + 2, by2 + 2, (bw - 4) * frac, bh - 4, 0.78, 0.16, 0.16, 1)
+        end
+        DrawRectOutline(bx2, by2, bw, bh, 2, 0.85, 0.3, 0.3, 0.9)
+      end
+      break
+    end
+  end
   -- 技能栏 (左下角: 键位 + 冷却蒙版)
   local slotW, slotH, gap = 46, 46, 6
   local bx, by = 14, 720 - slotH - 14
