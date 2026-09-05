@@ -1098,13 +1098,32 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera,
 }
 
 void GameRuntime::DrawUI(gfx::Renderer& renderer) {
-    if (!running_ || !cfg_.assets || !uiSystem_.Raw() || !cfg_.font2d.Valid()) return;
+    if (!running_ || !cfg_.assets || !uiSystem_.Raw() || !cfg_.font2d.Valid()) {
+        // One-shot diagnostic: a shipped game whose menus never appear is a
+        // support nightmare; name the gate that failed.
+        static bool gateWarned = false;
+        if (!gateWarned) {
+            gateWarned = true;
+            NEON_LOG_WARN(
+                "DrawUI skipped: running=%d assets=%d uiSystem=%d font=%d",
+                running_ ? 1 : 0, cfg_.assets ? 1 : 0, uiSystem_.Raw() ? 1 : 0,
+                cfg_.font2d.Valid() ? 1 : 0);
+        }
+        return;
+    }
     scriptCtx_.screenToUi = [this](const math::Vec2& p) {
         return (p - uiOffset_) / uiScale_;
     };
     // The live design-space viewport drives layout: the UI adapts to whatever
     // 2D mapping the host installed (fixed 1280x720 letterbox or a dynamic
     // width under a constant-height mapping).
+    static bool vpLogged = false;
+    if (!vpLogged) {
+        vpLogged = true;
+        const math::Vec2 vp = renderer.UIDesignSize();
+        NEON_LOG_INFO("DrawUI: doc layout viewport %.1fx%.1f uiScale=%.3f", vp.x, vp.y,
+                      renderer.UIScale());
+    }
     uiSystem_.Draw(renderer, cfg_.font2d,
                    [this](const std::string& p) {
                        if (!cfg_.assets || p.empty()) return gfx::Texture{};

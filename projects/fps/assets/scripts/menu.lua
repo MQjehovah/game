@@ -15,7 +15,6 @@ local function read_json(path)
 end
 
 local function save_settings()
-  local root = { settings = settings, bestScore = bestScore }
   local text = string.format(
     '{"settings":{"mouseSensitivity":%f,"musicVolume":%f,"sfxVolume":%f},"bestScore":%d}',
     settings.mouseSensitivity, settings.musicVolume, settings.sfxVolume, bestScore)
@@ -64,7 +63,7 @@ function on_update(e, dt)
     return
   end
 
-  if UIClicked("Options") then
+  if UIClicked("OptionsBtn") then
     PlaySfx("click")
     UISetVisible("MainMenu", false)
     UISetVisible("Options", true)
@@ -109,6 +108,9 @@ function on_update(e, dt)
 end
 
 function on_render()
-  DrawRect(0, 0, 1280, 720, 0.02, 0.04, 0.07, 1)
-  DrawText("BEST SCORE  " .. tostring(bestScore), 640, 614, 16, 0.65, 0.72, 0.82, 1, true, true)
+  -- Background fills the live game-area design space (not a fixed 1280x720).
+  local vp = GetViewportSize()
+  local vw, vh = (vp and vp.w) or 1280, (vp and vp.h) or 720
+  DrawRect(0, 0, vw, vh, 0.02, 0.04, 0.07, 1)
+  DrawText("BEST SCORE  " .. tostring(bestScore), vw * 0.5, vh - 106, 16, 0.65, 0.72, 0.82, 1, true, true)
 end

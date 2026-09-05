@@ -75,12 +75,6 @@ local function read_json(path)
   return Json.Parse(text)
 end
 
-local function write_json(path, obj)
-  -- Minimal JSON writer for our save payload; avoids building a full serializer.
-  if obj == nil then return false end
-  return WriteText(path, obj)
-end
-
 local function save_game()
   local s = settings
   local text = string.format(
@@ -519,9 +513,8 @@ local function update_player(dt)
   local dx = right.x * ix + fwd.x * iz
   local dz = right.z * ix + fwd.z * iz
   local moveMag = math.sqrt(dx * dx + dz * dz)
-  local len = math.sqrt(dx * dx + dz * dz)
-  if len > 1 then
-    dx, dz = dx / len, dz / len
+  if moveMag > 1 then
+    dx, dz = dx / moveMag, dz / moveMag
   end
   bobAmount = math.min(1, moveMag)
   if bobAmount > 0.05 then
@@ -559,7 +552,8 @@ local function update_player(dt)
   if ActionPressed("weapon_1") then switch_weapon(1) end
   if ActionPressed("weapon_2") then switch_weapon(2) end
   if ActionPressed("weapon_3") then switch_weapon(3) end
-  if ActionPressed("next_weapon") then switch_weapon(weaponIdx + 1) end
+  if ActionPressed("weapon_4") then switch_weapon(4) end
+  if ActionPressed("next_weapon") then switch_weapon(weaponIdx % #weapons + 1) end
   if ActionPressed("reload") then reload_weapon() end
   if weapon ~= nil and weapon.auto then
     if InputMouseDown("left") then fire_weapon() end
@@ -831,7 +825,8 @@ local function update_hud()
   UISetFill("HealthBar", clamp(hp / MAX_HP, 0, 1))
   if weapon ~= nil then
     UISetText("WeaponLabel", weapon.name or "Weapon")
-    UISetText("AmmoLabel", tostring(mag) .. " / " .. tostring(reserve))
+    -- Mag/reserve come from JSON as doubles; format without the ".0".
+    UISetText("AmmoLabel", string.format("%.0f / %.0f", mag, reserve))
   end
   UISetText("ScoreLabel", "Score " .. tostring(score))
   UISetText("WaveLabel", "Wave " .. tostring(waveIndex) .. " / " .. tostring(#(levelCfg.waves or {})))
@@ -871,13 +866,13 @@ function on_update(e, dt)
       ChangeScene("assets/scenes/menu.json")
     end
   elseif state == "gameover" then
-    if UIClicked("Retry") then
+    if UIClicked("Retry") or ActionPressed("restart") then
       restart_level()
     elseif UIClicked("GameOverMenu") then
       ChangeScene("assets/scenes/menu.json")
     end
   elseif state == "victory" then
-    if UIClicked("NextLevel") then
+    if UIClicked("NextLevel") or ActionPressed("restart") then
       if NEXT_SCENE ~= "" then
         ChangeScene(NEXT_SCENE)
       else
@@ -890,8 +885,14 @@ function on_update(e, dt)
 end
 
 function on_render()
+  -- Design-space viewport (height is always 720; width follows the live
+  -- game-area aspect). Centering/anchoring against this keeps the HUD
+  -- correct in the editor dock and any future aspect, not just 16:9.
+  local vp = GetViewportSize()
+  local vw, vh = (vp and vp.w) or 1280, (vp and vp.h) or 720
+
   if state == "playing" or state == "paused" then
-    local cx, cy = 640, 360
+    local cx, cy = vw * 0.5, vh * 0.5
     local gap = aiming and 5 or 12
     DrawRect(cx - gap - 8, cy - 1, 8, 2, 1, 1, 1, 0.9)
     DrawRect(cx + gap, cy - 1, 8, 2, 1, 1, 1, 0.9)
@@ -919,7 +920,8 @@ function on_render()
     end
 
     -- Top-right minimap: player, enemies, pickups and cover.
-    local mapX, mapY, mapS = 1090, 20, 170
+    local mapS = 170
+    local mapX, mapY = vw - mapS - 20, 20
     DrawRect(mapX, mapY, mapS, mapS, 0.03, 0.06, 0.09, 0.90)
     DrawRectOutline(mapX, mapY, mapS, mapS, 1.5, 0.35, 0.55, 0.85, 0.8)
     local function map_point(x, z)
@@ -975,14 +977,14 @@ function on_render()
 
     local hp = GetHealth(player) or 0
     if hp < 35 then
-      DrawRect(0, 0, 1280, 720, 0.8, 0.05, 0.05, 0.12 + math.sin(clock * 8) * 0.04)
+      DrawRect(0, 0, vw, vh, 0.8, 0.05, 0.05, 0.12 + math.sin(clock * 8) * 0.04)
     end
 
     -- Kill-streak combo banner with decay gauge.
     if combo >= 2 then
-      DrawText("COMBO x" .. combo, 640, 176, 30, 1, 0.85, 0.25, 1, true, true)
+      DrawText("COMBO x" .. combo, cx, 176, 30, 1, 0.85, 0.25, 1, true, true)
       local cw = 130 * (comboTimer / 3.0)
-      DrawRect(640 - cw / 2, 204, cw, 5, 1, 0.3, 0.1, 0.65)
+      DrawRect(cx - cw / 2, 204, cw, 5, 1, 0.3, 0.1, 0.65)
     end
 
     -- Boss overhead presence bar (top-center, wide).
@@ -990,23 +992,23 @@ function on_render()
       if t.alive and t.def.kind == "boss" then
         local hpB = GetHealth(t.e) or 0
         local bw = 420
-        DrawRect(640 - bw / 2 - 2, 44, bw + 4, 16, 0.03, 0.04, 0.08, 0.85)
+        DrawRect(cx - bw / 2 - 2, 44, bw + 4, 16, 0.03, 0.04, 0.08, 0.85)
         if t.def.hp ~= nil and t.def.hp > 0 then
-          DrawRect(640 - bw / 2, 46, bw * clamp(hpB / t.def.hp, 0, 1), 12, 0.85, 0.2, 0.85, 1)
+          DrawRect(cx - bw / 2, 46, bw * clamp(hpB / t.def.hp, 0, 1), 12, 0.85, 0.2, 0.85, 1)
         end
-        DrawText(t.def.name or "BOSS", 640, 20, 20, 0.9, 0.4, 0.95, 1, true, true)
+        DrawText(t.def.name or "BOSS", cx, 20, 20, 0.9, 0.4, 0.95, 1, true, true)
       end
     end
   end
 
   if waveFlash > 0 then
     local a = math.min(1, waveFlash / 0.4)
-    DrawRect(420, 128, 440, 76, 0.04, 0.07, 0.12, 0.9 * a)
-    DrawText("WAVE " .. tostring(waveIndex), 640, 148, 42, 0.5, 0.0, 0.0, a, true, true)
+    DrawRect(vw * 0.5 - 220, 128, 440, 76, 0.04, 0.07, 0.12, 0.9 * a)
+    DrawText("WAVE " .. tostring(waveIndex), vw * 0.5, 148, 42, 0.5, 0.0, 0.0, a, true, true)
   end
 
   if stateTimer > 0 then
-    DrawRect(400, 300, 480, 60, 0.03, 0.05, 0.09, 0.9)
-    DrawText(levelCfg.title or "Mission", 640, 318, 24, 0.4, 0.85, 1, 1, true, true)
+    DrawRect(vw * 0.5 - 240, vh * 0.5 - 60, 480, 60, 0.03, 0.05, 0.09, 0.9)
+    DrawText(levelCfg.title or "Mission", vw * 0.5, vh * 0.5 - 42, 24, 0.4, 0.85, 1, 1, true, true)
   end
 end

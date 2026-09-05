@@ -17,14 +17,13 @@
 ## 操作
 
 - WASD / 方向键：移动
-- 鼠标：视角
+- 鼠标：视角（右键瞄准）
 - 左键：射击
 - R：换弹
-- 1/2/3 或 Q：切换武器
+- 1/2/3/4 或 Q：切换武器（Q 循环并从最后一把回绕到第一把）
 - Space：跳跃
 - Shift：冲刺
-- P：暂停
-- Enter：重开 / 继续
+- P：暂停（结算界面按 Enter 重开 / 继续）
 
 ## 运行
 
@@ -34,12 +33,25 @@
 
 在编辑器里如果直接按播放，会从主菜单场景开始；点击 `START MISSION` 进入第一关。若只想直接验证射击，先打开 `assets/scenes/level_01.json`，再按 `F5` 播放。
 
-打包运行：
+打包运行（上线路径）：
 
 ```bat
 .\build\neon_editor.exe --package projects\fps build\fps_out
-.\build\neon_game.exe --pack build\fps_out\game.pack
+.\build\fps_out\neon_game.exe --pack build\fps_out\game.pack
 ```
+
+打包后的游戏是完整可玩切片：miniaudio 音频（全部音效/音乐随 pack 经 VFS 内存解码）、主菜单/HUD/暂停/结算 UI、三关波次、最高分存档均可用。命令行冒烟验证：
+
+```bat
+.\build\fps_out\neon_game.exe --pack build\fps_out\game.pack --smoke-test 300
+.\build\fps_out\neon_game.exe --pack build\fps_out\game.pack --screenshot menu.png 90
+```
+
+## 音频
+
+`assets/audio/*.wav` 为 16-bit PCM（44.1 kHz 由加载器统一重采样）。`tools/gen_fps_sfx.py`
+可再生成程序合成的 shoot/click/wave/win 四个音效；替换为录音素材时保持同名即可。
+打包播放由 `neon_game` 内置音频后端驱动（`ResolveSfx`：VFS → 磁盘兜底 → 缓存）。
 
 ## 结构
 

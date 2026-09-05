@@ -11,7 +11,6 @@
 #include "neon/core/pack.hpp"
 #include "neon/io/vfs.hpp"
 #include "neon/physics/jolt_world.hpp"
-
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 
@@ -352,6 +351,35 @@ assetMgr_.SetTextureBakeDir(".neon/imported");
     rcfg.input = &clientInput_;
     rcfg.font2d = cjkFont_.Valid() ? cjkFont_ : pixelFont_;
     rcfg.rngSeed = cfg_.rngSeed;
+    // Packaged audio: the editor play mode wires these hooks for editor
+    // testing; the standalone player must do the same or every PlaySfx /
+    // PlayMusic / PlaySfx3D cue in a shipped game is silently dropped.
+    audio_ = neon::audio::CreatePlatformAudioBackend();
+    if (!audio_->Init()) {
+        audio_->Shutdown();
+        audio_.reset();
+        NEON_LOG_WARN("Player: audio unavailable, running silent");
+    } else {
+        rcfg.playSfx = [this](const std::string& name) {
+            const neon::audio::SoundFx& fx = ResolveSfx(name);
+            if (!fx.samples.empty()) audio_->Play(fx, 0.7f);
+        };
+        rcfg.playMusic = [this](const std::string& name, float vol) {
+            const neon::audio::SoundFx& fx = ResolveSfx(name);
+            if (!fx.samples.empty()) audio_->PlayMusic(fx, vol);
+        };
+        rcfg.playSfx3D = [this](const std::string& name, const math::Vec3& pos) {
+            const neon::audio::SoundFx& fx = ResolveSfx(name);
+            if (fx.samples.empty()) return;
+            const math::Vec3 fwd =
+                (camera_.target - camera_.position).Normalized();
+            audio_->Play3D(fx, pos, camera_.position, fwd, 0.7f);
+        };
+        rcfg.setBusVolume = [this](int bus, float gain) {
+            if (audio_ && bus >= 0 && bus <= 2)
+                audio_->SetBusVolume(static_cast<neon::audio::AudioBus>(bus), gain);
+        };
+    }
     core::Status st = runtime_.Start(sceneJson_, rcfg);
     if (!st.Ok()) {
         NEON_LOG_ERROR("Player: runtime start failed: %s", st.Error().c_str());
@@ -543,6 +571,19 @@ void PlayerApp::OnRender() {
     if (started_) {
         float aspect = static_cast<float>(renderer_.ScreenWidth()) / renderer_.ScreenHeight();
         renderer_.SetCamera(camera_, aspect);
+        // Establish the 2D game-area mapping + 3D scene viewport for this
+        // frame (the editor play viewport does the same via
+        // DockViewportScope). Without it UIShow documents lay out against a
+        // 0x0 design viewport and every menu/HUD panel collapses to nothing
+        // (the raw Lua 2D canvas only survived by letterbox coincidence).
+        // Constant-height contract: 720 design units tall, width follows the
+        // window aspect; the scene rasterizes into the same rect so world-
+        // anchored HUD and geometry share one framing.
+        renderer_.Set2DViewport(0, 0, static_cast<float>(renderer_.ScreenWidth()),
+                                static_cast<float>(renderer_.ScreenHeight()), 1.0f,
+                                {0, 0}, aspect);
+        const math::Rect2 ga = renderer_.DesignSpaceRect();
+        renderer_.SetSceneViewport(ga.x, ga.y, ga.w, ga.h);
         if (networked_)
             DrawNetworkWorld();
         else
@@ -912,6 +953,10 @@ void PlayerApp::OnShutdown() {
         runtime_.Stop();
     }
     kernel_.Shutdown();  // microkernel: tear down the physics/script modules
+    if (audio_) {
+        audio_->Shutdown();
+        audio_.reset();
+    }
     if (networked_) {
         NEON_LOG_CAT(neon::core::LogCategory::Net, neon::core::LogLevel::Info,
                      "client: shutting down (welcomed=%d snapshots=%u controlledMoved=%d "
@@ -955,6 +1000,57 @@ void PlayerApp::DumpGameVars() {
         }
         NEON_LOG_INFO("%s", line);
     });
+}
+
+const neon::audio::SoundFx& PlayerApp::ResolveSfx(const std::string& name) {
+    static const neon::audio::SoundFx kEmpty{};
+    if (name.empty()) return kEmpty;
+    auto it = sfxCache_.find(name);
+    if (it != sfxCache_.end()) return it->second;
+
+    static const char* kExts[] = {".wav", ".ogg", ".mp3"};
+    neon::audio::SoundFx fx;
+    bool loaded = false;
+    // Pack mode: decode straight from the VFS bytes (pack entries have no
+    // file path). Mod overlay wins automatically (mount stack order).
+    if (cfg_.vfs) {
+        for (const char* ext : kExts) {
+            const std::string key = "assets/audio/" + name + ext;
+            const core::Result<std::vector<uint8_t>> bytes = cfg_.vfs->ReadFile(key);
+            if (bytes.Ok() && !bytes.Value().empty() &&
+                neon::audio::LoadSoundFxFromMemory(bytes.Value().data(),
+                                                   bytes.Value().size(), fx)) {
+                fx.name = key;
+                loaded = true;
+                break;
+            }
+        }
+    }
+    // Loose-scene / unpacked-dir fallbacks: unpacked pack root, the loose
+    // scene's scripts dir sibling, then the working directory.
+    if (!loaded) {
+        std::string bases[3];
+        int n = 0;
+        if (!cfg_.unpackedDir.empty()) bases[n++] = cfg_.unpackedDir + "/assets/audio/";
+        if (!cfg_.scriptsDir.empty()) bases[n++] = cfg_.scriptsDir + "/../assets/audio/";
+        bases[n++] = "assets/audio/";
+        for (int i = 0; i < n && !loaded; ++i) {
+            for (const char* ext : kExts) {
+                if (neon::audio::LoadSoundFx(bases[i] + name + ext, fx)) {
+                    loaded = true;
+                    break;
+                }
+            }
+        }
+    }
+    if (!loaded) {
+        NEON_LOG_WARN("Player: sfx '%s' not found (cue skipped)", name.c_str());
+        return sfxCache_.emplace(name, std::move(fx)).first->second;
+    }
+    // The mixers consume voice samples at the fixed device rate; convert any
+    // other source rate once at load (same contract as the editor's loader).
+    fx = neon::audio::ResampleTo44100(std::move(fx));
+    return sfxCache_.emplace(name, std::move(fx)).first->second;
 }
 
 } // namespace neon::player

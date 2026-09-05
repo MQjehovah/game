@@ -26,7 +26,7 @@
           { "type": "label", "name": "Title", "rect": [0, 40, 500, 68], "color": [0.30, 0.85, 1, 1], "border": [0, 0, 0, 0], "fill": 0, "fontSize": 46, "text": "NEON OPS", "clip": true, "visible": true },
           { "type": "label", "name": "Subtitle", "rect": [0, 118, 500, 34], "color": [0.72, 0.82, 0.95, 1], "border": [0, 0, 0, 0], "fill": 0, "fontSize": 17, "text": "A production-scale FPS sample", "clip": true, "visible": true },
           { "type": "button", "name": "Start", "rect": [140, 190, 220, 54], "color": [0.12, 0.48, 0.30, 1], "border": [0.45, 0.95, 0.65, 0.9], "fill": 0, "fontSize": 22, "text": "START MISSION", "clip": true, "visible": true },
-          { "type": "button", "name": "Options", "rect": [140, 258, 220, 44], "color": [0.12, 0.20, 0.32, 1], "border": [0.45, 0.65, 0.9, 0.8], "fill": 0, "fontSize": 18, "text": "OPTIONS", "clip": true, "visible": true },
+          { "type": "button", "name": "OptionsBtn", "rect": [140, 258, 220, 44], "color": [0.12, 0.20, 0.32, 1], "border": [0.45, 0.65, 0.9, 0.8], "fill": 0, "fontSize": 18, "text": "OPTIONS", "clip": true, "visible": true },
           { "type": "label", "name": "Hint", "rect": [0, 372, 500, 30], "color": [0.65, 0.72, 0.82, 1], "border": [0, 0, 0, 0], "fill": 0, "fontSize": 15, "text": "ESC to quit", "clip": true, "visible": true }
         ]
       },

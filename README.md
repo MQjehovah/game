@@ -73,6 +73,8 @@
 | 编辑器深化：gizmo / 撤销重做 / 材质编辑器 / 行为树可视化 / 脚本面板 / 缩略图 / 多相机 / 热重载 / 性能面板                                                                                     | ✅                                                                                              |
 | 一键打包 + 通用播放器：`neon_editor --package` → `game.pack` → `neon_game` 运行数据驱动游戏                                                                                           | ✅ 编辑→打包→运行闭环                                                                         |
 | 音频：miniaudio 软件混音器 + 程序化音效/音乐                                                                                                                                                  | ✅ 三平台统一，Windows 失败回退 WinMM                                                           |
+| 打包播放音频：`neon_game` 内置音频后端（与编辑器试玩同款钩子），pack 内音效/音乐经 VFS 内存解码（`LoadSoundFxFromMemory` + 44.1 kHz 统一重采样）                                               | ✅ 打包游戏不再无声运行                                                                        |
+| 播放器 2D/UI 视口映射：`neon_game` 每帧建立 game-area letterbox（`Set2DViewport` + `SetSceneViewport`），`UIShow` 文档/HUD 按常高 720 设计空间自适应布局                                       | ✅ 修复打包游戏 UI 文档不渲染（0x0 视口塌缩）                                                  |
 
 ## 构建
 

@@ -57,4 +57,21 @@ bool LoadSoundFx(const std::string& path, SoundFx& out);
 // vendored implementation lives). Internal; use LoadSoundFx.
 bool LoadSoundFxMiniAudio(const std::string& path, SoundFx& out);
 
+// Memory-based loaders (pack/VFS path): audio assets inside a .pack have no
+// file path, so callers read the bytes through the VFS and decode in memory.
+// LoadWavFromMemory parses 16-bit PCM RIFF (stereo down-mixed, same as
+// LoadWav). LoadSoundFxFromMemory tries the RIFF parser first, then the
+// miniaudio decoders (ogg/mp3/flac/...). Returns false on format error.
+bool LoadWavFromMemory(const uint8_t* data, size_t size, SoundFx& out);
+bool LoadSoundFxFromMemory(const uint8_t* data, size_t size, SoundFx& out);
+
+// ma_decoder memory decode path (miniaudio backend TU). Internal; use
+// LoadSoundFxFromMemory.
+bool LoadSoundFxMiniAudioFromMemory(const uint8_t* data, size_t size, SoundFx& out);
+
+// Linear resample to the mixer's fixed 44.1 kHz device rate (no per-voice
+// resampling in the backends, so assets recorded at other rates must be
+// converted before playback). No-op at 44100.
+SoundFx ResampleTo44100(SoundFx fx);
+
 } // namespace neon::audio

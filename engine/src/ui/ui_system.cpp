@@ -18,7 +18,16 @@ public:
     bool Show(const std::string& path) override {
         const std::string text = cfg_.readFile ? cfg_.readFile(path) : std::string();
         auto doc = std::make_unique<UiDocument>();
-        if (text.empty() || !doc->LoadJson(text)) return false;
+        // Silent failure here makes shipped-game menus vanish without a trace;
+        // always log which half failed (unreadable file vs parse error).
+        if (text.empty()) {
+            NEON_LOG_WARN("UI: Show('%s') failed: document unreadable", path.c_str());
+            return false;
+        }
+        if (!doc->LoadJson(text)) {
+            NEON_LOG_WARN("UI: Show('%s') failed: parse error", path.c_str());
+            return false;
+        }
         doc_ = std::move(doc);
         clicked_.clear();
         return true;

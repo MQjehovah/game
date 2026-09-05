@@ -10,6 +10,7 @@
     "weapon_1": ["1"],
     "weapon_2": ["2"],
     "weapon_3": ["3"],
+    "weapon_4": ["4"],
     "next_weapon": ["Q"],
     "interact": ["F"]
   }

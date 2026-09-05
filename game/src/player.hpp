@@ -1,10 +1,13 @@
 #pragma once
 #include <cstdint>
+#include <memory>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
 #include "neon/neon.hpp"
+#include "neon/audio/audio.hpp"
 #include "neon/assets/asset_variants.hpp"
 #include "neon/kernel/kernel.hpp"
 #include "neon/modules/subsystem_modules.hpp"
@@ -120,6 +123,11 @@ private:
     void DrawOverlay();
     void CaptureScreenshotIfDue();
     void DumpGameVars();
+    // Packaged audio: resolves "assets/audio/<name>.(wav|ogg|mp3)" through the
+    // VFS (pack + mods) with a disk fallback for loose scenes, decodes in
+    // memory, resamples to the mixer's 44.1 kHz device rate and caches per
+    // name. Missing names return an empty SoundFx (cue silently skipped).
+    const neon::audio::SoundFx& ResolveSfx(const std::string& name);
 
     // ---- T6.4 networked-client helpers ----------------------------------
     bool StartNetwork();
@@ -159,6 +167,13 @@ private:
     // G6-1: platform/LOD asset variant table (loaded from variants.json when
     // cfg_.variant is set; must outlive the runtime, so it lives here).
     assets::AssetVariantTable variantTable_;
+
+    // Packaged audio: platform backend (miniaudio -> WinMM -> null) plus the
+    // per-name sfx cache backing ResolveSfx. Declared before runtime_ is not
+    // required (runtime_ only holds std::function hooks), but audio_ must
+    // outlive every lambda the runtime captures.
+    std::unique_ptr<neon::audio::IAudioBackend> audio_;
+    std::unordered_map<std::string, neon::audio::SoundFx> sfxCache_;
 
     // T6.4 network state.
     bool networked_ = false;

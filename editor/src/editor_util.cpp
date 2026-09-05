@@ -413,30 +413,9 @@ void SfxTone(std::vector<int16_t>& out, double f0, double f1, float dur, float v
 
 } // namespace
 
-// Resample a SoundFx to the backend's fixed 44.1 kHz rate. The mixer consumes
-// every voice's samples at the device rate (no per-voice resampling), so a WAV
-// recorded at 22050 Hz must be upsampled or it plays back twice as fast.
-neon::audio::SoundFx ResampleTo44100(neon::audio::SoundFx fx) {
-    if (fx.sampleRate == 44100 || fx.samples.empty()) return fx;
-    const double ratio = static_cast<double>(fx.sampleRate) / 44100.0;
-    const size_t outCount = static_cast<size_t>(static_cast<double>(fx.samples.size()) / ratio);
-    neon::audio::SoundFx out;
-    out.name = std::move(fx.name);
-    out.sampleRate = 44100;
-    out.loop = fx.loop;
-    out.volume = fx.volume;
-    out.samples.reserve(outCount);
-    for (size_t i = 0; i < outCount; ++i) {
-        const double srcPos = static_cast<double>(i) * ratio;
-        const size_t i0 = static_cast<size_t>(srcPos);
-        const size_t i1 = std::min(i0 + 1, fx.samples.size() - 1);
-        const double frac = srcPos - static_cast<double>(i0);
-        const double s = static_cast<double>(fx.samples[i0]) * (1.0 - frac) +
-                         static_cast<double>(fx.samples[i1]) * frac;
-        out.samples.push_back(static_cast<int16_t>(std::max(-32768.0, std::min(32767.0, s))));
-    }
-    return out;
-}
+// ResampleTo44100 now lives in neon::audio (engine/src/audio/audio.cpp) so the
+// standalone player shares the same loader contract; MakePvzSfx below calls
+// the engine version directly.
 
 neon::audio::SoundFx MakePvzSfx(const std::string& name, const std::string& projectDir) {
     // 真实音效优先：项目自带 assets/audio/<name>.(wav|ogg|mp3)（素材包直用，

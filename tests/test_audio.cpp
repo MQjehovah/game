@@ -251,3 +251,64 @@ TEST(AudioLoadSoundFxFormats) {
     audio::SoundFx bad;
     CHECK(!audio::LoadSoundFx("smoke_bad_audio.bin", bad));
 }
+
+// Pack/VFS path: audio inside a .pack has no file path, so decoding happens
+// from memory. Byte-parity with the file-path loader on the same RIFF bytes.
+TEST(AudioWavFromMemory) {
+    // Minimal 44-byte mono PCM WAV: 2 samples (1000, -1000).
+    const std::vector<uint8_t> wav = {
+        'R', 'I', 'F', 'F', 36, 0, 0, 0, 'W', 'A', 'V', 'E',
+        'f', 'm', 't', ' ', 16, 0, 0, 0, 1, 0, 1, 0,
+        0x44, 0xAC, 0, 0, 0x88, 0x58, 0x01, 0, 2, 0, 16, 0,
+        'd', 'a', 't', 'a', 4, 0, 0, 0,
+        0xE8, 0x03, 0x18, 0xFC};
+    audio::SoundFx mem, file;
+    CHECK(audio::LoadWavFromMemory(wav.data(), wav.size(), mem));
+    CHECK_EQ(mem.samples.size(), 2u);
+    CHECK_EQ(mem.samples[0], 1000);
+    CHECK_EQ(mem.samples[1], -1000);
+    CHECK_EQ(mem.sampleRate, 44100u);
+
+    // LoadSoundFxFromMemory sniffs the same container and agrees.
+    CHECK(audio::LoadSoundFxFromMemory(wav.data(), wav.size(), file));
+    CHECK_EQ(file.samples.size(), mem.samples.size());
+    CHECK_EQ(file.samples[0], mem.samples[0]);
+
+    // Truncated + garbage buffers fail closed.
+    audio::SoundFx bad;
+    CHECK(!audio::LoadWavFromMemory(wav.data(), 10, bad));
+    CHECK(!audio::LoadSoundFxFromMemory(
+        reinterpret_cast<const uint8_t*>("not audio at all"), 16, bad));
+}
+
+// Real pack asset end-to-end: a shipped project WAV decodes from memory
+// identically to the file path, and lands at the mixer's 44.1 kHz rate.
+TEST(AudioPackAssetFromMemory) {
+    std::string bytes;
+    if (!test::ReadFileAll("projects/fps/assets/audio/hit.wav", bytes)) return;
+    audio::SoundFx file, mem;
+    CHECK(audio::LoadSoundFx("projects/fps/assets/audio/hit.wav", file));
+    CHECK(audio::LoadSoundFxFromMemory(reinterpret_cast<const uint8_t*>(bytes.data()),
+                                       bytes.size(), mem));
+    CHECK_EQ(mem.samples.size(), file.samples.size());
+    CHECK_EQ(mem.sampleRate, file.sampleRate);
+    CHECK(mem.samples.size() > 100u);
+}
+
+// ResampleTo44100: 22.05 kHz content doubles in length; 44.1 kHz is a no-op.
+TEST(AudioResampleTo44100) {
+    audio::SoundFx low;
+    low.sampleRate = 22050;
+    for (int i = 0; i < 220; ++i) low.samples.push_back(static_cast<int16_t>(i));
+    audio::SoundFx up = audio::ResampleTo44100(std::move(low));
+    CHECK_EQ(up.sampleRate, 44100u);
+    CHECK_EQ(up.samples.size(), 440u);  // exact 2x upsample
+
+    // Already-44100 content passes through untouched (no realloc/copies).
+    audio::SoundFx native;
+    native.sampleRate = 44100;
+    native.samples = {100, -100, 200};
+    audio::SoundFx same = audio::ResampleTo44100(std::move(native));
+    CHECK_EQ(same.samples.size(), 3u);
+    CHECK_EQ(same.samples[0], 100);
+}

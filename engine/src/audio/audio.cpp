@@ -3,6 +3,7 @@
 #include <cstring>
 #include <fstream>
 #include <cstdlib>
+#include <iterator>
 #include <memory>
 
 #include "neon/core/log.hpp"
@@ -61,56 +62,51 @@ std::unique_ptr<IAudioBackend> CreatePlatformAudioBackend() {
 
 // P2-2: RIFF WAV loader for 16-bit PCM (mono or stereo; stereo down-mixed by
 // averaging channels). Little-endian fields read byte-wise for portability.
-bool LoadWav(const std::string& path, SoundFx& out) {
-    std::ifstream in(path, std::ios::binary);
-    if (!in.is_open()) return false;
-    auto readU32 = [&]() -> uint32_t {
-        uint8_t b[4];
-        in.read(reinterpret_cast<char*>(b), 4);
-        return static_cast<uint32_t>(b[0]) | (static_cast<uint32_t>(b[1]) << 8) |
-               (static_cast<uint32_t>(b[2]) << 16) | (static_cast<uint32_t>(b[3]) << 24);
+// Buffer-based RIFF core shared by LoadWav (file path) and LoadWavFromMemory
+// (pack/VFS). Little-endian fields read byte-wise for portability.
+bool LoadWavFromMemory(const uint8_t* data, size_t size, SoundFx& out) {
+    if (data == nullptr || size < 12) return false;
+    auto readU32 = [&](size_t off) -> uint32_t {
+        return static_cast<uint32_t>(data[off]) | (static_cast<uint32_t>(data[off + 1]) << 8) |
+               (static_cast<uint32_t>(data[off + 2]) << 16) |
+               (static_cast<uint32_t>(data[off + 3]) << 24);
     };
-    auto readU16 = [&]() -> uint16_t {
-        uint8_t b[2];
-        in.read(reinterpret_cast<char*>(b), 2);
-        return static_cast<uint16_t>(b[0]) | (static_cast<uint16_t>(b[1]) << 8);
+    auto readU16 = [&](size_t off) -> uint16_t {
+        return static_cast<uint16_t>(static_cast<uint16_t>(data[off]) |
+                                     static_cast<uint16_t>(static_cast<uint16_t>(data[off + 1])
+                                                           << 8));
     };
-    char tag[5] = {};
-    in.read(tag, 4);
-    if (std::strncmp(tag, "RIFF", 4) != 0) return false;
-    (void)readU32();  // RIFF size
-    in.read(tag, 4);
-    if (std::strncmp(tag, "WAVE", 4) != 0) return false;
+    if (std::memcmp(data, "RIFF", 4) != 0) return false;
+    if (std::memcmp(data + 8, "WAVE", 4) != 0) return false;
 
     uint16_t channels = 0;
     uint32_t sampleRate = 0;
     bool gotFormat = false;
-    while (in) {
-        in.read(tag, 4);
-        const uint32_t chunkSize = readU32();
-        if (std::strncmp(tag, "fmt ", 4) == 0) {
-            const uint16_t audioFormat = readU16();
-            channels = readU16();
-            sampleRate = readU32();
+    size_t off = 12;
+    while (off + 8 <= size) {
+        const uint8_t* tag = data + off;
+        const uint32_t chunkSize = readU32(off + 4);
+        off += 8;
+        if (std::memcmp(tag, "fmt ", 4) == 0) {
+            if (off + chunkSize > size) return false;
+            const uint16_t audioFormat = readU16(off);
+            channels = readU16(off + 2);
+            sampleRate = readU32(off + 4);
             if (audioFormat != 1) return false;  // PCM only
             if (channels < 1 || channels > 2) return false;
             gotFormat = true;
-            // Skip the rest of the format chunk (audioFormat + channels +
-            // sampleRate = 8 bytes already consumed).
-            const uint32_t skip = chunkSize > 8 ? chunkSize - 8 : 0;
-            in.seekg(static_cast<std::streamoff>(skip), std::ios::cur);
-        } else if (std::strncmp(tag, "data", 4) == 0) {
+        } else if (std::memcmp(tag, "data", 4) == 0) {
             if (!gotFormat) return false;
-            const size_t bytes = chunkSize;
-            std::vector<uint8_t> pcm(bytes);
-            in.read(reinterpret_cast<char*>(pcm.data()), static_cast<std::streamsize>(bytes));
+            const size_t bytes = std::min<size_t>(chunkSize, size - off);
             out.samples.clear();
             out.samples.reserve(bytes / 2 / channels);
-            for (size_t i = 0; i + 1 < bytes; i += 2 * channels) {
-                int16_t l = static_cast<int16_t>(pcm[i] | (pcm[i + 1] << 8));
+            // Frame-strided walk keeps the stereo pair in bounds (the old
+            // loop could read up to 2 bytes past the buffer on odd sizes).
+            for (size_t i = 0; i + 2 * channels <= bytes; i += 2 * channels) {
+                const int16_t l = static_cast<int16_t>(data[off + i] | (data[off + i + 1] << 8));
                 if (channels == 2) {
-                    const int16_t r =
-                        static_cast<int16_t>(pcm[i + 2] | (pcm[i + 3] << 8));
+                    const int16_t r = static_cast<int16_t>(data[off + i + 2] |
+                                                           (data[off + i + 3] << 8));
                     out.samples.push_back(
                         static_cast<int16_t>((static_cast<int>(l) + r) / 2));
                 } else {
@@ -118,14 +114,22 @@ bool LoadWav(const std::string& path, SoundFx& out) {
                 }
             }
             out.sampleRate = sampleRate;
-            out.name = path;
             return !out.samples.empty();
-        } else {
-            in.seekg(static_cast<std::streamoff>(chunkSize + (chunkSize & 1)),
-                     std::ios::cur);
         }
+        // RIFF chunks are word-aligned.
+        off += chunkSize + (chunkSize & 1);
     }
     return false;
+}
+
+bool LoadWav(const std::string& path, SoundFx& out) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in.is_open()) return false;
+    std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)),
+                               std::istreambuf_iterator<char>());
+    if (!LoadWavFromMemory(bytes.data(), bytes.size(), out)) return false;
+    out.name = path;
+    return true;
 }
 
 bool LoadSoundFx(const std::string& path, SoundFx& out) {
@@ -142,6 +146,36 @@ bool LoadSoundFx(const std::string& path, SoundFx& out) {
         return true;
     }
     return LoadWav(path, out);
+}
+
+bool LoadSoundFxFromMemory(const uint8_t* data, size_t size, SoundFx& out) {
+    // RIFF first (dependency-free fast path), then the miniaudio decoders,
+    // mirroring LoadSoundFx's file path fallbacks.
+    if (LoadWavFromMemory(data, size, out)) return true;
+    if (LoadSoundFxMiniAudioFromMemory(data, size, out)) return true;
+    return false;
+}
+
+SoundFx ResampleTo44100(SoundFx fx) {
+    if (fx.sampleRate == 44100 || fx.samples.empty()) return fx;
+    const double ratio = static_cast<double>(fx.sampleRate) / 44100.0;
+    const size_t outCount = static_cast<size_t>(static_cast<double>(fx.samples.size()) / ratio);
+    SoundFx out;
+    out.name = std::move(fx.name);
+    out.sampleRate = 44100;
+    out.loop = fx.loop;
+    out.volume = fx.volume;
+    out.samples.reserve(outCount);
+    for (size_t i = 0; i < outCount; ++i) {
+        const double srcPos = static_cast<double>(i) * ratio;
+        const size_t i0 = static_cast<size_t>(srcPos);
+        const size_t i1 = std::min(i0 + 1, fx.samples.size() - 1);
+        const double frac = srcPos - static_cast<double>(i0);
+        const double s = static_cast<double>(fx.samples[i0]) * (1.0 - frac) +
+                         static_cast<double>(fx.samples[i1]) * frac;
+        out.samples.push_back(static_cast<int16_t>(std::max(-32768.0, std::min(32767.0, s))));
+    }
+    return out;
 }
 
 } // namespace neon::audio
