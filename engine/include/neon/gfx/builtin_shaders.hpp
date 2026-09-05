@@ -83,6 +83,10 @@ uniform bool uHasAO;
 uniform bool uHasEmissive;
 uniform bool uHasNormalMap;
 uniform float uNormalScale;
+// glTF MASK / foliage card cutout: when uAlphaTest > 0 fragments with an albedo
+// alpha below the threshold are discarded (crisp silhouette for grass/leaf/hair
+// cards instead of a soft translucent stack).
+uniform float uAlphaTest;
 uniform float uAOStrength;
 uniform float uEmissiveIntensity;
 uniform float uShininess;
@@ -294,6 +298,9 @@ void main() {
 #else
     vec4 albedo = uHasTexture ? texture(uAlbedo, vUV) : vec4(1.0);
     albedo *= uTint * vColor;
+    // Alpha cutout (grass/leaf cards): discard transparent fragments so the
+    // blades have a crisp edge rather than a translucent quad outline.
+    if (uAlphaTest > 0.0 && albedo.a < uAlphaTest) discard;
 #endif
     vec3 N = normalize(vNormal);
     // A2 normal mapping without per-vertex tangents: reconstruct the tangent

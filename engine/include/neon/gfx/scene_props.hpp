@@ -23,8 +23,15 @@ Mesh MakeTerrainMesh(Renderer& renderer, int segments = 48, float size = 60.0f,
 // Pine tree: box trunk + two stacked green cones.
 Mesh MakeTreeMesh(Renderer& renderer, const std::string& name = "tree");
 
-// Farmhouse: tan cube body + reddish pyramid roof (4-segment cone).
+// Textured stone farmhouse: walls with a door opening (front) and two window
+// openings (sides). Vertices are white (baked tint) and carry per-face 0..1 UVs
+// so an entity's albedo texture tiles across them (uvRepeat per metre). Winding
+// is outside-in so the lit shader's back-face culling keeps the exterior.
 Mesh MakeHouseMesh(Renderer& renderer, const std::string& name = "house");
+
+// Tiled gable roof (two sloped panels + end triangles + a chimney) for a
+// MakeHouseMesh. Separate meshKey so it gets its own albedo (roof tiles).
+Mesh MakeRoofMesh(Renderer& renderer, const std::string& name = "house_roof");
 
 // Simple villager: colored tunic (box) + skin-tone head (sphere).
 Mesh MakeNPCMesh(Renderer& renderer, const math::Vec4& tunic,

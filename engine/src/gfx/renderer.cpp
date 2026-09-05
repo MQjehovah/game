@@ -792,6 +792,10 @@ void Renderer::ApplyMaterial(const Material& material, const math::Mat4& mvp,
                              {material.rockColor.r, material.rockColor.g,
                               material.rockColor.b, material.rockColor.a});
     backend_->SetUniformInt("uHasTexture", material.albedo.Valid() ? 1 : 0);
+    // Alpha cutout: the lit shader discards albedo.a < uAlphaTest when > 0.
+    // alphaTest survives only when there is an albedo to cut against and the
+    // material requests it (glTF MASK foliage cards + procedurally-tufted grass).
+    backend_->SetUniformFloat("uAlphaTest", material.alphaTest ? material.alphaCutoff : 0.0f);
     backend_->SetUniformInt("uHasMR", material.metallicRoughness.Valid() ? 1 : 0);
     backend_->SetUniformInt("uHasAO", material.occlusion.Valid() ? 1 : 0);
     backend_->SetUniformInt("uHasEmissive", material.emissive.Valid() ? 1 : 0);

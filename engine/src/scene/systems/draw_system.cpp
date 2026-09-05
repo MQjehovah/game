@@ -140,7 +140,8 @@ void DrawSystem::Build(ecs::World& world, AnimationSystem& anims) {
         // Props that bake colors into vertex data keep a white material tint so
         // the baked colors show through (mirrors EditorApp::ApplyMaterialParams).
         const bool bakedColor = m->meshKey == "terrain" || m->meshKey == "tree" ||
-                                m->meshKey == "house" || m->meshKey == "bush" ||
+                                m->meshKey == "house" || m->meshKey == "house_roof" ||
+                                m->meshKey == "bush" ||
                                 m->meshKey == "hero" || m->meshKey == "wolf" ||
                                 m->meshKey == "npc" || m->meshKey.compare(0, 4, "npc:") == 0;
         item.mat.tint = bakedColor ? gfx::Color::White : ParseColorHex(m->colorHex);
@@ -546,6 +547,8 @@ gfx::Mesh DrawSystem::ResolveMeshKey(gfx::Renderer& renderer, const std::string&
         mesh = gfx::MakeTreeMesh(renderer);
     } else if (key == "house") {
         mesh = gfx::MakeHouseMesh(renderer);
+    } else if (key == "house_roof") {
+        mesh = gfx::MakeRoofMesh(renderer);
     } else if (key == "bush") {
         mesh = gfx::MakeBushMesh(renderer);
     } else if (key == "grass") {
@@ -613,6 +616,19 @@ void DrawSystem::DrawVegetation(gfx::Renderer& renderer, const gfx::Camera& came
             f->mat.doubleSided = true;
             f->impostorMat = gfx::Material::Lit({}, gfx::Color::White, 8.0f);
             f->impostorMat.doubleSided = true;
+            // Grass alpha cards: bind the tuft texture and enable the lit
+            // shader's alpha cutout so the transparent parts of grass.png are
+            // discarded (crisp blade silhouette instead of a translucent quad).
+            if (terr->vegMeshKey == "grass") {
+                f->mat.alphaTest = true;
+                f->mat.alphaCutoff = 0.45f;
+                f->mat.albedo =
+                    content_.assets
+                        ->LoadTexture(content_.fullAssetPath("assets/textures/grass.png"))
+                        .Handle();
+                f->impostorMat.albedo = f->mat.albedo;
+                f->impostorMat.alphaTest = true;
+            }
             if (f->mesh.Valid()) {
                 // Size the billboard card from the plant mesh's bounds.
                 const math::AABB& b = f->mesh.Bounds();

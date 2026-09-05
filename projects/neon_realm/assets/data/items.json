@@ -1,5 +1,6 @@
 [
   { "id": "herb",   "label": "月亮草",   "value": 10, "tag": "collectible", "icon": "assets/sprites/glow.png" },
   { "id": "silver", "label": "银币",     "value": 5,  "tag": "currency",    "icon": "assets/sprites/glow.png" },
-  { "id": "berry",  "label": "治疗浆果", "value": 25, "tag": "collectible", "icon": "assets/sprites/glow.png" }
+  { "id": "berry",  "label": "治疗浆果", "value": 25, "tag": "collectible", "icon": "assets/sprites/glow.png" },
+  { "id": "kingheart", "label": "狼王之心", "value": 120, "tag": "collectible", "icon": "assets/sprites/glow.png" }
 ]

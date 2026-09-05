@@ -256,6 +256,7 @@ function on_start(e)
       table.insert(wolves, {
         e = w, home = { x = p.x, y = p.y, z = p.z },
         dead = false, respawn = 0, attackCd = 0, phase = i * 0.7,
+        maxHp = WOLF_MAX, boss = false, scale = 1.6,
         -- B1 NavGrid pathfinding: cached waypoint list + current target while
         -- chasing/returning. Empty = beeline (no navgrid wired, or no path).
         path = {}, pathIdx = 1,
@@ -282,8 +283,15 @@ local function spawn_wave(wave)
     w.respawn = 0
     w.attackCd = 0
     w.path = {}; w.pathIdx = 1
+    -- 狼王 Boss：每 5 波的第一只狼放大增血，掉落稀有物品。
+    local isBoss = (wave % 5 == 0) and i == 1
+    w.boss = isBoss
+    w.maxHp = isBoss and 600 or WOLF_MAX
+    w.scale = isBoss and 3.0 or 1.6
     SetVisible(w.e, true)
-    SetHealth(w.e, WOLF_MAX)
+    SetScale(w.e, w.scale, w.scale, w.scale)
+    SetHealth(w.e, w.maxHp)
+    SetEntityPlate(w.e, isBoss and "狼王" or "野狼", 1.0)
     SetPosition(w.e, { x = w.home.x, y = w.home.y, z = w.home.z })
   end
 end
@@ -590,7 +598,7 @@ local function update_wolves(dt)
         local t = math.max(0, w.dieFade) / 0.6
         local wp3 = GetPosition(w.e)
         if wp3 ~= nil then
-          SetScale(w.e, t * 1.6, t * 0.6 + 0.1, t * 1.6)
+          SetScale(w.e, t * w.scale, t * 0.6 + 0.1, t * w.scale)
           wp3.y = 0.55 * t
           SetPosition(w.e, wp3)
         end
@@ -600,9 +608,9 @@ local function update_wolves(dt)
         if w.respawn <= 0 then
           w.dead = false
           SetVisible(w.e, true)
-          SetScale(w.e, 1.6, 1.6, 1.6)
-          SetEntityPlate(w.e, "野狼", 1.0)
-          SetHealth(w.e, WOLF_MAX)
+          SetScale(w.e, w.scale, w.scale, w.scale)
+          SetEntityPlate(w.e, w.boss and "狼王" or "野狼", 1.0)
+          SetHealth(w.e, w.maxHp)
           SetPosition(w.e, { x = w.home.x, y = w.home.y, z = w.home.z })
         end
       end
@@ -620,27 +628,36 @@ local function update_wolves(dt)
         local wp2 = GetPosition(w.e)
         if wp2 ~= nil then
           local crit = vget("last_hit_crit", false)
-          SpawnFloatText(wp2.x, wp2.y + 1.2, wp2.z, "-" .. tostring(math.floor(WOLF_MAX)), true, 1.2)
+          SpawnFloatText(wp2.x, wp2.y + 1.2, wp2.z, "-" .. tostring(math.floor(w.maxHp)), true, 1.2)
         end
         SetEntityPlate(w.e, nil, -1.0)
         SetVar("kills", vget("kills", 0) + 1)
-        SetVar("gold", vget("gold", 0) + 5 + math.floor(vget("wave", 0)))
-        -- B2 物品掉落: 随机掉落一件物品(银币/月亮草/浆果), 计入 inventory.
-        local lootIds = {}
-        for k in pairs(ITEMS) do lootIds[#lootIds + 1] = k end
-        if #lootIds > 0 then
-          local id = lootIds[math.random(#lootIds)]
-          local it = ITEMS[id]
-          inventory[id] = (inventory[id] or 0) + 1
-          if it and it.tag == "currency" then
-            SetVar("gold", vget("gold", 0) + math.floor(it.value))
-          elseif it and it.tag == "collectible" and it.value > 0 then
-            -- 治疗浆果等: 直接回血(演示数据表->玩法)
-            SetVar("hp", math.min(vget("max_hp", 100), vget("hp", 100) + math.floor(it.value)))
-          end
-          local pt = GetPosition(w.e)
-          if pt ~= nil then SpawnFloatText(pt.x, pt.y + 1.6, pt.z, "+" .. it.label, false, 1.0) end
+        -- 狼王击杀：大幅金币 + 稀有掉落 + 波次结算提示。
+        local goldGain = 5 + math.floor(vget("wave", 0)) + (w.boss and 60 or 0)
+        SetVar("gold", vget("gold", 0) + goldGain)
+        if w.boss then
+          dialogue = { lines = { "你击败了狼王！村庄安全了。" }, shown = 3 }
         end
+        -- B2 物品掉落: 随机掉落一件物品(银币/月亮草/浆果), 计入 inventory;
+        -- 狼王必掉稀有"狼王之心"。
+        local lootIds = {}
+        local forcedId = w.boss and "kingheart" or nil
+        for k in pairs(ITEMS) do if k ~= "kingheart" then lootIds[#lootIds + 1] = k end end
+        local id = forcedId or lootIds[math.random(#lootIds)]
+        local it = ITEMS[id]
+        inventory[id] = (inventory[id] or 0) + 1
+        if it and it.tag == "currency" then
+          SetVar("gold", vget("gold", 0) + math.floor(it.value))
+        elseif it and it.tag == "collectible" and it.value > 0 then
+          -- 采集物(月亮草/狼王之心等): 直接奖励经验 / 治疗浆果回血.
+          if id == "berry" then
+            SetVar("hp", math.min(vget("max_hp", 100), vget("hp", 100) + math.floor(it.value)))
+          else
+            SetVar("xp", vget("xp", 0) + math.floor(it.value))
+          end
+        end
+        local pt = GetPosition(w.e)
+        if pt ~= nil then SpawnFloatText(pt.x, pt.y + 1.6, pt.z, "+" .. it.label, false, 1.0) end
         local xp = vget("xp", 0) + 20
         SetVar("xp", xp)
         if xp >= vget("level", 1) * 100 then
