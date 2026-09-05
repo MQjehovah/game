@@ -1,0 +1,111 @@
+{
+  "entities": [
+    {
+      "name": "sun_light", "id": 1,
+      "components": {
+        "transform": { "pos": [0, 20, 0], "scale": [1, 1, 1], "rot": [0, 0, 0, 1] },
+        "light": {
+          "type": "directional",
+          "color": [1.0, 0.88, 0.66, 1],
+          "sunDir": [-0.45, -0.85, -0.2],
+          "intensity": 2.0,
+          "radius": 10,
+          "ambientStrength": 0.35,
+          "useAtmosphere": true,
+          "skyTop": [0.42, 0.62, 0.85, 1.0],
+          "skyHorizon": [0.98, 0.9, 0.74, 1.0],
+          "fogColor": [0.95, 0.82, 0.62, 1.0],
+          "fogNear": 50,
+          "fogFar": 260
+        },
+        "type": { "value": "Light3D" }
+      }
+    },
+    {
+      "name": "cam", "id": 2,
+      "components": {
+        "transform": { "pos": [0, 3.4, 16], "scale": [1, 1, 1], "rot": [0, 0, 0, 1] },
+        "camera": { "fov": 55, "ortho": false, "orthoSize": 10 },
+        "type": { "value": "Camera3D" }
+      }
+    },
+    {
+      "name": "ground", "id": 3,
+      "components": {
+        "transform": { "pos": [0, 0, 0], "scale": [8, 8, 8], "rot": [0, 0, 0, 1] },
+        "mesh": {
+          "meshKey": "plane",
+          "material": {
+            "albedoTex": "assets/textures/sand_02_diff_2k.jpg",
+            "uvRepeat": 8,
+            "metallic": 0,
+            "roughness": 1.0,
+            "ao": 1,
+            "emissiveIntensity": 1,
+            "colorHex": "#e0c9a0"
+          }
+        },
+        "type": { "value": "MeshInstance3D" }
+      }
+    },
+    {
+      "name": "dune_0", "id": 4,
+      "components": {
+        "transform": { "pos": [0, -0.4, -4], "scale": [5, 0.8, 1.4], "rot": [0, 0, 0, 1] },
+        "mesh": {
+          "meshKey": "sphere",
+          "material": { "albedoTex": "assets/textures/sand_02_diff_2k.jpg", "uvRepeat": 3, "colorHex": "#d9bf93" }
+        },
+        "type": { "value": "MeshInstance3D" }
+      }
+    },
+    {
+      "name": "dune_1", "id": 5,
+      "components": {
+        "transform": { "pos": [9, -0.9, -8], "scale": [8, 1.0, 1.2], "rot": [0, 0.2, 0, 1] },
+        "mesh": {
+          "meshKey": "sphere",
+          "material": { "albedoTex": "assets/textures/sand_02_diff_2k.jpg", "uvRepeat": 3, "colorHex": "#e2c9a1" }
+        },
+        "type": { "value": "MeshInstance3D" }
+      }
+    },
+    {
+      "name": "dune_2", "id": 6,
+      "components": {
+        "transform": { "pos": [-10, -0.7, -5], "scale": [7, 0.9, 1.3], "rot": [0, -0.1, 0, 1] },
+        "mesh": {
+          "meshKey": "sphere",
+          "material": { "albedoTex": "assets/textures/sand_02_diff_2k.jpg", "uvRepeat": 3, "colorHex": "#dcc49b" }
+        },
+        "type": { "value": "MeshInstance3D" }
+      }
+    },
+    {
+      "name": "rock_0", "id": 7,
+      "components": {
+        "transform": { "pos": [-3.5, 0.6, 2], "scale": [1.1, 1.1, 1.1], "rot": [0, 0, 0, 1] },
+        "mesh": { "meshKey": "rock", "material": { "colorHex": "#a26f3e" } },
+        "type": { "value": "MeshInstance3D" }
+      }
+    },
+    {
+      "name": "rock_1", "id": 8,
+      "components": {
+        "transform": { "pos": [4.5, 0.4, 3.5], "scale": [0.8, 0.8, 0.8], "rot": [0, 0.4, 0, 1] },
+        "mesh": { "meshKey": "rock", "material": { "colorHex": "#b0783f" } },
+        "type": { "value": "MeshInstance3D" }
+      }
+    },
+    {
+      "name": "rock_2", "id": 9,
+      "components": {
+        "transform": { "pos": [0.8, 0.3, -1.5], "scale": [0.6, 0.6, 0.6], "rot": [0, 0.2, 0, 1] },
+        "mesh": { "meshKey": "rock", "material": { "colorHex": "#9d6b3a" } },
+        "type": { "value": "MeshInstance3D" }
+      }
+    }
+  ]
+}
+
+

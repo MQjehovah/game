@@ -1,0 +1,54 @@
+{
+  "entities": [
+    {
+      "name": "Ground",
+      "id": 1,
+      "components": {
+        "transform": { "pos": [0, -0.5, 0], "rot": [0, 0, 0, 1], "scale": [68, 1, 68] },
+        "mesh": { "meshKey": "cube", "colorHex": "#B8C7D6", "albedoTex": "assets/textures/ground_tech.png", "uvRepeat": 20, "roughness": 0.95, "castShadow": false, "receiveShadow": false },
+        "rigidbody": { "shape": "box", "halfExtents": [34, 0.5, 34], "dynamic": false }
+      }
+    },
+    {
+      "name": "Directional Light",
+      "id": 2,
+      "components": {
+        "transform": { "pos": [0, 0, 0], "rot": [0, 0, 0, 1], "scale": [1, 1, 1] },
+        "light": {
+          "type": "directional",
+          "color": [1, 0.95, 0.88, 1],
+          "intensity": 2.4,
+          "sunDir": [-0.45, -0.9, -0.35],
+          "radius": 10
+        },
+        "type": { "value": "Light3D" }
+      }
+    },
+    {
+      "name": "Main Camera",
+      "id": 3,
+      "components": {
+        "transform": { "pos": [0, 1.8, 8], "rot": [0, 0, 0, 1], "scale": [1, 1, 1] },
+        "camera": { "fov": 65, "orthoSize": 10 },
+        "type": { "value": "Camera3D" }
+      }
+    },
+    {
+      "name": "Player",
+      "id": 4,
+      "components": {
+        "transform": { "pos": [0, 0, 0], "rot": [0, 0, 0, 1], "scale": [1, 1, 1] },
+        "health": { "hp": 100, "maxHp": 100 },
+        "script": {
+          "backend": "lua",
+          "path": "assets/scripts/game.lua",
+          "vars": { "level": 3, "next_scene": "" }
+        }
+      }
+    }
+  ],
+  "environment": {
+    "ambientColor": [0.45, 0.55, 0.72, 1],
+    "ambientStrength": 0.65
+  }
+}

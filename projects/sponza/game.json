@@ -1,0 +1,6 @@
+{
+  "startScene": "assets/scenes/sponza_scene.json",
+  "window": { "w": 1280, "h": 720, "title": "Neon Sponza" },
+  "title": "Neon Sponza",
+  "editor": { "mode": "3d" }
+}

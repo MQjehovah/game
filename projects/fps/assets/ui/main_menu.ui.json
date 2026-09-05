@@ -1,0 +1,59 @@
+{
+  "format": "neon-ui",
+  "version": 1,
+  "root": {
+    "type": "panel",
+    "name": "root",
+    "rect": [0, 0, 1280, 720],
+    "color": [0, 0, 0, 0],
+    "border": [0, 0, 0, 0],
+    "fill": 0,
+    "fontSize": 16,
+    "clip": true,
+    "visible": true,
+    "children": [
+      {
+        "type": "panel",
+        "name": "MainMenu",
+        "rect": [390, 130, 500, 460],
+        "color": [0.04, 0.07, 0.12, 0.96],
+        "border": [0.35, 0.55, 0.85, 0.9],
+        "fill": 0,
+        "fontSize": 16,
+        "clip": true,
+        "visible": true,
+        "children": [
+          { "type": "label", "name": "Title", "rect": [0, 40, 500, 68], "color": [0.30, 0.85, 1, 1], "border": [0, 0, 0, 0], "fill": 0, "fontSize": 46, "text": "NEON OPS", "clip": true, "visible": true },
+          { "type": "label", "name": "Subtitle", "rect": [0, 118, 500, 34], "color": [0.72, 0.82, 0.95, 1], "border": [0, 0, 0, 0], "fill": 0, "fontSize": 17, "text": "A production-scale FPS sample", "clip": true, "visible": true },
+          { "type": "button", "name": "Start", "rect": [140, 190, 220, 54], "color": [0.12, 0.48, 0.30, 1], "border": [0.45, 0.95, 0.65, 0.9], "fill": 0, "fontSize": 22, "text": "START MISSION", "clip": true, "visible": true },
+          { "type": "button", "name": "Options", "rect": [140, 258, 220, 44], "color": [0.12, 0.20, 0.32, 1], "border": [0.45, 0.65, 0.9, 0.8], "fill": 0, "fontSize": 18, "text": "OPTIONS", "clip": true, "visible": true },
+          { "type": "label", "name": "Hint", "rect": [0, 372, 500, 30], "color": [0.65, 0.72, 0.82, 1], "border": [0, 0, 0, 0], "fill": 0, "fontSize": 15, "text": "ESC to quit", "clip": true, "visible": true }
+        ]
+      },
+      {
+        "type": "panel",
+        "name": "Options",
+        "rect": [390, 110, 500, 500],
+        "color": [0.04, 0.07, 0.12, 0.98],
+        "border": [0.35, 0.55, 0.85, 0.9],
+        "fill": 0,
+        "fontSize": 16,
+        "clip": true,
+        "visible": false,
+        "children": [
+          { "type": "label", "name": "OptionsTitle", "rect": [0, 40, 500, 52], "color": [0.30, 0.85, 1, 1], "border": [0, 0, 0, 0], "fill": 0, "fontSize": 32, "text": "OPTIONS", "clip": true, "visible": true },
+          { "type": "label", "name": "SensLabel", "rect": [36, 138, 330, 28], "color": [0.88, 0.92, 0.98, 1], "border": [0, 0, 0, 0], "fill": 0, "fontSize": 17, "text": "Mouse sensitivity: 2.80", "clip": true, "visible": true },
+          { "type": "button", "name": "SensDown", "rect": [380, 134, 40, 34], "color": [0.12, 0.20, 0.32, 1], "border": [0.45, 0.65, 0.9, 0.8], "fill": 0, "fontSize": 20, "text": "-", "clip": true, "visible": true },
+          { "type": "button", "name": "SensUp", "rect": [428, 134, 40, 34], "color": [0.12, 0.20, 0.32, 1], "border": [0.45, 0.65, 0.9, 0.8], "fill": 0, "fontSize": 20, "text": "+", "clip": true, "visible": true },
+          { "type": "label", "name": "MusicLabel", "rect": [36, 196, 330, 28], "color": [0.88, 0.92, 0.98, 1], "border": [0, 0, 0, 0], "fill": 0, "fontSize": 17, "text": "Music: 70%", "clip": true, "visible": true },
+          { "type": "button", "name": "MusicDown", "rect": [380, 192, 40, 34], "color": [0.12, 0.20, 0.32, 1], "border": [0.45, 0.65, 0.9, 0.8], "fill": 0, "fontSize": 20, "text": "-", "clip": true, "visible": true },
+          { "type": "button", "name": "MusicUp", "rect": [428, 192, 40, 34], "color": [0.12, 0.20, 0.32, 1], "border": [0.45, 0.65, 0.9, 0.8], "fill": 0, "fontSize": 20, "text": "+", "clip": true, "visible": true },
+          { "type": "label", "name": "SfxLabel", "rect": [36, 254, 330, 28], "color": [0.88, 0.92, 0.98, 1], "border": [0, 0, 0, 0], "fill": 0, "fontSize": 17, "text": "SFX: 80%", "clip": true, "visible": true },
+          { "type": "button", "name": "SfxDown", "rect": [380, 250, 40, 34], "color": [0.12, 0.20, 0.32, 1], "border": [0.45, 0.65, 0.9, 0.8], "fill": 0, "fontSize": 20, "text": "-", "clip": true, "visible": true },
+          { "type": "button", "name": "SfxUp", "rect": [428, 250, 40, 34], "color": [0.12, 0.20, 0.32, 1], "border": [0.45, 0.65, 0.9, 0.8], "fill": 0, "fontSize": 20, "text": "+", "clip": true, "visible": true },
+          { "type": "button", "name": "Back", "rect": [140, 360, 220, 50], "color": [0.12, 0.20, 0.32, 1], "border": [0.45, 0.65, 0.9, 0.8], "fill": 0, "fontSize": 20, "text": "BACK", "clip": true, "visible": true }
+        ]
+      }
+    ]
+  }
+}

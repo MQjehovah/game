@@ -1,0 +1,37 @@
+{
+  "entities": [
+    {
+      "name": "Directional Light",
+      "id": 1,
+      "components": {
+        "transform": { "pos": [0, 0, 0], "rot": [0, 0, 0, 1], "scale": [1, 1, 1] },
+        "light": {
+          "type": "directional",
+          "color": [1, 0.96, 0.9, 1],
+          "intensity": 1.2,
+          "ambientStrength": 0.5,
+          "sunDir": [-0.4, -0.9, -0.3],
+          "radius": 10
+        },
+        "type": { "value": "Light3D" }
+      }
+    },
+    {
+      "name": "Main Camera",
+      "id": 2,
+      "components": {
+        "transform": { "pos": [0, 2, 12], "rot": [0, 0, 0, 1], "scale": [1, 1, 1] },
+        "camera": { "fov": 65, "orthoSize": 10 },
+        "type": { "value": "Camera3D" }
+      }
+    },
+    {
+      "name": "Menu",
+      "id": 3,
+      "components": {
+        "transform": { "pos": [0, 0, 0], "rot": [0, 0, 0, 1], "scale": [1, 1, 1] },
+        "script": { "backend": "lua", "path": "assets/scripts/menu.lua" }
+      }
+    }
+  ]
+}

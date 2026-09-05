@@ -1,0 +1,88 @@
+{
+  "format": "neon-ui",
+  "version": 1,
+  "root": {
+    "type": "panel",
+    "name": "root",
+    "rect": [0, 0, 1280, 720],
+    "color": [0, 0, 0, 0],
+    "border": [0, 0, 0, 0],
+    "fill": 0,
+    "fontSize": 16,
+    "clip": true,
+    "visible": true,
+    "children": [
+      {
+        "type": "panel",
+        "name": "Hud",
+        "rect": [16, 16, 430, 132],
+        "color": [0.04, 0.07, 0.12, 0.88],
+        "border": [0.35, 0.55, 0.85, 0.75],
+        "fill": 0,
+        "fontSize": 16,
+        "clip": true,
+        "visible": false,
+        "children": [
+          { "type": "label", "name": "HealthLabel", "rect": [12, 14, 210, 24], "color": [0.9, 0.95, 1, 1], "border": [0, 0, 0, 0], "fill": 0, "fontSize": 16, "text": "HP 100 / 100", "clip": true, "visible": true },
+          { "type": "bar", "name": "HealthBar", "rect": [12, 42, 180, 16], "color": [0.9, 0.2, 0.2, 1], "border": [0.4, 0.5, 0.7, 0.8], "fill": 1, "fontSize": 16, "text": "", "clip": true, "visible": true },
+          { "type": "label", "name": "AmmoLabel", "rect": [12, 66, 210, 24], "color": [1, 0.95, 0.72, 1], "border": [0, 0, 0, 0], "fill": 0, "fontSize": 16, "text": "30 / 180", "clip": true, "visible": true },
+          { "type": "label", "name": "WeaponLabel", "rect": [238, 14, 178, 22], "color": [0.75, 0.85, 1, 1], "border": [0, 0, 0, 0], "fill": 0, "fontSize": 15, "text": "Assault Rifle", "clip": true, "visible": true },
+          { "type": "label", "name": "ScoreLabel", "rect": [238, 42, 178, 20], "color": [0.95, 0.9, 0.5, 1], "border": [0, 0, 0, 0], "fill": 0, "fontSize": 15, "text": "Score 0", "clip": true, "visible": true },
+          { "type": "label", "name": "WaveLabel", "rect": [238, 66, 178, 20], "color": [0.72, 0.82, 0.95, 1], "border": [0, 0, 0, 0], "fill": 0, "fontSize": 15, "text": "Wave 0 / 0", "clip": true, "visible": true },
+          { "type": "label", "name": "ObjectiveLabel", "rect": [12, 98, 406, 24], "color": [0.55, 0.85, 0.7, 1], "border": [0, 0, 0, 0], "fill": 0, "fontSize": 15, "text": "Eliminate all hostiles", "clip": true, "visible": true }
+        ]
+      },
+      {
+        "type": "panel",
+        "name": "PauseMenu",
+        "rect": [440, 160, 400, 400],
+        "color": [0.04, 0.06, 0.10, 0.96],
+        "border": [0.35, 0.55, 0.85, 0.9],
+        "fill": 0,
+        "fontSize": 16,
+        "clip": true,
+        "visible": false,
+        "children": [
+          { "type": "label", "name": "PauseTitle", "rect": [0, 40, 400, 56], "color": [0.30, 0.85, 1, 1], "border": [0, 0, 0, 0], "fill": 0, "fontSize": 34, "text": "PAUSED", "clip": true, "visible": true },
+          { "type": "button", "name": "Resume", "rect": [110, 140, 180, 48], "color": [0.12, 0.48, 0.30, 1], "border": [0.45, 0.95, 0.65, 0.9], "fill": 0, "fontSize": 20, "text": "RESUME", "clip": true, "visible": true },
+          { "type": "button", "name": "RestartLevel", "rect": [110, 202, 180, 42], "color": [0.12, 0.20, 0.32, 1], "border": [0.45, 0.65, 0.9, 0.8], "fill": 0, "fontSize": 18, "text": "RESTART", "clip": true, "visible": true },
+          { "type": "button", "name": "QuitToMenu", "rect": [110, 258, 180, 42], "color": [0.35, 0.16, 0.16, 1], "border": [0.9, 0.45, 0.45, 0.8], "fill": 0, "fontSize": 18, "text": "QUIT TO MENU", "clip": true, "visible": true }
+        ]
+      },
+      {
+        "type": "panel",
+        "name": "GameOverPanel",
+        "rect": [390, 210, 500, 300],
+        "color": [0.10, 0.03, 0.03, 0.96],
+        "border": [0.9, 0.25, 0.25, 0.9],
+        "fill": 0,
+        "fontSize": 16,
+        "clip": true,
+        "visible": false,
+        "children": [
+          { "type": "label", "name": "GameOverTitle", "rect": [0, 42, 500, 60], "color": [1, 0.35, 0.3, 1], "border": [0, 0, 0, 0], "fill": 0, "fontSize": 40, "text": "MISSION FAILED", "clip": true, "visible": true },
+          { "type": "label", "name": "FinalScoreLabel", "rect": [0, 118, 500, 34], "color": [0.95, 0.9, 0.55, 1], "border": [0, 0, 0, 0], "fill": 0, "fontSize": 22, "text": "Score 0", "clip": true, "visible": true },
+          { "type": "button", "name": "Retry", "rect": [120, 178, 260, 46], "color": [0.12, 0.48, 0.30, 1], "border": [0.45, 0.95, 0.65, 0.9], "fill": 0, "fontSize": 19, "text": "RETRY MISSION", "clip": true, "visible": true },
+          { "type": "button", "name": "GameOverMenu", "rect": [120, 236, 260, 42], "color": [0.12, 0.20, 0.32, 1], "border": [0.45, 0.65, 0.9, 0.8], "fill": 0, "fontSize": 17, "text": "MAIN MENU", "clip": true, "visible": true }
+        ]
+      },
+      {
+        "type": "panel",
+        "name": "VictoryPanel",
+        "rect": [390, 180, 500, 360],
+        "color": [0.03, 0.10, 0.05, 0.96],
+        "border": [0.35, 0.95, 0.55, 0.9],
+        "fill": 0,
+        "fontSize": 16,
+        "clip": true,
+        "visible": false,
+        "children": [
+          { "type": "label", "name": "VictoryTitle", "rect": [0, 42, 500, 60], "color": [0.45, 1, 0.65, 1], "border": [0, 0, 0, 0], "fill": 0, "fontSize": 42, "text": "MISSION COMPLETE", "clip": true, "visible": true },
+          { "type": "label", "name": "VictoryScoreLabel", "rect": [0, 120, 500, 34], "color": [0.95, 0.9, 0.55, 1], "border": [0, 0, 0, 0], "fill": 0, "fontSize": 22, "text": "Score 0", "clip": true, "visible": true },
+          { "type": "button", "name": "NextLevel", "rect": [120, 180, 260, 48], "color": [0.12, 0.48, 0.30, 1], "border": [0.45, 0.95, 0.65, 0.9], "fill": 0, "fontSize": 19, "text": "CONTINUE", "clip": true, "visible": true },
+          { "type": "button", "name": "VictoryMenu", "rect": [120, 240, 260, 42], "color": [0.12, 0.20, 0.32, 1], "border": [0.45, 0.65, 0.9, 0.8], "fill": 0, "fontSize": 17, "text": "MAIN MENU", "clip": true, "visible": true }
+        ]
+      }
+    ]
+  }
+}

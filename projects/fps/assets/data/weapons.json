@@ -1,0 +1,47 @@
+[
+  {
+    "id": "rifle",
+    "name": "Assault Rifle",
+    "prefab": "weapon_rifle",
+    "auto": true,
+    "damage": 24,
+    "fireRate": 0.12,
+    "mag": 30,
+    "reserve": 180,
+    "spread": 0.010,
+    "projectileSpeed": 70,
+    "range": 140,
+    "pellets": 1,
+    "sfx": "shoot"
+  },
+  {
+    "id": "shotgun",
+    "name": "Combat Shotgun",
+    "prefab": "weapon_shotgun",
+    "auto": false,
+    "damage": 12,
+    "fireRate": 0.7,
+    "mag": 6,
+    "reserve": 48,
+    "spread": 0.050,
+    "projectileSpeed": 55,
+    "range": 45,
+    "pellets": 8,
+    "sfx": "shoot"
+  },
+  {
+    "id": "sniper",
+    "name": "Precision Rifle",
+    "prefab": "weapon_sniper",
+    "auto": false,
+    "damage": 120,
+    "fireRate": 1.2,
+    "mag": 5,
+    "reserve": 30,
+    "spread": 0.001,
+    "projectileSpeed": 130,
+    "range": 240,
+    "pellets": 1,
+    "sfx": "shoot"
+  }
+]

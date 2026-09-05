@@ -1,0 +1,6 @@
+{
+  "components": {
+    "transform": { "pos": [0, 0, 0], "rot": [0, 0, 0, 1], "scale": [0.42, 0.42, 0.42] },
+    "mesh": { "meshKey": "obj:assets/models/weapon_rifle_fp.obj", "colorHex": "#8A9AA8", "roughness": 0.35 }
+  }
+}

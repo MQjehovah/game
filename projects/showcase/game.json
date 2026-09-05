@@ -1,0 +1,6 @@
+{
+  "startScene": "assets/scenes/01_dusk_forest.json",
+  "window": { "w": 1280, "h": 720, "title": "Neon Showcase" },
+  "title": "Neon Showcase",
+  "editor": { "mode": "3d" }
+}

@@ -1,0 +1,6 @@
+{
+  "components": {
+    "transform": { "pos": [0, 0, 0], "rot": [0, 0, 0, 1], "scale": [0.46, 0.46, 0.46] },
+    "mesh": { "meshKey": "obj:assets/models/weapon_shotgun_fp.obj", "colorHex": "#6B4B3A", "roughness": 0.40 }
+  }
+}

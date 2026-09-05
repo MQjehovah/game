@@ -1,0 +1,6 @@
+{
+  "startScene": "assets/scenes/forest_scene.json",
+  "window": { "w": 1280, "h": 720, "title": "Neon Forest" },
+  "title": "Neon Forest",
+  "editor": { "mode": "3d" }
+}

@@ -1,0 +1,16 @@
+{
+  "actions": {
+    "move_forward": { "positive": ["W", "ArrowUp"], "negative": ["S", "ArrowDown"] },
+    "move_strafe": { "positive": ["D", "ArrowRight"], "negative": ["A", "ArrowLeft"] },
+    "jump": ["Space"],
+    "sprint": ["Shift"],
+    "reload": ["R"],
+    "restart": ["Enter"],
+    "pause": ["P"],
+    "weapon_1": ["1"],
+    "weapon_2": ["2"],
+    "weapon_3": ["3"],
+    "next_weapon": ["Q"],
+    "interact": ["F"]
+  }
+}

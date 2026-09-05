@@ -1,0 +1,7 @@
+{
+  "components": {
+    "transform": { "pos": [0, 0, 0], "rot": [0, 0, 0, 1], "scale": [2.2, 2, 2.2] },
+    "mesh": { "meshKey": "cube", "colorHex": "#C9D3DE", "albedoTex": "assets/textures/crate_tech.png", "roughness": 0.8 },
+    "rigidbody": { "shape": "box", "halfExtents": [1.1, 1.0, 1.1], "dynamic": false }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "startScene": "assets/scenes/menu.json",
+  "window": { "w": 1280, "h": 720, "title": "NeonOps - Shippable FPS Sample" },
+  "title": "NeonOps",
+  "editor": { "mode": "3d" },
+  "export": {
+    "platform": "windows",
+    "description": "NeonOps: a production-scale first-person shooter sample with menu, settings, levels, weapons, enemy AI, pickups, save and end-to-end game flow"
+  }
+}

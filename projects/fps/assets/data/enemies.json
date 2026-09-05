@@ -1,0 +1,38 @@
+[
+  {
+    "id": "drone",
+    "name": "Assault Drone",
+    "prefab": "enemy_drone",
+    "hp": 40,
+    "speed": 4.8,
+    "damage": 8,
+    "fireRate": 1.8,
+    "range": 18,
+    "score": 100,
+    "scale": 1.15
+  },
+  {
+    "id": "turret",
+    "name": "Sentry Turret",
+    "prefab": "enemy_turret",
+    "hp": 130,
+    "speed": 0,
+    "damage": 14,
+    "fireRate": 2.2,
+    "range": 32,
+    "score": 350,
+    "scale": 1.55
+  },
+  {
+    "id": "heavy",
+    "name": "Heavy Unit",
+    "prefab": "enemy_heavy",
+    "hp": 280,
+    "speed": 2.0,
+    "damage": 22,
+    "fireRate": 2.6,
+    "range": 15,
+    "score": 800,
+    "scale": 2.3
+  }
+]

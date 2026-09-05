@@ -1,0 +1,315 @@
+{
+    "entities":  [
+                     {
+                         "components":  {
+                                            "transform":  {
+                                                              "pos":  [
+                                                                          0,
+                                                                          20,
+                                                                          0
+                                                                      ],
+                                                              "scale":  [
+                                                                            1,
+                                                                            1,
+                                                                            1
+                                                                        ],
+                                                              "rot":  [
+                                                                          0,
+                                                                          0,
+                                                                          0,
+                                                                          1
+                                                                      ]
+                                                          },
+                                            "light":  {
+                                                          "skyTexture":  "assets/sky/sky_kiara_dawn.jpg",
+                                                          "color":  [
+                                                                        1,
+                                                                        0.95,
+                                                                        0.88,
+                                                                        1
+                                                                    ],
+                                                          "radius":  10,
+                                                          "intensity":  2.2,
+                                                          "type":  "directional",
+                                                          "ambientStrength":  0.5,
+                                                          "sunDir":  [
+                                                                         -0.55,
+                                                                         -0.55,
+                                                                         -0.35
+                                                                     ]
+                                                      },
+                                            "type":  {
+                                                         "value":  "Light3D"
+                                                     }
+                                        },
+                         "name":  "sun_light",
+                         "id":  1
+                     },
+                     {
+                         "components":  {
+                                            "transform":  {
+                                                              "pos":  [
+                                                                          0,
+                                                                          3,
+                                                                          18
+                                                                      ],
+                                                              "scale":  [
+                                                                            1,
+                                                                            1,
+                                                                            1
+                                                                        ],
+                                                              "rot":  [
+                                                                          0,
+                                                                          0,
+                                                                          0,
+                                                                          1
+                                                                      ]
+                                                          },
+                                            "camera":  {
+                                                           "orthoSize":  10,
+                                                           "fov":  60,
+                                                           "ortho":  false
+                                                       },
+                                            "type":  {
+                                                         "value":  "Camera3D"
+                                                     }
+                                        },
+                         "name":  "forest_cam",
+                         "id":  2
+                     },
+                     {
+                         "components":  {
+                                            "transform":  {
+                                                              "pos":  [
+                                                                          0,
+                                                                          -1,
+                                                                          4
+                                                                      ],
+                                                              "scale":  [
+                                                                            6,
+                                                                            6,
+                                                                            6
+                                                                        ],
+                                                              "rot":  [
+                                                                          0,
+                                                                          0,
+                                                                          0,
+                                                                          1
+                                                                      ]
+                                                          },
+                                            "mesh":  {
+                                                         "material":  {
+                                                                          "metallic":  0,
+                                                                          "emissiveIntensity":  1,
+                                                                          "roughness":  0.9,
+                                                                          "albedoTex":  "assets/textures/ground_aerial/grass_diff_2k.jpg",
+                                                                          "uvRepeat":  4,
+                                                                          "ao":  1,
+                                                                          "colorHex":  "#B8D8A8"
+                                                                      },
+                                                         "meshKey":  "plane"
+                                                     }
+                                        },
+                         "name":  "ground",
+                         "id":  3
+                     },
+                     {
+                         "components":  {
+                                            "transform":  {
+                                                              "pos":  [
+                                                                          6.05,
+                                                                          0,
+                                                                          1.95
+                                                                      ],
+                                                              "scale":  [
+                                                                            1.06,
+                                                                            1.06,
+                                                                            1.06
+                                                                        ],
+                                                              "rot":  [
+                                                                          0,
+                                                                          0,
+                                                                          0,
+                                                                          1
+                                                                      ]
+                                                          },
+                                            "mesh":  {
+                                                         "material":  {
+                                                                          "emissiveIntensity":  1,
+                                                                          "ao":  1,
+                                                                          "roughness":  0.8,
+                                                                          "metallic":  0
+                                                                      },
+                                                         "meshKey":  "gltf:assets/models/island_tree_01/island_tree_01.gltf"
+                                                     }
+                                        },
+                         "name":  "tree_0",
+                         "id":  4
+                     },
+                     {
+                         "components":  {
+                                            "transform":  {
+                                                              "pos":  [
+                                                                          0.82,
+                                                                          0,
+                                                                          2.72
+                                                                      ],
+                                                              "scale":  [
+                                                                            1.13,
+                                                                            1.13,
+                                                                            1.13
+                                                                        ],
+                                                              "rot":  [
+                                                                          0,
+                                                                          0,
+                                                                          0,
+                                                                          1
+                                                                      ]
+                                                          },
+                                            "mesh":  {
+                                                         "material":  {
+                                                                          "emissiveIntensity":  1,
+                                                                          "ao":  1,
+                                                                          "roughness":  0.8,
+                                                                          "metallic":  0
+                                                                      },
+                                                         "meshKey":  "gltf:assets/models/island_tree_01/island_tree_01.gltf"
+                                                     }
+                                        },
+                         "name":  "tree_1",
+                         "id":  5
+                     },
+                     {
+                         "components":  {
+                                            "transform":  {
+                                                              "pos":  [
+                                                                          8.08,
+                                                                          0,
+                                                                          12.36
+                                                                      ],
+                                                              "scale":  [
+                                                                            1.09,
+                                                                            1.09,
+                                                                            1.09
+                                                                        ],
+                                                              "rot":  [
+                                                                          0,
+                                                                          0,
+                                                                          0,
+                                                                          1
+                                                                      ]
+                                                          },
+                                            "mesh":  {
+                                                         "material":  {
+                                                                          "emissiveIntensity":  1,
+                                                                          "ao":  1,
+                                                                          "roughness":  0.8,
+                                                                          "metallic":  0
+                                                                      },
+                                                         "meshKey":  "gltf:assets/models/island_tree_01/island_tree_01.gltf"
+                                                     }
+                                        },
+                         "name":  "tree_2",
+                         "id":  6
+                     },
+                     {
+                         "components":  {
+                                            "transform":  {
+                                                              "pos":  [
+                                                                          9.41,
+                                                                          0,
+                                                                          4.57
+                                                                      ],
+                                                              "scale":  [
+                                                                            1.13,
+                                                                            1.13,
+                                                                            1.13
+                                                                        ],
+                                                              "rot":  [
+                                                                          0,
+                                                                          0,
+                                                                          0,
+                                                                          1
+                                                                      ]
+                                                          },
+                                            "mesh":  {
+                                                         "material":  {
+                                                                          "emissiveIntensity":  1,
+                                                                          "ao":  1,
+                                                                          "roughness":  0.8,
+                                                                          "metallic":  0
+                                                                      },
+                                                         "meshKey":  "gltf:assets/models/island_tree_01/island_tree_01.gltf"
+                                                     }
+                                        },
+                         "name":  "tree_3",
+                         "id":  7
+                     },
+                     {
+                         "components":  {
+                                            "transform":  {
+                                                              "pos":  [
+                                                                          0.2,
+                                                                          0,
+                                                                          6.97
+                                                                      ],
+                                                              "scale":  [
+                                                                            1.19,
+                                                                            1.19,
+                                                                            1.19
+                                                                        ],
+                                                              "rot":  [
+                                                                          0,
+                                                                          0,
+                                                                          0,
+                                                                          1
+                                                                      ]
+                                                          },
+                                            "mesh":  {
+                                                         "material":  {
+                                                                          "emissiveIntensity":  1,
+                                                                          "ao":  1,
+                                                                          "roughness":  0.8,
+                                                                          "metallic":  0
+                                                                      },
+                                                         "meshKey":  "gltf:assets/models/island_tree_01/island_tree_01.gltf"
+                                                     }
+                                        },
+                         "name":  "tree_4",
+                         "id":  8
+                     },
+                     {
+                         "components":  {
+                                            "transform":  {
+                                                              "pos":  [
+                                                                          -8.63,
+                                                                          0,
+                                                                          12.49
+                                                                      ],
+                                                              "scale":  [
+                                                                            1.02,
+                                                                            1.02,
+                                                                            1.02
+                                                                        ],
+                                                              "rot":  [
+                                                                          0,
+                                                                          0,
+                                                                          0,
+                                                                          1
+                                                                      ]
+                                                          },
+                                            "mesh":  {
+                                                         "material":  {
+                                                                          "emissiveIntensity":  1,
+                                                                          "ao":  1,
+                                                                          "roughness":  0.8,
+                                                                          "metallic":  0
+                                                                      },
+                                                         "meshKey":  "gltf:assets/models/island_tree_01/island_tree_01.gltf"
+                                                     }
+                                        },
+                         "name":  "tree_5",
+                         "id":  9
+                     }
+                 ]
+}

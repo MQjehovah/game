@@ -1,0 +1,47 @@
+[
+  {
+    "id": 1,
+    "scene": "assets/scenes/level_01.json",
+    "next": "assets/scenes/level_02.json",
+    "title": "Perimeter Breach",
+    "arenaRadius": 22,
+    "cover": [
+      [-5, 0, -6], [5, 0, -6], [-8, 0, 4], [8, 0, 4], [0, 0, 13]
+    ],
+    "waves": [
+      { "delay": 1.0, "spawns": [ { "type": "drone", "count": 4 } ] },
+      { "delay": 16.0, "spawns": [ { "type": "drone", "count": 3 }, { "type": "turret", "count": 1 } ] },
+      { "delay": 34.0, "spawns": [ { "type": "heavy", "count": 1 }, { "type": "drone", "count": 4 } ] }
+    ]
+  },
+  {
+    "id": 2,
+    "scene": "assets/scenes/level_02.json",
+    "next": "assets/scenes/level_03.json",
+    "title": "Sector Hold",
+    "arenaRadius": 25,
+    "cover": [
+      [-6, 0, -8], [6, 0, -8], [-10, 0, 5], [10, 0, 5], [-3, 0, 15], [3, 0, 15]
+    ],
+    "waves": [
+      { "delay": 1.0, "spawns": [ { "type": "drone", "count": 6 } ] },
+      { "delay": 18.0, "spawns": [ { "type": "turret", "count": 2 }, { "type": "drone", "count": 4 } ] },
+      { "delay": 36.0, "spawns": [ { "type": "heavy", "count": 2 }, { "type": "turret", "count": 1 } ] }
+    ]
+  },
+  {
+    "id": 3,
+    "scene": "assets/scenes/level_03.json",
+    "next": "",
+    "title": "Command Core",
+    "arenaRadius": 28,
+    "cover": [
+      [-8, 0, -10], [8, 0, -10], [-12, 0, 6], [12, 0, 6], [0, 0, 18]
+    ],
+    "waves": [
+      { "delay": 1.0, "spawns": [ { "type": "drone", "count": 8 } ] },
+      { "delay": 20.0, "spawns": [ { "type": "turret", "count": 3 }, { "type": "drone", "count": 5 } ] },
+      { "delay": 42.0, "spawns": [ { "type": "heavy", "count": 3 }, { "type": "turret", "count": 2 } ] }
+    ]
+  }
+]

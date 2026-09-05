@@ -1,0 +1,42 @@
+{
+  "entities": [
+    {
+      "id": 1,
+      "nodeType": "Light3D",
+      "mesh": "light:directional",
+      "name": "sun_light",
+      "pos": [0, 8, 0],
+      "light": {
+        "type": "directional",
+        "sunDir": [-0.35, -1.0, -0.3],
+        "color": [1.0, 0.97, 0.9, 1.0],
+        "intensity": 1.3,
+        "radius": 10.0,
+        "ambientStrength": 0.35
+      }
+    },
+    {
+      "id": 2,
+      "nodeType": "Camera3D",
+      "mesh": "cube",
+      "name": "atrium_camera",
+      "pos": [0, 2.5, 20.0],
+      "rot": [0, 0, 0, 1],
+      "cameraFov": 60,
+      "cameraOrtho": false,
+      "cameraOrthoSize": 10.0
+    },
+    {
+      "id": 3,
+      "mesh": "gltf:assets/models/sponza/Sponza.gltf",
+      "name": "sponza_palace",
+      "pos": [0, 0, 0],
+      "scale": [1, 1, 1],
+      "tint": [1, 1, 1],
+      "metallic": 0,
+      "roughness": 0.8,
+      "ao": 1,
+      "emissiveIntensity": 1
+    }
+  ]
+}

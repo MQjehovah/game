@@ -1,0 +1,112 @@
+{
+  "entities": [
+    {
+      "components": {
+        "mesh": {
+          "castShadow": false,
+          "receiveShadow": false,
+          "material": {
+            "albedoTex": "assets/textures/ground_tech.png",
+            "ao": 1,
+            "colorHex": "#B8C7D6",
+            "emissiveIntensity": 1,
+            "metallic": 0,
+            "roughness": 0.949999988079071,
+            "uvRepeat": 20
+          },
+          "meshKey": "cube"
+        },
+        "rigidbody": {
+          "damping": 0,
+          "friction": 0.4000000059604645,
+          "gravityScale": 1,
+          "halfExtents": [30,0.5,30],
+          "layer": 1,
+          "mask": 4294967295,
+          "mass": 0,
+          "radius": 0.5,
+          "restitution": 0,
+          "shape": "box"
+        },
+        "transform": {
+          "pos": [0,-0.5,0],
+          "rot": [0,0,0,1],
+          "scale": [60,1,60]
+        }
+      },
+      "id": 1,
+      "name": "Ground"
+    },
+    {
+      "components": {
+        "light": {
+          "ambientStrength": 0.25,
+          "color": [1,0.949999988079071,0.8799999952316284,1],
+          "intensity": 2,
+          "radius": 10,
+          "sunDir": [-0.44999998807907104,-0.8999999761581421,-0.3499999940395355],
+          "type": "directional"
+        },
+        "transform": {
+          "pos": [0,0,0],
+          "rot": [0,0,0,1],
+          "scale": [1,1,1]
+        },
+        "type": {
+          "value": "Light3D"
+        }
+      },
+      "id": 2,
+      "name": "Directional Light"
+    },
+    {
+      "components": {
+        "camera": {
+          "fov": 65,
+          "orthoSize": 10
+        },
+        "transform": {
+          "pos": [0,1.7999999523162842,8],
+          "rot": [0,0,0,1],
+          "scale": [1,1,1]
+        },
+        "type": {
+          "value": "Camera3D"
+        }
+      },
+      "id": 3,
+      "name": "Main Camera"
+    },
+    {
+      "components": {
+        "health": {
+          "hp": 100,
+          "maxHp": 100
+        },
+        "scripts": {
+          "items": [
+            {
+              "backend": "lua",
+              "path": "assets/scripts/game.lua",
+              "vars": {
+                "level": 1,
+                "next_scene": "assets/scenes/level_02.json"
+              }
+            }
+          ]
+        },
+        "transform": {
+          "pos": [0,0,0],
+          "rot": [0,0,0,1],
+          "scale": [1,1,1]
+        }
+      },
+      "id": 4,
+      "name": "Player"
+    }
+  ],
+  "environment": {
+    "ambientColor": [0.45, 0.55, 0.72, 1],
+    "ambientStrength": 0.55
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "components": {
+    "transform": { "pos": [0, 0, 0], "rot": [0, 0, 0, 1], "scale": [1.55, 1.55, 1.55] },
+    "mesh": { "meshKey": "cube", "colorHex": "#F59E0B", "roughness": 0.55 },
+    "health": { "hp": 130, "maxHp": 130 }
+  }
+}

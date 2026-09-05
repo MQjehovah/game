@@ -45,4 +45,7 @@ neon_editor_imgui.ini
 # Shadow-map / screenshot debug artifacts (throwaway diagnostics)
 *.raw
 /*.png
+# Oversized external-buffer meshes kept local-only (network push too large).
+projects/forest/assets/models/island_tree_01/island_tree_01.bin
+projects/showcase/assets/models/island_tree_01/island_tree_01.bin
 
