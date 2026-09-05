@@ -629,6 +629,8 @@ void DrawSystem::DrawVegetation(gfx::Renderer& renderer, const gfx::Camera& came
             vcfg.maxHeight = terr->vegMaxHeight;
             vcfg.maxSlope = terr->vegMaxSlope;
             vcfg.size = f->size;
+            vcfg.excludeCenter = {terr->vegExcludeCenter.x, terr->vegExcludeCenter.z};
+            vcfg.excludeRadius = terr->vegExcludeRadius;
             f->positions = gfx::ScatterVegetation(terr->heights, terr->segments, terr->size,
                                                   terr->heightScale, vcfg, rng);
             f->built = true;

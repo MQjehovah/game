@@ -274,6 +274,11 @@ std::vector<math::Vec3> ScatterVegetation(const std::vector<float>& heights, int
         const float y = SampleRaw(heights, segments, size, x, z) * heightScale;
         const float slope = SlopeAt(heights, segments, size, x, z, heightScale);
         if (y < config.minHeight || y > config.maxHeight || slope > config.maxSlope) continue;
+        if (config.excludeRadius >= 0.0f) {
+            const float dx = x - config.excludeCenter.x;
+            const float dz = z - config.excludeCenter.y;
+            if (dx * dx + dz * dz < config.excludeRadius * config.excludeRadius) continue;
+        }
         result.push_back({x, y, z});
     }
     return result;

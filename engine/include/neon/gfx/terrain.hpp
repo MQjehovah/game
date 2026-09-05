@@ -92,6 +92,11 @@ struct VegetationConfig {
     float maxSlope = 0.30f;      // slope (1 - normal.y) plants tolerate
     float size = 1.0f;
     float impostorDistance = 60.0f;
+    // A cleared area around a center (XZ): vegetation is NOT scattered inside
+    // this radius so gameplay zones (village, roads) stay plant-free. A
+    // negative radius disables the exclusion (default).
+    math::Vec2 excludeCenter{0.0f, 0.0f};
+    float excludeRadius = -1.0f;
 };
 
 // World-space positions (x, ground Y, z) for vegetation that passes the

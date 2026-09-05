@@ -1269,6 +1269,15 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                      if (const core::Json* n = data.Get("vegCount")) t.vegCount = static_cast<uint32_t>(n->GetNumber());
                      if (const core::Json* n = data.Get("vegSeed")) t.vegSeed = static_cast<uint32_t>(n->GetNumber());
                      if (const core::Json* n = data.Get("vegSize")) t.vegSize = static_cast<float>(n->GetNumber());
+                     if (const core::Json* n = data.Get("vegExcludeRadius"))
+                         t.vegExcludeRadius = static_cast<float>(n->GetNumber(-1.0));
+                     if (const core::Json* ec = data.Get("vegExcludeCenter")) {
+                         if (ec->IsArray() && ec->Size() >= 3) {
+                             t.vegExcludeCenter = {static_cast<float>(ec->At(0)->GetNumber()),
+                                                   static_cast<float>(ec->At(1)->GetNumber()),
+                                                   static_cast<float>(ec->At(2)->GetNumber())};
+                         }
+                     }
                      if (const core::Json* n = data.Get("vegImpostorDistance")) t.vegImpostorDistance = static_cast<float>(n->GetNumber());
                      if (const core::Json* n = data.Get("vegMinHeight")) t.vegMinHeight = static_cast<float>(n->GetNumber());
                      if (const core::Json* n = data.Get("vegMaxHeight")) t.vegMaxHeight = static_cast<float>(n->GetNumber());
@@ -1668,6 +1677,13 @@ static core::Json SerializeEntityComponents(ecs::World& world, ecs::Entity e) {
         te.object_["vegMinHeight"] = MakeNumber(t->vegMinHeight);
         te.object_["vegMaxHeight"] = MakeNumber(t->vegMaxHeight);
         te.object_["vegMaxSlope"] = MakeNumber(t->vegMaxSlope);
+        if (t->vegExcludeRadius >= 0.0f) te.object_["vegExcludeRadius"] = MakeNumber(t->vegExcludeRadius);
+        if (t->vegExcludeRadius >= 0.0f) {
+            core::Json c = MakeArray();
+            c.array_ = {MakeNumber(t->vegExcludeCenter.x), MakeNumber(t->vegExcludeCenter.y),
+                        MakeNumber(t->vegExcludeCenter.z)};
+            te.object_["vegExcludeCenter"] = std::move(c);
+        }
         comps.object_["terrain"] = std::move(te);
     }
     if (const SceneTilemap* t = world.Get<SceneTilemap>(e)) {

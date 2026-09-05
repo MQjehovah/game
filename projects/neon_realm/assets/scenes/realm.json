@@ -2429,7 +2429,9 @@
           "vegMaxSlope": 0.5,
           "vegMinHeight": -1,
           "vegSeed": 7,
-          "vegSize": 0.9
+          "vegSize": 0.9,
+          "vegExcludeRadius": 8,
+          "vegExcludeCenter": [0, 0, 0]
         },
         "transform": {
           "pos": [0,0,0],

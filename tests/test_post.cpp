@@ -4,6 +4,7 @@
 
 #include "neon/neon.hpp"
 #include "neon/gfx/skybox.hpp"
+#include "neon/gfx/scene_props.hpp"
 #include "helpers.hpp"
 #include "test_backend.hpp"
 

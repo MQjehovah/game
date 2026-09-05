@@ -600,6 +600,10 @@ struct SceneTerrain {
     float vegMinHeight = 0.0f;  // world Y floor for plantable ground
     float vegMaxHeight = 3.0f;  // world Y ceiling
     float vegMaxSlope = 0.30f;  // slope (1 - normal.y) plants tolerate
+    // G2-3 exclusion: a cleared radius (XZ) around vegExcludeCenter where no
+    // vegetation spawns — keeps gameplay zones (village, roads) plant-free.
+    float vegExcludeRadius = -1.0f;
+    math::Vec3 vegExcludeCenter{0.0f, 0.0f, 0.0f};
 };
 // 2D tilemap (P1-1): cols x rows of texture paths ("" = empty cell), each
 // cell rendered as a `cellSize` design-unit quad at the entity's position.
