@@ -6,10 +6,11 @@
 
 - 主菜单：开始任务、设置（鼠标灵敏度、音乐、音效）、持久化到 `save.json`
 - 三个关卡：`Perimeter Breach` -> `Sector Hold` -> `Command Core`
-- 武器系统：步枪 / 霰弹枪 / 狙击枪，弹药、换弹、散布、射速、伤害均由 `assets/data/weapons.json` 驱动
-- 敌人系统：无人机 / 炮台 / 重型单位，属性由 `assets/data/enemies.json` 驱动
-- 波次导演：`assets/data/levels.json` 定义每关掩体、敌人生成节奏
+- 武器系统：突击步枪 / 战术 SMG / 霰弹枪 / 狙击枪，弹药、换弹、散布、射速、伤害均由 `assets/data/weapons.json` 驱动（第一人称模型由脚本程序化生成的 OBJ 提供）
+- 敌人系统：无人机 / 炮台 / 重型单位 / 自爆 Sapper / 精英 Juggernaut，属性由 `assets/data/enemies.json` 驱动
+- 波次导演：`assets/data/levels.json` 定义每关掩体、敌人生成节奏（最终关有 Boss 波）
 - 拾取物：敌人概率掉落血包 / 弹药
+- 打击感：爆头判定 ×2 伤害、命中伤害飘字、命中/受击反馈音、连杀 COMBO 倍率、击杀粒子/浮字
 - 暂停、重开、任务失败、通关、主菜单返回
 - 最高分和设置持久化
 

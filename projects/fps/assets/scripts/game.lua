@@ -39,6 +39,9 @@ local recoil = 0
 local hitImpact = 0
 local lastHitPoint = nil
 local shakeT = 0
+local combo = 0
+local comboTimer = 0
+local waveFlash = 0
 
 local enemies = {}
 local enemyKeys = {}
@@ -270,6 +273,7 @@ end
 local function hitscan(origin, dir, range, damage)
   local wallDist = wall_distance(origin, dir, range)
   local bestEnt, bestT = nil, wallDist
+  local headshot = false
   for _, t in ipairs(enemies) do
     if t.alive then
       local p = GetPosition(t.e)
@@ -284,6 +288,7 @@ local function hitscan(origin, dir, range, damage)
           local dist = math.sqrt(ddx * ddx + ddy * ddy + ddz * ddz)
           if dist <= 1.2 then
             bestEnt, bestT = t.e, along
+            headshot = cy > p.y + (t.def.scale or 1) * 0.22
           end
         end
       end
@@ -297,10 +302,13 @@ local function hitscan(origin, dir, range, damage)
   }
   if bestEnt ~= nil then
     local hp = GetHealth(bestEnt)
-    if hp ~= nil then SetHealth(bestEnt, hp - damage) end
+    local dmg = damage * (headshot and 2.0 or 1.0)
+    if hp ~= nil then SetHealth(bestEnt, hp - dmg) end
     hitImpact = 0.09
     lastHitPoint = point
-    emit_burst(point, 7, 7, 1, 0.72, 0.28)
+    emit_burst(point, headshot and 10 or 7, 7, headshot and 1 or 1, headshot and 0.8 or 0.72, headshot and 0.3 or 0.28)
+    PlaySfx("hit")
+    SpawnFloatText(point.x, point.y + 0.2, point.z, "-" .. math.floor(dmg), false, 0.7)
   elseif wallDist < range then
     local wallPoint = {
       x = origin.x + dir.x * wallDist,
@@ -397,6 +405,7 @@ local function spawn_pickup(kind, pos)
 end
 
 local function spawn_wave(wave)
+  waveFlash = 1.8
   local spawns = wave.spawns or {}
   local radius = (levelCfg.arenaRadius or 24) * 0.7
   for _, s in ipairs(spawns) do
@@ -671,6 +680,31 @@ local function enemy_hitscan(origin, dir, range, damage)
   end
 end
 
+local function suicide_boom(t)
+  local dp = GetPosition(t.e) or { x = t.home.x, y = t.home.y, z = t.home.z }
+  EmitParticles({
+    pos = dp, count = 32, speedMin = 2, speedMax = 11,
+    lifeMin = 0.12, lifeMax = 0.42, sizeStart = 0.22, sizeEnd = 0.02,
+    color = { r = 1, g = 0.62, b = 0.08, a = 1 },
+    colorEnd = { r = 1, g = 0.1, b = 0.03, a = 0 },
+    gravity = -2, additive = true,
+  })
+  PlaySfx("explosion")
+  shakeT = math.max(shakeT, 0.2)
+  local pp = GetPosition(player)
+  if pp ~= nil and dist2d(dp.x, dp.z, pp.x, pp.z) < 5.0 then
+    SetHealth(player, math.max(0, (GetHealth(player) or MAX_HP) - (t.def.damage or 30)))
+  end
+  t.alive = false
+  combo = combo + 1
+  comboTimer = 3.0
+  local gain = math.floor((t.def.score or 300) * (1 + 0.12 * (combo - 1)))
+  kills = kills + 1
+  score = score + gain
+  SpawnFloatText(dp.x, dp.y + 0.8, dp.z, "+" .. tostring(gain), false, 0.8)
+  Despawn(t.e)
+end
+
 local function update_enemies(dt)
   local pp = GetPosition(player)
   for _, t in ipairs(enemies) do
@@ -678,31 +712,37 @@ local function update_enemies(dt)
       local hp = GetHealth(t.e)
       if hp ~= nil and hp <= 0 then
         t.alive = false
+        combo = combo + 1
+        comboTimer = 3.0
+        local gain = math.floor((t.def.score or 100) * (1 + 0.12 * (combo - 1)))
         kills = kills + 1
-        score = score + (t.def.score or 100)
+        score = score + gain
         hitMarker = 0.12
         shakeT = math.max(shakeT, 0.08)
         local dp = GetPosition(t.e) or { x = t.home.x, y = t.home.y, z = t.home.z }
+        local isBoss = t.def.kind == "boss"
         EmitParticles({
           pos = dp,
-          count = 18,
+          count = isBoss and 42 or 18,
           speedMin = 4,
           speedMax = 9,
           lifeMin = 0.20,
           lifeMax = 0.50,
-          sizeStart = 0.20,
+          sizeStart = isBoss and 0.30 or 0.20,
           sizeEnd = 0.02,
-          color = { r = 1, g = 0.52, b = 0.2, a = 1 },
+          color = isBoss and { r = 0.85, g = 0.3, b = 0.95, a = 1 } or { r = 1, g = 0.52, b = 0.2, a = 1 },
           colorEnd = { r = 1, g = 0.1, b = 0.04, a = 0 },
           gravity = -7,
           additive = true,
         })
-        SpawnFloatText(dp.x, dp.y + 0.8, dp.z, "+" .. tostring(t.def.score or 100), false, 0.8)
+        SpawnFloatText(dp.x, dp.y + 0.8, dp.z, "+" .. tostring(gain), false, 0.8)
         PlaySfx("explosion")
-        if math.random() < 0.22 then
-          spawn_pickup("health", { x = t.home.x, y = 1.2, z = t.home.z })
-        elseif math.random() < 0.30 then
-          spawn_pickup("ammo", { x = t.home.x, y = 1.2, z = t.home.z })
+        if not isBoss then
+          if math.random() < 0.22 then
+            spawn_pickup("health", { x = t.home.x, y = 1.2, z = t.home.z })
+          elseif math.random() < 0.30 then
+            spawn_pickup("ammo", { x = t.home.x, y = 1.2, z = t.home.z })
+          end
         end
         Despawn(t.e)
       else
@@ -722,7 +762,11 @@ local function update_enemies(dt)
           p.y = t.home.y + math.sin(clock * 2.0 + t.phase) * 0.10
           SetPosition(t.e, p)
           t.attackCd = math.max(0, t.attackCd - dt)
-          if d < (t.def.range or 18) and t.attackCd <= 0 then
+          if t.def.kind == "suicide" then
+            if t.attackCd <= 0 and d < 2.6 then
+              suicide_boom(t)
+            end
+          elseif d < (t.def.range or 18) and t.attackCd <= 0 then
             t.attackCd = t.def.fireRate or 1.8
             local dir = { x = (pp.x - p.x) / d, y = 0, z = (pp.z - p.z) / d }
             local origin = { x = p.x, y = p.y + 0.8, z = p.z }
@@ -798,6 +842,9 @@ end
 function on_update(e, dt)
   clock = clock + dt
   stateTimer = math.max(0, stateTimer - dt)
+  comboTimer = math.max(0, comboTimer - dt)
+  if comboTimer <= 0 then combo = 0 end
+  waveFlash = math.max(0, waveFlash - dt)
 
   if state == "playing" then
     update_player(dt)
@@ -930,6 +977,32 @@ function on_render()
     if hp < 35 then
       DrawRect(0, 0, 1280, 720, 0.8, 0.05, 0.05, 0.12 + math.sin(clock * 8) * 0.04)
     end
+
+    -- Kill-streak combo banner with decay gauge.
+    if combo >= 2 then
+      DrawText("COMBO x" .. combo, 640, 176, 30, 1, 0.85, 0.25, 1, true, true)
+      local cw = 130 * (comboTimer / 3.0)
+      DrawRect(640 - cw / 2, 204, cw, 5, 1, 0.3, 0.1, 0.65)
+    end
+
+    -- Boss overhead presence bar (top-center, wide).
+    for _, t in ipairs(enemies) do
+      if t.alive and t.def.kind == "boss" then
+        local hpB = GetHealth(t.e) or 0
+        local bw = 420
+        DrawRect(640 - bw / 2 - 2, 44, bw + 4, 16, 0.03, 0.04, 0.08, 0.85)
+        if t.def.hp ~= nil and t.def.hp > 0 then
+          DrawRect(640 - bw / 2, 46, bw * clamp(hpB / t.def.hp, 0, 1), 12, 0.85, 0.2, 0.85, 1)
+        end
+        DrawText(t.def.name or "BOSS", 640, 20, 20, 0.9, 0.4, 0.95, 1, true, true)
+      end
+    end
+  end
+
+  if waveFlash > 0 then
+    local a = math.min(1, waveFlash / 0.4)
+    DrawRect(420, 128, 440, 76, 0.04, 0.07, 0.12, 0.9 * a)
+    DrawText("WAVE " .. tostring(waveIndex), 640, 148, 42, 0.5, 0.0, 0.0, a, true, true)
   end
 
   if stateTimer > 0 then

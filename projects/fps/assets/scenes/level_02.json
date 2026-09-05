@@ -1,54 +1,239 @@
 {
   "entities": [
     {
-      "name": "Ground",
-      "id": 1,
       "components": {
-        "transform": { "pos": [0, -0.5, 0], "rot": [0, 0, 0, 1], "scale": [64, 1, 64] },
-        "mesh": { "meshKey": "cube", "colorHex": "#B8C7D6", "albedoTex": "assets/textures/ground_tech.png", "uvRepeat": 20, "roughness": 0.95, "castShadow": false, "receiveShadow": false },
-        "rigidbody": { "shape": "box", "halfExtents": [32, 0.5, 32], "dynamic": false }
-      }
-    },
-    {
-      "name": "Directional Light",
-      "id": 2,
-      "components": {
-        "transform": { "pos": [0, 0, 0], "rot": [0, 0, 0, 1], "scale": [1, 1, 1] },
-        "light": {
-          "type": "directional",
-          "color": [1, 0.95, 0.88, 1],
-          "intensity": 2.2,
-          "sunDir": [-0.45, -0.9, -0.35],
-          "radius": 10
+        "mesh": {
+          "castShadow": false,
+          "material": {
+            "albedoTex": "assets/textures/ground_checker.png",
+            "ao": 1,
+            "colorHex": "#B8C7D6",
+            "emissiveIntensity": 1,
+            "metallic": 0,
+            "roughness": 0.949999988079071,
+            "uvRepeat": 10
+          },
+          "meshKey": "cube"
         },
-        "type": { "value": "Light3D" }
-      }
-    },
-    {
-      "name": "Main Camera",
-      "id": 3,
-      "components": {
-        "transform": { "pos": [0, 1.8, 8], "rot": [0, 0, 0, 1], "scale": [1, 1, 1] },
-        "camera": { "fov": 65, "orthoSize": 10 },
-        "type": { "value": "Camera3D" }
-      }
-    },
-    {
-      "name": "Player",
-      "id": 4,
-      "components": {
-        "transform": { "pos": [0, 0, 0], "rot": [0, 0, 0, 1], "scale": [1, 1, 1] },
-        "health": { "hp": 100, "maxHp": 100 },
-        "script": {
-          "backend": "lua",
-          "path": "assets/scripts/game.lua",
-          "vars": { "level": 2, "next_scene": "assets/scenes/level_03.json" }
+        "rigidbody": {
+          "damping": 0,
+          "friction": 0.4000000059604645,
+          "gravityScale": 1,
+          "halfExtents": [
+            32,
+            0.5,
+            32
+          ],
+          "layer": 1,
+          "mask": 1,
+          "mass": 0,
+          "radius": 0.5,
+          "restitution": 0,
+          "shape": "box"
+        },
+        "transform": {
+          "pos": [
+            0,
+            -0.5,
+            0
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            64,
+            1,
+            64
+          ]
         }
-      }
+      },
+      "id": 1,
+      "name": "Ground"
+    },
+    {
+      "components": {
+        "light": {
+          "ambientStrength": 0.25,
+          "color": [
+            1,
+            0.949999988079071,
+            0.8799999952316284,
+            1
+          ],
+          "intensity": 2.200000047683716,
+          "radius": 10,
+          "sunDir": [
+            -0.44999998807907104,
+            -0.8999999761581421,
+            -0.3499999940395355
+          ],
+          "type": "directional"
+        },
+        "transform": {
+          "pos": [
+            0,
+            0,
+            0
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "type": {
+          "value": "Light3D"
+        }
+      },
+      "id": 2,
+      "name": "Directional Light"
+    },
+    {
+      "components": {
+        "camera": {
+          "fov": 65,
+          "orthoSize": 10
+        },
+        "transform": {
+          "pos": [
+            0,
+            1.7999999523162842,
+            8
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "type": {
+          "value": "Camera3D"
+        }
+      },
+      "id": 3,
+      "name": "Main Camera"
+    },
+    {
+      "components": {
+        "health": {
+          "hp": 100,
+          "maxHp": 100
+        },
+        "scripts": {
+          "items": [
+            {
+              "backend": "lua",
+              "path": "assets/scripts/game.lua",
+              "vars": {
+                "level": 2,
+                "next_scene": "assets/scenes/level_03.json"
+              }
+            }
+          ]
+        },
+        "transform": {
+          "pos": [
+            0,
+            0,
+            0
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        }
+      },
+      "id": 4,
+      "name": "Player"
     }
   ],
   "environment": {
-    "ambientColor": [0.45, 0.55, 0.72, 1],
-    "ambientStrength": 0.60
+    "ambientColor": [
+      0.44999998807907104,
+      0.550000011920929,
+      0.7200000286102295,
+      1
+    ],
+    "ambientStrength": 0.6000000238418579,
+    "fogColor": [
+      0.44999998807907104,
+      0.550000011920929,
+      0.699999988079071,
+      1
+    ],
+    "fogFar": 220,
+    "fogNear": 60,
+    "skyHorizon": [
+      0.550000011920929,
+      0.6499999761581421,
+      0.800000011920929,
+      1
+    ],
+    "skyTop": [
+      0.2800000011920929,
+      0.3799999952316284,
+      0.5799999833106995,
+      1
+    ]
+  },
+  "renderstack": {
+    "autoExposure": false,
+    "autoExposureKey": 0.18000000715255737,
+    "bloom": true,
+    "bloomStrength": 0.3499999940395355,
+    "bloomThreshold": 1,
+    "exposure": 1,
+    "fog": false,
+    "fogColor": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "fogDensity": 0.019999999552965164,
+    "grade": false,
+    "gradeContrast": 0,
+    "gradeGain": 1,
+    "gradeGamma": 1,
+    "gradeLift": 0,
+    "gradeSaturation": 1,
+    "gradeTint": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "ssao": false,
+    "ssaoIntensity": 1,
+    "ssr": false,
+    "ssrStrength": 1,
+    "tonemap": true,
+    "vignette": false,
+    "vignetteIntensity": 0.5,
+    "vignetteRadius": 0.6000000238418579,
+    "volumetric": false,
+    "volumetricStrength": 1
   }
 }

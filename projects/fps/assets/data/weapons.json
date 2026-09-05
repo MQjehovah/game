@@ -8,7 +8,7 @@
     "fireRate": 0.12,
     "mag": 30,
     "reserve": 180,
-    "spread": 0.010,
+    "spread": 0.01,
     "projectileSpeed": 70,
     "range": 140,
     "pellets": 1,
@@ -23,7 +23,7 @@
     "fireRate": 0.7,
     "mag": 6,
     "reserve": 48,
-    "spread": 0.050,
+    "spread": 0.05,
     "projectileSpeed": 55,
     "range": 45,
     "pellets": 8,
@@ -41,6 +41,20 @@
     "spread": 0.001,
     "projectileSpeed": 130,
     "range": 240,
+    "pellets": 1,
+    "sfx": "shoot"
+  },
+  {
+    "id": "smg",
+    "name": "Tactical SMG",
+    "prefab": "weapon_smg",
+    "auto": true,
+    "damage": 13,
+    "fireRate": 0.08,
+    "mag": 40,
+    "reserve": 240,
+    "spread": 0.02,
+    "range": 110,
     "pellets": 1,
     "sfx": "shoot"
   }

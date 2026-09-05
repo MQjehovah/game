@@ -4,20 +4,20 @@
       "components": {
         "mesh": {
           "castShadow": false,
-          "receiveShadow": false,
           "material": {
-            "albedoTex": "assets/textures/ground_tech.png",
+            "albedoTex": "assets/textures/ground_checker.png",
             "ao": 1,
             "colorHex": "#B8C7D6",
             "emissiveIntensity": 1,
             "metallic": 0,
             "roughness": 0.949999988079071,
-            "uvRepeat": 20
+            "uvRepeat": 40
           },
           "meshKey": "cube"
         },
         "rigidbody": {
           "damping": 0,
+          "dynamic": true,
           "friction": 0.4000000059604645,
           "gravityScale": 1,
           "halfExtents": [30,0.5,30],
@@ -106,7 +106,40 @@
     }
   ],
   "environment": {
-    "ambientColor": [0.45, 0.55, 0.72, 1],
-    "ambientStrength": 0.55
+    "ambientColor": [0.44999998807907104,0.550000011920929,0.7200000286102295,1],
+    "ambientStrength": 0.550000011920929,
+    "fogColor": [0.44999998807907104,0.550000011920929,0.699999988079071,1],
+    "fogFar": 220,
+    "fogNear": 60,
+    "skyHorizon": [0.550000011920929,0.6499999761581421,0.800000011920929,1],
+    "skyTop": [0.2800000011920929,0.3799999952316284,0.5799999833106995,1]
+  },
+  "renderstack": {
+    "autoExposure": false,
+    "autoExposureKey": 0.18000000715255737,
+    "bloom": true,
+    "bloomStrength": 0.3499999940395355,
+    "bloomThreshold": 1,
+    "exposure": 1,
+    "fog": false,
+    "fogColor": [1,1,1,1],
+    "fogDensity": 0.019999999552965164,
+    "grade": false,
+    "gradeContrast": 0,
+    "gradeGain": 1,
+    "gradeGamma": 1,
+    "gradeLift": 0,
+    "gradeSaturation": 1,
+    "gradeTint": [1,1,1,1],
+    "ssao": false,
+    "ssaoIntensity": 1,
+    "ssr": false,
+    "ssrStrength": 1,
+    "tonemap": true,
+    "vignette": false,
+    "vignetteIntensity": 0.5,
+    "vignetteRadius": 0.6000000238418579,
+    "volumetric": false,
+    "volumetricStrength": 1
   }
 }
