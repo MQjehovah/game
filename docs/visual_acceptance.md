@@ -71,11 +71,16 @@ DamagedHelmet 自带动法线贴图（`Default_Normal.jpg`）。对比 `castShad
 这种"GLB 外部相对 image URI"（源码注释即提到 Kenney），已用 `KenneyColormapExternalImage`
 测试证明材质 albedo 有效。
 
-**预览验收**（你跑一张截图，决定每个类别用哪个模型 / 多大 / 摆哪）：
+**预览验收**（看 Kenney 模型真实渲染效果 + 选型）。两个方式：
 ```bat
-.\build\release\neon_game.exe --scene projects\neon_realm\assets\scenes\kenney_preview.json --scripts projects\neon_realm --screenshot preview.png 10
+:: A) 编辑器打开(推荐, 自由 orbit 查看每个模型)
+.\build\release\neon_editor.exe --project projects\neon_realm
+::    在编辑器里加载 assets/scenes/kenney_preview.json, 右键旋转/滚轮缩放看清每个候选
+:: B) 单帧截图(固定视角)
+.\build\msvc\release\neon_game.exe --scene projects\neon_realm\assets\scenes\kenney_preview.json --scripts projects\neon_realm --screenshot preview.png 10
 ```
-预览场景横向摆 9 个候选（tree / tree-high / rock-large / rock-small / lantern / cart / stall /
-windmill / wall / road / fountain），相机正对。截图后告诉我：树用哪个、石用哪个、路要多宽、
+`kenney_preview.json` 横向摆 9 类候选(tree/tree-high/rock-large/rock-small/lantern/cart/stall/
+windmill/wall/road/fountain-round)。截图/编辑后告诉我：树用哪个、石用哪个、路要多宽、
 墙/马车/摊/风车/喷泉各留哪个——我据此批量重摆 `realm.json` 村庄。
+注意: 松�逡单机场景模式必须先构建 MSVC 版 neon_game(build-msvc\Release), build\release\ 是旧 MinGW 车。
 
