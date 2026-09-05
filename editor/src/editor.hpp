@@ -120,6 +120,8 @@ struct SceneEntity {
     // Light for a new/empty scene so there is always an observer + a light.
     bool hasLight = false;
     scene::SceneLight light;
+    bool hasEnvironment = false;
+    scene::SceneEnvironment environment;
     std::string meshKey; // "terrain" | "helmet" | "cube" | "tree" | "obj:<path>" | "gltf:<path>"
     // P1-1 terrain editing: heightmap canvas for meshKey "terrain".
     std::vector<float> terrainHeights_;

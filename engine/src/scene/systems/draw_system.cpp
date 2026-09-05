@@ -819,10 +819,15 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
     {
         const scene::SceneLight* directional = nullptr;
         const scene::SceneLight* ambient = nullptr;
+        const scene::SceneEnvironment* environment = nullptr;
         world.ViewAll<scene::SceneLight>().ForEach(
             [&](ecs::Entity, const scene::SceneLight& l) {
                 if (l.type == "directional" && !directional) directional = &l;
                 else if (l.type == "ambient" && !ambient) ambient = &l;
+            });
+        world.ViewAll<scene::SceneEnvironment>().ForEach(
+            [&](ecs::Entity, const scene::SceneEnvironment& e) {
+                if (!environment) environment = &e;
             });
         // 自定义氛围（useAtmosphere）：showcase 场景在 scene JSON 里用
         // skyTop/skyHorizon 渐变 + fogColor/fogNear/fogFar 表达整场色调
@@ -834,8 +839,11 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
         // useAtmosphere 手动渐变。
         if (content_.assets) {
             const std::string skyPath =
-                directional && !directional->skyTexture.empty() ? directional->skyTexture
-                                                                : std::string();
+                environment && !environment->skyTexture.empty()
+                    ? environment->skyTexture
+                    : (directional && !directional->skyTexture.empty()
+                           ? directional->skyTexture
+                           : std::string());
             if (!skyPath.empty() && skyPath != skyTexPath_) {
                 skyTex_ = content_.assets->LoadTexture(content_.fullAssetPath(skyPath));
                 skyTexPath_ = skyPath;
@@ -854,17 +862,23 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
             }
         }
         if (!skyIblFromTex_) {
-            if (directional && directional->useAtmosphere) {
+            if (environment && environment->useAtmosphere) {
+                renderer.SetSky(environment->skyTop, environment->skyHorizon);
+            } else if (directional && directional->useAtmosphere) {
                 renderer.SetSky(directional->skyTop, directional->skyHorizon);
             } else {
                 renderer.SetSky({0.28f, 0.38f, 0.58f, 1.0f}, {0.55f, 0.65f, 0.8f, 1.0f});
             }
         }
         // 曝光：scene 显式设置时覆盖宿主默认（夜晚 >1 提亮，黄昏微调）。
-        if (directional && directional->useAtmosphere && directional->exposure >= 0.0f)
+        if (environment && environment->useAtmosphere && environment->exposure >= 0.0f)
+            renderer.SetExposure(environment->exposure);
+        else if (directional && directional->useAtmosphere && directional->exposure >= 0.0f)
             renderer.SetExposure(directional->exposure);
         if (cam.ortho) {
             renderer.SetFog({0.45f, 0.55f, 0.7f, 1.0f}, 1e9f, 1e10f);
+        } else if (environment && environment->useAtmosphere) {
+            renderer.SetFog(environment->fogColor, environment->fogNear, environment->fogFar);
         } else if (directional && directional->useAtmosphere) {
             renderer.SetFog(directional->fogColor, directional->fogNear, directional->fogFar);
         } else {
@@ -876,15 +890,20 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
                                  directional->color.b * directional->intensity,
                                  directional->color.a};
             renderer.SetDirectionalLight(directional->sunDir, sun,
-                                         directional->ambientStrength);
+                                         environment ? environment->ambientStrength
+                                                     : directional->ambientStrength);
             // A4: a useAtmosphere scene can opt into the procedural view-ray
             // skybox (sun/moon/clouds), aimed from the directional-light sun dir.
-            if (directional->useAtmosphere && directional->skybox)
+            if ((environment && environment->useAtmosphere && environment->skybox) ||
+                (directional && directional->useAtmosphere && directional->skybox))
                 renderer.EnableSkyBox(directional->sunDir, /*clouds=*/true);
         } else {
             renderer.SetDirectionalLight({-0.4f, -1.0f, -0.3f}, {0.8f, 0.8f, 0.8f}, 0.0f);
         }
-        if (ambient) renderer.SetAmbientLight(ambient->color, ambient->ambientStrength);
+        if (environment)
+            renderer.SetAmbientLight(environment->ambientColor, environment->ambientStrength);
+        else if (ambient)
+            renderer.SetAmbientLight(ambient->color, ambient->ambientStrength);
         // PointLight objects (Unity-style) drive the renderer's point lights, so
         // campfire/firefly glows authored in a scene show up in the standalone
         // player too (the editor viewport already fed them). Up to

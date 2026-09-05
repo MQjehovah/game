@@ -562,6 +562,23 @@ struct SceneLight {
         Field("fogFar", "雾终点", FieldType::Number, &SceneLight::fogFar, 220, 0, 1e5, 1),
         Field("exposure", "曝光", FieldType::Number, &SceneLight::exposure, -1, -1, 100, 0.05));
 };
+
+// Environment component: owns ambient light, atmosphere, skybox, fog and
+// exposure. Kept separate from Light so scene authors can change the world
+// mood without touching light objects (and vice versa).
+struct SceneEnvironment {
+    gfx::Color ambientColor{0.45f, 0.55f, 0.72f, 1.0f};
+    float ambientStrength = 0.25f;
+    std::string skyTexture;
+    bool useAtmosphere = false;
+    bool skybox = false;
+    gfx::Color skyTop{0.28f, 0.38f, 0.58f, 1.0f};
+    gfx::Color skyHorizon{0.55f, 0.65f, 0.80f, 1.0f};
+    gfx::Color fogColor{0.45f, 0.55f, 0.70f, 1.0f};
+    float fogNear = 60.0f;
+    float fogFar = 220.0f;
+    float exposure = -1.0f;
+};
 // 2D sort order (P2-3): sprites draw back-to-front by this value (lower first;
 // default 0 when the component is absent).
 struct SceneSortOrder {

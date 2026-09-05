@@ -109,6 +109,20 @@ void EditorApp::AddEntity(const std::string& meshKey) {
         SetSelection(static_cast<int>(entities_.size()) - 1);
         return;
     }
+    if (meshKey == "light:ambient") {
+        SceneEntity e;
+        e.name = "环境光" + std::to_string(counter++);
+        e.nodeType = "Light3D";
+        e.hasLight = true;
+        e.light.type = "ambient";
+        e.light.color = {0.55f, 0.62f, 0.78f, 1.0f};
+        e.light.ambientStrength = 0.55f;
+        e.pos = pos;
+        const size_t insertAt = entities_.size();
+        history_.Push(std::make_unique<AddEntityCommand>(&entities_, e, insertAt));
+        SetSelection(static_cast<int>(entities_.size()) - 1);
+        return;
+    }
     if (meshKey.rfind("prefab:", 0) == 0) {
         // Instantiate a project prefab (assets/prefabs/<name>.json): materialize its
         // component template into a new editable entity.
@@ -1052,6 +1066,36 @@ void EditorApp::LoadScene(const std::string& path) {
                     e.light.fogFar = static_cast<float>(v->GetNumber());
                 if (const core::Json* v = li->Get("exposure"))
                     e.light.exposure = static_cast<float>(v->GetNumber());
+                if (e.nodeType.empty()) e.nodeType = "Light3D";
+            }
+            if (const core::Json* en = comps->Get("environment")) {
+                e.hasEnvironment = true;
+                auto readCol4 = [](const core::Json* c, gfx::Color& out) {
+                    if (!c || !c->IsArray()) return;
+                    float vv[4] = {out.r, out.g, out.b, out.a};
+                    size_t n = 0;
+                    for (const core::Json& x : c->Items())
+                        if (n < 4) vv[n++] = static_cast<float>(x.GetNumber());
+                    out = {vv[0], vv[1], vv[2], vv[3]};
+                };
+                readCol4(en->Get("ambientColor"), e.environment.ambientColor);
+                if (const core::Json* v = en->Get("ambientStrength"))
+                    e.environment.ambientStrength = static_cast<float>(v->GetNumber());
+                if (const core::Json* v = en->Get("skyTexture"))
+                    e.environment.skyTexture = v->GetString();
+                if (const core::Json* v = en->Get("useAtmosphere"))
+                    e.environment.useAtmosphere = v->IsBool() && v->GetBool();
+                if (const core::Json* v = en->Get("skybox"))
+                    e.environment.skybox = v->IsBool() && v->GetBool();
+                readCol4(en->Get("skyTop"), e.environment.skyTop);
+                readCol4(en->Get("skyHorizon"), e.environment.skyHorizon);
+                readCol4(en->Get("fogColor"), e.environment.fogColor);
+                if (const core::Json* v = en->Get("fogNear"))
+                    e.environment.fogNear = static_cast<float>(v->GetNumber());
+                if (const core::Json* v = en->Get("fogFar"))
+                    e.environment.fogFar = static_cast<float>(v->GetNumber());
+                if (const core::Json* v = en->Get("exposure"))
+                    e.environment.exposure = static_cast<float>(v->GetNumber());
                 if (e.nodeType.empty()) e.nodeType = "Light3D";
             }
             if (const core::Json* so = comps->Get("sortOrder")) {

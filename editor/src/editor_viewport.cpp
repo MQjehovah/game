@@ -689,18 +689,20 @@ void EditorApp::ApplySceneEnvironment() {
     // scene's authored values (dusk/desert/snow/night showcase scenes).
     const scene::SceneLight* sl = nullptr;
     const scene::SceneLight* amb = nullptr;
+    const scene::SceneEnvironment* env = nullptr;
     for (const SceneEntity& se : entities_) {
         if (se.hasLight && se.light.type == "directional" && !sl) sl = &se.light;
         if (se.hasLight && se.light.type == "ambient" && !amb) amb = &se.light;
+        if (se.hasEnvironment && !env) env = &se.environment;
     }
     // 天空/IBL：HDRI 天空（skyTexture）优先——加载贴图当全屏背景 + 从照片
     // CPU 采样真实天顶/地平色喂 SetSky，让 edit 视图物体受光跟随照片天空
     // （play 的 DrawSystem 同逻辑；之前编辑预览始终假白天渐变）。仅无
     // skyTexture 时，useAtmosphere 手动渐变才作 IBL。缓存按路径避免每帧
     // 重解码大图；NormalizeAssetPath 映射 assetBase 相对路径。
-    const bool hasSkyTex = sl && !sl->skyTexture.empty();
+    const bool hasSkyTex = env && !env->skyTexture.empty();
     if (hasSkyTex) {
-        const std::string path = assets::NormalizeAssetPath(sl->skyTexture);
+        const std::string path = assets::NormalizeAssetPath(env->skyTexture);
         if (path != skyIblPath_) {
             skyIblPath_ = path;
             skyIblReady_ = false;
@@ -717,10 +719,20 @@ void EditorApp::ApplySceneEnvironment() {
                 skyIblReady_ = true;
             }
         }
-    } else if (sl && sl->useAtmosphere) {
-        renderer_.SetSky(sl->skyTop, sl->skyHorizon);
+    } else if (env && env->useAtmosphere) {
+        renderer_.SetSky(env->skyTop, env->skyHorizon);
         // A4: opt into the procedural view-ray skybox (sun/moon/clouds) aimed
         // from the scene's directional-light sun dir.
+        if (env->skybox && sl) {
+            renderer_.SetDirectionalLight(sl->sunDir,
+                                          {sl->color.r * sl->intensity,
+                                           sl->color.g * sl->intensity,
+                                           sl->color.b * sl->intensity, 1.0f},
+                                          env->ambientStrength);
+            renderer_.EnableSkyBox(sl->sunDir, /*clouds=*/true);
+        }
+    } else if (sl && sl->useAtmosphere) {
+        renderer_.SetSky(sl->skyTop, sl->skyHorizon);
         if (sl->skybox) {
             renderer_.SetDirectionalLight(sl->sunDir,
                                           {sl->color.r * sl->intensity,
@@ -739,6 +751,8 @@ void EditorApp::ApplySceneEnvironment() {
         // (bright/dim circle at the camera position). Disable it by pushing
         // the fog range far beyond any visible object.
         renderer_.SetFog({0.45f, 0.55f, 0.7f, 1.0f}, 1e9f, 1e10f);
+    } else if (env && env->useAtmosphere) {
+        renderer_.SetFog(env->fogColor, env->fogNear, env->fogFar);
     } else if (sl && sl->useAtmosphere) {
         renderer_.SetFog(sl->fogColor, sl->fogNear, sl->fogFar);
     } else {
@@ -747,7 +761,9 @@ void EditorApp::ApplySceneEnvironment() {
     renderer_.DrawSky();
     // Scene-authored exposure (showcase night/dawn scenes): authoritative when
     // the directional light sets it, otherwise keep the editor default.
-    if (sl && sl->useAtmosphere && sl->exposure >= 0.0f)
+    if (env && env->useAtmosphere && env->exposure >= 0.0f)
+        renderer_.SetExposure(env->exposure);
+    else if (sl && sl->useAtmosphere && sl->exposure >= 0.0f)
         renderer_.SetExposure(sl->exposure);
     // The scene's DirectionalLight object drives the world light (Unity-style).
     if (sl) {
@@ -763,7 +779,10 @@ void EditorApp::ApplySceneEnvironment() {
     // term (color * strength) and turns off the sky-IBL fill so the object is
     // actually visible. Without one, keep the bright day-sky IBL ambient + a
     // neutral fill for the default look.
-    if (amb) {
+    if (env) {
+        renderer_.SetAmbientLight(env->ambientColor, env->ambientStrength);
+        renderer_.SetIblStrength(0.0f);
+    } else if (amb) {
         renderer_.SetAmbientLight(amb->color, amb->ambientStrength);
         renderer_.SetIblStrength(0.0f);
     } else {

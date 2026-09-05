@@ -157,36 +157,6 @@ void InspectorPanel::Draw(EditorContext& ctx) {
             ImGui::TextDisabled("将相机实体选中并设为视图: 使用右上角相机菜单的\"跟随选中\"");
             ImGui::Separator();
         }
-        if (e.hasLight) {
-            if (ImGui::CollapsingHeader("光源##light", ImGuiTreeNodeFlags_DefaultOpen)) {
-                static const char* kLt[] = {"方向光", "点光源", "环境光"};
-                const int typeIdx = e.light.type == "point" ? 1 : (e.light.type == "ambient" ? 2 : 0);
-                int sel = typeIdx;
-                if (ImGui::Combo("类型##lt", &sel, kLt, 3)) {
-                    e.light.type = sel == 1 ? "point" : (sel == 2 ? "ambient" : "directional");
-                    sceneDirty = true;
-                }
-                if (e.light.type == "directional") {
-                    if (ImGui::DragFloat3("方向##lt", &e.light.sunDir.x, 0.05f)) sceneDirty = true;
-                    if (ImGui::DragFloat("强度##lt", &e.light.intensity, 0.05f, 0.0f, 10.0f))
-                        sceneDirty = true;
-                } else if (e.light.type == "point") {
-                    if (ImGui::DragFloat("半径##lt", &e.light.radius, 0.1f, 0.1f, 500.0f))
-                        sceneDirty = true;
-                    if (ImGui::DragFloat("强度##lt", &e.light.intensity, 0.05f, 0.0f, 10.0f))
-                        sceneDirty = true;
-                } else { // ambient
-                    if (ImGui::DragFloat("强度##lt", &e.light.ambientStrength, 0.01f, 0.0f, 2.0f))
-                        sceneDirty = true;
-                }
-                float col[4] = {e.light.color.r, e.light.color.g, e.light.color.b, e.light.color.a};
-                if (ImGui::ColorEdit4("颜色##lt", col)) {
-                    e.light.color = {col[0], col[1], col[2], col[3]};
-                    sceneDirty = true;
-                }
-                ImGui::Separator();
-            }
-        }
         if (e.nodeType == "Sprite" && e.spriteTex.empty()) {
             ImGui::TextColored(ImVec4(0.8f, 0.85f, 1.0f, 1.0f),
                                "精灵类型: 在下方\"精灵\"区块设置贴图");
@@ -248,11 +218,15 @@ void InspectorPanel::Draw(EditorContext& ctx) {
                 &entities, selected, oldPos, e.rot, e.scale, e.pos, e.rot, e.scale,
                 EditTransformCommand::kPos));
         }
-        math::Vec3 euler = e.rot.ToMat4().TransformDir({0, 0, -1});
-        float rotDeg = std::atan2(euler.x, -euler.z) * math::kRadToDeg;
+        math::Vec3 eulerRad = e.rot.ToEulerRad();
+        math::Vec3 eulerDeg{eulerRad.x * math::kRadToDeg,
+                            eulerRad.y * math::kRadToDeg,
+                            eulerRad.z * math::kRadToDeg};
         const math::Quat oldRot = e.rot;
-        if (ImGui::DragFloat("旋转 Y", &rotDeg, 0.5f, -180.0f, 180.0f)) {
-            e.rot = math::Quat::FromEuler(0, rotDeg * math::kDegToRad, 0);
+        if (ImGui::DragFloat3("旋转 (Y/P/R)", &eulerDeg.x, 0.5f, -180.0f, 180.0f)) {
+            e.rot = math::Quat::FromEuler(eulerDeg.x * math::kDegToRad,
+                                          eulerDeg.y * math::kDegToRad,
+                                          eulerDeg.z * math::kDegToRad);
             history.Push(std::make_unique<EditTransformCommand>(
                 &entities, selected, e.pos, oldRot, e.scale, e.pos, e.rot, e.scale,
                 EditTransformCommand::kRot));
@@ -268,6 +242,112 @@ void InspectorPanel::Draw(EditorContext& ctx) {
             history.Push(std::make_unique<EditPropertyCommand<float>>(
                 &entities, selected, ApplyZOrderProp, oldZ, e.zOrder));
         }
+        }
+        if (e.hasLight) {
+            if (ImGui::CollapsingHeader("光源##light", ImGuiTreeNodeFlags_DefaultOpen)) {
+                static const char* kLt[] = {"方向光", "点光源"};
+                const int typeIdx = e.light.type == "point" ? 1 : 0;
+                int sel = typeIdx;
+                if (ImGui::Combo("类型##lt", &sel, kLt, 2)) {
+                    e.light.type = sel == 1 ? "point" : "directional";
+                    sceneDirty = true;
+                }
+                if (e.light.type == "directional") {
+                    if (ImGui::DragFloat3("方向##lt", &e.light.sunDir.x, 0.05f)) sceneDirty = true;
+                    if (ImGui::DragFloat("强度##lt", &e.light.intensity, 0.05f, 0.0f, 10.0f))
+                        sceneDirty = true;
+                } else if (e.light.type == "point") {
+                    if (ImGui::DragFloat("半径##lt", &e.light.radius, 0.1f, 0.1f, 500.0f))
+                        sceneDirty = true;
+                    if (ImGui::DragFloat("强度##lt", &e.light.intensity, 0.05f, 0.0f, 10.0f))
+                        sceneDirty = true;
+                }
+                float col[4] = {e.light.color.r, e.light.color.g, e.light.color.b, e.light.color.a};
+                if (ImGui::ColorEdit4("颜色##lt", col)) {
+                    e.light.color = {col[0], col[1], col[2], col[3]};
+                    sceneDirty = true;
+                }
+                ImGui::Separator();
+            }
+        }
+        if (e.hasEnvironment) {
+            if (ImGui::CollapsingHeader("环境 / 天空盒##environment", ImGuiTreeNodeFlags_DefaultOpen)) {
+                float amb[4] = {e.environment.ambientColor.r, e.environment.ambientColor.g,
+                                e.environment.ambientColor.b, e.environment.ambientColor.a};
+                if (ImGui::ColorEdit4("环境光颜色", amb)) {
+                    e.environment.ambientColor = {amb[0], amb[1], amb[2], amb[3]};
+                    sceneDirty = true;
+                }
+                if (ImGui::DragFloat("环境光强度", &e.environment.ambientStrength, 0.01f, 0.0f, 2.0f))
+                    sceneDirty = true;
+                bool useAtmo = e.environment.useAtmosphere;
+                if (ImGui::Checkbox("使用自定义氛围", &useAtmo)) {
+                    e.environment.useAtmosphere = useAtmo;
+                    sceneDirty = true;
+                }
+                if (e.environment.useAtmosphere) {
+                    bool skybox = e.environment.skybox;
+                    if (ImGui::Checkbox("程序化天空盒", &skybox)) {
+                        e.environment.skybox = skybox;
+                        sceneDirty = true;
+                    }
+                    float top[4] = {e.environment.skyTop.r, e.environment.skyTop.g, e.environment.skyTop.b, e.environment.skyTop.a};
+                    if (ImGui::ColorEdit4("天空顶部", top)) {
+                        e.environment.skyTop = {top[0], top[1], top[2], top[3]};
+                        sceneDirty = true;
+                    }
+                    float hor[4] = {e.environment.skyHorizon.r, e.environment.skyHorizon.g, e.environment.skyHorizon.b, e.environment.skyHorizon.a};
+                    if (ImGui::ColorEdit4("天空地平线", hor)) {
+                        e.environment.skyHorizon = {hor[0], hor[1], hor[2], hor[3]};
+                        sceneDirty = true;
+                    }
+                    float fog[4] = {e.environment.fogColor.r, e.environment.fogColor.g, e.environment.fogColor.b, e.environment.fogColor.a};
+                    if (ImGui::ColorEdit4("雾颜色", fog)) {
+                        e.environment.fogColor = {fog[0], fog[1], fog[2], fog[3]};
+                        sceneDirty = true;
+                    }
+                    if (ImGui::DragFloat("雾近端", &e.environment.fogNear, 0.1f, 0.0f, 2000.0f)) sceneDirty = true;
+                    if (ImGui::DragFloat("雾远端", &e.environment.fogFar, 0.1f, 0.0f, 5000.0f)) sceneDirty = true;
+                    if (ImGui::DragFloat("曝光", &e.environment.exposure, 0.01f, 0.0f, 5.0f)) sceneDirty = true;
+                }
+                gfx::Texture skyTex;
+                if (!e.environment.skyTexture.empty())
+                    skyTex = assetMgr.LoadTexture(e.environment.skyTexture);
+                ImTextureID tid = skyTex.Valid()
+                                      ? gfx::ImGuiNeon_RegisterTexture(skyTex.Handle())
+                                      : ImTextureID_Invalid;
+                ImGui::Text("HDRI 天空贴图");
+                if (tid != ImTextureID_Invalid)
+                    ImGui::ImageButton("##sky_thumb", tid, ImVec2(22.0f, 22.0f));
+                else
+                    ImGui::Button("##sky_thumb", ImVec2(22.0f, 22.0f));
+                if (ImGui::BeginDragDropTarget()) {
+                    if (const ImGuiPayload* payload =
+                            ImGui::AcceptDragDropPayload("ASSET_TEXTURE")) {
+                        std::string dropped(static_cast<const char*>(payload->Data),
+                                            static_cast<size_t>(payload->DataSize));
+                        if (!dropped.empty() && dropped.back() == '\0') dropped.pop_back();
+                        if (!dropped.empty()) {
+                            e.environment.skyTexture = ToProjectRelPath(dropped, projectDir);
+                            sceneDirty = true;
+                        }
+                    }
+                    ImGui::EndDragDropTarget();
+                }
+                ImGui::SameLine();
+                char skyBuf[1024];
+                std::snprintf(skyBuf, sizeof(skyBuf), "%s", e.environment.skyTexture.c_str());
+                if (ImGui::InputText("HDRI 天空贴图", skyBuf, sizeof(skyBuf), ImGuiInputTextFlags_EnterReturnsTrue)) {
+                    e.environment.skyTexture = skyBuf;
+                    sceneDirty = true;
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("清除##sky")) {
+                    e.environment.skyTexture.clear();
+                    sceneDirty = true;
+                }
+                ImGui::Separator();
+            }
         }
         // 网格 (MeshRenderer-like): mesh key + material + textures in one
         // block. Hidden for sprites (the sprite quad replaces it); removable -
@@ -943,6 +1023,10 @@ void InspectorPanel::Draw(EditorContext& ctx) {
             if (compName == "camera" && e.nodeType == "Camera3D") continue;
             // "type" 组件同理: 它存储 nodeType 本身, 已由上方的类型下拉编辑。
             if (compName == "type" && !e.nodeType.empty()) continue;
+            // environment 已有专门的类型区块, 不在原始组件列表里重复显示。
+            if (compName == "environment" && e.hasEnvironment) continue;
+            // light 同样已有专门的光源区块, 避免和原始组件重复显示。
+            if (compName == "light" && e.hasLight) continue;
             const scene::ComponentSchema* schema = scene::FindComponentSchema(compName);
             if (!schema && ctx.pluginMgr) schema = ctx.pluginMgr->FindSchema(compName);
             const std::string header =

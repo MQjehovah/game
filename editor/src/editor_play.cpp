@@ -427,6 +427,47 @@ core::Result<core::Json> EditorApp::BuildSceneJsonFromEntities() {
                 }
                 comps.object_["light"] = std::move(li);
             }
+            if (e.hasEnvironment) {
+                core::Json en;
+                en.type_ = core::Json::Type::Object;
+                auto colJson = [&](const gfx::Color& c) {
+                    core::Json a;
+                    a.type_ = core::Json::Type::Array;
+                    a.array_.push_back(mkNum(c.r));
+                    a.array_.push_back(mkNum(c.g));
+                    a.array_.push_back(mkNum(c.b));
+                    a.array_.push_back(mkNum(c.a));
+                    return a;
+                };
+                en.object_["ambientColor"] = colJson(e.environment.ambientColor);
+                en.object_["ambientStrength"] = mkNum(e.environment.ambientStrength);
+                if (!e.environment.skyTexture.empty()) {
+                    core::Json st;
+                    st.type_ = core::Json::Type::String;
+                    st.string_ = e.environment.skyTexture;
+                    en.object_["skyTexture"] = std::move(st);
+                }
+                if (e.environment.useAtmosphere) {
+                    core::Json ub;
+                    ub.type_ = core::Json::Type::Bool;
+                    ub.bool_ = true;
+                    en.object_["useAtmosphere"] = std::move(ub);
+                }
+                if (e.environment.skybox) {
+                    core::Json sb;
+                    sb.type_ = core::Json::Type::Bool;
+                    sb.bool_ = true;
+                    en.object_["skybox"] = std::move(sb);
+                }
+                en.object_["skyTop"] = colJson(e.environment.skyTop);
+                en.object_["skyHorizon"] = colJson(e.environment.skyHorizon);
+                en.object_["fogColor"] = colJson(e.environment.fogColor);
+                en.object_["fogNear"] = mkNum(e.environment.fogNear);
+                en.object_["fogFar"] = mkNum(e.environment.fogFar);
+                if (e.environment.exposure >= 0.0f)
+                    en.object_["exposure"] = mkNum(e.environment.exposure);
+                comps.object_["environment"] = std::move(en);
+            }
             if (e.zOrder != 0.0f) {
                 core::Json so;
                 so.type_ = core::Json::Type::Object;
