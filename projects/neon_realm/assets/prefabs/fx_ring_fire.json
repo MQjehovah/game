@@ -1,0 +1,26 @@
+{
+    "components":  {
+                       "transform":  {
+                                         "pos":  [
+                                                     0,
+                                                     0,
+                                                     0
+                                                 ],
+                                         "scale":  [
+                                                       1,
+                                                       1,
+                                                       1
+                                                   ],
+                                         "rot":  [
+                                                     -0.7071,
+                                                     0,
+                                                     0,
+                                                     0.7071
+                                                 ]
+                                     },
+                       "sprite":  {
+                                      "colorHex":  "#FF8A33",
+                                      "texture":  "assets/sprites/ring.png"
+                                  }
+                   }
+}

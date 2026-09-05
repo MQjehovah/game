@@ -1,0 +1,27 @@
+{
+    "components":  {
+                       "transform":  {
+                                         "pos":  [
+                                                     0,
+                                                     0,
+                                                     0
+                                                 ],
+                                         "scale":  [
+                                                       0.7,
+                                                       0.1,
+                                                       0.7
+                                                   ],
+                                         "rot":  [
+                                                     0,
+                                                     0,
+                                                     0,
+                                                     1
+                                                 ]
+                                     },
+                       "sprite":  {
+                                      "colorHex":  "#FFFFFF",
+                                      "texture":  "assets/sprites/pillar_volt.png",
+                                      "billboard":  true
+                                  }
+                   }
+}

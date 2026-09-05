@@ -1,0 +1,27 @@
+{
+    "components":  {
+                       "transform":  {
+                                         "pos":  [
+                                                     0,
+                                                     0,
+                                                     0
+                                                 ],
+                                         "scale":  [
+                                                       0.6,
+                                                       0.1,
+                                                       0.6
+                                                   ],
+                                         "rot":  [
+                                                     0,
+                                                     0,
+                                                     0,
+                                                     1
+                                                 ]
+                                     },
+                       "sprite":  {
+                                      "colorHex":  "#BFE8FF",
+                                      "texture":  "assets/sprites/pillar_ice.png",
+                                      "billboard":  true
+                                  }
+                   }
+}

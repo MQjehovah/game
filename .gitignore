@@ -21,31 +21,22 @@ neon_log.txt
 smoke_tone_fx.wav
 smoke_bad_audio.bin
 projects/*/save.json
-projects/*/save.json.meta
 neon_editor_config.json
-# The sandbox scratch scene is user data (kept out of version control on
-# purpose — every other project scene IS versioned).
-projects/default/assets/scenes/editor_scene.json
-scenes/
-# ...but project scenes are first-class project data (2D levels now live in
-# assets/scenes/*.json too), so keep them under version control.
-projects/*
-!projects/default/
-!projects/default/**
-!projects/snake/
-!projects/snake/**
-# NeonPhysics rigid-body demo project
-!projects/wc3/
-!projects/wc3/**
-!projects/physics_demo/
-!projects/wc3/
-!projects/wc3/**
-!projects/physics_demo/**
-# NeonPvZ architecture-showcase project: everything under its assets/ content
-# root (scenes, scripts, prefabs, UI docs, locales, sprites, audio), the input
-# map and plugins are all first-class project data.
-!projects/pvz/
-!projects/pvz/**
+# Every tree under projects/ is an Engine sample/test project shipped with the
+# engine and is first-class source: fully versioned (scenes, scripts, prefabs,
+# locales, audio, sprites, textures, models, materials, input maps, plugins).
+# Only runtime save games, engine-local derived data and *.meta import settings
+# are excluded. *.meta are regenerated on import, never versioned.
+*.meta
+# The editor's derived asset-database cache (analogous to .neon/), not source.
+projects/*/.asset_db.json
+# Editor scratch/backup/export artifacts produced while developing a project —
+# local user data, not shipped sample content.
+projects/*/assets/scripts/new_script.lua
+projects/*/assets/scenes/exported_scene.json
+projects/*/assets/scenes/*.bak
+# The engine repo-root scratch scene dir; project scenes live under assets/.
+/scenes/
 .vs/
 .vscode/
 CMakeUserPresets.json
