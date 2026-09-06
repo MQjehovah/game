@@ -44,6 +44,7 @@ local shakeT = 0
 local combo = 0
 local comboTimer = 0
 local waveFlash = 0
+local heartbeatLatch = false
 
 local enemies = {}
 local enemyKeys = {}
@@ -425,6 +426,18 @@ local function fire_weapon()
       })
     end
   end
+  -- Ejected shell casing: arcs out to the right with gravity.
+  EmitParticles({
+    pos = muzzle,
+    count = 1,
+    vel = { x = right.x * 2.2 + (math.random() - 0.5), y = 2.0, z = right.z * 2.2 + (math.random() - 0.5) },
+    speedMin = 0, speedMax = 0,
+    lifeMin = 0.55, lifeMax = 0.75,
+    sizeStart = 0.055, sizeEnd = 0.035,
+    color = { r = 0.92, g = 0.72, b = 0.25, a = 1 },
+    colorEnd = { r = 0.65, g = 0.5, b = 0.18, a = 0.9 },
+    gravity = -9.8, additive = false,
+  })
   flash_fx_light(muzzle, { r = 1, g = 0.72, b = 0.32, a = 1 }, 3.2, 9, 0.05)
   PlaySfx(weapon.sfx or "shoot")
   lookPitch = lookPitch + 0.006
@@ -1250,6 +1263,16 @@ function on_render()
 
   if state == "playing" or state == "paused" then
     local cx, cy = vw * 0.5, vh * 0.5
+
+    -- Reload progress arc under the crosshair (subtle, only while reloading).
+    if reloadTime > 0 and weapon ~= nil then
+      local total = 1.35
+      local frac = 1 - clamp(reloadTime / total, 0, 1)
+      local rw = 70
+      DrawRect(cx - rw / 2, cy + 26, rw, 5, 0.03, 0.05, 0.09, 0.8)
+      DrawRect(cx - rw / 2 + 1, cy + 27, (rw - 2) * frac, 3, 0.35, 0.85, 1, 1)
+      DrawText("RELOADING", cx, cy + 44, 12, 0.6, 0.8, 0.95, 0.9, true, true)
+    end
     local gap = aiming and 5 or 12
     DrawRect(cx - gap - 8, cy - 1, 8, 2, 1, 1, 1, 0.9)
     DrawRect(cx + gap, cy - 1, 8, 2, 1, 1, 1, 0.9)
@@ -1308,9 +1331,22 @@ function on_render()
     local pp = GetPosition(player)
     if pp ~= nil then
       local mx, my = map_point(pp.x, pp.z)
+      -- View cone: 8 sectors along the facing direction, fading out.
+      local fx, fz = -math.sin(lookYaw), -math.cos(lookYaw)
+      for s = 1, 8 do
+        local spread = (s - 1) * 0.055
+        for side = -1, 1, 2 do
+          local ca, sa = math.cos(spread * side), math.sin(spread * side)
+          local dx = fx * ca - fz * sa
+          local dz = fx * sa + fz * ca
+          local sx = mx + dx * s * 7
+          local sy = my + dz * s * 7
+          if sx >= mapX and sx < mapX + mapS and sy >= mapY and sy < mapY + mapS then
+            DrawRect(sx - 1, sy - 1, 2, 2, 0.35, 0.85, 1, 0.55 - s * 0.06)
+          end
+        end
+      end
       DrawRect(mx - 3, my - 3, 6, 6, 0.35, 0.85, 1, 1)
-      local fx = -math.sin(lookYaw)
-      local fz = -math.cos(lookYaw)
       local ang = math.atan(fz, fx) * 57.2958
       if ang < 0 then ang = ang + 360 end
       local arrows = { "→", "↘", "↓", "↙", "←", "↖", "↑", "↗" }
@@ -1334,7 +1370,17 @@ function on_render()
 
     local hp = GetHealth(player) or 0
     if hp < 35 then
-      DrawRect(0, 0, vw, vh, 0.8, 0.05, 0.05, 0.12 + math.sin(clock * 8) * 0.04)
+      -- Heartbeat: visual pulse + sync'd thump sfx. The interval shortens as
+      -- HP drops (a 30 HP player's heart beats faster than a 10 HP... no: the
+      -- opposite reads better in playtests — faster when close to death).
+      local beat = math.sin(clock * (5 + (35 - hp) * 0.15))
+      DrawRect(0, 0, vw, vh, 0.8, 0.05, 0.05, 0.10 + beat * 0.05)
+      if beat > 0.96 and not heartbeatLatch then
+        heartbeatLatch = true
+        PlaySfx("hit")
+      elseif beat < 0 then
+        heartbeatLatch = false
+      end
     end
 
     -- Kill-streak combo banner with decay gauge.

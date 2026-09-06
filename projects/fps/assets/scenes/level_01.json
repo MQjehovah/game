@@ -381,7 +381,12 @@
             "metallic": 0.0,
             "ao": 1,
             "emissiveIntensity": 2.2
-          }
+          },
+          "tintRgb": [
+            1.9,
+            1.15,
+            0.28
+          ]
         }
       },
       "id": 111,
@@ -489,7 +494,12 @@
             "metallic": 0.0,
             "ao": 1,
             "emissiveIntensity": 2.2
-          }
+          },
+          "tintRgb": [
+            1.9,
+            1.15,
+            0.28
+          ]
         }
       },
       "id": 114,
@@ -597,7 +607,12 @@
             "metallic": 0.0,
             "ao": 1,
             "emissiveIntensity": 2.2
-          }
+          },
+          "tintRgb": [
+            1.9,
+            1.15,
+            0.28
+          ]
         }
       },
       "id": 117,
@@ -705,7 +720,12 @@
             "metallic": 0.0,
             "ao": 1,
             "emissiveIntensity": 2.2
-          }
+          },
+          "tintRgb": [
+            1.9,
+            1.15,
+            0.28
+          ]
         }
       },
       "id": 120,

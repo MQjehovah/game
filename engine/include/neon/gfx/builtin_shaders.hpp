@@ -379,6 +379,14 @@ void main() {
     if (uHasAO) ambientLight *= mix(1.0, texture(uOcclusion, vUV).r, uAOStrength);
     vec3 color = (kd * albedo.rgb + spec) * uSunColor * ndl + ambientLight;
     if (uHasEmissive) color += texture(uEmissive, vUV).rgb * uEmissiveIntensity;
+    // Tint self-glow: tint components pushed above 1.0 (HDR tint) emit light
+    // directly, no emissive texture needed — beacon lamps, glowing pickups,
+    // enemy eye weak points. The glow participates in bloom (HDR target), so
+    // intensity > bloomThreshold (~1) reads as an actual light source.
+    vec3 tintGlow = max(uTint.rgb - vec3(1.0), vec3(0.0));
+    if (tintGlow.r + tintGlow.g + tintGlow.b > 0.0) {
+        color += tintGlow * albedo.rgb * uEmissiveIntensity;
+    }
     for (int i = 0; i < 8; ++i) {
         if (i >= uPointCount) break;
         vec3 toL = uPointPos[i] - vWorldPos;

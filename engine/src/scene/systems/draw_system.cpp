@@ -144,7 +144,13 @@ void DrawSystem::Build(ecs::World& world, AnimationSystem& anims) {
                                 m->meshKey == "bush" ||
                                 m->meshKey == "hero" || m->meshKey == "wolf" ||
                                 m->meshKey == "npc" || m->meshKey.compare(0, 4, "npc:") == 0;
-        item.mat.tint = bakedColor ? gfx::Color::White : ParseColorHex(m->colorHex);
+        // HDR tint override wins over colorHex; components above 1.0 emit
+        // through the lit shader's tint self-glow (beacons, pickups, eyes).
+        if (!m->tintRgb.empty()) {
+            item.mat.tint = {m->tintRgb[0], m->tintRgb[1], m->tintRgb[2], 1.0f};
+        } else {
+            item.mat.tint = bakedColor ? gfx::Color::White : ParseColorHex(m->colorHex);
+        }
         item.mat.metallic = m->metallic;
         item.mat.roughness = m->roughness;
         item.mat.uvRepeat = m->uvRepeat;

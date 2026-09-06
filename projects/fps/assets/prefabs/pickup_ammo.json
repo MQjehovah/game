@@ -1,6 +1,31 @@
 {
   "components": {
-    "transform": { "pos": [0, 0, 0], "rot": [0, 0, 0, 1], "scale": [1.1, 1.1, 1.1] },
-    "mesh": { "meshKey": "obj:assets/models/pickup_ammo.obj", "roughness": 0.4 }
+    "transform": {
+      "pos": [
+        0,
+        0,
+        0
+      ],
+      "rot": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1.1,
+        1.1,
+        1.1
+      ]
+    },
+    "mesh": {
+      "meshKey": "obj:assets/models/pickup_ammo.obj",
+      "roughness": 0.4,
+      "tintRgb": [
+        1.8,
+        1.3,
+        0.3
+      ]
+    }
   }
 }

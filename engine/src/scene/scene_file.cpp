@@ -660,7 +660,7 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                                      "normalTex", "normalScale",
                                      "ao", "emissiveIntensity", "uvRepeat",
                                      "dirtColorHex", "rockColorHex", "castShadow",
-                                     "receiveShadow"},
+                                     "receiveShadow", "tintRgb"},
                                     "mesh", err))
                          return false;
                      const core::Json* key = data.Get("meshKey");
@@ -740,7 +740,8 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                                           {"metallic", "roughness", "colorHex", "albedoTex", "mrTex",
                                            "aoTex", "emissiveTex", "normalTex", "normalScale",
                                            "ao", "emissiveIntensity",
-                                           "uvRepeat", "dirtColorHex", "rockColorHex"},
+                                           "uvRepeat", "dirtColorHex", "rockColorHex",
+                                           "tintRgb"},
                                           "mesh.material", err))
                               return false;
                          if (!RequireNumber(*mat, "metallic", "mesh.material", m.metallic, err))
@@ -775,6 +776,16 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                              }
                              m.colorHex = col->GetString();
                          }
+                         if (const core::Json* tr = mat->Get("tintRgb")) {
+                             if (!tr->IsArray() || tr->array_.size() < 3) {
+                                 if (err)
+                                     *err = "component 'mesh' field 'material.tintRgb' must be [r,g,b]";
+                                 return false;
+                             }
+                             m.tintRgb = {static_cast<float>(tr->array_[0].GetNumber()),
+                                          static_cast<float>(tr->array_[1].GetNumber()),
+                                          static_cast<float>(tr->array_[2].GetNumber())};
+                         }
                      }
                      if (!RequireNumber(data, "metallic", "mesh", m.metallic, err)) return false;
                      if (!RequireNumber(data, "roughness", "mesh", m.roughness, err)) return false;
@@ -798,6 +809,17 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                              return false;
                          }
                          m.colorHex = col->GetString();
+                     }
+                     if (const core::Json* tr = data.Get("tintRgb")) {
+                         // HDR tint override: [r,g,b], any float — components
+                         // above 1.0 glow through the lit shader self-glow.
+                         if (!tr->IsArray() || tr->array_.size() < 3) {
+                             if (err) *err = "component 'mesh' field 'tintRgb' must be [r,g,b]";
+                             return false;
+                         }
+                         m.tintRgb = {static_cast<float>(tr->array_[0].GetNumber()),
+                                      static_cast<float>(tr->array_[1].GetNumber()),
+                                      static_cast<float>(tr->array_[2].GetNumber())};
                      }
                     if (const core::Json* cs = data.Get("castShadow"))
                         m.castShadow = cs->IsBool() && cs->GetBool();

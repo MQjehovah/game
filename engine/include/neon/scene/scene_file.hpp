@@ -274,6 +274,10 @@ struct SceneMesh {
     // uses albedoTex as its realistic texture). Empty = engine default color.
     std::string dirtColorHex;
     std::string rockColorHex;
+    // HDR tint override: [r,g,b] floats, components may exceed 1.0 — the lit
+    // shader emits the overflow directly (tint self-glow), so lamps / pickups
+    // glow and bloom without an emissive texture. Empty = colorHex wins.
+    std::vector<float> tintRgb;
     float ao = 1.f;               // occlusion strength (0 = ignore AO, 1 = full)
     float emissiveIntensity = 1.f;
     // UV tiling multiplier applied to the material's base UVs (default 1 = no
