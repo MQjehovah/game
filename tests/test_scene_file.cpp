@@ -18,6 +18,37 @@ const scene::ComponentDef* FindComp(const scene::EntityDef& e, const std::string
 
 } // namespace
 
+// Editor play snapshot path: entities -> world (Instantiate) -> FromWorld ->
+// Parse must round-trip a shipped scene, or the editor's play collapses to an
+// empty world (the "play started (0 entities)" bug class).
+TEST(SceneFpsLevelsRoundTripThroughWorld) {
+    scene::ComponentRegistry reg;
+    scene::RegisterBuiltinComponents(reg);
+    scene::PrefabLibrary prefs;
+    const char* scenes[] = {
+        "projects/fps/assets/scenes/level_01.json",
+        "projects/fps/assets/scenes/level_02.json",
+        "projects/fps/assets/scenes/level_03.json",
+        "projects/fps/assets/scenes/menu.json",
+    };
+    for (const char* path : scenes) {
+        std::string text;
+        if (!test::ReadFileAll(path, text)) continue; // repo-root runs only
+        auto res = scene::SceneFile::Parse(text);
+        CHECK(res.Ok());
+        ecs::World world;
+        scene::Instantiate(world, res.Value(), prefs, reg);
+        auto out = scene::SceneFile::FromWorld(world);
+        CHECK(out.Ok());
+        auto reparsed = scene::SceneFile::Parse(core::JsonWriter::Write(out.Value()));
+        if (!reparsed.Ok()) {
+            NEON_LOG_ERROR("round-trip of %s rejected: %s", path,
+                           reparsed.Error().c_str());
+        }
+        CHECK(reparsed.Ok());
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Parse a valid componentized scene: entities/components/gameVars
 // ---------------------------------------------------------------------------

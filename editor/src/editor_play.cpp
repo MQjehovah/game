@@ -559,33 +559,50 @@ core::Result<core::Json> EditorApp::BuildSceneJsonFromEntities() {
 // builders + runtime Instantiate (the same path the player runs). Editor
 // metadata the runtime would reject (materialRef in mesh, top-level prefab) is
 // stripped here and re-applied by BuildPlaySceneJson afterwards.
+// Strips editor-only metadata the runtime Parse rejects (materialRef inside
+// mesh, top-level prefab) from a serialized scene DOM. Used by both the world
+// round-trip and the direct-entities fallback in BuildPlaySceneJson.
+static void StripEditorMetadata(core::Json& root,
+                                const std::vector<SceneEntity>& entities) {
+    auto arrIt = root.object_.find("entities");
+    if (arrIt == root.object_.end() || !arrIt->second.IsArray()) return;
+    core::Json& arr = arrIt->second;
+    for (size_t i = 0; i < arr.array_.size() && i < entities.size(); ++i) {
+        const SceneEntity& se = entities[i];
+        if (se.materialRef.empty() && se.prefab.empty()) continue;
+        core::Json& ent = arr.array_[i];
+        if (!se.materialRef.empty()) {
+            auto compsIt = ent.object_.find("components");
+            if (compsIt != ent.object_.end()) {
+                auto meshIt = compsIt->second.object_.find("mesh");
+                if (meshIt != compsIt->second.object_.end())
+                    meshIt->second.object_.erase("materialRef");
+            }
+        }
+        if (!se.prefab.empty()) ent.object_.erase("prefab");
+    }
+}
+
 void EditorApp::SyncWorldFromEntities() {
     sceneWorld_.Clear();
     sceneCompReg_ = scene::ComponentRegistry{};
     scene::RegisterBuiltinComponents(sceneCompReg_);
     auto rootRes = BuildSceneJsonFromEntities();
-    if (!rootRes.Ok()) return;
-    core::Json root = rootRes.Value();
-    auto arrIt = root.object_.find("entities");
-    if (arrIt != root.object_.end() && arrIt->second.IsArray()) {
-        core::Json& arr = arrIt->second;
-        for (size_t i = 0; i < arr.array_.size() && i < entities_.size(); ++i) {
-            const SceneEntity& se = entities_[i];
-            if (se.materialRef.empty() && se.prefab.empty()) continue;
-            core::Json& ent = arr.array_[i];
-            if (!se.materialRef.empty()) {
-                auto compsIt = ent.object_.find("components");
-                if (compsIt != ent.object_.end()) {
-                    auto meshIt = compsIt->second.object_.find("mesh");
-                    if (meshIt != compsIt->second.object_.end())
-                        meshIt->second.object_.erase("materialRef");
-                }
-            }
-            if (!se.prefab.empty()) ent.object_.erase("prefab");
-        }
+    if (!rootRes.Ok()) {
+        // Silent bail left sceneWorld_ empty and the next play started with
+        // "0 entities"; always say why the snapshot could not be built.
+        NEON_LOG_ERROR("Editor: play snapshot build failed: %s",
+                       rootRes.Error().c_str());
+        return;
     }
+    core::Json root = rootRes.Value();
+    StripEditorMetadata(root, entities_);
     auto parsed = scene::SceneFile::Parse(core::JsonWriter::Write(root));
-    if (!parsed.Ok()) return;
+    if (!parsed.Ok()) {
+        NEON_LOG_ERROR("Editor: play snapshot re-parse failed: %s",
+                       parsed.Error().c_str());
+        return;
+    }
     scene::PrefabLibrary prefs;
     scene::Instantiate(sceneWorld_, parsed.Value(), prefs, sceneCompReg_);
 }
@@ -602,6 +619,17 @@ core::Result<core::Json> EditorApp::BuildPlaySceneJson() {
     if (entities_.empty())
         return core::Result<core::Json>::Err("editor: scene is empty");
     SyncWorldFromEntities();
+    // FromWorld drops editor-side component data the ECS cannot carry; if the
+    // world sync bailed (logged above) and left nothing, fall back to the
+    // editor's own entity serialization instead of playing an empty world.
+    if (sceneWorld_.EntityCount() == 0) {
+        NEON_LOG_WARN("Editor: world sync empty, playing entities directly "
+                      "(%zu)", entities_.size());
+        auto direct = BuildSceneJsonFromEntities();
+        if (!direct.Ok()) return direct;
+        StripEditorMetadata(direct.Value(), entities_);
+        return core::Result<core::Json>::Ok(std::move(direct.Value()));
+    }
     auto out = scene::SceneFile::FromWorld(sceneWorld_);
     if (!out.Ok()) return out;
     core::Json root = out.Value();

@@ -47,6 +47,7 @@ local waveFlash = 0
 
 local enemies = {}
 local enemyKeys = {}
+local enemyByKey = {}
 local enemyDefs = {}
 local enemiesById = {}
 local pickups = {}
@@ -160,16 +161,51 @@ local function switch_weapon(idx)
   update_gun_visibility()
 end
 
--- Muzzle-flash point light: one persistent entity parked underground when
--- idle (SetVisible does not gate the light gather, so park it instead).
-local muzzleLight = nil
-local muzzleLightT = 0
+-- FX light pool: point lights parked underground, flashed on demand (muzzle
+-- flashes, explosions, boss aura). Colors are set per event through the
+-- light component; a 0 intensity parks the light visually.
+local FX_COUNT = 3
+local fxLights = {}
+local fxTimers = {}
 
-local function park_muzzle_light()
-  if muzzleLight ~= nil then
-    SetPosition(muzzleLight, { x = 0, y = -100, z = 0 })
+local function park_fx_light(e)
+  if e ~= nil then
+    SetEntityComponentField(e, "light", "intensity", 0)
+    SetPosition(e, { x = 0, y = -100, z = 0 })
   end
 end
+
+local function flash_fx_light(pos, color, intensity, radius, life)
+  local pick = 0
+  for i = 1, FX_COUNT do
+    if fxTimers[i] <= 0 then pick = i break end
+  end
+  if pick == 0 then
+    pick = 1
+    for i = 2, FX_COUNT do
+      if fxTimers[i] > fxTimers[pick] then pick = i end
+    end
+  end
+  local e = fxLights[pick]
+  if e == nil then return end
+  SetPosition(e, pos)
+  SetEntityComponentField(e, "light", "color", color)
+  SetEntityComponentField(e, "light", "intensity", intensity)
+  SetEntityComponentField(e, "light", "radius", radius)
+  fxTimers[pick] = life
+end
+
+local function update_fx_lights(dt)
+  for i = 1, FX_COUNT do
+    if fxTimers[i] > 0 then
+      fxTimers[i] = fxTimers[i] - dt
+      if fxTimers[i] <= 0 then park_fx_light(fxLights[i]) end
+    end
+  end
+end
+
+-- Persistent boss menace light (follows the Juggernaut, crimson).
+local bossLight = nil
 
 local function spawn_weapon_models()
   for _, w in ipairs(weapons) do
@@ -317,9 +353,13 @@ local function hitscan(origin, dir, range, damage)
     local hp = GetHealth(bestEnt)
     local dmg = damage * (headshot and 2.0 or 1.0)
     if hp ~= nil then SetHealth(bestEnt, hp - dmg) end
+    -- Hit reaction: scale punch so damage is FELT on the model.
+    local victim = enemyByKey[string.format("%d_%d", bestEnt.id, bestEnt.gen)]
+    if victim ~= nil then victim.punch = 0.12 end
     hitImpact = 0.09
     lastHitPoint = point
     emit_burst(point, headshot and 10 or 7, 7, headshot and 1 or 1, headshot and 0.8 or 0.72, headshot and 0.3 or 0.28)
+    flash_fx_light(point, { r = 1, g = 0.55, b = 0.2, a = 1 }, 1.6, 5, 0.07)
     PlaySfx("hit")
     SpawnFloatText(point.x, point.y + 0.2, point.z, "-" .. math.floor(dmg), false, 0.7)
   elseif wallDist < range then
@@ -385,10 +425,7 @@ local function fire_weapon()
       })
     end
   end
-  if muzzleLight ~= nil then
-    SetPosition(muzzleLight, muzzle)
-    muzzleLightT = 0.05
-  end
+  flash_fx_light(muzzle, { r = 1, g = 0.72, b = 0.32, a = 1 }, 3.2, 9, 0.05)
   PlaySfx(weapon.sfx or "shoot")
   lookPitch = lookPitch + 0.006
 end
@@ -435,12 +472,25 @@ local function spawn_enemy(type, pos)
     e = e,
     key = string.format("%d_%d", e.id, e.gen),
     def = def,
+    scale = def.scale or 1,
     home = { x = pos.x, y = 1, z = pos.z },
     alive = true,
     attackCd = 0.6 + math.random(),
     phase = math.random() * 6.28,
+    punch = 0,          -- hit-reaction scale punch timer
+    stepPhase = 0,      -- walk-cycle phase (ground units)
+    orbitDir = math.random() < 0.5 and 1 or -1,
+    orbitT = 2 + math.random() * 2,
+    stateT = 0,         -- heavy walk/halt cycle timer
+    halted = false,
+    chargeCd = 5 + math.random() * 3, -- boss charge-up timer
+    charging = 0,       -- boss charge dash time remaining
+    enraged = false,
+    burst = nil,        -- turret burst counter
+    burstT = 0,
   }
   enemyKeys[t.key] = true
+  enemyByKey[t.key] = t
   enemies[#enemies + 1] = t
   return t
 end
@@ -517,8 +567,13 @@ function on_start(e)
   load_data()
   switch_weapon(1)
   spawn_weapon_models()
-  muzzleLight = SpawnPrefab("muzzle_flash", { x = 0, y = -100, z = 0 })
-  muzzleLightT = 0
+  fxLights, fxTimers = {}, {}
+  for i = 1, FX_COUNT do
+    fxLights[i] = SpawnPrefab("muzzle_flash", { x = 0, y = -100, z = 0 })
+    fxTimers[i] = 0
+  end
+  bossLight = SpawnPrefab("muzzle_flash", { x = 0, y = -100, z = 0 })
+  park_fx_light(bossLight)
   UIShow("assets/ui/game_hud.ui.json")
   UISetVisible("Hud", true)
   UISetVisible("PauseMenu", false)
@@ -548,10 +603,7 @@ local function update_player(dt)
   hitImpact = math.max(0, hitImpact - dt)
   shakeT = math.max(0, shakeT - dt)
   spreadHeat = math.max(0, spreadHeat - dt * 0.35)
-  if muzzleLightT > 0 then
-    muzzleLightT = muzzleLightT - dt
-    if muzzleLightT <= 0 then park_muzzle_light() end
-  end
+  update_fx_lights(dt)
   if reloadTime > 0 then
     reloadTime = reloadTime - dt
     if reloadTime <= 0 and weapon ~= nil then
@@ -678,6 +730,8 @@ local function update_viewmodel()
 end
 
 local function enemy_hitscan(origin, dir, range, damage)
+  emit_burst(origin, 5, 5, 1, 0.85, 0.4)
+  flash_fx_light(origin, { r = 1, g = 0.6, b = 0.25, a = 1 }, 2.2, 7, 0.06)
   EmitParticles({
     pos = origin,
     count = 6,
@@ -748,7 +802,9 @@ local function suicide_boom(t)
     gravity = -2, additive = true,
   })
   PlaySfx("explosion")
-  shakeT = math.max(shakeT, 0.2)
+  shakeT = math.max(shakeT, 0.25)
+  flash_fx_light({ x = dp.x, y = dp.y + 0.5, z = dp.z },
+                 { r = 1, g = 0.45, b = 0.12, a = 1 }, 4.0, 16, 0.28)
   local pp = GetPosition(player)
   if pp ~= nil and dist2d(dp.x, dp.z, pp.x, pp.z) < 5.0 then
     SetHealth(player, math.max(0, (GetHealth(player) or MAX_HP) - (t.def.damage or 30)))
@@ -788,7 +844,6 @@ local function resolve_cover_xz(x, z, pad)
   end
   return x, z
 end
-
 local function update_enemies(dt)
   local pp = GetPosition(player)
   -- 1) Separation pass: keep the swarm readable (no stacking into one blob).
@@ -850,12 +905,19 @@ local function update_enemies(dt)
         })
         SpawnFloatText(dp.x, dp.y + 0.8, dp.z, "+" .. tostring(gain), false, 0.8)
         PlaySfx("explosion")
+        flash_fx_light({ x = dp.x, y = dp.y + 0.5, z = dp.z },
+                       isBoss and { r = 0.8, g = 0.25, b = 0.95, a = 1 }
+                              or { r = 1, g = 0.5, b = 0.15, a = 1 },
+                       isBoss and 5.0 or 3.2, isBoss and 20 or 13,
+                       isBoss and 0.4 or 0.22)
         if not isBoss then
           if math.random() < 0.22 then
             spawn_pickup("health", { x = t.home.x, y = 1.2, z = t.home.z })
           elseif math.random() < 0.30 then
             spawn_pickup("ammo", { x = t.home.x, y = 1.2, z = t.home.z })
           end
+        elseif bossLight ~= nil then
+          park_fx_light(bossLight)  -- aura dies with the Juggernaut
         end
         Despawn(t.e)
       else
@@ -865,12 +927,17 @@ local function update_enemies(dt)
         local p = GetPosition(t.e)
         if p ~= nil and pp ~= nil then
           local d = dist2d(p.x, p.z, pp.x, pp.z)
-          local toX, toZ = (pp.x - p.x) / math.max(d, 0.001), (pp.z - p.z) / math.max(d, 0.001)
-          -- Face the player (models are authored looking down +Z).
-          SetRotationY(t.e, math.atan(toX, toZ))
+          local nx, nz = (pp.x - p.x) / math.max(d, 0.001), (pp.z - p.z) / math.max(d, 0.001)
+          local kind = t.def.kind
+          -- Line of sight: never shoot through cover; use it to gate fire.
+          local los = false
+          if d > 0.001 then
+            los = wall_distance({ x = p.x, y = p.y + 0.7, z = p.z },
+                                { x = nx, y = 0, z = nz }, d) >= d - 0.8
+          end
 
           -- Boss enrage: below 35% HP it snaps into overdrive once.
-          if t.def.kind == "boss" and not t.enraged and hp < (t.def.hp or 1) * 0.35 then
+          if kind == "boss" and not t.enraged and hp < (t.def.hp or 1) * 0.35 then
             t.enraged = true
             EmitParticles({
               pos = p, count = 24, speedMin = 3, speedMax = 8,
@@ -879,55 +946,180 @@ local function update_enemies(dt)
               colorEnd = { r = 0.2, g = 0.05, b = 0.1, a = 0 },
               gravity = -3, additive = true,
             })
+            flash_fx_light(p, { r = 0.9, g = 0.2, b = 0.9, a = 1 }, 4.0, 18, 0.5)
             PlaySfx("wave")
           end
           local speed = t.def.speed or 0
           if t.enraged then speed = speed * 1.5 end
 
-          if speed > 0 and d > math.max(1.5, (t.def.range or 15) * 0.75) then
-            -- Cover-aware steering: probe ahead; a cover box inside the probe
-            -- deflects the chase tangentially instead of stacking into it.
-            local probe = 1.6
-            local nx, nz = resolve_cover_xz(p.x + toX * probe, p.z + toZ * probe, 0.35)
-            local sx, sz = nx - p.x, nz - p.z
-            local slen = math.sqrt(sx * sx + sz * sz)
-            if slen > 0.001 then
-              sx, sz = sx / slen, sz / slen
-              -- blend: mostly toward the deflected direction (around cover)
-              toX, toZ = sx, sz
+          -- Movement + per-archetype procedural animation.
+          local yaw = math.atan(nx, nz)
+          local hover = t.def.hover or 0.10
+          local moving = false
+          if kind == "suicide" then
+            -- Sapper: spins, zigzags, pulses faster the closer it gets.
+            yaw = clock * 6.0 + t.phase
+            if d > 2.2 then
+              moving = true
+              local zig = math.sin(clock * 5.0 + t.phase) * 0.9
+              local mx, mz = nx + (-nz) * zig, nz + nx * zig
+              local ml = math.sqrt(mx * mx + mz * mz)
+              p.x = p.x + mx / ml * speed * dt
+              p.z = p.z + mz / ml * speed * dt
             end
-            p.x = p.x + toX * speed * dt
-            p.z = p.z + toZ * speed * dt
-            p.x, p.z = resolve_cover_xz(p.x, p.z, 0.45)
+            local pulse = 1 + math.sin(clock * (4 + math.max(0, 8 - d))) * 0.07
+            SetScale(t.e, t.scale * pulse, t.scale * pulse, t.scale * pulse)
+          elseif kind == "turret" then
+            -- Sentry: smoothed aim, idle scan, burst recoil.
+            t.recoil = math.max(0, (t.recoil or 0) - dt * 6)
+            local scan = los and 0 or math.sin(clock * 0.8 + t.phase) * 0.6
+            yaw = yaw + scan
+            local rec = 1 + (t.recoil or 0) * 0.06
+            SetScale(t.e, t.scale * rec, t.scale * rec, t.scale * rec)
+          elseif kind == "boss" then
+            -- Juggernaut: heavy cadence, telegraphed charge dash.
+            t.stateT = t.stateT + dt
+            t.chargeCd = t.chargeCd - dt
+            if (t.charging or 0) > 0 then
+              t.charging = t.charging - dt
+              moving = true
+              local cspeed = speed * 3
+              p.x = p.x + nx * cspeed * dt
+              p.z = p.z + nz * cspeed * dt
+              EmitParticles({
+                pos = { x = p.x, y = p.y - t.scale * 0.4, z = p.z },
+                count = 2, speedMin = 1, speedMax = 3,
+                lifeMin = 0.2, lifeMax = 0.4, sizeStart = 0.2, sizeEnd = 0.02,
+                color = { r = 0.8, g = 0.3, b = 0.9, a = 1 },
+                colorEnd = { r = 0.2, g = 0.05, b = 0.1, a = 0 },
+                gravity = -2, additive = true,
+              })
+            elseif t.chargeCd <= 0 and d > 7 then
+              t.chargeCd = 7 + math.random() * 3
+              t.charging = 1.1
+              EmitParticles({
+                pos = { x = p.x, y = p.y + t.scale * 0.5, z = p.z },
+                count = 16, speedMin = 2, speedMax = 6,
+                lifeMin = 0.25, lifeMax = 0.5, sizeStart = 0.26, sizeEnd = 0.02,
+                color = { r = 0.95, g = 0.35, b = 0.15, a = 1 },
+                colorEnd = { r = 0.3, g = 0.05, b = 0.02, a = 0 },
+                gravity = -1, additive = true,
+              })
+              PlaySfx3D("wave", p)
+            elseif speed > 0 and d > math.max(1.5, (t.def.range or 15) * 0.75) then
+              moving = true
+              p.x = p.x + nx * speed * dt
+              p.z = p.z + nz * speed * dt
+            end
+            t.stepPhase = t.stepPhase + dt * (moving and 7 or 1.5)
+            local sway = math.sin(t.stepPhase) * (moving and 0.08 or 0.03)
+            yaw = yaw + sway
+            p.y = t.home.y + math.abs(math.sin(t.stepPhase)) * 0.05
+            local rec = 1 + math.sin(t.stepPhase * 2) * 0.015
+            SetScale(t.e, t.scale * rec, t.scale * rec, t.scale * rec)
+            if bossLight ~= nil then
+              SetPosition(bossLight, { x = p.x, y = p.y + t.scale * 0.4, z = p.z })
+              SetEntityComponentField(bossLight, "light", "color",
+                                      { r = 0.85, g = 0.2, b = 0.4, a = 1 })
+              SetEntityComponentField(bossLight, "light", "intensity", 2.2)
+              SetEntityComponentField(bossLight, "light", "radius", 12)
+            end
+          else
+            -- Drones & heavies: hold a preferred band, orbit strafe inside it.
+            local preferred = (t.def.range or 15) * 0.55
+            if speed > 0 then
+              if kind == "heavy" then
+                -- Heavies march in bursts: walk a beat, halt, fire.
+                t.stateT = t.stateT + dt
+                if t.halted then
+                  if t.stateT > 0.7 then t.stateT = 0; t.halted = false end
+                else
+                  if t.stateT > 1.3 then t.stateT = 0; t.halted = true end
+                end
+                moving = not t.halted
+              else
+                moving = d > preferred + 3
+              end
+              if moving then
+                if d > preferred + 3 then
+                  p.x = p.x + nx * speed * dt
+                  p.z = p.z + nz * speed * dt
+                else
+                  -- Orbit: circle the player, flipping direction now and then.
+                  t.orbitT = t.orbitT - dt
+                  if t.orbitT <= 0 then
+                    t.orbitT = 2 + math.random() * 2
+                    t.orbitDir = -t.orbitDir
+                  end
+                  local sx, sz = -nz * t.orbitDir, nx * t.orbitDir
+                  p.x = p.x + sx * speed * 0.65 * dt
+                  p.z = p.z + sz * speed * 0.65 * dt
+                end
+                local cx, cz = resolve_cover_xz(p.x, p.z, 0.45)
+                p.x, p.z = cx, cz
+              end
+            end
+            if hover > 0 then
+              -- Fliers bob fast, wobble, and recoil-hop on fire.
+              p.y = t.home.y + math.sin(clock * 2.6 + t.phase) * hover
+              yaw = yaw + math.sin(clock * 3.1 + t.phase) * 0.10
+            else
+              -- Ground units walk with a cadence + slight sway.
+              t.stepPhase = t.stepPhase + dt * (moving and 6 or 1)
+              p.y = t.home.y + math.abs(math.sin(t.stepPhase)) * 0.04
+              yaw = yaw + math.sin(t.stepPhase) * (moving and 0.06 or 0.02)
+            end
+            t.punch = math.max(0, (t.punch or 0) - dt)
+            local rec = 1 + (t.punch / 0.12) * 0.08
+            SetScale(t.e, t.scale * rec, t.scale * rec, t.scale * rec)
           end
-          -- Hover: flying units bob; ground units keep their feet planted.
-          p.y = t.home.y + math.sin(clock * 2.0 + t.phase) * (t.def.hover or 0.10)
+
+          -- Moving ground units kick up dust at footfall cadence.
+          if moving and hover == 0 and kind ~= "turret" then
+            local step = math.sin(t.stepPhase)
+            if step > 0.9 and not t.stepped then
+              t.stepped = true
+              EmitParticles({
+                pos = { x = p.x, y = 0.1, z = p.z },
+                count = 3, speedMin = 0.5, speedMax = 1.5,
+                lifeMin = 0.2, lifeMax = 0.4, sizeStart = 0.12, sizeEnd = 0.02,
+                color = { r = 0.55, g = 0.55, b = 0.5, a = 0.6 },
+                colorEnd = { r = 0.4, g = 0.4, b = 0.38, a = 0 },
+                gravity = -1, additive = false,
+              })
+            elseif step < 0 then
+              t.stepped = false
+            end
+          end
+
+          SetRotationY(t.e, yaw)
           SetPosition(t.e, p)
           t.attackCd = math.max(0, t.attackCd - dt)
-          if t.def.kind == "suicide" then
+          if kind == "suicide" then
             if t.attackCd <= 0 and d < 2.6 then
               suicide_boom(t)
             end
-          elseif t.def.kind == "turret" then
-            -- Sentry: 3-round burst when the player is in range.
-            if t.burst ~= nil and t.burst > 0 then
+          elseif kind == "turret" then
+            -- Sentry: 3-round burst when the player is visible in range.
+            if (t.burst or 0) > 0 then
               t.burstT = t.burstT - dt
               if t.burstT <= 0 then
                 t.burst = t.burst - 1
                 t.burstT = 0.16
-                local dir = { x = toX, y = 0, z = toZ }
+                t.recoil = 1
+                local dir = { x = nx, y = 0, z = nz }
                 local origin = { x = p.x, y = p.y + 0.6, z = p.z }
                 enemy_hitscan(origin, dir, (t.def.range or 18) + 8, t.def.damage or 8)
                 PlaySfx3D("shoot", origin)
               end
-            elseif d < (t.def.range or 18) and t.attackCd <= 0 then
+            elseif d < (t.def.range or 18) and los and t.attackCd <= 0 then
               t.attackCd = (t.def.fireRate or 1.8) * (t.enraged and 0.75 or 1)
               t.burst = 3
               t.burstT = 0
             end
-          elseif d < (t.def.range or 18) and t.attackCd <= 0 then
+          elseif d < (t.def.range or 18) and los and t.attackCd <= 0 then
             t.attackCd = (t.def.fireRate or 1.8) * (t.enraged and 0.75 or 1)
-            local dir = { x = toX, y = 0, z = toZ }
+            local dir = { x = nx, y = 0, z = nz }
             local origin = { x = p.x, y = p.y + 0.8, z = p.z }
             enemy_hitscan(origin, dir, (t.def.range or 18) + 8, t.def.damage or 8)
             PlaySfx3D("shoot", origin)
