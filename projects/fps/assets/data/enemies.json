@@ -9,7 +9,9 @@
     "fireRate": 1.8,
     "range": 18,
     "score": 100,
-    "scale": 1.15
+    "scale": 1.3,
+    "hover": 0.12,
+    "hitRadius": 1.2
   },
   {
     "id": "turret",
@@ -21,7 +23,9 @@
     "fireRate": 2.2,
     "range": 32,
     "score": 350,
-    "scale": 1.55
+    "scale": 1.55,
+    "hover": 0.0,
+    "hitRadius": 1.5
   },
   {
     "id": "heavy",
@@ -33,7 +37,9 @@
     "fireRate": 2.6,
     "range": 15,
     "score": 800,
-    "scale": 2.3
+    "scale": 1.6,
+    "hover": 0.0,
+    "hitRadius": 1.7
   },
   {
     "id": "suicide",
@@ -45,8 +51,10 @@
     "fireRate": 1.0,
     "range": 2.0,
     "score": 300,
-    "scale": 0.9,
-    "kind": "suicide"
+    "scale": 1.1,
+    "kind": "suicide",
+    "hover": 0.14,
+    "hitRadius": 1.1
   },
   {
     "id": "boss",
@@ -58,7 +66,9 @@
     "fireRate": 2.4,
     "range": 18,
     "score": 2500,
-    "scale": 3.0,
-    "kind": "boss"
+    "scale": 2.2,
+    "kind": "boss",
+    "hover": 0.0,
+    "hitRadius": 2.4
   }
 ]

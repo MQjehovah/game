@@ -1,0 +1,31 @@
+# enemy_drone.mtl - generated
+newmtl body
+Kd 0.320 0.360 0.420
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl dark
+Kd 0.130 0.140 0.170
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl eye
+Kd 0.900 0.180 0.140
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl rotor
+Kd 0.220 0.240 0.280
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl trim
+Kd 0.250 0.850 0.950
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+

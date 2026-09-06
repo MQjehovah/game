@@ -3,8 +3,10 @@
 -- wave director, enemy AI, pickups, persistent settings/scores, pause/game
 -- over/victory flow, UI HUD and first-person camera.
 
-local LEVEL = level or 1
-local NEXT_SCENE = next_scene or ""
+-- Script vars (level/next_scene) are injected per-call by the engine, not at
+-- load time -- so the real values are captured in on_start, never here.
+local LEVEL = 1
+local NEXT_SCENE = ""
 
 local player = nil
 local state = "playing" -- playing | paused | gameover | victory
@@ -158,6 +160,17 @@ local function switch_weapon(idx)
   update_gun_visibility()
 end
 
+-- Muzzle-flash point light: one persistent entity parked underground when
+-- idle (SetVisible does not gate the light gather, so park it instead).
+local muzzleLight = nil
+local muzzleLightT = 0
+
+local function park_muzzle_light()
+  if muzzleLight ~= nil then
+    SetPosition(muzzleLight, { x = 0, y = -100, z = 0 })
+  end
+end
+
 local function spawn_weapon_models()
   for _, w in ipairs(weapons) do
     if w.prefab ~= nil and w.prefab ~= "" then
@@ -225,6 +238,11 @@ local function ray_aabb(origin, dir, min, max)
   return tmin
 end
 
+local function cover_aabb(c)
+  return { x = c.x - c.halfX, y = c.cy - c.halfY, z = c.z - c.halfZ },
+         { x = c.x + c.halfX, y = c.cy + c.halfY, z = c.z + c.halfZ }
+end
+
 local function wall_distance(origin, dir, range)
   local best = range
   -- Ground plane (the large arena floor) stops downward shots.
@@ -236,10 +254,10 @@ local function wall_distance(origin, dir, range)
       if math.abs(px) <= 35 and math.abs(pz) <= 35 then best = t end
     end
   end
-  -- Axis-aligned cover crates.
+  -- Axis-aligned cover geometry (crates + barriers, per-type AABBs).
   for _, c in ipairs(covers) do
-    local t = ray_aabb(origin, dir, { x = c.x - c.halfX, y = c.y - c.halfY, z = c.z - c.halfZ },
-                       { x = c.x + c.halfX, y = c.y + c.halfY, z = c.z + c.halfZ })
+    local lo, hi = cover_aabb(c)
+    local t = ray_aabb(origin, dir, lo, hi)
     if t < best then best = t end
   end
   return best
@@ -280,7 +298,8 @@ local function hitscan(origin, dir, range, damage)
           local cz = origin.z + dir.z * along
           local ddx, ddy, ddz = p.x - cx, p.y - cy, p.z - cz
           local dist = math.sqrt(ddx * ddx + ddy * ddy + ddz * ddz)
-          if dist <= 1.2 then
+          -- Per-type hit sphere: a 3.5m Juggernaut is not a 1m drone.
+          if dist <= (t.def.hitRadius or 1.2) then
             bestEnt, bestT = t.e, along
             headshot = cy > p.y + (t.def.scale or 1) * 0.22
           end
@@ -336,34 +355,70 @@ local function fire_weapon()
     z = eye.z + fwd.z * 0.55 + right.z * 0.18,
   }
   local pellets = weapon.pellets or 1
+  local tracerEnd = nil
   for _ = 1, pellets do
     local spread = (weapon.spread or 0.008) + spreadHeat * 0.006
     local py = lookYaw + (math.random() - 0.5) * 2 * spread
     local pp = lookPitch + (math.random() - 0.5) * 2 * spread
-    hitscan(eye, forward_dir(py, pp), weapon.range or 120, weapon.damage or 20)
+    local _, hitPoint = hitscan(eye, forward_dir(py, pp), weapon.range or 120, weapon.damage or 20)
+    if tracerEnd == nil then tracerEnd = hitPoint end
   end
   spreadHeat = math.min(1, spreadHeat + 0.22)
   muzzleFlash = 0.055
   recoil = 1
   emit_burst(muzzle, 5, 6, 1, 0.8, 0.3)
+  -- Bright tracer streak downrange + muzzle point-light flash.
+  if tracerEnd ~= nil then
+    local dx, dy, dz = tracerEnd.x - muzzle.x, tracerEnd.y - muzzle.y, tracerEnd.z - muzzle.z
+    local len = math.sqrt(dx * dx + dy * dy + dz * dz)
+    if len > 0.1 then
+      EmitParticles({
+        pos = muzzle,
+        count = 1,
+        vel = { x = dx / len * 90, y = dy / len * 90, z = dz / len * 90 },
+        speedMin = 0, speedMax = 0,
+        lifeMin = 0.09, lifeMax = 0.09,
+        sizeStart = 0.07, sizeEnd = 0.015,
+        color = { r = 1, g = 0.85, b = 0.45, a = 1 },
+        colorEnd = { r = 1, g = 0.5, b = 0.1, a = 0 },
+        gravity = 0, additive = true,
+      })
+    end
+  end
+  if muzzleLight ~= nil then
+    SetPosition(muzzleLight, muzzle)
+    muzzleLightT = 0.05
+  end
   PlaySfx(weapon.sfx or "shoot")
   lookPitch = lookPitch + 0.006
 end
 
 local function spawn_cover()
   local list = levelCfg.cover or {}
-  for _, c in ipairs(list) do
-    local e = SpawnPrefab("cover_crate", { x = c[1] or 0, y = 1, z = c[3] or 0 })
+  for i, c in ipairs(list) do
+    -- Alternate tech crates and jersey barriers; barriers alternate their
+    -- long axis so the arena reads as a fought-over compound, not a grid.
+    local barrier = (i % 2) == 0
+    local e = SpawnPrefab(barrier and "cover_barrier" or "cover_crate",
+                          { x = c[1] or 0, y = 1, z = c[3] or 0 })
     if e ~= nil then
-      covers[#covers + 1] = {
-        e = e,
-        x = c[1] or 0,
-        y = 1,
-        z = c[3] or 0,
-        halfX = 1.1,
-        halfY = 1.0,
-        halfZ = 1.1,
-      }
+      local cover
+      if barrier then
+        -- Long axis alternates X / Z; the model's AABB is 2.0 x 1.0 x 0.45.
+        local longZ = (i % 4) >= 2
+        SetRotationY(e, longZ and math.pi / 2 or 0)
+        cover = {
+          e = e, x = c[1] or 0, y = 1, z = c[3] or 0,
+          cy = 0.52, halfX = longZ and 0.25 or 1.0, halfY = 0.55,
+          halfZ = longZ and 1.0 or 0.25,
+        }
+      else
+        cover = {
+          e = e, x = c[1] or 0, y = 1, z = c[3] or 0,
+          cy = 1.0, halfX = 1.1, halfY = 1.0, halfZ = 1.1,
+        }
+      end
+      covers[#covers + 1] = cover
     end
   end
 end
@@ -454,11 +509,16 @@ end
 
 function on_start(e)
   player = e
+  -- Per-instance script vars are live for this call: capture the level chain.
+  LEVEL = level or 1
+  NEXT_SCENE = next_scene or ""
   load_save()
   apply_audio()
   load_data()
   switch_weapon(1)
   spawn_weapon_models()
+  muzzleLight = SpawnPrefab("muzzle_flash", { x = 0, y = -100, z = 0 })
+  muzzleLightT = 0
   UIShow("assets/ui/game_hud.ui.json")
   UISetVisible("Hud", true)
   UISetVisible("PauseMenu", false)
@@ -488,6 +548,10 @@ local function update_player(dt)
   hitImpact = math.max(0, hitImpact - dt)
   shakeT = math.max(0, shakeT - dt)
   spreadHeat = math.max(0, spreadHeat - dt * 0.35)
+  if muzzleLightT > 0 then
+    muzzleLightT = muzzleLightT - dt
+    if muzzleLightT <= 0 then park_muzzle_light() end
+  end
   if reloadTime > 0 then
     reloadTime = reloadTime - dt
     if reloadTime <= 0 and weapon ~= nil then
@@ -699,8 +763,63 @@ local function suicide_boom(t)
   Despawn(t.e)
 end
 
+-- Steering helpers for ground/air movement around cover.
+local function inside_cover_xz(x, z, pad)
+  for _, c in ipairs(covers) do
+    if math.abs(x - c.x) < c.halfX + pad and math.abs(z - c.z) < c.halfZ + pad then
+      return c
+    end
+  end
+  return nil
+end
+
+-- Push the point out of any cover AABB (2D XZ), returning a corrected point.
+local function resolve_cover_xz(x, z, pad)
+  local c = inside_cover_xz(x, z, pad)
+  if c == nil then return x, z end
+  local dx = x - c.x
+  local dz = z - c.z
+  local pushX = (c.halfX + pad) - math.abs(dx)
+  local pushZ = (c.halfZ + pad) - math.abs(dz)
+  if pushX < pushZ then
+    x = x + (dx >= 0 and pushX or -pushX)
+  else
+    z = z + (dz >= 0 and pushZ or -pushZ)
+  end
+  return x, z
+end
+
 local function update_enemies(dt)
   local pp = GetPosition(player)
+  -- 1) Separation pass: keep the swarm readable (no stacking into one blob).
+  for i, t in ipairs(enemies) do
+    if t.alive and (t.def.speed or 0) > 0 then
+      local pi = GetPosition(t.e)
+      if pi ~= nil then
+        for j = i + 1, #enemies do
+          local o = enemies[j]
+          if o.alive and (o.def.speed or 0) > 0 then
+            local pj = GetPosition(o.e)
+            if pj ~= nil then
+              local dx, dz = pi.x - pj.x, pi.z - pj.z
+              local d = math.sqrt(dx * dx + dz * dz)
+              local minD = 1.5
+              if d > 0.001 and d < minD then
+                local push = (minD - d) * 0.5
+                local nx, nz = dx / d, dz / d
+                pi.x = pi.x + nx * push
+                pi.z = pi.z + nz * push
+                pj.x = pj.x - nx * push
+                pj.z = pj.z - nz * push
+                SetPosition(o.e, pj)
+              end
+            end
+          end
+        end
+      end
+    end
+  end
+
   for _, t in ipairs(enemies) do
     if t.alive then
       local hp = GetHealth(t.e)
@@ -746,23 +865,69 @@ local function update_enemies(dt)
         local p = GetPosition(t.e)
         if p ~= nil and pp ~= nil then
           local d = dist2d(p.x, p.z, pp.x, pp.z)
-          local moving = false
-          if (t.def.speed or 0) > 0 and d > math.max(1.5, (t.def.range or 15) * 0.75) then
-            moving = true
-            local sp = t.def.speed
-            p.x = p.x + (pp.x - p.x) / d * sp * dt
-            p.z = p.z + (pp.z - p.z) / d * sp * dt
+          local toX, toZ = (pp.x - p.x) / math.max(d, 0.001), (pp.z - p.z) / math.max(d, 0.001)
+          -- Face the player (models are authored looking down +Z).
+          SetRotationY(t.e, math.atan(toX, toZ))
+
+          -- Boss enrage: below 35% HP it snaps into overdrive once.
+          if t.def.kind == "boss" and not t.enraged and hp < (t.def.hp or 1) * 0.35 then
+            t.enraged = true
+            EmitParticles({
+              pos = p, count = 24, speedMin = 3, speedMax = 8,
+              lifeMin = 0.2, lifeMax = 0.45, sizeStart = 0.24, sizeEnd = 0.02,
+              color = { r = 0.85, g = 0.2, b = 0.9, a = 1 },
+              colorEnd = { r = 0.2, g = 0.05, b = 0.1, a = 0 },
+              gravity = -3, additive = true,
+            })
+            PlaySfx("wave")
           end
-          p.y = t.home.y + math.sin(clock * 2.0 + t.phase) * 0.10
+          local speed = t.def.speed or 0
+          if t.enraged then speed = speed * 1.5 end
+
+          if speed > 0 and d > math.max(1.5, (t.def.range or 15) * 0.75) then
+            -- Cover-aware steering: probe ahead; a cover box inside the probe
+            -- deflects the chase tangentially instead of stacking into it.
+            local probe = 1.6
+            local nx, nz = resolve_cover_xz(p.x + toX * probe, p.z + toZ * probe, 0.35)
+            local sx, sz = nx - p.x, nz - p.z
+            local slen = math.sqrt(sx * sx + sz * sz)
+            if slen > 0.001 then
+              sx, sz = sx / slen, sz / slen
+              -- blend: mostly toward the deflected direction (around cover)
+              toX, toZ = sx, sz
+            end
+            p.x = p.x + toX * speed * dt
+            p.z = p.z + toZ * speed * dt
+            p.x, p.z = resolve_cover_xz(p.x, p.z, 0.45)
+          end
+          -- Hover: flying units bob; ground units keep their feet planted.
+          p.y = t.home.y + math.sin(clock * 2.0 + t.phase) * (t.def.hover or 0.10)
           SetPosition(t.e, p)
           t.attackCd = math.max(0, t.attackCd - dt)
           if t.def.kind == "suicide" then
             if t.attackCd <= 0 and d < 2.6 then
               suicide_boom(t)
             end
+          elseif t.def.kind == "turret" then
+            -- Sentry: 3-round burst when the player is in range.
+            if t.burst ~= nil and t.burst > 0 then
+              t.burstT = t.burstT - dt
+              if t.burstT <= 0 then
+                t.burst = t.burst - 1
+                t.burstT = 0.16
+                local dir = { x = toX, y = 0, z = toZ }
+                local origin = { x = p.x, y = p.y + 0.6, z = p.z }
+                enemy_hitscan(origin, dir, (t.def.range or 18) + 8, t.def.damage or 8)
+                PlaySfx3D("shoot", origin)
+              end
+            elseif d < (t.def.range or 18) and t.attackCd <= 0 then
+              t.attackCd = (t.def.fireRate or 1.8) * (t.enraged and 0.75 or 1)
+              t.burst = 3
+              t.burstT = 0
+            end
           elseif d < (t.def.range or 18) and t.attackCd <= 0 then
-            t.attackCd = t.def.fireRate or 1.8
-            local dir = { x = (pp.x - p.x) / d, y = 0, z = (pp.z - p.z) / d }
+            t.attackCd = (t.def.fireRate or 1.8) * (t.enraged and 0.75 or 1)
+            local dir = { x = toX, y = 0, z = toZ }
             local origin = { x = p.x, y = p.y + 0.8, z = p.z }
             enemy_hitscan(origin, dir, (t.def.range or 18) + 8, t.def.damage or 8)
             PlaySfx3D("shoot", origin)

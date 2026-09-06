@@ -1,0 +1,19 @@
+# cover_barrier.mtl - generated
+newmtl concrete
+Kd 0.580 0.600 0.620
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl stripe
+Kd 0.920 0.780 0.200
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl foot
+Kd 0.130 0.140 0.170
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+

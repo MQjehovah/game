@@ -1,0 +1,19 @@
+# pickup_ammo.mtl - generated
+newmtl can
+Kd 0.420 0.460 0.300
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl lid
+Kd 0.130 0.140 0.170
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl tip
+Kd 0.800 0.620 0.250
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+

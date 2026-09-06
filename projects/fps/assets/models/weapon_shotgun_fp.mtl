@@ -1,0 +1,31 @@
+# weapon_shotgun_fp.mtl - generated
+newmtl body
+Kd 0.450 0.300 0.160
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl dark
+Kd 0.130 0.140 0.170
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl grip
+Kd 0.160 0.130 0.100
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl pump
+Kd 0.320 0.360 0.420
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl acc
+Kd 0.980 0.720 0.150
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+

@@ -1,0 +1,7 @@
+{
+  "components": {
+    "transform": { "pos": [0, 0, 0], "rot": [0, 0, 0, 1], "scale": [1, 1, 1] },
+    "mesh": { "meshKey": "obj:assets/models/cover_barrier.obj", "roughness": 0.85 },
+    "rigidbody": { "shape": "box", "halfExtents": [1.0, 0.55, 0.25], "dynamic": false }
+  }
+}

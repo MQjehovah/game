@@ -1,0 +1,37 @@
+# weapon_sniper_fp.mtl - generated
+newmtl body
+Kd 0.300 0.340 0.300
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl dark
+Kd 0.130 0.140 0.170
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl grip
+Kd 0.160 0.130 0.100
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl scope
+Kd 0.130 0.140 0.170
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl lens
+Kd 0.350 0.750 0.950
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl mag
+Kd 0.320 0.360 0.420
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+

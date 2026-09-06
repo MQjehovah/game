@@ -5,12 +5,14 @@
 ## 游戏循环
 
 - 主菜单：开始任务、设置（鼠标灵敏度、音乐、音效）、持久化到 `save.json`
-- 三个关卡：`Perimeter Breach` -> `Sector Hold` -> `Command Core`
-- 武器系统：突击步枪 / 战术 SMG / 霰弹枪 / 狙击枪，弹药、换弹、散布、射速、伤害均由 `assets/data/weapons.json` 驱动（第一人称模型由脚本程序化生成的 OBJ 提供）
-- 敌人系统：无人机 / 炮台 / 重型单位 / 自爆 Sapper / 精英 Juggernaut，属性由 `assets/data/enemies.json` 驱动
-- 波次导演：`assets/data/levels.json` 定义每关掩体、敌人生成节奏（最终关有 Boss 波）
-- 拾取物：敌人概率掉落血包 / 弹药
-- 打击感：爆头判定 ×2 伤害、命中伤害飘字、命中/受击反馈音、连杀 COMBO 倍率、击杀粒子/浮字
+- 三个关卡：`Perimeter Breach` -> `Sector Hold` -> `Command Core`，各配昼夜主题氛围
+  （黎明 / 黄昏 / 夜战 + 四角信标塔点光 + 围墙），由场景 `environment.useAtmosphere` 驱动
+- 武器系统：突击步枪 / 战术 SMG / 霰弹枪 / 狙击枪，弹药、换弹、散布、射速、伤害均由 `assets/data/weapons.json` 驱动（第一人称模型由 `tools/gen_fps_models.py` 程序生成的多材质 OBJ 提供：机匣/护木/弹匣/准星分色）
+- 敌人系统：无人机 / 炮台 / 重型单位 / 自爆 Sapper / 精英 Juggernaut，属性由 `assets/data/enemies.json` 驱动；低模机器人军团（`enemy_*.obj`：四旋翼无人机、双管哨炮、自爆球、双足重甲、攻城 Juggernaut）
+- 敌人 AI：群体分离（不堆叠）、绕掩体转向、朝向玩家；炮台三连发点射并转向瞄准；Boss 35% 血量狂暴（提速 + 射速加快）
+- 波次导演：`assets/data/levels.json` 定义每关掩体（科技箱 + 护墩混排）、敌人生成节奏（最终关有 Boss 波）
+- 打击感：枪口点光 + 曳光弹、爆头判定 ×2 伤害、命中伤害飘字、命中/受击反馈音、连杀 COMBO 倍率、击杀粒子/浮字
+- 拾取物：敌人概率掉落医疗包 / 弹药箱（程序化模型）
 - 暂停、重开、任务失败、通关、主菜单返回
 - 最高分和设置持久化
 
@@ -52,6 +54,20 @@
 `assets/audio/*.wav` 为 16-bit PCM（44.1 kHz 由加载器统一重采样）。`tools/gen_fps_sfx.py`
 可再生成程序合成的 shoot/click/wave/win 四个音效；替换为录音素材时保持同名即可。
 打包播放由 `neon_game` 内置音频后端驱动（`ResolveSfx`：VFS → 磁盘兜底 → 缓存）。
+
+## 美术资产管线
+
+敌人/武器/掩体/拾取物模型与地面/墙面纹理均由脚本程序化生成（可再生成、可整批替换）：
+
+```bat
+python tools\gen_fps_models.py     &REM projects/fps/assets/models/*.obj + .mtl
+python tools\gen_fps_textures.py   &REM projects/fps/assets/textures/*.png
+python tools\update_fps_scenes.py  &REM 三关场景：纹理/围墙/信标塔/主题氛围
+```
+
+模型为低多边形 OBJ+MTL 多材质（每部件 Kd 颜色，加载器平面着色）。地面单位模型
+脚底创作在 y=-1（实体生成于 y=1，脚底贴地）；飞行单位以原点为体心。
+换真实美术资产时保持文件名与朝向（ muzzle/-Z、模型正面 +Z）即可无缝替换。
 
 ## 结构
 

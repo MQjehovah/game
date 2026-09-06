@@ -5,13 +5,13 @@
         "mesh": {
           "castShadow": false,
           "material": {
-            "albedoTex": "assets/textures/ground_checker.png",
+            "albedoTex": "assets/textures/ground_tech.png",
             "ao": 1,
             "colorHex": "#B8C7D6",
             "emissiveIntensity": 1,
             "metallic": 0,
             "roughness": 0.949999988079071,
-            "uvRepeat": 100
+            "uvRepeat": 12
           },
           "meshKey": "cube"
         },
@@ -58,17 +58,17 @@
         "light": {
           "ambientStrength": 0.25,
           "color": [
-            1,
-            0.949999988079071,
-            0.8799999952316284,
+            0.55,
+            0.65,
+            0.95,
             1
           ],
-          "intensity": 2.4000000953674316,
+          "intensity": 0.9,
           "radius": 10,
           "sunDir": [
-            -0.44999998807907104,
-            -0.8999999761581421,
-            -0.3499999940395355
+            0.35,
+            -0.85,
+            0.25
           ],
           "type": "directional"
         },
@@ -167,42 +167,623 @@
       },
       "id": 4,
       "name": "Player"
+    },
+    {
+      "components": {
+        "transform": {
+          "pos": [
+            0,
+            1.5,
+            -34.5
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            69,
+            3,
+            1
+          ]
+        },
+        "mesh": {
+          "meshKey": "cube",
+          "castShadow": false,
+          "material": {
+            "albedoTex": "assets/textures/wall_tech.png",
+            "colorHex": "#B8C7D6",
+            "roughness": 0.85,
+            "metallic": 0.0,
+            "ao": 1,
+            "emissiveIntensity": 1,
+            "uvRepeat": 8
+          }
+        }
+      },
+      "id": 100,
+      "name": "Wall N"
+    },
+    {
+      "components": {
+        "transform": {
+          "pos": [
+            0,
+            1.5,
+            34.5
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            69,
+            3,
+            1
+          ]
+        },
+        "mesh": {
+          "meshKey": "cube",
+          "castShadow": false,
+          "material": {
+            "albedoTex": "assets/textures/wall_tech.png",
+            "colorHex": "#B8C7D6",
+            "roughness": 0.85,
+            "metallic": 0.0,
+            "ao": 1,
+            "emissiveIntensity": 1,
+            "uvRepeat": 8
+          }
+        }
+      },
+      "id": 101,
+      "name": "Wall S"
+    },
+    {
+      "components": {
+        "transform": {
+          "pos": [
+            -34.5,
+            1.5,
+            0
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            3,
+            69
+          ]
+        },
+        "mesh": {
+          "meshKey": "cube",
+          "castShadow": false,
+          "material": {
+            "albedoTex": "assets/textures/wall_tech.png",
+            "colorHex": "#B8C7D6",
+            "roughness": 0.85,
+            "metallic": 0.0,
+            "ao": 1,
+            "emissiveIntensity": 1,
+            "uvRepeat": 8
+          }
+        }
+      },
+      "id": 102,
+      "name": "Wall W"
+    },
+    {
+      "components": {
+        "transform": {
+          "pos": [
+            34.5,
+            1.5,
+            0
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            3,
+            69
+          ]
+        },
+        "mesh": {
+          "meshKey": "cube",
+          "castShadow": false,
+          "material": {
+            "albedoTex": "assets/textures/wall_tech.png",
+            "colorHex": "#B8C7D6",
+            "roughness": 0.85,
+            "metallic": 0.0,
+            "ao": 1,
+            "emissiveIntensity": 1,
+            "uvRepeat": 8
+          }
+        }
+      },
+      "id": 103,
+      "name": "Wall E"
+    },
+    {
+      "components": {
+        "transform": {
+          "pos": [
+            -30.5,
+            2.5,
+            -30.5
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            0.9,
+            5,
+            0.9
+          ]
+        },
+        "mesh": {
+          "meshKey": "cube",
+          "castShadow": true,
+          "material": {
+            "colorHex": "#4A5568",
+            "roughness": 0.7,
+            "metallic": 0.2,
+            "ao": 1,
+            "emissiveIntensity": 1
+          }
+        }
+      },
+      "id": 110,
+      "name": "Beacon 1 Pillar"
+    },
+    {
+      "components": {
+        "transform": {
+          "pos": [
+            -30.5,
+            5.4,
+            -30.5
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.4,
+            0.9,
+            1.4
+          ]
+        },
+        "mesh": {
+          "meshKey": "cube",
+          "castShadow": false,
+          "material": {
+            "colorHex": "#37E1FF",
+            "roughness": 0.4,
+            "metallic": 0.0,
+            "ao": 1,
+            "emissiveIntensity": 2.2
+          }
+        }
+      },
+      "id": 111,
+      "name": "Beacon 1 Head"
+    },
+    {
+      "components": {
+        "transform": {
+          "pos": [
+            -30.5,
+            5.8,
+            -30.5
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "light": {
+          "type": "point",
+          "color": [
+            0.25,
+            0.85,
+            1.0,
+            1
+          ],
+          "intensity": 2.8,
+          "radius": 22
+        },
+        "type": {
+          "value": "Light3D"
+        }
+      },
+      "id": 112,
+      "name": "Beacon 1 Light"
+    },
+    {
+      "components": {
+        "transform": {
+          "pos": [
+            30.5,
+            2.5,
+            -30.5
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            0.9,
+            5,
+            0.9
+          ]
+        },
+        "mesh": {
+          "meshKey": "cube",
+          "castShadow": true,
+          "material": {
+            "colorHex": "#4A5568",
+            "roughness": 0.7,
+            "metallic": 0.2,
+            "ao": 1,
+            "emissiveIntensity": 1
+          }
+        }
+      },
+      "id": 113,
+      "name": "Beacon 2 Pillar"
+    },
+    {
+      "components": {
+        "transform": {
+          "pos": [
+            30.5,
+            5.4,
+            -30.5
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.4,
+            0.9,
+            1.4
+          ]
+        },
+        "mesh": {
+          "meshKey": "cube",
+          "castShadow": false,
+          "material": {
+            "colorHex": "#37E1FF",
+            "roughness": 0.4,
+            "metallic": 0.0,
+            "ao": 1,
+            "emissiveIntensity": 2.2
+          }
+        }
+      },
+      "id": 114,
+      "name": "Beacon 2 Head"
+    },
+    {
+      "components": {
+        "transform": {
+          "pos": [
+            30.5,
+            5.8,
+            -30.5
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "light": {
+          "type": "point",
+          "color": [
+            0.25,
+            0.85,
+            1.0,
+            1
+          ],
+          "intensity": 2.8,
+          "radius": 22
+        },
+        "type": {
+          "value": "Light3D"
+        }
+      },
+      "id": 115,
+      "name": "Beacon 2 Light"
+    },
+    {
+      "components": {
+        "transform": {
+          "pos": [
+            -30.5,
+            2.5,
+            30.5
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            0.9,
+            5,
+            0.9
+          ]
+        },
+        "mesh": {
+          "meshKey": "cube",
+          "castShadow": true,
+          "material": {
+            "colorHex": "#4A5568",
+            "roughness": 0.7,
+            "metallic": 0.2,
+            "ao": 1,
+            "emissiveIntensity": 1
+          }
+        }
+      },
+      "id": 116,
+      "name": "Beacon 3 Pillar"
+    },
+    {
+      "components": {
+        "transform": {
+          "pos": [
+            -30.5,
+            5.4,
+            30.5
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.4,
+            0.9,
+            1.4
+          ]
+        },
+        "mesh": {
+          "meshKey": "cube",
+          "castShadow": false,
+          "material": {
+            "colorHex": "#37E1FF",
+            "roughness": 0.4,
+            "metallic": 0.0,
+            "ao": 1,
+            "emissiveIntensity": 2.2
+          }
+        }
+      },
+      "id": 117,
+      "name": "Beacon 3 Head"
+    },
+    {
+      "components": {
+        "transform": {
+          "pos": [
+            -30.5,
+            5.8,
+            30.5
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "light": {
+          "type": "point",
+          "color": [
+            0.25,
+            0.85,
+            1.0,
+            1
+          ],
+          "intensity": 2.8,
+          "radius": 22
+        },
+        "type": {
+          "value": "Light3D"
+        }
+      },
+      "id": 118,
+      "name": "Beacon 3 Light"
+    },
+    {
+      "components": {
+        "transform": {
+          "pos": [
+            30.5,
+            2.5,
+            30.5
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            0.9,
+            5,
+            0.9
+          ]
+        },
+        "mesh": {
+          "meshKey": "cube",
+          "castShadow": true,
+          "material": {
+            "colorHex": "#4A5568",
+            "roughness": 0.7,
+            "metallic": 0.2,
+            "ao": 1,
+            "emissiveIntensity": 1
+          }
+        }
+      },
+      "id": 119,
+      "name": "Beacon 4 Pillar"
+    },
+    {
+      "components": {
+        "transform": {
+          "pos": [
+            30.5,
+            5.4,
+            30.5
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1.4,
+            0.9,
+            1.4
+          ]
+        },
+        "mesh": {
+          "meshKey": "cube",
+          "castShadow": false,
+          "material": {
+            "colorHex": "#37E1FF",
+            "roughness": 0.4,
+            "metallic": 0.0,
+            "ao": 1,
+            "emissiveIntensity": 2.2
+          }
+        }
+      },
+      "id": 120,
+      "name": "Beacon 4 Head"
+    },
+    {
+      "components": {
+        "transform": {
+          "pos": [
+            30.5,
+            5.8,
+            30.5
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "light": {
+          "type": "point",
+          "color": [
+            0.25,
+            0.85,
+            1.0,
+            1
+          ],
+          "intensity": 2.8,
+          "radius": 22
+        },
+        "type": {
+          "value": "Light3D"
+        }
+      },
+      "id": 121,
+      "name": "Beacon 4 Light"
     }
   ],
   "environment": {
     "ambientColor": [
-      0.44999998807907104,
-      0.550000011920929,
-      0.7200000286102295,
+      0.18,
+      0.22,
+      0.32,
       1
     ],
-    "ambientStrength": 0.6499999761581421,
+    "ambientStrength": 0.52,
     "fogColor": [
-      0.44999998807907104,
-      0.550000011920929,
-      0.699999988079071,
+      0.05,
+      0.08,
+      0.14,
       1
     ],
     "fogFar": 220,
     "fogNear": 60,
     "skyHorizon": [
-      0.550000011920929,
-      0.6499999761581421,
-      0.800000011920929,
+      0.07,
+      0.11,
+      0.2,
       1
     ],
     "skyTop": [
-      0.2800000011920929,
-      0.3799999952316284,
-      0.5799999833106995,
+      0.015,
+      0.025,
+      0.06,
       1
-    ]
+    ],
+    "useAtmosphere": true
   },
   "renderstack": {
     "autoExposure": false,
     "autoExposureKey": 0.18000000715255737,
     "bloom": true,
-    "bloomStrength": 0.3499999940395355,
+    "bloomStrength": 0.55,
     "bloomThreshold": 1,
     "exposure": 1,
     "fog": false,
@@ -230,7 +811,7 @@
     "ssr": false,
     "ssrStrength": 1,
     "tonemap": true,
-    "vignette": false,
+    "vignette": true,
     "vignetteIntensity": 0.5,
     "vignetteRadius": 0.6000000238418579,
     "volumetric": false,

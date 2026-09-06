@@ -1,7 +1,7 @@
 {
   "components": {
-    "transform": { "pos": [0, 0, 0], "rot": [0, 0, 0, 1], "scale": [0.9, 0.9, 0.9] },
-    "mesh": { "meshKey": "sphere", "colorHex": "#F97316", "roughness": 0.6 },
+    "transform": { "pos": [0, 0, 0], "rot": [0, 0, 0, 1], "scale": [1.1, 1.1, 1.1] },
+    "mesh": { "meshKey": "obj:assets/models/enemy_sapper.obj", "roughness": 0.55 },
     "health": { "hp": 60, "maxHp": 60 }
   }
 }
