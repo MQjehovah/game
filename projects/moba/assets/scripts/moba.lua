@@ -75,7 +75,7 @@ local elapsed = 0
 local netStateTimer = 0
 local chooseChampion -- forward (defined below; used by lobby/match-start)
 -- 联机大厅（client 角色）：等待对手 / 房号 / 房间列表
-local LOBBY = { phase = "lobby", room = "", players = 0, max = 2, rooms = {},
+local LOBBY = { phase = "lobby", room = "", players = 0, max = 2, host = 0, rooms = {},
                 side = nil, code = "", msg = "", refreshT = 0, keysPrev = {} }
 local ROSTER = {}
 local CHAMP_DATA = {}
@@ -1213,6 +1213,7 @@ local function lobbyHandle(name, argsJson)
                 LOBBY.room = a.room or LOBBY.room
                 LOBBY.players = a.players or 1
                 LOBBY.max = a.max or 2
+                LOBBY.host = a.host or LOBBY.host
                 LOBBY.msg = ""
             end
         end
@@ -1220,6 +1221,7 @@ local function lobbyHandle(name, argsJson)
         if a ~= nil and LOBBY.room ~= "" and a.room == LOBBY.room then
             LOBBY.players = a.players or LOBBY.players
             LOBBY.max = a.max or LOBBY.max
+            LOBBY.host = a.host or LOBBY.host
         end
     elseif name == "room.list" then
         LOBBY.rooms = (a and a.rooms) or {}
@@ -2404,14 +2406,23 @@ local function drawLobby()
     local rx = vw * 0.5 + 40
     DrawText("当前房间", rx, ly, 16, 1, 1, 1, 1, false, true)
     if LOBBY.room ~= "" then
-        DrawText(string.format("%s   %d/%d", LOBBY.room, LOBBY.players, LOBBY.max),
-            rx, ly + 28, 22, 0.95, 0.82, 0.35, 1, false, true)
-        if LOBBY.players < LOBBY.max then
-            DrawText("等待对手加入…", rx, ly + 62, 15, 0.8, 0.85, 1, 1, false, true)
-            if button(rx, ly + 92, 170, 40, "和 AI 开始") then Rpc("room.start") end
+        local myId = GetVar("myClientId")
+        local isHost = (myId ~= nil and LOBBY.host ~= 0 and LOBBY.host == myId)
+        DrawText(string.format("%s   %d/%d%s", LOBBY.room, LOBBY.players, LOBBY.max,
+            isHost and "   (房主)" or ""), rx, ly + 28, 22, 0.95, 0.82, 0.35, 1, false, true)
+        if isHost then
+            if LOBBY.players >= 2 then
+                if button(rx, ly + 92, 170, 40, "开始对局") then Rpc("room.start") end
+                if button(rx, ly + 140, 170, 36, "踢出对手") then Rpc("room.kick") end
+            else
+                DrawText("等待对手加入…", rx, ly + 62, 15, 0.8, 0.85, 1, 1, false, true)
+                if button(rx, ly + 92, 170, 40, "和 AI 开始") then Rpc("room.start") end
+            end
+        else
+            DrawText("等待房主开始…", rx, ly + 62, 15, 0.8, 0.85, 1, 1, false, true)
         end
-        if button(rx, ly + 146, 130, 36, "离开房间") then
-            Rpc("room.leave"); LOBBY.room = ""; LOBBY.players = 0
+        if button(rx, ly + 190, 130, 36, "离开房间") then
+            Rpc("room.leave"); LOBBY.room = ""; LOBBY.players = 0; LOBBY.host = 0
         end
     else
         DrawText("未加入房间", rx, ly + 30, 15, 0.8, 0.8, 0.8, 1, false, true)

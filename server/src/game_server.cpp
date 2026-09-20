@@ -605,6 +605,15 @@ void GameServer::SetupRpc() {
         j.bool_ = v;
         o.object_[k] = std::move(j);
     };
+    // Host = the earliest-joined (smallest clientId) member of the room.
+    auto roomHostOf = [this](const std::string& code) -> uint64_t {
+        uint64_t host = 0;
+        for (auto& kv : clients_)
+            if (kv.second.room == code &&
+                (host == 0 || kv.second.clientId < host))
+                host = kv.second.clientId;
+        return host;
+    };
     rpc_.Register("room.create", [this, putStr, putNum](uint64_t clientId,
                                                         const std::string&) {
         std::string code;
@@ -623,12 +632,13 @@ void GameServer::SetupRpc() {
         putStr(reply, "room", code);
         putNum(reply, "players", 1);
         putNum(reply, "max", 2);
+        putNum(reply, "host", static_cast<double>(clientId));
         BroadcastRoom(code, "lobby", core::JsonWriter::Write(reply));
         return std::optional<std::pair<std::string, std::string>>(
             std::make_pair(std::string("room.joined"), core::JsonWriter::Write(reply)));
     });
-    rpc_.Register("room.join", [this, putStr, putNum, putBool](uint64_t clientId,
-                                                               const std::string& argsJson) {
+    rpc_.Register("room.join", [this, putStr, putNum, putBool, roomHostOf](
+                                   uint64_t clientId, const std::string& argsJson) {
         std::string code;
         std::string perr;
         core::Json args = core::Json::Parse(argsJson, &perr);
@@ -646,18 +656,40 @@ void GameServer::SetupRpc() {
             putStr(reply, "room", code);
             putNum(reply, "players", static_cast<double>(ClientsInRoom(code).size()));
             putNum(reply, "max", 2);
+            putNum(reply, "host", static_cast<double>(roomHostOf(code)));
         } else {
             putStr(reply, "error", "房间不存在/已满/已开始");
         }
         BroadcastRoom(code, "lobby", core::JsonWriter::Write(reply));
-        if (ok && ClientsInRoom(code).size() >= 2) StartRoomMatch(code);
         return std::optional<std::pair<std::string, std::string>>(
             std::make_pair(std::string("room.joined"), core::JsonWriter::Write(reply)));
     });
-    rpc_.Register("room.start", [this](uint64_t clientId, const std::string&) {
+    rpc_.Register("room.start", [this, roomHostOf](uint64_t clientId, const std::string&) {
         std::string code;
         if (Client* c = ClientById(clientId)) code = c->room;
-        if (!code.empty()) StartRoomMatch(code);
+        // Only the room's host may start (1 player -> vs AI, 2 -> 1v1).
+        if (!code.empty() && roomHostOf(code) == clientId) StartRoomMatch(code);
+        return std::optional<std::pair<std::string, std::string>>{};
+    });
+    // room.kick (host only): drop every other member from the room.
+    rpc_.Register("room.kick", [this, roomHostOf, putNum](uint64_t clientId,
+                                                          const std::string&) {
+        Client* me = ClientById(clientId);
+        if (me == nullptr) return std::optional<std::pair<std::string, std::string>>{};
+        const std::string code = me->room;
+        if (code.empty() || roomHostOf(code) != clientId)
+            return std::optional<std::pair<std::string, std::string>>{};
+        for (Client* m : ClientsInRoom(code)) {
+            if (m->clientId == clientId) continue;
+            m->room.clear();
+            SendRpc(*m, "room.left", "{}");
+        }
+        core::Json reply;
+        reply.type_ = core::Json::Type::Object;
+        putNum(reply, "players", static_cast<double>(ClientsInRoom(code).size()));
+        putNum(reply, "max", 2);
+        putNum(reply, "host", static_cast<double>(clientId));
+        BroadcastRoom(code, "lobby", core::JsonWriter::Write(reply));
         return std::optional<std::pair<std::string, std::string>>{};
     });
     rpc_.Register("room.leave", [this](uint64_t clientId, const std::string&) {
