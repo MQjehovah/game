@@ -167,6 +167,7 @@ public:
     }
 
 private:
+    struct Match;
     struct Client {
         net::NetAddress addr;
         net::ReliableChannel chan;
@@ -216,8 +217,15 @@ private:
     void SendCharList(Client& c);
     void SendPong(Client& c, uint64_t sendTime);
     void SendDespawn(Client& c, uint64_t entityId);
-    void ApplyControllerInput();
-    void BroadcastSnapshot();
+    void ApplyControllerInput(Match& m);
+    void BroadcastSnapshot(Match& m);
+    // Per-match setup (kernel + runtime + script hooks). Used for the default
+    // match at Start and for each room match in StartRoomMatch.
+    bool InitMatch(Match& m, const std::string& sceneJson, bool packMode);
+    // The match that serves `c`: its room's match when started, else the
+    // default match.
+    Match* MatchForClient(const Client& c);
+    uint64_t ControlledEntityKey(Match& m);
     void TickChannels(uint64_t nowMs);
     void DropTimedOutClients(uint64_t nowMs);
     void RemoveClient(const net::NetAddress& addr);
@@ -247,7 +255,11 @@ private:
         uint64_t snapshotDrops = 0;  // snapshots dropped for send failures
         std::string room;            // "" = default match
     };
-    std::unique_ptr<Match> match_; // default match (S1); room matches added in S2
+    std::unique_ptr<Match> match_; // default match (client with no started room)
+    // Per-room matches (multi-match). Each owns its own runtime + clients.
+    std::map<std::string, std::unique_ptr<Match>> roomMatches_;
+    std::string sceneJson_; // cached scene JSON, reused for new room matches
+    bool packMode_ = false; // scene came from a pack (VFS)
     std::map<net::NetAddress, Client, NetAddrLess> clients_;
     std::set<std::string> startedRooms_; // rooms whose match already began
     bool matchActive_ = false;
