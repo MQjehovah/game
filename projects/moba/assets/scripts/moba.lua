@@ -1231,6 +1231,15 @@ local function lobbyHandle(name, argsJson)
         LOBBY.phase = "match"
         if playerHero == nil and #SELECT > 0 then chooseChampion(SELECT[1]) end
         phase = "play"
+    elseif name == "net.reset" then
+        -- Reconnected to the server: our old room membership is gone.
+        LOBBY.phase = "lobby"
+        LOBBY.room = ""
+        LOBBY.players = 0
+        LOBBY.host = 0
+        LOBBY.rooms = {}
+        LOBBY.msg = "已重新连接服务器"
+        phase = "play"
     end
 end
 

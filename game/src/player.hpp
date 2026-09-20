@@ -142,6 +142,10 @@ private:
     void SendRpc(const std::string& name, const std::string& argsJson);
     void PumpNetwork();
     void SendInputPacket();
+    // Auto-reconnect: rebuild socket + channel and re-run login/join after the
+    // reliable channel dies (server restart, brief network loss, ...).
+    void TryReconnect(uint64_t nowMs);
+    uint64_t ReconnectDelayMs() const;
     void ResolveControlledEntity();
     void ReconcileControlled();
     void DrawNetworkWorld();
@@ -204,6 +208,12 @@ bool loginSent_ = false;  // MsgLogin sent (deferred to the first network pump)
 bool joinSent_ = false;  // MsgJoin sent (only after login)
     bool welcomed_ = false;
     bool connectedLost_ = false;
+    // Time (ms on the game clock) of the next reconnect attempt, 0 = none scheduled.
+    uint64_t reconnectAtMs_ = 0;
+    uint32_t reconnectAttempts_ = 0;
+    // Game clock at the last delivered server message; used to detect a dropped
+    // link faster than the reliable channel's (long) timeout.
+    uint64_t lastServerMsgMs_ = 0;
     uint32_t inputSeq_ = 0;
     uint64_t lastPingMs_ = 0; // A10: last heartbeat Ping send time (1 Hz)
     ecs::Entity controlledEntity_;

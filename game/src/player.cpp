@@ -722,6 +722,7 @@ bool PlayerApp::StartNetwork() {
                      cfg_.connectHost.c_str(), cfg_.connectPort);
         connectedLost_ = true;
         runtime_.GameVars().Set("netConnected", script::Value::Num(0));
+        reconnectAtMs_ = 0; // PumpNetwork schedules the next attempt
     });
 
     // T6.6 v0 anonymous login is DEFERRED to the first network pump (see
@@ -734,6 +735,45 @@ bool PlayerApp::StartNetwork() {
                  "client: connecting to %s:%u (login name '%s')",
                  cfg_.connectHost.c_str(), cfg_.connectPort, cfg_.playerName.c_str());
     return true;
+}
+
+// Exponential backoff for auto-reconnect: 1s, 2s, 4s, then 8s.
+uint64_t PlayerApp::ReconnectDelayMs() const {
+    const uint32_t shift = reconnectAttempts_ > 3 ? 3 : reconnectAttempts_;
+    return 1000ull << shift;
+}
+
+// Re-run the login/join handshake after the reliable channel died (server
+// restart, brief network drop, or the server dropping us mid-load). Keeps the
+// SAME UDP socket: recreating it proved unreliable here (the fresh socket
+// reported successful sends the peer never received), and reusing it keeps our
+// source address stable so the server sees one client, not a churn of ports.
+void PlayerApp::TryReconnect(uint64_t nowMs) {
+    ++reconnectAttempts_;
+    NEON_LOG_CAT(neon::core::LogCategory::Net, neon::core::LogLevel::Info,
+                 "client: reconnecting to %s:%u (attempt %u, local port %u)",
+                 cfg_.connectHost.c_str(), cfg_.connectPort, reconnectAttempts_,
+                 clientSock_.Port());
+    clientChan_.Reset();
+    loggedIn_ = false;
+    joinSent_ = false;
+    welcomed_ = false;
+    snapshotsReceived_ = 0;
+    connectedLost_ = false;
+    reconnectAtMs_ = 0;
+    // Seed the silence detector so a failed attempt retries in ~4s instead of
+    // waiting for the reliable channel's 8s timeout.
+    lastServerMsgMs_ = nowMs;
+    runtime_.GameVars().Set("netConnected", script::Value::Num(0));
+    // Re-send the login immediately (deferred-login flag must allow it).
+    loginSent_ = true;
+    net::MsgLogin login{cfg_.playerName, net::kProtocolVersion};
+    core::Status st =
+        clientChan_.Send(static_cast<uint8_t>(net::MsgType::Login), client::EncodeBody(login));
+    if (!st.Ok()) {
+        NEON_LOG_ERROR("client: reconnect login send failed: %s", st.Error().c_str());
+        reconnectAtMs_ = nowMs + ReconnectDelayMs();
+    }
 }
 
 // The T6.4 game join (MsgJoin -> MsgWelcome -> snapshots). Sent once, only
@@ -755,6 +795,10 @@ void PlayerApp::OnClientMessage(const net::DecodedMessage& msg) {
     // report a transient timeout while traffic still flows); keep the script's
     // netConnected flag true so the lobby stays interactive.
     runtime_.GameVars().Set("netConnected", script::Value::Num(1));
+    connectedLost_ = false;
+    reconnectAttempts_ = 0;
+    reconnectAtMs_ = 0;
+    lastServerMsgMs_ = static_cast<uint64_t>(TimeRef().elapsed * 1000.0);
     switch (static_cast<net::MsgType>(msg.header.msgId)) {
         case net::MsgType::LoginOk: {
             const net::MsgLoginOk& ok = std::get<net::MsgLoginOk>(msg.payload);
@@ -781,6 +825,9 @@ void PlayerApp::OnClientMessage(const net::DecodedMessage& msg) {
             welcomed_ = true;
             runtime_.GameVars().Set("myClientId", script::Value::Num(static_cast<double>(w.clientId)));
             runtime_.GameVars().Set("netConnected", script::Value::Num(1));
+            // A fresh Welcome means a (re)connect; tell the script to drop any
+            // stale room membership from before the disconnect.
+            runtime_.PushNetCommand(0, "net.reset", "{}");
             NEON_LOG_CAT(neon::core::LogCategory::Net, neon::core::LogLevel::Info,
                          "client: welcomed as client id=%llu (server tick %u)",
                          static_cast<unsigned long long>(w.clientId), w.tick);
@@ -850,7 +897,13 @@ void PlayerApp::SendRpc(const std::string& name, const std::string& argsJson) {
 }
 
 void PlayerApp::PumpNetwork() {
-    if (connectedLost_) return;
+    const uint64_t nowMs = static_cast<uint64_t>(TimeRef().elapsed * 1000.0);
+    // Lost the link: back off, then rebuild the socket/channel and re-login.
+    if (connectedLost_) {
+        if (reconnectAtMs_ == 0) reconnectAtMs_ = nowMs + ReconnectDelayMs();
+        if (nowMs >= reconnectAtMs_) TryReconnect(nowMs);
+        return;
+    }
     uint8_t buf[4096];
     for (;;) {
         core::Result<net::RecvPacket> r = clientSock_.RecvFrom(buf, sizeof(buf));
@@ -864,9 +917,18 @@ void PlayerApp::PumpNetwork() {
         }
         clientChan_.OnDatagram(buf, r.Value().size);
     }
-    // Monotonic clock in ms (accumulated fixed ticks * 1000); the reliable
-    // channel only needs a monotonic clock for retransmit/timeout/ack pacing.
-    const uint64_t nowMs = static_cast<uint64_t>(TimeRef().elapsed * 1000.0);
+    // Fast link-loss detection: the server pushes state (world.hash) ~2 Hz, so a
+    // multi-second silence means the link is gone. Without this we would only
+    // notice after the reliable channel's 8s timeout.
+    if (lastServerMsgMs_ != 0 && nowMs - lastServerMsgMs_ > 4000u) {
+        NEON_LOG_CAT(neon::core::LogCategory::Net, neon::core::LogLevel::Warn,
+                     "client: no server traffic for 4s; treating link as lost");
+        connectedLost_ = true;
+        reconnectAtMs_ = 0;
+        lastServerMsgMs_ = 0;
+        runtime_.GameVars().Set("netConnected", script::Value::Num(0));
+        return;
+    }
     // Deferred login: the account step happens on the first pump, i.e. once the
     // scene is loaded and the frame loop is running, so the server's inactivity
     // timer never sees the multi-second asset-load stall before frame 1.

@@ -301,7 +301,12 @@ void GameServer::PumpNetwork(uint64_t nowMs) {
         const uint16_t len = static_cast<uint16_t>((buf[0] << 8) | buf[1]);
         if (static_cast<size_t>(len) != size - 2) continue;
         core::Result<net::DecodedMessage> dec = codec_.Decode(buf + 2, len);
-        if (!dec.Ok()) continue;
+        if (!dec.Ok()) {
+            NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Debug,
+                         "server: undecodable datagram from unknown %s:%u (%s)",
+                         from.host.c_str(), from.port, dec.Error().c_str());
+            continue;
+        }
         const uint8_t msgId = dec.Value().header.msgId;
         if (msgId == static_cast<uint8_t>(net::MsgType::Join)) {
             const net::MsgJoin& join = std::get<net::MsgJoin>(dec.Value().payload);
@@ -321,8 +326,8 @@ void GameServer::PumpNetwork(uint64_t nowMs) {
             }
         } else {
             NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Debug,
-                         "server: dropping non-join/login datagram from unknown %s:%u",
-                         from.host.c_str(), from.port);
+                         "server: dropping non-join/login datagram from unknown %s:%u (msgId=%u)",
+                         from.host.c_str(), from.port, static_cast<unsigned>(msgId));
         }
     }
 }
