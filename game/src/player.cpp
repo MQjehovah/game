@@ -408,7 +408,7 @@ assetMgr_.SetTextureBakeDir(".neon/imported");
             CleanupUnpackedDir();
             return false;
         }
-        ResolveControlledEntity(); // the script spawns the player in on_start
+        if (!cfg_.spectate) ResolveControlledEntity(); // the script spawns the player in on_start
     }
     return true;
 }
@@ -497,9 +497,9 @@ void PlayerApp::OnUpdate(float dt) {
         // step LOCAL prediction with the same input, then reconcile the
         // controlled entity against the latest server snapshot.
         PumpNetwork();
-        SendInputPacket();
+        if (!cfg_.spectate) SendInputPacket();
         runtime_.Tick(dt);
-        ReconcileControlled();
+        if (!cfg_.spectate) ReconcileControlled();
     } else {
         runtime_.Tick(dt);
     }
@@ -922,6 +922,7 @@ void PlayerApp::DrawNetworkWorld() {
 
 bool PlayerApp::SmokeOk() const {
     if (!networked_) return true; // local runs keep the legacy behavior
+    if (cfg_.spectate) return welcomed_ && snapshotsReceived_ > 0; // observer: link is enough
     return welcomed_ && snapshotsReceived_ > 0 && controlledMoved_;
 }
 

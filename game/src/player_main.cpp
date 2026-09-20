@@ -19,6 +19,7 @@ void PrintHelp() {
         "                             no --pack). a bare name maps to scenes/<name>.json\n"
         "                             inside the pack (with --pack)\n"
         "  --connect host:port        join a GameServer as the input controller (T6.4):\n"
+        "  --spectate                 with --connect: observe only (no input/prediction)\n"
         "                             local prediction + snapshot interpolation + reconcile\n"
         "  --name <n>                 anonymous login name (T6.6; default neon_player)\n"
         "  --mod <dir>                Mod overlay dir mounted over the base pack\n"
@@ -60,7 +61,11 @@ int main(int argc, char** argv) {
         if (std::strcmp(argv[i], "--pack") == 0 && i + 1 < argc) {
             cfg.packPath = argv[++i];
         } else if (std::strcmp(argv[i], "--scene") == 0 && i + 1 < argc) {
-            cfg.sceneOverride = argv[++i];
+            const std::string v = argv[++i];
+            // A file path loads as a loose scene (standalone); a bare name maps
+            // to scenes/<name>.json inside the pack.
+            if (LooksLikePath(v)) cfg.looseScenePath = v;
+            else cfg.sceneOverride = v;
         } else if (std::strcmp(argv[i], "--connect") == 0 && i + 1 < argc) {
             std::string hostPort = argv[++i];
             const size_t colon = hostPort.rfind(':');
@@ -78,6 +83,8 @@ int main(int argc, char** argv) {
             }
         } else if (std::strcmp(argv[i], "--name") == 0 && i + 1 < argc) {
             cfg.playerName = argv[++i];
+        } else if (std::strcmp(argv[i], "--spectate") == 0) {
+            cfg.spectate = true;
         } else if (std::strcmp(argv[i], "--mod") == 0 && i + 1 < argc) {
             cfg.modDirs.push_back(argv[++i]);
         } else if (std::strcmp(argv[i], "--scripts") == 0 && i + 1 < argc) {

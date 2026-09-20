@@ -54,6 +54,10 @@ struct PlayerConfig {
     // snapshots and render the interpolated/reconciled state.
     std::string connectHost;      // --connect host:port ("" = local-only)
     uint16_t connectPort = 0;
+    // T6.4-spectate: connect as an observer. Receive + interpolate snapshots and
+    // render, but never send input, never predict, and do not require a
+    // controlled entity (the whole match is server-authoritative).
+    bool spectate = false;
     std::string playerName = "neon_player"; // --name <n>: anonymous login name (T6.6)
     std::string scriptsDir;       // --scripts DIR: scene script base (loose scene mode)
     std::string looseScenePath;   // --scene <path.json> in connect mode (direct file)
