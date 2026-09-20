@@ -406,7 +406,9 @@ assetMgr_.SetTextureBakeDir(".neon/imported");
     if (!cfg_.connectHost.empty() && cfg_.connectPort != 0) {
         networked_ = true;
         // Connected clients send MOBA commands (Rpc) and render server snapshots.
-        runtime_.GameVars().Set("netRole", script::Value::Str("client"));
+        // Spectators bypass the lobby; players enter it.
+        runtime_.GameVars().Set("netRole",
+                                script::Value::Str(cfg_.spectate ? "spectate" : "client"));
         if (SmokeActive()) clientInput_.SetForceMove(true);
         if (!StartNetwork()) {
             CleanupUnpackedDir();
@@ -793,9 +795,12 @@ void PlayerApp::OnClientMessage(const net::DecodedMessage& msg) {
 }
 
 void PlayerApp::HandleRpc(const net::MsgRpc& rpc) {
-    // MOBA server state: hand to scripts (moba.lua drains it via NetCommand()).
-    if (rpc.name == "moba_state") {
-        runtime_.PushNetCommand(0, "moba_state", rpc.argsJson);
+    // Gameplay/lobby RPCs from the server: hand to scripts (moba.lua drains
+    // them via NetCommand()).
+    if (rpc.name == "moba_state" || rpc.name == "room.joined" ||
+        rpc.name == "room.list" || rpc.name == "room.left" || rpc.name == "lobby" ||
+        rpc.name == "match.start") {
+        runtime_.PushNetCommand(0, rpc.name, rpc.argsJson);
         return;
     }
     std::optional<std::pair<std::string, std::string>> reply;

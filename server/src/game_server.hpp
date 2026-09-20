@@ -203,6 +203,12 @@ private:
     void SendRpc(Client& c, const std::string& name, const std::string& argsJson);
     void BroadcastRoom(const std::string& room, const std::string& name,
                        const std::string& argsJson);
+    // Lobby: start the (single) match for `room` — 2 players => 1v1, 1 player
+    // => vs AI. Calls the script's on_match_start(blueClientId, redClientId|0)
+    // and notifies each member of their side.
+    void StartRoomMatch(const std::string& room);
+    std::vector<Client*> ClientsInRoom(const std::string& room);
+    Client* ClientById(uint64_t id);
     void SendWelcome(Client& c);
     void SendLoginOk(Client& c);
     void SendCharList(Client& c);
@@ -233,6 +239,10 @@ private:
     NetInput controllerInput_; // wired into the runtime; fed by the controller client
     std::vector<ScriptedInput> scriptedInputs_; // T6.7 scripted-controller path
     std::map<net::NetAddress, Client, NetAddrLess> clients_;
+    // Lobby / single-match state.
+    std::set<std::string> startedRooms_; // rooms whose match already began
+    bool matchActive_ = false;           // one match instance at a time
+    std::string activeRoom_;
     net::RpcDispatcher rpc_;
     // P2-4 anti-cheat: banned accounts / client ids (persisted in-memory).
     std::set<uint64_t> bannedClientIds_;

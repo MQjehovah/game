@@ -73,6 +73,10 @@ local kills = { [BLUE] = 0, [RED] = 0 }
 local killFeed = {} -- 击杀播报 {killer, victim, color, t}
 local elapsed = 0
 local netStateTimer = 0
+local chooseChampion -- forward (defined below; used by lobby/match-start)
+-- 联机大厅（client 角色）：等待对手 / 房号 / 房间列表
+local LOBBY = { phase = "lobby", room = "", players = 0, max = 2, rooms = {},
+                side = nil, code = "", msg = "", refreshT = 0, keysPrev = {} }
 local ROSTER = {}
 local CHAMP_DATA = {}
 local ITEMS = {}
@@ -1197,6 +1201,60 @@ local function applyNetState(argsJson)
     end
 end
 
+-- 客户端大厅事件
+local function lobbyHandle(name, argsJson)
+    local a = nil
+    if type(argsJson) == "string" and argsJson ~= "" then a = Json.Parse(argsJson) end
+    if name == "room.joined" then
+        if a ~= nil then
+            if a.ok == false then
+                LOBBY.msg = a.error or "加入失败"
+            else
+                LOBBY.room = a.room or LOBBY.room
+                LOBBY.players = a.players or 1
+                LOBBY.max = a.max or 2
+                LOBBY.msg = ""
+            end
+        end
+    elseif name == "lobby" then
+        if a ~= nil and LOBBY.room ~= "" and a.room == LOBBY.room then
+            LOBBY.players = a.players or LOBBY.players
+            LOBBY.max = a.max or LOBBY.max
+        end
+    elseif name == "room.list" then
+        LOBBY.rooms = (a and a.rooms) or {}
+    elseif name == "match.start" then
+        LOBBY.side = (a and a.side) or "blue"
+        LOBBY.phase = "match"
+        if playerHero == nil and #SELECT > 0 then chooseChampion(SELECT[1]) end
+        phase = "play"
+    end
+end
+
+-- 客户端大厅键盘：房号输入（0-9A-Z / Backspace / Enter 加入）
+local function lobbyKeyInput()
+    local letters = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    for i = 1, #letters do
+        local k = letters:sub(i, i)
+        local down = InputKey(k) == 1
+        if down and not LOBBY.keysPrev[k] and #LOBBY.code < 6 then
+            LOBBY.code = LOBBY.code .. k
+        end
+        LOBBY.keysPrev[k] = down
+    end
+    local bs = InputKey("Backspace") == 1
+    if bs and not LOBBY.keysPrev["Backspace"] then
+        LOBBY.code = LOBBY.code:sub(1, math.max(0, #LOBBY.code - 1))
+    end
+    LOBBY.keysPrev["Backspace"] = bs
+    local en = (InputKey("Return") == 1) or (InputKey("Enter") == 1)
+    if en and not LOBBY.keysPrev["Return"] and #LOBBY.code > 0 then
+        Rpc("room.join", { room = LOBBY.code })
+        LOBBY.code = ""
+    end
+    LOBBY.keysPrev["Return"] = en
+end
+
 -- 客户端：读本地输入 -> 发 moba_cmd，不改本地状态（位置由服务器快照驱动）
 local function clientSendCommands(h)
     -- 先排空服务器状态广播
@@ -1745,7 +1803,7 @@ function on_start(e)
     waveTimer = FIRST_WAVE
 end
 
-local function chooseChampion(name)
+function chooseChampion(name)
     playerHero = spawnHero(name, BLUE)
     local pick = AI_CHAMP
     if pick == name then pick = (name == "Ashe") and "Garen" or "Ashe" end
@@ -1755,6 +1813,19 @@ local function chooseChampion(name)
     spawnJungle()
     phase = "loading"
     loadingTime = 0
+end
+
+-- 服务器：大厅开始一局（blue 客户端；red 客户端，0=AI）
+function on_match_start(blueClientId, redClientId)
+    netJoins = {}
+    if blueClientId ~= nil and blueClientId > 0 then netJoins[1] = blueClientId end
+    if redClientId ~= nil and redClientId > 0 then netJoins[2] = redClientId end
+    if playerHero == nil then chooseChampion(SELECT[1] or AI_CHAMP) end
+    if playerHero ~= nil and netJoins[1] ~= nil then playerHero.netClient = netJoins[1] end
+    if enemyHero ~= nil then
+        enemyHero.netClient = netJoins[2] or nil
+    end
+    phase = "play"
 end
 
 local function updateLoading(dt)
@@ -1767,6 +1838,7 @@ local function updateLoading(dt)
 end
 
 local function updateSelect()
+    if netRole() == "server" then return end -- 服务器等大厅开局，不自动选人
     local n = #SELECT
     if n == 0 then phase = "play"; return end
     selectTime = selectTime + 1
@@ -1803,6 +1875,22 @@ local function updateSelect()
 end
 
 function on_update(e, dt)
+    -- 联机客户端：先处理大厅（等待对手），未开局不进入玩法
+    if netRole() == "client" then
+        local cmd = NetCommand()
+        while cmd ~= nil do
+            if cmd.name == "moba_state" then applyNetState(cmd.args)
+            else lobbyHandle(cmd.name, cmd.args) end
+            cmd = NetCommand()
+        end
+        if LOBBY.phase ~= "match" then
+            LOBBY.refreshT = LOBBY.refreshT - dt
+            if LOBBY.refreshT <= 0 then LOBBY.refreshT = 1.0; Rpc("room.list") end
+            lobbyKeyInput()
+            updateCameraFollow(dt)
+            return
+        end
+    end
     if phase == "select" then
         updateSelect()
         updateCameraFollow(dt)
@@ -2279,7 +2367,61 @@ local function drawFog()
     end
 end
 
+-- 大厅界面（client）：创建/刷新/房号加入/等待/和 AI 开始/离开
+local function drawLobby()
+    local vp = GetViewportSize()
+    local vw = (vp and vp.w) or VW
+    local vh = (vp and vp.h) or VH
+    DrawRect(0, 0, vw, vh, 0.02, 0.03, 0.05, 0.94)
+    DrawText("NeonMOBA 大厅", vw * 0.5, 56, 30, 0.95, 0.82, 0.35, 1, true, true)
+    local m = InputMousePos()
+    local click = m ~= nil and InputMousePressed("left")
+    local function button(x, y, w, h, label)
+        DrawRect(x, y, w, h, 0.12, 0.14, 0.2, 0.95)
+        DrawRectOutline(x, y, w, h, 2, 0.6, 0.55, 0.3, 1)
+        DrawText(label, x + w / 2, y + h / 2, 15, 1, 1, 1, 1, true, true)
+        return click and m.x >= x and m.x <= x + w and m.y >= y and m.y <= y + h
+    end
+    local lx, ly = vw * 0.5 - 400, 120
+    if button(lx, ly, 150, 40, "创建房间") then Rpc("room.create") end
+    if button(lx + 166, ly, 130, 40, "刷新列表") then Rpc("room.list") end
+    DrawText("房号(0-9A-Z, Backspace, Enter 加入): " .. LOBBY.code,
+        lx, ly + 62, 14, 0.9, 0.9, 0.6, 1, false, true)
+    DrawText("房间列表", lx, ly + 96, 16, 1, 1, 1, 1, false, true)
+    for i = 1, math.min(#LOBBY.rooms, 8) do
+        local r = LOBBY.rooms[i]
+        local yy = ly + 122 + (i - 1) * 28
+        DrawText(string.format("%s   %d/%d%s", tostring(r.room), r.players or 1, r.max or 2,
+            r.started and "  (已开始)" or ""), lx, yy, 15, 0.9, 0.9, 0.9, 1, false, true)
+        if button(lx + 330, yy - 4, 80, 22, "加入") then
+            Rpc("room.join", { room = r.room })
+        end
+    end
+    local rx = vw * 0.5 + 40
+    DrawText("当前房间", rx, ly, 16, 1, 1, 1, 1, false, true)
+    if LOBBY.room ~= "" then
+        DrawText(string.format("%s   %d/%d", LOBBY.room, LOBBY.players, LOBBY.max),
+            rx, ly + 28, 22, 0.95, 0.82, 0.35, 1, false, true)
+        if LOBBY.players < LOBBY.max then
+            DrawText("等待对手加入…", rx, ly + 62, 15, 0.8, 0.85, 1, 1, false, true)
+            if button(rx, ly + 92, 170, 40, "和 AI 开始") then Rpc("room.start") end
+        end
+        if button(rx, ly + 146, 130, 36, "离开房间") then
+            Rpc("room.leave"); LOBBY.room = ""; LOBBY.players = 0
+        end
+    else
+        DrawText("未加入房间", rx, ly + 30, 15, 0.8, 0.8, 0.8, 1, false, true)
+    end
+    if LOBBY.msg ~= "" then
+        DrawText(LOBBY.msg, vw * 0.5, vh - 56, 15, 1, 0.6, 0.5, 1, true, true)
+    end
+end
+
 function on_render()
+    if netRole() == "client" and LOBBY.phase ~= "match" then
+        drawLobby()
+        return
+    end
     local vp = GetViewportSize()
     local vw = (vp and vp.w) or VW
     if phase == "select" then
