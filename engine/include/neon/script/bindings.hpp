@@ -93,7 +93,7 @@ struct ScriptContext {
     // Wired by hosts that own an audio backend; null -> no-ops.
     std::function<void(const std::string&, float)> playMusic;
     std::function<void(const std::string&, const math::Vec3&)> playSfx3D;
-    // World-space particle burst (engine billboard particle system â€” the
+    // World-space particle burst (engine billboard particle system â€?the
     // neon_rush-quality additive VFX path). Wired by GameRuntime; null -> no-op.
     std::function<void(const gfx::EmitterConfig&)> emitParticles;
     std::function<void(const math::Vec3&, const math::Vec3&)> setAudioListener;
@@ -274,7 +274,7 @@ struct ScriptContext {
     std::function<float(ecs::Entity)> animProgress;
     // True when a one-shot override finished.
     std::function<bool(ecs::Entity)> animFinished;
-    // G5-4-4(é¡¹2): data-driven animation state machine (.asm.json). attachStateMachine
+    // G5-4-4(é¡?): data-driven animation state machine (.asm.json). attachStateMachine
     // loads + binds the asset to the entity's skinned model; setAnimParam drives
     // the transitions.
     std::function<bool(ecs::Entity, const std::string&)> attachStateMachine;
@@ -314,3 +314,4 @@ struct ScriptContext {
 void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx);
 
 } // namespace neon::script
+

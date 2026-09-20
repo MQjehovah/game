@@ -399,7 +399,7 @@ Value NativeInputMousePressed(IScriptHost& host, void* user) {
     return Value::Bool(in->MousePressed(static_cast<platform::MouseButton>(idx)));
 }
 
-// BindPlayerToClient(entity, clientId): multi-player ownership â€” the server
+// BindPlayerToClient(entity, clientId): multi-player ownership â€?the server
 // routes that client's MsgInput to the bound entity's script. No-op when the
 // host did not wire the hook (single-player runtimes).
 Value NativeBindPlayerToClient(IScriptHost& host, void* user) {
@@ -882,7 +882,7 @@ Value NativeAttachStateMachine(IScriptHost& host, void* user) {
     return Value::Bool(ctx->attachStateMachine(e, path));
 }
 
-// SetAnimParam(entity, name, value) â€” drives the state machine's transitions.
+// SetAnimParam(entity, name, value) â€?drives the state machine's transitions.
 Value NativeSetAnimParam(IScriptHost& host, void* user) {
     auto* ctx = static_cast<ScriptContext*>(user);
     if (!ctx || !ctx->setAnimParam) return Value::Bool(false);
@@ -1886,7 +1886,7 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("PlayAnimation", &NativePlayAnimation, &ctx);
     host.Register("AnimationProgress", &NativeAnimProgress, &ctx);
     host.Register("AnimationFinished", &NativeAnimFinished, &ctx);
-    // G5-4-4(é¡¹2): data-driven animation state machine.
+    // G5-4-4(é¡?): data-driven animation state machine.
     host.Register("AttachStateMachine", &NativeAttachStateMachine, &ctx);
     host.Register("SetAnimParam", &NativeSetAnimParam, &ctx);
     host.Register("WorldToScreen", &NativeWorldToScreen, &ctx);
@@ -1914,4 +1914,5 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
 }
 
 } // namespace neon::script
+
 

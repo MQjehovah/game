@@ -42,7 +42,7 @@ namespace neon::net {
 // app's clock (deterministic fake clocks in tests).
 struct ReliableConfig {
     uint16_t windowSize = 256;     // max in-flight unacked frames (laggy clients)
-    uint64_t timeoutMs = 8000;     // fail the channel if a frame is unacked this long
+    uint64_t timeoutMs = 30000;    // fail the channel if a frame is unacked this long
     uint16_t ackBits = 32;         // MsgAck bitmap entries (<= 32)
     uint64_t retransmitMs = 200;   // resend frames unacked for this long
     uint64_t ackIntervalMs = 50;   // min gap between acks emitted by Tick
@@ -104,6 +104,10 @@ public:
     bool Connected() const { return !timedOut_; }
     bool TimedOut() const { return timedOut_; }
     const ReliableConfig& Config() const { return config_; }
+    // Diagnostics.
+    uint16_t NextExpectedDebug() const { return nextExpected_; }
+    size_t InflightDebug() const { return sent_.size(); }
+    size_t HeldDebug() const { return received_.size(); }
 
 private:
     struct OutFrame {
@@ -114,6 +118,7 @@ private:
     };
     struct HeldFrame {
         DecodedMessage message;
+        uint64_t heldAtMs = 0; // set on first Tick while waiting for a gap to fill
     };
 
     void Deliver(DecodedMessage&& msg);

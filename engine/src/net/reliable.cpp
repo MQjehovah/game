@@ -127,7 +127,7 @@ void ReliableChannel::OnFrame(DecodedMessage msg) {
     // Out of order: buffer if it is a plausible future frame, otherwise drop
     // (stale = already delivered, duplicate, or outside the reorder window).
     if (!InWindow(seq) || received_.count(seq) != 0) return;
-    received_.emplace(seq, HeldFrame{std::move(msg)});
+    received_.emplace(seq, HeldFrame{std::move(msg), 0});
     ackPending_ = true;
 }
 
@@ -176,6 +176,37 @@ void ReliableChannel::Tick(uint64_t nowMs) {
             timedOut_ = true;
             if (timeoutFn_) timeoutFn_();
             return;
+        }
+    }
+
+    // --- receiver: never stall forever on a lost frame ---------------------
+    // If a frame is missing and buffered frames have waited too long (its
+    // retransmit never arrived), skip the gap and deliver the buffered frames so
+    // the reliable stream cannot deadlock permanently.
+    if (!received_.empty()) {
+        uint16_t oldest = 0;
+        bool have = false;
+        for (const auto& kv : received_) {
+            if (!have || SeqLess(kv.first, oldest)) { oldest = kv.first; have = true; }
+        }
+        if (have) {
+            HeldFrame& hf = received_[oldest];
+            if (hf.heldAtMs == 0) {
+                hf.heldAtMs = nowMs;
+            } else if (nowMs - hf.heldAtMs >= 700) {
+                nextExpected_ = oldest;
+                uint16_t n = nextExpected_;
+                auto it = received_.find(n);
+                while (it != received_.end()) {
+                    DecodedMessage m = std::move(it->second.message);
+                    received_.erase(it);
+                    Deliver(std::move(m));
+                    n = static_cast<uint16_t>(n + 1);
+                    it = received_.find(n);
+                }
+                nextExpected_ = n;
+                ackPending_ = true;
+            }
         }
     }
 

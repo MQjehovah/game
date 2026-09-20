@@ -118,6 +118,8 @@ int main(int argc, char** argv) {
             cfg.playerName = argv[++i];
         } else if (std::strcmp(argv[i], "--spectate") == 0) {
             cfg.spectate = true;
+        } else if (std::strcmp(argv[i], "--moba-autostart") == 0) {
+            cfg.mobaAutostart = true;
         } else if (std::strcmp(argv[i], "--mod") == 0 && i + 1 < argc) {
             cfg.modDirs.push_back(argv[++i]);
         } else if (std::strcmp(argv[i], "--scripts") == 0 && i + 1 < argc) {

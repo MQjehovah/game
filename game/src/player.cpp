@@ -411,6 +411,8 @@ assetMgr_.SetTextureBakeDir(".neon/imported");
                                 script::Value::Str(cfg_.spectate ? "spectate" : "client"));
         runtime_.GameVars().Set("netConnected", script::Value::Num(0));
         runtime_.GameVars().Set("playerName", script::Value::Str(cfg_.playerName));
+        if (cfg_.mobaAutostart)
+            runtime_.GameVars().Set("mobaAutostart", script::Value::Num(1));
         if (SmokeActive()) clientInput_.SetForceMove(true);
         if (!StartNetwork()) {
             CleanupUnpackedDir();
@@ -858,7 +860,7 @@ void PlayerApp::OnClientMessage(const net::DecodedMessage& msg) {
 void PlayerApp::HandleRpc(const net::MsgRpc& rpc) {
     // Gameplay/lobby RPCs from the server: hand to scripts (moba.lua drains
     // them via NetCommand()).
-    if (rpc.name == "moba_state" || rpc.name == "room.joined" ||
+    if (rpc.name == "moba_state" || rpc.name == "moba_hud" || rpc.name == "room.joined" ||
         rpc.name == "room.list" || rpc.name == "room.left" || rpc.name == "lobby" ||
         rpc.name == "match.start") {
         runtime_.PushNetCommand(0, rpc.name, rpc.argsJson);
@@ -919,7 +921,11 @@ void PlayerApp::PumpNetwork() {
     }
     // Fast link-loss detection: the server pushes state (world.hash) ~2 Hz, so a
     // multi-second silence means the link is gone. Without this we would only
-    // notice after the reliable channel's 8s timeout.
+    // notice after the reliable channel's timeout.
+    // A large gap since the previous pump means the frame loop itself stalled
+    // (e.g. loading the match's models), not that the server went quiet.
+    if (lastPumpMs_ != 0 && nowMs - lastPumpMs_ > 1500u) lastServerMsgMs_ = nowMs;
+    lastPumpMs_ = nowMs;
     if (lastServerMsgMs_ != 0 && nowMs - lastServerMsgMs_ > 4000u) {
         NEON_LOG_CAT(neon::core::LogCategory::Net, neon::core::LogLevel::Warn,
                      "client: no server traffic for 4s; treating link as lost");

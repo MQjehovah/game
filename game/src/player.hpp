@@ -58,6 +58,7 @@ struct PlayerConfig {
     // render, but never send input, never predict, and do not require a
     // controlled entity (the whole match is server-authoritative).
     bool spectate = false;
+    bool mobaAutostart = false;   // --moba-autostart: debug driver (auto room + start + move)
     std::string playerName = "neon_player"; // --name <n>: anonymous login name (T6.6)
     std::string scriptsDir;       // --scripts DIR: scene script base (loose scene mode)
     std::string looseScenePath;   // --scene <path.json> in connect mode (direct file)
@@ -214,6 +215,9 @@ bool joinSent_ = false;  // MsgJoin sent (only after login)
     // Game clock at the last delivered server message; used to detect a dropped
     // link faster than the reliable channel's (long) timeout.
     uint64_t lastServerMsgMs_ = 0;
+    // Game clock at the previous network pump: a large gap means the frame loop
+    // stalled (synchronous asset load), which is NOT link loss.
+    uint64_t lastPumpMs_ = 0;
     uint32_t inputSeq_ = 0;
     uint64_t lastPingMs_ = 0; // A10: last heartbeat Ping send time (1 Hz)
     ecs::Entity controlledEntity_;

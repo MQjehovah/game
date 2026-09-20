@@ -110,12 +110,33 @@ void DrawBatch2D::DrawText(const Font& font, const std::string& text, const math
                            float size, const Color& color, bool centerX, bool centerY) {
     if (!font.Valid() || text.empty()) return;
     math::Vec2 p = pos;
+    const float scale = size / static_cast<float>(font.bakedSize_);
     if (centerX || centerY) {
-        math::Vec2 m = font.Measure(text, size);
-        if (centerX) p.x -= m.x * 0.5f;
-        if (centerY) p.y -= m.y * 0.5f;
+        if (centerX) p.x -= font.Measure(text, size).x * 0.5f;
+        if (centerY) {
+            // Center on the actual GLYPH INK, not the font's line box: the line
+            // box carries ascent/descent leading, so using it leaves CJK/latin
+            // text visibly off-centre inside UI rectangles.
+            float inkMin = 0.0f, inkMax = 0.0f;
+            bool haveInk = false;
+            float lineY = 0.0f;
+            const char* pit = text.data();
+            const char* pend = pit + text.size();
+            while (pit < pend) {
+                int32_t cp = DecodeUTF8Next(pit, pend);
+                if (cp == 0) continue;
+                if (cp == '\n') { lineY += font.LineHeight(size); continue; }
+                const Font::Glyph* g = font.FindGlyph(cp);
+                if (!g) continue;
+                const float top = lineY + g->yoff * scale;
+                const float bot = lineY + g->yoff2 * scale;
+                if (!haveInk || top < inkMin) inkMin = top;
+                if (!haveInk || bot > inkMax) inkMax = bot;
+                haveInk = true;
+            }
+            if (haveInk) p.y -= (inkMin + inkMax) * 0.5f;
+        }
     }
-    float scale = size / static_cast<float>(font.bakedSize_);
     float cursorX = 0.0f;
     float cursorY = 0.0f;
     const char* it = text.data();

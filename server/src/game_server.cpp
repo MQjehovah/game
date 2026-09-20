@@ -50,7 +50,7 @@ bool ReadFileBytes(const std::string& path, std::vector<uint8_t>& out) {
 
 bool GameServer::Start(const Config& cfg) {
     cfg_ = cfg;
-    if (cfg_.clientTimeoutMs == 0) cfg_.clientTimeoutMs = 15000;
+    if (cfg_.clientTimeoutMs == 0) cfg_.clientTimeoutMs = 30000;
     if (cfg_.snapshotEveryTicks == 0) cfg_.snapshotEveryTicks = 1;
     SetupRpc();
     // S1: one default match owns all per-simulation state.
@@ -850,6 +850,11 @@ void GameServer::StartRoomMatch(const std::string& room) {
         return;
     }
     Match* mp = owned.get();
+    // Room matches are authoritative servers: the script must consume client
+    // commands (NetCommand) instead of local input. The default match gets this
+    // from the CLI; setting it here keeps unit tests (which build the default
+    // match directly) unaffected.
+    mp->runtime.GameVars().Set("netRole", script::Value::Str("server"));
     roomMatches_[room] = std::move(owned); // visible to MatchForClient before start
     startedRooms_.insert(room);
     const uint64_t blue = members[0]->clientId;
