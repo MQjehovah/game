@@ -172,6 +172,13 @@ private:
     float camDist_ = 12.0f;
     bool started_ = false;
     bool appliedDefaults_ = false; // default sky/fog/light applied once (not per frame)
+    // Last input sent, to throttle MsgInput (only on change + a 1 Hz keepalive).
+    // Flooding inputs filled the reliable window, blocked acks and caused a
+    // both-directions timeout deadlock.
+    uint8_t lastSentButtons_ = 0;
+    float lastSentMoveX_ = 0.0f;
+    float lastSentMoveY_ = 0.0f;
+    uint64_t lastInputSentMs_ = 0;
     bool lastMouseLocked_ = false;
     // G6-1: platform/LOD asset variant table (loaded from variants.json when
     // cfg_.variant is set; must outlive the runtime, so it lives here).

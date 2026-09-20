@@ -885,6 +885,18 @@ void PlayerApp::SendInputPacket() {
                         (clientInput_.IsDown(platform::Key::A) ? 1.0f : 0.0f);
     const float moveY = (clientInput_.IsDown(platform::Key::W) ? 1.0f : 0.0f) -
                         (clientInput_.IsDown(platform::Key::S) ? 1.0f : 0.0f);
+    // Throttle: send only when the input CHANGED, plus a 1 Hz keepalive. Sending
+    // every frame flooded the reliable window, which also blocked our acks ->
+    // both directions timed out. The server's NetInput holds the last state, so
+    // a held key needs no resend.
+    const uint64_t nowMs = static_cast<uint64_t>(TimeRef().elapsed * 1000.0);
+    const bool changed = buttons != lastSentButtons_ || moveX != lastSentMoveX_ ||
+                         moveY != lastSentMoveY_;
+    if (!changed && nowMs - lastInputSentMs_ < 1000u) return;
+    lastSentButtons_ = buttons;
+    lastSentMoveX_ = moveX;
+    lastSentMoveY_ = moveY;
+    lastInputSentMs_ = nowMs;
     net::MsgInput in{inputSeq_++, buttons, moveX, moveY};
     core::Status st =
         clientChan_.Send(static_cast<uint8_t>(net::MsgType::Input), client::EncodeBody(in));
