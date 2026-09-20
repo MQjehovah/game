@@ -1203,10 +1203,9 @@ void GameServer::BroadcastSnapshot(Match& m) {
             continue;
         }
     }
-    // P2-4 anti-cheat: broadcast a deterministic world checksum alongside the
-    // snapshot stream. Clients can compare it against their local prediction
-    // to detect tampering / desync (client-side verification hook).
-    {
+    // P2-4 anti-cheat: broadcast a deterministic world checksum ~1 Hz (NOT
+    // every tick — that flooded the reliable window and timed clients out).
+    if (m.tick % 60 == 0) {
         std::stable_sort(items.begin(), items.end(),
                          [](const Item& a, const Item& b) { return a.id < b.id; });
         uint64_t hash = 1469598103934665603ull;  // FNV-1a 64
@@ -1229,7 +1228,7 @@ void GameServer::BroadcastSnapshot(Match& m) {
         msg.type_ = core::Json::Type::Object;
         core::Json t;
         t.type_ = core::Json::Type::Number;
-        t.number_ = match_->tick;
+        t.number_ = m.tick;
         msg.object_["tick"] = t;
         core::Json h;
         // A11: a uint64 FNV-1a hash loses its high bits through a JSON double
@@ -1244,7 +1243,8 @@ void GameServer::BroadcastSnapshot(Match& m) {
         }
         msg.object_["hash"] = h;
         for (auto& kv : clients_)
-            SendRpc(kv.second, "world.hash", core::JsonWriter::Write(msg));
+            if (MatchForClient(kv.second) == &m)
+                SendRpc(kv.second, "world.hash", core::JsonWriter::Write(msg));
     }
 }
 

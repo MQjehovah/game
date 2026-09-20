@@ -591,9 +591,15 @@ void PlayerApp::UpdateCamera(float dt) {
 
 void PlayerApp::OnRender() {
     renderer_.BeginFrame({0.02f, 0.04f, 0.09f, 1.0f});
-    renderer_.SetSky({0.10f, 0.18f, 0.36f, 1.0f}, {0.45f, 0.60f, 0.78f, 1.0f});
-    renderer_.SetFog({0.45f, 0.60f, 0.78f, 1.0f}, 60.0f, 220.0f);
-    renderer_.SetDirectionalLight({-0.4f, -1.0f, -0.3f}, {1.0f, 0.95f, 0.85f}, 0.3f);
+    // Default sky/fog/light once only: re-applying them every frame fought the
+    // scene's own environment (sky A -> scene sky B -> A ...), forcing an IBL
+    // recompute per frame (~30 ms) and tanking the frame rate.
+    if (!appliedDefaults_) {
+        renderer_.SetSky({0.10f, 0.18f, 0.36f, 1.0f}, {0.45f, 0.60f, 0.78f, 1.0f});
+        renderer_.SetFog({0.45f, 0.60f, 0.78f, 1.0f}, 60.0f, 220.0f);
+        renderer_.SetDirectionalLight({-0.4f, -1.0f, -0.3f}, {1.0f, 0.95f, 0.85f}, 0.3f);
+        appliedDefaults_ = true;
+    }
     renderer_.DrawSky();
 
     if (started_) {
@@ -744,6 +750,10 @@ void PlayerApp::SendJoin() {
 }
 
 void PlayerApp::OnClientMessage(const net::DecodedMessage& msg) {
+    // Any delivered server message means the link is alive (the channel may
+    // report a transient timeout while traffic still flows); keep the script's
+    // netConnected flag true so the lobby stays interactive.
+    runtime_.GameVars().Set("netConnected", script::Value::Num(1));
     switch (static_cast<net::MsgType>(msg.header.msgId)) {
         case net::MsgType::LoginOk: {
             const net::MsgLoginOk& ok = std::get<net::MsgLoginOk>(msg.payload);
