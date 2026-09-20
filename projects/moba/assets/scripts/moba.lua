@@ -1,7 +1,7 @@
--- NeonMOBA —�?League of Legends 风格 1v1 单路 MOBA（全部玩法在 Lua 中，数据驱动）�?
--- 地图: 真实召唤师峡谷（蓝方 -Z，红�?+Z，中路沿 Z 轴）�?
--- 玩家: 左键移动/锁敌，QWER 技能，自动普攻；滚轮缩放，空格回中；P 商店，B 回城，Tab 记分板�?
--- 敌方: AI 英雄 + 定时兵线 + 野区；推掉敌方水晶获胜�?
+-- NeonMOBA —— League of Legends 风格 1v1 单路 MOBA（全部玩法在 Lua 中，数据驱动）。
+-- 地图: 真实召唤师峡谷（蓝方 -Z，红方 +Z，中路沿 Z 轴）。
+-- 玩家: 左键移动/锁敌，QWER 技能，自动普攻；滚轮缩放，空格回中；P 商店，B 回城，Tab 记分板。
+-- 敌方: AI 英雄 + 定时兵线 + 野区；推掉敌方水晶获胜。
 -- ==========================================================================
 -- 常量 / 地图
 -- ==========================================================================
@@ -18,14 +18,14 @@ local MAP = {
     },
 }
 
--- 草丛（视野遮挡）。位置为世界坐标近似值�?
+-- 草丛（视野遮挡）。位置为世界坐标近似值。
 local BRUSHES = {
     { x = -7, z = -38, r = 3.6 }, { x = 7, z = -22, r = 3.6 },
     { x = -7, z = -4, r = 3.6 }, { x = 7, z = 12, r = 3.6 },
     { x = -7, z = 26, r = 3.6 }, { x = 7, z = 40, r = 3.6 },
 }
 
--- 相机视角（俯�?pitch，Riot Rift �?55°；位置由脚本每帧驱动 Main Camera 实体，保持鼠标可见）
+-- 相机视角（俯角 pitch，Riot Rift 约 55°；位置由脚本每帧驱动 Main Camera 实体，保持鼠标可见）
 local CAM = { yaw = math.pi * 0.75, pitch = 0.98, dist = 17, minDist = 11, maxDist = 28 }
 local CAM_FOV = 52
 local VW, VH = 1280, 720
@@ -37,7 +37,7 @@ local MINION_WAVE_PERIOD = 26
 local FIRST_WAVE = 8
 local MINION_COUNT = 3
 
--- 出场英雄（AI 对手�?AI_CHAMP 开始）
+-- 出场英雄（AI 对手从 AI_CHAMP 开始）
 local AI_CHAMP = "Ashe"
 
 -- ==========================================================================
@@ -53,11 +53,11 @@ local function nid() ids = ids + 1; return ids end
 local function fmtKey(e) if e == nil then return "" end return string.format("%d_%d", e.id, e.gen) end
 
 -- ==========================================================================
--- 状�?
+-- 状态
 -- ==========================================================================
-local units = {}       -- 所有存活单�?
+local units = {}       -- 所有存活单位
 local heroes = {}      -- 英雄
-local structures = {}  -- �?/ 水晶
+local structures = {}  -- 塔 / 水晶
 local projectiles = {}
 local groundAoes = {}
 local waveTimer = FIRST_WAVE
@@ -85,16 +85,16 @@ local ITEMS = {}
 local SHOP = {}
 local shopOpen = false
 local plateTeam = {}
-local plateMana = {}  -- 头顶蓝条（champion�?
-local plateLevel = {} -- 头顶等级（champion�?
+local plateMana = {}  -- 头顶蓝条（champion）
+local plateLevel = {} -- 头顶等级（champion）
 local MINIMAP_IMG = "assets/lol/ui/minimap.png"
--- 大厅 UI 素材（ComfyUI/Qwen-Image 生成，见 assets/ui/�?
+-- 大厅 UI 素材（ComfyUI/Qwen-Image 生成，见 assets/ui/）
 local UI_BG = "assets/ui/lobby_bg.jpg"
 local UI_PANEL = "assets/ui/panel.jpg"
 local UI_BTN = "assets/ui/button.jpg"
 local UI_BTN_ACCENT = "assets/ui/button_accent.jpg"
 
--- 音效（按事件触发 + 限流�?
+-- 音效（按事件触发 + 限流）
 local sfxLast = {}
 local function sfx(name, cd)
     cd = cd or 0.06
@@ -121,7 +121,7 @@ local function loadItems()
     table.sort(SHOP, function(a, b) return (t[a].price or 0) < (t[b].price or 0) end)
 end
 
--- �?Data Dragon 的真实英�?技能数据（名称/图标/说明/冷却/消耗）覆盖演示数值�?
+-- 用 Data Dragon 的真实英雄/技能数据（名称/图标/说明/冷却/消耗）覆盖演示数值。
 local function loadAbilityData()
     local txt = ReadText("assets/data/abilities.json")
     if txt == nil or txt == "" then return end
@@ -163,7 +163,7 @@ local function camPos()
     -- whole map reads at the same angle as the minimap.
     local rx = -sy * cp * CAM.dist
     local rz = -cy * cp * CAM.dist
-    -- 轻微震屏（命�?受击）：沿屏幕方向抖动焦�?
+    -- 轻微震屏（命中/受击）：沿屏幕方向抖动焦点
     local shx, shz = 0, 0
     if camShake > 0 then
         local amp = camShake * 0.35
@@ -177,13 +177,13 @@ local function applyCamera()
     if camEnt == nil then return end
     local x, y, z = camPos()
     SetPosition(camEnt, { x = x, y = y, z = z })
-    -- 只改位置不会转向：显式把相机朝向焦点（含俯角），yaw 才会真正旋转视角�?
+    -- 只改位置不会转向：显式把相机朝向焦点（含俯角），yaw 才会真正旋转视角。
     local sp, cp = math.sin(CAM.pitch), math.cos(CAM.pitch)
     local cy, sy = math.cos(CAM.yaw), math.sin(CAM.yaw)
     SetLook(camEnt, sy * cp, -sp, cy * cp)
 end
 
--- 屏幕像素 -> 地面 y=0 的世界点（相机由脚本固定，直接解析求交）�?
+-- 屏幕像素 -> 地面 y=0 的世界点（相机由脚本固定，直接解析求交）。
 local function groundPick(sx, sy)
     local vp = GetViewportSize()
     local vw = (vp and vp.w) or VW
@@ -291,7 +291,7 @@ local function spawnStructure(kind, team, x, z)
         SetPosition(ent, { x = x, y = 0, z = z })
     else
         u = {
-            id = nid(), ent = ent, kind = "tower", team = team, name = "防御�?,
+            id = nid(), ent = ent, kind = "tower", team = team, name = "防御塔",
             x = x, z = z, h = 7.4, radius = 1.3, hp = TOWER_HP, maxHp = TOWER_HP,
             ad = 95, range = 9.0, speed = 0, atkPeriod = 1.25, atkTimer = 0,
             buffs = {}, target = nil, anim = nil, actionT = 0, dead = false, ranged = true,
@@ -304,12 +304,12 @@ local function spawnStructure(kind, team, x, z)
     return u
 end
 
--- 野区营地（中立单位，team=0）�?
+-- 野区营地（中立单位，team=0）。
 local JUNGLE = {
     { key = "red", name = "红BUFF", prefab = "unit_sru_red", x = -14, z = -22, hp = 2300, ad = 80, range = 2.0, radius = 0.8, h = 1.6, gold = 100, xp = 110, buff = "red" },
     { key = "bluecamp", name = "蓝BUFF", prefab = "unit_sru_gromp", x = -20, z = -34, hp = 1800, ad = 60, range = 2.2, radius = 0.9, h = 1.8, gold = 80, xp = 90, buff = "blue" },
-    { key = "wolf", name = "魔沼�?, prefab = "unit_sru_murkwolf", x = -11, z = -30, hp = 1300, ad = 45, range = 2.0, radius = 0.6, h = 1.2, gold = 60, xp = 70, buff = "" },
-    { key = "crab", name = "迅捷�?, prefab = "unit_sru_crab", x = -9, z = 0, hp = 1200, ad = 40, range = 2.0, radius = 0.6, h = 1.0, gold = 55, xp = 60, buff = "" },
+    { key = "wolf", name = "魔沼蛙", prefab = "unit_sru_murkwolf", x = -11, z = -30, hp = 1300, ad = 45, range = 2.0, radius = 0.6, h = 1.2, gold = 60, xp = 70, buff = "" },
+    { key = "crab", name = "迅捷蟹", prefab = "unit_sru_crab", x = -9, z = 0, hp = 1200, ad = 40, range = 2.0, radius = 0.6, h = 1.0, gold = 55, xp = 60, buff = "" },
     { key = "dragon", name = "巨龙", prefab = "unit_sru_dragon", x = 13, z = -2, hp = 3800, ad = 110, range = 6.0, radius = 1.6, h = 3.0, gold = 150, xp = 200, buff = "dragon" },
     { key = "baron", name = "纳什男爵", prefab = "unit_sru_baron", x = -13, z = 3, hp = 5200, ad = 140, range = 6.0, radius = 1.8, h = 3.4, gold = 200, xp = 280, buff = "baron" },
 }
@@ -358,7 +358,7 @@ local function recomputeDerived(u)
     u.speed = (b.ms + u.bonus.ms) * 0.015
 end
 
--- 技能加点：R 上限 3，其�?5。玩家手动加（Ctrl+QWER），AI 自动加�?
+-- 技能加点：R 上限 3，其余 5。玩家手动加（Ctrl+QWER），AI 自动加。
 local RANK_MAX = { 5, 5, 5, 3 }
 
 local function spendPoint(h, idx)
@@ -471,7 +471,7 @@ local function killUnit(u, source)
     u.dead = true
     u.hp = 0
     SetHealth(u.ent, 0)
-    -- 塔被拆掉后放行该处的导航障碍，后续兵线可直推�?
+    -- 塔被拆掉后放行该处的导航障碍，后续兵线可直推。
     if u.kind == "tower" then NavBlock(u.x, u.z, 2.0, true) end
     if u.isHero then
         sfx("kill", 0.4)
@@ -568,17 +568,17 @@ local function damage(target, amount, source)
                 sizeStart = 0.3, sizeEnd = 0.02, color = { r = 1, g = 0.9, b = 0.5, a = 0.8 },
                 colorEnd = { r = 1, g = 0.3, b = 0.1, a = 0 }, additive = true })
         end
-        -- 回城被打断：读条中受到任意伤害立即取�?
+        -- 回城被打断：读条中受到任意伤害立即取消
         if target.isHero and (target.channel or 0) > 0 then
             target.channel = 0
-            floatAt(target, "回城被打�?, false)
+            floatAt(target, "回城被打断", false)
         end
         -- 轻重震屏：附近的大额伤害
         if amount >= 50 and playerHero ~= nil and
             dist(target.x, target.z, playerHero.x, playerHero.z) < 30 then
             camShake = math.min(1.2, camShake + amount * 0.004)
         end
-        -- 防御塔仇恨：英雄攻击敌方英雄后，进入该方塔范围会被转�?
+        -- 防御塔仇恨：英雄攻击敌方英雄后，进入该方塔范围会被转火
         if source ~= nil and source.isHero and target.isHero and source.team ~= target.team then
             for i = 1, #units do
                 local tw = units[i]
@@ -619,7 +619,7 @@ end
 local function faceTo(u, tx, tz)
     local dx, dz = tx - u.x, tz - u.z
     if dx * dx + dz * dz < 1e-6 then return end
-    -- 实测约定: SetRotationY(θ) 使模�?+Z 前向映射�?(sinθ, cosθ)
+    -- 实测约定: SetRotationY(θ) 使模型 +Z 前向映射到 (sinθ, cosθ)
     u.yaw = math.atan(dx, dz) + FACE_OFF
     SetRotationY(u.ent, u.yaw)
 end
@@ -641,8 +641,8 @@ local function moveToward(u, tx, tz, dt)
     return d <= 0.2
 end
 
--- 导航寻路：沿场景导航网格（level.navgrid）的 A* 路点移动，绕开地图障碍�?
--- 无网�?/ 无路时优雅回退直线（beeline），行为与旧版一致�?
+-- 导航寻路：沿场景导航网格（level.navgrid）的 A* 路点移动，绕开地图障碍。
+-- 无网格 / 无路时优雅回退直线（beeline），行为与旧版一致。
 local function repath(u, tx, tz)
     local p = NavFindPath({ x = u.x, y = 0, z = u.z }, { x = tx, y = 0, z = tz })
     if p ~= nil and #p > 0 then
@@ -655,7 +655,7 @@ local function repath(u, tx, tz)
     end
 end
 
--- 返回是否已抵达最终目标（<1.0）。移动目标用节流重算，固定目标只算一次�?
+-- 返回是否已抵达最终目标（<1.0）。移动目标用节流重算，固定目标只算一次。
 local function stepMove(u, tx, tz, dt)
     if u.dead then return true end
     u.navCd = (u.navCd or 0) - dt
@@ -695,7 +695,7 @@ local function playAction(u, clip, dur)
     if u.ent ~= nil then PlayAnimation(u.ent, clip, false, 0.08) end
 end
 
--- 施法动作：不同英雄的技能剪辑命名不一（Yasuo �?spell1a/1b/1c），逐级回退
+-- 施法动作：不同英雄的技能剪辑命名不一（Yasuo 是 spell1a/1b/1c），逐级回退
 local function playSpell(u, idx)
     u.actionT = 0.5
     if u.ent == nil then return end
@@ -758,7 +758,7 @@ local function adMul(u)
 end
 
 -- ==========================================================================
--- 投射�?/ AoE
+-- 投射物 / AoE
 -- ==========================================================================
 local function spawnProjectile(owner, x, z, dirx, dirz, opts)
     local col = opts.color or TEAM_COLOR[owner.team]
@@ -772,13 +772,13 @@ local function spawnProjectile(owner, x, z, dirx, dirz, opts)
         color = col, trail = 0,
         showTrail = opts.trail ~= false,
     }
-    -- 枪口/施法闪光（队伍色），让每次出手都有起手反�?
+    -- 枪口/施法闪光（队伍色），让每次出手都有起手反馈
     EmitParticles({ pos = { x = x + dirx * 0.5, y = 1.1, z = z + dirz * 0.5 }, count = 6,
         vel = { x = dirx, y = 0.2, z = dirz }, speedMin = 2, speedMax = 5,
         lifeMin = 0.07, lifeMax = 0.14, sizeStart = 0.5, sizeEnd = 0.05,
         color = { r = col[1], g = col[2], b = col[3], a = 0.9 },
         colorEnd = { r = 1, g = 1, b = 1, a = 0 }, additive = true })
-    -- 引擎侧火球（自发光球�?+ 拖尾 + 命中爆裂），damage=0 仅作视觉；伤害由上面�?Lua 投射物结�?
+    -- 引擎侧火球（自发光球体 + 拖尾 + 命中爆裂），damage=0 仅作视觉；伤害由上面的 Lua 投射物结算
     if owner.ent ~= nil then
         SpawnProjectile({ x = x, y = 1.1, z = z }, { x = dirx, y = 0, z = dirz },
             opts.speed or 16, 0, opts.life or 2.0, owner.ent, opts.range or 12, 0.8,
@@ -799,7 +799,7 @@ local function aoeDamage(source, cx, cz, radius, dmg, status, dur, mag)
         sizeStart = 1.0, sizeEnd = 0.05,
         color = { r = TEAM_COLOR[source.team][1], g = TEAM_COLOR[source.team][2], b = TEAM_COLOR[source.team][3], a = 0.9 },
         colorEnd = { r = 1, g = 1, b = 1, a = 0 }, gravity = 2.0, additive = true })
-    -- 冲击波：贴地扩散的亮�?
+    -- 冲击波：贴地扩散的亮环
     EmitParticles({ pos = { x = cx, y = 0.15, z = cz }, count = 30, vel = { x = 0, y = 0.2, z = 0 },
         speedMin = radius * 2.2, speedMax = radius * 3.0, lifeMin = 0.25, lifeMax = 0.4,
         sizeStart = 0.55, sizeEnd = 0.02,
@@ -809,14 +809,14 @@ local function aoeDamage(source, cx, cz, radius, dmg, status, dur, mag)
 end
 
 -- ==========================================================================
--- 技�?
+-- 技能
 -- ==========================================================================
 local function castAbility(h, idx, aimX, aimZ)
     local ab = h.abilities[idx]
     if ab == nil or h.dead then return end
     local rank = (h.ranks and h.ranks[idx]) or 0
-    if rank <= 0 then floatAt(h, "未学习技�?, false); return end
-    if (h.cds[idx] or 0) > 0 then floatAt(h, "冷却�?, false); return end
+    if rank <= 0 then floatAt(h, "未学习技能", false); return end
+    if (h.cds[idx] or 0) > 0 then floatAt(h, "冷却中", false); return end
     local cost = ab.cost or 0
     if h.mana < cost then floatAt(h, "法力不足", false); return end
     h.mana = h.mana - cost
@@ -862,7 +862,7 @@ local function castAbility(h, idx, aimX, aimZ)
             delay = ab.delay or 0.4, radius = ab.radius or 3, dmg = dmg,
             status = ab.status, statusDur = ab.statusDur, statusMag = ab.statusMag,
         }
-        -- 落点预警圈：沿圆周喷一圈粒子标记范�?
+        -- 落点预警圈：沿圆周喷一圈粒子标记范围
         local cr = ab.radius or 3
         for i = 0, 15 do
             local a = i / 16 * math.pi * 2
@@ -926,7 +926,7 @@ local function castAbility(h, idx, aimX, aimZ)
         floatAt(h, "+" .. tostring(ab.amount or 100), false, 0.4, 1.0, 0.5)
     elseif t == "execute" then
         local tgt = nearestEnemy(h, ab.range or 3)
-        if tgt == nil then floatAt(h, "无目�?, false); return end
+        if tgt == nil then floatAt(h, "无目标", false); return end
         local missing = 1.0 - tgt.hp / tgt.maxHp
         local total = dmg + (tgt.maxHp * (ab.missingPct or 0.3) * missing)
         damage(tgt, total, h)
@@ -941,7 +941,7 @@ local function autoAttack(u, dt)
     if u.range <= 0 then return end
     local tgt = u.target
     if u == playerHero then
-        -- 玩家英雄不自动索�?自动攻击：只打玩家点选（commandTarget）的目标�?
+        -- 玩家英雄不自动索敌/自动攻击：只打玩家点选（commandTarget）的目标。
         if tgt == nil or tgt.dead then return end
         if dist(u.x, u.z, tgt.x, tgt.z) > u.range + tgt.radius then return end
     else
@@ -998,7 +998,7 @@ local function updateNeutral(u, dt)
     end
 end
 
--- 防御塔：小兵优先；有英雄攻击了我方英雄则短暂转火该英雄�?
+-- 防御塔：小兵优先；有英雄攻击了我方英雄则短暂转火该英雄。
 local function updateTower(u, dt)
     if u.dead then return end
     if (u.towerAggroT or 0) > 0 then
@@ -1039,7 +1039,7 @@ local function updateHeroControl(h, dt)
         end
         return
     end
-    -- A 键攻击移动：沿路点前进，遇到射程内敌人停下攻击，敌人没了继续走�?
+    -- A 键攻击移动：沿路点前进，遇到射程内敌人停下攻击，敌人没了继续走。
     if h.attackMove then
         local t = nearestEnemy(h, h.range, false)
         h.target = t
@@ -1055,7 +1055,7 @@ local function updateHeroControl(h, dt)
         return
     end
     autoAttack(h, dt)
-    -- 只有"点击敌人"下达的攻击目标才追击/停手；autoAttack 自动锁定的目标不影响移动�?
+    -- 只有"点击敌人"下达的攻击目标才追击/停手；autoAttack 自动锁定的目标不影响移动。
     if h.commandTarget and (h.target == nil or h.target.dead) then h.commandTarget = nil end
     if h.commandTarget and h.target ~= nil and not h.target.dead then
         local t = h.target
@@ -1075,7 +1075,7 @@ local function updateHeroControl(h, dt)
     end
 end
 
--- 地面圆环 telegraph（技�?攻击范围指示�?
+-- 地面圆环 telegraph（技能/攻击范围指示）
 local function drawRangeRing(cx, cz, r, cr, cg, cb)
     if r == nil or r <= 0 then return end
     for k = 0, 23 do
@@ -1088,7 +1088,7 @@ local function drawRangeRing(cx, cz, r, cr, cg, cb)
     end
 end
 
--- 按住 QWER 的地面施法指示器（按技能类型：�?/ 直线�?
+-- 按住 QWER 的地面施法指示器（按技能类型：圆 / 直线）
 local function drawSpellIndicator(h, idx, aimX, aimZ)
     local ab = h.abilities[idx]
     if ab == nil then return end
@@ -1132,7 +1132,7 @@ local function netIndexUnit(id)
     return nil
 end
 
--- 联机：客户端分配（服务器在每个客户端加入时调�?on_player_join�?
+-- 联机：客户端分配（服务器在每个客户端加入时调用 on_player_join）
 local netJoins = {}
 local function assignNetClients()
     if playerHero ~= nil and playerHero.netClient == nil and netJoins[1] ~= nil then
@@ -1150,7 +1150,7 @@ end
 
 -- 服务器：把客户端发来的指令应用到玩家英雄
 local function applyNetCommand(cmd)
-    -- 指令�?clientId 路由到对应英雄（�?on_player_join 分配；无人操控则回退�?
+    -- 指令按 clientId 路由到对应英雄（由 on_player_join 分配；无人操控则回退）
     local h = nil
     for i = 1, #heroes do
         if heroes[i].netClient == cmd.client then h = heroes[i]; break end
@@ -1182,7 +1182,7 @@ local function applyNetCommand(cmd)
     end
 end
 
--- 客户端：把服务器广播�?moba_state 应用到本地英雄（�?HUD 显示�?
+-- 客户端：把服务器广播的 moba_state 应用到本地英雄（供 HUD 显示）
 local function applyNetState(argsJson)
     local s = nil
     if type(argsJson) == "string" and argsJson ~= "" then s = Json.Parse(argsJson) end
@@ -1192,7 +1192,7 @@ local function applyNetState(argsJson)
         local e = s.heroes[i]
         local h = (e.team == BLUE) and playerHero or enemyHero
         if h ~= nil and not h.dead then
-            -- 位置：服务器权威坐标，客户端插值到本地（moba_state ~10Hz）�?
+            -- 位置：服务器权威坐标，客户端插值到本地（moba_state ~10Hz）。
             if e.x ~= nil then h.nx = e.x; h.nz = e.z; h.nyaw = e.yaw or 0 end
         end
     end
@@ -1217,7 +1217,7 @@ local function applyNetHud(a)
     if a.r1 ~= nil then h.ranks = { a.r1, a.r2, a.r3, a.r4 } end
 end
 
--- 客户端大厅事�?
+-- 客户端大厅事件
 local function lobbyHandle(name, argsJson)
     local a = nil
     if type(argsJson) == "string" and argsJson ~= "" then a = Json.Parse(argsJson) end
@@ -1258,7 +1258,7 @@ local function lobbyHandle(name, argsJson)
     end
 end
 
--- 客户端大厅键盘：房号输入�?-9A-Z / Backspace / Enter 加入�?
+-- 客户端大厅键盘：房号输入（0-9A-Z / Backspace / Enter 加入）
 local function lobbyKeyInput()
     local letters = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
     for i = 1, #letters do
@@ -1282,9 +1282,9 @@ local function lobbyKeyInput()
     LOBBY.keysPrev["Return"] = en
 end
 
--- 客户端：读本地输�?-> �?moba_cmd，不改本地状态（位置由服务器快照驱动�?
+-- 客户端：读本地输入 -> 发 moba_cmd，不改本地状态（位置由服务器快照驱动）
 local function clientSendCommands(h)
-    -- 先排空服务器状态广�?
+    -- 先排空服务器状态广播
     local cmd = NetCommand()
     while cmd ~= nil do
         if cmd.name == "moba_state" then applyNetState(cmd.args)
@@ -1333,7 +1333,7 @@ local function clientSendCommands(h)
         end
     end
     if ActionPressed("recall") then Rpc("moba_cmd", { type = "recall" }) end
-    -- 调试驱动：定期发一条移动指令，验证 客户�?>服务�?>快照 链路�?
+    -- 调试驱动：定期发一条移动指令，验证 客户端->服务器->快照 链路。
     if GetVar("mobaAutostart") == 1 then
         if (LOBBY.autoMoveT or 0) <= elapsed then
             LOBBY.autoMoveT = elapsed + 1.5
@@ -1355,7 +1355,7 @@ local function updatePlayer(dt)
         updateHeroControl(h, dt)
         return
     elseif role == "client" then
-        -- 服务器权威坐�?-> 本地插值（moba_state ~10Hz），驱动模型/相机/小地图�?
+        -- 服务器权威坐标 -> 本地插值（moba_state ~10Hz），驱动模型/相机/小地图。
         local function lerpNet(u)
             if u == nil or u.dead or u.nx == nil then return end
             local k = math.min(1, dt * 14)
@@ -1369,14 +1369,14 @@ local function updatePlayer(dt)
         clientSendCommands(h)
         return
     end
-    -- 游戏渲染区域（设计坐标）。点击落在视野外（编辑器面板/黑边）一律忽略�?
+    -- 游戏渲染区域（设计坐标）。点击落在视野外（编辑器面板/黑边）一律忽略。
     local vp = GetViewportSize()
     local vw = (vp and vp.w) or VW
     local vh = (vp and vp.h) or VH
     local m = InputMousePos()
     local inView = m ~= nil and m.x >= 0 and m.y >= 0 and m.x <= vw and m.y <= vh
 
-    -- A：攻击移动准备；G：信号标记准备。二者都用下一次左键确认�?
+    -- A：攻击移动准备；G：信号标记准备。二者都用下一次左键确认。
     if ActionPressed("attack") then h.attackArmed = true; h.pingArmed = nil end
     if ActionPressed("ping") then h.pingArmed = true; h.attackArmed = nil end
 
@@ -1398,7 +1398,7 @@ local function updatePlayer(dt)
         local g = groundPick(m.x, m.y)
 
         if left and h.pingArmed then
-            -- G + 左键：地面信号标�?
+            -- G + 左键：地面信号标记
             if g ~= nil then
                 EmitParticles({ pos = { x = g.x, y = 0.1, z = g.z }, count = 36,
                     vel = { x = 0, y = 1, z = 0 }, speedMin = 4, speedMax = 8,
@@ -1410,7 +1410,7 @@ local function updatePlayer(dt)
             sfx("cast", 0.2)
             h.pingArmed = nil
         elseif right or (left and h.attackArmed) then
-            -- 右键：移�?攻击；A + 左键：攻击移�?
+            -- 右键：移动/攻击；A + 左键：攻击移动
             if best ~= nil then
                 h.target = best
                 h.commandTarget = true
@@ -1423,7 +1423,7 @@ local function updatePlayer(dt)
             end
             h.attackArmed = nil
         end
-        -- 左键未配�?A/G：不做任何移动（左键默认不移动）
+        -- 左键未配合 A/G：不做任何移动（左键默认不移动）
         if left then h.pingArmed = nil end
     end
 
@@ -1431,12 +1431,12 @@ local function updatePlayer(dt)
     local fy = h.yaw or 0
     local aimX = g and g.x or (h.x + math.sin(fy) * 6)
     local aimZ = g and g.z or (h.z + math.cos(fy) * 6)
-    -- Ctrl+QWER 加点；否则按住显示施法指示器、松开在该处释放�?
+    -- Ctrl+QWER 加点；否则按住显示施法指示器、松开在该处释放。
     local ctrl = InputKey("ctrl") == 1
     for i = 1, 4 do
         if ctrl and ActionPressed("spell" .. i) then
             if spendPoint(h, i) then
-                floatAt(h, "技能升�?, false)
+                floatAt(h, "技能升级", false)
                 sfx("levelup", 0.2)
             end
         else
@@ -1444,7 +1444,7 @@ local function updatePlayer(dt)
             if ActionReleased("spell" .. i) then castAbility(h, i, aimX, aimZ) end
         end
     end
-    -- 按住 A：显示攻击范围圈（在 HUD 层用 DrawCircle 画，�?drawSkillOverlay）�?
+    -- 按住 A：显示攻击范围圈（在 HUD 层用 DrawCircle 画，见 drawSkillOverlay）。
     if ActionPressed("recall") then h.channel = 1.4 end
     updateHeroControl(h, dt)
 end
@@ -1537,7 +1537,7 @@ local function updateProjectiles(dt)
             end
         end
         if hit and not p.pierce then
-            -- 命中爆点（技�?普攻都可见）
+            -- 命中爆点（技能/普攻都可见）
             EmitParticles({ pos = { x = p.x, y = 1.0, z = p.z }, count = 12, vel = { x = 0, y = 1, z = 0 },
                 speedMin = 2, speedMax = 5.5, lifeMin = 0.12, lifeMax = 0.28,
                 sizeStart = 0.55, sizeEnd = 0.04,
@@ -1585,7 +1585,7 @@ local function respawnHero(u)
     u.navGoal = nil
 end
 
--- 单位分离：避免英�?小兵/野怪互相重叠（结构体不动，只推开单位）�?
+-- 单位分离：避免英雄/小兵/野怪互相重叠（结构体不动，只推开单位）。
 local function separateUnits()
     local n = #units
     for i = 1, n do
@@ -1671,7 +1671,7 @@ end
 
 local function updateCameraFollow(dt)
     local h = playerHero
-    -- Y：锁�?解锁视角。锁定＝英雄居中；解锁＝可边缘平移�?
+    -- Y：锁定/解锁视角。锁定＝英雄居中；解锁＝可边缘平移。
     if ActionPressed("camera") then camFollow = not camFollow end
     if camFollow and h ~= nil and not h.dead then
         camFocusX = camFocusX + (h.x - camFocusX) * math.min(1, dt * 10)
@@ -1682,7 +1682,7 @@ local function updateCameraFollow(dt)
         if h ~= nil then camFocusX, camFocusZ = h.x, h.z end
     end
     if not camFollow then
-        -- 屏幕边缘平移（沿相机 yaw 的屏幕方向，手感与画面一致）�?
+        -- 屏幕边缘平移（沿相机 yaw 的屏幕方向，手感与画面一致）。
         local m = InputMousePos()
         local vp = GetViewportSize()
         local vw = (vp and vp.w) or VW
@@ -1691,7 +1691,7 @@ local function updateCameraFollow(dt)
             local edge = 0.04 * math.min(vw, vh) + 6
             local pan = 26 * dt
             local cy, sy = math.cos(CAM.yaw), math.sin(CAM.yaw)
-            local rx, rz = -cy, sy   -- 屏幕右方向（地面�?
+            local rx, rz = -cy, sy   -- 屏幕右方向（地面）
             local ux, uz = sy, cy    -- 屏幕上前方向（地面）
             if m.x < edge then camFocusX = camFocusX - rx * pan; camFocusZ = camFocusZ - rz * pan end
             if m.x > vw - edge then camFocusX = camFocusX + rx * pan; camFocusZ = camFocusZ + rz * pan end
@@ -1704,7 +1704,7 @@ local function updateCameraFollow(dt)
     CAM.dist = clamp(CAM.dist - MouseWheel() * 3.0, CAM.minDist, CAM.maxDist)
     if camShake > 0 then camShake = math.max(0, camShake - dt * 2.5) end
     applyCamera()
-    -- 独立播放�?neon_game)：用脚本相机模式复刻 MOBA 视角（编辑器走场景相机实体）�?
+    -- 独立播放器(neon_game)：用脚本相机模式复刻 MOBA 视角（编辑器走场景相机实体）。
     SetVar("cameraMode", "script")
     SetVar("cameraYaw", CAM.yaw)
     SetVar("cameraPitch", CAM.pitch)
@@ -1712,7 +1712,7 @@ local function updateCameraFollow(dt)
     SetVar("cameraFocus", { x = camFocusX, y = 0, z = camFocusZ })
 end
 
--- 战争迷雾：粗网格 + 导航网格视线遮挡。fogSeen=探索过，fogVis=当前可见�?
+-- 战争迷雾：粗网格 + 导航网格视线遮挡。fogSeen=探索过，fogVis=当前可见。
 local FOG_CELL = 8
 local FOG_MIN = -96
 local FOG_COLS = math.floor((96 - FOG_MIN) / FOG_CELL) + 1
@@ -1727,7 +1727,7 @@ local function fogIndex(x, z)
     return cz * FOG_COLS + cx + 1
 end
 
--- 视线：两点之间沿途采样是否都可行走（墙挡视野�?
+-- 视线：两点之间沿途采样是否都可行走（墙挡视野）
 local function lineClear(x0, z0, x1, z1)
     local d = dist(x0, z0, x1, z1)
     local steps = math.max(1, math.floor(d / (FOG_CELL * 0.5)))
@@ -1839,7 +1839,7 @@ function on_start(e)
             spawnStructure("tower", team, t.x, t.z)
         end
     end
-    -- �?水晶是脚本生成的结构体（不在 sr_map.glb 里），单独写进导航网格当障碍�?
+    -- 塔/水晶是脚本生成的结构体（不在 sr_map.glb 里），单独写进导航网格当障碍。
     for _, team in ipairs({ BLUE, RED }) do
         NavBlock(MAP.base[team].x, MAP.base[team].z, 3.0, false)
         for _, t in ipairs(MAP.towers[team]) do
@@ -1861,7 +1861,7 @@ function chooseChampion(name)
     loadingTime = 0
 end
 
--- 服务器：大厅开始一局（blue 客户端；red 客户端，0=AI�?
+-- 服务器：大厅开始一局（blue 客户端；red 客户端，0=AI）
 function on_match_start(blueClientId, redClientId)
     netJoins = {}
     if blueClientId ~= nil and blueClientId > 0 then netJoins[1] = blueClientId end
@@ -1921,7 +1921,7 @@ local function updateSelect()
 end
 
 function on_update(e, dt)
-    -- 联机客户端：先处理大厅（等待对手），未开局不进入玩�?
+    -- 联机客户端：先处理大厅（等待对手），未开局不进入玩法
     if netRole() == "client" then
         local cmd = NetCommand()
         while cmd ~= nil do
@@ -1931,9 +1931,9 @@ function on_update(e, dt)
             cmd = NetCommand()
         end
         if LOBBY.phase ~= "match" then
-            -- 大厅自带整屏 UI：隐藏引擎的调试/状态叠加层，避免文字重叠�?
+            -- 大厅自带整屏 UI：隐藏引擎的调试/状态叠加层，避免文字重叠。
             SetVar("debugOverlay", 0)
-            -- 未连上服务器时不要发请求（Rpc 会被丢弃），显示“连接中”�?
+            -- 未连上服务器时不要发请求（Rpc 会被丢弃），显示“连接中”。
             if GetVar("netConnected") ~= 1 then
                 updateCameraFollow(dt)
                 return
@@ -1953,7 +1953,7 @@ function on_update(e, dt)
                     LOBBY.clickY = mp.y
                 end
             end
-            -- 调试驱动�?-moba-autostart）：自动建房 -> 开局，便于无鼠标下测试�?
+            -- 调试驱动（--moba-autostart）：自动建房 -> 开局，便于无鼠标下测试。
             if GetVar("mobaAutostart") == 1 then
                 LOBBY.autoT = (LOBBY.autoT or 0) + dt
                 if LOBBY.autoT > 1.0 and not LOBBY.autoCreated then
@@ -1986,7 +1986,7 @@ function on_update(e, dt)
         return
     end
     elapsed = elapsed + dt
-    -- 服务器：周期广播英雄位置�?0Hz，消息保持较小以稳妥送达�?
+    -- 服务器：周期广播英雄位置（10Hz，消息保持较小以稳妥送达）
     if netRole() == "server" then
         netStateTimer = netStateTimer - dt
         if netStateTimer <= 0 then
@@ -1998,7 +1998,7 @@ function on_update(e, dt)
             end
             Rpc("moba_state", { heroes = arr })
         end
-        -- HUD 数值改动慢：分开、低频、每英雄一条小消息�?
+        -- HUD 数值改动慢：分开、低频、每英雄一条小消息。
         netHudTimer = netHudTimer - dt
         if netHudTimer <= 0 then
             netHudTimer = 0.3
@@ -2053,7 +2053,7 @@ local function bar(x, y, w, h, frac, r, g, b)
     DrawRectOutline(x, y, w, h, 1, 0, 0, 0, 0.9)
 end
 
--- 目标选中框：点�?锁定敌人时在其头顶画方框
+-- 目标选中框：点选/锁定敌人时在其头顶画方框
 local function drawTargetMarker()
     local h = playerHero
     if h == nil or h.target == nil or h.target.dead then return end
@@ -2082,7 +2082,7 @@ local function drawWorldPlates()
                     col = (team and TEAM_COLOR[team]) or { 0.85, 0.2, 0.2 }
                 end
                 if p.hp > 0 then DrawRect(a.x - w / 2 + 1, a.y - h + 1, (w - 2) * p.hp, h - 2, col[1], col[2], col[3], 1) end
-                -- 英雄：血条下方蓝�?+ 左侧等级
+                -- 英雄：血条下方蓝条 + 左侧等级
                 if plateMana[key] ~= nil then
                     local mw, mh = w, 3
                     DrawRect(a.x - mw / 2, a.y + 1, mw, mh, 0.04, 0.04, 0.06, 0.8)
@@ -2151,7 +2151,7 @@ local function drawHud()
         end
         DrawRectOutline(x, sy, slot, slot, 2, ready and 0.9 or 0.3, ready and 0.78 or 0.3, 0.2, 1)
         DrawText(keys[i], x + 7, sy + 8, 13, 1, 1, 1, 0.95, false, false)
-        -- 技能等级角�?
+        -- 技能等级角标
         DrawRect(x + slot - 16, sy + slot - 14, 16, 14, 0, 0, 0, 0.6)
         DrawText(tostring(rank), x + slot - 8, sy + slot - 7, 11, 1, 1, 1, 1, true, true)
         if ab ~= nil then
@@ -2177,7 +2177,7 @@ local function drawHud()
         DrawRect(rbx, rby, cw, chh, 0.05, 0.05, 0.08, 0.85)
         DrawRect(rbx + 1, rby + 1, (cw - 2) * clamp(1 - h.channel / 1.4, 0, 1), chh - 2,
             0.3, 0.7, 1.0, 1)
-        DrawText("回城中�?, cx, rby + chh / 2, 12, 1, 1, 1, 1, true, true)
+        DrawText("回城中…", cx, rby + chh / 2, 12, 1, 1, 1, 1, true, true)
     end
 
     local infoY = sy - 22
@@ -2192,7 +2192,7 @@ local function drawHud()
 
     if h.dead then
         DrawRect(0, 0, vw, vh, 0, 0, 0, 0.45)
-        DrawText(string.format("复活�?%.1fs", math.max(0, h.dying)), cx, vh / 2, 30, 1, 0.3, 0.3, 1, true, true)
+        DrawText(string.format("复活中 %.1fs", math.max(0, h.dying)), cx, vh / 2, 30, 1, 0.3, 0.3, 1, true, true)
     end
 
     if gameOver then
@@ -2200,7 +2200,7 @@ local function drawHud()
         local win = winner == BLUE
         DrawText(win and "胜利" or "失败", cx, vh / 2 - 20, 48,
             win and 0.3 or 1, win and 0.9 or 0.3, win and 0.4 or 0.3, 1, true, true)
-        DrawText("�?Enter / 空格 重新开�?, cx, vh / 2 + 30, 20, 1, 1, 1, 1, true, true)
+        DrawText("按 Enter / 空格 重新开始", cx, vh / 2 + 30, 20, 1, 1, 1, 1, true, true)
     end
 end
 
@@ -2209,8 +2209,8 @@ local function drawMinimap(vw)
     local x, y = vw - w - 12, 40
     DrawSprite(MINIMAP_IMG, x, y, w, h, 1, 1, 1, 0.92)
     DrawRectOutline(x, y, w, h, 2, 0.7, 0.6, 0.3, 0.9)
-    -- 世界坐标 -> 小地图图像坐标：地图实体�?Y 旋转 -45°，标记做同样旋转�?
-    -- 使小地图上的位置/朝向与图像和 3D 视角一致�?
+    -- 世界坐标 -> 小地图图像坐标：地图实体绕 Y 旋转 -45°，标记做同样旋转，
+    -- 使小地图上的位置/朝向与图像和 3D 视角一致。
     local rc, rs = math.cos(math.pi * 0.25), math.sin(math.pi * 0.25)
     local function mapX(wx, wz) return x + w * 0.5 + ((rc * wx + rs * wz) / 140) * (w * 0.42) end
     local function mapY(wx, wz) return y + h * 0.5 - ((-rs * wx + rc * wz) / 140) * (h * 0.42) end
@@ -2262,9 +2262,9 @@ local function drawScoreboard()
     DrawRect(0, 0, vw, vh, 0, 0, 0, 0.5)
     DrawRect(vw * 0.5 - 360, 110, 720, 310, 0.04, 0.05, 0.08, 0.96)
     DrawRectOutline(vw * 0.5 - 360, 110, 720, 310, 2, 0.6, 0.5, 0.2, 1)
-    DrawText("记分�? (Tab)", vw * 0.5, 88, 22, 0.95, 0.82, 0.35, 1, true, true)
+    DrawText("记分板  (Tab)", vw * 0.5, 88, 22, 0.95, 0.82, 0.35, 1, true, true)
     local rows = { { playerHero, TEAM_COLOR[BLUE], "蓝方" }, { enemyHero, TEAM_COLOR[RED], "红方" } }
-    -- 表头�?
+    -- 表头列
     DrawText("英雄", vw * 0.5 - 250, 124, 13, 0.75, 0.75, 0.75, 1, false, true)
     DrawText("击杀", vw * 0.5 + 40, 124, 13, 0.75, 0.75, 0.75, 1, false, true)
     DrawText("死亡", vw * 0.5 + 100, 124, 13, 0.75, 0.75, 0.75, 1, false, true)
@@ -2331,7 +2331,7 @@ local function drawSelect()
     local vh = (vp and vp.h) or VH
     DrawRect(0, 0, vw, vh, 0.02, 0.03, 0.05, 0.82)
     DrawText("选择你的英雄", vw * 0.5, 60, 30, 0.95, 0.82, 0.35, 1, true, true)
-    DrawText("方向�?/ 数字�?/ 鼠标点击选择，Enter �?Q 确认", vw * 0.5, 92, 15, 0.85, 0.85, 0.85, 1, true, true)
+    DrawText("方向键 / 数字键 / 鼠标点击选择，Enter 或 Q 确认", vw * 0.5, 92, 15, 0.85, 0.85, 0.85, 1, true, true)
     local n = #SELECT
     local cols, cell, gap = 5, 120, 16
     local rows = math.ceil(n / cols)
@@ -2374,7 +2374,7 @@ local function drawLoading()
         DrawSprite("assets/lol/icons/loading/" .. eh.key .. ".jpg", vw * 0.5 + 24, (vh - ih) * 0.5, iw, ih, 1, 1, 1, 1)
     end
     DrawText((ph and ph.name or "") .. "   VS   " .. (eh and eh.name or ""), vw * 0.5, vh - 74, 22, 1, 1, 1, 1, true, true)
-    DrawText("加载中�?, vw * 0.5, vh - 44, 15, 0.9, 0.85, 0.6, 1, true, true)
+    DrawText("加载中…", vw * 0.5, vh - 44, 15, 0.9, 0.85, 0.6, 1, true, true)
     local prog = clamp(loadingTime / 1.8, 0, 1)
     DrawRect(vw * 0.5 - 160, vh - 26, 320, 8, 0.1, 0.1, 0.12, 1)
     DrawRect(vw * 0.5 - 159, vh - 25, 318 * prog, 6, 0.85, 0.7, 0.25, 1)
@@ -2388,7 +2388,7 @@ local function worldRadiusPx(wx, wz, r)
     return dist(a.x, a.y, b.x, b.y)
 end
 
--- HUD 层技能叠加：攻击范围�?+ 施法瞄准�?落点圆（引擎 DrawCircle/DrawLine）�?
+-- HUD 层技能叠加：攻击范围圈 + 施法瞄准线/落点圆（引擎 DrawCircle/DrawLine）。
 local function drawSkillOverlay()
     local h = playerHero
     if h == nil or h.dead then return end
@@ -2440,7 +2440,7 @@ local function drawFog()
                 local s = WorldToScreen(wx, 0.0, wz)
                 if s ~= nil then
                     local rp = worldRadiusPx(wx, wz, FOG_CELL)
-                    -- 远处/近地平线的格子投影会爆表；夹住，避免一块黑盖满全屏�?
+                    -- 远处/近地平线的格子投影会爆表；夹住，避免一块黑盖满全屏。
                     if rp ~= nil then rp = math.min(rp, 40) end
                     if rp ~= nil and s.x > -rp and s.x < vw + rp and s.y > -rp and
                         s.y < vh + rp then
@@ -2454,7 +2454,7 @@ local function drawFog()
     end
 end
 
--- 大厅界面（client）：创建/刷新/房号加入/等待/�?AI 开�?离开
+-- 大厅界面（client）：创建/刷新/房号加入/等待/和 AI 开始/离开
 local function drawLobby()
     local vp = GetViewportSize()
     local vw = (vp and vp.w) or VW
@@ -2470,7 +2470,7 @@ local function drawLobby()
     local function hit(x, y, w, h)
         return click and cx >= x and cx <= x + w and cy >= y and cy <= y + h
     end
-    -- 带描边的文字：浓烈背景上也能看清（先画深色描边再填色）�?
+    -- 带描边的文字：浓烈背景上也能看清（先画深色描边再填色）。
     local OUT = { { -1, 0 }, { 1, 0 }, { 0, -1 }, { 0, 1 }, { -1, -1 }, { 1, -1 }, { -1, 1 }, { 1, 1 } }
     local function T(s, x, y, size, r, g, b, cenx, ceny)
         for i = 1, #OUT do
@@ -2479,7 +2479,7 @@ local function drawLobby()
         DrawText(s, x, y, size, r, g, b, 1, cenx, ceny)
     end
 
-    -- AI 生成的奥术大厅背�?+ 压暗遮罩
+    -- AI 生成的奥术大厅背景 + 压暗遮罩
     DrawSprite(UI_BG, 0, 0, vw, vh, 1, 1, 1, 1)
     DrawRect(0, 0, vw, vh, 0.02, 0.03, 0.06, 0.50)
     DrawRect(0, 0, vw, 104, 0.02, 0.03, 0.06, 0.80)
@@ -2496,11 +2496,11 @@ local function drawLobby()
     DrawRectOutline(pillX, 34, pillW, 38, 1.5, 0.55, 0.45, 0.22, 1)
     DrawCircle(pillX + 20, 53, 6, 2,
         connected and 0.35 or 0.95, connected and 0.92 or 0.45, connected and 0.55 or 0.4, 1, true)
-    T((connected and "已连�?  " or "连接�?  ") .. tostring(pname),
+    T((connected and "已连接   " or "连接中   ") .. tostring(pname),
         pillX + 40, 53, 15, 0.95, 0.97, 1, false, true)
 
     if not connected then
-        T("正在连接服务器�?, vw * 0.5, vh * 0.5, 24, 0.95, 0.95, 0.95, true, true)
+        T("正在连接服务器…", vw * 0.5, vh * 0.5, 24, 0.95, 0.95, 0.95, true, true)
         return
     end
 
@@ -2526,14 +2526,14 @@ local function drawLobby()
     end
 
     ---------------- 左：房间列表 ----------------
-    card(leftX, cardY, cardW, cardH, "�?�?�?�?)
+    card(leftX, cardY, cardW, cardH, "房 间 列 表")
     local innerX = leftX + pad
     local innerW = cardW - pad * 2
     local listY = cardY + 66
     local rowH, rowGap = 46, 12
     local maxRows = math.max(1, math.floor((cardH - 150) / (rowH + rowGap)))
     if #LOBBY.rooms == 0 then
-        T("暂无房间 �?来创建第一个吧", leftX + cardW * 0.5, listY + 34, 16, 0.70, 0.76, 0.86, true, true)
+        T("暂无房间 — 来创建第一个吧", leftX + cardW * 0.5, listY + 34, 16, 0.70, 0.76, 0.86, true, true)
     end
     for i = 1, math.min(#LOBBY.rooms, maxRows) do
         local r = LOBBY.rooms[i]
@@ -2542,7 +2542,7 @@ local function drawLobby()
         DrawRect(innerX, yy, innerW, rowH,
             hov and 0.18 or 0.10, hov and 0.22 or 0.13, hov and 0.30 or 0.19, 0.96)
         DrawRectOutline(innerX, yy, innerW, rowH, hov and 2 or 1, 0.35, 0.42, 0.55, 1)
-        local started = r.started and "  ·  已开�? or ""
+        local started = r.started and "  ·  已开始" or ""
         T("房间  " .. tostring(r.room), innerX + 16, yy + rowH * 0.5, 16, 0.95, 0.97, 1, false, true)
         T(string.format("%d/%d%s", r.players or 1, r.max or 2, started),
             innerX + innerW - 78, yy + rowH * 0.5, 15, 0.78, 0.88, 1, true, true)
@@ -2556,12 +2556,12 @@ local function drawLobby()
     end
 
     ---------------- 右：对战房间 ----------------
-    card(rightX, cardY, cardW, cardH, "�?�?�?�?)
+    card(rightX, cardY, cardW, cardH, "对 战 房 间")
     local myId = GetVar("myClientId")
     if LOBBY.room == "" then
-        T("还没有加入房�?, rightX + cardW * 0.5, cardY + 108, 17, 0.90, 0.93, 1, true, true)
-        T("创建房间后把房号发给好友�?, rightX + cardW * 0.5, cardY + 144, 14, 0.72, 0.78, 0.9, true, true)
-        T("或点击左侧列表加入�?, rightX + cardW * 0.5, cardY + 168, 14, 0.72, 0.78, 0.9, true, true)
+        T("还没有加入房间", rightX + cardW * 0.5, cardY + 108, 17, 0.90, 0.93, 1, true, true)
+        T("创建房间后把房号发给好友，", rightX + cardW * 0.5, cardY + 144, 14, 0.72, 0.78, 0.9, true, true)
+        T("或点击左侧列表加入。", rightX + cardW * 0.5, cardY + 168, 14, 0.72, 0.78, 0.9, true, true)
         if button(rightX + cardW * 0.5 - 110, cardY + 208, 220, 52, "创建房间", true) then
             Rpc("room.create")
         end
@@ -2586,16 +2586,16 @@ local function drawLobby()
         local isHost = (myId ~= nil and LOBBY.host ~= 0 and LOBBY.host == myId)
         T("房号", rightX + pad, cardY + 84, 14, 0.72, 0.78, 0.9, false, true)
         T(tostring(LOBBY.room), rightX + pad, cardY + 116, 40, 1.0, 0.86, 0.42, false, true)
-        T(string.format("%d / %d 名玩�?, LOBBY.players, LOBBY.max),
+        T(string.format("%d / %d 名玩家", LOBBY.players, LOBBY.max),
             rightX + pad, cardY + 172, 16, 0.92, 0.94, 1, false, true)
-        T(isHost and "你是房主" or "等待房主开始�?,
+        T(isHost and "你是房主" or "等待房主开始…",
             rightX + pad, cardY + 204, 15, 0.62, 0.92, 0.72, false, true)
         if isHost then
             if LOBBY.players >= 2 then
                 if button(rightX + pad, cardY + 258, 210, 52, "开始对局", true) then Rpc("room.start") end
                 if button(rightX + pad, cardY + 322, 210, 42, "踢出对手") then Rpc("room.kick") end
             else
-                if button(rightX + pad, cardY + 258, 210, 52, "�?AI 开�?, true) then Rpc("room.start") end
+                if button(rightX + pad, cardY + 258, 210, 52, "和 AI 开始", true) then Rpc("room.start") end
                 if button(rightX + pad, cardY + 322, 210, 42, "刷新对手") then Rpc("room.list") end
             end
         end
@@ -2629,8 +2629,8 @@ function on_render()
         drawLoading()
         return
     end
-    -- 战争迷雾的逐格黑色遮罩观感很差（硬边黑方块），暂时不画�?
-    -- 视野/草丛的“敌人隐藏”逻辑仍在（updateVision）。真正的柔和迷雾需要引擎遮罩纹理�?
+    -- 战争迷雾的逐格黑色遮罩观感很差（硬边黑方块），暂时不画；
+    -- 视野/草丛的“敌人隐藏”逻辑仍在（updateVision）。真正的柔和迷雾需要引擎遮罩纹理。
     drawWorldPlates()
     drawTargetMarker()
     drawSkillOverlay()
@@ -2641,4 +2641,3 @@ function on_render()
     drawScoreboard()
     drawShop()
 end
-
