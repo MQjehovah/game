@@ -348,6 +348,15 @@ local function floatAt(u, text, crit, cr, cg, cb)
         cr or 1.0, cg or 1.0, cb or 1.0)
 end
 
+-- 统一的金币入账：玩家金币增加时头顶飘 "+N 金币"（击杀/补刀/被动收入都用它）。
+local function gainGold(u, amount)
+    if u == nil or amount == nil or amount <= 0 then return end
+    u.gold = (u.gold or 0) + amount
+    if u == playerHero then
+        floatAt(u, "+" .. tostring(math.floor(amount + 0.5)) .. " 金币", false, 1.0, 0.86, 0.30)
+    end
+end
+
 local function recomputeDerived(u)
     local b = u.base
     if b == nil then return end
@@ -411,7 +420,15 @@ local XP_MINION = { melee = 32, caster = 28, siege = 55 }
 local function updateEconomy(dt)
     for i = 1, #heroes do
         local h = heroes[i]
-        if not h.dead then h.gold = h.gold + 2.0 * dt end
+        if not h.dead then
+            -- 被动金币攒够 10 再入账一次，玩家能看到 "+10 金币" 漂字而不是每帧刷屏。
+            h.goldAccum = (h.goldAccum or 0) + 2.0 * dt
+            if h.goldAccum >= 10 then
+                local g = math.floor(h.goldAccum)
+                h.goldAccum = h.goldAccum - g
+                gainGold(h, g)
+            end
+        end
     end
 end
 
@@ -495,9 +512,8 @@ local function killUnit(u, source)
             kills[source.team] = (kills[source.team] or 0) + 1
             if source.isHero then
                 local g = GOLD_MINION[u.mkind] or 20
-                source.gold = source.gold + g
                 source.cs = source.cs + 1
-                floatAt(source, "+" .. tostring(g), false, 0.98, 0.85, 0.35)
+                gainGold(source, g)
             end
         end
         for i = 1, #heroes do
@@ -511,9 +527,8 @@ local function killUnit(u, source)
             source.kills = (source.kills or 0) + 1
             source.streak = (source.streak or 0) + 1
             local bounty = 300 + math.min(source.streak - 1, 5) * 50
-            source.gold = source.gold + bounty
             grantXp(source, 150)
-            floatAt(source, "+" .. bounty, true, 0.98, 0.82, 0.3)
+            gainGold(source, bounty)
         end
         u.streak = 0
         local kname = (source ~= nil and source.name) or "?"
@@ -524,9 +539,8 @@ local function killUnit(u, source)
         sfx("monster_die", 0.15)
         if source ~= nil and source.isHero then
             local g = u.gold or 60
-            source.gold = source.gold + g
             grantXp(source, u.xpReward or 60)
-            floatAt(source, "+" .. tostring(g), false, 0.98, 0.85, 0.35)
+            gainGold(source, g)
             if u.campBuff == "red" then
                 applyStatusLua(source, "adbuff", 120, 1.15, source)
             elseif u.campBuff == "blue" then
@@ -641,10 +655,29 @@ local function moveToward(u, tx, tz, dt)
     return d <= 0.2
 end
 
+-- 把不可走的点吸附到最近的可行走格：A* 在端点不可走时会直接返回空路径，
+-- 而小兵的目标是敌方基地中心（被 NavBlock 标成障碍），不吸附就会退化成
+-- 直线移动、正好撞进沿途防御塔卡住。
+local function nearestWalkable(x, z)
+    if type(NavWalkable) ~= "function" then return x, z end
+    if NavWalkable(x, z) then return x, z end
+    for r = 1, 14 do
+        local n = 8 * r
+        for k = 0, n - 1 do
+            local a = k / n * math.pi * 2
+            local nx, nz = x + math.cos(a) * r, z + math.sin(a) * r
+            if NavWalkable(nx, nz) then return nx, nz end
+        end
+    end
+    return x, z
+end
+
 -- 导航寻路：沿场景导航网格（level.navgrid）的 A* 路点移动，绕开地图障碍。
 -- 无网格 / 无路时优雅回退直线（beeline），行为与旧版一致。
 local function repath(u, tx, tz)
-    local p = NavFindPath({ x = u.x, y = 0, z = u.z }, { x = tx, y = 0, z = tz })
+    local sx, sz = nearestWalkable(u.x, u.z)
+    local gx, gz = nearestWalkable(tx, tz)
+    local p = NavFindPath({ x = sx, y = 0, z = sz }, { x = gx, y = 0, z = gz })
     if p ~= nil and #p > 0 then
         u.navPath = p
         u.navIdx = 1
@@ -693,6 +726,39 @@ local function playAction(u, clip, dur)
     u.anim = clip
     u.actionT = dur or 0.4
     if u.ent ~= nil then PlayAnimation(u.ent, clip, false, 0.08) end
+end
+
+-- 技能特效小工具：让不同技能有不同形状，而不是清一色的同一团粒子。
+local function fxBurst(cx, cy, cz, count, sMin, sMax, lMin, lMax, sz0, sz1, col, colEnd, vy, grav)
+    EmitParticles({ pos = { x = cx, y = cy, z = cz }, count = count,
+        vel = { x = 0, y = vy or 1, z = 0 }, speedMin = sMin, speedMax = sMax,
+        lifeMin = lMin, lifeMax = lMax, sizeStart = sz0, sizeEnd = sz1,
+        color = col, colorEnd = colEnd, gravity = grav, additive = true })
+end
+
+-- 沿世界圆喷一圈（地面预警/光环），dir=false 时粒子只向上飘。
+local function fxRing(cx, cz, r, count, col, colEnd, y, sMin, sMax, lMin, lMax, sz0, sz1, vy)
+    for k = 0, count - 1 do
+        local a = k / count * math.pi * 2
+        EmitParticles({ pos = { x = cx + math.cos(a) * r, y = y or 0.1, z = cz + math.sin(a) * r },
+            count = 1, vel = { x = 0, y = vy or 1, z = 0 }, speedMin = sMin, speedMax = sMax,
+            lifeMin = lMin, lifeMax = lMax, sizeStart = sz0, sizeEnd = sz1,
+            color = col, colorEnd = colEnd, additive = true })
+    end
+end
+
+-- 沿朝向的扇形挥砍（近战弧线），沿弧线布点形成月牙。
+local function fxSlash(h, range, arc, col)
+    local fy = h.yaw or 0
+    for k = 0, 16 do
+        local a = -arc * 0.5 + arc * k / 16
+        local ax, az = math.sin(fy + a), math.cos(fy + a)
+        EmitParticles({ pos = { x = h.x + ax * range * 0.65, y = 0.95, z = h.z + az * range * 0.65 },
+            count = 2, vel = { x = ax, y = 0.35, z = az }, speedMin = 3.5, speedMax = 8,
+            lifeMin = 0.12, lifeMax = 0.26, sizeStart = 0.5, sizeEnd = 0.02,
+            color = { r = 1, g = 1, b = 1, a = 0.85 },
+            colorEnd = { r = col[1], g = col[2], b = col[3], a = 0 }, additive = true })
+    end
 end
 
 -- 施法动作：不同英雄的技能剪辑命名不一（Yasuo 是 spell1a/1b/1c），逐级回退
@@ -815,10 +881,12 @@ local function castAbility(h, idx, aimX, aimZ)
     local ab = h.abilities[idx]
     if ab == nil or h.dead then return end
     local rank = (h.ranks and h.ranks[idx]) or 0
-    if rank <= 0 then floatAt(h, "未学习技能", false); return end
-    if (h.cds[idx] or 0) > 0 then floatAt(h, "冷却中", false); return end
+    -- 失败反馈只对玩家显示：AI 每帧都会尝试施法，否则漂字会堆满敌方头顶。
+    local me = (h == playerHero)
+    if rank <= 0 then if me then floatAt(h, "未学习技能", false) end; return end
+    if (h.cds[idx] or 0) > 0 then if me then floatAt(h, "冷却中", false) end; return end
     local cost = ab.cost or 0
-    if h.mana < cost then floatAt(h, "法力不足", false); return end
+    if h.mana < cost then if me then floatAt(h, "法力不足", false) end; return end
     h.mana = h.mana - cost
     h.cds[idx] = (ab.cd or 6) * (1 - 0.05 * (rank - 1))
     playSpell(h, idx)
@@ -831,6 +899,7 @@ local function castAbility(h, idx, aimX, aimZ)
         dx, dz = math.sin(fy), math.cos(fy)
     end
     local t = ab.type
+    local col = TEAM_COLOR[h.team]
     local dmg = (ab.dmg or 0) * (0.6 + 0.4 * rank)
 
     if t == "projectile" then
@@ -848,11 +917,17 @@ local function castAbility(h, idx, aimX, aimZ)
                 status = ab.status, statusDur = ab.statusDur, statusMag = ab.statusMag,
             })
         end
+        -- 枪口能量环（区别于普攻）
+        fxRing(h.x + dx * 0.7, h.z + dz * 0.7, 0.35, 10,
+            { r = col[1], g = col[2], b = col[3], a = 0.9 }, { r = 1, g = 1, b = 1, a = 0 },
+            1.0, 2, 5, 0.1, 0.2, 0.4, 0.05, 0.2)
     elseif t == "aoe_self" then
         local ticks = ab.ticks or 1
         for _ = 1, ticks do
             aoeDamage(h, h.x + dx * 0.8, h.z + dz * 0.8, ab.radius or 3, dmg / ticks, ab.status, ab.statusDur, ab.statusMag)
         end
+        fxRing(h.x, h.z, ab.radius or 3, 24, { r = col[1], g = col[2], b = col[3], a = 0.9 },
+            { r = 1, g = 1, b = 1, a = 0 }, 0.1, 1.5, 4, 0.3, 0.6, 0.6, 0.05, 0.6)
     elseif t == "aoe_target" then
         local tl = math.sqrt((aimX - h.x) ^ 2 + (aimZ - h.z) ^ 2)
         local r = ab.range or 10
@@ -862,23 +937,20 @@ local function castAbility(h, idx, aimX, aimZ)
             delay = ab.delay or 0.4, radius = ab.radius or 3, dmg = dmg,
             status = ab.status, statusDur = ab.statusDur, statusMag = ab.statusMag,
         }
-        -- 落点预警圈：沿圆周喷一圈粒子标记范围
+        -- 落点预警圈（cast 时一次性粒子 + on_render 脉冲地面圈，见 drawGroundAoes）
         local cr = ab.radius or 3
-        for i = 0, 15 do
-            local a = i / 16 * math.pi * 2
-            EmitParticles({ pos = { x = aimX + math.cos(a) * cr, y = 0.1, z = aimZ + math.sin(a) * cr },
-                count = 1, vel = { x = 0, y = 1, z = 0 }, speedMin = 0.1, speedMax = 0.4,
-                lifeMin = (ab.delay or 0.4) * 0.8, lifeMax = (ab.delay or 0.4) * 1.1,
-                sizeStart = 0.5, sizeEnd = 0.15,
-                color = { r = TEAM_COLOR[h.team][1], g = TEAM_COLOR[h.team][2], b = TEAM_COLOR[h.team][3], a = 0.95 },
-                colorEnd = { r = 1, g = 0.4, b = 0.2, a = 0 }, additive = true })
-        end
+        fxRing(aimX, aimZ, cr, 20, { r = col[1], g = col[2], b = col[3], a = 0.95 },
+            { r = 1, g = 0.4, b = 0.2, a = 0 }, 0.1, 0.1, 0.4,
+            (ab.delay or 0.4) * 0.8, (ab.delay or 0.4) * 1.1, 0.5, 0.15, 1.2)
     elseif t == "dash" then
         local d = ab.dist or 4
         local steps = 8
         for _ = 1, steps do
             h.x = h.x + dx * d / steps
             h.z = h.z + dz * d / steps
+            -- 残影
+            fxBurst(h.x, 1.0, h.z, 4, 0.2, 0.8, 0.2, 0.4, 0.5, 0.05,
+                { r = col[1], g = col[2], b = col[3], a = 0.7 }, { r = 1, g = 1, b = 1, a = 0 }, 0.5)
             if ab.radius and ab.radius > 0 then
                 for j = 1, #units do
                     local o = units[j]
@@ -909,27 +981,36 @@ local function castAbility(h, idx, aimX, aimZ)
                 end
             end
         end
-        EmitParticles({ pos = { x = h.x + fx, y = 1, z = h.z + fz }, count = 16, vel = { x = dx, y = 0.4, z = dz },
-            speedMin = 1, speedMax = 3, lifeMin = 0.2, lifeMax = 0.4, sizeStart = 0.4, sizeEnd = 0.02,
-            color = { r = 1, g = 1, b = 1, a = 0.8 }, colorEnd = { r = 1, g = 1, b = 1, a = 0 }, additive = true })
+        fxSlash(h, r, arc, col)
     elseif t == "buff" then
         if ab.shield and ab.shield > 0 then applyStatusLua(h, "shield", ab.duration or 3, ab.shield, h) end
         if ab.msMul then applyStatusLua(h, "msbuff", ab.duration or 4, ab.msMul, h) end
         if ab.adMul then applyStatusLua(h, "adbuff", ab.duration or 5, ab.adMul, h) end
-        EmitParticles({ pos = { x = h.x, y = 1, z = h.z }, count = 24, vel = { x = 0, y = 1, z = 0 },
-            speedMin = 0.5, speedMax = 2, lifeMin = 0.4, lifeMax = 0.8, sizeStart = 0.6, sizeEnd = 0.05,
-            color = { r = TEAM_COLOR[h.team][1], g = TEAM_COLOR[h.team][2], b = TEAM_COLOR[h.team][3], a = 0.9 },
-            colorEnd = { r = 1, g = 1, b = 1, a = 0 }, additive = true })
+        -- 双环上浮光环（区别于伤害类）
+        fxRing(h.x, h.z, 0.7, 20, { r = col[1], g = col[2], b = col[3], a = 0.9 },
+            { r = 1, g = 1, b = 1, a = 0 }, 0.1, 0.1, 0.4, 0.5, 0.9, 0.5, 0.05, 1.6)
+        fxRing(h.x, h.z, 1.3, 24, { r = 1, g = 1, b = 1, a = 0.7 },
+            { r = col[1], g = col[2], b = col[3], a = 0 }, 0.1, 0.1, 0.4, 0.5, 0.9, 0.4, 0.05, 1.4)
+        fxBurst(h.x, 0.6, h.z, 18, 0.4, 1.6, 0.4, 0.8, 0.55, 0.05,
+            { r = col[1], g = col[2], b = col[3], a = 0.9 }, { r = 1, g = 1, b = 1, a = 0 }, 1.6)
     elseif t == "heal" then
         h.hp = math.min(h.maxHp, h.hp + (ab.amount or 100))
         SetHealth(h.ent, h.hp)
         floatAt(h, "+" .. tostring(ab.amount or 100), false, 0.4, 1.0, 0.5)
+        fxBurst(h.x, 0.3, h.z, 20, 0.3, 1.2, 0.4, 0.8, 0.45, 0.05,
+            { r = 0.4, g = 1.0, b = 0.5, a = 0.9 }, { r = 0.8, g = 1, b = 1, a = 0 }, 2.2, -0.6)
     elseif t == "execute" then
         local tgt = nearestEnemy(h, ab.range or 3)
         if tgt == nil then floatAt(h, "无目标", false); return end
         local missing = 1.0 - tgt.hp / tgt.maxHp
         local total = dmg + (tgt.maxHp * (ab.missingPct or 0.3) * missing)
         damage(tgt, total, h)
+        camShake = math.min(1.5, camShake + 0.7)
+        fxBurst(tgt.x, 1.0, tgt.z, 30, 3, 9, 0.25, 0.5, 0.8, 0.05,
+            { r = 1, g = 0.85, b = 0.3, a = 1 }, { r = 1, g = 0.2, b = 0.1, a = 0 }, 0.5)
+        fxRing(tgt.x, tgt.z, 1.0, 24, { r = 1, g = 0.9, b = 0.5, a = 0.9 },
+            { r = 1, g = 0.3, b = 0, a = 0 }, 0.15, 4, 9, 0.25, 0.5, 0.7, 0.05, 0.5)
+        SpawnFloatText({ x = tgt.x, y = tgt.h + 0.6, z = tgt.z }, "处决!", true, 1.0, 1, 0.6, 0.2)
     end
 end
 
@@ -955,6 +1036,7 @@ local function autoAttack(u, dt)
     if u.atkTimer > 0 then return end
     u.atkTimer = u.atkPeriod
     playAction(u, "attack1", math.min(0.45, u.atkPeriod))
+    if u.kind == "minion" then u.lungeT = 0.18 end -- 静态模型：攻击前冲作为出手反馈
     if u.isHero then sfx("attack", 0.08) elseif u.kind == "tower" then sfx("tower", 0.1) end
     faceTo(u, tgt.x, tgt.z)
     if u.isHero then
@@ -1075,46 +1157,9 @@ local function updateHeroControl(h, dt)
     end
 end
 
--- 地面圆环 telegraph（技能/攻击范围指示）
-local function drawRangeRing(cx, cz, r, cr, cg, cb)
-    if r == nil or r <= 0 then return end
-    for k = 0, 23 do
-        local a = k / 24 * math.pi * 2
-        EmitParticles({ pos = { x = cx + math.cos(a) * r, y = 0.08, z = cz + math.sin(a) * r },
-            count = 1, vel = { x = 0, y = 0.2, z = 0 }, speedMin = 0.05, speedMax = 0.15,
-            lifeMin = 0.06, lifeMax = 0.12, sizeStart = 0.24, sizeEnd = 0.14,
-            color = { r = cr, g = cg, b = cb, a = 0.9 },
-            colorEnd = { r = 1, g = 1, b = 1, a = 0 }, additive = true })
-    end
-end
-
--- 按住 QWER 的地面施法指示器（按技能类型：圆 / 直线）
-local function drawSpellIndicator(h, idx, aimX, aimZ)
-    local ab = h.abilities[idx]
-    if ab == nil then return end
-    local col = TEAM_COLOR[h.team]
-    local dx, dz = norm(aimX - h.x, aimZ - h.z)
-    if dx == 0 and dz == 0 then dx, dz = math.sin(h.yaw or 0), math.cos(h.yaw or 0) end
-    if ab.type == "aoe_target" then
-        local r = ab.range or 10
-        local cx, cz = aimX, aimZ
-        if dist(h.x, h.z, cx, cz) > r then cx, cz = h.x + dx * r, h.z + dz * r end
-        drawRangeRing(cx, cz, ab.radius or 3, col[1], col[2], col[3])
-    elseif ab.type == "aoe_self" then
-        drawRangeRing(h.x, h.z, ab.radius or 3, col[1], col[2], col[3])
-    else
-        local len = ab.range or (ab.dist or 6)
-        local steps = math.max(4, math.floor(len))
-        for k = 1, steps do
-            local t = k / steps * len
-            EmitParticles({ pos = { x = h.x + dx * t, y = 0.08, z = h.z + dz * t },
-                count = 1, vel = { x = 0, y = 0.2, z = 0 }, speedMin = 0.05, speedMax = 0.15,
-                lifeMin = 0.06, lifeMax = 0.12, sizeStart = 0.22, sizeEnd = 0.14,
-                color = { r = col[1], g = col[2], b = col[3], a = 0.85 },
-                colorEnd = { r = 1, g = 1, b = 1, a = 0 }, additive = true })
-        end
-    end
-end
+-- 施法/攻击的地面 telegraph 现在统一走 on_render 的透视正确多边形（见
+-- drawSkillOverlay + groundRing/groundLine），不再用屏幕空间 DrawCircle 或
+-- 粒子圈：屏幕圆会随透视“越走越大”，粒子圈则不够清晰。
 
 -- ==========================================================================
 -- 联机（A）：服务器权威消费指令，客户端发指令
@@ -1440,11 +1485,11 @@ local function updatePlayer(dt)
                 sfx("levelup", 0.2)
             end
         else
-            if ActionDown("spell" .. i) then drawSpellIndicator(h, i, aimX, aimZ) end
+            -- 按住显示地面施法指示器（on_render 的 drawSkillOverlay），松开释放。
             if ActionReleased("spell" .. i) then castAbility(h, i, aimX, aimZ) end
         end
     end
-    -- 按住 A：显示攻击范围圈（在 HUD 层用 DrawCircle 画，见 drawSkillOverlay）。
+    -- 按住 A：显示攻击范围圈（on_render 的世界空间地面圈，见 drawSkillOverlay）。
     if ActionPressed("recall") then h.channel = 1.4 end
     updateHeroControl(h, dt)
 end
@@ -1476,7 +1521,8 @@ local function updateAI(h, dt)
     local d = dist(h.x, h.z, tgt.x, tgt.z)
     for i = 1, 4 do
         local ab = h.abilities[i]
-        if ab and (h.cds[i] or 0) <= 0 and h.mana >= (ab.cost or 0) then
+        -- 只施放已加点的技能（ranks[i] > 0），否则会走 castAbility 的失败分支。
+        if ab and (h.ranks[i] or 0) > 0 and (h.cds[i] or 0) <= 0 and h.mana >= (ab.cost or 0) then
             local useRange = ab.range or ((ab.type == "aoe_self" or ab.type == "buff") and 3.5) or 6
             if d <= math.max(useRange, 5) and math.random() < 0.7 then
                 castAbility(h, i, tgt.x, tgt.z)
@@ -1585,8 +1631,30 @@ local function respawnHero(u)
     u.navGoal = nil
 end
 
+-- 小兵模型是静态网格（无骨骼动画）：用程序化起伏/摆动/攻击前冲让它“动起来”。
+local function minionWalk(u, dt)
+    u.bobT = (u.bobT or 0) + dt
+    local attacking = (u.actionT or 0) > 0
+    local bob, sway
+    if attacking then
+        bob = 0.04 + math.sin(u.bobT * 3.0) * 0.03
+        sway = math.sin(u.bobT * 3.0) * 0.05
+    else
+        bob = math.abs(math.sin(u.bobT * 9.0)) * 0.16 + 0.02
+        sway = math.sin(u.bobT * 9.0) * 0.11
+    end
+    local px, pz = u.x, u.z
+    if (u.lungeT or 0) > 0 then
+        u.lungeT = u.lungeT - dt
+        local f = math.sin((1 - math.max(0, u.lungeT) / 0.18) * math.pi) * 0.3
+        px = px + math.sin(u.yaw or 0) * f
+        pz = pz + math.cos(u.yaw or 0) * f
+    end
+    return px, bob, pz, (u.yaw or 0) + sway
+end
+
 -- 单位分离：避免英雄/小兵/野怪互相重叠（结构体不动，只推开单位）。
-local function separateUnits()
+local function separateUnits(dt)
     local n = #units
     for i = 1, n do
         local a = units[i]
@@ -1615,7 +1683,12 @@ local function separateUnits()
     for i = 1, n do
         local u = units[i]
         if not u.dead and u.ent ~= nil then
-            SetPosition(u.ent, { x = u.x, y = 0, z = u.z })
+            local px, py, pz, yaw = u.x, 0, u.z, u.yaw or 0
+            if u.kind == "minion" then
+                px, py, pz, yaw = minionWalk(u, dt)
+            end
+            SetPosition(u.ent, { x = px, y = py, z = pz })
+            SetRotationY(u.ent, yaw)
         end
     end
 end
@@ -1626,6 +1699,11 @@ local function cleanupUnits(dt)
         local u = units[i]
         if u.dead then
             u.dying = u.dying - dt
+            -- 小兵无死亡动画：压扁下沉作为死亡表现。
+            if u.kind == "minion" and u.ent ~= nil and u.dying > 0 then
+                local f = clamp(u.dying / 0.7, 0, 1)
+                SetScale(u.ent, 0.01, 0.01 * f * f, 0.01)
+            end
             if u.dying <= 0 then
                 if u.isHero then
                     respawnHero(u)
@@ -2040,7 +2118,7 @@ function on_update(e, dt)
     updateCameraFollow(dt)
     updateVision()
     updatePlates()
-    separateUnits()
+    separateUnits(dt)
     cleanupUnits(dt)
 end
 
@@ -2053,13 +2131,22 @@ local function bar(x, y, w, h, frac, r, g, b)
     DrawRectOutline(x, y, w, h, 1, 0, 0, 0, 0.9)
 end
 
--- 目标选中框：点选/锁定敌人时在其头顶画方框
-local function drawTargetMarker()
+-- 选中/锁定目标：用 SetEntityHighlight 让敌方 mesh 边缘发光（替代原来的头顶方框）。
+local lastTargetEnt = nil
+local function updateTargetHighlight()
     local h = playerHero
-    if h == nil or h.target == nil or h.target.dead then return end
-    local s = WorldToScreen(h.target.x, h.target.h * 0.5, h.target.z)
-    if s ~= nil then
-        DrawRectOutline(s.x - 18, s.y - 18, 36, 36, 2, 0.95, 0.45, 0.3, 1)
+    local t = (h ~= nil and h.target ~= nil and not h.target.dead) and h.target or nil
+    local ent = t and t.ent or nil
+    if lastTargetEnt ~= nil and lastTargetEnt ~= ent then
+        SetEntityHighlight(lastTargetEnt, 0, 0, 0, 0)
+    end
+    lastTargetEnt = ent
+    if ent ~= nil and t ~= nil then
+        if h ~= nil and t.team ~= h.team then
+            SetEntityHighlight(ent, 1.0, 0.30, 0.18, 1.9) -- 敌方：红橙描边
+        else
+            SetEntityHighlight(ent, 0.30, 1.0, 0.45, 1.4) -- 友方：绿色描边
+        end
     end
 end
 
@@ -2124,7 +2211,7 @@ local function drawHud()
     if h == nil then return end
     local bw, bh = 240, 16
     local bx, by = cx - bw / 2, vh - 96
-    DrawText(string.format("%s  Lv.%d", h.name, h.level), bx, by - 22, 16, 1, 1, 1, 1, false, true)
+    DrawText(string.format("%s  Lv.%d", h.name, h.level), bx, by - 40, 16, 1, 1, 1, 1, false, true)
     bar(bx, by, bw, bh, h.hp / h.maxHp, 0.2, 0.8, 0.25)
     bar(bx, by + bh + 3, bw, bh - 4, h.maxMana > 0 and h.mana / h.maxMana or 0, 0.25, 0.45, 0.95)
     DrawText(string.format("%d / %d", math.max(0, math.floor(h.hp)), math.floor(h.maxHp)), bx + bw / 2, by + bh / 2, 12, 1, 1, 1, 1, true, true)
@@ -2168,24 +2255,27 @@ local function drawHud()
         end
     end
     if (h.skillPoints or 0) > 0 then
-        DrawText("技能点 " .. h.skillPoints .. "   Ctrl+QWER 加点", sx, sy - 20, 14, 1, 0.9, 0.4, 1, false, true)
+        -- 放到顶部计时器下方，避免和血/蓝条、技能栏重叠。
+        DrawText("技能点 " .. h.skillPoints .. "   Ctrl+QWER 加点", cx, 46, 14, 1, 0.9, 0.4, 1, true, true)
     end
     -- 回城读条进度
     if (h.channel or 0) > 0 then
         local cw, chh = 220, 14
-        local rbx, rby = cx - cw / 2, by - 44
+        local rbx, rby = cx - cw / 2, by - 72
         DrawRect(rbx, rby, cw, chh, 0.05, 0.05, 0.08, 0.85)
         DrawRect(rbx + 1, rby + 1, (cw - 2) * clamp(1 - h.channel / 1.4, 0, 1), chh - 2,
             0.3, 0.7, 1.0, 1)
         DrawText("回城中…", cx, rby + chh / 2, 12, 1, 1, 1, 1, true, true)
     end
 
-    local infoY = sy - 22
-    DrawText(string.format("金币 %d", math.floor(h.gold)), bx, infoY, 15, 0.95, 0.82, 0.3, 1, false, true)
-    DrawText(string.format("补刀 %d", h.cs), bx + 86, infoY, 15, 0.9, 0.9, 0.9, 1, false, true)
+    -- 数值行放在血条右侧（原来放在 sy-22 与血/蓝条重叠）。
+    local infoY = by + bh * 0.5
+    local infoX = bx + bw + 16
+    DrawText(string.format("金币 %d", math.floor(h.gold)), infoX, infoY, 15, 0.95, 0.82, 0.3, 1, false, true)
+    DrawText(string.format("补刀 %d", h.cs), infoX + 92, infoY, 15, 0.9, 0.9, 0.9, 1, false, true)
     DrawText(string.format("KDA %d/%d", h.kills, h.deaths) ..
         (((h.streak or 0) > 1) and ("   连杀 x" .. h.streak) or ""),
-        bx + 166, infoY, 15, 0.9, 0.9, 0.9, 1, false, true)
+        infoX + 178, infoY, 15, 0.9, 0.9, 0.9, 1, false, true)
     DrawRect(bx - 64, by + 48, 58, 8, 0.05, 0.05, 0.08, 0.9)
     DrawRect(bx - 63, by + 49, 56 * clamp(h.xp / xpForLevel(h.level), 0, 1), 6, 0.85, 0.7, 0.25, 1)
     DrawText("Lv." .. h.level, bx - 35, by + 52, 11, 1, 1, 1, 1, true, true)
@@ -2388,38 +2478,109 @@ local function worldRadiusPx(wx, wz, r)
     return dist(a.x, a.y, b.x, b.y)
 end
 
--- HUD 层技能叠加：攻击范围圈 + 施法瞄准线/落点圆（引擎 DrawCircle/DrawLine）。
+-- 地面圆环：把世界空间圆采样后投影到屏幕，画成透视正确的多边形。
+-- 旧实现用 DrawCircle 画屏幕圆，半径随相机透视变化（越走越大/变椭圆），
+-- 这里改在世界空间采样，任何相机角度都贴合地面。
+local function groundRing(cx, cz, r, cr, cg, cb, ca, filled, seg)
+    if r == nil or r <= 0 then return end
+    seg = seg or 40
+    local pts = {}
+    for k = 0, seg do
+        local a = k / seg * math.pi * 2
+        local s = WorldToScreen(cx + math.cos(a) * r, 0.06, cz + math.sin(a) * r)
+        if s == nil then return end
+        pts[k + 1] = s
+    end
+    if filled then
+        local c = WorldToScreen(cx, 0.06, cz)
+        if c ~= nil then
+            for k = 1, seg do
+                DrawTri(c.x, c.y, pts[k].x, pts[k].y, pts[k + 1].x, pts[k + 1].y,
+                        cr, cg, cb, ca)
+            end
+        end
+    end
+    for k = 1, seg do
+        local p, q = pts[k], pts[k + 1]
+        DrawLine(p.x, p.y, q.x, q.y, 2.0, cr, cg, cb, ca)
+    end
+end
+
+-- 地面直线（技能轨迹）：沿世界直线采样投影，透视正确（不会像屏幕线一样悬空）。
+local function groundLine(x0, z0, x1, z1, cr, cg, cb, ca, width)
+    width = width or 2.0
+    local steps = 16
+    local prev = nil
+    for k = 0, steps do
+        local t = k / steps
+        local s = WorldToScreen(x0 + (x1 - x0) * t, 0.06, z0 + (z1 - z0) * t)
+        if s == nil then return end
+        if prev ~= nil then DrawLine(prev.x, prev.y, s.x, s.y, width, cr, cg, cb, ca) end
+        prev = s
+    end
+end
+
+-- 待落地 AoE 的地面预警：脉冲圆环 + 内圈，比一次性粒子更易读。
+local function drawGroundAoes()
+    for i = 1, #groundAoes do
+        local a = groundAoes[i]
+        local col = TEAM_COLOR[a.team]
+        local pulse = 0.5 + 0.4 * math.sin(elapsed * 14)
+        groundRing(a.x, a.z, a.radius, col[1], col[2], col[3], 0.22, true)
+        groundRing(a.x, a.z, a.radius, 0.95, 0.97, 1.0, pulse, false)
+        groundRing(a.x, a.z, a.radius * 0.55, col[1], col[2], col[3], 0.55, false)
+    end
+end
+
+-- HUD 层技能叠加：世界空间攻击范围圈 + 施法地面指示器（圆/直线）。
 local function drawSkillOverlay()
     local h = playerHero
     if h == nil or h.dead then return end
     local heroS = WorldToScreen(h.x, 0.0, h.z)
     if heroS == nil then return end
-    if ActionDown("attack") or h.attackMove then
-        local rp = worldRadiusPx(h.x, h.z, h.range)
-        if rp ~= nil then DrawCircle(heroS.x, heroS.y, rp, 2.0, 0.95, 0.9, 0.35, 0.9) end
+
+    -- A：攻击范围（世界空间地面圈）；攻击移动时高亮目标点。
+    if ActionDown("attack") then
+        groundRing(h.x, h.z, h.range, 0.95, 0.9, 0.4, 0.85, false)
     end
+    if h.attackMove and h.moveTarget ~= nil then
+        groundRing(h.moveTarget.x, h.moveTarget.z, 1.0, 0.95, 0.55, 0.2, 0.30, true)
+        groundRing(h.moveTarget.x, h.moveTarget.z, 1.0, 1.0, 0.85, 0.4, 0.95, false)
+    end
+
     local m = InputMousePos()
     if m == nil then return end
     for i = 1, 4 do
         local ab = h.abilities[i]
         if ab ~= nil and ((h.ranks and h.ranks[i]) or 0) > 0 and ActionDown("spell" .. i) then
-            DrawLine(heroS.x, heroS.y, m.x, m.y, 2.0, 0.5, 0.85, 1.0, 0.85)
-            if ab.type == "aoe_target" or ab.type == "aoe_self" then
-                local cx, cz = h.x, h.z
-                if ab.type == "aoe_target" then
-                    local g = groundPick(m.x, m.y)
-                    if g ~= nil then
-                        local d = dist(h.x, h.z, g.x, g.z)
-                        local r = ab.range or 10
-                        if d > r then g = { x = h.x + (g.x - h.x) / d * r, z = h.z + (g.z - h.z) / d * r } end
-                        cx, cz = g.x, g.z
-                    end
+            local col = TEAM_COLOR[h.team]
+            local g = groundPick(m.x, m.y)
+            local tx = g and g.x or (h.x + math.sin(h.yaw or 0) * 6)
+            local tz = g and g.z or (h.z + math.cos(h.yaw or 0) * 6)
+            -- 屏幕瞄准线（指向光标，作为辅助读向）
+            DrawLine(heroS.x, heroS.y, m.x, m.y, 1.5, col[1], col[2], col[3], 0.5)
+            if ab.type == "aoe_target" then
+                local r = ab.range or 10
+                local d = dist(h.x, h.z, tx, tz)
+                if d > r and d > 0.0001 then
+                    tx = h.x + (tx - h.x) / d * r
+                    tz = h.z + (tz - h.z) / d * r
                 end
-                local rp = worldRadiusPx(cx, cz, ab.radius or 3)
-                local s = WorldToScreen(cx, 0.0, cz)
-                if rp ~= nil and s ~= nil then
-                    DrawCircle(s.x, s.y, rp, 2.0, 0.5, 0.85, 1.0, 0.9)
-                end
+                groundRing(h.x, h.z, r, col[1], col[2], col[3], 0.30, false)  -- 施法距离
+                groundRing(tx, tz, ab.radius or 3, 0.55, 0.85, 1.0, 0.26, true) -- 落点填充
+                groundRing(tx, tz, ab.radius or 3, 0.75, 0.92, 1.0, 0.95, false)
+            elseif ab.type == "aoe_self" then
+                groundRing(h.x, h.z, ab.radius or 3, 0.55, 0.85, 1.0, 0.26, true)
+                groundRing(h.x, h.z, ab.radius or 3, 0.75, 0.92, 1.0, 0.95, false)
+            else
+                local len = ab.range or (ab.dist or 6)
+                local d = dist(h.x, h.z, tx, tz)
+                if d <= 0.0001 then d = 1 end
+                local ex = h.x + (tx - h.x) / d * math.min(d, len)
+                local ez = h.z + (tz - h.z) / d * math.min(d, len)
+                groundLine(h.x, h.z, ex, ez, col[1], col[2], col[3], 0.30, 9.0) -- 轨迹宽带
+                groundLine(h.x, h.z, ex, ez, 0.75, 0.92, 1.0, 0.95, 2.0)        -- 中心亮线
+                groundRing(ex, ez, 0.7, 0.75, 0.92, 1.0, 0.9, false)             -- 终点标记
             end
             break
         end
@@ -2632,7 +2793,8 @@ function on_render()
     -- 战争迷雾的逐格黑色遮罩观感很差（硬边黑方块），暂时不画；
     -- 视野/草丛的“敌人隐藏”逻辑仍在（updateVision）。真正的柔和迷雾需要引擎遮罩纹理。
     drawWorldPlates()
-    drawTargetMarker()
+    updateTargetHighlight()
+    drawGroundAoes()
     drawSkillOverlay()
     drawFloatTexts()
     drawHud()

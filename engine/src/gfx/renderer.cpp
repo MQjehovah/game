@@ -829,6 +829,12 @@ void Renderer::ApplyMaterial(const Material& material, const math::Mat4& mvp,
         backend_->SetUniformMat4("uModel", model);
         backend_->SetUniformMat4("uNormalMat", normalMat);
         backend_->SetUniformFloat("uShininess", material.shininess);
+        // Selection / edge glow (no-op in shaders compiled without the uniforms,
+        // e.g. the unlit variant; the lit + skinned-lit programs carry them).
+        backend_->SetUniformVec3("uHighlightColor",
+                                 {material.highlightColor.r, material.highlightColor.g,
+                                  material.highlightColor.b});
+        backend_->SetUniformFloat("uHighlightStrength", material.highlightStrength);
         // B1: the per-frame scene uniform block (sun/lights/fog/view/shadow/IBL)
         // is identical across every draw in a frame -- upload it once, and
         // re-upload whenever the shader changes (uniform locations are

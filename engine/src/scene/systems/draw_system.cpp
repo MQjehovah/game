@@ -691,6 +691,7 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
                       ecs::World& world, script::ScriptContext& scriptCtx,
                       script::IScriptHost* luaHost, script::IScriptHost* jsHost,
                       const std::set<uint64_t>& hiddenEntities,
+                      const std::map<uint64_t, script::EntityHighlight>& entityHighlights,
                       HudSystem& hud, SceneTreeSystem& sceneTree, AnimationSystem& anims,
                       ProjectileSystem& projectiles, SceneParticleSystem& particles,
                       ScriptCanvas& canvas, float& uiScale, math::Vec2& uiOffset) {
@@ -1133,9 +1134,22 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
             continue;
         }
         if (hiddenEntities.count(EntityKey(item.ent)) != 0) continue; // SetVisible(false)
+        // SetEntityHighlight: fresnel edge glow on the selected / targeted unit.
+        script::EntityHighlight hl;
+        bool highlighted = false;
+        if (auto it = entityHighlights.find(EntityKey(item.ent));
+            it != entityHighlights.end() && it->second.strength > 0.0f) {
+            hl = it->second;
+            highlighted = true;
+        }
         ResolveOrSkip(item, renderer, world, anims);
         if (!item.resolved || item.failed) continue;
         if (!world.Get<SceneTransform>(item.ent)) continue;
+        // Persisted DrawItem material: rewrite the highlight every frame so a
+        // stale glow clears when the entity stops being selected.
+        item.mat.highlightStrength = highlighted ? hl.strength : 0.0f;
+        item.mat.highlightColor = highlighted ? gfx::Color{hl.r, hl.g, hl.b, 1.0f}
+                                              : gfx::Color::White;
         math::Mat4 model = sceneTree.CachedLocalToWorld(item.ent);
         if (item.tileOffset.LengthSq() > 0.0f)
             model = model * math::Mat4::Translation(item.tileOffset);
@@ -1155,8 +1169,8 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
         // Batchable: opaque static mesh with the built-in shader. Skinned
         // (per-entity bone matrices), sprites, decals, transparent materials
         // and custom shaders keep the per-entity path.
-        const bool batchable = canBatch && !item.skinned && !item.isSprite && !item.isDecal &&
-                               !item.mat.transparent && !item.mat.shader.Valid() &&
+        const bool batchable = canBatch && !highlighted && !item.skinned && !item.isSprite &&
+                               !item.isDecal && !item.mat.transparent && !item.mat.shader.Valid() &&
                                item.mesh.Valid() && item.gltfSubNodes.empty();
         if (batchable) {
             if (!bvhVisible_.empty() && bvhVisible_[idx] == 0) continue; // pre-culled
@@ -1190,9 +1204,16 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
             std::vector<math::Mat4> bones;
             if (!anims.PoseFor(EntityKey(item.ent), item.skinned->skeleton, bones))
                 bones = item.skinned->BoneMatrices();
-            for (const auto& part : item.skinned->parts)
-                renderer.DrawSkinnedMesh(part.mesh, part.material, model,
-                                         bones, static_cast<int>(bones.size()));
+            for (const auto& part : item.skinned->parts) {
+                // Copy (parts are shared across entities): only this draw gets
+                // the highlight, and it clears when the unit is deselected.
+                gfx::Material pm = part.material;
+                pm.highlightStrength = highlighted ? hl.strength : 0.0f;
+                pm.highlightColor = highlighted ? gfx::Color{hl.r, hl.g, hl.b, 1.0f}
+                                                : gfx::Color::White;
+                renderer.DrawSkinnedMesh(part.mesh, pm, model, bones,
+                                         static_cast<int>(bones.size()));
+            }
         } else if (item.isSprite) {
             if (item.billboard) {
                 // Camera-facing quad (world-space VFX): rebuild the model

@@ -560,6 +560,9 @@ private:
     // 调用方），脚本直接走 scriptCtx_ 接线。
     UiSystem uiSystem_;
     std::set<uint64_t> hiddenEntities_;     // SetVisible hide list (EntityKey)
+    // SetEntityHighlight glow list (EntityKey -> color + strength); rewritten
+    // by scripts each frame and read by DrawSystem.
+    std::map<uint64_t, script::EntityHighlight> entityHighlights_;
     std::string pendingScene_;              // ChangeScene deferred to next Tick
     std::vector<std::pair<std::string, uint64_t>> signalHandlers_; // Lua signals
     // G3-4 pose history for lag compensation: LagCompSystem owns the per-tick

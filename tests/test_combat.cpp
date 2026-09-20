@@ -1,6 +1,8 @@
 #include <cmath>
 #include <fstream>
 #include <iterator>
+#include <map>
+#include <set>
 #include <string>
 
 #if defined(_WIN32)
@@ -1917,11 +1919,12 @@ TEST(DrawSystemStandaloneBuildResolveDraw) {
     scene::ScriptCanvas canvas;
     script::ScriptContext ctx;
     std::set<uint64_t> hidden;
+    std::map<uint64_t, script::EntityHighlight> highlights;
     float uiScale = 1.0f;
     math::Vec2 uiOffset;
     cam.position = {0, 0, 0};
     draw.Draw(renderer, cam, scene::DrawSystem::DrawParams{}, world, ctx,
-              /*luaHost=*/nullptr, /*jsHost=*/nullptr, hidden, hud, sceneTree,
+              /*luaHost=*/nullptr, /*jsHost=*/nullptr, hidden, highlights, hud, sceneTree,
               anims, projectiles, particles, canvas, uiScale, uiOffset);
     CHECK_EQ(draw.DrawCount(), 2u);
 

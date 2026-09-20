@@ -399,7 +399,7 @@ Value NativeInputMousePressed(IScriptHost& host, void* user) {
     return Value::Bool(in->MousePressed(static_cast<platform::MouseButton>(idx)));
 }
 
-// BindPlayerToClient(entity, clientId): multi-player ownership â€?the server
+// BindPlayerToClient(entity, clientId): multi-player ownership ï¿½?the server
 // routes that client's MsgInput to the bound entity's script. No-op when the
 // host did not wire the hook (single-player runtimes).
 Value NativeBindPlayerToClient(IScriptHost& host, void* user) {
@@ -882,7 +882,7 @@ Value NativeAttachStateMachine(IScriptHost& host, void* user) {
     return Value::Bool(ctx->attachStateMachine(e, path));
 }
 
-// SetAnimParam(entity, name, value) â€?drives the state machine's transitions.
+// SetAnimParam(entity, name, value) ï¿½?drives the state machine's transitions.
 Value NativeSetAnimParam(IScriptHost& host, void* user) {
     auto* ctx = static_cast<ScriptContext*>(user);
     if (!ctx || !ctx->setAnimParam) return Value::Bool(false);
@@ -1140,6 +1140,33 @@ Value NativeSetVisible(IScriptHost& host, void* user) {
         ctx->hiddenEntities->erase(key);
     else
         ctx->hiddenEntities->insert(key);
+    return Value::Nil();
+}
+
+// SetEntityHighlight(entity, r, g, b, strength): per-entity mesh edge glow.
+// Adds a Fresnel rim in the lit shader (strength > 1 blooms) so a selected /
+// targeted unit reads as an outlined silhouette. strength <= 0 clears it.
+Value NativeSetEntityHighlight(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->entityHighlights) return Value::Nil();
+    const ecs::Entity e = EntityFromValue(host.GetArg(0));
+    if (!e.IsValid()) return Value::Nil();
+    const uint64_t key =
+        (static_cast<uint64_t>(e.id) << 32) | static_cast<uint64_t>(e.generation);
+    auto num = [&](int i, float def) {
+        return host.GetArg(i).type == Value::Type::Number
+                   ? static_cast<float>(host.GetArg(i).number)
+                   : def;
+    };
+    EntityHighlight hl;
+    hl.r = num(1, 1.0f);
+    hl.g = num(2, 1.0f);
+    hl.b = num(3, 1.0f);
+    hl.strength = num(4, 0.0f);
+    if (hl.strength <= 0.0f)
+        ctx->entityHighlights->erase(key);
+    else
+        (*ctx->entityHighlights)[key] = hl;
     return Value::Nil();
 }
 
@@ -1886,7 +1913,7 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("PlayAnimation", &NativePlayAnimation, &ctx);
     host.Register("AnimationProgress", &NativeAnimProgress, &ctx);
     host.Register("AnimationFinished", &NativeAnimFinished, &ctx);
-    // G5-4-4(é¡?): data-driven animation state machine.
+    // G5-4-4(ï¿½?): data-driven animation state machine.
     host.Register("AttachStateMachine", &NativeAttachStateMachine, &ctx);
     host.Register("SetAnimParam", &NativeSetAnimParam, &ctx);
     host.Register("WorldToScreen", &NativeWorldToScreen, &ctx);
@@ -1904,6 +1931,7 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("EntityComponentField", &NativeEntityComponentField, &ctx);
     host.Register("SetEntityComponentField", &NativeSetEntityComponentField, &ctx);
     host.Register("SetVisible", &NativeSetVisible, &ctx);
+    host.Register("SetEntityHighlight", &NativeSetEntityHighlight, &ctx);
     host.Register("ChangeScene", &NativeChangeScene, &ctx);
     host.Register("SignalConnect", &NativeSignalConnect, &ctx);
     host.Register("SignalEmit", &NativeSignalEmit, &ctx);

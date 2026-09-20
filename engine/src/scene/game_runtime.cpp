@@ -535,6 +535,8 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     };
     hiddenEntities_.clear();
     scriptCtx_.hiddenEntities = &hiddenEntities_;
+    entityHighlights_.clear();
+    scriptCtx_.entityHighlights = &entityHighlights_;
     // Godot-style input actions: seed built-ins, then merge the project's
     // input.json (packed next to game.json; missing file = defaults only).
     // The action map itself lives in ScriptRuntime (script-facing state).
@@ -1137,8 +1139,9 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera,
         DrawSystem::DrawParams{previewZoom, postSsao_, postVolumetric_, postSsr_,
                                postSsaoIntensity_, postVolumetricIntensity_,
                                postSsrIntensity_},
-        world_, scriptCtx_, hosts_.lua.get(), hosts_.js.get(), hiddenEntities_, hud_,
-        sceneTree_, animations_, projectiles_, sceneParticles_, scriptCanvas_,
+        world_, scriptCtx_, hosts_.lua.get(), hosts_.js.get(), hiddenEntities_,
+        entityHighlights_, hud_, sceneTree_, animations_, projectiles_, sceneParticles_,
+        scriptCanvas_,
         uiScale_, uiOffset_);
 }
 

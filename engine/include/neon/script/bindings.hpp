@@ -36,6 +36,13 @@ struct CTransformBind {
     math::Quat rot{}; // heading/attitude (SetRotationY writes this)
 };
 
+// Per-entity edge-glow override (SetEntityHighlight): color + strength. The
+// runtime keeps a map keyed by EntityKey; DrawSystem copies the entry into the
+// entity's Material::highlightColor/highlightStrength each frame.
+struct EntityHighlight {
+    float r = 1.0f, g = 1.0f, b = 1.0f, strength = 0.0f;
+};
+
 // Strict ordering for std::map<ecs::Entity, ...> (entities are id+generation
 // pairs and do not define operator<).
 struct EntityLess {
@@ -93,7 +100,7 @@ struct ScriptContext {
     // Wired by hosts that own an audio backend; null -> no-ops.
     std::function<void(const std::string&, float)> playMusic;
     std::function<void(const std::string&, const math::Vec3&)> playSfx3D;
-    // World-space particle burst (engine billboard particle system â€?the
+    // World-space particle burst (engine billboard particle system ï¿½?the
     // neon_rush-quality additive VFX path). Wired by GameRuntime; null -> no-op.
     std::function<void(const gfx::EmitterConfig&)> emitParticles;
     std::function<void(const math::Vec3&, const math::Vec3&)> setAudioListener;
@@ -249,6 +256,10 @@ struct ScriptContext {
     std::function<script::Value(ecs::Entity)> zombieInfo;
     // Entities hidden from rendering by SetVisible (runtime-owned set).
     std::set<uint64_t>* hiddenEntities = nullptr;
+    // Per-entity edge-glow override (SetEntityHighlight): EntityKey -> color +
+    // strength. Runtime-owned; DrawSystem reads it each frame and copies it into
+    // the draw item's Material. strength <= 0 clears the highlight.
+    std::map<uint64_t, EntityHighlight>* entityHighlights = nullptr;
     // Godot-style action map (runtime-owned). Null -> Action* bindings fall
     // back to legacy KeyFromName behavior; InputAxis/InputKey prefer the map.
     InputMap* inputMap = nullptr;
@@ -274,7 +285,7 @@ struct ScriptContext {
     std::function<float(ecs::Entity)> animProgress;
     // True when a one-shot override finished.
     std::function<bool(ecs::Entity)> animFinished;
-    // G5-4-4(é¡?): data-driven animation state machine (.asm.json). attachStateMachine
+    // G5-4-4(ï¿½?): data-driven animation state machine (.asm.json). attachStateMachine
     // loads + binds the asset to the entity's skinned model; setAnimParam drives
     // the transitions.
     std::function<bool(ecs::Entity, const std::string&)> attachStateMachine;

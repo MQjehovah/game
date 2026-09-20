@@ -47,6 +47,12 @@ struct Material {
     // for foliage/hair cards), instead of soft translucent blending.
     bool alphaTest = false;
     float alphaCutoff = 0.5f;
+    // Selection / edge glow: a Fresnel rim term added on top of the lit color
+    // (see kLitFragmentShader). `strength` 0 = off; > 1 pushes the silhouette
+    // into HDR so the bloom pass turns it into a real glowing outline around the
+    // mesh edge (selected unit, target lock, ability preview). `color` tints it.
+    Color highlightColor{1.0f, 1.0f, 1.0f, 1.0f};
+    float highlightStrength = 0.0f;
 
     static Material Lit(TextureHandle albedo_, const Color& tint_ = Color::White, float shininess_ = 24.0f) {
         Material m;

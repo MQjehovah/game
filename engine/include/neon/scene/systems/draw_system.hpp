@@ -17,6 +17,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <map>
 #include <memory>
 #include <set>
 #include <string>
@@ -44,6 +45,7 @@ class Renderer;
 namespace neon::script {
 struct ScriptContext;
 class IScriptHost;
+struct EntityHighlight;
 }
 
 namespace neon::scene {
@@ -103,6 +105,7 @@ public:
               ecs::World& world, script::ScriptContext& scriptCtx,
               script::IScriptHost* luaHost, script::IScriptHost* jsHost,
               const std::set<uint64_t>& hiddenEntities,
+              const std::map<uint64_t, script::EntityHighlight>& entityHighlights,
               HudSystem& hud, SceneTreeSystem& sceneTree, AnimationSystem& anims,
               ProjectileSystem& projectiles, SceneParticleSystem& particles,
               ScriptCanvas& canvas, float& uiScale, math::Vec2& uiOffset);

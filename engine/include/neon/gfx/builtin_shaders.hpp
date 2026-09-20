@@ -92,6 +92,11 @@ uniform float uEmissiveIntensity;
 uniform float uShininess;
 uniform float uMetallic;
 uniform float uRoughness;
+// Selection / edge glow (Material::highlightColor/Strength). A Fresnel rim is
+// added after lighting so the mesh silhouette emits light regardless of the
+// surface's own shading; values > 1 land in the HDR target and bloom.
+uniform vec3 uHighlightColor;
+uniform float uHighlightStrength;
 uniform vec3 uSunDir;
 uniform vec3 uSunColor;
 uniform float uAmbient;
@@ -451,6 +456,14 @@ void main() {
     // shadowed pixels BRIGHTER than their surroundings (pale "ghost" shadows).
     vec3 sunTerm = max(color - ambientLight, vec3(0.0));
     color = sunTerm * shadow + ambientLight;
+    // Selection / edge glow: Fresnel rim on the silhouette. Applied last (after
+    // fog + shadow) so a highlighted unit stays visible even in shadow or fog;
+    // albedo tint keeps it reading as the mesh's edge rather than a flat disc.
+    if (uHighlightStrength > 0.0) {
+        float rim = 1.0 - clamp(dot(normalize(N), normalize(V)), 0.0, 1.0);
+        color += uHighlightColor * mix(albedo.rgb, vec3(1.0), 0.5) *
+                 pow(rim, 2.5) * uHighlightStrength;
+    }
     FragColor = vec4(color, albedo.a);
 }
 )";
