@@ -699,7 +699,9 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
         return math::Vec2{hud_.DesignWidth(), hud_.DesignHeight()};
     };
     scriptCtx_.spawnFloatText = [this](const math::Vec3& w, const std::string& t, bool crit,
-                                       float life) { hud_.SpawnFloatText(w, t, crit, life); };
+                                       float life, float r, float g, float b) {
+        hud_.SpawnFloatText(w, t, crit, life, r, g, b);
+    };
     scriptCtx_.setEntityPlate = [this](ecs::Entity e, const std::string& name, float hp) {
         if (!world_.Alive(e)) return;
         hud_.SetEntityPlate(e, name, hp);
@@ -761,6 +763,9 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
             t.table->fields.emplace_back("crit", script::Value::Bool(f.crit));
             t.table->fields.emplace_back("age", script::Value::Num(f.age));
             t.table->fields.emplace_back("life", script::Value::Num(f.life));
+            t.table->fields.emplace_back("r", script::Value::Num(f.r));
+            t.table->fields.emplace_back("g", script::Value::Num(f.g));
+            t.table->fields.emplace_back("b", script::Value::Num(f.b));
             arr.table->array.push_back(std::move(t));
         }
         return arr;
@@ -1099,8 +1104,8 @@ float GameRuntime::DesignWidth() const {
 }
 
 void GameRuntime::SpawnFloatText(const math::Vec3& world, const std::string& text, bool crit,
-                                 float life) {
-    hud_.SpawnFloatText(world, text, crit, life);
+                                 float life, float r, float g, float b) {
+    hud_.SpawnFloatText(world, text, crit, life, r, g, b);
 }
 
 void GameRuntime::SetEntityPlate(ecs::Entity e, const std::string& name, float hpFrac) {

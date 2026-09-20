@@ -213,7 +213,7 @@ public:
     // the runtime tracks it (rise + fade over `life` seconds) and exposes it
     // to on_render via FloatTexts(). crit scales the text and tints it.
     void SpawnFloatText(const math::Vec3& world, const std::string& text, bool crit = false,
-                        float life = 1.2f);
+                        float life = 1.2f, float r = 1.0f, float g = 1.0f, float b = 1.0f);
     const std::vector<HudSystem::FloatText>& FloatTexts() const { return hud_.FloatTexts(); }
     // Entity screen anchors cached during the LAST Draw: {entityKey, x, y,
     // onscreen} in design units. Scripts iterate it to draw overhead bars.

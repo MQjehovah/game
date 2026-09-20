@@ -290,7 +290,8 @@ struct ScriptContext {
     std::function<math::Vec2()> uiViewportSize;
     // Spawns a floating combat text anchored to a world position (the runtime
     // ages it; on_render reads it via FloatTexts()).
-    std::function<void(const math::Vec3&, const std::string&, bool, float)> spawnFloatText;
+    std::function<void(const math::Vec3&, const std::string&, bool, float, float, float, float)>
+        spawnFloatText;
     // Overhead plate stamp for HUD scripts: name + hp fraction (0..1, <0
     // hides). Drawn by the game's on_render via ScreenAnchors()/EntityPlates().
     std::function<void(ecs::Entity, const std::string&, float)> setEntityPlate;

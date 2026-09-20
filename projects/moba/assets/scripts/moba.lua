@@ -322,8 +322,9 @@ local function inOwnBase(u)
     return dist(u.x, u.z, b.x, b.z) < 12
 end
 
-local function floatAt(u, text, crit)
-    SpawnFloatText({ x = u.x, y = u.h + 0.4, z = u.z }, text, crit or false, 0.85)
+local function floatAt(u, text, crit, cr, cg, cb)
+    SpawnFloatText({ x = u.x, y = u.h + 0.4, z = u.z }, text, crit or false, 0.85,
+        cr or 1.0, cg or 1.0, cb or 1.0)
 end
 
 local function recomputeDerived(u)
@@ -475,7 +476,7 @@ local function killUnit(u, source)
                 local g = GOLD_MINION[u.mkind] or 20
                 source.gold = source.gold + g
                 source.cs = source.cs + 1
-                floatAt(source, "+" .. tostring(g), false)
+                floatAt(source, "+" .. tostring(g), false, 0.98, 0.85, 0.35)
             end
         end
         for i = 1, #heroes do
@@ -491,7 +492,7 @@ local function killUnit(u, source)
             local bounty = 300 + math.min(source.streak - 1, 5) * 50
             source.gold = source.gold + bounty
             grantXp(source, 150)
-            floatAt(source, "+" .. bounty, true)
+            floatAt(source, "+" .. bounty, true, 0.98, 0.82, 0.3)
         end
         u.streak = 0
         local kname = (source ~= nil and source.name) or "?"
@@ -504,7 +505,7 @@ local function killUnit(u, source)
             local g = u.gold or 60
             source.gold = source.gold + g
             grantXp(source, u.xpReward or 60)
-            floatAt(source, "+" .. tostring(g), false)
+            floatAt(source, "+" .. tostring(g), false, 0.98, 0.85, 0.35)
             if u.campBuff == "red" then
                 applyStatusLua(source, "adbuff", 120, 1.15, source)
             elseif u.campBuff == "blue" then
@@ -536,7 +537,9 @@ local function damage(target, amount, source)
     if amount > 0 then
         target.hp = target.hp - amount
         SetHealth(target.ent, math.max(0, target.hp))
-        floatAt(target, tostring(math.floor(amount + 0.5)), amount >= 90)
+        floatAt(target, tostring(math.floor(amount + 0.5)), amount >= 90,
+            amount >= 90 and 1.0 or 1.0, amount >= 90 and 0.55 or 0.95,
+            amount >= 90 and 0.15 or 0.6)
         if amount >= 40 then sfx("hit", 0.1) end
         if amount >= 25 then
             EmitParticles({ pos = { x = target.x, y = target.h * 0.6, z = target.z }, count = 5,
@@ -894,7 +897,7 @@ local function castAbility(h, idx, aimX, aimZ)
     elseif t == "heal" then
         h.hp = math.min(h.maxHp, h.hp + (ab.amount or 100))
         SetHealth(h.ent, h.hp)
-        floatAt(h, "+" .. tostring(ab.amount or 100), false)
+        floatAt(h, "+" .. tostring(ab.amount or 100), false, 0.4, 1.0, 0.5)
     elseif t == "execute" then
         local tgt = nearestEnemy(h, ab.range or 3)
         if tgt == nil then floatAt(h, "无目标", false); return end
@@ -1896,7 +1899,7 @@ local function drawFloatTexts()
         local age = f.age / math.max(0.01, f.life)
         local s = WorldToScreen(f.world.x, f.world.y + age * 0.8, f.world.z)
         if s ~= nil and age < 1 then
-            DrawText(f.text, s.x, s.y, f.crit and 20 or 15, 1, 1, 1, 1 - age, true, true)
+            DrawText(f.text, s.x, s.y, f.crit and 20 or 15, f.r, f.g, f.b, 1 - age, true, true)
         end
     end
 end

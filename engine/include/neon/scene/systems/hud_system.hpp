@@ -15,14 +15,16 @@ namespace neon::scene {
 // HUD 覆盖层：世界↔屏幕投影 + 飘字 + 头顶板 + 屏幕锚点。
 class HudSystem {
 public:
-    struct FloatText { math::Vec3 world; std::string text; bool crit = false; float life = 1.0f, age = 0.0f; };
+    struct FloatText { math::Vec3 world; std::string text; bool crit = false; float life = 1.0f, age = 0.0f;
+                   float r = 1.0f, g = 1.0f, b = 1.0f; };
     struct ScreenAnchor { uint64_t entity = 0; float x = 0, y = 0; bool onscreen = false; math::Vec3 world; };
     struct EntityPlate { std::string name; float hpFrac = -1.0f; };
 
     // Draw 每帧调用：记录相机/视口投影快照（WorldToScreen/ScreenToWorld 用）。
     void CaptureView(const gfx::Camera& cam, float aspect, float vpW, float vpH);
     void Tick(float dt); // 推进飘字 age
-    void SpawnFloatText(const math::Vec3& w, const std::string& t, bool crit, float life);
+    void SpawnFloatText(const math::Vec3& w, const std::string& t, bool crit, float life,
+                    float r = 1.0f, float g = 1.0f, float b = 1.0f);
     void SetEntityPlate(ecs::Entity e, const std::string& name, float hpFrac);
     bool WorldToScreen(const math::Vec3& w, float& x, float& y) const;
     bool ScreenToWorld(const math::Vec2& s, float& x, float& y) const;

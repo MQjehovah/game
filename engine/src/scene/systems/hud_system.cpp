@@ -42,12 +42,15 @@ void HudSystem::Tick(float dt) {
 }
 
 void HudSystem::SpawnFloatText(const math::Vec3& world, const std::string& text, bool crit,
-                               float life) {
+                               float life, float r, float g, float b) {
     FloatText ft;
     ft.world = world;
     ft.text = text;
     ft.crit = crit;
     ft.life = life > 0.05f ? life : 1.2f;
+    ft.r = r;
+    ft.g = g;
+    ft.b = b;
     floatTexts_.push_back(ft);
     if (floatTexts_.size() > 64) floatTexts_.erase(floatTexts_.begin()); // cap
 }

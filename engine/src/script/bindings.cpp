@@ -989,7 +989,8 @@ Value NativeSpawnFloatText(IScriptHost& host, void* user) {
         const Value v = host.GetArg(idx);
         return v.type == Value::Type::Number ? static_cast<float>(v.number) : def;
     };
-    ctx->spawnFloatText(w, text, asBool(textIdx + 1, false), num(textIdx + 2, 1.2f));
+    ctx->spawnFloatText(w, text, asBool(textIdx + 1, false), num(textIdx + 2, 1.2f),
+                        num(textIdx + 3, 1.0f), num(textIdx + 4, 1.0f), num(textIdx + 5, 1.0f));
     return Value::Nil();
 }
 
