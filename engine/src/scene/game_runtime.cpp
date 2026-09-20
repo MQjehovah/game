@@ -570,6 +570,24 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
         if (SceneTransform* t = world_.Get<SceneTransform>(e)) t->rot = q;
         if (script::CTransformBind* t = world_.Get<script::CTransformBind>(e)) t->rot = q;
     };
+    // SetLook: aim the entity's forward (local -Z) along a world direction with
+    // +Y up, so a camera can keep its pitch while being yawed.
+    scriptCtx_.sceneSetLook = [this](ecs::Entity e, const math::Vec3& dir) {
+        const math::Vec3 f = dir.Normalized();
+        if (f.LengthSq() < 1e-9f) return;
+        math::Vec3 up{0.0f, 1.0f, 0.0f};
+        if (std::fabs(math::Dot(f, up)) > 0.999f) up = {0.0f, 0.0f, 1.0f};
+        const math::Vec3 zaxis = -f; // the camera looks along its local -Z
+        const math::Vec3 xaxis = math::Cross(up, zaxis).Normalized();
+        const math::Vec3 yaxis = math::Cross(zaxis, xaxis);
+        math::Mat4 m;
+        m.m[0] = xaxis.x; m.m[4] = xaxis.y; m.m[8] = xaxis.z;
+        m.m[1] = yaxis.x; m.m[5] = yaxis.y; m.m[9] = yaxis.z;
+        m.m[2] = zaxis.x; m.m[6] = zaxis.y; m.m[10] = zaxis.z;
+        const math::Quat q = math::Mat4ToQuat(m);
+        if (SceneTransform* t = world_.Get<SceneTransform>(e)) t->rot = q;
+        if (script::CTransformBind* t = world_.Get<script::CTransformBind>(e)) t->rot = q;
+    };
     scriptCtx_.setScale = [this](ecs::Entity e, const math::Vec3& s) {
         if (SceneTransform* t = world_.Get<SceneTransform>(e)) t->scale = s;
     };

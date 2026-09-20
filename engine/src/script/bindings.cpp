@@ -173,6 +173,19 @@ Value NativeSetRotationY(IScriptHost& host, void* user) {
     return Value::Nil();
 }
 
+// SetLook(entity, dx, dy, dz): aim an entity's forward (local -Z) along a world
+// direction with +Y up. Used to aim the camera while keeping its downward pitch
+// (SetRotationY would replace the rotation with yaw-only). No-op without a hook.
+Value NativeSetLook(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->sceneSetLook) return Value::Nil();
+    const ecs::Entity e = EntityFromValue(host.GetArg(0));
+    ctx->sceneSetLook(e, {static_cast<float>(NumberArg(host, 1, 0.0)),
+                          static_cast<float>(NumberArg(host, 2, 0.0)),
+                          static_cast<float>(NumberArg(host, 3, 0.0))});
+    return Value::Nil();
+}
+
 Value NativeGetHealth(IScriptHost& host, void* user) {
     auto* ctx = static_cast<ScriptContext*>(user);
     if (!ctx || !ctx->sceneGetHp) return Value::Num(-1);
@@ -1735,6 +1748,7 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("InputMouseDown", &NativeInputMouseDown, &ctx);
     host.Register("InputMousePressed", &NativeInputMousePressed, &ctx);
     host.Register("SetRotationY", &NativeSetRotationY, &ctx);
+    host.Register("SetLook", &NativeSetLook, &ctx);
     host.Register("GetHealth", &NativeGetHealth, &ctx);
     host.Register("GetMaxHealth", &NativeGetMaxHealth, &ctx);
     host.Register("SetHealth", &NativeSetHealth, &ctx);

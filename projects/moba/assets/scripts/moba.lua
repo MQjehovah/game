@@ -26,7 +26,7 @@ local BRUSHES = {
 }
 
 -- 相机视角（俯角 pitch，Riot Rift 约 55°；位置由脚本每帧驱动 Main Camera 实体，保持鼠标可见）
-local CAM = { yaw = math.pi / 4, pitch = 0.95, dist = 22, minDist = 12, maxDist = 36 }
+local CAM = { yaw = math.pi * 0.75, pitch = 0.98, dist = 17, minDist = 11, maxDist = 28 }
 local CAM_FOV = 55
 local VW, VH = 1280, 720
 local FACE_OFF = 0
@@ -153,6 +153,10 @@ local function applyCamera()
     if camEnt == nil then return end
     local x, y, z = camPos()
     SetPosition(camEnt, { x = x, y = y, z = z })
+    -- 只改位置不会转向：显式把相机朝向焦点（含俯角），yaw 才会真正旋转视角。
+    local sp, cp = math.sin(CAM.pitch), math.cos(CAM.pitch)
+    local cy, sy = math.cos(CAM.yaw), math.sin(CAM.yaw)
+    SetLook(camEnt, sy * cp, -sp, cy * cp)
 end
 
 -- 屏幕像素 -> 地面 y=0 的世界点（相机由脚本固定，直接解析求交）。
