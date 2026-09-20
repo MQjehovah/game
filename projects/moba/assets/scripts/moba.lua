@@ -230,7 +230,9 @@ local function spawnHero(name, team)
         hp = s.hp, maxHp = s.hp, mana = s.mana or 0, maxMana = s.mana or 0,
         ad = s.ad or 60, range = s.range or 2.0, speed = (s.ms or 340) * 0.015,
         atkPeriod = (s.range or 2.0) > 3.0 and 1.0 or 1.15, atkTimer = 0,
+        baseAtkPeriod = (s.range or 2.0) > 3.0 and 1.0 or 1.15,
         ranged = (s.range or 2.0) > 3.0,
+        armor = 30, mr = 30,
         abilities = s.abilities or {}, cds = { 0, 0, 0, 0 },
         ranks = { 0, 0, 0, 0 }, skillPoints = 1,
         buffs = {}, target = nil, moveTarget = nil, state = "idle",
@@ -238,9 +240,10 @@ local function spawnHero(name, team)
         channel = 0, dying = 0, dead = false, isHero = true,
         base = { hp = s.hp, hpGrow = s.hpGrow or 78, mana = s.mana or 0,
                  manaGrow = s.manaGrow or 30, ad = s.ad or 60, adGrow = s.adGrow or 4,
-                 ms = s.ms or 340 },
+                 ms = s.ms or 340, armor = 30, mr = 30 },
         level = 1, xp = 0, gold = 500, cs = 0, kills = 0, deaths = 0, ap = 0,
-        bonus = { ad = 0, ap = 0, hp = 0, mana = 0, armor = 0, ms = 0 }, items = {},
+        bonus = { ad = 0, ap = 0, hp = 0, mana = 0, armor = 0, mr = 0, ms = 0, as = 0 },
+        items = {},
     }
     units[#units + 1] = u
     heroes[#heroes + 1] = u
@@ -256,6 +259,8 @@ local MINION_DEFS = {
 }
 
 local function spawnMinion(kind, team, x, z)
+    -- 僵持局小兵会无限累积，separateUnits 是 O(n²)：设上限避免帧率崩塌。
+    if #units >= 140 then return nil end
     local d = MINION_DEFS[kind]
     local prefab = "minion_" .. kind .. (team == BLUE and "_blue" or "_red")
     local ent = SpawnPrefab(prefab, { x = x, y = 0, z = z })
@@ -286,6 +291,7 @@ local function spawnStructure(kind, team, x, z)
             id = nid(), ent = ent, kind = "nexus", team = team, name = "水晶",
             x = x, z = z, h = 5.2, radius = 2.2, hp = NEXUS_HP, maxHp = NEXUS_HP,
             ad = 0, range = 0, speed = 0, atkPeriod = 1, atkTimer = 0,
+            armor = 20, mr = 20,
             buffs = {}, target = nil, anim = nil, actionT = 0, dead = false,
         }
         SetPosition(ent, { x = x, y = 0, z = z })
@@ -294,6 +300,7 @@ local function spawnStructure(kind, team, x, z)
             id = nid(), ent = ent, kind = "tower", team = team, name = "防御塔",
             x = x, z = z, h = 7.4, radius = 1.3, hp = TOWER_HP, maxHp = TOWER_HP,
             ad = 95, range = 9.0, speed = 0, atkPeriod = 1.25, atkTimer = 0,
+            armor = 40, mr = 40,
             buffs = {}, target = nil, anim = nil, actionT = 0, dead = false, ranged = true,
         }
         SetPosition(ent, { x = x, y = 0, z = z })
@@ -321,7 +328,7 @@ local function spawnNeutral(cfg)
         id = nid(), ent = ent, kind = "neutral", team = 0, name = cfg.name or cfg.key,
         x = cfg.x, z = cfg.z, h = cfg.h, radius = cfg.radius,
         hp = cfg.hp, maxHp = cfg.hp, ad = cfg.ad, range = cfg.range, speed = 0,
-        atkPeriod = 1.6, atkTimer = 0, buffs = {}, target = nil,
+        atkPeriod = 1.6, atkTimer = 0, armor = 15, mr = 15, buffs = {}, target = nil,
         home = { x = cfg.x, z = cfg.z }, gold = cfg.gold, xpReward = cfg.xp, campBuff = cfg.buff,
         anim = nil, actionT = 0, dying = 0, dead = false,
     }
@@ -364,7 +371,11 @@ local function recomputeDerived(u)
     u.maxMana = b.mana + b.manaGrow * (u.level - 1) + u.bonus.mana
     u.ad = b.ad + b.adGrow * (u.level - 1) + u.bonus.ad
     u.ap = u.bonus.ap
+    u.armor = (b.armor or 0) + (u.bonus.armor or 0)
+    u.mr = (b.mr or 0) + (u.bonus.mr or 0)
     u.speed = (b.ms + u.bonus.ms) * 0.015
+    -- 攻速：基础攻击间隔 / (1 + 攻速加成)。
+    u.atkPeriod = (u.baseAtkPeriod or 1.15) / (1.0 + (u.bonus.as or 0))
 end
 
 -- 技能加点：R 上限 3，其余 5。玩家手动加（Ctrl+QWER），AI 自动加。
@@ -444,6 +455,8 @@ local function buyItem(h, iid)
     h.bonus.hp = h.bonus.hp + (it.hp or 0)
     h.bonus.mana = h.bonus.mana + (it.mana or 0)
     h.bonus.armor = h.bonus.armor + (it.armor or 0)
+    h.bonus.mr = h.bonus.mr + (it.mr or 0)
+    h.bonus.as = h.bonus.as + (it.as or 0)
     h.bonus.ms = h.bonus.ms + (it.ms or 0)
     local oldHp, oldMana = h.maxHp, h.maxMana
     recomputeDerived(h)
@@ -561,8 +574,14 @@ local function killUnit(u, source)
     end
 end
 
-local function damage(target, amount, source)
+local function damage(target, amount, source, kind)
     if target == nil or target.dead or amount <= 0 then return end
+    kind = kind or "physical"
+    -- 抗性减伤（真实伤害除外）：护甲吃物理，魔抗吃魔法。def 100 => 减半。
+    if kind ~= "true" then
+        local def = (kind == "magic") and (target.mr or 0) or (target.armor or 0)
+        amount = amount * (100.0 / (100.0 + math.max(0, def)))
+    end
     local buf = target.buffs
     if buf and buf.shield and buf.shield.t > 0 and buf.shield.pool > 0 then
         local absorbed = math.min(buf.shield.pool, amount)
@@ -572,9 +591,13 @@ local function damage(target, amount, source)
     if amount > 0 then
         target.hp = target.hp - amount
         SetHealth(target.ent, math.max(0, target.hp))
-        floatAt(target, tostring(math.floor(amount + 0.5)), amount >= 90,
-            amount >= 90 and 1.0 or 1.0, amount >= 90 and 0.55 or 0.95,
-            amount >= 90 and 0.15 or 0.6)
+        -- 伤害数字按类型上色：物理橙、魔法紫、真实白（大额加粗）。
+        local cr, cg, cb
+        if kind == "magic" then cr, cg, cb = 0.72, 0.55, 1.0
+        elseif kind == "true" then cr, cg, cb = 1.0, 1.0, 1.0
+        else cr, cg, cb = 1.0, 0.9, 0.35 end
+        if amount >= 90 then cr, cg, cb = 1.0, 0.5, 0.15 end
+        floatAt(target, tostring(math.floor(amount + 0.5)), amount >= 90, cr, cg, cb)
         if amount >= 40 then sfx("hit", 0.1) end
         if amount >= 25 then
             EmitParticles({ pos = { x = target.x, y = target.h * 0.6, z = target.z }, count = 5,
@@ -837,6 +860,7 @@ local function spawnProjectile(owner, x, z, dirx, dirz, opts)
         status = opts.status, statusDur = opts.statusDur or 2, statusMag = opts.statusMag or 0.3,
         color = col, trail = 0,
         showTrail = opts.trail ~= false,
+        target = opts.target, dmgKind = opts.dmgKind or "magic",
     }
     -- 枪口/施法闪光（队伍色），让每次出手都有起手反馈
     EmitParticles({ pos = { x = x + dirx * 0.5, y = 1.1, z = z + dirz * 0.5 }, count = 6,
@@ -852,12 +876,13 @@ local function spawnProjectile(owner, x, z, dirx, dirz, opts)
     end
 end
 
-local function aoeDamage(source, cx, cz, radius, dmg, status, dur, mag)
+local function aoeDamage(source, cx, cz, radius, dmg, status, dur, mag, stun, kind)
     for i = 1, #units do
         local o = units[i]
         if not o.dead and o.team ~= source.team and dist(o.x, o.z, cx, cz) <= radius + o.radius then
-            damage(o, dmg, source)
+            damage(o, dmg, source, kind)
             if status then applyStatusLua(o, status, dur, mag, source) end
+            if stun and stun > 0 then applyStatusLua(o, "stun", stun, 0, source) end
         end
     end
     EmitParticles({ pos = { x = cx, y = 0.5, z = cz }, count = 40, vel = { x = 0, y = 1, z = 0 },
@@ -900,7 +925,11 @@ local function castAbility(h, idx, aimX, aimZ)
     end
     local t = ab.type
     local col = TEAM_COLOR[h.team]
-    local dmg = (ab.dmg or 0) * (0.6 + 0.4 * rank)
+    -- 伤害类型：近战/处决为物理，投射物/AoE 为魔法（吃对应抗性）。
+    local kind = (t == "melee" or t == "execute") and "physical" or "magic"
+    -- 法强加成：魔法技能默认 0.4 系数，让 AP 装备真正生效。
+    local apRatio = ab.apRatio or ((kind == "magic") and 0.4 or 0.0)
+    local dmg = (ab.dmg or 0) * (0.6 + 0.4 * rank) + (h.ap or 0) * apRatio
 
     if t == "projectile" then
         local count = ab.count or 1
@@ -915,6 +944,7 @@ local function castAbility(h, idx, aimX, aimZ)
                 life = (ab.range or 10) / (ab.speed or 18),
                 radius = ab.radius or 0.8, pierce = ab.pierce,
                 status = ab.status, statusDur = ab.statusDur, statusMag = ab.statusMag,
+                dmgKind = kind,
             })
         end
         -- 枪口能量环（区别于普攻）
@@ -924,7 +954,8 @@ local function castAbility(h, idx, aimX, aimZ)
     elseif t == "aoe_self" then
         local ticks = ab.ticks or 1
         for _ = 1, ticks do
-            aoeDamage(h, h.x + dx * 0.8, h.z + dz * 0.8, ab.radius or 3, dmg / ticks, ab.status, ab.statusDur, ab.statusMag)
+            aoeDamage(h, h.x + dx * 0.8, h.z + dz * 0.8, ab.radius or 3, dmg / ticks,
+                ab.status, ab.statusDur, ab.statusMag, ab.stun, kind)
         end
         fxRing(h.x, h.z, ab.radius or 3, 24, { r = col[1], g = col[2], b = col[3], a = 0.9 },
             { r = 1, g = 1, b = 1, a = 0 }, 0.1, 1.5, 4, 0.3, 0.6, 0.6, 0.05, 0.6)
@@ -936,6 +967,7 @@ local function castAbility(h, idx, aimX, aimZ)
             team = h.team, owner = h, x = aimX, z = aimZ,
             delay = ab.delay or 0.4, radius = ab.radius or 3, dmg = dmg,
             status = ab.status, statusDur = ab.statusDur, statusMag = ab.statusMag,
+            stun = ab.stun, kind = kind,
         }
         -- 落点预警圈（cast 时一次性粒子 + on_render 脉冲地面圈，见 drawGroundAoes）
         local cr = ab.radius or 3
@@ -946,8 +978,11 @@ local function castAbility(h, idx, aimX, aimZ)
         local d = ab.dist or 4
         local steps = 8
         for _ = 1, steps do
-            h.x = h.x + dx * d / steps
-            h.z = h.z + dz * d / steps
+            local nx = h.x + dx * d / steps
+            local nz = h.z + dz * d / steps
+            if type(NavWalkable) ~= "function" or NavWalkable(nx, nz) then
+                h.x, h.z = nx, nz
+            end
             -- 残影
             fxBurst(h.x, 1.0, h.z, 4, 0.2, 0.8, 0.2, 0.4, 0.5, 0.05,
                 { r = col[1], g = col[2], b = col[3], a = 0.7 }, { r = 1, g = 1, b = 1, a = 0 }, 0.5)
@@ -955,7 +990,7 @@ local function castAbility(h, idx, aimX, aimZ)
                 for j = 1, #units do
                     local o = units[j]
                     if not o.dead and o.team ~= h.team and dist(o.x, o.z, h.x, h.z) <= ab.radius + o.radius then
-                        damage(o, dmg / steps, h)
+                        damage(o, dmg / steps, h, kind)
                     end
                 end
             end
@@ -964,6 +999,10 @@ local function castAbility(h, idx, aimX, aimZ)
     elseif t == "melee" then
         local r = ab.range or 2.5
         local arc = math.rad(ab.arc or 120)
+        -- 朝施法点转身（原来只用 h.yaw，鼠标指向侧面/背后会打空）。
+        if aimX ~= nil and aimZ ~= nil and (math.abs(aimX - h.x) + math.abs(aimZ - h.z)) > 0.05 then
+            faceTo(h, aimX, aimZ)
+        end
         local fy = h.yaw or 0
         local fx, fz = math.sin(fy), math.cos(fy)
         for j = 1, #units do
@@ -974,7 +1013,7 @@ local function castAbility(h, idx, aimX, aimZ)
                 if d <= r + o.radius then
                     local ndx, ndz = norm(ox, oz)
                     if ndx * fx + ndz * fz > math.cos(arc * 0.5) or d < 0.6 then
-                        damage(o, dmg, h)
+                        damage(o, dmg, h, kind)
                         if ab.status then applyStatusLua(o, ab.status, ab.statusDur or 2, ab.statusMag or 0.3, h) end
                         if ab.stun then applyStatusLua(o, "stun", ab.stun, 0, h) end
                     end
@@ -1000,11 +1039,20 @@ local function castAbility(h, idx, aimX, aimZ)
         fxBurst(h.x, 0.3, h.z, 20, 0.3, 1.2, 0.4, 0.8, 0.45, 0.05,
             { r = 0.4, g = 1.0, b = 0.5, a = 0.9 }, { r = 0.8, g = 1, b = 1, a = 0 }, 2.2, -0.6)
     elseif t == "execute" then
-        local tgt = nearestEnemy(h, ab.range or 3)
+        -- 处决优先锁英雄（原来会砸到最近的小兵）。
+        local rng = ab.range or 3
+        local tgt, best = nil, nil
+        for j = 1, #units do
+            local o = units[j]
+            if not o.dead and o.team ~= h.team and dist(o.x, o.z, h.x, h.z) <= rng + o.radius then
+                local score = dist(o.x, o.z, h.x, h.z) - (o.isHero and 1000 or 0)
+                if best == nil or score < best then best = score; tgt = o end
+            end
+        end
         if tgt == nil then floatAt(h, "无目标", false); return end
         local missing = 1.0 - tgt.hp / tgt.maxHp
         local total = dmg + (tgt.maxHp * (ab.missingPct or 0.3) * missing)
-        damage(tgt, total, h)
+        damage(tgt, total, h, kind)
         camShake = math.min(1.5, camShake + 0.7)
         fxBurst(tgt.x, 1.0, tgt.z, 30, 3, 9, 0.25, 0.5, 0.8, 0.05,
             { r = 1, g = 0.85, b = 0.3, a = 1 }, { r = 1, g = 0.2, b = 0.1, a = 0 }, 0.5)
@@ -1045,7 +1093,8 @@ local function autoAttack(u, dt)
         u.swingTarget = tgt
     elseif u.ranged or u.kind == "tower" then
         local dx, dz = norm(tgt.x - u.x, tgt.z - u.z)
-        spawnProjectile(u, u.x, u.z, dx, dz, { speed = 30, dmg = u.ad * adMul(u), life = 2.5, radius = 0.8, trail = false })
+        spawnProjectile(u, u.x, u.z, dx, dz, { speed = 30, dmg = u.ad * adMul(u), life = 2.5,
+            radius = 0.8, trail = false, target = tgt, dmgKind = "physical" })
     else
         damage(tgt, u.ad * adMul(u), u)
     end
@@ -1064,7 +1113,8 @@ local function updateSwing(u, dt)
     faceTo(u, tgt.x, tgt.z)
     if u.ranged then
         local dx, dz = norm(tgt.x - u.x, tgt.z - u.z)
-        spawnProjectile(u, u.x, u.z, dx, dz, { speed = 30, dmg = u.ad * adMul(u), life = 2.5, radius = 0.8, trail = false })
+        spawnProjectile(u, u.x, u.z, dx, dz, { speed = 30, dmg = u.ad * adMul(u), life = 2.5,
+            radius = 0.8, trail = false, target = tgt, dmgKind = "physical" })
     else
         damage(tgt, u.ad * adMul(u), u)
     end
@@ -1193,7 +1243,16 @@ function on_player_join(clientId)
     assignNetClients()
 end
 
--- 服务器：把客户端发来的指令应用到玩家英雄
+-- 服务器：把客户端发来的指令应用到玩家英雄。客户端输入不可信，字段必须校验
+-- （畸形 JSON 曾能让 moveTarget 变成 {x=nil,z=nil} 从而崩掉权威服务器）。
+local function isNum(v) return type(v) == "number" and v == v and v > -1e9 and v < 1e9 end
+local function validPoint(x, z)
+    return isNum(x) and isNum(z) and math.abs(x) <= 120 and math.abs(z) <= 120
+end
+local function validAbility(i)
+    return isNum(i) and i >= 1 and i <= 4
+end
+
 local function applyNetCommand(cmd)
     -- 指令按 clientId 路由到对应英雄（由 on_player_join 分配；无人操控则回退）
     local h = nil
@@ -1205,25 +1264,30 @@ local function applyNetCommand(cmd)
     if cmd.name ~= "moba_cmd" then return end
     local a = nil
     if type(cmd.args) == "string" and cmd.args ~= "" then a = Json.Parse(cmd.args) end
-    if a == nil then return end
+    if type(a) ~= "table" then return end
     local t = a.type
-    if t == "move" then
+    if t == "move" or t == "attackMove" then
+        if not validPoint(a.x, a.z) then return end
         h.target = nil; h.commandTarget = false
-        h.moveTarget = { x = a.x, z = a.z }; h.attackMove = nil; h.navPath = nil
-    elseif t == "attackMove" then
-        h.target = nil; h.commandTarget = false
-        h.moveTarget = { x = a.x, z = a.z }; h.attackMove = true; h.navPath = nil
+        h.moveTarget = { x = a.x, z = a.z }
+        h.attackMove = (t == "attackMove") and true or nil
+        h.navPath = nil
     elseif t == "attackTarget" then
+        if not isNum(a.id) then return end
         local u = netIndexUnit(a.id)
         if u ~= nil and not u.dead and u.team ~= h.team then
             h.target = u; h.commandTarget = true; h.attackMove = nil
         end
     elseif t == "cast" then
-        castAbility(h, a.ability or 1, a.x or h.x, a.z or h.z)
+        if not validAbility(a.ability) then return end
+        local x, z = h.x, h.z
+        if validPoint(a.x, a.z) then x, z = a.x, a.z end
+        castAbility(h, math.floor(a.ability), x, z)
     elseif t == "recall" then
         h.channel = 1.4
     elseif t == "levelup" then
-        spendPoint(h, a.ability or 1)
+        if not validAbility(a.ability) then return end
+        spendPoint(h, math.floor(a.ability))
     end
 end
 
@@ -1370,11 +1434,20 @@ local function clientSendCommands(h)
     local aimX = g and g.x or (h.x + math.sin(fy) * 6)
     local aimZ = g and g.z or (h.z + math.cos(fy) * 6)
     local ctrl = InputKey("ctrl") == 1
+    h.spellArmed = h.spellArmed or {}
     for i = 1, 4 do
-        if ctrl and ActionPressed("spell" .. i) then
-            Rpc("moba_cmd", { type = "levelup", ability = i })
+        if ActionPressed("spell" .. i) then
+            if ctrl then
+                h.spellArmed[i] = false
+                Rpc("moba_cmd", { type = "levelup", ability = i })
+            else
+                h.spellArmed[i] = true
+            end
         elseif ActionReleased("spell" .. i) then
-            Rpc("moba_cmd", { type = "cast", ability = i, x = aimX, z = aimZ })
+            if h.spellArmed[i] then
+                Rpc("moba_cmd", { type = "cast", ability = i, x = aimX, z = aimZ })
+            end
+            h.spellArmed[i] = nil
         end
     end
     if ActionPressed("recall") then Rpc("moba_cmd", { type = "recall" }) end
@@ -1477,16 +1550,23 @@ local function updatePlayer(dt)
     local aimX = g and g.x or (h.x + math.sin(fy) * 6)
     local aimZ = g and g.z or (h.z + math.cos(fy) * 6)
     -- Ctrl+QWER 加点；否则按住显示施法指示器、松开在该处释放。
+    -- 用 spellArmed 记录“这次按下是施法还是加点”，避免 Ctrl+Q 松开时误放技能。
     local ctrl = InputKey("ctrl") == 1
+    h.spellArmed = h.spellArmed or {}
     for i = 1, 4 do
-        if ctrl and ActionPressed("spell" .. i) then
-            if spendPoint(h, i) then
-                floatAt(h, "技能升级", false)
-                sfx("levelup", 0.2)
+        if ActionPressed("spell" .. i) then
+            if ctrl then
+                h.spellArmed[i] = false
+                if spendPoint(h, i) then
+                    floatAt(h, "技能升级", false)
+                    sfx("levelup", 0.2)
+                end
+            else
+                h.spellArmed[i] = true
             end
-        else
-            -- 按住显示地面施法指示器（on_render 的 drawSkillOverlay），松开释放。
-            if ActionReleased("spell" .. i) then castAbility(h, i, aimX, aimZ) end
+        elseif ActionReleased("spell" .. i) then
+            if h.spellArmed[i] then castAbility(h, i, aimX, aimZ) end
+            h.spellArmed[i] = nil
         end
     end
     -- 按住 A：显示攻击范围圈（on_render 的世界空间地面圈，见 drawSkillOverlay）。
@@ -1558,6 +1638,14 @@ local function updateProjectiles(dt)
     local i = 1
     while i <= #projectiles do
         local p = projectiles[i]
+        -- 追踪弹（普攻）：锁定目标后每步转向，移动目标不会“擦肩而过”。
+        if p.target ~= nil then
+            if p.target.dead then
+                p.target = nil
+            else
+                p.dx, p.dz = norm(p.target.x - p.x, p.target.z - p.z)
+            end
+        end
         local step = p.speed * dt
         p.x = p.x + p.dx * step
         p.z = p.z + p.dz * step
@@ -1576,7 +1664,7 @@ local function updateProjectiles(dt)
         for j = 1, #units do
             local o = units[j]
             if not o.dead and o.team ~= p.team and dist(o.x, o.z, p.x, p.z) <= p.radius + o.radius then
-                damage(o, p.dmg, p.owner)
+                damage(o, p.dmg, p.owner, p.dmgKind)
                 if p.status then applyStatusLua(o, p.status, p.statusDur, p.statusMag, p.owner) end
                 hit = true
                 if not p.pierce then break end
@@ -1604,7 +1692,7 @@ local function updateGroundAoes(dt)
         local a = groundAoes[i]
         a.delay = a.delay - dt
         if a.delay <= 0 then
-            aoeDamage(a.owner, a.x, a.z, a.radius, a.dmg, a.status, a.statusDur, a.statusMag)
+            aoeDamage(a.owner, a.x, a.z, a.radius, a.dmg, a.status, a.statusDur, a.statusMag, a.stun, a.kind)
             table.remove(groundAoes, i)
         else
             i = i + 1
@@ -1622,6 +1710,17 @@ local function respawnHero(u)
     u.anim = nil
     u.actionT = 0
     u.atkTimer = 0
+    -- 复活时清掉可能残留的命令/前摇状态，否则 attackMove 等会让新一命失去控制。
+    u.attackMove = nil
+    u.commandTarget = false
+    u.attackArmed = nil
+    u.pingArmed = nil
+    u.swing = nil
+    u.swingTarget = nil
+    u.channel = 0
+    u.spellArmed = nil
+    u.dying = 0
+    u.navCd = 0
     local b = MAP.spawn[u.team]
     u.x, u.z = b.x, b.z
     SetPosition(u.ent, { x = u.x, y = 0, z = u.z })
@@ -1807,6 +1906,7 @@ end
 
 -- 视线：两点之间沿途采样是否都可行走（墙挡视野）
 local function lineClear(x0, z0, x1, z1)
+    if type(NavWalkable) ~= "function" then return true end -- 无导航网格时不遮挡视野
     local d = dist(x0, z0, x1, z1)
     local steps = math.max(1, math.floor(d / (FOG_CELL * 0.5)))
     for i = 1, steps - 1 do
@@ -2552,7 +2652,8 @@ local function drawSkillOverlay()
     if m == nil then return end
     for i = 1, 4 do
         local ab = h.abilities[i]
-        if ab ~= nil and ((h.ranks and h.ranks[i]) or 0) > 0 and ActionDown("spell" .. i) then
+        if ab ~= nil and ((h.ranks and h.ranks[i]) or 0) > 0 and ActionDown("spell" .. i)
+            and InputKey("ctrl") ~= 1 then
             local col = TEAM_COLOR[h.team]
             local g = groundPick(m.x, m.y)
             local tx = g and g.x or (h.x + math.sin(h.yaw or 0) * 6)
