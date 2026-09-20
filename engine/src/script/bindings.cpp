@@ -456,6 +456,44 @@ Value NativeDrawSprite(IScriptHost& host, void* user) {
     return Value::Nil();
 }
 
+// DrawLine(x0,y0,x1,y1,thickness, r,g,b,a): crisp 2D line (design units).
+Value NativeDrawLine(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->draw2d) return Value::Nil();
+    auto num = [&](int i, float def) {
+        return host.GetArg(i).type == Value::Type::Number
+                   ? static_cast<float>(host.GetArg(i).number)
+                   : def;
+    };
+    Draw2DCmd c;
+    c.kind = Draw2DCmd::Kind::Line;
+    c.x = num(0, 0.0f);  c.y = num(1, 0.0f);
+    c.x2 = num(2, 0.0f); c.y2 = num(3, 0.0f);
+    c.thickness = num(4, 2.0f);
+    c.r = num(5, 1.0f); c.g = num(6, 1.0f); c.b = num(7, 1.0f); c.a = num(8, 1.0f);
+    ctx->draw2d->push_back(std::move(c));
+    return Value::Nil();
+}
+
+// DrawCircle(cx,cy,radius, thickness, r,g,b,a [, filled]): ring by default.
+Value NativeDrawCircle(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->draw2d) return Value::Nil();
+    auto num = [&](int i, float def) {
+        return host.GetArg(i).type == Value::Type::Number
+                   ? static_cast<float>(host.GetArg(i).number)
+                   : def;
+    };
+    Draw2DCmd c;
+    c.kind = Draw2DCmd::Kind::Circle;
+    c.x = num(0, 0.0f); c.y = num(1, 0.0f); c.w = num(2, 0.0f);
+    c.thickness = num(3, 2.0f);
+    c.r = num(4, 1.0f); c.g = num(5, 1.0f); c.b = num(6, 1.0f); c.a = num(7, 1.0f);
+    c.filled = host.GetArg(8).type == Value::Type::Bool ? host.GetArg(8).boolean : false;
+    ctx->draw2d->push_back(std::move(c));
+    return Value::Nil();
+}
+
 // SetSpriteFrames(entity, { "assets/.../0.png", "1.png", ... }, fps): switches
 // the entity's sprite to a sequence-frame animation. Empty list restores the
 // static texture. No-op without a setSpriteFrames hook (e.g. the demo host).
@@ -1777,6 +1815,8 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("BindPlayerToClient", &NativeBindPlayerToClient, &ctx);
     host.Register("DrawRect", &NativeDrawRect, &ctx);
     host.Register("DrawSprite", &NativeDrawSprite, &ctx);
+    host.Register("DrawLine", &NativeDrawLine, &ctx);
+    host.Register("DrawCircle", &NativeDrawCircle, &ctx);
     host.Register("EmitParticles", &NativeEmitParticles, &ctx);
     host.Register("SetSpriteFrames", &NativeSetSpriteFrames, &ctx);
     host.Register("SetSpriteSheet", &NativeSetSpriteSheet, &ctx);

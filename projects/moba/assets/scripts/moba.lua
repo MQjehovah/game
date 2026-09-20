@@ -1136,8 +1136,7 @@ local function updatePlayer(dt)
             if ActionReleased("spell" .. i) then castAbility(h, i, aimX, aimZ) end
         end
     end
-    -- 按住 A：显示攻击范围圈。
-    if ActionDown("attack") then drawRangeRing(h.x, h.z, h.range, 0.95, 0.9, 0.35) end
+    -- 按住 A：显示攻击范围圈（在 HUD 层用 DrawCircle 画，见 drawSkillOverlay）。
     if ActionPressed("recall") then h.channel = 1.4 end
     updateHeroControl(h, dt)
 end
@@ -1827,6 +1826,52 @@ local function drawLoading()
     DrawRect(vw * 0.5 - 159, vh - 25, 318 * prog, 6, 0.85, 0.7, 0.25, 1)
 end
 
+-- 世界半径 -> 屏幕像素（用于把地面范围画成 HUD 圆）
+local function worldRadiusPx(wx, wz, r)
+    local a = WorldToScreen(wx, wz, 0.2)
+    local b = WorldToScreen(wx + r, wz, 0.2)
+    if a == nil or b == nil then return nil end
+    return dist(a.x, a.y, b.x, b.y)
+end
+
+-- HUD 层技能叠加：攻击范围圈 + 施法瞄准线/落点圆（引擎 DrawCircle/DrawLine）。
+local function drawSkillOverlay()
+    local h = playerHero
+    if h == nil or h.dead then return end
+    local heroS = WorldToScreen(h.x, 0.0, h.z)
+    if heroS == nil then return end
+    if ActionDown("attack") or h.attackMove then
+        local rp = worldRadiusPx(h.x, h.z, h.range)
+        if rp ~= nil then DrawCircle(heroS.x, heroS.y, rp, 2.0, 0.95, 0.9, 0.35, 0.9) end
+    end
+    local m = InputMousePos()
+    if m == nil then return end
+    for i = 1, 4 do
+        local ab = h.abilities[i]
+        if ab ~= nil and ((h.ranks and h.ranks[i]) or 0) > 0 and ActionDown("spell" .. i) then
+            DrawLine(heroS.x, heroS.y, m.x, m.y, 2.0, 0.5, 0.85, 1.0, 0.85)
+            if ab.type == "aoe_target" or ab.type == "aoe_self" then
+                local cx, cz = h.x, h.z
+                if ab.type == "aoe_target" then
+                    local g = groundPick(m.x, m.y)
+                    if g ~= nil then
+                        local d = dist(h.x, h.z, g.x, g.z)
+                        local r = ab.range or 10
+                        if d > r then g = { x = h.x + (g.x - h.x) / d * r, z = h.z + (g.z - h.z) / d * r } end
+                        cx, cz = g.x, g.z
+                    end
+                end
+                local rp = worldRadiusPx(cx, cz, ab.radius or 3)
+                local s = WorldToScreen(cx, 0.0, cz)
+                if rp ~= nil and s ~= nil then
+                    DrawCircle(s.x, s.y, rp, 2.0, 0.5, 0.85, 1.0, 0.9)
+                end
+            end
+            break
+        end
+    end
+end
+
 function on_render()
     local vp = GetViewportSize()
     local vw = (vp and vp.w) or VW
@@ -1840,6 +1885,7 @@ function on_render()
     end
     drawWorldPlates()
     drawTargetMarker()
+    drawSkillOverlay()
     drawFloatTexts()
     drawHud()
     drawMinimap(vw)

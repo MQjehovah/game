@@ -52,17 +52,20 @@ struct EntityLess {
 // data-driven 2D games (e.g. the editor-authored PvZ project) draw without
 // any C++ gameplay code.
 struct Draw2DCmd {
-    enum class Kind : uint8_t { Rect, RectOutline, Text };
+    enum class Kind : uint8_t { Rect, RectOutline, Text, Line, Circle };
     Kind kind = Kind::Rect;
     float x = 0.0f;
     float y = 0.0f;
     float w = 0.0f;
     float h = 0.0f;
+    float x2 = 0.0f; // Line end point / Circle radius
+    float y2 = 0.0f;
     float r = 1.0f, g = 1.0f, b = 1.0f, a = 1.0f;
     float thickness = 1.0f;
     float size = 16.0f;
     bool centerX = false;
     bool centerY = false;
+    bool filled = false; // Circle: filled vs ring
     gfx::TextureHandle texture; // sprite (DrawSprite); invalid = plain quad
     std::string text;
 };
