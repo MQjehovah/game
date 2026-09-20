@@ -1058,6 +1058,30 @@ PackageReport PackProject(const PackConfig& cfg) {
         }
     }
 
+    // Authoritative server (multiplayer): loads the SAME game.pack via VFS.
+    if (cfg.copyServer) {
+        const std::string ssrc =
+            cfg.serverSource.empty() ? std::string("build/neon_server.exe") : cfg.serverSource;
+        if (!FileExists(ssrc)) {
+            r.warnings.push_back("server not copied: '" + ssrc +
+                                 "' missing (build neon_server first)");
+        } else {
+            std::vector<uint8_t> sbytes;
+            if (ReadFileBytes(ssrc, sbytes) &&
+                WriteFileBytes(cfg.outDir + "/neon_server.exe", sbytes)) {
+                r.serverPath = cfg.outDir + "/neon_server.exe";
+                const std::string bat =
+                    "@echo off\r\n"
+                    "rem NeonEngine authoritative server (multiplayer). Loads game.pack.\r\n"
+                    "neon_server.exe --pack game.pack --port 26000\r\n";
+                WriteFileBytes(cfg.outDir + "/start_server.bat",
+                               std::vector<uint8_t>(bat.begin(), bat.end()));
+            } else {
+                r.warnings.push_back("server not copied: cannot read/write server exe");
+            }
+        }
+    }
+
     r.ok = r.errors.empty();
     return r;
 }

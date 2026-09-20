@@ -35,6 +35,17 @@ bool ReadFile(const std::string& path, std::string& out) {
     return !in.bad();
 }
 
+bool ReadFileBytes(const std::string& path, std::vector<uint8_t>& out) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in.is_open()) return false;
+    in.seekg(0, std::ios::end);
+    const std::streamoff n = in.tellg();
+    in.seekg(0, std::ios::beg);
+    out.assign(static_cast<size_t>(n > 0 ? n : 0), 0);
+    if (n > 0) in.read(reinterpret_cast<char*>(out.data()), n);
+    return !in.bad();
+}
+
 } // namespace
 
 bool GameServer::Start(const Config& cfg) {
@@ -43,9 +54,47 @@ bool GameServer::Start(const Config& cfg) {
     if (cfg_.snapshotEveryTicks == 0) cfg_.snapshotEveryTicks = 1;
     SetupRpc();
 
-    // Scene source: inline JSON wins, else the scene file.
+    // Scene source: inline JSON wins, else a game.pack (VFS, virtual scene
+    // path), else the scene file on disk.
     std::string sceneJson = cfg_.sceneJson;
-    if (sceneJson.empty() && !cfg_.sceneJsonPath.empty()) {
+    bool packMode = false;
+    if (sceneJson.empty() && !cfg_.packPath.empty()) {
+        std::vector<uint8_t> bytes;
+        if (!ReadFileBytes(cfg_.packPath, bytes)) {
+            NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Error,
+                         "server: cannot read pack '%s'", cfg_.packPath.c_str());
+            return false;
+        }
+        auto vfs = std::make_shared<io::MountStack>();
+        vfs->Mount(std::make_shared<io::PackFileSystem>(std::move(bytes)));
+        std::string scenePath = cfg_.sceneJsonPath; // virtual path (optional)
+        if (scenePath.empty()) {
+            auto g = vfs->ReadFile("game.json");
+            if (g.Ok()) {
+                std::string perr;
+                core::Json root = core::Json::Parse(
+                    std::string(g.Value().begin(), g.Value().end()), &perr);
+                if (const core::Json* s = root.Get("startScene")) scenePath = s->GetString();
+            }
+        }
+        if (scenePath.empty()) {
+            NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Error,
+                         "server: pack has no game.json startScene and no --scene given");
+            return false;
+        }
+        auto sres = vfs->ReadFile(scenePath);
+        if (!sres.Ok()) {
+            NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Error,
+                         "server: pack missing scene '%s'", scenePath.c_str());
+            return false;
+        }
+        sceneJson.assign(sres.Value().begin(), sres.Value().end());
+        packVfs_ = vfs; // outlive the runtime
+        packMode = true;
+        NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Info,
+                     "server: pack '%s' served via VFS (scene '%s')", cfg_.packPath.c_str(),
+                     scenePath.c_str());
+    } else if (sceneJson.empty() && !cfg_.sceneJsonPath.empty()) {
         if (!ReadFile(cfg_.sceneJsonPath, sceneJson)) {
             NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Error,
                          "server: cannot read scene '%s'", cfg_.sceneJsonPath.c_str());
@@ -96,8 +145,9 @@ bool GameServer::Start(const Config& cfg) {
     rcfg.assets = nullptr;
     rcfg.headless = true;
     rcfg.services = &kernel_->Services();
-    rcfg.scriptBaseDir = cfg_.scriptBaseDir;
-    rcfg.assetBaseDir = cfg_.assetBaseDir;
+    rcfg.scriptBaseDir = packMode ? std::string() : cfg_.scriptBaseDir;
+    rcfg.assetBaseDir = packMode ? std::string() : cfg_.assetBaseDir;
+    if (packMode) rcfg.fileSystem = packVfs_.get();
     rcfg.rngSeed = cfg_.rngSeed;
     rcfg.input = &controllerInput_;
     rcfg.physicsBackend = cfg_.physicsBackend; // only used for the "plugin:" fallback

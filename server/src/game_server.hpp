@@ -9,6 +9,7 @@
 
 #include "neon/core/result.hpp"
 #include "neon/ecs/world.hpp"
+#include "neon/io/vfs.hpp"
 #include "neon/kernel/kernel.hpp"
 #include "neon/modules/subsystem_modules.hpp"
 #include "neon/net/protocol.hpp"
@@ -90,6 +91,10 @@ public:
         bool loopback = false;           // bind 127.0.0.1 instead of 0.0.0.0 (tests)
         std::string sceneJsonPath;       // scene JSON file to load (used when sceneJson is empty)
         std::string sceneJson;           // inline scene JSON (overrides sceneJsonPath)
+        // game.pack to serve via VFS (client/server share one artifact). When
+        // set, sceneJsonPath is treated as a VIRTUAL path inside the pack (or
+        // empty -> game.json startScene).
+        std::string packPath;
         std::string scriptBaseDir;       // base dir for assets/{scripts,behaviors,prefabs}
         std::string assetBaseDir;        // asset root (unused headless; parity with player)
         // Physics backend for the authoritative simulation. Defaults to "jolt"
@@ -223,6 +228,8 @@ private:
     // service pointers).
     std::unique_ptr<kernel::Kernel> kernel_;
     scene::GameRuntime runtime_;
+    // pack VFS (must outlive runtime_): set when Config::packPath is used.
+    std::shared_ptr<io::MountStack> packVfs_;
     NetInput controllerInput_; // wired into the runtime; fed by the controller client
     std::vector<ScriptedInput> scriptedInputs_; // T6.7 scripted-controller path
     std::map<net::NetAddress, Client, NetAddrLess> clients_;

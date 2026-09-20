@@ -57,6 +57,7 @@ struct PackageReport {
     std::string playerPath;    // "<outDir>/neon_game.exe" ("" when not copied)
     std::string updatePath;    // P2-5: "<outDir>/update.json" ("" when not written)
     std::string installPath;   // P2-5: "<outDir>/install.bat" ("" when not written)
+    std::string serverPath;    // "<outDir>/neon_server.exe" ("" when not copied)
     size_t fileCount = 0;
     size_t bytesWritten = 0;
     // G8-4 incremental packing: true when the previous run's per-file content
@@ -69,6 +70,10 @@ struct PackConfig {
     std::string outDir;       // output directory ("" -> error)
     std::string playerSource; // exe to copy as neon_game.exe ("" = "build/neon_game.exe")
     bool copyPlayer = true;   // false skips the player copy (tests / CI)
+    // Authoritative server (multiplayer). Copied as neon_server.exe and a
+    // start_server.bat is written; it loads the SAME game.pack via VFS.
+    std::string serverSource; // "" = "build/neon_server.exe"
+    bool copyServer = true;   // false skips the server copy
     bool checkScriptSyntax = true; // run Lua CheckSyntax on every scripts/*.lua
     // P2-5 release metadata: version string + update host used by update.json
     // and the generated update.bat ("" disables the auto-update script).

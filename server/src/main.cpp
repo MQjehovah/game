@@ -33,6 +33,8 @@ void PrintUsage(const char* prog) {
         "Usage: %s [--port N] --scene FILE [options]\n"
         "  --port N      UDP port to bind (default 26000; 0 = OS ephemeral)\n"
         "  --scene FILE  scene JSON file to load (required)\n"
+        "  --pack FILE   game.pack to serve via VFS (scene = game.json startScene;\n"
+        "                clients and server then share one artifact)\n"
         "  --scripts DIR base dir for assets/{scripts,behaviors,prefabs} (default: scene's dir)\n"
         "  --assets DIR  asset base dir (unused headless; kept for parity)\n"
         "  --ticks N     run exactly N fixed 60Hz simulation steps then exit 0\n"
@@ -97,6 +99,9 @@ int main(int argc, char** argv) {
         } else if (arg == "--scene") {
             const char* v = value("--scene");
             if (v) scenePath = v;
+        } else if (arg == "--pack") {
+            const char* v = value("--pack");
+            if (v) cfg.packPath = v;
         } else if (arg == "--scripts") {
             const char* v = value("--scripts");
             if (v) scriptsDir = v;
@@ -121,13 +126,13 @@ int main(int argc, char** argv) {
         }
     }
 
-    if (scenePath.empty()) {
-        std::printf("error: --scene <file> is required\n");
+    if (scenePath.empty() && cfg.packPath.empty()) {
+        std::printf("error: --scene <file> (or --pack <file>) is required\n");
         PrintUsage(argv[0]);
         return 2;
     }
-    cfg.sceneJsonPath = scenePath;
-    if (scriptsDir.empty()) scriptsDir = ScriptBaseForLooseScene(scenePath);
+    cfg.sceneJsonPath = scenePath; // loose: file path; pack: virtual path ("" ok)
+    if (cfg.packPath.empty() && scriptsDir.empty()) scriptsDir = ScriptBaseForLooseScene(scenePath);
     cfg.scriptBaseDir = scriptsDir;
 
     neon::server::GameServer server;
