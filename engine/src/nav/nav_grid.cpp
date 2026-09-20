@@ -2,10 +2,74 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <queue>
+#include <vector>
 
 namespace neon::nav {
 namespace {
+
+// Rasterization scratch: per cell the lowest and highest world Y of any
+// geometry covering it, plus a coverage flag. A cell whose column spans more
+// than `clearance` holds a wall/ledge and is blocked by the bake.
+struct HeightField {
+    float minX = 0.0f;
+    float minZ = 0.0f;
+    float cell = 1.0f;
+    int width = 0;
+    int height = 0;
+    std::vector<float> lo;
+    std::vector<float> hi;
+    std::vector<uint8_t> has;
+
+    int Index(int x, int z) const { return z * width + x; }
+
+    void CellOf(float x, float z, int* cx, int* cz) const {
+        *cx = static_cast<int>(std::floor((x - minX) / cell));
+        *cz = static_cast<int>(std::floor((z - minZ) / cell));
+    }
+
+    // Scanline-fills one triangle into the grid, tracking the Y span of every
+    // covered cell (conservative: the triangle's full Y range for all its
+    // cells, which thickens walls slightly -- desirable for navigation).
+    void AddTriangle(const math::Vec3& a, const math::Vec3& b, const math::Vec3& c) {
+        const float xs[3] = {a.x, b.x, c.x};
+        const float zs[3] = {a.z, b.z, c.z};
+        const float ys[3] = {a.y, b.y, c.y};
+        const float yLo = std::min({ys[0], ys[1], ys[2]});
+        const float yHi = std::max({ys[0], ys[1], ys[2]});
+        int cz0 = static_cast<int>(std::floor((std::min({zs[0], zs[1], zs[2]}) - minZ) / cell));
+        int cz1 = static_cast<int>(std::floor((std::max({zs[0], zs[1], zs[2]}) - minZ) / cell));
+        cz0 = std::max(0, cz0);
+        cz1 = std::min(height - 1, cz1);
+        for (int cz = cz0; cz <= cz1; ++cz) {
+            const float zc = minZ + (static_cast<float>(cz) + 0.5f) * cell;
+            float sx[3];
+            int n = 0;
+            for (int e = 0; e < 3; ++e) {
+                const float zi = zs[e], zj = zs[(e + 1) % 3];
+                const float xi = xs[e], xj = xs[(e + 1) % 3];
+                if ((zi <= zc && zc < zj) || (zj <= zc && zc < zi)) {
+                    const float t = (zc - zi) / (zj - zi);
+                    sx[n++] = xi + (xj - xi) * t;
+                }
+            }
+            if (n < 2) continue;
+            const float xLo = std::min(sx[0], sx[1]);
+            const float xHi = std::max(sx[0], sx[1]);
+            int cx0 = static_cast<int>(std::floor((xLo - minX) / cell));
+            int cx1 = static_cast<int>(std::floor((xHi - minX) / cell));
+            cx0 = std::max(0, cx0);
+            cx1 = std::min(width - 1, cx1);
+            for (int cx = cx0; cx <= cx1; ++cx) {
+                const int k = Index(cx, cz);
+                has[k] = 1;
+                if (yLo < lo[k]) lo[k] = yLo;
+                if (yHi > hi[k]) hi[k] = yHi;
+            }
+        }
+    }
+};
 
 struct Node {
     int x = 0;
@@ -209,6 +273,100 @@ core::Result<NavGrid> NavGrid::FromJson(const std::string& jsonText) {
         for (int x = 0; x < w && x < static_cast<int>(s.size()); ++x)
             g.SetWalkable(x, y, s[static_cast<size_t>(x)] == '.');
     }
+    return core::Result<NavGrid>::Ok(std::move(g));
+}
+
+core::Result<NavGrid> BakeFromTriangles(const math::Vec3* positions, size_t vertexCount,
+                                        const uint32_t* indices, size_t indexCount,
+                                        const BakeParams& params) {
+    if (positions == nullptr || vertexCount == 0)
+        return core::Result<NavGrid>::Err("nav bake: no vertices");
+    const size_t triCount = indexCount / 3;
+    if (triCount == 0) return core::Result<NavGrid>::Err("nav bake: no triangles");
+    auto vi = [&](size_t i) -> uint32_t {
+        return indices ? indices[i] : static_cast<uint32_t>(i);
+    };
+    if (indices != nullptr) {
+        for (size_t i = 0; i < indexCount; ++i) {
+            if (indices[i] >= vertexCount)
+                return core::Result<NavGrid>::Err("nav bake: index out of range");
+        }
+    }
+
+    // World-space AABB over the referenced vertices.
+    float minX = positions[vi(0)].x, maxX = minX;
+    float minZ = positions[vi(0)].z, maxZ = minZ;
+    for (size_t t = 0; t < indexCount; ++t) {
+        const math::Vec3& p = positions[vi(t)];
+        minX = std::min(minX, p.x);
+        maxX = std::max(maxX, p.x);
+        minZ = std::min(minZ, p.z);
+        maxZ = std::max(maxZ, p.z);
+    }
+
+    HeightField field;
+    field.minX = minX;
+    field.minZ = minZ;
+    field.cell = params.cellSize > 0.0f ? params.cellSize : 1.0f;
+    field.width = std::max(1, static_cast<int>(std::ceil((maxX - minX) / field.cell)));
+    field.height = std::max(1, static_cast<int>(std::ceil((maxZ - minZ) / field.cell)));
+    const size_t cells = static_cast<size_t>(field.width) * field.height;
+    field.lo.assign(cells, 1e30f);
+    field.hi.assign(cells, -1e30f);
+    field.has.assign(cells, 0);
+    for (size_t t = 0; t < triCount; ++t) {
+        field.AddTriangle(positions[vi(t * 3 + 0)], positions[vi(t * 3 + 1)],
+                          positions[vi(t * 3 + 2)]);
+    }
+
+    // Walkable = geometry present and no tall obstacle over the column.
+    std::vector<uint8_t> walk(cells, 0);
+    for (size_t k = 0; k < cells; ++k)
+        walk[k] = (field.has[k] && (field.hi[k] - field.lo[k]) <= params.clearance) ? 1 : 0;
+
+    // Dilate the blocked set by the agent radius (keep off walls) with a
+    // discretized disk.
+    const float radiusCells = params.agentRadius / field.cell;
+    const int rr = static_cast<int>(std::ceil(radiusCells));
+    std::vector<math::Vec2> disk;
+    for (int dz = -rr; dz <= rr; ++dz) {
+        for (int dx = -rr; dx <= rr; ++dx) {
+            if (static_cast<float>(dx * dx + dz * dz) <= radiusCells * radiusCells + 1e-6f)
+                disk.push_back({static_cast<float>(dx), static_cast<float>(dz)});
+        }
+    }
+    std::vector<uint8_t> eroded = walk;
+    for (int cz = 0; cz < field.height; ++cz) {
+        for (int cx = 0; cx < field.width; ++cx) {
+            if (walk[field.Index(cx, cz)] != 0) continue;
+            for (const math::Vec2& d : disk) {
+                const int nx = cx + static_cast<int>(d.x);
+                const int nz = cz + static_cast<int>(d.y);
+                if (nx >= 0 && nz >= 0 && nx < field.width && nz < field.height)
+                    eroded[field.Index(nx, nz)] = 0;
+            }
+        }
+    }
+
+    // Carve forced-walkable anchors (spawns / bases).
+    for (const BakeParams::Disk& d : params.forceWalkable) {
+        int ccx = 0, ccz = 0;
+        field.CellOf(d.center.x, d.center.y, &ccx, &ccz);
+        const int rc = static_cast<int>(std::ceil(d.radius / field.cell));
+        for (int dz = -rc; dz <= rc; ++dz) {
+            for (int dx = -rc; dx <= rc; ++dx) {
+                if (dx * dx + dz * dz > rc * rc) continue;
+                const int nx = ccx + dx, nz = ccz + dz;
+                if (nx >= 0 && nz >= 0 && nx < field.width && nz < field.height)
+                    eroded[field.Index(nx, nz)] = 1;
+            }
+        }
+    }
+
+    NavGrid g = NavGrid::Create(field.width, field.height, field.cell, {minX, minZ});
+    for (int cz = 0; cz < field.height; ++cz)
+        for (int cx = 0; cx < field.width; ++cx)
+            g.SetWalkable(cx, cz, eroded[field.Index(cx, cz)] != 0);
     return core::Result<NavGrid>::Ok(std::move(g));
 }
 

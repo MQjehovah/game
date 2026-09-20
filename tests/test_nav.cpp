@@ -129,6 +129,98 @@ TEST(NavFindPathBinding) {
     CHECK_NEAR(noPath.Value().number, 0.0, 1e-6);
 }
 
+// Mesh -> grid bake: a floor quad plus a vertical wall strip. Cells under the
+// wall are blocked, the floor is walkable, and the blocked set is dilated by
+// the agent radius (so cells next to the wall are blocked too).
+TEST(NavBakeFromTrianglesBlocksWall) {
+    // Floor: x/z in [0,10] at y=0 (two triangles).
+    // Wall: x=4.5, z in [0,6], y in [0,3] (two triangles).
+    const math::Vec3 verts[] = {
+        {0, 0, 0}, {10, 0, 0}, {10, 0, 10}, {0, 0, 0}, {10, 0, 10}, {0, 0, 10},
+        {4.5f, 0, 0}, {4.5f, 3, 0}, {4.5f, 3, 6}, {4.5f, 0, 0}, {4.5f, 3, 6}, {4.5f, 0, 6},
+    };
+    nav::BakeParams p;
+    p.cellSize = 1.0f;
+    p.agentRadius = 1.5f; // dilates by one cell diagonally
+    p.clearance = 1.0f;
+    auto baked = nav::BakeFromTriangles(verts, 12, nullptr, 12, p);
+    CHECK(baked.Ok());
+    const nav::NavGrid& g = baked.Value();
+
+    auto cell = [&](float x, float z) {
+        int cx = 0, cz = 0;
+        CHECK(g.WorldToCell({x, z}, &cx, &cz));
+        return g.Walkable(cx, cz);
+    };
+    CHECK(cell(1.5f, 1.5f));   // open floor
+    CHECK(!cell(4.5f, 1.5f));  // under the wall
+    CHECK(!cell(3.5f, 1.5f));  // eroded: one cell left of the wall
+    CHECK(!cell(5.5f, 1.5f));  // eroded: one cell right of the wall
+    // A vertical wall's Y span (3 > clearance 1) is what marks it blocked; the
+    // open floor at y=0 is not.
+}
+
+// Force-walkable disks are carved after the erosion, so a spawn anchor stays
+// usable even when the source mesh blocks that column.
+TEST(NavBakeForceWalkableCarve) {
+    const math::Vec3 verts[] = {
+        // floor [0,6]^2 at y=0
+        {0, 0, 0}, {6, 0, 0}, {6, 0, 6}, {0, 0, 0}, {6, 0, 6}, {0, 0, 6},
+        // a tall pillar at the centre (x=3, z=3)
+        {3, 0, 3}, {3, 4, 3}, {3, 4, 2}, {3, 4, 2}, {3, 0, 3}, {3, 0, 2},
+    };
+    nav::BakeParams p;
+    p.cellSize = 1.0f;
+    p.agentRadius = 1.0f;
+    p.clearance = 1.0f;
+    auto blocked = nav::BakeFromTriangles(verts, 12, nullptr, 12, p);
+    CHECK(blocked.Ok());
+    int cx = 0, cz = 0;
+    CHECK(blocked.Value().WorldToCell({3.5f, 2.5f}, &cx, &cz));
+    CHECK(!blocked.Value().Walkable(cx, cz)); // pillar column blocked
+    // Same bake with the cell forced walkable.
+    p.forceWalkable.push_back({{3.5f, 2.5f}, 1.5f});
+    auto carved = nav::BakeFromTriangles(verts, 12, nullptr, 12, p);
+    CHECK(carved.Ok());
+    CHECK(carved.Value().Walkable(cx, cz));
+}
+
+// Bad input is rejected, not crashed.
+TEST(NavBakeRejectsEmptyInput) {
+    nav::BakeParams p;
+    CHECK(!nav::BakeFromTriangles(nullptr, 0, nullptr, 0, p).Ok());
+    const math::Vec3 v[] = {{0, 0, 0}};
+    CHECK(!nav::BakeFromTriangles(v, 1, nullptr, 0, p).Ok());
+    const uint32_t idx[] = {0, 1, 9};
+    CHECK(!nav::BakeFromTriangles(v, 1, idx, 3, p).Ok()); // index out of range
+}
+
+// Baking then pathfinding: a wall with a gap forces the path around it.
+TEST(NavBakeThenPathRoutesAroundWall) {
+    const math::Vec3 verts[] = {
+        // floor [0,10] x [0,10]
+        {0, 0, 0}, {10, 0, 0}, {10, 0, 10}, {0, 0, 0}, {10, 0, 10}, {0, 0, 10},
+        // wall x=4.5, z in [0,6] (gap at z in [6,10])
+        {4.5f, 0, 0}, {4.5f, 3, 0}, {4.5f, 3, 6}, {4.5f, 0, 0}, {4.5f, 3, 6}, {4.5f, 0, 6},
+    };
+    nav::BakeParams p;
+    p.cellSize = 1.0f;
+    p.agentRadius = 1.5f;
+    p.clearance = 1.0f;
+    auto baked = nav::BakeFromTriangles(verts, 12, nullptr, 12, p);
+    CHECK(baked.Ok());
+    auto path = baked.Value().FindPath({1.5f, 2.5f}, {8.5f, 2.5f});
+    CHECK(!path.empty());
+    bool usedGap = false;
+    for (const math::Vec2& w : path) {
+        int cx = 0, cz = 0;
+        CHECK(baked.Value().WorldToCell(w, &cx, &cz));
+        CHECK(baked.Value().Walkable(cx, cz));
+        if (w.y > 6.5f) usedGap = true; // detoured through the opening
+    }
+    CHECK(usedGap);
+}
+
 // B2: LoadDataTable validates a JSON row array against a registered reflected
 // type (SkillData via TypeRegistry) and returns typed rows.
 TEST(DataTableLoadAndValidate) {

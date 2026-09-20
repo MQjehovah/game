@@ -211,9 +211,16 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
             const std::string text = ReadScript(FullScriptPath(ng->GetString()));
             if (!text.empty()) {
                 auto parsedNav = nav::NavGrid::FromJson(text);
-                if (parsedNav.Ok()) SetNavGrid(parsedNav.Value());
-                else NEON_LOG_WARN("runtime: nav grid '%s' invalid: %s", ng->GetString().c_str(),
-                                   parsedNav.Error().c_str());
+                if (parsedNav.Ok()) {
+                    SetNavGrid(parsedNav.Value());
+                    NEON_LOG_CAT(core::LogCategory::Scene, core::LogLevel::Info,
+                                 "runtime: nav grid '%s' loaded (%dx%d)",
+                                 ng->GetString().c_str(), parsedNav.Value().Width(),
+                                 parsedNav.Value().Height());
+                } else {
+                    NEON_LOG_WARN("runtime: nav grid '%s' invalid: %s", ng->GetString().c_str(),
+                                  parsedNav.Error().c_str());
+                }
             }
         }
     }

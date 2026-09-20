@@ -594,6 +594,19 @@ elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     -finput-charset=UTF-8 -fexec-charset=UTF-8)
 endif()
 
+# navbake: headless mesh -> .navgrid.json baker. Reuses the engine's
+# nav::BakeFromTriangles (the exact bake the editor nav panel runs), so CI and
+# the editor produce identical grids for the same mesh.
+#   neon_navbake --mesh <in.glb> --out <out.navgrid.json> [--yaw-deg -45 ...]
+add_executable(neon_navbake tools/navbake.cpp)
+target_link_libraries(neon_navbake PRIVATE neon_core)
+if(MSVC)
+  target_compile_options(neon_navbake PRIVATE /W4 /permissive- /utf-8)
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(neon_navbake PRIVATE -Wall -Wextra
+    -finput-charset=UTF-8 -fexec-charset=UTF-8)
+endif()
+
 # ---------------------------------------------------------------------------
 # Editor
 # ---------------------------------------------------------------------------

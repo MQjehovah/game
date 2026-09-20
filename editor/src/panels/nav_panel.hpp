@@ -24,6 +24,13 @@ public:
     bool* VisibleFlag() override { return visible_; }
     void Draw(EditorContext& ctx) override;
 
+    // Mesh -> 导航网格烘焙参数（从选中实体烘焙，产出 .navgrid.json）。
+    float bakeCell_ = 1.0f;
+    float bakeRadius_ = 0.6f;
+    float bakeClearance_ = 1.6f;
+    char bakeOut_[512] = "assets/navgrid/grid.navgrid.json";
+    std::string bakeStatus_;
+
 private:
     bool* visible_ = nullptr;   // 不拥有；过渡期 = &EditorApp::showNav_
 };

@@ -1,4 +1,7 @@
 {
+  "level": {
+    "navgrid": "assets/navgrid/summoners_rift.navgrid.json"
+  },
   "entities": [
     {
       "components": {
@@ -123,7 +126,7 @@
           "pos": [
             0,
             0,
-            18
+            0
           ],
           "rot": [
             0,

@@ -257,6 +257,20 @@ public:
         navGrid_ = grid;
         navGridValid_ = grid.Valid();
         scriptCtx_.navGrid = navGridValid_ ? &navGrid_ : nullptr;
+        // NavBlock hook: scripts stamp/clear dynamic obstacle disks (towers).
+        scriptCtx_.navBlock = nullptr;
+        if (navGridValid_) {
+            scriptCtx_.navBlock = [this](float x, float z, float r, bool walkable) {
+                int cx = 0, cz = 0;
+                if (!navGrid_.WorldToCell({x, z}, &cx, &cz)) return false;
+                const int rc = static_cast<int>(std::ceil(r / navGrid_.CellSize()));
+                for (int dz = -rc; dz <= rc; ++dz)
+                    for (int dx = -rc; dx <= rc; ++dx)
+                        if (dx * dx + dz * dz <= rc * rc)
+                            navGrid_.SetWalkable(cx + dx, cz + dz, walkable);
+                return true;
+            };
+        }
     }
     bool NavGridValid() const { return navGridValid_; }
     // P1-2 debugger passthrough for the editor playtest.

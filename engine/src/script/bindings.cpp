@@ -1618,6 +1618,20 @@ Value NativeNavFindPath(IScriptHost& host, void* user) {
     return t;
 }
 
+// B1 NavGrid -> gameplay: NavBlock(x, z, radius, walkable) stamps a world-space
+// XZ disk in the scene's nav grid. Scripts mark dynamic obstacles (towers,
+// debris) and clear them again. Returns false when no grid / hook is wired.
+Value NativeNavBlock(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->navBlock) return Value::Bool(false);
+    const float x = static_cast<float>(NumberArg(host, 0, 0.0));
+    const float z = static_cast<float>(NumberArg(host, 1, 0.0));
+    const float r = static_cast<float>(NumberArg(host, 2, 0.0));
+    const bool walkable =
+        host.GetArg(3).type == Value::Type::Bool ? host.GetArg(3).boolean : false;
+    return Value::Bool(ctx->navBlock(x, z, r, walkable));
+}
+
 // B2: LoadDataTable(typeName, jsonText) -> array of typed row tables. `jsonText`
 // is a JSON array of row objects; each row is validated + normalized against the
 // registered reflected `typeName` via the wired loadDataTable hook (GameRuntime
@@ -1699,6 +1713,7 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("Tween", &NativeTween, &ctx);
     host.Register("GetEntitiesInGroup", &NativeGetEntitiesInGroup, &ctx);
     host.Register("NavFindPath", &NativeNavFindPath, &ctx);
+    host.Register("NavBlock", &NativeNavBlock, &ctx);
     host.Register("LoadDataTable", &NativeLoadDataTable, &ctx);
     host.Register("PollAnimEvents", &NativePollAnimEvents, &ctx);
     host.Register("AnimBlend", &NativeAnimBlend, &ctx);

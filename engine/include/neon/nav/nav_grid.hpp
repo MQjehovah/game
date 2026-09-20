@@ -6,8 +6,25 @@
 #include "neon/core/json.hpp"
 #include "neon/core/result.hpp"
 #include "neon/math/vec2.hpp"
+#include "neon/math/vec3.hpp"
 
 namespace neon::nav {
+
+// Parameters for the mesh -> grid bake (see BakeFromTriangles). Tuned per game:
+// a MOBA wants a generous agentRadius/clearance so heroes path down the middle
+// of lanes and never clip a wall corner.
+struct BakeParams {
+    float cellSize = 1.0f;      // grid resolution in world units
+    float agentRadius = 0.6f;   // blocked cells dilate by this (keep off walls)
+    float clearance = 1.6f;     // Y span over a cell that counts as an obstacle
+    // World-space XZ disks forced walkable AFTER the erosion. Used to guarantee
+    // valid anchors at spawns / bases even when the source mesh leaves a hole.
+    struct Disk {
+        math::Vec2 center;
+        float radius = 2.0f;
+    };
+    std::vector<Disk> forceWalkable;
+};
 
 // A grid-based navigation field (Godot Navigation / Unity NavMesh-style, but
 // data-driven): a 2D walkability bitmap in world space. Obstacles are marked
@@ -51,5 +68,17 @@ private:
     math::Vec2 origin_{0, 0};
     std::vector<uint8_t> walkable_; // 1 = walkable
 };
+
+// Bakes a walkability grid from a world-space triangle soup (the Recast-style
+// "where can an agent stand" pass). Positions are indexed by `indices` (3 per
+// triangle); pass indices == nullptr for a sequential soup. A cell is blocked
+// when it carries no geometry or when the geometry over its column spans more
+// than `clearance` in Y (a wall/ledge); the blocked set is then dilated by
+// `agentRadius` and `forceWalkable` disks are carved back. The result is the
+// same NavGrid the runtime path-finds on, so every asset consumer (the editor
+// panel, a provider plugin) shares one bake path. Err on empty/bad input.
+core::Result<NavGrid> BakeFromTriangles(const math::Vec3* positions, size_t vertexCount,
+                                        const uint32_t* indices, size_t indexCount,
+                                        const BakeParams& params);
 
 } // namespace neon::nav

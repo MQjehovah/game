@@ -583,6 +583,19 @@ static void StripEditorMetadata(core::Json& root,
     }
 }
 
+// The editor's play snapshot is built from the runtime World (+ direct-entity
+// fallback), which carries entities but NOT scene-root metadata. Navigation
+// (level.navgrid) and game vars live at the scene root, so re-attach them from
+// the parsed scene the editor loaded; without this a playtest silently loses
+// its navigation grid and units beeline through walls.
+static void CopySceneRootMetadata(core::Json& out, const core::Json& src) {
+    if (!out.IsObject() || !src.IsObject()) return;
+    if (const core::Json* lv = src.Get("level"))
+        if (out.Get("level") == nullptr) out.object_["level"] = *lv;
+    if (const core::Json* gv = src.Get("gameVars"))
+        if (out.Get("gameVars") == nullptr) out.object_["gameVars"] = *gv;
+}
+
 void EditorApp::SyncWorldFromEntities() {
     sceneWorld_.Clear();
     sceneCompReg_ = scene::ComponentRegistry{};
@@ -628,6 +641,7 @@ core::Result<core::Json> EditorApp::BuildPlaySceneJson() {
         auto direct = BuildSceneJsonFromEntities();
         if (!direct.Ok()) return direct;
         StripEditorMetadata(direct.Value(), entities_);
+        CopySceneRootMetadata(direct.Value(), currentSceneRoot_);
         return core::Result<core::Json>::Ok(std::move(direct.Value()));
     }
     auto out = scene::SceneFile::FromWorld(sceneWorld_);
@@ -663,6 +677,7 @@ core::Result<core::Json> EditorApp::BuildPlaySceneJson() {
             ent.object_["components"] = std::move(comps);
         }
     }
+    CopySceneRootMetadata(root, currentSceneRoot_);
     return core::Result<core::Json>::Ok(std::move(root));
 }
 

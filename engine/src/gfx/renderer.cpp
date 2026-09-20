@@ -428,18 +428,21 @@ bool Renderer::BakeLightProbes(const math::AABB& bounds, int res, const ProbeLig
 }
 
 void Renderer::SetExposure(float exposure) {
+    if (exposure_ == exposure) return; // called every frame; log only on change
     exposure_ = exposure;
     NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
                  "Renderer: composite exposure = %.3f", exposure_);
 }
 
 void Renderer::SetTonemapEnabled(bool enabled) {
+    if (tonemapEnabled_ == enabled) return; // called every frame; log only on change
     tonemapEnabled_ = enabled;
     NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
                  "Renderer: tonemap %s", enabled ? "enabled" : "disabled (legacy clamp)");
 }
 
 void Renderer::SetMsaaEnabled(bool enabled) {
+    if (msaaRequested_ == enabled) return; // called every frame; log only on change
     msaaRequested_ = enabled;
     NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
                  "Renderer: MSAA %s", enabled ? "requested" : "disabled by flag");

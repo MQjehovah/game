@@ -405,6 +405,8 @@ local function killUnit(u, source)
     u.dead = true
     u.hp = 0
     SetHealth(u.ent, 0)
+    -- 塔被拆掉后放行该处的导航障碍，后续兵线可直推。
+    if u.kind == "tower" then NavBlock(u.x, u.z, 2.0, true) end
     if u.isHero then
         sfx("kill", 0.4)
     elseif u.kind == "minion" and playerHero ~= nil and dist(u.x, u.z, playerHero.x, playerHero.z) < 22 then
@@ -541,6 +543,47 @@ local function moveToward(u, tx, tz, dt)
     SetPosition(u.ent, { x = u.x, y = 0, z = u.z })
     faceTo(u, tx, tz)
     return d <= 0.2
+end
+
+-- 导航寻路：沿场景导航网格（level.navgrid）的 A* 路点移动，绕开地图障碍。
+-- 无网格 / 无路时优雅回退直线（beeline），行为与旧版一致。
+local function repath(u, tx, tz)
+    local p = NavFindPath({ x = u.x, y = 0, z = u.z }, { x = tx, y = 0, z = tz })
+    if p ~= nil and #p > 0 then
+        u.navPath = p
+        u.navIdx = 1
+        u.navGoal = { x = tx, z = tz }
+    else
+        u.navPath = nil
+        u.navGoal = nil
+    end
+end
+
+-- 返回是否已抵达最终目标（<1.0）。移动目标用节流重算，固定目标只算一次。
+local function stepMove(u, tx, tz, dt)
+    if u.dead then return true end
+    u.navCd = (u.navCd or 0) - dt
+    local exhausted = (u.navPath == nil) or (u.navIdx > #u.navPath)
+    local goalMoved = (u.navGoal == nil) or dist(u.navGoal.x, u.navGoal.z, tx, tz) > 2.5
+    if (exhausted or goalMoved) and u.navCd <= 0 then
+        u.navCd = 0.35
+        repath(u, tx, tz)
+    end
+    local wx, wz = tx, tz
+    if u.navPath ~= nil then
+        local wp = u.navPath[u.navIdx]
+        while wp ~= nil and dist(u.x, u.z, wp.x, wp.z) < 0.7 do
+            u.navIdx = u.navIdx + 1
+            wp = u.navPath[u.navIdx]
+        end
+        if wp ~= nil then
+            wx, wz = wp.x, wp.z
+        else
+            u.navPath = nil
+        end
+    end
+    moveToward(u, wx, wz, dt)
+    return dist(u.x, u.z, tx, tz) < 1.0
 end
 
 local function setLoop(u, clip, fade)
@@ -836,14 +879,15 @@ local function updateHeroControl(h, dt)
             h.mana = h.maxMana
             SetHealth(h.ent, h.hp)
             h.moveTarget = nil
+            h.navPath = nil
             h.channel = 0
         end
         return
     end
     autoAttack(h, dt)
     if h.moveTarget ~= nil then
-        local arrived = moveToward(h, h.moveTarget.x, h.moveTarget.z, dt)
-        if arrived then h.moveTarget = nil end
+        local arrived = stepMove(h, h.moveTarget.x, h.moveTarget.z, dt)
+        if arrived then h.moveTarget = nil; h.navPath = nil end
         setLoop(h, "run", 0.15)
     else
         setLoop(h, "idle1", 0.2)
@@ -853,34 +897,36 @@ end
 local function updatePlayer(dt)
     local h = playerHero
     if h == nil or h.dead then return end
-    if InputMousePressed("left") or InputMousePressed("right") then
-        local m = InputMousePos()
-        if m then
-            local best, bd = nil, 44
-            for i = 1, #units do
-                local o = units[i]
-                if not o.dead and o.team ~= h.team then
-                    local s = WorldToScreen(o.x, o.h * 0.5, o.z)
-                    if s ~= nil then
-                        local d = dist(s.x, s.y, m.x, m.y)
-                        if d < bd then bd = d; best = o end
-                    end
-                end
-            end
-            if best ~= nil then
-                h.target = best
-                h.moveTarget = { x = best.x, z = best.z }
-            else
-                local g = groundPick(m.x, m.y)
-                if g ~= nil then
-                    h.target = nil
-                    h.moveTarget = { x = g.x, z = g.z }
+    -- 游戏渲染区域（设计坐标）。点击落在视野外（编辑器面板/黑边）一律忽略。
+    local vp = GetViewportSize()
+    local vw = (vp and vp.w) or VW
+    local vh = (vp and vp.h) or VH
+    local m = InputMousePos()
+    local inView = m ~= nil and m.x >= 0 and m.y >= 0 and m.x <= vw and m.y <= vh
+    if inView and (InputMousePressed("left") or InputMousePressed("right")) then
+        local best, bd = nil, 44
+        for i = 1, #units do
+            local o = units[i]
+            if not o.dead and o.team ~= h.team then
+                local s = WorldToScreen(o.x, o.h * 0.5, o.z)
+                if s ~= nil then
+                    local d = dist(s.x, s.y, m.x, m.y)
+                    if d < bd then bd = d; best = o end
                 end
             end
         end
+        if best ~= nil then
+            h.target = best
+            h.moveTarget = { x = best.x, z = best.z }
+        else
+            local g = groundPick(m.x, m.y)
+            if g ~= nil then
+                h.target = nil
+                h.moveTarget = { x = g.x, z = g.z }
+            end
+        end
     end
-    local m = InputMousePos()
-    local g = m and groundPick(m.x, m.y) or nil
+    local g = inView and groundPick(m.x, m.y) or nil
     local fy = h.yaw or 0
     local aimX = g and g.x or (h.x + math.sin(fy) * 6)
     local aimZ = g and g.z or (h.z + math.cos(fy) * 6)
@@ -899,7 +945,7 @@ local function updateAI(h, dt)
         h.target = nil
         h.moveTarget = { x = b.x, z = b.z }
         setLoop(h, "run", 0.15)
-        moveToward(h, b.x, b.z, dt)
+        stepMove(h, b.x, b.z, dt)
         return
     end
     local tgt, bestScore = nil, nil
@@ -927,7 +973,7 @@ local function updateAI(h, dt)
     end
     autoAttack(h, dt)
     if d > h.range + tgt.radius then
-        moveToward(h, tgt.x, tgt.z, dt)
+        stepMove(h, tgt.x, tgt.z, dt)
         setLoop(h, "run", 0.15)
     else
         setLoop(h, "idle1", 0.2)
@@ -944,7 +990,7 @@ local function updateMinion(u, dt)
         return
     end
     if u.moveTarget ~= nil then
-        moveToward(u, u.moveTarget.x, u.moveTarget.z, dt)
+        stepMove(u, u.moveTarget.x, u.moveTarget.z, dt)
         setLoop(u, "run", 0.25)
     end
     autoAttack(u, dt)
@@ -1017,6 +1063,8 @@ local function respawnHero(u)
     SetPosition(u.ent, { x = u.x, y = 0, z = u.z })
     SetHealth(u.ent, u.hp)
     SetRotationY(u.ent, (u.team == BLUE) and 0 or math.pi)
+    u.navPath = nil
+    u.navGoal = nil
 end
 
 local function cleanupUnits(dt)
@@ -1142,6 +1190,13 @@ function on_start(e)
         spawnStructure("nexus", team, MAP.base[team].x, MAP.base[team].z)
         for _, t in ipairs(MAP.towers[team]) do
             spawnStructure("tower", team, t.x, t.z)
+        end
+    end
+    -- 塔/水晶是脚本生成的结构体（不在 sr_map.glb 里），单独写进导航网格当障碍。
+    for _, team in ipairs({ BLUE, RED }) do
+        NavBlock(MAP.base[team].x, MAP.base[team].z, 3.0, false)
+        for _, t in ipairs(MAP.towers[team]) do
+            NavBlock(t.x, t.z, 2.0, false)
         end
     end
     waveTimer = FIRST_WAVE
