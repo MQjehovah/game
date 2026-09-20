@@ -1886,6 +1886,11 @@ function on_update(e, dt)
             cmd = NetCommand()
         end
         if LOBBY.phase ~= "match" then
+            -- 未连上服务器时不要发请求（Rpc 会被丢弃），显示“连接中”。
+            if GetVar("netConnected") ~= 1 then
+                updateCameraFollow(dt)
+                return
+            end
             LOBBY.refreshT = LOBBY.refreshT - dt
             if LOBBY.refreshT <= 0 then LOBBY.refreshT = 1.0; Rpc("room.list") end
             lobbyKeyInput()
@@ -2376,6 +2381,10 @@ local function drawLobby()
     local vh = (vp and vp.h) or VH
     DrawRect(0, 0, vw, vh, 0.02, 0.03, 0.05, 0.94)
     DrawText("NeonMOBA 大厅", vw * 0.5, 56, 30, 0.95, 0.82, 0.35, 1, true, true)
+    if GetVar("netConnected") ~= 1 then
+        DrawText("连接服务器中…", vw * 0.5, vh * 0.5, 22, 0.9, 0.9, 0.9, 1, true, true)
+        return
+    end
     local m = InputMousePos()
     local click = m ~= nil and InputMousePressed("left")
     local function button(x, y, w, h, label)

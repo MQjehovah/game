@@ -627,6 +627,8 @@ void GameServer::SetupRpc() {
         }
         if (code.empty()) code = "R0001";
         if (Client* c = ClientById(clientId)) c->room = code;
+        NEON_LOG_INFO("server: room.create client=%llu -> %s",
+                      static_cast<unsigned long long>(clientId), code.c_str());
         core::Json reply;
         reply.type_ = core::Json::Type::Object;
         putStr(reply, "room", code);

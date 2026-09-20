@@ -409,6 +409,7 @@ assetMgr_.SetTextureBakeDir(".neon/imported");
         // Spectators bypass the lobby; players enter it.
         runtime_.GameVars().Set("netRole",
                                 script::Value::Str(cfg_.spectate ? "spectate" : "client"));
+        runtime_.GameVars().Set("netConnected", script::Value::Num(0));
         if (SmokeActive()) clientInput_.SetForceMove(true);
         if (!StartNetwork()) {
             CleanupUnpackedDir();
@@ -708,6 +709,7 @@ bool PlayerApp::StartNetwork() {
                      "client: reliable channel to %s:%u timed out",
                      cfg_.connectHost.c_str(), cfg_.connectPort);
         connectedLost_ = true;
+        runtime_.GameVars().Set("netConnected", script::Value::Num(0));
     });
 
     // T6.6 v0 anonymous login: the FIRST network step. The server accepts any
@@ -767,6 +769,7 @@ void PlayerApp::OnClientMessage(const net::DecodedMessage& msg) {
             const net::MsgWelcome& w = std::get<net::MsgWelcome>(msg.payload);
             welcomed_ = true;
             runtime_.GameVars().Set("myClientId", script::Value::Num(static_cast<double>(w.clientId)));
+            runtime_.GameVars().Set("netConnected", script::Value::Num(1));
             NEON_LOG_CAT(neon::core::LogCategory::Net, neon::core::LogLevel::Info,
                          "client: welcomed as client id=%llu (server tick %u)",
                          static_cast<unsigned long long>(w.clientId), w.tick);
