@@ -386,6 +386,7 @@ struct ProjectContext {
     std::map<std::string, std::string> packFiles;
     std::string manifestText;        // normalized game.json (GameManifest::ToJson)
     std::string manifestStartScene;  // startScene from game.json ("" when unparsed)
+    std::string manifestTitle;       // title from game.json ("" when unparsed)
     bool manifestOk = false;
     bool syntaxCheck = true;
     std::set<std::string> walkedScenes; // scene virtual paths already validated
@@ -638,9 +639,10 @@ void ValidateInto(const PackConfig& cfg, ProjectContext& pc) {
                 r.errors.push_back("game.json: " + mres.Error());
             } else {
                 const scene::GameManifest& m = mres.Value();
-                pc.manifestText = core::JsonWriter::Write(m.ToJson());
-                pc.manifestOk = true;
-                pc.manifestStartScene = m.startScene;
+    pc.manifestText = core::JsonWriter::Write(m.ToJson());
+    pc.manifestOk = true;
+    pc.manifestTitle = m.title;
+    pc.manifestStartScene = m.startScene;
             }
         }
     }
@@ -1041,6 +1043,17 @@ PackageReport PackProject(const PackConfig& cfg) {
                                      "/neon_game.exe'");
             } else {
                 r.playerPath = cfg.outDir + "/neon_game.exe";
+                // Also copy under the game's title (e.g. "NeonMOBA.exe") so
+                // double-clicking the obviously-named exe runs the game; the
+                // player auto-loads game.pack next to it.
+                std::string safe;
+                for (char c : pc.manifestTitle) {
+                    if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+                        (c >= '0' && c <= '9') || c == '_' || c == '-')
+                        safe += c;
+                }
+                if (!safe.empty() && safe != "neon_game")
+                    WriteFileBytes(cfg.outDir + "/" + safe + ".exe", exeBytes);
             }
         }
     }

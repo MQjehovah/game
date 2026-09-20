@@ -49,3 +49,5 @@ neon_editor_imgui.ini
 projects/forest/assets/models/island_tree_01/island_tree_01.bin
 projects/showcase/assets/models/island_tree_01/island_tree_01.bin
 __pycache__/
+
+dist/

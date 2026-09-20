@@ -4,11 +4,44 @@
 #include <string>
 #include <utility>
 
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
+
 #include "neon/core/config.hpp"
 #include "neon/core/crash.hpp"
 #include "player.hpp"
 
 namespace {
+
+// Directory of the running executable (double-click launches from Explorer,
+// so the CWD is not the game folder).
+std::string ExeDir() {
+#if defined(_WIN32)
+    char buf[MAX_PATH];
+    const DWORD n = GetModuleFileNameA(nullptr, buf, MAX_PATH);
+    std::string p(buf, n > 0 ? n : 0);
+#else
+    char buf[4096];
+    const ssize_t n = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
+    std::string p = n > 0 ? std::string(buf, static_cast<size_t>(n)) : std::string();
+#endif
+    const size_t s = p.find_last_of("/\\");
+    return s == std::string::npos ? std::string(".") : p.substr(0, s);
+}
+
+bool FileExists(const std::string& p) {
+    if (FILE* f = std::fopen(p.c_str(), "rb")) {
+        std::fclose(f);
+        return true;
+    }
+    return false;
+}
 
 void PrintHelp() {
     std::printf(
@@ -120,6 +153,13 @@ int main(int argc, char** argv) {
         cfg.sceneOverride.clear();
     }
 
+    if (cfg.packPath.empty() && cfg.looseScenePath.empty()) {
+        // Double-click launch: run a game.pack sitting next to the executable
+        // (or in the current directory) without needing --pack.
+        const std::string beside = ExeDir() + "/game.pack";
+        if (FileExists(beside)) cfg.packPath = beside;
+        else if (FileExists("game.pack")) cfg.packPath = "game.pack";
+    }
     if (cfg.packPath.empty() && cfg.looseScenePath.empty()) {
         std::fprintf(stderr, "neon_game: no --pack (or --scene <file>) given (see --help)\n");
         return 1;
