@@ -900,19 +900,21 @@ local function updateHeroControl(h, dt)
         return
     end
     autoAttack(h, dt)
-    if h.moveTarget ~= nil then
-        -- 有攻击目标时，进入射程立即停手（远程不贴脸），交给 autoAttack 输出。
-        local tgt = h.target
-        if tgt ~= nil and not tgt.dead and
-            dist(h.x, h.z, tgt.x, tgt.z) <= h.range + tgt.radius then
+    -- 只有"点击敌人"下达的攻击目标才追击/停手；autoAttack 自动锁定的目标不影响移动。
+    if h.commandTarget and (h.target == nil or h.target.dead) then h.commandTarget = nil end
+    if h.commandTarget and h.target ~= nil and not h.target.dead then
+        local t = h.target
+        if dist(h.x, h.z, t.x, t.z) > h.range + t.radius then
+            h.moveTarget = { x = t.x, z = t.z }
+        else
             h.moveTarget = nil
             h.navPath = nil
-            setLoop(h, "idle1", 0.2)
-        else
-            local arrived = stepMove(h, h.moveTarget.x, h.moveTarget.z, dt)
-            if arrived then h.moveTarget = nil; h.navPath = nil end
-            setLoop(h, "run", 0.15)
         end
+    end
+    if h.moveTarget ~= nil then
+        local arrived = stepMove(h, h.moveTarget.x, h.moveTarget.z, dt)
+        if arrived then h.moveTarget = nil; h.navPath = nil end
+        setLoop(h, "run", 0.15)
     else
         setLoop(h, "idle1", 0.2)
     end
@@ -941,17 +943,12 @@ local function updatePlayer(dt)
         end
         if best ~= nil then
             h.target = best
-            -- 远程目标：进入射程就停手输出，不跑到脸上。
-            if dist(h.x, h.z, best.x, best.z) > h.range + best.radius then
-                h.moveTarget = { x = best.x, z = best.z }
-            else
-                h.moveTarget = nil
-                h.navPath = nil
-            end
+            h.commandTarget = true
         else
             local g = groundPick(m.x, m.y)
             if g ~= nil then
                 h.target = nil
+                h.commandTarget = false
                 h.moveTarget = { x = g.x, z = g.z }
             end
         end
