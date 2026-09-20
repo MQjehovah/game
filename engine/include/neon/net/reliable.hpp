@@ -41,10 +41,10 @@ namespace neon::net {
 // Per-channel reliability tuning. Times are in milliseconds and driven by the
 // app's clock (deterministic fake clocks in tests).
 struct ReliableConfig {
-    uint16_t windowSize = 64;      // max in-flight unacked frames
+    uint16_t windowSize = 256;     // max in-flight unacked frames (laggy clients)
+    uint64_t timeoutMs = 8000;     // fail the channel if a frame is unacked this long
     uint16_t ackBits = 32;         // MsgAck bitmap entries (<= 32)
     uint64_t retransmitMs = 200;   // resend frames unacked for this long
-    uint64_t timeoutMs = 3000;     // fail the channel if a frame is unacked this long
     uint64_t ackIntervalMs = 50;   // min gap between acks emitted by Tick
     uint16_t maxFrameBytes = 1200; // reject larger frames (MTU cap)
 };

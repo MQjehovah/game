@@ -110,7 +110,7 @@ public:
 #endif
         uint64_t rngSeed = 20260821u;    // fixed: the sim is reproducible
         uint64_t clientTimeoutMs = 5000; // disconnect a client silent this long
-        uint32_t snapshotEveryTicks = 1; // broadcast a snapshot every N fixed ticks
+        uint32_t snapshotEveryTicks = 2; // broadcast a snapshot every N fixed ticks
         int maxClients = 64;
         // P2-4 anti-cheat: max inputs per second per client, and how many
         // violations before the client is kicked + banned.
