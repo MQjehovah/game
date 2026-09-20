@@ -353,7 +353,8 @@ public:
     void SpawnProjectile(const math::Vec3& pos, const math::Vec3& dir, float speed, float damage,
                          float life, ecs::Entity caster = {}, float range = 0.0f,
                          float hitRadius = 0.8f,
-                         const std::vector<SkillStatus>& statuses = {});
+                         const std::vector<SkillStatus>& statuses = {},
+                         const gfx::Color& color = {1.0f, 1.0f, 1.0f, 1.0f});
 
     // Spatial overlap queries (script-facing). Return every SceneHealth entity
     // with hp > 0 whose position lies inside the sphere / yaw-oriented box,

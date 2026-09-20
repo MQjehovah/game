@@ -275,7 +275,22 @@ Value NativeSpawnProjectile(IScriptHost& host, void* user) {
             }
         }
     }
-    ctx->spawnProjectile(pos, dir, speed, damage, life, caster, range, hitRadius, statuses);
+    // Optional 10th arg: the fireball tint as a {r,g,b,a} table (defaults to
+    // white). Lets skills/attacks read as distinct projectiles.
+    gfx::Color color{1.0f, 1.0f, 1.0f, 1.0f};
+    if (host.ArgCount() >= 10) {
+        const Value& cArg = host.GetArg(9);
+        if (cArg.type == Value::Type::Table && cArg.table) {
+            for (const auto& f : cArg.table->fields) {
+                if (f.second.type != Value::Type::Number) continue;
+                if (f.first == "r") color.r = static_cast<float>(f.second.number);
+                else if (f.first == "g") color.g = static_cast<float>(f.second.number);
+                else if (f.first == "b") color.b = static_cast<float>(f.second.number);
+                else if (f.first == "a") color.a = static_cast<float>(f.second.number);
+            }
+        }
+    }
+    ctx->spawnProjectile(pos, dir, speed, damage, life, caster, range, hitRadius, statuses, color);
     return Value::Nil();
 }
 

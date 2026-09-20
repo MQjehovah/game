@@ -17,7 +17,8 @@ namespace neon::scene {
 
 void ProjectileSystem::Spawn(const math::Vec3& pos, const math::Vec3& dir, float speed,
                              float damage, float life, ecs::Entity caster, float range,
-                             float hitRadius, const std::vector<SkillStatus>& statuses) {
+                             float hitRadius, const std::vector<SkillStatus>& statuses,
+                             const gfx::Color& color) {
     Projectile p;
     p.pos = pos;
     p.dir = dir.LengthSq() > 1e-6f ? dir.Normalized() : math::Vec3{0, 0, 1};
@@ -28,6 +29,7 @@ void ProjectileSystem::Spawn(const math::Vec3& pos, const math::Vec3& dir, float
     p.range = range;
     p.hitRadius = hitRadius;
     p.statuses = statuses;
+    p.color = color;
     projectiles_.push_back(p);
 }
 
@@ -138,6 +140,7 @@ void ProjectileSystem::Draw(gfx::Renderer& renderer) {
     gfx::Material fmat = gfx::Material::Lit({}, gfx::Color::White, 8.0f);
     fmat.emissiveIntensity = 2.5f;
     for (const Projectile& p : projectiles_) {
+        fmat.tint = p.color;
         renderer.DrawMesh(fireballMesh_, fmat, math::Mat4::Translation(p.pos));
     }
 }

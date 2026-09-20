@@ -771,7 +771,8 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     scriptCtx_.spawnProjectile = [this](const math::Vec3& pos, const math::Vec3& dir, float speed,
                                         float damage, float life, ecs::Entity caster, float range,
                                         float hitRadius,
-                                        const std::vector<script::SkillStatusData>& statuses) {
+                                        const std::vector<script::SkillStatusData>& statuses,
+                                        const gfx::Color& color) {
         std::vector<scene::SkillStatus> sceneStatuses;
         sceneStatuses.reserve(statuses.size());
         for (const script::SkillStatusData& s : statuses) {
@@ -782,7 +783,8 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
             st.tickInterval = s.tickInterval;
             sceneStatuses.push_back(st);
         }
-        SpawnProjectile(pos, dir, speed, damage, life, caster, range, hitRadius, sceneStatuses);
+        SpawnProjectile(pos, dir, speed, damage, life, caster, range, hitRadius, sceneStatuses,
+                        color);
     };
 
     // Lua is the canonical backend (the editor's debugger targets it); a
@@ -875,8 +877,9 @@ void GameRuntime::EmitParticles(const gfx::EmitterConfig& cfg) {
 // live entirely inside ProjectileSystem).
 void GameRuntime::SpawnProjectile(const math::Vec3& pos, const math::Vec3& dir, float speed,
                                   float damage, float life, ecs::Entity caster, float range,
-                                  float hitRadius, const std::vector<SkillStatus>& statuses) {
-    projectiles_.Spawn(pos, dir, speed, damage, life, caster, range, hitRadius, statuses);
+                                  float hitRadius, const std::vector<SkillStatus>& statuses,
+                                  const gfx::Color& color) {
+    projectiles_.Spawn(pos, dir, speed, damage, life, caster, range, hitRadius, statuses, color);
 }
 
 void GameRuntime::Stop() {

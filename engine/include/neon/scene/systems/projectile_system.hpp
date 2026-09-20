@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "neon/ecs/world.hpp"
+#include "neon/gfx/color.hpp"
 #include "neon/gfx/mesh.hpp"
 #include "neon/gfx/particles.hpp"
 #include "neon/math/vec3.hpp"
@@ -33,11 +34,13 @@ public:
         float hitRadius = 0.8f;
         ecs::Entity caster;    // never damaged by its own projectile
         std::vector<SkillStatus> statuses; // applied to the hit target
+        gfx::Color color{1.0f, 1.0f, 1.0f, 1.0f}; // fireball tint (team/skill)
     };
 
     void Spawn(const math::Vec3& pos, const math::Vec3& dir, float speed, float damage,
                float life, ecs::Entity caster, float range, float hitRadius,
-               const std::vector<SkillStatus>& statuses);
+               const std::vector<SkillStatus>& statuses,
+               const gfx::Color& color = {1.0f, 1.0f, 1.0f, 1.0f});
     void Tick(float dt, ecs::World& world, gfx::ParticleSystem& particles);
     // Renders every in-flight projectile (lazily builds the shared fireball
     // mesh); no-op when none are active.

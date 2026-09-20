@@ -680,6 +680,7 @@ end
 -- 投射物 / AoE
 -- ==========================================================================
 local function spawnProjectile(owner, x, z, dirx, dirz, opts)
+    local col = opts.color or TEAM_COLOR[owner.team]
     projectiles[#projectiles + 1] = {
         team = owner.team, owner = owner, x = x, z = z,
         dx = dirx, dz = dirz, speed = opts.speed or 16,
@@ -687,13 +688,20 @@ local function spawnProjectile(owner, x, z, dirx, dirz, opts)
         radius = opts.radius or 0.8, range = opts.range or 12,
         traveled = 0, pierce = opts.pierce or false,
         status = opts.status, statusDur = opts.statusDur or 2, statusMag = opts.statusMag or 0.3,
-        color = opts.color or TEAM_COLOR[owner.team], trail = 0,
+        color = col, trail = 0,
         showTrail = opts.trail ~= false,
     }
+    -- 枪口/施法闪光（队伍色），让每次出手都有起手反馈
+    EmitParticles({ pos = { x = x + dirx * 0.5, y = 1.1, z = z + dirz * 0.5 }, count = 6,
+        vel = { x = dirx, y = 0.2, z = dirz }, speedMin = 2, speedMax = 5,
+        lifeMin = 0.07, lifeMax = 0.14, sizeStart = 0.5, sizeEnd = 0.05,
+        color = { r = col[1], g = col[2], b = col[3], a = 0.9 },
+        colorEnd = { r = 1, g = 1, b = 1, a = 0 }, additive = true })
     -- 引擎侧火球（自发光球体 + 拖尾 + 命中爆裂），damage=0 仅作视觉；伤害由上面的 Lua 投射物结算
     if owner.ent ~= nil then
         SpawnProjectile({ x = x, y = 1.1, z = z }, { x = dirx, y = 0, z = dirz },
-            opts.speed or 16, 0, opts.life or 2.0, owner.ent, opts.range or 12, 0.8)
+            opts.speed or 16, 0, opts.life or 2.0, owner.ent, opts.range or 12, 0.8,
+            nil, { r = col[1], g = col[2], b = col[3], a = 1 })
     end
 end
 
@@ -849,12 +857,18 @@ local function autoAttack(u, dt)
     u.atkTimer = u.atkTimer - dt
     if u.range <= 0 then return end
     local tgt = u.target
-    if tgt == nil or tgt.dead or dist(u.x, u.z, tgt.x, tgt.z) > u.range + tgt.radius then
-        tgt = nearestEnemy(u, u.range + 0.5, u.kind == "tower")
-        u.target = tgt
+    if u == playerHero then
+        -- 玩家英雄不自动索敌/自动攻击：只打玩家点选（commandTarget）的目标。
+        if tgt == nil or tgt.dead then return end
+        if dist(u.x, u.z, tgt.x, tgt.z) > u.range + tgt.radius then return end
+    else
+        if tgt == nil or tgt.dead or dist(u.x, u.z, tgt.x, tgt.z) > u.range + tgt.radius then
+            tgt = nearestEnemy(u, u.range + 0.5, u.kind == "tower")
+            u.target = tgt
+        end
+        if tgt == nil then return end
+        if dist(u.x, u.z, tgt.x, tgt.z) > u.range + tgt.radius then return end
     end
-    if tgt == nil then return end
-    if dist(u.x, u.z, tgt.x, tgt.z) > u.range + tgt.radius then return end
     if u.atkTimer > 0 then return end
     u.atkTimer = u.atkPeriod
     playAction(u, "attack1", math.min(0.45, u.atkPeriod))
@@ -1052,6 +1066,12 @@ local function updateProjectiles(dt)
             end
         end
         if hit and not p.pierce then
+            -- 命中爆点（技能/普攻都可见）
+            EmitParticles({ pos = { x = p.x, y = 1.0, z = p.z }, count = 12, vel = { x = 0, y = 1, z = 0 },
+                speedMin = 2, speedMax = 5.5, lifeMin = 0.12, lifeMax = 0.28,
+                sizeStart = 0.55, sizeEnd = 0.04,
+                color = { r = p.color[1], g = p.color[2], b = p.color[3], a = 1 },
+                colorEnd = { r = 1, g = 0.9, b = 0.5, a = 0 }, additive = true })
             table.remove(projectiles, i)
         elseif p.life <= 0 or p.traveled >= p.range then
             table.remove(projectiles, i)

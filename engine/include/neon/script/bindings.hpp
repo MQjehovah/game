@@ -9,6 +9,7 @@
 #include "neon/core/json.hpp"
 #include "neon/ecs/world.hpp"
 #include "neon/gfx/backend.hpp"
+#include "neon/gfx/color.hpp"
 #include "neon/gfx/particles.hpp"
 #include "neon/script/input_map.hpp"
 #include "neon/math/quat.hpp"
@@ -127,7 +128,7 @@ struct ScriptContext {
     std::function<void(ecs::Entity, float)> sceneSetHp;
     std::function<void(const math::Vec3& pos, const math::Vec3& dir, float speed, float damage,
                        float life, ecs::Entity caster, float range, float hitRadius,
-                       const std::vector<SkillStatusData>& statuses)>
+                       const std::vector<SkillStatusData>& statuses, const gfx::Color& color)>
         spawnProjectile;
     // Status-effect hooks (M2 combat core): the bindings pass numeric ids
     // directly (name -> id resolution lives in the Lua Gameplay library).
