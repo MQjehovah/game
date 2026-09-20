@@ -16,6 +16,10 @@ local MAP = {
         [BLUE] = { { x = 0, z = -46 }, { x = 0, z = -30 } },
         [RED] = { { x = 0, z = 46 }, { x = 0, z = 30 } },
     },
+    inhibitors = {
+        [BLUE] = { { x = 0, z = -62 } },
+        [RED] = { { x = 0, z = 62 } },
+    },
 }
 
 -- 草丛（视野遮挡）。位置为世界坐标近似值。
@@ -60,6 +64,8 @@ local heroes = {}      -- 英雄
 local structures = {}  -- 塔 / 水晶
 local projectiles = {}
 local groundAoes = {}
+local neutralRespawns = {}                 -- 野怪刷新计时 { cfg, t }
+local inhibDown = { [BLUE] = false, [RED] = false } -- 兵营被破 -> 对方出超级兵
 local waveTimer = FIRST_WAVE
 local waveN = 0
 local gameOver, winner = false, nil
@@ -253,6 +259,7 @@ local function spawnHero(name, team)
 end
 
 local MINION_DEFS = {
+    super = { hp = 1300, dmg = 65, range = 2.2, speed = 2.6, radius = 0.7, h = 1.5, period = 1.4 },
     melee = { hp = 450, dmg = 22, range = 1.8, speed = 3.2, radius = 0.5, h = 1.1, period = 1.1 },
     caster = { hp = 300, dmg = 26, range = 6.5, speed = 3.0, radius = 0.45, h = 1.1, period = 1.2, ranged = true },
     siege = { hp = 800, dmg = 45, range = 7.5, speed = 2.7, radius = 0.7, h = 1.4, period = 1.6, ranged = true },
@@ -262,7 +269,9 @@ local function spawnMinion(kind, team, x, z)
     -- 僵持局小兵会无限累积，separateUnits 是 O(n²)：设上限避免帧率崩塌。
     if #units >= 140 then return nil end
     local d = MINION_DEFS[kind]
-    local prefab = "minion_" .. kind .. (team == BLUE and "_blue" or "_red")
+    -- 超级兵复用攻城兵模型（没有单独的 super 资产）。
+    local model = (kind == "super") and "siege" or kind
+    local prefab = "minion_" .. model .. (team == BLUE and "_blue" or "_red")
     local ent = SpawnPrefab(prefab, { x = x, y = 0, z = z })
     if ent == nil then return nil end
     local u = {
@@ -282,7 +291,10 @@ end
 
 local function spawnStructure(kind, team, x, z)
     local suffix = (team == BLUE) and "blue" or "red"
-    local prefab = (kind == "nexus") and ("struct_nexus_" .. suffix) or ("struct_tower_" .. suffix)
+    local prefab
+    if kind == "nexus" then prefab = "struct_nexus_" .. suffix
+    elseif kind == "inhibitor" then prefab = "struct_inhibitor_" .. suffix
+    else prefab = "struct_tower_" .. suffix end
     local ent = SpawnPrefab(prefab, { x = x, y = 0, z = z })
     if ent == nil then return nil end
     local u
@@ -290,6 +302,15 @@ local function spawnStructure(kind, team, x, z)
         u = {
             id = nid(), ent = ent, kind = "nexus", team = team, name = "水晶",
             x = x, z = z, h = 5.2, radius = 2.2, hp = NEXUS_HP, maxHp = NEXUS_HP,
+            ad = 0, range = 0, speed = 0, atkPeriod = 1, atkTimer = 0,
+            armor = 20, mr = 20,
+            buffs = {}, target = nil, anim = nil, actionT = 0, dead = false,
+        }
+        SetPosition(ent, { x = x, y = 0, z = z })
+    elseif kind == "inhibitor" then
+        u = {
+            id = nid(), ent = ent, kind = "inhibitor", team = team, name = "兵营",
+            x = x, z = z, h = 3.2, radius = 1.5, hp = 1500, maxHp = 1500,
             ad = 0, range = 0, speed = 0, atkPeriod = 1, atkTimer = 0,
             armor = 20, mr = 20,
             buffs = {}, target = nil, anim = nil, actionT = 0, dead = false,
@@ -313,12 +334,12 @@ end
 
 -- 野区营地（中立单位，team=0）。
 local JUNGLE = {
-    { key = "red", name = "红BUFF", prefab = "unit_sru_red", x = -14, z = -22, hp = 2300, ad = 80, range = 2.0, radius = 0.8, h = 1.6, gold = 100, xp = 110, buff = "red" },
-    { key = "bluecamp", name = "蓝BUFF", prefab = "unit_sru_gromp", x = -20, z = -34, hp = 1800, ad = 60, range = 2.2, radius = 0.9, h = 1.8, gold = 80, xp = 90, buff = "blue" },
-    { key = "wolf", name = "魔沼蛙", prefab = "unit_sru_murkwolf", x = -11, z = -30, hp = 1300, ad = 45, range = 2.0, radius = 0.6, h = 1.2, gold = 60, xp = 70, buff = "" },
-    { key = "crab", name = "迅捷蟹", prefab = "unit_sru_crab", x = -9, z = 0, hp = 1200, ad = 40, range = 2.0, radius = 0.6, h = 1.0, gold = 55, xp = 60, buff = "" },
-    { key = "dragon", name = "巨龙", prefab = "unit_sru_dragon", x = 13, z = -2, hp = 3800, ad = 110, range = 6.0, radius = 1.6, h = 3.0, gold = 150, xp = 200, buff = "dragon" },
-    { key = "baron", name = "纳什男爵", prefab = "unit_sru_baron", x = -13, z = 3, hp = 5200, ad = 140, range = 6.0, radius = 1.8, h = 3.4, gold = 200, xp = 280, buff = "baron" },
+    { key = "red", name = "红BUFF", prefab = "unit_sru_red", x = -14, z = -22, hp = 2300, ad = 80, range = 2.0, radius = 0.8, h = 1.6, gold = 100, xp = 110, buff = "red", respawn = 120 },
+    { key = "bluecamp", name = "蓝BUFF", prefab = "unit_sru_gromp", x = -20, z = -34, hp = 1800, ad = 60, range = 2.2, radius = 0.9, h = 1.8, gold = 80, xp = 90, buff = "blue", respawn = 120 },
+    { key = "wolf", name = "魔沼蛙", prefab = "unit_sru_murkwolf", x = -11, z = -30, hp = 1300, ad = 45, range = 2.0, radius = 0.6, h = 1.2, gold = 60, xp = 70, buff = "", respawn = 120 },
+    { key = "crab", name = "迅捷蟹", prefab = "unit_sru_crab", x = -9, z = 0, hp = 1200, ad = 40, range = 2.0, radius = 0.6, h = 1.0, gold = 55, xp = 60, buff = "", respawn = 120 },
+    { key = "dragon", name = "巨龙", prefab = "unit_sru_dragon", x = 13, z = -2, hp = 3800, ad = 110, range = 6.0, radius = 1.6, h = 3.0, gold = 150, xp = 200, buff = "dragon", respawn = 300 },
+    { key = "baron", name = "纳什男爵", prefab = "unit_sru_baron", x = -13, z = 3, hp = 5200, ad = 140, range = 6.0, radius = 1.8, h = 3.4, gold = 200, xp = 280, buff = "baron", respawn = 360 },
 }
 
 local function spawnNeutral(cfg)
@@ -330,6 +351,7 @@ local function spawnNeutral(cfg)
         hp = cfg.hp, maxHp = cfg.hp, ad = cfg.ad, range = cfg.range, speed = 0,
         atkPeriod = 1.6, atkTimer = 0, armor = 15, mr = 15, buffs = {}, target = nil,
         home = { x = cfg.x, z = cfg.z }, gold = cfg.gold, xpReward = cfg.xp, campBuff = cfg.buff,
+        campKey = cfg.key, cfg = cfg, respawn = cfg.respawn or 120,
         anim = nil, actionT = 0, dying = 0, dead = false,
     }
     units[#units + 1] = u
@@ -501,8 +523,17 @@ local function killUnit(u, source)
     u.dead = true
     u.hp = 0
     SetHealth(u.ent, 0)
-    -- 塔被拆掉后放行该处的导航障碍，后续兵线可直推。
+    -- 塔/兵营被拆掉后放行该处的导航障碍，后续兵线可直推。
     if u.kind == "tower" then NavBlock(u.x, u.z, 2.0, true) end
+    if u.kind == "inhibitor" then
+        if NavBlock ~= nil then NavBlock(u.x, u.z, 1.6, true) end
+        -- 兵营被破：对方基地开始出超级兵。
+        inhibDown[u.team] = true
+        sfx("tower", 0.3)
+        killFeed[#killFeed + 1] = { killer = (source ~= nil and source.name) or "?",
+            victim = u.name, col = TEAM_COLOR[3 - u.team], t = elapsed, notice = true }
+        if #killFeed > 6 then table.remove(killFeed, 1) end
+    end
     if u.isHero then
         sfx("kill", 0.4)
     elseif u.kind == "minion" and playerHero ~= nil and dist(u.x, u.z, playerHero.x, playerHero.z) < 22 then
@@ -550,20 +581,34 @@ local function killUnit(u, source)
         if #killFeed > 6 then table.remove(killFeed, 1) end
     elseif u.kind == "neutral" then
         sfx("monster_die", 0.15)
+        if u.cfg ~= nil then neutralRespawns[#neutralRespawns + 1] = { cfg = u.cfg, t = u.respawn or 120 } end
         if source ~= nil and source.isHero then
             local g = u.gold or 60
             grantXp(source, u.xpReward or 60)
             gainGold(source, g)
+            source.buffTimers = source.buffTimers or {}
+            local dur = 120
             if u.campBuff == "red" then
                 applyStatusLua(source, "adbuff", 120, 1.15, source)
             elseif u.campBuff == "blue" then
                 applyStatusLua(source, "msbuff", 120, 1.1, source)
             elseif u.campBuff == "dragon" then
-                applyStatusLua(source, "adbuff", 600, 1.08, source)
+                dur = 120
+                applyStatusLua(source, "adbuff", dur, 1.08, source)
             elseif u.campBuff == "baron" then
-                applyStatusLua(source, "adbuff", 180, 1.2, source)
-                applyStatusLua(source, "msbuff", 180, 1.2, source)
+                dur = 180
+                applyStatusLua(source, "adbuff", dur, 1.2, source)
+                applyStatusLua(source, "msbuff", dur, 1.2, source)
+            else
+                dur = 0
             end
+            if dur > 0 then source.buffTimers[u.campBuff] = dur end
+        end
+        -- 大龙/小龙击杀播报
+        if u.campKey == "dragon" or u.campKey == "baron" then
+            killFeed[#killFeed + 1] = { killer = (source ~= nil and source.name) or "?",
+                victim = u.name, col = { 1.0, 0.85, 0.35 }, t = elapsed, notice = true }
+            if #killFeed > 6 then table.remove(killFeed, 1) end
         end
     end
 
@@ -837,6 +882,13 @@ local function tickBuffs(u, dt)
         if b[k] and b[k].t > 0 then
             b[k].t = b[k].t - dt
             if b[k].t <= 0 then b[k] = nil end
+        end
+    end
+    -- 野怪增益计时（HUD 显示剩余时间）
+    if u.buffTimers ~= nil then
+        for k, v in pairs(u.buffTimers) do
+            v = v - dt
+            if v <= 0 then u.buffTimers[k] = nil else u.buffTimers[k] = v end
         end
     end
 end
@@ -1761,8 +1813,8 @@ local function separateUnits(dt)
             for j = i + 1, n do
                 local b = units[j]
                 if not b.dead then
-                    local aStatic = (a.kind == "tower" or a.kind == "nexus")
-                    local bStatic = (b.kind == "tower" or b.kind == "nexus")
+                    local aStatic = (a.kind == "tower" or a.kind == "nexus" or a.kind == "inhibitor")
+                    local bStatic = (b.kind == "tower" or b.kind == "nexus" or b.kind == "inhibitor")
                     if not (aStatic and bStatic) then
                         local dx, dz = b.x - a.x, b.z - a.z
                         local d2 = dx * dx + dz * dz
@@ -1842,6 +1894,28 @@ local function updateWaves(dt)
         for _, team in ipairs({ BLUE, RED }) do
             local p = MAP.spawn[team]
             spawnMinion("siege", team, p.x, p.z)
+        end
+    end
+    -- 对方兵营被破 -> 我方每波额外出一只超级兵。
+    for _, team in ipairs({ BLUE, RED }) do
+        if inhibDown[3 - team] then
+            local p = MAP.spawn[team]
+            spawnMinion("super", team, p.x, p.z)
+        end
+    end
+end
+
+-- 野怪刷新：击杀后按 respawn 时间重新出现（红/蓝/河蟹 120s，小龙 300s，大龙 360s）。
+local function updateJungle(dt)
+    local i = 1
+    while i <= #neutralRespawns do
+        local r = neutralRespawns[i]
+        r.t = r.t - dt
+        if r.t <= 0 then
+            spawnNeutral(r.cfg)
+            table.remove(neutralRespawns, i)
+        else
+            i = i + 1
         end
     end
 end
@@ -2016,12 +2090,18 @@ function on_start(e)
         for _, t in ipairs(MAP.towers[team]) do
             spawnStructure("tower", team, t.x, t.z)
         end
+        for _, b in ipairs(MAP.inhibitors[team]) do
+            spawnStructure("inhibitor", team, b.x, b.z)
+        end
     end
-    -- 塔/水晶是脚本生成的结构体（不在 sr_map.glb 里），单独写进导航网格当障碍。
+    -- 塔/水晶/兵营是脚本生成的结构体（不在 sr_map.glb 里），单独写进导航网格当障碍。
     for _, team in ipairs({ BLUE, RED }) do
         NavBlock(MAP.base[team].x, MAP.base[team].z, 3.0, false)
         for _, t in ipairs(MAP.towers[team]) do
             NavBlock(t.x, t.z, 2.0, false)
+        end
+        for _, b in ipairs(MAP.inhibitors[team]) do
+            NavBlock(b.x, b.z, 1.6, false)
         end
     end
     waveTimer = FIRST_WAVE
@@ -2215,6 +2295,7 @@ function on_update(e, dt)
     updateProjectiles(dt)
     updateGroundAoes(dt)
     updateWaves(dt)
+    updateJungle(dt)
     updateCameraFollow(dt)
     updateVision()
     updatePlates()
@@ -2376,6 +2457,19 @@ local function drawHud()
     DrawText(string.format("KDA %d/%d", h.kills, h.deaths) ..
         (((h.streak or 0) > 1) and ("   连杀 x" .. h.streak) or ""),
         infoX + 178, infoY, 15, 0.9, 0.9, 0.9, 1, false, true)
+    -- 野怪增益剩余时间（红/蓝/小龙/大龙）
+    if h.buffTimers ~= nil then
+        local bf = { { "red", "红", 1.0, 0.4, 0.35 }, { "blue", "蓝", 0.4, 0.6, 1.0 },
+                     { "dragon", "小龙", 1.0, 0.6, 0.2 }, { "baron", "大龙", 0.8, 0.45, 1.0 } }
+        for i = 1, #bf do
+            local e = bf[i]
+            local t = h.buffTimers[e[1]]
+            if t ~= nil and t > 0 then
+                DrawText(string.format("%s %.0fs", e[2], math.ceil(t)),
+                    infoX + (i - 1) * 62, infoY + 18, 12, e[3], e[4], e[5], 1, false, true)
+            end
+        end
+    end
     DrawRect(bx - 64, by + 48, 58, 8, 0.05, 0.05, 0.08, 0.9)
     DrawRect(bx - 63, by + 49, 56 * clamp(h.xp / xpForLevel(h.level), 0, 1), 6, 0.85, 0.7, 0.25, 1)
     DrawText("Lv." .. h.level, bx - 35, by + 52, 11, 1, 1, 1, 1, true, true)
