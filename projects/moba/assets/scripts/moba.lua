@@ -70,6 +70,7 @@ local selectIndex = 1
 local selectTime = 0
 local loadingTime = 0
 local kills = { [BLUE] = 0, [RED] = 0 }
+local killFeed = {} -- 击杀播报 {killer, victim, color, t}
 local elapsed = 0
 local netStateTimer = 0
 local ROSTER = {}
@@ -493,6 +494,10 @@ local function killUnit(u, source)
             floatAt(source, "+" .. bounty, true)
         end
         u.streak = 0
+        local kname = (source ~= nil and source.name) or "?"
+        local kcol = TEAM_COLOR[(source ~= nil and source.team) or (3 - u.team)]
+        killFeed[#killFeed + 1] = { killer = kname, victim = u.name, col = kcol, t = elapsed }
+        if #killFeed > 6 then table.remove(killFeed, 1) end
     elseif u.kind == "neutral" then
         sfx("monster_die", 0.15)
         if source ~= nil and source.isHero then
@@ -923,7 +928,30 @@ local function autoAttack(u, dt)
     playAction(u, "attack1", math.min(0.45, u.atkPeriod))
     if u.isHero then sfx("attack", 0.08) elseif u.kind == "tower" then sfx("tower", 0.1) end
     faceTo(u, tgt.x, tgt.z)
-    if u.ranged or u.kind == "tower" then
+    if u.isHero then
+        -- 普攻前摇：起手后 ~0.15/0.22s 才结算，手感更有重量
+        u.swing = u.ranged and 0.22 or 0.15
+        u.swingTarget = tgt
+    elseif u.ranged or u.kind == "tower" then
+        local dx, dz = norm(tgt.x - u.x, tgt.z - u.z)
+        spawnProjectile(u, u.x, u.z, dx, dz, { speed = 26, dmg = u.ad * adMul(u), life = 2.5, radius = 0.8, trail = false })
+    else
+        damage(tgt, u.ad * adMul(u), u)
+    end
+end
+
+-- 普攻前摇结算（英雄）：到点后在射程内出手
+local function updateSwing(u, dt)
+    if u.swing == nil then return end
+    u.swing = u.swing - dt
+    if u.swing > 0 then return end
+    local tgt = u.swingTarget
+    u.swing = nil
+    u.swingTarget = nil
+    if u.dead or tgt == nil or tgt.dead then return end
+    if dist(u.x, u.z, tgt.x, tgt.z) > u.range + tgt.radius + 1.0 then return end
+    faceTo(u, tgt.x, tgt.z)
+    if u.ranged then
         local dx, dz = norm(tgt.x - u.x, tgt.z - u.z)
         spawnProjectile(u, u.x, u.z, dx, dz, { speed = 26, dmg = u.ad * adMul(u), life = 2.5, radius = 0.8, trail = false })
     else
@@ -1801,6 +1829,7 @@ function on_update(e, dt)
         if not u.dead then
             if (u.actionT or 0) > 0 then u.actionT = math.max(0, u.actionT - dt) end
             tickBuffs(u, dt)
+            if u.isHero then updateSwing(u, dt) end
             if u.kind == "minion" then updateMinion(u, dt)
             elseif u.kind == "neutral" then updateNeutral(u, dt)
             elseif u.kind == "tower" then updateTower(u, dt) end
@@ -1984,6 +2013,27 @@ local function drawMinimap(vw)
             local col = TEAM_COLOR[u.team] or { 0.6, 0.6, 0.6 }
             local s = (u.kind == "champion") and 5 or (u.kind == "minion" and 2 or 4)
             DrawRect(mapX(u.x, u.z) - s / 2, mapY(u.x, u.z) - s / 2, s, s, col[1], col[2], col[3], 1)
+        end
+    end
+end
+
+-- 击杀播报（右上，小地图下方）
+local function drawKillFeed()
+    local vp = GetViewportSize()
+    local vw = (vp and vp.w) or VW
+    local y = 200
+    for i = #killFeed, 1, -1 do
+        local f = killFeed[i]
+        local age = elapsed - f.t
+        if age < 6 then
+            local a = math.min(1, (6 - age) / 0.6)
+            local w = 210
+            local x = vw - w - 12
+            DrawRect(x, y, w, 20, 0.05, 0.05, 0.08, 0.65 * a)
+            DrawRect(x, y, 3, 20, f.col[1], f.col[2], f.col[3], a)
+            DrawText(f.killer .. " 击杀 " .. f.victim, x + w / 2 + 2, y + 10, 13,
+                f.col[1], f.col[2], f.col[3], a, true, true)
+            y = y + 22
         end
     end
 end
@@ -2199,6 +2249,7 @@ function on_render()
     drawFloatTexts()
     drawHud()
     drawMinimap(vw)
+    drawKillFeed()
     drawScoreboard()
     drawShop()
 end
