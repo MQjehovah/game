@@ -854,6 +854,13 @@ void PlayerApp::PumpNetwork() {
     for (;;) {
         core::Result<net::RecvPacket> r = clientSock_.RecvFrom(buf, sizeof(buf));
         if (!r.Ok() || r.Value().size == 0) break;
+        // Unreliable snapshot datagrams carry a leading 0xF5 marker (they are
+        // not part of the reliable channel); everything else is a channel frame.
+        if (r.Value().size >= 1 && buf[0] == 0xF5) {
+            core::Result<net::DecodedMessage> dec = codec_.Decode(buf + 1, r.Value().size - 1);
+            if (dec.Ok()) OnClientMessage(dec.Value());
+            continue;
+        }
         clientChan_.OnDatagram(buf, r.Value().size);
     }
     // Monotonic clock in ms (accumulated fixed ticks * 1000); the reliable

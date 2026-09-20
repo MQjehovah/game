@@ -132,6 +132,7 @@ int main(int argc, char** argv) {
         return 2;
     }
     cfg.sceneJsonPath = scenePath; // loose: file path; pack: virtual path ("" ok)
+    cfg.unreliableSnapshots = true; // MOBA: snapshots off the reliable window
     if (cfg.packPath.empty() && scriptsDir.empty()) scriptsDir = ScriptBaseForLooseScene(scenePath);
     cfg.scriptBaseDir = scriptsDir;
 

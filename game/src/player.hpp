@@ -196,6 +196,7 @@ private:
     client::ClientInput clientInput_;      // bridges real input -> prediction + wire
     net::UdpSocket clientSock_;
     net::ReliableChannel clientChan_;
+    net::MessageCodec codec_; // decodes unreliable (0xF5-marked) snapshot datagrams
     net::RpcDispatcher clientRpc_;
     client::ClientSync sync_;              // snapshot buffer + interp + reconcile query
     bool loggedIn_ = false;  // MsgLoginOk received (T6.6 account step done)

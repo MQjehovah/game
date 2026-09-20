@@ -111,6 +111,12 @@ public:
         uint64_t rngSeed = 20260821u;    // fixed: the sim is reproducible
         uint64_t clientTimeoutMs = 5000; // disconnect a client silent this long
         uint32_t snapshotEveryTicks = 2; // broadcast a snapshot every N fixed ticks
+        // Send snapshots UNRELIABLY (0xF5-marked raw datagrams) instead of over
+        // the reliable channel. State snapshots don't need reliability (the next
+        // supersedes a lost one) and keeping them off the reliable window avoids
+        // the data/ack window deadlock that drops slow clients. Off by default
+        // so unit tests keep the deterministic reliable stream.
+        bool unreliableSnapshots = false;
         int maxClients = 64;
         // P2-4 anti-cheat: max inputs per second per client, and how many
         // violations before the client is kicked + banned.

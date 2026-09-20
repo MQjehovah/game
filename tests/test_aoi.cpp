@@ -195,6 +195,7 @@ server::GameServer::Config AoiCfg(const std::string& dir, uint64_t seed) {
 struct AoiClient {
     net::UdpSocket sock;
     net::ReliableChannel chan;
+    net::MessageCodec codec; // decodes unreliable (0xF5-marked) snapshot datagrams
     bool welcomed = false;
     uint64_t clientId = 0;
     std::vector<net::MsgSnapshot> snapshots;
@@ -232,6 +233,11 @@ struct AoiClient {
         for (;;) {
             core::Result<size_t> r = sock.Recv(buf, sizeof(buf));
             if (!r.Ok() || r.Value() == 0) break;
+            if (buf[0] == 0xF5) { // unreliable snapshot datagram
+                core::Result<net::DecodedMessage> dec = codec.Decode(buf + 1, r.Value() - 1);
+                if (dec.Ok()) OnMessage(dec.Value());
+                continue;
+            }
             chan.OnDatagram(buf, r.Value());
         }
         chan.Tick(now);

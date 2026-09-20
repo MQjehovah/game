@@ -1152,6 +1152,24 @@ void GameServer::BroadcastSnapshot(Match& m) {
                 // Still too big (shouldn't happen given the entity math above);
                 // fall through to the fragmentation path.
                 (void)0;
+            } else if (cfg_.unreliableSnapshots) {
+                // Snapshots are state: send them UNRELIABLY (leading 0xF5 marker)
+                // so they never consume the reliable window or acks. Sharing one
+                // reliable window for both data and acks stalled slow clients
+                // (window full -> acks blocked -> mutual timeout).
+                auto frame = codec_.EncodeFrame(
+                    static_cast<uint8_t>(net::MsgType::Snapshot), 0, body);
+                if (frame.Ok()) {
+                    std::vector<uint8_t> pkt;
+                    pkt.reserve(frame.Value().size() + 1);
+                    pkt.push_back(0xF5);
+                    pkt.insert(pkt.end(), frame.Value().begin(), frame.Value().end());
+                    if (sock_.SetPeer(c.addr).Ok()) {
+                        core::Result<size_t> sr = sock_.Send(pkt.data(), pkt.size());
+                        if (sr.Ok() && sr.Value() > 0) c.lastSnapshotTick = snap.tick;
+                    }
+                }
+                continue;
             } else {
                 core::Status st =
                     c.chan.Send(static_cast<uint8_t>(net::MsgType::Snapshot), body);
@@ -1203,9 +1221,9 @@ void GameServer::BroadcastSnapshot(Match& m) {
             continue;
         }
     }
-    // P2-4 anti-cheat: broadcast a deterministic world checksum ~1 Hz (NOT
+    // P2-4 anti-cheat: broadcast a deterministic world checksum ~2 Hz (NOT
     // every tick — that flooded the reliable window and timed clients out).
-    if (m.tick % 60 == 0) {
+    if (m.tick <= 2 || m.tick % 30 == 0) {
         std::stable_sort(items.begin(), items.end(),
                          [](const Item& a, const Item& b) { return a.id < b.id; });
         uint64_t hash = 1469598103934665603ull;  // FNV-1a 64
