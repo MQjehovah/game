@@ -132,10 +132,12 @@ public:
     bool Running() const { return running_; }
     uint16_t Port() const; // bound local UDP port (0 until Start)
     uint32_t ClientCount() const { return static_cast<uint32_t>(clients_.size()); }
-    uint32_t CurrentTick() const { return tick_; }
+    uint32_t CurrentTick() const { return match_ ? match_->tick : 0; }
     // G3-4: the fixed-tick rewind currently applied to hit tests (derived
     // from the most latent live client's RTT). Observability for tests/admin.
-    uint32_t AutoLagCompTicks() const { return runtime_.AutoLagCompTicks(); }
+    uint32_t AutoLagCompTicks() const {
+        return match_ ? match_->runtime.AutoLagCompTicks() : 0;
+    }
     uint64_t ControllerClientId() const;
     // Total anonymous accounts assigned so far (T6.6). A monotonically
     // increasing counter: every accepted MsgLogin bumps it, so it is also the
@@ -145,15 +147,15 @@ public:
     // entity of kind "player" if the scene spawned one, else the first script
     // (CTransformBind) entity, else 0 (clients then focus on the world origin).
     uint64_t ControlledEntityKey();
-    script::GameVars& GameVars() { return runtime_.GameVars(); }
-    ecs::World& World() { return runtime_.World(); }
+    script::GameVars& GameVars() { return match_->runtime.GameVars(); }
+    ecs::World& World() { return match_->runtime.World(); }
 
     // Snapshot replication stats (admin/tests). SnapshotTooBig counts
     // snapshots dropped because they exceeded the ~1200-byte frame cap (see
     // the loop-model comment); SnapshotDrops counts snapshots the reliable
     // channel refused for other reasons (e.g. a client's send window full).
-    uint64_t SnapshotTooBig() const { return snapshotTooBig_; }
-    uint64_t SnapshotDrops() const { return snapshotDrops_; }
+    uint64_t SnapshotTooBig() const { return match_ ? match_->snapshotTooBig : 0; }
+    uint64_t SnapshotDrops() const { return match_ ? match_->snapshotDrops : 0; }
 
     // T6.7 test/demo injection: when non-empty, the controller input comes from
     // this fixed scripted sequence instead of a socket client (the
@@ -161,7 +163,7 @@ public:
     // tick equals the current fixed step drives that step. Ignored once empty
     // (default: the normal v1 client-controller path).
     void SetScriptedInputs(std::vector<ScriptedInput> inputs) {
-        scriptedInputs_ = std::move(inputs);
+        match_->scriptedInputs = std::move(inputs);
     }
 
 private:
@@ -229,28 +231,31 @@ private:
     Config cfg_;
     net::UdpSocket sock_;
     net::MessageCodec codec_; // decodes datagrams from unknown senders (join path)
-    // Microkernel (P-E): owns the replaceable physics/script modules; created
-    // fresh per Start and torn down in Stop (outlives runtime_'s non-owning
-    // service pointers).
-    std::unique_ptr<kernel::Kernel> kernel_;
-    scene::GameRuntime runtime_;
-    // pack VFS (must outlive runtime_): set when Config::packPath is used.
-    std::shared_ptr<io::MountStack> packVfs_;
-    NetInput controllerInput_; // wired into the runtime; fed by the controller client
-    std::vector<ScriptedInput> scriptedInputs_; // T6.7 scripted-controller path
+    // Per-match state (S1: one default match; S2: one Match per room). All the
+    // per-simulation state lives here so several matches can coexist.
+    struct Match {
+        std::unique_ptr<kernel::Kernel> kernel; // physics + script services
+        scene::GameRuntime runtime;
+        std::shared_ptr<io::MountStack> packVfs; // pack VFS (outlives runtime)
+        NetInput controllerInput;                // fed by the controller client
+        std::vector<ScriptedInput> scriptedInputs; // T6.7 scripted-controller path
+        std::unordered_map<uint64_t, uint64_t> entityClientIds; // entity key -> client
+        AoiGrid grid;                            // AOI cell index per broadcast
+        uint32_t tick = 0;
+        double accumulator = 0.0;
+        uint64_t snapshotTooBig = 0; // snapshots dropped for exceeding the cap
+        uint64_t snapshotDrops = 0;  // snapshots dropped for send failures
+        std::string room;            // "" = default match
+    };
+    std::unique_ptr<Match> match_; // default match (S1); room matches added in S2
     std::map<net::NetAddress, Client, NetAddrLess> clients_;
-    // Lobby / single-match state.
     std::set<std::string> startedRooms_; // rooms whose match already began
-    bool matchActive_ = false;           // one match instance at a time
+    bool matchActive_ = false;
     std::string activeRoom_;
     net::RpcDispatcher rpc_;
     // P2-4 anti-cheat: banned accounts / client ids (persisted in-memory).
     std::set<uint64_t> bannedClientIds_;
     std::set<std::string> bannedNames_;
-    // Multi-player ownership: stable entity key -> client id (set by the
-    // scene's BindPlayerToClient inside on_player_join). Drives per-entity
-    // input routing and per-client AOI focus.
-    std::unordered_map<uint64_t, uint64_t> entityClientIds_;
     std::vector<net::NetAddress> pendingRemovals_; // channel-timeout disconnects
     net::NetAddress controllerAddr_;
     uint64_t nextClientId_ = 0;
@@ -259,13 +264,8 @@ private:
     // is bound to. A future real auth flow can replace the accept-with-counter
     // with a credential lookup while keeping this map as the session table.
     std::map<uint64_t, net::NetAddress> accountToClient_;
-    uint32_t tick_ = 0;
-    double accumulator_ = 0.0;
     uint64_t lastStepMs_ = 0;
     uint64_t nowMs_ = 0;
-    AoiGrid grid_;                 // AOI cell index rebuilt every broadcast
-    uint64_t snapshotTooBig_ = 0;  // snapshots dropped for exceeding the frame cap
-    uint64_t snapshotDrops_ = 0;   // snapshots dropped for other send failures
     bool running_ = false;
 };
 

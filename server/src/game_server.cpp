@@ -53,6 +53,8 @@ bool GameServer::Start(const Config& cfg) {
     if (cfg_.clientTimeoutMs == 0) cfg_.clientTimeoutMs = 5000;
     if (cfg_.snapshotEveryTicks == 0) cfg_.snapshotEveryTicks = 1;
     SetupRpc();
+    // S1: one default match owns all per-simulation state.
+    match_ = std::make_unique<Match>();
 
     // Scene source: inline JSON wins, else a game.pack (VFS, virtual scene
     // path), else the scene file on disk.
@@ -89,7 +91,7 @@ bool GameServer::Start(const Config& cfg) {
             return false;
         }
         sceneJson.assign(sres.Value().begin(), sres.Value().end());
-        packVfs_ = vfs; // outlive the runtime
+        match_->packVfs = vfs; // outlive the runtime
         packMode = true;
         NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Info,
                      "server: pack '%s' served via VFS (scene '%s')", cfg_.packPath.c_str(),
@@ -126,32 +128,32 @@ bool GameServer::Start(const Config& cfg) {
     // Headless runtime: no renderer/audio/assets, just scripts + BT + physics.
     // Microkernel (P-E): wire physics (custom/Jolt) + script through the Kernel.
     // The native "plugin:<name>" backend keeps the string fallback (rare).
-    kernel_ = std::make_unique<kernel::Kernel>();
+    match_->kernel = std::make_unique<kernel::Kernel>();
     if (cfg_.physicsBackend.rfind("plugin:", 0) != 0) {
 #ifdef NEON_ENABLE_JOLT
         if (cfg_.physicsBackend == "jolt")
-            kernel_->Add(std::make_unique<modules::PhysicsModule>(
+            match_->kernel->Add(std::make_unique<modules::PhysicsModule>(
                 std::make_unique<physics::JoltWorld>()));
         else
 #endif
-            kernel_->Add(std::make_unique<modules::PhysicsModule>(
+            match_->kernel->Add(std::make_unique<modules::PhysicsModule>(
                 std::make_unique<physics::World>()));
     }
     if (auto lua = script::CreateLuaHost())
-        kernel_->Add(std::make_unique<modules::ScriptModule>(std::move(lua)));
-    kernel_->Init();
+        match_->kernel->Add(std::make_unique<modules::ScriptModule>(std::move(lua)));
+    match_->kernel->Init();
 
     scene::GameRuntimeConfig rcfg;
     rcfg.assets = nullptr;
     rcfg.headless = true;
-    rcfg.services = &kernel_->Services();
+    rcfg.services = &match_->kernel->Services();
     rcfg.scriptBaseDir = packMode ? std::string() : cfg_.scriptBaseDir;
     rcfg.assetBaseDir = packMode ? std::string() : cfg_.assetBaseDir;
-    if (packMode) rcfg.fileSystem = packVfs_.get();
+    if (packMode) rcfg.fileSystem = match_->packVfs.get();
     rcfg.rngSeed = cfg_.rngSeed;
-    rcfg.input = &controllerInput_;
+    rcfg.input = &match_->controllerInput;
     rcfg.physicsBackend = cfg_.physicsBackend; // only used for the "plugin:" fallback
-    core::Status st = runtime_.Start(sceneJson, rcfg);
+    core::Status st = match_->runtime.Start(sceneJson, rcfg);
     if (!st.Ok()) {
         NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Error, "server: %s",
                      st.Error().c_str());
@@ -162,19 +164,19 @@ bool GameServer::Start(const Config& cfg) {
     // Multi-player input routing: scripts read the input of the client that
     // owns their entity (bound via BindPlayerToClient inside on_player_join);
     // unbound entities fall back to the v1 shared controller input.
-    script::ScriptContext& ctx = runtime_.ScriptContext();
+    script::ScriptContext& ctx = match_->runtime.ScriptContext();
     ctx.inputForEntity = [this](ecs::Entity e) -> platform::IInput* {
-        const auto it = entityClientIds_.find(EntityKey(e));
-        if (it != entityClientIds_.end()) {
+        const auto it = match_->entityClientIds.find(EntityKey(e));
+        if (it != match_->entityClientIds.end()) {
             if (NetInput* in = ClientInputById(it->second)) return in;
         }
-        return &controllerInput_;
+        return &match_->controllerInput;
     };
     ctx.bindPlayerToClient = [this](ecs::Entity e, double clientId) {
         if (!e.IsValid()) return;
         const uint64_t id = static_cast<uint64_t>(clientId);
         if (ClientInputById(id) != nullptr) {
-            entityClientIds_[EntityKey(e)] = id;
+            match_->entityClientIds[EntityKey(e)] = id;
             NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Debug,
                          "server: entity %llu bound to client %llu",
                          static_cast<unsigned long long>(EntityKey(e)),
@@ -188,8 +190,8 @@ bool GameServer::Start(const Config& cfg) {
     };
 
     running_ = true;
-    tick_ = 0;
-    accumulator_ = 0.0;
+    match_->tick = 0;
+    match_->accumulator = 0.0;
     lastStepMs_ = 0;
     nowMs_ = 0;
     nextClientId_ = 0;
@@ -198,15 +200,15 @@ bool GameServer::Start(const Config& cfg) {
     controllerAddr_ = {};
     clients_.clear();
     pendingRemovals_.clear();
-    grid_.SetCellSize(cfg_.aoiCellSize);
-    grid_.Clear();
-    entityClientIds_.clear();
-    snapshotTooBig_ = 0;
-    snapshotDrops_ = 0;
+    match_->grid.SetCellSize(cfg_.aoiCellSize);
+    match_->grid.Clear();
+    match_->entityClientIds.clear();
+    match_->snapshotTooBig = 0;
+    match_->snapshotDrops = 0;
     NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Info,
                  "server: listening on %s:%u (%zu entities, %zu scripts, %zu trees)",
-                 cfg_.loopback ? "127.0.0.1" : "0.0.0.0", Port(), runtime_.EntityCount(),
-                 runtime_.ScriptCount(), runtime_.BehaviorTreeCount());
+                 cfg_.loopback ? "127.0.0.1" : "0.0.0.0", Port(), match_->runtime.EntityCount(),
+                 match_->runtime.ScriptCount(), match_->runtime.BehaviorTreeCount());
     return true;
 }
 
@@ -224,10 +226,10 @@ void GameServer::Step(uint64_t nowMs) {
     // exactly N — the accumulator residual never produces a second tick inside
     // a single Step (no overshoot). The leftover accumulates and drains one
     // tick per later call, so wall-clock pacing still catches up.
-    accumulator_ += static_cast<double>(nowMs_ - lastStepMs_) / 1000.0;
+    match_->accumulator += static_cast<double>(nowMs_ - lastStepMs_) / 1000.0;
     lastStepMs_ = nowMs_;
-    if (accumulator_ >= kFixedDt) {
-        accumulator_ -= kFixedDt;
+    if (match_->accumulator >= kFixedDt) {
+        match_->accumulator -= kFixedDt;
         ApplyControllerInput();
         // G3-4 lag compensation: rewind hit tests by the most latent live
         // client's one-way latency, so a fast-moving target is hit where
@@ -239,12 +241,12 @@ void GameServer::Step(uint64_t nowMs) {
             uint64_t maxRttMs = 0;
             for (const auto& kv : clients_)
                 maxRttMs = std::max(maxRttMs, kv.second.rttMs);
-            runtime_.SetAutoLagComp(LagTicksForRtt(maxRttMs));
+            match_->runtime.SetAutoLagComp(LagTicksForRtt(maxRttMs));
         }
-        runtime_.Tick(static_cast<float>(kFixedDt));
-        ++tick_;
-        if (tick_ % cfg_.snapshotEveryTicks == 0) BroadcastSnapshot();
-        controllerInput_.EndFrame(); // advance edges for the next tick
+        match_->runtime.Tick(static_cast<float>(kFixedDt));
+        ++match_->tick;
+        if (match_->tick % cfg_.snapshotEveryTicks == 0) BroadcastSnapshot();
+        match_->controllerInput.EndFrame(); // advance edges for the next tick
     }
     // 4) Disconnect stale clients (inactivity + reliable-channel timeouts).
     DropTimedOutClients(nowMs_);
@@ -455,12 +457,12 @@ void GameServer::AdmitClient(const net::NetAddress& addr, const std::string& nam
     // Multi-player (v2): a scene that defines on_player_join(clientId) spawns
     // and binds a player for this client right here (the script calls
     // BindPlayerToClient inside the handler).
-    if (runtime_.HasScriptFunction("on_player_join")) {
-        runtime_.CallScriptFunction(
+    if (match_->runtime.HasScriptFunction("on_player_join")) {
+        match_->runtime.CallScriptFunction(
             "on_player_join", {script::Value::Num(static_cast<double>(client.clientId))});
     }
     // Runtime plugins receive the same join event (Plugin.On("player_join")).
-    runtime_.DispatchPluginEvent(
+    match_->runtime.DispatchPluginEvent(
         "player_join", {script::Value::Num(static_cast<double>(client.clientId))});
 }
 
@@ -518,7 +520,7 @@ void GameServer::HandlePing(const net::NetAddress& addr, const net::MsgPing& pin
 }
 
 void GameServer::SendWelcome(Client& c) {
-    net::MsgWelcome welcome{c.clientId, tick_};
+    net::MsgWelcome welcome{c.clientId, match_->tick};
         core::Status st = c.chan.Send(static_cast<uint8_t>(net::MsgType::Welcome),
                                   net::EncodeBody(welcome));
     if (!st.Ok())
@@ -528,7 +530,7 @@ void GameServer::SendWelcome(Client& c) {
 }
 
 void GameServer::SendLoginOk(Client& c) {
-    net::MsgLoginOk ok{c.accountId, tick_};
+    net::MsgLoginOk ok{c.accountId, match_->tick};
     core::Status st = c.chan.Send(static_cast<uint8_t>(net::MsgType::LoginOk),
                                   net::EncodeBody(ok));
     if (!st.Ok())
@@ -613,9 +615,11 @@ void GameServer::SetupRpc() {
         std::string perr;
         core::Json args = core::Json::Parse(argsJson, &perr);
         if (const core::Json* r = args.Get("room")) code = r->GetString();
+        if (code.empty()) code = "lobby";
         auto members = ClientsInRoom(code);
-        const bool ok = !code.empty() && !members.empty() && members.size() < 2 &&
-                        startedRooms_.count(code) == 0;
+        // Joining an empty/new room creates it (implicit create, legacy
+        // behavior); an existing room is capped at 2 and closed once started.
+        const bool ok = members.size() < 2 && startedRooms_.count(code) == 0;
         core::Json reply;
         reply.type_ = core::Json::Type::Object;
         putBool(reply, "ok", ok);
@@ -703,7 +707,7 @@ void GameServer::SetupRpc() {
     // Gameplay commands: route a client's MOBA command RPC into the runtime's
     // command queue; authoritative scripts drain it with NetCommand().
     rpc_.Register("moba_cmd", [this](uint64_t clientId, const std::string& argsJson) {
-        runtime_.PushNetCommand(clientId, "moba_cmd", argsJson);
+        match_->runtime.PushNetCommand(clientId, "moba_cmd", argsJson);
         return std::optional<std::pair<std::string, std::string>>{};
     });
 
@@ -775,7 +779,7 @@ void GameServer::StartRoomMatch(const std::string& room) {
     matchActive_ = true;
     activeRoom_ = room;
     startedRooms_.insert(room);
-    runtime_.CallScriptFunction(
+    match_->runtime.CallScriptFunction(
         "on_match_start", {script::Value::Num(static_cast<double>(blue)),
                            script::Value::Num(static_cast<double>(red))});
     for (size_t i = 0; i < members.size(); ++i) {
@@ -843,12 +847,12 @@ void GameServer::ApplyControllerInput() {
     // sequence is installed, the input keyed to the CURRENT fixed step drives
     // the sim directly — no socket client involved, so a headless run can be
     // compared bit-exactly against a client prediction fed the same sequence.
-    if (!scriptedInputs_.empty()) {
-        const net::MsgInput* in = InputForTick(scriptedInputs_, tick_);
+    if (!match_->scriptedInputs.empty()) {
+        const net::MsgInput* in = InputForTick(match_->scriptedInputs, match_->tick);
         if (in)
-            controllerInput_.SetInput(in->buttons, in->moveX, in->moveY);
+            match_->controllerInput.SetInput(in->buttons, in->moveX, in->moveY);
         else
-            controllerInput_.SetInput(0, 0.0f, 0.0f);
+            match_->controllerInput.SetInput(0, 0.0f, 0.0f);
         return;
     }
 
@@ -865,11 +869,11 @@ void GameServer::ApplyControllerInput() {
 
     // v1 fallback for scenes without on_player_join: the controller client's
     // input drives the shared NetInput every unbound script reads.
-    controllerInput_.SetInput(0, 0.0f, 0.0f);
+    match_->controllerInput.SetInput(0, 0.0f, 0.0f);
     auto it = clients_.find(controllerAddr_);
     if (it != clients_.end() && it->second.hasInput) {
         const net::MsgInput& in = it->second.lastInput;
-        controllerInput_.SetInput(in.buttons, in.moveX, in.moveY);
+        match_->controllerInput.SetInput(in.buttons, in.moveX, in.moveY);
     }
 }
 
@@ -880,14 +884,14 @@ void GameServer::ApplyControllerInput() {
 // CTransformBind it finds); preferring the "player" kind keeps a scene with
 // several script entities centered on the actual playable one.
 uint64_t GameServer::ControlledEntityKey() {
-    ecs::World& world = runtime_.World();
+    ecs::World& world = match_->runtime.World();
     uint64_t fallback = 0;
     auto view = world.ViewAll<script::CTransformBind>();
     for (size_t i = 0; i < view.Size(); ++i) {
         ecs::Entity e = world.EntityAt<script::CTransformBind>(i);
         const uint64_t key = EntityKey(e);
-        const auto it = runtime_.ScriptContext().entityKinds.find(e);
-        if (it != runtime_.ScriptContext().entityKinds.end() && it->second == "player")
+        const auto it = match_->runtime.ScriptContext().entityKinds.find(e);
+        if (it != match_->runtime.ScriptContext().entityKinds.end() && it->second == "player")
             return key;
         if (fallback == 0) fallback = key;
     }
@@ -895,7 +899,7 @@ uint64_t GameServer::ControlledEntityKey() {
 }
 
 void GameServer::BroadcastSnapshot() {
-    ecs::World& world = runtime_.World();
+    ecs::World& world = match_->runtime.World();
 
     // One replicated entity: stable id, transform and the kind used for
     // MsgSpawn. Scene entities carry their name as the kind (SceneName), script
@@ -942,8 +946,8 @@ void GameServer::BroadcastSnapshot() {
             const script::CTransformBind* t = world.Get<script::CTransformBind>(e);
             if (!t) continue;
             std::string kind;
-            const auto it = runtime_.ScriptContext().entityKinds.find(e);
-            if (it != runtime_.ScriptContext().entityKinds.end()) kind = it->second;
+            const auto it = match_->runtime.ScriptContext().entityKinds.find(e);
+            if (it != match_->runtime.ScriptContext().entityKinds.end()) kind = it->second;
             add(e, t->pos, t->rot, kind);
         }
     }
@@ -953,8 +957,8 @@ void GameServer::BroadcastSnapshot() {
     std::vector<AoiGrid::Entry> entries;
     entries.reserve(items.size());
     for (const Item& it : items) entries.push_back({it.id, it.x, it.z});
-    grid_.SetCellSize(cfg_.aoiCellSize);
-    grid_.Update(entries);
+    match_->grid.SetCellSize(cfg_.aoiCellSize);
+    match_->grid.Update(entries);
 
     // The fallback focus (v1: a single playable player): the controlled
     // entity's position, or the world origin when the scene has no script
@@ -987,7 +991,7 @@ void GameServer::BroadcastSnapshot() {
         // (multi-player), else the shared controlled entity / world origin.
         math::Vec3 clientFocus = focus;
         uint64_t clientBound = 0;
-        for (const auto& eit : entityClientIds_)
+        for (const auto& eit : match_->entityClientIds)
             if (eit.second == c.clientId) {
                 clientBound = eit.first;
                 break;
@@ -997,7 +1001,7 @@ void GameServer::BroadcastSnapshot() {
                 clientFocus = {it->x, it->y, it->z};
         }
         std::vector<uint64_t> interest =
-            grid_.InterestSet(clientFocus.x, clientFocus.z, cfg_.aoiRadiusCells);
+            match_->grid.InterestSet(clientFocus.x, clientFocus.z, cfg_.aoiRadiusCells);
         const uint64_t alwaysVisible =
             clientBound != 0 ? clientBound : controlledKey;
         if (alwaysVisible != 0 &&
@@ -1022,7 +1026,7 @@ void GameServer::BroadcastSnapshot() {
         // Build the per-client snapshot from exactly the interest set, in the
         // same order InterestSet returned it (deterministic).
         net::MsgSnapshot snap;
-        snap.tick = tick_;
+        snap.tick = match_->tick;
         snap.entities.reserve(interest.size());
         for (uint64_t id : interest) {
             const Item* it = itemById(id);
@@ -1081,7 +1085,7 @@ void GameServer::BroadcastSnapshot() {
                 if (!st.Ok()) {
                     // Throttled: a client that never acks fills the window and would
                     // otherwise log once per tick until it is disconnected.
-                    ++snapshotDrops_;
+                    ++match_->snapshotDrops;
                     if (++c.dropLogCount % 60 == 1)
                         NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Debug,
                                      "server: snapshot to client %llu deferred (%s)",
@@ -1112,7 +1116,7 @@ void GameServer::BroadcastSnapshot() {
                 core::Status st =
                     c.chan.Send(static_cast<uint8_t>(net::MsgType::Snapshot), partBody);
                 if (!st.Ok()) {
-                    ++snapshotDrops_;
+                    ++match_->snapshotDrops;
                     if (++c.dropLogCount % 60 == 1)
                         NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Debug,
                                      "server: snapshot part %u/%u to client %llu deferred (%s)",
@@ -1152,7 +1156,7 @@ void GameServer::BroadcastSnapshot() {
         msg.type_ = core::Json::Type::Object;
         core::Json t;
         t.type_ = core::Json::Type::Number;
-        t.number_ = tick_;
+        t.number_ = match_->tick;
         msg.object_["tick"] = t;
         core::Json h;
         // A11: a uint64 FNV-1a hash loses its high bits through a JSON double
@@ -1206,9 +1210,9 @@ void GameServer::RemoveClient(const net::NetAddress& addr) {
     if (it->second.accountId != 0) accountToClient_.erase(it->second.accountId);
     clients_.erase(it);
     // Multi-player: drop every entity this client owned.
-    for (auto eit = entityClientIds_.begin(); eit != entityClientIds_.end();) {
+    for (auto eit = match_->entityClientIds.begin(); eit != match_->entityClientIds.end();) {
         if (eit->second == id)
-            eit = entityClientIds_.erase(eit);
+            eit = match_->entityClientIds.erase(eit);
         else
             ++eit;
     }
@@ -1225,14 +1229,15 @@ void GameServer::RemoveClient(const net::NetAddress& addr) {
 void GameServer::Shutdown() {
     if (!running_) return;
     NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Info,
-                 "server: shutting down after tick %u (%u clients)", tick_, ClientCount());
+                 "server: shutting down after tick %u (%u clients)", match_->tick, ClientCount());
     running_ = false;
     clients_.clear();
-    runtime_.Stop();
-    if (kernel_) {
-        kernel_->Shutdown();  // microkernel: tear down the physics/script modules
-        kernel_.reset();
+    match_->runtime.Stop();
+    if (match_->kernel) {
+        match_->kernel->Shutdown();  // microkernel: tear down the physics/script modules
+        match_->kernel.reset();
     }
+    match_.reset();
     sock_.Close();
 }
 
