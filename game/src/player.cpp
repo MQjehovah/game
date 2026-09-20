@@ -872,7 +872,18 @@ void PlayerApp::PumpNetwork() {
     if (nowMs - lastPingMs_ >= 1000u) {
         lastPingMs_ = nowMs;
         net::MsgPing ping{nowMs};
-        clientChan_.Send(static_cast<uint8_t>(net::MsgType::Ping), net::EncodeBody(ping));
+        // Send the heartbeat UNRELIABLY (0xF5 marker) so our liveness never
+        // depends on the reliable window: if that channel wedges (server not
+        // acking), the server would otherwise see us as inactive and drop us.
+        auto frame = codec_.EncodeFrame(static_cast<uint8_t>(net::MsgType::Ping), 0,
+                                        net::EncodeBody(ping));
+        if (frame.Ok()) {
+            std::vector<uint8_t> pkt;
+            pkt.reserve(frame.Value().size() + 1);
+            pkt.push_back(0xF5);
+            pkt.insert(pkt.end(), frame.Value().begin(), frame.Value().end());
+            clientSock_.Send(pkt.data(), pkt.size());
+        }
     }
     if (connectedLost_ && SmokeActive()) {
         NEON_LOG_WARN("client: connection lost; smoke run will report failure");

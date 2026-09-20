@@ -281,7 +281,14 @@ void GameServer::PumpNetwork(uint64_t nowMs) {
         auto it = clients_.find(from);
         if (it != clients_.end()) {
             it->second.lastSeenMs = nowMs;
-            it->second.chan.OnDatagram(buf, size);
+            // Unreliable heartbeats/snapshots (0xF5 marker) are not channel frames;
+            // decode them raw so they never corrupt the reliable seq-space.
+            if (size >= 1 && buf[0] == 0xF5) {
+                core::Result<net::DecodedMessage> dec = codec_.Decode(buf + 1, size - 1);
+                if (dec.Ok()) OnClientMessage(from, dec.Value());
+            } else {
+                it->second.chan.OnDatagram(buf, size);
+            }
             continue;
         }
 
