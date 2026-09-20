@@ -76,7 +76,8 @@ local netStateTimer = 0
 local chooseChampion -- forward (defined below; used by lobby/match-start)
 -- 联机大厅（client 角色）：等待对手 / 房号 / 房间列表
 local LOBBY = { phase = "lobby", room = "", players = 0, max = 2, host = 0, rooms = {},
-                side = nil, code = "", msg = "", refreshT = 0, keysPrev = {} }
+                side = nil, code = "", msg = "", refreshT = 0, keysPrev = {},
+                click = false, clickX = 0, clickY = 0 }
 local ROSTER = {}
 local CHAMP_DATA = {}
 local ITEMS = {}
@@ -1886,6 +1887,8 @@ function on_update(e, dt)
             cmd = NetCommand()
         end
         if LOBBY.phase ~= "match" then
+            -- 大厅自带整屏 UI：隐藏引擎的调试/状态叠加层，避免文字重叠。
+            SetVar("debugOverlay", 0)
             -- 未连上服务器时不要发请求（Rpc 会被丢弃），显示“连接中”。
             if GetVar("netConnected") ~= 1 then
                 updateCameraFollow(dt)
@@ -1894,10 +1897,23 @@ function on_update(e, dt)
             LOBBY.refreshT = LOBBY.refreshT - dt
             if LOBBY.refreshT <= 0 then LOBBY.refreshT = 1.0; Rpc("room.list") end
             lobbyKeyInput()
+            -- Mouse clicks are edge-triggered and the edge is cleared by
+            -- IInput::EndTick at the END of every tick, so it is already dead
+            -- inside on_render (where the lobby is drawn). Latch it here and let
+            -- drawLobby consume it this frame instead of polling in the renderer.
+            if InputMousePressed("left") then
+                local mp = InputMousePos()
+                if mp ~= nil then
+                    LOBBY.click = true
+                    LOBBY.clickX = mp.x
+                    LOBBY.clickY = mp.y
+                end
+            end
             updateCameraFollow(dt)
             return
         end
     end
+    SetVar("debugOverlay", 1)
     if phase == "select" then
         updateSelect()
         updateCameraFollow(dt)
@@ -2379,66 +2395,145 @@ local function drawLobby()
     local vp = GetViewportSize()
     local vw = (vp and vp.w) or VW
     local vh = (vp and vp.h) or VH
-    DrawRect(0, 0, vw, vh, 0.02, 0.03, 0.05, 0.94)
-    DrawText("NeonMOBA 大厅", vw * 0.5, 56, 30, 0.95, 0.82, 0.35, 1, true, true)
-    if GetVar("netConnected") ~= 1 then
-        DrawText("连接服务器中…", vw * 0.5, vh * 0.5, 22, 0.9, 0.9, 0.9, 1, true, true)
+    local m = InputMousePos()
+    local cx, cy = LOBBY.clickX, LOBBY.clickY
+    local click = LOBBY.click == true
+    LOBBY.click = false
+
+    local function hovered(x, y, w, h)
+        return m ~= nil and m.x >= x and m.x <= x + w and m.y >= y and m.y <= y + h
+    end
+    local function hit(x, y, w, h)
+        return click and cx >= x and cx <= x + w and cy >= y and cy <= y + h
+    end
+
+    DrawRect(0, 0, vw, vh, 0.03, 0.04, 0.07, 1)
+    DrawRect(0, 0, vw, 92, 0.06, 0.08, 0.13, 1)
+    DrawLine(0, 92, vw, 92, 1.5, 0.20, 0.55, 0.72, 0.9)
+    DrawText("NeonMOBA", vw * 0.5, 34, 34, 0.95, 0.82, 0.35, 1, true, true)
+    DrawText("对战大厅 · 创建或加入房间开始对局", vw * 0.5, 70, 14, 0.7, 0.78, 0.9, 1, true, true)
+
+    local connected = GetVar("netConnected") == 1
+    local pname = GetVar("playerName")
+    if pname == nil or pname == "" then pname = "玩家" end
+    local pillW = 200
+    local pillX = vw - pillW - 24
+    DrawRect(pillX, 30, pillW, 34, 0.10, 0.12, 0.17, 0.95)
+    DrawCircle(pillX + 18, 47, 6, 1.5,
+        connected and 0.35 or 0.95, connected and 0.85 or 0.45, connected and 0.5 or 0.4, 1, true)
+    DrawText((connected and "已连接  " or "连接中  ") .. tostring(pname),
+        pillX + 34, 47, 14, 0.9, 0.92, 0.96, 1, false, true)
+
+    if not connected then
+        DrawText("正在连接服务器…", vw * 0.5, vh * 0.5, 22, 0.9, 0.9, 0.9, 1, true, true)
         return
     end
-    local m = InputMousePos()
-    local click = m ~= nil and InputMousePressed("left")
-    local function button(x, y, w, h, label)
-        DrawRect(x, y, w, h, 0.12, 0.14, 0.2, 0.95)
-        DrawRectOutline(x, y, w, h, 2, 0.6, 0.55, 0.3, 1)
-        DrawText(label, x + w / 2, y + h / 2, 15, 1, 1, 1, 1, true, true)
-        return click and m.x >= x and m.x <= x + w and m.y >= y and m.y <= y + h
+
+    local cardW = math.min(430, (vw - 72) * 0.5)
+    local cardH = math.min(vh - 200, 520)
+    local leftX = vw * 0.5 - cardW - 14
+    local rightX = vw * 0.5 + 14
+    local cardY = 120
+    local function card(x, y, w, h, title)
+        DrawRect(x, y, w, h, 0.07, 0.08, 0.12, 0.96)
+        DrawRectOutline(x, y, w, h, 1.5, 0.20, 0.24, 0.34, 1)
+        DrawLine(x + 16, y + 46, x + w - 16, y + 46, 1, 0.18, 0.22, 0.3, 1)
+        DrawText(title, x + 18, y + 24, 17, 0.95, 0.85, 0.5, 1, false, true)
     end
-    local lx, ly = vw * 0.5 - 400, 120
-    if button(lx, ly, 150, 40, "创建房间") then Rpc("room.create") end
-    if button(lx + 166, ly, 130, 40, "刷新列表") then Rpc("room.list") end
-    DrawText("房号(0-9A-Z, Backspace, Enter 加入): " .. LOBBY.code,
-        lx, ly + 62, 14, 0.9, 0.9, 0.6, 1, false, true)
-    DrawText("房间列表", lx, ly + 96, 16, 1, 1, 1, 1, false, true)
-    for i = 1, math.min(#LOBBY.rooms, 8) do
+    local function button(x, y, w, h, label, accent)
+        local hov = hovered(x, y, w, h)
+        local r, g, b = 0.13, 0.15, 0.21
+        if accent then r, g, b = 0.16, 0.42, 0.30 end
+        if hov then r, g, b = math.min(1, r + 0.10), math.min(1, g + 0.12), math.min(1, b + 0.10) end
+        DrawRect(x, y, w, h, r, g, b, 0.98)
+        DrawRectOutline(x, y, w, h, hov and 2 or 1,
+            accent and 0.4 or 0.35, accent and 0.9 or 0.45, accent and 0.6 or 0.35, 1)
+        DrawText(label, x + w / 2, y + h / 2, 15, 1, 1, 1, 1, true, true)
+        return hit(x, y, w, h)
+    end
+
+    card(leftX, cardY, cardW, cardH, "房间列表")
+    local listX, listY = leftX + 18, cardY + 62
+    local rowW, rowH, rowGap = cardW - 36, 40, 8
+    local maxRows = math.max(1, math.floor((cardH - 90) / (rowH + rowGap)))
+    if #LOBBY.rooms == 0 then
+        DrawText("暂无房间 — 来创建第一个吧",
+            leftX + cardW * 0.5, listY + 30, 15, 0.62, 0.68, 0.78, 1, true, true)
+    end
+    for i = 1, math.min(#LOBBY.rooms, maxRows) do
         local r = LOBBY.rooms[i]
-        local yy = ly + 122 + (i - 1) * 28
-        local rowh = 24
-        DrawRect(lx - 4, yy - 4, 420, rowh, 0.08, 0.09, 0.13, 0.9)
-        DrawText(string.format("%s   %d/%d%s", tostring(r.room), r.players or 1, r.max or 2,
-            r.started and "  (已开始)" or ""), lx, yy, 15, 0.9, 0.9, 0.9, 1, false, true)
-        DrawText("点击加入", lx + 340, yy, 13, 0.7, 0.85, 1, 1, false, true)
-        if click and m.x >= lx - 4 and m.x <= lx + 416 and m.y >= yy - 4 and
-            m.y <= yy - 4 + rowh then
+        local yy = listY + (i - 1) * (rowH + rowGap)
+        local hov = hovered(listX, yy, rowW, rowH)
+        DrawRect(listX, yy, rowW, rowH,
+            hov and 0.16 or 0.10, hov and 0.19 or 0.12, hov and 0.27 or 0.17, 0.98)
+        DrawRectOutline(listX, yy, rowW, rowH, 1, 0.22, 0.26, 0.36, 1)
+        local started = r.started and "  ·  已开始" or ""
+        DrawText("房间  " .. tostring(r.room), listX + 14, yy + rowH * 0.5, 15,
+            0.92, 0.94, 0.98, 1, false, true)
+        DrawText(string.format("%d/%d%s", r.players or 1, r.max or 2, started),
+            listX + rowW - 74, yy + rowH * 0.5, 14, 0.7, 0.82, 0.95, 1, true, true)
+        DrawText("加入", listX + rowW - 26, yy + rowH * 0.5, 13, 0.5, 0.9, 0.7, 1, true, true)
+        if hit(listX, yy, rowW, rowH) and not r.started then
             Rpc("room.join", { room = r.room })
         end
     end
-    local rx = vw * 0.5 + 40
-    DrawText("当前房间", rx, ly, 16, 1, 1, 1, 1, false, true)
-    if LOBBY.room ~= "" then
-        local myId = GetVar("myClientId")
-        local isHost = (myId ~= nil and LOBBY.host ~= 0 and LOBBY.host == myId)
-        DrawText(string.format("%s   %d/%d%s", LOBBY.room, LOBBY.players, LOBBY.max,
-            isHost and "   (房主)" or ""), rx, ly + 28, 22, 0.95, 0.82, 0.35, 1, false, true)
-        if isHost then
-            if LOBBY.players >= 2 then
-                if button(rx, ly + 92, 170, 40, "开始对局") then Rpc("room.start") end
-                if button(rx, ly + 140, 170, 36, "踢出对手") then Rpc("room.kick") end
-            else
-                DrawText("等待对手加入…", rx, ly + 62, 15, 0.8, 0.85, 1, 1, false, true)
-                if button(rx, ly + 92, 170, 40, "和 AI 开始") then Rpc("room.start") end
-            end
-        else
-            DrawText("等待房主开始…", rx, ly + 62, 15, 0.8, 0.85, 1, 1, false, true)
+    if button(leftX + 18, cardY + cardH - 50, 150, 34, "刷新列表") then Rpc("room.list") end
+
+    card(rightX, cardY, cardW, cardH, "对战房间")
+    local myId = GetVar("myClientId")
+    if LOBBY.room == "" then
+        DrawText("还没有加入房间", rightX + cardW * 0.5, cardY + 92, 16, 0.8, 0.85, 0.95, 1, true, true)
+        DrawText("创建房间后把房号发给好友，或点击左侧列表加入。",
+            rightX + cardW * 0.5, cardY + 122, 13, 0.6, 0.66, 0.76, 1, true, true)
+        if button(rightX + cardW * 0.5 - 100, cardY + 168, 200, 46, "创建房间", true) then
+            Rpc("room.create")
         end
-        if button(rx, ly + 190, 130, 36, "离开房间") then
-            Rpc("room.leave"); LOBBY.room = ""; LOBBY.players = 0; LOBBY.host = 0
+        DrawLine(rightX + 40, cardY + 248, rightX + cardW - 40, cardY + 248, 1, 0.18, 0.22, 0.3, 1)
+        DrawText("输入房号加入", rightX + 18, cardY + 276, 14, 0.8, 0.85, 0.95, 1, false, true)
+        local boxW = cardW - 130
+        DrawRect(rightX + 18, cardY + 304, boxW, 44, 0.05, 0.06, 0.1, 1)
+        DrawRectOutline(rightX + 18, cardY + 304, boxW, 44, 1.5, 0.25, 0.4, 0.55, 1)
+        if #LOBBY.code == 0 then
+            DrawText("房号 (0-9 A-Z)", rightX + 32, cardY + 326, 15, 0.45, 0.5, 0.6, 1, false, true)
+        else
+            DrawText(LOBBY.code, rightX + 32, cardY + 326, 20, 0.98, 0.98, 1, 1, false, true)
+        end
+        if button(rightX + 18 + boxW + 12, cardY + 304, 88, 44, "加入") then
+            if #LOBBY.code > 0 then
+                Rpc("room.join", { room = LOBBY.code })
+                LOBBY.code = ""
+            end
         end
     else
-        DrawText("未加入房间", rx, ly + 30, 15, 0.8, 0.8, 0.8, 1, false, true)
+        local isHost = (myId ~= nil and LOBBY.host ~= 0 and LOBBY.host == myId)
+        DrawText("房号", rightX + 18, cardY + 78, 13, 0.6, 0.66, 0.76, 1, false, true)
+        DrawText(tostring(LOBBY.room), rightX + 18, cardY + 106, 34, 0.95, 0.82, 0.35, 1, false, true)
+        DrawText(string.format("%d / %d 名玩家", LOBBY.players, LOBBY.max),
+            rightX + 18, cardY + 156, 15, 0.85, 0.88, 0.95, 1, false, true)
+        DrawText(isHost and "你是房主" or "等待房主开始…",
+            rightX + 18, cardY + 184, 14, 0.6, 0.85, 0.7, 1, false, true)
+        if isHost then
+            if LOBBY.players >= 2 then
+                if button(rightX + 18, cardY + 240, 190, 46, "开始对局", true) then Rpc("room.start") end
+                if button(rightX + 18, cardY + 296, 190, 38, "踢出对手") then Rpc("room.kick") end
+            else
+                if button(rightX + 18, cardY + 240, 190, 46, "和 AI 开始", true) then Rpc("room.start") end
+                if button(rightX + 18, cardY + 296, 190, 38, "刷新对手") then Rpc("room.list") end
+            end
+        end
+        if button(rightX + 18, cardY + cardH - 50, 150, 34, "离开房间") then
+            Rpc("room.leave")
+            LOBBY.room = ""
+            LOBBY.players = 0
+            LOBBY.host = 0
+        end
     end
+
     if LOBBY.msg ~= "" then
-        DrawText(LOBBY.msg, vw * 0.5, vh - 56, 15, 1, 0.6, 0.5, 1, true, true)
+        DrawText(LOBBY.msg, vw * 0.5, vh - 64, 15, 1, 0.6, 0.5, 1, true, true)
     end
+    DrawText("鼠标点击操作 · 数字/字母输入房号 · Backspace 删除 · Enter 加入",
+        vw * 0.5, vh - 34, 13, 0.55, 0.6, 0.7, 1, true, true)
 end
 
 function on_render()

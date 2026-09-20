@@ -410,6 +410,7 @@ assetMgr_.SetTextureBakeDir(".neon/imported");
         runtime_.GameVars().Set("netRole",
                                 script::Value::Str(cfg_.spectate ? "spectate" : "client"));
         runtime_.GameVars().Set("netConnected", script::Value::Num(0));
+        runtime_.GameVars().Set("playerName", script::Value::Str(cfg_.playerName));
         if (SmokeActive()) clientInput_.SetForceMove(true);
         if (!StartNetwork()) {
             CleanupUnpackedDir();
@@ -636,6 +637,11 @@ void PlayerApp::OnRender() {
 }
 
 void PlayerApp::DrawOverlay() {
+    // The game script hides this debug/status overlay while it shows a
+    // full-screen menu of its own (e.g. the multiplayer lobby), so the two do
+    // not stack text on top of each other.
+    const script::Value dbg = runtime_.GameVars().Get("debugOverlay");
+    if (dbg.type == script::Value::Type::Number && dbg.number == 0.0) return;
     const int w = renderer_.ScreenWidth();
     const int h = renderer_.ScreenHeight();
     ui::DrawLabel(renderer_, theme_, title_, {static_cast<float>(w) * 0.5f, 22}, 20,
