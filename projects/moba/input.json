@@ -8,6 +8,8 @@
     "center": ["Space"],
     "shop": ["P"],
     "scoreboard": ["Tab"],
-    "stop": ["S"]
+    "stop": ["S"],
+    "attack": ["A"],
+    "ping": ["G"]
   }
 }

@@ -909,8 +909,24 @@ local function updateHeroControl(h, dt)
             SetHealth(h.ent, h.hp)
             h.moveTarget = nil
             h.navPath = nil
+            h.attackMove = nil
             h.channel = 0
         end
+        return
+    end
+    -- A 键攻击移动：沿路点前进，遇到射程内敌人停下攻击，敌人没了继续走。
+    if h.attackMove then
+        local t = nearestEnemy(h, h.range, false)
+        h.target = t
+        if t == nil and h.moveTarget ~= nil then
+            if stepMove(h, h.moveTarget.x, h.moveTarget.z, dt) then
+                h.moveTarget = nil
+                h.attackMove = nil
+                h.navPath = nil
+            end
+        end
+        autoAttack(h, dt)
+        setLoop(h, t == nil and "run" or "idle1", 0.2)
         return
     end
     autoAttack(h, dt)
@@ -943,7 +959,15 @@ local function updatePlayer(dt)
     local vh = (vp and vp.h) or VH
     local m = InputMousePos()
     local inView = m ~= nil and m.x >= 0 and m.y >= 0 and m.x <= vw and m.y <= vh
-    if inView and (InputMousePressed("left") or InputMousePressed("right")) then
+
+    -- A：攻击移动准备；G：信号标记准备。二者都用下一次左键确认。
+    if ActionPressed("attack") then h.attackArmed = true; h.pingArmed = nil end
+    if ActionPressed("ping") then h.pingArmed = true; h.attackArmed = nil end
+
+    local left = InputMousePressed("left")
+    local right = InputMousePressed("right")
+    if inView and (left or right) then
+        -- 拾取点击处附近的敌人
         local best, bd = nil, 44
         for i = 1, #units do
             local o = units[i]
@@ -955,18 +979,38 @@ local function updatePlayer(dt)
                 end
             end
         end
-        if best ~= nil then
-            h.target = best
-            h.commandTarget = true
-        else
-            local g = groundPick(m.x, m.y)
+        local g = groundPick(m.x, m.y)
+
+        if left and h.pingArmed then
+            -- G + 左键：地面信号标记
             if g ~= nil then
+                EmitParticles({ pos = { x = g.x, y = 0.1, z = g.z }, count = 36,
+                    vel = { x = 0, y = 1, z = 0 }, speedMin = 4, speedMax = 8,
+                    lifeMin = 0.4, lifeMax = 0.7, sizeStart = 0.8, sizeEnd = 0.05,
+                    color = { r = 1, g = 0.85, b = 0.25, a = 1 },
+                    colorEnd = { r = 1, g = 0.3, b = 0, a = 0 }, gravity = 1.2, additive = true })
+                SpawnFloatText({ x = g.x, y = 2.0, z = g.z }, "!", true, 1.2)
+            end
+            sfx("cast", 0.2)
+            h.pingArmed = nil
+        elseif right or (left and h.attackArmed) then
+            -- 右键：移动/攻击；A + 左键：攻击移动
+            if best ~= nil then
+                h.target = best
+                h.commandTarget = true
+                h.attackMove = nil
+            elseif g ~= nil then
                 h.target = nil
                 h.commandTarget = false
                 h.moveTarget = { x = g.x, z = g.z }
+                h.attackMove = left and true or nil
             end
+            h.attackArmed = nil
         end
+        -- 左键未配合 A/G：不做任何移动（左键默认不移动）
+        if left then h.pingArmed = nil end
     end
+
     local g = inView and groundPick(m.x, m.y) or nil
     local fy = h.yaw or 0
     local aimX = g and g.x or (h.x + math.sin(fy) * 6)
