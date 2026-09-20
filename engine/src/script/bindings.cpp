@@ -494,6 +494,25 @@ Value NativeDrawCircle(IScriptHost& host, void* user) {
     return Value::Nil();
 }
 
+// DrawTri(ax,ay,bx,by,cx,cy, r,g,b,a): filled triangle (design units).
+Value NativeDrawTri(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->draw2d) return Value::Nil();
+    auto num = [&](int i, float def) {
+        return host.GetArg(i).type == Value::Type::Number
+                   ? static_cast<float>(host.GetArg(i).number)
+                   : def;
+    };
+    Draw2DCmd c;
+    c.kind = Draw2DCmd::Kind::Triangle;
+    c.x = num(0, 0.0f);  c.y = num(1, 0.0f);
+    c.x2 = num(2, 0.0f); c.y2 = num(3, 0.0f);
+    c.w = num(4, 0.0f);  c.h = num(5, 0.0f);
+    c.r = num(6, 1.0f); c.g = num(7, 1.0f); c.b = num(8, 1.0f); c.a = num(9, 1.0f);
+    ctx->draw2d->push_back(std::move(c));
+    return Value::Nil();
+}
+
 // SetSpriteFrames(entity, { "assets/.../0.png", "1.png", ... }, fps): switches
 // the entity's sprite to a sequence-frame animation. Empty list restores the
 // static texture. No-op without a setSpriteFrames hook (e.g. the demo host).
@@ -1698,6 +1717,19 @@ Value NativeNavBlock(IScriptHost& host, void* user) {
     return Value::Bool(ctx->navBlock(x, z, r, walkable));
 }
 
+// NavWalkable(x, z) -> true when the nav-grid cell at (x,z) is walkable.
+// Scripts sample it along a ray for line-of-sight: any blocked cell blocks
+// vision (fog of war) and shots.
+Value NativeNavWalkable(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->navGrid || !ctx->navGrid->Valid()) return Value::Bool(false);
+    const float x = static_cast<float>(NumberArg(host, 0, 0.0));
+    const float z = static_cast<float>(NumberArg(host, 1, 0.0));
+    int cx = 0, cz = 0;
+    if (!ctx->navGrid->WorldToCell({x, z}, &cx, &cz)) return Value::Bool(false);
+    return Value::Bool(ctx->navGrid->Walkable(cx, cz));
+}
+
 // B2: LoadDataTable(typeName, jsonText) -> array of typed row tables. `jsonText`
 // is a JSON array of row objects; each row is validated + normalized against the
 // registered reflected `typeName` via the wired loadDataTable hook (GameRuntime
@@ -1780,6 +1812,7 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("GetEntitiesInGroup", &NativeGetEntitiesInGroup, &ctx);
     host.Register("NavFindPath", &NativeNavFindPath, &ctx);
     host.Register("NavBlock", &NativeNavBlock, &ctx);
+    host.Register("NavWalkable", &NativeNavWalkable, &ctx);
     host.Register("LoadDataTable", &NativeLoadDataTable, &ctx);
     host.Register("PollAnimEvents", &NativePollAnimEvents, &ctx);
     host.Register("AnimBlend", &NativeAnimBlend, &ctx);
@@ -1817,6 +1850,7 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("DrawSprite", &NativeDrawSprite, &ctx);
     host.Register("DrawLine", &NativeDrawLine, &ctx);
     host.Register("DrawCircle", &NativeDrawCircle, &ctx);
+    host.Register("DrawTri", &NativeDrawTri, &ctx);
     host.Register("EmitParticles", &NativeEmitParticles, &ctx);
     host.Register("SetSpriteFrames", &NativeSetSpriteFrames, &ctx);
     host.Register("SetSpriteSheet", &NativeSetSpriteSheet, &ctx);

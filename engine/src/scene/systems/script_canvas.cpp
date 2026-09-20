@@ -87,6 +87,10 @@ void ScriptCanvas::Flush(gfx::Renderer& renderer, const gfx::Font& font2d) {
                 }
                 break;
             }
+            case script::Draw2DCmd::Kind::Triangle:
+                renderer.DrawTriangle2D({c.x, c.y}, {c.x2, c.y2}, {c.w, c.h},
+                                        {c.r, c.g, c.b, c.a});
+                break;
         }
     }
 }

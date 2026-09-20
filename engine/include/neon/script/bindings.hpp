@@ -52,7 +52,7 @@ struct EntityLess {
 // data-driven 2D games (e.g. the editor-authored PvZ project) draw without
 // any C++ gameplay code.
 struct Draw2DCmd {
-    enum class Kind : uint8_t { Rect, RectOutline, Text, Line, Circle };
+    enum class Kind : uint8_t { Rect, RectOutline, Text, Line, Circle, Triangle };
     Kind kind = Kind::Rect;
     float x = 0.0f;
     float y = 0.0f;

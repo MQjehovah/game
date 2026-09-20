@@ -1397,28 +1397,89 @@ local function updateCameraFollow(dt)
     applyCamera()
 end
 
-local function updateVision()
-    for i = 1, #units do
-        local u = units[i]
-        local hidden = false
-        if not u.dead and u.team == RED then
-            local brush = false
-            for _, b in ipairs(BRUSHES) do
-                if dist2(u.x, u.z, b.x, b.z) <= b.r * b.r then brush = true; break end
-            end
-            if brush then
-                local seen = false
-                for j = 1, #units do
-                    local o = units[j]
-                    if not o.dead and o.team == BLUE and dist(o.x, o.z, u.x, u.z) < 9 then
-                        seen = true; break
-                    end
+-- 战争迷雾：粗网格 + 导航网格视线遮挡。fogSeen=探索过，fogVis=当前可见。
+local FOG_CELL = 8
+local FOG_MIN = -96
+local FOG_COLS = math.floor((96 - FOG_MIN) / FOG_CELL) + 1
+local fogSeen, fogVis = {}, {}
+for i = 1, FOG_COLS * FOG_COLS do fogSeen[i] = 0; fogVis[i] = 0 end
+local VISION_R = { champion = 16, minion = 11, tower = 22, nexus = 22 }
+
+local function fogIndex(x, z)
+    local cx = math.floor((x - FOG_MIN) / FOG_CELL)
+    local cz = math.floor((z - FOG_MIN) / FOG_CELL)
+    if cx < 0 or cz < 0 or cx >= FOG_COLS or cz >= FOG_COLS then return nil end
+    return cz * FOG_COLS + cx + 1
+end
+
+-- 视线：两点之间沿途采样是否都可行走（墙挡视野）
+local function lineClear(x0, z0, x1, z1)
+    local d = dist(x0, z0, x1, z1)
+    local steps = math.max(1, math.floor(d / (FOG_CELL * 0.5)))
+    for i = 1, steps - 1 do
+        local t = i / steps
+        if not NavWalkable(x0 + (x1 - x0) * t, z0 + (z1 - z0) * t) then return false end
+    end
+    return true
+end
+
+local function addVision(x, z, r)
+    local c0 = math.floor((x - r - FOG_MIN) / FOG_CELL)
+    local c1 = math.floor((x + r - FOG_MIN) / FOG_CELL)
+    local r0 = math.floor((z - r - FOG_MIN) / FOG_CELL)
+    local r1 = math.floor((z + r - FOG_MIN) / FOG_CELL)
+    for cz = r0, r1 do
+        for cx = c0, c1 do
+            if cx >= 0 and cz >= 0 and cx < FOG_COLS and cz < FOG_COLS then
+                local idx = cz * FOG_COLS + cx + 1
+                local wx = FOG_MIN + (cx + 0.5) * FOG_CELL
+                local wz = FOG_MIN + (cz + 0.5) * FOG_CELL
+                if fogVis[idx] ~= 1 and dist(x, z, wx, wz) <= r and lineClear(x, z, wx, wz) then
+                    fogVis[idx] = 1
+                    fogSeen[idx] = 1
                 end
-                hidden = not seen
             end
         end
-        u.hidden = hidden
-        if u.ent ~= nil then SetVisible(u.ent, not hidden) end
+    end
+end
+
+local function inBrush(x, z)
+    for _, b in ipairs(BRUSHES) do
+        if dist2(x, z, b.x, b.z) <= b.r * b.r then return true end
+    end
+    return false
+end
+
+local function updateVision()
+    for i = 1, #fogVis do fogVis[i] = 0 end
+    -- 蓝方（观察者）单位提供视野
+    for i = 1, #units do
+        local u = units[i]
+        if not u.dead and u.team == BLUE then
+            addVision(u.x, u.z, VISION_R[u.kind] or 10)
+        end
+    end
+    for i = 1, #units do
+        local u = units[i]
+        if not u.dead and u.team == RED then
+            local idx = fogIndex(u.x, u.z)
+            local hidden = (idx == nil) or (fogVis[idx] ~= 1)
+            -- 草丛内的敌人：除非蓝方贴脸（4.5），否则隐藏
+            if not hidden and inBrush(u.x, u.z) then
+                local near = false
+                for j = 1, #units do
+                    local o = units[j]
+                    if not o.dead and o.team == BLUE and dist(o.x, o.z, u.x, u.z) < 4.5 then
+                        near = true; break
+                    end
+                end
+                if not near then hidden = true end
+            end
+            u.hidden = hidden
+            if u.ent ~= nil then SetVisible(u.ent, not hidden) end
+        elseif u.ent ~= nil and not u.dead then
+            SetVisible(u.ent, true)
+        end
     end
 end
 
@@ -1908,6 +1969,34 @@ local function drawSkillOverlay()
     end
 end
 
+-- 战争迷雾遮罩：未探索=近黑，探索过但当前不可见=半透明
+local function drawFog()
+    local vp = GetViewportSize()
+    local vw = (vp and vp.w) or VW
+    local vh = (vp and vp.h) or VH
+    for cz = 0, FOG_COLS - 1 do
+        for cx = 0, FOG_COLS - 1 do
+            local idx = cz * FOG_COLS + cx + 1
+            if fogVis[idx] ~= 1 then
+                local wx = FOG_MIN + (cx + 0.5) * FOG_CELL
+                local wz = FOG_MIN + (cz + 0.5) * FOG_CELL
+                local s = WorldToScreen(wx, 0.0, wz)
+                if s ~= nil then
+                    local rp = worldRadiusPx(wx, wz, FOG_CELL)
+                    -- 远处/近地平线的格子投影会爆表；夹住，避免一块黑盖满全屏。
+                    if rp ~= nil then rp = math.min(rp, 40) end
+                    if rp ~= nil and s.x > -rp and s.x < vw + rp and s.y > -rp and
+                        s.y < vh + rp then
+                        local a = (fogSeen[idx] == 1) and 0.5 or 0.96
+                        DrawRect(s.x - rp * 1.15, s.y - rp * 1.15, rp * 2.3, rp * 2.3,
+                            0.02, 0.02, 0.05, a)
+                    end
+                end
+            end
+        end
+    end
+end
+
 function on_render()
     local vp = GetViewportSize()
     local vw = (vp and vp.w) or VW
@@ -1919,6 +2008,7 @@ function on_render()
         drawLoading()
         return
     end
+    drawFog()
     drawWorldPlates()
     drawTargetMarker()
     drawSkillOverlay()
