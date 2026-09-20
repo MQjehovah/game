@@ -1,0 +1,800 @@
+{
+  "Garen": {
+    "id": "86",
+    "name": "德玛西亚之力",
+    "title": "盖伦",
+    "portrait": "assets/lol/icons/champions/Garen.png",
+    "passive": {
+      "name": "坚韧",
+      "desc": "如果盖伦近期没有受到伤害或者被敌方技能命中，那么他会每秒回复若干百分比的总生命值。",
+      "icon": "assets/lol/icons/spells/Garen_Passive.png"
+    },
+    "abilities": [
+      {
+        "key": "Q",
+        "name": "致命打击",
+        "desc": "盖伦的移动速度获得爆发性提升，同时移除身上的所有减速效果。他的下次攻击将打击敌人的要害部位，造成额外伤害并将目标沉默。",
+        "tooltip": "盖伦移除身上的所有<status>减速</status>效果并获得<speed>{{ movementspeedamount*100 }}%移动速度</speed>，持续{{ movementspeedduration }}秒。<br /><br />他的下次攻击会使目标<status>沉默</status>{{ silenceduration }}秒并造成<physicalDamage>{{ totaldamage }}物理伤害</physicalDamage>。{{ spellmodifierdescriptionappend }}",
+        "cd": 8,
+        "cost": 0,
+        "costType": "无消耗",
+        "range": 300,
+        "icon": "assets/lol/icons/spells/GarenQ.png"
+      },
+      {
+        "key": "W",
+        "name": "勇气",
+        "desc": "盖伦被动地通过击杀敌人来提升护甲和魔法抗性。他也可以激活这个技能来暂时获得一层护盾和韧性，并在接下来的较长持续时间里获得较弱的伤害减免效果。",
+        "tooltip": "<spellPassive>被动：</spellPassive>盖伦获得<scaleArmor>{{ resistsfortooltip }}额外护甲</scaleArmor>和<scaleMR>{{ resistsfortooltip }}额外魔法抗性</scaleMR>。击杀单位时会永久提供<attention>{{ resistgainonkilltooltip }}双抗</attention>，至多至最大值<attention>{{ resistmax }}</attention>。<br /><br /><spellActive>主动：</spellActive>盖伦加固他的勇气{{ drduration }}秒，使即将到来的伤害降低{{ drpercent*100 }}%。他还会获得持续{{ upfrontduration }}秒的<shield>{{ totalshield }}护盾值</shield>和<slow>{{ upfronttenacity*100 }}%韧性</slow>。{{ spellmodifierdescriptionappend }}",
+        "cd": 22,
+        "cost": 0,
+        "costType": "无消耗",
+        "range": 0,
+        "icon": "assets/lol/icons/spells/GarenW.png"
+      },
+      {
+        "key": "E",
+        "name": "审判",
+        "desc": "盖伦快速地旋转身体挥舞大剑，并对邻近敌人造成物理伤害。",
+        "tooltip": "盖伦快速地旋舞大剑，持续{{ duration }}秒，每旋转一圈造成<physicalDamage>{{ totaldamage }}物理伤害</physicalDamage>，共旋转{{ f1 }}圈。相距最近的敌人受到<physicalDamage>{{ nearestenemybonus*100 }}%提升伤害</physicalDamage>。被{{ stackstoshred }}圈旋转命中的敌方英雄会损失<scaleArmor>{{ shredamount*100 }}%护甲</scaleArmor>，持续{{ shredduration }}秒。<br /><br /><recast>再次施放</recast>：盖伦提前结束这个技能。{{ spellmodifierdescriptionappend }}",
+        "cd": 9,
+        "cost": 0,
+        "costType": "无消耗",
+        "range": 325,
+        "icon": "assets/lol/icons/spells/GarenE.png"
+      },
+      {
+        "key": "R",
+        "name": "德玛西亚正义",
+        "desc": "盖伦召唤德玛西亚之力，试图处决一名敌方英雄。",
+        "tooltip": "盖伦召唤德玛西亚之力来击杀他的敌人，造成<trueDamage>{{ basedamage }}外加{{ executedamage*100 }}%已损失生命值的真实伤害</trueDamage>。{{ spellmodifierdescriptionappend }}",
+        "cd": 120,
+        "cost": 0,
+        "costType": "无消耗",
+        "range": 400,
+        "icon": "assets/lol/icons/spells/GarenR.png"
+      }
+    ]
+  },
+  "Ashe": {
+    "id": "22",
+    "name": "寒冰射手",
+    "title": "艾希",
+    "portrait": "assets/lol/icons/champions/Ashe.png",
+    "passive": {
+      "name": "冰霜射击",
+      "desc": "艾希的攻击会让目标减速，并使艾希对这些目标造成更高伤害。<br><br>艾希的暴击不会造成额外伤害，但会对目标施加一个强化版减速效果。",
+      "icon": "assets/lol/icons/spells/Ashe_P.png"
+    },
+    "abilities": [
+      {
+        "key": "Q",
+        "name": "射手的专注",
+        "desc": "艾希会在攻击时聚集【全神贯注】效果。在【全神贯注】到达最大值时，艾希就能施放【射手的专注】来消耗掉所有【全神贯注】效果，以临时提升她的攻击速度，并在持续期间将她的普攻转变为一阵强力的飓风箭阵。",
+        "tooltip": "<spellPassive>被动：</spellPassive>艾希的攻击提供一层持续{{ stackduration }}秒的效果。在{{ maxstacks }}层时，她就可以激活这个技能。<br /><br /><spellPassive>主动：</spellPassive>艾希获得<attackSpeed>{{ bonusas }}%攻击速度</attackSpeed>并且她的攻击转而造成<physicalDamage>{{ empowereddamage }}伤害</physicalDamage>，持续{{ buffduration }}秒。{{ spellmodifierdescriptionappend }}",
+        "cd": 0,
+        "cost": 30,
+        "costType": " {{ abilityresourcename }}",
+        "range": 400,
+        "icon": "assets/lol/icons/spells/AsheQ.png"
+      },
+      {
+        "key": "W",
+        "name": "万箭齐发",
+        "desc": "艾希向前方的锥形范围射出多支箭，对敌人造成额外伤害。也会触发冰霜射击的效果。",
+        "tooltip": "艾希射出一排共{{ numberofarrowstooltip }}支箭矢，每支箭矢造成<physicalDamage>{{ totaldamage }}物理伤害</physicalDamage>。敌方单位可以一次性格挡多支箭矢，但只会受到一次伤害。{{ spellmodifierdescriptionappend }}",
+        "cd": 18,
+        "cost": 75,
+        "costType": " {{ abilityresourcename }}",
+        "range": 1200,
+        "icon": "assets/lol/icons/spells/Volley.png"
+      },
+      {
+        "key": "E",
+        "name": "鹰击长空",
+        "desc": "艾希将她的猎鹰之灵派去执行侦查任务，可派往地图上的任意地点。",
+        "tooltip": "艾希派出一只鹰，在地图上的任一位置提供5秒的视野。它还会在飞行时显形附近的区域。<br /><br />这个技能可持有2层充能（{{ chargecooldown }}秒充能时间）。{{ spellmodifierdescriptionappend }}",
+        "cd": 5,
+        "cost": 0,
+        "costType": "无消耗",
+        "range": 25000,
+        "icon": "assets/lol/icons/spells/AsheSpiritOfTheHawk.png"
+      },
+      {
+        "key": "R",
+        "name": "魔法水晶箭",
+        "desc": "艾希射出一支沿直线飞行的魔法水晶箭。如果水晶箭命中了一名敌方英雄，那么它会对该英雄造成伤害和晕眩效果，晕眩时长取决于水晶箭的飞行距离。此外，该英雄附近的敌方单位会受到伤害和减速效果。",
+        "tooltip": "艾希射出魔法水晶箭，<status>晕眩</status>命中的第一个敌方英雄，并造成<magicDamage>{{ rmaindamage }}魔法伤害</magicDamage>。<status>晕眩</status>时长取决于飞行距离，至多{{ maxstunduration }}秒。目标周围的敌人会受到<spellName>冰霜射击</spellName>的<status>减速</status>效果。{{ spellmodifierdescriptionappend }}",
+        "cd": 100,
+        "cost": 100,
+        "costType": " {{ abilityresourcename }}",
+        "range": 25000,
+        "icon": "assets/lol/icons/spells/EnchantedCrystalArrow.png"
+      }
+    ]
+  },
+  "Annie": {
+    "id": "1",
+    "name": "黑暗之女",
+    "title": "安妮",
+    "portrait": "assets/lol/icons/champions/Annie.png",
+    "passive": {
+      "name": "嗜火",
+      "desc": "在施放4个技能后，安妮的下一次伤害类技能就会对目标造成短暂的晕眩效果。<br><br>安妮在游戏开始时和重生时，会带着满层的【嗜火】。",
+      "icon": "assets/lol/icons/spells/Annie_Passive.png"
+    },
+    "abilities": [
+      {
+        "key": "Q",
+        "name": "碎裂之火",
+        "desc": "安妮向目标投出注入了法力值的火球，对目标造成魔法伤害。如果目标死于碎裂之火，则碎裂之火消耗的法力值会返还给安妮，且碎裂之火的冷却时间减半。",
+        "tooltip": "安妮投出一团火球，造成<magicDamage>{{ totaldamage }}魔法伤害</magicDamage>。如果目标阵亡，那么安妮会返还法力值并缩短50%冷却时间。{{ spellmodifierdescriptionappend }}",
+        "cd": 4,
+        "cost": 60,
+        "costType": " {{ abilityresourcename }}",
+        "range": 625,
+        "icon": "assets/lol/icons/spells/AnnieQ.png"
+      },
+      {
+        "key": "W",
+        "name": "焚烧",
+        "desc": "安妮向锥形区域施放一道烈焰，对区域内的所有敌人造成伤害。",
+        "tooltip": "安妮投射出一阵火焰波，造成<magicDamage>{{ totaldamage }}魔法伤害</magicDamage>。{{ spellmodifierdescriptionappend }}",
+        "cd": 7,
+        "cost": 70,
+        "costType": " {{ abilityresourcename }}",
+        "range": 600,
+        "icon": "assets/lol/icons/spells/AnnieW.png"
+      },
+      {
+        "key": "E",
+        "name": "熔岩护盾",
+        "desc": "为安妮或一名友军提供一层护盾、一个爆发性的移动速度加成并且对任何用攻击或技能袭击她的敌人造成伤害。",
+        "tooltip": "安妮为一名友方英雄提供持续{{ shieldduration }}秒的<shield>{{ shieldblocktotal }}护盾值</shield>，以及在{{ movementspeedduration }}秒里持续衰减的<speed>{{ movespeedcalc }}移动速度</speed>。当护盾处于激活状态时，敌人用攻击或技能对护盾造成伤害时会受到<magicDamage>{{ damagereturn }}魔法伤害</magicDamage>，每个护盾受到一次伤害。<br /><br />提伯斯在被召唤出来时总会获得<spellName>熔岩护盾</spellName>的效果。{{ spellmodifierdescriptionappend }}",
+        "cd": 10,
+        "cost": 60,
+        "costType": " {{ abilityresourcename }}",
+        "range": 800,
+        "icon": "assets/lol/icons/spells/AnnieE.png"
+      },
+      {
+        "key": "R",
+        "name": "提伯斯之怒",
+        "desc": "安妮召唤地狱火泰迪：提伯斯为其作战，对目标区域造成伤害，提伯斯也会攻击和烧伤站在它周围的敌人。",
+        "tooltip": "<spellPassive>被动：</spellPassive>安妮获得<magicPen>{{ rpercentpenbuff*100 }}%法术穿透</magicPen>。<br /><br />安妮召唤提伯斯，造成<magicDamage>{{ initialburstdamage }}魔法伤害</magicDamage>。在接下来的{{ tibberslifetime }}秒里，提伯斯会灼烧附近的敌人，<magicDamage>每秒造成{{ tibbersauradamage }}魔法伤害</magicDamage>。<br /><br />提伯斯在以下情况下会变得暴怒：在被召唤出来时、在安妮晕眩一名敌方英雄时、以及在安妮阵亡时。在暴怒状态下，提伯斯获得<attackSpeed>275%攻击速度</attackSpeed>和在3秒里持续衰减的<speed>100%移动速度</speed>。<br /><br /><recast>再次施放：</recast>手动给提伯斯下达指令。{{ spellmodifierdescriptionappend }}",
+        "cd": 130,
+        "cost": 100,
+        "costType": " {{ abilityresourcename }}",
+        "range": 600,
+        "icon": "assets/lol/icons/spells/AnnieR.png"
+      }
+    ]
+  },
+  "MasterYi": {
+    "id": "11",
+    "name": "无极剑圣",
+    "title": "易",
+    "portrait": "assets/lol/icons/champions/MasterYi.png",
+    "passive": {
+      "name": "双重打击",
+      "desc": "易大师每攻击数次，就会同时对目标进行2次打击。",
+      "icon": "assets/lol/icons/spells/MasterYi_Passive1.png"
+    },
+    "abilities": [
+      {
+        "key": "Q",
+        "name": "阿尔法突袭",
+        "desc": "易以肉眼难以发觉的速度穿梭于战场，对多个敌人造成物理伤害，同时处于不可被选取的状态下。阿尔法突袭可以暴击，并对野怪造成额外物理伤害。普通攻击可以减少阿尔法突袭的冷却时间。",
+        "tooltip": "易变得【不可被选取】并对他目标附近的敌人发起快速打击，对命中的所有敌人造成<physicalDamage>{{ totaldamage }}物理伤害</physicalDamage>，至多命中{{ alphastrikebounces }}名敌人。<br /><br />如果没有其他目标，那么这个技能可以重复打击相同敌人，每次后续打击造成{{ subsequenthitmultiplier*100 }}%物理伤害(<physicalDamage>{{ subesquentdamage }}</physicalDamage>)，对单个目标的最大伤害值为<physicalDamage>{{ singletotaldamage }}物理伤害</physicalDamage>。{{ spellmodifierdescriptionappend }}",
+        "cd": 20,
+        "cost": 50,
+        "costType": " {{ abilityresourcename }}",
+        "range": 600,
+        "icon": "assets/lol/icons/spells/AlphaStrike.png"
+      },
+      {
+        "key": "W",
+        "name": "冥想",
+        "desc": "易通过集中念力来活化他的身体，从而回复生命值，并暂时减少所受的伤害。此外，易还会为双重打击充能，并暂停无极剑道和高原血统的持续时长。",
+        "tooltip": "易开始引导，并在{{ healduration }}秒里持续回复共<healing>{{ totalheal }}生命值</healing>。这个治疗效果可基于易大师的已损失生命值而提升，最多可提升至{{ maxmissinghealthpercent*100 }}%。<br /><br />在引导时和随后的{{ drlinger }}秒里，他还会获得{{ initialdr }}伤害减免，这个效果会在最初的{{ initialextradrduration }}秒后降低至{{ damagereduction*100 }}%。{{ spellmodifierdescriptionappend }}",
+        "cd": 10,
+        "cost": 40,
+        "costType": "法力 (+{{ percentmanacostpersecond*100 }}%最大法力值每秒)",
+        "range": 20,
+        "icon": "assets/lol/icons/spells/Meditate.png"
+      },
+      {
+        "key": "E",
+        "name": "无极剑道",
+        "desc": "提供额外真实伤害至普攻",
+        "tooltip": "易的攻击造成额外的<trueDamage>{{ totaldamage }}真实伤害</trueDamage>，持续{{ duration }}秒。{{ spellmodifierdescriptionappend }}",
+        "cd": 14,
+        "cost": 0,
+        "costType": "无消耗",
+        "range": 20,
+        "icon": "assets/lol/icons/spells/WujuStyle.png"
+      },
+      {
+        "key": "R",
+        "name": "高原血统",
+        "desc": "易以超乎想象的身法进行移动，短时间内提升移动速度和攻击速度，并免疫减速效果。该技能激活期间，易在参与击杀一名敌方英雄的同时，会延长该技能的持续时间。在击杀和助攻后，也会被动地减少易其它技能的冷却时间。",
+        "tooltip": "<spellPassive>被动：</spellPassive>在参与击杀后，易大师的普通技能的剩余冷却时间会减少{{ rcooldownrefund*100 }}%。<br /><br /><spellActive>主动：</spellActive>获得<speed>{{ rmsbonus }}%移动速度</speed>，<attackSpeed>{{ rasbonus }}%攻击速度</attackSpeed>，并且免疫<status>减速</status>效果，持续{{ rduration }}秒。每次参与击杀后都会使此技能的持续时间延长{{ rkillassistextension }}秒。{{ spellmodifierdescriptionappend }}",
+        "cd": 85,
+        "cost": 100,
+        "costType": " {{ abilityresourcename }}",
+        "range": 1,
+        "icon": "assets/lol/icons/spells/Highlander.png"
+      }
+    ]
+  },
+  "Teemo": {
+    "id": "17",
+    "name": "迅捷斥候",
+    "title": "提莫",
+    "portrait": "assets/lol/icons/champions/Teemo.png",
+    "passive": {
+      "name": "游击队军备",
+      "desc": "如果提莫在短时间内静止站立且不受任何伤害，就会进入无定期的隐形状态。如果提莫在草丛中，他就能在移动的同时进入并保持隐形状态。离开隐形状态后，提莫会获得“出奇制胜”的增益效果，提升攻击速度，持续3秒。",
+      "icon": "assets/lol/icons/spells/TeemoPassive.png"
+    },
+    "abilities": [
+      {
+        "key": "Q",
+        "name": "致盲吹箭",
+        "desc": "用一团强力的毒液来侵蚀一名敌人的视野，对目标单位造成伤害并使目标致盲一段时间。",
+        "tooltip": "提莫发射一根吹箭，对目标造成{{ blindduration }}秒<status>致盲</status>和<magicDamage>{{ calculateddamage }}魔法伤害</magicDamage>。{{ spellmodifierdescriptionappend }}",
+        "cd": 7,
+        "cost": 70,
+        "costType": " {{ abilityresourcename }}",
+        "range": 680,
+        "icon": "assets/lol/icons/spells/TeemoQ.png"
+      },
+      {
+        "key": "W",
+        "name": "小莫快跑",
+        "desc": "提莫动如脱兔，提升移动速度，直到被敌方英雄或防御塔击中为止。提莫可以通过冲刺来获得额外移动速度，且短时间内不会因被击中而使加速效果中止。",
+        "tooltip": "<spellPassive>被动：</spellPassive>提莫获得<speed>{{ passivemovespeedbonus*100 }}%移动速度</speed>，前提是在最近{{ passivecooldownondamagetaken }}秒内未受到来自敌方英雄或防御塔的伤害。<br /><br /><spellActive>主动：</spellActive>提莫急速奔跑，获得持续{{ activemovespeedbuffduration }}秒的<speed>{{ activemovespeedbonus*100 }}%移动速度</speed>，在被攻击时也不会移除。{{ spellmodifierdescriptionappend }}",
+        "cd": 14,
+        "cost": 40,
+        "costType": " {{ abilityresourcename }}",
+        "range": 20,
+        "icon": "assets/lol/icons/spells/TeemoW.png"
+      },
+      {
+        "key": "E",
+        "name": "毒性射击",
+        "desc": "提莫每次攻击附带毒液伤害%i:OnHit% <OnHit>攻击特效</OnHit>，造成持续性伤害，持续4秒。",
+        "tooltip": "<spellPassive>被动：</spellPassive>提莫的攻击会施加剧毒%i:OnHit% <OnHit>攻击特效</OnHit>，造成额外的<magicDamage>{{ impactcalculateddamage }}魔法伤害</magicDamage>外加在{{ poisonduration }}秒里持续造成共<magicDamage>{{ totaldotdamage }}魔法伤害</magicDamage>。{{ spellmodifierdescriptionappend }}",
+        "cd": 0,
+        "cost": 0,
+        "costType": "被动",
+        "range": 680,
+        "icon": "assets/lol/icons/spells/TeemoE.png"
+      },
+      {
+        "key": "R",
+        "name": "种蘑菇",
+        "desc": "提莫投掷一个可爆炸的毒性陷阱，需要消耗提莫背包里的一个蘑菇。陷阱会在被敌方踩中时爆炸，释放出一团毒云，对附近的敌人造成减速效果和持续伤害。如果提莫把一个蘑菇扔到另一个蘑菇上，那么这个蘑菇会进行弹跳，获得额外的距离。",
+        "tooltip": "提莫投掷一个蘑菇陷阱，它会在被敌方踩中时爆炸。陷阱造成持续{{ debuffduration }}秒的{{ slowamount }}%<status>减速</status>并在此期间持续造成共<magicDamage>{{ totaldamage }}魔法伤害</magicDamage>。敌人会被显形相同的时长 。<br /><br />陷阱持续{{ mushroomduration }}分钟并且处于潜行状态。一个蘑菇在被扔到另一个蘑菇上时，会先弹跳然后着陆到它的位置。这个技能有{{ maxammo }}层充能({{ ammorechargetime }}秒充能时间)。<br />{{ spellmodifierdescriptionappend }}",
+        "cd": 0.25,
+        "cost": 75,
+        "costType": " {{ abilityresourcename }}",
+        "range": 600,
+        "icon": "assets/lol/icons/spells/TeemoR.png"
+      }
+    ]
+  },
+  "Lux": {
+    "id": "99",
+    "name": "光辉女郎",
+    "title": "拉克丝",
+    "portrait": "assets/lol/icons/champions/Lux.png",
+    "passive": {
+      "name": "光芒四射",
+      "desc": "拉克丝的伤害类技能会对敌人施加【启明】效果，持续若干秒。拉克丝的下一次攻击将会消耗【启明】效果，来对目标造成额外魔法伤害（基于拉克丝等级）。",
+      "icon": "assets/lol/icons/spells/LuxIlluminatingFraulein.png"
+    },
+    "abilities": [
+      {
+        "key": "Q",
+        "name": "光之束缚",
+        "desc": "拉克丝释放一个光球，束缚并伤害最多两个敌方单位。",
+        "tooltip": "拉克丝朝目标地点发射一团光球，<status>束缚</status>前2名敌人{{ rootduration }}秒并对每个敌人造<magicDamage>{{ totaldamagett }}魔法伤害</magicDamage>。{{ spellmodifierdescriptionappend }}",
+        "cd": 10,
+        "cost": 50,
+        "costType": " {{ abilityresourcename }}",
+        "range": 1175,
+        "icon": "assets/lol/icons/spells/LuxLightBinding.png"
+      },
+      {
+        "key": "W",
+        "name": "曲光屏障",
+        "desc": "拉克丝掷出她的魔杖，魔杖所触及的友方单位会有光环环绕，保护他们免受敌方伤害。",
+        "tooltip": "拉克丝扔出她的魔杖，为它途经的友军提供持续{{ shieldduration }}秒的<shield>{{ totalshieldtt }}护盾</shield>。随后它会折返，为它途经的友军提供等额的<shield>护盾</shield>。{{ spellmodifierdescriptionappend }}",
+        "cd": 12,
+        "cost": 60,
+        "costType": " {{ abilityresourcename }}",
+        "range": 1150,
+        "icon": "assets/lol/icons/spells/LuxPrismaticWave.png"
+      },
+      {
+        "key": "E",
+        "name": "透光奇点",
+        "desc": "朝一个区域发射一个不规则的扭曲之光，减速附近敌人。拉克丝可以引爆它，对敌人造成区域性伤害。",
+        "tooltip": "拉克丝创造一个光明地带，显形该区域并使区域中的敌人<status>减速</status>{{ slowpercent }}%。在{{ slowzoneduration }}秒后或<recast>再次施放</recast>这个技能后，它会爆炸，造成<magicDamage>{{ totaldamagett }}魔法伤害</magicDamage>并<status>减速</status>额外的{{ slowlingerduration }}秒。{{ spellmodifierdescriptionappend }}",
+        "cd": 10,
+        "cost": 70,
+        "costType": " {{ abilityresourcename }}",
+        "range": 1100,
+        "icon": "assets/lol/icons/spells/LuxLightStrikeKugel.png"
+      },
+      {
+        "key": "R",
+        "name": "终极闪光",
+        "desc": "在积蓄能量之后，拉克丝发射一束光波，对该区域所有目标造成伤害。此外，该技能触发拉克丝的被动技能并刷新光芒四射减益的持续时间。",
+        "tooltip": "拉克丝发射一束耀目的光能射线，对一条直线上的所有敌人造成<magicDamage>{{ totaldamage }}魔法伤害</magicDamage>。{{ spellmodifierdescriptionappend }}",
+        "cd": 60,
+        "cost": 100,
+        "costType": " {{ abilityresourcename }}",
+        "range": 3340,
+        "icon": "assets/lol/icons/spells/LuxR.png"
+      }
+    ]
+  },
+  "Darius": {
+    "id": "122",
+    "name": "诺克萨斯之手",
+    "title": "德莱厄斯",
+    "portrait": "assets/lol/icons/champions/Darius.png",
+    "passive": {
+      "name": "出血",
+      "desc": "德莱厄斯的攻击和伤害技能会导致敌人流血，在5秒里持续造成物理伤害，最多叠加5次。在他的目标达到最大层数后，德莱厄斯会进入激怒状态并获得巨额攻击力。",
+      "icon": "assets/lol/icons/spells/Darius_Icon_Hemorrhage.png"
+    },
+    "abilities": [
+      {
+        "key": "Q",
+        "name": "大杀四方",
+        "desc": "德莱厄斯蓄力然后将他的斧头挥舞成一个大圈。被斧刃击中的敌人会比被斧柄击中的敌人受到更多伤害。德莱厄斯会基于被斧刃击中的敌方英雄或大型野怪的数量来获得治疗效果。",
+        "tooltip": "德莱厄斯举起他的斧头然后挥舞一圈，斧刃造成<physicalDamage>{{ bladedamage }}物理伤害</physicalDamage>并且斧柄造成<physicalDamage>{{ handledamage }}伤害</physicalDamage>。被斧柄命中的敌人不会被施加<keywordMajor>出血</keywordMajor>层数。<br /><br />德莱厄斯每用斧刃命中一个敌方英雄或大型野怪就会回复<healing>{{ missinghealthheal }}%已损失生命值</healing>，至多回复<healing>{{ missinghealpercent }}%</healing>。{{ spellmodifierdescriptionappend }}",
+        "cd": 9,
+        "cost": 25,
+        "costType": " {{ abilityresourcename }}",
+        "range": 1,
+        "icon": "assets/lol/icons/spells/DariusCleave.png"
+      },
+      {
+        "key": "W",
+        "name": "致残打击",
+        "desc": "德莱厄斯的下一次攻击会打向敌人的大动脉。在目标流血不止的同时，目标的移动速度也会被减缓。",
+        "tooltip": "德莱厄斯的下次攻击造成<physicalDamage>{{ empoweredattackdamage }}物理伤害</physicalDamage>和持续{{ slowduration }}秒的{{ slowpercent }}%<status>减速</status>。<br /><br />如果这个技能击杀了目标，那么会返还其法力消耗并缩短其{{ percentcdrefund }}%的冷却时间。<br /><br /><rules>这个技能会在造成伤害时触发技能特效。</rules>{{ spellmodifierdescriptionappend }}",
+        "cd": 5,
+        "cost": 40,
+        "costType": " {{ abilityresourcename }}",
+        "range": 300,
+        "icon": "assets/lol/icons/spells/DariusNoxianTacticsONH.png"
+      },
+      {
+        "key": "E",
+        "name": "无情铁手",
+        "desc": "德莱厄斯磨利他的巨斧，被动地让他的物理伤害无视目标一部分护甲。在主动施放时，德莱厄斯会用斧头上的钩子横扫他的敌人，并将他们拉到德莱厄斯身边。",
+        "tooltip": "<spellPassive>被动：</spellPassive>德莱厄斯获得{{ passivepercentarmorpen }}%护甲穿透。<br /><br /><spellActive>主动：</spellActive>德莱厄斯用他的斧头进行钩拽，造成<status>拖拽</status>、<status>击飞</status>和持续{{ slowduration }}秒的{{ slowpercent }}%<status>减速</status>。{{ spellmodifierdescriptionappend }}",
+        "cd": 26,
+        "cost": 70,
+        "costType": " {{ abilityresourcename }}",
+        "range": 535,
+        "icon": "assets/lol/icons/spells/DariusAxeGrabCone.png"
+      },
+      {
+        "key": "R",
+        "name": "诺克萨斯断头台",
+        "desc": "德莱厄斯跃向目标英雄并进行致命打击，造成真实伤害。目标身上的每层出血效果都会提升这个技能的伤害。如果诺克萨斯断头台完成了一次击杀，那么它的冷却时间会暂时被重置。",
+        "tooltip": "德莱厄斯跳向一名敌人并进行一次致命猛击，造成<trueDamage>{{ damage }}真实伤害</trueDamage>。目标身上每有一层<keywordMajor>出血</keywordMajor>，这个技能就会造成额外的{{ rdamagepercentperhemostack*100 }}%伤害，至多达到<trueDamage>{{ maximumdamage }}伤害</trueDamage>。<br /><br />如果这个技能击杀了目标，那么德莱厄斯就可以在{{ rrecastduration }}秒内<recast>再次施放</recast>这个技能。这个技能在技能等级达到3时，即可无需消耗法力并在击杀时完全刷新技能的冷却时间。{{ spellmodifierdescriptionappend }}",
+        "cd": 120,
+        "cost": 100,
+        "costType": " {{ abilityresourcename }}",
+        "range": 460,
+        "icon": "assets/lol/icons/spells/DariusExecute.png"
+      }
+    ]
+  },
+  "Yasuo": {
+    "id": "157",
+    "name": "疾风剑豪",
+    "title": "亚索",
+    "portrait": "assets/lol/icons/champions/Yasuo.png",
+    "passive": {
+      "name": "浪客之道",
+      "desc": "亚索的暴击几率提升。此外，亚索在移动时会为一层护盾攒能。护盾会在他受到来自英雄或野怪的伤害时触发。",
+      "icon": "assets/lol/icons/spells/Yasuo_Passive.png"
+    },
+    "abilities": [
+      {
+        "key": "Q",
+        "name": "斩钢闪",
+        "desc": "向前出剑，呈直线造成伤害。<br><br>在命中时，斩钢闪会获得一层旋风烈斩效果，持续数秒。在积攒2层旋风烈斩效果后，斩钢闪会形成一阵能够<font color='#6655CC'>击飞</font>敌人的旋风。<br><br>斩钢闪被视为普通攻击，并且可以从所有作用于普攻的东西上获得收益。",
+        "tooltip": "亚索进行戳刺，造成<physicalDamage>{{ totaldamage }}物理伤害</physicalDamage>。如果他命中了，那么他会获得一层持续{{ gatheringstormduration }}秒的层数。当他拥有2层时，这个技能的下次施放将会发射出一道远程龙卷风，造成等值伤害和{{ knockupdurationtooltiponly }}秒<status>击飞</status>。<br /><br />如果在冲刺期间施放，那么这个技能会呈环状进行打击而非直接戳刺。{{ spellmodifierdescriptionappend }}",
+        "cd": 4,
+        "cost": 0,
+        "costType": "无消耗",
+        "range": 475,
+        "icon": "assets/lol/icons/spells/YasuoQ1Wrapper.png"
+      },
+      {
+        "key": "W",
+        "name": "风之障壁",
+        "desc": "形成一个持续4秒的气流之墙，来阻挡敌方的飞行道具。",
+        "tooltip": "亚索形成一个持续4秒的气流浮墙，来阻挡敌方的飞行道具。{{ spellmodifierdescriptionappend }}",
+        "cd": 25,
+        "cost": 0,
+        "costType": "无消耗",
+        "range": 400,
+        "icon": "assets/lol/icons/spells/YasuoW.png"
+      },
+      {
+        "key": "E",
+        "name": "踏前斩",
+        "desc": "向目标敌人突进，造成魔法伤害。每次施法都会提升你的后续突进的伤害，直到抵达上限。<br><br>在若干秒内无法对相同敌人重复施放。<br><br><font color='#99FF99'>如果在突进的过程中施放斩钢闪，那么斩钢闪就会呈环状出剑。</font>",
+        "tooltip": "亚索冲刺并穿过一个目标，造成<magicDamage>{{ totaldamage }}魔法伤害</magicDamage>。这个技能每次施放后都会为{{ stackduration }}秒内的后续施放提供<magicDamage>{{ bonusdamageperstack }}</magicDamage>额外伤害，至多可叠加{{ maxstacks }}次。<br /><br />这个技能对每个目标有{{ pertargetcooldown }}秒冷却时间。{{ spellmodifierdescriptionappend }}",
+        "cd": 0.5,
+        "cost": 0,
+        "costType": "无消耗",
+        "range": 475,
+        "icon": "assets/lol/icons/spells/YasuoE.png"
+      },
+      {
+        "key": "R",
+        "name": "狂风绝息斩",
+        "desc": "闪烁到一个<factionIonia1>浮空</factionIonia1>的敌方英雄身边，造成物理伤害，并使范围内的所有<factionIonia1>浮空</factionIonia1>的敌人滞留在空中。获得满额的剑意值，但会重置旋风烈斩的层数。<br><br>在接下来的若干秒里，亚索的暴击会获得显著的额外护甲穿透加成值。",
+        "tooltip": "亚索传送到一名<status>浮空</status>的敌方英雄身边，造成<physicalDamage>{{ damage }}物理伤害</physicalDamage>并使所有附近<status>浮空</status>的敌人们维持此状态至多{{ rknockupduration }}秒。亚索还会获得满额<keywordMajor>剑意</keywordMajor>，但会失去所有所有<spellName>斩钢闪</spellName>层数。<br /><br />之后，亚索的暴击会无视<scaleArmor>{{ rpercentarmorpen }}%额外护甲</scaleArmor>，持续{{ rbuffduration }}秒。{{ spellmodifierdescriptionappend }}",
+        "cd": 70,
+        "cost": 0,
+        "costType": "无消耗",
+        "range": 1400,
+        "icon": "assets/lol/icons/spells/YasuoR.png"
+      }
+    ]
+  },
+  "Zed": {
+    "id": "238",
+    "name": "影流之主",
+    "title": "劫",
+    "portrait": "assets/lol/icons/champions/Zed.png",
+    "passive": {
+      "name": "影忍法！灭魂劫",
+      "desc": "劫的普通攻击会对低生命值的目标造成额外魔法伤害。这个特效在数秒内只能对相同的敌方英雄生效一次。",
+      "icon": "assets/lol/icons/spells/ZedP.png"
+    },
+    "abilities": [
+      {
+        "key": "Q",
+        "name": "影奥义！诸刃",
+        "desc": "劫和他的影分身一起将他们的手里剑向前方掷出。<br><br>每支手里剑都会对命中的每个敌人造成伤害。",
+        "tooltip": "劫和他的<keywordMajor>影分身</keywordMajor>一起将他们的手里剑向前方掷出，每一枚手里剑都会对命中的第一个敌人造成<physicalDamage>{{ totaldamage }}物理伤害</physicalDamage>，并对之后的每个敌人造成<physicalDamage>{{ passthroughdamage }}物理伤害</physicalDamage>。{{ spellmodifierdescriptionappend }}",
+        "cd": 6,
+        "cost": 75,
+        "costType": " {{ abilityresourcename }}",
+        "range": 900,
+        "icon": "assets/lol/icons/spells/ZedQ.png"
+      },
+      {
+        "key": "W",
+        "name": "影奥义！分身",
+        "desc": "<font color='#FF9900'>被动：</font>当劫和他的影分身用相同技能击中一名敌方英雄时，劫会回复能量。每次施放技能只会回复一次能量。<br><br><font color='#FF9900'>主动：</font>劫的影分身向前突进，并在一个地方维持若干秒。再次激活此技能会让劫与这个影分身互换位置。",
+        "tooltip": "<spellPassive>被动：</spellPassive>当劫和他的<keywordMajor>影分身</keywordMajor>用相同技能击中一名敌方英雄时，劫会回复<keywordMajor>{{ energyrestoredoublehit }}能量</keywordMajor>。<br /><br /><spellActive>主动：</spellActive>劫的<keywordMajor>影分身</keywordMajor>向前冲刺，并在一个地方维持{{ shadowdurationtooltip }}秒。<recast>再次施放</recast>这个技能会让劫与这个<keywordMajor>影分身</keywordMajor>互换位置。{{ spellmodifierdescriptionappend }}",
+        "cd": 20,
+        "cost": 40,
+        "costType": " {{ abilityresourcename }}",
+        "range": 650,
+        "icon": "assets/lol/icons/spells/ZedW.png"
+      },
+      {
+        "key": "E",
+        "name": "影奥义！鬼斩",
+        "desc": "劫和他的影分身进行斩击，对附近的敌人造成伤害。被一个影分身的斩击命中的敌人们会被减速。",
+        "tooltip": "劫和他的<keywordMajor>影分身</keywordMajor>进行斩击，对附近的敌人造成<physicalDamage>{{ totaldamage }}物理伤害</physicalDamage>。<br /><br />每个被劫的斩击所命中的敌方英雄都会使<spellName>影奥义！分身</spellName>的冷却时间减少{{ shadowhitcdr }}秒。<br /><br />被<keywordMajor>影分身</keywordMajor>的斩击所击中的敌人，将会被<status>减速</status>{{ movespeedmod*-100 }}%，持续{{ slowduration }}秒。被多个斩击同时击中的敌人，将会被<status>减速</status>{{ movespeedmodbonus*-100 }}%，但不会受到额外伤害。{{ spellmodifierdescriptionappend }}",
+        "cd": 5,
+        "cost": 40,
+        "costType": " {{ abilityresourcename }}",
+        "range": 290,
+        "icon": "assets/lol/icons/spells/ZedE.png"
+      },
+      {
+        "key": "R",
+        "name": "禁奥义！瞬狱影杀阵",
+        "desc": "劫变为不可被选取状态并突进至一名敌方英雄，同时为目标施加死亡印记。在3秒后，印记将会爆炸，同时造成额外伤害，劫在印记激活期间造成的伤害越多，则此额外伤害越高。如果该英雄死于此技能期间，那么劫可以获得该英雄的一部分攻击力。",
+        "tooltip": "劫变得不可被选取，突进向一位敌方英雄，并将其标记。{{ rdeathmarkduration }}秒后，标记会触发，对目标造成<physicalDamage>{{ rcalculateddamage }}物理伤害</physicalDamage>，加上印记激活期间劫所造成的伤害总和的{{ rdamageamp*100 }}%。<br /><br />突进会留下一个<keywordMajor>影分身</keywordMajor>在身后，持续{{ rshadowdurationdisplayed }}秒。<recast>再次施放</recast>此技能会使劫与这个<keywordMajor>影分身</keywordMajor>互换位置。{{ spellmodifierdescriptionappend }}",
+        "cd": 120,
+        "cost": 0,
+        "costType": "无消耗",
+        "range": 625,
+        "icon": "assets/lol/icons/spells/ZedR.png"
+      }
+    ]
+  },
+  "Jinx": {
+    "id": "222",
+    "name": "暴走萝莉",
+    "title": "金克丝",
+    "portrait": "assets/lol/icons/champions/Jinx.png",
+    "passive": {
+      "name": "罪恶快感",
+      "desc": "金克丝每当参与击杀或摧毁一名英雄、一个史诗级野怪或一座建筑物后，她的移动速度和攻击速度就会得到显著提升。",
+      "icon": "assets/lol/icons/spells/Jinx_Passive.png"
+    },
+    "abilities": [
+      {
+        "key": "Q",
+        "name": "枪炮交响曲！",
+        "desc": "金克丝可以通过切换武器来改变普通攻击的方式。在用她的轻机枪“砰砰”攻击时，她的攻击速度会提升。在用她的火箭发射器“鱼骨头”攻击时，她的普通攻击会造成范围伤害，攻击距离提升，但会消耗法力值并且攻击得更慢。",
+        "tooltip": "金克丝可在【鱼骨头—火箭发射器】和【砰砰枪—轻机枪】之间切换武器。<br /><br />在使用火箭发射器时，金克丝的攻击会对目标和附近的敌人造成<physicalDamage>{{ rocketdamage }}物理伤害</physicalDamage>，提升{{ rocketbonusrange }}距离，消耗法力，但所享的攻速加成减少{{ rocketaspdpenalty*100 }}%。<br /><br />在使用轻机枪时，金克丝的攻击提供<attackSpeed>攻击速度</attackSpeed>，持续{{ minigunattackspeedduration }}秒，可叠加至多{{ minigunattackspeedstacks }}次(<attackSpeed>最大攻速加成为+{{ minigunattackspeedmax }}% %i:scaleAS%</attackSpeed>)。{{ spellmodifierdescriptionappend }}",
+        "cd": 0.9,
+        "cost": 20,
+        "costType": "法力值",
+        "range": 600,
+        "icon": "assets/lol/icons/spells/JinxQ.png"
+      },
+      {
+        "key": "W",
+        "name": "震荡电磁波！",
+        "desc": "金克丝使用她的震荡手枪“电磁器”来发射震荡波，让被命中的第一个敌人暴露在己方视野中（可使隐形英雄现形），并对其造成伤害和减速效果。",
+        "tooltip": "金克丝发射一束震荡波，对命中的第一个目标造成<physicalDamage>{{ totaldamage }}物理伤害</physicalDamage>，使其<status>减速</status>{{ slowpercent }}%并显形，持续{{ slowduration }}秒。{{ spellmodifierdescriptionappend }}",
+        "cd": 8,
+        "cost": 40,
+        "costType": " {{ abilityresourcename }}",
+        "range": 1450,
+        "icon": "assets/lol/icons/spells/JinxW.png"
+      },
+      {
+        "key": "E",
+        "name": "嚼火者手雷！",
+        "desc": "金克丝扔出一串陷阱手雷。手雷会在5秒后爆炸，让敌人着火。嚼火者手雷将会袭击路过的敌方英雄，并将他们束缚在原地。",
+        "tooltip": "金克丝扔出3颗持续{{ grenadeduration }}秒的嚼火者手雷，手雷会在接触到敌方英雄时爆炸，将其<status>禁锢</status>{{ rootduration }}秒并对附近敌人造成<magicDamage>{{ totaldamage }}魔法伤害</magicDamage>。{{ spellmodifierdescriptionappend }}",
+        "cd": 24,
+        "cost": 90,
+        "costType": " {{ abilityresourcename }}",
+        "range": 925,
+        "icon": "assets/lol/icons/spells/JinxE.png"
+      },
+      {
+        "key": "R",
+        "name": "超究极死神飞弹！",
+        "desc": "金克丝发射一枚能够跨越整个地图的飞弹，并且飞行的时间越长，伤害值越高。飞弹会在命中一名敌方英雄后爆炸，对目标和目标附近的敌人造成伤害，且目标的生命值越低，所受的伤害值越高。",
+        "tooltip": "金克丝发射一枚飞弹，在首次命中敌方英雄后爆炸，造成<physicalDamage>{{ damagefloor }}到{{ damagemax }}+{{ percentdamage }}%已损失生命值的物理伤害</physicalDamage>，飞弹在飞行时间超过1秒后会持续提升伤害。目标附近的敌人受到{{ aoedamagemult*100 }}%伤害。<br /><br /><rules>对野怪的已损失生命值伤害无法超过{{ monsterexecutemax }}。</rules>{{ spellmodifierdescriptionappend }}",
+        "cd": 85,
+        "cost": 100,
+        "costType": " {{ abilityresourcename }}",
+        "range": 25000,
+        "icon": "assets/lol/icons/spells/JinxR.png"
+      }
+    ]
+  },
+  "Leona": {
+    "id": "89",
+    "name": "曙光女神",
+    "title": "蕾欧娜",
+    "portrait": "assets/lol/icons/champions/Leona.png",
+    "passive": {
+      "name": "日光",
+      "desc": "技能会在敌人身上施加【日光】效果，持续1.5秒。在此期间，蕾欧娜友军对这些目标造成伤害时，会触发【日光】，使目标受到额外的魔法伤害。",
+      "icon": "assets/lol/icons/spells/LeonaSunlight.png"
+    },
+    "abilities": [
+      {
+        "key": "Q",
+        "name": "破晓之盾",
+        "desc": "蕾欧娜用盾进行下次普通攻击，造成额外魔法伤害并晕眩目标。",
+        "tooltip": "蕾欧娜的下次攻击会<status>晕眩</status>目标{{ stunduration }}秒，并造成额外的<magicDamage>{{ totaldamagetooltip }}</magicDamage>魔法伤害。{{ spellmodifierdescriptionappend }}",
+        "cd": 5,
+        "cost": 30,
+        "costType": " {{ abilityresourcename }}",
+        "range": 100,
+        "icon": "assets/lol/icons/spells/LeonaShieldOfDaybreak.png"
+      },
+      {
+        "key": "W",
+        "name": "日蚀",
+        "desc": "蕾欧娜举起盾牌，提供伤害减免、护甲和魔法抗性。当持续时间首次结束时，如果附近有敌人，那么她会对其造成魔法伤害并延长效果的持续时间。",
+        "tooltip": "蕾欧娜举起她的盾牌，使即将到来的伤害降低{{ flatdamagereduction }}并获得<scaleArmor>{{ bonusarmortooltip }}护甲</scaleArmor>和<scaleMR>{{ bonusmrtooltip }}魔法抗性</scaleMR>，持续{{ armormrduration }}秒。之后，她的盾牌会爆炸，对附近的敌人造成<magicDamage>{{ totaldamagetooltip }}魔法伤害</magicDamage>。如果她命中了至少一名敌人，那么她会将该<scaleArmor>护甲</scaleArmor>和<scaleMR>魔法抗性</scaleMR>加成延续额外的{{ armormrduration }}秒。<br />{{ spellmodifierdescriptionappend }}",
+        "cd": 14,
+        "cost": 60,
+        "costType": " {{ abilityresourcename }}",
+        "range": 450,
+        "icon": "assets/lol/icons/spells/LeonaSolarBarrier.png"
+      },
+      {
+        "key": "E",
+        "name": "天顶之刃",
+        "desc": "蕾欧娜投掷一束日光，对直线上的所有敌人造成魔法伤害。当效果消失时，蕾欧娜会冲向最后一个被击中的敌人并使其无法移动。",
+        "tooltip": "蕾欧娜用光明之剑进行猛刺，造成<magicDamage>{{ totaldamagetooltip }}魔法伤害</magicDamage>。最后一个被命中的英雄将会被<status>禁锢</status>{{ rootduration }}秒，并且蕾欧娜将会冲向该英雄。{{ spellmodifierdescriptionappend }}",
+        "cd": 12,
+        "cost": 40,
+        "costType": " {{ abilityresourcename }}",
+        "range": 875,
+        "icon": "assets/lol/icons/spells/LeonaZenithBlade.png"
+      },
+      {
+        "key": "R",
+        "name": "日炎耀斑",
+        "desc": "蕾欧娜召唤一道太阳光束，对区域内的敌人造成伤害。区域中心的敌人会被晕眩，并且外围的敌人会被减速。",
+        "tooltip": "蕾欧娜召唤一道太阳光束，造成<magicDamage>{{ explosioncalculateddamage }}魔法伤害</magicDamage>并使敌人<status>减速</status>{{ slowpercent }}%，持续{{ ccduration }}秒。处于区域正中的敌人会受到<status>晕眩</status>效果而非<status>减速</status>效果。{{ spellmodifierdescriptionappend }}",
+        "cd": 90,
+        "cost": 100,
+        "costType": " {{ abilityresourcename }}",
+        "range": 1200,
+        "icon": "assets/lol/icons/spells/LeonaSolarFlare.png"
+      }
+    ]
+  },
+  "Riven": {
+    "id": "92",
+    "name": "放逐之刃",
+    "title": "锐雯",
+    "portrait": "assets/lol/icons/champions/Riven.png",
+    "passive": {
+      "name": "符文之刃",
+      "desc": "锐雯的技能会为她的剑刃充能，并且她的普通攻击会消耗充能来造成额外伤害。",
+      "icon": "assets/lol/icons/spells/RivenRunicBlades.png"
+    },
+    "abilities": [
+      {
+        "key": "Q",
+        "name": "折翼之舞",
+        "desc": "锐雯斩出一套猛烈的剑式。在短时间内，这个技能最多可以重新激活3次，并且第三次会将周围的所有敌人击飞。",
+        "tooltip": "锐雯向前冲刺，造成<physicalDamage>{{ firstslashdamage }}物理伤害</physicalDamage>。她可以<recast>再次施放</recast>这个技能两次。第一次<recast>再次施放</recast>和初始效果相同，但第二次会有不同的效果：<br /><br /><recast>再次施放</recast>: 锐雯向前跃起并猛劈，对附近的敌人们造成<physicalDamage>{{ firstslashdamage }}物理伤害</physicalDamage>和0.75秒<status>击飞</status>。{{ spellmodifierdescriptionappend }}",
+        "cd": 13,
+        "cost": 0,
+        "costType": "无消耗",
+        "range": 275,
+        "icon": "assets/lol/icons/spells/RivenTriCleave.png"
+      },
+      {
+        "key": "W",
+        "name": "震魂怒吼",
+        "desc": "锐雯爆发斗气，对附近敌人造成伤害和晕眩效果。",
+        "tooltip": "锐雯的剑爆发出一股符文能量，造成<physicalDamage>{{ totaldamage }}物理伤害</physicalDamage>和{{ stunduration }}秒<status>晕眩</status>。{{ spellmodifierdescriptionappend }}",
+        "cd": 11,
+        "cost": 0,
+        "costType": "无消耗",
+        "range": 260,
+        "icon": "assets/lol/icons/spells/RivenMartyr.png"
+      },
+      {
+        "key": "E",
+        "name": "勇往直前",
+        "desc": "锐雯向前冲锋一小段距离，并格挡即将到来的伤害。",
+        "tooltip": "锐雯快速冲刺并获得持续1.5秒的<shield>{{ totalshield }}护盾值</shield>。{{ spellmodifierdescriptionappend }}",
+        "cd": 10,
+        "cost": 0,
+        "costType": "无消耗",
+        "range": 250,
+        "icon": "assets/lol/icons/spells/RivenFeint.png"
+      },
+      {
+        "key": "R",
+        "name": "放逐之锋",
+        "desc": "锐雯将能量灌入她那残破不堪的武器中，使攻击力和攻击范围都得到提高。在这段时间里，她还能使用一次疾风斩（一次强大的远程打击）。",
+        "tooltip": "锐雯的武器激荡着灵体能量，为她提供<physicalDamage>{{ bonusad }}攻击力</physicalDamage>，并且伤害型技能和攻击获得距离提升，持续{{ duration }}秒。在此期间，她可以进行<recast>再次施放</recast>。<br /><br /><recast>再次施放</recast>：锐雯发射一道疾风斩来造成<physicalDamage>{{ mindamage }}</physicalDamage>到<physicalDamage>{{ maxdamage }}物理伤害</physicalDamage>，基于目标们的已损失生命值。{{ spellmodifierdescriptionappend }}",
+        "cd": 120,
+        "cost": 0,
+        "costType": "无消耗",
+        "range": 200,
+        "icon": "assets/lol/icons/spells/RivenFengShuiEngine.png"
+      }
+    ]
+  },
+  "Ahri": {
+    "id": "103",
+    "name": "九尾妖狐",
+    "title": "阿狸",
+    "portrait": "assets/lol/icons/champions/Ahri.png",
+    "passive": {
+      "name": "摄魂夺魄",
+      "desc": "在击杀9个小兵或野怪后，阿狸会治疗自身。<br>在参与击杀一名敌方英雄后，阿狸会以一个更高的治疗效果来治疗自身。",
+      "icon": "assets/lol/icons/spells/Ahri_SoulEater2.png"
+    },
+    "abilities": [
+      {
+        "key": "Q",
+        "name": "欺诈宝珠",
+        "desc": "阿狸放出并收回她的宝珠，在放出时会沿途对敌人造成魔法伤害，在收回时则会沿途对敌人造成真实伤害。 ",
+        "tooltip": "阿狸投出然后收回她的宝珠，在放出时会沿途对敌人造成<magicDamage>{{ totaldamage }}魔法伤害</magicDamage>，在收回时则会沿途对敌人造成<trueDamage>{{ totaldamage }}真实伤害</trueDamage>。{{ spellmodifierdescriptionappend }}",
+        "cd": 7,
+        "cost": 55,
+        "costType": " {{ abilityresourcename }}",
+        "range": 970,
+        "icon": "assets/lol/icons/spells/AhriQ.png"
+      },
+      {
+        "key": "W",
+        "name": "妖异狐火",
+        "desc": "阿狸获得短暂的爆发性移动速度加成，并放出三团狐火，锁定附近的敌人进行攻击。",
+        "tooltip": "阿狸释放出3团狐火来追踪附近的敌人们并造成<magicDamage>{{ singlefiredamage }}魔法伤害</magicDamage>，第一团之后的狐火降低至<magicDamage>{{ multifiredamage }}伤害</magicDamage>。她还会获得在{{ movementspeedduration }}秒里持续衰减的<speed>{{ movementspeed*100 }}%移动速度</speed>。{{ spellmodifierdescriptionappend }}",
+        "cd": 9,
+        "cost": 30,
+        "costType": " {{ abilityresourcename }}",
+        "range": 700,
+        "icon": "assets/lol/icons/spells/AhriW.png"
+      },
+      {
+        "key": "E",
+        "name": "魅惑妖术",
+        "desc": "阿狸献出红唇热吻，对命中的第一个敌人造成伤害并将目标魅惑，并且立刻终止目标的移动技能并使目标无恶意地走向她。",
+        "tooltip": "阿狸献出红唇热吻，<status>魅惑</status>命中的首个敌人{{ charmduration }}秒并造成<magicDamage>{{ totaldamage }}魔法伤害</magicDamage>。{{ spellmodifierdescriptionappend }}",
+        "cd": 12,
+        "cost": 60,
+        "costType": " {{ abilityresourcename }}",
+        "range": 975,
+        "icon": "assets/lol/icons/spells/AhriE.png"
+      },
+      {
+        "key": "R",
+        "name": "灵魄突袭",
+        "desc": "阿狸向前猛冲，并放出元气弹，对周围的数个敌人造成伤害。灵魄突袭在进入冷却阶段以前最多可被施放三次，并在参与击杀敌方英雄后获得额外的再次施放次数。",
+        "tooltip": "阿狸像妖魅一般冲刺，并对附近的敌人们发射{{ rmaxtargetspercast }}颗灵魄弹，优先选择英雄。这些灵魄弹每颗造成<magicDamage>{{ rcalculateddamage }}魔法伤害</magicDamage>。<spellName>灵魄突袭</spellName>可以在{{ rrecastwindow }}秒内<recast>再次施放</recast>至多2次。<br /><br />在此期间，用<spellName>摄魂夺魄</spellName>吞噬一名英雄的魂魄时，会使再次施放的窗口期至多延长至{{ pdurationextension }}秒并为<spellName>灵魄突袭</spellName>提供一次额外的再次施放(至多可储存至{{ rmaxcasts }}次)。{{ spellmodifierdescriptionappend }}",
+        "cd": 140,
+        "cost": 100,
+        "costType": " {{ abilityresourcename }}",
+        "range": 450,
+        "icon": "assets/lol/icons/spells/AhriR.png"
+      }
+    ]
+  },
+  "Vayne": {
+    "id": "67",
+    "name": "暗夜猎手",
+    "title": "薇恩",
+    "portrait": "assets/lol/icons/champions/Vayne.png",
+    "passive": {
+      "name": "暗夜猎手",
+      "desc": "薇恩毫不留情的猎杀世间邪恶，向附近敌方英雄移动时会获得移动速度。",
+      "icon": "assets/lol/icons/spells/Vayne_NightHunter.png"
+    },
+    "abilities": [
+      {
+        "key": "Q",
+        "name": "闪避突袭",
+        "desc": "薇恩进行翻滚，并小心地填充她的下一发射击。她的下次攻击造成额外伤害。",
+        "tooltip": "薇恩翻滚一小段距离，并且她的下次普通攻击造成额外的<physicalDamage>{{ adratiobonus }}物理伤害</physicalDamage>。<br /><br /><rules>这个技能会在造成伤害时触发技能特效。</rules>{{ spellmodifierdescriptionappend }}",
+        "cd": 6,
+        "cost": 46,
+        "costType": " {{ abilityresourcename }}",
+        "range": 300,
+        "icon": "assets/lol/icons/spells/VayneTumble.png"
+      },
+      {
+        "key": "W",
+        "name": "圣银弩箭",
+        "desc": "薇恩用稀有金属制作弩箭，让邪恶敌人中毒。对同一目标的第3次攻击或技能施放会对其造成额外真实伤害，数值相当于目标最大生命值的一定百分比。",
+        "tooltip": "<spellPassive>被动：</spellPassive>对一名敌人的每第三次连续的攻击或技能造成额外的<trueDamage>{{ totaldamage }}最大生命值的真实伤害</trueDamage>。{{ spellmodifierdescriptionappend }}",
+        "cd": 0,
+        "cost": 0,
+        "costType": "被动",
+        "range": 750,
+        "icon": "assets/lol/icons/spells/VayneSilveredBolts.png"
+      },
+      {
+        "key": "E",
+        "name": "恶魔审判",
+        "desc": "薇恩从背部展开一张重弩，并且朝她的目标发射一根巨型弩箭，将目标击退并造成伤害。如果目标与地形产生碰撞，那么目标会被贯穿，对其造成额外伤害和晕眩效果。",
+        "tooltip": "薇恩发射一根弩箭来<status>击退</status>一个目标并造成<physicalDamage>{{ totaldamage }}物理伤害</physicalDamage>。如果目标与地形产生碰撞，那么会受到<physicalDamage>{{ empowereddamagett }}额外物理伤害</physicalDamage>，并且会被<status>晕眩</status>{{ stunduration }}秒。 {{ spellmodifierdescriptionappend }}",
+        "cd": 20,
+        "cost": 90,
+        "costType": " {{ abilityresourcename }}",
+        "range": 550,
+        "icon": "assets/lol/icons/spells/VayneCondemn.png"
+      },
+      {
+        "key": "R",
+        "name": "终极时刻",
+        "desc": "薇恩准备进行史诗般的对决，她的攻击力得到提高，能在闪避突袭期间进入隐形状态，闪避突袭的冷却时间缩短，并且暗夜猎手（被动）提供更多移动速度。",
+        "tooltip": "薇恩获得<physicalDamage>{{ bonusattackdamage }}攻击力</physicalDamage>，持续{{ baseduration }}秒，并且如果一个被薇恩所伤害的敌方英雄在{{ damagedmarkerduration }}秒内死亡，那么持续时间会延长{{ durationtoadd }}秒。此外，在这段持续时间里：<li><spellName>暗夜猎手</spellName>会转而提供<speed>{{ movementspeed }}移动速度</speed>。<li><spellName>闪避突袭</spellName>的冷却时间缩短{{ tumblecdreduction }}%，并提供持续{{ tumblestealthduration }}秒的<keywordStealth>隐形</keywordStealth>。{{ spellmodifierdescriptionappend }}",
+        "cd": 100,
+        "cost": 80,
+        "costType": " {{ abilityresourcename }}",
+        "range": 1,
+        "icon": "assets/lol/icons/spells/VayneInquisition.png"
+      }
+    ]
+  }
+}

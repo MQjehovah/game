@@ -1,0 +1,13 @@
+{
+  "actions": {
+    "spell1": ["Q"],
+    "spell2": ["W"],
+    "spell3": ["E"],
+    "spell4": ["R"],
+    "recall": ["B"],
+    "center": ["Space"],
+    "shop": ["P"],
+    "scoreboard": ["Tab"],
+    "stop": ["S"]
+  }
+}

@@ -140,10 +140,19 @@ CONCRETE = (0.58, 0.60, 0.62)
 YELLOW = (0.92, 0.78, 0.20)
 PURPLE = (0.62, 0.25, 0.85)
 
+# HDR emissive materials: components above 1.0 glow through the lit shader's
+# tint self-glow path (tint - 1.0 emits, modulated by albedo) and bloom.
+GLOW_RED = (1.0, 0.10, 0.08)        # tint 1.0 -> +0.0 red? no: tint stays, glow = tint-1
+GLOW_RED = (1.6, 0.22, 0.12)        # red lamp
+GLOW_CYAN = (0.30, 1.7, 1.9)        # cyan lamp
+GLOW_AMBER = (1.9, 1.35, 0.25)      # amber lamp
+GLOW_PURPLE = (1.45, 0.35, 1.9)     # violet lamp
+GLOW_GREEN = (0.35, 1.8, 0.55)      # health glow
+
 
 def gen_drone():
     m = Mesh()
-    m.mat("body", STEEL); m.mat("dark", DARK); m.mat("eye", RED)
+    m.mat("body", STEEL); m.mat("dark", DARK); m.mat("eye", GLOW_RED)
     m.mat("rotor", GUNMETAL); m.mat("trim", CYAN)
     m.octa(0, 0, 0, 0.26, "body")                       # core
     m.box(0, -0.10, 0, 0.20, 0.14, 0.20, "dark")        # belly pod
@@ -162,7 +171,7 @@ def gen_drone():
 def gen_turret():
     m = Mesh()
     m.mat("base", DARK); m.mat("steel", STEEL); m.mat("dome", GUNMETAL)
-    m.mat("barrel", DARK); m.mat("acc", RED); m.mat("ring", CYAN)
+    m.mat("barrel", DARK); m.mat("acc", GLOW_RED); m.mat("ring", CYAN)
     # feet at y=-1.0 (entity spawns at y=1)
     m.cyl(0, -0.94, 0, 0.42, 0.50, 0.12, 8, "base")     # ground pad
     m.cyl(0, -0.78, 0, 0.26, 0.36, 0.28, 8, "steel")    # pedestal
@@ -180,7 +189,7 @@ def gen_turret():
 
 def gen_sapper():
     m = Mesh()
-    m.mat("shell", ORANGE); m.mat("band", DARK); m.mat("core", AMBER)
+    m.mat("shell", ORANGE); m.mat("band", DARK); m.mat("core", GLOW_AMBER)
     m.mat("fin", DARK)
     m.sphere(0, 0, 0, 0.26, 10, 6, "shell")
     m.cyl(0, 0.0, 0, 0.27, 0.27, 0.07, 10, "band")      # hazard band
@@ -195,8 +204,8 @@ def gen_sapper():
 
 def gen_heavy():
     m = Mesh()
-    m.mat("armor", STEEL); m.mat("dark", DARK); m.mat("visor", RED)
-    m.mat("gun", GUNMETAL); m.mat("trim", AMBER)
+    m.mat("armor", STEEL); m.mat("dark", DARK); m.mat("visor", GLOW_RED)
+    m.mat("gun", GUNMETAL); m.mat("trim", GLOW_AMBER)
     # legs (feet at y=-1.0)
     for sx in (-1, 1):
         m.box(sx * 0.20, -0.72, 0, 0.22, 0.60, 0.26, "dark")
@@ -220,8 +229,8 @@ def gen_heavy():
 
 def gen_boss():
     m = Mesh()
-    m.mat("armor", GUNMETAL); m.mat("dark", DARK); m.mat("visor", PURPLE)
-    m.mat("gun", STEEL); m.mat("acc", CRIMSON)
+    m.mat("armor", GUNMETAL); m.mat("dark", DARK); m.mat("visor", GLOW_PURPLE)
+    m.mat("gun", STEEL); m.mat("acc", GLOW_PURPLE)
     # thick legs
     for sx in (-1, 1):
         m.box(sx * 0.34, -0.70, 0, 0.34, 0.56, 0.40, "dark")
@@ -262,7 +271,7 @@ def gen_barrier():
 
 def gen_pickups():
     m = Mesh()
-    m.mat("case", WHITE); m.mat("cross", RED); m.mat("edge", DARK)
+    m.mat("case", WHITE); m.mat("cross", GLOW_GREEN); m.mat("edge", DARK)
     m.box(0, 0, 0, 0.34, 0.34, 0.22, "case")
     m.box(0, 0, 0.115, 0.20, 0.07, 0.02, "cross")
     m.box(0, 0, 0.115, 0.07, 0.20, 0.02, "cross")
@@ -271,7 +280,7 @@ def gen_pickups():
     m.write("pickup_health")
 
     m = Mesh()
-    m.mat("can", OLIVE); m.mat("lid", DARK); m.mat("tip", BRASS)
+    m.mat("can", OLIVE); m.mat("lid", DARK); m.mat("tip", GLOW_AMBER)
     m.box(0, 0, 0, 0.38, 0.24, 0.24, "can")
     m.box(0, 0.135, 0, 0.40, 0.04, 0.26, "lid")
     for i in range(4):
@@ -285,7 +294,7 @@ def gen_weapons():
     def rifle():
         m = Mesh()
         m.mat("body", GUNMETAL); m.mat("dark", DARK); m.mat("grip", (0.16, 0.13, 0.10))
-        m.mat("mag", STEEL); m.mat("acc", CYAN); m.mat("sight", RED)
+        m.mat("mag", STEEL); m.mat("acc", CYAN); m.mat("sight", GLOW_RED)
         m.box(0, 0, -0.20, 0.075, 0.09, 0.55, "body")        # receiver
         m.box(0, 0.005, -0.60, 0.045, 0.045, 0.30, "dark")   # handguard
         m.cyl(0, 0.005, -0.83, 0.016, 0.016, 0.14, 8, "dark")  # barrel
@@ -313,7 +322,7 @@ def gen_weapons():
     def sniper():
         m = Mesh()
         m.mat("body", (0.30, 0.34, 0.30)); m.mat("dark", DARK); m.mat("grip", (0.16, 0.13, 0.10))
-        m.mat("scope", DARK); m.mat("lens", (0.35, 0.75, 0.95)); m.mat("mag", STEEL)
+        m.mat("scope", DARK); m.mat("lens", GLOW_CYAN); m.mat("mag", STEEL)
         m.box(0, 0, -0.18, 0.07, 0.09, 0.62, "body")
         m.cyl(0, 0.01, -0.85, 0.017, 0.017, 0.44, 8, "dark")    # long barrel
         m.box(0, 0.005, -1.02, 0.05, 0.05, 0.10, "dark")        # muzzle brake

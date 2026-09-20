@@ -724,15 +724,20 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
             renderer.SetExposure(stack->exposure);
             // RenderStack fog is the density-based volumetric fog (composite
             // pass), not the lit shader's linear near/far fog (SceneLight owns
-            // that). fogColor feeds the composite through FogColor().
-            renderer.SetFog(stack->fogColor, 0.0f, 0.0f);
-            renderer.SetVolumetricFogEnabled(stack->fog);
-            renderer.SetVolumetricFogDensity(stack->fogDensity);
+            // that). Never push a degenerate 0/0 range into the lit shader:
+            // smoothstep(0,0,d) is undefined and washed frames white.
+            if (stack->fog) {
+                renderer.SetFog(stack->fogColor, 0.0f, 1e9f);
+                renderer.SetVolumetricFogEnabled(true);
+                renderer.SetVolumetricFogDensity(stack->fogDensity);
+            } else {
+                renderer.SetVolumetricFogEnabled(false);
+            }
             renderer.SetColorGrade({stack->grade, stack->gradeSaturation, stack->gradeContrast,
                                     stack->gradeGain, stack->gradeGamma, stack->gradeLift,
                                     {stack->gradeTint.r, stack->gradeTint.g, stack->gradeTint.b}});
             renderer.SetAutoExposure({stack->autoExposure, stack->autoExposureKey, 0.05f, 20.0f,
-                                      0.5f});
+                                      0.02f});
             renderer.SetVignette({stack->vignette, stack->vignetteRadius, 0.5f,
                                   stack->vignetteIntensity});
         }

@@ -1,0 +1,38 @@
+﻿{
+  "entities": [
+    {
+      "id": 2,
+      "name": "Main Camera",
+      "components": {
+        "type": { "value": "Camera3D" },
+        "camera": { "fov": 55, "orthoSize": 10 },
+        "transform": { "pos": [10, 22, 95], "rot": [-0.17, 0, 0, 0.985], "scale": [1, 1, 1] }
+      }
+    },
+    {
+      "id": 3,
+      "name": "Sun",
+      "components": {
+        "type": { "value": "Light3D" },
+        "light": {
+          "type": "directional",
+          "color": [1, 0.96, 0.88, 1],
+          "intensity": 1.1,
+          "ambientStrength": 0.45,
+          "sunDir": [-0.3, -1, 0.2],
+          "radius": 10
+        },
+        "transform": { "pos": [0, 200, 0], "rot": [0, 0, 0, 1], "scale": [1, 1, 1] }
+      }
+    },
+    {
+      "id": 10,
+      "name": "SummonersRift",
+      "components": {
+        "mesh": { "meshKey": "gltf:assets/models/sr/sr_map.glb" },
+        "transform": { "pos": [-150.5, 0, -149.2], "rot": [0, 0, 0, 1], "scale": [0.02, 0.02, 0.02] }
+      }
+    }
+  ]
+}
+

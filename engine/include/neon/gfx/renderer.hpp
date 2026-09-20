@@ -538,6 +538,7 @@ private:
     ShaderHandle upsampleAddShader_;
     ShaderHandle luminanceShader_;
     ShaderHandle luminanceReduceShader_;
+    ShaderHandle exposureAdaptShader_;
     ShaderHandle compositeShader_;
     ShaderHandle ssaoShader_;
     ShaderHandle ssaoBlurShader_;

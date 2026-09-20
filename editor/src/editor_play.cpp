@@ -765,9 +765,13 @@ void EditorApp::StartPlay() {
         }
         return;
     }
-    // Mirror the editor's post-process FX toggles into the play runtime.
-    play_->SetPostFx(postSsao_, postVolumetric_, postSsr_, postSsaoIntensity_,
-                     postVolumetricIntensity_, postSsrIntensity_);
+    // Mirror the editor's post-process toggles into the play runtime ONLY when
+    // the scene has no render stack of its own; otherwise the scene's authored
+    // settings must win so play matches the shipped game (no forced FX).
+    if (!hasSceneRenderStack_) {
+        play_->SetPostFx(postSsao_, postVolumetric_, postSsr_, postSsaoIntensity_,
+                         postVolumetricIntensity_, postSsrIntensity_);
+    }
     playActive_ = true;
     // Detach the input method while the play runs so game keys (WASD,
     // digits, space) arrive as raw key events even with a Chinese/Japanese IME

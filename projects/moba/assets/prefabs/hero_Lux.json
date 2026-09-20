@@ -1,0 +1,34 @@
+{
+    "components": {
+        "transform": {
+            "pos": [
+                0,
+                0,
+                0
+            ],
+            "rot": [
+                0,
+                0,
+                0,
+                1
+            ],
+            "scale": [
+                0.01,
+                0.01,
+                0.01
+            ]
+        },
+        "mesh": {
+            "meshKey": "gltf:assets/models/lol/Lux.glb"
+        },
+        "health": {
+            "hp": 560,
+            "maxHp": 560
+        },
+        "groups": {
+            "groups": [
+                "champion"
+            ]
+        }
+    }
+}

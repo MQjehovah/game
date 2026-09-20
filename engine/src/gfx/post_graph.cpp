@@ -30,6 +30,7 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
     upsampleAdd_ = shaders.upsampleAdd;
     luminanceShader_ = shaders.luminanceShader;
     luminanceReduceShader_ = shaders.luminanceReduceShader;
+    exposureAdaptShader_ = shaders.exposureAdaptShader;
     compositeShader_ = shaders.compositeShader;
     postQuad_ = postQuad;
     drawDepthCasters_ = std::move(drawDepthCasters);
@@ -69,6 +70,7 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
     const int lumH = std::max(h / 32, 1);
     lum_ = fresh.AddResource({static_cast<uint32_t>(lumW), static_cast<uint32_t>(lumH), kFloatFormat, 1u});
     lumAvg_ = fresh.AddResource({1u, 1u, kFloatFormat, 1u});
+    adaptDone_ = fresh.AddResource({1u, 1u, kFloatFormat, 1u});
 
     size_t nextPass = 0;
     const auto add = [&](FramePass p) {
@@ -329,6 +331,38 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
     };
     luminanceAvgIndex_ = add(std::move(lumAvg));
 
+    // 19b. Auto-exposure ADAPTATION: smooth the raw per-frame target toward
+    //      the previous frame's exposure so bright flashes (particles /
+    //      projectiles / damage numbers) don't strobe the frame. The result is
+    //      drawn twice: into the pooled graph target (the composite's input +
+    //      ordering edge) and into a persistent side target that becomes next
+    //      frame's "previous" (the graph pool recycles, so cross-frame state
+    //      must live outside it).
+    FramePass adapt;
+    adapt.name = "post.exposureAdapt";
+    adapt.reads = {lumAvg_};
+    adapt.writes = {adaptDone_};
+    adapt.execute = [this](FrameGraphContext& ctx) {
+        auto& backend = ctx.Backend();
+        backend.BindRenderTarget(ctx.GetOutput(adaptDone_));
+        Fullscreen(backend, exposureAdaptShader_);
+        backend.BindTexture(0, backend.RenderTargetColorTexture(ctx.GetInput(lumAvg_)));
+        backend.SetUniformInt("uAvgLum", 0);
+        backend.BindTexture(1, backend.RenderTargetColorTexture(adaptPrev_));
+        backend.SetUniformInt("uPrevExposure", 1);
+        const AutoExposure& ae = comp_.autoExposure;
+        backend.SetUniformFloat("uKeyValue", ae.keyValue);
+        backend.SetUniformFloat("uExposureMin", ae.minExposure);
+        backend.SetUniformFloat("uExposureMax", ae.maxExposure);
+        backend.SetUniformFloat("uAdaptation", ae.adaptationSpeed);
+        backend.DrawMesh(postQuad_);
+        // Same draw into the persistent target (shader/texture/uniform state
+        // stays bound; only the render target changes).
+        backend.BindRenderTarget(adaptCurr_);
+        backend.DrawMesh(postQuad_);
+    };
+    adaptIndex_ = add(std::move(adapt));
+
     // 18. Composite: draws the final image to the DEFAULT target (backbuffer,
     //     an out-of-graph target) sampling the scene HDR plus the exported
     //     finals (bloom accumulation, raw AO, blurred volumetric / SSR, scene
@@ -338,7 +372,7 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
     //     like the old hand-written composite.
     FramePass composite;
     composite.name = "post.composite";
-    composite.reads = {hdrScene_, sceneDepth_, ao_, volBlurB_, ssrBlurB_, bloomHalfB_, lumAvg_};
+    composite.reads = {hdrScene_, sceneDepth_, ao_, volBlurB_, ssrBlurB_, bloomHalfB_, adaptDone_};
     composite.execute = [this](FrameGraphContext& ctx) {
         auto& backend = ctx.Backend();
         if (!compositeShader_.Valid() || !postQuad_.Valid()) return;
@@ -419,11 +453,12 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
         backend.SetUniformFloat("uGamma", g.gamma);
         backend.SetUniformFloat("uLift", g.lift);
         backend.SetUniformVec3("uTint", g.tint);
-        // A5 auto-exposure + vignette. The 1x1 avg log-luminance is bound on a
-        // dedicated unit (6 clean); when off the composite ignores it entirely.
+        // A5 auto-exposure + vignette. The 1x1 SMOOTHED exposure (adapt pass)
+        // is bound on a dedicated unit (6 clean); when off the composite
+        // ignores it entirely.
         const AutoExposure& ae = comp_.autoExposure;
         const Vignette& vg = comp_.vignette;
-        const RenderTargetHandle lumRt = ctx.GetInput(lumAvg_);
+        const RenderTargetHandle lumRt = ctx.GetInput(adaptDone_);
         const bool lumLive = lumRt.Valid();
         if (lumLive && ae.enabled) {
             backend.BindTexture(6, backend.RenderTargetColorTexture(lumRt));
@@ -456,6 +491,10 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
 
 void PostGraph::Destroy(IRenderBackend& backend) {
     graph_.DestroyResources(backend);
+    if (adaptPrev_.Valid()) backend.DestroyRenderTarget(adaptPrev_);
+    if (adaptCurr_.Valid()) backend.DestroyRenderTarget(adaptCurr_);
+    adaptPrev_ = RenderTargetHandle{};
+    adaptCurr_ = RenderTargetHandle{};
     built_ = false;
     ran_ = false;
     depthRan_ = false;
@@ -514,6 +553,21 @@ bool PostGraph::Execute(IRenderBackend& backend, const FrameParams& params) {
                     luminanceReduceShader_.Valid() && params.hdrScene.Valid();
     graph_.SetPassEnabled(luminanceIndex_, ae);
     graph_.SetPassEnabled(luminanceAvgIndex_, ae);
+    // Adaptation chain: needs the measure chain AND the adapt shader; the
+    // persistent prev/curr 1x1 targets are created (and seeded with a neutral
+    // exposure of 1.0) on first use.
+    const bool adapt = ae && exposureAdaptShader_.Valid();
+    graph_.SetPassEnabled(adaptIndex_, adapt);
+    if (adapt) {
+        if (!adaptPrev_.Valid() || !adaptCurr_.Valid()) {
+            adaptPrev_ = backend.CreateRenderTarget(1, 1, true);
+            adaptCurr_ = backend.CreateRenderTarget(1, 1, true);
+            backend.BindRenderTarget(adaptPrev_);
+            backend.Clear({1.0f, 1.0f, 1.0f, 1.0f}, 1.0f);
+            backend.BindRenderTarget(adaptCurr_);
+            backend.Clear({1.0f, 1.0f, 1.0f, 1.0f}, 1.0f);
+        }
+    }
     // The composite is the chain's terminal pass: it always runs so the HDR
     // scene reaches the backbuffer (its execute guards on shader/input validity
     // and draws nothing when the composite program is missing).
@@ -543,6 +597,9 @@ bool PostGraph::Execute(IRenderBackend& backend, const FrameParams& params) {
 
     graph_.SetExternalInput(hdrScene_, params.hdrScene);
     const bool ok = graph_.Execute(backend);
+    // The adapt pass drew this frame's smoothed exposure into BOTH targets;
+    // swap them so the next frame blends from this frame's result.
+    if (ok && adapt) std::swap(adaptPrev_, adaptCurr_);
     const bool any = depth || ssao || vol || ssr;
     ran_ = ok && any;
     depthRan_ = ok && depth;

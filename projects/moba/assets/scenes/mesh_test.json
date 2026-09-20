@@ -1,0 +1,53 @@
+{
+  "entities": [
+    {
+      "id": 2,
+      "name": "Main Camera",
+      "components": {
+        "type": { "value": "Camera3D" },
+        "camera": { "fov": 55, "orthoSize": 10 },
+        "transform": { "pos": [0, 14, -14], "rot": [0, 0.9171, 0.3986, 0], "scale": [1, 1, 1] }
+      }
+    },
+    {
+      "id": 3,
+      "name": "Sun",
+      "components": {
+        "type": { "value": "Light3D" },
+        "light": {
+          "type": "directional",
+          "color": [1, 0.97, 0.9, 1],
+          "intensity": 1.9,
+          "ambientStrength": 1.0,
+          "sunDir": [-0.4, -1, 0.28],
+          "radius": 10
+        },
+        "transform": { "pos": [0, 60, 0], "rot": [0, 0, 0, 1], "scale": [1, 1, 1] }
+      }
+    },
+    {
+      "id": 10,
+      "name": "Hero",
+      "components": {
+        "mesh": { "meshKey": "gltf:assets/models/lol/Yasuo.glb" },
+        "transform": { "pos": [0, 0, 4], "rot": [0, 0, 0, 1], "scale": [0.01, 0.01, 0.01] }
+      }
+    },
+    {
+      "id": 11,
+      "name": "MinionA",
+      "components": {
+        "mesh": { "meshKey": "gltf:assets/models/lol_units/MinionMeleeBlue.glb" },
+        "transform": { "pos": [4, 0, -2], "rot": [0, 0, 0, 1], "scale": [0.01, 0.01, 0.01] }
+      }
+    },
+    {
+      "id": 12,
+      "name": "MinionB",
+      "components": {
+        "mesh": { "meshKey": "gltf:assets/models/lol_units/MinionCasterBlue.glb" },
+        "transform": { "pos": [-4, 0, -4], "rot": [0, 0, 0, 1], "scale": [0.01, 0.01, 0.01] }
+      }
+    }
+  ]
+}

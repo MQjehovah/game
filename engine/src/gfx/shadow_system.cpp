@@ -35,13 +35,13 @@ const char* kShadowSkinnedVertexShader = R"(
 layout(location = 0) in vec3 aPos;
 layout(location = 4) in vec4 aJointIds;
 layout(location = 5) in vec4 aWeights;
-uniform mat4 uBoneMatrices[64];
+uniform mat4 uBoneMatrices[128];
 uniform mat4 uMVP;
 void main() {
     mat4 skin = mat4(0.0);
     for (int i = 0; i < 4; ++i) {
         int id = int(aJointIds[i]);
-        if (id >= 0 && id < 64) skin += aWeights[i] * uBoneMatrices[id];
+        if (id >= 0 && id < 128) skin += aWeights[i] * uBoneMatrices[id];
     }
     gl_Position = uMVP * skin * vec4(aPos, 1.0);
 }
@@ -98,7 +98,7 @@ const char* kPointShadowSkinnedVertexShader = R"(
 layout(location = 0) in vec3 aPos;
 layout(location = 4) in vec4 aJointIds;
 layout(location = 5) in vec4 aWeights;
-uniform mat4 uBoneMatrices[64];
+uniform mat4 uBoneMatrices[128];
 uniform mat4 uMVP;
 uniform mat4 uModel;
 out vec3 vWorldPos;
@@ -106,7 +106,7 @@ void main() {
     mat4 skin = mat4(0.0);
     for (int i = 0; i < 4; ++i) {
         int id = int(aJointIds[i]);
-        if (id >= 0 && id < 64) skin += aWeights[i] * uBoneMatrices[id];
+        if (id >= 0 && id < 128) skin += aWeights[i] * uBoneMatrices[id];
     }
     vWorldPos = (uModel * skin * vec4(aPos, 1.0)).xyz;
     gl_Position = uMVP * skin * vec4(aPos, 1.0);

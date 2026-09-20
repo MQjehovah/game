@@ -44,6 +44,8 @@ public:
         // A5 auto-exposure measure shaders (HDR -> log-lum -> 1x1 average).
         ShaderHandle luminanceShader;
         ShaderHandle luminanceReduceShader;
+        // Temporal smoothing of the raw target exposure (anti-flicker).
+        ShaderHandle exposureAdaptShader;
         TextureHandle white;          // 未启用链的占位纹理（composite 绑定）
     };
 
@@ -160,6 +162,12 @@ private:
     // A5 auto-exposure: a small log-luminance intermediate + a 1x1 average.
     ResourceId lum_ = kInvalidResource;      // 1/32 尺寸 log-luminance（luminance 写）
     ResourceId lumAvg_ = kInvalidResource;   // 1x1 平均 log-luminance（reduce 写）
+    ResourceId adaptDone_ = kInvalidResource; // 1x1 平滑后曝光（adapt 写，composite 读）
+    // Persistent (graph-external) 1x1 targets carrying the smoothed exposure
+    // ACROSS frames: adaptPrev_ is what the adapt pass blends from, adaptCurr_
+    // receives the same draw; they swap after each Execute.
+    RenderTargetHandle adaptPrev_;
+    RenderTargetHandle adaptCurr_;
     size_t depthPassIndex_ = 0;
     size_t ssaoPassIndex_ = 0;
     size_t ssaoBlurHIndex_ = 0;
@@ -179,6 +187,7 @@ private:
     size_t upsampleAddIndex_ = 0;
     size_t luminanceIndex_ = 0;
     size_t luminanceAvgIndex_ = 0;
+    size_t adaptIndex_ = 0;
     size_t compositePassIndex_ = 0;
     ShaderHandle ssaoShader_;
     ShaderHandle ssaoBlur_;
@@ -190,6 +199,7 @@ private:
     ShaderHandle upsampleAdd_;
     ShaderHandle luminanceShader_;
     ShaderHandle luminanceReduceShader_;
+    ShaderHandle exposureAdaptShader_;
     ShaderHandle compositeShader_;
     MeshHandle postQuad_;
     std::function<void()> drawDepthCasters_;

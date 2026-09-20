@@ -44,24 +44,6 @@ void ScenePanel::Draw(EditorContext& ctx) {
     int& selected = *ctx.selected;
     HistoryManager& history = *ctx.history;
     if (ImGui::Begin("场景", visible_)) {
-        // Post-process FX toggles (SSAO / volumetric / SSR). Applied to both
-        // the editor viewport and the play runtime; intensity sliders expose the
-        // per-effect strength.
-        if (ImGui::CollapsingHeader("后处理效果##postfx", ImGuiTreeNodeFlags_DefaultOpen)) {
-            ImGui::Checkbox("SSAO (环境光遮蔽)", ctx.postSsao);
-            ImGui::SameLine();
-            ImGui::SetNextItemWidth(120.0f);
-            ImGui::SliderFloat("强度##ssao", ctx.postSsaoIntensity, 0.1f, 3.0f, "%.2f");
-            ImGui::Checkbox("体积雾光", ctx.postVolumetric);
-            ImGui::SameLine();
-            ImGui::SetNextItemWidth(120.0f);
-            ImGui::SliderFloat("强度##vol", ctx.postVolumetricIntensity, 0.1f, 3.0f, "%.2f");
-            ImGui::Checkbox("屏幕空间反射", ctx.postSsr);
-            ImGui::SameLine();
-            ImGui::SetNextItemWidth(120.0f);
-            ImGui::SliderFloat("强度##ssr", ctx.postSsrIntensity, 0.1f, 2.0f, "%.2f");
-            ImGui::Separator();
-        }
         if (ctx.hasSceneEnvironment && ctx.sceneEnvironment) {
             *ctx.hasSceneEnvironment = true;
             if (ImGui::CollapsingHeader("场景环境##scene_env", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -112,16 +94,106 @@ void ScenePanel::Draw(EditorContext& ctx) {
                 ImGui::Separator();
             }
         }
-        if (ctx.hasSceneRenderStack && ctx.sceneRenderStack) {
-            *ctx.hasSceneRenderStack = true;
-            if (ImGui::CollapsingHeader("渲染栈##scene_renderstack", ImGuiTreeNodeFlags_DefaultOpen)) {
-                scene::RenderStack& rs = *ctx.sceneRenderStack;
-                if (ImGui::Checkbox("泛光 Bloom", &rs.bloom)) *ctx.sceneDirty = true;
-                if (ImGui::Checkbox("色调映射 Tonemap", &rs.tonemap)) *ctx.sceneDirty = true;
-                if (ImGui::Checkbox("SSAO", &rs.ssao)) *ctx.sceneDirty = true;
-                if (ImGui::Checkbox("体积光", &rs.volumetric)) *ctx.sceneDirty = true;
-                if (ImGui::Checkbox("SSR", &rs.ssr)) *ctx.sceneDirty = true;
-                if (ImGui::DragFloat("曝光", &rs.exposure, 0.01f, 0.0f, 5.0f)) *ctx.sceneDirty = true;
+        // 渲染栈 (merged post-process panel): the scene's RenderStack is the
+        // single saved source of truth, read by the editor viewport, play mode
+        // and the shipped game. Scenes without one fall back to the editor-only
+        // SSAO / volumetric / SSR preview toggles.
+        scene::RenderStack* rs =
+            (ctx.hasSceneRenderStack && ctx.sceneRenderStack) ? ctx.sceneRenderStack : nullptr;
+        if (rs) *ctx.hasSceneRenderStack = true;
+        if (ImGui::CollapsingHeader("渲染栈##scene_renderstack", ImGuiTreeNodeFlags_DefaultOpen)) {
+            auto rsBool = [&](const char* label, bool& fallback, bool scene::RenderStack::*field) {
+                bool v = rs ? (rs->*field) : fallback;
+                if (ImGui::Checkbox(label, &v)) {
+                    if (rs) { rs->*field = v; *ctx.sceneDirty = true; } else fallback = v;
+                }
+            };
+            auto rsFloat = [&](const char* label, float& fallback, float scene::RenderStack::*field,
+                               float lo, float hi, const char* fmt) {
+                float v = rs ? (rs->*field) : fallback;
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(120.0f);
+                if (ImGui::SliderFloat(label, &v, lo, hi, fmt)) {
+                    if (rs) { rs->*field = v; *ctx.sceneDirty = true; } else fallback = v;
+                }
+            };
+            if (rs) {
+                if (ImGui::Checkbox("泛光 Bloom", &rs->bloom)) *ctx.sceneDirty = true;
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(110.0f);
+                if (ImGui::SliderFloat("强度##bloom", &rs->bloomStrength, 0.0f, 2.0f, "%.2f"))
+                    *ctx.sceneDirty = true;
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(110.0f);
+                if (ImGui::SliderFloat("阈值##bloom", &rs->bloomThreshold, 0.0f, 4.0f, "%.2f"))
+                    *ctx.sceneDirty = true;
+                if (ImGui::Checkbox("色调映射 Tonemap", &rs->tonemap)) *ctx.sceneDirty = true;
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(110.0f);
+                if (ImGui::DragFloat("曝光##rs", &rs->exposure, 0.01f, 0.0f, 5.0f))
+                    *ctx.sceneDirty = true;
+                ImGui::Separator();
+            }
+            rsBool("SSAO (环境光遮蔽)", *ctx.postSsao, &scene::RenderStack::ssao);
+            rsFloat("强度##ssao", *ctx.postSsaoIntensity, &scene::RenderStack::ssaoIntensity,
+                    0.1f, 3.0f, "%.2f");
+            rsBool("体积光", *ctx.postVolumetric, &scene::RenderStack::volumetric);
+            rsFloat("强度##vol", *ctx.postVolumetricIntensity, &scene::RenderStack::volumetricStrength,
+                    0.1f, 3.0f, "%.2f");
+            rsBool("屏幕空间反射 SSR", *ctx.postSsr, &scene::RenderStack::ssr);
+            rsFloat("强度##ssr", *ctx.postSsrIntensity, &scene::RenderStack::ssrStrength,
+                    0.1f, 2.0f, "%.2f");
+            ImGui::Separator();
+            if (rs) {
+                // Composite (density-based) fog.
+                if (ImGui::Checkbox("雾 Fog", &rs->fog)) *ctx.sceneDirty = true;
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(110.0f);
+                if (ImGui::DragFloat("密度##fog", &rs->fogDensity, 0.002f, 0.0f, 1.0f, "%.3f"))
+                    *ctx.sceneDirty = true;
+                float fog[4] = {rs->fogColor.r, rs->fogColor.g, rs->fogColor.b, rs->fogColor.a};
+                if (ImGui::ColorEdit4("雾颜色##rs", fog)) {
+                    rs->fogColor = {fog[0], fog[1], fog[2], fog[3]};
+                    *ctx.sceneDirty = true;
+                }
+                ImGui::Separator();
+                // Procedural colour grade (post-tonemap).
+                if (ImGui::Checkbox("颜色分级", &rs->grade)) *ctx.sceneDirty = true;
+                if (ImGui::DragFloat("饱和度##grade", &rs->gradeSaturation, 0.01f, 0.0f, 3.0f, "%.2f"))
+                    *ctx.sceneDirty = true;
+                if (ImGui::DragFloat("对比度##grade", &rs->gradeContrast, 0.01f, -1.0f, 2.0f, "%.2f"))
+                    *ctx.sceneDirty = true;
+                if (ImGui::DragFloat("增益(高光)##grade", &rs->gradeGain, 0.01f, 0.0f, 2.0f, "%.2f"))
+                    *ctx.sceneDirty = true;
+                if (ImGui::DragFloat("伽马(中间调)##grade", &rs->gradeGamma, 0.01f, 0.1f, 3.0f, "%.2f"))
+                    *ctx.sceneDirty = true;
+                if (ImGui::DragFloat("抬升(阴影)##grade", &rs->gradeLift, 0.01f, 0.0f, 1.0f, "%.2f"))
+                    *ctx.sceneDirty = true;
+                float tint[3] = {rs->gradeTint.r, rs->gradeTint.g, rs->gradeTint.b};
+                if (ImGui::ColorEdit3("色偏##grade", tint)) {
+                    rs->gradeTint = {tint[0], tint[1], tint[2], 1.0f};
+                    *ctx.sceneDirty = true;
+                }
+                ImGui::Separator();
+                // Auto exposure + vignette.
+                if (ImGui::Checkbox("自动曝光", &rs->autoExposure)) *ctx.sceneDirty = true;
+                if (rs->autoExposure) {
+                    ImGui::SameLine();
+                    ImGui::SetNextItemWidth(110.0f);
+                    if (ImGui::DragFloat("关键值##ae", &rs->autoExposureKey, 0.005f, 0.02f, 1.0f, "%.3f"))
+                        *ctx.sceneDirty = true;
+                }
+                if (ImGui::Checkbox("暗角", &rs->vignette)) *ctx.sceneDirty = true;
+                if (rs->vignette) {
+                    ImGui::SameLine();
+                    ImGui::SetNextItemWidth(110.0f);
+                    if (ImGui::DragFloat("半径##vig", &rs->vignetteRadius, 0.01f, 0.0f, 2.0f, "%.2f"))
+                        *ctx.sceneDirty = true;
+                    ImGui::SameLine();
+                    ImGui::SetNextItemWidth(110.0f);
+                    if (ImGui::DragFloat("强度##vig", &rs->vignetteIntensity, 0.01f, 0.0f, 2.0f, "%.2f"))
+                        *ctx.sceneDirty = true;
+                }
                 ImGui::Separator();
             }
         }

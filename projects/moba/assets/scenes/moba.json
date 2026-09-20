@@ -1,0 +1,212 @@
+{
+  "entities": [
+    {
+      "components": {
+        "scripts": {
+          "items": [
+            {
+              "backend": "lua",
+              "path": "assets/scripts/moba.lua"
+            }
+          ]
+        },
+        "transform": {
+          "pos": [
+            0,
+            0,
+            0
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        }
+      },
+      "id": 1,
+      "name": "Game"
+    },
+    {
+      "components": {
+        "camera": {
+          "fov": 55,
+          "orthoSize": 10
+        },
+        "transform": {
+          "pos": [
+            0,
+            18,
+            -13
+          ],
+          "rot": [
+            0,
+            0.8893799781799316,
+            0.45708000659942627,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "type": {
+          "value": "Camera3D"
+        }
+      },
+      "id": 2,
+      "name": "Main Camera"
+    },
+    {
+      "components": {
+        "light": {
+          "ambientStrength": 0.6499999761581421,
+          "color": [
+            1,
+            0.9599999785423279,
+            0.8799999952316284,
+            1
+          ],
+          "intensity": 2.200000047683716,
+          "radius": 10,
+          "sunDir": [
+            -0.3499999940395355,
+            -1,
+            0.2199999988079071
+          ],
+          "type": "directional"
+        },
+        "transform": {
+          "pos": [
+            0,
+            60,
+            0
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "type": {
+          "value": "Light3D"
+        }
+      },
+      "id": 3,
+      "name": "Sun"
+    },
+    {
+      "components": {
+        "mesh": {
+          "material": {
+            "ao": 1,
+            "colorHex": "#FFFFFF",
+            "emissiveIntensity": 1,
+            "metallic": 0,
+            "roughness": 0.8999999761581421
+          },
+          "meshKey": "gltf:assets/models/sr/sr_map.glb"
+        },
+        "transform": {
+          "pos": [
+            0,
+            0,
+            18
+          ],
+          "rot": [
+            0,
+            -0.3826799988746643,
+            0,
+            0.9238799810409546
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        }
+      },
+      "id": 10,
+      "name": "SummonersRift"
+    }
+  ],
+  "environment": {
+    "ambientColor": [
+      0.44999998807907104,
+      0.550000011920929,
+      0.7200000286102295,
+      1
+    ],
+    "ambientStrength": 1.159999966621399,
+    "fogColor": [
+      0.44999998807907104,
+      0.550000011920929,
+      0.699999988079071,
+      1
+    ],
+    "fogFar": 125,
+    "fogNear": 52,
+    "skyHorizon": [
+      0.550000011920929,
+      0.6499999761581421,
+      0.800000011920929,
+      1
+    ],
+    "skyTop": [
+      0.2800000011920929,
+      0.3799999952316284,
+      0.5799999833106995,
+      1
+    ]
+  },
+  "renderstack": {
+    "autoExposure": true,
+    "autoExposureKey": 0.18000000715255737,
+    "bloom": true,
+    "bloomStrength": 0.2800000011920929,
+    "bloomThreshold": 0.550000011920929,
+    "exposure": 1,
+    "fog": false,
+    "fogColor": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "fogDensity": 0.019999999552965164,
+    "grade": false,
+    "gradeContrast": 0,
+    "gradeGain": 1,
+    "gradeGamma": 1,
+    "gradeLift": 0,
+    "gradeSaturation": 1,
+    "gradeTint": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "ssao": false,
+    "ssaoIntensity": 0.6499999761581421,
+    "ssr": false,
+    "ssrStrength": 0.49000000953674316,
+    "tonemap": true,
+    "vignette": false,
+    "vignetteIntensity": 0.5,
+    "vignetteRadius": 0.6000000238418579,
+    "volumetric": false,
+    "volumetricStrength": 1
+  }
+}

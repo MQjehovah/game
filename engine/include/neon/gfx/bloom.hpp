@@ -149,7 +149,7 @@ struct AutoExposure {
     float keyValue = 0.18f;     // middle-grey target
     float minExposure = 0.05f;  // clamp the multiplier
     float maxExposure = 20.0f;
-    float adaptationSpeed = 0.5f; // lerp factor per frame toward target [0,1]
+    float adaptationSpeed = 0.02f; // lerp factor per frame toward target [0,1]
 };
 
 // Vignette params: radial darkening toward the frame corners/edges.
@@ -292,6 +292,30 @@ void main() {
 }
 )";
 
+// Auto-exposure ADAPTATION: turns the raw per-frame target exposure
+// (key / avgLum) into a temporally smoothed one by lerping toward it from the
+// previous frame's exposure. Without this the raw value follows every bright
+// particle/projectile flash and the whole frame strobes.
+inline constexpr const char* kExposureAdaptShader = R"(
+#version 330 core
+in vec2 vUV;
+out vec4 FragColor;
+uniform sampler2D uAvgLum;       // 1x1 average LOG luminance (this frame)
+uniform sampler2D uPrevExposure; // 1x1 previous frame's smoothed exposure
+uniform float uKeyValue;
+uniform float uExposureMin;
+uniform float uExposureMax;
+uniform float uAdaptation;       // per-frame lerp toward the target [0,1]
+void main() {
+    // Clamp the measured average: bright HDR flashes (fireballs, additive
+    // particles) would otherwise swing the target exposure with every cast.
+    float avgLum = clamp(exp(texture(uAvgLum, vec2(0.5)).r), 0.03, 4.0);
+    float target = clamp(uKeyValue / avgLum, uExposureMin, uExposureMax);
+    float prev = max(texture(uPrevExposure, vec2(0.5)).r, 1e-4);
+    FragColor = vec4(mix(prev, target, clamp(uAdaptation, 0.0, 1.0)), 0.0, 0.0, 1.0);
+}
+)";
+
 // Progressive bloom accumulation: half-res bloom + upsampled quarter-res bloom.
 // The bilinear texture sampler does the upsampling; the quarter pass only ever
 // holds 1/4-res data, so its contribution is added at 1/4 resolution and then
@@ -388,16 +412,11 @@ void main() {
         }
     }
     if (uTonemapEnabled != 0) {
-        // A5 auto-exposure: derive the exposure multiplier from the measured
-        // average log-luminance (uAvgLum), smoothed toward the target key value
-        // from the previous frame's exposure. When disabled the authored scalar
-        // uExposure is used verbatim (the historical pipeline).
+        // A5 auto-exposure: uAvgLum carries the TEMPORALLY SMOOTHED exposure
+        // produced by the adaptation pass (raw key/avgLum strobed on bright
+        // flashes). When disabled the authored scalar uExposure is used.
         float exposure = uExposure;
-        if (uAutoExposure != 0) {
-            float avgLog = texture(uAvgLum, vec2(0.5)).r;
-            float avgLum = exp(avgLog);
-            if (avgLum > 1e-5) exposure = clamp(uKeyValue / avgLum, uExposureMin, uExposureMax);
-        }
+        if (uAutoExposure != 0) exposure = max(texture(uAvgLum, vec2(0.5)).r, 1e-4);
         vec3 graded = ACESFilm(c * exposure);
         // A1 color grading (post-tonemap, display space). Skipped when disabled
         // so the default RenderStack is pixel-identical (matches GradeColor).

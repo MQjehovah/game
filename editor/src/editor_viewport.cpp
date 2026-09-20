@@ -180,14 +180,44 @@ void EditorApp::OnRender() {
         // Day sky + scene lights: shared with the 2D play so edit and
         // Play render the same environment (see ApplySceneEnvironment).
         ApplySceneEnvironment();
-        // Post-process FX toggles (applied to the shared renderer so the
-        // editor viewport previews exactly what play will show).
-        renderer_.SetSsaoEnabled(postSsao_);
-        renderer_.SetSsaoIntensity(postSsaoIntensity_);
-        renderer_.SetVolumetricEnabled(postVolumetric_);
-        renderer_.SetVolumetricIntensity(postVolumetricIntensity_);
-        renderer_.SetSsrEnabled(postSsr_);
-        renderer_.SetSsrIntensity(postSsrIntensity_);
+        // Scene render stack: when the scene carries one it is authoritative for
+        // post FX, tone mapping, exposure, fog, colour grade and vignette — the
+        // exact same data DrawSystem applies in play/the shipped game, so the
+        // viewport matches. Scenes without one fall back to the editor toggles.
+        if (hasSceneRenderStack_) {
+            const scene::RenderStack& rs = sceneRenderStack_;
+            renderer_.SetSsaoEnabled(rs.ssao);
+            renderer_.SetSsaoIntensity(rs.ssaoIntensity);
+            renderer_.SetVolumetricEnabled(rs.volumetric);
+            renderer_.SetVolumetricIntensity(rs.volumetricStrength);
+            renderer_.SetSsrEnabled(rs.ssr);
+            renderer_.SetSsrIntensity(rs.ssrStrength);
+            renderer_.SetBloomEnabled(rs.bloom);
+            renderer_.SetBloomParams(rs.bloomThreshold, rs.bloomStrength);
+            renderer_.SetTonemapEnabled(rs.tonemap);
+            renderer_.SetExposure(rs.exposure);
+            // Composite (density) fog only when the stack enables it: the old
+            // unconditional SetFog(colour, 0, 0) degenerated to full white fog.
+            if (rs.fog) {
+                renderer_.SetFog(rs.fogColor, 0.0f, 1e9f);
+                renderer_.SetVolumetricFogEnabled(true);
+                renderer_.SetVolumetricFogDensity(rs.fogDensity);
+            } else {
+                renderer_.SetVolumetricFogEnabled(false);
+            }
+            renderer_.SetColorGrade({rs.grade, rs.gradeSaturation, rs.gradeContrast,
+                                     rs.gradeGain, rs.gradeGamma, rs.gradeLift,
+                                     {rs.gradeTint.r, rs.gradeTint.g, rs.gradeTint.b}});
+            renderer_.SetAutoExposure({rs.autoExposure, rs.autoExposureKey, 0.05f, 20.0f, 0.02f});
+            renderer_.SetVignette({rs.vignette, rs.vignetteRadius, 0.5f, rs.vignetteIntensity});
+        } else {
+            renderer_.SetSsaoEnabled(postSsao_);
+            renderer_.SetSsaoIntensity(postSsaoIntensity_);
+            renderer_.SetVolumetricEnabled(postVolumetric_);
+            renderer_.SetVolumetricIntensity(postVolumetricIntensity_);
+            renderer_.SetSsrEnabled(postSsr_);
+            renderer_.SetSsrIntensity(postSsrIntensity_);
+        }
 
         const float aspect = ViewportAspect();
         // In play mode the scene's Camera3D object (driven by the game script
@@ -391,8 +421,46 @@ void EditorApp::OnRender() {
                     model = model * math::Mat4::Scale({e.spriteFlipX ? -1.0f : 1.0f,
                                                        e.spriteFlipY ? -1.0f : 1.0f, 1.0f});
                 const gfx::Mesh& pickMesh = e.spriteMesh.Valid() ? e.spriteMesh : e.mesh;
-                math::AABB world = math::TransformAABB(pickMesh.Bounds(), model);
-                renderer_.DrawBox(world, gfx::Color{0.3f, 0.8f, 1.0f, 1.0f});
+                // Local AABB over the WHOLE glTF (first mesh + all child nodes):
+                // multi-primitive models (the Rift map is 181 primitives) showed
+                // a selection box that only hugged the first primitive.
+                math::AABB lb = pickMesh.Bounds();
+                if (!e.skinned && e.meshKey.compare(0, 5, "gltf:") == 0) {
+                    auto cacheIt = gltfChildCache_.find(e.meshKey);
+                    if (cacheIt != gltfChildCache_.end()) {
+                        for (const GltfChildDraw& sub : cacheIt->second) {
+                            if (!sub.mesh.Valid()) continue;
+                            const math::AABB pb = math::TransformAABB(sub.mesh.Bounds(), sub.transform);
+                            lb.min = {std::min(lb.min.x, pb.min.x), std::min(lb.min.y, pb.min.y),
+                                      std::min(lb.min.z, pb.min.z)};
+                            lb.max = {std::max(lb.max.x, pb.max.x), std::max(lb.max.y, pb.max.y),
+                                      std::max(lb.max.z, pb.max.z)};
+                        }
+                    }
+                }
+                // Oriented selection box: TransformAABB grows an axis-aligned
+                // box around rotated meshes (a 45°-rotated map showed a square
+                // box that didn't hug the geometry). Transform the local AABB
+                // corners by the entity matrix and wire the 12 edges instead.
+                const math::Vec3 c[8] = {
+                    {lb.min.x, lb.min.y, lb.min.z}, {lb.max.x, lb.min.y, lb.min.z},
+                    {lb.max.x, lb.max.y, lb.min.z}, {lb.min.x, lb.max.y, lb.min.z},
+                    {lb.min.x, lb.min.y, lb.max.z}, {lb.max.x, lb.min.y, lb.max.z},
+                    {lb.max.x, lb.max.y, lb.max.z}, {lb.min.x, lb.max.y, lb.max.z}};
+                math::Vec3 w[8];
+                for (int i = 0; i < 8; ++i) w[i] = model.TransformPoint(c[i]);
+                const gfx::Color col{0.3f, 0.8f, 1.0f, 1.0f};
+                static const int edges[12][2] = {{0, 1}, {1, 2}, {2, 3}, {3, 0},
+                                                 {4, 5}, {5, 6}, {6, 7}, {7, 4},
+                                                 {0, 4}, {1, 5}, {2, 6}, {3, 7}};
+                std::vector<gfx::Renderer::LineVertex> rv;
+                rv.reserve(24);
+                for (const auto& ed : edges) {
+                    rv.push_back({w[ed[0]], col});
+                    rv.push_back({w[ed[1]], col});
+                }
+                renderer_.DrawLines(rv.data(), static_cast<uint32_t>(rv.size()),
+                                    math::Mat4::Identity());
             }
         }
 

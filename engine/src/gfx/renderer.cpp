@@ -188,6 +188,8 @@ void Renderer::InitBuiltinResources() {
         backend_->CreateShader(kPostVertexShader, kLuminanceShader, "autoexposure_lum");
     luminanceReduceShader_ =
         backend_->CreateShader(kPostVertexShader, kLuminanceReduceShader, "autoexposure_avg");
+    exposureAdaptShader_ =
+        backend_->CreateShader(kPostVertexShader, kExposureAdaptShader, "autoexposure_adapt");
     compositeShader_ =
         backend_->CreateShader(kPostVertexShader, kCompositeFragmentShader, "bloom_composite");
     NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
@@ -540,10 +542,10 @@ void Renderer::DrawSkinnedMesh(const Mesh& mesh, const Material& material,
         !sceneState_.Frustum().Intersects(math::TransformAABB(mesh.Bounds(), model)))
         return;
 
-    // Upload up to 64 bone matrices as one contiguous row-major array.
+    // Upload up to 128 bone matrices as one contiguous row-major array.
     int count = boneCount >= 0 ? std::min(boneCount, static_cast<int>(boneMatrices.size()))
                                : static_cast<int>(boneMatrices.size());
-    count = std::min(count, 64);
+    count = std::min(count, 128);
 
     if (shadowSystem_.Enabled() && shadowSystem_.Recording() && !material.transparent)
         shadowSystem_.RecordCaster({mesh.Handle(), model, {}, boneMatrices, count, mesh.Bounds()});
@@ -1146,6 +1148,7 @@ void Renderer::RebuildHdrTargets() {
     shaders.upsampleAdd = upsampleAddShader_;
     shaders.luminanceShader = luminanceShader_;
     shaders.luminanceReduceShader = luminanceReduceShader_;
+    shaders.exposureAdaptShader = exposureAdaptShader_;
     shaders.compositeShader = compositeShader_;
     shaders.white = white_;
     postGraph_.Build(shaders, postQuadMesh_, screenW_, screenH_,

@@ -21,7 +21,7 @@ uniform vec2 uTiling; // UV repeat multiplier (default 1,1)
 #ifdef SKINNED
 layout(location = 4) in vec4 aJointIds;
 layout(location = 5) in vec4 aWeights;
-uniform mat4 uBoneMatrices[64];
+uniform mat4 uBoneMatrices[128];
 #endif
 uniform mat4 uMVP;
 uniform mat4 uModel;
@@ -38,7 +38,7 @@ void main() {
     mat4 skin = mat4(0.0);
     for (int i = 0; i < 4; ++i) {
         int id = int(aJointIds[i]);
-        if (id >= 0 && id < 64) skin += aWeights[i] * uBoneMatrices[id];
+        if (id >= 0 && id < 128) skin += aWeights[i] * uBoneMatrices[id];
     }
     vec4 p = skin * vec4(aPos, 1.0);
     vec4 n = skin * vec4(aNormal, 0.0);
@@ -419,7 +419,10 @@ void main() {
         color += albedo.rgb * uPlayerLightColor * pndl * atten;
     }
     float dist = length(vWorldPos - uCamPos);
-    float fog = smoothstep(uFogStart, uFogEnd, dist);
+    // Degenerate range (end <= start, e.g. 0/0 from data-driven stacks) must
+    // mean "no fog": a bare smoothstep(0,0,d) divides by zero and mixes the
+    // whole frame toward the fog colour (white wash).
+    float fog = (uFogEnd > uFogStart) ? smoothstep(uFogStart, uFogEnd, dist) : 0.0;
     color = mix(color, uFogColor, fog);
 
     float shadow = 1.0;
@@ -443,8 +446,11 @@ void main() {
     }
     if (!uReceiveShadow) shadow = 1.0;
     // The sun term is shadowed; ambient/sky stays unshadowed so shadowed areas
-    // read as dim (not black) and match the CPU projected-shadow fallback look.
-    color = (color - ambientLight) * shadow + ambientLight;
+    // read as dim (not black). Clamp the sun term to >= 0 first: if a surface's
+    // lit colour is darker than the ambient term, the unclamped blend turned
+    // shadowed pixels BRIGHTER than their surroundings (pale "ghost" shadows).
+    vec3 sunTerm = max(color - ambientLight, vec3(0.0));
+    color = sunTerm * shadow + ambientLight;
     FragColor = vec4(color, albedo.a);
 }
 )";

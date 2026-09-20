@@ -1,0 +1,142 @@
+{
+  "Garen": {
+    "chinese": "盖伦", "role": "战士", "hp": 640, "hpGrow": 84, "mana": 0, "manaGrow": 0,
+    "ad": 66, "adGrow": 5, "range": 1.9, "ms": 340, "scale": 0.01,
+    "abilities": [
+      { "key": "Q", "name": "致命打击", "type": "melee", "cd": 8, "cost": 0, "dmg": 60, "range": 2.6, "arc": 180, "buff": "ms", "buffDur": 3.5, "buffMag": 1.35 },
+      { "key": "W", "name": "勇气", "type": "buff", "cd": 14, "cost": 0, "shield": 120, "duration": 3, "dmg": 0 },
+      { "key": "E", "name": "审判", "type": "aoe_self", "cd": 12, "cost": 0, "dmg": 90, "radius": 3.4, "ticks": 3 },
+      { "key": "R", "name": "德玛西亚正义", "type": "execute", "cd": 80, "cost": 0, "dmg": 180, "range": 3.5, "missingPct": 0.3 }
+    ]
+  },
+  "Ashe": {
+    "chinese": "艾希", "role": "射手", "hp": 570, "hpGrow": 78, "mana": 280, "manaGrow": 35,
+    "ad": 61, "adGrow": 4.5, "range": 8.5, "ms": 325, "scale": 0.01,
+    "abilities": [
+      { "key": "Q", "name": "射手的专注", "type": "buff", "cd": 9, "cost": 50, "shield": 0, "duration": 4, "dmg": 0, "adMul": 1.4 },
+      { "key": "W", "name": "万箭齐发", "type": "projectile", "cd": 10, "cost": 60, "dmg": 55, "speed": 20, "count": 7, "spread": 40, "range": 10, "radius": 0.7, "status": "slow", "statusDur": 2, "statusMag": 0.4 },
+      { "key": "E", "name": "鹰击长空", "type": "aoe_target", "cd": 18, "cost": 40, "dmg": 0, "range": 18, "radius": 5, "delay": 0.4, "reveal": true },
+      { "key": "R", "name": "魔法水晶箭", "type": "projectile", "cd": 70, "cost": 100, "dmg": 200, "speed": 16, "count": 1, "spread": 0, "range": 40, "radius": 1.2, "status": "slow", "statusDur": 3, "statusMag": 0.2 }
+    ]
+  },
+  "Annie": {
+    "chinese": "安妮", "role": "法师", "hp": 590, "hpGrow": 82, "mana": 420, "manaGrow": 45,
+    "ad": 50, "adGrow": 3, "range": 7.5, "ms": 335, "scale": 0.01,
+    "abilities": [
+      { "key": "Q", "name": "碎裂之火", "type": "projectile", "cd": 4, "cost": 60, "dmg": 80, "speed": 24, "count": 1, "spread": 0, "range": 10, "radius": 0.8, "status": "burning", "statusDur": 3, "statusMag": 8 },
+      { "key": "W", "name": "焚烧", "type": "aoe_target", "cd": 8, "cost": 70, "dmg": 90, "range": 9, "radius": 3, "delay": 0.35 },
+      { "key": "E", "name": "熔岩护盾", "type": "buff", "cd": 14, "cost": 60, "shield": 90, "duration": 4, "dmg": 20, "reflect": true },
+      { "key": "R", "name": "提伯斯之怒", "type": "aoe_target", "cd": 90, "cost": 100, "dmg": 220, "range": 9, "radius": 3.5, "delay": 0.5, "status": "burning", "statusDur": 4, "statusMag": 15 }
+    ]
+  },
+  "MasterYi": {
+    "chinese": "易大师", "role": "刺客", "hp": 600, "hpGrow": 86, "mana": 250, "manaGrow": 40,
+    "ad": 65, "adGrow": 4.5, "range": 2.0, "ms": 355, "scale": 0.01,
+    "abilities": [
+      { "key": "Q", "name": "阿尔法突袭", "type": "dash", "cd": 12, "cost": 50, "dmg": 90, "dist": 6, "speed": 30, "radius": 2.5 },
+      { "key": "W", "name": "冥想", "type": "heal", "cd": 16, "cost": 50, "amount": 150, "duration": 2 },
+      { "key": "E", "name": "无极剑道", "type": "buff", "cd": 14, "cost": 40, "duration": 5, "dmg": 0, "trueDmg": 30 },
+      { "key": "R", "name": "高原血统", "type": "buff", "cd": 75, "cost": 100, "duration": 7, "shield": 0, "msMul": 1.5, "adMul": 1.3 }
+    ]
+  },
+  "Teemo": {
+    "chinese": "提莫", "role": "射手", "hp": 528, "hpGrow": 72, "mana": 250, "manaGrow": 40,
+    "ad": 54, "adGrow": 3.6, "range": 8.0, "ms": 330, "scale": 0.01,
+    "abilities": [
+      { "key": "Q", "name": "致盲吹箭", "type": "projectile", "cd": 8, "cost": 70, "dmg": 70, "speed": 26, "count": 1, "spread": 0, "range": 10, "radius": 0.7 },
+      { "key": "W", "name": "小莫快跑", "type": "buff", "cd": 12, "cost": 40, "duration": 4, "msMul": 1.5 },
+      { "key": "E", "name": "毒性射击", "type": "aoe_self", "cd": 10, "cost": 50, "dmg": 30, "radius": 7, "status": "poison", "statusDur": 3, "statusMag": 6 },
+      { "key": "R", "name": "种蘑菇", "type": "aoe_target", "cd": 30, "cost": 75, "dmg": 150, "range": 12, "radius": 3, "delay": 0.6, "status": "poison", "statusDur": 4, "statusMag": 12 }
+    ]
+  },
+  "Lux": {
+    "chinese": "拉克丝", "role": "法师", "hp": 560, "hpGrow": 80, "mana": 440, "manaGrow": 45,
+    "ad": 50, "adGrow": 3, "range": 9.5, "ms": 330, "scale": 0.01,
+    "abilities": [
+      { "key": "Q", "name": "光之束缚", "type": "projectile", "cd": 11, "cost": 50, "dmg": 80, "speed": 22, "count": 1, "spread": 0, "range": 12, "radius": 0.9, "status": "slow", "statusDur": 2, "statusMag": 0.25 },
+      { "key": "W", "name": "曲光屏障", "type": "buff", "cd": 14, "cost": 60, "shield": 100, "duration": 4, "dmg": 0, "radius": 6, "ally": true },
+      { "key": "E", "name": "透光奇点", "type": "aoe_target", "cd": 10, "cost": 70, "dmg": 110, "range": 12, "radius": 3.2, "delay": 0.4 },
+      { "key": "R", "name": "终极闪光", "type": "projectile", "cd": 80, "cost": 100, "dmg": 260, "speed": 40, "count": 1, "spread": 0, "range": 30, "radius": 1.4, "pierce": true }
+    ]
+  },
+  "Darius": {
+    "chinese": "德莱厄斯", "role": "战士", "hp": 652, "hpGrow": 92, "mana": 260, "manaGrow": 40,
+    "ad": 64, "adGrow": 5, "range": 2.1, "ms": 340, "scale": 0.01,
+    "abilities": [
+      { "key": "Q", "name": "大杀四方", "type": "aoe_self", "cd": 9, "cost": 40, "dmg": 90, "radius": 3.6 },
+      { "key": "W", "name": "致残打击", "type": "melee", "cd": 7, "cost": 30, "dmg": 70, "range": 2.8, "arc": 120, "status": "slow", "statusDur": 2, "statusMag": 0.4 },
+      { "key": "E", "name": "无情铁手", "type": "melee", "cd": 18, "cost": 45, "dmg": 30, "range": 4.5, "arc": 60, "pull": true },
+      { "key": "R", "name": "诺克萨斯断头台", "type": "execute", "cd": 100, "cost": 100, "dmg": 200, "range": 3.5, "missingPct": 0.35 }
+    ]
+  },
+  "Yasuo": {
+    "chinese": "亚索", "role": "刺客", "hp": 590, "hpGrow": 82, "mana": 0, "manaGrow": 0,
+    "ad": 60, "adGrow": 4.5, "range": 2.0, "ms": 345, "scale": 0.01,
+    "abilities": [
+      { "key": "Q", "name": "斩钢闪", "type": "projectile", "cd": 4, "cost": 0, "dmg": 60, "speed": 30, "count": 1, "spread": 0, "range": 7, "radius": 0.7 },
+      { "key": "W", "name": "风之障壁", "type": "buff", "cd": 26, "cost": 0, "shield": 0, "duration": 4, "dmg": 0, "wall": true },
+      { "key": "E", "name": "踏前斩", "type": "dash", "cd": 8, "cost": 0, "dmg": 70, "dist": 5, "speed": 34, "radius": 2 },
+      { "key": "R", "name": "狂风绝息斩", "type": "aoe_self", "cd": 60, "cost": 0, "dmg": 240, "radius": 4.5, "status": "slow", "statusDur": 2, "statusMag": 0.3 }
+    ]
+  },
+  "Zed": {
+    "chinese": "劫", "role": "刺客", "hp": 584, "hpGrow": 80, "mana": 0, "manaGrow": 0,
+    "ad": 63, "adGrow": 4.6, "range": 2.0, "ms": 345, "scale": 0.01,
+    "abilities": [
+      { "key": "Q", "name": "影奥义·诸刃", "type": "projectile", "cd": 6, "cost": 0, "dmg": 80, "speed": 30, "count": 1, "spread": 0, "range": 9, "radius": 0.7 },
+      { "key": "W", "name": "影分身", "type": "dash", "cd": 18, "cost": 0, "dmg": 0, "dist": 5, "speed": 40, "radius": 0 },
+      { "key": "E", "name": "鬼斩", "type": "aoe_self", "cd": 5, "cost": 0, "dmg": 70, "radius": 3 },
+      { "key": "R", "name": "死亡印记", "type": "dash", "cd": 70, "cost": 0, "dmg": 160, "dist": 7, "speed": 45, "radius": 3 }
+    ]
+  },
+  "Jinx": {
+    "chinese": "金克丝", "role": "射手", "hp": 560, "hpGrow": 78, "mana": 260, "manaGrow": 40,
+    "ad": 60, "adGrow": 4.2, "range": 9.0, "ms": 325, "scale": 0.01,
+    "abilities": [
+      { "key": "Q", "name": "枪炮交响曲", "type": "buff", "cd": 1, "cost": 0, "duration": 4, "msMul": 1.1, "adMul": 1.15, "toggle": true },
+      { "key": "W", "name": "震荡电磁波", "type": "projectile", "cd": 8, "cost": 50, "dmg": 90, "speed": 34, "count": 1, "spread": 0, "range": 14, "radius": 0.7, "status": "slow", "statusDur": 2, "statusMag": 0.4 },
+      { "key": "E", "name": "嚼火者手雷", "type": "aoe_target", "cd": 18, "cost": 70, "dmg": 80, "range": 9, "radius": 3, "delay": 0.5, "status": "slow", "statusDur": 2, "statusMag": 0.2 },
+      { "key": "R", "name": "超级死亡火箭", "type": "projectile", "cd": 80, "cost": 100, "dmg": 240, "speed": 45, "count": 1, "spread": 0, "range": 40, "radius": 1.3 }
+    ]
+  },
+  "Leona": {
+    "chinese": "蕾欧娜", "role": "坦克", "hp": 690, "hpGrow": 95, "mana": 300, "manaGrow": 40,
+    "ad": 60, "adGrow": 3.6, "range": 1.8, "ms": 335, "scale": 0.01,
+    "abilities": [
+      { "key": "Q", "name": "破晓之盾", "type": "melee", "cd": 6, "cost": 45, "dmg": 60, "range": 2.6, "arc": 120, "stun": 1.0 },
+      { "key": "W", "name": "日蚀", "type": "buff", "cd": 14, "cost": 60, "shield": 130, "duration": 3, "dmg": 0, "armor": true },
+      { "key": "E", "name": "天顶之刃", "type": "melee", "cd": 12, "cost": 60, "dmg": 80, "range": 5.0, "arc": 40, "pull": true },
+      { "key": "R", "name": "日炎耀斑", "type": "aoe_target", "cd": 80, "cost": 100, "dmg": 180, "range": 10, "radius": 3.5, "delay": 0.6, "stun": 1.4 }
+    ]
+  },
+  "Riven": {
+    "chinese": "锐雯", "role": "战士", "hp": 600, "hpGrow": 84, "mana": 0, "manaGrow": 0,
+    "ad": 64, "adGrow": 4.6, "range": 2.0, "ms": 340, "scale": 0.01,
+    "abilities": [
+      { "key": "Q", "name": "折翼之舞", "type": "dash", "cd": 6, "cost": 0, "dmg": 70, "dist": 3.5, "speed": 32, "radius": 2 },
+      { "key": "W", "name": "震魂怒吼", "type": "aoe_self", "cd": 10, "cost": 0, "dmg": 70, "radius": 2.8, "stun": 0.75 },
+      { "key": "E", "name": "勇往直前", "type": "buff", "cd": 9, "cost": 0, "shield": 110, "duration": 2, "dmg": 0 },
+      { "key": "R", "name": "放逐之锋", "type": "aoe_self", "cd": 70, "cost": 0, "dmg": 220, "radius": 3.5, "adMul": 1.3 }
+    ]
+  },
+  "Ahri": {
+    "chinese": "阿狸", "role": "法师", "hp": 570, "hpGrow": 80, "mana": 420, "manaGrow": 45,
+    "ad": 50, "adGrow": 3, "range": 8.5, "ms": 330, "scale": 0.01,
+    "abilities": [
+      { "key": "Q", "name": "欺诈宝珠", "type": "projectile", "cd": 7, "cost": 55, "dmg": 80, "speed": 24, "count": 1, "spread": 0, "range": 11, "radius": 0.8, "pierce": true },
+      { "key": "W", "name": "妖异狐火", "type": "aoe_self", "cd": 9, "cost": 40, "dmg": 60, "radius": 8 },
+      { "key": "E", "name": "魅惑妖术", "type": "projectile", "cd": 14, "cost": 70, "dmg": 60, "speed": 26, "count": 1, "spread": 0, "range": 10, "radius": 0.8, "status": "slow", "statusDur": 1.5, "statusMag": 0.1 },
+      { "key": "R", "name": "灵魄突袭", "type": "dash", "cd": 90, "cost": 100, "dmg": 150, "dist": 6, "speed": 45, "radius": 3 }
+    ]
+  },
+  "Vayne": {
+    "chinese": "薇恩", "role": "射手", "hp": 550, "hpGrow": 76, "mana": 240, "manaGrow": 35,
+    "ad": 60, "adGrow": 4.4, "range": 7.5, "ms": 330, "scale": 0.01,
+    "abilities": [
+      { "key": "Q", "name": "闪避突袭", "type": "dash", "cd": 6, "cost": 30, "dmg": 40, "dist": 4, "speed": 30, "radius": 0 },
+      { "key": "W", "name": "圣银弩箭", "type": "buff", "cd": 6, "cost": 0, "duration": 4, "adMul": 1.35, "trueDmg": 0 },
+      { "key": "E", "name": "恶魔审判", "type": "melee", "cd": 16, "cost": 60, "dmg": 90, "range": 4.0, "arc": 60, "pull": true },
+      { "key": "R", "name": "终极时刻", "type": "buff", "cd": 80, "cost": 80, "duration": 8, "msMul": 1.4, "adMul": 1.4, "shield": 0 }
+    ]
+  }
+}

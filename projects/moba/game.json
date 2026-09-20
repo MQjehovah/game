@@ -1,0 +1,7 @@
+{
+  "startScene": "assets/scenes/moba.json",
+  "window": { "w": 1280, "h": 720, "title": "NeonMOBA" },
+  "title": "NeonMOBA",
+  "editor": { "mode": "3d" },
+  "export": { "platform": "windows", "description": "NeonMOBA - League-style 1v1 single lane" }
+}

@@ -1,0 +1,44 @@
+{
+  "entities": [
+    {
+      "id": 1,
+      "name": "Game",
+      "components": {
+        "transform": { "pos": [0, 0, 0], "rot": [0, 0, 0, 1], "scale": [1, 1, 1] }
+      }
+    },
+    {
+      "id": 2,
+      "name": "Main Camera",
+      "components": {
+        "type": { "value": "Camera3D" },
+        "camera": { "fov": 55, "orthoSize": 10 },
+        "transform": { "pos": [0, 1.2, 3.2], "rot": [-0.1305, 0, 0, 0.9914], "scale": [1, 1, 1] }
+      }
+    },
+    {
+      "id": 3,
+      "name": "Directional Light",
+      "components": {
+        "type": { "value": "Light3D" },
+        "light": {
+          "type": "directional",
+          "color": [1, 0.95, 0.85, 1],
+          "intensity": 1,
+          "ambientStrength": 0.35,
+          "sunDir": [-0.4, -1, -0.3],
+          "radius": 10
+        },
+        "transform": { "pos": [0, 0, 0], "rot": [0, 0, 0, 1], "scale": [1, 1, 1] }
+      }
+    },
+    {
+      "id": 10,
+      "name": "Teemo",
+      "components": {
+        "transform": { "pos": [0, 0, 0], "rot": [0, 0, 0, 1], "scale": [0.1, 0.1, 0.1] },
+        "mesh": { "meshKey": "gltf:assets/models/lol/Teemo.glb" }
+      }
+    }
+  ]
+}
