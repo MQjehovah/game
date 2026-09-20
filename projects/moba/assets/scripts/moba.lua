@@ -27,7 +27,7 @@ local BRUSHES = {
 
 -- 相机视角（俯角 pitch，Riot Rift 约 55°；位置由脚本每帧驱动 Main Camera 实体，保持鼠标可见）
 local CAM = { yaw = math.pi * 0.75, pitch = 0.98, dist = 17, minDist = 11, maxDist = 28 }
-local CAM_FOV = 55
+local CAM_FOV = 52
 local VW, VH = 1280, 720
 local FACE_OFF = 0
 
@@ -142,6 +142,7 @@ end
 -- ==========================================================================
 local camFocusX, camFocusZ = 0, 0
 local camFollow = true
+local camShake = 0 -- 受击/命中震屏强度
 local camEnt = nil
 
 local function camPos()
@@ -151,7 +152,14 @@ local function camPos()
     -- whole map reads at the same angle as the minimap.
     local rx = -sy * cp * CAM.dist
     local rz = -cy * cp * CAM.dist
-    return camFocusX + rx, sp * CAM.dist, camFocusZ + rz
+    -- 轻微震屏（命中/受击）：沿屏幕方向抖动焦点
+    local shx, shz = 0, 0
+    if camShake > 0 then
+        local amp = camShake * 0.35
+        shx = math.sin(elapsed * 47.0) * amp
+        shz = math.cos(elapsed * 53.0) * amp
+    end
+    return camFocusX + rx + shx, sp * CAM.dist, camFocusZ + rz + shz
 end
 
 local function applyCamera()
@@ -554,6 +562,11 @@ local function damage(target, amount, source)
             target.channel = 0
             floatAt(target, "回城被打断", false)
         end
+        -- 轻重震屏：附近的大额伤害
+        if amount >= 50 and playerHero ~= nil and
+            dist(target.x, target.z, playerHero.x, playerHero.z) < 30 then
+            camShake = math.min(1.2, camShake + amount * 0.004)
+        end
         -- 防御塔仇恨：英雄攻击敌方英雄后，进入该方塔范围会被转火
         if source ~= nil and source.isHero and target.isHero and source.team ~= target.team then
             for i = 1, #units do
@@ -939,7 +952,7 @@ local function autoAttack(u, dt)
         u.swingTarget = tgt
     elseif u.ranged or u.kind == "tower" then
         local dx, dz = norm(tgt.x - u.x, tgt.z - u.z)
-        spawnProjectile(u, u.x, u.z, dx, dz, { speed = 26, dmg = u.ad * adMul(u), life = 2.5, radius = 0.8, trail = false })
+        spawnProjectile(u, u.x, u.z, dx, dz, { speed = 30, dmg = u.ad * adMul(u), life = 2.5, radius = 0.8, trail = false })
     else
         damage(tgt, u.ad * adMul(u), u)
     end
@@ -958,7 +971,7 @@ local function updateSwing(u, dt)
     faceTo(u, tgt.x, tgt.z)
     if u.ranged then
         local dx, dz = norm(tgt.x - u.x, tgt.z - u.z)
-        spawnProjectile(u, u.x, u.z, dx, dz, { speed = 26, dmg = u.ad * adMul(u), life = 2.5, radius = 0.8, trail = false })
+        spawnProjectile(u, u.x, u.z, dx, dz, { speed = 30, dmg = u.ad * adMul(u), life = 2.5, radius = 0.8, trail = false })
     else
         damage(tgt, u.ad * adMul(u), u)
     end
@@ -1585,6 +1598,7 @@ local function updateCameraFollow(dt)
         end
     end
     CAM.dist = clamp(CAM.dist - MouseWheel() * 3.0, CAM.minDist, CAM.maxDist)
+    if camShake > 0 then camShake = math.max(0, camShake - dt * 2.5) end
     applyCamera()
     -- 独立播放器(neon_game)：用脚本相机模式复刻 MOBA 视角（编辑器走场景相机实体）。
     SetVar("cameraMode", "script")
@@ -2030,7 +2044,16 @@ local function drawMinimap(vw)
         if not u.dead and not u.hidden then
             local col = TEAM_COLOR[u.team] or { 0.6, 0.6, 0.6 }
             local s = (u.kind == "champion") and 5 or (u.kind == "minion" and 2 or 4)
-            DrawRect(mapX(u.x, u.z) - s / 2, mapY(u.x, u.z) - s / 2, s, s, col[1], col[2], col[3], 1)
+            local mx, my = mapX(u.x, u.z), mapY(u.x, u.z)
+            DrawRect(mx - s / 2, my - s / 2, s, s, col[1], col[2], col[3], 1)
+            -- 英雄：朝向小箭头
+            if u.kind == "champion" then
+                local dx, dz = math.sin(u.yaw or 0), math.cos(u.yaw or 0)
+                local dlx = rc * dx + rs * dz
+                local dly = rs * dx - rc * dz
+                DrawLine(mx, my, mx + dlx * 7, my + dly * 7, 2.0,
+                    col[1], col[2], col[3], 1)
+            end
         end
     end
 end
@@ -2066,6 +2089,13 @@ local function drawScoreboard()
     DrawRectOutline(vw * 0.5 - 360, 110, 720, 310, 2, 0.6, 0.5, 0.2, 1)
     DrawText("记分板  (Tab)", vw * 0.5, 88, 22, 0.95, 0.82, 0.35, 1, true, true)
     local rows = { { playerHero, TEAM_COLOR[BLUE], "蓝方" }, { enemyHero, TEAM_COLOR[RED], "红方" } }
+    -- 表头列
+    DrawText("英雄", vw * 0.5 - 250, 124, 13, 0.75, 0.75, 0.75, 1, false, true)
+    DrawText("击杀", vw * 0.5 + 40, 124, 13, 0.75, 0.75, 0.75, 1, false, true)
+    DrawText("死亡", vw * 0.5 + 100, 124, 13, 0.75, 0.75, 0.75, 1, false, true)
+    DrawText("补刀", vw * 0.5 + 160, 124, 13, 0.75, 0.75, 0.75, 1, false, true)
+    DrawText("金币", vw * 0.5 + 220, 124, 13, 0.75, 0.75, 0.75, 1, false, true)
+    DrawText("装备", vw * 0.5 + 300, 124, 13, 0.75, 0.75, 0.75, 1, false, true)
     for i, r in ipairs(rows) do
         local h = r[1]
         if h ~= nil then
@@ -2073,13 +2103,14 @@ local function drawScoreboard()
             DrawText(r[3], vw * 0.5 - 330, y + 8, 16, r[2][1], r[2][2], r[2][3], 1, false, true)
             if h.portrait then DrawSprite(h.portrait, vw * 0.5 - 330, y + 28, 64, 64, 1, 1, 1, 1) end
             DrawText(string.format("%s  Lv.%d", h.name, h.level), vw * 0.5 - 250, y + 36, 20, 1, 1, 1, 1, false, true)
-            DrawText(string.format("KDA %d/%d    补刀 %d    金币 %d", h.kills, h.deaths, h.cs, math.floor(h.gold)),
-                vw * 0.5 - 250, y + 66, 15, 0.9, 0.9, 0.9, 1, false, true)
-            DrawText("装备", vw * 0.5 + 30, y + 8, 14, 0.9, 0.85, 0.6, 1, false, true)
+            DrawText(tostring(h.kills), vw * 0.5 + 40, y + 40, 18, 0.95, 0.85, 0.4, 1, false, true)
+            DrawText(tostring(h.deaths), vw * 0.5 + 100, y + 40, 18, 0.9, 0.6, 0.5, 1, false, true)
+            DrawText(tostring(h.cs), vw * 0.5 + 160, y + 40, 18, 0.9, 0.9, 0.9, 1, false, true)
+            DrawText(tostring(math.floor(h.gold)), vw * 0.5 + 220, y + 40, 16, 0.95, 0.82, 0.3, 1, false, true)
             for k = 1, #h.items do
                 local it = ITEMS[h.items[k]]
                 if it and it.icon ~= "" then
-                    DrawSprite(it.icon, vw * 0.5 + 30 + (k - 1) * 42, y + 26, 38, 38, 1, 1, 1, 1)
+                    DrawSprite(it.icon, vw * 0.5 + 300 + (k - 1) * 42, y + 26, 38, 38, 1, 1, 1, 1)
                 end
             end
         end
