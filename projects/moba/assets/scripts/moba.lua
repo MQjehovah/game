@@ -137,6 +137,7 @@ end
 -- 相机
 -- ==========================================================================
 local camFocusX, camFocusZ = 0, 0
+local camFollow = true
 local camEnt = nil
 
 local function camPos()
@@ -950,6 +951,47 @@ local function updateHeroControl(h, dt)
     end
 end
 
+-- 地面圆环 telegraph（技能/攻击范围指示）
+local function drawRangeRing(cx, cz, r, cr, cg, cb)
+    if r == nil or r <= 0 then return end
+    for k = 0, 23 do
+        local a = k / 24 * math.pi * 2
+        EmitParticles({ pos = { x = cx + math.cos(a) * r, y = 0.08, z = cz + math.sin(a) * r },
+            count = 1, vel = { x = 0, y = 0.2, z = 0 }, speedMin = 0.05, speedMax = 0.15,
+            lifeMin = 0.06, lifeMax = 0.12, sizeStart = 0.24, sizeEnd = 0.14,
+            color = { r = cr, g = cg, b = cb, a = 0.9 },
+            colorEnd = { r = 1, g = 1, b = 1, a = 0 }, additive = true })
+    end
+end
+
+-- 按住 QWER 的地面施法指示器（按技能类型：圆 / 直线）
+local function drawSpellIndicator(h, idx, aimX, aimZ)
+    local ab = h.abilities[idx]
+    if ab == nil then return end
+    local col = TEAM_COLOR[h.team]
+    local dx, dz = norm(aimX - h.x, aimZ - h.z)
+    if dx == 0 and dz == 0 then dx, dz = math.sin(h.yaw or 0), math.cos(h.yaw or 0) end
+    if ab.type == "aoe_target" then
+        local r = ab.range or 10
+        local cx, cz = aimX, aimZ
+        if dist(h.x, h.z, cx, cz) > r then cx, cz = h.x + dx * r, h.z + dz * r end
+        drawRangeRing(cx, cz, ab.radius or 3, col[1], col[2], col[3])
+    elseif ab.type == "aoe_self" then
+        drawRangeRing(h.x, h.z, ab.radius or 3, col[1], col[2], col[3])
+    else
+        local len = ab.range or (ab.dist or 6)
+        local steps = math.max(4, math.floor(len))
+        for k = 1, steps do
+            local t = k / steps * len
+            EmitParticles({ pos = { x = h.x + dx * t, y = 0.08, z = h.z + dz * t },
+                count = 1, vel = { x = 0, y = 0.2, z = 0 }, speedMin = 0.05, speedMax = 0.15,
+                lifeMin = 0.06, lifeMax = 0.12, sizeStart = 0.22, sizeEnd = 0.14,
+                color = { r = col[1], g = col[2], b = col[3], a = 0.85 },
+                colorEnd = { r = 1, g = 1, b = 1, a = 0 }, additive = true })
+        end
+    end
+end
+
 local function updatePlayer(dt)
     local h = playerHero
     if h == nil or h.dead then return end
@@ -1015,9 +1057,13 @@ local function updatePlayer(dt)
     local fy = h.yaw or 0
     local aimX = g and g.x or (h.x + math.sin(fy) * 6)
     local aimZ = g and g.z or (h.z + math.cos(fy) * 6)
+    -- 按住显示施法指示器，松开在该处释放（快速施法+指示）。
     for i = 1, 4 do
-        if ActionPressed("spell" .. i) then castAbility(h, i, aimX, aimZ) end
+        if ActionDown("spell" .. i) then drawSpellIndicator(h, i, aimX, aimZ) end
+        if ActionReleased("spell" .. i) then castAbility(h, i, aimX, aimZ) end
     end
+    -- 按住 A：显示攻击范围圈。
+    if ActionDown("attack") then drawRangeRing(h.x, h.z, h.range, 0.95, 0.9, 0.35) end
     if ActionPressed("recall") then h.channel = 1.4 end
     updateHeroControl(h, dt)
 end
@@ -1209,14 +1255,35 @@ end
 
 local function updateCameraFollow(dt)
     local h = playerHero
-    if h ~= nil and not h.dead then
-        -- 锁定镜头：英雄始终居中
-        local tx, tz = h.x, h.z
-        camFocusX = camFocusX + (tx - camFocusX) * math.min(1, dt * 10)
-        camFocusZ = camFocusZ + (tz - camFocusZ) * math.min(1, dt * 10)
+    -- Y：锁定/解锁视角。锁定＝英雄居中；解锁＝可边缘平移。
+    if ActionPressed("camera") then camFollow = not camFollow end
+    if camFollow and h ~= nil and not h.dead then
+        camFocusX = camFocusX + (h.x - camFocusX) * math.min(1, dt * 10)
+        camFocusZ = camFocusZ + (h.z - camFocusZ) * math.min(1, dt * 10)
     end
     if ActionPressed("center") then
+        camFollow = true
         if h ~= nil then camFocusX, camFocusZ = h.x, h.z end
+    end
+    if not camFollow then
+        -- 屏幕边缘平移（沿相机 yaw 的屏幕方向，手感与画面一致）。
+        local m = InputMousePos()
+        local vp = GetViewportSize()
+        local vw = (vp and vp.w) or VW
+        local vh = (vp and vp.h) or VH
+        if m ~= nil then
+            local edge = 0.04 * math.min(vw, vh) + 6
+            local pan = 26 * dt
+            local cy, sy = math.cos(CAM.yaw), math.sin(CAM.yaw)
+            local rx, rz = -cy, sy   -- 屏幕右方向（地面）
+            local ux, uz = sy, cy    -- 屏幕上前方向（地面）
+            if m.x < edge then camFocusX = camFocusX - rx * pan; camFocusZ = camFocusZ - rz * pan end
+            if m.x > vw - edge then camFocusX = camFocusX + rx * pan; camFocusZ = camFocusZ + rz * pan end
+            if m.y < edge then camFocusX = camFocusX + ux * pan; camFocusZ = camFocusZ + uz * pan end
+            if m.y > vh - edge then camFocusX = camFocusX - ux * pan; camFocusZ = camFocusZ - uz * pan end
+            camFocusX = clamp(camFocusX, -70, 70)
+            camFocusZ = clamp(camFocusZ, -70, 70)
+        end
     end
     CAM.dist = clamp(CAM.dist - MouseWheel() * 3.0, CAM.minDist, CAM.maxDist)
     applyCamera()
@@ -1402,6 +1469,16 @@ local function bar(x, y, w, h, frac, r, g, b)
     DrawRect(x, y, w, h, 0.05, 0.05, 0.07, 0.85)
     if frac > 0 then DrawRect(x + 1, y + 1, (w - 2) * clamp(frac, 0, 1), h - 2, r, g, b, 1) end
     DrawRectOutline(x, y, w, h, 1, 0, 0, 0, 0.9)
+end
+
+-- 目标选中框：点选/锁定敌人时在其头顶画方框
+local function drawTargetMarker()
+    local h = playerHero
+    if h == nil or h.target == nil or h.target.dead then return end
+    local s = WorldToScreen(h.target.x, h.target.h * 0.5, h.target.z)
+    if s ~= nil then
+        DrawRectOutline(s.x - 18, s.y - 18, 36, 36, 2, 0.95, 0.45, 0.3, 1)
+    end
 end
 
 local function drawWorldPlates()
@@ -1669,6 +1746,7 @@ function on_render()
         return
     end
     drawWorldPlates()
+    drawTargetMarker()
     drawFloatTexts()
     drawHud()
     drawMinimap(vw)
