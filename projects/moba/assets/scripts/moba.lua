@@ -2391,9 +2391,13 @@ local function drawLobby()
     for i = 1, math.min(#LOBBY.rooms, 8) do
         local r = LOBBY.rooms[i]
         local yy = ly + 122 + (i - 1) * 28
+        local rowh = 24
+        DrawRect(lx - 4, yy - 4, 420, rowh, 0.08, 0.09, 0.13, 0.9)
         DrawText(string.format("%s   %d/%d%s", tostring(r.room), r.players or 1, r.max or 2,
             r.started and "  (已开始)" or ""), lx, yy, 15, 0.9, 0.9, 0.9, 1, false, true)
-        if button(lx + 330, yy - 4, 80, 22, "加入") then
+        DrawText("点击加入", lx + 340, yy, 13, 0.7, 0.85, 1, 1, false, true)
+        if click and m.x >= lx - 4 and m.x <= lx + 416 and m.y >= yy - 4 and
+            m.y <= yy - 4 + rowh then
             Rpc("room.join", { room = r.room })
         end
     end
