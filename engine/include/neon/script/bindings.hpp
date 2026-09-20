@@ -191,6 +191,10 @@ struct ScriptContext {
     // when the scene has no .navgrid.json). The NavFindPath binding reads it
     // (null -> empty path); GameRuntime loads the asset and wires it here.
     const nav::NavGrid* navGrid = nullptr;
+    // Network commands delivered to scripts (authoritative server). NetCommand()
+    // returns the next queued command as {client=<num>, name=<str>, args=<json>}
+    // or nil. Wired by the host (server) which pushes received RPCs here.
+    std::function<Value()> netNextCommand;
     // B1 NavGrid mutation: block/unblock a world-space XZ disk (dynamic
     // obstacles such as towers). GameRuntime wires it to the live grid;
     // null -> NavBlock is a no-op returning false.

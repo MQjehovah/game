@@ -135,6 +135,9 @@ int main(int argc, char** argv) {
         NEON_LOG_ERROR("server: failed to start; exiting");
         return 1;
     }
+    // Authoritative MOBA mode: scripts read this to consume client commands
+    // (NetCommand) instead of local input.
+    server.GameVars().Set("netRole", neon::script::Value::Str("server"));
     NEON_LOG_INFO("server: port=%u scene='%s' scripts='%s' ticks=%d%s", server.Port(),
                   scenePath.c_str(), scriptsDir.c_str(), ticksLimit,
                   cfg.loopback ? " loopback" : "");

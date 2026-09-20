@@ -392,6 +392,8 @@ assetMgr_.SetTextureBakeDir(".neon/imported");
                                               const std::string& argsJson) {
         SendRpc(name, argsJson);
     };
+    // Connected clients run scripts in "client" network role: they send MOBA
+    // commands (Rpc) and render server-authoritative snapshots.
     started_ = true;
     NEON_LOG_CAT(neon::core::LogCategory::Scene, neon::core::LogLevel::Info,
                  "player: '%s' started (%zu entities, %zu scripts, %zu trees, %zu draws)",
@@ -403,6 +405,8 @@ assetMgr_.SetTextureBakeDir(".neon/imported");
     // reconcile the controlled entity.
     if (!cfg_.connectHost.empty() && cfg_.connectPort != 0) {
         networked_ = true;
+        // Connected clients send MOBA commands (Rpc) and render server snapshots.
+        runtime_.GameVars().Set("netRole", script::Value::Str("client"));
         if (SmokeActive()) clientInput_.SetForceMove(true);
         if (!StartNetwork()) {
             CleanupUnpackedDir();

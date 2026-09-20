@@ -589,6 +589,13 @@ void GameServer::SetupRpc() {
         }
         return std::optional<std::pair<std::string, std::string>>();
     });
+    // Gameplay commands: route a client's MOBA command RPC into the runtime's
+    // command queue; authoritative scripts drain it with NetCommand().
+    rpc_.Register("moba_cmd", [this](uint64_t clientId, const std::string& argsJson) {
+        runtime_.PushNetCommand(clientId, "moba_cmd", argsJson);
+        return std::optional<std::pair<std::string, std::string>>{};
+    });
+
     // P2-4 anti-cheat admin RPCs (placeholder: any connected client may use
     // them; a real deployment gates this behind an auth/admin role).
     rpc_.Register("admin.kick", [this](uint64_t, const std::string& argsJson) {

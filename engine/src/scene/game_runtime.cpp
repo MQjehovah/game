@@ -377,6 +377,18 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
         }
         return table.Value().rows;
     };
+    // NetCommand(): drain the next queued network command (authoritative server).
+    scriptCtx_.netNextCommand = [this]() {
+        script::Value v = script::Value::Nil();
+        if (netCommands_.empty()) return v;
+        const NetCommand c = netCommands_.front();
+        netCommands_.erase(netCommands_.begin());
+        v = script::Value::Tbl();
+        v.table->fields.emplace_back("client", script::Value::Num(static_cast<double>(c.clientId)));
+        v.table->fields.emplace_back("name", script::Value::Str(c.name));
+        v.table->fields.emplace_back("args", script::Value::Str(c.args));
+        return v;
+    };
     // Replaceable UI system: injected via cfg_.uiSystem wins; otherwise the
     // default document-backed system reading through the same VFS/disk source
     // as scripts (G7-1: packed games load ui/*.ui.json straight from the pack).

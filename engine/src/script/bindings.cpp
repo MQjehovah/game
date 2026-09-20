@@ -186,6 +186,16 @@ Value NativeSetLook(IScriptHost& host, void* user) {
     return Value::Nil();
 }
 
+// NetCommand(): authoritative-server scripts drain network commands queued by
+// the host (a client's RPC). Returns {client=<num>, name=<str>, args=<json>}
+// or nil when the queue is empty. Client hosts leave the hook null.
+Value NativeNetCommand(IScriptHost& host, void* user) {
+    (void)host;
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->netNextCommand) return Value::Nil();
+    return ctx->netNextCommand();
+}
+
 Value NativeGetHealth(IScriptHost& host, void* user) {
     auto* ctx = static_cast<ScriptContext*>(user);
     if (!ctx || !ctx->sceneGetHp) return Value::Num(-1);
@@ -1813,6 +1823,7 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("NavFindPath", &NativeNavFindPath, &ctx);
     host.Register("NavBlock", &NativeNavBlock, &ctx);
     host.Register("NavWalkable", &NativeNavWalkable, &ctx);
+    host.Register("NetCommand", &NativeNetCommand, &ctx);
     host.Register("LoadDataTable", &NativeLoadDataTable, &ctx);
     host.Register("PollAnimEvents", &NativePollAnimEvents, &ctx);
     host.Register("AnimBlend", &NativeAnimBlend, &ctx);

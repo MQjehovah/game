@@ -1058,9 +1058,113 @@ local function drawSpellIndicator(h, idx, aimX, aimZ)
     end
 end
 
+-- ==========================================================================
+-- 联机（A）：服务器权威消费指令，客户端发指令
+-- ==========================================================================
+local function netRole()
+    local r = GetVar("netRole")
+    if type(r) == "string" then return r end
+    return nil
+end
+
+local function netIndexUnit(id)
+    for i = 1, #units do
+        if units[i].id == id then return units[i] end
+    end
+    return nil
+end
+
+-- 服务器：把客户端发来的指令应用到玩家英雄
+local function applyNetCommand(cmd)
+    local h = playerHero
+    if h == nil or h.dead then return end
+    if cmd.name ~= "moba_cmd" then return end
+    local a = nil
+    if type(cmd.args) == "string" and cmd.args ~= "" then a = Json.Parse(cmd.args) end
+    if a == nil then return end
+    local t = a.type
+    if t == "move" then
+        h.target = nil; h.commandTarget = false
+        h.moveTarget = { x = a.x, z = a.z }; h.attackMove = nil; h.navPath = nil
+    elseif t == "attackMove" then
+        h.target = nil; h.commandTarget = false
+        h.moveTarget = { x = a.x, z = a.z }; h.attackMove = true; h.navPath = nil
+    elseif t == "attackTarget" then
+        local u = netIndexUnit(a.id)
+        if u ~= nil and not u.dead and u.team ~= h.team then
+            h.target = u; h.commandTarget = true; h.attackMove = nil
+        end
+    elseif t == "cast" then
+        castAbility(h, a.ability or 1, a.x or h.x, a.z or h.z)
+    elseif t == "recall" then
+        h.channel = 1.4
+    elseif t == "levelup" then
+        spendPoint(h, a.ability or 1)
+    end
+end
+
+-- 客户端：读本地输入 -> 发 moba_cmd，不改本地状态（位置由服务器快照驱动）
+local function clientSendCommands(h)
+    local vp = GetViewportSize()
+    local vw = (vp and vp.w) or VW
+    local vh = (vp and vp.h) or VH
+    local m = InputMousePos()
+    local inView = m ~= nil and m.x >= 0 and m.y >= 0 and m.x <= vw and m.y <= vh
+    if ActionPressed("attack") then h.attackArmed = true end
+    local left = InputMousePressed("left")
+    local right = InputMousePressed("right")
+    if inView and (left or right) then
+        local best, bd = nil, 44
+        for i = 1, #units do
+            local o = units[i]
+            if not o.dead and o.team ~= h.team then
+                local s = WorldToScreen(o.x, o.h * 0.5, o.z)
+                if s ~= nil then
+                    local d = dist(s.x, s.y, m.x, m.y)
+                    if d < bd then bd = d; best = o end
+                end
+            end
+        end
+        local g = groundPick(m.x, m.y)
+        if best ~= nil then
+            Rpc("moba_cmd", { type = "attackTarget", id = best.id })
+        elseif g ~= nil then
+            Rpc("moba_cmd", { type = (left and h.attackArmed) and "attackMove" or "move",
+                              x = g.x, z = g.z })
+        end
+        if left then h.attackArmed = nil end
+    end
+    local g = inView and groundPick(m.x, m.y) or nil
+    local fy = h.yaw or 0
+    local aimX = g and g.x or (h.x + math.sin(fy) * 6)
+    local aimZ = g and g.z or (h.z + math.cos(fy) * 6)
+    local ctrl = InputKey("ctrl") == 1
+    for i = 1, 4 do
+        if ctrl and ActionPressed("spell" .. i) then
+            Rpc("moba_cmd", { type = "levelup", ability = i })
+        elseif ActionReleased("spell" .. i) then
+            Rpc("moba_cmd", { type = "cast", ability = i, x = aimX, z = aimZ })
+        end
+    end
+    if ActionPressed("recall") then Rpc("moba_cmd", { type = "recall" }) end
+end
+
 local function updatePlayer(dt)
     local h = playerHero
     if h == nil or h.dead then return end
+    local role = netRole()
+    if role == "server" then
+        local cmd = NetCommand()
+        while cmd ~= nil do
+            applyNetCommand(cmd)
+            cmd = NetCommand()
+        end
+        updateHeroControl(h, dt)
+        return
+    elseif role == "client" then
+        clientSendCommands(h)
+        return
+    end
     -- 游戏渲染区域（设计坐标）。点击落在视野外（编辑器面板/黑边）一律忽略。
     local vp = GetViewportSize()
     local vw = (vp and vp.w) or VW

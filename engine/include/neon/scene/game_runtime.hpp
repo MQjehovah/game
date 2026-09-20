@@ -273,6 +273,12 @@ public:
         }
     }
     bool NavGridValid() const { return navGridValid_; }
+    // Network commands (authoritative server): the host pushes received client
+    // RPCs here; scripts drain them one by one with NetCommand().
+    void PushNetCommand(uint64_t clientId, const std::string& name,
+                        const std::string& argsJson) {
+        netCommands_.push_back({clientId, name, argsJson});
+    }
     // P1-2 debugger passthrough for the editor playtest.
     // The Lua host (the canonical debugger backend; the editor's breakpoint /
     // step UI talks to it). JS scripts route internally through the same
@@ -452,6 +458,13 @@ private:
     // obstacles; null when the scene has no associated grid.
     nav::NavGrid navGrid_;
     bool navGridValid_ = false;
+    // Queued network commands (authoritative server); drained by NetCommand().
+    struct NetCommand {
+        uint64_t clientId = 0;
+        std::string name;
+        std::string args;
+    };
+    std::vector<NetCommand> netCommands_;
     // Post-process FX overrides (applied at Draw); see SetPostFx.
     bool postSsao_ = false;
     bool postVolumetric_ = false;
