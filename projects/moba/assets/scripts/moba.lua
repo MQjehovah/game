@@ -209,6 +209,7 @@ local function spawnHero(name, team)
         atkPeriod = (s.range or 2.0) > 3.0 and 1.0 or 1.15, atkTimer = 0,
         ranged = (s.range or 2.0) > 3.0,
         abilities = s.abilities or {}, cds = { 0, 0, 0, 0 },
+        ranks = { 0, 0, 0, 0 }, skillPoints = 1,
         buffs = {}, target = nil, moveTarget = nil, state = "idle",
         anim = nil, actionT = 0, yaw = (team == BLUE) and 0 or math.pi,
         channel = 0, dying = 0, dead = false, isHero = true,
@@ -333,6 +334,29 @@ local function recomputeDerived(u)
     u.speed = (b.ms + u.bonus.ms) * 0.015
 end
 
+-- 技能加点：R 上限 3，其余 5。玩家手动加（Ctrl+QWER），AI 自动加。
+local RANK_MAX = { 5, 5, 5, 3 }
+
+local function spendPoint(h, idx)
+    if h == nil or h.ranks == nil then return false end
+    if (h.skillPoints or 0) <= 0 then return false end
+    if h.ranks[idx] >= RANK_MAX[idx] then return false end
+    h.ranks[idx] = h.ranks[idx] + 1
+    h.skillPoints = h.skillPoints - 1
+    return true
+end
+
+local function autoLevel(h)
+    if h == nil or h.ranks == nil then return end
+    while (h.skillPoints or 0) > 0 do
+        local spent = false
+        for i = 1, 4 do
+            if h.ranks[i] < RANK_MAX[i] and spendPoint(h, i) then spent = true end
+        end
+        if not spent then break end
+    end
+end
+
 local function xpForLevel(l) return 100 + (l - 1) * 80 end
 
 local function grantXp(u, amount)
@@ -341,6 +365,8 @@ local function grantXp(u, amount)
     while u.xp >= xpForLevel(u.level) and u.level < 18 do
         u.xp = u.xp - xpForLevel(u.level)
         u.level = u.level + 1
+        u.skillPoints = (u.skillPoints or 0) + 1
+        if u ~= playerHero then autoLevel(u) end
         local oldHp, oldMana = u.maxHp, u.maxMana
         recomputeDerived(u)
         u.hp = u.hp + (u.maxHp - oldHp)
@@ -459,10 +485,13 @@ local function killUnit(u, source)
     elseif u.isHero then
         if source ~= nil and source.isHero and source.team ~= u.team then
             source.kills = (source.kills or 0) + 1
-            source.gold = source.gold + 300
+            source.streak = (source.streak or 0) + 1
+            local bounty = 300 + math.min(source.streak - 1, 5) * 50
+            source.gold = source.gold + bounty
             grantXp(source, 150)
-            floatAt(source, "+300", true)
+            floatAt(source, "+" .. bounty, true)
         end
+        u.streak = 0
     elseif u.kind == "neutral" then
         sfx("monster_die", 0.15)
         if source ~= nil and source.isHero then
@@ -508,6 +537,22 @@ local function damage(target, amount, source)
                 vel = { x = 0, y = 1, z = 0 }, speedMin = 1, speedMax = 3, lifeMin = 0.15, lifeMax = 0.3,
                 sizeStart = 0.3, sizeEnd = 0.02, color = { r = 1, g = 0.9, b = 0.5, a = 0.8 },
                 colorEnd = { r = 1, g = 0.3, b = 0.1, a = 0 }, additive = true })
+        end
+        -- 回城被打断：读条中受到任意伤害立即取消
+        if target.isHero and (target.channel or 0) > 0 then
+            target.channel = 0
+            floatAt(target, "回城被打断", false)
+        end
+        -- 防御塔仇恨：英雄攻击敌方英雄后，进入该方塔范围会被转火
+        if source ~= nil and source.isHero and target.isHero and source.team ~= target.team then
+            for i = 1, #units do
+                local tw = units[i]
+                if tw.kind == "tower" and tw.team == target.team and not tw.dead and
+                    dist(tw.x, tw.z, source.x, source.z) <= tw.range then
+                    tw.towerTarget = source
+                    tw.towerAggroT = 3.0
+                end
+            end
         end
     end
     if target.hp <= 0 then killUnit(target, source) end
@@ -734,11 +779,13 @@ end
 local function castAbility(h, idx, aimX, aimZ)
     local ab = h.abilities[idx]
     if ab == nil or h.dead then return end
+    local rank = (h.ranks and h.ranks[idx]) or 0
+    if rank <= 0 then floatAt(h, "未学习技能", false); return end
     if (h.cds[idx] or 0) > 0 then floatAt(h, "冷却中", false); return end
     local cost = ab.cost or 0
     if h.mana < cost then floatAt(h, "法力不足", false); return end
     h.mana = h.mana - cost
-    h.cds[idx] = ab.cd or 6
+    h.cds[idx] = (ab.cd or 6) * (1 - 0.05 * (rank - 1))
     playSpell(h, idx)
     if h.isHero then sfx("cast", 0.08) end
 
@@ -749,7 +796,7 @@ local function castAbility(h, idx, aimX, aimZ)
         dx, dz = math.sin(fy), math.cos(fy)
     end
     local t = ab.type
-    local dmg = ab.dmg or 0
+    local dmg = (ab.dmg or 0) * (0.6 + 0.4 * rank)
 
     if t == "projectile" then
         local count = ab.count or 1
@@ -891,6 +938,25 @@ local function updateNeutral(u, dt)
         u.hp = math.min(u.maxHp, u.hp + u.maxHp * 0.02 * dt)
         SetHealth(u.ent, u.hp)
     end
+end
+
+-- 防御塔：小兵优先；有英雄攻击了我方英雄则短暂转火该英雄。
+local function updateTower(u, dt)
+    if u.dead then return end
+    if (u.towerAggroT or 0) > 0 then
+        u.towerAggroT = u.towerAggroT - dt
+        local t = u.towerTarget
+        if t == nil or t.dead or dist(u.x, u.z, t.x, t.z) > u.range then
+            u.towerTarget = nil
+            u.towerAggroT = 0
+        end
+    end
+    if u.towerTarget ~= nil then
+        u.target = u.towerTarget
+    else
+        u.target = nearestEnemy(u, u.range, true)
+    end
+    autoAttack(u, dt)
 end
 
 -- ==========================================================================
@@ -1057,10 +1123,18 @@ local function updatePlayer(dt)
     local fy = h.yaw or 0
     local aimX = g and g.x or (h.x + math.sin(fy) * 6)
     local aimZ = g and g.z or (h.z + math.cos(fy) * 6)
-    -- 按住显示施法指示器，松开在该处释放（快速施法+指示）。
+    -- Ctrl+QWER 加点；否则按住显示施法指示器、松开在该处释放。
+    local ctrl = InputKey("ctrl") == 1
     for i = 1, 4 do
-        if ActionDown("spell" .. i) then drawSpellIndicator(h, i, aimX, aimZ) end
-        if ActionReleased("spell" .. i) then castAbility(h, i, aimX, aimZ) end
+        if ctrl and ActionPressed("spell" .. i) then
+            if spendPoint(h, i) then
+                floatAt(h, "技能升级", false)
+                sfx("levelup", 0.2)
+            end
+        else
+            if ActionDown("spell" .. i) then drawSpellIndicator(h, i, aimX, aimZ) end
+            if ActionReleased("spell" .. i) then castAbility(h, i, aimX, aimZ) end
+        end
     end
     -- 按住 A：显示攻击范围圈。
     if ActionDown("attack") then drawRangeRing(h.x, h.z, h.range, 0.95, 0.9, 0.35) end
@@ -1365,6 +1439,7 @@ local function chooseChampion(name)
     local pick = AI_CHAMP
     if pick == name then pick = (name == "Ashe") and "Garen" or "Ashe" end
     enemyHero = spawnHero(pick, RED)
+    if enemyHero ~= nil then autoLevel(enemyHero) end
     spawnJungle()
     phase = "loading"
     loadingTime = 0
@@ -1450,7 +1525,7 @@ function on_update(e, dt)
             tickBuffs(u, dt)
             if u.kind == "minion" then updateMinion(u, dt)
             elseif u.kind == "neutral" then updateNeutral(u, dt)
-            elseif u.kind == "tower" then autoAttack(u, dt) end
+            elseif u.kind == "tower" then updateTower(u, dt) end
         end
     end
     updateProjectiles(dt)
@@ -1552,14 +1627,18 @@ local function drawHud()
         local x = sx + (i - 1) * (slot + 8)
         local ab = h.abilities[i]
         local cost = (ab and ab.cost) or 0
-        local ready = (h.cds[i] or 0) <= 0 and h.mana >= cost
+        local rank = (h.ranks and h.ranks[i]) or 0
+        local ready = rank > 0 and (h.cds[i] or 0) <= 0 and h.mana >= cost
         if ab ~= nil and ab.icon and ab.icon ~= "" then
-            DrawSprite(ab.icon, x, sy, slot, slot, 1, 1, 1, 1)
+            DrawSprite(ab.icon, x, sy, slot, slot, 1, 1, 1, rank > 0 and 1 or 0.42)
         else
             DrawRect(x, sy, slot, slot, 0.08, 0.08, 0.12, 0.9)
         end
         DrawRectOutline(x, sy, slot, slot, 2, ready and 0.9 or 0.3, ready and 0.78 or 0.3, 0.2, 1)
         DrawText(keys[i], x + 7, sy + 8, 13, 1, 1, 1, 0.95, false, false)
+        -- 技能等级角标
+        DrawRect(x + slot - 16, sy + slot - 14, 16, 14, 0, 0, 0, 0.6)
+        DrawText(tostring(rank), x + slot - 8, sy + slot - 7, 11, 1, 1, 1, 1, true, true)
         if ab ~= nil then
             local cd = h.cds[i] or 0
             if cd > 0 then
@@ -1573,11 +1652,25 @@ local function drawHud()
             end
         end
     end
+    if (h.skillPoints or 0) > 0 then
+        DrawText("技能点 " .. h.skillPoints .. "   Ctrl+QWER 加点", sx, sy - 20, 14, 1, 0.9, 0.4, 1, false, true)
+    end
+    -- 回城读条进度
+    if (h.channel or 0) > 0 then
+        local cw, chh = 220, 14
+        local rbx, rby = cx - cw / 2, by - 44
+        DrawRect(rbx, rby, cw, chh, 0.05, 0.05, 0.08, 0.85)
+        DrawRect(rbx + 1, rby + 1, (cw - 2) * clamp(1 - h.channel / 1.4, 0, 1), chh - 2,
+            0.3, 0.7, 1.0, 1)
+        DrawText("回城中…", cx, rby + chh / 2, 12, 1, 1, 1, 1, true, true)
+    end
 
     local infoY = sy - 22
     DrawText(string.format("金币 %d", math.floor(h.gold)), bx, infoY, 15, 0.95, 0.82, 0.3, 1, false, true)
     DrawText(string.format("补刀 %d", h.cs), bx + 86, infoY, 15, 0.9, 0.9, 0.9, 1, false, true)
-    DrawText(string.format("KDA %d/%d", h.kills, h.deaths), bx + 166, infoY, 15, 0.9, 0.9, 0.9, 1, false, true)
+    DrawText(string.format("KDA %d/%d", h.kills, h.deaths) ..
+        (((h.streak or 0) > 1) and ("   连杀 x" .. h.streak) or ""),
+        bx + 166, infoY, 15, 0.9, 0.9, 0.9, 1, false, true)
     DrawRect(bx - 64, by + 48, 58, 8, 0.05, 0.05, 0.08, 0.9)
     DrawRect(bx - 63, by + 49, 56 * clamp(h.xp / xpForLevel(h.level), 0, 1), 6, 0.85, 0.7, 0.25, 1)
     DrawText("Lv." .. h.level, bx - 35, by + 52, 11, 1, 1, 1, 1, true, true)
