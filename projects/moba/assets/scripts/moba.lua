@@ -1395,6 +1395,12 @@ local function updateCameraFollow(dt)
     end
     CAM.dist = clamp(CAM.dist - MouseWheel() * 3.0, CAM.minDist, CAM.maxDist)
     applyCamera()
+    -- 独立播放器(neon_game)：用脚本相机模式复刻 MOBA 视角（编辑器走场景相机实体）。
+    SetVar("cameraMode", "script")
+    SetVar("cameraYaw", CAM.yaw)
+    SetVar("cameraPitch", CAM.pitch)
+    SetVar("cameraDist", CAM.dist)
+    SetVar("cameraFocus", { x = camFocusX, y = 0, z = camFocusZ })
 end
 
 -- 战争迷雾：粗网格 + 导航网格视线遮挡。fogSeen=探索过，fogVis=当前可见。

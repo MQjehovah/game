@@ -540,15 +540,36 @@ void PlayerApp::UpdateCamera(float dt) {
         lastMouseLocked_ = mouseLocked;
     }
     if (!mouseLocked) {
-        yaw_ += -input->MouseDelta().x * 0.004f;
-        pitch_ += -input->MouseDelta().y * 0.004f;
-        pitch_ = math::Clamp(pitch_, -1.3f, 1.3f);
-        float wheel = input->WheelDelta();
-        if (std::fabs(wheel) > 0.01f)
-            camDist_ = math::Clamp(camDist_ - wheel * 1.5f, 2.0f, 80.0f);
-        // The camera owns the mouse by default: consume so scripts see zero.
-        input->ConsumeMouseDelta();
-        input->ConsumeWheel();
+        // Script-driven camera (e.g. a MOBA): a script sets cameraMode="script"
+        // plus cameraYaw/cameraPitch/cameraDist (radians + world units) and
+        // cameraFocus each frame. Mouse orbit is skipped and the deltas are
+        // consumed so scripts can still read the raw mouse for aiming.
+        const script::Value mode = runtime_.GameVars().Get("cameraMode");
+        const bool scriptCam =
+            mode.type == script::Value::Type::String && mode.str == "script";
+        if (scriptCam) {
+            auto numVar = [&](const char* k, float def) {
+                const script::Value v = runtime_.GameVars().Get(k);
+                return v.type == script::Value::Type::Number
+                           ? static_cast<float>(v.number)
+                           : def;
+            };
+            yaw_ = numVar("cameraYaw", yaw_);
+            pitch_ = math::Clamp(numVar("cameraPitch", pitch_), -1.3f, 1.3f);
+            camDist_ = math::Clamp(numVar("cameraDist", camDist_), 2.0f, 120.0f);
+            input->ConsumeMouseDelta();
+            input->ConsumeWheel();
+        } else {
+            yaw_ += -input->MouseDelta().x * 0.004f;
+            pitch_ += -input->MouseDelta().y * 0.004f;
+            pitch_ = math::Clamp(pitch_, -1.3f, 1.3f);
+            float wheel = input->WheelDelta();
+            if (std::fabs(wheel) > 0.01f)
+                camDist_ = math::Clamp(camDist_ - wheel * 1.5f, 2.0f, 80.0f);
+            // The camera owns the mouse by default: consume so scripts see zero.
+            input->ConsumeMouseDelta();
+            input->ConsumeWheel();
+        }
     }
 
     math::Vec3 offset{std::sin(yaw_) * std::cos(pitch_), std::sin(pitch_),
