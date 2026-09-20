@@ -206,6 +206,7 @@ local function spawnHero(name, team)
         hp = s.hp, maxHp = s.hp, mana = s.mana or 0, maxMana = s.mana or 0,
         ad = s.ad or 60, range = s.range or 2.0, speed = (s.ms or 340) * 0.015,
         atkPeriod = (s.range or 2.0) > 3.0 and 1.0 or 1.15, atkTimer = 0,
+        ranged = (s.range or 2.0) > 3.0,
         abilities = s.abilities or {}, cds = { 0, 0, 0, 0 },
         buffs = {}, target = nil, moveTarget = nil, state = "idle",
         anim = nil, actionT = 0, yaw = (team == BLUE) and 0 or math.pi,
@@ -900,9 +901,18 @@ local function updateHeroControl(h, dt)
     end
     autoAttack(h, dt)
     if h.moveTarget ~= nil then
-        local arrived = stepMove(h, h.moveTarget.x, h.moveTarget.z, dt)
-        if arrived then h.moveTarget = nil; h.navPath = nil end
-        setLoop(h, "run", 0.15)
+        -- 有攻击目标时，进入射程立即停手（远程不贴脸），交给 autoAttack 输出。
+        local tgt = h.target
+        if tgt ~= nil and not tgt.dead and
+            dist(h.x, h.z, tgt.x, tgt.z) <= h.range + tgt.radius then
+            h.moveTarget = nil
+            h.navPath = nil
+            setLoop(h, "idle1", 0.2)
+        else
+            local arrived = stepMove(h, h.moveTarget.x, h.moveTarget.z, dt)
+            if arrived then h.moveTarget = nil; h.navPath = nil end
+            setLoop(h, "run", 0.15)
+        end
     else
         setLoop(h, "idle1", 0.2)
     end
@@ -931,7 +941,13 @@ local function updatePlayer(dt)
         end
         if best ~= nil then
             h.target = best
-            h.moveTarget = { x = best.x, z = best.z }
+            -- 远程目标：进入射程就停手输出，不跑到脸上。
+            if dist(h.x, h.z, best.x, best.z) > h.range + best.radius then
+                h.moveTarget = { x = best.x, z = best.z }
+            else
+                h.moveTarget = nil
+                h.navPath = nil
+            end
         else
             local g = groundPick(m.x, m.y)
             if g ~= nil then
