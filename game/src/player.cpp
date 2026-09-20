@@ -764,6 +764,7 @@ void PlayerApp::OnClientMessage(const net::DecodedMessage& msg) {
         case net::MsgType::Welcome: {
             const net::MsgWelcome& w = std::get<net::MsgWelcome>(msg.payload);
             welcomed_ = true;
+            runtime_.GameVars().Set("myClientId", script::Value::Num(static_cast<double>(w.clientId)));
             NEON_LOG_CAT(neon::core::LogCategory::Net, neon::core::LogLevel::Info,
                          "client: welcomed as client id=%llu (server tick %u)",
                          static_cast<unsigned long long>(w.clientId), w.tick);
@@ -792,6 +793,11 @@ void PlayerApp::OnClientMessage(const net::DecodedMessage& msg) {
 }
 
 void PlayerApp::HandleRpc(const net::MsgRpc& rpc) {
+    // MOBA server state: hand to scripts (moba.lua drains it via NetCommand()).
+    if (rpc.name == "moba_state") {
+        runtime_.PushNetCommand(0, "moba_state", rpc.argsJson);
+        return;
+    }
     std::optional<std::pair<std::string, std::string>> reply;
     if (clientRpc_.Dispatch(0, rpc.name, rpc.argsJson, &reply)) {
         if (reply) SendRpc(reply->first, reply->second);

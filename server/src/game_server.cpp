@@ -131,6 +131,11 @@ bool GameServer::Start(const Config& cfg) {
                          static_cast<unsigned long long>(id));
         }
     };
+    // Script Rpc(name, args): the authoritative server broadcasts to every
+    // connected client (HUD/state sync like "moba_state").
+    ctx.rpcCall = [this](const std::string& name, const std::string& argsJson) {
+        for (auto& kv : clients_) SendRpc(kv.second, name, argsJson);
+    };
 
     running_ = true;
     tick_ = 0;

@@ -71,6 +71,7 @@ local selectTime = 0
 local loadingTime = 0
 local kills = { [BLUE] = 0, [RED] = 0 }
 local elapsed = 0
+local netStateTimer = 0
 local ROSTER = {}
 local CHAMP_DATA = {}
 local ITEMS = {}
@@ -1074,9 +1075,30 @@ local function netIndexUnit(id)
     return nil
 end
 
+-- 联机：客户端分配（服务器在每个客户端加入时调用 on_player_join）
+local netJoins = {}
+local function assignNetClients()
+    if playerHero ~= nil and playerHero.netClient == nil and netJoins[1] ~= nil then
+        playerHero.netClient = netJoins[1]
+    end
+    if enemyHero ~= nil and enemyHero.netClient == nil and netJoins[2] ~= nil then
+        enemyHero.netClient = netJoins[2]
+    end
+end
+
+function on_player_join(clientId)
+    netJoins[#netJoins + 1] = clientId
+    assignNetClients()
+end
+
 -- 服务器：把客户端发来的指令应用到玩家英雄
 local function applyNetCommand(cmd)
-    local h = playerHero
+    -- 指令按 clientId 路由到对应英雄（由 on_player_join 分配；无人操控则回退）
+    local h = nil
+    for i = 1, #heroes do
+        if heroes[i].netClient == cmd.client then h = heroes[i]; break end
+    end
+    if h == nil then h = playerHero end
     if h == nil or h.dead then return end
     if cmd.name ~= "moba_cmd" then return end
     local a = nil
@@ -1103,8 +1125,40 @@ local function applyNetCommand(cmd)
     end
 end
 
+-- 客户端：把服务器广播的 moba_state 应用到本地英雄（供 HUD 显示）
+local function applyNetState(argsJson)
+    local s = nil
+    if type(argsJson) == "string" and argsJson ~= "" then s = Json.Parse(argsJson) end
+    if s == nil or s.heroes == nil then return end
+    local myId = GetVar("myClientId")
+    for i = 1, #s.heroes do
+        local e = s.heroes[i]
+        if myId ~= nil and e.client == myId then
+            local h = (e.team == BLUE) and playerHero or enemyHero
+            if h ~= nil and not h.dead then
+                h.hp = e.hp or h.hp
+                h.maxHp = e.maxHp or h.maxHp
+                h.mana = e.mana or h.mana
+                h.level = e.level or h.level
+                h.gold = e.gold or h.gold
+                h.cs = e.cs or h.cs
+                h.kills = e.kills or h.kills
+                h.deaths = e.deaths or h.deaths
+                if e.cd1 ~= nil then h.cds = { e.cd1, e.cd2, e.cd3, e.cd4 } end
+                if e.r1 ~= nil then h.ranks = { e.r1, e.r2, e.r3, e.r4 } end
+            end
+        end
+    end
+end
+
 -- 客户端：读本地输入 -> 发 moba_cmd，不改本地状态（位置由服务器快照驱动）
 local function clientSendCommands(h)
+    -- 先排空服务器状态广播
+    local cmd = NetCommand()
+    while cmd ~= nil do
+        if cmd.name == "moba_state" then applyNetState(cmd.args) end
+        cmd = NetCommand()
+    end
     local vp = GetViewportSize()
     local vw = (vp and vp.w) or VW
     local vh = (vp and vp.h) or VH
@@ -1645,6 +1699,7 @@ local function chooseChampion(name)
     if pick == name then pick = (name == "Ashe") and "Garen" or "Ashe" end
     enemyHero = spawnHero(pick, RED)
     if enemyHero ~= nil then autoLevel(enemyHero) end
+    assignNetClients()
     spawnJungle()
     phase = "loading"
     loadingTime = 0
@@ -1713,6 +1768,24 @@ function on_update(e, dt)
         return
     end
     elapsed = elapsed + dt
+    -- 服务器：周期广播英雄状态，供客户端 HUD 显示（血量/蓝量/金币/CD/等级…）
+    if netRole() == "server" then
+        netStateTimer = netStateTimer - dt
+        if netStateTimer <= 0 then
+            netStateTimer = 0.1
+            local arr = {}
+            for i = 1, #heroes do
+                local x = heroes[i]
+                arr[i] = { id = x.id, client = x.netClient or 0, team = x.team,
+                    hp = math.floor(x.hp), maxHp = math.floor(x.maxHp),
+                    mana = math.floor(x.mana), level = x.level,
+                    kills = x.kills, deaths = x.deaths, cs = x.cs, gold = math.floor(x.gold),
+                    cd1 = x.cds[1], cd2 = x.cds[2], cd3 = x.cds[3], cd4 = x.cds[4],
+                    r1 = x.ranks[1], r2 = x.ranks[2], r3 = x.ranks[3], r4 = x.ranks[4] }
+            end
+            Rpc("moba_state", { heroes = arr })
+        end
+    end
     for i = 1, #heroes do
         local h = heroes[i]
         for k = 1, 4 do
@@ -1722,7 +1795,7 @@ function on_update(e, dt)
     updatePlayer(dt)
     updateEconomy(dt)
     updateShop(dt)
-    if enemyHero ~= nil then updateAI(enemyHero, dt) end
+    if enemyHero ~= nil and enemyHero.netClient == nil then updateAI(enemyHero, dt) end
     for i = 1, #units do
         local u = units[i]
         if not u.dead then
