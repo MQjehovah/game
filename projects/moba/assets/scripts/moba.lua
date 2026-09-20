@@ -79,6 +79,8 @@ local ITEMS = {}
 local SHOP = {}
 local shopOpen = false
 local plateTeam = {}
+local plateMana = {}  -- 头顶蓝条（champion）
+local plateLevel = {} -- 头顶等级（champion）
 local MINIMAP_IMG = "assets/lol/ui/minimap.png"
 
 -- 音效（按事件触发 + 限流）
@@ -1688,6 +1690,11 @@ local function updatePlates()
                 SetEntityPlate(u.ent, u.name, u.dead and -1 or (u.hp / u.maxHp))
             end
             plateTeam[fmtKey(u.ent)] = u.team
+            if u.isHero then
+                local k = fmtKey(u.ent)
+                plateMana[k] = (u.maxMana > 0) and (u.mana / u.maxMana) or 0
+                plateLevel[k] = u.level or 1
+            end
         end
     end
 end
@@ -1886,6 +1893,14 @@ local function drawWorldPlates()
                     col = (team and TEAM_COLOR[team]) or { 0.85, 0.2, 0.2 }
                 end
                 if p.hp > 0 then DrawRect(a.x - w / 2 + 1, a.y - h + 1, (w - 2) * p.hp, h - 2, col[1], col[2], col[3], 1) end
+                -- 英雄：血条下方蓝条 + 左侧等级
+                if plateMana[key] ~= nil then
+                    local mw, mh = w, 3
+                    DrawRect(a.x - mw / 2, a.y + 1, mw, mh, 0.04, 0.04, 0.06, 0.8)
+                    DrawRect(a.x - mw / 2 + 1, a.y + 2, (mw - 2) * plateMana[key], mh - 2, 0.25, 0.45, 0.95, 1)
+                    DrawText("Lv." .. tostring(plateLevel[key] or 1), a.x - w / 2 - 4, a.y - h + 2, 11,
+                        1, 1, 1, 0.95, false, true)
+                end
                 DrawText(p.name, a.x, a.y - h - 14, 12, 1, 1, 1, 0.9, true, true)
             end
         end
