@@ -1277,6 +1277,41 @@ local function respawnHero(u)
     u.navGoal = nil
 end
 
+-- 单位分离：避免英雄/小兵/野怪互相重叠（结构体不动，只推开单位）。
+local function separateUnits()
+    local n = #units
+    for i = 1, n do
+        local a = units[i]
+        if not a.dead then
+            for j = i + 1, n do
+                local b = units[j]
+                if not b.dead then
+                    local aStatic = (a.kind == "tower" or a.kind == "nexus")
+                    local bStatic = (b.kind == "tower" or b.kind == "nexus")
+                    if not (aStatic and bStatic) then
+                        local dx, dz = b.x - a.x, b.z - a.z
+                        local d2 = dx * dx + dz * dz
+                        local rr = a.radius + b.radius
+                        if d2 < rr * rr and d2 > 1e-6 then
+                            local d = math.sqrt(d2)
+                            local push = (rr - d) * 0.5
+                            local nx, nz = dx / d, dz / d
+                            if not aStatic then a.x = a.x - nx * push; a.z = a.z - nz * push end
+                            if not bStatic then b.x = b.x + nx * push; b.z = b.z + nz * push end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    for i = 1, n do
+        local u = units[i]
+        if not u.dead and u.ent ~= nil then
+            SetPosition(u.ent, { x = u.x, y = 0, z = u.z })
+        end
+    end
+end
+
 local function cleanupUnits(dt)
     local i = 1
     while i <= #units do
@@ -1533,6 +1568,7 @@ function on_update(e, dt)
     updateCameraFollow(dt)
     updateVision()
     updatePlates()
+    separateUnits()
     cleanupUnits(dt)
 end
 
