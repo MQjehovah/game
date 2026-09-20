@@ -10,6 +10,7 @@
     "scoreboard": ["Tab"],
     "stop": ["S"],
     "attack": ["A"],
-    "ping": ["G"]
+    "ping": ["G"],
+    "camera": ["Y"]
   }
 }
