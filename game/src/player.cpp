@@ -718,17 +718,12 @@ bool PlayerApp::StartNetwork() {
         runtime_.GameVars().Set("netConnected", script::Value::Num(0));
     });
 
-    // T6.6 v0 anonymous login: the FIRST network step. The server accepts any
-    // non-empty name, replies MsgLoginOk + MsgCharList, and only then do we
-    // send the T6.4 game join (see SendJoin / the LoginOk handler).
-    net::MsgLogin login{cfg_.playerName, net::kProtocolVersion};
-    core::Status st =
-        clientChan_.Send(static_cast<uint8_t>(net::MsgType::Login), client::EncodeBody(login));
-    if (!st.Ok()) {
-        NEON_LOG_ERROR("client: login send failed: %s", st.Error().c_str());
-        clientSock_.Close();
-        return false;
-    }
+    // T6.6 v0 anonymous login is DEFERRED to the first network pump (see
+    // PumpNetwork). Between here and the first frame the client spends seconds
+    // loading scene assets, during which it cannot pump the channel or send
+    // heartbeats; logging in now made the server measure 5s of silence and drop
+    // us mid-load (the "inactive for 5009 ms" disconnect).
+    loginSent_ = false;
     NEON_LOG_CAT(neon::core::LogCategory::Net, neon::core::LogLevel::Info,
                  "client: connecting to %s:%u (login name '%s')",
                  cfg_.connectHost.c_str(), cfg_.connectPort, cfg_.playerName.c_str());
@@ -866,6 +861,17 @@ void PlayerApp::PumpNetwork() {
     // Monotonic clock in ms (accumulated fixed ticks * 1000); the reliable
     // channel only needs a monotonic clock for retransmit/timeout/ack pacing.
     const uint64_t nowMs = static_cast<uint64_t>(TimeRef().elapsed * 1000.0);
+    // Deferred login: the account step happens on the first pump, i.e. once the
+    // scene is loaded and the frame loop is running, so the server's inactivity
+    // timer never sees the multi-second asset-load stall before frame 1.
+    if (!loginSent_) {
+        loginSent_ = true;
+        net::MsgLogin login{cfg_.playerName, net::kProtocolVersion};
+        core::Status st =
+            clientChan_.Send(static_cast<uint8_t>(net::MsgType::Login),
+                             client::EncodeBody(login));
+        if (!st.Ok()) NEON_LOG_ERROR("client: login send failed: %s", st.Error().c_str());
+    }
     clientChan_.Tick(nowMs);
     // A10: 1 Hz heartbeat so the server measures a real RTT and automatic lag
     // compensation actually rewinds (without pings AutoLagCompTicks stays 0).

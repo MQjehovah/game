@@ -50,7 +50,7 @@ bool ReadFileBytes(const std::string& path, std::vector<uint8_t>& out) {
 
 bool GameServer::Start(const Config& cfg) {
     cfg_ = cfg;
-    if (cfg_.clientTimeoutMs == 0) cfg_.clientTimeoutMs = 5000;
+    if (cfg_.clientTimeoutMs == 0) cfg_.clientTimeoutMs = 15000;
     if (cfg_.snapshotEveryTicks == 0) cfg_.snapshotEveryTicks = 1;
     SetupRpc();
     // S1: one default match owns all per-simulation state.

@@ -109,7 +109,7 @@ public:
         std::string physicsBackend = "custom";
 #endif
         uint64_t rngSeed = 20260821u;    // fixed: the sim is reproducible
-        uint64_t clientTimeoutMs = 5000; // disconnect a client silent this long
+        uint64_t clientTimeoutMs = 15000; // disconnect a client silent this long (tolerates asset-load stalls)
         uint32_t snapshotEveryTicks = 2; // broadcast a snapshot every N fixed ticks
         // Send snapshots UNRELIABLY (0xF5-marked raw datagrams) instead of over
         // the reliable channel. State snapshots don't need reliability (the next

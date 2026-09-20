@@ -199,8 +199,9 @@ private:
     net::MessageCodec codec_; // decodes unreliable (0xF5-marked) snapshot datagrams
     net::RpcDispatcher clientRpc_;
     client::ClientSync sync_;              // snapshot buffer + interp + reconcile query
-    bool loggedIn_ = false;  // MsgLoginOk received (T6.6 account step done)
-    bool joinSent_ = false;  // MsgJoin sent (only after login)
+bool loggedIn_ = false;  // MsgLoginOk received (T6.6 account step done)
+bool loginSent_ = false;  // MsgLogin sent (deferred to the first network pump)
+bool joinSent_ = false;  // MsgJoin sent (only after login)
     bool welcomed_ = false;
     bool connectedLost_ = false;
     uint32_t inputSeq_ = 0;
