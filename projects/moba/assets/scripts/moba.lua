@@ -2191,7 +2191,8 @@ function on_render()
         drawLoading()
         return
     end
-    drawFog()
+    -- 战争迷雾的逐格黑色遮罩观感很差（硬边黑方块），暂时不画；
+    -- 视野/草丛的“敌人隐藏”逻辑仍在（updateVision）。真正的柔和迷雾需要引擎遮罩纹理。
     drawWorldPlates()
     drawTargetMarker()
     drawSkillOverlay()
