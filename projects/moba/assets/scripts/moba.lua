@@ -70,6 +70,8 @@ local waveTimer = FIRST_WAVE
 local waveN = 0
 local gameOver, winner = false, nil
 local playerHero, enemyHero = nil, nil
+local myTeam = BLUE          -- 联机客户端：本地视角阵营（由 match.start 的 side 决定）
+local matchEndSent = false
 local phase = "select"
 local SELECT = {}
 local selectIndex = 1
@@ -678,6 +680,17 @@ end
 -- ==========================================================================
 -- 目标选择
 -- ==========================================================================
+-- 小兵仇恨优先级：近战 > 远程 > 炮车/超级兵；英雄/建筑最后。
+local function aggroRank(o)
+    if o.kind == "minion" then
+        if o.mkind == "melee" then return 0 end
+        if o.mkind == "caster" then return 1 end
+        return 2 -- siege / super
+    end
+    if o.isHero then return 3 end
+    return 4 -- 建筑
+end
+
 local function nearestEnemy(u, range, preferMinion)
     local best, bestScore = nil, nil
     local r2 = range * range
@@ -686,8 +699,8 @@ local function nearestEnemy(u, range, preferMinion)
         if not o.dead and o.team ~= u.team then
             local d = dist2(u.x, u.z, o.x, o.z)
             if d <= r2 then
-                local score = d
-                if preferMinion and o.kind == "minion" then score = score - 1e9 end
+                -- preferMinion（防御塔）：先按兵种优先级，再比距离。
+                local score = preferMinion and (aggroRank(o) * 1e9 + d) or d
                 if bestScore == nil or score < bestScore then bestScore = score; best = o end
             end
         end
@@ -1348,10 +1361,9 @@ local function applyNetState(argsJson)
     local s = nil
     if type(argsJson) == "string" and argsJson ~= "" then s = Json.Parse(argsJson) end
     if s == nil or s.heroes == nil then return end
-    local myId = GetVar("myClientId")
     for i = 1, #s.heroes do
         local e = s.heroes[i]
-        local h = (e.team == BLUE) and playerHero or enemyHero
+        local h = (e.team == myTeam) and playerHero or enemyHero
         if h ~= nil and not h.dead then
             -- 位置：服务器权威坐标，客户端插值到本地（moba_state ~10Hz）。
             if e.x ~= nil then h.nx = e.x; h.nz = e.z; h.nyaw = e.yaw or 0 end
@@ -1364,7 +1376,7 @@ local function applyNetHud(a)
     if a == nil then return end
     local myId = GetVar("myClientId")
     if myId == nil or a.client ~= myId then return end
-    local h = (a.team == BLUE) and playerHero or enemyHero
+    local h = (a.team == myTeam) and playerHero or enemyHero
     if h == nil or h.dead then return end
     h.hp = a.hp or h.hp
     h.maxHp = a.maxHp or h.maxHp
@@ -1405,8 +1417,33 @@ local function lobbyHandle(name, argsJson)
     elseif name == "match.start" then
         LOBBY.side = (a and a.side) or "blue"
         LOBBY.phase = "match"
+        myTeam = (LOBBY.side == "red") and RED or BLUE
         if playerHero == nil and #SELECT > 0 then chooseChampion(SELECT[1]) end
+        -- 红方客户端：把本地 playerHero 指向红方英雄（本地两英雄只是渲染/HUD 视角）。
+        if myTeam == RED and playerHero ~= nil and enemyHero ~= nil then
+            playerHero, enemyHero = enemyHero, playerHero
+            camFocusX, camFocusZ = playerHero.x, playerHero.z
+        end
+        matchEndSent = false
+        gameOver = false
+        winner = nil
         phase = "play"
+    elseif name == "match.end" then
+        -- 服务器判定胜负：客户端进入结算，按 Enter 离开房间回大厅。
+        gameOver = true
+        winner = (a and a.winner) or nil
+        phase = "play"
+    elseif name == "room.left" then
+        -- 被踢 / 房主离开 / 自己离开：回大厅。
+        LOBBY.phase = "lobby"
+        LOBBY.room = ""
+        LOBBY.players = 0
+        LOBBY.host = 0
+        LOBBY.rooms = {}
+        LOBBY.msg = "已离开房间"
+        gameOver = false
+        winner = nil
+        phase = "select"
     elseif name == "net.reset" then
         -- Reconnected to the server: our old room membership is gone.
         LOBBY.phase = "lobby"
@@ -1550,7 +1587,8 @@ local function updatePlayer(dt)
     if ActionPressed("attack") then h.attackArmed = true; h.pingArmed = nil end
     if ActionPressed("ping") then h.pingArmed = true; h.attackArmed = nil end
 
-    local left = InputMousePressed("left")
+    -- 商店打开时左键用于买装备，不再触发移动/攻击（避免点击穿透）。
+    local left = InputMousePressed("left") and not shopOpen
     local right = InputMousePressed("right")
     if inView and (left or right) then
         -- 拾取点击处附近的敌人
@@ -2129,6 +2167,16 @@ function on_match_start(blueClientId, redClientId)
     if enemyHero ~= nil then
         enemyHero.netClient = netJoins[2] or nil
     end
+    -- 让服务器把客户端与实体绑定：AOI/输入路由按被控制的英雄走（否则会锚到第一个结构体）。
+    if type(BindPlayerToClient) == "function" then
+        if playerHero ~= nil and playerHero.ent ~= nil and netJoins[1] ~= nil then
+            BindPlayerToClient(playerHero.ent, netJoins[1])
+        end
+        if enemyHero ~= nil and enemyHero.ent ~= nil and netJoins[2] ~= nil then
+            BindPlayerToClient(enemyHero.ent, netJoins[2])
+        end
+    end
+    matchEndSent = false
     phase = "play"
 end
 
@@ -2153,6 +2201,7 @@ local function updateSelect()
         if InputKey(tostring(i)) == 1 then selectIndex = i end
     end
     local m = InputMousePos()
+    local hovered = false
     if m ~= nil then
         local vp = GetViewportSize()
         local vw = (vp and vp.w) or VW
@@ -2170,10 +2219,13 @@ local function updateSelect()
             local y = oy + r * (cell + gap)
             if m.x >= x and m.x <= x + cell and m.y >= y and m.y <= y + cell then
                 selectIndex = i
+                hovered = true
             end
         end
     end
-    if InputMousePressed("left") or InputKey("Return") == 1 or InputKey("Enter") == 1 or ActionPressed("spell1") then
+    -- 只有点到英雄格子才确认，点空白处不再误选。
+    if (hovered and InputMousePressed("left")) or InputKey("Return") == 1 or InputKey("Enter") == 1
+        or ActionPressed("spell1") then
         chooseChampion(SELECT[selectIndex])
     end
 end
@@ -2239,13 +2291,32 @@ function on_update(e, dt)
     end
     if gameOver then
         if ActionPressed("center") or InputKey("Return") == 1 or InputKey("Enter") == 1 then
-            ChangeScene("assets/scenes/moba.json")
+            if netRole() == "client" then
+                -- 联机：离开房间回大厅（服务器清空房间后会回收该局，可重新开）。
+                Rpc("room.leave")
+                LOBBY.phase = "lobby"
+                LOBBY.room = ""
+                LOBBY.players = 0
+                LOBBY.host = 0
+                LOBBY.rooms = {}
+                LOBBY.msg = "已离开房间"
+                gameOver = false
+                winner = nil
+                phase = "select"
+            else
+                ChangeScene("assets/scenes/moba.json")
+            end
         end
         return
     end
     elapsed = elapsed + dt
     -- 服务器：周期广播英雄位置（10Hz，消息保持较小以稳妥送达）
     if netRole() == "server" then
+        -- 胜负一旦产生，广播一次 match.end（客户端据此进入结算并离开房间）。
+        if gameOver and not matchEndSent then
+            matchEndSent = true
+            Rpc("match.end", { winner = winner })
+        end
         netStateTimer = netStateTimer - dt
         if netStateTimer <= 0 then
             netStateTimer = 0.1
@@ -2425,7 +2496,9 @@ local function drawHud()
         if ab ~= nil then
             local cd = h.cds[i] or 0
             if cd > 0 then
-                local frac = clamp(cd / (ab.cd or 1), 0, 1)
+                -- 与实际冷却一致（含等级缩减），否则高等级时进度条一开始就是满的。
+                local full = (ab.cd or 6) * (1 - 0.05 * (rank - 1))
+                local frac = clamp(cd / math.max(0.001, full), 0, 1)
                 DrawRect(x, sy + slot * (1 - frac), slot, slot * frac, 0, 0, 0, 0.72)
                 DrawText(string.format("%.0f", math.ceil(cd)), x + slot / 2, sy + slot / 2, 20, 1, 1, 1, 1, true, true)
             end

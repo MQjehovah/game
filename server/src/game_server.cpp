@@ -881,8 +881,27 @@ void GameServer::HandleRpc(const net::NetAddress& addr, const net::MsgRpc& rpc) 
     if (it == clients_.end()) return;
     // room.leave is handled specially so the sender's own room clears first.
     if (rpc.name == "room.leave") {
+        const std::string code = it->second.room;
         it->second.room.clear();
         SendRpc(it->second, "room.left", "{}");
+        // Tell the remaining members the room changed (host may have moved on),
+        // otherwise their lobby UI keeps a stale player/host count.
+        if (!code.empty()) {
+            auto members = ClientsInRoom(code);
+            core::Json reply;
+            reply.type_ = core::Json::Type::Object;
+            core::Json room; room.type_ = core::Json::Type::String; room.string_ = code;
+            reply.object_["room"] = std::move(room);
+            core::Json players; players.type_ = core::Json::Type::Number;
+            players.number_ = static_cast<double>(members.size());
+            reply.object_["players"] = std::move(players);
+            core::Json maxv; maxv.type_ = core::Json::Type::Number; maxv.number_ = 2.0;
+            reply.object_["max"] = std::move(maxv);
+            core::Json host; host.type_ = core::Json::Type::Number;
+            host.number_ = members.empty() ? 0.0 : static_cast<double>(members[0]->clientId);
+            reply.object_["host"] = std::move(host);
+            BroadcastRoom(code, "lobby", core::JsonWriter::Write(reply));
+        }
         return;
     }
     std::optional<std::pair<std::string, std::string>> reply;

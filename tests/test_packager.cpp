@@ -80,6 +80,7 @@ PackConfig DefaultCfg(const std::string& proj, const std::string& out) {
     cfg.projectDir = proj;
     cfg.outDir = out;
     cfg.copyPlayer = false; // unit tests must not depend on the build tree
+    cfg.copyServer = false; // ditto: build/neon_server.exe is not guaranteed
     return cfg;
 }
 
