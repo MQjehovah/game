@@ -26,7 +26,7 @@ local BRUSHES = {
 }
 
 -- 相机视角（俯角 pitch，Riot Rift 约 55°；位置由脚本每帧驱动 Main Camera 实体，保持鼠标可见）
-local CAM = { yaw = math.pi, pitch = 0.95, dist = 22, minDist = 12, maxDist = 36 }
+local CAM = { yaw = math.pi / 4, pitch = 0.95, dist = 22, minDist = 12, maxDist = 36 }
 local CAM_FOV = 55
 local VW, VH = 1280, 720
 local FACE_OFF = 0
@@ -141,7 +141,12 @@ local camEnt = nil
 
 local function camPos()
     local sp, cp = math.sin(CAM.pitch), math.cos(CAM.pitch)
-    return camFocusX, sp * CAM.dist, camFocusZ - cp * CAM.dist
+    local cy, sy = math.cos(CAM.yaw), math.sin(CAM.yaw)
+    -- Ground-plane offset (0, -cp*dist) rotated by yaw about the focus, so the
+    -- whole map reads at the same angle as the minimap.
+    local rx = -sy * cp * CAM.dist
+    local rz = -cy * cp * CAM.dist
+    return camFocusX + rx, sp * CAM.dist, camFocusZ + rz
 end
 
 local function applyCamera()
@@ -163,6 +168,11 @@ local function groundPick(sx, sy)
     local dx = -nx * tanX
     local dy = -sp + cp * ny * tanY
     local dz = cp + sp * ny * tanY
+    -- Rotate the camera ray by yaw so picking matches the yawed camera.
+    local cyaw, syaw = math.cos(CAM.yaw), math.sin(CAM.yaw)
+    local rdx = cyaw * dx + syaw * dz
+    local rdz = -syaw * dx + cyaw * dz
+    dx, dz = rdx, rdz
     local cx, cy, cz = camPos()
     if dy >= -1e-4 then return nil end
     local t = -cy / dy
@@ -1433,14 +1443,17 @@ local function drawMinimap(vw)
     local x, y = vw - w - 12, 40
     DrawSprite(MINIMAP_IMG, x, y, w, h, 1, 1, 1, 0.92)
     DrawRectOutline(x, y, w, h, 2, 0.7, 0.6, 0.3, 0.9)
-    local function mapX(wx) return x + w * 0.5 + (wx / 140) * (w * 0.42) end
-    local function mapY(wz) return y + h * 0.5 + (wz / 140) * (h * 0.42) end
+    -- 世界坐标 -> 小地图图像坐标：地图实体绕 Y 旋转 -45°，标记做同样旋转，
+    -- 使小地图上的位置/朝向与图像和 3D 视角一致。
+    local rc, rs = math.cos(math.pi * 0.25), math.sin(math.pi * 0.25)
+    local function mapX(wx, wz) return x + w * 0.5 + ((rc * wx + rs * wz) / 140) * (w * 0.42) end
+    local function mapY(wx, wz) return y + h * 0.5 - ((-rs * wx + rc * wz) / 140) * (h * 0.42) end
     for i = 1, #units do
         local u = units[i]
         if not u.dead and not u.hidden then
-            local c = TEAM_COLOR[u.team] or { 0.6, 0.6, 0.6 }
+            local col = TEAM_COLOR[u.team] or { 0.6, 0.6, 0.6 }
             local s = (u.kind == "champion") and 5 or (u.kind == "minion" and 2 or 4)
-            DrawRect(mapX(u.x) - s / 2, mapY(u.z) - s / 2, s, s, c[1], c[2], c[3], 1)
+            DrawRect(mapX(u.x, u.z) - s / 2, mapY(u.x, u.z) - s / 2, s, s, col[1], col[2], col[3], 1)
         end
     end
 end
