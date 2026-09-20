@@ -6,7 +6,7 @@ build-*/
 *.exe
 *.pdb
 *.ilk
-# Engine-local derived data (offline-baked BC1 textures etc.) â€” regenerated on
+# Engine-local derived data (offline-baked BC1 textures etc.) â€?regenerated on
 # demand, never versioned. Analogous to Unity's Library/ or Godot's .godot/.
 .neon/
 # Runtime save games live next to the project while developing, but they are
@@ -30,7 +30,7 @@ neon_editor_config.json
 *.meta
 # The editor's derived asset-database cache (analogous to .neon/), not source.
 projects/*/.asset_db.json
-# Editor scratch/backup/export artifacts produced while developing a project â€”
+# Editor scratch/backup/export artifacts produced while developing a project â€?
 # local user data, not shipped sample content.
 projects/*/assets/scripts/new_script.lua
 projects/*/assets/scenes/exported_scene.json
@@ -48,9 +48,4 @@ neon_editor_imgui.ini
 # Oversized external-buffer meshes kept local-only (network push too large).
 projects/forest/assets/models/island_tree_01/island_tree_01.bin
 projects/showcase/assets/models/island_tree_01/island_tree_01.bin
-
-
 __pycache__/
-
-
-projects/moba/assets/models/sr/*.glb

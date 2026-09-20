@@ -21,12 +21,14 @@ Usage::
 
 import argparse
 import glob
+import io
 import json
 import math
 import os
 import re
 import struct
 import numpy as np
+from PIL import Image
 
 
 # --------------------------------------------------------------------------
@@ -180,6 +182,31 @@ CATEGORY = [
 ]
 
 
+def _embed_image(path, max_size=1024, quality=85):
+    """Read a texture and return (bytes, mimeType).
+
+    Opaque images re-encode as JPEG to keep the glb small (the 2048² terrain
+    bakes dominate the size and would blow past GitHub's 100MB repo limit);
+    images with a meaningful alpha channel stay PNG (JPEG has no alpha).
+    Textures larger than ``max_size`` are downscaled first — at top-down MOBA
+    zoom 1024² is plenty for whole-map bakes.
+    """
+    img = Image.open(path)
+    if img.mode != "RGBA":
+        img = img.convert("RGBA")
+    if img.width > max_size or img.height > max_size:
+        img.thumbnail((max_size, max_size), Image.LANCZOS)
+    arr = np.asarray(img)
+    if int(arr[..., 3].min()) >= 250:
+        rgb = Image.fromarray(arr[..., :3], "RGB")
+        buf = io.BytesIO()
+        rgb.save(buf, format="JPEG", quality=quality)
+        return buf.getvalue(), "image/jpeg"
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue(), "image/png"
+
+
 def category_color(mat_name):
     low = mat_name.lower()
     for key, col in CATEGORY:
@@ -234,6 +261,10 @@ def main():
                     help="bake the map centre to the origin (for entity rotation)")
     ap.add_argument("--scale", type=float, default=1.0,
                     help="bake a uniform scale into the vertices")
+    ap.add_argument("--max-tex", type=int, default=1024,
+                    help="max embedded texture dimension (2048 = native bakes)")
+    ap.add_argument("--tex-quality", type=int, default=85,
+                    help="JPEG quality for opaque textures")
     args = ap.parse_args()
 
     print("parsing", args.fbx)
@@ -446,10 +477,13 @@ def main():
         if tex_path is not None:
             name = os.path.basename(tex_path).lower()
             if name not in tex_index:
-                with open(tex_path, "rb") as fh:
-                    png = fh.read()
-                view = g.add(png)
-                gltf_imgs.append({"bufferView": view, "mimeType": "image/png"})
+                # Opaque textures embed as JPEG (~5-10x smaller than PNG — the
+                # 2048² terrain bakes dominate the glb size and would blow past
+                # GitHub's 100MB limit). Textures WITH alpha stay PNG (JPEG has
+                # no alpha channel; foliage cut-outs need it).
+                data, mime = _embed_image(tex_path, args.max_tex, args.tex_quality)
+                view = g.add(data)
+                gltf_imgs.append({"bufferView": view, "mimeType": mime})
                 gltf_texs.append({"source": len(gltf_imgs) - 1, "sampler": 0})
                 tex_index[name] = len(gltf_texs) - 1
             mat["pbrMetallicRoughness"]["baseColorTexture"] = {"index": tex_index[name]}
