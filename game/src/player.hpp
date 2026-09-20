@@ -145,6 +145,10 @@ private:
     void ResolveControlledEntity();
     void ReconcileControlled();
     void DrawNetworkWorld();
+    // Applies interpolated server transforms to the local entities (keyed by
+    // entity id) so the REAL scene renders server-authoritative state. The
+    // controlled entity is left to local prediction (reconciled separately).
+    void ApplyNetworkedTransforms();
     uint64_t EntityKey(const ecs::Entity& e) const;
     bool SmokeActive() const;
 

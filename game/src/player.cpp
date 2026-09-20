@@ -605,10 +605,8 @@ void PlayerApp::OnRender() {
                                 {0, 0}, aspect);
         const math::Rect2 ga = renderer_.DesignSpaceRect();
         renderer_.SetSceneViewport(ga.x, ga.y, ga.w, ga.h);
-        if (networked_)
-            DrawNetworkWorld();
-        else
-            runtime_.Draw(renderer_, camera_);
+        if (networked_) ApplyNetworkedTransforms();
+        runtime_.Draw(renderer_, camera_);
     }
     renderer_.EndScene();
 
@@ -906,6 +904,31 @@ void PlayerApp::ReconcileControlled() {
         }
     }
     if (controlledKey_ != 0 && t->pos.z - controlledStartPos_.z > 0.5f) controlledMoved_ = true;
+}
+
+void PlayerApp::ApplyNetworkedTransforms() {
+    const net::MsgSnapshot* latest = sync_.Latest();
+    if (!latest) return;
+    double renderTick = sync_.CurrentServerTick() - static_cast<double>(client::kInterpDelayTicks);
+    if (renderTick < 0.0) renderTick = 0.0;
+    ecs::World& world = runtime_.World();
+    auto view = world.ViewAll<script::CTransformBind>();
+    for (size_t i = 0; i < view.Size(); ++i) {
+        ecs::Entity e = world.EntityAt<script::CTransformBind>(i);
+        const uint64_t key = EntityKey(e);
+        if (key == controlledKey_) continue; // predicted + reconciled locally
+        for (const net::SnapshotEntity& se : latest->entities) {
+            if (se.id != key) continue;
+            core::Result<client::InterpolatedEntity> s = sync_.Sample(se.id, renderTick);
+            if (s.Ok()) {
+                if (script::CTransformBind* t = world.Get<script::CTransformBind>(e)) {
+                    t->pos = s.Value().pos;
+                    t->rot = math::Quat::FromAxisAngle({0, 1, 0}, s.Value().yaw);
+                }
+            }
+            break;
+        }
+    }
 }
 
 void PlayerApp::DrawNetworkWorld() {
