@@ -10,6 +10,15 @@ void ParticleSystem::Emit(const EmitterConfig& config) {
     // Reuse capacity across bursts instead of reallocating per Emit (P0-3
     // memory direction: stable arena for the hot particle path).
     if (particles_.empty()) particles_.reserve(2048);
+    // Hard cap: bound the per-frame CPU update + instance upload so a runaway
+    // emitter (or many overlapping ultimates) cannot collapse the frame. Evict
+    // the oldest particles first (they are appended in time order).
+    constexpr size_t kMaxParticles = 8192;
+    if (particles_.size() + config.count > kMaxParticles) {
+        const size_t over = particles_.size() + config.count - kMaxParticles;
+        const size_t drop = std::min(over, particles_.size());
+        particles_.erase(particles_.begin(), particles_.begin() + static_cast<long>(drop));
+    }
     for (uint32_t i = 0; i < config.count; ++i) {
         Particle p;
         p.pos = config.position;
