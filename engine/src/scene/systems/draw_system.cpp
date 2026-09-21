@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <unordered_map>
 
 #include "neon/assets/asset_manager.hpp"
 #include "neon/assets/mesh_format.hpp"
@@ -33,6 +34,82 @@
 
 namespace neon::scene {
 using namespace detail; // SameMaterial / SelectLodMesh / EntityKey
+
+namespace {
+
+// Spatial mesh chunking for oversized static glTF nodes. The Summoner's Rift
+// map is a 181-node glTF whose triangle mass sits in a handful of huge nodes
+// (one node = 455k triangles), so the whole terrain is submitted every frame
+// (and for every shadow cascade) even though only a slice is on screen. Split
+// each such node's triangles into a `gridN x gridN` grid over its local XZ
+// bounds and return one sub-mesh per occupied cell (vertices remapped per cell,
+// positions unchanged so the node transform still applies). The draw loop's
+// per-sub-node frustum cull then drops the off-screen cells.
+std::vector<gfx::Mesh> ChunkMesh(gfx::Renderer& renderer, const gfx::Mesh& src, int gridN) {
+    std::vector<gfx::Mesh> out;
+    const std::vector<gfx::Vertex3D>& verts = src.CpuVerts();
+    const std::vector<uint16_t>& idx16 = src.CpuIndices();
+    const std::vector<uint32_t>& idx32 = src.CpuIndicesU32();
+    if (verts.empty()) return out;
+    const bool use32 = !idx32.empty();
+    const size_t triCount = use32 ? idx32.size() / 3 : idx16.size() / 3;
+    if (triCount == 0) return out;
+    if (gridN < 2) gridN = 2;
+    const math::AABB& b = src.Bounds();
+    const float ex = std::fmax(1e-4f, b.max.x - b.min.x);
+    const float ez = std::fmax(1e-4f, b.max.z - b.min.z);
+
+    struct Bucket {
+        std::unordered_map<uint32_t, uint32_t> remap;
+        std::vector<gfx::Vertex3D> v;
+        std::vector<uint32_t> i;
+    };
+    std::vector<Bucket> buckets(static_cast<size_t>(gridN) * gridN);
+    auto cellOf = [&](const math::Vec3& p, int& cx, int& cz) {
+        cx = static_cast<int>(std::floor((p.x - b.min.x) / ex * gridN));
+        cz = static_cast<int>(std::floor((p.z - b.min.z) / ez * gridN));
+        cx = std::clamp(cx, 0, gridN - 1);
+        cz = std::clamp(cz, 0, gridN - 1);
+    };
+    for (size_t t = 0; t < triCount; ++t) {
+        const uint32_t i0 = use32 ? idx32[t * 3] : idx16[t * 3];
+        const uint32_t i1 = use32 ? idx32[t * 3 + 1] : idx16[t * 3 + 1];
+        const uint32_t i2 = use32 ? idx32[t * 3 + 2] : idx16[t * 3 + 2];
+        const uint32_t nv = static_cast<uint32_t>(verts.size());
+        if (i0 >= nv || i1 >= nv || i2 >= nv) continue;
+        const math::Vec3 c = (verts[i0].pos + verts[i1].pos + verts[i2].pos) * (1.0f / 3.0f);
+        int cx = 0, cz = 0;
+        cellOf(c, cx, cz);
+        Bucket& bk = buckets[static_cast<size_t>(cz) * gridN + cx];
+        for (uint32_t vi : {i0, i1, i2}) {
+            auto it = bk.remap.find(vi);
+            if (it == bk.remap.end()) {
+                const uint32_t ni = static_cast<uint32_t>(bk.v.size());
+                bk.v.push_back(verts[vi]);
+                bk.i.push_back(ni);
+                bk.remap.emplace(vi, ni);
+            } else {
+                bk.i.push_back(it->second);
+            }
+        }
+    }
+    out.reserve(buckets.size());
+    for (Bucket& bk : buckets) {
+        if (bk.i.empty()) continue;
+        out.push_back(gfx::Mesh::CreateFromDataU32(renderer, bk.v.data(),
+                                                   static_cast<uint32_t>(bk.v.size()),
+                                                   bk.i.data(),
+                                                   static_cast<uint32_t>(bk.i.size()),
+                                                   "gltf_chunk"));
+    }
+    return out;
+}
+
+// Nodes at or above this triangle count get spatially chunked.
+constexpr size_t kChunkTriangleThreshold = 20000;
+constexpr int kChunkGrid = 8;
+
+} // namespace
 
 void DrawSystem::Configure(Content content) { content_ = std::move(content); }
 
@@ -440,7 +517,32 @@ void DrawSystem::ResolveDrawItem(DrawItem& item, gfx::Renderer& renderer, ecs::W
     if (!mesh.Skinned() && key.compare(0, 5, "gltf:") == 0 && content_.assets) {
         assets::GltfAsset g = content_.assets->LoadGLTF(content_.fullAssetPath(key.substr(5)));
         if (g.nodes.size() > 1) {
-            item.gltfSubNodes.assign(g.nodes.begin() + 1, g.nodes.end());
+            // Oversized nodes are split into spatial chunks so per-node frustum
+            // culling (in Draw) can drop the off-screen ones; the rest are used
+            // as-is.
+            item.gltfSubNodes.clear();
+            item.gltfSubNodes.reserve(g.nodes.size());
+            size_t chunked = 0;
+            for (size_t ni = 1; ni < g.nodes.size(); ++ni) {
+                const assets::GltfMeshNode& sub = g.nodes[ni];
+                if (!sub.mesh.Valid()) continue;
+                const size_t tris =
+                    sub.mesh.CpuIndicesU32().size() / 3 + sub.mesh.CpuIndices().size() / 3;
+                if (tris >= kChunkTriangleThreshold) {
+                    std::vector<gfx::Mesh> chunks = ChunkMesh(renderer, sub.mesh, kChunkGrid);
+                    chunked += chunks.size();
+                    for (gfx::Mesh& cm : chunks)
+                        item.gltfSubNodes.push_back({sub.transform, std::move(cm), sub.material});
+                } else {
+                    item.gltfSubNodes.push_back(sub);
+                }
+            }
+            if (chunked > 0)
+                NEON_LOG_CAT(core::LogCategory::Scene, core::LogLevel::Info,
+                             "runtime: chunked glTF '%s': %zu nodes -> %zu sub-nodes "
+                             "(%zu chunks)",
+                             key.c_str(), g.nodes.size() - 1, item.gltfSubNodes.size(),
+                             chunked);
         }
         // 多 mesh 场景合并 AABB（主 mesh + 全部子节点的世界包围盒），供视锥
         // 剔除使用。单个 nodes[0] 的 bounds 只覆盖场景一角，用它剔除会把
