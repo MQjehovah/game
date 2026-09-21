@@ -782,7 +782,9 @@ void Renderer::ApplyMaterial(const Material& material, const math::Mat4& mvp,
     // depth WRITE so blended pixels do not occlude later draws.
     backend_->SetDepthTest(sceneState_.DepthAvailable() && material.depthTest,
                            !material.transparent);
-    backend_->SetBlendMode(material.transparent ? BlendMode::Alpha : BlendMode::Opaque);
+    backend_->SetBlendMode(material.transparent
+                               ? (material.additive ? BlendMode::Additive : BlendMode::Alpha)
+                               : BlendMode::Opaque);
 
     backend_->SetUniformMat4("uMVP", mvp);
     backend_->SetUniformVec2("uTiling", {material.uvRepeat, material.uvRepeat});

@@ -1138,7 +1138,14 @@ Value NativeSpawnDecal(IScriptHost& host, void* user) {
         sizeIdx = 4;
         alphaIdx = 5;
     }
-    const ecs::Entity e = ctx->spawnDecal(texture, pos, num(sizeIdx, 2.0f), num(alphaIdx, 1.0f));
+    // Optional trailing tint/blend: ..., alpha [, r, g, b, additive]
+    const float r = num(alphaIdx + 1, 1.0f);
+    const float g = num(alphaIdx + 2, 1.0f);
+    const float b = num(alphaIdx + 3, 1.0f);
+    const Value& av = host.GetArg(alphaIdx + 4);
+    const bool additive = av.type == Value::Type::Bool ? av.boolean : av.number != 0.0;
+    const ecs::Entity e = ctx->spawnDecal(texture, pos, num(sizeIdx, 2.0f), num(alphaIdx, 1.0f),
+                                          r, g, b, additive);
     return e.IsValid() ? EntityToValue(e) : Value::Nil();
 }
 

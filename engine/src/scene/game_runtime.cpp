@@ -727,7 +727,8 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
                          vpW, vpH);
     };
     scriptCtx_.spawnDecal = [this](const std::string& texture, const math::Vec3& pos, float size,
-                                   float alpha) -> ecs::Entity {
+                                   float alpha, float r, float g, float b,
+                                   bool additive) -> ecs::Entity {
         if (texture.empty()) return {};
         ecs::Entity e = world_.Create();
         SceneTransform t;
@@ -737,6 +738,10 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
         d.texture = texture;
         d.size = size > 0.01f ? size : 2.0f;
         d.alpha = alpha;
+        d.r = r;
+        d.g = g;
+        d.b = b;
+        d.additive = additive;
         world_.Add<SceneDecal>(e, d);
         return e;
     };

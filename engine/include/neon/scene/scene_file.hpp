@@ -654,6 +654,11 @@ struct SceneDecal {
     std::string texture;
     float size = 2.0f;
     float alpha = 1.0f;
+    // Runtime VFX tint + additive blend (scriptable ground VFX: skill
+    // telegraphs, range rings, pings, scorch). Not reflected: spawned from Lua,
+    // not authored in scenes.
+    float r = 1.0f, g = 1.0f, b = 1.0f;
+    bool additive = false;
 
     // G2-1: reflection drives the editor schema + JSON + script field access.
     inline static const auto kFields = ReflectFields(

@@ -36,6 +36,9 @@ struct Material {
     float emissiveIntensity = 1.0f;
     bool lit = true;
     bool transparent = false;
+    // Additive blend (glow decals, light pools). Honoured while transparent is
+    // also true (depth test on, depth write off).
+    bool additive = false;
     // Depth test for this draw (default on). Set false for overlays that must
     // paint over the scene regardless of depth (e.g. the fog-of-war mask).
     bool depthTest = true;

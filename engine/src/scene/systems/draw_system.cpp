@@ -343,7 +343,8 @@ void DrawSystem::Build(ecs::World& world, AnimationSystem& anims) {
         item.decalSize = d->size;
         item.mat = gfx::Material::Unlit({});
         item.mat.transparent = true;
-        item.mat.tint = {1, 1, 1, d->alpha};
+        item.mat.additive = d->additive;
+        item.mat.tint = {d->r, d->g, d->b, d->alpha};
         draws_.push_back(std::move(item));
     }
     SyncDrawKeys();
@@ -1263,6 +1264,14 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
         item.mat.highlightStrength = highlighted ? hl.strength : 0.0f;
         item.mat.highlightColor = highlighted ? gfx::Color{hl.r, hl.g, hl.b, 1.0f}
                                               : gfx::Color::White;
+        // Runtime decals change tint/alpha/blend every frame (skill VFX fades);
+        // DrawItem.mat is cached, so re-read the component here.
+        if (item.isDecal) {
+            if (const SceneDecal* d = world.Get<SceneDecal>(item.ent)) {
+                item.mat.tint = {d->r, d->g, d->b, d->alpha};
+                item.mat.additive = d->additive;
+            }
+        }
         math::Mat4 model = sceneTree.CachedLocalToWorld(item.ent);
         if (item.tileOffset.LengthSq() > 0.0f)
             model = model * math::Mat4::Translation(item.tileOffset);

@@ -759,7 +759,8 @@ TEST(ScriptBindingsDecalDispatches) {
     float gotSize = 0.0f, gotAlpha = 0.0f;
     int setCalls = 0;
     float setSize = 0.0f, setAlpha = 0.0f;
-    ctx.spawnDecal = [&](const std::string& tex, const math::Vec3& p, float s, float a) {
+    ctx.spawnDecal = [&](const std::string& tex, const math::Vec3& p, float s, float a,
+                         float /*r*/, float /*g*/, float /*b*/, bool /*additive*/) {
         gotTex = tex;
         gotPos = p;
         gotSize = s;

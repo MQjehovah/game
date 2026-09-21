@@ -390,11 +390,22 @@ local function wrapText(text, maxChars)
     return lines
 end
 
--- G 信号：世界特效 + 小地图标记（联机时由服务器广播给双方）。
+-- 地面环形/圆形贴花（引擎 SceneDecal，透视正确、GPU 绘制）：返回实体句柄。
+local function spawnGroundDecal(tex, x, z, radius, r, g, b, alpha)
+    return SpawnDecal(tex, x, 0.05, z, radius * 2, alpha, r, g, b, true)
+end
+
+-- G 信号：世界特效 + 地面贴花 + 小地图标记（联机时由服务器广播给双方）。
 local function addPing(x, z, team)
     if x == nil or z == nil then return end
-    pings[#pings + 1] = { x = x, z = z, team = team or BLUE, t = elapsed }
-    if #pings > 16 then table.remove(pings, 1) end
+    local col = TEAM_COLOR[team or BLUE] or { 1.0, 0.8, 0.3 }
+    local ent = spawnGroundDecal("assets/sprites/decal_ring.png", x, z, 1.2,
+        col[1], col[2], col[3], 0.9)
+    pings[#pings + 1] = { x = x, z = z, team = team or BLUE, t = elapsed, ent = ent }
+    if #pings > 16 then
+        local old = table.remove(pings, 1)
+        if old ~= nil and old.ent ~= nil then Despawn(old.ent) end
+    end
     EmitParticles({ pos = { x = x, y = 0.1, z = z }, count = 36,
         vel = { x = 0, y = 1, z = 0 }, speedMin = 4, speedMax = 8,
         lifeMin = 0.4, lifeMax = 0.7, sizeStart = 0.8, sizeEnd = 0.05,
@@ -1060,14 +1071,19 @@ local function castAbility(h, idx, aimX, aimZ)
         local tl = math.sqrt((aimX - h.x) ^ 2 + (aimZ - h.z) ^ 2)
         local r = ab.range or 10
         if tl > r then aimX = h.x + dx * r; aimZ = h.z + dz * r end
+        -- 落点地面贴花：填充圆 + 高亮环（引擎 SceneDecal，脉冲见 drawGroundAoes）
+        local cr = ab.radius or 3
+        local fill = spawnGroundDecal("assets/sprites/decal_disc.png", aimX, aimZ, cr,
+            col[1], col[2], col[3], 0.18)
+        local ring = spawnGroundDecal("assets/sprites/decal_ring.png", aimX, aimZ, cr,
+            0.7, 0.85, 1.0, 0.9)
         groundAoes[#groundAoes + 1] = {
             team = h.team, owner = h, x = aimX, z = aimZ,
             delay = ab.delay or 0.4, radius = ab.radius or 3, dmg = dmg,
             status = ab.status, statusDur = ab.statusDur, statusMag = ab.statusMag,
-            stun = ab.stun, kind = kind,
+            stun = ab.stun, kind = kind, decalFill = fill, decalRing = ring,
         }
-        -- 落点预警圈（cast 时一次性粒子 + on_render 脉冲地面圈，见 drawGroundAoes）
-        local cr = ab.radius or 3
+        -- cast 时一次粒子脉冲增强反馈
         fxRing(aimX, aimZ, cr, 20, { r = col[1], g = col[2], b = col[3], a = 0.95 },
             { r = 1, g = 0.4, b = 0.2, a = 0 }, 0.1, 0.1, 0.4,
             (ab.delay or 0.4) * 0.8, (ab.delay or 0.4) * 1.1, 0.5, 0.15, 1.2)
@@ -1903,6 +1919,8 @@ local function updateGroundAoes(dt)
         a.delay = a.delay - dt
         if a.delay <= 0 then
             aoeDamage(a.owner, a.x, a.z, a.radius, a.dmg, a.status, a.statusDur, a.statusMag, a.stun, a.kind)
+            if a.decalFill ~= nil then Despawn(a.decalFill) end
+            if a.decalRing ~= nil then Despawn(a.decalRing) end
             table.remove(groundAoes, i)
         else
             i = i + 1
@@ -2465,9 +2483,16 @@ function on_update(e, dt)
     updatePlates()
     separateUnits(dt)
     cleanupUnits(dt)
-    -- 信号标记 8 秒后消失
+    -- 信号标记 8 秒后消失（贴花淡出）
     for i = #pings, 1, -1 do
-        if elapsed - pings[i].t > 8 then table.remove(pings, i) end
+        local p = pings[i]
+        local age = elapsed - p.t
+        if age > 8 then
+            if p.ent ~= nil then Despawn(p.ent) end
+            table.remove(pings, i)
+        elseif p.ent ~= nil then
+            SetDecal(p.ent, 2.4, 0.9 * (1 - age / 8))
+        end
     end
 end
 
@@ -2932,13 +2957,12 @@ end
 
 -- 待落地 AoE 的地面预警：脉冲圆环 + 内圈，比一次性粒子更易读。
 local function drawGroundAoes()
+    -- 贴花由引擎渲染（透视正确）；这里只做呼吸式脉冲更新 alpha。
     for i = 1, #groundAoes do
         local a = groundAoes[i]
-        local col = TEAM_COLOR[a.team]
-        local pulse = 0.5 + 0.4 * math.sin(elapsed * 14)
-        groundRing(a.x, a.z, a.radius, col[1], col[2], col[3], 0.22, true)
-        groundRing(a.x, a.z, a.radius, 0.95, 0.97, 1.0, pulse, false)
-        groundRing(a.x, a.z, a.radius * 0.55, col[1], col[2], col[3], 0.55, false)
+        local pulse = 0.55 + 0.4 * math.sin(elapsed * 14)
+        if a.decalRing ~= nil then SetDecal(a.decalRing, a.radius * 2, pulse) end
+        if a.decalFill ~= nil then SetDecal(a.decalFill, a.radius * 2, 0.14 + 0.06 * math.sin(elapsed * 14)) end
     end
 end
 
