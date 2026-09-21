@@ -15,6 +15,9 @@
 - 新增 `--capture <png> <frame>`（已有截图）+ `tools/pixel_diff`（同场景两次运行/黄金图逐像素比对，容差 + 差异占比）。
 - 冒烟脚本把「截图 + 阈值」纳入 CI；关键 pass（雾/SSAO/环境/后处理）各留一张黄金图。
 - 收益：B3/B4/C4/C10/G2-4 全部可自动验收。**建议第一件做这个。**
+- **进度**：`tools/pixel_diff.cpp`（`neon_pixel_diff`）+ `tools/render_regression.ps1` + `tests/golden/sandbox_900.png`
+  已落地并验证（PASS/FAIL 分支均通过；同场景 run-to-run 约 0.00–0.005% 像素差）。
+  待做：接入 CI、为雾/SSAO/环境各留黄金图。
 
 ### P0 · 渲染管线深化（画面收益最高，做完 0 后不再阻塞）
 1. **B4 收尾：SSAO 复用主深度**。`IRenderBackend::ResolveDepth` 已落地；剩下 MSAA 深度 resolve→

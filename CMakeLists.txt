@@ -597,8 +597,20 @@ elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     -finput-charset=UTF-8 -fexec-charset=UTF-8)
 endif()
 
-# navbake: headless mesh -> .navgrid.json baker. Reuses the engine's
-# nav::BakeFromTriangles (the exact bake the editor nav panel runs), so CI and
+# pixel_diff: render-regression helper. Compares a committed golden PNG with a
+# fresh --screenshot capture (tolerance + differing-pixel ratio) and exits
+# non-zero past the threshold, so CI can gate on rendered output.
+add_executable(neon_pixel_diff tools/pixel_diff.cpp)
+target_link_libraries(neon_pixel_diff PRIVATE neon_engine)
+target_include_directories(neon_pixel_diff PRIVATE third_party/stb)
+if(MSVC)
+  target_compile_options(neon_pixel_diff PRIVATE /W4 /permissive- /utf-8)
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(neon_pixel_diff PRIVATE -Wall -Wextra
+    -finput-charset=UTF-8 -fexec-charset=UTF-8)
+endif()
+
+# navbake: headless mesh -> .navgrid.json baker. Reuses the engine's# nav::BakeFromTriangles (the exact bake the editor nav panel runs), so CI and
 # the editor produce identical grids for the same mesh.
 #   neon_navbake --mesh <in.glb> --out <out.navgrid.json> [--yaw-deg -45 ...]
 add_executable(neon_navbake tools/navbake.cpp)
