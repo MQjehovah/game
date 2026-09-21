@@ -452,8 +452,103 @@ bool World::Raycast(const math::Ray& ray, float maxDist, float& outT,
     return hit;
 }
 
-std::vector<World::DebugBody> World::DebugBodies() const {
-    std::vector<DebugBody> out;
+bool World::SphereCast(const math::Vec3& start, float radius, const math::Vec3& dir,
+                       float maxDist, ShapeCastHit& out) const {
+    if (radius <= 0.0f || maxDist <= 0.0f) return false;
+    const math::Vec3 d = dir.LengthSq() > 1e-8f ? dir.Normalized() : math::Vec3{0, 0, 0};
+    const math::Ray ray{start, d};
+    float best = maxDist;
+    bool hit = false;
+    uint64_t bestOwner = 0;
+    const Body* bestBody = nullptr;
+    for (const Body& b : bodies_) {
+        if (!b.enabled || b.sensor) continue;
+        float t = 0.0f;
+        if (b.kind == Body::Kind::Sphere) {
+            // Swept sphere vs sphere == ray vs a sphere of the summed radius.
+            if (!math::IntersectRaySphere(ray, b.pos, b.radius + radius, t)) continue;
+        } else {
+            // Minkowski sum: ray vs the box grown by the sphere radius.
+            const math::AABB grown{{b.Box().min.x - radius, b.Box().min.y - radius,
+                                    b.Box().min.z - radius},
+                                   {b.Box().max.x + radius, b.Box().max.y + radius,
+                                    b.Box().max.z + radius}};
+            if (!math::IntersectRayAABB(ray, grown, t)) continue;
+        }
+        if (t >= 0.0f && t < best) {
+            best = t;
+            bestOwner = b.owner;
+            bestBody = &b;
+            hit = true;
+        }
+    }
+    if (!hit) return false;
+    out.owner = bestOwner;
+    out.distance = best;
+    out.point = start + d * best;
+    if (bestBody != nullptr && bestBody->kind == Body::Kind::Sphere) {
+        const math::Vec3 n = (out.point - bestBody->pos).Normalized();
+        out.normal = n.LengthSq() > 1e-8f ? n : -d;
+    } else if (bestBody != nullptr) {
+        // Nearest face of the box (largest normalized offset along an axis).
+        const math::Vec3 rel = out.point - bestBody->pos;
+        const float ax = bestBody->halfExtents.x > 0.0f
+                             ? std::fabs(rel.x) / bestBody->halfExtents.x : 0.0f;
+        const float ay = bestBody->halfExtents.y > 0.0f
+                             ? std::fabs(rel.y) / bestBody->halfExtents.y : 0.0f;
+        const float az = bestBody->halfExtents.z > 0.0f
+                             ? std::fabs(rel.z) / bestBody->halfExtents.z : 0.0f;
+        if (ax >= ay && ax >= az)
+            out.normal = {rel.x < 0.0f ? -1.0f : 1.0f, 0, 0};
+        else if (ay >= az)
+            out.normal = {0, rel.y < 0.0f ? -1.0f : 1.0f, 0};
+        else
+            out.normal = {0, 0, rel.z < 0.0f ? -1.0f : 1.0f};
+    }
+    return true;
+}
+
+std::vector<uint64_t> World::OverlapSphere(const math::Vec3& center, float radius) const {
+    std::vector<uint64_t> out;
+    if (radius <= 0.0f) return out;
+    const float r2 = radius * radius;
+    for (const Body& b : bodies_) {
+        if (!b.enabled || b.sensor) continue;
+        if (b.kind == Body::Kind::Sphere) {
+            const float rr = radius + b.radius;
+            if ((b.pos - center).LengthSq() <= rr * rr) out.push_back(b.owner);
+        } else {
+            const math::Vec3 d{std::fmax(std::fabs(center.x - b.pos.x) - b.halfExtents.x, 0.0f),
+                               std::fmax(std::fabs(center.y - b.pos.y) - b.halfExtents.y, 0.0f),
+                               std::fmax(std::fabs(center.z - b.pos.z) - b.halfExtents.z, 0.0f)};
+            if (d.LengthSq() <= r2) out.push_back(b.owner);
+        }
+    }
+    return out;
+}
+
+std::vector<uint64_t> World::OverlapBox(const math::Vec3& center,
+                                        const math::Vec3& halfExtents) const {
+    std::vector<uint64_t> out;
+    if (halfExtents.x <= 0.0f || halfExtents.y <= 0.0f || halfExtents.z <= 0.0f) return out;
+    for (const Body& b : bodies_) {
+        if (!b.enabled || b.sensor) continue;
+        if (b.kind == Body::Kind::Sphere) {
+            const math::Vec3 d{std::fmax(std::fabs(b.pos.x - center.x) - halfExtents.x, 0.0f),
+                               std::fmax(std::fabs(b.pos.y - center.y) - halfExtents.y, 0.0f),
+                               std::fmax(std::fabs(b.pos.z - center.z) - halfExtents.z, 0.0f)};
+            if (d.LengthSq() <= b.radius * b.radius) out.push_back(b.owner);
+        } else {
+            const bool overlap = std::fabs(b.pos.x - center.x) <= halfExtents.x + b.halfExtents.x &&
+                                 std::fabs(b.pos.y - center.y) <= halfExtents.y + b.halfExtents.y &&
+                                 std::fabs(b.pos.z - center.z) <= halfExtents.z + b.halfExtents.z;
+            if (overlap) out.push_back(b.owner);
+        }
+    }
+    return out;
+}
+
+std::vector<World::DebugBody> World::DebugBodies() const {    std::vector<DebugBody> out;
     out.reserve(bodies_.size());
     for (const Body& b : bodies_) {
         if (!b.enabled) continue;

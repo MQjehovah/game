@@ -247,6 +247,30 @@ assert(found, "trigger pair reported to script")
     CHECK(RunScript(*b.host, check));
 }
 
+TEST(ScriptBindingsPhysicsQueries) {
+    Bindings b;
+    const char* src = R"(
+local box = PhysicsAddBox({x=0, y=0, z=0}, {x=2, y=1, z=2}, false, {owner=200})
+assert(box > 0)
+local hits = PhysicsOverlapSphere({x=0, y=0.5, z=0}, 1.0)
+assert(type(hits) == "table" and #hits >= 1)
+local found = false
+for i = 1, #hits do if hits[i] == 200 then found = true end end
+assert(found, "overlap reports the box owner")
+
+local boxHits = PhysicsOverlapBox({x=0, y=0.5, z=0}, {x=2, y=1, z=2})
+assert(#boxHits >= 1)
+
+local cast = PhysicsSphereCast({x=0, y=5, z=0}, 0.5, {x=0, y=-1, z=0}, 10.0)
+assert(cast ~= nil, "cast hit")
+assert(cast.owner == 200)
+assert(math.abs(cast.distance - 3.5) < 0.1, "cast distance")
+assert(cast.point.y > 1.4 and cast.point.y < 1.6)
+assert(cast.normal.y > 0.9)
+)";
+    CHECK(RunScript(*b.host, src));
+}
+
 TEST(ScriptBindingsDespawnThenGetPositionNil) {    Bindings b;
     const char* src = R"(
 local e = Spawn("wolf", {x=1, y=0, z=2})

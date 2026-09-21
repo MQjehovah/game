@@ -70,6 +70,12 @@ public:
     bool Raycast(const math::Ray& ray, float maxDist, float& outT,
                  uint64_t* hitOwner) const override;
 
+    bool SphereCast(const math::Vec3& start, float radius, const math::Vec3& dir, float maxDist,
+                    ShapeCastHit& out) const override;
+    std::vector<uint64_t> OverlapSphere(const math::Vec3& center, float radius) const override;
+    std::vector<uint64_t> OverlapBox(const math::Vec3& center,
+                                     const math::Vec3& halfExtents) const override;
+
     std::vector<DebugBody> DebugBodies() const override;
 
 private:

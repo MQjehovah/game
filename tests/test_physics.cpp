@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cmath>
 
 #include "neon/neon.hpp"
@@ -39,8 +40,29 @@ TEST(PhysicsTriggerReportsOverlapWithoutBlocking) {
     CHECK(world.Triggers().size() >= 1u); // still inside: reported every step
 }
 
-TEST(PhysicsTriggerRespectsLayerMask) {
+TEST(PhysicsOverlapQueriesAndSphereCast) {
     physics::World world;
+    world.AddBox(200, {{-2, 0, -2}, {2, 1, 2}}, false); // static floor box (top y=1)
+    world.AddSphere(300, {5, 5, 0}, 0.5f, false);       // static ball, far away
+
+    const std::vector<uint64_t> nearby = world.OverlapSphere({0, 0.5f, 0}, 1.0f);
+    CHECK(std::find(nearby.begin(), nearby.end(), 200u) != nearby.end());
+    CHECK(std::find(nearby.begin(), nearby.end(), 300u) == nearby.end());
+
+    const std::vector<uint64_t> box = world.OverlapBox({5, 5, 0}, {0.6f, 0.6f, 0.6f});
+    CHECK(std::find(box.begin(), box.end(), 300u) != box.end());
+    CHECK(std::find(box.begin(), box.end(), 200u) == box.end());
+
+    // Swept sphere straight down from y=5 stops at the grown box top (1.5).
+    physics::World::ShapeCastHit hit;
+    CHECK(world.SphereCast({0, 5, 0}, 0.5f, {0, -1, 0}, 10.0f, hit));
+    CHECK(hit.owner == 200);
+    CHECK_NEAR(hit.distance, 3.5f, 0.05f);
+    CHECK(hit.normal.y > 0.9f);
+    CHECK_NEAR(hit.point.y, 1.5f, 0.05f);
+}
+
+TEST(PhysicsTriggerRespectsLayerMask) {    physics::World world;
     physics::RigidBodyDesc zoneDesc;
     zoneDesc.layer = 2;
     zoneDesc.mask = 1u << 1; // only hits layer 1

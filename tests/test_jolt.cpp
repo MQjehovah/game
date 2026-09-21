@@ -217,8 +217,36 @@ TEST(JoltTriggerDetectsVirtualCharacter) {
     world2.AddCharacter(100, {50, 1, 50}, 0.5f, 0.9f);
     world2.Step(1.0f / 60.0f, {0, -9.81f, 0});
     for (const auto& t : world2.Triggers()) {
-        CHECK(t.first != 900); // no near overlap
+        CHECK(t.first != 900); // no nearby overlap
     }
+}
+
+TEST(JoltOverlapQueriesAndSphereCast) {
+    physics::JoltWorld world;
+    world.AddBox(200, {{-2, 0, -2}, {2, 1, 2}}, false); // static floor box (top y=1)
+    world.AddSphere(300, {5, 5, 0}, 0.5f, false);       // static ball, far away
+
+    const std::vector<uint64_t> nearby = world.OverlapSphere({0, 0.5f, 0}, 1.0f);
+    bool hasBox = false, hasBall = false;
+    for (uint64_t o : nearby) {
+        if (o == 200) hasBox = true;
+        if (o == 300) hasBall = true;
+    }
+    CHECK(hasBox);
+    CHECK(!hasBall);
+
+    const std::vector<uint64_t> qbox = world.OverlapBox({5, 5, 0}, {0.6f, 0.6f, 0.6f});
+    bool boxHasBall = false;
+    for (uint64_t o : qbox) {
+        if (o == 300) boxHasBall = true;
+    }
+    CHECK(boxHasBall);
+
+    physics::World::ShapeCastHit hit;
+    CHECK(world.SphereCast({0, 5, 0}, 0.5f, {0, -1, 0}, 10.0f, hit));
+    CHECK(hit.owner == 200);
+    CHECK(std::fabs(hit.distance - 3.5f) < 0.1f);
+    CHECK(std::fabs(hit.normal.y) > 0.5f);
 }
 
 #endif // NEON_ENABLE_JOLT

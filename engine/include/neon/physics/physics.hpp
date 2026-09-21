@@ -103,6 +103,25 @@ public:
     virtual bool Raycast(const math::Ray& ray, float maxDist, float& outT,
                          uint64_t* hitOwner) const;
 
+    // --- Shape queries -------------------------------------------------------
+    // Result of a swept-sphere query (SphereCast).
+    struct ShapeCastHit {
+        uint64_t owner = 0;
+        float distance = 0.0f; // along the normalized sweep direction
+        math::Vec3 point{};    // world-space contact point
+        math::Vec3 normal{};   // surface normal at the contact
+    };
+    // Sweeps a sphere of `radius` from `start` along `dir` up to `maxDist` and
+    // reports the first non-sensor body hit (false when nothing is hit). Sensors
+    // are ignored: they are non-physical and queried via Triggers() instead.
+    virtual bool SphereCast(const math::Vec3& start, float radius, const math::Vec3& dir,
+                            float maxDist, ShapeCastHit& out) const;
+    // Owners of every enabled non-sensor body whose shape overlaps the given
+    // sphere / axis-aligned box.
+    virtual std::vector<uint64_t> OverlapSphere(const math::Vec3& center, float radius) const;
+    virtual std::vector<uint64_t> OverlapBox(const math::Vec3& center,
+                                             const math::Vec3& halfExtents) const;
+
     // Read-only snapshot for debug rendering (editor collider wireframes).
     enum class ShapeKind : uint8_t { Sphere, Box };
     struct DebugBody {

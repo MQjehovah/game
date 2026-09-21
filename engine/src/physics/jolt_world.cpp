@@ -14,6 +14,8 @@
 #include <Jolt/Physics/Collision/BroadPhase/BroadPhaseLayerInterfaceMask.h>
 #include <Jolt/Physics/Collision/BroadPhase/ObjectVsBroadPhaseLayerFilterMask.h>
 #include <Jolt/Physics/Collision/CastResult.h>
+#include <Jolt/Physics/Collision/CollideShape.h>
+#include <Jolt/Physics/Collision/ShapeCast.h>
 #include <Jolt/Physics/Collision/ObjectLayerPairFilterMask.h>
 #include <Jolt/Physics/Collision/RayCast.h>
 #include <Jolt/Physics/Collision/CollisionCollectorImpl.h>
@@ -91,8 +93,49 @@ public:
     }
 };
 
-class ExcludeBodyFilter : public JPH::BodyFilter {
+// Overlap query collector: skips sensors (non-physical) and records the owner
+// of every hit body. Owners are read under lock via OnBody, keyed by body index
+// so duplicates (multi-subshape hits) collapse.
+class OverlapOwnerCollector : public JPH::CollideShapeCollector {
 public:
+    void OnBody(const JPH::Body& inBody) override {
+        ownerByIndex[inBody.GetID().GetIndex()] = inBody.GetUserData();
+        sensorByIndex[inBody.GetID().GetIndex()] = inBody.IsSensor();
+    }
+    void AddHit(const JPH::CollideShapeResult& inResult) override {
+        const uint32_t idx = inResult.mBodyID2.GetIndex();
+        if (sensorByIndex.count(idx) && sensorByIndex[idx]) return;
+        if (ownerByIndex.count(idx)) order.push_back(idx);
+    }
+    std::map<uint32_t, uint64_t> ownerByIndex;
+    std::map<uint32_t, bool> sensorByIndex;
+    std::vector<uint32_t> order;
+};
+
+// Cast query collector: closest non-sensor hit; owner looked up by body index
+// (OnBody may run for farther bodies after the closest one, so the owner is not
+// tracked incrementally).
+class CastOwnerCollector
+    : public JPH::ClosestHitCollisionCollector<JPH::CastShapeCollector> {
+public:
+    void OnBody(const JPH::Body& inBody) override {
+        ownerByIndex[inBody.GetID().GetIndex()] = inBody.GetUserData();
+        sensorByIndex[inBody.GetID().GetIndex()] = inBody.IsSensor();
+    }
+    void AddHit(const JPH::ShapeCastResult& inResult) override {
+        const uint32_t idx = inResult.mBodyID2.GetIndex();
+        if (sensorByIndex.count(idx) && sensorByIndex[idx]) return;
+        JPH::ClosestHitCollisionCollector<JPH::CastShapeCollector>::AddHit(inResult);
+    }
+    uint64_t Owner(const JPH::BodyID& id) const {
+        auto it = ownerByIndex.find(id.GetIndex());
+        return it == ownerByIndex.end() ? 0 : it->second;
+    }
+    std::map<uint32_t, uint64_t> ownerByIndex;
+    std::map<uint32_t, bool> sensorByIndex;
+};
+
+class ExcludeBodyFilter : public JPH::BodyFilter {public:
     explicit ExcludeBodyFilter(JPH::BodyID exclude) : exclude_(exclude) {}
     bool ShouldCollide(const JPH::BodyID& inBodyID) const override {
         return inBodyID != exclude_;
@@ -732,8 +775,89 @@ bool JoltWorld::Raycast(const math::Ray& ray, float maxDist, float& outT,
     return true;
 }
 
-std::vector<World::DebugBody> JoltWorld::DebugBodies() const {
-    std::vector<World::DebugBody> out;
+bool JoltWorld::SphereCast(const math::Vec3& start, float radius, const math::Vec3& dir,
+                           float maxDist, ShapeCastHit& out) const {
+    if (!impl_ || radius <= 0.0f || maxDist <= 0.0f) return false;
+    if (impl_->broadphaseDirty) {
+        impl_->physics.OptimizeBroadPhase();
+        impl_->broadphaseDirty = false;
+    }
+    const math::Vec3 d = dir.LengthSq() > 1e-8f ? dir.Normalized() : math::Vec3{0, 0, 0};
+    JPH::Ref<JPH::SphereShape> shape = new JPH::SphereShape(radius);
+    JPH::RShapeCast cast(shape, JPH::Vec3(1.0f, 1.0f, 1.0f), JPH::RMat44::sTranslation(ToRVec3(start)),
+                         ToJolt(d) * maxDist);
+    JPH::ShapeCastSettings settings;
+    CastOwnerCollector collector;
+    const JPH::ObjectLayer qLayer =
+        JPH::ObjectLayerPairFilterMask::sGetObjectLayer(1, kMaxLayerMask);
+    JPH::DefaultBroadPhaseLayerFilter bpFilter(*impl_->vsBpFilter, qLayer);
+    JPH::DefaultObjectLayerFilter objFilter(impl_->layerFilter, qLayer);
+    AllBodyFilter bodyFilter;
+    AllShapeFilter shapeFilter;
+    impl_->physics.GetNarrowPhaseQuery().CastShape(cast, settings, JPH::RVec3::sZero(), collector,
+                                                   bpFilter, objFilter, bodyFilter, shapeFilter);
+    if (!collector.HadHit()) return false;
+    out.owner = collector.Owner(collector.mHit.mBodyID2);
+    out.distance = collector.mHit.mFraction * maxDist;
+    out.point = FromJolt(collector.mHit.mContactPointOn2);
+    const math::Vec3 n = FromJolt(-collector.mHit.mPenetrationAxis).Normalized();
+    out.normal = n.LengthSq() > 1e-8f ? n : -d;
+    return true;
+}
+
+std::vector<uint64_t> JoltWorld::OverlapSphere(const math::Vec3& center, float radius) const {
+    std::vector<uint64_t> out;
+    if (!impl_ || radius <= 0.0f) return out;
+    if (impl_->broadphaseDirty) {
+        impl_->physics.OptimizeBroadPhase();
+        impl_->broadphaseDirty = false;
+    }
+    JPH::Ref<JPH::SphereShape> shape = new JPH::SphereShape(radius);
+    JPH::CollideShapeSettings settings;
+    OverlapOwnerCollector collector;
+    const JPH::ObjectLayer qLayer =
+        JPH::ObjectLayerPairFilterMask::sGetObjectLayer(1, kMaxLayerMask);
+    JPH::DefaultBroadPhaseLayerFilter bpFilter(*impl_->vsBpFilter, qLayer);
+    JPH::DefaultObjectLayerFilter objFilter(impl_->layerFilter, qLayer);
+    AllBodyFilter bodyFilter;
+    impl_->physics.GetNarrowPhaseQuery().CollideShape(
+        shape, JPH::Vec3(1.0f, 1.0f, 1.0f), JPH::RMat44::sTranslation(ToRVec3(center)), settings,
+        JPH::RVec3::sZero(), collector, bpFilter, objFilter, bodyFilter);
+    for (uint32_t idx : collector.order) {
+        auto it = collector.ownerByIndex.find(idx);
+        if (it != collector.ownerByIndex.end()) out.push_back(it->second);
+    }
+    return out;
+}
+
+std::vector<uint64_t> JoltWorld::OverlapBox(const math::Vec3& center,
+                                            const math::Vec3& halfExtents) const {
+    std::vector<uint64_t> out;
+    if (!impl_ || halfExtents.x <= 0.0f || halfExtents.y <= 0.0f || halfExtents.z <= 0.0f)
+        return out;
+    if (impl_->broadphaseDirty) {
+        impl_->physics.OptimizeBroadPhase();
+        impl_->broadphaseDirty = false;
+    }
+    JPH::Ref<JPH::BoxShape> shape = new JPH::BoxShape(ToJolt(halfExtents));
+    JPH::CollideShapeSettings settings;
+    OverlapOwnerCollector collector;
+    const JPH::ObjectLayer qLayer =
+        JPH::ObjectLayerPairFilterMask::sGetObjectLayer(1, kMaxLayerMask);
+    JPH::DefaultBroadPhaseLayerFilter bpFilter(*impl_->vsBpFilter, qLayer);
+    JPH::DefaultObjectLayerFilter objFilter(impl_->layerFilter, qLayer);
+    AllBodyFilter bodyFilter;
+    impl_->physics.GetNarrowPhaseQuery().CollideShape(
+        shape, JPH::Vec3(1.0f, 1.0f, 1.0f), JPH::RMat44::sTranslation(ToRVec3(center)), settings,
+        JPH::RVec3::sZero(), collector, bpFilter, objFilter, bodyFilter);
+    for (uint32_t idx : collector.order) {
+        auto it = collector.ownerByIndex.find(idx);
+        if (it != collector.ownerByIndex.end()) out.push_back(it->second);
+    }
+    return out;
+}
+
+std::vector<World::DebugBody> JoltWorld::DebugBodies() const {    std::vector<World::DebugBody> out;
     if (!impl_) return out;
     for (const auto& kv : impl_->characters) {
         World::DebugBody db;

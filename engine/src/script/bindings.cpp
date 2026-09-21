@@ -1635,6 +1635,45 @@ Value NativePhysicsTriggers(IScriptHost& host, void* user) {
     return out;
 }
 
+Value NativePhysicsOverlapSphere(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    Value out = Value::Tbl();
+    if (!ctx || !ctx->physics) return out;
+    const math::Vec3 c = Vec3FromValue(host.GetArg(0), math::Vec3{});
+    const float r = NumberArg(host, 1, 1.0f);
+    for (uint64_t o : ctx->physics->OverlapSphere(c, r))
+        out.table->array.push_back(Value::Num(static_cast<double>(o)));
+    return out;
+}
+
+Value NativePhysicsOverlapBox(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    Value out = Value::Tbl();
+    if (!ctx || !ctx->physics) return out;
+    const math::Vec3 c = Vec3FromValue(host.GetArg(0), math::Vec3{});
+    const math::Vec3 half = Vec3FromValue(host.GetArg(1), math::Vec3{1, 1, 1});
+    for (uint64_t o : ctx->physics->OverlapBox(c, half))
+        out.table->array.push_back(Value::Num(static_cast<double>(o)));
+    return out;
+}
+
+Value NativePhysicsSphereCast(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->physics) return Value::Nil();
+    const math::Vec3 start = Vec3FromValue(host.GetArg(0), math::Vec3{});
+    const float radius = NumberArg(host, 1, 0.5f);
+    const math::Vec3 dir = Vec3FromValue(host.GetArg(2), math::Vec3{0, -1, 0});
+    const float maxDist = NumberArg(host, 3, 100.0f);
+    physics::World::ShapeCastHit hit;
+    if (!ctx->physics->SphereCast(start, radius, dir, maxDist, hit)) return Value::Nil();
+    Value out = Value::Tbl();
+    out.table->fields.emplace_back("owner", Value::Num(static_cast<double>(hit.owner)));
+    out.table->fields.emplace_back("distance", Value::Num(hit.distance));
+    out.table->fields.emplace_back("point", Vec3ToValue(hit.point));
+    out.table->fields.emplace_back("normal", Vec3ToValue(hit.normal));
+    return out;
+}
+
 Value NativePhysicsRemove(IScriptHost& host, void* user) {    auto* ctx = static_cast<ScriptContext*>(user);
     if (!ctx || !ctx->physics) return Value::Nil();
     const uint32_t id = SafeU32FromNumber(NumberArg(host, 0, 0.0));
@@ -2140,6 +2179,9 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("PhysicsAddTriggerSphere", &NativePhysicsAddTriggerSphere, &ctx);
     host.Register("PhysicsAddTriggerBox", &NativePhysicsAddTriggerBox, &ctx);
     host.Register("PhysicsTriggers", &NativePhysicsTriggers, &ctx);
+    host.Register("PhysicsOverlapSphere", &NativePhysicsOverlapSphere, &ctx);
+    host.Register("PhysicsOverlapBox", &NativePhysicsOverlapBox, &ctx);
+    host.Register("PhysicsSphereCast", &NativePhysicsSphereCast, &ctx);
     host.Register("PhysicsRemove", &NativePhysicsRemove, &ctx);
     host.Register("PhysicsSetVelocity", &NativePhysicsSetVelocity, &ctx);
     host.Register("PhysicsGetVelocity", &NativePhysicsGetVelocity, &ctx);
