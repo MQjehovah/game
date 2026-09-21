@@ -5,6 +5,7 @@
 #include <Jolt/Jolt.h>
 
 #include <Jolt/Core/JobSystemSingleThreaded.h>
+#include <Jolt/Core/JobSystemThreadPool.h>
 #include <Jolt/Core/Factory.h>
 #include <Jolt/Core/TempAllocator.h>
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
@@ -46,9 +47,6 @@ namespace {
 // destroying one world clears the type info the surviving world still needs.
 int g_joltWorldCount = 0;
 
-constexpr uint32_t kMaxBodies = 2048;
-constexpr uint32_t kMaxBodyPairs = 32768;
-constexpr uint32_t kMaxContactConstraints = 8192;
 // Per-step scratch: Jolt allocates its contact-constraint and body-pair buffers
 // from the temp allocator; with a 60k-contact world that needs ~13MB, so give
 // the allocator generous headroom.
@@ -213,15 +211,25 @@ private:
 };
 
 struct JoltWorld::Impl {
-    Impl() {
+    Impl(uint32_t maxBodiesIn, int workerThreads, uint32_t maxBodyPairsIn,
+         uint32_t maxContactsIn)
+        : maxBodies(maxBodiesIn), maxBodyPairs(maxBodyPairsIn),
+          maxContactConstraints(maxContactsIn) {
         if (JPH::Factory::sInstance == nullptr) JPH::Factory::sInstance = new JPH::Factory();
         if (g_joltWorldCount == 0) JPH::RegisterTypes();
         ++g_joltWorldCount;
+        // Deterministic default: a single-threaded job system. A thread pool is
+        // opt-in because it makes stepping non-bit-deterministic.
+        if (workerThreads > 0)
+            jobSystem = std::make_unique<JPH::JobSystemThreadPool>(
+                JPH::cMaxPhysicsJobs, JPH::cMaxPhysicsBarriers, workerThreads);
+        else
+            jobSystem = std::make_unique<JPH::JobSystemSingleThreaded>(1024);
         // Broadphase: layer 0 = static group 0 (non-moving), layer 1 = the rest.
         bpInterface.ConfigureLayer(JPH::BroadPhaseLayer(0), 1u << 0, 0u);
         bpInterface.ConfigureLayer(JPH::BroadPhaseLayer(1), kMaxLayerMask & ~(1u << 0), 0u);
         vsBpFilter = std::make_unique<JPH::ObjectVsBroadPhaseLayerFilterMask>(bpInterface);
-        physics.Init(kMaxBodies, 0, kMaxBodyPairs, kMaxContactConstraints, bpInterface,
+        physics.Init(maxBodies, 0, maxBodyPairs, maxContactConstraints, bpInterface,
                      *vsBpFilter, layerFilter);
         physics.SetContactListener(&listener);
         AddImplicitGround();
@@ -264,8 +272,11 @@ struct JoltWorld::Impl {
     JPH::ObjectLayerPairFilterMask layerFilter;
     JPH::PhysicsSystem physics;
     JPH::TempAllocatorImpl tempAllocator{kTempAllocatorBytes};
-    JPH::JobSystemSingleThreaded jobSystem{1024};
+    std::unique_ptr<JPH::JobSystem> jobSystem;
     JoltContactListener listener;
+    uint32_t maxBodies = 2048;
+    uint32_t maxBodyPairs = 32768;
+    uint32_t maxContactConstraints = 8192;
 
     std::map<uint32_t, JPH::BodyID> idMap;
     std::map<uint32_t, bool> enabled;       // our BodyId -> active in the system
@@ -289,7 +300,8 @@ struct JoltWorld::Impl {
     std::vector<std::pair<uint64_t, uint64_t>> collisions;
 };
 
-JoltWorld::JoltWorld() : impl_(std::make_unique<Impl>()) {}
+JoltWorld::JoltWorld(uint32_t maxBodies, int workerThreads, uint32_t maxBodyPairs, uint32_t maxContactConstraints)
+    : impl_(std::make_unique<Impl>(maxBodies, workerThreads, maxBodyPairs, maxContactConstraints)) {}
 JoltWorld::~JoltWorld() = default;
 
 World::BodyId JoltWorld::AddSphere(uint64_t owner, const math::Vec3& pos, float radius,
@@ -546,7 +558,8 @@ void JoltWorld::RemoveJointsOn(BodyId body) {
 
 size_t JoltWorld::JointCount() const { return impl_ ? impl_->constraints.size() : 0; }
 
-void JoltWorld::SetCharacterMove(BodyId body, const math::Vec3& move) {    if (!impl_) return;
+void JoltWorld::SetCharacterMove(BodyId body, const math::Vec3& move) {
+    if (!impl_) return;
     auto it = impl_->charMove.find(body.id);
     if (it != impl_->charMove.end()) it->second = move;
 }
@@ -801,7 +814,7 @@ void JoltWorld::Step(float dt, const math::Vec3& gravity) {
         impl_->physics.OptimizeBroadPhase();
         impl_->broadphaseDirty = false;
     }
-    impl_->physics.Update(dt, 1, &impl_->tempAllocator, &impl_->jobSystem);
+    impl_->physics.Update(dt, 1, &impl_->tempAllocator, impl_->jobSystem.get());
     // Virtual characters: drive them with the requested velocity, then update
     // ground state from the sweep results.
     for (auto& kv : impl_->characters) {
@@ -996,7 +1009,8 @@ std::vector<uint64_t> JoltWorld::OverlapBox(const math::Vec3& center,
     return out;
 }
 
-std::vector<World::DebugBody> JoltWorld::DebugBodies() const {    std::vector<World::DebugBody> out;
+std::vector<World::DebugBody> JoltWorld::DebugBodies() const {
+    std::vector<World::DebugBody> out;
     if (!impl_) return out;
     for (const auto& kv : impl_->characters) {
         World::DebugBody db;

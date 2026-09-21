@@ -317,4 +317,19 @@ TEST(JoltHingeJointAndBodyRemovalCleansJoints) {
     CHECK(world.JointCount() == 0u);
 }
 
+TEST(JoltConfigurableLimitsAndWorkerThreads) {
+    // Small custom pools (implicit ground uses one slot).
+    physics::JoltWorld small(16, 0, 64, 32);
+    CHECK(small.AddSphere(1, {0, 5, 0}, 0.5f, true).Valid());
+    CHECK(small.AddBox(2, {{-1, 0, -1}, {1, 1, 1}}, false).Valid());
+    for (int i = 0; i < 60; ++i) small.Step(1.0f / 60.0f, {0, -9.81f, 0});
+    CHECK(small.BodyCount() >= 2u);
+
+    // Opt-in multithreaded job system still simulates correctly.
+    physics::JoltWorld mt(256, 2);
+    physics::World::BodyId b = mt.AddSphere(1, {0, 5, 0}, 0.5f, true);
+    for (int i = 0; i < 300; ++i) mt.Step(1.0f / 60.0f, {0, -9.81f, 0});
+    CHECK(std::fabs(mt.GetPosition(b).y - 0.5f) < 0.2f);
+}
+
 #endif // NEON_ENABLE_JOLT

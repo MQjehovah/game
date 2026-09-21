@@ -22,7 +22,12 @@ namespace neon::physics {
 // cross-platform deterministic fallback for authoritative servers.
 class JoltWorld : public World {
 public:
-    JoltWorld();
+    // `maxBodies`/`maxBodyPairs`/`maxContactConstraints` size Jolt's internal
+    // pools (the implicit ground counts as one body). `workerThreads <= 0` keeps
+    // the deterministic single-threaded job system; a positive count uses a
+    // thread pool (faster, but Jolt is only bit-deterministic single-threaded).
+    explicit JoltWorld(uint32_t maxBodies = 2048, int workerThreads = 0,
+                       uint32_t maxBodyPairs = 32768, uint32_t maxContactConstraints = 8192);
     ~JoltWorld() override;
 
     JoltWorld(const JoltWorld&) = delete;
