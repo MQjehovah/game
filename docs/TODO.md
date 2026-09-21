@@ -20,8 +20,17 @@
   待做：接入 CI、为雾/SSAO/环境各留黄金图。
 
 ### P0 · 渲染管线深化（画面收益最高，做完 0 后不再阻塞）
-1. **B4 收尾：SSAO 复用主深度**。`IRenderBackend::ResolveDepth` 已落地；剩下 MSAA 深度 resolve→
-   SSAO 采样深度、去掉全量 caster 重画（几何 pass 减半）。带驱动自检回退旧的颜色编码路径。
+1. **B4 前置：修 SSAO（当前是精确的 no-op）**。用像素基线实测：SSAO 开关前后仅 24–52 px 差（= 运行噪声），
+   `ssaoIntensity=8` 也只有 29 px。诊断（已确认）：
+   - AO pass **确实在跑**（projScale/far 有值），AO 值**确实进 composite**（常量 0.5 → 99.7% 像素变化），
+     深度预通道**写入了有效深度**（raw≈0.02，天空=1）→ 结论是 `occ` 恒为 0。
+   - 已找到 2 个真实 bug（在 `ssao.hpp`，修完仍未出 AO，说明还有第 3 个更深原因）：
+     ① 深度是**归一化**(/uFar)，却和**世界单位**的 `uRadius/uBias` 比较 → `diff > bias` 永不成立；
+     ② 衰减 `1 - min(diff/radius,1)` 对超过 radius 的深度差直接归零 → 真实接触（箱边比后面地面近好几单位）不产生遮蔽。
+     修法：深度乘回 `uFar` 用世界单位、采样半径按深度投到屏幕空间（传 `uProjScale=0.5*H/tan(fovY/2)`）、
+     衰减改 range-check `clamp(radius/diff,0,1)`。**待查**：AO 目标分辨率 vs `uTexelSize`（全分辨率）是否匹配、
+     24-bit mantissa 经 RGBA8 采样是否被 sRGB/量化破坏、blur 链进 composite 的是否为正确资源。
+   - 只有在 SSAO 真正出效果后才做 B4（复用主深度、几何减半）。
 2. **C4 Renderer 拆分 + render graph**：`renderer.cpp` ~2800 行、17 个 RT 手工生命周期、三份近似 caster
    提交（CSM/SSAO 深度/点光）。先抽 caster 提交 helper + pass 描述 + RT 自动生命周期。
 3. **C10 shader 资产化**：全部内嵌 C++ 字符串 → 源文件 + 产物缓存 + 变体；VK 端 `CreateShader`
