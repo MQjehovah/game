@@ -67,6 +67,7 @@ local neutralRespawns = {}                 -- 野怪刷新计时 { cfg, t }
 local inhibDown = { [BLUE] = false, [RED] = false } -- 兵营被破 -> 对方出超级兵
 local pings = {}                           -- G 信号标记 { x, z, team, t }
 local runPassive                            -- 被动脚本钩子（下方定义，前向声明）
+local screenFlash                           -- 全屏闪光（下方定义，前向声明）
 local waveTimer = FIRST_WAVE
 local waveN = 0
 local gameOver, winner = false, nil
@@ -395,6 +396,23 @@ local function spawnGroundDecal(tex, x, z, radius, r, g, b, alpha)
     return SpawnDecal(tex, x, 0.05, z, radius * 2, alpha, r, g, b, true)
 end
 
+-- 可旋转/拉伸的地面贴花（1x1 平面 + 变换缩放/绕 Y 旋转）：技能朝向矩形/扇形。
+local function spawnGroundQuad(tex, x, z, w, h, yaw, r, g, b, alpha)
+    local ent = SpawnDecal(tex, x, 0.05, z, 1.0, alpha, r, g, b, true)
+    if ent ~= nil then
+        SetScale(ent, w, 1, h)
+        SetRotationY(ent, yaw or 0)
+    end
+    return ent
+end
+
+-- 全屏命中/技能闪光（HUD 覆盖层，0 成本）。screenFlash 定义在下方（前向声明）。
+local flash = { r = 0, g = 0, b = 0, a = 0, t = 0, life = 0.4 }
+screenFlash = function(r, g, b, a)
+    flash.r, flash.g, flash.b, flash.a = r, g, b, a
+    flash.t = flash.life
+end
+
 -- G 信号：世界特效 + 地面贴花 + 小地图标记（联机时由服务器广播给双方）。
 local function addPing(x, z, team)
     if x == nil or z == nil then return end
@@ -610,7 +628,9 @@ local function killUnit(u, source)
             local bounty = 300 + math.min(source.streak - 1, 5) * 50
             grantXp(source, 150)
             gainGold(source, bounty)
+            if source == playerHero then screenFlash(1.0, 0.85, 0.4, 0.28) end
         end
+        if u == playerHero then screenFlash(0.75, 0.10, 0.12, 0.32) end
         u.streak = 0
         local kname = (source ~= nil and source.name) or "?"
         local kcol = TEAM_COLOR[(source ~= nil and source.team) or (3 - u.team)]
@@ -1167,6 +1187,7 @@ local function castAbility(h, idx, aimX, aimZ)
         local total = dmg + (tgt.maxHp * (ab.missingPct or 0.3) * missing)
         damage(tgt, total, h, kind)
         camShake = math.min(1.5, camShake + 0.7)
+        if h == playerHero then screenFlash(1.0, 0.62, 0.28, 0.20) end
         fxBurst(tgt.x, 1.0, tgt.z, 30, 3, 9, 0.25, 0.5, 0.8, 0.05,
             { r = 1, g = 0.85, b = 0.3, a = 1 }, { r = 1, g = 0.2, b = 0.1, a = 0 }, 0.5)
         fxRing(tgt.x, tgt.z, 1.0, 24, { r = 1, g = 0.9, b = 0.5, a = 0.9 },
@@ -2494,6 +2515,7 @@ function on_update(e, dt)
             SetDecal(p.ent, 2.4, 0.9 * (1 - age / 8))
         end
     end
+    if flash.t > 0 then flash.t = math.max(0, flash.t - dt) end
 end
 
 -- ==========================================================================
@@ -3215,4 +3237,9 @@ function on_render()
     drawKillFeed()
     drawScoreboard()
     drawShop()
+    -- 命中/技能全屏闪光（最上层覆盖）
+    if flash.t > 0 then
+        local vh = (vp and vp.h) or VH
+        DrawRect(0, 0, vw, vh, flash.r, flash.g, flash.b, flash.a * (flash.t / flash.life))
+    end
 end
