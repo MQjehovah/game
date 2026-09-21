@@ -8,6 +8,14 @@
 
 namespace neon::gfx {
 
+// GPU particle simulation handle (transform-feedback pool). Optional: backends
+// that cannot simulate on the GPU report SupportsGpuParticles()==false and the
+// runtime keeps its CPU particle path, so nothing regresses.
+struct ParticleSimHandle {
+    uint32_t id = 0;
+    bool Valid() const { return id != 0; }
+};
+
 enum class BlendMode : uint8_t { Opaque, Alpha, Additive, Premultiplied };
 enum class CullMode : uint8_t { None, Back, Front };
 enum class PrimitiveTopology : uint8_t { Triangles, Lines };
@@ -108,6 +116,18 @@ public:
     }
     virtual TextureHandle RenderTargetColorTexture(RenderTargetHandle target) const = 0;
     virtual TextureHandle RenderTargetDepthTexture(RenderTargetHandle target) const = 0;
+
+    // --- GPU particle simulation (optional; transform feedback) --------------
+    // A backend that can simulate particles on the GPU returns an invalid handle
+    // from CreateParticleSim and false from SupportsGpuParticles; the runtime
+    // then keeps its CPU particle path. Concrete emit/step/draw methods land
+    // with the GL implementation.
+    virtual bool SupportsGpuParticles() const { return false; }
+    virtual ParticleSimHandle CreateParticleSim(uint32_t capacity) {
+        (void)capacity;
+        return {};
+    }
+    virtual void DestroyParticleSim(ParticleSimHandle sim) { (void)sim; }
 
     // Shadow-map depth target: an FBO whose only attachment is a depth texture
     // (no color buffer). Depth is written by the rasterizer; sample it with
