@@ -66,6 +66,7 @@ local projectiles = {}
 local groundAoes = {}
 local neutralRespawns = {}                 -- 野怪刷新计时 { cfg, t }
 local inhibDown = { [BLUE] = false, [RED] = false } -- 兵营被破 -> 对方出超级兵
+local pings = {}                           -- G 信号标记 { x, z, team, t }
 local waveTimer = FIRST_WAVE
 local waveN = 0
 local gameOver, winner = false, nil
@@ -233,7 +234,7 @@ local function spawnHero(name, team)
     local u = {
         id = nid(), ent = ent, kind = "champion", team = team,
         name = s.chinese or name, key = name,
-        portrait = s.portrait, title = s.title,
+        portrait = s.portrait, title = s.title, passive = s.passive,
         x = p.x + off, z = p.z, h = 1.8, radius = 0.55,
         hp = s.hp, maxHp = s.hp, mana = s.mana or 0, maxMana = s.mana or 0,
         ad = s.ad or 60, range = s.range or 2.0, speed = (s.ms or 340) * 0.015,
@@ -386,6 +387,45 @@ local function gainGold(u, amount)
     if u == playerHero then
         floatAt(u, "+" .. tostring(math.floor(amount + 0.5)) .. " 金币", false, 1.0, 0.86, 0.30)
     end
+end
+
+-- 中文按字宽近似换行（用于技能/装备 tooltip）。
+local function wrapText(text, maxChars)
+    local lines, cur, curW = {}, "", 0
+    for ch in text:gmatch("[^\n]") do
+        local w = (ch:byte() >= 128) and 2 or 1
+        if curW + w > maxChars then
+            lines[#lines + 1] = cur
+            cur, curW = ch, w
+        else
+            cur = cur .. ch
+            curW = curW + w
+        end
+    end
+    if cur ~= "" then lines[#lines + 1] = cur end
+    return lines
+end
+
+-- G 信号：世界特效 + 小地图标记（联机时由服务器广播给双方）。
+local function addPing(x, z, team)
+    if x == nil or z == nil then return end
+    pings[#pings + 1] = { x = x, z = z, team = team or BLUE, t = elapsed }
+    if #pings > 16 then table.remove(pings, 1) end
+    EmitParticles({ pos = { x = x, y = 0.1, z = z }, count = 36,
+        vel = { x = 0, y = 1, z = 0 }, speedMin = 4, speedMax = 8,
+        lifeMin = 0.4, lifeMax = 0.7, sizeStart = 0.8, sizeEnd = 0.05,
+        color = { r = 1, g = 0.85, b = 0.25, a = 1 },
+        colorEnd = { r = 1, g = 0.3, b = 0, a = 0 }, gravity = 1.2, additive = true })
+    SpawnFloatText({ x = x, y = 2.0, z = z }, "!", true, 1.2)
+end
+
+-- 处理服务器广播的他人信号（发送方本地已预测，按 from 去重）。
+local function handlePingMessage(argsJson)
+    local a = nil
+    if type(argsJson) == "string" and argsJson ~= "" then a = Json.Parse(argsJson) end
+    if type(a) ~= "table" then return end
+    if a.from ~= nil and a.from == GetVar("myClientId") then return end
+    addPing(a.x, a.z, a.team)
 end
 
 local function recomputeDerived(u)
@@ -1350,6 +1390,11 @@ local function applyNetCommand(cmd)
         castAbility(h, math.floor(a.ability), x, z)
     elseif t == "recall" then
         h.channel = 1.4
+    elseif t == "ping" then
+        -- 广播给房间其他人（发送方本地已预测，用 from 去重）。
+        if validPoint(a.x, a.z) then
+            Rpc("moba_ping", { x = a.x, z = a.z, team = h.team, from = cmd.client })
+        end
     elseif t == "levelup" then
         if not validAbility(a.ability) then return end
         spendPoint(h, math.floor(a.ability))
@@ -1486,7 +1531,8 @@ local function clientSendCommands(h)
     local cmd = NetCommand()
     while cmd ~= nil do
         if cmd.name == "moba_state" then applyNetState(cmd.args)
-        elseif cmd.name == "moba_hud" then applyNetHud(Json.Parse(cmd.args)) end
+        elseif cmd.name == "moba_hud" then applyNetHud(Json.Parse(cmd.args))
+        elseif cmd.name == "moba_ping" then handlePingMessage(cmd.args) end
         cmd = NetCommand()
     end
     local vp = GetViewportSize()
@@ -1494,7 +1540,8 @@ local function clientSendCommands(h)
     local vh = (vp and vp.h) or VH
     local m = InputMousePos()
     local inView = m ~= nil and m.x >= 0 and m.y >= 0 and m.x <= vw and m.y <= vh
-    if ActionPressed("attack") then h.attackArmed = true end
+    if ActionPressed("attack") then h.attackArmed = true; h.pingArmed = nil end
+    if ActionPressed("ping") then h.pingArmed = true; h.attackArmed = nil end
     local left = InputMousePressed("left")
     local right = InputMousePressed("right")
     if inView and (left or right) then
@@ -1510,7 +1557,14 @@ local function clientSendCommands(h)
             end
         end
         local g = groundPick(m.x, m.y)
-        if best ~= nil then
+        if left and h.pingArmed then
+            -- G + 左键：本地先显示，同时发给服务器广播给对手。
+            if g ~= nil then
+                addPing(g.x, g.z, h.team)
+                Rpc("moba_cmd", { type = "ping", x = g.x, z = g.z })
+            end
+            h.pingArmed = nil
+        elseif best ~= nil then
             Rpc("moba_cmd", { type = "attackTarget", id = best.id })
         elseif g ~= nil then
             Rpc("moba_cmd", { type = (left and h.attackArmed) and "attackMove" or "move",
@@ -1606,15 +1660,8 @@ local function updatePlayer(dt)
         local g = groundPick(m.x, m.y)
 
         if left and h.pingArmed then
-            -- G + 左键：地面信号标记
-            if g ~= nil then
-                EmitParticles({ pos = { x = g.x, y = 0.1, z = g.z }, count = 36,
-                    vel = { x = 0, y = 1, z = 0 }, speedMin = 4, speedMax = 8,
-                    lifeMin = 0.4, lifeMax = 0.7, sizeStart = 0.8, sizeEnd = 0.05,
-                    color = { r = 1, g = 0.85, b = 0.25, a = 1 },
-                    colorEnd = { r = 1, g = 0.3, b = 0, a = 0 }, gravity = 1.2, additive = true })
-                SpawnFloatText({ x = g.x, y = 2.0, z = g.z }, "!", true, 1.2)
-            end
+            -- G + 左键：地面信号标记（世界特效 + 小地图）
+            if g ~= nil then addPing(g.x, g.z, h.team) end
             sfx("cast", 0.2)
             h.pingArmed = nil
         elseif right or (left and h.attackArmed) then
@@ -2237,6 +2284,7 @@ function on_update(e, dt)
         while cmd ~= nil do
         if cmd.name == "moba_state" then applyNetState(cmd.args)
         elseif cmd.name == "moba_hud" then applyNetHud(Json.Parse(cmd.args))
+        elseif cmd.name == "moba_ping" then handlePingMessage(cmd.args)
             else lobbyHandle(cmd.name, cmd.args) end
             cmd = NetCommand()
         end
@@ -2372,6 +2420,10 @@ function on_update(e, dt)
     updatePlates()
     separateUnits(dt)
     cleanupUnits(dt)
+    -- 信号标记 8 秒后消失
+    for i = #pings, 1, -1 do
+        if elapsed - pings[i].t > 8 then table.remove(pings, i) end
+    end
 end
 
 -- ==========================================================================
@@ -2447,6 +2499,22 @@ local function drawFloatTexts()
     end
 end
 
+-- 通用 tooltip 面板：标题 + 自动换行的正文行。坐标用设计单位（1280x720）。
+local function drawTooltip(x, y, title, lines, accent)
+    local w = 300
+    local total = 24 + #lines * 17 + 6
+    if x + w > VW - 8 then x = VW - w - 8 end
+    if y + total > VH - 8 then y = VH - total - 8 end
+    if x < 8 then x = 8 end
+    if y < 8 then y = 8 end
+    DrawRect(x, y, w, total, 0.03, 0.04, 0.07, 0.96)
+    DrawRectOutline(x, y, w, total, 2, accent[1], accent[2], accent[3], 1)
+    DrawText(title, x + 10, y + 13, 16, 1, 0.9, 0.5, 1, false, true)
+    for i = 1, #lines do
+        DrawText(lines[i], x + 10, y + 16 + i * 17, 13, 0.88, 0.9, 0.95, 1, false, true)
+    end
+end
+
 local function drawHud()
     local vp = GetViewportSize()
     local vw = (vp and vp.w) or VW
@@ -2477,9 +2545,38 @@ local function drawHud()
     local total = slot * 4 + 3 * 8
     local sx = cx - total / 2
     local sy = vh - slot - 8
+    local m = InputMousePos()
+    local tip = nil
+    -- 被动技能槽（左侧小图标 + hover 显示被动说明）
+    local p = h.passive
+    if p ~= nil then
+        -- 放在技能栏右侧，避开左侧头像/经验条。
+        local psx, pslot = sx + total + 10, 34
+        if p.icon and p.icon ~= "" then
+            DrawSprite(p.icon, psx, sy, pslot, pslot, 1, 1, 1, 0.95)
+        else
+            DrawRect(psx, sy, pslot, pslot, 0.08, 0.08, 0.12, 0.9)
+            DrawText("P", psx + pslot / 2, sy + pslot / 2, 14, 1, 1, 1, 0.9, true, true)
+        end
+        DrawRectOutline(psx, sy, pslot, pslot, 2, 0.7, 0.6, 0.25, 1)
+        if m ~= nil and m.x >= psx and m.x <= psx + pslot and m.y >= sy and m.y <= sy + pslot then
+            local lines = {}
+            for _, l in ipairs(wrapText(p.desc or "", 34)) do lines[#lines + 1] = l end
+            tip = { x = psx - 20, y = sy - 90 - #lines * 17,
+                    title = "被动 · " .. (p.name or ""), lines = lines,
+                    accent = { 0.8, 0.7, 0.3 } }
+        end
+    end
     for i = 1, 4 do
         local x = sx + (i - 1) * (slot + 8)
         local ab = h.abilities[i]
+        if m ~= nil and m.x >= x and m.x <= x + slot and m.y >= sy and m.y <= sy + slot and ab ~= nil then
+            local lines = { string.format("等级 %d/%d   冷却 %.0fs%s", (h.ranks and h.ranks[i]) or 0,
+                RANK_MAX[i], (ab.cd or 6), (ab.cost or 0) > 0 and ("   消耗 " .. ab.cost) or "") }
+            for _, l in ipairs(wrapText(ab.desc or "", 34)) do lines[#lines + 1] = l end
+            tip = { x = x - 46, y = sy - 60 - #lines * 17, title = (ab.name or keys[i]),
+                    lines = lines, accent = { 0.9, 0.78, 0.3 } }
+        end
         local cost = (ab and ab.cost) or 0
         local rank = (h.ranks and h.ranks[i]) or 0
         local ready = rank > 0 and (h.cds[i] or 0) <= 0 and h.mana >= cost
@@ -2547,6 +2644,10 @@ local function drawHud()
     DrawRect(bx - 63, by + 49, 56 * clamp(h.xp / xpForLevel(h.level), 0, 1), 6, 0.85, 0.7, 0.25, 1)
     DrawText("Lv." .. h.level, bx - 35, by + 52, 11, 1, 1, 1, 1, true, true)
 
+    if tip ~= nil then
+        drawTooltip(tip.x, tip.y, tip.title, tip.lines, tip.accent)
+    end
+
     if h.dead then
         DrawRect(0, 0, vw, vh, 0, 0, 0, 0.45)
         DrawText(string.format("复活中 %.1fs", math.max(0, h.dying)), cx, vh / 2, 30, 1, 0.3, 0.3, 1, true, true)
@@ -2586,6 +2687,18 @@ local function drawMinimap(vw)
                 DrawLine(mx, my, mx + dlx * 7, my + dly * 7, 2.0,
                     col[1], col[2], col[3], 1)
             end
+        end
+    end
+    -- G 信号：小地图脉冲圈
+    for i = 1, #pings do
+        local p = pings[i]
+        local age = elapsed - p.t
+        if age < 8 then
+            local col = TEAM_COLOR[p.team] or { 1.0, 0.8, 0.3 }
+            local mx, my = mapX(p.x, p.z), mapY(p.x, p.z)
+            local pulse = 6 + math.sin(elapsed * 10) * 3
+            DrawCircle(mx, my, pulse, 2.0, col[1], col[2], col[3], math.min(1, 8 - age))
+            DrawCircle(mx, my, pulse * 0.55, 2.0, 1.0, 0.85, 0.3, 0.95)
         end
     end
 end
@@ -2663,8 +2776,10 @@ local function drawShop()
     local ox = vw * 0.5 - totalW * 0.5
     local oy = vh * 0.5 - totalH * 0.5
     local h = playerHero
+    local mp = InputMousePos()
+    local tip = nil
     DrawText("装备商店", vw * 0.5, oy - 48, 24, 0.95, 0.82, 0.35, 1, true, true)
-    DrawText("点击购买，P 关闭", vw * 0.5, oy - 24, 14, 0.85, 0.85, 0.85, 1, true, true)
+    DrawText("点击购买，P 关闭，悬停看详情", vw * 0.5, oy - 24, 14, 0.85, 0.85, 0.85, 1, true, true)
     for i = 1, n do
         local it = ITEMS[SHOP[i]]
         if it ~= nil then
@@ -2678,8 +2793,25 @@ local function drawShop()
             DrawRectOutline(x, y, cell, cell, 2, afford and 0.9 or 0.4, afford and 0.75 or 0.35, 0.2, 1)
             DrawText(tostring(it.price), x + cell / 2, y + cell - 7, 11, 0.95, 0.82, 0.3, 1, true, true)
             DrawText(it.name, x + cell / 2, y - 10, 11, 1, 1, 1, 0.9, true, true)
+            if mp ~= nil and mp.x >= x and mp.x <= x + cell and mp.y >= y and mp.y <= y + cell then
+                local stats = {}
+                if (it.ad or 0) > 0 then stats[#stats + 1] = "攻击力 +" .. it.ad end
+                if (it.ap or 0) > 0 then stats[#stats + 1] = "法强 +" .. it.ap end
+                if (it.hp or 0) > 0 then stats[#stats + 1] = "生命 +" .. it.hp end
+                if (it.mana or 0) > 0 then stats[#stats + 1] = "法力 +" .. it.mana end
+                if (it.armor or 0) > 0 then stats[#stats + 1] = "护甲 +" .. it.armor end
+                if (it.mr or 0) > 0 then stats[#stats + 1] = "魔抗 +" .. it.mr end
+                if (it.as or 0) > 0 then stats[#stats + 1] = "攻速 +" .. math.floor(it.as * 100) .. "%" end
+                if (it.ms or 0) > 0 then stats[#stats + 1] = "移速 +" .. it.ms end
+                local lines = { string.format("价格 %d", it.price or 0) }
+                if #stats > 0 then lines[#lines + 1] = table.concat(stats, "  ") end
+                for _, l in ipairs(wrapText(it.plain or "", 34)) do lines[#lines + 1] = l end
+                tip = { x = x + cell + 8, y = y, title = it.name, lines = lines,
+                        accent = { 0.9, 0.75, 0.3 } }
+            end
         end
     end
+    if tip ~= nil then drawTooltip(tip.x, tip.y, tip.title, tip.lines, tip.accent) end
 end
 
 local function drawSelect()
