@@ -364,11 +364,40 @@ TEST(BloomShaderSourceTokens) {
     CHECK(vertex.find("layout(location = 2) in vec2 aUV") != std::string::npos);
 }
 
+// B4 prerequisite: depth resolve is opt-in and reports unsupported by default.
+// The headless NullBackend inherits the interface default (false) so callers
+// keep their colour-encoded SSAO fallback; a backend that can resolve depth
+// returns true and receives the exact src/dst pair.
+namespace {
+class DepthResolveRecordingBackend : public test::NullBackend {
+public:
+    bool ResolveDepth(gfx::RenderTargetHandle src, gfx::RenderTargetHandle dst) override {
+        ++calls;
+        lastSrc = src.id;
+        lastDst = dst.id;
+        return true;
+    }
+    int calls = 0;
+    uint32_t lastSrc = 0;
+    uint32_t lastDst = 0;
+};
+} // namespace
+
+TEST(DepthResolveCapabilityContract) {
+    test::NullBackend plain;
+    CHECK(!plain.ResolveDepth({1}, {2})); // default: unsupported -> fallback path
+
+    DepthResolveRecordingBackend recording;
+    CHECK(recording.ResolveDepth({7}, {9}));
+    CHECK(recording.calls == 1);
+    CHECK(recording.lastSrc == 7);
+    CHECK(recording.lastDst == 9);
+}
+
 // --- Renderer state on the headless backend --------------------------------
 // No float-target capability test runs on the NullBackend (no GL), so the HDR
 // pipeline must stay inert: BeginFrame/EndFrame draw straight to the "default"
 // target exactly like before, and the toggles still track their user state.
-
 TEST(BloomStateHeadless) {
     test::HeadlessAssetFixture fx;
     CHECK(fx.renderer.BloomEnabled()); // default on

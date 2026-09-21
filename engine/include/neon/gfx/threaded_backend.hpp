@@ -47,6 +47,7 @@ public:
     void BindRenderTarget(RenderTargetHandle target) override;
     void BindDefaultTarget() override;
     void ResolveRenderTarget(RenderTargetHandle src, RenderTargetHandle dst) override;
+bool ResolveDepth(RenderTargetHandle src, RenderTargetHandle dst) override;
     TextureHandle RenderTargetColorTexture(RenderTargetHandle target) const override;
     TextureHandle RenderTargetDepthTexture(RenderTargetHandle target) const override;
     RenderTargetHandle CreateDepthTarget(int width, int height) override;

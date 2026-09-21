@@ -94,6 +94,18 @@ public:
     // src may also be single-sample (an identity copy). No-op on backends
     // without a resolve (NullBackend/Vulkan placeholder).
     virtual void ResolveRenderTarget(RenderTargetHandle src, RenderTargetHandle dst) = 0;
+    // Blits the DEPTH attachment of a multisample target (src) into the depth
+    // target (dst) at the same size, so the main pass depth becomes a
+    // single-sample, sampleable texture (GL 3.3 glBlitFramebuffer with
+    // GL_DEPTH_BUFFER_BIT; filter must be NEAREST). Returns false when the
+    // backend cannot resolve depth (no depth-resolve support, or a driver whose
+    // depth attachments are unreliable) so the caller keeps its colour-encoded
+    // fallback. The default implementation reports unsupported.
+    virtual bool ResolveDepth(RenderTargetHandle src, RenderTargetHandle dst) {
+        (void)src;
+        (void)dst;
+        return false;
+    }
     virtual TextureHandle RenderTargetColorTexture(RenderTargetHandle target) const = 0;
     virtual TextureHandle RenderTargetDepthTexture(RenderTargetHandle target) const = 0;
 

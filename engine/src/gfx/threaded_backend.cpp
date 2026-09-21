@@ -205,6 +205,11 @@ void ThreadedBackend::BindDefaultTarget() {
 void ThreadedBackend::ResolveRenderTarget(RenderTargetHandle src, RenderTargetHandle dst) {
     Enqueue([this, src, dst]() { real_->ResolveRenderTarget(src, dst); });
 }
+bool ThreadedBackend::ResolveDepth(RenderTargetHandle src, RenderTargetHandle dst) {
+    bool result = false;
+    Run([&]() { result = real_->ResolveDepth(src, dst); });
+    return result;
+}
 void ThreadedBackend::BeginDepthPass(RenderTargetHandle target) {
     Enqueue([this, target]() { real_->BeginDepthPass(target); });
 }

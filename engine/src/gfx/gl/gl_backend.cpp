@@ -442,6 +442,29 @@ public:
         CheckError("ResolveRenderTarget");
     }
 
+    bool ResolveDepth(RenderTargetHandle src, RenderTargetHandle dst) override {
+        auto srcIt = renderTargets_.find(src.id);
+        auto dstIt = renderTargets_.find(dst.id);
+        if (srcIt == renderTargets_.end() || dstIt == renderTargets_.end()) return false;
+        // Only multisample sources need a resolve; a single-sample source is
+        // already readable as-is.
+        if (srcIt->second.samples <= 0) return true;
+        // The destination needs a depth attachment to receive the blit.
+        if (dstIt->second.depthTex == 0 && dstIt->second.depthRbo == 0) return false;
+        auto& g = gl::GetGL();
+        g.BindFramebuffer(glc::ReadFramebuffer, srcIt->second.fbo);
+        g.BindFramebuffer(glc::DrawFramebuffer, dstIt->second.fbo);
+        // Depth resolves require NEAREST filtering (GL spec); sample counts may
+        // differ (MSAA source, single-sample destination).
+        g.BlitFramebuffer(0, 0, srcIt->second.width, srcIt->second.height, 0, 0,
+                          dstIt->second.width, dstIt->second.height, glc::DepthBufferBit,
+                          glc::Nearest);
+        g.BindFramebuffer(glc::ReadFramebuffer, currentFBO_);
+        g.BindFramebuffer(glc::DrawFramebuffer, currentFBO_);
+        CheckError("ResolveDepth");
+        return true;
+    }
+
     void DestroyRenderTarget(RenderTargetHandle target) override {
         auto it = renderTargets_.find(target.id);
         if (it == renderTargets_.end()) return;
