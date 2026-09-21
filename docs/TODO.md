@@ -20,8 +20,12 @@
   待做：接入 CI、为雾/SSAO/环境各留黄金图。
 
 ### P0 · 渲染管线深化（画面收益最高，做完 0 后不再阻塞）
-1. **B4 收尾：SSAO 复用主深度**。SSAO 已修好（见下），现在做 B4：MSAA 深度 resolve→SSAO 采样主深度、
-   去掉全量 caster 重画（几何 pass 减半），带驱动自检回退旧的颜色编码路径。
+1. **B4 已完成：SSAO 复用主深度（几何 pass 减半）**。主 pass 后 `ResolveDepth` 把 MSAA 深度解析成单采样
+   深度纹理；post 图的 depth pass 改为**全屏编码**该深度（`kDepthEncodeFragmentShader`）写入消费端
+   读取的彩码深度，不再 `DrawSsaoDepthCasters` 重画全部 caster。`ResolveDepth` 不支持（无 MSAA/驱动）时
+   自动回退旧 caster 路径。实测 depth pass 走 encode 分支、AO 效果保留（与旧路径 17.7% 像素差，因真实最近
+   深度优于旧的 painter's-order 深度），像素回归 PASS，`neon_tests` 维持 9 个基线失败。
+   - 遗留小项：`ssaoCasters_` 仍在收集（B4 路径下只浪费少量 CPU，可后续按 `depthResolved_` 关掉）。
    - **SSAO 修复（已落地）**：根因有三——① 深度顶点 shader 写 `vViewDepth = -clip.w`；GL 下 `clip.w`
      才是正的视图距离，`-clip.w` 为负 → `clamp(...,0,1)` 全变 0（几何深度恒 0，天空=clear=1）；
      ② AO shader 用归一化深度比世界单位 `uRadius/uBias`；③ AO pass 没设 `uFar`（解码乘 0）。

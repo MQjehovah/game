@@ -171,6 +171,28 @@ void main() {
 }
 )";
 
+// Fullscreen variant of the depth pre-pass (B4): instead of redrawing the
+// scene's casters, encode the main pass's RESOLVED depth attachment into the same
+// colour-encoded RGBA8 the AO/SSR/volumetric consumers read. This reuses the
+// geometry the main pass already drew (one geometry pass instead of two).
+inline constexpr const char* kDepthEncodeFragmentShader = R"(
+#version 330 core
+in vec2 vUV;
+out vec4 FragColor;
+uniform sampler2D uDepthTex; // raw depth attachment (NDC depth in .r)
+uniform float uNear;
+uniform float uFar;
+void main() {
+    float ndc = texture(uDepthTex, vUV).r;
+    // GL depth is nonlinear NDC [0,1]; invert to a positive view distance.
+    float linear = (2.0 * uNear * uFar) /
+                   (uFar + uNear - (2.0 * ndc - 1.0) * (uFar - uNear));
+    // Sky / no geometry: the depth buffer sits at the far plane (ndc == 1).
+    float d = (ndc >= 1.0) ? 1.0 : clamp(linear / uFar, 0.0, 1.0);
+    FragColor = vec4(d, fract(d * 255.0), fract(d * 65025.0), fract(d * 16581375.0));
+}
+)";
+
 // Separable blur for the AO channel (kSsaoBlurTaps taps, one axis per pass).
 constexpr int kSsaoBlurTaps = 5;
 inline constexpr float kSsaoBlurKernel[kSsaoBlurTaps] = {0.05449f, 0.244202f, 0.402620f,

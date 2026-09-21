@@ -205,6 +205,8 @@ void Renderer::InitBuiltinResources() {
     ssaoDepthMeshShader_ = backend_->CreateShader(kSsaoDepthMeshVertexShader,
                                                   kSsaoDepthFragmentShader, "ssao_depth_mesh");
     ssaoShader_ = backend_->CreateShader(kPostVertexShader, kSsaoFragmentShader, "ssao");
+    depthEncodeShader_ =
+        backend_->CreateShader(kPostVertexShader, kDepthEncodeFragmentShader, "depth_encode");
     ssaoBlurShader_ =
         backend_->CreateShader(kPostVertexShader, kSsaoBlurFragmentShader, "ssao_blur");
     volumetricShader_ =
@@ -1193,6 +1195,10 @@ void Renderer::RebuildHdrTargets() {
                          "Renderer: MSAA target %dx%d (samples=%d) failed -> single-sample HDR",
                          screenW_, screenH_, msaaSamples_);
             msaaEnabled_ = false;
+        } else {
+            // B4: resolve the MSAA depth into a sampleable depth target so the
+            // post chain can reuse the main pass depth (no caster redraw).
+            hdrDepthRT_ = backend_->CreateDepthTarget(screenW_, screenH_);
         }
     }
     hdrW_ = screenW_;
@@ -1207,6 +1213,7 @@ void Renderer::RebuildHdrTargets() {
     postGraph_.Destroy(*backend_);
     PostGraph::Shaders shaders;
     shaders.ssaoShader = ssaoShader_;
+    shaders.depthEncodeShader = depthEncodeShader_;
     shaders.ssaoBlur = ssaoBlurShader_;
     shaders.volumetricShader = volumetricShader_;
     shaders.ssrShader = ssrShader_;
@@ -1232,6 +1239,7 @@ void Renderer::DestroyHdrTargets() {
         t = {};
     };
     destroy(hdrMsaaRT_);
+    destroy(hdrDepthRT_);
     destroy(hdrRT_);
     // The post pyramid targets are owned by the FrameGraph pool; release every
     // allocation it still holds (also covers a pending result).
@@ -1331,8 +1339,13 @@ bool Renderer::TestMsaaCapability() {
 }
 
 void Renderer::ResolveMainTarget() {
+    depthResolved_ = false;
     if (msaaEnabled_ && hdrMsaaRT_.Valid() && hdrRT_.Valid()) {
         backend_->ResolveRenderTarget(hdrMsaaRT_, hdrRT_);
+        // B4: also resolve the depth so the post chain reuses the main pass depth
+        // (returns false on backends/drivers that cannot resolve depth, in which
+        // case the depth pass falls back to redrawing the casters).
+        if (hdrDepthRT_.Valid()) depthResolved_ = backend_->ResolveDepth(hdrMsaaRT_, hdrDepthRT_);
     }
 }
 
@@ -1356,7 +1369,12 @@ PostGraph::FrameParams Renderer::MakePostParams(bool chains) const {
     // ran the post graph, so its composites had no AO/vol/SSR/fog terms).
     p.depthPass = chains && (ssaoEnabled_ || ssrEnabled_ || volumetricEnabled_ ||
                              sceneState_.VolumetricFogEnabled());
-    p.ssaoPass = chains && ssaoEnabled_ && !ssaoCasters_.empty();
+    // B4: when the main pass depth was resolved, feed it to the depth pass (which
+    // then encodes it fullscreen instead of redrawing the casters).
+    if (depthResolved_ && hdrDepthRT_.Valid())
+        p.depthTexture = backend_->RenderTargetDepthTexture(hdrDepthRT_);
+    p.ssaoPass = chains && ssaoEnabled_ &&
+                 (p.depthTexture.Valid() || !ssaoCasters_.empty());
     p.volumetricPass = chains && volumetricEnabled_;
     p.ssrPass = chains && ssrEnabled_;
     p.bloomPass = bloomEnabled_;

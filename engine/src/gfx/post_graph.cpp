@@ -22,6 +22,7 @@ constexpr Color kFarDepth{1.0f, 0.0f, 0.0f, 0.0f};
 void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
                       std::function<void()> drawDepthCasters) {
     ssaoShader_ = shaders.ssaoShader;
+    depthEncodeShader_ = shaders.depthEncodeShader;
     ssaoBlur_ = shaders.ssaoBlur;
     volumetricShader_ = shaders.volumetricShader;
     ssrShader_ = shaders.ssrShader;
@@ -93,10 +94,21 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
         auto& backend = ctx.Backend();
         backend.BindRenderTarget(ctx.GetOutput(sceneDepth_));
         backend.SetBlendMode(BlendMode::Opaque);
-        backend.SetDepthTest(false, false);
+        backend.SetDepthTest(false, false); // colour-encoded depth: draw order owns it
         backend.SetCullMode(CullMode::None);
-        backend.Clear(kFarDepth, 1.0f);
-        if (drawDepthCasters_) drawDepthCasters_();
+        if (depthFromTex_ && depthEncodeShader_.Valid() && depthTex_.Valid()) {
+            // B4: encode the main pass's resolved depth (fullscreen quad) instead
+            // of redrawing every caster - the geometry pass is halved.
+            Fullscreen(backend, depthEncodeShader_);
+            backend.BindTexture(0, depthTex_);
+            backend.SetUniformInt("uDepthTex", 0);
+            backend.SetUniformFloat("uNear", nearPlane_);
+            backend.SetUniformFloat("uFar", farPlane_);
+            backend.DrawMesh(postQuad_);
+        } else {
+            backend.Clear(kFarDepth, 1.0f);
+            if (drawDepthCasters_) drawDepthCasters_();
+        }
     };
     depthPassIndex_ = add(std::move(depth));
 
@@ -521,6 +533,10 @@ bool PostGraph::Execute(IRenderBackend& backend, const FrameParams& params) {
     compositeRan_ = false;
     if (!built_ || !postQuad_.Valid()) return false;
     if (params.hdrW <= 0 || params.hdrH <= 0) return false;
+    // B4: the depth pass encodes the resolved main depth when the renderer
+    // provides it (invalid handle = fall back to drawing the casters).
+    depthFromTex_ = params.depthTexture.Valid();
+    depthTex_ = params.depthTexture;
 
     // Per-chain enable: a chain runs only when requested AND its shaders are
     // valid AND (for the chains sampling the scene) the HDR target is live.

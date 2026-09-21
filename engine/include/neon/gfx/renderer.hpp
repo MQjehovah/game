@@ -556,6 +556,7 @@ private:
     ShaderHandle exposureAdaptShader_;
     ShaderHandle compositeShader_;
     ShaderHandle ssaoShader_;
+    ShaderHandle depthEncodeShader_; // B4: fullscreen resolved-depth encode
     ShaderHandle ssaoBlurShader_;
     ShaderHandle ssaoDepthShader_;   // SSAO depth pre-pass (linear camera depth)
     ShaderHandle ssaoDepthMeshShader_;   // non-instanced variant
@@ -585,6 +586,10 @@ private:
     // depth/AO/vol/SSR) lives in postGraph_'s FrameGraph transient pool.
     RenderTargetHandle hdrRT_;
     RenderTargetHandle hdrMsaaRT_;
+    // B4: single-sample depth target resolved from the MSAA HDR depth so the post
+    // chain can sample the main pass depth instead of redrawing the casters.
+    RenderTargetHandle hdrDepthRT_;
+    bool depthResolved_ = false;
     // G1-5 SSAO/volumetric/SSR/depth + Task 2 bloom + Task 4 composite: one
     // unified post-processing FrameGraph. The depth/AO/blur/vol/ssr targets and
     // the bloom pyramid live in its transient pool; the composite pass reads

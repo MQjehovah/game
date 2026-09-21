@@ -33,6 +33,7 @@ public:
     // Build() 所需的 shader/纹理句柄集（均来自 Renderer 的 InitBuiltinResources）。
     struct Shaders {
         ShaderHandle ssaoShader;      // AO 计算
+        ShaderHandle depthEncodeShader; // B4: 把主 pass 解析出的深度编码成彩码深度
         ShaderHandle ssaoBlur;        // AO/体积/SSR 共享的分离式高斯模糊
         ShaderHandle volumetricShader;
         ShaderHandle ssrShader;
@@ -83,6 +84,10 @@ public:
         int hdrH = 0;
         bool depthPass = false;
         bool ssaoPass = false;
+        // B4: when set, the depth pass encodes this resolved main-pass depth
+        // texture (fullscreen) instead of redrawing the scene's casters, so the
+        // geometry is drawn once. Invalid texture keeps the caster path.
+        TextureHandle depthTexture;
         bool volumetricPass = false;
         bool ssrPass = false;
         bool bloomPass = false;
@@ -144,6 +149,9 @@ private:
     void Fullscreen(IRenderBackend& backend, ShaderHandle shader);
 
     FrameGraph graph_;
+    ShaderHandle depthEncodeShader_; // B4 fullscreen depth encode
+    TextureHandle depthTex_;         // B4 resolved depth sampled by the depth pass
+    bool depthFromTex_ = false;
     ResourceId hdrScene_ = kInvalidResource; // 外部输入（主场景 HDR）
     ResourceId sceneDepth_ = kInvalidResource; // 全尺寸，depth pass 写
     ResourceId ao_ = kInvalidResource;         // 半尺寸，ssao 写
