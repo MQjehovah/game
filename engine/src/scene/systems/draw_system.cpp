@@ -1127,6 +1127,8 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
         batchModels_.clear();
     };
     size_t dead = 0;
+    // Camera frustum for per-sub-node culling below (same one the item BVH uses).
+    const math::Frustum& viewFrustum = renderer.ViewFrustum();
     for (size_t idx : drawOrder_) {
         DrawItem& item = draws_[idx];
         if (!world.Alive(item.ent)) {
@@ -1252,9 +1254,15 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
                               item.mat, model);
         }
         // 多 mesh glTF 场景的子节点（第 2+ mesh，自带累积变换 + 材质）。
+        // 逐节点视锥剔除：一张多节点 glTF（如 181 节点的召唤师峡谷地图）是
+        // 单个 DrawItem，只按整体 AABB 剔除会让每个节点每帧（以及每个阴影
+        // 级联）都进绘制列表。这里按节点世界 AABB 单独裁剪，只提交可见块。
         for (const assets::GltfMeshNode& sub : item.gltfSubNodes) {
             if (!sub.mesh.Valid()) continue;
-            renderer.DrawMesh(sub.mesh, sub.material, model * sub.transform);
+            const math::Mat4 subModel = model * sub.transform;
+            if (!viewFrustum.Intersects(math::TransformAABB(sub.mesh.Bounds(), subModel)))
+                continue;
+            renderer.DrawMesh(sub.mesh, sub.material, subModel);
         }
     }
     flushBatches();
