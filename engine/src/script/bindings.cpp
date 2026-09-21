@@ -1156,7 +1156,51 @@ Value NativeSetDecal(IScriptHost& host, void* user) {
     if (!e.IsValid()) return Value::Nil();
     ctx->setDecal(e, NumberArg(host, 1, 0.0f), NumberArg(host, 2, 1.0f));
     return Value::Nil();
-}Value NativeFogSetup(IScriptHost& host, void* user) {
+}
+
+// SpawnTrail(width, hr,hg,hb,ha, tr,tg,tb,ta) -> id (>0). Ribbon trail VFX.
+Value NativeSpawnTrail(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->spawnTrail) return Value::Num(0);
+    auto num = [&](int i, float def) {
+        return host.GetArg(i).type == Value::Type::Number
+                   ? static_cast<float>(host.GetArg(i).number)
+                   : def;
+    };
+    const uint32_t id = ctx->spawnTrail(num(0, 0.4f), num(1, 1), num(2, 1), num(3, 1), num(4, 1),
+                                        num(5, 1), num(6, 1), num(7, 1), num(8, 0));
+    return Value::Num(static_cast<double>(id));
+}
+
+// TrailPoint(id, x,y,z) or TrailPoint(id, {x,y,z}).
+Value NativeTrailPoint(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->trailPoint) return Value::Nil();
+    auto num = [&](int i, float def) {
+        return host.GetArg(i).type == Value::Type::Number
+                   ? static_cast<float>(host.GetArg(i).number)
+                   : def;
+    };
+    const uint32_t id = static_cast<uint32_t>(NumberArg(host, 0, 0.0));
+    math::Vec3 p;
+    if (host.GetArg(1).type == Value::Type::Table) {
+        p = Vec3FromValue(host.GetArg(1), math::Vec3{});
+    } else {
+        p = {num(1, 0), num(2, 0), num(3, 0)};
+    }
+    ctx->trailPoint(id, p);
+    return Value::Nil();
+}
+
+// TrailEnd(id): stop emitting; existing points fade out.
+Value NativeTrailEnd(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->trailEnd) return Value::Nil();
+    ctx->trailEnd(static_cast<uint32_t>(NumberArg(host, 0, 0.0)));
+    return Value::Nil();
+}
+
+Value NativeFogSetup(IScriptHost& host, void* user) {
     auto* ctx = static_cast<ScriptContext*>(user);
     if (!ctx || !ctx->fogSetup) return Value::Nil();
     auto num = [&](int i, float def) {
@@ -2347,6 +2391,9 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("FogDraw", &NativeFogDraw, &ctx);
     host.Register("SpawnDecal", &NativeSpawnDecal, &ctx);
     host.Register("SetDecal", &NativeSetDecal, &ctx);
+    host.Register("SpawnTrail", &NativeSpawnTrail, &ctx);
+    host.Register("TrailPoint", &NativeTrailPoint, &ctx);
+    host.Register("TrailEnd", &NativeTrailEnd, &ctx);
     host.Register("EmitParticles", &NativeEmitParticles, &ctx);
     host.Register("SetSpriteFrames", &NativeSetSpriteFrames, &ctx);
     host.Register("SetSpriteSheet", &NativeSetSpriteSheet, &ctx);

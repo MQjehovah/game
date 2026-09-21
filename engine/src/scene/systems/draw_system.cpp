@@ -18,6 +18,7 @@
 #include "neon/core/result.hpp"
 #include "neon/core/rng.hpp"
 #include "neon/gfx/renderer.hpp"
+#include "neon/gfx/trail.hpp"
 #include "neon/gfx/scene_props.hpp"
 #include "neon/gfx/terrain.hpp"
 #include "neon/scene/render_stack.hpp"
@@ -797,7 +798,8 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
                       const std::map<uint64_t, script::EntityHighlight>& entityHighlights,
                       HudSystem& hud, SceneTreeSystem& sceneTree, AnimationSystem& anims,
                       ProjectileSystem& projectiles, SceneParticleSystem& particles,
-                      ScriptCanvas& canvas, float& uiScale, math::Vec2& uiOffset) {
+                      gfx::TrailSystem& trails, ScriptCanvas& canvas, float& uiScale,
+                      math::Vec2& uiOffset) {
     if (!content_.assets) return; // sim-only runtime draws nothing (running_ checked by caller)
     core::ScopedTimer drawTimer("runtime.draw");
     // Post-process FX overrides (mirrors the editor toggles so play matches).
@@ -1386,6 +1388,7 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
     // Skill projectiles (fireballs): bright glowing orbs (ProjectileSystem
     // lazily builds the shared fireball mesh on first use).
     projectiles.Draw(renderer);
+    trails.Draw(renderer); // script ribbon trails (skill/projectile VFX)
     // G2-3 vegetation: instanced plant meshes + far yaw-billboard impostors.
     // Use the RESOLVED scene camera (`cam`, which may have been overridden by a
     // scene Camera3D entity driven by the game script) rather than the raw

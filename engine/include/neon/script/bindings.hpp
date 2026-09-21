@@ -364,6 +364,14 @@ struct ScriptContext {
                               float alpha, float r, float g, float b, bool additive)>
         spawnDecal;
     std::function<void(ecs::Entity, float size, float alpha)> setDecal;
+
+    // --- Ribbon trails (skill/projectile VFX) ------------------------------
+    // SpawnTrail(width, hr,hg,hb,ha, tr,tg,tb,ta) -> id; TrailPoint(id, x,y,z);
+    // TrailEnd(id) stops emitting (existing points fade). Null hooks -> no-ops.
+    std::function<uint32_t(float, float, float, float, float, float, float, float, float)>
+        spawnTrail;
+    std::function<void(uint32_t, const math::Vec3&)> trailPoint;
+    std::function<void(uint32_t)> trailEnd;
 };
 
 // Registers Spawn/Despawn/GetPosition/SetPosition/GetVar/SetVar/Raycast/

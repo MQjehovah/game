@@ -119,6 +119,7 @@ add_library(neon_gfx STATIC
   engine/src/gfx/terrain.cpp
   engine/src/gfx/light_probe.cpp
   engine/src/gfx/particles.cpp
+  engine/src/gfx/trail.cpp
   engine/src/gfx/renderer.cpp
   engine/src/gfx/gl/gl_loader.cpp
   engine/src/gfx/gl/gl_backend.cpp

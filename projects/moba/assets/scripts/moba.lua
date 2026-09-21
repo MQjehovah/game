@@ -633,7 +633,10 @@ local function killUnit(u, source)
         if u == playerHero then screenFlash(0.75, 0.10, 0.12, 0.32) end
         u.streak = 0
         local kname = (source ~= nil and source.name) or "?"
-        local kcol = TEAM_COLOR[(source ~= nil and source.team) or (3 - u.team)]
+        -- source.team may be 0 (neutral) -> TEAM_COLOR[0] is nil; fall back to the
+        -- victim's opposing colour / a neutral grey so the feed never indexes nil.
+        local kcol = (source ~= nil and TEAM_COLOR[source.team]) or TEAM_COLOR[3 - u.team]
+            or { 0.8, 0.8, 0.8 }
         killFeed[#killFeed + 1] = { killer = kname, victim = u.name, col = kcol, t = elapsed }
         if #killFeed > 6 then table.remove(killFeed, 1) end
     elseif u.kind == "neutral" then
@@ -978,6 +981,12 @@ end
 -- ==========================================================================
 local function spawnProjectile(owner, x, z, dirx, dirz, opts)
     local col = opts.color or TEAM_COLOR[owner.team]
+    -- 技能弹道用引擎 ribbon 拖尾（普攻 trail=false 不带）。
+    local trailId = 0
+    if opts.trail ~= false and type(SpawnTrail) == "function" then
+        trailId = SpawnTrail(opts.width or 0.45,
+            col[1], col[2], col[3], 0.95, col[1], col[2], col[3], 0.0)
+    end
     projectiles[#projectiles + 1] = {
         team = owner.team, owner = owner, x = x, z = z,
         dx = dirx, dz = dirz, speed = opts.speed or 16,
@@ -985,7 +994,7 @@ local function spawnProjectile(owner, x, z, dirx, dirz, opts)
         radius = opts.radius or 0.8, range = opts.range or 12,
         traveled = 0, pierce = opts.pierce or false,
         status = opts.status, statusDur = opts.statusDur or 2, statusMag = opts.statusMag or 0.3,
-        color = col, trail = 0,
+        color = col, trail = 0, trailId = trailId,
         showTrail = opts.trail ~= false,
         target = opts.target, dmgKind = opts.dmgKind or "magic",
     }
@@ -1898,6 +1907,7 @@ local function updateProjectiles(dt)
         p.traveled = p.traveled + step
         p.life = p.life - dt
         p.trail = p.trail + dt
+        if p.trailId and p.trailId > 0 then TrailPoint(p.trailId, { x = p.x, y = 1.0, z = p.z }) end
         if p.showTrail and p.trail >= 0.055 then
             p.trail = 0
             EmitParticles({ pos = { x = p.x, y = 1.0, z = p.z }, count = 1, vel = { x = 0, y = 0.25, z = 0 },
@@ -1924,8 +1934,10 @@ local function updateProjectiles(dt)
                 sizeStart = 0.55, sizeEnd = 0.04,
                 color = { r = p.color[1], g = p.color[2], b = p.color[3], a = 1 },
                 colorEnd = { r = 1, g = 0.9, b = 0.5, a = 0 }, additive = true })
+            if p.trailId and p.trailId > 0 then TrailEnd(p.trailId) end
             table.remove(projectiles, i)
         elseif p.life <= 0 or p.traveled >= p.range then
+            if p.trailId and p.trailId > 0 then TrailEnd(p.trailId) end
             table.remove(projectiles, i)
         else
             i = i + 1
@@ -2805,12 +2817,13 @@ local function drawKillFeed()
         local age = elapsed - f.t
         if age < 6 then
             local a = math.min(1, (6 - age) / 0.6)
+            local col = f.col or { 0.8, 0.8, 0.8 }
             local w = 210
             local x = vw - w - 12
             DrawRect(x, y, w, 20, 0.05, 0.05, 0.08, 0.65 * a)
-            DrawRect(x, y, 3, 20, f.col[1], f.col[2], f.col[3], a)
+            DrawRect(x, y, 3, 20, col[1], col[2], col[3], a)
             DrawText(f.killer .. " 击杀 " .. f.victim, x + w / 2 + 2, y + 10, 13,
-                f.col[1], f.col[2], f.col[3], a, true, true)
+                col[1], col[2], col[3], a, true, true)
             y = y + 22
         end
     end

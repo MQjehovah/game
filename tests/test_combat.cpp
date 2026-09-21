@@ -1918,6 +1918,7 @@ TEST(DrawSystemStandaloneBuildResolveDraw) {
     scene::SceneTreeSystem sceneTree;
     scene::ProjectileSystem projectiles;
     scene::SceneParticleSystem particles;
+    gfx::TrailSystem trails;
     scene::ScriptCanvas canvas;
     script::ScriptContext ctx;
     std::set<uint64_t> hidden;
@@ -1927,7 +1928,7 @@ TEST(DrawSystemStandaloneBuildResolveDraw) {
     cam.position = {0, 0, 0};
     draw.Draw(renderer, cam, scene::DrawSystem::DrawParams{}, world, ctx,
               /*luaHost=*/nullptr, /*jsHost=*/nullptr, hidden, highlights, hud, sceneTree,
-              anims, projectiles, particles, canvas, uiScale, uiOffset);
+              anims, projectiles, particles, trails, canvas, uiScale, uiOffset);
     CHECK_EQ(draw.DrawCount(), 2u);
 
     // Sprite-frame hooks are safe on the failed sprite item (no-op, no crash).

@@ -751,6 +751,12 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
         if (size > 0.01f) d->size = size;
         d->alpha = alpha;
     };
+    scriptCtx_.spawnTrail = [this](float w, float hr, float hg, float hb, float ha, float tr,
+                                   float tg, float tb, float ta) {
+        return trails_.Create(w, gfx::Color{hr, hg, hb, ha}, gfx::Color{tr, tg, tb, ta});
+    };
+    scriptCtx_.trailPoint = [this](uint32_t id, const math::Vec3& p) { trails_.AddPoint(id, p); };
+    scriptCtx_.trailEnd = [this](uint32_t id) { trails_.End(id); };
     scriptCtx_.uiViewportSize = [this]() {
         return math::Vec2{hud_.DesignWidth(), hud_.DesignHeight()};
     };
@@ -964,6 +970,7 @@ void GameRuntime::Stop() {
     projectiles_.Clear();
     tweens_.Clear();
     sceneParticles_.Reset();
+    trails_.Clear();
     lagComp_.Clear();
     signalHandlers_.clear();
     pendingScene_.clear();
@@ -1194,9 +1201,8 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera,
                                postSsaoIntensity_, postVolumetricIntensity_,
                                postSsrIntensity_},
         world_, scriptCtx_, hosts_.lua.get(), hosts_.js.get(), hiddenEntities_,
-        entityHighlights_, hud_, sceneTree_, animations_, projectiles_, sceneParticles_,
-        scriptCanvas_,
-        uiScale_, uiOffset_);
+        entityHighlights_, hud_, sceneTree_, animations_, projectiles_, sceneParticles_, trails_,
+        scriptCanvas_, uiScale_, uiOffset_);
 }
 
 void GameRuntime::DrawUI(gfx::Renderer& renderer) {
@@ -1309,6 +1315,7 @@ void GameRuntime::Tick(float dt) {
     if (hosts_.lua && hosts_.lua->DebuggerPaused()) return;
 
     sceneParticles_.Update(dt); // world-space VFX particles (script EmitParticles)
+    trails_.Update(dt);         // ribbon trails (skill/projectile VFX)
 
     // G7-3: advance the input map's timing clock before scripts query actions,
     // so double-tap / long-press edges are fresh this frame.

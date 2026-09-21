@@ -41,6 +41,7 @@ class AssetManager;
 namespace neon::gfx {
 struct Camera;
 class Renderer;
+class TrailSystem;
 }
 namespace neon::script {
 struct ScriptContext;
@@ -108,7 +109,7 @@ public:
               const std::map<uint64_t, script::EntityHighlight>& entityHighlights,
               HudSystem& hud, SceneTreeSystem& sceneTree, AnimationSystem& anims,
               ProjectileSystem& projectiles, SceneParticleSystem& particles,
-              ScriptCanvas& canvas, float& uiScale, math::Vec2& uiOffset);
+              gfx::TrailSystem& trails, ScriptCanvas& canvas, float& uiScale, math::Vec2& uiOffset);
 
     // 原 GameRuntime::MeshForEntity（test/debug 观测）：实体已解析 draw item 在
     // 给定相机距离下的 LOD 网格。实体无 draw item / 未解析 / 失败时返回无效网格。

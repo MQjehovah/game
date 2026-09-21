@@ -18,6 +18,7 @@
 #include "neon/gfx/font.hpp"
 #include "neon/gfx/material.hpp"
 #include "neon/gfx/mesh.hpp"
+#include "neon/gfx/trail.hpp"
 #include "neon/math/bvh.hpp"
 #include "neon/nav/nav_grid.hpp"
 #include "neon/plugin/runtime_plugin.hpp"
@@ -536,6 +537,7 @@ void ResolveEnvironmentResources();
     // projectiles + fireball mesh; GameRuntime forwards SpawnProjectile and
     // ticks/draws it every frame.
     ProjectileSystem projectiles_;
+    gfx::TrailSystem trails_; // scriptable ribbon trails (skill/projectile VFX)
     // Draw subsystem (Task 16): the render orchestration split out of
     // GameRuntime. Owns the draw list (draws_/drawKeys_/drawBatches_/batchModels_/
     // drawBvh_/bvhVisible_/drawOrder_) + the vegetation cache (vegCache_) and the
