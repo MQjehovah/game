@@ -91,6 +91,11 @@ void ScriptCanvas::Flush(gfx::Renderer& renderer, const gfx::Font& font2d) {
                 renderer.DrawTriangle2D({c.x, c.y}, {c.x2, c.y2}, {c.w, c.h},
                                         {c.r, c.g, c.b, c.a});
                 break;
+            case script::Draw2DCmd::Kind::TriangleGradient:
+                renderer.DrawTriangle2DColored({c.x, c.y}, {c.x2, c.y2}, {c.w, c.h},
+                                               {c.r, c.g, c.b, c.a}, {c.r2, c.g2, c.b2, c.a2},
+                                               {c.r3, c.g3, c.b3, c.a3});
+                break;
         }
     }
 }

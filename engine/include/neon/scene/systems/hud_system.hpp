@@ -28,6 +28,13 @@ public:
     void SetEntityPlate(ecs::Entity e, const std::string& name, float hpFrac);
     bool WorldToScreen(const math::Vec3& w, float& x, float& y) const;
     bool ScreenToWorld(const math::Vec2& s, float& x, float& y) const;
+    // Ground-plane pick: screen pixels (design space) -> the world point where
+    // the view ray meets y = 0. Perspective cameras unproject the ray from the
+    // live camera snapshot; ortho cameras map to the world XY plane exactly like
+    // ScreenToWorld (so 2D games read .x/.y and 3D games read .x/.z). Returns
+    // false before the first render, when no camera was captured, or when the
+    // ground plane is behind/parallel to the ray.
+    bool GroundPick(const math::Vec2& screen, math::Vec3& out) const;
     float DesignWidth() const;
     float DesignHeight() const;
     // 每帧由 Draw 更新：把 world 投影成屏幕锚点（供脚本 ScreenAnchors() 读）。

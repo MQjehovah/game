@@ -44,6 +44,10 @@ public:
     // Filled triangle in design units (same immediate-mode 2D buffer as quads).
     void DrawTriangle2D(const math::Vec2& a, const math::Vec2& b, const math::Vec2& c,
                         const Color& color);
+    // Filled triangle with per-vertex colors (Gouraud). Used by soft overlays
+    // such as the fog-of-war mask, where per-vertex alpha fades a cell edge.
+    void DrawTriangle2DColored(const math::Vec2& a, const math::Vec2& b, const math::Vec2& c,
+                               const Color& ca, const Color& cb, const Color& cc);
     void DrawText(const Font& font, const std::string& text, const math::Vec2& pos, float size,
                   const Color& color, bool centerX = false, bool centerY = false);
     // Flushes the batched 2D overlay now.

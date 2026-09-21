@@ -697,6 +697,28 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     scriptCtx_.worldFromScreen = [this](const math::Vec2& d, float& ox, float& oy) {
         return hud_.ScreenToWorld(d, ox, oy);
     };
+    scriptCtx_.groundPick = [this](const math::Vec2& d, math::Vec3& out) {
+        return hud_.GroundPick(d, out);
+    };
+    scriptCtx_.fogSetup = [this](int cols, int rows, float cell, float minX, float minZ,
+                                 float seenAlpha, float unseenAlpha, float r, float g, float b) {
+        fog_.Setup(cols, rows, cell, minX, minZ, seenAlpha, unseenAlpha, {r, g, b});
+    };
+    scriptCtx_.fogBegin = [this]() { fog_.BeginFrame(); };
+    scriptCtx_.fogAddSource = [this](float x, float z, float radius) {
+        fog_.AddSource(x, z, radius, navGridValid_ ? &navGrid_ : nullptr);
+    };
+    scriptCtx_.fogVisibleAt = [this](float x, float z) { return fog_.VisibleAt(x, z); };
+    scriptCtx_.fogDraw = [this]() -> int {
+        if (!scriptCtx_.draw2d) return 0;
+        const float vpW = hud_.DesignWidth();
+        const float vpH = hud_.DesignHeight();
+        return fog_.Draw(*scriptCtx_.draw2d,
+                         [this](const math::Vec3& w, float& sx, float& sy) {
+                             return hud_.WorldToScreen(w, sx, sy);
+                         },
+                         vpW, vpH);
+    };
     scriptCtx_.uiViewportSize = [this]() {
         return math::Vec2{hud_.DesignWidth(), hud_.DesignHeight()};
     };

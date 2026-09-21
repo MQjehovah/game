@@ -151,6 +151,7 @@ add_library(neon_scene STATIC
   engine/src/scene/data_table.cpp
   engine/src/scene/scene_manager.cpp
   engine/src/scene/game_manifest.cpp
+  engine/src/scene/fog_of_war.cpp
   engine/src/scene/game_runtime.cpp
   engine/src/scene/game_runtime_combat.cpp
   engine/src/scene/game_runtime_content.cpp
@@ -750,6 +751,7 @@ add_executable(neon_tests tests/test_main.cpp tests/test_serialize.cpp tests/tes
   tests/test_volumetric.cpp
   tests/test_ssr.cpp
   tests/test_fog.cpp
+tests/test_fog_of_war.cpp
   tests/test_pvz_project.cpp
   tests/test_profiler.cpp
   tests/test_task_graph.cpp

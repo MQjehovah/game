@@ -59,7 +59,18 @@ struct EntityLess {
 // data-driven 2D games (e.g. the editor-authored PvZ project) draw without
 // any C++ gameplay code.
 struct Draw2DCmd {
-    enum class Kind : uint8_t { Rect, RectOutline, Text, Line, Circle, Triangle };
+    enum class Kind : uint8_t {
+        Rect,
+        RectOutline,
+        Text,
+        Line,
+        Circle,
+        Triangle,
+        // Filled triangle with one color per vertex (Gouraud): vertex 1 =
+        // (x,y)/(r,g,b,a), vertex 2 = (x2,y2)/(r2,g2,b2,a2), vertex 3 =
+        // (w,h)/(r3,g3,b3,a3). Used for soft gradients (fog of war).
+        TriangleGradient
+    };
     Kind kind = Kind::Rect;
     float x = 0.0f;
     float y = 0.0f;
@@ -68,6 +79,10 @@ struct Draw2DCmd {
     float x2 = 0.0f; // Line end point / Circle radius
     float y2 = 0.0f;
     float r = 1.0f, g = 1.0f, b = 1.0f, a = 1.0f;
+    // Per-vertex colors for TriangleGradient (vertex 2 follows x2/y2, vertex 3
+    // follows w/h). Ignored by every other kind.
+    float r2 = 1.0f, g2 = 1.0f, b2 = 1.0f, a2 = 1.0f;
+    float r3 = 1.0f, g3 = 1.0f, b3 = 1.0f, a3 = 1.0f;
     float thickness = 1.0f;
     float size = 16.0f;
     bool centerX = false;
@@ -296,6 +311,10 @@ struct ScriptContext {
     // Inverse (design point -> world XY) for the ortho 2D camera; null /
     // false -> ScreenToWorld returns nil (perspective camera, first frame).
     std::function<bool(const math::Vec2&, float&, float&)> worldFromScreen;
+    // Ground-plane pick: design point -> world point on y = 0 (out.z = 0 for a
+    // perspective camera; out.y = 0 for an ortho camera). Used by RTS/MOBA
+    // scripts for click-to-move and skill aiming. Null -> PickGround is nil.
+    std::function<bool(const math::Vec2&, math::Vec3&)> groundPick;
     // Live UI viewport size in design units (constant-height mapping:
     // height 720, width follows the viewport aspect).
     std::function<math::Vec2()> uiViewportSize;
@@ -315,6 +334,23 @@ struct ScriptContext {
     std::function<script::Value()> entityPlates;
     // Active floating texts: {world={x,y,z}, text, crit, age, life}.
     std::function<script::Value()> floatTexts;
+
+    // --- Fog of war (engine-owned visibility mask) -------------------------
+    // The grid, line-of-sight test and soft mask rendering live in the engine
+    // (scene::FogOfWar); scripts only supply the observer sources each frame.
+    // Null hooks make every Fog* binding a safe no-op.
+    std::function<void(int cols, int rows, float cell, float minX, float minZ, float seenAlpha,
+                       float unseenAlpha, float r, float g, float b)>
+        fogSetup;
+    // Clears this frame's "currently visible" set (call once per tick).
+    std::function<void()> fogBegin;
+    // Marks every cell within `radius` of (x, z) visible + explored, occluded
+    // by the scene nav grid's line of sight.
+    std::function<void(float x, float z, float radius)> fogAddSource;
+    // True when (x, z) is in a currently-visible cell.
+    std::function<bool(float x, float z)> fogVisibleAt;
+    // Emits the soft fog mask into the on_render 2D canvas; returns triangles.
+    std::function<int()> fogDraw;
 };
 
 // Registers Spawn/Despawn/GetPosition/SetPosition/GetVar/SetVar/Raycast/

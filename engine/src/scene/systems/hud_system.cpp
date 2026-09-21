@@ -5,6 +5,7 @@
 // instead of by GameRuntime. Pure code movement, no semantic change.
 #include "neon/scene/systems/hud_system.hpp"
 
+#include <cmath>
 #include <cstdint>
 #include <utility>
 
@@ -93,6 +94,45 @@ float HudSystem::DesignWidth() const {
 
 float HudSystem::DesignHeight() const {
     return lastVpH_;
+}
+
+bool HudSystem::GroundPick(const math::Vec2& screen, math::Vec3& out) const {
+    if (!lastViewProjValid_ || !lastCamValid_) return false;
+    if (lastCam_.ortho) {
+        float wx = 0.0f, wy = 0.0f;
+        if (!ScreenToWorld(screen, wx, wy)) return false;
+        out = {wx, wy, 0.0f};
+        return true;
+    }
+    // Screen pixel -> normalized device coords (top-left origin, y down).
+    const float vpW = lastVpW_ > 0.5f ? lastVpW_ : 1280.0f;
+    const float vpH = lastVpH_ > 0.5f ? lastVpH_ : 720.0f;
+    const float nx = (screen.x / vpW) * 2.0f - 1.0f;
+    const float ny = 1.0f - (screen.y / vpH) * 2.0f;
+    // Build the view ray from the captured camera basis (independent of near/far
+    // plane, so a wide pitch or a shallow FOV both work).
+    math::Vec3 f = lastCam_.target - lastCam_.position;
+    const float fl = f.Length();
+    if (fl < 1e-5f) return false;
+    f = f * (1.0f / fl);
+    math::Vec3 up = lastCam_.up;
+    math::Vec3 s = math::Cross(f, up);
+    const float sl = s.Length();
+    if (sl < 1e-5f) return false;
+    s = s * (1.0f / sl);
+    const math::Vec3 u = math::Cross(s, f);
+    const float aspect = lastAspect_ > 0.01f ? lastAspect_ : (vpW / vpH);
+    const float tanY = std::tan(lastCam_.fovY * 0.5f);
+    const float tanX = tanY * aspect;
+    math::Vec3 dir = f + s * (nx * tanX) + u * (ny * tanY);
+    const float dl = dir.Length();
+    if (dl < 1e-5f) return false;
+    dir = dir * (1.0f / dl);
+    if (std::fabs(dir.y) < 1e-6f) return false;   // parallel to the ground
+    const float t = -lastCam_.position.y / dir.y; // intersect the y = 0 plane
+    if (t <= 0.0f) return false;                  // ground is behind the camera
+    out = {lastCam_.position.x + dir.x * t, 0.0f, lastCam_.position.z + dir.z * t};
+    return true;
 }
 
 // M1 HUD anchors: project each entity's world position into design units for

@@ -30,6 +30,7 @@
 #include "neon/scene/systems/bt_runtime.hpp"
 #include "neon/scene/systems/draw_system.hpp"
 #include "neon/scene/systems/hud_system.hpp"
+#include "neon/scene/fog_of_war.hpp"
 #include "neon/scene/systems/lagcomp_system.hpp"
 #include "neon/scene/systems/physics_bridge.hpp"
 #include "neon/scene/systems/plugin_system.hpp"
@@ -513,6 +514,10 @@ private:
     // SpawnFloatText/SetEntityPlate/WorldToScreen etc. and refreshes it from
     // Draw each frame.
     HudSystem hud_;
+    // Engine-owned fog-of-war mask: the script feeds observer sources each tick,
+    // this runs the nav-grid line-of-sight test and renders the soft mask into
+    // the on_render canvas (see script FogSetup/FogAddSource/FogDraw).
+    FogOfWar fog_;
     // G1-3 world-transform cache (EntityKey -> world matrix), rebuilt by
     // RebuildWorldTransforms() and consumed by CachedLocalToWorld / Draw.
     // Scene-tree subsystem (SceneParentLink hierarchy + world-transform cache;

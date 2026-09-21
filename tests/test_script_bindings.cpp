@@ -601,3 +601,89 @@ TEST(ScriptBindingsSignals) {
     CHECK_EQ(handlers.size(), 1u);
     CHECK_EQ(handlers[0].first, std::string("wave_started"));
 }
+
+// Engine push-downs for MOBA/RTS scripts: PickGround + the perspective-correct
+// ground drawing bindings + the fog-of-war bindings all dispatch to their
+// ScriptContext hooks.
+TEST(ScriptBindingsPickGroundDispatches) {
+    auto host = script::CreateLuaHost();
+    script::ScriptContext ctx;
+    ctx.groundPick = [](const math::Vec2& d, math::Vec3& out) {
+        out = {d.x * 2.0f, 0.0f, d.y * 3.0f};
+        return true;
+    };
+    CHECK(host->Init());
+    script::RegisterEngineBindings(*host, ctx);
+    CHECK(RunScript(*host, "local p = PickGround(5, 7); GX = p.x; GZ = p.z"));
+    const auto gx = host->GetGlobal("GX");
+    const auto gz = host->GetGlobal("GZ");
+    CHECK(gx.Ok() && gx.Value().type == script::Value::Type::Number);
+    CHECK_NEAR(gx.Value().number, 10.0, 1e-6);
+    CHECK(gz.Ok() && gz.Value().type == script::Value::Type::Number);
+    CHECK_NEAR(gz.Value().number, 21.0, 1e-6);
+    host->Shutdown();
+}
+
+TEST(ScriptBindingsGroundDrawBindings) {
+    auto host = script::CreateLuaHost();
+    script::ScriptContext ctx;
+    std::vector<script::Draw2DCmd> cmds;
+    ctx.draw2d = &cmds;
+    ctx.worldToScreen = [](const math::Vec3& w, float& sx, float& sy) {
+        sx = 640.0f + w.x;
+        sy = 360.0f + w.z;
+        return true;
+    };
+    CHECK(host->Init());
+    script::RegisterEngineBindings(*host, ctx);
+    // 12-segment ring + 8-segment disc + 4-segment line + one gradient triangle.
+    CHECK(RunScript(*host, R"(
+      DrawGroundRing(0, 0, 5, 2, 1, 0, 0, 1, 12)
+      DrawGroundDisc(0, 0, 3, 1, 1, 1, 0.5, 8)
+      DrawGroundLine(0, 0, 5, 5, 2, 0, 1, 0, 1, 4)
+      DrawTriGradient(0,0, 1,0, 0,1, 1,0,0,1, 0,1,0,1, 0,0,1,1)
+    )"));
+    CHECK_EQ(cmds.size(), 25u);
+    CHECK_EQ(static_cast<int>(cmds[0].kind),
+             static_cast<int>(script::Draw2DCmd::Kind::Line));
+    CHECK_EQ(static_cast<int>(cmds.back().kind),
+             static_cast<int>(script::Draw2DCmd::Kind::TriangleGradient));
+    host->Shutdown();
+}
+
+TEST(ScriptBindingsFogDispatches) {
+    auto host = script::CreateLuaHost();
+    script::ScriptContext ctx;
+    int setupCols = 0;
+    bool began = false;
+    float srcX = 0.0f, srcZ = 0.0f, srcR = 0.0f;
+    int drawCalls = 0;
+    ctx.fogSetup = [&](int cols, int rows, float cell, float minX, float minZ, float, float,
+                       float, float, float) { setupCols = cols; };
+    ctx.fogBegin = [&]() { began = true; };
+    ctx.fogAddSource = [&](float x, float z, float r) { srcX = x; srcZ = z; srcR = r; };
+    ctx.fogVisibleAt = [](float, float) { return false; };
+    ctx.fogDraw = [&]() -> int { ++drawCalls; return 7; };
+    CHECK(host->Init());
+    script::RegisterEngineBindings(*host, ctx);
+    CHECK(RunScript(*host, R"(
+      FogSetup(8, -96, -96, 25, 25, 0.5, 0.96, 0.02, 0.02, 0.05)
+      FogBegin()
+      FogAddSource(1, 2, 3)
+      FOGV = FogVisibleAt(0, 0)
+      FOGT = FogDraw()
+    )"));
+    CHECK_EQ(setupCols, 25);
+    CHECK(began);
+    CHECK_NEAR(srcX, 1.0, 1e-6);
+    CHECK_NEAR(srcZ, 2.0, 1e-6);
+    CHECK_NEAR(srcR, 3.0, 1e-6);
+    CHECK_EQ(drawCalls, 1);
+    const auto fv = host->GetGlobal("FOGV");
+    CHECK(fv.Ok() && fv.Value().type == script::Value::Type::Bool && !fv.Value().boolean);
+    const auto ft = host->GetGlobal("FOGT");
+    CHECK(ft.Ok() && ft.Value().type == script::Value::Type::Number);
+    CHECK_NEAR(ft.Value().number, 7.0, 1e-6);
+    host->Shutdown();
+}
+

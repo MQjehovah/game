@@ -31,7 +31,6 @@ local BRUSHES = {
 
 -- 相机视角（俯角 pitch，Riot Rift 约 55°；位置由脚本每帧驱动 Main Camera 实体，保持鼠标可见）
 local CAM = { yaw = math.pi * 0.75, pitch = 0.98, dist = 17, minDist = 11, maxDist = 28 }
-local CAM_FOV = 52
 local VW, VH = 1280, 720
 local FACE_OFF = 0
 
@@ -193,28 +192,12 @@ local function applyCamera()
     SetLook(camEnt, sy * cp, -sp, cy * cp)
 end
 
--- 屏幕像素 -> 地面 y=0 的世界点（相机由脚本固定，直接解析求交）。
+-- 屏幕像素 -> 地面 y=0 的世界点。改用引擎 PickGround（相机正确：任意视角/
+-- 俯角/FOV 都用同一套反投影射线，不再由脚本假定相机固定）。返回 {x,y,z}/nil，
+-- 调用方只用 .x/.z。
 local function groundPick(sx, sy)
-    local vp = GetViewportSize()
-    local vw = (vp and vp.w) or VW
-    local vh = (vp and vp.h) or VH
-    local nx = (sx / vw) * 2 - 1
-    local ny = 1 - (sy / vh) * 2
-    local tanY = math.tan(math.rad(CAM_FOV * 0.5))
-    local tanX = tanY * (vw / vh)
-    local sp, cp = math.sin(CAM.pitch), math.cos(CAM.pitch)
-    local dx = -nx * tanX
-    local dy = -sp + cp * ny * tanY
-    local dz = cp + sp * ny * tanY
-    -- Rotate the camera ray by yaw so picking matches the yawed camera.
-    local cyaw, syaw = math.cos(CAM.yaw), math.sin(CAM.yaw)
-    local rdx = cyaw * dx + syaw * dz
-    local rdz = -syaw * dx + cyaw * dz
-    dx, dz = rdx, rdz
-    local cx, cy, cz = camPos()
-    if dy >= -1e-4 then return nil end
-    local t = -cy / dy
-    return { x = cx + dx * t, z = cz + dz * t }
+    if type(PickGround) ~= "function" then return nil end
+    return PickGround(sx, sy)
 end
 
 -- ==========================================================================
@@ -2138,50 +2121,19 @@ local function updateCameraFollow(dt)
     SetVar("cameraFocus", { x = camFocusX, y = 0, z = camFocusZ })
 end
 
--- 战争迷雾：粗网格 + 导航网格视线遮挡。fogSeen=探索过，fogVis=当前可见。
-local FOG_CELL = 8
-local FOG_MIN = -96
-local FOG_COLS = math.floor((96 - FOG_MIN) / FOG_CELL) + 1
-local fogSeen, fogVis = {}, {}
-for i = 1, FOG_COLS * FOG_COLS do fogSeen[i] = 0; fogVis[i] = 0 end
+-- 战争迷雾：可见性网格 / 视线遮挡 / 柔化遮罩全部下沉到引擎（scene::FogOfWar）：
+--   FogSetup(格宽, minX, minZ, 列, 行, 已探索透明度, 未探索透明度, r,g,b)
+--   FogBegin()     每帧清空"当前可见"（保留已探索记忆）
+--   FogAddSource(x,z,r)  按导航网格逐格做视线遮挡，标记可见 + 已探索
+--   FogVisibleAt(x,z)    查询某点当前是否可见（用于隐藏敌方单位）
+--   FogDraw()            在 on_render 输出按顶点 alpha 渐变的柔化遮罩（不再是硬边黑方块）
+-- 游戏规则（谁能给视野、草丛隐藏）仍留在这里。
+local FOG_CELL, FOG_MIN, FOG_COLS = 8, -96, 25
 local VISION_R = { champion = 16, minion = 11, tower = 22, nexus = 22 }
 
-local function fogIndex(x, z)
-    local cx = math.floor((x - FOG_MIN) / FOG_CELL)
-    local cz = math.floor((z - FOG_MIN) / FOG_CELL)
-    if cx < 0 or cz < 0 or cx >= FOG_COLS or cz >= FOG_COLS then return nil end
-    return cz * FOG_COLS + cx + 1
-end
-
--- 视线：两点之间沿途采样是否都可行走（墙挡视野）
-local function lineClear(x0, z0, x1, z1)
-    if type(NavWalkable) ~= "function" then return true end -- 无导航网格时不遮挡视野
-    local d = dist(x0, z0, x1, z1)
-    local steps = math.max(1, math.floor(d / (FOG_CELL * 0.5)))
-    for i = 1, steps - 1 do
-        local t = i / steps
-        if not NavWalkable(x0 + (x1 - x0) * t, z0 + (z1 - z0) * t) then return false end
-    end
-    return true
-end
-
-local function addVision(x, z, r)
-    local c0 = math.floor((x - r - FOG_MIN) / FOG_CELL)
-    local c1 = math.floor((x + r - FOG_MIN) / FOG_CELL)
-    local r0 = math.floor((z - r - FOG_MIN) / FOG_CELL)
-    local r1 = math.floor((z + r - FOG_MIN) / FOG_CELL)
-    for cz = r0, r1 do
-        for cx = c0, c1 do
-            if cx >= 0 and cz >= 0 and cx < FOG_COLS and cz < FOG_COLS then
-                local idx = cz * FOG_COLS + cx + 1
-                local wx = FOG_MIN + (cx + 0.5) * FOG_CELL
-                local wz = FOG_MIN + (cz + 0.5) * FOG_CELL
-                if fogVis[idx] ~= 1 and dist(x, z, wx, wz) <= r and lineClear(x, z, wx, wz) then
-                    fogVis[idx] = 1
-                    fogSeen[idx] = 1
-                end
-            end
-        end
+local function setupFog()
+    if type(FogSetup) == "function" then
+        FogSetup(FOG_CELL, FOG_MIN, FOG_MIN, FOG_COLS, FOG_COLS, 0.5, 0.96, 0.02, 0.02, 0.05)
     end
 end
 
@@ -2193,19 +2145,20 @@ local function inBrush(x, z)
 end
 
 local function updateVision()
-    for i = 1, #fogVis do fogVis[i] = 0 end
+    if type(FogBegin) == "function" then FogBegin() end
     -- 蓝方（观察者）单位提供视野
     for i = 1, #units do
         local u = units[i]
         if not u.dead and u.team == BLUE then
-            addVision(u.x, u.z, VISION_R[u.kind] or 10)
+            if type(FogAddSource) == "function" then
+                FogAddSource(u.x, u.z, VISION_R[u.kind] or 10)
+            end
         end
     end
     for i = 1, #units do
         local u = units[i]
         if not u.dead and u.team == RED then
-            local idx = fogIndex(u.x, u.z)
-            local hidden = (idx == nil) or (fogVis[idx] ~= 1)
+            local hidden = (type(FogVisibleAt) == "function") and (not FogVisibleAt(u.x, u.z)) or false
             -- 草丛内的敌人：除非蓝方贴脸（4.5），否则隐藏
             if not hidden and inBrush(u.x, u.z) then
                 local near = false
@@ -2251,6 +2204,7 @@ function on_start(e)
     loadRoster()
     loadAbilityData()
     loadItems()
+    setupFog()
     camEnt = FindNamedEntity("Main Camera")
     SELECT = {}
     for name, _ in pairs(ROSTER) do SELECT[#SELECT + 1] = name end
@@ -2960,54 +2914,20 @@ local function drawLoading()
     DrawRect(vw * 0.5 - 159, vh - 25, 318 * prog, 6, 0.85, 0.7, 0.25, 1)
 end
 
--- 世界半径 -> 屏幕像素（用于把地面范围画成 HUD 圆）
-local function worldRadiusPx(wx, wz, r)
-    local a = WorldToScreen(wx, wz, 0.2)
-    local b = WorldToScreen(wx + r, wz, 0.2)
-    if a == nil or b == nil then return nil end
-    return dist(a.x, a.y, b.x, b.y)
-end
-
--- 地面圆环：把世界空间圆采样后投影到屏幕，画成透视正确的多边形。
--- 旧实现用 DrawCircle 画屏幕圆，半径随相机透视变化（越走越大/变椭圆），
--- 这里改在世界空间采样，任何相机角度都贴合地面。
+-- 地面技能指示器：世界空间圆/直线由引擎按当前相机投影成透视正确的多边形
+-- （DrawGroundDisc/DrawGroundRing/DrawGroundLine），不再在 Lua 里逐点投影 +
+-- 分配 table。填充圆仍补一圈描边，保留原来的观感。
 local function groundRing(cx, cz, r, cr, cg, cb, ca, filled, seg)
     if r == nil or r <= 0 then return end
+    if type(DrawGroundRing) ~= "function" then return end
     seg = seg or 40
-    local pts = {}
-    for k = 0, seg do
-        local a = k / seg * math.pi * 2
-        local s = WorldToScreen(cx + math.cos(a) * r, 0.06, cz + math.sin(a) * r)
-        if s == nil then return end
-        pts[k + 1] = s
-    end
-    if filled then
-        local c = WorldToScreen(cx, 0.06, cz)
-        if c ~= nil then
-            for k = 1, seg do
-                DrawTri(c.x, c.y, pts[k].x, pts[k].y, pts[k + 1].x, pts[k + 1].y,
-                        cr, cg, cb, ca)
-            end
-        end
-    end
-    for k = 1, seg do
-        local p, q = pts[k], pts[k + 1]
-        DrawLine(p.x, p.y, q.x, q.y, 2.0, cr, cg, cb, ca)
-    end
+    if filled then DrawGroundDisc(cx, cz, r, cr, cg, cb, ca, seg) end
+    DrawGroundRing(cx, cz, r, 2.0, cr, cg, cb, ca, seg)
 end
 
--- 地面直线（技能轨迹）：沿世界直线采样投影，透视正确（不会像屏幕线一样悬空）。
 local function groundLine(x0, z0, x1, z1, cr, cg, cb, ca, width)
-    width = width or 2.0
-    local steps = 16
-    local prev = nil
-    for k = 0, steps do
-        local t = k / steps
-        local s = WorldToScreen(x0 + (x1 - x0) * t, 0.06, z0 + (z1 - z0) * t)
-        if s == nil then return end
-        if prev ~= nil then DrawLine(prev.x, prev.y, s.x, s.y, width, cr, cg, cb, ca) end
-        prev = s
-    end
+    if type(DrawGroundLine) ~= "function" then return end
+    DrawGroundLine(x0, z0, x1, z1, width or 2.0, cr, cg, cb, ca, 16)
 end
 
 -- 待落地 AoE 的地面预警：脉冲圆环 + 内圈，比一次性粒子更易读。
@@ -3078,32 +2998,10 @@ local function drawSkillOverlay()
     end
 end
 
--- 战争迷雾遮罩：未探索=近黑，探索过但当前不可见=半透明
+-- 战争迷雾遮罩：由引擎按可见性网格输出柔化（顶点 alpha 渐变）遮罩，
+-- 未探索=近黑，探索过但当前不可见=半透明。见 setupFog/updateVision。
 local function drawFog()
-    local vp = GetViewportSize()
-    local vw = (vp and vp.w) or VW
-    local vh = (vp and vp.h) or VH
-    for cz = 0, FOG_COLS - 1 do
-        for cx = 0, FOG_COLS - 1 do
-            local idx = cz * FOG_COLS + cx + 1
-            if fogVis[idx] ~= 1 then
-                local wx = FOG_MIN + (cx + 0.5) * FOG_CELL
-                local wz = FOG_MIN + (cz + 0.5) * FOG_CELL
-                local s = WorldToScreen(wx, 0.0, wz)
-                if s ~= nil then
-                    local rp = worldRadiusPx(wx, wz, FOG_CELL)
-                    -- 远处/近地平线的格子投影会爆表；夹住，避免一块黑盖满全屏。
-                    if rp ~= nil then rp = math.min(rp, 40) end
-                    if rp ~= nil and s.x > -rp and s.x < vw + rp and s.y > -rp and
-                        s.y < vh + rp then
-                        local a = (fogSeen[idx] == 1) and 0.5 or 0.96
-                        DrawRect(s.x - rp * 1.15, s.y - rp * 1.15, rp * 2.3, rp * 2.3,
-                            0.02, 0.02, 0.05, a)
-                    end
-                end
-            end
-        end
-    end
+    if type(FogDraw) == "function" then FogDraw() end
 end
 
 -- 大厅界面（client）：创建/刷新/房号加入/等待/和 AI 开始/离开
@@ -3281,8 +3179,8 @@ function on_render()
         drawLoading()
         return
     end
-    -- 战争迷雾的逐格黑色遮罩观感很差（硬边黑方块），暂时不画；
-    -- 视野/草丛的“敌人隐藏”逻辑仍在（updateVision）。真正的柔和迷雾需要引擎遮罩纹理。
+    -- 战争迷雾：引擎按可见性网格输出柔化遮罩（先画，单位/指示器/HUD 叠在其上）。
+    drawFog()
     drawWorldPlates()
     updateTargetHighlight()
     drawGroundAoes()

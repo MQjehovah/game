@@ -1047,6 +1047,12 @@ void Renderer::DrawTriangle2D(const math::Vec2& a, const math::Vec2& b, const ma
     draw2d_.DrawTriangle2D(a, b, c, color);
 }
 
+void Renderer::DrawTriangle2DColored(const math::Vec2& a, const math::Vec2& b,
+                                     const math::Vec2& c, const Color& ca, const Color& cb,
+                                     const Color& cc) {
+    draw2d_.DrawTriangle2DColored(a, b, c, ca, cb, cc);
+}
+
 void Renderer::DrawText(const Font& font, const std::string& text, const math::Vec2& pos,
                         float size, const Color& color, bool centerX, bool centerY) {
     draw2d_.DrawText(font, text, pos, size, color, centerX, centerY);

@@ -523,6 +523,28 @@ Value NativeDrawTri(IScriptHost& host, void* user) {
     return Value::Nil();
 }
 
+// DrawTriGradient(ax,ay,bx,by,cx,cy, r1,g1,b1,a1, r2,g2,b2,a2, r3,g3,b3,a3):
+// filled triangle with one color per vertex (Gouraud). Soft gradient overlays.
+Value NativeDrawTriGradient(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->draw2d) return Value::Nil();
+    auto num = [&](int i, float def) {
+        return host.GetArg(i).type == Value::Type::Number
+                   ? static_cast<float>(host.GetArg(i).number)
+                   : def;
+    };
+    Draw2DCmd c;
+    c.kind = Draw2DCmd::Kind::TriangleGradient;
+    c.x = num(0, 0.0f);  c.y = num(1, 0.0f);
+    c.x2 = num(2, 0.0f); c.y2 = num(3, 0.0f);
+    c.w = num(4, 0.0f);  c.h = num(5, 0.0f);
+    c.r = num(6, 1.0f);  c.g = num(7, 1.0f);  c.b = num(8, 1.0f);  c.a = num(9, 1.0f);
+    c.r2 = num(10, 1.0f); c.g2 = num(11, 1.0f); c.b2 = num(12, 1.0f); c.a2 = num(13, 1.0f);
+    c.r3 = num(14, 1.0f); c.g3 = num(15, 1.0f); c.b3 = num(16, 1.0f); c.a3 = num(17, 1.0f);
+    ctx->draw2d->push_back(std::move(c));
+    return Value::Nil();
+}
+
 // SetSpriteFrames(entity, { "assets/.../0.png", "1.png", ... }, fps): switches
 // the entity's sprite to a sequence-frame animation. Empty list restores the
 // static texture. No-op without a setSpriteFrames hook (e.g. the demo host).
@@ -942,6 +964,208 @@ Value NativeScreenToWorld(IScriptHost& host, void* user) {
     t.table->fields.emplace_back("x", Value::Num(wx));
     t.table->fields.emplace_back("y", Value::Num(wy));
     return t;
+}
+
+// PickGround(x, y) -> {x=, y=, z=} | nil: casts the screen ray onto the ground
+// plane (y = 0) using the live camera. The generic, camera-correct replacement
+// for the hand-rolled analytic groundPick() in project MOBA/RTS scripts.
+Value NativePickGround(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->groundPick) return Value::Nil();
+    auto num = [&](int i, float def) {
+        return host.GetArg(i).type == Value::Type::Number
+                   ? static_cast<float>(host.GetArg(i).number)
+                   : def;
+    };
+    math::Vec2 d{num(0, 0.0f), num(1, 0.0f)};
+    const Value& a0 = host.GetArg(0);
+    if (a0.type == Value::Type::Table && a0.table) {
+        for (const auto& kv : a0.table->fields) {
+            if (kv.second.type != Value::Type::Number) continue;
+            if (kv.first == "x") d.x = static_cast<float>(kv.second.number);
+            else if (kv.first == "y") d.y = static_cast<float>(kv.second.number);
+        }
+    }
+    math::Vec3 w{};
+    if (!ctx->groundPick(d, w)) return Value::Nil();
+    Value t = Value::Tbl();
+    t.table->fields.emplace_back("x", Value::Num(w.x));
+    t.table->fields.emplace_back("y", Value::Num(w.y));
+    t.table->fields.emplace_back("z", Value::Num(w.z));
+    return t;
+}
+
+// Projects a ground point (y slightly above 0 to sit on the floor) into design
+// space. Shared by the ground-drawing bindings below.
+bool ProjectGroundPoint(ScriptContext* ctx, float x, float z, float& sx, float& sy) {
+    if (!ctx->worldToScreen) return false;
+    return ctx->worldToScreen(math::Vec3{x, 0.05f, z}, sx, sy);
+}
+
+// DrawGroundDisc(cx, cz, radius, r,g,b,a [, segments=32]): filled, perspective-
+// correct ground disc for AoE telegraphs / attack ranges.
+Value NativeDrawGroundDisc(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->draw2d || !ctx->worldToScreen) return Value::Nil();
+    auto num = [&](int i, float def) {
+        return host.GetArg(i).type == Value::Type::Number
+                   ? static_cast<float>(host.GetArg(i).number)
+                   : def;
+    };
+    const float cx = num(0, 0.0f), cz = num(1, 0.0f), radius = num(2, 1.0f);
+    const float r = num(3, 1.0f), g = num(4, 1.0f), b = num(5, 1.0f), a = num(6, 1.0f);
+    int seg = static_cast<int>(num(7, 32.0f));
+    if (seg < 3) seg = 3;
+    if (seg > 128) seg = 128;
+    float cxs = 0.0f, cys = 0.0f;
+    if (!ProjectGroundPoint(ctx, cx, cz, cxs, cys)) return Value::Nil();
+    float px = 0.0f, py = 0.0f;
+    bool havePrev = ProjectGroundPoint(ctx, cx + radius, cz, px, py);
+    for (int k = 1; k <= seg; ++k) {
+        const float ang = static_cast<float>(k) / seg * 6.28318530718f;
+        float qx = 0.0f, qy = 0.0f;
+        const bool ok = ProjectGroundPoint(ctx, cx + std::cos(ang) * radius,
+                                           cz + std::sin(ang) * radius, qx, qy);
+        if (havePrev && ok) {
+            Draw2DCmd c;
+            c.kind = Draw2DCmd::Kind::Triangle;
+            c.x = cxs;  c.y = cys;
+            c.x2 = px;  c.y2 = py;
+            c.w = qx;   c.h = qy;
+            c.r = r; c.g = g; c.b = b; c.a = a;
+            ctx->draw2d->push_back(std::move(c));
+        }
+        px = qx; py = qy;
+        havePrev = ok;
+    }
+    return Value::Nil();
+}
+
+// DrawGroundRing(cx, cz, radius, thickness, r,g,b,a [, segments=48]): ground
+// circle outline (perspective-correct).
+Value NativeDrawGroundRing(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->draw2d || !ctx->worldToScreen) return Value::Nil();
+    auto num = [&](int i, float def) {
+        return host.GetArg(i).type == Value::Type::Number
+                   ? static_cast<float>(host.GetArg(i).number)
+                   : def;
+    };
+    const float cx = num(0, 0.0f), cz = num(1, 0.0f), radius = num(2, 1.0f);
+    const float thickness = num(3, 2.0f);
+    const float r = num(4, 1.0f), g = num(5, 1.0f), b = num(6, 1.0f), a = num(7, 1.0f);
+    int seg = static_cast<int>(num(8, 48.0f));
+    if (seg < 3) seg = 3;
+    if (seg > 160) seg = 160;
+    float px = 0.0f, py = 0.0f;
+    bool havePrev = ProjectGroundPoint(ctx, cx + radius, cz, px, py);
+    for (int k = 1; k <= seg; ++k) {
+        const float ang = static_cast<float>(k) / seg * 6.28318530718f;
+        float qx = 0.0f, qy = 0.0f;
+        const bool ok = ProjectGroundPoint(ctx, cx + std::cos(ang) * radius,
+                                           cz + std::sin(ang) * radius, qx, qy);
+        if (havePrev && ok) {
+            Draw2DCmd c;
+            c.kind = Draw2DCmd::Kind::Line;
+            c.x = px;  c.y = py;
+            c.x2 = qx; c.y2 = qy;
+            c.thickness = thickness;
+            c.r = r; c.g = g; c.b = b; c.a = a;
+            ctx->draw2d->push_back(std::move(c));
+        }
+        px = qx; py = qy;
+        havePrev = ok;
+    }
+    return Value::Nil();
+}
+
+// DrawGroundLine(x0, z0, x1, z1, thickness, r,g,b,a [, segments=16]): ground
+// line/path indicator (perspective-correct, follows the floor).
+Value NativeDrawGroundLine(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->draw2d || !ctx->worldToScreen) return Value::Nil();
+    auto num = [&](int i, float def) {
+        return host.GetArg(i).type == Value::Type::Number
+                   ? static_cast<float>(host.GetArg(i).number)
+                   : def;
+    };
+    const float x0 = num(0, 0.0f), z0 = num(1, 0.0f), x1 = num(2, 0.0f), z1 = num(3, 0.0f);
+    const float thickness = num(4, 2.0f);
+    const float r = num(5, 1.0f), g = num(6, 1.0f), b = num(7, 1.0f), a = num(8, 1.0f);
+    int seg = static_cast<int>(num(9, 16.0f));
+    if (seg < 1) seg = 1;
+    if (seg > 64) seg = 64;
+    float px = 0.0f, py = 0.0f;
+    bool havePrev = ProjectGroundPoint(ctx, x0, z0, px, py);
+    for (int k = 1; k <= seg; ++k) {
+        const float t = static_cast<float>(k) / seg;
+        float qx = 0.0f, qy = 0.0f;
+        const bool ok = ProjectGroundPoint(ctx, x0 + (x1 - x0) * t, z0 + (z1 - z0) * t, qx, qy);
+        if (havePrev && ok) {
+            Draw2DCmd c;
+            c.kind = Draw2DCmd::Kind::Line;
+            c.x = px;  c.y = py;
+            c.x2 = qx; c.y2 = qy;
+            c.thickness = thickness;
+            c.r = r; c.g = g; c.b = b; c.a = a;
+            ctx->draw2d->push_back(std::move(c));
+        }
+        px = qx; py = qy;
+        havePrev = ok;
+    }
+    return Value::Nil();
+}
+
+// --- Fog of war bindings ---------------------------------------------------
+Value NativeFogSetup(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->fogSetup) return Value::Nil();
+    auto num = [&](int i, float def) {
+        return host.GetArg(i).type == Value::Type::Number
+                   ? static_cast<float>(host.GetArg(i).number)
+                   : def;
+    };
+    ctx->fogSetup(static_cast<int>(num(3, 0.0f)), static_cast<int>(num(4, 0.0f)),
+                  num(0, 8.0f), num(1, 0.0f), num(2, 0.0f), num(5, 0.5f), num(6, 0.95f),
+                  num(7, 0.02f), num(8, 0.02f), num(9, 0.05f));
+    return Value::Nil();
+}
+
+Value NativeFogBegin(IScriptHost& host, void* user) {
+    (void)host;
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (ctx && ctx->fogBegin) ctx->fogBegin();
+    return Value::Nil();
+}
+
+Value NativeFogAddSource(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->fogAddSource) return Value::Nil();
+    auto num = [&](int i, float def) {
+        return host.GetArg(i).type == Value::Type::Number
+                   ? static_cast<float>(host.GetArg(i).number)
+                   : def;
+    };
+    ctx->fogAddSource(num(0, 0.0f), num(1, 0.0f), num(2, 0.0f));
+    return Value::Nil();
+}
+
+Value NativeFogVisibleAt(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->fogVisibleAt) return Value::Bool(false);
+    auto num = [&](int i, float def) {
+        return host.GetArg(i).type == Value::Type::Number
+                   ? static_cast<float>(host.GetArg(i).number)
+                   : def;
+    };
+    return Value::Bool(ctx->fogVisibleAt(num(0, 0.0f), num(1, 0.0f)));
+}
+
+Value NativeFogDraw(IScriptHost& host, void* user) {
+    (void)host;
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->fogDraw) return Value::Num(0.0);
+    return Value::Num(static_cast<double>(ctx->fogDraw()));
 }
 
 // GetViewportSize() -> {w=, h=} in design units. Constant-height mapping:
@@ -1890,6 +2114,16 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("DrawLine", &NativeDrawLine, &ctx);
     host.Register("DrawCircle", &NativeDrawCircle, &ctx);
     host.Register("DrawTri", &NativeDrawTri, &ctx);
+    host.Register("DrawTriGradient", &NativeDrawTriGradient, &ctx);
+    host.Register("PickGround", &NativePickGround, &ctx);
+    host.Register("DrawGroundDisc", &NativeDrawGroundDisc, &ctx);
+    host.Register("DrawGroundRing", &NativeDrawGroundRing, &ctx);
+    host.Register("DrawGroundLine", &NativeDrawGroundLine, &ctx);
+    host.Register("FogSetup", &NativeFogSetup, &ctx);
+    host.Register("FogBegin", &NativeFogBegin, &ctx);
+    host.Register("FogAddSource", &NativeFogAddSource, &ctx);
+    host.Register("FogVisibleAt", &NativeFogVisibleAt, &ctx);
+    host.Register("FogDraw", &NativeFogDraw, &ctx);
     host.Register("EmitParticles", &NativeEmitParticles, &ctx);
     host.Register("SetSpriteFrames", &NativeSetSpriteFrames, &ctx);
     host.Register("SetSpriteSheet", &NativeSetSpriteSheet, &ctx);
