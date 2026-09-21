@@ -39,6 +39,7 @@
 #include "neon/scene/systems/scene_particle_system.hpp"
 #include "neon/scene/systems/scene_tree_system.hpp"
 #include "neon/scene/systems/script_canvas.hpp"
+#include "neon/scene/systems/spatial_index.hpp"
 #include "neon/scene/systems/script_runtime.hpp"
 #include "neon/scene/systems/status_system.hpp"
 #include "neon/scene/systems/tween_system.hpp"
@@ -334,6 +335,9 @@ public:
     physics::World& PhysicsWorld() { return *physics_.World(); }
     const physics::World& PhysicsWorld() const { return *physics_.World(); }
     double SimTime() const { return simTime_; }
+    // Monotonic per-tick cache stamp (microseconds of sim time). Used by the
+    // combat broadphase to rebuild at most once per tick.
+    uint64_t SimStamp() const { return static_cast<uint64_t>(simTime_ * 1000000.0); }
 
     // Observability for tests/debug: the per-entity blackboard value the
     // behavior tree of `ent` wrote under `key` (Nil when the entity has no
@@ -575,6 +579,11 @@ private:
     // Tick records into it (lagComp_.Record) and OverlapSphere/OverlapBox
     // rewind through it (lagComp_.Position).
     LagCompSystem lagComp_;
+    // Broadphase for OverlapSphere/OverlapBox: a dynamic BVH over live
+    // SceneHealth entities, rebuilt once per tick (cached) and invalidated by
+    // script transform/health writes. Turns the O(n) scan per query into a
+    // local traversal.
+    mutable CombatSpatialIndex spatial_;
     // Scene-level particle subsystem (world-space billboards + soft glow
     // sprite): GameRuntime forwards EmitParticles and ticks/draws it per frame.
     SceneParticleSystem sceneParticles_;

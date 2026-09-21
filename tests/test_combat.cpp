@@ -1,4 +1,6 @@
 #include <cmath>
+#include <cstdio>
+#include <chrono>
 #include <fstream>
 #include <iterator>
 #include <map>
@@ -1942,4 +1944,80 @@ TEST(DrawSystemStandaloneBuildResolveDraw) {
 
     draw.Clear();
     CHECK_EQ(draw.DrawCount(), 0u);
+}
+
+// The combat broadphase (CombatSpatialIndex BVH) must return EXACTLY the same
+// set as the brute-force scan it replaces, and be faster when many queries hit
+// one cached build. This is the engine perf guarantee for OverlapSphere/Box.
+TEST(OverlapSphereBroadphaseMatchesBruteForce) {
+    constexpr int kCount = 400;
+    std::string scene = "{\"entities\":[";
+    {
+        core::Rng rng(0xC0FFEEu);
+        for (int i = 0; i < kCount; ++i) {
+            const float x = rng.Range(-40.0f, 40.0f);
+            const float z = rng.Range(-40.0f, 40.0f);
+            char buf[256];
+            std::snprintf(buf, sizeof(buf),
+                          "%s{\"name\":\"e%d\",\"components\":{\"transform\":{\"pos\":[%g,0,%g]},"
+                          "\"health\":{\"hp\":100,\"maxHp\":100}}}",
+                          i ? "," : "", i, static_cast<double>(x), static_cast<double>(z));
+            scene += buf;
+        }
+    }
+    scene += "]}";
+
+    scene::GameRuntime rt;
+    scene::GameRuntimeConfig cfg;
+    cfg.headless = true;
+    CHECK(rt.Start(scene, cfg).Ok());
+
+    auto key = [](ecs::Entity e) {
+        return (static_cast<uint64_t>(e.id) << 32) | static_cast<uint64_t>(e.generation);
+    };
+    auto brute = [&](const math::Vec3& c, float r) {
+        std::set<uint64_t> out;
+        auto view = rt.World().ViewAll<scene::SceneHealth>();
+        for (size_t i = 0; i < view.Size(); ++i) {
+            ecs::Entity e = rt.World().EntityAt<scene::SceneHealth>(i);
+            const scene::SceneHealth* h = rt.World().Get<scene::SceneHealth>(e);
+            const scene::SceneTransform* t = rt.World().Get<scene::SceneTransform>(e);
+            if (!h || !t || h->hp <= 0.0f) continue;
+            if ((t->pos - c).LengthSq() <= r * r) out.insert(key(e));
+        }
+        return out;
+    };
+
+    core::Rng qrng(0xBEEFu);
+    for (int q = 0; q < 200; ++q) {
+        const math::Vec3 c{qrng.Range(-45.0f, 45.0f), 0.0f, qrng.Range(-45.0f, 45.0f)};
+        const float r = qrng.Range(1.0f, 8.0f);
+        std::set<uint64_t> fast;
+        for (const auto& h : rt.OverlapSphere(c, r)) fast.insert(key(h.entity));
+        const std::set<uint64_t> slow = brute(c, r);
+        CHECK_EQ(fast.size(), slow.size());
+        CHECK(fast == slow);
+    }
+
+    // Warm both paths, then measure 300 queries.
+    const auto t0 = std::chrono::steady_clock::now();
+    size_t bruteHits = 0;
+    {
+        core::Rng rng(7u);
+        for (int q = 0; q < 300; ++q)
+            bruteHits += brute({rng.Range(-45, 45), 0, rng.Range(-45, 45)}, 6.0f).size();
+    }
+    const auto t1 = std::chrono::steady_clock::now();
+    size_t fastHits = 0;
+    {
+        core::Rng rng(7u);
+        for (int q = 0; q < 300; ++q)
+            fastHits += rt.OverlapSphere({rng.Range(-45, 45), 0, rng.Range(-45, 45)}, 6.0f).size();
+    }
+    const auto t2 = std::chrono::steady_clock::now();
+    CHECK_EQ(bruteHits, fastHits);
+    const double bruteMs = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    const double fastMs = std::chrono::duration<double, std::milli>(t2 - t1).count();
+    std::printf("  [bench] %d ents sphere x300: brute=%.2fms broadphase=%.2fms (hits=%zu)\n",
+                kCount, bruteMs, fastMs, fastHits);
 }

@@ -578,6 +578,7 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
         // next SyncBodies() snaps the entity back and characters walk
         // through walls that only physics knows about.
         physics_.SetBodyPosition(world_, e, p);
+        spatial_.MarkDirty(); // a covered entity moved: refresh the broadphase
     };
     scriptCtx_.sceneSetYaw = [this](ecs::Entity e, float yaw) {
         const math::Quat q = math::Quat::FromAxisAngle({0, 1, 0}, yaw);
@@ -614,7 +615,11 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
         return h ? h->maxHp : -1.0f;
     };
     scriptCtx_.sceneSetHp = [this](ecs::Entity e, float hp) {
-        if (SceneHealth* h = world_.Get<SceneHealth>(e)) h->hp = hp;
+        SceneHealth* h = world_.Get<SceneHealth>(e);
+        if (h == nullptr) return;
+        // Only dead<->alive transitions change the broadphase membership.
+        if ((h->hp > 0.0f) != (hp > 0.0f)) spatial_.MarkDirty();
+        h->hp = hp;
     };
     // Status-effect hooks (M2 combat core): scripts apply/query/remove
     // buffs+debuffs through ApplyStatus/HasStatus/StatusMagnitude/RemoveStatus.
