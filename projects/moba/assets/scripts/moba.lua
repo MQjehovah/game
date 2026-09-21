@@ -67,6 +67,7 @@ local groundAoes = {}
 local neutralRespawns = {}                 -- 野怪刷新计时 { cfg, t }
 local inhibDown = { [BLUE] = false, [RED] = false } -- 兵营被破 -> 对方出超级兵
 local pings = {}                           -- G 信号标记 { x, z, team, t }
+local runPassive                            -- 被动脚本钩子（下方定义，前向声明）
 local waveTimer = FIRST_WAVE
 local waveN = 0
 local gameOver, winner = false, nil
@@ -654,6 +655,10 @@ local function killUnit(u, source)
         end
     end
 
+    if source ~= nil and source.isHero and source ~= u then
+        runPassive(source, "on_kill", u)
+    end
+
     if u.kind == "nexus" and not gameOver then
         gameOver = true
         winner = source and source.team or (3 - u.team)
@@ -664,6 +669,9 @@ end
 local function damage(target, amount, source, kind)
     if target == nil or target.dead or amount <= 0 then return end
     kind = kind or "physical"
+    -- 脱战计时（被动回血等用）
+    if target.isHero then target.lastCombat = elapsed end
+    if source ~= nil and source.isHero then source.lastCombat = elapsed end
     -- 抗性减伤（真实伤害除外）：护甲吃物理，魔抗吃魔法。def 100 => 减半。
     if kind ~= "true" then
         local def = (kind == "magic") and (target.mr or 0) or (target.armor or 0)
@@ -1021,6 +1029,7 @@ local function castAbility(h, idx, aimX, aimZ)
     h.cds[idx] = (ab.cd or 6) * (1 - 0.05 * (rank - 1))
     playSpell(h, idx)
     if h.isHero then sfx("cast", 0.08) end
+    runPassive(h, "on_cast", idx)
 
     local dx, dz = aimX - h.x, aimZ - h.z
     dx, dz = norm(dx, dz)
@@ -1168,6 +1177,82 @@ local function castAbility(h, idx, aimX, aimZ)
 end
 
 -- ==========================================================================
+-- 英雄被动脚本：每个英雄按名加载 assets/scripts/passives/<champ>.lua，
+-- 模块返回 { on_acquire/on_tick/on_hit/on_cast/on_kill }，钩子收到 ctx 与参数。
+-- ==========================================================================
+local PASSIVE_SCRIPTS = {
+    Garen = "assets/scripts/passives/garen.lua",
+    Ashe = "assets/scripts/passives/ashe.lua",
+    MasterYi = "assets/scripts/passives/masteryi.lua",
+    Vayne = "assets/scripts/passives/vayne.lua",
+    Teemo = "assets/scripts/passives/teemo.lua",
+    Lux = "assets/scripts/passives/lux.lua",
+}
+local passiveCache = {}
+local function loadPassive(key)
+    local cached = passiveCache[key]
+    if cached ~= nil then return cached end
+    passiveCache[key] = false -- 加载失败也缓存，避免每帧重试
+    local path = PASSIVE_SCRIPTS[key]
+    if path == nil then return false end
+    local text = ReadText(path)
+    if text == nil or text == "" then return false end
+    local chunk, err = load(text, "@" .. path)
+    if chunk == nil then print("passive compile error: " .. tostring(err)); return false end
+    local ok, mod = pcall(chunk)
+    if not ok or type(mod) ~= "table" then
+        print("passive run error [" .. key .. "]: " .. tostring(mod))
+        return false
+    end
+    passiveCache[key] = mod
+    return mod
+end
+
+-- 传给被动脚本的受限 API（只暴露玩法原语，不暴露 moba 内部表）。
+local function passiveCtx(u)
+    return {
+        owner = u,
+        now = function() return elapsed end,
+        outOfCombat = function(sec) return (elapsed - (u.lastCombat or -1e9)) >= (sec or 0) end,
+        damage = function(target, amount, kind) damage(target, amount, u, kind) end,
+        heal = function(amount)
+            u.hp = math.min(u.maxHp, u.hp + amount)
+            if u.ent ~= nil then SetHealth(u.ent, u.hp) end
+        end,
+        applyStatus = function(target, kind, dur, mag) applyStatusLua(target, kind, dur, mag, u) end,
+        float = function(text, crit, r, g, b) floatAt(u, text, crit, r, g, b) end,
+        emit = EmitParticles,
+        enemiesNear = function(radius)
+            local out = {}
+            for i = 1, #units do
+                local o = units[i]
+                if not o.dead and o.team ~= u.team and dist(o.x, o.z, u.x, u.z) <= radius then
+                    out[#out + 1] = o
+                end
+            end
+            return out
+        end,
+    }
+end
+
+local function passiveOf(u)
+    if u._pmod == nil then
+        u._pmod = loadPassive(u.key) or false
+        if u._pmod then
+            u._pc = passiveCtx(u)
+            if u._pmod.on_acquire then u._pmod.on_acquire(u._pc) end
+        end
+    end
+    return u._pmod or nil, u._pc
+end
+
+runPassive = function(u, hook, ...)
+    if u == nil or u.key == nil then return end
+    local mod, ctx = passiveOf(u)
+    if mod ~= nil and mod[hook] ~= nil then mod[hook](ctx, ...) end
+end
+
+-- ==========================================================================
 -- 更新
 -- ==========================================================================
 local function autoAttack(u, dt)
@@ -1199,9 +1284,11 @@ local function autoAttack(u, dt)
     elseif u.ranged or u.kind == "tower" then
         local dx, dz = norm(tgt.x - u.x, tgt.z - u.z)
         spawnProjectile(u, u.x, u.z, dx, dz, { speed = 30, dmg = u.ad * adMul(u), life = 2.5,
-            radius = 0.8, trail = false, target = tgt, dmgKind = "physical" })
+            radius = 0.8, trail = false, target = tgt, dmgKind = "physical", basic = true })
     else
-        damage(tgt, u.ad * adMul(u), u)
+        local amount = u.ad * adMul(u)
+        damage(tgt, amount, u)
+        runPassive(u, "on_hit", tgt, amount)
     end
 end
 
@@ -1219,9 +1306,11 @@ local function updateSwing(u, dt)
     if u.ranged then
         local dx, dz = norm(tgt.x - u.x, tgt.z - u.z)
         spawnProjectile(u, u.x, u.z, dx, dz, { speed = 30, dmg = u.ad * adMul(u), life = 2.5,
-            radius = 0.8, trail = false, target = tgt, dmgKind = "physical" })
+            radius = 0.8, trail = false, target = tgt, dmgKind = "physical", basic = true })
     else
-        damage(tgt, u.ad * adMul(u), u)
+        local amount = u.ad * adMul(u)
+        damage(tgt, amount, u)
+        runPassive(u, "on_hit", tgt, amount)
     end
 end
 
@@ -1803,6 +1892,7 @@ local function updateProjectiles(dt)
             if not o.dead and o.team ~= p.team and dist(o.x, o.z, p.x, p.z) <= p.radius + o.radius then
                 damage(o, p.dmg, p.owner, p.dmgKind)
                 if p.status then applyStatusLua(o, p.status, p.statusDur, p.statusMag, p.owner) end
+                if p.basic then runPassive(p.owner, "on_hit", o, p.dmg) end
                 hit = true
                 if not p.pierce then break end
             end
@@ -2395,6 +2485,7 @@ function on_update(e, dt)
         for k = 1, 4 do
             if (h.cds[k] or 0) > 0 then h.cds[k] = h.cds[k] - dt end
         end
+        if not h.dead then runPassive(h, "on_tick", dt) end
     end
     updatePlayer(dt)
     updateEconomy(dt)
