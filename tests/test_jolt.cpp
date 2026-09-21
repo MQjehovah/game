@@ -249,4 +249,27 @@ TEST(JoltOverlapQueriesAndSphereCast) {
     CHECK(std::fabs(hit.normal.y) > 0.5f);
 }
 
+TEST(JoltRotationRoundTrip) {
+    physics::JoltWorld world;
+    physics::World::BodyId b = world.AddBox(1, {0, 5, 0}, {1, 1, 1}, true);
+    const math::Quat q = math::Quat::FromAxisAngle({0, 1, 0}, 0.7f);
+    world.SetRotation(b, q);
+    const math::Quat got = world.GetRotation(b); // read before any Step
+    CHECK(std::fabs(got.y - q.y) < 1e-4);
+    CHECK(std::fabs(got.w - q.w) < 1e-4);
+}
+
+TEST(JoltContinuousCollisionStopsFastBody) {
+    // A fast, small dynamic sphere vs a thin static wall: discrete stepping
+    // tunnels through; LinearCast motion quality must stop it at the wall.
+    physics::JoltWorld world;
+    world.AddBox(200, {0, 2, 0}, {0.05f, 5, 5}, false); // thin wall at x=0
+    physics::RigidBodyDesc ball;
+    ball.continuous = true;
+    physics::World::BodyId b = world.AddSphere(100, {-5, 2, 0}, 0.2f, true, ball);
+    world.SetVelocity(b, {200, 0, 0});
+    for (int i = 0; i < 60; ++i) world.Step(1.0f / 60.0f, {0, 0, 0});
+    CHECK(world.GetPosition(b).x < 0.0f); // did not pass through the wall
+}
+
 #endif // NEON_ENABLE_JOLT

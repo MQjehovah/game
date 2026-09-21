@@ -298,6 +298,7 @@ World::BodyId JoltWorld::AddSphere(uint64_t owner, const math::Vec3& pos, float 
     settings.mFriction = desc.friction;
     settings.mLinearDamping = desc.linearDamping;
     settings.mGravityFactor = desc.gravityScale;
+    if (dynamic && desc.continuous) settings.mMotionQuality = JPH::EMotionQuality::LinearCast;
     const float volume = 4.0f / 3.0f * 3.14159265358979323846f * radius * radius * radius;
     if (dynamic && desc.mass > 0.0f) {
         settings.mOverrideMassProperties = JPH::EOverrideMassProperties::CalculateInertia;
@@ -335,6 +336,7 @@ World::BodyId JoltWorld::AddBox(uint64_t owner, const math::Vec3& center,
     settings.mFriction = desc.friction;
     settings.mLinearDamping = desc.linearDamping;
     settings.mGravityFactor = desc.gravityScale;
+    if (dynamic && desc.continuous) settings.mMotionQuality = JPH::EMotionQuality::LinearCast;
     const float volume = 8.0f * halfExtents.x * halfExtents.y * halfExtents.z;
     if (dynamic && desc.mass > 0.0f) {
         settings.mOverrideMassProperties = JPH::EOverrideMassProperties::CalculateInertia;
@@ -525,6 +527,32 @@ math::Vec3 JoltWorld::GetPosition(BodyId body) const {
     if (cit != impl_->characters.end()) return FromJolt(cit->second->GetPosition());
     const JPH::BodyID bid = impl_->Find(body);
     return bid == JPH::BodyID() ? math::Vec3{} : FromJolt(impl_->Bodies().GetPosition(bid));
+}
+
+void JoltWorld::SetRotation(BodyId body, const math::Quat& rot) {
+    if (!impl_) return;
+    const JPH::Quat q(rot.x, rot.y, rot.z, rot.w);
+    auto cit = impl_->characters.find(body.id);
+    if (cit != impl_->characters.end()) {
+        cit->second->SetRotation(q);
+        return;
+    }
+    const JPH::BodyID bid = impl_->Find(body);
+    if (bid != JPH::BodyID())
+        impl_->Bodies().SetRotation(bid, q, JPH::EActivation::Activate);
+}
+
+math::Quat JoltWorld::GetRotation(BodyId body) const {
+    if (!impl_) return math::Quat::Identity();
+    auto cit = impl_->characters.find(body.id);
+    if (cit != impl_->characters.end()) {
+        const JPH::Quat q = cit->second->GetRotation();
+        return {q.GetX(), q.GetY(), q.GetZ(), q.GetW()};
+    }
+    const JPH::BodyID bid = impl_->Find(body);
+    if (bid == JPH::BodyID()) return math::Quat::Identity();
+    const JPH::Quat q = impl_->Bodies().GetRotation(bid);
+    return {q.GetX(), q.GetY(), q.GetZ(), q.GetW()};
 }
 
 void JoltWorld::SetVelocity(BodyId body, const math::Vec3& vel) {

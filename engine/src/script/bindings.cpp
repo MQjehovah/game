@@ -1711,6 +1711,43 @@ Value NativePhysicsGetPosition(IScriptHost& host, void* user) {
     return id == 0 ? Value::Nil() : Vec3ToValue(ctx->physics->GetPosition({id}));
 }
 
+// {x=,y=,z=,w=} quaternion; missing components keep the identity defaults.
+math::Quat QuatFromValue(const Value& v) {
+    math::Quat q;
+    if (v.type != Value::Type::Table || !v.table) return q;
+    for (const auto& kv : v.table->fields) {
+        if (kv.second.type != Value::Type::Number) continue;
+        const float f = static_cast<float>(kv.second.number);
+        if (kv.first == "x") q.x = f;
+        else if (kv.first == "y") q.y = f;
+        else if (kv.first == "z") q.z = f;
+        else if (kv.first == "w") q.w = f;
+    }
+    return q;
+}
+
+Value NativePhysicsSetRotation(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->physics) return Value::Nil();
+    const uint32_t id = SafeU32FromNumber(NumberArg(host, 0, 0.0));
+    if (id != 0) ctx->physics->SetRotation({id}, QuatFromValue(host.GetArg(1)));
+    return Value::Nil();
+}
+
+Value NativePhysicsGetRotation(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->physics) return Value::Nil();
+    const uint32_t id = SafeU32FromNumber(NumberArg(host, 0, 0.0));
+    if (id == 0) return Value::Nil();
+    const math::Quat q = ctx->physics->GetRotation({id});
+    Value out = Value::Tbl();
+    out.table->fields.emplace_back("x", Value::Num(q.x));
+    out.table->fields.emplace_back("y", Value::Num(q.y));
+    out.table->fields.emplace_back("z", Value::Num(q.z));
+    out.table->fields.emplace_back("w", Value::Num(q.w));
+    return out;
+}
+
 Value NativePhysicsSetMass(IScriptHost& host, void* user) {
     auto* ctx = static_cast<ScriptContext*>(user);
     if (!ctx || !ctx->physics) return Value::Nil();
@@ -2187,6 +2224,8 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("PhysicsGetVelocity", &NativePhysicsGetVelocity, &ctx);
     host.Register("PhysicsSetPosition", &NativePhysicsSetPosition, &ctx);
     host.Register("PhysicsGetPosition", &NativePhysicsGetPosition, &ctx);
+    host.Register("PhysicsSetRotation", &NativePhysicsSetRotation, &ctx);
+    host.Register("PhysicsGetRotation", &NativePhysicsGetRotation, &ctx);
     host.Register("PhysicsSetMass", &NativePhysicsSetMass, &ctx);
     host.Register("PhysicsSetRestitution", &NativePhysicsSetRestitution, &ctx);
     host.Register("PhysicsSetFriction", &NativePhysicsSetFriction, &ctx);

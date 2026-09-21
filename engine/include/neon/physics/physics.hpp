@@ -3,6 +3,7 @@
 #include <utility>
 #include <vector>
 #include "neon/math/math.hpp"
+#include "neon/math/quat.hpp"
 #include "neon/math/vec3.hpp"
 
 namespace neon::physics {
@@ -20,6 +21,10 @@ struct RigidBodyDesc {
     float gravityScale = 1.0f;  // 0 disables gravity for this body
     uint32_t layer = 1;         // collision group id
     uint32_t mask = 0xFFFFFFFFu; // collision mask (which groups this body hits)
+    // Continuous collision detection (Jolt: LinearCast motion quality). Prevents
+    // fast, small dynamic bodies from tunnelling through thin geometry. Ignored
+    // by the deterministic custom world (which is linear-discrete anyway).
+    bool continuous = false;
 };
 
 // Lightweight deterministic rigid-body engine: dynamic spheres + AABBs against
@@ -68,6 +73,13 @@ public:
 
     virtual void SetPosition(BodyId body, const math::Vec3& pos);
     virtual math::Vec3 GetPosition(BodyId body) const;
+    // Orientation. The Jolt backend simulates rotation for dynamic bodies (this
+    // sets/reads the current rigid-body rotation). The deterministic custom
+    // world is linear only: it stores the assigned orientation for round-trips
+    // and rendering but does not integrate angular motion or use it for
+    // collision (boxes stay axis-aligned there).
+    virtual void SetRotation(BodyId body, const math::Quat& rot);
+    virtual math::Quat GetRotation(BodyId body) const;
     virtual void SetVelocity(BodyId body, const math::Vec3& vel);
     virtual math::Vec3 GetVelocity(BodyId body) const;
     virtual void SetMass(BodyId body, float mass);
@@ -146,6 +158,7 @@ private:
         uint64_t owner = 0;
         enum class Kind : uint8_t { Sphere, Box } kind = Kind::Sphere;
         math::Vec3 pos{};
+        math::Quat rotation{};
         float radius = 1.0f;
         math::Vec3 halfExtents{1, 1, 1};
         math::Vec3 velocity{};

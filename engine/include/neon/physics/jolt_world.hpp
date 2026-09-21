@@ -48,6 +48,8 @@ public:
 
     void SetPosition(BodyId body, const math::Vec3& pos) override;
     math::Vec3 GetPosition(BodyId body) const override;
+    void SetRotation(BodyId body, const math::Quat& rot) override;
+    math::Quat GetRotation(BodyId body) const override;
     void SetVelocity(BodyId body, const math::Vec3& vel) override;
     math::Vec3 GetVelocity(BodyId body) const override;
     void SetMass(BodyId body, float mass) override;

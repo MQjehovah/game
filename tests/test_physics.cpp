@@ -40,6 +40,19 @@ TEST(PhysicsTriggerReportsOverlapWithoutBlocking) {
     CHECK(world.Triggers().size() >= 1u); // still inside: reported every step
 }
 
+TEST(PhysicsRotationRoundTrip) {
+    physics::World world;
+    physics::World::BodyId b = world.AddBox(1, {0, 1, 0}, {1, 1, 1}, true);
+    CHECK(world.GetRotation(b).w == 1.0f); // identity by default
+    const math::Quat q = math::Quat::FromAxisAngle({0, 1, 0}, 1.0f);
+    world.SetRotation(b, q);
+    const math::Quat got = world.GetRotation(b);
+    CHECK_NEAR(got.x, q.x, 1e-5);
+    CHECK_NEAR(got.y, q.y, 1e-5);
+    CHECK_NEAR(got.z, q.z, 1e-5);
+    CHECK_NEAR(got.w, q.w, 1e-5);
+}
+
 TEST(PhysicsOverlapQueriesAndSphereCast) {
     physics::World world;
     world.AddBox(200, {{-2, 0, -2}, {2, 1, 2}}, false); // static floor box (top y=1)

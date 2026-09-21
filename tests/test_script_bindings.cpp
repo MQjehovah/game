@@ -267,6 +267,10 @@ assert(cast.owner == 200)
 assert(math.abs(cast.distance - 3.5) < 0.1, "cast distance")
 assert(cast.point.y > 1.4 and cast.point.y < 1.6)
 assert(cast.normal.y > 0.9)
+
+PhysicsSetRotation(box, {x=0, y=0.7071, z=0, w=0.7071})
+local rot = PhysicsGetRotation(box)
+assert(math.abs(rot.y - 0.7071) < 0.01 and math.abs(rot.w - 0.7071) < 0.01, "rotation round-trip")
 )";
     CHECK(RunScript(*b.host, src));
 }

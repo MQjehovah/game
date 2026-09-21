@@ -221,6 +221,15 @@ math::Vec3 World::GetPosition(BodyId body) const {
     return b ? b->pos : math::Vec3{};
 }
 
+void World::SetRotation(BodyId body, const math::Quat& rot) {
+    if (Body* b = Find(body)) b->rotation = rot.Normalized();
+}
+
+math::Quat World::GetRotation(BodyId body) const {
+    const Body* b = Find(body);
+    return b ? b->rotation : math::Quat::Identity();
+}
+
 void World::SetVelocity(BodyId body, const math::Vec3& vel) {
     if (Body* b = Find(body)) b->velocity = vel;
 }
