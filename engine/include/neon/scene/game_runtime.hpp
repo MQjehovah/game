@@ -440,8 +440,13 @@ private:
     // PrefabSystem (no-op when the base dir is empty or the prefabs dir is
     // absent). Scene entities can then reference prefabs by name, matching how
     // packed games ship them.
-    void LoadPrefabs();
-    void LoadLocales(); // <localesDir>/*.json string tables for Loc()
+void LoadPrefabs();
+void LoadLocales(); // <localesDir>/*.json string tables for Loc()
+// Resolves SceneEnvironment components that reference a reusable environment
+// resource (`environments/*.env.json`): loads each file and folds its values
+// over the component's inline fields (the resource wins). Runs once per scene
+// load; missing files fall back to the inline values.
+void ResolveEnvironmentResources();
     void RegisterAudioSources(); // G8-3: play SceneAudioSource components once
     std::string ReadScript(const std::string& path) const;
     std::string FullScriptPath(const std::string& path) const;

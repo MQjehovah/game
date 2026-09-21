@@ -23,6 +23,7 @@
 #include "neon/physics/jolt_world.hpp"
 #include "neon/plugin/backend.hpp"
 #include "neon/scene/scene_file.hpp"
+#include "neon/scene/environment.hpp"
 #include "neon/scene/data_table.hpp"
 #include "gameplay_lib.hpp"
 
@@ -337,6 +338,7 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
         ecs::Entity e = world_.Create();
         world_.Add<scene::SceneEnvironment>(e, sceneFile.environment);
     }
+    ResolveEnvironmentResources(); // fold environments/*.env.json over inline fields
     if (sceneFile.hasRenderStack) {
         ecs::Entity e = world_.Create();
         world_.Add<scene::RenderStack>(e, sceneFile.renderStack);

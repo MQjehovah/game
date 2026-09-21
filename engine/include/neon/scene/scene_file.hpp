@@ -36,6 +36,10 @@ struct SceneEnvironment {
     float fogNear = 60.0f;
     float fogFar = 220.0f;
     float exposure = -1.0f;
+    // Optional reusable environment resource (`environments/*.env.json`): when
+    // set, the runtime loads it and its values override the inline fields above,
+    // so one asset can drive many scenes (Godot-style Environment resource).
+    std::string resource;
 };
 
 // A single component of an entity: the component name plus its raw JSON data.

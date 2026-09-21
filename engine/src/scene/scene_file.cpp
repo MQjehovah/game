@@ -7,6 +7,7 @@
 #include "neon/assets/asset_manager.hpp"
 #include "neon/assets/mesh_format.hpp"
 #include "neon/core/log.hpp"
+#include "neon/scene/environment.hpp"
 #include "neon/scene/render_stack.hpp"
 
 namespace neon::scene {
@@ -260,33 +261,9 @@ core::Result<SceneFile> SceneFile::Parse(const std::string& jsonText) {
         if (!en->IsObject())
             return core::Result<SceneFile>::Err("scene: 'environment' must be a JSON object");
         out.hasEnvironment = true;
-        auto readColor = [&](const char* key, gfx::Color& c) {
-            const core::Json* j = en->Get(key);
-            if (!j || !j->IsArray()) return;
-            float v[4] = {c.r, c.g, c.b, c.a};
-            size_t n = 0;
-            for (const core::Json& x : j->Items())
-                if (n < 4) v[n++] = static_cast<float>(x.GetNumber());
-            c = {v[0], v[1], v[2], v[3]};
-        };
-        readColor("ambientColor", out.environment.ambientColor);
-        if (const core::Json* n = en->Get("ambientStrength"))
-            out.environment.ambientStrength = static_cast<float>(n->GetNumber());
-        if (const core::Json* s = en->Get("skyTexture"))
-            out.environment.skyTexture = s->GetString();
-        if (const core::Json* b = en->Get("useAtmosphere"))
-            out.environment.useAtmosphere = b->IsBool() && b->GetBool();
-        if (const core::Json* b = en->Get("skybox"))
-            out.environment.skybox = b->IsBool() && b->GetBool();
-        readColor("skyTop", out.environment.skyTop);
-        readColor("skyHorizon", out.environment.skyHorizon);
-        readColor("fogColor", out.environment.fogColor);
-        if (const core::Json* n = en->Get("fogNear"))
-            out.environment.fogNear = static_cast<float>(n->GetNumber());
-        if (const core::Json* n = en->Get("fogFar"))
-            out.environment.fogFar = static_cast<float>(n->GetNumber());
-        if (const core::Json* n = en->Get("exposure"))
-            out.environment.exposure = static_cast<float>(n->GetNumber());
+        std::string envErr;
+        if (!EnvironmentFromJson(*en, out.environment, &envErr))
+            return core::Result<SceneFile>::Err("scene: environment: " + envErr);
     }
     if (const core::Json* rs = root.Get("renderstack")) {
         if (!rs->IsObject())
@@ -340,25 +317,7 @@ core::Json SceneFile::ToJson() const {
     if (level.IsObject()) root.object_["level"] = level;
     if (hasEnvironment) {
         core::Json en = MakeObject();
-        auto mkColor = [](const gfx::Color& c) {
-            core::Json a = MakeArray();
-            a.array_ = {MakeNumber(c.r), MakeNumber(c.g), MakeNumber(c.b),
-                        MakeNumber(c.a)};
-            return a;
-        };
-        en.object_["ambientColor"] = mkColor(environment.ambientColor);
-        en.object_["ambientStrength"] = MakeNumber(environment.ambientStrength);
-        if (!environment.skyTexture.empty())
-            en.object_["skyTexture"] = MakeString(environment.skyTexture);
-        if (environment.useAtmosphere) en.object_["useAtmosphere"] = MakeBool(true);
-        if (environment.skybox) en.object_["skybox"] = MakeBool(true);
-        en.object_["skyTop"] = mkColor(environment.skyTop);
-        en.object_["skyHorizon"] = mkColor(environment.skyHorizon);
-        en.object_["fogColor"] = mkColor(environment.fogColor);
-        en.object_["fogNear"] = MakeNumber(environment.fogNear);
-        en.object_["fogFar"] = MakeNumber(environment.fogFar);
-        if (environment.exposure >= 0.0f)
-            en.object_["exposure"] = MakeNumber(environment.exposure);
+        EnvironmentToJson(environment, en);
         root.object_["environment"] = std::move(en);
     }
     if (hasRenderStack) root.object_["renderstack"] = renderStack.ToJson();
@@ -1326,40 +1285,13 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                     const core::Json&, std::string* err) {
                      if (!CheckComponentShape(
                              data,
-                             {"ambientColor", "ambientStrength", "skyTexture",
+                             {"resource", "ambientColor", "ambientStrength", "skyTexture",
                               "useAtmosphere", "skybox", "skyTop", "skyHorizon",
                               "fogColor", "fogNear", "fogFar", "exposure"},
                              "environment", err))
                          return false;
                      SceneEnvironment e;
-                     auto readColor = [&](const char* key, gfx::Color& out) {
-                         const core::Json* c = data.Get(key);
-                         if (!c || !c->IsArray()) return;
-                         float v[4] = {out.r, out.g, out.b, out.a};
-                         size_t n = 0;
-                         for (const core::Json& vv : c->Items())
-                             if (n < 4) v[n++] = static_cast<float>(vv.GetNumber());
-                         out = {v[0], v[1], v[2], v[3]};
-                     };
-                     if (const core::Json* c = data.Get("ambientColor"))
-                         readColor("ambientColor", e.ambientColor);
-                     if (const core::Json* n = data.Get("ambientStrength"))
-                         e.ambientStrength = static_cast<float>(n->GetNumber());
-                     if (const core::Json* s = data.Get("skyTexture"))
-                         e.skyTexture = s->GetString();
-                     if (const core::Json* b = data.Get("useAtmosphere"))
-                         e.useAtmosphere = b->IsBool() && b->GetBool();
-                     if (const core::Json* b = data.Get("skybox"))
-                         e.skybox = b->IsBool() && b->GetBool();
-                     readColor("skyTop", e.skyTop);
-                     readColor("skyHorizon", e.skyHorizon);
-                     readColor("fogColor", e.fogColor);
-                     if (const core::Json* n = data.Get("fogNear"))
-                         e.fogNear = static_cast<float>(n->GetNumber());
-                     if (const core::Json* n = data.Get("fogFar"))
-                         e.fogFar = static_cast<float>(n->GetNumber());
-                     if (const core::Json* n = data.Get("exposure"))
-                         e.exposure = static_cast<float>(n->GetNumber());
+                     if (!EnvironmentFromJson(data, e, err)) return false;
                      world.Add<SceneEnvironment>(ent, e);
                      return true;
                  });
@@ -1795,24 +1727,7 @@ static core::Json SerializeEntityComponents(ecs::World& world, ecs::Entity e) {
     }
     if (const SceneEnvironment* env = world.Get<SceneEnvironment>(e)) {
         core::Json en = MakeObject();
-        auto mkColor = [](const gfx::Color& c) {
-            core::Json a = MakeArray();
-            a.array_ = {MakeNumber(c.r), MakeNumber(c.g), MakeNumber(c.b),
-                        MakeNumber(c.a)};
-            return a;
-        };
-        en.object_["ambientColor"] = mkColor(env->ambientColor);
-        en.object_["ambientStrength"] = MakeNumber(env->ambientStrength);
-        if (!env->skyTexture.empty())
-            en.object_["skyTexture"] = MakeString(env->skyTexture);
-        if (env->useAtmosphere) en.object_["useAtmosphere"] = MakeBool(true);
-        if (env->skybox) en.object_["skybox"] = MakeBool(true);
-        en.object_["skyTop"] = mkColor(env->skyTop);
-        en.object_["skyHorizon"] = mkColor(env->skyHorizon);
-        en.object_["fogColor"] = mkColor(env->fogColor);
-        en.object_["fogNear"] = MakeNumber(env->fogNear);
-        en.object_["fogFar"] = MakeNumber(env->fogFar);
-        if (env->exposure >= 0.0f) en.object_["exposure"] = MakeNumber(env->exposure);
+        EnvironmentToJson(*env, en);
         comps.object_["environment"] = std::move(en);
     }
     if (const SceneSortOrder* so = world.Get<SceneSortOrder>(e)) {

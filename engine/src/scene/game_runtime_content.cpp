@@ -10,6 +10,7 @@
 #include "neon/assets/asset_path.hpp"
 #include "neon/assets/asset_variants.hpp"
 #include "neon/core/log.hpp"
+#include "neon/scene/environment.hpp"
 #include "neon/scene/scene_file.hpp"
 
 namespace neon::scene {
@@ -78,8 +79,41 @@ void GameRuntime::LoadLocales() {
     }
 }
 
-std::string GameRuntime::FullScriptPath(const std::string& path) const {
-    if (path.empty() || cfg_.scriptBaseDir.empty()) return path;
+// WorldEnvironment: fold a referenced `environments/*.env.json` resource over
+// each SceneEnvironment's inline fields (the resource wins). Runs once per scene
+// load; a missing/unparseable file leaves the inline values untouched.
+void GameRuntime::ResolveEnvironmentResources() {
+    int resolved = 0;
+    world_.ViewAll<scene::SceneEnvironment>().ForEach(
+        [&](ecs::Entity, scene::SceneEnvironment& env) {
+            if (env.resource.empty()) return;
+            const std::string text = ReadScript(FullScriptPath(env.resource));
+            if (text.empty()) {
+                NEON_LOG_CAT(core::LogCategory::Scene, core::LogLevel::Warn,
+                             "runtime: environment resource '%s' not found", env.resource.c_str());
+                return;
+            }
+            std::string err;
+            core::Json json = core::Json::Parse(text, &err);
+            if (!json.IsObject()) {
+                NEON_LOG_CAT(core::LogCategory::Scene, core::LogLevel::Warn,
+                             "runtime: environment '%s' is not a JSON object: %s",
+                             env.resource.c_str(), err.c_str());
+                return;
+            }
+            scene::SceneEnvironment merged = env; // inline values are the base
+            merged.resource.clear();
+            if (!scene::EnvironmentFromJson(json, merged, &err)) return;
+            merged.resource = env.resource; // keep the reference for round-trips
+            env = merged;
+            ++resolved;
+        });
+    if (resolved > 0)
+        NEON_LOG_CAT(core::LogCategory::Scene, core::LogLevel::Info,
+                     "runtime: resolved %d environment resource(s)", resolved);
+}
+
+std::string GameRuntime::FullScriptPath(const std::string& path) const {    if (path.empty() || cfg_.scriptBaseDir.empty()) return path;
     return cfg_.scriptBaseDir + "/" + path;
 }
 

@@ -3,10 +3,42 @@
 
 #include "neon/neon.hpp"
 #include "neon/scene/component_schema.hpp"
+#include "neon/scene/environment.hpp"
 #include "neon/scene/scene_file.hpp"
 #include "helpers.hpp"
 
 using namespace neon;
+
+TEST(SceneEnvironmentResourceRoundTrip) {
+    // A WorldEnvironment references a reusable environments/*.env.json; the
+    // reader/writer share one field set so parse and serialize cannot drift.
+    const char* json = R"({
+        "resource": "assets/environments/dusk.env.json",
+        "useAtmosphere": true,
+        "skyTop": [0.1, 0.16, 0.38, 1.0],
+        "fogNear": 40, "fogFar": 180, "exposure": 1.15
+    })";
+    std::string err;
+    const core::Json parsed = core::Json::Parse(json, &err);
+    scene::SceneEnvironment env;
+    CHECK(scene::EnvironmentFromJson(parsed, env, &err));
+    CHECK(env.useAtmosphere);
+    CHECK_EQ(env.resource, std::string("assets/environments/dusk.env.json"));
+    CHECK_NEAR(env.fogNear, 40.0f, 1e-6);
+    CHECK_NEAR(env.exposure, 1.15f, 1e-6);
+    CHECK_NEAR(env.skyTop.b, 0.38f, 1e-6);
+    // Missing keys keep the previous value: the resource is folded over inline
+    // fields, so absent entries are inherit-from-scene.
+    CHECK_NEAR(env.skyHorizon.r, 0.55f, 1e-6);
+
+    core::Json out;
+    scene::EnvironmentToJson(env, out);
+    scene::SceneEnvironment again;
+    CHECK(scene::EnvironmentFromJson(out, again, &err));
+    CHECK_NEAR(again.skyTop.b, 0.38f, 1e-6);
+    CHECK_NEAR(again.fogFar, 180.0f, 1e-6);
+    CHECK_EQ(again.resource, env.resource);
+}
 
 namespace {
 

@@ -1,4 +1,7 @@
 {
+  "environment": {
+    "resource": "assets/environments/dusk.env.json"
+  },
   "entities": [
     {
       "components": {

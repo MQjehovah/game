@@ -146,6 +146,7 @@ add_library(neon_scene STATIC
   engine/src/audio/miniaudio/ma_audio.cpp
   engine/src/physics/physics.cpp
   engine/src/scene/scene_file.cpp
+  engine/src/scene/environment.cpp
   engine/src/scene/component_schema.cpp
   engine/src/scene/type_registry.cpp
   engine/src/scene/data_table.cpp
