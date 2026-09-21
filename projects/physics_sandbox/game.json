@@ -1,0 +1,10 @@
+{
+  "startScene": "assets/scenes/sandbox.json",
+  "window": { "w": 1280, "h": 720, "title": "NeonEngine Physics Sandbox" },
+  "title": "Physics Sandbox",
+  "editor": { "mode": "3d" },
+  "export": {
+    "platform": "windows",
+    "description": "Physics sandbox demo + regression: rigid bodies, stacking, CCD (continuous collision), trigger volumes, sphere cast / overlap queries and fixed joints"
+  }
+}

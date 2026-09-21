@@ -1657,8 +1657,48 @@ Value NativePhysicsOverlapBox(IScriptHost& host, void* user) {
     return out;
 }
 
-Value NativePhysicsSphereCast(IScriptHost& host, void* user) {
+Value NativePhysicsAddFixedJoint(IScriptHost& host, void* user) {
     auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->physics) return Value::Nil();
+    const uint32_t a = SafeU32FromNumber(NumberArg(host, 0, 0.0));
+    const uint32_t b = SafeU32FromNumber(NumberArg(host, 1, 0.0));
+    const math::Vec3 anchor = Vec3FromValue(host.GetArg(2), math::Vec3{});
+    return Value::Num(static_cast<double>(ctx->physics->AddFixedJoint({a}, {b}, anchor).id));
+}
+
+Value NativePhysicsAddHingeJoint(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->physics) return Value::Nil();
+    const uint32_t a = SafeU32FromNumber(NumberArg(host, 0, 0.0));
+    const uint32_t b = SafeU32FromNumber(NumberArg(host, 1, 0.0));
+    const math::Vec3 anchor = Vec3FromValue(host.GetArg(2), math::Vec3{});
+    const math::Vec3 axis = Vec3FromValue(host.GetArg(3), math::Vec3{0, 1, 0});
+    return Value::Num(
+        static_cast<double>(ctx->physics->AddHingeJoint({a}, {b}, anchor, axis).id));
+}
+
+Value NativePhysicsAddDistanceJoint(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->physics) return Value::Nil();
+    const uint32_t a = SafeU32FromNumber(NumberArg(host, 0, 0.0));
+    const uint32_t b = SafeU32FromNumber(NumberArg(host, 1, 0.0));
+    const math::Vec3 anchorA = Vec3FromValue(host.GetArg(2), math::Vec3{});
+    const math::Vec3 anchorB = Vec3FromValue(host.GetArg(3), math::Vec3{});
+    const float minD = NumberArg(host, 4, -1.0f);
+    const float maxD = NumberArg(host, 5, -1.0f);
+    return Value::Num(static_cast<double>(
+        ctx->physics->AddDistanceJoint({a}, {b}, anchorA, anchorB, minD, maxD).id));
+}
+
+Value NativePhysicsRemoveJoint(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->physics) return Value::Nil();
+    const uint32_t id = SafeU32FromNumber(NumberArg(host, 0, 0.0));
+    if (id != 0) ctx->physics->RemoveJoint({id});
+    return Value::Nil();
+}
+
+Value NativePhysicsSphereCast(IScriptHost& host, void* user) {    auto* ctx = static_cast<ScriptContext*>(user);
     if (!ctx || !ctx->physics) return Value::Nil();
     const math::Vec3 start = Vec3FromValue(host.GetArg(0), math::Vec3{});
     const float radius = NumberArg(host, 1, 0.5f);
@@ -2219,6 +2259,16 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("PhysicsOverlapSphere", &NativePhysicsOverlapSphere, &ctx);
     host.Register("PhysicsOverlapBox", &NativePhysicsOverlapBox, &ctx);
     host.Register("PhysicsSphereCast", &NativePhysicsSphereCast, &ctx);
+    host.Register("PhysicsAddFixedJoint", &NativePhysicsAddFixedJoint, &ctx);
+    host.Register("PhysicsAddHingeJoint", &NativePhysicsAddHingeJoint, &ctx);
+    host.Register("PhysicsAddDistanceJoint", &NativePhysicsAddDistanceJoint, &ctx);
+    host.Register("PhysicsRemoveJoint", &NativePhysicsRemoveJoint, &ctx);
+    host.Register("PhysicsJointCount", [](IScriptHost&, void* user) -> Value {
+        auto* ctx = static_cast<ScriptContext*>(user);
+        return ctx && ctx->physics
+                   ? Value::Num(static_cast<double>(ctx->physics->JointCount()))
+                   : Value::Num(0.0);
+    }, &ctx);
     host.Register("PhysicsRemove", &NativePhysicsRemove, &ctx);
     host.Register("PhysicsSetVelocity", &NativePhysicsSetVelocity, &ctx);
     host.Register("PhysicsGetVelocity", &NativePhysicsGetVelocity, &ctx);

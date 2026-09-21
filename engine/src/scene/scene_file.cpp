@@ -1031,9 +1031,9 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                     const core::Json&, std::string* err) {
                      if (!CheckComponentShape(
                              data,
-                             {"shape", "radius", "halfExtents", "dynamic", "mass",
-                              "restitution", "friction", "damping", "gravityScale",
-                              "layer", "mask"},
+                              {"shape", "radius", "halfExtents", "dynamic", "mass",
+                               "restitution", "friction", "damping", "gravityScale",
+                               "layer", "mask", "continuous"},
                              "rigidbody", err))
                          return false;
                      SceneRigidBody r;
@@ -1090,6 +1090,13 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                              return false;
                          }
                          r.mask = static_cast<uint32_t>(m->GetNumber());
+                     }
+                     if (const core::Json* c = data.Get("continuous")) {
+                         if (!c->IsBool()) {
+                             if (err) *err = "component 'rigidbody' field 'continuous' must be a bool";
+                             return false;
+                         }
+                         r.continuous = c->GetBool();
                      }
                      world.Add<SceneRigidBody>(ent, r);
                      return true;
@@ -1873,6 +1880,7 @@ static core::Json SerializeEntityComponents(ecs::World& world, ecs::Entity e) {
         r.object_["gravityScale"] = MakeNumber(rb->gravityScale);
         r.object_["layer"] = MakeNumber(rb->layer);
         r.object_["mask"] = MakeNumber(rb->mask);
+        if (rb->continuous) r.object_["continuous"] = MakeBool(true);
         comps.object_["rigidbody"] = std::move(r);
     }
     if (const SceneCharacter* c = world.Get<SceneCharacter>(e)) {

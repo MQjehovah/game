@@ -380,6 +380,7 @@ struct SceneRigidBody {
     float gravityScale = 1.0f;
     uint32_t layer = 1;                 // collision group (0..255 on Jolt)
     uint32_t mask = 0xFFFFFFFFu;        // collision mask (which groups to hit)
+    bool continuous = false;            // CCD: fast bodies don't tunnel (Jolt)
     uint32_t bodyId = 0;                // physics::World::BodyId (runtime state)
 
     // G2-1: reflection drives the editor schema + JSON + script field access.
@@ -402,6 +403,7 @@ struct SceneRigidBody {
         Field("gravityScale", "重力缩放", FieldType::Number, &SceneRigidBody::gravityScale, 1, 0, 10, 0.1),
         Field("layer", "碰撞层", FieldType::Int, &SceneRigidBody::layer, 1, 0, 255, 1),
         Field("mask", "碰撞掩码", FieldType::Int, &SceneRigidBody::mask, 1, 0, 0xFFFFFFFF, 1),
+        Field("continuous", "连续碰撞", FieldType::Bool, &SceneRigidBody::continuous, 0, 0, 1, 0),
         Field("bodyId", "物理体", FieldType::Int, &SceneRigidBody::bodyId,
               FieldMeta{FieldCategory::Transient}));
 };

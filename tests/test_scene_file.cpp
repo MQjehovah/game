@@ -30,6 +30,7 @@ TEST(SceneFpsLevelsRoundTripThroughWorld) {
         "projects/fps/assets/scenes/level_02.json",
         "projects/fps/assets/scenes/level_03.json",
         "projects/fps/assets/scenes/menu.json",
+        "projects/physics_sandbox/assets/scenes/sandbox.json",
     };
     for (const char* path : scenes) {
         std::string text;
@@ -198,7 +199,7 @@ TEST(SceneRigidBodyShapeTolerance) {
                 "name": "BoxShape",
                 "components": {
                     "transform": {"pos": [1,0,0]},
-                    "rigidbody": {"shape": "box", "halfExtents": [0.5,0.5,0.5]}
+                    "rigidbody": {"shape": "box", "halfExtents": [0.5,0.5,0.5], "continuous": true}
                 }
             }
         ]
@@ -219,6 +220,7 @@ TEST(SceneRigidBodyShapeTolerance) {
         world.Get<scene::SceneRigidBody>(world.EntityAt<scene::SceneRigidBody>(1));
     CHECK(rb1 != nullptr);
     CHECK_EQ(rb1->shape, std::string("box")); // valid shape preserved
+    CHECK(rb1->continuous);                   // CCD flag parsed through
 }
 
 // G8-3: the "audio" component parses into a SceneAudioSource (sound/volume/

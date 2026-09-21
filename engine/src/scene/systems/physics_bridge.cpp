@@ -46,6 +46,7 @@ void PhysicsBridge::RegisterBodies(ecs::World& world) {
             desc.gravityScale = rb.gravityScale;
             desc.layer = rb.layer;
             desc.mask = rb.mask;
+            desc.continuous = rb.continuous;
             physics::World::BodyId body;
             if (rb.shape == "box") {
                 body = physics_->AddBox(EntityKey(e), t.pos, rb.halfExtents, rb.dynamic, desc);
