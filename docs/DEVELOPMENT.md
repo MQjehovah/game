@@ -845,10 +845,10 @@ HDR+Bloom+ACES/MSAA/IBL/SSAO/体积光/SSR/GPU 蒙皮/LOD/BC1/地形 splat+chunk
 3. **脚本体验**：JS 调试器、Lua 完整调用栈、悬停文档/补全、远程调试。
 4. **音频/2D 纵深**：效果器（低通/混响）、流式背景音乐；2D 光照与 2D 物理工具。
 5. **平台扩张**：WASM/WebGPU、macOS/Linux 实机验证、TLS/WebSocket 传输。
-6. **场景级环境/后处理**：当前天空/雾/IBL/曝光是引擎硬编码；计划按 Godot 范式做
-   **Environment 独立资源**（`environments/*.env.json`）+ **`WorldEnvironment` 组件实体**
-   引用，渲染器读组件 → 加载环境资源 → 应用。**切勿自创**"场景根内联 environment block"
-   方案；用资源 + 节点才能可复用、可多环境、为体积混合（PostProcessVolume）铺路。
+6. **场景级环境/后处理**：天空/雾/IBL/曝光已改为 **Environment 独立资源**
+   （`environments/*.env.json`）+ `SceneEnvironment.resource` 引用（渲染器读组件 → 解析资源 → 应用；
+   `scene::EnvironmentFromJson/ToJson` 单一读取器）。**已落地**：资源可复用、可多环境。
+   未做：体积混合（PostProcessVolume）；旧的场景根内联 `environment` 字段保留为兼容回退。
 
 ### 9.4 建议顺序
 
