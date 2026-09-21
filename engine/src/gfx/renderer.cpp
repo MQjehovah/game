@@ -173,6 +173,9 @@ void Renderer::InitBuiltinResources() {
     unlitInstancedColoredShader_ =
         backend_->CreateShader(kUnlitInstancedColoredVertexShader,
                                kUnlitInstancedColoredFragmentShader, "unlit_instanced_colored");
+    particleSoftShader_ =
+        backend_->CreateShader(kParticleSoftVertexShader, kParticleSoftFragmentShader,
+                               "particle_soft");
     billboardQuad_ = Mesh::CreateQuad(*this, 1.0f, 1.0f, "billboard");
 
     // Post-processing shaders (HDR + bloom). Sources live in bloom.hpp so the
@@ -287,6 +290,7 @@ void Renderer::BeginFrame(const Color& clearColor, float clearDepth) {
     // composited this frame" latch.
     postGraph_.ResetFrame();
     ssaoCasters_.clear();
+    softDepthReady_ = false;
     screenW_ = window_ ? window_->Width() : screenW_;
     screenH_ = window_ ? window_->Height() : screenH_;
     draw2d_.Resize(screenW_, screenH_);
@@ -683,13 +687,25 @@ void Renderer::DrawBillboards(const math::Vec3* positions, const float* sizes,
     Material mat = Material::Unlit(texture, Color::White);
     mat.transparent = true; // pick any; blend mode is overridden below
     mat.doubleSided = true;
+    // Soft particles: when a sampleable scene depth is available this frame,
+    // use the depth-faded billboard shader so glow quads fade where they cross
+    // geometry (no hard intersection line). Falls back cleanly otherwise.
+    const bool soft = particleSoftShader_.Valid() && EnsureSoftDepth();
+    const ShaderHandle shader = soft ? particleSoftShader_ : unlitInstancedColoredShader_;
     ApplyMaterial(mat, sceneState_.ViewProjection(), math::Mat4::Identity(),
-                  math::Mat4::Identity(), unlitInstancedColoredShader_);
+                  math::Mat4::Identity(), shader);
     // Particles blend appropriately and respect the scene depth (unlike the
     // screen-space DrawBillboard helper which is depth-unaware).
     backend_->SetBlendMode(blend);
     backend_->SetDepthTest(sceneState_.DepthAvailable(), false);
     backend_->SetCullMode(CullMode::None);
+    if (soft) {
+        backend_->BindTexture(22, backend_->RenderTargetDepthTexture(hdrDepthRT_));
+        backend_->SetUniformInt("uSceneDepth", 22);
+        backend_->SetUniformVec2("uScreenSize",
+                                 {static_cast<float>(screenW_), static_cast<float>(screenH_)});
+        backend_->SetUniformFloat("uSoftFade", softFadeRange_);
+    }
     backend_->DrawMeshInstancedColored(billboardQuad_.Handle(), models.data(), colc.data(),
                                        count);
     ++stats_.drawCalls;
@@ -1349,6 +1365,18 @@ void Renderer::ResolveMainTarget() {
         // case the depth pass falls back to redrawing the casters).
         if (hdrDepthRT_.Valid()) depthResolved_ = backend_->ResolveDepth(hdrMsaaRT_, hdrDepthRT_);
     }
+}
+
+bool Renderer::EnsureSoftDepth() {
+    if (softDepthReady_) return true;
+    softDepthReady_ = true; // try once per frame regardless of outcome
+    // Soft particles need a sampleable depth texture. Only the MSAA HDR path
+    // keeps a depth target (hdrDepthRT_); the single-sample path has a bare
+    // depth RBO, so soft particles are simply disabled there.
+    if (!hdrEnabled_ || !hdrMsaaRT_.Valid() || !hdrDepthRT_.Valid()) return false;
+    if (!backend_->ResolveDepth(hdrMsaaRT_, hdrDepthRT_)) return false; // restores currentFBO_
+    if (!backend_->RenderTargetDepthTexture(hdrDepthRT_).Valid()) return false;
+    return true;
 }
 
 void Renderer::RebindMainTarget() {

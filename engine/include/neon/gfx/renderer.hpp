@@ -503,6 +503,10 @@ private:
     void ApplySceneUniforms(ShaderHandle shader);
     // MSAA: multisample HDR render target + resolve self-test (4x then 2x).
     bool TestMsaaCapability();
+    // Ensures the main-pass depth is resolved to a sampleable texture for this
+    // frame (once), so soft particles can read scene depth. False when the
+    // backend cannot provide a depth texture (MSAA off / no depth target).
+    bool EnsureSoftDepth();
     // Binds whichever target the main scene renders into (the HDR float target
     // when active, else the default framebuffer).
     void RebindMainTarget();
@@ -545,6 +549,9 @@ private:
     ShaderHandle litInstancedShader_;
     ShaderHandle unlitInstancedShader_;
     ShaderHandle unlitInstancedColoredShader_;
+    ShaderHandle particleSoftShader_;   // depth-faded billboard variant (soft particles)
+    bool softDepthReady_ = false;       // resolved the main-pass depth this frame
+    float softFadeRange_ = 0.012f;      // window-depth fade band for soft particles
     gfx::Mesh billboardQuad_;  // unit XY quad used by DrawBillboards
     // Post-processing (HDR + bloom).
     ShaderHandle brightPassShader_;

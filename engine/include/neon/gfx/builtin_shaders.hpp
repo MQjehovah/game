@@ -574,6 +574,55 @@ void main() {
 }
 )";
 
+// Soft-particle billboard: same instanced colored billboard as above, plus a
+// scene-depth fetch (uSceneDepth, the resolved main-pass depth) so the glow
+// fades where the quad crosses geometry instead of showing a hard intersection
+// line. uSoftFade<=0 disables the fade (uniform-filled by the renderer).
+inline constexpr const char* kParticleSoftVertexShader = R"(
+#version 330 core
+layout(location = 0) in vec3 aPos;
+layout(location = 2) in vec2 aUV;
+layout(location = 3) in vec4 aColor;
+layout(location = 4) in mat4 aInstance;
+layout(location = 8) in vec4 aInstanceColor;
+uniform mat4 uMVP;
+out vec2 vUV;
+out vec4 vColor;
+out vec4 vInstanceColor;
+out float vWinDepth;
+void main() {
+    vUV = aUV;
+    vColor = aColor;
+    vInstanceColor = aInstanceColor;
+    gl_Position = uMVP * aInstance * vec4(aPos, 1.0);
+    vWinDepth = 0.5 * gl_Position.z / gl_Position.w + 0.5;
+}
+)";
+
+inline constexpr const char* kParticleSoftFragmentShader = R"(
+#version 330 core
+in vec2 vUV;
+in vec4 vColor;
+in vec4 vInstanceColor;
+in float vWinDepth;
+out vec4 FragColor;
+uniform sampler2D uAlbedo;
+uniform sampler2D uSceneDepth;
+uniform vec4 uTint;
+uniform bool uHasTexture;
+uniform vec2 uScreenSize;
+uniform float uSoftFade;
+void main() {
+    vec4 tex = uHasTexture ? texture(uAlbedo, vUV) : vec4(1.0);
+    vec4 col = tex * uTint * vColor * vInstanceColor;
+    if (uSoftFade > 0.0) {
+        float scene = texture(uSceneDepth, gl_FragCoord.xy / uScreenSize).r;
+        col.a *= clamp((scene - vWinDepth) / uSoftFade, 0.0, 1.0);
+    }
+    FragColor = col;
+}
+)";
+
 inline constexpr const char* kLineVertexShader = R"(
 #version 330 core
 layout(location = 0) in vec3 aPos;
