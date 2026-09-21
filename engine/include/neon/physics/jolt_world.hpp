@@ -36,6 +36,11 @@ public:
                   const RigidBodyDesc& desc = {}) override;
     BodyId AddCharacter(uint64_t owner, const math::Vec3& pos, float radius, float halfHeight,
                         const RigidBodyDesc& desc = {}) override;
+    BodyId AddTriggerSphere(uint64_t owner, const math::Vec3& pos, float radius,
+                            const RigidBodyDesc& desc = {}) override;
+    BodyId AddTriggerBox(uint64_t owner, const math::Vec3& center,
+                         const math::Vec3& halfExtents,
+                         const RigidBodyDesc& desc = {}) override;
     void SetCharacterMove(BodyId body, const math::Vec3& move) override;
     math::Vec3 GetCharacterMove(BodyId body) const override;
     void Remove(BodyId body) override;

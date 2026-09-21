@@ -9,6 +9,48 @@ using namespace neon;
 // physics::World
 // ---------------------------------------------------------------------------
 
+TEST(PhysicsTriggerReportsOverlapWithoutBlocking) {
+    physics::World world;
+    physics::World::BodyId zone = world.AddTriggerBox(900, {0, 1, 0}, {2, 1, 2});
+    CHECK(zone.Valid());
+    // A sensor must not be a collider: a dynamic sphere falls straight through
+    // it and comes to rest on the y=0 ground plane.
+    physics::World::BodyId ball = world.AddSphere(100, {0, 5, 0}, 0.5f, true);
+    const math::Vec3 gravity{0, -9.81f, 0};
+    const float dt = 1.0f / 60.0f;
+    bool reported = false;
+    for (int i = 0; i < 180 && !reported; ++i) {
+        world.Step(dt, gravity);
+        for (const auto& t : world.Triggers()) {
+            if (t.first == 900 && t.second == 100) reported = true;
+        }
+    }
+    CHECK(reported);
+    // Let it settle, then confirm the sensor did not stop it: it rests on the
+    // y=0 ground plane (radius 0.5).
+    for (int i = 0; i < 300; ++i) world.Step(dt, gravity);
+    CHECK_NEAR(world.GetPosition(ball).y, 0.5f, 1e-3);
+    // Sensors never appear in the physical collision list.
+    for (const auto& c : world.Collisions()) {
+        CHECK(c.first != 900);
+        CHECK(c.second != 900);
+    }
+    world.Step(dt, gravity);
+    CHECK(world.Triggers().size() >= 1u); // still inside: reported every step
+}
+
+TEST(PhysicsTriggerRespectsLayerMask) {
+    physics::World world;
+    physics::RigidBodyDesc zoneDesc;
+    zoneDesc.layer = 2;
+    zoneDesc.mask = 1u << 1; // only hits layer 1
+    world.AddTriggerSphere(900, {0, 1, 0}, 3.0f, zoneDesc);
+    // Layer 0 body: the zone's mask (bit1) does not cover layer 0 -> no report.
+    world.AddSphere(100, {0, 1, 0}, 0.5f, false);
+    world.Step(1.0f / 60.0f, {0, -9.81f, 0});
+    CHECK(world.Triggers().empty());
+}
+
 TEST(PhysicsBallFallsUnderGravity) {
     physics::World world;
     physics::World::BodyId ball = world.AddSphere(100, {0, 5, 0}, 1.0f, true);

@@ -131,26 +131,36 @@ public:
     void OnContactRemoved(const JPH::SubShapeIDPair&) override {}
 
     std::vector<std::pair<uint64_t, uint64_t>> collisions;
+    std::vector<std::pair<uint64_t, uint64_t>> triggers;
 
     void Reset() {
         collisions.clear();
+        triggers.clear();
     }
 
 private:
     void Record(const JPH::Body& a, const JPH::Body& b, const JPH::Vec3& normal) {
         const uint64_t oa = a.GetUserData();
         const uint64_t ob = b.GetUserData();
-        if (oa != 0 && ob != 0 && oa != ob) {
-            // Dynamic body first (matches the custom world's contract).
-            const bool aDynamic = a.GetMotionType() == JPH::EMotionType::Dynamic;
-            const bool bDynamic = b.GetMotionType() == JPH::EMotionType::Dynamic;
-            if (aDynamic && !bDynamic)
-                collisions.push_back({oa, ob});
-            else if (bDynamic && !aDynamic)
-                collisions.push_back({ob, oa});
+        if (oa == 0 || ob == 0 || oa == ob) return;
+        // Sensor pairs are trigger events, not physical collisions. Report the
+        // sensor's owner first so callers get (trigger, other).
+        if (a.IsSensor() || b.IsSensor()) {
+            if (a.IsSensor())
+                triggers.push_back({oa, ob});
             else
-                collisions.push_back({oa, ob});
+                triggers.push_back({ob, oa});
+            return;
         }
+        // Dynamic body first (matches the custom world's contract).
+        const bool aDynamic = a.GetMotionType() == JPH::EMotionType::Dynamic;
+        const bool bDynamic = b.GetMotionType() == JPH::EMotionType::Dynamic;
+        if (aDynamic && !bDynamic)
+            collisions.push_back({oa, ob});
+        else if (bDynamic && !aDynamic)
+            collisions.push_back({ob, oa});
+        else
+            collisions.push_back({oa, ob});
         (void)normal;
     }
 };
@@ -213,6 +223,7 @@ struct JoltWorld::Impl {
     std::map<uint32_t, JPH::BodyID> idMap;
     std::map<uint32_t, bool> enabled;       // our BodyId -> active in the system
     std::map<uint32_t, World::ShapeKind> shapes;
+    std::map<uint32_t, bool> sensors;
     std::map<uint32_t, float> radii;
     std::map<uint32_t, math::Vec3> halfExtents;
     std::map<uint32_t, uint64_t> owners;
@@ -326,8 +337,57 @@ World::BodyId JoltWorld::AddCharacter(uint64_t owner, const math::Vec3& pos, flo
     return id;
 }
 
-void JoltWorld::SetCharacterMove(BodyId body, const math::Vec3& move) {
-    if (!impl_) return;
+World::BodyId JoltWorld::AddTriggerSphere(uint64_t owner, const math::Vec3& pos, float radius,
+                                          const RigidBodyDesc& desc) {
+    if (!impl_ || radius <= 0.0f) return {};
+    JPH::Ref<JPH::SphereShape> shape = new JPH::SphereShape(radius);
+    JPH::BodyCreationSettings settings(
+        shape, ToRVec3(pos), JPH::Quat::sIdentity(), JPH::EMotionType::Static,
+        JPH::ObjectLayerPairFilterMask::sGetObjectLayer(desc.layer & kMaxLayerMask,
+                                                        desc.mask & kMaxLayerMask));
+    settings.mIsSensor = true;
+    JPH::BodyID bid = impl_->Bodies().CreateAndAddBody(settings, JPH::EActivation::DontActivate);
+    if (bid == JPH::BodyID()) return {};
+    impl_->Bodies().SetUserData(bid, owner);
+    const BodyId id{impl_->nextId++};
+    impl_->broadphaseDirty = true;
+    impl_->idMap[id.id] = bid;
+    impl_->enabled[id.id] = true;
+    impl_->shapes[id.id] = ShapeKind::Sphere;
+    impl_->radii[id.id] = radius;
+    impl_->owners[id.id] = owner;
+    impl_->sensors[id.id] = true;
+    ++impl_->bodyCount;
+    return id;
+}
+
+World::BodyId JoltWorld::AddTriggerBox(uint64_t owner, const math::Vec3& center,
+                                       const math::Vec3& halfExtents,
+                                       const RigidBodyDesc& desc) {
+    if (!impl_ || halfExtents.x <= 0.0f || halfExtents.y <= 0.0f || halfExtents.z <= 0.0f)
+        return {};
+    JPH::Ref<JPH::BoxShape> shape = new JPH::BoxShape(ToJolt(halfExtents));
+    JPH::BodyCreationSettings settings(
+        shape, ToRVec3(center), JPH::Quat::sIdentity(), JPH::EMotionType::Static,
+        JPH::ObjectLayerPairFilterMask::sGetObjectLayer(desc.layer & kMaxLayerMask,
+                                                        desc.mask & kMaxLayerMask));
+    settings.mIsSensor = true;
+    JPH::BodyID bid = impl_->Bodies().CreateAndAddBody(settings, JPH::EActivation::DontActivate);
+    if (bid == JPH::BodyID()) return {};
+    impl_->Bodies().SetUserData(bid, owner);
+    const BodyId id{impl_->nextId++};
+    impl_->broadphaseDirty = true;
+    impl_->idMap[id.id] = bid;
+    impl_->enabled[id.id] = true;
+    impl_->shapes[id.id] = ShapeKind::Box;
+    impl_->halfExtents[id.id] = halfExtents;
+    impl_->owners[id.id] = owner;
+    impl_->sensors[id.id] = true;
+    ++impl_->bodyCount;
+    return id;
+}
+
+void JoltWorld::SetCharacterMove(BodyId body, const math::Vec3& move) {    if (!impl_) return;
     auto it = impl_->charMove.find(body.id);
     if (it != impl_->charMove.end()) it->second = move;
 }
@@ -355,6 +415,7 @@ void JoltWorld::Remove(BodyId body) {
     impl_->idMap.erase(body.id);
     impl_->enabled.erase(body.id);
     impl_->shapes.erase(body.id);
+    impl_->sensors.erase(body.id);
     impl_->radii.erase(body.id);
     impl_->halfExtents.erase(body.id);
     impl_->owners.erase(body.id);
@@ -375,6 +436,7 @@ void JoltWorld::Clear() {
     impl_->idMap.clear();
     impl_->enabled.clear();
     impl_->shapes.clear();
+    impl_->sensors.clear();
     impl_->radii.clear();
     impl_->halfExtents.clear();
     impl_->owners.clear();
@@ -569,6 +631,7 @@ void JoltWorld::Step(float dt, const math::Vec3& gravity) {
     // caller ever invoked ClearCollisions() (A7).
     impl_->collisions = impl_->listener.collisions;
     collisions_ = std::move(impl_->collisions);
+    triggers_ = impl_->listener.triggers;
 }
 
 size_t JoltWorld::BodyCount() const {

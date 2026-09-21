@@ -154,4 +154,44 @@ TEST(JoltSamePlatformDeterministic) {
     CHECK(std::fabs(pa.z - pb.z) < 1e-4f);
 }
 
+TEST(JoltTriggerReportsOverlapWithoutBlocking) {
+    physics::JoltWorld world;
+    physics::World::BodyId zone = world.AddTriggerSphere(900, {0, 1, 0}, 2.0f);
+    CHECK(zone.Valid());
+    physics::World::BodyId ball = world.AddSphere(100, {0, 5, 0}, 0.5f, true);
+    bool reported = false;
+    for (int i = 0; i < 180 && !reported; ++i) {
+        world.Step(1.0f / 60.0f, {0, -9.81f, 0});
+        for (const auto& t : world.Triggers()) {
+            if (t.first == 900 && t.second == 100) reported = true;
+        }
+        // Sensors must never surface as physical collisions.
+        for (const auto& c : world.Collisions()) {
+            CHECK(c.first != 900);
+            CHECK(c.second != 900);
+        }
+    }
+    CHECK(reported);
+    // Let it settle, then confirm the sensor did not block it (ground at r=0.5).
+    for (int i = 0; i < 300; ++i) world.Step(1.0f / 60.0f, {0, -9.81f, 0});
+    CHECK(std::fabs(world.GetPosition(ball).y - 0.5f) < 0.2f);
+}
+
+TEST(JoltTriggerBoxDetectsRestingBody) {
+    physics::JoltWorld world;
+    physics::World::BodyId zone = world.AddTriggerBox(900, {0, 1, 0}, {3, 2, 3});
+    CHECK(zone.Valid());
+    // Dynamic sphere inside the zone (Jolt sensors report dynamic overlaps).
+    physics::World::BodyId ball = world.AddSphere(100, {0, 1, 0}, 0.5f, true);
+    CHECK(ball.Valid());
+    bool reported = false;
+    for (int i = 0; i < 180 && !reported; ++i) {
+        world.Step(1.0f / 60.0f, {0, -9.81f, 0});
+        for (const auto& t : world.Triggers()) {
+            if (t.first == 900 && t.second == 100) reported = true;
+        }
+    }
+    CHECK(reported);
+}
+
 #endif // NEON_ENABLE_JOLT

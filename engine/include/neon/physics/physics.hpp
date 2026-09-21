@@ -50,6 +50,15 @@ public:
     // deterministic world returns an invalid id (characters are a Jolt feature).
     virtual BodyId AddCharacter(uint64_t owner, const math::Vec3& pos, float radius,
                                 float halfHeight, const RigidBodyDesc& desc = {});
+    // Trigger volumes (sensors): static, non-physical bodies. Every enabled body
+    // that overlaps a trigger this step is reported in Triggers() as
+    // (triggerOwner, otherOwner); sensors never resolve physically, never apply
+    // forces and never appear in Collisions(). Use them for skill zones, pickups,
+    // checkpoints and other "enter/inside" detection.
+    virtual BodyId AddTriggerSphere(uint64_t owner, const math::Vec3& pos, float radius,
+                                    const RigidBodyDesc& desc = {});
+    virtual BodyId AddTriggerBox(uint64_t owner, const math::Vec3& center,
+                                 const math::Vec3& halfExtents, const RigidBodyDesc& desc = {});
     // Desired horizontal/vertical velocity for a character body (clamped by the
     // controller's collision response).
     virtual void SetCharacterMove(BodyId body, const math::Vec3& move);
@@ -83,6 +92,14 @@ public:
     }
     virtual void ClearCollisions() { collisions_.clear(); }
 
+    // (triggerOwner, otherOwner) overlap pairs detected this step. Sensors are
+    // static and are not resolved, so unlike Collisions() there is no
+    // dynamic-first ordering: the trigger's owner is always the first element.
+    virtual const std::vector<std::pair<uint64_t, uint64_t>>& Triggers() const {
+        return triggers_;
+    }
+    virtual void ClearTriggers() { triggers_.clear(); }
+
     virtual bool Raycast(const math::Ray& ray, float maxDist, float& outT,
                          uint64_t* hitOwner) const;
 
@@ -101,6 +118,8 @@ protected:
     // Collision pairs for the current step (dynamic-first ordering). Backends
     // append here; ClearCollisions() resets it.
     std::vector<std::pair<uint64_t, uint64_t>> collisions_;
+    // Sensor overlap pairs for the current step (trigger owner first).
+    std::vector<std::pair<uint64_t, uint64_t>> triggers_;
 
 private:
     struct Body {
@@ -119,6 +138,7 @@ private:
         float gravityScale = 1.0f;
         bool dynamic = true;
         bool enabled = true;
+        bool sensor = false; // trigger volume: overlaps reported, never resolved
         bool onGround = false;
         uint32_t layer = 1;
         uint32_t mask = 0xFFFFFFFFu;
@@ -133,6 +153,8 @@ private:
     Body* Find(BodyId id);
     void InitBody(Body& b, uint64_t owner, bool dynamic, const RigidBodyDesc& desc);
     void SolvePair(Body& a, Body& b);
+    // Shape-vs-shape overlap test for trigger detection (no resolution).
+    bool Overlaps(const Body& a, const Body& b) const;
 
     std::vector<Body> bodies_;
     std::vector<BodyId> freeIds_;

@@ -130,6 +130,22 @@ World::BodyId World::AddBox(uint64_t owner, const math::AABB& box, bool dynamic,
     return AddBox(owner, box.Center(), box.Extents(), dynamic, desc);
 }
 
+World::BodyId World::AddTriggerSphere(uint64_t owner, const math::Vec3& pos, float radius,
+                                      const RigidBodyDesc& desc) {
+    // A trigger is a static sensor: created like a static body, then flagged so
+    // SolvePair skips it and the trigger pass reports its overlaps.
+    const BodyId id = AddSphere(owner, pos, radius, /*dynamic=*/false, desc);
+    if (Body* b = Find(id)) b->sensor = true;
+    return id;
+}
+
+World::BodyId World::AddTriggerBox(uint64_t owner, const math::Vec3& center,
+                                   const math::Vec3& halfExtents, const RigidBodyDesc& desc) {
+    const BodyId id = AddBox(owner, center, halfExtents, /*dynamic=*/false, desc);
+    if (Body* b = Find(id)) b->sensor = true;
+    return id;
+}
+
 World::BodyId World::AddCharacter(uint64_t owner, const math::Vec3& pos, float radius,
                                   float halfHeight, const RigidBodyDesc& desc) {
     // The deterministic custom world has no kinematic character controller;
@@ -155,6 +171,7 @@ math::Vec3 World::GetCharacterMove(BodyId body) const {
 void World::InitBody(Body& b, uint64_t owner, bool dynamic, const RigidBodyDesc& desc) {
     b.owner = owner;
     b.dynamic = dynamic;
+    b.sensor = false;
     b.layer = desc.layer;
     b.mask = desc.mask;
     b.restitution = math::Clamp(desc.restitution, 0.0f, 1.0f);
@@ -184,6 +201,7 @@ void World::Clear() {
     freeIds_.clear();
     nextId_ = 1;
     collisions_.clear();
+    triggers_.clear();
 }
 
 size_t World::BodyCount() const {
@@ -248,6 +266,7 @@ bool World::IsOnGround(BodyId body) const {
 
 void World::Step(float dt, const math::Vec3& gravity) {
     collisions_.clear();
+    triggers_.clear();
     dt = std::fmax(dt, 0.0f);
 
     // Integrate dynamic bodies: gravity (per-body scale), exponential damping,
@@ -300,9 +319,43 @@ void World::Step(float dt, const math::Vec3& gravity) {
     for (Body& b : bodies_) {
         if (b.enabled && b.dynamic && b.Bottom() <= 0.001f) b.onGround = true;
     }
+
+    // Trigger pass: report every enabled non-sensor body overlapping each
+    // sensor. Deterministic (trigger insertion order, then body order); sensors
+    // were skipped by SolvePair so they never move or resolve.
+    for (size_t i = 0; i < bodies_.size(); ++i) {
+        const Body& s = bodies_[i];
+        if (!s.enabled || !s.sensor) continue;
+        for (size_t j = 0; j < bodies_.size(); ++j) {
+            if (j == i) continue;
+            const Body& o = bodies_[j];
+            if (!o.enabled || o.sensor) continue;
+            if (Overlaps(s, o)) triggers_.emplace_back(s.owner, o.owner);
+        }
+    }
+}
+
+bool World::Overlaps(const Body& a, const Body& b) const {
+    // Same layer/mask rule as physical collisions.
+    if ((a.mask & b.layer) == 0 || (b.mask & a.layer) == 0) return false;
+    math::Vec3 normal{0, 1, 0};
+    float penetration = 0.0f;
+    if (a.kind == Body::Kind::Sphere && b.kind == Body::Kind::Sphere) {
+        const float minDist = a.radius + b.radius;
+        return (b.pos - a.pos).LengthSq() < minDist * minDist;
+    }
+    if (a.kind == Body::Kind::Sphere && b.kind == Body::Kind::Box) {
+        return SphereBoxContact(a.pos, a.radius, b.Box(), normal, penetration);
+    }
+    if (a.kind == Body::Kind::Box && b.kind == Body::Kind::Sphere) {
+        return SphereBoxContact(b.pos, b.radius, a.Box(), normal, penetration);
+    }
+    return BoxBoxContact(a.Box(), b.Box(), normal, penetration);
 }
 
 void World::SolvePair(Body& a, Body& b) {
+    // Sensors are triggers: they report overlaps but never resolve physically.
+    if (a.sensor || b.sensor) return;
     // Collision layer/mask filter (Bullet-style): both directions must match.
     if ((a.mask & b.layer) == 0 || (b.mask & a.layer) == 0) return;
     math::Vec3 normal{0, 1, 0};
