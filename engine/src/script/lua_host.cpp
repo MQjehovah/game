@@ -438,13 +438,21 @@ int LuaHost::NativeCallClosure(lua_State* L) {
     if (!self || !name) return luaL_error(L, "invalid native function registration");
 
     // Copy the registration into a trivially destructible local so nothing
-    // non-trivial stays alive across the lua_error below.
+    // non-trivial stays alive across the lua_error below. Upvalue 3 caches a
+    // pointer to the map entry (unordered_map nodes are address-stable and are
+    // never erased while the host lives), so the hot path skips the by-name
+    // hash lookup entirely.
     NativeFn nf;
     {
-        auto it = self->impl_->nativeFns.find(name);
-        if (it == self->impl_->nativeFns.end())
-            return luaL_error(L, "native function '%s' is not registered", name);
-        nf = it->second;
+        auto* cached = static_cast<NativeFn*>(lua_touserdata(L, lua_upvalueindex(3)));
+        if (cached != nullptr) {
+            nf = *cached;
+        } else {
+            auto it = self->impl_->nativeFns.find(name);
+            if (it == self->impl_->nativeFns.end())
+                return luaL_error(L, "native function '%s' is not registered", name);
+            nf = it->second;
+        }
     }
     if (nf.fn == nullptr) return luaL_error(L, "native function '%s' has no implementation", name);
 
@@ -648,7 +656,8 @@ void LuaHost::Register(const std::string& name, NativeFunction fn, void* user) {
     impl_->nativeFns[name] = NativeFn{fn, user};
     lua_pushlightuserdata(impl_->L, this);
     lua_pushlstring(impl_->L, name.data(), name.size());
-    lua_pushcclosure(impl_->L, &LuaHost::NativeCallClosure, 2);
+    lua_pushlightuserdata(impl_->L, &impl_->nativeFns[name]);
+    lua_pushcclosure(impl_->L, &LuaHost::NativeCallClosure, 3);
     lua_setglobal(impl_->L, name.c_str());
 }
 
@@ -683,7 +692,8 @@ void LuaHost::RegisterField(const std::string& tableName, const std::string& fie
     }
     lua_pushlightuserdata(impl_->L, this);
     lua_pushlstring(impl_->L, fullName.data(), fullName.size());
-    lua_pushcclosure(impl_->L, &LuaHost::NativeCallClosure, 2);
+    lua_pushlightuserdata(impl_->L, &impl_->nativeFns[fullName]);
+    lua_pushcclosure(impl_->L, &LuaHost::NativeCallClosure, 3);
     lua_setfield(impl_->L, tableIdx, fieldName.c_str());
     lua_pop(impl_->L, tableIdx); // current table + ancestors + globals
 }
