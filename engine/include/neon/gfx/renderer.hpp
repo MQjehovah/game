@@ -345,6 +345,9 @@ public:
 
     // Resources
     Texture CreateTexture(const TextureDesc& desc);
+    // Uploads an RGBA8 sub-rectangle into an existing texture (dynamic masks /
+    // font atlases). No-op for an invalid texture.
+    void UpdateTexture(const Texture& tex, int x, int y, int w, int h, const void* rgba);
     // Compressed (BC1/DXT1) texture upload; format is the backend format code
     // (assets::kBc1Format). Returns an invalid Texture when the driver rejects
     // compressed uploads - the asset layer then falls back to RGBA8.

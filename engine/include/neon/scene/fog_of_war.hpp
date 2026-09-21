@@ -33,6 +33,19 @@ public:
     void AddSource(float x, float z, float radius, const nav::NavGrid* nav);
     bool VisibleAt(float x, float z) const;
 
+    // --- GPU mask path -----------------------------------------------------
+    // Fills `rgba` with cols*rows RGBA8 mask texels (dark RGB, alpha = 0 when
+    // visible / seenAlpha explored / unseenAlpha unseen). Returns true when the
+    // bytes changed since the previous call, so the caller uploads only on
+    // change. Bilinear sampling of this texture gives soft fog edges on the GPU.
+    bool BuildMask(std::vector<uint8_t>& rgba);
+    int Cols() const { return cols_; }
+    int Rows() const { return rows_; }
+    float Cell() const { return cell_; }
+    float MinX() const { return minX_; }
+    float MinZ() const { return minZ_; }
+    const math::Vec3& MaskColor() const { return color_; }
+
     // Emits the soft mask into `out` using `project` (world -> design pixels).
     // Returns the number of triangles emitted.
     int Draw(std::vector<script::Draw2DCmd>& out,
@@ -48,6 +61,7 @@ private:
     float seenAlpha_ = 0.5f, unseenAlpha_ = 0.95f;
     math::Vec3 color_{0.02f, 0.02f, 0.05f};
     std::vector<uint8_t> vis_, seen_;
+    std::vector<uint8_t> lastMask_; // change detection for BuildMask
 };
 
 } // namespace neon::scene

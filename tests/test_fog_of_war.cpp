@@ -92,8 +92,7 @@ TEST(FogOfWarLineOfSightOccludedByNavGrid) {
     CHECK(!fog.VisibleAt(15.5f, 10.5f));
 }
 
-TEST(FogOfWarClearDisablesFog) {
-    scene::FogOfWar fog;
+TEST(FogOfWarClearDisablesFog) {    scene::FogOfWar fog;
     fog.Setup(4, 4, 1.0f, 0.0f, 0.0f, 0.5f, 0.95f, {0.0f, 0.0f, 0.1f});
     fog.Clear();
     CHECK(!fog.Configured());
@@ -102,4 +101,36 @@ TEST(FogOfWarClearDisablesFog) {
     CHECK_EQ(fog.Draw(cmds, [](const math::Vec3&, float&, float&) { return true; }, 100.0f,
                       100.0f),
              0);
+}
+
+// GPU mask path: BuildMask packs the grid into RGBA8 (dark RGB, alpha = 0
+// visible / seenAlpha explored / unseenAlpha unseen), row-flipped for the ground
+// plane's V axis, and reports "unchanged" so the caller can skip the upload.
+TEST(FogOfWarBuildMaskPacksVisibility) {
+    scene::FogOfWar fog;
+    fog.Setup(4, 4, 1.0f, 0.0f, 0.0f, 0.5f, 0.95f, {0.0f, 0.0f, 0.0f});
+    fog.BeginFrame();
+    fog.AddSource(0.5f, 0.5f, 0.5f, nullptr); // reveals cell (0,0) only
+    std::vector<uint8_t> rgba;
+    CHECK(fog.BuildMask(rgba));
+    CHECK_EQ(rgba.size(), 4u * 4u * 4u);
+
+    // Row flip: grid row cz -> buffer row (rows-1-cz).
+    auto alpha = [&](int cx, int cz) {
+        const int row = 4 - 1 - cz;
+        return rgba[(static_cast<size_t>(row) * 4 + cx) * 4 + 3];
+    };
+    CHECK_EQ(alpha(0, 0), 0);                    // visible
+    CHECK_EQ(alpha(3, 3), static_cast<int>(0.95f * 255.0f)); // unseen
+
+    // No change between calls -> BuildMask returns false (skip GPU upload).
+    std::vector<uint8_t> again;
+    CHECK(!fog.BuildMask(again));
+
+    // Now explore another cell: the mask changes and is reported.
+    fog.BeginFrame();
+    fog.AddSource(3.5f, 3.5f, 0.5f, nullptr);
+    std::vector<uint8_t> changed;
+    CHECK(fog.BuildMask(changed));
+    CHECK_EQ(changed.size(), rgba.size());
 }

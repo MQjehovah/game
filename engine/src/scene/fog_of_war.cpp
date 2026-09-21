@@ -29,12 +29,14 @@ void FogOfWar::Setup(int cols, int rows, float cell, float minX, float minZ, flo
     color_ = color;
     vis_.assign(static_cast<size_t>(cols_) * rows_, 0);
     seen_.assign(static_cast<size_t>(cols_) * rows_, 0);
+    lastMask_.clear();
 }
 
 void FogOfWar::Clear() {
     cols_ = rows_ = 0;
     vis_.clear();
     seen_.clear();
+    lastMask_.clear();
 }
 
 void FogOfWar::BeginFrame() {
@@ -76,8 +78,7 @@ void FogOfWar::AddSource(float x, float z, float radius, const nav::NavGrid* nav
     }
 }
 
-bool FogOfWar::VisibleAt(float x, float z) const {
-    if (!Configured()) return true; // no fog grid -> everything visible
+bool FogOfWar::VisibleAt(float x, float z) const {    if (!Configured()) return true; // no fog grid -> everything visible
     const int cx = static_cast<int>(std::floor((x - minX_) / cell_));
     const int cz = static_cast<int>(std::floor((z - minZ_) / cell_));
     if (cx < 0 || cz < 0 || cx >= cols_ || cz >= rows_) return true;
@@ -160,6 +161,33 @@ int FogOfWar::Draw(std::vector<script::Draw2DCmd>& out,
         }
     }
     return tris;
+}
+
+bool FogOfWar::BuildMask(std::vector<uint8_t>& rgba) {
+    if (!Configured()) return false;
+    const size_t n = static_cast<size_t>(cols_) * rows_;
+    std::vector<uint8_t> mask(n * 4);
+    const uint8_t r = static_cast<uint8_t>(color_.x * 255.0f);
+    const uint8_t g = static_cast<uint8_t>(color_.y * 255.0f);
+    const uint8_t b = static_cast<uint8_t>(color_.z * 255.0f);
+    const uint8_t seenA = static_cast<uint8_t>(seenAlpha_ * 255.0f);
+    const uint8_t unseenA = static_cast<uint8_t>(unseenAlpha_ * 255.0f);
+    for (size_t i = 0; i < n; ++i) {
+        const uint8_t a = vis_[i] != 0 ? 0 : (seen_[i] != 0 ? seenA : unseenA);
+        // Row flip: the ground plane's V axis runs opposite to the grid's +Z
+        // rows, so write rows bottom-up.
+        const size_t cz = i / static_cast<size_t>(cols_);
+        const size_t cx = i % static_cast<size_t>(cols_);
+        const size_t d = (static_cast<size_t>(rows_) - 1 - cz) * static_cast<size_t>(cols_) + cx;
+        mask[d * 4 + 0] = r;
+        mask[d * 4 + 1] = g;
+        mask[d * 4 + 2] = b;
+        mask[d * 4 + 3] = a;
+    }
+    if (mask == lastMask_) return false; // unchanged: skip the GPU upload
+    lastMask_ = mask;
+    rgba = std::move(mask);
+    return true;
 }
 
 } // namespace neon::scene

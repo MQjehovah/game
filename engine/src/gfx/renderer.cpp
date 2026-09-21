@@ -778,7 +778,8 @@ void Renderer::ApplyMaterial(const Material& material, const math::Mat4& mvp,
     // geometry are still rejected - without it every fur shell / particle
     // layer stacks from every angle into a dark smear) and only disables the
     // depth WRITE so blended pixels do not occlude later draws.
-    backend_->SetDepthTest(sceneState_.DepthAvailable(), !material.transparent);
+    backend_->SetDepthTest(sceneState_.DepthAvailable() && material.depthTest,
+                           !material.transparent);
     backend_->SetBlendMode(material.transparent ? BlendMode::Alpha : BlendMode::Opaque);
 
     backend_->SetUniformMat4("uMVP", mvp);
@@ -1051,6 +1052,11 @@ void Renderer::DrawSphere(const math::Vec3& center, float radius, const Color& c
 Texture Renderer::CreateTexture(const TextureDesc& desc) {
     TextureHandle handle = backend_->CreateTexture(desc);
     return Texture(handle, desc.width, desc.height);
+}
+
+void Renderer::UpdateTexture(const Texture& tex, int x, int y, int w, int h, const void* rgba) {
+    if (!tex.Valid() || rgba == nullptr || w <= 0 || h <= 0) return;
+    backend_->UpdateTextureRegion(tex.Handle(), x, y, w, h, rgba);
 }
 
 Texture Renderer::CreateTextureCompressed(int width, int height, uint32_t format,

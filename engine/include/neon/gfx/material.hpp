@@ -36,6 +36,9 @@ struct Material {
     float emissiveIntensity = 1.0f;
     bool lit = true;
     bool transparent = false;
+    // Depth test for this draw (default on). Set false for overlays that must
+    // paint over the scene regardless of depth (e.g. the fog-of-war mask).
+    bool depthTest = true;
     // Casts a directional-light (CSM) shadow. Default true so trees/props cast;
     // set false on large receivers (ground plane, water, terrain) that would
     // otherwise self-shadow into a black swath.
