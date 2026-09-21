@@ -71,6 +71,31 @@ void ParticleSystem::Draw(Renderer& renderer, const Texture& texture, float scal
             alphaCol.push_back(c);
         }
     }
+    // Additive particles are order-independent (blend commutes), so they draw
+    // unsorted. Alpha-blended particles (smoke/dust/poison) must draw back-to-
+    // front or overlapping quads composite in the wrong order; sort by distance
+    // to the camera (farthest first).
+    if (alphaPos.size() > 1) {
+        const math::Vec3 cam = renderer.CameraPosition();
+        std::vector<uint32_t> order(alphaPos.size());
+        for (uint32_t k = 0; k < order.size(); ++k) order[k] = k;
+        std::sort(order.begin(), order.end(), [&](uint32_t a, uint32_t b) {
+            const math::Vec3 da = alphaPos[a] - cam;
+            const math::Vec3 db = alphaPos[b] - cam;
+            return da.LengthSq() > db.LengthSq();
+        });
+        std::vector<math::Vec3> sp(alphaPos.size());
+        std::vector<float> ss(alphaSize.size());
+        std::vector<Color> sc(alphaCol.size());
+        for (size_t k = 0; k < order.size(); ++k) {
+            sp[k] = alphaPos[order[k]];
+            ss[k] = alphaSize[order[k]];
+            sc[k] = alphaCol[order[k]];
+        }
+        alphaPos.swap(sp);
+        alphaSize.swap(ss);
+        alphaCol.swap(sc);
+    }
     if (!addPos.empty())
         renderer.DrawBillboards(addPos.data(), addSize.data(), addCol.data(),
                                 texture.Handle(), static_cast<uint32_t>(addPos.size()),
