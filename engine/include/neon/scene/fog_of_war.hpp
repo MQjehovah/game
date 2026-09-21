@@ -56,6 +56,12 @@ private:
     int Index(int cx, int cz) const { return cz * cols_ + cx; }
     float CellAlpha(int cx, int cz) const;
 
+    // Scratch buffers reused across Draw() calls (sized (cols+1)*(rows+1)) so the
+    // per-frame projection of the fog grid does not allocate.
+    mutable std::vector<float> drawVx_;
+    mutable std::vector<float> drawVy_;
+    mutable std::vector<uint8_t> drawOk_;
+
     int cols_ = 0, rows_ = 0;
     float cell_ = 8.0f, minX_ = 0.0f, minZ_ = 0.0f;
     float seenAlpha_ = 0.5f, unseenAlpha_ = 0.95f;

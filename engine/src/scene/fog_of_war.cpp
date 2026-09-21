@@ -78,7 +78,8 @@ void FogOfWar::AddSource(float x, float z, float radius, const nav::NavGrid* nav
     }
 }
 
-bool FogOfWar::VisibleAt(float x, float z) const {    if (!Configured()) return true; // no fog grid -> everything visible
+bool FogOfWar::VisibleAt(float x, float z) const {
+    if (!Configured()) return true; // no fog grid -> everything visible
     const int cx = static_cast<int>(std::floor((x - minX_) / cell_));
     const int cz = static_cast<int>(std::floor((z - minZ_) / cell_));
     if (cx < 0 || cz < 0 || cx >= cols_ || cz >= rows_) return true;
@@ -97,9 +98,15 @@ int FogOfWar::Draw(std::vector<script::Draw2DCmd>& out,
                    float vpW, float vpH) const {
     if (!Configured() || !project) return 0;
     const int vcols = cols_ + 1, vrows = rows_ + 1;
-    std::vector<float> vx(static_cast<size_t>(vcols) * vrows);
-    std::vector<float> vy(static_cast<size_t>(vcols) * vrows);
-    std::vector<uint8_t> ok(static_cast<size_t>(vcols) * vrows, 0);
+    const size_t vcount = static_cast<size_t>(vcols) * vrows;
+    if (drawVx_.size() != vcount) {
+        drawVx_.assign(vcount, 0.0f);
+        drawVy_.assign(vcount, 0.0f);
+        drawOk_.assign(vcount, 0);
+    }
+    std::vector<float>& vx = drawVx_;
+    std::vector<float>& vy = drawVy_;
+    std::vector<uint8_t>& ok = drawOk_;
     for (int vz = 0; vz < vrows; ++vz) {
         for (int gx = 0; gx < vcols; ++gx) {
             const float wx = minX_ + static_cast<float>(gx) * cell_;
