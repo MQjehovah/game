@@ -345,6 +345,9 @@ public:
 
     // Resources
     Texture CreateTexture(const TextureDesc& desc);
+    // Releases a texture created by CreateTexture (dynamic masks/fonts). No-op
+    // for an invalid texture.
+    void DestroyTexture(Texture& tex);
     // Uploads an RGBA8 sub-rectangle into an existing texture (dynamic masks /
     // font atlases). No-op for an invalid texture.
     void UpdateTexture(const Texture& tex, int x, int y, int w, int h, const void* rgba);

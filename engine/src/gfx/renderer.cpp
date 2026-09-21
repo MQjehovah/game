@@ -1059,6 +1059,12 @@ void Renderer::UpdateTexture(const Texture& tex, int x, int y, int w, int h, con
     backend_->UpdateTextureRegion(tex.Handle(), x, y, w, h, rgba);
 }
 
+void Renderer::DestroyTexture(Texture& tex) {
+    if (!tex.Valid()) return;
+    backend_->DestroyTexture(tex.Handle());
+    tex = Texture{};
+}
+
 Texture Renderer::CreateTextureCompressed(int width, int height, uint32_t format,
                                           const void* data, size_t size) {
     TextureHandle handle = backend_->CreateTextureCompressed(width, height, format, data, size);
