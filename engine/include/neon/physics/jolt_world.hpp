@@ -46,6 +46,16 @@ public:
     void Remove(BodyId body) override;
     void Clear() override;
 
+    JointId AddFixedJoint(BodyId a, BodyId b, const math::Vec3& worldAnchor) override;
+    JointId AddHingeJoint(BodyId a, BodyId b, const math::Vec3& worldAnchor,
+                          const math::Vec3& worldAxis) override;
+    JointId AddDistanceJoint(BodyId a, BodyId b, const math::Vec3& worldAnchorA,
+                             const math::Vec3& worldAnchorB, float minDistance,
+                             float maxDistance) override;
+    void RemoveJoint(JointId joint) override;
+    void RemoveJointsOn(BodyId body) override;
+    size_t JointCount() const override;
+
     void SetPosition(BodyId body, const math::Vec3& pos) override;
     math::Vec3 GetPosition(BodyId body) const override;
     void SetRotation(BodyId body, const math::Quat& rot) override;

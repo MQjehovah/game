@@ -272,4 +272,49 @@ TEST(JoltContinuousCollisionStopsFastBody) {
     CHECK(world.GetPosition(b).x < 0.0f); // did not pass through the wall
 }
 
+TEST(JoltFixedJointKeepsBodiesTogether) {
+    physics::JoltWorld world;
+    physics::World::BodyId a = world.AddSphere(1, {0, 5, 0}, 0.5f, true);
+    physics::World::BodyId b = world.AddSphere(2, {2, 5, 0}, 0.5f, true);
+    physics::World::JointId j = world.AddFixedJoint(a, b, {1, 5, 0});
+    CHECK(j.Valid());
+    CHECK(world.JointCount() == 1u);
+    // Try to tear them apart; the weld must hold the 2-unit separation.
+    world.SetVelocity(a, {-20, 0, 0});
+    world.SetVelocity(b, {20, 0, 0});
+    for (int i = 0; i < 120; ++i) world.Step(1.0f / 60.0f, {0, 0, 0});
+    const float dist = (world.GetPosition(a) - world.GetPosition(b)).Length();
+    CHECK(std::fabs(dist - 2.0f) < 0.3f);
+    world.RemoveJoint(j);
+    CHECK(world.JointCount() == 0u);
+}
+
+TEST(JoltDistanceJointClampsSeparation) {
+    physics::JoltWorld world;
+    physics::World::BodyId anchor = world.AddSphere(1, {0, 5, 0}, 0.5f, false); // static
+    physics::World::BodyId bob = world.AddSphere(2, {0, 3, 0}, 0.5f, true);
+    physics::World::JointId j = world.AddDistanceJoint(anchor, bob, {0, 5, 0}, {0, 3, 0}, 2.0f, 2.0f);
+    CHECK(j.Valid());
+    world.SetVelocity(bob, {0, -10, 0});
+    for (int i = 0; i < 180; ++i) world.Step(1.0f / 60.0f, {0, -9.81f, 0});
+    const float dist = (world.GetPosition(anchor) - world.GetPosition(bob)).Length();
+    CHECK(std::fabs(dist - 2.0f) < 0.3f); // rope length preserved (pendulum)
+}
+
+TEST(JoltHingeJointAndBodyRemovalCleansJoints) {
+    physics::JoltWorld world;
+    physics::World::BodyId a = world.AddBox(1, {0, 5, 0}, {0.5f, 0.5f, 0.5f}, false);
+    physics::World::BodyId b = world.AddBox(2, {1.5f, 5, 0}, {0.5f, 0.5f, 0.5f}, true);
+    physics::World::JointId j = world.AddHingeJoint(a, b, {0.5f, 5, 0}, {0, 0, 1});
+    CHECK(j.Valid());
+    CHECK(world.JointCount() == 1u);
+    for (int i = 0; i < 120; ++i) world.Step(1.0f / 60.0f, {0, -9.81f, 0});
+    // The bob swings about the hinge (stays 1 unit from the anchor point).
+    const math::Vec3 p = world.GetPosition(b);
+    CHECK(std::fabs(p.y - 5.0f) < 1.6f);
+    // Removing the body drops its joint automatically.
+    world.Remove(b);
+    CHECK(world.JointCount() == 0u);
+}
+
 #endif // NEON_ENABLE_JOLT

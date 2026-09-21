@@ -130,9 +130,44 @@ World::BodyId World::AddBox(uint64_t owner, const math::AABB& box, bool dynamic,
     return AddBox(owner, box.Center(), box.Extents(), dynamic, desc);
 }
 
+World::JointId World::AddFixedJoint(BodyId a, BodyId b, const math::Vec3& worldAnchor) {
+    // The deterministic custom world is a linear solver with no constraints;
+    // joints are a Jolt feature (like characters).
+    (void)a;
+    (void)b;
+    (void)worldAnchor;
+    return {};
+}
+
+World::JointId World::AddHingeJoint(BodyId a, BodyId b, const math::Vec3& worldAnchor,
+                                    const math::Vec3& worldAxis) {
+    (void)a;
+    (void)b;
+    (void)worldAnchor;
+    (void)worldAxis;
+    return {};
+}
+
+World::JointId World::AddDistanceJoint(BodyId a, BodyId b, const math::Vec3& worldAnchorA,
+                                       const math::Vec3& worldAnchorB, float minDistance,
+                                       float maxDistance) {
+    (void)a;
+    (void)b;
+    (void)worldAnchorA;
+    (void)worldAnchorB;
+    (void)minDistance;
+    (void)maxDistance;
+    return {};
+}
+
+void World::RemoveJoint(JointId joint) { (void)joint; }
+
+void World::RemoveJointsOn(BodyId body) { (void)body; }
+
+size_t World::JointCount() const { return 0; }
+
 World::BodyId World::AddTriggerSphere(uint64_t owner, const math::Vec3& pos, float radius,
-                                      const RigidBodyDesc& desc) {
-    // A trigger is a static sensor: created like a static body, then flagged so
+                                      const RigidBodyDesc& desc) {    // A trigger is a static sensor: created like a static body, then flagged so
     // SolvePair skips it and the trigger pass reports its overlaps.
     const BodyId id = AddSphere(owner, pos, radius, /*dynamic=*/false, desc);
     if (Body* b = Find(id)) b->sensor = true;

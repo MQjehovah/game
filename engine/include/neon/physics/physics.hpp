@@ -71,6 +71,26 @@ public:
     virtual void Remove(BodyId body);
     virtual void Clear();
 
+    // --- Joints / constraints ------------------------------------------------
+    struct JointId {
+        uint32_t id = 0;
+        bool Valid() const { return id != 0; }
+    };
+    // Fixed: locks two bodies together at `worldAnchor` (rigid weld).
+    virtual JointId AddFixedJoint(BodyId a, BodyId b, const math::Vec3& worldAnchor);
+    // Hinge: both bodies rotate about `worldAxis` through `worldAnchor`.
+    virtual JointId AddHingeJoint(BodyId a, BodyId b, const math::Vec3& worldAnchor,
+                                  const math::Vec3& worldAxis);
+    // Distance: keeps `worldAnchorA` (on a) and `worldAnchorB` (on b) within
+    // [minDistance, maxDistance] (negative values auto-derive from the anchors).
+    virtual JointId AddDistanceJoint(BodyId a, BodyId b, const math::Vec3& worldAnchorA,
+                                     const math::Vec3& worldAnchorB, float minDistance,
+                                     float maxDistance);
+    virtual void RemoveJoint(JointId joint);
+    virtual size_t JointCount() const;
+    // Removes every joint referencing `body` (also done implicitly by Remove).
+    virtual void RemoveJointsOn(BodyId body);
+
     virtual void SetPosition(BodyId body, const math::Vec3& pos);
     virtual math::Vec3 GetPosition(BodyId body) const;
     // Orientation. The Jolt backend simulates rotation for dynamic bodies (this

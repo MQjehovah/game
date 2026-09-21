@@ -40,6 +40,16 @@ TEST(PhysicsTriggerReportsOverlapWithoutBlocking) {
     CHECK(world.Triggers().size() >= 1u); // still inside: reported every step
 }
 
+TEST(PhysicsJointsUnsupportedOnCustomWorld) {
+    physics::World world;
+    physics::World::BodyId a = world.AddSphere(1, {0, 1, 0}, 0.5f, true);
+    physics::World::BodyId b = world.AddSphere(2, {2, 1, 0}, 0.5f, true);
+    CHECK(!world.AddFixedJoint(a, b, {1, 1, 0}).Valid());
+    CHECK(!world.AddHingeJoint(a, b, {1, 1, 0}, {0, 0, 1}).Valid());
+    CHECK(!world.AddDistanceJoint(a, b, {0, 1, 0}, {2, 1, 0}, 1.0f, 2.0f).Valid());
+    CHECK(world.JointCount() == 0u);
+}
+
 TEST(PhysicsRotationRoundTrip) {
     physics::World world;
     physics::World::BodyId b = world.AddBox(1, {0, 1, 0}, {1, 1, 1}, true);

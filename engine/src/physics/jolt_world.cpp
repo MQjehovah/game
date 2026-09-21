@@ -11,6 +11,10 @@
 #include <Jolt/Physics/Body/BodyManager.h>
 #include <Jolt/Physics/Body/BodyLock.h>
 #include <Jolt/Physics/Character/CharacterVirtual.h>
+#include <Jolt/Physics/Constraints/DistanceConstraint.h>
+#include <Jolt/Physics/Constraints/FixedConstraint.h>
+#include <Jolt/Physics/Constraints/HingeConstraint.h>
+#include <Jolt/Physics/Constraints/TwoBodyConstraint.h>
 #include <Jolt/Physics/Collision/BroadPhase/BroadPhaseLayerInterfaceMask.h>
 #include <Jolt/Physics/Collision/BroadPhase/ObjectVsBroadPhaseLayerFilterMask.h>
 #include <Jolt/Physics/Collision/CastResult.h>
@@ -277,6 +281,8 @@ struct JoltWorld::Impl {
     std::map<uint32_t, bool> charOnGround;
     std::map<uint32_t, float> charRadius;     // capsule radius
     std::map<uint32_t, float> charHalfHeight; // capsule cylinder half-height
+    std::map<uint32_t, JPH::Ref<JPH::Constraint>> constraints; // joints by JointId
+    uint32_t nextJointId = 1;
     uint32_t nextId = 1;
     size_t bodyCount = 0;
     bool broadphaseDirty = false;
@@ -439,6 +445,107 @@ World::BodyId JoltWorld::AddTriggerBox(uint64_t owner, const math::Vec3& center,
     return id;
 }
 
+World::JointId JoltWorld::AddFixedJoint(BodyId a, BodyId b, const math::Vec3& worldAnchor) {
+    if (!impl_) return {};
+    const JPH::BodyID ba = impl_->Find(a);
+    const JPH::BodyID bb = impl_->Find(b);
+    if (ba == JPH::BodyID() || bb == JPH::BodyID() || ba == bb) return {};
+    JPH::BodyLockWrite la(impl_->physics.GetBodyLockInterface(), ba);
+    JPH::BodyLockWrite lb(impl_->physics.GetBodyLockInterface(), bb);
+    if (!la.Succeeded() || !lb.Succeeded()) return {};
+    JPH::FixedConstraintSettings s;
+    s.mSpace = JPH::EConstraintSpace::WorldSpace;
+    s.mAutoDetectPoint = false;
+    s.mPoint1 = ToRVec3(worldAnchor);
+    s.mPoint2 = ToRVec3(worldAnchor);
+    JPH::Ref<JPH::Constraint> c = s.Create(la.GetBody(), lb.GetBody());
+    impl_->physics.AddConstraint(c.GetPtr());
+    const JointId id{impl_->nextJointId++};
+    impl_->constraints[id.id] = c;
+    return id;
+}
+
+World::JointId JoltWorld::AddHingeJoint(BodyId a, BodyId b, const math::Vec3& worldAnchor,
+                                        const math::Vec3& worldAxis) {
+    if (!impl_) return {};
+    const JPH::BodyID ba = impl_->Find(a);
+    const JPH::BodyID bb = impl_->Find(b);
+    if (ba == JPH::BodyID() || bb == JPH::BodyID() || ba == bb) return {};
+    JPH::BodyLockWrite la(impl_->physics.GetBodyLockInterface(), ba);
+    JPH::BodyLockWrite lb(impl_->physics.GetBodyLockInterface(), bb);
+    if (!la.Succeeded() || !lb.Succeeded()) return {};
+    JPH::HingeConstraintSettings s;
+    s.mSpace = JPH::EConstraintSpace::WorldSpace;
+    s.mPoint1 = ToRVec3(worldAnchor);
+    s.mPoint2 = ToRVec3(worldAnchor);
+    JPH::Vec3 ax = ToJolt(worldAxis);
+    if (ax.LengthSq() < 1e-8f) ax = JPH::Vec3::sAxisY();
+    ax = ax.Normalized();
+    s.mHingeAxis1 = ax;
+    s.mHingeAxis2 = ax;
+    // A reference axis perpendicular to the hinge (defines the limit frame).
+    const JPH::Vec3 ref =
+        std::fabs(ax.GetY()) < 0.9f ? JPH::Vec3::sAxisY() : JPH::Vec3::sAxisX();
+    const JPH::Vec3 normal = ax.Cross(ref).Normalized();
+    s.mNormalAxis1 = normal;
+    s.mNormalAxis2 = normal;
+    JPH::Ref<JPH::Constraint> c = s.Create(la.GetBody(), lb.GetBody());
+    impl_->physics.AddConstraint(c.GetPtr());
+    const JointId id{impl_->nextJointId++};
+    impl_->constraints[id.id] = c;
+    return id;
+}
+
+World::JointId JoltWorld::AddDistanceJoint(BodyId a, BodyId b, const math::Vec3& worldAnchorA,
+                                           const math::Vec3& worldAnchorB, float minDistance,
+                                           float maxDistance) {
+    if (!impl_) return {};
+    const JPH::BodyID ba = impl_->Find(a);
+    const JPH::BodyID bb = impl_->Find(b);
+    if (ba == JPH::BodyID() || bb == JPH::BodyID() || ba == bb) return {};
+    JPH::BodyLockWrite la(impl_->physics.GetBodyLockInterface(), ba);
+    JPH::BodyLockWrite lb(impl_->physics.GetBodyLockInterface(), bb);
+    if (!la.Succeeded() || !lb.Succeeded()) return {};
+    JPH::DistanceConstraintSettings s;
+    s.mSpace = JPH::EConstraintSpace::WorldSpace;
+    s.mPoint1 = ToRVec3(worldAnchorA);
+    s.mPoint2 = ToRVec3(worldAnchorB);
+    s.mMinDistance = minDistance;
+    s.mMaxDistance = maxDistance;
+    JPH::Ref<JPH::Constraint> c = s.Create(la.GetBody(), lb.GetBody());
+    impl_->physics.AddConstraint(c.GetPtr());
+    const JointId id{impl_->nextJointId++};
+    impl_->constraints[id.id] = c;
+    return id;
+}
+
+void JoltWorld::RemoveJoint(JointId joint) {
+    if (!impl_) return;
+    auto it = impl_->constraints.find(joint.id);
+    if (it == impl_->constraints.end()) return;
+    impl_->physics.RemoveConstraint(it->second.GetPtr());
+    impl_->constraints.erase(it);
+}
+
+void JoltWorld::RemoveJointsOn(BodyId body) {
+    if (!impl_) return;
+    const JPH::BodyID bid = impl_->Find(body);
+    if (bid == JPH::BodyID()) return;
+    for (auto it = impl_->constraints.begin(); it != impl_->constraints.end();) {
+        auto* c = static_cast<JPH::TwoBodyConstraint*>(it->second.GetPtr());
+        const bool refs = (c->GetBody1() != nullptr && c->GetBody1()->GetID() == bid) ||
+                          (c->GetBody2() != nullptr && c->GetBody2()->GetID() == bid);
+        if (refs) {
+            impl_->physics.RemoveConstraint(it->second.GetPtr());
+            it = impl_->constraints.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
+size_t JoltWorld::JointCount() const { return impl_ ? impl_->constraints.size() : 0; }
+
 void JoltWorld::SetCharacterMove(BodyId body, const math::Vec3& move) {    if (!impl_) return;
     auto it = impl_->charMove.find(body.id);
     if (it != impl_->charMove.end()) it->second = move;
@@ -464,6 +571,7 @@ void JoltWorld::Remove(BodyId body) {
     }
     const JPH::BodyID bid = impl_->Find(body);
     if (bid == JPH::BodyID()) return;
+    RemoveJointsOn(body);
     impl_->Bodies().RemoveBody(bid);
     impl_->Bodies().DestroyBody(bid);
     impl_->idMap.erase(body.id);
@@ -479,6 +587,9 @@ void JoltWorld::Remove(BodyId body) {
 
 void JoltWorld::Clear() {
     if (!impl_) return;
+    // Constraints must be removed before their bodies are destroyed.
+    for (auto& kv : impl_->constraints) impl_->physics.RemoveConstraint(kv.second.GetPtr());
+    impl_->constraints.clear();
     JPH::BodyIDVector all;
     impl_->physics.GetBodies(all);
     // Jolt requires bodies to leave the broadphase BEFORE they are destroyed
