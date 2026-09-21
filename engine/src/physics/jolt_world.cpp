@@ -224,6 +224,7 @@ struct JoltWorld::Impl {
     std::map<uint32_t, bool> enabled;       // our BodyId -> active in the system
     std::map<uint32_t, World::ShapeKind> shapes;
     std::map<uint32_t, bool> sensors;
+    std::map<uint32_t, math::Vec3> sensorPos; // static sensor centre (for queries)
     std::map<uint32_t, float> radii;
     std::map<uint32_t, math::Vec3> halfExtents;
     std::map<uint32_t, uint64_t> owners;
@@ -231,6 +232,8 @@ struct JoltWorld::Impl {
     std::map<uint32_t, JPH::ObjectLayer> charLayers;
     std::map<uint32_t, math::Vec3> charMove;
     std::map<uint32_t, bool> charOnGround;
+    std::map<uint32_t, float> charRadius;     // capsule radius
+    std::map<uint32_t, float> charHalfHeight; // capsule cylinder half-height
     uint32_t nextId = 1;
     size_t bodyCount = 0;
     bool broadphaseDirty = false;
@@ -332,6 +335,8 @@ World::BodyId JoltWorld::AddCharacter(uint64_t owner, const math::Vec3& pos, flo
     impl_->charLayers[id.id] = layer;
     impl_->charMove[id.id] = {};
     impl_->charOnGround[id.id] = false;
+    impl_->charRadius[id.id] = radius;
+    impl_->charHalfHeight[id.id] = halfHeight;
     impl_->owners[id.id] = owner;
     impl_->broadphaseDirty = true;
     return id;
@@ -357,6 +362,7 @@ World::BodyId JoltWorld::AddTriggerSphere(uint64_t owner, const math::Vec3& pos,
     impl_->radii[id.id] = radius;
     impl_->owners[id.id] = owner;
     impl_->sensors[id.id] = true;
+    impl_->sensorPos[id.id] = pos;
     ++impl_->bodyCount;
     return id;
 }
@@ -383,6 +389,7 @@ World::BodyId JoltWorld::AddTriggerBox(uint64_t owner, const math::Vec3& center,
     impl_->halfExtents[id.id] = halfExtents;
     impl_->owners[id.id] = owner;
     impl_->sensors[id.id] = true;
+    impl_->sensorPos[id.id] = center;
     ++impl_->bodyCount;
     return id;
 }
@@ -404,6 +411,8 @@ void JoltWorld::Remove(BodyId body) {
         impl_->charLayers.erase(body.id);
         impl_->charMove.erase(body.id);
         impl_->charOnGround.erase(body.id);
+        impl_->charRadius.erase(body.id);
+        impl_->charHalfHeight.erase(body.id);
         impl_->owners.erase(body.id);
         if (impl_->bodyCount > 0) --impl_->bodyCount;
         return;
@@ -416,6 +425,7 @@ void JoltWorld::Remove(BodyId body) {
     impl_->enabled.erase(body.id);
     impl_->shapes.erase(body.id);
     impl_->sensors.erase(body.id);
+    impl_->sensorPos.erase(body.id);
     impl_->radii.erase(body.id);
     impl_->halfExtents.erase(body.id);
     impl_->owners.erase(body.id);
@@ -437,6 +447,7 @@ void JoltWorld::Clear() {
     impl_->enabled.clear();
     impl_->shapes.clear();
     impl_->sensors.clear();
+    impl_->sensorPos.clear();
     impl_->radii.clear();
     impl_->halfExtents.clear();
     impl_->owners.clear();
@@ -444,6 +455,8 @@ void JoltWorld::Clear() {
     impl_->charLayers.clear();
     impl_->charMove.clear();
     impl_->charOnGround.clear();
+    impl_->charRadius.clear();
+    impl_->charHalfHeight.clear();
     impl_->bodyCount = 0;
     impl_->collisions.clear();
     impl_->broadphaseDirty = true;
@@ -629,9 +642,60 @@ void JoltWorld::Step(float dt, const math::Vec3& gravity) {
     // the pairs of THIS step (custom world clears at the start of every Step,
     // physics.cpp:250). Appending here used to grow without bound since no
     // caller ever invoked ClearCollisions() (A7).
+    // Sensors vs virtual characters: CharacterVirtual instances are not Jolt
+    // bodies, so the contact listener never sees them. Approximate the character
+    // capsule with sample spheres along its vertical axis and test each against
+    // the sensor shape (static, axis-aligned).
+    std::vector<std::pair<uint64_t, uint64_t>> charTriggers;
+    if (!impl_->sensors.empty() && !impl_->characters.empty()) {
+        constexpr int kSamples = 5;
+        for (const auto& s : impl_->sensors) {
+            const auto shapeIt = impl_->shapes.find(s.first);
+            const auto posIt = impl_->sensorPos.find(s.first);
+            const auto ownerIt = impl_->owners.find(s.first);
+            if (shapeIt == impl_->shapes.end() || posIt == impl_->sensorPos.end() ||
+                ownerIt == impl_->owners.end())
+                continue;
+            const math::Vec3 sc = posIt->second;
+            const bool sphereSensor = shapeIt->second == World::ShapeKind::Sphere;
+            const float sr = sphereSensor && impl_->radii.count(s.first) ? impl_->radii[s.first]
+                                                                        : 0.0f;
+            const math::Vec3 sh = (!sphereSensor && impl_->halfExtents.count(s.first))
+                                      ? impl_->halfExtents[s.first]
+                                      : math::Vec3{};
+            for (const auto& c : impl_->characters) {
+                const auto rIt = impl_->charRadius.find(c.first);
+                const auto hhIt = impl_->charHalfHeight.find(c.first);
+                const auto coIt = impl_->owners.find(c.first);
+                if (rIt == impl_->charRadius.end() || hhIt == impl_->charHalfHeight.end() ||
+                    coIt == impl_->owners.end())
+                    continue;
+                const float rCap = rIt->second;
+                const float hh = hhIt->second;
+                const math::Vec3 p = FromJolt(c.second->GetPosition());
+                bool hit = false;
+                for (int i = 0; i < kSamples && !hit; ++i) {
+                    const float t = static_cast<float>(i) / static_cast<float>(kSamples - 1);
+                    const math::Vec3 sample{p.x, (p.y - hh) + 2.0f * hh * t, p.z};
+                    if (sphereSensor) {
+                        const math::Vec3 d = sample - sc;
+                        const float rr = rCap + sr;
+                        if (d.LengthSq() < rr * rr) hit = true;
+                    } else {
+                        const float dx = std::fmax(std::fabs(sample.x - sc.x) - sh.x, 0.0f);
+                        const float dy = std::fmax(std::fabs(sample.y - sc.y) - sh.y, 0.0f);
+                        const float dz = std::fmax(std::fabs(sample.z - sc.z) - sh.z, 0.0f);
+                        if (dx * dx + dy * dy + dz * dz < rCap * rCap) hit = true;
+                    }
+                }
+                if (hit) charTriggers.push_back({ownerIt->second, coIt->second});
+            }
+        }
+    }
     impl_->collisions = impl_->listener.collisions;
     collisions_ = std::move(impl_->collisions);
     triggers_ = impl_->listener.triggers;
+    triggers_.insert(triggers_.end(), charTriggers.begin(), charTriggers.end());
 }
 
 size_t JoltWorld::BodyCount() const {

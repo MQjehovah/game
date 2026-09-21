@@ -194,4 +194,31 @@ TEST(JoltTriggerBoxDetectsRestingBody) {
     CHECK(reported);
 }
 
+TEST(JoltTriggerDetectsVirtualCharacter) {
+    // Characters are CharacterVirtual (not Jolt bodies), so sensors rely on the
+    // capsule-vs-sensor pass rather than the contact listener.
+    physics::JoltWorld world;
+    physics::World::BodyId zone = world.AddTriggerSphere(900, {0, 1, 0}, 2.0f);
+    physics::World::BodyId ch = world.AddCharacter(100, {0, 1, 0}, 0.5f, 0.9f);
+    CHECK(zone.Valid());
+    CHECK(ch.Valid());
+    bool reported = false;
+    for (int i = 0; i < 30 && !reported; ++i) {
+        world.Step(1.0f / 60.0f, {0, -9.81f, 0});
+        for (const auto& t : world.Triggers()) {
+            if (t.first == 900 && t.second == 100) reported = true;
+        }
+    }
+    CHECK(reported);
+
+    // A character outside the zone (and away from the sensor) is not reported.
+    physics::JoltWorld world2;
+    world2.AddTriggerSphere(900, {0, 1, 0}, 1.0f);
+    world2.AddCharacter(100, {50, 1, 50}, 0.5f, 0.9f);
+    world2.Step(1.0f / 60.0f, {0, -9.81f, 0});
+    for (const auto& t : world2.Triggers()) {
+        CHECK(t.first != 900); // no near overlap
+    }
+}
+
 #endif // NEON_ENABLE_JOLT

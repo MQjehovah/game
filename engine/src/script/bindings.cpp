@@ -1562,6 +1562,19 @@ physics::RigidBodyDesc RigidBodyDescFromValue(IScriptHost& host, int argIndex) {
     return desc;
 }
 
+// Reads the optional `owner` (gameplay id) from the RigidBodyDesc table at
+// `argIndex` (default 0). Collision/trigger pairs report owners, so scripts use
+// this to identify their own bodies (otherwise every script body would be 0).
+uint64_t OwnerFromDesc(IScriptHost& host, int argIndex) {
+    const Value v = host.GetArg(argIndex);
+    if (v.type != Value::Type::Table || !v.table) return 0;
+    for (const auto& kv : v.table->fields) {
+        if (kv.first == "owner" && kv.second.type == Value::Type::Number)
+            return static_cast<uint64_t>(kv.second.number);
+    }
+    return 0;
+}
+
 Value NativePhysicsAddSphere(IScriptHost& host, void* user) {
     auto* ctx = static_cast<ScriptContext*>(user);
     if (!ctx || !ctx->physics) return Value::Nil();
@@ -1570,7 +1583,7 @@ Value NativePhysicsAddSphere(IScriptHost& host, void* user) {
     const bool dynamic = BoolArg(host, 2, true);
     const physics::RigidBodyDesc desc = RigidBodyDescFromValue(host, 3);
     const physics::World::BodyId id =
-        ctx->physics->AddSphere(0, pos, radius, dynamic, desc);
+        ctx->physics->AddSphere(OwnerFromDesc(host, 3), pos, radius, dynamic, desc);
     return Value::Num(static_cast<double>(id.id));
 }
 
@@ -1582,12 +1595,47 @@ Value NativePhysicsAddBox(IScriptHost& host, void* user) {
     const bool dynamic = BoolArg(host, 2, true);
     const physics::RigidBodyDesc desc = RigidBodyDescFromValue(host, 3);
     const physics::World::BodyId id =
-        ctx->physics->AddBox(0, center, half, dynamic, desc);
+        ctx->physics->AddBox(OwnerFromDesc(host, 3), center, half, dynamic, desc);
     return Value::Num(static_cast<double>(id.id));
 }
 
-Value NativePhysicsRemove(IScriptHost& host, void* user) {
+Value NativePhysicsAddTriggerSphere(IScriptHost& host, void* user) {
     auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->physics) return Value::Nil();
+    const math::Vec3 pos = Vec3FromValue(host.GetArg(0), math::Vec3{});
+    const float radius = NumberArg(host, 1, 1.0f);
+    const physics::RigidBodyDesc desc = RigidBodyDescFromValue(host, 2);
+    const physics::World::BodyId id =
+        ctx->physics->AddTriggerSphere(OwnerFromDesc(host, 2), pos, radius, desc);
+    return Value::Num(static_cast<double>(id.id));
+}
+
+Value NativePhysicsAddTriggerBox(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->physics) return Value::Nil();
+    const math::Vec3 center = Vec3FromValue(host.GetArg(0), math::Vec3{});
+    const math::Vec3 half = Vec3FromValue(host.GetArg(1), math::Vec3{1, 1, 1});
+    const physics::RigidBodyDesc desc = RigidBodyDescFromValue(host, 2);
+    const physics::World::BodyId id =
+        ctx->physics->AddTriggerBox(OwnerFromDesc(host, 2), center, half, desc);
+    return Value::Num(static_cast<double>(id.id));
+}
+
+Value NativePhysicsTriggers(IScriptHost& host, void* user) {
+    (void)host;
+    auto* ctx = static_cast<ScriptContext*>(user);
+    Value out = Value::Tbl();
+    if (!ctx || !ctx->physics) return out;
+    for (const auto& t : ctx->physics->Triggers()) {
+        Value pair = Value::Tbl();
+        pair.table->fields.emplace_back("trigger", Value::Num(static_cast<double>(t.first)));
+        pair.table->fields.emplace_back("other", Value::Num(static_cast<double>(t.second)));
+        out.table->array.push_back(std::move(pair));
+    }
+    return out;
+}
+
+Value NativePhysicsRemove(IScriptHost& host, void* user) {    auto* ctx = static_cast<ScriptContext*>(user);
     if (!ctx || !ctx->physics) return Value::Nil();
     const uint32_t id = SafeU32FromNumber(NumberArg(host, 0, 0.0));
     if (id != 0) ctx->physics->Remove({id});
@@ -1677,7 +1725,7 @@ Value NativePhysicsAddCharacter(IScriptHost& host, void* user) {
     const float halfHeight = NumberArg(host, 2, 0.9f);
     const physics::RigidBodyDesc desc = RigidBodyDescFromValue(host, 3);
     const physics::World::BodyId id =
-        ctx->physics->AddCharacter(0, pos, radius, halfHeight, desc);
+        ctx->physics->AddCharacter(OwnerFromDesc(host, 3), pos, radius, halfHeight, desc);
     return Value::Num(static_cast<double>(id.id));
 }
 
@@ -2089,6 +2137,9 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("Raycast", &NativeRaycast, &ctx);
     host.Register("PhysicsAddSphere", &NativePhysicsAddSphere, &ctx);
     host.Register("PhysicsAddBox", &NativePhysicsAddBox, &ctx);
+    host.Register("PhysicsAddTriggerSphere", &NativePhysicsAddTriggerSphere, &ctx);
+    host.Register("PhysicsAddTriggerBox", &NativePhysicsAddTriggerBox, &ctx);
+    host.Register("PhysicsTriggers", &NativePhysicsTriggers, &ctx);
     host.Register("PhysicsRemove", &NativePhysicsRemove, &ctx);
     host.Register("PhysicsSetVelocity", &NativePhysicsSetVelocity, &ctx);
     host.Register("PhysicsGetVelocity", &NativePhysicsGetVelocity, &ctx);

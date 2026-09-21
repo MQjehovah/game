@@ -210,8 +210,44 @@ assert(c.a ~= nil and c.b ~= nil)
     CHECK(RunScript(*b.host, check));
 }
 
-TEST(ScriptBindingsDespawnThenGetPositionNil) {
+TEST(ScriptBindingsPhysicsTriggers) {
     Bindings b;
+    const char* src = R"(
+local zone = PhysicsAddTriggerBox({x=0, y=1, z=0}, {x=2, y=1, z=2}, {owner=11})
+assert(type(zone) == "number" and zone > 0)
+local ball = PhysicsAddSphere({x=0, y=5, z=0}, 0.5, true, {owner=22})
+assert(type(ball) == "number" and ball > 0)
+)";
+    CHECK(RunScript(*b.host, src));
+
+    bool reported = false;
+    for (int i = 0; i < 240 && !reported; ++i) {
+        b.physics.Step(1.0f / 60.0f, {0, -9.81f, 0});
+        for (const auto& t : b.physics.Triggers()) {
+            if (t.first == 11 && t.second == 22) reported = true;
+        }
+    }
+    CHECK(reported);
+    // No collision was ever raised against the sensor (it is non-physical).
+    for (const auto& c : b.physics.Collisions()) {
+        CHECK(c.first != 11);
+        CHECK(c.second != 11);
+    }
+
+    // Script-side query exposes the same pairs as {trigger=, other=}.
+    const char* check = R"(
+local tr = PhysicsTriggers()
+assert(type(tr) == "table")
+local found = false
+for i = 1, #tr do
+    if tr[i].trigger == 11 and tr[i].other == 22 then found = true end
+end
+assert(found, "trigger pair reported to script")
+)";
+    CHECK(RunScript(*b.host, check));
+}
+
+TEST(ScriptBindingsDespawnThenGetPositionNil) {    Bindings b;
     const char* src = R"(
 local e = Spawn("wolf", {x=1, y=0, z=2})
 assert(GetPosition(e) ~= nil)
