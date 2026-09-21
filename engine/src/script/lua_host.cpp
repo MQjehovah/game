@@ -234,6 +234,17 @@ void PushValue(lua_State* L, const Value& v) {
 }
 
 Value PopValue(lua_State* L, int index) {
+    // Scalar fast path: the overwhelming majority of script arguments are
+    // numbers/strings/bools. Handle them without reserving Lua stack or
+    // constructing the cycle-detection set (a per-call heap allocation).
+    if (lua_isnil(L, index)) return Value::Nil();
+    if (lua_isboolean(L, index)) return Value::Bool(lua_toboolean(L, index) != 0);
+    if (lua_isnumber(L, index)) return Value::Num(lua_tonumber(L, index));
+    if (lua_isstring(L, index)) {
+        size_t len = 0;
+        const char* s = lua_tolstring(L, index, &len);
+        return Value::Str(std::string(s ? s : "", len));
+    }
     if (!lua_checkstack(L, kMaxConversionDepth * 2 + 32)) return Value::Nil();
     std::unordered_set<const void*> seen;
     return PopValueImpl(L, index, 0, seen);
