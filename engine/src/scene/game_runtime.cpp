@@ -724,6 +724,26 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
                          },
                          vpW, vpH);
     };
+    scriptCtx_.spawnDecal = [this](const std::string& texture, const math::Vec3& pos, float size,
+                                   float alpha) -> ecs::Entity {
+        if (texture.empty()) return {};
+        ecs::Entity e = world_.Create();
+        SceneTransform t;
+        t.pos = pos;
+        world_.Add<SceneTransform>(e, t);
+        SceneDecal d;
+        d.texture = texture;
+        d.size = size > 0.01f ? size : 2.0f;
+        d.alpha = alpha;
+        world_.Add<SceneDecal>(e, d);
+        return e;
+    };
+    scriptCtx_.setDecal = [this](ecs::Entity e, float size, float alpha) {
+        SceneDecal* d = world_.Get<SceneDecal>(e);
+        if (d == nullptr) return;
+        if (size > 0.01f) d->size = size;
+        d->alpha = alpha;
+    };
     scriptCtx_.uiViewportSize = [this]() {
         return math::Vec2{hud_.DesignWidth(), hud_.DesignHeight()};
     };

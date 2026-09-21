@@ -1117,7 +1117,39 @@ Value NativeDrawGroundLine(IScriptHost& host, void* user) {
 }
 
 // --- Fog of war bindings ---------------------------------------------------
-Value NativeFogSetup(IScriptHost& host, void* user) {
+Value NativeSpawnDecal(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->spawnDecal) return Value::Nil();
+    const std::string texture = StringArg(host, 0);
+    if (texture.empty()) return Value::Nil();
+    auto num = [&](int i, float def) {
+        return host.GetArg(i).type == Value::Type::Number
+                   ? static_cast<float>(host.GetArg(i).number)
+                   : def;
+    };
+    // SpawnDecal(texture, {x,y,z}, size, alpha) or (texture, x, y, z, size, alpha).
+    math::Vec3 pos{};
+    int sizeIdx = 2, alphaIdx = 3;
+    const Value& a1 = host.GetArg(1);
+    if (a1.type == Value::Type::Table) {
+        pos = Vec3FromValue(a1, math::Vec3{});
+    } else if (host.ArgCount() >= 6) {
+        pos = {num(1, 0.0f), num(2, 0.0f), num(3, 0.0f)};
+        sizeIdx = 4;
+        alphaIdx = 5;
+    }
+    const ecs::Entity e = ctx->spawnDecal(texture, pos, num(sizeIdx, 2.0f), num(alphaIdx, 1.0f));
+    return e.IsValid() ? EntityToValue(e) : Value::Nil();
+}
+
+Value NativeSetDecal(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->setDecal) return Value::Nil();
+    const ecs::Entity e = EntityFromValue(host.GetArg(0));
+    if (!e.IsValid()) return Value::Nil();
+    ctx->setDecal(e, NumberArg(host, 1, 0.0f), NumberArg(host, 2, 1.0f));
+    return Value::Nil();
+}Value NativeFogSetup(IScriptHost& host, void* user) {
     auto* ctx = static_cast<ScriptContext*>(user);
     if (!ctx || !ctx->fogSetup) return Value::Nil();
     auto num = [&](int i, float def) {
@@ -2124,6 +2156,8 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("FogAddSource", &NativeFogAddSource, &ctx);
     host.Register("FogVisibleAt", &NativeFogVisibleAt, &ctx);
     host.Register("FogDraw", &NativeFogDraw, &ctx);
+    host.Register("SpawnDecal", &NativeSpawnDecal, &ctx);
+    host.Register("SetDecal", &NativeSetDecal, &ctx);
     host.Register("EmitParticles", &NativeEmitParticles, &ctx);
     host.Register("SetSpriteFrames", &NativeSetSpriteFrames, &ctx);
     host.Register("SetSpriteSheet", &NativeSetSpriteSheet, &ctx);

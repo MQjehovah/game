@@ -2021,3 +2021,46 @@ TEST(OverlapSphereBroadphaseMatchesBruteForce) {
     std::printf("  [bench] %d ents sphere x300: brute=%.2fms broadphase=%.2fms (hits=%zu)\n",
                 kCount, bruteMs, fastMs, fastHits);
 }
+
+// Script-spawnable ground decals: SpawnDecal creates a SceneDecal entity the
+// DrawSystem renders in the 3D scene; SetDecal updates size/alpha in place.
+TEST(SpawnDecalViaLuaCreatesGroundDecal) {
+    const char* scene = R"({
+      "entities": [
+        {"name": "hero", "components": {
+          "transform": {"pos": [0,0,0]},
+          "script": {"backend": "lua", "path": "decal.lua"}}}
+      ]
+    })";
+    const char* lua = R"(
+      function on_start(e)
+        local d = SpawnDecal("assets/sprites/glow.png", {x = 1, y = 0, z = 2}, 5, 0.6)
+        SetVar("valid", (d ~= nil and d.id ~= nil and d.id > 0) and 1 or 0)
+        SetDecal(d, 9, 0.25)
+      end
+    )";
+    scene::GameRuntime runtime;
+    scene::GameRuntimeConfig cfg;
+    cfg.headless = true;
+    cfg.readScript = [&](const std::string&) { return std::string(lua); };
+    CHECK(runtime.Start(scene, cfg).Ok());
+    CHECK_NEAR(runtime.GameVar("valid"), 1.0, 1e-6);
+
+    bool found = false;
+    auto view = runtime.World().ViewAll<scene::SceneDecal>();
+    for (size_t i = 0; i < view.Size(); ++i) {
+        const ecs::Entity e = runtime.World().EntityAt<scene::SceneDecal>(i);
+        const scene::SceneDecal* d = runtime.World().Get<scene::SceneDecal>(e);
+        if (d == nullptr || d->texture != "assets/sprites/glow.png") continue;
+        found = true;
+        CHECK_NEAR(d->size, 9.0f, 1e-4);   // SetDecal updated size
+        CHECK_NEAR(d->alpha, 0.25f, 1e-4); // and alpha
+        const scene::SceneTransform* t = runtime.World().Get<scene::SceneTransform>(e);
+        CHECK(t != nullptr);
+        if (t) {
+            CHECK_NEAR(t->pos.x, 1.0f, 1e-4);
+            CHECK_NEAR(t->pos.z, 2.0f, 1e-4);
+        }
+    }
+    CHECK(found);
+}

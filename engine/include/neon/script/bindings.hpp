@@ -351,6 +351,17 @@ struct ScriptContext {
     std::function<bool(float x, float z)> fogVisibleAt;
     // Emits the soft fog mask into the on_render 2D canvas; returns triangles.
     std::function<int()> fogDraw;
+
+    // --- Ground decals -----------------------------------------------------
+    // Spawns a flat textured quad on the ground (XZ plane) at (x, y, z) and
+    // returns its entity handle, or an invalid handle when unsupported. The
+    // engine's DrawSystem renders SceneDecal entities in the 3D scene (depth-
+    // tested, perspective-correct), so scripts get GPU ground effects instead
+    // of projecting their own polygons. setDecal updates size/alpha in place.
+    std::function<ecs::Entity(const std::string& texture, const math::Vec3& pos, float size,
+                              float alpha)>
+        spawnDecal;
+    std::function<void(ecs::Entity, float size, float alpha)> setDecal;
 };
 
 // Registers Spawn/Despawn/GetPosition/SetPosition/GetVar/SetVar/Raycast/
