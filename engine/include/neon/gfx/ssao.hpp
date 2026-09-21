@@ -30,7 +30,12 @@ inline constexpr float kSsaoKernel[kSsaoKernelSize][3] = {
 
 // AO tuning.
 constexpr float kSsaoRadius = 0.8f;    // world-units sphere radius
-constexpr float kSsaoBias = 0.05f;     // depth bias (fights self-occlusion)
+constexpr float kSsaoBias = 0.05f;     // depth bias (CPU mirror, normalised depth)
+// GPU AO bias in WORLD units: the shader decodes the normalised scene depth back
+// to world units, so the bias must be world-scaled too (a grazing ground plane's
+// own depth gradient across a tap is ~0.1..0.3 units). Kept separate from
+// kSsaoBias, which the CPU mirror test drives in normalised units.
+constexpr float kSsaoBiasWorld = 0.4f;
 constexpr float kSsaoPower = 1.8f;     // sharpens the occlusion curve
 constexpr float kSsaoIntensity = 3.0f; // scales the unoccluded multiplier
 
@@ -80,8 +85,10 @@ inline float SsaoOcclusion(float depth, float radius, float bias,
 
 // --- Built-in shaders -----------------------------------------------------
 
-// Camera-depth pass: writes a colour-encoded linear camera-space depth. The
-// clip-space -w equals the view-space z (linear), so depth/far is [0,1].
+// Camera-depth pass: writes a colour-encoded linear camera depth. In OpenGL the
+// clip-space w equals -viewZ, and the view looks down -Z, so clip.w is the
+// POSITIVE view distance: `vViewDepth = clip.w`. (The previous `-clip.w` was
+// negative and clamped to 0, so every fragment encoded depth 0.)
 inline constexpr const char* kSsaoDepthVertexShader = R"(
 #version 330 core
 layout(location = 0) in vec3 aPos;
@@ -90,7 +97,7 @@ uniform mat4 uMVP;
 out float vViewDepth;
 void main() {
     vec4 clip = uMVP * aInstance * vec4(aPos, 1.0);
-    vViewDepth = -clip.w; // linear view-space depth (perspective W)
+    vViewDepth = clip.w; // positive view distance
     gl_Position = clip;
 }
 )";
@@ -103,7 +110,7 @@ uniform mat4 uMVP;
 out float vViewDepth;
 void main() {
     vec4 clip = uMVP * vec4(aPos, 1.0);
-    vViewDepth = -clip.w; // linear view-space depth (perspective W)
+    vViewDepth = clip.w; // positive view distance
     gl_Position = clip;
 }
 )";
@@ -120,30 +127,31 @@ void main() {
 }
 )";
 
-// AO compute: samples the colour-encoded depth, reconstructs linear depth and
-// accumulates occlusion over the screen-space kernel. Outputs AO in R.
+// AO compute: samples the colour-encoded depth, decodes it to WORLD units and
+// accumulates occlusion over a depth-scaled screen-space kernel. Outputs AO in R.
 inline constexpr const char* kSsaoFragmentShader = R"(
 #version 330 core
 in vec2 vUV;
 out vec4 FragColor;
 uniform sampler2D uDepth;
 uniform vec2 uTexelSize;
-uniform float uRadius;
-uniform float uBias;
+uniform float uRadius;     // sampling radius, world units
+uniform float uBias;       // depth bias, world units
 uniform float uPower;
 uniform float uFar;
-vec4 Decode(vec4 p) {
-    return vec4(p.r, p.g, p.b, p.a);
-}
-float LoadDepth(vec2 uv) {
+uniform float uProjScale;  // pixels per world unit at depth 1 (0.5*height/tan(fovY/2))
+float RawDepth(vec2 uv) {
     vec4 p = texture(uDepth, uv);
     return p.r + p.g / 255.0 + p.b / 65025.0 + p.a / 16581375.0;
 }
 void main() {
-    float centre = LoadDepth(vUV);
-    if (centre >= 1.0) { FragColor = vec4(1.0, 1.0, 1.0, 1.0); return; } // sky/no geometry
+    float raw = RawDepth(vUV);
+    if (raw >= 0.9999) { FragColor = vec4(1.0, 1.0, 1.0, 1.0); return; } // sky/no geometry
+    float centre = raw * uFar; // world units
+    // Project the world radius to screen space at the centre depth.
+    float pixels = clamp(uRadius * uProjScale / max(centre, 0.001), 1.0, 128.0);
+    vec2 step = uTexelSize * pixels;
     float occ = 0.0;
-    float count = 0.0;
     for (int i = 0; i < 6; ++i) {
         vec2 off; float scale;
         if (i == 0) { off = vec2(0.0); scale = 0.5; }
@@ -152,12 +160,13 @@ void main() {
         else if (i == 3) { off = vec2(0.0, 1.0); scale = 0.9; }
         else if (i == 4) { off = vec2(-1.0, 0.8); scale = 0.7; }
         else { off = vec2(-0.6, -1.0); scale = 0.85; }
-        float s = LoadDepth(vUV + off * uTexelSize * uRadius * scale);
-        float diff = centre - s;
+        vec2 uv2 = vUV + off * step * scale;
+        float s = RawDepth(uv2) * uFar;
+        if (s >= uFar * 0.9999) continue; // sky sample
+        float diff = centre - s; // world units (positive: neighbour is closer)
         if (diff > uBias) occ += pow(1.0 - min(diff / uRadius, 1.0), uPower);
-        count += 1.0;
     }
-    float ao = 1.0 - clamp(occ / count, 0.0, 1.0);
+    float ao = clamp(1.0 - uPower * (occ / 6.0), 0.0, 1.0);
     FragColor = vec4(ao, ao, ao, 1.0);
 }
 )";

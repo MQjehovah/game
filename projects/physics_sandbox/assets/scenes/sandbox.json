@@ -1,4 +1,5 @@
 {
+  "renderstack": { "ssao": true, "ssaoIntensity": 1.5, "bloom": true, "tonemap": true, "exposure": 1.0 },
   "environment": {
     "resource": "assets/environments/dusk.env.json"
   },

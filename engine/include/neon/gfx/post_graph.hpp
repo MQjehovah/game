@@ -218,6 +218,9 @@ private:
     math::Vec4 sceneVpRect_{0.0f, 0.0f, 0.0f, 0.0f}; // px, within the HDR target
     float nearPlane_ = 0.1f;       // SSR / composite 的 near/far（Execute 时从 camera 复制）
     float farPlane_ = 800.0f;
+    // Pixels per world unit at depth 1 (0.5*height/tan(fovY/2)): SSAO projects its
+    // world-space sampling radius to screen space with it.
+    float projScale_ = 600.0f;
     CompositeParams comp_; // 上一次 Execute 的 composite 快照
     bool built_ = false;
     bool ran_ = false;

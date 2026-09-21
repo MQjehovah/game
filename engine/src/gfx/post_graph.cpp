@@ -1,6 +1,7 @@
 #include "neon/gfx/post_graph.hpp"
 
 #include <algorithm>
+#include <cmath>
 
 #include "neon/gfx/bloom.hpp"
 #include "neon/gfx/ssao.hpp"
@@ -113,8 +114,13 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
         backend.SetUniformVec2("uTexelSize", math::Vec2{1.0f / static_cast<float>(hdrW_),
                                                         1.0f / static_cast<float>(hdrH_)});
         backend.SetUniformFloat("uRadius", kSsaoRadius);
-        backend.SetUniformFloat("uBias", kSsaoBias);
+        backend.SetUniformFloat("uBias", kSsaoBiasWorld);
         backend.SetUniformFloat("uPower", kSsaoPower);
+        // The AO shader decodes the normalised depth to world units, so it needs
+        // uFar (the depth pass encoded with it) and the screen-space projection
+        // scale for its radius. The pass previously set neither.
+        backend.SetUniformFloat("uFar", farPlane_);
+        backend.SetUniformFloat("uProjScale", projScale_);
         backend.DrawMesh(postQuad_);
     };
     ssaoPassIndex_ = add(std::move(ssao));
@@ -589,6 +595,8 @@ bool PostGraph::Execute(IRenderBackend& backend, const FrameParams& params) {
     }
     nearPlane_ = params.camera.nearPlane;
     farPlane_ = params.camera.farPlane;
+    projScale_ = hdrH_ > 0 ? 0.5f * static_cast<float>(hdrH_) / std::tan(0.5f * params.camera.fovY)
+                           : 600.0f;
     viewProj_ = params.viewProj;
     camPos_ = params.camPos;
     sunDir_ = params.sunDir;

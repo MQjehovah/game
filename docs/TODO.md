@@ -20,23 +20,15 @@
   待做：接入 CI、为雾/SSAO/环境各留黄金图。
 
 ### P0 · 渲染管线深化（画面收益最高，做完 0 后不再阻塞）
-1. **B4 前置：修 SSAO（当前是精确的 no-op）**。像素基线实测 SSAO 开关 24–52px（=噪声）、intensity=8 也仅 29px。
-   调试会话已确认（都有证据）：
-   - AO pass 在跑（DBGAO far=800）；AO 值确实进 composite（常量 0.5 → 99.7% 像素变化）；
-     深度预通道**会绘制**（把深度片段写成常量白 → 整屏变白）；caster 走**实例化**路径（n=10），
-     且 `aInstance` 有效（把 vViewDepth 改成实例平移长度 → 几何位置正确可见）。
-   - **卡点**：AO shader 解码出的深度对几何 ≈ 0、对天空 = 1，即 `vViewDepth = -clip.w` 在片段里像是 ~0，
-     但同一个 clip 又把几何摆到了正确位置——两者矛盾。下一步要用干净探针重验（并查深度目标 clear/格式/别名）。
-   - **已定位的真实 bug（无论上面如何都要修）**：
-     ① AO shader 用**归一化**深度与**世界单位** `uRadius/uBias` 比较 → `diff>bias` 恒假 → occ=0；
-     ② **AO pass 从未设置 `uFar`**（volumetric/SSR pass 有设）→ 解码深度乘的是 0 → diff 恒 0；
-     ③ 衰减 `1-min(diff/radius,1)` 对超过 radius 的深度差直接归零 → 真实接触不产生遮蔽，
-        应改成 hemisphere/深度平面 + range 形式（用重建位置与法线）。
-
-    另外：AO 目标为**半分辨率**、`uTexelSize` 用全分辨率（对 UV 采深度是对的）。
-   - **踩坑记录**：PowerShell 正则改 GLSL 会把 shader 改坏（如 `'ao' undeclared`）→ 整条 SSAO 链
-     静默失效（日志 `Renderer: SSAO/SSR/volumetric shaders FAILED`），导致后续所有"没效果"的结论失真。
-     改 shader 务必手改，并确认日志为 `... shaders ok`。
+1. **B4 收尾：SSAO 复用主深度**。SSAO 已修好（见下），现在做 B4：MSAA 深度 resolve→SSAO 采样主深度、
+   去掉全量 caster 重画（几何 pass 减半），带驱动自检回退旧的颜色编码路径。
+   - **SSAO 修复（已落地）**：根因有三——① 深度顶点 shader 写 `vViewDepth = -clip.w`；GL 下 `clip.w`
+     才是正的视图距离，`-clip.w` 为负 → `clamp(...,0,1)` 全变 0（几何深度恒 0，天空=clear=1）；
+     ② AO shader 用归一化深度比世界单位 `uRadius/uBias`；③ AO pass 没设 `uFar`（解码乘 0）。
+     修法：`vViewDepth = clip.w`；AO 用世界单位（`centre = RawDepth*uFar`）、按 `uProjScale` 把半径投到
+     屏幕空间；post_graph 给 AO pass 补 `uFar`/`uProjScale`；新增 `kSsaoBiasWorld=0.4`（世界单位）与
+     `kSsaoBias=0.05`（CPU 镜像用归一化）分离。实测 SSAO 开关 53.8% 像素变化、接触处有 AO；
+     沙盒场景启用 renderstack(ssao) 并更新黄金图，像素回归 PASS。
 2. **C4 Renderer 拆分 + render graph**：`renderer.cpp` ~2800 行、17 个 RT 手工生命周期、三份近似 caster
    提交（CSM/SSAO 深度/点光）。先抽 caster 提交 helper + pass 描述 + RT 自动生命周期。
 3. **C10 shader 资产化**：全部内嵌 C++ 字符串 → 源文件 + 产物缓存 + 变体；VK 端 `CreateShader`
