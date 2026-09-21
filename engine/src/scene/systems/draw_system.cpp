@@ -1042,6 +1042,19 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
     // depth) once per frame; the BVH pass and the draw loop read it instead of
     // re-walking parent chains per entity.
     sceneTree.Rebuild(world);
+    // B7: compute each skinned entity's pose ONCE per frame and reuse it in the
+    // HUD anchor pass and the main draw loop (each used to call PoseFor, which
+    // samples every animation curve + builds every bone matrix).
+    std::unordered_map<uint64_t, std::vector<math::Mat4>> poseCache;
+    auto poseFor = [&](const DrawItem& item) -> const std::vector<math::Mat4>& {
+        const uint64_t key = EntityKey(item.ent);
+        auto it = poseCache.find(key);
+        if (it != poseCache.end()) return it->second;
+        std::vector<math::Mat4> bones;
+        if (!anims.PoseFor(key, item.skinned->skeleton, bones))
+            bones = item.skinned->BoneMatrices();
+        return poseCache.emplace(key, std::move(bones)).first->second;
+    };
     // M1 HUD anchors: project every drawn entity's world position (plus a
     // per-plate head offset) into design units for on_render scripts. Cached
     // once per frame; WorldToScreen() below uses the same matrices. The
@@ -1093,14 +1106,10 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
                         }
                     };
                     if (d.skinned && d.skinned->Valid()) {
-                        // Mirror Draw()'s bone selection (override clip vs the
-                        // model's default) so the anchor matches this frame.
-                        // Task 12: the override pose now comes from the
-                        // AnimationSystem state table (PoseFor); the default
-                        // path falls back to the model's own BoneMatrices().
-                        std::vector<math::Mat4> bones;
-                        if (!anims.PoseFor(EntityKey(d.ent), d.skinned->skeleton, bones))
-                            bones = d.skinned->BoneMatrices();
+                        // Task 12: the pose comes from the AnimationSystem state
+                        // table (PoseFor) via the per-frame cache; shared with
+                        // the main draw loop so it is computed only once.
+                        const std::vector<math::Mat4>& bones = poseFor(d);
                         if (!bones.empty()) {
                             // CPU-skin the actual vertices so the plate hugs the
                             // RENDERED mesh (a rig can place the body off the
@@ -1302,12 +1311,9 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
         }
         flushBatches(); // keep relative order with non-batched draws
         if (item.skinned && item.skinned->Valid()) {
-            // Task 12: the override pose comes from the AnimationSystem state
-            // table (PoseFor); the default path falls back to the model's own
-            // BoneMatrices(), matching the old DrawItem override branch.
-            std::vector<math::Mat4> bones;
-            if (!anims.PoseFor(EntityKey(item.ent), item.skinned->skeleton, bones))
-                bones = item.skinned->BoneMatrices();
+            // Task 12: pose from AnimationSystem (PoseFor), shared per-frame
+            // with the HUD anchor pass above (see poseFor).
+            const std::vector<math::Mat4>& bones = poseFor(item);
             for (const auto& part : item.skinned->parts) {
                 // Copy (parts are shared across entities): only this draw gets
                 // the highlight, and it clears when the unit is deselected.
