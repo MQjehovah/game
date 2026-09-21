@@ -406,7 +406,7 @@
 | Vulkan 成熟度 | 中→大 | descriptor 泄漏/无内存子分配/串行提交/伪 HDR | A1/A2/B5/P1 系列 |
 | ECS/并行 | 中 | 无 archetype/job 依赖分析/burst 级优化 | C11/G2-2/G5-2 |
 | 动画 | 中 | 无动画事件/重定向；>64 骨骼上限；BlendSpace 相位漂移 | B7/C2 + 新增：AnimEvent、骨骼上限 |
-| 物理 | 中→大 | Jolt 同库但封装最小子集（无关节、隐式地面、2048 上限、单线程）——**触发器(传感器)/角色检测/shape cast/重叠查询已补** | A7/A8 + Jolt 封装扩展 |
+| 物理 | 中 | Jolt 同库——**触发器/shape cast/重叠查询/旋转/CCD/关节(固定·铰链·距离)/可配置池+可选多线程已补**；余：碰撞体类型扩展(胶囊/凸包)、隐式地面消除、约束限位/马达 | A7/A8 + Jolt 封装扩展 |
 | 脚本工具链 | 中→小 | 反射字段访问（EntityComponentField）已做；多语言宿主（JS/Python 门控）已做；JS 无调试/绑定静默失败仍存 | B8/B9/C7 + E |
 | 网络 | 强项+硬上限 | 确定性+AOI 强；48 实体上限/delta/认证/重连/分区分服缺 | B13/D3/G3-4 |
 | 资产管线 | 中→大 | 有中心式 GUID 库（.asset_db.json）+ ResolveAssetRef 路径回退；仍无 FBX/USD、GUID 未贯通场景引用 | A13/C5 + 导入格式扩展 |
