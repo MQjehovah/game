@@ -35,6 +35,8 @@ public:
         ecs::Entity caster;    // never damaged by its own projectile
         std::vector<SkillStatus> statuses; // applied to the hit target
         gfx::Color color{1.0f, 1.0f, 1.0f, 1.0f}; // fireball tint (team/skill)
+        // Recent positions (oldest first) for the camera-facing ribbon trail.
+        std::vector<math::Vec3> trail;
     };
 
     void Spawn(const math::Vec3& pos, const math::Vec3& dir, float speed, float damage,

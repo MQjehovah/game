@@ -30,6 +30,7 @@ void ProjectileSystem::Spawn(const math::Vec3& pos, const math::Vec3& dir, float
     p.hitRadius = hitRadius;
     p.statuses = statuses;
     p.color = color;
+    p.trail.push_back(pos);
     projectiles_.push_back(p);
 }
 
@@ -78,6 +79,10 @@ void ProjectileSystem::Tick(float dt, ecs::World& world, gfx::ParticleSystem& pa
         p.pos += p.dir * step;
         p.traveled += step;
         p.life -= dt;
+        // Ribbon trail: keep the last ~0.4s of positions (oldest first).
+        p.trail.push_back(p.pos);
+        constexpr size_t kTrailMax = 24;
+        if (p.trail.size() > kTrailMax) p.trail.erase(p.trail.begin());
         Trail(p, particles);
         // Data-driven skills can bound a projectile by travel distance.
         if (p.range > 0.0f && p.traveled >= p.range) {
@@ -140,6 +145,12 @@ void ProjectileSystem::Draw(gfx::Renderer& renderer) {
     gfx::Material fmat = gfx::Material::Lit({}, gfx::Color::White, 8.0f);
     fmat.emissiveIntensity = 2.5f;
     for (const Projectile& p : projectiles_) {
+        // Camera-facing additive ribbon from the recent path (comet tail).
+        if (p.trail.size() >= 2) {
+            renderer.DrawTrail(p.trail.data(), static_cast<uint32_t>(p.trail.size()), 0.32f,
+                               {p.color.r, p.color.g, p.color.b, 0.85f},
+                               {p.color.r, p.color.g, p.color.b, 0.0f});
+        }
         fmat.tint = p.color;
         renderer.DrawMesh(fireballMesh_, fmat, math::Mat4::Translation(p.pos));
     }

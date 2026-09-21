@@ -323,6 +323,12 @@ public:
         Color color;
     };
     void DrawLines(const LineVertex* vertices, uint32_t count, const math::Mat4& model);
+    // Camera-facing additive ribbon through `points` (oldest first). `head` is
+    // the colour at the newest point, `tail` at the oldest; `width` in world
+    // units. Depth-tested (no write). Used for projectile/skill trails; the
+    // buffer is rebuilt per call (a handful of points).
+    void DrawTrail(const math::Vec3* points, uint32_t count, float width, const Color& head,
+                   const Color& tail);
     void DrawBox(const math::AABB& box, const Color& color);
     void DrawSphere(const math::Vec3& center, float radius, const Color& color, int segments = 20);
 

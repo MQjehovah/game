@@ -971,8 +971,49 @@ void Renderer::DrawLines(const LineVertex* vertices, uint32_t count, const math:
     backend_->DrawPrimitives(vertices, count, 28, nullptr, 0, PrimitiveTopology::Lines);
 }
 
-void Renderer::DrawBox(const math::AABB& box, const Color& color) {
-    math::Vec3 c[8] = {
+void Renderer::DrawTrail(const math::Vec3* points, uint32_t count, float width,
+                         const Color& head, const Color& tail) {
+    if (points == nullptr || count < 2 || width <= 0.0f) return;
+    const math::Vec3 eye = sceneState_.ActiveCamera().position;
+    std::vector<LineVertex> verts;
+    verts.reserve(static_cast<size_t>(count) * 2);
+    for (uint32_t i = 0; i < count; ++i) {
+        const math::Vec3 p = points[i];
+        math::Vec3 dir = (i + 1 < count) ? (points[i + 1] - p) : (p - points[i - 1]);
+        if (dir.LengthSq() < 1e-8f) dir = {0.0f, 0.0f, 1.0f};
+        dir = dir.Normalized();
+        // Perpendicular in the view plane: cross(segment, toEye).
+        math::Vec3 side = math::Cross(dir, eye - p);
+        if (side.LengthSq() < 1e-8f) side = math::Cross(dir, {0.0f, 1.0f, 0.0f});
+        side = side.Normalized() * (width * 0.5f);
+        // i = 0 is the oldest point (tail); fade tail -> head.
+        const float t = static_cast<float>(i) / static_cast<float>(count - 1);
+        const Color c{tail.r + (head.r - tail.r) * t, tail.g + (head.g - tail.g) * t,
+                      tail.b + (head.b - tail.b) * t, tail.a + (head.a - tail.a) * t};
+        verts.push_back({p - side, c});
+        verts.push_back({p + side, c});
+    }
+    std::vector<uint16_t> idx;
+    idx.reserve(static_cast<size_t>(count - 1) * 6);
+    for (uint32_t i = 0; i + 1 < count; ++i) {
+        const uint16_t a = static_cast<uint16_t>(i * 2);
+        const uint16_t b = static_cast<uint16_t>(i * 2 + 1);
+        const uint16_t c = static_cast<uint16_t>((i + 1) * 2);
+        const uint16_t d = static_cast<uint16_t>((i + 1) * 2 + 1);
+        idx.push_back(a); idx.push_back(c); idx.push_back(b);
+        idx.push_back(b); idx.push_back(c); idx.push_back(d);
+    }
+    Flush2D();
+    backend_->SetBlendMode(BlendMode::Additive);
+    backend_->SetDepthTest(sceneState_.DepthAvailable(), false);
+    backend_->SetCullMode(CullMode::None);
+    backend_->UseShader(linesShader_);
+    backend_->SetUniformMat4("uMVP", sceneState_.ViewProjection());
+    backend_->DrawPrimitives(verts.data(), static_cast<uint32_t>(verts.size()), 28, idx.data(),
+                             static_cast<uint32_t>(idx.size()), PrimitiveTopology::Triangles);
+}
+
+void Renderer::DrawBox(const math::AABB& box, const Color& color) {    math::Vec3 c[8] = {
         {box.min.x, box.min.y, box.min.z}, {box.max.x, box.min.y, box.min.z},
         {box.max.x, box.max.y, box.min.z}, {box.min.x, box.max.y, box.min.z},
         {box.min.x, box.min.y, box.max.z}, {box.max.x, box.min.y, box.max.z},
