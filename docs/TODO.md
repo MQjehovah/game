@@ -201,8 +201,9 @@
 - 验收：无断点运行基准脚本耗时下降 ≥10%；断点功能回归通过。
 
 ### B9 Lua-C++ 边界每参数全量转换
-- [~] `lua_host.cpp:169-213, 226-230` GetArg 每次 PopValue 完整转换（新构造 unordered_set 堆分配 + 递归表拷贝）；`lua_host.cpp:379` native 按名字符串查 map（JS 侧是 O(1) 索引）。
+- [x] `lua_host.cpp:169-213, 226-230` GetArg 每次 PopValue 完整转换（新构造 unordered_set 堆分配 + 递归表拷贝）；`lua_host.cpp:379` native 按名字符串查 map（JS 侧是 O(1) 索引）。
 - 修复方向：标量 fast path（不构造 set/不拷贝 table）；native 注册时缓存 upvalue 索引。
+- 已修复：`PopValue` 标量（nil/bool/number/string）走 fast path，不构造 `unordered_set`、不预留 Lua 栈；`NativeCallClosure` 注册时把 map 节点指针存入第 3 个 upvalue，热路径免去按名 hash 查找（保留 name 回退）。
 - 验收：脚本密集调用基准提升；行为回归（既有脚本测试全绿）。
 
 ### B10 每帧堆分配热点（pose 快照/sprite 排序/profiler）
