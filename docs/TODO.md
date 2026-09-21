@@ -402,7 +402,7 @@
 
 | 领域 | 差距评级 | 对标要点 | 本清单对应项 |
 |------|---------|---------|-------------|
-| 渲染架构 | 大→中 | RenderStack 数据驱动雏形已做（后处理参数反射+bloom参数化，A3 全量几何 FrameGraph 未做）；深度可采样/SSAO 已修 | A3 + B1/B3/B4/C4/C10, G2-4 |
+| 渲染架构 | 大→中 | RenderStack 数据驱动雏形已做（后处理参数反射+bloom参数化，A3 全量几何 FrameGraph 未做）；深度可采样/SSAO 已修；**Environment 独立资源 + 场景引用已落地** | A3 + B1/B3/B4/C4/C10, G2-4 |
 | Vulkan 成熟度 | 中→大 | descriptor 泄漏/无内存子分配/串行提交/伪 HDR | A1/A2/B5/P1 系列 |
 | ECS/并行 | 中 | 无 archetype/job 依赖分析/burst 级优化 | C11/G2-2/G5-2 |
 | 动画 | 中 | 无动画事件/重定向；>64 骨骼上限；BlendSpace 相位漂移 | B7/C2 + 新增：AnimEvent、骨骼上限 |
