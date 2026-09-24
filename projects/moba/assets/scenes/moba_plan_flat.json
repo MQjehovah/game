@@ -1,0 +1,213 @@
+{
+ "entities": [
+  {
+   "components": {
+    "transform": {
+     "pos": [
+      0,
+      0,
+      0
+     ],
+     "rot": [
+      0,
+      0,
+      0,
+      1
+     ],
+     "scale": [
+      1,
+      1,
+      1
+     ]
+    }
+   },
+   "id": 1,
+   "name": "Game"
+  },
+  {
+   "components": {
+    "camera": {
+     "fov": 40,
+     "orthoSize": 10
+    },
+    "transform": {
+     "pos": [
+      0,
+      200,
+      0
+     ],
+     "rot": [
+      -0.7009092642998509,
+      0,
+      0,
+      0.7132504491541816
+     ],
+     "scale": [
+      1,
+      1,
+      1
+     ]
+    },
+    "type": {
+     "value": "Camera3D"
+    }
+   },
+   "id": 2,
+   "name": "Main Camera"
+  },
+  {
+   "components": {
+    "light": {
+     "ambientStrength": 0.6499999761581421,
+     "color": [
+      1,
+      0.97,
+      0.92,
+      1
+     ],
+     "intensity": 0,
+     "radius": 10,
+     "sunDir": [
+      -0.45,
+      -1.1,
+      0.3
+     ],
+     "type": "directional",
+     "fogNear": 5000,
+     "fogFar": 9000
+    },
+    "transform": {
+     "pos": [
+      0,
+      60,
+      0
+     ],
+     "rot": [
+      0,
+      0,
+      0,
+      1
+     ],
+     "scale": [
+      1,
+      1,
+      1
+     ]
+    },
+    "type": {
+     "value": "Light3D"
+    }
+   },
+   "id": 3,
+   "name": "Sun"
+  },
+  {
+   "components": {
+    "mesh": {
+     "material": {
+      "ao": 1,
+      "colorHex": "#FFFFFF",
+      "emissiveIntensity": 1,
+      "metallic": 0,
+      "roughness": 0.8999999761581421
+     },
+     "meshKey": "gltf:assets/models/sr/sr_map.glb"
+    },
+    "transform": {
+     "pos": [
+      0,
+      0,
+      0
+     ],
+     "rot": [
+      0,
+      0,
+      0,
+      1
+     ],
+     "scale": [
+      1,
+      1,
+      1
+     ]
+    }
+   },
+   "id": 10,
+   "name": "SummonersRift"
+  }
+ ],
+ "environment": {
+  "ambientColor": [
+   1,
+   1,
+   1,
+   1
+  ],
+  "ambientStrength": 1,
+  "fogColor": [
+   0.55,
+   0.6,
+   0.7,
+   1
+  ],
+  "fogFar": 9000,
+  "fogNear": 5000,
+  "skyHorizon": [
+   0.550000011920929,
+   0.6499999761581421,
+   0.800000011920929,
+   1
+  ],
+  "skyTop": [
+   0.2800000011920929,
+   0.3799999952316284,
+   0.5799999833106995,
+   1
+  ],
+  "fog": false,
+  "useAtmosphere": true,
+  "skybox": true,
+  "exposure": 1
+ },
+ "level": {
+  "navgrid": "assets/navgrid/summoners_rift.navgrid.json"
+ },
+ "renderstack": {
+  "autoExposure": false,
+  "autoExposureKey": 0.18000000715255737,
+  "bloom": false,
+  "bloomStrength": 0.2800000011920929,
+  "bloomThreshold": 0.550000011920929,
+  "exposure": 1,
+  "fog": false,
+  "fogColor": [
+   0.44999998807907104,
+   0.550000011920929,
+   0.699999988079071,
+   1
+  ],
+  "fogDensity": 0.014000000432133675,
+  "grade": false,
+  "gradeContrast": 0.07999999821186066,
+  "gradeGain": 1,
+  "gradeGamma": 1,
+  "gradeLift": 0,
+  "gradeSaturation": 1.1200000047683716,
+  "gradeTint": [
+   1,
+   1,
+   1,
+   1
+  ],
+  "ssao": false,
+  "ssaoIntensity": 0.6499999761581421,
+  "ssr": false,
+  "ssrStrength": 0.49000000953674316,
+  "tonemap": false,
+  "vignette": false,
+  "vignetteIntensity": 0.4000000059604645,
+  "vignetteRadius": 0.6499999761581421,
+  "volumetric": false,
+  "volumetricStrength": 1
+ }
+}

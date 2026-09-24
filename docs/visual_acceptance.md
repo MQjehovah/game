@@ -84,3 +84,464 @@ windmill/wall/road/fountain-round)。截图/编辑后告诉我：树用哪个、
 墙/马车/摊/风车/喷泉各留哪个——我据此批量重摆 `realm.json` 村庄。
 注意: 松�逡单机场景模式必须先构建 MSVC 版 neon_game(build-msvc\Release), build\release\ 是旧 MinGW 车。
 
+
+## 引擎画质升级（G1: 分级 / 动态分辨率 / TAA / 贴花 / CSM 软阴影）
+
+本轮引擎层改动的验收方式都在 `neon_game` 命令行上，逐项 A/B：
+
+```
+build-msvc\Release\neon_game.exe --scene projects\moba\assets\scenes\moba.json --scripts projects\moba --moba-autostart --smoke-test 1550 --screenshot out.png 1450
+```
+
+### 1. 画质分级 + 渲染分辨率
+- `--quality low|medium|high|ultra`：一次性设 MSAA / 阴影贴图 / 阴影距离 / 软阴影强度 /
+  SSAO / 体积光 / SSR / bloom 宽度 / 渲染分辨率 / 粒子预算。
+  | 档 | scale | MSAA | 阴影 | 粒子 | 备注 |
+  |----|-------|------|------|------|------|
+  | low | 0.75 | 关 | 512 | 8k | SSAO/体积/SSR 全关 |
+  | medium | 0.90 | 关 | 1024 | 16k | SSAO 开 |
+  | high | 1.00 | 4x | 2048 | 32k | TAA 开 |
+  | ultra | 1.00 | 8x | 2048 | 64k | TAA+SSR+体积光 |
+- `--render-scale <f>`（0.4–2.0）单独覆盖分辨率缩放，`--render-scale 2.0` 可作为
+  超采样参考图（用于和 TAA 做画质对比）。
+- `--dyn-res <fps>`：按帧时 EMA 在 [0.6, render-scale] 内自动升降渲染分辨率。
+  注意 HUD/文字画在 window 分辨率上，缩放渲染分辨率不会糊字。
+
+### 2. 时域抗锯齿 TAA（Step E）
+- `--taa` / `--no-taa`；`--taa-sharpen <0-1.5>` 控制解析后的 unsharp 增益（默认 0.5）。
+- 实现：Halton(2,3) 亚像素抖动 → 历史缓冲用 Catmull-Rom 双三次重采样（相机重投影 +
+  3x3 邻域 clamp 抑制鬼影）→ 3x3 tent unsharp 补细节。**锐化只作用于显示输出，
+  不回灌历史**（否则高频会逐帧正反馈放大）。
+- 逐物体 motion vector（Step E2）：DrawSystem 每帧缓存实体的上一帧 local-to-world，变换
+  发生变化的物体额外写一张 RGBA16F 速度图（alpha = 1 表示该像素属于移动物体），resolve
+  优先用 `prevUV = UV + velocity`，静态几何回退到深度重投影。
+  - 环境变量 `NEON_NO_VELOCITY=1` 可强制关闭速度图做 A/B（同 `NEON_NO_DECAL_PROJECT`）。
+  - 骨骼动画只取**实体变换**的速度（用 rest-pose 几何），逐骨骼形变暂无 velocity；
+    原地摆动的手脚仍靠邻域 clamp 抑制。
+  - Billboard 特效不写速度（其朝向每帧随相机重建，正确速度就是纯相机重投影）。
+  - `Renderer::Stats().velocityDraws` 给出本帧写入速度图的 draw 数。
+- 验收：`--taa` vs `--no-taa` 同帧截图，边缘锯齿/贴图闪烁应明显收敛；HUD 因在
+  composite 之后绘制，始终不受 TAA 影响。
+
+### 3. 深度投影贴花（Step C）
+- `SpawnDecal(tex, pos, size, alpha [, r,g,b,additive [, height]])`、
+  `SetDecal(ent, size, alpha [, height])`；`height` 是投影体积高度，
+  贴花会按场景深度贴合地形/台阶，而不是悬空平面。
+- 调试开关：环境变量 `NEON_NO_DECAL_PROJECT=1` 可强制退回平面 quad 做 A/B。
+
+### 4. CSM / PSSM 软阴影（Step G / G2 / G3）
+- 级联按视锥分割（PSSM）+ 纹素对齐 + PCSS 变半影软阴影；`SetShadowSoftness` 控制
+  半影宽度，`SetShadowDistance` 控制最远级联。
+- **G2 修复（真 bug）**：`DrawSystem::Draw` 每帧会调用两次 `RefreshShadowPass()`，
+  第二次发生在投影体记录之前。旧实现无条件重跑 `RunPass`，于是**每帧都用空投射体列表
+  把 3 张级联图全部清成"远处"**，主 pass 采样到的永远是空白阴影图。现在
+  `RefreshShadowPass` 在"本轮没有投射体 && 阴影图已初始化"时直接返回。
+  读回统计：修复前 cascade 0/1/2 非清屏像素 = 0/0/0，修复后 = 53612/58551/2538（1024²）。
+- **G3 深度缓冲级联**：级联 FBO 改为带 depth24 附件的目标
+  （`IRenderBackend::CreateRenderTargetWithDepth`），阴影 pass 用 `SetDepthTest(true,true)`
+  让最近表面按纹素胜出。画家排序每帧只有一个排序键，"整张地图导成一个 mesh"的关卡
+  （地形 + 树 + 塔）内部互相穿透时无解；depth test 后不再依赖排序。
+  只有后端 `DepthAvailable()` 为 false（Intel FBO 深度缺陷）时才回退画家排序。
+- **G3 关闭背面剔除**：阴影 pass 用 `CullMode::None`。Summoner's Rift 的整张地图在
+  light space 下大量三角形被判为背面，旧实现下**地面根本没进阴影图**，
+  于是地面永远采样到"无遮挡"而看不出任何树影。关闭剔除后阴影图才包含完整地形。
+- **G3 双面着色法线**：lit shader 在算光照前加 `if (dot(N, V) < 0.0) N = -N;`。
+  该关卡地面网格的法线朝下（导出时未翻面），导致 (a) 阳光项 `ndl = 0`，地面只剩 IBL
+  环境光（画面扁平、发灰蓝）；(b) 阴影接收偏移 `vWorldPos + N * texel * offset` 把
+  接收点埋到自身深度以下，地面 `shadow` 恒为 0。修好法线后 MOBA 地面首次真正吃到
+  平行光 + 树影/塔影/英雄影。
+- 验收（`--quality high`，同帧 A/B，1280x720，步长 2 采样）：
+  | 对比 | mean | max | px>12 |
+  |------|------|-----|-------|
+  | 阴影贡献（G2 修复前基线） | 0.62 | 152 | 3490 (1.5%) |
+  | 阴影贡献（G3 全部落地后） | 8.26 | 161 | 30733 (13.3%) |
+  | TAA 开/关 | 8.00 | 159 | 44722 (19.4%) |
+  | 整帧（G3 前 vs 后） | 35.39 | 205 | 206507 (89.6%) |
+- 调试开关：`NEON_SHADOW_DEBUG=1` 让 lit shader 直接输出级联阴影因子
+  （白 = 晒到太阳，黑 = 全遮挡），是区分"阴影图坏"和"接收端坏"的最快手段。
+  `NEON_NO_SHADOWS=1` 仍可整体关阴影做 A/B。
+- 内容侧同步改动：`projects/moba/assets/scenes/moba.json` 的 renderstack `exposure`
+  2.0 -> 0.8（原来的 2.0 是在"地面完全没有阳光"的前提下调出来的补偿曝光，
+  法线修好后继续用 2.0 会整体过曝）。
+
+## Vulkan 后端补齐（TAA / 速度图 / lit 特性）
+
+GL 侧的画质改动此前未同步到 Vulkan；本轮把 `--backend vulkan`（RTX 2060, Vulkan 1.4）补齐到与 GL 同一水平，
+并修掉两个只在 Vulkan 出现的真 bug。
+
+### 1. TAA 开启后 3D 几何整体消失（真 bug，已修）
+- 现象：`--taa --backend vulkan` 只剩天空 + HUD，地形/单位/树全部不见；`--no-taa` 正常。
+- 根因：Vulkan 后端的"待清理"标记 `clearPending_` 是**全局单槽**。`BeginFrame` 对 HDR 目标
+  `Clear()` 之后，速度图 pass 会 `BindRenderTarget(velocityRT_)` 再 `RebindMainTarget()`，
+  `BindTarget` 每次都把该标记清掉 → 本帧 HDR 的颜色/深度**从未 clear**，第一帧起深度附件里是
+  未定义内容（近平面），于是每个片元都过不了深度测试（只剩不吃深度测试的天空）。
+- 修复：标记改为**按 target 记录**（`Target::clearPending/_Color/_Depth`），语义与 GL 一致
+  —— `Clear()` 作用于调用时绑定的那个 target，无论它中间被换出去多少次。
+- 判定依据：`NEON_NO_VELOCITY=1` 正常、TAA shader 换成 pass-through 仍复现 → 与 TAA/速度图
+  shader 本身无关，是 target/clear 状态机的问题。
+
+### 2. 速度图（motion vector）合批：每帧 1 个 pass
+- 旧实现：`Renderer::SubmitVelocity` 对**每个运动物体**做一次
+  `BindRenderTarget(velocityRT_)` + `RebindMainTarget()`。Vulkan 后端每次 `BindTarget` 切换目标
+  都会 `vkEndCommandBuffer` + `vkQueueSubmit` + `vkWaitForFences`（一次完整 GPU 同步），
+  即每个移动物体 2 次 GPU 停顿（也是上面 clear bug 的放大器）。
+- 新实现：`SubmitVelocity` 只记录（`VelocityDraw{mesh, model, prevModel}`），
+  由 `FlushVelocityPass()` 在 TAA resolve 之前**一次性**清空并绘制整批，
+  目标 `velocityRT_` 每帧只绑一次（并真正 clear 颜色+深度）。
+- 实测（Summoner's Rift, 1280x720, `--quality high --taa`）：13 FPS -> **97~145 FPS**。
+
+### 3. 截图后 `VK_ERROR_DEVICE_LOST`（真 bug，已修）
+- 现象：`--screenshot` 之后所有 `vkQueueSubmit` 返回 `VK_ERROR_DEVICE_LOST`，后续帧全部不提交
+  （画面冻结在最后一帧，日志里刷 "queue submit failed"）。
+- 根因：`ReadImage`（截图/回读）会把帧命令缓冲 `vkEndCommandBuffer` + 提交，
+  而 `EndFrame` 里 `if (f.cmdOpen)` 为 false 就**跳过**了画面到 `PRESENT_SRC_KHR` 的布局转换，
+  随后仍然 `vkQueuePresentKHR` —— 用 GENERAL 布局呈现 swapchain 图像是未定义行为。
+- 修复：`EndFrame` 改为无条件 `OpenCmd(f)`（重新开始一个已提交过的 ONE_TIME 缓冲是合法的，
+  提交前已 wait 过对应 fence）后再记录 present 转换；同时把 `vkQueueSubmit` 的返回值
+  （`VkResultName`）打进日志，避免再次"静默丢帧"。
+- 验证：`--smoke-test 400 --taa` + 截图 → 0 条 submit failed（修复前 ~2800 条）。
+
+### 4. lit shader 与 GL 对齐（补 A2/A3/高光/接收阴影）
+`lit.frag` 之前缺 GL 已有的这些项，Vulkan 画面因此偏平；现已按 GL 源码 1:1 移植：
+- A2 法线贴图：`uNormalMap`(unit 23) + `uNormalScale` + `uHasNormalMap`，用 dFdx/dFdy 重建切线基。
+- A3 半球环境光：`uAmbientGroundColor`（天光/地面反弹按法线 Y 过渡）。
+- A3 探针 GI：`uLightProbeAtlas`(unit 24) + `uLightProbeMin/Extent/Res/InvMax/Enabled`，三线性采样。
+- `uReceiveShadow`（材质级关闭接收阴影）、`uHighlightColor/uHighlightStrength` 菲涅尔描边高光。
+- 顺带补上 GL 有而 VK 漏掉的：tint HDR 自发光（`max(uTint.rgb-1,0)`）、雾区间退化保护。
+- UBO 从 6976 扩到 **7152** 字节（`engine_ubo.glsl` 与 `kUniformOffsets` 同步），
+  采样器 unit 23/24 加入 set=1（未绑定时自动落到白色 fallback 纹理，未启用即无效）。
+
+### 5. HDR 现状更正
+- 之前的注释称"驱动采样 SFLOAT 返回黑、内部回退 RGBA8（伪 HDR）"——**已过时**。
+  当前 `CreateRenderTarget(floatColor=true)` 就是 `VK_FORMAT_R16G16B16A16_SFLOAT`，
+  本机 RTX 2060 的 HDR FBO 自检 + MSAA 4x 自检都 PASS（日志 `HDR float-target pipeline ACTIVE`），
+  >1.0 的高光/bloom 是真实存在的；若某驱动过不了自检，渲染器会整体回退到非 HDR 路径。
+
+### 验收命令
+```bat
+:: Vulkan（注意 --taa/--no-taa 放在 --backend 之前）
+build-msvc\Release\neon_game.exe --scene projects\moba\assets\scenes\moba.json --moba-autostart ^
+  --smoke-test 1550 --quality high --taa --backend vulkan --screenshot build-msvc\vk_p8.png 1450
+:: GL 对照：去掉 --backend vulkan
+```
+- 期望：地形/森林/单位/阴影/HUD 齐全，`--taa` 与 `--no-taa` 画面一致（仅边缘更稳），日志无
+  `queue submit failed`；本机 1450 帧截图为 vk_p8.png / gl_p8.png。
+- `neon_tests`：836/841（5 个 PostGraph* 失败为既有基线，与本轮无关）。
+
+### 仍未实现（如实记录）
+- 点光源阴影：Vulkan 与 GL 一样仍关闭（`uPointShadowEnabled` 恒 0）。
+- 资源上传仍是"每次上传一次提交 + fence 等待"（`CreateTexture`/`UploadBuffer`），
+  大 glTF 分块流式加载时会有可见卡顿；建议后续做**每帧一次合批上传**。
+- UI 文本像素差异：字体栅格化路径不同，Vulkan 与 GL 的字形边缘有细微差别。
+
+## 召唤师峡谷：多套元素龙地形状态叠画（真 bug，已修）
+
+### 症状
+整张峡谷的地面把**多套地形状态画在了同一块坐标上**：同一个格子被
+Base / Upgraded / Walled / Tunnel × (BaseLayer / ChemtechLayer / HextechLayer / CloudLayer /
+OceanLayer / InfernalLayer / MountainLayer) 重复画一遍，另有一整套 `_earth_*` 重复拷贝。
+结果就是地面出现 z-fighting 补丁、河道/中路一带的错位贴图；做单层过滤实验时还会看到
+（去掉 `_default_*` 后）中心露出天空的大洞。
+
+### 根因与证据（针对 `assets/models/sr/sr_map.glb`）
+- 181 个 primitive，只有 136 个不同包围盒；**21 组 primitive 的 POSITION min/max 完全相同，
+  合计 66 个 primitive 落在重合组里**。
+- 最大那组 21 个成员 = 7 个元素层 × {Base, Upgraded, Walled}，每个都是 269 tri、包围盒
+  一字不差，例：`_blend_master_Base_BaseLayer_Terrain_001_Baked`、
+  `_blend_master_Upgraded_ChemtechLayer_Terrain_Baked`、
+  `_earth_Walled_MountainLayer_Terrain_Baked`…
+- 三套整体拷贝：`_default_*` 77 个（真正在用的地图）、`_blend_master_*` 60 个（状态层）、
+  `_earth_*` 38 个（重复拷贝），另有 VertexDeform 植被 / Rubble / 塔基 6 个。
+
+### 修复：直接从 mesh 资产里删掉状态层
+`tools/lolimport/glb_strip_layers.py` 对已烘好的 .glb 做删除 + GC：丢掉状态层 primitive，
+再把不再被引用的 material / texture / image / accessor / bufferView 回收，最后重打包二进制块
+（保留的 primitive 数据一字不动）。默认规则就是运行时 `SceneMesh::materialExclude` 那份清单：
+
+```
+python tools/lolimport/glb_strip_layers.py --in <map>.glb --out <clean>.glb --dedupe-bbox
+```
+
+- 默认排除：ChemtechLayer / HextechLayer / CloudLayer / OceanLayer / InfernalLayer /
+  MountainLayer / `_Tunnel_` / `_Upgraded_` / `_Walled_` / `_earth_`。
+- `--dedupe-bbox` 再兜一层：POSITION 包围盒与已保留 primitive 完全相同的直接丢弃。
+- `--keep` / `--exclude` 可覆盖规则，`--dry-run` 只出报告，默认写出到 `--out` 不动原文件。
+- 运行时那套 `materialInclude/materialExclude` **保留**：地图以后要做"元素龙切换"仍然用它，
+  资产层删干净之后它只是安全网（`projects/moba/assets/scenes/moba_layer_test.json` 留作 A/B）。
+
+### 验收（`sr_map.glb` 148.8 MB -> 125.6 MB）
+| 指标 | 修复前 | 修复后 |
+|------|--------|--------|
+| primitive | 181 | 119 |
+| 不同包围盒 | 136 | **119** |
+| 重合包围盒组 / 涉及 primitive | 21 / 66 | **0 / 0** |
+| material / texture / image | 181 / 95 / 95 | 119 / 66 / 66 |
+| accessor / bufferView | 724 / 819 | 476 / 542 |
+| 二进制块 | 148.6 MB | 125.5 MB |
+
+- 结构自检：所有 accessor/index/material/texture/image 引用可解析、index < 顶点数、
+  bufferView 4 字节对齐且不越界 —— 全过。
+- **保留的 119 个 primitive 与修复前逐字节一致**（POSITION sha1 + 三角形数 + min/max 全等）。
+- **与运行时过滤等价**：`glb_strip_layers.py` 留下的材质名集合，与用
+  `moba_layer_test.json` 的 `materialExclude` 跑 `MaterialLayerSelected` 得到的集合
+  完全相同（119 == 119，集合相等）。
+- 整图俯视 A/B（同一相机、同帧、无任何过滤）：`neon_pixel_diff` 只有
+  1075/921600 像素（0.1166%）不同，且差异全部落在叠层互相打架的位置（中路/河道几处红块）。
+- 游戏场景 `moba.json`（不带任何过滤）现在直接就是对的：`build-msvc/clean_a.png`。
+
+### 贴图修正：VertexDeform 植被（风摆草丛）
+
+**根因**：`mapgeo_fbx_to_gltf.py` 靠材质名 token 从贴图目录里打分"猜"贴图，`VertexDeform_inst1`
+（风摆草丛，455k tri 的整层植被）落到 FORCE 表里被强行贴成地形烘焙图
+`upgraded_baselayer_terrain_bake1_pbr_diffuse`（581 KB 地表 splat，带大片黑色空洞）
+-- 于是草丛是泥泞的橄榄色。
+
+**权威映射（不再猜）**：游戏自己的 `DATA__Maps__mapgeometry__map11__base_srx.materials.bin`
+存着每个材质的 `DiffuseTexture`，直接读出来：
+
+| GLB 内材质 | materials.bin 里的源贴图 | 本地文件 | 性质 |
+|---|---|---|---|
+| `.../LevelProp/Materials/VertexDeform_inst1` | `ASSETS/Maps/KitPieces/SRX/textures/SRU_Brush.dds` | `..._textures__sru_brush.dds` | 256^2，全不透明（alpha 恒 255） |
+| `.../Materials/VertexDeform_WaterLily_B_inst1` | `ASSETS/Maps/KitPieces/SRX/textures/Ocean_WaterLily_A.tex` | `..._textures__Ocean_WaterLily_A.dds` | 256^2，带 alpha（42% 像素低于 cutout） |
+
+**方案**：
+- `VertexDeform_inst1` -> `SRU_Brush.dds`，`alphaMode` 保持 `OPAQUE`；该贴图本身没有有效 alpha，
+  压成 JPEG 无损失。
+- `VertexDeform_WaterLily_B_inst1` -> `Ocean_WaterLily_A.dds`，`alphaMode = mask`
+  （`alphaCutoff 0.4`），让花朵/荷叶的镂空成片透出，而不是整块方片浮在水面。
+- 替换在**已剥层**的 GLB 上原地做（不重跑 FBX 导入），由 `glb_strip_layers.py` 的
+  `--set-texture` / `--alpha` 完成，被换掉的旧 diffuse 引用会一并 GC：
+
+```
+python tools/lolimport/glb_strip_layers.py --in <strip>.glb --out <fixed>.glb --dedupe-bbox ^
+  --set-texture "VertexDeform_inst1=_textures__sru_brush.dds" ^
+  --set-texture "VertexDeform_WaterLily_B_inst1=_textures__Ocean_WaterLily_A.dds" ^
+  --alpha "VertexDeform_WaterLily_B_inst1=mask"
+```
+
+- `--set-texture` / `--alpha` 的 key 是**材质名子串**；`embed_texture()` 只重烘 baseColor
+  （不透明走 JPEG、带 alpha 走 PNG），默认上限 1024^2。
+- 导入侧同步修（以后重导出别再错）：`mapgeo_fbx_to_gltf.py` 的 `FORCE` 表加
+  `("waterlily", ...)` / `("vertexdeform", ...)` 两条，且 `find_tex()` 改成匹配小写化**完整路径**，
+  这样片段能锁定到具体一个文件，而不是靠短词撞运气。
+
+**验收**（`NEON_GLTF_ONLY_MAT=VertexDeform` 只渲染该材质，同相机同帧）：
+- `build-msvc/iso_old.png`（泥橄榄色）vs `build-msvc/iso_fixed.png`（鲜绿草丛 + 紫花）。
+- 成品 GLB 实测：`VertexDeform_inst1` -> 13.3 KB JPEG，alpha 全 255（不透明）；
+  `VertexDeform_WaterLily_B_inst1` -> 47.7 KB PNG，`alphaMode=mask` / cutoff 0.4，42.5% 像素被裁掉。
+- 119 个保留 primitive 的几何与纯剥层结果**逐字节相同**（只动贴图引用），texture/image
+  66 -> 67。当时产出 125,074,308 字节；下面"全量重贴"把它改写成了 118,368,528 字节。
+
+### 全量重贴：119 个材质各自绑回自己的贴图（已落地）
+
+上面只修了 VertexDeform 两处；同一套"猜贴图"逻辑其实错了一大片（118 / 119 个材质绑错）。
+现在改成**从游戏数据里读**，不再打分猜：`base_srx.materials.bin` 里每个材质都有自己的
+`DiffuseTexture`（少数是旧写法 `Diffuse_Texture`），材质路径和 .glb 里的 `name` 一字不差。
+
+新工具 `tools/lolimport/glb_remap_textures.py`：
+
+```
+# 1) 从游戏数据抽出 材质 -> 贴图 表（119/119 全部解析成功）
+python tools/lolimport/glb_remap_textures.py extract ^
+  --materials-bin F:/assets/fantome/named/DATA__Maps__mapgeometry__map11__base_srx.materials.bin ^
+  --glb projects/moba/assets/models/sr/sr_map.glb --out build-msvc/sr_tex_map.json
+
+# 2) 按表重绑并重打包（几何一个字节都不动）
+python tools/lolimport/glb_remap_textures.py apply ^
+  --in projects/moba/assets/models/sr/sr_map.glb --map build-msvc/sr_tex_map.json ^
+  --named-dir F:/assets/fantome/named --out build-msvc/sr_map_remap.glb
+```
+
+结果（输入 = 上一条修完的 125.1 MB 资产）：
+
+| 指标 | 之前 | 之后 |
+|------|------|------|
+| 材质绑到正确贴图 | 1 / 119 | **119 / 119** |
+| 无贴图的材质 | 3 | **0** |
+| texture / image | 66 / 66 | 88 / 88 |
+| 内嵌贴图体积 | 19.9 MB | 11.1 MB |
+| .glb | 125.1 MB | **116.3 MB** |
+| primitive 几何 | 119 | 119（**逐字节相同**） |
+
+`_default_X` 和 `_blend_master_X` 这类成对材质引用同一张原图，`rebuild()` 现在按内容 sha1 复用，
+所以 119 个材质只留 88 张图（去重前是 119 张、13.1 MB；去重后 88 张、11.1 MB）。
+
+**两个坑（都踩过，工具现在会拦住）**
+- 解包 dump 里的 `.png` 大都是**坏的**：同一张图既有 `.dds`（正常）又有 `.png`（解出来是彩色噪声）。
+  第一版按 `.png` 重贴，地面直接变成白花花的噪点图（`build-msvc/remap_a.png` 就是那次翻车）。
+  现在 `.dds` 优先，并且每个源图都过一道噪声检查（相邻像素差 > 60 直接拒绝写盘）。
+  - 交叉验证：`.dds` 与旧资产里已经在用的贴图相关系数 1.000。
+- `.tex` 的目录和 dump 暴露的目录对不上：`SRX/CustomMap/wallofgrass.tex` 实际是
+  `Map11/textures/wallofgrass.dds`。所以解析顺序是 精确路径 `.dds` -> 同名 `.dds` -> 其它后缀。
+
+**顺带修掉的两个 alphaMode 问题**
+- 引擎（`engine/src/assets/asset_manager.cpp:1255`）原来是 `alpha == "MASK"` **逐字符比较**的：
+  上一条给睡莲写的小写 `mask` 等于没生效，睡莲一直是**不透明**的。两处都修了：loader 先把
+  `alphaMode` 折成大写再比（大小写都认），`glb_strip_layers.py` 写出时一律用大写 `MASK` +
+  `alphaCutoff 0.4`（45 个材质）。验证：把全部 45 个材质改回小写 `mask` 重新出图，与大写版
+  逐像素只差 32 / 921600（0.0035%，噪声级），即小写不再退化成不透明。
+- 31 个材质用的是 `alphaCutoffFactor`（不是 glTF 字段，引擎当兼容写法认）。已统一成
+  `alphaCutoff`；OPAQUE 材质上残留的 cutoff 一并清掉。
+
+**分辨率选择**：地形烘焙图 UV 全是 0..1（单张铺满全图的 splat），游戏相机下地面被放大十几倍，
+2048² 是浪费（2048²/q80 会让资产涨到 194 MB）。压到 1024² 后铺装细节仍然清晰，资产反而比
+原来更小。要换回去用 `--max-size 2048`，质量用 `--quality`。
+
+**验收**（都在 `build-msvc/`）
+- `overview_before.png` vs `overview_after.png`（同一俯视相机、同一帧）：基地从一块发亮的荧光绿
+  变成带砖缝、圆形铺装、青苔的石砌庭院。
+- `ab_paving.png` / `ab_props.png` / `ab_mid.png`：同区域左右对比（左=之前，右=之后）。
+- `remap_b.png`：游戏内整图（`moba.json` 默认相机）。
+- 结构检查：119 primitive 的 POSITION / TEXCOORD_0 / NORMAL / indices 与输入**逐字节相同**，
+  material 名集合相等，119 material / 88 texture / 88 image，`alphaModes = {MASK: 45, OPAQUE: 74}`；
+  逐材质回验：119/119 的 baseColorTexture 与 `materials.bin` 指到的源图相关系数 > 0.98（0 个不符）。
+- 引擎改动后重编，`neon_tests` 836/841（5 个 `PostGraph*` 为既有失败，与本次无关）。
+
+**复核用的基线**：`build-msvc/sr_map_prefix.glb`（重贴前那份 125.1 MB 资产，125,074,308 字节）留着，方便重跑这组 A/B；
+重贴前的原始资产是 `F:/assets/sr/sr_map.glb`。其余中间产物已清掉，`build-msvc/` 里只留证据图 + 这份基线。
+全部证据图都在 `build-msvc/`：`remap_a.png`（踩坑那版）、`remap_b.png`、`overview_*.png`、`ab_*.png`。
+
+## 召唤师峡谷：整层地面贴花被删（真 bug，已修）
+
+### 症状
+上面那次"全量重贴"之后，每个材质绑到的贴图都是对的了，但整张图**还是不对**：
+地面看上去发平、发空。车道两侧该有的石板路、基地里的苔藓/草丛/花丛、防御塔和
+兵营/水晶脚下的石砌基座、基地外圈的碎石缝隙，全都没有 —— 只剩一层单调的铺装。
+
+### 根因
+`tools/lolimport/mapgeo_fbx_to_gltf.py` 分组时无条件丢掉所有名字里带
+`decal` / `seam` 的材质：
+
+```python
+if "decal" in mat_name.lower() or "seam" in mat_name.lower():
+    continue
+```
+
+注释给的理由是"贴花是 alpha 混合叠层，不透明导入会变成硬边条带"。理由没错，
+**错在把材质整个扔掉**：这 16 个是峡谷自己画在地面上的"地贴"，游戏每一帧都在画它们。
+源数据一共 197 个 primitive = 181 个常规 + 16 个被这句话删掉的贴花。
+
+被删掉的 16 个材质（左侧名字即 GLB 里的材质名，右侧是 `materials.bin` 里它自己的 DiffuseTexture）：
+
+| 材质 | 源贴图 | 作用 |
+|---|---|---|
+| `NVRMaterial_new_stone_road_decalVersion3_no_shadow` | `new_stone_road.tex` | 车道石板路 |
+| `NVRMaterial_order_tile_floor_border_decalVersion3_no_shadow` | `order_tile_floor_border.tex` | 基地铺装分块 |
+| `NVRMaterial_order_ground_mix2_decalVersion3_no_shadow` | `order_ground_mix2.tex` | 草地/碎石混合 |
+| `NVRMaterial_order_ground_moss_patch1_decalVersion3_no_shadow` | `order_ground_moss_patch1.tex` | 苔藓斑块 |
+| `NVRMaterial_grasstuft_decalVersion3_no_shadow` | `order_base_decal_mid.tex` | 草丛 |
+| `NVRMaterial_flowerb_decalVersion3_no_shadow` | `decal_blue_flower.tex` | 蓝花丛 |
+| `NVRMaterial_flowerp_decalVersion3_no_shadow1` | `decal_purple_flower.tex` | 紫花丛 |
+| `NVRMaterial_nexus_stoneBase_decalVersion3_no_shadow` | `nexus_stonebase.tex` | 水晶基座 |
+| `NVRMaterial_lambert144_decalVersion3_no_shadow` | `inhibitor_stonebase.tex` | 兵营基座 |
+| `NVRMaterial_lanetowerdcl_decalVersion3_no_shadow` | `bluetower_decal.tex` | 防御塔基座 |
+| `NVRMaterial_base_chasm1_decalVersion3_no_shadow` | `base_chasm1.tex` | 基地外圈碎石 |
+| `NVRMaterial_base_chasm2_decalVersion3_no_shadow` | `base_chasm2.tex` | 基地外圈碎石 |
+| `NVRMaterial_order_tile_floor_mark1_decalVersion3_no_shadow` | `order_tile_floor_mark2.tex` | 地面印记 |
+| `NVRMaterial_Order_seam_decalVersion3_no_shadow` | `order_seam.tex` | 区域接缝 |
+| `NVRMaterial_firepit_ash_decalVersion3_no_shadow` | `sr_firepit_ash_decal_tx_dm.tex` | 篝火灰烬 |
+| `NVRMaterial_v_decalVersion3_no_shadow` | `chaos_root_base_decal_mid.tex` | 混沌方基地地贴 |
+
+证据：
+- 从 `F:/assets/sr/base_srx.fbx` 重新导入得到 **197** 个 primitive，与
+  `F:/assets/sr/sr_map.glb` 的对应 primitive 逐字节一致（POSITION / NORMAL /
+  TEXCOORD_0 / indices 全等），即这 16 个就是被上面那句删掉的那一批。
+- 16 张贴图全是 RGBA，**27% – 88% 的像素 alpha < 250** —— 是真 alpha 混合叠层，
+  不是"没有 alpha 的硬边片"。
+
+### 修复
+1. **导入端**（`tools/lolimport/mapgeo_fbx_to_gltf.py`）：不再丢弃，保留几何并标
+   `alphaMode = "BLEND"`（新增 `is_decal()`）。既进了场景，又由贴图自己的 alpha 做
+   软混合，不会变成硬边条带。顺带的效果正好对上源数据：BLEND 材质在引擎里
+   `material.transparent = true`，于是不进 CSM / SSAO 的 caster 列表
+   （`engine/src/gfx/renderer.cpp:833`），与这些材质在源数据里的 `_no_shadow` 命名一致。
+2. **重贴端**（`tools/lolimport/glb_remap_textures.py`）：MASK / OPAQUE 是**贴图**的性质
+   （有没有 alpha），可以从图里推；**BLEND 不能推**，它是"怎么和底下混合"的**材质**属性，
+   必须继承。原实现一律由贴图推导，会把 BLEND 重算成 MASK，把软边切成硬边。
+3. **打包端**（`tools/lolimport/glb_strip_layers.py` 的 `rebuild()`）：换贴图时把
+   `baseColorFactor` 复位成白。旧行为是"保留材质原有 tint"，但那个值是导入器
+   `category_color()` 的**预览**调色板（不是游戏数据）；留着它等于给刚绑上的真实贴图
+   乘一个 0.42 的灰棕 —— 16 个贴花当场变成一层灰蓝色"水膜"（第一版重导入就是这个翻车现场）。
+
+### 完整流水线（可复跑）
+
+```
+# 1) FBX -> glb：197 个 primitive（181 常规 + 16 贴花）
+#    --center --scale 0.007 复现既有资产的世界坐标（地图中心到原点）
+python tools/lolimport/mapgeo_fbx_to_gltf.py --fbx F:/assets/sr/base_srx.fbx ^
+  --out build-msvc/sr_base_197.glb --center --scale 0.007
+
+# 2) 删掉元素龙状态层（62 个 primitive）-> 135
+python tools/lolimport/glb_strip_layers.py --in build-msvc/sr_base_197.glb ^
+  --out build-msvc/sr_135.glb --dedupe-bbox
+
+# 3) 抽 材质->贴图 表并重贴，产物拷进工程
+python tools/lolimport/glb_remap_textures.py extract ^
+  --materials-bin F:/assets/fantome/named/DATA__Maps__mapgeometry__map11__base_srx.materials.bin ^
+  --glb build-msvc/sr_135.glb --out build-msvc/sr_tex_map_135.json
+python tools/lolimport/glb_remap_textures.py apply ^
+  --in build-msvc/sr_135.glb --map build-msvc/sr_tex_map_135.json ^
+  --named-dir F:/assets/fantome/named --out build-msvc/sr_map_decals.glb
+copy build-msvc\sr_map_decals.glb projects\moba\assets\models\sr\sr_map.glb
+```
+
+（上一节"全量重贴"里那次跑的临时产物叫 `sr_map_remap.glb`，已经清理；现在这条流水线
+的产物叫 `sr_map_decals.glb`。16 个贴花都落在地图原有包围盒内，所以加上它们不会改变
+`--center` 算出来的中心，世界坐标与旧资产完全一致。）
+
+### 验收
+
+| 指标 | 修复前 | 修复后 |
+|---|---|---|
+| primitive | 119 | **135** |
+| material / texture / image | 119 / 88 / 88 | **135 / 104 / 104** |
+| alphaMode | MASK 45 / OPAQUE 74 | **MASK 45 / OPAQUE 74 / BLEND 16** |
+| `.glb` | 116,329,224 B | **124,019,072 B** |
+
+- 原 119 个 primitive 逐个复核：POSITION / NORMAL / TEXCOORD_0 / indices、贴图字节、
+  `alphaMode` / `alphaCutoff` / `doubleSided` **全部一致**（0 处不同）。
+- 唯一有意的差异：`_default_NVRMaterial_shop_base_` / `_default_NVRMaterial_statue_warrior` /
+  `_default_NVRMaterial_Chaos_stones_` 这 3 个材质在旧资产里残留着导入器的预览色
+  （0.42/0.40/0.36），现在复位为白 —— 也就是说旧资产里它们一直被压暗约 60%。
+- 贴花确实贴在地面上：每个贴花顶点到最近地面顶点的垂直差 dy 中位数只有
+  **+0.003 ~ +0.053 世界单位**（125 单位宽的地图）。
+- 同一相机同帧 A/B（`moba_overview.json`，frame 900，`build-msvc/`）：
+  - `decals_skip.png`（`NEON_GLTF_SKIP_MAT=decalVersion3` 关掉贴花）
+    vs `decals_overview.png`（开着）：**6.49% 像素不同**，差异集中在车道与基地。
+  - 关掉贴花的新资产 vs 旧资产（`sr_map_119.glb`）：**0.04% 像素不同**（就是上面那 3 个
+    材质），即"加贴花"本身没有其它副作用。
+  - `decals_diff.png` 是差异热力图；`ab_decals_base/mid/left/right.png` 是分区左右对比
+    （左 = 关贴花，右 = 开）。
+- 渲染确定性：同配置连渲两次只有 39/921600（0.004%）像素不同，上面这些百分比都远高于噪声底。
+- 可复跑：把上面三步流水线重跑一遍，产物与工程里那份 **SHA1 完全相同**
+  （`F91B249FC389E028144E78153799FA3D4A8E2873`，124,019,072 字节）。
+
+### 负结果：`_default_Terrain_All_1_Baked` 的 V 方向不是 bug（别再"修"它）
+
+这一格的 `dv/dz` 是 **+0.04146**，而其余 24 格都是 **-0.04146**（`build-msvc/vsign.py`），
+看上去很像是这一格的 UV 被镜像了。**其实不是**：这一格**贴图本身的 v 存储方向**与其它格相反，
+UV 里的符号差正是补偿。把它"掰正"反而会撕开接缝：
+
+| 相邻格对（共享边） | 原样（当前资产） | tile1 的 v 取反 |
+|---|---|---|
+| `_default_Terrain_All_1_Baked` ↔ `…_6_Baked` | **3.19** | 12.98 |
+| `_default_Terrain_All_1_Baked` ↔ `…_2_Baked` | **2.41** | 20.18 |
+
+（判据脚本 `build-msvc/seam_edge.py`：取两格共享边上的顶点，**读网格里存的实际 UV**，
+按 GPU 的采样方式取色再算 MAD；其它相邻格对的基线在 2.8 ~ 4.9。）
+
+按实际 UV 采样拼出的世界俯视图同样看得出来：`build-msvc/ground_uv_asis.png` 接缝连续，
+`build-msvc/ground_uv_tile1_mirrored.png` 里 tile1 那一格出现硬边错位，
+`build-msvc/ground_uv_tile1_ab.png` 是两版并排。
+
+教训（重要）：`vsign.py` / `alltiles.py` 这种"图像行对图像行"的启发式**没有读真实 UV**，
+于是把"这一格贴图是反的"误判成"这一格 UV 是反的"。判断地面拼合时，只有"按存下来的 UV
+采样"的结果才算数。
+
+### 复核用基线
+- `build-msvc/sr_map_prefix.glb`（125,074,308 B）："全量重贴"之前的资产。
+- `build-msvc/sr_map_119.glb`（116,329,224 B）：加贴花之前的资产（状态层已删、贴图已重贴）。
+
+其余证据图都在 `build-msvc/`：`sheet_decals.png`（16 张贴花贴图铺在中灰上的样子）、
+`sheet_ground.png` / `sheet_props.png`（贴图盘点）、`decal_height.py`（贴地高度量测）、
+`mosaic_live.py`（按真实 UV 拼世界俯视图）。
