@@ -52,9 +52,17 @@ math::Mat4 ComputeCascadeLightViewProj(const math::Vec3& lightDir, const Camera&
     aabb.max = {-1e30f, -1e30f, -1e30f};
     for (int i = 0; i < 8; ++i) aabb.Expand(lightView.TransformPoint(corners[i]));
 
-    // Tighten the light frustum to the shadow-casting scene (union of caster
-    // AABBs) so a small scene does not get squished into a corner of the map.
-    // Intersect the slice AABB with the scene's light-space AABB.
+    // Extend the light-space DEPTH range to cover the shadow-casting scene, so a
+    // caster lying outside the camera slice (e.g. above it, along the light
+    // beam) still casts into view. The XY footprint stays the camera slice.
+    //
+    // An earlier revision also *intersected* XY with the caster AABB (to keep a
+    // small scene from being squished into a corner of the map). That is wrong:
+    // any receiver outside the casters' AABB - the ground plane is normally a
+    // non-caster - projects outside the ortho box, and the lit shader treats
+    // outside-box samples as unshadowed. The result is exactly "some places
+    // have shadows, some don't", ending in a hard cut at the AABB edge, and the
+    // footprint jumped as the visible caster set changed while the camera moved.
     if (sceneBounds) {
         math::AABB sceneLight;
         sceneLight.min = {1e30f, 1e30f, 1e30f};
@@ -65,18 +73,8 @@ math::Mat4 ComputeCascadeLightViewProj(const math::Vec3& lightDir, const Camera&
                          (i & 4) ? sceneBounds->max.z : sceneBounds->min.z};
             sceneLight.Expand(lightView.TransformPoint(c));
         }
-        math::AABB tight;
-        tight.min = {std::fmax(aabb.min.x, sceneLight.min.x),
-                     std::fmax(aabb.min.y, sceneLight.min.y),
-                     std::fmax(aabb.min.z, sceneLight.min.z)};
-        tight.max = {std::fmin(aabb.max.x, sceneLight.max.x),
-                     std::fmin(aabb.max.y, sceneLight.max.y),
-                     std::fmin(aabb.max.z, sceneLight.max.z)};
-        // Fall back to the slice AABB if the intersection is degenerate.
-        if (tight.min.x < tight.max.x && tight.min.y < tight.max.y &&
-            tight.min.z < tight.max.z) {
-            aabb = tight;
-        }
+        aabb.min.z = std::fmin(aabb.min.z, sceneLight.min.z);
+        aabb.max.z = std::fmax(aabb.max.z, sceneLight.max.z);
     }
 
     // Pad the map a little so receivers at the slice edge stay inside the map.

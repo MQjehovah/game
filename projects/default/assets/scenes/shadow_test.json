@@ -1,0 +1,106 @@
+{
+  "renderstack": {
+    "ssao": false,
+    "bloom": false,
+    "tonemap": true,
+    "exposure": 1.0,
+    "shadowDistance": 150.0,
+    "shadowSoftness": 1.0,
+    "shadowNormalOffset": 1.5
+  },
+  "entities": [
+    {
+      "id": 2,
+      "name": "Main Camera",
+      "components": {
+        "type": { "value": "Camera3D" },
+        "camera": { "fov": 55, "orthoSize": 10 },
+        "transform": { "pos": [0, 18, -13], "rot": [0, 0.8893799781799316, 0.45708000659942627, 0], "scale": [1, 1, 1] }
+      }
+    },
+    {
+      "id": 3,
+      "name": "Sun",
+      "components": {
+        "type": { "value": "Light3D" },
+        "light": {
+          "type": "directional",
+          "color": [1, 0.97, 0.9, 1],
+          "intensity": 2.4,
+          "ambientStrength": 0.45,
+          "sunDir": [-0.5, -0.7, -0.35],
+          "radius": 10
+        },
+        "transform": { "pos": [0, 60, 0], "rot": [0, 0, 0, 1], "scale": [1, 1, 1] }
+      }
+    },
+    {
+      "id": 4,
+      "name": "Ground",
+      "components": {
+        "mesh": {
+          "meshKey": "cube",
+          "castShadow": false,
+          "receiveShadow": true,
+          "material": { "ao": 1, "colorHex": "#6E7A57", "metallic": 0, "roughness": 0.95, "uvRepeat": 20 }
+        },
+        "transform": { "pos": [0, -0.5, 0], "rot": [0, 0, 0, 1], "scale": [80, 1, 80] }
+      }
+    },
+    {
+      "id": 10,
+      "name": "Tall Tower",
+      "components": {
+        "mesh": {
+          "meshKey": "cube",
+          "material": { "ao": 1, "colorHex": "#C9A227", "metallic": 0.1, "roughness": 0.6 }
+        },
+        "transform": { "pos": [0, 5, 0], "rot": [0, 0, 0, 1], "scale": [2, 10, 2] }
+      }
+    },
+    {
+      "id": 11,
+      "name": "Mid Tower",
+      "components": {
+        "mesh": {
+          "meshKey": "cube",
+          "material": { "ao": 1, "colorHex": "#D8B23A", "metallic": 0.1, "roughness": 0.6 }
+        },
+        "transform": { "pos": [16, 3, 2], "rot": [0, 0, 0, 1], "scale": [2, 6, 2] }
+      }
+    },
+    {
+      "id": 12,
+      "name": "Far Tower",
+      "components": {
+        "mesh": {
+          "meshKey": "cube",
+          "material": { "ao": 1, "colorHex": "#B58CF0", "metallic": 0.1, "roughness": 0.6 }
+        },
+        "transform": { "pos": [-18, 2, -6], "rot": [0, 0, 0, 1], "scale": [2, 4, 2] }
+      }
+    },
+    {
+      "id": 13,
+      "name": "Low Slab",
+      "components": {
+        "mesh": {
+          "meshKey": "cube",
+          "material": { "ao": 1, "colorHex": "#8A8F98", "metallic": 0.2, "roughness": 0.7 }
+        },
+        "transform": { "pos": [8, 0.5, -10], "rot": [0, 0, 0, 1], "scale": [12, 1, 4] }
+      }
+    },
+    {
+      "id": 14,
+      "name": "Ball",
+      "components": {
+        "mesh": {
+          "meshKey": "sphere",
+          "material": { "ao": 1, "colorHex": "#4C8BF5", "metallic": 0.2, "roughness": 0.4 }
+        },
+        "transform": { "pos": [-8, 1, 8], "rot": [0, 0, 0, 1], "scale": [2, 2, 2] }
+      }
+    }
+  ]
+}

@@ -481,7 +481,11 @@ python tools/lolimport/glb_remap_textures.py extract ^
   --glb build-msvc/sr_135.glb --out build-msvc/sr_tex_map_135.json
 python tools/lolimport/glb_remap_textures.py apply ^
   --in build-msvc/sr_135.glb --map build-msvc/sr_tex_map_135.json ^
-  --named-dir F:/assets/fantome/named --out build-msvc/sr_map_decals.glb
+  --named-dir F:/assets/fantome/named --out build-msvc/sr_map_decals_raw.glb
+
+# 4) 修正地面贴花 UV：每个放置实例映射一次贴图（否则印章整图平铺，见下一节）
+python tools/lolimport/glb_normalize_decals.py ^
+  --in build-msvc/sr_map_decals_raw.glb --out build-msvc/sr_map_decals.glb
 copy build-msvc\sr_map_decals.glb projects\moba\assets\models\sr\sr_map.glb
 ```
 
@@ -545,3 +549,113 @@ UV 里的符号差正是补偿。把它"掰正"反而会撕开接缝：
 其余证据图都在 `build-msvc/`：`sheet_decals.png`（16 张贴花贴图铺在中灰上的样子）、
 `sheet_ground.png` / `sheet_props.png`（贴图盘点）、`decal_height.py`（贴地高度量测）、
 `mosaic_live.py`（按真实 UV 拼世界俯视图）。
+
+## 召唤师峡谷：地面贴花 UV 平铺错位（真 bug，已修）
+
+### 症状
+上面那次把 16 个地面贴花加回来之后，每个材质绑到的贴图都对了，但整张图**又不对了**：
+地面像一盘被打乱的拼花，**防御塔基座的圆环满地都是**，各种贴花图案（车道石片、花丛、
+裂石、苔藓）在整张图上重复平铺、互相叠色。对比：关掉贴花（`NEON_GLTF_SKIP_MAT=decalVersion3`）
+地面干净，开着就花。
+
+### 根因
+这 16 个 `*_decalVersion3_*` 贴图是**单枚印章**（`build-msvc/decal_layer_only.png`
+单独看贴花层就很清楚）：`lanetowerdcl` 是一枚防御塔基座圆环，`flowerb` 是一丛蓝花，
+`base_chasm1` 是一块裂石地面……贴图都带柔和的 alpha 边。但源 FBX 给它们的是**共享的
+世界投影 UV 场**（`uvU/uvV` 范围远超 0..1），于是每个印章在它自己的 patch 上**平铺
+2–8 次**：`lanetowerdcl` 的圆环就在整张图上密密麻麻。游戏本身用 decal shader 按
+贴花数据重新投影，这份数据（`map11.bin.json` 是 VFX，不是地图贴花；`base_srx.materials.bin`
+里也没有 UV 变换字段）在静态 .glb 里没有。
+
+### 修复：按连通分量把每个贴花实例映射一次贴图
+新工具 `tools/lolimport/glb_normalize_decals.py`：
+- 把每个 decal primitive 的三角汤按**共享顶点**拆成连通分量（一个分量 = 一枚摆好的贴花，
+  16 个材质合计 748 个实例）；
+- 把每个分量的 `TEXCOORD_0` 包围盒归一化到 `[0,1]`（`--mode fit`，另有 `square` / `world`）；
+- **几何一个字节都不动**：只重写 decal primitive 的 `TEXCOORD_0` accessor，输入输出同尺寸。
+- `order_ground_mix2`（89 个四边形）和 `grasstuft` 本来就是按实例给了 0..1 的 UV，归一化
+  对它们是恒等操作——正好印证"一个分量 = 一枚贴花"。
+
+```
+python tools/lolimport/glb_normalize_decals.py \
+  --in projects/moba/assets/models/sr/sr_map.glb \
+  --out build-msvc/sr_map_decals.glb        # 再 copy 回工程
+```
+
+### 验收
+| 指标 | 修复前 | 修复后 |
+|---|---|---|
+| decal primitive / 实例 | 16 / 748 | 16 / 748 |
+| TEXCOORD_0 被改的 decal primitive | — | **14**（另 2 个本就 0..1，不变） |
+| POSITION / NORMAL / indices | — | **逐字节相同，0 处不同** |
+| `lanetowerdcl` 的 UV 范围 | `U[-1.25,2.57] V[-1.43,2.97]` | **`U[0,1] V[0,1]`** |
+| `.glb` | 124,019,072 B | **124,019,072 B**（同尺寸，SHA1 `33D95698FE6DB76670E8907E346A875A84F85E2C`） |
+
+- 结构校验：135 primitive 中，非 decal 的 121 个 `TEXCOORD_0` 与几何全等；14 个 decal 的
+  `TEXCOORD_0` 改变（正是那两个 0..1 的没变）；`lanetowerdcl` 归一后恰好铺满 0..1。
+- 场景侧：`projects/moba/assets/scenes/moba.json` **不带任何 `materialExclude`** 就对了
+  （贴图修对之后又回到了"无过滤"的基线，`materialExclude` 只留作元素龙切换的安全网）。
+- 视觉：`build-msvc/decal_bug_game.png` / `decal_bug_ov.png`（修复前，花斑）
+  vs `decal_fixed_game.png` / `decal_fixed_ov.png`（修复后，石砖车道 + 车道圆台/苔藓/花草）；
+  `decal_layer_only.png` 是贴花层单独渲染。
+- 注意：贴花仍是透明叠层，近景（`decal_fixed_game.png`）已经很 LoL；俯视看基地一带贴花较密，
+  属主观观感，如需更"素"可只对个别材质收窄 `--tag`（工具按材质名子串选）。
+
+### 复跑与基线
+- 上游流水线第 4 步就是本工具（见上一节），复跑产物即 `build-msvc/sr_map_decals.glb`。
+- 复核基线：`build-msvc/sr_map_119.glb`（无贴花）、`build-msvc/sr_map_prefix.glb`（重贴前）。
+
+## 定向光阴影（CSM）：缺失 / 硬边切断 / 随相机抖动（真 bug，已修）
+
+### 症状
+- 地面**有的地方有阴影、有的地方没有**，阴影在一条直的边缘上被硬生生切断；
+- 同一个静止物体，**只移动相机（晃动鼠标）**，阴影的形状/长度就变了。
+
+### 根因
+`engine/src/gfx/csm.cpp` 的 `ComputeCascadeLightViewProj` 把每个级联的正交包围盒
+**与"投影物（caster）并集"的光空间 AABB 求了交集**（旧代码 55–80 行，注释写的
+意图是"别让一个小场景被挤到地图角落"）。但那份 `sceneBounds` 只由**本帧可见、
+且上一帧缓存的 caster** 组成（`shadow_system.cpp:302-321`），而地面一般是
+`castShadow=false` 的纯接收体，落在该 AABB 之外：
+
+- 正交盒实际只覆盖 `相机切片 ∩ caster 包围盒`，切片内落在 caster AABB 外的接收面
+  全被裁掉，片元投影出盒后按"受光"处理（`lit.frag:369`）—— 于是有阴影/没阴影并存，
+  并在 AABB 边缘留下一道硬切；
+- caster 集合随相机平移变化 ⇒ 正交盒的大小/位置/纹素尺度每帧变 ⇒ 阴影随鼠标
+  抖动/跳变。
+
+### 修复
+1. `csm.cpp`：**不再在 XY 上与 caster AABB 求交**。XY 恒等于相机切片（覆盖全部
+   可见接收面）；只把光空间 **深度（z）** 范围扩展到 caster，让位于切片之外、沿
+   光方向仍可能投影进画面的物体照样进阴影图。这样所有可见接收体都在盒内，且盒
+   不再依赖"当前可见 caster 集合"。
+2. 级联切换去硬缝：`lit.frag` 与 GL 版 `builtin_shaders.hpp` 都新增 `CascadeShadow()`，
+   在每条分割线两侧各留 5% 的混合带（`smoothstep` 交叉淡入淡出），消除级联切换处
+   的硬接缝。两段着色器保持一致；Vulkan 的 `engine/generated/vk_shaders.hpp` 在构建
+   时由 `tools/gen_vk_shaders.ps1` 重新生成。
+
+### 验收
+用新增的简单场景 `projects/default/assets/scenes/shadow_test.json`
+（平地面 + 高塔/矮塔/球 + 低角度太阳，静态、无脚本）：
+
+| | 修复前 | 修复后 |
+|---|---|---|
+| 左塔阴影 | **完全没有** | 完整落地 |
+| 中间高塔阴影 | 远端被切出尖角 | 完整 |
+| 移动相机后同一物体的阴影 | 形状/长度明显变化 | 一致（只剩透视差异） |
+| 级联接缝 | 硬缝 | 5% 混合带，平滑 |
+
+- MOBA 实机：`build-msvc/shadow_moba_game.png`（塔/树/单位阴影连贯）。
+- 对比图：`build-msvc/shadow_cam{A,B}.png`（修复前）vs `shadowfix_cam{A,B}.png` /
+  `shadowblend_camA.png`（修复后）；`shadow_camC.png` / `shadowfix_camC.png`。
+- `neon_tests` 836/841（5 个 `PostGraph*` 既有失败，与本改无关）。
+
+### 复现命令
+```
+neon_game.exe --scene projects\default\assets\scenes\shadow_test.json ^
+  --smoke-test 40 --screenshot out.png 30
+set NEON_NO_SHADOWS=1     :: 关阴影做 A/B
+set NEON_SHADOW_DEBUG=1   :: 直接输出级联阴影因子（白=受光，黑=被挡）
+```
+
+

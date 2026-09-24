@@ -5,7 +5,7 @@
       "name": "地面",
       "components": {
         "transform": { "pos": [0, 0, 0] },
-        "mesh": { "meshKey": "terrain", "material": { "castShadow": false } }
+        "mesh": { "meshKey": "terrain", "castShadow": false }
       }
     },
     {

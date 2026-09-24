@@ -352,6 +352,25 @@ vec3 SampleLightProbeAtlas(vec3 wp) {
     vec3 y1 = mix(x10, x11, f.y);
     return mix(y0, y1, f.z) * uLightProbeInvMax;
 }
+// Shadow factor from one directional cascade: projects the world position into
+// the cascade's light space and resolves shadow + penumbra. Fragments outside
+// the cascade's ortho box return "lit" - the box always covers the whole camera
+// slice now (see csm.cpp), so that only happens past the shadow distance.
+float CascadeShadow(int c, vec3 worldPos, vec3 norm) {
+    float texelWorld = c == 0 ? uShadowTexelWorld.x
+                      : (c == 1 ? uShadowTexelWorld.y : uShadowTexelWorld.z);
+    vec3 p = worldPos + norm * texelWorld * uShadowNormalOffset;
+    vec4 sp = uLightVP[c] * vec4(p, 1.0);
+    vec3 ndc = sp.xyz / sp.w;
+    if (!(ndc.x > -1.0 && ndc.x < 1.0 && ndc.y > -1.0 && ndc.y < 1.0 &&
+          ndc.z > -1.0 && ndc.z < 1.0)) {
+        return 1.0;
+    }
+    vec3 sc = ndc * 0.5 + 0.5;
+    if (c == 0) return ShadowFactor(uShadowMap0, sc.xy, sc.z);
+    if (c == 1) return ShadowFactor(uShadowMap1, sc.xy, sc.z);
+    return ShadowFactor(uShadowMap2, sc.xy, sc.z);
+}
 void main() {
 #ifdef TERRAIN_SPLAT
     // G4 terrain splatmap: layer a realistic grass texture, dirt color and rock
@@ -505,31 +524,28 @@ void main() {
         // Cascade selection by positive view-space depth (distance along the
         // camera forward axis), matching the CPU-side split computation.
         float viewDepth = -vViewZ;
-        int cascade = viewDepth < uCascadeSplits.x ? 0 : (viewDepth < uCascadeSplits.y ? 1 : 2);
-        // Normal-offset bias: shift the receiver along its own normal by a
-        // couple of shadow texels before projecting. The offset must scale with
-        // the cascade's texel size (each cascade is a different resolution over
-        // a different world area), hence uShadowTexelWorld.
-        float texelWorld = cascade == 0 ? uShadowTexelWorld.x
-                          : (cascade == 1 ? uShadowTexelWorld.y : uShadowTexelWorld.z);
-        vec3 shadowPos = vWorldPos + normalize(N) * texelWorld * uShadowNormalOffset;
-        vec4 sp;
-        if (cascade == 0) sp = uLightVP[0] * vec4(shadowPos, 1.0);
-        else if (cascade == 1) sp = uLightVP[1] * vec4(shadowPos, 1.0);
-        else sp = uLightVP[2] * vec4(shadowPos, 1.0);
-        vec3 ndc = sp.xyz / sp.w;
-        if (ndc.x > -1.0 && ndc.x < 1.0 && ndc.y > -1.0 && ndc.y < 1.0 && ndc.z > -1.0 &&
-            ndc.z < 1.0) {
-            vec3 sc = ndc * 0.5 + 0.5;
-            if (cascade == 0) shadow = ShadowFactor(uShadowMap0, sc.xy, sc.z);
-            else if (cascade == 1) shadow = ShadowFactor(uShadowMap1, sc.xy, sc.z);
-            else shadow = ShadowFactor(uShadowMap2, sc.xy, sc.z);
+        float s0 = uCascadeSplits.x;
+        float s1 = uCascadeSplits.y;
+        float s2 = uCascadeSplits.z;
+        int cascade = viewDepth < s0 ? 0 : (viewDepth < s1 ? 1 : 2);
+        vec3 shN = normalize(N);
+        shadow = CascadeShadow(cascade, vWorldPos, shN);
+        // Cross-fade across each split so the cascade switch - which also changes
+        // the texel size and thus the penumbra - is not a hard seam.
+        float b0 = max(s0 * 0.05, 0.02);
+        float b1 = max(s1 * 0.05, 0.02);
+        if (viewDepth > s0 - b0 && viewDepth < s0 + b0) {
+            float t = smoothstep(s0 - b0, s0 + b0, viewDepth);
+            shadow = mix(CascadeShadow(0, vWorldPos, shN), CascadeShadow(1, vWorldPos, shN), t);
+        } else if (viewDepth > s1 - b1 && viewDepth < s1 + b1) {
+            float t = smoothstep(s1 - b1, s1 + b1, viewDepth);
+            shadow = mix(CascadeShadow(1, vWorldPos, shN), CascadeShadow(2, vWorldPos, shN), t);
         }
         // Fade the shadow out at the end of the last cascade. The cascades only
         // cover the shadow distance, so without this the last slice ends in a
         // hard line across the terrain where shadows stop dead.
         shadow = mix(1.0, shadow,
-                     1.0 - smoothstep(uCascadeSplits.z * 0.85, uCascadeSplits.z, viewDepth));
+                     1.0 - smoothstep(s2 * 0.85, s2, viewDepth));
     }
     if (!uReceiveShadow) shadow = 1.0;
     // NEON_SHADOW_DEBUG=1: replace the shaded result with the raw cascade shadow
