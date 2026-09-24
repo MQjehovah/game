@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <unordered_map>
 
 #include "neon/assets/asset_manager.hpp"
@@ -37,6 +38,51 @@ namespace neon::scene {
 using namespace detail; // SameMaterial / SelectLodMesh / EntityKey
 
 namespace {
+
+// glTF material-layer selection (SceneMesh::materialInclude / materialExclude).
+// A multi-state kit-piece map - Summoner's Rift ships Base / Walled / Upgraded /
+// Tunnel / Chemtech / Hextech / Cloud / Ocean / Infernal / Mountain variants of
+// every terrain cell and prop - stacks all states at identical coordinates, so
+// drawing them together z-fights into a patchwork of mismatched ground and
+// doubled-up props. The scene picks one state by substring-matching the glTF
+// material name (include = whitelist when non-empty, then exclude = blacklist).
+bool MaterialLayerSelected(const std::vector<std::string>& include,
+                           const std::vector<std::string>& exclude,
+                           const std::string& name) {
+    if (!include.empty()) {
+        bool hit = false;
+        for (const std::string& p : include) {
+            if (name.find(p) != std::string::npos) { hit = true; break; }
+        }
+        if (!hit) return false;
+    }
+    for (const std::string& p : exclude) {
+        if (name.find(p) != std::string::npos) return false;
+    }
+    return true;
+}
+
+// A script error inside on_render() (a HUD/VFX draw callback that runs every
+// frame) used to log one line per frame forever: a single nil field produced
+// 25k+ identical "[script] on_render() failed" lines in one session, drowning
+// the log file and the editor log panel. The first few occurrences still log
+// verbatim (so the error is visible and reportable); after that only a periodic
+// summary with the suppressed count is emitted.
+core::LogThrottle& RenderErrorThrottle() {
+    static core::LogThrottle throttle(4, 600);
+    return throttle;
+}
+
+// Step E2 (TAA motion vectors): does this transform differ from the previous
+// frame's? A pure translation/rotation/scale change of any object is what makes
+// it a velocity caster; an epsilon keeps float noise in the scene tree from
+// classifying every static prop as moving.
+bool SameTransform(const math::Mat4& a, const math::Mat4& b) {
+    for (int i = 0; i < 16; ++i) {
+        if (std::fabs(a.m[i] - b.m[i]) > 1e-5f) return false;
+    }
+    return true;
+}
 
 // Spatial mesh chunking for oversized static glTF nodes. The Summoner's Rift
 // map is a 181-node glTF whose triangle mass sits in a handful of huge nodes
@@ -212,6 +258,12 @@ void DrawSystem::Build(ecs::World& world, AnimationSystem& anims) {
                 item.mat = gltf.nodes[0].material;
             else
                 item.mat = gfx::Material::Lit({}, ParseColorHex(m->colorHex), 24.0f);
+            // nodes[0] is the file's first primitive; drop it when the entity's
+            // material-layer filter rejects that primitive's name.
+            if (!gltf.nodes.empty() &&
+                !MaterialLayerSelected(m->materialInclude, m->materialExclude,
+                                       gltf.nodes[0].materialName))
+                item.suppressMesh = true;
         } else {
             item.mat = gfx::Material::Lit({}, ParseColorHex(m->colorHex), 24.0f);
         }
@@ -342,10 +394,14 @@ void DrawSystem::Build(ecs::World& world, AnimationSystem& anims) {
         item.isDecal = true;
         item.spriteTex = d->texture;
         item.decalSize = d->size;
+        item.decalHeight = d->height;
         item.mat = gfx::Material::Unlit({});
         item.mat.transparent = true;
         item.mat.additive = d->additive;
         item.mat.tint = {d->r, d->g, d->b, d->alpha};
+        // Depth-projected decal: the renderer rebuilds the receiving surface
+        // from the scene depth and conforms the decal to it.
+        item.mat.decal = true;
         draws_.push_back(std::move(item));
     }
     SyncDrawKeys();
@@ -427,8 +483,8 @@ void DrawSystem::ResolveDrawItem(DrawItem& item, gfx::Renderer& renderer, ecs::W
             item.failed = true;
             return;
         }
-        item.mesh = gfx::Mesh::CreatePlane(renderer, item.decalSize, item.decalSize, 1, 1,
-                                           "decal");
+        // Unit quad: Draw() scales it by the component's live size/height.
+        item.mesh = gfx::Mesh::CreatePlane(renderer, 1.0f, 1.0f, 1, 1, "decal");
         item.mat.albedo = tex.Handle();
         item.resolved = true;
         return;
@@ -518,6 +574,7 @@ void DrawSystem::ResolveDrawItem(DrawItem& item, gfx::Renderer& renderer, ecs::W
     // 累积变换 + 材质）作为子项存储，Draw 时整体渲染（Sponza 类建筑场景）。
     if (!mesh.Skinned() && key.compare(0, 5, "gltf:") == 0 && content_.assets) {
         assets::GltfAsset g = content_.assets->LoadGLTF(content_.fullAssetPath(key.substr(5)));
+        const SceneMesh* layerCfg = world.Get<SceneMesh>(item.ent);
         if (g.nodes.size() > 1) {
             // Oversized nodes are split into spatial chunks so per-node frustum
             // culling (in Draw) can drop the off-screen ones; the rest are used
@@ -528,13 +585,18 @@ void DrawSystem::ResolveDrawItem(DrawItem& item, gfx::Renderer& renderer, ecs::W
             for (size_t ni = 1; ni < g.nodes.size(); ++ni) {
                 const assets::GltfMeshNode& sub = g.nodes[ni];
                 if (!sub.mesh.Valid()) continue;
+                if (layerCfg &&
+                    !MaterialLayerSelected(layerCfg->materialInclude,
+                                           layerCfg->materialExclude, sub.materialName))
+                    continue;
                 const size_t tris =
                     sub.mesh.CpuIndicesU32().size() / 3 + sub.mesh.CpuIndices().size() / 3;
                 if (tris >= kChunkTriangleThreshold) {
                     std::vector<gfx::Mesh> chunks = ChunkMesh(renderer, sub.mesh, kChunkGrid);
                     chunked += chunks.size();
                     for (gfx::Mesh& cm : chunks)
-                        item.gltfSubNodes.push_back({sub.transform, std::move(cm), sub.material});
+                        item.gltfSubNodes.push_back(
+                            {sub.transform, std::move(cm), sub.material, sub.materialName});
                 } else {
                     item.gltfSubNodes.push_back(sub);
                 }
@@ -826,6 +888,10 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
             renderer.SetSsrIntensity(stack->ssrStrength);
             renderer.SetBloomEnabled(stack->bloom);
             renderer.SetBloomParams(stack->bloomThreshold, stack->bloomStrength);
+            renderer.SetBloomWidth(stack->bloomWidth);
+            renderer.SetShadowDistance(stack->shadowDistance);
+            renderer.SetShadowSoftness(stack->shadowSoftness);
+            renderer.SetShadowNormalOffset(stack->shadowNormalOffset);
             renderer.SetTonemapEnabled(stack->tonemap);
             renderer.SetExposure(stack->exposure);
             // RenderStack fog is the density-based volumetric fog (composite
@@ -1171,14 +1237,56 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
         hud.UpdateAnchors(anchorEnts);
     }
     // P2-3: sprites render back-to-front by their sortOrder component (2D
-    // games); 3D depth-tested meshes are unaffected by the stable order.
+    // games). On the depth-buffer path the items are additionally bucketed so
+    // the depth-order-sensitive ones are submitted in the right order:
+    //   * batchable opaque stays in creation order -- the instanced batching run
+    //     must stay contiguous or every interleaved item flushes the batch and
+    //     the draw-call count explodes;
+    //   * other opaque 3D goes front-to-back (early-Z) and transparent 3D
+    //     back-to-front (overlapping skill effects composite correctly);
+    //   * 2D painter's-order items keep their SceneSortOrder.z and draw last.
+    // The no-depth fallback keeps the legacy z-only order, so its painter's
+    // algorithm is untouched.
     drawOrder_.resize(draws_.size());
     for (size_t i = 0; i < drawOrder_.size(); ++i) drawOrder_[i] = i;
-    std::stable_sort(drawOrder_.begin(), drawOrder_.end(), [&](size_t a, size_t b) {
-        const SceneSortOrder* sa = world.Get<SceneSortOrder>(draws_[a].ent);
-        const SceneSortOrder* sb = world.Get<SceneSortOrder>(draws_[b].ent);
-        return (sa ? sa->z : 0.0f) < (sb ? sb->z : 0.0f);
-    });
+    const bool depthOrdered = renderer.DepthTestAvailable();
+    if (depthOrdered) {
+        drawSortKeys_.resize(draws_.size());
+        for (size_t i = 0; i < draws_.size(); ++i) {
+            const DrawItem& d = draws_[i];
+            const bool alive = world.Alive(d.ent);
+            const SceneSortOrder* so = alive ? world.Get<SceneSortOrder>(d.ent) : nullptr;
+            const bool highlighted =
+                entityHighlights.find(EntityKey(d.ent)) != entityHighlights.end();
+            DrawSortKey k;
+            k.z = so ? so->z : 0.0f;
+            const bool is2D = so != nullptr || d.isSprite || d.isDecal;
+            const bool batchable = !is2D && !highlighted && !d.skinned && !d.mat.transparent &&
+                                   !d.mat.shader.Valid() && d.mesh.Valid() &&
+                                   d.gltfSubNodes.empty();
+            k.group = is2D ? 3 : (d.mat.transparent ? 2 : (batchable ? 0 : 1));
+            if (!is2D && alive && world.Get<SceneTransform>(d.ent) != nullptr) {
+                const math::Mat4 m = sceneTree.CachedLocalToWorld(d.ent);
+                k.dist = math::Distance(math::Vec3{m.m[3], m.m[7], m.m[11]}, camera.position);
+            }
+            drawSortKeys_[i] = k;
+        }
+        std::stable_sort(drawOrder_.begin(), drawOrder_.end(), [&](size_t a, size_t b) {
+            const DrawSortKey& ka = drawSortKeys_[a];
+            const DrawSortKey& kb = drawSortKeys_[b];
+            if (ka.group != kb.group) return ka.group < kb.group;
+            if (ka.group == 0) return false;                  // keep creation order
+            if (ka.group == 1) return ka.dist < kb.dist;      // opaque front-to-back
+            if (ka.group == 2) return ka.dist > kb.dist;      // transparent back-to-front
+            return ka.z < kb.z;                               // 2D painter's order
+        });
+    } else {
+        std::stable_sort(drawOrder_.begin(), drawOrder_.end(), [&](size_t a, size_t b) {
+            const SceneSortOrder* sa = world.Get<SceneSortOrder>(draws_[a].ent);
+            const SceneSortOrder* sb = world.Get<SceneSortOrder>(draws_[b].ent);
+            return (sa ? sa->z : 0.0f) < (sb ? sb->z : 0.0f);
+        });
+    }
     // Re-run the cascade shadow pass NOW: the earlier SetCamera/RefreshShadowPass
     // ran BEFORE Build recorded this frame's casters, so the shadow maps were
     // rendered empty and every receiver sampled factor=1 (no tree shadows on
@@ -1191,6 +1299,10 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
     // change. Flush whenever a non-batchable item interrupts the run so the
     // relative order of opaque vs transparent/skinned draws never changes.
     const bool canBatch = renderer.DepthTestAvailable();
+    // Step E2: while temporal AA is writing motion vectors, track per-entity
+    // transforms so moving objects can be reprojected with a real velocity.
+    const bool velocityActive = renderer.VelocityEnabled();
+    if (velocityActive) ++drawFrame_;
     // G1-2: build a per-frame BVH of batchable items and pre-cull the camera
     // frustum, so instanced draws only receive visible instances (the
     // renderer then skips its own per-instance test). Uses the renderer's own
@@ -1206,7 +1318,7 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
             if (!item.resolved || item.failed) continue;
             if (!world.Get<SceneTransform>(item.ent)) continue;
             if (item.skinned || item.isSprite || item.isDecal || item.mat.transparent ||
-                item.mat.shader.Valid() || !item.mesh.Valid())
+                item.mat.shader.Valid() || !item.mesh.Valid() || item.suppressMesh)
                 continue;
             const math::Mat4 model = sceneTree.CachedLocalToWorld(item.ent);
             // Column-vector convention: the translation is the last COLUMN of
@@ -1228,8 +1340,40 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
             drawBvh_.QueryFrustum(renderer.ViewFrustum(),
                                   [&](math::Bvh::Id id) { bvhVisible_[id] = 1; });
     }
+    // Batch lookup key: mesh + the material fields SameMaterial compares. The
+    // hash only narrows the candidates; SameMaterial still decides, so hash
+    // collisions are harmless.
+    auto batchKey = [](const gfx::Mesh& mesh, const gfx::Material& m) {
+        uint64_t h = 1469598103934665603ull;
+        auto mix = [&h](uint64_t v) { h = (h ^ v) * 1099511628211ull; };
+        auto mixF = [&mix](float f) {
+            uint32_t bits = 0;
+            std::memcpy(&bits, &f, sizeof(bits));
+            mix(bits);
+        };
+        mix(mesh.Handle().vao);
+        mix(m.shader.id);
+        mix(m.albedo.id);
+        mix(m.metallicRoughness.id);
+        mix(m.occlusion.id);
+        mix(m.emissive.id);
+        mixF(m.tint.r);
+        mixF(m.tint.g);
+        mixF(m.tint.b);
+        mixF(m.tint.a);
+        mixF(m.shininess);
+        mixF(m.metallic);
+        mixF(m.roughness);
+        mixF(m.aoStrength);
+        mixF(m.emissiveIntensity);
+        mixF(m.alphaCutoff);
+        mix((m.lit ? 1ull : 0ull) | (m.transparent ? 2ull : 0ull) |
+            (m.doubleSided ? 4ull : 0ull) | (m.alphaTest ? 8ull : 0ull));
+        return h;
+    };
     drawBatches_.clear();
     batchModels_.clear();
+    batchLookup_.clear();
     auto flushBatches = [&]() {
         if (drawBatches_.empty()) return;
         for (const DrawBatch& b : drawBatches_) {
@@ -1239,6 +1383,7 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
         }
         drawBatches_.clear();
         batchModels_.clear();
+        batchLookup_.clear();
     };
     size_t dead = 0;
     // Camera frustum for per-sub-node culling below (same one the item BVH uses).
@@ -1278,9 +1423,34 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
         if (item.tileOffset.LengthSq() > 0.0f)
             model = model * math::Mat4::Translation(item.tileOffset);
         if (item.isDecal) {
-            // Lift the quad a hair above the surface it projects onto so depth
-            // testing keeps it visible (no z-fighting on flat ground).
-            model = model * math::Mat4::Translation({0.0f, 0.02f, 0.0f});
+            // Unit quad -> live size/height. Read the component directly because
+            // SetDecal resizes the decal in place after the mesh was resolved.
+            float dsize = item.decalSize;
+            float dheight = item.decalHeight;
+            if (const SceneDecal* live = world.Get<SceneDecal>(item.ent)) {
+                dsize = live->size;
+                dheight = live->height;
+            }
+            // Lift a hair above the surface so the non-projected fallback path
+            // (no sampleable depth this frame) still wins the depth test.
+            model = model * math::Mat4::Translation({0.0f, 0.02f, 0.0f}) *
+                    math::Mat4::Scale({dsize, dheight, dsize});
+        }
+        // Step E2: this entity's previous transform, for the TAA motion-vector
+        // pass. Copied into a local so the pointer stays valid for every
+        // sub-draw the item issues below.
+        math::Mat4 prevModel;
+        const math::Mat4* prevModelPtr = nullptr;
+        bool moved = false;
+        if (velocityActive) {
+            const uint64_t velKey = EntityKey(item.ent);
+            auto found = prevXforms_.find(velKey);
+            if (found != prevXforms_.end()) {
+                prevModel = found->second.model;
+                prevModelPtr = &prevModel;
+                moved = !SameTransform(prevModel, model);
+            }
+            prevXforms_[velKey] = PrevXform{model, drawFrame_};
         }
         // Column-vector convention: translation lives in the last column
         // (m[3], m[7], m[11]); reading m[12..14] returned ~0 and broke LOD
@@ -1295,17 +1465,26 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
         // and custom shaders keep the per-entity path.
         const bool batchable = canBatch && !highlighted && !item.skinned && !item.isSprite &&
                                !item.isDecal && !item.mat.transparent && !item.mat.shader.Valid() &&
-                               item.mesh.Valid() && item.gltfSubNodes.empty();
+                               item.mesh.Valid() && !item.suppressMesh &&
+                               item.gltfSubNodes.empty() &&
+                               // A moving object must keep its own draw call so
+                               // it can also emit a motion vector.
+                               !(velocityActive && moved);
         if (batchable) {
             if (!bvhVisible_.empty() && bvhVisible_[idx] == 0) continue; // pre-culled
             gfx::Mesh drawMesh = SelectLodMesh(item.mesh, item.chain, worldPos, cam.position);
             if (!drawMesh.Valid()) continue;
+            // O(1) lookup instead of a linear scan over every open batch (the
+            // Rift map alone opens hundreds of distinct materials per frame).
+            const uint64_t key = batchKey(drawMesh, item.mat);
             int batchIndex = -1;
-            for (size_t bi = 0; bi < drawBatches_.size(); ++bi) {
-                if (drawBatches_[bi].mesh.Handle().vao == drawMesh.Handle().vao &&
-                    SameMaterial(drawBatches_[bi].mat, item.mat)) {
-                    batchIndex = static_cast<int>(bi);
-                    break;
+            if (auto found = batchLookup_.find(key); found != batchLookup_.end()) {
+                for (uint32_t bi : found->second) {
+                    if (drawBatches_[bi].mesh.Handle().vao == drawMesh.Handle().vao &&
+                        SameMaterial(drawBatches_[bi].mat, item.mat)) {
+                        batchIndex = static_cast<int>(bi);
+                        break;
+                    }
                 }
             }
             if (batchIndex < 0) {
@@ -1315,6 +1494,7 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
                 b.start = static_cast<uint32_t>(batchModels_.size());
                 batchIndex = static_cast<int>(drawBatches_.size());
                 drawBatches_.push_back(b);
+                batchLookup_[key].push_back(static_cast<uint32_t>(batchIndex));
             }
             batchModels_.push_back(model);
             drawBatches_[static_cast<size_t>(batchIndex)].count++;
@@ -1333,7 +1513,7 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
                 pm.highlightColor = highlighted ? gfx::Color{hl.r, hl.g, hl.b, 1.0f}
                                                 : gfx::Color::White;
                 renderer.DrawSkinnedMesh(part.mesh, pm, model, bones,
-                                         static_cast<int>(bones.size()));
+                                         static_cast<int>(bones.size()), prevModelPtr);
             }
         } else if (item.isSprite) {
             if (item.billboard) {
@@ -1366,11 +1546,11 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
                 if (item.flipX || item.flipY)
                     model = model * math::Mat4::Scale({item.flipX ? -1.0f : 1.0f,
                                                        item.flipY ? -1.0f : 1.0f, 1.0f});
-                renderer.DrawMesh(item.mesh, item.mat, model);
+                renderer.DrawMesh(item.mesh, item.mat, model, prevModelPtr);
             }
-        } else {
+        } else if (!item.suppressMesh) {
             renderer.DrawMesh(SelectLodMesh(item.mesh, item.chain, worldPos, cam.position),
-                              item.mat, model);
+                              item.mat, model, prevModelPtr);
         }
         // 多 mesh glTF 场景的子节点（第 2+ mesh，自带累积变换 + 材质）。
         // 逐节点视锥剔除：一张多节点 glTF（如 181 节点的召唤师峡谷地图）是
@@ -1381,7 +1561,12 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
             const math::Mat4 subModel = model * sub.transform;
             if (!viewFrustum.Intersects(math::TransformAABB(sub.mesh.Bounds(), subModel)))
                 continue;
-            renderer.DrawMesh(sub.mesh, sub.material, subModel);
+            // Sub-nodes inherit the node transform: reuse the same previous
+            // transform so a moving multi-node glTF gets motion vectors too.
+            const math::Mat4 prevSubModel =
+                prevModelPtr ? (*prevModelPtr * sub.transform) : math::Mat4::Identity();
+            renderer.DrawMesh(sub.mesh, sub.material, subModel,
+                               prevModelPtr ? &prevSubModel : nullptr);
         }
     }
     flushBatches();
@@ -1399,6 +1584,15 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
     // Script VFX particles: world-space camera-facing billboards (additive +
     // alpha batches), drawn INSIDE the HDR target so bright particles bloom.
     particles.Draw(renderer);
+    // Step E2: drop motion-vector history for entities that stopped drawing this
+    // frame (hidden/destroyed/resolve-failed), so a reappearing object never
+    // reprojects from a long-stale transform.
+    if (velocityActive) {
+        for (auto it = prevXforms_.begin(); it != prevXforms_.end();) {
+            if (it->second.frame != drawFrame_) it = prevXforms_.erase(it);
+            else ++it;
+        }
+    }
     // Compact when a fifth of the draw list belongs to dead entities.
     if (dead && dead * 5 > draws_.size()) {
         draws_.erase(std::remove_if(draws_.begin(), draws_.end(),
@@ -1428,9 +1622,22 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
             if (!h || !h->HasFunction("on_render")) continue;
             const core::Result<script::Value> res = h->Call("on_render", {});
             if (!res.Ok()) {
-                NEON_LOG_CAT(core::LogCategory::Script, core::LogLevel::Error,
-                             "runtime: on_render() failed: %s",
-                             h->LastError().message.c_str());
+                core::LogThrottle& throttle = RenderErrorThrottle();
+                if (throttle.Allow()) {
+                    const uint32_t suppressed = throttle.TakeSuppressed();
+                    if (suppressed > 0) {
+                        NEON_LOG_CAT(core::LogCategory::Script, core::LogLevel::Error,
+                                     "runtime: on_render() failed (%u identical errors "
+                                     "suppressed, %llu total): %s",
+                                     suppressed,
+                                     static_cast<unsigned long long>(throttle.Calls()),
+                                     h->LastError().message.c_str());
+                    } else {
+                        NEON_LOG_CAT(core::LogCategory::Script, core::LogLevel::Error,
+                                     "runtime: on_render() failed: %s",
+                                     h->LastError().message.c_str());
+                    }
+                }
             }
         }
         scriptCtx.draw2d = nullptr;
@@ -1523,6 +1730,7 @@ void DrawSystem::Clear() {
     drawKeys_.clear();
     drawBatches_.clear();
     batchModels_.clear();
+    batchLookup_.clear();
     drawBvh_.Clear();
     bvhVisible_.clear();
     drawOrder_.clear();

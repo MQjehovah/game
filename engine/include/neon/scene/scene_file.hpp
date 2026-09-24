@@ -159,7 +159,11 @@ struct SceneFile {
                                                  int id = 0,
                                                  float uvRepeat = 1.0f,
                                                  const std::string& normalTex = "",
-                                                 float normalScale = 1.0f);
+                                                 float normalScale = 1.0f,
+                                                 const std::vector<std::string>&
+                                                     materialInclude = {},
+                                                 const std::vector<std::string>&
+                                                     materialExclude = {});
     // G2-2 scene unification: the canonical 2D sprite entity builder (mirrors
     // MakeEntity for mesh entities). Emits name + id + components: transform
     // (pos/rot/scale/parent/parentId), sprite (texture/flipX/flipY/colorHex)
@@ -288,6 +292,15 @@ struct SceneMesh {
     // repeat). For a large ground plane set this to the world-size so a small
     // texture tiles instead of stretching across the whole surface.
     float uvRepeat = 1.0f;
+    // glTF material-layer selection (substring match on the primitive's glTF
+    // material name). A multi-state map exports every variant of a cell - e.g.
+    // Summoner's Rift ships Base / Walled / Upgraded / Tunnel / Chemtech /
+    // Hextech / Cloud / Ocean / Infernal / Mountain terrain layers - all at the
+    // same coordinates, so rendering them together z-fights into a patchwork.
+    // Non-empty materialInclude keeps only matching primitives; materialExclude
+    // then drops matches. Empty + empty = render everything (previous behavior).
+    std::vector<std::string> materialInclude;
+    std::vector<std::string> materialExclude;
     // Casts a directional-light (CSM) shadow. Large receivers such as a ground
     // plane must NOT be a caster: a big plane projecting onto itself lands the
     // cascade depth within the bias band and blackens the whole surface (the
@@ -653,6 +666,10 @@ struct SceneTilemap {
 struct SceneDecal {
     std::string texture;
     float size = 2.0f;
+    // Projection volume height (world units): a depth-projected decal conforms
+    // to any surface within +/- height/2 of the decal origin (low steps, slopes,
+    // curbs) instead of floating above them as a flat quad.
+    float height = 2.0f;
     float alpha = 1.0f;
     // Runtime VFX tint + additive blend (scriptable ground VFX: skill
     // telegraphs, range rings, pings, scorch). Not reflected: spawned from Lua,
@@ -665,6 +682,7 @@ struct SceneDecal {
         Field("texture", "贴图", FieldType::Resource, &SceneDecal::texture, 0, 0, 0, 0,
               FieldMeta{FieldCategory::Serialize, nullptr, nullptr, "texture"}),
         Field("size", "尺寸", FieldType::Number, &SceneDecal::size, 2, 0.1, 100, 0.1),
+        Field("height", "投影高度", FieldType::Number, &SceneDecal::height, 2, 0, 20, 0.1),
         Field("alpha", "不透明度", FieldType::Number, &SceneDecal::alpha, 1, 0, 1, 0.01));
     core::Json ToJson() const { return kFields.ToJson(*this); }
 };

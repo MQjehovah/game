@@ -326,9 +326,24 @@ in vec2 vUV;
 out vec4 FragColor;
 uniform sampler2D uHalf;
 uniform sampler2D uQuarter;
+uniform float uBloomWidth;   // filter footprint multiplier (1 = classic bilinear)
 void main() {
     vec3 halfB = texture(uHalf, vUV).rgb;
-    vec3 quarter = texture(uQuarter, vUV).rgb;
+    // 9-tap tent instead of a single bilinear tap: the same target count, but
+    // the halo no longer has the tight "dirty" edge a one-tap upsample leaves.
+    // A wide low-weight skirt (2.5x footprint on the diagonals) extends the
+    // glow outward, which is what makes bright VFX read as a real bloom rather
+    // than a local blur. Weights sum to 1 so the bloom energy is unchanged.
+    vec2 t = uBloomWidth / vec2(textureSize(uQuarter, 0));
+    vec3 quarter = texture(uQuarter, vUV).rgb * 0.25
+                 + (texture(uQuarter, vUV + vec2( t.x, 0.0)).rgb +
+                    texture(uQuarter, vUV + vec2(-t.x, 0.0)).rgb +
+                    texture(uQuarter, vUV + vec2(0.0,  t.y)).rgb +
+                    texture(uQuarter, vUV + vec2(0.0, -t.y)).rgb) * 0.125
+                 + (texture(uQuarter, vUV + vec2( t.x,  t.y) * 2.5).rgb +
+                    texture(uQuarter, vUV + vec2(-t.x,  t.y) * 2.5).rgb +
+                    texture(uQuarter, vUV + vec2( t.x, -t.y) * 2.5).rgb +
+                    texture(uQuarter, vUV + vec2(-t.x, -t.y) * 2.5).rgb) * 0.0625;
     FragColor = vec4(halfB + quarter, 1.0);
 }
 )";

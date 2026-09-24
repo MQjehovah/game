@@ -30,6 +30,10 @@ import struct
 import numpy as np
 from PIL import Image
 
+# Single source of truth for the Rift's per-state terrain layers, shared
+# with the post-processor so a re-import and a strip agree by construction.
+from glb_strip_layers import SR_STATE_LAYERS
+
 
 # --------------------------------------------------------------------------
 # Minimal streaming ASCII-FBX reader (only what mapgeo2fbx emits)
@@ -257,6 +261,9 @@ def main():
                     help="ignore textures, use category colours (fast preview)")
     ap.add_argument("--merge-all", action="store_true",
                     help="merge every material group into ONE primitive")
+    ap.add_argument("--drop-layers", action="store_true",
+                    help="drop the non-base terrain states (Chemtech/Hextech/..."
+                         " Upgraded/Walled/Tunnel/_earth_) so the map has one state")
     ap.add_argument("--center", action="store_true",
                     help="bake the map centre to the origin (for entity rotation)")
     ap.add_argument("--scale", type=float, default=1.0,
@@ -308,9 +315,20 @@ def main():
         if toks:
             tex_pool.append((p, toks))
 
-    # Explicit fallbacks for materials whose real texture shares no token.
+    # Explicit bindings for materials whose real texture shares no token with
+    # their name. The authoritative source is the game's own material table
+    # (DATA/Maps/mapgeometry/map11/base_srx.materials.bin), which stores each
+    # material's DiffuseTexture path next to its name - so these entries were
+    # read off that file rather than guessed:
+    #   .../LevelProp/Materials/VertexDeform_inst1            -> SRU_Brush.dds
+    #   .../LevelProp/Materials/VertexDeform_WaterLily_B_inst1 -> Ocean_WaterLily_A.tex
+    # VertexDeform is Summoner's Rift's wind-deformed brush (grass) layer - an
+    # OPAQUE 455k-triangle mesh, not a foliage cut-out; the water lily is a small
+    # alpha-cut prop. Entries are matched in order, so the lily must come first
+    # ("vertexdeformwaterlilybinst1" also contains the generic key).
     FORCE = [
-        ("vertexdeform", "upgraded_baselayer_terrain_bake1_pbr_diffuse"),
+        ("waterlily", "_textures__ocean_waterlily_a.dds"),
+        ("vertexdeform", "_textures__sru_brush.dds"),
         ("centermark", "base_center_mark3"),
         ("rubble", "base_stone_steps"),
         ("lambert", "base_stone_steps"),
@@ -318,8 +336,12 @@ def main():
     ]
 
     def find_tex(fragment):
+        # Fragment matched against the whole (lower-cased) path: a caller can
+        # pin one exact file ("_textures__sru_brush.dds") when a short word would
+        # also hit a downscaled or legacy copy ("2x_...", "old__...").
+        needle = fragment.lower()
         for p, _ in tex_pool:
-            if fragment in os.path.basename(p).lower():
+            if needle in p.lower():
                 return p
         return None
 
@@ -348,14 +370,26 @@ def main():
     # Vegetation materials get alpha cut-out so foliage cards show leaves
     # instead of solid quads.
     FOLIAGE = ("drybush", "bush", "tree", "foliage", "grass", "vine",
-               "wallofgrass", "plant", "flower")
+               "wallofgrass", "plant", "flower", "waterlily", "lily")
 
     def is_foliage(mat_name):
         low = mat_name.lower()
         return any(k in low for k in FOLIAGE)
 
+    # The Rift paints its lane paving, ground mix, moss patches, grass tufts,
+    # flowers, base chasm and base seams as GROUND DECALS: flat overlays sitting
+    # a hair above the terrain whose alpha fades them into whatever is below.
+    # They are real map geometry - the game draws them every frame - so they are
+    # imported. They must however be alpha-BLENDED; drawn opaque they read as
+    # hard-edged strips, which is why an earlier revision dropped them outright
+    # and left every lane and base floor looking bare.
+    def is_decal(mat_name):
+        low = mat_name.lower()
+        return "decal" in low or "seam" in low
+
     # Group triangles by material name.
     groups = {}
+    skipped = [0]  # --drop-layers: state-layer geometries left out
     for g in geoms:
         pvi = g["pvi"]
         if pvi is None or g["verts"] is None:
@@ -364,10 +398,12 @@ def main():
         model_id = geom_to_model.get(g["id"])
         mat_id = model_to_mat.get(model_id) if model_id else None
         mat_name = materials.get(mat_id, "_default")
-        # decal/seam are alpha-blended overlays in the real renderer; opaque
-        # they read as hard strips. Everything else (roads, gates, grass
-        # walls, props) is legitimate kitpiece geometry and stays.
-        if "decal" in mat_name.lower() or "seam" in mat_name.lower():
+        # Multi-state map (Summoner's Rift): every kit-piece cell ships once per
+        # visual state. Grouping them all into the glb stacks the states on top
+        # of each other and the ground z-fights into a patchwork, so the shipping
+        # map imports only the base state (see glb_strip_layers.py).
+        if args.drop_layers and any(k in mat_name for k in SR_STATE_LAYERS):
+            skipped[0] += 1
             continue
         M = trs_matrix(*[models[model_id][k] for k in ("t", "r", "s")]) if model_id else np.eye(4)
         world = verts @ M[:3, :3].T + M[:3, 3]
@@ -402,7 +438,8 @@ def main():
         grp["tri"].append(idx + base)
         grp["base"] = base + len(world)
 
-    print("material groups:", len(groups))
+    print("material groups:", len(groups),
+          ("(%d state-layer geometries dropped)" % skipped[0]) if skipped[0] else "")
 
     # Structure centroids (blue/red bases) for lane alignment.
     for name, grp in groups.items():
@@ -470,7 +507,10 @@ def main():
                 "metallicFactor": 0.0, "roughnessFactor": 0.9,
             },
         }
-        if is_foliage(mat_name):
+        if is_decal(mat_name):
+            # Soft ground paint: the diffuse's own alpha does the blending.
+            mat["alphaMode"] = "BLEND"
+        elif is_foliage(mat_name):
             mat["alphaMode"] = "MASK"
             mat["alphaCutoffFactor"] = 0.4
         tex_path = pick_texture(mat_name)

@@ -272,6 +272,22 @@ bool PlayerApp::OnCreate() {
         CleanupUnpackedDir();
         return false;
     }
+    // Step D: scalability from the command line. A preset first, then the
+    // individual overrides so "--quality low --render-scale 0.6" wins.
+    if (!cfg_.quality.empty()) {
+        const std::string& q = cfg_.quality;
+        if (q == "low") renderer_.SetQuality(gfx::Renderer::Quality::Low);
+        else if (q == "medium") renderer_.SetQuality(gfx::Renderer::Quality::Medium);
+        else if (q == "ultra") renderer_.SetQuality(gfx::Renderer::Quality::Ultra);
+        else if (q == "high") renderer_.SetQuality(gfx::Renderer::Quality::High);
+        else
+            NEON_LOG_WARN("Player: unknown --quality '%s' (low|medium|high|ultra)", q.c_str());
+    }
+    if (cfg_.renderScale > 0.0f) renderer_.SetRenderScale(cfg_.renderScale);
+    if (cfg_.dynResTargetFps > 0.0f) renderer_.SetDynamicResolution(true, cfg_.dynResTargetFps);
+    if (cfg_.taa) renderer_.SetTaaEnabled(true);
+    if (cfg_.noTaa) renderer_.SetTaaEnabled(false);
+    if (cfg_.taaSharpen >= 0.0f) renderer_.SetTaaSharpen(cfg_.taaSharpen);
 assetMgr_.Init(&renderer_);
 // G7-1: asset reads go through the pack + Mod mount stack when present.
 if (cfg_.vfs) assetMgr_.SetFileSystem(cfg_.vfs.get());

@@ -131,8 +131,12 @@ uniform sampler2D uShadowMap2;
 uniform mat4 uLightVP[3];
 uniform vec4 uCascadeSplits;
 uniform vec2 uShadowTexel;
+uniform vec3 uShadowTexelWorld;
+uniform float uShadowSoftness;
+uniform float uShadowNormalOffset;
 uniform bool uShadowEnabled;
 uniform bool uReceiveShadow;
+uniform int uShadowDebug;
 uniform sampler2D uPointShadowMap0;
 uniform sampler2D uPointShadowMap1;
 uniform sampler2D uPointShadowMap2;
@@ -163,27 +167,83 @@ float G_Schlick(float ndl, float ndv, float a) {
 vec3 F_Schlick(float vdh, vec3 f0) {
     return f0 + (1.0 - f0) * pow(1.0 - vdh, 5.0);
 }
+// Interleaved gradient noise (Jimenez 2014): a cheap screen-space dither used
+// to rotate the shadow kernel per pixel.
+float Ign(vec2 p) {
+    return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715))));
+}
+// 12-tap Poisson disk of unit radius, rotated per pixel by Ign above.
+const vec2 kShadowDisk[12] = vec2[12](
+    vec2(-0.326, -0.406), vec2(-0.840, -0.074), vec2(-0.696, 0.457),
+    vec2(-0.203, 0.621), vec2(0.962, -0.195), vec2(0.473, -0.480),
+    vec2(0.519, 0.767), vec2(0.185, -0.893), vec2(0.507, 0.064),
+    vec2(0.896, 0.412), vec2(-0.322, -0.933), vec2(-0.792, -0.598));
 float ShadowFactor(sampler2D sm, vec2 uv, float lightDepth) {
     // Bias scaled by the shadow map's own per-texel depth gradient. The map is
     // stored at texel centers while the compared fragment depth is continuous,
-    // so on a sloped receiver the two differ by up to half a texel of depth;
-    // a bias of one gradient step (measured from the same map, so it tracks
-    // any surface orientation) keeps coplanar receivers lit without a large
-    // constant bias that would peter-pan shadows on the thin cascade boxes.
+    // so on a sloped receiver the two differ by up to half a texel of depth.
+    // The caller additionally offsets the receiver along its normal, which is
+    // what removes acne at grazing light angles; that lets this residual bias
+    // stay small enough that contact shadows stay welded to the caster's feet.
     float d0 = DecodeDepth(texture(sm, uv));
     float dx = DecodeDepth(texture(sm, uv + vec2(uShadowTexel.x, 0.0)));
     float dy = DecodeDepth(texture(sm, uv + vec2(0.0, uShadowTexel.y)));
     float slope = max(abs(dx - d0), abs(dy - d0));
-    float bias = clamp(0.002 + slope, 0.002, 0.02);
+    float bias = clamp(0.0008 + slope * 0.5, 0.0008, 0.01);
 
+    // Interleaved gradient noise: a per-pixel kernel rotation. A rotated 12-tap
+    // Poisson disk resolves a penumbra that the old 2x2 grid could not, and the
+    // per-pixel dither hides the tap pattern (a fixed grid left visible
+    // stair-steps along every shadow edge).
+    float ang = Ign(gl_FragCoord.xy) * 6.2831853;
+    float ca = cos(ang);
+    float sa = sin(ang);
+    mat2 rot = mat2(ca, sa, -sa, ca);
+    vec2 base = uShadowTexel * max(uShadowSoftness, 0.0);
+    if (uShadowSoftness <= 0.0) {
+        float lit1 = 0.0;
+        for (int x = 0; x < 2; ++x) {
+            for (int y = 0; y < 2; ++y) {
+                vec2 off = (vec2(float(x), float(y)) - vec2(0.5)) * uShadowTexel;
+                lit1 += DecodeDepth(texture(sm, uv + off)) > lightDepth - bias ? 1.0 : 0.0;
+            }
+        }
+        return lit1 / 4.0;
+    }
+
+    // Stage 1: rotated Poisson kernel. Besides the visibility estimate it
+    // averages the depth of the texels that occlude this fragment, which is the
+    // blocker estimate PCSS needs - so it costs nothing extra here.
     float lit = 0.0;
-    for (int x = 0; x < 2; ++x) {
-        for (int y = 0; y < 2; ++y) {
-            vec2 off = (vec2(float(x), float(y)) - vec2(0.5)) * uShadowTexel;
-            lit += DecodeDepth(texture(sm, uv + off)) > lightDepth - bias ? 1.0 : 0.0;
+    float sumBlocker = 0.0;
+    int blockers = 0;
+    for (int i = 0; i < 12; ++i) {
+        float d = DecodeDepth(texture(sm, uv + rot * kShadowDisk[i] * base));
+        lit += d > lightDepth - bias ? 1.0 : 0.0;
+        if (d < lightDepth - bias) {
+            sumBlocker += d;
+            blockers += 1;
         }
     }
-    return lit / 4.0;
+    float shadow = lit / 12.0;
+    if (blockers == 0) return shadow;
+
+    // Stage 2: penumbra radius grows with (receiver - blocker), the standard
+    // PCSS ratio estimator. A receiver touching its caster gets radius ~0 and
+    // keeps the hard core (crisp contact shadow); a distant caster blurs wide.
+    float avgBlocker = sumBlocker / float(blockers);
+    float penumbra = clamp((lightDepth - avgBlocker) / max(avgBlocker, 1e-4), 0.0, 1.0);
+    float radius = penumbra * 6.0;
+    if (radius < 0.75) return shadow;
+    vec2 wide = uShadowTexel * radius;
+    float soft = 0.0;
+    for (int i = 0; i < 8; ++i) {
+        float d = DecodeDepth(texture(sm, uv + rot * kShadowDisk[i] * wide));
+        soft += d > lightDepth - bias ? 1.0 : 0.0;
+    }
+    // min() with the base estimate keeps the wide kernel from brightening past
+    // the direct comparison, so the soft pass can never introduce light leak.
+    return mix(shadow, min(shadow, soft / 8.0), clamp(radius / 3.0, 0.0, 1.0));
 }
 // Maps the light->fragment direction to a cube face + uv. Same convention as
 // the CPU-side CubemapFaceAndUV (GL cube-map spec table 8.19), which is how
@@ -335,6 +395,16 @@ void main() {
         N = normalize(nrm.x * tangent + nrm.y * bitangent + nrm.z * N);
     }
     vec3 V = normalize(uCamPos - vWorldPos);
+    // Two-sided shading normal. A mirrored transform (negative scale), a level
+    // mesh exported with inverted winding, or a single-sided plane seen from
+    // behind leaves dot(N, V) < 0. Lighting such a surface with its geometric
+    // normal is what turned Summoner's Rift's ground into a sun-less, flat
+    // IBL-only sheet that also self-shadowed to shadow=0 everywhere (the
+    // shadow-map receiver offset runs along N, so a downward normal buries the
+    // receiver under its own depth). Flipping the shading normal toward the
+    // viewer makes the surface lit, shadow-receiving and correctly occluded;
+    // front faces of well-formed meshes are untouched (dot(N, V) > 0 already).
+    if (dot(N, V) < 0.0) N = -N;
     vec3 L = normalize(-uSunDir);
     float ndl = max(dot(N, L), 0.0);
     vec3 H = normalize(L + V);
@@ -436,10 +506,17 @@ void main() {
         // camera forward axis), matching the CPU-side split computation.
         float viewDepth = -vViewZ;
         int cascade = viewDepth < uCascadeSplits.x ? 0 : (viewDepth < uCascadeSplits.y ? 1 : 2);
+        // Normal-offset bias: shift the receiver along its own normal by a
+        // couple of shadow texels before projecting. The offset must scale with
+        // the cascade's texel size (each cascade is a different resolution over
+        // a different world area), hence uShadowTexelWorld.
+        float texelWorld = cascade == 0 ? uShadowTexelWorld.x
+                          : (cascade == 1 ? uShadowTexelWorld.y : uShadowTexelWorld.z);
+        vec3 shadowPos = vWorldPos + normalize(N) * texelWorld * uShadowNormalOffset;
         vec4 sp;
-        if (cascade == 0) sp = uLightVP[0] * vec4(vWorldPos, 1.0);
-        else if (cascade == 1) sp = uLightVP[1] * vec4(vWorldPos, 1.0);
-        else sp = uLightVP[2] * vec4(vWorldPos, 1.0);
+        if (cascade == 0) sp = uLightVP[0] * vec4(shadowPos, 1.0);
+        else if (cascade == 1) sp = uLightVP[1] * vec4(shadowPos, 1.0);
+        else sp = uLightVP[2] * vec4(shadowPos, 1.0);
         vec3 ndc = sp.xyz / sp.w;
         if (ndc.x > -1.0 && ndc.x < 1.0 && ndc.y > -1.0 && ndc.y < 1.0 && ndc.z > -1.0 &&
             ndc.z < 1.0) {
@@ -448,8 +525,17 @@ void main() {
             else if (cascade == 1) shadow = ShadowFactor(uShadowMap1, sc.xy, sc.z);
             else shadow = ShadowFactor(uShadowMap2, sc.xy, sc.z);
         }
+        // Fade the shadow out at the end of the last cascade. The cascades only
+        // cover the shadow distance, so without this the last slice ends in a
+        // hard line across the terrain where shadows stop dead.
+        shadow = mix(1.0, shadow,
+                     1.0 - smoothstep(uCascadeSplits.z * 0.85, uCascadeSplits.z, viewDepth));
     }
     if (!uReceiveShadow) shadow = 1.0;
+    // NEON_SHADOW_DEBUG=1: replace the shaded result with the raw cascade shadow
+    // factor (white = sun reaches the surface, black = fully occluded). The fastest
+    // way to tell a broken shadow map from a broken receiver.
+    if (uShadowDebug != 0) { FragColor = vec4(vec3(shadow), 1.0); return; }
     // The sun term is shadowed; ambient/sky stays unshadowed so shadowed areas
     // read as dim (not black). Clamp the sun term to >= 0 first: if a surface's
     // lit colour is darker than the ambient term, the unclamped blend turned
@@ -574,6 +660,32 @@ void main() {
 }
 )";
 
+// Particle billboard vertex shader: the instanced-coloured variant plus a
+// per-instance UV rectangle (attribute 9: offset.xy, scale.xy). The quad's 0..1
+// UV is remapped into one atlas cell, which is what drives flipbook / sprite
+// sheet particle animation (uvRect = (col/cols, row/rows, 1/cols, 1/rows)).
+// The fragment program is kUnlitInstancedColoredFragmentShader unchanged (it
+// just samples vUV).
+inline constexpr const char* kParticleVertexShader = R"(
+#version 330 core
+layout(location = 0) in vec3 aPos;
+layout(location = 2) in vec2 aUV;
+layout(location = 3) in vec4 aColor;
+layout(location = 4) in mat4 aInstance;
+layout(location = 8) in vec4 aInstanceColor;
+layout(location = 9) in vec4 aUvRect;
+uniform mat4 uMVP;
+out vec2 vUV;
+out vec4 vColor;
+out vec4 vInstanceColor;
+void main() {
+    vUV = aUvRect.xy + aUV * aUvRect.zw;
+    vColor = aColor;
+    vInstanceColor = aInstanceColor;
+    gl_Position = uMVP * aInstance * vec4(aPos, 1.0);
+}
+)";
+
 // Soft-particle billboard: same instanced colored billboard as above, plus a
 // scene-depth fetch (uSceneDepth, the resolved main-pass depth) so the glow
 // fades where the quad crosses geometry instead of showing a hard intersection
@@ -585,13 +697,14 @@ layout(location = 2) in vec2 aUV;
 layout(location = 3) in vec4 aColor;
 layout(location = 4) in mat4 aInstance;
 layout(location = 8) in vec4 aInstanceColor;
+layout(location = 9) in vec4 aUvRect;
 uniform mat4 uMVP;
 out vec2 vUV;
 out vec4 vColor;
 out vec4 vInstanceColor;
 out float vWinDepth;
 void main() {
-    vUV = aUV;
+    vUV = aUvRect.xy + aUV * aUvRect.zw;
     vColor = aColor;
     vInstanceColor = aInstanceColor;
     gl_Position = uMVP * aInstance * vec4(aPos, 1.0);
@@ -620,6 +733,115 @@ void main() {
         col.a *= clamp((scene - vWinDepth) / uSoftFade, 0.0, 1.0);
     }
     FragColor = col;
+}
+)";
+
+// Depth-projected decal (P2-1 upgrade). The mesh is a flat quad lying on the
+// decal plane; the fragment shader ignores its own surface and instead rebuilds
+// the world position of whatever geometry the resolved main-pass depth (unit
+// uSceneDepth) shows at that pixel, then maps that point into the decal's local
+// box. Fragments outside the box volume are discarded, so the decal only appears
+// where the scene surface actually lies within the projection volume -- it
+// conforms to slopes and stairs instead of floating over them.
+//
+// The decal writes gl_FragDepth = sceneDepth - uDecalBias, so it is occluded by
+// anything in front of the receiving surface and never z-fights with it.
+// uDecalProject == 0 (no sampleable depth this frame, e.g. MSAA off) degrades to
+// the original flat unlit quad: the fragment's own interpolated world position is
+// used instead of the depth rebuild.
+// Per-object motion vectors (TAA velocity buffer). The vertex shader projects
+// the same position through the current and the previous frame's (both jittered)
+// view-projection and hands the fragment the screen-space offset to ADD to the
+// current UV to find that surface point in the history buffer.
+//
+// Only objects whose transform actually changed are submitted (the draw system
+// keeps the previous model matrix and skips static geometry), so a stored alpha
+// of 1 means "this pixel is covered by a moving object" and 0 means "fall back
+// to camera-only reprojection from the depth buffer".
+inline constexpr const char* kVelocityVertexShader = R"(
+#version 330 core
+layout(location = 0) in vec3 aPos;
+uniform mat4 uViewProj;
+uniform mat4 uPrevViewProj;
+uniform mat4 uModel;
+uniform mat4 uPrevModel;
+out vec2 vMotion;
+void main() {
+    vec4 cur = uViewProj * uModel * vec4(aPos, 1.0);
+    vec4 prv = uPrevViewProj * uPrevModel * vec4(aPos, 1.0);
+    float cw = abs(cur.w) > 1e-6 ? cur.w : 1e-6;
+    float pw = abs(prv.w) > 1e-6 ? prv.w : 1e-6;
+    // NDC delta -> UV delta (NDC spans 2 UV units). Adding it to the current UV
+    // lands on the same surface point in the previous frame.
+    vMotion = (prv.xy / pw - cur.xy / cw) * 0.5;
+    gl_Position = cur;
+}
+)";
+
+inline constexpr const char* kVelocityFragmentShader = R"(
+#version 330 core
+in vec2 vMotion;
+out vec4 FragColor;
+void main() {
+    FragColor = vec4(vMotion, 0.0, 1.0);
+}
+)";
+inline constexpr const char* kDecalVertexShader = R"(
+#version 330 core
+layout(location = 0) in vec3 aPos;
+layout(location = 2) in vec2 aUV;
+uniform mat4 uMVP;
+uniform mat4 uModel;
+out vec3 vWorld;
+out vec2 vUv;
+void main() {
+    vWorld = (uModel * vec4(aPos, 1.0)).xyz;
+    vUv = aUV;
+    gl_Position = uMVP * vec4(aPos, 1.0);
+}
+)";
+
+inline constexpr const char* kDecalFragmentShader = R"(
+#version 330 core
+in vec3 vWorld;
+in vec2 vUv;
+out vec4 FragColor;
+uniform sampler2D uAlbedo;
+uniform sampler2D uSceneDepth;
+uniform vec2 uScreenSize;
+uniform mat4 uInvViewProj;
+uniform mat4 uDecalInvModel;
+uniform vec4 uTint;
+uniform int uDecalProject;
+uniform int uDecalAdditive;
+uniform float uDecalBias;
+void main() {
+    vec3 world = vWorld;
+    vec2 uv = vUv;
+    float outDepth = gl_FragCoord.z;
+    if (uDecalProject == 1) {
+        vec2 scr = gl_FragCoord.xy / uScreenSize;
+        float d = texture(uSceneDepth, scr).r;
+        if (d >= 0.99999) discard;              // sky / nothing rendered
+        vec4 clip = vec4(scr * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
+        vec4 wp = uInvViewProj * clip;
+        if (abs(wp.w) < 1e-7) discard;
+        world = wp.xyz / wp.w;
+        outDepth = max(d - uDecalBias, 0.0);
+    }
+    vec3 local = (uDecalInvModel * vec4(world, 1.0)).xyz;
+    if (any(greaterThan(abs(local), vec3(0.5)))) discard;   // outside the box
+    if (uDecalProject == 1) uv = local.xz + 0.5;
+    vec4 tex = texture(uAlbedo, uv);
+    vec4 col = tex * uTint;
+    if (uDecalAdditive == 1) {
+        if (col.a <= 0.0) discard;
+        FragColor = vec4(col.rgb * col.a, col.a);
+    } else {
+        if (col.a <= 0.002) discard;
+        FragColor = col;
+    }
+    gl_FragDepth = outDepth;
 }
 )";
 

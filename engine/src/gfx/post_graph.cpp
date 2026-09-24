@@ -312,6 +312,7 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
         backend.SetUniformInt("uHalf", 0);
         backend.BindTexture(1, backend.RenderTargetColorTexture(ctx.GetInput(bloomQuarterA_)));
         backend.SetUniformInt("uQuarter", 1);
+        backend.SetUniformFloat("uBloomWidth", comp_.bloomWidth);
         backend.DrawMesh(postQuad_);
     };
     upsampleAddIndex_ = add(std::move(upsample));

@@ -18,7 +18,7 @@ layout(location = 4) out float vViewZ;
 void main() {
     vWorldPos = (eng.uModel * vec4(aPos, 1.0)).xyz;
     vNormal = (eng.uNormalMat * vec4(aNormal, 0.0)).xyz;
-    vUV = aUV;
+    vUV = aUV * eng.uTiling;
     vColor = aColor;
     vViewZ = (eng.uViewMatrix * vec4(vWorldPos, 1.0)).z;
     gl_Position = eng.uMVP * vec4(aPos, 1.0);

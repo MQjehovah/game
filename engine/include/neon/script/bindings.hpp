@@ -358,12 +358,14 @@ struct ScriptContext {
     // engine's DrawSystem renders SceneDecal entities in the 3D scene (depth-
     // tested, perspective-correct), so scripts get GPU ground effects instead
     // of projecting their own polygons. setDecal updates size/alpha in place.
-    // ..., size, alpha [, r, g, b, additive]: tint + additive blend let scripts
-    // draw team/skill-coloured glow decals from one white texture.
+    // ..., size, alpha [, r, g, b, additive [, height]]: tint + additive blend
+    // let scripts draw team/skill-coloured glow decals from one white texture.
+    // height is the depth-projection volume (world units) the decal conforms to;
+    // the renderer falls back to a flat quad when no scene depth is available.
     std::function<ecs::Entity(const std::string& texture, const math::Vec3& pos, float size,
-                              float alpha, float r, float g, float b, bool additive)>
+                              float alpha, float r, float g, float b, bool additive, float height)>
         spawnDecal;
-    std::function<void(ecs::Entity, float size, float alpha)> setDecal;
+    std::function<void(ecs::Entity, float size, float alpha, float height)> setDecal;
 
     // --- Ribbon trails (skill/projectile VFX) ------------------------------
     // SpawnTrail(width, hr,hg,hb,ha, tr,tg,tb,ta) -> id; TrailPoint(id, x,y,z);

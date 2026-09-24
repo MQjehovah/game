@@ -94,6 +94,21 @@ public:
     virtual RenderTargetHandle CreateRenderTarget(int width, int height,
                                                   bool floatColor = false,
                                                   int samples = 0) = 0;
+    // Single-sample colour target WITH a real depth attachment (RGBA8 + depth24).
+    // Used by the CSM cascade pass so the shadow map can be built with a genuine
+    // depth TEST - nearest surface wins per texel - instead of painter's-order
+    // sorting. Painter's order needs one sort key per object, so geometry that
+    // interpenetrates *inside a single merged mesh* (a whole level exported as
+    // one node: terrain + trees + towers) cannot be ordered correctly and large
+    // parts of the map silently stop casting. Backends without a usable depth
+    // buffer report unsupported here (invalid handle, NOT a plain colour target -
+    // the caller would otherwise enable a depth test against a target that has no
+    // depth attachment) and the caller keeps painter's order.
+    virtual RenderTargetHandle CreateRenderTargetWithDepth(int width, int height) {
+        (void)width;
+        (void)height;
+        return {};
+    }
     virtual void DestroyRenderTarget(RenderTargetHandle target) = 0;
     virtual void BindRenderTarget(RenderTargetHandle target) = 0;
     virtual void BindDefaultTarget() = 0;
@@ -216,6 +231,18 @@ public:
     // vary color per instance). `colors` has `count` entries.
     virtual void DrawMeshInstancedColored(const MeshHandle& mesh, const math::Mat4* models,
                                           const math::Vec4* colors, uint32_t count) = 0;
+    // GPU instancing with a per-instance color AND UV rectangle
+    // (offset.xy, scale.xy). Used by flipbook/atlas particles: the vertex shader
+    // maps the quad's 0..1 UV into one atlas cell. Backends without the extra
+    // attribute fall back to DrawMeshInstancedColored (the uv rectangles are
+    // ignored and the quad samples the whole texture), so a caller that only
+    // needs the fallback stays correct.
+    virtual void DrawMeshInstancedColoredUv(const MeshHandle& mesh, const math::Mat4* models,
+                                            const math::Vec4* colors, const math::Vec4* uvRects,
+                                            uint32_t count) {
+        (void)uvRects;
+        DrawMeshInstancedColored(mesh, models, colors, count);
+    }
     // Immediate vertex submission (stride = bytes per vertex).
     virtual void DrawPrimitives(const void* vertices, uint32_t vertexCount, uint32_t stride,
                                 const uint16_t* indices, uint32_t indexCount,

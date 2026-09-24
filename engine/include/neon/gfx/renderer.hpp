@@ -19,6 +19,7 @@
 #include "neon/gfx/upload_thread.hpp"
 #include "neon/gfx/shader.hpp"
 #include "neon/gfx/shadow_system.hpp"
+#include "neon/gfx/taa.hpp"
 #include "neon/gfx/texture.hpp"
 #include "neon/math/math.hpp"
 
@@ -250,6 +251,23 @@ public:
     void SetBloomParams(float threshold, float strength);
     float BloomThreshold() const { return bloomThreshold_; }
     float BloomStrength() const { return bloomStrength_; }
+    // Upsample/bloom filter footprint: 1 = the classic narrow upsample, > 1
+    // widens the glow skirt around bright pixels (additive VFX read as a real
+    // bloom instead of a local blur). Data-driven via RenderStack.bloomWidth.
+    void SetBloomWidth(float width);
+    float BloomWidth() const { return bloomWidth_; }
+    // Shadow quality controls (CSM). shadowDistance clamps the cascades to a
+    // world range (0 = the camera far plane), which is the single biggest
+    // texel-density win for an overhead camera. softness scales the PCSS kernel
+    // radius (0 falls back to the legacy 2x2 comparison), and normalOffset
+    // shifts receivers along their normal by that many cascade texels.
+    void SetShadowDistance(float distance) { shadowSystem_.SetShadowDistance(distance); }
+    float ShadowDistance() const { return shadowSystem_.ShadowDistance(); }
+    void SetShadowSoftness(float softness) { shadowSoftness_ = softness > 0.0f ? softness : 0.0f; }
+    float ShadowSoftness() const { return shadowSoftness_; }
+    void SetShadowNormalOffset(float texels) { shadowNormalOffset_ = texels; }
+    float ShadowNormalOffset() const { return shadowNormalOffset_; }
+    void SetCascadeLambda(float lambda) { shadowSystem_.SetCascadeLambda(lambda); }
     // T3.7: the composite applies the ACES fitted tonemapper to
     // ACES((hdr + bloom*strength) * exposure). exposure_ defaults to 1.0
     // (identity); SetExposure lets the editor/T4.7 tune later. tonemapEnabled_
@@ -279,6 +297,54 @@ public:
     // path with a log (and --no-msaa forces the fallback for diffing).
     void SetMsaaEnabled(bool enabled);
     bool MsaaEnabled() const { return msaaEnabled_; }
+    // Multisample count requested when MSAA is on (2/4/8). Changing it rebuilds
+    // the HDR targets at the next BeginFrame. Falls back to a lower supported
+    // count when the driver rejects it.
+    void SetMsaaSamples(int samples);
+    int MsaaSamples() const { return msaaSamples_; }
+
+    // --- Quality / scalability (Step D) -------------------------------------
+    // One preset that drives MSAA, shadow resolution/reach/softness, point
+    // shadows, the screen-space effects (SSAO / volumetric / SSR) and the render
+    // resolution scale. Individual setters above stay authoritative, so a
+    // script can apply a preset and then override any single knob.
+    enum class Quality { Low, Medium, High, Ultra };
+    void SetQuality(Quality quality);
+    Quality GetQuality() const { return quality_; }
+    const char* QualityName() const;
+    // Render resolution scale in [0.4, 1.0]. Below 1 the whole 3D scene + post
+    // chain render into a smaller HDR target and the composite upscales to the
+    // window (bilinear). Above 1 supersamples (SSAA). This is the main GPU lever
+    // on fill-rate-bound mobile/Intel parts.
+    void SetRenderScale(float scale);
+    float RenderScale() const { return renderScale_; }
+    // Dynamic resolution: nudges the effective scale between `minScale` and
+    // RenderScale() to hold `targetFps`, from an EMA of the measured frame time.
+    // Applied only to the full-window scene (a custom scene viewport pins it).
+    void SetDynamicResolution(bool enabled, float targetFps = 60.0f, float minScale = 0.6f);
+    bool DynamicResolution() const { return dynResEnabled_; }
+    float DynamicScale() const { return dynScale_; }
+    // --- Temporal AA (Step E) -----------------------------------------------
+    // Renders the scene with a per-frame sub-pixel camera jitter and resolves
+    // the result against an accumulated history buffer (camera-only
+    // reprojection + neighbourhood clamp). Needs the resolved main-pass depth,
+    // so it engages on the MSAA path and silently no-ops otherwise.
+    void SetTaaEnabled(bool enabled);
+    bool TaaEnabled() const { return taaEnabled_; }
+    // Weight of the CURRENT frame in the resolve (0.05 = heavy accumulation,
+    // 0.3 = little). Higher values trade smoothness for less ghosting.
+    void SetTaaBlend(float blend);
+    float TaaBlend() const { return taaBlend_; }
+    // High-pass gain of the unsharp mask run after the resolve (0 = off). The
+    // accumulation is what removes edge aliasing, but it also averages away
+    // texture detail; this puts a controllable slice of it back.
+    void SetTaaSharpen(float amount);
+    float TaaSharpen() const { return taaSharpen_; }
+    bool TaaActive() const { return taaOutput_.Valid(); }
+    // Particle budget hint. The renderer does not own the gameplay particle
+    // system (GameRuntime does); the runtime polls this and applies it, so a
+    // quality preset also scales VFX density.
+    size_t ParticleBudget() const { return particleBudget_; }
     // True when the HDR float-target pipeline is active (float RT works and
     // the window-sized target was created). False on drivers without
     // RGBA16F-FBO support: the renderer then draws straight to the backbuffer
@@ -286,11 +352,29 @@ public:
     bool HdrEnabled() const { return hdrEnabled_; }
 
     void DrawMesh(const Mesh& mesh, const Material& material, const math::Mat4& model);
+    // Step E2 velocity variant: `prevModel` is the same object's model matrix
+    // LAST frame. When it differs from `model` and temporal AA is on, the mesh is
+    // also rasterized into the velocity buffer so the TAA resolve reprojects it
+    // with a real motion vector instead of the camera-only fallback. Pass null
+    // (or the default overload) for static geometry.
+    void DrawMesh(const Mesh& mesh, const Material& material, const math::Mat4& model,
+                  const math::Mat4* prevModel);
     // Skinned variant: binds the SKINNED lit program and uploads up to 64 bone
     // matrices (from anim::Skeleton::ComputeBoneMatrices). The mesh must be
     // Skinned() (have per-vertex joint ids/weights in its vertex buffer).
     void DrawSkinnedMesh(const Mesh& mesh, const Material& material, const math::Mat4& model,
                          const std::vector<math::Mat4>& boneMatrices, int boneCount);
+    // Velocity variant. The motion vector is taken from the ENTITY transform only
+    // (rest-pose geometry through prevModel): in-place skeletal deformation has
+    // no per-bone velocity yet, so limbs still rely on the neighbourhood clamp.
+    void DrawSkinnedMesh(const Mesh& mesh, const Material& material, const math::Mat4& model,
+                         const std::vector<math::Mat4>& boneMatrices, int boneCount,
+                         const math::Mat4* prevModel);
+    // True when this frame is writing per-object motion vectors (TAA active and
+    // the velocity target exists). Hosts poll this to skip per-object transform
+    // tracking when the buffer would be ignored anyway.
+    bool VelocityEnabled() const { return velocityEnabled_ && velocityRT_.Valid(); }
+    TextureHandle VelocityTexture() const;
     void DrawMeshInstanced(const Mesh& mesh, const Material& material, const math::Mat4* models,
                            uint32_t count, bool frustumCull = true);
     // Instanced draw with a per-instance RGBA color (sprite-billboard particles
@@ -304,7 +388,8 @@ public:
     // pass with correct depth/fog/light occlusion.
     void DrawBillboards(const math::Vec3* positions, const float* sizes,
                         const Color* colors, TextureHandle texture, uint32_t count,
-                        BlendMode blend = BlendMode::Additive, float intensity = 1.0f);
+                        BlendMode blend = BlendMode::Additive, float intensity = 1.0f,
+                        const float* rotations = nullptr, const math::Vec4* uvRects = nullptr);
     // CPU-side projected shadow: projects the mesh onto the ground plane
     // (y=0) along lightDir. Works without any depth buffer or FBO. Used as the
     // fallback when CSM is disabled.
@@ -328,7 +413,20 @@ public:
     // units. Depth-tested (no write). Used for projectile/skill trails; the
     // buffer is rebuilt per call (a handful of points).
     void DrawTrail(const math::Vec3* points, uint32_t count, float width, const Color& head,
-                   const Color& tail);
+                   const Color& tail, float tailWidthScale = 1.0f);
+    // One ribbon submission (points oldest-first) for DrawTrails.
+    struct TrailDraw {
+        const math::Vec3* points = nullptr;
+        uint32_t count = 0;
+        float width = 0.4f;
+        float tailWidthScale = 1.0f; // width multiplier at the oldest point
+        Color head{1.0f, 1.0f, 1.0f, 1.0f};
+        Color tail{1.0f, 1.0f, 1.0f, 0.0f};
+    };
+    // Draws many ribbons as ONE buffer upload + ONE draw call (projectile and
+    // skill trails all live in the same additive pass). Splits internally when
+    // the 16-bit index buffer would overflow.
+    void DrawTrails(const TrailDraw* draws, uint32_t drawCount);
     void DrawBox(const math::AABB& box, const Color& color);
     void DrawSphere(const math::Vec3& center, float radius, const Color& color, int segments = 20);
 
@@ -336,6 +434,9 @@ public:
         uint32_t drawCalls = 0;
         uint32_t triangles = 0;
         uint32_t instances = 0;
+        // Step E2: meshes that also wrote a motion vector this frame (subset of
+        // drawCalls; 0 whenever the velocity pass is off).
+        uint32_t velocityDraws = 0;
     };
     const RenderStats& Stats() const { return stats_; }
     // G6-1: driver-reported GPU memory budget/usage (zeros when unavailable).
@@ -477,6 +578,11 @@ private:
                                   const Color& color);
     void ApplyMaterial(const Material& material, const math::Mat4& mvp, const math::Mat4& model,
                        const math::Mat4& normalMat, ShaderHandle shader);
+    // Depth-projected decal path (Material::decal). Rebuilds the receiving
+    // surface from the resolved scene depth and writes gl_FragDepth so the decal
+    // sits exactly on the geometry. Falls back to a plain unlit quad when no
+    // sampleable depth is available this frame.
+    void DrawDecal(const Mesh& mesh, const Material& material, const math::Mat4& model);
     // Wires the backend + the shared scene-uniform stamp into the subsystems
     // (called from Init and AttachBackendForTesting).
     void ConnectSubsystems();
@@ -489,6 +595,23 @@ private:
     // vol/SSR) all live in its own pool, so nothing else manages them.
     void RebuildHdrTargets();
     void DestroyHdrTargets();
+    // Step D: the scale actually used this frame (dynamic-resolution adjusted,
+    // pinned to 1.0 while a custom scene viewport is active).
+    float EffectiveRenderScale() const;
+    void UpdateDynamicResolution();
+    // Step E: resolve this frame's jittered HDR scene against the TAA history
+    // (no-op unless TAA is on and a sampleable depth is available).
+    void ApplyTaa();
+    // Step E2: record one object's motion vector for this frame's velocity pass
+    // (no-op when the pass is off). The draws are BATCHED and replayed once per
+    // frame by FlushVelocityPass: switching render targets flushes and submits
+    // the pending command buffer in the Vulkan backend, so one target bind per
+    // moving object cost two full GPU stalls per object per frame.
+    void SubmitVelocity(const Mesh& mesh, const math::Mat4& model, const math::Mat4& prevModel);
+    // Rasterizes every recorded motion vector into velocityRT_ in ONE pass, then
+    // rebinds the main target. Called before the TAA resolve samples velocityRT_.
+    void FlushVelocityPass();
+    void RestoreSceneViewport();
     // Builds the per-frame post graph input from the current renderer state.
     // chains=false forces every post chain (ssao/vol/ssr/depth/fog) off while
     // keeping bloom + composite, matching the old CaptureBloom/TonemapComparison
@@ -514,6 +637,14 @@ private:
     // (no-op when MSAA is inactive). Called before any pass that samples the
     // HDR target: CompositeSceneToBackbuffer and the capture helpers.
     void ResolveMainTarget();
+    // True when the post chain will read the main-pass depth this frame (MSAA
+    // targets present and the backend supports depth resolve), in which case the
+    // SSAO/SSR colour-depth path reuses it and the caster fallback list is not
+    // collected at all.
+    bool PostDepthReuseOk() const {
+        return depthResolveSupported_ && msaaEnabled_ && hdrMsaaRT_.Valid() &&
+               hdrDepthRT_.Valid();
+    }
     // Composite HDR (+ bloom) to the backbuffer with the composite shader.
     // Runs the whole unified post chain (postGraph_) once: the SSAO/vol/SSR/
     // depth/bloom chains execute only when their enabled flags are on, and the
@@ -550,6 +681,8 @@ private:
     ShaderHandle unlitInstancedShader_;
     ShaderHandle unlitInstancedColoredShader_;
     ShaderHandle particleSoftShader_;   // depth-faded billboard variant (soft particles)
+    ShaderHandle particleShader_;       // atlas/flipbook billboard (per-instance UV rect)
+    ShaderHandle decalShader_;          // depth-projected ground decal
     bool softDepthReady_ = false;       // resolved the main-pass depth this frame
     float softFadeRange_ = 0.012f;      // window-depth fade band for soft particles
     gfx::Mesh billboardQuad_;  // unit XY quad used by DrawBillboards
@@ -597,6 +730,10 @@ private:
     // chain can sample the main pass depth instead of redrawing the casters.
     RenderTargetHandle hdrDepthRT_;
     bool depthResolved_ = false;
+    // Set false the first time ResolveDepth() fails with valid targets, so the
+    // SSAO/SSR caster fallback collection switches back on (a driver that cannot
+    // resolve depth must keep the legacy depth pre-pass path).
+    bool depthResolveSupported_ = true;
     // G1-5 SSAO/volumetric/SSR/depth + Task 2 bloom + Task 4 composite: one
     // unified post-processing FrameGraph. The depth/AO/blur/vol/ssr targets and
     // the bloom pyramid live in its transient pool; the composite pass reads
@@ -610,6 +747,10 @@ private:
     bool bloomEnabled_ = true;
     float bloomThreshold_ = kBloomThreshold;
     float bloomStrength_ = kBloomStrength;
+    float bloomWidth_ = 1.6f;
+    // CSM quality: PCSS kernel scale + normal-offset bias in cascade texels.
+    float shadowSoftness_ = 1.0f;
+    float shadowNormalOffset_ = 1.5f;
     float exposure_ = 1.0f;
     bool tonemapEnabled_ = true;
     // A1 color grading (post-tonemap procedural "film look"); default disabled.
@@ -628,6 +769,42 @@ private:
     bool msaaRequested_ = true;
     bool msaaEnabled_ = false;
     int msaaSamples_ = 0;
+    int msaaSampleRequest_ = 0; // 0 = auto (probe 4x then 2x)
+    // Step D quality/scalability state.
+    Quality quality_ = Quality::High;
+    float renderScale_ = 1.0f;
+    float dynScale_ = 1.0f;
+    float dynMinScale_ = 0.6f;
+    float dynTargetFps_ = 60.0f;
+    bool dynResEnabled_ = false;
+    size_t particleBudget_ = 32768;
+    // Step E temporal-AA state.
+    Taa taa_;
+    // -1 = unresolved (probe NEON_SHADOW_DEBUG once), 0 = off, 1 = shadow-factor view.
+    int shadowDebug_ = -1;
+    bool taaEnabled_ = false;
+    // Step E2 motion-vector pass (only allocated/used while TAA is on).
+    ShaderHandle velocityShader_;
+    RenderTargetHandle velocityRT_;
+    // One entry per moving object, replayed by FlushVelocityPass (the colour
+    // pass order is unaffected: velocity rasterizes into its own target).
+    struct VelocityDraw {
+        MeshHandle mesh;
+        math::Mat4 model;
+        math::Mat4 prevModel;
+    };
+    std::vector<VelocityDraw> velocityBatch_;
+    bool velocityEnabled_ = false;
+    float taaBlend_ = 0.12f;
+    float taaSharpen_ = 0.5f;
+    bool taaHistoryValid_ = false;
+    bool prevViewProjValid_ = false;
+    math::Mat4 prevViewProj_;
+    RenderTargetHandle taaOutput_;
+    int taaFrame_ = 0;
+    math::Vec2 jitterPixels_{0.0f, 0.0f};
+    double frameTimeEmaMs_ = 0.0;
+    long long lastFrameClock_ = 0;
     // G1-5 SSAO state.
     bool ssaoEnabled_ = false;
     float ssaoIntensity_ = 1.0f; // AO blend amount in [0,1]
@@ -648,6 +825,13 @@ private:
     // for heap churn in the hot path.
     std::vector<math::Mat4> instancedVisible_;
     std::vector<math::Vec4> instancedVisibleColored_;
+    // Billboard scratch: the model/colour instance streams are rebuilt every
+    // frame (particles), so keep the buffers instead of allocating per call.
+    std::vector<math::Mat4> billboardModels_;
+    std::vector<math::Vec4> billboardColors_;
+    std::vector<math::Vec4> billboardUvRects_;
+    std::vector<LineVertex> trailVerts_;      // merged ribbon batch scratch
+    std::vector<uint16_t> trailIndices_;
     std::vector<float> boneUniformFlat_;
     std::vector<ShadowSystem::ShadowSortKey> shadowSortKeys_;
     std::vector<LineVertex> projectedShadowVerts_;

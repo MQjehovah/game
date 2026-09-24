@@ -69,6 +69,12 @@ void PrintHelp() {
         "  --smoke-test <n>           run n fixed ticks then exit 0 (verification)\n"
         "  --screenshot <file> <n>    capture a PNG at frame n\n"
         "  --dump-vars                log every GameVar at exit (verification)\n"
+        "  --quality <preset>         low|medium|high|ultra scalability preset\n"
+        "                             (drives MSAA, shadows, SSAO/vol/SSR, VFX budget)\n"
+        "  --render-scale <f>         render resolution scale (0.4-2.0; 1 = native)\n"
+        "  --dyn-res <fps>            dynamic resolution targeting <fps>\n"
+        "  --taa / --no-taa           temporal anti-aliasing (jittered history resolve)\n"
+        "  --taa-sharpen <f>          unsharp-mask gain on the TAA resolve (0-1.5)\n"
         "  --keep                     keep the unpacked temp dir on exit (debug)\n"
         "  --log-level <level>        log filter: debug|info|warn|error (default debug)\n"
         "  --log-cat <n>:<level>      per-category override (repeatable, comma-separated,\n"
@@ -120,6 +126,18 @@ int main(int argc, char** argv) {
             cfg.spectate = true;
         } else if (std::strcmp(argv[i], "--moba-autostart") == 0) {
             cfg.mobaAutostart = true;
+        } else if (std::strcmp(argv[i], "--quality") == 0 && i + 1 < argc) {
+            cfg.quality = argv[++i];
+        } else if (std::strcmp(argv[i], "--render-scale") == 0 && i + 1 < argc) {
+            cfg.renderScale = static_cast<float>(std::atof(argv[++i]));
+        } else if (std::strcmp(argv[i], "--dyn-res") == 0 && i + 1 < argc) {
+            cfg.dynResTargetFps = static_cast<float>(std::atof(argv[++i]));
+        } else if (std::strcmp(argv[i], "--taa") == 0) {
+            cfg.taa = true;
+        } else if (std::strcmp(argv[i], "--no-taa") == 0) {
+            cfg.noTaa = true;
+        } else if (std::strcmp(argv[i], "--taa-sharpen") == 0 && i + 1 < argc) {
+            cfg.taaSharpen = static_cast<float>(std::atof(argv[++i]));
         } else if (std::strcmp(argv[i], "--mod") == 0 && i + 1 < argc) {
             cfg.modDirs.push_back(argv[++i]);
         } else if (std::strcmp(argv[i], "--scripts") == 0 && i + 1 < argc) {

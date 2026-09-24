@@ -205,9 +205,26 @@ bool ScriptRuntime::CallFunction(script::ScriptContext& ctx, Hosts hosts,
     ctx.currentEntity = {};
     const core::Result<script::Value> res = host->Call(name, args);
     if (!res.Ok()) {
-        NEON_LOG_CAT(core::LogCategory::Script, core::LogLevel::Error,
-                     "runtime: script function %s() failed: %s", name.c_str(),
-                     host->LastError().message.c_str());
+        // Global callbacks (on_update, on_render helpers, ...) run every frame;
+        // one broken line must not produce an unbounded stream of identical log
+        // lines. Throttled per function name.
+        static std::map<std::string, core::LogThrottle> throttles;
+        core::LogThrottle& throttle = throttles[name];
+        if (throttle.Allow()) {
+            const uint32_t suppressed = throttle.TakeSuppressed();
+            if (suppressed > 0) {
+                NEON_LOG_CAT(core::LogCategory::Script, core::LogLevel::Error,
+                             "runtime: script function %s() failed (%u identical errors "
+                             "suppressed, %llu total): %s",
+                             name.c_str(), suppressed,
+                             static_cast<unsigned long long>(throttle.Calls()),
+                             host->LastError().message.c_str());
+            } else {
+                NEON_LOG_CAT(core::LogCategory::Script, core::LogLevel::Error,
+                             "runtime: script function %s() failed: %s", name.c_str(),
+                             host->LastError().message.c_str());
+            }
+        }
     }
     return res.Ok();
 }

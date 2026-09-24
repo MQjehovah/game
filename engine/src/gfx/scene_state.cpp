@@ -28,6 +28,23 @@ void SceneState::SetCamera(const Camera& camera, float aspect) {
     frustumValid_ = true;
 }
 
+void SceneState::SetProjectionJitter(float jitterXPixels, float jitterYPixels, int width,
+                                     int height) {
+    // Rebuild from the last camera so repeated calls in a frame are idempotent
+    // (the jitter is not compounded).
+    viewProj_ = camera_.ViewProjection(viewAspect_);
+    if (width <= 0 || height <= 0) return;
+    // clip.x += jx * clip.w shifts the NDC x by a constant jx, so the x row
+    // absorbs jx times the w row (and likewise y). Exact for any projection.
+    const float jx = 2.0f * jitterXPixels / static_cast<float>(width);
+    const float jy = 2.0f * jitterYPixels / static_cast<float>(height);
+    for (int c = 0; c < 4; ++c) {
+        const float wRow = viewProj_.m[12 + c];
+        viewProj_.m[c] += jx * wRow;
+        viewProj_.m[4 + c] += jy * wRow;
+    }
+}
+
 void SceneState::SetSky(const Color& top, const Color& horizon) {
     skyTop_ = top;
     skyHorizon_ = horizon;

@@ -1,5 +1,7 @@
 #include "neon/scene/scene_file.hpp"
 
+#include <cstring>
+
 #include <algorithm>
 #include <cstdio>
 #include <utility>
@@ -379,7 +381,9 @@ core::Result<core::Json> SceneFile::MakeEntity(const std::string& name,
                                                  int id,
                                                  float uvRepeat,
                                                  const std::string& normalTex,
-                                                 float normalScale) {
+                                                 float normalScale,
+                                                 const std::vector<std::string>& materialInclude,
+                                                 const std::vector<std::string>& materialExclude) {
     if (name.empty())
         return core::Result<core::Json>::Err("scene: exported entity name must not be empty");
     // NOTE: a pure-logic entity (e.g. a game script host like wc3's `Game`) has
@@ -416,6 +420,18 @@ core::Result<core::Json> SceneFile::MakeEntity(const std::string& name,
     core::Json mesh = MakeObject();
     mesh.object_["meshKey"] = MakeString(meshKey);
     mesh.object_["material"] = std::move(mat);
+    // glTF material-layer filter (see SceneMesh::materialInclude): emitted only
+    // when set, so scenes that render every layer keep byte-identical output.
+    auto emitLayers = [&mesh](const char* keyName,
+                              const std::vector<std::string>& values) {
+        if (values.empty()) return;
+        core::Json arr;
+        arr.type_ = core::Json::Type::Array;
+        for (const std::string& v : values) arr.array_.push_back(MakeString(v));
+        mesh.object_[keyName] = std::move(arr);
+    };
+    emitLayers("materialInclude", materialInclude);
+    emitLayers("materialExclude", materialExclude);
     // LOD chain: emitted only when non-empty, as [{distance, meshKey}, ...].
     if (!lod.empty()) {
         core::Json lodArr;
@@ -619,7 +635,8 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                                      "normalTex", "normalScale",
                                      "ao", "emissiveIntensity", "uvRepeat",
                                      "dirtColorHex", "rockColorHex", "castShadow",
-                                     "receiveShadow", "tintRgb"},
+                                     "receiveShadow", "tintRgb",
+                                     "materialInclude", "materialExclude"},
                                     "mesh", err))
                          return false;
                      const core::Json* key = data.Get("meshKey");
@@ -784,6 +801,31 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                         m.castShadow = cs->IsBool() && cs->GetBool();
                     if (const core::Json* rs = data.Get("receiveShadow"))
                         m.receiveShadow = rs->IsBool() && rs->GetBool();
+                    // glTF material-layer filter: arrays of substrings matched
+                    // against each primitive's glTF material name.
+                    for (const char* keyName : {"materialInclude", "materialExclude"}) {
+                        const core::Json* arr = data.Get(keyName);
+                        if (!arr) continue;
+                        if (!arr->IsArray()) {
+                            if (err)
+                                *err = std::string("component 'mesh' field '") + keyName +
+                                       "' must be an array of strings";
+                            return false;
+                        }
+                        std::vector<std::string>& dst =
+                            std::strcmp(keyName, "materialInclude") == 0 ? m.materialInclude
+                                                                        : m.materialExclude;
+                        for (size_t i = 0; i < arr->Size(); ++i) {
+                            const core::Json* s = arr->At(i);
+                            if (!s || !s->IsString()) {
+                                if (err)
+                                    *err = std::string("component 'mesh' field '") +
+                                           keyName + "' entries must be strings";
+                                return false;
+                            }
+                            if (!s->GetString().empty()) dst.push_back(s->GetString());
+                        }
+                    }
                      world.Add<SceneMesh>(ent, m);
                      return true;
                  });

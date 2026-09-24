@@ -86,6 +86,47 @@ void RemoveLogSink(void (*sink)(const LogEntry&, void* userData), void* userData
 std::vector<LogEntry> GetRecentLogs(size_t maxCount);
 void ClearLogs();
 
+// Rate limiter for log lines that a per-frame loop can emit thousands of times
+// (a failing script callback, a broken asset polled every tick). The first
+// `burst` occurrences are logged verbatim; after that only one summary line is
+// emitted every `reportEvery` occurrences, carrying the suppressed count. This
+// keeps the log readable and stops a single bad line from filling the log file
+// (and the editor log ring) for the rest of the session.
+class LogThrottle {
+public:
+    LogThrottle() = default;
+    LogThrottle(uint32_t burst, uint32_t reportEvery)
+        : burst_(burst ? burst : 1), reportEvery_(reportEvery ? reportEvery : 1) {}
+
+    // True when the caller should emit this occurrence (either one of the first
+    // `burst` lines or a periodic summary).
+    bool Allow() {
+        ++calls_;
+        if (calls_ <= burst_) return true;
+        ++suppressed_;
+        if (++sinceReport_ >= reportEvery_) {
+            sinceReport_ = 0;
+            return true;
+        }
+        return false;
+    }
+    // Occurrences suppressed since this was last read (call it when Allow()
+    // returned true to include the count in the summary line).
+    uint32_t TakeSuppressed() {
+        const uint32_t n = suppressed_;
+        suppressed_ = 0;
+        return n;
+    }
+    uint64_t Calls() const { return calls_; }
+
+private:
+    uint32_t burst_ = 4;
+    uint32_t reportEvery_ = 600;
+    uint64_t calls_ = 0;
+    uint32_t suppressed_ = 0;
+    uint32_t sinceReport_ = 0;
+};
+
 } // namespace neon::core
 
 #define NEON_LOG_DEBUG(...)                                                    \

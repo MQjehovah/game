@@ -26,7 +26,7 @@ void main() {
     vec4 n = skin * vec4(aNormal, 0.0);
     vWorldPos = (eng.uModel * p).xyz;
     vNormal = (eng.uNormalMat * n).xyz;
-    vUV = aUV;
+    vUV = aUV * eng.uTiling;
     vColor = aColor;
     vViewZ = (eng.uViewMatrix * vec4(vWorldPos, 1.0)).z;
     gl_Position = eng.uMVP * p;

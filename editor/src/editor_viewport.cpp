@@ -194,6 +194,10 @@ void EditorApp::OnRender() {
             renderer_.SetSsrIntensity(rs.ssrStrength);
             renderer_.SetBloomEnabled(rs.bloom);
             renderer_.SetBloomParams(rs.bloomThreshold, rs.bloomStrength);
+            renderer_.SetBloomWidth(rs.bloomWidth);
+            renderer_.SetShadowDistance(rs.shadowDistance);
+            renderer_.SetShadowSoftness(rs.shadowSoftness);
+            renderer_.SetShadowNormalOffset(rs.shadowNormalOffset);
             renderer_.SetTonemapEnabled(rs.tonemap);
             renderer_.SetExposure(rs.exposure);
             // Composite (density) fog only when the stack enables it: the old

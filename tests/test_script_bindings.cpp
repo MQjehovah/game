@@ -758,9 +758,10 @@ TEST(ScriptBindingsDecalDispatches) {
     math::Vec3 gotPos{};
     float gotSize = 0.0f, gotAlpha = 0.0f;
     int setCalls = 0;
-    float setSize = 0.0f, setAlpha = 0.0f;
+    float setSize = 0.0f, setAlpha = 0.0f, setHeight = 0.0f;
     ctx.spawnDecal = [&](const std::string& tex, const math::Vec3& p, float s, float a,
-                         float /*r*/, float /*g*/, float /*b*/, bool /*additive*/) {
+                         float /*r*/, float /*g*/, float /*b*/, bool /*additive*/,
+                         float /*height*/) {
         gotTex = tex;
         gotPos = p;
         gotSize = s;
@@ -770,17 +771,18 @@ TEST(ScriptBindingsDecalDispatches) {
         e.generation = 1;
         return e;
     };
-    ctx.setDecal = [&](ecs::Entity, float s, float a) {
+    ctx.setDecal = [&](ecs::Entity, float s, float a, float h) {
         ++setCalls;
         setSize = s;
         setAlpha = a;
+        setHeight = h;
     };
     CHECK(host->Init());
     script::RegisterEngineBindings(*host, ctx);
     CHECK(RunScript(*host, R"(
       local d = SpawnDecal("assets/x.png", {x = 1, y = 2, z = 3}, 4, 0.5)
       DID = d.id
-      SetDecal(d, 6, 0.2)
+      SetDecal(d, 6, 0.2, 3.5)
     )"));
     CHECK_EQ(gotTex, std::string("assets/x.png"));
     CHECK_NEAR(gotPos.x, 1.0, 1e-6);
@@ -791,6 +793,7 @@ TEST(ScriptBindingsDecalDispatches) {
     CHECK_EQ(setCalls, 1);
     CHECK_NEAR(setSize, 6.0, 1e-6);
     CHECK_NEAR(setAlpha, 0.2, 1e-6);
+    CHECK_NEAR(setHeight, 3.5, 1e-6);
     const auto did = host->GetGlobal("DID");
     CHECK(did.Ok() && did.Value().type == script::Value::Type::Number);
     CHECK_NEAR(did.Value().number, 7.0, 1e-6);

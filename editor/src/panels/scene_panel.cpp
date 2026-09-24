@@ -127,6 +127,18 @@ void ScenePanel::Draw(EditorContext& ctx) {
                 ImGui::SetNextItemWidth(110.0f);
                 if (ImGui::SliderFloat("阈值##bloom", &rs->bloomThreshold, 0.0f, 4.0f, "%.2f"))
                     *ctx.sceneDirty = true;
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(110.0f);
+                if (ImGui::SliderFloat("扩散##bloom", &rs->bloomWidth, 0.5f, 6.0f, "%.2f"))
+                    *ctx.sceneDirty = true;
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(110.0f);
+                if (ImGui::SliderFloat("阴影距离##rs", &rs->shadowDistance, 0.0f, 600.0f, "%.0f"))
+                    *ctx.sceneDirty = true;
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(110.0f);
+                if (ImGui::SliderFloat("阴影柔化##rs", &rs->shadowSoftness, 0.0f, 3.0f, "%.2f"))
+                    *ctx.sceneDirty = true;
                 if (ImGui::Checkbox("色调映射 Tonemap", &rs->tonemap)) *ctx.sceneDirty = true;
                 ImGui::SameLine();
                 ImGui::SetNextItemWidth(110.0f);

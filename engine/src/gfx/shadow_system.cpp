@@ -1,6 +1,7 @@
 #include "neon/gfx/shadow_system.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 
@@ -160,15 +161,9 @@ void ShadowSystem::Init(IRenderBackend& backend, MeshHandle probeQuad, ShaderHan
                      "Renderer: CSM disabled by flag (--disable-fbo/--no-shadows)");
         return;
     }
-    for (int i = 0; i < kShadowCascades; ++i) {
-        shadowRT_[i] = backend.CreateRenderTarget(shadowSize_, shadowSize_);
-        shadowDepthTex_[i] = backend.RenderTargetColorTexture(shadowRT_[i]);
-        if (!shadowRT_[i].Valid() || !shadowDepthTex_[i].Valid()) {
-            NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Warn,
-                         "Renderer: cascade %d shadow target failed", i);
-            csmEnabled_ = false;
-            return;
-        }
+    if (!CreateCascadeTargets()) {
+        csmEnabled_ = false;
+        return;
     }
     csmEnabled_ = TestDepthTargetCapability();
     NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
@@ -192,6 +187,55 @@ void ShadowSystem::Init(IRenderBackend& backend, MeshHandle probeQuad, ShaderHan
                      "Renderer: point light shadows disabled by NEON_NO_POINT_SHADOWS");
         pointShadowsEnabled_ = false;
     }
+}
+
+bool ShadowSystem::CreateCascadeTargets() {
+    if (backend_ == nullptr) return false;
+    for (int i = 0; i < kShadowCascades; ++i) {
+        if (shadowRT_[i].Valid()) backend_->DestroyRenderTarget(shadowRT_[i]);
+        shadowRT_[i] = {};
+        shadowDepthTex_[i] = {};
+        // Prefer a depth-attached target so the pass can resolve occlusion with
+        // a real depth TEST instead of painter's order (see the header note on
+        // CreateRenderTargetWithDepth). Falls back to the plain colour target -
+        // and painter's order - when the backend has no usable depth buffer or
+        // the FBO comes back incomplete.
+        const bool wantDepth = backend_->DepthAvailable();
+        if (i == 0) depthTestedCascades_ = wantDepth;
+        shadowRT_[i] = wantDepth
+                           ? backend_->CreateRenderTargetWithDepth(shadowSize_, shadowSize_)
+                           : backend_->CreateRenderTarget(shadowSize_, shadowSize_);
+        if (!shadowRT_[i].Valid() && wantDepth) {
+            depthTestedCascades_ = false;
+            shadowRT_[i] = backend_->CreateRenderTarget(shadowSize_, shadowSize_);
+        }
+        shadowDepthTex_[i] = backend_->RenderTargetColorTexture(shadowRT_[i]);
+        if (!shadowRT_[i].Valid() || !shadowDepthTex_[i].Valid()) {
+            NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Warn,
+                         "Renderer: cascade %d shadow target failed", i);
+            return false;
+        }
+    }
+    NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
+                 "Renderer: CSM cascades %s",
+                 depthTestedCascades_ ? "depth-tested (nearest surface per texel)"
+                                      : "painter's order (no usable depth buffer)");
+    return true;
+}
+
+void ShadowSystem::SetShadowSize(int size) {
+    if (size < 256) size = 256;
+    if (size > 4096) size = 4096;
+    if (size == shadowSize_) return;
+    shadowSize_ = size;
+    // Before Init (or with shadows forced off) there is nothing to recreate:
+    // Init will allocate at the new size.
+    if (backend_ == nullptr || shadowsForcedOff_) return;
+    const bool ok = CreateCascadeTargets();
+    csmEnabled_ = ok && TestDepthTargetCapability();
+    NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
+                 "Renderer: CSM shadow maps resized to %dx%d x3 (%s)", shadowSize_, shadowSize_,
+                 csmEnabled_ ? "ok" : "FAILED");
 }
 
 void ShadowSystem::Shutdown(IRenderBackend& backend) {
@@ -241,7 +285,13 @@ void ShadowSystem::RunPass(const Camera& camera, float aspect, const math::Vec3&
                            int pointCount) {
     if (!csmEnabled_) return;
     shadowPassRanThisFrame_ = true;
-    ComputeCascadeSplits(camera.nearPlane, camera.farPlane, cascadeSplits_);
+    // Practical (PSSM) splits over the capped shadow range: near cascade gets a
+    // small slice (high texel density where the player looks) and the far
+    // cascade a wide one. The renderer fades shadows out at the last split.
+    const float shadowFar = shadowDistance_ > 0.0f
+                                ? std::fmin(shadowDistance_, camera.farPlane)
+                                : camera.farPlane;
+    ComputeCascadeSplitsPSSM(camera.nearPlane, shadowFar, cascadeLambda_, cascadeSplits_);
     // Cascade frusta must match the camera projection (which may use the
     // viewport rect's aspect when the editor renders into a sub-viewport).
     const float a = aspect;
@@ -272,7 +322,8 @@ void ShadowSystem::RunPass(const Camera& camera, float aspect, const math::Vec3&
 
     for (int i = 0; i < kShadowCascades; ++i) {
         lightViewProj_[i] = ComputeCascadeLightViewProj(sunDir, camera, a, cascadeSplits_[i],
-                                                        cascadeSplits_[i + 1], scenePtr);
+                                                        cascadeSplits_[i + 1], scenePtr,
+                                                        shadowSize_, &cascadeTexelWorld_[i]);
     }
 
     for (int i = 0; i < kShadowCascades; ++i) {
@@ -281,12 +332,50 @@ void ShadowSystem::RunPass(const Camera& camera, float aspect, const math::Vec3&
         // Encoded far depth by default: anything not drawn is lit.
         backend_->Clear({1.0f, 1.0f, 1.0f, 1.0f}, 1.0f);
         backend_->SetBlendMode(BlendMode::Opaque);
-        backend_->SetCullMode(CullMode::Back);
-        // No depth buffer in the color-encoded map (the window/FBO depth path
-        // is broken on the tested Intel driver); painter's-order (far to near
-        // in light space) gives the correct nearest-surface per texel.
-        backend_->SetDepthTest(false, false);
+        // Casters are rasterized with BOTH faces. A level exported as one
+        // merged mesh can contain both windings (Summoner's Rift's terrain and
+        // its props live in a single glTF node), and back-face culling silently
+        // dropped the whole ground plane from the maps: nothing was left to
+        // receive anything, so the ground read as fully lit no matter what the
+        // sun did. Culling costs a little shadow-pass fill and removes an entire
+        // class of content-authored bugs; the depth buffer keeps the nearest
+        // surface per texel either way.
+        backend_->SetCullMode(CullMode::None);
+        // Depth-attached cascades resolve occlusion with GL_LESS (nearest
+        // surface per texel), which is the only correct answer for geometry that
+        // interpenetrates inside one merged mesh. Without a depth buffer (the
+        // Intel FBO depth defect) fall back to painter's order, sorted far to
+        // near in light space.
+        backend_->SetDepthTest(depthTestedCascades_, depthTestedCascades_);
         DrawShadowCastersSorted(lightViewProj_[i]);
+        // Diagnostic (NEON_DUMP_SHADOW=1): histogram the cascade that was just
+        // rendered so a "no shadows" report can distinguish an empty map (casters
+        // missing / culled / mis-viewported) from a broken receiver projection.
+        if (i == 0 && std::getenv("NEON_DUMP_SHADOW") != nullptr) {
+            const int kGrid = 16;
+            int hits = 0;
+            float minD = 1e9f, maxD = -1e9f, sumD = 0.0f;
+            for (int gy = 0; gy < kGrid; ++gy) {
+                for (int gx = 0; gx < kGrid; ++gx) {
+                    unsigned char px[4] = {0, 0, 0, 0};
+                    backend_->ReadCurrentTargetPixel(gx * shadowSize_ / kGrid,
+                                                     gy * shadowSize_ / kGrid, px);
+                    const float d = static_cast<float>(px[0]) / 255.0f +
+                                    static_cast<float>(px[1]) / 255.0f / 255.0f +
+                                    static_cast<float>(px[2]) / 255.0f / 65025.0f;
+                    if (d < 0.999f) ++hits;
+                    minD = d < minD ? d : minD;
+                    maxD = d > maxD ? d : maxD;
+                    sumD += d;
+                }
+            }
+            const int total = kGrid * kGrid;
+            NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
+                         "Renderer: cascade0 depth sample %d/%d texels < 1.0 "
+                         "(min=%.4f max=%.4f mean=%.4f)",
+                         hits, total, minD, maxD, sumD / static_cast<float>(total));
+        }
+
     }
     // Point-light cubemap faces reuse the same caster list (cleared below).
     RunPointShadowPass(pointPos, pointRadius, pointCount);
@@ -304,20 +393,61 @@ void ShadowSystem::DrawShadowCastersSorted(const math::Mat4& lightVP) {
     shadowSortKeys_.reserve(shadowCasters_.size());
     for (const ShadowDraw& draw : shadowCasters_) {
         math::Vec3 center;
+        // World-space size of this caster's AABB. The painter's-order pass keys
+        // off it: see the sort below. World units (not light-space clip units)
+        // because the cascades have different ortho scales, and the bucket has
+        // to mean the same thing in every cascade.
+        math::AABB worldBounds;
+        worldBounds.min = {1e30f, 1e30f, 1e30f};
+        worldBounds.max = {-1e30f, -1e30f, -1e30f};
+        auto expandWorldAabb = [&](const math::Mat4& m) {
+            worldBounds.Expand(math::TransformAABB(draw.bounds, m).min);
+            worldBounds.Expand(math::TransformAABB(draw.bounds, m).max);
+        };
         if (!draw.models.empty()) {
             for (const math::Mat4& m : draw.models) {
                 center += m.TransformPoint(draw.bounds.Center());
+                expandWorldAabb(m);
             }
             center = center * (1.0f / static_cast<float>(draw.models.size()));
         } else {
             center = draw.model.TransformPoint(draw.bounds.Center());
+            expandWorldAabb(draw.model);
         }
-        shadowSortKeys_.push_back({&draw, lightView.TransformPoint(center).z});
+        const math::Vec3 size = worldBounds.max - worldBounds.min;
+        float extent = std::fmax(size.x, std::fmax(size.y, size.z));
+        // Degenerate/garbage AABB (no valid bounds, e.g. a merged glTF chunk
+        // mesh that never had one computed): class it as the LARGEST so it is
+        // drawn first. An unbounded mesh is nearly always a big static receiver
+        // (the arena floor); drawn last it would overwrite every caster's depth
+        // and erase all shadows in the scene, which is exactly the failure the
+        // buckets exist to prevent.
+        if (!(extent > 0.0f) || extent > 1e6f) extent = 1e9f;
+        shadowSortKeys_.push_back({&draw, lightView.TransformPoint(center).z, extent});
     }
     // NDC z grows as light-space z goes negative (ortho slope is negative), so
     // the farthest caster has the largest value; draw it first (last wins).
+    //
+    // Primary key is the light-space footprint, coarse-bucketed by the largest
+    // power of two below the extent, biggest first. Painter's order has one key
+    // per object, so a mesh that *contains* other casters must be drawn before
+    // them or its depth overwrites theirs. The Summoner's Rift ground is a
+    // single mesh spanning the whole map: sorted purely by distance it landed
+    // after every unit and erased every unit shadow (measured: toggling CSM
+    // changed 0.3/765 per pixel of the frame). Bucketing makes the big ground
+    // and building plates land in an earlier class than the units on them,
+    // while players/minions/projectiles (same class) still sort far -> near.
+    auto extentBucket = [](float extent) {
+        if (extent <= 1.0f) return 0.0f;
+        if (extent >= 1e8f) return 1000.0f; // degenerate AABB -> drawn first
+        return std::floor(std::log2(extent));
+    };
+    for (ShadowSortKey& k : shadowSortKeys_) k.extent = extentBucket(k.extent);
     std::sort(shadowSortKeys_.begin(), shadowSortKeys_.end(),
-              [](const ShadowSortKey& a, const ShadowSortKey& b) { return a.z > b.z; });
+              [](const ShadowSortKey& a, const ShadowSortKey& b) {
+                  if (a.extent != b.extent) return a.extent > b.extent;
+                  return a.z > b.z;
+              });
     for (const ShadowSortKey& k : shadowSortKeys_) DrawShadowCaster(*k.draw, lightVP);
 }
 

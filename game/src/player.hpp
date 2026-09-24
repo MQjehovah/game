@@ -74,6 +74,13 @@ struct PlayerConfig {
     // G6-1 --variant <name>: platform/LOD asset variant selected from the
     // project's variants.json ("mobile"/"pc"/...). "" = base assets only.
     std::string variant;
+    // Step D scalability: quality preset + render-resolution scaling.
+    std::string quality;          // --quality low|medium|high|ultra ("" = engine default)
+    float renderScale = 0.0f;     // --render-scale <f> (0 = native)
+    float dynResTargetFps = 0.0f; // --dyn-res <fps>: dynamic resolution target
+    bool taa = false;             // --taa: temporal AA (also on in high/ultra)
+    bool noTaa = false;           // --no-taa: force temporal AA off
+    float taaSharpen = -1.0f;     // --taa-sharpen <f>: unsharp gain (0-1.5)
 };
 
 // The data-driven player: unpack a store-only pack to a temp dir, read the

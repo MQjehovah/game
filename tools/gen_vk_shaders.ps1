@@ -14,7 +14,7 @@ param(
 # committed; this script only re-runs when a shader source changes and the
 # tool is present.
 
-# name;vertex_file;fragment_file
+# name;vertex_file;fragment_file[;MACRO=1[,MACRO2=1]]
 $shaders = @(
     "lit;lit.vert;lit.frag",
     "lit_skinned;lit_skinned.vert;lit.frag",
@@ -34,7 +34,31 @@ $shaders = @(
     "bloom_blur;post.vert;blur.frag",
     "bloom_downsample;post.vert;downsample.frag",
     "bloom_upsample_add;post.vert;upsample_add.frag",
-    "bloom_composite;post.vert;composite.frag"
+    "bloom_composite;post.vert;composite.frag",
+    # G1-5 depth / AO / SSR / volumetric post chain.
+    "ssao_depth;ssao_depth.vert;ssao_depth.frag",
+    "ssao_depth_mesh;ssao_depth_mesh.vert;ssao_depth.frag",
+    "depth_encode;post.vert;depth_encode.frag",
+    "ssao;post.vert;ssao.frag",
+    "ssao_blur;post.vert;ssao_blur.frag",
+    "volumetric;post.vert;volumetric.frag",
+    "ssr;post.vert;ssr.frag",
+    # A5 auto-exposure chain.
+    "autoexposure_lum;post.vert;autoexposure_lum.frag",
+    "autoexposure_avg;post.vert;autoexposure_avg.frag",
+    "autoexposure_adapt;post.vert;autoexposure_adapt.frag",
+    # Procedural sky + MOBA effect programs.
+    "skybox;skybox.vert;skybox.frag",
+    "particle;particle.vert;unlit_instanced_colored.frag",
+    "particle_soft;particle_soft.vert;particle_soft.frag",
+    "decal;decal.vert;decal.frag",
+    "lit_terrain;lit.vert;lit.frag;TERRAIN_SPLAT=1",
+    # Step E/E2: temporal AA (resolve + sharpen), motion vectors, and the
+    # backend-internal MSAA depth resolve the resolve pass reprojects from.
+    "velocity;velocity.vert;velocity.frag",
+    "taa;post.vert;taa.frag",
+    "taa_sharpen;post.vert;taa_sharpen.frag",
+    "depth_resolve;post.vert;depth_resolve.frag"
 )
 
 if (-not (Test-Path $Glslang)) {
@@ -85,13 +109,18 @@ foreach ($entry in $shaders) {
     $name = $parts[0]
     $vertFile = $parts[1]
     $fragFile = $parts[2]
+    # Optional 4th field: comma-separated preprocessor defines for glslang.
+    $defArgs = @()
+    if ($parts.Count -ge 4 -and $parts[3]) {
+        foreach ($d in ($parts[3] -split ",")) { $defArgs += @("-D$d") }
+    }
     $names += $name
 
     $vertSpv = Join-Path $SpvDir "$name.vert.spv"
     $fragSpv = Join-Path $SpvDir "$name.frag.spv"
-    & $Glslang -V "-I$ShaderDir" -o $vertSpv (Join-Path $ShaderDir $vertFile) 2>$null
+    & $Glslang -V "-I$ShaderDir" @defArgs -o $vertSpv (Join-Path $ShaderDir $vertFile) 2>$null
     if ($LASTEXITCODE -ne 0) { Write-Error "glslang failed on $vertFile"; exit 1 }
-    & $Glslang -V "-I$ShaderDir" -o $fragSpv (Join-Path $ShaderDir $fragFile) 2>$null
+    & $Glslang -V "-I$ShaderDir" @defArgs -o $fragSpv (Join-Path $ShaderDir $fragFile) 2>$null
     if ($LASTEXITCODE -ne 0) { Write-Error "glslang failed on $fragFile"; exit 1 }
 
     Write-WordArray $sb "k${name}Vert" (Get-SpvWords $vertSpv)

@@ -15,7 +15,7 @@
 //  - Every program shares ONE pipeline layout: set 0 = dynamic uniform buffer
 //    holding the engine's canonical "EngineUBO" block (see
 //    shaders/engine_ubo.glsl; the CPU-side offsets are the kUniformOffsets
-//    table below - keep the two in sync), set 1 = 23 combined image samplers
+//    table below - keep the two in sync), set 1 = 25 combined image samplers
 //    whose bindings match the renderer's texture slots 0..22.
 //  - Uniforms are written into a per-frame ring by name (SetUniform*), and
 //    every draw records a snapshot into the ring bound via the dynamic offset.
@@ -36,13 +36,13 @@
 // transitions. Sampler descriptor layouts use GENERAL for render-target
 // textures and SHADER_READ_ONLY for uploaded textures.
 //
-// KNOWN DRIVER LIMITATION (documented degradation): the Intel Vulkan driver on
-// this machine cannot SAMPLING an SFLOAT (R16G16B16A16 / R32G32B32A32) image -
-// the sampler returns black for valid float data. The HDR "float" render
-// targets therefore fall back to R8G8B8A8_UNORM internally. The renderer's
-// HDR capability self-test still passes (the drawn values round-trip through
-// the RGBA8 readback), so the HDR + bloom pipeline stays ACTIVE, but values
-// above 1.0 clamp to LDR (true >1.0 HDR is lost). Everything renders.
+// HDR: CreateRenderTarget(floatColor=true) allocates a real
+// VK_FORMAT_R16G16B16A16_SFLOAT image, so the scene target, the bloom
+// pyramid and the composite all carry values above 1.0 (the test machine's
+// RTX 2060 passes the renderer's float-target self-test). A driver that
+// cannot SAMPLE an SFLOAT image (the Intel this engine grew up on returned
+// black) fails that self-test, and the renderer then falls back to the
+// legacy non-HDR path instead of silently shading a clamped LDR target.
 //
 // Degradations vs the GL backend (documented):
 //  - Custom shaders with sources outside the built-in set are rejected
@@ -90,8 +90,8 @@ constexpr VkFormat kDepthFormats[] = {VK_FORMAT_D24_UNORM_S8_UINT, VK_FORMAT_D32
                                       VK_FORMAT_D16_UNORM};
 constexpr VkFormat kSwapchainFormats[] = {VK_FORMAT_B8G8R8A8_UNORM, VK_FORMAT_R8G8B8A8_UNORM,
                                           VK_FORMAT_B8G8R8A8_SRGB};
-constexpr uint32_t kMaxSamplerSlots = 23;  // renderer texture units 0..22
-constexpr size_t kUniformBlockSize = 5568; // EngineUBO std140 size (engine_ubo.glsl)
+constexpr uint32_t kMaxSamplerSlots = 25;  // renderer texture units 0..24
+constexpr size_t kUniformBlockSize = 7152; // EngineUBO std140 size (engine_ubo.glsl)
 constexpr uint32_t kFramesInFlight = 2;
 constexpr uint64_t kScratchBytes = 16ull * 1024 * 1024;
 constexpr uint64_t kUboBytes = 16ull * 1024 * 1024;
@@ -99,7 +99,7 @@ constexpr uint64_t kUboBytes = 16ull * 1024 * 1024;
 // ---------------------------------------------------------------------------
 // Uniform layout table. Offsets MUST match shaders/engine_ubo.glsl exactly.
 // ---------------------------------------------------------------------------
-enum class UniKind { Mat4, Mat4Arr, Vec4, Vec3, Vec2, Float, Int, Sampler };
+enum class UniKind { Mat4, Mat4Arr, Vec4, Vec3, Vec2, Float, Int, Num, Sampler };
 struct UniEntry {
     const char* name;
     UniKind kind;
@@ -145,11 +145,10 @@ const UniEntry kUniformOffsets[] = {
     {"uPointShadowLightCount", UniKind::Int, 5296, 4, 1},
     {"uPointCount", UniKind::Int, 5312, 4, 1},
     {"uHasTexture", UniKind::Int, 5328, 4, 1},
-    {"uAlphaTest", UniKind::Float, 5344, 4, 1},
-    {"uHasMR", UniKind::Int, 5360, 4, 1},
-    {"uHasAO", UniKind::Int, 5376, 4, 1},
-    {"uHasEmissive", UniKind::Int, 5392, 4, 1},
-    {"uPlayerLightEnabled", UniKind::Int, 5408, 4, 1},
+    {"uHasMR", UniKind::Int, 5344, 4, 1},
+    {"uHasAO", UniKind::Int, 5360, 4, 1},
+    {"uHasEmissive", UniKind::Int, 5376, 4, 1},
+    {"uPlayerLightEnabled", UniKind::Int, 5392, 4, 1},
     {"uBloomEnabled", UniKind::Int, 5408, 4, 1},
     {"uTonemapEnabled", UniKind::Int, 5424, 4, 1},
     {"uThreshold", UniKind::Float, 5440, 4, 1},
@@ -160,7 +159,97 @@ const UniEntry kUniformOffsets[] = {
     {"uSrcTexelSize", UniKind::Vec2, 5520, 8, 1},
     {"uLightPos", UniKind::Vec3, 5536, 12, 1},
     {"uLightRange", UniKind::Float, 5552, 4, 1},
+    {"uShadowTexelWorld", UniKind::Vec3, 5568, 12, 1},
+    {"uShadowSoftness", UniKind::Float, 5584, 4, 1},
+    {"uShadowNormalOffset", UniKind::Float, 5600, 4, 1},
+    {"uShadowDebug", UniKind::Int, 5616, 4, 1},
+    {"uAlphaTest", UniKind::Float, 5632, 4, 1},
+    // --- post-processing / effects (offsets mirror engine_ubo.glsl) -------
+    {"uNear", UniKind::Float, 5648, 4, 1},
+    {"uFar", UniKind::Float, 5664, 4, 1},
+    {"uRadius", UniKind::Float, 5680, 4, 1},
+    {"uBias", UniKind::Float, 5696, 4, 1},
+    {"uPower", UniKind::Float, 5712, 4, 1},
+    {"uProjScale", UniKind::Float, 5728, 4, 1},
+    {"uDensity", UniKind::Float, 5744, 4, 1},
+    {"uWeight", UniKind::Float, 5760, 4, 1},
+    {"uDecay", UniKind::Float, 5776, 4, 1},
+    {"uSteps", UniKind::Num, 5792, 4, 1},
+    {"uThickness", UniKind::Float, 5808, 4, 1},
+    {"uMaxDist", UniKind::Float, 5824, 4, 1},
+    {"uKeyValue", UniKind::Float, 5840, 4, 1},
+    {"uExposureMin", UniKind::Float, 5856, 4, 1},
+    {"uExposureMax", UniKind::Float, 5872, 4, 1},
+    {"uAdaptation", UniKind::Float, 5888, 4, 1},
+    {"uAoIntensity", UniKind::Float, 5904, 4, 1},
+    {"uVolStrength", UniKind::Float, 5920, 4, 1},
+    {"uSsrStrength", UniKind::Float, 5936, 4, 1},
+    {"uFogDensity", UniKind::Float, 5968, 4, 1},
+    {"uSaturation", UniKind::Float, 5984, 4, 1},
+    {"uContrast", UniKind::Float, 6000, 4, 1},
+    {"uGain", UniKind::Float, 6016, 4, 1},
+    {"uGamma", UniKind::Float, 6032, 4, 1},
+    {"uLift", UniKind::Float, 6048, 4, 1},
+    {"uVignetteRadius", UniKind::Float, 6064, 4, 1},
+    {"uVignetteSoftness", UniKind::Float, 6080, 4, 1},
+    {"uVignetteIntensity", UniKind::Float, 6096, 4, 1},
+    {"uSoftFade", UniKind::Float, 6112, 4, 1},
+    {"uDecalBias", UniKind::Float, 6128, 4, 1},
+    {"uSunYaw", UniKind::Float, 6144, 4, 1},
+    {"uSunPitch", UniKind::Float, 6160, 4, 1},
+    {"uCloudCoverage", UniKind::Float, 6176, 4, 1},
+    {"uCloudScale", UniKind::Float, 6192, 4, 1},
+    {"uTime", UniKind::Float, 6208, 4, 1},
+    {"uAoEnabled", UniKind::Int, 6224, 4, 1},
+    {"uVolEnabled", UniKind::Int, 6240, 4, 1},
+    {"uSsrEnabled", UniKind::Int, 6256, 4, 1},
+    {"uFogEnabled", UniKind::Int, 6272, 4, 1},
+    {"uGradeEnabled", UniKind::Int, 6288, 4, 1},
+    {"uAutoExposure", UniKind::Int, 6304, 4, 1},
+    {"uVignette", UniKind::Int, 6320, 4, 1},
+    {"uDecalProject", UniKind::Int, 6336, 4, 1},
+    {"uDecalAdditive", UniKind::Int, 6352, 4, 1},
+    {"uSkyTextureValid", UniKind::Int, 6368, 4, 1},
+    {"uSunVisible", UniKind::Int, 6384, 4, 1},
+    {"uMoonVisible", UniKind::Int, 6400, 4, 1},
+    {"uCloudsEnabled", UniKind::Int, 6416, 4, 1},
+    {"uScreenSize", UniKind::Vec2, 6432, 8, 1},
+    {"uSunScreen", UniKind::Vec2, 6448, 8, 1},
+    {"uSkyTop", UniKind::Vec3, 6464, 12, 1},
+    {"uSkyHorizon", UniKind::Vec3, 6480, 12, 1},
+    {"uSceneVpRect", UniKind::Vec4, 6496, 16, 1},
+    {"uViewProj", UniKind::Mat4, 6512, 64, 1},
+    {"uInvViewProj", UniKind::Mat4, 6576, 64, 1},
+    {"uPrevViewProj", UniKind::Mat4, 6640, 64, 1},
+    {"uPrevModel", UniKind::Mat4, 6704, 64, 1},
+    {"uDecalInvModel", UniKind::Mat4, 6768, 64, 1},
+    {"uTiling", UniKind::Vec2, 6832, 8, 1},
+    {"uDirtColor", UniKind::Vec4, 6848, 16, 1},
+    {"uRockColor", UniKind::Vec4, 6864, 16, 1},
+    {"uHasGrassTex", UniKind::Int, 6880, 4, 1},
+    {"uBlend", UniKind::Float, 6896, 4, 1},
+    {"uValidHistory", UniKind::Int, 6912, 4, 1},
+    {"uHasVelocity", UniKind::Int, 6928, 4, 1},
+    {"uSharpen", UniKind::Float, 6944, 4, 1},
+    {"uSamples", UniKind::Int, 6960, 4, 1},
+    {"uAmbientGroundColor", UniKind::Vec3, 6976, 12, 1},
+    {"uHighlightColor", UniKind::Vec3, 6992, 12, 1},
+    {"uLightProbeMin", UniKind::Vec3, 7008, 12, 1},
+    {"uLightProbeExtent", UniKind::Vec3, 7024, 12, 1},
+    {"uNormalScale", UniKind::Float, 7040, 4, 1},
+    {"uHighlightStrength", UniKind::Float, 7056, 4, 1},
+    {"uLightProbeRes", UniKind::Float, 7072, 4, 1},
+    {"uLightProbeInvMax", UniKind::Float, 7088, 4, 1},
+    {"uHasNormalMap", UniKind::Int, 7104, 4, 1},
+    {"uReceiveShadow", UniKind::Int, 7120, 4, 1},
+    {"uLightProbeEnabled", UniKind::Int, 7136, 4, 1},
     {"uAlbedo", UniKind::Sampler, 0, 0, 1},
+    {"uGrassTex", UniKind::Sampler, 0, 0, 1},
+    {"uCurrent", UniKind::Sampler, 0, 0, 1},
+    {"uHistory", UniKind::Sampler, 0, 0, 1},
+    {"uVelocity", UniKind::Sampler, 0, 0, 1},
+    {"uSource", UniKind::Sampler, 0, 0, 1},
+    {"uDepthMs", UniKind::Sampler, 0, 0, 1},
     {"uMR", UniKind::Sampler, 0, 0, 1},
     {"uOcclusion", UniKind::Sampler, 0, 0, 1},
     {"uEmissive", UniKind::Sampler, 0, 0, 1},
@@ -175,7 +264,34 @@ const UniEntry kUniformOffsets[] = {
     {"uIrradianceMap", UniKind::Sampler, 0, 0, 1},
     {"uPrefilteredMap", UniKind::Sampler, 0, 0, 1},
     {"uBrdfLUT", UniKind::Sampler, 0, 0, 1},
+    {"uNormalMap", UniKind::Sampler, 0, 0, 1},         // lit unit 23
+    {"uLightProbeAtlas", UniKind::Sampler, 0, 0, 1},   // lit unit 24
+    // post / effect samplers (bindings equal the renderer texture unit)
+    {"uDepthTex", UniKind::Sampler, 0, 0, 1},
+    {"uDepth", UniKind::Sampler, 0, 0, 1},
+    {"uScene", UniKind::Sampler, 0, 0, 1},
+    {"uSceneDepth", UniKind::Sampler, 0, 0, 1},
+    {"uLum", UniKind::Sampler, 0, 0, 1},
+    {"uAvgLum", UniKind::Sampler, 0, 0, 1},
+    {"uPrevExposure", UniKind::Sampler, 0, 0, 1},
+    {"uAo", UniKind::Sampler, 0, 0, 1},
+    {"uVol", UniKind::Sampler, 0, 0, 1},
+    {"uSsr", UniKind::Sampler, 0, 0, 1},
+    {"uFogDepth", UniKind::Sampler, 0, 0, 1},
+    {"uSkyTexture", UniKind::Sampler, 0, 0, 1},
 };
+
+// Opt-in render trace: NEON_VK_TRACE=1 logs backend entry points so a crash can be
+// localised to the last completed call.
+bool VkTraceEnabled() {
+    static const bool enabled = []() {
+        const char* v = std::getenv("NEON_VK_TRACE");
+        return v && v[0] && v[0] != 48;
+    }();
+    return enabled;
+}
+
+#define NEON_VK_TRACE(...) do { if (VkTraceEnabled()) { std::printf(__VA_ARGS__); std::fflush(stdout); } } while (0)
 
 const UniEntry* FindUniform(const char* name) {
     for (const UniEntry& e : kUniformOffsets) {
@@ -235,6 +351,75 @@ float HalfToFloat(uint16_t h) {
     return out;
 }
 
+// True when the physical device exposes the named device extension.
+bool DeviceHasExtension(VkPhysicalDevice dev, const char* name) {
+    uint32_t count = 0;
+    if (vkEnumerateDeviceExtensionProperties(dev, nullptr, &count, nullptr) != VK_SUCCESS) return false;
+    std::vector<VkExtensionProperties> exts(count);
+    vkEnumerateDeviceExtensionProperties(dev, nullptr, &count, exts.data());
+    for (const VkExtensionProperties& e : exts) {
+        if (std::strcmp(e.extensionName, name) == 0) return true;
+    }
+    return false;
+}
+
+// Graphics queue family index that can also present to `surface`, or UINT32_MAX.
+uint32_t FindGraphicsPresentQueueFamily(VkPhysicalDevice dev, VkSurfaceKHR surface) {
+    uint32_t count = 0;
+    vkGetPhysicalDeviceQueueFamilyProperties(dev, &count, nullptr);
+    std::vector<VkQueueFamilyProperties> fams(count);
+    vkGetPhysicalDeviceQueueFamilyProperties(dev, &count, fams.data());
+    for (uint32_t i = 0; i < count; ++i) {
+        if (!(fams[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)) continue;
+        VkBool32 present = VK_FALSE;
+        vkGetPhysicalDeviceSurfaceSupportKHR(dev, i, surface, &present);
+        if (present) return i;
+    }
+    return UINT32_MAX;
+}
+
+// Swapchain/present capability probe used to score candidate devices.
+int DevicePresentScore(VkPhysicalDevice dev, VkSurfaceKHR surface, char* why, size_t whyLen) {
+    VkPhysicalDeviceProperties props{};
+    vkGetPhysicalDeviceProperties(dev, &props);
+    int typeScore = 0;
+    switch (props.deviceType) {
+        case VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU: typeScore = 400; break;
+        case VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU: typeScore = 300; break;
+        case VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU: typeScore = 200; break;
+        case VK_PHYSICAL_DEVICE_TYPE_CPU: typeScore = 100; break;
+        default: typeScore = 50; break;
+    }
+    if (!DeviceHasExtension(dev, VK_KHR_SWAPCHAIN_EXTENSION_NAME)) {
+        std::snprintf(why, whyLen, "no VK_KHR_swapchain");
+        return -1;
+    }
+    if (FindGraphicsPresentQueueFamily(dev, surface) == UINT32_MAX) {
+        std::snprintf(why, whyLen, "no graphics+present queue family");
+        return -1;
+    }
+    uint32_t formatCount = 0;
+    uint32_t modeCount = 0;
+    vkGetPhysicalDeviceSurfaceFormatsKHR(dev, surface, &formatCount, nullptr);
+    vkGetPhysicalDeviceSurfacePresentModesKHR(dev, surface, &modeCount, nullptr);
+    if (formatCount == 0 || modeCount == 0) {
+        std::snprintf(why, whyLen, "surface formats=%u modes=%u", formatCount, modeCount);
+        return -1;
+    }
+    VkSurfaceCapabilitiesKHR caps{};
+    if (vkGetPhysicalDeviceSurfaceCapabilitiesKHR(dev, surface, &caps) != VK_SUCCESS) {
+        std::snprintf(why, whyLen, "surface capabilities unavailable");
+        return -1;
+    }
+    if (caps.supportedUsageFlags == 0 || caps.supportedCompositeAlpha == 0) {
+        std::snprintf(why, whyLen, "unsupported usage/alpha bits");
+        return -1;
+    }
+    std::snprintf(why, whyLen, "ok formats=%u modes=%u", formatCount, modeCount);
+    return typeScore;
+}
+
+
 VkFormat SwapchainFormat(const std::vector<VkSurfaceFormatKHR>& formats) {
     for (VkFormat want : kSwapchainFormats) {
         for (const VkSurfaceFormatKHR& f : formats) {
@@ -247,11 +432,27 @@ VkFormat SwapchainFormat(const std::vector<VkSurfaceFormatKHR>& formats) {
 const char* VkResultName(VkResult r) {
     switch (r) {
         case VK_SUCCESS: return "VK_SUCCESS";
-        case VK_ERROR_OUT_OF_DATE_KHR: return "VK_ERROR_OUT_OF_DATE_KHR";
-        case VK_ERROR_DEVICE_LOST: return "VK_ERROR_DEVICE_LOST";
+        case VK_NOT_READY: return "VK_NOT_READY";
+        case VK_TIMEOUT: return "VK_TIMEOUT";
+        case VK_ERROR_OUT_OF_HOST_MEMORY: return "VK_ERROR_OUT_OF_HOST_MEMORY";
+        case VK_ERROR_OUT_OF_DEVICE_MEMORY: return "VK_ERROR_OUT_OF_DEVICE_MEMORY";
         case VK_ERROR_INITIALIZATION_FAILED: return "VK_ERROR_INITIALIZATION_FAILED";
-        default: return "VkResult";
+        case VK_ERROR_DEVICE_LOST: return "VK_ERROR_DEVICE_LOST";
+        case VK_ERROR_LAYER_NOT_PRESENT: return "VK_ERROR_LAYER_NOT_PRESENT";
+        case VK_ERROR_EXTENSION_NOT_PRESENT: return "VK_ERROR_EXTENSION_NOT_PRESENT";
+        case VK_ERROR_FEATURE_NOT_PRESENT: return "VK_ERROR_FEATURE_NOT_PRESENT";
+        case VK_ERROR_INCOMPATIBLE_DRIVER: return "VK_ERROR_INCOMPATIBLE_DRIVER";
+        case VK_ERROR_TOO_MANY_OBJECTS: return "VK_ERROR_TOO_MANY_OBJECTS";
+        case VK_ERROR_FORMAT_NOT_SUPPORTED: return "VK_ERROR_FORMAT_NOT_SUPPORTED";
+        case VK_ERROR_SURFACE_LOST_KHR: return "VK_ERROR_SURFACE_LOST_KHR";
+        case VK_ERROR_NATIVE_WINDOW_IN_USE_KHR: return "VK_ERROR_NATIVE_WINDOW_IN_USE_KHR";
+        case VK_ERROR_OUT_OF_DATE_KHR: return "VK_ERROR_OUT_OF_DATE_KHR";
+        case VK_ERROR_INCOMPATIBLE_DISPLAY_KHR: return "VK_ERROR_INCOMPATIBLE_DISPLAY_KHR";
+        default: break;
     }
+    static char buf[48];
+    std::snprintf(buf, sizeof(buf), "VkResult(%d)", static_cast<int>(r));
+    return buf;
 }
 
 struct Texture {
@@ -273,6 +474,8 @@ struct Mesh {
     VkDeviceMemory iboMem = VK_NULL_HANDLE;
     uint32_t indexCount = 0;
     uint32_t vertexCount = 0;
+    // 0 = uint16 indices, 1 = uint32 (large merged geometry, see CreateMeshU32).
+    uint32_t indexType = 0;
 };
 
 enum class RpKind : uint8_t { Color1, Float1, Float2, Float4, DepthOnly };
@@ -296,6 +499,17 @@ struct Target {
     bool floatColor = false;
     bool depthOnly = false;
     bool swapchain = false;
+    // Per-target pending clear (see Clear()). The renderer binds a target,
+    // clears it, and then binds OTHER targets before drawing into it again
+    // (the TAA velocity pass, the soft-depth resolve). A single global latch
+    // was dropped by the next bind, so the HDR colour and depth began their
+    // pass with LOAD_OP_LOAD over undefined memory - every fragment then failed
+    // the depth test and only the sky survived. Keeping the flag on the target
+    // makes Clear() match GL exactly: it applies to whatever target was bound
+    // when it was called, whenever that target next begins a render pass.
+    bool clearPending = false;
+    VkClearColorValue pendingClearColor = {{0.02f, 0.03f, 0.08f, 1.0f}};
+    float pendingClearDepth = 1.0f;
     uint32_t colorTexId = 0;
     uint32_t depthTexId = 0;
     VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -428,6 +642,22 @@ public:
         if (!CreateSwapchain()) return false;
         if (!CreateFrames()) return false;
 
+        // Backend-internal resources for the MSAA depth resolve (ResolveDepth).
+        // Built once at startup so a missing program is reported once instead of
+        // every frame; the quad is the same NDC unit quad the FBO self-tests use
+        // (post.vert maps it to the full target when uMVP is the identity).
+        depthResolveShader_ = CreateShader("", "", "depth_resolve");
+        {
+            const Vertex3D verts[4] = {
+                {{-1, -1, 0}, {}, {0, 0}, {1, 1, 1, 1}, {0, 0, 0, 0}, {0, 0, 0, 0}},
+                {{1, -1, 0}, {}, {1, 0}, {1, 1, 1, 1}, {0, 0, 0, 0}, {0, 0, 0, 0}},
+                {{1, 1, 0}, {}, {1, 1}, {1, 1, 1, 1}, {0, 0, 0, 0}, {0, 0, 0, 0}},
+                {{-1, 1, 0}, {}, {0, 1}, {1, 1, 1, 1}, {0, 0, 0, 0}, {0, 0, 0, 0}},
+            };
+            const uint16_t indices[6] = {0, 1, 2, 0, 2, 3};
+            resolveQuad_ = CreateMesh(verts, 4, indices, 6);
+        }
+
         const uint8_t whitePx[4] = {255, 255, 255, 255};
         TextureDesc whiteDesc;
         whiteDesc.width = 1;
@@ -516,6 +746,7 @@ public:
     // ------------------------------------------------------------------
     RenderTargetHandle CreateRenderTarget(int width, int height, bool floatColor,
                                           int samples) override {
+        NEON_VK_TRACE("vt: CreateRenderTarget %dx%d float=%d\n", width, height, (int)floatColor);
         if (width <= 0 || height <= 0) return {};
         // A2: honor floatColor with real R16G16B16A16_SFLOAT so the HDR +
         // bloom pipeline is not silently clamped to LDR. Drivers whose SFLOAT
@@ -553,10 +784,37 @@ public:
         rt.colorView =
             CreateView(rt.colorImage, colorFormat, VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_COLOR_BIT);
         if (!rt.colorView) return {};
+        // SAMPLED so the MSAA depth can be read back by the depth-resolve pass
+        // (see ResolveDepth); the single-sample attachments get the same flag for
+        // free, which keeps the usage list uniform.
         if (!CreateImage(width, height, depthFormat_, samples,
-                         VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_IMAGE_TILING_OPTIMAL,
-                         &rt.depthImage, &rt.depthMem, &rt.depthView, 1)) {
+                         VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
+                             VK_IMAGE_USAGE_SAMPLED_BIT,
+                         VK_IMAGE_TILING_OPTIMAL, &rt.depthImage, &rt.depthMem, &rt.depthView, 1)) {
             return {};
+        }
+        // Multisampled depth needs an explicit resolve pass before anything can
+        // sample it, so expose it as a texture here. Single-sample targets keep
+        // depthTexId clear: RenderTargetDepthTexture must go on returning the
+        // colour-encoded depth for the shadow / post-graph targets.
+        if (samples > 1) {
+            Texture dtex;
+            dtex.image = rt.depthImage;
+            dtex.view = rt.depthView;
+            dtex.sampler = samplerNearest_;
+            dtex.format = depthFormat_;
+            dtex.width = width;
+            dtex.height = height;
+            dtex.mipLevels = 1;
+            // The colour render pass declares this image as already being in the
+            // depth attachment layout and never transitions it, so the tracked
+            // value must claim the same: the resolve pass samples the depth and
+            // would otherwise transition from UNDEFINED and discard it.
+            dtex.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+            rt.depthLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+            dtex.owned = false;
+            rt.depthTexId = ++nextTextureId_;
+            textures_[rt.depthTexId] = dtex;
         }
 
         RenderPassPair rp = GetRenderPasses(colorFormat, samples);
@@ -584,9 +842,21 @@ public:
         return {rt.id};
     }
 
+    // Every Vulkan colour target created above already carries a D32 depth
+    // attachment (see CreateRenderTarget), so the CSM cascade pass can depth-TEST
+    // instead of sorting by painters order. That matters for level geometry that
+    // interpenetrates inside a single merged mesh (terrain + trees + towers):
+    // painters order needs one key per object and therefore drops most casters.
+    RenderTargetHandle CreateRenderTargetWithDepth(int width, int height) override {
+        NEON_VK_TRACE("vt: CreateRenderTargetWithDepth %dx%d\n", width, height);
+        return CreateRenderTarget(width, height, false, 1);
+    }
+
     void DestroyRenderTarget(RenderTargetHandle target) override {
+        NEON_VK_TRACE("bt: DestroyRenderTarget %u\n", target.id);
         auto it = renderTargets_.find(target.id);
         if (it == renderTargets_.end()) return;
+        FlushPendingWorkBeforeDestroy(&it->second);
         if (it->second.colorTexId) textures_.erase(it->second.colorTexId);
         if (it->second.depthTexId) textures_.erase(it->second.depthTexId);
         DestroyTargetInternal(it->second);
@@ -594,12 +864,14 @@ public:
     }
 
     void BindRenderTarget(RenderTargetHandle target) override {
+        NEON_VK_TRACE("vt: BindRenderTarget %u\n", target.id);
         auto it = renderTargets_.find(target.id);
         if (it == renderTargets_.end()) return;
         BindTarget(&it->second);
     }
 
     void BindDefaultTarget() override {
+        NEON_VK_TRACE("vt: BindDefaultTarget\n");
         if (!swapTarget_) return;
         BindTarget(swapTarget_.get());
     }
@@ -658,6 +930,76 @@ public:
         if (it == renderTargets_.end()) return {};
         if (it->second.depthTexId) return {it->second.depthTexId};
         return {it->second.colorTexId};
+    }
+
+    // Depth resolve for the MSAA HDR target (the GL backend blits
+    // GL_DEPTH_BUFFER_BIT here). Vulkan has no depth blit and vkCmdResolveImage
+    // is colour-only, so the multisampled attachment is collapsed into the
+    // single-sample depth target by a depth-writing fullscreen pass
+    // (shaders/depth_resolve.frag): the post chain, soft particles and the TAA
+    // reprojection then read the main-pass depth instead of it being redrawn.
+    // Returns false when the resolve is not possible, which keeps the renderer
+    // on its colour-encoded caster fallback.
+    bool ResolveDepth(RenderTargetHandle src, RenderTargetHandle dst) override {
+        auto sit = renderTargets_.find(src.id);
+        auto dit = renderTargets_.find(dst.id);
+        if (sit == renderTargets_.end() || dit == renderTargets_.end()) return false;
+        Target& s = sit->second;
+        Target& d = dit->second;
+        if (s.samples <= 1 || s.depthOnly || !d.depthOnly) return false;
+        if (!s.depthTexId || !d.depthImage || !d.depthView) return false;
+        if (s.width != d.width || s.height != d.height) return false;
+        if (!depthResolveShader_.Valid() || !resolveQuad_.Valid()) return false;
+
+        static int resolveCount = 0;
+        NEON_VK_TRACE("vt: ResolveDepth #%d src=%u dst=%u depthImg=%p tex=%u\\n",
+                      ++resolveCount, src.id, dst.id, (void*)s.depthImage, s.depthTexId);
+        Frame& f = CurrentFrame();
+        Target* prev = target_;
+        const int vx = viewportX_;
+        const int vy = viewportY_;
+        const int vw = viewportWidth_;
+        const int vh = viewportHeight_;
+        EndRenderPassIfActive(f);
+        EnsureFrameStarted();
+        BindTarget(&d);
+        // BindTarget flushes and ENDS the pending command buffer when the target
+        // changes, and the descriptor transition PrepareDraw records (sampling the
+        // multisampled depth) would otherwise be recorded into a closed buffer.
+        OpenCmd(f);
+        SetViewport(0, 0, d.width, d.height);
+        // Depth test off / write on: the pass overwrites every destination
+        // texel (the quad covers the target), so nothing must reject it.
+        SetDepthTest(false, true);
+        SetCullMode(CullMode::None);
+        SetBlendMode(BlendMode::Opaque);
+        UseShader(depthResolveShader_);
+        SetUniformMat4("uMVP", math::Mat4::Identity());
+        SetUniformInt("uSamples", static_cast<int>(s.samples));
+        BindTexture(0, TextureHandle{s.depthTexId});
+        SetUniformInt("uDepthMs", 0);
+        DrawMesh(resolveQuad_);
+        // Sampling the multisampled depth moved it out of the depth-attachment
+        // layout the main colour pass declares as its initial layout. Put it back
+        // before returning: the TAA velocity pass re-binds the main target for
+        // every moving object, and a mid-frame re-bind LOADs the depth buffer -
+        // with a mismatched layout the driver may hand back undefined depth and
+        // every fragment then fails the depth test (just the sky survived).
+        EndRenderPassIfActive(f);
+        TransitionImage(f.cmd, s.depthImage, TrackedLayout(s.depthImage),
+                        VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                        VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
+                            VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+                        VK_ACCESS_SHADER_READ_BIT,
+                        VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+                            VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                        DepthAspect());
+        SetTrackedLayout(s.depthImage, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+        if (prev && prev != &d) BindTarget(prev);
+        else if (!prev) BindDefaultTarget();
+        SetViewport(vx, vy, vw, vh);
+        return true;
     }
 
     RenderTargetHandle CreateDepthTarget(int width, int height) override {
@@ -847,6 +1189,7 @@ public:
     }
 
     void DestroyTexture(TextureHandle texture) override {
+        FlushPendingWorkBeforeDestroy(nullptr);
         auto it = textures_.find(texture.id);
         if (it == textures_.end()) return;
         DestroyTextureInternal(it->second);
@@ -990,19 +1333,41 @@ public:
             }
         }
         meshes_[++nextMeshId_] = m;
-        return {nextMeshId_, nextMeshId_, nextMeshId_, m.indexCount};
+        return {nextMeshId_, nextMeshId_, nextMeshId_, m.indexCount, m.indexType};
     }
 
     MeshHandle CreateMeshU32(const void* vertices, uint32_t vertexCount,
                              const uint32_t* indices, uint32_t indexCount) override {
-        // TODO(Vulkan): 32-bit index buffer support. Vulkan is opt-in and not
-        // enabled in the default build; FBX (>65535 verts) falls back to a
-        // load failure until a u32 index path is added here.
-        (void)vertices; (void)vertexCount; (void)indices; (void)indexCount;
-        return {};
+        // 32-bit index path for meshes with more than 65535 vertices (large
+        // merged glTF / FBX geometry). Without it those meshes failed to create
+        // and their draws silently disappeared (the Summoner Rift map border
+        // was the visible symptom).
+        if (!vertices || vertexCount == 0) return {};
+        Mesh m;
+        m.vertexCount = vertexCount;
+        m.indexCount = indexCount;
+        m.indexType = 1;
+
+        const size_t vbytes = static_cast<size_t>(vertexCount) * sizeof(Vertex3D);
+        if (!CreateDeviceBuffer(vbytes, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, vertices, &m.vbo,
+                                &m.vboMem)) {
+            return {};
+        }
+        if (indices && indexCount > 0) {
+            const size_t ibytes = static_cast<size_t>(indexCount) * sizeof(uint32_t);
+            if (!CreateDeviceBuffer(ibytes, VK_BUFFER_USAGE_INDEX_BUFFER_BIT, indices, &m.ibo,
+                                    &m.iboMem)) {
+                vkDestroyBuffer(device_, m.vbo, nullptr);
+                vkFreeMemory(device_, m.vboMem, nullptr);
+                return {};
+            }
+        }
+        meshes_[++nextMeshId_] = m;
+        return {nextMeshId_, nextMeshId_, nextMeshId_, m.indexCount, m.indexType};
     }
 
     void DestroyMesh(const MeshHandle& mesh) override {
+        FlushPendingWorkBeforeDestroy(nullptr);
         auto it = meshes_.find(mesh.vao);
         if (it == meshes_.end()) return;
         if (it->second.vbo) vkDestroyBuffer(device_, it->second.vbo, nullptr);
@@ -1068,12 +1433,14 @@ public:
     }
 
     void Clear(const Color& color, float depth) override {
+        NEON_VK_TRACE("vt: Clear\n");
         Frame& f = CurrentFrame();
         EndRenderPassIfActive(f);
         EnsureFrameStarted();
-        clearPending_ = true;
-        clearColor_ = {color.r, color.g, color.b, color.a};
-        clearDepth_ = depth;
+        if (!target_) return; // nothing bound (GL would clear the backbuffer)
+        target_->clearPending = true;
+        target_->pendingClearColor = {color.r, color.g, color.b, color.a};
+        target_->pendingClearDepth = depth;
     }
 
     // ------------------------------------------------------------------
@@ -1109,7 +1476,9 @@ public:
 
     void SetUniformVec3(const char* name, const math::Vec3& value) override {
         const UniEntry* e = FindUniform(name);
-        if (!e || e->kind != UniKind::Vec3) return;
+        // A vec3 write into a vec4 slot is allowed (the composite sets the
+        // colour-grade tint while the lit path uses the same slot as a vec4).
+        if (!e || (e->kind != UniKind::Vec3 && e->kind != UniKind::Vec4)) return;
         float* dst = reinterpret_cast<float*>(uniforms_ + ElementOffset(e, name));
         dst[0] = value.x;
         dst[1] = value.y;
@@ -1126,7 +1495,7 @@ public:
 
     void SetUniformFloat(const char* name, float value) override {
         const UniEntry* e = FindUniform(name);
-        if (!e || e->kind != UniKind::Float) return;
+        if (!e || (e->kind != UniKind::Float && e->kind != UniKind::Num)) return;
         float v = value;
         std::memcpy(uniforms_ + ElementOffset(e, name), &v, 4);
         uniformsDirty_ = true;
@@ -1134,7 +1503,14 @@ public:
 
     void SetUniformInt(const char* name, int value) override {
         const UniEntry* e = FindUniform(name);
-        if (!e || e->kind != UniKind::Int) return;
+        if (!e) return;
+        if (e->kind == UniKind::Num) {
+            const float v = static_cast<float>(value);
+            std::memcpy(uniforms_ + e->offset, &v, 4);
+            uniformsDirty_ = true;
+            return;
+        }
+        if (e->kind != UniKind::Int) return;
         std::memcpy(uniforms_ + e->offset, &value, 4);
         uniformsDirty_ = true;
     }
@@ -1149,8 +1525,15 @@ public:
     // Drawing
     // ------------------------------------------------------------------
     void DrawMesh(const MeshHandle& mesh) override {
+        NEON_VK_TRACE("vt: DrawMesh vao=%u\n", mesh.vao);
         auto it = meshes_.find(mesh.vao);
-        if (it == meshes_.end()) return;
+        if (it == meshes_.end()) {
+            // A silently dropped draw is invisible in a screenshot (and cost a
+            // full afternoon of shadow debugging on the GL path).
+            NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Warn,
+                         "Vulkan: DrawMesh with unknown mesh handle vao=%u", mesh.vao);
+            return;
+        }
         DrawIndexed(it->second, 1, 0);
     }
 
@@ -1246,14 +1629,22 @@ public:
 
         VkImage swapImage = imageIndex_ < swapImages_.size() ? swapImages_[imageIndex_]
                                                              : VK_NULL_HANDLE;
+        // Re-open the frame command buffer instead of testing f.cmdOpen: a
+        // mid-frame readback (screenshot capture, ReadImage) ends and SUBMITS
+        // f.cmd, and the old guard then skipped the PRESENT_SRC transition below.
+        // Presenting an image that is still in GENERAL is undefined, and the
+        // driver answered it with VK_ERROR_DEVICE_LOST on every later submit.
+        // Resetting an already-submitted ONE_TIME buffer is legal here because
+        // SubmitQueue waited on its fence before returning.
+        OpenCmd(f);
+        if (swapImage && swapImageLayout_ != VK_IMAGE_LAYOUT_PRESENT_SRC_KHR) {
+            TransitionImage(f.cmd, swapImage, swapImageLayout_, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                            VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+                            VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, 0, VK_IMAGE_ASPECT_COLOR_BIT);
+            swapImageLayout_ = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+        }
         if (f.cmdOpen) {
-            if (swapImage) {
-                TransitionImage(f.cmd, swapImage, swapImageLayout_, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-                                VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-                                VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-                                VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, 0, VK_IMAGE_ASPECT_COLOR_BIT);
-                swapImageLayout_ = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-            }
             vkEndCommandBuffer(f.cmd);
             f.cmdOpen = false;
         }
@@ -1278,9 +1669,11 @@ public:
         }
         si.signalSemaphoreCount = 1;
         si.pSignalSemaphores = &f.renderFinished;
-        if (vkQueueSubmit(queue_, 1, &si, f.fence) != VK_SUCCESS) {
+        const VkResult submitRes = vkQueueSubmit(queue_, 1, &si, f.fence);
+        if (submitRes != VK_SUCCESS) {
             NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Error,
-                         "Vulkan: EndFrame queue submit failed");
+                         "Vulkan: EndFrame queue submit failed: %s (%d)",
+                         VkResultName(submitRes), static_cast<int>(submitRes));
         }
 
         if (swapImage) {
@@ -1306,6 +1699,7 @@ public:
     }
 
     void ReadCurrentTargetPixel(int x, int y, unsigned char* rgba) override {
+        NEON_VK_TRACE("vt: ReadCurrentTargetPixel %d,%d target=%p\n", x, y, (void*)target_);
         if (!rgba) return;
         if (target_ && !target_->swapchain && target_->colorImage) {
             ReadImage(target_->colorImage, TrackedLayout(target_->colorImage),
@@ -1370,17 +1764,6 @@ private:
     }
 
     bool CreateDevice() {
-        uint32_t deviceCount = 0;
-        vkEnumeratePhysicalDevices(instance_, &deviceCount, nullptr);
-        if (deviceCount == 0) {
-            NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Error,
-                         "Vulkan: no physical devices");
-            return false;
-        }
-        std::vector<VkPhysicalDevice> devices(deviceCount);
-        vkEnumeratePhysicalDevices(instance_, &deviceCount, devices.data());
-        physicalDevice_ = devices[0];
-
         VkWin32SurfaceCreateInfoKHR sci{};
         sci.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
         sci.hwnd = hwnd_;
@@ -1391,22 +1774,46 @@ private:
             return false;
         }
 
-        uint32_t familyCount = 0;
-        vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice_, &familyCount, nullptr);
-        std::vector<VkQueueFamilyProperties> families(familyCount);
-        vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice_, &familyCount, families.data());
+        uint32_t deviceCount = 0;
+        vkEnumeratePhysicalDevices(instance_, &deviceCount, nullptr);
+        if (deviceCount == 0) {
+            NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Error,
+                         "Vulkan: no physical devices");
+            return false;
+        }
+        std::vector<VkPhysicalDevice> devices(deviceCount);
+        vkEnumeratePhysicalDevices(instance_, &deviceCount, devices.data());
 
-        queueFamily_ = UINT32_MAX;
-        for (uint32_t i = 0; i < familyCount; ++i) {
-            if (families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
-                VkBool32 present = VK_FALSE;
-                vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevice_, i, surface_, &present);
-                if (present) {
-                    queueFamily_ = i;
-                    break;
-                }
+        // Pick a device that can actually present to this window: devices[0] is
+        // often a software adapter or a display-less GPU whose surface support
+        // cannot back a swapchain for this HWND.
+        int bestScore = -1;
+        for (uint32_t i = 0; i < deviceCount; ++i) {
+            VkPhysicalDeviceProperties props{};
+            vkGetPhysicalDeviceProperties(devices[i], &props);
+            char why[96] = {0};
+            const int score = DevicePresentScore(devices[i], surface_, why, sizeof(why));
+            NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
+                         "Vulkan: device[%u] \"%s\" type=%d -> %s", i, props.deviceName,
+                         static_cast<int>(props.deviceType), why);
+            if (score < 0) continue;
+            if (score > bestScore) {
+                bestScore = score;
+                physicalDevice_ = devices[i];
             }
         }
+        if (physicalDevice_ == VK_NULL_HANDLE) {
+            NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Warn,
+                         "Vulkan: no device advertised swapchain support; falling back to devices[0]");
+            physicalDevice_ = devices[0];
+        }
+        if (!DeviceHasExtension(physicalDevice_, VK_KHR_SWAPCHAIN_EXTENSION_NAME)) {
+            NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Error,
+                         "Vulkan: selected device does not support VK_KHR_swapchain");
+            return false;
+        }
+
+        queueFamily_ = FindGraphicsPresentQueueFamily(physicalDevice_, surface_);
         if (queueFamily_ == UINT32_MAX) {
             NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Error,
                          "Vulkan: no queue family with graphics+present support");
@@ -1433,9 +1840,10 @@ private:
         dci.enabledExtensionCount = 1;
         dci.ppEnabledExtensionNames = deviceExts;
 
-        if (vkCreateDevice(physicalDevice_, &dci, nullptr, &device_) != VK_SUCCESS) {
+        const VkResult devRes = vkCreateDevice(physicalDevice_, &dci, nullptr, &device_);
+        if (devRes != VK_SUCCESS) {
             NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Error,
-                         "Vulkan: vkCreateDevice failed");
+                         "Vulkan: vkCreateDevice failed (%s)", VkResultName(devRes));
             return false;
         }
         volkLoadDevice(device_);
@@ -1445,8 +1853,13 @@ private:
         vkGetPhysicalDeviceProperties(physicalDevice_, &props);
         minUboAlignment_ = std::max<uint32_t>(props.limits.minUniformBufferOffsetAlignment, 16u);
         maxSampleCounts_ = props.limits.framebufferColorSampleCounts;
+        NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
+                     "Vulkan: using \"%s\" apiVersion=%u.%u.%u", props.deviceName,
+                     VK_VERSION_MAJOR(props.apiVersion), VK_VERSION_MINOR(props.apiVersion),
+                     VK_VERSION_PATCH(props.apiVersion));
         return true;
     }
+
 
     bool CreateSwapchain() { return RecreateSwapchain(); }
 
@@ -1454,26 +1867,33 @@ private:
         vkDeviceWaitIdle(device_);
         if (swapchain_) DestroySwapchain();
 
-        VkSurfaceCapabilitiesKHR caps;
-        vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice_, surface_, &caps);
+        VkSurfaceCapabilitiesKHR caps{};
+        const VkResult capsRes =
+            vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice_, surface_, &caps);
         uint32_t formatCount = 0;
         vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice_, surface_, &formatCount, nullptr);
         std::vector<VkSurfaceFormatKHR> formats(formatCount);
-        vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice_, surface_, &formatCount, formats.data());
+        if (formatCount)
+            vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice_, surface_, &formatCount,
+                                                 formats.data());
         uint32_t modeCount = 0;
         vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice_, surface_, &modeCount, nullptr);
         std::vector<VkPresentModeKHR> modes(modeCount);
-        vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice_, surface_, &modeCount,
-                                                  modes.data());
+        if (modeCount)
+            vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice_, surface_, &modeCount,
+                                                      modes.data());
 
-        swapchainFormat_ = SwapchainFormat(formats);
-        VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR;
-        for (VkPresentModeKHR m : modes) {
-            if (m == VK_PRESENT_MODE_MAILBOX_KHR) {
-                presentMode = m;
-                break;
-            }
+        if (capsRes != VK_SUCCESS || formats.empty() || modes.empty()) {
+            NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Error,
+                         "Vulkan: surface is not swapchain-capable (caps=%s formats=%u modes=%u)",
+                         VkResultName(capsRes), formatCount, modeCount);
+            return false;
         }
+
+        // Present mode is negotiated below: some drivers advertise MAILBOX/IMMEDIATE but
+        // reject them at swapchain creation time (seen on RTX 20xx drivers, which return
+        // VK_ERROR_NATIVE_WINDOW_IN_USE_KHR), so FIFO stays as the guaranteed fallback.
+        VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR;
 
         uint32_t w = caps.currentExtent.width != UINT32_MAX
                          ? caps.currentExtent.width
@@ -1481,34 +1901,89 @@ private:
         uint32_t h = caps.currentExtent.height != UINT32_MAX
                          ? caps.currentExtent.height
                          : static_cast<uint32_t>(window_->Height());
-        if (w == 0 || h == 0) {
-            w = 1280;
-            h = 720;
-        }
+        w = std::clamp(w, caps.minImageExtent.width, caps.maxImageExtent.width);
+        h = std::clamp(h, caps.minImageExtent.height, caps.maxImageExtent.height);
 
         uint32_t imageCount = caps.minImageCount + 1;
         if (caps.maxImageCount > 0 && imageCount > caps.maxImageCount)
             imageCount = caps.maxImageCount;
         imageCount = std::max(imageCount, 2u);
 
-        VkSwapchainCreateInfoKHR sci{};
-        sci.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-        sci.surface = surface_;
-        sci.minImageCount = imageCount;
-        sci.imageFormat = swapchainFormat_;
-        sci.imageColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
-        sci.imageExtent = {w, h};
-        sci.imageArrayLayers = 1;
-        sci.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
-        sci.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-        sci.preTransform = caps.currentTransform;
-        sci.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-        sci.presentMode = presentMode;
-        sci.clipped = VK_TRUE;
+        VkCompositeAlphaFlagBitsKHR composite = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+        if (!(caps.supportedCompositeAlpha & composite)) {
+            for (uint32_t bit = 1; bit <= VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR; bit <<= 1) {
+                if (caps.supportedCompositeAlpha & bit) {
+                    composite = static_cast<VkCompositeAlphaFlagBitsKHR>(bit);
+                    break;
+                }
+            }
+        }
+        VkImageUsageFlags usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+        if (caps.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_SRC_BIT)
+            usage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
 
-        if (vkCreateSwapchainKHR(device_, &sci, nullptr, &swapchain_) != VK_SUCCESS) {
-            NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Error,
-                         "Vulkan: vkCreateSwapchainKHR failed");
+        // Preferred formats first, then everything the surface actually advertises.
+        std::vector<VkFormat> candidates(
+            kSwapchainFormats,
+            kSwapchainFormats + sizeof(kSwapchainFormats) / sizeof(kSwapchainFormats[0]));
+        for (const VkSurfaceFormatKHR& f : formats) {
+            if (std::find(candidates.begin(), candidates.end(), f.format) == candidates.end())
+                candidates.push_back(f.format);
+        }
+
+        std::vector<VkPresentModeKHR> presentCandidates;
+        for (VkPresentModeKHR m : modes) {
+            if (m == VK_PRESENT_MODE_MAILBOX_KHR) presentCandidates.push_back(m);
+        }
+        for (VkPresentModeKHR m : modes) {
+            if (m == VK_PRESENT_MODE_FIFO_RELAXED_KHR) presentCandidates.push_back(m);
+        }
+        presentCandidates.push_back(VK_PRESENT_MODE_FIFO_KHR);
+
+        VkResult scRes = VK_ERROR_INITIALIZATION_FAILED;
+        for (VkPresentModeKHR mode : presentCandidates) {
+            for (VkFormat fmt : candidates) {
+                VkSwapchainCreateInfoKHR sci{};
+                sci.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+                sci.surface = surface_;
+                sci.minImageCount = imageCount;
+                sci.imageFormat = fmt;
+                sci.imageColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+                sci.imageExtent = {w, h};
+                sci.imageArrayLayers = 1;
+                sci.imageUsage = usage;
+                sci.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+                sci.preTransform = caps.currentTransform;
+                sci.compositeAlpha = composite;
+                sci.presentMode = mode;
+                sci.clipped = VK_TRUE;
+
+                scRes = vkCreateSwapchainKHR(device_, &sci, nullptr, &swapchain_);
+                if (scRes == VK_SUCCESS) {
+                    swapchainFormat_ = fmt;
+                    presentMode = mode;
+                    break;
+                }
+                NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Warn,
+                             "Vulkan: swapchain present=%d format=%d rejected (%s)",
+                             static_cast<int>(mode), static_cast<int>(fmt), VkResultName(scRes));
+            }
+            if (scRes == VK_SUCCESS) break;
+            if (mode != VK_PRESENT_MODE_FIFO_KHR) {
+                NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Warn,
+                             "Vulkan: present mode %d is advertised but unusable (%s); retrying with a simpler mode",
+                             static_cast<int>(mode), VkResultName(scRes));
+            }
+        }
+        if (scRes != VK_SUCCESS) {
+            NEON_LOG_CAT(
+                neon::core::LogCategory::Gfx, neon::core::LogLevel::Error,
+                "Vulkan: vkCreateSwapchainKHR failed (%s) extent=%ux%u range=[%u..%u]x[%u..%u] images=%u present=%d alpha=0x%x usage=0x%x supported=0x%x formats=%u modes=%u",
+                VkResultName(scRes), w, h, caps.minImageExtent.width, caps.maxImageExtent.width,
+                caps.minImageExtent.height, caps.maxImageExtent.height, imageCount,
+                static_cast<int>(presentMode), static_cast<unsigned>(composite),
+                static_cast<unsigned>(usage), static_cast<unsigned>(caps.supportedUsageFlags),
+                formatCount, modeCount);
             return false;
         }
 
@@ -1600,6 +2075,7 @@ private:
             return false;
 
         depthFormat_ = VK_FORMAT_UNDEFINED;
+        // (the chosen depth format is logged after the probe below)
         for (VkFormat f : kDepthFormats) {
             VkFormatProperties props;
             vkGetPhysicalDeviceFormatProperties(physicalDevice_, f, &props);
@@ -1660,9 +2136,12 @@ private:
         depthAtt.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
         depthAtt.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         depthAtt.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        depthAtt.initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-        depthAtt.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-        VkAttachmentReference depthRef{0, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
+        // GENERAL: the only layout that is valid both as a depth attachment and
+        // as a sampled texture, so the resolved depth never needs an
+        // attachment -> sample transition (see the note in ResolveDepth).
+        depthAtt.initialLayout = VK_IMAGE_LAYOUT_GENERAL;
+        depthAtt.finalLayout = VK_IMAGE_LAYOUT_GENERAL;
+        VkAttachmentReference depthRef{0, VK_IMAGE_LAYOUT_GENERAL};
         VkSubpassDescription subpass{};
         subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
         subpass.colorAttachmentCount = 0;
@@ -2169,6 +2648,21 @@ private:
                              &barrier);
     }
 
+    // Aspect mask for the engine depth format. A combined depth-stencil image
+    // must be transitioned with both aspects whenever either layout is a
+    // combined depth-stencil layout, which the depth-attachment layouts are:
+    // the NVIDIA driver crashes on the depth-only form.
+    VkImageAspectFlags DepthAspect() const {
+        switch (depthFormat_) {
+            case VK_FORMAT_D16_UNORM_S8_UINT:
+            case VK_FORMAT_D24_UNORM_S8_UINT:
+            case VK_FORMAT_D32_SFLOAT_S8_UINT:
+                return VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
+            default:
+                return VK_IMAGE_ASPECT_DEPTH_BIT;
+        }
+    }
+
     void TransitionImage(VkCommandBuffer cmd, VkImage image, VkImageLayout oldLayout,
                          VkImageLayout newLayout, VkPipelineStageFlags srcStage,
                          VkPipelineStageFlags dstStage, VkAccessFlags srcAccess,
@@ -2183,10 +2677,13 @@ private:
         barrier.srcAccessMask = srcAccess;
         barrier.dstAccessMask = dstAccess;
         barrier.subresourceRange = {aspect, 0, VK_REMAINING_MIP_LEVELS, 0, 1};
+        NEON_VK_TRACE("vt: barrier pre old=%d new=%d aspect=%u cmd=%p\n", (int)oldLayout, (int)newLayout, (unsigned)aspect, (void*)cmd);
         vkCmdPipelineBarrier(cmd, srcStage, dstStage, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+        NEON_VK_TRACE("vt: barrier post\n");
     }
 
     void SubmitQueue(Frame& f, VkCommandBuffer cmd, bool waitAcquire = false) {
+        NEON_VK_TRACE("bt: SubmitQueue\n");
         VkSubmitInfo si{};
         si.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
         si.commandBufferCount = 1;
@@ -2208,33 +2705,71 @@ private:
         si.signalSemaphoreCount = 1;
         si.pSignalSemaphores = &f.progress;
         f.progressSignaled = true;
-        vkQueueSubmit(queue_, 1, &si, f.readFence);
+        const VkResult midRes = vkQueueSubmit(queue_, 1, &si, f.readFence);
+        if (midRes != VK_SUCCESS) {
+            NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Error,
+                         "Vulkan: mid-frame queue submit failed: %s (%d)",
+                         VkResultName(midRes), static_cast<int>(midRes));
+        }
         vkWaitForFences(device_, 1, &f.readFence, VK_TRUE, UINT64_MAX);
         vkResetFences(device_, 1, &f.readFence);
     }
 
+    // Vulkan has no implicit lifetime tracking for handles referenced by a
+    // recorded but unsubmitted command buffer (OpenGL does; the driver defers
+    // deletion). Destroying a framebuffer/attachment (or a buffer/image still
+    // reachable from pending commands) made the NVIDIA driver fault inside
+    // vkCmdEndRenderPass. Flush first: an open render pass means attachments are
+    // in flight, and SubmitQueue fully synchronises before the handle dies.
+    void FlushPendingWorkBeforeDestroy(Target* destroyed) {
+        if (!device_ || frames_.empty()) return;
+        Frame& f = CurrentFrame();
+        if (!f.cmdOpen || !rpActive_) {
+            if (destroyed && target_ == destroyed) target_ = nullptr;
+            return;
+        }
+        EndRenderPassIfActive(f);
+        vkEndCommandBuffer(f.cmd);
+        f.cmdOpen = false;
+        SubmitQueue(f, f.cmd);
+        if (destroyed && target_ == destroyed) target_ = nullptr;
+    }
     // ------------------------------------------------------------------
     // Frame / target management
     // ------------------------------------------------------------------
     void BindTarget(Target* target) {
+        NEON_VK_TRACE("bt: enter target=%p old=%p\n", (void*)target, (void*)target_);
         Frame& f = CurrentFrame();
         // Bound each submission to one target's render pass: the tested Intel
         // driver device-losts when the whole frame is in a single command
         // buffer. A semaphore chain keeps sampler reads memory-coherent across
         // the submissions.
         if (target_ != target && f.cmdOpen) {
+            NEON_VK_TRACE("bt: flushing pending cmd\n");
             EndRenderPassIfActive(f);
             vkEndCommandBuffer(f.cmd);
             f.cmdOpen = false;
             SubmitQueue(f, f.cmd);
+            NEON_VK_TRACE("bt: flush done\n");
         }
         EndRenderPassIfActive(f);
         EnsureFrameStarted();
-        clearPending_ = false;
         target_ = target;
+        // Binding a target resets the viewport to its full size, matching the GL
+        // backend. The shadow pass relies on this: it binds a shadowSize x
+        // shadowSize cascade target without an explicit SetViewport, and a stale
+        // window-sized viewport stretched the light frustum so the maps no
+        // longer lined up with the lit shader sampling them.
+        if (target) {
+            viewportX_ = 0;
+            viewportY_ = 0;
+            viewportWidth_ = target->width;
+            viewportHeight_ = target->height;
+        }
     }
 
     void EnsureFrameStarted() {
+        NEON_VK_TRACE("vt: EnsureFrameStarted ready=%d\n", (int)frameReady_);
         Frame& f = CurrentFrame();
         if (frameReady_) return;
         frameReady_ = true;
@@ -2257,7 +2792,10 @@ private:
         AllocUboSet(f);
         rpActive_ = false;
         target_ = nullptr;
-        clearPending_ = false;
+        // A frame starts with no pending clear: a target that was cleared but
+        // never drawn into leaves no stale clear behind for its next pass.
+        for (auto& entry : renderTargets_) entry.second.clearPending = false;
+        if (swapTarget_) swapTarget_->clearPending = false;
         uniformsDirty_ = true;
         OpenCmd(f);
     }
@@ -2318,21 +2856,20 @@ private:
     }
 
     void EnsureRenderPass(Frame& f) {
+        NEON_VK_TRACE("vt: EnsureRenderPass target=%p swap=%d\n", (void*)target_, target_ ? (int)target_->swapchain : -1);
         if (rpActive_ || !target_) return;
         OpenCmd(f);
         if (target_->swapchain) AcquireIfNeeded();
 
         if (target_->depthOnly) {
             VkImageLayout cur = TrackedLayout(target_->depthImage);
-            if (cur != VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
-                TransitionImage(f.cmd, target_->depthImage, cur,
-                                VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+            if (cur != VK_IMAGE_LAYOUT_GENERAL) {
+                TransitionImage(f.cmd, target_->depthImage, cur, VK_IMAGE_LAYOUT_GENERAL,
                                 VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
                                 VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT, 0,
                                 VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-                                VK_IMAGE_ASPECT_DEPTH_BIT);
-                SetTrackedLayout(target_->depthImage,
-                                 VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+                                DepthAspect());
+                SetTrackedLayout(target_->depthImage, VK_IMAGE_LAYOUT_GENERAL);
             }
         } else {
             VkImage colorImage =
@@ -2365,7 +2902,8 @@ private:
             }
         }
 
-        VkRenderPass rp = clearPending_ ? target_->rpClear : target_->rpLoad;
+        const bool targetClear = target_->clearPending;
+        VkRenderPass rp = targetClear ? target_->rpClear : target_->rpLoad;
         VkFramebuffer fb =
             target_->swapchain ? target_->swapFramebuffers[imageIndex_] : target_->framebuffer;
         if (!rp || !fb) return;
@@ -2378,16 +2916,16 @@ private:
                          static_cast<uint32_t>(target_->height)};
         VkClearValue clears[2] = {};
         if (target_->depthOnly) {
-            clears[0].depthStencil = {clearDepth_, 0};
+            clears[0].depthStencil = {target_->pendingClearDepth, 0};
         } else {
-            clears[0].color = clearColor_;
-            clears[1].depthStencil = {clearDepth_, 0};
+            clears[0].color = target_->pendingClearColor;
+            clears[1].depthStencil = {target_->pendingClearDepth, 0};
         }
         bi.clearValueCount = target_->depthOnly ? 1 : 2;
         bi.pClearValues = clears;
         vkCmdBeginRenderPass(f.cmd, &bi, VK_SUBPASS_CONTENTS_INLINE);
         rpActive_ = true;
-        clearPending_ = false;
+        target_->clearPending = false;
     }
 
     void DestroyTargetInternal(Target& rt) {
@@ -2447,6 +2985,7 @@ private:
         for (uint32_t i = 0; i < kMaxSamplerSlots; ++i) key.ids[i] = boundTextures_[i];
         auto it = texSetCache_.find(key);
         if (it != texSetCache_.end()) return it->second;
+        NEON_VK_TRACE("vt: texture set cache miss tex0=%u tex2=%u\n", boundTextures_[0], boundTextures_[2]);
 
         VkDescriptorSetAllocateInfo ai{};
         ai.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -2459,28 +2998,46 @@ private:
         }
 
         const Texture* white = GetTexture(white_);
+        NEON_VK_TRACE("vt: ets alloc ok white=%p\n", (const void*)white);
         std::vector<VkDescriptorImageInfo> infos(kMaxSamplerSlots);
         std::vector<VkWriteDescriptorSet> writes;
         writes.reserve(kMaxSamplerSlots);
         for (uint32_t i = 0; i < kMaxSamplerSlots; ++i) {
             const Texture* tex = GetTexture({boundTextures_[i]});
+            NEON_VK_TRACE("vt: ets i=%u id=%u tex=%p\\n", i, boundTextures_[i], (const void*)tex);
             if (!tex || !tex->view) tex = white;
             const VkImageLayout sampleLayout =
                 tex->owned ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_GENERAL;
             if (tex->image) {
                 const VkImageAspectFlags aspect =
-                    tex->format == depthFormat_ ? VK_IMAGE_ASPECT_DEPTH_BIT
+                    tex->format == depthFormat_ ? DepthAspect()
                                                 : VK_IMAGE_ASPECT_COLOR_BIT;
                 const VkImageLayout cur = TrackedLayout(tex->image);
                 if (cur != sampleLayout && f.cmd) {
-                    TransitionImage(f.cmd, tex->image, cur, sampleLayout,
-                                    VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
-                                        VK_PIPELINE_STAGE_TRANSFER_BIT,
-                                    VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-                                    VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
-                                        VK_ACCESS_TRANSFER_WRITE_BIT,
-                                    VK_ACCESS_SHADER_READ_BIT, aspect);
-                    SetTrackedLayout(tex->image, sampleLayout);
+                    // A depth image written by a render pass needs the fragment-test
+                    // stages in the source scope: naming only the colour stages makes
+                    // the barrier claim nothing wrote the depth attachment.
+                    const bool isDepth = tex->format == depthFormat_;
+                    const VkPipelineStageFlags srcStage =
+                        isDepth ? (VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
+                                   VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT |
+                                   VK_PIPELINE_STAGE_TRANSFER_BIT)
+                                : (VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+                                   VK_PIPELINE_STAGE_TRANSFER_BIT);
+                    const VkAccessFlags srcAccess =
+                        isDepth ? (VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT |
+                                   VK_ACCESS_TRANSFER_WRITE_BIT)
+                                : (VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
+                                   VK_ACCESS_TRANSFER_WRITE_BIT);
+                    if (std::getenv("NEON_NO_TEX_TRANSITION")) {
+                        SetTrackedLayout(tex->image, sampleLayout);
+                    } else {
+                        NEON_VK_TRACE("vt: ets transition i=%u img=%p cur=%d new=%d aspect=%u\n", i, (void*)tex->image, (int)cur, (int)sampleLayout, (unsigned)aspect);
+                        TransitionImage(f.cmd, tex->image, cur, sampleLayout, srcStage,
+                                        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, srcAccess,
+                                        VK_ACCESS_SHADER_READ_BIT, aspect);
+                        SetTrackedLayout(tex->image, sampleLayout);
+                    }
                 }
             }
             infos[i].imageLayout = sampleLayout;
@@ -2495,8 +3052,10 @@ private:
             w.pImageInfo = &infos[i];
             writes.push_back(w);
         }
+        NEON_VK_TRACE("vt: ets updating %u writes\n", (unsigned)writes.size());
         vkUpdateDescriptorSets(device_, static_cast<uint32_t>(writes.size()), writes.data(), 0,
                                nullptr);
+        NEON_VK_TRACE("vt: ets update ok\n");
         texSetCache_.emplace(key, set);
         return set;
     }
@@ -2512,11 +3071,15 @@ private:
     }
 
     bool PrepareDraw(Frame& f) {
+        NEON_VK_TRACE("vt: PrepareDraw enter\n");
         const uint64_t uboOffset = SnapshotUniforms(f);
+        NEON_VK_TRACE("vt: SnapshotUniforms -> %llu\n", (unsigned long long)uboOffset);
         if (uboOffset == UINT64_MAX) return false;
         if (!f.uboSet) AllocUboSet(f);
         lastUboOffset_ = uboOffset;
+        NEON_VK_TRACE("vt: EnsureTextureSet start tex0=%u\n", boundTextures_[0]);
         lastTexSet_ = EnsureTextureSet(f);
+        NEON_VK_TRACE("vt: EnsureTextureSet done set=%p\n", (void*)lastTexSet_);
         return lastTexSet_ != VK_NULL_HANDLE && f.uboSet != VK_NULL_HANDLE;
     }
 
@@ -2568,7 +3131,18 @@ private:
         VkDeviceSize voffs[3] = {0, instanceOffset, colorOffset};
         vkCmdBindVertexBuffers(f.cmd, 0, instanced ? (colored ? 3u : 2u) : 1u, vbs, voffs);
         if (mesh.ibo) {
-            vkCmdBindIndexBuffer(f.cmd, mesh.ibo, 0, VK_INDEX_TYPE_UINT16);
+            vkCmdBindIndexBuffer(f.cmd, mesh.ibo, 0,
+                                mesh.indexType ? VK_INDEX_TYPE_UINT32
+                                                : VK_INDEX_TYPE_UINT16);
+        if (VkTraceEnabled()) {
+            const UniEntry* at = FindUniform("uAlphaTest");
+            const float atv = at ? *reinterpret_cast<const float*>(uniforms_ + at->offset) : -1.0f;
+            const UniEntry* ht = FindUniform("uHasTexture");
+            const int htv = ht ? *reinterpret_cast<const int*>(uniforms_ + ht->offset) : -1;
+            NEON_VK_TRACE("vt: draw prog=%s idx=%u inst=%u alphaTest=%.3f hasTex=%d tex0=%u\n",
+                          prog->name.c_str(), mesh.indexCount, instanceCount, atv, htv,
+                          boundTextures_[0]);
+        }
             vkCmdDrawIndexed(f.cmd, mesh.indexCount, instanceCount, 0, 0, 0);
         }
     }
@@ -2815,6 +3389,7 @@ private:
 
     void ReadImage(VkImage image, VkImageLayout currentLayout, VkFormat format, int readW,
                    int readH, void* rgba, int x, int y, bool waitAcquire = false) {
+        NEON_VK_TRACE("vt: ReadImage img=%p %dx%d at %d,%d\n", (void*)image, readW, readH, x, y);
         if (!rgba || readW <= 0 || readH <= 0) return;
         Frame& f = CurrentFrame();
         EndRenderPassIfActive(f);
@@ -2938,6 +3513,9 @@ private:
 
     TextureHandle white_;
     ShaderHandle currentShader_;
+    // Backend-internal depth-resolve pass (see ResolveDepth).
+    ShaderHandle depthResolveShader_;
+    MeshHandle resolveQuad_;
     uint32_t currentProgramId_ = 0;
     BlendState currentBlend_ = BlendState::Opaque;
     bool currentDepthTest_ = false;
@@ -2961,9 +3539,6 @@ private:
     VkDescriptorSet lastTexSet_ = VK_NULL_HANDLE;
     Target* target_ = nullptr;
     bool rpActive_ = false;
-    bool clearPending_ = false;
-    VkClearColorValue clearColor_ = {{0.02f, 0.03f, 0.08f, 1.0f}};
-    float clearDepth_ = 1.0f;
     bool compressedTexSupported_ = false;
     bool depthUsable_ = true;
 };

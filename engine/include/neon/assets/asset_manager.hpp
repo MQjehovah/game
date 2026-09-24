@@ -43,6 +43,11 @@ struct GltfMeshNode {
     math::Mat4 transform;
     gfx::Mesh mesh;
     gfx::Material material;
+    // Source glTF material name. Multi-state kit-piece maps (Summoner's Rift)
+    // ship every variant of a prop / terrain cell - base, walled, upgraded,
+    // chemtech, hextech, cloud, ocean, infernal, mountain - stacked at the same
+    // coordinates, so the renderer needs the name to pick one layer.
+    std::string materialName;
 };
 
 // Raw glTF buffer layout (bufferViews / accessors arrays), kept alongside the

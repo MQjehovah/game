@@ -52,6 +52,7 @@ public:
     struct ShadowSortKey {
         const ShadowDraw* draw;
         float z;
+        float extent;
     };
 
     ShadowSystem() = default;
@@ -80,6 +81,15 @@ public:
     // to avoid running the pass twice per frame).
     bool ShadowPassRanThisFrame() const { return shadowPassRanThisFrame_; }
     void RecordCaster(const ShadowDraw& draw) { shadowCasters_.push_back(draw); }
+    // True while casters recorded last frame are still waiting to be consumed by
+    // RunPass. A host re-running the pass (Renderer::RefreshShadowPass) must not
+    // clear the cascades with an EMPTY list - that would leave the maps blank for
+    // the main pass that is about to sample them.
+    bool HasRecordedCasters() const { return !shadowCasters_.empty(); }
+    // True once at least one pass has rendered (and thereby cleared) the cascade
+    // maps, i.e. they hold defined values and can safely be sampled even if a
+    // later frame has no casters to draw.
+    bool MapsInitialized() const { return csmActive_; }
 
     // Re-runs the cascade + point-light shadow passes for `camera`. Called from
     // Renderer::SetCamera (once per frame) and Renderer::RefreshShadowPass
@@ -91,10 +101,27 @@ public:
     // Public API forwards + per-frame scene-uniform reads.
     bool CsmActive() const { return csmActive_; }
     int ShadowSize() const { return shadowSize_; }
+    // Cascade shadow-map resolution (per cascade). Recreates the cascade targets
+    // when the system is already initialized, so quality presets can trade
+    // shadow sharpness for fill rate at runtime. Clamped to [256, 4096].
+    void SetShadowSize(int size);
+    // Shadow coverage distance (world units along the camera forward axis). 0
+    // means "use the camera far plane". Clamping the cascades to a short range
+    // is the single biggest shadow-quality win in a MOBA-style overhead camera:
+    // the same 1024-texel map then covers ~120 units instead of the whole 800
+    // unit far plane, so texel density goes up by an order of magnitude.
+    void SetShadowDistance(float distance) { shadowDistance_ = distance > 0.0f ? distance : 0.0f; }
+    float ShadowDistance() const { return shadowDistance_; }
+    // PSSM lambda (0 = uniform splits, 1 = fully logarithmic). See
+    // ComputeCascadeSplitsPSSM.
+    void SetCascadeLambda(float lambda) { cascadeLambda_ = lambda; }
+    float CascadeLambda() const { return cascadeLambda_; }
     bool PointShadowsEnabled() const { return pointShadowsEnabled_; }
     bool PointShadowsActive() const { return pointShadowsActive_; }
     const math::Mat4* LightViewProj() const { return lightViewProj_; }
     const float* CascadeSplits() const { return cascadeSplits_; }
+    // World size of one texel of each cascade's shadow map (normal-offset bias).
+    const float* CascadeTexelWorld() const { return cascadeTexelWorld_; }
     const TextureHandle* ShadowDepthTex() const { return shadowDepthTex_; }
     const TextureHandle* PointShadowDepthTex() const { return &pointShadowDepthTex_[0][0]; }
     // The skinned depth program is shared with the SSAO depth pre-pass in the
@@ -109,6 +136,9 @@ private:
     void DrawPointShadowCaster(const ShadowDraw& draw, const math::Mat4& lightVP,
                                const math::Vec3& lightPos, float range);
     bool TestDepthTargetCapability();
+    // (Re)creates the per-cascade color-encoded depth targets at shadowSize_.
+    // Returns false when any target fails (CSM then stays disabled).
+    bool CreateCascadeTargets();
 
     IRenderBackend* backend_ = nullptr;
     uint64_t* sceneUniformStamp_ = nullptr;
@@ -125,12 +155,24 @@ private:
     TextureHandle shadowDepthTex_[kShadowCascades];
     int shadowSize_ = kShadowMapSize;
     math::Mat4 lightViewProj_[kShadowCascades];
+    float cascadeTexelWorld_[kShadowCascades] = {0.0f, 0.0f, 0.0f};
     float cascadeSplits_[kShadowCascades + 1] = {0.1f, 20.0f, 60.0f, 100.0f};
+    // 150 world units by default: with the old uniform splits the first cascade
+    // spanned 160 of an 800 unit far plane, so a 1024 map gave ~0.3 world units
+    // per texel and unit shadows were a blocky slab. Capping the range costs
+    // nothing visible (shadows that far out are sub-pixel) and buys roughly an
+    // order of magnitude of texel density where the player actually looks.
+    float shadowDistance_ = 150.0f;
+    float cascadeLambda_ = 0.75f;
     bool csmEnabled_ = false;
     bool csmActive_ = false;
     bool shadowsForcedOff_ = false;
     bool shadowPassRanThisFrame_ = false;
     bool shadowRecording_ = true;
+    // True when the cascade FBOs carry a depth attachment AND the backend's
+    // depth buffer works, so SetDepthTest(true, true) resolves occlusion per
+    // texel. False keeps the painter's-order fallback (no depth buffer).
+    bool depthTestedCascades_ = false;
     std::vector<ShadowDraw> shadowCasters_;
 
     RenderTargetHandle pointShadowRT_[kShadowPointLights][6];

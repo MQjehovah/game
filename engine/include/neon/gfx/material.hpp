@@ -42,6 +42,12 @@ struct Material {
     // Depth test for this draw (default on). Set false for overlays that must
     // paint over the scene regardless of depth (e.g. the fog-of-war mask).
     bool depthTest = true;
+    // Depth-projected decal: the mesh is a flat quad at the decal origin and the
+    // shader rebuilds the scene surface from the resolved main-pass depth, so
+    // the decal conforms to slopes/stairs instead of floating above them (no
+    // z-fighting, no 0.02 lift). Requires a sampleable scene depth; the renderer
+    // silently falls back to a plain unlit quad when none is available.
+    bool decal = false;
     // Casts a directional-light (CSM) shadow. Default true so trees/props cast;
     // set false on large receivers (ground plane, water, terrain) that would
     // otherwise self-shadow into a black swath.

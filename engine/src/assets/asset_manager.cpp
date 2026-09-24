@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <cstdlib>
 #include <functional>
 #include <fstream>
 #include <iterator>
@@ -1242,6 +1243,7 @@ GltfAsset AssetManager::LoadGltfJson(core::Json& root, std::vector<std::vector<u
 
     // Materials.
     std::vector<gfx::Material> materials;
+    std::vector<std::string> materialNames;  // parallel to `materials`, for diagnostics
     if (const core::Json* mats = root.Get("materials")) {
         for (size_t i = 0; i < mats->Size(); ++i) {
             const core::Json* m = mats->At(i);
@@ -1251,14 +1253,25 @@ GltfAsset AssetManager::LoadGltfJson(core::Json& root, std::vector<std::vector<u
             // surfaces must not be back-face culled or they show holes.
             if (const core::Json* am = m->Get("alphaMode")) {
                 std::string alpha = am->GetString();
+                // glTF spells these "MASK"/"BLEND"; this repo's own exporters
+                // have written "mask". Compare case-insensitively so a valid
+                // cut-out never silently degrades into an opaque surface.
+                for (char& c : alpha) {
+                    c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+                }
                 if (alpha == "MASK") {
                     mat.alphaTest = true;
                     mat.transparent = false;
                 } else if (alpha == "BLEND") {
                     mat.transparent = true;
                 }
-                if (const core::Json* cf = m->Get("alphaCutoffFactor")) {
+                // glTF names this field `alphaCutoff`; the older
+                // `alphaCutoffFactor` spelling is accepted as a fallback
+                // because this repo's own importers wrote it.
+                if (const core::Json* cf = m->Get("alphaCutoff")) {
                     mat.alphaCutoff = static_cast<float>(cf->GetNumber(0.5));
+                } else if (const core::Json* legacy = m->Get("alphaCutoffFactor")) {
+                    mat.alphaCutoff = static_cast<float>(legacy->GetNumber(0.5));
                 }
             }
             if (const core::Json* ds = m->Get("doubleSided")) {
@@ -1305,6 +1318,8 @@ GltfAsset AssetManager::LoadGltfJson(core::Json& root, std::vector<std::vector<u
                     mat.normalScale = static_cast<float>(sc->GetNumber(1.0));
                 }
             }
+            materialNames.push_back(m->Get("name") ? m->Get("name")->GetString()
+                                                   : std::string());
             materials.push_back(mat);
         }
     }
@@ -1318,6 +1333,7 @@ GltfAsset AssetManager::LoadGltfJson(core::Json& root, std::vector<std::vector<u
         std::vector<uint32_t> indicesU32;
         bool needsU32 = false;
         gfx::Material material;
+        std::string materialName;  // glTF material name (diagnostics/filtering)
         std::vector<uint16_t> jointIds;   // 4 per vertex
         std::vector<float> jointWeights;  // 4 per vertex
         bool skinned = false;
@@ -1343,6 +1359,8 @@ GltfAsset AssetManager::LoadGltfJson(core::Json& root, std::vector<std::vector<u
                 rm.material = matIdx >= 0 && matIdx < static_cast<int>(materials.size())
                                   ? materials[matIdx]
                                   : gfx::Material::Lit({}, gfx::Color::White);
+                if (matIdx >= 0 && matIdx < static_cast<int>(materialNames.size()))
+                    rm.materialName = materialNames[static_cast<size_t>(matIdx)];
 
                 const uint8_t* posBase = nullptr;
                 int posStride = 0, posCount = 0;
@@ -1657,6 +1675,16 @@ GltfAsset AssetManager::LoadGltfJson(core::Json& root, std::vector<std::vector<u
                                 static_cast<float>(jids[vi * 4 + c]);
                 }
             }
+            // Diagnostics: NEON_GLTF_ONLY_MAT / NEON_GLTF_SKIP_MAT substring
+            // filters on the glTF material name, used to triage maps whose
+            // primitives overlap (e.g. several material variants of one kit
+            // piece). Unset in normal runs.
+            static const char* onlyMat = std::getenv("NEON_GLTF_ONLY_MAT");
+            static const char* skipMat = std::getenv("NEON_GLTF_SKIP_MAT");
+            if (onlyMat && *onlyMat && rm.materialName.find(onlyMat) == std::string::npos)
+                continue;
+            if (skipMat && *skipMat && rm.materialName.find(skipMat) != std::string::npos)
+                continue;
             gfx::Mesh mesh =
                 rm.needsU32
                     ? gfx::Mesh::CreateFromDataU32(*renderer_, rm.verts.data(),
@@ -1679,7 +1707,7 @@ GltfAsset AssetManager::LoadGltfJson(core::Json& root, std::vector<std::vector<u
                     path + "#" + std::to_string(idx) + ":" + std::to_string(r);
                 meshes_[meshKey] = mesh;
                 meshRefs_[meshKey] = 1;
-                out.nodes.push_back({world, mesh, rm.material});
+                out.nodes.push_back({world, mesh, rm.material, rm.materialName});
             }
             }  // for r: 该 mesh 的所有 primitives
         }

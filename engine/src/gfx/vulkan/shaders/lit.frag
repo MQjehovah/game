@@ -13,13 +13,17 @@ layout(location = 0) out vec4 FragColor;
 
 #include "engine_ubo.glsl"
 
+// Binding index == renderer texture unit (the backend writes descriptor i to
+// dstBinding i). Units 1 is the terrain grass splat and 5..7 are the CSM
+// cascades, so these must NOT be renumbered to 1..6.
 layout(set = 1, binding = 0)  uniform sampler2D uAlbedo;
-layout(set = 1, binding = 1)  uniform sampler2D uMR;
-layout(set = 1, binding = 2)  uniform sampler2D uOcclusion;
-layout(set = 1, binding = 3)  uniform sampler2D uEmissive;
-layout(set = 1, binding = 4)  uniform sampler2D uShadowMap0;
-layout(set = 1, binding = 5)  uniform sampler2D uShadowMap1;
-layout(set = 1, binding = 6)  uniform sampler2D uShadowMap2;
+layout(set = 1, binding = 1)  uniform sampler2D uGrassTex; // TERRAIN_SPLAT only
+layout(set = 1, binding = 2)  uniform sampler2D uMR;
+layout(set = 1, binding = 3)  uniform sampler2D uOcclusion;
+layout(set = 1, binding = 4)  uniform sampler2D uEmissive;
+layout(set = 1, binding = 5)  uniform sampler2D uShadowMap0;
+layout(set = 1, binding = 6)  uniform sampler2D uShadowMap1;
+layout(set = 1, binding = 7)  uniform sampler2D uShadowMap2;
 layout(set = 1, binding = 8)  uniform sampler2D uPointShadowMap0;
 layout(set = 1, binding = 9)  uniform sampler2D uPointShadowMap1;
 layout(set = 1, binding = 10) uniform sampler2D uPointShadowMap2;
@@ -35,11 +39,50 @@ layout(set = 1, binding = 19) uniform sampler2D uPointShadowMap11;
 layout(set = 1, binding = 20) uniform sampler2D uIrradianceMap;
 layout(set = 1, binding = 21) uniform sampler2D uPrefilteredMap;
 layout(set = 1, binding = 22) uniform sampler2D uBrdfLUT;
-// A2/A3 (normal map + probe GI + hemisphere ambient) are GL-only for now: the
-// VK descriptor set layout is compiled for the fixed set=1 bindings above, and
-// this renderer's VK backend is still experimental (descriptor reuse / pseudo-
-// HDR / serial submit are open - see TODO A1/A2/B5). Adding bindings here would
-// reference descriptors the layout does not declare.
+// Material maps the renderer binds at their texture units: 23 = normal map
+// (Material::normalMap) and 24 = baked light-probe irradiance atlas. The
+// set-1 layout declares all 25 units, and an unbound unit reads the white
+// fallback texture, so both stay inert until the renderer hands one over.
+layout(set = 1, binding = 23) uniform sampler2D uNormalMap;
+layout(set = 1, binding = 24) uniform sampler2D uLightProbeAtlas;
+
+// A3 probe-field GI: trilinear-sample the baked 2D irradiance atlas by world
+// position (mirrors CPU light_probe.cpp SampleProbeField exactly). The atlas is
+// res x (res*res): tile (i,j,k) at texel (i, k*res + j). Irradiance is encoded
+// LDR (value * uLightProbeInvMax). Disabled when uLightProbeEnabled == 0.
+vec3 SampleLightProbeAtlas(vec3 wp) {
+    vec3 u = clamp((wp - eng.uLightProbeMin) /
+                       max(eng.uLightProbeExtent, vec3(1e-5)) * eng.uLightProbeRes - 0.5,
+                   vec3(0.0), vec3(eng.uLightProbeRes - 1.0));
+    ivec3 i0 = ivec3(floor(u));
+    ivec3 i1 = min(i0 + ivec3(1), ivec3(ivec3(eng.uLightProbeRes) - 1));
+    vec3 f = u - vec3(i0);
+    float invRes = 1.0 / eng.uLightProbeRes;
+    float invRsq = 1.0 / (eng.uLightProbeRes * eng.uLightProbeRes);
+    vec3 c000 = texture(uLightProbeAtlas, vec2((float(i0.x) + 0.5) * invRes,
+                        (float(i0.z) * eng.uLightProbeRes + float(i0.y) + 0.5) * invRsq)).rgb;
+    vec3 c100 = texture(uLightProbeAtlas, vec2((float(i1.x) + 0.5) * invRes,
+                        (float(i0.z) * eng.uLightProbeRes + float(i0.y) + 0.5) * invRsq)).rgb;
+    vec3 c010 = texture(uLightProbeAtlas, vec2((float(i0.x) + 0.5) * invRes,
+                        (float(i0.z) * eng.uLightProbeRes + float(i1.y) + 0.5) * invRsq)).rgb;
+    vec3 c110 = texture(uLightProbeAtlas, vec2((float(i1.x) + 0.5) * invRes,
+                        (float(i0.z) * eng.uLightProbeRes + float(i1.y) + 0.5) * invRsq)).rgb;
+    vec3 c001 = texture(uLightProbeAtlas, vec2((float(i0.x) + 0.5) * invRes,
+                        (float(i1.z) * eng.uLightProbeRes + float(i0.y) + 0.5) * invRsq)).rgb;
+    vec3 c101 = texture(uLightProbeAtlas, vec2((float(i1.x) + 0.5) * invRes,
+                        (float(i1.z) * eng.uLightProbeRes + float(i0.y) + 0.5) * invRsq)).rgb;
+    vec3 c011 = texture(uLightProbeAtlas, vec2((float(i0.x) + 0.5) * invRes,
+                        (float(i1.z) * eng.uLightProbeRes + float(i1.y) + 0.5) * invRsq)).rgb;
+    vec3 c111 = texture(uLightProbeAtlas, vec2((float(i1.x) + 0.5) * invRes,
+                        (float(i1.z) * eng.uLightProbeRes + float(i1.y) + 0.5) * invRsq)).rgb;
+    vec3 x00 = mix(c000, c100, f.x);
+    vec3 x01 = mix(c010, c110, f.x);
+    vec3 x10 = mix(c001, c101, f.x);
+    vec3 x11 = mix(c011, c111, f.x);
+    vec3 y0 = mix(x00, x01, f.y);
+    vec3 y1 = mix(x10, x11, f.y);
+    return mix(y0, y1, f.z) * eng.uLightProbeInvMax;
+}
 
 float DecodeDepth(vec4 v) {
     return dot(v, vec4(1.0, 1.0 / 255.0, 1.0 / 65025.0, 1.0 / 16581375.0));
@@ -56,21 +99,68 @@ float G_Schlick(float ndl, float ndv, float a) {
 vec3 F_Schlick(float vdh, vec3 f0) {
     return f0 + (1.0 - f0) * pow(1.0 - vdh, 5.0);
 }
+// Interleaved gradient noise (Jimenez 2014): a cheap screen-space dither used
+// to rotate the shadow kernel per pixel.
+float Ign(vec2 p) {
+    return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715))));
+}
+// 12-tap Poisson disk of unit radius, rotated per pixel by Ign above.
+const vec2 kShadowDisk[12] = vec2[12](
+    vec2(-0.326, -0.406), vec2(-0.840, -0.074), vec2(-0.696, 0.457),
+    vec2(-0.203, 0.621), vec2(0.962, -0.195), vec2(0.473, -0.480),
+    vec2(0.519, 0.767), vec2(0.185, -0.893), vec2(0.507, 0.064),
+    vec2(0.896, 0.412), vec2(-0.322, -0.933), vec2(-0.792, -0.598));
+// Rotated-Poisson PCF with a PCSS penumbra estimate (see the GL twin in
+// builtin_shaders.hpp for the full rationale): the same 12 taps both estimate
+// visibility and average the occluder depth, so the blocker search is free.
 float ShadowFactor(sampler2D sm, vec2 uv, float lightDepth) {
     float d0 = DecodeDepth(texture(sm, uv));
     float dx = DecodeDepth(texture(sm, uv + vec2(eng.uShadowTexel.x, 0.0)));
     float dy = DecodeDepth(texture(sm, uv + vec2(0.0, eng.uShadowTexel.y)));
     float slope = max(abs(dx - d0), abs(dy - d0));
-    float bias = clamp(0.002 + slope, 0.002, 0.02);
+    float bias = clamp(0.0008 + slope * 0.5, 0.0008, 0.01);
+
+    float ang = Ign(gl_FragCoord.xy) * 6.2831853;
+    float ca = cos(ang);
+    float sa = sin(ang);
+    mat2 rot = mat2(ca, sa, -sa, ca);
+    vec2 base = eng.uShadowTexel * max(eng.uShadowSoftness, 0.0);
+    if (eng.uShadowSoftness <= 0.0) {
+        float lit1 = 0.0;
+        for (int x = 0; x < 2; ++x) {
+            for (int y = 0; y < 2; ++y) {
+                vec2 off = (vec2(float(x), float(y)) - vec2(0.5)) * eng.uShadowTexel;
+                lit1 += DecodeDepth(texture(sm, uv + off)) > lightDepth - bias ? 1.0 : 0.0;
+            }
+        }
+        return lit1 / 4.0;
+    }
 
     float lit = 0.0;
-    for (int x = 0; x < 2; ++x) {
-        for (int y = 0; y < 2; ++y) {
-            vec2 off = (vec2(float(x), float(y)) - vec2(0.5)) * eng.uShadowTexel;
-            lit += DecodeDepth(texture(sm, uv + off)) > lightDepth - bias ? 1.0 : 0.0;
+    float sumBlocker = 0.0;
+    int blockers = 0;
+    for (int i = 0; i < 12; ++i) {
+        float d = DecodeDepth(texture(sm, uv + rot * kShadowDisk[i] * base));
+        lit += d > lightDepth - bias ? 1.0 : 0.0;
+        if (d < lightDepth - bias) {
+            sumBlocker += d;
+            blockers += 1;
         }
     }
-    return lit / 4.0;
+    float shadow = lit / 12.0;
+    if (blockers == 0) return shadow;
+
+    float avgBlocker = sumBlocker / float(blockers);
+    float penumbra = clamp((lightDepth - avgBlocker) / max(avgBlocker, 1e-4), 0.0, 1.0);
+    float radius = penumbra * 6.0;
+    if (radius < 0.75) return shadow;
+    vec2 wide = eng.uShadowTexel * radius;
+    float soft = 0.0;
+    for (int i = 0; i < 8; ++i) {
+        float d = DecodeDepth(texture(sm, uv + rot * kShadowDisk[i] * wide));
+        soft += d > lightDepth - bias ? 1.0 : 0.0;
+    }
+    return mix(shadow, min(shadow, soft / 8.0), clamp(radius / 3.0, 0.0, 1.0));
 }
 vec2 PointCubemapFaceUV(vec3 dir, out int face) {
     vec3 ad = abs(dir);
@@ -132,10 +222,52 @@ float PointShadowForLight(int light, vec3 worldPos, vec3 lightPos, float range) 
     return PointShadowFactor(uPointShadowMap11, uv, current, taps);
 }
 void main() {
+#ifdef TERRAIN_SPLAT
+    // G4 terrain splatmap (GL parity): layer a grass texture, a dirt colour and
+    // a rock colour by the vertex splat weights (vColor.r = grass, .g = dirt,
+    // .b = rock). Terrain chunks draw with this variant; the plain lit path is
+    // unchanged.
+    vec3 grassAlbedo = (eng.uHasGrassTex != 0) ? texture(uGrassTex, vUV).rgb : vec3(1.0);
+    vec3 splatAlbedo = grassAlbedo * vColor.r + eng.uDirtColor.rgb * vColor.g +
+                       eng.uRockColor.rgb * vColor.b;
+    vec4 albedo = vec4(splatAlbedo, 1.0);
+    albedo *= eng.uTint;
+#else
     vec4 albedo = (eng.uHasTexture != 0) ? texture(uAlbedo, vUV) : vec4(1.0);
     albedo *= eng.uTint * vColor;
+    // glTF MASK / foliage card cutout: discard transparent fragments so leaf
+    // blades keep a crisp edge instead of a translucent quad outline.
+    if (eng.uAlphaTest > 0.0 && albedo.a < eng.uAlphaTest) discard;
+#endif
     vec3 N = normalize(vNormal);
+    // A2 normal mapping without per-vertex tangents: reconstruct the tangent
+    // basis from screen-space derivatives of world position + UV (the standard
+    // dFdx/dFdy triangle method, good for the common single-UV mesh). The map's
+    // z is the geometric normal axis by construction, so orthonormalizing
+    // against N avoids the flipping artifact along UV seams. When no map is
+    // bound (uHasNormalMap == 0) N is left as authored.
+    if (eng.uHasNormalMap != 0) {
+        vec3 dp1 = dFdx(vWorldPos);
+        vec3 dp2 = dFdy(vWorldPos);
+        vec2 duv1 = dFdx(vUV);
+        vec2 duv2 = dFdy(vUV);
+        vec3 dp2perp = cross(dp2, N);
+        vec3 dp1perp = cross(N, dp1);
+        vec3 tangent = dp2perp * duv1.x + dp1perp * duv2.x;
+        vec3 bitangent = dp2perp * duv1.y + dp1perp * duv2.y;
+        float invMax = inversesqrt(max(dot(tangent, tangent), dot(bitangent, bitangent)));
+        tangent *= invMax;
+        bitangent *= invMax;
+        vec3 nrm = normalize(texture(uNormalMap, vUV).rgb * 2.0 - 1.0);
+        nrm.xy *= eng.uNormalScale;
+        N = normalize(nrm.x * tangent + nrm.y * bitangent + nrm.z * N);
+    }
     vec3 V = normalize(eng.uCamPos - vWorldPos);
+    // Two-sided shading normal: a mirrored transform, an inverted-winding mesh
+    // or a plane seen from behind leaves dot(N, V) < 0, which lit the surface
+    // with a normal pointing away from the camera (flat IBL-only ground) and
+    // buried the shadow receiver under its own depth via the normal offset.
+    if (dot(N, V) < 0.0) N = -N;
     vec3 L = normalize(-eng.uSunDir);
     float ndl = max(dot(N, L), 0.0);
     vec3 H = normalize(L + V);
@@ -159,11 +291,29 @@ void main() {
     vec3 prefiltered = texture(uPrefilteredMap, vec2(roughU, R.y * 0.5 + 0.5)).rgb;
     vec2 brdf = texture(uBrdfLUT, vec2(ndv, roughness)).rg;
     vec3 iblSpecular = prefiltered * (f0 * brdf.x + brdf.y) * eng.uIblStrength;
+    // A3 hemisphere ambient: split the flat ambient into a sky/ground gradient by
+    // the world normal's Y so upward faces take the sky tint (uAmbientColor) and
+    // downward faces a ground bounce (uAmbientGroundColor). Equal colours
+    // reproduce the old flat ambient exactly.
+    vec3 hemiAmbient =
+        mix(eng.uAmbientGroundColor, eng.uAmbientColor, clamp(N.y * 0.5 + 0.5, 0.0, 1.0));
     vec3 ambientLight = iblDiffuse + iblSpecular +
-                        albedo.rgb * eng.uAmbientColor * eng.uAmbient * (1.0 - eng.uIblStrength);
+                        albedo.rgb * hemiAmbient * eng.uAmbient * (1.0 - eng.uIblStrength);
+    // A3 probe-field GI: baked scene-local indirect light on top of the sky IBL,
+    // weighted by the diffuse term only so specular is not double counted.
+    if (eng.uLightProbeEnabled != 0) {
+        ambientLight += kd * SampleLightProbeAtlas(vWorldPos) * albedo.rgb;
+    }
     if (eng.uHasAO != 0) ambientLight *= mix(1.0, texture(uOcclusion, vUV).r, eng.uAOStrength);
     vec3 color = (kd * albedo.rgb + spec) * eng.uSunColor * ndl + ambientLight;
     if (eng.uHasEmissive != 0) color += texture(uEmissive, vUV).rgb * eng.uEmissiveIntensity;
+    // Tint self-glow: tint components pushed above 1.0 emit light directly (beacon
+    // lamps, glowing pickups). The term lands in the HDR target, so intensity above
+    // the bloom threshold reads as an actual light source.
+    vec3 tintGlow = max(eng.uTint.rgb - vec3(1.0), vec3(0.0));
+    if (tintGlow.r + tintGlow.g + tintGlow.b > 0.0) {
+        color += tintGlow * albedo.rgb * eng.uEmissiveIntensity;
+    }
     for (int i = 0; i < 8; ++i) {
         if (i >= eng.uPointCount) break;
         vec3 toL = eng.uPointPos[i] - vWorldPos;
@@ -196,17 +346,25 @@ void main() {
         color += albedo.rgb * eng.uPlayerLightColor * pndl * atten;
     }
     float dist = length(vWorldPos - eng.uCamPos);
-    float fog = smoothstep(eng.uFogStart, eng.uFogEnd, dist);
+    // A degenerate range (end <= start, e.g. 0/0 from a data-driven stack) must
+    // mean 'no fog': smoothstep(0, 0, d) divides by zero and washes the frame out.
+    float fog = (eng.uFogEnd > eng.uFogStart) ? smoothstep(eng.uFogStart, eng.uFogEnd, dist) : 0.0;
     color = mix(color, eng.uFogColor, fog);
 
     float shadow = 1.0;
     if (eng.uShadowEnabled != 0) {
         float viewDepth = -vViewZ;
         int cascade = viewDepth < eng.uCascadeSplits.x ? 0 : (viewDepth < eng.uCascadeSplits.y ? 1 : 2);
+        // Normal-offset bias: shift the receiver along its own normal by a
+        // couple of shadow texels before projecting. The offset scales with the
+        // cascade texel size (each cascade covers a different world area).
+        float texelWorld = cascade == 0 ? eng.uShadowTexelWorld.x
+                          : (cascade == 1 ? eng.uShadowTexelWorld.y : eng.uShadowTexelWorld.z);
+        vec3 shadowPos = vWorldPos + N * texelWorld * eng.uShadowNormalOffset;
         vec4 sp;
-        if (cascade == 0) sp = eng.uLightVP[0] * vec4(vWorldPos, 1.0);
-        else if (cascade == 1) sp = eng.uLightVP[1] * vec4(vWorldPos, 1.0);
-        else sp = eng.uLightVP[2] * vec4(vWorldPos, 1.0);
+        if (cascade == 0) sp = eng.uLightVP[0] * vec4(shadowPos, 1.0);
+        else if (cascade == 1) sp = eng.uLightVP[1] * vec4(shadowPos, 1.0);
+        else sp = eng.uLightVP[2] * vec4(shadowPos, 1.0);
         vec3 ndc = sp.xyz / sp.w;
         if (ndc.x > -1.0 && ndc.x < 1.0 && ndc.y > -1.0 && ndc.y < 1.0 && ndc.z > -1.0 &&
             ndc.z < 1.0) {
@@ -215,7 +373,28 @@ void main() {
             else if (cascade == 1) shadow = ShadowFactor(uShadowMap1, sc.xy, sc.z);
             else shadow = ShadowFactor(uShadowMap2, sc.xy, sc.z);
         }
+        // Fade the shadow out at the end of the last cascade so the shadow
+        // distance does not end in a hard line across the terrain.
+        shadow = mix(1.0, shadow,
+                     1.0 - smoothstep(eng.uCascadeSplits.z * 0.85, eng.uCascadeSplits.z, viewDepth));
     }
-    color = (color - ambientLight) * shadow + ambientLight;
+    if (eng.uReceiveShadow == 0) shadow = 1.0;
+    // NEON_SHADOW_DEBUG=1: show the raw cascade shadow factor instead of the
+    // shaded result (white = sun reaches the surface, black = fully occluded).
+    if (eng.uShadowDebug != 0) { FragColor = vec4(vec3(shadow), 1.0); return; }
+    // Only the sun term is shadowed; ambient/sky stays unshadowed so shadowed
+    // areas read as dim rather than black. Clamping the sun term to >= 0 first
+    // keeps a surface whose lit colour is darker than the ambient from turning
+    // BRIGHTER where it is shadowed (pale "ghost" shadows).
+    vec3 sunTerm = max(color - ambientLight, vec3(0.0));
+    color = sunTerm * shadow + ambientLight;
+    // Selection / edge glow: Fresnel rim on the silhouette. Applied last (after
+    // fog + shadow) so a highlighted unit stays visible in shadow or fog; the
+    // albedo tint keeps it reading as the mesh's edge rather than a flat disc.
+    if (eng.uHighlightStrength > 0.0) {
+        float rim = 1.0 - clamp(dot(normalize(N), normalize(V)), 0.0, 1.0);
+        color += eng.uHighlightColor * mix(albedo.rgb, vec3(1.0), 0.5) *
+                 pow(rim, 2.5) * eng.uHighlightStrength;
+    }
     FragColor = vec4(color, albedo.a);
 }

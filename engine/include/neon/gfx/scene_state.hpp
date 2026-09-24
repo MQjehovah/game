@@ -46,6 +46,10 @@ public:
     // Last SetCamera aspect (the shadow cascade frusta match it).
     float ViewAspect() const { return viewAspect_; }
     const math::Mat4& ViewProjection() const { return viewProj_; }
+    // Step E TAA: shifts the projection by a sub-pixel offset given in
+    // render-target pixels (a Halton jitter). Recomputes ViewProjection from the
+    // last SetCamera; the culling frustum keeps the unjittered bounds.
+    void SetProjectionJitter(float jitterXPixels, float jitterYPixels, int width, int height);
     const math::Mat4& View() const { return view_; }
     const math::Vec3& CamPos() const { return camPos_; }
     const math::Frustum& Frustum() const { return frustum_; }

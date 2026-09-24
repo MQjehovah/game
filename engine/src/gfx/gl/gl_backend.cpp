@@ -180,6 +180,7 @@ public:
         g.GenBuffers(1, &uiEbo_);
         g.GenBuffers(1, &instanceVbo_);
         g.GenBuffers(1, &instanceColorVbo_);
+        g.GenBuffers(1, &instanceUvVbo_);
         g.BindVertexArray(uiVao_);
         g.BindBuffer(glc::ArrayBuffer, uiVbo_);
         g.EnableVertexAttribArray(0);
@@ -308,6 +309,7 @@ public:
         g.DeleteBuffers(1, &uiEbo_);
         g.DeleteBuffers(1, &instanceVbo_);
         g.DeleteBuffers(1, &instanceColorVbo_);
+        g.DeleteBuffers(1, &instanceUvVbo_);
         window_ = nullptr;
     }
 
@@ -419,6 +421,57 @@ public:
             rt.textureHandle = ++nextTextureId_;
             textures_[rt.textureHandle] = GLTexture{rt.depthTex, width, height};
         }
+        renderTargets_[++nextRenderTargetId_] = rt;
+        return {nextRenderTargetId_};
+    }
+
+    // RGBA8 colour texture + depth24 renderbuffer. The CSM pass uses this so the
+    // shadow map can be rasterized with GL_LESS: the nearest surface wins per
+    // texel, which is the only way to get correct occlusion out of level
+    // geometry that interpenetrates inside a single merged mesh (terrain and the
+    // trees/towers standing on it exported as one node). The colour attachment
+    // still carries the packed light-space depth the lit shader decodes.
+    RenderTargetHandle CreateRenderTargetWithDepth(int width, int height) override {
+        auto& g = gl::GetGL();
+        GLRenderTarget rt;
+        rt.width = width;
+        rt.height = height;
+        rt.samples = 0;
+        g.GenFramebuffers(1, &rt.fbo);
+        g.BindFramebuffer(glc::Framebuffer, rt.fbo);
+        g.GenTextures(1, &rt.colorTex);
+        g.BindTexture(glc::Texture2D, rt.colorTex);
+        g.TexImage2D(glc::Texture2D, 0, static_cast<gl::GLint>(glc::Rgba8), width, height, 0,
+                     glc::Rgba, glc::UnsignedByte, nullptr);
+        g.TexParameteri(glc::Texture2D, glc::TextureMinFilter, glc::Nearest);
+        g.TexParameteri(glc::Texture2D, glc::TextureMagFilter, glc::Nearest);
+        g.TexParameteri(glc::Texture2D, glc::TextureWrapS, glc::ClampToEdge);
+        g.TexParameteri(glc::Texture2D, glc::TextureWrapT, glc::ClampToEdge);
+        g.FramebufferTexture2D(glc::Framebuffer, glc::ColorAttachment0, glc::Texture2D, rt.colorTex,
+                               0);
+        g.GenRenderbuffers(1, &rt.depthRbo);
+        g.BindRenderbuffer(glc::Renderbuffer, rt.depthRbo);
+        g.RenderbufferStorage(glc::Renderbuffer, glc::DepthComponent24, width, height);
+        g.FramebufferRenderbuffer(glc::Framebuffer, glc::DepthAttachment, glc::Renderbuffer,
+                                  rt.depthRbo);
+        g.DrawBuffer(glc::ColorAttachment0);
+        g.ReadBuffer(glc::ColorAttachment0);
+        gl::GLenum status = g.CheckFramebufferStatus(glc::Framebuffer);
+        if (status != 0x8CD5) {
+            NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Warn,
+                         "GL: depth-attached render target %dx%d incomplete, status=0x%X", width,
+                         height, status);
+            g.DeleteFramebuffers(1, &rt.fbo);
+            g.DeleteTextures(1, &rt.colorTex);
+            if (rt.depthRbo) g.DeleteRenderbuffers(1, &rt.depthRbo);
+            g.BindFramebuffer(glc::Framebuffer, 0);
+            return {};
+        }
+        g.BindFramebuffer(glc::Framebuffer, 0);
+        rt.colorTextureHandle = ++nextTextureId_;
+        textures_[rt.colorTextureHandle] = GLTexture{rt.colorTex, width, height};
+        rt.textureHandle = ++nextTextureId_;
+        textures_[rt.textureHandle] = GLTexture{rt.depthTex, width, height};
         renderTargets_[++nextRenderTargetId_] = rt;
         return {nextRenderTargetId_};
     }
@@ -968,7 +1021,13 @@ public:
 
     void DrawMesh(const MeshHandle& mesh) override {
         auto it = meshes_.find(mesh.vao);
-        if (it == meshes_.end()) return;
+        if (it == meshes_.end()) {
+            // Silently dropping a draw is invisible in a screenshot and cost a
+            // full afternoon of shadow debugging; say so instead.
+            NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Warn,
+                         "GL: DrawMesh with unknown mesh handle vao=%u", mesh.vao);
+            return;
+        }
         auto& g = gl::GetGL();
         g.BindVertexArray(it->second.vao);
         g.DrawElements(glc::Triangles, static_cast<gl::GLsizei>(it->second.indexCount),
@@ -980,7 +1039,12 @@ public:
     void DrawMeshInstanced(const MeshHandle& mesh, const math::Mat4* models,
                            uint32_t count) override {
         auto it = meshes_.find(mesh.vao);
-        if (it == meshes_.end() || !models || count == 0) return;
+        if (it == meshes_.end() || !models || count == 0) {
+            if (it == meshes_.end())
+                NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Warn,
+                             "GL: DrawMeshInstanced with unknown mesh handle vao=%u", mesh.vao);
+            return;
+        }
         auto& g = gl::GetGL();
         g.BindVertexArray(it->second.vao);
         g.BindBuffer(glc::ArrayBuffer, instanceVbo_);
@@ -1049,6 +1113,56 @@ public:
                                 nullptr, static_cast<gl::GLsizei>(count));
         for (int i = 0; i < 4; ++i) g.DisableVertexAttribArray(4 + i);
         g.DisableVertexAttribArray(8);
+        g.BindVertexArray(0);
+    }
+    // Same as DrawMeshInstancedColored plus a per-instance UV rectangle
+    // (attribute 9: offset.xy, scale.xy) so one quad mesh can sample an atlas
+    // cell per instance (flipbook / sprite-sheet particles).
+    void DrawMeshInstancedColoredUv(const MeshHandle& mesh, const math::Mat4* models,
+                                    const math::Vec4* colors, const math::Vec4* uvRects,
+                                    uint32_t count) override {
+        auto it = meshes_.find(mesh.vao);
+        if (it == meshes_.end() || !models || !colors || !uvRects || count == 0) return;
+        auto& g = gl::GetGL();
+        g.BindVertexArray(it->second.vao);
+
+        g.BindBuffer(glc::ArrayBuffer, instanceVbo_);
+        std::vector<float> flat(static_cast<size_t>(count) * 16);
+        for (uint32_t m = 0; m < count; ++m) {
+            const float* src = models[m].Data();
+            float* dst = flat.data() + static_cast<size_t>(m) * 16;
+            for (int r = 0; r < 4; ++r)
+                for (int c = 0; c < 4; ++c) dst[r * 4 + c] = src[c * 4 + r];
+        }
+        g.BufferData(glc::ArrayBuffer, static_cast<gl::GLsizeiptr>(count * 64), flat.data(),
+                     glc::DynamicDraw);
+        for (int i = 0; i < 4; ++i) {
+            g.EnableVertexAttribArray(4 + i);
+            g.VertexAttribPointer(4 + i, 4, glc::Float, 0, 64,
+                                  reinterpret_cast<const void*>(i * 16));
+            g.VertexAttribDivisor(4 + i, 1);
+        }
+
+        g.BindBuffer(glc::ArrayBuffer, instanceColorVbo_);
+        g.BufferData(glc::ArrayBuffer, static_cast<gl::GLsizeiptr>(count * 16), colors,
+                     glc::DynamicDraw);
+        g.EnableVertexAttribArray(8);
+        g.VertexAttribPointer(8, 4, glc::Float, 0, 16, nullptr);
+        g.VertexAttribDivisor(8, 1);
+
+        g.BindBuffer(glc::ArrayBuffer, instanceUvVbo_);
+        g.BufferData(glc::ArrayBuffer, static_cast<gl::GLsizeiptr>(count * 16), uvRects,
+                     glc::DynamicDraw);
+        g.EnableVertexAttribArray(9);
+        g.VertexAttribPointer(9, 4, glc::Float, 0, 16, nullptr);
+        g.VertexAttribDivisor(9, 1);
+
+        g.DrawElementsInstanced(glc::Triangles, static_cast<gl::GLsizei>(it->second.indexCount),
+                                it->second.indexType ? glc::UnsignedInt : glc::UnsignedShort,
+                                nullptr, static_cast<gl::GLsizei>(count));
+        for (int i = 0; i < 4; ++i) g.DisableVertexAttribArray(4 + i);
+        g.DisableVertexAttribArray(8);
+        g.DisableVertexAttribArray(9);
         g.BindVertexArray(0);
     }
 
@@ -1149,6 +1263,7 @@ private:
     gl::GLuint uiVao_ = 0, uiVbo_ = 0, uiEbo_ = 0;
     gl::GLuint instanceVbo_ = 0;
     gl::GLuint instanceColorVbo_ = 0;
+    gl::GLuint instanceUvVbo_ = 0;
     std::unordered_map<uint32_t, Program> shaders_;
     std::unordered_map<uint32_t, GLMesh> meshes_;
     std::unordered_map<uint32_t, GLTexture> textures_;

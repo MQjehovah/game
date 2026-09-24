@@ -728,7 +728,7 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     };
     scriptCtx_.spawnDecal = [this](const std::string& texture, const math::Vec3& pos, float size,
                                    float alpha, float r, float g, float b,
-                                   bool additive) -> ecs::Entity {
+                                   bool additive, float height) -> ecs::Entity {
         if (texture.empty()) return {};
         ecs::Entity e = world_.Create();
         SceneTransform t;
@@ -742,14 +742,16 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
         d.g = g;
         d.b = b;
         d.additive = additive;
+        if (height > 0.0f) d.height = height;
         world_.Add<SceneDecal>(e, d);
         return e;
     };
-    scriptCtx_.setDecal = [this](ecs::Entity e, float size, float alpha) {
+    scriptCtx_.setDecal = [this](ecs::Entity e, float size, float alpha, float height) {
         SceneDecal* d = world_.Get<SceneDecal>(e);
         if (d == nullptr) return;
         if (size > 0.01f) d->size = size;
         d->alpha = alpha;
+        if (height > 0.01f) d->height = height;
     };
     scriptCtx_.spawnTrail = [this](float w, float hr, float hg, float hb, float ha, float tr,
                                    float tg, float tb, float ta) {
@@ -1190,6 +1192,10 @@ void GameRuntime::SetPostFx(bool ssao, bool volumetric, bool ssr,
 void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera,
                        float previewZoom) {
     if (!running_ || !cfg_.assets) return; // sim-only runtime draws nothing
+    // Step D: the renderer owns the quality preset, the runtime owns the VFX
+    // particle pool, so the preset's particle budget is applied here.
+    if (sceneParticles_.Particles().Budget() != renderer.ParticleBudget())
+        sceneParticles_.Particles().SetBudget(renderer.ParticleBudget());
     // DrawSystem owns the draw-list build + the whole render orchestration
     // (Task 16). The already-split systems and the shared runtime state
     // (world_/scriptCtx_/hosts_/hiddenEntities_/uiScale_/uiOffset_ + the post-FX

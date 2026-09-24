@@ -120,6 +120,7 @@ add_library(neon_gfx STATIC
   engine/src/gfx/light_probe.cpp
   engine/src/gfx/particles.cpp
   engine/src/gfx/trail.cpp
+  engine/src/gfx/taa.cpp
   engine/src/gfx/renderer.cpp
   engine/src/gfx/gl/gl_loader.cpp
   engine/src/gfx/gl/gl_backend.cpp
@@ -255,6 +256,11 @@ if(NEON_ENABLE_VULKAN)
   set(VK_GLSLANG ${CMAKE_SOURCE_DIR}/third_party/glslang_tool/bin/glslang.exe)
   set(VK_SHADER_DIR ${CMAKE_SOURCE_DIR}/engine/src/gfx/vulkan/shaders)
   set(VK_SHADER_OUTPUT ${CMAKE_SOURCE_DIR}/engine/generated/vk_shaders.hpp)
+  # Every shader source is a build dependency. CONFIGURE_DEPENDS re-globs when
+  # a shader is added, so a new pass cannot silently keep using a stale header.
+  file(GLOB VK_SHADER_SOURCES CONFIGURE_DEPENDS
+    ${VK_SHADER_DIR}/*.vert ${VK_SHADER_DIR}/*.frag ${VK_SHADER_DIR}/*.glsl)
+
   add_custom_command(
     OUTPUT ${VK_SHADER_OUTPUT}
     COMMAND powershell -NoProfile -ExecutionPolicy Bypass -File
@@ -266,32 +272,7 @@ if(NEON_ENABLE_VULKAN)
     DEPENDS
       ${CMAKE_SOURCE_DIR}/tools/gen_vk_shaders.ps1
       ${VK_GLSLANG}
-      ${VK_SHADER_DIR}/engine_ubo.glsl
-      ${VK_SHADER_DIR}/lit.vert
-      ${VK_SHADER_DIR}/lit.frag
-      ${VK_SHADER_DIR}/lit_skinned.vert
-      ${VK_SHADER_DIR}/unlit.vert
-      ${VK_SHADER_DIR}/unlit.frag
-      ${VK_SHADER_DIR}/ui.vert
-      ${VK_SHADER_DIR}/ui.frag
-      ${VK_SHADER_DIR}/lines.vert
-      ${VK_SHADER_DIR}/lines.frag
-      ${VK_SHADER_DIR}/lit_instanced.vert
-      ${VK_SHADER_DIR}/unlit_instanced.vert
-      ${VK_SHADER_DIR}/shadow.vert
-      ${VK_SHADER_DIR}/shadow.frag
-      ${VK_SHADER_DIR}/shadow_instanced.vert
-      ${VK_SHADER_DIR}/shadow_skinned.vert
-      ${VK_SHADER_DIR}/point_shadow.vert
-      ${VK_SHADER_DIR}/point_shadow.frag
-      ${VK_SHADER_DIR}/point_shadow_instanced.vert
-      ${VK_SHADER_DIR}/point_shadow_skinned.vert
-      ${VK_SHADER_DIR}/post.vert
-      ${VK_SHADER_DIR}/bright.frag
-      ${VK_SHADER_DIR}/blur.frag
-      ${VK_SHADER_DIR}/downsample.frag
-      ${VK_SHADER_DIR}/upsample_add.frag
-      ${VK_SHADER_DIR}/composite.frag
+      ${VK_SHADER_SOURCES}
     COMMENT "Generating embedded Vulkan SPIR-V (vk_shaders.hpp)..."
     VERBATIM
   )

@@ -1,6 +1,7 @@
-﻿#include "neon/gfx/renderer.hpp"
+#include "neon/gfx/renderer.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -13,6 +14,9 @@
 #include "neon/gfx/ssr.hpp"
 #include "neon/gfx/volumetric.hpp"
 #include "neon/gfx/skybox.hpp"
+
+// Step E: Halton(2,3) sub-pixel jitter helper (defined below with the TAA code).
+namespace neon::gfx { static math::Vec2 TaaJitterOffset(int index); }
 
 namespace neon::gfx {
 namespace {
@@ -99,6 +103,7 @@ void Renderer::ConnectSubsystems() {
 
 void Renderer::Shutdown() {
     if (!backend_) return;
+    taa_.Shutdown(*backend_, /*keepShader=*/false);
     // Stop the background upload worker before destroying any shared GL
     // resources or the window's context (the worker holds the shared context).
     if (uploadThread_) {
@@ -108,6 +113,8 @@ void Renderer::Shutdown() {
     if (litShader_.Valid()) backend_->DestroyShader(litShader_);
     if (skinnedLitShader_.Valid()) backend_->DestroyShader(skinnedLitShader_);
     if (unlitShader_.Valid()) backend_->DestroyShader(unlitShader_);
+    if (decalShader_.Valid()) backend_->DestroyShader(decalShader_);
+    if (velocityShader_.Valid()) backend_->DestroyShader(velocityShader_);
     if (linesShader_.Valid()) backend_->DestroyShader(linesShader_);
     if (litInstancedShader_.Valid()) backend_->DestroyShader(litInstancedShader_);
     if (unlitInstancedShader_.Valid()) backend_->DestroyShader(unlitInstancedShader_);
@@ -176,6 +183,21 @@ void Renderer::InitBuiltinResources() {
     particleSoftShader_ =
         backend_->CreateShader(kParticleSoftVertexShader, kParticleSoftFragmentShader,
                                "particle_soft");
+    // Atlas/flipbook billboard variant (per-instance UV rectangle). Invalid on
+    // backends that resolve shaders by name without this program registered (the
+    // Vulkan table), in which case DrawBillboards falls back to the plain
+    // instanced-coloured program (no flipbook, everything else identical).
+    particleShader_ = backend_->CreateShader(kParticleVertexShader,
+                                             kUnlitInstancedColoredFragmentShader, "particle");
+    // Depth-projected ground decal (Material::decal). Registered as "decal";
+    // backends that resolve programs by name without this entry leave it invalid
+    // and DrawDecal degrades to the plain unlit quad.
+    decalShader_ = backend_->CreateShader(kDecalVertexShader, kDecalFragmentShader, "decal");
+    // Step E2 motion vectors for TAA (see DrawMesh's prevModel overload). A
+    // backend without this program simply leaves it invalid and the velocity
+    // target is never allocated -> the resolve keeps using depth reprojection.
+    velocityShader_ =
+        backend_->CreateShader(kVelocityVertexShader, kVelocityFragmentShader, "velocity");
     billboardQuad_ = Mesh::CreateQuad(*this, 1.0f, 1.0f, "billboard");
 
     // Post-processing shaders (HDR + bloom). Sources live in bloom.hpp so the
@@ -226,6 +248,14 @@ void Renderer::InitBuiltinResources() {
         NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Warn,
                      "Renderer: bloom disabled by NEON_NO_BLOOM");
         bloomEnabled_ = false;
+    }
+    // Diagnostic override for A/B screenshot diffs (same role as NEON_NO_BLOOM):
+    // disables CSM so a render can be diffed against the same frame with shadows
+    // on, which isolates the shadow contribution without touching scene data.
+    if (std::getenv("NEON_NO_SHADOWS")) {
+        NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Warn,
+                     "Renderer: shadows disabled by NEON_NO_SHADOWS");
+        shadowSystem_.SetShadowsEnabled(false);
     }
 
     // NDC unit quad used by the FBO capability self-test.
@@ -291,17 +321,36 @@ void Renderer::BeginFrame(const Color& clearColor, float clearDepth) {
     postGraph_.ResetFrame();
     ssaoCasters_.clear();
     softDepthReady_ = false;
+    // Motion vectors recorded by a frame that never reached its composite (an
+    // early-out capture path) must not leak into this frame's velocity pass.
+    velocityBatch_.clear();
     screenW_ = window_ ? window_->Width() : screenW_;
     screenH_ = window_ ? window_->Height() : screenH_;
     draw2d_.Resize(screenW_, screenH_);
+    UpdateDynamicResolution(); // Step D: may change the render scale this frame
+    // Step E: advance the sub-pixel jitter once per frame (idempotent across
+    // multiple SetCamera calls in the same frame).
+    if (taaEnabled_) jitterPixels_ = TaaJitterOffset(taaFrame_++);
+    else jitterPixels_ = {0.0f, 0.0f};
     RebuildHdrTargets();
     if (hdrEnabled_ && hdrRT_.Valid()) {
         // Scene + sky draw into the (multisample when MSAA is active) HDR
         // target; the final composite (bloom -> backbuffer) happens in
         // EndFrame / CaptureFrame after resolving the MSAA samples.
         RebindMainTarget();
-        backend_->SetViewport(0, 0, screenW_, screenH_);
+        // The HDR target may be smaller than the window (render scale < 1):
+        // render into it at ITS size, the composite upscales to the window.
+        backend_->SetViewport(0, 0, hdrW_, hdrH_);
         backend_->Clear(clearColor, clearDepth);
+        if (velocityEnabled_ && velocityRT_.Valid()) {
+            // Zero-filled: alpha 0 means "no moving object covers this pixel",
+            // so the resolve falls back to depth reprojection there.
+            backend_->BindRenderTarget(velocityRT_);
+            backend_->SetViewport(0, 0, hdrW_, hdrH_);
+            backend_->Clear({0.0f, 0.0f, 0.0f, 0.0f}, 1.0f);
+            RebindMainTarget();
+            backend_->SetViewport(0, 0, hdrW_, hdrH_);
+        }
     } else {
         backend_->BindDefaultTarget();
         backend_->SetViewport(0, 0, screenW_, screenH_);
@@ -317,6 +366,9 @@ void Renderer::EndFrame() {
 void Renderer::SetCamera(const Camera& camera, float aspect) {
     ++sceneUniformStamp_; // B1: scene uniforms (view/proj/camPos) changed
     sceneState_.SetCamera(camera, aspect);
+    // Step E: bake the frame's sub-pixel jitter into the projection so the
+    // whole frame (scene, shadow cascades, depth pre-pass) shares one offset.
+    if (taaEnabled_) sceneState_.SetProjectionJitter(jitterPixels_.x, jitterPixels_.y, hdrW_, hdrH_);
     // Render the cascade shadow maps now: they are sampled by the main-pass
     // draws that follow this SetCamera. Uses the previous frame's recorded
     // casters (one frame of staleness, imperceptible) and the current camera.
@@ -332,11 +384,10 @@ void Renderer::SetCamera(const Camera& camera, float aspect) {
         // so the main pass still rasterizes into the intended rect - hosts
         // that render into a sub-viewport (e.g. the 2D playtest) would
         // otherwise see the scene stretched/offset to the full window.
-        if (draw2d_.SceneViewportActive()) {
-            const math::Rect2& vp = draw2d_.SceneViewport();
-            backend_->SetViewport(static_cast<int>(vp.x), static_cast<int>(vp.y),
-                                  static_cast<int>(vp.w), static_cast<int>(vp.h));
-        }
+        // When render scaling is active the target is smaller than the window
+        // and RebindMainTarget's full-target viewport is already the right one
+        // (a full-window scene viewport scales to exactly that rect).
+        RestoreSceneViewport();
     }
 }
 
@@ -347,11 +398,17 @@ void Renderer::RefreshShadowPass() {
     // frusta locked to the ACTUAL render view so orbiting the editor camera
     // slides the shadows incorrectly.
     if (!shadowSystem_.Enabled()) return;
+    // The caster list is recorded by the MAIN pass (one frame of staleness) and
+    // consumed by the first RunPass of a frame. A host calling this a second
+    // time - or before any caster has ever been recorded - would otherwise clear
+    // every cascade to 'far' with nothing drawn and wipe out the dynamic shadows
+    // for the whole frame.
+    if (!shadowSystem_.HasRecordedCasters() && shadowSystem_.MapsInitialized()) return;
     shadowSystem_.RunPass(sceneState_.ActiveCamera(), sceneState_.ViewAspect(),
                           sceneState_.SunDir(), sceneState_.PointPos(),
                           sceneState_.PointRadius(), sceneState_.PointCount());
     RebindMainTarget();
-    if (draw2d_.SceneViewportActive()) {
+    if (draw2d_.SceneViewportActive() && EffectiveRenderScale() == 1.0f) {
         const math::Rect2& vp = draw2d_.SceneViewport();
         backend_->SetViewport(static_cast<int>(vp.x), static_cast<int>(vp.y),
                               static_cast<int>(vp.w), static_cast<int>(vp.h));
@@ -394,6 +451,8 @@ void Renderer::SetBloomParams(float threshold, float strength) {
     bloomThreshold_ = threshold;
     bloomStrength_ = strength;
 }
+
+void Renderer::SetBloomWidth(float width) { bloomWidth_ = width > 0.0f ? width : 1.0f; }
 
 void Renderer::SetLightProbes(TextureHandle atlas, const math::AABB& bounds, int res,
                               float maxIrradiance) {
@@ -450,8 +509,233 @@ void Renderer::SetTonemapEnabled(bool enabled) {
 void Renderer::SetMsaaEnabled(bool enabled) {
     if (msaaRequested_ == enabled) return; // called every frame; log only on change
     msaaRequested_ = enabled;
+    hdrW_ = -1; // force RebuildHdrTargets to apply the change this frame
     NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
                  "Renderer: MSAA %s", enabled ? "requested" : "disabled by flag");
+}
+
+void Renderer::SetMsaaSamples(int samples) {
+    if (samples != 0 && samples != 2 && samples != 4 && samples != 8) samples = 4;
+    if (samples == msaaSampleRequest_) return;
+    msaaSampleRequest_ = samples;
+    msaaSamples_ = 0; // force a fresh capability probe for the new count
+    hdrW_ = -1;
+}
+
+// --- Step D: quality presets + render-scale / dynamic resolution ------------
+
+const char* Renderer::QualityName() const {
+    switch (quality_) {
+        case Quality::Low: return "low";
+        case Quality::Medium: return "medium";
+        case Quality::Ultra: return "ultra";
+        case Quality::High:
+        default: return "high";
+    }
+}
+
+void Renderer::SetQuality(Quality quality) {
+    quality_ = quality;
+    // Every knob set here is re-applied explicitly (not "only when it changes")
+    // so switching presets is idempotent even after a script overrode one of
+    // them. Individual setters remain usable afterwards.
+    switch (quality) {
+        case Quality::Low:
+            SetMsaaEnabled(false);
+            shadowSystem_.SetShadowSize(512);
+            SetShadowDistance(60.0f);
+            SetShadowSoftness(0.6f);
+            SetSsaoEnabled(false);
+            SetVolumetricEnabled(false);
+            SetSsrEnabled(false);
+            SetBloomEnabled(true);
+            SetBloomParams(0.62f, 0.30f);
+            SetBloomWidth(1.2f);
+            SetRenderScale(0.75f);
+            particleBudget_ = 8192;
+            break;
+        case Quality::Medium:
+            SetMsaaEnabled(false);
+            shadowSystem_.SetShadowSize(1024);
+            SetShadowDistance(90.0f);
+            SetShadowSoftness(1.0f);
+            SetSsaoEnabled(true);
+            SetSsaoIntensity(0.8f);
+            SetVolumetricEnabled(false);
+            SetSsrEnabled(false);
+            SetBloomEnabled(true);
+            SetBloomParams(0.58f, 0.30f);
+            SetBloomWidth(1.4f);
+            SetRenderScale(0.9f);
+            particleBudget_ = 16384;
+            break;
+        case Quality::Ultra:
+            SetMsaaEnabled(true);
+            SetMsaaSamples(8);
+            shadowSystem_.SetShadowSize(2048);
+            SetShadowDistance(220.0f);
+            SetShadowSoftness(1.4f);
+            SetSsaoEnabled(true);
+            SetSsaoIntensity(1.0f);
+            SetVolumetricEnabled(true);
+            SetVolumetricIntensity(1.0f);
+            SetSsrEnabled(true);
+            SetSsrIntensity(1.0f);
+            SetBloomEnabled(true);
+            SetBloomParams(0.55f, 0.34f);
+            SetBloomWidth(2.0f);
+            SetRenderScale(1.0f);
+            SetTaaEnabled(true);
+            SetTaaBlend(0.10f);
+            SetTaaSharpen(0.55f);
+            particleBudget_ = 65536;
+            break;
+        case Quality::High:
+        default:
+            SetMsaaEnabled(true);
+            SetMsaaSamples(4);
+            shadowSystem_.SetShadowSize(2048);
+            SetShadowDistance(150.0f);
+            SetShadowSoftness(1.0f);
+            SetSsaoEnabled(true);
+            SetSsaoIntensity(1.0f);
+            SetVolumetricEnabled(true);
+            SetVolumetricIntensity(1.0f);
+            SetSsrEnabled(false);
+            SetBloomEnabled(true);
+            SetBloomParams(0.55f, 0.32f);
+            SetBloomWidth(1.6f);
+            SetRenderScale(1.0f);
+            SetTaaEnabled(true);
+            SetTaaBlend(0.12f);
+            SetTaaSharpen(0.50f);
+            particleBudget_ = 32768;
+            break;
+    }
+    NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
+                 "Renderer: quality preset '%s' (scale %.2f, msaa %s, shadow %d, particles %zu)",
+                 QualityName(), renderScale_, msaaRequested_ ? "on" : "off", ShadowMapSize(),
+                 particleBudget_);
+}
+
+void Renderer::SetRenderScale(float scale) {
+    if (scale < 0.4f) scale = 0.4f;
+    if (scale > 2.0f) scale = 2.0f;
+    if (std::fabs(scale - renderScale_) < 1e-4f) return;
+    renderScale_ = scale;
+    if (dynScale_ > renderScale_) dynScale_ = renderScale_;
+    hdrW_ = -1; // resize the HDR/post targets on the next BeginFrame
+}
+
+void Renderer::SetDynamicResolution(bool enabled, float targetFps, float minScale) {
+    dynResEnabled_ = enabled;
+    dynTargetFps_ = targetFps > 1.0f ? targetFps : 60.0f;
+    dynMinScale_ = std::min(std::max(minScale, 0.4f), 1.0f);
+    if (enabled && dynScale_ > renderScale_) dynScale_ = renderScale_;
+}
+
+void Renderer::SetTaaEnabled(bool enabled) {
+    if (taaEnabled_ == enabled) return;
+    taaEnabled_ = enabled;
+    // Motion vectors only exist to feed the temporal resolve; toggling in
+    // RebuildHdrTargets' early-out re-allocates/releases the target for us.
+    // NEON_NO_VELOCITY forces the pass off for A/B screenshots (same role as
+    // NEON_NO_DECAL_PROJECT / NEON_NO_BLOOM).
+    static const bool velocityOff = std::getenv("NEON_NO_VELOCITY") != nullptr;
+    velocityEnabled_ = enabled && !velocityOff;
+    taaHistoryValid_ = false;   // never blend across the toggle
+    taaFrame_ = 0;
+    NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
+                 "Renderer: temporal AA %s (motion vectors %s)", enabled ? "enabled" : "disabled",
+                 velocityEnabled_ ? "on" : "off");
+}
+
+void Renderer::SetTaaBlend(float blend) {
+    taaBlend_ = std::min(std::max(blend, 0.02f), 0.6f);
+}
+
+void Renderer::SetTaaSharpen(float amount) {
+    taaSharpen_ = std::min(std::max(amount, 0.0f), 1.5f);
+    taa_.SetSharpen(taaSharpen_);
+}
+
+// Halton(2,3) low-discrepancy sub-pixel offsets: the same sequence a TAA
+// implementation uses to turn N frames into Nx supersampling.
+static math::Vec2 TaaJitterOffset(int index) {
+    auto halton = [](int i, int base) {
+        float f = 1.0f, r = 0.0f;
+        while (i > 0) {
+            f /= static_cast<float>(base);
+            r += f * static_cast<float>(i % base);
+            i /= base;
+        }
+        return r;
+    };
+    const int i = index % 8 + 1;
+    return {halton(i, 2) - 0.5f, halton(i, 3) - 0.5f};
+}
+
+void Renderer::ApplyTaa() {
+    taaOutput_ = {};
+    if (!taaEnabled_ || !backend_ || !hdrRT_.Valid()) return;
+    if (!taa_.Ready() && !taa_.Init(*backend_, hdrW_, hdrH_)) return;
+    // Camera-only reprojection needs the resolved main-pass depth, which only
+    // exists on the MSAA HDR path; without it temporal AA stays off (logged once
+    // by SetTaaEnabled's caller-side state).
+    if (!EnsureSoftDepth()) return;
+    taa_.SetSharpen(taaSharpen_);
+    const TextureHandle depth = backend_->RenderTargetDepthTexture(hdrDepthRT_);
+    if (!depth.Valid()) return;
+    const bool valid = taaHistoryValid_ && prevViewProjValid_ &&
+                       taa_.Width() == hdrW_ && taa_.Height() == hdrH_;
+    taaOutput_ = taa_.Resolve(*backend_, hdrRT_, depth, sceneState_.ViewProjection().Inverse(),
+                              prevViewProj_, postQuadMesh_, taaBlend_, valid,
+                              VelocityTexture());
+    prevViewProj_ = sceneState_.ViewProjection();
+    prevViewProjValid_ = true;
+    taaHistoryValid_ = taaOutput_.Valid();
+    // Resolve left the history FBO bound; put the main target back for the post
+    // graph (the composite binds the backbuffer itself).
+    RebindMainTarget();
+}
+
+float Renderer::EffectiveRenderScale() const {
+    // A scene viewport that is SMALLER than the window (the editor's docked
+    // sub-rect) maps its pixels 1:1; scaling the HDR target would break that
+    // mapping, so pin the scale. A full-window scene viewport (the player, which
+    // sets the design-space rect every frame) scales cleanly.
+    if (draw2d_.SceneViewportActive()) {
+        const math::Rect2& vp = draw2d_.SceneViewport();
+        if (vp.w < static_cast<float>(screenW_) - 0.5f ||
+            vp.h < static_cast<float>(screenH_) - 0.5f)
+            return 1.0f;
+    }
+    const float s = dynResEnabled_ ? std::min(dynScale_, renderScale_) : renderScale_;
+    return std::min(std::max(s, 0.4f), 2.0f);
+}
+
+void Renderer::UpdateDynamicResolution() {
+    // Frame-to-frame wall time is the only timing signal the backend exposes
+    // (there is no GPU timer query). With vsync on, a GPU-bound frame still
+    // stretches the swap interval, so this tracks missed budgets well enough to
+    // steer the scale.
+    const long long ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                             std::chrono::steady_clock::now().time_since_epoch())
+                             .count();
+    if (lastFrameClock_ != 0) {
+        const double ms = static_cast<double>(ns - lastFrameClock_) / 1.0e6;
+        if (ms > 0.05 && ms < 500.0)
+            frameTimeEmaMs_ = frameTimeEmaMs_ <= 0.0 ? ms : frameTimeEmaMs_ * 0.9 + ms * 0.1;
+    }
+    lastFrameClock_ = ns;
+    if (!dynResEnabled_ || frameTimeEmaMs_ <= 0.0) return;
+    const double targetMs = 1000.0 / static_cast<double>(dynTargetFps_);
+    float next = dynScale_;
+    if (frameTimeEmaMs_ > targetMs * 1.08) next = dynScale_ * 0.94f;      // over budget
+    else if (frameTimeEmaMs_ < targetMs * 0.90) next = dynScale_ * 1.02f; // headroom
+    const float lo = std::min(dynMinScale_, renderScale_);
+    const float hi = std::max(renderScale_, 0.4f);
+    dynScale_ = std::min(std::max(next, lo), hi);
 }
 
 void Renderer::SetPointLight(int index, const math::Vec3& position, const Color& color,
@@ -517,6 +801,11 @@ void Renderer::EnableSkyBox(const math::Vec3& sunDir, bool clouds) {
 }
 
 void Renderer::DrawMesh(const Mesh& mesh, const Material& material, const math::Mat4& model) {
+    DrawMesh(mesh, material, model, nullptr);
+}
+
+void Renderer::DrawMesh(const Mesh& mesh, const Material& material, const math::Mat4& model,
+                        const math::Mat4* prevModel) {
     if (!mesh.Valid()) return;
     Flush2D();
 
@@ -524,12 +813,31 @@ void Renderer::DrawMesh(const Mesh& mesh, const Material& material, const math::
         !sceneState_.Frustum().Intersects(math::TransformAABB(mesh.Bounds(), model)))
         return;
 
+    // Step E2: a moving object also rasterizes a motion vector for the TAA
+    // resolve. Submitted before the material path so the colour draw afterwards
+    // re-establishes every piece of state the velocity pass touched.
+    if (prevModel && velocityEnabled_ && velocityRT_.Valid() && velocityShader_.Valid())
+        SubmitVelocity(mesh, model, *prevModel);
+
+    // Depth-projected decal: bypass the material path (no shadow/SSAO caster
+    // recording, custom state). Falls through to the plain unlit quad when the
+    // frame has no sampleable scene depth. NEON_NO_DECAL_PROJECT forces the flat
+    // quad for A/B screenshots (same role as NEON_NO_BLOOM / NEON_NO_SHADOWS).
+    static const bool decalProjectOff = std::getenv("NEON_NO_DECAL_PROJECT") != nullptr;
+    if (material.decal && !decalProjectOff && decalShader_.Valid() && EnsureSoftDepth()) {
+        DrawDecal(mesh, material, model);
+        return;
+    }
+
     if (shadowSystem_.Enabled() && shadowSystem_.Recording() && !material.transparent &&
         material.castShadow)
         shadowSystem_.RecordCaster({mesh.Handle(), model, {}, {}, 0, mesh.Bounds()});
     // SSAO/SSR have their own colour-encoded depth pre-pass and do NOT depend
     // on CSM being enabled: collect the caster whenever one is active.
-    if ((ssaoEnabled_ || ssrEnabled_) && !material.transparent)
+    // The SSAO/SSR colour-depth pre-pass only needs the caster list when the
+    // main-pass depth cannot be resolved for the post chain (no MSAA / a backend
+    // without ResolveDepth). Collecting otherwise is pure CPU waste.
+    if ((ssaoEnabled_ || ssrEnabled_) && !material.transparent && !PostDepthReuseOk())
         ssaoCasters_.push_back({mesh.Handle(), model, {}, {}, 0, mesh.Bounds()});
 
     ShaderHandle shader = material.shader.Valid() ? material.shader
@@ -541,15 +849,126 @@ void Renderer::DrawMesh(const Mesh& mesh, const Material& material, const math::
     stats_.triangles += mesh.TriangleCount();
 }
 
+TextureHandle Renderer::VelocityTexture() const {
+    if (!backend_ || !velocityRT_.Valid()) return {};
+    return backend_->RenderTargetColorTexture(velocityRT_);
+}
+
+void Renderer::SubmitVelocity(const Mesh& mesh, const math::Mat4& model,
+                              const math::Mat4& prevModel) {
+    // Motion vectors are only RECORDED here; the whole batch is rasterized by
+    // one pass per frame (FlushVelocityPass). Binding velocityRT_ per object
+    // used to switch targets twice per moving object, and every switch flushes
+    // and submits the command buffer in the Vulkan backend - two GPU stalls
+    // and one dropped pending clear per object, per frame.
+    if (!velocityEnabled_ || !velocityRT_.Valid() || !velocityShader_.Valid()) return;
+    velocityBatch_.push_back({mesh.Handle(), model, prevModel});
+}
+
+void Renderer::FlushVelocityPass() {
+    if (velocityBatch_.empty()) return;
+    // Swap the batch out first so a draw inside the pass can never re-enter it.
+    std::vector<VelocityDraw> batch;
+    batch.swap(velocityBatch_);
+    if (!hdrEnabled_ || hdrW_ <= 0 || hdrH_ <= 0) return;
+    if (!velocityEnabled_ || !velocityRT_.Valid() || !velocityShader_.Valid()) return;
+    backend_->BindRenderTarget(velocityRT_);
+    backend_->SetViewport(0, 0, hdrW_, hdrH_);
+    // The pass owns this target: clear colour (alpha 0 = 'no moving object
+    // covers this pixel', so the TAA resolve falls back to depth
+    // reprojection) and depth (a stale depth rejects the whole batch).
+    backend_->Clear({0.0f, 0.0f, 0.0f, 0.0f}, 1.0f);
+    backend_->SetBlendMode(BlendMode::Opaque);
+    // Depth test/write on so the nearest object owns the pixel regardless of the
+    // draw order (the colour pass sorts opaques front-to-back, but transparency
+    // and per-entity paths do not).
+    backend_->SetDepthTest(true, true);
+    backend_->SetCullMode(CullMode::Back);
+    backend_->UseShader(velocityShader_);
+    // Same view-projection pair the TAA resolve uses: both are the frame's
+    // JITTERED matrices, so the offset lands on the right texel of the jittered
+    // history buffer.
+    const math::Mat4 viewProj = sceneState_.ViewProjection();
+    for (const VelocityDraw& d : batch) {
+        backend_->SetUniformMat4("uViewProj", viewProj);
+        backend_->SetUniformMat4("uPrevViewProj", prevViewProj_);
+        backend_->SetUniformMat4("uModel", d.model);
+        backend_->SetUniformMat4("uPrevModel", d.prevModel);
+        backend_->DrawMesh(d.mesh);
+        ++stats_.velocityDraws;
+    }
+    // Route the main pass back into the HDR target: everything drawn after this
+    // point (including this frame's post chain) must not land in the velocity
+    // buffer. Also restores a docked sub-viewport, since binding a target resets
+    // the viewport to its full size.
+    RebindMainTarget();
+    RestoreSceneViewport();
+}
+
+void Renderer::RestoreSceneViewport() {
+    if (draw2d_.SceneViewportActive() && EffectiveRenderScale() == 1.0f) {
+        const math::Rect2& vp = draw2d_.SceneViewport();
+        backend_->SetViewport(static_cast<int>(vp.x), static_cast<int>(vp.y),
+                              static_cast<int>(vp.w), static_cast<int>(vp.h));
+    }
+}
+
+void Renderer::DrawDecal(const Mesh& mesh, const Material& material, const math::Mat4& model) {
+    const math::Mat4 viewProj = sceneState_.ViewProjection();
+    ApplyMaterial(material, viewProj * model, model, NormalMatrix(model), decalShader_);
+    // ApplyMaterial only uploads uModel for lit materials; the decal VS needs it
+    // (and the inverse maps the depth-rebuilt world point into decal-local space).
+    backend_->SetUniformMat4("uModel", model);
+    backend_->SetUniformMat4("uDecalInvModel", model.Inverted());
+    backend_->SetUniformMat4("uInvViewProj", viewProj.Inverse());
+    backend_->SetUniformInt("uDecalProject", 1);
+    backend_->SetUniformInt("uDecalAdditive", material.additive ? 1 : 0);
+    // Depth bias in window-depth units: large enough to beat resolved-depth vs
+    // per-sample MSAA differences at silhouette edges, small enough that the
+    // decal never pokes through geometry in front of it.
+    backend_->SetUniformFloat("uDecalBias", 0.00035f);
+    const TextureHandle sceneDepth = backend_->RenderTargetDepthTexture(hdrDepthRT_);
+    // Unit 24 (0..4 material maps, 5..19 shadows, 20..22 IBL, 23 normal map):
+    // reusing the IBL unit would leave a stale depth binding behind when the
+    // cached scene-uniform upload is skipped for the next lit draw.
+    backend_->BindTexture(24, sceneDepth);
+    backend_->SetUniformInt("uSceneDepth", 24);
+    backend_->SetUniformVec2(
+        "uScreenSize", {static_cast<float>(hdrW_), static_cast<float>(hdrH_)});
+    // One quad lies inside the projection volume, so exactly one fragment per
+    // pixel is shaded (no double blending). Depth test on so a unit standing in
+    // front still occludes the decal; no depth write so it never hides what is
+    // behind it.
+    backend_->SetCullMode(CullMode::None);
+    backend_->SetDepthTest(sceneState_.DepthAvailable(), false);
+    backend_->SetBlendMode(material.additive ? BlendMode::Additive : BlendMode::Alpha);
+    backend_->DrawMesh(mesh.Handle());
+    ++stats_.drawCalls;
+    stats_.triangles += mesh.TriangleCount();
+}
+
 void Renderer::DrawSkinnedMesh(const Mesh& mesh, const Material& material,
                                const math::Mat4& model,
                                const std::vector<math::Mat4>& boneMatrices, int boneCount) {
+    DrawSkinnedMesh(mesh, material, model, boneMatrices, boneCount, nullptr);
+}
+
+void Renderer::DrawSkinnedMesh(const Mesh& mesh, const Material& material,
+                               const math::Mat4& model,
+                               const std::vector<math::Mat4>& boneMatrices, int boneCount,
+                               const math::Mat4* prevModel) {
     if (!mesh.Valid()) return;
     Flush2D();
 
     if (sceneState_.FrustumValid() &&
         !sceneState_.Frustum().Intersects(math::TransformAABB(mesh.Bounds(), model)))
         return;
+
+    // Step E2: entity-level motion vector (rest-pose geometry through the current
+    // and previous entity transform). Per-bone deformation is not captured yet,
+    // so a limb swinging in place still relies on the neighbourhood clamp.
+    if (prevModel && velocityEnabled_ && velocityRT_.Valid() && velocityShader_.Valid())
+        SubmitVelocity(mesh, model, *prevModel);
 
     // Upload up to 128 bone matrices as one contiguous row-major array.
     int count = boneCount >= 0 ? std::min(boneCount, static_cast<int>(boneMatrices.size()))
@@ -558,7 +977,7 @@ void Renderer::DrawSkinnedMesh(const Mesh& mesh, const Material& material,
 
     if (shadowSystem_.Enabled() && shadowSystem_.Recording() && !material.transparent)
         shadowSystem_.RecordCaster({mesh.Handle(), model, {}, boneMatrices, count, mesh.Bounds()});
-    if ((ssaoEnabled_ || ssrEnabled_) && !material.transparent)
+    if ((ssaoEnabled_ || ssrEnabled_) && !material.transparent && !PostDepthReuseOk())
         ssaoCasters_.push_back({mesh.Handle(), model, {}, boneMatrices, count, mesh.Bounds()});
 
     ShaderHandle shader = material.shader.Valid() ? material.shader : skinnedLitShader_;
@@ -594,10 +1013,27 @@ void Renderer::DrawMeshInstanced(const Mesh& mesh, const Material& material,
     }
     if (instancedVisible_.empty()) return;
 
+    // Opaque, depth-tested instances of one mesh+material: submit them
+    // front-to-back so the nearest fragments fill the depth buffer first and the
+    // remaining ones are rejected before shading. The rendered result is
+    // identical (depth test), only the overdraw drops -- the Rift's terrain
+    // chunks and the instanced vegetation fields are the big winners.
+    if (!material.transparent && instancedVisible_.size() > 1) {
+        const math::Vec3 camPos = sceneState_.CamPos();
+        std::stable_sort(instancedVisible_.begin(), instancedVisible_.end(),
+                         [&camPos](const math::Mat4& a, const math::Mat4& b) {
+                             const float da = math::Distance(
+                                 math::Vec3{a.m[3], a.m[7], a.m[11]}, camPos);
+                             const float db = math::Distance(
+                                 math::Vec3{b.m[3], b.m[7], b.m[11]}, camPos);
+                             return da < db;
+                         });
+    }
+
     if (shadowSystem_.Enabled() && shadowSystem_.Recording() && !material.transparent)
         shadowSystem_.RecordCaster(
             {mesh.Handle(), math::Mat4::Identity(), instancedVisible_, {}, 0, mesh.Bounds()});
-    if ((ssaoEnabled_ || ssrEnabled_) && !material.transparent)
+    if ((ssaoEnabled_ || ssrEnabled_) && !material.transparent && !PostDepthReuseOk())
         ssaoCasters_.push_back(
             {mesh.Handle(), math::Mat4::Identity(), instancedVisible_, {}, 0, mesh.Bounds()});
 
@@ -648,7 +1084,8 @@ void Renderer::DrawMeshInstancedColored(const Mesh& mesh, const Material& materi
 
 void Renderer::DrawBillboards(const math::Vec3* positions, const float* sizes,
                               const Color* colors, TextureHandle texture, uint32_t count,
-                              BlendMode blend, float intensity) {
+                              BlendMode blend, float intensity, const float* rotations,
+                              const math::Vec4* uvRects) {
     if (!backend_ || !billboardQuad_.Valid() || !positions || !sizes || !colors || count == 0)
         return;
     Flush2D();
@@ -665,19 +1102,37 @@ void Renderer::DrawBillboards(const math::Vec3* positions, const float* sizes,
     right = right.Normalized();
     const math::Vec3 up = math::Cross(right, fwd).Normalized();
 
-    std::vector<math::Mat4> models(static_cast<size_t>(count));
-    std::vector<math::Vec4> colc(static_cast<size_t>(count));
+    // Per-frame scratch (reused across calls): particles rebuild these streams
+    // every frame, so a fresh allocation per burst was pure heap churn.
+    billboardModels_.resize(static_cast<size_t>(count));
+    billboardColors_.resize(static_cast<size_t>(count));
+    billboardUvRects_.resize(static_cast<size_t>(count));
+    math::Mat4* models = billboardModels_.data();
+    math::Vec4* colc = billboardColors_.data();
+    math::Vec4* uvs = billboardUvRects_.data();
     for (uint32_t i = 0; i < count; ++i) {
         const float s = sizes[i];
+        // Per-particle roll: rotate the camera-facing basis in the quad's own
+        // plane. Baking it into the instance matrix keeps the shader (and both
+        // backends) untouched.
+        math::Vec3 r = right;
+        math::Vec3 u = up;
+        if (rotations && rotations[i] != 0.0f) {
+            const float ca = std::cos(rotations[i]);
+            const float sa = std::sin(rotations[i]);
+            r = right * ca + up * sa;
+            u = up * ca - right * sa;
+        }
         math::Mat4 m; // identity; fill the basis columns below
         // Local +X -> camera right, +Y -> camera up, +Z -> toward camera.
-        m.m[0] = right.x * s;  m.m[4] = right.y * s;  m.m[8] = right.z * s;
-        m.m[1] = up.x * s;     m.m[5] = up.y * s;     m.m[9] = up.z * s;
+        m.m[0] = r.x * s;  m.m[4] = r.y * s;  m.m[8] = r.z * s;
+        m.m[1] = u.x * s;  m.m[5] = u.y * s;  m.m[9] = u.z * s;
         m.m[2] = -fwd.x * s;   m.m[6] = -fwd.y * s;   m.m[10] = -fwd.z * s;
         m.m[3] = positions[i].x;
         m.m[7] = positions[i].y;
         m.m[11] = positions[i].z;
         models[i] = m;
+        uvs[i] = uvRects ? uvRects[i] : math::Vec4{0.0f, 0.0f, 1.0f, 1.0f};
         // Multiply RGB by `intensity` so additive glow particles emit HDR
         // values > 1.0 and the bloom pass picks them up (the "big game" glow).
         colc[i] = {colors[i].r * intensity, colors[i].g * intensity,
@@ -691,7 +1146,12 @@ void Renderer::DrawBillboards(const math::Vec3* positions, const float* sizes,
     // use the depth-faded billboard shader so glow quads fade where they cross
     // geometry (no hard intersection line). Falls back cleanly otherwise.
     const bool soft = particleSoftShader_.Valid() && EnsureSoftDepth();
-    const ShaderHandle shader = soft ? particleSoftShader_ : unlitInstancedColoredShader_;
+    // Both billboard programs take the per-instance UV rectangle; the plain
+    // instanced-coloured program (the fallback when a backend could not build
+    // the atlas variant) does not, so it draws without the UV remap.
+    const bool atlas = soft || particleShader_.Valid();
+    const ShaderHandle shader = soft ? particleSoftShader_
+                                     : (atlas ? particleShader_ : unlitInstancedColoredShader_);
     ApplyMaterial(mat, sceneState_.ViewProjection(), math::Mat4::Identity(),
                   math::Mat4::Identity(), shader);
     // Particles blend appropriately and respect the scene depth (unlike the
@@ -703,11 +1163,13 @@ void Renderer::DrawBillboards(const math::Vec3* positions, const float* sizes,
         backend_->BindTexture(22, backend_->RenderTargetDepthTexture(hdrDepthRT_));
         backend_->SetUniformInt("uSceneDepth", 22);
         backend_->SetUniformVec2("uScreenSize",
-                                 {static_cast<float>(screenW_), static_cast<float>(screenH_)});
+                                 {static_cast<float>(hdrW_), static_cast<float>(hdrH_)});
         backend_->SetUniformFloat("uSoftFade", softFadeRange_);
     }
-    backend_->DrawMeshInstancedColored(billboardQuad_.Handle(), models.data(), colc.data(),
-                                       count);
+    if (atlas)
+        backend_->DrawMeshInstancedColoredUv(billboardQuad_.Handle(), models, colc, uvs, count);
+    else
+        backend_->DrawMeshInstancedColored(billboardQuad_.Handle(), models, colc, count);
     ++stats_.drawCalls;
     stats_.instances += count;
     stats_.triangles += billboardQuad_.TriangleCount() * count;
@@ -845,6 +1307,13 @@ void Renderer::ApplyMaterial(const Material& material, const math::Mat4& mvp,
     backend_->SetUniformInt("uHasNormalMap", material.normalMap.Valid() ? 1 : 0);
     backend_->SetUniformFloat("uNormalScale", material.normalScale);
     backend_->SetUniformInt("uReceiveShadow", material.receiveShadow ? 1 : 0);
+    // Diagnostic view (NEON_SHADOW_DEBUG=1): the lit shader outputs the raw
+    // cascade shadow factor instead of the shaded colour - white where the sun
+    // reaches, black where fully occluded. Resolved once per frame: getenv in a
+    // per-draw path would show up in a profile.
+    if (shadowDebug_ < 0)
+        shadowDebug_ = std::getenv("NEON_SHADOW_DEBUG") != nullptr ? 1 : 0;
+    backend_->SetUniformInt("uShadowDebug", shadowDebug_);
 
     if (material.lit) {
         backend_->SetUniformMat4("uModel", model);
@@ -913,6 +1382,13 @@ void Renderer::ApplySceneUniforms(ShaderHandle shader) {
     backend_->SetUniformVec2("uShadowTexel",
                              {1.0f / static_cast<float>(shadowSystem_.ShadowSize()),
                               1.0f / static_cast<float>(shadowSystem_.ShadowSize())});
+    {
+        const float* texelWorld = shadowSystem_.CascadeTexelWorld();
+        backend_->SetUniformVec3("uShadowTexelWorld",
+                                 {texelWorld[0], texelWorld[1], texelWorld[2]});
+    }
+    backend_->SetUniformFloat("uShadowSoftness", shadowSoftness_);
+    backend_->SetUniformFloat("uShadowNormalOffset", shadowNormalOffset_);
     backend_->SetUniformInt("uShadowEnabled", shadowSystem_.CsmActive() ? 1 : 0);
     const TextureHandle* shadowTex = shadowSystem_.ShadowDepthTex();
     backend_->BindTexture(5, shadowTex[0]);
@@ -992,12 +1468,15 @@ void Renderer::DrawLines(const LineVertex* vertices, uint32_t count, const math:
     backend_->DrawPrimitives(vertices, count, 28, nullptr, 0, PrimitiveTopology::Lines);
 }
 
-void Renderer::DrawTrail(const math::Vec3* points, uint32_t count, float width,
-                         const Color& head, const Color& tail) {
-    if (points == nullptr || count < 2 || width <= 0.0f) return;
-    const math::Vec3 eye = sceneState_.ActiveCamera().position;
-    std::vector<LineVertex> verts;
-    verts.reserve(static_cast<size_t>(count) * 2);
+namespace {
+// Appends one camera-facing ribbon (points oldest-first) to the shared vertex /
+// index streams. `tailWidthScale` tapers the width towards the oldest point so
+// a trail dissolves into a point instead of ending in a blunt rectangle.
+void AppendRibbon(std::vector<Renderer::LineVertex>& verts, std::vector<uint16_t>& idx,
+                  const math::Vec3* points, uint32_t count, float width,
+                  float tailWidthScale, const Color& head, const Color& tail,
+                  const math::Vec3& eye) {
+    const uint16_t base = static_cast<uint16_t>(verts.size());
     for (uint32_t i = 0; i < count; ++i) {
         const math::Vec3 p = points[i];
         math::Vec3 dir = (i + 1 < count) ? (points[i + 1] - p) : (p - points[i - 1]);
@@ -1006,32 +1485,70 @@ void Renderer::DrawTrail(const math::Vec3* points, uint32_t count, float width,
         // Perpendicular in the view plane: cross(segment, toEye).
         math::Vec3 side = math::Cross(dir, eye - p);
         if (side.LengthSq() < 1e-8f) side = math::Cross(dir, {0.0f, 1.0f, 0.0f});
-        side = side.Normalized() * (width * 0.5f);
-        // i = 0 is the oldest point (tail); fade tail -> head.
+        // i = 0 is the oldest point (tail); fade + taper tail -> head.
         const float t = static_cast<float>(i) / static_cast<float>(count - 1);
+        side = side.Normalized() * (width * 0.5f * math::Lerp(tailWidthScale, 1.0f, t));
         const Color c{tail.r + (head.r - tail.r) * t, tail.g + (head.g - tail.g) * t,
                       tail.b + (head.b - tail.b) * t, tail.a + (head.a - tail.a) * t};
         verts.push_back({p - side, c});
         verts.push_back({p + side, c});
     }
-    std::vector<uint16_t> idx;
-    idx.reserve(static_cast<size_t>(count - 1) * 6);
     for (uint32_t i = 0; i + 1 < count; ++i) {
-        const uint16_t a = static_cast<uint16_t>(i * 2);
-        const uint16_t b = static_cast<uint16_t>(i * 2 + 1);
-        const uint16_t c = static_cast<uint16_t>((i + 1) * 2);
-        const uint16_t d = static_cast<uint16_t>((i + 1) * 2 + 1);
+        const uint16_t a = static_cast<uint16_t>(base + i * 2);
+        const uint16_t b = static_cast<uint16_t>(base + i * 2 + 1);
+        const uint16_t c = static_cast<uint16_t>(base + (i + 1) * 2);
+        const uint16_t d = static_cast<uint16_t>(base + (i + 1) * 2 + 1);
         idx.push_back(a); idx.push_back(c); idx.push_back(b);
         idx.push_back(b); idx.push_back(c); idx.push_back(d);
     }
-    Flush2D();
-    backend_->SetBlendMode(BlendMode::Additive);
-    backend_->SetDepthTest(sceneState_.DepthAvailable(), false);
-    backend_->SetCullMode(CullMode::None);
-    backend_->UseShader(linesShader_);
-    backend_->SetUniformMat4("uMVP", sceneState_.ViewProjection());
-    backend_->DrawPrimitives(verts.data(), static_cast<uint32_t>(verts.size()), 28, idx.data(),
-                             static_cast<uint32_t>(idx.size()), PrimitiveTopology::Triangles);
+}
+} // namespace
+
+void Renderer::DrawTrail(const math::Vec3* points, uint32_t count, float width,
+                         const Color& head, const Color& tail, float tailWidthScale) {
+    TrailDraw d;
+    d.points = points;
+    d.count = count;
+    d.width = width;
+    d.tailWidthScale = tailWidthScale;
+    d.head = head;
+    d.tail = tail;
+    DrawTrails(&d, 1);
+}
+
+void Renderer::DrawTrails(const TrailDraw* draws, uint32_t drawCount) {
+    if (!backend_ || !draws || drawCount == 0) return;
+    const math::Vec3 eye = sceneState_.ActiveCamera().position;
+    trailVerts_.clear();
+    trailIndices_.clear();
+    bool any = false;
+    auto flush = [&]() {
+        if (trailIndices_.empty()) return;
+        Flush2D();
+        backend_->SetBlendMode(BlendMode::Additive);
+        backend_->SetDepthTest(sceneState_.DepthAvailable(), false);
+        backend_->SetCullMode(CullMode::None);
+        backend_->UseShader(linesShader_);
+        backend_->SetUniformMat4("uMVP", sceneState_.ViewProjection());
+        backend_->DrawPrimitives(trailVerts_.data(), static_cast<uint32_t>(trailVerts_.size()),
+                                 28, trailIndices_.data(),
+                                 static_cast<uint32_t>(trailIndices_.size()),
+                                 PrimitiveTopology::Triangles);
+        ++stats_.drawCalls;
+        stats_.triangles += static_cast<uint32_t>(trailIndices_.size() / 3);
+        trailVerts_.clear();
+        trailIndices_.clear();
+    };
+    for (uint32_t i = 0; i < drawCount; ++i) {
+        const TrailDraw& d = draws[i];
+        if (d.points == nullptr || d.count < 2 || d.width <= 0.0f) continue;
+        // 16-bit indices: flush before the next ribbon would overflow.
+        if (trailVerts_.size() + static_cast<size_t>(d.count) * 2 > 65000) flush();
+        AppendRibbon(trailVerts_, trailIndices_, d.points, d.count, d.width, d.tailWidthScale,
+                     d.head, d.tail, eye);
+        any = true;
+    }
+    if (any) flush();
 }
 
 void Renderer::DrawBox(const math::AABB& box, const Color& color) {    math::Vec3 c[8] = {
@@ -1173,10 +1690,20 @@ void Renderer::Set2DViewportPixels(float x, float y) {
 void Renderer::SetSceneViewport(float x, float y, float w, float h) {
     draw2d_.SetSceneViewport(x, y, w, h);
     sceneVpLast_ = {x, y, w, h};
+    // The scene rasters into the HDR target, which render scaling may have made
+    // smaller than the window; re-apply the rect in render-target pixels. The 2D
+    // mapping above stays in window pixels (HUD/text layout is unaffected).
+    const float s = EffectiveRenderScale();
+    if (s != 1.0f && hdrEnabled_ && hdrRT_.Valid()) {
+        backend_->SetViewport(static_cast<int>(x * s), static_cast<int>(y * s),
+                              std::max(static_cast<int>(w * s), 1),
+                              std::max(static_cast<int>(h * s), 1));
+    }
 }
 
 void Renderer::ResetSceneViewport() {
     draw2d_.ResetSceneViewport();
+    if (hdrEnabled_ && hdrRT_.Valid()) backend_->SetViewport(0, 0, hdrW_, hdrH_);
 }
 
 float Renderer::SceneAspect() const {
@@ -1190,37 +1717,65 @@ void Renderer::Flush2D() {
 void Renderer::RebuildHdrTargets() {
     if (!hdrEnabled_) return;
     if (screenW_ <= 0 || screenH_ <= 0) return;
-    if (hdrRT_.Valid() && hdrW_ == screenW_ && hdrH_ == screenH_) return;
+    // Step D render scaling: the scene + post chain run at (window * scale) and
+    // the terminal composite (which binds the default target, viewport = window)
+    // upscales with the HDR target's bilinear filter.
+    const float scale = EffectiveRenderScale();
+    const int sw = std::max(
+        static_cast<int>(std::lround(static_cast<double>(screenW_) * scale)), 1);
+    const int sh = std::max(
+        static_cast<int>(std::lround(static_cast<double>(screenH_) * scale)), 1);
+    const bool wantVelocity = velocityEnabled_ && velocityShader_.Valid();
+    if (hdrRT_.Valid() && hdrW_ == sw && hdrH_ == sh &&
+        velocityRT_.Valid() == wantVelocity)
+        return;
     DestroyHdrTargets();
-    const int hw = std::max(screenW_ / 2, 1);
-    const int hh = std::max(screenH_ / 2, 1);
-    const int qw = std::max(screenW_ / 4, 1);
-    const int qh = std::max(screenH_ / 4, 1);
-    hdrRT_ = backend_->CreateRenderTarget(screenW_, screenH_, true);
+    const int hw = std::max(sw / 2, 1);
+    const int hh = std::max(sh / 2, 1);
+    const int qw = std::max(sw / 4, 1);
+    const int qh = std::max(sh / 4, 1);
+    hdrRT_ = backend_->CreateRenderTarget(sw, sh, true);
     if (!hdrRT_.Valid()) {
         NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Error,
-                     "Renderer: HDR target %dx%d creation failed -> HDR/bloom disabled", screenW_,
-                     screenH_);
+                     "Renderer: HDR target %dx%d creation failed -> HDR/bloom disabled", sw, sh);
         hdrEnabled_ = false;
         return;
+    }
+    // MSAA request is re-evaluated here (not only in Init) so SetMsaaEnabled /
+    // SetQuality take effect at runtime. A freshly requested sample count resets
+    // msaaSamples_ to 0, which re-runs the capability probe.
+    if (!msaaRequested_) {
+        msaaEnabled_ = false;
+    } else if (!msaaEnabled_ || msaaSamples_ == 0) {
+        msaaEnabled_ = TestMsaaCapability();
     }
     if (msaaEnabled_) {
         // MSAA scene target: resolves into hdrRT_ (the post-chain source)
         // before the graph executes. Only the HDR main target is multisampled.
-        hdrMsaaRT_ = backend_->CreateRenderTarget(screenW_, screenH_, true, msaaSamples_);
+        hdrMsaaRT_ = backend_->CreateRenderTarget(sw, sh, true, msaaSamples_);
         if (!hdrMsaaRT_.Valid()) {
             NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Warn,
                          "Renderer: MSAA target %dx%d (samples=%d) failed -> single-sample HDR",
-                         screenW_, screenH_, msaaSamples_);
+                         sw, sh, msaaSamples_);
             msaaEnabled_ = false;
         } else {
             // B4: resolve the MSAA depth into a sampleable depth target so the
             // post chain can reuse the main pass depth (no caster redraw).
-            hdrDepthRT_ = backend_->CreateDepthTarget(screenW_, screenH_);
+            hdrDepthRT_ = backend_->CreateDepthTarget(sw, sh);
         }
     }
-    hdrW_ = screenW_;
-    hdrH_ = screenH_;
+    hdrW_ = sw;
+    hdrH_ = sh;
+    // Step E: the TAA history lives at the render resolution; a resize (or a
+    // render-scale change) invalidates it so the first frame seeds cleanly.
+    taaHistoryValid_ = false;
+    prevViewProjValid_ = false;
+    taaOutput_ = {};
+    if (taaEnabled_) taa_.Init(*backend_, hdrW_, hdrH_);
+    // Step E2: motion-vector target, same size as the render resolution. Only
+    // allocated while temporal AA is on (it is the only consumer).
+    if (velocityEnabled_ && velocityShader_.Valid())
+        velocityRT_ = backend_->CreateRenderTarget(sw, sh, true);
     // Every post target (bloom pyramid + depth/AO/blur/vol/SSR) lives in the
     // unified post graph's transient pool: rebuild the graph at the new
     // resolution (Destroy first releases the old graph's GPU allocations).
@@ -1244,11 +1799,11 @@ void Renderer::RebuildHdrTargets() {
     shaders.exposureAdaptShader = exposureAdaptShader_;
     shaders.compositeShader = compositeShader_;
     shaders.white = white_;
-    postGraph_.Build(shaders, postQuadMesh_, screenW_, screenH_,
+    postGraph_.Build(shaders, postQuadMesh_, sw, sh,
                      [this] { DrawSsaoDepthCasters(sceneState_.ViewProjection()); });
     NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
-                 "Renderer: HDR target %dx%d (RGBA16F%s) + bloom %dx%d / %dx%d", screenW_,
-                 screenH_, msaaEnabled_ ? ", MSAA" : "", hw, hh, qw, qh);
+                 "Renderer: HDR target %dx%d (RGBA16F%s, scale %.2f) + bloom %dx%d / %dx%d",
+                 sw, sh, msaaEnabled_ ? ", MSAA" : "", scale, hw, hh, qw, qh);
 }
 
 void Renderer::DestroyHdrTargets() {
@@ -1256,6 +1811,7 @@ void Renderer::DestroyHdrTargets() {
         if (t.Valid() && backend_) backend_->DestroyRenderTarget(t);
         t = {};
     };
+    destroy(velocityRT_);
     destroy(hdrMsaaRT_);
     destroy(hdrDepthRT_);
     destroy(hdrRT_);
@@ -1308,11 +1864,21 @@ bool Renderer::TestFloatTargetCapability() {
 bool Renderer::TestMsaaCapability() {
     if (!backend_ || !unlitShader_.Valid() || !probeQuadMesh_.Valid()) return false;
     constexpr int kSize = 32;
-    // Try 4x first (the target sample count), then 2x for drivers that only
-    // handle lower counts; either way the resolved image must round-trip the
-    // drawn colour through the same FBO + blit path the frame uses.
-    const int attempts[2] = {4, 2};
-    for (int samples : attempts) {
+    // Try the requested sample count first (when a quality preset asked for a
+    // specific one), then 4x/2x for drivers that only handle lower counts;
+    // either way the resolved image must round-trip the drawn colour through the
+    // same FBO + blit path the frame uses.
+    int attempts[3] = {4, 2, 0};
+    int attemptCount = 2;
+    if (msaaSampleRequest_ > 0) {
+        attempts[0] = msaaSampleRequest_;
+        attempts[1] = 4;
+        attempts[2] = 2;
+        attemptCount = 3;
+    }
+    for (int ai = 0; ai < attemptCount; ++ai) {
+        const int samples = attempts[ai];
+        if (samples <= 0) break;
         RenderTargetHandle ms = backend_->CreateRenderTarget(kSize, kSize, true, samples);
         RenderTargetHandle ss = backend_->CreateRenderTarget(kSize, kSize, true);
         bool keep = false;
@@ -1363,7 +1929,12 @@ void Renderer::ResolveMainTarget() {
         // B4: also resolve the depth so the post chain reuses the main pass depth
         // (returns false on backends/drivers that cannot resolve depth, in which
         // case the depth pass falls back to redrawing the casters).
-        if (hdrDepthRT_.Valid()) depthResolved_ = backend_->ResolveDepth(hdrMsaaRT_, hdrDepthRT_);
+        if (hdrDepthRT_.Valid()) {
+            depthResolved_ = backend_->ResolveDepth(hdrMsaaRT_, hdrDepthRT_);
+            // A failing resolve flips the frame back to the caster fallback
+            // (PostDepthReuseOk) instead of silently losing the AO chain.
+            if (!depthResolved_) depthResolveSupported_ = false;
+        }
     }
 }
 
@@ -1389,7 +1960,10 @@ void Renderer::RebindMainTarget() {
 
 PostGraph::FrameParams Renderer::MakePostParams(bool chains) const {
     PostGraph::FrameParams p;
-    p.hdrScene = hdrRT_;
+    // Step E: the post chain reads the temporally accumulated image when the
+    // resolve produced one (the diagnostic comparisons force chains=false and
+    // always see the raw scene colour).
+    p.hdrScene = (chains && taaEnabled_ && taaOutput_.Valid()) ? taaOutput_ : hdrRT_;
     p.hdrW = hdrW_;
     p.hdrH = hdrH_;
     // Depth pre-pass is needed by SSAO/SSR and by the composite's volumetric
@@ -1417,8 +1991,10 @@ PostGraph::FrameParams Renderer::MakePostParams(bool chains) const {
     if (svp.w > 0.0f && svp.h > 0.0f) {
         p.sceneVpRect = {svp.x, svp.y, svp.w, svp.h};
     } else {
-        p.sceneVpRect = {0.0f, 0.0f, static_cast<float>(screenW_),
-                         static_cast<float>(screenH_)};
+        // Render-target pixels (not window pixels): the post graph normalises
+        // this rect by the HDR target size, which render scaling shrinks.
+        p.sceneVpRect = {0.0f, 0.0f, static_cast<float>(hdrW_ > 0 ? hdrW_ : screenW_),
+                         static_cast<float>(hdrH_ > 0 ? hdrH_ : screenH_)};
     }
     p.camera = sceneState_.ActiveCamera();
     p.composite.ssaoIntensity = ssaoIntensity_;
@@ -1432,6 +2008,7 @@ PostGraph::FrameParams Renderer::MakePostParams(bool chains) const {
     p.composite.tonemapEnabled = tonemapEnabled_;
     p.composite.bloomThreshold = bloomThreshold_;
     p.composite.bloomStrength = bloomStrength_;
+    p.composite.bloomWidth = bloomWidth_;
     p.composite.colorGrade = colorGrade_;
     p.composite.autoExposure = autoExposure_;
     p.composite.vignette = vignette_;
@@ -1446,7 +2023,13 @@ void Renderer::CompositeSceneToBackbuffer() {
     }
     // The scene rendered into the (possibly multisample) HDR target; resolve
     // into the single-sample source before any pass samples it.
+    // Every recorded motion vector is rasterized in ONE pass before anything
+    // samples velocityRT_ (the TAA resolve below).
+    FlushVelocityPass();
     ResolveMainTarget();
+    // Step E: temporal resolve before the post chain (bloom/composite read the
+    // accumulated image instead of the raw jittered one when this succeeds).
+    ApplyTaa();
     // The SSAO/volumetric/SSR/depth/bloom chain + the terminal composite run as
     // one FrameGraph (postGraph_): each chain executes only when its enabled
     // flag is on, and the composite pass samples the finals in-graph and draws

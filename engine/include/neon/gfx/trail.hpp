@@ -23,6 +23,16 @@ public:
     void Update(float dt);
     void Draw(Renderer& renderer) const;
     void Clear();
+    // Minimum spacing between stored points (world units). Points closer than
+    // this are merged; a segment that jumps more than `maxSpacing` is
+    // interpolated so a fast projectile still leaves a continuous ribbon
+    // instead of a chain of disconnected quads.
+    void SetSpacing(float minSpacing, float maxSpacing) {
+        minSpacing_ = minSpacing > 0.0f ? minSpacing : 0.01f;
+        maxSpacing_ = maxSpacing > minSpacing_ ? maxSpacing : minSpacing_ * 4.0f;
+    }
+    // Width multiplier applied at the oldest point (ribbon taper).
+    void SetTailWidthScale(float scale) { tailWidthScale_ = scale; }
 
 private:
     struct Trail {
@@ -31,11 +41,23 @@ private:
         Color tail{1, 1, 1, 0};
         float pointLife = 0.35f;
         bool ended = false;
-        std::vector<math::Vec3> pts; // oldest first
+        // Fixed-capacity ring buffer, oldest first. A ring keeps AddPoint O(1):
+        // the previous vector erased from the front every frame, which both
+        // memmoved the whole trail and made long trails visibly stutter.
+        std::vector<math::Vec3> pts;
         std::vector<float> ages;
+        size_t begin = 0; // ring index of the oldest point
+        size_t count = 0;
     };
     std::vector<Trail> trails_;
     std::vector<uint32_t> freeSlots_;
+    // Reused ribbon scratch so Draw() does not allocate per frame.
+    mutable std::vector<math::Vec3> ribbon_;
+    mutable std::vector<Renderer::TrailDraw> drawBatch_;
+    mutable std::vector<size_t> drawOffsets_;
+    float minSpacing_ = 0.12f;
+    float maxSpacing_ = 0.6f;
+    float tailWidthScale_ = 0.15f;
 };
 
 } // namespace neon::gfx

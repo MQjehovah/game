@@ -6,7 +6,8 @@ namespace neon::gfx {
 
 math::Mat4 ComputeCascadeLightViewProj(const math::Vec3& lightDir, const Camera& cam,
                                        float aspect, float splitNear, float splitFar,
-                                       const math::AABB* sceneBounds) {
+                                       const math::AABB* sceneBounds, int shadowMapSize,
+                                       float* outTexelWorld) {
     // Camera basis (matches Camera::View convention).
     const math::Vec3 forward = (cam.target - cam.position).Normalized();
     const math::Vec3 right = math::Cross(forward, cam.up).Normalized();
@@ -82,6 +83,30 @@ math::Mat4 ComputeCascadeLightViewProj(const math::Vec3& lightDir, const Camera&
     const float pad = 1.0f;
     aabb.min.x -= pad; aabb.min.y -= pad; aabb.min.z -= pad;
     aabb.max.x += pad; aabb.max.y += pad; aabb.max.z += pad;
+
+    // Square + texel-snapped footprint. Without this the ortho extents follow
+    // the camera continuously, so every frame samples a slightly different
+    // sub-texel offset: fine shadow detail then shimmers/crawls as the camera
+    // moves. Snapping the centre to the map's texel grid makes the grid move in
+    // whole-texel steps instead.
+    if (shadowMapSize > 0) {
+        const float side =
+            std::fmax(aabb.max.x - aabb.min.x, aabb.max.y - aabb.min.y);
+        const float texel = side / static_cast<float>(shadowMapSize);
+        if (texel > 0.0f) {
+            const float cx = (aabb.min.x + aabb.max.x) * 0.5f;
+            const float cy = (aabb.min.y + aabb.max.y) * 0.5f;
+            const float sx = std::floor(cx / texel + 0.5f) * texel;
+            const float sy = std::floor(cy / texel + 0.5f) * texel;
+            const float half = side * 0.5f;
+            aabb.min.x = sx - half; aabb.max.x = sx + half;
+            aabb.min.y = sy - half; aabb.max.y = sy + half;
+        }
+        if (outTexelWorld) *outTexelWorld = texel;
+    } else if (outTexelWorld) {
+        *outTexelWorld = (aabb.max.x - aabb.min.x) /
+                         std::fmax(static_cast<float>(shadowMapSize), 1.0f);
+    }
 
     // Light-space z is negative in front of the light; Ortho maps
     // view-z in [-far, -near] -> NDC [-1, 1], so pass distances -maxZ / -minZ.

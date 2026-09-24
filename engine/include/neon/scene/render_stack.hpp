@@ -43,6 +43,16 @@ struct RenderStack {
     bool bloom = true;
     float bloomThreshold = 1.0f;
     float bloomStrength = 0.35f;
+    // Bloom filter footprint multiplier: widens the tent upsample so the glow
+    // spreads into a soft halo instead of a tight rim (1 = classic bilinear).
+    float bloomWidth = 1.6f;
+    // Cascaded-shadow quality. shadowDistance clamps the cascades to a world
+    // range (0 = the camera far plane) - the biggest texel-density lever for an
+    // overhead camera. softness scales the PCSS penumbra (0 = hard 2x2 PCF) and
+    // shadowNormalOffset is the receiver normal-offset bias in cascade texels.
+    float shadowDistance = 150.0f;
+    float shadowSoftness = 1.0f;
+    float shadowNormalOffset = 1.5f;
     // Tone mapping + exposure.
     bool tonemap = true;
     float exposure = 1.0f;
@@ -83,6 +93,14 @@ struct RenderStack {
               1, 0, 10, 0.01),
         Field("bloomStrength", "泛光强度", FieldType::Number, &RenderStack::bloomStrength,
               0.35, 0, 10, 0.01),
+        Field("bloomWidth", "泛光扩散", FieldType::Number, &RenderStack::bloomWidth,
+              1.6, 0.5, 6, 0.05),
+        Field("shadowDistance", "阴影距离", FieldType::Number, &RenderStack::shadowDistance,
+              150, 0, 600, 5),
+        Field("shadowSoftness", "阴影柔化", FieldType::Number, &RenderStack::shadowSoftness,
+              1, 0, 3, 0.05),
+        Field("shadowNormalOffset", "阴影法线偏移", FieldType::Number,
+              &RenderStack::shadowNormalOffset, 1.5, 0, 6, 0.1),
         Field("tonemap", "色调映射", FieldType::Bool, &RenderStack::tonemap),
         Field("exposure", "曝光", FieldType::Number, &RenderStack::exposure, 1, 0, 10, 0.01),
         Field("fog", "雾", FieldType::Bool, &RenderStack::fog),

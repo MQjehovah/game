@@ -159,6 +159,10 @@ private:
         // P2-1 ground decal: draws a flat XZ-plane quad with the texture.
         bool isDecal = false;
         float decalSize = 2.0f;
+        // Depth-projection volume height (world units). The decal mesh is a unit
+        // quad scaled by (size, height, size) at draw time so a later SetDecal
+        // resize takes effect immediately.
+        float decalHeight = 2.0f;
         // LOD chain spec from the entity's SceneMesh (data-driven: distance +
         // meshKey per level). Resolved into `chain` during ResolveDrawItem.
         std::vector<LodEntry> lod;
@@ -186,6 +190,9 @@ private:
         // mesh 节点（自带累积变换 + 材质）。Draw 时用 itemModel * sub.transform
         // 绘制，使一个 `gltf:` 实体渲染整个场景（大型场景渲染，C15 延伸）。
         std::vector<assets::GltfMeshNode> gltfSubNodes;
+        // True when the entity's glTF material-layer filter rejects nodes[0]'s
+        // primitive: its mesh is skipped while surviving sub-nodes still draw.
+        bool suppressMesh = false;
         // 多 mesh glTF 场景的合并 AABB（主 mesh + 全部子节点），用于视锥剔除。
         // 若只按 nodes[0] 的 bounds 剔除，相机看向宫殿中心（nodes[0] 是边缘小
         // 块）时整个 item 被错误剔除，导致 Sponza 不可见（draws=1）。
@@ -202,6 +209,18 @@ private:
         gfx::Material mat;
         uint32_t start = 0;
         uint32_t count = 0;
+    };
+    // Per-frame sort key for one draw item. Items are bucketed into pipeline
+    // groups so the batched opaque run stays contiguous (batching is preserved)
+    // and only the depth-order-sensitive groups are sorted:
+    //   0 batchable opaque  -> creation order (instanced batching run)
+    //   1 other opaque 3D   -> front-to-back (early-Z)
+    //   2 transparent 3D    -> back-to-front (correct blend order)
+    //   3 2D painters order -> SceneSortOrder.z
+    struct DrawSortKey {
+        float z = 0.0f;       // SceneSortOrder.z (2D painter's order)
+        float dist = 0.0f;    // camera distance (3D items)
+        uint8_t group = 0;
     };
     // G2-3 vegetation field attached to a terrain entity: deterministic scatter
     // positions plus lazily-resolved plant + impostor meshes. Built once per
@@ -254,8 +273,22 @@ private:
     std::vector<uint8_t> bvhVisible_;
     // Sprite sort scratch (reused instead of a fresh allocation every frame).
     std::vector<size_t> drawOrder_;
+    std::vector<DrawSortKey> drawSortKeys_;
+    // Instanced-batch lookup: hash(mesh + material) -> open batch indices. The
+    // previous linear scan over every open batch was O(batches) per item (the
+    // Rift map alone has hundreds of distinct materials).
+    std::unordered_map<uint64_t, std::vector<uint32_t>> batchLookup_;
     // G2-3 vegetation cache (EntityKey -> VegField); rebuilt lazily per Start.
     std::unordered_map<uint64_t, VegField> vegCache_;
+    // Step E2 (TAA motion vectors): last frame's local-to-world per entity, plus
+    // the frame stamp used to prune entries for entities that stopped drawing.
+    // Only maintained while the renderer is writing a velocity buffer.
+    struct PrevXform {
+        math::Mat4 model;
+        uint64_t frame = 0;
+    };
+    std::unordered_map<uint64_t, PrevXform> prevXforms_;
+    uint64_t drawFrame_ = 0;
     // 写实天空贴图缓存（SceneLight.skyTexture 配置）：按路径懒加载一次。
     gfx::Texture skyTex_;
     std::string skyTexPath_;

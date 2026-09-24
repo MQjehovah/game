@@ -774,6 +774,19 @@ Value NativeSpawnSprite(IScriptHost& host, void* user) {
 //   colorEnd {r,g,b,a}     end color (default white -> alpha 0)
 //   gravity                y acceleration (default 0)
 //   additive               true = additive blend (default true)
+//   shape                  "point"|"sphere"|"hemisphere"|"cone"|"ring"|"disc"
+//   radius / thickness     spawn volume size (default 0.25 / 0.06)
+//   coneAngle              cone half angle in degrees (default 40)
+//   dir {x,y,z}            cone/ring/disc axis (default 0,1,0)
+//   spread                 velocity cone half angle in degrees (0 = isotropic)
+//   drag                   per-second velocity damping (default 0)
+//   rot / rotSpeed         per-particle roll start + spin (radians, rad/s)
+//   uvCols/uvRows/uvFps    flipbook atlas (uvFps 0 = static)
+//   uvLoop / uvRandomStart / uvFlipY   atlas playback flags
+//   sizeEase / alphaEase   lifetime curve exponents (1 = linear)
+//   fadeIn                 0..1 fraction of life fading in
+//   ground / collideGround / bounce / dieOnGround   ground interaction
+//   emissive               HDR multiplier for the particle colour
 Value NativeEmitParticles(IScriptHost& host, void* user) {
     auto* ctx = static_cast<ScriptContext*>(user);
     if (!ctx || !ctx->emitParticles) return Value::Nil();
@@ -834,6 +847,47 @@ Value NativeEmitParticles(IScriptHost& host, void* user) {
     cfg.gravity = num("gravity", 0.0f);
     if (const Value* ad = find("additive"))
         cfg.additive = !(ad->type == Value::Type::Bool && !ad->boolean);
+    // Spawn volume + motion (defaults reproduce the legacy sphere burst).
+    if (const Value* s = find("shape"); s && s->type == Value::Type::String) {
+        const std::string& n = s->str;
+        if (n == "point") cfg.shape = gfx::EmitterShape::Point;
+        else if (n == "hemisphere") cfg.shape = gfx::EmitterShape::Hemisphere;
+        else if (n == "cone") cfg.shape = gfx::EmitterShape::Cone;
+        else if (n == "ring") cfg.shape = gfx::EmitterShape::Ring;
+        else if (n == "disc") cfg.shape = gfx::EmitterShape::Disc;
+        else cfg.shape = gfx::EmitterShape::Sphere;
+    }
+    cfg.shapeRadius = num("radius", cfg.shapeRadius);
+    cfg.ringThickness = num("thickness", cfg.ringThickness);
+    cfg.coneAngleDeg = num("coneAngle", cfg.coneAngleDeg);
+    cfg.direction = vec3("dir", cfg.direction.x, cfg.direction.y, cfg.direction.z);
+    cfg.spreadDeg = num("spread", 0.0f);
+    cfg.drag = num("drag", 0.0f);
+    cfg.rotStartMin = num("rot", 0.0f);
+    cfg.rotStartMax = num("rotMax", cfg.rotStartMin);
+    cfg.rotSpeedMin = num("rotSpeed", 0.0f);
+    cfg.rotSpeedMax = num("rotSpeedMax", cfg.rotSpeedMin);
+    const float uvCols = num("uvCols", 1.0f);
+    const float uvRows = num("uvRows", 1.0f);
+    cfg.uvCols = static_cast<uint32_t>(std::max(1.0f, uvCols));
+    cfg.uvRows = static_cast<uint32_t>(std::max(1.0f, uvRows));
+    cfg.uvFps = num("uvFps", 0.0f);
+    if (const Value* v = find("uvLoop"))
+        cfg.uvLoop = !(v->type == Value::Type::Bool && !v->boolean);
+    if (const Value* v = find("uvRandomStart"))
+        cfg.uvRandomStart = !(v->type == Value::Type::Bool && !v->boolean);
+    if (const Value* v = find("uvFlipY"))
+        cfg.uvFlipY = (v->type == Value::Type::Bool && v->boolean);
+    cfg.sizeEase = num("sizeEase", 1.0f);
+    cfg.alphaEase = num("alphaEase", 1.0f);
+    cfg.fadeIn = num("fadeIn", 0.0f);
+    cfg.groundY = num("ground", 0.0f);
+    if (const Value* v = find("collideGround"))
+        cfg.collideGround = (v->type == Value::Type::Bool && v->boolean);
+    cfg.bounce = num("bounce", 0.0f);
+    if (const Value* v = find("dieOnGround"))
+        cfg.dieOnGround = (v->type == Value::Type::Bool && v->boolean);
+    cfg.emissive = num("emissive", 1.0f);
     ctx->emitParticles(cfg);
     return Value::Nil();
 }
@@ -1144,8 +1198,11 @@ Value NativeSpawnDecal(IScriptHost& host, void* user) {
     const float b = num(alphaIdx + 3, 1.0f);
     const Value& av = host.GetArg(alphaIdx + 4);
     const bool additive = av.type == Value::Type::Bool ? av.boolean : av.number != 0.0;
+    // Optional trailing height: the depth-projection volume the decal conforms
+    // to (0 -> a flat quad, engine default otherwise).
+    const float height = num(alphaIdx + 5, 2.0f);
     const ecs::Entity e = ctx->spawnDecal(texture, pos, num(sizeIdx, 2.0f), num(alphaIdx, 1.0f),
-                                          r, g, b, additive);
+                                          r, g, b, additive, height);
     return e.IsValid() ? EntityToValue(e) : Value::Nil();
 }
 
@@ -1154,7 +1211,9 @@ Value NativeSetDecal(IScriptHost& host, void* user) {
     if (!ctx || !ctx->setDecal) return Value::Nil();
     const ecs::Entity e = EntityFromValue(host.GetArg(0));
     if (!e.IsValid()) return Value::Nil();
-    ctx->setDecal(e, NumberArg(host, 1, 0.0f), NumberArg(host, 2, 1.0f));
+    // SetDecal(ent, size, alpha [, height]); height <= 0 keeps the current one.
+    ctx->setDecal(e, NumberArg(host, 1, 0.0f), NumberArg(host, 2, 1.0f),
+                  NumberArg(host, 3, 0.0f));
     return Value::Nil();
 }
 

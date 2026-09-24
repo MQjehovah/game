@@ -65,6 +65,9 @@ public:
         // defaulting to the original constants so existing scenes are unchanged.
         float bloomThreshold = kBloomThreshold;
         float bloomStrength = kBloomStrength;
+        // Upsample filter footprint. 1.0 = the classic single-tap bilinear
+        // upsample; > 1 widens the glow skirt around bright pixels.
+        float bloomWidth = 1.6f;
         // A1 color grading (procedural LUT-free "film look", applied post-tonemap).
         // Default (disabled) leaves the composite pixel-identical to the old path.
         ColorGrade colorGrade;
