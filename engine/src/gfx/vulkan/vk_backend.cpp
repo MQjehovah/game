@@ -91,7 +91,7 @@ constexpr VkFormat kDepthFormats[] = {VK_FORMAT_D24_UNORM_S8_UINT, VK_FORMAT_D32
 constexpr VkFormat kSwapchainFormats[] = {VK_FORMAT_B8G8R8A8_UNORM, VK_FORMAT_R8G8B8A8_UNORM,
                                           VK_FORMAT_B8G8R8A8_SRGB};
 constexpr uint32_t kMaxSamplerSlots = 25;  // renderer texture units 0..24
-constexpr size_t kUniformBlockSize = 7152; // EngineUBO std140 size (engine_ubo.glsl)
+constexpr size_t kUniformBlockSize = 7248; // EngineUBO std140 size (uAmbientColor moved out of the uPointRadius std140 span)
 constexpr uint32_t kFramesInFlight = 2;
 constexpr uint64_t kScratchBytes = 16ull * 1024 * 1024;
 constexpr uint64_t kUboBytes = 16ull * 1024 * 1024;
@@ -120,130 +120,130 @@ const UniEntry kUniformOffsets[] = {
     {"uPointPos[0]", UniKind::Vec3, 4576, 12, 8},
     {"uPointColor[0]", UniKind::Vec3, 4704, 12, 8},
     {"uPointRadius[0]", UniKind::Float, 4832, 4, 8},
-    {"uAmbientColor", UniKind::Vec3, 4864, 12, 1},
-    {"uCamPos", UniKind::Vec3, 4960, 12, 1},
-    {"uSunDir", UniKind::Vec3, 4976, 12, 1},
-    {"uSunColor", UniKind::Vec3, 4992, 12, 1},
-    {"uPlayerLightPos", UniKind::Vec3, 5008, 12, 1},
-    {"uPlayerLightColor", UniKind::Vec3, 5024, 12, 1},
-    {"uPlayerLightRadius", UniKind::Float, 5040, 4, 1},
-    {"uFogColor", UniKind::Vec3, 5056, 12, 1},
-    {"uFogStart", UniKind::Float, 5072, 4, 1},
-    {"uFogEnd", UniKind::Float, 5088, 4, 1},
-    {"uAmbient", UniKind::Float, 5104, 4, 1},
-    {"uAOStrength", UniKind::Float, 5120, 4, 1},
-    {"uEmissiveIntensity", UniKind::Float, 5136, 4, 1},
-    {"uShininess", UniKind::Float, 5152, 4, 1},
-    {"uMetallic", UniKind::Float, 5168, 4, 1},
-    {"uRoughness", UniKind::Float, 5184, 4, 1},
-    {"uRoughnessMin", UniKind::Float, 5200, 4, 1},
-    {"uIblStrength", UniKind::Float, 5216, 4, 1},
-    {"uShadowTexel", UniKind::Vec2, 5232, 8, 1},
-    {"uPointShadowTexel", UniKind::Vec2, 5248, 8, 1},
-    {"uShadowEnabled", UniKind::Int, 5264, 4, 1},
-    {"uPointShadowEnabled", UniKind::Int, 5280, 4, 1},
-    {"uPointShadowLightCount", UniKind::Int, 5296, 4, 1},
-    {"uPointCount", UniKind::Int, 5312, 4, 1},
-    {"uHasTexture", UniKind::Int, 5328, 4, 1},
-    {"uHasMR", UniKind::Int, 5344, 4, 1},
-    {"uHasAO", UniKind::Int, 5360, 4, 1},
-    {"uHasEmissive", UniKind::Int, 5376, 4, 1},
-    {"uPlayerLightEnabled", UniKind::Int, 5392, 4, 1},
-    {"uBloomEnabled", UniKind::Int, 5408, 4, 1},
-    {"uTonemapEnabled", UniKind::Int, 5424, 4, 1},
-    {"uThreshold", UniKind::Float, 5440, 4, 1},
-    {"uStrength", UniKind::Float, 5456, 4, 1},
-    {"uExposure", UniKind::Float, 5472, 4, 1},
-    {"uTexelSize", UniKind::Vec2, 5488, 8, 1},
-    {"uDirection", UniKind::Vec2, 5504, 8, 1},
-    {"uSrcTexelSize", UniKind::Vec2, 5520, 8, 1},
-    {"uLightPos", UniKind::Vec3, 5536, 12, 1},
-    {"uLightRange", UniKind::Float, 5552, 4, 1},
-    {"uShadowTexelWorld", UniKind::Vec3, 5568, 12, 1},
-    {"uShadowSoftness", UniKind::Float, 5584, 4, 1},
-    {"uShadowNormalOffset", UniKind::Float, 5600, 4, 1},
-    {"uShadowDebug", UniKind::Int, 5616, 4, 1},
-    {"uAlphaTest", UniKind::Float, 5632, 4, 1},
+    {"uAmbientColor", UniKind::Vec3, 4960, 12, 1},
+    {"uCamPos", UniKind::Vec3, 5056, 12, 1},
+    {"uSunDir", UniKind::Vec3, 5072, 12, 1},
+    {"uSunColor", UniKind::Vec3, 5088, 12, 1},
+    {"uPlayerLightPos", UniKind::Vec3, 5104, 12, 1},
+    {"uPlayerLightColor", UniKind::Vec3, 5120, 12, 1},
+    {"uPlayerLightRadius", UniKind::Float, 5136, 4, 1},
+    {"uFogColor", UniKind::Vec3, 5152, 12, 1},
+    {"uFogStart", UniKind::Float, 5168, 4, 1},
+    {"uFogEnd", UniKind::Float, 5184, 4, 1},
+    {"uAmbient", UniKind::Float, 5200, 4, 1},
+    {"uAOStrength", UniKind::Float, 5216, 4, 1},
+    {"uEmissiveIntensity", UniKind::Float, 5232, 4, 1},
+    {"uShininess", UniKind::Float, 5248, 4, 1},
+    {"uMetallic", UniKind::Float, 5264, 4, 1},
+    {"uRoughness", UniKind::Float, 5280, 4, 1},
+    {"uRoughnessMin", UniKind::Float, 5296, 4, 1},
+    {"uIblStrength", UniKind::Float, 5312, 4, 1},
+    {"uShadowTexel", UniKind::Vec2, 5328, 8, 1},
+    {"uPointShadowTexel", UniKind::Vec2, 5344, 8, 1},
+    {"uShadowEnabled", UniKind::Int, 5360, 4, 1},
+    {"uPointShadowEnabled", UniKind::Int, 5376, 4, 1},
+    {"uPointShadowLightCount", UniKind::Int, 5392, 4, 1},
+    {"uPointCount", UniKind::Int, 5408, 4, 1},
+    {"uHasTexture", UniKind::Int, 5424, 4, 1},
+    {"uHasMR", UniKind::Int, 5440, 4, 1},
+    {"uHasAO", UniKind::Int, 5456, 4, 1},
+    {"uHasEmissive", UniKind::Int, 5472, 4, 1},
+    {"uPlayerLightEnabled", UniKind::Int, 5488, 4, 1},
+    {"uBloomEnabled", UniKind::Int, 5504, 4, 1},
+    {"uTonemapEnabled", UniKind::Int, 5520, 4, 1},
+    {"uThreshold", UniKind::Float, 5536, 4, 1},
+    {"uStrength", UniKind::Float, 5552, 4, 1},
+    {"uExposure", UniKind::Float, 5568, 4, 1},
+    {"uTexelSize", UniKind::Vec2, 5584, 8, 1},
+    {"uDirection", UniKind::Vec2, 5600, 8, 1},
+    {"uSrcTexelSize", UniKind::Vec2, 5616, 8, 1},
+    {"uLightPos", UniKind::Vec3, 5632, 12, 1},
+    {"uLightRange", UniKind::Float, 5648, 4, 1},
+    {"uShadowTexelWorld", UniKind::Vec3, 5664, 12, 1},
+    {"uShadowSoftness", UniKind::Float, 5680, 4, 1},
+    {"uShadowNormalOffset", UniKind::Float, 5696, 4, 1},
+    {"uShadowDebug", UniKind::Int, 5712, 4, 1},
+    {"uAlphaTest", UniKind::Float, 5728, 4, 1},
     // --- post-processing / effects (offsets mirror engine_ubo.glsl) -------
-    {"uNear", UniKind::Float, 5648, 4, 1},
-    {"uFar", UniKind::Float, 5664, 4, 1},
-    {"uRadius", UniKind::Float, 5680, 4, 1},
-    {"uBias", UniKind::Float, 5696, 4, 1},
-    {"uPower", UniKind::Float, 5712, 4, 1},
-    {"uProjScale", UniKind::Float, 5728, 4, 1},
-    {"uDensity", UniKind::Float, 5744, 4, 1},
-    {"uWeight", UniKind::Float, 5760, 4, 1},
-    {"uDecay", UniKind::Float, 5776, 4, 1},
-    {"uSteps", UniKind::Num, 5792, 4, 1},
-    {"uThickness", UniKind::Float, 5808, 4, 1},
-    {"uMaxDist", UniKind::Float, 5824, 4, 1},
-    {"uKeyValue", UniKind::Float, 5840, 4, 1},
-    {"uExposureMin", UniKind::Float, 5856, 4, 1},
-    {"uExposureMax", UniKind::Float, 5872, 4, 1},
-    {"uAdaptation", UniKind::Float, 5888, 4, 1},
-    {"uAoIntensity", UniKind::Float, 5904, 4, 1},
-    {"uVolStrength", UniKind::Float, 5920, 4, 1},
-    {"uSsrStrength", UniKind::Float, 5936, 4, 1},
-    {"uFogDensity", UniKind::Float, 5968, 4, 1},
-    {"uSaturation", UniKind::Float, 5984, 4, 1},
-    {"uContrast", UniKind::Float, 6000, 4, 1},
-    {"uGain", UniKind::Float, 6016, 4, 1},
-    {"uGamma", UniKind::Float, 6032, 4, 1},
-    {"uLift", UniKind::Float, 6048, 4, 1},
-    {"uVignetteRadius", UniKind::Float, 6064, 4, 1},
-    {"uVignetteSoftness", UniKind::Float, 6080, 4, 1},
-    {"uVignetteIntensity", UniKind::Float, 6096, 4, 1},
-    {"uSoftFade", UniKind::Float, 6112, 4, 1},
-    {"uDecalBias", UniKind::Float, 6128, 4, 1},
-    {"uSunYaw", UniKind::Float, 6144, 4, 1},
-    {"uSunPitch", UniKind::Float, 6160, 4, 1},
-    {"uCloudCoverage", UniKind::Float, 6176, 4, 1},
-    {"uCloudScale", UniKind::Float, 6192, 4, 1},
-    {"uTime", UniKind::Float, 6208, 4, 1},
-    {"uAoEnabled", UniKind::Int, 6224, 4, 1},
-    {"uVolEnabled", UniKind::Int, 6240, 4, 1},
-    {"uSsrEnabled", UniKind::Int, 6256, 4, 1},
-    {"uFogEnabled", UniKind::Int, 6272, 4, 1},
-    {"uGradeEnabled", UniKind::Int, 6288, 4, 1},
-    {"uAutoExposure", UniKind::Int, 6304, 4, 1},
-    {"uVignette", UniKind::Int, 6320, 4, 1},
-    {"uDecalProject", UniKind::Int, 6336, 4, 1},
-    {"uDecalAdditive", UniKind::Int, 6352, 4, 1},
-    {"uSkyTextureValid", UniKind::Int, 6368, 4, 1},
-    {"uSunVisible", UniKind::Int, 6384, 4, 1},
-    {"uMoonVisible", UniKind::Int, 6400, 4, 1},
-    {"uCloudsEnabled", UniKind::Int, 6416, 4, 1},
-    {"uScreenSize", UniKind::Vec2, 6432, 8, 1},
-    {"uSunScreen", UniKind::Vec2, 6448, 8, 1},
-    {"uSkyTop", UniKind::Vec3, 6464, 12, 1},
-    {"uSkyHorizon", UniKind::Vec3, 6480, 12, 1},
-    {"uSceneVpRect", UniKind::Vec4, 6496, 16, 1},
-    {"uViewProj", UniKind::Mat4, 6512, 64, 1},
-    {"uInvViewProj", UniKind::Mat4, 6576, 64, 1},
-    {"uPrevViewProj", UniKind::Mat4, 6640, 64, 1},
-    {"uPrevModel", UniKind::Mat4, 6704, 64, 1},
-    {"uDecalInvModel", UniKind::Mat4, 6768, 64, 1},
-    {"uTiling", UniKind::Vec2, 6832, 8, 1},
-    {"uDirtColor", UniKind::Vec4, 6848, 16, 1},
-    {"uRockColor", UniKind::Vec4, 6864, 16, 1},
-    {"uHasGrassTex", UniKind::Int, 6880, 4, 1},
-    {"uBlend", UniKind::Float, 6896, 4, 1},
-    {"uValidHistory", UniKind::Int, 6912, 4, 1},
-    {"uHasVelocity", UniKind::Int, 6928, 4, 1},
-    {"uSharpen", UniKind::Float, 6944, 4, 1},
-    {"uSamples", UniKind::Int, 6960, 4, 1},
-    {"uAmbientGroundColor", UniKind::Vec3, 6976, 12, 1},
-    {"uHighlightColor", UniKind::Vec3, 6992, 12, 1},
-    {"uLightProbeMin", UniKind::Vec3, 7008, 12, 1},
-    {"uLightProbeExtent", UniKind::Vec3, 7024, 12, 1},
-    {"uNormalScale", UniKind::Float, 7040, 4, 1},
-    {"uHighlightStrength", UniKind::Float, 7056, 4, 1},
-    {"uLightProbeRes", UniKind::Float, 7072, 4, 1},
-    {"uLightProbeInvMax", UniKind::Float, 7088, 4, 1},
-    {"uHasNormalMap", UniKind::Int, 7104, 4, 1},
-    {"uReceiveShadow", UniKind::Int, 7120, 4, 1},
-    {"uLightProbeEnabled", UniKind::Int, 7136, 4, 1},
-    {"uBloomWidth", UniKind::Float, 7140, 4, 1},
+    {"uNear", UniKind::Float, 5744, 4, 1},
+    {"uFar", UniKind::Float, 5760, 4, 1},
+    {"uRadius", UniKind::Float, 5776, 4, 1},
+    {"uBias", UniKind::Float, 5792, 4, 1},
+    {"uPower", UniKind::Float, 5808, 4, 1},
+    {"uProjScale", UniKind::Float, 5824, 4, 1},
+    {"uDensity", UniKind::Float, 5840, 4, 1},
+    {"uWeight", UniKind::Float, 5856, 4, 1},
+    {"uDecay", UniKind::Float, 5872, 4, 1},
+    {"uSteps", UniKind::Num, 5888, 4, 1},
+    {"uThickness", UniKind::Float, 5904, 4, 1},
+    {"uMaxDist", UniKind::Float, 5920, 4, 1},
+    {"uKeyValue", UniKind::Float, 5936, 4, 1},
+    {"uExposureMin", UniKind::Float, 5952, 4, 1},
+    {"uExposureMax", UniKind::Float, 5968, 4, 1},
+    {"uAdaptation", UniKind::Float, 5984, 4, 1},
+    {"uAoIntensity", UniKind::Float, 6000, 4, 1},
+    {"uVolStrength", UniKind::Float, 6016, 4, 1},
+    {"uSsrStrength", UniKind::Float, 6032, 4, 1},
+    {"uFogDensity", UniKind::Float, 6064, 4, 1},
+    {"uSaturation", UniKind::Float, 6080, 4, 1},
+    {"uContrast", UniKind::Float, 6096, 4, 1},
+    {"uGain", UniKind::Float, 6112, 4, 1},
+    {"uGamma", UniKind::Float, 6128, 4, 1},
+    {"uLift", UniKind::Float, 6144, 4, 1},
+    {"uVignetteRadius", UniKind::Float, 6160, 4, 1},
+    {"uVignetteSoftness", UniKind::Float, 6176, 4, 1},
+    {"uVignetteIntensity", UniKind::Float, 6192, 4, 1},
+    {"uSoftFade", UniKind::Float, 6208, 4, 1},
+    {"uDecalBias", UniKind::Float, 6224, 4, 1},
+    {"uSunYaw", UniKind::Float, 6240, 4, 1},
+    {"uSunPitch", UniKind::Float, 6256, 4, 1},
+    {"uCloudCoverage", UniKind::Float, 6272, 4, 1},
+    {"uCloudScale", UniKind::Float, 6288, 4, 1},
+    {"uTime", UniKind::Float, 6304, 4, 1},
+    {"uAoEnabled", UniKind::Int, 6320, 4, 1},
+    {"uVolEnabled", UniKind::Int, 6336, 4, 1},
+    {"uSsrEnabled", UniKind::Int, 6352, 4, 1},
+    {"uFogEnabled", UniKind::Int, 6368, 4, 1},
+    {"uGradeEnabled", UniKind::Int, 6384, 4, 1},
+    {"uAutoExposure", UniKind::Int, 6400, 4, 1},
+    {"uVignette", UniKind::Int, 6416, 4, 1},
+    {"uDecalProject", UniKind::Int, 6432, 4, 1},
+    {"uDecalAdditive", UniKind::Int, 6448, 4, 1},
+    {"uSkyTextureValid", UniKind::Int, 6464, 4, 1},
+    {"uSunVisible", UniKind::Int, 6480, 4, 1},
+    {"uMoonVisible", UniKind::Int, 6496, 4, 1},
+    {"uCloudsEnabled", UniKind::Int, 6512, 4, 1},
+    {"uScreenSize", UniKind::Vec2, 6528, 8, 1},
+    {"uSunScreen", UniKind::Vec2, 6544, 8, 1},
+    {"uSkyTop", UniKind::Vec3, 6560, 12, 1},
+    {"uSkyHorizon", UniKind::Vec3, 6576, 12, 1},
+    {"uSceneVpRect", UniKind::Vec4, 6592, 16, 1},
+    {"uViewProj", UniKind::Mat4, 6608, 64, 1},
+    {"uInvViewProj", UniKind::Mat4, 6672, 64, 1},
+    {"uPrevViewProj", UniKind::Mat4, 6736, 64, 1},
+    {"uPrevModel", UniKind::Mat4, 6800, 64, 1},
+    {"uDecalInvModel", UniKind::Mat4, 6864, 64, 1},
+    {"uTiling", UniKind::Vec2, 6928, 8, 1},
+    {"uDirtColor", UniKind::Vec4, 6944, 16, 1},
+    {"uRockColor", UniKind::Vec4, 6960, 16, 1},
+    {"uHasGrassTex", UniKind::Int, 6976, 4, 1},
+    {"uBlend", UniKind::Float, 6992, 4, 1},
+    {"uValidHistory", UniKind::Int, 7008, 4, 1},
+    {"uHasVelocity", UniKind::Int, 7024, 4, 1},
+    {"uSharpen", UniKind::Float, 7040, 4, 1},
+    {"uSamples", UniKind::Int, 7056, 4, 1},
+    {"uAmbientGroundColor", UniKind::Vec3, 7072, 12, 1},
+    {"uHighlightColor", UniKind::Vec3, 7088, 12, 1},
+    {"uLightProbeMin", UniKind::Vec3, 7104, 12, 1},
+    {"uLightProbeExtent", UniKind::Vec3, 7120, 12, 1},
+    {"uNormalScale", UniKind::Float, 7136, 4, 1},
+    {"uHighlightStrength", UniKind::Float, 7152, 4, 1},
+    {"uLightProbeRes", UniKind::Float, 7168, 4, 1},
+    {"uLightProbeInvMax", UniKind::Float, 7184, 4, 1},
+    {"uHasNormalMap", UniKind::Int, 7200, 4, 1},
+    {"uReceiveShadow", UniKind::Int, 7216, 4, 1},
+    {"uLightProbeEnabled", UniKind::Int, 7232, 4, 1},
+    {"uBloomWidth", UniKind::Float, 7236, 4, 1},
     {"uAlbedo", UniKind::Sampler, 0, 0, 1},
     {"uGrassTex", UniKind::Sampler, 0, 0, 1},
     {"uCurrent", UniKind::Sampler, 0, 0, 1},
@@ -538,9 +538,14 @@ struct PipelineKey {
     uint8_t depthTest;
     uint8_t depthWrite;
     uint8_t cull;
+    uint32_t colorFormat; // RpKind is not enough: the swapchain (BGRA) and
+                          // offscreen (RGBA) Color1 targets have incompatible
+                          // render passes, and a pipeline must only be used
+                          // with the pass it was created against.
     bool operator==(const PipelineKey& o) const {
         return programId == o.programId && rp == o.rp && blend == o.blend &&
-               depthTest == o.depthTest && depthWrite == o.depthWrite && cull == o.cull;
+               depthTest == o.depthTest && depthWrite == o.depthWrite && cull == o.cull &&
+               colorFormat == o.colorFormat;
     }
 };
 struct PipelineKeyHash {
@@ -551,6 +556,7 @@ struct PipelineKeyHash {
         v = v * 31 + k.depthTest;
         v = v * 31 + k.depthWrite;
         v = v * 31 + k.cull;
+        v = v * 31 + k.colorFormat;
         return std::hash<uint64_t>{}(v);
     }
 };
@@ -1182,43 +1188,6 @@ public:
         vkDestroyBuffer(device_, staging, nullptr);
         vkFreeMemory(device_, stagingMem, nullptr);
 
-        // DEBUG-VK-TEX: 回读验证角落 alpha 是否落地（PNG 透明区 rgb=白 a=0）
-        if (desc.width == 128 && desc.height == 128) {
-            VkBuffer readback;
-            VkDeviceMemory readbackMem;
-            if (CreateHostBuffer(dataSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT, &readback,
-                                 &readbackMem)) {
-                VkCommandPool pool;
-                CreateCommandPool(&pool);
-                VkCommandBuffer cmd = BeginOneShot(pool);
-                TransitionImage(cmd, image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                                VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                                VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-                                VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_SHADER_READ_BIT,
-                                VK_ACCESS_TRANSFER_READ_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
-                VkBufferImageCopy rc{};
-                rc.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-                rc.imageExtent = {static_cast<uint32_t>(desc.width),
-                                  static_cast<uint32_t>(desc.height), 1};
-                vkCmdCopyImageToBuffer(cmd, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                                       readback, 1, &rc);
-                vkEndCommandBuffer(cmd);
-                SubmitQueue(CurrentFrame(), cmd);
-                void* rm = nullptr;
-                vkMapMemory(device_, readbackMem, 0, dataSize, 0, &rm);
-                const unsigned char* px = static_cast<const unsigned char*>(rm);
-                NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Warn,
-                             "Vulkan: tex readback corner=(%u,%u,%u,%u) center=(%u,%u,%u,%u)",
-                             px[0], px[1], px[2], px[3],
-                             px[(64 * 128 + 64) * 4], px[(64 * 128 + 64) * 4 + 1],
-                             px[(64 * 128 + 64) * 4 + 2], px[(64 * 128 + 64) * 4 + 3]);
-                vkUnmapMemory(device_, readbackMem);
-                vkFreeCommandBuffers(device_, pool, 1, &cmd);
-                vkDestroyCommandPool(device_, pool, nullptr);
-                vkDestroyBuffer(device_, readback, nullptr);
-                vkFreeMemory(device_, readbackMem, nullptr);
-            }
-        }
         Texture tex;
         tex.image = image;
         tex.view = view;
@@ -2706,10 +2675,12 @@ private:
         rpci.pAttachments = attachments;
         rpci.subpassCount = 1;
         rpci.pSubpasses = &subpass;
-        if (!clearLoad) {
-            rpci.dependencyCount = 1;
-            rpci.pDependencies = &dependency;
-        }
+        // The dependency must be IDENTICAL in the clear and load passes:
+        // render-pass compatibility (VkRenderPassBeginInfo-renderPass-00904 /
+        // vkCmdDrawIndexed-renderPass-02684) includes the dependency list, and
+        // pipelines + framebuffers are shared between the two variants.
+        rpci.dependencyCount = 1;
+        rpci.pDependencies = &dependency;
         VkRenderPass rp;
         if (vkCreateRenderPass(device_, &rpci, nullptr, &rp) != VK_SUCCESS) return VK_NULL_HANDLE;
         return rp;
@@ -3307,6 +3278,8 @@ private:
         PipelineKey key;
         key.programId = prog->id;
         key.rp = static_cast<uint8_t>(rp);
+        key.colorFormat = target_ ? static_cast<uint32_t>(target_->colorFormat)
+                                  : static_cast<uint32_t>(VK_FORMAT_R8G8B8A8_UNORM);
         key.blend = static_cast<uint8_t>(currentBlend_);
         key.depthTest = currentDepthTest_ ? 1 : 0;
         key.depthWrite = currentDepthWrite_ ? 1 : 0;
@@ -3314,7 +3287,7 @@ private:
         auto it = pipelines_.find(key);
         if (it != pipelines_.end()) return it->second;
 
-        VkPipeline pipeline = CreatePipeline(prog, rp);
+        VkPipeline pipeline = CreatePipeline(prog, rp, static_cast<VkFormat>(key.colorFormat));
         if (!pipeline) return VK_NULL_HANDLE;
         pipelines_[key] = pipeline;
         return pipeline;
@@ -3332,7 +3305,7 @@ private:
         }
     }
 
-    VkPipeline CreatePipeline(Program* prog, RpKind rp) {
+    VkPipeline CreatePipeline(Program* prog, RpKind rp, VkFormat targetColorFormat) {
         const bool depthOnly = rp == RpKind::DepthOnly;
 
         VkPipelineShaderStageCreateInfo stages[2]{};
@@ -3471,8 +3444,13 @@ private:
         dyn.dynamicStateCount = 2;
         dyn.pDynamicStates = dynamicStates;
 
-        VkRenderPass renderPass = depthOnly ? depthOnlyPass_
-                                            : GetRenderPasses(RpFormat(rp), samples).clear;
+        // The pipeline must be created against a render pass compatible with
+        // the one the draws will use: the swapchain target is BGRA while
+        // RpFormat(Color1) is RGBA - creating against the latter and drawing
+        // into the former is a compatibility violation (validation 02684).
+        VkRenderPass renderPass =
+            depthOnly ? depthOnlyPass_
+                      : GetRenderPasses(targetColorFormat, samples).clear;
 
         VkGraphicsPipelineCreateInfo ci{};
         ci.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
