@@ -1,0 +1,191 @@
+{
+  "renderstack": {
+    "ssao": true,
+    "bloom": true,
+    "tonemap": true,
+    "exposure": 1.0,
+    "shadowDistance": 60.0,
+    "shadowSoftness": 1.2,
+    "shadowNormalOffset": 1.5
+  },
+  "entities": [
+    {
+      "id": 1,
+      "name": "Game",
+      "components": {
+        "scripts": {
+          "items": [ { "backend": "lua", "path": "assets/scripts/garage.lua" } ]
+        },
+        "transform": { "pos": [0,0,0], "rot": [0,0,0,1], "scale": [1,1,1] }
+      }
+    },
+    {
+      "id": 2,
+      "name": "Main Camera",
+      "components": {
+        "type": { "value": "Camera3D" },
+        "camera": { "fov": 50, "orthoSize": 10 },
+        "transform": { "pos": [0, 11.5, -9.2], "rot": [0, 0.8893799781799316, 0.45708000659942627, 0], "scale": [1, 1, 1] }
+      }
+    },
+    {
+      "id": 3,
+      "name": "Sun",
+      "components": {
+        "type": { "value": "Light3D" },
+        "light": {
+          "type": "directional",
+          "color": [1, 0.96, 0.88, 1],
+          "intensity": 2.0,
+          "ambientStrength": 0.55,
+          "sunDir": [-0.42, -0.8, -0.3],
+          "radius": 10
+        },
+        "transform": { "pos": [0, 40, 0], "rot": [0, 0, 0, 1], "scale": [1, 1, 1] }
+      }
+    },
+    {
+      "id": 4,
+      "name": "Ground",
+      "components": {
+        "mesh": {
+          "meshKey": "cube",
+          "castShadow": false,
+          "receiveShadow": true,
+          "material": { "ao": 1, "colorHex": "#43464B", "metallic": 0, "roughness": 0.95, "uvRepeat": 30 }
+        },
+        "transform": { "pos": [0, -0.05, 0], "rot": [0, 0, 0, 1], "scale": [60, 0.1, 60] }
+      }
+    },
+    {
+      "id": 10,
+      "name": "RV_Floor",
+      "components": {
+        "mesh": {
+          "meshKey": "cube",
+          "castShadow": true,
+          "receiveShadow": true,
+          "material": { "ao": 1, "colorHex": "#6E6152", "metallic": 0, "roughness": 0.85, "uvRepeat": 4 }
+        },
+        "transform": { "pos": [0, -0.01, 0], "rot": [0, 0, 0, 1], "scale": [2.4, 0.08, 8.0] }
+      }
+    },
+    {
+      "id": 11,
+      "name": "RV_WallL",
+      "components": {
+        "mesh": {
+          "meshKey": "cube",
+          "castShadow": true,
+          "receiveShadow": true,
+          "material": { "ao": 1, "colorHex": "#9AA0A6", "metallic": 0.1, "roughness": 0.6 }
+        },
+        "transform": { "pos": [-1.15, 1.2, 0], "rot": [0, 0, 0, 1], "scale": [0.3, 2.0, 8.0] }
+      }
+    },
+    {
+      "id": 12,
+      "name": "RV_WallR",
+      "components": {
+        "mesh": {
+          "meshKey": "cube",
+          "castShadow": true,
+          "receiveShadow": true,
+          "material": { "ao": 1, "colorHex": "#8E9499", "metallic": 0.1, "roughness": 0.6 }
+        },
+        "transform": { "pos": [1.15, 1.2, 0], "rot": [0, 0, 0, 1], "scale": [0.3, 2.0, 8.0] }
+      }
+    },
+    {
+      "id": 13,
+      "name": "RV_RearWall",
+      "components": {
+        "mesh": {
+          "meshKey": "cube",
+          "castShadow": true,
+          "receiveShadow": true,
+          "material": { "ao": 1, "colorHex": "#8E9499", "metallic": 0.1, "roughness": 0.6 }
+        },
+        "transform": { "pos": [0, 1.2, -4.15], "rot": [0, 0, 0, 1], "scale": [2.6, 2.0, 0.3] }
+      }
+    },
+    {
+      "id": 14,
+      "name": "RV_Cab",
+      "components": {
+        "mesh": {
+          "meshKey": "cube",
+          "castShadow": true,
+          "receiveShadow": true,
+          "material": { "ao": 1, "colorHex": "#7E8A93", "metallic": 0.15, "roughness": 0.55 }
+        },
+        "transform": { "pos": [0, 1.1, 4.85], "rot": [0, 0, 0, 1], "scale": [2.4, 1.8, 1.7] }
+      }
+    },
+    {
+      "id": 15,
+      "name": "RV_Windshield",
+      "components": {
+        "mesh": {
+          "meshKey": "cube",
+          "castShadow": false,
+          "receiveShadow": true,
+          "material": { "ao": 1, "colorHex": "#2A3540", "metallic": 0.4, "roughness": 0.25 }
+        },
+        "transform": { "pos": [0, 1.45, 5.72], "rot": [0, 0, 0, 1], "scale": [2.0, 0.7, 0.06] }
+      }
+    },
+    {
+      "id": 20,
+      "name": "Wheel_FL",
+      "components": {
+        "mesh": {
+          "meshKey": "sphere",
+          "castShadow": true,
+          "receiveShadow": true,
+          "material": { "ao": 1, "colorHex": "#26282B", "metallic": 0, "roughness": 0.9 }
+        },
+        "transform": { "pos": [1.3, 0.4, 3.4], "rot": [0, 0, 0, 1], "scale": [0.5, 0.8, 0.8] }
+      }
+    },
+    {
+      "id": 21,
+      "name": "Wheel_FR",
+      "components": {
+        "mesh": {
+          "meshKey": "sphere",
+          "castShadow": true,
+          "receiveShadow": true,
+          "material": { "ao": 1, "colorHex": "#26282B", "metallic": 0, "roughness": 0.9 }
+        },
+        "transform": { "pos": [-1.3, 0.4, 3.4], "rot": [0, 0, 0, 1], "scale": [0.5, 0.8, 0.8] }
+      }
+    },
+    {
+      "id": 22,
+      "name": "Wheel_RL",
+      "components": {
+        "mesh": {
+          "meshKey": "sphere",
+          "castShadow": true,
+          "receiveShadow": true,
+          "material": { "ao": 1, "colorHex": "#26282B", "metallic": 0, "roughness": 0.9 }
+        },
+        "transform": { "pos": [1.3, 0.4, -2.6], "rot": [0, 0, 0, 1], "scale": [0.5, 0.8, 0.8] }
+      }
+    },
+    {
+      "id": 23,
+      "name": "Wheel_RR",
+      "components": {
+        "mesh": {
+          "meshKey": "sphere",
+          "castShadow": true,
+          "receiveShadow": true,
+          "material": { "ao": 1, "colorHex": "#26282B", "metallic": 0, "roughness": 0.9 }
+        },
+        "transform": { "pos": [-1.3, 0.4, -2.6], "rot": [0, 0, 0, 1], "scale": [0.5, 0.8, 0.8] }
+      }
+    }
+  ]
+}
