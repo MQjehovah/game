@@ -833,12 +833,16 @@ set NEON_SHADOW_DEBUG=1   :: 直接输出级联阴影因子（白=受光，黑=�
   2. **渲染通道兼容性违规**（02684/00904，3622 条）：rpClear（0 依赖）与 rpLoad
      （1 依赖）不兼容而管线/帧缓冲跨用；swapchain（BGRA）与离屏（RGBA）共用
      RpKind::Color1 管线键。修复 = 两个通道携带相同依赖 + 管线键加入实际颜色格式。
-- **残留（下轮）**：fx_probe 的盘贴花 (-2,1) 在 VK 上仍不渲染（位置依赖：环 (0,0)
-  正常、盘在 (1.2,1.6) 时正常）。已排除：深度写入、重建镜像、UBO 重叠、通道兼容、
-  纹理内容（回读 a=234 正确）、绑定（tex0=35 正确）、alpha 采样（灰度探针正常）、
-  深度方向（编码探针无镜像）。剩余 324 条验证错误为帧图瞬时目标首帧 UNDEFINED 标记
-  类（NVIDIA 下无害）。该问题需 RenderDoc 级别抓帧定位，暂不影响游戏内主要场景
-  （MOBA 技能贴花待实机复核）。
+- **残留（下轮，根因链已闭环）**：fx_probe 的环/盘贴花在 VK 上片元全部被
+  `d >= 0.99999` sky-discard 丢弃——**无粒子条带探针实锤**（GL 显示深度条带、VK 同区域
+  完全空白 = 采样的解析深度恒 1.0）。而 0.5 常量 gl_FragDepth 写入实验时贴花可见
+  （写入/读取链路通）→ **MSAA 深度采样的 texelFetch 读到清除值 1.0 = 场景的深度写入
+  未定义**。验证层每帧 ~21 条 InvalidImageLayout（附件布局声明与实际不符，1932 条
+  同类）——NVIDIA 在错误布局下执行深度写入 = 未定义。**修复方向：布局跟踪系统
+  （RenderPassPair 声明的 initial/final 布局与 Target 跟踪状态的一致性、
+  EnsureTextureSet 的 pass 内 barrier 01197、帧图瞬时目标的首帧 UNDEFINED）——
+  独立大项，证据见 build-msvc/vk_val*.log。** 本条与"VK 后处理垂直镜像"P1-3 疑似
+  同源（布局/行序约定），修复时一并验证。
 - **TAA scene-rect 错位**：`DesignSpaceRect()` 宽度固定 16:9，非 16:9 窗口 + TAA 时
   velocity/TAA/后链三套屏幕空间映射错位（编辑器无 TAA 入口，休眠中）。
 - 动态分辨率每步进全量重建 target 并作废 TAA 历史（活跃调整期 TAA 无法收敛）；
