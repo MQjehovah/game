@@ -3263,6 +3263,13 @@ private:
                     "vt: DECAL uMVP: %g %g %g %g | %g %g %g %g | %g %g %g %g | %g %g %g %g\n",
                     m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7],
                     m[8], m[9], m[10], m[11], m[12], m[13], m[14], m[15]);
+                NEON_VK_TRACE(
+                    "vt: DECAL state rp=%d tgt=%p vp=%d,%d %dx%d scissorEn=%d sc=%d,%d %dx%d "
+                    "blend=%d depth=%d uboOff=%llu\n",
+                    rpActive_ ? 1 : 0, (void*)target_, viewportX_, viewportY_, viewportWidth_,
+                    viewportHeight_, scissorEnabled_ ? 1 : 0, scissorX_, scissorY_, scissorW_,
+                    scissorH_, (int)currentBlend_, currentDepthTest_ ? 1 : 0,
+                    (unsigned long long)lastUboOffset_);
             }
         }
             vkCmdDrawIndexed(f.cmd, mesh.indexCount, instanceCount, 0, 0, 0);
