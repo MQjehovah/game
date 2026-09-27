@@ -287,6 +287,9 @@ public:
     // frame corners. Both off by default -> existing scenes unchanged.
     void SetAutoExposure(const AutoExposure& ae) { autoExposure_ = ae; }
     const AutoExposure& GetAutoExposure() const { return autoExposure_; }
+    // 丢弃自动曝光的适应历史（场景加载/切换时调用）：下一个 AE 帧从种子 1.0
+    // 重新收敛，而不是从上一个场景的适应亮度漂移过来。
+    void ResetAutoExposure();
     void SetVignette(const Vignette& v) { vignette_ = v; }
     const Vignette& GetVignette() const { return vignette_; }
     // MSAA (Task 3.7): when requested AND the driver passes the multisample
@@ -684,7 +687,7 @@ private:
     ShaderHandle particleShader_;       // atlas/flipbook billboard (per-instance UV rect)
     ShaderHandle decalShader_;          // depth-projected ground decal
     bool softDepthReady_ = false;       // resolved the main-pass depth this frame
-    float softFadeRange_ = 0.012f;      // window-depth fade band for soft particles
+    float softFadeRange_ = 0.75f;       // world-unit fade band for soft particles
     gfx::Mesh billboardQuad_;  // unit XY quad used by DrawBillboards
     // Post-processing (HDR + bloom).
     ShaderHandle brightPassShader_;
@@ -700,6 +703,7 @@ private:
     ShaderHandle ssaoBlurShader_;
     ShaderHandle ssaoDepthShader_;   // SSAO depth pre-pass (linear camera depth)
     ShaderHandle ssaoDepthMeshShader_;   // non-instanced variant
+    ShaderHandle ssaoDepthSkinnedShader_; // GPU-skinned variant (linear depth)
     ShaderHandle volumetricShader_;
     ShaderHandle ssrShader_;
     ShaderHandle skyboxShader_;
@@ -768,6 +772,7 @@ private:
     float lightProbeMaxIrr_ = 1.0f;
     bool msaaRequested_ = true;
     bool msaaEnabled_ = false;
+    bool iblWasValid_ = false; // last frame had a live IBL set (else-branch reset)
     int msaaSamples_ = 0;
     int msaaSampleRequest_ = 0; // 0 = auto (probe 4x then 2x)
     // Step D quality/scalability state.
@@ -805,6 +810,7 @@ private:
     math::Vec2 jitterPixels_{0.0f, 0.0f};
     double frameTimeEmaMs_ = 0.0;
     long long lastFrameClock_ = 0;
+    float lastFrameDtSec_ = 1.0f / 60.0f; // raw wall-clock dt (AE adapt rate)
     // G1-5 SSAO state.
     bool ssaoEnabled_ = false;
     float ssaoIntensity_ = 1.0f; // AO blend amount in [0,1]

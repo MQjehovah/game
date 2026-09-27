@@ -178,18 +178,24 @@ const vec2 kShadowDisk[12] = vec2[12](
     vec2(-0.203, 0.621), vec2(0.962, -0.195), vec2(0.473, -0.480),
     vec2(0.519, 0.767), vec2(0.185, -0.893), vec2(0.507, 0.064),
     vec2(0.896, 0.412), vec2(-0.322, -0.933), vec2(-0.792, -0.598));
-float ShadowFactor(sampler2D sm, vec2 uv, float lightDepth) {
+float ShadowFactor(sampler2D sm, vec2 uv, float lightDepth, float biasUnit) {
     // Bias scaled by the shadow map's own per-texel depth gradient. The map is
     // stored at texel centers while the compared fragment depth is continuous,
     // so on a sloped receiver the two differ by up to half a texel of depth.
     // The caller additionally offsets the receiver along its normal, which is
     // what removes acne at grazing light angles; that lets this residual bias
     // stay small enough that contact shadows stay welded to the caster's feet.
+    // biasUnit = one shadow texel expressed in this cascade's NORMALIZED depth
+    // (texelWorld / zRange): the clamp bounds below are whole texels, so the
+    // world-space bias stays ~[0.2, 8] texels no matter how far the cascade's
+    // depth range stretches. The previous fixed clamp(0.0008..0.01) was in raw
+    // normalized units - whole world units once the range covered a large
+    // scene's casters - which detached contact shadows (peter-panning).
     float d0 = DecodeDepth(texture(sm, uv));
     float dx = DecodeDepth(texture(sm, uv + vec2(uShadowTexel.x, 0.0)));
     float dy = DecodeDepth(texture(sm, uv + vec2(0.0, uShadowTexel.y)));
     float slope = max(abs(dx - d0), abs(dy - d0));
-    float bias = clamp(0.0008 + slope * 0.5, 0.0008, 0.01);
+    float bias = clamp(0.5 * slope + 0.5 * biasUnit, 0.2 * biasUnit, 8.0 * biasUnit);
 
     // Interleaved gradient noise: a per-pixel kernel rotation. A rotated 12-tap
     // Poisson disk resolves a penumbra that the old 2x2 grid could not, and the
@@ -350,7 +356,11 @@ vec3 SampleLightProbeAtlas(vec3 wp) {
     vec3 x11 = mix(c011, c111, f.x);
     vec3 y0 = mix(x00, x01, f.y);
     vec3 y1 = mix(x10, x11, f.y);
-    return mix(y0, y1, f.z) * uLightProbeInvMax;
+    // The atlas stores irradiance PRE-multiplied by 1/maxIrr (see
+    // LightProbe encoding); uLightProbeInvMax = 1/maxIrr, so UNDO the encode
+    // scale by dividing. Multiplying by it again (the old code) squared the
+    // scale and darkened the whole GI term by maxIrr^2 (~49x at maxIrr 7).
+    return mix(y0, y1, f.z) / uLightProbeInvMax;
 }
 // Shadow factor from one directional cascade: projects the world position into
 // the cascade's light space and resolves shadow + penumbra. Fragments outside
@@ -359,6 +369,11 @@ vec3 SampleLightProbeAtlas(vec3 wp) {
 float CascadeShadow(int c, vec3 worldPos, vec3 norm) {
     float texelWorld = c == 0 ? uShadowTexelWorld.x
                       : (c == 1 ? uShadowTexelWorld.y : uShadowTexelWorld.z);
+    // Cascade depth range from the light VP: the ortho projection stores
+    // -2/(far-near) in uLightVP[c][2].z, so 2/|.| is the range the packed
+    // RGBA8 depth is normalized over - needed for the world-scaled bias.
+    float zRange = 2.0 / max(abs(uLightVP[c][2].z), 1e-8);
+    float biasUnit = texelWorld / zRange;
     vec3 p = worldPos + norm * texelWorld * uShadowNormalOffset;
     vec4 sp = uLightVP[c] * vec4(p, 1.0);
     vec3 ndc = sp.xyz / sp.w;
@@ -367,9 +382,9 @@ float CascadeShadow(int c, vec3 worldPos, vec3 norm) {
         return 1.0;
     }
     vec3 sc = ndc * 0.5 + 0.5;
-    if (c == 0) return ShadowFactor(uShadowMap0, sc.xy, sc.z);
-    if (c == 1) return ShadowFactor(uShadowMap1, sc.xy, sc.z);
-    return ShadowFactor(uShadowMap2, sc.xy, sc.z);
+    if (c == 0) return ShadowFactor(uShadowMap0, sc.xy, sc.z, biasUnit);
+    if (c == 1) return ShadowFactor(uShadowMap1, sc.xy, sc.z, biasUnit);
+    return ShadowFactor(uShadowMap2, sc.xy, sc.z, biasUnit);
 }
 void main() {
 #ifdef TERRAIN_SPLAT
@@ -424,6 +439,13 @@ void main() {
     // viewer makes the surface lit, shadow-receiving and correctly occluded;
     // front faces of well-formed meshes are untouched (dot(N, V) > 0 already).
     if (dot(N, V) < 0.0) N = -N;
+    // Receiver-offset normal for shadow sampling: the GEOMETRIC normal, not the
+    // normal-mapped one. A bumped normal's lateral component slides the sample
+    // along the surface instead of off it - light leaks at silhouettes on one
+    // side and acne bands on the other. Viewer-flipped like the shading normal
+    // so an inverted-winding ground still offsets upward (see comment above).
+    vec3 shadowNormal = normalize(vNormal);
+    if (dot(shadowNormal, V) < 0.0) shadowNormal = -shadowNormal;
     vec3 L = normalize(-uSunDir);
     float ndl = max(dot(N, L), 0.0);
     vec3 H = normalize(L + V);
@@ -472,17 +494,23 @@ void main() {
     }
     if (uHasAO) ambientLight *= mix(1.0, texture(uOcclusion, vUV).r, uAOStrength);
     vec3 color = (kd * albedo.rgb + spec) * uSunColor * ndl + ambientLight;
-    if (uHasEmissive) color += texture(uEmissive, vUV).rgb * uEmissiveIntensity;
+    // Emissive, tint self-glow, point lights and the player light are NOT part
+    // of the sun term: accumulating them separately keeps them OUT of the sun
+    // shadow composite below (a glowing pickup or torch-lit wall must not go
+    // dark because the sun happens to be blocked).
+    vec3 extraLight = vec3(0.0);
+    if (uHasEmissive) extraLight += texture(uEmissive, vUV).rgb * uEmissiveIntensity;
     // Tint self-glow: tint components pushed above 1.0 (HDR tint) emit light
     // directly, no emissive texture needed — beacon lamps, glowing pickups,
     // enemy eye weak points. The glow participates in bloom (HDR target), so
     // intensity > bloomThreshold (~1) reads as an actual light source.
     vec3 tintGlow = max(uTint.rgb - vec3(1.0), vec3(0.0));
     if (tintGlow.r + tintGlow.g + tintGlow.b > 0.0) {
-        color += tintGlow * albedo.rgb * uEmissiveIntensity;
+        extraLight += tintGlow * albedo.rgb * uEmissiveIntensity;
     }
     for (int i = 0; i < 8; ++i) {
         if (i >= uPointCount) break;
+        if (uPointRadius[i] <= 0.0) continue; // unset/off slot (also kills 0/0 NaN)
         vec3 toL = uPointPos[i] - vWorldPos;
         float d = length(toL);
         float atten = clamp(1.0 - d / uPointRadius[i], 0.0, 1.0);
@@ -501,7 +529,7 @@ void main() {
         if (uPointShadowEnabled && i < uPointShadowLightCount) {
             pContrib *= PointShadowForLight(i, vWorldPos, uPointPos[i], uPointRadius[i]);
         }
-        color += pContrib;
+        extraLight += pContrib;
     }
     if (uPlayerLightEnabled) {
         vec3 toL = uPlayerLightPos - vWorldPos;
@@ -510,14 +538,13 @@ void main() {
         atten *= atten;
         vec3 pl = toL / max(d, 1e-4);
         float pndl = max(dot(N, pl), 0.0);
-        color += albedo.rgb * uPlayerLightColor * pndl * atten;
+        extraLight += albedo.rgb * uPlayerLightColor * pndl * atten;
     }
     float dist = length(vWorldPos - uCamPos);
     // Degenerate range (end <= start, e.g. 0/0 from data-driven stacks) must
     // mean "no fog": a bare smoothstep(0,0,d) divides by zero and mixes the
     // whole frame toward the fog colour (white wash).
     float fog = (uFogEnd > uFogStart) ? smoothstep(uFogStart, uFogEnd, dist) : 0.0;
-    color = mix(color, uFogColor, fog);
 
     float shadow = 1.0;
     if (uShadowEnabled) {
@@ -528,7 +555,7 @@ void main() {
         float s1 = uCascadeSplits.y;
         float s2 = uCascadeSplits.z;
         int cascade = viewDepth < s0 ? 0 : (viewDepth < s1 ? 1 : 2);
-        vec3 shN = normalize(N);
+        vec3 shN = shadowNormal;
         shadow = CascadeShadow(cascade, vWorldPos, shN);
         // Cross-fade across each split so the cascade switch - which also changes
         // the texel size and thus the penumbra - is not a hard seam.
@@ -558,6 +585,11 @@ void main() {
     // shadowed pixels BRIGHTER than their surroundings (pale "ghost" shadows).
     vec3 sunTerm = max(color - ambientLight, vec3(0.0));
     color = sunTerm * shadow + ambientLight;
+    // Emissive / glow / local lights survive the sun shadow; then distance fog
+    // fades BOTH the shadowed and lit result (fog used to be mixed in before
+    // the composite, which let the sun-shadow term darken the fog itself).
+    color += extraLight;
+    color = mix(color, uFogColor, fog);
     // Selection / edge glow: Fresnel rim on the silhouette. Applied last (after
     // fog + shadow) so a highlighted unit stays visible even in shadow or fog;
     // albedo tint keeps it reading as the mesh's edge rather than a flat disc.
@@ -718,13 +750,18 @@ uniform mat4 uMVP;
 out vec2 vUV;
 out vec4 vColor;
 out vec4 vInstanceColor;
-out float vWinDepth;
+out float vViewDist;
 void main() {
     vUV = aUvRect.xy + aUV * aUvRect.zw;
     vColor = aColor;
     vInstanceColor = aInstanceColor;
     gl_Position = uMVP * aInstance * vec4(aPos, 1.0);
-    vWinDepth = 0.5 * gl_Position.z / gl_Position.w + 0.5;
+    // Perspective clip w is exactly the view-axis distance of this vertex.
+    // The fade compares against the LINEARISED scene depth, so it must run in
+    // the same linear metric (window depth is quadratic in distance and made
+    // the fade band grow with d^2 -- soft particles all but vanished at
+    // gameplay camera distances).
+    vViewDist = gl_Position.w;
 }
 )";
 
@@ -733,7 +770,7 @@ inline constexpr const char* kParticleSoftFragmentShader = R"(
 in vec2 vUV;
 in vec4 vColor;
 in vec4 vInstanceColor;
-in float vWinDepth;
+in float vViewDist;
 out vec4 FragColor;
 uniform sampler2D uAlbedo;
 uniform sampler2D uSceneDepth;
@@ -741,12 +778,18 @@ uniform vec4 uTint;
 uniform bool uHasTexture;
 uniform vec2 uScreenSize;
 uniform float uSoftFade;
+uniform float uNear;
+uniform float uFar;
 void main() {
     vec4 tex = uHasTexture ? texture(uAlbedo, vUV) : vec4(1.0);
     vec4 col = tex * uTint * vColor * vInstanceColor;
     if (uSoftFade > 0.0) {
         float scene = texture(uSceneDepth, gl_FragCoord.xy / uScreenSize).r;
-        col.a *= clamp((scene - vWinDepth) / uSoftFade, 0.0, 1.0);
+        // Linearise the raw window depth into view-axis distance so the fade
+        // band (uSoftFade, world units) is distance-independent.
+        float sceneDist = (2.0 * uNear * uFar) /
+                          (uFar + uNear - (scene * 2.0 - 1.0) * (uFar - uNear));
+        col.a *= clamp((sceneDist - vViewDist) / uSoftFade, 0.0, 1.0);
     }
     FragColor = col;
 }
@@ -831,6 +874,8 @@ uniform vec4 uTint;
 uniform int uDecalProject;
 uniform int uDecalAdditive;
 uniform float uDecalBias;
+uniform float uNear;
+uniform float uFar;
 void main() {
     vec3 world = vWorld;
     vec2 uv = vUv;
@@ -843,7 +888,15 @@ void main() {
         vec4 wp = uInvViewProj * clip;
         if (abs(wp.w) < 1e-7) discard;
         world = wp.xyz / wp.w;
-        outDepth = max(d - uDecalBias, 0.0);
+        // uDecalBias is in WORLD units. Window depth is quadratic in distance,
+        // so a constant window bias drifted with camera distance (at gameplay
+        // range 0.00035 was a full world unit -- decals painted over the legs
+        // of units standing in them). Linearise -> offset -> re-encode keeps
+        // the offset constant in world space.
+        float nf = uNear * uFar;
+        float dist = (2.0 * nf) / (uFar + uNear - (d * 2.0 - 1.0) * (uFar - uNear));
+        float biased = max(dist - uDecalBias, uNear * 1.001);
+        outDepth = max(uFar / (uFar - uNear) - nf / ((uFar - uNear) * biased), 0.0);
     }
     vec3 local = (uDecalInvModel * vec4(world, 1.0)).xyz;
     if (any(greaterThan(abs(local), vec3(0.5)))) discard;   // outside the box
@@ -852,7 +905,10 @@ void main() {
     vec4 col = tex * uTint;
     if (uDecalAdditive == 1) {
         if (col.a <= 0.0) discard;
-        FragColor = vec4(col.rgb * col.a, col.a);
+        // Straight colour: the engine's additive blend is (SRC_ALPHA, ONE),
+        // so premultiplying here squared the alpha and the glow fell off as
+        // a^2 (a=0.5 texels contributed 25% of their colour).
+        FragColor = vec4(col.rgb, col.a);
     } else {
         if (col.a <= 0.002) discard;
         FragColor = col;

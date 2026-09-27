@@ -302,7 +302,8 @@ TEST(BloomShaderSourceTokens) {
     const std::string bright(gfx::kBrightPassFragmentShader);
     CHECK(bright.find("#version 330 core") != std::string::npos);
     CHECK(bright.find("uThreshold") != std::string::npos);
-    CHECK(bright.find("max(c.rgb - vec3(uThreshold), vec3(0.0))") != std::string::npos);
+    // Bright pass thresholds AFTER the effective exposure (auto exposure aware).
+    CHECK(bright.find("max(c.rgb * exposure - vec3(uThreshold), vec3(0.0))") != std::string::npos);
 
     const std::string blur(gfx::kBlurFragmentShader);
     CHECK(blur.find("uTexelSize") != std::string::npos);
@@ -357,7 +358,10 @@ TEST(BloomShaderSourceTokens) {
     CHECK(lum.find("log(") != std::string::npos);
     const std::string reduce(gfx::kLuminanceReduceShader);
     CHECK(reduce.find("uLum") != std::string::npos);
-    CHECK(reduce.find("uSrcTexelSize") != std::string::npos);
+    // 16x16 whole-frame subsample (was: 4 taps on the centre 2x2 texels) that
+    // also skips letterbox taps via the scene rect.
+    CHECK(reduce.find("uSceneVpRect") != std::string::npos);
+    CHECK(reduce.find("const int GRID = 16") != std::string::npos);
 
     const std::string vertex(gfx::kPostVertexShader);
     CHECK(vertex.find("layout(location = 0) in vec3 aPos") != std::string::npos);

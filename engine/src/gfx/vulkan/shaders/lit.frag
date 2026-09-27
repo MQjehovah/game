@@ -81,7 +81,9 @@ vec3 SampleLightProbeAtlas(vec3 wp) {
     vec3 x11 = mix(c011, c111, f.x);
     vec3 y0 = mix(x00, x01, f.y);
     vec3 y1 = mix(x10, x11, f.y);
-    return mix(y0, y1, f.z) * eng.uLightProbeInvMax;
+    // The atlas stores irradiance PRE-multiplied by 1/maxIrr; divide to undo
+    // the encode scale (multiplying again darkened GI by maxIrr^2).
+    return mix(y0, y1, f.z) / eng.uLightProbeInvMax;
 }
 
 float DecodeDepth(vec4 v) {
@@ -113,12 +115,17 @@ const vec2 kShadowDisk[12] = vec2[12](
 // Rotated-Poisson PCF with a PCSS penumbra estimate (see the GL twin in
 // builtin_shaders.hpp for the full rationale): the same 12 taps both estimate
 // visibility and average the occluder depth, so the blocker search is free.
-float ShadowFactor(sampler2D sm, vec2 uv, float lightDepth) {
+float ShadowFactor(sampler2D sm, vec2 uv, float lightDepth, float biasUnit) {
     float d0 = DecodeDepth(texture(sm, uv));
     float dx = DecodeDepth(texture(sm, uv + vec2(eng.uShadowTexel.x, 0.0)));
     float dy = DecodeDepth(texture(sm, uv + vec2(0.0, eng.uShadowTexel.y)));
     float slope = max(abs(dx - d0), abs(dy - d0));
-    float bias = clamp(0.0008 + slope * 0.5, 0.0008, 0.01);
+    // biasUnit = one shadow texel in this cascade's NORMALIZED depth
+    // (texelWorld / zRange): clamping to whole texels keeps the world-space
+    // bias ~[0.2, 8] texels no matter how far the cascade's depth range
+    // stretches (raw normalized constants became whole world units on a large
+    // scene - contact shadows detached from their casters).
+    float bias = clamp(0.5 * slope + 0.5 * biasUnit, 0.2 * biasUnit, 8.0 * biasUnit);
 
     float ang = Ign(gl_FragCoord.xy) * 6.2831853;
     float ca = cos(ang);
@@ -228,6 +235,11 @@ float PointShadowForLight(int light, vec3 worldPos, vec3 lightPos, float range) 
 float CascadeShadow(int c, vec3 worldPos, vec3 norm) {
     float texelWorld = c == 0 ? eng.uShadowTexelWorld.x
                       : (c == 1 ? eng.uShadowTexelWorld.y : eng.uShadowTexelWorld.z);
+    // Cascade depth range from the light VP: the ortho projection stores
+    // -2/(far-near) in uLightVP[c][2].z, so 2/|.| is the range the packed
+    // RGBA8 depth is normalized over - needed for the world-scaled bias.
+    float zRange = 2.0 / max(abs(eng.uLightVP[c][2].z), 1e-8);
+    float biasUnit = texelWorld / zRange;
     vec3 p = worldPos + norm * texelWorld * eng.uShadowNormalOffset;
     vec4 sp = eng.uLightVP[c] * vec4(p, 1.0);
     vec3 ndc = sp.xyz / sp.w;
@@ -236,9 +248,9 @@ float CascadeShadow(int c, vec3 worldPos, vec3 norm) {
         return 1.0;
     }
     vec3 sc = ndc * 0.5 + 0.5;
-    if (c == 0) return ShadowFactor(uShadowMap0, sc.xy, sc.z);
-    if (c == 1) return ShadowFactor(uShadowMap1, sc.xy, sc.z);
-    return ShadowFactor(uShadowMap2, sc.xy, sc.z);
+    if (c == 0) return ShadowFactor(uShadowMap0, sc.xy, sc.z, biasUnit);
+    if (c == 1) return ShadowFactor(uShadowMap1, sc.xy, sc.z, biasUnit);
+    return ShadowFactor(uShadowMap2, sc.xy, sc.z, biasUnit);
 }
 void main() {
 #ifdef TERRAIN_SPLAT
@@ -287,6 +299,12 @@ void main() {
     // with a normal pointing away from the camera (flat IBL-only ground) and
     // buried the shadow receiver under its own depth via the normal offset.
     if (dot(N, V) < 0.0) N = -N;
+    // Receiver-offset normal for shadow sampling: the GEOMETRIC normal, not the
+    // normal-mapped one (a bumped normal's lateral component slides the sample
+    // along the surface - light leaks at silhouettes / acne bands). Viewer-
+    // flipped like the shading normal above.
+    vec3 shadowNormal = normalize(vNormal);
+    if (dot(shadowNormal, V) < 0.0) shadowNormal = -shadowNormal;
     vec3 L = normalize(-eng.uSunDir);
     float ndl = max(dot(N, L), 0.0);
     vec3 H = normalize(L + V);
@@ -325,16 +343,21 @@ void main() {
     }
     if (eng.uHasAO != 0) ambientLight *= mix(1.0, texture(uOcclusion, vUV).r, eng.uAOStrength);
     vec3 color = (kd * albedo.rgb + spec) * eng.uSunColor * ndl + ambientLight;
-    if (eng.uHasEmissive != 0) color += texture(uEmissive, vUV).rgb * eng.uEmissiveIntensity;
+    // Emissive, tint self-glow, point lights and the player light are NOT part
+    // of the sun term: kept out of the sun shadow composite below (a glowing
+    // pickup or torch-lit wall must not go dark because the sun is blocked).
+    vec3 extraLight = vec3(0.0);
+    if (eng.uHasEmissive != 0) extraLight += texture(uEmissive, vUV).rgb * eng.uEmissiveIntensity;
     // Tint self-glow: tint components pushed above 1.0 emit light directly (beacon
     // lamps, glowing pickups). The term lands in the HDR target, so intensity above
     // the bloom threshold reads as an actual light source.
     vec3 tintGlow = max(eng.uTint.rgb - vec3(1.0), vec3(0.0));
     if (tintGlow.r + tintGlow.g + tintGlow.b > 0.0) {
-        color += tintGlow * albedo.rgb * eng.uEmissiveIntensity;
+        extraLight += tintGlow * albedo.rgb * eng.uEmissiveIntensity;
     }
     for (int i = 0; i < 8; ++i) {
         if (i >= eng.uPointCount) break;
+        if (eng.uPointRadius[i] <= 0.0) continue; // unset/off slot (kills 0/0 NaN)
         vec3 toL = eng.uPointPos[i] - vWorldPos;
         float d = length(toL);
         float atten = clamp(1.0 - d / eng.uPointRadius[i], 0.0, 1.0);
@@ -353,7 +376,7 @@ void main() {
         if (eng.uPointShadowEnabled != 0 && i < eng.uPointShadowLightCount) {
             pContrib *= PointShadowForLight(i, vWorldPos, eng.uPointPos[i], eng.uPointRadius[i]);
         }
-        color += pContrib;
+        extraLight += pContrib;
     }
     if (eng.uPlayerLightEnabled != 0) {
         vec3 toL = eng.uPlayerLightPos - vWorldPos;
@@ -362,13 +385,12 @@ void main() {
         atten *= atten;
         vec3 pl = toL / max(d, 1e-4);
         float pndl = max(dot(N, pl), 0.0);
-        color += albedo.rgb * eng.uPlayerLightColor * pndl * atten;
+        extraLight += albedo.rgb * eng.uPlayerLightColor * pndl * atten;
     }
     float dist = length(vWorldPos - eng.uCamPos);
     // A degenerate range (end <= start, e.g. 0/0 from a data-driven stack) must
     // mean 'no fog': smoothstep(0, 0, d) divides by zero and washes the frame out.
     float fog = (eng.uFogEnd > eng.uFogStart) ? smoothstep(eng.uFogStart, eng.uFogEnd, dist) : 0.0;
-    color = mix(color, eng.uFogColor, fog);
 
     float shadow = 1.0;
     if (eng.uShadowEnabled != 0) {
@@ -377,17 +399,19 @@ void main() {
         float s1 = eng.uCascadeSplits.y;
         float s2 = eng.uCascadeSplits.z;
         int cascade = viewDepth < s0 ? 0 : (viewDepth < s1 ? 1 : 2);
-        shadow = CascadeShadow(cascade, vWorldPos, N);
+        shadow = CascadeShadow(cascade, vWorldPos, shadowNormal);
         // Cross-fade across each split so the cascade switch - which also changes
         // the texel size and thus the penumbra - is not a hard seam.
         float b0 = max(s0 * 0.05, 0.02);
         float b1 = max(s1 * 0.05, 0.02);
         if (viewDepth > s0 - b0 && viewDepth < s0 + b0) {
             float t = smoothstep(s0 - b0, s0 + b0, viewDepth);
-            shadow = mix(CascadeShadow(0, vWorldPos, N), CascadeShadow(1, vWorldPos, N), t);
+            shadow = mix(CascadeShadow(0, vWorldPos, shadowNormal),
+                         CascadeShadow(1, vWorldPos, shadowNormal), t);
         } else if (viewDepth > s1 - b1 && viewDepth < s1 + b1) {
             float t = smoothstep(s1 - b1, s1 + b1, viewDepth);
-            shadow = mix(CascadeShadow(1, vWorldPos, N), CascadeShadow(2, vWorldPos, N), t);
+            shadow = mix(CascadeShadow(1, vWorldPos, shadowNormal),
+                         CascadeShadow(2, vWorldPos, shadowNormal), t);
         }
         // Fade the shadow out at the end of the last cascade so the shadow
         // distance does not end in a hard line across the terrain.
@@ -404,6 +428,11 @@ void main() {
     // BRIGHTER where it is shadowed (pale "ghost" shadows).
     vec3 sunTerm = max(color - ambientLight, vec3(0.0));
     color = sunTerm * shadow + ambientLight;
+    // Emissive / glow / local lights survive the sun shadow; then distance fog
+    // fades BOTH the shadowed and lit result (fog used to be mixed in before
+    // the composite, which let the sun-shadow term darken the fog itself).
+    color += extraLight;
+    color = mix(color, eng.uFogColor, fog);
     // Selection / edge glow: Fresnel rim on the silhouette. Applied last (after
     // fog + shadow) so a highlighted unit stays visible in shadow or fog; the
     // albedo tint keeps it reading as the mesh's edge rather than a flat disc.

@@ -47,9 +47,10 @@ float LoadDepth(vec2 uv) {
     return p.r + p.g / 255.0 + p.b / 65025.0 + p.a / 16581375.0;
 }
 float ViewDepth(float ndc) {
-    // Invert the perspective z-mapping: ndc in [0,1] -> positive view depth.
-    float z = ndc * 2.0 - 1.0;
-    return (2.0 * uNear * uFar) / (uFar + uNear - z * (uFar - uNear));
+    // The depth RT stores LINEAR view distance / uFar (SSAO depth encoder);
+    // inverting the perspective z-mapping here collapsed every march sample
+    // to ~2*uNear so reflections never found the surface.
+    return ndc * uFar;
 }
 void main() {
     float ndc = LoadDepth(vUV);

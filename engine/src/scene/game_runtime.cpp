@@ -191,6 +191,7 @@ const gfx::Mesh& SelectLodMesh(const gfx::Mesh& base, const gfx::LodChain& chain
 
 core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig cfg) {
     Stop(); // idempotent: a Start always begins from a fresh state
+    resetExposureOnDraw_ = true; // first Draw drops the previous scene's AE history
 
     auto parsed = SceneFile::Parse(sceneJson);
     if (!parsed.Ok()) return core::Status::Err("runtime: " + parsed.Error());
@@ -1192,6 +1193,12 @@ void GameRuntime::SetPostFx(bool ssao, bool volumetric, bool ssr,
 void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera,
                        float previewZoom) {
     if (!running_ || !cfg_.assets) return; // sim-only runtime draws nothing
+    if (resetExposureOnDraw_) {
+        // The adaptation history is per-scene state: a fresh scene starts from
+        // the neutral seed instead of drifting from the previous scene's level.
+        renderer.ResetAutoExposure();
+        resetExposureOnDraw_ = false;
+    }
     // Step D: the renderer owns the quality preset, the runtime owns the VFX
     // particle pool, so the preset's particle budget is applied here.
     if (sceneParticles_.Particles().Budget() != renderer.ParticleBudget())

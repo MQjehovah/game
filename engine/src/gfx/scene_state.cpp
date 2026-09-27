@@ -155,6 +155,9 @@ void SceneState::SetDirectionalLight(const math::Vec3& direction, const Color& c
 void SceneState::SetAmbientLight(const Color& color, float strength) {
     ambientColor_ = color;
     ambient_ = strength;
+    // B1: like every other light setter - uAmbient/uAmbientColor are cached in
+    // the scene uniform block and only re-upload when the stamp changes.
+    if (sceneUniformStamp_) ++*sceneUniformStamp_;
 }
 
 void SceneState::SetAmbientGroundColor(const Color& color) {

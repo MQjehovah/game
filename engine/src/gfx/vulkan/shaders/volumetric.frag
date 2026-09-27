@@ -17,8 +17,9 @@ float LoadDepth(vec2 uv) {
     return p.r + p.g / 255.0 + p.b / 65025.0 + p.a / 16581375.0;
 }
 float ViewDepth(float ndc) {
-    float z = ndc * 2.0 - 1.0;
-    return (2.0 * eng.uNear * eng.uFar) / (eng.uFar + eng.uNear - z * (eng.uFar - eng.uNear));
+    // The depth RT stores LINEAR view distance / uFar (SSAO depth encoder);
+    // the old perspective re-linearization collapsed everything to ~2*uNear.
+    return ndc * eng.uFar;
 }
 void main() {
     // vUV spans the whole HDR target; the 3D scene only occupies the centred

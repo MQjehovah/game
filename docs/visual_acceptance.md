@@ -658,4 +658,190 @@ set NEON_NO_SHADOWS=1     :: 关阴影做 A/B
 set NEON_SHADOW_DEBUG=1   :: 直接输出级联阴影因子（白=受光，黑=被挡）
 ```
 
+## 渲染管线全面体检：阴影 / 光照 / 后处理（一批真 bug，已修）
 
+四路并行审计（CSM、光照着色器、Renderer/编辑器集成、后处理链）定位出以下问题，
+全部修复并验证。GL 与 Vulkan 两条后端同步修改。
+
+### 已修（按可见影响排序）
+1. **SSAO 用的是未模糊的原始 AO**（`post_graph.cpp`）：composite 读的是 `post.ssao`
+   直出纹理而不是模糊链产物 `aoBlurB_`，稀疏 6-tap 核直接上屏 → 表面黑色斑点
+   （"破面"的主要来源之一）；两道模糊 pass 白跑。现读 `aoBlurB_`。
+2. **SSAO 强度 >1 会外推出负值**（`post_graph.cpp`）：`mix(1.0, ao, i)` 对 i>1 是外推，
+   i=2.5 时可到 -0.75 → ACES 后成黑斑；编辑器滑条允许 0..10。上传处 clamp 到 [0,1]。
+3. **合成雾/体积光/SSR 把线性深度当 NDC 深度二次反推**（`bloom.hpp`、`composite.frag`、
+   `volumetric.hpp/.frag`、`ssr.hpp/.frag`）：深度 RT 存的是**线性视距/uFar**（SSAO 深度
+   编码器），消费端却用透视公式反推 → 所有距离坍缩到 ~2*near，**浓度雾从没生效过**、
+   体积光步进区间为 0、SSR 按垃圾深度 marching。全部改为 `ndc * uFar`。
+4. **阴影偏移量(bias)随场景大小失控**（`builtin_shaders.hpp` + `lit.frag`）：bias 固定
+   0.0008..0.01 是**归一化深度**单位，级联深度范围被全场 caster 并集拉到数百单位后，
+   最小 bias 相当于 0.5+ 世界单位 → 接触阴影脱离投影物（peter-panning）、薄墙漏光。
+   改为按"整个阴影纹素"计量（`biasUnit = texelWorld/zRange`，zRange 从 `uLightVP[c][2].z`
+   反推），世界空间偏移恒为 ~[0.2, 8] 纹素，与场景尺度无关。
+5. **阴影接收端法线偏移用了法线贴图扰动后的法线**（两后端）：扰动法线的横向分量把采样
+   沿表面滑动而不是抬离表面 → 轮廓漏光 + 弧面 acne 条带。改用几何法线（vNormal，
+   同样做面向观察者翻转）。
+6. **太阳阴影会把自发光/点光源/玩家灯/雾一起乘没**（两后端 lit shader）：
+   `sunTerm = max(color-ambient,0)` 把 emissive、tint 自发光、点光、玩家灯全卷进太阳项，
+   全影区里发光物直接熄灭；雾在阴影合成前混合，阴影还会把雾本身染暗。重构为
+   extraLight 单独累加、阴影只作用于太阳直射项，雾移到合成之后。
+7. **编辑器模型预览面板把预览模型记成了场景 caster**（`model_preview_panel.cpp`）：
+   没像缩略图那样关 `SetShadowRecording`，面板开着时预览模型（画在世界原点）下一帧
+   变成场景阴影 caster → 原点附近鬼影/闪烁。已包裹关闭/恢复。
+8. **离屏工具渲染的 SetCamera 会清空级联**（`renderer.cpp`）：缩略图/预览的 SetCamera
+   触发一次空 caster 列表的阴影 pass（消费并清掉场景待用 caster），主视口随后跳过
+   pass → 整帧阴影消失（间歇性"表面忽明忽暗"）。SetCamera 加了与 RefreshShadowPass
+   相同的空列表守卫。
+9. **蒙皮/实例化路径记录 caster 不检查 castShadow 且在视锥剔除之后**（`renderer.cpp`）：
+   屏幕外角色照样丢影子、castShadow=false 的材质照样写深度。两条路径都改为剔除前
+   记录并检查 castShadow（与静态路径一致；实例化仍只记可见实例——植被批量太大）。
+10. **正交相机的级联包围球按 FOV 计算**（`csm.cpp`）：编辑器顶视/前视、缩略图等正交
+    相机的半高恒为 orthoSize，按 fovY 算导致级联盒与实际视锥无关、对缩放不敏感。
+11. **级联 pass 重跑后场景 uniform 不重传**（`shadow_system.cpp`）：只有点光源 pass
+    bump stamp，中途 RefreshShadowPass 后 uLightVP 可能与实际阴影图不一致（潜在）。
+    级联 pass 末尾同样 bump。`SetAmbientLight` 也补上了缺失的 bump（`scene_state.cpp`）。
+12. **编辑器无渲染栈场景泄漏上一场景的阴影参数**（`editor_viewport.cpp`）：else 分支
+    不重置 shadowDistance/Softness/NormalOffset → 上一场景的设置粘住。现重置为默认。
+
+### 验收
+- 简单场景 `shadow_test.json`：接触阴影贴回塔脚、地面无 acne、各级联过渡平滑
+  （`build-msvc/pipe_shadow.png`）。
+- 编辑器 `_ed_repro.json`（绿地面+高柱+墙+低太阳）：两个对向 yaw 下阴影完整、
+  边缘干净，此前墙影边缘的锯齿梳状走样消失（`build-msvc/pipe_ed_y0_7.png` /
+  `pipe_ed_y4_0.png` vs 旧 `ed_y0_7.png`）。
+- MOBA 实机（`build-msvc/pipe_moba.png`）：单位/塔/树阴影连贯，雾正常。
+- `neon_tests` 836/841（5 个 PostGraph* 既有失败，无关）。
+
+### 已知但未修（记录在案，按需再做）
+- MASK 材质（草叶/卡片）投影是实心四边形——阴影 pass 无 alpha 测试变体。
+- 合成 SSAO 乘的是整幅颜色而非仅环境光（阴影区会被再压暗一档）。
+- 自动曝光的"平均"只采了 1/32 降采样图中心 2x2 texel；且 autoExposure 直接替换
+  （不是乘）authored exposure；bloom 阈值在曝光前。
+- 曝光适配状态切换场景不重置、按帧率变化。
+- 无 MSAA 配置下深度预-pass 退化为按包围盒排序的重画（SSAO/SSR 深度可能错序），
+  贴花失去深度投影退回平面四边形。
+- 光照贴图 GI(probe) 与天空 IBL 同时开时环境光可能双计。
+- 编辑器 demo 场景的 terrain/水面默认 castShadow=true（引擎文档建议大地面应为
+  receiver-only）；MOBA 地图实体同样（其 135 个子节点会整体投影，靠 3 级联全画）。
+
+### 调试钩子
+- `NEON_ED_YAW / NEON_ED_PITCH / NEON_ED_DIST`（编辑器）：headless 指定自由相机
+  角度/距离截图（本轮 A/B 用；`editor_viewport.cpp`）。
+- `NEON_SHADOW_DEBUG=1`、`NEON_DUMP_SHADOW=1`、`NEON_NO_SHADOWS=1`（引擎，原有）。
+
+
+
+## 渲染管线第二轮体检：自动曝光 / 粒子 / 贴花 / 光照链（一批真 bug，已修）
+
+五路并行审计（bloom+曝光链、TAA+速度图、粒子+贴花+透明、点光+探针 GI+IBL、SSR+体积光+雾）
+定位出以下问题，全部修复并验证。GL 与 Vulkan 双后端同步。
+
+### 已修（按可见影响排序）
+
+1. **P0 软粒子在"窗口深度"空间做比较**（`builtin_shaders.hpp` / `particle_soft.*`）：
+   粒子把窗口深度（`0.5*z/w+0.5`，对距离是二次曲线）与场景深度直接相减，固定淡出带宽
+   0.012 换算成世界距离 = `0.12*d²`——MOBA 相机距离 17 时约 **35 个世界单位**，贴地 5 单位
+   高的粒子 alpha 只剩 ~11%，对着天空也只有 48%。"编辑器近处调好、游戏里隐形"的元凶。
+   修复：VS 直接输出 `gl_Position.w`（= 视轴距离），FS 把原始深度线性化
+   （`2nf/(f+n-(2d-1)(f-n))`）再比较；`uSoftFade` 改为**世界单位**（默认 0.75）。
+2. **P0 VK 粒子顶点布局错配，实例缓冲根本没绑**（`vk_backend.cpp`）：`VertexVariantFor`
+   没有 `"particle"`/`"particle_soft"` 分支 → 落到 V3d（非实例化）→ 只绑 mesh.vbo 却按
+   instanceCount 绘制，quad 顶点数据被当 mat4 读 → VK 后端 GPU 粒子整体不可见/错乱；
+   且 `DrawMeshInstancedColoredUv` VK 无实现（flipbook UV 静默丢弃）。修复：新增
+   `InstancedColoredUv` 顶点变体（binding3/location9）+ VK 实现三缓冲实例上传。
+3. **P0 自动曝光的"平均亮度"只测了画面中心 ~0.002%**（`bloom.hpp` / `autoexposure_avg.frag`）：
+   lum pass 每 texel 单次双线性采样（1/32 图本身就不是均值），reduce 又只采中心 2x2 texel
+   ——1080p 下 2000 个 texel 只读 9 个。准星指天空全帧压暗、指暗墙全帧过曝。
+   修复：reduce 改为 **16x16 全图均匀网格（256 taps）**，并按 `uSceneVpRect` 剔除
+   letterbox 黑边 tap（清屏黑 log=-9.2 会毒化均值）。
+4. **P1 autoExposure 直接替换 authored exposure**（两后端 composite）：编辑器曝光滑杆在
+   AE 开启时静默失效。改为 `exposure = authored * adapted`（作者意图保留，AE 只做自适应）。
+5. **P1 bloom 阈值在曝光之前**（两后端 bright pass）：AE 拉亮暗场景时没有像素能过阈值，
+   泛光恰好在画面最亮时消失。bright pass 现在乘同一份有效曝光（adapt 后 × authored）。
+6. **P1 曝光适应按帧率变化 + 场景切换不重置**：adapt 改 `1-exp(-speed*60*dt)`（墙钟归一，
+   renderer 逐帧采 dt）；新增 `Renderer::ResetAutoExposure()` / `PostGraph::ResetAutoExposure`，
+   `GameRuntime::Start` 置标记、首次 `Draw` 时消费（上一场景的适应亮度不再漂进新场景）。
+7. **P1 贴花 additive 分支预乘 alpha**（两后端）：引擎加法混合是 (SRC_ALPHA, ONE)，
+   预乘后实际贡献 = `rgb·a²`——纹理 a=0.5 处只剩 25% 亮度，光晕半径缩小、边缘发硬。
+   改为直色输出。
+8. **P1 贴花深度 bias 是窗口深度常数**（两后端）：0.00035 对应世界距离 `0.0035·d²`——
+   相机 17 米时约 1 个世界单位，技能圈把圈内单位的小腿都涂了色，与注释宣称的
+   "never pokes through geometry" 直接矛盾。修复：FS 内线性化 → 世界单位偏移
+   （0.05m）→ 重编码窗口深度。
+9. **P1 VK bloom upsample 缺 tent 滤波，`bloomWidth` 完全无效**：VK 版只是单 bilinear tap，
+   `uBloomWidth` 在 UBO 里不存在（静默 no-op）。移植 GL 的 9-tap tent + 宽裙边实现，
+   UBO 尾部加 `uBloomWidth`（offset 7140，块大小不变），两后端泛光一致。
+10. **P1 体积光/SSR 模糊链复用了单通道 AO 模糊**（`post_graph.cpp`）：`kSsaoBlurFragmentShader`
+    只读 .r 并写回全部通道——两链各过 H+V 两次模糊后 G/B 被 R 覆盖，**光柱永远是灰色、
+    SSR 反射全部去色**（形状对、颜色错，极难察觉）。vol/ssr 的 4 个 blur pass 换 vec4
+    高斯 `blur_`（bloom 链已在用），AO 链保持单通道版。
+11. **P1 探针 GI 解码被二次除以 maxIrr**（两后端 lit）：atlas 编码时已乘 `1/maxIrr`，
+    解码应除回来，旧代码又乘了一次 → GI 暗 `maxIrr²` 倍（maxIrr≈7 时暗 ~49 倍，基本不可见）。
+    改为 `/ uLightProbeInvMax`。
+12. **P1 非 MSAA 回退深度 pre-pass 里，蒙皮网格用 shadow 编码器写深度**：shadow fragment 写
+    窗口 NDC 深度，消费端按"线性视距/uFar"解码——10 米处解码出 ~990 米，开体积雾时
+    **蒙皮角色整块变纯雾色剪影**。新增 `kSsaoDepthSkinnedVertexShader`（GL）+
+    `ssao_depth_skinned.vert`（VK，gen_vk_shaders 注册），输出线性 `clip.w`。
+13. **P2 光照边界**：点光 `radius<=0` 在 GPU 衰减公式里是 1+d/|r| → clamp 成 1 → 负半径
+    全场常亮、r=0 且 d=0 产生 NaN——shader 循环加 `if (radius<=0) continue`；空光源槽
+    默认值是"原点白灯+未初始化半径"（`SetPointLight(3)` 会点亮 3 个垃圾槽）→
+    SceneState 构造时显式清黑/清零；IBL 资源失效后清 `uIblStrength=0`（不再采已销毁句柄）。
+14. **P2 其它**：探针烘焙太阳半球平均系数 0.5→0.25（∫cos/4π=0.25，旧值偏大 2 倍）；
+    alpha 粒子排序 `std::sort`→`std::stable_sort`（等距粒子逐帧抖动）；透明材质不再写
+    速度图（velocity pass 深度写入会抢后面运动实体的运动向量）；诊断捕获
+    （`--tonemap-compare` 等 chains=false 路径）不再推进 AE 适应状态；gamma 注释方向
+    纠正（>1 是变亮，pow(c,1/gamma)）。
+
+### 验证
+
+- 新增确定性探针场景 `projects/moba/assets/scenes/fx_probe.json` +
+  `assets/scripts/fx_probe.lua`（每帧 emit 贴地软粒子+加法火花+技能圈/盘贴花，固定相机）：
+  GL 前后对比 `build-msvc/r2/probe_gl_{old,new}.png`——修复后火花/贴花/烟雾明显更亮更实
+  （旧版全部被 alpha²/深度空间错误压暗）；VK 前后对比 `probe_vk_{old,new}.png`——
+  旧版**所有**脚本特效（粒子+贴花）缺失，新版粒子正常。
+- 回归：`shadow_test.json`（GL/VK）与旧二进制逐像素一致；`visual_acceptance.json` AE 场景
+  正常（AE 乘 authored 后整体略暗，符合 authored=1 的预期）；MOBA GL/VK 整图无回归。
+- `neon_tests` **836/841**（5 个 `PostGraph*` 为既有基线，与本轮无关；
+  `BloomShaderSourceTokens` 的 token 断言已随 bright/reduce 着色器修改同步更新）。
+  注意：测试必须在仓库根目录跑（server 测试用相对路径 `tests/data/...`）。
+
+### 已知但未修（本轮新增记录，按需再做）
+
+- **✅ 已修复（本轮）：VK 贴花不可见 —— 根因是 ResolveDepth 的深度写入从未发生**。
+  复盘：`ResolveDepth`（vk_backend.cpp）用 `SetDepthTest(false, true)` 画解析 quad——
+  Vulkan（与 GL 一致）在深度测试关闭时**深度写入也被跳过**，解析目标永远是清除值 1.0；
+  贴花片元采样解析深度得到 d >= 0.99999 → `discard` 全部片元（软粒子淡出、TAA 深度重投影
+  同受影响——它们读同一张解析深度）。修复 = `SetDepthTest(true, true)`（清除值 1.0 vs
+  写入值 <1.0，LESS 恒通过，天空 texel 保持 1.0 清除值）。验证：车库网格贴花在 VK 首次
+  渲染（`build-msvc/rv_vk_clean.png`），fx_probe 软粒子淡出恢复。
+  排查过程证明有效的工具链：NEON_VK_TRACE 状态 trace + 着色器级二分（全屏 gl_VertexIndex
+  quad / UBO 内容探针 / aPos.xz 探针 / 盒可视化 / UV 棋盘）。
+  附带：新增 `NEON_VK_VALIDATION=1`（Khronos 验证层 + debug messenger，需 SDK 层文件，
+  本机未装层时告警跳过）；`DrawIndexed` 增加 prog=decal 的 uMVP 字节 trace。
+  残留小项：车库场景里网格贴花会"渗"到占位模块顶面（解析深度的垂直镜像嫌疑，
+  仅影响装饰性网格，见下条）。
+- **✅ 已修复（本轮）：VK decal 世界重建的 y 翻转是双重矫正**：场景顶点着色器的
+  y 翻转已抵消 VK 帧缓冲行序差，decal.frag 的重建 `1 - scr.y*2` 再翻一次导致投影盒
+  垂直镜像（车库网格渗到模块顶、fx_probe 盘画到镜像位置）。已改为与 GL 一致的
+  `scr.y*2-1`。深度方向探针（d 编码成颜色）证实解析深度本身方向正确。
+- **残留（下轮）**：fx_probe 的盘贴花 (-2,1) 在 VK 上仍不渲染——本轮用五级着色器探针
+  把范围收敛到：**片元在盒判定（local 测试）阶段被全部丢弃**（uMVP 字节验证正确、
+  纹理图像回读验证内容正确 a=234/0、纹理绑定 trace 正确 tex0=35、gl_FragCoord→深度
+  采样方向正确无镜像、alpha 灰度探针证明采样路径正常）。位置依赖：环 (0,0) 同帧正常、
+  盘在 (1.2,1.6)（盒与墙相交）时正常。嫌疑集中在该 draw 的 uDecalInvModel/uTint 写入
+  时序（第二个同 shader draw 的 per-draw 状态）。**需要装 Vulkan SDK 验证层终判**
+  （NEON_VK_VALIDATION=1 已接入，装层即用）。
+- **TAA scene-rect 错位**：`DesignSpaceRect()` 宽度固定 16:9，非 16:9 窗口 + TAA 时
+  velocity/TAA/后链三套屏幕空间映射错位（编辑器无 TAA 入口，休眠中）。
+- 动态分辨率每步进全量重建 target 并作废 TAA 历史（活跃调整期 TAA 无法收敛）；
+  TAA 无相机跳变检测（瞬移后 ~8 帧残影靠邻域 clamp 收敛）。
+- 骨骼数上限 GL 128 / VK 64 不一致（>64 关节的资源 VK 丢权重）。
+- 探针 GI 与天空 IBL 同时开时环境光双计（#11 修复后 GI 显形，此项更值得做）；
+  编辑器烘焙输入仍是假灯（不带场景真实灯光）。
+- 体积光无太阳阴影采样（光柱穿墙）；uDecay/uThreshold 死参数；SSR 命中语义/量纲混乱。
+- lit 线性雾与 composite exp² 雾双重叠加（建议关 lit 雾只留 composite）。
+- vignette 无宽高比校正（宽屏下是横椭圆；三处实现一致，属统一取舍）。
+
+### 调试钩子
+- `NEON_NO_TEX_TRANSITION=1`（VK）：跳过纹理布局转换（本轮排查用，兼作该路径的 A/B 开关）。
+- `NEON_VK_TRACE=1`（VK）：后端 draw 级 trace（prog/idx/inst/tex0）。

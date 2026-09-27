@@ -105,6 +105,9 @@ public:
         // mis-aligned ghost copy of the scene.
         math::Vec4 sceneVpRect{0.0f, 0.0f, 0.0f, 0.0f};
         Camera camera; // SSR / composite 的 near/far
+        // Wall-clock seconds since the previous frame (clamped by the caller).
+        // Drives the auto-exposure adaptation rate (frame-rate independent).
+        float frameDt = 1.0f / 60.0f;
         CompositeParams composite;
     };
 
@@ -124,6 +127,10 @@ public:
     // composite 在最后一 pass 把结果画到默认目标（backbuffer）。返回 true 表示
     // 图本身执行成功（任一链实际运行与否见各 SsaoRan/... 查询）。
     bool Execute(IRenderBackend& backend, const FrameParams& params);
+
+    // 作废自动曝光的适应状态（下一帧从种子 1.0 重新收敛）。场景加载/切换时调用，
+    // 否则上一个场景的适应亮度会以 ~speed/帧 的速度漂移进新场景。
+    void ResetAutoExposure(IRenderBackend& backend);
 
     // 帧末把本帧仍存活的目标归还池（renderer 在 BeginFrame 调用；同时清除
     // CompositeRan() 的"本帧已 composite"闩存）。
@@ -179,6 +186,8 @@ private:
     // receives the same draw; they swap after each Execute.
     RenderTargetHandle adaptPrev_;
     RenderTargetHandle adaptCurr_;
+    // Execute 快照：本帧墙钟 dt（adapt 速率归一用）。
+    float frameDt_ = 1.0f / 60.0f;
     size_t depthPassIndex_ = 0;
     size_t ssaoPassIndex_ = 0;
     size_t ssaoBlurHIndex_ = 0;

@@ -22,8 +22,10 @@ size_t BuildProbeField(const math::AABB& bounds, int res, const ProbeLightInput&
     }
 
     const math::Vec3 extent = bounds.max - bounds.min;
+    // cos-weighted hemisphere average over ALL orientations is
+    // integral(cos dOmega)/4pi = 0.25 (0.5 is only the lit half).
     const math::Vec3 sunIrradiance =
-        ColorToVec3(input.sunColor) * (input.sunIntensity * 0.5f); // hemisphere avg
+        ColorToVec3(input.sunColor) * (input.sunIntensity * 0.25f);
     const math::Vec3 sky = ColorToVec3(input.skyIrradiance);
 
     for (int iz = 0; iz < res; ++iz) {

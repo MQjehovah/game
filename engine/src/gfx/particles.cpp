@@ -214,7 +214,9 @@ void ParticleSystem::Draw(Renderer& renderer, const Texture& texture, float scal
         const math::Vec3 cam = renderer.CameraPosition();
         std::vector<uint32_t> order(alphaPos.size());
         for (uint32_t k = 0; k < order.size(); ++k) order[k] = k;
-        std::sort(order.begin(), order.end(), [&](uint32_t a, uint32_t b) {
+        // Stable: equidistant particles (a ring burst) must not reshuffle every
+        // frame -- an unstable sort makes them flicker as they swap draw order.
+        std::stable_sort(order.begin(), order.end(), [&](uint32_t a, uint32_t b) {
             const math::Vec3 da = alphaPos[a] - cam;
             const math::Vec3 db = alphaPos[b] - cam;
             return da.LengthSq() > db.LengthSq();

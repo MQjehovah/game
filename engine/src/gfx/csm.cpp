@@ -10,25 +10,7 @@ math::Mat4 ComputeCascadeLightViewProj(const math::Vec3& lightDir, const Camera&
                                        float* outTexelWorld) {
     // Camera basis (matches Camera::View convention).
     const math::Vec3 forward = (cam.target - cam.position).Normalized();
-    const math::Vec3 right = math::Cross(forward, cam.up).Normalized();
-    const math::Vec3 up = math::Cross(right, forward);
     const float tanHalf = std::tan(cam.fovY * 0.5f);
-
-    // 8 world-space corners of the frustum slice.
-    math::Vec3 corners[8];
-    int ci = 0;
-    const float distances[2] = {splitNear, splitFar};
-    for (int d = 0; d < 2; ++d) {
-        const float halfH = tanHalf * distances[d];
-        const float halfW = halfH * aspect;
-        const math::Vec3 center = cam.position + forward * distances[d];
-        for (int sx = -1; sx <= 1; sx += 2) {
-            for (int sy = -1; sy <= 1; sy += 2) {
-                corners[ci++] = center + right * (halfW * static_cast<float>(sx)) +
-                                up * (halfH * static_cast<float>(sy));
-            }
-        }
-    }
 
     // Light view basis: light looks along lightDir; ortho covers the slice.
     math::Vec3 lf = lightDir.Normalized();
@@ -46,11 +28,29 @@ math::Mat4 ComputeCascadeLightViewProj(const math::Vec3& lightDir, const Camera&
     lightView.m[7] = -math::Dot(lu, sliceCenter);
     lightView.m[11] = math::Dot(lf, sliceCenter);
 
-    // Light-space AABB of the slice corners.
+    // Bounding SPHERE of the frustum slice, rather than the tight corner AABB.
+    // The slice's light-space AABB changes shape as the camera ROTATES (the
+    // slice is a frustum, and its orientation relative to the light changes),
+    // so its extent - and with it the ortho size and the shadow texel grid -
+    // rescales every frame. Snapping only the centre then cannot stop the
+    // shadows sliding/crawling when the view turns. A sphere's radius depends
+    // only on fov / aspect / split distances, so the light-space box is a
+    // constant-size cube: rotating the camera only translates it, and the
+    // texel snap below keeps that translation in whole-texel steps.
+    const float mid = (splitNear + splitFar) * 0.5f;
+    const math::Vec3 sphereCenter = cam.position + forward * mid;
+    // Ortho cameras (editor top/front views, thumbnails, the 2D game camera)
+    // have a CONSTANT half-height: sizing the sphere from fovY ignored the
+    // actual ortho frustum and left the cascades wildly oversized / insensitive
+    // to zoom.
+    const float halfHf = cam.ortho ? cam.orthoSize : tanHalf * splitFar;
+    const float halfWf = halfHf * aspect;
+    const float dz = (splitFar - splitNear) * 0.5f;
+    const float radius = std::sqrt(halfWf * halfWf + halfHf * halfHf + dz * dz);
+    const math::Vec3 lc = lightView.TransformPoint(sphereCenter);
     math::AABB aabb;
-    aabb.min = {1e30f, 1e30f, 1e30f};
-    aabb.max = {-1e30f, -1e30f, -1e30f};
-    for (int i = 0; i < 8; ++i) aabb.Expand(lightView.TransformPoint(corners[i]));
+    aabb.min = {lc.x - radius, lc.y - radius, lc.z - radius};
+    aabb.max = {lc.x + radius, lc.y + radius, lc.z + radius};
 
     // Extend the light-space DEPTH range to cover the shadow-casting scene, so a
     // caster lying outside the camera slice (e.g. above it, along the light

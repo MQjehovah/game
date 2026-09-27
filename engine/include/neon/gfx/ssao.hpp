@@ -115,6 +115,30 @@ void main() {
 }
 )";
 
+// GPU-skinned variant for the depth pre-pass fallback. The shadow skinned
+// program encodes WINDOW depth (correct for CSM depth compare) — reusing it
+// here fed the post chain quadratic window depth that consumers decoded as
+// linear view distance (skinned characters turned into solid fog silhouettes).
+inline constexpr const char* kSsaoDepthSkinnedVertexShader = R"(
+#version 330 core
+layout(location = 0) in vec3 aPos;
+layout(location = 4) in vec4 aJointIds;
+layout(location = 5) in vec4 aWeights;
+uniform mat4 uBoneMatrices[128];
+uniform mat4 uMVP;
+out float vViewDepth;
+void main() {
+    mat4 skin = mat4(0.0);
+    for (int i = 0; i < 4; ++i) {
+        int id = int(aJointIds[i]);
+        if (id >= 0 && id < 128) skin += aWeights[i] * uBoneMatrices[id];
+    }
+    vec4 clip = uMVP * skin * vec4(aPos, 1.0);
+    vViewDepth = clip.w; // positive view distance (same as the static variant)
+    gl_Position = clip;
+}
+)";
+
 inline constexpr const char* kSsaoDepthFragmentShader = R"(
 #version 330 core
 in float vViewDepth;

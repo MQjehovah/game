@@ -1,0 +1,74 @@
+{
+  "renderstack": {
+    "ssao": false,
+    "bloom": false,
+    "tonemap": true,
+    "exposure": 1.0,
+    "shadowDistance": 120.0,
+    "shadowSoftness": 1.0,
+    "shadowNormalOffset": 1.5
+  },
+  "entities": [
+    {
+      "id": 1,
+      "name": "Game",
+      "components": {
+        "scripts": {
+          "items": [ { "backend": "lua", "path": "assets/scripts/fx_probe.lua" } ]
+        },
+        "transform": { "pos": [0,0,0], "rot": [0,0,0,1], "scale": [1,1,1] }
+      }
+    },
+    {
+      "id": 2,
+      "name": "Main Camera",
+      "components": {
+        "type": { "value": "Camera3D" },
+        "camera": { "fov": 55, "orthoSize": 10 },
+        "transform": { "pos": [0, 18, -13], "rot": [0, 0.8893799781799316, 0.45708000659942627, 0], "scale": [1, 1, 1] }
+      }
+    },
+    {
+      "id": 3,
+      "name": "Sun",
+      "components": {
+        "type": { "value": "Light3D" },
+        "light": {
+          "type": "directional",
+          "color": [1, 0.97, 0.9, 1],
+          "intensity": 2.2,
+          "ambientStrength": 0.5,
+          "sunDir": [-0.4, -0.75, -0.3],
+          "radius": 10
+        },
+        "transform": { "pos": [0, 60, 0], "rot": [0, 0, 0, 1], "scale": [1, 1, 1] }
+      }
+    },
+    {
+      "id": 4,
+      "name": "Ground",
+      "components": {
+        "mesh": {
+          "meshKey": "cube",
+          "castShadow": false,
+          "receiveShadow": true,
+          "material": { "ao": 1, "colorHex": "#6E7A57", "metallic": 0, "roughness": 0.95, "uvRepeat": 20 }
+        },
+        "transform": { "pos": [0, -0.5, 0], "rot": [0, 0, 0, 1], "scale": [60, 1, 60] }
+      }
+    },
+    {
+      "id": 5,
+      "name": "Wall",
+      "components": {
+        "mesh": {
+          "meshKey": "cube",
+          "castShadow": true,
+          "receiveShadow": true,
+          "material": { "ao": 1, "colorHex": "#9A927E", "metallic": 0, "roughness": 0.85 }
+        },
+        "transform": { "pos": [0, 1.0, 2.2], "rot": [0, 0, 0, 1], "scale": [6, 2, 0.6] }
+      }
+    }
+  ]
+}

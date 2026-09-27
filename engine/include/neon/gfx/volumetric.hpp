@@ -67,8 +67,9 @@ float LoadDepth(vec2 uv) {
     return p.r + p.g / 255.0 + p.b / 65025.0 + p.a / 16581375.0;
 }
 float ViewDepth(float ndc) {
-    float z = ndc * 2.0 - 1.0;
-    return (2.0 * uNear * uFar) / (uFar + uNear - z * (uFar - uNear));
+    // The depth RT stores LINEAR view distance / uFar (SSAO depth encoder);
+    // the old perspective re-linearization collapsed everything to ~2*uNear.
+    return ndc * uFar;
 }
 void main() {
     // The 3D scene draws only into the centred letterboxed sub-rect. Two UV

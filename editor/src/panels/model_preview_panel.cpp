@@ -179,6 +179,12 @@ void ModelPreviewPanel::Render() {
     b->SetViewport(0, 0, w, h);
     b->SetScissor(0, 0, w, h, true);
     renderer_->SetDirectionalLight({-0.4f, -1.0f, -0.3f}, {1.0f, 0.95f, 0.9f}, 0.5f);
+    // Tool render on the SHARED renderer: suppress shadow-caster recording for
+    // the previewed model exactly like the thumbnail generators. Without this
+    // the model's parts (drawn at world origin) became scene shadow casters
+    // next frame - ghost shadows / flicker over surfaces near the origin while
+    // the panel is open.
+    renderer_->SetShadowRecording(false);
     anim::Pose pose = model->skeleton.BindPose();
     if (clip >= 0 && clip < static_cast<int>(model->clips.size())) {
         const anim::AnimationClip& c = model->clips[static_cast<size_t>(clip)];
@@ -202,6 +208,7 @@ void ModelPreviewPanel::Render() {
                                        static_cast<int>(bones.size()));
     }
     b->BindDefaultTarget();
+    renderer_->SetShadowRecording(true); // restore scene-caster recording
     // The preview enabled a full-FBO scissor above (shadow-pass state can
     // bleed stale scissor/viewport). Disable it so the next frame's BeginFrame
     // clear and the EndFrame composite are not cropped to the preview rect

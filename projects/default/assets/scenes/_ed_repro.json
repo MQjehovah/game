@@ -1,0 +1,126 @@
+{
+  "renderstack": {
+    "ssao": false,
+    "bloom": false,
+    "tonemap": true,
+    "exposure": 1.0,
+    "shadowDistance": 150.0,
+    "shadowSoftness": 1.0,
+    "shadowNormalOffset": 1.5
+  },
+  "entities": [
+    {
+      "id": 1,
+      "name": "Ground",
+      "components": {
+        "mesh": {
+          "meshKey": "plane",
+          "castShadow": false,
+          "receiveShadow": true,
+          "material": {
+            "colorHex": "#6abf4b",
+            "metallic": 0,
+            "roughness": 0.95,
+            "uvRepeat": 20
+          }
+        },
+        "transform": {
+          "pos": [
+            0,
+            0,
+            0
+          ],
+          "scale": [
+            6,
+            1,
+            6
+          ]
+        }
+      }
+    },
+    {
+      "id": 2,
+      "name": "Tower",
+      "components": {
+        "mesh": {
+          "meshKey": "cube",
+          "material": {
+            "colorHex": "#c9a227",
+            "metallic": 0.1,
+            "roughness": 0.6
+          }
+        },
+        "transform": {
+          "pos": [
+            0,
+            3,
+            0
+          ],
+          "scale": [
+            1,
+            6,
+            1
+          ]
+        }
+      }
+    },
+    {
+      "id": 3,
+      "name": "Wall",
+      "components": {
+        "mesh": {
+          "meshKey": "cube",
+          "material": {
+            "colorHex": "#9aa0a8",
+            "metallic": 0.1,
+            "roughness": 0.7
+          }
+        },
+        "transform": {
+          "pos": [
+            9,
+            1,
+            -3
+          ],
+          "scale": [
+            1.5,
+            2,
+            9
+          ]
+        }
+      }
+    },
+    {
+      "id": 4,
+      "name": "Sun",
+      "components": {
+        "type": {
+          "value": "Light3D"
+        },
+        "light": {
+          "type": "directional",
+          "color": [
+            1,
+            0.97,
+            0.9,
+            1
+          ],
+          "intensity": 2.4,
+          "ambientStrength": 0.45,
+          "sunDir": [
+            -0.5,
+            -0.22,
+            -0.3
+          ]
+        },
+        "transform": {
+          "pos": [
+            0,
+            30,
+            0
+          ]
+        }
+      }
+    }
+  ]
+}

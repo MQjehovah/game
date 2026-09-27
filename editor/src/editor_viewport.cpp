@@ -221,6 +221,13 @@ void EditorApp::OnRender() {
             renderer_.SetVolumetricIntensity(postVolumetricIntensity_);
             renderer_.SetSsrEnabled(postSsr_);
             renderer_.SetSsrIntensity(postSsrIntensity_);
+            // No authored stack: reset the shadow parameters to the engine
+            // defaults, otherwise a previously loaded scene's stack leaks
+            // (e.g. its shadowDistance 60 kept the wrong cascade splits).
+            const scene::RenderStack rsDefaults{};
+            renderer_.SetShadowDistance(rsDefaults.shadowDistance);
+            renderer_.SetShadowSoftness(rsDefaults.shadowSoftness);
+            renderer_.SetShadowNormalOffset(rsDefaults.shadowNormalOffset);
         }
 
         const float aspect = ViewportAspect();
@@ -726,6 +733,10 @@ gfx::Camera EditorApp::ActiveCamera() const {
         }
     }
     gfx::Camera cam;
+    float yaw = yaw_, pitch = pitch_, dist = camDist_;
+    if (const char* e = std::getenv("NEON_ED_YAW")) yaw = static_cast<float>(std::atof(e));
+    if (const char* e = std::getenv("NEON_ED_PITCH")) pitch = static_cast<float>(std::atof(e));
+    if (const char* e = std::getenv("NEON_ED_DIST")) dist = static_cast<float>(std::atof(e));
     switch (viewCam_) {
         case ViewCam::Top: // 顶视: orthographic looking down -Y
             cam.position = camTarget_ + math::Vec3{0, camDist_, 0};
@@ -743,10 +754,9 @@ gfx::Camera EditorApp::ActiveCamera() const {
             break;
         case ViewCam::Perspective:
         default:
-            cam.position = camTarget_ + math::Vec3{std::sin(yaw_) * std::cos(pitch_),
-                                                   std::sin(pitch_),
-                                                   std::cos(yaw_) * std::cos(pitch_)} *
-                                            camDist_;
+            cam.position = camTarget_ + math::Vec3{std::sin(yaw) * std::cos(pitch),
+                                                   std::sin(pitch),
+                                                   std::cos(yaw) * std::cos(pitch)} * dist;
             cam.target = camTarget_;
             break;
     }

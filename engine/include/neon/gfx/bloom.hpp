@@ -104,7 +104,8 @@ struct ColorGrade {
     float saturation = 1.0f;   // 1 neutral; <1 toward grey; >1 punchier
     float contrast = 0.0f;     // 0 neutral; >0 spreads around the 0.5 pivot
     float gain = 1.0f;         // scales highlights
-    float gamma = 1.0f;        // >1 darkens mid-tones; <1 brightens them
+    float gamma = 1.0f;        // >1 brightens mid-tones (pow(c, 1/gamma));
+                               // <1 darkens them
     float lift = 0.0f;         // offsets shadows upward (0 = neutral)
     math::Vec3 tint{1.0f, 1.0f, 1.0f}; // per-channel white balance (colour temp)
 };
@@ -208,10 +209,20 @@ inline constexpr const char* kBrightPassFragmentShader = R"(
 in vec2 vUV;
 out vec4 FragColor;
 uniform sampler2D uTex;
+uniform sampler2D uAvgLum;   // 1x1 adapted exposure (auto-exposure on)
 uniform float uThreshold;
+uniform float uExposure;
+uniform int uAutoExposure;
 void main() {
     vec4 c = texture(uTex, vUV);
-    FragColor = vec4(max(c.rgb - vec3(uThreshold), vec3(0.0)), 1.0);
+    // The bright pass runs BEFORE the composite applies exposure. Keying the
+    // threshold on raw HDR values decoupled bloom from displayed brightness:
+    // with auto exposure lifting a dark scene no pixel crossed the threshold
+    // and the glow vanished exactly when the image looked brightest. Apply the
+    // same effective exposure the composite will use.
+    float exposure = uExposure;
+    if (uAutoExposure != 0) exposure = uExposure * max(texture(uAvgLum, vec2(0.5)).r, 1e-4);
+    FragColor = vec4(max(c.rgb * exposure - vec3(uThreshold), vec3(0.0)), 1.0);
 }
 )";
 
@@ -280,15 +291,29 @@ inline constexpr const char* kLuminanceReduceShader = R"(
 #version 330 core
 in vec2 vUV;
 out vec4 FragColor;
-uniform sampler2D uLum;     // the log-luminance target (small)
-uniform vec2 uSrcTexelSize; // 1 / source dimensions
+uniform sampler2D uLum;         // the log-luminance target (small)
+uniform vec4 uSceneVpRect;      // letterboxed scene area, normalised HDR UV
 void main() {
-    vec2 o = uSrcTexelSize * 0.5;
-    vec4 s = texture(uLum, vUV + vec2(-o.x, -o.y))
-           + texture(uLum, vUV + vec2( o.x, -o.y))
-           + texture(uLum, vUV + vec2(-o.x,  o.y))
-           + texture(uLum, vUV + vec2( o.x,  o.y));
-    FragColor = vec4(s.rgb * 0.25, 1.0); // averaged log luminance
+    // 16x16 uniform subsample of the WHOLE small target. The old 4 taps sat on
+    // the centre 2x2 texels (~0.002% of the frame), so pointing the camera at
+    // the sky or a dark wall swung the entire frame's exposure while the other
+    // 99.998% of pixels had no vote. Letterbox bars are excluded (tally only
+    // taps inside the scene rect) so clear-colour black can't poison the mean.
+    const int GRID = 16;
+    float sum = 0.0;
+    float n = 0.0;
+    for (int y = 0; y < GRID; ++y) {
+        for (int x = 0; x < GRID; ++x) {
+            vec2 uv = (vec2(float(x), float(y)) + 0.5) / float(GRID);
+            if (uv.x < uSceneVpRect.x || uv.y < uSceneVpRect.y ||
+                uv.x > uSceneVpRect.x + uSceneVpRect.z ||
+                uv.y > uSceneVpRect.y + uSceneVpRect.w) continue;
+            sum += texture(uLum, uv).r;
+            n += 1.0;
+        }
+    }
+    float avg = n > 0.0 ? sum / n : log(0.18);
+    FragColor = vec4(avg, 0.0, 0.0, 1.0); // averaged log luminance
 }
 )";
 
@@ -406,22 +431,26 @@ vec3 ACESFilm(vec3 x) {
 void main() {
     vec3 hdr = texture(uHdr, vUV).rgb;
     vec3 c = hdr;
-    if (uBloomEnabled != 0) c += texture(uBloom, vUV).rgb * uStrength;
+    // SSAO scales the LIT SCENE COLOUR only. Applying it after the additive
+    // terms also darkened bloom / volumetric / SSR (and the highlights inside
+    // them) with occlusion. A true ambient-only split needs a separated lit
+    // output; ordering it before the additions is the cheap part of that fix.
     if (uAoEnabled != 0) {
         float ao = texture(uAo, vUV).r;
-        // SSAO lightens the indirect/diffuse contribution. We have no separate
-        // ambient term in the composite, so the AO scales the whole in-range
-        // colour; a modest intensity keeps it from crushing lit surfaces.
         c *= mix(1.0, ao, uAoIntensity);
     }
+    if (uBloomEnabled != 0) c += texture(uBloom, vUV).rgb * uStrength;
     if (uVolEnabled != 0) c += texture(uVol, vUV).rgb * uVolStrength;
     if (uSsrEnabled != 0) c += texture(uSsr, vUV).rgb * uSsrStrength;
     if (uFogEnabled != 0) {
         vec4 dp = texture(uFogDepth, vUV);
         float ndc = dp.r + dp.g / 255.0 + dp.b / 65025.0 + dp.a / 16581375.0;
         if (ndc < 1.0) {
-            float z = ndc * 2.0 - 1.0;
-            float dist = (2.0 * uNear * uFar) / (uFar + uNear - z * (uFar - uNear));
+            // The scene-depth resource stores LINEAR view distance / uFar (see
+            // the SSAO depth encoder), NOT window NDC depth. Decoding it through
+            // the perspective formula collapsed every distance to ~2*uNear and
+            // the exp^2 density fog never appeared.
+            float dist = ndc * uFar;
             float f = 1.0 - exp(-uFogDensity * uFogDensity * dist * dist);
             c = mix(c, uFogColor, clamp(f, 0.0, 1.0));
         }
@@ -429,9 +458,11 @@ void main() {
     if (uTonemapEnabled != 0) {
         // A5 auto-exposure: uAvgLum carries the TEMPORALLY SMOOTHED exposure
         // produced by the adaptation pass (raw key/avgLum strobed on bright
-        // flashes). When disabled the authored scalar uExposure is used.
+        // flashes). The adapted value MULTIPLIES the authored exposure instead
+        // of replacing it -- the author's exposure is a scene look, and the old
+        // replace silently discarded it whenever auto exposure was on.
         float exposure = uExposure;
-        if (uAutoExposure != 0) exposure = max(texture(uAvgLum, vec2(0.5)).r, 1e-4);
+        if (uAutoExposure != 0) exposure = uExposure * max(texture(uAvgLum, vec2(0.5)).r, 1e-4);
         vec3 graded = ACESFilm(c * exposure);
         // A1 color grading (post-tonemap, display space). Skipped when disabled
         // so the default RenderStack is pixel-identical (matches GradeColor).

@@ -38,6 +38,7 @@ $shaders = @(
     # G1-5 depth / AO / SSR / volumetric post chain.
     "ssao_depth;ssao_depth.vert;ssao_depth.frag",
     "ssao_depth_mesh;ssao_depth_mesh.vert;ssao_depth.frag",
+    "ssao_depth_skinned;ssao_depth_skinned.vert;ssao_depth.frag",
     "depth_encode;post.vert;depth_encode.frag",
     "ssao;post.vert;ssao.frag",
     "ssao_blur;post.vert;ssao_blur.frag",

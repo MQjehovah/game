@@ -26,28 +26,33 @@ vec3 ACESFilm(vec3 x) {
 void main() {
     vec3 hdr = texture(uHdr, vUV).rgb;
     vec3 c = hdr;
-    if (eng.uBloomEnabled != 0) c += texture(uBloom, vUV).rgb * eng.uStrength;
+    // SSAO scales the LIT SCENE COLOUR only; after the additive terms it also
+    // darkened bloom / volumetric / SSR with occlusion.
     if (eng.uAoEnabled != 0) {
         float ao = texture(uAo, vUV).r;
-        // No separate ambient term here, so AO scales the in-range colour.
         c *= mix(1.0, ao, eng.uAoIntensity);
     }
+    if (eng.uBloomEnabled != 0) c += texture(uBloom, vUV).rgb * eng.uStrength;
     if (eng.uVolEnabled != 0) c += texture(uVol, vUV).rgb * eng.uVolStrength;
     if (eng.uSsrEnabled != 0) c += texture(uSsr, vUV).rgb * eng.uSsrStrength;
     if (eng.uFogEnabled != 0) {
         vec4 dp = texture(uFogDepth, vUV);
         float ndc = dp.r + dp.g / 255.0 + dp.b / 65025.0 + dp.a / 16581375.0;
         if (ndc < 1.0) {
-            float z = ndc * 2.0 - 1.0;
-            float dist = (2.0 * eng.uNear * eng.uFar) /
-                         (eng.uFar + eng.uNear - z * (eng.uFar - eng.uNear));
+            // The scene-depth resource stores LINEAR view distance / uFar (see
+            // the SSAO depth encoder), NOT window NDC depth - decoding through
+            // the perspective formula collapsed every distance to ~2*uNear.
+            float dist = ndc * eng.uFar;
             float f = 1.0 - exp(-eng.uFogDensity * eng.uFogDensity * dist * dist);
             c = mix(c, eng.uFogColor, clamp(f, 0.0, 1.0));
         }
     }
     if (eng.uTonemapEnabled != 0) {
         float exposure = eng.uExposure;
-        if (eng.uAutoExposure != 0) exposure = max(texture(uAvgLum, vec2(0.5)).r, 1e-4);
+        // The adapted value MULTIPLIES the authored exposure instead of
+        // replacing it -- the authored exposure is a scene look.
+        if (eng.uAutoExposure != 0)
+            exposure = eng.uExposure * max(texture(uAvgLum, vec2(0.5)).r, 1e-4);
         vec3 graded = ACESFilm(c * exposure);
         if (eng.uGradeEnabled != 0) {
             graded = clamp(graded, vec3(0.0), vec3(1.0));

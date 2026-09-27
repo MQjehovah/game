@@ -243,6 +243,7 @@ const UniEntry kUniformOffsets[] = {
     {"uHasNormalMap", UniKind::Int, 7104, 4, 1},
     {"uReceiveShadow", UniKind::Int, 7120, 4, 1},
     {"uLightProbeEnabled", UniKind::Int, 7136, 4, 1},
+    {"uBloomWidth", UniKind::Float, 7140, 4, 1},
     {"uAlbedo", UniKind::Sampler, 0, 0, 1},
     {"uGrassTex", UniKind::Sampler, 0, 0, 1},
     {"uCurrent", UniKind::Sampler, 0, 0, 1},
@@ -519,7 +520,7 @@ struct Target {
 };
 
 enum class BlendState : uint8_t { Opaque, Alpha, Additive, Premultiplied };
-enum class VertexVariant : uint8_t { V3d, Instanced, InstancedColored, Ui, Lines };
+enum class VertexVariant : uint8_t { V3d, Instanced, InstancedColored, InstancedColoredUv, Ui, Lines };
 
 struct Program {
     uint32_t id = 0;
@@ -731,6 +732,12 @@ public:
 
         vkDestroyDevice(device_, nullptr);
         vkDestroySurfaceKHR(instance_, surface_, nullptr);
+        if (debugMessenger_ != VK_NULL_HANDLE) {
+            auto fn = reinterpret_cast<PFN_vkDestroyDebugUtilsMessengerEXT>(
+                vkGetInstanceProcAddr(instance_, "vkDestroyDebugUtilsMessengerEXT"));
+            if (fn) fn(instance_, debugMessenger_, nullptr);
+            debugMessenger_ = VK_NULL_HANDLE;
+        }
         vkDestroyInstance(instance_, nullptr);
         volkFinalize();
         device_ = VK_NULL_HANDLE;
@@ -968,9 +975,14 @@ public:
         // multisampled depth) would otherwise be recorded into a closed buffer.
         OpenCmd(f);
         SetViewport(0, 0, d.width, d.height);
-        // Depth test off / write on: the pass overwrites every destination
-        // texel (the quad covers the target), so nothing must reject it.
-        SetDepthTest(false, true);
+        // Depth WRITE requires the depth TEST to be enabled (Vulkan, like GL,
+        // skips all depth updates when the test is off): with (false, true)
+        // this pass cleared the target to 1.0 and never wrote the resolved
+        // depth - decals discarded everything (sampled depth >= 0.99999), soft
+        // particles never faded and TAA's depth reprojection read garbage.
+        // Test ON + compare LESS against the cleared 1.0: the quad writes real
+        // depths (< 1.0) everywhere, sky texels keep the 1.0 clear value.
+        SetDepthTest(true, true);
         SetCullMode(CullMode::None);
         SetBlendMode(BlendMode::Opaque);
         UseShader(depthResolveShader_);
@@ -1170,6 +1182,43 @@ public:
         vkDestroyBuffer(device_, staging, nullptr);
         vkFreeMemory(device_, stagingMem, nullptr);
 
+        // DEBUG-VK-TEX: 回读验证角落 alpha 是否落地（PNG 透明区 rgb=白 a=0）
+        if (desc.width == 128 && desc.height == 128) {
+            VkBuffer readback;
+            VkDeviceMemory readbackMem;
+            if (CreateHostBuffer(dataSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT, &readback,
+                                 &readbackMem)) {
+                VkCommandPool pool;
+                CreateCommandPool(&pool);
+                VkCommandBuffer cmd = BeginOneShot(pool);
+                TransitionImage(cmd, image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                                VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                                VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_SHADER_READ_BIT,
+                                VK_ACCESS_TRANSFER_READ_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+                VkBufferImageCopy rc{};
+                rc.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+                rc.imageExtent = {static_cast<uint32_t>(desc.width),
+                                  static_cast<uint32_t>(desc.height), 1};
+                vkCmdCopyImageToBuffer(cmd, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                                       readback, 1, &rc);
+                vkEndCommandBuffer(cmd);
+                SubmitQueue(CurrentFrame(), cmd);
+                void* rm = nullptr;
+                vkMapMemory(device_, readbackMem, 0, dataSize, 0, &rm);
+                const unsigned char* px = static_cast<const unsigned char*>(rm);
+                NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Warn,
+                             "Vulkan: tex readback corner=(%u,%u,%u,%u) center=(%u,%u,%u,%u)",
+                             px[0], px[1], px[2], px[3],
+                             px[(64 * 128 + 64) * 4], px[(64 * 128 + 64) * 4 + 1],
+                             px[(64 * 128 + 64) * 4 + 2], px[(64 * 128 + 64) * 4 + 3]);
+                vkUnmapMemory(device_, readbackMem);
+                vkFreeCommandBuffers(device_, pool, 1, &cmd);
+                vkDestroyCommandPool(device_, pool, nullptr);
+                vkDestroyBuffer(device_, readback, nullptr);
+                vkFreeMemory(device_, readbackMem, nullptr);
+            }
+        }
         Texture tex;
         tex.image = image;
         tex.view = view;
@@ -1574,6 +1623,31 @@ public:
         DrawIndexed(it->second, count, matOffset, colOffset);
     }
 
+    // Billboard particles: instanced mat4 + colour + atlas UV rect (GL
+    // attribute 9). Without the VK implementation the shared default dropped
+    // the UV rects AND the particles drew with the wrong vertex layout.
+    void DrawMeshInstancedColoredUv(const MeshHandle& mesh, const math::Mat4* models,
+                                    const math::Vec4* colors, const math::Vec4* uvRects,
+                                    uint32_t count) override {
+        auto it = meshes_.find(mesh.vao);
+        if (it == meshes_.end() || !models || !colors || !uvRects || count == 0) return;
+        const size_t matBytes = static_cast<size_t>(count) * 64;
+        const size_t colBytes = static_cast<size_t>(count) * 16;
+        const size_t uvBytes = static_cast<size_t>(count) * 16;
+        Frame& f = CurrentFrame();
+        uint64_t matOffset = 0, colOffset = 0, uvOffset = 0;
+        if (!ScratchAlloc(f, matBytes, 16, &matOffset)) return;
+        if (!ScratchAlloc(f, colBytes, 16, &colOffset)) return;
+        if (!ScratchAlloc(f, uvBytes, 16, &uvOffset)) return;
+        for (uint32_t i = 0; i < count; ++i) {
+            TransposeMat4(reinterpret_cast<float*>(f.scratchPtr + matOffset + i * 64),
+                          models[i].Data());
+            std::memcpy(f.scratchPtr + colOffset + i * 16, &colors[i], 16);
+            std::memcpy(f.scratchPtr + uvOffset + i * 16, &uvRects[i], 16);
+        }
+        DrawIndexed(it->second, count, matOffset, colOffset, uvOffset);
+    }
+
     void DrawPrimitives(const void* vertices, uint32_t vertexCount, uint32_t stride,
                         const uint16_t* indices, uint32_t indexCount,
                         PrimitiveTopology topology) override {
@@ -1737,6 +1811,34 @@ private:
             return false;
         }
 
+        // Optional validation (NEON_VK_VALIDATION=1): enables the Khronos
+        // validation layer + VK_EXT_debug_utils messenger when both are
+        // present. This is the engine's standard way to make the driver point
+        // at real API misuse instead of silent garbage.
+        bool wantValidation = std::getenv("NEON_VK_VALIDATION") != nullptr;
+        bool hasValidationLayer = false;
+        bool hasDebugUtils = false;
+        if (wantValidation) {
+            uint32_t layerCount = 0;
+            vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
+            std::vector<VkLayerProperties> layers(layerCount);
+            vkEnumerateInstanceLayerProperties(&layerCount, layers.data());
+            for (const auto& l : layers) {
+                if (std::strcmp(l.layerName, "VK_LAYER_KHRONOS_validation") == 0)
+                    hasValidationLayer = true;
+            }
+            for (const auto& e : exts) {
+                if (std::strcmp(e.extensionName, VK_EXT_DEBUG_UTILS_EXTENSION_NAME) == 0)
+                    hasDebugUtils = true;
+            }
+            if (!hasValidationLayer || !hasDebugUtils) {
+                NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Warn,
+                             "Vulkan: NEON_VK_VALIDATION=1 but layer(%d)/debug_utils(%d) "
+                             "missing - running unvalidated",
+                             hasValidationLayer ? 1 : 0, hasDebugUtils ? 1 : 0);
+            }
+        }
+
         VkApplicationInfo app{};
         app.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
         app.pApplicationName = "NeonEngine";
@@ -1745,13 +1847,19 @@ private:
         app.engineVersion = VK_MAKE_VERSION(0, 1, 0);
         app.apiVersion = VK_API_VERSION_1_1;
 
-        const char* enabledExts[] = {VK_KHR_SURFACE_EXTENSION_NAME,
-                                     VK_KHR_WIN32_SURFACE_EXTENSION_NAME};
+        std::vector<const char*> enabledExts{VK_KHR_SURFACE_EXTENSION_NAME,
+                                             VK_KHR_WIN32_SURFACE_EXTENSION_NAME};
+        if (hasValidationLayer && hasDebugUtils) enabledExts.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+        const char* validationLayer = "VK_LAYER_KHRONOS_validation";
         VkInstanceCreateInfo ci{};
         ci.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
         ci.pApplicationInfo = &app;
-        ci.enabledExtensionCount = 2;
-        ci.ppEnabledExtensionNames = enabledExts;
+        ci.enabledExtensionCount = static_cast<uint32_t>(enabledExts.size());
+        ci.ppEnabledExtensionNames = enabledExts.data();
+        if (hasValidationLayer && hasDebugUtils) {
+            ci.enabledLayerCount = 1;
+            ci.ppEnabledLayerNames = &validationLayer;
+        }
 
         VkResult r = vkCreateInstance(&ci, nullptr, &instance_);
         if (r != VK_SUCCESS) {
@@ -1760,7 +1868,38 @@ private:
             return false;
         }
         volkLoadInstance(instance_);
+        if (hasValidationLayer && hasDebugUtils) CreateDebugMessenger();
         return true;
+    }
+
+    // Routes validation-layer messages into the engine log. The label in the
+    // prefix keeps per-draw log filtering (grep) usable.
+    static VKAPI_ATTR VkBool32 VKAPI_CALL DebugMessengerCallback(
+        VkDebugUtilsMessageSeverityFlagBitsEXT severity,
+        VkDebugUtilsMessageTypeFlagsEXT /*types*/,
+        const VkDebugUtilsMessengerCallbackDataEXT* data, void* /*userData*/) {
+        if (severity < VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) return VK_FALSE;
+        if (!data || !data->pMessage) return VK_FALSE;
+        NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Error,
+                     "Vulkan validation: %s", data->pMessage);
+        return VK_FALSE;
+    }
+
+    void CreateDebugMessenger() {
+        VkDebugUtilsMessengerCreateInfoEXT ci{};
+        ci.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+        ci.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+                             VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+        ci.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+                         VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+                         VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+        ci.pfnUserCallback = &DebugMessengerCallback;
+        auto fn = reinterpret_cast<PFN_vkCreateDebugUtilsMessengerEXT>(
+            vkGetInstanceProcAddr(instance_, "vkCreateDebugUtilsMessengerEXT"));
+        if (fn && fn(instance_, &ci, nullptr, &debugMessenger_) == VK_SUCCESS) {
+            NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
+                         "Vulkan: validation layer ACTIVE (NEON_VK_VALIDATION=1)");
+        }
     }
 
     bool CreateDevice() {
@@ -3112,7 +3251,7 @@ private:
     }
 
     void DrawIndexed(const Mesh& mesh, uint32_t instanceCount, uint64_t instanceOffset,
-                     uint64_t colorOffset = UINT64_MAX) {
+                     uint64_t colorOffset = UINT64_MAX, uint64_t uvOffset = UINT64_MAX) {
         Frame& f = CurrentFrame();
         if (!currentProgramId_) return;
         Program* prog = GetProgram(currentProgramId_);
@@ -3123,13 +3262,18 @@ private:
         if (!pipeline) return;
         BindPipeline(f, pipeline);
 
-        const bool colored = prog->variant == VertexVariant::InstancedColored &&
-                             colorOffset != UINT64_MAX;
+        const bool uvColored = prog->variant == VertexVariant::InstancedColoredUv &&
+                               uvOffset != UINT64_MAX;
+        const bool colored = uvColored ||
+                             (prog->variant == VertexVariant::InstancedColored &&
+                              colorOffset != UINT64_MAX);
         const bool instanced =
             prog->variant == VertexVariant::Instanced || colored;
-        VkBuffer vbs[3] = {mesh.vbo, f.scratch, f.scratch};
-        VkDeviceSize voffs[3] = {0, instanceOffset, colorOffset};
-        vkCmdBindVertexBuffers(f.cmd, 0, instanced ? (colored ? 3u : 2u) : 1u, vbs, voffs);
+        VkBuffer vbs[4] = {mesh.vbo, f.scratch, f.scratch, f.scratch};
+        VkDeviceSize voffs[4] = {0, instanceOffset, colorOffset, uvOffset};
+        vkCmdBindVertexBuffers(f.cmd, 0,
+                               instanced ? (uvColored ? 4u : (colored ? 3u : 2u)) : 1u, vbs,
+                               voffs);
         if (mesh.ibo) {
             vkCmdBindIndexBuffer(f.cmd, mesh.ibo, 0,
                                 mesh.indexType ? VK_INDEX_TYPE_UINT32
@@ -3142,6 +3286,13 @@ private:
             NEON_VK_TRACE("vt: draw prog=%s idx=%u inst=%u alphaTest=%.3f hasTex=%d tex0=%u\n",
                           prog->name.c_str(), mesh.indexCount, instanceCount, atv, htv,
                           boundTextures_[0]);
+            if (prog->name == "decal") {
+                const float* m = reinterpret_cast<const float*>(uniforms_);
+                NEON_VK_TRACE(
+                    "vt: DECAL uMVP: %g %g %g %g | %g %g %g %g | %g %g %g %g | %g %g %g %g\n",
+                    m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7],
+                    m[8], m[9], m[10], m[11], m[12], m[13], m[14], m[15]);
+            }
         }
             vkCmdDrawIndexed(f.cmd, mesh.indexCount, instanceCount, 0, 0, 0);
         }
@@ -3196,7 +3347,8 @@ private:
 
         std::vector<VkVertexInputBindingDescription> bindings;
         std::vector<VkVertexInputAttributeDescription> attributes;
-        const bool coloredInst = prog->variant == VertexVariant::InstancedColored;
+        const bool coloredInst = prog->variant == VertexVariant::InstancedColored ||
+                                 prog->variant == VertexVariant::InstancedColoredUv;
         if (prog->variant == VertexVariant::V3d || prog->variant == VertexVariant::Instanced ||
             coloredInst) {
             bindings.push_back({0, 80, VK_VERTEX_INPUT_RATE_VERTEX});
@@ -3217,6 +3369,11 @@ private:
                 // Per-instance RGBA (GL attribute 8): binding 2, instance rate.
                 bindings.push_back({2, 16, VK_VERTEX_INPUT_RATE_INSTANCE});
                 attributes.push_back({8, 2, VK_FORMAT_R32G32B32A32_SFLOAT, 0});
+            }
+            if (prog->variant == VertexVariant::InstancedColoredUv) {
+                // Per-instance atlas UV rect (GL attribute 9): binding 3.
+                bindings.push_back({3, 16, VK_VERTEX_INPUT_RATE_INSTANCE});
+                attributes.push_back({9, 3, VK_FORMAT_R32G32B32A32_SFLOAT, 0});
             }
         } else if (prog->variant == VertexVariant::Ui) {
             bindings.push_back({0, 32, VK_VERTEX_INPUT_RATE_VERTEX});
@@ -3371,6 +3528,11 @@ private:
         if (std::strcmp(name, "lines") == 0) return VertexVariant::Lines;
         if (std::strcmp(name, "unlit_instanced_colored") == 0)
             return VertexVariant::InstancedColored;
+        // Billboard particles: instanced mat4 + colour + per-instance atlas UV
+        // rect (flipbook). Without this they fell through to V3d, drew with
+        // instanceCount but NO instance buffers bound, and read garbage quads.
+        if (std::strcmp(name, "particle") == 0 || std::strcmp(name, "particle_soft") == 0)
+            return VertexVariant::InstancedColoredUv;
         if (std::strcmp(name, "lit_instanced") == 0 || std::strcmp(name, "unlit_instanced") == 0 ||
             std::strcmp(name, "shadow_inst") == 0 || std::strcmp(name, "point_shadow_inst") == 0)
             return VertexVariant::Instanced;
@@ -3464,6 +3626,7 @@ private:
     platform::IWindow* window_ = nullptr;
     HWND hwnd_ = nullptr;
     VkInstance instance_ = VK_NULL_HANDLE;
+    VkDebugUtilsMessengerEXT debugMessenger_ = VK_NULL_HANDLE;
     VkPhysicalDevice physicalDevice_ = VK_NULL_HANDLE;
     VkDevice device_ = VK_NULL_HANDLE;
     VkSurfaceKHR surface_ = VK_NULL_HANDLE;

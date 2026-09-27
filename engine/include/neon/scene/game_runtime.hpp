@@ -483,6 +483,10 @@ void ResolveEnvironmentResources();
     float postSsaoIntensity_ = 1.0f;
     float postVolumetricIntensity_ = 1.0f;
     float postSsrIntensity_ = 0.8f;
+    // Set by Start(), consumed by the first Draw(): the renderer's auto-exposure
+    // adaptation history belongs to the previous scene and must not bleed into
+    // the new one (it would otherwise drift toward the new scene for seconds).
+    bool resetExposureOnDraw_ = false;
     PrefabSystem prefabs_;            // prefab library loaded from <scriptBaseDir>/assets/prefabs/
     core::Localization loc_;          // string tables loaded from cfg_.localesDir
     // Dual script backends: Lua + QuickJS (ES2020). Scene scripts pick a

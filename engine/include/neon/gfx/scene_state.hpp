@@ -27,9 +27,15 @@ class SceneState {
 public:
     static constexpr int kMaxPointLights = 8; // must match Renderer::kMaxPointLights
 
-    SceneState() = default;
+    SceneState() {
+        // Unused point-light slots must be INERT: the implicit defaults are a
+        // WHITE light at the origin (Color() = white) with an uninitialized
+        // radius, and SetPointLight(n) raises pointCount_ to n+1, so a caller
+        // setting light 3 would light the origin through the garbage slots.
+        for (Color& c : pointColor_) c = Color{0.0f, 0.0f, 0.0f, 1.0f};
+        for (float& r : pointRadius_) r = 0.0f;
+    }
     ~SceneState() = default;
-
     // Reads depthAvailable_ from the backend (Renderer::ConnectSubsystems).
     void SetBackend(IRenderBackend* backend) {
         backend_ = backend;

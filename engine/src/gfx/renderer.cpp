@@ -227,6 +227,8 @@ void Renderer::InitBuiltinResources() {
     // depth shaders with the main-camera VP (colour-encoded gl_FragCoord.z).
     ssaoDepthShader_ = backend_->CreateShader(kSsaoDepthVertexShader, kSsaoDepthFragmentShader,
                                               "ssao_depth");
+    ssaoDepthSkinnedShader_ = backend_->CreateShader(
+        kSsaoDepthSkinnedVertexShader, kSsaoDepthFragmentShader, "ssao_depth_skinned");
     ssaoDepthMeshShader_ = backend_->CreateShader(kSsaoDepthMeshVertexShader,
                                                   kSsaoDepthFragmentShader, "ssao_depth_mesh");
     ssaoShader_ = backend_->CreateShader(kPostVertexShader, kSsaoFragmentShader, "ssao");
@@ -372,7 +374,12 @@ void Renderer::SetCamera(const Camera& camera, float aspect) {
     // Render the cascade shadow maps now: they are sampled by the main-pass
     // draws that follow this SetCamera. Uses the previous frame's recorded
     // casters (one frame of staleness, imperceptible) and the current camera.
-    if (shadowSystem_.Enabled() && !shadowSystem_.ShadowPassRanThisFrame()) {
+    // Guard mirrors RefreshShadowPass: an offscreen tool render (thumbnail,
+    // model preview) that calls SetCamera must not consume-and-clear the
+    // pending scene casters and re-render the cascades empty - that wiped the
+    // shadows for the following main frame (surfaces popping lit/dark).
+    if (shadowSystem_.Enabled() && !shadowSystem_.ShadowPassRanThisFrame() &&
+        (shadowSystem_.HasRecordedCasters() || !shadowSystem_.MapsInitialized())) {
         shadowSystem_.RunPass(sceneState_.ActiveCamera(), sceneState_.ViewAspect(),
                               sceneState_.SunDir(), sceneState_.PointPos(),
                               sceneState_.PointRadius(), sceneState_.PointCount());
@@ -504,6 +511,11 @@ void Renderer::SetTonemapEnabled(bool enabled) {
     tonemapEnabled_ = enabled;
     NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
                  "Renderer: tonemap %s", enabled ? "enabled" : "disabled (legacy clamp)");
+}
+
+void Renderer::ResetAutoExposure() {
+    if (!backend_) return;
+    postGraph_.ResetAutoExposure(*backend_);
 }
 
 void Renderer::SetMsaaEnabled(bool enabled) {
@@ -724,8 +736,12 @@ void Renderer::UpdateDynamicResolution() {
                              .count();
     if (lastFrameClock_ != 0) {
         const double ms = static_cast<double>(ns - lastFrameClock_) / 1.0e6;
-        if (ms > 0.05 && ms < 500.0)
+        if (ms > 0.05 && ms < 500.0) {
             frameTimeEmaMs_ = frameTimeEmaMs_ <= 0.0 ? ms : frameTimeEmaMs_ * 0.9 + ms * 0.1;
+            // Raw (unsmoothed) wall-clock dt for frame-rate independent
+            // adaptation curves (auto exposure).
+            lastFrameDtSec_ = static_cast<float>(std::min(std::max(ms * 0.001, 0.0005), 0.1));
+        }
     }
     lastFrameClock_ = ns;
     if (!dynResEnabled_ || frameTimeEmaMs_ <= 0.0) return;
@@ -809,6 +825,24 @@ void Renderer::DrawMesh(const Mesh& mesh, const Material& material, const math::
     if (!mesh.Valid()) return;
     Flush2D();
 
+    // Record shadow/SSAO casters BEFORE the camera frustum cull. A caster that
+    // is off-screen (behind or beside the view, but lying along the light
+    // direction) still casts into the visible region; culling it here made the
+    // shadows depend on the view direction - "shadows only on one side",
+    // "turning toward the light there is no shadow". The shadow pass consumes
+    // this list, so it must not be limited to the main camera's view.
+    if (shadowSystem_.Enabled() && shadowSystem_.Recording() && !material.transparent &&
+        material.castShadow)
+        shadowSystem_.RecordCaster({mesh.Handle(), model, {}, {}, 0, mesh.Bounds()});
+    // SSAO/SSR have their own colour-encoded depth pre-pass and do NOT depend
+    // on CSM being enabled: collect the caster whenever one is active.
+    // The SSAO/SSR colour-depth pre-pass only needs the caster list when the
+    // main-pass depth cannot be resolved for the post chain (no MSAA / a backend
+    // without ResolveDepth). Collecting otherwise is pure CPU waste.
+    if ((ssaoEnabled_ || ssrEnabled_) && shadowSystem_.Recording() && !material.transparent &&
+        !PostDepthReuseOk())
+        ssaoCasters_.push_back({mesh.Handle(), model, {}, {}, 0, mesh.Bounds()});
+
     if (sceneState_.FrustumValid() &&
         !sceneState_.Frustum().Intersects(math::TransformAABB(mesh.Bounds(), model)))
         return;
@@ -816,7 +850,12 @@ void Renderer::DrawMesh(const Mesh& mesh, const Material& material, const math::
     // Step E2: a moving object also rasterizes a motion vector for the TAA
     // resolve. Submitted before the material path so the colour draw afterwards
     // re-establishes every piece of state the velocity pass touched.
-    if (prevModel && velocityEnabled_ && velocityRT_.Valid() && velocityShader_.Valid())
+    // Transparent materials are excluded: the velocity pass rasterises opaque
+    // with depth-write, so a moving translucent card would claim the velocity
+    // of the pixels it covers (its own alpha-blended colour) and ghost the
+    // moving object behind it; those surfaces fall back to depth reprojection.
+    if (prevModel && velocityEnabled_ && velocityRT_.Valid() && velocityShader_.Valid() &&
+        !material.transparent)
         SubmitVelocity(mesh, model, *prevModel);
 
     // Depth-projected decal: bypass the material path (no shadow/SSAO caster
@@ -828,17 +867,6 @@ void Renderer::DrawMesh(const Mesh& mesh, const Material& material, const math::
         DrawDecal(mesh, material, model);
         return;
     }
-
-    if (shadowSystem_.Enabled() && shadowSystem_.Recording() && !material.transparent &&
-        material.castShadow)
-        shadowSystem_.RecordCaster({mesh.Handle(), model, {}, {}, 0, mesh.Bounds()});
-    // SSAO/SSR have their own colour-encoded depth pre-pass and do NOT depend
-    // on CSM being enabled: collect the caster whenever one is active.
-    // The SSAO/SSR colour-depth pre-pass only needs the caster list when the
-    // main-pass depth cannot be resolved for the post chain (no MSAA / a backend
-    // without ResolveDepth). Collecting otherwise is pure CPU waste.
-    if ((ssaoEnabled_ || ssrEnabled_) && !material.transparent && !PostDepthReuseOk())
-        ssaoCasters_.push_back({mesh.Handle(), model, {}, {}, 0, mesh.Bounds()});
 
     ShaderHandle shader = material.shader.Valid() ? material.shader
                                                   : (material.lit ? litShader_ : unlitShader_);
@@ -923,10 +951,16 @@ void Renderer::DrawDecal(const Mesh& mesh, const Material& material, const math:
     backend_->SetUniformMat4("uInvViewProj", viewProj.Inverse());
     backend_->SetUniformInt("uDecalProject", 1);
     backend_->SetUniformInt("uDecalAdditive", material.additive ? 1 : 0);
-    // Depth bias in window-depth units: large enough to beat resolved-depth vs
-    // per-sample MSAA differences at silhouette edges, small enough that the
-    // decal never pokes through geometry in front of it.
-    backend_->SetUniformFloat("uDecalBias", 0.00035f);
+    // World-unit depth bias (linearised against the camera near/far inside the
+    // shader): large enough to beat resolved-depth vs per-sample MSAA
+    // differences at silhouette edges, small enough that the decal never pokes
+    // through geometry in front of it. The old fixed window-depth bias grew
+    // with camera distance squared (~1 world unit at gameplay range) and
+    // painted decals over the legs of units standing in them.
+    backend_->SetUniformFloat("uDecalBias", 0.05f);
+    const Camera& cam = sceneState_.ActiveCamera();
+    backend_->SetUniformFloat("uNear", cam.nearPlane);
+    backend_->SetUniformFloat("uFar", cam.farPlane);
     const TextureHandle sceneDepth = backend_->RenderTargetDepthTexture(hdrDepthRT_);
     // Unit 24 (0..4 material maps, 5..19 shadows, 20..22 IBL, 23 normal map):
     // reusing the IBL unit would leave a stale depth binding behind when the
@@ -960,6 +994,20 @@ void Renderer::DrawSkinnedMesh(const Mesh& mesh, const Material& material,
     if (!mesh.Valid()) return;
     Flush2D();
 
+    // Record the caster BEFORE the frustum cull and honour material.castShadow,
+    // mirroring DrawMesh: an off-screen character (behind/beside the view but
+    // along the light direction) still casts into the visible region, and a
+    // material authored castShadow=false must not write shadow depth.
+    int count = boneCount >= 0 ? std::min(boneCount, static_cast<int>(boneMatrices.size()))
+                               : static_cast<int>(boneMatrices.size());
+    count = std::min(count, 128);
+    if (shadowSystem_.Enabled() && shadowSystem_.Recording() && !material.transparent &&
+        material.castShadow)
+        shadowSystem_.RecordCaster({mesh.Handle(), model, {}, boneMatrices, count, mesh.Bounds()});
+    if ((ssaoEnabled_ || ssrEnabled_) && shadowSystem_.Recording() && !material.transparent &&
+        !PostDepthReuseOk())
+        ssaoCasters_.push_back({mesh.Handle(), model, {}, boneMatrices, count, mesh.Bounds()});
+
     if (sceneState_.FrustumValid() &&
         !sceneState_.Frustum().Intersects(math::TransformAABB(mesh.Bounds(), model)))
         return;
@@ -969,16 +1017,6 @@ void Renderer::DrawSkinnedMesh(const Mesh& mesh, const Material& material,
     // so a limb swinging in place still relies on the neighbourhood clamp.
     if (prevModel && velocityEnabled_ && velocityRT_.Valid() && velocityShader_.Valid())
         SubmitVelocity(mesh, model, *prevModel);
-
-    // Upload up to 128 bone matrices as one contiguous row-major array.
-    int count = boneCount >= 0 ? std::min(boneCount, static_cast<int>(boneMatrices.size()))
-                               : static_cast<int>(boneMatrices.size());
-    count = std::min(count, 128);
-
-    if (shadowSystem_.Enabled() && shadowSystem_.Recording() && !material.transparent)
-        shadowSystem_.RecordCaster({mesh.Handle(), model, {}, boneMatrices, count, mesh.Bounds()});
-    if ((ssaoEnabled_ || ssrEnabled_) && !material.transparent && !PostDepthReuseOk())
-        ssaoCasters_.push_back({mesh.Handle(), model, {}, boneMatrices, count, mesh.Bounds()});
 
     ShaderHandle shader = material.shader.Valid() ? material.shader : skinnedLitShader_;
     ApplyMaterial(material, sceneState_.ViewProjection() * model, model, NormalMatrix(model),
@@ -1030,10 +1068,15 @@ void Renderer::DrawMeshInstanced(const Mesh& mesh, const Material& material,
                          });
     }
 
-    if (shadowSystem_.Enabled() && shadowSystem_.Recording() && !material.transparent)
+    // Instances are still recorded from the frustum-visible subset only: veg
+    // fields batch thousands of instances and the off-screen ones are the
+    // cheap-to-skip half. material.castShadow IS honoured, as in DrawMesh.
+    if (shadowSystem_.Enabled() && shadowSystem_.Recording() && !material.transparent &&
+        material.castShadow)
         shadowSystem_.RecordCaster(
             {mesh.Handle(), math::Mat4::Identity(), instancedVisible_, {}, 0, mesh.Bounds()});
-    if ((ssaoEnabled_ || ssrEnabled_) && !material.transparent && !PostDepthReuseOk())
+    if ((ssaoEnabled_ || ssrEnabled_) && shadowSystem_.Recording() && !material.transparent &&
+        !PostDepthReuseOk())
         ssaoCasters_.push_back(
             {mesh.Handle(), math::Mat4::Identity(), instancedVisible_, {}, 0, mesh.Bounds()});
 
@@ -1164,6 +1207,11 @@ void Renderer::DrawBillboards(const math::Vec3* positions, const float* sizes,
         backend_->SetUniformInt("uSceneDepth", 22);
         backend_->SetUniformVec2("uScreenSize",
                                  {static_cast<float>(hdrW_), static_cast<float>(hdrH_)});
+        // uSoftFade is in world units: the shader linearises the raw scene
+        // depth (uNear/uFar) and compares against the particle's view-axis
+        // distance, so the fade band no longer grows with camera distance^2.
+        backend_->SetUniformFloat("uNear", cam.nearPlane);
+        backend_->SetUniformFloat("uFar", cam.farPlane);
         backend_->SetUniformFloat("uSoftFade", softFadeRange_);
     }
     if (atlas)
@@ -1426,6 +1474,7 @@ void Renderer::ApplySceneUniforms(ShaderHandle shader) {
     // recompute pending) the uniforms stay at their GLSL defaults
     // (uIblStrength = 0) so the shader contributes no IBL term.
     if (sceneState_.IblValid()) {
+        iblWasValid_ = true;
         backend_->SetUniformFloat("uIblStrength", sceneState_.IblStrength());
         backend_->SetUniformFloat("uRoughnessMin", ibl::kRoughnessMin);
         backend_->BindTexture(20, sceneState_.IblIrradianceTex());
@@ -1434,6 +1483,12 @@ void Renderer::ApplySceneUniforms(ShaderHandle shader) {
         backend_->SetUniformInt("uPrefilteredMap", 21);
         backend_->BindTexture(22, sceneState_.IblBrdfLutTex());
         backend_->SetUniformInt("uBrdfLUT", 22);
+    } else if (iblWasValid_) {
+        // The IBL set went invalid after having been uploaded (recompute
+        // failure / SceneState::Shutdown): zero the strength so the shader
+        // contributes no IBL term instead of sampling stale/destroyed handles.
+        backend_->SetUniformFloat("uIblStrength", 0.0f);
+        iblWasValid_ = false;
     }
     // A3 probe-field GI atlas (texture unit 24, after normalMap on 23 and IBL on
     // 20..22): sampled by world position for indirect diffuse, blended into the
@@ -1997,6 +2052,8 @@ PostGraph::FrameParams Renderer::MakePostParams(bool chains) const {
                          static_cast<float>(hdrH_ > 0 ? hdrH_ : screenH_)};
     }
     p.camera = sceneState_.ActiveCamera();
+    // Wall-clock dt for the auto-exposure adaptation rate.
+    p.frameDt = lastFrameDtSec_;
     p.composite.ssaoIntensity = ssaoIntensity_;
     p.composite.volStrength = volumetricIntensity_;
     p.composite.ssrStrength = ssrIntensity_;
@@ -2011,6 +2068,10 @@ PostGraph::FrameParams Renderer::MakePostParams(bool chains) const {
     p.composite.bloomWidth = bloomWidth_;
     p.composite.colorGrade = colorGrade_;
     p.composite.autoExposure = autoExposure_;
+    // Diagnostic captures (chains=false) re-run the composite with tweaked
+    // switches; keep the exposure-measure chain out of them entirely so the
+    // capture passes don't advance the adaptation state.
+    p.composite.autoExposure.enabled = chains && autoExposure_.enabled;
     p.composite.vignette = vignette_;
     p.composite.white = white_;
     return p;
@@ -2136,14 +2197,25 @@ void Renderer::DrawSsaoDepthCasters(const math::Mat4& viewProj) {
             backend_->SetUniformFloat("uFar", sceneState_.ActiveCamera().farPlane);
             backend_->DrawMeshInstanced(draw.mesh, draw.models.data(),
                                         static_cast<uint32_t>(draw.models.size()));
-        } else if (!draw.bones.empty()) {
-            backend_->UseShader(shadowSystem_.SkinnedDepthShader());
+        } else if (!draw.bones.empty() && ssaoDepthSkinnedShader_.Valid()) {
+            // Linear-depth SKINNED variant (see kSsaoDepthSkinnedVertexShader):
+            // the shadow skinned program writes window depth, which the post
+            // chain would decode as ~990m at 10m distance.
+            backend_->UseShader(ssaoDepthSkinnedShader_);
             boneUniformFlat_.resize(static_cast<size_t>(draw.boneCount) * 16);
             for (int i = 0; i < draw.boneCount; ++i)
                 std::memcpy(boneUniformFlat_.data() + static_cast<size_t>(i) * 16,
                             draw.bones[static_cast<size_t>(i)].Data(), 16 * sizeof(float));
             backend_->SetUniformMat4Array("uBoneMatrices", boneUniformFlat_.data(), draw.boneCount);
             backend_->SetUniformMat4("uMVP", viewProj * draw.model);
+            backend_->SetUniformFloat("uFar", sceneState_.ActiveCamera().farPlane);
+            backend_->DrawMesh(draw.mesh);
+        } else if (!draw.bones.empty()) {
+            // No skinned linear-depth variant (shader build failed): fall back
+            // to the static path so at least the model transform is right.
+            backend_->UseShader(ssaoDepthMeshShader_);
+            backend_->SetUniformMat4("uMVP", viewProj * draw.model);
+            backend_->SetUniformFloat("uFar", sceneState_.ActiveCamera().farPlane);
             backend_->DrawMesh(draw.mesh);
         } else {
             backend_->UseShader(ssaoDepthMeshShader_);

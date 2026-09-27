@@ -172,4 +172,6 @@ layout(set = 0, binding = 0) uniform EngineUBO {
     layout(offset = 7104) int uHasNormalMap;
     layout(offset = 7120) int uReceiveShadow;
     layout(offset = 7136) int uLightProbeEnabled;
+    // Bloom upsample filter footprint (mirrors GL uBloomWidth; 1 = bilinear).
+    layout(offset = 7140) float uBloomWidth;
 } eng;

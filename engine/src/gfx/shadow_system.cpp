@@ -377,6 +377,11 @@ void ShadowSystem::RunPass(const Camera& camera, float aspect, const math::Vec3&
         }
 
     }
+    // B1: the cascades re-rendered with new lightViewProj_ - the scene uniform
+    // block must re-upload before the next lit draw samples them. SetCamera
+    // already bumped on entry, so this only matters for a mid-frame
+    // RefreshShadowPass (draws already made with the previous matrices).
+    if (sceneUniformStamp_) ++*sceneUniformStamp_;
     // Point-light cubemap faces reuse the same caster list (cleared below).
     RunPointShadowPass(pointPos, pointRadius, pointCount);
     backend_->BindDefaultTarget();

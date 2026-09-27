@@ -202,8 +202,11 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
     volPassIndex_ = add(std::move(vol));
 
     // 6/7. Volumetric blur (H then V), ping-ponging vol/volBlurA/volBlurB.
-    volBlurHIndex_ = add(blurPass("post.volBlurH", ssaoBlur_, vol_, volBlurA_, math::Vec2{1.0f, 0.0f}));
-    volBlurVIndex_ = add(blurPass("post.volBlurV", ssaoBlur_, volBlurA_, volBlurB_, math::Vec2{0.0f, 1.0f}));
+    // RGBA gaussian, NOT the AO blur: kSsaoBlurFragmentShader reads only the
+    // .r channel and wrote it back into every channel, which flattened the
+    // sun colour out of the shafts (always grey) and desaturated SSR hits.
+    volBlurHIndex_ = add(blurPass("post.volBlurH", blur_, vol_, volBlurA_, math::Vec2{1.0f, 0.0f}));
+    volBlurVIndex_ = add(blurPass("post.volBlurV", blur_, volBlurA_, volBlurB_, math::Vec2{0.0f, 1.0f}));
 
     // 8. SSR: ray-marches the reflected view ray in screen space against the
     //    scene depth, pulling the HDR colour.
@@ -231,14 +234,14 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
     ssrPassIndex_ = add(std::move(ssr));
 
     // 9/10. SSR blur (H then V), ping-ponging ssr/ssrBlurA/ssrBlurB.
-    ssrBlurHIndex_ = add(blurPass("post.ssrBlurH", ssaoBlur_, ssr_, ssrBlurA_, math::Vec2{1.0f, 0.0f}));
-    ssrBlurVIndex_ = add(blurPass("post.ssrBlurV", ssaoBlur_, ssrBlurA_, ssrBlurB_, math::Vec2{0.0f, 1.0f}));
+    ssrBlurHIndex_ = add(blurPass("post.ssrBlurH", blur_, ssr_, ssrBlurA_, math::Vec2{1.0f, 0.0f}));
+    ssrBlurVIndex_ = add(blurPass("post.ssrBlurV", blur_, ssrBlurA_, ssrBlurB_, math::Vec2{0.0f, 1.0f}));
 
     // 11. Bloom bright pass: HDR -> bloomHalfA (thresholded, only pixels above
-    //     1.0).
+    //     1.0 AFTER the effective exposure -- see kBrightPassFragmentShader).
     FramePass bright;
     bright.name = "bloom.bright";
-    bright.reads = {hdrScene_};
+    bright.reads = {hdrScene_, adaptDone_};
     bright.writes = {bloomHalfA_};
     bright.execute = [this](FrameGraphContext& ctx) {
         auto& backend = ctx.Backend();
@@ -247,6 +250,16 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
         backend.BindTexture(0, backend.RenderTargetColorTexture(ctx.GetInput(hdrScene_)));
         backend.SetUniformInt("uTex", 0);
         backend.SetUniformFloat("uThreshold", comp_.bloomThreshold);
+        backend.SetUniformFloat("uExposure", comp_.exposure);
+        // Same live-input pattern as the composite: when the adaptation chain
+        // did not run this frame the 1x1 target is not live, so fall back to
+        // the authored scalar exposure (uAutoExposure = 0).
+        const RenderTargetHandle aeRt = ctx.GetInput(adaptDone_);
+        const bool aeOn = comp_.autoExposure.enabled && exposureAdaptShader_.Valid() && aeRt.Valid();
+        backend.BindTexture(1, aeRt.Valid() ? backend.RenderTargetColorTexture(aeRt)
+                                            : comp_.white);
+        backend.SetUniformInt("uAvgLum", 1);
+        backend.SetUniformInt("uAutoExposure", aeOn ? 1 : 0);
         backend.DrawMesh(postQuad_);
     };
     brightPassIndex_ = add(std::move(bright));
@@ -338,14 +351,17 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
     lumAvg.name = "post.luminanceAvg";
     lumAvg.reads = {lum_};
     lumAvg.writes = {lumAvg_};
-    lumAvg.execute = [this, lumW, lumH](FrameGraphContext& ctx) {
+    lumAvg.execute = [this, hw = float(hdrW_), hh = float(hdrH_)](FrameGraphContext& ctx) {
         auto& backend = ctx.Backend();
         backend.BindRenderTarget(ctx.GetOutput(lumAvg_));
         Fullscreen(backend, luminanceReduceShader_);
         backend.BindTexture(0, backend.RenderTargetColorTexture(ctx.GetInput(lum_)));
         backend.SetUniformInt("uLum", 0);
-        backend.SetUniformVec2("uSrcTexelSize", math::Vec2{1.0f / static_cast<float>(lumW),
-                                                            1.0f / static_cast<float>(lumH)});
+        // Letterboxed scene area in normalised HDR UV (same convention as the
+        // volumetric pass): the reduce's subsample grid skips taps outside it
+        // so clear-colour letterbox black can't drag the average down.
+        backend.SetUniformVec4("uSceneVpRect", {sceneVpRect_.x / hw, sceneVpRect_.y / hh,
+                                                sceneVpRect_.z / hw, sceneVpRect_.w / hh});
         backend.DrawMesh(postQuad_);
     };
     luminanceAvgIndex_ = add(std::move(lumAvg));
@@ -373,7 +389,11 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
         backend.SetUniformFloat("uKeyValue", ae.keyValue);
         backend.SetUniformFloat("uExposureMin", ae.minExposure);
         backend.SetUniformFloat("uExposureMax", ae.maxExposure);
-        backend.SetUniformFloat("uAdaptation", ae.adaptationSpeed);
+        // adaptationSpeed is a per-60fps-frame lerp factor; convert to a wall
+        // clock rate so convergence no longer depends on the frame rate.
+        const float dt = std::min(std::max(frameDt_, 0.0005f), 0.1f);
+        backend.SetUniformFloat(
+            "uAdaptation", 1.0f - std::exp(-ae.adaptationSpeed * 60.0f * dt));
         backend.DrawMesh(postQuad_);
         // Same draw into the persistent target (shader/texture/uniform state
         // stays bound; only the render target changes).
@@ -391,7 +411,8 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
     //     like the old hand-written composite.
     FramePass composite;
     composite.name = "post.composite";
-    composite.reads = {hdrScene_, sceneDepth_, ao_, volBlurB_, ssrBlurB_, bloomHalfB_, adaptDone_};
+    composite.reads = {hdrScene_, sceneDepth_, aoBlurB_, volBlurB_, ssrBlurB_, bloomHalfB_,
+                       adaptDone_};
     composite.execute = [this](FrameGraphContext& ctx) {
         auto& backend = ctx.Backend();
         if (!compositeShader_.Valid() || !postQuad_.Valid()) return;
@@ -419,7 +440,10 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
         backend.SetUniformFloat("uStrength", comp_.bloomStrength);
         backend.SetUniformInt("uBloomEnabled", bloomActive ? 1 : 0);
         backend.SetUniformInt("uBloom", 1);
-        const RenderTargetHandle aoRt = ctx.GetInput(ao_);
+        // The BLURRED AO chain output (aoBlurB_), not the raw post.ssao pass
+        // output: the sparse 6-tap kernel shows as dark speckle on every
+        // surface without the separable blur (which ran for nothing before).
+        const RenderTargetHandle aoRt = ctx.GetInput(aoBlurB_);
         const bool aoActive = aoRt.Valid();
         if (aoActive) {
             backend.BindTexture(2, backend.RenderTargetColorTexture(aoRt));
@@ -428,7 +452,13 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
         }
         backend.SetUniformInt("uAoEnabled", aoActive ? 1 : 0);
         backend.SetUniformInt("uAo", 2);
-        backend.SetUniformFloat("uAoIntensity", comp_.ssaoIntensity);
+        // The shader blends mix(1.0, ao, uAoIntensity); an intensity > 1
+        // EXTRAPOLATES past the AO value and can go negative (black patches).
+        // The editor slider allows 0..10, so clamp at the upload.
+        backend.SetUniformFloat("uAoIntensity",
+                                comp_.ssaoIntensity < 0.0f
+                                    ? 0.0f
+                                    : (comp_.ssaoIntensity > 1.0f ? 1.0f : comp_.ssaoIntensity));
         const RenderTargetHandle volRt = ctx.GetInput(volBlurB_);
         const bool volActive = volRt.Valid();
         if (volActive) {
@@ -508,6 +538,15 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
     compositeRan_ = false;
 }
 
+void PostGraph::ResetAutoExposure(IRenderBackend& backend) {
+    // Drop the persistent 1x1 targets; the next Execute with the adaptation
+    // chain enabled recreates and re-seeds them with the neutral exposure.
+    if (adaptPrev_.Valid()) backend.DestroyRenderTarget(adaptPrev_);
+    if (adaptCurr_.Valid()) backend.DestroyRenderTarget(adaptCurr_);
+    adaptPrev_ = RenderTargetHandle{};
+    adaptCurr_ = RenderTargetHandle{};
+}
+
 void PostGraph::Destroy(IRenderBackend& backend) {
     graph_.DestroyResources(backend);
     if (adaptPrev_.Valid()) backend.DestroyRenderTarget(adaptPrev_);
@@ -542,9 +581,9 @@ bool PostGraph::Execute(IRenderBackend& backend, const FrameParams& params) {
     // Per-chain enable: a chain runs only when requested AND its shaders are
     // valid AND (for the chains sampling the scene) the HDR target is live.
     const bool ssao = params.ssaoPass && ssaoShader_.Valid() && ssaoBlur_.Valid();
-    const bool vol = params.volumetricPass && volumetricShader_.Valid() && ssaoBlur_.Valid() &&
+    const bool vol = params.volumetricPass && volumetricShader_.Valid() && blur_.Valid() &&
                      params.hdrScene.Valid();
-    const bool ssr = params.ssrPass && ssrShader_.Valid() && ssaoBlur_.Valid() &&
+    const bool ssr = params.ssrPass && ssrShader_.Valid() && blur_.Valid() &&
                      params.hdrScene.Valid();
     const bool bloom = params.bloomPass && bright_.Valid() && blur_.Valid() &&
                        downsample_.Valid() && upsampleAdd_.Valid() && params.hdrScene.Valid();
@@ -612,6 +651,7 @@ bool PostGraph::Execute(IRenderBackend& backend, const FrameParams& params) {
     }
     nearPlane_ = params.camera.nearPlane;
     farPlane_ = params.camera.farPlane;
+    frameDt_ = params.frameDt;
     projScale_ = hdrH_ > 0 ? 0.5f * static_cast<float>(hdrH_) / std::tan(0.5f * params.camera.fovY)
                            : 600.0f;
     viewProj_ = params.viewProj;
