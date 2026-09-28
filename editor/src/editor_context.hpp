@@ -197,6 +197,8 @@ struct EditorContext {
     int* viewCam = nullptr;        // ViewCam 枚举（0 透视, 1 顶视, 2 前视）
     math::Vec3* camTarget = nullptr;
     float* camDist = nullptr;
+    float* camYaw = nullptr;    // orbit yaw/pitch, shown in the hint row so
+    float* camPitch = nullptr;  // bug reports can reproduce the exact view
     // 行为树面板（Task 18b）：btGraph_ 由 EditorApp 持有（OnCreate 播种 + 冒烟
     // 测试直接读写），注入指针；BT 文件 IO（EditorApp 方法，冒烟测试也调）经
     // 回调；播放高亮（play_ 是 GameRuntime，面板不直接持有）经回调。

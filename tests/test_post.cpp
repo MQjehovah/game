@@ -308,8 +308,9 @@ TEST(BloomShaderSourceTokens) {
     const std::string blur(gfx::kBlurFragmentShader);
     CHECK(blur.find("uTexelSize") != std::string::npos);
     CHECK(blur.find("uDirection") != std::string::npos);
-    // Kernel taps match the tested constants (center weight present).
-    CHECK(blur.find("0.402620") != std::string::npos);
+    // Kernel taps match the tested constants (9-tap gaussian, center weight).
+    CHECK(blur.find("0.2854") != std::string::npos);
+    CHECK(blur.find("off * 4.0") != std::string::npos);
 
     const std::string down(gfx::kDownsampleFragmentShader);
     CHECK(down.find("uSrcTexelSize") != std::string::npos);

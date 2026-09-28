@@ -42,7 +42,13 @@ void main() {
     }
     if (eng.uBloomEnabled != 0) c += texture(uBloom, vUV).rgb * eng.uStrength;
     if (eng.uVolEnabled != 0) c += texture(uVol, vUV).rgb * eng.uVolStrength;
-    if (eng.uSsrEnabled != 0) c += texture(uSsr, vUV).rgb * eng.uSsrStrength;
+    // SSR BLENDS by its alpha (fresnel * ray fade), it is not ADDed: adding
+    // the fully-lit scene colour on top of an already-lit surface double-lit
+    // everything and washed reflections out to white.
+    if (eng.uSsrEnabled != 0) {
+        vec4 ssr = texture(uSsr, vUV);
+        c = mix(c, ssr.rgb, clamp(eng.uSsrStrength * ssr.a, 0.0, 1.0));
+    }
     if (eng.uFogEnabled != 0) {
         vec4 dp = texture(uFogDepth, vUV);
         float ndc = dp.r + dp.g / 255.0 + dp.b / 65025.0 + dp.a / 16581375.0;

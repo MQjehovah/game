@@ -237,11 +237,18 @@ uniform vec2 uTexelSize;  // 1 / target dimensions
 uniform vec2 uDirection;  // (1,0) horizontal or (0,1) vertical
 void main() {
     vec2 off = uTexelSize * uDirection;
-    vec4 c = texture(uTex, vUV - off * 2.0) * 0.05449
-           + texture(uTex, vUV - off)       * 0.244202
-           + texture(uTex, vUV)             * 0.402620
-           + texture(uTex, vUV + off)       * 0.244202
-           + texture(uTex, vUV + off * 2.0) * 0.05449;
+    // 9-tap gaussian (±4 texels): the SSR march dithers its start per pixel
+    // (to break step banding), and a ±2 kernel left that as fine dense
+    // stripes. The wider kernel averages the dither away.
+    vec4 c = texture(uTex, vUV - off * 4.0) * 0.0048
+           + texture(uTex, vUV - off * 3.0) * 0.0287
+           + texture(uTex, vUV - off * 2.0) * 0.1028
+           + texture(uTex, vUV - off)       * 0.2210
+           + texture(uTex, vUV)             * 0.2854
+           + texture(uTex, vUV + off)       * 0.2210
+           + texture(uTex, vUV + off * 2.0) * 0.1028
+           + texture(uTex, vUV + off * 3.0) * 0.0287
+           + texture(uTex, vUV + off * 4.0) * 0.0048;
     FragColor = c;
 }
 )";
@@ -448,7 +455,13 @@ void main() {
     }
     if (uBloomEnabled != 0) c += texture(uBloom, vUV).rgb * uStrength;
     if (uVolEnabled != 0) c += texture(uVol, vUV).rgb * uVolStrength;
-    if (uSsrEnabled != 0) c += texture(uSsr, vUV).rgb * uSsrStrength;
+    // SSR BLENDS by its alpha (fresnel * ray fade), it is not ADDed: adding
+    // the fully-lit scene colour on top of an already-lit surface double-lit
+    // everything and washed reflections out to white.
+    if (uSsrEnabled != 0) {
+        vec4 ssr = texture(uSsr, vUV);
+        c = mix(c, ssr.rgb, clamp(uSsrStrength * ssr.a, 0.0, 1.0));
+    }
     if (uFogEnabled != 0) {
         vec4 dp = texture(uFogDepth, vUV);
         float ndc = dp.r + dp.g / 255.0 + dp.b / 65025.0 + dp.a / 16581375.0;

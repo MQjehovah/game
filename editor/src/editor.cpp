@@ -408,6 +408,8 @@ bool EditorApp::OnCreate() {
     ctx_.viewCam = reinterpret_cast<int*>(&viewCam_);
     ctx_.camTarget = &camTarget_;
     ctx_.camDist = &camDist_;
+    ctx_.camYaw = &yaw_;
+    ctx_.camPitch = &pitch_;
     // playBodyCount 已在性能面板注入（复用）。
     panels_.Register(std::make_unique<ViewportPanel>());
     // 行为树面板（Task 18b）：btGraph_ 由 EditorApp 持有（OnCreate 播种 + 冒烟

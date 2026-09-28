@@ -77,12 +77,17 @@ void ViewportPanel::Draw(EditorContext& ctx) {
             std::string physInfo;
             if (ctx.playBodyCount && ctx.playBodyCount() > 0)
                 physInfo = " | 物理 " + std::to_string(ctx.playBodyCount());
-            ImGui::TextDisabled("%s | 实体 %zu%s | 目标 (%.1f, %.1f, %.1f) | 距离 %.1f", camLabel,
-                                ctx.entities->size(), physInfo.c_str(),
+            // Yaw/pitch in the hint row so a reported visual bug can be
+            // reproduced headlessly (NEON_ED_YAW/PITCH/DIST).
+            ImGui::TextDisabled("%s | 实体 %zu%s | 目标 (%.1f, %.1f, %.1f) | 距离 %.1f | "
+                                "yaw %.2f pitch %.2f",
+                                camLabel, ctx.entities->size(), physInfo.c_str(),
                                 ctx.camTarget ? ctx.camTarget->x : 0.0f,
                                 ctx.camTarget ? ctx.camTarget->y : 0.0f,
                                 ctx.camTarget ? ctx.camTarget->z : 0.0f,
-                                ctx.camDist ? *ctx.camDist : 0.0f);
+                                ctx.camDist ? *ctx.camDist : 0.0f,
+                                ctx.camYaw ? *ctx.camYaw : 0.0f,
+                                ctx.camPitch ? *ctx.camPitch : 0.0f);
         }
         // Transform gizmo for the selected entity (drawn into this window's
         // draw list; interacts via ImGui's mouse state).

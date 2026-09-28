@@ -406,10 +406,11 @@ TEST(PostGraphPassOrderAndWiring) {
     CHECK_EQ(trace[17].inputs[4].target.id, trace[9].outputs[0].target.id);  // ssrBlurB
     CHECK_EQ(trace[17].inputs[5].target.id, trace[16].outputs[0].target.id); // bloomAcc
 
-    // The whole chain allocates 8 pooled targets (full-res depth + half-res
-    // float pyramid reused aggressively + quarter-res float); composite itself
-    // writes nothing (it draws to the backbuffer), so all are pooled.
-    CHECK_EQ(backend.createCount, 8);
+    // The whole chain allocates 9 pooled targets (full-res depth + full-res
+    // float SSR chain + half-res float pyramid reused aggressively + quarter-res
+    // float); composite itself writes nothing (it draws to the backbuffer), so
+    // all are pooled.
+    CHECK_EQ(backend.createCount, 9);
     CHECK_EQ(backend.destroyCount, 0);
 
     post.ResetFrame();
@@ -527,7 +528,9 @@ TEST(PostGraphTransientPoolAndRebuild) {
     CHECK(post.Execute(backend, PostFrameParams(640, 360, true, true, true, true, true)));
     post.ResetFrame();
     const int created = backend.createCount;
-    CHECK_EQ(created, 8); // 1 full-res depth + half-res float (recycled) + quarter-res float
+    // 1 full-res depth + full-res float SSR (own pool bucket) + half-res float
+    // (recycled) + quarter-res float.
+    CHECK_EQ(created, 9);
 
     // A second frame reuses the same pooled targets: no new allocations.
     CHECK(post.Execute(backend, PostFrameParams(640, 360, true, true, true, true, true)));

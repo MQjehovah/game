@@ -62,9 +62,11 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
     vol_ = fresh.AddResource({static_cast<uint32_t>(aw), static_cast<uint32_t>(ah), kFloatFormat, 1u});
     volBlurA_ = fresh.AddResource({static_cast<uint32_t>(aw), static_cast<uint32_t>(ah), kFloatFormat, 1u});
     volBlurB_ = fresh.AddResource({static_cast<uint32_t>(aw), static_cast<uint32_t>(ah), kFloatFormat, 1u});
-    ssr_ = fresh.AddResource({static_cast<uint32_t>(aw), static_cast<uint32_t>(ah), kFloatFormat, 1u});
-    ssrBlurA_ = fresh.AddResource({static_cast<uint32_t>(aw), static_cast<uint32_t>(ah), kFloatFormat, 1u});
-    ssrBlurB_ = fresh.AddResource({static_cast<uint32_t>(aw), static_cast<uint32_t>(ah), kFloatFormat, 1u});
+    // SSR runs at FULL resolution: a half-res reflection buffer upsamples
+    // into visibly jagged reflection edges (the "stair-step" look).
+    ssr_ = fresh.AddResource({static_cast<uint32_t>(w), static_cast<uint32_t>(h), kFloatFormat, 1u});
+    ssrBlurA_ = fresh.AddResource({static_cast<uint32_t>(w), static_cast<uint32_t>(h), kFloatFormat, 1u});
+    ssrBlurB_ = fresh.AddResource({static_cast<uint32_t>(w), static_cast<uint32_t>(h), kFloatFormat, 1u});
     bloomHalfA_ = fresh.AddResource({static_cast<uint32_t>(aw), static_cast<uint32_t>(ah), kFloatFormat, 1u});
     bloomHalfB_ = fresh.AddResource({static_cast<uint32_t>(aw), static_cast<uint32_t>(ah), kFloatFormat, 1u});
     bloomQuarterA_ = fresh.AddResource({static_cast<uint32_t>(qw), static_cast<uint32_t>(qh), kFloatFormat, 1u});
@@ -158,27 +160,32 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
     };
     ssaoPassIndex_ = add(std::move(ssao));
 
-    // 3/4. Separable AO blur (H then V), ping-ponging ao/aoBlurA/aoBlurB.
+    // 3/4. Separable blur (H then V). `texel` is the SOURCE's texel size (the
+    // AO chain runs at half res, the SSR chain at full res).
     auto blurPass = [this](const char* name, ShaderHandle shader, ResourceId src, ResourceId dst,
-                           const math::Vec2& dir) {
+                           const math::Vec2& dir, const math::Vec2& texel) {
         FramePass p;
         p.name = name;
         p.reads = {src};
         p.writes = {dst};
-        p.execute = [this, shader, src, dst, dir](FrameGraphContext& ctx) {
+        p.execute = [this, shader, src, dst, dir, texel](FrameGraphContext& ctx) {
             auto& backend = ctx.Backend();
             backend.BindRenderTarget(ctx.GetOutput(dst));
             Fullscreen(backend, shader);
             backend.BindTexture(0, backend.RenderTargetColorTexture(ctx.GetInput(src)));
             backend.SetUniformInt("uTex", 0);
-            backend.SetUniformVec2("uTexelSize", math::Vec2{halfTexelX_, halfTexelY_});
+            backend.SetUniformVec2("uTexelSize", texel);
             backend.SetUniformVec2("uDirection", dir);
             backend.DrawMesh(postQuad_);
         };
         return p;
     };
-    ssaoBlurHIndex_ = add(blurPass("post.ssaoBlurH", ssaoBlur_, ao_, aoBlurA_, math::Vec2{1.0f, 0.0f}));
-    ssaoBlurVIndex_ = add(blurPass("post.ssaoBlurV", ssaoBlur_, aoBlurA_, aoBlurB_, math::Vec2{0.0f, 1.0f}));
+    ssaoBlurHIndex_ = add(blurPass("post.ssaoBlurH", ssaoBlur_, ao_, aoBlurA_,
+                                   math::Vec2{1.0f, 0.0f},
+                                   math::Vec2{halfTexelX_, halfTexelY_}));
+    ssaoBlurVIndex_ = add(blurPass("post.ssaoBlurV", ssaoBlur_, aoBlurA_, aoBlurB_,
+                                   math::Vec2{0.0f, 1.0f},
+                                   math::Vec2{halfTexelX_, halfTexelY_}));
 
     // 5. Volumetric: depth-aware volume ray-march toward the sun. Each pixel
     //    steps along its view ray, accumulating the sun's phase-scattered light
@@ -226,8 +233,12 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
     // RGBA gaussian, NOT the AO blur: kSsaoBlurFragmentShader reads only the
     // .r channel and wrote it back into every channel, which flattened the
     // sun colour out of the shafts (always grey) and desaturated SSR hits.
-    volBlurHIndex_ = add(blurPass("post.volBlurH", blur_, vol_, volBlurA_, math::Vec2{1.0f, 0.0f}));
-    volBlurVIndex_ = add(blurPass("post.volBlurV", blur_, volBlurA_, volBlurB_, math::Vec2{0.0f, 1.0f}));
+    volBlurHIndex_ = add(blurPass("post.volBlurH", blur_, vol_, volBlurA_,
+                                  math::Vec2{1.0f, 0.0f},
+                                  math::Vec2{halfTexelX_, halfTexelY_}));
+    volBlurVIndex_ = add(blurPass("post.volBlurV", blur_, volBlurA_, volBlurB_,
+                                  math::Vec2{0.0f, 1.0f},
+                                  math::Vec2{halfTexelX_, halfTexelY_}));
 
     // 8. SSR: ray-marches the reflected view ray in screen space against the
     //    scene depth, pulling the HDR colour.
@@ -235,7 +246,7 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
     ssr.name = "post.ssr";
     ssr.reads = {hdrScene_, sceneDepth_};
     ssr.writes = {ssr_};
-    ssr.execute = [this](FrameGraphContext& ctx) {
+    ssr.execute = [this, dumpTarget, w, h](FrameGraphContext& ctx) {
         auto& backend = ctx.Backend();
         backend.BindRenderTarget(ctx.GetOutput(ssr_));
         Fullscreen(backend, ssrShader_);
@@ -250,13 +261,22 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
         backend.SetUniformFloat("uSteps", static_cast<float>(kSsrSteps));
         backend.SetUniformFloat("uThickness", kSsrThickness);
         backend.SetUniformFloat("uMaxDist", kSsrMaxDist);
+        // View-space march needs the projection factors (see kSsrFragmentShader).
+        backend.SetUniformFloat("uProjScale", projScale_);
         backend.DrawMesh(postQuad_);
+        dumpTarget(backend, "ssr", w, h);
     };
     ssrPassIndex_ = add(std::move(ssr));
 
     // 9/10. SSR blur (H then V), ping-ponging ssr/ssrBlurA/ssrBlurB.
-    ssrBlurHIndex_ = add(blurPass("post.ssrBlurH", blur_, ssr_, ssrBlurA_, math::Vec2{1.0f, 0.0f}));
-    ssrBlurVIndex_ = add(blurPass("post.ssrBlurV", blur_, ssrBlurA_, ssrBlurB_, math::Vec2{0.0f, 1.0f}));
+    ssrBlurHIndex_ = add(blurPass("post.ssrBlurH", blur_, ssr_, ssrBlurA_,
+                                  math::Vec2{1.0f, 0.0f},
+                                  math::Vec2{1.0f / static_cast<float>(hdrW_),
+                                             1.0f / static_cast<float>(hdrH_)}));
+    ssrBlurVIndex_ = add(blurPass("post.ssrBlurV", blur_, ssrBlurA_, ssrBlurB_,
+                                  math::Vec2{0.0f, 1.0f},
+                                  math::Vec2{1.0f / static_cast<float>(hdrW_),
+                                             1.0f / static_cast<float>(hdrH_)}));
 
     // 11. Bloom bright pass: HDR -> bloomHalfA (thresholded, only pixels above
     //     1.0 AFTER the effective exposure -- see kBrightPassFragmentShader).
