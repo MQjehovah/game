@@ -60,6 +60,19 @@ local STOP = {
   keepRatio = 0.6,   -- 超时被袭保留下来的物资比例（损失 40%）
   pickRadius = 30,   -- 点击搜箱的屏幕命中半径（px）
 }
+-- 夜袭：威胁满值后尸群涌向房车偷物资，点击射击防卫；炮塔/武器架派上用场
+local RAID = {
+  spawnEvery = 1.1,   -- 尸群刷新间隔（秒）
+  aliveMax = 9,       -- 场上同时存在上限
+  speed = 1.8,        -- 逼近速度 m/s（+ 危险度加成）
+  hpBase = 2,         -- 基础命中数（危险度每 2 级 +1）
+  attackDist = 2.3,   -- 贴身开始偷物资的距离（m）
+  stealEvery = 0.9,   -- 偷物资周期（秒）
+  hitRadius = 30,     -- 点击命中屏幕半径（px）
+  fireCd = 0.22,      -- 玩家射击间隔（秒）
+  turretCd = 0.65,    -- 炮塔射击间隔（秒）
+  turretRange = 18,   -- 炮塔射程（m）
+}
 -- worldmap.json 节点的世界坐标（驾驶目的地；营地=原点）。地图 1.0 ≈ 160m。
 local NODES = {
   { id = "camp",    name = "营地",       x = 0,   z = 0 },
@@ -113,6 +126,14 @@ local day = 1          -- 旅途天数（每次启程 +1）
 local mapOpen = false  -- 世界地图开关（M）
 local autoT = 0        -- autopilot 停靠自动搜箱计时
 local autoTarget = nil -- autopilot 寻的目的地（最近的非营地节点）
+
+-- 夜袭状态
+local horde = {}       -- 尸群 { ent=, x=, z=, hp=, speed=, phase=, stealT= }
+local hordeT = 0       -- 尸群刷新计时
+local fireT = 0        -- 玩家射击冷却
+local turretT = 0      -- 炮塔射击冷却
+local killCount = 0    -- 本次夜袭歼灭数
+local raidT = 0        -- 夜袭累计时间（跛行动画相位用）
 
 -- ---------------------------------------------------------------------------
 -- 小工具
@@ -631,7 +652,7 @@ local function searchCrate(idx)
     parts[#parts + 1] = MAT_NAMES[mat] .. "+" .. n
   end
   SpawnFloatText(c.x, 0.9, c.z, table.concat(parts, "  "),
-                 false, 1.0, 0.85, 0.45, 1.0)
+                 false, 1.2, 1.0, 0.85, 0.4)
   Despawn(c.ent)
   table.remove(crates, idx)
   -- 尸群被搜刮声惊动：+1 基础 + 节点危险度
@@ -659,9 +680,11 @@ local function bankStopBag(keepRatio)
 end
 
 -- 结束停靠（keepRatio = 1 主动撤离 / STOP.keepRatio 被袭折损）→ 车库模式
+local despawnHorde  -- 前置声明：endStop 在夜袭段之前定义
 local function endStop(keepRatio)
   local got = bankStopBag(keepRatio)
   despawnCrates()
+  despawnHorde()
   stopThreat = 0
   evacT = -1
   day = day + 1
@@ -669,6 +692,190 @@ local function endStop(keepRatio)
   toast.text = (got == "" and "空手而归" or "物资入库: " .. got)
                .. " — 第 " .. day .. " 天"
   toast.t = 4.0
+end
+
+-- ---------------------------------------------------------------------------
+-- 夜袭：尸群逼近 / 偷物资 / 点击射击 / 炮塔自动开火
+-- ---------------------------------------------------------------------------
+-- 方向向量 -> yaw（前进 = (sin yaw, cos yaw)）
+local function dirYaw(dx, dz)
+  if dz > 0 then return math.atan(dx / dz)
+  elseif dz < 0 then return math.atan(dx / dz) + (dx >= 0 and math.pi or -math.pi)
+  else return (dx >= 0) and (math.pi * 0.5) or (-math.pi * 0.5) end
+end
+
+local function hasModule(id)
+  for _, inst in pairs(instances) do
+    if inst.cat.id == id then return inst end
+  end
+  return nil
+end
+
+local function spawnZombie()
+  local ent = SpawnPrefab("rv_zombie", { x = 0, y = -50, z = 0 })
+  if ent == nil then return end
+  local a = math.random() * math.pi * 2
+  local r = 14 + math.random() * 7
+  local wx, wz = rotOf(math.sin(a) * r, math.cos(a) * r)
+  local nd = nodeById(curNode)
+  local danger = nd and nd.danger or 0
+  SetPosition(ent, { x = wx, y = 0.8, z = wz })
+  SetScale(ent, 0.5, 1.6, 0.4)
+  horde[#horde + 1] = { ent = ent, x = wx, z = wz,
+                        hp = RAID.hpBase + math.floor(danger / 2),
+                        speed = RAID.speed * (0.85 + math.random() * 0.4)
+                                + danger * 0.12,
+                        phase = math.random() * 6.28, stealT = 0 }
+end
+
+function despawnHorde()
+  for _, z in ipairs(horde) do Despawn(z.ent) end
+  horde = {}
+end
+
+local function killZombie(idx)
+  local z = horde[idx]
+  EmitParticles({ pos = { x = z.x, y = 1.0, z = z.z }, count = 14,
+                  speedMin = 1.0, speedMax = 3.5,
+                  lifeMin = 0.3, lifeMax = 0.7,
+                  sizeStart = 0.22, sizeEnd = 0.05,
+                  color = { r = 0.35, g = 0.12, b = 0.1, a = 0.9 },
+                  colorEnd = { r = 0.35, g = 0.12, b = 0.1, a = 0.0 },
+                  additive = false })
+  Despawn(z.ent)
+  table.remove(horde, idx)
+  killCount = killCount + 1
+  if math.random() < 0.2 then  -- 20% 掉一小份材料进搜获袋
+    local mats = { "metal", "electronics", "cloth", "wood" }
+    local m = mats[math.random(1, 4)]
+    stopBag[m] = (stopBag[m] or 0) + 1
+    SpawnFloatText(z.x, 1.4, z.z, MAT_NAMES[m] .. "+1",
+                   false, 1.2, 1.0, 0.85, 0.4)
+  end
+end
+
+local function updateHorde(dt)
+  raidT = raidT + dt
+  if evacT >= 0 then
+    hordeT = hordeT - dt
+    if hordeT <= 0 and #horde < RAID.aliveMax then
+      hordeT = RAID.spawnEvery
+      spawnZombie()
+    end
+  end
+  for i = #horde, 1, -1 do
+    local z = horde[i]
+    local dx, dz = rv.x - z.x, rv.z - z.z
+    local dist = math.sqrt(dx * dx + dz * dz)
+    if dist > 0.01 then
+      z.x = z.x + dx / dist * z.speed * dt
+      z.z = z.z + dz / dist * z.speed * dt
+    end
+    local sway = math.sin(raidT * 5.0 + z.phase)
+    SetPosition(z.ent, { x = z.x, y = 0.8 + math.abs(sway) * 0.06, z = z.z })
+    SetRotationY(z.ent, dirYaw(dx, dz) + sway * 0.15)
+    -- 贴身偷物资
+    if dist < RAID.attackDist then
+      z.stealT = z.stealT - dt
+      if z.stealT <= 0 then
+        z.stealT = RAID.stealEvery
+        local mats, n = {}, 0
+        for m, v in pairs(stopBag) do
+          if v > 0 then n = n + 1 mats[n] = m end
+        end
+        if n > 0 then
+          local m = mats[math.random(1, n)]
+          stopBag[m] = stopBag[m] - 1
+          if stopBag[m] <= 0 then stopBag[m] = nil end
+          SpawnFloatText(z.x, 1.5, z.z, "-" .. MAT_NAMES[m],
+                         false, 1.2, 1, 0.3, 0.25)
+        end
+      end
+    else
+      z.stealT = 0
+    end
+  end
+end
+
+-- 点击射击：屏幕空间命中最近丧尸；枪口在炮塔（有则）或车顶中段
+local function shootAt(mx, my)
+  local best, bestD = nil, RAID.hitRadius * RAID.hitRadius
+  for i, z in ipairs(horde) do
+    local sp = WorldToScreen(z.x, 1.0, z.z)
+    if sp then
+      local ddx, ddz = sp.x - mx, sp.y - my
+      local d2 = ddx * ddx + ddz * ddz
+      if d2 < bestD then best, bestD = i, d2 end
+    end
+  end
+  local turret = hasModule("turret")
+  local mzx, mzz = rotOf(0, 1.5)
+  local mzy = 2.35
+  if turret then mzx, mzz = rotOf(turret.lx, turret.lz) mzy = turret.ly + 0.8 end
+  -- 枪口火光
+  EmitParticles({ pos = { x = mzx, y = mzy, z = mzz }, count = 4,
+                  speedMin = 2, speedMax = 5, lifeMin = 0.05, lifeMax = 0.12,
+                  sizeStart = 0.16, sizeEnd = 0.03,
+                  color = { r = 1, g = 0.8, b = 0.3, a = 0.95 },
+                  colorEnd = { r = 1, g = 0.6, b = 0.1, a = 0.0 },
+                  additive = true })
+  if best then
+    local z = horde[best]
+    z.hp = z.hp - (hasModule("gun_rack") and 2 or 1)
+    EmitParticles({ pos = { x = z.x, y = 1.0 + math.random() * 0.4, z = z.z },
+                    count = 6, speedMin = 0.5, speedMax = 2,
+                    lifeMin = 0.2, lifeMax = 0.45,
+                    sizeStart = 0.14, sizeEnd = 0.03,
+                    color = { r = 0.4, g = 0.1, b = 0.08, a = 0.9 },
+                    colorEnd = { r = 0.4, g = 0.1, b = 0.08, a = 0.0 },
+                    additive = false })
+    if z.hp <= 0 then killZombie(best) end
+  else
+    -- 打空：地面扬土
+    local g = PickGround({ x = mx, y = my })
+    if g then
+      EmitParticles({ pos = { x = g.x, y = 0.08, z = g.z }, count = 8,
+                      speedMin = 0.5, speedMax = 2, lifeMin = 0.25, lifeMax = 0.5,
+                      sizeStart = 0.15, sizeEnd = 0.04,
+                      color = { r = 0.62, g = 0.57, b = 0.47, a = 0.7 },
+                      colorEnd = { r = 0.62, g = 0.57, b = 0.47, a = 0.0 },
+                      additive = false })
+    end
+  end
+end
+
+-- 炮塔模块自动开火（射程内最近丧尸，单发 1 伤）
+local function turretFire(dt)
+  if turretT > 0 then
+    turretT = turretT - dt
+    return
+  end
+  local turret = hasModule("turret")
+  if not turret then return end
+  local best, bestD = nil, RAID.turretRange * RAID.turretRange
+  for i, z in ipairs(horde) do
+    local ddx, ddz = z.x - rv.x, z.z - rv.z
+    local d2 = ddx * ddx + ddz * ddz
+    if d2 < bestD then best, bestD = i, d2 end
+  end
+  if not best then return end
+  turretT = RAID.turretCd
+  local z = horde[best]
+  local tx, tz = rotOf(turret.lx, turret.lz)
+  EmitParticles({ pos = { x = tx, y = (turret.ly or 2.6) + 0.5, z = tz }, count = 4,
+                  speedMin = 2, speedMax = 5, lifeMin = 0.05, lifeMax = 0.1,
+                  sizeStart = 0.14, sizeEnd = 0.03,
+                  color = { r = 1, g = 0.9, b = 0.4, a = 0.95 },
+                  colorEnd = { r = 1, g = 0.7, b = 0.1, a = 0.0 },
+                  additive = true })
+  EmitParticles({ pos = { x = z.x, y = 1.0, z = z.z }, count = 8,
+                  speedMin = 0.8, speedMax = 2.5, lifeMin = 0.2, lifeMax = 0.4,
+                  sizeStart = 0.16, sizeEnd = 0.04,
+                  color = { r = 1, g = 0.75, b = 0.25, a = 0.9 },
+                  colorEnd = { r = 1, g = 0.6, b = 0.15, a = 0.0 },
+                  additive = true })
+  z.hp = z.hp - 1
+  if z.hp <= 0 then killZombie(best) end
 end
 
 local function updateDrive(dt)
@@ -856,6 +1063,8 @@ function setMode(m)
     if rvBody then PhysicsSetVelocity(rvBody, { x = 0, y = 0, z = 0 }) end
     if nearNode then curNode = nearNode.id end
     stopBag, stopThreat, evacT = {}, 0, -1
+    despawnHorde()
+    killCount, hordeT, fireT, turretT, raidT = 0, 0, 0, 0, 0
     spawnCrates()
     local nd = nodeById(curNode)
     local stars = string.rep("★", nd and nd.danger or 0)
@@ -866,6 +1075,7 @@ function setMode(m)
     if prev == "stop" then
       -- 开走 = 收工：物资入库 + 天数 +1（物资箱自然残留在这片荒野）
       despawnCrates()
+      despawnHorde()
       day = day + 1
       local got = bankStopBag(1.0)
       stopThreat = 0
@@ -1368,8 +1578,19 @@ function on_update(ent, dt)
     end
   end
   if mode == "stop" then
-    -- 点击搜箱（屏幕空间命中最近的箱）
-    if InputMousePressed(0) then
+    -- 夜袭期（威胁满值）：尸群逼近 + 左键射击防卫 + 炮塔自动开火
+    if evacT >= 0 then
+      updateHorde(dt)
+      turretFire(dt)
+      fireT = fireT - dt
+      if InputMouseDown(0) and fireT <= 0 then
+        fireT = RAID.fireCd
+        local mp = InputMousePos()
+        shootAt(mp.x, mp.y)
+      end
+    end
+    -- 搜箱（夜袭期左键被射击占用）
+    if evacT < 0 and InputMousePressed(0) then
       local mp = InputMousePos()
       local best, bestD = nil, STOP.pickRadius * STOP.pickRadius
       for i, c in ipairs(crates) do
@@ -1382,16 +1603,27 @@ function on_update(ent, dt)
       end
       if best then searchCrate(best) end
     end
-    -- 自动化钩子：每 1.2s 搜最近一箱，搜完主动撤离（截图验收用）
+    -- 自动化钩子：无威胁时搜箱（1.2s/箱）；夜袭时朝最近丧尸开火（0.35s/发）
     if autoPilot then
-      autoT = autoT + dt
-      if autoT > 1.2 then
-        autoT = 0
-        if #crates > 0 then
-          searchCrate(1)
-        elseif evacT < 0 then
-          autoPilot = false
-          endStop(1.0)
+      if evacT < 0 then
+        autoT = autoT + dt
+        if autoT > 1.2 then
+          autoT = 0
+          if #crates > 0 then
+            searchCrate(1)
+          else
+            autoPilot = false
+            endStop(1.0)
+          end
+        end
+      else
+        autoT = autoT + dt
+        if autoT > 0.35 then
+          autoT = 0
+          if #horde > 0 then
+            local sp = WorldToScreen(horde[1].x, 1.0, horde[1].z)
+            if sp then shootAt(sp.x, sp.y) end
+          end
         end
       end
     end
@@ -1560,8 +1792,9 @@ local function drawStopHud()
            .. "   第 " .. day .. " 天",
            math.floor(vw * 0.5), 14, 16, 0.95, 0.88, 0.7, 1, true)
 
-  -- 左上：尸群威胁条（分段，绿→红）
-  local px, py, pw, ph = 10, 10, 216, 64
+  -- 左上：尸群威胁条（分段，绿→红）+ 夜袭歼灭数
+  local px, py, pw = 10, 10, 216
+  local ph = (evacT >= 0) and 88 or 64
   DrawRect(px, py, pw, ph, 0.08, 0.09, 0.10, 0.72)
   DrawRectOutline(px, py, pw, ph, 0.55, 0.52, 0.42, 0.9)
   DrawText("尸群威胁", px + 12, py + 7, 14, 0.9, 0.62, 0.5, 1)
@@ -1574,6 +1807,10 @@ local function drawStopHud()
     if stopThreat >= i - 0.01 then
       DrawRect(sx, py + 32, segW, 12, 0.35 + 0.62 * t, 0.75 - 0.55 * t, 0.25, 1)
     end
+  end
+  if evacT >= 0 then
+    DrawText("夜袭！歼灭 x " .. killCount .. "   场上 x " .. #horde,
+             px + 12, py + 56, 14, 1, 0.5, 0.4, 1)
   end
 
   -- 左下：本次搜获
@@ -1614,7 +1851,18 @@ local function drawStopHud()
     end
   end
 
-  local hints = { "左键 搜箱", "E 收藏撤离   T 上路", "M 世界地图" }
+  -- 夜袭准星
+  if evacT >= 0 then
+    local mp = InputMousePos()
+    if mp then
+      DrawRect(mp.x - 1, mp.y - 9, 2, 18, 1, 0.45, 0.3, 0.9)
+      DrawRect(mp.x - 9, mp.y - 1, 18, 2, 1, 0.45, 0.3, 0.9)
+    end
+  end
+
+  local hints = (evacT >= 0)
+      and { "左键 射击防卫!", "E 收藏撤离   T 上路", "M 世界地图" }
+      or { "左键 搜箱", "E 收藏撤离   T 上路", "M 世界地图" }
   for i, h in ipairs(hints) do
     DrawText(h, vw - 14, 14 + (i - 1) * 20, 14, 0.85, 0.84, 0.80, 0.9, true, true)
   end
