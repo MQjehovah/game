@@ -1,7 +1,7 @@
 -- ===========================================================================
--- Last Caravan（末路房车）车库沙盒 v0.1
--- 网格模块化改装：放置 / 旋转 / 拆除 / 占用判定 / 四资源结算 / HUD / 存读档
--- 网格：4 x 14 格，格 0.5m，车内区域 x[-1,1] z[-3.5,3.5]，车头在 +z（画面远端）
+-- Last Caravan（末路房车）车库沙盒 v0.2 — P1 布局深度
+-- 网格模块化改装：双层放置（地板/车顶）/ 走道连通性 / 四资源+容量 / 存读档
+-- 网格：4 x 14 格，格 0.5m；地板 y≈0.03，车顶 y≈2.25；车头在 +z（画面远端）
 -- ===========================================================================
 
 -- ---------------------------------------------------------------------------
@@ -12,23 +12,34 @@ local GW, GH    = 4, 14              -- 网格宽(x) x 长(z)，单位格
 local ORIGIN_X  = -1.0               -- 格 (0,0) 的西边缘
 local ORIGIN_Z  = -3.5               -- 格 (0,0) 的后边缘（镜头侧）
 local FLOOR_Y   = 0.03               -- 车厢地板顶面
+local ROOF_Y    = 2.25               -- 车顶承载面（墙顶 2.2）
 local WEIGHT_MAX = 1500              -- 底盘载重 kg
 
--- 模块目录（v0.1：程序化色块占位；w/h 单位=格，mh=高度米）
--- powerGen/powerDraw kW；waterStore L、waterDraw L/h；weight kg；comfort 点数
+-- 模块目录（v0.2：layer = "floor"/"roof"；w/h 单位=格，mh=高度米）
+-- powerGen/powerDraw kW；waterStore/waterDraw L、L/h；weight kg；comfort 点数；
+-- storage L（载物容量）。layer="roof" 的模块只能放车顶层。
 local CATALOG = {
-  { id="bed_double", name="双人床",   w=3, h=4, mh=0.45, color="#8A5A44", weight=60,  comfort=30, desc="睡眠质量 +30" },
-  { id="bed_single", name="单人床",   w=2, h=3, mh=0.40, color="#A0714F", weight=35,  comfort=15, desc="睡眠质量 +15" },
-  { id="stove",      name="灶台",     w=2, h=2, mh=0.50, color="#7A7F87", weight=40,  comfort=5,  powerDraw=0.5, waterDraw=2, desc="耗电 0.5kW 耗水 2L/h" },
-  { id="fridge",     name="冰箱",     w=1, h=2, mh=1.10, color="#9FB4C7", weight=30,              powerDraw=0.3, desc="耗电 0.3kW" },
-  { id="water_tank", name="净水箱",   w=2, h=2, mh=0.90, color="#4F8FBF", weight=160,             waterStore=120, desc="储水 120L" },
-  { id="battery",    name="电池组",   w=2, h=1, mh=0.50, color="#D8B23A", weight=80,  battery=5,  desc="储能 5kWh" },
-  { id="solar",      name="太阳能板", w=2, h=3, mh=0.15, color="#3E6FB0", weight=25,  powerGen=1.2, desc="发电 1.2kW（后续上车顶）" },
-  { id="workbench",  name="工作台",   w=2, h=3, mh=0.55, color="#8C6239", weight=70,  desc="改装检修（P1 开放功能）" },
-  { id="storage",    name="储物箱",   w=1, h=1, mh=0.60, color="#6E7B52", weight=15,  desc="储物 50L" },
-  { id="heater",     name="电暖器",   w=1, h=1, mh=0.55, color="#C96B3F", weight=12,  comfort=10, powerDraw=0.8, desc="耗电 0.8kW 舒适 +10" },
-  { id="tv",         name="娱乐柜",   w=2, h=1, mh=0.90, color="#5D5366", weight=28,  comfort=8,  powerDraw=0.2, desc="耗电 0.2kW 舒适 +8" },
-  { id="turret",     name="炮塔底座", w=2, h=2, mh=0.60, color="#5A5A5A", weight=90,  desc="预留（P2 夜袭开放）" },
+  -- 地板层
+  { id="bed_double", name="双人床",   layer="floor", w=3, h=4, mh=0.45, color="#8A5A44", weight=60,  comfort=30, desc="睡眠质量 +30" },
+  { id="bed_single", name="单人床",   layer="floor", w=2, h=3, mh=0.40, color="#A0714F", weight=35,  comfort=15, desc="睡眠质量 +15" },
+  { id="stove",      name="灶台",     layer="floor", w=2, h=2, mh=0.50, color="#7A7F87", weight=40,  comfort=5,  powerDraw=0.5, waterDraw=2, desc="耗电 0.5kW 耗水 2L/h" },
+  { id="fridge",     name="冰箱",     layer="floor", w=1, h=2, mh=1.10, color="#9FB4C7", weight=30,              powerDraw=0.3, desc="耗电 0.3kW" },
+  { id="water_tank", name="净水箱",   layer="floor", w=2, h=2, mh=0.90, color="#4F8FBF", weight=160,             waterStore=120, desc="储水 120L" },
+  { id="battery",    name="电池组",   layer="floor", w=2, h=1, mh=0.50, color="#D8B23A", weight=80,  battery=5,  desc="储能 5kWh" },
+  { id="workbench",  name="工作台",   layer="floor", w=2, h=3, mh=0.55, color="#8C6239", weight=70,  desc="改装检修（P1 后开放）" },
+  { id="storage",    name="储物箱",   layer="floor", w=1, h=1, mh=0.60, color="#6E7B52", weight=15,  storage=50,  desc="储物 50L" },
+  { id="heater",     name="电暖器",   layer="floor", w=1, h=1, mh=0.55, color="#C96B3F", weight=12,  comfort=10, powerDraw=0.8, desc="耗电 0.8kW 舒适 +10" },
+  { id="tv",         name="娱乐柜",   layer="floor", w=2, h=1, mh=0.90, color="#5D5366", weight=28,  comfort=8,  powerDraw=0.2, desc="耗电 0.2kW 舒适 +8" },
+  { id="sink",       name="水槽",     layer="floor", w=1, h=1, mh=0.35, color="#B8C4CE", weight=12,  waterDraw=1, comfort=2, desc="耗水 1L/h 舒适 +2" },
+  { id="bathroom",   name="卫生间",   layer="floor", w=2, h=3, mh=1.00, color="#7F9BA8", weight=120, comfort=12, waterDraw=3, desc="耗水 3L/h 舒适 +12" },
+  { id="generator",  name="发电机",   layer="floor", w=2, h=2, mh=0.70, color="#C7B45A", weight=180, powerGen=2.0, comfort=-5, desc="发电 2.0kW 噪音 舒适 -5" },
+  { id="med_cabinet",name="药柜",     layer="floor", w=1, h=1, mh=0.50, color="#D8E8E0", weight=20,  comfort=6,  desc="医疗 舒适 +6" },
+  { id="gun_rack",   name="武器架",   layer="floor", w=2, h=1, mh=0.50, color="#6B4F3A", weight=40,  desc="武器存放（P2 夜袭）" },
+  { id="turret",     name="炮塔底座", layer="floor", w=2, h=2, mh=0.60, color="#5A5A5A", weight=90,  desc="预留（P2 夜袭开放）" },
+  -- 车顶层（太阳能上车顶发电 +50%）
+  { id="solar",      name="太阳能板", layer="roof",  w=2, h=3, mh=0.15, color="#3E6FB0", weight=25,  powerGen=1.8, desc="发电 1.8kW（车顶限定）" },
+  { id="roof_vent",  name="通风扇",   layer="roof",  w=1, h=1, mh=0.25, color="#8891A0", weight=8,   comfort=4,  powerDraw=0.1, desc="耗电 0.1kW 舒适 +4" },
+  { id="roof_rack",  name="车顶行李架", layer="roof", w=2, h=4, mh=0.35, color="#5C6670", weight=30, storage=150, desc="车载储物 150L" },
 }
 local HOTKEYS = { "1","2","3","4","5","6","7","8","9","0" }  -- 前 10 件绑定热键
 
@@ -37,24 +48,24 @@ local HOTKEYS = { "1","2","3","4","5","6","7","8","9","0" }  -- 前 10 件绑定
 -- ---------------------------------------------------------------------------
 local selected  = 1          -- 当前选择的目录索引
 local rot       = 0          -- 幽灵旋转 0/1（1 = 交换 w/h）
-local occupancy = {}         -- cellIndex = cz*GW+cx -> 实例 id
-local instances = {}         -- id -> { cat=目录项, ent=实体, cx=, cz=, rot= }
+local curLayer  = "floor"    -- 当前放置层 "floor" / "roof"
+local occupancy = {}         -- 地板层: cellIndex = cz*GW+cx -> 实例 id
+local roofOcc   = {}         -- 车顶层占用
+local instances = {}         -- id -> { cat=目录项, ent=实体, cx=, cz=, rot=, layer= }
 local nextId    = 1
 local hover     = nil        -- 当前悬停格 { cx=, cz=, valid= }
-local ghostEnt, gridEnt, hoverDecalEnt
+local ghostEnt, hoverDecalEnt
+local gridFloorEnt, gridRoofEnt
 local gridVisible = true
 local ghostValidLast = nil
 local toast     = { text="", t=0 }
 local stats     = {}
+local unreachableNames = {}  -- 不可达模块名列表（HUD 警告）
 
 -- ---------------------------------------------------------------------------
 -- 小工具
 -- ---------------------------------------------------------------------------
 local function cellIndex(cx, cz) return cz * GW + cx end
-
-local function cellCenter(cx, cz)
-  return ORIGIN_X + (cx + 0.5) * CELL, ORIGIN_Z + (cz + 0.5) * CELL
-end
 
 local function worldToCell(x, z)
   local cx = math.floor((x - ORIGIN_X) / CELL)
@@ -83,11 +94,16 @@ local function cellsOf(cat, cx, cz, r)
   return cells
 end
 
+local function occGrid(layer)
+  return layer == "roof" and roofOcc or occupancy
+end
+
 local function fits(cat, cx, cz, r)
   local cells = cellsOf(cat, cx, cz, r)
   if not cells then return false end
+  local occ = occGrid(cat.layer)
   for _, c in ipairs(cells) do
-    if occupancy[cellIndex(c.x, c.z)] ~= nil then return false end
+    if occ[cellIndex(c.x, c.z)] ~= nil then return false end
   end
   return true
 end
@@ -108,6 +124,62 @@ local function hexColor(s)
 end
 
 -- ---------------------------------------------------------------------------
+-- 走道连通性：从驾驶舱门（前排整行）洪泛填充自由格；
+-- 模块可达 = 占格四邻存在可达自由格。不可达模块舒适度不计并列入警告。
+-- ---------------------------------------------------------------------------
+local function computeReachability()
+  local reach = {}
+  local queue = {}
+  for cx = 0, GW - 1 do
+    local idx = cellIndex(cx, GH - 1)
+    if occupancy[idx] == nil then
+      reach[idx] = true
+      queue[#queue + 1] = { cx = cx, cz = GH - 1 }
+    end
+  end
+  local head = 1
+  while queue[head] do
+    local c = queue[head]
+    head = head + 1
+    local dirs = { {1,0}, {-1,0}, {0,1}, {0,-1} }
+    for _, dv in ipairs(dirs) do
+      local nx, nz = c.cx + dv[1], c.cz + dv[2]
+      if nx >= 0 and nx < GW and nz >= 0 and nz < GH then
+        local idx = cellIndex(nx, nz)
+        if occupancy[idx] == nil and not reach[idx] then
+          reach[idx] = true
+          queue[#queue + 1] = { cx = nx, cz = nz }
+        end
+      end
+    end
+  end
+  unreachableNames = {}
+  for _, inst in pairs(instances) do
+    if inst.cat.layer == "roof" then
+      inst.reachable = true
+    else
+      local cells = cellsOf(inst.cat, inst.cx, inst.cz, inst.rot)
+      inst.reachable = false
+      if cells then
+        local dirs = { {1,0}, {-1,0}, {0,1}, {0,-1} }
+        for _, c in ipairs(cells) do
+          for _, dv in ipairs(dirs) do
+            local nx, nz = c.x + dv[1], c.z + dv[2]
+            if nx >= 0 and nx < GW and nz >= 0 and nz < GH then
+              if reach[cellIndex(nx, nz)] then inst.reachable = true end
+            end
+          end
+        end
+      end
+      if not inst.reachable then
+        unreachableNames[#unreachableNames + 1] = inst.cat.name
+      end
+    end
+  end
+  table.sort(unreachableNames)
+end
+
+-- ---------------------------------------------------------------------------
 -- 放置 / 拆除 / 统计
 -- ---------------------------------------------------------------------------
 local function spawnModule(cat, cx, cz, r)
@@ -116,35 +188,64 @@ local function spawnModule(cat, cx, cz, r)
   local ent = SpawnPrefab("rv_" .. cat.id, { x = 0, y = 0, z = 0 })
   if ent == nil then return nil end
   local w, h = footprint(cat, r)
-  local mx, mz = cellCenter(cx, cz)
+  local baseY = (cat.layer == "roof") and ROOF_Y or FLOOR_Y
   -- 以锚点格(左上)为基准摆放整个占格范围
   local ox = ORIGIN_X + cx * CELL + w * CELL * 0.5
   local oz = ORIGIN_Z + cz * CELL + h * CELL * 0.5
-  SetPosition(ent, { x = ox, y = FLOOR_Y + cat.mh * 0.5 + 0.005, z = oz })
+  SetPosition(ent, { x = ox, y = baseY + cat.mh * 0.5 + 0.005, z = oz })
   SetScale(ent, w * CELL - 0.03, cat.mh, h * CELL - 0.03)
   if r % 2 == 1 then SetRotationY(ent, math.pi * 0.5) end
   return ent
 end
 
 local function place(cat, cx, cz, r)
+  if cat.layer == "roof" and curLayer ~= "roof" then return false end
+  if cat.layer ~= "roof" and curLayer == "roof" then return false end
   if not fits(cat, cx, cz, r) then return false end
   local ent = spawnModule(cat, cx, cz, r)
   if ent == nil then return false end
   local id = nextId
   nextId = nextId + 1
   local w, h = footprint(cat, r)
+  local occ = occGrid(cat.layer)
   for dz = 0, h - 1 do
     for dx = 0, w - 1 do
-      occupancy[cellIndex(cx + dx, cz + dz)] = id
+      occ[cellIndex(cx + dx, cz + dz)] = id
     end
   end
-  instances[id] = { cat = cat, ent = ent, cx = cx, cz = cz, rot = r }
+  instances[id] = { cat = cat, ent = ent, cx = cx, cz = cz, rot = r, layer = cat.layer }
+  computeReachability()
   return true
 end
 
 local function removeAt(cx, cz)
   local inst = findInstanceAt(cx, cz)
-  if not inst then return false end
+  if not inst then
+    -- 车顶层拆除（悬停拾取仍走地面格）
+    local occ = roofOcc
+    for idx, id in pairs(occ) do
+      local cand = instances[id]
+      if cand then
+        local w, h = footprint(cand.cat, cand.rot)
+        for dz = 0, h - 1 do
+          for dx = 0, w - 1 do
+            if cand.cx + dx == cx and cand.cz + dz == cz then
+              Despawn(cand.ent)
+              for dz2 = 0, h - 1 do
+                for dx2 = 0, w - 1 do
+                  occ[cellIndex(cand.cx + dx2, cand.cz + dz2)] = nil
+                end
+              end
+              instances[id] = nil
+              computeReachability()
+              return true
+            end
+          end
+        end
+      end
+    end
+    return false
+  end
   local w, h = footprint(inst.cat, inst.rot)
   for dz = 0, h - 1 do
     for dx = 0, w - 1 do
@@ -153,12 +254,13 @@ local function removeAt(cx, cz)
   end
   Despawn(inst.ent)
   instances[inst.id] = nil
+  computeReachability()
   return true
 end
 
 local function recomputeStats()
-  local s = { powerGen = 0, powerDraw = 0, battery = 0,
-              waterStore = 0, waterDraw = 0, weight = 0, comfort = 0, count = 0 }
+  local s = { powerGen = 0, powerDraw = 0, battery = 0, waterStore = 0, waterDraw = 0,
+              weight = 0, comfort = 0, count = 0, storage = 0 }
   for _, inst in pairs(instances) do
     local c = inst.cat
     s.powerGen   = s.powerGen   + (c.powerGen   or 0)
@@ -167,7 +269,9 @@ local function recomputeStats()
     s.waterStore = s.waterStore + (c.waterStore or 0)
     s.waterDraw  = s.waterDraw  + (c.waterDraw  or 0)
     s.weight     = s.weight     + (c.weight     or 0)
-    s.comfort    = s.comfort    + (c.comfort    or 0)
+    s.storage    = s.storage    + (c.storage    or 0)
+    -- 不可达模块的舒适度不计（够不着用不了）
+    s.comfort    = s.comfort    + ((c.comfort or 0) * (inst.reachable == false and 0 or 1))
     s.count      = s.count + 1
   end
   stats = s
@@ -288,7 +392,8 @@ end
 local function saveLayout()
   local rows = {}
   for _, inst in pairs(instances) do
-    rows[#rows + 1] = { id = inst.cat.id, cx = inst.cx, cz = inst.cz, rot = inst.rot }
+    rows[#rows + 1] = { id = inst.cat.id, cx = inst.cx, cz = inst.cz,
+                        rot = inst.rot, layer = inst.layer }
   end
   local data = { cell = CELL, gw = GW, gh = GH, modules = rows }
   local ok = WriteText("saves/layout.json", jsonEncode(data))
@@ -300,6 +405,7 @@ local function clearAll()
   for _, inst in pairs(instances) do Despawn(inst.ent) end
   instances = {}
   occupancy = {}
+  roofOcc = {}
 end
 
 local function loadLayout()
@@ -320,14 +426,26 @@ local function loadLayout()
   for _, cat in ipairs(CATALOG) do byId[cat.id] = cat end
   for _, row in ipairs(data.modules) do
     local cat = byId[row.id]
-    if cat then place(cat, math.floor(row.cx), math.floor(row.cz), math.floor(row.rot or 0)) end
+    if cat then
+      local saveLayer = row.layer or cat.layer or "floor"
+      if saveLayer == "roof" then
+        place(cat, math.floor(row.cx), math.floor(row.cz), math.floor(row.rot or 0))
+      else
+        -- 地板层放置需要临时切层（place 校验当前层）
+        local saved = curLayer
+        curLayer = "floor"
+        place(cat, math.floor(row.cx), math.floor(row.cz), math.floor(row.rot or 0))
+        curLayer = saved
+      end
+    end
   end
+  computeReachability()
   toast.text = "布局已读取"
   toast.t = 2.5
 end
 
 -- ---------------------------------------------------------------------------
--- 幽灵 / 高亮
+-- 幽灵 / 高亮 / 网格
 -- ---------------------------------------------------------------------------
 local function setGhostColor(valid)
   -- 绿=可放，红=冲突（换色=换预制体实体；运行时改组件颜色不生效）
@@ -341,15 +459,21 @@ local function ensureHelpers()
     setGhostColor(true)
     SetVisible(ghostEnt, false)
   end
-  if gridEnt == nil then
-    -- 标准贴花用法（同 moba spawnGroundQuad）：组件 size 保持 1.0，
-    -- 投影盒长宽/高度用实体 SetScale 控制；size 与 SetScale 叠乘会放大 size 倍。
-    gridEnt = SpawnDecal("assets/sprites/grid_4x14.png", 0, FLOOR_Y, 0,
-                         1.0, 0.55, 1, 1, 1, true, 0.1)
-    SetScale(gridEnt, 2.0, 1.0, 7.0)
+  -- 地板网格：标准贴花用法（同 moba spawnGroundQuad）：组件 size 保持 1.0，
+  -- 投影盒长宽/高度用实体 SetScale 控制；size 与 SetScale 叠乘会放大 size 倍。
+  if gridFloorEnt == nil then
+    gridFloorEnt = SpawnDecal("assets/sprites/grid_4x14.png", 0, FLOOR_Y, 0,
+                              1.0, 0.55, 1, 1, 1, true, 0.1)
+    SetScale(gridFloorEnt, 2.0, 1.0, 7.0)
+  end
+  -- 车顶网格：独立贴花，随层显隐
+  if gridRoofEnt == nil then
+    gridRoofEnt = SpawnDecal("assets/sprites/grid_4x14.png", 0, ROOF_Y, 0,
+                             1.0, 0.55, 1, 1, 1, true, 0.1)
+    SetScale(gridRoofEnt, 2.0, 1.0, 7.0)
+    SetVisible(gridRoofEnt, false)
   end
   if hoverDecalEnt == nil then
-    -- 悬停高亮：圆形贴花，投影盒高度覆盖被悬停模块 -> 光斑贴在模块顶面
     hoverDecalEnt = SpawnDecal("assets/sprites/decal_disc.png", 0, FLOOR_Y, 0,
                                1.0, 0.45, 1, 0.95, 0.75, true, 0.6)
     SetVisible(hoverDecalEnt, false)
@@ -376,7 +500,7 @@ local function drawHud()
   local vw = (vp and vp.w) or 1280
   local vh = (vp and vp.h) or 720
   -- 顶部面板
-  local pw, ph = 250, 190
+  local pw, ph = 250, 236
   DrawRect(10, 10, pw, ph, 0.08, 0.09, 0.10, 0.72)
   DrawRectOutline(10, 10, pw, ph, 0.55, 0.52, 0.42, 0.9)
   DrawText("车库 · Last Caravan", 20, 16, 17, 0.95, 0.88, 0.70, 1)
@@ -401,14 +525,25 @@ local function drawHud()
     s.weight / WEIGHT_MAX,
     s.weight > WEIGHT_MAX)
   rowY = rowY + 34
+  drawStatBar(10 + pad, rowY, innerW, "储物",
+    string.format("%d L", s.storage),
+    math.min(1, s.storage / 400),
+    false)
+  rowY = rowY + 34
   drawStatBar(10 + pad, rowY, innerW, "舒适",
     string.format("%d%%", math.min(100, s.comfort)),
     math.min(1, s.comfort / 100),
     false)
 
-  -- 底部热栏：2 行 x 6 列
+  -- 不可达警告
+  if #unreachableNames > 0 then
+    DrawText("不可达: " .. table.concat(unreachableNames, "、"),
+             10 + pad, 10 + ph - 10, 13, 1, 0.45, 0.3, 1)
+  end
+
+  -- 底部热栏：3 行 x 7 列（19 模块）
   local slotW, slotH, gap = 96, 46, 6
-  local cols = 6
+  local cols = 7
   local rowsN = math.ceil(#CATALOG / cols)
   local barW = cols * slotW + (cols - 1) * gap
   local bx = math.floor(vw * 0.5 - barW * 0.5)
@@ -419,6 +554,7 @@ local function drawHud()
     local x = bx + col * (slotW + gap)
     local y = by + row * (slotH + gap)
     local sel = (i == selected)
+    local isRoof = (cat.layer == "roof")
     DrawRect(x, y, slotW, slotH, sel and 0.20 or 0.10, sel and 0.18 or 0.10,
              sel and 0.12 or 0.11, 0.85)
     DrawRectOutline(x, y, slotW, slotH, sel and 0.98 or 0.45, sel and 0.85 or 0.42,
@@ -427,8 +563,9 @@ local function drawHud()
     DrawRect(x + 6, y + 6, 10, slotH - 12, mr, mg, mb, 1)
     DrawText(cat.name, x + 22, y + 5, 14, 0.95, 0.92, 0.86, 1)
     local key = HOTKEYS[i]
-    DrawText(key and ("[" .. key .. "]") or "点击", x + 22, y + 23, 12,
-             0.65, 0.65, 0.62, 1)
+    local tag = key and ("[" .. key .. "]") or "点击"
+    if isRoof then tag = tag .. " 顶" end
+    DrawText(tag, x + 22, y + 23, 12, 0.65, 0.65, 0.62, 1)
     if hover and hover.uiSlot == i then
       DrawText(cat.desc, x + slotW * 0.5, y - 18, 13, 0.95, 0.9, 0.75, 1, true)
     end
@@ -437,11 +574,16 @@ local function drawHud()
   -- 右上提示
   local hints = {
     "左键 放置   右键/X 拆除",
-    "R 旋转   G 网格   F5/F9 存/读",
+    "R 旋转   Tab 地板/车顶",
+    "G 网格   F5/F9 存/读",
   }
   for i, h in ipairs(hints) do
-    DrawText(h, vw - 14, 14 + (i - 1) * 20, 14, 0.85, 0.84, 0.80, 0.9, true)
+    DrawText(h, vw - 14, 14 + (i - 1) * 20, 14, 0.85, 0.84, 0.80, 0.9, true, true)
   end
+
+  -- 当前层指示
+  DrawText(curLayer == "roof" and "【车顶层】" or "【地板层】",
+           math.floor(vw * 0.5), 14, 16, 0.55, 0.85, 0.98, 1, true)
 
   -- 悬停实例信息
   if hover and hover.inst then
@@ -462,7 +604,7 @@ local function hotbarHit(mx, my)
   local vw = (vp and vp.w) or 1280
   local vh = (vp and vp.h) or 720
   local slotW, slotH, gap = 96, 46, 6
-  local cols = 6
+  local cols = 7
   local rowsN = math.ceil(#CATALOG / cols)
   local barW = cols * slotW + (cols - 1) * gap
   local bx = math.floor(vw * 0.5 - barW * 0.5)
@@ -484,12 +626,17 @@ end
 -- ---------------------------------------------------------------------------
 function on_start()
   ensureHelpers()
-  recomputeStats()
   -- 初始示例布局（有存档时会被覆盖）：一眼看到“布置好的房车”
   place(CATALOG[1], 1, 0, 0)    -- 双人床（贴后墙右侧，3x4 格）
   place(CATALOG[3], 0, 4, 0)    -- 灶台（左舷中段）
   place(CATALOG[5], 0, 6, 0)    -- 净水箱（灶台后方）
-  place(CATALOG[7], 2, 10, 0)   -- 太阳能板
+  place(CATALOG[9], 3, 6, 0)    -- 储物箱
+  local saved = curLayer
+  curLayer = "roof"
+  place(CATALOG[17], 0, 8, 0)   -- 太阳能板（车顶）
+  place(CATALOG[19], 2, 9, 0)   -- 车顶行李架
+  curLayer = saved
+  computeReachability()
   recomputeStats()
   local placed = 0
   for _ in pairs(instances) do placed = placed + 1 end
@@ -500,7 +647,7 @@ function on_start()
   if text and text ~= "" then loadLayout() end
 end
 
-function on_update(dt)
+function on_update(ent, dt)
   if toast.t > 0 then toast.t = toast.t - dt end
   ensureHelpers()
 
@@ -509,9 +656,15 @@ function on_update(dt)
     if ActionPressed(key) then selected = i end
   end
   if ActionPressed("r") then rot = (rot + 1) % 2 end
+  if ActionPressed("tab") then
+    curLayer = (curLayer == "roof") and "floor" or "roof"
+    SetVisible(gridFloorEnt, curLayer == "floor" and gridVisible or false)
+    SetVisible(gridRoofEnt, curLayer == "roof" and gridVisible or false)
+  end
   if ActionPressed("g") then
     gridVisible = not gridVisible
-    if gridEnt ~= nil then SetVisible(gridEnt, gridVisible) end
+    SetVisible(gridFloorEnt, gridVisible)
+    SetVisible(gridRoofEnt, gridVisible and curLayer == "roof")
   end
   if ActionPressed("f5") then saveLayout() end
   if ActionPressed("f9") then loadLayout() end
@@ -527,14 +680,17 @@ function on_update(dt)
     if cx then
       local inst = findInstanceAt(cx, cz)
       local cat = CATALOG[selected]
-      local valid = fits(cat, cx, cz, rot) and not overUi
+      -- 目录条目的层必须与当前层一致才可放置
+      local layerOk = (cat.layer == "roof") == (curLayer == "roof")
+      local valid = layerOk and fits(cat, cx, cz, rot) and not overUi
       hover = { cx = cx, cz = cz, valid = valid, inst = inst, uiSlot = hitSlot }
-      -- 幽灵
+      -- 幽灵（当前层高度）
       local w, h = footprint(cat, rot)
+      local baseY = (curLayer == "roof") and ROOF_Y or FLOOR_Y
       local ox = ORIGIN_X + cx * CELL + w * CELL * 0.5
       local oz = ORIGIN_Z + cz * CELL + h * CELL * 0.5
       SetVisible(ghostEnt, true)
-      SetPosition(ghostEnt, { x = ox, y = FLOOR_Y + 0.035, z = oz })
+      SetPosition(ghostEnt, { x = ox, y = baseY + 0.035, z = oz })
       SetScale(ghostEnt, w * CELL - 0.04, 0.06, h * CELL - 0.04)
       if ghostValidLast ~= valid then
         setGhostColor(valid)
@@ -544,9 +700,10 @@ function on_update(dt)
       SetVisible(hoverDecalEnt, inst ~= nil)
       if inst then
         local iw, ih = footprint(inst.cat, inst.rot)
+        local baseYI = (inst.layer == "roof") and ROOF_Y or FLOOR_Y
         SetPosition(hoverDecalEnt, {
           x = ORIGIN_X + inst.cx * CELL + iw * CELL * 0.5,
-          y = FLOOR_Y,
+          y = baseYI,
           z = ORIGIN_Z + inst.cz * CELL + ih * CELL * 0.5,
         })
         SetScale(hoverDecalEnt, iw * CELL, 1.0, ih * CELL)
