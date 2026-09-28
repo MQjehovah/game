@@ -1355,12 +1355,13 @@ void Renderer::ApplyMaterial(const Material& material, const math::Mat4& mvp,
     backend_->SetUniformInt("uHasNormalMap", material.normalMap.Valid() ? 1 : 0);
     backend_->SetUniformFloat("uNormalScale", material.normalScale);
     backend_->SetUniformInt("uReceiveShadow", material.receiveShadow ? 1 : 0);
-    // Diagnostic view (NEON_SHADOW_DEBUG=1): the lit shader outputs the raw
-    // cascade shadow factor instead of the shaded colour - white where the sun
-    // reaches, black where fully occluded. Resolved once per frame: getenv in a
-    // per-draw path would show up in a profile.
-    if (shadowDebug_ < 0)
-        shadowDebug_ = std::getenv("NEON_SHADOW_DEBUG") != nullptr ? 1 : 0;
+    // Diagnostic view (NEON_SHADOW_DEBUG=1: raw cascade shadow factor, 2:
+    // cascade index colours) replaces the shaded colour. Resolved once per
+    // frame: getenv in a per-draw path would show up in a profile.
+    if (shadowDebug_ < 0) {
+        const char* dbg = std::getenv("NEON_SHADOW_DEBUG");
+        shadowDebug_ = dbg ? atoi(dbg) : 0;
+    }
     backend_->SetUniformInt("uShadowDebug", shadowDebug_);
 
     if (material.lit) {

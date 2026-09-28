@@ -401,15 +401,22 @@ void main() {
         int cascade = viewDepth < s0 ? 0 : (viewDepth < s1 ? 1 : 2);
         shadow = CascadeShadow(cascade, vWorldPos, shadowNormal);
         // Cross-fade across each split so the cascade switch - which also changes
-        // the texel size and thus the penumbra - is not a hard seam.
-        float b0 = max(s0 * 0.05, 0.02);
-        float b1 = max(s1 * 0.05, 0.02);
+        // the texel size and thus the penumbra - is not a hard seam. The mix is
+        // DITHERED with the per-pixel IGN below: the two cascades' shadow factors
+        // disagree slightly inside the band (different texel size), and a solid
+        // mix of that disagreement reads as a horizontal stripe across flat
+        // ground. Dithering + a wider band turns the stripe into fine noise.
+        float b0 = max(s0 * 0.25, 0.02);
+        float b1 = max(s1 * 0.25, 0.02);
+        float dth = Ign(gl_FragCoord.xy) - 0.5;
         if (viewDepth > s0 - b0 && viewDepth < s0 + b0) {
-            float t = smoothstep(s0 - b0, s0 + b0, viewDepth);
+            float t = clamp(smoothstep(s0 - b0, s0 + b0, viewDepth) + dth * 0.7,
+                            0.0, 1.0);
             shadow = mix(CascadeShadow(0, vWorldPos, shadowNormal),
                          CascadeShadow(1, vWorldPos, shadowNormal), t);
         } else if (viewDepth > s1 - b1 && viewDepth < s1 + b1) {
-            float t = smoothstep(s1 - b1, s1 + b1, viewDepth);
+            float t = clamp(smoothstep(s1 - b1, s1 + b1, viewDepth) + dth * 0.7,
+                            0.0, 1.0);
             shadow = mix(CascadeShadow(1, vWorldPos, shadowNormal),
                          CascadeShadow(2, vWorldPos, shadowNormal), t);
         }
@@ -417,6 +424,14 @@ void main() {
         // distance does not end in a hard line across the terrain.
         shadow = mix(1.0, shadow,
                      1.0 - smoothstep(s2 * 0.85, s2, viewDepth));
+        // NEON_SHADOW_DEBUG=2: cascade index view (blue = 0, green = 1, red = 2).
+        if (eng.uShadowDebug == 2) {
+            FragColor = vec4(viewDepth < s0 ? vec3(0.1, 0.1, 0.9)
+                             : (viewDepth < s1 ? vec3(0.1, 0.8, 0.1)
+                                               : vec3(0.9, 0.1, 0.1)),
+                             1.0);
+            return;
+        }
     }
     if (eng.uReceiveShadow == 0) shadow = 1.0;
     // NEON_SHADOW_DEBUG=1: show the raw cascade shadow factor instead of the

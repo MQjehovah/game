@@ -23,6 +23,14 @@ vec3 ACESFilm(vec3 x) {
     x = clamp(x, vec3(0.0), vec3(65504.0));
     return clamp((x * (a * x + b)) / (x * (c * x + d) + e), vec3(0.0), vec3(1.0));
 }
+// Interleaved gradient noise (Jimenez 2014) - the same per-pixel dither the
+// lit shader uses for shadow kernels. Adding +-0.5 LSB of it before the 8-bit
+// store turns smooth-gradient posterization (horizontal stripes on large flat
+// ground / sky) into imperceptible noise.
+float OutDither(vec2 p) {
+    return (fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))) - 0.5)
+           / 255.0;
+}
 void main() {
     vec3 hdr = texture(uHdr, vUV).rgb;
     vec3 c = hdr;
@@ -74,8 +82,8 @@ void main() {
             float st = t * t * (3.0 - 2.0 * t);
             graded *= 1.0 - st * eng.uVignetteIntensity;
         }
-        FragColor = vec4(graded, 1.0);
+        FragColor = vec4(graded + OutDither(gl_FragCoord.xy), 1.0);
     } else {
-        FragColor = vec4(min(c, vec3(1.0)), 1.0);
+        FragColor = vec4(min(c, vec3(1.0)) + OutDither(gl_FragCoord.xy), 1.0);
     }
 }

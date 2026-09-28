@@ -857,3 +857,21 @@ set NEON_SHADOW_DEBUG=1   :: 直接输出级联阴影因子（白=受光，黑=�
 ### 调试钩子
 - `NEON_NO_TEX_TRANSITION=1`（VK）：跳过纹理布局转换（本轮排查用，兼作该路径的 A/B 开关）。
 - `NEON_VK_TRACE=1`（VK）：后端 draw 级 trace（prog/idx/inst/tex0）。
+
+### ✅ 已修复（本轮）：地面横向阴影条纹（两个独立来源）
+
+用户实机报告"横向阴影条纹"。高通滤波（原图 − 9px 高斯）让条带现形后逐一定位：
+
+1. **CSM 级间混合带**（驾驶视角，视距恒定的 2-3 条宽带）：两个级联的阴影因子
+   在混合带内不一致（texel 尺寸→PCSS 半影不同），实心 mix 读成一条带。
+   修复 = 混合带 5%→25% 加宽 + 用 per-pixel IGN 抖动混合因子（`lit.frag` +
+   GL 孪生 `builtin_shaders.hpp`），条带散成细噪声。
+2. **8-bit 输出渐变断层**（车库俯视，约 10 条等间距横带贯穿地面）：光照本身
+   平滑（NEON_SHADOW_DEBUG=1 原始阴影因子干净），条纹产生于后处理输出——
+   平滑渐变被 8-bit 量化成台阶。修复 = 合成 pass 输出前加 ±0.5 LSB 的 IGN
+   单色抖动（`composite.frag` / `bloom.hpp` 的 kCompositeFragmentShader），
+   `HP_before/after.png` 对比：条带消失，只剩真实渐变。
+- 工具链：高通滤波凸显条带 → NEON_SHADOW_DEBUG=1（阴影因子）/新增 =2
+  （级联索引着色，`renderer.cpp` 现按整数解析 env）分层隔离 → 逐开关
+  SSAO/级联宽度 A/B。
+- 顺带：分析期间发现输出浮动文字参数序为 (life,r,g,b)，搜刮浮字颜色已修正。
