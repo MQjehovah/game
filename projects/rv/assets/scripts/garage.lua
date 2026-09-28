@@ -21,28 +21,32 @@ local WEIGHT_MAX = 1500              -- 底盘载重 kg
 -- modelScale: Kenney GLB 的统一缩放（模型原生 ~1 单位=1 米）
 local CATALOG = {
   -- 地板层
-  { id="bed_double", name="双人床",   layer="floor", w=3, h=4, mh=0.45, color="#8A5A44", weight=60,  comfort=30, modelScale=1.0, desc="睡眠质量 +30" },
-  { id="bed_single", name="单人床",   layer="floor", w=2, h=3, mh=0.40, color="#A0714F", weight=35,  comfort=15, modelScale=1.0, desc="睡眠质量 +15" },
-  { id="stove",      name="灶台",     layer="floor", w=2, h=2, mh=0.50, color="#7A7F87", weight=40,  comfort=5,  powerDraw=0.5, waterDraw=2, modelScale=1.0, desc="耗电 0.5kW 耗水 2L/h" },
-  { id="fridge",     name="冰箱",     layer="floor", w=1, h=2, mh=1.10, color="#9FB4C7", weight=30,              powerDraw=0.3, modelScale=1.0, desc="耗电 0.3kW" },
-  { id="water_tank", name="净水箱",   layer="floor", w=2, h=2, mh=0.90, color="#4F8FBF", weight=160,             waterStore=120, modelScale=1.0, desc="储水 120L" },
-  { id="battery",    name="电池组",   layer="floor", w=2, h=1, mh=0.50, color="#D8B23A", weight=80,  battery=5,  modelScale=1.0, desc="储能 5kWh" },
-  { id="workbench",  name="工作台",   layer="floor", w=2, h=3, mh=0.55, color="#8C6239", weight=70,  modelScale=1.2, desc="改装检修（P1 后开放）" },
-  { id="storage",    name="储物箱",   layer="floor", w=1, h=1, mh=0.60, color="#6E7B52", weight=15,  storage=50,  modelScale=1.0, desc="储物 50L" },
-  { id="heater",     name="电暖器",   layer="floor", w=1, h=1, mh=0.55, color="#C96B3F", weight=12,  comfort=10, powerDraw=0.8, modelScale=1.0, desc="耗电 0.8kW 舒适 +10" },
-  { id="tv",         name="娱乐柜",   layer="floor", w=2, h=1, mh=0.90, color="#5D5366", weight=28,  comfort=8,  powerDraw=0.2, modelScale=1.0, desc="耗电 0.2kW 舒适 +8" },
-  { id="sink",       name="水槽",     layer="floor", w=1, h=1, mh=0.35, color="#B8C4CE", weight=12,  waterDraw=1, comfort=2, modelScale=1.0, desc="耗水 1L/h 舒适 +2" },
-  { id="bathroom",   name="卫生间",   layer="floor", w=2, h=3, mh=1.00, color="#7F9BA8", weight=120, comfort=12, waterDraw=3, modelScale=1.0, desc="耗水 3L/h 舒适 +12" },
-  { id="generator",  name="发电机",   layer="floor", w=2, h=2, mh=0.70, color="#C7B45A", weight=180, powerGen=2.0, comfort=-5, modelScale=1.0, desc="发电 2.0kW 噪音 舒适 -5" },
-  { id="med_cabinet",name="药柜",     layer="floor", w=1, h=1, mh=0.50, color="#D8E8E0", weight=20,  comfort=6,  modelScale=1.0, desc="医疗 舒适 +6" },
-  { id="gun_rack",   name="武器架",   layer="floor", w=2, h=1, mh=0.50, color="#6B4F3A", weight=40,  modelScale=1.0, desc="武器存放（P2 夜袭）" },
-  { id="turret",     name="炮塔底座", layer="floor", w=2, h=2, mh=0.60, color="#5A5A5A", weight=90,  modelScale=1.0, desc="预留（P2 夜袭开放）" },
+  { id="bed_double", name="双人床",   layer="floor", w=3, h=4, mh=0.45, color="#8A5A44", weight=60,  comfort=30, modelScale=1.0, desc="睡眠质量 +30" , cost={wood=4,cloth=4}},
+  { id="bed_single", name="单人床",   layer="floor", w=2, h=3, mh=0.40, color="#A0714F", weight=35,  comfort=15, modelScale=1.0, desc="睡眠质量 +15" , cost={wood=2,cloth=2}},
+  { id="stove",      name="灶台",     layer="floor", w=2, h=2, mh=0.50, color="#7A7F87", weight=40,  comfort=5,  powerDraw=0.5, waterDraw=2, modelScale=1.0, desc="耗电 0.5kW 耗水 2L/h" , cost={metal=3,electronics=1}},
+  { id="fridge",     name="冰箱",     layer="floor", w=1, h=2, mh=1.10, color="#9FB4C7", weight=30,              powerDraw=0.3, modelScale=1.0, desc="耗电 0.3kW" , cost={metal=2,electronics=3}},
+  { id="water_tank", name="净水箱",   layer="floor", w=2, h=2, mh=0.90, color="#4F8FBF", weight=160,             waterStore=120, modelScale=1.0, desc="储水 120L" , cost={metal=4}},
+  { id="battery",    name="电池组",   layer="floor", w=2, h=1, mh=0.50, color="#D8B23A", weight=80,  battery=5,  modelScale=1.0, desc="储能 5kWh" , cost={metal=2,electronics=4}},
+  { id="workbench",  name="工作台",   layer="floor", w=2, h=3, mh=0.55, color="#8C6239", weight=70,  modelScale=1.2, desc="改装检修（P1 后开放）" , cost={metal=2,wood=3}},
+  { id="storage",    name="储物箱",   layer="floor", w=1, h=1, mh=0.60, color="#6E7B52", weight=15,  storage=50,  modelScale=1.0, desc="储物 50L" , cost={wood=2}},
+  { id="heater",     name="电暖器",   layer="floor", w=1, h=1, mh=0.55, color="#C96B3F", weight=12,  comfort=10, powerDraw=0.8, modelScale=1.0, desc="耗电 0.8kW 舒适 +10" , cost={metal=1,electronics=2}},
+  { id="tv",         name="娱乐柜",   layer="floor", w=2, h=1, mh=0.90, color="#5D5366", weight=28,  comfort=8,  powerDraw=0.2, modelScale=1.0, desc="耗电 0.2kW 舒适 +8" , cost={electronics=3,cloth=1}},
+  { id="sink",       name="水槽",     layer="floor", w=1, h=1, mh=0.35, color="#B8C4CE", weight=12,  waterDraw=1, comfort=2, modelScale=1.0, desc="耗水 1L/h 舒适 +2" , cost={metal=2}},
+  { id="bathroom",   name="卫生间",   layer="floor", w=2, h=3, mh=1.00, color="#7F9BA8", weight=120, comfort=12, waterDraw=3, modelScale=1.0, desc="耗水 3L/h 舒适 +12" , cost={metal=3,wood=2}},
+  { id="generator",  name="发电机",   layer="floor", w=2, h=2, mh=0.70, color="#C7B45A", weight=180, powerGen=2.0, comfort=-5, modelScale=1.0, desc="发电 2.0kW 噪音 舒适 -5" , cost={metal=6,electronics=3}},
+  { id="med_cabinet",name="药柜",     layer="floor", w=1, h=1, mh=0.50, color="#D8E8E0", weight=20,  comfort=6,  modelScale=1.0, desc="医疗 舒适 +6" , cost={metal=1,cloth=2}},
+  { id="gun_rack",   name="武器架",   layer="floor", w=2, h=1, mh=0.50, color="#6B4F3A", weight=40,  modelScale=1.0, desc="武器存放（P2 夜袭）" , cost={wood=3,metal=1}},
+  { id="turret",     name="炮塔底座", layer="floor", w=2, h=2, mh=0.60, color="#5A5A5A", weight=90,  modelScale=1.0, desc="预留（P2 夜袭开放）" , cost={metal=8,electronics=4}},
   -- 车顶层（太阳能上车顶发电 +50%）
-  { id="solar",      name="太阳能板", layer="roof",  w=2, h=3, mh=0.15, color="#3E6FB0", weight=25,  powerGen=1.8, modelScale=1.0, desc="发电 1.8kW（车顶限定）" },
-  { id="roof_vent",  name="通风扇",   layer="roof",  w=1, h=1, mh=0.25, color="#8891A0", weight=8,   comfort=4,  powerDraw=0.1, modelScale=1.0, desc="耗电 0.1kW 舒适 +4" },
-  { id="roof_rack",  name="车顶行李架", layer="roof", w=2, h=4, mh=0.35, color="#5C6670", weight=30, storage=150, modelScale=1.0, desc="车载储物 150L" },
+  { id="solar",      name="太阳能板", layer="roof",  w=2, h=3, mh=0.15, color="#3E6FB0", weight=25,  powerGen=1.8, modelScale=1.0, desc="发电 1.8kW（车顶限定）" , cost={metal=2,electronics=4}},
+  { id="roof_vent",  name="通风扇",   layer="roof",  w=1, h=1, mh=0.25, color="#8891A0", weight=8,   comfort=4,  powerDraw=0.1, modelScale=1.0, desc="耗电 0.1kW 舒适 +4" , cost={metal=1,electronics=1}},
+  { id="roof_rack",  name="车顶行李架", layer="roof", w=2, h=4, mh=0.35, color="#5C6670", weight=30, storage=150, modelScale=1.0, desc="车载储物 150L" , cost={metal=3}},
 }
 local HOTKEYS = { "1","2","3","4","5","6","7","8","9","0" }  -- 前 10 件绑定热键
+
+-- 材料经济：搜刮获得（P2），建造消耗；拆除全额退还
+local MAT_NAMES = { metal="金属片", electronics="电子件", cloth="布料", wood="木材" }
+local materials = { metal=12, electronics=8, cloth=6, wood=10 }
 
 -- ---------------------------------------------------------------------------
 -- 状态
@@ -112,6 +116,33 @@ end
 local function findInstanceAt(cx, cz)
   local id = occupancy[cellIndex(cx, cz)]
   return id and instances[id] or nil
+end
+
+local function canAfford(cat)
+  if not cat.cost then return true end
+  for k, v in pairs(cat.cost) do
+    if (materials[k] or 0) < v then return false end
+  end
+  return true
+end
+
+local function payCost(cat)
+  if not cat.cost then return end
+  for k, v in pairs(cat.cost) do materials[k] = (materials[k] or 0) - v end
+end
+
+local function refundCost(cat)
+  if not cat.cost then return end
+  for k, v in pairs(cat.cost) do materials[k] = (materials[k] or 0) + v end
+end
+
+local function costText(cat)
+  if not cat.cost then return "" end
+  local parts = {}
+  for k, v in pairs(cat.cost) do
+    parts[#parts + 1] = MAT_NAMES[k] .. "x" .. v
+  end
+  return table.concat(parts, " ")
 end
 
 -- #RRGGBB -> r,g,b (0..1)
@@ -203,15 +234,26 @@ local function spawnModule(cat, cx, cz, r)
     SetScale(ent, w * CELL - 0.03, cat.mh, h * CELL - 0.03)
   end
   if r % 2 == 1 then SetRotationY(ent, math.pi * 0.5) end
+  -- 放置弹入动画：缩放从 0.65 倍 tween 到目标（prop 2 = scale）
+  local sx, sy, sz
+  if cat.modelScale then
+    sx, sy, sz = cat.modelScale, cat.modelScale, cat.modelScale
+  else
+    sx, sy, sz = w * CELL - 0.03, cat.mh, h * CELL - 0.03
+  end
+  Tween(ent, 2, { x = sx * 0.6, y = sy * 0.6, z = sz * 0.6 },
+              { x = sx, y = sy, z = sz }, 0.18, 1)
   return ent
 end
 
-local function place(cat, cx, cz, r)
+local function place(cat, cx, cz, r, free)
   if cat.layer == "roof" and curLayer ~= "roof" then return false end
   if cat.layer ~= "roof" and curLayer == "roof" then return false end
   if not fits(cat, cx, cz, r) then return false end
+  if not free and not canAfford(cat) then return false end
   local ent = spawnModule(cat, cx, cz, r)
   if ent == nil then return false end
+  if not free then payCost(cat) end
   local id = nextId
   nextId = nextId + 1
   local w, h = footprint(cat, r)
@@ -245,6 +287,7 @@ local function removeAt(cx, cz)
                 end
               end
               instances[id] = nil
+              refundCost(cand.cat)
               computeReachability()
               return true
             end
@@ -262,6 +305,7 @@ local function removeAt(cx, cz)
   end
   Despawn(inst.ent)
   instances[inst.id] = nil
+  refundCost(inst.cat)
   computeReachability()
   return true
 end
@@ -403,7 +447,7 @@ local function saveLayout()
     rows[#rows + 1] = { id = inst.cat.id, cx = inst.cx, cz = inst.cz,
                         rot = inst.rot, layer = inst.layer }
   end
-  local data = { cell = CELL, gw = GW, gh = GH, modules = rows }
+  local data = { cell = CELL, gw = GW, gh = GH, materials = materials, modules = rows }
   local ok = WriteText("saves/layout.json", jsonEncode(data))
   toast.text = ok and "布局已保存 (saves/layout.json)" or "保存失败"
   toast.t = 2.5
@@ -429,6 +473,12 @@ local function loadLayout()
     toast.t = 2.5
     return
   end
+  if type(data.materials) == "table" then
+    -- 沙盒阶段：材料只补足到初始值（不因旧存档残量锁死建造）
+    for k, v in pairs(data.materials) do
+      materials[k] = math.max(materials[k] or 0, v or 0)
+    end
+  end
   clearAll()
   local byId = {}
   for _, cat in ipairs(CATALOG) do byId[cat.id] = cat end
@@ -436,13 +486,13 @@ local function loadLayout()
     local cat = byId[row.id]
     if cat then
       local saveLayer = row.layer or cat.layer or "floor"
+      -- 重放免费：材料状态由存档 materials 字段整体恢复
       if saveLayer == "roof" then
-        place(cat, math.floor(row.cx), math.floor(row.cz), math.floor(row.rot or 0))
+        place(cat, math.floor(row.cx), math.floor(row.cz), math.floor(row.rot or 0), true)
       else
-        -- 地板层放置需要临时切层（place 校验当前层）
         local saved = curLayer
         curLayer = "floor"
-        place(cat, math.floor(row.cx), math.floor(row.cz), math.floor(row.rot or 0))
+        place(cat, math.floor(row.cx), math.floor(row.cz), math.floor(row.rot or 0), true)
         curLayer = saved
       end
     end
@@ -583,10 +633,29 @@ local function drawHud()
   local hints = {
     "左键 放置   右键/X 拆除",
     "R 旋转   Tab 地板/车顶",
-    "G 网格   F5/F9 存/读",
+    "G 网格   M 补给   F5/F9 存/读",
   }
   for i, h in ipairs(hints) do
     DrawText(h, vw - 14, 14 + (i - 1) * 20, 14, 0.85, 0.84, 0.80, 0.9, true, true)
+  end
+
+  -- 右上材料库存面板
+  local mw, mh2 = 150, 118
+  local mx0 = vw - mw - 10
+  local my0 = 78
+  DrawRect(mx0, my0, mw, mh2, 0.08, 0.09, 0.10, 0.72)
+  DrawRectOutline(mx0, my0, mw, mh2, 0.45, 0.52, 0.42, 0.9)
+  DrawText("材料库存", mx0 + 10, my0 + 6, 14, 0.85, 0.80, 0.62, 1)
+  local mats = {
+    { MAT_NAMES.metal,     materials.metal },
+    { MAT_NAMES.electronics, materials.electronics },
+    { MAT_NAMES.cloth,     materials.cloth },
+    { MAT_NAMES.wood,      materials.wood },
+  }
+  for i, mv in ipairs(mats) do
+    local yy = my0 + 30 + (i - 1) * 21
+    DrawText(mv[1], mx0 + 10, yy, 14, 0.88, 0.86, 0.80, 1)
+    DrawText(tostring(mv[2]), mx0 + mw - 14, yy, 14, 0.95, 0.92, 0.82, 1, true)
   end
 
   -- 当前层指示
@@ -596,7 +665,8 @@ local function drawHud()
   -- 悬停实例信息
   if hover and hover.inst then
     local c = hover.inst.cat
-    DrawText(c.name .. "  ·  " .. (c.desc or ""), math.floor(vw * 0.5), vh - rowsN * (slotH + gap) - 40,
+    DrawText(c.name .. "  ·  " .. (c.desc or "") .. "  ·  " .. costText(c),
+             math.floor(vw * 0.5), vh - rowsN * (slotH + gap) - 40,
              14, 0.95, 0.90, 0.78, 1, true)
   end
 
@@ -635,14 +705,14 @@ end
 function on_start()
   ensureHelpers()
   -- 初始示例布局（有存档时会被覆盖）：一眼看到“布置好的房车”
-  place(CATALOG[1], 1, 0, 0)    -- 双人床（贴后墙右侧，3x4 格）
-  place(CATALOG[3], 0, 4, 0)    -- 灶台（左舷中段）
-  place(CATALOG[5], 0, 6, 0)    -- 净水箱（灶台后方）
-  place(CATALOG[9], 3, 6, 0)    -- 储物箱
+  place(CATALOG[1], 1, 0, 0, true)    -- 双人床（贴后墙右侧，3x4 格）
+  place(CATALOG[3], 0, 4, 0, true)    -- 灶台（左舷中段）
+  place(CATALOG[5], 0, 6, 0, true)    -- 净水箱（灶台后方）
+  place(CATALOG[9], 3, 6, 0, true)    -- 储物箱
   local saved = curLayer
   curLayer = "roof"
-  place(CATALOG[17], 0, 8, 0)   -- 太阳能板（车顶）
-  place(CATALOG[19], 2, 9, 0)   -- 车顶行李架
+  place(CATALOG[17], 0, 8, 0, true)   -- 太阳能板（车顶）
+  place(CATALOG[19], 2, 9, 0, true)   -- 车顶行李架
   curLayer = saved
   computeReachability()
   recomputeStats()
@@ -676,6 +746,12 @@ function on_update(ent, dt)
   end
   if ActionPressed("f5") then saveLayout() end
   if ActionPressed("f9") then loadLayout() end
+  if ActionPressed("m") then
+    -- 沙盒补给（P2 搜刮上线后移除）
+    for k in pairs(materials) do materials[k] = materials[k] + 10 end
+    toast.text = "沙盒补给: 全材料 +10"
+    toast.t = 2.0
+  end
 
   -- 鼠标拾取
   local mp = InputMousePos()
@@ -731,6 +807,12 @@ function on_update(ent, dt)
     elseif hover and hover.valid then
       if place(CATALOG[selected], hover.cx, hover.cz, rot) then
         recomputeStats()
+      end
+    elseif hover and not hover.valid and not overUi then
+      local cat = CATALOG[selected]
+      if fits(cat, hover.cx, hover.cz, rot) and not canAfford(cat) then
+        toast.text = "材料不足: 需要 " .. costText(cat)
+        toast.t = 1.6
       end
     end
   end
