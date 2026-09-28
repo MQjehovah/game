@@ -254,6 +254,11 @@ public:
     virtual void CaptureFrame(int width, int height, void* rgba) = 0;
     // Reads a single pixel from the currently bound render target.
     virtual void ReadCurrentTargetPixel(int x, int y, unsigned char* rgba) = 0;
+    // Debug (NEON_DUMP_POST): bulk-read the currently bound render target as
+    // RGBA8. Default no-op; backends without a bulk read simply skip dumps.
+    virtual void ReadTargetPixelsRect(int x, int y, int w, int h, unsigned char* rgba) {
+        (void)x; (void)y; (void)w; (void)h; (void)rgba;
+    }
     // True if the depth buffer is functional (some drivers expose a broken one).
     virtual bool DepthAvailable() const = 0;
 };

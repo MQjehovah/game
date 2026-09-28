@@ -235,10 +235,12 @@ float PointShadowForLight(int light, vec3 worldPos, vec3 lightPos, float range) 
 float CascadeShadow(int c, vec3 worldPos, vec3 norm) {
     float texelWorld = c == 0 ? eng.uShadowTexelWorld.x
                       : (c == 1 ? eng.uShadowTexelWorld.y : eng.uShadowTexelWorld.z);
-    // Cascade depth range from the light VP: the ortho projection stores
-    // -2/(far-near) in uLightVP[c][2].z, so 2/|.| is the range the packed
-    // RGBA8 depth is normalized over - needed for the world-scaled bias.
-    float zRange = 2.0 / max(abs(eng.uLightVP[c][2].z), 1e-8);
+    // Cascade depth range from the light VP: the z row of (ortho*lightView)
+    // is (2/zRange) * unit-light-forward, so its LENGTH recovers the range the
+    // packed RGBA8 depth is normalized over. (abs([2].z) alone overestimated
+    // zRange ~2x for a tilted sun - the bias collapsed, receivers self-shadowed.)
+    float zRange = 2.0 / max(length(vec3(eng.uLightVP[c][0].z, eng.uLightVP[c][1].z,
+                                         eng.uLightVP[c][2].z)), 1e-8);
     float biasUnit = texelWorld / zRange;
     vec3 p = worldPos + norm * texelWorld * eng.uShadowNormalOffset;
     vec4 sp = eng.uLightVP[c] * vec4(p, 1.0);

@@ -13,6 +13,11 @@ float RawDepth(vec2 uv) {
     vec4 p = texture(uDepth, uv);
     return p.r + p.g / 255.0 + p.b / 65025.0 + p.a / 16581375.0;
 }
+// Interleaved gradient noise: rotates the kernel per pixel so the discrete
+// tap radii average into a smooth halo instead of concentric outline rings.
+float Ign(vec2 p) {
+    return fract(52.9829189 * fract(0.06711056 * p.x + 0.00583715 * p.y));
+}
 
 void main() {
     float raw = RawDepth(vUV);
@@ -25,11 +30,15 @@ void main() {
     // gradient quantised into view-angle-dependent horizontal stripes.
     float rx = RawDepth(vUV + vec2(eng.uTexelSize.x, 0.0));
     float ry = RawDepth(vUV + vec2(0.0, eng.uTexelSize.y));
-    float gradX = (rx >= 0.9999) ? 0.0 : (rx - raw) * eng.uFar;
-    float gradY = (ry >= 0.9999) ? 0.0 : (ry - raw) * eng.uFar;
+    float gradX = (rx >= 0.9999) ? 0.0 : clamp((rx - raw) * eng.uFar, -eng.uRadius, eng.uRadius);
+    float gradY = (ry >= 0.9999) ? 0.0 : clamp((ry - raw) * eng.uFar, -eng.uRadius, eng.uRadius);
     // Project the world radius to screen space at the centre depth.
     float pixels = clamp(eng.uRadius * eng.uProjScale / max(centre, 0.001), 1.0, 128.0);
     vec2 texel = eng.uTexelSize * pixels;
+    // Per-pixel kernel rotation: without it the 6 fixed tap radii imprint
+    // concentric rings around object silhouettes.
+    float ang = Ign(gl_FragCoord.xy) * 6.2831853;
+    mat2 rot = mat2(cos(ang), sin(ang), -sin(ang), cos(ang));
     float occ = 0.0;
     for (int i = 0; i < 6; ++i) {
         vec2 off; float k;
@@ -39,8 +48,8 @@ void main() {
         else if (i == 3) { off = vec2(0.0, 1.0); k = 0.9; }
         else if (i == 4) { off = vec2(-1.0, 0.8); k = 0.7; }
         else { off = vec2(-0.6, -1.0); k = 0.85; }
-        float planar = clamp((gradX * off.x + gradY * off.y) * pixels * k,
-                             -eng.uRadius, eng.uRadius);
+        off = rot * off;
+        float planar = (gradX * off.x + gradY * off.y) * pixels * k;
         vec2 uv2 = vUV + off * texel * k;
         float s = RawDepth(uv2) * eng.uFar;
         if (s >= eng.uFar * 0.9999) continue; // sky sample

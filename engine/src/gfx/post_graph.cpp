@@ -2,6 +2,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <vector>
 
 #include "neon/gfx/bloom.hpp"
 #include "neon/gfx/ssao.hpp"
@@ -75,6 +78,22 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
     adaptDone_ = fresh.AddResource({1u, 1u, kFloatFormat, 1u});
 
     size_t nextPass = 0;
+    // NEON_DUMP_POST=1 debug: overwrite raw dumps of the post chain's
+    // intermediate targets in the process CWD (_postdump_<stage>_<w>x<h>.bin,
+    // RGBA8, GL bottom-up rows) for offline numerical triage.
+    const char* dumpEnv = std::getenv("NEON_DUMP_POST");
+    const auto dumpTarget = [dumpEnv](IRenderBackend& backend, const char* stage, int w,
+                                      int h) {
+        if (!dumpEnv) return;
+        std::vector<unsigned char> px(static_cast<size_t>(w) * h * 4);
+        backend.ReadTargetPixelsRect(0, 0, w, h, px.data());
+        char name[96];
+        std::snprintf(name, sizeof(name), "_postdump_%s_%dx%d.bin", stage, w, h);
+        if (std::FILE* f = std::fopen(name, "wb")) {
+            std::fwrite(px.data(), 1, px.size(), f);
+            std::fclose(f);
+        }
+    };
     const auto add = [&](FramePass p) {
         const size_t idx = nextPass;
         const bool ok = fresh.AddPass(std::move(p));
@@ -90,7 +109,7 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
     FramePass depth;
     depth.name = "post.depth";
     depth.writes = {sceneDepth_};
-    depth.execute = [this](FrameGraphContext& ctx) {
+    depth.execute = [this, dumpTarget, w, h](FrameGraphContext& ctx) {
         auto& backend = ctx.Backend();
         backend.BindRenderTarget(ctx.GetOutput(sceneDepth_));
         backend.SetBlendMode(BlendMode::Opaque);
@@ -109,6 +128,7 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
             backend.Clear(kFarDepth, 1.0f);
             if (drawDepthCasters_) drawDepthCasters_();
         }
+        dumpTarget(backend, "depth", w, h);
     };
     depthPassIndex_ = add(std::move(depth));
 
@@ -117,7 +137,7 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
     ssao.name = "post.ssao";
     ssao.reads = {sceneDepth_};
     ssao.writes = {ao_};
-    ssao.execute = [this](FrameGraphContext& ctx) {
+    ssao.execute = [this, dumpTarget, aw, ah](FrameGraphContext& ctx) {
         auto& backend = ctx.Backend();
         backend.BindRenderTarget(ctx.GetOutput(ao_));
         Fullscreen(backend, ssaoShader_);
@@ -134,6 +154,7 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
         backend.SetUniformFloat("uFar", farPlane_);
         backend.SetUniformFloat("uProjScale", projScale_);
         backend.DrawMesh(postQuad_);
+        dumpTarget(backend, "ao", aw, ah);
     };
     ssaoPassIndex_ = add(std::move(ssao));
 

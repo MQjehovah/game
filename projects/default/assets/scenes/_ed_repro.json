@@ -1,12 +1,13 @@
 {
   "renderstack": {
-    "ssao": false,
+    "ssao": true,
     "bloom": false,
     "tonemap": true,
     "exposure": 1.0,
     "shadowDistance": 150.0,
     "shadowSoftness": 1.0,
-    "shadowNormalOffset": 1.5
+    "shadowNormalOffset": 1.5,
+    "ssaoIntensity": 0.8
   },
   "entities": [
     {

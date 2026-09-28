@@ -1212,6 +1212,10 @@ public:
         if (!rgba) return;
         gl::GetGL().ReadPixels(x, y, 1, 1, glc::Rgba, glc::UnsignedByte, rgba);
     }
+    void ReadTargetPixelsRect(int x, int y, int w, int h, unsigned char* rgba) override {
+        if (!rgba || w <= 0 || h <= 0) return;
+        gl::GetGL().ReadPixels(x, y, w, h, glc::Rgba, glc::UnsignedByte, rgba);
+    }
 
 private:
     gl::GLuint CompileShader(gl::GLenum type, const char* source, const char* debugName) {

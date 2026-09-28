@@ -153,10 +153,25 @@ inline constexpr const char* kSsaoDepthFragmentShader = R"(
 in float vViewDepth;
 out vec4 FragColor;
 uniform float uFar;
+// Carry-corrected base-255 packing (same as the shadow encoder). The naive
+// `vec4(d, fract(d*255), ...)` form has each channel rounded INDEPENDENTLY by
+// the RGBA8 quantizer, so the decode r+g/255+... sawtooths by up to ~0.5/255
+// of the range (~0.8 world units at uFar 800) with a period of 1/255 of depth.
+// The AO/SSR/volumetric/fog consumers compare that depth with world-unit
+// thresholds, so the sawtooth surfaced as false occlusion / fake surfaces
+// along constant-depth contours - horizontal stripes whose pitch and strength
+// differed per consumer. The carry correction makes every stored channel a
+// UNORM8-exact multiple so the decode error collapses to ~1/16M.
+vec4 EncodeDepth(float d) {
+    vec4 bits = vec4(1.0, 255.0, 65025.0, 16581375.0) * d;
+    bits = fract(bits);
+    bits -= bits.yzww * vec4(1.0 / 255.0, 1.0 / 255.0, 1.0 / 255.0, 0.0);
+    return bits;
+}
 void main() {
     float d = vViewDepth / uFar;
     d = clamp(d, 0.0, 1.0);
-    FragColor = vec4(d, fract(d * 255.0), fract(d * 65025.0), fract(d * 16581375.0));
+    FragColor = EncodeDepth(d);
 }
 )";
 
@@ -177,6 +192,13 @@ float RawDepth(vec2 uv) {
     vec4 p = texture(uDepth, uv);
     return p.r + p.g / 255.0 + p.b / 65025.0 + p.a / 16581375.0;
 }
+// Interleaved gradient noise (same as the lit shader's PCSS rotation):
+// rotates the kernel per pixel so the DISCRETE tap radii average into a
+// smooth halo instead of drawing concentric dark outline rings around every
+// silhouette (the "multiple black contour lines" artifact).
+float Ign(vec2 p) {
+    return fract(52.9829189 * fract(0.06711056 * p.x + 0.00583715 * p.y));
+}
 void main() {
     float raw = RawDepth(vUV);
     if (raw >= 0.9999) { FragColor = vec4(1.0, 1.0, 1.0, 1.0); return; } // sky/no geometry
@@ -192,11 +214,22 @@ void main() {
     // the horizon's depth cliff cannot poison the slope.
     float rx = RawDepth(vUV + vec2(uTexelSize.x, 0.0));
     float ry = RawDepth(vUV + vec2(0.0, uTexelSize.y));
-    float gradX = (rx >= 0.9999) ? 0.0 : (rx - raw) * uFar;
-    float gradY = (ry >= 0.9999) ? 0.0 : (ry - raw) * uFar;
+    // Per-texel depth slope, clamped only to guard the finite difference
+    // against a depth CLIFF (a spurious huge gradient must not fabricate
+    // occlusion). The extrapolated planar depth below is deliberately NOT
+    // clamped: on a plane viewed obliquely the expected depth change across a
+    // kernel tap legitimately exceeds uRadius, and clamping it there left a
+    // residual false self-occlusion that read as horizontal depth-contour
+    // bands (worst on large bright ground planes).
+    float gradX = (rx >= 0.9999) ? 0.0 : clamp((rx - raw) * uFar, -uRadius, uRadius);
+    float gradY = (ry >= 0.9999) ? 0.0 : clamp((ry - raw) * uFar, -uRadius, uRadius);
     // Project the world radius to screen space at the centre depth.
     float pixels = clamp(uRadius * uProjScale / max(centre, 0.001), 1.0, 128.0);
     vec2 step = uTexelSize * pixels;
+    // Per-pixel kernel rotation: without it the 6 fixed tap radii imprint
+    // concentric rings around object silhouettes.
+    float ang = Ign(gl_FragCoord.xy) * 6.2831853;
+    mat2 rot = mat2(cos(ang), sin(ang), -sin(ang), cos(ang));
     float occ = 0.0;
     for (int i = 0; i < 6; ++i) {
         vec2 off; float scale;
@@ -206,12 +239,10 @@ void main() {
         else if (i == 3) { off = vec2(0.0, 1.0); scale = 0.9; }
         else if (i == 4) { off = vec2(-1.0, 0.8); scale = 0.7; }
         else { off = vec2(-0.6, -1.0); scale = 0.85; }
-        // Expected planar depth change at the tap. off.x/off.y are in texels and
-        // the step scales both by `pixels`, so the slope projected on the offset
-        // is (gradX*off.x + gradY*off.y)*pixels*scale; clamped so a depth cliff
-        // in the finite-difference estimate cannot fabricate occlusion.
-        float planar = clamp((gradX * off.x + gradY * off.y) * pixels * scale,
-                             -uRadius, uRadius);
+        off = rot * off;
+        // Expected planar depth change at the tap (unclamped - see the
+        // gradient comment above; clamping here was the band source).
+        float planar = (gradX * off.x + gradY * off.y) * pixels * scale;
         vec2 uv2 = vUV + off * step * scale;
         float s = RawDepth(uv2) * uFar;
         if (s >= uFar * 0.9999) continue; // sky sample
@@ -241,14 +272,23 @@ void main() {
                    (uFar + uNear - (2.0 * ndc - 1.0) * (uFar - uNear));
     // Sky / no geometry: the depth buffer sits at the far plane (ndc == 1).
     float d = (ndc >= 1.0) ? 1.0 : clamp(linear / uFar, 0.0, 1.0);
-    FragColor = vec4(d, fract(d * 255.0), fract(d * 65025.0), fract(d * 16581375.0));
+    // Carry-corrected packing (see kSsaoDepthFragmentShader): the naive
+    // fract() form quantised to a ~0.5/255 sawtooth that the AO/SSR/vol/fog
+    // consumers read as horizontal depth-contour stripes.
+    vec4 bits = vec4(1.0, 255.0, 65025.0, 16581375.0) * d;
+    bits = fract(bits);
+    bits -= bits.yzww * vec4(1.0 / 255.0, 1.0 / 255.0, 1.0 / 255.0, 0.0);
+    FragColor = bits;
 }
 )";
 
 // Separable blur for the AO channel (kSsaoBlurTaps taps, one axis per pass).
-constexpr int kSsaoBlurTaps = 5;
-inline constexpr float kSsaoBlurKernel[kSsaoBlurTaps] = {0.05449f, 0.244202f, 0.402620f,
-                                                          0.244202f, 0.05449f};
+// 9 taps (±4 texels, gaussian): the AO kernel's features are up to `pixels`
+// texels wide (≤128), and the old ±2 blur left the rotated kernel's residual
+// structure and silhouette halos unsmoothed.
+constexpr int kSsaoBlurTaps = 9;
+inline constexpr float kSsaoBlurKernel[kSsaoBlurTaps] = {
+    0.0048f, 0.0287f, 0.1028f, 0.2210f, 0.2854f, 0.2210f, 0.1028f, 0.0287f, 0.0048f};
 inline constexpr const char* kSsaoBlurFragmentShader = R"(
 #version 330 core
 in vec2 vUV;
@@ -258,11 +298,15 @@ uniform vec2 uTexelSize;
 uniform vec2 uDirection;
 void main() {
     vec2 off = uTexelSize * uDirection;
-    float c = texture(uTex, vUV - off * 2.0).r * 0.05449
-            + texture(uTex, vUV - off).r       * 0.244202
-            + texture(uTex, vUV).r             * 0.402620
-            + texture(uTex, vUV + off).r       * 0.244202
-            + texture(uTex, vUV + off * 2.0).r * 0.05449;
+    float c = texture(uTex, vUV - off * 4.0).r * 0.0048
+            + texture(uTex, vUV - off * 3.0).r * 0.0287
+            + texture(uTex, vUV - off * 2.0).r * 0.1028
+            + texture(uTex, vUV - off).r       * 0.2210
+            + texture(uTex, vUV).r             * 0.2854
+            + texture(uTex, vUV + off).r       * 0.2210
+            + texture(uTex, vUV + off * 2.0).r * 0.1028
+            + texture(uTex, vUV + off * 3.0).r * 0.0287
+            + texture(uTex, vUV + off * 4.0).r * 0.0048;
     FragColor = vec4(c);
 }
 )";

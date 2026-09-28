@@ -369,10 +369,13 @@ vec3 SampleLightProbeAtlas(vec3 wp) {
 float CascadeShadow(int c, vec3 worldPos, vec3 norm) {
     float texelWorld = c == 0 ? uShadowTexelWorld.x
                       : (c == 1 ? uShadowTexelWorld.y : uShadowTexelWorld.z);
-    // Cascade depth range from the light VP: the ortho projection stores
-    // -2/(far-near) in uLightVP[c][2].z, so 2/|.| is the range the packed
-    // RGBA8 depth is normalized over - needed for the world-scaled bias.
-    float zRange = 2.0 / max(abs(uLightVP[c][2].z), 1e-8);
+    // Cascade depth range from the light VP: the z row of (ortho*lightView)
+    // is (2/zRange) * unit-light-forward, so its LENGTH recovers the range the
+    // packed RGBA8 depth is normalized over. (The earlier abs([2].z) form
+    // divided by the light's z tilt alone and overestimated zRange ~2x for a
+    // 45-degree sun - the bias collapsed and the whole receiver self-shadowed.)
+    float zRange = 2.0 / max(length(vec3(uLightVP[c][0].z, uLightVP[c][1].z,
+                                         uLightVP[c][2].z)), 1e-8);
     float biasUnit = texelWorld / zRange;
     vec3 p = worldPos + norm * texelWorld * uShadowNormalOffset;
     vec4 sp = uLightVP[c] * vec4(p, 1.0);

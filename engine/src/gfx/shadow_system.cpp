@@ -2,8 +2,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <vector>
 
 #include "neon/core/log.hpp"
 #include "neon/gfx/csm.hpp"
@@ -348,6 +350,36 @@ void ShadowSystem::RunPass(const Camera& camera, float aspect, const math::Vec3&
         // near in light space.
         backend_->SetDepthTest(depthTestedCascades_, depthTestedCascades_);
         DrawShadowCastersSorted(lightViewProj_[i]);
+        // Diagnostic (NEON_DUMP_SHADOW=1): one-shot full-map dump per cascade
+        // (RGBA8 packed depth, GL bottom-up rows) + the math the receivers
+        // use, so a "shadow wrong" report can be reproduced offline.
+        if (std::getenv("NEON_DUMP_SHADOW") != nullptr) {
+            // Steady-state dump: skip the first passes (their caster list is
+            // still empty - one frame of staleness) and capture a later one.
+            static int passCount[kShadowCascades] = {0, 0, 0};
+            if (i < kShadowCascades && ++passCount[i] == 60) {
+                std::vector<unsigned char> px(static_cast<size_t>(shadowSize_) *
+                                               shadowSize_ * 4);
+                backend_->ReadTargetPixelsRect(0, 0, shadowSize_, shadowSize_, px.data());
+                char name[96];
+                std::snprintf(name, sizeof(name), "_shadowdump_c%d_%d.bin", i, shadowSize_);
+                if (std::FILE* f = std::fopen(name, "wb")) {
+                    std::fwrite(px.data(), 1, px.size(), f);
+                    std::fclose(f);
+                }
+                const math::Mat4& m = lightViewProj_[i];
+                NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
+                             "Renderer: shadowdump c%d size=%d texelWorld=%.4f "
+                             "zrow=(%.4f,%.4f,%.4f) ztrans=%.3f zRange=%.1f "
+                             "splits=%.2f/%.2f/%.2f/%.2f",
+                             i, shadowSize_, cascadeTexelWorld_[i], m.m[8], m.m[9],
+                             m.m[10], m.m[11],
+                             2.0f / std::max(std::sqrt(m.m[8] * m.m[8] + m.m[9] * m.m[9] +
+                                                       m.m[10] * m.m[10]), 1e-8f),
+                             cascadeSplits_[0], cascadeSplits_[1], cascadeSplits_[2],
+                             cascadeSplits_[3]);
+            }
+        }
         // Diagnostic (NEON_DUMP_SHADOW=1): histogram the cascade that was just
         // rendered so a "no shadows" report can distinguish an empty map (casters
         // missing / culled / mis-viewported) from a broken receiver projection.
