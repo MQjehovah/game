@@ -19,15 +19,9 @@
       ]
     },
     "mesh": {
-      "meshKey": "cube",
+      "meshKey": "gltf:assets/models/furniture/bathroomCabinet.glb",
       "castShadow": true,
-      "receiveShadow": true,
-      "material": {
-        "ao": 1,
-        "colorHex": "#D8E8E0",
-        "metallic": 0,
-        "roughness": 0.75
-      }
+      "receiveShadow": true
     }
   }
 }

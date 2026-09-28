@@ -19,15 +19,9 @@
       ]
     },
     "mesh": {
-      "meshKey": "cube",
+      "meshKey": "gltf:assets/models/furniture/coatRackStanding.glb",
       "castShadow": true,
-      "receiveShadow": true,
-      "material": {
-        "ao": 1,
-        "colorHex": "#6B4F3A",
-        "metallic": 0,
-        "roughness": 0.75
-      }
+      "receiveShadow": true
     }
   }
 }

@@ -19,15 +19,9 @@
       ]
     },
     "mesh": {
-      "meshKey": "cube",
+      "meshKey": "gltf:assets/models/furniture/bathtub.glb",
       "castShadow": true,
-      "receiveShadow": true,
-      "material": {
-        "ao": 1,
-        "colorHex": "#7F9BA8",
-        "metallic": 0,
-        "roughness": 0.75
-      }
+      "receiveShadow": true
     }
   }
 }

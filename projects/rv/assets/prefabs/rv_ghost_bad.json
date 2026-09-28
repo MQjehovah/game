@@ -24,7 +24,7 @@
       "receiveShadow": false,
       "material": {
         "ao": 1,
-        "colorHex": "#E0483E",
+        "colorHex": "#E0483F",
         "metallic": 0,
         "roughness": 0.75
       }
