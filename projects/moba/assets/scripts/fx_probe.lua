@@ -22,8 +22,10 @@ local function emit()
 end
 
 function on_update(dt)
+    emit()
     if not spawned then
         spawned = true
-        SpawnDecal("assets/sprites/decal_disc.png", 1.2, 0.05, 1.6, 2.4, 0.75, 1.0, 0.25, 0.2, true)
+        SpawnDecal("assets/sprites/decal_ring.png", 0, 0.05, 0, 3.0, 0.9, 0.2, 0.6, 1.0, true)
+        SpawnDecal("assets/sprites/decal_disc.png", -2.0, 0.05, 1.0, 2.4, 0.75, 1.0, 0.25, 0.2, true)
     end
 end
