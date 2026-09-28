@@ -205,7 +205,11 @@ float ShadowFactor(sampler2D sm, vec2 uv, float lightDepth, float biasUnit) {
     float ca = cos(ang);
     float sa = sin(ang);
     mat2 rot = mat2(ca, sa, -sa, ca);
-    vec2 base = uShadowTexel * max(uShadowSoftness, 0.0);
+    // Minimum 1.5-texel penumbra: with a ~1-texel kernel the IGN rotation
+    // reads as per-pixel grain on every shadow edge and the stair-steps of
+    // the coarse cascades show raw. A small guaranteed penumbra lets the
+    // dither average into a smooth edge (softness still scales it up).
+    vec2 base = uShadowTexel * max(uShadowSoftness, 1.5);
     if (uShadowSoftness <= 0.0) {
         float lit1 = 0.0;
         for (int x = 0; x < 2; ++x) {

@@ -131,7 +131,9 @@ float ShadowFactor(sampler2D sm, vec2 uv, float lightDepth, float biasUnit) {
     float ca = cos(ang);
     float sa = sin(ang);
     mat2 rot = mat2(ca, sa, -sa, ca);
-    vec2 base = eng.uShadowTexel * max(eng.uShadowSoftness, 0.0);
+    // Minimum 1.5-texel penumbra (see the GL twin): hides IGN grain and the
+    // coarse cascades' stair-steps; uShadowSoftness still scales it up.
+    vec2 base = eng.uShadowTexel * max(eng.uShadowSoftness, 1.5);
     if (eng.uShadowSoftness <= 0.0) {
         float lit1 = 0.0;
         for (int x = 0; x < 2; ++x) {
