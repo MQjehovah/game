@@ -331,6 +331,13 @@ void ShadowSystem::RunPass(const Camera& camera, float aspect, const math::Vec3&
     for (int i = 0; i < kShadowCascades; ++i) {
         if (!shadowRT_[i].Valid()) continue;
         backend_->BindRenderTarget(shadowRT_[i]);
+        // The map must be rasterized at ITS full size: hosts that render the
+        // scene into a sub-viewport (the editor's dock rect) leave a viewport
+        // AND a scissor rect active - without resetting both, every caster
+        // was clipped to the dock-rect intersection, leaving a small stale
+        // blob in the map and garbage view-dependent shadows.
+        backend_->SetViewport(0, 0, shadowSize_, shadowSize_);
+        backend_->SetScissor(0, 0, 0, 0, false);
         // Encoded far depth by default: anything not drawn is lit.
         backend_->Clear({1.0f, 1.0f, 1.0f, 1.0f}, 1.0f);
         backend_->SetBlendMode(BlendMode::Opaque);
@@ -354,10 +361,11 @@ void ShadowSystem::RunPass(const Camera& camera, float aspect, const math::Vec3&
         // (RGBA8 packed depth, GL bottom-up rows) + the math the receivers
         // use, so a "shadow wrong" report can be reproduced offline.
         if (std::getenv("NEON_DUMP_SHADOW") != nullptr) {
-            // Steady-state dump: skip the first passes (their caster list is
-            // still empty - one frame of staleness) and capture a later one.
+            // Steady-state dump, and only of passes that actually consumed a
+            // caster list (offscreen tool passes would pollute the counter).
             static int passCount[kShadowCascades] = {0, 0, 0};
-            if (i < kShadowCascades && ++passCount[i] == 60) {
+            if (i < kShadowCascades && !shadowCasters_.empty() &&
+                ++passCount[i] == 60) {
                 std::vector<unsigned char> px(static_cast<size_t>(shadowSize_) *
                                                shadowSize_ * 4);
                 backend_->ReadTargetPixelsRect(0, 0, shadowSize_, shadowSize_, px.data());
@@ -367,13 +375,32 @@ void ShadowSystem::RunPass(const Camera& camera, float aspect, const math::Vec3&
                     std::fwrite(px.data(), 1, px.size(), f);
                     std::fclose(f);
                 }
+                // Caster manifests (debug): world AABB per recorded caster.
+                for (const ShadowDraw& d : shadowCasters_) {
+                    math::AABB wb;
+                    wb.min = {1e30f, 1e30f, 1e30f};
+                    wb.max = {-1e30f, -1e30f, -1e30f};
+                    if (!d.models.empty()) {
+                        for (const math::Mat4& mm : d.models) {
+                            wb.Expand(math::TransformAABB(d.bounds, mm).min);
+                            wb.Expand(math::TransformAABB(d.bounds, mm).max);
+                        }
+                    } else {
+                        wb.Expand(math::TransformAABB(d.bounds, d.model).min);
+                        wb.Expand(math::TransformAABB(d.bounds, d.model).max);
+                    }
+                    NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
+                                 "Renderer: shadowdump caster bounds=[%.1f,%.1f,%.1f]"
+                                 "..[%.1f,%.1f,%.1f]",
+                                 wb.min.x, wb.min.y, wb.min.z, wb.max.x, wb.max.y, wb.max.z);
+                }
                 const math::Mat4& m = lightViewProj_[i];
                 NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
-                             "Renderer: shadowdump c%d size=%d texelWorld=%.4f "
+                             "Renderer: shadowdump c%d size=%d casters=%zu texelWorld=%.4f "
                              "zrow=(%.4f,%.4f,%.4f) ztrans=%.3f zRange=%.1f "
                              "splits=%.2f/%.2f/%.2f/%.2f",
-                             i, shadowSize_, cascadeTexelWorld_[i], m.m[8], m.m[9],
-                             m.m[10], m.m[11],
+                             i, shadowSize_, shadowCasters_.size(), cascadeTexelWorld_[i],
+                             m.m[8], m.m[9], m.m[10], m.m[11],
                              2.0f / std::max(std::sqrt(m.m[8] * m.m[8] + m.m[9] * m.m[9] +
                                                        m.m[10] * m.m[10]), 1e-8f),
                              cascadeSplits_[0], cascadeSplits_[1], cascadeSplits_[2],
@@ -568,6 +595,9 @@ void ShadowSystem::DrawPointShadowCastersSorted(int lightIndex, const math::Vec3
     backend_->SetDepthTest(false, false);
     for (int face = 0; face < 6; ++face) {
         backend_->BindRenderTarget(pointShadowRT_[lightIndex][face]);
+        // Same sub-viewport/scissor hazard as the cascades (see RunPass).
+        backend_->SetViewport(0, 0, kPointShadowSize, kPointShadowSize);
+        backend_->SetScissor(0, 0, 0, 0, false);
         backend_->Clear({1.0f, 1.0f, 1.0f, 1.0f}, 1.0f);
         for (const ShadowSortKey& k : shadowSortKeys_)
             DrawPointShadowCaster(*k.draw, pointLightViewProj_[lightIndex][face], lightPos, range);

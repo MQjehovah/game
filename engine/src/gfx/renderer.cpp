@@ -378,7 +378,12 @@ void Renderer::SetCamera(const Camera& camera, float aspect) {
     // model preview) that calls SetCamera must not consume-and-clear the
     // pending scene casters and re-render the cascades empty - that wiped the
     // shadows for the following main frame (surfaces popping lit/dark).
-    if (shadowSystem_.Enabled() && !shadowSystem_.ShadowPassRanThisFrame() &&
+    // Recording()==false marks exactly those tool renders (they disable
+    // caster recording), so a suppressed shadow pass here also stops the
+    // model preview from overwriting the scene's cascades with ITS tiny
+    // close-up camera every frame.
+    if (shadowSystem_.Enabled() && shadowSystem_.Recording() &&
+        !shadowSystem_.ShadowPassRanThisFrame() &&
         (shadowSystem_.HasRecordedCasters() || !shadowSystem_.MapsInitialized())) {
         shadowSystem_.RunPass(sceneState_.ActiveCamera(), sceneState_.ViewAspect(),
                               sceneState_.SunDir(), sceneState_.PointPos(),

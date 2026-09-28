@@ -169,6 +169,14 @@ void ModelPreviewPanel::Render() {
                                std::cos(yaw) * std::cos(pitch)} *
                         size * 2.6f;
     pcam.target = center;
+    // Tool render on the SHARED renderer, disabled BEFORE SetCamera so the
+    // renderer's caster-recording guard also suppresses the CSM pass for this
+    // camera: without that the preview's SetCamera re-rendered the scene's
+    // shadow cascades with THIS tiny close-up camera every frame AND consumed
+    // the pending scene casters - the next main frame then sampled cascades
+    // framed on the preview (shadows cut by straight lines, view-dependent).
+    // (Also stops the previewed model's parts from becoming scene casters.)
+    renderer_->SetShadowRecording(false);
     renderer_->SetCamera(pcam, static_cast<float>(w) / static_cast<float>(h));
     // SetCamera's CSM shadow pass may rebind the HDR/default target and reset
     // the viewport to the main scene rect (when the main viewport did not run
@@ -179,12 +187,6 @@ void ModelPreviewPanel::Render() {
     b->SetViewport(0, 0, w, h);
     b->SetScissor(0, 0, w, h, true);
     renderer_->SetDirectionalLight({-0.4f, -1.0f, -0.3f}, {1.0f, 0.95f, 0.9f}, 0.5f);
-    // Tool render on the SHARED renderer: suppress shadow-caster recording for
-    // the previewed model exactly like the thumbnail generators. Without this
-    // the model's parts (drawn at world origin) became scene shadow casters
-    // next frame - ghost shadows / flicker over surfaces near the origin while
-    // the panel is open.
-    renderer_->SetShadowRecording(false);
     anim::Pose pose = model->skeleton.BindPose();
     if (clip >= 0 && clip < static_cast<int>(model->clips.size())) {
         const anim::AnimationClip& c = model->clips[static_cast<size_t>(clip)];
