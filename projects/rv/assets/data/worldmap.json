@@ -1,0 +1,144 @@
+{
+  "nodes": [
+    {
+      "id": "camp",
+      "name": "营地",
+      "mx": 0.1,
+      "my": 0.68,
+      "danger": 0,
+      "desc": "房车驻地",
+      "links": [
+        "gasstop",
+        "ruin"
+      ]
+    },
+    {
+      "id": "gasstop",
+      "name": "废弃加油站",
+      "mx": 0.34,
+      "my": 0.46,
+      "danger": 1,
+      "desc": "油泵尚存残余",
+      "links": [
+        "camp",
+        "ruin",
+        "mall"
+      ],
+      "loot": {
+        "metal": [
+          2,
+          5
+        ],
+        "electronics": [
+          0,
+          2
+        ]
+      }
+    },
+    {
+      "id": "ruin",
+      "name": "郊区废宅",
+      "mx": 0.3,
+      "my": 0.82,
+      "danger": 1,
+      "desc": "逃难者遗弃的房屋",
+      "links": [
+        "camp",
+        "gasstop",
+        "town"
+      ],
+      "loot": {
+        "cloth": [
+          2,
+          5
+        ],
+        "wood": [
+          2,
+          5
+        ],
+        "electronics": [
+          0,
+          2
+        ]
+      }
+    },
+    {
+      "id": "mall",
+      "name": "购物中心",
+      "mx": 0.62,
+      "my": 0.3,
+      "danger": 3,
+      "desc": "物资丰富，尸群密集",
+      "links": [
+        "gasstop",
+        "town"
+      ],
+      "loot": {
+        "electronics": [
+          2,
+          5
+        ],
+        "cloth": [
+          2,
+          5
+        ],
+        "metal": [
+          2,
+          4
+        ]
+      }
+    },
+    {
+      "id": "town",
+      "name": "小镇主街",
+      "mx": 0.78,
+      "my": 0.64,
+      "danger": 2,
+      "desc": "小镇商铺一条街",
+      "links": [
+        "ruin",
+        "mall",
+        "depot"
+      ],
+      "loot": {
+        "wood": [
+          3,
+          6
+        ],
+        "metal": [
+          2,
+          5
+        ],
+        "cloth": [
+          1,
+          3
+        ]
+      }
+    },
+    {
+      "id": "depot",
+      "name": "物流仓库",
+      "mx": 0.9,
+      "my": 0.38,
+      "danger": 3,
+      "desc": "货运枢纽，高风险高回报",
+      "links": [
+        "town"
+      ],
+      "loot": {
+        "metal": [
+          4,
+          8
+        ],
+        "electronics": [
+          3,
+          6
+        ],
+        "wood": [
+          2,
+          4
+        ]
+      }
+    }
+  ]
+}
