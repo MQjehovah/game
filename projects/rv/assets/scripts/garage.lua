@@ -44,6 +44,23 @@ local CATALOG = {
 }
 local HOTKEYS = { "1","2","3","4","5","6","7","8","9","0" }  -- 前 10 件绑定热键
 
+-- 驾驶（P2.5）：房车真的能在荒漠里开。T 上路 / WASD 驾驶 / 空格停靠。
+local DRIVE = {
+  accel = 4.5, brake = 9.0, drag = 0.8, reverseMax = 3.0,
+  maxSpeed = 9.0,   -- m/s ≈ 32 km/h；超载按超出比例打折
+  steerRate = 1.4,  -- rad/s（3 m/s 以上打满，速度越低越难打方向）
+  camDist = 10.5, camPitch = 0.40,
+}
+-- worldmap.json 节点的世界坐标（驾驶目的地；营地=原点）。地图 1.0 ≈ 160m。
+local NODES = {
+  { id = "camp",    name = "营地",       x = 0,   z = 0 },
+  { id = "gasstop", name = "废弃加油站", x = 46,  z = -42 },
+  { id = "ruin",    name = "郊区废宅",   x = 38,  z = 27 },
+  { id = "mall",    name = "购物中心",   x = 100, z = -73 },
+  { id = "town",    name = "小镇主街",   x = 131, z = -8 },
+  { id = "depot",   name = "物流仓库",   x = 154, z = -58 },
+}
+
 -- 材料经济：搜刮获得（P2），建造消耗；拆除全额退还
 local MAT_NAMES = { metal="金属片", electronics="电子件", cloth="布料", wood="木材" }
 local materials = { metal=12, electronics=8, cloth=6, wood=10 }
@@ -67,16 +84,38 @@ local toast     = { text="", t=0 }
 local stats     = {}
 local unreachableNames = {}  -- 不可达模块名列表（HUD 警告）
 
+-- 驾驶状态
+local mode = "garage"            -- "garage" / "drive"
+local rv = { x = 0, z = 0, yaw = 0, speed = 0 }
+local curNode = "camp"
+local rvParts, camEnt, groundEnt -- 车体部件 / 相机 / 地面（on_start 收集）
+local props, markersSpawned = {}, false  -- 荒漠循环道具 / 节点标记
+local camSmooth, nearNode        -- 相机平滑位置 / 临近节点
+local dustAcc = 0
+local autoPilot, driveT = false, 0  -- RV_AUTOPILOT=1 自动驾驶（视觉验收钩子）
+
 -- ---------------------------------------------------------------------------
 -- 小工具
 -- ---------------------------------------------------------------------------
 local function cellIndex(cx, cz) return cz * GW + cx end
 
+-- 世界点 -> 房车局部（逆旋转 -yaw）再落格：房车停在任意位置/朝向都能放置
 local function worldToCell(x, z)
-  local cx = math.floor((x - ORIGIN_X) / CELL)
-  local cz = math.floor((z - ORIGIN_Z) / CELL)
+  local dx, dz = x - rv.x, z - rv.z
+  local cy, sy = math.cos(rv.yaw), math.sin(rv.yaw)
+  local lx = dx * cy - dz * sy
+  local lz = dx * sy + dz * cy
+  local cx = math.floor((lx - ORIGIN_X) / CELL)
+  local cz = math.floor((lz - ORIGIN_Z) / CELL)
   if cx < 0 or cx >= GW or cz < 0 or cz >= GH then return nil end
   return cx, cz
+end
+
+-- 房车局部点 -> 世界坐标（R(yaw) 旋转 + 平移；与 SetRotationY 同约定：
+-- 局部 +z 轴转向世界 (sin yaw, cos yaw)，车头朝向即前进方向）
+local function rotOf(lx, lz)
+  local cy, sy = math.cos(rv.yaw), math.sin(rv.yaw)
+  return rv.x + lx * cy + lz * sy, rv.z - lx * sy + lz * cy
 end
 
 -- 旋转后的占格尺寸
@@ -224,16 +263,20 @@ local function spawnModule(cat, cx, cz, r)
   -- 以锚点格(左上)为基准摆放整个占格范围
   local ox = ORIGIN_X + cx * CELL + w * CELL * 0.5
   local oz = ORIGIN_Z + cz * CELL + h * CELL * 0.5
+  local ly = cat.modelScale and (baseY + 0.01) or (baseY + cat.mh * 0.5 + 0.005)
+  local wx, wz = rotOf(ox, oz)
   if cat.modelScale then
     -- 真模型（Kenney GLB）：统一缩放保持比例，不平展到占格盒
-    SetPosition(ent, { x = ox, y = baseY + 0.01, z = oz })
+    SetPosition(ent, { x = wx, y = ly, z = wz })
     local sc = cat.modelScale
     SetScale(ent, sc, sc, sc)
   else
-    SetPosition(ent, { x = ox, y = baseY + cat.mh * 0.5 + 0.005, z = oz })
+    SetPosition(ent, { x = wx, y = ly, z = wz })
     SetScale(ent, w * CELL - 0.03, cat.mh, h * CELL - 0.03)
   end
-  if r % 2 == 1 then SetRotationY(ent, math.pi * 0.5) end
+  -- 朝向 = 房车朝向 + 自身 90°（旋转占格）
+  local lrot = (r % 2 == 1) and (math.pi * 0.5) or 0
+  SetRotationY(ent, rv.yaw + lrot)
   -- 放置弹入动画：缩放从 0.65 倍 tween 到目标（prop 2 = scale）
   local sx, sy, sz
   if cat.modelScale then
@@ -243,7 +286,7 @@ local function spawnModule(cat, cx, cz, r)
   end
   Tween(ent, 2, { x = sx * 0.6, y = sy * 0.6, z = sz * 0.6 },
               { x = sx, y = sy, z = sz }, 0.18, 1)
-  return ent
+  return ent, ox, ly, oz, lrot  -- 局部位姿供 place 记账（驾驶模式整体变换用）
 end
 
 local function place(cat, cx, cz, r, free)
@@ -251,7 +294,7 @@ local function place(cat, cx, cz, r, free)
   if cat.layer ~= "roof" and curLayer == "roof" then return false end
   if not fits(cat, cx, cz, r) then return false end
   if not free and not canAfford(cat) then return false end
-  local ent = spawnModule(cat, cx, cz, r)
+  local ent, ox, ly, oz, lrot = spawnModule(cat, cx, cz, r)
   if ent == nil then return false end
   if not free then payCost(cat) end
   local id = nextId
@@ -263,7 +306,8 @@ local function place(cat, cx, cz, r, free)
       occ[cellIndex(cx + dx, cz + dz)] = id
     end
   end
-  instances[id] = { cat = cat, ent = ent, cx = cx, cz = cz, rot = r, layer = cat.layer }
+  instances[id] = { cat = cat, ent = ent, cx = cx, cz = cz, rot = r, layer = cat.layer,
+                    lx = ox, ly = ly, lz = oz, lrot = lrot }
   computeReachability()
   return true
 end
@@ -327,6 +371,285 @@ local function recomputeStats()
     s.count      = s.count + 1
   end
   stats = s
+end
+
+-- ---------------------------------------------------------------------------
+-- 驾驶模式：车体/模块/网格随 rv 位姿整体变换 + 无限荒漠 + 追逐相机
+-- ---------------------------------------------------------------------------
+local setMode  -- 前置声明：updateDrive 的自动停车回路在定义前引用
+local function collectRvParts()
+  if rvParts then return end
+  rvParts = {}
+  local names = { "RV_Floor", "RV_WallL", "RV_WallR", "RV_RearWall", "RV_Cab",
+                  "RV_Windshield", "Wheel_FL", "Wheel_FR", "Wheel_RL", "Wheel_RR" }
+  for _, n in ipairs(names) do
+    local e = FindNamedEntity(n)
+    if e ~= nil then
+      local p = GetPosition(e)
+      rvParts[#rvParts + 1] = { ent = e, lx = p.x, ly = p.y, lz = p.z }
+    end
+  end
+end
+
+-- 把车体部件 / 模块 / 网格贴花摆到当前车位姿（局部 -> 世界）
+local function applyRvTransform()
+  if rvParts then
+    for _, p in ipairs(rvParts) do
+      local wx, wz = rotOf(p.lx, p.lz)
+      SetPosition(p.ent, { x = wx, y = p.ly, z = wz })
+      SetRotationY(p.ent, rv.yaw)
+    end
+  end
+  for _, inst in pairs(instances) do
+    local wx, wz = rotOf(inst.lx, inst.lz)
+    SetPosition(inst.ent, { x = wx, y = inst.ly, z = wz })
+    SetRotationY(inst.ent, rv.yaw + (inst.lrot or 0))
+  end
+  if gridFloorEnt ~= nil then
+    SetPosition(gridFloorEnt, { x = rv.x, y = FLOOR_Y, z = rv.z })
+    SetRotationY(gridFloorEnt, rv.yaw)
+  end
+  if gridRoofEnt ~= nil then
+    SetPosition(gridRoofEnt, { x = rv.x, y = ROOF_Y, z = rv.z })
+    SetRotationY(gridRoofEnt, rv.yaw)
+  end
+end
+
+-- 荒漠道具池：出视野（车后 40m / 横向 55m 外）回收，车前 25..70m 重生，
+-- 正前方 5m 与节点 10m 内留空。地面/道具不随车移动——位移感全靠道具倒退。
+local PROP_TYPES = {
+  { pre = "rv_scrub_a", n = 34 },
+  { pre = "rv_scrub_b", n = 26 },
+  { pre = "rv_rock",    n = 14 },
+  { pre = "rv_tree",    n = 9 },
+  { pre = "rv_wreck",   n = 5 },
+}
+local function propScale(kind)
+  if kind == "rv_rock" then
+    return 0.6 + math.random() * 1.4, 0.35 + math.random() * 0.85, 0.6 + math.random() * 1.4
+  elseif kind == "rv_tree" then
+    return 0.4 + math.random() * 0.5, 2.0 + math.random() * 1.6, 0.4 + math.random() * 0.5
+  elseif kind == "rv_wreck" then
+    return 1.6 + math.random() * 0.8, 0.6 + math.random() * 0.5, 2.8 + math.random() * 1.4
+  end
+  return 0.5 + math.random(), 0.03 + math.random() * 0.04, 0.5 + math.random()
+end
+local function placeProp(p, fx, fz, fMin, fMax)
+  for _ = 1, 6 do
+    local f = fMin + math.random() * (fMax - fMin)
+    local lat = (math.random() * 2 - 1) * 42
+    if math.abs(lat) >= 5 or fMin < 0 then
+      local wx = rv.x + fx * f - fz * lat
+      local wz = rv.z + fz * f + fx * lat
+      local blocked = false
+      for _, nd in ipairs(NODES) do
+        local ddx, ddz = wx - nd.x, wz - nd.z
+        if ddx * ddx + ddz * ddz < 100 then blocked = true break end
+      end
+      if not blocked then
+        local sx, sy, sz = propScale(p.kind)
+        local y = (p.kind == "rv_scrub_a" or p.kind == "rv_scrub_b") and 0.015 or sy * 0.5
+        SetPosition(p.ent, { x = wx, y = y, z = wz })
+        SetScale(p.ent, sx, sy, sz)
+        SetRotationY(p.ent, math.random() * math.pi * 2)
+        p.x, p.z = wx, wz
+        return
+      end
+    end
+  end
+  -- 重试失败：扔到更远处，保证不卡死循环
+  local wx = rv.x + fx * (fMax + 20) - fz * 30
+  local wz = rv.z + fz * (fMax + 20) + fx * 30
+  SetPosition(p.ent, { x = wx, y = 0.3, z = wz })
+  p.x, p.z = wx, wz
+end
+local function spawnProps()
+  if #props > 0 then return end
+  for _, t in ipairs(PROP_TYPES) do
+    for _ = 1, t.n do
+      local ent = SpawnPrefab(t.pre, { x = 0, y = -50, z = 0 })
+      if ent ~= nil then
+        local p = { ent = ent, kind = t.pre, x = 0, z = 0 }
+        placeProp(p, 0, 1, -45, 65)  -- 初始绕营地环形铺满
+        props[#props + 1] = p
+      end
+    end
+  end
+end
+local function recycleProps(fx, fz)
+  for _, p in ipairs(props) do
+    local dx, dz = p.x - rv.x, p.z - rv.z
+    local f = dx * fx + dz * fz
+    local lat = dx * (-fz) + dz * fx
+    if f < -40 or f > 95 or math.abs(lat) > 55 then
+      placeProp(p, fx, fz, 25, 70)
+    end
+  end
+end
+
+-- 节点标记柱（世界坐标）；名字牌在 drawDriveHud 里用 WorldToScreen 投影绘制
+-- （引擎的 EntityPlates 只是数据 API，不主动渲染）
+local function spawnMarkers()
+  if markersSpawned then return end
+  markersSpawned = true
+  for _, nd in ipairs(NODES) do
+    if nd.id ~= "camp" then  -- 营地=原点，柱子会插在房车里
+      local ent = SpawnPrefab("rv_marker", { x = nd.x, y = 1.6, z = nd.z })
+      if ent ~= nil then SetScale(ent, 0.16, 3.2, 0.16) end
+    end
+  end
+end
+
+local function nodeName(id)
+  for _, nd in ipairs(NODES) do
+    if nd.id == id then return nd.name end
+  end
+  return "荒野"
+end
+
+local function updateDrive(dt)
+  local throttle = (ActionDown("w") and 1 or 0) - (ActionDown("s") and 1 or 0)
+  local steer = (ActionDown("a") and 1 or 0) - (ActionDown("d") and 1 or 0)
+  if autoPilot then
+    driveT = driveT + dt
+    if driveT > 16.0 then
+      autoPilot = false
+      setMode("garage")  -- 验证回路：自动开 16s 后停回车库模式
+      return
+    end
+    throttle = 1
+    steer = math.sin(driveT * 0.35) * 0.8
+  end
+
+  -- 超载惩罚：极速/加速按超出比例打折
+  local ratio = stats.weight / WEIGHT_MAX
+  local maxSp, acc = DRIVE.maxSpeed, DRIVE.accel
+  if ratio > 1.0 then
+    local over = math.min(1.0, ratio - 1.0)
+    maxSp = maxSp * (1.0 - over * 0.45)
+    acc = acc * (1.0 - over * 0.5)
+  end
+
+  if throttle > 0 then
+    rv.speed = math.min(maxSp, rv.speed + acc * dt)
+  elseif throttle < 0 then
+    if rv.speed > 0.05 then
+      rv.speed = math.max(0.0, rv.speed - DRIVE.brake * dt)
+    else
+      rv.speed = math.max(-DRIVE.reverseMax, rv.speed - acc * 0.6 * dt)
+    end
+  else
+    local mag = math.abs(rv.speed) - DRIVE.drag * dt
+    if mag < 0 then mag = 0 end
+    rv.speed = (rv.speed >= 0) and mag or -mag
+  end
+
+  -- 转向：速度越低越难打方向；倒车反向（贴真实驾驶感）
+  local sf = math.min(1.0, math.abs(rv.speed) / 3.0)
+  if sf > 0.01 and steer ~= 0 then
+    local dir = (rv.speed < -0.05) and -1 or 1
+    rv.yaw = rv.yaw + steer * DRIVE.steerRate * sf * dt * dir
+  end
+
+  local fx, fz = math.sin(rv.yaw), math.cos(rv.yaw)
+  rv.x = rv.x + fx * rv.speed * dt
+  rv.z = rv.z + fz * rv.speed * dt
+
+  applyRvTransform()
+  if groundEnt ~= nil then
+    SetPosition(groundEnt, { x = rv.x, y = -0.05, z = rv.z })
+  end
+  recycleProps(fx, fz)
+
+  -- 后轮扬尘
+  if math.abs(rv.speed) > 2.5 then
+    dustAcc = dustAcc + dt * (6.0 + math.abs(rv.speed) * 1.6)
+    while dustAcc >= 1.0 do
+      dustAcc = dustAcc - 1.0
+      local s = (math.random() < 0.5) and -1.3 or 1.3
+      local wx, wz = rotOf(s, -2.9)
+      EmitParticles({
+        pos = { x = wx, y = 0.12, z = wz }, count = 2,
+        vel = { x = -fx * 1.2, y = 0.9, z = -fz * 1.2 },
+        speedMin = 0.3, speedMax = 1.2,
+        lifeMin = 0.5, lifeMax = 1.1,
+        sizeStart = 0.35, sizeEnd = 1.5,
+        color = { r = 0.58, g = 0.53, b = 0.44, a = 0.45 },
+        colorEnd = { r = 0.58, g = 0.53, b = 0.44, a = 0.0 },
+        additive = false, gravity = 0,
+      })
+    end
+  else
+    dustAcc = 0
+  end
+
+  -- 临近节点（12m 内可停靠）
+  nearNode = nil
+  local best = 144
+  for _, nd in ipairs(NODES) do
+    local ddx, ddz = rv.x - nd.x, rv.z - nd.z
+    local d2 = ddx * ddx + ddz * ddz
+    if d2 < best then best = d2 nearNode = nd end
+  end
+end
+
+-- 相机：车库=场景原始机位（随 rv 平移）；驾驶=车后追逐（平滑 + 高速微震）
+local function updateCamera(dt)
+  if camEnt == nil then return end
+  local fx, fz = math.sin(rv.yaw), math.cos(rv.yaw)
+  local tx, ty, tz, lookx, lookz, looky
+  if mode == "drive" then
+    local cp, sp = math.cos(DRIVE.camPitch), math.sin(DRIVE.camPitch)
+    tx = rv.x - fx * DRIVE.camDist * cp
+    ty = 1.4 + sp * DRIVE.camDist
+    tz = rv.z - fz * DRIVE.camDist * cp
+    lookx, lookz, looky = rv.x + fx * 2.5, rv.z + fz * 2.5, 0.9
+  else
+    tx, ty, tz = rv.x, 11.5, rv.z - 9.2
+    lookx, lookz, looky = rv.x, rv.z, 0.0
+  end
+  if camSmooth == nil then camSmooth = { x = tx, y = ty, z = tz } end
+  local k = 1 - math.exp(-5.0 * dt)
+  camSmooth.x = camSmooth.x + (tx - camSmooth.x) * k
+  camSmooth.y = camSmooth.y + (ty - camSmooth.y) * k
+  camSmooth.z = camSmooth.z + (tz - camSmooth.z) * k
+  local sx, sy, sz = camSmooth.x, camSmooth.y, camSmooth.z
+  if mode == "drive" then
+    local amp = math.min(0.05, math.abs(rv.speed) * 0.005)
+    sx = sx + (math.random() - 0.5) * amp
+    sy = sy + (math.random() - 0.5) * amp
+  end
+  SetPosition(camEnt, { x = sx, y = sy, z = sz })
+  local dx, dy, dz = lookx - sx, looky - sy, lookz - sz
+  local len = math.sqrt(dx * dx + dy * dy + dz * dz)
+  if len > 1e-4 then SetLook(camEnt, dx / len, dy / len, dz / len) end
+end
+
+function setMode(m)
+  if mode == m then return end
+  mode = m
+  if m == "garage" then
+    rv.speed = 0
+    if nearNode then
+      curNode = nearNode.id
+      toast.text = "已停靠: " .. nearNode.name .. " — 车库模式（可改装）"
+    else
+      toast.text = "荒野停车 — 车库模式（可改装）"
+    end
+    toast.t = 3.5
+  else
+    toast.text = "上路！W/S 油门·刹车  A/D 转向  空格 停车"
+    toast.t = 4.5
+  end
+  if ghostEnt ~= nil then SetVisible(ghostEnt, false) end
+  if hoverDecalEnt ~= nil then SetVisible(hoverDecalEnt, false) end
+  hover = nil
+  if gridFloorEnt ~= nil then
+    SetVisible(gridFloorEnt, (m == "garage") and gridVisible or false)
+  end
+  if gridRoofEnt ~= nil then
+    SetVisible(gridRoofEnt, (m == "garage") and gridVisible and curLayer == "roof" or false)
+  end
 end
 
 -- ---------------------------------------------------------------------------
@@ -447,7 +770,9 @@ local function saveLayout()
     rows[#rows + 1] = { id = inst.cat.id, cx = inst.cx, cz = inst.cz,
                         rot = inst.rot, layer = inst.layer }
   end
-  local data = { cell = CELL, gw = GW, gh = GH, materials = materials, modules = rows }
+  local data = { cell = CELL, gw = GW, gh = GH, materials = materials,
+                 rv = { x = rv.x, z = rv.z, yaw = rv.yaw, node = curNode },
+                 modules = rows }
   local ok = WriteText("saves/layout.json", jsonEncode(data))
   toast.text = ok and "布局已保存 (saves/layout.json)" or "保存失败"
   toast.t = 2.5
@@ -496,6 +821,14 @@ local function loadLayout()
         curLayer = saved
       end
     end
+  end
+  -- 房车世界位姿（旧存档无 rv 字段 = 原点）
+  if type(data.rv) == "table" then
+    rv.x = tonumber(data.rv.x) or 0
+    rv.z = tonumber(data.rv.z) or 0
+    rv.yaw = tonumber(data.rv.yaw) or 0
+    curNode = tostring(data.rv.node or "camp")
+    applyRvTransform()
   end
   computeReachability()
   toast.text = "布局已读取"
@@ -703,6 +1036,18 @@ end
 -- 生命周期
 -- ---------------------------------------------------------------------------
 function on_start()
+  camEnt = FindNamedEntity("Main Camera")
+  groundEnt = FindNamedEntity("Ground")
+  collectRvParts()
+  -- 地面放大到 800x800：追逐相机高度下 60x60 的地面边缘会露馅
+  if groundEnt ~= nil then SetScale(groundEnt, 800, 0.1, 800) end
+  spawnProps()
+  spawnMarkers()
+  do  -- 验证钩子：工作目录放 autopilot_on.txt 即自动上路巡航（截图验收用；
+      -- Lua 沙箱无 os 库，读不了环境变量）
+    local flag = ReadText("autopilot_on.txt")
+    autoPilot = (flag ~= nil and flag ~= "")
+  end
   ensureHelpers()
   -- 初始示例布局（有存档时会被覆盖）：一眼看到“布置好的房车”
   place(CATALOG[1], 1, 0, 0, true)    -- 双人床（贴后墙右侧，3x4 格）
@@ -723,11 +1068,23 @@ function on_start()
   -- 尝试自动读取上次布局
   local text = ReadText("saves/layout.json")
   if text and text ~= "" then loadLayout() end
+  applyRvTransform()
+  if autoPilot then setMode("drive") end
 end
 
 function on_update(ent, dt)
   if toast.t > 0 then toast.t = toast.t - dt end
   ensureHelpers()
+
+  -- 驾驶模式：车库交互（放置/拆除/热栏）全部挂起
+  if mode == "drive" then
+    if ActionPressed("space") then setMode("garage") end
+    updateDrive(dt)
+    updateCamera(dt)
+    return
+  end
+  if ActionPressed("t") then setMode("drive") end
+  updateCamera(dt)
 
   -- 键盘
   for i, key in ipairs(HOTKEYS) do
@@ -773,8 +1130,10 @@ function on_update(ent, dt)
       local baseY = (curLayer == "roof") and ROOF_Y or FLOOR_Y
       local ox = ORIGIN_X + cx * CELL + w * CELL * 0.5
       local oz = ORIGIN_Z + cz * CELL + h * CELL * 0.5
+      local gwx, gwz = rotOf(ox, oz)
       SetVisible(ghostEnt, true)
-      SetPosition(ghostEnt, { x = ox, y = baseY + 0.035, z = oz })
+      SetPosition(ghostEnt, { x = gwx, y = baseY + 0.035, z = gwz })
+      SetRotationY(ghostEnt, rv.yaw)
       SetScale(ghostEnt, w * CELL - 0.04, 0.06, h * CELL - 0.04)
       if ghostValidLast ~= valid then
         setGhostColor(valid)
@@ -785,11 +1144,11 @@ function on_update(ent, dt)
       if inst then
         local iw, ih = footprint(inst.cat, inst.rot)
         local baseYI = (inst.layer == "roof") and ROOF_Y or FLOOR_Y
-        SetPosition(hoverDecalEnt, {
-          x = ORIGIN_X + inst.cx * CELL + iw * CELL * 0.5,
-          y = baseYI,
-          z = ORIGIN_Z + inst.cz * CELL + ih * CELL * 0.5,
-        })
+        local hlx = ORIGIN_X + inst.cx * CELL + iw * CELL * 0.5
+        local hlz = ORIGIN_Z + inst.cz * CELL + ih * CELL * 0.5
+        local hwx, hwz = rotOf(hlx, hlz)
+        SetPosition(hoverDecalEnt, { x = hwx, y = baseYI, z = hwz })
+        SetRotationY(hoverDecalEnt, rv.yaw)
         SetScale(hoverDecalEnt, iw * CELL, 1.0, ih * CELL)
         SetDecal(hoverDecalEnt, 1.0, 0.45, inst.cat.mh + 0.25)
       end
@@ -824,8 +1183,61 @@ function on_update(ent, dt)
   end
 end
 
+-- 驾驶 HUD：速度表 / 档位 / 载重（超载变红）/ 临近节点提示
+local function drawDriveHud()
+  local vp = GetViewportSize()
+  local vw = (vp and vp.w) or 1280
+  local vh = (vp and vp.h) or 720
+  local kmh = math.floor(math.abs(rv.speed) * 3.6)
+  local ratio = stats.weight / WEIGHT_MAX
+  local over = ratio > 1.0
+
+  local pw, ph = 210, 100
+  local px, py = 10, vh - ph - 10
+  DrawRect(px, py, pw, ph, 0.08, 0.09, 0.10, 0.72)
+  DrawRectOutline(px, py, pw, ph, 0.55, 0.52, 0.42, 0.9)
+  local gear = (rv.speed > 0.05) and "D" or ((rv.speed < -0.05) and "R" or "N")
+  DrawText(string.format("%d", kmh), px + 14, py + 10, 34,
+           over and 1.0 or 0.95, over and 0.5 or 0.92, over and 0.35 or 0.78, 1)
+  DrawText("km/h", px + 84, py + 26, 15, 0.7, 0.68, 0.62, 1)
+  DrawText("挡位 " .. gear, px + 140, py + 26, 15, 0.6, 0.85, 0.95, 1)
+  DrawText(string.format("载重 %.0f / %d kg%s", stats.weight, WEIGHT_MAX,
+           over and "  超载! 极速受限" or ""),
+           px + 14, py + 60, 13, over and 1 or 0.85, over and 0.45 or 0.84,
+           over and 0.3 or 0.8, 1)
+  DrawRect(px + 14, py + 80, pw - 28, 6, 0.13, 0.13, 0.14, 0.9)
+  DrawRect(px + 14, py + 80, (pw - 28) * math.min(1, ratio), 6,
+           over and 0.88 or 0.45, over and 0.28 or 0.78, over and 0.24 or 0.44, 1)
+
+  local hints = { "W 油门   S 刹车/倒车", "A/D 转向   空格 停车" }
+  for i, h in ipairs(hints) do
+    DrawText(h, vw - 14, 14 + (i - 1) * 20, 14, 0.85, 0.84, 0.80, 0.9, true, true)
+  end
+
+  local top = "停靠点: " .. nodeName(curNode)
+  if nearNode and nearNode.id ~= curNode then
+    top = top .. "   ▶ 临近 " .. nearNode.name .. "（空格停靠）"
+  end
+  DrawText(top, math.floor(vw * 0.5), 14, 16, 0.95, 0.9, 0.75, 1, true)
+
+  -- 节点名字牌：标记柱顶投影到屏幕
+  for _, nd in ipairs(NODES) do
+    if nd.id ~= "camp" then
+      local sp = WorldToScreen(nd.x, 3.6, nd.z)
+      if sp then
+        DrawText("▲ " .. nd.name, math.floor(sp.x), math.floor(sp.y), 15,
+                 0.95, 0.85, 0.45, 1, true)
+      end
+    end
+  end
+
+  if toast.t > 0 then
+    DrawText(toast.text, math.floor(vw * 0.5), 120, 16, 0.98, 0.93, 0.75, 1, true)
+  end
+end
+
 -- 2D HUD 必须在 on_render 里画：draw2d 上下文只在渲染期接线，
 -- on_update 里的 DrawRect/DrawText 会被静默丢弃。
 function on_render()
-  drawHud()
+  if mode == "drive" then drawDriveHud() else drawHud() end
 end

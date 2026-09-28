@@ -1,0 +1,11 @@
+{
+  "components": {
+    "transform": { "pos": [0, 0, 0], "rot": [0, 0, 0, 1], "scale": [1, 1, 1] },
+    "mesh": {
+      "meshKey": "cube",
+      "castShadow": true,
+      "receiveShadow": true,
+      "material": { "ao": 1, "colorHex": "#C79E1B", "metallic": 0.2, "roughness": 0.5, "uvRepeat": 1 }
+    }
+  }
+}
