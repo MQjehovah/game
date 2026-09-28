@@ -93,6 +93,7 @@ local props, markersSpawned = {}, false  -- 荒漠循环道具 / 节点标记
 local camSmooth, nearNode        -- 相机平滑位置 / 临近节点
 local dustAcc = 0
 local autoPilot, driveT = false, 0  -- RV_AUTOPILOT=1 自动驾驶（视觉验收钩子）
+local rvBody = nil               -- RV 动态刚体（Jolt；位姿/碰撞由物理解算）
 
 -- ---------------------------------------------------------------------------
 -- 小工具
@@ -442,6 +443,10 @@ local function placeProp(p, fx, fz, fMin, fMax)
       local wx = rv.x + fx * f - fz * lat
       local wz = rv.z + fz * f + fx * lat
       local blocked = false
+      do  -- 不压在房车身上（防止初始穿透被 Jolt 弹飞）
+        local rdx, rdz = wx - rv.x, wz - rv.z
+        if rdx * rdx + rdz * rdz < 81 then blocked = true end
+      end
       for _, nd in ipairs(NODES) do
         local ddx, ddz = wx - nd.x, wz - nd.z
         if ddx * ddx + ddz * ddz < 100 then blocked = true break end
@@ -453,6 +458,18 @@ local function placeProp(p, fx, fz, fMin, fMax)
         SetScale(p.ent, sx, sy, sz)
         SetRotationY(p.ent, math.random() * math.pi * 2)
         p.x, p.z = wx, wz
+        -- 物理体：岩石/枯树/残骸是动态刚体（可被撞开）；灌木贴地无碰撞；
+        -- 回收复用已有刚体（传送 + 清速度），避免增删抖动
+        if p.body then
+          PhysicsSetPosition(p.body, { x = wx, y = y, z = wz })
+          PhysicsSetVelocity(p.body, { x = 0, y = 0, z = 0 })
+        elseif p.kind == "rv_rock" or p.kind == "rv_tree" or p.kind == "rv_wreck" then
+          local dens = (p.kind == "rv_rock") and 500 or 220
+          p.body = PhysicsAddBox({ x = wx, y = y, z = wz },
+                                 { x = sx * 0.5, y = sy * 0.5, z = sz * 0.5 },
+                                 true, { mass = math.max(60, sx * sy * sz * dens),
+                                         friction = 0.6, restitution = 0.05 })
+        end
         return
       end
     end
@@ -478,6 +495,17 @@ local function spawnProps()
 end
 local function recycleProps(fx, fz)
   for _, p in ipairs(props) do
+    -- 被撞开的道具：视觉跟随物理体（位置以 Jolt 解算为准）
+    if p.body then
+      local pp = PhysicsGetPosition(p.body)
+      if pp then
+        local mx, mz = pp.x - p.x, pp.z - p.z
+        if mx * mx + mz * mz > 1e-6 then
+          p.x, p.z = pp.x, pp.z
+          SetPosition(p.ent, { x = pp.x, y = pp.y, z = pp.z })
+        end
+      end
+    end
     local dx, dz = p.x - rv.x, p.z - rv.z
     local f = dx * fx + dz * fz
     local lat = dx * (-fz) + dz * fx
@@ -495,7 +523,12 @@ local function spawnMarkers()
   for _, nd in ipairs(NODES) do
     if nd.id ~= "camp" then  -- 营地=原点，柱子会插在房车里
       local ent = SpawnPrefab("rv_marker", { x = nd.x, y = 1.6, z = nd.z })
-      if ent ~= nil then SetScale(ent, 0.16, 3.2, 0.16) end
+      if ent ~= nil then
+        SetScale(ent, 0.16, 3.2, 0.16)
+        -- 静态碰撞柱（撞上会停车，穿不过去）
+        PhysicsAddBox({ x = nd.x, y = 1.6, z = nd.z },
+                      { x = 0.09, y = 1.6, z = 0.09 }, false, {})
+      end
     end
   end
 end
@@ -519,6 +552,22 @@ local function updateDrive(dt)
     end
     throttle = 1
     steer = math.sin(driveT * 0.35) * 0.8
+  end
+
+  -- 先读回上一物理步：位置/速度以 Jolt 解算为准。被障碍挡住时速度投影
+  -- 小于意图值 -> 写回 rv.speed，撞墙自然减速。必须在油门积分之前读，
+  -- 否则读到的永远是上帧刚设进去的值（会死锁在 0）。
+  local bodyVy = 0
+  if rvBody then
+    local p = PhysicsGetPosition(rvBody)
+    if p then rv.x, rv.z = p.x, p.z end
+    local v = PhysicsGetVelocity(rvBody)
+    if v then
+      bodyVy = v.y
+      local fxr, fzr = math.sin(rv.yaw), math.cos(rv.yaw)
+      local proj = v.x * fxr + v.z * fzr
+      if math.abs(proj) < math.abs(rv.speed) then rv.speed = proj end
+    end
   end
 
   -- 超载惩罚：极速/加速按超出比例打折
@@ -552,8 +601,17 @@ local function updateDrive(dt)
   end
 
   local fx, fz = math.sin(rv.yaw), math.cos(rv.yaw)
-  rv.x = rv.x + fx * rv.speed * dt
-  rv.z = rv.z + fz * rv.speed * dt
+
+  -- 施加本帧意图：速度驱动（碰撞/推挤由物理在下一步解算），朝向每帧覆盖
+  -- 以保持简化驾驶模型（不会翻车）。无刚体时退化为直接积分。
+  if rvBody then
+    PhysicsSetVelocity(rvBody, { x = fx * rv.speed, y = bodyVy, z = fz * rv.speed })
+    local half = rv.yaw * 0.5
+    PhysicsSetRotation(rvBody, { x = 0, y = math.sin(half), z = 0, w = math.cos(half) })
+  else
+    rv.x = rv.x + fx * rv.speed * dt
+    rv.z = rv.z + fz * rv.speed * dt
+  end
 
   applyRvTransform()
   if groundEnt ~= nil then
@@ -630,6 +688,7 @@ function setMode(m)
   mode = m
   if m == "garage" then
     rv.speed = 0
+    if rvBody then PhysicsSetVelocity(rvBody, { x = 0, y = 0, z = 0 }) end
     if nearNode then
       curNode = nearNode.id
       toast.text = "已停靠: " .. nearNode.name .. " — 车库模式（可改装）"
@@ -829,6 +888,10 @@ local function loadLayout()
     rv.yaw = tonumber(data.rv.yaw) or 0
     curNode = tostring(data.rv.node or "camp")
     applyRvTransform()
+    if rvBody then  -- 刚体跟着传送，避免读档后物理把车拽回旧位置
+      PhysicsSetPosition(rvBody, { x = rv.x, y = 0.9, z = rv.z })
+      PhysicsSetVelocity(rvBody, { x = 0, y = 0, z = 0 })
+    end
   end
   computeReachability()
   toast.text = "布局已读取"
@@ -1069,6 +1132,12 @@ function on_start()
   local text = ReadText("saves/layout.json")
   if text and text ~= "" then loadLayout() end
   applyRvTransform()
+  -- RV 动态刚体：半长 (1.2, 0.9, 4.3)，底面落在 y=0 隐式地面上；
+  -- 载重影响质量（超载的车更沉、更难被推动，也推东西更狠）
+  rvBody = PhysicsAddBox({ x = rv.x, y = 0.9, z = rv.z },
+                         { x = 1.2, y = 0.9, z = 4.3 }, true,
+                         { mass = math.max(800, 1200 + stats.weight * 0.8),
+                           friction = 0.4, restitution = 0.05 })
   if autoPilot then setMode("drive") end
 end
 

@@ -6,7 +6,7 @@
     "exposure": 1.0,
     "shadowDistance": 60.0,
     "shadowSoftness": 1.2,
-    "shadowNormalOffset": 1.5
+    "shadowNormalOffset": 3.0
   },
   "entities": [
     {
