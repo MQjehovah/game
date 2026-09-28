@@ -62,21 +62,30 @@ inline float DecodeLinearDepth(const math::Vec4& packed) {
 // The occlusion value for one pixel given a screen-space depth function. This
 // is the CPU mirror of the SSAO fragment shader: `sample` returns the decoded
 // linear depth at a (x,y) in [0,1] UV space; `depth` is the centre depth.
-// Returns >= 0 occlusion (higher = more occluded), eventually clamped to 1 by
-// the caller. Callers/tests can inject a depth function to unit-test.
+// `depthGradient` is the surface's local depth slope (depth per UV unit); it is
+// subtracted as the expected planar depth at each tap so a slanted plane does
+// not occlude itself (see the GPU shader's planar-depth rejection). Returns >= 0
+// occlusion (higher = more occluded), eventually clamped to 1 by the caller.
+// Callers/tests can inject a depth function to unit-test.
 inline float SsaoOcclusion(float depth, float radius, float bias,
                            float (*sample)(const math::Vec2& uv, void* user),
-                           void* user, const math::Vec2& uv, float texelSize) {
+                           void* user, const math::Vec2& uv, float texelSize,
+                           const math::Vec2& depthGradient = {0.0f, 0.0f}) {
     float occ = 0.0f;
     int count = 0;
     for (int i = 0; i < kSsaoKernelSize; ++i) {
         const math::Vec2 offset(kSsaoKernel[i][0], kSsaoKernel[i][1]);
         const float scale = kSsaoKernel[i][2];
         // Project the sample onto the fragment's view-space depth plane.
-        const float sampleDepth = sample(uv + offset * texelSize * radius * scale, user);
-        const float diff = depth - sampleDepth;
-        // A neighbour that is closer than the centre (diff > 0) occludes it;
-        // a farther one contributes nothing. The bias avoids self-occlusion.
+        const math::Vec2 tap = offset * texelSize * radius * scale;
+        const float sampleDepth = sample(uv + tap, user);
+        // Expected planar depth at the tap: the centre depth plus the surface
+        // slope projected on the tap offset. On a flat/sloped plane this
+        // cancels the geometric depth change, so only real occluders remain.
+        const float expected = depth + depthGradient.x * tap.x + depthGradient.y * tap.y;
+        const float diff = expected - sampleDepth;
+        // A neighbour that is closer than the expected plane (diff > 0) occludes
+        // it; a farther one contributes nothing. The bias avoids self-occlusion.
         if (diff > bias) occ += std::pow(1.0f - std::min(diff / radius, 1.0f), kSsaoPower);
         ++count;
     }
@@ -172,6 +181,19 @@ void main() {
     float raw = RawDepth(vUV);
     if (raw >= 0.9999) { FragColor = vec4(1.0, 1.0, 1.0, 1.0); return; } // sky/no geometry
     float centre = raw * uFar; // world units
+    // Planar-depth rejection. The kernel taps sit at different view distances on
+    // a slanted receiver, so on open ground (centre - neighbour) is positive on
+    // the downhill side and the fixed world bias cannot absorb it at grazing
+    // angles. That false self-occlusion left a smooth AO gradient on flat ground
+    // which, quantised into the AO target's 8 bits, read as view-angle-dependent
+    // horizontal stripes. Reconstruct the surface's local depth slope and
+    // subtract it from the expected neighbour depth so a plane occludes nothing
+    // however obliquely it is viewed. A tap that lands on the sky is skipped so
+    // the horizon's depth cliff cannot poison the slope.
+    float rx = RawDepth(vUV + vec2(uTexelSize.x, 0.0));
+    float ry = RawDepth(vUV + vec2(0.0, uTexelSize.y));
+    float gradX = (rx >= 0.9999) ? 0.0 : (rx - raw) * uFar;
+    float gradY = (ry >= 0.9999) ? 0.0 : (ry - raw) * uFar;
     // Project the world radius to screen space at the centre depth.
     float pixels = clamp(uRadius * uProjScale / max(centre, 0.001), 1.0, 128.0);
     vec2 step = uTexelSize * pixels;
@@ -184,10 +206,16 @@ void main() {
         else if (i == 3) { off = vec2(0.0, 1.0); scale = 0.9; }
         else if (i == 4) { off = vec2(-1.0, 0.8); scale = 0.7; }
         else { off = vec2(-0.6, -1.0); scale = 0.85; }
+        // Expected planar depth change at the tap. off.x/off.y are in texels and
+        // the step scales both by `pixels`, so the slope projected on the offset
+        // is (gradX*off.x + gradY*off.y)*pixels*scale; clamped so a depth cliff
+        // in the finite-difference estimate cannot fabricate occlusion.
+        float planar = clamp((gradX * off.x + gradY * off.y) * pixels * scale,
+                             -uRadius, uRadius);
         vec2 uv2 = vUV + off * step * scale;
         float s = RawDepth(uv2) * uFar;
         if (s >= uFar * 0.9999) continue; // sky sample
-        float diff = centre - s; // world units (positive: neighbour is closer)
+        float diff = (centre + planar) - s; // world units (positive: neighbour closer)
         if (diff > uBias) occ += pow(1.0 - min(diff / uRadius, 1.0), uPower);
     }
     float ao = clamp(1.0 - uPower * (occ / 6.0), 0.0, 1.0);
