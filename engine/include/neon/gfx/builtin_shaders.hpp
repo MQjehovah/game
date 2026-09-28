@@ -209,7 +209,7 @@ float ShadowFactor(sampler2D sm, vec2 uv, float lightDepth, float biasUnit) {
     // reads as per-pixel grain on every shadow edge and the stair-steps of
     // the coarse cascades show raw. A small guaranteed penumbra lets the
     // dither average into a smooth edge (softness still scales it up).
-    vec2 base = uShadowTexel * max(uShadowSoftness, 1.5);
+    vec2 base = uShadowTexel * max(uShadowSoftness, 0.0);
     if (uShadowSoftness <= 0.0) {
         float lit1 = 0.0;
         for (int x = 0; x < 2; ++x) {
@@ -509,7 +509,7 @@ void main() {
     vec3 extraLight = vec3(0.0);
     if (uHasEmissive) extraLight += texture(uEmissive, vUV).rgb * uEmissiveIntensity;
     // Tint self-glow: tint components pushed above 1.0 (HDR tint) emit light
-    // directly, no emissive texture needed — beacon lamps, glowing pickups,
+    // directly, no emissive texture needed �?beacon lamps, glowing pickups,
     // enemy eye weak points. The glow participates in bloom (HDR target), so
     // intensity > bloomThreshold (~1) reads as an actual light source.
     vec3 tintGlow = max(uTint.rgb - vec3(1.0), vec3(0.0));

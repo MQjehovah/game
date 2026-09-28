@@ -24,7 +24,7 @@ namespace neon::gfx {
 class ShadowSystem {
 public:
     static constexpr int kShadowCascades = 3;
-    static constexpr int kShadowMapSize = 1024;
+    static constexpr int kShadowMapSize = 2048;
     // Point-light shadows: the first kShadowPointLights point lights each get 6
     // faces (2D maps; layered cubemap FBOs are unreliable on the tested Intel
     // driver). The lit shader computes the face + uv from the fragment->light
