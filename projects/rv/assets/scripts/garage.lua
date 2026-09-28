@@ -51,6 +51,15 @@ local DRIVE = {
   steerRate = 1.4,  -- rad/s（3 m/s 以上打满，速度越低越难打方向）
   camDist = 10.5, camPitch = 0.40,
 }
+-- 停靠搜刮（P2）：停在节点后搜物资箱，威胁随搜刮上涨，满值触发撤离时限
+local STOP = {
+  crates = 5,        -- 每个停靠点刷新的物资箱数
+  threatMax = 6,     -- 威胁满值 → 触发撤离时限
+  evacTime = 15,     -- 撤离时限（秒）
+  searchThreat = 1,  -- 每次搜刮基础威胁（+ 节点危险度）
+  keepRatio = 0.6,   -- 超时被袭保留下来的物资比例（损失 40%）
+  pickRadius = 30,   -- 点击搜箱的屏幕命中半径（px）
+}
 -- worldmap.json 节点的世界坐标（驾驶目的地；营地=原点）。地图 1.0 ≈ 160m。
 local NODES = {
   { id = "camp",    name = "营地",       x = 0,   z = 0 },
@@ -94,6 +103,16 @@ local camSmooth, nearNode        -- 相机平滑位置 / 临近节点
 local dustAcc = 0
 local autoPilot, driveT = false, 0  -- RV_AUTOPILOT=1 自动驾驶（视觉验收钩子）
 local rvBody = nil               -- RV 动态刚体（Jolt；位姿/碰撞由物理解算）
+
+-- 停靠搜刮状态
+local stopBag = {}     -- 本次停靠已搜获（撤离/上车时入库）
+local stopThreat = 0   -- 尸群威胁 0..threatMax
+local evacT = -1       -- 撤离倒计时（<0 = 未触发）
+local crates = {}      -- 场上物资箱 { ent=, x=, z= }
+local day = 1          -- 旅途天数（每次启程 +1）
+local mapOpen = false  -- 世界地图开关（M）
+local autoT = 0        -- autopilot 停靠自动搜箱计时
+local autoTarget = nil -- autopilot 寻的目的地（最近的非营地节点）
 
 -- ---------------------------------------------------------------------------
 -- 小工具
@@ -540,18 +559,157 @@ local function nodeName(id)
   return "荒野"
 end
 
+local function nodeById(id)
+  for _, nd in ipairs(NODES) do
+    if nd.id == id then return nd end
+  end
+  return nil
+end
+
+-- ---------------------------------------------------------------------------
+-- 停靠搜刮：物资箱 / 战利品 Roll / 尸群威胁 / 撤离
+-- ---------------------------------------------------------------------------
+local function nodeLootRoll(nd)
+  local out = {}
+  for mat, range in pairs(nd.loot or {}) do
+    local lo, hi = range[1] or 0, range[2] or 0
+    if hi > lo then
+      local n = lo + math.random(0, hi - lo)
+      if math.random() < 0.12 then n = n + hi end  -- 12% 意外大件
+      if n > 0 then out[mat] = (out[mat] or 0) + n end
+    end
+  end
+  if not next(out) then out.cloth = 1 end  -- 保底
+  return out
+end
+
+local function despawnCrates()
+  for _, c in ipairs(crates) do Despawn(c.ent) end
+  crates = {}
+end
+
+local function spawnCrates()
+  despawnCrates()
+  for i = 1, STOP.crates do
+    local ent = SpawnPrefab("rv_loot_crate", { x = 0, y = -50, z = 0 })
+    if ent ~= nil then
+      -- 环形随机落位（房车局部系）：3..8m，避开车体 2.6m / 其他箱 1.4m
+      local cx, cz
+      for _ = 1, 12 do
+        local a = math.random() * math.pi * 2
+        local r = 3.0 + math.random() * 5.0
+        local wx, wz = rotOf(math.sin(a) * r, math.cos(a) * r)
+        local rdx, rdz = wx - rv.x, wz - rv.z
+        if rdx * rdx + rdz * rdz >= 6.75 then
+          local ok = true
+          for _, c in ipairs(crates) do
+            local ddx, ddz = wx - c.x, wz - c.z
+            if ddx * ddx + ddz * ddz < 1.96 then ok = false break end
+          end
+          if ok then cx, cz = wx, wz break end
+        end
+      end
+      if cx == nil then  -- 兜底：右侧排开
+        cx, cz = rotOf(3.2, -2.0 + 1.4 * (i - 1))
+      end
+      SetPosition(ent, { x = cx, y = 0.28, z = cz })
+      SetScale(ent, 0.55, 0.55, 0.55)
+      SetRotationY(ent, math.random() * math.pi * 2)
+      crates[#crates + 1] = { ent = ent, x = cx, z = cz }
+    end
+  end
+end
+
+local function searchCrate(idx)
+  local c = crates[idx]
+  if c == nil then return end
+  local nd = nodeById(curNode) or { loot = {}, danger = 0 }
+  local loot = nodeLootRoll(nd)
+  local parts = {}
+  for mat, n in pairs(loot) do
+    stopBag[mat] = (stopBag[mat] or 0) + n
+    parts[#parts + 1] = MAT_NAMES[mat] .. "+" .. n
+  end
+  SpawnFloatText(c.x, 0.9, c.z, table.concat(parts, "  "),
+                 false, 1.0, 0.85, 0.45, 1.0)
+  Despawn(c.ent)
+  table.remove(crates, idx)
+  -- 尸群被搜刮声惊动：+1 基础 + 节点危险度
+  stopThreat = math.min(STOP.threatMax,
+                        stopThreat + STOP.searchThreat + (nd.danger or 0))
+  if stopThreat >= STOP.threatMax and evacT < 0 then
+    evacT = STOP.evacTime
+    toast.text = "尸群被惊动了！赶紧撤（E 收藏撤离 / T 直接上路）"
+    toast.t = 3.5
+  end
+end
+
+-- 物资入库；keepRatio < 1 表示被袭折损。返回入库摘要文本。
+local function bankStopBag(keepRatio)
+  local got = {}
+  for mat, n in pairs(stopBag) do
+    local v = math.floor(n * (keepRatio or 1) + 0.5)
+    if v > 0 then
+      materials[mat] = (materials[mat] or 0) + v
+      got[#got + 1] = MAT_NAMES[mat] .. "+" .. v
+    end
+  end
+  stopBag = {}
+  return table.concat(got, " ")
+end
+
+-- 结束停靠（keepRatio = 1 主动撤离 / STOP.keepRatio 被袭折损）→ 车库模式
+local function endStop(keepRatio)
+  local got = bankStopBag(keepRatio)
+  despawnCrates()
+  stopThreat = 0
+  evacT = -1
+  day = day + 1
+  setMode("garage")
+  toast.text = (got == "" and "空手而归" or "物资入库: " .. got)
+               .. " — 第 " .. day .. " 天"
+  toast.t = 4.0
+end
+
 local function updateDrive(dt)
   local throttle = (ActionDown("w") and 1 or 0) - (ActionDown("s") and 1 or 0)
   local steer = (ActionDown("a") and 1 or 0) - (ActionDown("d") and 1 or 0)
   if autoPilot then
     driveT = driveT + dt
-    if driveT > 16.0 then
+    if nearNode and nearNode.id ~= "camp" and driveT > 3.0 then
+      setMode("stop")  -- 靠站（营地是家，不停；autoPilot 保持 true 接管搜刮）
+      return
+    end
+    if driveT > 45.0 then  -- 45s 没靠上任何节点：荒野停车兜底
       autoPilot = false
-      setMode("garage")  -- 验证回路：自动开 16s 后停回车库模式
+      setMode("garage")
       return
     end
     throttle = 1
-    steer = math.sin(driveT * 0.35) * 0.8
+    -- 朝最近的非营地节点寻的（验证钩子）：误差角 → 转向
+    --（yaw 约定：前进 = (sin yaw, cos yaw)，故目标角 = atan2(dx, dz)）
+    if autoTarget == nil then
+      local bestD = 1e18
+      for _, nd in ipairs(NODES) do
+        if nd.id ~= "camp" then
+          local ddx, ddz = nd.x - rv.x, nd.z - rv.z
+          local d2 = ddx * ddx + ddz * ddz
+          if d2 < bestD then bestD = d2 autoTarget = nd end
+        end
+      end
+    end
+    local target = autoTarget
+    if target then
+      local dx, dz = target.x - rv.x, target.z - rv.z
+      local desired
+      if dz > 0 then desired = math.atan(dx / dz)
+      elseif dz < 0 then desired = math.atan(dx / dz) + (dx >= 0 and math.pi or -math.pi)
+      else desired = (dx >= 0) and (math.pi * 0.5) or (-math.pi * 0.5) end
+      local err = desired - rv.yaw
+      while err > math.pi do err = err - 2 * math.pi end
+      while err < -math.pi do err = err + 2 * math.pi end
+      steer = math.max(-1, math.min(1, err * 1.5))
+    end
   end
 
   -- 先读回上一物理步：位置/速度以 Jolt 解算为准。被障碍挡住时速度投影
@@ -685,20 +843,40 @@ end
 
 function setMode(m)
   if mode == m then return end
+  local prev = mode
   mode = m
   if m == "garage" then
     rv.speed = 0
     if rvBody then PhysicsSetVelocity(rvBody, { x = 0, y = 0, z = 0 }) end
-    if nearNode then
-      curNode = nearNode.id
-      toast.text = "已停靠: " .. nearNode.name .. " — 车库模式（可改装）"
-    else
-      toast.text = "荒野停车 — 车库模式（可改装）"
-    end
+    if prev == "stop" then despawnCrates() end
+    toast.text = "荒野停车 — 车库模式（可改装）"
     toast.t = 3.5
-  else
-    toast.text = "上路！W/S 油门·刹车  A/D 转向  空格 停车"
-    toast.t = 4.5
+  elseif m == "stop" then
+    rv.speed = 0
+    if rvBody then PhysicsSetVelocity(rvBody, { x = 0, y = 0, z = 0 }) end
+    if nearNode then curNode = nearNode.id end
+    stopBag, stopThreat, evacT = {}, 0, -1
+    spawnCrates()
+    local nd = nodeById(curNode)
+    local stars = string.rep("★", nd and nd.danger or 0)
+    toast.text = "停靠 " .. nodeName(curNode) .. (stars ~= "" and ("（危险 " .. stars .. "）") or "")
+                 .. " — 左键搜箱  E 收藏撤离  T 上路"
+    toast.t = 5.0
+  else  -- drive
+    if prev == "stop" then
+      -- 开走 = 收工：物资入库 + 天数 +1（物资箱自然残留在这片荒野）
+      despawnCrates()
+      day = day + 1
+      local got = bankStopBag(1.0)
+      stopThreat = 0
+      evacT = -1
+      toast.text = (got == "" and "启程" or "物资入库: " .. got)
+                   .. " — 第 " .. day .. " 天"
+      toast.t = 4.0
+    else
+      toast.text = "上路！W/S 油门·刹车  A/D 转向  空格 停车"
+      toast.t = 4.5
+    end
   end
   if ghostEnt ~= nil then SetVisible(ghostEnt, false) end
   if hoverDecalEnt ~= nil then SetVisible(hoverDecalEnt, false) end
@@ -831,7 +1009,7 @@ local function saveLayout()
   end
   local data = { cell = CELL, gw = GW, gh = GH, materials = materials,
                  rv = { x = rv.x, z = rv.z, yaw = rv.yaw, node = curNode },
-                 modules = rows }
+                 day = day, modules = rows }
   local ok = WriteText("saves/layout.json", jsonEncode(data))
   toast.text = ok and "布局已保存 (saves/layout.json)" or "保存失败"
   toast.t = 2.5
@@ -887,6 +1065,7 @@ local function loadLayout()
     rv.z = tonumber(data.rv.z) or 0
     rv.yaw = tonumber(data.rv.yaw) or 0
     curNode = tostring(data.rv.node or "camp")
+    day = tonumber(data.day) or 1
     applyRvTransform()
     if rvBody then  -- 刚体跟着传送，避免读档后物理把车拽回旧位置
       PhysicsSetPosition(rvBody, { x = rv.x, y = 0.9, z = rv.z })
@@ -1028,8 +1207,8 @@ local function drawHud()
   -- 右上提示
   local hints = {
     "左键 放置   右键/X 拆除",
-    "R 旋转   Tab 地板/车顶",
-    "G 网格   M 补给   F5/F9 存/读",
+    "R 旋转   Tab 地板/车顶   G 网格",
+    "T 上路   M 地图   F5/F9 存/读",
   }
   for i, h in ipairs(hints) do
     DrawText(h, vw - 14, 14 + (i - 1) * 20, 14, 0.85, 0.84, 0.80, 0.9, true, true)
@@ -1104,6 +1283,24 @@ function on_start()
   collectRvParts()
   -- 地面放大到 800x800：追逐相机高度下 60x60 的地面边缘会露馅
   if groundEnt ~= nil then SetScale(groundEnt, 800, 0.1, 800) end
+  -- 合并 worldmap.json：名字/危险度/战利品表/链接（本文件 NODES 只持世界坐标）
+  do
+    local text = ReadText("assets/data/worldmap.json")
+    if text and text ~= "" then
+      local data = jsonDecode(text)
+      if type(data) == "table" and type(data.nodes) == "table" then
+        for _, nd in ipairs(data.nodes) do
+          local mine = nodeById(nd.id)
+          if mine then
+            mine.name = nd.name or mine.name
+            mine.danger = nd.danger or 0
+            mine.loot = nd.loot or {}
+            mine.links = nd.links or {}
+          end
+        end
+      end
+    end
+  end
   spawnProps()
   spawnMarkers()
   do  -- 验证钩子：工作目录放 autopilot_on.txt 即自动上路巡航（截图验收用；
@@ -1144,14 +1341,64 @@ end
 function on_update(ent, dt)
   if toast.t > 0 then toast.t = toast.t - dt end
   ensureHelpers()
+  if ActionPressed("m") then mapOpen = not mapOpen end
 
   -- 驾驶模式：车库交互（放置/拆除/热栏）全部挂起
   if mode == "drive" then
-    if ActionPressed("space") then setMode("garage") end
+    if ActionPressed("space") then
+      -- 靠在节点 12m 内 = 停靠搜刮，荒野 = 车库改装
+      if nearNode then setMode("stop") else setMode("garage") end
+    end
     updateDrive(dt)
     updateCamera(dt)
     return
   end
+
+  -- 停靠搜刮：搜箱 / 尸群威胁 / 撤离时限
+  if mode == "stop" then
+    if ActionPressed("e") then endStop(1.0) end
+    if mode == "stop" and ActionPressed("t") then setMode("drive") end
+  end
+  if mode == "stop" and evacT >= 0 then
+    evacT = evacT - dt
+    if evacT <= 0 then
+      toast.text = "尸群冲垮了停靠点！丢下部分物资…"
+      toast.t = 3.0
+      endStop(STOP.keepRatio)
+    end
+  end
+  if mode == "stop" then
+    -- 点击搜箱（屏幕空间命中最近的箱）
+    if InputMousePressed(0) then
+      local mp = InputMousePos()
+      local best, bestD = nil, STOP.pickRadius * STOP.pickRadius
+      for i, c in ipairs(crates) do
+        local sp = WorldToScreen(c.x, 0.5, c.z)
+        if sp then
+          local dx, dy = sp.x - mp.x, sp.y - mp.y
+          local d2 = dx * dx + dy * dy
+          if d2 < bestD then best, bestD = i, d2 end
+        end
+      end
+      if best then searchCrate(best) end
+    end
+    -- 自动化钩子：每 1.2s 搜最近一箱，搜完主动撤离（截图验收用）
+    if autoPilot then
+      autoT = autoT + dt
+      if autoT > 1.2 then
+        autoT = 0
+        if #crates > 0 then
+          searchCrate(1)
+        elseif evacT < 0 then
+          autoPilot = false
+          endStop(1.0)
+        end
+      end
+    end
+    updateCamera(dt)
+    return
+  end
+
   if ActionPressed("t") then setMode("drive") end
   updateCamera(dt)
 
@@ -1172,12 +1419,6 @@ function on_update(ent, dt)
   end
   if ActionPressed("f5") then saveLayout() end
   if ActionPressed("f9") then loadLayout() end
-  if ActionPressed("m") then
-    -- 沙盒补给（P2 搜刮上线后移除）
-    for k in pairs(materials) do materials[k] = materials[k] + 10 end
-    toast.text = "沙盒补给: 全材料 +10"
-    toast.t = 2.0
-  end
 
   -- 鼠标拾取
   local mp = InputMousePos()
@@ -1305,8 +1546,142 @@ local function drawDriveHud()
   end
 end
 
+-- 停靠 HUD：尸群威胁条 / 本次搜获 / 撤离警报 / 物资箱标记
+local function drawStopHud()
+  local vp = GetViewportSize()
+  local vw = (vp and vp.w) or 1280
+  local vh = (vp and vp.h) or 720
+  local nd = nodeById(curNode)
+
+  -- 顶部：地点 + 危险度 + 天数
+  local stars = string.rep("★", nd and nd.danger or 0)
+  DrawText("停靠 · " .. nodeName(curNode)
+           .. (stars ~= "" and ("  危险 " .. stars) or "")
+           .. "   第 " .. day .. " 天",
+           math.floor(vw * 0.5), 14, 16, 0.95, 0.88, 0.7, 1, true)
+
+  -- 左上：尸群威胁条（分段，绿→红）
+  local px, py, pw, ph = 10, 10, 216, 64
+  DrawRect(px, py, pw, ph, 0.08, 0.09, 0.10, 0.72)
+  DrawRectOutline(px, py, pw, ph, 0.55, 0.52, 0.42, 0.9)
+  DrawText("尸群威胁", px + 12, py + 7, 14, 0.9, 0.62, 0.5, 1)
+  local gap2 = 5
+  local segW = (pw - 24 - (STOP.threatMax - 1) * gap2) / STOP.threatMax
+  for i = 1, STOP.threatMax do
+    local sx = px + 12 + (i - 1) * (segW + gap2)
+    local t = i / STOP.threatMax
+    DrawRect(sx, py + 32, segW, 12, 0.12, 0.12, 0.13, 0.9)
+    if stopThreat >= i - 0.01 then
+      DrawRect(sx, py + 32, segW, 12, 0.35 + 0.62 * t, 0.75 - 0.55 * t, 0.25, 1)
+    end
+  end
+
+  -- 左下：本次搜获
+  local cats = 0
+  for _ in pairs(stopBag) do cats = cats + 1 end
+  local bw = 190
+  local bh = 34 + 21 * math.max(1, cats)
+  local bx, by = 10, vh - bh - 10
+  DrawRect(bx, by, bw, bh, 0.08, 0.09, 0.10, 0.72)
+  DrawRectOutline(bx, by, bw, bh, 0.55, 0.52, 0.42, 0.9)
+  DrawText("本次搜获", bx + 12, by + 7, 14, 0.85, 0.8, 0.62, 1)
+  if cats == 0 then
+    DrawText("（还没搜到东西）", bx + 12, by + 30, 13, 0.55, 0.55, 0.52, 1)
+  else
+    local yy = by + 30
+    for mat, n in pairs(stopBag) do
+      DrawText(MAT_NAMES[mat], bx + 12, yy, 13, 0.88, 0.86, 0.8, 1)
+      DrawText("x" .. n, bx + bw - 14, yy, 13, 0.95, 0.92, 0.82, 1, true)
+      yy = yy + 21
+    end
+  end
+
+  -- 撤离时限：全屏红闪 + 大字倒计时
+  if evacT >= 0 then
+    local flash = (math.floor(evacT * 4) % 2 == 0)
+    DrawRect(0, 0, vw, vh, 0.7, 0.05, 0.02, flash and 0.13 or 0.05)
+    DrawText(string.format("尸群逼近！%.0f 秒内撤离", math.ceil(evacT)),
+             math.floor(vw * 0.5), math.floor(vh * 0.28), 30,
+             1, flash and 0.25 or 0.5, 0.2, 1, true)
+  end
+
+  -- 场上物资箱标记
+  for _, c in ipairs(crates) do
+    local sp = WorldToScreen(c.x, 0.75, c.z)
+    if sp then
+      DrawText("□ 搜", math.floor(sp.x), math.floor(sp.y), 14,
+               1, 0.75, 0.35, 1, true)
+    end
+  end
+
+  local hints = { "左键 搜箱", "E 收藏撤离   T 上路", "M 世界地图" }
+  for i, h in ipairs(hints) do
+    DrawText(h, vw - 14, 14 + (i - 1) * 20, 14, 0.85, 0.84, 0.80, 0.9, true, true)
+  end
+
+  if toast.t > 0 then
+    DrawText(toast.text, math.floor(vw * 0.5), 120, 16, 0.98, 0.93, 0.75, 1, true)
+  end
+end
+
+-- 世界地图（M）：节点/链接/当前停靠点/房车位置，纯 2D 投影
+local function drawMapHud()
+  local vp = GetViewportSize()
+  local vw = (vp and vp.w) or 1280
+  local vh = (vp and vp.h) or 720
+  DrawRect(0, 0, vw, vh, 0.02, 0.03, 0.04, 0.55)
+  local pw, ph = 470, 380
+  local px = math.floor((vw - pw) * 0.5)
+  local py = math.floor((vh - ph) * 0.5)
+  DrawRect(px, py, pw, ph, 0.07, 0.08, 0.09, 0.93)
+  DrawRectOutline(px, py, pw, ph, 0.55, 0.52, 0.42, 0.95)
+  DrawText("世界地图", px + 16, py + 10, 16, 0.95, 0.88, 0.7, 1)
+  DrawText("M 关闭", px + pw - 16, py + 13, 13, 0.6, 0.6, 0.55, 1, true)
+
+  -- 世界坐标 → 面板（覆盖全部节点 + 边距）
+  local wx0, wx1, wz0, wz1 = -190, 200, -125, 215
+  local function mapXY(x, z)
+    return px + 26 + (x - wx0) / (wx1 - wx0) * (pw - 52),
+           py + 44 + (z - wz0) / (wz1 - wz0) * (ph - 84)
+  end
+  -- 道路（链接）
+  for _, nd in ipairs(NODES) do
+    for _, lid in ipairs(nd.links or {}) do
+      if nd.id < lid then
+        local o = nodeById(lid)
+        if o then
+          local ax, ay = mapXY(nd.x, nd.z)
+          local bx, by = mapXY(o.x, o.z)
+          DrawLine(ax, ay, bx, by, 2, 0.42, 0.46, 0.4, 0.85)
+        end
+      end
+    end
+  end
+  -- 节点（危险度着色：绿→红）
+  for _, nd in ipairs(NODES) do
+    local mx2, my2 = mapXY(nd.x, nd.z)
+    local cur = (nd.id == curNode)
+    local danger = nd.danger or 0
+    DrawCircle(mx2, my2, cur and 7 or 5, cur and 2 or 1.5,
+               0.45 + danger * 0.17, 0.85 - danger * 0.18, 0.32, 1, true)
+    DrawText(nd.name .. (danger > 0 and string.rep("!", danger) or ""),
+             mx2, my2 - 20, 13, cur and 1 or 0.82,
+             cur and 0.9 or 0.78, cur and 0.6 or 0.68, 1, true)
+  end
+  -- 房车位置 + 朝向
+  local rx, ry = mapXY(rv.x, rv.z)
+  DrawLine(rx, ry, rx + math.sin(rv.yaw) * 20, ry + math.cos(rv.yaw) * 20,
+           2, 0.98, 0.85, 0.4, 1)
+  DrawCircle(rx, ry, 4, 2, 0.98, 0.85, 0.4, 1, true)
+  DrawText("● 房车    ● 节点（越红越危险）    — 道路",
+           px + 16, py + ph - 24, 12, 0.7, 0.7, 0.65, 1)
+end
+
 -- 2D HUD 必须在 on_render 里画：draw2d 上下文只在渲染期接线，
 -- on_update 里的 DrawRect/DrawText 会被静默丢弃。
 function on_render()
-  if mode == "drive" then drawDriveHud() else drawHud() end
+  if mode == "drive" then drawDriveHud()
+  elseif mode == "stop" then drawStopHud()
+  else drawHud() end
+  if mapOpen then drawMapHud() end
 end
