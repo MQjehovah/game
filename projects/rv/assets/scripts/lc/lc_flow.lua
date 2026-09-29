@@ -100,6 +100,7 @@ local function evalVal(g, v)
   end
   return v
 end
+LC.flow.evalVal = evalVal  -- export for flowkit/flowgame $var resolution
 
 local function compare(a, op, b)
   if op == "<" then return a < b
@@ -170,8 +171,10 @@ end
 -- 内置流程节点（纯流程控制；玩法节点由游戏注册）
 -- ---------------------------------------------------------------------------
 LC.flow.register("flow/branch", function(node, g)
-  local a = evalVal(g, node.var)
+  local a = g.vars[node.var]  -- var is a NAME; evalVal returns the literal string
+  if a == nil then a = tonumber(node.var) or node.var end
   local b = evalVal(g, node.value)
+  if type(b) == "string" then b = tonumber(b) or b end
   return compare(a, node.op or "==", b) and "true" or "false"
 end)
 
@@ -238,7 +241,8 @@ LC.flow.register("flow/seq", function(node, g)
 end)
 
 LC.flow.register("flow/math", function(node, g)
-  local a = tonumber(g.vars[node.var]) or 0
+  local a = g.vars[node.var]
+  if type(a) ~= "number" then a = tonumber(a) or 0 end
   local b = tonumber(evalVal(g, node.value)) or 0
   local r = a
   local op = node.op or "+"

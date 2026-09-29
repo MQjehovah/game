@@ -33,16 +33,16 @@ LC.flow.register("game/music", function(node)
 end)
 
 -- --- 世界飘字 -----------------------------------------------------------
-LC.flow.register("game/floattext", function(node)
-  SpawnFloatText({ x = node.x or 0, y = node.y or 2, z = node.z or 0 },
+LC.flow.register("game/floattext", function(node, g)
+  SpawnFloatText({ x = (LC.flow.evalVal and LC.flow.evalVal(g, node.x)) or 0, y = (LC.flow.evalVal and LC.flow.evalVal(g, node.y)) or 2, z = (LC.flow.evalVal and LC.flow.evalVal(g, node.z)) or 0 },
                  tostring(node.text or "..."))
   return "exec"
 end)
 
 -- --- 粒子爆发 -----------------------------------------------------------
-LC.flow.register("game/particles", function(node)
+LC.flow.register("game/particles", function(node, g)
   EmitParticles({
-    pos = { x = node.x or 0, y = node.y or 1, z = node.z or 0 },
+    pos = { x = (LC.flow.evalVal and LC.flow.evalVal(g, node.x)) or 0, y = (LC.flow.evalVal and LC.flow.evalVal(g, node.y)) or 1, z = (LC.flow.evalVal and LC.flow.evalVal(g, node.z)) or 0 },
     count = node.count or 24,
     speed = node.speed or 4,
     life = node.life or 0.8,
@@ -53,8 +53,8 @@ LC.flow.register("game/particles", function(node)
 end)
 
 -- --- 预制体生成 ----------------------------------------------------------
-LC.flow.register("game/spawn", function(node)
-  SpawnPrefab(tostring(node.prefab or ""), { x = node.x or 0, y = node.y or 0, z = node.z or 0 })
+LC.flow.register("game/spawn", function(node, g)
+  SpawnPrefab(tostring(node.prefab or ""), { x = (LC.flow.evalVal and LC.flow.evalVal(g, node.x)) or 0, y = (LC.flow.evalVal and LC.flow.evalVal(g, node.y)) or 0, z = (LC.flow.evalVal and LC.flow.evalVal(g, node.z)) or 0 })
   return "exec"
 end)
 

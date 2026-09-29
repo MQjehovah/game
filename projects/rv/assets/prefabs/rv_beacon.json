@@ -1,0 +1,13 @@
+{
+  "components": {
+    "transform": { "pos": [0, 0, 0], "rot": [0, 0, 0, 1], "scale": [1, 1, 1] },
+    "mesh": {
+      "meshKey": "cube",
+      "castShadow": true,
+      "receiveShadow": true,
+      "material": { "ao": 1, "colorHex": "#FFB347", "metallic": 0.3, "roughness": 0.4, "emissiveIntensity": 2.0, "uvRepeat": 1 }
+    },
+    "flow": { "graph": "beacon" },
+    "scripts": { "items": [ { "backend": "lua", "path": "assets/scripts/prefab_flow.lua" } ] }
+  }
+}

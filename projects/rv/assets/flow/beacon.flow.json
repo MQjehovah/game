@@ -1,0 +1,24 @@
+{
+  "name": "beacon",
+  "vars": { "ent_id": 0, "ent_x": 0, "ent_y": 0, "ent_z": 0, "pulse_count": 0 },
+  "entry": [
+    { "type": "timer", "interval": 2.0, "node": 1 }
+  ],
+  "nodes": [
+    { "id": 1, "type": "game/particles", "x": "$ent_x", "y": "$ent_y", "z": "$ent_z", "count": 12, "speed": 2, "life": 1.0, "size": 0.2, "color": "ffb347" },
+    { "id": 2, "type": "game/floattext", "x": "$ent_x", "y": 2.5, "z": "$ent_z", "text": "◆" },
+    { "id": 3, "type": "flow/addvar", "var": "pulse_count", "value": 1 },
+    { "id": 4, "type": "flow/branch", "var": "pulse_count", "op": ">=", "value": 15 },
+    { "id": 5, "type": "game/toast", "text": "信标能量耗尽", "duration": 2.0 }
+  ],
+  "links": [
+    { "from": 1, "out": "exec", "to": 2, "in": "exec" },
+    { "from": 2, "out": "exec", "to": 3, "in": "exec" },
+    { "from": 3, "out": "exec", "to": 4, "in": "exec" }
+  ],
+  "editor": {
+    "positions": { "1": [80, 60], "2": [320, 60], "3": [560, 60], "4": [800, 60], "5": [1040, 60] },
+    "notes": { "1": "信标脉冲粒子（$ent_x/y/z 来自预设体注入）", "4": "15 次后停止（可加 despawn）" },
+    "groups": [ { "title": "信标脉冲循环", "x": 48, "y": 24, "w": 1200, "h": 130, "color": 16744448 } ]
+  }
+}
