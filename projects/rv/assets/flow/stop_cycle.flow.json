@@ -1,0 +1,33 @@
+{
+  "name": "stop_cycle",
+  "vars": { "day_count": 0 },
+  "entry": [
+    { "type": "signal", "name": "arrive",       "node": 1 },
+    { "type": "signal", "name": "threat_full",  "node": 4 },
+    { "type": "signal", "name": "leave",        "node": 6 }
+  ],
+  "nodes": [
+    { "id": 1, "type": "game/crates" },
+    { "id": 2, "type": "game/toast",  "text": "停靠搜索物资（左键搜箱）", "duration": 2.5 },
+    { "id": 4, "type": "game/evac" },
+    { "id": 5, "type": "flow/call",   "graph": "raid_wave", "signal": "raid_start" },
+    { "id": 6, "type": "game/bank",   "keep": 1.0 },
+    { "id": 7, "type": "game/clear" },
+    { "id": 8, "type": "game/day",    "amount": 1 },
+    { "id": 9, "type": "game/toast",  "text": "收工入库", "duration": 3.0 }
+  ],
+  "links": [
+    { "from": 1, "out": "exec",  "to": 2, "in": "exec" },
+    { "from": 4, "out": "exec",  "to": 5, "in": "exec" },
+    { "from": 6, "out": "exec",  "to": 7, "in": "exec" },
+    { "from": 7, "out": "exec",  "to": 8, "in": "exec" },
+    { "from": 8, "out": "exec",  "to": 9, "in": "exec" }
+  ],
+  "editor": {
+    "positions": { "1": [80, 60], "2": [320, 60], "4": [80, 220], "5": [320, 220],
+                   "6": [80, 400], "7": [320, 400], "8": [560, 400], "9": [800, 400] },
+    "notes": { "1": "停靠：撒物资箱", "4": "威胁满：撤离倒计时", "5": "接管夜袭波次子图" },
+    "groups": [ { "title": "停靠", "x": 48, "y": 24, "w": 560, "h": 140, "color": 11100297 },
+                { "title": "撤离/入库", "x": 48, "y": 364, "w": 960, "h": 150, "color": 20480 } ]
+  }
+}

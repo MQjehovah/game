@@ -66,10 +66,8 @@ function searchCrate(idx)
   stopThreat = math.min(STOP.threatMax,
                         stopThreat + STOP.searchThreat + (nd.danger or 0))
   if stopThreat >= STOP.threatMax and evacT < 0 then
-    evacT = STOP.evacTime
-    LC.flow.emit("raid_start")
-    toast.text = "尸群被惊动了！赶紧撤（E 收藏撤离 / T 上路）"
-    toast.t = 3.5
+    -- 威胁满：撤离倒计时 + 夜袭子图接管（stop_cycle 数据驱动）
+    LC.flow.emit("threat_full")
   end
 end
 
@@ -87,15 +85,8 @@ function bankStopBag(keepRatio)
 end
 
 function endScavenge(keepRatio)
-  local got = bankStopBag(keepRatio)
-  despawnCrates()
-  despawnHorde()
-  stopThreat = 0
-  evacT = -1
+  -- 收工全流程交给 stop_cycle 图（入库/清场/天数/提示），keep 折扣随行
+  g_bankKeep = keepRatio
   LC.flow.emit("raid_end")
-  day = day + 1
-  atNode = nil
-  toast.text = (got == "" and "空手而归" or "物资入库: " .. got)
-               .. " — 第 " .. day .. " 天"
-  toast.t = 4.0
+  LC.flow.call("stop_cycle", "leave")
 end

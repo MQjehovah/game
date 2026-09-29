@@ -16,7 +16,8 @@ function setPhase(m)
         curNode = atNode
         stopBag, stopThreat, evacT = {}, 0, -1
         killCount, hordeT, fireT, turretT, raidT = 0, 0, 0, 0, 0
-        spawnCrates()
+        -- 停靠流程交给 stop_cycle 图（生成物资箱/提示，可热调）
+        LC.flow.emit("arrive")
         local nd = nodeById(atNode)
         local stars = string.rep("★", nd and nd.danger or 0)
         toast.text = "停靠 " .. nodeName(atNode)
@@ -35,16 +36,10 @@ function setPhase(m)
     toast.t = 4.5
   else  -- driving
     if atNode then
-      -- 开走 = 收工：物资入库 + 天数 +1
-      despawnCrates()
-      despawnHorde()
-      day = day + 1
-      local got = bankStopBag(1.0)
-      stopThreat = 0
-      evacT = -1
-      atNode = nil
-      toast.text = (got == "" and "启程" or "物资入库: " .. got)
-                   .. " — 第 " .. day .. " 天"
+      -- 开走 = 收工：入库/清场/天数全部交给 stop_cycle 图
+      g_bankKeep = (evacT >= 0) and STOP.keepRatio or 1.0
+      LC.flow.emit("raid_end")        -- 夜袭子图安全停波
+      LC.flow.call("stop_cycle", "leave")
     else
       toast.text = "上路！W/S 油门·刹车  A/D 转向  空格 停车  C 切换视角"
     end
@@ -184,7 +179,8 @@ function on_start()
     end
   end
   if groundEnt ~= nil then SetScale(groundEnt, 800, 0.1, 800) end
-  LC.flow.load("assets/flow/raid_wave.flow.json")  -- 示例玩法图：夜袭波次
+  LC.flow.load("assets/flow/raid_wave.flow.json")
+LC.flow.load("assets/flow/stop_cycle.flow.json")  -- 停靠远征循环（可视化可热调）  -- 示例玩法图：夜袭波次
   spawnScenery()
   spawnMarkers()
   do  -- 验证钩子：scriptBaseDir 下放 autopilot_on.txt 即自动驾驶全循环

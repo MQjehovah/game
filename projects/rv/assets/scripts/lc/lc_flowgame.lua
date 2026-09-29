@@ -59,3 +59,42 @@ LC.flow.describe("game/fuel", "油量增减", "玩法", { "exec" }, { { "amount"
 LC.flow.describe("game/durability", "耐久增减", "玩法", { "exec" }, { { "amount", "n" } })
 LC.flow.describe("game/animparam", "动画参数", "玩法", { "exec" },
                  { { "target", "s" }, { "param", "s" }, { "value", "n" } })
+
+-- ---------------------------------------------------------------------------
+-- 停靠远征循环节点（停靠→搜刮→威胁→夜袭→撤离→入库，全部可上流程图）
+-- ---------------------------------------------------------------------------
+LC.flow.register("game/crates", function(node)
+  spawnCrates()  -- 物资箱生成（数量/散布仍由 STOP 配置驱动）
+  return "exec"
+end)
+
+LC.flow.register("game/clear", function(node)
+  despawnCrates()
+  despawnHorde()
+  stopThreat = 0
+  return "exec"
+end)
+
+g_bankKeep = g_bankKeep  -- 撤离折扣：调用方在触发 leave 前设置（nil = 全额）
+LC.flow.register("game/bank", function(node)
+  lastBankText = bankStopBag(g_bankKeep or node.keep or 1.0)
+  g_bankKeep = nil
+  return "exec"
+end)
+
+LC.flow.register("game/day", function(node)
+  day = day + (node.amount or 1)
+  atNode = nil
+  return "exec"
+end)
+
+LC.flow.register("game/evac", function(node)
+  if evacT < 0 then evacT = STOP.evacTime end
+  return "exec"
+end)
+
+LC.flow.describe("game/crates", "生成物资箱", "玩法", { "exec" }, {})
+LC.flow.describe("game/clear", "清场", "玩法", { "exec" }, {})
+LC.flow.describe("game/bank", "搜获入库", "玩法", { "exec" }, { { "keep", "n" } })
+LC.flow.describe("game/day", "推进天数", "玩法", { "exec" }, { { "amount", "n" } })
+LC.flow.describe("game/evac", "开始撤离", "玩法", { "exec" }, {})
