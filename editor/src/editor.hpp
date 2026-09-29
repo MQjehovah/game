@@ -961,6 +961,7 @@ private:
     // 选中/拖拽/视图变换）全部迁入 panels/bt_panel.hpp（Task 18b）。
     bool showBt_ = false;
     bool showFlow_ = true; // 流程图（蓝图式玩法编排）面板：默认开一次便于发现
+    bool showAssetLibrary_ = false; // 素材库（本地资产批量导入）面板
     btgraph::BtGraph btGraph_;
     // 不拥有；OnCreate 注册 BtPanel 时设置（undo/redo 路由 + 冒烟测试经此访问）。
     BtPanel* btPanel_ = nullptr;

@@ -660,6 +660,7 @@ add_library(neon_editor_lib STATIC
   editor/src/panels/viewport_panel.cpp
   editor/src/panels/bt_panel.cpp
   editor/src/panels/flow_panel.cpp
+  editor/src/panels/asset_library_panel.cpp
   editor/src/bt_editor.cpp
 )
 target_include_directories(neon_editor_lib

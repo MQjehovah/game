@@ -22,6 +22,7 @@
 #include "panels/viewport_panel.hpp"
 #include "panels/bt_panel.hpp"
 #include "panels/flow_panel.hpp"
+#include "panels/asset_library_panel.hpp"
 
 #include <algorithm>
 #include <cerrno>
@@ -169,6 +170,7 @@ void RegisterPanelStateHandler(EditorApp* app) {
         {"模型查看器", &EditorApp::showModelPreview_},
         {"行为树", &EditorApp::showBt_},
         {"流程图", &EditorApp::showFlow_},
+        {"素材库", &EditorApp::showAssetLibrary_},
         {"脚本编辑器", &EditorApp::showScriptEditor_},
         {"打包", &EditorApp::showPackage_},
         {"性能", &EditorApp::showProfiler_},
@@ -433,6 +435,7 @@ bool EditorApp::OnCreate() {
         panels_.Register(std::move(panel));
     }
     panels_.Register(std::make_unique<FlowPanel>(&showFlow_));
+    panels_.Register(std::make_unique<AssetLibraryPanel>(&showAssetLibrary_));
     panels_.OpenAll(ctx_);
     // Toolbar icon glyph self-check: a missing glyph renders as '?' in the
     // toolbar. Log once at startup so icon regressions are caught immediately.
