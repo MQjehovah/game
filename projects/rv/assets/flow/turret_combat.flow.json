@@ -1,0 +1,16 @@
+{
+  "name": "turret_combat",
+  "vars": { "cooldown": 1.2, "damage": 1, "range": 10 },
+  "entry": [
+    { "type": "timer", "interval": 0.5, "gate": "turret_active", "node": 1 }
+  ],
+  "nodes": [
+    { "id": 1, "type": "game/turret-fire", "cooldown": "$cooldown", "damage": "$damage", "range": "$range" }
+  ],
+  "links": [],
+  "editor": {
+    "positions": { "1": [120, 80] },
+    "notes": { "1": "炮塔每 0.5s 检查开火；冷却/伤害/射程全在图变量" },
+    "groups": [ { "title": "炮塔战斗", "x": 48, "y": 24, "w": 500, "h": 140, "color": 12503040 } ]
+  }
+}

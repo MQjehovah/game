@@ -182,7 +182,9 @@ function on_start()
   LC.flow.load("assets/flow/raid_wave.flow.json")
 LC.flow.load("assets/flow/stop_cycle.flow.json")  -- 停靠远征循环（可视化可热调）
 LC.flow.load("assets/flow/drive_event.flow.json") -- 途中随机事件（权重可视化可调）
-LC.flow.load("assets/flow/zombie_death.flow.json") -- 击杀掉落（掉率可视化可调）  -- 示例玩法图：夜袭波次
+LC.flow.load("assets/flow/zombie_death.flow.json") -- 击杀掉落（掉率可视化可调）
+LC.flow.load("assets/flow/vehicle_warnings.flow.json")
+LC.flow.load("assets/flow/difficulty_scaling.flow.json") -- 每日难度曲线  -- 示例玩法图：夜袭波次
   spawnScenery()
   spawnMarkers()
   do  -- 验证钩子：scriptBaseDir 下放 autopilot_on.txt 即自动驾驶全循环
@@ -220,6 +222,8 @@ function on_update(ent, dt)
   if hitMarkT > 0 then hitMarkT = hitMarkT - dt end
   if recoilT > 0 then recoilT = recoilT - dt end
   updateGrenades(dt)
+  -- 炮塔 gate：有模块时激活战斗图
+  LC.flow.setvar("turret_combat", "turret_active", hasModule("turret") and 1 or 0)
   LC.flow.tick(dt)
 
   -- ======================= 行驶 =======================

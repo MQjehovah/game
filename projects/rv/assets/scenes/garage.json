@@ -18,6 +18,10 @@
             },
             {
               "backend": "lua",
+              "path": "assets/scripts/lc/lc_flowadapters.lua"
+            },
+            {
+              "backend": "lua",
               "path": "assets/scripts/lc/lc_config.lua"
             },
             {

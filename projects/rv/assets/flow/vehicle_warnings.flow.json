@@ -1,0 +1,26 @@
+{
+  "name": "vehicle_warnings",
+  "vars": { "fuel_warn_pct": 0.25, "dur_warn_pct": 0.30 },
+  "entry": [
+    { "type": "timer", "interval": 3.0, "node": 1 }
+  ],
+  "nodes": [
+    { "id": 1, "type": "game/vehicle-sync" },
+    { "id": 2, "type": "flow/branch", "var": "fuel_pct", "op": "<", "value": "$fuel_warn_pct" },
+    { "id": 3, "type": "game/toast", "text": "⚠ 燃油不足！找加油站或捡油桶", "duration": 3.0 },
+    { "id": 4, "type": "flow/branch", "var": "dur_pct", "op": "<", "value": "$dur_warn_pct" },
+    { "id": 5, "type": "game/toast", "text": "⚠ 车体耐久低！避免撞击丧尸", "duration": 3.0 }
+  ],
+  "links": [
+    { "from": 1, "out": "exec", "to": 2, "in": "exec" },
+    { "from": 2, "out": "true", "to": 3, "in": "exec" },
+    { "from": 3, "out": "exec", "to": 4, "in": "exec" },
+    { "from": 2, "out": "false", "to": 4, "in": "exec" },
+    { "from": 4, "out": "true", "to": 5, "in": "exec" }
+  ],
+  "editor": {
+    "positions": { "1": [80, 60], "2": [340, 60], "3": [600, 40], "4": [600, 160], "5": [860, 160] },
+    "notes": { "2": "fuel_warn_pct 图变量（原 25% 硬编码）", "4": "dur_warn_pct 图变量（原 30% 硬编码）" },
+    "groups": [ { "title": "车辆监控（3s 巡检）", "x": 48, "y": 24, "w": 1000, "h": 220, "color": 16744448 } ]
+  }
+}

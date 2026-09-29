@@ -178,7 +178,7 @@ end
 -- ---------------------------------------------------------------------------
 LC.flow.register("flow/branch", function(node, g)
   local a = g.vars[node.var]  -- var is a NAME; evalVal returns the literal string
-  if a == nil then a = tonumber(node.var) or node.var end
+  if a == nil then a = tonumber(node.var) or 0 end  -- missing var -> 0, not the var-name string
   local b = evalVal(g, node.value)
   if type(b) == "string" then b = tonumber(b) or b end
   return compare(a, node.op or "==", b) and "true" or "false"

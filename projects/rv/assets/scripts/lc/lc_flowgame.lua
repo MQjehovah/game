@@ -82,9 +82,11 @@ LC.flow.register("game/bank", function(node)
   return "exec"
 end)
 
-LC.flow.register("game/day", function(node)
+LC.flow.register("game/day", function(node, g)
   day = day + (node.amount or 1)
   atNode = nil
+  -- 广播天数推进信号（difficulty_scaling 图接收并重算参数）
+  LC.flow.emit("day_advanced")
   return "exec"
 end)
 
