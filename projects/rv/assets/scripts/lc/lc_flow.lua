@@ -46,6 +46,7 @@ function LC.flow.load(path)
   local g = {
     def = def,
     name = def.name or path,
+    path = path,   -- 热重载用（LC.flow.reload 按它重读文件）
     vars = {},
     acc = {},      -- 入口累积器（timer/tick）
     nodeById = {},
@@ -60,6 +61,36 @@ function LC.flow.load(path)
   end
   LC.flow.graphs[#LC.flow.graphs + 1] = g
   return g
+end
+
+-- ---------------------------------------------------------------------------
+-- 可视化编辑器桥
+-- FLOW_DEBUG_NODE（全局字符串 "图名:节点id"）：runFrom 每次触发更新，编辑器
+--   读取后在画布上高亮"正在执行"的节点（运行期调试视图）。
+-- FLOW_RELOAD(name)（全局函数）：编辑器保存后调用，按 g.path 重读文件替换
+--   def/nodeById，但保留 vars/acc —— 运行状态不丢，可边玩边调。
+-- ---------------------------------------------------------------------------
+function LC.flow.reload(name)
+  for _, g in ipairs(LC.flow.graphs) do
+    if g.name == name and g.path then
+      local text = ReadText(g.path)
+      if not text or text == "" then return false end
+      local def = jsonDecode(text)
+      if type(def) ~= "table" or type(def.nodes) ~= "table" then return false end
+      g.def = def
+      g.nodeById = {}
+      for _, n in ipairs(def.nodes or {}) do g.nodeById[n.id] = n end
+      -- 新文件里新增的 timer/tick 累积器补零（旧的保留，删掉的留残值无害）
+      for _, e in ipairs(def.entry or {}) do
+        if e.type == "timer" then
+          local k = "timer:" .. tostring(e.node) .. ":" .. tostring(e.interval)
+          g.acc[k] = g.acc[k] or 0
+        end
+      end
+      return true
+    end
+  end
+  return false
 end
 
 -- 参数求值："$var" -> 图变量；其余原样
@@ -83,6 +114,8 @@ end
 -- 从节点沿指定 out pin 深走 exec 链
 local function runFrom(g, nodeId, outPin, depth)
   if depth > LC.flow.maxDepth then return end
+  -- 调试桥：记录"即将执行的节点"（编辑器高亮用）
+  _G.FLOW_DEBUG_NODE = tostring(g.name) .. ":" .. tostring(nodeId)
   for _, lk in ipairs(g.def.links or {}) do
     if lk.from == nodeId and (lk.out or "exec") == outPin then
       local node = g.nodeById[lk.to]
@@ -152,3 +185,8 @@ LC.flow.register("flow/addvar", function(node, g)
   g.vars[node.var] = cur + (evalVal(g, node.value) or 1)
   return "exec"
 end)
+
+-- ---------------------------------------------------------------------------
+-- ȫ���ţ��� C++ �� IScriptHost ֱ�� Call/GetGlobal��Lua ������ LC.flow.*��
+-- ---------------------------------------------------------------------------
+function FLOW_RELOAD(name) return LC.flow.reload(name) end

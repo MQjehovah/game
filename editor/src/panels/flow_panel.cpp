@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <sys/stat.h>
 
+#include "neon/script/script.hpp"
+
 #if defined(_WIN32)
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -279,6 +281,58 @@ void FlowPanel::Draw(EditorContext& ctx) {
     ImGui::End();
 }
 
+// ---------------------------------------------------------------------------
+// 撤销/重做（整图快照，一次交互一步）
+// ---------------------------------------------------------------------------
+namespace {
+class FlowSnapshotCmd : public Command {
+public:
+    FlowSnapshotCmd(FlowPanel* panel, FlowGraph before, FlowGraph after)
+        : panel_(panel), before_(std::move(before)), after_(std::move(after)) {}
+    void Apply() override { panel_->RestoreSnapshot(after_); }
+    void Undo() override { panel_->RestoreSnapshot(before_); }
+
+private:
+    FlowPanel* panel_;
+    FlowGraph before_, after_;
+};
+} // namespace
+
+void FlowPanel::PushHistory(const FlowGraph& before) {
+    const FlowGraph after = Snapshot();
+    history_.Push(std::make_unique<FlowSnapshotCmd>(this, before, after));
+}
+void FlowPanel::BeginInteraction() {
+    beforeInteract_ = Snapshot();
+    hasBeforeInteract_ = true;
+}
+void FlowPanel::CommitInteraction() {
+    if (!hasBeforeInteract_) return;
+    hasBeforeInteract_ = false;
+    // 有变化才入栈（对比序列化文本）
+    if (FlowSaveJson(beforeInteract_) != FlowSaveJson(graph_)) {
+        PushHistory(beforeInteract_);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 运行期调试桥
+// ---------------------------------------------------------------------------
+int FlowPanel::PollDebugNode(EditorContext& ctx) {
+    debugNode_ = 0;
+    if (!ctx.playActive || !*ctx.playActive || !ctx.playScriptHost) return 0;
+    script::IScriptHost* host = ctx.playScriptHost();
+    if (!host) return 0;
+    auto r = host->GetGlobal("FLOW_DEBUG_NODE");
+    if (!r.Ok()) return 0;
+    const std::string s = r.Value().str;
+    const size_t c = s.rfind(':');
+    if (c == std::string::npos) return 0;
+    debugGraph_ = s.substr(0, c);
+    debugNode_ = std::atoi(s.substr(c + 1).c_str());
+    return debugNode_;
+}
+
 void FlowPanel::RefreshFiles(EditorContext& ctx) {
     if (filesRefreshFrame_ && ImGui::GetFrameCount() - filesRefreshFrame_ < 120) return;
     filesRefreshFrame_ = ImGui::GetFrameCount();
@@ -317,6 +371,15 @@ bool FlowPanel::Save(const EditorContext& ctx) {
     if (!out.is_open()) return false;
     const std::string text = FlowSaveJson(graph_);
     out.write(text.data(), static_cast<std::streamsize>(text.size()));
+    // 播放中：热重载进运行图（保留运行变量/累积器，可边玩边调）
+    hotReloadNote_.clear();
+    if (ctx.playActive && *ctx.playActive && ctx.playScriptHost) {
+        if (script::IScriptHost* host = ctx.playScriptHost()) {
+            const auto r = host->Call("FLOW_RELOAD", {script::Value::Str(fileName_)});
+            hotReloadNote_ = r.Ok() && r.Value().boolean ? "已热重载"
+                                                             : "热重载失败(图未在运行?)";
+        }
+    }
     return true;
 }
 
@@ -342,11 +405,25 @@ void FlowPanel::Toolbar(EditorContext& ctx) {
         filesRefreshFrame_ = 0;
     }
     ImGui::SameLine();
+    ImGui::BeginDisabled(!history_.CanUndo());
+    if (ImGui::Button("撤销") || ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_Z))
+        history_.Undo();
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    ImGui::BeginDisabled(!history_.CanRedo());
+    if (ImGui::Button("重做") || ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_Y))
+        history_.Redo();
+    ImGui::EndDisabled();
+    ImGui::SameLine();
     ImGui::SetNextItemWidth(160);
     ImGui::InputText("##name", nameBuf_, sizeof(nameBuf_));
     ImGui::SameLine();
     ImGui::TextDisabled("%zu 节点 · %zu 连线 · %zu 入口 · %zu 变量", graph_.nodes.size(),
                         graph_.links.size(), graph_.entries.size(), graph_.vars.size());
+    if (!hotReloadNote_.empty()) {
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(0.5f, 1.f, 0.6f, 1), "%s", hotReloadNote_.c_str());
+    }
     if (!pendingType_.empty() || !pendingEntry_.empty()) {
         ImGui::SameLine();
         ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.5f, 1), "点击画布放置: %s",
@@ -539,7 +616,44 @@ void FlowPanel::Canvas(EditorContext& ctx) {
         }
     }
 
-    // ---- 交互 ----
+    // ---- 连线命中（采样贝塞尔距离） ----
+    auto HitLink = [&](const ImVec2& m) -> int {
+        for (size_t li = 0; li < graph_.links.size(); ++li) {
+            const FlowLink& l = graph_.links[li];
+            const Hit* a = nullptr;
+            const Hit* b = nullptr;
+            for (const auto& h : hits_) {
+                if (h.id == l.from) a = &h;
+                if (h.id == l.to) b = &h;
+            }
+            if (!a || !b) continue;
+            ImVec2 from = a->outPos[0];
+            int oi = 0;
+            if (a->info)
+                for (auto o = a->info->outs; *o && oi < 3; ++o, ++oi)
+                    if (l.out == *o) from = a->outPos[oi];
+            const ImVec2 to = b->inPos;
+            const ImVec2 c1(from.x + 50.f * zoom_, from.y), c2(to.x - 50.f * zoom_, to.y);
+            float best = 1e9f;
+            for (int s = 0; s <= 12; ++s) {
+                const float t = static_cast<float>(s) / 12.0f;
+                const float u = 1.0f - t;
+                const ImVec2 pt(u * u * u * from.x + 3 * u * u * t * c1.x + 3 * u * t * t * c2.x +
+                                    t * t * t * to.x,
+                                u * u * u * from.y + 3 * u * u * t * c1.y + 3 * u * t * t * c2.y +
+                                    t * t * t * to.y);
+                const float dx = m.x - pt.x, dy = m.y - pt.y;
+                best = std::min(best, dx * dx + dy * dy);
+            }
+            if (best < 64.f) return static_cast<int>(li);
+        }
+        return -1;
+    };
+
+    // ---- 运行期高亮 ----
+    const int dbg = PollDebugNode(ctx);
+
+    // ---- 左键 ----
     if (hover && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
         // 入口徽标优先（点徽标=选中该入口，进检视编辑）
         for (const auto& b : badges_) {
@@ -547,12 +661,12 @@ void FlowPanel::Canvas(EditorContext& ctx) {
                 mouse.y <= b.max.y + 4) {
                 selEntry_ = b.entry;
                 selNode_ = 0;
-                return; // 在 InvisibleButton 的 handler 里：直接结束本帧交互
+                return;
             }
         }
         Hit* hit = HitNode(mouse);
         if (!pendingType_.empty() && !hit) {
-            // 放置新节点
+            BeginInteraction();
             FlowNode n;
             n.id = graph_.AllocId();
             n.type = pendingType_;
@@ -563,8 +677,9 @@ void FlowPanel::Canvas(EditorContext& ctx) {
             selNode_ = n.id;
             selEntry_ = -1;
             pendingType_.clear();
+            CommitInteraction();
         } else if (!pendingEntry_.empty() && hit) {
-            // 入口绑定到点击的节点
+            BeginInteraction();
             FlowEntry e;
             e.type = pendingEntry_;
             if (e.type == "signal") e.name = "new_signal";
@@ -572,10 +687,10 @@ void FlowPanel::Canvas(EditorContext& ctx) {
             e.node = hit->id;
             graph_.entries.push_back(e);
             pendingEntry_.clear();
+            CommitInteraction();
         } else if (hit) {
             selNode_ = hit->id;
             selEntry_ = -1;
-            // 输出引脚？
             int oi = 0;
             if (hit->info)
                 for (auto o = hit->info->outs; *o && oi < 3; ++o, ++oi) {
@@ -587,6 +702,7 @@ void FlowPanel::Canvas(EditorContext& ctx) {
                     }
                 }
             if (!linking_) {
+                BeginInteraction();
                 dragging_ = true;
                 dragNode_ = hit->id;
                 dragStart_ = mouse;
@@ -605,6 +721,7 @@ void FlowPanel::Canvas(EditorContext& ctx) {
     if (linking_ && !ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
         Hit* hit = HitNode(mouse);
         if (hit && hit->id != linkFrom_) {
+            BeginInteraction();
             // 每个 out 一条链；每个节点一条入链（运行时只跟第一个匹配）
             for (size_t i = 0; i < graph_.links.size();) {
                 if (graph_.links[i].to == hit->id ||
@@ -618,8 +735,13 @@ void FlowPanel::Canvas(EditorContext& ctx) {
             l.out = linkOut_;
             l.to = hit->id;
             graph_.links.push_back(l);
+            CommitInteraction();
         }
         linking_ = false;
+    }
+    if (dragging_ && !ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+        dragging_ = false;
+        CommitInteraction();
     }
     if (dragging_ && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
         const ImVec2 d((mouse.x - dragStart_.x) / zoom_, (mouse.y - dragStart_.y) / zoom_);
@@ -628,8 +750,6 @@ void FlowPanel::Canvas(EditorContext& ctx) {
                 n.x = std::floor((nodeStartPos_.x + d.x) / kGrid + 0.5f) * kGrid;
                 n.y = std::floor((nodeStartPos_.y + d.y) / kGrid + 0.5f) * kGrid;
             }
-    } else {
-        dragging_ = false;
     }
     if (panning_ && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
         pan_.x = panOrigin_.x + (mouse.x - panStart_.x);
@@ -637,10 +757,84 @@ void FlowPanel::Canvas(EditorContext& ctx) {
     } else {
         panning_ = false;
     }
-    // 删除
+
+    // ---- 右键菜单 ----
+    if (hover && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+        Hit* hit = HitNode(mouse);
+        const int linkIdx = hit ? -1 : HitLink(mouse);
+        ImGui::OpenPopup("flow_ctx");
+        ctxNode_ = hit ? hit->id : 0;
+        ctxLink_ = linkIdx;
+        ctxMouse_ = ToWorld(mouse);
+    }
+    if (ImGui::BeginPopup("flow_ctx")) {
+        if (ctxNode_) {
+          FlowNode* cn = graph_.Find(ctxNode_);
+          if (cn) {
+            const FlowTypeInfo* ti = FindFlowType(cn->type);
+            ImGui::TextDisabled("%s", ti ? ti->label : cn->type.c_str());
+            if (ImGui::MenuItem("复制节点")) {
+                BeginInteraction();
+                FlowNode dup = *cn;
+                dup.id = graph_.AllocId();
+                dup.x += 48.f;
+                dup.y += 48.f;
+                graph_.nodes.push_back(dup);
+                selNode_ = dup.id;
+                CommitInteraction();
+            }
+            if (ImGui::MenuItem("删除节点")) {
+                BeginInteraction();
+                graph_.RemoveNode(ctxNode_);
+                if (selNode_ == ctxNode_) selNode_ = 0;
+                CommitInteraction();
+            }
+          }
+        } else if (ctxLink_ >= 0 && ctxLink_ < static_cast<int>(graph_.links.size())) {
+            if (ImGui::MenuItem("删除连线")) {
+                BeginInteraction();
+                graph_.links.erase(graph_.links.begin() + ctxLink_);
+                CommitInteraction();
+            }
+        } else {
+            if (ImGui::BeginMenu("在此放置")) {
+                for (const auto& t : FlowTypes())
+                    if (ImGui::MenuItem(t.label)) {
+                        BeginInteraction();
+                        FlowNode n;
+                        n.id = graph_.AllocId();
+                        n.type = t.type;
+                        n.x = std::floor(ctxMouse_.x / kGrid + 0.5f) * kGrid - kNodeW * 0.5f;
+                        n.y = std::floor(ctxMouse_.y / kGrid + 0.5f) * kGrid - kTitleH * 0.5f;
+                        graph_.nodes.push_back(n);
+                        selNode_ = n.id;
+                        CommitInteraction();
+                    }
+                ImGui::EndMenu();
+            }
+        }
+        ImGui::EndPopup();
+    }
+
+    // ---- 删除键 ----
     if (hover && selNode_ && ImGui::IsKeyPressed(ImGuiKey_Delete, false)) {
+        BeginInteraction();
         graph_.RemoveNode(selNode_);
         selNode_ = 0;
+        CommitInteraction();
+    }
+
+    // ---- 调试高亮（运行期） ----
+    if (dbg && debugGraph_ == fileName_) {
+        for (const auto& h : hits_)
+            if (h.id == dbg) {
+                const float pulse = 0.5f + 0.5f * std::sin(ImGui::GetTime() * 6.0f);
+                ImU32 c = IM_COL32(120, 255, 140, static_cast<int>(120 + 120 * pulse));
+                dl->AddRect(ImVec2(h.min.x - 3, h.min.y - 3), ImVec2(h.max.x + 3, h.max.y + 3), c,
+                            8.0f, 0, 3.0f);
+                dl->AddText(ImVec2(h.min.x + 4, h.max.y + 2), IM_COL32(120, 255, 140, 255),
+                            "● executing");
+            }
     }
 }
 

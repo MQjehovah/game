@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "editor_context.hpp"
+#include "history.hpp"
 #include "imgui.h"
 #include "neon/core/json.hpp"
 
@@ -115,6 +116,8 @@ public:
     const char* Title() const override { return "流程图"; }
     bool* VisibleFlag() override { return visible_; }
     void Draw(EditorContext& ctx) override;
+    // 撤销命令回调（FlowSnapshotCmd 需要公开访问）
+    void RestoreSnapshot(const FlowGraph& g) { graph_ = g; }
 
 private:
     // UI 分区
@@ -129,10 +132,22 @@ private:
     bool Load(const EditorContext& ctx, const std::string& file);
     bool Save(const EditorContext& ctx);
 
+    // 撤销/重做（整图快照）
+    FlowGraph Snapshot() const { return graph_; }
+    void PushHistory(const FlowGraph& before);
+    void BeginInteraction();   // 交互开始时抓快照（拖动/改参数前）
+    void CommitInteraction();  // 交互结束且有变化时入栈
+    // 运行期调试：读 FLOW_DEBUG_NODE（"图名:节点id"）→ 高亮；返回节点 id
+    int PollDebugNode(EditorContext& ctx);
+
     bool* visible_ = nullptr;
 
     FlowGraph graph_;
+    HistoryManager history_;
+    FlowGraph beforeInteract_;
+    bool hasBeforeInteract_ = false;
     std::string fileName_ = "raid_wave"; // 无扩展名
+    std::string hotReloadNote_;          // 保存时热重载的结果提示
     char nameBuf_[128]{};
     std::vector<std::string> files_;
     uint64_t filesRefreshFrame_ = 0;
@@ -172,6 +187,13 @@ private:
     };
     std::vector<Hit> hits_;
     std::vector<Badge> badges_;
+    // 运行期调试（PollDebugNode 缓存）
+    int debugNode_ = 0;
+    std::string debugGraph_;
+    // 右键菜单上下文
+    int ctxNode_ = 0;
+    int ctxLink_ = -1;
+    ImVec2 ctxMouse_{};
 };
 
 } // namespace neon::editor
