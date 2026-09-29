@@ -180,7 +180,8 @@ function on_start()
   end
   if groundEnt ~= nil then SetScale(groundEnt, 800, 0.1, 800) end
   LC.flow.load("assets/flow/raid_wave.flow.json")
-LC.flow.load("assets/flow/stop_cycle.flow.json")  -- 停靠远征循环（可视化可热调）  -- 示例玩法图：夜袭波次
+LC.flow.load("assets/flow/stop_cycle.flow.json")  -- 停靠远征循环（可视化可热调）
+LC.flow.load("assets/flow/drive_event.flow.json") -- 途中随机事件（权重可视化可调）  -- 示例玩法图：夜袭波次
   spawnScenery()
   spawnMarkers()
   do  -- 验证钩子：scriptBaseDir 下放 autopilot_on.txt 即自动驾驶全循环

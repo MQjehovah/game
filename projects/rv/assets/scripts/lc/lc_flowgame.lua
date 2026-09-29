@@ -98,3 +98,26 @@ LC.flow.describe("game/clear", "清场", "玩法", { "exec" }, {})
 LC.flow.describe("game/bank", "搜获入库", "玩法", { "exec" }, { { "keep", "n" } })
 LC.flow.describe("game/day", "推进天数", "玩法", { "exec" }, { { "amount", "n" } })
 LC.flow.describe("game/evac", "开始撤离", "玩法", { "exec" }, {})
+
+
+-- ---------------------------------------------------------------------------
+-- 途中随机事件节点（drive_event 图驱动；权重在图上用 flow/random 编排）
+-- ---------------------------------------------------------------------------
+LC.flow.register("game/drive-horde", function(node)
+  spawnDriveHorde(node.count or 5)
+  return "exec"
+end)
+
+LC.flow.register("game/drive-supply", function(node)
+  spawnDriveProp("supply")
+  return "exec"
+end)
+
+LC.flow.register("game/drive-fuel", function(node)
+  spawnDriveProp("fuelcan")
+  return "exec"
+end)
+
+LC.flow.describe("game/drive-horde", "途中尸群", "玩法", { "exec" }, { { "count", "n" } })
+LC.flow.describe("game/drive-supply", "路边补给", "玩法", { "exec" }, {})
+LC.flow.describe("game/drive-fuel", "路边油桶", "玩法", { "exec" }, {})

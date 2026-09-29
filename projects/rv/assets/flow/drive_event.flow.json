@@ -1,0 +1,33 @@
+{
+  "name": "drive_event",
+  "vars": {},
+  "entry": [
+    { "type": "signal", "name": "drive_event", "node": 1 }
+  ],
+  "nodes": [
+    { "id": 1, "type": "flow/random", "chance": 0.44 },
+    { "id": 2, "type": "game/drive-horde", "count": 5 },
+    { "id": 3, "type": "game/toast", "text": "尸群横穿！绕开它们——撞上掉车体耐久", "duration": 3.5 },
+    { "id": 4, "type": "flow/random", "chance": 0.6 },
+    { "id": 5, "type": "game/drive-supply" },
+    { "id": 6, "type": "game/toast", "text": "发现路边补给！开过去拾取", "duration": 3.5 },
+    { "id": 7, "type": "game/drive-fuel" },
+    { "id": 8, "type": "game/toast", "text": "路边有燃油桶！开过去拾取", "duration": 3.5 }
+  ],
+  "links": [
+    { "from": 1, "out": "true",  "to": 2, "in": "exec" },
+    { "from": 2, "out": "exec",  "to": 3, "in": "exec" },
+    { "from": 1, "out": "false", "to": 4, "in": "exec" },
+    { "from": 4, "out": "true",  "to": 5, "in": "exec" },
+    { "from": 5, "out": "exec",  "to": 6, "in": "exec" },
+    { "from": 4, "out": "false", "to": 7, "in": "exec" },
+    { "from": 7, "out": "exec",  "to": 8, "in": "exec" }
+  ],
+  "editor": {
+    "positions": { "1": [80, 60], "2": [340, 40], "3": [580, 40], "4": [80, 240],
+                   "5": [340, 220], "6": [580, 220], "7": [340, 400], "8": [580, 400] },
+    "notes": { "1": "权重 4/9 ≈ 0.44（原 EVENTS w=4/9）", "4": "剩余 5/9 里补给 3/5 = 0.6" },
+    "groups": [ { "title": "尸群横穿 (w=4)", "x": 48, "y": 8, "w": 740, "h": 130, "color": 12503040 },
+                { "title": "补给/油桶 (w=3+2)", "x": 48, "y": 168, "w": 740, "h": 330, "color": 3244032 } ]
+  }
+}
