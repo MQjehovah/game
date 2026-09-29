@@ -698,7 +698,7 @@ local function spawnPlayer()
   if player.active then return end
   local bx, bz = rotOf(1.7, -1.0)
   player.x, player.z, player.yaw = bx, bz, rv.yaw + math.pi * 0.5
-  player.ent = SpawnPrefab("rv_player", { x = bx, y = 0.9, z = bz })
+  player.ent = SpawnPrefab("rv_player", { x = bx, y = 0, z = bz })
   player.active = (player.ent ~= nil)
   player.anim = ""
   if player.active then onFoot = true end
@@ -735,8 +735,10 @@ local function updatePlayer(dt)
     player.x = rv.x + lx * cy + lz * sy
     player.z = rv.z - lx * sy + lz * cy
   end
-  SetPosition(player.ent, { x = player.x, y = 0.9, z = player.z })
-  SetRotationY(player.ent, player.yaw)
+  SetPosition(player.ent, { x = player.x, y = 0, z = player.z })
+  -- 模型网格在 rot 0 朝 -Z，与 yaw 约定（前进 = (sin,cos)，rot 0 朝 +Z）相反，
+  -- 加 π 让视觉朝向对齐移动方向（否则人物倒着走、相机对着脸）
+  SetRotationY(player.ent, player.yaw + math.pi)
   -- 动画状态机：移动 = Walk，静止 = Idle（循环 + 0.15s 淡入）
   local clip = (mv ~= 0) and "Walk" or "Idle"
   if clip ~= player.anim then
@@ -1324,9 +1326,12 @@ local function updateCamera(dt)
   if onFoot and player.active then
     local fx, fz = math.sin(player.yaw), math.cos(player.yaw)
     tx = player.x - fx * 3.6
-    ty = 2.3
+    ty = 2.0
     tz = player.z - fz * 3.6
-    lookx, looky, lookz = player.x, 1.3, player.z
+    -- 看向人物前方地平线（不是人物本人）：人物落在画面下沿，视野朝前
+    lookx = player.x + fx * 6.0
+    looky = 1.2
+    lookz = player.z + fz * 6.0
   elseif phase == "driving" and driveView == "cab" then
     local fx, fz = math.sin(rv.yaw), math.cos(rv.yaw)
     local cx2, cz2 = rotOf(0.45, 1.4)
