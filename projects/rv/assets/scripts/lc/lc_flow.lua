@@ -33,7 +33,8 @@ function LC.flow.register(nodeType, handler)
 end
 
 -- è¯»å›¾å¹¶å®ä¾‹åŒ–ï¼ˆåŒä¸€æ–‡ä»¶å¯å¤šå®ä¾‹ï¼›name ç›¸åŒåˆ™è·³è¿‡ï¼‰
-function LC.flow.load(path)
+function LC.flow.load(path, key)
+  -- key: ¶¶Â·ÊµÀı±êÊ¶£¨Í¬Ò»¶¨Òå¶àÊµÀı¸÷×Ô¶ÀÁ¢±äÁ¿£©
   local text = ReadText(path)
   if not text or text == "" then
     print(string.format("flow: %s not found", path))
@@ -46,6 +47,7 @@ function LC.flow.load(path)
   local g = {
     def = def,
     name = def.name or path,
+    key = key or (def.name or path),  -- ¶¶Â·ÊµÀı¼ü£¨load/setvar/call °´´Ë¶¨Î»£©
     path = path,   -- çƒ­é‡è½½ç”¨ï¼ˆLC.flow.reload æŒ‰å®ƒé‡è¯»æ–‡ä»¶ï¼‰
     vars = {},
     acc = {},      -- å…¥å£ç´¯ç§¯å™¨ï¼ˆtimer/tickï¼‰
@@ -58,6 +60,10 @@ function LC.flow.load(path)
   for _, e in ipairs(def.entry or {}) do
     if e.type == "timer" then g.acc["timer:" .. tostring(e.node) .. ":" .. tostring(e.interval)] = 0 end
     if e.type == "tick" then g.acc["tick:" .. tostring(e.node)] = 0 end
+  end
+  -- Í¬ key µÄÊµÀıÒÑ´æÔÚÔò²»ÖØ¸´¼ÓÔØ£¨·µ»ØÏÖÓĞÊµÀı£©
+  for _, ex in ipairs(LC.flow.graphs) do
+    if ex.key == g.key then return ex end
   end
   LC.flow.graphs[#LC.flow.graphs + 1] = g
   return g
@@ -72,7 +78,7 @@ end
 -- ---------------------------------------------------------------------------
 function LC.flow.reload(name)
   for _, g in ipairs(LC.flow.graphs) do
-    if g.name == name and g.path then
+    if (g.key == name or g.name == name) and g.path then
       local text = ReadText(g.path)
       if not text or text == "" then return false end
       local def = jsonDecode(text)
@@ -264,7 +270,7 @@ end)
 -- å­å›¾è°ƒç”¨ï¼šåªè§¦å‘æŒ‡å®šå›¾å®ä¾‹å†…ç›‘å¬è¯¥ä¿¡å·çš„å…¥å£ï¼ˆemit æ˜¯å…¨å›¾å¹¿æ’­ï¼Œcall æ˜¯å®šå‘ï¼‰
 function LC.flow.call(graphName, signalName)
   for _, g in ipairs(LC.flow.graphs) do
-    if g.name == graphName then
+    if g.key == graphName or g.name == graphName then
       for _, e in ipairs(g.def.entry or {}) do
         if e.type == "signal" and e.name == signalName then
           runFrom(g, e.node, "exec", 1)
@@ -296,7 +302,7 @@ LC.flow.describe("flow/call", "è°ƒç”¨å­å›¾", "æµç¨‹", { "exec" },
 -- ---------------------------------------------------------------------------
 function LC.flow.setvar(graphName, var, value)
   for _, g in ipairs(LC.flow.graphs) do
-    if g.name == graphName then
+    if g.key == graphName or g.name == graphName then
       g.vars[var] = value
       return true
     end

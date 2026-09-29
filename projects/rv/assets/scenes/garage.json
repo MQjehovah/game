@@ -441,6 +441,31 @@
           ]
         }
       }
+    },
+    {
+      "id": 998,
+      "name": "Beacon2",
+      "prefab": "rv_beacon",
+      "components": {
+        "transform": {
+          "pos": [
+            -5,
+            0.5,
+            3
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            0.3,
+            1.2,
+            0.3
+          ]
+        }
+      }
     }
   ],
   "environment": {
