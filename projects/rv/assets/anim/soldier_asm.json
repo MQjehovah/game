@@ -1,0 +1,20 @@
+{
+  "states": [
+    { "name": "Idle", "clip": "Idle" },
+    { "name": "Walk", "clip": "Walk" },
+    { "name": "Run",  "clip": "Run" }
+  ],
+  "transitions": [
+    { "from": "Idle", "to": "Walk", "param": "walk",   "threshold": 0.5,  "duration": 0.15 },
+    { "from": "Idle", "to": "Run",  "param": "run",    "threshold": 0.5,  "duration": 0.15 },
+    { "from": "Walk", "to": "Idle", "param": "still",  "threshold": 0.5,  "duration": 0.2 },
+    { "from": "Walk", "to": "Run",  "param": "run",    "threshold": 0.5,  "duration": 0.15 },
+    { "from": "Run",  "to": "Walk", "param": "walk",   "threshold": 0.5,  "duration": 0.15 },
+    { "from": "Run",  "to": "Idle", "param": "still",  "threshold": 0.5,  "duration": 0.2 }
+  ],
+  "params": [
+    { "name": "still", "value": 1 },
+    { "name": "walk",  "value": 0 },
+    { "name": "run",   "value": 0 }
+  ]
+}

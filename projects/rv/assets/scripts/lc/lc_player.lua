@@ -8,6 +8,7 @@ function spawnPlayer()
   player.ent = SpawnPrefab("rv_player", { x = bx, y = 0, z = bz })
   player.active = (player.ent ~= nil)
   player.anim = ""
+  player.asm = false
   player.mag = 30
   player.reloadT = 0
   if player.active then
@@ -27,6 +28,7 @@ function despawnPlayer()
   player.ent, player.gunBody, player.gunBarrel, player.gunStock = nil, nil, nil, nil
   player.active = false
   player.anim = ""
+  player.asm = false
   onFoot = false
 end
 
@@ -91,12 +93,26 @@ function updatePlayer(dt)
   -- 模型网格在 rot 0 朝 -Z，与 yaw 约定（前进 = (sin,cos)，rot 0 朝 +Z）相反，
   -- 加 π 让视觉朝向对齐移动方向（否则人物倒着走、相机对着脸）
   SetRotationY(player.ent, player.yaw + math.pi)
-  -- 动画状态机：疾跑 = Run，移动 = Walk，静止 = Idle（循环 + 0.15s 淡入）
-  local clip = (mv == 0) and "Idle" or (sprint and "Run" or "Walk")
-  if clip ~= player.anim then
-    player.anim = clip
-    if not PlayAnimation(player.ent, clip, true, 0.15) then
-      player.anim = ""  -- 剪辑缺失时回退，避免卡死在状态里
+  -- 动画：数据驱动状态机（assets/anim/soldier_asm.json）。脚本变量
+  -- （still/walk/run 互斥桶）经 SetAnimParam 喂入，过渡与淡入由规格文件定义，
+  -- 脚本不再手写 if 切换。AttachStateMachine 需要蒙皮 draw item 先解析一帧，
+  -- 失败逐帧重试；始终失败则回退 PlayAnimation 手动切换（保底）。
+  if player.asm then
+    SetAnimParam(player.ent, "still", (mv == 0) and 1 or 0)
+    SetAnimParam(player.ent, "walk",  (mv ~= 0 and not sprint) and 1 or 0)
+    SetAnimParam(player.ent, "run",   (mv ~= 0 and sprint) and 1 or 0)
+  else
+    player.asm = AttachStateMachine(player.ent, "assets/anim/soldier_asm.json")
+    if not player.asm then
+      local clip = (mv == 0) and "Idle" or (sprint and "Run" or "Walk")
+      if clip ~= player.anim then
+        player.anim = clip
+        if not PlayAnimation(player.ent, clip, true, 0.15) then
+          player.anim = ""  -- 剪辑缺失时回退，避免卡死在状态里
+        end
+      end
+    else
+      player.anim = ""
     end
   end
   updatePlayerGun()
