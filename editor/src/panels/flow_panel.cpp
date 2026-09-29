@@ -327,6 +327,27 @@ bool FlowLoadJson(FlowGraph& g, const std::string& text, std::string* err) {
             g.links.push_back(fl);
         }
     }
+    // 编辑器元数据：分组框 + 节点注释（运行时忽略）
+    if (const core::Json* ed = def.Get("editor")) {
+        if (const core::Json* gs = ed->Get("groups")) {
+            for (size_t i = 0; i < gs->Size(); ++i) {
+                const core::Json* gd = gs->At(i);
+                if (!gd) continue;
+                FlowGroup fg;
+                fg.title = gd->Get("title") ? gd->Get("title")->GetString("分组") : "分组";
+                fg.x = gd->Get("x") ? static_cast<float>(gd->Get("x")->GetNumber()) : 0.f;
+                fg.y = gd->Get("y") ? static_cast<float>(gd->Get("y")->GetNumber()) : 0.f;
+                fg.w = gd->Get("w") ? static_cast<float>(gd->Get("w")->GetNumber(320)) : 320.f;
+                fg.h = gd->Get("h") ? static_cast<float>(gd->Get("h")->GetNumber(160)) : 160.f;
+                fg.rgb = gd->Get("color") ? gd->Get("color")->GetInt(0x4a7dc9) : 0x4a7dc9;
+                g.groups.push_back(fg);
+            }
+        }
+        if (const core::Json* notes = ed->Get("notes")) {
+            for (const auto& [k, v] : notes->Members())
+                if (FlowNode* n = g.Find(std::atoi(k.c_str()))) n->note = v.GetString();
+        }
+    }
     return true;
 }
 
@@ -373,14 +394,31 @@ std::string FlowSaveJson(const FlowGraph& g) {
     def.object_["links"] = links;
 
     core::Json positions{core::Json::Type::Object};
+    core::Json notes{core::Json::Type::Object};
     for (const auto& n : g.nodes) {
         core::Json pt{core::Json::Type::Array};
         pt.array_.push_back(JsonNum(static_cast<double>(n.x)));
         pt.array_.push_back(JsonNum(static_cast<double>(n.y)));
         positions.object_[std::to_string(n.id)] = pt;
+        if (!n.note.empty()) notes.object_[std::to_string(n.id)] = JsonStr(n.note);
     }
     core::Json editor{core::Json::Type::Object};
     editor.object_["positions"] = positions;
+    if (!notes.object_.empty()) editor.object_["notes"] = notes;
+    if (!g.groups.empty()) {
+        core::Json groups{core::Json::Type::Array};
+        for (const auto& gr : g.groups) {
+            core::Json jg{core::Json::Type::Object};
+            jg.object_["title"] = JsonStr(gr.title);
+            jg.object_["x"] = JsonNum(gr.x);
+            jg.object_["y"] = JsonNum(gr.y);
+            jg.object_["w"] = JsonNum(gr.w);
+            jg.object_["h"] = JsonNum(gr.h);
+            jg.object_["color"] = JsonNum(gr.rgb);
+            groups.array_.push_back(jg);
+        }
+        editor.object_["groups"] = groups;
+    }
     def.object_["editor"] = editor;
 
     return core::JsonWriter::WritePretty(def);
@@ -675,6 +713,24 @@ void FlowPanel::Canvas(EditorContext& ctx) {
         return nullptr;
     };
 
+    // 分组框（画在最下层：先于连线与节点）
+    groupRects_.clear();
+    for (size_t gi = 0; gi < graph_.groups.size(); ++gi) {
+        const FlowGroup& gr = graph_.groups[gi];
+        const ImVec2 a = ToScreen(ImVec2(gr.x, gr.y));
+        const ImVec2 b = ToScreen(ImVec2(gr.x + gr.w, gr.y + gr.h));
+        const ImU32 col = (static_cast<ImU32>(gr.rgb) & 0xFFFFFF) | 0x30000000; // 半透明填充
+        const ImU32 line = (static_cast<ImU32>(gr.rgb) & 0xFFFFFF) | 0xB0000000;
+        dl->AddRectFilled(a, b, col, 8.0f);
+        dl->AddRect(a, b, line, 8.0f, 0, selGroup_ == static_cast<int>(gi) ? 2.5f : 1.2f);
+        dl->AddText(ImVec2(a.x + 8, a.y + 4), line & 0x00FFFFFF | 0xFF000000, gr.title.c_str());
+        GroupRect r;
+        r.index = static_cast<int>(gi);
+        r.min = a;
+        r.max = b;
+        groupRects_.push_back(r);
+    }
+
     // 连线（先画在节点下层）
     for (const auto& l : graph_.links) {
         const Hit* a = nullptr;
@@ -735,6 +791,11 @@ void FlowPanel::Canvas(EditorContext& ctx) {
                 dl->AddText(ImVec2(h.min.x + 8, py), IM_COL32(200, 205, 215, 255), line);
                 py += 22.f * zoom_;
             }
+        }
+        // 节点注释（编辑器元数据）
+        if (!n.note.empty()) {
+            const ImVec2 notePos(h.min.x + 6, h.max.y + 3);
+            dl->AddText(notePos, IM_COL32(150, 200, 240, 220), n.note.c_str());
         }
         // 引脚
         dl->AddCircleFilled(h.inPos, 5.f * zoom_ + 2.f, IM_COL32(200, 205, 215, 255));
@@ -808,6 +869,12 @@ void FlowPanel::Canvas(EditorContext& ctx) {
 
     // ---- 左键 ----
     if (hover && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        // 分组框：点组内空白（未命中节点/徽标）= 选组并可拖动
+        int groupHit = -1;
+        for (const auto& r : groupRects_)
+            if (mouse.x >= r.min.x && mouse.x <= r.max.x && mouse.y >= r.min.y &&
+                mouse.y <= r.max.y)
+                groupHit = r.index;
         // 入口徽标优先（点徽标=选中该入口，进检视编辑）
         for (const auto& b : badges_) {
             if (mouse.x >= b.min.x - 4 && mouse.x <= b.max.x + 4 && mouse.y >= b.min.y - 4 &&
@@ -844,6 +911,7 @@ void FlowPanel::Canvas(EditorContext& ctx) {
         } else if (hit) {
             selNode_ = hit->id;
             selEntry_ = -1;
+            selGroup_ = -1;
             int oi = 0;
             if (hit->info)
                 for (auto o = hit->info->outs; *o && oi < 3; ++o, ++oi) {
@@ -863,9 +931,26 @@ void FlowPanel::Canvas(EditorContext& ctx) {
                     graph_.nodes[static_cast<size_t>(hit - hits_.data())].x,
                     graph_.nodes[static_cast<size_t>(hit - hits_.data())].y);
             }
+        } else if (groupHit >= 0) {
+            // 拖分组 = 组矩形 + 全部"完全在内"的节点一起动
+            selGroup_ = groupHit;
+            selNode_ = 0;
+            selEntry_ = -1;
+            BeginInteraction();
+            groupDragging_ = true;
+            groupDragStart_ = mouse;
+            FlowGroup& gr = graph_.groups[static_cast<size_t>(groupHit)];
+            groupOrigPos_ = ImVec2(gr.x, gr.y);
+            groupMembers_.clear();
+            for (const auto& n : graph_.nodes) {
+                const bool inside = n.x >= gr.x && n.y >= gr.y &&
+                                    n.x + kNodeW <= gr.x + gr.w && n.y + 80 <= gr.y + gr.h;
+                if (inside) groupMembers_.push_back({n.id, ImVec2(n.x, n.y)});
+            }
         } else {
             selNode_ = 0;
             selEntry_ = -1;
+            selGroup_ = -1;
             panning_ = true;
             panStart_ = mouse;
             panOrigin_ = pan_;
@@ -903,6 +988,25 @@ void FlowPanel::Canvas(EditorContext& ctx) {
                 n.x = std::floor((nodeStartPos_.x + d.x) / kGrid + 0.5f) * kGrid;
                 n.y = std::floor((nodeStartPos_.y + d.y) / kGrid + 0.5f) * kGrid;
             }
+    }
+    if (groupDragging_ && !ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+        groupDragging_ = false;
+        groupMembers_.clear();
+        CommitInteraction();
+    }
+    if (groupDragging_ && ImGui::IsMouseDown(ImGuiMouseButton_Left) && selGroup_ >= 0) {
+        const ImVec2 d((mouse.x - groupDragStart_.x) / zoom_,
+                       (mouse.y - groupDragStart_.y) / zoom_);
+        FlowGroup& gr = graph_.groups[static_cast<size_t>(selGroup_)];
+        gr.x = groupOrigPos_.x + d.x;
+        gr.y = groupOrigPos_.y + d.y;
+        // 成员节点 = 拖动开始时冻结的 (id, 原位) 列表
+        for (const auto& m : groupMembers_) {
+            if (FlowNode* n = graph_.Find(m.first)) {
+                n->x = m.second.x + d.x;
+                n->y = m.second.y + d.y;
+            }
+        }
     }
     if (panning_ && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
         pan_.x = panOrigin_.x + (mouse.x - panStart_.x);
@@ -965,11 +1069,28 @@ void FlowPanel::Canvas(EditorContext& ctx) {
                     }
                 ImGui::EndMenu();
             }
+            if (ImGui::MenuItem("新建分组")) {
+                BeginInteraction();
+                FlowGroup gr;
+                gr.title = "分组";
+                gr.x = std::floor(ctxMouse_.x / kGrid + 0.5f) * kGrid;
+                gr.y = std::floor(ctxMouse_.y / kGrid + 0.5f) * kGrid;
+                graph_.groups.push_back(gr);
+                selGroup_ = static_cast<int>(graph_.groups.size()) - 1;
+                selNode_ = 0;
+                CommitInteraction();
+            }
         }
         ImGui::EndPopup();
     }
 
     // ---- 删除键 ----
+    if (hover && selGroup_ >= 0 && !selNode_ && ImGui::IsKeyPressed(ImGuiKey_Delete, false)) {
+        BeginInteraction();
+        graph_.groups.erase(graph_.groups.begin() + selGroup_);
+        selGroup_ = -1;
+        CommitInteraction();
+    }
     if (hover && selNode_ && ImGui::IsKeyPressed(ImGuiKey_Delete, false)) {
         BeginInteraction();
         graph_.RemoveNode(selNode_);
@@ -1032,9 +1153,45 @@ void FlowPanel::Inspector(EditorContext& ctx) {
             }
         }
         ImGui::Spacing();
+        // 节点注释（编辑器元数据，运行时忽略）
+        char noteB[256];
+        std::snprintf(noteB, sizeof(noteB), "%s", nodeSel->note.c_str());
+        ImGui::SetNextItemWidth(-40);
+        if (ImGui::InputText("注释", noteB, sizeof(noteB), ImGuiInputTextFlags_EnterReturnsTrue))
+            nodeSel->note = noteB;
+        ImGui::Spacing();
         if (ImGui::Button("删除节点")) {
             graph_.RemoveNode(selNode_);
             selNode_ = 0;
+        }
+    } else if (selGroup_ >= 0 && selGroup_ < static_cast<int>(graph_.groups.size())) {
+        // 分组编辑
+        FlowGroup& gr = graph_.groups[static_cast<size_t>(selGroup_)];
+        ImGui::Text("分组");
+        char tb[96];
+        std::snprintf(tb, sizeof(tb), "%s", gr.title.c_str());
+        ImGui::SetNextItemWidth(-60);
+        if (ImGui::InputText("标题", tb, sizeof(tb), ImGuiInputTextFlags_EnterReturnsTrue))
+            gr.title = tb;
+        float sz[2] = {gr.w, gr.h};
+        if (ImGui::DragFloat2("大小", sz, 2.f, 96.f, 2000.f, "%.0f")) {
+            gr.w = sz[0];
+            gr.h = sz[1];
+        }
+        float cols[3] = {
+            static_cast<float>((gr.rgb >> 16) & 0xFF) / 255.f,
+            static_cast<float>((gr.rgb >> 8) & 0xFF) / 255.f,
+            static_cast<float>(gr.rgb & 0xFF) / 255.f};
+        if (ImGui::ColorEdit3("颜色", cols,
+                              ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel)) {
+            const int r = static_cast<int>(cols[0] * 255.f), g2 = static_cast<int>(cols[1] * 255.f),
+                      b2 = static_cast<int>(cols[2] * 255.f);
+            gr.rgb = (r << 16) | (g2 << 8) | b2;
+        }
+        ImGui::TextDisabled("拖动组内空白移动整组（含组内节点）");
+        if (ImGui::Button("删除分组")) {
+            graph_.groups.erase(graph_.groups.begin() + selGroup_);
+            selGroup_ = -1;
         }
     } else if (selEntry_ >= 0 && selEntry_ < static_cast<int>(graph_.entries.size())) {
         FlowEntry& e = graph_.entries[static_cast<size_t>(selEntry_)];

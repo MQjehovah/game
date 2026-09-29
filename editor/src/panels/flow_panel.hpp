@@ -40,6 +40,7 @@ struct FlowNode {
     std::string type;
     core::Json args = JsonObj();
     float x = 0.f, y = 0.f;
+    std::string note; // 编辑器注释（editor.notes，运行时忽略）
 };
 struct FlowLink {
     int from = 0, to = 0;
@@ -70,6 +71,7 @@ struct FlowGraph {
     std::vector<FlowEntry> entries;
     std::vector<FlowNode> nodes;
     std::vector<FlowLink> links;
+    std::vector<FlowGroup> groups; // 编辑器元数据（运行时忽略）
     int nextId = 1;
 
     FlowNode* Find(int id) {
@@ -194,8 +196,13 @@ private:
         int entry = -1;
         ImVec2 min{}, max{};
     };
+    struct GroupRect {
+        int index = -1;
+        ImVec2 min{}, max{};
+    };
     std::vector<Hit> hits_;
     std::vector<Badge> badges_;
+    std::vector<GroupRect> groupRects_;
     // 运行期调试（PollDebugNode 缓存）
     int debugNode_ = 0;
     std::string debugGraph_;
@@ -203,6 +210,11 @@ private:
     int ctxNode_ = 0;
     int ctxLink_ = -1;
     ImVec2 ctxMouse_{};
+    // 分组拖动（组矩形 + 全体内含节点一起动）
+    int selGroup_ = -1;
+    bool groupDragging_ = false;
+    ImVec2 groupDragStart_{}, groupOrigPos_{};
+    std::vector<std::pair<int, ImVec2>> groupMembers_; // 拖动开始冻结的 (节点id, 原位)
 };
 
 } // namespace neon::editor
