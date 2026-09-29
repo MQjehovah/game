@@ -12,7 +12,8 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
-#include <shlobj.h>
+#include <shobjidl.h>
+#include <objbase.h>
 #endif
 
 #include "editor.hpp"
@@ -144,21 +145,38 @@ void AssetLibraryPanel::Draw(EditorContext& ctx) {
     ImGui::InputText("##root", rootPath_, sizeof(rootPath_));
     ImGui::SameLine();
     if (ImGui::Button("浏览...")) {
-        BROWSEINFOA bi = {};
-        char path[MAX_PATH] = {};
-        bi.lpszTitle = "选择素材目录";
-        bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
-        LPITEMIDLIST pidl = SHBrowseForFolderA(&bi);
-        if (pidl) {
-            SHGetPathFromIDListA(pidl, path);
-            IMalloc* im = nullptr;
-            SHGetMalloc(&im);
-            if (im) { im->Free(pidl); im->Release(); }
-            if (path[0]) {
-                std::snprintf(rootPath_, sizeof(rootPath_), "%s", path);
-                Scan(rootPath_);
+        // 现代 IFileDialog 文件夹选择（Vista+）；COM 单线程初始化
+        // SHBrowseForFolder 在游戏渲染线程上会死锁（内部消息泵冲突）。
+        CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+        IFileDialog* dlg = nullptr;
+        if (SUCCEEDED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER,
+                                       IID_IFileDialog, reinterpret_cast<void**>(&dlg)))) {
+            DWORD opts = 0;
+            dlg->GetOptions(&opts);
+            dlg->SetOptions(opts | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM);
+            dlg->SetTitle(L"选择素材目录");
+            // 提升到前台（编辑器可能是全屏/置顶）
+            HWND owner = GetForegroundWindow();
+            if (SUCCEEDED(dlg->Show(owner))) {
+                IShellItem* item = nullptr;
+                if (SUCCEEDED(dlg->GetResult(&item))) {
+                    PWSTR wpath = nullptr;
+                    if (SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH, &wpath))) {
+                        char narrow[MAX_PATH];
+                        WideCharToMultiByte(CP_UTF8, 0, wpath, -1, narrow, MAX_PATH,
+                                            nullptr, nullptr);
+                        CoTaskMemFree(wpath);
+                        if (narrow[0]) {
+                            std::snprintf(rootPath_, sizeof(rootPath_), "%s", narrow);
+                            Scan(rootPath_);
+                        }
+                    }
+                    item->Release();
+                }
             }
+            dlg->Release();
         }
+        CoUninitialize();
     }
     ImGui::SameLine();
     if (ImGui::Button("扫描") && rootPath_[0]) {
