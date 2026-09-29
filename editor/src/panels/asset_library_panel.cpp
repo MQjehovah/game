@@ -2,6 +2,7 @@
 #include "panels/asset_library_panel.hpp"
 
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 #include <cstdlib>
 #include <fstream>
@@ -12,8 +13,6 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
-#include <shobjidl.h>
-#include <objbase.h>
 #endif
 
 #include "editor.hpp"
@@ -96,6 +95,61 @@ bool FileExists(const std::string& p) {
     return _stat64(p.c_str(), &st) == 0;
 }
 
+// --- 内置目录浏览器所需的文件系统辅助（避免原生对话框）---------------
+
+#if defined(_WIN32)
+std::wstring Utf8ToWide(const std::string& s) {
+    if (s.empty()) return {};
+    const int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), static_cast<int>(s.size()), nullptr, 0);
+    std::wstring w(static_cast<size_t>(n), L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, s.c_str(), static_cast<int>(s.size()), w.data(), n);
+    return w;
+}
+std::string WideToUtf8(const std::wstring& w) {
+    if (w.empty()) return {};
+    const int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), static_cast<int>(w.size()),
+                                      nullptr, 0, nullptr, nullptr);
+    std::string s(static_cast<size_t>(n), '\0');
+    WideCharToMultiByte(CP_UTF8, 0, w.c_str(), static_cast<int>(w.size()), s.data(), n,
+                        nullptr, nullptr);
+    return s;
+}
+
+// 上一级目录；盘根（"C:/"）保持不变。
+std::string ParentDir(const std::string& p) {
+    if (p.size() <= 3) return p;
+    const size_t slash = p.find_last_of("/\\");
+    if (slash == std::string::npos) return p;
+    if (slash <= 2) return p.substr(0, 3);
+    return p.substr(0, slash);
+}
+
+// 列出直接子目录（排序）。
+void ListSubdirs(const std::string& dir, std::vector<std::string>& out) {
+    out.clear();
+    const std::wstring pattern = Utf8ToWide(dir) + L"/*";
+    WIN32_FIND_DATAW fd;
+    HANDLE h = FindFirstFileW(pattern.c_str(), &fd);
+    if (h == INVALID_HANDLE_VALUE) return;
+    do {
+        if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) continue;
+        const std::wstring name = fd.cFileName;
+        if (name == L"." || name == L"..") continue;
+        out.push_back(WideToUtf8(name));
+    } while (FindNextFileW(h, &fd));
+    FindClose(h);
+    std::sort(out.begin(), out.end());
+}
+
+std::vector<std::string> ListDrives() {
+    std::vector<std::string> out;
+    const DWORD mask = GetLogicalDrives();
+    for (int i = 0; i < 26; ++i)
+        if (mask & (1u << i)) out.push_back(std::string(1, static_cast<char>('A' + i)) + ":");
+    return out;
+}
+#endif
+
 } // namespace
 
 void AssetLibraryPanel::Scan(const std::string& root) {
@@ -132,6 +186,86 @@ void AssetLibraryPanel::ImportSelected(EditorContext& ctx) {
     }
 }
 
+// 内置目录浏览器：一个纯 ImGui 弹窗，逐级列子目录。刻意不使用 Windows
+// 原生文件夹对话框（SHBrowseForFolder / IFileDialog）——它们的模态消息
+// 泵会和游戏渲染循环抢消息，而本引擎的 PumpEvents 用 PeekMessage 抽取
+// 整个线程的消息，导致对话框永远拿不到输入、编辑器卡死。
+void AssetLibraryPanel::DrawBrowser(EditorContext& ctx) {
+    if (!ImGui::BeginPopupModal("选择目录", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+        return;
+
+#if defined(_WIN32)
+    const std::vector<std::string> drives = ListDrives();
+    if (browseDir_[0] == '\0' && !drives.empty())
+        std::snprintf(browseDir_, sizeof(browseDir_), "%s/", drives.front().c_str());
+
+    ImGui::Text("当前目录：");
+    ImGui::SameLine();
+    ImGui::TextColored(ImVec4(0.6f, 0.85f, 1.0f, 1.0f), "%s",
+                       browseDir_[0] ? browseDir_ : "(未选择)");
+
+    // 盘符下拉
+    if (!drives.empty()) {
+        std::vector<const char*> items;
+        items.reserve(drives.size());
+        for (auto& d : drives) items.push_back(d.c_str());
+        int driveIdx = 0;
+        for (size_t i = 0; i < drives.size(); ++i) {
+            if (browseDir_[0] && browseDir_[0] == drives[i][0]) {
+                driveIdx = static_cast<int>(i);
+                break;
+            }
+        }
+        ImGui::SetNextItemWidth(80);
+        if (ImGui::Combo("##drive", &driveIdx, items.data(), static_cast<int>(items.size()))) {
+            std::snprintf(browseDir_, sizeof(browseDir_), "%s/", drives[driveIdx].c_str());
+            browseSel_ = -1;
+        }
+        ImGui::SameLine();
+    }
+
+    if (ImGui::Button("⬆ 上级")) {
+        const std::string up = ParentDir(browseDir_);
+        std::snprintf(browseDir_, sizeof(browseDir_), "%s", up.c_str());
+        browseSel_ = -1;
+    }
+    ImGui::SameLine();
+    ImGui::TextDisabled("双击文件夹进入 · 确认后导入到 assets/ 下");
+
+    ImGui::BeginChild("##dirs", ImVec2(560, 320), 0, 0);
+    std::vector<std::string> subdirs;
+    ListSubdirs(browseDir_, subdirs);
+    if (subdirs.empty()) ImGui::TextDisabled("(无子文件夹)");
+    for (int i = 0; i < static_cast<int>(subdirs.size()); ++i) {
+        ImGui::PushID(i);
+        if (ImGui::Selectable(subdirs[i].c_str(), browseSel_ == i,
+                              ImGuiSelectableFlags_AllowDoubleClick)) {
+            if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+                const std::string next = std::string(browseDir_) + "/" + subdirs[i];
+                std::snprintf(browseDir_, sizeof(browseDir_), "%s", next.c_str());
+                browseSel_ = -1;
+            } else {
+                browseSel_ = i;
+            }
+        }
+        ImGui::PopID();
+    }
+    ImGui::EndChild();
+
+    if (ImGui::Button("选择此目录", ImVec2(140, 0)) && browseDir_[0]) {
+        std::snprintf(rootPath_, sizeof(rootPath_), "%s", browseDir_);
+        Scan(rootPath_);
+        ImGui::CloseCurrentPopup();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("取消", ImVec2(80, 0))) ImGui::CloseCurrentPopup();
+#else
+    ImGui::TextDisabled("此平台请直接输入路径");
+    if (ImGui::Button("关闭")) ImGui::CloseCurrentPopup();
+#endif
+    ImGui::EndPopup();
+}
+
 void AssetLibraryPanel::Draw(EditorContext& ctx) {
     if (!ImGui::Begin(Title(), VisibleFlag())) {
         ImGui::End();
@@ -145,39 +279,18 @@ void AssetLibraryPanel::Draw(EditorContext& ctx) {
     ImGui::InputText("##root", rootPath_, sizeof(rootPath_));
     ImGui::SameLine();
     if (ImGui::Button("浏览...")) {
-        // 现代 IFileDialog 文件夹选择（Vista+）；COM 单线程初始化
-        // SHBrowseForFolder 在游戏渲染线程上会死锁（内部消息泵冲突）。
-        CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
-        IFileDialog* dlg = nullptr;
-        if (SUCCEEDED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER,
-                                       IID_IFileDialog, reinterpret_cast<void**>(&dlg)))) {
-            DWORD opts = 0;
-            dlg->GetOptions(&opts);
-            dlg->SetOptions(opts | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM);
-            dlg->SetTitle(L"选择素材目录");
-            // 提升到前台（编辑器可能是全屏/置顶）
-            HWND owner = GetForegroundWindow();
-            if (SUCCEEDED(dlg->Show(owner))) {
-                IShellItem* item = nullptr;
-                if (SUCCEEDED(dlg->GetResult(&item))) {
-                    PWSTR wpath = nullptr;
-                    if (SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH, &wpath))) {
-                        char narrow[MAX_PATH];
-                        WideCharToMultiByte(CP_UTF8, 0, wpath, -1, narrow, MAX_PATH,
-                                            nullptr, nullptr);
-                        CoTaskMemFree(wpath);
-                        if (narrow[0]) {
-                            std::snprintf(rootPath_, sizeof(rootPath_), "%s", narrow);
-                            Scan(rootPath_);
-                        }
-                    }
-                    item->Release();
-                }
-            }
-            dlg->Release();
+        if (rootPath_[0]) {
+            std::snprintf(browseDir_, sizeof(browseDir_), "%s", rootPath_);
+        } else if (ctx.projectDir && !ctx.projectDir->empty()) {
+            std::snprintf(browseDir_, sizeof(browseDir_), "%s/assets", ctx.projectDir->c_str());
+        } else {
+            browseDir_[0] = '\0';
         }
-        CoUninitialize();
+        browseSel_ = -1;
+        ImGui::OpenPopup("选择目录");
     }
+    DrawBrowser(ctx);
+
     ImGui::SameLine();
     if (ImGui::Button("扫描") && rootPath_[0]) {
         Scan(rootPath_);

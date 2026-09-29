@@ -29,6 +29,7 @@ private:
     void Scan(const std::string& root);
     void ImportSelected(EditorContext& ctx);
     std::string TargetPath(EditorContext& ctx, const AssetLibEntry& e) const;
+    void DrawBrowser(EditorContext& ctx);
 
     bool* visible_;
     char rootPath_[1024]{};
@@ -39,6 +40,9 @@ private:
     bool overwrite_ = false;
     int imported_ = 0;
     int skipped_ = 0;
+    // 内置目录浏览器状态
+    char browseDir_[1024]{};
+    int browseSel_ = -1;
 };
 
 } // namespace neon::editor
