@@ -135,7 +135,10 @@ local nextEventT = 20
 local driveProps, driveHorde = {}, {}
 
 -- 主角
-local player = { active = false, x = 0, z = 0, yaw = 0, ent = nil, anim = "" }
+local player = { active = false, x = 0, z = 0, yaw = 0, ent = nil, anim = "",
+                 mag = 30, reloadT = 0, nadeCd = 0 }
+local grenades = {}
+local hitMarkT, recoilT = 0, 0
 
 -- 验证钩子
 local autoPilot, driveT, autoT, autoTarget = false, 0, 0, nil
@@ -701,15 +704,59 @@ local function spawnPlayer()
   player.ent = SpawnPrefab("rv_player", { x = bx, y = 0, z = bz })
   player.active = (player.ent ~= nil)
   player.anim = ""
-  if player.active then onFoot = true end
+  player.mag = 30
+  player.reloadT = 0
+  if player.active then
+    -- 步枪三件：枪身/枪管/枪托（每帧按持枪位姿摆放）
+    player.gunBody = SpawnPrefab("rv_gun_body", { x = bx, y = 1.15, z = bz })
+    player.gunBarrel = SpawnPrefab("rv_gun_barrel", { x = bx, y = 1.15, z = bz })
+    player.gunStock = SpawnPrefab("rv_gun_stock", { x = bx, y = 1.12, z = bz })
+    onFoot = true
+  end
 end
 
 local function despawnPlayer()
   if player.ent ~= nil then Despawn(player.ent) end
-  player.ent = nil
+  if player.gunBody ~= nil then Despawn(player.gunBody) end
+  if player.gunBarrel ~= nil then Despawn(player.gunBarrel) end
+  if player.gunStock ~= nil then Despawn(player.gunStock) end
+  player.ent, player.gunBody, player.gunBarrel, player.gunStock = nil, nil, nil, nil
   player.active = false
   player.anim = ""
   onFoot = false
+end
+
+-- 步枪三件贴到持枪位（右手，前向伸出；跑步时枪口下压）
+local function updatePlayerGun()
+  if not onFoot or player.gunBody == nil then return end
+  local fx, fz = math.sin(player.yaw), math.cos(player.yaw)
+  local rx, rz = -fz * 0.32, fx * 0.32      -- 右手侧偏移（侧影可见）
+  local lower = (player.anim == "Idle") and 0.14 or 0
+  local bx, bz = player.x + fx * 0.24 + rx, player.z + fz * 0.24 + rz
+  local y = 1.1 - lower
+  SetPosition(player.gunBody, { x = bx, y = y, z = bz })
+  SetRotationY(player.gunBody, player.yaw)
+  SetScale(player.gunBody, 0.07, 0.1, 0.46)
+  SetPosition(player.gunBarrel, { x = bx + fx * 0.36, y = y + 0.025, z = bz + fz * 0.36 })
+  SetRotationY(player.gunBarrel, player.yaw)
+  SetScale(player.gunBarrel, 0.035, 0.035, 0.3)
+  SetPosition(player.gunStock, { x = bx - fx * 0.2, y = y - 0.025, z = bz - fz * 0.2 })
+  SetRotationY(player.gunStock, player.yaw)
+  SetScale(player.gunStock, 0.05, 0.09, 0.18)
+end
+
+local function playerMuzzle()
+  if onFoot and player.active then
+    local fx, fz = math.sin(player.yaw), math.cos(player.yaw)
+    return player.x + fx * 0.5, 1.22, player.z + fz * 0.5
+  end
+  local turret = hasModule("turret")
+  if turret then
+    local mx, mz = rotOf(turret.lx, turret.lz)
+    return mx, (turret.ly or 2.6) + 0.5, mz
+  end
+  local mx, mz = rotOf(0, 1.5)
+  return mx, 2.35, mz
 end
 
 local function updatePlayer(dt)
@@ -717,10 +764,11 @@ local function updatePlayer(dt)
   -- 坦克式行走：W/S 前后，A/D 转向（与驾驶操作一致）
   local mv = (ActionDown("w") and 1 or 0) - (ActionDown("s") and 1 or 0)
   local turn = (ActionDown("a") and 1 or 0) - (ActionDown("d") and 1 or 0)
+  local sprint = ActionDown("shift") and true or false
   if autoPilot then mv, turn = 1, 0 end  -- 验证钩子：自动直走
-  player.yaw = player.yaw + turn * 2.4 * dt
+  player.yaw = player.yaw + turn * (sprint and 1.9 or 2.4) * dt
   local fx, fz = math.sin(player.yaw), math.cos(player.yaw)
-  local sp = (mv >= 0) and 3.2 or 1.6
+  local sp = ((mv >= 0) and 3.2 or 1.6) * (sprint and 1.65 or 1)
   player.x = player.x + fx * sp * mv * dt
   player.z = player.z + fz * sp * mv * dt
   -- 车内行走：进入车厢范围则夹在 4x14 格内部（不出墙）
@@ -739,29 +787,49 @@ local function updatePlayer(dt)
   -- 模型网格在 rot 0 朝 -Z，与 yaw 约定（前进 = (sin,cos)，rot 0 朝 +Z）相反，
   -- 加 π 让视觉朝向对齐移动方向（否则人物倒着走、相机对着脸）
   SetRotationY(player.ent, player.yaw + math.pi)
-  -- 动画状态机：移动 = Walk，静止 = Idle（循环 + 0.15s 淡入）
-  local clip = (mv ~= 0) and "Walk" or "Idle"
+  -- 动画状态机：疾跑 = Run，移动 = Walk，静止 = Idle（循环 + 0.15s 淡入）
+  local clip = (mv == 0) and "Idle" or (sprint and "Run" or "Walk")
   if clip ~= player.anim then
     player.anim = clip
     if not PlayAnimation(player.ent, clip, true, 0.15) then
       player.anim = ""  -- 剪辑缺失时回退，避免卡死在状态里
     end
   end
+  updatePlayerGun()
+  -- 换弹
+  if player.reloadT > 0 then
+    player.reloadT = player.reloadT - dt
+    if player.reloadT <= 0 then player.mag = 30 end
+  end
+  -- 手雷（Q）：抛物线投掷，落地范围爆炸
+  if player.nadeCd > 0 then
+    player.nadeCd = player.nadeCd - dt
+  end
+  if ActionPressed("q") and player.nadeCd <= 0 and #grenades < 4 then
+    player.nadeCd = 6.0
+    local mp = InputMousePos()
+    local aim = PickGround(mp)
+    local tx, tz = player.x + fx * 10, player.z + fz * 10
+    if aim then
+      local adx, adz = aim.x - player.x, aim.z - player.z
+      local ad = math.sqrt(adx * adx + adz * adz)
+      if ad > 12 then adx, adz, ad = adx / ad * 12, adz / ad * 12, 12 end
+      tx, tz = player.x + adx, player.z + adz
+    end
+    local ent = SpawnPrefab("rv_grenade", { x = player.x + fx * 0.4, y = 1.3, z = player.z + fz * 0.4 })
+    if ent ~= nil then
+      local n = (tx - player.x)
+      local nz = (tz - player.z)
+      local flight = 0.9
+      grenades[#grenades + 1] = { ent = ent,
+          x = player.x + fx * 0.4, y = 1.3, z = player.z + fz * 0.4,
+          vx = n / flight, vz = nz / flight,
+          vy = (0 - 1.3) / flight + 0.5 * 9.8 * flight,
+          fuse = flight + 0.3 }
+    end
+  end
 end
 
-local function playerMuzzle()
-  if onFoot and player.active then
-    local fx, fz = math.sin(player.yaw), math.cos(player.yaw)
-    return player.x + fx * 0.35, 1.3, player.z + fz * 0.35
-  end
-  local turret = hasModule("turret")
-  if turret then
-    local mx, mz = rotOf(turret.lx, turret.lz)
-    return mx, (turret.ly or 2.6) + 0.5, mz
-  end
-  local mx, mz = rotOf(0, 1.5)
-  return mx, 2.35, mz
-end
 
 -- ---------------------------------------------------------------------------
 -- 停靠搜刮（驻车在节点旁时的附加层；建造不受影响）
@@ -973,10 +1041,14 @@ local function shootAt(mx, my)
                   color = { r = 1, g = 0.8, b = 0.3, a = 0.95 },
                   colorEnd = { r = 1, g = 0.6, b = 0.1, a = 0.0 },
                   additive = true })
+  recoilT = 0.12
+  local hx, hy, hz
   if best then
     local z = horde[best]
     z.hp = z.hp - (hasModule("gun_rack") and 2 or 1)
-    EmitParticles({ pos = { x = z.x, y = 1.0 + math.random() * 0.4, z = z.z },
+    hx, hy, hz = z.x, 1.0 + math.random() * 0.4, z.z
+    hitMarkT = 0.12
+    EmitParticles({ pos = { x = hx, y = hy, z = hz },
                     count = 6, speedMin = 0.5, speedMax = 2,
                     lifeMin = 0.2, lifeMax = 0.45,
                     sizeStart = 0.14, sizeEnd = 0.03,
@@ -987,12 +1059,27 @@ local function shootAt(mx, my)
   else
     local g = PickGround({ x = mx, y = my })
     if g then
-      EmitParticles({ pos = { x = g.x, y = 0.08, z = g.z }, count = 8,
+      hx, hy, hz = g.x, 0.08, g.z
+      EmitParticles({ pos = { x = hx, y = hy, z = hz }, count = 8,
                       speedMin = 0.5, speedMax = 2, lifeMin = 0.25, lifeMax = 0.5,
                       sizeStart = 0.15, sizeEnd = 0.04,
                       color = { r = 0.62, g = 0.57, b = 0.47, a = 0.7 },
                       colorEnd = { r = 0.62, g = 0.57, b = 0.47, a = 0.0 },
                       additive = false })
+    end
+  end
+  -- 曳光：枪口到弹着点的亮粒子串
+  if hx then
+    for k = 1, 5 do
+      local t = k / 5
+      EmitParticles({ pos = { x = mzx + (hx - mzx) * t, y = mzy + (hy - mzy) * t,
+                             z = mzz + (hz - mzz) * t },
+                      count = 1, speedMin = 0, speedMax = 0,
+                      lifeMin = 0.05, lifeMax = 0.09,
+                      sizeStart = 0.06, sizeEnd = 0.02,
+                      color = { r = 1, g = 0.85, b = 0.4, a = 0.85 },
+                      colorEnd = { r = 1, g = 0.7, b = 0.2, a = 0.0 },
+                      additive = true })
     end
   end
 end
@@ -1028,6 +1115,47 @@ local function turretFire(dt)
                   additive = true })
   z.hp = z.hp - 1
   if z.hp <= 0 then killZombie(best) end
+end
+
+-- 投掷物：抛物线 + 落地范围爆炸（伤害尸群）
+local function updateGrenades(dt)
+  for i = #grenades, 1, -1 do
+    local g = grenades[i]
+    g.vy = g.vy - 9.8 * dt
+    g.x = g.x + g.vx * dt
+    g.y = g.y + g.vy * dt
+    g.z = g.z + g.vz * dt
+    g.fuse = g.fuse - dt
+    if g.y <= 0.12 or g.fuse <= 0 then
+      EmitParticles({ pos = { x = g.x, y = 0.5, z = g.z }, count = 34,
+                      shape = "sphere", radius = 0.8,
+                      speedMin = 2, speedMax = 7, lifeMin = 0.35, lifeMax = 0.9,
+                      sizeStart = 0.3, sizeEnd = 0.06,
+                      color = { r = 1, g = 0.55, b = 0.15, a = 0.95 },
+                      colorEnd = { r = 0.9, g = 0.3, b = 0.05, a = 0.0 },
+                      additive = true })
+      EmitParticles({ pos = { x = g.x, y = 0.6, z = g.z }, count = 16,
+                      shape = "sphere", radius = 0.6,
+                      speedMin = 1, speedMax = 3, lifeMin = 0.5, lifeMax = 1.2,
+                      sizeStart = 0.5, sizeEnd = 0.1,
+                      color = { r = 0.25, g = 0.23, b = 0.2, a = 0.8 },
+                      colorEnd = { r = 0.3, g = 0.28, b = 0.25, a = 0.0 },
+                      additive = false })
+      for j = #horde, 1, -1 do
+        local z = horde[j]
+        local ddx, ddz = z.x - g.x, z.z - g.z
+        if ddx * ddx + ddz * ddz < 16 then  -- 4m 爆炸半径
+          z.hp = z.hp - 5
+          if z.hp <= 0 then killZombie(j) end
+        end
+      end
+      Despawn(g.ent)
+      table.remove(grenades, i)
+    else
+      SetPosition(g.ent, { x = g.x, y = g.y, z = g.z })
+      SetRotationY(g.ent, raidT * 7)
+    end
+  end
 end
 
 -- ---------------------------------------------------------------------------
@@ -1359,6 +1487,7 @@ local function updateCamera(dt)
     sx = sx + (math.random() - 0.5) * amp
     sy = sy + (math.random() - 0.5) * amp
   end
+  if recoilT > 0 then sy = sy + recoilT * 0.3 end  -- 射击后坐力（轻微上抬）
   SetPosition(camEnt, { x = sx, y = sy, z = sz })
   local dx, dy, dz = lookx - sx, looky - sy, lookz - sz
   local len = math.sqrt(dx * dx + dy * dy + dz * dz)
@@ -1574,6 +1703,7 @@ local function drawStatBar(x, y, w, label, valueText, frac, warn)
 end
 
 local function drawHud()
+  local sprinting = onFoot and (player.anim == "Run")
   local vp = GetViewportSize()
   local vw = (vp and vp.w) or 1280
   local vh = (vp and vp.h) or 720
@@ -1647,8 +1777,8 @@ local function drawHud()
   end
 
   local hints = {
-    onFoot and "W/S 行走   A/D 转向" or "左键 放置   右键/X 拆除",
-    onFoot and "F 上车" or "F 下车   T 上路   C 视角(行驶)",
+    onFoot and "W/S 行走   A/D 转向   Shift 疾跑" or "左键 放置   右键/X 拆除",
+    onFoot and "F 上车   Q 手雷" or "F 下车   T 上路   C 视角(行驶)",
     "M 地图   H 修理   F5/F9 存/读",
   }
   for i, h in ipairs(hints) do
@@ -1681,6 +1811,37 @@ local function drawHud()
     DrawText(c.name .. "  ·  " .. (c.desc or "") .. "  ·  " .. costText(c.cost or {}),
              math.floor(vw * 0.5), vh - rowsN * (slotH + gap) - 40,
              14, 0.95, 0.90, 0.78, 1, true)
+  end
+
+  if onFoot then
+    local mp = InputMousePos()
+    if mp then
+      -- 准星
+      DrawRect(mp.x - 6, mp.y - 0.5, 12, 1, 0.92, 0.9, 0.85, 0.85)
+      DrawRect(mp.x - 0.5, mp.y - 6, 1, 12, 0.92, 0.9, 0.85, 0.85)
+      -- 命中标记（X 四瓣，命中后短暂闪现）
+      if hitMarkT > 0 then
+        local a = hitMarkT / 0.12
+        DrawRect(mp.x - 10, mp.y - 0.75, 6, 1.5, 1, 0.3, 0.25, a)
+        DrawRect(mp.x + 4, mp.y - 0.75, 6, 1.5, 1, 0.3, 0.25, a)
+        DrawRect(mp.x - 0.75, mp.y - 10, 1.5, 6, 1, 0.3, 0.25, a)
+        DrawRect(mp.x - 0.75, mp.y + 4, 1.5, 6, 1, 0.3, 0.25, a)
+      end
+    end
+    local by2 = vh - 205
+    DrawRect(vw * 0.5 - 70, by2 - 6, 140, 64, 0.06, 0.07, 0.08, 0.55)
+    local ammoText = (player.reloadT > 0) and "换弹中…" or (player.mag .. " / 30")
+    local aCol = (player.mag <= 6 or player.reloadT > 0) and 1 or 0.9
+    DrawText("弹药 " .. ammoText, math.floor(vw * 0.5), by2, 14,
+             aCol, player.reloadT > 0 and 0.6 or 0.9, 0.5, 1, true)
+    local nadeText = (player.nadeCd > 0) and string.format("Q 手雷 %.1fs", player.nadeCd)
+                     or "Q 手雷 就绪"
+    DrawText(nadeText, math.floor(vw * 0.5), by2 + 20, 13,
+             player.nadeCd > 0 and 0.55 or 0.65, 0.85, 0.55, 1, true)
+    if sprinting then
+      DrawText("疾跑中", math.floor(vw * 0.5), by2 + 40, 13,
+               0.6, 0.85, 0.55, 1, true)
+    end
   end
 
   if toast.t > 0 then
@@ -1923,6 +2084,9 @@ function on_update(ent, dt)
   if toast.t > 0 then toast.t = toast.t - dt end
   ensureHelpers()
   if ActionPressed("m") then mapOpen = not mapOpen end
+  if hitMarkT > 0 then hitMarkT = hitMarkT - dt end
+  if recoilT > 0 then recoilT = recoilT - dt end
+  updateGrenades(dt)
 
   -- ======================= 行驶 =======================
   if phase == "driving" then
@@ -1987,7 +2151,10 @@ function on_update(ent, dt)
       updateHorde(dt)
       turretFire(dt)
       fireT = fireT - dt
-      if InputMouseDown(0) and fireT <= 0 then
+      if InputMouseDown(0) and fireT <= 0 and player.reloadT <= 0 then
+        if player.mag <= 0 then
+          player.reloadT = 1.6
+        else
         local mp = InputMousePos()
         local nearest = false
         for _, z in ipairs(horde) do
@@ -2002,7 +2169,9 @@ function on_update(ent, dt)
         end
         if nearest then
           fireT = RAID.fireCd
+          player.mag = player.mag - 1
           shootAt(mp.x, mp.y)
+        end
         end
       end
     end
