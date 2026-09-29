@@ -65,7 +65,7 @@
           "castShadow": false,
           "material": {
             "ao": 1,
-            "colorHex": "#43464B",
+            "colorHex": "#7E7458",
             "emissiveIntensity": 1,
             "metallic": 0,
             "roughness": 0.949999988079071,
