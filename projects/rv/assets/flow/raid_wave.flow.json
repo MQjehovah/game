@@ -1,0 +1,28 @@
+{
+  "name": "raid_wave",
+  "vars": { "active": 0, "wave": 0 },
+  "entry": [
+    { "type": "signal", "name": "raid_start", "node": 1 },
+    { "type": "signal", "name": "raid_end",   "node": 4 },
+    { "type": "timer",  "interval": 4.0, "gate": "active", "node": 5 }
+  ],
+  "nodes": [
+    { "id": 1, "type": "flow/setvar", "var": "active", "value": 1 },
+    { "id": 2, "type": "flow/setvar", "var": "wave",   "value": 0 },
+    { "id": 3, "type": "game/toast",  "text": "夜袭波次系统接管：尸群将成波涌来" },
+    { "id": 4, "type": "flow/setvar", "var": "active", "value": 0 },
+    { "id": 5, "type": "flow/branch", "var": "wave", "op": "<", "value": 5 },
+    { "id": 6, "type": "game/horde",  "count": 3 },
+    { "id": 7, "type": "game/loot",   "mat": "metal", "min": 1, "max": 3 },
+    { "id": 8, "type": "flow/addvar", "var": "wave", "value": 1 }
+  ],
+  "links": [
+    { "from": 1, "out": "exec",  "to": 2, "in": "exec" },
+    { "from": 2, "out": "exec",  "to": 3, "in": "exec" },
+    { "from": 5, "out": "true",  "to": 6, "in": "exec" },
+    { "from": 6, "out": "exec",  "to": 7, "in": "exec" },
+    { "from": 7, "out": "exec",  "to": 8, "in": "exec" }
+  ],
+  "editor": { "positions": { "1": [80, 60], "2": [300, 60], "3": [520, 60],
+              "4": [80, 200], "5": [80, 340], "6": [300, 340], "7": [520, 340], "8": [740, 340] } }
+}

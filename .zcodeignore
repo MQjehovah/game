@@ -1,0 +1,84 @@
+build/
+build-*/
+*.o
+*.obj
+!projects/default/assets/kenney_nature/**/*.obj
+*.exe
+*.pdb
+*.ilk
+# Engine-local derived data (offline-baked BC1 textures etc.) �?regenerated on
+# demand, never versioned. Analogous to Unity's Library/ or Godot's .godot/.
+.neon/
+# Runtime save games live next to the project while developing, but they are
+# player data, not source data.
+*_save.dat
+# Runtime tool logs (ImGui log-to-file).
+imgui_log.txt
+# Engine log written to the repo root by the editor for diagnosis.
+neon_log.log
+neon_log.txt
+# Unit-test scratch files (test_audio fixtures).
+smoke_tone_fx.wav
+smoke_bad_audio.bin
+projects/*/save.json
+neon_editor_config.json
+# Every tree under projects/ is an Engine sample/test project shipped with the
+# engine and is first-class source: fully versioned (scenes, scripts, prefabs,
+# locales, audio, sprites, textures, models, materials, input maps, plugins).
+# Only runtime save games, engine-local derived data and *.meta import settings
+# are excluded. *.meta are regenerated on import, never versioned.
+*.meta
+# The editor's derived asset-database cache (analogous to .neon/), not source.
+projects/*/.asset_db.json
+# Editor scratch/backup/export artifacts produced while developing a project �?
+# local user data, not shipped sample content.
+projects/*/assets/scripts/new_script.lua
+projects/*/assets/scenes/exported_scene.json
+projects/*/assets/scenes/*.bak
+# The engine repo-root scratch scene dir; project scenes live under assets/.
+/scenes/
+.vs/
+.vscode/
+CMakeUserPresets.json
+# Editor runtime window/layout state (regenerated every launch).
+neon_editor_imgui.ini
+# Shadow-map / screenshot debug artifacts (throwaway diagnostics)
+*.raw
+/*.png
+# Oversized external-buffer meshes kept local-only (network push too large).
+projects/forest/assets/models/island_tree_01/island_tree_01.bin
+projects/showcase/assets/models/island_tree_01/island_tree_01.bin
+__pycache__/
+
+dist/
+
+# ===== ↑ 以上同步自 .gitignore（「从 .gitignore 同步」只重写以上部分）=====
+.git/
+.hg/
+.svn/
+node_modules/
+bower_components/
+jspm_packages/
+site-packages/
+venv/
+coverage/
+htmlcov/
+lcov-report/
+cmakefiles/
+cmake-build-*/
+bazel-*/
+pods/
+deriveddata/
+storybook-static/
+playwright-report/
+test-results/
+allure-results/
+allure-report/
+cdk.out/
+*.egg-info/
+*.dist-info/
+eggs/
+pip-wheel-metadata/
+wheels/
+# ----- ↑ 以上为 ZCode 默认排除规则（自定义规则请写在本行下方，不会被同步/恢复改动）-----
+# 自定义规则写在下方（本行提示可删除）

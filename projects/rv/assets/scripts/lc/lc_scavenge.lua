@@ -67,6 +67,7 @@ function searchCrate(idx)
                         stopThreat + STOP.searchThreat + (nd.danger or 0))
   if stopThreat >= STOP.threatMax and evacT < 0 then
     evacT = STOP.evacTime
+    LC.flow.emit("raid_start")
     toast.text = "尸群被惊动了！赶紧撤（E 收藏撤离 / T 上路）"
     toast.t = 3.5
   end
@@ -91,6 +92,7 @@ function endScavenge(keepRatio)
   despawnHorde()
   stopThreat = 0
   evacT = -1
+  LC.flow.emit("raid_end")
   day = day + 1
   atNode = nil
   toast.text = (got == "" and "空手而归" or "物资入库: " .. got)

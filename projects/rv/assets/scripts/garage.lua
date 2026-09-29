@@ -184,6 +184,7 @@ function on_start()
     end
   end
   if groundEnt ~= nil then SetScale(groundEnt, 800, 0.1, 800) end
+  LC.flow.load("assets/flow/raid_wave.flow.json")  -- 示例玩法图：夜袭波次
   spawnScenery()
   spawnMarkers()
   do  -- 验证钩子：scriptBaseDir 下放 autopilot_on.txt 即自动驾驶全循环
@@ -221,6 +222,7 @@ function on_update(ent, dt)
   if hitMarkT > 0 then hitMarkT = hitMarkT - dt end
   if recoilT > 0 then recoilT = recoilT - dt end
   updateGrenades(dt)
+  LC.flow.tick(dt)
 
   -- ======================= 行驶 =======================
   if phase == "driving" then

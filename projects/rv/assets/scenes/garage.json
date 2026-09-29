@@ -6,6 +6,14 @@
           "items": [
             {
               "backend": "lua",
+              "path": "assets/scripts/lc/lc_flow.lua"
+            },
+            {
+              "backend": "lua",
+              "path": "assets/scripts/lc/lc_flowgame.lua"
+            },
+            {
+              "backend": "lua",
               "path": "assets/scripts/lc/lc_config.lua"
             },
             {
