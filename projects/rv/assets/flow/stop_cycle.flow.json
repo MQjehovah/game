@@ -1,33 +1,49 @@
 {
   "name": "stop_cycle",
-  "vars": { "day_count": 0 },
+  "vars": { "day_count": 0, "danger": 0, "threat": 0, "searchThreat": 1, "threatMax": 8 },
   "entry": [
-    { "type": "signal", "name": "arrive",       "node": 1 },
-    { "type": "signal", "name": "threat_full",  "node": 4 },
-    { "type": "signal", "name": "leave",        "node": 6 }
+    { "type": "signal", "name": "arrive",         "node": 1 },
+    { "type": "signal", "name": "crate_searched", "node": 10 },
+    { "type": "signal", "name": "leave",          "node": 6 }
   ],
   "nodes": [
-    { "id": 1, "type": "game/crates" },
-    { "id": 2, "type": "game/toast",  "text": "停靠搜索物资（左键搜箱）", "duration": 2.5 },
-    { "id": 4, "type": "game/evac" },
-    { "id": 5, "type": "flow/call",   "graph": "raid_wave", "signal": "raid_start" },
-    { "id": 6, "type": "game/bank",   "keep": 1.0 },
-    { "id": 7, "type": "game/clear" },
-    { "id": 8, "type": "game/day",    "amount": 1 },
-    { "id": 9, "type": "game/toast",  "text": "收工入库", "duration": 3.0 }
+    { "id": 1,  "type": "game/crates" },
+    { "id": 2,  "type": "game/toast",  "text": "停靠搜索物资（左键搜箱）", "duration": 2.5 },
+    { "id": 4,  "type": "game/evac" },
+    { "id": 5,  "type": "flow/call",   "graph": "raid_wave", "signal": "raid_start" },
+    { "id": 6,  "type": "game/bank",   "keep": 1.0 },
+    { "id": 7,  "type": "game/clear" },
+    { "id": 8,  "type": "game/day",    "amount": 1 },
+    { "id": 9,  "type": "game/toast",  "text": "收工入库", "duration": 3.0 },
+    { "id": 10, "type": "game/threat-add", "amount": "$searchThreat" },
+    { "id": 11, "type": "game/threat-add", "amount": "$danger" },
+    { "id": 12, "type": "game/threat-sync", "to": "threat" },
+    { "id": 13, "type": "flow/branch", "var": "threat", "op": ">=", "value": "$threatMax" },
+    { "id": 14, "type": "game/toast",  "text": "尸群被惊动了！赶紧撤（E 收工 / T 上路）", "duration": 3.5 }
   ],
   "links": [
-    { "from": 1, "out": "exec",  "to": 2, "in": "exec" },
-    { "from": 4, "out": "exec",  "to": 5, "in": "exec" },
-    { "from": 6, "out": "exec",  "to": 7, "in": "exec" },
-    { "from": 7, "out": "exec",  "to": 8, "in": "exec" },
-    { "from": 8, "out": "exec",  "to": 9, "in": "exec" }
+    { "from": 1,   "out": "exec",  "to": 2,  "in": "exec" },
+    { "from": 10,  "out": "exec",  "to": 11, "in": "exec" },
+    { "from": 11,  "out": "exec",  "to": 12, "in": "exec" },
+    { "from": 12,  "out": "exec",  "to": 13, "in": "exec" },
+    { "from": 13,  "out": "true",  "to": 14, "in": "exec" },
+    { "from": 14,  "out": "exec",  "to": 4,  "in": "exec" },
+    { "from": 4,   "out": "exec",  "to": 5,  "in": "exec" },
+    { "from": 6,   "out": "exec",  "to": 7,  "in": "exec" },
+    { "from": 7,   "out": "exec",  "to": 8,  "in": "exec" },
+    { "from": 8,   "out": "exec",  "to": 9,  "in": "exec" }
   ],
   "editor": {
-    "positions": { "1": [80, 60], "2": [320, 60], "4": [80, 220], "5": [320, 220],
-                   "6": [80, 400], "7": [320, 400], "8": [560, 400], "9": [800, 400] },
-    "notes": { "1": "停靠：撒物资箱", "4": "威胁满：撤离倒计时", "5": "接管夜袭波次子图" },
+    "positions": { "1": [80, 60], "2": [320, 60], "10": [80, 220], "11": [320, 220],
+                   "12": [560, 220], "13": [800, 220], "14": [1040, 220],
+                   "4": [80, 400], "5": [320, 400],
+                   "6": [80, 560], "7": [320, 560], "8": [560, 560], "9": [800, 560] },
+    "notes": { "10": "searchThreat 图变量（原 STOP.searchThreat）",
+               "11": "本箱危险度（搜箱时注入 danger 变量）",
+               "13": "threatMax 图变量（原 STOP.threatMax）——平衡在此调" },
     "groups": [ { "title": "停靠", "x": 48, "y": 24, "w": 560, "h": 140, "color": 11100297 },
-                { "title": "撤离/入库", "x": 48, "y": 364, "w": 960, "h": 150, "color": 20480 } ]
+                { "title": "威胁累积（数值可热调）", "x": 48, "y": 184, "w": 1220, "h": 140, "color": 13369632 },
+                { "title": "夜袭接管", "x": 48, "y": 364, "w": 560, "h": 140, "color": 12503040 },
+                { "title": "撤离/入库", "x": 48, "y": 524, "w": 960, "h": 150, "color": 20480 } ]
   }
 }

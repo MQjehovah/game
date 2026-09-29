@@ -63,11 +63,10 @@ function searchCrate(idx)
                  false, 1.2, 1.0, 0.85, 0.4)
   Despawn(c.ent)
   table.remove(crates, idx)
-  stopThreat = math.min(STOP.threatMax,
-                        stopThreat + STOP.searchThreat + (nd.danger or 0))
-  if stopThreat >= STOP.threatMax and evacT < 0 then
-    -- 威胁满：撤离倒计时 + 夜袭子图接管（stop_cycle 数据驱动）
-    LC.flow.emit("threat_full")
+  -- 威胁累积/触发全部在 stop_cycle 图（searchThreat/threatMax 图变量可热调）
+  if evacT < 0 then
+    LC.flow.setvar("stop_cycle", "danger", nd.danger or 0)
+    LC.flow.emit("crate_searched")
   end
 end
 

@@ -286,3 +286,16 @@ LC.flow.describe("flow/call", "调用子图", "流程", { "exec" },
                  { { "graph", "s" }, { "signal", "s" } })
 
 -- 流程编排：加载通用玩法节点包 + 主流程图（编辑器保存后热重载即可生效）
+
+-- ---------------------------------------------------------------------------
+-- 运行时 API 补充：跨图变量注入（宿主在触发信号前把上下文写进图变量）
+-- ---------------------------------------------------------------------------
+function LC.flow.setvar(graphName, var, value)
+  for _, g in ipairs(LC.flow.graphs) do
+    if g.name == graphName then
+      g.vars[var] = value
+      return true
+    end
+  end
+  return false
+end

@@ -121,3 +121,26 @@ end)
 LC.flow.describe("game/drive-horde", "途中尸群", "玩法", { "exec" }, { { "count", "n" } })
 LC.flow.describe("game/drive-supply", "路边补给", "玩法", { "exec" }, {})
 LC.flow.describe("game/drive-fuel", "路边油桶", "玩法", { "exec" }, {})
+
+-- ---------------------------------------------------------------------------
+-- 威胁桥（游戏状态 <-> 图变量）：平衡数值全部上图可调
+-- ---------------------------------------------------------------------------
+LC.flow.register("game/threat-add", function(node, g)
+  -- 累加威胁（amount 支持 $var 引用图变量；evalVal 是 lc_flow 的局部函数，此处内联）
+  local amt = node.amount
+  if type(amt) == "string" and string.sub(amt, 1, 1) == "$" then
+    amt = g.vars[string.sub(amt, 2)]
+  end
+  if type(amt) ~= "number" then amt = tonumber(amt) or 1 end
+  stopThreat = math.min(STOP.threatMax, stopThreat + amt)
+  return "exec"
+end)
+
+LC.flow.register("game/threat-sync", function(node, g)
+  -- Lua 游戏状态 -> 图变量（branch/math 节点可读）
+  if node.to then g.vars[node.to] = stopThreat end
+  return "exec"
+end)
+
+LC.flow.describe("game/threat-add", "威胁累加", "玩法", { "exec" }, { { "amount", "s" } })
+LC.flow.describe("game/threat-sync", "威胁同步到图", "玩法", { "exec" }, { { "to", "s" } })
