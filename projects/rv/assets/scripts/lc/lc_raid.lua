@@ -34,13 +34,10 @@ function killZombie(idx)
   Despawn(z.ent)
   table.remove(horde, idx)
   killCount = killCount + 1
-  if math.random() < 0.2 then
-    local mats = { "metal", "electronics", "cloth", "wood" }
-    local m = mats[math.random(1, 4)]
-    stopBag[m] = (stopBag[m] or 0) + 1
-    SpawnFloatText(z.x, 1.4, z.z, MAT_NAMES[m] .. "+1",
-                   false, 1.2, 1.0, 0.85, 0.4)
-  end
+  -- 掉落决策在 zombie_death 图（掉率/材质/数量可视化可热调）
+  LC.flow.setvar("zombie_death", "drop_x", z.x)
+  LC.flow.setvar("zombie_death", "drop_z", z.z)
+  LC.flow.emit("zombie_killed")
 end
 
 function updateHorde(dt)

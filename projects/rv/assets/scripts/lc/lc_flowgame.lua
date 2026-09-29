@@ -144,3 +144,22 @@ end)
 
 LC.flow.describe("game/threat-add", "威胁累加", "玩法", { "exec" }, { { "amount", "s" } })
 LC.flow.describe("game/threat-sync", "威胁同步到图", "玩法", { "exec" }, { { "to", "s" } })
+
+
+-- ---------------------------------------------------------------------------
+-- 击杀掉落节点（zombie_death 图驱动；掉率/材质/数量全部可热调）
+-- ---------------------------------------------------------------------------
+LC.flow.register("game/drop", function(node, g)
+  local mat = node.mat or "metal"
+  local n = (node.min or 1) + math.random(0, math.max(0, (node.max or node.min or 1) - (node.min or 1)))
+  if atNode then
+    stopBag[mat] = (stopBag[mat] or 0) + n
+  else
+    materials[mat] = (materials[mat] or 0) + n
+  end
+  SpawnFloatText(g.vars.drop_x or 0, 1.4, g.vars.drop_z or 0,
+                 MAT_NAMES[mat] .. "+" .. n, false, 1.2, 1.0, 0.85, 0.4)
+  return "exec"
+end)
+LC.flow.describe("game/drop", "材料掉落", "玩法", { "exec" },
+                 { { "mat", "s" }, { "min", "n" }, { "max", "n" } })

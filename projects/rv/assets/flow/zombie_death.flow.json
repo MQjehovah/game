@@ -1,0 +1,24 @@
+{
+  "name": "zombie_death",
+  "vars": { "drop_x": 0, "drop_z": 0 },
+  "entry": [
+    { "type": "signal", "name": "zombie_killed", "node": 1 }
+  ],
+  "nodes": [
+    { "id": 1, "type": "flow/random", "chance": 0.35 },
+    { "id": 2, "type": "game/toast", "text": "", "duration": 0.01 },
+    { "id": 3, "type": "flow/random", "chance": 0.5 },
+    { "id": 4, "type": "game/drop", "mat": "metal", "min": 1, "max": 1 },
+    { "id": 5, "type": "game/drop", "mat": "electronics", "min": 1, "max": 1 }
+  ],
+  "links": [
+    { "from": 1, "out": "true",  "to": 3, "in": "exec" },
+    { "from": 3, "out": "true",  "to": 4, "in": "exec" },
+    { "from": 3, "out": "false", "to": 5, "in": "exec" }
+  ],
+  "editor": {
+    "positions": { "1": [80, 60], "3": [340, 60], "4": [600, 40], "5": [600, 140] },
+    "notes": { "1": "35% 掉率（原 20% + 提升空间）", "3": "50/50 金属/电子（原四选一简化）" },
+    "groups": [ { "title": "击杀掉落", "x": 48, "y": 24, "w": 740, "h": 200, "color": 12503040 } ]
+  }
+}
