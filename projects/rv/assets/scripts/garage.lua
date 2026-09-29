@@ -135,7 +135,7 @@ local nextEventT = 20
 local driveProps, driveHorde = {}, {}
 
 -- 主角
-local player = { active = false, x = 0, z = 0, yaw = 0, body = nil, head = nil, gun = nil }
+local player = { active = false, x = 0, z = 0, yaw = 0, ent = nil, anim = "" }
 
 -- 验证钩子
 local autoPilot, driveT, autoT, autoTarget = false, 0, 0, nil
@@ -692,32 +692,32 @@ end
 -- ---------------------------------------------------------------------------
 -- 主角：F 下车/上车；步行 WASD（W/S 前后、A/D 转向）；可射击夜袭尸群
 -- ---------------------------------------------------------------------------
+-- 主角：Soldier.glb 蒙皮模型（4 剪辑 Idle/Run/TPose/Walk，缩放 0.04 ≈ 1.78m）
+-- prefab 里 y=0.9：网格最低点 -22.48 x 0.04 = -0.90，落位后脚底正好贴地
 local function spawnPlayer()
   if player.active then return end
   local bx, bz = rotOf(1.7, -1.0)
   player.x, player.z, player.yaw = bx, bz, rv.yaw + math.pi * 0.5
-  player.body = SpawnPrefab("rv_player_body", { x = bx, y = 0.53, z = bz })
-  player.head = SpawnPrefab("rv_player_head", { x = bx, y = 1.32, z = bz })
-  player.gun  = SpawnPrefab("rv_player_gun",  { x = bx, y = 0.95, z = bz })
-  player.active = (player.body ~= nil)
-  if not player.active then return end
-  onFoot = true
+  player.ent = SpawnPrefab("rv_player", { x = bx, y = 0.9, z = bz })
+  player.active = (player.ent ~= nil)
+  player.anim = ""
+  if player.active then onFoot = true end
 end
 
 local function despawnPlayer()
-  if player.body ~= nil then Despawn(player.body) end
-  if player.head ~= nil then Despawn(player.head) end
-  if player.gun ~= nil then Despawn(player.gun) end
-  player.body, player.head, player.gun = nil, nil, nil
+  if player.ent ~= nil then Despawn(player.ent) end
+  player.ent = nil
   player.active = false
+  player.anim = ""
   onFoot = false
 end
 
 local function updatePlayer(dt)
-  if not onFoot or player.body == nil then return end
+  if not onFoot or player.ent == nil then return end
   -- 坦克式行走：W/S 前后，A/D 转向（与驾驶操作一致）
   local mv = (ActionDown("w") and 1 or 0) - (ActionDown("s") and 1 or 0)
   local turn = (ActionDown("a") and 1 or 0) - (ActionDown("d") and 1 or 0)
+  if autoPilot then mv, turn = 1, 0 end  -- 验证钩子：自动直走
   player.yaw = player.yaw + turn * 2.4 * dt
   local fx, fz = math.sin(player.yaw), math.cos(player.yaw)
   local sp = (mv >= 0) and 3.2 or 1.6
@@ -728,27 +728,31 @@ local function updatePlayer(dt)
   local cy, sy = math.cos(rv.yaw), math.sin(rv.yaw)
   local lx = dx * cy - dz * sy
   local lz = dx * sy + dz * cy
-  if math.abs(lx) < 1.5 and math.abs(lz) < 4.3 then
+  local inside = (math.abs(lx) < 1.5 and math.abs(lz) < 4.3)
+  if inside then
     lx = math.max(-1.0, math.min(1.0, lx))
     lz = math.max(-3.5, math.min(3.5, lz))
     player.x = rv.x + lx * cy + lz * sy
     player.z = rv.z - lx * sy + lz * cy
   end
-  local bob = math.abs(math.sin(raidT * 9 + 1)) * (mv ~= 0 and 0.05 or 0.015)
-  SetPosition(player.body, { x = player.x, y = 0.53 + bob * 0.3, z = player.z })
-  SetPosition(player.head, { x = player.x, y = 1.32 + bob, z = player.z })
-  SetPosition(player.gun, { x = player.x + fx * 0.3, y = 0.95, z = player.z + fz * 0.3 })
-  SetRotationY(player.body, player.yaw)
-  SetRotationY(player.head, player.yaw)
-  SetRotationY(player.gun, player.yaw)
+  SetPosition(player.ent, { x = player.x, y = 0.9, z = player.z })
+  SetRotationY(player.ent, player.yaw)
+  -- 动画状态机：移动 = Walk，静止 = Idle（循环 + 0.15s 淡入）
+  local clip = (mv ~= 0) and "Walk" or "Idle"
+  if clip ~= player.anim then
+    player.anim = clip
+    if not PlayAnimation(player.ent, clip, true, 0.15) then
+      player.anim = ""  -- 剪辑缺失时回退，避免卡死在状态里
+    end
+  end
 end
 
 local function playerMuzzle()
   if onFoot and player.active then
     local fx, fz = math.sin(player.yaw), math.cos(player.yaw)
-    return player.x + fx * 0.35, 0.95, player.z + fz * 0.35
+    return player.x + fx * 0.35, 1.3, player.z + fz * 0.35
   end
-  local turret = hasModule and hasModule("turret") or nil
+  local turret = hasModule("turret")
   if turret then
     local mx, mz = rotOf(turret.lx, turret.lz)
     return mx, (turret.ly or 2.6) + 0.5, mz
@@ -1168,6 +1172,7 @@ local function updateDrive(dt)
     driveT = driveT + dt
     if nearNode and nearNode.id ~= "camp" and driveT > 3.0 then
       setPhase("parked")  -- 靠站（autoPilot 保持 true：搜刮接管）
+      spawnPlayer()       -- 验证钩子：自动下车走两步（蒙皮主角检查）
       return
     end
     if driveT > 45.0 then
