@@ -220,3 +220,69 @@ function LC.flow.describe(nodeType, label, category, outs, params)
     params = params or {},
   }
 end
+
+-- ---------------------------------------------------------------------------
+-- 流程核心增强（游戏无关）：
+--   flow/random  按概率走 true/false
+--   flow/seq     顺序触发全部出链（then1..then3）
+--   flow/math    var = var op value（+ - * / min max）
+--   flow/call    调用子图（LC.flow.call 触发目标图的指定信号入口）
+-- ---------------------------------------------------------------------------
+LC.flow.register("flow/random", function(node, g)
+  if math.random() < (node.chance or 0.5) then return "true" end
+  return "false"
+end)
+
+LC.flow.register("flow/seq", function(node, g)
+  return { "then1", "then2", "then3" }  -- runFrom 依次深走（未连线的 pin 自动跳过）
+end)
+
+LC.flow.register("flow/math", function(node, g)
+  local a = tonumber(g.vars[node.var]) or 0
+  local b = tonumber(evalVal(g, node.value)) or 0
+  local r = a
+  local op = node.op or "+"
+  if op == "+" then r = a + b
+  elseif op == "-" then r = a - b
+  elseif op == "*" then r = a * b
+  elseif op == "/" then r = (b ~= 0) and (a / b) or a
+  elseif op == "min" then r = math.min(a, b)
+  elseif op == "max" then r = math.max(a, b) end
+  g.vars[node.var] = r
+  return "exec"
+end)
+
+LC.flow.register("flow/call", function(node, g)
+  LC.flow.call(tostring(node.graph or ""), tostring(node.signal or "start"))
+  return "exec"
+end)
+
+-- 子图调用：只触发指定图实例内监听该信号的入口（emit 是全图广播，call 是定向）
+function LC.flow.call(graphName, signalName)
+  for _, g in ipairs(LC.flow.graphs) do
+    if g.name == graphName then
+      for _, e in ipairs(g.def.entry or {}) do
+        if e.type == "signal" and e.name == signalName then
+          runFrom(g, e.node, "exec", 1)
+        end
+      end
+      return
+    end
+  end
+end
+
+-- 流程核心节点元数据（编辑器自动发现）
+LC.flow.describe("flow/setvar", "设置变量", "流程", { "exec" },
+                 { { "var", "s" }, { "value", "s" } })
+LC.flow.describe("flow/addvar", "变量自增", "流程", { "exec" },
+                 { { "var", "s" }, { "value", "n" } })
+LC.flow.describe("flow/branch", "条件分支", "流程", { "true", "false" },
+                 { { "var", "s" }, { "op", "o" }, { "value", "s" } })
+LC.flow.describe("flow/random", "概率分支", "流程", { "true", "false" }, { { "chance", "n" } })
+LC.flow.describe("flow/seq", "顺序执行", "流程", { "then1", "then2", "then3" }, {})
+LC.flow.describe("flow/math", "变量运算", "流程", { "exec" },
+                 { { "var", "s" }, { "op", "o" }, { "value", "n" } })
+LC.flow.describe("flow/call", "调用子图", "流程", { "exec" },
+                 { { "graph", "s" }, { "signal", "s" } })
+
+-- 流程编排：加载通用玩法节点包 + 主流程图（编辑器保存后热重载即可生效）

@@ -10,6 +10,10 @@
             },
             {
               "backend": "lua",
+              "path": "assets/scripts/lc/lc_flowkit.lua"
+            },
+            {
+              "backend": "lua",
               "path": "assets/scripts/lc/lc_flowgame.lua"
             },
             {

@@ -56,6 +56,13 @@ struct FlowVar {
     std::string name;
     core::Json value;
 };
+// 分组框（UE 蓝图注释盒）：编辑器元数据，运行时忽略；成员按"节点矩形完全在
+// 组内"判定，拖组 = 组+成员一起动。
+struct FlowGroup {
+    std::string title = "分组";
+    float x = 0.f, y = 0.f, w = 320.f, h = 160.f;
+    int rgb = 0x4a7dc9; // 边框/标题颜色
+};
 
 struct FlowGraph {
     std::string name = "untitled";
