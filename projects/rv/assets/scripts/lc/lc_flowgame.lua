@@ -46,3 +46,16 @@ LC.flow.register("game/animparam", function(node, g)
   end
   return "exec"
 end)
+
+-- ---------------------------------------------------------------------------
+-- 节点元数据声明（可视化编辑器扫描源码发现；类型本体在上面 register）
+-- ---------------------------------------------------------------------------
+LC.flow.describe("game/toast", "提示文字", "玩法", { "exec" },
+                 { { "text", "s" }, { "duration", "n" } })
+LC.flow.describe("game/horde", "尸群刷新", "玩法", { "exec" }, { { "count", "n" } })
+LC.flow.describe("game/loot", "搜刮材料", "玩法", { "exec" },
+                 { { "mat", "s" }, { "min", "n" }, { "max", "n" } })
+LC.flow.describe("game/fuel", "油量增减", "玩法", { "exec" }, { { "amount", "n" } })
+LC.flow.describe("game/durability", "耐久增减", "玩法", { "exec" }, { { "amount", "n" } })
+LC.flow.describe("game/animparam", "动画参数", "玩法", { "exec" },
+                 { { "target", "s" }, { "param", "s" }, { "value", "n" } })

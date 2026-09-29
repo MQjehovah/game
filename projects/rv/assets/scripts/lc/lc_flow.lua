@@ -190,3 +190,33 @@ end)
 -- ȫ���ţ��� C++ �� IScriptHost ֱ�� Call/GetGlobal��Lua ������ LC.flow.*��
 -- ---------------------------------------------------------------------------
 function FLOW_RELOAD(name) return LC.flow.reload(name) end
+
+-- FLOW_DEBUG(name)：返回图变量的快照串 "k=v,k=v"（编辑器运行期显示用）
+function FLOW_DEBUG(name)
+  for _, g in ipairs(LC.flow.graphs) do
+    if g.name == name then
+      local parts = {}
+      for k, v in pairs(g.vars) do
+        parts[#parts + 1] = tostring(k) .. "=" .. tostring(v)
+      end
+      return table.concat(parts, ",")
+    end
+  end
+  return ""
+end
+
+-- ---------------------------------------------------------------------------
+-- 节点类型元数据（可视化编辑器扫描 .lua 源发现；与 register 分离，纯声明）：
+--   LC.flow.describe("game/toast", "提示文字", "玩法",
+--                    { "exec" },                              -- 输出引脚
+--                    { { "text", "s" }, { "duration", "n" } }) -- 参数 s文本 n数值 o比较符
+-- ---------------------------------------------------------------------------
+LC.flow.descriptions = {}
+function LC.flow.describe(nodeType, label, category, outs, params)
+  LC.flow.descriptions[nodeType] = {
+    label = label or nodeType,
+    category = category or "玩法",
+    outs = outs or { "exec" },
+    params = params or {},
+  }
+end

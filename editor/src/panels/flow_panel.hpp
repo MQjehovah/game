@@ -103,6 +103,8 @@ struct FlowTypeInfo {
 };
 const std::vector<FlowTypeInfo>& FlowTypes();
 const FlowTypeInfo* FindFlowType(const std::string& type);
+// 扫描项目 scripts 下的 LC.flow.describe(...) 声明，并入类型目录（静态目录优先）
+void ScanFlowDescriptions(const std::string& scriptsDir);
 
 // --- JSON 装载/保存（与 lc_flow.load 读取的格式逐字段一致） ------------------
 bool FlowLoadJson(FlowGraph& g, const std::string& text, std::string* err = nullptr);

@@ -3,6 +3,8 @@
 #include "panels/flow_panel.hpp"
 
 #include <algorithm>
+#include <functional>
+#include <cstdarg>
 #include <sys/stat.h>
 
 #include "neon/script/script.hpp"
@@ -20,6 +22,17 @@ namespace {
 constexpr float kGrid = 16.0f;
 constexpr float kNodeW = 176.0f;
 constexpr float kTitleH = 24.0f;
+
+std::vector<std::string> SplitComma(const std::string& s) {
+    std::vector<std::string> out;
+    size_t start = 0;
+    for (size_t i = 0; i <= s.size(); ++i)
+        if (i == s.size() || s[i] == ',') {
+            if (i > start) out.push_back(s.substr(start, i - start));
+            start = i + 1;
+        }
+    return out;
+}
 
 
 core::Json JsonStr(const std::string& s) {
@@ -113,10 +126,140 @@ const std::vector<FlowTypeInfo>& FlowTypes() {
     return types;
 }
 
+// ---------------------------------------------------------------------------
+// 类型自动发现：扫描 scripts 下所有 .lua 的
+//   LC.flow.describe("type", "label", "category", { "out",... },
+//                    { { "key","kind" }, ... })
+// 解析成 FlowTypeInfo 并入 ExtraFlowTypes（静态目录里已有的类型不覆盖）。
+// ---------------------------------------------------------------------------
+std::vector<FlowTypeInfo>& ExtraFlowTypes() {
+    static std::vector<FlowTypeInfo> types;
+    return types;
+}
+
 const FlowTypeInfo* FindFlowType(const std::string& type) {
     for (const auto& t : FlowTypes())
         if (type == t.type) return &t;
+    for (const auto& t : ExtraFlowTypes())
+        if (type == t.type) return &t;
     return nullptr;
+}
+
+void ScanFlowDescriptions(const std::string& scriptsDir) {
+    static std::string scannedDir;
+    if (scannedDir == scriptsDir) return; // 每个工程只扫一次
+    scannedDir = scriptsDir;
+    auto& out = ExtraFlowTypes();
+    out.clear();
+    std::vector<std::string> luaFiles;
+    std::function<void(const std::string&)> walk = [&](const std::string& dir) {
+        WIN32_FIND_DATAA fd;
+        HANDLE h = FindFirstFileA((dir + "/*").c_str(), &fd);
+        if (h == INVALID_HANDLE_VALUE) return;
+        do {
+            const std::string name = fd.cFileName;
+            if (name == "." || name == "..") continue;
+            const std::string full = dir + "/" + name;
+            if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+                walk(full);
+            else if (name.size() > 4 && _stricmp(name.c_str() + name.size() - 4, ".lua") == 0)
+                luaFiles.push_back(full);
+        } while (FindNextFileA(h, &fd));
+        FindClose(h);
+    };
+    walk(scriptsDir);
+    // 逐文件抓 describe(...) 调用（跨行也兼容：先把源码压平）
+    for (const auto& f : luaFiles) {
+        std::string text;
+        if (!ReadTextFile(f, text)) continue;
+        std::string flat;
+        flat.reserve(text.size());
+        for (char c : text) flat.push_back(c == '\n' || c == '\r' || c == '\t' ? ' ' : c);
+        size_t pos = 0;
+        while ((pos = flat.find("LC.flow.describe(", pos)) != std::string::npos) {
+            pos += 17;
+            // 抓到平衡右括号
+            int depth = 1;
+            size_t end = pos;
+            while (end < flat.size() && depth > 0) {
+                if (flat[end] == '(') ++depth;
+                if (flat[end] == ')') --depth;
+                ++end;
+            }
+            const std::string args = flat.substr(pos, end - 1 - pos);
+            // 顶层逗号切分
+            std::vector<std::string> parts;
+            int d = 0;
+            size_t s = 0;
+            for (size_t i = 0; i <= args.size(); ++i) {
+                if (i == args.size() || (args[i] == ',' && d == 0)) {
+                    parts.push_back(args.substr(s, i - s));
+                    s = i + 1;
+                } else if (args[i] == '{' || args[i] == '(')
+                    ++d;
+                else if (args[i] == '}' || args[i] == ')')
+                    --d;
+            }
+            auto unquote = [](std::string v) {
+                const size_t a = v.find('"');
+                if (a == std::string::npos) return std::string();
+                const size_t b = v.find('"', a + 1);
+                return v.substr(a + 1, b - a - 1);
+            };
+            if (parts.size() < 3) continue;
+            FlowTypeInfo t{};
+            t.type = strdup(unquote(parts[0]).c_str());
+            t.label = strdup(unquote(parts[1]).c_str());
+            t.category = strdup(unquote(parts[2]).c_str());
+            t.color = std::string(t.category) == "流程" ? IM_COL32(70, 120, 220, 255)
+                                                        : IM_COL32(70, 170, 110, 255);
+            // outs：{ "exec", ... }
+            if (parts.size() > 3) {
+                int oi = 0;
+                size_t p = 0;
+                while (oi < 3) {
+                    p = parts[3].find('"', p);
+                    if (p == std::string::npos) break;
+                    const size_t q = parts[3].find('"', p + 1);
+                    if (q == std::string::npos) break;
+                    t.outs[oi++] = strdup(parts[3].substr(p + 1, q - p - 1).c_str());
+                    p = q + 1;
+                }
+            }
+            if (!t.outs[0]) t.outs[0] = "exec";
+            // params：{ { "key","kind" }, ... }
+            if (parts.size() > 4) {
+                int pi = 0;
+                size_t p = 0;
+                while (pi < 4) {
+                    p = parts[4].find('{', p);
+                    if (p == std::string::npos) break;
+                    const size_t q = parts[4].find('}', p);
+                    if (q == std::string::npos) break;
+                    const std::string pair = parts[4].substr(p + 1, q - p - 1);
+                    const std::string key = unquote(pair);
+                    char kind = 's';
+                    const size_t ks = pair.rfind('"');
+                    if (ks != std::string::npos && ks + 1 < pair.size()) {
+                        char k = ' ';
+                        for (size_t i = ks + 1; i < pair.size(); ++i)
+                            if (pair[i] != ' ') {
+                                k = pair[i];
+                                break;
+                            }
+                        if (k == 'n' || k == 'o') kind = k;
+                    }
+                    if (!key.empty()) t.params[pi++] = {strdup(key.c_str()), kind};
+                    p = q + 1;
+                }
+            }
+            // 静态目录已有的类型不重复
+            bool dup = false;
+            for (const auto& st : FlowTypes())
+                if (std::string(st.type) == std::string(t.type)) dup = true;
+            if (!dup) out.push_back(t);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -334,6 +477,8 @@ int FlowPanel::PollDebugNode(EditorContext& ctx) {
 }
 
 void FlowPanel::RefreshFiles(EditorContext& ctx) {
+    // 类型自动发现（每工程一次）
+    if (ctx.projectDir) ScanFlowDescriptions(*ctx.projectDir + "/assets/scripts");
     if (filesRefreshFrame_ && ImGui::GetFrameCount() - filesRefreshFrame_ < 120) return;
     filesRefreshFrame_ = ImGui::GetFrameCount();
     ListFlowFiles(FlowDir(ctx), files_);
@@ -435,16 +580,24 @@ void FlowPanel::Palette(EditorContext& ctx) {
     ImGui::TextUnformatted("节点");
     ImGui::Separator();
     const char* lastCat = nullptr;
-    for (const auto& t : FlowTypes()) {
-        if (lastCat && std::strcmp(lastCat, t.category) != 0) ImGui::Separator();
-        lastCat = t.category;
-        ImGui::PushStyleColor(ImGuiCol_Header, t.color & 0x00FFFFFF | 0xFF000000);
-        ImGui::Selectable(t.label);
-        ImGui::PopStyleColor();
-        if (ImGui::IsItemActivated()) {
-            pendingType_ = t.type;
-            pendingEntry_.clear();
+    auto drawTypes = [&](const std::vector<FlowTypeInfo>& types) {
+        for (const auto& t : types) {
+            if (lastCat && std::strcmp(lastCat, t.category) != 0) ImGui::Separator();
+            lastCat = t.category;
+            ImGui::PushStyleColor(ImGuiCol_Header, t.color & 0x00FFFFFF | 0xFF000000);
+            ImGui::Selectable(t.label);
+            ImGui::PopStyleColor();
+            if (ImGui::IsItemActivated()) {
+                pendingType_ = t.type;
+                pendingEntry_.clear();
+            }
         }
+    };
+    drawTypes(FlowTypes());
+    if (!ExtraFlowTypes().empty()) {
+        ImGui::Separator();
+        ImGui::TextDisabled("（自动发现）");
+        drawTypes(ExtraFlowTypes());
     }
     ImGui::Separator();
     ImGui::TextUnformatted("入口");
@@ -915,8 +1068,11 @@ void FlowPanel::Inspector(EditorContext& ctx) {
     ImGui::SameLine();
     ImGui::BeginChild("insp_right", ImVec2(0, 0), 0);
 
-    // 变量
+    // 变量（Play 时带实时值列：FLOW_DEBUG 桥）
     ImGui::TextColored(ImVec4(1.f, 0.85f, 0.6f, 1), "变量");
+    ImGui::SameLine();
+    const bool playing = ctx.playActive && *ctx.playActive && ctx.playScriptHost;
+    if (playing) ImGui::TextDisabled("（右列为运行值）");
     ImGui::Separator();
     static char newName[64] = "";
     ImGui::SetNextItemWidth(90);
@@ -926,6 +1082,20 @@ void FlowPanel::Inspector(EditorContext& ctx) {
         graph_.vars.push_back({newName, JsonNum(0.0)});
         newName[0] = '\0';
     }
+    // 运行值快照：仅 play 时取一次/帧
+    std::string liveVals;
+    if (playing) {
+        if (script::IScriptHost* host = ctx.playScriptHost()) {
+            const auto r = host->Call("FLOW_DEBUG", {script::Value::Str(fileName_)});
+            if (r.Ok()) liveVals = r.Value().str;
+        }
+    }
+    auto liveOf = [&](const std::string& k) -> std::string {
+        if (liveVals.empty()) return "";
+        for (const auto& kv : SplitComma(liveVals))
+            if (kv.rfind(k + "=", 0) == 0) return kv.substr(k.size() + 1);
+        return "";
+    };
     for (size_t i = 0; i < graph_.vars.size(); ++i) {
         ImGui::PushID(static_cast<int>(i));
         FlowVar& v = graph_.vars[i];
@@ -944,6 +1114,11 @@ void FlowPanel::Inspector(EditorContext& ctx) {
             std::snprintf(b, sizeof(b), "%s", v.value.GetString().c_str());
             if (ImGui::InputText("##v", b, sizeof(b), ImGuiInputTextFlags_EnterReturnsTrue))
                 v.value = ArgFromText(b);
+        }
+        if (playing) {
+            ImGui::SameLine();
+            const std::string lv = liveOf(v.name);
+            ImGui::TextColored(ImVec4(0.55f, 1.f, 0.65f, 1), "%s", lv.empty() ? "-" : lv.c_str());
         }
         ImGui::SameLine();
         if (ImGui::SmallButton("x")) {
@@ -973,6 +1148,56 @@ void FlowPanel::Inspector(EditorContext& ctx) {
         }
     }
     ImGui::TextDisabled("入口绑定：调色板选入口类型后点目标节点");
+
+    // 校验清单（点击条目选中问题节点）
+    ImGui::Spacing();
+    ImGui::TextColored(ImVec4(1.f, 0.7f, 0.5f, 1), "校验");
+    ImGui::Separator();
+    int warn = 0;
+    auto WarnNode = [&](int id, const char* fmt, ...) {
+        char buf[160];
+        va_list ap;
+        va_start(ap, fmt);
+        std::vsnprintf(buf, sizeof(buf), fmt, ap);
+        va_end(ap);
+        ++warn;
+        ImGui::PushID(warn);
+        if (ImGui::Selectable(buf)) {
+            selNode_ = id;
+            selEntry_ = -1;
+        }
+        ImGui::PopID();
+    };
+    // 1) 入口悬空/指向缺失节点
+    for (size_t i = 0; i < graph_.entries.size(); ++i) {
+        const FlowEntry& e = graph_.entries[static_cast<size_t>(i)];
+        if (e.node == 0 || !graph_.Find(e.node))
+            ImGui::TextDisabled("入口[%zu] %s 未绑定节点（画布点节点接上）", i, e.type.c_str());
+    }
+    // 2) 连线引用缺失节点
+    for (const auto& l : graph_.links) {
+        if (!graph_.Find(l.from) || !graph_.Find(l.to))
+            ImGui::TextDisabled("连线 #%d->#%d 引用了不存在的节点", l.from, l.to);
+    }
+    // 3) 不可达节点（无入链 且 不被任何入口绑定）
+    for (const auto& n : graph_.nodes) {
+        bool hasIn = false;
+        for (const auto& l : graph_.links)
+            if (l.to == n.id) hasIn = true;
+        bool entered = false;
+        for (const auto& e : graph_.entries)
+            if (e.node == n.id) entered = true;
+        if (!hasIn && !entered) WarnNode(n.id, "节点 #%d 不可达（无入链/无入口）", n.id);
+    }
+    // 4) 分支节点没有出链（死路）
+    for (const auto& n : graph_.nodes) {
+        if (n.type != "flow/branch") continue;
+        int outs = 0;
+        for (const auto& l : graph_.links)
+            if (l.from == n.id) ++outs;
+        if (outs == 0) WarnNode(n.id, "分支 #%d 没有任何出链", n.id);
+    }
+    if (warn == 0) ImGui::TextColored(ImVec4(0.6f, 1.f, 0.6f, 1), "√ 无问题");
     ImGui::EndChild();
 }
 
