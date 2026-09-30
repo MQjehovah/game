@@ -1,6 +1,6 @@
 #pragma once
 
-// 素材库面板 — 按源目录层级逐级浏览，图标网格显示，批量导入到当前工程。
+// 素材库面板 — 按源目录层级逐级浏览，图标网格显示，按类型导入到当前工程。
 #include <cstdint>
 #include <set>
 #include <string>

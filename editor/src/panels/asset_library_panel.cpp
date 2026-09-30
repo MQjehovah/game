@@ -61,13 +61,10 @@ int CategoryIndex(const std::string& cat) {
     if (cat == "audio") return 2;
     return 3;
 }
-// full 相对 root 的路径（用于保持源目录层级）；不在 root 下时原样返回。
-std::string RelToRoot(const std::string& full, const std::string& root) {
-    if (root.empty()) return full;
-    if (full.size() > root.size() + 1 && full.compare(0, root.size(), root) == 0 &&
-        (full[root.size()] == '/' || full[root.size()] == '\\'))
-        return full.substr(root.size() + 1);
-    return full;
+// filename (最后一节)；导入按类型平铺，不保留来源目录层级。
+std::string FileNameOf(const std::string& full) {
+    const size_t slash = full.find_last_of("/\\");
+    return slash == std::string::npos ? full : full.substr(slash + 1);
 }
 
 void EnsureDir(const std::string& dir) {
@@ -188,7 +185,7 @@ void AssetLibraryPanel::ImportSelected(EditorContext& ctx) {
     std::vector<std::string> done;
     for (const std::string& full : selected_) {
         const std::string ext = ExtOf(full);
-        const std::string dst = TargetPath(ctx, CategoryOf(ext), RelToRoot(full, rootPath_));
+        const std::string dst = TargetPath(ctx, CategoryOf(ext), FileNameOf(full));
         if (dst.empty()) continue;
         if (!overwrite_ && FileExists(dst)) {
             ++skipped_;
@@ -248,7 +245,7 @@ void AssetLibraryPanel::Draw(EditorContext& ctx) {
     if (curDir_[0] == '\0') {
         ImGui::Separator();
         ImGui::TextDisabled("输入素材根目录（或选盘符）后点“载入”，再逐级进入子目录；");
-        ImGui::TextDisabled("勾选文件 → “导入选中”，按源目录层级拷入 assets/ 下。");
+        ImGui::TextDisabled("勾选文件 → “导入选中”，按类型平铺到 assets/models|textures|audio/。");
         ImGui::End();
         return;
     }
