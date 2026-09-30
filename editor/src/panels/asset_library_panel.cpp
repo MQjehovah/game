@@ -205,10 +205,12 @@ void AssetLibraryPanel::ImportSelected(EditorContext& ctx) {
 }
 
 std::uint64_t AssetLibraryPanel::TileTexture(EditorContext& ctx, const std::string& fullPath,
-                                             bool isTexture) {
-    if (!isTexture || !ctx.assetMgr) return 0;
+                                             int& budget) {
+    if (!ctx.assetMgr) return 0;
     auto it = texCache_.find(fullPath);
-    if (it != texCache_.end() && it->second != 0) return it->second;
+    if (it != texCache_.end() && it->second != 0) return it->second; // 已缓存：随时可显示
+    if (budget <= 0) return 0; // 本帧额度用完：先用类型块占位，下一帧再解码
+    --budget;
     gfx::Texture tex = ctx.assetMgr->LoadTexture(fullPath);
     if (!tex.Valid()) return 0;
     const std::uint64_t id = static_cast<std::uint64_t>(gfx::ImGuiNeon_RegisterTexture(tex.Handle()));
@@ -281,6 +283,8 @@ void AssetLibraryPanel::Draw(EditorContext& ctx) {
     if (ImGui::Button("全不选")) selected_.clear();
     ImGui::SameLine();
     ImGui::Checkbox("覆盖", &overwrite_);
+    ImGui::SameLine();
+    if (ImGui::Checkbox("缩略图", &previews_) && !previews_) texCache_.clear();
 
     const std::string filterStr = filter_;
     ImGui::TextDisabled("选中 %zu 项", selected_.size());
@@ -299,6 +303,7 @@ void AssetLibraryPanel::Draw(EditorContext& ctx) {
     // === 图标网格 ===
     const float cellW = 88.0f;
     const float cellH = 100.0f;
+    loadBudget_ = 3; // 每帧最多新解码 3 张缩略图，避免一进大目录整帧卡死
     ImGui::BeginChild("##lib_grid", ImVec2(0, 0), 0, 0);
     const ImVec2 avail = ImGui::GetContentRegionAvail();
     const int cols = std::max(1, static_cast<int>(avail.x / cellW));
@@ -345,6 +350,10 @@ void AssetLibraryPanel::Draw(EditorContext& ctx) {
         ImGui::SetCursorPos(ImVec2(col * cellW, row * cellH));
         ImGui::PushID(static_cast<int>(i));
         const ImVec2 cellSize(cellW - 6.0f, cellH - 8.0f);
+        // 只给可见格子解码缩略图（滚动到哪解到哪）。
+        const ImVec2 cellPos = ImGui::GetCursorScreenPos();
+        const bool cellVisible =
+            ImGui::IsRectVisible(cellPos, ImVec2(cellPos.x + cellSize.x, cellPos.y + cellSize.y));
         const bool clicked = ImGui::InvisibleButton("##cell", cellSize);
         const bool hovered = ImGui::IsItemHovered();
         const bool dbl = hovered && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left);
@@ -380,13 +389,18 @@ void AssetLibraryPanel::Draw(EditorContext& ctx) {
         } else if (isTex) {
             tileCol = IM_COL32(70, 150, 90, 255);
             tag = "IMG";
-            const std::uint64_t handle = TileTexture(ctx, e.fullPath, true);
-            if (handle) tid = static_cast<ImTextureID>(handle);
+            if (previews_ && cellVisible) {
+                const std::uint64_t handle = TileTexture(ctx, e.fullPath, loadBudget_);
+                if (handle) tid = static_cast<ImTextureID>(handle);
+            }
         } else if (isMdl) {
             tileCol = IM_COL32(85, 125, 200, 255);
             tag = "MDL";
-            tid = static_cast<ImTextureID>(ctx.meshThumbnail ? ctx.meshThumbnail(e.fullPath) : 0);
-            flipV = tid != ImTextureID_Invalid;
+            if (previews_ && cellVisible && loadBudget_ > 0) {
+                tid = static_cast<ImTextureID>(ctx.meshThumbnail ? ctx.meshThumbnail(e.fullPath) : 0);
+                if (tid == ImTextureID_Invalid) --loadBudget_; // 发出渲染请求才占额度
+                flipV = tid != ImTextureID_Invalid;
+            }
         } else {
             tileCol = IM_COL32(200, 130, 55, 255);
             tag = "WAV";

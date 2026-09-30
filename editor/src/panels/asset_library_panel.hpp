@@ -36,7 +36,7 @@ private:
     void ImportSelected(EditorContext& ctx);
     std::string TargetPath(EditorContext& ctx, const std::string& category,
                            const std::string& rel) const;
-    std::uint64_t TileTexture(EditorContext& ctx, const std::string& fullPath, bool isTexture);
+    std::uint64_t TileTexture(EditorContext& ctx, const std::string& fullPath, int& budget);
 
     bool* visible_;
     char rootPath_[1024]{}; // 素材根目录（导入基准）
@@ -47,6 +47,8 @@ private:
     char filter_[128]{};
     int categoryFilter_ = -1;
     int rootDriveIdx_ = 0;
+    int loadBudget_ = 0;   // 每帧最多新解码的缩略图数（防止一进目录全部卡住）
+    bool previews_ = true; // 是否生成缩略图（关闭后仅显示类型图标，零解码）
     bool overwrite_ = false;
     int imported_ = 0;
     int skipped_ = 0;
