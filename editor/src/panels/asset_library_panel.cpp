@@ -1,11 +1,17 @@
-// 素材库面板实现 — 扫描本地目录 → 列出资产 → 一键导入工程
+// 素材库面板实现 — 按源目录层级浏览 → 图标网格 → 批量导入工程。
+//
+// 关键点：
+//  * 逐级加载（每次只 stat 当前目录的直接子项），不再递归扫描整棵树，
+//    因此打开素材根目录不会再卡。
+//  * 纯 ImGui 图标网格（不用原生对话框 / 列表）：原生模态对话框的消息泵会
+//    和引擎的 PeekMessage 渲染循环抢消息，导致编辑器假死。
 #include "panels/asset_library_panel.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <cstring>
 #include <cstdlib>
-#include <fstream>
 #include <sys/stat.h>
 
 #if defined(_WIN32)
@@ -16,6 +22,9 @@
 #endif
 
 #include "editor.hpp"
+#include "imgui.h"
+
+#include "neon/gfx/imgui_neon.hpp"
 
 namespace neon::editor {
 namespace {
@@ -36,6 +45,10 @@ std::string ToLower(std::string s) {
     for (auto& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     return s;
 }
+std::string ExtOf(const std::string& name) {
+    const size_t dot = name.find_last_of('.');
+    return dot == std::string::npos ? std::string() : ToLower(name.substr(dot));
+}
 std::string CategoryOf(const std::string& ext) {
     if (IsModel(ext)) return "models";
     if (IsTexture(ext)) return "textures";
@@ -48,35 +61,13 @@ int CategoryIndex(const std::string& cat) {
     if (cat == "audio") return 2;
     return 3;
 }
-
-void WalkDir(const std::string& dir, const std::string& rel, std::vector<AssetLibEntry>& out) {
-    WIN32_FIND_DATAA fd;
-    HANDLE h = FindFirstFileA((dir + "/*").c_str(), &fd);
-    if (h == INVALID_HANDLE_VALUE) return;
-    do {
-        const std::string name = fd.cFileName;
-        if (name == "." || name == "..") continue;
-        const std::string full = dir + "/" + name;
-        const std::string r = rel.empty() ? name : rel + "/" + name;
-        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
-            WalkDir(full, r, out);
-        } else {
-            const size_t dot = name.find_last_of('.');
-            if (dot == std::string::npos) continue;
-            const std::string ext = ToLower(name.substr(dot));
-            if (!IsModel(ext) && !IsTexture(ext) && !IsAudio(ext)) continue;
-            AssetLibEntry e;
-            e.relPath = r;
-            e.fullPath = full;
-            e.category = CategoryOf(ext);
-            LARGE_INTEGER sz;
-            sz.HighPart = fd.nFileSizeHigh;
-            sz.LowPart = fd.nFileSizeLow;
-            e.size = static_cast<size_t>(sz.QuadPart);
-            out.push_back(e);
-        }
-    } while (FindNextFileA(h, &fd));
-    FindClose(h);
+// full 相对 root 的路径（用于保持源目录层级）；不在 root 下时原样返回。
+std::string RelToRoot(const std::string& full, const std::string& root) {
+    if (root.empty()) return full;
+    if (full.size() > root.size() + 1 && full.compare(0, root.size(), root) == 0 &&
+        (full[root.size()] == '/' || full[root.size()] == '\\'))
+        return full.substr(root.size() + 1);
+    return full;
 }
 
 void EnsureDir(const std::string& dir) {
@@ -94,8 +85,6 @@ bool FileExists(const std::string& p) {
     struct _stat64 st;
     return _stat64(p.c_str(), &st) == 0;
 }
-
-// --- 内置目录浏览器所需的文件系统辅助（避免原生对话框）---------------
 
 #if defined(_WIN32)
 std::wstring Utf8ToWide(const std::string& s) {
@@ -124,23 +113,6 @@ std::string ParentDir(const std::string& p) {
     return p.substr(0, slash);
 }
 
-// 列出直接子目录（排序）。
-void ListSubdirs(const std::string& dir, std::vector<std::string>& out) {
-    out.clear();
-    const std::wstring pattern = Utf8ToWide(dir) + L"/*";
-    WIN32_FIND_DATAW fd;
-    HANDLE h = FindFirstFileW(pattern.c_str(), &fd);
-    if (h == INVALID_HANDLE_VALUE) return;
-    do {
-        if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) continue;
-        const std::wstring name = fd.cFileName;
-        if (name == L"." || name == L"..") continue;
-        out.push_back(WideToUtf8(name));
-    } while (FindNextFileW(h, &fd));
-    FindClose(h);
-    std::sort(out.begin(), out.end());
-}
-
 std::vector<std::string> ListDrives() {
     std::vector<std::string> out;
     const DWORD mask = GetLogicalDrives();
@@ -152,118 +124,96 @@ std::vector<std::string> ListDrives() {
 
 } // namespace
 
-void AssetLibraryPanel::Scan(const std::string& root) {
+void AssetLibraryPanel::LoadRoot(const std::string& root) {
+    std::string r = root;
+    while (!r.empty() && (r.back() == '/' || r.back() == '\\')) r.pop_back();
+    if (r.empty()) return;
+    std::snprintf(rootPath_, sizeof(rootPath_), "%s", r.c_str());
+    std::snprintf(curDir_, sizeof(curDir_), "%s", r.c_str());
+    selected_.clear();
+    texCache_.clear();
     entries_.clear();
-    if (root.empty()) return;
-    WalkDir(root, "", entries_);
-    std::sort(entries_.begin(), entries_.end(),
-              [](const AssetLibEntry& a, const AssetLibEntry& b) { return a.relPath < b.relPath; });
-    scanned_ = true;
+    LoadDir(curDir_);
 }
 
-std::string AssetLibraryPanel::TargetPath(EditorContext& ctx, const AssetLibEntry& e) const {
+// 仅列举当前目录的直接子项（目录 + 支持的资产文件），不递归。
+void AssetLibraryPanel::LoadDir(const std::string& dir) {
+    entries_.clear();
+    if (dir.empty()) return;
+    WIN32_FIND_DATAA fd;
+    HANDLE h = FindFirstFileA((dir + "/*").c_str(), &fd);
+    if (h == INVALID_HANDLE_VALUE) return;
+    do {
+        const std::string name = fd.cFileName;
+        if (name == "." || name == "..") continue;
+        const std::string full = dir + "/" + name;
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+            AssetLibEntry e;
+            e.relPath = name;
+            e.fullPath = full;
+            e.category = "dir";
+            e.isDir = true;
+            entries_.push_back(std::move(e));
+        } else {
+            const std::string ext = ExtOf(name);
+            if (!IsModel(ext) && !IsTexture(ext) && !IsAudio(ext)) continue;
+            AssetLibEntry e;
+            e.relPath = name;
+            e.fullPath = full;
+            e.category = CategoryOf(ext);
+            LARGE_INTEGER sz;
+            sz.HighPart = fd.nFileSizeHigh;
+            sz.LowPart = fd.nFileSizeLow;
+            e.size = static_cast<size_t>(sz.QuadPart);
+            entries_.push_back(std::move(e));
+        }
+    } while (FindNextFileA(h, &fd));
+    FindClose(h);
+    std::sort(entries_.begin(), entries_.end(),
+              [](const AssetLibEntry& a, const AssetLibEntry& b) {
+                  if (a.isDir != b.isDir) return a.isDir; // 目录在前
+                  return ToLower(a.relPath) < ToLower(b.relPath);
+              });
+}
+
+std::string AssetLibraryPanel::TargetPath(EditorContext& ctx, const std::string& category,
+                                          const std::string& rel) const {
     if (!ctx.projectDir) return "";
-    return *ctx.projectDir + "/assets/" + e.category + "/" + e.relPath;
+    return *ctx.projectDir + "/assets/" + category + "/" + rel;
 }
 
 void AssetLibraryPanel::ImportSelected(EditorContext& ctx) {
     imported_ = 0;
     skipped_ = 0;
-    for (auto& e : entries_) {
-        if (!e.selected) continue;
-        const std::string dst = TargetPath(ctx, e);
+    std::vector<std::string> done;
+    for (const std::string& full : selected_) {
+        const std::string ext = ExtOf(full);
+        const std::string dst = TargetPath(ctx, CategoryOf(ext), RelToRoot(full, rootPath_));
         if (dst.empty()) continue;
         if (!overwrite_ && FileExists(dst)) {
             ++skipped_;
             continue;
         }
-        if (CopyFileTo(e.fullPath, dst)) {
+        if (CopyFileTo(full, dst)) {
             ++imported_;
-            e.selected = false;
+            done.push_back(full);
         } else {
             ++skipped_;
         }
     }
+    for (const std::string& p : done) selected_.erase(p);
 }
 
-// 内置目录浏览器：一个纯 ImGui 弹窗，逐级列子目录。刻意不使用 Windows
-// 原生文件夹对话框（SHBrowseForFolder / IFileDialog）——它们的模态消息
-// 泵会和游戏渲染循环抢消息，而本引擎的 PumpEvents 用 PeekMessage 抽取
-// 整个线程的消息，导致对话框永远拿不到输入、编辑器卡死。
-void AssetLibraryPanel::DrawBrowser(EditorContext& ctx) {
-    if (!ImGui::BeginPopupModal("选择目录", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
-        return;
-
-#if defined(_WIN32)
-    const std::vector<std::string> drives = ListDrives();
-    if (browseDir_[0] == '\0' && !drives.empty())
-        std::snprintf(browseDir_, sizeof(browseDir_), "%s/", drives.front().c_str());
-
-    ImGui::Text("当前目录：");
-    ImGui::SameLine();
-    ImGui::TextColored(ImVec4(0.6f, 0.85f, 1.0f, 1.0f), "%s",
-                       browseDir_[0] ? browseDir_ : "(未选择)");
-
-    // 盘符下拉
-    if (!drives.empty()) {
-        std::vector<const char*> items;
-        items.reserve(drives.size());
-        for (auto& d : drives) items.push_back(d.c_str());
-        int driveIdx = 0;
-        for (size_t i = 0; i < drives.size(); ++i) {
-            if (browseDir_[0] && browseDir_[0] == drives[i][0]) {
-                driveIdx = static_cast<int>(i);
-                break;
-            }
-        }
-        ImGui::SetNextItemWidth(80);
-        if (ImGui::Combo("##drive", &driveIdx, items.data(), static_cast<int>(items.size()))) {
-            std::snprintf(browseDir_, sizeof(browseDir_), "%s/", drives[driveIdx].c_str());
-            browseSel_ = -1;
-        }
-        ImGui::SameLine();
-    }
-
-    if (ImGui::Button("⬆ 上级")) {
-        const std::string up = ParentDir(browseDir_);
-        std::snprintf(browseDir_, sizeof(browseDir_), "%s", up.c_str());
-        browseSel_ = -1;
-    }
-    ImGui::SameLine();
-    ImGui::TextDisabled("双击文件夹进入 · 确认后导入到 assets/ 下");
-
-    ImGui::BeginChild("##dirs", ImVec2(560, 320), 0, 0);
-    std::vector<std::string> subdirs;
-    ListSubdirs(browseDir_, subdirs);
-    if (subdirs.empty()) ImGui::TextDisabled("(无子文件夹)");
-    for (int i = 0; i < static_cast<int>(subdirs.size()); ++i) {
-        ImGui::PushID(i);
-        if (ImGui::Selectable(subdirs[i].c_str(), browseSel_ == i,
-                              ImGuiSelectableFlags_AllowDoubleClick)) {
-            if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
-                const std::string next = std::string(browseDir_) + "/" + subdirs[i];
-                std::snprintf(browseDir_, sizeof(browseDir_), "%s", next.c_str());
-                browseSel_ = -1;
-            } else {
-                browseSel_ = i;
-            }
-        }
-        ImGui::PopID();
-    }
-    ImGui::EndChild();
-
-    if (ImGui::Button("选择此目录", ImVec2(140, 0)) && browseDir_[0]) {
-        std::snprintf(rootPath_, sizeof(rootPath_), "%s", browseDir_);
-        Scan(rootPath_);
-        ImGui::CloseCurrentPopup();
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("取消", ImVec2(80, 0))) ImGui::CloseCurrentPopup();
-#else
-    ImGui::TextDisabled("此平台请直接输入路径");
-    if (ImGui::Button("关闭")) ImGui::CloseCurrentPopup();
-#endif
-    ImGui::EndPopup();
+std::uint64_t AssetLibraryPanel::TileTexture(EditorContext& ctx, const std::string& fullPath,
+                                             bool isTexture) {
+    if (!isTexture || !ctx.assetMgr) return 0;
+    auto it = texCache_.find(fullPath);
+    if (it != texCache_.end() && it->second != 0) return it->second;
+    gfx::Texture tex = ctx.assetMgr->LoadTexture(fullPath);
+    if (!tex.Valid()) return 0;
+    const std::uint64_t id = static_cast<std::uint64_t>(gfx::ImGuiNeon_RegisterTexture(tex.Handle()));
+    texCache_[fullPath] = id;
+    return id;
 }
 
 void AssetLibraryPanel::Draw(EditorContext& ctx) {
@@ -272,90 +222,212 @@ void AssetLibraryPanel::Draw(EditorContext& ctx) {
         return;
     }
 
-    // === 路径输入 ===
+    // === 根目录 + 盘符 ===
     ImGui::Text("素材目录：");
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(-120);
+    ImGui::SetNextItemWidth(-160);
     ImGui::InputText("##root", rootPath_, sizeof(rootPath_));
     ImGui::SameLine();
-    if (ImGui::Button("浏览...")) {
-        if (rootPath_[0]) {
-            std::snprintf(browseDir_, sizeof(browseDir_), "%s", rootPath_);
-        } else if (ctx.projectDir && !ctx.projectDir->empty()) {
-            std::snprintf(browseDir_, sizeof(browseDir_), "%s/assets", ctx.projectDir->c_str());
-        } else {
-            browseDir_[0] = '\0';
-        }
-        browseSel_ = -1;
-        ImGui::OpenPopup("选择目录");
-    }
-    DrawBrowser(ctx);
-
+    if (ImGui::Button("载入") && rootPath_[0]) LoadRoot(rootPath_);
     ImGui::SameLine();
-    if (ImGui::Button("扫描") && rootPath_[0]) {
-        Scan(rootPath_);
+#if defined(_WIN32)
+    const std::vector<std::string> drives = ListDrives();
+    if (!drives.empty()) {
+        std::vector<const char*> items;
+        items.reserve(drives.size());
+        for (auto& d : drives) items.push_back(d.c_str());
+        ImGui::SetNextItemWidth(70);
+        if (ImGui::Combo("##rootdrive", &rootDriveIdx_, items.data(), static_cast<int>(items.size()))) {
+            LoadRoot(drives[rootDriveIdx_] + "/");
+        }
+    }
+#endif
+
+    if (curDir_[0] == '\0') {
+        ImGui::Separator();
+        ImGui::TextDisabled("输入素材根目录（或选盘符）后点“载入”，再逐级进入子目录；");
+        ImGui::TextDisabled("勾选文件 → “导入选中”，按源目录层级拷入 assets/ 下。");
+        ImGui::End();
+        return;
     }
 
     ImGui::Separator();
 
-    if (scanned_ && !entries_.empty()) {
-        // === 过滤 ===
-        ImGui::SetNextItemWidth(200);
-        ImGui::InputTextWithHint("##filter", "过滤...", filter_, sizeof(filter_));
-        ImGui::SameLine();
-        const char* cats[] = {"全部", "模型", "贴图", "音频", "其他"};
-        ImGui::SetNextItemWidth(100);
-        ImGui::Combo("##cat", &categoryFilter_, cats, 5);
-        ImGui::SameLine();
-        if (ImGui::Button("全选")) for (auto& e : entries_) e.selected = true;
-        ImGui::SameLine();
-        if (ImGui::Button("全不选")) for (auto& e : entries_) e.selected = false;
-        ImGui::SameLine();
-        ImGui::Checkbox("覆盖", &overwrite_);
+    // === 路径行 + 上级 ===
+    const bool atRoot = std::strcmp(curDir_, rootPath_) == 0;
+    ImGui::BeginDisabled(atRoot);
+    if (ImGui::Button("⬆ 上级")) {
+        const std::string parent = ParentDir(curDir_);
+        std::snprintf(curDir_, sizeof(curDir_), "%s", parent.c_str());
+        LoadDir(curDir_);
+    }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    ImGui::TextColored(ImVec4(0.6f, 0.85f, 1.0f, 1.0f), "%s", curDir_);
 
-        int selCount = 0;
-        for (auto& e : entries_) if (e.selected) ++selCount;
-        ImGui::TextDisabled("%zu 项（选中 %d）", entries_.size(), selCount);
+    // === 过滤 + 批量 ===
+    ImGui::SetNextItemWidth(180);
+    ImGui::InputTextWithHint("##filter", "过滤...", filter_, sizeof(filter_));
+    ImGui::SameLine();
+    const char* cats[] = {"全部", "模型", "贴图", "音频", "其他"};
+    ImGui::SetNextItemWidth(90);
+    ImGui::Combo("##cat", &categoryFilter_, cats, 5);
+    ImGui::SameLine();
+    if (ImGui::Button("全选本目录")) {
+        for (auto& e : entries_)
+            if (!e.isDir) selected_.insert(e.fullPath);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("全不选")) selected_.clear();
+    ImGui::SameLine();
+    ImGui::Checkbox("覆盖", &overwrite_);
 
-        ImGui::BeginDisabled(selCount == 0);
-        if (ImGui::Button("导入选中") || ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_I)) {
-            ImportSelected(ctx);
-        }
-        ImGui::EndDisabled();
-        if (imported_ > 0 || skipped_ > 0) {
-            ImGui::SameLine();
-            ImGui::Text("导入 %d · 跳过 %d", imported_, skipped_);
-        }
-        ImGui::Separator();
+    const std::string filterStr = filter_;
+    ImGui::TextDisabled("选中 %zu 项", selected_.size());
+    ImGui::SameLine();
+    ImGui::BeginDisabled(selected_.empty());
+    if (ImGui::Button("导入选中") || ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_I)) {
+        ImportSelected(ctx);
+    }
+    ImGui::EndDisabled();
+    if (imported_ > 0 || skipped_ > 0) {
+        ImGui::SameLine();
+        ImGui::Text("导入 %d · 跳过 %d", imported_, skipped_);
+    }
+    ImGui::Separator();
 
-        // === 列表 ===
-        ImGui::BeginChild("asset_list", ImVec2(0, 0), 0, 0);
-        const std::string filterStr = filter_;
-        for (auto& e : entries_) {
+    // === 图标网格 ===
+    const float cellW = 88.0f;
+    const float cellH = 100.0f;
+    ImGui::BeginChild("##lib_grid", ImVec2(0, 0), 0, 0);
+    const ImVec2 avail = ImGui::GetContentRegionAvail();
+    const int cols = std::max(1, static_cast<int>(avail.x / cellW));
+    int slot = 0; // slot 0 = 上级
+
+    // “上级”格子
+    ImGui::SetCursorPos(ImVec2(0.0f, 0.0f));
+    ImGui::PushID("up");
+    ImGui::InvisibleButton("##up", ImVec2(cellW - 6.0f, cellH - 8.0f));
+    {
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        const ImVec2 tl = ImGui::GetItemRectMin();
+        const ImVec2 br = ImGui::GetItemRectMax();
+        dl->AddRectFilled(tl, br, IM_COL32(70, 70, 80, 255));
+        dl->AddRect(tl, br, IM_COL32(30, 30, 35, 255));
+        const ImVec2 ts = ImGui::CalcTextSize("⬆");
+        dl->AddText(ImVec2((tl.x + br.x - ts.x) * 0.5f, tl.y + 18.0f),
+                    IM_COL32(230, 230, 235, 255), "⬆");
+        const ImVec2 ts2 = ImGui::CalcTextSize("上级");
+        dl->AddText(ImVec2((tl.x + br.x - ts2.x) * 0.5f, br.y - 20.0f),
+                    IM_COL32(200, 205, 215, 255), "上级");
+    }
+    if (!atRoot && ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+        const std::string parent = ParentDir(curDir_);
+        std::snprintf(curDir_, sizeof(curDir_), "%s", parent.c_str());
+        LoadDir(curDir_);
+    }
+    ImGui::PopID();
+    ++slot;
+
+    for (size_t i = 0; i < entries_.size(); ++i) {
+        AssetLibEntry& e = entries_[i];
+        const std::string ext = e.isDir ? std::string() : ExtOf(e.relPath);
+        const bool isTex = IsTexture(ext);
+        const bool isMdl = IsModel(ext);
+        if (!e.isDir) {
             if (!filterStr.empty() && e.relPath.find(filterStr) == std::string::npos) continue;
             if (categoryFilter_ > 0 && CategoryIndex(e.category) != categoryFilter_ - 1) continue;
-
-            ImGui::PushID(e.relPath.c_str());
-            const int ci = CategoryIndex(e.category);
-            const ImVec4 colors[] = {
-                ImVec4(0.39f, 0.67f, 1.0f, 1), ImVec4(0.47f, 0.86f, 0.47f, 1),
-                ImVec4(1.0f, 0.78f, 0.39f, 1), ImVec4(0.71f, 0.71f, 0.71f, 1)};
-            ImGui::TextColored(colors[ci], "[%s]", kCategories[ci]);
-            ImGui::SameLine();
-            ImGui::Selectable(e.relPath.c_str(), &e.selected);
-            ImGui::SameLine(ImGui::GetContentRegionAvail().x - 70);
-            ImGui::TextDisabled("%.1fMB", e.size / 1048576.0);
-            ImGui::PopID();
         }
-        ImGui::EndChild();
-    } else if (scanned_) {
-        ImGui::TextColored(ImVec4(1, 0.7f, 0.5f, 1), "目录为空或无可导入资产");
-    } else {
-        ImGui::TextDisabled("指定你的素材目录后点扫描");
-        ImGui::Spacing();
-        ImGui::TextDisabled("支持: .obj .glb .gltf .fbx .png .jpg .tga .dds .wav .mp3 .ogg");
-        ImGui::TextDisabled("导入到: assets/models/ · assets/textures/ · assets/audio/");
+
+        const int col = slot % cols;
+        const int row = slot / cols;
+        ++slot;
+        ImGui::SetCursorPos(ImVec2(col * cellW, row * cellH));
+        ImGui::PushID(static_cast<int>(i));
+        const ImVec2 cellSize(cellW - 6.0f, cellH - 8.0f);
+        const bool clicked = ImGui::InvisibleButton("##cell", cellSize);
+        const bool hovered = ImGui::IsItemHovered();
+        const bool dbl = hovered && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left);
+
+        const bool isSelected = !e.isDir && selected_.count(e.fullPath) > 0;
+        if (e.isDir) {
+            if (dbl) {
+                const std::string next = std::string(curDir_) + "/" + e.relPath;
+                std::snprintf(curDir_, sizeof(curDir_), "%s", next.c_str());
+                LoadDir(curDir_);
+            }
+        } else if (clicked) {
+            if (isSelected) selected_.erase(e.fullPath);
+            else selected_.insert(e.fullPath);
+        }
+
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        const ImVec2 tl = ImGui::GetItemRectMin();
+        const float tw = cellSize.x;
+        const ImVec2 thumbTl(tl.x + 4.0f, tl.y + 2.0f);
+        const ImVec2 thumbBr(tl.x + tw - 4.0f, tl.y + 62.0f);
+
+        if (isSelected) dl->AddRectFilled(tl, ImVec2(tl.x + tw, tl.y + cellH - 8.0f),
+                                          IM_COL32(60, 110, 170, 110));
+
+        ImU32 tileCol = IM_COL32(70, 70, 80, 255);
+        ImTextureID tid = ImTextureID_Invalid;
+        bool flipV = false;
+        const char* tag = "FILE";
+        if (e.isDir) {
+            tileCol = IM_COL32(185, 145, 45, 255);
+            tag = "DIR";
+        } else if (isTex) {
+            tileCol = IM_COL32(70, 150, 90, 255);
+            tag = "IMG";
+            const std::uint64_t handle = TileTexture(ctx, e.fullPath, true);
+            if (handle) tid = static_cast<ImTextureID>(handle);
+        } else if (isMdl) {
+            tileCol = IM_COL32(85, 125, 200, 255);
+            tag = "MDL";
+            tid = static_cast<ImTextureID>(ctx.meshThumbnail ? ctx.meshThumbnail(e.fullPath) : 0);
+            flipV = tid != ImTextureID_Invalid;
+        } else {
+            tileCol = IM_COL32(200, 130, 55, 255);
+            tag = "WAV";
+        }
+
+        if (tid != ImTextureID_Invalid) {
+            const float tw2 = thumbBr.x - thumbTl.x;
+            const float th2 = thumbBr.y - thumbTl.y;
+            const float ts = std::min(tw2, th2);
+            const ImVec2 imgTl(thumbTl.x + (tw2 - ts) * 0.5f, thumbTl.y + (th2 - ts) * 0.5f);
+            dl->AddImage(tid, imgTl, ImVec2(imgTl.x + ts, imgTl.y + ts),
+                         ImVec2(0.0f, flipV ? 1.0f : 0.0f), ImVec2(1.0f, flipV ? 0.0f : 1.0f));
+            dl->AddRect(imgTl, ImVec2(imgTl.x + ts, imgTl.y + ts), IM_COL32(30, 30, 35, 255));
+        } else {
+            dl->AddRectFilled(thumbTl, thumbBr, tileCol);
+            dl->AddRect(thumbTl, thumbBr, IM_COL32(30, 30, 35, 255));
+            const ImVec2 ts = ImGui::CalcTextSize(tag);
+            dl->AddText(ImVec2((thumbTl.x + thumbBr.x - ts.x) * 0.5f,
+                               (thumbTl.y + thumbBr.y - ts.y) * 0.5f),
+                        IM_COL32(255, 255, 255, 225), tag);
+        }
+
+        // 文件名（单行，裁剪）
+        dl->PushClipRect(tl, ImVec2(tl.x + tw, tl.y + cellH - 6.0f), true);
+        dl->AddText(ImVec2(tl.x + 3.0f, thumbBr.y + 3.0f), IM_COL32(220, 225, 235, 255),
+                    e.relPath.c_str());
+        dl->PopClipRect();
+
+        // 选中勾
+        if (isSelected) {
+            const ImVec2 c(thumbBr.x - 11.0f, thumbTl.y + 11.0f);
+            dl->AddCircleFilled(c, 9.0f, IM_COL32(60, 150, 220, 235));
+            dl->AddCircle(c, 9.0f, IM_COL32(240, 245, 255, 255));
+            dl->AddText(ImVec2(c.x - 4.0f, c.y - 7.0f), IM_COL32(255, 255, 255, 255), "✓");
+        }
+        ImGui::PopID();
     }
+
+    const int rows = (slot + cols - 1) / cols;
+    ImGui::Dummy(ImVec2(1.0f, rows * cellH + 8.0f));
+    ImGui::EndChild();
 
     ImGui::End();
 }
