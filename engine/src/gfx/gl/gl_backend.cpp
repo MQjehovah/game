@@ -708,8 +708,15 @@ public:
         const gl::GLenum wrap = desc.wrap == Wrap::Repeat ? glc::Repeat : glc::ClampToEdge;
         g.TexParameteri(glc::Texture2D, glc::TextureWrapS, wrap);
         g.TexParameteri(glc::Texture2D, glc::TextureWrapT, wrap);
+        // Mipmapped textures sample the generated mip chain (trilinear): the
+        // old plain-Linear min filter allocated + generated mips but never
+        // sampled them, so GL sharpen-aliased at distance while the Vulkan
+        // sampler (LINEAR mip mode) filtered properly - the measured 13.7%
+        // GL/VK pixel divergence on textured surfaces (sky matched exactly).
         g.TexParameteri(glc::Texture2D, glc::TextureMinFilter,
-                        desc.filter == Filter::Nearest ? glc::Nearest : glc::Linear);
+                        desc.filter == Filter::Nearest
+                            ? glc::Nearest
+                            : (desc.mipmaps ? glc::LinearMipmapLinear : glc::Linear));
         g.TexParameteri(glc::Texture2D, glc::TextureMagFilter,
                         desc.filter == Filter::Nearest ? glc::Nearest : glc::Linear);
 

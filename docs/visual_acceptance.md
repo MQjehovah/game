@@ -894,3 +894,21 @@ set NEON_SHADOW_DEBUG=1   :: 直接输出级联阴影因子（白=受光，黑=�
 - 另记：强杀编辑器后 ~0.5s 内重启偶发 WGL 上下文创建失败（窗口创建竞态，重试即好，
   非代码缺陷）；VK uniform 表支持 `uPointPos[i]` 下标式写入（FindUniform 词干匹配，
   曾误判缺失，已核实无误）。
+
+### 追查更新（GL/VK 差异定位到河水条带；GL 三线性修复）
+
+- 修复：GL `CreateTexture` 此前"生成了 mip 链却从不采样"（MinFilter=GL_LINEAR），
+  VK 采样器一直是三线性 → GL 改为 `desc.mipmaps` 时用 `LINEAR_MIPMAP_LINEAR`
+  （常量早已定义但从未使用）。效果量小（2.6% 像素变化），属一致性修复。
+- GL/VK 差异精确定位（区域统计 + 分通道比值）：
+  - 天空、近处地面：**逐像素完全一致**；
+  - 差异全部集中在**画面中部河流条带**：GL 暖褐(97,82,47) vs VK 冷蓝(100,118,147)，
+    B 通道 ×2.0 —— 是色相漂移，不是亮度/过滤问题；
+  - 河水材质为 OPAQUE + doubleSided + 贴图（非透明混合）。
+- 已排除：混合状态（VK 三种 blend 因子全对）、PipelineKey 含 blend、
+  TERRAIN_SPLAT 变体（两端一致且河水不走它）、vColor 乘法（两端一致）、
+  贴图加载失败（日志无告警）、UBO/着色器逻辑（逐行一致）。
+- 剩余嫌疑：VK 上河水采样到**不同 texel**（UV 方向/贴图行序/图集错位一类）。
+  下一步：RenderDoc 抓 VK 一帧，看河水 draw 的 uAlbedo 绑定与 UV；
+  复现：`neon_editor --backend vulkan --project projects/moba --frames 80
+  --screenshot out.png 60`（对照 GL 去掉 --backend）。
