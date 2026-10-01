@@ -29,6 +29,31 @@ local BRUSHES = {
     { x = -7, z = 26, r = 3.6 }, { x = 7, z = 40, r = 3.6 },
 }
 
+-- 地面高度采样：地图(sr_map.glb)的可行走表面在 y≈-1.3~-1.7，而单位原先
+-- 硬编码 y=0，导致人物/防御塔/小兵全部悬空。高度网格由 moba_ground.lua
+-- 提供（烘焙数据，先于本脚本加载），无数据时回退 0（平地）。
+local function groundY(x, z)
+    local g = MOBA_GROUND
+    if g == nil then return 0 end
+    local gx = (x - g.minx) / g.cell
+    local gz = (z - g.minz) / g.cell
+    local maxc = g.n - 1.001
+    if gx < 0 then gx = 0 elseif gx > maxc then gx = maxc end
+    if gz < 0 then gz = 0 elseif gz > maxc then gz = maxc end
+    local x0 = math.floor(gx)
+    local z0 = math.floor(gz)
+    local fx = gx - x0
+    local fz = gz - z0
+    local h = g.h
+    local i = z0 * g.n + x0 + 1
+    local h00 = h[i]
+    local h10 = h[i + 1]
+    local h01 = h[i + g.n]
+    local h11 = h[i + g.n + 1]
+    return (h00 * (1 - fx) + h10 * fx) * (1 - fz) + (h01 * (1 - fx) + h11 * fx) * fz
+end
+
+
 -- 相机视角（俯角 pitch，Riot Rift 约 55°；位置由脚本每帧驱动 Main Camera 实体，保持鼠标可见）
 local CAM = { yaw = math.pi * 0.75, pitch = 0.98, dist = 17, minDist = 11, maxDist = 28 }
 local VW, VH = 1280, 720
@@ -214,7 +239,7 @@ local function spawnHero(name, team)
     local s = baseStats(name)
     local p = MAP.spawn[team]
     local off = (team == BLUE) and -1.6 or 1.6
-    local ent = SpawnPrefab("hero_" .. name, { x = p.x + off, y = 0, z = p.z })
+    local ent = SpawnPrefab("hero_" .. name, { x = p.x + off, y = groundY(p.x + off, p.z), z = p.z })
     if ent == nil then return nil end
     local u = {
         id = nid(), ent = ent, kind = "champion", team = team,
@@ -260,7 +285,7 @@ local function spawnMinion(kind, team, x, z)
     -- 超级兵复用攻城兵模型（没有单独的 super 资产）。
     local model = (kind == "super") and "siege" or kind
     local prefab = "minion_" .. model .. (team == BLUE and "_blue" or "_red")
-    local ent = SpawnPrefab(prefab, { x = x, y = 0, z = z })
+    local ent = SpawnPrefab(prefab, { x = x, y = groundY(x, z), z = z })
     if ent == nil then return nil end
     local u = {
         id = nid(), ent = ent, kind = "minion", mkind = kind, team = team,
@@ -283,7 +308,7 @@ local function spawnStructure(kind, team, x, z)
     if kind == "nexus" then prefab = "struct_nexus_" .. suffix
     elseif kind == "inhibitor" then prefab = "struct_inhibitor_" .. suffix
     else prefab = "struct_tower_" .. suffix end
-    local ent = SpawnPrefab(prefab, { x = x, y = 0, z = z })
+    local ent = SpawnPrefab(prefab, { x = x, y = groundY(x, z), z = z })
     if ent == nil then return nil end
     local u
     if kind == "nexus" then
@@ -294,7 +319,7 @@ local function spawnStructure(kind, team, x, z)
             armor = 20, mr = 20,
             buffs = {}, target = nil, anim = nil, actionT = 0, dead = false,
         }
-        SetPosition(ent, { x = x, y = 0, z = z })
+        SetPosition(ent, { x = x, y = groundY(x, z), z = z })
     elseif kind == "inhibitor" then
         u = {
             id = nid(), ent = ent, kind = "inhibitor", team = team, name = "兵营",
@@ -303,7 +328,7 @@ local function spawnStructure(kind, team, x, z)
             armor = 20, mr = 20,
             buffs = {}, target = nil, anim = nil, actionT = 0, dead = false,
         }
-        SetPosition(ent, { x = x, y = 0, z = z })
+        SetPosition(ent, { x = x, y = groundY(x, z), z = z })
     else
         u = {
             id = nid(), ent = ent, kind = "tower", team = team, name = "防御塔",
@@ -312,7 +337,7 @@ local function spawnStructure(kind, team, x, z)
             armor = 40, mr = 40,
             buffs = {}, target = nil, anim = nil, actionT = 0, dead = false, ranged = true,
         }
-        SetPosition(ent, { x = x, y = 0, z = z })
+        SetPosition(ent, { x = x, y = groundY(x, z), z = z })
     end
     units[#units + 1] = u
     structures[#structures + 1] = u
@@ -331,7 +356,7 @@ local JUNGLE = {
 }
 
 local function spawnNeutral(cfg)
-    local ent = SpawnPrefab(cfg.prefab, { x = cfg.x, y = 0, z = cfg.z })
+    local ent = SpawnPrefab(cfg.prefab, { x = cfg.x, y = groundY(cfg.x, cfg.z), z = cfg.z })
     if ent == nil then return nil end
     local u = {
         id = nid(), ent = ent, kind = "neutral", team = 0, name = cfg.name or cfg.key,
@@ -796,7 +821,7 @@ local function moveToward(u, tx, tz, dt)
     if step > d then step = d end
     u.x = u.x + dx / d * step
     u.z = u.z + dz / d * step
-    SetPosition(u.ent, { x = u.x, y = 0, z = u.z })
+    SetPosition(u.ent, { x = u.x, y = groundY(u.x, u.z), z = u.z })
     faceTo(u, tx, tz)
     return d <= 0.2
 end
@@ -1137,7 +1162,7 @@ local function castAbility(h, idx, aimX, aimZ)
                 end
             end
         end
-        SetPosition(h.ent, { x = h.x, y = 0, z = h.z })
+        SetPosition(h.ent, { x = h.x, y = groundY(h.x, h.z), z = h.z })
     elseif t == "melee" then
         local r = ab.range or 2.5
         local arc = math.rad(ab.arc or 120)
@@ -1383,7 +1408,7 @@ local function updateHeroControl(h, dt)
         if h.channel <= 0 then
             local b = MAP.spawn[h.team]
             h.x, h.z = b.x, b.z
-            SetPosition(h.ent, { x = h.x, y = 0, z = h.z })
+            SetPosition(h.ent, { x = h.x, y = groundY(h.x, h.z), z = h.z })
             h.hp = h.maxHp
             h.mana = h.maxMana
             SetHealth(h.ent, h.hp)
@@ -1741,7 +1766,7 @@ local function updatePlayer(dt)
             u.x = u.x + (u.nx - u.x) * k
             u.z = u.z + (u.nz - u.z) * k
             u.yaw = u.nyaw or u.yaw
-            if u.ent ~= nil then SetPosition(u.ent, { x = u.x, y = 0, z = u.z }) end
+            if u.ent ~= nil then SetPosition(u.ent, { x = u.x, y = groundY(u.x, u.z), z = u.z }) end
         end
         lerpNet(playerHero)
         lerpNet(enemyHero)
@@ -1984,7 +2009,7 @@ local function respawnHero(u)
     u.navCd = 0
     local b = MAP.spawn[u.team]
     u.x, u.z = b.x, b.z
-    SetPosition(u.ent, { x = u.x, y = 0, z = u.z })
+    SetPosition(u.ent, { x = u.x, y = groundY(u.x, u.z), z = u.z })
     SetHealth(u.ent, u.hp)
     SetRotationY(u.ent, (u.team == BLUE) and 0 or math.pi)
     u.navPath = nil
@@ -2179,10 +2204,14 @@ end
 --   FogVisibleAt(x,z)    查询某点当前是否可见（用于隐藏敌方单位）
 --   FogDraw()            在 on_render 输出按顶点 alpha 渐变的柔化遮罩（不再是硬边黑方块）
 -- 游戏规则（谁能给视野、草丛隐藏）仍留在这里。
+-- 战争迷雾总开关：false = 关闭（不渲染遮罩、不做视野隐藏）。
+-- 关掉后“塔附近阴影被一条斜线切一半”的现象应消失；改回 true 恢复迷雾。
+local FOG_OF_WAR = false
 local FOG_CELL, FOG_MIN, FOG_COLS = 8, -96, 25
 local VISION_R = { champion = 16, minion = 11, tower = 22, nexus = 22 }
 
 local function setupFog()
+    if not FOG_OF_WAR then return end
     if type(FogSetup) == "function" then
         FogSetup(FOG_CELL, FOG_MIN, FOG_MIN, FOG_COLS, FOG_COLS, 0.5, 0.96, 0.02, 0.02, 0.05)
     end
@@ -3060,7 +3089,7 @@ end
 -- 战争迷雾遮罩：由引擎按可见性网格输出柔化（顶点 alpha 渐变）遮罩，
 -- 未探索=近黑，探索过但当前不可见=半透明。见 setupFog/updateVision。
 local function drawFog()
-    if type(FogDraw) == "function" then FogDraw() end
+    if FOG_OF_WAR and type(FogDraw) == "function" then FogDraw() end
 end
 
 -- 大厅界面（client）：创建/刷新/房号加入/等待/和 AI 开始/离开
