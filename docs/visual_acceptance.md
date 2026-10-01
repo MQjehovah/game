@@ -875,3 +875,26 @@ set NEON_SHADOW_DEBUG=1   :: 直接输出级联阴影因子（白=受光，黑=�
   （级联索引着色，`renderer.cpp` 现按整数解析 env）分层隔离 → 逐开关
   SSAO/级联宽度 A/B。
 - 顺带：分析期间发现输出浮动文字参数序为 (life,r,g,b)，搜刮浮字颜色已修正。
+
+### 已定位待修（本轮）：VK 后端 post 链 depth/AO 全零 → 全屏偏暗
+
+- 症状：moba 场景（renderstack: ssao/fog/tonemap/grade 开）GL 明亮、VK 整屏暗青色；
+  默认沙盒场景两端几乎一致（差异 ±7% 内）→ 只有走 scene renderstack 的场景受影响。
+- 实测（`NEON_DUMP_POST=1` 导出 post 中间目标，逐阶段数值对比）：
+  - depth 编码目标：GL mean 0.0047（有真实值） vs **VK 全 0**；
+  - AO 目标：GL mean 1.003（无遮蔽=1） vs **VK 全 0**。
+- 传播链：AO=0 进合成 `c *= mix(1, ao=0, uAoIntensity=0.65)` → 全屏 ×0.35 变暗；
+  depth=0 → composite 雾项 `ndc<1 → dist=0 → f=0` → VK 无雾。GL/VK 合成着色器逻辑
+  已逐段比对一致（fog/ACES/grade/vignette/exposure 全对齐），UBO 偏移表 131 项与
+  engine_ubo.glsl 全量对账无一处错位；数组步长（显式 16B）与 ElementOffset 一致。
+- 结论：嫌疑收敛在 **VK 主 pass 可采样深度纹理（B4 depth-encode 输入）为空**——
+  depth-encode 全屏 quad 采样到 0 → depth 目标 0 → AO 采样 0 深度 → 全黑 AO。
+  `ResolveDepth`（vk_backend.cpp:956）本身实现完善（注释含历史坑修复），
+  下一步用 `NEON_VK_TRACE=1` + RenderDoc 抓 depth-encode pass 的输入绑定。
+- 复现：
+  - `neon_editor --backend vulkan --project projects/moba --frames 120 --screenshot out.png 80`
+  - 对照 `neon_editor --project projects/moba ...`（GL）
+  - 数值化：`$env:NEON_DUMP_POST="1"` 后比较 `_postdump_depth/ao_*.bin`
+- 另记：强杀编辑器后 ~0.5s 内重启偶发 WGL 上下文创建失败（窗口创建竞态，重试即好，
+  非代码缺陷）；VK uniform 表支持 `uPointPos[i]` 下标式写入（FindUniform 词干匹配，
+  本轮曾误判缺失，已核实无误）。

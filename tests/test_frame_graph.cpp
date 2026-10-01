@@ -302,8 +302,10 @@ gfx::PostGraph BuildFullPostGraph(int& depthCasterCalls) {
     gfx::PostGraph post;
     post.Build(MakeTestShaders(), gfx::MeshHandle{1, 1, 1, 6}, 640, 360,
                [&] { ++depthCasterCalls; });
-    // 18 post/bloom passes + 2 A5 auto-exposure passes (luminance + 1x1 average).
-    CHECK_EQ(post.PassCount(), 20u);
+    // 18 post/bloom passes + 3 auto-exposure passes (luminance, 1x1 average,
+    // and the A5b exposure-adaptation smoothing pass; the chain only EXECUTES
+    // when auto-exposure is enabled, but the passes always exist in the graph).
+    CHECK_EQ(post.PassCount(), 21u);
     return post;
 }
 
