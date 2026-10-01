@@ -1754,6 +1754,28 @@ public:
         }
     }
 
+    void ReadTargetPixelsRect(int x, int y, int w, int h, unsigned char* rgba) override {
+        // Debug (NEON_DUMP_POST) bulk read of the currently bound render target.
+        // Without this override the interface default is a NO-OP, and every
+        // Vulkan post-chain "dump" was silently a zero-filled buffer - a whole
+        // debugging session chased a "depth/AO are zero" bug that was actually
+        // an empty measurement. Mirrors the GL read's bottom-up row order.
+        NEON_VK_TRACE("vt: ReadTargetPixelsRect %d,%d %dx%d target=%p\n", x, y, w, h,
+                      (void*)target_);
+        if (!rgba || w <= 0 || h <= 0) return;
+        if (!target_ || target_->swapchain || !target_->colorImage) return;
+        if (x < 0 || y < 0 || x + w > target_->width || y + h > target_->height) return;
+        std::vector<unsigned char> rows(static_cast<size_t>(w) * h * 4);
+        ReadImage(target_->colorImage, TrackedLayout(target_->colorImage), target_->colorFormat,
+                  w, h, rows.data(), x, y);
+        // Flip to the GL bottom-up dump convention, row by row.
+        for (int r = 0; r < h; ++r) {
+            const unsigned char* src = rows.data() + static_cast<size_t>(r) * w * 4;
+            unsigned char* dst = rgba + static_cast<size_t>(h - 1 - r) * w * 4;
+            std::memcpy(dst, src, static_cast<size_t>(w) * 4);
+        }
+    }
+
     bool DepthAvailable() const override { return depthUsable_; }
 
 

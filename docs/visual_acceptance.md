@@ -876,25 +876,21 @@ set NEON_SHADOW_DEBUG=1   :: 直接输出级联阴影因子（白=受光，黑=�
   SSAO/级联宽度 A/B。
 - 顺带：分析期间发现输出浮动文字参数序为 (life,r,g,b)，搜刮浮字颜色已修正。
 
-### 已定位待修（本轮）：VK 后端 post 链 depth/AO 全零 → 全屏偏暗
+### 已更正（本轮）：VK "depth/AO 全零"是测量伪影；VK bulk 读回已实现并验证正常
 
-- 症状：moba 场景（renderstack: ssao/fog/tonemap/grade 开）GL 明亮、VK 整屏暗青色；
-  默认沙盒场景两端几乎一致（差异 ±7% 内）→ 只有走 scene renderstack 的场景受影响。
-- 实测（`NEON_DUMP_POST=1` 导出 post 中间目标，逐阶段数值对比）：
-  - depth 编码目标：GL mean 0.0047（有真实值） vs **VK 全 0**；
-  - AO 目标：GL mean 1.003（无遮蔽=1） vs **VK 全 0**。
-- 传播链：AO=0 进合成 `c *= mix(1, ao=0, uAoIntensity=0.65)` → 全屏 ×0.35 变暗；
-  depth=0 → composite 雾项 `ndc<1 → dist=0 → f=0` → VK 无雾。GL/VK 合成着色器逻辑
-  已逐段比对一致（fog/ACES/grade/vignette/exposure 全对齐），UBO 偏移表 131 项与
-  engine_ubo.glsl 全量对账无一处错位；数组步长（显式 16B）与 ElementOffset 一致。
-- 结论：嫌疑收敛在 **VK 主 pass 可采样深度纹理（B4 depth-encode 输入）为空**——
-  depth-encode 全屏 quad 采样到 0 → depth 目标 0 → AO 采样 0 深度 → 全黑 AO。
-  `ResolveDepth`（vk_backend.cpp:956）本身实现完善（注释含历史坑修复），
-  下一步用 `NEON_VK_TRACE=1` + RenderDoc 抓 depth-encode pass 的输入绑定。
-- 复现：
-  - `neon_editor --backend vulkan --project projects/moba --frames 120 --screenshot out.png 80`
-  - 对照 `neon_editor --project projects/moba ...`（GL）
-  - 数值化：`$env:NEON_DUMP_POST="1"` 后比较 `_postdump_depth/ao_*.bin`
+- **上轮结论作废**：`ReadTargetPixelsRect` 在 VK 后端没有实现（接口默认 no-op），
+  `NEON_DUMP_POST` 在 VK 下导出的是零填充空缓冲——不是 depth/AO 真的为零。
+- 本轮给 VK 实现了真正的 `ReadTargetPixelsRect`（走 `ReadImage`，行序对齐 GL 的
+  底-顶约定）。真数据闭环：VK depth mean 0.0014（4% 覆盖，取景合理）、
+  **AO mean 1.0037 ≈ GL 1.003** → VK 的 depth-encode/SSAO 链完全正常。
+- 遗留的真实差异（截图二分定位）：renderstack 全关的基线场景 GL/VK 仍有 13.7%
+  像素局部差异（VK 均值 +14%）；ssao/fog/grade/tonemap/bloom 逐项开关均不改变
+  该差异 → 与 post 链无关；程序化天空两端完全一致（74.7/74.6），差异集中在
+  贴图表面 → 疑似纹理采样细节（mip/过滤）级别差异，量级小、非全局偏色，
+  列为 VK 平价低优先级待查项。
+- 复现（含可用的 VK dump）：
+  - `neon_editor --backend vulkan --project projects/moba ...`（对照去掉 `--backend`）
+  - `$env:NEON_DUMP_POST="1"` 后比较 `_postdump_depth/ao_*.bin`（VK 现在是真数据）
 - 另记：强杀编辑器后 ~0.5s 内重启偶发 WGL 上下文创建失败（窗口创建竞态，重试即好，
   非代码缺陷）；VK uniform 表支持 `uPointPos[i]` 下标式写入（FindUniform 词干匹配，
-  本轮曾误判缺失，已核实无误）。
+  曾误判缺失，已核实无误）。
