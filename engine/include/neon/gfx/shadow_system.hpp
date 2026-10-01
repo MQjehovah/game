@@ -54,6 +54,13 @@ public:
         float z;
         float extent;
     };
+    // Cascade-INDEPENDENT per-caster data (world centre + extent bucket),
+    // computed once per RunPass instead of once per cascade.
+    struct CasterKey {
+        const ShadowDraw* draw;
+        math::Vec3 center;
+        float extent; // already bucketed (log2 of world extent)
+    };
 
     ShadowSystem() = default;
     ~ShadowSystem() = default;
@@ -130,6 +137,9 @@ public:
 
 private:
     void DrawShadowCaster(const ShadowDraw& draw, const math::Mat4& lightVP);
+    // Computes the per-caster world centre + extent bucket once and expands
+    // `sceneBounds` (union of caster world AABBs) in the same pass.
+    void BuildCasterKeys(math::AABB& sceneBounds);
     void DrawShadowCastersSorted(const math::Mat4& lightVP);
     void RunPointShadowPass(const math::Vec3* pointPos, const float* pointRadius, int pointCount);
     void DrawPointShadowCastersSorted(int lightIndex, const math::Vec3& lightPos, float range);
@@ -182,8 +192,10 @@ private:
     bool pointShadowsActive_ = false;
 
     // Reusable per-frame scratch buffers (kept out of the hot path's per-call
-    // allocations): painter's-order sort keys + flattened bone matrices.
+    // allocations): painter's-order sort keys + caster centres + flattened
+    // bone matrices.
     std::vector<ShadowSortKey> shadowSortKeys_;
+    std::vector<CasterKey> casterKeys_;
     std::vector<float> boneUniformFlat_;
 };
 

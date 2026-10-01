@@ -1380,19 +1380,19 @@ void Renderer::ApplyMaterial(const Material& material, const math::Mat4& mvp,
                                   material.highlightColor.b});
         backend_->SetUniformFloat("uHighlightStrength", material.highlightStrength);
         // B1: the per-frame scene uniform block (sun/lights/fog/view/shadow/IBL)
-        // is identical across every draw in a frame -- upload it once, and
-        // re-upload whenever the shader changes (uniform locations are
-        // per-program).
-        if (sceneUniformStamp_ != sceneUniformAppliedStamp_ ||
-            shader.id != lastSceneUniformShader_.id) {
-            sceneUniformAppliedStamp_ = sceneUniformStamp_;
+        // is identical across every draw in a frame -- upload it once per
+        // PROGRAM (uniform locations are per-program), so alternating shaders
+        // in the draw stream no longer re-upload the whole block per draw.
+        if (sceneUniformProgramStamps_.size() > 64) sceneUniformProgramStamps_.clear();
+        uint64_t& appliedStamp = sceneUniformProgramStamps_[shader.id];
+        if (appliedStamp != sceneUniformStamp_) {
+            appliedStamp = sceneUniformStamp_;
             ApplySceneUniforms(shader);
         }
     }
 }
 
 void Renderer::ApplySceneUniforms(ShaderHandle shader) {
-    lastSceneUniformShader_ = shader;
     backend_->SetUniformVec3("uCamPos", sceneState_.CamPos());
     backend_->SetUniformVec3("uSunDir", sceneState_.SunDir());
     const Color& sunColor = sceneState_.SunColor();

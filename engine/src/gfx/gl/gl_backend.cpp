@@ -1,4 +1,4 @@
-#include "neon/gfx/backend.hpp"
+﻿#include "neon/gfx/backend.hpp"
 
 #include <algorithm>
 #include <cstdlib>
@@ -267,6 +267,17 @@ public:
                          "GL compressed textures (BC1/DXT1): %s",
                          compressedTexSupported_ ? "supported" : "NOT supported - textures fall back to RGBA8");
         }
+
+        // The init probes bind textures/programs directly; start the
+        // redundant-state shadow caches from "unknown".
+        InvalidateTextureBindings();
+        lastProgram_ = 0;
+        vpW_ = -1;
+        scissorOn_ = -1;
+        blendMode_ = -1;
+        depthEnabled_ = -1;
+        depthWrite_ = -1;
+        cullMode_ = -1;
 
         glReady_ = true;
         return true;
@@ -578,6 +589,7 @@ public:
         auto& g = gl::GetGL();
         g.BindFramebuffer(glc::Framebuffer, it->second.fbo);
         g.Viewport(0, 0, it->second.width, it->second.height);
+        TrackViewport(0, 0, it->second.width, it->second.height);
     }
 
     void EndDepthPass() override { BindDefaultTarget(); }
@@ -588,6 +600,11 @@ public:
         auto& g = gl::GetGL();
         g.ActiveTexture(glc::Texture0 + static_cast<gl::GLenum>(slot));
         g.BindTexture(glc::Texture2D, it->second.depthTex);
+        // Keep the per-unit cache truthful about this direct bind.
+        if (slot >= 0 && slot < kMaxTextureUnits) {
+            unitKnown_[slot] = true;
+            unitTex_[slot] = it->second.depthTex;
+        }
     }
 
     bool ReadCurrentTargetDepth(int width, int height, float* out) override {
@@ -606,6 +623,7 @@ public:
         auto& g = gl::GetGL();
         g.BindFramebuffer(glc::Framebuffer, it->second.fbo);
         g.Viewport(0, 0, it->second.width, it->second.height);
+        TrackViewport(0, 0, it->second.width, it->second.height);
     }
 
     void BindDefaultTarget() override {
@@ -617,7 +635,10 @@ public:
         g.DrawBuffer(glc::Back);
         g.ReadBuffer(glc::Back);
         targetHeight_ = window_ ? window_->Height() : 0;
-        if (window_) g.Viewport(0, 0, window_->Width(), window_->Height());
+        if (window_) {
+            g.Viewport(0, 0, window_->Width(), window_->Height());
+            TrackViewport(0, 0, window_->Width(), window_->Height());
+        }
     }
 
     TextureHandle RenderTargetDepthTexture(RenderTargetHandle target) const override {
@@ -672,6 +693,7 @@ public:
         auto it = shaders_.find(shader.id);
         if (it == shaders_.end()) return;
         gl::GetGL().DeleteProgram(it->second.id);
+        if (it->second.id == lastProgram_) lastProgram_ = 0; // id may be recycled
         shaders_.erase(it);
     }
 
@@ -679,6 +701,9 @@ public:
         auto& g = gl::GetGL();
         gl::GLuint id = 0;
         g.GenTextures(1, &id);
+        // Raw binds below land on whatever unit is active: drop the per-unit
+        // cache so a later BindTexture is not wrongly skipped.
+        InvalidateTextureBindings();
         g.BindTexture(glc::Texture2D, id);
         const gl::GLenum wrap = desc.wrap == Wrap::Repeat ? glc::Repeat : glc::ClampToEdge;
         g.TexParameteri(glc::Texture2D, glc::TextureWrapS, wrap);
@@ -716,6 +741,9 @@ public:
         if (it == textures_.end()) return;
         gl::GetGL().DeleteTextures(1, &it->second.id);
         textures_.erase(it);
+        // A deleted GL name can be recycled by a later create; stop trusting
+        // cached bindings that still point at it.
+        InvalidateTextureBindings();
     }
 
     void UpdateTextureRegion(TextureHandle texture, int x, int y, int w, int h,
@@ -727,6 +755,7 @@ public:
         g.BindTexture(glc::Texture2D, it->second.id);
         g.TexSubImage2D(glc::Texture2D, 0, x, y, w, h, glc::Rgba, glc::UnsignedByte, rgba);
         g.BindTexture(glc::Texture2D, 0);
+        InvalidateTextureBindings();
         CheckError("UpdateTextureRegion");
     }
 
@@ -746,6 +775,7 @@ public:
         auto& g = gl::GetGL();
         gl::GLuint id = 0;
         g.GenTextures(1, &id);
+        InvalidateTextureBindings();
         g.BindTexture(glc::Texture2D, id);
         g.TexParameteri(glc::Texture2D, glc::TextureWrapS, glc::ClampToEdge);
         g.TexParameteri(glc::Texture2D, glc::TextureWrapT, glc::ClampToEdge);
@@ -884,6 +914,9 @@ public:
     }
 
     void SetBlendMode(BlendMode mode) override {
+        const int m = static_cast<int>(mode);
+        if (blendMode_ == m) return; // per-draw calls: skip redundant GL state churn
+        blendMode_ = m;
         auto& g = gl::GetGL();
         if (mode == BlendMode::Opaque) {
             g.Disable(glc::Blend);
@@ -900,6 +933,10 @@ public:
     }
 
     void SetDepthTest(bool enabled, bool write) override {
+        const int e = enabled ? 1 : 0, w = write ? 1 : 0;
+        if (depthEnabled_ == e && depthWrite_ == w) return;
+        depthEnabled_ = e;
+        depthWrite_ = w;
         auto& g = gl::GetGL();
         if (enabled) g.Enable(glc::DepthTest);
         else g.Disable(glc::DepthTest);
@@ -907,6 +944,9 @@ public:
     }
 
     void SetCullMode(CullMode mode) override {
+        const int m = static_cast<int>(mode);
+        if (cullMode_ == m) return;
+        cullMode_ = m;
         auto& g = gl::GetGL();
         if (mode == CullMode::None) {
             g.Disable(glc::CullFace);
@@ -918,26 +958,40 @@ public:
 
     void SetViewport(int x, int y, int width, int height) override {
         const int baseH = targetHeight_ > 0 ? targetHeight_ : height;
-        gl::GetGL().Viewport(x, baseH - (y + height), width, height);
+        const int gy = baseH - (y + height);
+        if (vpW_ == width && vpH_ == height &&
+            vpX_ == x && vpY_ == gy)
+            return;
+        vpX_ = x; vpY_ = gy; vpW_ = width; vpH_ = height;
+        gl::GetGL().Viewport(x, gy, width, height);
     }
 
     void SetScissor(int x, int y, int width, int height, bool enabled) override {
         auto& g = gl::GetGL();
         if (!enabled) {
+            if (scissorOn_ == 0) return;
+            scissorOn_ = 0;
             g.Disable(glc::ScissorTest);
             return;
         }
-        g.Enable(glc::ScissorTest);
         const int baseH = targetHeight_ > 0 ? targetHeight_ : height;
-        g.Scissor(x, baseH - (y + height), width, height);
+        const int gy = baseH - (y + height);
+        const int on = 1;
+        if (scissorOn_ == on && scX_ == x && scY_ == gy && scW_ == width && scH_ == height)
+            return;
+        scissorOn_ = on; scX_ = x; scY_ = gy; scW_ = width; scH_ = height;
+        g.Enable(glc::ScissorTest);
+        g.Scissor(x, gy, width, height);
     }
 
     void Clear(const Color& color, float depth) override {
         auto& g = gl::GetGL();
         // glClear respects the depth WRITE MASK: a previous SetDepthTest(false,
         // false) leaves DepthMask(0), so the depth clear would silently no-op
-        // and the LEQUAL test would reject every pixel. Force the mask on.
+        // and the LEQUAL test would reject every pixel. Force the mask on
+        // (and keep the cached depth-write state in sync).
         g.DepthMask(1);
+        depthWrite_ = 1;
         g.ClearColor(color.r, color.g, color.b, color.a);
         g.ClearDepth(depth);
         g.Clear(glc::ColorBufferBit | glc::DepthBufferBit);
@@ -950,13 +1004,21 @@ public:
         if (prog.id == 0)
             NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Error,
                          "GL: UseShader with invalid program (handle %u)", shader.id);
+        // Programs are re-selected for every draw; skip the driver call when the
+        // binding is unchanged (uniform uploads only act on the current program).
+        if (prog.id == lastProgram_) return;
+        lastProgram_ = prog.id;
         gl::GetGL().UseProgram(prog.id);
-        gl::GLenum err = gl::GetGL().GetError();
-        if (err) {
-            gl::GLint link = 0;
-            gl::GetGL().GetProgramiv(prog.id, glc::LinkStatus, &link);
-            NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Error,
-                         "GL: UseShader err=0x%X program=%u link=%d", err, prog.id, link);
+        // glGetError per draw costs more than the state change itself; only run
+        // it in the diagnostic mode (same gate as CheckError).
+        if (GlErrorChecksEnabled()) {
+            gl::GLenum err = gl::GetGL().GetError();
+            if (err) {
+                gl::GLint link = 0;
+                gl::GetGL().GetProgramiv(prog.id, glc::LinkStatus, &link);
+                NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Error,
+                             "GL: UseShader err=0x%X program=%u link=%d", err, prog.id, link);
+            }
         }
     }
 
@@ -1014,9 +1076,21 @@ public:
 
     void BindTexture(int slot, TextureHandle texture) override {
         auto& g = gl::GetGL();
-        g.ActiveTexture(glc::Texture0 + static_cast<gl::GLenum>(slot));
         auto it = textures_.find(texture.id);
-        g.BindTexture(glc::Texture2D, it != textures_.end() ? it->second.id : 0);
+        const gl::GLuint id = it != textures_.end() ? it->second.id : 0;
+        // Materials re-bind the same albedo/MR/AO/white textures every draw;
+        // skip the ActiveTexture+BindTexture round trip when the unit already
+        // holds the texture. unitKnown_ is invalidated wherever the backend
+        // binds GL textures behind this API (create/destroy/shadow-map paths).
+        if (slot >= 0 && slot < kMaxTextureUnits && unitKnown_[slot] &&
+            unitTex_[slot] == id)
+            return;
+        g.ActiveTexture(glc::Texture0 + static_cast<gl::GLenum>(slot));
+        g.BindTexture(glc::Texture2D, id);
+        if (slot >= 0 && slot < kMaxTextureUnits) {
+            unitKnown_[slot] = true;
+            unitTex_[slot] = id;
+        }
     }
 
     void DrawMesh(const MeshHandle& mesh) override {
@@ -1264,6 +1338,27 @@ private:
     ShaderHandle currentShader_;
     Program dummyProgram_;
     gl::GLuint linesVao_ = 0, linesVbo_ = 0, linesEbo_ = 0;
+
+    // --- Redundant-GL-state suppression -----------------------------------
+    // The per-draw hot path (hundreds of draws x ~10 state calls) spends more
+    // CPU issuing unchanged GL commands than the driver spends applying them.
+    // These shadow the last uploaded state; -1/unknown means "not tracked".
+    static constexpr int kMaxTextureUnits = 32;
+    gl::GLuint unitTex_[kMaxTextureUnits] = {};
+    bool unitKnown_[kMaxTextureUnits] = {};
+    gl::GLuint lastProgram_ = 0;
+    int vpX_ = 0, vpY_ = 0, vpW_ = -1, vpH_ = -1;
+    int scissorOn_ = -1, scX_ = 0, scY_ = 0, scW_ = 0, scH_ = 0;
+    int blendMode_ = -1;
+    int depthEnabled_ = -1, depthWrite_ = -1;
+    int cullMode_ = -1;
+
+    void InvalidateTextureBindings() {
+        for (int i = 0; i < kMaxTextureUnits; ++i) unitKnown_[i] = false;
+    }
+    void TrackViewport(int x, int y, int w, int h) {
+        vpX_ = x; vpY_ = y; vpW_ = w; vpH_ = h;
+    }
     gl::GLuint uiVao_ = 0, uiVbo_ = 0, uiEbo_ = 0;
     gl::GLuint instanceVbo_ = 0;
     gl::GLuint instanceColorVbo_ = 0;
@@ -1294,3 +1389,4 @@ std::unique_ptr<IRenderBackend> CreateOpenGLBackend() {
 }
 
 } // namespace neon::gfx
+

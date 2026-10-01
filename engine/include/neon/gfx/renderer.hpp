@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 #include "neon/gfx/backend.hpp"
 #include "neon/gfx/bloom.hpp"
@@ -719,8 +720,11 @@ private:
     // Shared with the subsystems (SceneState light/fog/IBL setters and the
     // ShadowSystem point-light pass bump it via ConnectSubsystems).
     uint64_t sceneUniformStamp_ = 0;
-    uint64_t sceneUniformAppliedStamp_ = ~0ull;
-    ShaderHandle lastSceneUniformShader_;
+    // B1+: the per-frame scene uniform block is identical across every draw;
+    // track the applied stamp PER PROGRAM (uniform locations are per-program)
+    // so alternating shaders (lit / lit-instanced / skinned) do not re-upload
+    // the whole block on every draw. Cleared when it grows past shader churn.
+    std::unordered_map<uint32_t, uint64_t> sceneUniformProgramStamps_;
 
     // HDR scene target (window size, RGBA16F). hdrMsaaRT_ is the 4x/2x
     // multisample target the scene renders into when MSAA is active; hdrRT_ is

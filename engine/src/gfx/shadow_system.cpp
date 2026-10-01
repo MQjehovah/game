@@ -268,6 +268,7 @@ void ShadowSystem::Shutdown(IRenderBackend& backend) {
     }
     shadowCasters_.clear();
     shadowSortKeys_.clear();
+    casterKeys_.clear();
     boneUniformFlat_.clear();
 }
 
@@ -300,27 +301,15 @@ void ShadowSystem::RunPass(const Camera& camera, float aspect, const math::Vec3&
 
     // Union of all shadow-caster world AABBs: the cascade light frusta are
     // tightened to it so a small scene fills the shadow maps instead of being
-    // squished into a corner.
+    // squished into a corner. Built together with the per-caster sort keys
+    // (world centre + extent bucket) so the AABB work happens ONCE per pass
+    // instead of once per cascade.
     math::AABB sceneBounds;
     sceneBounds.min = {1e30f, 1e30f, 1e30f};
     sceneBounds.max = {-1e30f, -1e30f, -1e30f};
-    bool hasScene = false;
-    for (const ShadowDraw& draw : shadowCasters_) {
-        if (!draw.mesh.Valid()) continue;
-        if (!draw.models.empty()) {
-            for (const math::Mat4& m : draw.models) {
-                sceneBounds.Expand(math::TransformAABB(draw.bounds, m).min);
-                sceneBounds.Expand(math::TransformAABB(draw.bounds, m).max);
-                hasScene = true;
-            }
-        } else {
-            math::AABB w = math::TransformAABB(draw.bounds, draw.model);
-            sceneBounds.Expand(w.min);
-            sceneBounds.Expand(w.max);
-            hasScene = true;
-        }
-    }
-    const math::AABB* scenePtr = hasScene ? &sceneBounds : nullptr;
+    BuildCasterKeys(sceneBounds);
+    const math::AABB* scenePtr =
+        sceneBounds.min.x <= sceneBounds.max.x ? &sceneBounds : nullptr;
 
     for (int i = 0; i < kShadowCascades; ++i) {
         lightViewProj_[i] = ComputeCascadeLightViewProj(sunDir, camera, a, cascadeSplits_[i],
@@ -448,31 +437,35 @@ void ShadowSystem::RunPass(const Camera& camera, float aspect, const math::Vec3&
     csmActive_ = true;
 }
 
-void ShadowSystem::DrawShadowCastersSorted(const math::Mat4& lightVP) {
-    if (shadowCasters_.empty()) return;
-    // Extract the light view (projection is ortho, translation-only per axis)
-    // to sort casters by their distance along the light direction.
-    const math::Mat4 lightView = lightVP;
-    shadowSortKeys_.clear();
-    shadowSortKeys_.reserve(shadowCasters_.size());
+// Per-caster world data for the painter's-order pass, computed once per
+// RunPass: each caster's world AABB centre (light-space z is per cascade, so
+// only the projection happens per cascade) and its extent bucket. Also
+// expands `sceneBounds` with every caster's world AABB for the cascade fit.
+void ShadowSystem::BuildCasterKeys(math::AABB& sceneBounds) {
+    casterKeys_.clear();
+    casterKeys_.reserve(shadowCasters_.size());
+    auto extentBucket = [](float extent) {
+        if (extent <= 1.0f) return 0.0f;
+        if (extent >= 1e8f) return 1000.0f; // degenerate AABB -> drawn first
+        return std::floor(std::log2(extent));
+    };
     for (const ShadowDraw& draw : shadowCasters_) {
+        if (!draw.mesh.Valid()) continue;
         math::Vec3 center;
         // World-space size of this caster's AABB. The painter's-order pass keys
-        // off it: see the sort below. World units (not light-space clip units)
-        // because the cascades have different ortho scales, and the bucket has
-        // to mean the same thing in every cascade.
+        // off it: see the sort in DrawShadowCastersSorted.
         math::AABB worldBounds;
         worldBounds.min = {1e30f, 1e30f, 1e30f};
         worldBounds.max = {-1e30f, -1e30f, -1e30f};
         auto expandWorldAabb = [&](const math::Mat4& m) {
+            sceneBounds.Expand(math::TransformAABB(draw.bounds, m).min);
+            sceneBounds.Expand(math::TransformAABB(draw.bounds, m).max);
             worldBounds.Expand(math::TransformAABB(draw.bounds, m).min);
             worldBounds.Expand(math::TransformAABB(draw.bounds, m).max);
         };
         if (!draw.models.empty()) {
-            for (const math::Mat4& m : draw.models) {
-                center += m.TransformPoint(draw.bounds.Center());
-                expandWorldAabb(m);
-            }
+            for (const math::Mat4& m : draw.models) center += m.TransformPoint(draw.bounds.Center());
+            for (const math::Mat4& m : draw.models) expandWorldAabb(m);
             center = center * (1.0f / static_cast<float>(draw.models.size()));
         } else {
             center = draw.model.TransformPoint(draw.bounds.Center());
@@ -487,8 +480,19 @@ void ShadowSystem::DrawShadowCastersSorted(const math::Mat4& lightVP) {
         // and erase all shadows in the scene, which is exactly the failure the
         // buckets exist to prevent.
         if (!(extent > 0.0f) || extent > 1e6f) extent = 1e9f;
-        shadowSortKeys_.push_back({&draw, lightView.TransformPoint(center).z, extent});
+        casterKeys_.push_back({&draw, center, extentBucket(extent)});
     }
+}
+
+void ShadowSystem::DrawShadowCastersSorted(const math::Mat4& lightVP) {
+    if (casterKeys_.empty()) return;
+    // Extract the light view (projection is ortho, translation-only per axis)
+    // to sort casters by their distance along the light direction.
+    const math::Mat4 lightView = lightVP;
+    shadowSortKeys_.clear();
+    shadowSortKeys_.reserve(casterKeys_.size());
+    for (const CasterKey& k : casterKeys_)
+        shadowSortKeys_.push_back({k.draw, lightView.TransformPoint(k.center).z, k.extent});
     // NDC z grows as light-space z goes negative (ortho slope is negative), so
     // the farthest caster has the largest value; draw it first (last wins).
     //
@@ -501,12 +505,6 @@ void ShadowSystem::DrawShadowCastersSorted(const math::Mat4& lightVP) {
     // changed 0.3/765 per pixel of the frame). Bucketing makes the big ground
     // and building plates land in an earlier class than the units on them,
     // while players/minions/projectiles (same class) still sort far -> near.
-    auto extentBucket = [](float extent) {
-        if (extent <= 1.0f) return 0.0f;
-        if (extent >= 1e8f) return 1000.0f; // degenerate AABB -> drawn first
-        return std::floor(std::log2(extent));
-    };
-    for (ShadowSortKey& k : shadowSortKeys_) k.extent = extentBucket(k.extent);
     std::sort(shadowSortKeys_.begin(), shadowSortKeys_.end(),
               [](const ShadowSortKey& a, const ShadowSortKey& b) {
                   if (a.extent != b.extent) return a.extent > b.extent;
