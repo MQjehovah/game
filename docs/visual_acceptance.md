@@ -968,3 +968,20 @@ set NEON_SHADOW_DEBUG=1   :: 直接输出级联阴影因子（白=受光，黑=�
   VK depthBias）导入支持；或内容侧把水面顶点整体抬 ~0.05。
 - 生成隔离 GLB 的方法：从 sr_map.glb 抽 mesh0/prim130（POSITION/NORMAL/
   TEXCOORD_0/indices + 材质130 的 PNG，MASK cutoff 0.4）。
+
+### 新功能：材质级 polygonOffset（GL/VK 双端，解决共面层叠内容）
+
+- `Material.polygonOffset`（float，默认 0=关；1 = 经典"抬高共面覆盖层"量级，
+  同时作为斜率因子和单位量；负值把表面拉近相机）。数据链完整：
+  场景 JSON（mesh 顶层 + mesh.material 嵌套，shape 检查已放行）→ SceneMesh →
+  DrawSystem → ApplyMaterial → `IRenderBackend::SetPolygonOffset`。
+- GL：`glEnable(POLYGON_OFFSET_FILL)` + `glPolygonOffset`（状态缓存，0 材质零开销）；
+  采样器函数 `PolygonOffset` 已加入 gl_funcs.inc。
+- VK：所有管线新增 `VK_DYNAMIC_STATE_DEPTH_BIAS`，`BindPipeline` 时按材质下发
+  `vkCmdSetDepthBias`（不膨胀管线缓存）。
+- 编辑器：属性面板新增"多边形偏移"拖拽（含撤销），实体/prefab 存取已通。
+- 验证：scene→draw_system→renderer 全链 DIAG 确认到达后端；GL offset 0 vs -2
+  单端 A/B 有可见像素变化（3.7%）；neon_tests 842/842。
+- 已知边界：对 Rift 这类"整图单 glb 内部自斗"（水体原语 vs 河床原语）无效——
+  场景级材质会平移该实体的全部原语，无相对变化；需要 per-gltf-primitive
+  材质覆盖（materialInclude 机制的扩展）才能定向偏移水体原语。列为后续。

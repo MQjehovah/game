@@ -59,6 +59,13 @@ struct Material {
     // for foliage/hair cards), instead of soft translucent blending.
     bool alphaTest = false;
     float alphaCutoff = 0.5f;
+    // Polygon offset (slope-scaled depth bias): pushes this material's
+    // fragments toward/farther-from the camera in depth space so coplanar
+    // layered content (decals painted on floors, water sheets laid over a
+    // riverbed) resolves deterministically instead of z-fighting. 0 = off;
+    // 1 = the classic "lift a coplanar overlay" amount (applied to both the
+    // slope factor and the units).
+    float polygonOffset = 0.0f;
     // Selection / edge glow: a Fresnel rim term added on top of the lit color
     // (see kLitFragmentShader). `strength` 0 = off; > 1 pushes the silhouette
     // into HDR so the bloom pass turns it into a real glowing outline around the

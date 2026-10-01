@@ -78,6 +78,7 @@ NEON_GL_FUNC(void, ActiveTexture, (GLenum))
 NEON_GL_FUNC(void, DepthMask, (GLboolean))
 NEON_GL_FUNC(void, DepthFunc, (GLenum))
 NEON_GL_FUNC(void, CullFace, (GLenum))
+NEON_GL_FUNC(void, PolygonOffset, (GLfloat, GLfloat))
 NEON_GL_FUNC(void, FrontFace, (GLenum))
 NEON_GL_FUNC(void, LineWidth, (GLfloat))
 // Transform feedback (GPU particle simulation, GL 3.0+).

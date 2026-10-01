@@ -416,6 +416,7 @@ void EditorApp::ApplyMaterialParams(SceneEntity& e) {
     e.material.metallic = e.metallic;
     e.material.roughness = e.roughness;
     e.material.uvRepeat = e.uvRepeat;
+    e.material.polygonOffset = e.polygonOffset;
     e.material.castShadow = e.castShadow;
     e.material.aoStrength = e.ao;
     e.material.emissiveIntensity = e.emissiveIntensity;
@@ -1061,6 +1062,7 @@ void EditorApp::LoadScene(const std::string& path) {
                 if (const core::Json* v = matVal("metallic")) e.metallic = static_cast<float>(v->GetNumber());
                 if (const core::Json* v = matVal("roughness")) e.roughness = static_cast<float>(v->GetNumber());
                 if (const core::Json* v = matVal("uvRepeat")) e.uvRepeat = static_cast<float>(v->GetNumber(1.0f));
+                if (const core::Json* v = matVal("polygonOffset")) e.polygonOffset = static_cast<float>(v->GetNumber(0.0f));
                 if (const core::Json* v = matVal("ao")) e.ao = static_cast<float>(v->GetNumber());
                 if (const core::Json* v = matVal("emissiveIntensity")) e.emissiveIntensity = static_cast<float>(v->GetNumber());
                 if (const core::Json* v = matVal("albedoTex")) e.albedoTex = assets::NormalizeAssetPath(v->GetString());
@@ -1685,8 +1687,8 @@ void EditorApp::SavePrefab(const std::string& name) {
                                             e.tint, e.albedoTex, e.mrTex, e.aoTex,
                                             e.emissiveTex, e.ao, e.emissiveIntensity,
                                             "", "", core::Json{}, {},
-                                            e.hp, e.maxHp, "", 0, 0, e.uvRepeat, e.normalTex,
-                                            e.normalScale);
+                                            e.hp, e.maxHp, "", 0, 0, e.uvRepeat, e.polygonOffset,
+                                            e.normalTex, e.normalScale);
     if (!res.Ok()) {
         NEON_LOG_ERROR("Editor: cannot save prefab: %s", res.Error().c_str());
         return;

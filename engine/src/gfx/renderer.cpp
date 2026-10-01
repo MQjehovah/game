@@ -1337,6 +1337,10 @@ void Renderer::ApplyMaterial(const Material& material, const math::Mat4& mvp,
     // alphaTest survives only when there is an albedo to cut against and the
     // material requests it (glTF MASK foliage cards + procedurally-tufted grass).
     backend_->SetUniformFloat("uAlphaTest", material.alphaTest ? material.alphaCutoff : 0.0f);
+    // Coplanar layered content (decals, water sheets) gets a slope-scaled
+    // depth bias so the overlay wins/loses depth deterministically instead of
+    // z-fighting (see the Rift water-vs-riverbed investigation).
+    backend_->SetPolygonOffset(material.polygonOffset, material.polygonOffset);
     backend_->SetUniformInt("uHasMR", material.metallicRoughness.Valid() ? 1 : 0);
     backend_->SetUniformInt("uHasAO", material.occlusion.Valid() ? 1 : 0);
     backend_->SetUniformInt("uHasEmissive", material.emissive.Valid() ? 1 : 0);

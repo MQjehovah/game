@@ -466,6 +466,14 @@ void InspectorPanel::Draw(EditorContext& ctx) {
             history.Push(std::make_unique<EditPropertyCommand<float>>(
                 &entities, selected, ApplyUvRepeatProp, oldUv, e.uvRepeat));
         }
+        // Slope-scaled depth bias: resolves coplanar overlays (decals / water
+        // sheets) deterministically instead of z-fighting. 0 = off.
+        const float oldPoly = e.polygonOffset;
+        if (ImGui::DragFloat("多边形偏移", &e.polygonOffset, 0.05f, -4.0f, 4.0f, "%.2f")) {
+            e.material.polygonOffset = e.polygonOffset;
+            history.Push(std::make_unique<EditPropertyCommand<float>>(
+                &entities, selected, ApplyPolygonOffsetProp, oldPoly, e.polygonOffset));
+        }
         const float oldAO = e.ao;
         if (ImGui::DragFloat("环境光遮蔽", &e.ao, 0.01f, 0.0f, 1.0f)) {
             e.material.aoStrength = e.ao;

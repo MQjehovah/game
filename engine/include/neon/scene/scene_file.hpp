@@ -158,6 +158,7 @@ struct SceneFile {
                                                  int parentId = 0,
                                                  int id = 0,
                                                  float uvRepeat = 1.0f,
+                                                 float polygonOffset = 0.0f,
                                                  const std::string& normalTex = "",
                                                  float normalScale = 1.0f,
                                                  const std::vector<std::string>&
@@ -292,6 +293,11 @@ struct SceneMesh {
     // repeat). For a large ground plane set this to the world-size so a small
     // texture tiles instead of stretching across the whole surface.
     float uvRepeat = 1.0f;
+    // Slope-scaled depth bias for coplanar layered content (decals painted on
+    // floors, a water sheet laid over a riverbed): 0 = off, 1 = the classic
+    // "lift a coplanar overlay" amount. Resolves the layering deterministically
+    // instead of z-fighting (see the Rift water investigation notes).
+    float polygonOffset = 0.0f;
     // glTF material-layer selection (substring match on the primitive's glTF
     // material name). A multi-state map exports every variant of a cell - e.g.
     // Summoner's Rift ships Base / Walled / Upgraded / Tunnel / Chemtech /

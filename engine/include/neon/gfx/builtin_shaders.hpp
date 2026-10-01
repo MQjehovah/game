@@ -60,7 +60,7 @@ void main() {
 )";
 
 inline constexpr const char* kLitFragmentShader = R"(
-#version 330 core
+#version 400 core
 in vec3 vWorldPos;
 in vec3 vNormal;
 in vec2 vUV;

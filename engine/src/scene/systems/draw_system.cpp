@@ -284,6 +284,7 @@ void DrawSystem::Build(ecs::World& world, AnimationSystem& anims) {
         item.mat.metallic = m->metallic;
         item.mat.roughness = m->roughness;
         item.mat.uvRepeat = m->uvRepeat;
+        item.mat.polygonOffset = m->polygonOffset;
         item.mat.aoStrength = m->ao;
         item.mat.emissiveIntensity = m->emissiveIntensity;
         item.mat.castShadow = m->castShadow;

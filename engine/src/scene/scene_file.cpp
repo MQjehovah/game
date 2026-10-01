@@ -378,9 +378,10 @@ core::Result<core::Json> SceneFile::MakeEntity(const std::string& name,
                                                float maxHp,
                                                  const std::string& parent,
                                                  int parentId,
-                                                 int id,
-                                                 float uvRepeat,
-                                                 const std::string& normalTex,
+                                                  int id,
+                                                  float uvRepeat,
+                                                  float polygonOffset,
+                                                  const std::string& normalTex,
                                                  float normalScale,
                                                  const std::vector<std::string>& materialInclude,
                                                  const std::vector<std::string>& materialExclude) {
@@ -410,6 +411,7 @@ core::Result<core::Json> SceneFile::MakeEntity(const std::string& name,
     mat.object_["ao"] = MakeNumber(ao);
     mat.object_["emissiveIntensity"] = MakeNumber(emissiveIntensity);
     if (uvRepeat != 1.0f) mat.object_["uvRepeat"] = MakeNumber(uvRepeat);
+    if (polygonOffset != 0.0f) mat.object_["polygonOffset"] = MakeNumber(polygonOffset);
     if (!albedoTex.empty()) mat.object_["albedoTex"] = MakeString(albedoTex);
     if (!mrTex.empty()) mat.object_["mrTex"] = MakeString(mrTex);
     if (!aoTex.empty()) mat.object_["aoTex"] = MakeString(aoTex);
@@ -635,7 +637,7 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                                      "normalTex", "normalScale",
                                      "ao", "emissiveIntensity", "uvRepeat",
                                      "dirtColorHex", "rockColorHex", "castShadow",
-                                     "receiveShadow", "tintRgb",
+                                     "receiveShadow", "tintRgb", "polygonOffset",
                                      "materialInclude", "materialExclude"},
                                     "mesh", err))
                          return false;
@@ -717,7 +719,7 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                                            "aoTex", "emissiveTex", "normalTex", "normalScale",
                                            "ao", "emissiveIntensity",
                                            "uvRepeat", "dirtColorHex", "rockColorHex",
-                                           "tintRgb"},
+                                           "tintRgb", "polygonOffset"},
                                           "mesh.material", err))
                               return false;
                          if (!RequireNumber(*mat, "metallic", "mesh.material", m.metallic, err))
@@ -742,6 +744,8 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                              return false;
                          if (const core::Json* ur = mat->Get("uvRepeat"))
                               m.uvRepeat = static_cast<float>(ur->GetNumber(1.0f));
+                         if (const core::Json* po = mat->Get("polygonOffset"))
+                              m.polygonOffset = static_cast<float>(po->GetNumber(0.0f));
                          if (const core::Json* dc = mat->Get("dirtColorHex")) m.dirtColorHex = dc->GetString();
                          if (const core::Json* rc = mat->Get("rockColorHex")) m.rockColorHex = rc->GetString();
                          if (const core::Json* col = mat->Get("colorHex")) {
@@ -777,6 +781,8 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                          return false;
                       if (const core::Json* ur = data.Get("uvRepeat"))
                           m.uvRepeat = static_cast<float>(ur->GetNumber(1.0f));
+                      if (const core::Json* po = data.Get("polygonOffset"))
+                          m.polygonOffset = static_cast<float>(po->GetNumber(0.0f));
                       if (const core::Json* dc = data.Get("dirtColorHex")) m.dirtColorHex = dc->GetString();
                       if (const core::Json* rc = data.Get("rockColorHex")) m.rockColorHex = rc->GetString();
                      if (const core::Json* col = data.Get("colorHex")) {
@@ -1634,6 +1640,8 @@ static core::Json SerializeEntityComponents(ecs::World& world, ecs::Entity e) {
         mat.object_["ao"] = MakeNumber(m->ao);
         mat.object_["emissiveIntensity"] = MakeNumber(m->emissiveIntensity);
         if (m->uvRepeat != 1.0f) mat.object_["uvRepeat"] = MakeNumber(m->uvRepeat);
+        if (m->polygonOffset != 0.0f)
+            mat.object_["polygonOffset"] = MakeNumber(m->polygonOffset);
         if (!m->dirtColorHex.empty()) mat.object_["dirtColorHex"] = MakeString(m->dirtColorHex);
         if (!m->rockColorHex.empty()) mat.object_["rockColorHex"] = MakeString(m->rockColorHex);
         if (!m->albedoTex.empty()) mat.object_["albedoTex"] = MakeString(m->albedoTex);

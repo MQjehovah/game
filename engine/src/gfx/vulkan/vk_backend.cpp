@@ -1438,6 +1438,14 @@ public:
         currentCull_ = mode == CullMode::Back ? 1 : (mode == CullMode::Front ? 2 : 0);
     }
 
+    void SetPolygonOffset(float factor, float units) override {
+        // Stored and pushed as vkCmdSetDepthBias on the next draw (depth bias
+        // is dynamic state on every pipeline). Slope factor maps 1:1; the
+        // constant bias is in depth-quantum units like GL polygonOffset.
+        biasFactor_ = factor;
+        biasUnits_ = units;
+    }
+
     void SetViewport(int x, int y, int width, int height) override {
         viewportX_ = x;
         viewportY_ = y;
@@ -3251,6 +3259,8 @@ private:
                               static_cast<uint32_t>(viewportHeight_)};
         }
         vkCmdSetScissor(f.cmd, 0, 1, &scissor);
+        // Material polygon offset (dynamic depth-bias state on all pipelines).
+        vkCmdSetDepthBias(f.cmd, biasUnits_, 0.0f, biasFactor_);
 
         if (lastTexSet_ == VK_NULL_HANDLE || !f.uboSet) return;
         VkDescriptorSet sets[2] = {f.uboSet, lastTexSet_};
@@ -3483,10 +3493,15 @@ private:
         cb.attachmentCount = depthOnly ? 0 : 1;
         cb.pAttachments = depthOnly ? nullptr : &cbAtt;
 
-        VkDynamicState dynamicStates[2] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+        // VIEWPORT/SCISSOR are set per-bind; DEPTH_BIAS lets materials apply a
+        // slope-scaled polygon offset (coplanar decals / water sheets over a
+        // riverbed) without exploding the pipeline cache - the value itself is
+        // a dynamic command.
+        VkDynamicState dynamicStates[3] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR,
+                                          VK_DYNAMIC_STATE_DEPTH_BIAS};
         VkPipelineDynamicStateCreateInfo dyn{};
         dyn.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-        dyn.dynamicStateCount = 2;
+        dyn.dynamicStateCount = 3;
         dyn.pDynamicStates = dynamicStates;
 
         // The pipeline must be created against a render pass compatible with
@@ -3707,6 +3722,8 @@ private:
     bool currentDepthTest_ = false;
     bool currentDepthWrite_ = true;
     uint8_t currentCull_ = 0;
+    float biasFactor_ = 0.0f;
+    float biasUnits_ = 0.0f;
     int viewportWidth_ = 1280;
     int viewportHeight_ = 720;
     int viewportX_ = 0;

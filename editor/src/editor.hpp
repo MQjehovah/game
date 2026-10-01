@@ -159,6 +159,7 @@ struct SceneEntity {
     float metallic = 0.0f;
     float roughness = 0.8f;
     float uvRepeat = 1.0f; // UV tiling multiplier for the entity's material
+    float polygonOffset = 0.0f; // slope-scaled depth bias (coplanar overlays)
     bool castShadow = true; // CSM caster; false on ground/terrain receivers
     // Material texture slots: file paths (empty = none) resolved through the
     // AssetManager into the entity's gfx::Material texture handles below.

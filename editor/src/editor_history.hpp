@@ -80,7 +80,7 @@ public:
     DuplicateEntityCommand(std::vector<SceneEntity>* entities, size_t sourceIndex)
         : entities_(entities), insertAt_(entities->size()) {
         copy_ = (*entities)[sourceIndex];
-        copy_.name += "_副本";
+        copy_.name += "_鍓湰";
         copy_.pos.z += 0.5f;
     }
 
@@ -116,7 +116,7 @@ private:
     size_t to_;
 };
 
-// Full scene-tree reorder (the panel's "按名称排序" button): stores the exact
+// Full scene-tree reorder (the panel's "鎸夊悕绉版帓搴? button): stores the exact
 // pre-sort entity list and the target index permutation, so one undo step
 // restores the whole tree order. Apply snapshots the current list before
 // rebuilding it from the permutation (the history alternates Apply/Undo from
@@ -227,6 +227,10 @@ inline void ApplyRoughnessProp(SceneEntity& e, const float& v) {
     e.roughness = v;
     e.material.roughness = v;
 }
+inline void ApplyPolygonOffsetProp(SceneEntity& e, const float& v) {
+    e.polygonOffset = v;
+    e.material.polygonOffset = v;
+}
 inline void ApplyUvRepeatProp(SceneEntity& e, const float& v) {
     e.uvRepeat = v;
     e.material.uvRepeat = v;
@@ -321,7 +325,7 @@ public:
         std::sort(indices.begin(), indices.end());
         for (int i : indices) {
             SceneEntity c = (*entities)[static_cast<size_t>(i)];
-            c.name += "_副本";
+            c.name += "_鍓湰";
             c.pos.z += 0.5f;
             copies_.push_back(std::move(c));
         }
@@ -607,8 +611,8 @@ private:
 };
 
 // Adds or removes a whole extra component on one entity (undo restores the
-// component's previous JSON / absence). Used by the inspector's 添加组件 /
-// 移除 buttons so component edits are first-class undoable scene edits.
+// component's previous JSON / absence). Used by the inspector's 娣诲姞缁勪欢 /
+// 绉婚櫎 buttons so component edits are first-class undoable scene edits.
 class AddComponentCommand : public Command {
 public:
     AddComponentCommand(std::vector<SceneEntity>* entities, int index,
@@ -642,7 +646,7 @@ private:
 
 // Mesh-key edit: swaps an entity's mesh and re-resolves it (mesh + material
 // stay in sync on both undo and redo). The resolve/apply steps are injected as
-// callbacks so the command never links against EditorApp (面板解耦，无逃生舱)。
+// callbacks so the command never links against EditorApp (闈㈡澘瑙ｈ€︼紝鏃犻€冪敓鑸?銆?
 class EditMeshKeyCommand : public Command {
 public:
     EditMeshKeyCommand(std::function<bool(SceneEntity&)> resolve,
@@ -679,8 +683,8 @@ private:
     std::string cur_;
 };
 
-// G5-4-4: canonical component-JSON bridge. Every component — built-in
-// (health/groups/sortOrder/camera/type/transform) or data (extraComponents) —
+// G5-4-4: canonical component-JSON bridge. Every component 鈥?built-in
+// (health/groups/sortOrder/camera/type/transform) or data (extraComponents) 鈥?
 // is addressed as {name, fieldKey} JSON, so the inspector renders ALL of them
 // through the SAME schema-driven field editor (one renderer, one undo path).
 // Built-in components map to the editor's flattened fields; data components
@@ -832,7 +836,7 @@ inline void SetComponentField(SceneEntity& e, const std::string& name,
 }
 
 // Applies a whole component JSON as an undoable edit (dedicated components
-// include removable ones — ApplyComponentJson(e, name, {}) detaches).
+// include removable ones 鈥?ApplyComponentJson(e, name, {}) detaches).
 class ComponentJsonCommand : public Command {public:
     ComponentJsonCommand(std::vector<SceneEntity>* entities, int index, std::string name,
                          core::Json oldData, core::Json newData)
@@ -852,7 +856,7 @@ private:
     core::Json new_;
 };
 
-// G5-4-4(项1): replaces a whole entity (used by "重置为预制体" — reverting an
+// G5-4-4(椤?): replaces a whole entity (used by "閲嶇疆涓洪鍒朵綋" 鈥?reverting an
 // instance's component overrides back to the prefab template).
 class ReplaceEntityCommand : public Command {
 public:

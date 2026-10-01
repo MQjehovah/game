@@ -51,6 +51,7 @@ constexpr gl::GLenum One = 0x0001;
 constexpr gl::GLenum OneMinusSrcAlpha = 0x0303;
 constexpr gl::GLenum DepthTest = 0x0B71;
 constexpr gl::GLenum CullFace = 0x0B44;
+constexpr gl::GLenum PolygonOffsetFill = 0x8037;
 constexpr gl::GLenum Back = 0x0405;
 constexpr gl::GLenum Front = 0x0404;
 constexpr gl::GLenum CCW = 0x0901;
@@ -963,6 +964,23 @@ public:
         }
     }
 
+    void SetPolygonOffset(float factor, float units) override {
+        // Cached like the other raster state: materials without an offset
+        // (the common case) issue no GL calls at all.
+        const int active = (factor != 0.0f || units != 0.0f) ? 1 : 0;
+        if (polyOffsetOn_ == active && polyFactor_ == factor && polyUnits_ == units) return;
+        polyOffsetOn_ = active;
+        polyFactor_ = factor;
+        polyUnits_ = units;
+        auto& g = gl::GetGL();
+        if (active) {
+            g.Enable(glc::PolygonOffsetFill);
+            g.PolygonOffset(factor, units);
+        } else {
+            g.Disable(glc::PolygonOffsetFill);
+        }
+    }
+
     void SetViewport(int x, int y, int width, int height) override {
         const int baseH = targetHeight_ > 0 ? targetHeight_ : height;
         const int gy = baseH - (y + height);
@@ -1359,6 +1377,8 @@ private:
     int blendMode_ = -1;
     int depthEnabled_ = -1, depthWrite_ = -1;
     int cullMode_ = -1;
+    int polyOffsetOn_ = -1;
+    float polyFactor_ = 0.0f, polyUnits_ = 0.0f;
 
     void InvalidateTextureBindings() {
         for (int i = 0; i < kMaxTextureUnits; ++i) unitKnown_[i] = false;

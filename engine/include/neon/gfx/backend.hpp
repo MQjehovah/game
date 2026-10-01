@@ -202,6 +202,11 @@ public:
     virtual void SetBlendMode(BlendMode mode) = 0;
     virtual void SetDepthTest(bool enabled, bool write = true) = 0;
     virtual void SetCullMode(CullMode mode) = 0;
+    // Slope-scaled depth bias for coplanar layered content (decals, water
+    // sheets over a riverbed): 0/0 disables. Default no-op for backends
+    // without support. `factor` scales with the surface slope, `units` is a
+    // constant depth-quantum nudge (GL polygonOffset units / VK depthBias).
+    virtual void SetPolygonOffset(float factor, float units) { (void)factor; (void)units; }
     // Sets the rasterization viewport in screen/window coordinates (top-left
     // origin; each backend translates to its own convention). Lets a 3D scene
     // render into a sub-rect of the target (e.g. the editor viewport dock).
