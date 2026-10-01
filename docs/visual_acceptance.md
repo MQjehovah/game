@@ -949,3 +949,22 @@ set NEON_SHADOW_DEBUG=1   :: 直接输出级联阴影因子（白=受光，黑=�
   顶点位置/UV/绑定布局。
 - 复现：`$env:NEON_SHADOW_DEBUG="4"; neon_editor --backend vulkan --project
   projects/moba --play ...`（对照 GL）。
+
+### 结案：GL/VK 河流差异 = 水面层与河床的 z-fighting（非 VK 管线 bug）
+
+- 机制：水面层网格 y∈[-2.64,+0.16] 与河床材质**近共面互相穿插**；VK 顶点着色器
+  做 `z*0.5+w*0.5` 的 [0,1] 深度重映射（GL 为 [-1,1]），近共面像素的深度胜者
+  两端不同 → 只有河流区域出现斑驳差异（LOD/alpha 视图看到的"异常"其实是
+  不同表面胜出的混合）。
+- 验证（隔离实验，可复现）：
+  1. 水面网格+贴图单独抽成 GLB：GL/VK **任意距离一致**（差异 1.3~1.8%）→
+     网格/贴图/材质路径全无问题；
+  2. 完整地图 + 水面垫高 +0.05：整体差异 13.7%→3.5%；
+  3. 地图剔除水面 prim + 垫高的独立水面：整体 **1.8%**。
+- 结论：是**内容级 z-fighting**（原游戏靠材质 render queue/polygon offset 解决，
+  导入管线未带），不是渲染管线缺陷。任何深度映射差异（或相机角度变化）都会
+  改变胜者；GL 的"窄浑浊"与 VK 的"宽亮蓝"都是 z-fight 的不同解。
+- 可选后续（真功能，非修 bug）：材质级 polygon offset（glPolygonOffset /
+  VK depthBias）导入支持；或内容侧把水面顶点整体抬 ~0.05。
+- 生成隔离 GLB 的方法：从 sr_map.glb 抽 mesh0/prim130（POSITION/NORMAL/
+  TEXCOORD_0/indices + 材质130 的 PNG，MASK cutoff 0.4）。
