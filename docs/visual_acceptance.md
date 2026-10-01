@@ -912,3 +912,20 @@ set NEON_SHADOW_DEBUG=1   :: 直接输出级联阴影因子（白=受光，黑=�
   下一步：RenderDoc 抓 VK 一帧，看河水 draw 的 uAlbedo 绑定与 UV；
   复现：`neon_editor --backend vulkan --project projects/moba --frames 80
   --screenshot out.png 60`（对照 GL 去掉 --backend）。
+
+### 河水层追查（VK 水面偏蓝，已收敛到贴图 alpha/discard 行为）
+
+- 已确认（--play 模式，场景相机）：`uAlphaTest=0.40` 在 VK 上**正确写入 UBO 并随 draw
+  生效**（draw trace 实测 lit draw alphaTest=0.400）；早前"全部 0.000"来自 edit 模式
+  追踪（编辑器自绘路径），是另一回事。
+- 水面层 = 材质 #130 `VertexDeform_WaterLayer`（MASK, cutoff 0.40, 带贴图）：
+  GL 呈窄条浑浊水流（std≈40，纹理变化丰富），VK 呈大片均匀亮蓝（R/G std 减半、
+  B 主导）→ VK 上 discard 几乎不发生或贴图 alpha 内容不同。
+- 已排除：材质数据（两端 ApplyMaterial 同值 0.40）、UBO 偏移表、贴图创建失败
+  （白色回退探针零命中，play 模式同样）、mip（近距基础级差异依旧）、
+  混合状态/管线键/splat 变体/vColor。
+- 下一步（需 RenderDoc）：抓 VK 一帧水面 draw，查看 uAlbedo 绑定的贴图 alpha
+  通道实际值；重点怀疑 VK 贴图上传路径对**该贴图**的 alpha 处理（多数贴图 alpha=1
+  不可见差异，只有 MASK 贴图暴露）。
+- 基础设施改进（随本轮提交）：VK `CreateTexture` 失败现在会记错误日志；
+  `EnsureTextureSet` 对"槽位有 id 但无 GPU image（静默画白色）"有一次性错误日志。

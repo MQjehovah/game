@@ -1140,6 +1140,9 @@ public:
                          VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
                              VK_IMAGE_USAGE_SAMPLED_BIT,
                          VK_IMAGE_TILING_OPTIMAL, &image, &mem, nullptr, levels)) {
+            NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Error,
+                         "Vulkan: CreateTexture %dx%d failed (image/memory allocation)",
+                         desc.width, desc.height);
             return {};
         }
         VkImageView view =
@@ -3137,6 +3140,19 @@ private:
         for (uint32_t i = 0; i < kMaxSamplerSlots; ++i) {
             const Texture* tex = GetTexture({boundTextures_[i]});
             NEON_VK_TRACE("vt: ets i=%u id=%u tex=%p\\n", i, boundTextures_[i], (const void*)tex);
+            // Diagnostic: a non-empty slot resolving to nothing means the
+            // texture was never created (CreateTexture failure) or was
+            // destroyed - the draw silently samples WHITE instead.
+            if (boundTextures_[i] != 0 && (!tex || !tex->view)) {
+                static bool reported = false;
+                if (!reported) {
+                    reported = true;
+                    NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Error,
+                                 "Vulkan: texture slot %u holds id %u that has no GPU image - "
+                                 "drawing WHITE (first occurrence)",
+                                 i, boundTextures_[i]);
+                }
+            }
             if (!tex || !tex->view) tex = white;
             const VkImageLayout sampleLayout =
                 tex->owned ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_GENERAL;
