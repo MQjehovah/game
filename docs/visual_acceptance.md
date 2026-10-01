@@ -929,3 +929,23 @@ set NEON_SHADOW_DEBUG=1   :: 直接输出级联阴影因子（白=受光，黑=�
   不可见差异，只有 MASK 贴图暴露）。
 - 基础设施改进（随本轮提交）：VK `CreateTexture` 失败现在会记错误日志；
   `EnsureTextureSet` 对"槽位有 id 但无 GPU image（静默画白色）"有一次性错误日志。
+
+### 河水层追查二：LOD 视图锁定"UV 导数异常"签名（新增 debug=3/4 工具）
+
+- 新增诊断视图（两端 lit 同步）：`NEON_SHADOW_DEBUG=3` = albedo alpha 可视化、
+  `=4` = textureQueryLod 可视化（黑=LOD0，白=LOD9）。
+- 实测（同一相机 --play）：
+  - 植被 MASK 贴图（树/草，同样 alpha 丢弃）：两端 alpha 逐像素**完全一致**
+    （地形带均值 41.9/41.9）→ VK 的 mask 采样/丢弃机制本身正常；
+  - 水面层（材质130，256² MASK 贴图，暖色 RGB+硬 alpha）：GL 河带 alpha 均值
+    216.8（78% 全不透明），VK 144.5 ≈ **贴图全图 alpha 均值 142.8**，且 0% 低于
+    50 —— VK 采样到"平均化"的 alpha；
+  - LOD 视图：GL 河带均匀 ≈4.7；VK 河带**斑驳 0.8~8.5** —— 同网格同相机下
+    VK 的 UV 导数在片元间无规则跳变；
+  - 水面网格属性普通（POSITION/NORMAL/TEXCOORD_0，8526 顶点，无蒙皮/双 UV/顶点色）。
+- 结论：问题收敛到"**VK 上该网格的顶点数据/变换路径产生异常 UV 导数**"
+  （候选：实例化顶点变体 InstancedColoredUv 的 UV/实例流绑定、或顶点缓冲
+  stride/偏移对 8526 顶点网格的边界情况）。需 RenderDoc 看该 draw 的实际
+  顶点位置/UV/绑定布局。
+- 复现：`$env:NEON_SHADOW_DEBUG="4"; neon_editor --backend vulkan --project
+  projects/moba --play ...`（对照 GL）。

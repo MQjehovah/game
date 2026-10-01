@@ -589,7 +589,19 @@ void main() {
             FragColor = vec4(viewDepth < s0 ? vec3(0.1, 0.1, 0.9)
                              : (viewDepth < s1 ? vec3(0.1, 0.8, 0.1)
                                                : vec3(0.9, 0.1, 0.1)),
-                             1.0);
+                              1.0);
+            return;
+        }
+        // NEON_SHADOW_DEBUG=3: albedo ALPHA visualization (white = a=1,
+        // black = a=0). Diagnoses MASK materials where the cutout behaves
+        // differently per backend (the Rift water-layer hunt).
+        if (uShadowDebug == 3) {
+            FragColor = vec4(vec3(albedo.a), 1.0);
+            return;
+        }
+        // NEON_SHADOW_DEBUG=4: sampled texture LOD (black=0 .. white=9+).
+        if (uShadowDebug == 4) {
+            FragColor = vec4(vec3(clamp(textureQueryLod(uAlbedo, vUV).x * 0.1, 0.0, 1.0)), 1.0);
             return;
         }
     }

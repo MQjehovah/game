@@ -436,6 +436,18 @@ void main() {
                              1.0);
             return;
         }
+        // NEON_SHADOW_DEBUG=3: albedo ALPHA visualization (white = a=1,
+        // black = a=0). Diagnoses MASK materials where the cutout behaves
+        // differently per backend (the Rift water-layer hunt).
+        if (eng.uShadowDebug == 3) {
+            FragColor = vec4(vec3(albedo.a), 1.0);
+            return;
+        }
+        // NEON_SHADOW_DEBUG=4: sampled texture LOD (black=0 .. white=9+).
+        if (eng.uShadowDebug == 4) {
+            FragColor = vec4(vec3(clamp(textureQueryLod(uAlbedo, vUV).x * 0.1, 0.0, 1.0)), 1.0);
+            return;
+        }
     }
     if (eng.uReceiveShadow == 0) shadow = 1.0;
     // NEON_SHADOW_DEBUG=1: show the raw cascade shadow factor instead of the
