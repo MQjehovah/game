@@ -127,22 +127,25 @@ void main() {
     vec3 outColor = cur;
     if (valid) {
         vec3 hist = SampleHistory(prevUv);
-        // Neighbourhood clip: the 3x3 min/max box in the CURRENT frame bounds
-        // what history is allowed to contribute, which is what kills ghosting
-        // from geometry that moved without a velocity vector.
-        vec3 mn = cur, mx = cur;
+        // Variance clipping (Salvi/GDC2016 - the method Godot and Filament use):
+        // build the 3x3 mean + variance of the CURRENT frame and clamp history to
+        // mean +/- gamma*sigma. Tighter than a raw min/max box at edges (kills
+        // ghosting from geometry that moved without a velocity vector) while flat
+        // / low-variance regions still keep accumulating.
+        vec3 m1 = vec3(0.0), m2 = vec3(0.0);
         for (int y = -1; y <= 1; ++y) {
             for (int x = -1; x <= 1; ++x) {
-                if (x == 0 && y == 0) continue;
                 vec3 c = texture(uCurrent, vUV + vec2(float(x), float(y)) / uScreenSize).rgb;
-                mn = min(mn, c);
-                mx = max(mx, c);
+                m1 += c;
+                m2 += c * c;
             }
         }
-        // Widen the box a touch so flat areas keep accumulating instead of
-        // snapping to the current sample.
-        vec3 pad = (mx - mn) * 0.15;
-        hist = clamp(hist, mn - pad, mx + pad);
+        m1 /= 9.0;
+        m2 /= 9.0;
+        vec3 sigma = sqrt(max(m2 - m1 * m1, vec3(0.0)));
+        vec3 mn = m1 - sigma * 1.5;
+        vec3 mx = m1 + sigma * 1.5;
+        hist = clamp(hist, mn, mx);
         outColor = mix(cur, hist, clamp(1.0 - uBlend, 0.0, 1.0));
     }
     FragColor = vec4(outColor, 1.0);

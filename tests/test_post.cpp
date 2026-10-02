@@ -361,10 +361,10 @@ TEST(BloomShaderSourceTokens) {
     CHECK(lum.find("log(") != std::string::npos);
     const std::string reduce(gfx::kLuminanceReduceShader);
     CHECK(reduce.find("uLum") != std::string::npos);
-    // 16x16 whole-frame subsample (was: 4 taps on the centre 2x2 texels) that
-    // also skips letterbox taps via the scene rect.
+    // Whole-target average: iterate every texel via textureSize, skipping
+    // letterbox taps through the scene rect (was a fixed 16x16 subsample).
     CHECK(reduce.find("uSceneVpRect") != std::string::npos);
-    CHECK(reduce.find("const int GRID = 16") != std::string::npos);
+    CHECK(reduce.find("textureSize(uLum") != std::string::npos);
 
     const std::string vertex(gfx::kPostVertexShader);
     CHECK(vertex.find("layout(location = 0) in vec3 aPos") != std::string::npos);

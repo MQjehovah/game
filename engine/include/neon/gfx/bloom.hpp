@@ -291,9 +291,21 @@ in vec2 vUV;
 out vec4 FragColor;
 uniform sampler2D uHdr;     // the scene HDR (composite input)
 void main() {
-    vec3 c = texture(uHdr, vUV).rgb;
-    // Perceptual luminance (Rec.709), with a floor to keep log finite on black.
-    float lum = max(dot(c, vec3(0.2126, 0.7152, 0.0722)), 1e-4);
+    // Each output texel stands for a 32x32 block of the full-res HDR (the target
+    // is 1/32). Average a 64-tap stratified sample of that block so a small but
+    // bright emitter anywhere in the block still votes - the old single-point
+    // sample only saw it when it sat exactly under the texel centre, so exposure
+    // ignored muzzle flashes / lamps that fell between samples.
+    vec2 texel = 1.0 / vec2(textureSize(uHdr, 0));
+    vec3 acc = vec3(0.0);
+    for (int y = 0; y < 8; ++y) {
+        for (int x = 0; x < 8; ++x) {
+            vec2 off = (vec2(float(x), float(y)) - 3.5) * 4.0 * texel;
+            acc += texture(uHdr, vUV + off).rgb;
+        }
+    }
+    acc *= (1.0 / 64.0);
+    float lum = max(dot(acc, vec3(0.2126, 0.7152, 0.0722)), 1e-4);
     // Average LOG luminance (writes the log so the reduce pass can average it).
     FragColor = vec4(log(lum), 0.0, 0.0, 1.0);
 }
@@ -306,21 +318,20 @@ out vec4 FragColor;
 uniform sampler2D uLum;         // the log-luminance target (small)
 uniform vec4 uSceneVpRect;      // letterboxed scene area, normalised HDR UV
 void main() {
-    // 16x16 uniform subsample of the WHOLE small target. The old 4 taps sat on
-    // the centre 2x2 texels (~0.002% of the frame), so pointing the camera at
-    // the sky or a dark wall swung the entire frame's exposure while the other
-    // 99.998% of pixels had no vote. Letterbox bars are excluded (tally only
-    // taps inside the scene rect) so clear-colour black can't poison the mean.
-    const int GRID = 16;
+    // Average EVERY texel of the small target (each already a 32x32 HDR block
+    // average), instead of a fixed 16x16 subsample that left most of the target
+    // with no vote. Letterbox taps are skipped so clear-colour black can't
+    // poison the mean.
+    ivec2 sz = textureSize(uLum, 0);
     float sum = 0.0;
     float n = 0.0;
-    for (int y = 0; y < GRID; ++y) {
-        for (int x = 0; x < GRID; ++x) {
-            vec2 uv = (vec2(float(x), float(y)) + 0.5) / float(GRID);
+    for (int y = 0; y < sz.y; ++y) {
+        for (int x = 0; x < sz.x; ++x) {
+            vec2 uv = (vec2(float(x), float(y)) + 0.5) / vec2(sz);
             if (uv.x < uSceneVpRect.x || uv.y < uSceneVpRect.y ||
                 uv.x > uSceneVpRect.x + uSceneVpRect.z ||
                 uv.y > uSceneVpRect.y + uSceneVpRect.w) continue;
-            sum += texture(uLum, uv).r;
+            sum += texelFetch(uLum, ivec2(x, y), 0).r;
             n += 1.0;
         }
     }
