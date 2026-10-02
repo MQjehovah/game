@@ -51,7 +51,11 @@ void main() {
     vec3 col;
     if (eng.uSkyTextureValid != 0) {
         float u = atan(dir.z, dir.x) / (2.0 * 3.14159265) + 0.5;
-        float v = acos(clamp(dy, 0.0, 1.0)) / 3.14159265;
+        // Equirect v = polar angle from the zenith, using the direction's OWN y
+        // ([-1,1]). Passing the gradient's 0..1 `dy` ran acos over [0,1] so v
+        // peaked at 0.5: the sky was squeezed into the top half of the image and
+        // the horizon sat at v=1/3 (GL twin in skybox.hpp).
+        float v = acos(clamp(dir.y, -1.0, 1.0)) / 3.14159265;
         col = texture(uSkyTexture, vec2(u, v)).rgb;
     } else {
         col = mix(eng.uSkyHorizon, eng.uSkyTop, pow(dy, 1.0));

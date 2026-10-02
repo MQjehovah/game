@@ -117,7 +117,12 @@ void main() {
     vec3 col;
     if (uSkyTextureValid != 0) {
         float u = atan(dir.z, dir.x) / (2.0 * 3.14159265) + 0.5;
-        float v = acos(clamp(dy, 0.0, 1.0)) / 3.14159265;
+        // Equirect v = polar angle from the zenith, from the direction's OWN y
+        // (range [-1,1]): zen=0, horizon=0.5, nadir=1. Passing the gradient's
+        // 0..1 remap `dy` here ran acos over [0,1] -> v only reached 0.5, so the
+        // whole sky was squeezed into the top image half and the horizon landed
+        // at v=1/3 instead of 1/2.
+        float v = acos(clamp(dir.y, -1.0, 1.0)) / 3.14159265;
         col = texture(uSkyTexture, vec2(u, v)).rgb;
     } else {
         col = mix(uSkyHorizon, uSkyTop, pow(dy, 1.0));
