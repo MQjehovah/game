@@ -35,7 +35,11 @@ constexpr float kSsaoBias = 0.05f;     // depth bias (CPU mirror, normalised dep
 // to world units, so the bias must be world-scaled too (a grazing ground plane's
 // own depth gradient across a tap is ~0.1..0.3 units). Kept separate from
 // kSsaoBias, which the CPU mirror test drives in normalised units.
-constexpr float kSsaoBiasWorld = 0.4f;
+// GPU AO bias in WORLD units: the shader now compares each hemisphere sample's
+// own view depth against the stored depth, so the bias only has to absorb depth
+// quantisation (the 24-bit encoded depth is ~sub-millimetre at these ranges) -
+// a large bias here would reject the contact occlusion the pass exists to add.
+constexpr float kSsaoBiasWorld = 0.05f;
 constexpr float kSsaoPower = 1.8f;     // sharpens the occlusion curve
 constexpr float kSsaoIntensity = 3.0f; // scales the unoccluded multiplier
 
@@ -199,58 +203,77 @@ float RawDepth(vec2 uv) {
 float Ign(vec2 p) {
     return fract(52.9829189 * fract(0.06711056 * p.x + 0.00583715 * p.y));
 }
+// 12 unit hemisphere directions (z > 0), the top of the classic cosine-ish
+// sample kernel. Sparse but, combined with the per-pixel IGN rotation, a
+// broadband occlusion.
+const int kSsaoSamples = 12;
+const vec3 kSsaoKernel[12] = vec3[12](
+    vec3( 0.538,  0.283, 0.834), vec3(-0.342, -0.664, 0.666),
+    vec3( 0.043,  0.930, 0.365), vec3(-0.696,  0.549, 0.462),
+    vec3( 0.706,  0.370, 0.604), vec3(-0.395, -0.184, 0.900),
+    vec3(-0.003, -0.372, 0.928), vec3(-0.717,  0.091, 0.691),
+    vec3( 0.442,  0.786, 0.434), vec3(-0.347,  0.880, 0.325),
+    vec3(-0.870, -0.298, 0.394), vec3(-0.297, -0.902, 0.312));
 void main() {
     float raw = RawDepth(vUV);
     if (raw >= 0.9999) { FragColor = vec4(1.0, 1.0, 1.0, 1.0); return; } // sky/no geometry
-    float centre = raw * uFar; // world units
-    // Planar-depth rejection. The kernel taps sit at different view distances on
-    // a slanted receiver, so on open ground (centre - neighbour) is positive on
-    // the downhill side and the fixed world bias cannot absorb it at grazing
-    // angles. That false self-occlusion left a smooth AO gradient on flat ground
-    // which, quantised into the AO target's 8 bits, read as view-angle-dependent
-    // horizontal stripes. Reconstruct the surface's local depth slope and
-    // subtract it from the expected neighbour depth so a plane occludes nothing
-    // however obliquely it is viewed. A tap that lands on the sky is skipped so
-    // the horizon's depth cliff cannot poison the slope.
-    float rx = RawDepth(vUV + vec2(uTexelSize.x, 0.0));
-    float ry = RawDepth(vUV + vec2(0.0, uTexelSize.y));
-    // Per-texel depth slope, clamped only to guard the finite difference
-    // against a depth CLIFF (a spurious huge gradient must not fabricate
-    // occlusion). The extrapolated planar depth below is deliberately NOT
-    // clamped: on a plane viewed obliquely the expected depth change across a
-    // kernel tap legitimately exceeds uRadius, and clamping it there left a
-    // residual false self-occlusion that read as horizontal depth-contour
-    // bands (worst on large bright ground planes).
-    float gradX = (rx >= 0.9999) ? 0.0 : clamp((rx - raw) * uFar, -uRadius, uRadius);
-    float gradY = (ry >= 0.9999) ? 0.0 : clamp((ry - raw) * uFar, -uRadius, uRadius);
-    // Project the world radius to screen space at the centre depth.
-    float pixels = clamp(uRadius * uProjScale / max(centre, 0.001), 1.0, 128.0);
-    vec2 step = uTexelSize * pixels;
-    // Per-pixel kernel rotation: without it the 6 fixed tap radii imprint
-    // concentric rings around object silhouettes.
+    float viewZ = raw * uFar; // linear view distance (world units)
+
+    // View-space reconstruction (camera at origin, -z forward): a fragment and
+    // its neighbours fix an actual surface normal instead of relying on a
+    // depth-gradient plane, and each kernel sample is placed in VIEW space so
+    // the occlusion test can compare the SAMPLE POINT's depth with the stored
+    // depth - the comparison the old planar-extrapolation code got backwards
+    // (it compared the receiver's own extrapolated depth, which cancels the
+    // contact signal and left AO ~= 1 everywhere).
+    float hdrH = 1.0 / uTexelSize.y;
+    float tanHalf = 0.5 * hdrH / uProjScale;
+    float aspect = uTexelSize.y / uTexelSize.x;
+    vec2 scr = vUV * 2.0 - 1.0;
+    vec3 ro = vec3(scr.x * tanHalf * aspect, scr.y * tanHalf, -1.0) * viewZ;
+    vec2 oX = vec2(2.0 * uTexelSize.x, 0.0);
+    vec2 oY = vec2(0.0, 2.0 * uTexelSize.y);
+    float zX = RawDepth(vUV + oX) * uFar;
+    float zY = RawDepth(vUV + oY) * uFar;
+    vec2 sX = scr + 2.0 * oX;
+    vec2 sY = scr + 2.0 * oY;
+    vec3 pX = vec3(sX.x * tanHalf * aspect, sX.y * tanHalf, -1.0) *
+              (zX < uFar * 0.9999 ? zX : viewZ);
+    vec3 pY = vec3(sY.x * tanHalf * aspect, sY.y * tanHalf, -1.0) *
+              (zY < uFar * 0.9999 ? zY : viewZ);
+    vec3 N = normalize(cross(pY - ro, pX - ro));
+    if (dot(N, ro) > 0.0) N = -N; // face the camera's hemisphere
+
+    // Per-pixel rotation of a random tangent vector, so the 12 fixed directions
+    // average into a smooth halo instead of imprinting rings on silhouettes.
     float ang = Ign(gl_FragCoord.xy) * 6.2831853;
-    mat2 rot = mat2(cos(ang), sin(ang), -sin(ang), cos(ang));
+    vec3 rvec = vec3(cos(ang), sin(ang), 0.0);
+    vec3 T = normalize(rvec - N * dot(rvec, N));
+    vec3 B = cross(N, T);
+    mat3 TBN = mat3(T, B, N);
+
     float occ = 0.0;
-    for (int i = 0; i < 6; ++i) {
-        vec2 off; float scale;
-        if (i == 0) { off = vec2(0.0); scale = 0.5; }
-        else if (i == 1) { off = vec2(1.0, 0.0); scale = 0.9; }
-        else if (i == 2) { off = vec2(1.0, 0.7); scale = 0.7; }
-        else if (i == 3) { off = vec2(0.0, 1.0); scale = 0.9; }
-        else if (i == 4) { off = vec2(-1.0, 0.8); scale = 0.7; }
-        else { off = vec2(-0.6, -1.0); scale = 0.85; }
-        off = rot * off;
-        // Expected planar depth change at the tap (unclamped - see the
-        // gradient comment above; clamping here was the band source).
-        float planar = (gradX * off.x + gradY * off.y) * pixels * scale;
-        vec2 uv2 = vUV + off * step * scale;
-        float s = RawDepth(uv2) * uFar;
-        if (s >= uFar * 0.9999) continue; // sky sample
-        float diff = (centre + planar) - s; // world units (positive: neighbour closer)
-        if (diff > uBias) occ += pow(1.0 - min(diff / uRadius, 1.0), uPower);
+    for (int i = 0; i < kSsaoSamples; ++i) {
+        // Linear-sample the kernel toward the origin so occlusion is weighted
+        // toward the contact point.
+        float t = (float(i) + 0.5) / float(kSsaoSamples);
+        vec3 sv = TBN * (kSsaoKernel[i] * (uRadius * mix(0.25, 1.0, t)));
+        vec3 samplePos = ro + sv;
+        float sampleZ = -samplePos.z; // positive view depth of the sample
+        if (sampleZ < 1e-3) continue;  // behind the camera
+        vec2 suv = vec2(samplePos.x / (-samplePos.z * tanHalf * aspect),
+                        samplePos.y / (-samplePos.z * tanHalf)) * 0.5 + 0.5;
+        if (suv.x < 0.0 || suv.x > 1.0 || suv.y < 0.0 || suv.y > 1.0) continue;
+        float sceneZ = RawDepth(suv) * uFar;
+        if (sceneZ >= uFar * 0.9999) continue; // sky sample
+        // Range check: only occlude with geometry inside the sample radius.
+        float rangeCheck = smoothstep(0.0, 1.0, uRadius / max(abs(viewZ - sceneZ), 1e-4));
+        // Occluded when the stored surface is CLOSER than the sample point.
+        float diff = sampleZ - sceneZ;
+        if (diff > uBias) occ += rangeCheck;
     }
-    float ao = clamp(1.0 - uPower * (occ / 6.0), 0.0, 1.0);
-    FragColor = vec4(ao, ao, ao, 1.0);
+    float ao = clamp(1.0 - occ / float(kSsaoSamples), 0.0, 1.0);
+    FragColor = vec4(vec3(pow(ao, uPower)), 1.0);
 }
 )";
 

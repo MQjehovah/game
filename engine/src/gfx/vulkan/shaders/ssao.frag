@@ -19,43 +19,67 @@ float Ign(vec2 p) {
     return fract(52.9829189 * fract(0.06711056 * p.x + 0.00583715 * p.y));
 }
 
+// 12 unit hemisphere directions (z > 0), the top of the classic cosine-ish
+// sample kernel (GL twin in ssao.hpp).
+const int kSsaoSamples = 12;
+const vec3 kSsaoKernel[12] = vec3[12](
+    vec3( 0.538,  0.283, 0.834), vec3(-0.342, -0.664, 0.666),
+    vec3( 0.043,  0.930, 0.365), vec3(-0.696,  0.549, 0.462),
+    vec3( 0.706,  0.370, 0.604), vec3(-0.395, -0.184, 0.900),
+    vec3(-0.003, -0.372, 0.928), vec3(-0.717,  0.091, 0.691),
+    vec3( 0.442,  0.786, 0.434), vec3(-0.347,  0.880, 0.325),
+    vec3(-0.870, -0.298, 0.394), vec3(-0.297, -0.902, 0.312));
 void main() {
     float raw = RawDepth(vUV);
     if (raw >= 0.9999) { FragColor = vec4(1.0, 1.0, 1.0, 1.0); return; } // sky
-    float centre = raw * eng.uFar; // world units
-    // Planar-depth rejection: reconstruct the surface's local depth slope and
-    // subtract it from the expected neighbour depth so a slanted plane occludes
-    // nothing however obliquely it is viewed. Without it the plane's own depth
-    // gradient across the kernel was counted as occlusion and the resulting AO
-    // gradient quantised into view-angle-dependent horizontal stripes.
-    float rx = RawDepth(vUV + vec2(eng.uTexelSize.x, 0.0));
-    float ry = RawDepth(vUV + vec2(0.0, eng.uTexelSize.y));
-    float gradX = (rx >= 0.9999) ? 0.0 : clamp((rx - raw) * eng.uFar, -eng.uRadius, eng.uRadius);
-    float gradY = (ry >= 0.9999) ? 0.0 : clamp((ry - raw) * eng.uFar, -eng.uRadius, eng.uRadius);
-    // Project the world radius to screen space at the centre depth.
-    float pixels = clamp(eng.uRadius * eng.uProjScale / max(centre, 0.001), 1.0, 128.0);
-    vec2 texel = eng.uTexelSize * pixels;
-    // Per-pixel kernel rotation: without it the 6 fixed tap radii imprint
-    // concentric rings around object silhouettes.
+    float viewZ = raw * eng.uFar; // positive linear view depth
+
+    // View-space reconstruction (camera at origin, -z forward): neighbours fix
+    // the real surface normal, and each kernel sample is placed in view space
+    // so the occlusion test compares the SAMPLE POINT's depth with the stored
+    // depth. The old planar-extrapolation compared the receiver's own depth,
+    // which cancelled the contact signal (AO ~= 1 everywhere).
+    float hdrH = 1.0 / eng.uTexelSize.y;
+    float tanHalf = 0.5 * hdrH / eng.uProjScale;
+    float aspect = eng.uTexelSize.y / eng.uTexelSize.x;
+    vec2 scr = vUV * 2.0 - 1.0;
+    vec3 ro = vec3(scr.x * tanHalf * aspect, scr.y * tanHalf, -1.0) * viewZ;
+    vec2 oX = vec2(2.0 * eng.uTexelSize.x, 0.0);
+    vec2 oY = vec2(0.0, 2.0 * eng.uTexelSize.y);
+    float zX = RawDepth(vUV + oX) * eng.uFar;
+    float zY = RawDepth(vUV + oY) * eng.uFar;
+    vec2 sX = scr + 2.0 * oX;
+    vec2 sY = scr + 2.0 * oY;
+    vec3 pX = vec3(sX.x * tanHalf * aspect, sX.y * tanHalf, -1.0) *
+              (zX < eng.uFar * 0.9999 ? zX : viewZ);
+    vec3 pY = vec3(sY.x * tanHalf * aspect, sY.y * tanHalf, -1.0) *
+              (zY < eng.uFar * 0.9999 ? zY : viewZ);
+    vec3 N = normalize(cross(pY - ro, pX - ro));
+    if (dot(N, ro) > 0.0) N = -N;
+
     float ang = Ign(gl_FragCoord.xy) * 6.2831853;
-    mat2 rot = mat2(cos(ang), sin(ang), -sin(ang), cos(ang));
+    vec3 rvec = vec3(cos(ang), sin(ang), 0.0);
+    vec3 T = normalize(rvec - N * dot(rvec, N));
+    vec3 B = cross(N, T);
+    mat3 TBN = mat3(T, B, N);
+
     float occ = 0.0;
-    for (int i = 0; i < 6; ++i) {
-        vec2 off; float k;
-        if (i == 0) { off = vec2(0.0); k = 0.5; }
-        else if (i == 1) { off = vec2(1.0, 0.0); k = 0.9; }
-        else if (i == 2) { off = vec2(1.0, 0.7); k = 0.7; }
-        else if (i == 3) { off = vec2(0.0, 1.0); k = 0.9; }
-        else if (i == 4) { off = vec2(-1.0, 0.8); k = 0.7; }
-        else { off = vec2(-0.6, -1.0); k = 0.85; }
-        off = rot * off;
-        float planar = (gradX * off.x + gradY * off.y) * pixels * k;
-        vec2 uv2 = vUV + off * texel * k;
-        float s = RawDepth(uv2) * eng.uFar;
-        if (s >= eng.uFar * 0.9999) continue; // sky sample
-        float diff = (centre + planar) - s; // positive: neighbour is closer
-        if (diff > eng.uBias) occ += pow(1.0 - min(diff / eng.uRadius, 1.0), eng.uPower);
+    for (int i = 0; i < kSsaoSamples; ++i) {
+        float t = (float(i) + 0.5) / float(kSsaoSamples);
+        vec3 sv = TBN * (kSsaoKernel[i] * (eng.uRadius * mix(0.25, 1.0, t)));
+        vec3 samplePos = ro + sv;
+        float sampleZ = -samplePos.z;
+        if (sampleZ < 1e-3) continue;
+        vec2 suv = vec2(samplePos.x / (-samplePos.z * tanHalf * aspect),
+                        samplePos.y / (-samplePos.z * tanHalf)) * 0.5 + 0.5;
+        if (suv.x < 0.0 || suv.x > 1.0 || suv.y < 0.0 || suv.y > 1.0) continue;
+        float sceneZ = RawDepth(suv) * eng.uFar;
+        if (sceneZ >= eng.uFar * 0.9999) continue;
+        float rangeCheck = smoothstep(0.0, 1.0,
+                                      eng.uRadius / max(abs(viewZ - sceneZ), 1e-4));
+        float diff = sampleZ - sceneZ;
+        if (diff > eng.uBias) occ += rangeCheck;
     }
-    float ao = clamp(1.0 - eng.uPower * (occ / 6.0), 0.0, 1.0);
-    FragColor = vec4(ao, ao, ao, 1.0);
+    float ao = clamp(1.0 - occ / float(kSsaoSamples), 0.0, 1.0);
+    FragColor = vec4(vec3(pow(ao, eng.uPower)), 1.0);
 }
