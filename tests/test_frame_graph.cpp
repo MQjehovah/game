@@ -298,14 +298,13 @@ gfx::PostGraph::Shaders MakeTestShaders() {
 
 // Builds a fully-enabled PostGraph (depth + ssao + vol + ssr + bloom +
 // composite) at 640x360 and a depth-caster callback that counts invocations.
-gfx::PostGraph BuildFullPostGraph(int& depthCasterCalls) {
+gfx::PostGraph BuildFullPostGraph(int& depthCasterCalls, int& gbufferCasterCalls) {
     gfx::PostGraph post;
     post.Build(MakeTestShaders(), gfx::MeshHandle{1, 1, 1, 6}, 640, 360,
-               [&] { ++depthCasterCalls; });
-    // 18 post/bloom passes + 3 auto-exposure passes (luminance, 1x1 average,
-    // and the A5b exposure-adaptation smoothing pass; the chain only EXECUTES
-    // when auto-exposure is enabled, but the passes always exist in the graph).
-    CHECK_EQ(post.PassCount(), 21u);
+               [&] { ++depthCasterCalls; }, [&] { ++gbufferCasterCalls; });
+    // 19 post/bloom passes + 3 auto-exposure passes ... plus the G-buffer pass
+    // (indirect radiance + roughness for SSAO/SSR) = 22 declared passes.
+    CHECK_EQ(post.PassCount(), 22u);
     return post;
 }
 
@@ -319,6 +318,7 @@ gfx::PostGraph::FrameParams PostFrameParams(int w, int h, bool depth, bool ssao,
     p.ssaoPass = ssao;
     p.volumetricPass = vol;
     p.ssrPass = ssr;
+    p.gbufferPass = ssao || ssr;
     p.bloomPass = bloom;
     p.camPos = {0.0f, 3.0f, 10.0f};
     p.sunDir = {-0.4f, -1.0f, -0.3f};
@@ -339,7 +339,8 @@ gfx::PostGraph::FrameParams PostFrameParams(int w, int h, bool depth, bool ssao,
 TEST(PostGraphPassOrderAndWiring) {
     CountingNullBackend backend;
     int depthCasterCalls = 0;
-    gfx::PostGraph post = BuildFullPostGraph(depthCasterCalls);
+    int gbufferCasterCalls = 0;
+    gfx::PostGraph post = BuildFullPostGraph(depthCasterCalls, gbufferCasterCalls);
 
     CHECK(post.Execute(backend, PostFrameParams(640, 360, true, true, true, true, true)));
     CHECK(post.Ran());
@@ -352,67 +353,72 @@ TEST(PostGraphPassOrderAndWiring) {
     CHECK_EQ(depthCasterCalls, 1); // the depth pass drew the casters exactly once
 
     const auto& trace = post.LastTrace();
-    CHECK_EQ(trace.size(), 18u);
+    CHECK_EQ(trace.size(), 19u);
     const char* expected[] = {
-        "post.depth",          "post.ssao",       "post.ssaoBlurH",   "post.ssaoBlurV",
-        "post.volumetric",     "post.volBlurH",   "post.volBlurV",    "post.ssr",
-        "post.ssrBlurH",       "post.ssrBlurV",   "bloom.bright",     "bloom.blurHalfH",
-        "bloom.blurHalfV",     "bloom.downsample", "bloom.blurQuarterH", "bloom.blurQuarterV",
-        "bloom.upsampleAdd",   "post.composite"};
-    for (size_t i = 0; i < 18; ++i) CHECK_EQ(trace[i].name, std::string(expected[i]));
+        "post.depth",          "post.gbuffer",    "post.ssao",        "post.ssaoBlurH",
+        "post.ssaoBlurV",      "post.volumetric", "post.volBlurH",    "post.volBlurV",
+        "post.ssr",            "post.ssrBlurH",   "post.ssrBlurV",    "bloom.bright",
+        "bloom.blurHalfH",     "bloom.blurHalfV", "bloom.downsample", "bloom.blurQuarterH",
+        "bloom.blurQuarterV",  "bloom.upsampleAdd", "post.composite"};
+    for (size_t i = 0; i < 19; ++i) CHECK_EQ(trace[i].name, std::string(expected[i]));
 
     // The depth pass has NO inputs (casters are drawn directly) and writes the
-    // scene depth; ssao/ssr bind that same target as their depth input.
+    // scene depth; the gbuffer pass likewise draws casters and writes the
+    // indirect+roughness target. ssao/ssr bind those as inputs.
     CHECK_EQ(trace[0].inputs.size(), 0u);
     CHECK_EQ(trace[0].outputs.size(), 1u);
-    CHECK_EQ(trace[1].inputs[0].target.id, trace[0].outputs[0].target.id); // ssao <- depth
-    CHECK_EQ(trace[7].inputs[1].target.id, trace[0].outputs[0].target.id); // ssr  <- depth
+    CHECK_EQ(trace[1].inputs.size(), 0u);                 // gbuffer: no graph inputs
+    CHECK_EQ(trace[1].outputs.size(), 1u);                // gbuffer: writes gbuffer_
+    CHECK_EQ(trace[2].inputs[0].target.id, trace[0].outputs[0].target.id); // ssao <- depth
 
     // AO ping-pong: ao -> aoBlurA -> aoBlurB.
-    CHECK_EQ(trace[1].outputs[0].target.id, trace[2].inputs[0].target.id); // blurH <- ao
-    CHECK_EQ(trace[2].outputs[0].target.id, trace[3].inputs[0].target.id); // blurV <- aoBlurA
+    CHECK_EQ(trace[2].outputs[0].target.id, trace[3].inputs[0].target.id); // blurH <- ao
+    CHECK_EQ(trace[3].outputs[0].target.id, trace[4].inputs[0].target.id); // blurV <- aoBlurA
 
     // Volumetric reads the external HDR, blurs vol -> volBlurA -> volBlurB.
-    CHECK_EQ(trace[4].inputs[0].target.id, 100u); // external hdrScene
-    CHECK_EQ(trace[4].outputs[0].target.id, trace[5].inputs[0].target.id);
+    CHECK_EQ(trace[5].inputs[0].target.id, 100u); // external hdrScene
     CHECK_EQ(trace[5].outputs[0].target.id, trace[6].inputs[0].target.id);
+    CHECK_EQ(trace[6].outputs[0].target.id, trace[7].inputs[0].target.id);
 
-    // SSR reads BOTH the external HDR and the scene depth, blurs ssr ->
+    // SSR reads the external HDR, scene depth AND the gbuffer, blurs ssr ->
     // ssrBlurA -> ssrBlurB.
-    CHECK_EQ(trace[7].inputs.size(), 2u);
-    CHECK_EQ(trace[7].inputs[0].target.id, 100u); // external hdrScene
-    CHECK_EQ(trace[7].outputs[0].target.id, trace[8].inputs[0].target.id);
+    CHECK_EQ(trace[8].inputs.size(), 3u);
+    CHECK_EQ(trace[8].inputs[0].target.id, 100u);                            // external hdrScene
+    CHECK_EQ(trace[8].inputs[1].target.id, trace[0].outputs[0].target.id);   // scene depth
+    CHECK_EQ(trace[8].inputs[2].target.id, trace[1].outputs[0].target.id);   // gbuffer
     CHECK_EQ(trace[8].outputs[0].target.id, trace[9].inputs[0].target.id);
+    CHECK_EQ(trace[9].outputs[0].target.id, trace[10].inputs[0].target.id);
 
     // Bloom chain: bright <- hdr, blur ping-pong on the half res, downsample,
     // quarter blur ping-pong, upsample-add reading halfA + quarterA.
-    CHECK_EQ(trace[10].inputs[0].target.id, 100u);                         // bright <- hdr
-    CHECK_EQ(trace[11].inputs[0].target.id, trace[10].outputs[0].target.id); // blurH <- bright
-    CHECK_EQ(trace[12].inputs[0].target.id, trace[11].outputs[0].target.id); // blurV <- blurH
-    CHECK_EQ(trace[13].inputs[0].target.id, trace[12].outputs[0].target.id); // downsample <- blurV
-    CHECK_EQ(trace[14].inputs[0].target.id, trace[13].outputs[0].target.id); // blurQH <- downsample
-    CHECK_EQ(trace[15].inputs[0].target.id, trace[14].outputs[0].target.id); // blurQV <- blurQH
-    CHECK_EQ(trace[16].inputs.size(), 2u);
+    CHECK_EQ(trace[11].inputs[0].target.id, 100u);                          // bright <- hdr
+    CHECK_EQ(trace[12].inputs[0].target.id, trace[11].outputs[0].target.id); // blurH <- bright
+    CHECK_EQ(trace[13].inputs[0].target.id, trace[12].outputs[0].target.id); // blurV <- blurH
+    CHECK_EQ(trace[14].inputs[0].target.id, trace[13].outputs[0].target.id); // downsample <- blurV
+    CHECK_EQ(trace[15].inputs[0].target.id, trace[14].outputs[0].target.id); // blurQH <- downsample
+    CHECK_EQ(trace[16].inputs[0].target.id, trace[15].outputs[0].target.id); // blurQV <- blurQH
+    CHECK_EQ(trace[17].inputs.size(), 2u);
     // upsample-add reads halfA (blurV's output) and quarterA (blurQV's output).
-    CHECK_EQ(trace[16].inputs[0].target.id, trace[12].outputs[0].target.id);
-    CHECK_EQ(trace[16].inputs[1].target.id, trace[15].outputs[0].target.id);
+    CHECK_EQ(trace[17].inputs[0].target.id, trace[13].outputs[0].target.id);
+    CHECK_EQ(trace[17].inputs[1].target.id, trace[16].outputs[0].target.id);
 
     // Composite is the last pass and consumes every chain final IN-GRAPH: the
     // external HDR, the scene depth (volumetric fog), the raw AO, the blurred
-    // volumetric / SSR, and the accumulated bloom.
-    CHECK_EQ(trace[17].inputs.size(), 6u);
-    CHECK_EQ(trace[17].inputs[0].target.id, 100u);                           // hdrScene
-    CHECK_EQ(trace[17].inputs[1].target.id, trace[0].outputs[0].target.id);  // sceneDepth
-    CHECK_EQ(trace[17].inputs[2].target.id, trace[1].outputs[0].target.id);  // raw ao
-    CHECK_EQ(trace[17].inputs[3].target.id, trace[6].outputs[0].target.id);  // volBlurB
-    CHECK_EQ(trace[17].inputs[4].target.id, trace[9].outputs[0].target.id);  // ssrBlurB
-    CHECK_EQ(trace[17].inputs[5].target.id, trace[16].outputs[0].target.id); // bloomAcc
+    // volumetric / SSR, the accumulated bloom and the indirect gbuffer.
+    CHECK_EQ(trace[18].inputs.size(), 7u);
+    CHECK_EQ(trace[18].inputs[0].target.id, 100u);                           // hdrScene
+    CHECK_EQ(trace[18].inputs[1].target.id, trace[0].outputs[0].target.id);  // sceneDepth
+    CHECK_EQ(trace[18].inputs[2].target.id, trace[4].outputs[0].target.id);  // raw ao (blurV)
+    CHECK_EQ(trace[18].inputs[3].target.id, trace[7].outputs[0].target.id);  // volBlurB
+    CHECK_EQ(trace[18].inputs[4].target.id, trace[10].outputs[0].target.id); // ssrBlurB
+    CHECK_EQ(trace[18].inputs[5].target.id, trace[17].outputs[0].target.id); // bloomAcc
+    CHECK_EQ(trace[18].inputs[6].target.id, trace[1].outputs[0].target.id);  // gbuffer
 
-    // The whole chain allocates 9 pooled targets (full-res depth + full-res
-    // float SSR chain + half-res float pyramid reused aggressively + quarter-res
-    // float); composite itself writes nothing (it draws to the backbuffer), so
-    // all are pooled.
-    CHECK_EQ(backend.createCount, 9);
+    // The whole chain allocates 10 pooled targets (full-res depth + full-res
+    // gbuffer + full-res float SSR chain + half-res float pyramid reused
+    // aggressively + quarter-res float); composite itself writes nothing (it
+    // draws to the backbuffer), so all are pooled.
+    CHECK_EQ(backend.createCount, 10);
     CHECK_EQ(backend.destroyCount, 0);
 
     post.ResetFrame();
@@ -427,7 +433,8 @@ TEST(PostGraphPassOrderAndWiring) {
 TEST(PostGraphChainDisabling) {
     CountingNullBackend backend;
     int depthCasterCalls = 0;
-    gfx::PostGraph post = BuildFullPostGraph(depthCasterCalls);
+    int gbufferCasterCalls = 0;
+    gfx::PostGraph post = BuildFullPostGraph(depthCasterCalls, gbufferCasterCalls);
 
     // Only the SSAO chain requested (renderer: ssaoEnabled && casters present).
     CHECK(post.Execute(backend, PostFrameParams(640, 360, true, true, false, false)));
@@ -441,21 +448,24 @@ TEST(PostGraphChainDisabling) {
     CHECK_EQ(depthCasterCalls, 1);
 
     const auto& trace = post.LastTrace();
-    CHECK_EQ(trace.size(), 5u);
+    CHECK_EQ(trace.size(), 6u);
     CHECK_EQ(trace[0].name, std::string("post.depth"));
-    CHECK_EQ(trace[1].name, std::string("post.ssao"));
-    CHECK_EQ(trace[2].name, std::string("post.ssaoBlurH"));
-    CHECK_EQ(trace[3].name, std::string("post.ssaoBlurV"));
-    CHECK_EQ(trace[4].name, std::string("post.composite"));
-    // Composite reads hdr + depth + raw ao (the only live finals).
-    CHECK_EQ(trace[4].inputs.size(), 3u);
-    CHECK_EQ(trace[4].inputs[0].target.id, 100u);
-    CHECK_EQ(trace[4].inputs[1].target.id, trace[0].outputs[0].target.id);
-    CHECK_EQ(trace[4].inputs[2].target.id, trace[1].outputs[0].target.id);
+    CHECK_EQ(trace[1].name, std::string("post.gbuffer"));
+    CHECK_EQ(trace[2].name, std::string("post.ssao"));
+    CHECK_EQ(trace[3].name, std::string("post.ssaoBlurH"));
+    CHECK_EQ(trace[4].name, std::string("post.ssaoBlurV"));
+    CHECK_EQ(trace[5].name, std::string("post.composite"));
+    // Composite reads hdr + depth + raw ao + the indirect gbuffer.
+    CHECK_EQ(trace[5].inputs.size(), 4u);
+    CHECK_EQ(trace[5].inputs[0].target.id, 100u);
+    CHECK_EQ(trace[5].inputs[1].target.id, trace[0].outputs[0].target.id);
+    CHECK_EQ(trace[5].inputs[2].target.id, trace[4].outputs[0].target.id);
+    CHECK_EQ(trace[5].inputs[3].target.id, trace[1].outputs[0].target.id);
     post.ResetFrame();
 
     // Next frame: SSR + bloom run; depth still needed for the depth read. The
-    // composite now receives the blurred SSR and the bloom accumulation.
+    // composite now receives the blurred SSR, the bloom accumulation and the
+    // gbuffer (roughness).
     CHECK(post.Execute(backend, PostFrameParams(640, 360, true, false, false, true, true)));
     CHECK(post.DepthRan());
     CHECK(!post.SsaoRan());
@@ -463,16 +473,18 @@ TEST(PostGraphChainDisabling) {
     CHECK(post.BloomRan());
     CHECK(post.CompositeRan());
     const auto& trace2 = post.LastTrace();
-    CHECK_EQ(trace2.size(), 12u); // depth + ssr chain + bloom chain + composite
+    CHECK_EQ(trace2.size(), 13u); // depth + gbuffer + ssr chain + bloom chain + composite
     CHECK_EQ(trace2[0].name, std::string("post.depth"));
-    CHECK_EQ(trace2[1].name, std::string("post.ssr"));
-    CHECK_EQ(trace2[10].name, std::string("bloom.upsampleAdd"));
-    CHECK_EQ(trace2[11].name, std::string("post.composite"));
-    CHECK_EQ(trace2[11].inputs.size(), 4u); // hdr + depth + ssrBlurB + bloomAcc
-    CHECK_EQ(trace2[11].inputs[0].target.id, 100u);
-    CHECK_EQ(trace2[11].inputs[1].target.id, trace2[0].outputs[0].target.id);
-    CHECK_EQ(trace2[11].inputs[2].target.id, trace2[3].outputs[0].target.id); // ssrBlurV
-    CHECK_EQ(trace2[11].inputs[3].target.id, trace2[10].outputs[0].target.id); // upsampleAdd
+    CHECK_EQ(trace2[1].name, std::string("post.gbuffer"));
+    CHECK_EQ(trace2[2].name, std::string("post.ssr"));
+    CHECK_EQ(trace2[11].name, std::string("bloom.upsampleAdd"));
+    CHECK_EQ(trace2[12].name, std::string("post.composite"));
+    CHECK_EQ(trace2[12].inputs.size(), 5u); // hdr + depth + ssrBlurB + bloomAcc + gbuffer
+    CHECK_EQ(trace2[12].inputs[0].target.id, 100u);
+    CHECK_EQ(trace2[12].inputs[1].target.id, trace2[0].outputs[0].target.id);
+    CHECK_EQ(trace2[12].inputs[2].target.id, trace2[4].outputs[0].target.id); // ssrBlurV
+    CHECK_EQ(trace2[12].inputs[3].target.id, trace2[11].outputs[0].target.id); // upsampleAdd
+    CHECK_EQ(trace2[12].inputs[4].target.id, trace2[1].outputs[0].target.id); // gbuffer
     post.ResetFrame();
 }
 
@@ -481,14 +493,15 @@ TEST(PostGraphChainDisabling) {
 TEST(PostGraphDepthDrivenByConsumers) {
     CountingNullBackend backend;
     int depthCasterCalls = 0;
-    gfx::PostGraph post = BuildFullPostGraph(depthCasterCalls);
+    int gbufferCasterCalls = 0;
+    gfx::PostGraph post = BuildFullPostGraph(depthCasterCalls, gbufferCasterCalls);
 
     // ssr on, depthPass flag missed (defensive path): depth still executes.
     CHECK(post.Execute(backend, PostFrameParams(640, 360, false, false, false, true)));
     CHECK(post.DepthRan());
     CHECK(post.SsrRan());
     CHECK_EQ(depthCasterCalls, 1);
-    CHECK_EQ(post.LastTrace().size(), 5u); // depth + ssr chain + composite
+    CHECK_EQ(post.LastTrace().size(), 6u); // depth + gbuffer + ssr chain + composite
     post.ResetFrame();
 }
 
@@ -498,7 +511,8 @@ TEST(PostGraphDepthDrivenByConsumers) {
 TEST(PostGraphAllDisabled) {
     CountingNullBackend backend;
     int depthCasterCalls = 0;
-    gfx::PostGraph post = BuildFullPostGraph(depthCasterCalls);
+    int gbufferCasterCalls = 0;
+    gfx::PostGraph post = BuildFullPostGraph(depthCasterCalls, gbufferCasterCalls);
 
     CHECK(post.Execute(backend, PostFrameParams(640, 360, false, false, false, false)));
     CHECK(!post.Ran());
@@ -525,14 +539,15 @@ TEST(PostGraphAllDisabled) {
 TEST(PostGraphTransientPoolAndRebuild) {
     CountingNullBackend backend;
     int depthCasterCalls = 0;
-    gfx::PostGraph post = BuildFullPostGraph(depthCasterCalls);
+    int gbufferCasterCalls = 0;
+    gfx::PostGraph post = BuildFullPostGraph(depthCasterCalls, gbufferCasterCalls);
 
     CHECK(post.Execute(backend, PostFrameParams(640, 360, true, true, true, true, true)));
     post.ResetFrame();
     const int created = backend.createCount;
-    // 1 full-res depth + full-res float SSR (own pool bucket) + half-res float
-    // (recycled) + quarter-res float.
-    CHECK_EQ(created, 9);
+    // 1 full-res depth + 1 full-res gbuffer + full-res float SSR (own pool
+    // bucket) + half-res float (recycled) + quarter-res float.
+    CHECK_EQ(created, 10);
 
     // A second frame reuses the same pooled targets: no new allocations.
     CHECK(post.Execute(backend, PostFrameParams(640, 360, true, true, true, true, true)));

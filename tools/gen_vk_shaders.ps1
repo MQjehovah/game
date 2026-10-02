@@ -18,6 +18,9 @@ param(
 $shaders = @(
     "lit;lit.vert;lit.frag",
     "lit_skinned;lit_skinned.vert;lit.frag",
+    "gbuffer;lit.vert;lit.frag;GBUFFER=1",
+    "gbuffer_skinned;lit_skinned.vert;lit.frag;GBUFFER=1",
+    "gbuffer_instanced;lit_instanced.vert;lit.frag;GBUFFER=1",
     "unlit;unlit.vert;unlit.frag",
     "ui;ui.vert;ui.frag",
     "lines;lines.vert;lines.frag",

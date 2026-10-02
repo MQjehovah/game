@@ -1063,7 +1063,11 @@ public:
                          "GL: uBoneMatrices uniform not found in program %u",
                          GetProgram(currentShader_).id);
         else
-            NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Error,
+            // Debug, not Error: many programs legitimately don't reference the
+            // whole scene-uniform block (the GBUFFER lit variant computes only
+            // indirect radiance and drops uLightVP/shadows entirely), so a
+            // missing location is expected and must not spam the log.
+            NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Debug,
                          "GL: mat4-array uniform '%s' not found in program %u",
                          name, GetProgram(currentShader_).id);
         CheckError(name);

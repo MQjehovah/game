@@ -174,4 +174,7 @@ layout(set = 0, binding = 0) uniform EngineUBO {
     layout(offset = 7232) int uLightProbeEnabled;
     // Bloom upsample filter footprint (mirrors GL uBloomWidth; 1 = bilinear).
     layout(offset = 7236) float uBloomWidth;
+    // 1 when the composite's G-buffer sampler (uGBuffer) is bound (SSAO
+    // indirect-only path); 0 disables the indirect subtraction.
+    layout(offset = 7240) int uHasGBuffer;
 } eng;

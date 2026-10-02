@@ -3,6 +3,7 @@
 #include <vector>
 #include "neon/gfx/backend.hpp"
 #include "neon/gfx/camera.hpp"
+#include "neon/gfx/material.hpp"
 #include "neon/math/math.hpp"
 
 namespace neon::gfx {
@@ -45,6 +46,10 @@ public:
         std::vector<math::Mat4> bones;
         int boneCount = 0;
         math::AABB bounds;
+        // Owning material (albedo/roughness/metallic/...) so the G-buffer pass
+        // can redraw the caster through ApplyMaterial and emit the real indirect
+        // radiance + roughness. Default-constructed for pure shadow casters.
+        Material material;
     };
     // Painter's-order key used to sort shadow casters (the colour-encoded
     // shadow pass has no depth buffer). Stored in a member vector so the

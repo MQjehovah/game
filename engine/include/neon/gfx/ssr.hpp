@@ -65,6 +65,8 @@ in vec2 vUV;
 out vec4 FragColor;
 uniform sampler2D uScene;       // resolved HDR colour
 uniform sampler2D uDepth;       // colour-encoded scene depth
+uniform sampler2D uGBuffer;     // G-buffer: A = reflector roughness (optional)
+uniform int uHasGBuffer;        // 1 when uGBuffer is bound
 uniform vec2 uTexelSize;        // FULL-res texel of the depth texture
 uniform float uNear;
 uniform float uFar;
@@ -90,11 +92,10 @@ void main() {
     if (ndc >= 1.0) { FragColor = vec4(0.0); return; } // sky -> no reflection
     float viewZ = ViewDepth(ndc);
 
-    // Reflector roughness, packed into the HDR scene alpha by the lit pass (the
-    // forward path has no MRT G-buffer). A rough surface reflects a wide lobe,
-    // not a mirror: fade SSR out as roughness grows so the roughness-prefiltered
-    // IBL specular takes over (Godot/Filament disable SSR past ~0.7).
-    float surfRough = texture(uScene, vUV).a;
+    // Reflector roughness from the G-buffer alpha (the forward path has no MRT;
+    // the gbuffer pass redraws the opaque casters with indirect radiance in RGB
+    // and roughness in A). Without it (uHasGBuffer == 0) no roughness fade.
+    float surfRough = (uHasGBuffer != 0) ? texture(uGBuffer, vUV).a : 0.0;
     float roughFade = 1.0 - smoothstep(0.5, 0.72, surfRough);
     if (roughFade <= 0.0) { FragColor = vec4(0.0); return; }
 

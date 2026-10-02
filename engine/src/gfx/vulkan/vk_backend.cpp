@@ -244,8 +244,10 @@ const UniEntry kUniformOffsets[] = {
     {"uReceiveShadow", UniKind::Int, 7216, 4, 1},
     {"uLightProbeEnabled", UniKind::Int, 7232, 4, 1},
     {"uBloomWidth", UniKind::Float, 7236, 4, 1},
+    {"uHasGBuffer", UniKind::Int, 7240, 4, 1},
     {"uAlbedo", UniKind::Sampler, 0, 0, 1},
     {"uGrassTex", UniKind::Sampler, 0, 0, 1},
+    {"uGBuffer", UniKind::Sampler, 0, 0, 1},
     {"uCurrent", UniKind::Sampler, 0, 0, 1},
     {"uHistory", UniKind::Sampler, 0, 0, 1},
     {"uVelocity", UniKind::Sampler, 0, 0, 1},
@@ -3572,7 +3574,8 @@ private:
         if (std::strcmp(name, "particle") == 0 || std::strcmp(name, "particle_soft") == 0)
             return VertexVariant::InstancedColoredUv;
         if (std::strcmp(name, "lit_instanced") == 0 || std::strcmp(name, "unlit_instanced") == 0 ||
-            std::strcmp(name, "shadow_inst") == 0 || std::strcmp(name, "point_shadow_inst") == 0)
+            std::strcmp(name, "shadow_inst") == 0 || std::strcmp(name, "point_shadow_inst") == 0 ||
+            std::strcmp(name, "gbuffer_instanced") == 0)
             return VertexVariant::Instanced;
         return VertexVariant::V3d;
     }

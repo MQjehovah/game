@@ -515,6 +515,15 @@ void main() {
         ambientLight += kdIbl * SampleLightProbeAtlas(vWorldPos) * albedo.rgb;
     }
     if (uHasAO) ambientLight *= mix(1.0, texture(uOcclusion, vUV).r, uAOStrength);
+#ifdef GBUFFER
+    // G-buffer variant: RGB = indirect/ambient radiance, A = roughness. The
+    // composite subtracts indirect*(1-AO) so SSAO darkens only indirect light,
+    // and the SSR pass reads .a for the reflector roughness. Compiled as a
+    // separate program (like the terrain splat variant) so the main lit path
+    // pays nothing.
+    FragColor = vec4(ambientLight, roughness);
+    return;
+#endif
     vec3 color = (kd * albedo.rgb + spec) * uSunColor * ndl + ambientLight;
     // Emissive, tint self-glow, point lights and the player light are NOT part
     // of the sun term: accumulating them separately keeps them OUT of the sun
@@ -643,12 +652,7 @@ void main() {
         color += uHighlightColor * mix(albedo.rgb, vec3(1.0), 0.5) *
                  pow(rim, 2.5) * uHighlightStrength;
     }
-    // Alpha carries the surface ROUGHNESS, not albedo.a: the HDR target's alpha
-    // is unused downstream (composite/bloom/TAA read .rgb only), so it is the
-    // free channel the SSR pass reads to fade/blur its reflection by roughness
-    // (there is no MRT G-buffer in the forward path). MASK cutout already happened
-    // via discard above.
-    FragColor = vec4(color, roughness);
+    FragColor = vec4(color, albedo.a);
 }
 )";
 

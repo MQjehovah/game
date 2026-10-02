@@ -23,7 +23,8 @@ constexpr Color kFarDepth{1.0f, 0.0f, 0.0f, 0.0f};
 } // namespace
 
 void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
-                      std::function<void()> drawDepthCasters) {
+                      std::function<void()> drawDepthCasters,
+                      std::function<void()> drawGBufferCasters) {
     ssaoShader_ = shaders.ssaoShader;
     depthEncodeShader_ = shaders.depthEncodeShader;
     ssaoBlur_ = shaders.ssaoBlur;
@@ -40,6 +41,7 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
     compositeShader_ = shaders.compositeShader;
     postQuad_ = postQuad;
     drawDepthCasters_ = std::move(drawDepthCasters);
+    drawGBufferCasters_ = std::move(drawGBufferCasters);
     hdrW_ = w;
     hdrH_ = h;
     const int aw = std::max(w / 2, 1);
@@ -57,6 +59,9 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
     hdrScene_ = fresh.AddResource({static_cast<uint32_t>(w), static_cast<uint32_t>(h), 0u, 1u});
     // Depth is colour-encoded (RGBA8), same as the renderer's ssaoDepthRT_.
     sceneDepth_ = fresh.AddResource({static_cast<uint32_t>(w), static_cast<uint32_t>(h), 0u, 1u});
+    // G-buffer: RGB = indirect radiance (HDR), A = roughness. Float so indirect
+    // radiance survives above 1.0 (the composite subtracts it back out).
+    gbuffer_ = fresh.AddResource({static_cast<uint32_t>(w), static_cast<uint32_t>(h), kFloatFormat, 1u});
     ao_ = fresh.AddResource({static_cast<uint32_t>(aw), static_cast<uint32_t>(ah), kFloatFormat, 1u});
     aoBlurA_ = fresh.AddResource({static_cast<uint32_t>(aw), static_cast<uint32_t>(ah), kFloatFormat, 1u});
     aoBlurB_ = fresh.AddResource({static_cast<uint32_t>(aw), static_cast<uint32_t>(ah), kFloatFormat, 1u});
@@ -134,6 +139,24 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
         dumpTarget(backend, "depth", w, h);
     };
     depthPassIndex_ = add(std::move(depth));
+
+    // 1b. G-buffer pass: redraw the opaque casters with the GBUFFER lit variant
+    //     into gbuffer_ (RGB = indirect radiance, A = roughness). Enabled only
+    //     when SSAO/SSR need it (params.gbufferPass). The pass binds/clears the
+    //     target; drawGBufferCasters_ (Renderer) draws the geometry into it.
+    FramePass gbuffer;
+    gbuffer.name = "post.gbuffer";
+    gbuffer.writes = {gbuffer_};
+    gbuffer.execute = [this](FrameGraphContext& ctx) {
+        auto& backend = ctx.Backend();
+        backend.BindRenderTarget(ctx.GetOutput(gbuffer_));
+        backend.SetDepthTest(true, true);
+        backend.SetCullMode(CullMode::Back);
+        backend.SetBlendMode(BlendMode::Opaque);
+        backend.Clear({0.0f, 0.0f, 0.0f, 0.0f}, 1.0f);
+        if (drawGBufferCasters_) drawGBufferCasters_();
+    };
+    gbufferPassIndex_ = add(std::move(gbuffer));
 
     // 2. AO compute: samples the colour-encoded scene depth, writes ao.
     FramePass ssao;
@@ -245,7 +268,7 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
     //    scene depth, pulling the HDR colour.
     FramePass ssr;
     ssr.name = "post.ssr";
-    ssr.reads = {hdrScene_, sceneDepth_};
+    ssr.reads = {hdrScene_, sceneDepth_, gbuffer_};
     ssr.writes = {ssr_};
     ssr.execute = [this, dumpTarget, w, h](FrameGraphContext& ctx) {
         auto& backend = ctx.Backend();
@@ -255,6 +278,14 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
         backend.SetUniformInt("uScene", 0);
         backend.BindTexture(1, backend.RenderTargetColorTexture(ctx.GetInput(sceneDepth_)));
         backend.SetUniformInt("uDepth", 1);
+        // Reflector roughness from the G-buffer's alpha (RGB is the indirect
+        // radiance, unused here). Unbound when the gbuffer pass is off; the
+        // shader then falls back to no roughness fade.
+        const RenderTargetHandle gbufRt = ctx.GetInput(gbuffer_);
+        const bool hasG = gbufRt.Valid();
+        if (hasG) backend.BindTexture(2, backend.RenderTargetColorTexture(gbufRt));
+        backend.SetUniformInt("uGBuffer", 2);
+        backend.SetUniformInt("uHasGBuffer", hasG ? 1 : 0);
         backend.SetUniformVec2("uTexelSize", math::Vec2{1.0f / static_cast<float>(hdrW_),
                                                         1.0f / static_cast<float>(hdrH_)});
         backend.SetUniformFloat("uNear", nearPlane_);
@@ -454,7 +485,7 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
     FramePass composite;
     composite.name = "post.composite";
     composite.reads = {hdrScene_, sceneDepth_, aoBlurB_, volBlurB_, ssrBlurB_, bloomHalfB_,
-                       adaptDone_};
+                       adaptDone_, gbuffer_};
     composite.execute = [this](FrameGraphContext& ctx) {
         auto& backend = ctx.Backend();
         if (!compositeShader_.Valid() || !postQuad_.Valid()) return;
@@ -501,6 +532,18 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
                                 comp_.ssaoIntensity < 0.0f
                                     ? 0.0f
                                     : (comp_.ssaoIntensity > 1.0f ? 1.0f : comp_.ssaoIntensity));
+        // Indirect-radiance G-buffer (RGB) for indirect-only SSAO. Only bound
+        // when the gbuffer pass ran (SSAO/SSR on); otherwise the composite falls
+        // back to the whole-colour AO multiply via uHasGBuffer=0.
+        const RenderTargetHandle gbufRt = ctx.GetInput(gbuffer_);
+        const bool gbufActive = gbufRt.Valid();
+        if (gbufActive) {
+            backend.BindTexture(7, backend.RenderTargetColorTexture(gbufRt));
+        } else {
+            backend.BindTexture(7, comp_.white);
+        }
+        backend.SetUniformInt("uGBuffer", 7);
+        backend.SetUniformInt("uHasGBuffer", gbufActive ? 1 : 0);
         const RenderTargetHandle volRt = ctx.GetInput(volBlurB_);
         const bool volActive = volRt.Valid();
         if (volActive) {
@@ -632,8 +675,13 @@ bool PostGraph::Execute(IRenderBackend& backend, const FrameParams& params) {
     // Depth must run whenever any chain samples the scene depth (belt and
     // braces on top of the renderer's own depthPass flag).
     const bool depth = params.depthPass || ssao || ssr || params.composite.volumetricFog;
+    // G-buffer runs when requested and something consumes it (SSAO indirect-only
+    // / SSR roughness). Written by the renderer callback into the graph target.
+    const bool gbuf = params.gbufferPass && (ssao || ssr) && drawGBufferCasters_ &&
+                      params.hdrScene.Valid();
 
     graph_.SetPassEnabled(depthPassIndex_, depth);
+    graph_.SetPassEnabled(gbufferPassIndex_, gbuf);
     graph_.SetPassEnabled(ssaoPassIndex_, ssao);
     graph_.SetPassEnabled(ssaoBlurHIndex_, ssao);
     graph_.SetPassEnabled(ssaoBlurVIndex_, ssao);

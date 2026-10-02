@@ -411,6 +411,8 @@ uniform sampler2D uBloom;
 uniform sampler2D uAo;
 uniform float uAoIntensity;
 uniform int uAoEnabled;
+uniform sampler2D uGBuffer;      // G-buffer: RGB = indirect radiance (A = roughness)
+uniform int uHasGBuffer;         // 1 when uGBuffer is bound (SSAO indirect-only path)
 uniform sampler2D uVol;
 uniform float uVolStrength;
 uniform int uVolEnabled;
@@ -461,13 +463,18 @@ float OutDither(vec2 p) {
 void main() {
     vec3 hdr = texture(uHdr, vUV).rgb;
     vec3 c = hdr;
-    // SSAO scales the LIT SCENE COLOUR only. Applying it after the additive
-    // terms also darkened bloom / volumetric / SSR (and the highlights inside
-    // them) with occlusion. A true ambient-only split needs a separated lit
-    // output; ordering it before the additions is the cheap part of that fix.
+    // SSAO scales ONLY the indirect/ambient term. The G-buffer pass (forward
+    // path has no MRT) wrote the indirect radiance to uGBuffer.rgb, so we remove
+    // indirect*(1-AO) and leave direct sunlight intact. Without the G-buffer
+    // (e.g. SSAO on a backend that skipped it) fall back to the whole-colour
+    // multiply, which is the pre-G-buffer behaviour.
     if (uAoEnabled != 0) {
-        float ao = texture(uAo, vUV).r;
-        c *= mix(1.0, ao, uAoIntensity);
+        float aoEff = mix(1.0, texture(uAo, vUV).r, uAoIntensity);
+        if (uHasGBuffer != 0) {
+            c -= texture(uGBuffer, vUV).rgb * (1.0 - aoEff);
+        } else {
+            c *= aoEff;
+        }
     }
     if (uBloomEnabled != 0) c += texture(uBloom, vUV).rgb * uStrength;
     if (uVolEnabled != 0) c += texture(uVol, vUV).rgb * uVolStrength;

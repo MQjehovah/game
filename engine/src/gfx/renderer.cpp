@@ -112,6 +112,9 @@ void Renderer::Shutdown() {
     }
     if (litShader_.Valid()) backend_->DestroyShader(litShader_);
     if (skinnedLitShader_.Valid()) backend_->DestroyShader(skinnedLitShader_);
+    if (gbufferShader_.Valid()) backend_->DestroyShader(gbufferShader_);
+    if (gbufferSkinnedShader_.Valid()) backend_->DestroyShader(gbufferSkinnedShader_);
+    if (gbufferInstancedShader_.Valid()) backend_->DestroyShader(gbufferInstancedShader_);
     if (unlitShader_.Valid()) backend_->DestroyShader(unlitShader_);
     if (decalShader_.Valid()) backend_->DestroyShader(decalShader_);
     if (velocityShader_.Valid()) backend_->DestroyShader(velocityShader_);
@@ -174,6 +177,29 @@ void Renderer::InitBuiltinResources() {
                      terrainShader_.Valid() ? "ok" : "FAILED");
     }
     linesShader_ = backend_->CreateShader(kLineVertexShader, kLineFragmentShader, "lines");
+    {
+        // G-buffer variants: the lit source with #define GBUFFER so the fragment
+        // emits indirect radiance + roughness (GL compiles it; Vulkan resolves
+        // the "gbuffer*" names from the precompiled SPIR-V table).
+        std::string gFrag(kLitFragmentShader);
+        size_t v = gFrag.find("#version");
+        size_t ve = gFrag.find('\n', v);
+        gFrag.insert(ve + 1, "#define GBUFFER 1\n");
+        std::string gSkinVert(kLitVertexShader);
+        size_t sv = gSkinVert.find("#version");
+        size_t sve = gSkinVert.find('\n', sv);
+        gSkinVert.insert(sve + 1, "#define SKINNED 1\n");
+        gbufferShader_ = backend_->CreateShader(kLitVertexShader, gFrag.c_str(), "gbuffer");
+        gbufferSkinnedShader_ =
+            backend_->CreateShader(gSkinVert.c_str(), gFrag.c_str(), "gbuffer_skinned");
+        gbufferInstancedShader_ =
+            backend_->CreateShader(kLitInstancedVertexShader, gFrag.c_str(), "gbuffer_instanced");
+        NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
+                     "Renderer: gbuffer shaders %s/%s/%s",
+                     gbufferShader_.Valid() ? "ok" : "FAIL",
+                     gbufferSkinnedShader_.Valid() ? "ok" : "FAIL",
+                     gbufferInstancedShader_.Valid() ? "ok" : "FAIL");
+    }
     litInstancedShader_ =
         backend_->CreateShader(kLitInstancedVertexShader, kLitFragmentShader, "lit_instanced");
     unlitInstancedShader_ =
@@ -844,9 +870,8 @@ void Renderer::DrawMesh(const Mesh& mesh, const Material& material, const math::
     // The SSAO/SSR colour-depth pre-pass only needs the caster list when the
     // main-pass depth cannot be resolved for the post chain (no MSAA / a backend
     // without ResolveDepth). Collecting otherwise is pure CPU waste.
-    if ((ssaoEnabled_ || ssrEnabled_) && shadowSystem_.Recording() && !material.transparent &&
-        !PostDepthReuseOk())
-        ssaoCasters_.push_back({mesh.Handle(), model, {}, {}, 0, mesh.Bounds()});
+    if ((ssaoEnabled_ || ssrEnabled_) && shadowSystem_.Recording() && !material.transparent)
+        ssaoCasters_.push_back({mesh.Handle(), model, {}, {}, 0, mesh.Bounds(), material});
 
     if (sceneState_.FrustumValid() &&
         !sceneState_.Frustum().Intersects(math::TransformAABB(mesh.Bounds(), model)))
@@ -1009,9 +1034,9 @@ void Renderer::DrawSkinnedMesh(const Mesh& mesh, const Material& material,
     if (shadowSystem_.Enabled() && shadowSystem_.Recording() && !material.transparent &&
         material.castShadow)
         shadowSystem_.RecordCaster({mesh.Handle(), model, {}, boneMatrices, count, mesh.Bounds()});
-    if ((ssaoEnabled_ || ssrEnabled_) && shadowSystem_.Recording() && !material.transparent &&
-        !PostDepthReuseOk())
-        ssaoCasters_.push_back({mesh.Handle(), model, {}, boneMatrices, count, mesh.Bounds()});
+    if ((ssaoEnabled_ || ssrEnabled_) && shadowSystem_.Recording() && !material.transparent)
+        ssaoCasters_.push_back(
+            {mesh.Handle(), model, {}, boneMatrices, count, mesh.Bounds(), material});
 
     if (sceneState_.FrustumValid() &&
         !sceneState_.Frustum().Intersects(math::TransformAABB(mesh.Bounds(), model)))
@@ -1080,10 +1105,9 @@ void Renderer::DrawMeshInstanced(const Mesh& mesh, const Material& material,
         material.castShadow)
         shadowSystem_.RecordCaster(
             {mesh.Handle(), math::Mat4::Identity(), instancedVisible_, {}, 0, mesh.Bounds()});
-    if ((ssaoEnabled_ || ssrEnabled_) && shadowSystem_.Recording() && !material.transparent &&
-        !PostDepthReuseOk())
-        ssaoCasters_.push_back(
-            {mesh.Handle(), math::Mat4::Identity(), instancedVisible_, {}, 0, mesh.Bounds()});
+    if ((ssaoEnabled_ || ssrEnabled_) && shadowSystem_.Recording() && !material.transparent)
+        ssaoCasters_.push_back({mesh.Handle(), math::Mat4::Identity(), instancedVisible_, {}, 0,
+                                mesh.Bounds(), material});
 
     ShaderHandle shader = material.shader.Valid()
                               ? material.shader
@@ -1866,7 +1890,8 @@ void Renderer::RebuildHdrTargets() {
     shaders.compositeShader = compositeShader_;
     shaders.white = white_;
     postGraph_.Build(shaders, postQuadMesh_, sw, sh,
-                     [this] { DrawSsaoDepthCasters(sceneState_.ViewProjection()); });
+                     [this] { DrawSsaoDepthCasters(sceneState_.ViewProjection()); },
+                     [this] { DrawGBufferCasters(sceneState_.ViewProjection()); });
     NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
                  "Renderer: HDR target %dx%d (RGBA16F%s, scale %.2f) + bloom %dx%d / %dx%d",
                  sw, sh, msaaEnabled_ ? ", MSAA" : "", scale, hw, hh, qw, qh);
@@ -2047,6 +2072,9 @@ PostGraph::FrameParams Renderer::MakePostParams(bool chains) const {
                  (p.depthTexture.Valid() || !ssaoCasters_.empty());
     p.volumetricPass = chains && volumetricEnabled_;
     p.ssrPass = chains && ssrEnabled_;
+    // G-buffer pass: redraws the opaque casters into indirect radiance + roughness.
+    // Needed by the composite's indirect-only SSAO and the SSR roughness read.
+    p.gbufferPass = chains && (ssaoEnabled_ || ssrEnabled_) && !ssaoCasters_.empty();
     p.bloomPass = bloomEnabled_;
     p.camPos = sceneState_.CamPos();
     p.sunDir = sceneState_.SunDir();
@@ -2232,6 +2260,38 @@ void Renderer::DrawSsaoDepthCasters(const math::Mat4& viewProj) {
             backend_->UseShader(ssaoDepthMeshShader_);
             backend_->SetUniformMat4("uMVP", viewProj * draw.model);
             backend_->SetUniformFloat("uFar", sceneState_.ActiveCamera().farPlane);
+            backend_->DrawMesh(draw.mesh);
+        }
+    }
+}
+
+void Renderer::DrawGBufferCasters(const math::Mat4& viewProj) {
+    if (ssaoCasters_.empty() || !gbufferShader_.Valid()) return;
+    for (const ShadowSystem::ShadowDraw& draw : ssaoCasters_) {
+        if (!draw.mesh.Valid()) continue;
+        const bool instanced = !draw.models.empty();
+        const bool skinned = !draw.bones.empty() && gbufferSkinnedShader_.Valid();
+        const ShaderHandle sh = instanced ? gbufferInstancedShader_
+                               : skinned ? gbufferSkinnedShader_
+                                         : gbufferShader_;
+        if (!sh.Valid()) continue;
+        // ApplyMaterial binds the albedo/MR/occlusion textures + sets roughness,
+        // metallic, tint (so the GBUFFER branch's indirect radiance uses the
+        // REAL material), uploads the scene uniforms (per program), and sets the
+        // opaque/depth state. mvp is the final model->clip transform.
+        const math::Mat4 mvp = instanced ? viewProj : viewProj * draw.model;
+        ApplyMaterial(draw.material, mvp, draw.model, NormalMatrix(draw.model), sh);
+        if (!draw.models.empty()) {
+            backend_->DrawMeshInstanced(draw.mesh, draw.models.data(),
+                                        static_cast<uint32_t>(draw.models.size()));
+        } else if (skinned) {
+            boneUniformFlat_.resize(static_cast<size_t>(draw.boneCount) * 16);
+            for (int i = 0; i < draw.boneCount; ++i)
+                std::memcpy(boneUniformFlat_.data() + static_cast<size_t>(i) * 16,
+                            draw.bones[static_cast<size_t>(i)].Data(), 16 * sizeof(float));
+            backend_->SetUniformMat4Array("uBoneMatrices", boneUniformFlat_.data(), draw.boneCount);
+            backend_->DrawMesh(draw.mesh);
+        } else {
             backend_->DrawMesh(draw.mesh);
         }
     }

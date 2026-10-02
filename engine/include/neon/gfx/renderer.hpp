@@ -622,6 +622,9 @@ private:
     // behaviour (they never ran the post graph, only bloom + composite).
     PostGraph::FrameParams MakePostParams(bool chains) const;
     void DrawSsaoDepthCasters(const math::Mat4& viewProj);
+    // Draws the recorded opaque casters into gNormalRough_ with the GBUFFER lit
+    // variants (RGB = indirect radiance, A = roughness) for the composite and SSR.
+    void DrawGBufferCasters(const math::Mat4& viewProj);
     bool TestFloatTargetCapability();
     // B1: uploads the per-FRAME scene uniforms (sun/lights/fog/view/shadow/IBL)
     // once per (frame, program) pair -- draws after the first in a frame skip
@@ -679,6 +682,12 @@ private:
     ShaderHandle litShader_;
     ShaderHandle terrainShader_;
     ShaderHandle skinnedLitShader_;
+    // G-buffer variants (lit source + #define GBUFFER): draw the same casters
+    // into gNormalRough_ (RGB = indirect radiance, A = roughness) for the
+    // composite's indirect-only SSAO and the SSR roughness read.
+    ShaderHandle gbufferShader_;
+    ShaderHandle gbufferSkinnedShader_;
+    ShaderHandle gbufferInstancedShader_;
     ShaderHandle unlitShader_;
     ShaderHandle linesShader_;
     ShaderHandle litInstancedShader_;

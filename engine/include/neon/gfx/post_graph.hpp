@@ -96,6 +96,10 @@ public:
         TextureHandle depthTexture;
         bool volumetricPass = false;
         bool ssrPass = false;
+        // G-buffer pass: draw the opaque casters into gbuffer_ (RGB = indirect
+        // radiance, A = roughness) so the composite applies SSAO to indirect
+        // light only and the SSR reads the true reflector roughness.
+        bool gbufferPass = false;
         bool bloomPass = false;
         math::Vec3 camPos; // volumetric 太阳投影
         math::Vec3 sunDir;
@@ -121,7 +125,8 @@ public:
     // `[this]{ DrawSsaoDepthCasters(viewProj_); }`，在 depth pass 绑定并清空
     // sceneDepth 后把场景几何画进当前 RT（不是全屏 quad）。
     void Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
-               std::function<void()> drawDepthCasters);
+               std::function<void()> drawDepthCasters,
+               std::function<void()> drawGBufferCasters);
 
     // 释放本图持有的全部 RT（分辨率重建 / renderer 销毁时）。
     void Destroy(IRenderBackend& backend);
@@ -167,6 +172,7 @@ private:
     bool depthFromTex_ = false;
     ResourceId hdrScene_ = kInvalidResource; // 外部输入（主场景 HDR）
     ResourceId sceneDepth_ = kInvalidResource; // 全尺寸，depth pass 写
+    ResourceId gbuffer_ = kInvalidResource;    // 全尺寸，gbuffer pass 写（间接光+粗糙度）
     ResourceId ao_ = kInvalidResource;         // 半尺寸，ssao 写
     ResourceId aoBlurA_ = kInvalidResource;
     ResourceId aoBlurB_ = kInvalidResource;
@@ -192,6 +198,7 @@ private:
     // Execute 快照：本帧墙钟 dt（adapt 速率归一用）。
     float frameDt_ = 1.0f / 60.0f;
     size_t depthPassIndex_ = 0;
+    size_t gbufferPassIndex_ = 0;
     size_t ssaoPassIndex_ = 0;
     size_t ssaoBlurHIndex_ = 0;
     size_t ssaoBlurVIndex_ = 0;
@@ -227,6 +234,7 @@ private:
     ShaderHandle compositeShader_;
     MeshHandle postQuad_;
     std::function<void()> drawDepthCasters_;
+    std::function<void()> drawGBufferCasters_;
     float halfTexelX_ = 0.0f;
     float halfTexelY_ = 0.0f;
     float quarterTexelX_ = 0.0f;

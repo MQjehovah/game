@@ -15,6 +15,7 @@ layout(set = 1, binding = 3) uniform sampler2D uVol;
 layout(set = 1, binding = 4) uniform sampler2D uSsr;
 layout(set = 1, binding = 5) uniform sampler2D uFogDepth;
 layout(set = 1, binding = 6) uniform sampler2D uAvgLum;
+layout(set = 1, binding = 7) uniform sampler2D uGBuffer; // RGB = indirect radiance
 
 vec3 ACESFilm(vec3 x) {
     float a = 2.51, b = 0.03, c = 2.43, d = 0.59, e = 0.14;
@@ -34,11 +35,16 @@ float OutDither(vec2 p) {
 void main() {
     vec3 hdr = texture(uHdr, vUV).rgb;
     vec3 c = hdr;
-    // SSAO scales the LIT SCENE COLOUR only; after the additive terms it also
-    // darkened bloom / volumetric / SSR with occlusion.
+    // SSAO scales ONLY the indirect/ambient term (the G-buffer pass wrote the
+    // indirect radiance to uGBuffer.rgb). Without the G-buffer, fall back to the
+    // whole-colour multiply. GL twin in bloom.hpp.
     if (eng.uAoEnabled != 0) {
-        float ao = texture(uAo, vUV).r;
-        c *= mix(1.0, ao, eng.uAoIntensity);
+        float aoEff = mix(1.0, texture(uAo, vUV).r, eng.uAoIntensity);
+        if (eng.uHasGBuffer != 0) {
+            c -= texture(uGBuffer, vUV).rgb * (1.0 - aoEff);
+        } else {
+            c *= aoEff;
+        }
     }
     if (eng.uBloomEnabled != 0) c += texture(uBloom, vUV).rgb * eng.uStrength;
     if (eng.uVolEnabled != 0) c += texture(uVol, vUV).rgb * eng.uVolStrength;

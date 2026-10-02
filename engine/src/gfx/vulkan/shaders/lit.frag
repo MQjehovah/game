@@ -358,6 +358,12 @@ void main() {
         ambientLight += kdIbl * SampleLightProbeAtlas(vWorldPos) * albedo.rgb;
     }
     if (eng.uHasAO != 0) ambientLight *= mix(1.0, texture(uOcclusion, vUV).r, eng.uAOStrength);
+#ifdef GBUFFER
+    // G-buffer variant (separate program): RGB = indirect radiance, A = roughness.
+    // GL twin in builtin_shaders.hpp.
+    FragColor = vec4(ambientLight, roughness);
+    return;
+#endif
     vec3 color = (kd * albedo.rgb + spec) * eng.uSunColor * ndl + ambientLight;
     // Emissive, tint self-glow, point lights and the player light are NOT part
     // of the sun term: kept out of the sun shadow composite below (a glowing
@@ -484,8 +490,5 @@ void main() {
         color += eng.uHighlightColor * mix(albedo.rgb, vec3(1.0), 0.5) *
                  pow(rim, 2.5) * eng.uHighlightStrength;
     }
-    // Alpha carries surface ROUGHNESS (the HDR target's alpha is otherwise unused
-    // downstream) so the SSR pass can fade by roughness without an MRT G-buffer.
-    // GL twin in builtin_shaders.hpp.
-    FragColor = vec4(color, roughness);
+    FragColor = vec4(color, albedo.a);
 }
