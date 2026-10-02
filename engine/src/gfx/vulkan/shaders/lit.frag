@@ -94,8 +94,14 @@ float D_GGX(float ndh, float a) {
     float d = ndh * ndh * (a2 - 1.0) + 1.0;
     return a2 / (3.14159265 * d * d);
 }
-float G_Schlick(float ndl, float ndv, float a) {
-    float k = a * a * 0.5;
+// Direct-lighting Schlick-GGX geometry. The remap k = (roughness + 1)^2 / 8 is
+// the direct-light variant (Karis 2013); the IBL variant (k = roughness^2 / 2)
+// lives only in the CPU BRDF LUT / prefilter (ibl.cpp). Passing a = roughness^2
+// and computing k = a*a*0.5 = roughness^4/2 under-attenuated every direct
+// highlight (see the GL twin in builtin_shaders.hpp).
+float G_Schlick(float ndl, float ndv, float roughness) {
+    float r = roughness + 1.0;
+    float k = (r * r) / 8.0;
     return (ndl / (ndl * (1.0 - k) + k)) * (ndv / (ndv * (1.0 - k) + k));
 }
 vec3 F_Schlick(float vdh, vec3 f0) {
@@ -321,7 +327,7 @@ void main() {
     float vdh = max(dot(V, H), 0.0);
     vec3 f0 = mix(vec3(0.04), albedo.rgb, metallic);
     float D = D_GGX(ndh, a);
-    float G = G_Schlick(ndl, ndv, a);
+    float G = G_Schlick(ndl, ndv, roughness);
     vec3 F = F_Schlick(vdh, f0);
     vec3 spec = D * G * F / (4.0 * ndl * ndv + 1e-3);
     vec3 kd = (1.0 - F) * (1.0 - metallic);
@@ -372,7 +378,7 @@ void main() {
         float pndh = max(dot(N, ph), 0.0);
         float pvdh = max(dot(V, ph), 0.0);
         float pD = D_GGX(pndh, a);
-        float pG = G_Schlick(pndl, ndv, a);
+        float pG = G_Schlick(pndl, ndv, roughness);
         vec3 pF = F_Schlick(pvdh, f0);
         vec3 pSpec = pD * pG * pF / (4.0 * pndl * ndv + 1e-3);
         vec3 pKd = (1.0 - pF) * (1.0 - metallic);
