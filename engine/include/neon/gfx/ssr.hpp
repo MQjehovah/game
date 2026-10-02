@@ -211,11 +211,15 @@ void main() {
                 float edge = smoothstep(0.0, 0.1, suv.x) * smoothstep(1.0, 0.9, suv.x) *
                              smoothstep(0.0, 0.1, suv.y) * smoothstep(1.0, 0.9, suv.y);
                 float fade = max(1.0 - t / maxDist, 0.0) * edge * tangentFade;
-                // Schlick-style fresnel with a GAME floor (0.25, not the
-                // physical dielectric 0.04): a physical F0 leaves face-on
-                // reflections blended at ~4-8% and visually switches the
-                // effect off. Grazing angles still dominate.
-                float fres = 0.25 + 0.75 * pow(1.0 - max(dot(n, -normalize(ro)), 0.0), 5.0);
+                // Schlick Fresnel with the PHYSICAL water/dielectric F0 (0.02).
+                // The old 0.25 floor forced every surface to be at least 25%
+                // reflective regardless of angle or material, turning entire
+                // rough ground planes into mirrors (measured: a single 14px
+                // ball produced reflections across 63836 pixels). With the
+                // real F0, face-on rough surfaces get ~2% (correctly invisible)
+                // and grazing-angle water ramps toward total reflection.
+                // ssrStrength in the composite is the artist's global control.
+                float fres = 0.02 + 0.98 * pow(1.0 - max(dot(n, -normalize(ro)), 0.0), 5.0);
                 FragColor = vec4(texture(uScene, suv).rgb, fade * fres);
                 return;
                 }

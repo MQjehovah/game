@@ -122,10 +122,10 @@ void main() {
                     float edge = smoothstep(0.0, 0.1, suv.x) * smoothstep(1.0, 0.9, suv.x) *
                                  smoothstep(0.0, 0.1, suv.y) * smoothstep(1.0, 0.9, suv.y);
                     float fade = max(1.0 - t / maxDist, 0.0) * edge * tangentFade;
-                    // Schlick-style fresnel with a GAME floor (0.25): the
-                    // physical 0.04 F0 left face-on reflections at ~4-8% blend
-                    // and visually switched the effect off.
-                    float fres = 0.25 + 0.75 * pow(1.0 - max(dot(n, -normalize(ro)), 0.0), 5.0);
+                    // Schlick Fresnel with the PHYSICAL water/dielectric F0
+                    // (0.02) - see the GL twin for the full rationale (the
+                    // 0.25 floor turned rough ground into mirrors).
+                    float fres = 0.02 + 0.98 * pow(1.0 - max(dot(n, -normalize(ro)), 0.0), 5.0);
                     FragColor = vec4(texture(uScene, suv).rgb, fade * fres);
                     return;
                 }
