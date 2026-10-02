@@ -839,7 +839,9 @@ void EditorApp::ApplySceneEnvironment() {
     } else if (sl && sl->useAtmosphere) {
         renderer_.SetFog(sl->fogColor, sl->fogNear, sl->fogFar);
     } else {
-        renderer_.SetFog({0.45f, 0.55f, 0.7f, 1.0f}, 60.0f, 140.0f);
+        // Matches the runtime DrawSystem fallback (was 60/140 here vs 60/220 in
+        // play - scenes without authored fog got a different falloff in edit).
+        renderer_.SetFog({0.45f, 0.55f, 0.7f, 1.0f}, 60.0f, 220.0f);
     }
     renderer_.DrawSky();
     // Scene-authored exposure (showcase night/dawn scenes): authoritative when

@@ -1061,10 +1061,17 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
             }
         }
         // 曝光：scene 显式设置时覆盖宿主默认（夜晚 >1 提亮，黄昏微调）。
-        if (environment && environment->useAtmosphere && environment->exposure >= 0.0f)
-            renderer.SetExposure(environment->exposure);
-        else if (directional && directional->useAtmosphere && directional->exposure >= 0.0f)
-            renderer.SetExposure(directional->exposure);
+        // Precedence mirrors the editor (ApplySceneEnvironment runs BEFORE the
+        // RenderStack block there, so the stack wins): a scene carrying a
+        // RenderStack is authoritative for exposure and the atmosphere's value
+        // only applies to stack-less scenes. The old order let the atmosphere
+        // exposure overwrite the stack's in play while edit showed the stack's.
+        if (!sceneStack) {
+            if (environment && environment->useAtmosphere && environment->exposure >= 0.0f)
+                renderer.SetExposure(environment->exposure);
+            else if (directional && directional->useAtmosphere && directional->exposure >= 0.0f)
+                renderer.SetExposure(directional->exposure);
+        }
         if (cam.ortho) {
             renderer.SetFog({0.45f, 0.55f, 0.7f, 1.0f}, 1e9f, 1e10f);
         } else if (sceneStack && sceneStack->fog) {
