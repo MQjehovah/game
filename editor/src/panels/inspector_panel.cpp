@@ -17,6 +17,7 @@
 #include "editor_util.hpp"
 
 #include "imgui.h"
+#include "neon/assets/asset_manager.hpp"
 #include "neon/assets/mesh_format.hpp"
 #include "neon/core/json.hpp"
 #include "neon/gfx/imgui_neon.hpp"
@@ -510,7 +511,12 @@ void InspectorPanel::Draw(EditorContext& ctx) {
                     if (!newPath.empty() && newPath.back() == '\0') newPath.pop_back();
                     if (!newPath.empty() && newPath != path) {
                         const TextureSlotValue oldVal{path, handle};
-                        gfx::Texture tex = assetMgr.LoadTexture(newPath);
+                        // 3D material textures load with REPEAT wrap: meshes can
+                        // carry authored tiling UVs with uvRepeat=1, and
+                        // ClampToEdge smears edge pixels across the surface.
+                        assets::TextureLoadOptions rep;
+                        rep.wrap = gfx::Wrap::Repeat;
+                        gfx::Texture tex = assetMgr.LoadTexture(newPath, rep);
                         if (tex.Valid()) {
                             const TextureSlotValue newVal{newPath, tex.Handle()};
                             history.Push(std::make_unique<EditPropertyCommand<TextureSlotValue>>(
@@ -531,8 +537,10 @@ void InspectorPanel::Draw(EditorContext& ctx) {
                 const std::string newPath(buf);
                 if (newPath != path) {
                     const TextureSlotValue oldVal{path, handle};
+                    assets::TextureLoadOptions rep;
+                    rep.wrap = gfx::Wrap::Repeat;
                     gfx::Texture tex =
-                        newPath.empty() ? gfx::Texture{} : assetMgr.LoadTexture(newPath);
+                        newPath.empty() ? gfx::Texture{} : assetMgr.LoadTexture(newPath, rep);
                     if (newPath.empty() || tex.Valid()) {
                         // Store the project-relative path (so it survives a save
                         // + restart and resolves through the runtime's
@@ -562,7 +570,9 @@ void InspectorPanel::Draw(EditorContext& ctx) {
                     const char* src = static_cast<const char*>(p->Data);
                     if (src && *src) {
                         const std::string newPath(src);
-                        gfx::Texture tex = assetMgr.LoadTexture(newPath);
+                        assets::TextureLoadOptions rep;
+                        rep.wrap = gfx::Wrap::Repeat;
+                        gfx::Texture tex = assetMgr.LoadTexture(newPath, rep);
                         if (tex.Valid()) {
                             // Store project-relative so the path survives a save
                             // + restart and resolves via FullAssetPath in play.
