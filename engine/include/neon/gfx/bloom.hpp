@@ -218,11 +218,16 @@ void main() {
     // The bright pass runs BEFORE the composite applies exposure. Keying the
     // threshold on raw HDR values decoupled bloom from displayed brightness:
     // with auto exposure lifting a dark scene no pixel crossed the threshold
-    // and the glow vanished exactly when the image looked brightest. Apply the
-    // same effective exposure the composite will use.
+    // and the glow vanished exactly when the image looked brightest. Threshold
+    // on the SAME effective exposure the composite will use - but return the
+    // result in UNEXPOSED units: the composite adds bloom to the scene before
+    // its single `* exposure`, so emitting an exposed bright pass multiplied
+    // the glow by exposure a second time (bloom scaled by exposure^2).
+    // max(c*e - t, 0)/e == max(c - t/e, 0) for e > 0.
     float exposure = uExposure;
     if (uAutoExposure != 0) exposure = uExposure * max(texture(uAvgLum, vec2(0.5)).r, 1e-4);
-    FragColor = vec4(max(c.rgb * exposure - vec3(uThreshold), vec3(0.0)), 1.0);
+    float e = max(exposure, 1e-4);
+    FragColor = vec4(max(c.rgb - vec3(uThreshold) / e, vec3(0.0)), 1.0);
 }
 )";
 
