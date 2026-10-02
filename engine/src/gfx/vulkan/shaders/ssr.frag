@@ -65,10 +65,9 @@ void main() {
 
     float maxDist = eng.uMaxDist * viewZ * 2.0 * tanHalf * aspect;
     float dt = max(maxDist / eng.uSteps, 1e-3);
-    // Deterministic, centred start (a per-pixel dither moved hits by a whole
-    // step and printed view-dependent stripes; the binary refinement already
-    // recovers exact crossings, so no dither).
-    float t = 0.1 + 0.5 * dt;
+    // Sub-step per-pixel jitter (GL twin in ssr.hpp): a deterministic start
+    // makes adjacent rows coherently hit/miss, printing horizontal stripes.
+    float t = 0.1 + (0.25 + 0.5 * Ign(gl_FragCoord.xy)) * dt;
     // Crossing detection: hit only when the ray goes from BEHIND the surface
     // to IN FRONT beyond the thickness - grazing rays that merely skim the
     // ground must not hit (they smeared the ground's dark regions in large

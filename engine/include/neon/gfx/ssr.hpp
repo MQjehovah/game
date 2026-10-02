@@ -147,13 +147,15 @@ void main() {
     // surfaces the ray never crossed - smears and phantom reflections).
     float maxDist = uMaxDist * viewZ * 2.0 * tanHalf * aspect; // world length
     float dt = max(maxDist / uSteps, 1e-3);
-    // Deterministic, centred march start. A per-pixel dithered start was tried
-    // to break step banding, but it moves each pixel's hit by up to a whole
-    // STEP (0.2+ world units) - the sampled reflection colour then varies far
-    // beyond what the blur can average, printing view-dependent dense stripes
-    // that shifted density while rotating. The binary refinement below already
-    // recovers exact crossings, so no dither is needed.
-    float t = 0.1 + 0.5 * dt;
+    // Sub-step per-pixel jitter of the march start. A fully deterministic
+    // start makes adjacent rows coherently hit or miss (the crossing test
+    // is quantization-sensitive), printing horizontal stripes of with/without
+    // reflection across the ground (measured: diff oscillated 130->15->127
+    // between adjacent row bands on a flat mirror). A quarter-step IGN jitter
+    // breaks the coherence while staying well within one step, so the binary
+    // refinement still recovers the exact crossing (the old full-step dither
+    // moved hits too far and printed its own stripes).
+    float t = 0.1 + (0.25 + 0.5 * Ign(gl_FragCoord.xy)) * dt;
     // prev/cur delta = sceneZ - rayZ at consecutive samples; a hit is a SIGN
     // FLIP (ray went from in front of the surface to behind it). A grazing
     // ray that merely skims the ground never flips and never hits.
