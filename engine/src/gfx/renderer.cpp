@@ -454,9 +454,6 @@ void Renderer::SetShadowsEnabled(bool enabled) {
 
 void Renderer::SetBloomEnabled(bool enabled) {
     bloomEnabled_ = enabled;
-    if (!enabled)
-        NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
-                     "Renderer: bloom disabled");
 }
 
 void Renderer::SetBloomParams(float threshold, float strength) {
