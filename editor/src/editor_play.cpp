@@ -585,15 +585,22 @@ static void StripEditorMetadata(core::Json& root,
 
 // The editor's play snapshot is built from the runtime World (+ direct-entity
 // fallback), which carries entities but NOT scene-root metadata. Navigation
-// (level.navgrid) and game vars live at the scene root, so re-attach them from
-// the parsed scene the editor loaded; without this a playtest silently loses
-// its navigation grid and units beeline through walls.
+// (level.navgrid), game vars, the ENVIRONMENT (ambient/sky/fog colours) and
+// the RENDERSTACK (post FX: ssao/ssr/bloom/tonemap/fog/exposure/grade) all
+// live at the scene root, so re-attach them from the parsed scene the editor
+// loaded; without this a playtest silently loses its navigation grid (units
+// beeline through walls), its authored lighting AND every post effect (the
+// scene's ssr:true never reached DrawSystem - SSR measured as a 0.1% no-op).
 static void CopySceneRootMetadata(core::Json& out, const core::Json& src) {
     if (!out.IsObject() || !src.IsObject()) return;
     if (const core::Json* lv = src.Get("level"))
         if (out.Get("level") == nullptr) out.object_["level"] = *lv;
     if (const core::Json* gv = src.Get("gameVars"))
         if (out.Get("gameVars") == nullptr) out.object_["gameVars"] = *gv;
+    if (const core::Json* en = src.Get("environment"))
+        if (out.Get("environment") == nullptr) out.object_["environment"] = *en;
+    if (const core::Json* rs = src.Get("renderstack"))
+        if (out.Get("renderstack") == nullptr) out.object_["renderstack"] = *rs;
 }
 
 void EditorApp::SyncWorldFromEntities() {
