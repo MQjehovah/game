@@ -428,12 +428,15 @@ void EditorApp::ApplyMaterialParams(SceneEntity& e) {
     // Asset paths are normalized ("@assets/x" -> "assets/x") then resolved by
     // the AssetManager against the project root VFS (IoRead). No per-call
     // project-dir prefixing — the unified asset path model handles all forms.
-    // Load a texture, using REPEAT wrap when the material tiles UVs (uvRepeat>1)
-    // so a small texture repeats across the surface instead of stretching
-    // (Clamp would smear the edge pixels over the whole UV>1 range).
-    auto loadTex = [this](const std::string& p, float repeat) {
+    // 3D mesh material textures ALWAYS load with REPEAT wrap: models can carry
+    // authored tiling UVs (beyond [0,1]) with uvRepeat=1, and ClampToEdge
+    // smears the edge pixels across the whole surface (the "UV repeat is
+    // wrong" streaks). Sprites/UI atlases need Clamp but load through their
+    // own paths, not here. This also means changing uvRepeat later never
+    // requires re-resolving the texture handle.
+    auto loadTex = [this](const std::string& p, float) {
         assets::TextureLoadOptions o;
-        o.wrap = repeat > 1.01f ? gfx::Wrap::Repeat : gfx::Wrap::Clamp;
+        o.wrap = gfx::Wrap::Repeat;
         return assetMgr_.LoadTexture(assets::NormalizeAssetPath(p), o);
     };
     if (!e.albedoTex.empty())

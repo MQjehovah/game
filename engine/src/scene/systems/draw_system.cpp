@@ -290,10 +290,13 @@ void DrawSystem::Build(ecs::World& world, AnimationSystem& anims) {
         item.mat.castShadow = m->castShadow;
         item.mat.receiveShadow = m->receiveShadow;
         if (content_.assets) {
-            // UV tiling: when uvRepeat > 1 the sampler must use REPEAT, else
-            // clamp pulls edge pixels and the tiling collapses into streaks.
+            // 3D mesh material textures always load with REPEAT wrap: models
+            // can carry authored tiling UVs (beyond [0,1]) with uvRepeat=1,
+            // and ClampToEdge smears edge pixels across the surface (the
+            // "UV repeat is wrong" streaks). Clamp stays for sprites/UI which
+            // resolve through different paths.
             assets::TextureLoadOptions opts;
-            if (m->uvRepeat > 1.01f) opts.wrap = gfx::Wrap::Repeat;
+            opts.wrap = gfx::Wrap::Repeat;
             if (!m->albedoTex.empty())
                 item.mat.albedo =
                     content_.assets->LoadTexture(content_.fullAssetPath(m->albedoTex), opts)
