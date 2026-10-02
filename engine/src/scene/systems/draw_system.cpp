@@ -879,10 +879,12 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
     // overrides the FX toggles + bloom/tonemap/exposure/color-grade. This is the
     // runtime application point that was missing (SetBloomParams etc. existed but
     // nothing fed them) — now the data-driven stack actually drives the renderer.
+    const RenderStack* sceneStack = nullptr;
     {
         const RenderStack* stack = nullptr;
         world.ViewAll<RenderStack>().ForEach(
             [&](ecs::Entity, const RenderStack& s) { if (!stack) stack = &s; });
+        sceneStack = stack;
         if (stack) {
             renderer.SetSsaoEnabled(stack->ssao);
             renderer.SetSsaoIntensity(stack->ssaoIntensity);
@@ -1065,6 +1067,15 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
             renderer.SetExposure(directional->exposure);
         if (cam.ortho) {
             renderer.SetFog({0.45f, 0.55f, 0.7f, 1.0f}, 1e9f, 1e10f);
+        } else if (sceneStack && sceneStack->fog) {
+            // A scene-level RenderStack already claimed fog as the density-based
+            // composite volumetric (and set the lit shader's linear fog off with
+            // 0/1e9) in the stack block above. Overwriting it here with the
+            // atmosphere defaults re-enabled the LINEAR fog on top of the
+            // volumetric one - double fog, distant terrain washed out ("the
+            // ambient/shadows feel wrong"). The editor applies the stack AFTER
+            // the atmosphere block, so edit mode never showed it; keep the same
+            // order semantics here by letting the stack's fog win.
         } else if (environment && environment->useAtmosphere) {
             renderer.SetFog(environment->fogColor, environment->fogNear, environment->fogFar);
         } else if (directional && directional->useAtmosphere) {
@@ -1088,10 +1099,23 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
         } else {
             renderer.SetDirectionalLight({-0.4f, -1.0f, -0.3f}, {0.8f, 0.8f, 0.8f}, 0.0f);
         }
-        if (environment)
+        // Ambient: mirror the editor's ApplySceneEnvironment rule so edit and
+        // play shade identically. An authored ambient source (environment or an
+        // explicit ambient-light entity) is authoritative for the flat term and
+        // turns the sky-IBL fill OFF - the lit shader multiplies the flat
+        // ambient by (1 - uIblStrength), so leaving IBL at its default 1.0 (the
+        // old behaviour here) silently zeroed the authored
+        // ambientColor/ambientStrength in play while edit mode showed them.
+        if (environment) {
             renderer.SetAmbientLight(environment->ambientColor, environment->ambientStrength);
-        else if (ambient)
+            renderer.SetIblStrength(0.0f);
+        } else if (ambient) {
             renderer.SetAmbientLight(ambient->color, ambient->ambientStrength);
+            renderer.SetIblStrength(0.0f);
+        } else {
+            renderer.SetAmbientLight({1.0f, 1.0f, 1.0f, 1.0f}, 0.1f);
+            renderer.SetIblStrength(1.0f);
+        }
         // PointLight objects (Unity-style) drive the renderer's point lights, so
         // campfire/firefly glows authored in a scene show up in the standalone
         // player too (the editor viewport already fed them). Up to
