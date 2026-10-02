@@ -302,8 +302,10 @@ TEST(BloomShaderSourceTokens) {
     const std::string bright(gfx::kBrightPassFragmentShader);
     CHECK(bright.find("#version 330 core") != std::string::npos);
     CHECK(bright.find("uThreshold") != std::string::npos);
-    // Bright pass thresholds AFTER the effective exposure (auto exposure aware).
-    CHECK(bright.find("max(c.rgb * exposure - vec3(uThreshold), vec3(0.0))") != std::string::npos);
+    // Bright pass thresholds AFTER the effective exposure (auto exposure aware)
+    // but returns UNEXPOSED units, so the composite's single `* exposure` does
+    // not scale the bloom by exposure a second time.
+    CHECK(bright.find("max(c.rgb - vec3(uThreshold) / e, vec3(0.0))") != std::string::npos);
 
     const std::string blur(gfx::kBlurFragmentShader);
     CHECK(blur.find("uTexelSize") != std::string::npos);

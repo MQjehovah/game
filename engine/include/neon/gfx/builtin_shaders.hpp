@@ -484,13 +484,20 @@ void main() {
     // as uIblStrength -> 1, so `--ibl 0` reproduces the pre-IBL look exactly
     // while the shadows/AO interplay below is unchanged (only the sun term is
     // shadowed; ambient stays unshadowed so shadows read as dim, not black).
-    vec3 iblIrradiance = texture(uIrradianceMap, vec2(0.5, N.y * 0.5 + 0.5)).rgb;
-    vec3 iblDiffuse = kd * iblIrradiance * albedo.rgb * uIblStrength;
     vec3 R = reflect(-V, N);
     float roughU = clamp((roughness - uRoughnessMin) / (1.0 - uRoughnessMin), 0.0, 1.0);
     vec3 prefiltered = texture(uPrefilteredMap, vec2(roughU, R.y * 0.5 + 0.5)).rgb;
+    // Split-sum specular DFG (f0*brdf.x + brdf.y); its complement (1 - E) is the
+    // ambient DIFFUSE energy share. The direct `kd` above carries the sun's
+    // Fresnel - applying that to the IBL modulated ambient by the sun angle and
+    // drove it to ~0 at grazing view angles. Filament: Fd = albedo*irradiance*
+    // (1 - E). Use a view/roughness-correct share for the indirect term.
     vec2 brdf = texture(uBrdfLUT, vec2(ndv, roughness)).rg;
-    vec3 iblSpecular = prefiltered * (f0 * brdf.x + brdf.y) * uIblStrength;
+    vec3 envBRDF = f0 * brdf.x + brdf.y;
+    vec3 kdIbl = (1.0 - envBRDF) * (1.0 - metallic);
+    vec3 iblIrradiance = texture(uIrradianceMap, vec2(0.5, N.y * 0.5 + 0.5)).rgb;
+    vec3 iblDiffuse = kdIbl * iblIrradiance * albedo.rgb * uIblStrength;
+    vec3 iblSpecular = prefiltered * envBRDF * uIblStrength;
     // A3 hemisphere ambient: split the legacy flat ambient into a sky/ground
     // gradient by the world normal's Y so upward-facing surfaces take the sky
     // tint (uAmbientColor) and downward-facing take a ground bounce
@@ -502,10 +509,10 @@ void main() {
                         albedo.rgb * hemiAmbient * uAmbient * (1.0 - uIblStrength);
     // A3 probe-field GI: the baked light-probe irradiance adds scene-local
     // indirect light (point-light / sun bounce baked per probe) on top of the
-    // sky-based IBL. Weighted by iblDiffuse's diffuse term only (kd) so it
-    // fills the indirect contribution without double-counting specular.
+    // sky-based IBL. Weighted by the indirect diffuse share (kdIbl) so it fills
+    // the indirect contribution without double-counting specular.
     if (uLightProbeEnabled != 0) {
-        ambientLight += kd * SampleLightProbeAtlas(vWorldPos) * albedo.rgb;
+        ambientLight += kdIbl * SampleLightProbeAtlas(vWorldPos) * albedo.rgb;
     }
     if (uHasAO) ambientLight *= mix(1.0, texture(uOcclusion, vUV).r, uAOStrength);
     vec3 color = (kd * albedo.rgb + spec) * uSunColor * ndl + ambientLight;
@@ -636,7 +643,12 @@ void main() {
         color += uHighlightColor * mix(albedo.rgb, vec3(1.0), 0.5) *
                  pow(rim, 2.5) * uHighlightStrength;
     }
-    FragColor = vec4(color, albedo.a);
+    // Alpha carries the surface ROUGHNESS, not albedo.a: the HDR target's alpha
+    // is unused downstream (composite/bloom/TAA read .rgb only), so it is the
+    // free channel the SSR pass reads to fade/blur its reflection by roughness
+    // (there is no MRT G-buffer in the forward path). MASK cutout already happened
+    // via discard above.
+    FragColor = vec4(color, roughness);
 }
 )";
 

@@ -331,13 +331,19 @@ void main() {
     vec3 F = F_Schlick(vdh, f0);
     vec3 spec = D * G * F / (4.0 * ndl * ndv + 1e-3);
     vec3 kd = (1.0 - F) * (1.0 - metallic);
-    vec3 iblIrradiance = texture(uIrradianceMap, vec2(0.5, N.y * 0.5 + 0.5)).rgb;
-    vec3 iblDiffuse = kd * iblIrradiance * albedo.rgb * eng.uIblStrength;
     vec3 R = reflect(-V, N);
     float roughU = clamp((roughness - eng.uRoughnessMin) / (1.0 - eng.uRoughnessMin), 0.0, 1.0);
     vec3 prefiltered = texture(uPrefilteredMap, vec2(roughU, R.y * 0.5 + 0.5)).rgb;
+    // Split-sum specular DFG; (1 - E) is the ambient DIFFUSE share. The direct
+    // `kd` (sun Fresnel) must not modulate the IBL (it varied with the sun and
+    // killed ambient at grazing view angles). Filament: Fd = albedo*irradiance*
+    // (1 - E). See the GL twin in builtin_shaders.hpp.
     vec2 brdf = texture(uBrdfLUT, vec2(ndv, roughness)).rg;
-    vec3 iblSpecular = prefiltered * (f0 * brdf.x + brdf.y) * eng.uIblStrength;
+    vec3 envBRDF = f0 * brdf.x + brdf.y;
+    vec3 kdIbl = (1.0 - envBRDF) * (1.0 - metallic);
+    vec3 iblIrradiance = texture(uIrradianceMap, vec2(0.5, N.y * 0.5 + 0.5)).rgb;
+    vec3 iblDiffuse = kdIbl * iblIrradiance * albedo.rgb * eng.uIblStrength;
+    vec3 iblSpecular = prefiltered * envBRDF * eng.uIblStrength;
     // A3 hemisphere ambient: split the flat ambient into a sky/ground gradient by
     // the world normal's Y so upward faces take the sky tint (uAmbientColor) and
     // downward faces a ground bounce (uAmbientGroundColor). Equal colours
@@ -347,9 +353,9 @@ void main() {
     vec3 ambientLight = iblDiffuse + iblSpecular +
                         albedo.rgb * hemiAmbient * eng.uAmbient * (1.0 - eng.uIblStrength);
     // A3 probe-field GI: baked scene-local indirect light on top of the sky IBL,
-    // weighted by the diffuse term only so specular is not double counted.
+    // weighted by the indirect diffuse share so specular is not double counted.
     if (eng.uLightProbeEnabled != 0) {
-        ambientLight += kd * SampleLightProbeAtlas(vWorldPos) * albedo.rgb;
+        ambientLight += kdIbl * SampleLightProbeAtlas(vWorldPos) * albedo.rgb;
     }
     if (eng.uHasAO != 0) ambientLight *= mix(1.0, texture(uOcclusion, vUV).r, eng.uAOStrength);
     vec3 color = (kd * albedo.rgb + spec) * eng.uSunColor * ndl + ambientLight;
@@ -478,5 +484,8 @@ void main() {
         color += eng.uHighlightColor * mix(albedo.rgb, vec3(1.0), 0.5) *
                  pow(rim, 2.5) * eng.uHighlightStrength;
     }
-    FragColor = vec4(color, albedo.a);
+    // Alpha carries surface ROUGHNESS (the HDR target's alpha is otherwise unused
+    // downstream) so the SSR pass can fade by roughness without an MRT G-buffer.
+    // GL twin in builtin_shaders.hpp.
+    FragColor = vec4(color, roughness);
 }

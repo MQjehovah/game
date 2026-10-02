@@ -29,6 +29,14 @@ void main() {
     if (ndc >= 1.0) { FragColor = vec4(0.0); return; } // sky -> no reflection
     float viewZ = ViewDepth(ndc);
 
+    // Reflector roughness, packed into the HDR scene alpha by the lit pass (the
+    // forward path has no MRT G-buffer). A rough surface reflects a wide lobe,
+    // not a mirror: fade SSR out as roughness grows, letting the roughness-
+    // prefiltered IBL specular take over (Godot/Filament disable SSR past ~0.7).
+    float surfRough = texture(uScene, vUV).a;
+    float roughFade = 1.0 - smoothstep(0.5, 0.72, surfRough);
+    if (roughFade <= 0.0) { FragColor = vec4(0.0); return; }
+
     float hdrH = 1.0 / eng.uTexelSize.y;
     float tanHalf = 0.5 * hdrH / eng.uProjScale;
     float aspect = eng.uTexelSize.y / eng.uTexelSize.x;
@@ -120,7 +128,7 @@ void main() {
                     !sameSurface && distance(suv, vUV) >= 0.01) {
                     float edge = smoothstep(0.0, 0.1, suv.x) * smoothstep(1.0, 0.9, suv.x) *
                                  smoothstep(0.0, 0.1, suv.y) * smoothstep(1.0, 0.9, suv.y);
-                    float fade = max(1.0 - t / maxDist, 0.0) * edge * tangentFade;
+                    float fade = max(1.0 - t / maxDist, 0.0) * edge * tangentFade * roughFade;
                     // Schlick Fresnel with the PHYSICAL water/dielectric F0
                     // (0.02) - see the GL twin for the full rationale (the
                     // 0.25 floor turned rough ground into mirrors).
