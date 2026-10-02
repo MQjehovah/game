@@ -985,3 +985,29 @@ set NEON_SHADOW_DEBUG=1   :: 直接输出级联阴影因子（白=受光，黑=�
 - 已知边界：对 Rift 这类"整图单 glb 内部自斗"（水体原语 vs 河床原语）无效——
   场景级材质会平移该实体的全部原语，无相对变化；需要 per-gltf-primitive
   材质覆盖（materialInclude 机制的扩展）才能定向偏移水体原语。列为后续。
+
+### 编辑/运行光照平价审计（本轮，含 4 个已修分歧 + 遗留项）
+
+已修（edit 与 play 不一致，均以编辑器所见为基准对齐）：
+1. 双重雾：play 的氛围雾回退链在 RenderStack 之后执行，把 stack 关掉的线性雾
+   （0/1e9）覆盖回 60..220 → 线性+体积双重雾（72c0b13）。
+2. 环境光清零：play 从不设 IBL 强度（默认 1.0），lit 着色器把平面环境光乘
+   (1-IBL) 后归零 → 场景设置的 ambientColor/Strength 失效，编辑器却生效
+   （72c0b13）。
+3. 曝光优先级反置：编辑器 stack 后应用（stack 赢），play 氛围后应用（氛围赢）
+   → play 现在与编辑器一致，带 stack 的场景以 stack 为准（d0c5787）。
+4. 无雾回退值：编辑器 60/140 vs 运行 60/220 → 统一 220（d0c5787）。
+
+审计确认无问题的部分：
+- CSM 数学（级联拟合/bias/texel 对齐）此前已验证；阴影只乘太阳项；
+- 场景 uniform 戳记机制：SetIblStrength 不自增戳记，但两条路径中紧随的
+  SetAmbientLight 会增，实践中安全；
+- 点光源收集两端同构；2D 雾禁用逻辑等价（编辑器查 projectMode，运行查
+  cam.ortho，效果一致）。
+
+遗留（低优先级，已记录）：
+- SetAmbientGroundColor 无任何调用者 → 半球环境光地面色永远是 0.5 灰默认；
+  可考虑从 environment.ambientColor 推导（下亮上暗的自然地面反弹）。
+- skyTop/skyHorizon 仅在 useAtmosphere=true 时生效（否则用硬编码默认天），
+  自定义天色但不开启 atmosphere 的场景两端一致地被忽略（不算分歧，属设计
+  门槛，但作者容易踩）。
