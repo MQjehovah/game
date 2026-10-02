@@ -44,6 +44,7 @@ $shaders = @(
     "ssao_blur;post.vert;ssao_blur.frag",
     "volumetric;post.vert;volumetric.frag",
     "ssr;post.vert;ssr.frag",
+"ssr_blur;post.vert;ssr_blur.frag",
     # A5 auto-exposure chain.
     "autoexposure_lum;post.vert;autoexposure_lum.frag",
     "autoexposure_avg;post.vert;autoexposure_avg.frag",

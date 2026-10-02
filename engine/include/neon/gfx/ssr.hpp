@@ -15,9 +15,38 @@ namespace neon::gfx {
 // reflects its view ray off a depth-gradient normal, marches it in screen
 // space, and pulls the reflected colour where it hits nearby geometry.
 
-constexpr int kSsrSteps = 24;
+constexpr int kSsrSteps = 48;
 constexpr float kSsrThickness = 0.03f; // depth epsilon, RELATIVE to ray depth
-constexpr float kSsrMaxDist = 0.35f;   // max screen-space ray length in UV
+constexpr float kSsrMaxDist = 0.6f;   // max screen-space ray length in UV
+
+// Premultiplied-alpha separable blur for the SSR chain. A plain gaussian on
+// RGBA smears sparse hits into dark halos: a no-hit texel (0,0,0,0) next to a
+// hit (colour, .6) averages toward BLACK, and the composite then blends that
+// dimmed colour at the spread alpha - vertical streaks and ghost smears around
+// every reflection. Blurring (rgb*a, a) and un-premultiplying keeps black
+// texels contributing nothing.
+inline constexpr const char* kSsrBlurFragmentShader = R"(
+#version 330 core
+in vec2 vUV;
+out vec4 FragColor;
+uniform sampler2D uTex;
+uniform vec2 uTexelSize;
+uniform vec2 uDirection;
+void main() {
+    const float w[9] = float[9](0.0048, 0.0287, 0.1028, 0.2210, 0.2854,
+                                0.2210, 0.1028, 0.0287, 0.0048);
+    vec2 off = uTexelSize * uDirection;
+    vec3 psum = vec3(0.0);
+    float asum = 0.0;
+    for (int i = 0; i < 9; ++i) {
+        vec4 s = texture(uTex, vUV + off * float(i - 4));
+        psum += s.rgb * s.a * w[i];
+        asum += s.a * w[i];
+    }
+    FragColor = vec4(asum > 1e-4 ? psum / asum : vec3(0.0), asum);
+}
+)";
+
 
 // One ray-march step in screen space. `rayDepth` is the ray's view-space depth
 // at the current sample, `sceneDepth` the decoded scene depth at the same UV.
@@ -166,15 +195,17 @@ void main() {
             if (-p.z >= uNear) {
                 suv = vec2(p.x / (-p.z * tanHalf * aspect),
                            p.y / (-p.z * tanHalf)) * 0.5 + 0.5;
+                // Self-reflection guard: reject only hits on the ORIGIN'S OWN
+                // SURFACE, detected by DEPTH (the hit lies at essentially the
+                // origin's view depth = the same plane), or hits inside a tiny
+                // 1-texel-ish UV radius. The old fixed 0.08-UV disc (~100px)
+                // also rejected DIFFERENT surfaces near the contact point -
+                // a mirror floor at a tower's base lost the tower's contact
+                // reflection and kept only a detached ghost further out.
+                float hitZ = ViewDepth(LoadDepth(suv));
+                bool sameSurface = abs(hitZ - viewZ) < viewZ * 0.02;
                 if (suv.x >= 0.0 && suv.x <= 1.0 && suv.y >= 0.0 && suv.y <= 1.0 &&
-                    distance(suv, vUV) >= 0.08) {
-                // ^ Self-reflection guard: a hit that lands back in the
-                // ORIGIN's own screen neighbourhood is the surface reflecting
-                // itself - sampling it just replays its own shading, and on
-                // the ground that amplified every shadow artifact (stripes,
-                // cascade seams) across the whole reflector, leaving only the
-                // edge-fade rim bright. Real object reflections land farther
-                // away on screen and pass.
+                    !sameSurface && distance(suv, vUV) >= 0.01) {
                 // Fade with march distance and toward the screen edges: samples
                 // near the border would extrapolate off-screen geometry.
                 float edge = smoothstep(0.0, 0.1, suv.x) * smoothstep(1.0, 0.9, suv.x) *

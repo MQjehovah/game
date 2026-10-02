@@ -37,6 +37,9 @@ public:
         ShaderHandle ssaoBlur;        // AO/体积/SSR 共享的分离式高斯模糊
         ShaderHandle volumetricShader;
         ShaderHandle ssrShader;
+        // Premultiplied-alpha blur for the SSR chain (plain gaussian smears
+        // sparse hits into dark halos / vertical streaks).
+        ShaderHandle ssrBlur;
         ShaderHandle brightPass;      // bloom bright
         ShaderHandle blur;            // bloom 分离式模糊
         ShaderHandle downsample;
@@ -213,6 +216,7 @@ private:
     ShaderHandle ssaoBlur_;
     ShaderHandle volumetricShader_;
     ShaderHandle ssrShader_;
+    ShaderHandle ssrBlur_;
     ShaderHandle bright_;
     ShaderHandle blur_;
     ShaderHandle downsample_;

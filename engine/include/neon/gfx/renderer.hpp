@@ -707,6 +707,7 @@ private:
     ShaderHandle ssaoDepthSkinnedShader_; // GPU-skinned variant (linear depth)
     ShaderHandle volumetricShader_;
     ShaderHandle ssrShader_;
+    ShaderHandle ssrBlurShader_;
     ShaderHandle skyboxShader_;
     TextureHandle white_;
     MeshHandle probeQuadMesh_;

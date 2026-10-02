@@ -109,11 +109,16 @@ void main() {
             if (-p.z >= eng.uNear) {
                 suv = vec2(p.x / (-p.z * tanHalf * aspect),
                            p.y / (-p.z * tanHalf)) * 0.5 + 0.5;
-                // Self-reflection guard: hits back in the ORIGIN's own screen
-                // neighbourhood replay the surface's own shading (on the ground
-                // that amplified every shadow artifact across the reflector).
+                // Self-reflection guard (depth-based, GL twin in ssr.hpp):
+                // reject only hits on the ORIGIN'S OWN surface (same view
+                // depth = same plane) or within a 1-texel-ish UV radius. The
+                // old fixed 0.08-UV disc also rejected DIFFERENT surfaces near
+                // the contact point - a mirror at an object's base lost its
+                // contact reflection and kept a detached ghost further out.
+                float hitZ = ViewDepth(LoadDepth(suv));
+                bool sameSurface = abs(hitZ - viewZ) < viewZ * 0.02;
                 if (suv.x >= 0.0 && suv.x <= 1.0 && suv.y >= 0.0 && suv.y <= 1.0 &&
-                    distance(suv, vUV) >= 0.08) {
+                    !sameSurface && distance(suv, vUV) >= 0.01) {
                     float edge = smoothstep(0.0, 0.1, suv.x) * smoothstep(1.0, 0.9, suv.x) *
                                  smoothstep(0.0, 0.1, suv.y) * smoothstep(1.0, 0.9, suv.y);
                     float fade = max(1.0 - t / maxDist, 0.0) * edge * tangentFade;

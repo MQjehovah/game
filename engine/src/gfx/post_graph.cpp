@@ -29,6 +29,7 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
     ssaoBlur_ = shaders.ssaoBlur;
     volumetricShader_ = shaders.volumetricShader;
     ssrShader_ = shaders.ssrShader;
+    ssrBlur_ = shaders.ssrBlur.Valid() ? shaders.ssrBlur : shaders.blur;
     bright_ = shaders.brightPass;
     blur_ = shaders.blur;
     downsample_ = shaders.downsample;
@@ -269,11 +270,11 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
     ssrPassIndex_ = add(std::move(ssr));
 
     // 9/10. SSR blur (H then V), ping-ponging ssr/ssrBlurA/ssrBlurB.
-    ssrBlurHIndex_ = add(blurPass("post.ssrBlurH", blur_, ssr_, ssrBlurA_,
+    ssrBlurHIndex_ = add(blurPass("post.ssrBlurH", ssrBlur_, ssr_, ssrBlurA_,
                                   math::Vec2{1.0f, 0.0f},
                                   math::Vec2{1.0f / static_cast<float>(hdrW_),
                                              1.0f / static_cast<float>(hdrH_)}));
-    ssrBlurVIndex_ = add(blurPass("post.ssrBlurV", blur_, ssrBlurA_, ssrBlurB_,
+    ssrBlurVIndex_ = add(blurPass("post.ssrBlurV", ssrBlur_, ssrBlurA_, ssrBlurB_,
                                   math::Vec2{0.0f, 1.0f},
                                   math::Vec2{1.0f / static_cast<float>(hdrW_),
                                              1.0f / static_cast<float>(hdrH_)}));

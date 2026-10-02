@@ -120,6 +120,7 @@ void Renderer::Shutdown() {
     if (unlitInstancedShader_.Valid()) backend_->DestroyShader(unlitInstancedShader_);
     if (brightPassShader_.Valid()) backend_->DestroyShader(brightPassShader_);
     if (blurShader_.Valid()) backend_->DestroyShader(blurShader_);
+    if (ssrBlurShader_.Valid()) backend_->DestroyShader(ssrBlurShader_);
     if (downsampleShader_.Valid()) backend_->DestroyShader(downsampleShader_);
     if (upsampleAddShader_.Valid()) backend_->DestroyShader(upsampleAddShader_);
     if (compositeShader_.Valid()) backend_->DestroyShader(compositeShader_);
@@ -239,6 +240,8 @@ void Renderer::InitBuiltinResources() {
     volumetricShader_ =
         backend_->CreateShader(kPostVertexShader, kVolumetricFragmentShader, "volumetric");
     ssrShader_ = backend_->CreateShader(kPostVertexShader, kSsrFragmentShader, "ssr");
+    ssrBlurShader_ =
+        backend_->CreateShader(kPostVertexShader, kSsrBlurFragmentShader, "ssr_blur");
     skyboxShader_ = backend_->CreateShader(kSkyboxVertexShader, kSkyboxFragmentShader, "skybox");
     NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
                  "Renderer: SSAO/SSR/volumetric shaders %s",
@@ -1852,6 +1855,7 @@ void Renderer::RebuildHdrTargets() {
     shaders.ssaoBlur = ssaoBlurShader_;
     shaders.volumetricShader = volumetricShader_;
     shaders.ssrShader = ssrShader_;
+    shaders.ssrBlur = ssrBlurShader_;
     shaders.brightPass = brightPassShader_;
     shaders.blur = blurShader_;
     shaders.downsample = downsampleShader_;
