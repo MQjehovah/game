@@ -3041,7 +3041,7 @@ private:
                                     VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
                                     VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT, 0,
                                     VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-                                    VK_IMAGE_ASPECT_DEPTH_BIT);
+                                    DepthAspect());
                     SetTrackedLayout(depthImage, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
                 }
             }
@@ -3438,7 +3438,8 @@ private:
         rs.cullMode = currentCull_ == 1 ? VK_CULL_MODE_BACK_BIT
                      : currentCull_ == 2 ? VK_CULL_MODE_FRONT_BIT
                                          : VK_CULL_MODE_NONE;
-        rs.frontFace = prog->flipped ? VK_FRONT_FACE_CLOCKWISE : VK_FRONT_FACE_COUNTER_CLOCKWISE;
+        rs.frontFace = prog->flipped ? VK_FRONT_FACE_COUNTER_CLOCKWISE
+                                     : VK_FRONT_FACE_CLOCKWISE;
         rs.lineWidth = 1.0f;
 
         const uint32_t samples = rp == RpKind::Float4 ? 4 : (rp == RpKind::Float2 ? 2 : 1);
