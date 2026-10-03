@@ -72,6 +72,50 @@ void SceneState::SetSky(const Color& top, const Color& horizon) {
     }
 }
 
+void SceneState::SetSkySource(const uint8_t* rgba, int width, int height) {
+    skyEquirect_.clear();
+    skyEquirectW_ = 0;
+    skyEquirectH_ = 0;
+    if (!rgba || width <= 0 || height <= 0) {
+        // Procedural sky: force a rebuild so the gradient maps come back.
+        iblValid_ = false;
+        return;
+    }
+    // Box-downsample to at most 1024 wide: the prefilter's Monte-Carlo loop
+    // samples this buffer randomly, so a full 8K HDRI would be cache-hostile
+    // for no visual gain (the prefiltered map is 64 texels).
+    constexpr int kMaxW = 1024;
+    const int dstW = std::min(width, kMaxW);
+    const int dstH = std::max(1, height * dstW / std::max(width, 1));
+    const int sx = std::max(1, width / dstW);
+    const int sy = std::max(1, height / dstH);
+    skyEquirect_.resize(static_cast<size_t>(dstW) * dstH * 4);
+    for (int y = 0; y < dstH; ++y) {
+        for (int x = 0; x < dstW; ++x) {
+            int r = 0, g = 0, b = 0, n = 0;
+            for (int oy = 0; oy < sy; ++oy) {
+                const int yy = std::min(height - 1, y * sy + oy);
+                for (int ox = 0; ox < sx; ++ox) {
+                    const int xx = std::min(width - 1, x * sx + ox);
+                    const uint8_t* p = rgba + (static_cast<size_t>(yy) * width + xx) * 4;
+                    r += p[0];
+                    g += p[1];
+                    b += p[2];
+                    ++n;
+                }
+            }
+            uint8_t* d = skyEquirect_.data() + (static_cast<size_t>(y) * dstW + x) * 4;
+            d[0] = static_cast<uint8_t>(r / std::max(n, 1));
+            d[1] = static_cast<uint8_t>(g / std::max(n, 1));
+            d[2] = static_cast<uint8_t>(b / std::max(n, 1));
+            d[3] = 255;
+        }
+    }
+    skyEquirectW_ = dstW;
+    skyEquirectH_ = dstH;
+    iblValid_ = false; // rebuild with the new source
+}
+
 void SceneState::SetIblStrength(float strength) {
     strength = std::max(0.0f, std::min(1.0f, strength));
     const bool wasZero = iblStrength_ <= 0.0f;
@@ -105,19 +149,30 @@ void SceneState::RecomputeIbl(const Color& top, const Color& horizon) {
     // RGBA8: the sky gradient is an LDR environment (all texels <= 1) so the
     // 8-bit upload loses nothing; a future HDR environment would need a
     // float-texture path in the backend.
-    const std::vector<uint8_t> irr = ibl::BuildIrradianceMap(top, horizon, kIblGradientPower);
-    const std::vector<uint8_t> pf = ibl::BuildPrefilteredMap(top, horizon, kIblGradientPower);
+    // Octahedral (azimuth-aware) maps. When the scene supplies a decoded HDRI
+    // the bake samples it directly, so reflections show the photographed sky's
+    // actual layout; otherwise the procedural vertical gradient is used.
+    const bool haveSource =
+        !skyEquirect_.empty() && skyEquirectW_ > 0 && skyEquirectH_ > 0;
+    const std::vector<uint8_t> irr =
+        haveSource ? ibl::BuildOctaIrradianceFromEquirect(skyEquirect_.data(), skyEquirectW_,
+                                                          skyEquirectH_)
+                   : ibl::BuildOctaIrradiance(top, horizon, kIblGradientPower);
+    const std::vector<uint8_t> pf =
+        haveSource ? ibl::BuildOctaPrefilteredFromEquirect(skyEquirect_.data(), skyEquirectW_,
+                                                           skyEquirectH_)
+                   : ibl::BuildOctaPrefiltered(top, horizon, kIblGradientPower);
     if (iblIrradianceTex_.Valid()) backend_->DestroyTexture(iblIrradianceTex_);
     if (iblPrefilteredTex_.Valid()) backend_->DestroyTexture(iblPrefilteredTex_);
     TextureDesc irrDesc;
-    irrDesc.width = 1;
-    irrDesc.height = ibl::kEnvRows;
+    irrDesc.width = ibl::kOctaIrradianceSize;
+    irrDesc.height = ibl::kOctaIrradianceSize;
     irrDesc.rgba = irr.data();
     irrDesc.filter = Filter::Linear;
     iblIrradianceTex_ = backend_->CreateTexture(irrDesc);
     TextureDesc pfDesc;
-    pfDesc.width = ibl::kRoughnessCols;
-    pfDesc.height = ibl::kEnvRows;
+    pfDesc.width = ibl::kOctaPrefilterSize;
+    pfDesc.height = ibl::kOctaPrefilterSize * ibl::kOctaRoughnessLevels;
     pfDesc.rgba = pf.data();
     pfDesc.filter = Filter::Linear;
     iblPrefilteredTex_ = backend_->CreateTexture(pfDesc);

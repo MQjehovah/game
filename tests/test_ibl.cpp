@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cmath>
 #include <vector>
 
@@ -371,4 +372,78 @@ TEST(IblRendererHeadlessLifecycle) {
     fx.renderer.SetIblStrength(1.0f);
     fx.renderer.SetSky(nightTop, nightHor);
     CHECK_EQ(fx.renderer.IblBuildCount(), 3u);
+}
+
+// ---------------------------------------------------------------------------
+// Octahedral environment maps (azimuth-aware).
+// ---------------------------------------------------------------------------
+
+TEST(OctahedralEncodeDecodeRoundTrip) {
+    const math::Vec3 dirs[] = {
+        {1, 0, 0},  {-1, 0, 0}, {0, 1, 0},  {0, -1, 0}, {0, 0, 1},
+        {0, 0, -1}, {1, 1, 1},  {-1, -1, -1}, {0.3f, -0.7f, 0.2f}, {-0.6f, 0.2f, -0.9f},
+    };
+    for (const math::Vec3& d : dirs) {
+        const math::Vec2 uv = gfx::ibl::OctahedralEncode(d);
+        CHECK(uv.x >= -1e-4f && uv.x <= 1.0f + 1e-4f);
+        CHECK(uv.y >= -1e-4f && uv.y <= 1.0f + 1e-4f);
+        const math::Vec3 back = gfx::ibl::OctahedralDecode(uv);
+        CHECK_NEAR(back.x, d.Normalized().x, 1e-3);
+        CHECK_NEAR(back.y, d.Normalized().y, 1e-3);
+        CHECK_NEAR(back.z, d.Normalized().z, 1e-3);
+    }
+}
+
+TEST(OctahedralMapsWhiteEnvironment) {
+    // A white environment must integrate to white irradiance and white
+    // prefiltered specular at every texel (energy preserving), and the map
+    // sizes must match the constants the shader derives from textureSize().
+    const gfx::Color white{1.0f, 1.0f, 1.0f, 1.0f};
+    const std::vector<uint8_t> irr = gfx::ibl::BuildOctaIrradiance(white, white, kGp);
+    CHECK_EQ(irr.size(), static_cast<size_t>(gfx::ibl::kOctaIrradianceSize) *
+                             gfx::ibl::kOctaIrradianceSize * 4);
+    for (size_t i = 0; i < irr.size(); i += 4) {
+        CHECK(irr[i] >= 250 && irr[i + 1] >= 250 && irr[i + 2] >= 250);
+    }
+    const std::vector<uint8_t> pf = gfx::ibl::BuildOctaPrefiltered(white, white, kGp);
+    CHECK_EQ(pf.size(),
+             static_cast<size_t>(gfx::ibl::kOctaPrefilterSize) *
+                 (gfx::ibl::kOctaPrefilterSize * gfx::ibl::kOctaRoughnessLevels) * 4);
+    for (size_t i = 0; i < pf.size(); i += 4) {
+        CHECK(pf[i] >= 250 && pf[i + 1] >= 250 && pf[i + 2] >= 250);
+    }
+}
+
+TEST(OctahedralPrefilterRespectsAzimuth) {
+    // Synthetic 4x2 equirect: the +X half is bright red, the -X half dark. A
+    // reflection pointing +X must be redder than one pointing -X - the old
+    // Y-only map could not distinguish them at all.
+    constexpr int W = 4, H = 2;
+    std::vector<uint8_t> eq(static_cast<size_t>(W) * H * 4, 0);
+    for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+            // u = atan2(z,x)/2pi + 0.5: +Z sits at u=0.75 (x=2..3, bright),
+            // -Z at u=0.25 (x=0..1, dark).
+            const bool bright = (x >= 2);
+            uint8_t* p = eq.data() + (static_cast<size_t>(y) * W + x) * 4;
+            p[0] = bright ? 255 : 0;
+            p[1] = 0;
+            p[2] = 0;
+            p[3] = 255;
+        }
+    }
+    const std::vector<uint8_t> pf = gfx::ibl::BuildOctaPrefilteredFromEquirect(eq.data(), W, H);
+    auto sample = [&](const math::Vec3& dir) {
+        const math::Vec2 uv = gfx::ibl::OctahedralEncode(dir);
+        const int size = gfx::ibl::kOctaPrefilterSize;
+        // Roughness tile 0 (mirror) starts at row 0; texel for uv.
+        const int x = std::min(size - 1, static_cast<int>(uv.x * size));
+        const int y = std::min(size - 1, static_cast<int>(uv.y * size));
+        const size_t idx = (static_cast<size_t>(y) * size + x) * 4;
+        return static_cast<int>(pf[idx]);
+    };
+    const int plusZ = sample({0, 0, 1});
+    const int minusZ = sample({0, 0, -1});
+    CHECK(plusZ > minusZ);
+    CHECK(plusZ > 20);
 }

@@ -191,6 +191,176 @@ std::vector<uint8_t> BuildPrefilteredMap(const Color& top, const Color& horizon,
     return out;
 }
 
+// --- Octahedral helpers -----------------------------------------------------
+namespace {
+
+constexpr float kPi = 3.14159265358979323846f;
+
+// Decoded equirect frame (row 0 = zenith) sampled with bilinear filtering and
+// azimuth wrap. Returns 0..1 RGB (the engine is gamma-unaware, so the raw
+// bytes are used exactly like the old top/horizon extraction).
+math::Vec3 SampleEquirect(const uint8_t* rgba, int w, int h, const math::Vec3& dirIn) {
+    if (!rgba || w <= 0 || h <= 0) return {1.0f, 1.0f, 1.0f};
+    const math::Vec3 d = dirIn.Normalized();
+    const float u = std::atan2(d.z, d.x) * (0.5f / kPi) + 0.5f;
+    const float v = std::acos(math::Clamp(d.y, -1.0f, 1.0f)) / kPi;
+    const float x = u * static_cast<float>(w) - 0.5f;
+    const float y = v * static_cast<float>(h) - 0.5f;
+    const int x0 = static_cast<int>(std::floor(x));
+    const int y0 = static_cast<int>(std::floor(y));
+    const float fx = x - static_cast<float>(x0);
+    const float fy = y - static_cast<float>(y0);
+    auto fetch = [&](int xi, int yi) {
+        xi %= w;
+        if (xi < 0) xi += w;
+        yi = std::max(0, std::min(h - 1, yi));
+        const uint8_t* p = rgba + (static_cast<size_t>(yi) * w + xi) * 4;
+        return math::Vec3{p[0] * (1.0f / 255.0f), p[1] * (1.0f / 255.0f),
+                          p[2] * (1.0f / 255.0f)};
+    };
+    const math::Vec3 c00 = fetch(x0, y0);
+    const math::Vec3 c10 = fetch(x0 + 1, y0);
+    const math::Vec3 c01 = fetch(x0, y0 + 1);
+    const math::Vec3 c11 = fetch(x0 + 1, y0 + 1);
+    const math::Vec3 cx0 = c00 * (1.0f - fx) + c10 * fx;
+    const math::Vec3 cx1 = c01 * (1.0f - fx) + c11 * fx;
+    return cx0 * (1.0f - fy) + cx1 * fy;
+}
+
+// Generic cosine-hemisphere irradiance over an arbitrary radiance function.
+template <typename F>
+math::Vec3 IrradianceGeneric(const math::Vec3& n, F&& radiance) {
+    const math::Vec3 N = n.Normalized();
+    math::Vec3 t, b;
+    TangentBasis(N, t, b);
+    math::Vec3 acc{};
+    for (int i = 0; i < kIrradianceSamples; ++i) {
+        const math::Vec2 xi = Hammersley(i, kIrradianceSamples);
+        const float phi = math::kTwoPi * xi.x;
+        const float cosTheta = std::sqrt(1.0f - xi.y);
+        const float sinTheta = std::sqrt(xi.y);
+        const math::Vec3 L =
+            (t * (std::cos(phi) * sinTheta) + b * (std::sin(phi) * sinTheta) + N * cosTheta)
+                .Normalized();
+        acc += radiance(L);
+    }
+    return acc * (1.0f / static_cast<float>(kIrradianceSamples));
+}
+
+// Generic GGX-prefiltered specular over an arbitrary radiance function.
+template <typename F>
+math::Vec3 PrefilterGeneric(const math::Vec3& r, float roughness, F&& radiance) {
+    const math::Vec3 N = r.Normalized();
+    const float alpha = math::Saturate(roughness) * math::Saturate(roughness);
+    math::Vec3 t, b;
+    TangentBasis(N, t, b);
+    math::Vec3 acc{};
+    float weight = 0.0f;
+    for (int i = 0; i < kRadianceSamples; ++i) {
+        const math::Vec2 xi = Hammersley(i, kRadianceSamples);
+        const math::Vec3 H = ImportanceSampleGGX(xi, alpha, t, b, N);
+        const math::Vec3 L = (2.0f * math::Dot(N, H) * H - N).Normalized();
+        const float ndl = math::Dot(N, L);
+        if (ndl <= 0.0f) continue;
+        acc += radiance(L) * ndl;
+        weight += ndl;
+    }
+    return weight > 0.0f ? acc * (1.0f / weight) : math::Vec3{};
+}
+
+template <typename F>
+std::vector<uint8_t> BuildOctaIrradianceGeneric(int size, F&& radiance) {
+    std::vector<uint8_t> out;
+    out.reserve(static_cast<size_t>(size) * size * 4);
+    for (int y = 0; y < size; ++y) {
+        for (int x = 0; x < size; ++x) {
+            const math::Vec2 uv{(static_cast<float>(x) + 0.5f) / size,
+                                (static_cast<float>(y) + 0.5f) / size};
+            Push(out, IrradianceGeneric(OctahedralDecode(uv), radiance));
+        }
+    }
+    return out;
+}
+
+template <typename F>
+std::vector<uint8_t> BuildOctaPrefilteredGeneric(int size, F&& radiance) {
+    std::vector<uint8_t> out;
+    out.reserve(static_cast<size_t>(size) * (size * kOctaRoughnessLevels) * 4);
+    for (int level = 0; level < kOctaRoughnessLevels; ++level) {
+        const float t = kOctaRoughnessLevels > 1
+                            ? static_cast<float>(level) / static_cast<float>(kOctaRoughnessLevels - 1)
+                            : 0.0f;
+        const float roughness = kRoughnessMin + (1.0f - kRoughnessMin) * t;
+        for (int y = 0; y < size; ++y) {
+            for (int x = 0; x < size; ++x) {
+                const math::Vec2 uv{(static_cast<float>(x) + 0.5f) / size,
+                                    (static_cast<float>(y) + 0.5f) / size};
+                Push(out, PrefilterGeneric(OctahedralDecode(uv), roughness, radiance));
+            }
+        }
+    }
+    return out;
+}
+
+} // namespace
+
+math::Vec2 OctahedralEncode(const math::Vec3& nIn) {
+    math::Vec3 n = nIn.Normalized();
+    const float inv = 1.0f / std::max(std::fabs(n.x) + std::fabs(n.y) + std::fabs(n.z), 1e-8f);
+    n.x *= inv;
+    n.y *= inv;
+    if (n.z < 0.0f) {
+        const float ox = (1.0f - std::fabs(n.y)) * (n.x >= 0.0f ? 1.0f : -1.0f);
+        const float oy = (1.0f - std::fabs(n.x)) * (n.y >= 0.0f ? 1.0f : -1.0f);
+        n.x = ox;
+        n.y = oy;
+    }
+    return {n.x * 0.5f + 0.5f, n.y * 0.5f + 0.5f};
+}
+
+math::Vec3 OctahedralDecode(const math::Vec2& uv) {
+    const float fx = uv.x * 2.0f - 1.0f;
+    const float fy = uv.y * 2.0f - 1.0f;
+    math::Vec3 n{fx, fy, 1.0f - std::fabs(fx) - std::fabs(fy)};
+    if (n.z < 0.0f) {
+        const float ox = (1.0f - std::fabs(n.y)) * (n.x >= 0.0f ? 1.0f : -1.0f);
+        const float oy = (1.0f - std::fabs(n.x)) * (n.y >= 0.0f ? 1.0f : -1.0f);
+        n.x = ox;
+        n.y = oy;
+    }
+    return n.Normalized();
+}
+
+std::vector<uint8_t> BuildOctaIrradiance(const Color& top, const Color& horizon,
+                                         float gradientPower) {
+    return BuildOctaIrradianceGeneric(kOctaIrradianceSize, [&](const math::Vec3& d) {
+        const Color c = SkyColor(top, horizon, d, gradientPower);
+        return math::Vec3{c.r, c.g, c.b};
+    });
+}
+
+std::vector<uint8_t> BuildOctaPrefiltered(const Color& top, const Color& horizon,
+                                          float gradientPower) {
+    return BuildOctaPrefilteredGeneric(kOctaPrefilterSize, [&](const math::Vec3& d) {
+        const Color c = SkyColor(top, horizon, d, gradientPower);
+        return math::Vec3{c.r, c.g, c.b};
+    });
+}
+
+std::vector<uint8_t> BuildOctaIrradianceFromEquirect(const uint8_t* rgba, int width, int height) {
+    return BuildOctaIrradianceGeneric(kOctaIrradianceSize,
+                                      [&](const math::Vec3& d) {
+                                          return SampleEquirect(rgba, width, height, d);
+                                      });
+}
+
+std::vector<uint8_t> BuildOctaPrefilteredFromEquirect(const uint8_t* rgba, int width, int height) {
+    return BuildOctaPrefilteredGeneric(kOctaPrefilterSize,
+                                       [&](const math::Vec3& d) {
+                                           return SampleEquirect(rgba, width, height, d);
+                                       });
+}
+
 std::vector<uint8_t> BuildBrdfLut() {    std::vector<uint8_t> out;
     out.reserve(static_cast<size_t>(kBrdfLutSize) * kBrdfLutSize * 4);
     for (int r = 0; r < kBrdfLutSize; ++r) {

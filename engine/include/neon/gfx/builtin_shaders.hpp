@@ -407,6 +407,62 @@ float CascadeShadow(int c, vec3 worldPos, vec3 norm) {
     if (c == 1) return ShadowFactor(uShadowMap1, sc.xy, sc.z, biasUnit);
     return ShadowFactor(uShadowMap2, sc.xy, sc.z, biasUnit);
 }
+// Octahedral direction <-> uv and seam-aware bilinear sampling. A plain
+// texture() lookup interpolates across the octahedron's unfolded edge and
+// leaves a hard seam (visible on smooth mirrors); the wrap fold below sends
+// the out-of-range neighbours to the opposite edge before the fetch, exactly
+// like the CPU bake (matches ibl.cpp OctahedralEncode/Decode).
+vec2 OctWrap(vec2 v) {
+    return (1.0 - abs(v.yx)) * vec2(v.x >= 0.0 ? 1.0 : -1.0, v.y >= 0.0 ? 1.0 : -1.0);
+}
+vec2 OctEncode(vec3 n) {
+    n /= max(abs(n.x) + abs(n.y) + abs(n.z), 1e-8);
+    if (n.z < 0.0) n.xy = OctWrap(n.xy);
+    return n.xy * 0.5 + 0.5;
+}
+vec3 OctDecode(vec2 uv) {
+    vec2 e = uv * 2.0 - 1.0;
+    vec3 n = vec3(e.x, e.y, 1.0 - abs(e.x) - abs(e.y));
+    if (n.z < 0.0) n.xy = OctWrap(n.xy);
+    return normalize(n);
+}
+// Bilinear within one octahedral tile occupying v in [v0,v1] of the atlas.
+vec3 OctBilinear(sampler2D s, vec2 uv, float v0, float v1) {
+    ivec2 sz = textureSize(s, 0);
+    float res = float(sz.x);
+    vec2 p = uv * res - 0.5;
+    vec2 f = fract(p);
+    vec2 i = floor(p);
+    vec3 acc = vec3(0.0);
+    for (int j = 0; j < 2; ++j) {
+        for (int k = 0; k < 2; ++k) {
+            vec2 corner = (i + vec2(float(k), float(j)) + 0.5) / res;
+            vec2 e = OctEncode(OctDecode(corner));
+            int x = clamp(int(floor(e.x * res)), 0, sz.x - 1);
+            int yLocal = clamp(int(floor(e.y * res)), 0, int(res) - 1);
+            float vt = (float(yLocal) + 0.5) / res;
+            int y = clamp(int(mix(v0, v1, vt) * float(sz.y)), 0, sz.y - 1);
+            float w = (k == 0 ? 1.0 - f.x : f.x) * (j == 0 ? 1.0 - f.y : f.y);
+            acc += texelFetch(s, ivec2(x, y), 0).rgb * w;
+        }
+    }
+    return acc;
+}
+vec3 OctIblSample(sampler2D s, vec3 dir) { return OctBilinear(s, OctEncode(dir), 0.0, 1.0); }
+// Prefiltered map is a vertical roughness atlas of octahedral tiles; blend the
+// two nearest tiles so roughness stays continuous. The tile count is derived
+// from the texture dimensions (H = W * levels) - no extra uniform needed.
+vec3 OctIblSampleRough(sampler2D s, vec3 dir, float rough) {
+    vec2 ts = vec2(textureSize(s, 0));
+    float levels = max(ts.y / max(ts.x, 1.0), 1.0);
+    vec2 uv = OctEncode(dir);
+    float lv = clamp(rough, 0.0, 1.0) * (levels - 1.0);
+    float l0 = floor(lv);
+    float l1 = min(l0 + 1.0, levels - 1.0);
+    vec3 a = OctBilinear(s, uv, l0 / levels, (l0 + 1.0) / levels);
+    vec3 b = OctBilinear(s, uv, l1 / levels, (l1 + 1.0) / levels);
+    return mix(a, b, lv - l0);
+}
 void main() {
 #ifdef TERRAIN_SPLAT
     // G4 terrain splatmap: layer a realistic grass texture, dirt color and rock
@@ -493,7 +549,7 @@ void main() {
     // shadowed; ambient stays unshadowed so shadows read as dim, not black).
     vec3 R = reflect(-V, N);
     float roughU = clamp((roughness - uRoughnessMin) / (1.0 - uRoughnessMin), 0.0, 1.0);
-    vec3 prefiltered = texture(uPrefilteredMap, vec2(roughU, R.y * 0.5 + 0.5)).rgb;
+    vec3 prefiltered = OctIblSampleRough(uPrefilteredMap, R, roughU);
     // Split-sum specular DFG (f0*brdf.x + brdf.y); its complement (1 - E) is the
     // ambient DIFFUSE energy share. The direct `kd` above carries the sun's
     // Fresnel - applying that to the IBL modulated ambient by the sun angle and
@@ -502,7 +558,7 @@ void main() {
     vec2 brdf = texture(uBrdfLUT, vec2(ndv, roughness)).rg;
     vec3 envBRDF = f0 * brdf.x + brdf.y;
     vec3 kdIbl = (1.0 - envBRDF) * (1.0 - metallic);
-    vec3 iblIrradiance = texture(uIrradianceMap, vec2(0.5, N.y * 0.5 + 0.5)).rgb;
+    vec3 iblIrradiance = OctIblSample(uIrradianceMap, N);
     vec3 iblDiffuse = kdIbl * iblIrradiance * albedo.rgb * uIblStrength;
     vec3 iblSpecular = prefiltered * envBRDF * uIblStrength;
     // A3 hemisphere ambient: split the legacy flat ambient into a sky/ground

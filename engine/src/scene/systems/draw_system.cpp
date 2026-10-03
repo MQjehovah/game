@@ -1046,6 +1046,10 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
                 if (img.channels > 0 && img.width > 0 && img.height > 0) {
                     gfx::Color z, h;
                     gfx::ibl::SkyDominantColors(img.rgba.data(), img.width, img.height, z, h);
+                    // Hand the decoded equirect to the IBL bake so reflections
+                    // follow the photographed sky (not just its top/horizon
+                    // colours) before SetSky triggers the lazy rebuild.
+                    renderer.SetSkySource(img.rgba.data(), img.width, img.height);
                     renderer.SetSky(z, h);
                     skyIblFromTex_ = true;
                 }

@@ -106,6 +106,11 @@ public:
     // Atmosphere / lights
     void SetSky(const Color& top, const Color& horizon);
     void SetSkyTexture(TextureHandle tex) { sceneState_.SetSkyTexture(tex); }
+    // Decoded equirect HDRI (row 0 = zenith) that the IBL bake samples; call
+    // before SetSky. nullptr reverts to the procedural gradient.
+    void SetSkySource(const uint8_t* rgba, int width, int height) {
+        sceneState_.SetSkySource(rgba, width, height);
+    }
     void DrawSky();
     // A4 procedural skybox overrides the static gradient: a view-ray sky with a
     // sun disc + halo, a moon, and procedural clouds. sunYaw/sunPitch in

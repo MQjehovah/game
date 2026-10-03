@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <vector>
 #include "neon/gfx/backend.hpp"
 #include "neon/gfx/camera.hpp"
 #include "neon/gfx/color.hpp"
@@ -72,9 +73,15 @@ public:
     const Color& SkyTop() const { return skyTop_; }
     const Color& SkyHorizon() const { return skyHorizon_; }
     // 写实天空贴图：非空时 DrawSky 用全屏纹理 quad 替代纯色渐变（HDRI
-    // tonemapped 天空 JPG），IBL 仍基于 SetSky 的渐变环境色。
+    // tonemapped 天空 JPG）。IBL 环境优先由 SetSkySource 的 equirect 烘焙，
+    // 无源时才回退到 SetSky 的渐变环境色。
     void SetSkyTexture(TextureHandle tex) { skyTexture_ = tex; }
     TextureHandle SkyTexture() const { return skyTexture_; }
+    // Decoded equirect HDRI (row 0 = zenith) driving the IBL bake. Copied and
+    // downsampled internally; passing nullptr/zero clears it and reverts the
+    // IBL to the procedural gradient. Must be called before SetSky so the
+    // lazily-triggered rebuild sees the new source.
+    void SetSkySource(const uint8_t* rgba, int width, int height);
 
     // Fog (linear lit-shader fog + the composite-time volumetric curve).
     void SetFog(const Color& color, float start, float end);
@@ -190,14 +197,20 @@ private:
     float playerLightRadius_ = 14.0f;
     bool playerLightEnabled_ = false;
 
-    // IBL environment (Task 3.8). ibl.cpp precomputes the three byte maps
-    // (irradiance 1x128, prefiltered 24x128, BRDF LUT 128x128) from the sky
-    // gradient; they upload as plain RGBA8 2D textures (units 20..22) and the
-    // lit shader samples them. The environment is recomputed from SetSky when
+    // IBL environment (Task 3.8). ibl.cpp precomputes an octahedral irradiance
+    // map (kOctaIrradianceSize^2), an octahedral prefiltered atlas
+    // (kOctaPrefilterSize x size*levels) and the BRDF LUT; they upload as plain
+    // RGBA8 2D textures (units 20..22) and the lit shader samples them. The
+    // source is the scene's decoded equirect HDRI (SetSkySource) when present,
+    // else the procedural gradient. The environment is recomputed from SetSky when
     // the accumulated sky delta passes a small epsilon and at most once every
     // kIblRecomputeInterval SetSky calls, so the animated day/night sky tracks
     // smoothly without a per-frame hitch; the BRDF LUT is sky-independent and
     // built once.
+    // Downsampled copy of the scene's equirect HDRI (empty = procedural sky).
+    std::vector<uint8_t> skyEquirect_;
+    int skyEquirectW_ = 0;
+    int skyEquirectH_ = 0;
     TextureHandle iblIrradianceTex_;
     TextureHandle iblPrefilteredTex_;
     TextureHandle iblBrdfLutTex_;

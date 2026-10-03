@@ -42,6 +42,7 @@
 | `24db079` | **spot light**（GL+VK），最多 4 个，含锥角/羽化 |
 | (F2) | **启用点光阴影**（GL+VK）：目标带深度附件、按 texel 深度测试（非画家排序），`PointShadowRT` 真正分配（原来从未创建），`Renderer::SetPointShadowsEnabled` 运行时开关（low/medium 关，high/ultra 开），`NEON_NO_POINT_SHADOWS` 诊断 |
 | (VK) | **修复 Vulkan 布局校验报错**：clear pass 的 `initialLayout` 用 UNDEFINED（原来谎称 GENERAL）；新 RT 的 tracked layout 从 UNDEFINED 起步（首次 bind 才真正 transition）；`EnsureTextureSet` 在过渡前补齐 `EndRenderPassIfActive` + 重开已结束的 cmd（换 target 会 flush/end 命令缓冲）。visual_acceptance 的 image-layout 错误从 110 → 0 |
+| (F3) | **八面体 IBL（带方位）**：irradiance 32²→24²、prefiltered 改成八面体「粗糙度 atlas」（`kOctaPrefilterSize=48` × `48*5` 行，逐 tile GGX 预滤波），从**真实 equirect HDRI**（`SceneState::SetSkySource`，1024 宽降采样）或程序化渐变烘焙；lit shader 用八面体 encode + wrap-fold 双线性（消除接缝）按 `textureSize()` 推 tile 数并混合相邻粗糙度。观感较旧 Y-only 渐变明显改善；GL/VK 一致，烘焙 ~50–120ms |
 
 架构要点（供后续参考）：
 - 前向管线：lit pass（HDR+depth）→ 后处理图 `post_graph`（depth → gbuffer → ssao → vol → ssr → bloom → composite）。**无 MRT**；间接光/粗糙度靠 `post.gbuffer` 那个额外几何 pass 写 `gbuffer_`（RGBA16F）。
@@ -79,10 +80,10 @@
 - 原因：`pointShadowRT_` 从未分配（`Init` 里被硬编码 `pointShadowsEnabled_=false`，`CreateCascadeTargets` 不建点光目标），且旧代码只有画家排序（无深度），大面积地面作接收者+投射者会产生 face 状光斑。
 - 现在：`CreatePointShadowTargets()` 建 2 光 × 6 face 的 512² 目标，有深度缓冲时用 GL_LESS 逐 texel 深度测试（`CullMode::None` 画双面），否则退回画家排序。运行时开关 `Renderer::SetPointShadowsEnabled`；画质预设 low/medium 关、high/ultra 开；`NEON_NO_POINT_SHADOWS=1` 诊断关闭。GL/VK 截图一致，`neon_tests` 842/842。
 
-### F3. 真实 cubemap IBL 预滤波（HDRI 光照准确）
-- 现状（`engine/src/gfx/ibl.cpp`）：IBL 只按 `top`/`horizon` 两个颜色烘焙竖直渐变（irradiance 1×128、prefiltered 24×128、BRDF LUT 128×128），**即使场景用真 HDRI 天空也不是从 cubemap 预滤波**。
-- 做法：把环境预滤波搬到 GPU（equirect→cube→irradiance convolution + GGX prefilter + BRDF LUT，参考 `ref/Volcano` 的 `EquirectangularToEnvCubeMap.glsl`/`EnvCubeMapToIrradianceMap.glsl`/`EnvCubeMapToPrefilterMap.glsl`、`ref/godot` 的 `environment/sky.glsl` 等）；lit shader 改成 `textureLod(uPrefiltered, R, rough*maxLod)`。
-- 影响：改观感（HDRI 场景反射/漫反射变化）。
+### F3. 真实 IBL 预滤波（**已完成第一版；GPU 卸载待办**）
+- 已完成：把旧 Y-only 渐变图换成**八面体（azimuth-aware）**，并从**真实 equirect HDRI** 烘焙（`SceneState::SetSkySource`，`draw_system.cpp` 在设置天空贴图时传入解码图像）。irradiance 用余弦卷积，prefiltered 用逐 tile GGX 卷积做成「粗糙度 atlas」（`kOctaRoughnessLevels` 个八面体 tile 纵向排列）；lit shader 用 `OctEncode` + wrap-fold 双线性（`OctBilinear`，消除八面体接缝）按 `textureSize()` 推 tile 数并混合相邻粗糙度。无 HDRI 场景回退程序化渐变。GL/VK 一致，`neon_tests` 845/845。
+- 仍待办（当时选的完整 GPU 方案）：预滤波目前是 **CPU 烘焙**（HDRI 场景一次性；动画程序化天空每 ~20 帧重烘一次，~50–120ms）。搬到 GPU 需要：(1) 新增 equirect→八面体 / irradiance / GGX prefilter 三个 fragment shader 并登记 `tools/gen_vk_shaders.ps1`；(2) 新的「完整 mip 链上传」后端 API（GL `TexImage2D` 逐级 / VK 逐级 buffer-image copy）；(3) lit 改 `textureLod` + mip。当前用 atlas 代替 mip 以避免这套基础设施。
+- 影响：HDRI 场景反射/漫反射已随照片天空变化（含水平方位）。
 
 ### F4. froxel 体积雾
 - 现状：`volumetric.frag` 只是太阳光柱 raymarch（固定 38m slab，无高度衰减/阴影采样/逐 froxel 光注入）。
