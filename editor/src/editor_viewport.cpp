@@ -886,6 +886,23 @@ void EditorApp::ApplySceneEnvironment() {
     }
     for (; plIndex < gfx::Renderer::kMaxPointLights; ++plIndex)
         renderer_.SetPointLight(plIndex, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f, 1.0f}, 0.0f);
+    // Scene SpotLight objects (Unity-style).
+    int slIndex = 0;
+    for (const SceneEntity& se : entities_) {
+        if (!se.hasLight || se.light.type != "spot") continue;
+        if (slIndex >= gfx::Renderer::kMaxSpotLights) break;
+        const float outer = std::cos(se.light.spotAngle * math::kDegToRad);
+        const float inner =
+            std::cos(se.light.spotAngle * (1.0f - se.light.spotSoftness) * math::kDegToRad);
+        const gfx::Color sc{se.light.color.r * se.light.intensity,
+                            se.light.color.g * se.light.intensity,
+                            se.light.color.b * se.light.intensity, se.light.color.a};
+        renderer_.SetSpotLight(slIndex++, se.pos, se.light.spotDir, sc, se.light.radius, inner,
+                               outer);
+    }
+    for (; slIndex < gfx::Renderer::kMaxSpotLights; ++slIndex)
+        renderer_.SetSpotLight(slIndex, {0.0f, 0.0f, 0.0f}, {0.0f, -1.0f, 0.0f},
+                               {0.0f, 0.0f, 0.0f, 1.0f}, 0.0f, 1.0f, 0.0f);
 }
 
 void EditorApp::DrawCameraFrame() {

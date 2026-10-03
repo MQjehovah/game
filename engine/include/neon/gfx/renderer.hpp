@@ -146,6 +146,12 @@ public:
     // a dark sky-tinted bounce; override per scene or leave default.
     void SetAmbientGroundColor(const Color& color) { sceneState_.SetAmbientGroundColor(color); }
     void SetPointLight(int index, const math::Vec3& position, const Color& color, float radius);
+    void SetSpotLight(int index, const math::Vec3& position, const math::Vec3& direction,
+                      const Color& color, float radius, float cosInner, float cosOuter) {
+        sceneState_.SetSpotLight(index, position, direction, color, radius, cosInner, cosOuter);
+    }
+    void ClearSpotLights() { sceneState_.ClearSpotLights(); }
+    static constexpr int kMaxSpotLights = SceneState::kMaxSpotLights;
     void SetPlayerLight(const math::Vec3& position, const Color& color, float radius);
 
     // IBL environment lighting (Task 3.8). SetSky procedurally generates a

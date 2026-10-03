@@ -1259,6 +1259,7 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                       if (!CheckComponentShape(data,
                                               {"type", "sunDir", "color", "intensity", "radius",
                                                 "ambientStrength", "skyTexture",
+                                                "spotDir", "spotAngle", "spotSoftness",
                                                 "useAtmosphere", "skybox", "skyTop", "skyHorizon",
                                                 "fogColor", "fogNear", "fogFar", "exposure"},
                                               "light", err))
@@ -1291,11 +1292,16 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                          out.a = v[3];
                      };
                      readVec3("sunDir", l.sunDir);
+                     readVec3("spotDir", l.spotDir);
                      readColor("color", l.color);
                      if (const core::Json* n = data.Get("intensity"))
                          l.intensity = static_cast<float>(n->GetNumber());
                       if (const core::Json* n = data.Get("radius"))
                           l.radius = static_cast<float>(n->GetNumber());
+                     if (const core::Json* n = data.Get("spotAngle"))
+                         l.spotAngle = static_cast<float>(n->GetNumber());
+                     if (const core::Json* n = data.Get("spotSoftness"))
+                         l.spotSoftness = static_cast<float>(n->GetNumber());
                      if (const core::Json* n = data.Get("ambientStrength"))
                          l.ambientStrength = static_cast<float>(n->GetNumber());
                      if (const core::Json* s = data.Get("skyTexture"))

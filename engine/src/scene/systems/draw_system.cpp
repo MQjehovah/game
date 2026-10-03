@@ -1138,6 +1138,24 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
             });
         for (; plIndex < gfx::Renderer::kMaxPointLights; ++plIndex)
             renderer.SetPointLight(plIndex, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f, 1.0f}, 0.0f);
+        // SpotLight objects: cone lights, position from the transform, cone axis
+        // from `spotDir`. Up to kMaxSpotLights; unused slots are set inert
+        // (radius 0) so the shader skips them.
+        int slIndex = 0;
+        world.ViewAll<scene::SceneLight, SceneTransform>().ForEach(
+            [&](ecs::Entity, const scene::SceneLight& sl, const SceneTransform& st) {
+                if (sl.type != "spot") return;
+                if (slIndex >= gfx::Renderer::kMaxSpotLights) return;
+                const float outer = std::cos(sl.spotAngle * math::kDegToRad);
+                const float inner =
+                    std::cos(sl.spotAngle * (1.0f - sl.spotSoftness) * math::kDegToRad);
+                const gfx::Color sc{sl.color.r * sl.intensity, sl.color.g * sl.intensity,
+                                    sl.color.b * sl.intensity, sl.color.a};
+                renderer.SetSpotLight(slIndex++, st.pos, sl.spotDir, sc, sl.radius, inner, outer);
+            });
+        for (; slIndex < gfx::Renderer::kMaxSpotLights; ++slIndex)
+            renderer.SetSpotLight(slIndex, {0.0f, 0.0f, 0.0f}, {0.0f, -1.0f, 0.0f},
+                                  {0.0f, 0.0f, 0.0f, 1.0f}, 0.0f, 1.0f, 0.0f);
         renderer.DrawSky();
     }
     // Scripts may have spawned/despawned sprite entities since the last frame.

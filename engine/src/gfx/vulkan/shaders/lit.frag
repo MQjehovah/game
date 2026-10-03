@@ -400,6 +400,31 @@ void main() {
         }
         extraLight += pContrib;
     }
+    // Spot lights (GL parity): point-like falloff gated by the cone.
+    for (int i = 0; i < 4; ++i) {
+        if (i >= eng.uSpotCount) break;
+        if (eng.uSpotRadius[i] <= 0.0) continue;
+        vec3 toL = eng.uSpotPos[i] - vWorldPos;
+        float d = length(toL);
+        vec3 sl = toL / max(d, 1e-4);
+        float theta = dot(-sl, normalize(eng.uSpotDir[i]));
+        float cone = clamp((theta - eng.uSpotCosOuter[i]) /
+                               max(eng.uSpotCosInner[i] - eng.uSpotCosOuter[i], 1e-4),
+                           0.0, 1.0);
+        if (cone <= 0.0) continue;
+        float atten = clamp(1.0 - d / eng.uSpotRadius[i], 0.0, 1.0);
+        atten *= atten * cone;
+        float sndl = max(dot(N, sl), 0.0);
+        vec3 sh = normalize(sl + V);
+        float sndh = max(dot(N, sh), 0.0);
+        float svdh = max(dot(V, sh), 0.0);
+        float sD = D_GGX(sndh, a);
+        float sG = G_Schlick(sndl, ndv, roughness);
+        vec3 sF = F_Schlick(svdh, f0);
+        vec3 sSpec = sD * sG * sF / (4.0 * sndl * ndv + 1e-3);
+        vec3 sKd = (1.0 - sF) * (1.0 - metallic);
+        extraLight += (sKd * albedo.rgb + sSpec) * eng.uSpotColor[i] * sndl * atten;
+    }
     if (eng.uPlayerLightEnabled != 0) {
         vec3 toL = eng.uPlayerLightPos - vWorldPos;
         float d = length(toL);

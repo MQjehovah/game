@@ -1440,6 +1440,17 @@ void Renderer::ApplySceneUniforms(ShaderHandle shader) {
         backend_->SetUniformVec3(("uPointColor" + suffix).c_str(), {pc.r, pc.g, pc.b});
         backend_->SetUniformFloat(("uPointRadius" + suffix).c_str(), sceneState_.PointRadius()[i]);
     }
+    backend_->SetUniformInt("uSpotCount", sceneState_.SpotCount());
+    for (int i = 0; i < sceneState_.SpotCount(); ++i) {
+        std::string suffix = "[" + std::to_string(i) + "]";
+        backend_->SetUniformVec3(("uSpotPos" + suffix).c_str(), sceneState_.SpotPos()[i]);
+        backend_->SetUniformVec3(("uSpotDir" + suffix).c_str(), sceneState_.SpotDir()[i]);
+        const Color& sc = sceneState_.SpotColor()[i];
+        backend_->SetUniformVec3(("uSpotColor" + suffix).c_str(), {sc.r, sc.g, sc.b});
+        backend_->SetUniformFloat(("uSpotRadius" + suffix).c_str(), sceneState_.SpotRadius()[i]);
+        backend_->SetUniformFloat(("uSpotCosInner" + suffix).c_str(), sceneState_.SpotCosInner()[i]);
+        backend_->SetUniformFloat(("uSpotCosOuter" + suffix).c_str(), sceneState_.SpotCosOuter()[i]);
+    }
     backend_->SetUniformVec3("uPlayerLightPos", sceneState_.PlayerLightPos());
     const Color& plc = sceneState_.PlayerLightColor();
     backend_->SetUniformVec3("uPlayerLightColor",

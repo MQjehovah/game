@@ -569,6 +569,12 @@ struct SceneLight {
     float intensity = 1.0f;        // per-light strength (multiplies color at render)
     float radius = 10.0f;               // point light falloff range
     float ambientStrength = 0.25f;
+    // Spot lights: cone axis (world space) from the entity's rotation-free
+    // `spotDir`; `spotAngle` is the OUTER half-angle in degrees; `spotSoftness`
+    // is the fraction of the cone that is penumbra (inner = outer*(1-softness)).
+    math::Vec3 spotDir{0.0f, -1.0f, 0.0f};
+    float spotAngle = 30.0f;
+    float spotSoftness = 0.25f;
     // 写实天空贴图（HDRI tonemapped JPG 的虚拟路径）。非空时 DrawSystem 加载
     // 并作为全屏天空背景替代纯色渐变。
     std::string skyTexture;
@@ -592,15 +598,19 @@ struct SceneLight {
     // G2-1: reflection drives the editor schema + JSON + script field access.
     // `color` is a gfx::Color (serialized as [r,g,b,a]); the editor's Color
     // control reads BOTH forms (hex string for mesh material, array for light).
-    inline static const char* const kLightTypes[3] = {"directional", "point", "ambient"};
+    inline static const char* const kLightTypes[4] = {"directional", "point", "spot", "ambient"};
     inline static const auto kFields = ReflectFields(
         Field("type", "类型", FieldType::Enum, &SceneLight::type, 0, 0, 0, 0,
               FieldMeta{FieldCategory::Serialize, nullptr, nullptr, nullptr, nullptr,
-                        kLightTypes, 3}),
+                        kLightTypes, 4}),
         Field("sunDir", "太阳方向", FieldType::Vec3, &SceneLight::sunDir),
         Field("color", "颜色", FieldType::Color, &SceneLight::color),
         Field("intensity", "强度", FieldType::Number, &SceneLight::intensity, 1, 0, 100, 0.05),
         Field("radius", "范围", FieldType::Number, &SceneLight::radius, 10, 0, 1e4, 0.5),
+        Field("spotDir", "聚光方向", FieldType::Vec3, &SceneLight::spotDir),
+        Field("spotAngle", "聚光角(度)", FieldType::Number, &SceneLight::spotAngle, 30, 1, 89, 0.5),
+        Field("spotSoftness", "聚光羽化", FieldType::Number, &SceneLight::spotSoftness, 0.25, 0, 1,
+              0.01),
         Field("ambientStrength", "环境强度", FieldType::Number, &SceneLight::ambientStrength,
               0.25, 0, 1, 0.01),
         Field("skyTexture", "天空贴图", FieldType::Resource, &SceneLight::skyTexture,

@@ -91,7 +91,7 @@ constexpr VkFormat kDepthFormats[] = {VK_FORMAT_D24_UNORM_S8_UINT, VK_FORMAT_D32
 constexpr VkFormat kSwapchainFormats[] = {VK_FORMAT_B8G8R8A8_UNORM, VK_FORMAT_R8G8B8A8_UNORM,
                                           VK_FORMAT_B8G8R8A8_SRGB};
 constexpr uint32_t kMaxSamplerSlots = 25;  // renderer texture units 0..24
-constexpr size_t kUniformBlockSize = 7248; // EngineUBO std140 size (uAmbientColor moved out of the uPointRadius std140 span)
+constexpr size_t kUniformBlockSize = 7648; // EngineUBO std140 size (spot-light arrays appended)
 constexpr uint32_t kFramesInFlight = 2;
 constexpr uint64_t kScratchBytes = 16ull * 1024 * 1024;
 constexpr uint64_t kUboBytes = 16ull * 1024 * 1024;
@@ -245,6 +245,13 @@ const UniEntry kUniformOffsets[] = {
     {"uLightProbeEnabled", UniKind::Int, 7232, 4, 1},
     {"uBloomWidth", UniKind::Float, 7236, 4, 1},
     {"uHasGBuffer", UniKind::Int, 7240, 4, 1},
+    {"uSpotPos[0]", UniKind::Vec3, 7248, 12, 4},
+    {"uSpotDir[0]", UniKind::Vec3, 7312, 12, 4},
+    {"uSpotColor[0]", UniKind::Vec3, 7376, 12, 4},
+    {"uSpotRadius[0]", UniKind::Float, 7440, 4, 4},
+    {"uSpotCosInner[0]", UniKind::Float, 7504, 4, 4},
+    {"uSpotCosOuter[0]", UniKind::Float, 7568, 4, 4},
+    {"uSpotCount", UniKind::Int, 7632, 4, 1},
     {"uAlbedo", UniKind::Sampler, 0, 0, 1},
     {"uGrassTex", UniKind::Sampler, 0, 0, 1},
     {"uGBuffer", UniKind::Sampler, 0, 0, 1},

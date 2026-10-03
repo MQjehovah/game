@@ -26,6 +26,7 @@ namespace neon::gfx {
 class SceneState {
 public:
     static constexpr int kMaxPointLights = 8; // must match Renderer::kMaxPointLights
+    static constexpr int kMaxSpotLights = 4;  // must match Renderer::kMaxSpotLights
 
     SceneState() {
         // Unused point-light slots must be INERT: the implicit defaults are a
@@ -34,6 +35,8 @@ public:
         // setting light 3 would light the origin through the garbage slots.
         for (Color& c : pointColor_) c = Color{0.0f, 0.0f, 0.0f, 1.0f};
         for (float& r : pointRadius_) r = 0.0f;
+        for (Color& c : spotColor_) c = Color{0.0f, 0.0f, 0.0f, 1.0f};
+        for (float& r : spotRadius_) r = 0.0f;
     }
     ~SceneState() = default;
     // Reads depthAvailable_ from the backend (Renderer::ConnectSubsystems).
@@ -95,6 +98,12 @@ public:
     // scales both. Empty/invalid ground color falls back to the sky color * 0.5.
     void SetAmbientGroundColor(const Color& color);
     void SetPointLight(int index, const math::Vec3& position, const Color& color, float radius);
+    // Spot lights (up to kMaxSpotLights): position + cone axis `direction` +
+    // colour + range + inner/outer cone cosines. SetSpotLight(n) raises
+    // spotCount_ to n+1; unused slots stay inert.
+    void SetSpotLight(int index, const math::Vec3& position, const math::Vec3& direction,
+                      const Color& color, float radius, float cosInner, float cosOuter);
+    void ClearSpotLights() { spotCount_ = 0; }
     void SetPlayerLight(const math::Vec3& position, const Color& color, float radius);
     const math::Vec3& SunDir() const { return sunDir_; }
     const Color& SunColor() const { return sunColor_; }
@@ -105,6 +114,13 @@ public:
     const Color* PointColor() const { return pointColor_; }
     const float* PointRadius() const { return pointRadius_; }
     int PointCount() const { return pointCount_; }
+    const math::Vec3* SpotPos() const { return spotPos_; }
+    const math::Vec3* SpotDir() const { return spotDir_; }
+    const Color* SpotColor() const { return spotColor_; }
+    const float* SpotRadius() const { return spotRadius_; }
+    const float* SpotCosInner() const { return spotCosInner_; }
+    const float* SpotCosOuter() const { return spotCosOuter_; }
+    int SpotCount() const { return spotCount_; }
     const math::Vec3& PlayerLightPos() const { return playerLightPos_; }
     const Color& PlayerLightColor() const { return playerLightColor_; }
     float PlayerLightRadius() const { return playerLightRadius_; }
@@ -162,6 +178,13 @@ private:
     Color pointColor_[kMaxPointLights];
     float pointRadius_[kMaxPointLights];
     int pointCount_ = 0;
+    math::Vec3 spotPos_[kMaxSpotLights];
+    math::Vec3 spotDir_[kMaxSpotLights];
+    Color spotColor_[kMaxSpotLights];
+    float spotRadius_[kMaxSpotLights];
+    float spotCosInner_[kMaxSpotLights];
+    float spotCosOuter_[kMaxSpotLights];
+    int spotCount_ = 0;
     math::Vec3 playerLightPos_{};
     Color playerLightColor_{1.0f, 0.8f, 0.6f, 1.0f};
     float playerLightRadius_ = 14.0f;

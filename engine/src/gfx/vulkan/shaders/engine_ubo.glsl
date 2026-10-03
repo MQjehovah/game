@@ -177,4 +177,13 @@ layout(set = 0, binding = 0) uniform EngineUBO {
     // 1 when the composite's G-buffer sampler (uGBuffer) is bound (SSAO
     // indirect-only path); 0 disables the indirect subtraction.
     layout(offset = 7240) int uHasGBuffer;
+    // Spot lights (up to 4): position, cone axis, colour, range, inner/outer
+    // cone cosines. std140 vec3 arrays use a 16-byte element stride.
+    layout(offset = 7248) vec3 uSpotPos[4];
+    layout(offset = 7312) vec3 uSpotDir[4];
+    layout(offset = 7376) vec3 uSpotColor[4];
+    layout(offset = 7440) float uSpotRadius[4];
+    layout(offset = 7504) float uSpotCosInner[4];
+    layout(offset = 7568) float uSpotCosOuter[4];
+    layout(offset = 7632) int uSpotCount;
 } eng;

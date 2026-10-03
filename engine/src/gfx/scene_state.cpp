@@ -175,6 +175,19 @@ void SceneState::SetPointLight(int index, const math::Vec3& position, const Colo
     pointCount_ = std::max(pointCount_, index + 1);
 }
 
+void SceneState::SetSpotLight(int index, const math::Vec3& position, const math::Vec3& direction,
+                              const Color& color, float radius, float cosInner, float cosOuter) {
+    if (sceneUniformStamp_) ++*sceneUniformStamp_; // B1
+    if (index < 0 || index >= kMaxSpotLights) return;
+    spotPos_[index] = position;
+    spotDir_[index] = direction;
+    spotColor_[index] = color;
+    spotRadius_[index] = radius;
+    spotCosInner_[index] = cosInner;
+    spotCosOuter_[index] = cosOuter;
+    spotCount_ = std::max(spotCount_, index + 1);
+}
+
 void SceneState::SetPlayerLight(const math::Vec3& position, const Color& color, float radius) {
     if (sceneUniformStamp_) ++*sceneUniformStamp_; // B1
     playerLightPos_ = position;
