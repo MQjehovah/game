@@ -465,8 +465,13 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
         // adaptationSpeed is a per-60fps-frame lerp factor; convert to a wall
         // clock rate so convergence no longer depends on the frame rate.
         const float dt = std::min(std::max(frameDt_, 0.0005f), 0.1f);
-        backend.SetUniformFloat(
-            "uAdaptation", 1.0f - std::exp(-ae.adaptationSpeed * 60.0f * dt));
+        // Temporal blending needs a reliable persistent "previous exposure".
+        // Backends without it (Vulkan) would read prev=0 and go dark, so there
+        // the exposure follows the raw target directly.
+        const float adaptation = backend.SupportsTargetPersistence()
+                                     ? (1.0f - std::exp(-ae.adaptationSpeed * 60.0f * dt))
+                                     : 1.0f;
+        backend.SetUniformFloat("uAdaptation", adaptation);
         backend.DrawMesh(postQuad_);
         // Same draw into the persistent target (shader/texture/uniform state
         // stays bound; only the render target changes).

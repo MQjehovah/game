@@ -1790,6 +1790,10 @@ public:
     }
 
     bool DepthAvailable() const override { return depthUsable_; }
+    // Out-of-graph writes to renderer-owned render targets (e.g. the post
+    // chain's persistent 1x1 exposure history) are not reliably observed here,
+    // so the exposure chain skips its temporal blend on Vulkan.
+    bool SupportsTargetPersistence() const override { return false; }
 
 
 private:

@@ -138,6 +138,11 @@ public:
     // then keeps its CPU particle path. Concrete emit/step/draw methods land
     // with the GL implementation.
     virtual bool SupportsGpuParticles() const { return false; }
+    // True when a render target the post chain writes one frame can be reliably
+    // read back / rewritten the next frame (persistent auto-exposure history).
+    // The Vulkan backend drops out-of-graph writes to such targets, so it
+    // returns false and the exposure chain skips the temporal blend.
+    virtual bool SupportsTargetPersistence() const { return true; }
     virtual ParticleSimHandle CreateParticleSim(uint32_t capacity) {
         (void)capacity;
         return {};
