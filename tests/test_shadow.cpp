@@ -234,4 +234,10 @@ TEST(PointShadowNullBackendStaysDisabled) {
     fx.renderer.SetShadowsEnabled(false);
     CHECK(!fx.renderer.ShadowsEnabled());
     CHECK(!fx.renderer.PointShadowsEnabled());
+
+    // The runtime toggle is a no-op without allocated targets (headless
+    // NullBackend never passed the CSM capability self-test), so requesting it
+    // must not report enabled.
+    fx.renderer.SetPointShadowsEnabled(true);
+    CHECK(!fx.renderer.PointShadowsEnabled());
 }

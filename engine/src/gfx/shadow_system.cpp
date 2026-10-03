@@ -176,12 +176,20 @@ void ShadowSystem::Init(IRenderBackend& backend, MeshHandle probeQuad, ShaderHan
     // so they engage only when the CSM capability self-test passed. Six 2D
     // maps per light (layered cubemap FBOs are unreliable on the Intel driver);
     // the lit shader picks the face from the fragment->light direction.
-    // Point-light cubemap shadows currently produce visible cube-face light
-    // patches on the ground; keep point lights unshadowed until the face
-    // projection is fixed. Directional/CSM shadows remain enabled.
-    pointShadowsEnabled_ = false;
+    //
+    // The maps are allocated with a depth attachment whenever the backend has a
+    // usable depth buffer, so the pass resolves occlusion per texel (GL_LESS)
+    // instead of painter-sorting far->near. The old painter's-order path could
+    // not represent a large receiver that also casts (the ground) correctly and
+    // produced face-shaped light patches on it; depth testing removes that
+    // whole class of artifacts and lets both windings be rasterized.
+    pointShadowsTargetsValid_ = csmEnabled_ && CreatePointShadowTargets();
+    pointShadowsEnabled_ = pointShadowsTargetsValid_ && pointShadowsRequested_;
     NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
-                 "Renderer: point light shadows disabled (ground patch workaround)");
+                 "Renderer: point light shadow maps %dx%d x%d lights (%s, %s)",
+                 kPointShadowSize, kPointShadowSize, kShadowPointLights,
+                 pointShadowsTargetsValid_ ? "ok" : "FAILED",
+                 depthTestedPointShadows_ ? "depth-tested" : "painter's order");
     // Diagnostic override (not public API): isolate the point-light shadow
     // contribution for verification (screenshot diffs) without touching CSM.
     if (pointShadowsEnabled_ && std::getenv("NEON_NO_POINT_SHADOWS")) {
@@ -222,6 +230,41 @@ bool ShadowSystem::CreateCascadeTargets() {
                  "Renderer: CSM cascades %s",
                  depthTestedCascades_ ? "depth-tested (nearest surface per texel)"
                                       : "painter's order (no usable depth buffer)");
+    return true;
+}
+
+bool ShadowSystem::CreatePointShadowTargets() {
+    if (backend_ == nullptr) return false;
+    const bool wantDepth = backend_->DepthAvailable();
+    depthTestedPointShadows_ = wantDepth;
+    for (int li = 0; li < kShadowPointLights; ++li) {
+        for (int face = 0; face < 6; ++face) {
+            if (pointShadowRT_[li][face].Valid())
+                backend_->DestroyRenderTarget(pointShadowRT_[li][face]);
+            pointShadowRT_[li][face] = {};
+            pointShadowDepthTex_[li][face] = {};
+            pointShadowRT_[li][face] = wantDepth
+                                           ? backend_->CreateRenderTargetWithDepth(kPointShadowSize,
+                                                                                   kPointShadowSize)
+                                           : backend_->CreateRenderTarget(kPointShadowSize,
+                                                                          kPointShadowSize);
+            if (!pointShadowRT_[li][face].Valid() && wantDepth) {
+                // Driver refused the depth attachment: fall back to the plain
+                // colour target (painter's order) rather than disabling point
+                // shadows entirely.
+                depthTestedPointShadows_ = false;
+                pointShadowRT_[li][face] =
+                    backend_->CreateRenderTarget(kPointShadowSize, kPointShadowSize);
+            }
+            pointShadowDepthTex_[li][face] =
+                backend_->RenderTargetColorTexture(pointShadowRT_[li][face]);
+            if (!pointShadowRT_[li][face].Valid() || !pointShadowDepthTex_[li][face].Valid()) {
+                NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Warn,
+                             "Renderer: point light %d face %d shadow target failed", li, face);
+                return false;
+            }
+        }
+    }
     return true;
 }
 
@@ -565,9 +608,9 @@ void ShadowSystem::DrawPointShadowCastersSorted(int lightIndex, const math::Vec3
                                                 float range) {
     if (shadowCasters_.empty()) return;
 
-    // Color-encoded maps have no depth buffer, so draw casters far -> near from
-    // the light (last wins = nearest surface). Casters fully outside the
-    // light's sphere of influence cannot shadow anything the light reaches.
+    // Casters fully outside the light's sphere of influence cannot shadow
+    // anything the light reaches. Sort keys are also used as the painter's
+    // order when no depth buffer is available.
     shadowSortKeys_.clear();
     shadowSortKeys_.reserve(shadowCasters_.size());
     for (const ShadowDraw& draw : shadowCasters_) {
@@ -585,12 +628,20 @@ void ShadowSystem::DrawPointShadowCastersSorted(int lightIndex, const math::Vec3
         if (dist - boxRadius > range) continue;
         shadowSortKeys_.push_back({&draw, dist});
     }
-    std::sort(shadowSortKeys_.begin(), shadowSortKeys_.end(),
-              [](const ShadowSortKey& a, const ShadowSortKey& b) { return a.z > b.z; });
+    // Depth-attached maps resolve the nearest surface per texel, so draw order
+    // is irrelevant; the plain-colour fallback has no depth buffer and must be
+    // painter-sorted far -> near (last wins = nearest).
+    if (!depthTestedPointShadows_) {
+        std::sort(shadowSortKeys_.begin(), shadowSortKeys_.end(),
+                  [](const ShadowSortKey& a, const ShadowSortKey& b) { return a.z > b.z; });
+    }
 
     backend_->SetBlendMode(BlendMode::Opaque);
-    backend_->SetCullMode(CullMode::Back);
-    backend_->SetDepthTest(false, false);
+    // Both windings: a merged level mesh can contain both and back-face culling
+    // silently drops casters (same reasoning as the cascade pass). The depth
+    // buffer keeps the nearest surface per texel.
+    backend_->SetCullMode(depthTestedPointShadows_ ? CullMode::None : CullMode::Back);
+    backend_->SetDepthTest(depthTestedPointShadows_, depthTestedPointShadows_);
     for (int face = 0; face < 6; ++face) {
         backend_->BindRenderTarget(pointShadowRT_[lightIndex][face]);
         // Same sub-viewport/scissor hazard as the cascades (see RunPass).

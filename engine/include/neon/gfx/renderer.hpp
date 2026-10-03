@@ -232,6 +232,11 @@ public:
     // lights by sampling a 6-face depth map computed from the fragment->light
     // direction. Disabled by --no-shadows like CSM.
     bool PointShadowsEnabled() const { return shadowSystem_.PointShadowsEnabled(); }
+    // Runtime point-light shadow toggle (quality presets): the targets stay
+    // allocated, this only gates whether the per-frame pass runs.
+    void SetPointShadowsEnabled(bool enabled) {
+        shadowSystem_.SetPointShadowsEnabled(enabled);
+    }
     // True when a point-light shadow pass actually ran this frame.
     bool PointShadowMapActive() const { return shadowSystem_.PointShadowsActive(); }
     // Shadow map size in pixels per face.

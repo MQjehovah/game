@@ -87,6 +87,12 @@ public:
     // Shadow enablement + caster recording.
     void SetShadowsEnabled(bool enabled);
     bool Enabled() const { return csmEnabled_; }
+    // Runtime point-light shadow toggle (quality presets / scripts). Targets
+    // stay allocated; this only gates whether RunPointShadowPass runs.
+    void SetPointShadowsEnabled(bool enabled) {
+        pointShadowsRequested_ = enabled;
+        pointShadowsEnabled_ = pointShadowsTargetsValid_ && enabled;
+    }
     void SetShadowRecording(bool enabled) { shadowRecording_ = enabled; }
     bool Recording() const { return shadowRecording_; }
     // True when a shadow pass already ran for this frame (SetCamera checks it
@@ -154,6 +160,9 @@ private:
     // (Re)creates the per-cascade color-encoded depth targets at shadowSize_.
     // Returns false when any target fails (CSM then stays disabled).
     bool CreateCascadeTargets();
+    // Allocates the 6 per-face color-encoded depth targets of each point-light
+    // cubemap shadow. Returns false when any target fails (point shadows off).
+    bool CreatePointShadowTargets();
 
     IRenderBackend* backend_ = nullptr;
     uint64_t* sceneUniformStamp_ = nullptr;
@@ -195,6 +204,14 @@ private:
     math::Mat4 pointLightViewProj_[kShadowPointLights][6];
     bool pointShadowsEnabled_ = false;
     bool pointShadowsActive_ = false;
+    // Points shadows are on unless a quality preset / script opts out; the
+    // actual enabled flag also requires the targets to have been created.
+    bool pointShadowsRequested_ = true;
+    bool pointShadowsTargetsValid_ = false;
+    // True when the point-light face maps carry a depth attachment AND the
+    // backend's depth buffer works, so the pass can depth-TEST (nearest surface
+    // per texel) instead of painter-sorting far->near.
+    bool depthTestedPointShadows_ = false;
 
     // Reusable per-frame scratch buffers (kept out of the hot path's per-call
     // allocations): painter's-order sort keys + caster centres + flattened

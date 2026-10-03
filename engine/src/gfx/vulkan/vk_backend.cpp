@@ -793,7 +793,10 @@ public:
         rt.floatColor = floatColor;
         rt.kind = kind;
         rt.colorFormat = colorFormat;
-        rt.layout = VK_IMAGE_LAYOUT_GENERAL;
+        // A newly created image is in UNDEFINED, so track it as such: the
+        // first bind then issues the real transition (EnsureRenderPass) instead
+        // of believing it is already GENERAL and sampling it while UNDEFINED.
+        rt.layout = VK_IMAGE_LAYOUT_UNDEFINED;
 
         const VkImageUsageFlags colorUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
                                              VK_IMAGE_USAGE_SAMPLED_BIT |
@@ -855,7 +858,7 @@ public:
         tex.width = width;
         tex.height = height;
         tex.mipLevels = 1;
-        tex.layout = VK_IMAGE_LAYOUT_GENERAL;
+        tex.layout = VK_IMAGE_LAYOUT_UNDEFINED;
         tex.owned = false;
         textures_[rt.colorTexId] = tex;
 
@@ -2678,7 +2681,13 @@ private:
         color.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
         color.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
         color.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        color.initialLayout = VK_IMAGE_LAYOUT_GENERAL;
+        // A clear pass does not preserve the contents, so the image's prior
+        // layout is irrelevant and must be declared UNDEFINED: a freshly
+        // created image is in UNDEFINED, and claiming GENERAL here made the
+        // first bind of every render target a validation error (the tracked
+        // layout was seeded to GENERAL while the actual image was UNDEFINED).
+        color.initialLayout =
+            clearLoad ? VK_IMAGE_LAYOUT_UNDEFINED : VK_IMAGE_LAYOUT_GENERAL;
         color.finalLayout = VK_IMAGE_LAYOUT_GENERAL;
 
         VkAttachmentDescription depth{};
@@ -2688,7 +2697,8 @@ private:
         depth.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
         depth.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         depth.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        depth.initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        depth.initialLayout = clearLoad ? VK_IMAGE_LAYOUT_UNDEFINED
+                                        : VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
         depth.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
         VkAttachmentReference colorRef{0, VK_IMAGE_LAYOUT_GENERAL};
@@ -3142,6 +3152,17 @@ private:
         auto it = texSetCache_.find(key);
         if (it != texSetCache_.end()) return it->second;
         NEON_VK_TRACE("vt: texture set cache miss tex0=%u tex2=%u\n", boundTextures_[0], boundTextures_[2]);
+        // Switching render targets flushes (and ends) the current command
+        // buffer mid frame while frameReady_ stays set, so the layout
+        // transitions below would otherwise be recorded into an ended command
+        // buffer. Reopen it first. Also end any active render pass: barriers
+        // are illegal inside a render pass, and the next draw re-begins it
+        // with LOAD so the preserved contents survive.
+        EndRenderPassIfActive(f);
+        if (!f.cmdOpen) {
+            EnsureFrameStarted();
+            OpenCmd(f);
+        }
 
         VkDescriptorSetAllocateInfo ai{};
         ai.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;

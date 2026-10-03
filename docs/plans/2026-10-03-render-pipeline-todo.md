@@ -40,6 +40,8 @@
 | `69719c5` | **VK**：三角形绕序/frontFace 反（单面网格不渲染）+ 深度 barrier aspect（D24S8 需 DEPTH\|STENCIL） |
 | `dfc80f2` | **VK**：自动曝光偏黑（pass 内向图外持久目标第二绘制丢失）→ `SupportsTargetPersistence()`，VK 跳过时域平滑 |
 | `24db079` | **spot light**（GL+VK），最多 4 个，含锥角/羽化 |
+| (F2) | **启用点光阴影**（GL+VK）：目标带深度附件、按 texel 深度测试（非画家排序），`PointShadowRT` 真正分配（原来从未创建），`Renderer::SetPointShadowsEnabled` 运行时开关（low/medium 关，high/ultra 开），`NEON_NO_POINT_SHADOWS` 诊断 |
+| (VK) | **修复 Vulkan 布局校验报错**：clear pass 的 `initialLayout` 用 UNDEFINED（原来谎称 GENERAL）；新 RT 的 tracked layout 从 UNDEFINED 起步（首次 bind 才真正 transition）；`EnsureTextureSet` 在过渡前补齐 `EndRenderPassIfActive` + 重开已结束的 cmd（换 target 会 flush/end 命令缓冲）。visual_acceptance 的 image-layout 错误从 110 → 0 |
 
 架构要点（供后续参考）：
 - 前向管线：lit pass（HDR+depth）→ 后处理图 `post_graph`（depth → gbuffer → ssao → vol → ssr → bloom → composite）。**无 MRT**；间接光/粗糙度靠 `post.gbuffer` 那个额外几何 pass 写 `gbuffer_`（RGBA16F）。
@@ -64,18 +66,18 @@
 ### 其它已记录的低优先问题
 - **SSAO** 仍用「深度重建法线」，Godot 用真法线缓冲 + horizon-based；有 gbuffer 后可考虑用 `gbuffer` 真法线提质。
 - **SSR**：单 pass、无 HiZ、无时域去噪（只有空间 blur）；粗糙度只是淡出，未做 cone/mip 模糊。
-- **点光阴影**默认关闭（见 F2）。
+- **点光阴影**已默认开启（见 F2）；高粗糙度地面在光源极近处仍可能有轻微 self-shadow（slope bias 封顶 0.03），如需可加 normal-offset。
 - **VK 自动曝光**目前跳过时域平滑（`SupportsTargetPersistence()=false`）；彻底修需要让 VK 的「图外持久目标」可写（把历史改成图内资源并解决读写环，或用一次性 copy 写回）。
 - `SetAmbientGroundColor` 无调用者（半球环境地面色恒为默认灰）。
+- **VK 资源析构顺序**（校验层仅剩此类）：`vkDestroyBuffer-00922`/`vkDestroyPipeline-00765`/`vkDestroyImageView-01026` 在仍被 pending 使用时报错，`vkQueueSubmit-00065` semaphore 重用，以及 `vkDestroyDevice-05137` 设备内存泄漏（若干 DeviceMemory 未释放）。需要给资源加延迟销毁/帧围栏，并补全 DeviceMemory 释放路径。
 
 ---
 
 ## 3. 待补的功能（按建议顺序）
 
-### F2. 启用点光阴影（最省事，代码已存在）
-- `ShadowSystem::kShadowPointLights=2`、`kPointShadowSize=512`，`pointShadowsEnabled_` 默认 false（`engine/src/gfx/shadow_system.cpp:182`）。lit shader 有 `PointShadowForLight` + 12 张 2D face map 采样（unit 8..19）。
-- 做法：默认开（或按场景/画质开），跑 `NEON_DUMP_POST`/截图验证 GL+VK；注意 VK 的 face map 上传与 cube 约定要一致（`PointCubemapFaceUV` 对应 GL 规范表 8.19）。
-- 风险：性能（2 光 × 6 face）+ 之前被关可能有原因，需回归。
+### F2. 启用点光阴影（**已完成**）
+- 原因：`pointShadowRT_` 从未分配（`Init` 里被硬编码 `pointShadowsEnabled_=false`，`CreateCascadeTargets` 不建点光目标），且旧代码只有画家排序（无深度），大面积地面作接收者+投射者会产生 face 状光斑。
+- 现在：`CreatePointShadowTargets()` 建 2 光 × 6 face 的 512² 目标，有深度缓冲时用 GL_LESS 逐 texel 深度测试（`CullMode::None` 画双面），否则退回画家排序。运行时开关 `Renderer::SetPointShadowsEnabled`；画质预设 low/medium 关、high/ultra 开；`NEON_NO_POINT_SHADOWS=1` 诊断关闭。GL/VK 截图一致，`neon_tests` 842/842。
 
 ### F3. 真实 cubemap IBL 预滤波（HDRI 光照准确）
 - 现状（`engine/src/gfx/ibl.cpp`）：IBL 只按 `top`/`horizon` 两个颜色烘焙竖直渐变（irradiance 1×128、prefiltered 24×128、BRDF LUT 128×128），**即使场景用真 HDRI 天空也不是从 cubemap 预滤波**。
@@ -118,4 +120,4 @@
 ## 5. 快速验证清单（每次改渲染后）
 - `neon_tests` = 842/842。
 - GL 与 VK 都跑 `projects/default/assets/scenes/visual_acceptance.json`、`_mirror.json`、`projects/showcase/assets/scenes/04_lakeside.json`，肉眼/像素 diff 对比，确认无回归、两后端一致。
-- 改 VK UBO 后跑一次 `NEON_VK_VALIDATION=1`，要求只剩 `vkDestroyDevice` 泄漏告警（无 `pCode-08737`、无 layout 错误）。
+- 改 VK UBO 后跑一次 `NEON_VK_VALIDATION=1`，要求无 `pCode-08737`、无 `InvalidImageLayout`。剩余为**资源析构顺序**类（`vkDestroyBuffer-00922`/`vkDestroyPipeline-00765`/`vkDestroyImageView-01026`/`vkDestroyDevice-05137` 泄漏 + semaphore `-00065`），属已知的独立问题（见「待修」）。

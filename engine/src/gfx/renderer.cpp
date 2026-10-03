@@ -588,6 +588,7 @@ void Renderer::SetQuality(Quality quality) {
             shadowSystem_.SetShadowSize(512);
             SetShadowDistance(60.0f);
             SetShadowSoftness(0.6f);
+            SetPointShadowsEnabled(false);
             SetSsaoEnabled(false);
             SetVolumetricEnabled(false);
             SetSsrEnabled(false);
@@ -602,6 +603,7 @@ void Renderer::SetQuality(Quality quality) {
             shadowSystem_.SetShadowSize(1024);
             SetShadowDistance(90.0f);
             SetShadowSoftness(1.0f);
+            SetPointShadowsEnabled(false);
             SetSsaoEnabled(true);
             SetSsaoIntensity(0.8f);
             SetVolumetricEnabled(false);
@@ -618,6 +620,7 @@ void Renderer::SetQuality(Quality quality) {
             shadowSystem_.SetShadowSize(2048);
             SetShadowDistance(220.0f);
             SetShadowSoftness(1.4f);
+            SetPointShadowsEnabled(true);
             SetSsaoEnabled(true);
             SetSsaoIntensity(1.0f);
             SetVolumetricEnabled(true);
@@ -640,6 +643,7 @@ void Renderer::SetQuality(Quality quality) {
             shadowSystem_.SetShadowSize(2048);
             SetShadowDistance(150.0f);
             SetShadowSoftness(1.0f);
+            SetPointShadowsEnabled(true);
             SetSsaoEnabled(true);
             SetSsaoIntensity(1.0f);
             SetVolumetricEnabled(true);
