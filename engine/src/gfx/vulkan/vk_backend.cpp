@@ -245,6 +245,7 @@ const UniEntry kUniformOffsets[] = {
     {"uLightProbeEnabled", UniKind::Int, 7232, 4, 1},
     {"uBloomWidth", UniKind::Float, 7236, 4, 1},
     {"uHasGBuffer", UniKind::Int, 7240, 4, 1},
+    {"uTonemapMode", UniKind::Int, 7244, 4, 1},
     {"uSpotPos[0]", UniKind::Vec3, 7248, 12, 4},
     {"uSpotDir[0]", UniKind::Vec3, 7312, 12, 4},
     {"uSpotColor[0]", UniKind::Vec3, 7376, 12, 4},

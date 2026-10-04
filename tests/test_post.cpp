@@ -78,6 +78,34 @@ TEST(AcesFilmNaNInfGuard) {
     CHECK(gfx::AcesFilm(3.4e38f) >= 0.0f && gfx::AcesFilm(3.4e38f) <= 1.0f);
 }
 
+TEST(TonemapModeOperators) {
+    using gfx::TonemapMode;
+    const float xs[] = {0.0f, 0.25f, 0.5f, 1.0f, 2.0f, 4.0f, 8.0f, 64.0f};
+    // ACES mode must equal the standalone AcesFilm (default unchanged).
+    CHECK_NEAR(gfx::TonemapColor(TonemapMode::ACES, {0.5f, 0.5f, 0.5f}).x,
+               gfx::AcesFilm(0.5f), 1e-6);
+    // Linear is the clamp reference.
+    CHECK_NEAR(gfx::TonemapColor(TonemapMode::Linear, {4.0f, 0.5f, -1.0f}).x, 1.0f, 1e-6);
+    CHECK_NEAR(gfx::TonemapColor(TonemapMode::Linear, {4.0f, 0.5f, -1.0f}).z, 0.0f, 1e-6);
+    for (TonemapMode m : {TonemapMode::Linear, TonemapMode::Reinhard, TonemapMode::Filmic,
+                          TonemapMode::ACES}) {
+        float prev = -1.0f;
+        for (float x : xs) {
+            const math::Vec3 c = gfx::TonemapColor(m, {x, x, x});
+            CHECK(c.x >= -1e-6f && c.x <= 1.0f + 1e-6f);
+            CHECK(c.x >= prev - 1e-5f); // monotonic non-decreasing
+            prev = c.x;
+        }
+        // NaN/Inf never escape as non-finite.
+        const math::Vec3 bad = gfx::TonemapColor(
+            m, {std::numeric_limits<float>::infinity(), std::numeric_limits<float>::quiet_NaN(),
+                -std::numeric_limits<float>::infinity()});
+        CHECK(std::isfinite(bad.x) && std::isfinite(bad.y) && std::isfinite(bad.z));
+    }
+    // Reinhard compresses highlights below 1 for finite input.
+    CHECK(gfx::TonemapColor(TonemapMode::Reinhard, {8.0f, 8.0f, 8.0f}).x < 1.0f);
+}
+
 TEST(AcesFilmMonotonic) {
     // Monotonic non-decreasing over the whole range (no banding / no ringing).
     const float xs[] = {0.0f, 0.25f, 0.5f, 0.75f, 1.0f, 1.5f, 2.0f, 4.0f, 8.0f, 100.0f};

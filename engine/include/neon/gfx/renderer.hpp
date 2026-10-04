@@ -294,6 +294,10 @@ public:
     float Exposure() const { return exposure_; }
     void SetTonemapEnabled(bool enabled);
     bool TonemapEnabled() const { return tonemapEnabled_; }
+    // Selects the composite tonemap operator (default ACES). See bloom.hpp
+    // TonemapMode; existing scenes are unchanged at the default.
+    void SetTonemapMode(TonemapMode mode) { tonemapMode_ = mode; }
+    TonemapMode TonemapModeSelected() const { return tonemapMode_; }
     // A1 color grading: procedural (LUT-free) post-tonemap grade driving the
     // composite. SetColorGrade copies the params; the RenderStack component (or
     // a Lua-driven script) applies it each frame so grading is data-driven.
@@ -787,6 +791,7 @@ private:
     float shadowNormalOffset_ = 1.5f;
     float exposure_ = 1.0f;
     bool tonemapEnabled_ = true;
+    TonemapMode tonemapMode_ = TonemapMode::ACES;
     // A1 color grading (post-tonemap procedural "film look"); default disabled.
     ColorGrade colorGrade_;
     // A5 auto-exposure + vignette (composite). autoExposure_/vignette_ drive

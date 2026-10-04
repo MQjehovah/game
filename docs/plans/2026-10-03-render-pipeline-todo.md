@@ -42,6 +42,7 @@
 | `24db079` | **spot light**（GL+VK），最多 4 个，含锥角/羽化 |
 | (F2) | **启用点光阴影**（GL+VK）：目标带深度附件、按 texel 深度测试（非画家排序），`PointShadowRT` 真正分配（原来从未创建），`Renderer::SetPointShadowsEnabled` 运行时开关（low/medium 关，high/ultra 开），`NEON_NO_POINT_SHADOWS` 诊断 |
 | (VK) | **修复 Vulkan 布局校验报错**：clear pass 的 `initialLayout` 用 UNDEFINED（原来谎称 GENERAL）；新 RT 的 tracked layout 从 UNDEFINED 起步（首次 bind 才真正 transition）；`EnsureTextureSet` 在过渡前补齐 `EndRenderPassIfActive` + 重开已结束的 cmd（换 target 会 flush/end 命令缓冲）。visual_acceptance 的 image-layout 错误从 110 → 0 |
+| (F5) | **多 tonemapper**：Linear/Reinhard/Filmic/ACES（`TonemapMode`，GL+VK composite，CLI `--tonemap`），默认 ACES 不变 |
 | (F3) | **八面体 IBL（带方位）**：irradiance 32²→24²、prefiltered 改成八面体「粗糙度 atlas」（`kOctaPrefilterSize=48` × `48*5` 行，逐 tile GGX 预滤波），从**真实 equirect HDRI**（`SceneState::SetSkySource`，1024 宽降采样）或程序化渐变烘焙；lit shader 用八面体 encode + wrap-fold 双线性（消除接缝）按 `textureSize()` 推 tile 数并混合相邻粗糙度。观感较旧 Y-only 渐变明显改善；GL/VK 一致，烘焙 ~50–120ms |
 
 架构要点（供后续参考）：
@@ -90,9 +91,10 @@
 - 参考：Godot `environment/volumetric_fog.glsl`、`volumetric_fog_process.glsl`（froxel grid + light injection + temporal）。
 
 ### F5. 后期补缺（都属可选、低风险）
+- **多 tonemapper（已做 Linear/Reinhard/Filmic/ACES）**：`bloom.hpp` 的 `TonemapMode` + CPU `TonemapColor`，GL `kCompositeFragmentShader` 与 VK `composite.frag` 加 `uTonemapMode`（VK UBO slot 7244），`PostParams::CompositeParams::tonemapMode`，`Renderer::SetTonemapMode`，CLI `--tonemap linear|reinhard|filmic|aces`。默认 ACES 保持既有观感不变。
+- **AgX**：矩阵式，仍未做（可照 Godot `effects/tonemap.glsl`）。
 - DoF / bokeh（Godot `effects/bokeh_dof.glsl`）。
 - 运动模糊。
-- 多种 tonemapper：Linear/Reinhard/Filmic/ACES/AgX（Godot `effects/tonemap.glsl`，AgX 矩阵已抄在对话里）。当前只有 ACES(Narkowicz)，在 `bloom.hpp` kCompositeFragmentShader / VK `composite.frag`。
 - 色彩校正 LUT（当前只有程序化 LGG）。
 - 抗锯齿：FXAA / SMAA（Godot `effects/smaa_*.glsl`；当前 MSAA+TAA）。
 

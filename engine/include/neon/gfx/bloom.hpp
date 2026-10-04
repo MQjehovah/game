@@ -76,6 +76,62 @@ inline math::Vec3 AcesFilm(const math::Vec3& color) {
     return {AcesFilm(color.x), AcesFilm(color.y), AcesFilm(color.z)};
 }
 
+// Tonemap operators exposed to the composite. ACES (Narkowicz) stays the
+// default so existing scenes are unchanged; the others are selectable per
+// scene/stack and mirror the GLSL in kCompositeFragmentShader / composite.frag.
+enum class TonemapMode : int {
+    Linear = 0,   // clamp only (legacy reference)
+    Reinhard = 1, // x / (1 + x)
+    Filmic = 2,   // Hable "Uncharted 2" curve, white point 11.2
+    ACES = 3,     // Narkowicz ACES fit (default)
+};
+
+// Guard for every operator: clamp away Inf and map NaN -> 0 before the curve
+// (rational/pow ops on NaN are undefined in GLSL -> flicker).
+inline math::Vec3 SanitizeHdr(const math::Vec3& x) {
+    return {std::isnan(x.x) ? 0.0f : std::clamp(x.x, 0.0f, kAcesHdrMax),
+            std::isnan(x.y) ? 0.0f : std::clamp(x.y, 0.0f, kAcesHdrMax),
+            std::isnan(x.z) ? 0.0f : std::clamp(x.z, 0.0f, kAcesHdrMax)};
+}
+
+inline math::Vec3 ReinhardFilm(const math::Vec3& in) {
+    const math::Vec3 x = SanitizeHdr(in);
+    return {x.x / (1.0f + x.x), x.y / (1.0f + x.y), x.z / (1.0f + x.z)};
+}
+
+inline math::Vec3 Uncharted2Curve(const math::Vec3& x) {
+    const float A = 0.15f, B = 0.50f, C = 0.10f, D = 0.20f, E = 0.02f, F = 0.30f;
+    auto f = [&](float v) {
+        return ((v * (A * v + C * B) + D * E) / (v * (A * v + B) + D * F)) - E / F;
+    };
+    return {f(x.x), f(x.y), f(x.z)};
+}
+
+inline math::Vec3 FilmicFilm(const math::Vec3& in) {
+    const math::Vec3 x = SanitizeHdr(in) * 2.0f;
+    const float whiteScale = 1.0f / Uncharted2Curve({11.2f, 11.2f, 11.2f}).x;
+    const math::Vec3 c = Uncharted2Curve(x) * whiteScale;
+    return {std::clamp(c.x, 0.0f, 1.0f), std::clamp(c.y, 0.0f, 1.0f),
+            std::clamp(c.z, 0.0f, 1.0f)};
+}
+
+// Applies the selected operator to an already exposure-scaled HDR colour.
+inline math::Vec3 TonemapColor(TonemapMode mode, const math::Vec3& hdr) {
+    switch (mode) {
+        case TonemapMode::Linear: {
+            const math::Vec3 s = SanitizeHdr(hdr);
+            return {std::min(s.x, 1.0f), std::min(s.y, 1.0f), std::min(s.z, 1.0f)};
+        }
+        case TonemapMode::Reinhard:
+            return ReinhardFilm(hdr);
+        case TonemapMode::Filmic:
+            return FilmicFilm(hdr);
+        case TonemapMode::ACES:
+        default:
+            return AcesFilm(hdr);
+    }
+}
+
 // Exposure application: exposure multiplies the HDR input BEFORE the curve
 // (ACESFilm(color * exposure)); the composite shader does the same. exposure
 // == 1 is the identity (no darkening / no wash-out).
@@ -429,6 +485,7 @@ uniform float uStrength;
 uniform float uExposure;
 uniform int uBloomEnabled;
 uniform int uTonemapEnabled;
+uniform int uTonemapMode;      // 0 Linear, 1 Reinhard, 2 Filmic, 3 ACES
 uniform int uGradeEnabled;
 uniform float uSaturation;
 uniform float uContrast;
@@ -452,6 +509,26 @@ vec3 ACESFilm(vec3 x) {
     // which is undefined for NaN in GLSL (matches the CPU AcesFilm guard).
     x = clamp(x, vec3(0.0), vec3(65504.0));
     return clamp((x * (a * x + b)) / (x * (c * x + d) + e), vec3(0.0), vec3(1.0));
+}
+vec3 ReinhardFilm(vec3 x) {
+    x = clamp(x, vec3(0.0), vec3(65504.0));
+    return x / (vec3(1.0) + x);
+}
+vec3 Uncharted2Curve(vec3 x) {
+    const float A = 0.15, B = 0.50, C = 0.10, D = 0.20, E = 0.02, F = 0.30;
+    return ((x * (A * x + C * B) + D * E) / (x * (A * x + B) + D * F)) - E / F;
+}
+vec3 FilmicFilm(vec3 x) {
+    x = clamp(x, vec3(0.0), vec3(65504.0)) * 2.0;
+    float whiteScale = 1.0 / Uncharted2Curve(vec3(11.2)).x;
+    return clamp(Uncharted2Curve(x) * whiteScale, vec3(0.0), vec3(1.0));
+}
+// 0 Linear, 1 Reinhard, 2 Filmic, 3 ACES (mirrors bloom.hpp TonemapColor).
+vec3 TonemapColor(int mode, vec3 x) {
+    if (mode == 0) return clamp(x, vec3(0.0), vec3(1.0));
+    if (mode == 1) return ReinhardFilm(x);
+    if (mode == 2) return FilmicFilm(x);
+    return ACESFilm(x);
 }
 // Interleaved gradient noise - +-0.5 LSB of it before the 8-bit store turns
 // smooth-gradient posterization (horizontal stripes on large flat ground /
@@ -506,7 +583,7 @@ void main() {
         // replace silently discarded it whenever auto exposure was on.
         float exposure = uExposure;
         if (uAutoExposure != 0) exposure = uExposure * max(texture(uAvgLum, vec2(0.5)).r, 1e-4);
-        vec3 graded = ACESFilm(c * exposure);
+        vec3 graded = TonemapColor(uTonemapMode, c * exposure);
         // A1 color grading (post-tonemap, display space). Skipped when disabled
         // so the default RenderStack is pixel-identical (matches GradeColor).
         if (uGradeEnabled != 0) {

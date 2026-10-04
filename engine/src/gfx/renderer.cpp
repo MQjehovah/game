@@ -2117,6 +2117,7 @@ PostGraph::FrameParams Renderer::MakePostParams(bool chains) const {
     p.composite.fogDensity = sceneState_.VolumetricFogDensity();
     p.composite.exposure = exposure_;
     p.composite.tonemapEnabled = tonemapEnabled_;
+    p.composite.tonemapMode = static_cast<int>(tonemapMode_);
     p.composite.bloomThreshold = bloomThreshold_;
     p.composite.bloomStrength = bloomStrength_;
     p.composite.bloomWidth = bloomWidth_;

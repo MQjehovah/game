@@ -64,6 +64,9 @@ public:
         float fogDensity = 0.02f;
         float exposure = 1.0f;
         bool tonemapEnabled = true;
+        // Composite tonemap operator (gfx::TonemapMode). ACES default keeps
+        // existing scenes pixel-identical.
+        int tonemapMode = 3;
         // Data-driven bloom (A/RenderStack): bright threshold + add-back strength,
         // defaulting to the original constants so existing scenes are unchanged.
         float bloomThreshold = kBloomThreshold;

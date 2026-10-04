@@ -81,6 +81,7 @@ struct PlayerConfig {
     bool taa = false;             // --taa: temporal AA (also on in high/ultra)
     bool noTaa = false;           // --no-taa: force temporal AA off
     float taaSharpen = -1.0f;     // --taa-sharpen <f>: unsharp gain (0-1.5)
+    std::string tonemapMode;      // --tonemap linear|reinhard|filmic|aces
 };
 
 // The data-driven player: unpack a store-only pack to a temp dir, read the

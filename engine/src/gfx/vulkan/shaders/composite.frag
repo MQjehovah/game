@@ -24,6 +24,26 @@ vec3 ACESFilm(vec3 x) {
     x = clamp(x, vec3(0.0), vec3(65504.0));
     return clamp((x * (a * x + b)) / (x * (c * x + d) + e), vec3(0.0), vec3(1.0));
 }
+vec3 ReinhardFilm(vec3 x) {
+    x = clamp(x, vec3(0.0), vec3(65504.0));
+    return x / (vec3(1.0) + x);
+}
+vec3 Uncharted2Curve(vec3 x) {
+    const float A = 0.15, B = 0.50, C = 0.10, D = 0.20, E = 0.02, F = 0.30;
+    return ((x * (A * x + C * B) + D * E) / (x * (A * x + B) + D * F)) - E / F;
+}
+vec3 FilmicFilm(vec3 x) {
+    x = clamp(x, vec3(0.0), vec3(65504.0)) * 2.0;
+    float whiteScale = 1.0 / Uncharted2Curve(vec3(11.2)).x;
+    return clamp(Uncharted2Curve(x) * whiteScale, vec3(0.0), vec3(1.0));
+}
+// 0 Linear, 1 Reinhard, 2 Filmic, 3 ACES (mirrors bloom.hpp TonemapColor).
+vec3 TonemapColor(int mode, vec3 x) {
+    if (mode == 0) return clamp(x, vec3(0.0), vec3(1.0));
+    if (mode == 1) return ReinhardFilm(x);
+    if (mode == 2) return FilmicFilm(x);
+    return ACESFilm(x);
+}
 // Interleaved gradient noise (Jimenez 2014) - the same per-pixel dither the
 // lit shader uses for shadow kernels. Adding +-0.5 LSB of it before the 8-bit
 // store turns smooth-gradient posterization (horizontal stripes on large flat
@@ -73,7 +93,7 @@ void main() {
         // replacing it -- the authored exposure is a scene look.
         if (eng.uAutoExposure != 0)
             exposure = eng.uExposure * max(texture(uAvgLum, vec2(0.5)).r, 1e-4);
-        vec3 graded = ACESFilm(c * exposure);
+        vec3 graded = TonemapColor(eng.uTonemapMode, c * exposure);
         if (eng.uGradeEnabled != 0) {
             graded = clamp(graded, vec3(0.0), vec3(1.0));
             graded *= eng.uTint.rgb;

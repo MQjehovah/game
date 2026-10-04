@@ -584,6 +584,7 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
         backend.SetUniformFloat("uFar", farPlane_);
         backend.SetUniformFloat("uExposure", comp_.exposure);
         backend.SetUniformInt("uTonemapEnabled", comp_.tonemapEnabled ? 1 : 0);
+        backend.SetUniformInt("uTonemapMode", comp_.tonemapMode);
         const ColorGrade& g = comp_.colorGrade;
         backend.SetUniformInt("uGradeEnabled", g.enabled ? 1 : 0);
         backend.SetUniformFloat("uSaturation", g.saturation);

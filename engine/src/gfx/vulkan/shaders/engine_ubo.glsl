@@ -177,6 +177,8 @@ layout(set = 0, binding = 0) uniform EngineUBO {
     // 1 when the composite's G-buffer sampler (uGBuffer) is bound (SSAO
     // indirect-only path); 0 disables the indirect subtraction.
     layout(offset = 7240) int uHasGBuffer;
+    // Composite tonemap operator: 0 Linear, 1 Reinhard, 2 Filmic, 3 ACES.
+    layout(offset = 7244) int uTonemapMode;
     // Spot lights (up to 4): position, cone axis, colour, range, inner/outer
     // cone cosines. std140 vec3 arrays use a 16-byte element stride.
     layout(offset = 7248) vec3 uSpotPos[4];

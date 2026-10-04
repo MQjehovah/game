@@ -75,6 +75,7 @@ void PrintHelp() {
         "  --dyn-res <fps>            dynamic resolution targeting <fps>\n"
         "  --taa / --no-taa           temporal anti-aliasing (jittered history resolve)\n"
         "  --taa-sharpen <f>          unsharp-mask gain on the TAA resolve (0-1.5)\n"
+        "  --tonemap <mode>           composite tonemap: linear|reinhard|filmic|aces\n"
         "  --keep                     keep the unpacked temp dir on exit (debug)\n"
         "  --log-level <level>        log filter: debug|info|warn|error (default debug)\n"
         "  --log-cat <n>:<level>      per-category override (repeatable, comma-separated,\n"
@@ -138,6 +139,8 @@ int main(int argc, char** argv) {
             cfg.noTaa = true;
         } else if (std::strcmp(argv[i], "--taa-sharpen") == 0 && i + 1 < argc) {
             cfg.taaSharpen = static_cast<float>(std::atof(argv[++i]));
+        } else if (std::strcmp(argv[i], "--tonemap") == 0 && i + 1 < argc) {
+            cfg.tonemapMode = argv[++i];
         } else if (std::strcmp(argv[i], "--mod") == 0 && i + 1 < argc) {
             cfg.modDirs.push_back(argv[++i]);
         } else if (std::strcmp(argv[i], "--scripts") == 0 && i + 1 < argc) {

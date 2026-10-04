@@ -288,6 +288,15 @@ bool PlayerApp::OnCreate() {
     if (cfg_.taa) renderer_.SetTaaEnabled(true);
     if (cfg_.noTaa) renderer_.SetTaaEnabled(false);
     if (cfg_.taaSharpen >= 0.0f) renderer_.SetTaaSharpen(cfg_.taaSharpen);
+    if (!cfg_.tonemapMode.empty()) {
+        const std::string& tm = cfg_.tonemapMode;
+        if (tm == "linear") renderer_.SetTonemapMode(gfx::TonemapMode::Linear);
+        else if (tm == "reinhard") renderer_.SetTonemapMode(gfx::TonemapMode::Reinhard);
+        else if (tm == "filmic") renderer_.SetTonemapMode(gfx::TonemapMode::Filmic);
+        else if (tm == "aces") renderer_.SetTonemapMode(gfx::TonemapMode::ACES);
+        else NEON_LOG_WARN("Player: unknown --tonemap '%s' (linear|reinhard|filmic|aces)",
+                           tm.c_str());
+    }
 assetMgr_.Init(&renderer_);
 // G7-1: asset reads go through the pack + Mod mount stack when present.
 if (cfg_.vfs) assetMgr_.SetFileSystem(cfg_.vfs.get());
