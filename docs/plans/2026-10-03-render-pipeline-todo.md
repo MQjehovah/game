@@ -43,6 +43,7 @@
 | (F2) | **启用点光阴影**（GL+VK）：目标带深度附件、按 texel 深度测试（非画家排序），`PointShadowRT` 真正分配（原来从未创建），`Renderer::SetPointShadowsEnabled` 运行时开关（low/medium 关，high/ultra 开），`NEON_NO_POINT_SHADOWS` 诊断 |
 | (VK) | **修复 Vulkan 布局校验报错**：clear pass 的 `initialLayout` 用 UNDEFINED（原来谎称 GENERAL）；新 RT 的 tracked layout 从 UNDEFINED 起步（首次 bind 才真正 transition）；`EnsureTextureSet` 在过渡前补齐 `EndRenderPassIfActive` + 重开已结束的 cmd（换 target 会 flush/end 命令缓冲）。visual_acceptance 的 image-layout 错误从 110 → 0 |
 | (F5) | **多 tonemapper**：Linear/Reinhard/Filmic/ACES（`TonemapMode`，GL+VK composite，CLI `--tonemap`），默认 ACES 不变 |
+| (B3) | **可选 gamma-correct**（`Renderer::SetGammaCorrect`，默认关，CLI `--gamma-correct`）：lit 解码 sRGB albedo/emissive，composite `LinearToSrgb` 编码（tonemap 后、grade 前）；VK UBO slot 7636 |
 | (F3) | **八面体 IBL（带方位）**：irradiance 32²→24²、prefiltered 改成八面体「粗糙度 atlas」（`kOctaPrefilterSize=48` × `48*5` 行，逐 tile GGX 预滤波），从**真实 equirect HDRI**（`SceneState::SetSkySource`，1024 宽降采样）或程序化渐变烘焙；lit shader 用八面体 encode + wrap-fold 双线性（消除接缝）按 `textureSize()` 推 tile 数并混合相邻粗糙度。观感较旧 Y-only 渐变明显改善；GL/VK 一致，烘焙 ~50–120ms |
 
 架构要点（供后续参考）：
@@ -56,13 +57,12 @@
 
 ## 2. 待修的 bug
 
-### B3. gamma-correct 管线（**已实现过、已回退**，需决策）
-- 现状：引擎是 **gamma-unaware**（albedo 贴图当线性用、输出不编码，只有 grade 的 `uGamma` 默认 1.0 等于没做）。
-- 试验过：lit 里对 albedo/tint/emissive/草贴图 `pow(.,2.2)` 解码 + composite 输出 `pow(.,1/2.2)` 编码。**结果：现有场景整体过曝发灰**（visual_acceptance mean 71→128），因为所有内容都按旧管线调过。
-- 结论：**直接默认开启会破坏全部项目**。建议做成**可选开关**（默认关）：
-  1. `Renderer::SetGammaCorrect(bool)` + 走场景 uniform（lit 端 `uniform int uGammaCorrect`；VK 加 UBO slot，注意还有空位：当前末尾 ~7640）。
-  2. composite 端 `CompositeParams::gammaCorrect`，`if (gammaCorrect) graded = LinearToSrgb(graded);`（在 grade/vignette 之前）。
-  3. 开启后需要按项目重调 exposure/光照。
+### B3. gamma-correct 管线（**已做成可选开关，默认关**）
+- 引擎默认仍 **gamma-unaware**（albedo 当线性用、输出不编码），既有项目不受影响。
+- 已实现（opt-in）：`Renderer::SetGammaCorrect(bool)`（默认 false）+ CLI `--gamma-correct`。
+  - lit 端 `uGammaCorrect`（GL builtin + VK lit.frag；VK UBO slot `7636`）：为真时 albedo（含 tint/顶点色/草/地形）与 emissive 贴图 `pow(.,2.2)` 解码到线性。
+  - composite 端 `CompositeParams::gammaCorrect`：tonemap 后、grade/vignette 前 `LinearToSrgb` 编码（两个分支都编码）。
+  - 开启后观感明显变亮/发灰（visual_acceptance 验证），需按项目重调 exposure/光照。
 - 若要彻底正确：把 albedo/emissive 贴图用 sRGB internal format 上传（硬件解码），并区分 color/data 贴图。改动更大。
 
 ### 其它已记录的低优先问题

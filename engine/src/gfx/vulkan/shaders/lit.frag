@@ -329,6 +329,8 @@ void main() {
     // blades keep a crisp edge instead of a translucent quad outline.
     if (eng.uAlphaTest > 0.0 && albedo.a < eng.uAlphaTest) discard;
 #endif
+    // Gamma-correct (off by default): decode sRGB albedo/tint to linear.
+    if (eng.uGammaCorrect != 0) albedo.rgb = pow(max(albedo.rgb, vec3(0.0)), vec3(2.2));
     vec3 N = normalize(vNormal);
     // A2 normal mapping without per-vertex tangents: reconstruct the tangent
     // basis from screen-space derivatives of world position + UV (the standard
@@ -418,7 +420,11 @@ void main() {
     // of the sun term: kept out of the sun shadow composite below (a glowing
     // pickup or torch-lit wall must not go dark because the sun is blocked).
     vec3 extraLight = vec3(0.0);
-    if (eng.uHasEmissive != 0) extraLight += texture(uEmissive, vUV).rgb * eng.uEmissiveIntensity;
+    if (eng.uHasEmissive != 0) {
+        vec3 em = texture(uEmissive, vUV).rgb;
+        if (eng.uGammaCorrect != 0) em = pow(max(em, vec3(0.0)), vec3(2.2));
+        extraLight += em * eng.uEmissiveIntensity;
+    }
     // Tint self-glow: tint components pushed above 1.0 emit light directly (beacon
     // lamps, glowing pickups). The term lands in the HDR target, so intensity above
     // the bloom threshold reads as an actual light source.

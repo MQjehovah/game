@@ -298,6 +298,13 @@ public:
     // TonemapMode; existing scenes are unchanged at the default.
     void SetTonemapMode(TonemapMode mode) { tonemapMode_ = mode; }
     TonemapMode TonemapModeSelected() const { return tonemapMode_; }
+    // Optional gamma-correct pipeline (default OFF). When on, the lit shader
+    // decodes albedo/emissive from sRGB to linear before lighting and the
+    // composite re-encodes display output to sRGB. The engine is gamma-unaware
+    // by default and existing content was authored for that, so enabling this
+    // changes the look and requires retuning exposure/lighting.
+    void SetGammaCorrect(bool enabled) { gammaCorrect_ = enabled; }
+    bool GammaCorrect() const { return gammaCorrect_; }
     // A1 color grading: procedural (LUT-free) post-tonemap grade driving the
     // composite. SetColorGrade copies the params; the RenderStack component (or
     // a Lua-driven script) applies it each frame so grading is data-driven.
@@ -792,6 +799,7 @@ private:
     float exposure_ = 1.0f;
     bool tonemapEnabled_ = true;
     TonemapMode tonemapMode_ = TonemapMode::ACES;
+    bool gammaCorrect_ = false;
     // A1 color grading (post-tonemap procedural "film look"); default disabled.
     ColorGrade colorGrade_;
     // A5 auto-exposure + vignette (composite). autoExposure_/vignette_ drive

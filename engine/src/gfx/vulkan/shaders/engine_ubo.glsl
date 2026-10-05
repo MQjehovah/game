@@ -188,4 +188,7 @@ layout(set = 0, binding = 0) uniform EngineUBO {
     layout(offset = 7504) float uSpotCosInner[4];
     layout(offset = 7568) float uSpotCosOuter[4];
     layout(offset = 7632) int uSpotCount;
+    // Gamma-correct pipeline (default off): decode sRGB albedo/emissive in the
+    // lit shader and encode linear->sRGB in the composite.
+    layout(offset = 7636) int uGammaCorrect;
 } eng;

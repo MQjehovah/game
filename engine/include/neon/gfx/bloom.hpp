@@ -486,6 +486,7 @@ uniform float uExposure;
 uniform int uBloomEnabled;
 uniform int uTonemapEnabled;
 uniform int uTonemapMode;      // 0 Linear, 1 Reinhard, 2 Filmic, 3 ACES
+uniform int uGammaCorrect;     // 1 = encode display output from linear to sRGB
 uniform int uGradeEnabled;
 uniform float uSaturation;
 uniform float uContrast;
@@ -529,6 +530,11 @@ vec3 TonemapColor(int mode, vec3 x) {
     if (mode == 1) return ReinhardFilm(x);
     if (mode == 2) return FilmicFilm(x);
     return ACESFilm(x);
+}
+// Linear -> sRGB display encode (gamma-correct output, off by default).
+vec3 LinearToSrgb(vec3 c) {
+    c = clamp(c, vec3(0.0), vec3(1.0));
+    return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), c));
 }
 // Interleaved gradient noise - +-0.5 LSB of it before the 8-bit store turns
 // smooth-gradient posterization (horizontal stripes on large flat ground /
@@ -584,6 +590,7 @@ void main() {
         float exposure = uExposure;
         if (uAutoExposure != 0) exposure = uExposure * max(texture(uAvgLum, vec2(0.5)).r, 1e-4);
         vec3 graded = TonemapColor(uTonemapMode, c * exposure);
+        if (uGammaCorrect != 0) graded = LinearToSrgb(graded);
         // A1 color grading (post-tonemap, display space). Skipped when disabled
         // so the default RenderStack is pixel-identical (matches GradeColor).
         if (uGradeEnabled != 0) {
@@ -609,7 +616,9 @@ void main() {
         }
         FragColor = vec4(graded + OutDither(gl_FragCoord.xy), 1.0);
     } else {
-        FragColor = vec4(min(c, vec3(1.0)) + OutDither(gl_FragCoord.xy), 1.0);
+        vec3 outc = min(c, vec3(1.0));
+        if (uGammaCorrect != 0) outc = LinearToSrgb(outc);
+        FragColor = vec4(outc + OutDither(gl_FragCoord.xy), 1.0);
     }
 }
 )";

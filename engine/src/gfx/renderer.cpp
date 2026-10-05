@@ -1436,6 +1436,7 @@ void Renderer::ApplySceneUniforms(ShaderHandle shader) {
     const Color& groundColor = sceneState_.AmbientGroundColor();
     backend_->SetUniformVec3("uAmbientGroundColor",
                              {groundColor.r, groundColor.g, groundColor.b});
+    backend_->SetUniformInt("uGammaCorrect", gammaCorrect_ ? 1 : 0);
     backend_->SetUniformInt("uPointCount", sceneState_.PointCount());
     for (int i = 0; i < sceneState_.PointCount(); ++i) {
         std::string suffix = "[" + std::to_string(i) + "]";
@@ -2118,6 +2119,7 @@ PostGraph::FrameParams Renderer::MakePostParams(bool chains) const {
     p.composite.exposure = exposure_;
     p.composite.tonemapEnabled = tonemapEnabled_;
     p.composite.tonemapMode = static_cast<int>(tonemapMode_);
+    p.composite.gammaCorrect = gammaCorrect_;
     p.composite.bloomThreshold = bloomThreshold_;
     p.composite.bloomStrength = bloomStrength_;
     p.composite.bloomWidth = bloomWidth_;

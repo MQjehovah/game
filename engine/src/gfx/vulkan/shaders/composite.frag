@@ -44,6 +44,11 @@ vec3 TonemapColor(int mode, vec3 x) {
     if (mode == 2) return FilmicFilm(x);
     return ACESFilm(x);
 }
+// Linear -> sRGB display encode (gamma-correct output, off by default).
+vec3 LinearToSrgb(vec3 c) {
+    c = clamp(c, vec3(0.0), vec3(1.0));
+    return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), c));
+}
 // Interleaved gradient noise (Jimenez 2014) - the same per-pixel dither the
 // lit shader uses for shadow kernels. Adding +-0.5 LSB of it before the 8-bit
 // store turns smooth-gradient posterization (horizontal stripes on large flat
@@ -94,6 +99,7 @@ void main() {
         if (eng.uAutoExposure != 0)
             exposure = eng.uExposure * max(texture(uAvgLum, vec2(0.5)).r, 1e-4);
         vec3 graded = TonemapColor(eng.uTonemapMode, c * exposure);
+        if (eng.uGammaCorrect != 0) graded = LinearToSrgb(graded);
         if (eng.uGradeEnabled != 0) {
             graded = clamp(graded, vec3(0.0), vec3(1.0));
             graded *= eng.uTint.rgb;
@@ -116,6 +122,8 @@ void main() {
         }
         FragColor = vec4(graded + OutDither(gl_FragCoord.xy), 1.0);
     } else {
-        FragColor = vec4(min(c, vec3(1.0)) + OutDither(gl_FragCoord.xy), 1.0);
+        vec3 outc = min(c, vec3(1.0));
+        if (eng.uGammaCorrect != 0) outc = LinearToSrgb(outc);
+        FragColor = vec4(outc + OutDither(gl_FragCoord.xy), 1.0);
     }
 }

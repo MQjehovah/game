@@ -89,6 +89,8 @@ uniform float uNormalScale;
 uniform float uAlphaTest;
 uniform float uAOStrength;
 uniform float uEmissiveIntensity;
+// Gamma-correct pipeline (default off): decode sRGB albedo/emissive to linear.
+uniform int uGammaCorrect;
 uniform float uShininess;
 uniform float uMetallic;
 uniform float uRoughness;
@@ -479,6 +481,10 @@ void main() {
     // blades have a crisp edge rather than a translucent quad outline.
     if (uAlphaTest > 0.0 && albedo.a < uAlphaTest) discard;
 #endif
+    // Gamma-correct: albedo/tint/vertex-color are authored in sRGB; decode to
+    // linear before lighting (the composite encodes back to sRGB). Off by
+    // default so existing content is unchanged.
+    if (uGammaCorrect != 0) albedo.rgb = pow(max(albedo.rgb, vec3(0.0)), vec3(2.2));
     vec3 N = normalize(vNormal);
     // A2 normal mapping without per-vertex tangents: reconstruct the tangent
     // basis from screen-space derivatives of world position + UV (the standard
@@ -593,7 +599,11 @@ void main() {
     // shadow composite below (a glowing pickup or torch-lit wall must not go
     // dark because the sun happens to be blocked).
     vec3 extraLight = vec3(0.0);
-    if (uHasEmissive) extraLight += texture(uEmissive, vUV).rgb * uEmissiveIntensity;
+    if (uHasEmissive) {
+        vec3 em = texture(uEmissive, vUV).rgb;
+        if (uGammaCorrect != 0) em = pow(max(em, vec3(0.0)), vec3(2.2));
+        extraLight += em * uEmissiveIntensity;
+    }
     // Tint self-glow: tint components pushed above 1.0 (HDR tint) emit light
     // directly, no emissive texture needed �?beacon lamps, glowing pickups,
     // enemy eye weak points. The glow participates in bloom (HDR target), so

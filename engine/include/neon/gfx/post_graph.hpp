@@ -67,6 +67,8 @@ public:
         // Composite tonemap operator (gfx::TonemapMode). ACES default keeps
         // existing scenes pixel-identical.
         int tonemapMode = 3;
+        // Optional gamma-correct output encode (sRGB). Off by default.
+        bool gammaCorrect = false;
         // Data-driven bloom (A/RenderStack): bright threshold + add-back strength,
         // defaulting to the original constants so existing scenes are unchanged.
         float bloomThreshold = kBloomThreshold;
