@@ -84,6 +84,8 @@ struct PlayerConfig {
     std::string tonemapMode;      // --tonemap linear|reinhard|filmic|aces
     bool gammaCorrect = false;    // --gamma-correct: opt-in linear workflow
     bool fxaa = false;            // --fxaa: screen-space AA after composite
+    bool dof = false;             // --dof: depth of field
+    float dofFocus = 0.0f;        // --dof-focus <worldUnits> (0 = default)
 };
 
 // The data-driven player: unpack a store-only pack to a temp dir, read the

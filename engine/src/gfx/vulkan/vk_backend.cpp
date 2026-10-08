@@ -91,7 +91,7 @@ constexpr VkFormat kDepthFormats[] = {VK_FORMAT_D24_UNORM_S8_UINT, VK_FORMAT_D32
 constexpr VkFormat kSwapchainFormats[] = {VK_FORMAT_B8G8R8A8_UNORM, VK_FORMAT_R8G8B8A8_UNORM,
                                           VK_FORMAT_B8G8R8A8_SRGB};
 constexpr uint32_t kMaxSamplerSlots = 25;  // renderer texture units 0..24
-constexpr size_t kUniformBlockSize = 7648; // EngineUBO std140 size (spot-light arrays appended)
+constexpr size_t kUniformBlockSize = 7712; // EngineUBO std140 size (spot-light + post params)
 constexpr uint32_t kFramesInFlight = 2;
 constexpr uint64_t kScratchBytes = 16ull * 1024 * 1024;
 constexpr uint64_t kUboBytes = 16ull * 1024 * 1024;
@@ -255,6 +255,10 @@ const UniEntry kUniformOffsets[] = {
     {"uSpotCount", UniKind::Int, 7632, 4, 1},
     {"uGammaCorrect", UniKind::Int, 7636, 4, 1},
     {"uFxaaStrength", UniKind::Float, 7640, 4, 1},
+    {"uFocusDistance", UniKind::Float, 7648, 4, 1},
+    {"uFocusRange", UniKind::Float, 7664, 4, 1},
+    {"uDofStrength", UniKind::Float, 7680, 4, 1},
+    {"uDofEnabled", UniKind::Int, 7696, 4, 1},
     {"uAlbedo", UniKind::Sampler, 0, 0, 1},
     {"uGrassTex", UniKind::Sampler, 0, 0, 1},
     {"uGBuffer", UniKind::Sampler, 0, 0, 1},

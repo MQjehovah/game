@@ -2124,6 +2124,10 @@ PostGraph::FrameParams Renderer::MakePostParams(bool chains) const {
     p.composite.tonemapEnabled = tonemapEnabled_;
     p.composite.tonemapMode = static_cast<int>(tonemapMode_);
     p.composite.gammaCorrect = gammaCorrect_;
+    p.composite.dofEnabled = dofEnabled_;
+    p.composite.focusDistance = dofFocusDistance_;
+    p.composite.focusRange = dofFocusRange_;
+    p.composite.dofStrength = dofStrength_;
     p.composite.bloomThreshold = bloomThreshold_;
     p.composite.bloomStrength = bloomStrength_;
     p.composite.bloomWidth = bloomWidth_;

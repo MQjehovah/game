@@ -290,6 +290,10 @@ bool PlayerApp::OnCreate() {
     if (cfg_.taaSharpen >= 0.0f) renderer_.SetTaaSharpen(cfg_.taaSharpen);
     if (cfg_.gammaCorrect) renderer_.SetGammaCorrect(true);
     if (cfg_.fxaa) renderer_.SetFxaaEnabled(true);
+    if (cfg_.dof) {
+        renderer_.SetDofEnabled(true);
+        if (cfg_.dofFocus > 0.0f) renderer_.SetDofFocus(cfg_.dofFocus, 10.0f);
+    }
     if (!cfg_.tonemapMode.empty()) {
         const std::string& tm = cfg_.tonemapMode;
         if (tm == "linear") renderer_.SetTonemapMode(gfx::TonemapMode::Linear);

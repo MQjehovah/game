@@ -193,4 +193,10 @@ layout(set = 0, binding = 0) uniform EngineUBO {
     layout(offset = 7636) int uGammaCorrect;
     // FXAA resolve strength (0 = off/exact copy); uTexelSize is 1/resolution.
     layout(offset = 7640) float uFxaaStrength;
+    // Depth of field (composite gather): focus distance / range in world units,
+    // blur strength [0,1], enable flag.
+    layout(offset = 7648) float uFocusDistance;
+    layout(offset = 7664) float uFocusRange;
+    layout(offset = 7680) float uDofStrength;
+    layout(offset = 7696) int uDofEnabled;
 } eng;

@@ -269,6 +269,14 @@ public:
     bool FxaaEnabled() const { return fxaaEnabled_; }
     void SetFxaaStrength(float strength) { fxaaStrength_ = strength; }
     float FxaaStrength() const { return fxaaStrength_; }
+    // Depth of field (composite gather). Off by default.
+    void SetDofEnabled(bool enabled) { dofEnabled_ = enabled; }
+    bool DofEnabled() const { return dofEnabled_; }
+    void SetDofFocus(float distance, float range) {
+        dofFocusDistance_ = distance;
+        dofFocusRange_ = range > 1e-3f ? range : 1e-3f;
+    }
+    void SetDofStrength(float strength) { dofStrength_ = strength; }
     // A/RenderStack: data-driven bloom threshold + add-back strength (defaults to
     // the original constants). The RenderStack component drives these each frame.
     void SetBloomParams(float threshold, float strength);
@@ -799,6 +807,10 @@ private:
     bool bloomEnabled_ = true;
     bool fxaaEnabled_ = false;
     float fxaaStrength_ = 0.75f;
+    bool dofEnabled_ = false;
+    float dofFocusDistance_ = 10.0f;
+    float dofFocusRange_ = 8.0f;
+    float dofStrength_ = 0.6f;
     float bloomThreshold_ = kBloomThreshold;
     float bloomStrength_ = kBloomStrength;
     float bloomWidth_ = 1.6f;

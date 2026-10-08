@@ -583,14 +583,20 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
         backend.SetUniformInt("uSsr", 4);
         backend.SetUniformFloat("uSsrStrength", comp_.ssrStrength);
         const RenderTargetHandle depthRt = ctx.GetInput(sceneDepth_);
-        const bool fogDepthActive = comp_.volumetricFog && depthRt.Valid();
-        if (fogDepthActive) {
+        // DoF also needs the scene depth; bind it whenever either consumes it.
+        const bool depthNeeded = (comp_.volumetricFog || comp_.dofEnabled) && depthRt.Valid();
+        if (depthNeeded) {
             backend.BindTexture(5, backend.RenderTargetColorTexture(depthRt));
         } else {
             backend.BindTexture(5, comp_.white);
         }
-        backend.SetUniformInt("uFogEnabled", fogDepthActive ? 1 : 0);
+        backend.SetUniformInt("uFogEnabled", (comp_.volumetricFog && depthRt.Valid()) ? 1 : 0);
         backend.SetUniformInt("uFogDepth", 5);
+        const bool dofActive = comp_.dofEnabled && depthRt.Valid();
+        backend.SetUniformInt("uDofEnabled", dofActive ? 1 : 0);
+        backend.SetUniformFloat("uFocusDistance", comp_.focusDistance);
+        backend.SetUniformFloat("uFocusRange", comp_.focusRange);
+        backend.SetUniformFloat("uDofStrength", comp_.dofStrength);
         backend.SetUniformVec3("uFogColor", comp_.fogColor);
         backend.SetUniformFloat("uFogDensity", comp_.fogDensity);
         backend.SetUniformFloat("uNear", nearPlane_);
@@ -726,7 +732,8 @@ bool PostGraph::Execute(IRenderBackend& backend, const FrameParams& params) {
                        downsample_.Valid() && upsampleAdd_.Valid() && params.hdrScene.Valid();
     // Depth must run whenever any chain samples the scene depth (belt and
     // braces on top of the renderer's own depthPass flag).
-    const bool depth = params.depthPass || ssao || ssr || params.composite.volumetricFog;
+    const bool depth = params.depthPass || ssao || ssr || params.composite.volumetricFog ||
+                       params.composite.dofEnabled;
     // G-buffer runs when requested and something consumes it (SSAO indirect-only
     // / SSR roughness). Written by the renderer callback into the graph target.
     const bool gbuf = params.gbufferPass && (ssao || ssr) && drawGBufferCasters_ &&

@@ -71,6 +71,11 @@ public:
         int tonemapMode = 3;
         // Optional gamma-correct output encode (sRGB). Off by default.
         bool gammaCorrect = false;
+        // Depth of field (composite gather). Off by default.
+        bool dofEnabled = false;
+        float focusDistance = 10.0f;
+        float focusRange = 8.0f;
+        float dofStrength = 0.6f;
         // Data-driven bloom (A/RenderStack): bright threshold + add-back strength,
         // defaulting to the original constants so existing scenes are unchanged.
         float bloomThreshold = kBloomThreshold;

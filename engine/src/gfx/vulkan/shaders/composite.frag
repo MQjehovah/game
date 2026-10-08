@@ -85,6 +85,33 @@ float OutDither(vec2 p) {
 void main() {
     vec3 hdr = texture(uHdr, vUV).rgb;
     vec3 c = hdr;
+    // Depth of field gather (GL parity, mirrors bloom.hpp kCompositeFragmentShader).
+    if (eng.uDofEnabled != 0) {
+        vec4 cdp = texture(uFogDepth, vUV);
+        float cndc = cdp.r + cdp.g / 255.0 + cdp.b / 65025.0 + cdp.a / 16581375.0;
+        float cdist = cndc * eng.uFar;
+        float coc = clamp(abs(cdist - eng.uFocusDistance) / max(eng.uFocusRange, 1e-3), 0.0, 1.0) *
+                    clamp(eng.uDofStrength, 0.0, 1.0);
+        if (coc > 0.001) {
+            vec2 texel = 1.0 / vec2(textureSize(uHdr, 0));
+            float radius = coc * 24.0;
+            vec3 acc = hdr;
+            float wsum = 1.0;
+            for (int i = 0; i < 12; ++i) {
+                float ang = float(i) * 2.39996323;
+                float r = sqrt((float(i) + 0.5) / 12.0) * radius;
+                vec2 off = vec2(cos(ang), sin(ang)) * r * texel;
+                vec3 sc = texture(uHdr, vUV + off).rgb;
+                vec4 sp = texture(uFogDepth, vUV + off);
+                float sndc = sp.r + sp.g / 255.0 + sp.b / 65025.0 + sp.a / 16581375.0;
+                float sw = clamp(1.0 - abs(sndc * eng.uFar - cdist) / max(eng.uFocusRange, 1e-3),
+                                 0.0, 1.0);
+                acc += sc * sw;
+                wsum += sw;
+            }
+            c = acc / wsum;
+        }
+    }
     // SSAO scales ONLY the indirect/ambient term (the G-buffer pass wrote the
     // indirect radiance to uGBuffer.rgb). Without the G-buffer, fall back to the
     // whole-colour multiply. GL twin in bloom.hpp.
