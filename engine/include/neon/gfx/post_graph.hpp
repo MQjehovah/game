@@ -76,6 +76,9 @@ public:
         float focusDistance = 10.0f;
         float focusRange = 8.0f;
         float dofStrength = 0.6f;
+        // Object motion blur (samples the velocity buffer). Off by default.
+        bool motionBlurEnabled = false;
+        float motionBlurStrength = 0.5f;
         // Data-driven bloom (A/RenderStack): bright threshold + add-back strength,
         // defaulting to the original constants so existing scenes are unchanged.
         float bloomThreshold = kBloomThreshold;
@@ -117,6 +120,8 @@ public:
         // the graph always routes the composite through the LDR intermediate.
         bool fxaaPass = false;
         float fxaaStrength = 0.75f;
+        // Velocity buffer (RG = previous-frame UV offset) for motion blur.
+        TextureHandle velocityTexture;
         math::Vec3 camPos; // volumetric 太阳投影
         math::Vec3 sunDir;
         math::Vec3 sunColor; // volumetric light-shaft colour (sun * intensity)
@@ -274,6 +279,7 @@ private:
     float projScale_ = 600.0f;
     static constexpr size_t kNoPass = static_cast<size_t>(-1);
     float fxaaStrength_ = 0.0f; // Execute 快照（fxaa 关闭时为 0 = 精确拷贝）
+    TextureHandle velocityTex_;  // Execute 快照：运动模糊的 velocity buffer
     CompositeParams comp_; // 上一次 Execute 的 composite 快照
     bool built_ = false;
     bool ran_ = false;

@@ -16,6 +16,7 @@ layout(set = 1, binding = 4) uniform sampler2D uSsr;
 layout(set = 1, binding = 5) uniform sampler2D uFogDepth;
 layout(set = 1, binding = 6) uniform sampler2D uAvgLum;
 layout(set = 1, binding = 7) uniform sampler2D uGBuffer; // RGB = indirect radiance
+layout(set = 1, binding = 8) uniform sampler2D uVelocity; // xy = prev-frame UV offset
 
 vec3 ACESFilm(vec3 x) {
     float a = 2.51, b = 0.03, c = 2.43, d = 0.59, e = 0.14;
@@ -110,6 +111,19 @@ void main() {
                 wsum += sw;
             }
             c = acc / wsum;
+        }
+    }
+    // Object motion blur along the velocity buffer (GL parity).
+    if (eng.uMotionBlurEnabled != 0) {
+        vec2 vel = texture(uVelocity, vUV).xy * clamp(eng.uMotionBlurStrength, 0.0, 1.0);
+        if (dot(vel, vel) > 1e-8) {
+            vec3 acc = vec3(0.0);
+            const int kTaps = 8;
+            for (int i = 0; i < kTaps; ++i) {
+                float t = (float(i) + 0.5) / float(kTaps) - 0.5;
+                acc += texture(uHdr, vUV + vel * t).rgb;
+            }
+            c = acc / float(kTaps);
         }
     }
     // SSAO scales ONLY the indirect/ambient term (the G-buffer pass wrote the

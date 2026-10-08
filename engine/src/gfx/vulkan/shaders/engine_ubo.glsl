@@ -199,4 +199,7 @@ layout(set = 0, binding = 0) uniform EngineUBO {
     layout(offset = 7664) float uFocusRange;
     layout(offset = 7680) float uDofStrength;
     layout(offset = 7696) int uDofEnabled;
+    // Object motion blur (composite): velocity-buffer smear strength + enable.
+    layout(offset = 7700) float uMotionBlurStrength;
+    layout(offset = 7704) int uMotionBlurEnabled;
 } eng;

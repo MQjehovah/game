@@ -259,6 +259,8 @@ const UniEntry kUniformOffsets[] = {
     {"uFocusRange", UniKind::Float, 7664, 4, 1},
     {"uDofStrength", UniKind::Float, 7680, 4, 1},
     {"uDofEnabled", UniKind::Int, 7696, 4, 1},
+    {"uMotionBlurStrength", UniKind::Float, 7700, 4, 1},
+    {"uMotionBlurEnabled", UniKind::Int, 7704, 4, 1},
     {"uAlbedo", UniKind::Sampler, 0, 0, 1},
     {"uGrassTex", UniKind::Sampler, 0, 0, 1},
     {"uGBuffer", UniKind::Sampler, 0, 0, 1},

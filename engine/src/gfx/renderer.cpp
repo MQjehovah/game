@@ -690,12 +690,20 @@ void Renderer::SetTaaEnabled(bool enabled) {
     // NEON_NO_VELOCITY forces the pass off for A/B screenshots (same role as
     // NEON_NO_DECAL_PROJECT / NEON_NO_BLOOM).
     static const bool velocityOff = std::getenv("NEON_NO_VELOCITY") != nullptr;
-    velocityEnabled_ = enabled && !velocityOff;
+    velocityEnabled_ = (enabled || motionBlurEnabled_) && !velocityOff;
     taaHistoryValid_ = false;   // never blend across the toggle
     taaFrame_ = 0;
     NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
                  "Renderer: temporal AA %s (motion vectors %s)", enabled ? "enabled" : "disabled",
                  velocityEnabled_ ? "on" : "off");
+}
+
+void Renderer::SetMotionBlurEnabled(bool enabled) {
+    motionBlurEnabled_ = enabled;
+    // Motion blur consumes the same velocity buffer as TAA; keep it allocated
+    // while either is on.
+    static const bool velocityOff = std::getenv("NEON_NO_VELOCITY") != nullptr;
+    velocityEnabled_ = (taaEnabled_ || motionBlurEnabled_) && !velocityOff;
 }
 
 void Renderer::SetTaaBlend(float blend) {
@@ -2128,6 +2136,9 @@ PostGraph::FrameParams Renderer::MakePostParams(bool chains) const {
     p.composite.focusDistance = dofFocusDistance_;
     p.composite.focusRange = dofFocusRange_;
     p.composite.dofStrength = dofStrength_;
+    p.composite.motionBlurEnabled = motionBlurEnabled_ && velocityEnabled_;
+    p.composite.motionBlurStrength = motionBlurStrength_;
+    p.velocityTexture = VelocityTexture();
     p.composite.bloomThreshold = bloomThreshold_;
     p.composite.bloomStrength = bloomStrength_;
     p.composite.bloomWidth = bloomWidth_;

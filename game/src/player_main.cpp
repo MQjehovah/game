@@ -79,6 +79,7 @@ void PrintHelp() {
         "  --gamma-correct            opt-in linear workflow (sRGB decode/encode)\n"
         "  --fxaa                     FXAA screen-space anti-aliasing\n"
         "  --dof [--dof-focus <d>]    depth of field (focus distance in world units)\n"
+        "  --motion-blur              object motion blur (velocity based)\n"
         "  --keep                     keep the unpacked temp dir on exit (debug)\n"
         "  --log-level <level>        log filter: debug|info|warn|error (default debug)\n"
         "  --log-cat <n>:<level>      per-category override (repeatable, comma-separated,\n"
@@ -152,6 +153,8 @@ int main(int argc, char** argv) {
             cfg.dof = true;
         } else if (std::strcmp(argv[i], "--dof-focus") == 0 && i + 1 < argc) {
             cfg.dofFocus = static_cast<float>(std::atof(argv[++i]));
+        } else if (std::strcmp(argv[i], "--motion-blur") == 0) {
+            cfg.motionBlur = true;
         } else if (std::strcmp(argv[i], "--mod") == 0 && i + 1 < argc) {
             cfg.modDirs.push_back(argv[++i]);
         } else if (std::strcmp(argv[i], "--scripts") == 0 && i + 1 < argc) {

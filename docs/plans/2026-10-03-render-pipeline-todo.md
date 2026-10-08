@@ -46,6 +46,7 @@
 | (F5) | **AgX tonemapper**（`--tonemap agx`，Sobotka 近似，GL+VK） |
 | (F5) | **FXAA**：composite→LDR 中间 RT→`post.fxaa`→backbuffer（默认 strength 0 精确拷贝）；`--fxaa` |
 | (F5) | **DoF**：composite 内深度感知 gather；`--dof [--dof-focus d]` |
+| (F5) | **运动模糊**：composite 内沿 velocity buffer 采样；`--motion-blur` |
 | (B3) | **可选 gamma-correct**（`Renderer::SetGammaCorrect`，默认关，CLI `--gamma-correct`）：lit 解码 sRGB albedo/emissive，composite `LinearToSrgb` 编码（tonemap 后、grade 前）；VK UBO slot 7636 |
 | (F3) | **八面体 IBL（带方位）**：irradiance 32²→24²、prefiltered 改成八面体「粗糙度 atlas」（`kOctaPrefilterSize=48` × `48*5` 行，逐 tile GGX 预滤波），从**真实 equirect HDRI**（`SceneState::SetSkySource`，1024 宽降采样）或程序化渐变烘焙；lit shader 用八面体 encode + wrap-fold 双线性（消除接缝）按 `textureSize()` 推 tile 数并混合相邻粗糙度。观感较旧 Y-only 渐变明显改善；GL/VK 一致，烘焙 ~50–120ms |
 
@@ -97,7 +98,7 @@
 - **多 tonemapper（已做 Linear/Reinhard/Filmic/ACES）**：`bloom.hpp` 的 `TonemapMode` + CPU `TonemapColor`，GL `kCompositeFragmentShader` 与 VK `composite.frag` 加 `uTonemapMode`（VK UBO slot 7244），`PostParams::CompositeParams::tonemapMode`，`Renderer::SetTonemapMode`，CLI `--tonemap linear|reinhard|filmic|aces`。默认 ACES 保持既有观感不变。
 - **AgX**：矩阵式，仍未做（可照 Godot `effects/tonemap.glsl`）。
 - **DoF（已做）**：在 composite 内做深度感知 gather（读 `uFogDepth` 线性深度算 CoC，12 抽样碟形，按深度邻近度加权减少前景渗色）。`Renderer::SetDofEnabled/SetDofFocus/SetDofStrength`，CLI `--dof [--dof-focus d]`。VK UBO slot 7648/7664/7680/7696。DoF 会强制深度预 pass。
-- 运动模糊：未做。
+- **运动模糊（已做）**：composite 内沿 velocity buffer（复用 TAA 的 velocity pass，`--motion-blur` 会自动开启它）8 次采样平均。`Renderer::SetMotionBlurEnabled/Strength`，CLI `--motion-blur`。VK UBO slot 7700/7704。
 - 色彩校正 LUT（当前只有程序化 LGG）。
 - **FXAA（已做）**：composite 改写到 LDR 中间 RT，末端新增 `post.fxaa` pass（GL `kFxaaFragmentShader` / VK `fxaa.frag`，strength 0 = 精确拷贝，故默认关闭也走同一图结构）。`Renderer::SetFxaaEnabled/Strength`，CLI `--fxaa`。VK UBO slot `7640 uFxaaStrength`（复用 `uTexelSize`）。
 - SMAA：未做（Godot `effects/smaa_*.glsl`）。

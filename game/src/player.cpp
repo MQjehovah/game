@@ -294,6 +294,7 @@ bool PlayerApp::OnCreate() {
         renderer_.SetDofEnabled(true);
         if (cfg_.dofFocus > 0.0f) renderer_.SetDofFocus(cfg_.dofFocus, 10.0f);
     }
+    if (cfg_.motionBlur) renderer_.SetMotionBlurEnabled(true);
     if (!cfg_.tonemapMode.empty()) {
         const std::string& tm = cfg_.tonemapMode;
         if (tm == "linear") renderer_.SetTonemapMode(gfx::TonemapMode::Linear);

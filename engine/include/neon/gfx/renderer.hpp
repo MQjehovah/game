@@ -277,6 +277,10 @@ public:
         dofFocusRange_ = range > 1e-3f ? range : 1e-3f;
     }
     void SetDofStrength(float strength) { dofStrength_ = strength; }
+    // Object motion blur (needs the velocity pass; enables it alongside TAA).
+    void SetMotionBlurEnabled(bool enabled);
+    bool MotionBlurEnabled() const { return motionBlurEnabled_; }
+    void SetMotionBlurStrength(float strength) { motionBlurStrength_ = strength; }
     // A/RenderStack: data-driven bloom threshold + add-back strength (defaults to
     // the original constants). The RenderStack component drives these each frame.
     void SetBloomParams(float threshold, float strength);
@@ -811,6 +815,8 @@ private:
     float dofFocusDistance_ = 10.0f;
     float dofFocusRange_ = 8.0f;
     float dofStrength_ = 0.6f;
+    bool motionBlurEnabled_ = false;
+    float motionBlurStrength_ = 0.5f;
     float bloomThreshold_ = kBloomThreshold;
     float bloomStrength_ = kBloomStrength;
     float bloomWidth_ = 1.6f;

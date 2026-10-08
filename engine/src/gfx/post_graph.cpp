@@ -597,6 +597,15 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
         backend.SetUniformFloat("uFocusDistance", comp_.focusDistance);
         backend.SetUniformFloat("uFocusRange", comp_.focusRange);
         backend.SetUniformFloat("uDofStrength", comp_.dofStrength);
+        const bool mbActive = comp_.motionBlurEnabled && velocityTex_.Valid();
+        if (mbActive) {
+            backend.BindTexture(8, velocityTex_);
+        } else {
+            backend.BindTexture(8, comp_.white);
+        }
+        backend.SetUniformInt("uVelocity", 8);
+        backend.SetUniformInt("uMotionBlurEnabled", mbActive ? 1 : 0);
+        backend.SetUniformFloat("uMotionBlurStrength", comp_.motionBlurStrength);
         backend.SetUniformVec3("uFogColor", comp_.fogColor);
         backend.SetUniformFloat("uFogDensity", comp_.fogDensity);
         backend.SetUniformFloat("uNear", nearPlane_);
@@ -810,6 +819,7 @@ bool PostGraph::Execute(IRenderBackend& backend, const FrameParams& params) {
     sceneVpRect_ = params.sceneVpRect;
     // FXAA strength: 0 when off (the pass then copies the composite verbatim).
     fxaaStrength_ = params.fxaaPass ? params.fxaaStrength : 0.0f;
+    velocityTex_ = params.velocityTexture;
 
     graph_.SetExternalInput(hdrScene_, params.hdrScene);
     const bool ok = graph_.Execute(backend);

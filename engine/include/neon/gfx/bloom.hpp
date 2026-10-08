@@ -525,6 +525,9 @@ uniform int uDofEnabled;
 uniform float uFocusDistance;  // world units
 uniform float uFocusRange;     // world units to reach max blur
 uniform float uDofStrength;    // 0..1 blur amount
+uniform sampler2D uVelocity;   // xy = previous-frame UV offset
+uniform int uMotionBlurEnabled;
+uniform float uMotionBlurStrength;
 uniform int uGradeEnabled;
 uniform float uSaturation;
 uniform float uContrast;
@@ -639,6 +642,20 @@ void main() {
                 wsum += sw;
             }
             c = acc / wsum;
+        }
+    }
+    // Object motion blur: average the HDR along the velocity buffer's screen
+    // delta. A zero velocity (static camera/scene) is a no-op.
+    if (uMotionBlurEnabled != 0) {
+        vec2 vel = texture(uVelocity, vUV).xy * clamp(uMotionBlurStrength, 0.0, 1.0);
+        if (dot(vel, vel) > 1e-8) {
+            vec3 acc = vec3(0.0);
+            const int kTaps = 8;
+            for (int i = 0; i < kTaps; ++i) {
+                float t = (float(i) + 0.5) / float(kTaps) - 0.5;
+                acc += texture(uHdr, vUV + vel * t).rgb;
+            }
+            c = acc / float(kTaps);
         }
     }
     // SSAO scales ONLY the indirect/ambient term. The G-buffer pass (forward
