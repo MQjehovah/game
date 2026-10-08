@@ -1386,6 +1386,8 @@ void Renderer::ApplyMaterial(const Material& material, const math::Mat4& mvp,
     backend_->SetUniformVec4("uTint", {material.tint.r, material.tint.g, material.tint.b, material.tint.a});
     backend_->SetUniformFloat("uMetallic", material.metallic);
     backend_->SetUniformFloat("uRoughness", material.roughness);
+    backend_->SetUniformFloat("uClearcoat", material.clearcoat);
+    backend_->SetUniformFloat("uClearcoatRoughness", material.clearcoatRoughness);
     backend_->BindTexture(2, material.metallicRoughness);
     backend_->SetUniformInt("uMR", 2);
     backend_->BindTexture(3, material.occlusion);

@@ -202,4 +202,7 @@ layout(set = 0, binding = 0) uniform EngineUBO {
     // Object motion blur (composite): velocity-buffer smear strength + enable.
     layout(offset = 7700) float uMotionBlurStrength;
     layout(offset = 7704) int uMotionBlurEnabled;
+    // F6 clearcoat (second dielectric specular lobe).
+    layout(offset = 7712) float uClearcoat;
+    layout(offset = 7716) float uClearcoatRoughness;
 } eng;

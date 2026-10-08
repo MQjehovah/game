@@ -289,6 +289,9 @@ struct SceneMesh {
     std::vector<float> tintRgb;
     float ao = 1.f;               // occlusion strength (0 = ignore AO, 1 = full)
     float emissiveIntensity = 1.f;
+    // F6 clearcoat: second dielectric specular lobe (0 = off).
+    float clearcoat = 0.f;
+    float clearcoatRoughness = 0.1f;
     // UV tiling multiplier applied to the material's base UVs (default 1 = no
     // repeat). For a large ground plane set this to the world-size so a small
     // texture tiles instead of stretching across the whole surface.

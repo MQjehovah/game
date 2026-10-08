@@ -47,6 +47,7 @@
 | (F5) | **FXAA**：composite→LDR 中间 RT→`post.fxaa`→backbuffer（默认 strength 0 精确拷贝）；`--fxaa` |
 | (F5) | **DoF**：composite 内深度感知 gather；`--dof [--dof-focus d]` |
 | (F5) | **运动模糊**：composite 内沿 velocity buffer 采样；`--motion-blur` |
+| (F6) | **clearcoat**：第二种介电高光叶（GL+VK），`Material`/scene JSON 字段；默认关 |
 | (B3) | **可选 gamma-correct**（`Renderer::SetGammaCorrect`，默认关，CLI `--gamma-correct`）：lit 解码 sRGB albedo/emissive，composite `LinearToSrgb` 编码（tonemap 后、grade 前）；VK UBO slot 7636 |
 | (F3) | **八面体 IBL（带方位）**：irradiance 32²→24²、prefiltered 改成八面体「粗糙度 atlas」（`kOctaPrefilterSize=48` × `48*5` 行，逐 tile GGX 预滤波），从**真实 equirect HDRI**（`SceneState::SetSkySource`，1024 宽降采样）或程序化渐变烘焙；lit shader 用八面体 encode + wrap-fold 双线性（消除接缝）按 `textureSize()` 推 tile 数并混合相邻粗糙度。观感较旧 Y-only 渐变明显改善；GL/VK 一致，烘焙 ~50–120ms |
 
@@ -104,7 +105,8 @@
 - SMAA：未做（Godot `effects/smaa_*.glsl`）。
 
 ### F6. 高级材质
-- clearcoat / anisotropy / iridescence / sheen(cloth) / subsurface / 第二高光叶 / 金属能量补偿（split-sum 高粗糙度偏暗）。参考 Filament `surface_brdf.fs`。
+- **clearcoat（已做）**：`Material::clearcoat`/`clearcoatRoughness`；lit shader（GL+VK）加一层介电高光叶（F0=0.04，`ClearcoatSpec`），并按其中心 Fresnel 衰减底高光；直接光（太阳/点/聚光）+ IBL 都加。VK UBO slot 7712/7716（`kUniformBlockSize` 7728）。scene JSON 支持 `clearcoat`/`clearcoatRoughness`（可选字段，已加入白名单+解析+序列化），`draw_system` 映射到 `gfx::Material`。默认 0（不影响既有内容）。
+- 其余未做：anisotropy / iridescence / sheen(cloth) / subsurface / 金属能量补偿（split-sum 高粗糙度偏暗）。参考 Filament `surface_brdf.fs`。
 
 ### 其它大项（暂缓，规模大）
 - Light clustering（当前点光最多 8、spot 4，逐片元循环）。

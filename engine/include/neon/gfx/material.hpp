@@ -72,6 +72,11 @@ struct Material {
     // mesh edge (selected unit, target lock, ability preview). `color` tints it.
     Color highlightColor{1.0f, 1.0f, 1.0f, 1.0f};
     float highlightStrength = 0.0f;
+    // F6 clearcoat: a second dielectric specular lobe on top of the base BRDF
+    // (car paint / varnish / wet surfaces). 0 = off; 1 = full coverage with the
+    // base specular attenuated. clearcoatRoughness controls its highlight width.
+    float clearcoat = 0.0f;
+    float clearcoatRoughness = 0.1f;
 
     static Material Lit(TextureHandle albedo_, const Color& tint_ = Color::White, float shininess_ = 24.0f) {
         Material m;

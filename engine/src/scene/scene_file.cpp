@@ -638,6 +638,7 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                                      "ao", "emissiveIntensity", "uvRepeat",
                                      "dirtColorHex", "rockColorHex", "castShadow",
                                      "receiveShadow", "tintRgb", "polygonOffset",
+                                     "clearcoat", "clearcoatRoughness",
                                      "materialInclude", "materialExclude"},
                                     "mesh", err))
                          return false;
@@ -719,7 +720,8 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                                            "aoTex", "emissiveTex", "normalTex", "normalScale",
                                            "ao", "emissiveIntensity",
                                            "uvRepeat", "dirtColorHex", "rockColorHex",
-                                           "tintRgb", "polygonOffset"},
+                                           "tintRgb", "polygonOffset",
+                                           "clearcoat", "clearcoatRoughness"},
                                           "mesh.material", err))
                               return false;
                          if (!RequireNumber(*mat, "metallic", "mesh.material", m.metallic, err))
@@ -746,6 +748,10 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                               m.uvRepeat = static_cast<float>(ur->GetNumber(1.0f));
                          if (const core::Json* po = mat->Get("polygonOffset"))
                               m.polygonOffset = static_cast<float>(po->GetNumber(0.0f));
+                         if (const core::Json* cc = mat->Get("clearcoat"))
+                             m.clearcoat = static_cast<float>(cc->GetNumber(0.0f));
+                         if (const core::Json* ccr = mat->Get("clearcoatRoughness"))
+                             m.clearcoatRoughness = static_cast<float>(ccr->GetNumber(0.1f));
                          if (const core::Json* dc = mat->Get("dirtColorHex")) m.dirtColorHex = dc->GetString();
                          if (const core::Json* rc = mat->Get("rockColorHex")) m.rockColorHex = rc->GetString();
                          if (const core::Json* col = mat->Get("colorHex")) {
@@ -783,6 +789,10 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                           m.uvRepeat = static_cast<float>(ur->GetNumber(1.0f));
                       if (const core::Json* po = data.Get("polygonOffset"))
                           m.polygonOffset = static_cast<float>(po->GetNumber(0.0f));
+                      if (const core::Json* cc = data.Get("clearcoat"))
+                          m.clearcoat = static_cast<float>(cc->GetNumber(0.0f));
+                      if (const core::Json* ccr = data.Get("clearcoatRoughness"))
+                          m.clearcoatRoughness = static_cast<float>(ccr->GetNumber(0.1f));
                       if (const core::Json* dc = data.Get("dirtColorHex")) m.dirtColorHex = dc->GetString();
                       if (const core::Json* rc = data.Get("rockColorHex")) m.rockColorHex = rc->GetString();
                      if (const core::Json* col = data.Get("colorHex")) {
@@ -1648,6 +1658,9 @@ static core::Json SerializeEntityComponents(ecs::World& world, ecs::Entity e) {
         if (m->uvRepeat != 1.0f) mat.object_["uvRepeat"] = MakeNumber(m->uvRepeat);
         if (m->polygonOffset != 0.0f)
             mat.object_["polygonOffset"] = MakeNumber(m->polygonOffset);
+        if (m->clearcoat != 0.0f) mat.object_["clearcoat"] = MakeNumber(m->clearcoat);
+        if (m->clearcoatRoughness != 0.1f)
+            mat.object_["clearcoatRoughness"] = MakeNumber(m->clearcoatRoughness);
         if (!m->dirtColorHex.empty()) mat.object_["dirtColorHex"] = MakeString(m->dirtColorHex);
         if (!m->rockColorHex.empty()) mat.object_["rockColorHex"] = MakeString(m->rockColorHex);
         if (!m->albedoTex.empty()) mat.object_["albedoTex"] = MakeString(m->albedoTex);

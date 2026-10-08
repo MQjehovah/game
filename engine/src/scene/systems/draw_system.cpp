@@ -287,6 +287,8 @@ void DrawSystem::Build(ecs::World& world, AnimationSystem& anims) {
         item.mat.polygonOffset = m->polygonOffset;
         item.mat.aoStrength = m->ao;
         item.mat.emissiveIntensity = m->emissiveIntensity;
+        item.mat.clearcoat = m->clearcoat;
+        item.mat.clearcoatRoughness = m->clearcoatRoughness;
         item.mat.castShadow = m->castShadow;
         item.mat.receiveShadow = m->receiveShadow;
         if (content_.assets) {

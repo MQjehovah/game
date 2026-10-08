@@ -89,6 +89,9 @@ uniform float uNormalScale;
 uniform float uAlphaTest;
 uniform float uAOStrength;
 uniform float uEmissiveIntensity;
+// F6 clearcoat: second dielectric specular lobe (0 = off).
+uniform float uClearcoat;
+uniform float uClearcoatRoughness;
 // Gamma-correct pipeline (default off): decode sRGB albedo/emissive to linear.
 uniform int uGammaCorrect;
 uniform float uShininess;
@@ -182,6 +185,16 @@ float G_Schlick(float ndl, float ndv, float roughness) {
 }
 vec3 F_Schlick(float vdh, vec3 f0) {
     return f0 + (1.0 - f0) * pow(1.0 - vdh, 5.0);
+}
+// F6 clearcoat: dielectric specular lobe (F0 = 0.04). Returns the BRDF value
+// (multiply by the light colour * NdotL) and writes the centre Fresnel to
+// `atten` so the base specular can be reduced by the coating coverage.
+float ClearcoatSpec(float ndl, float ndv, float ndh, float vdh, float ccRough, out float atten) {
+    float ccA = ccRough * ccRough;
+    float ccD = D_GGX(ndh, ccA);
+    float ccG = G_Schlick(ndl, ndv, ccRough);
+    atten = 0.04 + 0.96 * pow(1.0 - vdh, 5.0);
+    return ccD * ccG * atten / (4.0 * ndl * ndv + 1e-3);
 }
 // Interleaved gradient noise (Jimenez 2014): a cheap screen-space dither used
 // to rotate the shadow kernel per pixel.
@@ -546,6 +559,15 @@ void main() {
     vec3 F = F_Schlick(vdh, f0);
     vec3 spec = D * G * F / (4.0 * ndl * ndv + 1e-3);
     vec3 kd = (1.0 - F) * (1.0 - metallic);
+    // F6 clearcoat: a dielectric top layer attenuates the base specular by its
+    // Fresnel and adds its own lobe.
+    float ccRough = clamp(uClearcoatRoughness, 0.03, 1.0);
+    float ccAtten = 0.0;
+    float ccSpec = 0.0;
+    if (uClearcoat > 0.0) {
+        ccSpec = ClearcoatSpec(ndl, ndv, ndh, vdh, ccRough, ccAtten) * uClearcoat;
+        spec *= (1.0 - uClearcoat * ccAtten);
+    }
     // IBL environment ambient (Task 3.8): diffuse irradiance + prefiltered
     // specular via the split-sum BRDF LUT. Both maps are baked from the sky
     // gradient and, because that environment is a vertical gradient, sampled
@@ -567,6 +589,15 @@ void main() {
     vec3 iblIrradiance = OctIblSample(uIrradianceMap, N);
     vec3 iblDiffuse = kdIbl * iblIrradiance * albedo.rgb * uIblStrength;
     vec3 iblSpecular = prefiltered * envBRDF * uIblStrength;
+    // Clearcoat environment specular (same prefiltered map at the coating
+    // roughness, dielectric F0 = 0.04).
+    if (uClearcoat > 0.0) {
+        float ccRoughU = clamp((ccRough - uRoughnessMin) / (1.0 - uRoughnessMin), 0.0, 1.0);
+        vec3 ccEnv = OctIblSampleRough(uPrefilteredMap, R, ccRoughU);
+        vec2 ccBrdf = texture(uBrdfLUT, vec2(ndv, ccRough)).rg;
+        iblSpecular = iblSpecular * (1.0 - uClearcoat * 0.25) +
+                      ccEnv * (0.04 * ccBrdf.x + ccBrdf.y) * uClearcoat * uIblStrength;
+    }
     // A3 hemisphere ambient: split the legacy flat ambient into a sky/ground
     // gradient by the world normal's Y so upward-facing surfaces take the sky
     // tint (uAmbientColor) and downward-facing take a ground bounce
@@ -593,7 +624,8 @@ void main() {
     FragColor = vec4(ambientLight, roughness);
     return;
 #endif
-    vec3 color = (kd * albedo.rgb + spec) * uSunColor * ndl + ambientLight;
+    vec3 color = (kd * albedo.rgb + spec) * uSunColor * ndl + vec3(ccSpec) * uSunColor * ndl +
+                 ambientLight;
     // Emissive, tint self-glow, point lights and the player light are NOT part
     // of the sun term: accumulating them separately keeps them OUT of the sun
     // shadow composite below (a glowing pickup or torch-lit wall must not go
@@ -629,7 +661,14 @@ void main() {
         vec3 pF = F_Schlick(pvdh, f0);
         vec3 pSpec = pD * pG * pF / (4.0 * pndl * ndv + 1e-3);
         vec3 pKd = (1.0 - pF) * (1.0 - metallic);
-        vec3 pContrib = (pKd * albedo.rgb + pSpec) * uPointColor[i] * pndl * atten;
+        float pccAtten = 0.0;
+        float pccSpec = 0.0;
+        if (uClearcoat > 0.0) {
+            pccSpec = ClearcoatSpec(pndl, ndv, pndh, pvdh, ccRough, pccAtten) * uClearcoat;
+            pSpec *= (1.0 - uClearcoat * pccAtten);
+        }
+        vec3 pContrib =
+            (pKd * albedo.rgb + pSpec) * uPointColor[i] * pndl * atten + vec3(pccSpec) * uPointColor[i] * pndl * atten;
         if (uPointShadowEnabled && i < uPointShadowLightCount) {
             pContrib *= PointShadowForLight(i, vWorldPos, uPointPos[i], uPointRadius[i]);
         }
@@ -659,7 +698,14 @@ void main() {
         vec3 sF = F_Schlick(svdh, f0);
         vec3 sSpec = sD * sG * sF / (4.0 * sndl * ndv + 1e-3);
         vec3 sKd = (1.0 - sF) * (1.0 - metallic);
-        extraLight += (sKd * albedo.rgb + sSpec) * uSpotColor[i] * sndl * atten;
+        float sccAtten = 0.0;
+        float sccSpec = 0.0;
+        if (uClearcoat > 0.0) {
+            sccSpec = ClearcoatSpec(sndl, ndv, sndh, svdh, ccRough, sccAtten) * uClearcoat;
+            sSpec *= (1.0 - uClearcoat * sccAtten);
+        }
+        extraLight += (sKd * albedo.rgb + sSpec) * uSpotColor[i] * sndl * atten +
+                      vec3(sccSpec) * uSpotColor[i] * sndl * atten;
     }
     if (uPlayerLightEnabled) {
         vec3 toL = uPlayerLightPos - vWorldPos;
