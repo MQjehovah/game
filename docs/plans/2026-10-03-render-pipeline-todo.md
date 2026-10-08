@@ -96,7 +96,7 @@
 
 ### F5. 后期补缺（都属可选、低风险）
 - **多 tonemapper（已做 Linear/Reinhard/Filmic/ACES）**：`bloom.hpp` 的 `TonemapMode` + CPU `TonemapColor`，GL `kCompositeFragmentShader` 与 VK `composite.frag` 加 `uTonemapMode`（VK UBO slot 7244），`PostParams::CompositeParams::tonemapMode`，`Renderer::SetTonemapMode`，CLI `--tonemap linear|reinhard|filmic|aces`。默认 ACES 保持既有观感不变。
-- **AgX**：矩阵式，仍未做（可照 Godot `effects/tonemap.glsl`）。
+- **AgX（已做）**：`--tonemap agx`（Sobotka 近似：inset 矩阵→log2→多项式对比→outset 矩阵；GL+VK）。
 - **DoF（已做）**：在 composite 内做深度感知 gather（读 `uFogDepth` 线性深度算 CoC，12 抽样碟形，按深度邻近度加权减少前景渗色）。`Renderer::SetDofEnabled/SetDofFocus/SetDofStrength`，CLI `--dof [--dof-focus d]`。VK UBO slot 7648/7664/7680/7696。DoF 会强制深度预 pass。
 - **运动模糊（已做）**：composite 内沿 velocity buffer（复用 TAA 的 velocity pass，`--motion-blur` 会自动开启它）8 次采样平均。`Renderer::SetMotionBlurEnabled/Strength`，CLI `--motion-blur`。VK UBO slot 7700/7704。
 - 色彩校正 LUT（当前只有程序化 LGG）。
