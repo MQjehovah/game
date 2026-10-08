@@ -684,4 +684,52 @@ void main() {
 }
 )";
 
+// FXAA (Lottes) resolve, run as the terminal pass after the composite has
+// written the display-referred LDR image. A strength of 0 returns the centre
+// texel untouched (an exact copy), so the pass can stay in the graph while
+// anti-aliasing is off. uTexelSize is 1/resolution.
+inline constexpr const char* kFxaaFragmentShader = R"(
+#version 330 core
+in vec2 vUV;
+out vec4 FragColor;
+uniform sampler2D uColor;
+uniform vec2 uTexelSize;
+uniform float uFxaaStrength;
+float FxaaLuma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
+void main() {
+    vec3 rgbM = texture(uColor, vUV).rgb;
+    if (uFxaaStrength <= 0.0) {
+        FragColor = vec4(rgbM, 1.0);
+        return;
+    }
+    vec3 rgbNW = texture(uColor, vUV + vec2(-1.0, -1.0) * uTexelSize).rgb;
+    vec3 rgbNE = texture(uColor, vUV + vec2( 1.0, -1.0) * uTexelSize).rgb;
+    vec3 rgbSW = texture(uColor, vUV + vec2(-1.0,  1.0) * uTexelSize).rgb;
+    vec3 rgbSE = texture(uColor, vUV + vec2( 1.0,  1.0) * uTexelSize).rgb;
+    float lM = FxaaLuma(rgbM);
+    float lNW = FxaaLuma(rgbNW), lNE = FxaaLuma(rgbNE);
+    float lSW = FxaaLuma(rgbSW), lSE = FxaaLuma(rgbSE);
+    float lMin = min(lM, min(min(lNW, lNE), min(lSW, lSE)));
+    float lMax = max(lM, max(max(lNW, lNE), max(lSW, lSE)));
+    // Early out on flat areas (also protects mostly-uniform dark frames).
+    float range = lMax - lMin;
+    if (range < max(0.0312, lMax * 0.125)) {
+        FragColor = vec4(rgbM, 1.0);
+        return;
+    }
+    vec2 dir = vec2(-((lNW + lNE) - (lSW + lSE)), ((lNW + lSW) - (lNE + lSE)));
+    float dirReduce = max((lNW + lNE + lSW + lSE) * 0.25 * 0.125, 1.0 / 128.0);
+    float rcp = 1.0 / (min(abs(dir.x), abs(dir.y)) + dirReduce);
+    dir = clamp(dir * rcp, vec2(-8.0), vec2(8.0)) * uTexelSize;
+    vec3 rgbA = 0.5 * (texture(uColor, vUV + dir * (1.0 / 3.0 - 0.5)).rgb +
+                       texture(uColor, vUV + dir * (2.0 / 3.0 - 0.5)).rgb);
+    vec3 rgbB = rgbA * 0.5 +
+                0.25 * (texture(uColor, vUV + dir * -0.5).rgb +
+                        texture(uColor, vUV + dir * 0.5).rgb);
+    float lB = FxaaLuma(rgbB);
+    vec3 result = (lB < lMin || lB > lMax) ? rgbA : rgbB;
+    FragColor = vec4(mix(rgbM, result, uFxaaStrength), 1.0);
+}
+)";
+
 } // namespace neon::gfx

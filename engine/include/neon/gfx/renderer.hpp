@@ -263,6 +263,12 @@ public:
     // only by the bloom contribution).
     void SetBloomEnabled(bool enabled);
     bool BloomEnabled() const { return bloomEnabled_; }
+    // FXAA screen-space AA, resolved after the composite (HDR path only).
+    // Off by default; strength 0 also disables (exact pass-through copy).
+    void SetFxaaEnabled(bool enabled) { fxaaEnabled_ = enabled; }
+    bool FxaaEnabled() const { return fxaaEnabled_; }
+    void SetFxaaStrength(float strength) { fxaaStrength_ = strength; }
+    float FxaaStrength() const { return fxaaStrength_; }
     // A/RenderStack: data-driven bloom threshold + add-back strength (defaults to
     // the original constants). The RenderStack component drives these each frame.
     void SetBloomParams(float threshold, float strength);
@@ -735,6 +741,7 @@ private:
     ShaderHandle luminanceReduceShader_;
     ShaderHandle exposureAdaptShader_;
     ShaderHandle compositeShader_;
+    ShaderHandle fxaaShader_;
     ShaderHandle ssaoShader_;
     ShaderHandle depthEncodeShader_; // B4: fullscreen resolved-depth encode
     ShaderHandle ssaoBlurShader_;
@@ -790,6 +797,8 @@ private:
     int hdrH_ = 0;
     bool hdrEnabled_ = false;
     bool bloomEnabled_ = true;
+    bool fxaaEnabled_ = false;
+    float fxaaStrength_ = 0.75f;
     float bloomThreshold_ = kBloomThreshold;
     float bloomStrength_ = kBloomStrength;
     float bloomWidth_ = 1.6f;

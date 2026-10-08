@@ -191,4 +191,6 @@ layout(set = 0, binding = 0) uniform EngineUBO {
     // Gamma-correct pipeline (default off): decode sRGB albedo/emissive in the
     // lit shader and encode linear->sRGB in the composite.
     layout(offset = 7636) int uGammaCorrect;
+    // FXAA resolve strength (0 = off/exact copy); uTexelSize is 1/resolution.
+    layout(offset = 7640) float uFxaaStrength;
 } eng;

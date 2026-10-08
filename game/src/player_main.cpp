@@ -77,6 +77,7 @@ void PrintHelp() {
         "  --taa-sharpen <f>          unsharp-mask gain on the TAA resolve (0-1.5)\n"
         "  --tonemap <mode>           composite tonemap: linear|reinhard|filmic|aces|agx\n"
         "  --gamma-correct            opt-in linear workflow (sRGB decode/encode)\n"
+        "  --fxaa                     FXAA screen-space anti-aliasing\n"
         "  --keep                     keep the unpacked temp dir on exit (debug)\n"
         "  --log-level <level>        log filter: debug|info|warn|error (default debug)\n"
         "  --log-cat <n>:<level>      per-category override (repeatable, comma-separated,\n"
@@ -144,6 +145,8 @@ int main(int argc, char** argv) {
             cfg.tonemapMode = argv[++i];
         } else if (std::strcmp(argv[i], "--gamma-correct") == 0) {
             cfg.gammaCorrect = true;
+        } else if (std::strcmp(argv[i], "--fxaa") == 0) {
+            cfg.fxaa = true;
         } else if (std::strcmp(argv[i], "--mod") == 0 && i + 1 < argc) {
             cfg.modDirs.push_back(argv[++i]);
         } else if (std::strcmp(argv[i], "--scripts") == 0 && i + 1 < argc) {

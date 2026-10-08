@@ -289,6 +289,7 @@ bool PlayerApp::OnCreate() {
     if (cfg_.noTaa) renderer_.SetTaaEnabled(false);
     if (cfg_.taaSharpen >= 0.0f) renderer_.SetTaaSharpen(cfg_.taaSharpen);
     if (cfg_.gammaCorrect) renderer_.SetGammaCorrect(true);
+    if (cfg_.fxaa) renderer_.SetFxaaEnabled(true);
     if (!cfg_.tonemapMode.empty()) {
         const std::string& tm = cfg_.tonemapMode;
         if (tm == "linear") renderer_.SetTonemapMode(gfx::TonemapMode::Linear);

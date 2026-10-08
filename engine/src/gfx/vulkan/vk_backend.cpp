@@ -254,6 +254,7 @@ const UniEntry kUniformOffsets[] = {
     {"uSpotCosOuter[0]", UniKind::Float, 7568, 4, 4},
     {"uSpotCount", UniKind::Int, 7632, 4, 1},
     {"uGammaCorrect", UniKind::Int, 7636, 4, 1},
+    {"uFxaaStrength", UniKind::Float, 7640, 4, 1},
     {"uAlbedo", UniKind::Sampler, 0, 0, 1},
     {"uGrassTex", UniKind::Sampler, 0, 0, 1},
     {"uGBuffer", UniKind::Sampler, 0, 0, 1},

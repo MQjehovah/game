@@ -38,6 +38,7 @@ $shaders = @(
     "bloom_downsample;post.vert;downsample.frag",
     "bloom_upsample_add;post.vert;upsample_add.frag",
     "bloom_composite;post.vert;composite.frag",
+    "fxaa;post.vert;fxaa.frag",
     # G1-5 depth / AO / SSR / volumetric post chain.
     "ssao_depth;ssao_depth.vert;ssao_depth.frag",
     "ssao_depth_mesh;ssao_depth_mesh.vert;ssao_depth.frag",

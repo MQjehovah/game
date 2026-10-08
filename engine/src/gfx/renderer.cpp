@@ -244,6 +244,7 @@ void Renderer::InitBuiltinResources() {
         backend_->CreateShader(kPostVertexShader, kExposureAdaptShader, "autoexposure_adapt");
     compositeShader_ =
         backend_->CreateShader(kPostVertexShader, kCompositeFragmentShader, "bloom_composite");
+    fxaaShader_ = backend_->CreateShader(kPostVertexShader, kFxaaFragmentShader, "fxaa");
     NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
                  "Renderer: bloom shaders %s",
                  (brightPassShader_.Valid() && blurShader_.Valid() && downsampleShader_.Valid() &&
@@ -1904,6 +1905,7 @@ void Renderer::RebuildHdrTargets() {
     shaders.luminanceReduceShader = luminanceReduceShader_;
     shaders.exposureAdaptShader = exposureAdaptShader_;
     shaders.compositeShader = compositeShader_;
+    shaders.fxaaShader = fxaaShader_;
     shaders.white = white_;
     postGraph_.Build(shaders, postQuadMesh_, sw, sh,
                      [this] { DrawSsaoDepthCasters(sceneState_.ViewProjection()); },
@@ -2092,6 +2094,8 @@ PostGraph::FrameParams Renderer::MakePostParams(bool chains) const {
     // Needed by the composite's indirect-only SSAO and the SSR roughness read.
     p.gbufferPass = chains && (ssaoEnabled_ || ssrEnabled_) && !ssaoCasters_.empty();
     p.bloomPass = bloomEnabled_;
+    p.fxaaPass = fxaaEnabled_;
+    p.fxaaStrength = fxaaStrength_;
     p.camPos = sceneState_.CamPos();
     p.sunDir = sceneState_.SunDir();
     const Color& sunC = sceneState_.SunColor();

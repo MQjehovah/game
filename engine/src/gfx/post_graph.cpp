@@ -39,6 +39,7 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
     luminanceReduceShader_ = shaders.luminanceReduceShader;
     exposureAdaptShader_ = shaders.exposureAdaptShader;
     compositeShader_ = shaders.compositeShader;
+    fxaaShader_ = shaders.fxaaShader;
     postQuad_ = postQuad;
     drawDepthCasters_ = std::move(drawDepthCasters);
     drawGBufferCasters_ = std::move(drawGBufferCasters);
@@ -62,6 +63,9 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
     // G-buffer: RGB = indirect radiance (HDR), A = roughness. Float so indirect
     // radiance survives above 1.0 (the composite subtracts it back out).
     gbuffer_ = fresh.AddResource({static_cast<uint32_t>(w), static_cast<uint32_t>(h), kFloatFormat, 1u});
+    // Display-referred LDR image written by composite, read by the FXAA resolve.
+    // RGBA8 (format 0) - it already carries tonemapped/encoded [0,1] colour.
+    ldr_ = fresh.AddResource({static_cast<uint32_t>(w), static_cast<uint32_t>(h), 0u, 1u});
     ao_ = fresh.AddResource({static_cast<uint32_t>(aw), static_cast<uint32_t>(ah), kFloatFormat, 1u});
     aoBlurA_ = fresh.AddResource({static_cast<uint32_t>(aw), static_cast<uint32_t>(ah), kFloatFormat, 1u});
     aoBlurB_ = fresh.AddResource({static_cast<uint32_t>(aw), static_cast<uint32_t>(ah), kFloatFormat, 1u});
@@ -487,14 +491,23 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
     //     corresponding chain produced a live target this frame (invalid
     //     otherwise), so a disabled chain blends white + uXEnabled=0 exactly
     //     like the old hand-written composite.
+    // When an FXAA program exists the composite writes the LDR intermediate and
+    // the FXAA pass resolves it to the backbuffer; otherwise the composite keeps
+    // writing the default target directly (its original behaviour).
+    const bool useFxaa = fxaaShader_.Valid();
     FramePass composite;
     composite.name = "post.composite";
     composite.reads = {hdrScene_, sceneDepth_, aoBlurB_, volBlurB_, ssrBlurB_, bloomHalfB_,
                        adaptDone_, gbuffer_};
-    composite.execute = [this](FrameGraphContext& ctx) {
+    if (useFxaa) composite.writes = {ldr_};
+    composite.execute = [this, useFxaa](FrameGraphContext& ctx) {
         auto& backend = ctx.Backend();
         if (!compositeShader_.Valid() || !postQuad_.Valid()) return;
-        backend.BindDefaultTarget();
+        if (useFxaa) {
+            backend.BindRenderTarget(ctx.GetOutput(ldr_));
+        } else {
+            backend.BindDefaultTarget();
+        }
         backend.SetBlendMode(BlendMode::Opaque);
         backend.SetDepthTest(false, false);
         backend.SetCullMode(CullMode::None);
@@ -618,6 +631,38 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
         backend.DrawMesh(postQuad_);
     };
     compositePassIndex_ = add(std::move(composite));
+
+    // Terminal FXAA resolve: reads the composite's LDR image and writes the
+    // backbuffer. Always present so the graph structure is static; a strength
+    // of 0 makes it an exact copy. When the shader is missing the composite
+    // result is blitted through unchanged.
+    if (useFxaa) {
+        FramePass fxaa;
+        fxaa.name = "post.fxaa";
+        fxaa.reads = {ldr_};
+        fxaa.execute = [this](FrameGraphContext& ctx) {
+            auto& backend = ctx.Backend();
+            if (!postQuad_.Valid()) return;
+            const TextureHandle ldr = backend.RenderTargetColorTexture(ctx.GetInput(ldr_));
+            if (!ldr.Valid()) return;
+            backend.BindDefaultTarget();
+            backend.SetBlendMode(BlendMode::Opaque);
+            backend.SetDepthTest(false, false);
+            backend.SetCullMode(CullMode::None);
+            backend.UseShader(fxaaShader_);
+            backend.SetUniformMat4("uMVP", math::Mat4::Identity());
+            backend.BindTexture(0, ldr);
+            backend.SetUniformInt("uColor", 0);
+            backend.SetUniformVec2("uTexelSize",
+                                   {hdrW_ > 0 ? 1.0f / static_cast<float>(hdrW_) : 0.0f,
+                                    hdrH_ > 0 ? 1.0f / static_cast<float>(hdrH_) : 0.0f});
+            backend.SetUniformFloat("uFxaaStrength", fxaaStrength_);
+            backend.DrawMesh(postQuad_);
+        };
+        fxaaPassIndex_ = add(std::move(fxaa));
+    } else {
+        fxaaPassIndex_ = kNoPass;
+    }
 
     graph_ = std::move(fresh);
     built_ = true;
@@ -756,6 +801,8 @@ bool PostGraph::Execute(IRenderBackend& backend, const FrameParams& params) {
     sunDir_ = params.sunDir;
     sunColor_ = params.sunColor;
     sceneVpRect_ = params.sceneVpRect;
+    // FXAA strength: 0 when off (the pass then copies the composite verbatim).
+    fxaaStrength_ = params.fxaaPass ? params.fxaaStrength : 0.0f;
 
     graph_.SetExternalInput(hdrScene_, params.hdrScene);
     const bool ok = graph_.Execute(backend);

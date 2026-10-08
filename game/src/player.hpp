@@ -83,6 +83,7 @@ struct PlayerConfig {
     float taaSharpen = -1.0f;     // --taa-sharpen <f>: unsharp gain (0-1.5)
     std::string tonemapMode;      // --tonemap linear|reinhard|filmic|aces
     bool gammaCorrect = false;    // --gamma-correct: opt-in linear workflow
+    bool fxaa = false;            // --fxaa: screen-space AA after composite
 };
 
 // The data-driven player: unpack a store-only pack to a temp dir, read the

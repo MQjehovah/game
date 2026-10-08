@@ -45,6 +45,8 @@ public:
         ShaderHandle downsample;
         ShaderHandle upsampleAdd;
         ShaderHandle compositeShader; // 最终 composite
+        // FXAA resolve (terminal pass; strength 0 = exact copy).
+        ShaderHandle fxaaShader;
         // A5 auto-exposure measure shaders (HDR -> log-lum -> 1x1 average).
         ShaderHandle luminanceShader;
         ShaderHandle luminanceReduceShader;
@@ -106,6 +108,10 @@ public:
         // light only and the SSR reads the true reflector roughness.
         bool gbufferPass = false;
         bool bloomPass = false;
+        // FXAA resolve after the composite. strength 0 = pass-through copy so
+        // the graph always routes the composite through the LDR intermediate.
+        bool fxaaPass = false;
+        float fxaaStrength = 0.75f;
         math::Vec3 camPos; // volumetric 太阳投影
         math::Vec3 sunDir;
         math::Vec3 sunColor; // volumetric light-shaft colour (sun * intensity)
@@ -178,6 +184,7 @@ private:
     ResourceId hdrScene_ = kInvalidResource; // 外部输入（主场景 HDR）
     ResourceId sceneDepth_ = kInvalidResource; // 全尺寸，depth pass 写
     ResourceId gbuffer_ = kInvalidResource;    // 全尺寸，gbuffer pass 写（间接光+粗糙度）
+    ResourceId ldr_ = kInvalidResource;        // 全尺寸 LDR，composite 写、fxaa 读
     ResourceId ao_ = kInvalidResource;         // 半尺寸，ssao 写
     ResourceId aoBlurA_ = kInvalidResource;
     ResourceId aoBlurB_ = kInvalidResource;
@@ -224,6 +231,7 @@ private:
     size_t luminanceAvgIndex_ = 0;
     size_t adaptIndex_ = 0;
     size_t compositePassIndex_ = 0;
+    size_t fxaaPassIndex_ = 0;
     ShaderHandle ssaoShader_;
     ShaderHandle ssaoBlur_;
     ShaderHandle volumetricShader_;
@@ -237,6 +245,7 @@ private:
     ShaderHandle luminanceReduceShader_;
     ShaderHandle exposureAdaptShader_;
     ShaderHandle compositeShader_;
+    ShaderHandle fxaaShader_;
     MeshHandle postQuad_;
     std::function<void()> drawDepthCasters_;
     std::function<void()> drawGBufferCasters_;
@@ -258,6 +267,8 @@ private:
     // Pixels per world unit at depth 1 (0.5*height/tan(fovY/2)): SSAO projects its
     // world-space sampling radius to screen space with it.
     float projScale_ = 600.0f;
+    static constexpr size_t kNoPass = static_cast<size_t>(-1);
+    float fxaaStrength_ = 0.0f; // Execute 快照（fxaa 关闭时为 0 = 精确拷贝）
     CompositeParams comp_; // 上一次 Execute 的 composite 快照
     bool built_ = false;
     bool ran_ = false;

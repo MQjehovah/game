@@ -43,6 +43,8 @@
 | (F2) | **启用点光阴影**（GL+VK）：目标带深度附件、按 texel 深度测试（非画家排序），`PointShadowRT` 真正分配（原来从未创建），`Renderer::SetPointShadowsEnabled` 运行时开关（low/medium 关，high/ultra 开），`NEON_NO_POINT_SHADOWS` 诊断 |
 | (VK) | **修复 Vulkan 布局校验报错**：clear pass 的 `initialLayout` 用 UNDEFINED（原来谎称 GENERAL）；新 RT 的 tracked layout 从 UNDEFINED 起步（首次 bind 才真正 transition）；`EnsureTextureSet` 在过渡前补齐 `EndRenderPassIfActive` + 重开已结束的 cmd（换 target 会 flush/end 命令缓冲）。visual_acceptance 的 image-layout 错误从 110 → 0 |
 | (F5) | **多 tonemapper**：Linear/Reinhard/Filmic/ACES（`TonemapMode`，GL+VK composite，CLI `--tonemap`），默认 ACES 不变 |
+| (F5) | **AgX tonemapper**（`--tonemap agx`，Sobotka 近似，GL+VK） |
+| (F5) | **FXAA**：composite→LDR 中间 RT→`post.fxaa`→backbuffer（默认 strength 0 精确拷贝）；`--fxaa` |
 | (B3) | **可选 gamma-correct**（`Renderer::SetGammaCorrect`，默认关，CLI `--gamma-correct`）：lit 解码 sRGB albedo/emissive，composite `LinearToSrgb` 编码（tonemap 后、grade 前）；VK UBO slot 7636 |
 | (F3) | **八面体 IBL（带方位）**：irradiance 32²→24²、prefiltered 改成八面体「粗糙度 atlas」（`kOctaPrefilterSize=48` × `48*5` 行，逐 tile GGX 预滤波），从**真实 equirect HDRI**（`SceneState::SetSkySource`，1024 宽降采样）或程序化渐变烘焙；lit shader 用八面体 encode + wrap-fold 双线性（消除接缝）按 `textureSize()` 推 tile 数并混合相邻粗糙度。观感较旧 Y-only 渐变明显改善；GL/VK 一致，烘焙 ~50–120ms |
 
@@ -96,7 +98,8 @@
 - DoF / bokeh（Godot `effects/bokeh_dof.glsl`）。
 - 运动模糊。
 - 色彩校正 LUT（当前只有程序化 LGG）。
-- 抗锯齿：FXAA / SMAA（Godot `effects/smaa_*.glsl`；当前 MSAA+TAA）。
+- **FXAA（已做）**：composite 改写到 LDR 中间 RT，末端新增 `post.fxaa` pass（GL `kFxaaFragmentShader` / VK `fxaa.frag`，strength 0 = 精确拷贝，故默认关闭也走同一图结构）。`Renderer::SetFxaaEnabled/Strength`，CLI `--fxaa`。VK UBO slot `7640 uFxaaStrength`（复用 `uTexelSize`）。
+- SMAA：未做（Godot `effects/smaa_*.glsl`）。
 
 ### F6. 高级材质
 - clearcoat / anisotropy / iridescence / sheen(cloth) / subsurface / 第二高光叶 / 金属能量补偿（split-sum 高粗糙度偏暗）。参考 Filament `surface_brdf.fs`。
