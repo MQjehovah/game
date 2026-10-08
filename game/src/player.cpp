@@ -295,7 +295,8 @@ bool PlayerApp::OnCreate() {
         else if (tm == "reinhard") renderer_.SetTonemapMode(gfx::TonemapMode::Reinhard);
         else if (tm == "filmic") renderer_.SetTonemapMode(gfx::TonemapMode::Filmic);
         else if (tm == "aces") renderer_.SetTonemapMode(gfx::TonemapMode::ACES);
-        else NEON_LOG_WARN("Player: unknown --tonemap '%s' (linear|reinhard|filmic|aces)",
+        else if (tm == "agx") renderer_.SetTonemapMode(gfx::TonemapMode::AgX);
+        else NEON_LOG_WARN("Player: unknown --tonemap '%s' (linear|reinhard|filmic|aces|agx)",
                            tm.c_str());
     }
 assetMgr_.Init(&renderer_);

@@ -37,11 +37,36 @@ vec3 FilmicFilm(vec3 x) {
     float whiteScale = 1.0 / Uncharted2Curve(vec3(11.2)).x;
     return clamp(Uncharted2Curve(x) * whiteScale, vec3(0.0), vec3(1.0));
 }
-// 0 Linear, 1 Reinhard, 2 Filmic, 3 ACES (mirrors bloom.hpp TonemapColor).
+float AgxContrastApprox(float x) {
+    float x2 = x * x;
+    float x4 = x2 * x2;
+    return 15.5 * x4 * x2 - 40.14 * x4 * x + 31.96 * x4 - 6.868 * x2 * x +
+           0.4298 * x2 + 0.1191 * x - 0.00232;
+}
+vec3 AgxFilm(vec3 x) {
+    x = clamp(x, vec3(0.0), vec3(65504.0));
+    vec3 r0 = vec3(0.842479062253094, 0.0423282422610123, 0.0423756549057051);
+    vec3 r1 = vec3(0.0784335999999992, 0.878468636469772, 0.0784336);
+    vec3 r2 = vec3(0.0792237451477643, 0.0791661274605434, 0.879142973793104);
+    vec3 v = vec3(dot(r0, x), dot(r1, x), dot(r2, x));
+    const float minEv = -12.47393;
+    const float maxEv = 4.026069;
+    v = vec3(
+        AgxContrastApprox((clamp(log2(max(v.x, 1e-10)), minEv, maxEv) - minEv) / (maxEv - minEv)),
+        AgxContrastApprox((clamp(log2(max(v.y, 1e-10)), minEv, maxEv) - minEv) / (maxEv - minEv)),
+        AgxContrastApprox((clamp(log2(max(v.z, 1e-10)), minEv, maxEv) - minEv) / (maxEv - minEv)));
+    vec3 o0 = vec3(1.19687900512017, -0.0528968517574562, -0.0529716355144438);
+    vec3 o1 = vec3(-0.0980208811401368, 1.15190312990417, -0.0980434501171241);
+    vec3 o2 = vec3(-0.0990297440797205, -0.0989611768448433, 1.15107367264116);
+    v = vec3(dot(o0, v), dot(o1, v), dot(o2, v));
+    return clamp(v, vec3(0.0), vec3(1.0));
+}
+// 0 Linear, 1 Reinhard, 2 Filmic, 3 ACES, 4 AgX (mirrors bloom.hpp TonemapColor).
 vec3 TonemapColor(int mode, vec3 x) {
     if (mode == 0) return clamp(x, vec3(0.0), vec3(1.0));
     if (mode == 1) return ReinhardFilm(x);
     if (mode == 2) return FilmicFilm(x);
+    if (mode == 4) return AgxFilm(x);
     return ACESFilm(x);
 }
 // Linear -> sRGB display encode (gamma-correct output, off by default).

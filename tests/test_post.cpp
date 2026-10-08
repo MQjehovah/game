@@ -88,7 +88,7 @@ TEST(TonemapModeOperators) {
     CHECK_NEAR(gfx::TonemapColor(TonemapMode::Linear, {4.0f, 0.5f, -1.0f}).x, 1.0f, 1e-6);
     CHECK_NEAR(gfx::TonemapColor(TonemapMode::Linear, {4.0f, 0.5f, -1.0f}).z, 0.0f, 1e-6);
     for (TonemapMode m : {TonemapMode::Linear, TonemapMode::Reinhard, TonemapMode::Filmic,
-                          TonemapMode::ACES}) {
+                          TonemapMode::ACES, TonemapMode::AgX}) {
         float prev = -1.0f;
         for (float x : xs) {
             const math::Vec3 c = gfx::TonemapColor(m, {x, x, x});

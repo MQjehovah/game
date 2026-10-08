@@ -75,7 +75,7 @@ void PrintHelp() {
         "  --dyn-res <fps>            dynamic resolution targeting <fps>\n"
         "  --taa / --no-taa           temporal anti-aliasing (jittered history resolve)\n"
         "  --taa-sharpen <f>          unsharp-mask gain on the TAA resolve (0-1.5)\n"
-        "  --tonemap <mode>           composite tonemap: linear|reinhard|filmic|aces\n"
+        "  --tonemap <mode>           composite tonemap: linear|reinhard|filmic|aces|agx\n"
         "  --gamma-correct            opt-in linear workflow (sRGB decode/encode)\n"
         "  --keep                     keep the unpacked temp dir on exit (debug)\n"
         "  --log-level <level>        log filter: debug|info|warn|error (default debug)\n"

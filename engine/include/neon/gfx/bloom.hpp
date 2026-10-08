@@ -84,6 +84,7 @@ enum class TonemapMode : int {
     Reinhard = 1, // x / (1 + x)
     Filmic = 2,   // Hable "Uncharted 2" curve, white point 11.2
     ACES = 3,     // Narkowicz ACES fit (default)
+    AgX = 4,      // Sobotka AgX (compact log2 + contrast approximation)
 };
 
 // Guard for every operator: clamp away Inf and map NaN -> 0 before the curve
@@ -115,6 +116,37 @@ inline math::Vec3 FilmicFilm(const math::Vec3& in) {
             std::clamp(c.z, 0.0f, 1.0f)};
 }
 
+// AgX (Sobotka) compact approximation: inset matrix -> log2 encode ->
+// polynomial contrast -> outset matrix. Matrices are written as ROWS and
+// applied by dot product (identical CPU/GPU, no column/row ambiguity).
+inline float AgxContrastApprox(float x) {
+    const float x2 = x * x;
+    const float x4 = x2 * x2;
+    return 15.5f * x4 * x2 - 40.14f * x4 * x + 31.96f * x4 - 6.868f * x2 * x +
+           0.4298f * x2 + 0.1191f * x - 0.00232f;
+}
+inline math::Vec3 AgxFilm(const math::Vec3& in) {
+    const math::Vec3 x = SanitizeHdr(in);
+    // Inset matrix rows.
+    const math::Vec3 r0{0.842479062253094f, 0.0423282422610123f, 0.0423756549057051f};
+    const math::Vec3 r1{0.0784335999999992f, 0.878468636469772f, 0.0784336f};
+    const math::Vec3 r2{0.0792237451477643f, 0.0791661274605434f, 0.879142973793104f};
+    math::Vec3 v{math::Dot(r0, x), math::Dot(r1, x), math::Dot(r2, x)};
+    constexpr float minEv = -12.47393f, maxEv = 4.026069f;
+    auto enc = [&](float c) {
+        const float l = std::log2(std::max(c, 1e-10f));
+        return (std::clamp(l, minEv, maxEv) - minEv) / (maxEv - minEv);
+    };
+    v = {AgxContrastApprox(enc(v.x)), AgxContrastApprox(enc(v.y)), AgxContrastApprox(enc(v.z))};
+    // Outset matrix rows (inverse).
+    const math::Vec3 o0{1.19687900512017f, -0.0528968517574562f, -0.0529716355144438f};
+    const math::Vec3 o1{-0.0980208811401368f, 1.15190312990417f, -0.0980434501171241f};
+    const math::Vec3 o2{-0.0990297440797205f, -0.0989611768448433f, 1.15107367264116f};
+    v = {math::Dot(o0, v), math::Dot(o1, v), math::Dot(o2, v)};
+    return {std::clamp(v.x, 0.0f, 1.0f), std::clamp(v.y, 0.0f, 1.0f),
+            std::clamp(v.z, 0.0f, 1.0f)};
+}
+
 // Applies the selected operator to an already exposure-scaled HDR colour.
 inline math::Vec3 TonemapColor(TonemapMode mode, const math::Vec3& hdr) {
     switch (mode) {
@@ -126,6 +158,8 @@ inline math::Vec3 TonemapColor(TonemapMode mode, const math::Vec3& hdr) {
             return ReinhardFilm(hdr);
         case TonemapMode::Filmic:
             return FilmicFilm(hdr);
+        case TonemapMode::AgX:
+            return AgxFilm(hdr);
         case TonemapMode::ACES:
         default:
             return AcesFilm(hdr);
@@ -524,11 +558,38 @@ vec3 FilmicFilm(vec3 x) {
     float whiteScale = 1.0 / Uncharted2Curve(vec3(11.2)).x;
     return clamp(Uncharted2Curve(x) * whiteScale, vec3(0.0), vec3(1.0));
 }
-// 0 Linear, 1 Reinhard, 2 Filmic, 3 ACES (mirrors bloom.hpp TonemapColor).
+float AgxContrastApprox(float x) {
+    float x2 = x * x;
+    float x4 = x2 * x2;
+    return 15.5 * x4 * x2 - 40.14 * x4 * x + 31.96 * x4 - 6.868 * x2 * x +
+           0.4298 * x2 + 0.1191 * x - 0.00232;
+}
+vec3 AgxFilm(vec3 x) {
+    x = clamp(x, vec3(0.0), vec3(65504.0));
+    // Inset matrix (rows) applied by dot product.
+    vec3 r0 = vec3(0.842479062253094, 0.0423282422610123, 0.0423756549057051);
+    vec3 r1 = vec3(0.0784335999999992, 0.878468636469772, 0.0784336);
+    vec3 r2 = vec3(0.0792237451477643, 0.0791661274605434, 0.879142973793104);
+    vec3 v = vec3(dot(r0, x), dot(r1, x), dot(r2, x));
+    const float minEv = -12.47393;
+    const float maxEv = 4.026069;
+    v = vec3(
+        AgxContrastApprox((clamp(log2(max(v.x, 1e-10)), minEv, maxEv) - minEv) / (maxEv - minEv)),
+        AgxContrastApprox((clamp(log2(max(v.y, 1e-10)), minEv, maxEv) - minEv) / (maxEv - minEv)),
+        AgxContrastApprox((clamp(log2(max(v.z, 1e-10)), minEv, maxEv) - minEv) / (maxEv - minEv)));
+    // Outset matrix (rows).
+    vec3 o0 = vec3(1.19687900512017, -0.0528968517574562, -0.0529716355144438);
+    vec3 o1 = vec3(-0.0980208811401368, 1.15190312990417, -0.0980434501171241);
+    vec3 o2 = vec3(-0.0990297440797205, -0.0989611768448433, 1.15107367264116);
+    v = vec3(dot(o0, v), dot(o1, v), dot(o2, v));
+    return clamp(v, vec3(0.0), vec3(1.0));
+}
+// 0 Linear, 1 Reinhard, 2 Filmic, 3 ACES, 4 AgX (mirrors bloom.hpp TonemapColor).
 vec3 TonemapColor(int mode, vec3 x) {
     if (mode == 0) return clamp(x, vec3(0.0), vec3(1.0));
     if (mode == 1) return ReinhardFilm(x);
     if (mode == 2) return FilmicFilm(x);
+    if (mode == 4) return AgxFilm(x);
     return ACESFilm(x);
 }
 // Linear -> sRGB display encode (gamma-correct output, off by default).
