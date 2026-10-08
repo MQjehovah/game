@@ -128,6 +128,25 @@
 ---
 
 ## 5. 快速验证清单（每次改渲染后）
-- `neon_tests` = 842/842。
+- `neon_tests` = 846/846。
 - GL 与 VK 都跑 `projects/default/assets/scenes/visual_acceptance.json`、`_mirror.json`、`projects/showcase/assets/scenes/04_lakeside.json`，肉眼/像素 diff 对比，确认无回归、两后端一致。
 - 改 VK UBO 后跑一次 `NEON_VK_VALIDATION=1`，要求无 `pCode-08737`、无 `InvalidImageLayout`。剩余为**资源析构顺序**类（`vkDestroyBuffer-00922`/`vkDestroyPipeline-00765`/`vkDestroyImageView-01026`/`vkDestroyDevice-05137` 泄漏 + semaphore `-00065`），属已知的独立问题（见「待修」）。
+
+---
+
+## 6. 本轮（F2/F3/F5/B3/F6-clearcoat 之后）剩余待办
+
+已从 `24db079` 推进到 `165e70e`：F2 点光阴影、F3 八面体 IBL、F5 多 tonemapper/AgX/FXAA/DoF/运动模糊、B3 可选 gamma、F6 clearcoat。**以下为尚未做的**：
+
+1. **F4 froxel 体积雾（最大）**：现 `volumetric.frag` 仅太阳 raymarch。需 froxel 网格（3D 体积或用多张 2D atlas 拼）、逐 froxel 光注入 pass、时域滤波；新增/登记 VK shader。参考 Godot `environment/volumetric_fog*.glsl`。
+2. **F6 其余材质叶**：anisotropy（需切线方向）、sheen（布料，可仿 clearcoat 做有界）、subsurface（wrap-diffuse 近似）、iridescence、金属能量补偿（split-sum 高粗糙度偏暗）。参考 Filament `surface_brdf.fs`。每个都要 `Material` 字段 + `scene_file` 白名单/解析/序列化 + GL/VK lit + VK UBO slot。
+3. **色彩校正 LUT**：需要 3D/条带式 LUT 纹理 + 资源加载路径（`asset_manager`），composite 采样替换/叠加程序化 LGG。
+4. **SMAA**：多张预计算 area/search 查找纹理 + 多个 pass（当前只有 FXAA）。
+5. **待修 bug**（仍开）：SSAO 用真法线缓冲提质；SSR 无 HiZ/时域；VK 自动曝光时域平滑；VK 资源析构顺序/泄漏；`SetAmbientGroundColor` 无调用者。
+
+## 7. 新需求：真实水体效果（待实现）
+
+目标：把现有平面/占位水面换成**真实水体**——折射（读场景深度做水下偏移/扭曲）、反射（SSR 或平面反射）、Fresnel、深度吸收（Beer-Lambert 按深度染色）、动态法线（滚动/双层）、泡沫/岸边浪、太阳高光。GL 与 VK 一致。
+- 思路：新增 water 材质/变体（可复用 lit 管线或独立 water shader），读 `uFogDepth`（线性深度）算水深与折射偏移，反射优先接现有 SSR（`uSsr` 已在 composite，但 water 需要在水面片元处直接用 SSR 结果 → 可能要在 water shader 内联 SSR 采样或把 SSR 结果作为水面输入）。
+- 涉及：`material.hpp`（water 标志/参数：深水色、浅水色、波幅、波速、折射强度、泡沫）、`scene_file`（解析）、lit/新 shader（GL builtin + VK `.frag` + 注册）、可能的 VK UBO slot。默认关闭，不影响既有内容。
+- 参考：Godot `sky.glsl`/`water` 相关、Filament water 示例；也可参考 `projects/showcase/assets/scenes/04_lakeside.json` 现有水面。
