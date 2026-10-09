@@ -67,15 +67,21 @@ vec3 OctIblSampleRough(sampler2D s, vec3 dir, float rough) {
     return mix(a, b, lv - l0);
 }
 
-// Three superimposed directional sine waves scrolling over world XZ.
+// Four superimposed directional sine waves scrolling over world XZ, summed by
+// their height gradients into a world-space normal (the geometric normal is +Y).
 vec3 WaterNormal(vec3 wp) {
     float t = eng.uTime * eng.uWaterParams.y;
     vec2 p = wp.xz * eng.uWaterParams.x;
-    float a1 = p.x * 1.0 + t * 1.3;
-    float a2 = p.y * 1.3 - t * 1.1;
-    float a3 = (p.x + p.y) * 0.7 + t * 0.7;
-    vec2 grad = vec2(cos(a1) + cos(a3) * 0.7, cos(a2) * 1.3 + cos(a3) * 0.7);
-    grad *= eng.uWaterParams.z;
+    vec2 dirs[4] = vec2[4](normalize(vec2(1.0, 0.2)), normalize(vec2(-0.6, 0.9)),
+                           normalize(vec2(0.3, -1.0)), normalize(vec2(0.8, 0.6)));
+    float freqs[4] = float[4](1.0, 1.7, 2.6, 3.9);
+    float amps[4] = float[4](1.0, 0.6, 0.4, 0.25);
+    vec2 grad = vec2(0.0);
+    for (int i = 0; i < 4; ++i) {
+        float ph = dot(p, dirs[i]) * freqs[i] + t * freqs[i] * 0.9;
+        grad += dirs[i] * (cos(ph) * amps[i] * freqs[i]);
+    }
+    grad *= eng.uWaterParams.z * 0.25;
     return normalize(vec3(-grad.x, 1.0, -grad.y));
 }
 

@@ -271,7 +271,7 @@ void DrawSystem::Build(ecs::World& world, AnimationSystem& anims) {
         // the baked colors show through (mirrors EditorApp::ApplyMaterialParams).
         const bool bakedColor = m->meshKey == "terrain" || m->meshKey == "tree" ||
                                 m->meshKey == "house" || m->meshKey == "house_roof" ||
-                                m->meshKey == "bush" ||
+                                m->meshKey == "bush" || m->meshKey == "water" ||
                                 m->meshKey == "hero" || m->meshKey == "wolf" ||
                                 m->meshKey == "npc" || m->meshKey.compare(0, 4, "npc:") == 0;
         // HDR tint override wins over colorHex; components above 1.0 emit
@@ -1526,7 +1526,8 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
         // (per-entity bone matrices), sprites, decals, transparent materials
         // and custom shaders keep the per-entity path.
         const bool batchable = canBatch && !highlighted && !item.skinned && !item.isSprite &&
-                               !item.isDecal && !item.mat.transparent && !item.mat.shader.Valid() &&
+                               !item.isDecal && !item.mat.transparent && !item.mat.water &&
+                               !item.mat.shader.Valid() &&
                                item.mesh.Valid() && !item.suppressMesh &&
                                item.gltfSubNodes.empty() &&
                                // A moving object must keep its own draw call so

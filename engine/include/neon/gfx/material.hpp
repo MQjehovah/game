@@ -82,9 +82,9 @@ struct Material {
     // highlight. When on, the lit shader replaces the standard PBR result with
     // the water model. The water params below are only read when water == true.
     bool water = false;
-    float waterWaveScale = 0.18f;    // spatial frequency of the wave field
-    float waterWaveSpeed = 0.6f;     // animation speed
-    float waterWaveStrength = 0.55f; // normal perturbation amount
+    float waterWaveScale = 0.5f;     // spatial frequency of the wave field
+    float waterWaveSpeed = 0.8f;     // animation speed
+    float waterWaveStrength = 0.6f;  // normal perturbation amount
     float waterSpecular = 2.5f;      // sun highlight intensity
     float waterSpecPower = 220.0f;   // sun highlight sharpness
     Color waterDeep{0.015f, 0.06f, 0.11f, 1.0f};   // deep-water body colour
