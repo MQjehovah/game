@@ -150,7 +150,10 @@
 - 算法：4 个方向波叠加的解析法线（`WaterWaveSample`，xy=梯度、z=高度）+ Fresnel（F0=0.02）混合深/浅水体色与八面体 IBL 反射 + 太阳高光 + 波峰泡沫 + 距离越远反射越糙。
 - 材质：`Material.water` + 参数（`waterWaveScale/Speed/Strength`、`waterSpecular/SpecPower`、`waterDeep/Shallow`）；`meshKey=="water"` 或 JSON `"water": true` 自动启用；scene JSON 可调全部参数（含 deep/shallow 颜色）。
 - **关键坑**：水面是不透明内建 shader，会走**实例化批处理**从而绕过按材质选 shader（表现是一直是 lit）。已在 `draw_system` 的 `batchable` 里加 `!mat.water`，改走 per-entity `DrawMesh`。
-- 未做：真折射（需场景颜色/深度，前向单 pass 不可靠，需透明 pass + 场景颜色拷贝）、屏幕空间反射接入。VK 未验证（按“先 GL”约定）。
+- **平面反射**（`9579b38`）：EndScene 用镜像相机（`m[5]=-1`，`uReflectionVP = ViewProjection()*mirror`）把本帧不透明 caster（`ssaoCasters_`，现恒记录、跳过 water）渲染到半分辨率 `reflectionRT_`；水在下帧采样（`uReflectionTex` unit 9，`uReflectionEnabled/Strength`），法线扭曲后与天空 IBL 混合。`NEON_NO_WATER_REFRACTION` 关折射。
+- **屏幕空间折射/吸收**（`adc79fa`）：水现在走**透明 pass**（`item.mat.transparent=true`），`draw_system` 在 opaque→transparent 边界调 `Renderer::BeginTransparentPass()` 抓取不透明场景颜色（`sceneColorCopy_`，blit `hdrRT_`）+ 解析深度（`EnsureSoftDepth`→`hdrDepthRT_`）。水用 `uSceneColor`(unit 4)/`uSceneDepth`(unit 3) 按 `gl_FragCoord/uScreenSize` 采样，法线偏移 + Beer-Lambert 吸收到深水色 + 岸边泡沫。折射参数挤在 `uWaterParams2=(specPower, refraction, absorb, enabled)`，**不新增 UBO 槽**；采样器复用绑定 3/4（occlusion/emissive，水域不用）。
+- **坑**：`ApplySceneUniforms` 不含 `uNear/uFar`（只有粒子/水路径需要），水的折射分支里要自己设。测试场景水面下方只有天空→会被吸成深色；验证要用有地形/底面的场景（lakeside、watertest2）。
+- VK 未验证折射/反射（折射采样器靠绑定 3/4 在 set-1 内，理论可编译；按“先 GL”约定）。
 
 ## 8. 后端架构（参照 Godot RD / Unity RHI）— P0 已完成
 
