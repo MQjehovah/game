@@ -56,11 +56,12 @@ const float CLOUD_TOP = 360.0;
 float CloudDensity(vec3 p, float coverage) {
     float h = (p.y - CLOUD_BASE) / (CLOUD_TOP - CLOUD_BASE);
     if (h < 0.0 || h > 1.0) return 0.0;
-    float profile = smoothstep(0.0, 0.12, h) * smoothstep(1.0, 0.48, h);
-    vec3 q = p * 0.006 * max(eng.uCloudScale, 0.1);
-    q.xz += vec2(eng.uTime * 0.012, eng.uTime * 0.005);
-    float d = (fbm3(q) - (0.64 - clamp(coverage, 0.0, 1.0) * 0.55)) * 6.0;
-    return clamp(d, 0.0, 1.0) * profile;
+    float profile = smoothstep(0.0, 0.12, h) * smoothstep(1.0, 0.55, h);
+    vec3 q = p * 0.01 * max(eng.uCloudScale, 0.1);
+    q.xz += vec2(eng.uTime * 0.02, eng.uTime * 0.008);
+    float n = fbm3(q);
+    n = 1.0 - abs(n * 2.0 - 1.0); // billow: rounded cumulus blobs
+    return smoothstep(1.0 - clamp(coverage, 0.0, 1.0), 1.0, n) * profile;
 }
 float CloudLight(vec3 p, vec3 sunDir, float coverage) {
     float d = 0.0;
@@ -138,8 +139,8 @@ void main() {
             float phase = mix((1.0 - g * g) /
                                   (4.0 * 3.14159265 * pow(1.0 + g * g - 2.0 * g * c, 1.5)),
                               1.0 / (4.0 * 3.14159265), 0.5);
-            vec3 sunCol = vec3(1.0, 0.95, 0.86) * 2.0;
-            vec3 ambCol = mix(eng.uSkyHorizon, eng.uSkyTop, 0.5) * 0.7;
+            vec3 sunCol = vec3(1.02, 0.98, 0.92) * 3.4;
+            vec3 ambCol = mix(eng.uSkyHorizon, eng.uSkyTop, 0.5) * 1.0 + vec3(0.32);
             for (int i = 0; i < STEPS; ++i) {
                 float d = CloudDensity(p, eng.uCloudCoverage);
                 if (d > 0.001) {

@@ -78,7 +78,7 @@ bool Renderer::Init(platform::IWindow* window) {
     screenH_ = window_->Height();
     draw2d_.Resize(screenW_, screenH_);
     // Background GPU-upload worker on a shared GL context (resource context).
-    // OpenGL-only (the shared-context abstraction is GL-specific); optional â€?
+    // OpenGL-only (the shared-context abstraction is GL-specific); optional ï¿½?
     // on platforms without shared-context support Start() fails and uploads
     // stay on the main thread.
     const char* bn = backend_->Name();
@@ -808,52 +808,6 @@ void Renderer::DrawSky(const math::Mat4* vpOverride, const math::Vec3* camOverri
     sceneState_.DrawSky(draw2d_);
 }
 
-// Correct full 4x4 inverse (Mat4::Inverted is affine-only, which is wrong for a
-// perspective view-projection - the sky ray reconstruction needs the real one).
-static math::Mat4 InvertFull(const math::Mat4& m) {
-    const float* a = m.Data();
-    float inv[16];
-    inv[0] = a[5] * a[10] * a[15] - a[5] * a[11] * a[14] - a[9] * a[6] * a[15] +
-             a[9] * a[7] * a[14] + a[13] * a[6] * a[11] - a[13] * a[7] * a[10];
-    inv[4] = -a[4] * a[10] * a[15] + a[4] * a[11] * a[14] + a[8] * a[6] * a[15] -
-             a[8] * a[7] * a[14] - a[12] * a[6] * a[11] + a[12] * a[7] * a[10];
-    inv[8] = a[4] * a[9] * a[15] - a[4] * a[11] * a[13] - a[8] * a[5] * a[15] +
-             a[8] * a[7] * a[13] + a[12] * a[5] * a[11] - a[12] * a[7] * a[9];
-    inv[12] = -a[4] * a[9] * a[14] + a[4] * a[10] * a[13] + a[8] * a[5] * a[14] -
-              a[8] * a[6] * a[13] - a[12] * a[5] * a[10] + a[12] * a[6] * a[9];
-    inv[1] = -a[1] * a[10] * a[15] + a[1] * a[11] * a[14] + a[9] * a[2] * a[15] -
-             a[9] * a[3] * a[14] - a[13] * a[2] * a[11] + a[13] * a[3] * a[10];
-    inv[5] = a[0] * a[10] * a[15] - a[0] * a[11] * a[14] - a[8] * a[2] * a[15] +
-             a[8] * a[3] * a[14] + a[12] * a[2] * a[11] - a[12] * a[3] * a[10];
-    inv[9] = -a[0] * a[9] * a[15] + a[0] * a[11] * a[13] + a[8] * a[1] * a[15] -
-             a[8] * a[3] * a[13] - a[12] * a[1] * a[11] + a[12] * a[3] * a[9];
-    inv[13] = a[0] * a[9] * a[14] - a[0] * a[10] * a[13] - a[8] * a[1] * a[14] +
-              a[8] * a[2] * a[13] + a[12] * a[1] * a[10] - a[12] * a[2] * a[9];
-    inv[2] = a[1] * a[6] * a[15] - a[1] * a[7] * a[14] - a[5] * a[2] * a[15] +
-             a[5] * a[3] * a[14] + a[13] * a[2] * a[7] - a[13] * a[3] * a[6];
-    inv[6] = -a[0] * a[6] * a[15] + a[0] * a[7] * a[14] + a[4] * a[2] * a[15] -
-             a[4] * a[3] * a[14] - a[12] * a[2] * a[7] + a[12] * a[3] * a[6];
-    inv[10] = a[0] * a[5] * a[15] - a[0] * a[7] * a[13] - a[4] * a[1] * a[15] +
-              a[4] * a[3] * a[13] + a[12] * a[1] * a[7] - a[12] * a[3] * a[5];
-    inv[14] = -a[0] * a[5] * a[14] + a[0] * a[6] * a[13] + a[4] * a[1] * a[14] -
-              a[4] * a[2] * a[13] - a[12] * a[1] * a[6] + a[12] * a[2] * a[5];
-    inv[3] = -a[1] * a[6] * a[11] + a[1] * a[7] * a[10] + a[5] * a[2] * a[11] -
-             a[5] * a[3] * a[10] - a[9] * a[2] * a[7] + a[9] * a[3] * a[6];
-    inv[7] = a[0] * a[6] * a[11] - a[0] * a[7] * a[10] - a[4] * a[2] * a[11] +
-             a[4] * a[3] * a[10] + a[8] * a[2] * a[7] - a[8] * a[3] * a[6];
-    inv[11] = -a[0] * a[5] * a[11] + a[0] * a[7] * a[9] + a[4] * a[1] * a[11] -
-              a[4] * a[3] * a[9] - a[8] * a[1] * a[7] + a[8] * a[3] * a[5];
-    inv[15] = a[0] * a[5] * a[10] - a[0] * a[6] * a[9] - a[4] * a[1] * a[10] +
-              a[4] * a[2] * a[9] + a[8] * a[1] * a[6] - a[8] * a[2] * a[5];
-    float det = a[0] * inv[0] + a[1] * inv[4] + a[2] * inv[8] + a[3] * inv[12];
-    math::Mat4 r;
-    if (std::fabs(det) < 1e-12f) return r;
-    const float d = 1.0f / det;
-    float* o = r.Data();
-    for (int i = 0; i < 16; ++i) o[i] = inv[i] * d;
-    return r;
-}
-
 bool Renderer::DrawSkyQuad(const math::Mat4& vp, const math::Vec3& camPos) {
     if (!skyBox_.enabled || !Program("skybox").Valid() || !postQuadMesh_.Valid()) return false;
     {
@@ -864,7 +818,16 @@ bool Renderer::DrawSkyQuad(const math::Mat4& vp, const math::Vec3& camPos) {
         backend_->SetUniformMat4("uMVP", math::Mat4::Identity());
         // Reconstruct world rays with the inverse(view*proj) of the rendered
         // camera; the sky texture (optional HDRI) is sampled when valid.
-        backend_->SetUniformMat4("uInvViewProj", InvertFull(vp));
+        const math::Mat4 invVP = vp.Inverse();
+        backend_->SetUniformMat4("uInvViewProj", invVP);
+        const math::Vec3 rbl = gfx::InverseViewProjRay(invVP, -1.0f, -1.0f);
+        const math::Vec3 rbr = gfx::InverseViewProjRay(invVP, 1.0f, -1.0f);
+        const math::Vec3 rtr = gfx::InverseViewProjRay(invVP, 1.0f, 1.0f);
+        const math::Vec3 rtl = gfx::InverseViewProjRay(invVP, -1.0f, 1.0f);
+        backend_->SetUniformVec3("uRayBL", rbl);
+        backend_->SetUniformVec3("uRayBR", rbr);
+        backend_->SetUniformVec3("uRayTR", rtr);
+        backend_->SetUniformVec3("uRayTL", rtl);
         backend_->SetUniformVec3("uCamPos", camPos);
         const gfx::TextureHandle skyTex = sceneState_.SkyTexture();
         backend_->BindTexture(0, skyTex.Valid() ? skyTex : white_);
