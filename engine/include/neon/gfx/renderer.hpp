@@ -88,6 +88,10 @@ public:
     // behaviour: EndFrame/CaptureFrame composite + flush everything at once.
     void EndScene();
 
+    // Draw-system hook at the opaque -> transparent boundary: grabs the opaque
+    // scene colour + depth so the water program can do screen-space refraction.
+    void BeginTransparentPass();
+
     // 3D camera
     void SetCamera(const Camera& camera, float aspect);
     // Re-runs the cascade shadow pass for the CURRENT camera, even if one was
@@ -800,6 +804,12 @@ private:
     bool waterPresent_ = false;    // a water material was drawn this frame
     float waterReflectionStrength_ = 0.85f;
     bool planarReflectionEnabled_ = true; // render the mirrored-camera water reflection
+    // Opaque-scene grab for water refraction (colour copy + resolved depth).
+    RenderTargetHandle sceneColorCopy_;
+    TextureHandle sceneColorTex_;
+    int sceneColorW_ = 0;
+    int sceneColorH_ = 0;
+    bool transparentGrabbed_ = false;
     bool depthResolved_ = false;
     // Set false the first time ResolveDepth() fails with valid targets, so the
     // SSAO/SSR caster fallback collection switches back on (a driver that cannot

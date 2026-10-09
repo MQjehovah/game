@@ -131,6 +131,9 @@ void Renderer::Shutdown() {
     if (reflectionRT_.Valid()) backend_->DestroyRenderTarget(reflectionRT_);
     reflectionRT_ = {};
     reflectionTex_ = {};
+    if (sceneColorCopy_.Valid()) backend_->DestroyRenderTarget(sceneColorCopy_);
+    sceneColorCopy_ = {};
+    sceneColorTex_ = {};
     if (probeQuadMesh_.Valid()) backend_->DestroyMesh(probeQuadMesh_);
     if (postQuadMesh_.Valid()) backend_->DestroyMesh(postQuadMesh_);
     shadowSystem_.Shutdown(*backend_);
@@ -335,6 +338,7 @@ void Renderer::BeginFrame(const Color& clearColor, float clearDepth) {
     ssaoCasters_.clear();
     softDepthReady_ = false;
     waterPresent_ = false;
+    transparentGrabbed_ = false;
     // Motion vectors recorded by a frame that never reached its composite (an
     // early-out capture path) must not leak into this frame's velocity pass.
     velocityBatch_.clear();
@@ -911,6 +915,34 @@ void Renderer::DrawMesh(const Mesh& mesh, const Material& material, const math::
         backend_->SetUniformMat4("uReflectionVP", reflectionVP_);
         backend_->SetUniformFloat("uReflectionStrength", waterReflectionStrength_);
         backend_->SetUniformInt("uReflectionEnabled", reflectionReady_ ? 1 : 0);
+        // Screen-space refraction: opaque scene colour (unit 4) + resolved depth
+        // (unit 3), grabbed by the draw system at the opaque->transparent
+        // boundary. Packed into uWaterParams2 (specPower, refraction, absorb,
+        // enabled) so no new UBO slots are needed.
+        static const bool refrOff = std::getenv("NEON_NO_WATER_REFRACTION") != nullptr;
+        float refraction = 0.0f, absorb = 0.0f, refrEnabled = 0.0f;
+        if (!refrOff && transparentGrabbed_ && hdrDepthRT_.Valid()) {
+            const TextureHandle depthTex = backend_->RenderTargetDepthTexture(hdrDepthRT_);
+            if (depthTex.Valid() && sceneColorTex_.Valid()) {
+                backend_->BindTexture(3, depthTex);
+                backend_->SetUniformInt("uSceneDepth", 3);
+                backend_->BindTexture(4, sceneColorTex_);
+                backend_->SetUniformInt("uSceneColor", 4);
+                backend_->SetUniformVec2(
+                    "uScreenSize", {static_cast<float>(hdrW_), static_cast<float>(hdrH_)});
+                // ApplySceneUniforms does not carry the clip planes (only the
+                // particle/water paths need them), so set them here for the
+                // depth linearisation.
+                const Camera& wcam = sceneState_.ActiveCamera();
+                backend_->SetUniformFloat("uNear", wcam.nearPlane);
+                backend_->SetUniformFloat("uFar", wcam.farPlane);
+                refraction = 0.06f;
+                absorb = 0.4f;
+                refrEnabled = 1.0f;
+            }
+        }
+        backend_->SetUniformVec4(
+            "uWaterParams2", {material.waterSpecPower, refraction, absorb, refrEnabled});
     }
     backend_->DrawMesh(mesh.Handle());
     ++stats_.drawCalls;
@@ -2348,6 +2380,28 @@ void Renderer::DrawGBufferCasters(const math::Mat4& viewProj) {
             backend_->DrawMesh(draw.mesh);
         }
     }
+}
+
+void Renderer::BeginTransparentPass() {
+    if (!hdrEnabled_ || !hdrRT_.Valid()) return;
+    // Make the opaque image single-sample + current (ResolveMainTarget is a
+    // no-op without MSAA), then copy the colour and resolve the depth so the
+    // water program can sample what is behind the surface.
+    ResolveMainTarget();
+    const int w = hdrW_, h = hdrH_;
+    if (!sceneColorCopy_.Valid() || sceneColorW_ != w || sceneColorH_ != h) {
+        if (sceneColorCopy_.Valid()) backend_->DestroyRenderTarget(sceneColorCopy_);
+        sceneColorCopy_ = backend_->CreateRenderTarget(w, h, true);
+        sceneColorTex_ =
+            sceneColorCopy_.Valid() ? backend_->RenderTargetColorTexture(sceneColorCopy_)
+                                    : TextureHandle{};
+        sceneColorW_ = w;
+        sceneColorH_ = h;
+    }
+    if (sceneColorCopy_.Valid() && sceneColorTex_.Valid())
+        backend_->ResolveRenderTarget(hdrRT_, sceneColorCopy_);
+    EnsureSoftDepth(); // resolves the main depth to hdrDepthRT_ (no-op if MSAA off)
+    transparentGrabbed_ = sceneColorTex_.Valid();
 }
 
 void Renderer::RenderPlanarReflection() {

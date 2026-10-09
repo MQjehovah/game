@@ -293,6 +293,10 @@ void DrawSystem::Build(ecs::World& world, AnimationSystem& anims) {
         // waves + Fresnel IBL reflection) instead of the plain lit surface. The
         // scene can also opt any surface in via `"water": true` and tune it.
         item.mat.water = (m->meshKey == "water") || m->water;
+        // Water draws in the transparent pass (after all opaque geometry) so it
+        // can sample the opaque scene colour + depth for screen-space
+        // refraction; depth write is off, depth test on (occluded by opaque).
+        if (item.mat.water) item.mat.transparent = true;
         item.mat.waterWaveScale = m->waterWaveScale;
         item.mat.waterWaveSpeed = m->waterWaveSpeed;
         item.mat.waterWaveStrength = m->waterWaveStrength;
@@ -1460,6 +1464,10 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
     size_t dead = 0;
     // Camera frustum for per-sub-node culling below (same one the item BVH uses).
     const math::Frustum& viewFrustum = renderer.ViewFrustum();
+    // The transparent group is sorted after the opaque group; the first 3D
+    // transparent item is the boundary where the opaque scene colour + depth
+    // are grabbed for water refraction.
+    bool transparentGrabStarted = false;
     for (size_t idx : drawOrder_) {
         DrawItem& item = draws_[idx];
         if (!world.Alive(item.ent)) {
@@ -1478,6 +1486,11 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
         ResolveOrSkip(item, renderer, world, anims);
         if (!item.resolved || item.failed) continue;
         if (!world.Get<SceneTransform>(item.ent)) continue;
+        if (!transparentGrabStarted && item.mat.transparent && !item.isSprite &&
+            item.mesh.Valid()) {
+            renderer.BeginTransparentPass();
+            transparentGrabStarted = true;
+        }
         // Persisted DrawItem material: rewrite the highlight every frame so a
         // stale glow clears when the entity stops being selected.
         item.mat.highlightStrength = highlighted ? hl.strength : 0.0f;

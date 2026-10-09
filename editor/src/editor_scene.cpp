@@ -454,6 +454,7 @@ void EditorApp::ApplyMaterialParams(SceneEntity& e) {
     // Real water surface for the procedural "water" mesh (animated waves + IBL
     // reflection); mirrors the runtime's draw_system so the editor matches play.
     e.material.water = (e.meshKey == "water");
+    if (e.material.water) e.material.transparent = true;
 }
 
 void EditorApp::RebuildTerrainMesh(SceneEntity& e) {

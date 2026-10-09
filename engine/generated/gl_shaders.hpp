@@ -15,6 +15,7 @@ in vec3 vWorldPos;
 in vec3 vNormal;
 in vec2 vUV;
 in vec4 vColor;
+in float vViewZ;
 layout(location = 0) out vec4 FragColor;
 
 uniform mat4 uMVP;
@@ -184,6 +185,9 @@ uniform sampler2D uPrefilteredMap;
 uniform sampler2D uBrdfLUT;
 // Planar reflection rendered by the renderer from the mirrored camera.
 uniform sampler2D uReflectionTex;
+// Opaque-scene grab for screen-space refraction (resolved depth + colour).
+uniform sampler2D uSceneDepth;
+uniform sampler2D uSceneColor;
 
 // --- Octahedral IBL sampling (matches ibl.cpp OctahedralEncode; wrap-fold
 // bilinear keeps the prefiltered atlas seam-free). ---------------------------
@@ -295,6 +299,29 @@ void main() {
     }
 
     vec3 body = mix(uWaterDeep.rgb, uWaterShallow.rgb, clamp(1.0 - ndv, 0.0, 1.0));
+    float shoreFoam = 0.0;
+    // Screen-space refraction: sample the opaque scene behind the surface,
+    // distorted by the wave normal, and absorb it toward the deep colour with
+    // water depth (Beer-Lambert). Packed in uWaterParams2 = (specPower,
+    // refraction, absorbance, enabled).
+    if (uWaterParams2.w > 0.5) {
+        vec2 suv = gl_FragCoord.xy / max(uScreenSize, vec2(1.0));
+        float raw = texture(uSceneDepth, suv).r;
+        float sceneView = (2.0 * uNear * uFar) /
+                          (uFar + uNear - (raw * 2.0 - 1.0) * (uFar - uNear));
+        float waterDepth = max(sceneView + vViewZ, 0.0);
+        if (raw < 0.999) {
+            vec2 off = N.xz * uWaterParams2.y * clamp(waterDepth * 2.0, 0.0, 1.0);
+            vec3 sceneCol = texture(uSceneColor, clamp(suv + off, 0.0, 1.0)).rgb;
+            // Beer-Lambert absorption toward the deep colour, capped so very
+            // distant geometry (the skybox) still reads as deep water and the
+            // body keeps a water tint instead of becoming the background.
+            float wd = clamp(waterDepth, 0.0, 12.0);
+            float absorb = exp(-wd * uWaterParams2.z);
+            body = mix(sceneCol, uWaterDeep.rgb, clamp(1.0 - absorb, 0.0, 1.0));
+        }
+        shoreFoam = 1.0 - smoothstep(0.0, 0.5, waterDepth);
+    }
     vec3 color = mix(body, refl, clamp(fres, 0.0, 1.0));
 
     // Sun glitter: a sharp specular lobe (the sun's mirror path on the ripples)
@@ -310,6 +337,7 @@ void main() {
     // foam on the tallest peaks, strongest at grazing view.
     color += body * smoothstep(0.6, 2.2, wave.z) * 0.18;
     float foam = smoothstep(1.9, 3.0, wave.z) * (0.3 + 0.6 * fres);
+    foam = max(foam, shoreFoam * (0.5 + 0.5 * fres));
     color = mix(color, vec3(0.9, 0.95, 1.0), clamp(foam, 0.0, 0.85));
 
     color += body * mix(uAmbientGroundColor, uAmbientColor, clamp(N.y * 0.5 + 0.5, 0.0, 1.0)) *
