@@ -292,6 +292,16 @@ struct SceneMesh {
     // F6 clearcoat: second dielectric specular lobe (0 = off).
     float clearcoat = 0.f;
     float clearcoatRoughness = 0.1f;
+    // Real water surface: set `water` true (or use meshKey "water") for the
+    // dedicated water program; the *_water params tune its look.
+    bool water = false;
+    float waterWaveScale = 0.5f;
+    float waterWaveSpeed = 0.8f;
+    float waterWaveStrength = 0.6f;
+    float waterSpecular = 2.5f;
+    float waterSpecPower = 220.f;
+    std::string waterDeepColorHex;    // empty = engine default deep colour
+    std::string waterShallowColorHex; // empty = engine default shallow colour
     // UV tiling multiplier applied to the material's base UVs (default 1 = no
     // repeat). For a large ground plane set this to the world-size so a small
     // texture tiles instead of stretching across the whole surface.

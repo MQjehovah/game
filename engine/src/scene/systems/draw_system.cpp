@@ -290,8 +290,18 @@ void DrawSystem::Build(ecs::World& world, AnimationSystem& anims) {
         item.mat.clearcoat = m->clearcoat;
         item.mat.clearcoatRoughness = m->clearcoatRoughness;
         // The procedural "water" mesh gets the dedicated water shader (animated
-        // waves + Fresnel IBL reflection) instead of the plain lit surface.
-        item.mat.water = (m->meshKey == "water");
+        // waves + Fresnel IBL reflection) instead of the plain lit surface. The
+        // scene can also opt any surface in via `"water": true` and tune it.
+        item.mat.water = (m->meshKey == "water") || m->water;
+        item.mat.waterWaveScale = m->waterWaveScale;
+        item.mat.waterWaveSpeed = m->waterWaveSpeed;
+        item.mat.waterWaveStrength = m->waterWaveStrength;
+        item.mat.waterSpecular = m->waterSpecular;
+        item.mat.waterSpecPower = m->waterSpecPower;
+        if (!m->waterDeepColorHex.empty())
+            item.mat.waterDeep = ParseColorHex(m->waterDeepColorHex);
+        if (!m->waterShallowColorHex.empty())
+            item.mat.waterShallow = ParseColorHex(m->waterShallowColorHex);
         item.mat.castShadow = m->castShadow;
         item.mat.receiveShadow = m->receiveShadow;
         if (content_.assets) {
