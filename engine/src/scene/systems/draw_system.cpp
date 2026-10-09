@@ -306,6 +306,10 @@ void DrawSystem::Build(ecs::World& world, AnimationSystem& anims) {
             item.mat.waterDeep = ParseColorHex(m->waterDeepColorHex);
         if (!m->waterShallowColorHex.empty())
             item.mat.waterShallow = ParseColorHex(m->waterShallowColorHex);
+        item.mat.waterRefraction = m->waterRefraction;
+        item.mat.waterAbsorb = m->waterAbsorb;
+        item.mat.waterReflection = m->waterReflection;
+        item.mat.waterFoam = m->waterFoam;
         item.mat.castShadow = m->castShadow;
         item.mat.receiveShadow = m->receiveShadow;
         if (content_.assets) {

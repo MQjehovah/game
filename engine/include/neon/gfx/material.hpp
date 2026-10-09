@@ -89,6 +89,10 @@ struct Material {
     float waterSpecPower = 220.0f;   // sun highlight sharpness
     Color waterDeep{0.03f, 0.11f, 0.17f, 1.0f};    // deep-water body colour
     Color waterShallow{0.11f, 0.42f, 0.50f, 1.0f}; // grazing/near colour tint
+    float waterRefraction = 0.06f;  // screen-space refraction UV strength
+    float waterAbsorb = 0.18f;      // Beer-Lambert density (higher = darker/opaque)
+    float waterReflection = 0.85f;  // planar-reflection blend weight
+    float waterFoam = 1.0f;         // contact/shore foam strength
 
     static Material Lit(TextureHandle albedo_, const Color& tint_ = Color::White, float shininess_ = 24.0f) {
         Material m;

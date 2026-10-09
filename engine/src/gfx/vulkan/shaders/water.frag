@@ -155,7 +155,9 @@ void main() {
             float absorb = exp(-wd * eng.uWaterParams2.z);
             body = mix(sceneCol, eng.uWaterDeep.rgb, clamp(1.0 - absorb, 0.0, 1.0));
         }
-        shoreFoam = 1.0 - smoothstep(0.0, 0.5, waterDepth);
+        // Contact foam: a white collar where the surface meets submerged
+        // geometry (rocks, banks) - the depth is small there.
+        shoreFoam = (1.0 - smoothstep(0.0, 0.7, waterDepth)) * eng.uWaterFoam;
     }
     vec3 color = mix(body, refl, clamp(fres, 0.0, 1.0));
 
@@ -172,8 +174,8 @@ void main() {
     // foam on the tallest peaks, strongest at grazing view.
     color += body * smoothstep(0.6, 2.2, wave.z) * 0.18;
     float foam = smoothstep(1.9, 3.0, wave.z) * (0.3 + 0.6 * fres);
-    foam = max(foam, shoreFoam * (0.5 + 0.5 * fres));
-    color = mix(color, vec3(0.9, 0.95, 1.0), clamp(foam, 0.0, 0.85));
+    foam = max(foam, shoreFoam);
+    color = mix(color, vec3(0.92, 0.96, 1.0), clamp(foam, 0.0, 0.9));
 
     color += body * mix(eng.uAmbientGroundColor, eng.uAmbientColor, clamp(N.y * 0.5 + 0.5, 0.0, 1.0)) *
              eng.uAmbient;

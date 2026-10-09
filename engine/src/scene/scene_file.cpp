@@ -641,7 +641,7 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                                      "clearcoat", "clearcoatRoughness",
                                      "water", "waterWaveScale", "waterWaveSpeed",
                                      "waterWaveStrength", "waterSpecular", "waterSpecPower",
-                                     "waterDeepColorHex", "waterShallowColorHex",
+                                     "waterDeepColorHex", "waterShallowColorHex", "waterRefraction", "waterAbsorb", "waterReflection", "waterFoam",
                                      "materialInclude", "materialExclude"},
                                     "mesh", err))
                          return false;
@@ -727,7 +727,7 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                                            "clearcoat", "clearcoatRoughness",
                                            "water", "waterWaveScale", "waterWaveSpeed",
                                            "waterWaveStrength", "waterSpecular", "waterSpecPower",
-                                           "waterDeepColorHex", "waterShallowColorHex"},
+                                           "waterDeepColorHex", "waterShallowColorHex", "waterRefraction", "waterAbsorb", "waterReflection", "waterFoam"},
                                           "mesh.material", err))
                               return false;
                          if (!RequireNumber(*mat, "metallic", "mesh.material", m.metallic, err))
@@ -774,6 +774,14 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                              m.waterDeepColorHex = h->GetString();
                          if (const core::Json* h = mat->Get("waterShallowColorHex"))
                              m.waterShallowColorHex = h->GetString();
+                         if (const core::Json* v = mat->Get("waterRefraction"))
+                             m.waterRefraction = static_cast<float>(v->GetNumber(0.06f));
+                         if (const core::Json* v = mat->Get("waterAbsorb"))
+                             m.waterAbsorb = static_cast<float>(v->GetNumber(0.18f));
+                         if (const core::Json* v = mat->Get("waterReflection"))
+                             m.waterReflection = static_cast<float>(v->GetNumber(0.85f));
+                         if (const core::Json* v = mat->Get("waterFoam"))
+                             m.waterFoam = static_cast<float>(v->GetNumber(1.0f));
                          if (const core::Json* dc = mat->Get("dirtColorHex")) m.dirtColorHex = dc->GetString();
                          if (const core::Json* rc = mat->Get("rockColorHex")) m.rockColorHex = rc->GetString();
                          if (const core::Json* col = mat->Get("colorHex")) {
@@ -831,6 +839,14 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                          m.waterDeepColorHex = h->GetString();
                      if (const core::Json* h = data.Get("waterShallowColorHex"))
                          m.waterShallowColorHex = h->GetString();
+                     if (const core::Json* v = data.Get("waterRefraction"))
+                         m.waterRefraction = static_cast<float>(v->GetNumber(0.06f));
+                     if (const core::Json* v = data.Get("waterAbsorb"))
+                         m.waterAbsorb = static_cast<float>(v->GetNumber(0.18f));
+                     if (const core::Json* v = data.Get("waterReflection"))
+                         m.waterReflection = static_cast<float>(v->GetNumber(0.85f));
+                     if (const core::Json* v = data.Get("waterFoam"))
+                         m.waterFoam = static_cast<float>(v->GetNumber(1.0f));
                      if (const core::Json* dc = data.Get("dirtColorHex")) m.dirtColorHex = dc->GetString();
                       if (const core::Json* rc = data.Get("rockColorHex")) m.rockColorHex = rc->GetString();
                      if (const core::Json* col = data.Get("colorHex")) {
@@ -1710,6 +1726,10 @@ static core::Json SerializeEntityComponents(ecs::World& world, ecs::Entity e) {
             mat.object_["waterDeepColorHex"] = MakeString(m->waterDeepColorHex);
         if (!m->waterShallowColorHex.empty())
             mat.object_["waterShallowColorHex"] = MakeString(m->waterShallowColorHex);
+        if (m->waterRefraction != 0.06f) mat.object_["waterRefraction"] = MakeNumber(m->waterRefraction);
+        if (m->waterAbsorb != 0.18f) mat.object_["waterAbsorb"] = MakeNumber(m->waterAbsorb);
+        if (m->waterReflection != 0.85f) mat.object_["waterReflection"] = MakeNumber(m->waterReflection);
+        if (m->waterFoam != 1.0f) mat.object_["waterFoam"] = MakeNumber(m->waterFoam);
         if (!m->dirtColorHex.empty()) mat.object_["dirtColorHex"] = MakeString(m->dirtColorHex);
         if (!m->rockColorHex.empty()) mat.object_["rockColorHex"] = MakeString(m->rockColorHex);
         if (!m->albedoTex.empty()) mat.object_["albedoTex"] = MakeString(m->albedoTex);

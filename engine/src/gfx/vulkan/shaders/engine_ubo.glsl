@@ -215,5 +215,6 @@ layout(set = 0, binding = 0) uniform EngineUBO {
     // the texture rendered into uReflectionTex) + strength/enable.
     layout(offset = 7808) mat4 uReflectionVP;
     layout(offset = 7872) float uReflectionStrength;
+    layout(offset = 7876) float uWaterFoam; // contact/shore foam strength
     layout(offset = 7888) int uReflectionEnabled;
 } eng;

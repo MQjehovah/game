@@ -1,0 +1,134 @@
+{
+  "entities": [
+    {
+      "name": "sun_light", "id": 1,
+      "components": {
+        "transform": { "pos": [0, 20, 0], "scale": [1, 1, 1], "rot": [0, 0, 0, 1] },
+        "light": {
+          "type": "directional",
+          "color": [1.0, 0.97, 0.9, 1],
+          "sunDir": [-0.3, -0.8, -0.5],
+          "intensity": 2.1,
+          "radius": 10,
+          "ambientStrength": 0.6,
+          "useAtmosphere": true,
+          "skyTop": [0.34, 0.52, 0.74, 1.0],
+          "skyHorizon": [0.8, 0.87, 0.93, 1.0],
+          "fogColor": [0.72, 0.8, 0.87, 1.0],
+          "fogNear": 30,
+          "fogFar": 150
+        },
+        "type": { "value": "Light3D" }
+      }
+    },
+    {
+      "name": "cam", "id": 2,
+      "components": {
+        "transform": { "pos": [0, 1.35, 4.5], "scale": [1, 1, 1], "rot": [-0.19, 0, 0, 0.982] },
+        "camera": { "fov": 50, "ortho": false, "orthoSize": 10 },
+        "type": { "value": "Camera3D" }
+      }
+    },
+    {
+      "name": "bed", "id": 3,
+      "components": {
+        "transform": { "pos": [0, -0.5, -10], "scale": [0.75, 1, 6], "rot": [0, 0, 0, 1] },
+        "mesh": {
+          "meshKey": "plane",
+          "material": {
+            "uvRepeat": 6, "metallic": 0, "roughness": 1.0, "ao": 1,
+            "emissiveIntensity": 1, "colorHex": "#8f887a"
+          }
+        },
+        "type": { "value": "MeshInstance3D" }
+      }
+    },
+    {
+      "name": "bank_left", "id": 4,
+      "components": {
+        "transform": { "pos": [-5.2, 0.22, -10], "scale": [0.6, 1, 6], "rot": [0, 0, 0, 1] },
+        "mesh": {
+          "meshKey": "plane",
+          "material": {
+            "albedoTex": "assets/textures/ground_aerial/grass_diff_2k.jpg",
+            "uvRepeat": 5, "metallic": 0, "roughness": 1.0, "ao": 1,
+            "emissiveIntensity": 1, "colorHex": "#638f45"
+          }
+        },
+        "type": { "value": "MeshInstance3D" }
+      }
+    },
+    {
+      "name": "bank_right", "id": 5,
+      "components": {
+        "transform": { "pos": [5.2, 0.22, -10], "scale": [0.6, 1, 6], "rot": [0, 0, 0, 1] },
+        "mesh": {
+          "meshKey": "plane",
+          "material": {
+            "albedoTex": "assets/textures/ground_aerial/grass_diff_2k.jpg",
+            "uvRepeat": 5, "metallic": 0, "roughness": 1.0, "ao": 1,
+            "emissiveIntensity": 1, "colorHex": "#638f45"
+          }
+        },
+        "type": { "value": "MeshInstance3D" }
+      }
+    },
+    {
+      "name": "far_bank", "id": 6,
+      "components": {
+        "transform": { "pos": [0, 0.22, -34], "scale": [6, 1, 2], "rot": [0, 0, 0, 1] },
+        "mesh": {
+          "meshKey": "plane",
+          "material": {
+            "albedoTex": "assets/textures/ground_aerial/grass_diff_2k.jpg",
+            "uvRepeat": 8, "metallic": 0, "roughness": 1.0, "ao": 1,
+            "emissiveIntensity": 1, "colorHex": "#577f3d"
+          }
+        },
+        "type": { "value": "MeshInstance3D" }
+      }
+    },
+    {
+      "name": "stream", "id": 7,
+      "components": {
+        "transform": { "pos": [0, 0.09, -10], "scale": [0.36, 1, 3], "rot": [0, 0, 0, 1] },
+        "mesh": {
+          "meshKey": "water",
+          "material": {
+            "colorHex": "#2f6f56",
+            "metallic": 0, "roughness": 0.08, "ao": 1, "emissiveIntensity": 1,
+            "waterDeepColorHex": "#24503f",
+            "waterShallowColorHex": "#6fae90",
+            "waterAbsorb": 0.22,
+            "waterReflection": 0.5,
+            "waterRefraction": 0.09,
+            "waterWaveScale": 0.8,
+            "waterWaveSpeed": 0.9,
+            "waterWaveStrength": 0.7,
+            "waterFoam": 2.4
+          }
+        },
+        "type": { "value": "MeshInstance3D" }
+      }
+    },
+    { "name": "rock_a", "id": 20, "components": { "transform": { "pos": [-1.0, 0.15, 3.0], "scale": [0.45, 0.35, 0.42], "rot": [0, 0.4, 0, 0.92] }, "mesh": { "meshKey": "rock", "material": { "colorHex": "#9aa09a" } }, "type": { "value": "MeshInstance3D" } } },
+    { "name": "rock_b", "id": 21, "components": { "transform": { "pos": [0.9, 0.1, 1.9], "scale": [0.35, 0.28, 0.35], "rot": [0, 1.2, 0, 0.36] }, "mesh": { "meshKey": "rock", "material": { "colorHex": "#8f958f" } }, "type": { "value": "MeshInstance3D" } } },
+    { "name": "rock_c", "id": 22, "components": { "transform": { "pos": [-0.25, 0.18, 0.5], "scale": [0.55, 0.4, 0.5], "rot": [0, 2.1, 0, -0.5] }, "mesh": { "meshKey": "rock", "material": { "colorHex": "#a4a79e" } }, "type": { "value": "MeshInstance3D" } } },
+    { "name": "rock_d", "id": 23, "components": { "transform": { "pos": [1.05, 0.08, -0.9], "scale": [0.3, 0.24, 0.3], "rot": [0, 0.7, 0, 0.76] }, "mesh": { "meshKey": "rock", "material": { "colorHex": "#949890" } }, "type": { "value": "MeshInstance3D" } } },
+    { "name": "rock_e", "id": 24, "components": { "transform": { "pos": [-0.95, 0.13, -2.3], "scale": [0.4, 0.3, 0.4], "rot": [0, 1.6, 0, -0.02] }, "mesh": { "meshKey": "rock", "material": { "colorHex": "#9ea19a" } }, "type": { "value": "MeshInstance3D" } } },
+    { "name": "rock_f", "id": 25, "components": { "transform": { "pos": [0.6, 0.16, -3.8], "scale": [0.5, 0.36, 0.45], "rot": [0, 2.6, 0, -0.57] }, "mesh": { "meshKey": "rock", "material": { "colorHex": "#8b9089" } }, "type": { "value": "MeshInstance3D" } } },
+    { "name": "rock_g", "id": 26, "components": { "transform": { "pos": [-0.7, 0.1, -5.3], "scale": [0.33, 0.26, 0.33], "rot": [0, 0.3, 0, 0.96] }, "mesh": { "meshKey": "rock", "material": { "colorHex": "#a0a49b" } }, "type": { "value": "MeshInstance3D" } } },
+    { "name": "rock_h", "id": 27, "components": { "transform": { "pos": [0.85, 0.14, -6.9], "scale": [0.42, 0.32, 0.42], "rot": [0, 1.9, 0, -0.32] }, "mesh": { "meshKey": "rock", "material": { "colorHex": "#959a93" } }, "type": { "value": "MeshInstance3D" } } },
+    { "name": "rock_i", "id": 28, "components": { "transform": { "pos": [-1.1, 0.16, -8.5], "scale": [0.5, 0.38, 0.46], "rot": [0, 2.4, 0, -0.68] }, "mesh": { "meshKey": "rock", "material": { "colorHex": "#9ba09a" } }, "type": { "value": "MeshInstance3D" } } },
+    { "name": "rock_j", "id": 29, "components": { "transform": { "pos": [0.3, 0.11, -10.1], "scale": [0.35, 0.28, 0.35], "rot": [0, 0.9, 0, 0.62] }, "mesh": { "meshKey": "rock", "material": { "colorHex": "#93978f" } }, "type": { "value": "MeshInstance3D" } } },
+    { "name": "rock_k", "id": 30, "components": { "transform": { "pos": [-0.8, 0.13, -11.7], "scale": [0.44, 0.33, 0.42], "rot": [0, 1.3, 0, 0.27] }, "mesh": { "meshKey": "rock", "material": { "colorHex": "#a4a89f" } }, "type": { "value": "MeshInstance3D" } } },
+    { "name": "rock_l", "id": 31, "components": { "transform": { "pos": [2.9, 0.25, 0.5], "scale": [0.7, 0.5, 0.6], "rot": [0, 0.5, 0, 0.88] }, "mesh": { "meshKey": "rock", "material": { "colorHex": "#9aa09a" } }, "type": { "value": "MeshInstance3D" } } },
+    { "name": "rock_m", "id": 32, "components": { "transform": { "pos": [-3.0, 0.22, -3.5], "scale": [0.6, 0.45, 0.55], "rot": [0, 2.0, 0, -0.42] }, "mesh": { "meshKey": "rock", "material": { "colorHex": "#929890" } }, "type": { "value": "MeshInstance3D" } } },
+    { "name": "tree_0", "id": 8, "components": { "transform": { "pos": [-5.5, 0.2, 0.5], "scale": [1.4, 1.4, 1.4], "rot": [0, 0.3, 0, 0.95] }, "mesh": { "meshKey": "tree", "material": { "colorHex": "#3c6b30" } }, "type": { "value": "MeshInstance3D" } } },
+    { "name": "tree_1", "id": 9, "components": { "transform": { "pos": [5.6, 0.2, -2.5], "scale": [1.5, 1.5, 1.5], "rot": [0, -0.4, 0, 0.92] }, "mesh": { "meshKey": "tree", "material": { "colorHex": "#365f2c" } }, "type": { "value": "MeshInstance3D" } } },
+    { "name": "tree_2", "id": 10, "components": { "transform": { "pos": [-3.5, 0.2, -13], "scale": [1.6, 1.6, 1.6], "rot": [0, 0.6, 0, 0.83] }, "mesh": { "meshKey": "tree", "material": { "colorHex": "#3c6b30" } }, "type": { "value": "MeshInstance3D" } } },
+    { "name": "tree_3", "id": 13, "components": { "transform": { "pos": [4.0, 0.2, -12], "scale": [1.3, 1.3, 1.3], "rot": [0, -0.2, 0, 0.98] }, "mesh": { "meshKey": "tree", "material": { "colorHex": "#365f2c" } }, "type": { "value": "MeshInstance3D" } } },
+    { "name": "bush_0", "id": 11, "components": { "transform": { "pos": [-3.2, 0.3, 1.5], "scale": [0.9, 0.9, 0.9], "rot": [0, 0, 0, 1] }, "mesh": { "meshKey": "bush", "material": { "colorHex": "#3f7a3a" } }, "type": { "value": "MeshInstance3D" } } },
+    { "name": "bush_1", "id": 12, "components": { "transform": { "pos": [3.4, 0.3, -1.0], "scale": [0.8, 0.8, 0.8], "rot": [0, 0, 0, 1] }, "mesh": { "meshKey": "bush", "material": { "colorHex": "#4c8a44" } }, "type": { "value": "MeshInstance3D" } } }
+  ]
+}

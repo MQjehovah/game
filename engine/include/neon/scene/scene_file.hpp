@@ -302,6 +302,10 @@ struct SceneMesh {
     float waterSpecPower = 220.f;
     std::string waterDeepColorHex;    // empty = engine default deep colour
     std::string waterShallowColorHex; // empty = engine default shallow colour
+    float waterRefraction = 0.06f;    // screen-space refraction UV strength
+    float waterAbsorb = 0.18f;        // Beer-Lambert density (higher = darker)
+    float waterReflection = 0.85f;    // planar-reflection blend weight
+    float waterFoam = 1.0f;           // contact/shore foam strength
     // UV tiling multiplier applied to the material's base UVs (default 1 = no
     // repeat). For a large ground plane set this to the world-size so a small
     // texture tiles instead of stretching across the whole surface.

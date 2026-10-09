@@ -130,7 +130,7 @@ public:
         bool sunVisible = true;
         bool moonVisible = true;
         bool cloudsEnabled = true;
-        float cloudCoverage = 0.35f;
+        float cloudCoverage = 0.5f;
         float cloudScale = 2.0f;
     };
     void SetSkyBox(const SkyBoxParams& params) { skyBox_ = params; }
@@ -340,8 +340,8 @@ public:
     // frame corners. Both off by default -> existing scenes unchanged.
     void SetAutoExposure(const AutoExposure& ae) { autoExposure_ = ae; }
     const AutoExposure& GetAutoExposure() const { return autoExposure_; }
-    // 丢弃自动曝光的适应历史（场景加载/切换时调用）：下一个 AE 帧从种子 1.0
-    // 重新收敛，而不是从上一个场景的适应亮度漂移过来。
+    // 丢弃自动曝光的适应历史（场景加�?切换时调用）：下一�?AE 帧从种子 1.0
+    // 重新收敛，而不是从上一个场景的适应亮度漂移过来�?
     void ResetAutoExposure();
     void SetVignette(const Vignette& v) { vignette_ = v; }
     const Vignette& GetVignette() const { return vignette_; }
