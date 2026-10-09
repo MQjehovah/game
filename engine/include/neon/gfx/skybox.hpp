@@ -118,7 +118,7 @@ float vnoise3(vec3 x) {
 }
 float fbm3(vec3 p) {
     float v = 0.0, a = 0.5;
-    for (int i = 0; i < 4; ++i) { v += a * vnoise3(p); p *= 2.03; a *= 0.5; }
+    for (int i = 0; i < 5; ++i) { v += a * vnoise3(p); p *= 2.03; a *= 0.5; }
     return v;
 }
 const float CLOUD_BASE = 140.0;
@@ -127,11 +127,14 @@ float CloudDensity(vec3 p, float coverage) {
     float h = (p.y - CLOUD_BASE) / (CLOUD_TOP - CLOUD_BASE);
     if (h < 0.0 || h > 1.0) return 0.0;
     float profile = smoothstep(0.0, 0.12, h) * smoothstep(1.0, 0.55, h);
-    vec3 q = p * 0.01 * max(uCloudScale, 0.1);
+    vec3 q = p * 0.014 * max(uCloudScale, 0.1);
     q.xz += vec2(uTime * 0.02, uTime * 0.008);
-    float n = fbm3(q);
-    n = 1.0 - abs(n * 2.0 - 1.0); // billow: rounded cumulus blobs
-    return smoothstep(1.0 - clamp(coverage, 0.0, 1.0), 1.0, n) * profile;
+    // Plain fbm + a low coverage threshold gives distinct blobs (billow peaks at
+    // the noise mean and would fill every gap). Fine octave breaks the rims.
+    float n = fbm3(q) + vnoise3(q * 5.0) * 0.06;
+    float cov = clamp(coverage, 0.0, 1.0);
+    float thr = 0.62 - cov * 0.4;
+    return smoothstep(thr, thr + 0.10, n) * profile;
 }
 float CloudLight(vec3 p, vec3 sunDir, float coverage) {
     float d = 0.0;
@@ -223,7 +226,7 @@ void main() {
                 float d = CloudDensity(p, uCloudCoverage);
                 if (d > 0.001) {
                     float lt = CloudLight(p, sunDir, uCloudCoverage);
-                    float e = exp(-d * 8.0 / float(STEPS));
+                    float e = exp(-d * 15.0 / float(STEPS));
                     acc += T * (1.0 - e) * (ambCol + sunCol * lt * phase);
                     T *= e;
                     if (T < 0.02) break;

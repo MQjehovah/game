@@ -130,7 +130,7 @@ public:
         bool sunVisible = true;
         bool moonVisible = true;
         bool cloudsEnabled = true;
-        float cloudCoverage = 0.5f;
+        float cloudCoverage = 0.45f;
         float cloudScale = 2.0f;
     };
     void SetSkyBox(const SkyBoxParams& params) { skyBox_ = params; }

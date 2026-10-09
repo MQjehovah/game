@@ -25,7 +25,7 @@
     {
       "name": "cam", "id": 2,
       "components": {
-        "transform": { "pos": [0, 2.2, 12], "scale": [1, 1, 1], "rot": [-0.09, 0, 0, 0.996] },
+        "transform": { "pos": [0, 3.0, 12], "scale": [1, 1, 1], "rot": [-0.04, 0, 0, 0.9992] },
         "camera": { "fov": 55, "ortho": false, "orthoSize": 10 },
         "type": { "value": "Camera3D" }
       }
