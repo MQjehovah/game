@@ -670,6 +670,12 @@ private:
     // Draws the recorded opaque casters into gNormalRough_ with the GBUFFER lit
     // variants (RGB = indirect radiance, A = roughness) for the composite and SSR.
     void DrawGBufferCasters(const math::Mat4& viewProj);
+    // Planar water reflection: renders the recorded opaque casters from the
+    // camera mirrored across the water plane into reflectionRT_, for the NEXT
+    // frame's water passes to sample (a one-frame-old reflection avoids any
+    // grab-pass / draw-order change). No-op when no water was drawn.
+    void RenderPlanarReflection();
+    void DrawReflectionCasters(const math::Mat4& viewProj);
     bool TestFloatTargetCapability();
     // B1: uploads the per-FRAME scene uniforms (sun/lights/fog/view/shadow/IBL)
     // once per (frame, program) pair -- draws after the first in a frame skip
@@ -784,6 +790,16 @@ private:
     // B4: single-sample depth target resolved from the MSAA HDR depth so the post
     // chain can sample the main pass depth instead of redrawing the casters.
     RenderTargetHandle hdrDepthRT_;
+    // Planar water reflection target (half-res float) + the VP used to render it.
+    RenderTargetHandle reflectionRT_;
+    TextureHandle reflectionTex_;
+    math::Mat4 reflectionVP_ = math::Mat4::Identity();
+    int reflectionW_ = 0;
+    int reflectionH_ = 0;
+    bool reflectionReady_ = false; // a valid reflection exists (from last frame)
+    bool waterPresent_ = false;    // a water material was drawn this frame
+    float waterReflectionStrength_ = 0.85f;
+    bool planarReflectionEnabled_ = true; // render the mirrored-camera water reflection
     bool depthResolved_ = false;
     // Set false the first time ResolveDepth() fails with valid targets, so the
     // SSAO/SSR caster fallback collection switches back on (a driver that cannot

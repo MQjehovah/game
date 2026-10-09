@@ -128,6 +128,9 @@ void Renderer::Shutdown() {
     if (downsampleShader_.Valid()) backend_->DestroyShader(downsampleShader_);
     if (upsampleAddShader_.Valid()) backend_->DestroyShader(upsampleAddShader_);
     if (compositeShader_.Valid()) backend_->DestroyShader(compositeShader_);
+    if (reflectionRT_.Valid()) backend_->DestroyRenderTarget(reflectionRT_);
+    reflectionRT_ = {};
+    reflectionTex_ = {};
     if (probeQuadMesh_.Valid()) backend_->DestroyMesh(probeQuadMesh_);
     if (postQuadMesh_.Valid()) backend_->DestroyMesh(postQuadMesh_);
     shadowSystem_.Shutdown(*backend_);
@@ -331,6 +334,7 @@ void Renderer::BeginFrame(const Color& clearColor, float clearDepth) {
     postGraph_.ResetFrame();
     ssaoCasters_.clear();
     softDepthReady_ = false;
+    waterPresent_ = false;
     // Motion vectors recorded by a frame that never reached its composite (an
     // early-out capture path) must not leak into this frame's velocity pass.
     velocityBatch_.clear();
@@ -861,7 +865,8 @@ void Renderer::DrawMesh(const Mesh& mesh, const Material& material, const math::
     // The SSAO/SSR colour-depth pre-pass only needs the caster list when the
     // main-pass depth cannot be resolved for the post chain (no MSAA / a backend
     // without ResolveDepth). Collecting otherwise is pure CPU waste.
-    if ((ssaoEnabled_ || ssrEnabled_) && shadowSystem_.Recording() && !material.transparent)
+    if ((ssaoEnabled_ || ssrEnabled_ || planarReflectionEnabled_) && shadowSystem_.Recording() &&
+        !material.transparent)
         ssaoCasters_.push_back({mesh.Handle(), model, {}, {}, 0, mesh.Bounds(), material});
 
     if (sceneState_.FrustumValid() &&
@@ -897,6 +902,16 @@ void Renderer::DrawMesh(const Mesh& mesh, const Material& material, const math::
                    : (material.lit ? Program("lit") : Program("unlit")));
     ApplyMaterial(material, sceneState_.ViewProjection() * model, model, NormalMatrix(model),
                   shader);
+    if (material.water) {
+        // Planar reflection (rendered at the END of last frame for this frame to
+        // sample). Unit 9; disabled until at least one reflection frame exists.
+        waterPresent_ = true;
+        backend_->BindTexture(9, reflectionReady_ ? reflectionTex_ : white_);
+        backend_->SetUniformInt("uReflectionTex", 9);
+        backend_->SetUniformMat4("uReflectionVP", reflectionVP_);
+        backend_->SetUniformFloat("uReflectionStrength", waterReflectionStrength_);
+        backend_->SetUniformInt("uReflectionEnabled", reflectionReady_ ? 1 : 0);
+    }
     backend_->DrawMesh(mesh.Handle());
     ++stats_.drawCalls;
     stats_.triangles += mesh.TriangleCount();
@@ -1029,7 +1044,8 @@ void Renderer::DrawSkinnedMesh(const Mesh& mesh, const Material& material,
     if (shadowSystem_.Enabled() && shadowSystem_.Recording() && !material.transparent &&
         material.castShadow)
         shadowSystem_.RecordCaster({mesh.Handle(), model, {}, boneMatrices, count, mesh.Bounds()});
-    if ((ssaoEnabled_ || ssrEnabled_) && shadowSystem_.Recording() && !material.transparent)
+    if ((ssaoEnabled_ || ssrEnabled_ || planarReflectionEnabled_) && shadowSystem_.Recording() &&
+        !material.transparent)
         ssaoCasters_.push_back(
             {mesh.Handle(), model, {}, boneMatrices, count, mesh.Bounds(), material});
 
@@ -1100,7 +1116,8 @@ void Renderer::DrawMeshInstanced(const Mesh& mesh, const Material& material,
         material.castShadow)
         shadowSystem_.RecordCaster(
             {mesh.Handle(), math::Mat4::Identity(), instancedVisible_, {}, 0, mesh.Bounds()});
-    if ((ssaoEnabled_ || ssrEnabled_) && shadowSystem_.Recording() && !material.transparent)
+    if ((ssaoEnabled_ || ssrEnabled_ || planarReflectionEnabled_) && shadowSystem_.Recording() &&
+        !material.transparent)
         ssaoCasters_.push_back({mesh.Handle(), math::Mat4::Identity(), instancedVisible_, {}, 0,
                                 mesh.Bounds(), material});
 
@@ -2173,6 +2190,9 @@ void Renderer::CompositeSceneToBackbuffer() {
 
 void Renderer::EndScene() {
     if (!hdrEnabled_ || !hdrRT_.Valid()) return; // legacy: 2D already to backbuffer
+    // Render this frame's planar water reflection for the NEXT frame to sample
+    // (before the composite; restores the main HDR target when done).
+    RenderPlanarReflection();
     if (!postGraph_.CompositeRan()) {
         // Any 2D still queued at this point is scene content (billboards,
         // particles, ground marker): flush it into the HDR target so it is
@@ -2315,6 +2335,71 @@ void Renderer::DrawGBufferCasters(const math::Mat4& viewProj) {
         const math::Mat4 mvp = instanced ? viewProj : viewProj * draw.model;
         ApplyMaterial(draw.material, mvp, draw.model, NormalMatrix(draw.model), sh);
         if (!draw.models.empty()) {
+            backend_->DrawMeshInstanced(draw.mesh, draw.models.data(),
+                                        static_cast<uint32_t>(draw.models.size()));
+        } else if (skinned) {
+            boneUniformFlat_.resize(static_cast<size_t>(draw.boneCount) * 16);
+            for (int i = 0; i < draw.boneCount; ++i)
+                std::memcpy(boneUniformFlat_.data() + static_cast<size_t>(i) * 16,
+                            draw.bones[static_cast<size_t>(i)].Data(), 16 * sizeof(float));
+            backend_->SetUniformMat4Array("uBoneMatrices", boneUniformFlat_.data(), draw.boneCount);
+            backend_->DrawMesh(draw.mesh);
+        } else {
+            backend_->DrawMesh(draw.mesh);
+        }
+    }
+}
+
+void Renderer::RenderPlanarReflection() {
+    if (!backend_ || !planarReflectionEnabled_) return;
+    // Nothing to reflect if no water was drawn (or no opaque casters recorded).
+    if (!waterPresent_ || ssaoCasters_.empty()) return;
+    const int rw = std::max(hdrW_ / 2, 1);
+    const int rh = std::max(hdrH_ / 2, 1);
+    if (!reflectionRT_.Valid() || reflectionW_ != rw || reflectionH_ != rh) {
+        if (reflectionRT_.Valid()) backend_->DestroyRenderTarget(reflectionRT_);
+        reflectionRT_ = backend_->CreateRenderTarget(rw, rh, true);
+        reflectionTex_ =
+            reflectionRT_.Valid() ? backend_->RenderTargetColorTexture(reflectionRT_)
+                                  : TextureHandle{};
+        reflectionW_ = rw;
+        reflectionH_ = rh;
+        reflectionReady_ = false;
+    }
+    if (!reflectionRT_.Valid() || !reflectionTex_.Valid()) return;
+    // Mirror the camera across the water plane (y = 0): reflectionVP = VP * M,
+    // M = diag(1, -1, 1, 1). The reflected image aligns with the main camera's
+    // screen, so the water shader projects its own surface point through this VP.
+    math::Mat4 mirror = math::Mat4::Identity();
+    mirror.m[5] = -1.0f;
+    reflectionVP_ = sceneState_.ViewProjection() * mirror;
+    backend_->BindRenderTarget(reflectionRT_);
+    backend_->SetViewport(0, 0, rw, rh);
+    backend_->SetScissor(0, 0, 0, 0, false);
+    const Color& top = sceneState_.SkyTop();
+    backend_->Clear({top.r, top.g, top.b, 1.0f}, 1.0f);
+    // A mirror reverses triangle winding: rasterize both faces.
+    backend_->SetCullMode(CullMode::None);
+    DrawReflectionCasters(reflectionVP_);
+    // Restore the main scene target (its full viewport) for the composite.
+    RebindMainTarget();
+    reflectionReady_ = true;
+}
+
+void Renderer::DrawReflectionCasters(const math::Mat4& viewProj) {
+    if (ssaoCasters_.empty()) return;
+    const ShaderHandle litMesh = Program("lit");
+    const ShaderHandle litInst = Program("lit_instanced");
+    const ShaderHandle litSkin = Program("lit_skinned");
+    for (const ShadowSystem::ShadowDraw& draw : ssaoCasters_) {
+        if (!draw.mesh.Valid() || draw.material.water) continue; // no self-reflection
+        const bool instanced = !draw.models.empty();
+        const bool skinned = !draw.bones.empty() && litSkin.Valid();
+        const ShaderHandle sh = instanced ? litInst : (skinned ? litSkin : litMesh);
+        if (!sh.Valid()) continue;
+        const math::Mat4 mvp = instanced ? viewProj : viewProj * draw.model;
+        ApplyMaterial(draw.material, mvp, draw.model, NormalMatrix(draw.model), sh);
+        if (instanced) {
             backend_->DrawMeshInstanced(draw.mesh, draw.models.data(),
                                         static_cast<uint32_t>(draw.models.size()));
         } else if (skinned) {

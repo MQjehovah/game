@@ -211,4 +211,9 @@ layout(set = 0, binding = 0) uniform EngineUBO {
     layout(offset = 7760) vec4 uWaterDeep;        // rgb
     layout(offset = 7776) vec4 uWaterShallow;     // rgb
     layout(offset = 7792) int uWaterEnabled;
+    // Planar water reflection: the mirrored camera's view-projection (matches
+    // the texture rendered into uReflectionTex) + strength/enable.
+    layout(offset = 7808) mat4 uReflectionVP;
+    layout(offset = 7872) float uReflectionStrength;
+    layout(offset = 7888) int uReflectionEnabled;
 } eng;

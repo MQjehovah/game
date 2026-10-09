@@ -17,6 +17,8 @@ layout(location = 0) out vec4 FragColor;
 layout(set = 1, binding = 20) uniform sampler2D uIrradianceMap;
 layout(set = 1, binding = 21) uniform sampler2D uPrefilteredMap;
 layout(set = 1, binding = 22) uniform sampler2D uBrdfLUT;
+// Planar reflection rendered by the renderer from the mirrored camera.
+layout(set = 1, binding = 23) uniform sampler2D uReflectionTex;
 
 // --- Octahedral IBL sampling (matches ibl.cpp OctahedralEncode; wrap-fold
 // bilinear keeps the prefiltered atlas seam-free). ---------------------------
@@ -110,7 +112,22 @@ void main() {
     float reflRough = clamp(0.04 + dist * 0.004, 0.04, 0.45);
     float roughU = clamp((reflRough - eng.uRoughnessMin) / max(1.0 - eng.uRoughnessMin, 1e-4),
                          0.0, 1.0);
-    vec3 refl = OctIblSampleRough(uPrefilteredMap, R, roughU) * eng.uIblStrength;
+    vec3 skyRefl = OctIblSampleRough(uPrefilteredMap, R, roughU) * eng.uIblStrength;
+    vec3 refl = skyRefl;
+    // Planar reflection of the actual scene (terrain / props / sky) when the
+    // renderer supplied one: project this surface point into the mirrored
+    // camera and sample, distorted by the wave normal. Falls back to the sky
+    // IBL when disabled or the point projects behind the mirror camera.
+    if (eng.uReflectionEnabled != 0) {
+        vec4 rc = eng.uReflectionVP * vec4(vWorldPos, 1.0);
+        if (rc.w > 0.0) {
+            vec2 ruv = rc.xy / rc.w * 0.5 + 0.5;
+            ruv.y = 1.0 - ruv.y;
+            ruv += N.xz * eng.uReflectionStrength * 0.05;
+            refl = mix(skyRefl, texture(uReflectionTex, clamp(ruv, 0.0, 1.0)).rgb,
+                       clamp(eng.uReflectionStrength, 0.0, 1.0));
+        }
+    }
 
     vec3 body = mix(eng.uWaterDeep.rgb, eng.uWaterShallow.rgb, clamp(1.0 - ndv, 0.0, 1.0));
     vec3 color = mix(body, refl, clamp(fres, 0.0, 1.0));
