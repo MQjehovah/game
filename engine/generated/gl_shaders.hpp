@@ -229,23 +229,27 @@ vec3 OctIblSampleRough(sampler2D s, vec3 dir, float rough) {
     return mix(a, b, lv - l0);
 }
 
-// Four superimposed directional sine waves scrolling over world XZ. Returns
-// xy = surface height gradient, z = relative height (used for crest foam).
+// Six superimposed directional sine waves (incommensurate frequencies so the
+// pattern never visibly repeats) scrolling over world XZ. The high-frequency
+// taps carry the small ripples that make a surface read as water rather than a
+// smooth sheet. Returns xy = height gradient, z = relative height (crest foam).
 vec3 WaterWaveSample(vec3 wp) {
     float t = uTime * uWaterParams.y;
     vec2 p = wp.xz * uWaterParams.x;
-    vec2 dirs[4] = vec2[4](normalize(vec2(1.0, 0.2)), normalize(vec2(-0.6, 0.9)),
-                           normalize(vec2(0.3, -1.0)), normalize(vec2(0.8, 0.6)));
-    float freqs[4] = float[4](1.0, 1.7, 2.6, 3.9);
-    float amps[4] = float[4](1.0, 0.6, 0.4, 0.25);
+    vec2 dirs[6] = vec2[6](normalize(vec2(1.0, 0.2)),  normalize(vec2(-0.6, 0.9)),
+                           normalize(vec2(0.3, -1.0)), normalize(vec2(0.8, 0.6)),
+                           normalize(vec2(-0.9, 0.3)), normalize(vec2(0.4, -0.9)));
+    float freqs[6] = float[6](1.0, 1.7, 2.6, 3.9, 6.1, 9.3);
+    float amps[6] = float[6](1.0, 0.75, 0.55, 0.4, 0.28, 0.18);
     vec2 grad = vec2(0.0);
     float height = 0.0;
-    for (int i = 0; i < 4; ++i) {
-        float ph = dot(p, dirs[i]) * freqs[i] + t * freqs[i] * 0.9;
+    for (int i = 0; i < 6; ++i) {
+        // Longer waves travel faster (deep-water dispersion: speed ~ sqrt(freq)).
+        float ph = dot(p, dirs[i]) * freqs[i] + t * sqrt(freqs[i]) * 1.1;
         grad += dirs[i] * (cos(ph) * amps[i] * freqs[i]);
         height += sin(ph) * amps[i];
     }
-    grad *= uWaterParams.z * 0.25;
+    grad *= uWaterParams.z * 0.16;
     return vec3(grad, height);
 }
 
@@ -273,13 +277,19 @@ void main() {
     vec3 body = mix(uWaterDeep.rgb, uWaterShallow.rgb, clamp(1.0 - ndv, 0.0, 1.0));
     vec3 color = mix(body, refl, clamp(fres, 0.0, 1.0));
 
-    // Sun glitter: a sharp specular lobe on the wave normals.
+    // Sun glitter: a sharp specular lobe (the sun's mirror path on the ripples)
+    // plus a broad low-power lobe that reads as the sun's sheen on the surface.
     vec3 L = normalize(-uSunDir);
     vec3 H = normalize(L + V);
-    color += uSunColor * pow(max(dot(N, H), 0.0), uWaterParams2.x) * uWaterParams.w;
+    float ndh = max(dot(N, H), 0.0);
+    float sharp = pow(ndh, uWaterParams2.x);
+    float broad = pow(ndh, uWaterParams2.x * 0.06);
+    color += uSunColor * (sharp + broad * 0.12) * uWaterParams.w;
 
-    // Foam on wave crests (height above the mean), strongest at grazing view.
-    float foam = smoothstep(1.3, 2.1, wave.z) * (0.25 + 0.5 * fres);
+    // Crests: a little translucent scattering (thin water is lighter) and
+    // foam on the tallest peaks, strongest at grazing view.
+    color += body * smoothstep(0.6, 2.2, wave.z) * 0.18;
+    float foam = smoothstep(1.9, 3.0, wave.z) * (0.3 + 0.6 * fres);
     color = mix(color, vec3(0.9, 0.95, 1.0), clamp(foam, 0.0, 0.85));
 
     color += body * mix(uAmbientGroundColor, uAmbientColor, clamp(N.y * 0.5 + 0.5, 0.0, 1.0)) *
