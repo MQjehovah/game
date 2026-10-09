@@ -67,9 +67,9 @@ vec3 OctIblSampleRough(sampler2D s, vec3 dir, float rough) {
     return mix(a, b, lv - l0);
 }
 
-// Four superimposed directional sine waves scrolling over world XZ, summed by
-// their height gradients into a world-space normal (the geometric normal is +Y).
-vec3 WaterNormal(vec3 wp) {
+// Four superimposed directional sine waves scrolling over world XZ. Returns
+// xy = surface height gradient, z = relative height (used for crest foam).
+vec3 WaterWaveSample(vec3 wp) {
     float t = eng.uTime * eng.uWaterParams.y;
     vec2 p = wp.xz * eng.uWaterParams.x;
     vec2 dirs[4] = vec2[4](normalize(vec2(1.0, 0.2)), normalize(vec2(-0.6, 0.9)),
@@ -77,40 +77,53 @@ vec3 WaterNormal(vec3 wp) {
     float freqs[4] = float[4](1.0, 1.7, 2.6, 3.9);
     float amps[4] = float[4](1.0, 0.6, 0.4, 0.25);
     vec2 grad = vec2(0.0);
+    float height = 0.0;
     for (int i = 0; i < 4; ++i) {
         float ph = dot(p, dirs[i]) * freqs[i] + t * freqs[i] * 0.9;
         grad += dirs[i] * (cos(ph) * amps[i] * freqs[i]);
+        height += sin(ph) * amps[i];
     }
     grad *= eng.uWaterParams.z * 0.25;
-    return normalize(vec3(-grad.x, 1.0, -grad.y));
+    return vec3(grad, height);
 }
 
 void main() {
     vec3 V = normalize(eng.uCamPos - vWorldPos);
     vec3 N = normalize(vNormal);
     // Perturb only roughly-horizontal water; vertical water walls keep N.
-    if (abs(N.y) > 0.5) N = normalize(WaterNormal(vWorldPos) + N * 0.15);
+    vec3 wave = WaterWaveSample(vWorldPos);
+    if (abs(N.y) > 0.5) N = normalize(vec3(-wave.x, 1.0, -wave.y) + N * 0.15);
     if (dot(N, V) < 0.0) N = -N;
 
     float ndv = max(dot(N, V), 1e-4);
     float fres = 0.02 + 0.98 * pow(1.0 - ndv, 5.0);
+    float dist = length(vWorldPos - eng.uCamPos);
 
+    // Reflection: the environment map, progressively rougher with distance so
+    // far water reflects a soft blur instead of a razor-sharp sky (and the
+    // wave normals still break the near reflection up into ripples).
     vec3 R = reflect(-V, N);
-    float roughU = clamp((0.06 - eng.uRoughnessMin) / max(1.0 - eng.uRoughnessMin, 1e-4), 0.0, 1.0);
+    float reflRough = clamp(0.04 + dist * 0.004, 0.04, 0.45);
+    float roughU = clamp((reflRough - eng.uRoughnessMin) / max(1.0 - eng.uRoughnessMin, 1e-4),
+                         0.0, 1.0);
     vec3 refl = OctIblSampleRough(uPrefilteredMap, R, roughU) * eng.uIblStrength;
 
     vec3 body = mix(eng.uWaterDeep.rgb, eng.uWaterShallow.rgb, clamp(1.0 - ndv, 0.0, 1.0));
     vec3 color = mix(body, refl, clamp(fres, 0.0, 1.0));
 
+    // Sun glitter: a sharp specular lobe on the wave normals.
     vec3 L = normalize(-eng.uSunDir);
     vec3 H = normalize(L + V);
     color += eng.uSunColor * pow(max(dot(N, H), 0.0), eng.uWaterParams2.x) * eng.uWaterParams.w;
+
+    // Foam on wave crests (height above the mean), strongest at grazing view.
+    float foam = smoothstep(1.3, 2.1, wave.z) * (0.25 + 0.5 * fres);
+    color = mix(color, vec3(0.9, 0.95, 1.0), clamp(foam, 0.0, 0.85));
 
     color += body * mix(eng.uAmbientGroundColor, eng.uAmbientColor, clamp(N.y * 0.5 + 0.5, 0.0, 1.0)) *
              eng.uAmbient;
     color *= eng.uTint.rgb;
 
-    float dist = length(vWorldPos - eng.uCamPos);
     float fog = (eng.uFogEnd > eng.uFogStart) ? smoothstep(eng.uFogStart, eng.uFogEnd, dist) : 0.0;
     color = mix(color, eng.uFogColor, fog);
 
