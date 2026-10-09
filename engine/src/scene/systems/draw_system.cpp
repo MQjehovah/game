@@ -289,6 +289,9 @@ void DrawSystem::Build(ecs::World& world, AnimationSystem& anims) {
         item.mat.emissiveIntensity = m->emissiveIntensity;
         item.mat.clearcoat = m->clearcoat;
         item.mat.clearcoatRoughness = m->clearcoatRoughness;
+        // The procedural "water" mesh gets the dedicated water shader (animated
+        // waves + Fresnel IBL reflection) instead of the plain lit surface.
+        item.mat.water = (m->meshKey == "water");
         item.mat.castShadow = m->castShadow;
         item.mat.receiveShadow = m->receiveShadow;
         if (content_.assets) {

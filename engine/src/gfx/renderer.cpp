@@ -9,6 +9,7 @@
 #include "neon/core/log.hpp"
 #include "neon/gfx/bloom.hpp"
 #include "neon/gfx/builtin_shaders.hpp"
+#include "gl_shaders.hpp" // GL transform of the single-source shaders
 #include "neon/gfx/fog.hpp"
 #include "neon/gfx/ssao.hpp"
 #include "neon/gfx/ssr.hpp"
@@ -110,17 +111,17 @@ void Renderer::Shutdown() {
         uploadThread_->Shutdown();
         uploadThread_.reset();
     }
-    if (litShader_.Valid()) backend_->DestroyShader(litShader_);
-    if (skinnedLitShader_.Valid()) backend_->DestroyShader(skinnedLitShader_);
-    if (gbufferShader_.Valid()) backend_->DestroyShader(gbufferShader_);
-    if (gbufferSkinnedShader_.Valid()) backend_->DestroyShader(gbufferSkinnedShader_);
-    if (gbufferInstancedShader_.Valid()) backend_->DestroyShader(gbufferInstancedShader_);
-    if (unlitShader_.Valid()) backend_->DestroyShader(unlitShader_);
-    if (decalShader_.Valid()) backend_->DestroyShader(decalShader_);
-    if (velocityShader_.Valid()) backend_->DestroyShader(velocityShader_);
-    if (linesShader_.Valid()) backend_->DestroyShader(linesShader_);
-    if (litInstancedShader_.Valid()) backend_->DestroyShader(litInstancedShader_);
-    if (unlitInstancedShader_.Valid()) backend_->DestroyShader(unlitInstancedShader_);
+    if (Program("lit").Valid()) backend_->DestroyShader(Program("lit"));
+    if (Program("lit_skinned").Valid()) backend_->DestroyShader(Program("lit_skinned"));
+    if (Program("gbuffer").Valid()) backend_->DestroyShader(Program("gbuffer"));
+    if (Program("gbuffer_skinned").Valid()) backend_->DestroyShader(Program("gbuffer_skinned"));
+    if (Program("gbuffer_instanced").Valid()) backend_->DestroyShader(Program("gbuffer_instanced"));
+    if (Program("unlit").Valid()) backend_->DestroyShader(Program("unlit"));
+    if (Program("decal").Valid()) backend_->DestroyShader(Program("decal"));
+    if (Program("velocity").Valid()) backend_->DestroyShader(Program("velocity"));
+    if (Program("lines").Valid()) backend_->DestroyShader(Program("lines"));
+    if (Program("lit_instanced").Valid()) backend_->DestroyShader(Program("lit_instanced"));
+    if (Program("unlit_instanced").Valid()) backend_->DestroyShader(Program("unlit_instanced"));
     if (brightPassShader_.Valid()) backend_->DestroyShader(brightPassShader_);
     if (blurShader_.Valid()) backend_->DestroyShader(blurShader_);
     if (ssrBlurShader_.Valid()) backend_->DestroyShader(ssrBlurShader_);
@@ -146,84 +147,61 @@ void Renderer::InitBuiltinResources() {
     whiteDesc.rgba = whitePx;
     white_ = backend_->CreateTexture(whiteDesc);
 
-    litShader_ = backend_->CreateShader(kLitVertexShader, kLitFragmentShader, "lit");
-    {
-        // Skinned lit variant: same source with #define SKINNED 1 inserted
-        // right after the #version line (GLSL requires #version first) so the
-        // shader enables the joint/weight attributes + uBoneMatrices.
-        std::string skinnedSrc(kLitVertexShader);
-        size_t versionPos = skinnedSrc.find("#version");
-        size_t versionEnd = skinnedSrc.find('\n', versionPos);
-        skinnedSrc.insert(versionEnd + 1, "#define SKINNED 1\n");
-        skinnedLitShader_ =
-            backend_->CreateShader(skinnedSrc.c_str(), kLitFragmentShader, "lit_skinned");
-        NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
-                     "Renderer: skinned lit shader %s",
-                     skinnedLitShader_.Valid() ? "ok" : "FAILED");
-    }
-    unlitShader_ = backend_->CreateShader(kUnlitVertexShader, kUnlitFragmentShader, "unlit");
-    {
-        // G4 terrain splatmap variant: same lit source with #define TERRAIN_SPLAT
-        // to blend grass/dirt/rock layers by the vertex splat weights. Terrain
-        // chunks use this; every other mesh keeps the plain lit shader.
-        std::string fragSrc(kLitFragmentShader);
-        size_t v = fragSrc.find("#version");
-        size_t ve = fragSrc.find('\n', v);
-        fragSrc.insert(ve + 1, "#define TERRAIN_SPLAT 1\n");
-        terrainShader_ =
-            backend_->CreateShader(kLitVertexShader, fragSrc.c_str(), "lit_terrain");
-        NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
-                     "Renderer: terrain lit shader %s",
-                     terrainShader_.Valid() ? "ok" : "FAILED");
-    }
-    linesShader_ = backend_->CreateShader(kLineVertexShader, kLineFragmentShader, "lines");
-    {
-        // G-buffer variants: the lit source with #define GBUFFER so the fragment
-        // emits indirect radiance + roughness (GL compiles it; Vulkan resolves
-        // the "gbuffer*" names from the precompiled SPIR-V table).
-        std::string gFrag(kLitFragmentShader);
-        size_t v = gFrag.find("#version");
-        size_t ve = gFrag.find('\n', v);
-        gFrag.insert(ve + 1, "#define GBUFFER 1\n");
-        std::string gSkinVert(kLitVertexShader);
-        size_t sv = gSkinVert.find("#version");
-        size_t sve = gSkinVert.find('\n', sv);
-        gSkinVert.insert(sve + 1, "#define SKINNED 1\n");
-        gbufferShader_ = backend_->CreateShader(kLitVertexShader, gFrag.c_str(), "gbuffer");
-        gbufferSkinnedShader_ =
-            backend_->CreateShader(gSkinVert.c_str(), gFrag.c_str(), "gbuffer_skinned");
-        gbufferInstancedShader_ =
-            backend_->CreateShader(kLitInstancedVertexShader, gFrag.c_str(), "gbuffer_instanced");
-        NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
-                     "Renderer: gbuffer shaders %s/%s/%s",
-                     gbufferShader_.Valid() ? "ok" : "FAIL",
-                     gbufferSkinnedShader_.Valid() ? "ok" : "FAIL",
-                     gbufferInstancedShader_.Valid() ? "ok" : "FAIL");
-    }
-    litInstancedShader_ =
+    shaders_["lit"] = backend_->CreateShader(kLitVertexShader, kLitFragmentShader, "lit");
+    // Water: a dedicated program (single-source water.frag; the GL backend uses
+    // the generated GL transform, the VK backend the precompiled SPIR-V).
+    shaders_["water"] = backend_->CreateShader(kLitVertexShader, gl::kWaterFrag, "water");
+    NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
+                 "Renderer: water shader %s", Program("water").Valid() ? "ok" : "FAILED");
+    // Helper: create a program with an optional preprocessor define injected
+    // right after #version (GLSL requires #version first). The VK backend
+    // ignores the sources and resolves the name from its SPIR-V table, so the
+    // same call registers "lit_skinned"/"gbuffer*"/... there too.
+    auto createShader = [this](const char* name, const char* vert, const char* frag,
+                               const char* define = nullptr) {
+        std::string v = vert ? vert : "";
+        std::string f = frag ? frag : "";
+        if (define) {
+            const size_t vp = v.find("#version");
+            if (vp != std::string::npos) v.insert(v.find('\n', vp) + 1, define);
+            const size_t fp = f.find("#version");
+            if (fp != std::string::npos) f.insert(f.find('\n', fp) + 1, define);
+        }
+        shaders_[name] = backend_->CreateShader(v.c_str(), f.c_str(), name);
+    };
+    createShader("lit_skinned", kLitVertexShader, kLitFragmentShader, "#define SKINNED 1\n");
+    shaders_["unlit"] = backend_->CreateShader(kUnlitVertexShader, kUnlitFragmentShader, "unlit");
+    createShader("lit_terrain", kLitVertexShader, kLitFragmentShader, "#define TERRAIN_SPLAT 1\n");
+    shaders_["lines"] = backend_->CreateShader(kLineVertexShader, kLineFragmentShader, "lines");
+    createShader("gbuffer", kLitVertexShader, kLitFragmentShader, "#define GBUFFER 1\n");
+    createShader("gbuffer_skinned", kLitVertexShader, kLitFragmentShader,
+                 "#define SKINNED 1\n#define GBUFFER 1\n");
+    createShader("gbuffer_instanced", kLitInstancedVertexShader, kLitFragmentShader,
+                 "#define GBUFFER 1\n");
+    shaders_["lit_instanced"] =
         backend_->CreateShader(kLitInstancedVertexShader, kLitFragmentShader, "lit_instanced");
-    unlitInstancedShader_ =
+    shaders_["unlit_instanced"] =
         backend_->CreateShader(kUnlitInstancedVertexShader, kUnlitFragmentShader, "unlit_instanced");
-    unlitInstancedColoredShader_ =
+    shaders_["unlit_instanced_colored"] =
         backend_->CreateShader(kUnlitInstancedColoredVertexShader,
                                kUnlitInstancedColoredFragmentShader, "unlit_instanced_colored");
-    particleSoftShader_ =
-        backend_->CreateShader(kParticleSoftVertexShader, kParticleSoftFragmentShader,
-                               "particle_soft");
+    shaders_["particle_soft"] = backend_->CreateShader(kParticleSoftVertexShader,
+                                                       kParticleSoftFragmentShader,
+                                                       "particle_soft");
     // Atlas/flipbook billboard variant (per-instance UV rectangle). Invalid on
     // backends that resolve shaders by name without this program registered (the
     // Vulkan table), in which case DrawBillboards falls back to the plain
     // instanced-coloured program (no flipbook, everything else identical).
-    particleShader_ = backend_->CreateShader(kParticleVertexShader,
-                                             kUnlitInstancedColoredFragmentShader, "particle");
+    shaders_["particle"] = backend_->CreateShader(kParticleVertexShader,
+                                                  kUnlitInstancedColoredFragmentShader, "particle");
     // Depth-projected ground decal (Material::decal). Registered as "decal";
     // backends that resolve programs by name without this entry leave it invalid
     // and DrawDecal degrades to the plain unlit quad.
-    decalShader_ = backend_->CreateShader(kDecalVertexShader, kDecalFragmentShader, "decal");
+    shaders_["decal"] = backend_->CreateShader(kDecalVertexShader, kDecalFragmentShader, "decal");
     // Step E2 motion vectors for TAA (see DrawMesh's prevModel overload). A
     // backend without this program simply leaves it invalid and the velocity
     // target is never allocated -> the resolve keeps using depth reprojection.
-    velocityShader_ =
+    shaders_["velocity"] =
         backend_->CreateShader(kVelocityVertexShader, kVelocityFragmentShader, "velocity");
     billboardQuad_ = Mesh::CreateQuad(*this, 1.0f, 1.0f, "billboard");
 
@@ -269,7 +247,7 @@ void Renderer::InitBuiltinResources() {
     ssrShader_ = backend_->CreateShader(kPostVertexShader, kSsrFragmentShader, "ssr");
     ssrBlurShader_ =
         backend_->CreateShader(kPostVertexShader, kSsrBlurFragmentShader, "ssr_blur");
-    skyboxShader_ = backend_->CreateShader(kSkyboxVertexShader, kSkyboxFragmentShader, "skybox");
+    shaders_["skybox"] = backend_->CreateShader(kSkyboxVertexShader, kSkyboxFragmentShader, "skybox");
     NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
                  "Renderer: SSAO/SSR/volumetric shaders %s",
                  (ssaoShader_.Valid() && ssaoBlurShader_.Valid() && volumetricShader_.Valid() &&
@@ -339,7 +317,7 @@ void Renderer::InitBuiltinResources() {
 
     // Shadow subsystem: depth/point-depth shaders + cascade/point render
     // targets + the FBO capability self-tests (ShadowSystem).
-    shadowSystem_.Init(*backend_, probeQuadMesh_, unlitShader_);
+    shadowSystem_.Init(*backend_, probeQuadMesh_, Program("unlit"));
 }
 
 void Renderer::BeginFrame(const Color& clearColor, float clearDepth) {
@@ -816,8 +794,8 @@ void Renderer::DrawSky() {
     // which did not follow the camera. When disabled (default) the legacy
     // gradient/HDRI path runs.
     draw2d_.Flush2D();
-    if (skyBox_.enabled && skyboxShader_.Valid() && postQuadMesh_.Valid()) {
-        backend_->UseShader(skyboxShader_);
+    if (skyBox_.enabled && Program("skybox").Valid() && postQuadMesh_.Valid()) {
+        backend_->UseShader(Program("skybox"));
         backend_->SetBlendMode(BlendMode::Opaque);
         backend_->SetDepthTest(false, false);
         backend_->SetCullMode(CullMode::None);
@@ -897,7 +875,7 @@ void Renderer::DrawMesh(const Mesh& mesh, const Material& material, const math::
     // with depth-write, so a moving translucent card would claim the velocity
     // of the pixels it covers (its own alpha-blended colour) and ghost the
     // moving object behind it; those surfaces fall back to depth reprojection.
-    if (prevModel && velocityEnabled_ && velocityRT_.Valid() && velocityShader_.Valid() &&
+    if (prevModel && velocityEnabled_ && velocityRT_.Valid() && Program("velocity").Valid() &&
         !material.transparent)
         SubmitVelocity(mesh, model, *prevModel);
 
@@ -906,13 +884,17 @@ void Renderer::DrawMesh(const Mesh& mesh, const Material& material, const math::
     // frame has no sampleable scene depth. NEON_NO_DECAL_PROJECT forces the flat
     // quad for A/B screenshots (same role as NEON_NO_BLOOM / NEON_NO_SHADOWS).
     static const bool decalProjectOff = std::getenv("NEON_NO_DECAL_PROJECT") != nullptr;
-    if (material.decal && !decalProjectOff && decalShader_.Valid() && EnsureSoftDepth()) {
+    if (material.decal && !decalProjectOff && Program("decal").Valid() && EnsureSoftDepth()) {
         DrawDecal(mesh, material, model);
         return;
     }
 
-    ShaderHandle shader = material.shader.Valid() ? material.shader
-                                                  : (material.lit ? litShader_ : unlitShader_);
+    ShaderHandle shader =
+        material.shader.Valid()
+            ? material.shader
+            : (material.water && Program("water").Valid()
+                   ? Program("water")
+                   : (material.lit ? Program("lit") : Program("unlit")));
     ApplyMaterial(material, sceneState_.ViewProjection() * model, model, NormalMatrix(model),
                   shader);
     backend_->DrawMesh(mesh.Handle());
@@ -932,7 +914,7 @@ void Renderer::SubmitVelocity(const Mesh& mesh, const math::Mat4& model,
     // used to switch targets twice per moving object, and every switch flushes
     // and submits the command buffer in the Vulkan backend - two GPU stalls
     // and one dropped pending clear per object, per frame.
-    if (!velocityEnabled_ || !velocityRT_.Valid() || !velocityShader_.Valid()) return;
+    if (!velocityEnabled_ || !velocityRT_.Valid() || !Program("velocity").Valid()) return;
     velocityBatch_.push_back({mesh.Handle(), model, prevModel});
 }
 
@@ -942,7 +924,7 @@ void Renderer::FlushVelocityPass() {
     std::vector<VelocityDraw> batch;
     batch.swap(velocityBatch_);
     if (!hdrEnabled_ || hdrW_ <= 0 || hdrH_ <= 0) return;
-    if (!velocityEnabled_ || !velocityRT_.Valid() || !velocityShader_.Valid()) return;
+    if (!velocityEnabled_ || !velocityRT_.Valid() || !Program("velocity").Valid()) return;
     backend_->BindRenderTarget(velocityRT_);
     backend_->SetViewport(0, 0, hdrW_, hdrH_);
     // The pass owns this target: clear colour (alpha 0 = 'no moving object
@@ -955,7 +937,7 @@ void Renderer::FlushVelocityPass() {
     // and per-entity paths do not).
     backend_->SetDepthTest(true, true);
     backend_->SetCullMode(CullMode::Back);
-    backend_->UseShader(velocityShader_);
+    backend_->UseShader(Program("velocity"));
     // Same view-projection pair the TAA resolve uses: both are the frame's
     // JITTERED matrices, so the offset lands on the right texel of the jittered
     // history buffer.
@@ -986,7 +968,7 @@ void Renderer::RestoreSceneViewport() {
 
 void Renderer::DrawDecal(const Mesh& mesh, const Material& material, const math::Mat4& model) {
     const math::Mat4 viewProj = sceneState_.ViewProjection();
-    ApplyMaterial(material, viewProj * model, model, NormalMatrix(model), decalShader_);
+    ApplyMaterial(material, viewProj * model, model, NormalMatrix(model), Program("decal"));
     // ApplyMaterial only uploads uModel for lit materials; the decal VS needs it
     // (and the inverse maps the depth-rebuilt world point into decal-local space).
     backend_->SetUniformMat4("uModel", model);
@@ -1058,10 +1040,10 @@ void Renderer::DrawSkinnedMesh(const Mesh& mesh, const Material& material,
     // Step E2: entity-level motion vector (rest-pose geometry through the current
     // and previous entity transform). Per-bone deformation is not captured yet,
     // so a limb swinging in place still relies on the neighbourhood clamp.
-    if (prevModel && velocityEnabled_ && velocityRT_.Valid() && velocityShader_.Valid())
+    if (prevModel && velocityEnabled_ && velocityRT_.Valid() && Program("velocity").Valid())
         SubmitVelocity(mesh, model, *prevModel);
 
-    ShaderHandle shader = material.shader.Valid() ? material.shader : skinnedLitShader_;
+    ShaderHandle shader = material.shader.Valid() ? material.shader : Program("lit_skinned");
     ApplyMaterial(material, sceneState_.ViewProjection() * model, model, NormalMatrix(model),
                   shader);
 
@@ -1124,7 +1106,7 @@ void Renderer::DrawMeshInstanced(const Mesh& mesh, const Material& material,
 
     ShaderHandle shader = material.shader.Valid()
                               ? material.shader
-                              : (material.lit ? litInstancedShader_ : unlitInstancedShader_);
+                              : (material.lit ? Program("lit_instanced") : Program("unlit_instanced"));
     ApplyMaterial(material, sceneState_.ViewProjection(), math::Mat4::Identity(),
                   math::Mat4::Identity(), shader);
     backend_->DrawMeshInstanced(mesh.Handle(), instancedVisible_.data(),
@@ -1155,7 +1137,7 @@ void Renderer::DrawMeshInstancedColored(const Mesh& mesh, const Material& materi
     if (instancedVisible_.empty()) return;
 
     ShaderHandle shader =
-        material.shader.Valid() ? material.shader : unlitInstancedColoredShader_;
+        material.shader.Valid() ? material.shader : Program("unlit_instanced_colored");
     ApplyMaterial(material, sceneState_.ViewProjection(), math::Mat4::Identity(),
                   math::Mat4::Identity(), shader);
     backend_->DrawMeshInstancedColored(mesh.Handle(), instancedVisible_.data(),
@@ -1230,13 +1212,13 @@ void Renderer::DrawBillboards(const math::Vec3* positions, const float* sizes,
     // Soft particles: when a sampleable scene depth is available this frame,
     // use the depth-faded billboard shader so glow quads fade where they cross
     // geometry (no hard intersection line). Falls back cleanly otherwise.
-    const bool soft = particleSoftShader_.Valid() && EnsureSoftDepth();
+    const bool soft = Program("particle_soft").Valid() && EnsureSoftDepth();
     // Both billboard programs take the per-instance UV rectangle; the plain
     // instanced-coloured program (the fallback when a backend could not build
     // the atlas variant) does not, so it draws without the UV remap.
-    const bool atlas = soft || particleShader_.Valid();
-    const ShaderHandle shader = soft ? particleSoftShader_
-                                     : (atlas ? particleShader_ : unlitInstancedColoredShader_);
+    const bool atlas = soft || Program("particle").Valid();
+    const ShaderHandle shader = soft ? Program("particle_soft")
+                                     : (atlas ? Program("particle") : Program("unlit_instanced_colored"));
     ApplyMaterial(mat, sceneState_.ViewProjection(), math::Mat4::Identity(),
                   math::Mat4::Identity(), shader);
     // Particles blend appropriately and respect the scene depth (unlike the
@@ -1295,7 +1277,7 @@ void Renderer::DrawProjectedShadowVerts(const std::vector<Vertex3D>& verts,
     backend_->SetBlendMode(BlendMode::Alpha);
     backend_->SetDepthTest(false, false);
     backend_->SetCullMode(CullMode::None);
-    backend_->UseShader(linesShader_);
+    backend_->UseShader(Program("lines"));
     backend_->SetUniformMat4("uMVP", sceneState_.ViewProjection());
     backend_->DrawPrimitives(projectedShadowVerts_.data(),
                              static_cast<uint32_t>(projectedShadowVerts_.size()), 28, nullptr, 0,
@@ -1388,6 +1370,15 @@ void Renderer::ApplyMaterial(const Material& material, const math::Mat4& mvp,
     backend_->SetUniformFloat("uRoughness", material.roughness);
     backend_->SetUniformFloat("uClearcoat", material.clearcoat);
     backend_->SetUniformFloat("uClearcoatRoughness", material.clearcoatRoughness);
+    // Water params (only read by the dedicated water program).
+    backend_->SetUniformVec4("uWaterParams",
+                             {material.waterWaveScale, material.waterWaveSpeed,
+                              material.waterWaveStrength, material.waterSpecular});
+    backend_->SetUniformVec4("uWaterParams2", {material.waterSpecPower, 0.0f, 0.0f, 0.0f});
+    backend_->SetUniformVec4("uWaterDeep", {material.waterDeep.r, material.waterDeep.g,
+                                            material.waterDeep.b, 1.0f});
+    backend_->SetUniformVec4("uWaterShallow", {material.waterShallow.r, material.waterShallow.g,
+                                               material.waterShallow.b, 1.0f});
     backend_->BindTexture(2, material.metallicRoughness);
     backend_->SetUniformInt("uMR", 2);
     backend_->BindTexture(3, material.occlusion);
@@ -1437,6 +1428,9 @@ void Renderer::ApplyMaterial(const Material& material, const math::Mat4& mvp,
 
 void Renderer::ApplySceneUniforms(ShaderHandle shader) {
     backend_->SetUniformVec3("uCamPos", sceneState_.CamPos());
+    // Monotonic clock for animated materials (water waves). Per-program upload
+    // (uniform locations are per-program); VK writes the shared UBO.
+    backend_->SetUniformFloat("uTime", skyTime_);
     backend_->SetUniformVec3("uSunDir", sceneState_.SunDir());
     const Color& sunColor = sceneState_.SunColor();
     backend_->SetUniformVec3("uSunColor", {sunColor.r, sunColor.g, sunColor.b});
@@ -1579,7 +1573,7 @@ void Renderer::DrawLines(const LineVertex* vertices, uint32_t count, const math:
     backend_->SetBlendMode(BlendMode::Alpha);
     backend_->SetDepthTest(sceneState_.DepthAvailable(), false);
     backend_->SetCullMode(CullMode::None);
-    backend_->UseShader(linesShader_);
+    backend_->UseShader(Program("lines"));
     backend_->SetUniformMat4("uMVP", sceneState_.ViewProjection() * model);
     backend_->DrawPrimitives(vertices, count, 28, nullptr, 0, PrimitiveTopology::Lines);
 }
@@ -1644,7 +1638,7 @@ void Renderer::DrawTrails(const TrailDraw* draws, uint32_t drawCount) {
         backend_->SetBlendMode(BlendMode::Additive);
         backend_->SetDepthTest(sceneState_.DepthAvailable(), false);
         backend_->SetCullMode(CullMode::None);
-        backend_->UseShader(linesShader_);
+        backend_->UseShader(Program("lines"));
         backend_->SetUniformMat4("uMVP", sceneState_.ViewProjection());
         backend_->DrawPrimitives(trailVerts_.data(), static_cast<uint32_t>(trailVerts_.size()),
                                  28, trailIndices_.data(),
@@ -1841,7 +1835,7 @@ void Renderer::RebuildHdrTargets() {
         static_cast<int>(std::lround(static_cast<double>(screenW_) * scale)), 1);
     const int sh = std::max(
         static_cast<int>(std::lround(static_cast<double>(screenH_) * scale)), 1);
-    const bool wantVelocity = velocityEnabled_ && velocityShader_.Valid();
+    const bool wantVelocity = velocityEnabled_ && Program("velocity").Valid();
     if (hdrRT_.Valid() && hdrW_ == sw && hdrH_ == sh &&
         velocityRT_.Valid() == wantVelocity)
         return;
@@ -1890,7 +1884,7 @@ void Renderer::RebuildHdrTargets() {
     if (taaEnabled_) taa_.Init(*backend_, hdrW_, hdrH_);
     // Step E2: motion-vector target, same size as the render resolution. Only
     // allocated while temporal AA is on (it is the only consumer).
-    if (velocityEnabled_ && velocityShader_.Valid())
+    if (velocityEnabled_ && Program("velocity").Valid())
         velocityRT_ = backend_->CreateRenderTarget(sw, sh, true);
     // Every post target (bloom pyramid + depth/AO/blur/vol/SSR) lives in the
     // unified post graph's transient pool: rebuild the graph at the new
@@ -1942,7 +1936,7 @@ void Renderer::DestroyHdrTargets() {
 }
 
 bool Renderer::TestFloatTargetCapability() {
-    if (!backend_ || !unlitShader_.Valid() || !probeQuadMesh_.Valid()) return false;
+    if (!backend_ || !Program("unlit").Valid() || !probeQuadMesh_.Valid()) return false;
     constexpr int kSize = 32;
     RenderTargetHandle rt = backend_->CreateRenderTarget(kSize, kSize, true);
     if (!rt.Valid()) {
@@ -1952,7 +1946,7 @@ bool Renderer::TestFloatTargetCapability() {
     }
     backend_->BindRenderTarget(rt);
     backend_->Clear({0.0f, 0.0f, 0.0f, 1.0f}, 1.0f);
-    backend_->UseShader(unlitShader_);
+    backend_->UseShader(Program("unlit"));
     backend_->SetUniformMat4("uMVP", math::Mat4::Identity());
     backend_->SetUniformInt("uHasTexture", 0);
     backend_->SetUniformVec4("uTint", {0.5f, 0.25f, 0.125f, 1.0f});
@@ -1981,7 +1975,7 @@ bool Renderer::TestFloatTargetCapability() {
 }
 
 bool Renderer::TestMsaaCapability() {
-    if (!backend_ || !unlitShader_.Valid() || !probeQuadMesh_.Valid()) return false;
+    if (!backend_ || !Program("unlit").Valid() || !probeQuadMesh_.Valid()) return false;
     constexpr int kSize = 32;
     // Try the requested sample count first (when a quality preset asked for a
     // specific one), then 4x/2x for drivers that only handle lower counts;
@@ -2004,7 +1998,7 @@ bool Renderer::TestMsaaCapability() {
         if (ms.Valid() && ss.Valid()) {
             backend_->BindRenderTarget(ms);
             backend_->Clear({0.0f, 0.0f, 0.0f, 1.0f}, 1.0f);
-            backend_->UseShader(unlitShader_);
+            backend_->UseShader(Program("unlit"));
             backend_->SetUniformMat4("uMVP", math::Mat4::Identity());
             backend_->SetUniformInt("uHasTexture", 0);
             backend_->SetUniformVec4("uTint", {0.5f, 0.25f, 0.125f, 1.0f});
@@ -2305,14 +2299,14 @@ void Renderer::DrawSsaoDepthCasters(const math::Mat4& viewProj) {
 }
 
 void Renderer::DrawGBufferCasters(const math::Mat4& viewProj) {
-    if (ssaoCasters_.empty() || !gbufferShader_.Valid()) return;
+    if (ssaoCasters_.empty() || !Program("gbuffer").Valid()) return;
     for (const ShadowSystem::ShadowDraw& draw : ssaoCasters_) {
         if (!draw.mesh.Valid()) continue;
         const bool instanced = !draw.models.empty();
-        const bool skinned = !draw.bones.empty() && gbufferSkinnedShader_.Valid();
-        const ShaderHandle sh = instanced ? gbufferInstancedShader_
-                               : skinned ? gbufferSkinnedShader_
-                                         : gbufferShader_;
+        const bool skinned = !draw.bones.empty() && Program("gbuffer_skinned").Valid();
+        const ShaderHandle sh = instanced ? Program("gbuffer_instanced")
+                               : skinned ? Program("gbuffer_skinned")
+                                         : Program("gbuffer");
         if (!sh.Valid()) continue;
         // ApplyMaterial binds the albedo/MR/occlusion textures + sets roughness,
         // metallic, tint (so the GBUFFER branch's indirect radiance uses the

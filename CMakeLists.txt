@@ -281,6 +281,31 @@ if(NEON_ENABLE_VULKAN)
 endif()
 
 # ---------------------------------------------------------------------------
+# Build-time OpenGL shader generation. The engine authors each shader once in
+# the Vulkan-flavoured GLSL files (tools/gen_gl_shaders.ps1 transforms them into
+# loose-uniform GL sources), so GL and VK share a single source of truth. The
+# generated header is committed, so builds without PowerShell still work.
+# ---------------------------------------------------------------------------
+set(GL_SHADER_DIR ${CMAKE_SOURCE_DIR}/engine/src/gfx/vulkan/shaders)
+set(GL_SHADER_OUTPUT ${CMAKE_SOURCE_DIR}/engine/generated/gl_shaders.hpp)
+file(GLOB GL_SHADER_SOURCES CONFIGURE_DEPENDS
+  ${GL_SHADER_DIR}/*.vert ${GL_SHADER_DIR}/*.frag ${GL_SHADER_DIR}/*.glsl)
+add_custom_command(
+  OUTPUT ${GL_SHADER_OUTPUT}
+  COMMAND powershell -NoProfile -ExecutionPolicy Bypass -File
+    ${CMAKE_SOURCE_DIR}/tools/gen_gl_shaders.ps1
+    -ShaderDir ${GL_SHADER_DIR}
+    -OutputHeader ${GL_SHADER_OUTPUT}
+  DEPENDS
+    ${CMAKE_SOURCE_DIR}/tools/gen_gl_shaders.ps1
+    ${GL_SHADER_SOURCES}
+  COMMENT "Generating embedded OpenGL shaders (gl_shaders.hpp)..."
+  VERBATIM
+)
+add_custom_target(neon_gl_shaders ALL DEPENDS ${GL_SHADER_OUTPUT})
+add_dependencies(neon_gfx neon_gl_shaders)
+
+# ---------------------------------------------------------------------------
 # Platform backends: one window/input implementation per OS
 # ---------------------------------------------------------------------------
 if(WIN32)

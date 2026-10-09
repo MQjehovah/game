@@ -205,4 +205,10 @@ layout(set = 0, binding = 0) uniform EngineUBO {
     // F6 clearcoat (second dielectric specular lobe).
     layout(offset = 7712) float uClearcoat;
     layout(offset = 7716) float uClearcoatRoughness;
+    // Real water surface.
+    layout(offset = 7728) vec4 uWaterParams;      // (waveScale, waveSpeed, waveStrength, specular)
+    layout(offset = 7744) vec4 uWaterParams2;     // (specPower, unused...)
+    layout(offset = 7760) vec4 uWaterDeep;        // rgb
+    layout(offset = 7776) vec4 uWaterShallow;     // rgb
+    layout(offset = 7792) int uWaterEnabled;
 } eng;

@@ -51,7 +51,7 @@ public:
     // G4: the terrain splatmap shader variant (grass texture + dirt/rock colors
     // blended by the vertex splat weights). Terrain chunks set this on their
     // material so the Draw path selects it instead of the plain lit shader.
-    ShaderHandle TerrainShader() const { return terrainShader_; }
+    ShaderHandle TerrainShader() const { return Program("lit_terrain"); }
 
     // Selects the graphics backend before Init. "gl" (default) uses OpenGL;
     // "vulkan" uses the Vulkan backend when built with NEON_ENABLE_VULKAN=ON
@@ -724,23 +724,15 @@ private:
     // target" (no letterbox), in which case effects sample the whole HDR frame.
     math::Rect2 sceneVpLast_{0.0f, 0.0f, 0.0f, 0.0f};
 
-    ShaderHandle litShader_;
-    ShaderHandle terrainShader_;
-    ShaderHandle skinnedLitShader_;
-    // G-buffer variants (lit source + #define GBUFFER): draw the same casters
-    // into gNormalRough_ (RGB = indirect radiance, A = roughness) for the
-    // composite's indirect-only SSAO and the SSR roughness read.
-    ShaderHandle gbufferShader_;
-    ShaderHandle gbufferSkinnedShader_;
-    ShaderHandle gbufferInstancedShader_;
-    ShaderHandle unlitShader_;
-    ShaderHandle linesShader_;
-    ShaderHandle litInstancedShader_;
-    ShaderHandle unlitInstancedShader_;
-    ShaderHandle unlitInstancedColoredShader_;
-    ShaderHandle particleSoftShader_;   // depth-faded billboard variant (soft particles)
-    ShaderHandle particleShader_;       // atlas/flipbook billboard (per-instance UV rect)
-    ShaderHandle decalShader_;          // depth-projected ground decal
+    // Name-keyed shader programs (Godot-style): a shader is a table entry in
+    // InitShaders(), not a hand-wired member. Lookup is backend-agnostic - the
+    // GL backend compiles the provided source, the VK backend resolves the name
+    // from its precompiled SPIR-V table. Missing name -> invalid handle.
+    std::unordered_map<std::string, ShaderHandle> shaders_;
+    ShaderHandle Program(const char* name) const {
+        const auto it = shaders_.find(name);
+        return it == shaders_.end() ? ShaderHandle{} : it->second;
+    }
     bool softDepthReady_ = false;       // resolved the main-pass depth this frame
     float softFadeRange_ = 0.75f;       // world-unit fade band for soft particles
     gfx::Mesh billboardQuad_;  // unit XY quad used by DrawBillboards
@@ -763,7 +755,6 @@ private:
     ShaderHandle volumetricShader_;
     ShaderHandle ssrShader_;
     ShaderHandle ssrBlurShader_;
-    ShaderHandle skyboxShader_;
     TextureHandle white_;
     MeshHandle probeQuadMesh_;
     // Fullscreen NDC quad (uv 0..1) for the post passes.
@@ -859,7 +850,6 @@ private:
     int shadowDebug_ = -1;
     bool taaEnabled_ = false;
     // Step E2 motion-vector pass (only allocated/used while TAA is on).
-    ShaderHandle velocityShader_;
     RenderTargetHandle velocityRT_;
     // One entry per moving object, replayed by FlushVelocityPass (the colour
     // pass order is unaffected: velocity rasterizes into its own target).

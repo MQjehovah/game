@@ -92,6 +92,7 @@ uniform float uEmissiveIntensity;
 // F6 clearcoat: second dielectric specular lobe (0 = off).
 uniform float uClearcoat;
 uniform float uClearcoatRoughness;
+
 // Gamma-correct pipeline (default off): decode sRGB albedo/emissive to linear.
 uniform int uGammaCorrect;
 uniform float uShininess;
@@ -196,6 +197,7 @@ float ClearcoatSpec(float ndl, float ndv, float ndh, float vdh, float ccRough, o
     atten = 0.04 + 0.96 * pow(1.0 - vdh, 5.0);
     return ccD * ccG * atten / (4.0 * ndl * ndv + 1e-3);
 }
+
 // Interleaved gradient noise (Jimenez 2014): a cheap screen-space dither used
 // to rotate the shadow kernel per pixel.
 float Ign(vec2 p) {
