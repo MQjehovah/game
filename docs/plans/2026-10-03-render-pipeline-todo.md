@@ -144,9 +144,17 @@
 4. **SMAA**：多张预计算 area/search 查找纹理 + 多个 pass（当前只有 FXAA）。
 5. **待修 bug**（仍开）：SSAO 用真法线缓冲提质；SSR 无 HiZ/时域；VK 自动曝光时域平滑；VK 资源析构顺序/泄漏；`SetAmbientGroundColor` 无调用者。
 
-## 7. 新需求：真实水体效果（待实现）
+## 7. 真实水体效果（**已实现，GL**）
 
-目标：把现有平面/占位水面换成**真实水体**——折射（读场景深度做水下偏移/扭曲）、反射（SSR 或平面反射）、Fresnel、深度吸收（Beer-Lambert 按深度染色）、动态法线（滚动/双层）、泡沫/岸边浪、太阳高光。GL 与 VK 一致。
-- 思路：新增 water 材质/变体（可复用 lit 管线或独立 water shader），读 `uFogDepth`（线性深度）算水深与折射偏移，反射优先接现有 SSR（`uSsr` 已在 composite，但 water 需要在水面片元处直接用 SSR 结果 → 可能要在 water shader 内联 SSR 采样或把 SSR 结果作为水面输入）。
-- 涉及：`material.hpp`（water 标志/参数：深水色、浅水色、波幅、波速、折射强度、泡沫）、`scene_file`（解析）、lit/新 shader（GL builtin + VK `.frag` + 注册）、可能的 VK UBO slot。默认关闭，不影响既有内容。
-- 参考：Godot `sky.glsl`/`water` 相关、Filament water 示例；也可参考 `projects/showcase/assets/scenes/04_lakeside.json` 现有水面。
+- **独立 water 程序**（不再往 lit 里塞 `if`）：单源 `engine/src/gfx/vulkan/shaders/water.frag`，GL 走 `tools/gen_gl_shaders.ps1` 生成的 loose-uniform 版本，VK 走 SPIR-V。
+- 算法：4 个方向波叠加的解析法线（`WaterWaveSample`，xy=梯度、z=高度）+ Fresnel（F0=0.02）混合深/浅水体色与八面体 IBL 反射 + 太阳高光 + 波峰泡沫 + 距离越远反射越糙。
+- 材质：`Material.water` + 参数（`waterWaveScale/Speed/Strength`、`waterSpecular/SpecPower`、`waterDeep/Shallow`）；`meshKey=="water"` 或 JSON `"water": true` 自动启用；scene JSON 可调全部参数（含 deep/shallow 颜色）。
+- **关键坑**：水面是不透明内建 shader，会走**实例化批处理**从而绕过按材质选 shader（表现是一直是 lit）。已在 `draw_system` 的 `batchable` 里加 `!mat.water`，改走 per-entity `DrawMesh`。
+- 未做：真折射（需场景颜色/深度，前向单 pass 不可靠，需透明 pass + 场景颜色拷贝）、屏幕空间反射接入。VK 未验证（按“先 GL”约定）。
+
+## 8. 后端架构（参照 Godot RD / Unity RHI）— P0 已完成
+
+详见 `docs/plans/2026-10-04-backend-architecture.md`。已完成 **P0**：
+- `Renderer` 去掉 ~17 个 shader 成员 → `shaders_`（名字→handle）+ `Program(name)` 表驱动。
+- **单源 shader + 构建期双编译**：VK 用 glslang 出 SPIR-V；GL 用 `tools/gen_gl_shaders.ps1` 把 UBO 展开成 loose uniform、去 `eng.`/`set=`、内联 `#include`。
+- 待办 P1 PipelineState / P2 UniformSet / P3 RenderGraph / P4 变体系统。
