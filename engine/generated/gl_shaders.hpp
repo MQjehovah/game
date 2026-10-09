@@ -278,7 +278,7 @@ void main() {
     // far water reflects a soft blur instead of a razor-sharp sky (and the
     // wave normals still break the near reflection up into ripples).
     vec3 R = reflect(-V, N);
-    float reflRough = clamp(0.04 + dist * 0.004, 0.04, 0.45);
+    float reflRough = clamp(0.03 + dist * 0.0015, 0.03, 0.20);
     float roughU = clamp((reflRough - uRoughnessMin) / max(1.0 - uRoughnessMin, 1e-4),
                          0.0, 1.0);
     vec3 skyRefl = OctIblSampleRough(uPrefilteredMap, R, roughU) * uIblStrength;
@@ -316,7 +316,7 @@ void main() {
             // Beer-Lambert absorption toward the deep colour, capped so very
             // distant geometry (the skybox) still reads as deep water and the
             // body keeps a water tint instead of becoming the background.
-            float wd = clamp(waterDepth, 0.0, 12.0);
+            float wd = clamp(waterDepth, 0.0, 25.0);
             float absorb = exp(-wd * uWaterParams2.z);
             body = mix(sceneCol, uWaterDeep.rgb, clamp(1.0 - absorb, 0.0, 1.0));
         }
@@ -331,7 +331,7 @@ void main() {
     float ndh = max(dot(N, H), 0.0);
     float sharp = pow(ndh, uWaterParams2.x);
     float broad = pow(ndh, uWaterParams2.x * 0.06);
-    color += uSunColor * (sharp + broad * 0.12) * uWaterParams.w;
+    color += uSunColor * (sharp + broad * 0.25) * uWaterParams.w;
 
     // Crests: a little translucent scattering (thin water is lighter) and
     // foam on the tallest peaks, strongest at grazing view.

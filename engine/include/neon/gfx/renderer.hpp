@@ -115,7 +115,10 @@ public:
     void SetSkySource(const uint8_t* rgba, int width, int height) {
         sceneState_.SetSkySource(rgba, width, height);
     }
-    void DrawSky();
+    // Draws the sky background into the currently-bound target. `vpOverride`
+    // / `camOverride` let the water reflection pass render the sky through the
+    // mirrored camera (so the reflected sky gradient + sun land correctly).
+    void DrawSky(const math::Mat4* vpOverride = nullptr, const math::Vec3* camOverride = nullptr);
     // A4 procedural skybox overrides the static gradient: a view-ray sky with a
     // sun disc + halo, a moon, and procedural clouds. sunYaw/sunPitch in
     // radians; set enabled=true to replace the plain gradient. Defaults fill a
@@ -680,6 +683,9 @@ private:
     // grab-pass / draw-order change). No-op when no water was drawn.
     void RenderPlanarReflection();
     void DrawReflectionCasters(const math::Mat4& viewProj);
+    // Renders the procedural skybox quad with an explicit camera; returns false
+    // when the skybox is unavailable (caller falls back to the legacy path).
+    bool DrawSkyQuad(const math::Mat4& vp, const math::Vec3& camPos);
     bool TestFloatTargetCapability();
     // B1: uploads the per-FRAME scene uniforms (sun/lights/fog/view/shadow/IBL)
     // once per (frame, program) pair -- draws after the first in a frame skip

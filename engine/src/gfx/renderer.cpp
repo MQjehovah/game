@@ -793,7 +793,7 @@ void Renderer::SetPlayerLight(const math::Vec3& position, const Color& color, fl
     sceneState_.SetPlayerLight(position, color, radius);
 }
 
-void Renderer::DrawSky() {
+void Renderer::DrawSky(const math::Mat4* vpOverride, const math::Vec3* camOverride) {
     // A4 procedural skybox: a view-ray fullscreen background pass with a sun
     // disc + halo, a locked moon and procedural clouds. Drawn into the CURRENT
     // scene target (HDR or backbuffer); the sky quad has depth test OFF and the
@@ -802,7 +802,15 @@ void Renderer::DrawSky() {
     // which did not follow the camera. When disabled (default) the legacy
     // gradient/HDRI path runs.
     draw2d_.Flush2D();
-    if (skyBox_.enabled && Program("skybox").Valid() && postQuadMesh_.Valid()) {
+    const math::Mat4 vp = vpOverride ? *vpOverride : sceneState_.ViewProjection();
+    const math::Vec3 camPos = camOverride ? *camOverride : sceneState_.CamPos();
+    if (DrawSkyQuad(vp, camPos)) return;
+    sceneState_.DrawSky(draw2d_);
+}
+
+bool Renderer::DrawSkyQuad(const math::Mat4& vp, const math::Vec3& camPos) {
+    if (!skyBox_.enabled || !Program("skybox").Valid() || !postQuadMesh_.Valid()) return false;
+    {
         backend_->UseShader(Program("skybox"));
         backend_->SetBlendMode(BlendMode::Opaque);
         backend_->SetDepthTest(false, false);
@@ -810,8 +818,7 @@ void Renderer::DrawSky() {
         backend_->SetUniformMat4("uMVP", math::Mat4::Identity());
         // Reconstruct world rays with the inverse(view*proj) of the rendered
         // camera; the sky texture (optional HDRI) is sampled when valid.
-        backend_->SetUniformMat4("uInvViewProj", sceneState_.ViewProjection().Inverted());
-        const math::Vec3 camPos = sceneState_.CamPos();
+        backend_->SetUniformMat4("uInvViewProj", vp.Inverted());
         backend_->SetUniformVec3("uCamPos", camPos);
         const gfx::TextureHandle skyTex = sceneState_.SkyTexture();
         backend_->BindTexture(0, skyTex.Valid() ? skyTex : white_);
@@ -830,9 +837,8 @@ void Renderer::DrawSky() {
         backend_->SetUniformFloat("uCloudScale", skyBox_.cloudScale);
         backend_->SetUniformFloat("uTime", skyTime_);
         backend_->DrawMesh(postQuadMesh_);
-        return;
+        return true;
     }
-    sceneState_.DrawSky(draw2d_);
 }
 
 void Renderer::EnableSkyBox(const math::Vec3& sunDir, bool clouds) {
@@ -937,7 +943,7 @@ void Renderer::DrawMesh(const Mesh& mesh, const Material& material, const math::
                 backend_->SetUniformFloat("uNear", wcam.nearPlane);
                 backend_->SetUniformFloat("uFar", wcam.farPlane);
                 refraction = 0.06f;
-                absorb = 0.4f;
+                absorb = 0.18f;
                 refrEnabled = 1.0f;
             }
         }
@@ -2432,6 +2438,10 @@ void Renderer::RenderPlanarReflection() {
     backend_->SetScissor(0, 0, 0, 0, false);
     const Color& top = sceneState_.SkyTop();
     backend_->Clear({top.r, top.g, top.b, 1.0f}, 1.0f);
+    // Render the actual sky (gradient + sun + clouds) through the mirrored
+    // camera so the reflected sky is the real one, not a flat clear colour.
+    const math::Vec3 cam = sceneState_.CamPos();
+    DrawSkyQuad(reflectionVP_, math::Vec3{cam.x, -cam.y, cam.z});
     // A mirror reverses triangle winding: rasterize both faces.
     backend_->SetCullMode(CullMode::None);
     DrawReflectionCasters(reflectionVP_);
