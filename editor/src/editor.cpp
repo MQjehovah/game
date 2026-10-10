@@ -498,8 +498,9 @@ bool EditorApp::OnCreate() {
     pluginMgr_->Init(this);
     pluginMgr_->Load("."); // editor plugins are GLOBAL (engine-level), not per-project
     ctx_.pluginMgr = pluginMgr_.get(); // 资产面板的插件素材源区块
-    NEON_LOG_INFO("NeonEditor ready (%zu entities), project dir '%s'", entities_.size(),
-                  projectDir_.c_str());
+    // The accurate "ready" line is logged AFTER --project / config-restore are
+    // applied below (otherwise it reported the persisted project, not the one
+    // the editor actually opened).
     // The smoke test is the canonical 3D-editor flow: --2d/--2d-play/--project
     // only matter for interactive sessions. Normalize before any render so the
     // gizmo/camera assertions see the default scene from frame 0.
@@ -532,6 +533,11 @@ bool EditorApp::OnCreate() {
         projectDir_ = abs;
         std::strncpy(projectDirBuf_, projectDir_.c_str(), sizeof(projectDirBuf_) - 1);
         projectDirBuf_[sizeof(projectDirBuf_) - 1] = '\0';
+        // Mount the project-root VFS at the new dir: LoadProjectScene ->
+        // SwitchProject does this, but a smoke run (which clears
+        // loadProjectOnStart_) or a --scene-only open would otherwise keep
+        // resolving assets against the previous project.
+        MountAssetVfs();
         if (loadProjectOnStart_) LoadProjectScene();
         if (!sceneOnStart_.empty()) {
             // --scene <rel>: open a specific scene under the project instead of
@@ -539,6 +545,8 @@ bool EditorApp::OnCreate() {
             LoadScene(projectDir_ + "/" + sceneOnStart_);
         }
     }
+    NEON_LOG_INFO("NeonEditor ready (%zu entities), project dir '%s'", entities_.size(),
+                  projectDir_.c_str());
     // Start the play LAST: LoadProjectScene/SwitchProject above stop any
     // running play, so --2d-play + --project must start after both.
     if (pvzPlayOnStart_ || playOnStart_) StartPlay();
