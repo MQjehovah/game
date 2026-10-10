@@ -2028,12 +2028,37 @@ void EditorApp::LoadProjectScene() {
     SwitchProject(projectDir_);
 }
 
+std::string EditorApp::ResolveSceneRef(const std::string& ref) const {
+    if (ref.empty()) return {};
+    auto exists = [](const std::string& f) {
+        std::ifstream p(f, std::ios::binary);
+        return p.is_open();
+    };
+    const bool hasJson = ref.size() > 5 && ref.compare(ref.size() - 5, 5, ".json") == 0;
+    const std::string withJson = hasJson ? ref : ref + ".json";
+    const bool absolute = ref.size() >= 2 && ref[1] == ':' ||
+                          (!ref.empty() && (ref[0] == '/' || ref[0] == '\\'));
+    // 1) an existing path as given (absolute, or relative to the project / CWD).
+    if (exists(ref)) return ref;
+    if (!absolute && exists(projectDir_ + "/" + ref)) return projectDir_ + "/" + ref;
+    // 2) a bare name / project-relative scene under the project's assets/scenes.
+    if (!absolute && exists(projectDir_ + "/assets/scenes/" + withJson))
+        return projectDir_ + "/assets/scenes/" + withJson;
+    return {};
+}
+
 void EditorApp::LoadProjectScene(const std::string& rel) {
     StopPlay();
     SetSelection(-1);
     history_.Clear();
-    LoadScene(projectDir_ + "/" + rel);
-    NEON_LOG_INFO("Editor: project scene loaded from '%s/%s'", projectDir_.c_str(), rel.c_str());
+    const std::string path = ResolveSceneRef(rel);
+    if (path.empty()) {
+        NEON_LOG_ERROR("Editor: scene '%s' not found under project '%s'", rel.c_str(),
+                       projectDir_.c_str());
+        return;
+    }
+    LoadScene(path);
+    NEON_LOG_INFO("Editor: project scene loaded from '%s'", path.c_str());
 }
 
 void EditorApp::OpenScriptEditor(const std::string& path) {

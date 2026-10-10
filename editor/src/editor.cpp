@@ -541,8 +541,15 @@ bool EditorApp::OnCreate() {
         if (loadProjectOnStart_) LoadProjectScene();
         if (!sceneOnStart_.empty()) {
             // --scene <rel>: open a specific scene under the project instead of
-            // the game.json startScene (showcase demos live as siblings).
-            LoadScene(projectDir_ + "/" + sceneOnStart_);
+            // the game.json startScene. Accepts a bare name ("06_ocean" /
+            // "06_ocean.json") as well as "assets/scenes/06_ocean.json"; a bad
+            // arg is reported instead of silently leaving the start scene open.
+            const std::string scenePath = ResolveSceneRef(sceneOnStart_);
+            if (scenePath.empty())
+                NEON_LOG_ERROR("Editor: --scene '%s' not found under '%s'",
+                               sceneOnStart_.c_str(), projectDir_.c_str());
+            else
+                LoadScene(scenePath);
         }
     }
     NEON_LOG_INFO("NeonEditor ready (%zu entities), project dir '%s'", entities_.size(),

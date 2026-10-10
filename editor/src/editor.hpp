@@ -517,6 +517,11 @@ private:
     void LoadProjectScene();
     // Loads a specific scene from the current project (scenes/*.json).
     void LoadProjectScene(const std::string& rel);
+    // Resolves a scene reference (--scene arg / "06_ocean" / "06_ocean.json" /
+    // "assets/scenes/06_ocean.json") to a loadable path under the project,
+    // returning "" when nothing matches. Tolerates a bare scene name so an
+    // abbreviated arg does not silently leave the previous scene loaded.
+    std::string ResolveSceneRef(const std::string& ref) const;
     void AddEntity(const std::string& meshKey);
     // Adds a 2D sprite entity for a texture asset (spriteTex + unlit quad).
     void AddSpriteEntity(const std::string& texPath);
