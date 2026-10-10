@@ -300,12 +300,32 @@ void EditorApp::OnRender() {
             // scene-tree order for everything else).
             std::vector<size_t> drawOrder(entities_.size());
             for (size_t i = 0; i < drawOrder.size(); ++i) drawOrder[i] = i;
+            // Transparent geometry (water, sprites, decals) draws last, and the
+            // opaque scene colour + depth are grabbed at the boundary so the
+            // water program can do screen-space refraction - the same contract as
+            // the runtime DrawSystem, so the edit-mode preview matches play (a
+            // water surface drawn in creation order used to hide submerged props).
+            auto isTransparentEntity = [](const SceneEntity& ent) {
+                if (!ent.decalTex.empty() || !ent.spriteTex.empty()) return true;
+                if (ent.meshKey == "tilemap") return true;
+                return ent.material.transparent;
+            };
             std::stable_sort(drawOrder.begin(), drawOrder.end(),
                              [&](size_t a, size_t b) {
+                                 const bool ta = isTransparentEntity(entities_[a]);
+                                 const bool tb = isTransparentEntity(entities_[b]);
+                                 if (ta != tb) return !ta; // opaque before transparent
                                  return entities_[a].zOrder < entities_[b].zOrder;
                              });
+            bool transparentGrabStarted = false;
             for (size_t di : drawOrder) {
                 SceneEntity& e = entities_[di];
+                if (!transparentGrabStarted && e.material.transparent &&
+                    e.spriteTex.empty() && e.meshKey != "tilemap" &&
+                    e.decalTex.empty() && e.mesh.Valid()) {
+                    renderer_.BeginTransparentPass();
+                    transparentGrabStarted = true;
+                }
                 if (e.meshKey == "tilemap") {
                     // P1-1: draw every non-empty cell as a sprite quad; the
                     // entity's scale sets the cell size.
