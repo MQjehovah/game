@@ -302,12 +302,16 @@ bool EditorApp::ResolveMesh(SceneEntity& e) {
         e.material = res.material;
     } else if (key.rfind("gltf:", 0) == 0) {
         const std::string gltfPath = assets::NormalizeAssetPath(key.substr(5));
+        // Project-relative scene paths must be rooted at the project dir (the
+        // editor's AssetManager does not prefix them); the raw relative form
+        // stays the cache key.
+        const std::string gltfFull = ResolveMeshAssetPath(gltfPath, projectDir_);
         // Cache the resolved model per path: the first entity pays the full
         // parse + upload, the rest clone the result (GPU handles shared, the
         // per-entity Animator state is a fresh copy).
         if (skinnedModelCache_.count(gltfPath) == 0 &&
             gltfStaticMeshCache_.count(gltfPath) == 0) {
-            assets::GltfAsset gltf = assetMgr_.LoadGLTF(gltfPath);
+            assets::GltfAsset gltf = assetMgr_.LoadGLTF(gltfFull);
             if (!gltf.nodes.empty()) {
                 gltfStaticMeshCache_[gltfPath] = gltf.nodes[0].mesh;
                 gltfStaticMaterialCache_[gltfPath] = gltf.nodes[0].material;
@@ -437,19 +441,25 @@ void EditorApp::ApplyMaterialParams(SceneEntity& e) {
     auto loadTex = [this](const std::string& p, float) {
         assets::TextureLoadOptions o;
         o.wrap = gfx::Wrap::Repeat;
-        return assetMgr_.LoadTexture(assets::NormalizeAssetPath(p), o);
+        return assetMgr_.LoadTexture(
+            ResolveMeshAssetPath(assets::NormalizeAssetPath(p), projectDir_), o);
     };
     if (!e.albedoTex.empty())
         e.material.albedo = loadTex(e.albedoTex, e.uvRepeat).Handle();
     if (!e.mrTex.empty())
         e.material.metallicRoughness = loadTex(e.mrTex, e.uvRepeat).Handle();
     if (!e.aoTex.empty())
-        e.material.occlusion = assetMgr_.LoadTexture(assets::NormalizeAssetPath(e.aoTex)).Handle();
+        e.material.occlusion =
+            assetMgr_.LoadTexture(ResolveMeshAssetPath(assets::NormalizeAssetPath(e.aoTex),
+                                                       projectDir_)).Handle();
     if (!e.emissiveTex.empty())
-        e.material.emissive = assetMgr_.LoadTexture(assets::NormalizeAssetPath(e.emissiveTex)).Handle();
+        e.material.emissive =
+            assetMgr_.LoadTexture(ResolveMeshAssetPath(assets::NormalizeAssetPath(e.emissiveTex),
+                                                       projectDir_)).Handle();
     if (!e.normalTex.empty())
         e.material.normalMap =
-            assetMgr_.LoadTexture(assets::NormalizeAssetPath(e.normalTex)).Handle();
+            assetMgr_.LoadTexture(ResolveMeshAssetPath(assets::NormalizeAssetPath(e.normalTex),
+                                                       projectDir_)).Handle();
     e.material.normalScale = e.normalScale;
     // Real water surface for the procedural "water" mesh (animated waves + IBL
     // reflection); mirrors the runtime's draw_system so the editor matches play.

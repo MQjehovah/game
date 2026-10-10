@@ -177,6 +177,13 @@ void EditorApp::OnRender() {
         const bool gameArea = playActive_;
         DockViewportScope dock(*this, /*designFit=*/gameArea, /*sceneVp=*/true,
                                PlayCameraAspect());
+        // Play renders through GameRuntime::Draw -> scene::DrawSystem; edit mode
+        // renders through the SAME scene::DrawSystem. Both apply the scene
+        // environment (sky/sun/fog) + render stack + sky themselves, so this
+        // host-side copy is redundant - keep it only for the play path, where the
+        // editor toggles must still be pushed onto the renderer before
+        // GameRuntime::Draw. Edit mode skips it entirely: one code path.
+        if (playActive_) {
         // Day sky + scene lights: shared with the 2D play so edit and
         // Play render the same environment (see ApplySceneEnvironment).
         ApplySceneEnvironment();
@@ -229,6 +236,7 @@ void EditorApp::OnRender() {
             renderer_.SetShadowSoftness(rsDefaults.shadowSoftness);
             renderer_.SetShadowNormalOffset(rsDefaults.shadowNormalOffset);
         }
+        } // if (playActive_)
 
         const float aspect = ViewportAspect();
         // In play mode the scene's Camera3D object (driven by the game script
@@ -306,18 +314,8 @@ void EditorApp::OnRender() {
             if (!editDrawReady_) {
                 editDraw_.Configure({&assetMgr_, /*asyncMeshLoad=*/false,
                                      [this](const std::string& p) {
-                                         const std::string rel =
-                                             assets::NormalizeAssetPath(p);
-                                         const bool abs =
-                                             (rel.size() >= 2 && rel[1] == ':') ||
-                                             (!rel.empty() &&
-                                              (rel[0] == '/' || rel[0] == '\\'));
-                                         if (abs || projectDir_.empty()) return rel;
-                                         // The editor's AssetManager resolves
-                                         // absolute paths (its project-root VFS is
-                                         // mounted at projectDir_); root the
-                                         // scene's project-relative refs there.
-                                         return projectDir_ + "/" + rel;
+                                         return ResolveMeshAssetPath(
+                                             assets::NormalizeAssetPath(p), projectDir_);
                                      }});
                 editDrawReady_ = true;
             }
@@ -720,7 +718,8 @@ void EditorApp::ApplySceneEnvironment() {
     // 重解码大图；NormalizeAssetPath 映射 assetBase 相对路径。
     const bool hasSkyTex = env && !env->skyTexture.empty();
     if (hasSkyTex) {
-        const std::string path = assets::NormalizeAssetPath(env->skyTexture);
+        const std::string path =
+            ResolveMeshAssetPath(assets::NormalizeAssetPath(env->skyTexture), projectDir_);
         if (path != skyIblPath_) {
             skyIblPath_ = path;
             skyIblReady_ = false;
