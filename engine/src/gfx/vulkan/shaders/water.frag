@@ -73,28 +73,54 @@ vec3 OctIblSampleRough(sampler2D s, vec3 dir, float rough) {
     return mix(a, b, lv - l0);
 }
 
-// Six superimposed directional sine waves (incommensurate frequencies so the
-// pattern never visibly repeats) scrolling over world XZ. The high-frequency
-// taps carry the small ripples that make a surface read as water rather than a
-// smooth sheet. Returns xy = height gradient, z = relative height (crest foam).
+// --- Procedural water height field -------------------------------------------
+// Value noise (hash + smooth interpolation) so the ripples never read as the
+// regular plaid a fixed sum of directional sines produces.
+float Hash21(vec2 p) {
+    p = fract(p * vec2(123.34, 456.21));
+    p += dot(p, p + 45.32);
+    return fract(p.x * p.y);
+}
+float ValueNoise2(vec2 p) {
+    vec2 i = floor(p), f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    float a = Hash21(i);
+    float b = Hash21(i + vec2(1.0, 0.0));
+    float c = Hash21(i + vec2(0.0, 1.0));
+    float d = Hash21(i + vec2(1.0, 1.0));
+    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+// Height = two slow directional swells (the rolling ocean) + four octaves of
+// wind ripples. Every noise octave drifts on its OWN diagonal so neighbouring
+// ripples are decorrelated and the surface never tiles into a visible grid.
+float WaterHeight(vec2 p, float t) {
+    float h = 0.0;
+    h += 0.5 * sin(dot(p, normalize(vec2(0.86, 0.5))) * 0.9 + t * 0.9);
+    h += 0.3 * sin(dot(p, normalize(vec2(-0.4, 0.92))) * 1.6 - t * 1.3);
+    float amp = 0.5;
+    vec2 q = p * 1.6;
+    for (int i = 0; i < 4; ++i) {
+        vec2 drift = vec2(sin(float(i) * 1.7 + 0.7), cos(float(i) * 2.3)) *
+                     (t * (0.5 + 0.35 * float(i)));
+        h += amp * ValueNoise2(q + drift);
+        q = q * 2.07 + 13.1;
+        amp *= 0.5;
+    }
+    return h;
+}
+// Returns xy = height gradient (from central differences), z = height
+// (crest foam). Multi-scale so the near surface is fine chop and the far
+// surface still has readable undulation.
 vec3 WaterWaveSample(vec3 wp) {
     float t = eng.uTime * eng.uWaterParams.y;
     vec2 p = wp.xz * eng.uWaterParams.x;
-    vec2 dirs[6] = vec2[6](normalize(vec2(1.0, 0.2)),  normalize(vec2(-0.6, 0.9)),
-                           normalize(vec2(0.3, -1.0)), normalize(vec2(0.8, 0.6)),
-                           normalize(vec2(-0.9, 0.3)), normalize(vec2(0.4, -0.9)));
-    float freqs[6] = float[6](1.0, 1.7, 2.6, 3.9, 6.1, 9.3);
-    float amps[6] = float[6](1.0, 0.75, 0.55, 0.4, 0.28, 0.18);
-    vec2 grad = vec2(0.0);
-    float height = 0.0;
-    for (int i = 0; i < 6; ++i) {
-        // Longer waves travel faster (deep-water dispersion: speed ~ sqrt(freq)).
-        float ph = dot(p, dirs[i]) * freqs[i] + t * sqrt(freqs[i]) * 1.1;
-        grad += dirs[i] * (cos(ph) * amps[i] * freqs[i]);
-        height += sin(ph) * amps[i];
-    }
-    grad *= eng.uWaterParams.z * 0.16;
-    return vec3(grad, height);
+    const float e = 0.4;
+    float h = WaterHeight(p, t);
+    float hx = WaterHeight(p + vec2(e, 0.0), t);
+    float hz = WaterHeight(p + vec2(0.0, e), t);
+    vec2 grad = vec2(hx - h, hz - h) / e;
+    grad *= eng.uWaterParams.z * 0.6;
+    return vec3(grad, h);
 }
 
 void main() {
@@ -172,8 +198,8 @@ void main() {
 
     // Crests: a little translucent scattering (thin water is lighter) and
     // foam on the tallest peaks, strongest at grazing view.
-    color += body * smoothstep(0.6, 2.2, wave.z) * 0.18;
-    float foam = smoothstep(1.9, 3.0, wave.z) * (0.3 + 0.6 * fres);
+    color += body * smoothstep(0.9, 1.5, wave.z) * 0.18;
+    float foam = smoothstep(1.3, 1.75, wave.z) * (0.3 + 0.6 * fres);
     foam = max(foam, shoreFoam);
     color = mix(color, vec3(0.92, 0.96, 1.0), clamp(foam, 0.0, 0.9));
 
