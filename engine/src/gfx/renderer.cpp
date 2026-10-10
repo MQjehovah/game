@@ -2468,37 +2468,35 @@ void Renderer::DrawReflectionCasters(const math::Mat4& viewProj) {
     for (const ShadowSystem::ShadowDraw& draw : ssaoCasters_) {
         if (!draw.mesh.Valid() || draw.material.water) continue; // no self-reflection
         const bool instanced = !draw.models.empty();
-        // Water sits at y = 0 (the mirror plane). Flat ground hugging the
-        // waterline - a beach, a sea-floor shelf, a ground plane - is nearly
-        // coplanar with the surface, so mirroring it smears a hard-edged
-        // "block" across the water instead of a plausible reflection. Real
-        // water reflects what stands ABOVE it, not the ground it meets, so
-        // drop casters whose geometry is entirely flat and low (per instance).
-        auto flatAndLow = [&](const math::Mat4& m) {
+        // Water sits at y = 0 (the mirror plane). Only geometry that stands
+        // appreciably ABOVE the surface should be mirrored - a beach / ground
+        // plane / sea-floor shelf hugs the waterline, so its mirror image just
+        // smears a flat, hard-edged slab across the water. Drop casters whose
+        // world bounds never rise above kMinReflectHeight (per instance).
+        constexpr float kMinReflectHeight = 1.5f;
+        auto tooLowToReflect = [&](const math::Mat4& m) {
             const math::AABB& b = draw.bounds;
             const bool hasBounds =
                 b.min.x < b.max.x || b.min.y < b.max.y || b.min.z < b.max.z;
             if (!hasBounds) return false; // unknown bounds: keep it
-            float minY = 1e30f, maxY = -1e30f;
+            float maxY = -1e30f;
             for (int ci = 0; ci < 8; ++ci) {
                 const math::Vec3 corner{(ci & 1) ? b.max.x : b.min.x,
                                         (ci & 2) ? b.max.y : b.min.y,
                                         (ci & 4) ? b.max.z : b.min.z};
-                const float wy = m.TransformPoint(corner).y;
-                minY = std::fmin(minY, wy);
-                maxY = std::fmax(maxY, wy);
+                maxY = std::fmax(maxY, m.TransformPoint(corner).y);
             }
-            return maxY < 1.0f && (maxY - minY) < 0.5f;
+            return maxY < kMinReflectHeight;
         };
-        bool allFlatLow = true;
+        bool allTooLow = true;
         if (instanced) {
             for (const math::Mat4& m : draw.models) {
-                if (!flatAndLow(m)) { allFlatLow = false; break; }
+                if (!tooLowToReflect(m)) { allTooLow = false; break; }
             }
         } else {
-            allFlatLow = flatAndLow(draw.model);
+            allTooLow = tooLowToReflect(draw.model);
         }
-        if (allFlatLow) continue;
+        if (allTooLow) continue;
         const bool skinned = !draw.bones.empty() && litSkin.Valid();
         const ShaderHandle sh = instanced ? litInst : (skinned ? litSkin : litMesh);
         if (!sh.Valid()) continue;
