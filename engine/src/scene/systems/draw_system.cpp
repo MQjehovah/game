@@ -1492,6 +1492,12 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
         if (!world.Get<SceneTransform>(item.ent)) continue;
         if (!transparentGrabStarted && item.mat.transparent && !item.isSprite &&
             item.mesh.Valid()) {
+            // Opaque instanced batches are still pending here (they accumulate
+            // until a non-batchable draw or the end of the loop). Flush them
+            // BEFORE grabbing the opaque scene for water refraction, otherwise
+            // every batched prop (rocks, etc.) is missing from the grab and its
+            // submerged part refracts as the background (see-through rocks).
+            flushBatches();
             renderer.BeginTransparentPass();
             transparentGrabStarted = true;
         }
