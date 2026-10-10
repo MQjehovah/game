@@ -605,6 +605,11 @@ static void CopySceneRootMetadata(core::Json& out, const core::Json& src) {
 
 void EditorApp::SyncWorldFromEntities() {
     sceneWorld_.Clear();
+    // The world re-numbers entities from 1 on Clear(), so the editor's shared
+    // render DrawSystem would otherwise keep the previous scene's cached draw
+    // items (same handles -> "still alive") and keep drawing it after a scene
+    // switch. Drop its caches so everything re-resolves against the new world.
+    editDraw_.Reset();
     sceneCompReg_ = scene::ComponentRegistry{};
     scene::RegisterBuiltinComponents(sceneCompReg_);
     auto rootRes = BuildSceneJsonFromEntities();

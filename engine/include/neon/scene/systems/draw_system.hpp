@@ -133,6 +133,13 @@ public:
     // Stop 生命周期（原 draws_.clear()；vegetation 缓存保持原样，由每帧
     // DrawVegetation 的存活检查清理）。
     void Clear();
+    // Full cache reset for a HOST that reuses one DrawSystem across different
+    // worlds/scene loads. Clear() alone is not enough there: a cleared world
+    // re-numbers entities from 1, so the new entities reuse the old handles and
+    // the cached draw items look "still alive" (contains() hits) and are never
+    // re-resolved - the previous scene keeps drawing. Reset() also drops the
+    // vegetation cache + sky-texture cache so nothing survives the swap.
+    void Reset();
     size_t DrawCount() const { return draws_.size(); }
 
 private:

@@ -1849,4 +1849,15 @@ void DrawSystem::Clear() {
     // per-frame alive check (same Start/Stop semantics preserved).
 }
 
+void DrawSystem::Reset() {
+    Clear();
+    // A reused DrawSystem across scene loads must not keep per-entity caches
+    // keyed by handles the new world reuses (see Reset() in the header).
+    vegCache_.clear();
+    prevXforms_.clear();
+    skyTex_ = {};
+    skyTexPath_.clear();
+    skyIblFromTex_ = false;
+}
+
 } // namespace neon::scene
