@@ -71,6 +71,11 @@ public:
         float ssaoIntensity = 1.0f;
         float volumetricIntensity = 1.0f;
         float ssrIntensity = 0.8f;
+        // When true (runtime default), a SceneCamera entity in the world (or a
+        // script mouse-lock camera) overrides the passed-in camera. Editors that
+        // render their own free/orbit camera set this false so Draw uses the
+        // camera they pass in.
+        bool useSceneCamera = true;
     };
 
     // 运行时持有的共享状态（Start 时由 GameRuntime 注入；ChangeScene 复用时刷新）。

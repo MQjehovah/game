@@ -298,126 +298,41 @@ void EditorApp::OnRender() {
         } else {
             // P2-3: sprites draw back-to-front by zOrder (stable sort keeps the
             // scene-tree order for everything else).
-            std::vector<size_t> drawOrder(entities_.size());
-            for (size_t i = 0; i < drawOrder.size(); ++i) drawOrder[i] = i;
-            // Transparent geometry (water, sprites, decals) draws last, and the
-            // opaque scene colour + depth are grabbed at the boundary so the
-            // water program can do screen-space refraction - the same contract as
-            // the runtime DrawSystem, so the edit-mode preview matches play (a
-            // water surface drawn in creation order used to hide submerged props).
-            auto isTransparentEntity = [](const SceneEntity& ent) {
-                if (!ent.decalTex.empty() || !ent.spriteTex.empty()) return true;
-                if (ent.meshKey == "tilemap") return true;
-                return ent.material.transparent;
-            };
-            std::stable_sort(drawOrder.begin(), drawOrder.end(),
-                             [&](size_t a, size_t b) {
-                                 const bool ta = isTransparentEntity(entities_[a]);
-                                 const bool tb = isTransparentEntity(entities_[b]);
-                                 if (ta != tb) return !ta; // opaque before transparent
-                                 return entities_[a].zOrder < entities_[b].zOrder;
-                             });
-            bool transparentGrabStarted = false;
-            for (size_t di : drawOrder) {
-                SceneEntity& e = entities_[di];
-                if (!transparentGrabStarted && e.material.transparent &&
-                    e.spriteTex.empty() && e.meshKey != "tilemap" &&
-                    e.decalTex.empty() && e.mesh.Valid()) {
-                    renderer_.BeginTransparentPass();
-                    transparentGrabStarted = true;
-                }
-                if (e.meshKey == "tilemap") {
-                    // P1-1: draw every non-empty cell as a sprite quad; the
-                    // entity's scale sets the cell size.
-                    const size_t cellCount =
-                        static_cast<size_t>(e.tilemapCols_) * e.tilemapRows_;
-                    if (!e.tilemapTiles_.empty() && e.tilemapTiles_.size() == cellCount &&
-                        e.spriteMesh.Valid()) {
-                        for (int r = 0; r < e.tilemapRows_; ++r) {
-                            for (int c = 0; c < e.tilemapCols_; ++c) {
-                                const std::string& tex =
-                                    e.tilemapTiles_[static_cast<size_t>(r) * e.tilemapCols_ + c];
-                                if (tex.empty()) continue;
-                                gfx::Material mat = e.spriteMaterial;
-                                mat.albedo = assetMgr_.LoadTexture(tex).Handle();
-                                mat.tint = gfx::Color::White;
-                                const math::Vec3 offset{
-                                    (static_cast<float>(c) + 0.5f) * e.scale.x,
-                                    (static_cast<float>(r) + 0.5f) * e.scale.y, 0.0f};
-                                math::Mat4 cellModel =
-                                    math::Mat4::Translation(e.pos + e.rot.Rotate(offset)) *
-                                    e.rot.ToMat4() *
-                                    math::Mat4::Scale(e.scale);
-                                renderer_.DrawMesh(e.spriteMesh, mat, cellModel);
-                            }
-                        }
-                    }
-                    continue;
-                }
-                if (!e.decalTex.empty()) {
-                    gfx::Material mat = e.spriteMaterial;
-                    mat.albedo = assetMgr_.LoadTexture(e.decalTex).Handle();
-                    mat.transparent = true;
-                    mat.tint = {1, 1, 1, e.decalAlpha};
-                    if (!e.decalMesh.Valid())
-                        e.decalMesh =
-                            gfx::Mesh::CreatePlane(renderer_, e.decalSize, e.decalSize, 1, 1,
-                                                   "decal");
-                    math::Mat4 decalModel =
-                        math::Mat4::Translation(e.pos + math::Vec3{0, 0.02f, 0}) *
-                        e.rot.ToMat4();
-                    renderer_.DrawMesh(e.decalMesh, mat, decalModel);
-                    continue;
-                }
-                math::Mat4 model = math::Mat4::Translation(e.pos) * e.rot.ToMat4() *
-                                   math::Mat4::Scale(e.scale);
-                if (!e.spriteTex.empty() && e.spriteMesh.Valid()) {
-                    // 2D sprite: image quad; flips mirror it around its center
-                    // via a negative local scale (keeps the texture upright).
-                    if (e.spriteFlipX || e.spriteFlipY)
-                        model = model * math::Mat4::Scale({e.spriteFlipX ? -1.0f : 1.0f,
-                                                           e.spriteFlipY ? -1.0f : 1.0f, 1.0f});
-                    renderer_.DrawMesh(e.spriteMesh, e.spriteMaterial, model);
-                } else if (e.skinned && e.skinned->Valid()) {
-                    const std::vector<math::Mat4> bones = e.skinned->BoneMatrices();
-                    for (const auto& part : e.skinned->parts)
-                        renderer_.DrawSkinnedMesh(part.mesh, part.material,
-                                                  model, bones,
-                                                  static_cast<int>(bones.size()));
-            } else {
-                renderer_.DrawMesh(e.mesh, e.material, model);
-                // 多 mesh glTF 场景（C15 延伸）：实体 meshKey "gltf:..." 时绘制
-                // 第 2+ 个 mesh 节点（自带累积变换 + 材质），使编辑器视口也能
-                // 渲染 Sponza 类单 mesh / 多 primitive 的建筑场景。
-                if (!e.skinned && e.meshKey.compare(0, 5, "gltf:") == 0) {
-                    // 子节点渲染列表缓存：LoadGLTF 每帧调用会有 58MB 级深拷贝
-                    // （实测 ~25ms/次），只在首次解析，之后每帧直接取引用渲染。
-                    auto cacheIt = gltfChildCache_.find(e.meshKey);
-                    if (cacheIt == gltfChildCache_.end()) {
-                        assets::GltfAsset g = assetMgr_.LoadGLTF(e.meshKey.substr(5));
-                        std::vector<GltfChildDraw> children;
-                        for (size_t si = 1; si < g.nodes.size(); ++si) {
-                            if (!g.nodes[si].mesh.Valid()) continue;
-                            children.push_back({g.nodes[si].mesh, g.nodes[si].material,
-                                                g.nodes[si].transform});
-                        }
-                        cacheIt =
-                            gltfChildCache_.emplace(e.meshKey, std::move(children)).first;
-                    }
-                    for (size_t ci = 0; ci < cacheIt->second.size(); ++ci) {
-                        const GltfChildDraw& sub = cacheIt->second[ci];
-                        if (!sub.mesh.Valid()) continue;
-                        // 编辑视口 LOD 降载：>40k 顶点的子 mesh（扫描模型的主体）
-                        // 用 meshoptimizer 简化版渲染，避免编辑高面场景时拖垮 UI。
-                        const gfx::Mesh subMesh =
-                            sub.mesh.CpuVerts().size() >= 40000u
-                                ? LodMeshFor(e.meshKey + "#" + std::to_string(ci + 1), sub.mesh)
-                                : sub.mesh;
-                        renderer_.DrawMesh(subMesh, sub.material, model * sub.transform);
-                    }
-                }
+            // One render path: feed the editor's live ECS world through the SAME
+            // scene::DrawSystem the runtime/play uses, so the edit viewport can
+            // never diverge from play (opaque/transparent ordering, water
+            // refraction, instanced batching, LOD chains, terrain chunks,
+            // vegetation, projectiles/particles/trails, glTF sub-nodes).
+            if (!editDrawReady_) {
+                editDraw_.Configure({&assetMgr_, /*asyncMeshLoad=*/false,
+                                     [this](const std::string& p) {
+                                         const std::string rel =
+                                             assets::NormalizeAssetPath(p);
+                                         const bool abs =
+                                             (rel.size() >= 2 && rel[1] == ':') ||
+                                             (!rel.empty() &&
+                                              (rel[0] == '/' || rel[0] == '\\'));
+                                         if (abs || projectDir_.empty()) return rel;
+                                         // The editor's AssetManager resolves
+                                         // absolute paths (its project-root VFS is
+                                         // mounted at projectDir_); root the
+                                         // scene's project-relative refs there.
+                                         return projectDir_ + "/" + rel;
+                                     }});
+                editDrawReady_ = true;
             }
-            }
+            scene::DrawSystem::DrawParams dp;
+            dp.useSceneCamera = false; // keep the editor's free/orbit camera
+            dp.ssao = postSsao_;
+            dp.volumetric = postVolumetric_;
+            dp.ssr = postSsr_;
+            dp.ssaoIntensity = postSsaoIntensity_;
+            dp.volumetricIntensity = postVolumetricIntensity_;
+            dp.ssrIntensity = postSsrIntensity_;
+            editDraw_.Draw(renderer_, cam, dp, sceneWorld_, editScriptCtx_, nullptr, nullptr,
+                           /*hiddenEntities=*/{}, /*entityHighlights=*/{}, editHud_, editTree_,
+                           editAnims_, editProjectiles_, editParticles_, editTrails_,
+                           editCanvas_, editUiScale_, editUiOffset_);
             static bool dbg = false;
             if (!dbg && smokeMode_) {
                 dbg = true;

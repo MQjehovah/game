@@ -675,6 +675,23 @@ private:
     // World，后续阶段把面板/视口/历史直接迁移到 World 组件读写，消除双模型。
     ecs::World sceneWorld_;
     scene::ComponentRegistry sceneCompReg_;
+    // One render path: the edit-mode viewport renders `sceneWorld_` through the
+    // SAME scene::DrawSystem the runtime/play uses (see editor_viewport.cpp) so
+    // edit and play can never diverge (ordering, water refraction, batching,
+    // LOD, terrain chunks, vegetation, VFX, ...). Edit mode runs no simulation,
+    // so the sibling systems DrawSystem::Draw requires stay empty no-ops.
+    scene::DrawSystem editDraw_;
+    scene::SceneTreeSystem editTree_;
+    scene::AnimationSystem editAnims_;
+    scene::HudSystem editHud_;
+    scene::ProjectileSystem editProjectiles_;
+    scene::SceneParticleSystem editParticles_;
+    gfx::TrailSystem editTrails_;
+    scene::ScriptCanvas editCanvas_;
+    script::ScriptContext editScriptCtx_;
+    bool editDrawReady_ = false;
+    float editUiScale_ = 1.0f;
+    math::Vec2 editUiOffset_{0.0f, 0.0f};
     void RefreshSceneWorld();
     // G2-2: play/save output from the runtime World (entities_ -> World via
     // SyncWorldFromEntities -> canonical SceneFile::FromWorld).

@@ -954,9 +954,10 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
     // overrides any scene Camera3D entity, so the runtime renders through the
     // player's eye in both the standalone player and the editor playtest.
     const script::Value fpsLock = scriptCtx.gameVars.Get("cameraMouseLock");
-    const bool fpsCam = (fpsLock.type == script::Value::Type::Number &&
-                         fpsLock.number != 0.0) ||
-                        (fpsLock.type == script::Value::Type::Bool && fpsLock.boolean);
+    const bool fpsCam = params.useSceneCamera &&
+                        ((fpsLock.type == script::Value::Type::Number &&
+                          fpsLock.number != 0.0) ||
+                         (fpsLock.type == script::Value::Type::Bool && fpsLock.boolean));
     if (fpsCam) {
         math::Vec3 focus;
         const script::Value focusVar = scriptCtx.gameVars.Get("cameraFocus");
@@ -986,7 +987,9 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
         usedCameraEntity = true;
     }
     // P2-3 scene camera: when the world contains a camera entity, its transform
-    // + camera component become the active view (Godot Camera3D-style).
+    // + camera component become the active view (Godot Camera3D-style). Skipped
+    // when the host wants its own camera (editor edit viewport).
+    if (params.useSceneCamera)
     world.ViewAll<SceneCamera, SceneTransform>().ForEach(
         [&](ecs::Entity, const SceneCamera& c, const SceneTransform& t) {
             if (usedCameraEntity) return;
