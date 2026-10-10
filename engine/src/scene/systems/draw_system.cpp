@@ -1128,11 +1128,22 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
             renderer.SetDirectionalLight(directional->sunDir, sun,
                                          environment ? environment->ambientStrength
                                                      : directional->ambientStrength);
-            // A4: a useAtmosphere scene can opt into the procedural view-ray
-            // skybox (sun/moon/clouds), aimed from the directional-light sun dir.
-            if ((environment && environment->useAtmosphere && environment->skybox) ||
-                (directional && directional->useAtmosphere && directional->skybox))
-                renderer.EnableSkyBox(directional->sunDir, /*clouds=*/true);
+            // A4: draw EVERY sky through the procedural view-ray quad (gradient
+            // or equirect HDRI). The quad reconstructs world rays and rasterises
+            // into the ACTIVE scene viewport, so the sky fills the editor dock and
+            // the full-window player identically; the legacy 2D-overlay sky path
+            // drew at full-window pixels only (fine for the player, but it landed
+            // at the window origin / wrong rect inside the editor dock). The
+            // sun/moon discs + clouds stay opt-in via the scene's skybox flag, so
+            // an atmosphere-only or bare-HDRI scene shows just its sky.
+            const bool sceneSkybox =
+                (environment && environment->useAtmosphere && environment->skybox) ||
+                (directional && directional->useAtmosphere && directional->skybox);
+            renderer.EnableSkyBox(directional->sunDir, sceneSkybox);
+            gfx::Renderer::SkyBoxParams sky = renderer.SkyBox();
+            sky.sunVisible = sceneSkybox;
+            sky.moonVisible = sceneSkybox;
+            renderer.SetSkyBox(sky);
         } else {
             renderer.SetDirectionalLight({-0.4f, -1.0f, -0.3f}, {0.8f, 0.8f, 0.8f}, 0.0f);
         }
