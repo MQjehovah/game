@@ -319,6 +319,10 @@ void EditorApp::OnRender() {
                                      }});
                 editDrawReady_ = true;
             }
+            // The render-stack panel edits the editor's cached RenderStack; the
+            // shared DrawSystem reads the WORLD's component, so mirror the live
+            // values in for real-time SSAO/fog/etc. changes.
+            SyncRenderStackToWorld();
             scene::DrawSystem::DrawParams dp;
             dp.useSceneCamera = false; // keep the editor's free/orbit camera
             dp.ssao = postSsao_;

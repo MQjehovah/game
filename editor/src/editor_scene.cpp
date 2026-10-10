@@ -559,6 +559,22 @@ void EditorApp::ReloadEntityShader(SceneEntity& e) {
 // G2-2 编辑器 ECS 化：用运行时 Instantiate 把当前场景装载进 sceneWorld_（与
 // 播放器相同的组件表示）。entities_ 仍为 UI 读写模型；本函数使编辑器持有
 // 规范 ecs::World，供后续阶段 UI 直读/直写组件。
+void EditorApp::SyncRenderStackToWorld() {
+    if (!hasSceneRenderStack_) return;
+    bool found = false;
+    sceneWorld_.ViewAll<scene::RenderStack>().ForEach(
+        [&](ecs::Entity, scene::RenderStack& s) {
+            if (!found) {
+                s = sceneRenderStack_;
+                found = true;
+            }
+        });
+    if (!found) {
+        ecs::Entity e = sceneWorld_.Create();
+        sceneWorld_.Add<scene::RenderStack>(e, sceneRenderStack_);
+    }
+}
+
 void EditorApp::RefreshSceneWorld() {
     // G5-4: the World is the canonical runtime store, rebuilt from the editor's
     // working model (entities_) via the canonical builders + Instantiate. This

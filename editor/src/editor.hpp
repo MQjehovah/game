@@ -698,6 +698,12 @@ private:
     float editUiScale_ = 1.0f;
     math::Vec2 editUiOffset_{0.0f, 0.0f};
     void RefreshSceneWorld();
+    // Mirrors the editor's live RenderStack (edited by the render-stack panel)
+    // into sceneWorld_'s RenderStack component, since the shared DrawSystem reads
+    // the WORLD component, not the editor's cached copy. Without this the panel's
+    // real-time SSAO/fog/etc. toggles had no visible effect once edit mode began
+    // rendering through DrawSystem.
+    void SyncRenderStackToWorld();
     // G2-2: play/save output from the runtime World (entities_ -> World via
     // SyncWorldFromEntities -> canonical SceneFile::FromWorld).
     void SyncWorldFromEntities();
