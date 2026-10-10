@@ -209,7 +209,14 @@ void main() {
         float t1 = (CLOUD_TOP - uCamPos.y) / dir.y;
         if (t1 > 0.0) {
             t0 = max(t0, 0.0);
-            float horizonFade = smoothstep(0.02, 0.16, dir.y);
+            // Cap the march distance: near the horizon the slab intersection is
+            // enormous and 48 steps would badly undersample the fbm.
+            t1 = min(t1, t0 + 9000.0);
+            // Clouds reach much closer to the horizon than before (was
+            // 0.02..0.16, which left the lower ~9 deg of sky clear - very
+            // visible when the camera looks down and only a low band of sky is
+            // on screen).
+            float horizonFade = smoothstep(0.0, 0.08, dir.y);
             const int STEPS = 48;
             float dt = (t1 - t0) / float(STEPS);
             vec3 p = uCamPos + dir * t0;

@@ -320,8 +320,15 @@ void main() {
             vec2 ruv = rc.xy / rc.w * 0.5 + 0.5;
             ruv.y = 1.0 - ruv.y;
             ruv += N.xz * uReflectionStrength * 0.05;
+            // Fade the planar reflection out where the surface point falls
+            // OUTSIDE the mirrored camera's captured frustum: clamping the UV
+            // there smeared the render-target border into hard-edged wedges
+            // across the water. Blend back to the sky IBL at the border.
+            vec2 d = max(-ruv, ruv - 1.0); // >0 once outside [0,1]
+            float oob = max(max(d.x, d.y), 0.0);
+            float valid = 1.0 - smoothstep(0.0, 0.04, oob);
             refl = mix(skyRefl, texture(uReflectionTex, clamp(ruv, 0.0, 1.0)).rgb,
-                       clamp(uReflectionStrength, 0.0, 1.0));
+                       clamp(uReflectionStrength, 0.0, 1.0) * valid);
         }
     }
 

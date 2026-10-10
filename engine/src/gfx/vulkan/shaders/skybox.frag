@@ -128,9 +128,12 @@ void main() {
         float t1 = (CLOUD_TOP - cam.y) / dir.y;
         if (t1 > 0.0) {
             t0 = max(t0, 0.0);
-            // Fade near the horizon: the slab is effectively at infinity there
-            // and under-sampled (banding), and real distant clouds vanish.
-            float horizonFade = smoothstep(0.02, 0.16, dir.y);
+            // Cap the march distance: near the horizon the slab intersection is
+            // enormous and 48 steps would badly undersample the fbm.
+            t1 = min(t1, t0 + 9000.0);
+            // Reach much closer to the horizon than before (was 0.02..0.16,
+            // which cleared the lower ~9 deg of sky).
+            float horizonFade = smoothstep(0.0, 0.08, dir.y);
             const int STEPS = 48;
             float dt = (t1 - t0) / float(STEPS);
             vec3 p = cam + dir * t0;
