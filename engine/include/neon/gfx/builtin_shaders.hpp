@@ -1099,7 +1099,7 @@ void main() {
         float biased = max(dist - uDecalBias, uNear * 1.001);
         outDepth = max(uFar / (uFar - uNear) - nf / ((uFar - uNear) * biased), 0.0);
     }
-    vec3 local = (uDecalInvModel * vec4(world, 1.0)).xyz;
+    vec3 local = (uDecalInvModel * vec4(vWorld, 1.0)).xyz;
     if (any(greaterThan(abs(local), vec3(0.5)))) discard;   // outside the box
     if (uDecalProject == 1) uv = local.xz + 0.5;
     vec4 tex = texture(uAlbedo, uv);

@@ -42,7 +42,7 @@ void main() {
         outDepth = max(eng.uFar / (eng.uFar - eng.uNear) -
                            nf / ((eng.uFar - eng.uNear) * biased), 0.0);
     }
-    vec3 local = (eng.uDecalInvModel * vec4(world, 1.0)).xyz;
+    vec3 local = (eng.uDecalInvModel * vec4(vWorld, 1.0)).xyz;
     if (any(greaterThan(abs(local), vec3(0.5)))) discard; // outside the box
     if (eng.uDecalProject == 1) uv = local.xz + 0.5;
     vec4 tex = texture(uAlbedo, uv);
