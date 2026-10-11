@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <string>
 #include <vector>
 #include "neon/core/rng.hpp"
 #include "neon/gfx/color.hpp"
@@ -68,13 +69,23 @@ struct EmitterConfig {
     // HDR multiplier applied on top of the particle colour: > 1 pushes additive
     // particles above the bloom threshold (the "big game" glow).
     float emissive = 1.0f;
+    // Per-emitter sprite: an asset path (empty = the scene's default glow
+    // sprite). The scene particle subsystem resolves it to `textureIndex`;
+    // every emitter sharing a sprite batches into one draw call, so a scene can
+    // mix sparks / smoke / slashes / flipbooks without a material per effect.
+    std::string texture;
+    uint32_t textureIndex = 0; // resolved by SceneParticleSystem::Emit (0 = default)
 };
 
 class ParticleSystem {
 public:
     void Emit(const EmitterConfig& config);
     void Update(float dt);
+    // Single-sprite draw (every particle uses `texture`).
     void Draw(Renderer& renderer, const Texture& texture, float scale = 1.0f);
+    // Per-sprite draw: each particle uses textures[particle.texIndex] (clamped),
+    // batched per texture + blend mode.
+    void Draw(Renderer& renderer, const std::vector<Texture>& textures, float scale = 1.0f);
     void Clear();
     size_t Count() const { return particles_.size(); }
     // Live-particle budget. Reaching it drops *incoming* particles (a burst is
@@ -115,6 +126,7 @@ private:
         bool uvFlipY;
         float uvPhase; // start offset in [0,1) so a burst does not flicker in sync
         bool additive;
+        uint32_t texIndex = 0; // index into the draw's texture list
     };
     std::vector<Particle> particles_;
     size_t budget_ = 32768;

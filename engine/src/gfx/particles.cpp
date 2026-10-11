@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <map>
 
 #include "neon/math/math.hpp"
 
@@ -103,6 +104,7 @@ void ParticleSystem::Emit(const EmitterConfig& config) {
         p.uvFlipY = config.uvFlipY;
         p.uvPhase = config.uvRandomStart ? rng_.Float() : 0.0f;
         p.additive = config.additive;
+        p.texIndex = config.textureIndex;
         particles_.push_back(p);
     }
 }
@@ -141,19 +143,31 @@ void ParticleSystem::Update(float dt) {
     }
 }
 
+namespace {
+// Per-(texture, blend) instance arrays built once per Draw call.
+struct ParticleBucket {
+    std::vector<math::Vec3> pos;
+    std::vector<float> size;
+    std::vector<Color> col;
+    std::vector<float> rot;
+    std::vector<math::Vec4> uv;
+};
+} // namespace
+
 void ParticleSystem::Draw(Renderer& renderer, const Texture& texture, float scale) {
-    // G1-5: batch every particle into ONE instanced 3D billboard draw per blend
-    // mode (additive vs alpha) instead of one screen-space call per particle.
-    // The billboards are world-sized, camera-facing and depth-tested, so they
-    // occlude/are occluded by the scene (the old path was 2D overlay, unaware
-    // of scene depth).
-    std::vector<math::Vec3> addPos, alphaPos;
-    std::vector<float> addSize, alphaSize;
-    std::vector<Color> addCol, alphaCol;
-    std::vector<float> addRot, alphaRot;
-    std::vector<math::Vec4> addUv, alphaUv;
-    addPos.reserve(particles_.size());
-    alphaPos.reserve(particles_.size());
+    if (particles_.empty() || !texture.Valid()) return;
+    const std::vector<Texture> one{texture};
+    Draw(renderer, one, scale);
+}
+
+void ParticleSystem::Draw(Renderer& renderer, const std::vector<Texture>& textures, float scale) {
+    // G1-5: batch every particle into ONE instanced 3D billboard draw per
+    // (sprite, blend mode) instead of one screen-space call per particle. The
+    // billboards are world-sized, camera-facing and depth-tested, so they
+    // occlude/are occluded by the scene. A scene can now mix several sprites
+    // (glow / spark / smoke / slash) via EmitterConfig::texture.
+    if (particles_.empty() || textures.empty()) return;
+    std::map<uint32_t, ParticleBucket> add, alpha;
     for (const Particle& p : particles_) {
         const float age01 = 1.0f - p.life / p.maxLife;
         // Lifetime ramps with independent easing: the shape of the size/alpha
@@ -192,63 +206,66 @@ void ParticleSystem::Draw(Renderer& renderer, const Texture& texture, float scal
                   1.0f / static_cast<float>(p.uvCols),
                   1.0f / static_cast<float>(p.uvRows)};
         }
-        if (p.additive) {
-            addPos.push_back(p.pos);
-            addSize.push_back(size);
-            addCol.push_back(c);
-            addRot.push_back(p.rot);
-            addUv.push_back(uv);
-        } else {
-            alphaPos.push_back(p.pos);
-            alphaSize.push_back(size);
-            alphaCol.push_back(c);
-            alphaRot.push_back(p.rot);
-            alphaUv.push_back(uv);
-        }
+        ParticleBucket& b = p.additive ? add[p.texIndex] : alpha[p.texIndex];
+        b.pos.push_back(p.pos);
+        b.size.push_back(size);
+        b.col.push_back(c);
+        b.rot.push_back(p.rot);
+        b.uv.push_back(uv);
     }
+    auto handle_for = [&](uint32_t ti) -> TextureHandle {
+        if (ti >= textures.size()) ti = 0;
+        return textures[ti].Handle();
+    };
     // Additive particles are order-independent (blend commutes), so they draw
-    // unsorted. Alpha-blended particles (smoke/dust/poison) must draw back-to-
-    // front or overlapping quads composite in the wrong order; sort by distance
-    // to the camera (farthest first).
-    if (alphaPos.size() > 1) {
-        const math::Vec3 cam = renderer.CameraPosition();
-        std::vector<uint32_t> order(alphaPos.size());
-        for (uint32_t k = 0; k < order.size(); ++k) order[k] = k;
-        // Stable: equidistant particles (a ring burst) must not reshuffle every
-        // frame -- an unstable sort makes them flicker as they swap draw order.
-        std::stable_sort(order.begin(), order.end(), [&](uint32_t a, uint32_t b) {
-            const math::Vec3 da = alphaPos[a] - cam;
-            const math::Vec3 db = alphaPos[b] - cam;
-            return da.LengthSq() > db.LengthSq();
-        });
-        std::vector<math::Vec3> sp(alphaPos.size());
-        std::vector<float> ss(alphaSize.size());
-        std::vector<Color> sc(alphaCol.size());
-        std::vector<float> sr(alphaRot.size());
-        std::vector<math::Vec4> su(alphaUv.size());
-        for (size_t k = 0; k < order.size(); ++k) {
-            sp[k] = alphaPos[order[k]];
-            ss[k] = alphaSize[order[k]];
-            sc[k] = alphaCol[order[k]];
-            sr[k] = alphaRot[order[k]];
-            su[k] = alphaUv[order[k]];
-        }
-        alphaPos.swap(sp);
-        alphaSize.swap(ss);
-        alphaCol.swap(sc);
-        alphaRot.swap(sr);
-        alphaUv.swap(su);
+    // unsorted, one draw per sprite.
+    for (auto it = add.begin(); it != add.end(); ++it) {
+        ParticleBucket& b = it->second;
+        if (b.pos.empty()) continue;
+        renderer.DrawBillboards(b.pos.data(), b.size.data(), b.col.data(), handle_for(it->first),
+                                static_cast<uint32_t>(b.pos.size()), BlendMode::Additive,
+                                /*intensity=*/4.0f, b.rot.data(), b.uv.data());
     }
-    if (!addPos.empty())
-        renderer.DrawBillboards(addPos.data(), addSize.data(), addCol.data(),
-                                texture.Handle(), static_cast<uint32_t>(addPos.size()),
-                                BlendMode::Additive, /*intensity=*/4.0f, addRot.data(),
-                                addUv.data());
-    if (!alphaPos.empty())
-        renderer.DrawBillboards(alphaPos.data(), alphaSize.data(), alphaCol.data(),
-                                texture.Handle(), static_cast<uint32_t>(alphaPos.size()),
-                                BlendMode::Alpha, /*intensity=*/1.0f, alphaRot.data(),
-                                alphaUv.data());
+    // Alpha-blended particles (smoke/dust/poison) must draw back-to-front or
+    // overlapping quads composite in the wrong order; sort by distance to the
+    // camera (farthest first) within each sprite bucket.
+    const math::Vec3 cam = renderer.CameraPosition();
+    for (auto it = alpha.begin(); it != alpha.end(); ++it) {
+        ParticleBucket& b = it->second;
+        if (b.pos.empty()) continue;
+        if (b.pos.size() > 1) {
+            std::vector<uint32_t> order(b.pos.size());
+            for (uint32_t k = 0; k < order.size(); ++k) order[k] = k;
+            // Stable: equidistant particles (a ring burst) must not reshuffle
+            // every frame -- an unstable sort makes them flicker as they swap.
+            std::stable_sort(order.begin(), order.end(), [&](uint32_t a, uint32_t c) {
+                const math::Vec3 da = b.pos[a] - cam;
+                const math::Vec3 dc = b.pos[c] - cam;
+                return da.LengthSq() > dc.LengthSq();
+            });
+            ParticleBucket s;
+            s.pos.resize(b.pos.size());
+            s.size.resize(b.size.size());
+            s.col.resize(b.col.size());
+            s.rot.resize(b.rot.size());
+            s.uv.resize(b.uv.size());
+            for (size_t k = 0; k < order.size(); ++k) {
+                s.pos[k] = b.pos[order[k]];
+                s.size[k] = b.size[order[k]];
+                s.col[k] = b.col[order[k]];
+                s.rot[k] = b.rot[order[k]];
+                s.uv[k] = b.uv[order[k]];
+            }
+            b.pos.swap(s.pos);
+            b.size.swap(s.size);
+            b.col.swap(s.col);
+            b.rot.swap(s.rot);
+            b.uv.swap(s.uv);
+        }
+        renderer.DrawBillboards(b.pos.data(), b.size.data(), b.col.data(), handle_for(it->first),
+                                static_cast<uint32_t>(b.pos.size()), BlendMode::Alpha,
+                                /*intensity=*/1.0f, b.rot.data(), b.uv.data());
+    }
 }
 
 void ParticleSystem::Clear() { particles_.clear(); }

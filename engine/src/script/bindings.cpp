@@ -798,6 +798,10 @@ Value NativeEmitParticles(IScriptHost& host, void* user) {
             if (f.first == key) return &f.second;
         return nullptr;
     };
+    auto str = [&](const char* key, const char* def) -> std::string {
+        const Value* v = find(key);
+        return (v && v->type == Value::Type::String) ? v->str : std::string(def);
+    };
     auto num = [&](const char* key, float def) {
         const Value* v = find(key);
         return (v && v->type == Value::Type::Number) ? static_cast<float>(v->number) : def;
@@ -888,6 +892,8 @@ Value NativeEmitParticles(IScriptHost& host, void* user) {
     if (const Value* v = find("dieOnGround"))
         cfg.dieOnGround = (v->type == Value::Type::Bool && v->boolean);
     cfg.emissive = num("emissive", 1.0f);
+    // Per-emitter sprite (project-relative path); empty = scene default glow.
+    cfg.texture = str("texture", "");
     ctx->emitParticles(cfg);
     return Value::Nil();
 }

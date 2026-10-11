@@ -951,7 +951,11 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
 }
 
 void GameRuntime::EmitParticles(const gfx::EmitterConfig& cfg) {
-    sceneParticles_.Emit(cfg);
+    // A per-emitter sprite path is project-relative in scripts; root it through
+    // the runtime's asset base here so SceneParticleSystem can load it directly.
+    gfx::EmitterConfig resolved = cfg;
+    if (!resolved.texture.empty()) resolved.texture = FullAssetPath(resolved.texture);
+    sceneParticles_.Emit(resolved);
 }
 
 // Script-facing forwarder to the ProjectileSystem (the bindings and the
