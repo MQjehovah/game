@@ -1,0 +1,109 @@
+{
+  "renderstack": {
+    "bloom": true,
+    "bloomThreshold": 1.2,
+    "bloomStrength": 0.4,
+    "bloomWidth": 1.8,
+    "tonemap": true,
+    "exposure": 1.0,
+    "vignette": true,
+    "vignetteRadius": 0.62,
+    "vignetteIntensity": 0.35,
+    "shadowDistance": 90.0,
+    "shadowSoftness": 1.2
+  },
+  "entities": [
+    {
+      "name": "sun_light", "id": 1,
+      "components": {
+        "transform": { "pos": [0, 30, 0], "scale": [1, 1, 1], "rot": [0, 0, 0, 1] },
+        "light": {
+          "type": "directional",
+          "color": [1.0, 0.97, 0.9, 1],
+          "sunDir": [-0.45, -0.72, -0.52],
+          "intensity": 2.2,
+          "radius": 10,
+          "ambientStrength": 0.55,
+          "useAtmosphere": true,
+          "skybox": true,
+          "skyTop": [0.28, 0.5, 0.82, 1.0],
+          "skyHorizon": [0.78, 0.86, 0.95, 1.0],
+          "fogColor": [0.72, 0.8, 0.9, 1.0],
+          "fogNear": 70,
+          "fogFar": 320
+        },
+        "type": { "value": "Light3D" }
+      }
+    },
+    {
+      "name": "cam", "id": 2,
+      "components": {
+        "transform": { "pos": [0, 5.0, 9.0], "scale": [1, 1, 1], "rot": [-0.28, 0, 0, 0.9605] },
+        "camera": { "fov": 55, "ortho": false, "orthoSize": 10 },
+        "type": { "value": "Camera3D" }
+      }
+    },
+    {
+      "name": "ground", "id": 3,
+      "components": {
+        "transform": { "pos": [0, 0, 0], "scale": [9, 1, 9], "rot": [0, 0, 0, 1] },
+        "mesh": {
+          "meshKey": "plane",
+          "material": {
+            "albedoTex": "assets/textures/ground_aerial/grass_diff_2k.jpg",
+            "uvRepeat": 4, "metallic": 0, "roughness": 1.0, "ao": 1,
+            "emissiveIntensity": 1, "colorHex": "#9ab070"
+          }
+        },
+        "type": { "value": "MeshInstance3D" }
+      }
+    },
+
+    { "name": "tree_a", "id": 10, "components": { "transform": { "pos": [-12.0, 0, -6.0], "scale": [1.6, 1.6, 1.6], "rot": [0, 0.4, 0, 0.92] }, "mesh": { "meshKey": "tree", "material": { "colorHex": "#3c6b30" } }, "type": { "value": "MeshInstance3D" } } },
+    { "name": "tree_b", "id": 11, "components": { "transform": { "pos": [13.0, 0, -9.0], "scale": [1.9, 1.9, 1.9], "rot": [0, -0.3, 0, 0.96] }, "mesh": { "meshKey": "tree", "material": { "colorHex": "#365f2c" } }, "type": { "value": "MeshInstance3D" } } },
+    { "name": "tree_c", "id": 12, "components": { "transform": { "pos": [10.0, 0, 12.0], "scale": [1.4, 1.4, 1.4], "rot": [0, 0.9, 0, 0.78] }, "mesh": { "meshKey": "tree", "material": { "colorHex": "#3c6b30" } }, "type": { "value": "MeshInstance3D" } } },
+    { "name": "rock_a", "id": 13, "components": { "transform": { "pos": [-9.0, 0.2, 8.0], "scale": [0.8, 0.7, 0.8], "rot": [0, 0.6, 0, 0.83] }, "mesh": { "meshKey": "rock", "material": { "colorHex": "#9aa09a" } }, "type": { "value": "MeshInstance3D" } } },
+    { "name": "rock_b", "id": 14, "components": { "transform": { "pos": [-14.0, 0.2, 2.0], "scale": [1.0, 0.9, 1.0], "rot": [0, 2.0, 0, -0.42] }, "mesh": { "meshKey": "rock", "material": { "colorHex": "#929890" } }, "type": { "value": "MeshInstance3D" } } },
+
+    {
+      "name": "Hero", "id": 20,
+      "components": {
+        "transform": { "pos": [0, 0, 0], "scale": [1, 1, 1], "rot": [0, 0, 0, 1] },
+        "health": { "hp": 400, "maxHp": 400 },
+        "mesh": {
+          "meshKey": "gltf:assets/models/kaykit/Knight.glb",
+          "material": { "metallic": 0, "roughness": 0.6, "colorHex": "#FFFFFF" }
+        },
+        "scripts": { "items": [ { "backend": "lua", "path": "assets/scripts/knight_hero.lua" } ] },
+        "type": { "value": "MeshInstance3D" }
+      }
+    },
+    {
+      "name": "Dummy_1", "id": 21,
+      "components": {
+        "transform": { "pos": [-3.2, 0, 4.0], "scale": [1, 1, 1], "rot": [0, 0.6, 0, 0.83] },
+        "health": { "hp": 220, "maxHp": 220 },
+        "mesh": { "meshKey": "gltf:assets/models/kaykit/Knight.glb", "material": { "metallic": 0, "roughness": 0.7, "colorHex": "#C7472E" } },
+        "type": { "value": "MeshInstance3D" }
+      }
+    },
+    {
+      "name": "Dummy_2", "id": 22,
+      "components": {
+        "transform": { "pos": [3.4, 0, 4.6], "scale": [1, 1, 1], "rot": [0, -0.5, 0, 0.88] },
+        "health": { "hp": 220, "maxHp": 220 },
+        "mesh": { "meshKey": "gltf:assets/models/kaykit/Knight.glb", "material": { "metallic": 0, "roughness": 0.7, "colorHex": "#3E6FB0" } },
+        "type": { "value": "MeshInstance3D" }
+      }
+    },
+    {
+      "name": "Dummy_3", "id": 23,
+      "components": {
+        "transform": { "pos": [0.0, 0, 8.0], "scale": [1.15, 1.15, 1.15], "rot": [0, 3.14, 0, 0.0] },
+        "health": { "hp": 320, "maxHp": 320 },
+        "mesh": { "meshKey": "gltf:assets/models/kaykit/Knight.glb", "material": { "metallic": 0, "roughness": 0.7, "colorHex": "#8B5CF6" } },
+        "type": { "value": "MeshInstance3D" }
+      }
+    }
+  ]
+}
