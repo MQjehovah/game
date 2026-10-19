@@ -258,6 +258,147 @@ Mesh MakeHeroMesh(Renderer& renderer, const std::string& name) {
                                 idx.data(), static_cast<uint32_t>(idx.size()), name);
 }
 
+Mesh MakePineMesh(Renderer& renderer, const std::string& name) {
+    std::vector<Vertex3D> v;
+    std::vector<uint16_t> idx;
+    Mesh trunk = Mesh::CreateCube(renderer, 0.34f, 2.7f, 0.34f, "pine_trunk");
+    AppendMeshAt(v, idx, trunk, {0.0f, 1.35f, 0.0f}, {0.30f, 0.22f, 0.15f, 1.0f});
+    // Four overlapping tiers with a slight alternating lean read as a mature
+    // mountain pine rather than a generic cone tree.
+    for (int tier = 0; tier < 4; ++tier) {
+        const float r = 1.35f - tier * 0.24f;
+        const float h = 1.75f - tier * 0.10f;
+        const float y = 1.45f + tier * 1.10f;
+        const math::Vec4 green =
+            (tier & 1) ? math::Vec4{0.10f, 0.25f, 0.14f, 1.0f}
+                       : math::Vec4{0.13f, 0.31f, 0.17f, 1.0f};
+        auto crown = ConeVerts(r, h, 12, green);
+        const float lean = (tier & 1) ? 0.08f : -0.06f;
+        for (auto& vv : crown) {
+            vv.pos.x += lean * (vv.pos.y / h);
+            vv.pos.y += y;
+        }
+        AppendMesh(v, idx, crown, ConeIndices(12));
+    }
+    return Mesh::CreateFromData(renderer, v.data(), static_cast<uint32_t>(v.size()),
+                                idx.data(), static_cast<uint32_t>(idx.size()), name);
+}
+
+Mesh MakeRockPillarMesh(Renderer& renderer, const std::string& name) {
+    std::vector<Vertex3D> v;
+    std::vector<uint16_t> idx;
+    const math::Vec4 stone{0.34f, 0.33f, 0.31f, 1.0f};
+    const math::Vec4 moss{0.24f, 0.31f, 0.21f, 1.0f};
+    // Irregular stacked rings read as a weathered cliff spire instead of a
+    // smooth cone: the silhouette steps inward and the rings are offset.
+    struct Ring {
+        float y, r, ox, oz;
+    };
+    const Ring rings[] = {
+        {0.0f, 1.75f, 0.00f, 0.00f},
+        {2.2f, 1.58f, 0.10f, -0.05f},
+        {4.8f, 1.28f, -0.08f, 0.10f},
+        {7.4f, 0.98f, 0.06f, -0.09f},
+        {10.1f, 0.60f, -0.02f, 0.03f},
+        {11.4f, 0.34f, 0.03f, -0.02f},
+    };
+    const int seg = 9;
+    const int ringCount = static_cast<int>(sizeof(rings) / sizeof(rings[0]));
+    for (int ri = 0; ri + 1 < ringCount; ++ri) {
+        const Ring& lo = rings[ri];
+        const Ring& hi = rings[ri + 1];
+        for (int i = 0; i < seg; ++i) {
+            const float a0 = static_cast<float>(i) / seg * math::kTwoPi;
+            const float a1 = static_cast<float>(i + 1) / seg * math::kTwoPi;
+            auto point = [](const Ring& ring, float a) {
+                return math::Vec3{ring.ox + std::cos(a) * ring.r, ring.y,
+                                  ring.oz + std::sin(a) * ring.r};
+            };
+            const math::Vec3 p0 = point(lo, a0);
+            const math::Vec3 p1 = point(lo, a1);
+            const math::Vec3 p2 = point(hi, a1);
+            const math::Vec3 p3 = point(hi, a0);
+            math::Vec3 n = math::Cross(p1 - p0, p2 - p0).Normalized();
+            const math::Vec3 mid{(p0.x + p2.x) * 0.5f, (p0.y + p2.y) * 0.5f,
+                                 (p0.z + p2.z) * 0.5f};
+            const math::Vec3 axis{(lo.ox + hi.ox) * 0.5f, mid.y,
+                                  (lo.oz + hi.oz) * 0.5f};
+            if (math::Dot(n, mid - axis) < 0.0f)
+                n = math::Vec3{-n.x, -n.y, -n.z};
+            const uint16_t base = static_cast<uint16_t>(v.size());
+            const math::Vec4 c = (ri == 0 && i % 3 == 0) ? moss : stone;
+            v.push_back({p0, n, {a0 / math::kTwoPi, lo.y * 0.1f}, c});
+            v.push_back({p1, n, {a1 / math::kTwoPi, lo.y * 0.1f}, c});
+            v.push_back({p2, n, {a1 / math::kTwoPi, hi.y * 0.1f}, c});
+            v.push_back({p3, n, {a0 / math::kTwoPi, hi.y * 0.1f}, c});
+            if (math::Dot(math::Cross(p1 - p0, p2 - p0), mid - axis) >= 0.0f) {
+                idx.insert(idx.end(), {base, static_cast<uint16_t>(base + 1),
+                                       static_cast<uint16_t>(base + 2), base,
+                                       static_cast<uint16_t>(base + 2),
+                                       static_cast<uint16_t>(base + 3)});
+            } else {
+                idx.insert(idx.end(), {base, static_cast<uint16_t>(base + 2),
+                                       static_cast<uint16_t>(base + 1), base,
+                                       static_cast<uint16_t>(base + 3),
+                                       static_cast<uint16_t>(base + 2)});
+            }
+        }
+    }
+    Mesh boulder = Mesh::CreateSphere(renderer, 1.0f, 10, 7, "pillar_boulder");
+    AppendMeshAt(v, idx, boulder, {-1.25f, 0.35f, 0.25f}, stone);
+    AppendMeshAt(v, idx, boulder, {1.10f, 0.28f, -0.35f}, moss);
+    return Mesh::CreateFromData(renderer, v.data(), static_cast<uint32_t>(v.size()),
+                                idx.data(), static_cast<uint32_t>(idx.size()), name);
+}
+
+Mesh MakeStoneLanternMesh(Renderer& renderer, const std::string& name) {
+    std::vector<Vertex3D> v;
+    std::vector<uint16_t> idx;
+    const math::Vec4 stone{0.23f, 0.23f, 0.21f, 1.0f};
+    const math::Vec4 light{1.0f, 0.70f, 0.30f, 1.0f};
+    Mesh base = Mesh::CreateCube(renderer, 0.82f, 0.22f, 0.82f, "lantern_base");
+    AppendMeshAt(v, idx, base, {0.0f, 0.11f, 0.0f}, stone);
+    Mesh post = Mesh::CreateCube(renderer, 0.24f, 1.05f, 0.24f, "lantern_post");
+    AppendMeshAt(v, idx, post, {0.0f, 0.74f, 0.0f}, stone);
+    Mesh box = Mesh::CreateCube(renderer, 0.66f, 0.50f, 0.66f, "lantern_box");
+    AppendMeshAt(v, idx, box, {0.0f, 1.48f, 0.0f}, light);
+    auto roof = ConeVerts(0.78f, 0.48f, 4, stone);
+    for (auto& vv : roof) vv.pos.y += 1.72f;
+    AppendMesh(v, idx, roof, ConeIndices(4));
+    Mesh finial = Mesh::CreateCube(renderer, 0.16f, 0.24f, 0.16f, "lantern_finial");
+    AppendMeshAt(v, idx, finial, {0.0f, 2.30f, 0.0f}, stone);
+    return Mesh::CreateFromData(renderer, v.data(), static_cast<uint32_t>(v.size()),
+                                idx.data(), static_cast<uint32_t>(idx.size()), name);
+}
+
+Mesh MakeCultivatorMesh(Renderer& renderer, const std::string& name) {
+    std::vector<Vertex3D> v;
+    std::vector<uint16_t> idx;
+    const math::Vec4 robe{0.075f, 0.085f, 0.11f, 1.0f};
+    const math::Vec4 trim{0.48f, 0.38f, 0.22f, 1.0f};
+    const math::Vec4 skin{0.84f, 0.70f, 0.56f, 1.0f};
+    const math::Vec4 hair{0.56f, 0.59f, 0.65f, 1.0f};
+    auto skirt = ConeVerts(0.56f, 1.32f, 12, robe);
+    AppendMesh(v, idx, skirt, ConeIndices(12));
+    Mesh torso = Mesh::CreateCube(renderer, 0.46f, 0.56f, 0.30f, "cultivator_torso");
+    AppendMeshAt(v, idx, torso, {0.0f, 1.22f, 0.0f}, robe);
+    Mesh sash = Mesh::CreateCube(renderer, 0.50f, 0.10f, 0.32f, "cultivator_sash");
+    AppendMeshAt(v, idx, sash, {0.0f, 1.00f, 0.0f}, trim);
+    Mesh arm = Mesh::CreateCube(renderer, 0.14f, 0.58f, 0.16f, "cultivator_arm");
+    AppendMeshAt(v, idx, arm, {-0.29f, 1.26f, 0.0f}, robe);
+    AppendMeshAt(v, idx, arm, {0.29f, 1.26f, 0.0f}, robe);
+    Mesh head = Mesh::CreateSphere(renderer, 0.22f, 12, 8, "cultivator_head");
+    AppendMeshAt(v, idx, head, {0.0f, 1.66f, 0.0f}, skin);
+    Mesh backHair = Mesh::CreateCube(renderer, 0.20f, 0.74f, 0.08f, "cultivator_hair");
+    AppendMeshAt(v, idx, backHair, {0.0f, 1.45f, 0.16f}, hair);
+    Mesh topHair = Mesh::CreateSphere(renderer, 0.20f, 10, 7, "cultivator_hair_top");
+    AppendMeshAt(v, idx, topHair, {0.0f, 1.80f, 0.03f}, hair);
+    Mesh sword = Mesh::CreateCube(renderer, 0.07f, 1.15f, 0.04f, "cultivator_sword");
+    AppendMeshAt(v, idx, sword, {0.28f, 0.82f, 0.20f}, {0.72f, 0.76f, 0.82f, 1.0f});
+    return Mesh::CreateFromData(renderer, v.data(), static_cast<uint32_t>(v.size()),
+                                idx.data(), static_cast<uint32_t>(idx.size()), name);
+}
+
 Mesh MakeWolfMesh(Renderer& renderer, const std::string& name) {
     std::vector<Vertex3D> v;
     std::vector<uint16_t> idx;

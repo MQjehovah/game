@@ -763,6 +763,14 @@ gfx::Mesh DrawSystem::ResolveMeshKey(gfx::Renderer& renderer, const std::string&
         mesh = gfx::MakeGrassMesh(renderer);
     } else if (key == "hero") {
         mesh = gfx::MakeHeroMesh(renderer);
+    } else if (key == "cultivator") {
+        mesh = gfx::MakeCultivatorMesh(renderer);
+    } else if (key == "pine") {
+        mesh = gfx::MakePineMesh(renderer);
+    } else if (key == "rock_pillar") {
+        mesh = gfx::MakeRockPillarMesh(renderer);
+    } else if (key == "stone_lantern") {
+        mesh = gfx::MakeStoneLanternMesh(renderer);
     } else if (key == "wolf") {
         mesh = gfx::MakeWolfMesh(renderer);
     } else if (key.compare(0, 4, "npc:") == 0) {

@@ -43,6 +43,14 @@ Mesh MakeBushMesh(Renderer& renderer, const std::string& name = "bush");
 // Playable hero: blue/gold armor figure with a sword.
 Mesh MakeHeroMesh(Renderer& renderer, const std::string& name = "hero");
 
+// Xianxia placeholders: a tall pine, a weathered rock spire, a stone lantern
+// and a robed cultivator. All are vertex-coloured and origin-at-feet so scene
+// entities can place them directly on the terrain.
+Mesh MakePineMesh(Renderer& renderer, const std::string& name = "pine");
+Mesh MakeRockPillarMesh(Renderer& renderer, const std::string& name = "rock_pillar");
+Mesh MakeStoneLanternMesh(Renderer& renderer, const std::string& name = "stone_lantern");
+Mesh MakeCultivatorMesh(Renderer& renderer, const std::string& name = "cultivator");
+
 // Hostile wolf (low-poly): gray body, head, legs, tail.
 Mesh MakeWolfMesh(Renderer& renderer, const std::string& name = "wolf");
 
