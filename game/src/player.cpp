@@ -627,11 +627,13 @@ void PlayerApp::UpdateCamera(float dt) {
 
 void PlayerApp::OnRender() {
     renderer_.BeginFrame({0.02f, 0.04f, 0.09f, 1.0f});
-    // Default sky/fog/light once only: re-applying them every frame fought the
-    // scene's own environment (sky A -> scene sky B -> A ...), forcing an IBL
-    // recompute per frame (~30 ms) and tanking the frame rate.
+    // Default fog/light once only: re-applying them every frame fought the
+    // scene's own environment. The sky is deliberately NOT set here: DrawSystem
+    // applies the scene environment (or its own fallback) before the first draw,
+    // and setting a default first forced a full CPU IBL bake of colours that were
+    // replaced immediately (an extra ~115 ms startup stall plus 20 frames of
+    // stale lighting).
     if (!appliedDefaults_) {
-        renderer_.SetSky({0.10f, 0.18f, 0.36f, 1.0f}, {0.45f, 0.60f, 0.78f, 1.0f});
         renderer_.SetFog({0.45f, 0.60f, 0.78f, 1.0f}, 60.0f, 220.0f);
         renderer_.SetDirectionalLight({-0.4f, -1.0f, -0.3f}, {1.0f, 0.95f, 0.85f}, 0.3f);
         appliedDefaults_ = true;

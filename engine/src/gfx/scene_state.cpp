@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <future>
 
 #include "neon/core/log.hpp"
 #include "neon/gfx/ibl.hpp"
@@ -131,18 +132,9 @@ void SceneState::RecomputeIbl(const Color& top, const Color& horizon) {
 
     // BRDF LUT is a pure material term (roughness x NoV), independent of the
     // sky - build and upload it once.
+    std::future<std::vector<uint8_t>> brdfFuture;
     if (!iblBrdfLutReady_) {
-        const std::vector<uint8_t> lut = ibl::BuildBrdfLut();
-        if (!lut.empty()) {
-            if (iblBrdfLutTex_.Valid()) backend_->DestroyTexture(iblBrdfLutTex_);
-            TextureDesc desc;
-            desc.width = ibl::kBrdfLutSize;
-            desc.height = ibl::kBrdfLutSize;
-            desc.rgba = lut.data();
-            desc.filter = Filter::Linear;
-            iblBrdfLutTex_ = backend_->CreateTexture(desc);
-            iblBrdfLutReady_ = iblBrdfLutTex_.Valid();
-        }
+        brdfFuture = std::async(std::launch::async, []() { return ibl::BuildBrdfLut(); });
     }
 
     // Sky-dependent maps: irradiance (diffuse) + prefiltered specular. Both are
@@ -154,14 +146,33 @@ void SceneState::RecomputeIbl(const Color& top, const Color& horizon) {
     // actual layout; otherwise the procedural vertical gradient is used.
     const bool haveSource =
         !skyEquirect_.empty() && skyEquirectW_ > 0 && skyEquirectH_ > 0;
-    const std::vector<uint8_t> irr =
-        haveSource ? ibl::BuildOctaIrradianceFromEquirect(skyEquirect_.data(), skyEquirectW_,
-                                                          skyEquirectH_)
-                   : ibl::BuildOctaIrradiance(top, horizon, kIblGradientPower);
+    // The three bakes are independent pure functions of the sky/material data.
+    // Run them on separate cores to cut the visible startup hitch; the outputs
+    // are byte-identical to the serial path.
+    auto irrFuture = std::async(std::launch::async, [&]() {
+        return haveSource ? ibl::BuildOctaIrradianceFromEquirect(
+                                skyEquirect_.data(), skyEquirectW_, skyEquirectH_)
+                          : ibl::BuildOctaIrradiance(top, horizon, kIblGradientPower);
+    });
     const std::vector<uint8_t> pf =
         haveSource ? ibl::BuildOctaPrefilteredFromEquirect(skyEquirect_.data(), skyEquirectW_,
                                                            skyEquirectH_)
                    : ibl::BuildOctaPrefiltered(top, horizon, kIblGradientPower);
+    const std::vector<uint8_t> irr = irrFuture.get();
+
+    if (brdfFuture.valid()) {
+        const std::vector<uint8_t> lut = brdfFuture.get();
+        if (!lut.empty()) {
+            if (iblBrdfLutTex_.Valid()) backend_->DestroyTexture(iblBrdfLutTex_);
+            TextureDesc desc;
+            desc.width = ibl::kBrdfLutSize;
+            desc.height = ibl::kBrdfLutSize;
+            desc.rgba = lut.data();
+            desc.filter = Filter::Linear;
+            iblBrdfLutTex_ = backend_->CreateTexture(desc);
+            iblBrdfLutReady_ = iblBrdfLutTex_.Valid();
+        }
+    }
     if (iblIrradianceTex_.Valid()) backend_->DestroyTexture(iblIrradianceTex_);
     if (iblPrefilteredTex_.Valid()) backend_->DestroyTexture(iblPrefilteredTex_);
     TextureDesc irrDesc;
