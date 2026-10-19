@@ -597,23 +597,6 @@ void DrawSystem::ResolveDrawItem(DrawItem& item, gfx::Renderer& renderer, ecs::W
     }
     item.mesh = mesh;
 
-    // Non-chunked terrain used to take the generic lit path: its albedo was
-    // multiplied by the baked grass/dirt/rock vertex colours, so an authored
-    // sand texture rendered green. Use the same splat shader as the chunked
-    // path so terrain materials behave consistently with or without
-    // `chunkGridDiv`.
-    if (key == "terrain") {
-        item.mat.shader = renderer.TerrainShader();
-        if (item.mat.albedo.Valid()) item.mat.grassTex = item.mat.albedo;
-        item.mat.albedo = {};
-        if (const SceneMesh* sm = world.Get<SceneMesh>(item.ent)) {
-            if (!sm->dirtColorHex.empty())
-                item.mat.dirtColor = ParseColorHex(sm->dirtColorHex);
-            if (!sm->rockColorHex.empty())
-                item.mat.rockColor = ParseColorHex(sm->rockColorHex);
-        }
-    }
-
     // 多 mesh glTF 场景（C15 延伸）：`gltf:` 实体的第 2+ 个 mesh 节点（自带
     // 累积变换 + 材质）作为子项存储，Draw 时整体渲染（Sponza 类建筑场景）。
     if (!mesh.Skinned() && key.compare(0, 5, "gltf:") == 0 && content_.assets) {
