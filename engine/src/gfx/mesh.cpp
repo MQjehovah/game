@@ -54,7 +54,7 @@ void AppendSphereVerts(std::vector<Vertex3D>& verts, std::vector<uint16_t>& indi
             push(phi1, theta1);
             uint16_t v01 = static_cast<uint16_t>(verts.size());
             push(phi0, theta1);
-            indices.insert(indices.end(), {v00, v10, v11, v00, v11, v01});
+            indices.insert(indices.end(), {v00, v11, v10, v00, v01, v11});
         }
     }
 }

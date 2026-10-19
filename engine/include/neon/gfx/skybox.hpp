@@ -27,11 +27,14 @@ namespace neon::gfx {
 // translation). Mirrors the GLSL `InverseViewProjRay` in kSkyboxFragmentShader
 // so the CPU model (used by tests/any host-side probe) matches the GPU exactly.
 inline math::Vec3 InverseViewProjRay(const math::Mat4& invViewProj, float ndcX, float ndcY) {
-    const math::Vec4 p0 = invViewProj.TransformVec4({ndcX, ndcY, 1.0f, 1.0f});
-    const math::Vec4 p1 = invViewProj.TransformVec4({ndcX, ndcY, -1.0f, 1.0f});
-    if (std::fabs(p0.w) < 1e-6f || std::fabs(p1.w) < 1e-6f) return {0.0f, 0.0f, 1.0f};
-    const math::Vec3 nearP{p0.x / p0.w, p0.y / p0.w, p0.z / p0.w};
-    const math::Vec3 farP{p1.x / p1.w, p1.y / p1.w, p1.z / p1.w};
+    // GL clip space: z=-1 is the near plane and z=+1 the far plane. Unproject
+    // both and take near -> far (the reverse order pointed the ray back at the
+    // camera, which flipped the sky vertically).
+    const math::Vec4 nearH = invViewProj.TransformVec4({ndcX, ndcY, -1.0f, 1.0f});
+    const math::Vec4 farH = invViewProj.TransformVec4({ndcX, ndcY, 1.0f, 1.0f});
+    if (std::fabs(nearH.w) < 1e-6f || std::fabs(farH.w) < 1e-6f) return {0.0f, 0.0f, 1.0f};
+    const math::Vec3 nearP{nearH.x / nearH.w, nearH.y / nearH.w, nearH.z / nearH.w};
+    const math::Vec3 farP{farH.x / farH.w, farH.y / farH.w, farH.z / farH.w};
     return (farP - nearP).Normalized();
 }
 
@@ -147,18 +150,18 @@ float CloudLight(vec3 p, vec3 sunDir, float coverage) {
 // inverse(view*proj): unproject both -z (near) and +z (far) and take the
 // direction. Mirrors CPU gfx::InverseViewProjRay.
 vec3 InverseViewProjRay(vec2 ndc) {
-    vec4 p0 = uInvViewProj * vec4(ndc, 1.0, 1.0);
-    vec4 p1 = uInvViewProj * vec4(ndc, -1.0, 1.0);
-    if (abs(p0.w) < 1e-6 || abs(p1.w) < 1e-6) return vec3(0.0, 0.0, 1.0);
-    vec3 nearP = p0.xyz / p0.w;
-    vec3 farP = p1.xyz / p1.w;
+    vec4 nearH = uInvViewProj * vec4(ndc, -1.0, 1.0);
+    vec4 farH = uInvViewProj * vec4(ndc, 1.0, 1.0);
+    if (abs(nearH.w) < 1e-6 || abs(farH.w) < 1e-6) return vec3(0.0, 0.0, 1.0);
+    vec3 nearP = nearH.xyz / nearH.w;
+    vec3 farP = farH.xyz / farH.w;
     return normalize(farP - nearP);
 }
 void main() {
-    // The scene projection is Y-flipped (NDC +y is screen-down), so the corner
-    // computed at ndc.y=-1 is the TOP ray and ndc.y=+1 the bottom one.
-    vec3 dir = normalize(mix(mix(uRayTL, uRayTR, vUV.x),
-                             mix(uRayBL, uRayBR, vUV.x), vUV.y));
+    // GL's quad UV has v=0 at the bottom and v=1 at the top, matching NDC
+    // y=-1 (bottom) / +1 (top).
+    vec3 dir = normalize(mix(mix(uRayBL, uRayBR, vUV.x),
+                             mix(uRayTL, uRayTR, vUV.x), vUV.y));
     float dy = clamp(dir.y * 0.5 + 0.5, 0.0, 1.0);
 
     // HDRI (equirect) source when provided; otherwise the vertical gradient.

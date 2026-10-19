@@ -270,6 +270,7 @@ const UniEntry kUniformOffsets[] = {
     {"uWaterEnabled", UniKind::Int, 7792, 4, 1},
     {"uReflectionVP", UniKind::Mat4, 7808, 64, 1},
     {"uReflectionStrength", UniKind::Float, 7872, 4, 1},
+    {"uWaterFoam", UniKind::Float, 7876, 4, 1},
     {"uReflectionEnabled", UniKind::Int, 7888, 4, 1},
     {"uAlbedo", UniKind::Sampler, 0, 0, 1},
     {"uGrassTex", UniKind::Sampler, 0, 0, 1},
@@ -926,7 +927,7 @@ public:
         if (sit == renderTargets_.end() || dit == renderTargets_.end()) return;
         Target& s = sit->second;
         Target& d = dit->second;
-        if (s.samples <= 1 || s.depthOnly || d.depthOnly) return;
+        if (s.depthOnly || d.depthOnly) return;
         if (s.width != d.width || s.height != d.height) return;
 
         Frame& f = CurrentFrame();
@@ -944,12 +945,25 @@ public:
                         VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
         d.layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
 
-        VkImageResolve region{};
-        region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-        region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-        region.extent = {static_cast<uint32_t>(s.width), static_cast<uint32_t>(s.height), 1};
-        vkCmdResolveImage(f.cmd, s.colorImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, d.colorImage,
-                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+        if (s.samples <= 1) {
+            // A single-sample source needs a plain copy, not a multisample
+            // resolve. The water refraction grab (ResolveRenderTarget from the
+            // resolved HDR target) hits this path; early-returning used to
+            // leave sceneColorCopy_ uninitialised and the water sampled garbage.
+            VkImageCopy region{};
+            region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+            region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+            region.extent = {static_cast<uint32_t>(s.width), static_cast<uint32_t>(s.height), 1};
+            vkCmdCopyImage(f.cmd, s.colorImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                           d.colorImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+        } else {
+            VkImageResolve region{};
+            region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+            region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+            region.extent = {static_cast<uint32_t>(s.width), static_cast<uint32_t>(s.height), 1};
+            vkCmdResolveImage(f.cmd, s.colorImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                              d.colorImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+        }
 
         TransitionImage(f.cmd, s.colorImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                         VK_IMAGE_LAYOUT_GENERAL, VK_PIPELINE_STAGE_TRANSFER_BIT,
@@ -2804,33 +2818,25 @@ private:
             vkCmdBlitImage(cmd, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, image,
                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
 
+            // Return the source mip to TRANSFER_DST so EVERY level is in the
+            // same layout when CreateTexture's final all-mip transition runs.
+            // (Transitioning it to SHADER_READ_ONLY here made that final
+            // barrier claim oldLayout=TRANSFER_DST for already-read-only
+            // levels - a real validation error, and undefined layout state on
+            // stricter drivers.)
             barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT,
                                         static_cast<uint32_t>(level - 1), 1, 0, 1};
             barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-            barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
             barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-            barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
             vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
-                                 VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr,
+                                 VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr,
                                  1, &barrier);
 
             mipW = nextW;
             mipH = nextH;
         }
-        VkImageMemoryBarrier barrier{};
-        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-        barrier.image = image;
-        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT,
-                                    static_cast<uint32_t>(levels - 1), 1, 0, 1};
-        barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
-                             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1,
-                             &barrier);
     }
 
     // Aspect mask for the engine depth format. A combined depth-stencil image

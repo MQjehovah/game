@@ -3,6 +3,7 @@
 #include <string>
 
 #include "neon/neon.hpp"
+#include "neon/gfx/post_graph.hpp"
 #include "neon/gfx/skybox.hpp"
 #include "neon/gfx/scene_props.hpp"
 #include "helpers.hpp"
@@ -235,6 +236,21 @@ TEST(SkyboxInverseViewProjRay) {
     // Center of the screen for an identity Proj (near=0.1, far=800) -> ray
     // points toward -Z; the two points' w are both 1 so the difference is finite.
     CHECK(std::isfinite(r.x) && std::isfinite(r.y) && std::isfinite(r.z));
+
+    // Unprojection order matters: near is z=-1, far z=+1. Reversing them points
+    // the ray back at the camera and flips the sky vertically (the Vulkan
+    // clouds/HDRI bug). For a camera looking straight ahead, NDC +y is the top
+    // of the screen and must point ABOVE the horizon.
+    gfx::Camera cam;
+    cam.position = {0.0f, 2.0f, 10.0f};
+    cam.target = {0.0f, 2.0f, 0.0f};
+    const math::Mat4 vp = cam.ViewProjection(16.0f / 9.0f);
+    const math::Mat4 invVp = vp.Inverse();
+    const math::Vec3 top = gfx::InverseViewProjRay(invVp, 0.0f, 1.0f);
+    const math::Vec3 bottom = gfx::InverseViewProjRay(invVp, 0.0f, -1.0f);
+    CHECK(top.y > 0.0f);
+    CHECK(bottom.y < 0.0f);
+    CHECK(top.z < 0.0f); // still looking down the camera's forward axis
 }
 
 TEST(SkyboxShaderSourceTokens) {
@@ -248,6 +264,58 @@ TEST(SkyboxShaderSourceTokens) {
     CHECK(frag.find("uCloudCoverage") != std::string::npos);
     CHECK(frag.find("fbm") != std::string::npos);
     CHECK(frag.find("uSkyTextureValid") != std::string::npos);
+}
+
+TEST(PostGraphAutoExposureFeedsBloom) {
+    // Auto-exposure is measured, reduced and adapted before the bloom bright
+    // pass. The bright pass thresholds in exposed units, so FrameGraph must
+    // wire adaptDone_ into it; when the adaptation pass was declared after
+    // bloom that read had no producer and bloom silently used the scalar
+    // exposure.
+    test::NullBackend backend;
+    gfx::PostGraph graph;
+    gfx::PostGraph::Shaders shaders;
+    shaders.ssaoShader = {1};
+    shaders.depthEncodeShader = {1};
+    shaders.ssaoBlur = {1};
+    shaders.volumetricShader = {1};
+    shaders.ssrShader = {1};
+    shaders.ssrBlur = {1};
+    shaders.brightPass = {1};
+    shaders.blur = {1};
+    shaders.downsample = {1};
+    shaders.upsampleAdd = {1};
+    shaders.compositeShader = {1};
+    shaders.fxaaShader = {1};
+    shaders.luminanceShader = {1};
+    shaders.luminanceReduceShader = {1};
+    shaders.exposureAdaptShader = {1};
+    shaders.white = {1};
+    graph.Build(shaders, gfx::MeshHandle{1, 1, 1, 6}, 128, 72, [] {}, [] {});
+
+    gfx::PostGraph::FrameParams p;
+    p.hdrScene = {1};
+    p.hdrW = 128;
+    p.hdrH = 72;
+    p.bloomPass = true;
+    p.composite.white = {1};
+    p.composite.autoExposure.enabled = true;
+    CHECK(graph.Execute(backend, p));
+
+    int lum = -1, avg = -1, adapt = -1, bright = -1;
+    const auto& trace = graph.LastTrace();
+    for (size_t i = 0; i < trace.size(); ++i) {
+        const std::string& name = trace[i].name;
+        if (name == "post.luminance") lum = static_cast<int>(i);
+        if (name == "post.luminanceAvg") avg = static_cast<int>(i);
+        if (name == "post.exposureAdapt") adapt = static_cast<int>(i);
+        if (name == "bloom.bright") bright = static_cast<int>(i);
+    }
+    CHECK(lum >= 0);
+    CHECK(avg > lum);
+    CHECK(adapt > avg);
+    CHECK(bright > adapt);
+    graph.Destroy(backend);
 }
 
 TEST(ProceduralGrassMesh) {

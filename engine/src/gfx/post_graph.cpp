@@ -314,6 +314,85 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
                                   math::Vec2{1.0f / static_cast<float>(hdrW_),
                                              1.0f / static_cast<float>(hdrH_)}));
 
+    // Auto-exposure measure + adaptation must run BEFORE the bloom bright pass:
+    // the bright pass thresholds in exposed units using this frame's adapted
+    // exposure. Declaring it earlier makes FrameGraph wire adaptDone_ into the
+    // bright pass; when it was declared after bloom, that read had no producer
+    // and bloom silently ignored auto-exposure.
+    //   18. Convert the HDR scene to a small log-luminance target.
+    //   19. Reduce it to a 1x1 average.
+    //   19b. Smooth it toward the previous frame's exposure (anti-flicker).
+    FramePass lum;
+    lum.name = "post.luminance";
+    lum.reads = {hdrScene_};
+    lum.writes = {lum_};
+    lum.execute = [this](FrameGraphContext& ctx) {
+        auto& backend = ctx.Backend();
+        backend.BindRenderTarget(ctx.GetOutput(lum_));
+        Fullscreen(backend, luminanceShader_);
+        backend.BindTexture(0, backend.RenderTargetColorTexture(ctx.GetInput(hdrScene_)));
+        backend.SetUniformInt("uHdr", 0);
+        backend.DrawMesh(postQuad_);
+    };
+    luminanceIndex_ = add(std::move(lum));
+
+    FramePass lumAvg;
+    lumAvg.name = "post.luminanceAvg";
+    lumAvg.reads = {lum_};
+    lumAvg.writes = {lumAvg_};
+    lumAvg.execute = [this, hw = float(hdrW_), hh = float(hdrH_)](FrameGraphContext& ctx) {
+        auto& backend = ctx.Backend();
+        backend.BindRenderTarget(ctx.GetOutput(lumAvg_));
+        Fullscreen(backend, luminanceReduceShader_);
+        backend.BindTexture(0, backend.RenderTargetColorTexture(ctx.GetInput(lum_)));
+        backend.SetUniformInt("uLum", 0);
+        // Letterboxed scene area in normalised HDR UV (same convention as the
+        // volumetric pass): the reduce's subsample grid skips taps outside it
+        // so clear-colour letterbox black can't drag the average down.
+        backend.SetUniformVec4("uSceneVpRect", {sceneVpRect_.x / hw, sceneVpRect_.y / hh,
+                                                sceneVpRect_.z / hw, sceneVpRect_.w / hh});
+        backend.DrawMesh(postQuad_);
+    };
+    luminanceAvgIndex_ = add(std::move(lumAvg));
+
+    // The result is drawn twice: into the pooled graph target (the bloom bright
+    // + composite input and ordering edge) and into a persistent side target
+    // that becomes next frame's "previous" (the graph pool recycles, so
+    // cross-frame state must live outside it).
+    FramePass adapt;
+    adapt.name = "post.exposureAdapt";
+    adapt.reads = {lumAvg_};
+    adapt.writes = {adaptDone_};
+    adapt.execute = [this](FrameGraphContext& ctx) {
+        auto& backend = ctx.Backend();
+        backend.BindRenderTarget(ctx.GetOutput(adaptDone_));
+        Fullscreen(backend, exposureAdaptShader_);
+        backend.BindTexture(0, backend.RenderTargetColorTexture(ctx.GetInput(lumAvg_)));
+        backend.SetUniformInt("uAvgLum", 0);
+        backend.BindTexture(1, backend.RenderTargetColorTexture(adaptPrev_));
+        backend.SetUniformInt("uPrevExposure", 1);
+        const AutoExposure& ae = comp_.autoExposure;
+        backend.SetUniformFloat("uKeyValue", ae.keyValue);
+        backend.SetUniformFloat("uExposureMin", ae.minExposure);
+        backend.SetUniformFloat("uExposureMax", ae.maxExposure);
+        // adaptationSpeed is a per-60fps-frame lerp factor; convert to a wall
+        // clock rate so convergence no longer depends on the frame rate.
+        const float dt = std::min(std::max(frameDt_, 0.0005f), 0.1f);
+        // Temporal blending needs a reliable persistent "previous exposure".
+        // Backends without it (Vulkan) would read prev=0 and go dark, so there
+        // the exposure follows the raw target directly.
+        const float adaptation = backend.SupportsTargetPersistence()
+                                     ? (1.0f - std::exp(-ae.adaptationSpeed * 60.0f * dt))
+                                     : 1.0f;
+        backend.SetUniformFloat("uAdaptation", adaptation);
+        backend.DrawMesh(postQuad_);
+        // Same draw into the persistent target (shader/texture/uniform state
+        // stays bound; only the render target changes).
+        backend.BindRenderTarget(adaptCurr_);
+        backend.DrawMesh(postQuad_);
+    };
+    adaptIndex_ = add(std::move(adapt));
+
     // 11. Bloom bright pass: HDR -> bloomHalfA (thresholded, only pixels above
     //     1.0 AFTER the effective exposure -- see kBrightPassFragmentShader).
     FramePass bright;
@@ -406,83 +485,6 @@ void PostGraph::Build(const Shaders& shaders, MeshHandle postQuad, int w, int h,
         backend.DrawMesh(postQuad_);
     };
     upsampleAddIndex_ = add(std::move(upsample));
-
-    // 18. Auto-exposure measure: convert the HDR scene to a small log-luminance
-    //     target. 19. reduce it to a 1x1 average. The composite samples that
-    //     single texel to derive the exposure multiplier (A5).
-    FramePass lum;
-    lum.name = "post.luminance";
-    lum.reads = {hdrScene_};
-    lum.writes = {lum_};
-    lum.execute = [this](FrameGraphContext& ctx) {
-        auto& backend = ctx.Backend();
-        backend.BindRenderTarget(ctx.GetOutput(lum_));
-        Fullscreen(backend, luminanceShader_);
-        backend.BindTexture(0, backend.RenderTargetColorTexture(ctx.GetInput(hdrScene_)));
-        backend.SetUniformInt("uHdr", 0);
-        backend.DrawMesh(postQuad_);
-    };
-    luminanceIndex_ = add(std::move(lum));
-
-    FramePass lumAvg;
-    lumAvg.name = "post.luminanceAvg";
-    lumAvg.reads = {lum_};
-    lumAvg.writes = {lumAvg_};
-    lumAvg.execute = [this, hw = float(hdrW_), hh = float(hdrH_)](FrameGraphContext& ctx) {
-        auto& backend = ctx.Backend();
-        backend.BindRenderTarget(ctx.GetOutput(lumAvg_));
-        Fullscreen(backend, luminanceReduceShader_);
-        backend.BindTexture(0, backend.RenderTargetColorTexture(ctx.GetInput(lum_)));
-        backend.SetUniformInt("uLum", 0);
-        // Letterboxed scene area in normalised HDR UV (same convention as the
-        // volumetric pass): the reduce's subsample grid skips taps outside it
-        // so clear-colour letterbox black can't drag the average down.
-        backend.SetUniformVec4("uSceneVpRect", {sceneVpRect_.x / hw, sceneVpRect_.y / hh,
-                                                sceneVpRect_.z / hw, sceneVpRect_.w / hh});
-        backend.DrawMesh(postQuad_);
-    };
-    luminanceAvgIndex_ = add(std::move(lumAvg));
-
-    // 19b. Auto-exposure ADAPTATION: smooth the raw per-frame target toward
-    //      the previous frame's exposure so bright flashes (particles /
-    //      projectiles / damage numbers) don't strobe the frame. The result is
-    //      drawn twice: into the pooled graph target (the composite's input +
-    //      ordering edge) and into a persistent side target that becomes next
-    //      frame's "previous" (the graph pool recycles, so cross-frame state
-    //      must live outside it).
-    FramePass adapt;
-    adapt.name = "post.exposureAdapt";
-    adapt.reads = {lumAvg_};
-    adapt.writes = {adaptDone_};
-    adapt.execute = [this](FrameGraphContext& ctx) {
-        auto& backend = ctx.Backend();
-        backend.BindRenderTarget(ctx.GetOutput(adaptDone_));
-        Fullscreen(backend, exposureAdaptShader_);
-        backend.BindTexture(0, backend.RenderTargetColorTexture(ctx.GetInput(lumAvg_)));
-        backend.SetUniformInt("uAvgLum", 0);
-        backend.BindTexture(1, backend.RenderTargetColorTexture(adaptPrev_));
-        backend.SetUniformInt("uPrevExposure", 1);
-        const AutoExposure& ae = comp_.autoExposure;
-        backend.SetUniformFloat("uKeyValue", ae.keyValue);
-        backend.SetUniformFloat("uExposureMin", ae.minExposure);
-        backend.SetUniformFloat("uExposureMax", ae.maxExposure);
-        // adaptationSpeed is a per-60fps-frame lerp factor; convert to a wall
-        // clock rate so convergence no longer depends on the frame rate.
-        const float dt = std::min(std::max(frameDt_, 0.0005f), 0.1f);
-        // Temporal blending needs a reliable persistent "previous exposure".
-        // Backends without it (Vulkan) would read prev=0 and go dark, so there
-        // the exposure follows the raw target directly.
-        const float adaptation = backend.SupportsTargetPersistence()
-                                     ? (1.0f - std::exp(-ae.adaptationSpeed * 60.0f * dt))
-                                     : 1.0f;
-        backend.SetUniformFloat("uAdaptation", adaptation);
-        backend.DrawMesh(postQuad_);
-        // Same draw into the persistent target (shader/texture/uniform state
-        // stays bound; only the render target changes).
-        backend.BindRenderTarget(adaptCurr_);
-        backend.DrawMesh(postQuad_);
-    };
-    adaptIndex_ = add(std::move(adapt));
 
     // 18. Composite: draws the final image to the DEFAULT target (backbuffer,
     //     an out-of-graph target) sampling the scene HDR plus the exported

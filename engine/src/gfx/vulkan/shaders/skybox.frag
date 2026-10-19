@@ -74,11 +74,14 @@ float CloudLight(vec3 p, vec3 sunDir, float coverage) {
     return exp(-d * 0.6);
 }
 vec3 InverseViewProjRay(vec2 ndc) {
-    vec4 p0 = eng.uInvViewProj * vec4(ndc, 1.0, 1.0);
-    vec4 p1 = eng.uInvViewProj * vec4(ndc, -1.0, 1.0);
-    if (abs(p0.w) < 1e-6 || abs(p1.w) < 1e-6) return vec3(0.0, 0.0, 1.0);
-    vec3 nearP = p0.xyz / p0.w;
-    vec3 farP = p1.xyz / p1.w;
+    // GL clip space: z=-1 is the near plane, z=+1 the far plane. Unproject
+    // near -> far (the old order was reversed, so the whole sky rendered
+    // upside down and the cloud ray never pointed above the horizon).
+    vec4 nearH = eng.uInvViewProj * vec4(ndc, -1.0, 1.0);
+    vec4 farH = eng.uInvViewProj * vec4(ndc, 1.0, 1.0);
+    if (abs(nearH.w) < 1e-6 || abs(farH.w) < 1e-6) return vec3(0.0, 0.0, 1.0);
+    vec3 nearP = nearH.xyz / nearH.w;
+    vec3 farP = farH.xyz / farH.w;
     return normalize(farP - nearP);
 }
 void main() {
