@@ -43,7 +43,13 @@ $diffOut = Join-Path $repoRoot (Join-Path $Build "render_regression_diff.png")
 Remove-Item -LiteralPath $actual -ErrorAction SilentlyContinue
 
 Write-Host "capture: --scene $Project/$Scene --scripts $Project --frame $Frame"
-& $player --scene "$Project/$Scene" --scripts $Project --smoke-test $Smoke --screenshot $actual $Frame | Out-Null
+# Engine INFO logs go to stderr. PowerShell 5.1 turns native stderr into error
+# records; with ErrorActionPreference=Stop that would abort the script. Run the
+# capture with Continue and discard the logs (the exit code is still checked).
+$previousEap = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+& $player --scene "$Project/$Scene" --scripts $Project --smoke-test $Smoke --screenshot $actual $Frame 2>&1 | Out-Null
+$ErrorActionPreference = $previousEap
 if (-not (Test-Path $actual)) { Write-Error "capture produced no image"; exit 2 }
 
 if ($UpdateGolden -or -not (Test-Path $goldenPath)) {
