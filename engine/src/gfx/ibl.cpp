@@ -376,19 +376,32 @@ std::vector<uint8_t> BuildOctaPrefilteredFromEquirect(const uint8_t* rgba, int w
                                        });
 }
 
-std::vector<uint8_t> BuildBrdfLut() {    std::vector<uint8_t> out;
-    out.reserve(static_cast<size_t>(kBrdfLutSize) * kBrdfLutSize * 4);
-    for (int r = 0; r < kBrdfLutSize; ++r) {
-        const float roughness = (static_cast<float>(r) + 0.5f) / kBrdfLutSize;
-        for (int c = 0; c < kBrdfLutSize; ++c) {
-            const float ndv = (static_cast<float>(c) + 0.5f) / kBrdfLutSize;
-            const math::Vec2 v = BrdfLutValue(ndv, roughness);
-            out.push_back(Encode(v.x));
-            out.push_back(Encode(v.y));
-            out.push_back(0);
-            out.push_back(255);
+std::vector<uint8_t> BuildBrdfLut() {
+    // The LUT is 64x64 x 64 samples: the single most expensive CPU phase of an
+    // IBL rebuild (~60ms serial). Rows are independent, so split them over a
+    // small worker set; each thread writes its own rows, keeping the result
+    // byte-identical and deterministic.
+    std::vector<uint8_t> out(static_cast<size_t>(kBrdfLutSize) * kBrdfLutSize * 4);
+    const unsigned hw = std::thread::hardware_concurrency();
+    const int workers = std::max(1, std::min<int>(kBrdfLutSize, hw ? static_cast<int>(hw) : 4));
+    auto bakeRows = [&](int first) {
+        for (int r = first; r < kBrdfLutSize; r += workers) {
+            const float roughness = (static_cast<float>(r) + 0.5f) / kBrdfLutSize;
+            for (int c = 0; c < kBrdfLutSize; ++c) {
+                const float ndv = (static_cast<float>(c) + 0.5f) / kBrdfLutSize;
+                const math::Vec2 v = BrdfLutValue(ndv, roughness);
+                const size_t dst = (static_cast<size_t>(r) * kBrdfLutSize + c) * 4;
+                out[dst + 0] = Encode(v.x);
+                out[dst + 1] = Encode(v.y);
+                out[dst + 2] = 0;
+                out[dst + 3] = 255;
+            }
         }
-    }
+    };
+    std::vector<std::thread> workersList;
+    workersList.reserve(static_cast<size_t>(workers));
+    for (int i = 0; i < workers; ++i) workersList.emplace_back(bakeRows, i);
+    for (std::thread& t : workersList) t.join();
     return out;
 }
 
