@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <thread>
 
 namespace neon::gfx::ibl {
 namespace {
@@ -284,21 +285,35 @@ std::vector<uint8_t> BuildOctaIrradianceGeneric(int size, F&& radiance) {
 
 template <typename F>
 std::vector<uint8_t> BuildOctaPrefilteredGeneric(int size, F&& radiance) {
-    std::vector<uint8_t> out;
-    out.reserve(static_cast<size_t>(size) * (size * kOctaRoughnessLevels) * 4);
-    for (int level = 0; level < kOctaRoughnessLevels; ++level) {
+    // Each roughness tile is an independent Monte-Carlo bake. Write disjoint
+    // slices of the preallocated atlas from one thread per tile; the output is
+    // byte-identical to the serial loop but the CPU bake is much shorter on a
+    // multi-core machine (this is the dominant phase of an IBL rebuild).
+    const size_t tileBytes = static_cast<size_t>(size) * size * 4;
+    std::vector<uint8_t> out(tileBytes * kOctaRoughnessLevels);
+    auto bakeLevel = [&](int level) {
         const float t = kOctaRoughnessLevels > 1
                             ? static_cast<float>(level) / static_cast<float>(kOctaRoughnessLevels - 1)
                             : 0.0f;
         const float roughness = kRoughnessMin + (1.0f - kRoughnessMin) * t;
+        size_t dst = static_cast<size_t>(level) * tileBytes;
         for (int y = 0; y < size; ++y) {
             for (int x = 0; x < size; ++x) {
                 const math::Vec2 uv{(static_cast<float>(x) + 0.5f) / size,
                                     (static_cast<float>(y) + 0.5f) / size};
-                Push(out, PrefilterGeneric(OctahedralDecode(uv), roughness, radiance));
+                const math::Vec3 c = PrefilterGeneric(OctahedralDecode(uv), roughness, radiance);
+                out[dst++] = Encode(c.x);
+                out[dst++] = Encode(c.y);
+                out[dst++] = Encode(c.z);
+                out[dst++] = 255;
             }
         }
-    }
+    };
+    std::vector<std::thread> workers;
+    workers.reserve(kOctaRoughnessLevels);
+    for (int level = 0; level < kOctaRoughnessLevels; ++level)
+        workers.emplace_back(bakeLevel, level);
+    for (std::thread& t : workers) t.join();
     return out;
 }
 
