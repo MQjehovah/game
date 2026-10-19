@@ -487,6 +487,7 @@ const char* VkResultName(VkResult r) {
 
 struct Texture {
     VkImage image = VK_NULL_HANDLE;
+    VkDeviceMemory mem = VK_NULL_HANDLE;
     VkImageView view = VK_NULL_HANDLE;
     VkSampler sampler = VK_NULL_HANDLE;
     VkFormat format = VK_FORMAT_UNDEFINED;
@@ -722,6 +723,18 @@ public:
     void Shutdown() override {
         if (!device_) return;
         vkDeviceWaitIdle(device_);
+        // Command buffers can remain in the recording state at shutdown (the
+        // smoke-test loop stops between BeginFrame/EndFrame). A recording
+        // buffer still references every mesh/texture it recorded, so reset the
+        // pools before destroying those objects; otherwise validation reports
+        // "can't be called ... currently in use" even though the device is idle.
+        for (Frame& f : frames_) {
+            if (f.pool) vkResetCommandPool(device_, f.pool, 0);
+        }
+        // Free the command buffers/pools BEFORE the objects they reference.
+        // Destroying meshes/textures first left each recording command buffer
+        // pointing at freed handles (validation 00922/01026/00765).
+        DestroyFrames();
 
         for (auto& [id, prog] : programs_) {
             if (prog.vert) vkDestroyShaderModule(device_, prog.vert, nullptr);
@@ -754,7 +767,6 @@ public:
         if (depthOnlyPass_) vkDestroyRenderPass(device_, depthOnlyPass_, nullptr);
 
         DestroySwapchain();
-        DestroyFrames();
 
         if (samplerNearest_) vkDestroySampler(device_, samplerNearest_, nullptr);
         if (samplerLinear_) vkDestroySampler(device_, samplerLinear_, nullptr);
@@ -902,6 +914,9 @@ public:
         auto it = renderTargets_.find(target.id);
         if (it == renderTargets_.end()) return;
         FlushPendingWorkBeforeDestroy(&it->second);
+        // Descriptor sets from earlier frames still point at this target's
+        // image views; destroy the sets before the views.
+        ResetDescriptorState();
         if (it->second.colorTexId) textures_.erase(it->second.colorTexId);
         if (it->second.depthTexId) textures_.erase(it->second.depthTexId);
         DestroyTargetInternal(it->second);
@@ -1154,6 +1169,7 @@ public:
     }
 
     void DestroyShader(ShaderHandle shader) override {
+        FlushPendingWorkBeforeDestroy(nullptr);
         auto it = programs_.find(shader.id);
         if (it == programs_.end()) return;
         if (it->second.vert) vkDestroyShaderModule(device_, it->second.vert, nullptr);
@@ -1238,6 +1254,7 @@ public:
 
         Texture tex;
         tex.image = image;
+        tex.mem = mem;
         tex.view = view;
         if (desc.wrap == Wrap::Repeat)
             tex.sampler = desc.filter == Filter::Nearest ? samplerRepeatNearest_
@@ -1258,6 +1275,9 @@ public:
         FlushPendingWorkBeforeDestroy(nullptr);
         auto it = textures_.find(texture.id);
         if (it == textures_.end()) return;
+        // Old descriptor sets still reference this image view. Recycle them
+        // before destroying the view (validation 01026).
+        ResetDescriptorState();
         DestroyTextureInternal(it->second);
         textures_.erase(it);
     }
@@ -1362,6 +1382,7 @@ public:
 
         Texture tex;
         tex.image = image;
+        tex.mem = mem;
         tex.view = view;
         tex.sampler = samplerLinear_;
         tex.format = VK_FORMAT_BC1_RGBA_UNORM_BLOCK;
@@ -1771,9 +1792,13 @@ public:
         const VkResult submitRes = vkQueueSubmit(queue_, 1, &si, f.fence);
         if (submitRes != VK_SUCCESS) {
             NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Error,
-                         "Vulkan: EndFrame queue submit failed: %s (%d)",
-                         VkResultName(submitRes), static_cast<int>(submitRes));
+                         "Vulkan: EndFrame queue submit failed: %s (%d)", VkResultName(submitRes),
+                         static_cast<int>(submitRes));
         }
+        // EndFrame consumes the mid-frame progress signal but does not signal
+        // it again (it signals renderFinished for present). Record that so the
+        // next frame does not wait on a semaphore that can never be signaled.
+        f.progressSignaled = false;
 
         if (swapImage) {
             VkPresentInfoKHR pi{};
@@ -2912,10 +2937,28 @@ private:
     // reachable from pending commands) made the NVIDIA driver fault inside
     // vkCmdEndRenderPass. Flush first: an open render pass means attachments are
     // in flight, and SubmitQueue fully synchronises before the handle dies.
+    void ResetDescriptorState() {
+        for (Frame& frame : frames_) {
+            if (frame.descPool) vkResetDescriptorPool(device_, frame.descPool, 0);
+            if (frame.texPool) vkResetDescriptorPool(device_, frame.texPool, 0);
+            frame.uboSet = VK_NULL_HANDLE;
+        }
+        texSetCache_.clear();
+        lastTexSet_ = VK_NULL_HANDLE;
+    }
+
     void FlushPendingWorkBeforeDestroy(Target* destroyed) {
         if (!device_ || frames_.empty()) return;
+        // Deletion is rare (scene teardown / cache eviction). Wait for work
+        // submitted by the final EndFrame too: with no open command buffer the
+        // old path returned immediately and freed buffers still referenced by
+        // commands in flight (VUID 00922/01026/00765).
+        vkDeviceWaitIdle(device_);
         Frame& f = CurrentFrame();
-        if (!f.cmdOpen || !rpActive_) {
+        // An open command buffer references the object even between render
+        // passes (e.g. a mesh destroyed after the last draw of a frame). Submit
+        // it whenever anything is open, not only when rpActive_ is set.
+        if (!f.cmdOpen) {
             if (destroyed && target_ == destroyed) target_ = nullptr;
             return;
         }
@@ -2978,7 +3021,11 @@ private:
         f.uboCursor = 0;
         f.scratchCursor = 0;
         f.acquiredWaited = false;
-        f.progressSignaled = false;
+        // Keep progressSignaled across frames. SubmitQueue leaves the progress
+        // semaphore signaled after its last submit; clearing the flag made the
+        // next frame's first submit signal an already-signaled binary semaphore
+        // (VUID-vkQueueSubmit-pCommandBuffers-00065). Carrying the flag makes
+        // that first submit wait on it, which consumes the signal.
         f.uboSet = VK_NULL_HANDLE;
         AllocUboSet(f);
         rpActive_ = false;
@@ -3031,6 +3078,17 @@ private:
         return VK_IMAGE_LAYOUT_UNDEFINED;
     }
 
+    bool IsDepthImage(VkImage image) const {
+        if (image == swapDepthImage_) return true;
+        for (const auto& [id, tex] : textures_) {
+            if (tex.image == image && tex.format == depthFormat_) return true;
+        }
+        for (const auto& [id, rt] : renderTargets_) {
+            if (rt.depthImage == image) return true;
+        }
+        return false;
+    }
+
     void SetTrackedLayout(VkImage image, VkImageLayout layout) {
         if (swapchain_ && imageIndex_ < swapImages_.size() &&
             image == swapImages_[imageIndex_]) {
@@ -3044,6 +3102,12 @@ private:
             if (rt.depthImage == image) rt.depthLayout = layout;
         }
         if (image == swapDepthImage_) swapDepthLayout_ = layout;
+        // A cached sampler set records the imageLayout it was written with. The
+        // depth-resolve pass samples the MSAA depth (DEPTH -> GENERAL), restores
+        // it to DEPTH, and the main pass later re-binds it; reusing the old set
+        // would ask the shader for GENERAL while the image is DEPTH. Drop the
+        // cache for depth changes so the next sample re-issues the transition.
+        if (IsDepthImage(image)) texSetCache_.clear();
     }
 
     void EnsureRenderPass(Frame& f) {
@@ -3139,8 +3203,10 @@ private:
     void DestroyTextureInternal(Texture& tex) {
         if (tex.view) vkDestroyImageView(device_, tex.view, nullptr);
         if (tex.owned && tex.image) vkDestroyImage(device_, tex.image, nullptr);
+        if (tex.owned && tex.mem) vkFreeMemory(device_, tex.mem, nullptr);
         tex.view = VK_NULL_HANDLE;
         tex.image = VK_NULL_HANDLE;
+        tex.mem = VK_NULL_HANDLE;
         tex.owned = false;
     }
 
