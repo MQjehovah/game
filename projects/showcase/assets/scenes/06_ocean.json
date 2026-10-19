@@ -1,55 +1,201 @@
 {
+  "renderstack": {
+    "ssao": true,
+    "ssaoIntensity": 0.7,
+    "volumetric": true,
+    "volumetricStrength": 0.75,
+    "bloom": true,
+    "bloomThreshold": 1.15,
+    "bloomStrength": 0.4,
+    "bloomWidth": 1.9,
+    "tonemap": true,
+    "exposure": 1.0,
+    "grade": true,
+    "gradeSaturation": 1.1,
+    "gradeContrast": 0.06,
+    "gradeGain": 1.03,
+    "gradeTint": [
+      1.0,
+      0.99,
+      0.96,
+      1.0
+    ],
+    "autoExposure": true,
+    "autoExposureKey": 0.2,
+    "vignette": true,
+    "vignetteRadius": 0.6,
+    "vignetteIntensity": 0.3,
+    "shadowDistance": 80.0,
+    "shadowSoftness": 1.2
+  },
   "entities": [
     {
-      "name": "sun_light", "id": 1,
+      "name": "sun_light",
+      "id": 1,
       "components": {
-        "transform": { "pos": [0, 30, 0], "scale": [1, 1, 1], "rot": [0, 0, 0, 1] },
+        "transform": {
+          "pos": [
+            0,
+            30,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ]
+        },
         "light": {
           "type": "directional",
-          "color": [1.0, 0.96, 0.88, 1],
-          "sunDir": [-0.35, -0.42, -0.52],
+          "color": [
+            1.0,
+            0.96,
+            0.88,
+            1
+          ],
+          "sunDir": [
+            -0.35,
+            -0.42,
+            -0.52
+          ],
           "intensity": 2.4,
           "radius": 10,
           "ambientStrength": 0.6,
           "useAtmosphere": true,
-          "skybox": true,
-          "skyTop": [0.16, 0.34, 0.66, 1.0],
-          "skyHorizon": [0.72, 0.82, 0.9, 1.0],
-          "fogColor": [0.62, 0.72, 0.82, 1.0],
+          "skyTop": [
+            0.16,
+            0.34,
+            0.66,
+            1.0
+          ],
+          "skyHorizon": [
+            0.72,
+            0.82,
+            0.9,
+            1.0
+          ],
+          "fogColor": [
+            0.62,
+            0.72,
+            0.82,
+            1.0
+          ],
           "fogNear": 60,
           "fogFar": 420
         },
-        "type": { "value": "Light3D" }
+        "type": {
+          "value": "Light3D"
+        }
       }
     },
     {
-      "name": "cam", "id": 2,
+      "name": "cam",
+      "id": 2,
       "components": {
-        "transform": { "pos": [0, 3.0, 12], "scale": [1, 1, 1], "rot": [-0.04, 0, 0, 0.9992] },
-        "camera": { "fov": 55, "ortho": false, "orthoSize": 10 },
-        "type": { "value": "Camera3D" }
+        "transform": {
+          "pos": [
+            0,
+            3.0,
+            12
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "rot": [
+            -0.04,
+            0,
+            0,
+            0.9992
+          ]
+        },
+        "camera": {
+          "fov": 55,
+          "ortho": false,
+          "orthoSize": 10
+        },
+        "type": {
+          "value": "Camera3D"
+        }
       }
     },
     {
-      "name": "beach", "id": 3,
+      "name": "beach",
+      "id": 3,
       "components": {
-        "transform": { "pos": [0, -0.05, 5], "scale": [60, 0.5, 40], "rot": [-0.025, 0, 0, 0.99969] },
+        "transform": {
+          "pos": [
+            0,
+            -0.05,
+            5
+          ],
+          "scale": [
+            60,
+            0.5,
+            40
+          ],
+          "rot": [
+            -0.025,
+            0,
+            0,
+            0.99969
+          ]
+        },
         "mesh": {
           "meshKey": "cube",
-          "material": { "uvRepeat": 6, "metallic": 0, "roughness": 1.0, "ao": 1, "emissiveIntensity": 1, "colorHex": "#cdb488" }
+          "castShadow": false,
+          "material": {
+            "uvRepeat": 6,
+            "metallic": 0,
+            "roughness": 1.0,
+            "ao": 1,
+            "emissiveIntensity": 1,
+            "colorHex": "#cdb488"
+          }
         },
-        "type": { "value": "MeshInstance3D" }
+        "type": {
+          "value": "MeshInstance3D"
+        }
       }
     },
     {
-      "name": "ocean", "id": 5,
+      "name": "ocean",
+      "id": 5,
       "components": {
-        "transform": { "pos": [0, 0, -220], "scale": [80, 1, 80], "rot": [0, 0, 0, 1] },
+        "transform": {
+          "pos": [
+            0,
+            0,
+            -220
+          ],
+          "scale": [
+            80,
+            1,
+            80
+          ],
+          "rot": [
+            0,
+            0,
+            0,
+            1
+          ]
+        },
         "mesh": {
           "meshKey": "water",
+          "castShadow": false,
           "material": {
             "colorHex": "#0e3750",
-            "metallic": 0, "roughness": 0.05, "ao": 1, "emissiveIntensity": 1,
+            "metallic": 0,
+            "roughness": 0.05,
+            "ao": 1,
+            "emissiveIntensity": 1,
             "waterDeepColorHex": "#06283a",
             "waterShallowColorHex": "#3aa0b0",
             "waterAbsorb": 0.22,
@@ -61,11 +207,248 @@
             "waterFoam": 1.6
           }
         },
-        "type": { "value": "MeshInstance3D" }
+        "type": {
+          "value": "MeshInstance3D"
+        }
       }
     },
-    { "name": "rock_0", "id": 6, "components": { "transform": { "pos": [-4.5, -0.1, 1.5], "scale": [0.6, 0.4, 0.5], "rot": [0, 0.6, 0, 0.83] }, "mesh": { "meshKey": "rock", "material": { "colorHex": "#9aa09a" } }, "type": { "value": "MeshInstance3D" } } },
-    { "name": "rock_1", "id": 7, "components": { "transform": { "pos": [5.2, -0.05, 0.0], "scale": [0.8, 0.5, 0.7], "rot": [0, 1.4, 0, 0.17] }, "mesh": { "meshKey": "rock", "material": { "colorHex": "#8f948d" } }, "type": { "value": "MeshInstance3D" } } },
-    { "name": "rock_2", "id": 8, "components": { "transform": { "pos": [2.0, 0.1, 8.5], "scale": [0.7, 0.5, 0.6], "rot": [0, 2.2, 0, -0.59] }, "mesh": { "meshKey": "rock", "material": { "colorHex": "#a4a89f" } }, "type": { "value": "MeshInstance3D" } } }
+    {
+      "name": "rock_0",
+      "id": 6,
+      "components": {
+        "transform": {
+          "pos": [
+            -4.5,
+            -0.1,
+            1.5
+          ],
+          "scale": [
+            0.6,
+            0.4,
+            0.5
+          ],
+          "rot": [
+            0,
+            0.6,
+            0,
+            0.83
+          ]
+        },
+        "mesh": {
+          "meshKey": "rock",
+          "material": {
+            "colorHex": "#4f554e",
+            "roughness": 0.96
+          }
+        },
+        "type": {
+          "value": "MeshInstance3D"
+        }
+      }
+    },
+    {
+      "name": "rock_1",
+      "id": 7,
+      "components": {
+        "transform": {
+          "pos": [
+            5.2,
+            -0.05,
+            0.0
+          ],
+          "scale": [
+            0.8,
+            0.5,
+            0.7
+          ],
+          "rot": [
+            0,
+            1.4,
+            0,
+            0.17
+          ]
+        },
+        "mesh": {
+          "meshKey": "rock",
+          "material": {
+            "colorHex": "#565b52",
+            "roughness": 0.96
+          }
+        },
+        "type": {
+          "value": "MeshInstance3D"
+        }
+      }
+    },
+    {
+      "name": "rock_2",
+      "id": 8,
+      "components": {
+        "transform": {
+          "pos": [
+            2.0,
+            0.1,
+            8.5
+          ],
+          "scale": [
+            0.7,
+            0.5,
+            0.6
+          ],
+          "rot": [
+            0,
+            2.2,
+            0,
+            -0.59
+          ]
+        },
+        "mesh": {
+          "meshKey": "rock",
+          "material": {
+            "colorHex": "#5c6058",
+            "roughness": 0.96
+          }
+        },
+        "type": {
+          "value": "MeshInstance3D"
+        }
+      }
+    },
+    {
+      "name": "rock_3",
+      "id": 9,
+      "components": {
+        "transform": {
+          "pos": [
+            -3.2,
+            -0.1,
+            1.2
+          ],
+          "scale": [
+            1.0,
+            0.7,
+            0.9
+          ],
+          "rot": [
+            0,
+            0.9,
+            0,
+            0.62
+          ]
+        },
+        "mesh": {
+          "meshKey": "rock",
+          "material": {
+            "colorHex": "#4a4e48",
+            "roughness": 0.96
+          }
+        },
+        "type": {
+          "value": "MeshInstance3D"
+        }
+      }
+    },
+    {
+      "name": "rock_4",
+      "id": 10,
+      "components": {
+        "transform": {
+          "pos": [
+            3.4,
+            -0.1,
+            1.8
+          ],
+          "scale": [
+            0.9,
+            0.6,
+            0.8
+          ],
+          "rot": [
+            0,
+            1.7,
+            0,
+            -0.13
+          ]
+        },
+        "mesh": {
+          "meshKey": "rock",
+          "material": {
+            "colorHex": "#555a52",
+            "roughness": 0.96
+          }
+        },
+        "type": {
+          "value": "MeshInstance3D"
+        }
+      }
+    },
+    {
+      "name": "driftwood_0",
+      "id": 11,
+      "components": {
+        "transform": {
+          "pos": [
+            -2.5,
+            0.16,
+            2.0
+          ],
+          "scale": [
+            0.16,
+            0.16,
+            1.8
+          ],
+          "rot": [
+            0,
+            0.301,
+            0,
+            0.954
+          ]
+        },
+        "mesh": {
+          "meshKey": "cube",
+          "material": {
+            "colorHex": "#6b5035",
+            "roughness": 0.92
+          }
+        },
+        "type": {
+          "value": "MeshInstance3D"
+        }
+      }
+    },
+    {
+      "name": "driftwood_1",
+      "id": 12,
+      "components": {
+        "transform": {
+          "pos": [
+            2.8,
+            0.15,
+            0.8
+          ],
+          "scale": [
+            0.14,
+            0.14,
+            1.4
+          ],
+          "rot": [
+            0,
+            -0.423,
+            0,
+            0.906
+          ]
+        },
+        "mesh": {
+          "meshKey": "cube",
+          "material": {
+            "colorHex": "#5c452f",
+            "roughness": 0.94
+          }
+        },
+        "type": {
+          "value": "MeshInstance3D"
+        }
+      }
+    }
   ]
 }
