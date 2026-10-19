@@ -597,6 +597,23 @@ void DrawSystem::ResolveDrawItem(DrawItem& item, gfx::Renderer& renderer, ecs::W
     }
     item.mesh = mesh;
 
+    // Non-chunked terrain used to take the generic lit path: its albedo was
+    // multiplied by the baked grass/dirt/rock vertex colours, so an authored
+    // sand texture rendered green. Use the same splat shader as the chunked
+    // path so terrain materials behave consistently with or without
+    // `chunkGridDiv`.
+    if (key == "terrain") {
+        item.mat.shader = renderer.TerrainShader();
+        if (item.mat.albedo.Valid()) item.mat.grassTex = item.mat.albedo;
+        item.mat.albedo = {};
+        if (const SceneMesh* sm = world.Get<SceneMesh>(item.ent)) {
+            if (!sm->dirtColorHex.empty())
+                item.mat.dirtColor = ParseColorHex(sm->dirtColorHex);
+            if (!sm->rockColorHex.empty())
+                item.mat.rockColor = ParseColorHex(sm->rockColorHex);
+        }
+    }
+
     // 多 mesh glTF 场景（C15 延伸）：`gltf:` 实体的第 2+ 个 mesh 节点（自带
     // 累积变换 + 材质）作为子项存储，Draw 时整体渲染（Sponza 类建筑场景）。
     if (!mesh.Skinned() && key.compare(0, 5, "gltf:") == 0 && content_.assets) {
@@ -727,8 +744,16 @@ gfx::Mesh DrawSystem::ResolveMeshKey(gfx::Renderer& renderer, const std::string&
         const std::string resolved = content_.fullAssetPath(path);
         assets::MeshLoadResult res =
             assets::MeshFormatRegistry::Instance().Load(*content_.assets, prefix + ":" + resolved);
-        mesh = res.mesh;
-    } else if (key == "cube") {
+        return res.mesh;
+    }
+    // Share one GPU mesh for every entity that uses the same built-in
+    // primitive. Terrain is excluded: its geometry comes from the entity's
+    // own heightmap, so two terrain entities are not interchangeable.
+    if (key != "terrain") {
+        if (auto it = proceduralMeshes_.find(key); it != proceduralMeshes_.end())
+            return it->second;
+    }
+    if (key == "cube") {
         mesh = gfx::Mesh::CreateCube(renderer, 1.0f, 1.0f, 1.0f, "cube");
     } else if (key == "sphere") {
         mesh = gfx::Mesh::CreateSphere(renderer, 1.0f, 16, 10, "sphere");
@@ -771,6 +796,7 @@ gfx::Mesh DrawSystem::ResolveMeshKey(gfx::Renderer& renderer, const std::string&
     } else if (key == "road") {
         mesh = gfx::Mesh::CreatePlane(renderer, 1.0f, 1.0f, 1, 1, "road");
     }
+    if (key != "terrain" && mesh.Valid()) proceduralMeshes_.emplace(key, mesh);
     return mesh;
 }
 
@@ -1854,6 +1880,7 @@ void DrawSystem::Reset() {
     // A reused DrawSystem across scene loads must not keep per-entity caches
     // keyed by handles the new world reuses (see Reset() in the header).
     vegCache_.clear();
+    proceduralMeshes_.clear();
     prevXforms_.clear();
     skyTex_ = {};
     skyTexPath_.clear();

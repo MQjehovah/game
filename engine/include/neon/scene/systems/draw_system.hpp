@@ -292,6 +292,13 @@ private:
     std::unordered_map<uint64_t, std::vector<uint32_t>> batchLookup_;
     // G2-3 vegetation cache (EntityKey -> VegField); rebuilt lazily per Start.
     std::unordered_map<uint64_t, VegField> vegCache_;
+    // Procedural primitive cache (meshKey -> GPU mesh). A scene may contain
+    // hundreds of trees/rocks/bushes; without this every entity uploaded its
+    // own identical vertex/index buffers. File-backed meshes are already
+    // cached by AssetManager, and per-entity heightmap terrain is unique, so
+    // only the built-in procedural keys are stored here. Cleared by Reset()
+    // when a host swaps projects/renderers.
+    std::unordered_map<std::string, gfx::Mesh> proceduralMeshes_;
     // Step E2 (TAA motion vectors): last frame's local-to-world per entity, plus
     // the frame stamp used to prune entries for entities that stopped drawing.
     // Only maintained while the renderer is writing a velocity buffer.

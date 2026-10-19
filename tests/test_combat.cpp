@@ -1947,6 +1947,39 @@ TEST(DrawSystemStandaloneBuildResolveDraw) {
     CHECK_EQ(draw.DrawCount(), 0u);
 }
 
+// Procedural primitives (tree/rock/bush/...) are shared by mesh key: N
+// entities must reference one GPU mesh instead of uploading N identical VBOs.
+TEST(DrawSystemReusesProceduralMeshes) {
+    test::HeadlessAssetFixture fix;
+
+    ecs::World world;
+    scene::AnimationSystem anims;
+    scene::DrawSystem draw;
+
+    ecs::Entity treeA = world.Create();
+    world.Add<scene::SceneTransform>(treeA, scene::SceneTransform{{-4, 0, 0}});
+    world.Add<scene::SceneMesh>(treeA);
+    world.Get<scene::SceneMesh>(treeA)->meshKey = "tree";
+
+    ecs::Entity treeB = world.Create();
+    world.Add<scene::SceneTransform>(treeB, scene::SceneTransform{{4, 0, 0}});
+    world.Add<scene::SceneMesh>(treeB);
+    world.Get<scene::SceneMesh>(treeB)->meshKey = "tree";
+
+    draw.Configure({&fix.assets, /*asyncMeshLoad=*/false,
+                    [](const std::string& p) { return p; }});
+    draw.Build(world, anims);
+    draw.Resolve(world, fix.renderer, anims);
+
+    gfx::Camera cam;
+    const gfx::Mesh a = draw.MeshForEntity(treeA, cam, world);
+    const gfx::Mesh b = draw.MeshForEntity(treeB, cam, world);
+    CHECK(a.Valid());
+    CHECK(b.Valid());
+    CHECK_EQ(a.Handle().vao, b.Handle().vao);
+    CHECK_EQ(a.Handle().vbo, b.Handle().vbo);
+}
+
 // The combat broadphase (CombatSpatialIndex BVH) must return EXACTLY the same
 // set as the brute-force scan it replaces, and be faster when many queries hit
 // one cached build. This is the engine perf guarantee for OverlapSphere/Box.
