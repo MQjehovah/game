@@ -1,0 +1,7 @@
+{
+  "startScene": "assets/scenes/immortal_path.json",
+  "window": { "w": 1280, "h": 720, "title": "仙山古道 - 修仙开放世界垂直切片" },
+  "title": "仙山古道",
+  "editor": { "mode": "3d" },
+  "export": { "platform": "windows", "description": "Xianxia vertical slice: cliff path, pines, stone lanterns and a third-person cultivator" }
+}
