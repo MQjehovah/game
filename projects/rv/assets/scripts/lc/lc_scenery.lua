@@ -351,6 +351,70 @@ function updatePoiWindows(dt)
   end
 end
 
+-- ---------------------------------------------------------------------------
+-- Animated warehouse roll-up door (server-authoritative in co-op)
+-- ---------------------------------------------------------------------------
+poiDoors = {}
+
+function spawnPoiDoor(nd)
+  if poiDoors[nd.id] ~= nil then return end
+  local cx, cz = nd.x + 6.5, nd.z + 6.5
+  local ent = SpawnPrefab("rv_rollup_door", { x = cx, y = 1.3, z = cz + 2.52 })
+  if ent == nil then return end
+  poiDoors[nd.id] = {
+    ent = ent, x = cx, z = cz + 2.52,
+    height = 2.6, topY = 2.62,
+    cur = 0.0, target = 0.0,
+  }
+  print(string.format("[depot-door] spawned at %s (closed)", nd.id))
+end
+
+function setPoiDoorOpen(ndId, open)
+  local d = poiDoors[ndId]
+  if d == nil then return end
+  local t = open and 1.0 or 0.0
+  if t ~= d.target then
+    d.target = t
+    print(string.format("[depot-door] %s target=%s (client)", ndId, tostring(open)))
+  end
+end
+
+-- Roll-up: shrink scaleY around the fixed top edge.
+function updatePoiDoors(dt)
+  for id, d in pairs(poiDoors) do
+    if d.cur ~= d.target then
+      local step = dt * 2.2
+      if d.cur < d.target then
+        d.cur = math.min(d.target, d.cur + step)
+      else
+        d.cur = math.max(d.target, d.cur - step)
+      end
+      d.cur = math.max(0, math.min(1, d.cur))
+      local s = 1.0 - 0.94 * d.cur
+      SetScale(d.ent, 1.0, s, 1.0)
+      SetPosition(d.ent, { x = d.x, y = d.topY - d.height * s * 0.5, z = d.z })
+    end
+    if d.cur == d.target and d.logged ~= d.target then
+      d.logged = d.target
+      print(string.format("[depot-door] %s now %s (client, cur=%.2f)",
+            id, d.cur > 0.5 and "open" or "closed", d.cur))
+    end
+  end
+end
+
+-- Single-player proximity trigger, mirroring the co-op server logic.
+function updatePoiDoorProximity(x, z)
+  for id, _ in pairs(poiDoors) do
+    local nd = nodeById(id)
+    if nd ~= nil then
+      local cx, cz = poiCenter(nd)
+      local near = math.abs(x - cx) < 3.6 and
+                   (z - cz) > 0.5 and (z - cz) < 4.5
+      setPoiDoorOpen(id, near)
+    end
+  end
+end
+
 -- 简易路边建筑：一个带门洞/窗的废弃小屋（纯装饰，原型级）
 function spawnRuinFor(nd)
   if nd.ruinSpawned then return end
@@ -426,6 +490,7 @@ function spawnRuinFor(nd)
       if lamp ~= nil then SetScale(lamp, 1.5, 1.5, 1.5) end
     end
     spawnPoiWindows(nd)
+    spawnPoiDoor(nd)
     return
   end
   if isGas then

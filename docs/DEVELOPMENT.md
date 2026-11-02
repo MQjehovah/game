@@ -771,7 +771,7 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   `rv_store.gltf`（透明可破碎橱窗 + 成排商品墙 + 收银机 + 冷柜 + 果蔬箱 + 挂式价牌）、
   `rv_gasstation.gltf`（透明可破碎橱窗 + 成排商品墙 + 收银机 + 冷柜 + 咖啡台 + 四柱雨棚 +
   两台油泵）、`rv_warehouse.gltf`
-  （宽装卸门/月台 + 钢制货架 + 标签托盘 + 叉车 + 发货台）、`rv_barn.gltf`（红谷仓 +
+  （宽装卸门/月台 + 钢制货架 + 标签托盘 + 叉车 + 发货台 + 可开合卷帘门）、`rv_barn.gltf`（红谷仓 +
   畜栏/干草槽/马具墙/奶桶/工作台）、
   `rv_mall.gltf`（玻璃店面 + 收银机/商品墙/服装架/模特/导视牌）、`rv_cabin.gltf`
   （原木墙 + 门廊 + 壁炉/床/桌椅/厨房）和 `rv_clinic.gltf`（玻璃门 + 红十字 +
@@ -793,6 +793,13 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   `assets/models/rv/rv_products.png`（4×4 包装格），`tools/rv_atlas.py` 提供
   `tile_uvs()` / `product_material()` / `atlas_extras()`；商店/加油站/商场的商品盒
   使用 `*_product` 材质 + TEXCOORD_0，商品墙显示品牌条/标签/条码而不是纯色块。
+- **仓库卷帘门**（`projects/rv`）：`tools/gen_rv_rollup_door.py` 生成
+  `rv_rollup_door.gltf`（11 条板 + 导轨 + 底梁 + 卷轴，2.6m 高）；
+  `lc_scenery.spawnPoiDoor()` 在物流仓库装卸门生成，`updatePoiDoors()` 用
+  `scaleY = 1 - 0.94*cur` 绕顶边卷起；单机由 `updatePoiDoorProximity()` 触发，
+  合作模式由服务器按玩家到月台的距离计算 `rollup` 并写入 `game_state`
+  （状态变化时立即 `pushState()`），客户端在 `clientUpdate` 里调用 `setPoiDoorOpen()`；
+  日志 `[depot-door] open/close (server)` 与 `... now open/closed (client)`。
 
 ---
 

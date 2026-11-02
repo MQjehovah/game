@@ -683,6 +683,7 @@ function on_update(ent, dt)
   if coopRole ~= nil then
     coopUpdate(dt)
     if updatePoiWindows then updatePoiWindows(dt) end
+    if updatePoiDoors then updatePoiDoors(dt) end
     return
   end
   if toast.t > 0 then toast.t = toast.t - dt end
@@ -770,6 +771,8 @@ function on_update(ent, dt)
   -- 第一人称：移动 / 交互 / 射击 / 钓鱼
   updatePlayer(dt)
   if updatePoiWindows then updatePoiWindows(dt) end
+  if updatePoiDoorProximity then updatePoiDoorProximity(player.x, player.z) end
+  if updatePoiDoors then updatePoiDoors(dt) end
   updateFishing(dt)
   updateInteraction()
   if ActionPressed("e") then doInteract() end
