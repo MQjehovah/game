@@ -100,7 +100,8 @@ end
 
 function spawnPonds()
   if #ponds > 0 then return end
-  spawnPond(14, 10)
+  -- 放在营地左后方：避开开局去废宅/加油站的直线路径，避免房车开进水里
+  spawnPond(-18, -12)
 end
 
 -- 简易路边建筑：一个带门洞/窗的废弃小屋（纯装饰，原型级）

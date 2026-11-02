@@ -24,7 +24,7 @@ rv = { x = 0, z = 0, yaw = 0, speed = 0 }
 curNode, day, clock = "camp", 1, 8 * 60
 rvBody = nil                  -- RV 动态刚体（Jolt）
 rvParts, camEnt, groundEnt = nil, nil, nil
-roadEnt, roadPhase, roadScroll, roadDashes = nil, 0, 0, {}
+roadEnt, roadSegments, roadPhase, roadScroll, roadDashes = nil, {}, 0, 0, {}
 camSmooth = nil
 impactCd = 0
 fuel, dur = 60, 100

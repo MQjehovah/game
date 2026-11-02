@@ -3,13 +3,14 @@
     "transform": {
       "pos": [0, 0, 0],
       "rot": [0, 0, 0, 1],
-      "scale": [7.5, 0.02, 60]
+      "scale": [7.5, 0.02, 10]
     },
     "mesh": {
       "meshKey": "cube",
       "colorHex": "#2E2E2E",
       "roughness": 0.98,
       "metallic": 0,
+      "polygonOffset": -2,
       "castShadow": false,
       "receiveShadow": false
     }

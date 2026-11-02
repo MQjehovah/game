@@ -296,12 +296,19 @@ function on_start()
   end
   if groundEnt ~= nil then SetScale(groundEnt, 800, 0.1, 800) end
   -- 用薄立方体而不是贴花：贴花是深度投影，会把路面画到房车/家具上。
-  roadEnt = SpawnPrefab("rv_road", { x = 0, y = 0.03, z = 0 })
+  -- 路面拆成 10m 小段：单个 200m 长条会因包围盒中心落在相机后方被整体剔除
+  roadSegments = {}
+  for i = 1, 20 do
+    local ent = SpawnPrefab("rv_road_seg", { x = 0, y = 0.03, z = 0 })
+    if ent ~= nil then
+      roadSegments[#roadSegments + 1] = { ent = ent, off = -95 + (i - 1) * 10 }
+    end
+  end
   roadDashes = {}
-  for i = 1, 10 do
+  for i = 1, 34 do
     local ent = SpawnPrefab("rv_road_dash", { x = 0, y = 0.043, z = 0 })
     if ent ~= nil then
-      roadDashes[#roadDashes + 1] = { ent = ent, off = -27 + (i - 1) * 6 }
+      roadDashes[#roadDashes + 1] = { ent = ent, off = -99 + (i - 1) * 6 }
     end
   end
   LC.flow.load("assets/flow/raid_wave.flow.json")
@@ -352,7 +359,7 @@ function on_start()
                            friction = 0.4, restitution = 0.05 })
 
   -- 第一人称出生：车右后侧，面朝房车（Nomad Drive 式开场）
-  local px, pz, pyaw = 5.2, -7.5, dirYaw(-5.2, 7.5)
+  local px, pz, pyaw = 2.2, -8.0, dirYaw(-2.2, 8.0)
   if startMode == "look_back" then
     px, pz = -1.8, -7.5
   end

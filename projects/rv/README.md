@@ -69,7 +69,8 @@
 ## 表现
 
 - 车内补了内墙板、车顶、仪表台、A 柱、暖色点光源，驾驶席视角隐藏车头盒体。
-- 公路改为薄立方体基座 + 独立黄色虚线几何体，不再依赖贴图/深度投影（旧版会把路面画到房车上，换个视角还会发白）。
+- 公路改为 20 段 10m 深灰立方体 + 独立黄色虚线几何体：抬高路面并加 polygon offset，
+  避免远距离 z-fighting 导致的整条路发白；不再依赖贴图/深度投影。
 - 新增做饭、倒水、咖啡、修理、拾取、钓鱼、受伤、枪声、脚步等音效。
 
 ## 运行 / 验证
@@ -87,7 +88,8 @@
 
 - `selftest_on.txt`：启动时跑完整系统自检，结果写到 `selftest_result.txt`。
 - `autopilot_on.txt`：自动上路、靠站、搜箱、收工。
-- `start_mode.txt`：`inside` / `inside_night` / `night` / `place` / `place_night` / `drive` / `map`。
+- `start_mode.txt`：`inside` / `inside_night` / `night` / `place` / `place_night` /
+  `drive` / `map` / `look_back` / `look_left` / `look_right` / `look_down` / `look_up`。
 
 ## 已知差距（后续）
 
