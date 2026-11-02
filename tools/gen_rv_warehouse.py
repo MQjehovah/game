@@ -3,7 +3,10 @@
 
 The shell keeps the shared 6.2 x 5.2 POI footprint so `collidePoiWalls` and the
 interior loot slots work unchanged. It adds a taller shed, a wide loading-bay
-door with an exterior apron/stripes/bollards, and steel racks + pallets inside.
+door with an exterior apron/stripes/bollards, steel racks + pallets inside, and
+higher-fidelity depot props: labelled pallet stacks with tape-striped cargo
+boxes, a forklift, rack signage, a shipping desk with monitor/label printer, a
+dock leveler and painted floor lanes.
 """
 import json
 import struct
@@ -46,8 +49,13 @@ class MeshBuilder:
 
 def main():
     b = MeshBuilder()
-    WALL, TRIM, ROOF, FLOOR, GLASS, YELLOW, STEEL, WOOD, RED = range(9)
+    (WALL, TRIM, ROOF, FLOOR, GLASS, YELLOW, STEEL, WOOD,
+     RED, WHITE, BLUE, GREEN, ORANGE) = range(1, 14)
     H = 3.6
+
+    # Hidden material-0 primitive (the importer's first primitive uses the
+    # default material; keep that slot invisible).
+    b.box(0, 0, -0.60, 0, 0.02, 0.02, 0.02)
 
     # --- Shed shell, wide loading-bay doorway at +Z ---
     b.box(FLOOR, 0, 0.03, 0, 6.2, 0.06, 5.2)
@@ -79,6 +87,13 @@ def main():
         b.box(STEEL, ox, 0.86, 4.35, 0.18, 0.06, 0.18)
     b.box(RED, 0, 3.30, 2.64, 2.20, 0.40, 0.06)
     b.box(YELLOW, 0, 3.30, 2.68, 1.40, 0.16, 0.02)
+    # Dock leveler plate just inside the bay.
+    b.box(STEEL, 0, 0.09, 2.28, 1.62, 0.05, 0.86)
+    # Painted floor lanes + hazard stripes.
+    b.box(YELLOW, 0, 0.066, 2.02, 3.6, 0.02, 0.10)
+    b.box(YELLOW, 0, 0.066, 1.90, 3.6, 0.02, 0.10)
+    for k in range(5):
+        b.box(YELLOW, 0, 0.066, -1.80 + k * 0.80, 0.10, 0.02, 0.40)
 
     # --- Interior racks: left, right and back ---
     for rack_x in (-2.55, 2.55):
@@ -93,14 +108,77 @@ def main():
         b.box(STEEL, 0, shelf_y, -2.30, 3.10, 0.08, 0.12)
         b.box(WOOD, 0, shelf_y + 0.06, -2.30, 3.00, 0.04, 0.55)
 
-    # --- Pallets and crates inside ---
-    pallets = [(-1.20, 0.22, 1.30), (0.55, 0.22, 1.55), (1.85, 0.22, -1.15),
-               (-1.95, 0.22, -1.10)]
-    for i, (px, py, pz) in enumerate(pallets):
-        b.box(WOOD, px, py - 0.14, pz, 0.90, 0.10, 0.75)
-        b.box(WOOD if i % 2 == 0 else STEEL, px, py + 0.18, pz, 0.72, 0.55, 0.58)
+    # Rack signage: yellow boards with white labels on the back and sides.
+    b.box(YELLOW, 0, 2.42, -2.12, 2.60, 0.34, 0.04)
+    b.box(WHITE, 0, 2.42, -2.09, 2.20, 0.18, 0.02)
+    for sx in (-1, 1):
+        b.box(YELLOW, sx * 2.30, 2.30, 1.00, 0.04, 0.34, 0.80)
+        b.box(WHITE, sx * 2.27, 2.30, 1.00, 0.02, 0.20, 0.60)
+
+    # --- Labelled pallet stacks with tape-striped cargo ---
+    pallet_colors = (ORANGE, BLUE, GREEN, WOOD, RED)
+    stacks = [(-2.15, 1.35, 3), (1.95, 1.45, 2), (-1.95, -1.15, 3),
+              (0.55, -1.35, 2)]
+    for px, pz, levels in stacks:
+        b.box(WOOD, px, 0.08, pz, 0.90, 0.12, 0.75)
+        for i in range(levels):
+            cy = 0.14 + 0.18 + i * 0.34
+            c = pallet_colors[(i + int(abs(px * 10))) % len(pallet_colors)]
+            b.box(c, px, cy, pz, 0.70, 0.30, 0.58)
+            b.box(WHITE, px, cy + 0.15, pz, 0.72, 0.04, 0.10)
+        top = 0.14 + 0.18 + levels * 0.34
+        # Shipping label facing the aisle (+Z).
+        b.box(WHITE, px, top - 0.12, pz + 0.30, 0.34, 0.16, 0.02)
+        b.box(TRIM, px, top - 0.15, pz + 0.31, 0.20, 0.03, 0.01)
+
+    # --- Forklift (facing +Z, parked by the right rack) ---
+    fx, fz = 1.70, -1.40
+    b.box(YELLOW, fx, 0.55, fz, 0.90, 0.60, 1.20)          # body
+    b.box(TRIM, fx, 0.55, fz - 0.60, 0.80, 0.70, 0.30)     # counterweight
+    b.box(TRIM, fx, 0.98, fz - 0.10, 0.42, 0.12, 0.42)     # seat
+    b.box(TRIM, fx, 1.20, fz - 0.28, 0.42, 0.42, 0.10)     # seat back
+    for gx in (-0.36, 0.36):
+        for gz in (-0.45, 0.45):
+            b.box(STEEL, fx + gx, 1.32, fz + gz, 0.06, 0.90, 0.06)
+    b.box(STEEL, fx, 1.80, fz, 0.90, 0.06, 1.10)           # overhead guard
+    for wx in (-0.45, 0.45):
+        for wz in (-0.38, 0.38):
+            b.box(TRIM, fx + wx, 0.18, fz + wz, 0.16, 0.36, 0.36)
+    for mx in (-0.34, 0.34):
+        b.box(STEEL, fx + mx, 1.25, fz + 0.66, 0.08, 2.10, 0.10)
+    b.box(STEEL, fx, 2.28, fz + 0.66, 0.80, 0.08, 0.10)    # mast crossbar
+    for ox in (-0.26, 0.26):
+        b.box(STEEL, fx + ox, 0.16, fz + 1.15, 0.14, 0.06, 0.95)  # forks
+    # Small orange beacon + white model plate.
+    b.box(ORANGE, fx, 1.92, fz - 0.30, 0.14, 0.14, 0.14)
+    b.box(WHITE, fx, 0.72, fz + 0.61, 0.30, 0.12, 0.02)
+
+    # --- Shipping desk with monitor, label printer and stool ---
+    dx, dz = 2.30, 1.92
+    b.box(TRIM, dx, 0.50, dz, 1.30, 1.00, 0.60)
+    b.box(WHITE, dx, 1.02, dz, 1.38, 0.06, 0.68)
+    b.box(STEEL, dx - 0.34, 1.22, dz - 0.10, 0.42, 0.30, 0.06)
+    b.box(BLUE, dx - 0.34, 1.24, dz - 0.13, 0.34, 0.20, 0.02)
+    b.box(STEEL, dx + 0.30, 1.16, dz, 0.30, 0.22, 0.30)
+    b.box(WHITE, dx + 0.30, 1.28, dz, 0.24, 0.04, 0.24)
+    b.box(STEEL, dx + 0.02, 1.06, dz + 0.20, 0.28, 0.04, 0.18)
+    b.box(WOOD, dx, 0.42, dz + 0.58, 0.55, 0.10, 0.55)
+    b.box(STEEL, dx, 0.20, dz + 0.58, 0.40, 0.40, 0.10)
+
+    # --- Loose cargo boxes by the bay ---
+    for c, bx, bz, sx, sy, sz in (
+            (WOOD, -2.30, 2.10, 0.80, 0.55, 0.60),
+            (ORANGE, 1.55, 2.15, 0.70, 0.65, 0.55),
+            (BLUE, -2.55, 2.10, 0.60, 0.30, 0.45)):
+        b.box(c, bx, sy * 0.5 + 0.06, bz, sx, sy, sz)
+        b.box(WHITE, bx, sy * 0.5 + 0.10, bz + sz * 0.5 + 0.01, sx * 0.7, 0.05, 0.02)
 
     materials = [
+        # glTF material index 0 is treated as the no-material default by the
+        # engine's importer, so keep a dummy here and start real materials at 1.
+        {"name": "wh_default",
+         "pbrMetallicRoughness": {"baseColorFactor": [0.5, 0.5, 0.5, 1],
+                                  "metallicFactor": 0.0, "roughnessFactor": 0.9}},
         {"name": "wh_wall",
          "pbrMetallicRoughness": {"baseColorFactor": [0.52, 0.55, 0.58, 1],
                                   "metallicFactor": 0.12, "roughnessFactor": 0.8}},
@@ -128,6 +206,18 @@ def main():
         {"name": "wh_red",
          "pbrMetallicRoughness": {"baseColorFactor": [0.62, 0.16, 0.12, 1],
                                   "metallicFactor": 0.1, "roughnessFactor": 0.55}},
+        {"name": "wh_white",
+         "pbrMetallicRoughness": {"baseColorFactor": [0.88, 0.87, 0.82, 1],
+                                  "metallicFactor": 0.03, "roughnessFactor": 0.6}},
+        {"name": "wh_blue",
+         "pbrMetallicRoughness": {"baseColorFactor": [0.10, 0.24, 0.50, 1],
+                                  "metallicFactor": 0.03, "roughnessFactor": 0.6}},
+        {"name": "wh_green",
+         "pbrMetallicRoughness": {"baseColorFactor": [0.18, 0.44, 0.20, 1],
+                                  "metallicFactor": 0.03, "roughnessFactor": 0.65}},
+        {"name": "wh_orange",
+         "pbrMetallicRoughness": {"baseColorFactor": [0.78, 0.40, 0.10, 1],
+                                  "metallicFactor": 0.03, "roughnessFactor": 0.65}},
     ]
 
     buffer = b""
