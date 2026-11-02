@@ -218,9 +218,38 @@ function spawnRuinFor(nd)
   if nd.ruinSpawned then return end
   nd.ruinSpawned = true
   local cx, cz = nd.x + 6.5, nd.z + 6.5
+  local nm = nd.name or ""
+  local isStore = (nd.id == "ruin") or (nm:find("废宅") ~= nil)
+  if nd.id == "ruin" then
+    print(string.format("[poi] spawn store shell node=(%.1f,%.1f) center=(%.1f,%.1f)",
+          nd.x, nd.z, cx, cz))
+  end
+  if isStore then
+    -- 真实可进入建筑：独立 glTF（实心墙体/门洞/屋檐/招牌/柜台/货架）
+    local store = SpawnPrefab("rv_store", { x = cx, y = 0, z = cz })
+    if store ~= nil then SetRotationY(store, 0) end
+    for _, lx in ipairs({ -1.60, 1.40 }) do
+      local lamp = SpawnPrefab("rv_lamp", { x = cx + lx, y = 2.42, z = cz })
+      if lamp ~= nil then SetScale(lamp, 1.4, 1.4, 1.4) end
+    end
+    local box = SpawnPrefab("rv_storage", { x = cx - 1.80, y = 0.20, z = cz + 1.35 })
+    if box ~= nil then
+      SetScale(box, 0.7, 0.7, 0.7)
+      SetRotationY(box, 0.45)
+    end
+    return
+  end
+
+  poiShellParts = poiShellParts or {}
+  local shell = {}
+  poiShellParts[nd.id] = shell
   local function cube(pre, x, y, z, sx, sy, sz)
     local e = SpawnPrefab(pre, { x = x, y = y, z = z })
-    if e ~= nil then SetScale(e, sx, sy, sz) end
+    if e ~= nil then
+      SetScale(e, sx, sy, sz)
+      shell[#shell + 1] = { ent = e, x = x, y = y, z = z, sx = sx, sy = sy, sz = sz }
+    end
+    return e
   end
   -- 地板 / 后墙 / 两侧墙 / 屋顶
   cube("rv_panel_dark",  cx, 0.03, cz, 6.2, 0.06, 5.2)
@@ -228,6 +257,15 @@ function spawnRuinFor(nd)
   cube("rv_panel_light", cx - 3.05, 1.25, cz, 0.16, 2.5, 5.2)
   cube("rv_panel_light", cx + 3.05, 1.25, cz, 0.16, 2.5, 5.2)
   cube("rv_panel_dark",  cx, 2.55, cz, 6.4, 0.16, 5.4)
+  -- 内衬：立方体材质单面，站在室内看到的是外墙背面（被剔除）。
+  -- 补一层朝内的墙板/顶板，让建筑真正可以走进去。
+  cube("rv_panel_light", cx, 1.25, cz - 2.44, 6.0, 2.50, 0.06)
+  cube("rv_panel_light", cx - 2.94, 1.25, cz, 0.06, 2.50, 5.0)
+  cube("rv_panel_light", cx + 2.94, 1.25, cz, 0.06, 2.50, 5.0)
+  cube("rv_panel_light", cx, 2.47, cz, 6.0, 0.06, 5.0)
+  -- 前墙内衬同样留门洞
+  cube("rv_panel_light", cx - 1.90, 1.25, cz + 2.44, 2.20, 2.50, 0.06)
+  cube("rv_panel_light", cx + 1.90, 1.25, cz + 2.44, 2.20, 2.50, 0.06)
   -- 前墙两段（中间留门洞）
   cube("rv_panel_light", cx - 1.9, 1.25, cz + 2.55, 2.3, 2.5, 0.16)
   cube("rv_panel_light", cx + 1.9, 1.25, cz + 2.55, 2.3, 2.5, 0.16)
@@ -235,7 +273,16 @@ function spawnRuinFor(nd)
   cube("rv_panel_window", cx - 3.0, 1.55, cz + 0.3, 0.04, 0.7, 1.4)
   cube("rv_panel_window", cx + 3.0, 1.55, cz + 0.3, 0.04, 0.7, 1.4)
 
-  local nm = nd.name or ""
+  -- 门框 + 半开的门板：所有建筑统一，正门是唯一墙体开口
+  cube("rv_panel_dark", cx - 0.86, 1.20, cz + 2.55, 0.20, 2.40, 0.24)
+  cube("rv_panel_dark", cx + 0.86, 1.20, cz + 2.55, 0.20, 2.40, 0.24)
+  cube("rv_panel_dark", cx, 2.36, cz + 2.55, 1.92, 0.22, 0.24)
+  local leaf = SpawnPrefab("rv_panel_dark", { x = cx - 0.86, y = 1.14, z = cz + 2.62 })
+  if leaf ~= nil then
+    SetScale(leaf, 0.07, 2.04, 0.92)
+    SetRotationY(leaf, -1.92)
+  end
+
   if nm:find("加油站") or nd.id == "gasstop" then
     -- 加油站雨棚 + 油泵
     local gx, gz = nd.x + 2.2, nd.z + 5.0

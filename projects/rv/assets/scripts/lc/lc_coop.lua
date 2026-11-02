@@ -54,6 +54,7 @@ local coop = {
   buildLayer = "floor", buildRot = 0, buildGhostValid = nil,
   buildDemo = false, buildDemoT = 0, buildDemoStage = 0,
   buildUi = false, buildUiDone = false,
+  poiDemo = false, poiView = false, poiIn = {}, poiT = 0,
   sitDemo = false, doorView = false,
   doorAngle = 0, doorTarget = 0, animT = 0,
   animPhase = {},
@@ -445,8 +446,18 @@ local function serverDebugLog()
   for i = 1, MAX_SLOTS do
     if coop.slots[i].joined and coop.slots[i].inside then door = 1 end
   end
+  local shop = 0
+  local shopNd = nodeById("ruin")
+  if shopNd ~= nil then
+    local scx, scz = poiCenter(shopNd)
+    for i = 1, MAX_SLOTS do
+      local s = coop.slots[i]
+      if s.joined and math.abs(s.x - scx) < POI_HALF_X and
+         math.abs(s.z - scz) < POI_HALF_Z then shop = shop + 1 end
+    end
+  end
   print(string.format(
-    "[coop-main-server] seq=%d rv=(%.2f,%.2f,yaw=%.2f speed=%.2f) p1=(%.2f,%.2f) p2=(%.2f,%.2f) p3=(%.2f,%.2f) p4=(%.2f,%.2f) joined=%d/%d fuel=%.1f water=%.1f metal=%d crates=%d meal=%d waterItem=%d stove=%d fridge=%d bed=%d furn=%d in1=%d in2=%d in3=%d in4=%d door=%d",
+    "[coop-main-server] seq=%d rv=(%.2f,%.2f,yaw=%.2f speed=%.2f) p1=(%.2f,%.2f) p2=(%.2f,%.2f) p3=(%.2f,%.2f) p4=(%.2f,%.2f) joined=%d/%d fuel=%.1f water=%.1f metal=%d crates=%d meal=%d waterItem=%d stove=%d fridge=%d bed=%d furn=%d in1=%d in2=%d in3=%d in4=%d door=%d shop=%d",
     coop.seq, rv.x, rv.z, rv.yaw, rv.speed,
     coop.slots[1].x, coop.slots[1].z, coop.slots[2].x, coop.slots[2].z,
     coop.slots[3].x, coop.slots[3].z, coop.slots[4].x, coop.slots[4].z,
@@ -457,7 +468,7 @@ local function serverDebugLog()
     furnState("stove") and 1 or 0, furnState("fridge") and 1 or 0,
     furnState("bed") and 1 or 0, #sortedInstances(),
     coop.slots[1].inside and 1 or 0, coop.slots[2].inside and 1 or 0,
-    coop.slots[3].inside and 1 or 0, coop.slots[4].inside and 1 or 0, door))
+    coop.slots[3].inside and 1 or 0, coop.slots[4].inside and 1 or 0, door, shop))
 end
 
 local function serverHandleCommand(clientId, a)
@@ -648,6 +659,53 @@ local function coopSave()
   end
 end
 
+local function smoothStep(t)
+  t = clamp(t, 0.0, 1.0)
+  return t * t * (3.0 - 2.0 * t)
+end
+
+-- Scripted verification walk for coop_ruin.txt: 3-5s enter through the front
+-- door, 5-8s stand inside the store, 8-10s leave.
+local function poiDemoPose(slotIndex, t)
+  local nd = nodeById("ruin")
+  if nd == nil then return nil end
+  local cx, cz = poiCenter(nd)
+  local lane = cx
+  local outsideZ = cz + 5.6 + (slotIndex - 1) * 1.1
+  local insideZ = cz + 0.7
+  local side = (slotIndex == 1) and -1.15 or 1.15
+  if t < 3.0 then
+    return lane, outsideZ
+  elseif t < 5.0 then
+    local k = smoothStep((t - 3.0) / 2.0)
+    return lane, outsideZ + (insideZ - outsideZ) * k
+  elseif t < 8.0 then
+    local k = smoothStep((t - 5.0) / 1.2)
+    return lane + side * k, insideZ
+  elseif t < 10.0 then
+    local k = smoothStep((t - 8.0) / 2.0)
+    local x = lane + side * (1.0 - math.min(1.0, k * 2.0))
+    local z = insideZ + (outsideZ - insideZ) * math.max(0.0, (k - 0.5) * 2.0)
+    return x, z
+  end
+  return lane, outsideZ
+end
+
+local function poiInsideCount()
+  local n = 0
+  local nd = nodeById("ruin")
+  if nd == nil then return 0 end
+  local cx, cz = poiCenter(nd)
+  for i = 1, MAX_SLOTS do
+    local s = coop.slots[i]
+    if s.joined and math.abs(s.x - cx) < POI_HALF_X and
+       math.abs(s.z - cz) < POI_HALF_Z then
+      n = n + 1
+    end
+  end
+  return n
+end
+
 local function serverUpdate(dt)
   drainCommands()
   coop.autoT = coop.autoT + dt
@@ -720,14 +778,53 @@ local function serverUpdate(dt)
       if s.joined and not s.inside then
         local fx, fz = math.sin(s.yaw), math.cos(s.yaw)
         local rx, rz = math.cos(s.yaw), -math.sin(s.yaw)
-        s.x = s.x + (fx * s.f + rx * s.s) * PLAYER_SPEED * dt
-        s.z = s.z + (fz * s.f + rz * s.s) * PLAYER_SPEED * dt
+        local nx = s.x + (fx * s.f + rx * s.s) * PLAYER_SPEED * dt
+        local nz = s.z + (fz * s.f + rz * s.s) * PLAYER_SPEED * dt
+        nx, nz = collidePoiWalls(s.x, s.z, nx, nz)
+        s.x, s.z = nx, nz
         if coop.clampDemo then
           s.x = clamp(s.x, -4.0, 4.0)
           s.z = clamp(s.z, -13.0, -6.5)
         else
           s.x = clamp(s.x, -WORLD_LIMIT, WORLD_LIMIT)
           s.z = clamp(s.z, -WORLD_LIMIT, WORLD_LIMIT)
+        end
+      end
+    end
+  end
+
+  if coop.poiDemo then
+    local anyJoined = false
+    for i = 1, MAX_SLOTS do
+      if coop.slots[i].joined then anyJoined = true end
+    end
+    if anyJoined then coop.poiT = coop.poiT + dt end
+    for i = 1, 2 do
+      local s = coop.slots[i]
+      if s.joined then
+        local px, pz = poiDemoPose(i, coop.poiT)
+        if px ~= nil then
+          s.x, s.z = px, pz
+          s.yaw = (coop.poiT < 8.0) and math.pi or 0
+        end
+      end
+    end
+  end
+
+  do
+    local nd = nodeById("ruin")
+    if nd ~= nil then
+      local cx, cz = poiCenter(nd)
+      for i = 1, MAX_SLOTS do
+        local s = coop.slots[i]
+        local inside = math.abs(s.x - cx) < POI_HALF_X and
+                       math.abs(s.z - cz) < POI_HALF_Z
+        if inside ~= (coop.poiIn[i] == true) then
+          coop.poiIn[i] = inside
+          if s.joined then
+            print(string.format("[coop-poi] P%d %s ruin store (%.1f,%.1f)",
+                  i, inside and "entered" or "exited", s.x, s.z))
+          end
         end
       end
     end
@@ -787,8 +884,20 @@ end
 
 local function clientLog(s)
   local p = s.players or {}
+  local shop = 0
+  local shopNd = nodeById("ruin")
+  if shopNd ~= nil then
+    local scx, scz = poiCenter(shopNd)
+    for i = 1, MAX_SLOTS do
+      local q = p[i]
+      if q ~= nil and q.j == 1 and math.abs((q.x or 0) - scx) < POI_HALF_X and
+         math.abs((q.z or 0) - scz) < POI_HALF_Z then
+        shop = shop + 1
+      end
+    end
+  end
   print(string.format(
-    "[coop-main-client] seq=%d name=%s slot=%d id=%.0f rv=(%.2f,%.2f,yaw=%.2f) p1=(%.2f,%.2f) p2=(%.2f,%.2f) p3=(%.2f,%.2f) p4=(%.2f,%.2f) fuel=%.1f water=%.1f metal=%d crates=%d meal=%d waterItem=%d stove=%d fridge=%d bed=%d hunger=%.1f furn=%d in1=%d in2=%d in3=%d in4=%d door=%d",
+    "[coop-main-client] seq=%d name=%s slot=%d id=%.0f rv=(%.2f,%.2f,yaw=%.2f) p1=(%.2f,%.2f) p2=(%.2f,%.2f) p3=(%.2f,%.2f) p4=(%.2f,%.2f) fuel=%.1f water=%.1f metal=%d crates=%d meal=%d waterItem=%d stove=%d fridge=%d bed=%d hunger=%.1f furn=%d in1=%d in2=%d in3=%d in4=%d door=%d shop=%d",
     s.seq, tostring(GetVar("playerName")), coop.mySlot, coop.myClientId or 0,
     s.rv.x, s.rv.z, s.rv.yaw,
     (p[1] and p[1].x) or 0, (p[1] and p[1].z) or 0,
@@ -802,7 +911,7 @@ local function clientLog(s)
     (s.furn and s.furn[3] and s.furn[3].on) or 0,
     (s.needs and s.needs.hunger) or 0, s.furnCount or 0,
     (p[1] and p[1].ins) or 0, (p[2] and p[2].ins) or 0,
-    (p[3] and p[3].ins) or 0, (p[4] and p[4].ins) or 0, s.door or 0))
+    (p[3] and p[3].ins) or 0, (p[4] and p[4].ins) or 0, s.door or 0, shop))
 end
 
 local function applyState(s)
@@ -986,8 +1095,10 @@ local function clientUpdate(dt)
   if coop.haveSelf and not driving and not coop.buildMode and not inside then
     local fx, fz = math.sin(coop.lookYaw), math.cos(coop.lookYaw)
     local rx, rz = math.cos(coop.lookYaw), -math.sin(coop.lookYaw)
-    coop.localPos.x = coop.localPos.x + (fx * f + rx * s) * PLAYER_SPEED * dt
-    coop.localPos.z = coop.localPos.z + (fz * f + rz * s) * PLAYER_SPEED * dt
+    local nx = coop.localPos.x + (fx * f + rx * s) * PLAYER_SPEED * dt
+    local nz = coop.localPos.z + (fz * f + rz * s) * PLAYER_SPEED * dt
+    nx, nz = collidePoiWalls(coop.localPos.x, coop.localPos.z, nx, nz)
+    coop.localPos.x, coop.localPos.z = nx, nz
     if coop.clampDemo then
       coop.localPos.x = clamp(coop.localPos.x, -4.0, 4.0)
       coop.localPos.z = clamp(coop.localPos.z, -13.0, -6.5)
@@ -1104,6 +1215,7 @@ local function clientUpdate(dt)
       local joined = p ~= nil and p.j == 1
       local pInside = p ~= nil and p.ins == 1
       local show = joined and not (pInside and i == coop.mySlot)
+                   and not (coop.poiView and i == coop.mySlot)
       SetVisible(v, show)
       if show then
         local px, pz, py
@@ -1158,7 +1270,16 @@ local function clientUpdate(dt)
   else
     px, pz, pyaw = COOP_SPAWN[1].lx, COOP_SPAWN[1].lz, 0
   end
-  if coop.doorView and coop.mySlot == 2 then
+  if coop.poiView then
+    local nd = nodeById("ruin")
+    local cx, cz = rv.x, rv.z
+    if nd ~= nil then cx, cz = poiCenter(nd) end
+    SetVar("cameraMouseLock", 1)
+    SetVar("cameraFocus", { x = cx - 0.5, y = 1.15, z = cz - 0.6 })
+    SetVar("cameraYaw", 0.55)
+    SetVar("cameraPitch", 0.04)
+    SetVar("cameraDist", 3.0)
+  elseif coop.doorView and coop.mySlot == 2 then
     -- Test-only three-quarter rear camera for inspecting the real door mesh,
     -- the cut opening and the seated passenger.
     SetVar("cameraMouseLock", 1)
@@ -1283,7 +1404,32 @@ function coopInitWorld(role)
     coop.autoDrive = readFlag("coop_drive.txt")
     coop.actionsDemo = readFlag("coop_actions.txt")
     coop.boardDemo = readFlag("coop_board.txt")
-    coop.clampDemo = readFlag("coop_clamp.txt")
+    coop.poiDemo = readFlag("coop_ruin.txt")
+    if coop.poiDemo then
+      local nd = nodeById("ruin")
+      if nd ~= nil then
+        local cx, cz = poiCenter(nd)
+        atNode, curNode = "ruin", "ruin"
+        rv.x, rv.z, rv.yaw = nd.x, nd.z, 0
+        coop.rv = { x = nd.x, z = nd.z, yaw = 0, speed = 0 }
+        spawnCrates() -- re-roll loot inside the store
+        for i = 1, MAX_SLOTS do
+          local s = coop.slots[i]
+          if i <= 2 then
+            s.x, s.z, s.yaw = cx, cz + 5.6 + (i - 1) * 1.1, math.pi
+          end
+          if coop.proxies[i] ~= nil then
+            SetPosition(coop.proxies[i], { x = s.x, y = 0, z = s.z })
+            SetRotationY(coop.proxies[i], s.yaw)
+          end
+        end
+        applyRvTransform()
+        print(string.format(
+          "[coop-poi] demo at ruin store center=(%.1f,%.1f) crates=%d p1=(%.1f,%.1f) p2=(%.1f,%.1f)",
+          cx, cz, #crates, coop.slots[1].x, coop.slots[1].z,
+          coop.slots[2].x, coop.slots[2].z))
+      end
+    end
     print(string.format("[coop-main] server init proxies=%d/%d/%d/%d crates=%d furniture=%d",
           coop.slots[1].key, coop.slots[2].key, coop.slots[3].key, coop.slots[4].key,
           #crates, #sortedInstances()))
@@ -1317,6 +1463,24 @@ function coopInitWorld(role)
     coop.boardDemo = readFlag("coop_board.txt")
     coop.sitDemo = readFlag("coop_sitdemo.txt")
     coop.doorView = readFlag("coop_doorview.txt")
+    coop.poiView = readFlag("coop_poiview.txt")
+    -- Prefab shell cubes are spawned before networking starts; re-assert their
+    -- transforms once so the co-op client's draw list uses the authored pose.
+    if poiShellParts ~= nil then
+      local n = 0
+      for _, list in pairs(poiShellParts) do
+        for _, p in ipairs(list) do
+          -- Nudge once: static prefab entities keep their scene-load culling
+          -- bounds unless the transform is actually dirtied.
+          SetPosition(p.ent, { x = p.x + 0.0015, y = p.y, z = p.z })
+          SetPosition(p.ent, { x = p.x, y = p.y, z = p.z })
+          SetScale(p.ent, p.sx, p.sy, p.sz)
+          SetVisible(p.ent, true)
+          n = n + 1
+        end
+      end
+      print(string.format("[coop-poi] refreshed shell parts=%d", n))
+    end
     SetVar("cameraMouseLock", 1)
     applyLights()
     print(string.format("[coop-main] client init proxies=%d/%d/%d/%d",
@@ -1360,8 +1524,9 @@ function coopDrawHud()
   DrawText(string.format("材料 金属%d 电子%d 布料%d 木材%d",
            materials.metal or 0, materials.electronics or 0,
            materials.cloth or 0, materials.wood or 0), 26, 110, 12, 0.80, 0.82, 0.76, 1)
-  DrawText(string.format("物资箱 %d   家具 %d 件   热饭 %d   净水 %d",
-           #crates, #sortedInstances(), coop.invMeal or 0, coop.invWater or 0),
+  DrawText(string.format("物资箱 %d   家具 %d 件   商店内 %d 人   热饭 %d   净水 %d",
+           #crates, #sortedInstances(), poiInsideCount(),
+           coop.invMeal or 0, coop.invWater or 0),
            26, 128, 12, 0.80, 0.82, 0.76, 1)
 
   drawBar(26, 152, 200, "生命", (needs.health or 0) / 100, 0.85, 0.30, 0.30)

@@ -99,6 +99,67 @@ function findInstanceAt(cx, cz)
   return id and instances[id] or nil
 end
 
+-- POI building footprint (all non-camp nodes spawn the same base shell at
+-- node + (6.5, 6.5)). Shared by collision, loot placement and co-op demos.
+POI_HALF_X, POI_HALF_Z = 3.05, 2.55
+POI_DOOR_HALF = 0.72
+
+function poiCenter(nd)
+  if nd == nil then return nil end
+  return nd.x + 6.5, nd.z + 6.5
+end
+
+-- Axis-separated wall collision for the POI shell: side/back walls always
+-- block, the front wall only blocks outside the doorway span. Applied to both
+-- local prediction and the authoritative server so walls feel solid online.
+function collidePoiWalls(px, pz, nx, nz)
+  local margin = 0.14
+  for _, nd in ipairs(NODES) do
+    if nd.id ~= "camp" then
+      local cx, cz = poiCenter(nd)
+      local hx, hz = POI_HALF_X, POI_HALF_Z
+
+      -- Side walls.
+      if pz > cz - hz - margin and pz < cz + hz + margin then
+        local left, right = cx - hx, cx + hx
+        if px >= left then
+          if nx < left + margin then nx = left + margin end
+        elseif nx > left - margin then
+          nx = left - margin
+        end
+        if px <= right then
+          if nx > right - margin then nx = right - margin end
+        elseif nx < right + margin then
+          nx = right + margin
+        end
+      end
+
+      -- Back wall.
+      if px > cx - hx - margin and px < cx + hx + margin then
+        local back = cz - hz
+        if pz >= back then
+          if nz < back + margin then nz = back + margin end
+        elseif nz > back - margin then
+          nz = back - margin
+        end
+      end
+
+      -- Front wall, split around the doorway.
+      if px > cx - hx - margin and px < cx + hx + margin then
+        local front = cz + hz
+        if math.abs(nx - cx) > POI_DOOR_HALF then
+          if pz <= front then
+            if nz > front - margin then nz = front - margin end
+          elseif nz < front + margin then
+            nz = front + margin
+          end
+        end
+      end
+    end
+  end
+  return nx, nz
+end
+
 function canAfford(cost)
   for k, v in pairs(cost) do
     if (materials[k] or 0) < v then return false end

@@ -136,8 +136,10 @@ function updatePlayer(dt)
   local len = math.sqrt(mx * mx + mz * mz)
   if len > 0.001 then mx, mz = mx / len, mz / len end
   local sp = (sprint and 4.3 or 2.7) * ((needs.energy or 100) < 20 and 0.7 or 1)
-  player.x = player.x + mx * sp * dt
-  player.z = player.z + mz * sp * dt
+  local nx = player.x + mx * sp * dt
+  local nz = player.z + mz * sp * dt
+  nx, nz = collidePoiWalls(player.x, player.z, nx, nz)
+  player.x, player.z = nx, nz
   clampPlayerInsideRv()
   -- 脚步声
   if len > 0 then

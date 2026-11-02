@@ -758,6 +758,12 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   写 `saves/layout.json`（含 `coop` 扩展），启动时恢复；同名断线重连回收槽位。
   已验证 2/3/4 个客户端、合作放置/拆除、进出过渡、保存重启和重连；门洞/车门/
   坐姿资产可用 `coop_board.txt` + `coop_doorview.txt` 复现。
+- **可进入 POI 商店**（`projects/rv`）：`tools/gen_rv_store.py` 生成实心墙体、门洞、
+  门框/雨棚/招牌、货架/柜台/地毯的 `rv_store.gltf`；废宅/商店地点直接生成该 glTF，
+  店内 6 个物资箱由 `spawnCrates()` 放在店内。`collidePoiWalls()` 在服务器与客户端
+  预测同时阻挡侧/后墙，只允许从门洞进出。`coop_ruin.txt` 把两名玩家放到店门口并
+  自动 3–5s 进门、8–10s 出门，`coop_poiview.txt` 提供店内镜头；服务器日志
+  `P1/P2 entered ruin store`、`shop=2` → `exited`、`shop=0`，两端 `smoke assertions passed`。
 
 ---
 

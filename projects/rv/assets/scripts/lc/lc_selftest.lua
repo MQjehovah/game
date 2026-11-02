@@ -150,18 +150,32 @@ function runSelfTest()
   ok(r, "day/night sun light", nightInt and dayInt and dayInt > nightInt,
      string.format("night=%.2f day=%.2f", tonumber(nightInt) or -1, tonumber(dayInt) or -1))
 
-  -- 地点物资箱刷在小屋周围
+  -- 地点物资箱刷在建筑内部，玩家需要从正门进入
   atNode = "ruin"
   spawnCrates()
   local ruin = nodeById("ruin")
-  local nearRuin = 0
+  local scx, scz = poiCenter(ruin)
+  local insideCrates = 0
   for _, c in ipairs(crates) do
-    local dx, dz = c.x - (ruin.x + 6.5), c.z - (ruin.z + 6.5)
-    if dx * dx + dz * dz < 25 then nearRuin = nearRuin + 1 end
+    local dx, dz = c.x - scx, c.z - scz
+    if math.abs(dx) < POI_HALF_X and math.abs(dz) < POI_HALF_Z then
+      insideCrates = insideCrates + 1
+    end
   end
-  ok(r, "crates at POI ruin", nearRuin >= 4,
-     string.format("%d/%d near ruin", nearRuin, #crates))
+  ok(r, "crates inside POI store", insideCrates >= 4,
+     string.format("%d/%d interior", insideCrates, #crates))
   despawnCrates()
+
+  -- POI 墙体碰撞：侧墙挡住，门洞可以通过
+  do
+    local cx, cz = poiCenter(ruin)
+    local wx = collidePoiWalls(cx, cz, cx + 6.0, cz)
+    local dx, dz = collidePoiWalls(cx, cz + 2.0, cx, cz + 3.2)
+    local wallOk = math.abs(wx - (cx + POI_HALF_X - 0.14)) < 1e-6
+    local doorOk = math.abs(dx - cx) < 1e-6 and dz > cz + 2.6
+    ok(r, "poi wall collision", wallOk and doorOk,
+       string.format("wall x=%.2f door z=%.2f", wx, dz))
+  end
   atNode = nil
 
   -- 存读档

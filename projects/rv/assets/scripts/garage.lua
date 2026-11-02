@@ -397,6 +397,14 @@ function on_start()
   if startMode == "side" or startMode == "side_night" then
     px, pz, pyaw = 6.2, 0.0, -math.pi * 0.5
   end
+  if startMode == "poi" then
+    -- 路边商店门口：用于检查可进入建筑（门洞/内衬/战利品）
+    local nd = nodeById("ruin")
+    if nd ~= nil then
+      local cx, cz = poiCenter(nd)
+      px, pz, pyaw = cx, cz + 3.6, math.pi
+    end
+  end
   if startMode == "side_night" then clock = 22 * 60 end
   if startMode == "night" or startMode == "inside_night"
      or startMode == "place_night" or startMode == "night_drive" then
