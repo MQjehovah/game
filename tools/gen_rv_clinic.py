@@ -49,7 +49,7 @@ class MeshBuilder:
 def main():
     b = MeshBuilder()
     (WALL, TRIM, ROOF, FLOOR, GLASS, RED, STEEL, WHITE,
-     FABRIC, WOOD, TEAL) = range(1, 12)
+     FABRIC, WOOD, TEAL, AMBER, BLUE, GREEN) = range(1, 15)
     H = 3.0
 
     # Hidden material-0 primitive (the importer's first primitive uses the
@@ -83,33 +83,90 @@ def main():
     b.box(WHITE, 0, 3.02, 2.68, 0.30, 0.70, 0.02)
     b.box(WHITE, 0, 3.02, 2.69, 0.70, 0.30, 0.02)
 
-    # --- Interior: reception, waiting chairs, exam area ---
-    # Reception counter (right).
+    # --- Interior: reception, waiting chairs, exam area, medicine wall ---
+    # Reception counter (right) with monitor, keyboard, phone and paperwork.
     b.box(WOOD, 1.55, 0.55, -0.60, 2.10, 1.10, 0.70)
     b.box(WHITE, 1.55, 1.13, -0.60, 2.18, 0.06, 0.78)
-    b.box(STEEL, 1.55, 1.42, -0.85, 0.65, 0.50, 0.10)
+    b.box(STEEL, 1.55, 0.10, -0.60, 2.02, 0.16, 0.62)
+    b.box(STEEL, 1.55, 1.35, -0.88, 0.10, 0.30, 0.10)
+    b.box(TRIM, 1.55, 1.52, -0.80, 0.44, 0.26, 0.04)
+    b.box(BLUE, 1.55, 1.52, -0.77, 0.36, 0.18, 0.02)
+    b.box(TRIM, 1.55, 1.18, -0.45, 0.44, 0.03, 0.16)
+    b.box(TRIM, 1.98, 1.18, -0.58, 0.16, 0.06, 0.22)
+    b.box(WHITE, 1.20, 1.16, -0.45, 0.20, 0.02, 0.28)
+    b.box(STEEL, 1.55, 0.34, -1.10, 0.40, 0.10, 0.40)
+    # Reception sign (teal plate + red cross) on the back wall.
+    b.box(TEAL, 1.55, 2.34, -2.44, 1.70, 0.28, 0.04)
+    b.box(WHITE, 1.55, 2.34, -2.41, 1.20, 0.14, 0.02)
+    b.box(RED, 2.20, 2.34, -2.41, 0.14, 0.20, 0.02)
+    b.box(RED, 2.20, 2.34, -2.41, 0.34, 0.08, 0.02)
+
     # Waiting chairs along the left wall.
     for i in range(3):
         cz = -1.60 + i * 0.95
         b.box(STEEL, -2.30, 0.25, cz, 0.55, 0.10, 0.60)
         b.box(TEAL, -2.30, 0.60, cz + 0.26, 0.55, 0.60, 0.08)
         b.box(STEEL, -2.30, 0.45, cz, 0.08, 0.45, 0.60)
-    # Exam table (back-right) with a sheet + pillow.
-    b.box(WHITE, 1.90, 0.62, -1.95, 1.20, 0.16, 2.00)
-    b.box(STEEL, 1.90, 0.30, -1.95, 1.10, 0.50, 1.85)
-    b.box(WHITE, 1.90, 0.74, -1.55, 1.08, 0.10, 1.10)
-    b.box(STEEL, 1.90, 0.80, -2.65, 0.95, 0.16, 0.30)
-    # Medicine shelves (back-left).
+
+    # Exam table (back-right): padded top, sheet, pillow, paper roll.
+    b.box(WHITE, 1.90, 0.62, -1.70, 1.20, 0.16, 1.45)
+    b.box(STEEL, 1.90, 0.30, -1.70, 1.10, 0.50, 1.30)
+    b.box(WHITE, 1.90, 0.74, -1.35, 1.08, 0.10, 0.80)
+    b.box(STEEL, 1.90, 0.80, -2.30, 0.95, 0.16, 0.28)
+    b.box(WHITE, 2.36, 0.80, -1.70, 0.10, 0.30, 0.34)
+
+    # Overhead exam lamp on an articulated wall arm.
+    b.box(STEEL, 2.60, 2.10, -1.70, 0.10, 0.90, 0.10)
+    b.box(STEEL, 2.20, 2.10, -1.70, 0.90, 0.08, 0.08)
+    b.box(STEEL, 1.80, 1.95, -1.70, 0.08, 0.40, 0.08)
+    b.box(AMBER, 1.80, 1.72, -1.70, 0.34, 0.16, 0.34)
+    b.box(WHITE, 1.80, 1.64, -1.70, 0.26, 0.04, 0.26)
+
+    # Vital-signs monitor on a rolling stand.
+    b.box(STEEL, 2.62, 0.55, -0.95, 0.06, 1.10, 0.06)
+    b.box(STEEL, 2.62, 0.08, -0.95, 0.34, 0.05, 0.34)
+    b.box(TRIM, 2.62, 1.20, -0.95, 0.34, 0.28, 0.10)
+    b.box(BLUE, 2.62, 1.20, -0.89, 0.26, 0.18, 0.02)
+    b.box(GREEN, 2.62, 1.20, -0.88, 0.18, 0.03, 0.01)
+
+    # IV stand + bag, instrument tray on a cart.
+    b.box(STEEL, 1.10, 0.70, -2.20, 0.05, 1.40, 0.05)
+    b.box(STEEL, 1.10, 0.08, -2.20, 0.30, 0.05, 0.30)
+    b.box(WHITE, 1.10, 1.42, -2.20, 0.16, 0.28, 0.10)
+    b.box(STEEL, 1.20, 0.55, -1.05, 0.50, 0.06, 0.40)
+    b.box(STEEL, 1.20, 0.28, -1.05, 0.06, 0.55, 0.06)
+    for tx in (1.14, 1.20, 1.26):
+        b.box(WHITE, tx, 0.62, -1.05, 0.03, 0.10, 0.12)
+
+    # Medicine cabinet (back-left): glass-front shelves, labelled boxes.
     b.box(STEEL, -1.40, 1.05, -2.32, 2.20, 2.10, 0.26)
     for shelf_y in (0.55, 1.20, 1.85):
         b.box(WHITE, -1.40, shelf_y, -2.16, 2.00, 0.05, 0.34)
-    for i in range(9):
-        px = -2.15 + (i % 3) * 0.72
-        py = 0.66 + (i // 3) * 0.65
-        b.box(TEAL if i % 2 == 0 else WHITE, px, py, -2.10, 0.26, 0.30, 0.20)
+        b.box(WHITE, -1.40, shelf_y + 0.09, -2.03, 1.94, 0.05, 0.02)
+    b.box(GLASS, -1.40, 1.30, -2.02, 1.96, 1.80, 0.02)
+    med_colors = (TEAL, WHITE, RED, BLUE, GREEN, AMBER)
+    for row in range(3):
+        sy = 0.55 + row * 0.65 + 0.17
+        for i in range(9):
+            px = -2.20 + i * 0.22
+            c = med_colors[(i + row) % len(med_colors)]
+            b.box(c, px, sy, -2.10, 0.14, 0.22, 0.18)
+            b.box(WHITE, px, sy, -2.00, 0.12, 0.05, 0.01)
+    # Red cross plate on the cabinet header.
+    b.box(RED, -1.40, 2.22, -2.16, 0.42, 0.30, 0.03)
+    b.box(WHITE, -1.40, 2.22, -2.13, 0.10, 0.26, 0.02)
+    b.box(WHITE, -1.40, 2.22, -2.13, 0.26, 0.10, 0.02)
+
     # Privacy curtain rail + hanging curtain between exam and waiting area.
     b.box(STEEL, -0.55, 2.78, -0.55, 0.06, 0.06, 3.10)
     b.box(FABRIC, -0.55, 1.80, -1.05, 0.04, 1.90, 0.90)
+    # "EXAM" sign on the curtain rail.
+    b.box(WHITE, -0.55, 2.55, -1.30, 0.02, 0.16, 0.50)
+    b.box(TEAL, -0.55, 2.55, -1.30, 0.03, 0.10, 0.38)
+    # Wall clock above the waiting chairs.
+    b.box(TRIM, -2.86, 2.10, -0.35, 0.04, 0.34, 0.34)
+    b.box(WHITE, -2.83, 2.10, -0.35, 0.02, 0.26, 0.26)
+
     # Rug / mat.
     b.box(TEAL, 0, 0.075, 1.30, 1.60, 0.02, 0.90)
     # Interior lining so the room reads white from inside.
@@ -169,6 +226,15 @@ def main():
         {"name": "clinic_teal",
          "pbrMetallicRoughness": {"baseColorFactor": [0.06, 0.34, 0.36, 1],
                                   "metallicFactor": 0.05, "roughnessFactor": 0.7}},
+        {"name": "clinic_amber",
+         "pbrMetallicRoughness": {"baseColorFactor": [0.78, 0.46, 0.10, 1],
+                                  "metallicFactor": 0.03, "roughnessFactor": 0.6}},
+        {"name": "clinic_blue",
+         "pbrMetallicRoughness": {"baseColorFactor": [0.10, 0.24, 0.50, 1],
+                                  "metallicFactor": 0.03, "roughnessFactor": 0.55}},
+        {"name": "clinic_green",
+         "pbrMetallicRoughness": {"baseColorFactor": [0.18, 0.44, 0.20, 1],
+                                  "metallicFactor": 0.03, "roughnessFactor": 0.65}},
     ]
 
     buffer = b""

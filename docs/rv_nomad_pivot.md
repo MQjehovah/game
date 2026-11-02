@@ -234,8 +234,10 @@
   地毯、柴堆/木桶/鱼箱/灯柱；`lakecamp` 和所有“营地”地点生成该 glTF，
   旁边生成水塘。
 - `assets/models/rv/rv_clinic.gltf` + `rv_clinic.bin`（`tools/gen_rv_clinic.py`）：
-  白/青色外墙、平屋顶、玻璃双开门 + 红十字、接待台、候诊椅、诊床、药柜、隐私窗帘、
-  门外长椅/花箱/轮椅推车；`clinic` 和所有“诊所/医院”地点生成该 glTF。
+  白/青色外墙、平屋顶、玻璃双开门 + 红十字、玻璃橱窗；店内接待台（蓝图显示器/
+  键盘/电话/单据）、候诊椅、诊床（床单/枕头/纸卷）、三层玻璃门药柜（彩色药盒 +
+  白色标签）、检查壁灯、生命体征监护仪、输液架、器械托盘、隐私窗帘、`RECEPTION`/
+  `EXAM` 标识、壁钟，门外长椅/花箱/轮椅推车；`clinic` 和所有“诊所/医院”地点生成该 glTF。
 - `lc_scenery.spawnRuinFor()` 对 `ruin`/`gasstop`/`depot`/`farm`/`mall`/`lakecamp`/
   `clinic` 和对应名称的地点直接生成对应 glTF，不再使用缩放立方体拼装。
 - `collidePoiWalls()`（`lc_util.lua`）在**服务器和客户端预测**同时生效：侧/后墙

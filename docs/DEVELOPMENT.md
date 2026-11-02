@@ -772,7 +772,7 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   （宽装卸门/月台 + 钢制货架 + 标签托盘 + 叉车 + 发货台）、`rv_barn.gltf`（红谷仓 + 畜栏/干草）、
   `rv_mall.gltf`（玻璃店面 + 收银台/货架/服装架/模特）、`rv_cabin.gltf`
   （原木墙 + 门廊 + 壁炉/床/桌椅/厨房）和 `rv_clinic.gltf`（玻璃门 + 红十字 +
-  接待台/诊床/药柜）；对应地点直接生成 glTF，店内 6 个物资箱
+  接待台/诊床/玻璃门药柜/检查灯/监护仪/输液架）；对应地点直接生成 glTF，店内 6 个物资箱
   由 `spawnCrates()` 放在店内。`collidePoiWalls()` 在服务器与客户端预测同时阻挡
   侧/后墙，只允许从门洞进出。`coop_ruin.txt` / `coop_gas.txt` / `coop_depot.txt` /
   `coop_farm.txt` / `coop_mall.txt` / `coop_lake.txt` / `coop_clinic.txt` 把两名玩家
