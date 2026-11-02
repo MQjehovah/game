@@ -63,14 +63,20 @@ def main():
     b.box(WALL, 0, H * 0.5, -2.52, 6.2, H, 0.16)
     b.box(WALL, -3.02, H * 0.5, 0, 0.16, H, 5.2)
     b.box(WALL, 3.02, H * 0.5, 0, 0.16, H, 5.2)
-    b.box(WALL, -1.95, H * 0.5, 2.52, 2.30, H, 0.16)
-    b.box(WALL, 1.95, H * 0.5, 2.52, 2.30, H, 0.16)
+    # Front wall split around the doorway and two tall display windows.
+    for bay in (-1, 1):
+        ccx = bay * 1.95
+        b.box(WALL, ccx, 0.45, 2.52, 2.30, 0.90, 0.16)               # sill wall
+        b.box(WALL, ccx, 3.45, 2.52, 2.30, 1.10, 0.16)               # header
+        b.box(WALL, ccx + bay * 1.00, 1.90, 2.52, 0.30, 2.00, 0.16)  # outer pier
+        b.box(WALL, ccx - bay * 1.00, 1.90, 2.52, 0.30, 2.00, 0.16)  # inner pier
+        # Window frame (the breakable pane is a dynamic entity).
+        b.box(STEEL, ccx, 2.85, 2.55, 1.78, 0.08, 0.22)
+        b.box(STEEL, ccx, 0.95, 2.55, 1.78, 0.08, 0.22)
+        b.box(STEEL, ccx - 0.85, 1.90, 2.55, 0.08, 2.00, 0.22)
+        b.box(STEEL, ccx + 0.85, 1.90, 2.55, 0.08, 2.00, 0.22)
+        b.box(STEEL, ccx, 1.90, 2.62, 0.08, 1.90, 0.06)  # centre mullion
     b.box(WALL, 0, 3.30, 2.52, 1.60, 1.40, 0.16)
-    # Storefront glass: two large panes either side of the doorway.
-    for sx in (-2.10, 2.10):
-        b.box(GLASS, sx, 1.75, 2.61, 1.55, 2.10, 0.04)
-        b.box(STEEL, sx + 0.82, 1.75, 2.62, 0.08, 2.14, 0.05)
-        b.box(STEEL, sx - 0.82, 1.75, 2.62, 0.08, 2.14, 0.05)
     b.box(STEEL, -0.86, 1.35, 2.56, 0.18, 2.70, 0.28)
     b.box(STEEL, 0.86, 1.35, 2.56, 0.18, 2.70, 0.28)
     b.box(STEEL, 0, 2.75, 2.56, 1.90, 0.18, 0.28)

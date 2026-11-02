@@ -81,8 +81,13 @@ def main():
     b.box(WALL, 0, H * 0.5, -2.52, 6.2, H, 0.16)
     b.box(WALL, -3.02, H * 0.5, 0, 0.16, H, 5.2)
     b.box(WALL, 3.02, H * 0.5, 0, 0.16, H, 5.2)
-    b.box(WALL, -1.95, H * 0.5, 2.52, 2.30, H, 0.16)
-    b.box(WALL, 1.95, H * 0.5, 2.52, 2.30, H, 0.16)
+    # Front wall split around the doorway and two cabin windows.
+    for bay in (-1, 1):
+        ccx = bay * 1.95
+        b.box(WALL, ccx, 0.50, 2.52, 2.30, 1.00, 0.16)                # sill wall
+        b.box(WALL, ccx, 2.425, 2.52, 2.30, 0.85, 0.16)               # header
+        b.box(WALL, ccx + bay * 1.00, 1.50, 2.52, 0.30, 1.00, 0.16)   # outer pier
+        b.box(WALL, ccx - bay * 1.00, 1.50, 2.52, 0.30, 1.00, 0.16)   # inner pier
     b.box(WALL, 0, 2.55, 2.52, 1.60, 0.60, 0.16)
     # Gable roof + gable ends.
     b.poly(ROOF, [(-3.45, 2.85, 3.00), (0, 4.25, 3.00),
@@ -100,12 +105,12 @@ def main():
     b.box(TRIM, -0.88, 1.15, 2.56, 0.18, 2.30, 0.24)
     b.box(TRIM, 0.88, 1.15, 2.56, 0.18, 2.30, 0.24)
     b.box(TRIM, 0, 2.28, 2.56, 1.94, 0.18, 0.24)
-    for sx in (-2.10, 2.10):
-        b.box(GLASS, sx, 1.55, 2.61, 1.20, 0.90, 0.04)
-        b.box(TRIM, sx, 1.00, 2.62, 1.30, 0.08, 0.06)
-        b.box(TRIM, sx, 2.10, 2.62, 1.30, 0.08, 0.06)
-        b.box(TRIM, sx - 0.62, 1.55, 2.62, 0.08, 1.18, 0.06)
-        b.box(TRIM, sx + 0.62, 1.55, 2.62, 0.08, 1.18, 0.06)
+    for ccx in (-1.95, 1.95):
+        # Window frame (the breakable pane is a dynamic entity).
+        b.box(TRIM, ccx, 1.00, 2.62, 1.78, 0.08, 0.06)
+        b.box(TRIM, ccx, 2.00, 2.62, 1.78, 0.08, 0.06)
+        b.box(TRIM, ccx - 0.85, 1.50, 2.62, 0.08, 1.08, 0.06)
+        b.box(TRIM, ccx + 0.85, 1.50, 2.62, 0.08, 1.08, 0.06)
     # Porch deck, roof and posts.
     b.box(WOOD, 0, 0.10, 3.35, 5.00, 0.12, 1.60)
     b.box(TRIM, 0, 2.48, 3.55, 5.00, 0.10, 1.80)

@@ -64,8 +64,18 @@ def main():
     b.box(WALL, 0, H * 0.5, -2.52, 6.2, H, 0.16)
     b.box(WALL, -3.02, H * 0.5, 0, 0.16, H, 5.2)
     b.box(WALL, 3.02, H * 0.5, 0, 0.16, H, 5.2)
-    b.box(WALL, -1.95, H * 0.5, 2.52, 2.30, H, 0.16)
-    b.box(WALL, 1.95, H * 0.5, 2.52, 2.30, H, 0.16)
+    # Front wall split around the bay door and two display windows.
+    for bay in (-1, 1):
+        ccx = bay * 1.95
+        b.box(WALL, ccx, 0.60, 2.52, 2.30, 1.20, 0.16)               # sill wall
+        b.box(WALL, ccx, 3.10, 2.52, 2.30, 1.00, 0.16)               # header
+        b.box(WALL, ccx + bay * 1.00, 1.90, 2.52, 0.30, 1.40, 0.16)  # outer pier
+        b.box(WALL, ccx - bay * 1.00, 1.90, 2.52, 0.30, 1.40, 0.16)  # inner pier
+        # Window frame (the breakable pane is a dynamic entity).
+        b.box(STEEL, ccx, 2.55, 2.55, 1.78, 0.08, 0.22)
+        b.box(STEEL, ccx, 1.25, 2.55, 1.78, 0.08, 0.22)
+        b.box(STEEL, ccx - 0.85, 1.90, 2.55, 0.08, 1.30, 0.22)
+        b.box(STEEL, ccx + 0.85, 1.90, 2.55, 0.08, 1.30, 0.22)
     b.box(WALL, 0, 3.10, 2.52, 1.60, 1.00, 0.16)  # header over the bay
     # High clerestory windows on the sides and back.
     b.box(GLASS, -3.10, 3.00, 0, 0.04, 0.55, 3.6)

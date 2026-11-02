@@ -221,22 +221,57 @@ end
 poiGlass = {}
 poiShards = {}
 
--- Store/gas stations share the same front-window openings: local x +-1.95,
--- y 0.9..2.0, z=2.52. Spawn one transparent pane per opening.
+-- Per-kind pane layout in building-local space:
+--   x, y, z (offset from the POI centre), width, height, yaw.
+-- Every front window faces +Z; the table makes it easy to add side panes later.
+local GLASS_LAYOUTS = {
+  store = { { -1.95, 1.45, 2.52, 1.70, 1.10, 0 },
+            { 1.95, 1.45, 2.52, 1.70, 1.10, 0 } },
+  gas = { { -1.95, 1.45, 2.52, 1.70, 1.10, 0 },
+          { 1.95, 1.45, 2.52, 1.70, 1.10, 0 } },
+  clinic = { { -1.95, 1.45, 2.52, 1.70, 1.10, 0 },
+             { 1.95, 1.45, 2.52, 1.70, 1.10, 0 } },
+  mall = { { -1.95, 1.90, 2.52, 1.70, 2.00, 0 },
+           { 1.95, 1.90, 2.52, 1.70, 2.00, 0 } },
+  cabin = { { -1.95, 1.50, 2.52, 1.70, 1.00, 0 },
+            { 1.95, 1.50, 2.52, 1.70, 1.00, 0 } },
+  depot = { { -1.95, 1.90, 2.52, 1.70, 1.40, 0 },
+            { 1.95, 1.90, 2.52, 1.70, 1.40, 0 } },
+}
+
+local function glassKind(nd)
+  local nm = nd.name or ""
+  if nd.id == "ruin" or nm:find("废宅") then return "store" end
+  if nd.id == "gasstop" or nm:find("加油站") then return "gas" end
+  if nd.id == "clinic" or nm:find("诊所") or nm:find("医院") then return "clinic" end
+  if nd.id == "mall" or nm:find("商场") then return "mall" end
+  if nd.id == "lakecamp" or nm:find("营地") then return "cabin" end
+  if nd.id == "depot" or nm:find("仓库") or nm:find("物流") then return "depot" end
+  return nil
+end
+
+-- Spawn one transparent pane for every opening in the POI's layout.
 function spawnPoiWindows(nd)
   if poiGlass[nd.id] ~= nil then return end
+  local kind = glassKind(nd)
+  local layout = kind and GLASS_LAYOUTS[kind]
+  if layout == nil then return end
   local cx, cz = nd.x + 6.5, nd.z + 6.5
   local panes = {}
-  for _, lx in ipairs({ -1.95, 1.95 }) do
-    local e = SpawnPrefab("rv_window_glass",
-                          { x = cx + lx, y = 1.45, z = cz + 2.52 })
+  for _, p in ipairs(layout) do
+    local px, py, pz = cx + p[1], p[2], cz + p[3]
+    local e = SpawnPrefab("rv_window_glass", { x = px, y = py, z = pz })
     if e ~= nil then
-      SetScale(e, 1.70, 1.10, 1.0)
-      panes[#panes + 1] = e
+      SetScale(e, p[4], p[5], 1.0)
+      if p[6] ~= 0 then SetRotationY(e, p[6]) end
+      panes[#panes + 1] = {
+        ent = e, x = px, y = py, z = pz,
+        sx = p[4], sy = p[5], rot = p[6] or 0,
+      }
     end
   end
   poiGlass[nd.id] = { panes = panes, broken = false, x = cx, z = cz }
-  print(string.format("[glass] intact panes at %s = %d", nd.id, #panes))
+  print(string.format("[glass] intact panes at %s = %d (%s)", nd.id, #panes, kind))
 end
 
 -- One-shot break: remove the intact panes and spawn a short-lived shard burst.
@@ -245,27 +280,33 @@ function breakPoiWindows(nd, reason)
   local g = poiGlass[nd.id]
   if g == nil or g.broken then return false end
   g.broken = true
-  for _, e in ipairs(g.panes) do Despawn(e) end
+  local panes = g.panes
   g.panes = {}
-  for i = 1, 16 do
-    local side = (i % 2 == 0) and 1.95 or -1.95
-    local sx = g.x + side + (math.random() - 0.5) * 1.40
-    local sy = 1.35 + (math.random() - 0.5) * 0.90
-    local sz = g.z + 2.60
-    local e = SpawnPrefab("rv_window_shard", { x = sx, y = sy, z = sz })
-    if e ~= nil then
-      local s = 0.18 + math.random() * 0.26
-      SetScale(e, s, s, s)
-      -- Keep the flat face toward the street so the shards read at a glance.
-      SetRotationY(e, (math.random() - 0.5) * 0.6)
-      poiShards[#poiShards + 1] = {
-        ent = e, x = sx, y = sy, z = sz,
-        vx = (math.random() - 0.5) * 3.2,
-        vy = 1.8 + math.random() * 2.6,
-        vz = -1.0 - math.random() * 2.0,
-        life = 2.0 + math.random() * 0.8,
-        spin = (math.random() - 0.5) * 1.2,
-      }
+  for _, pane in ipairs(panes) do
+    Despawn(pane.ent)
+    -- Pane normal (local +Z rotated by yaw) and its in-plane tangent.
+    local nx, nz = math.sin(pane.rot), math.cos(pane.rot)
+    local tx, tz = math.cos(pane.rot), -math.sin(pane.rot)
+    for _ = 1, 8 do
+      local ox = (math.random() - 0.5) * pane.sx * 0.9
+      local oy = (math.random() - 0.5) * pane.sy * 0.8
+      local sx = pane.x + tx * ox + nx * 0.06
+      local sy = pane.y + oy
+      local sz = pane.z + tz * ox + nz * 0.06
+      local e = SpawnPrefab("rv_window_shard", { x = sx, y = sy, z = sz })
+      if e ~= nil then
+        local s = 0.18 + math.random() * 0.26
+        SetScale(e, s, s, s)
+        SetRotationY(e, pane.rot + (math.random() - 0.5) * 0.6)
+        poiShards[#poiShards + 1] = {
+          ent = e, x = sx, y = sy, z = sz,
+          vx = nx * (1.2 + math.random() * 1.4) + tx * (math.random() - 0.5) * 1.8,
+          vy = 1.8 + math.random() * 2.6,
+          vz = nz * (1.2 + math.random() * 1.4) + tz * (math.random() - 0.5) * 1.8,
+          life = 2.0 + math.random() * 0.8,
+          spin = (math.random() - 0.5) * 1.2,
+        }
+      end
     end
   end
   print(string.format("[glass] broke windows at %s (%s)", nd.id, reason or "enter"))
@@ -339,6 +380,7 @@ function spawnRuinFor(nd)
       local lamp = SpawnPrefab("rv_lamp", { x = cx + lp[1], y = 2.35, z = cz + lp[2] })
       if lamp ~= nil then SetScale(lamp, 1.4, 1.4, 1.4) end
     end
+    spawnPoiWindows(nd)
     return
   end
   if isCabin then
@@ -349,6 +391,7 @@ function spawnRuinFor(nd)
       local lamp = SpawnPrefab("rv_lamp", { x = cx + lp[1], y = 2.15, z = cz + lp[2] })
       if lamp ~= nil then SetScale(lamp, 1.3, 1.3, 1.3) end
     end
+    spawnPoiWindows(nd)
     return
   end
   if isMall then
@@ -360,6 +403,7 @@ function spawnRuinFor(nd)
       local lamp = SpawnPrefab("rv_lamp", { x = cx + lp[1], y = 2.85, z = cz + lp[2] })
       if lamp ~= nil then SetScale(lamp, 1.6, 1.6, 1.6) end
     end
+    spawnPoiWindows(nd)
     return
   end
   if isFarm then
@@ -381,6 +425,7 @@ function spawnRuinFor(nd)
       local lamp = SpawnPrefab("rv_lamp", { x = cx + lx, y = 3.15, z = cz })
       if lamp ~= nil then SetScale(lamp, 1.5, 1.5, 1.5) end
     end
+    spawnPoiWindows(nd)
     return
   end
   if isGas then

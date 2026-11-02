@@ -225,11 +225,12 @@
   生成该 glTF。
 - `assets/models/rv/rv_window_glass.gltf` / `rv_window_shard.gltf`
   （`tools/gen_rv_windows.py`）：半透明 BLEND 玻璃面板 + 玻璃碎片；
-  `lc_scenery.spawnPoiWindows()` 为商店/加油站生成两扇面板，
-  `breakPoiWindowsAt()` 在玩家进入或攻击时把面板替换为 16 块重力下落的碎片，
-  `updatePoiWindows()` 负责弹跳与回收。
+  `lc_scenery.spawnPoiWindows()` 按 POI 类型（商店/加油站/仓库/商场/湖边木屋/诊所）
+  生成对应尺寸的两扇前窗面板，`breakPoiWindowsAt()` 在玩家进入或攻击时把面板替换为
+  16 块重力下落的碎片，`updatePoiWindows()` 负责弹跳与回收。
 - `assets/models/rv/rv_warehouse.gltf` + `rv_warehouse.bin`（`tools/gen_rv_warehouse.py`）：
-  3.6m 高棚、宽装卸门 + 月台（黄色警示线/防撞柱/升降台板）、顶部高窗、两侧与后墙
+  3.6m 高棚、宽装卸门 + 月台（黄色警示线/防撞柱/升降台板）、两扇可破碎前橱窗、
+  顶部高窗、两侧与后墙
   钢制货架、黄底白字货架标识、标签托盘堆（胶带封箱）、叉车、发货台（显示器/标签
   打印机/键盘/凳子）、散装货箱、地面通道线；`depot` 和所有“仓库/物流”地点生成该 glTF。
 - `assets/models/rv/rv_barn.gltf` + `rv_barn.bin`（`tools/gen_rv_barn.py`）：
@@ -238,16 +239,16 @@
   奶桶、粮袋、带标签木箱、后墙货架，门外干草堆/水槽/木栅栏；`farm` 和所有
   “农场”地点生成该 glTF。
 - `assets/models/rv/rv_mall.gltf` + `rv_mall.bin`（`tools/gen_rv_mall.py`）：
-  4m 高玻璃店面、红蓝 `MALL` 招牌；店内收银台（收银机屏幕/键盘/小票 + 刷卡器 +
+  4m 高可破碎玻璃店面、红蓝 `MALL` 招牌；店内收银台（收银机屏幕/键盘/小票 + 刷卡器 +
   购物袋）、四层商品墙（成排彩色商品 + 价签条）、折叠衣物展示台、配件展示台、
   左墙挂衣架 + 圆形挂衣架、穿色衣的橱窗模特、商场导视牌、悬挂 SALE 牌、入口指示牌；
   屋顶空调、门外花箱/长椅/购物车；`mall` 和所有“商场”地点生成该 glTF。
 - `assets/models/rv/rv_cabin.gltf` + `rv_cabin.bin`（`tools/gen_rv_cabin.py`）：
-  原木墙、山墙屋顶、带柱门廊、壁炉/烟囱、床/蓝被、餐桌椅、厨房柜台、货架、
+  原木墙、山墙屋顶、带柱门廊、两扇可破碎窗、壁炉/烟囱、床/蓝被、餐桌椅、厨房柜台、货架、
   地毯、柴堆/木桶/鱼箱/灯柱；`lakecamp` 和所有“营地”地点生成该 glTF，
   旁边生成水塘。
 - `assets/models/rv/rv_clinic.gltf` + `rv_clinic.bin`（`tools/gen_rv_clinic.py`）：
-  白/青色外墙、平屋顶、玻璃双开门 + 红十字、玻璃橱窗；店内接待台（蓝图显示器/
+  白/青色外墙、平屋顶、玻璃双开门 + 红十字、两扇可破碎橱窗；店内接待台（蓝图显示器/
   键盘/电话/单据）、候诊椅、诊床（床单/枕头/纸卷）、三层玻璃门药柜（彩色药盒 +
   白色标签）、检查壁灯、生命体征监护仪、输液架、器械托盘、隐私窗帘、`RECEPTION`/
   `EXAM` 标识、壁钟，门外长椅/花箱/轮椅推车；`clinic` 和所有“诊所/医院”地点生成该 glTF。
@@ -286,8 +287,8 @@
    合作建造仍是网格模式（还不是单机的无网格自由摆放），也还没有每名玩家的独立物品所有权。
 2. **家具自由摆放**：已改为第一人称无网格自由放置 + AABB/车内边界校验。
 3. **美术**：房车外壳/车内仍是程序化低多边形 glTF + Kenney 家具，缺少高精度车内软装、
-   材质；商店/加油站橱窗已支持透明玻璃与碎片飞散，但碎片是简单刚体而非逐块断裂模拟，
-   商品仍是低多边形色块，角色动画也仍是手工关键帧。
+   材质；商店/加油站/仓库/商场/湖边木屋/诊所前窗已支持透明玻璃与碎片飞散，但碎片是
+   简单刚体而非逐块断裂模拟，商品仍是低多边形色块，角色动画也仍是手工关键帧。
 4. **世界**：已有世界固定公路网 + 15 个地点；废宅/商店 → `rv_store.gltf`、
    废弃加油站 → `rv_gasstation.gltf`、物流仓库 → `rv_warehouse.gltf`、
    旧农场 → `rv_barn.gltf`、购物中心 → `rv_mall.gltf`、湖边营地 →

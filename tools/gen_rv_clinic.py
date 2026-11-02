@@ -63,14 +63,22 @@ def main():
     b.box(WALL, 0, H * 0.5, -2.52, 6.2, H, 0.16)
     b.box(WALL, -3.02, H * 0.5, 0, 0.16, H, 5.2)
     b.box(WALL, 3.02, H * 0.5, 0, 0.16, H, 5.2)
-    b.box(WALL, -1.95, H * 0.5, 2.52, 2.30, H, 0.16)
-    b.box(WALL, 1.95, H * 0.5, 2.52, 2.30, H, 0.16)
+    # Front wall split around the doorway and two display windows.
+    for bay in (-1, 1):
+        ccx = bay * 1.95
+        b.box(WALL, ccx, 0.45, 2.52, 2.30, 0.90, 0.16)               # sill wall
+        b.box(WALL, ccx, 2.50, 2.52, 2.30, 1.00, 0.16)               # header
+        b.box(WALL, ccx + bay * 1.00, 1.45, 2.52, 0.30, 1.10, 0.16)  # outer pier
+        b.box(WALL, ccx - bay * 1.00, 1.45, 2.52, 0.30, 1.10, 0.16)  # inner pier
+        # Window frame (the breakable pane is a dynamic entity).
+        b.box(STEEL, ccx, 1.95, 2.55, 1.78, 0.08, 0.22)
+        b.box(STEEL, ccx, 0.95, 2.55, 1.78, 0.08, 0.22)
+        b.box(STEEL, ccx - 0.85, 1.45, 2.55, 0.08, 1.10, 0.22)
+        b.box(STEEL, ccx + 0.85, 1.45, 2.55, 0.08, 1.10, 0.22)
+        b.box(STEEL, ccx, 0.92, 2.62, 1.80, 0.05, 0.10)
     b.box(WALL, 0, 2.72, 2.52, 1.60, 0.56, 0.16)
     # Teal wainscot band on the front.
     b.box(TEAL, 0, 0.55, 2.61, 6.0, 0.90, 0.03)
-    # Front glass either side of the doorway.
-    for sx in (-2.10, 2.10):
-        b.box(GLASS, sx, 1.75, 2.61, 1.50, 1.10, 0.04)
     # Door frame + double doors (opened outward).
     b.box(STEEL, -0.86, 1.32, 2.56, 0.16, 2.64, 0.26)
     b.box(STEEL, 0.86, 1.32, 2.56, 0.16, 2.64, 0.26)
