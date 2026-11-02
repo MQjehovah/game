@@ -751,13 +751,15 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   服务器权威房车/需求/家具/物资箱/玩家进出状态，客户端 `game_cmd` 上行 +
   `game_state`/`game_world`/`game_crates` 下行；进出房车用 `board`/`exit` 命令，
   状态 `in/st/door` 驱动第一/第三人称、角色显隐；车体右侧切出真实门洞，独立
-  `rv_door.gltf` 门网格绕后缘铰链旋转；角色动画为 `Board`（Idle→Sit 0.6s）→
-  `Sit` 循环，下车 `Stand`（Sit→Idle 0.6s）→ `Idle`，由 `AnimationFinished` 切换；
+  `rv_door.gltf` 门网格绕后缘铰链旋转；角色动画由 `tools/gen_rv_anim_clips.py`
+  生成**手工关键帧** `Board`（站姿→伸手→抬步→落座，0.9s）→ `Sit` 循环
+  （坐姿 + 1s 呼吸关键帧），下车 `Stand`（坐姿→前倾→起身→迈步，0.9s）→ `Idle`，
+  由 `AnimationFinished` 切换；`coop_sitview.txt` 提供驾驶室看向乘客席的验证镜头；
   `game_world` 按 4 条/块分块，避免家具列表超过 RPC 字符串上限；合作建造用
   `place`/`removeAt` + `fits`/`canAfford` 在服务器校验；每 3s + `on_server_stop`
   写 `saves/layout.json`（含 `coop` 扩展），启动时恢复；同名断线重连回收槽位。
   已验证 2/3/4 个客户端、合作放置/拆除、进出过渡、保存重启和重连；门洞/车门/
-  坐姿资产可用 `coop_board.txt` + `coop_doorview.txt` 复现。
+  坐姿资产可用 `coop_board.txt` + `coop_sitview.txt` 复现。
 - **可进入 POI 商店/加油站/仓库/农场/购物中心**（`projects/rv`）：
   `tools/gen_rv_store.py` / `gen_rv_gasstation.py` / `gen_rv_warehouse.py` /
   `gen_rv_barn.py` / `gen_rv_mall.py` 生成实心墙体、门洞、门框/雨棚/招牌、

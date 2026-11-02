@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
-"""Generate the RV passenger animation clips inside Soldier.glb.
+"""Author multi-keyframe Sit/Board/Stand clips for the RV passenger.
 
-Clips:
-  Sit    - static seated pose (Idle breathing + hip/thigh/knee/foot offsets)
-  Board  - one-shot Idle -> Sit transition (0.6s)
-  Stand  - one-shot Sit -> Idle transition (0.6s)
+Unlike the previous generator (which duplicated Idle and added constant bone
+offsets), this script defines explicit key poses per clip:
 
-The source character ships Idle/Run/TPose/Walk only. We always rebuild from the
-pristine pre-Sit GLB so this script is idempotent (append-only runs would keep
-growing the binary). The base revision is pinned; edit BASE_REV if the source
-model is replaced upstream.
+  Sit    - seated loop with a subtle breathing key at 1s
+  Board  - stance -> reach -> step -> lower -> seated (0.9s)
+  Stand  - seated -> lean -> rise -> step out -> stance (0.9s)
+
+Rotations are authored as local corrections over the Mixamo bind pose; the
+relaxed arm stance is baked in as constants so no Idle data is reused. The
+source is rebuilt from the pinned pre-animation GLB, so re-running is
+idempotent.
 """
 import json
 import math
@@ -20,9 +22,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 REL = "projects/rv/assets/models/player/Soldier.glb"
 GLB = ROOT / REL
-BASE_REV = "6390ede"  # last commit with the untouched Idle/Run/TPose/Walk model
-TRANSITION_SECONDS = 0.6
-TRANSITION_SAMPLES = 13
+BASE_REV = "6390ede"  # pristine Idle/Run/TPose/Walk model
 
 
 def q_mul(a, b):
@@ -48,26 +48,9 @@ def q_norm(q):
     return tuple(c / n for c in q)
 
 
-def q_slerp(a, b, t):
-    a = q_norm(a)
-    b = q_norm(b)
-    dot = sum(x * y for x, y in zip(a, b))
-    if dot < 0.0:
-        b = tuple(-c for c in b)
-        dot = -dot
-    if dot > 0.9995:
-        return q_norm(tuple(x + (y - x) * t for x, y in zip(a, b)))
-    theta0 = math.acos(max(-1.0, min(1.0, dot)))
-    theta = theta0 * t
-    sin0 = math.sin(theta0)
-    s0 = math.sin(theta0 - theta) / sin0
-    s1 = math.sin(theta) / sin0
-    return q_norm(tuple(x * s0 + y * s1 for x, y in zip(a, b)))
-
-
 def read_glb_bytes(data):
     magic, version, length = struct.unpack_from("<III", data, 0)
-    assert magic == 0x46546C67 and version == 2, "not a GLB v2 file"
+    assert magic == 0x46546C67 and version == 2
     off = 12
     js = None
     binary = b""
@@ -82,6 +65,10 @@ def read_glb_bytes(data):
     return js, binary
 
 
+def read_glb(path):
+    return read_glb_bytes(path.read_bytes())
+
+
 def write_glb(path, js, binary):
     jb = json.dumps(js, separators=(",", ":")).encode("utf-8")
     jb += b" " * ((4 - len(jb) % 4) % 4)
@@ -94,20 +81,6 @@ def write_glb(path, js, binary):
     path.write_bytes(out)
 
 
-def read_accessor(js, binary, index):
-    acc = js["accessors"][index]
-    view = js["bufferViews"][acc["bufferView"]]
-    comps = {"SCALAR": 1, "VEC3": 3, "VEC4": 4}[acc["type"]]
-    fmt = {5126: "f", 5125: "I", 5123: "H", 5121: "B"}[acc["componentType"]]
-    size = struct.calcsize(fmt)
-    stride = view.get("byteStride", comps * size)
-    base = view.get("byteOffset", 0) + acc.get("byteOffset", 0)
-    return [
-        struct.unpack_from("<" + fmt * comps, binary, base + i * stride)
-        for i in range(acc["count"])
-    ]
-
-
 def append_accessor(js, binary, values, typ, component_type=5126):
     comps = {"SCALAR": 1, "VEC3": 3, "VEC4": 4}[typ]
     fmt = {5126: "f", 5123: "H"}[component_type]
@@ -115,14 +88,10 @@ def append_accessor(js, binary, values, typ, component_type=5126):
     off = len(binary)
     binary += raw
     binary += b"\0" * ((4 - len(binary) % 4) % 4)
-    view_index = len(js["bufferViews"])
+    vi = len(js["bufferViews"])
     js["bufferViews"].append({"buffer": 0, "byteOffset": off, "byteLength": len(raw)})
-    acc = {
-        "bufferView": view_index,
-        "componentType": component_type,
-        "count": len(values),
-        "type": typ,
-    }
+    acc = {"bufferView": vi, "componentType": component_type,
+           "count": len(values), "type": typ}
     if component_type == 5126:
         acc["min"] = [min(v[i] for v in values) for i in range(comps)]
         acc["max"] = [max(v[i] for v in values) for i in range(comps)]
@@ -130,84 +99,14 @@ def append_accessor(js, binary, values, typ, component_type=5126):
     return len(js["accessors"]) - 1, binary
 
 
-# Mixamo legs point +Y down the bone: a local-X rotation swings the thigh/shin.
-ROT_OFFSETS = {
-    "mixamorig:LeftUpLeg": q_axis((1, 0, 0), -1.15),
-    "mixamorig:RightUpLeg": q_axis((1, 0, 0), -1.15),
-    "mixamorig:LeftLeg": q_axis((1, 0, 0), 1.35),
-    "mixamorig:RightLeg": q_axis((1, 0, 0), 1.35),
-    "mixamorig:LeftFoot": q_axis((1, 0, 0), -0.55),
-    "mixamorig:RightFoot": q_axis((1, 0, 0), -0.55),
-}
-HIP_DROP = 50.0
-
-
-def build_clip(js, binary, idle, name, blend):
-    """blend(t) -> 0..1 seated amount for a one-shot transition, or None for a
-    static seated clip (always 1)."""
-    nodes = js["nodes"]
-    channels = []
-    samplers = []
-    for ch in idle["channels"]:
-        node_name = nodes[ch["target"]["node"]].get("name", "")
-        path = ch["target"]["path"]
-        base = idle["samplers"][ch["sampler"]]
-        out_index = base["output"]
-        input_index = base["input"]
-        typ = js["accessors"][base["output"]]["type"]
-        if blend is None:
-            if path == "rotation" and node_name in ROT_OFFSETS:
-                vals = read_accessor(js, binary, base["output"])
-                new_vals = [q_mul(v, ROT_OFFSETS[node_name]) for v in vals]
-                out_index, binary = append_accessor(js, binary, new_vals, "VEC4")
-            elif path == "translation" and node_name == "mixamorig:Hips":
-                vals = read_accessor(js, binary, base["output"])
-                new_vals = [(x, y, z - HIP_DROP) for (x, y, z) in vals]
-                out_index, binary = append_accessor(js, binary, new_vals, "VEC3")
-        else:
-            # One-shot transition: resample EVERY channel onto a 0.6s timeline
-            # so the clip's duration (and AnimFinished) matches the blend, not
-            # the 2s Idle loop.
-            vals = read_accessor(js, binary, base["output"])
-            n = len(vals)
-            times = []
-            new_vals = []
-            for k in range(TRANSITION_SAMPLES):
-                t = k / (TRANSITION_SAMPLES - 1)
-                src = vals[min(n - 1, int(round(t * (n - 1))))]
-                amt = blend(t)
-                if path == "rotation" and node_name in ROT_OFFSETS:
-                    part = q_slerp((0.0, 0.0, 0.0, 1.0),
-                                   ROT_OFFSETS[node_name], amt)
-                    src = q_mul(src, part)
-                elif path == "translation" and node_name == "mixamorig:Hips":
-                    src = (src[0], src[1], src[2] - HIP_DROP * amt)
-                times.append((t * TRANSITION_SECONDS,))
-                new_vals.append(src)
-            input_index, binary = append_accessor(js, binary, times, "SCALAR")
-            out_index, binary = append_accessor(js, binary, new_vals, typ)
-        samplers.append({
-            "input": input_index,
-            "output": out_index,
-            "interpolation": "LINEAR",
-        })
-        channels.append({"sampler": len(samplers) - 1, "target": ch["target"]})
-    js["animations"].append({"name": name, "channels": channels, "samplers": samplers})
-    return binary
-
-
 def load_base():
     tmp = ROOT / "tools" / "_soldier_base.glb"
     try:
-        # Pipe git's blob straight into a binary file: capturing stdout through
-        # a text pipe can try to decode the GLB and fail on non-UTF-8 payloads.
         with open(tmp, "wb") as fh:
             subprocess.run(["git", "show", f"{BASE_REV}:{REL}"],
                            cwd=ROOT, stdout=fh, stderr=subprocess.DEVNULL,
                            check=True)
         return tmp.read_bytes()
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return None
     finally:
         try:
             tmp.unlink()
@@ -215,35 +114,193 @@ def load_base():
             pass
 
 
-def load_base_or_strip():
-    base = load_base()
-    if base is not None:
-        return base
-    if True:
-        # Fallback: strip generated clips from the current file (binary may keep
-        # unused padding, but the animation list stays correct).
-        data = GLB.read_bytes()
-        js, binary = read_glb_bytes(data)
-        js["animations"] = [
-            a for a in js.get("animations", [])
-            if a.get("name") not in ("Sit", "Board", "Stand")
-        ]
-        write_glb(GLB, js, binary)
-        return GLB.read_bytes()
+# Baked relaxed arm/shoulder stance (local rotations from the character's
+# neutral pose, hard-coded so the clips do not depend on the Idle animation).
+BASE_ARM_ROT = {
+    "mixamorig:LeftShoulder": (0.7540, 0.6567, 0.0126, -0.0052),
+    "mixamorig:LeftArm": (-0.0475, -0.1166, 0.5226, 0.8432),
+    "mixamorig:LeftForeArm": (-0.4050, 0.0579, -0.0125, 0.9124),
+    "mixamorig:LeftHand": (-0.0150, 0.1401, -0.1628, 0.9766),
+    "mixamorig:RightShoulder": (0.0711, 0.0437, 0.7629, 0.6411),
+    "mixamorig:RightArm": (-0.1868, 0.0970, 0.4908, 0.8455),
+    "mixamorig:RightForeArm": (0.3595, 0.0291, 0.0447, 0.9316),
+    "mixamorig:RightHand": (0.1012, -0.0646, 0.1067, 0.9870),
+}
+
+UP_L = "mixamorig:LeftUpLeg"
+LO_L = "mixamorig:LeftLeg"
+FOOT_L = "mixamorig:LeftFoot"
+UP_R = "mixamorig:RightUpLeg"
+LO_R = "mixamorig:RightLeg"
+FOOT_R = "mixamorig:RightFoot"
+SPINE = "mixamorig:Spine"
+SPINE1 = "mixamorig:Spine1"
+NECK = "mixamorig:Neck"
+HEAD = "mixamorig:Head"
+
+
+def leg_corrs(thigh, knee, foot):
+    return {UP_L: q_axis((1, 0, 0), thigh), UP_R: q_axis((1, 0, 0), thigh),
+            LO_L: q_axis((1, 0, 0), knee), LO_R: q_axis((1, 0, 0), knee),
+            FOOT_L: q_axis((1, 0, 0), foot), FOOT_R: q_axis((1, 0, 0), foot)}
+
+
+STANCE = dict(leg_corrs(-0.06, 0.12, -0.06))
+STANCE.update({
+    SPINE: q_axis((1, 0, 0), 0.04),
+    SPINE1: q_axis((1, 0, 0), 0.05),
+    NECK: q_axis((1, 0, 0), -0.02),
+    HEAD: q_axis((1, 0, 0), -0.02),
+})
+
+SIT = dict(leg_corrs(-1.15, 1.35, -0.55))
+SIT.update({
+    SPINE: q_axis((1, 0, 0), 0.14),
+    SPINE1: q_axis((1, 0, 0), 0.16),
+    NECK: q_axis((1, 0, 0), 0.05),
+    HEAD: q_axis((1, 0, 0), 0.06),
+    "mixamorig:LeftForeArm": q_axis((1, 0, 0), -0.55),
+    "mixamorig:RightForeArm": q_axis((1, 0, 0), 0.55),
+    "mixamorig:LeftArm": q_axis((1, 0, 0), -0.12),
+    "mixamorig:RightArm": q_axis((1, 0, 0), -0.12),
+})
+SIT_BREATH = dict(SIT)
+SIT_BREATH.update({
+    SPINE1: q_mul(SIT[SPINE1], q_axis((1, 0, 0), 0.02)),
+    HEAD: q_mul(SIT[HEAD], q_axis((1, 0, 0), -0.02)),
+    "mixamorig:LeftForeArm": q_mul(SIT["mixamorig:LeftForeArm"], q_axis((1, 0, 0), -0.02)),
+    "mixamorig:RightForeArm": q_mul(SIT["mixamorig:RightForeArm"], q_axis((1, 0, 0), 0.02)),
+})
+
+REACH = dict(STANCE)
+REACH.update({
+    SPINE: q_axis((1, 0, 0), 0.20),
+    SPINE1: q_axis((1, 0, 0), 0.22),
+    HEAD: q_axis((1, 0, 0), 0.08),
+    "mixamorig:RightArm": q_axis((1, 0, 0), -0.85),
+    "mixamorig:RightForeArm": q_axis((1, 0, 0), -0.25),
+    "mixamorig:LeftArm": q_axis((1, 0, 0), 0.25),
+})
+
+STEP = dict(leg_corrs(-0.55, 0.90, -0.30))
+STEP.update({
+    UP_L: q_axis((1, 0, 0), -0.80),
+    LO_L: q_axis((1, 0, 0), 1.15),
+    SPINE: q_axis((1, 0, 0), 0.16),
+    SPINE1: q_axis((1, 0, 0), 0.18),
+    "mixamorig:RightArm": q_axis((1, 0, 0), -0.55),
+    "mixamorig:RightForeArm": q_axis((1, 0, 0), -0.15),
+    "mixamorig:LeftArm": q_axis((1, 0, 0), 0.15),
+})
+STEP_DROP = -14.0
+
+LOWER = dict(leg_corrs(-1.00, 1.25, -0.50))
+LOWER.update({
+    SPINE: q_axis((1, 0, 0), 0.22),
+    SPINE1: q_axis((1, 0, 0), 0.24),
+    "mixamorig:LeftForeArm": q_axis((1, 0, 0), -0.35),
+    "mixamorig:RightForeArm": q_axis((1, 0, 0), 0.35),
+    "mixamorig:LeftArm": q_axis((1, 0, 0), -0.10),
+    "mixamorig:RightArm": q_axis((1, 0, 0), -0.10),
+})
+LOWER_DROP = -38.0
+
+LEAN = dict(SIT)
+LEAN.update({
+    SPINE: q_axis((1, 0, 0), 0.30),
+    SPINE1: q_axis((1, 0, 0), 0.30),
+    NECK: q_axis((1, 0, 0), 0.10),
+    "mixamorig:LeftForeArm": q_axis((1, 0, 0), -0.20),
+    "mixamorig:RightForeArm": q_axis((1, 0, 0), 0.20),
+})
+
+RISE = dict(leg_corrs(-0.70, 1.00, -0.35))
+RISE.update({
+    SPINE: q_axis((1, 0, 0), 0.26),
+    SPINE1: q_axis((1, 0, 0), 0.28),
+    "mixamorig:LeftForeArm": q_axis((1, 0, 0), -0.15),
+    "mixamorig:RightForeArm": q_axis((1, 0, 0), 0.15),
+})
+RISE_DROP = -18.0
+
+STEPOUT = dict(leg_corrs(-0.25, 0.45, -0.15))
+STEPOUT.update({
+    UP_L: q_axis((1, 0, 0), -0.35),
+    LO_L: q_axis((1, 0, 0), 0.50),
+    SPINE: q_axis((1, 0, 0), 0.12),
+    SPINE1: q_axis((1, 0, 0), 0.14),
+})
+STEPOUT_DROP = -5.0
+
+
+def build_clip(js, binary, joints, bind_rot, bind_trans, name, keys):
+    """keys: [(time, rotation-corrections dict, hip_drop)]."""
+    times = [k[0] for k in keys]
+    time_acc, binary = append_accessor(js, binary, [(t,) for t in times], "SCALAR")
+    channels = []
+    samplers = []
+    for node in joints:
+        node_name = js["nodes"][node].get("name", "")
+        base = BASE_ARM_ROT.get(node_name, bind_rot.get(node, (0.0, 0.0, 0.0, 1.0)))
+        vals = []
+        for _, corr, _ in keys:
+            q = base
+            for bone, c in corr.items():
+                if bone == node_name:
+                    q = q_mul(q, c)
+            vals.append(q_norm(q))
+        out, binary = append_accessor(js, binary, vals, "VEC4")
+        samplers.append({"input": time_acc, "output": out, "interpolation": "LINEAR"})
+        channels.append({"sampler": len(samplers) - 1,
+                         "target": {"node": node, "path": "rotation"}})
+
+    hips = next((n for n in joints
+                 if js["nodes"][n].get("name") == "mixamorig:Hips"), None)
+    if hips is not None:
+        bt = bind_trans.get(hips, (0.0, 0.0, 0.0))
+        vals = [(bt[0], bt[1], bt[2] + drop) for _, _, drop in keys]
+        out, binary = append_accessor(js, binary, vals, "VEC3")
+        samplers.append({"input": time_acc, "output": out, "interpolation": "LINEAR"})
+        channels.append({"sampler": len(samplers) - 1,
+                         "target": {"node": hips, "path": "translation"}})
+
+    js["animations"].append({"name": name, "channels": channels, "samplers": samplers})
+    return binary
 
 
 def main():
-    data = load_base_or_strip()
-    js, binary = read_glb_bytes(data)
-    js["animations"] = [
-        a for a in js.get("animations", [])
-        if a.get("name") not in ("Sit", "Board", "Stand")
-    ]
-    idle = next(a for a in js["animations"] if a.get("name") == "Idle")
+    js, binary = read_glb_bytes(load_base())
+    js["animations"] = [a for a in js.get("animations", [])
+                        if a.get("name") not in ("Sit", "Board", "Stand")]
+    joints = list(js["skins"][0]["joints"])
+    bind_rot = {}
+    bind_trans = {}
+    for node in joints:
+        n = js["nodes"][node]
+        r = n.get("rotation", [0.0, 0.0, 0.0, 1.0])
+        t = n.get("translation", [0.0, 0.0, 0.0])
+        bind_rot[node] = tuple(r)
+        bind_trans[node] = tuple(t)
 
-    binary = build_clip(js, binary, idle, "Sit", None)
-    binary = build_clip(js, binary, idle, "Board", lambda t: t * t * (3.0 - 2.0 * t))
-    binary = build_clip(js, binary, idle, "Stand", lambda t: 1.0 - (t * t * (3.0 - 2.0 * t)))
+    binary = build_clip(js, binary, joints, bind_rot, bind_trans, "Sit", [
+        (0.0, SIT, -50.0),
+        (1.0, SIT_BREATH, -50.0),
+        (2.0, SIT, -50.0),
+    ])
+    binary = build_clip(js, binary, joints, bind_rot, bind_trans, "Board", [
+        (0.00, STANCE, 0.0),
+        (0.18, REACH, 0.0),
+        (0.40, STEP, STEP_DROP),
+        (0.62, LOWER, LOWER_DROP),
+        (0.90, SIT, -50.0),
+    ])
+    binary = build_clip(js, binary, joints, bind_rot, bind_trans, "Stand", [
+        (0.00, SIT, -50.0),
+        (0.16, LEAN, -50.0),
+        (0.38, RISE, RISE_DROP),
+        (0.62, STEPOUT, STEPOUT_DROP),
+        (0.90, STANCE, 0.0),
+    ])
 
     js["buffers"][0]["byteLength"] = len(binary)
     write_glb(GLB, js, binary)

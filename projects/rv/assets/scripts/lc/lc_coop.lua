@@ -55,7 +55,8 @@ local coop = {
   buildDemo = false, buildDemoT = 0, buildDemoStage = 0,
   buildUi = false, buildUiDone = false,
   poiDemo = false, poiView = false, poiExt = false, poiNode = nil, poiIn = {}, poiT = 0,
-  sitDemo = false, doorView = false,
+  sitDemo = false, doorView = false, sitView = false,
+  animDemo = nil, animDemoEnt = nil,
   doorAngle = 0, doorTarget = 0, animT = 0,
   animPhase = {},
   visualAnim = {},
@@ -100,7 +101,7 @@ end
 
 local function seatLocal(seat)
   if seat == "driver" then return 0.0, 3.15 end
-  return 1.00, -3.15 -- passenger sits at the doorway bay, lit and visible through the opening
+  return 0.60, -3.00 -- passenger sits inside the doorway bay, visible through the opening
 end
 
 local function seatWorld(seat)
@@ -1271,7 +1272,14 @@ local function clientUpdate(dt)
   else
     px, pz, pyaw = COOP_SPAWN[1].lx, COOP_SPAWN[1].lz, 0
   end
-  if coop.poiExt then
+  if coop.animDemoEnt ~= nil then
+    local p = GetPosition(coop.animDemoEnt)
+    SetVar("cameraMouseLock", 1)
+    SetVar("cameraFocus", { x = p and p.x or 0, y = 1.0, z = p and p.z or 0 })
+    SetVar("cameraYaw", 1.55)
+    SetVar("cameraPitch", 0.06)
+    SetVar("cameraDist", 3.0)
+  elseif coop.poiExt then
     -- Test-only exterior overview: shop + forecourt/canopy from the road side.
     local nd = nodeById(coop.poiNode or "ruin")
     local cx, cz = rv.x, rv.z
@@ -1290,14 +1298,21 @@ local function clientUpdate(dt)
     SetVar("cameraYaw", 0.55)
     SetVar("cameraPitch", 0.04)
     SetVar("cameraDist", 3.0)
+  elseif coop.sitView then
+    -- Test-only interior camera: look from the cab toward the passenger seat.
+    SetVar("cameraMouseLock", 1)
+    SetVar("cameraFocus", { x = 0.6, y = 1.10, z = rv.z - 3.00 })
+    SetVar("cameraYaw", 0.0)
+    SetVar("cameraPitch", 0.04)
+    SetVar("cameraDist", 5.2)
   elseif coop.doorView and coop.mySlot == 2 then
     -- Test-only three-quarter rear camera for inspecting the real door mesh,
     -- the cut opening and the seated passenger.
     SetVar("cameraMouseLock", 1)
-    SetVar("cameraFocus", { x = 0.9, y = 1.15, z = rv.z - 2.95 })
-    SetVar("cameraYaw", 0.90)
-    SetVar("cameraPitch", 0.04)
-    SetVar("cameraDist", 4.5)
+    SetVar("cameraFocus", { x = 0.9, y = 1.10, z = rv.z - 3.05 })
+    SetVar("cameraYaw", 1.57)
+    SetVar("cameraPitch", 0.05)
+    SetVar("cameraDist", 6.0)
   elseif inside then
     -- First-person interior view: eye at the seat, shell hidden above.
     local fx, fz = math.sin(pyaw), math.cos(pyaw)
@@ -1479,6 +1494,21 @@ function coopInitWorld(role)
         print("[coop-anim] sit demo avatar=" .. tostring(ok))
       end
     end
+    local ad = ReadText("coop_animdemo.txt")
+    if ad ~= nil and ad ~= "" then
+      local clip = string.lower((ad:gsub("%s+", "")))
+      if clip == "sit" or clip == "board" or clip == "stand" then
+        local sx, sz = rotOf(4.0, -1.0)
+        local v = SpawnPrefab("rv_player", { x = sx, y = 0, z = sz })
+        if v ~= nil then
+          SetRotationY(v, rv.yaw + math.pi)
+          local ok = PlayAnimation(v, clip, true, 0.0, 1.0)
+          coop.animDemo = clip
+          coop.animDemoEnt = v
+          print("[coop-anim] demo clip=" .. clip .. " ok=" .. tostring(ok))
+        end
+      end
+    end
     coop.localPos.x, coop.localPos.z = rotOf(COOP_SPAWN[1].lx, COOP_SPAWN[1].lz)
     coop.lookYaw = rv.yaw
     coop.clampDemo = readFlag("coop_clamp.txt")
@@ -1487,6 +1517,7 @@ function coopInitWorld(role)
     coop.boardDemo = readFlag("coop_board.txt")
     coop.sitDemo = readFlag("coop_sitdemo.txt")
     coop.doorView = readFlag("coop_doorview.txt")
+    coop.sitView = readFlag("coop_sitview.txt")
     coop.poiView = readFlag("coop_poiview.txt")
     coop.poiExt = readFlag("coop_poiext.txt")
     if readFlag("coop_gas.txt") then
