@@ -23,7 +23,7 @@ atNode = nil                  -- 驻车点在节点旁 = 节点 id（搜刮层�
 rv = { x = 0, z = 0, yaw = 0, speed = 0 }
 curNode, day, clock = "camp", 1, 8 * 60
 rvBody = nil                  -- RV 动态刚体（Jolt）
-rvParts, camEnt, groundEnt = nil, nil, nil
+rvParts, rvShell, camEnt, groundEnt = nil, nil, nil, nil
 roadEnt, roadSegments, roadPhase, roadScroll, roadDashes = nil, {}, 0, 0, {}
 camSmooth = nil
 impactCd = 0

@@ -279,6 +279,7 @@ function on_start()
   camEnt = FindNamedEntity("Main Camera")
   groundEnt = FindNamedEntity("Ground")
   collectRvParts()
+  spawnRvShell()
   spawnInterior()
   -- 合并 worldmap.json：名字/危险度/战利品表/链接
   do
