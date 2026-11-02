@@ -70,7 +70,7 @@ class MeshBuilder:
 
 def main():
     b = MeshBuilder()
-    WALL, TRIM, ROOF, FLOOR, WOOD, HAY, DARK = range(1, 8)
+    WALL, TRIM, ROOF, FLOOR, WOOD, HAY, DARK, STEEL, WHITE, RED, AMBER = range(1, 12)
     H = 3.15
 
     # Hidden dummy geometry using material 0. The engine's glTF importer
@@ -119,7 +119,7 @@ def main():
     b.box(TRIM, -3.48, 3.10, 0, 0.10, 0.14, 6.0)
     b.box(TRIM, 3.48, 3.10, 0, 0.10, 0.14, 6.0)
 
-    # --- Stalls (left/right) ---
+    # --- Animal stalls with hay feeders, water buckets and number plates ---
     for sx in (-1.0, 1.0):
         for z in (-2.20, -0.10):
             b.box(WOOD, sx * 2.10, 0.70, z, 0.14, 1.40, 0.14)
@@ -129,21 +129,66 @@ def main():
         b.box(WOOD, sx * 1.60, 0.60, -0.10, 1.10, 0.10, 0.10)
         b.box(WOOD, sx * 2.06, 0.55, -1.15, 0.10, 1.10, 2.10)
         b.box(HAY, sx * 1.60, 0.18, -1.20, 1.00, 0.30, 1.60)
+        # Hay feeder on the stall front + water bucket + stall number plate.
+        b.box(WOOD, sx * 1.60, 0.92, -0.34, 1.05, 0.12, 0.40)
+        b.box(HAY, sx * 1.60, 1.02, -0.34, 0.90, 0.14, 0.28)
+        b.box(WOOD, sx * 1.60, 1.12, -0.54, 1.05, 0.34, 0.05)
+        b.box(STEEL, sx * 2.32, 0.16, -1.15, 0.28, 0.26, 0.28)
+        b.box(WHITE, sx * 2.10, 1.38, -0.28, 0.26, 0.18, 0.02)
 
     # --- Hay bales, trough, workbench, shelves, barrels ---
     b.box(HAY, 2.05, 0.24, 1.55, 1.00, 0.46, 0.66)
     b.box(HAY, 2.05, 0.70, 1.55, 0.92, 0.42, 0.60)
     b.box(HAY, 2.05, 0.24, 0.80, 1.00, 0.46, 0.66)
     b.box(DARK, 0.20, 0.22, 1.55, 1.50, 0.36, 0.52)
+    # Workbench + pegboard tools + vise + toolbox.
     b.box(WOOD, -1.55, 0.42, 1.35, 1.90, 0.16, 0.70)
     for lx in (-2.40, -0.70):
         b.box(WOOD, lx, 0.21, 1.35, 0.12, 0.42, 0.62)
+    b.box(WOOD, -1.55, 1.55, 2.33, 1.70, 0.90, 0.04)
+    for i in range(4):
+        b.box(STEEL, -2.10 + i * 0.38, 1.62, 2.29, 0.04, 0.04, 0.04)
+    b.box(STEEL, -2.00, 1.45, 2.28, 0.06, 0.30, 0.03)
+    b.box(STEEL, -1.62, 1.45, 2.28, 0.06, 0.34, 0.03)
+    b.box(WOOD, -1.62, 1.63, 2.28, 0.18, 0.10, 0.05)
+    b.box(STEEL, -1.24, 1.45, 2.28, 0.24, 0.06, 0.03)
+    b.box(STEEL, -1.55, 0.52, 1.10, 0.20, 0.16, 0.20)
+    b.box(RED, -1.20, 0.55, 1.45, 0.46, 0.20, 0.26)
+    b.box(TRIM, -1.20, 0.66, 1.45, 0.48, 0.03, 0.28)
+
+    # --- Tack wall on the left wall: board, pegs, halters, horseshoes ---
+    b.box(WOOD, -2.84, 1.55, -0.60, 0.04, 1.10, 1.70)
+    for pz in (-1.20, -0.70, -0.20, 0.10):
+        b.box(STEEL, -2.80, 1.78, pz, 0.06, 0.06, 0.06)
+    for pz, c in ((-1.05, DARK), (-0.45, AMBER), (0.05, DARK)):
+        b.box(c, -2.78, 1.38, pz, 0.03, 0.55, 0.12)
+    for pz in (-0.70, -0.15):
+        b.box(STEEL, -2.78, 1.55, pz, 0.02, 0.14, 0.16)
+        b.box(TRIM, -2.79, 1.55, pz, 0.01, 0.06, 0.08)
+    # Saddle on a stand.
+    b.box(WOOD, -2.55, 0.45, 1.25, 0.60, 0.90, 0.14)
+    b.box(DARK, -2.55, 0.98, 1.20, 0.42, 0.18, 0.50)
+    b.box(DARK, -2.55, 1.08, 1.38, 0.16, 0.14, 0.14)
+    b.box(AMBER, -2.55, 1.00, 0.96, 0.06, 0.30, 0.10)
+
+    # --- Milk cans, grain sacks and labelled crates ---
+    for mx, mz in ((1.05, 0.55), (1.28, 0.62)):
+        b.box(STEEL, mx, 0.26, mz, 0.22, 0.44, 0.22)
+        b.box(STEEL, mx, 0.50, mz, 0.24, 0.06, 0.24)
+        b.box(TRIM, mx, 0.54, mz, 0.10, 0.04, 0.10)
+    b.box(WHITE, 1.05, 0.28, 2.15, 0.50, 0.40, 0.42)
+    b.box(AMBER, 1.35, 0.30, 2.20, 0.46, 0.36, 0.36)
+    b.box(WHITE, 0.75, 0.70, 2.15, 0.46, 0.30, 0.40)
+    for cx, cz in ((-2.55, 2.15), (2.55, 2.15)):
+        b.box(WOOD, cx, 0.22, cz, 0.60, 0.44, 0.50)
+        b.box(WHITE, cx, 0.30, cz + 0.26, 0.26, 0.14, 0.02)
+        b.box(TRIM, cx, 0.26, cz + 0.27, 0.16, 0.03, 0.01)
+
+    # Back-wall shelves + crates.
     for shelf_y in (0.55, 1.15, 1.75):
         b.box(WOOD, 1.45, shelf_y, -2.32, 2.60, 0.08, 0.32)
     b.box(WOOD, 0.20, 0.42, -2.30, 0.55, 0.80, 0.50)
     b.box(WOOD, 2.55, 0.42, -1.95, 0.55, 0.80, 0.50)
-    b.box(DARK, -2.55, 0.32, 2.05, 0.46, 0.62, 0.46)
-    b.box(DARK, 2.55, 0.32, 2.05, 0.46, 0.62, 0.46)
 
     # --- Exterior: hay stack, trough, fence ---
     b.box(HAY, -3.85, 0.26, 3.55, 1.10, 0.50, 0.70)
@@ -181,6 +226,18 @@ def main():
         {"name": "barn_dark",
          "pbrMetallicRoughness": {"baseColorFactor": [0.10, 0.09, 0.08, 1],
                                   "metallicFactor": 0.05, "roughnessFactor": 0.9}},
+        {"name": "barn_steel",
+         "pbrMetallicRoughness": {"baseColorFactor": [0.46, 0.48, 0.50, 1],
+                                  "metallicFactor": 0.55, "roughnessFactor": 0.4}},
+        {"name": "barn_white",
+         "pbrMetallicRoughness": {"baseColorFactor": [0.86, 0.84, 0.78, 1],
+                                  "metallicFactor": 0.02, "roughnessFactor": 0.7}},
+        {"name": "barn_red",
+         "pbrMetallicRoughness": {"baseColorFactor": [0.58, 0.14, 0.10, 1],
+                                  "metallicFactor": 0.05, "roughnessFactor": 0.6}},
+        {"name": "barn_amber",
+         "pbrMetallicRoughness": {"baseColorFactor": [0.66, 0.44, 0.16, 1],
+                                  "metallicFactor": 0.02, "roughnessFactor": 0.75}},
     ]
 
     buffer = b""
