@@ -51,7 +51,9 @@ function spawnCrates()
   local interior = false
   -- 废宅/商店/加油站：物资箱刷在建筑内部，玩家必须从正门进入；其他地点保持屋外散落
   local isShop = nd ~= nil and (nd.id == "ruin" or nd.id == "gasstop" or
-    (nd.name or ""):find("废宅") ~= nil or (nd.name or ""):find("加油站") ~= nil)
+    nd.id == "depot" or
+    (nd.name or ""):find("废宅") ~= nil or (nd.name or ""):find("加油站") ~= nil or
+    (nd.name or ""):find("仓库") ~= nil or (nd.name or ""):find("物流") ~= nil)
   if nd and atNode ~= "camp" and isShop then
     baseX, baseZ = poiCenter(nd)
     interior = true

@@ -181,6 +181,21 @@ function runSelfTest()
      string.format("%d/%d interior", gasInside, #crates))
   despawnCrates()
 
+  -- 物流仓库：店内货架之间同样有物资箱
+  atNode = "depot"
+  spawnCrates()
+  local dep = nodeById("depot")
+  local dx, dz = poiCenter(dep)
+  local depInside = 0
+  for _, c in ipairs(crates) do
+    if math.abs(c.x - dx) < POI_HALF_X and math.abs(c.z - dz) < POI_HALF_Z then
+      depInside = depInside + 1
+    end
+  end
+  ok(r, "crates inside warehouse", depInside >= 4,
+     string.format("%d/%d interior", depInside, #crates))
+  despawnCrates()
+
   -- POI 墙体碰撞：侧墙挡住，门洞可以通过
   do
     local cx, cz = poiCenter(ruin)

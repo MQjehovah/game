@@ -1117,7 +1117,13 @@ void PlayerApp::ReconcileControlled() {
             reconcileLogged_ = true;
         }
     }
-    if (controlledKey_ != 0 && t->pos.z - controlledStartPos_.z > 0.5f) controlledMoved_ = true;
+    if (controlledKey_ != 0) {
+        const float dx = t->pos.x - controlledStartPos_.x;
+        const float dz = t->pos.z - controlledStartPos_.z;
+        // Horizontal distance, not just +Z: scripted co-op demos teleport the
+        // player in any direction and smoke tests should still see movement.
+        if (dx * dx + dz * dz > 0.25f) controlledMoved_ = true;
+    }
 }
 
 void PlayerApp::ApplyNetworkedTransforms() {

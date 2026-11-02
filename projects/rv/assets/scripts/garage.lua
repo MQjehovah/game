@@ -413,6 +413,14 @@ function on_start()
       px, pz, pyaw = cx, cz + 3.6, math.pi
     end
   end
+  if startMode == "warehouse" then
+    -- 物流仓库装卸门门口
+    local nd = nodeById("depot")
+    if nd ~= nil then
+      local cx, cz = poiCenter(nd)
+      px, pz, pyaw = cx, cz + 4.2, math.pi
+    end
+  end
   if startMode == "side_night" then clock = 22 * 60 end
   if startMode == "night" or startMode == "inside_night"
      or startMode == "place_night" or startMode == "night_drive" then
