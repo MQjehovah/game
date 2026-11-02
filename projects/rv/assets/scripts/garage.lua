@@ -306,6 +306,7 @@ function on_start()
   -- 世界固定公路网 + 开局固定生成的地点（驾驶中不再改路）
   spawnRoadNetwork()
   preGeneratePois(6)
+  spawnRoadsidePoles()
   LC.flow.load("assets/flow/raid_wave.flow.json")
   LC.flow.load("assets/flow/stop_cycle.flow.json")
   LC.flow.load("assets/flow/drive_event.flow.json")

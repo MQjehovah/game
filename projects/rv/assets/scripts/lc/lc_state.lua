@@ -27,6 +27,7 @@ rvParts, rvShell, camEnt, groundEnt = nil, nil, nil, nil
 roadEnt, roadSegments, roadPhase, roadScroll, roadDashes = nil, {}, 0, 0, {}
 camSmooth = nil
 impactCd = 0
+engineWarned, tireWarned = false, false
 fuel, dur = 60, 100
 parts = { engine = 100, tires = 100, battery = 100 }
 fuelWarned = false

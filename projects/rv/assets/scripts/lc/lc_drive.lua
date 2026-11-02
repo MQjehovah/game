@@ -67,6 +67,28 @@ function updateDrive(dt)
   local tireF = 0.60 + 0.40 * (parts.tires or 100) / 100
   maxSp = maxSp * engF
   acc = acc * (0.70 + 0.30 * (parts.engine or 100) / 100)
+  -- 引擎濒临报废：只能龟速，必须先修
+  if (parts.engine or 100) < 10 then
+    maxSp = math.min(maxSp, 1.6)
+    acc = acc * 0.25
+    if not engineWarned then
+      engineWarned = true
+      toast.text = "引擎快报废了！只能龟速——到工作台修引擎"
+      toast.t = 4.0
+    end
+  elseif (parts.engine or 100) > 25 then
+    engineWarned = false
+  end
+  if (parts.tires or 100) < 10 then
+    tireF = tireF * 0.35
+    if not tireWarned then
+      tireWarned = true
+      toast.text = "轮胎几乎磨平了——转向会非常迟钝"
+      toast.t = 4.0
+    end
+  elseif (parts.tires or 100) > 25 then
+    tireWarned = false
+  end
   if ratio > 1.0 then
     local over = math.min(1.0, ratio - 1.0)
     maxSp = maxSp * (1.0 - over * 0.45)

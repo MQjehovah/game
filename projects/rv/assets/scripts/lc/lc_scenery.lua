@@ -151,6 +151,32 @@ function spawnRoadBetween(ax, az, bx, bz)
   end
 end
 
+-- 公路电线杆（纯装饰，强化公路感）
+function spawnPolesAlong(ax, az, bx, bz, side)
+  local dx, dz = bx - ax, bz - az
+  local len = math.sqrt(dx * dx + dz * dz)
+  if len < 20 then return end
+  local ux, uz = dx / len, dz / len
+  local rx, rz = uz * (side or 1), -ux * (side or 1)
+  local yaw = dirYaw(dx, dz)
+  for d = 12, len - 8, 28 do
+    local x = ax + ux * d + rx * 6.2
+    local z = az + uz * d + rz * 6.2
+    local pole = SpawnPrefab("rv_powerpole", { x = x, y = 3.2, z = z })
+    if pole ~= nil then SetScale(pole, 0.16, 6.4, 0.16) end
+    local arm = SpawnPrefab("rv_panel_dark", { x = x, y = 5.9, z = z })
+    if arm ~= nil then
+      SetScale(arm, 1.5, 0.10, 0.10)
+      SetRotationY(arm, yaw)
+    end
+  end
+end
+
+function spawnRoadsidePoles()
+  spawnPolesAlong(0, -220, 0, 0, 1)
+  spawnPolesAlong(0, 60, 0, 220, -1)
+end
+
 function preGeneratePois(count)
   for _ = 1, (count or 6) do
     local before = #NODES
