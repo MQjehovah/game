@@ -300,8 +300,9 @@ function on_start()
   end
   if groundEnt ~= nil then SetScale(groundEnt, 800, 0.1, 800) end
   -- 用薄立方体而不是贴花：贴花是深度投影，会把路面画到房车/家具上。
-  -- 世界固定公路网（不跟随车头旋转）
+  -- 世界固定公路网 + 开局固定生成的地点（驾驶中不再改路）
   spawnRoadNetwork()
+  preGeneratePois(6)
   LC.flow.load("assets/flow/raid_wave.flow.json")
   LC.flow.load("assets/flow/stop_cycle.flow.json")
   LC.flow.load("assets/flow/drive_event.flow.json")

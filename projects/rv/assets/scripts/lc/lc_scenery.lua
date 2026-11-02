@@ -151,6 +151,14 @@ function spawnRoadBetween(ax, az, bx, bz)
   end
 end
 
+function preGeneratePois(count)
+  for _ = 1, (count or 6) do
+    local before = #NODES
+    trySpawnPoi(true)
+    if #NODES == before then return end
+  end
+end
+
 function spawnRoadNetwork()
   roadSegments, roadDashes = {}, {}
   -- 营地南侧主路（出生点在营地里，需要身后也有路）
@@ -215,13 +223,15 @@ end
 
 -- 程序化公路地点：向前方推进一段里程后生成
 local poiSeq = 0
-function trySpawnPoi()
+function trySpawnPoi(silent)
   if #NODES >= 15 then return end
   for _ = 1, 13 do
-    local a = rv.yaw + (math.random() * 2 - 1) * 0.9
-    local dist = 110 + math.random() * 70
-    local x = rv.x + math.sin(a) * dist
-    local z = rv.z + math.cos(a) * dist
+    -- 以现有地点为锚点生成，而不是以车头方向生成：路网在开局就固定
+    local anchor = NODES[math.random(1, #NODES)]
+    local a = math.random() * math.pi * 2
+    local dist = 70 + math.random() * 90
+    local x = anchor.x + math.sin(a) * dist
+    local z = anchor.z + math.cos(a) * dist
     local ok = true
     for _, nd in ipairs(NODES) do
       local dx, dz = x - nd.x, z - nd.z
@@ -230,12 +240,7 @@ function trySpawnPoi()
     if ok then
       repeat poiSeq = poiSeq + 1 until nodeById("poi_" .. poiSeq) == nil
       local kind = POI_KINDS[math.random(1, #POI_KINDS)]
-      local nearest, bestD = NODES[1], 1e18
-      for _, nd in ipairs(NODES) do
-        local dx, dz = x - nd.x, z - nd.z
-        local d2 = dx * dx + dz * dz
-        if d2 < bestD then nearest, bestD = nd, d2 end
-      end
+      local nearest = anchor
       local nd = {
         id = "poi_" .. poiSeq,
         name = kind.name .. " #" .. poiSeq,
@@ -266,8 +271,10 @@ function trySpawnPoi()
           SetRotationY(prop, math.random() * math.pi * 2)
         end
       end
-      toast.text = "前方发现地点：" .. nd.name
-      toast.t = 4.0
+      if not silent then
+        toast.text = "发现地点：" .. nd.name
+        toast.t = 4.0
+      end
       return
     end
   end

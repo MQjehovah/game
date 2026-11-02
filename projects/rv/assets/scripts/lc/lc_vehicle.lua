@@ -20,8 +20,8 @@ end
 -- 这里补一层朝内的墙板 + 车窗外饰，第一人称才有像样的车舱。
 local INTERIOR = {
   -- 内墙板
-  { pre = "rv_panel_light", lx = -0.94, ly = 1.13, lz = 0.0,  sx = 0.04, sy = 2.16, sz = 7.86 },
-  { pre = "rv_panel_light", lx =  0.94, ly = 1.13, lz = 0.0,  sx = 0.04, sy = 2.16, sz = 7.86 },
+  { pre = "rv_panel_light", lx = -0.975, ly = 1.13, lz = 0.0, sx = 0.03, sy = 2.16, sz = 7.86 },
+  { pre = "rv_panel_light", lx =  0.975, ly = 1.13, lz = 0.0, sx = 0.03, sy = 2.16, sz = 7.86 },
   { pre = "rv_panel_light", lx =  0.0,  ly = 1.13, lz = -3.92, sx = 2.24, sy = 2.16, sz = 0.04 },
   -- 驾驶台下半部（上半部留空当挡风玻璃）
   { pre = "rv_panel_dark",  lx =  0.0,  ly = 0.52, lz = 3.94, sx = 2.24, sy = 1.02, sz = 0.06 },
@@ -36,7 +36,6 @@ local INTERIOR = {
   { pre = "rv_panel_window", lx = -1.335, ly = 1.46, lz = -1.35, sx = 0.02, sy = 0.56, sz = 2.0 },
   { pre = "rv_panel_window", lx =  1.335, ly = 1.46, lz =  1.35, sx = 0.02, sy = 0.56, sz = 2.0 },
   { pre = "rv_panel_window", lx =  1.335, ly = 1.46, lz = -1.35, sx = 0.02, sy = 0.56, sz = 2.0 },
-  { pre = "rv_panel_window", lx =  0.0,  ly = 1.52, lz = -4.335, sx = 1.5, sy = 0.5, sz = 0.02 },
   { pre = "rv_panel_window", lx = -1.225, ly = 1.45, lz = 4.85, sx = 0.02, sy = 0.5, sz = 1.0 },
   { pre = "rv_panel_window", lx =  1.225, ly = 1.45, lz = 4.85, sx = 0.02, sy = 0.5, sz = 1.0 },
   -- 车顶内饰板（挡天空，配合暖光做出车舱感）

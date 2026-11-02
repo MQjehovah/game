@@ -135,12 +135,7 @@ function updateDrive(dt)
     parts.battery = math.max(0, parts.battery - VEH.partWear.battery * meters)
   end
 
-  -- 程序化公路地点：每约 130m 在前方生成一个新地点
-  poiDistAcc = poiDistAcc + math.abs(rv.speed) * dt
-  if poiDistAcc > 130 then
-    poiDistAcc = 0
-    trySpawnPoi()
-  end
+  -- 地点在开局一次性生成；行驶中不再新增/改向公路
 
   if math.abs(rv.speed) > 2.5 then
     dustAcc = dustAcc + dt * (6.0 + math.abs(rv.speed) * 1.6)
