@@ -209,6 +209,11 @@
 
 ## 可进入的废宅商店、加油站、仓库、农场、购物中心、湖边木屋与诊所
 
+- `assets/models/rv/rv_store.gltf` + `rv_store.bin`（`tools/gen_rv_store.py`）：
+  实心墙体、1.6m 门洞、门框/雨棚/红招牌、两扇破裂橱窗（窗内展示商品）；店内
+  四层商品墙（成排彩色货盒 + 价签）、中央双层货架、玻璃门冷柜、果蔬木箱、
+  带屏幕/键盘/小票的收银机、挂式价牌、壁钟、购物篮堆、地毯和物资箱；
+  `ruin` 和所有“废宅/商店”地点生成该 glTF。
 - `assets/models/rv/rv_gasstation.gltf` + `rv_gasstation.bin`（`tools/gen_rv_gasstation.py`）：
   同一套实心墙体/门洞商店（玻璃窗、柜台、货架、咖啡机）+ 四柱雨棚 + 两台加油机；
   `gasstop` 和所有“加油站”地点生成该 glTF。
