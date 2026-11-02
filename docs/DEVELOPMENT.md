@@ -767,7 +767,8 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   `gen_rv_barn.py` / `gen_rv_mall.py` / `gen_rv_cabin.py` / `gen_rv_clinic.py` 生成
   实心墙体、门洞、门框/雨棚/招牌、货架/柜台/托盘/畜栏/商品/壁炉/药柜的
   `rv_store.gltf`（破裂橱窗 + 成排商品墙 + 收银机 + 冷柜 + 果蔬箱 + 挂式价牌）、
-  `rv_gasstation.gltf`（四柱雨棚 + 两台油泵）、`rv_warehouse.gltf`
+  `rv_gasstation.gltf`（破裂橱窗 + 成排商品墙 + 收银机 + 冷柜 + 咖啡台 + 四柱雨棚 +
+  两台油泵）、`rv_warehouse.gltf`
   （宽装卸门/月台 + 钢制货架）、`rv_barn.gltf`（红谷仓 + 畜栏/干草）、
   `rv_mall.gltf`（玻璃店面 + 收银台/货架/服装架/模特）、`rv_cabin.gltf`
   （原木墙 + 门廊 + 壁炉/床/桌椅/厨房）和 `rv_clinic.gltf`（玻璃门 + 红十字 +

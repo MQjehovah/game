@@ -215,8 +215,10 @@
   带屏幕/键盘/小票的收银机、挂式价牌、壁钟、购物篮堆、地毯和物资箱；
   `ruin` 和所有“废宅/商店”地点生成该 glTF。
 - `assets/models/rv/rv_gasstation.gltf` + `rv_gasstation.bin`（`tools/gen_rv_gasstation.py`）：
-  同一套实心墙体/门洞商店（玻璃窗、柜台、货架、咖啡机）+ 四柱雨棚 + 两台加油机；
-  `gasstop` 和所有“加油站”地点生成该 glTF。
+  实心墙体、1.6m 门洞、两扇破裂橱窗；店内四层商品墙（成排彩色货盒 + 价签）、
+  中央双层零食货架、玻璃门冷柜、咖啡机 + 杯堆 + 调料架、带屏幕/键盘/小票的收银机、
+  挂式价牌、壁钟、购物篮堆；四柱雨棚 + 两台加油机；`gasstop` 和所有“加油站”地点
+  生成该 glTF。
 - `assets/models/rv/rv_warehouse.gltf` + `rv_warehouse.bin`（`tools/gen_rv_warehouse.py`）：
   3.6m 高棚、宽装卸门 + 月台（黄色警示线/防撞柱）、顶部高窗、两侧与后墙钢制货架、
   木托盘/货箱；`depot` 和所有“仓库/物流”地点生成该 glTF。
