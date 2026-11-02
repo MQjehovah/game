@@ -50,8 +50,10 @@ inline constexpr uint8_t kProtocolVersion = 5; // v5: snapshot fragmentation (B1
 
 // Hard caps applied on decode to hostile input. Strings longer than
 // kMaxStringBytes and snapshots with more than kMaxSnapshotEntities entries
-// are rejected as malformed.
-inline constexpr size_t kMaxStringBytes = 256;
+// are rejected as malformed. RPC arguments are JSON strings, so this must be
+// large enough for a realistic gameplay state packet (the reliable frame cap
+// still bounds the total datagram at ~1.2 KB).
+inline constexpr size_t kMaxStringBytes = 1024;
 inline constexpr uint32_t kMaxSnapshotEntities = 4096;
 inline constexpr uint32_t kMaxCharacters = 256;
 

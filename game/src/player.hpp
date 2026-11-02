@@ -161,6 +161,7 @@ private:
     void TryReconnect(uint64_t nowMs);
     uint64_t ReconnectDelayMs() const;
     void ResolveControlledEntity();
+    void ApplyScriptControlOverride();
     void ReconcileControlled();
     void DrawNetworkWorld();
     // Applies interpolated server transforms to the local entities (keyed by

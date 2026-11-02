@@ -542,7 +542,13 @@ void PlayerApp::OnUpdate(float dt) {
         PumpNetwork();
         if (!cfg_.spectate) SendInputPacket();
         runtime_.Tick(dt);
-        if (!cfg_.spectate) ReconcileControlled();
+        if (!cfg_.spectate) {
+            // Multi-player scripts may claim a specific replicated entity via
+            // GameVar "netControlKey" (the server sends each client its key).
+            // Apply before reconciliation so the right entity is authoritative.
+            ApplyScriptControlOverride();
+            ReconcileControlled();
+        }
     } else {
         runtime_.Tick(dt);
     }
@@ -897,7 +903,7 @@ void PlayerApp::HandleRpc(const net::MsgRpc& rpc) {
     // them via NetCommand()).
     if (rpc.name == "moba_state" || rpc.name == "moba_hud" || rpc.name == "room.joined" ||
         rpc.name == "room.list" || rpc.name == "room.left" || rpc.name == "lobby" ||
-        rpc.name == "match.start") {
+        rpc.name == "match.start" || rpc.name == "game_state" || rpc.name == "game_event") {
         runtime_.PushNetCommand(0, rpc.name, rpc.argsJson);
         return;
     }
@@ -1056,6 +1062,32 @@ void PlayerApp::ResolveControlledEntity() {
                      e.id, e.generation, static_cast<unsigned long long>(controlledKey_),
                      controlledStartPos_.x, controlledStartPos_.y, controlledStartPos_.z);
         break;
+    }
+}
+
+void PlayerApp::ApplyScriptControlOverride() {
+    // Co-op clients learn which replicated entity they own from the server
+    // (GameVar "netControlKey"). The default first-CTransformBind heuristic
+    // still applies until the script claims one, so single-player scenes and
+    // the v1 controller demo keep working unchanged.
+    const script::Value v = runtime_.GameVars().Get("netControlKey");
+    if (v.type != script::Value::Type::Number || !(v.number > 0.0) || v.number > 9.0e15)
+        return;
+    const uint64_t key = static_cast<uint64_t>(v.number);
+    if (key == controlledKey_) return;
+    ecs::World& world = runtime_.World();
+    auto view = world.ViewAll<script::CTransformBind>();
+    for (size_t i = 0; i < view.Size(); ++i) {
+        ecs::Entity e = world.EntityAt<script::CTransformBind>(i);
+        if (EntityKey(e) != key) continue;
+        controlledEntity_ = e;
+        controlledKey_ = key;
+        if (const script::CTransformBind* t = world.Get<script::CTransformBind>(e))
+            controlledStartPos_ = t->pos;
+        NEON_LOG_CAT(neon::core::LogCategory::Net, neon::core::LogLevel::Info,
+                     "client: script claimed controlled entity id=%u gen=%u key=%llu",
+                     e.id, e.generation, static_cast<unsigned long long>(controlledKey_));
+        return;
     }
 }
 

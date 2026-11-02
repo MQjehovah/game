@@ -380,8 +380,9 @@ TEST(ProtocolOversizedCharCount) {
 TEST(ProtocolOversizedString) {
     net::MessageCodec codec;
     std::vector<uint8_t> payload;
-    AppendU32(payload, 1000); // name length over kMaxStringBytes
-    for (int i = 0; i < 1000; ++i) payload.push_back(static_cast<uint8_t>('x'));
+    const uint32_t over = static_cast<uint32_t>(net::kMaxStringBytes + 1);
+    AppendU32(payload, over); // name length over kMaxStringBytes
+    for (uint32_t i = 0; i < over; ++i) payload.push_back(static_cast<uint8_t>('x'));
     core::Result<std::vector<uint8_t>> frame =
         codec.EncodeFrame(static_cast<uint8_t>(net::MsgType::Join), 1, payload);
     CHECK(frame.Ok());

@@ -731,6 +731,19 @@ Value NativeFindNamedEntity(IScriptHost& host, void* user) {
     return e.IsValid() ? EntityToValue(e) : Value::Nil();
 }
 
+// EntityKey(entity) -> stable numeric key (id<<32 | generation), the same key
+// network snapshots use. Multi-player scenes use it to tell a connected client
+// which replicated entity it owns (GameVar "netControlKey").
+Value NativeEntityKey(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->world) return Value::Num(0);
+    const ecs::Entity e = EntityFromValue(host.GetArg(0));
+    if (!e.IsValid() || !ctx->world->Alive(e)) return Value::Num(0);
+    const uint64_t key = (static_cast<uint64_t>(e.id) << 32) |
+                         static_cast<uint64_t>(e.generation);
+    return Value::Num(static_cast<double>(key));
+}
+
 // SpawnSprite(texture, x, y, width, height, flipX, flipY): creates a
 // renderable sprite entity (2D games) and returns its handle. The runtime
 // renders it through the normal scene pass, so editing and playtesting share
@@ -2475,6 +2488,7 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("Loc", &NativeLoc, &ctx);
     host.Register("WriteText", &NativeWriteText, &ctx);
     host.Register("FindNamedEntity", &NativeFindNamedEntity, &ctx);
+    host.Register("EntityKey", &NativeEntityKey, &ctx);
     host.Register("SpawnSprite", &NativeSpawnSprite, &ctx);
     host.Register("SpawnPrefab", &NativeSpawnPrefab, &ctx);
     host.Register("GetGroundHeight", &NativeGetGroundHeight, &ctx);

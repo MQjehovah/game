@@ -718,6 +718,15 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   **RPC + 房间**（`room.create/join/leave/list/broadcast`）；**防作弊**（输入限速、
   kick/ban 按 clientId/name、admin 命令）；**lag comp**（Ping RTT → 回滚 tick 数）；
   超时断线；`SetScriptedInputs` 确定性验收注入。
+- **通用玩法 RPC 通道**：客户端 `Rpc("game_cmd", args)` → 服务器注册的 `game_cmd`
+  处理器把 `{clientId, argsJson}` 放进该 match 的 runtime 队列；权威脚本用
+  `NetCommand()` 取出并做字段校验。服务器脚本 `Rpc("game_state", args)` 广播给
+  match 内所有客户端，客户端 `HandleRpc` 把 `game_state`/`game_event` 放进同一队列。
+- **每客户端实体所有权**：`EntityKey(entity)` 返回快照同款稳定 key；服务器把 key
+  随状态下发，客户端通过 GameVar `netControlKey` 认领自己的 `CTransformBind` 实体，
+  `ReconcileControlled` 只纠正该实体（房车合作项目由此支持两个客户端各自预测）。
+- **RPC 字符串上限**：`kMaxStringBytes` 1024，容得下约 1KB 的 JSON 状态包；
+  可靠通道的 `maxFrameBytes` 仍把单个 UDP 帧限制在 ~1.2KB。
 - **客户端同步**（`client::ClientSync`）：快照环形缓冲 + 相邻插值（yaw 最短弧，渲染时钟
   落后 6 tick ≈100ms）+ 本地预测（同场景同 seed 跑本地 `GameRuntime`）+
   **快照对齐回滚**（分歧超阈值即纠正）；1Hz Ping 心跳。

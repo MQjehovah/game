@@ -777,6 +777,16 @@ void GameServer::SetupRpc() {
         }
         return std::optional<std::pair<std::string, std::string>>{};
     });
+    // Generic gameplay command channel for non-MOBA projects (RV co-op etc.):
+    // a client sends Rpc("game_cmd", {...}); the authoritative script drains it
+    // with NetCommand() and receives the sender's clientId for ownership.
+    rpc_.Register("game_cmd", [this](uint64_t clientId, const std::string& argsJson) {
+        if (Client* c = ClientById(clientId)) {
+            if (Match* mc = MatchForClient(*c))
+                mc->runtime.PushNetCommand(clientId, "game_cmd", argsJson);
+        }
+        return std::optional<std::pair<std::string, std::string>>{};
+    });
 
     // P2-4 anti-cheat admin RPCs (placeholder: any connected client may use
     // them; a real deployment gates this behind an auth/admin role).

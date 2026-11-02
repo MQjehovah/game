@@ -1,0 +1,237 @@
+{
+  "entities": [
+    {
+      "id": 1,
+      "name": "Coop",
+      "components": {
+        "transform": { "pos": [0, 0, 0], "rot": [0, 0, 0, 1], "scale": [1, 1, 1] },
+        "scripts": {
+          "items": [
+            { "backend": "lua", "path": "assets/scripts/coop/coop_test.lua" }
+          ]
+        }
+      }
+    },
+    {
+      "id": 2,
+      "name": "Main Camera",
+      "components": {
+        "type": { "value": "Camera3D" },
+        "camera": { "fov": 62, "orthoSize": 10 },
+        "transform": { "pos": [0, 4, -8], "rot": [0, 0, 0, 1], "scale": [1, 1, 1] }
+      }
+    },
+    {
+      "id": 3,
+      "name": "Sun",
+      "components": {
+        "type": { "value": "Light3D" },
+        "light": {
+          "type": "directional",
+          "color": [1.0, 0.95, 0.86, 1],
+          "intensity": 1.65,
+          "ambientStrength": 0.55,
+          "sunDir": [0.42, -0.8, 0.3]
+        },
+        "transform": { "pos": [0, 40, 0], "rot": [0, 0, 0, 1], "scale": [1, 1, 1] }
+      }
+    },
+    {
+      "id": 4,
+      "name": "Ground",
+      "components": {
+        "mesh": {
+          "meshKey": "cube",
+          "castShadow": false,
+          "receiveShadow": true,
+          "material": {
+            "ao": 1,
+            "colorHex": "#7B7256",
+            "metallic": 0,
+            "roughness": 0.95,
+            "uvRepeat": 60
+          }
+        },
+        "transform": { "pos": [0, -0.06, 6], "rot": [0, 0, 0, 1], "scale": [140, 0.1, 140] }
+      }
+    },
+    {
+      "id": 10,
+      "name": "Road",
+      "components": {
+        "mesh": {
+          "meshKey": "cube",
+          "castShadow": false,
+          "receiveShadow": true,
+          "material": {
+            "ao": 1,
+            "colorHex": "#38383A",
+            "metallic": 0,
+            "roughness": 0.97,
+            "uvRepeat": 8
+          }
+        },
+        "transform": { "pos": [0, -0.005, 10], "rot": [0, 0, 0, 1], "scale": [8.5, 0.02, 78] }
+      }
+    },
+    {
+      "id": 11,
+      "name": "Dash1",
+      "components": {
+        "mesh": {
+          "meshKey": "cube",
+          "castShadow": false,
+          "receiveShadow": false,
+          "material": { "colorHex": "#D9C15A", "metallic": 0, "roughness": 0.7 }
+        },
+        "transform": { "pos": [0, 0.01, -12], "rot": [0, 0, 0, 1], "scale": [0.18, 0.02, 2.4] }
+      }
+    },
+    {
+      "id": 12,
+      "name": "Dash2",
+      "components": {
+        "mesh": {
+          "meshKey": "cube",
+          "castShadow": false,
+          "receiveShadow": false,
+          "material": { "colorHex": "#D9C15A", "metallic": 0, "roughness": 0.7 }
+        },
+        "transform": { "pos": [0, 0.01, -4], "rot": [0, 0, 0, 1], "scale": [0.18, 0.02, 2.4] }
+      }
+    },
+    {
+      "id": 13,
+      "name": "Dash3",
+      "components": {
+        "mesh": {
+          "meshKey": "cube",
+          "castShadow": false,
+          "receiveShadow": false,
+          "material": { "colorHex": "#D9C15A", "metallic": 0, "roughness": 0.7 }
+        },
+        "transform": { "pos": [0, 0.01, 4], "rot": [0, 0, 0, 1], "scale": [0.18, 0.02, 2.4] }
+      }
+    },
+    {
+      "id": 14,
+      "name": "Dash4",
+      "components": {
+        "mesh": {
+          "meshKey": "cube",
+          "castShadow": false,
+          "receiveShadow": false,
+          "material": { "colorHex": "#D9C15A", "metallic": 0, "roughness": 0.7 }
+        },
+        "transform": { "pos": [0, 0.01, 12], "rot": [0, 0, 0, 1], "scale": [0.18, 0.02, 2.4] }
+      }
+    },
+    {
+      "id": 15,
+      "name": "Dash5",
+      "components": {
+        "mesh": {
+          "meshKey": "cube",
+          "castShadow": false,
+          "receiveShadow": false,
+          "material": { "colorHex": "#D9C15A", "metallic": 0, "roughness": 0.7 }
+        },
+        "transform": { "pos": [0, 0.01, 20], "rot": [0, 0, 0, 1], "scale": [0.18, 0.02, 2.4] }
+      }
+    },
+    {
+      "id": 20,
+      "name": "PineL1",
+      "prefab": "rv_pine_a",
+      "components": {
+        "transform": { "pos": [-9, 0, -6], "rot": [0, 0, 0, 1], "scale": [1.1, 1.1, 1.1] }
+      }
+    },
+    {
+      "id": 21,
+      "name": "PineL2",
+      "prefab": "rv_pine_b",
+      "components": {
+        "transform": { "pos": [-11, 0, 8], "rot": [0, 0, 0, 1], "scale": [1.2, 1.2, 1.2] }
+      }
+    },
+    {
+      "id": 22,
+      "name": "PineR1",
+      "prefab": "rv_pine_c",
+      "components": {
+        "transform": { "pos": [9.5, 0, -4], "rot": [0, 0, 0, 1], "scale": [1.0, 1.0, 1.0] }
+      }
+    },
+    {
+      "id": 23,
+      "name": "PineR2",
+      "prefab": "rv_pine_a",
+      "components": {
+        "transform": { "pos": [11, 0, 10], "rot": [0, 0, 0, 1], "scale": [1.3, 1.3, 1.3] }
+      }
+    },
+    {
+      "id": 30,
+      "name": "MarkerL",
+      "components": {
+        "mesh": {
+          "meshKey": "cube",
+          "castShadow": true,
+          "receiveShadow": true,
+          "material": { "colorHex": "#C9763A", "metallic": 0.1, "roughness": 0.8 }
+        },
+        "transform": { "pos": [-5.5, 0.45, 3.5], "rot": [0, 0, 0, 1], "scale": [0.18, 0.9, 0.18] }
+      }
+    },
+    {
+      "id": 31,
+      "name": "MarkerR",
+      "components": {
+        "mesh": {
+          "meshKey": "cube",
+          "castShadow": true,
+          "receiveShadow": true,
+          "material": { "colorHex": "#C9763A", "metallic": 0.1, "roughness": 0.8 }
+        },
+        "transform": { "pos": [5.5, 0.45, 3.5], "rot": [0, 0, 0, 1], "scale": [0.18, 0.9, 0.18] }
+      }
+    }
+  ],
+  "environment": {
+    "ambientColor": [0.56, 0.60, 0.68, 1],
+    "ambientStrength": 0.58,
+    "fogColor": [0.62, 0.68, 0.76, 1],
+    "fogFar": 240,
+    "fogNear": 80,
+    "skyHorizon": [0.70, 0.76, 0.84, 1],
+    "skyTop": [0.32, 0.48, 0.72, 1]
+  },
+  "renderstack": {
+    "autoExposure": false,
+    "bloom": true,
+    "bloomStrength": 0.24,
+    "bloomThreshold": 1.1,
+    "bloomWidth": 1.4,
+    "exposure": 1.05,
+    "fog": true,
+    "fogColor": [0.62, 0.68, 0.76, 1],
+    "fogDensity": 0.006,
+    "grade": true,
+    "gradeContrast": 0.02,
+    "gradeGain": 1.02,
+    "gradeGamma": 1,
+    "gradeLift": 0,
+    "gradeSaturation": 1.05,
+    "gradeTint": [1, 1, 1, 1],
+    "shadowDistance": 70,
+    "shadowNormalOffset": 3,
+    "shadowSoftness": 1.2,
+    "ssao": true,
+    "ssaoIntensity": 2.4,
+    "ssr": false,
+    "tonemap": true,
+    "vignette": false,
+    "volumetric": false
+  }
+}
