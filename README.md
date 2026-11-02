@@ -160,8 +160,9 @@ build\neon_game.exe --connect 127.0.0.1:26000 --scene tests\data\neon_server_sam
 ```
 
 > 服务器二进制不在 `build\` 时，用 CMake 构建目录下的 `build-msvc\Release\neon_server.exe`。
-> 需要“两个玩家各自控制角色 + 共享房车”的完整合作示例，见
-> `projects/rv/README.md` 的“网络合作（2 人测试场景）”（`coop_test.json`）。
+> 需要“两名玩家各自控制角色 + 共享房车/家具/搜刮”的完整合作示例，见
+> `projects/rv/README.md` 的“网络合作（主世界 2–4 人）”（主场景 `garage.json`，
+> `coop_test.json` 仍保留为轻量协议调试场景）。
 
 ### 数据驱动 2D 游戏（NeonPvZ，植物大战僵尸原型）
 
