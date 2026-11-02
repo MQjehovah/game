@@ -92,11 +92,13 @@ def main():
     b.box(TRIM, 0.95, 1.30, 2.56, 0.18, 2.60, 0.22)
     b.box(TRIM, 0, 2.62, 2.56, 2.08, 0.18, 0.22)
     b.box(DARK, 0, 2.92, 2.48, 1.30, 0.42, 0.06)
-    # Sliding doors parked beside the opening (open state).
-    for sx in (-2.15, 2.15):
-        b.box(WALL, sx, 1.25, 2.66, 1.55, 2.35, 0.08)
-        b.box(TRIM, sx, 0.10, 2.70, 1.62, 0.10, 0.06)
-        b.box(TRIM, sx, 2.42, 2.70, 1.62, 0.10, 0.06)
+    # Sliding-door track above the opening. The panel itself is a dynamic
+    # entity (rv_sliding_door) spawned by lc_scenery so it can open and close
+    # at runtime; only the fixed track stays in the building mesh.
+    b.box(TRIM, 1.05, 2.50, 2.66, 4.35, 0.12, 0.12)
+    b.box(STEEL, 1.05, 2.57, 2.66, 4.35, 0.04, 0.06)
+    for sx in (-1.10, 3.20):
+        b.box(TRIM, sx, 2.50, 2.66, 0.10, 0.22, 0.16)
 
     # Whitewashed interior lining (keeps the red exterior while lighting the
     # interior like a real barn).

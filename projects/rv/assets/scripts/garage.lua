@@ -684,6 +684,7 @@ function on_update(ent, dt)
     coopUpdate(dt)
     if updatePoiWindows then updatePoiWindows(dt) end
     if updatePoiDoors then updatePoiDoors(dt) end
+    if updatePoiSlidingDoors then updatePoiSlidingDoors(dt) end
     return
   end
   if toast.t > 0 then toast.t = toast.t - dt end
@@ -773,6 +774,8 @@ function on_update(ent, dt)
   if updatePoiWindows then updatePoiWindows(dt) end
   if updatePoiDoorProximity then updatePoiDoorProximity(player.x, player.z) end
   if updatePoiDoors then updatePoiDoors(dt) end
+  if updatePoiBarnDoorProximity then updatePoiBarnDoorProximity(player.x, player.z) end
+  if updatePoiSlidingDoors then updatePoiSlidingDoors(dt) end
   updateFishing(dt)
   updateInteraction()
   if ActionPressed("e") then doInteract() end

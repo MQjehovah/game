@@ -415,6 +415,69 @@ function updatePoiDoorProximity(x, z)
   end
 end
 
+-- ---------------------------------------------------------------------------
+-- Animated barn sliding door (server-authoritative in co-op)
+-- ---------------------------------------------------------------------------
+poiBarnDoors = {}
+
+-- Panel local centre at y = 1.23 (2.42 m tall), parked 2.05 m to the +X side.
+function spawnPoiSlidingDoor(nd)
+  if poiBarnDoors[nd.id] ~= nil then return end
+  local cx, cz = nd.x + 6.5, nd.z + 6.5
+  local ent = SpawnPrefab("rv_sliding_door",
+                          { x = cx, y = 1.23, z = cz + 2.70 })
+  if ent == nil then return end
+  poiBarnDoors[nd.id] = {
+    ent = ent, x = cx, y = 1.23, z = cz + 2.70,
+    slide = 2.05, cur = 0.0, target = 0.0,
+  }
+  print(string.format("[barn-door] spawned at %s (closed)", nd.id))
+end
+
+function setPoiSlidingDoorOpen(ndId, open)
+  local d = poiBarnDoors[ndId]
+  if d == nil then return end
+  local t = open and 1.0 or 0.0
+  if t ~= d.target then
+    d.target = t
+    print(string.format("[barn-door] %s target=%s (client)", ndId, tostring(open)))
+  end
+end
+
+-- Slide the panel sideways; the whole 1.86 m panel parks over the front wall.
+function updatePoiSlidingDoors(dt)
+  for id, d in pairs(poiBarnDoors) do
+    if d.cur ~= d.target then
+      local step = dt * 1.6
+      if d.cur < d.target then
+        d.cur = math.min(d.target, d.cur + step)
+      else
+        d.cur = math.max(d.target, d.cur - step)
+      end
+      d.cur = math.max(0, math.min(1, d.cur))
+      SetPosition(d.ent, { x = d.x + d.slide * d.cur, y = d.y, z = d.z })
+    end
+    if d.cur == d.target and d.logged ~= d.target then
+      d.logged = d.target
+      print(string.format("[barn-door] %s now %s (client, cur=%.2f)",
+            id, d.cur > 0.5 and "open" or "closed", d.cur))
+    end
+  end
+end
+
+-- Single-player proximity trigger, mirroring the co-op server logic.
+function updatePoiBarnDoorProximity(x, z)
+  for id, _ in pairs(poiBarnDoors) do
+    local nd = nodeById(id)
+    if nd ~= nil then
+      local cx, cz = poiCenter(nd)
+      local near = math.abs(x - cx) < 3.6 and
+                   (z - cz) > 0.5 and (z - cz) < 4.5
+      setPoiSlidingDoorOpen(id, near)
+    end
+  end
+end
+
 -- 简易路边建筑：一个带门洞/窗的废弃小屋（纯装饰，原型级）
 function spawnRuinFor(nd)
   if nd.ruinSpawned then return end
@@ -479,6 +542,7 @@ function spawnRuinFor(nd)
       local lamp = SpawnPrefab("rv_lamp", { x = cx + lp[1], y = 2.60, z = cz + lp[2] })
       if lamp ~= nil then SetScale(lamp, 2.0, 2.0, 2.0) end
     end
+    spawnPoiSlidingDoor(nd)
     return
   end
   if isWarehouse then

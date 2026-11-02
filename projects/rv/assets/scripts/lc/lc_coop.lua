@@ -62,7 +62,7 @@ local coop = {
   visualAnim = {},
   boardDemo = false, boardDemoT = 0, boardDemoStage = 0,
   carrySlot = 0, carryT = 0, carryView = false, glassView = false,
-  rollup = false,
+  rollup = false, barnDoor = false,
   toast = "", toastT = 0, logT = 0,
 }
 
@@ -442,6 +442,7 @@ local function pushState()
     door = anyInside and 1 or 0,
     carry = coop.carrySlot or 0,
     rollup = coop.rollup and 1 or 0,
+    barndoor = coop.barnDoor and 1 or 0,
     event = coop.toast, eventId = coop.eventId or 0,
   })
 end
@@ -462,7 +463,7 @@ local function serverDebugLog()
     end
   end
   print(string.format(
-    "[coop-main-server] seq=%d rv=(%.2f,%.2f,yaw=%.2f speed=%.2f) p1=(%.2f,%.2f) p2=(%.2f,%.2f) p3=(%.2f,%.2f) p4=(%.2f,%.2f) joined=%d/%d fuel=%.1f water=%.1f metal=%d crates=%d meal=%d waterItem=%d stove=%d fridge=%d bed=%d furn=%d in1=%d in2=%d in3=%d in4=%d door=%d shop=%d rollup=%d",
+    "[coop-main-server] seq=%d rv=(%.2f,%.2f,yaw=%.2f speed=%.2f) p1=(%.2f,%.2f) p2=(%.2f,%.2f) p3=(%.2f,%.2f) p4=(%.2f,%.2f) joined=%d/%d fuel=%.1f water=%.1f metal=%d crates=%d meal=%d waterItem=%d stove=%d fridge=%d bed=%d furn=%d in1=%d in2=%d in3=%d in4=%d door=%d shop=%d rollup=%d barndoor=%d",
     coop.seq, rv.x, rv.z, rv.yaw, rv.speed,
     coop.slots[1].x, coop.slots[1].z, coop.slots[2].x, coop.slots[2].z,
     coop.slots[3].x, coop.slots[3].z, coop.slots[4].x, coop.slots[4].z,
@@ -474,7 +475,7 @@ local function serverDebugLog()
     furnState("bed") and 1 or 0, #sortedInstances(),
     coop.slots[1].inside and 1 or 0, coop.slots[2].inside and 1 or 0,
     coop.slots[3].inside and 1 or 0, coop.slots[4].inside and 1 or 0, door, shop,
-    coop.rollup and 1 or 0))
+    coop.rollup and 1 or 0, coop.barnDoor and 1 or 0))
 end
 
 local function serverHandleCommand(clientId, a)
@@ -752,6 +753,27 @@ local function serverUpdate(dt)
     end
   end
 
+  -- Barn sliding door: open while any player is near the barn entrance.
+  do
+    local farm = nodeById("farm")
+    if farm ~= nil then
+      local fcx, fcz = poiCenter(farm)
+      local near = false
+      for i = 1, MAX_SLOTS do
+        local s = coop.slots[i]
+        if s.joined and math.abs(s.x - fcx) < 3.6 and
+           (s.z - fcz) > 0.5 and (s.z - fcz) < 4.5 then
+          near = true
+        end
+      end
+      if near ~= coop.barnDoor then
+        coop.barnDoor = near
+        print(string.format("[barn-door] %s (server)", near and "open" or "close"))
+        pushState()
+      end
+    end
+  end
+
   if coop.autoDrive and not coop.autoDriveDone and coop.autoT >= 2.0 and coop.slots[1].joined then
     coop.autoDriveDone = true
     local drv = coop.slots[1]
@@ -942,7 +964,7 @@ local function clientLog(s)
     end
   end
   print(string.format(
-    "[coop-main-client] seq=%d name=%s slot=%d id=%.0f rv=(%.2f,%.2f,yaw=%.2f) p1=(%.2f,%.2f) p2=(%.2f,%.2f) p3=(%.2f,%.2f) p4=(%.2f,%.2f) fuel=%.1f water=%.1f metal=%d crates=%d meal=%d waterItem=%d stove=%d fridge=%d bed=%d hunger=%.1f furn=%d in1=%d in2=%d in3=%d in4=%d door=%d shop=%d rollup=%s",
+    "[coop-main-client] seq=%d name=%s slot=%d id=%.0f rv=(%.2f,%.2f,yaw=%.2f) p1=(%.2f,%.2f) p2=(%.2f,%.2f) p3=(%.2f,%.2f) p4=(%.2f,%.2f) fuel=%.1f water=%.1f metal=%d crates=%d meal=%d waterItem=%d stove=%d fridge=%d bed=%d hunger=%.1f furn=%d in1=%d in2=%d in3=%d in4=%d door=%d shop=%d rollup=%s barndoor=%s",
     s.seq, tostring(GetVar("playerName")), coop.mySlot, coop.myClientId or 0,
     s.rv.x, s.rv.z, s.rv.yaw,
     (p[1] and p[1].x) or 0, (p[1] and p[1].z) or 0,
@@ -957,7 +979,7 @@ local function clientLog(s)
     (s.needs and s.needs.hunger) or 0, s.furnCount or 0,
     (p[1] and p[1].ins) or 0, (p[2] and p[2].ins) or 0,
     (p[3] and p[3].ins) or 0, (p[4] and p[4].ins) or 0, s.door or 0, shop,
-    tostring(s.rollup or 0)))
+    tostring(s.rollup or 0), tostring(s.barndoor or 0)))
 end
 
 local function applyState(s)
@@ -1121,6 +1143,11 @@ local function clientUpdate(dt)
   -- Server-authoritative warehouse roll-up door.
   if setPoiDoorOpen and coop.state ~= nil and coop.state.rollup ~= nil then
     setPoiDoorOpen("depot", tonumber(coop.state.rollup) == 1)
+  end
+
+  -- Server-authoritative barn sliding door.
+  if setPoiSlidingDoorOpen and coop.state ~= nil and coop.state.barndoor ~= nil then
+    setPoiSlidingDoorOpen("farm", tonumber(coop.state.barndoor) == 1)
   end
 
   local mx, my = InputMouseX(), InputMouseY()

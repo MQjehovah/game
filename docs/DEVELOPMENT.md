@@ -772,7 +772,7 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   `rv_gasstation.gltf`（透明可破碎橱窗 + 成排商品墙 + 收银机 + 冷柜 + 咖啡台 + 四柱雨棚 +
   两台油泵）、`rv_warehouse.gltf`
   （宽装卸门/月台 + 钢制货架 + 标签托盘 + 叉车 + 发货台 + 可开合卷帘门）、`rv_barn.gltf`（红谷仓 +
-  畜栏/干草槽/马具墙/奶桶/工作台）、
+  畜栏/干草槽/马具墙/奶桶/工作台 + 顶部滑轨 + 可开合滑动门）、
   `rv_mall.gltf`（玻璃店面 + 收银机/商品墙/服装架/模特/导视牌）、`rv_cabin.gltf`
   （原木墙 + 门廊 + 壁炉/床/桌椅/厨房）和 `rv_clinic.gltf`（玻璃门 + 红十字 +
   接待台/诊床/玻璃门药柜/检查灯/监护仪/输液架）；对应地点直接生成 glTF，店内 6 个物资箱
@@ -800,6 +800,13 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   合作模式由服务器按玩家到月台的距离计算 `rollup` 并写入 `game_state`
   （状态变化时立即 `pushState()`），客户端在 `clientUpdate` 里调用 `setPoiDoorOpen()`；
   日志 `[depot-door] open/close (server)` 与 `... now open/closed (client)`。
+- **谷仓滑动门**（`projects/rv`）：`tools/gen_rv_sliding_door.py` 生成
+  `rv_sliding_door.gltf`（5 块红木板 + 白横梁/斜撑 + 顶滑轮 + 把手/门牌，1.86×2.42m）；
+  `lc_scenery.spawnPoiSlidingDoor()` 在谷仓门洞生成，`updatePoiSlidingDoors()` 沿 X
+  滑动 2.05m 停到右前墙上方；单机由 `updatePoiBarnDoorProximity()` 触发，合作模式由
+  服务器按玩家到谷仓门口的距离计算 `barndoor` 并写入 `game_state`（变化时立即
+  `pushState()`），客户端在 `clientUpdate` 里调用 `setPoiSlidingDoorOpen()`；
+  日志 `[barn-door] open/close (server)` 与 `... now open/closed (client)`。
 
 ---
 
