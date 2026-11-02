@@ -287,6 +287,9 @@ function ensureHelpers()
 end
 
 function on_start()
+  local saveText = ReadText("saves/layout.json")
+  if not saveText or saveText == "" then saveText = ReadText("layout.json") end
+  local hasSave = saveText ~= nil and saveText ~= ""
   camEnt = FindNamedEntity("Main Camera")
   groundEnt = FindNamedEntity("Ground")
   collectRvParts()
@@ -314,7 +317,8 @@ function on_start()
   -- 用薄立方体而不是贴花：贴花是深度投影，会把路面画到房车/家具上。
   -- 世界固定公路网 + 开局固定生成的地点（驾驶中不再改路）
   spawnRoadNetwork()
-  preGeneratePois(6)
+  -- 有存档时由 loadLayout 恢复已发现地点，避免每次启动又随机生成一批
+  if not hasSave then preGeneratePois(6) end
   spawnRoadsidePoles()
   LC.flow.load("assets/flow/raid_wave.flow.json")
   LC.flow.load("assets/flow/stop_cycle.flow.json")
@@ -356,9 +360,7 @@ function on_start()
   computeReachability()
   recomputeStats()
 
-  local text = ReadText("saves/layout.json")
-  if not text or text == "" then text = ReadText("layout.json") end
-  if text and text ~= "" then loadLayout() end
+  if hasSave then loadLayout() end
   applyRvTransform()
   -- RV 动态刚体：质量随载重
   rvBody = PhysicsAddBox({ x = rv.x, y = 0.9, z = rv.z },
