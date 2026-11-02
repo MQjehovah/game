@@ -62,16 +62,21 @@ end
 -- 公路贴花：跟随房车，按里程滚动虚线（Nomad Drive 的公路感）
 function updateRoad(dt)
   if roadEnt == nil then return end
-  roadPhase = (roadPhase + (rv.speed or 0) * (dt or 0)) % 7.5
   local fx, fz = math.sin(rv.yaw), math.cos(rv.yaw)
-  local rx, rz = math.cos(rv.yaw), -math.sin(rv.yaw)
-  -- 房车走右车道：公路中心往左偏 1.8m，虚线在车左侧
-  SetPosition(roadEnt, {
-    x = rv.x - fx * roadPhase - rx * 1.8,
-    y = 0.03,
-    z = rv.z - fz * roadPhase - rz * 1.8,
-  })
+  -- 路面基座与房车对齐；虚线用独立几何体，避免贴图/投影在不同视角发白
+  SetPosition(roadEnt, { x = rv.x, y = 0.03, z = rv.z })
   SetRotationY(roadEnt, rv.yaw)
+  roadScroll = (roadScroll + (rv.speed or 0) * (dt or 0)) % 6.0
+  for _, d in ipairs(roadDashes) do
+    local off = d.off - roadScroll
+    if off < -30 then off = off + 60 end
+    SetPosition(d.ent, {
+      x = rv.x + fx * off,
+      y = 0.043,
+      z = rv.z + fz * off,
+    })
+    SetRotationY(d.ent, rv.yaw)
+  end
 end
 
 function applyRvTransform()

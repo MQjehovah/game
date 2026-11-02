@@ -297,6 +297,13 @@ function on_start()
   if groundEnt ~= nil then SetScale(groundEnt, 800, 0.1, 800) end
   -- 用薄立方体而不是贴花：贴花是深度投影，会把路面画到房车/家具上。
   roadEnt = SpawnPrefab("rv_road", { x = 0, y = 0.03, z = 0 })
+  roadDashes = {}
+  for i = 1, 10 do
+    local ent = SpawnPrefab("rv_road_dash", { x = 0, y = 0.043, z = 0 })
+    if ent ~= nil then
+      roadDashes[#roadDashes + 1] = { ent = ent, off = -27 + (i - 1) * 6 }
+    end
+  end
   LC.flow.load("assets/flow/raid_wave.flow.json")
   LC.flow.load("assets/flow/stop_cycle.flow.json")
   LC.flow.load("assets/flow/drive_event.flow.json")
@@ -346,6 +353,9 @@ function on_start()
 
   -- 第一人称出生：车右后侧，面朝房车（Nomad Drive 式开场）
   local px, pz, pyaw = 5.2, -7.5, dirYaw(-5.2, 7.5)
+  if startMode == "look_back" then
+    px, pz = -1.8, -7.5
+  end
   if startMode == "inside" or startMode == "inside_night"
      or startMode == "place" or startMode == "place_night" then
     px, pz, pyaw = -0.5, -2.6, 0
@@ -357,6 +367,12 @@ function on_start()
   local sx, sz = rotOf(px, pz)
   spawnPlayerAt(sx, sz, rv.yaw + pyaw)
   player.pitch = -0.05
+  if startMode == "look_back" then player.yaw = player.yaw + math.pi
+  elseif startMode == "look_left" then player.yaw = player.yaw + math.pi * 0.5
+  elseif startMode == "look_right" then player.yaw = player.yaw - math.pi * 0.5
+  elseif startMode == "look_down" then player.pitch = -0.9
+  elseif startMode == "look_up" then player.pitch = 0.7
+  end
   SetVar("cameraMouseLock", 1)
   updateInteraction()
 

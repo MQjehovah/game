@@ -7,16 +7,11 @@
     },
     "mesh": {
       "meshKey": "cube",
-      "material": {
-        "colorHex": "#FFFFFF",
-        "albedoTex": "assets/sprites/road_opaque.png",
-        "metallic": 0,
-        "roughness": 0.95,
-        "ao": 1,
-        "emissiveIntensity": 1
-      },
+      "colorHex": "#2E2E2E",
+      "roughness": 0.98,
+      "metallic": 0,
       "castShadow": false,
-      "receiveShadow": true
+      "receiveShadow": false
     }
   }
 }
