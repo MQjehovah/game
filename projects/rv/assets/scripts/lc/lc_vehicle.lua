@@ -47,6 +47,10 @@ local INTERIOR = {
 function spawnRvShell()
   if rvShell then return end
   rvShell = SpawnPrefab("rv_body", { x = 0, y = 0, z = 0 })
+  -- The side door is a separate mesh (hinged at the rear edge) so it can swing
+  -- open without a cube overlay.
+  rvDoor = SpawnPrefab("rv_door", { x = 0, y = 0, z = 0 })
+  if rvDoor ~= nil then SetRotationY(rvDoor, rv.yaw) end
 end
 
 function spawnInterior()
@@ -81,6 +85,11 @@ function applyRvTransform()
     -- 驾驶席视角或人在车内时隐藏外壳：避免镜头钻进车窗/墙板
     SetVisible(rvShell, not (phase == "driving" and driveView == "cab")
                         and not isPlayerInsideRv())
+  end
+  if rvDoor ~= nil then
+    local dx, dz = rotOf(1.205, -3.54)
+    SetPosition(rvDoor, { x = dx, y = 0, z = dz })
+    SetRotationY(rvDoor, rv.yaw + (rvDoorAngle or 0))
   end
   if rvInterior then
     local hideCab = (phase == "driving" and driveView == "cab")

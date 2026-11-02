@@ -750,12 +750,12 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
 - **房车 4 人合作示例**（`projects/rv`）：`garage.json` 主世界 + `lc_coop.lua`；
   服务器权威房车/需求/家具/物资箱/玩家进出状态，客户端 `game_cmd` 上行 +
   `game_state`/`game_world`/`game_crates` 下行；进出房车用 `board`/`exit` 命令，
-  状态 `in/st/door` 驱动第一/第三人称、角色显隐、车门动画和座椅姿态；
-  `game_world` 按 4 条/块分块，避免家具列表超过 RPC 字符串上限；
-  合作建造用 `place`/`removeAt` + `fits`/`canAfford` 在服务器校验；每 3s +
-  `on_server_stop` 写 `saves/layout.json`（含 `coop` 扩展），启动时恢复；
-  同名断线重连回收槽位。已验证 2/3/4 个客户端、合作放置/拆除、进出过渡、
-  保存重启和重连。
+  状态 `in/st/door` 驱动第一/第三人称、角色显隐、独立 `rv_door.gltf` 门网格的
+  铰链旋转和 `Soldier.glb` 的 `Sit` 骨骼片段；`game_world` 按 4 条/块分块，
+  避免家具列表超过 RPC 字符串上限；合作建造用 `place`/`removeAt` +
+  `fits`/`canAfford` 在服务器校验；每 3s + `on_server_stop` 写
+  `saves/layout.json`（含 `coop` 扩展），启动时恢复；同名断线重连回收槽位。
+  已验证 2/3/4 个客户端、合作放置/拆除、进出过渡、保存重启和重连。
 
 ---
 

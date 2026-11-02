@@ -54,7 +54,9 @@ local coop = {
   buildLayer = "floor", buildRot = 0, buildGhostValid = nil,
   buildDemo = false, buildDemoT = 0, buildDemoStage = 0,
   buildUi = false, buildUiDone = false,
-  doorEnt = nil, doorAngle = 0, doorTarget = 0, animT = 0,
+  sitDemo = false, doorView = false,
+  doorAngle = 0, doorTarget = 0, animT = 0,
+  visualAnim = {},
   boardDemo = false, boardDemoT = 0, boardDemoStage = 0,
   toast = "", toastT = 0, logT = 0,
 }
@@ -1075,6 +1077,9 @@ local function clientUpdate(dt)
   end
 
   -- Smoothly follow the authoritative RV pose, then move the main-world model.
+  local targetAngle = (coop.state and coop.state.door == 1) and (math.pi * 0.5) or 0
+  coop.doorAngle = coop.doorAngle + (targetAngle - coop.doorAngle) * math.min(1, dt * 6)
+  rvDoorAngle = coop.doorAngle
   rv.x = rv.x + (coop.rv.x - rv.x) * math.min(1, dt * 12)
   rv.z = rv.z + (coop.rv.z - rv.z) * math.min(1, dt * 12)
   rv.yaw = coop.rv.yaw
@@ -1082,24 +1087,13 @@ local function clientUpdate(dt)
   fuel, water, day, clock = coop.fuel, coop.water, coop.day, coop.clock
   applyRvTransform()
   -- Inside the RV: hide the exterior shell so the first-person view sees the
-  -- interior (the glTF body is one mesh, including the door).
+  -- interior (the door is a separate mesh and keeps swinging).
   if rvShell ~= nil then SetVisible(rvShell, not inside) end
   applyLights()
   updateDayNight(0)
   recomputeStats()
 
   coop.animT = coop.animT + dt
-  -- Door open/close animation (client-side panel hinged at the rear edge).
-  local targetAngle = (coop.state and coop.state.door == 1) and (math.pi * 0.5) or 0
-  coop.doorAngle = coop.doorAngle + (targetAngle - coop.doorAngle) * math.min(1, dt * 6)
-  if coop.doorEnt ~= nil then
-    local hingeX, hingeZ = 1.23, -3.54
-    local ox = math.sin(coop.doorAngle) * 0.39
-    local oz = math.cos(coop.doorAngle) * 0.39
-    local wx, wz = rotOf(hingeX + ox, hingeZ + oz)
-    SetPosition(coop.doorEnt, { x = wx, y = 1.05, z = wz })
-    SetRotationY(coop.doorEnt, rv.yaw + coop.doorAngle)
-  end
 
   -- Avatars: own = local prediction / first-person, remote = replicated proxy.
   for i = 1, MAX_SLOTS do
@@ -1121,16 +1115,16 @@ local function clientUpdate(dt)
           pz = pos and pos.z or (p.z or 0)
           py = p.y or 0
         end
-        if pInside then
-          -- Seat posture: lower/compress the standing avatar and add a slow
-          -- breathing bob. A full skeletal sit clip is future work.
-          local bob = math.sin(coop.animT * 2.2 + i) * 0.012
-          SetPosition(v, { x = px, y = 0.08 + bob, z = pz })
-          SetScale(v, 1.0, 0.82, 1.0)
-        else
-          SetPosition(v, { x = px, y = 0, z = pz })
-          SetScale(v, 1.0, 1.0, 1.0)
+        local animName = pInside and "Sit" or "Idle"
+        if coop.visualAnim[i] ~= animName then
+          coop.visualAnim[i] = animName
+          local ok = PlayAnimation(v, animName, true, 0.2, 1.0)
+          if pInside then
+            print(string.format("[coop-anim] player %d plays Sit (%s)", i, tostring(ok)))
+          end
         end
+        SetPosition(v, { x = px, y = 0, z = pz })
+        SetScale(v, 1.0, 1.0, 1.0)
         SetRotationY(v, py + math.pi)
       end
     end
@@ -1142,7 +1136,14 @@ local function clientUpdate(dt)
   else
     px, pz, pyaw = COOP_SPAWN[1].lx, COOP_SPAWN[1].lz, 0
   end
-  if inside then
+  if coop.doorView and coop.mySlot == 2 then
+    -- Test-only side camera for inspecting the real door mesh / seat pose.
+    SetVar("cameraMouseLock", 1)
+    SetVar("cameraFocus", { x = rv.x, y = 1.25, z = rv.z - 3.2 })
+    SetVar("cameraYaw", math.pi * 0.5)
+    SetVar("cameraPitch", 0.10)
+    SetVar("cameraDist", 6.0)
+  elseif inside then
     -- First-person interior view: eye at the seat, shell hidden above.
     local fx, fz = math.sin(pyaw), math.cos(pyaw)
     SetVar("cameraMouseLock", 1)
@@ -1273,22 +1274,26 @@ function coopInitWorld(role)
       end
       coop.visuals[i] = v
     end
-    -- Animated side door overlay (the glTF body is one mesh, so the door is a
-    -- separate client-side panel hinged at the rear edge of the opening).
-    coop.doorEnt = SpawnPrefab("rv_panel_dark", { x = 0, y = 1.05, z = 0 })
-    if coop.doorEnt ~= nil then
-      SetScale(coop.doorEnt, 0.05, 1.62, 0.78)
-      SetRotationY(coop.doorEnt, rv.yaw)
-    end
     coop.doorAngle = 0
     coop.doorTarget = 0
     coop.animT = 0
+    if readFlag("coop_sitdemo.txt") then
+      local sx, sz = rotOf(1.5, -5.0)
+      local v = SpawnPrefab("rv_player", { x = sx, y = 0, z = sz })
+      if v ~= nil then
+        SetRotationY(v, rv.yaw + math.pi)
+        local ok = PlayAnimation(v, "Sit", true, 0.2, 1.0)
+        print("[coop-anim] sit demo avatar=" .. tostring(ok))
+      end
+    end
     coop.localPos.x, coop.localPos.z = rotOf(COOP_SPAWN[1].lx, COOP_SPAWN[1].lz)
     coop.lookYaw = rv.yaw
     coop.clampDemo = readFlag("coop_clamp.txt")
     coop.buildDemo = readFlag("coop_build.txt")
     coop.buildUi = readFlag("coop_buildmode.txt")
     coop.boardDemo = readFlag("coop_board.txt")
+    coop.sitDemo = readFlag("coop_sitdemo.txt")
+    coop.doorView = readFlag("coop_doorview.txt")
     SetVar("cameraMouseLock", 1)
     applyLights()
     print(string.format("[coop-main] client init proxies=%d/%d/%d/%d",
