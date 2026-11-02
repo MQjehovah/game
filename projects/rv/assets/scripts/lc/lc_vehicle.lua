@@ -25,8 +25,8 @@ end
 -- 这里补一层朝内的墙板 + 车窗外饰，第一人称才有像样的车舱。
 local INTERIOR = {
   -- 内墙板
-  { pre = "rv_panel_light", lx = -0.975, ly = 1.13, lz = 0.0, sx = 0.03, sy = 2.16, sz = 7.86 },
-  { pre = "rv_panel_light", lx =  0.975, ly = 1.13, lz = 0.0, sx = 0.03, sy = 2.16, sz = 7.86 },
+  { pre = "rv_panel_light", lx = -0.99, ly = 1.13, lz = 0.0, sx = 0.02, sy = 2.16, sz = 7.86 },
+  { pre = "rv_panel_light", lx =  0.99, ly = 1.13, lz = 0.0, sx = 0.02, sy = 2.16, sz = 7.86 },
   { pre = "rv_panel_light", lx =  0.0,  ly = 1.13, lz = -3.92, sx = 2.24, sy = 2.16, sz = 0.04 },
   -- 驾驶台下半部（上半部留空当挡风玻璃）
   { pre = "rv_panel_dark",  lx =  0.0,  ly = 0.52, lz = 3.94, sx = 2.24, sy = 1.02, sz = 0.06 },
@@ -78,8 +78,9 @@ function applyRvTransform()
   if rvShell then
     SetPosition(rvShell, { x = rv.x, y = 0, z = rv.z })
     SetRotationY(rvShell, rv.yaw)
-    -- 驾驶席视角隐藏外壳，避免车头/挡风玻璃内壁挡住道路
-    SetVisible(rvShell, not (phase == "driving" and driveView == "cab"))
+    -- 驾驶席视角或人在车内时隐藏外壳：避免镜头钻进车窗/墙板
+    SetVisible(rvShell, not (phase == "driving" and driveView == "cab")
+                        and not isPlayerInsideRv())
   end
   if rvInterior then
     for _, p in ipairs(rvInterior) do

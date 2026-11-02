@@ -99,13 +99,20 @@ function clampPlayerInsideRv()
   local cy, sy = math.cos(rv.yaw), math.sin(rv.yaw)
   local lx = dx * cy - dz * sy
   local lz = dx * sy + dz * cy
-  local inside = (math.abs(lx) < 1.35 and math.abs(lz) < 4.0)
+  local inside = (math.abs(lx) < 1.35 and lz > -4.2 and lz < 4.0)
   if inside then
-    lx = math.max(-1.0, math.min(1.0, lx))
-    lz = math.max(-3.45, math.min(3.45, lz))
+    -- 留出内墙板/车窗的余量，避免第一人称镜头钻进墙里
+    lx = math.max(-0.88, math.min(0.88, lx))
+    lz = math.max(-4.05, math.min(3.35, lz))
     player.x = rv.x + lx * cy + lz * sy
     player.z = rv.z - lx * sy + lz * cy
   end
+end
+
+function isPlayerInsideRv()
+  if not (onFoot and player.active) then return false end
+  local lx, lz = worldToLocal(player.x, player.z)
+  return math.abs(lx) < 1.05 and lz > -3.95 and lz < 3.75
 end
 
 function updatePlayer(dt)
