@@ -151,13 +151,17 @@ cmake --build build --target neon_tests -j
 ### 局域网双进程 demo（一服务器 + 两客户端）
 
 ```bat
-:: 终端 1：服务器（默认即 --host 模式）
-build\neon_server.exe --scene tests\data\neon_server_sample\scene.json
+:: 终端 1：服务器（默认即 --host 模式；MSVC 构建产物在 build-msvc\Release）
+build-msvc\Release\neon_server.exe --scene tests\data\neon_server_sample\scene.json
 :: 终端 2：客户端 A（先登录 → 输入控制器）
 build\neon_game.exe --connect 127.0.0.1:26000 --scene tests\data\neon_server_sample\scene.json --name alice
 :: 终端 3：客户端 B（后登录 → 观察者，只收快照）
 build\neon_game.exe --connect 127.0.0.1:26000 --scene tests\data\neon_server_sample\scene.json --name bob
 ```
+
+> 服务器二进制不在 `build\` 时，用 CMake 构建目录下的 `build-msvc\Release\neon_server.exe`。
+> 需要“两个玩家各自控制角色 + 共享房车”的完整合作示例，见
+> `projects/rv/README.md` 的“网络合作（2 人测试场景）”（`coop_test.json`）。
 
 ### 数据驱动 2D 游戏（NeonPvZ，植物大战僵尸原型）
 
