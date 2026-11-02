@@ -238,6 +238,11 @@ function updateSurvival(dt)
     toast.t = 3.2
   elseif needs.energy > 45 then lastWarn.energy = false end
 
+  -- 雨天接水
+  if weather == "rain" and water < SURVIVAL.waterMax then
+    water = math.min(SURVIVAL.waterMax, water + 0.04 * gm)
+  end
+
   updatePlants(dt)
 end
 

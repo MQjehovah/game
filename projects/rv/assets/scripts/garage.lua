@@ -325,6 +325,8 @@ function on_start()
   initSurvival()
   initWeather()
   initDayNight()
+  if startMode == "rain" then setWeather("rain") end
+  if startMode == "fog" then setWeather("fog") end
 
   -- 初始示例布局：车尾卧室 + 灶台/水槽/冰箱 + 车顶太阳能
   place(CATALOG[2], 2, 0, 0, true)   -- 单人床（右侧，留出 1m 走道）
@@ -366,7 +368,7 @@ function on_start()
   end
   if startMode == "side_night" then clock = 22 * 60 end
   if startMode == "night" or startMode == "inside_night"
-     or startMode == "place_night" then
+     or startMode == "place_night" or startMode == "night_drive" then
     clock = 22 * 60
   end
   local sx, sz = rotOf(px, pz)
@@ -390,7 +392,7 @@ function on_start()
     trySpawnPoi()
     trySpawnPoi()
     mapOpen = true
-  elseif startMode == "drive" or autoPilot then
+  elseif startMode == "drive" or startMode == "night_drive" or autoPilot then
     setPhase("driving")
   else
     toast.text = string.format("第 %d 天 %s — E 交互 / B 改装 / T 驾驶 / M 地图",
