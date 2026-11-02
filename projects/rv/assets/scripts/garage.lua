@@ -188,6 +188,10 @@ function loadLayout()
         generatedPois[#generatedPois + 1] = p
         spawnMarkerFor(nd)
         spawnRuinFor(nd)
+        for _, lid in ipairs(nd.links or {}) do
+          local o = nodeById(lid)
+          if o then spawnRoadBetween(o.x, o.z, nd.x, nd.z) end
+        end
       end
     end
   end
@@ -296,21 +300,8 @@ function on_start()
   end
   if groundEnt ~= nil then SetScale(groundEnt, 800, 0.1, 800) end
   -- 用薄立方体而不是贴花：贴花是深度投影，会把路面画到房车/家具上。
-  -- 路面拆成 10m 小段：单个 200m 长条会因包围盒中心落在相机后方被整体剔除
-  roadSegments = {}
-  for i = 1, 20 do
-    local ent = SpawnPrefab("rv_road_seg", { x = 0, y = 0.03, z = 0 })
-    if ent ~= nil then
-      roadSegments[#roadSegments + 1] = { ent = ent, off = -95 + (i - 1) * 10 }
-    end
-  end
-  roadDashes = {}
-  for i = 1, 34 do
-    local ent = SpawnPrefab("rv_road_dash", { x = 0, y = 0.043, z = 0 })
-    if ent ~= nil then
-      roadDashes[#roadDashes + 1] = { ent = ent, off = -99 + (i - 1) * 6 }
-    end
-  end
+  -- 世界固定公路网（不跟随车头旋转）
+  spawnRoadNetwork()
   LC.flow.load("assets/flow/raid_wave.flow.json")
   LC.flow.load("assets/flow/stop_cycle.flow.json")
   LC.flow.load("assets/flow/drive_event.flow.json")
@@ -600,7 +591,6 @@ function on_update(ent, dt)
   LC.flow.tick(dt)
   updateSurvival(dt)
   updateWeather(dt)
-  updateRoad(dt)
 
   if ActionPressed("f5") then saveLayout() end
   if ActionPressed("f9") then loadLayout() end

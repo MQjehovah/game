@@ -12,6 +12,26 @@ function sceneryScale(kind)
   return 1
 end
 
+local roadPaths = {}
+
+local function distToRoadSq(x, z)
+  local best = 1e18
+  for _, s in ipairs(roadPaths) do
+    local dx, dz = s.bx - s.ax, s.bz - s.az
+    local len2 = dx * dx + dz * dz
+    local t = 0
+    if len2 > 0.001 then
+      t = ((x - s.ax) * dx + (z - s.az) * dz) / len2
+      t = math.max(0, math.min(1, t))
+    end
+    local px, pz = s.ax + dx * t, s.az + dz * t
+    local ddx, ddz = x - px, z - pz
+    local d2 = ddx * ddx + ddz * ddz
+    if d2 < best then best = d2 end
+  end
+  return best
+end
+
 function placeScenery(p, fx, fz, fMin, fMax)
   for _ = 1, 6 do
     local f = fMin + math.random() * (fMax - fMin)
@@ -30,6 +50,7 @@ function placeScenery(p, fx, fz, fMin, fMax)
         local ddx, ddz = wx - p.x, wz - p.z
         if ddx * ddx + ddz * ddz < 144 then blocked = true break end  -- 水塘 12m
       end
+      if not blocked and distToRoadSq(wx, wz) < 36 then blocked = true end  -- 公路 6m
       if not blocked then
         local s = sceneryScale(p.kind)
         local y = 0
@@ -88,6 +109,60 @@ function recycleScenery(fx, fz)
       placeScenery(p, fx, fz, 25, 75)
     end
   end
+end
+
+-- ===========================================================================
+-- 世界固定公路网：不再跟随/随车头旋转
+-- ===========================================================================
+local roadLinks = {}
+local roadLinkSeq = 0
+
+function spawnRoadBetween(ax, az, bx, bz)
+  local dx, dz = bx - ax, bz - az
+  local len = math.sqrt(dx * dx + dz * dz)
+  if len < 1.0 then return end
+  local key = string.format("%.1f,%.1f|%.1f,%.1f",
+                            math.min(ax, bx), math.min(az, bz),
+                            math.max(ax, bx), math.max(az, bz))
+  if roadLinks[key] then return end
+  roadLinks[key] = true
+  roadPaths[#roadPaths + 1] = { ax = ax, az = az, bx = bx, bz = bz }
+  roadLinkSeq = roadLinkSeq + 1
+  local y = 0.08 + (roadLinkSeq % 6) * 0.0015
+  local yaw = dirYaw(dx, dz)
+  local ux, uz = dx / len, dz / len
+  local count = math.max(1, math.ceil(len / 10))
+  for i = 0, count - 1 do
+    local d = math.min(len, i * 10 + 5)
+    local ent = SpawnPrefab("rv_road_seg",
+                            { x = ax + ux * d, y = y, z = az + uz * d })
+    if ent ~= nil then
+      SetRotationY(ent, yaw)
+      roadSegments[#roadSegments + 1] = { ent = ent }
+    end
+  end
+  for d = 6, len - 2, 6 do
+    local ent = SpawnPrefab("rv_road_dash",
+                            { x = ax + ux * d, y = y + 0.04, z = az + uz * d })
+    if ent ~= nil then
+      SetRotationY(ent, yaw)
+      roadDashes[#roadDashes + 1] = { ent = ent }
+    end
+  end
+end
+
+function spawnRoadNetwork()
+  roadSegments, roadDashes = {}, {}
+  -- 营地南侧主路（出生点在营地里，需要身后也有路）
+  spawnRoadBetween(0, -220, 0, 0)
+  for _, nd in ipairs(NODES) do
+    for _, lid in ipairs(nd.links or {}) do
+      local o = nodeById(lid)
+      if o then spawnRoadBetween(nd.x, nd.z, o.x, o.z) end
+    end
+  end
+  -- 加油站向北延伸的主干道
+  spawnRoadBetween(0, 60, 0, 220)
 end
 
 -- 水塘（钓鱼点）
@@ -171,6 +246,7 @@ function trySpawnPoi()
         generated = true,
       }
       NODES[#NODES + 1] = nd
+      spawnRoadBetween(nearest.x, nearest.z, x, z)
       generatedPois[#generatedPois + 1] = {
         id = nd.id, name = nd.name, x = nd.x, z = nd.z,
         danger = nd.danger, loot = nd.loot, links = nd.links,
