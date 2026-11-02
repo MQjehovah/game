@@ -1238,20 +1238,36 @@ local function clientUpdate(dt)
         if phase == nil then
           coop.animPhase[i] = pInside and "sit" or "idle"
           PlayAnimation(v, pInside and "Sit" or "Idle", true, 0.0, 1.0)
-        elseif pInside and (phase == "idle" or phase == "stand") then
+        elseif pInside and (phase == "idle" or phase == "stand" or
+                            phase == "doorclose") then
+          -- Reach the door handle first; the door already swings on state.door.
+          coop.animPhase[i] = "dooropen"
+          local ok = PlayAnimation(v, "DoorOpen", false, 0.1, 1.0)
+          print(string.format(
+            "[coop-anim] player %d reaches for the door handle (DoorOpen ok=%s)",
+            i, tostring(ok)))
+        elseif pInside and phase == "dooropen" and AnimationFinished(v) then
           coop.animPhase[i] = "board"
           local ok = PlayAnimation(v, "Board", false, 0.1, 1.0)
           print(string.format("[coop-anim] player %d boards (Board -> Sit, ok=%s)",
                 i, tostring(ok)))
-        elseif (not pInside) and (phase == "sit" or phase == "board") then
+        elseif (not pInside) and (phase == "sit" or phase == "board" or
+                                  phase == "dooropen") then
           coop.animPhase[i] = "stand"
           PlayAnimation(v, "Stand", false, 0.1, 1.0)
-          print(string.format("[coop-anim] player %d exits (Stand -> Idle)", i))
+          print(string.format(
+            "[coop-anim] player %d exits (Stand -> DoorClose -> Idle)", i))
+        elseif (not pInside) and phase == "stand" and AnimationFinished(v) then
+          coop.animPhase[i] = "doorclose"
+          local ok = PlayAnimation(v, "DoorClose", false, 0.1, 1.0)
+          print(string.format(
+            "[coop-anim] player %d pushes the door shut (DoorClose ok=%s)",
+            i, tostring(ok)))
         elseif phase == "board" and AnimationFinished(v) then
           coop.animPhase[i] = "sit"
           PlayAnimation(v, "Sit", true, 0.1, 1.0)
           print(string.format("[coop-anim] player %d sits down (Sit loop)", i))
-        elseif phase == "stand" and AnimationFinished(v) then
+        elseif phase == "doorclose" and AnimationFinished(v) then
           coop.animPhase[i] = "idle"
           PlayAnimation(v, "Idle", true, 0.1, 1.0)
           print(string.format("[coop-anim] player %d stands up (Idle loop)", i))
@@ -1502,15 +1518,22 @@ function coopInitWorld(role)
     local ad = ReadText("coop_animdemo.txt")
     if ad ~= nil and ad ~= "" then
       local clip = string.lower((ad:gsub("%s+", "")))
-      if clip == "sit" or clip == "board" or clip == "stand" then
+      local clipName = nil
+      if clip == "sit" then clipName = "Sit"
+      elseif clip == "board" then clipName = "Board"
+      elseif clip == "stand" then clipName = "Stand"
+      elseif clip == "dooropen" then clipName = "DoorOpen"
+      elseif clip == "doorclose" then clipName = "DoorClose"
+      end
+      if clipName ~= nil then
         local sx, sz = rotOf(4.0, -1.0)
         local v = SpawnPrefab("rv_player", { x = sx, y = 0, z = sz })
         if v ~= nil then
           SetRotationY(v, rv.yaw + math.pi)
-          local ok = PlayAnimation(v, clip, true, 0.0, 1.0)
-          coop.animDemo = clip
+          local ok = PlayAnimation(v, clipName, true, 0.0, 1.0)
+          coop.animDemo = clipName
           coop.animDemoEnt = v
-          print("[coop-anim] demo clip=" .. clip .. " ok=" .. tostring(ok))
+          print("[coop-anim] demo clip=" .. clipName .. " ok=" .. tostring(ok))
         end
       end
     end

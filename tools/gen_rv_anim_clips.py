@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-"""Author multi-keyframe Sit/Board/Stand clips for the RV passenger.
+"""Author multi-keyframe Sit/Board/Stand/Door clips for the RV passenger.
 
 Unlike the previous generator (which duplicated Idle and added constant bone
 offsets), this script defines explicit key poses per clip:
 
-  Sit    - seated loop with a subtle breathing key at 1s
-  Board  - stance -> reach -> step -> lower -> seated (0.9s)
-  Stand  - seated -> lean -> rise -> step out -> stance (0.9s)
+  Sit       - seated loop with a subtle breathing key at 1s
+  Board     - stance -> reach -> step -> lower -> seated (0.9s)
+  Stand     - seated -> lean -> rise -> step out -> stance (0.9s)
+  DoorOpen  - stance -> reach handle -> grip -> pull open -> stance (0.9s)
+  DoorClose - stance -> reach handle -> grip -> push shut -> stance (0.9s)
 
 Rotations are authored as local corrections over the Mixamo bind pose; the
 relaxed arm stance is baked in as constants so no Idle data is reused. The
@@ -232,6 +234,52 @@ STEPOUT.update({
 })
 STEPOUT_DROP = -5.0
 
+# --- Door interaction (hand reaches the handle, then the door swings) ---
+DOOR_REACH = dict(STANCE)
+DOOR_REACH.update({
+    SPINE: q_axis((1, 0, 0), 0.14),
+    SPINE1: q_axis((1, 0, 0), 0.16),
+    NECK: q_axis((1, 0, 0), 0.05),
+    HEAD: q_axis((1, 0, 0), 0.08),
+    "mixamorig:RightArm": q_axis((1, 0, 0), -1.05),
+    "mixamorig:RightForeArm": q_axis((1, 0, 0), -0.45),
+    "mixamorig:RightHand": q_axis((1, 0, 0), 0.20),
+    "mixamorig:LeftArm": q_axis((1, 0, 0), 0.12),
+})
+
+DOOR_GRIP = dict(STANCE)
+DOOR_GRIP.update({
+    SPINE: q_axis((1, 0, 0), 0.12),
+    SPINE1: q_axis((1, 0, 0), 0.14),
+    HEAD: q_axis((1, 0, 0), 0.05),
+    "mixamorig:RightArm": q_axis((1, 0, 0), -0.95),
+    "mixamorig:RightForeArm": q_axis((1, 0, 0), -0.70),
+    "mixamorig:RightHand": q_axis((1, 0, 0), 0.35),
+    "mixamorig:LeftArm": q_axis((1, 0, 0), 0.10),
+})
+
+DOOR_PULL = dict(STANCE)
+DOOR_PULL.update({
+    SPINE: q_axis((1, 0, 0), 0.02),
+    SPINE1: q_axis((1, 0, 0), 0.04),
+    NECK: q_axis((1, 0, 0), -0.04),
+    "mixamorig:RightArm": q_axis((1, 0, 0), -0.55),
+    "mixamorig:RightForeArm": q_axis((1, 0, 0), -1.10),
+    "mixamorig:RightHand": q_axis((1, 0, 0), 0.30),
+    "mixamorig:LeftArm": q_axis((1, 0, 0), 0.16),
+})
+
+DOOR_PUSH = dict(STANCE)
+DOOR_PUSH.update({
+    SPINE: q_axis((1, 0, 0), 0.22),
+    SPINE1: q_axis((1, 0, 0), 0.24),
+    HEAD: q_axis((1, 0, 0), 0.10),
+    "mixamorig:RightArm": q_axis((1, 0, 0), -1.15),
+    "mixamorig:RightForeArm": q_axis((1, 0, 0), -0.20),
+    "mixamorig:RightHand": q_axis((1, 0, 0), 0.10),
+    "mixamorig:LeftArm": q_axis((1, 0, 0), 0.20),
+})
+
 
 def build_clip(js, binary, joints, bind_rot, bind_trans, name, keys):
     """keys: [(time, rotation-corrections dict, hip_drop)]."""
@@ -271,7 +319,8 @@ def build_clip(js, binary, joints, bind_rot, bind_trans, name, keys):
 def main():
     js, binary = read_glb_bytes(load_base())
     js["animations"] = [a for a in js.get("animations", [])
-                        if a.get("name") not in ("Sit", "Board", "Stand")]
+                        if a.get("name") not in ("Sit", "Board", "Stand",
+                                                 "DoorOpen", "DoorClose")]
     joints = list(js["skins"][0]["joints"])
     bind_rot = {}
     bind_trans = {}
@@ -299,6 +348,20 @@ def main():
         (0.16, LEAN, -50.0),
         (0.38, RISE, RISE_DROP),
         (0.62, STEPOUT, STEPOUT_DROP),
+        (0.90, STANCE, 0.0),
+    ])
+    binary = build_clip(js, binary, joints, bind_rot, bind_trans, "DoorOpen", [
+        (0.00, STANCE, 0.0),
+        (0.20, DOOR_REACH, 0.0),
+        (0.36, DOOR_GRIP, 0.0),
+        (0.62, DOOR_PULL, 0.0),
+        (0.90, STANCE, 0.0),
+    ])
+    binary = build_clip(js, binary, joints, bind_rot, bind_trans, "DoorClose", [
+        (0.00, STANCE, 0.0),
+        (0.20, DOOR_REACH, 0.0),
+        (0.36, DOOR_GRIP, 0.0),
+        (0.62, DOOR_PUSH, 0.0),
         (0.90, STANCE, 0.0),
     ])
 

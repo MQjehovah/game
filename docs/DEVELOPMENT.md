@@ -752,9 +752,11 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   `game_state`/`game_world`/`game_crates` 下行；进出房车用 `board`/`exit` 命令，
   状态 `in/st/door` 驱动第一/第三人称、角色显隐；车体右侧切出真实门洞，独立
   `rv_door.gltf` 门网格绕后缘铰链旋转；角色动画由 `tools/gen_rv_anim_clips.py`
-  生成**手工关键帧** `Board`（站姿→伸手→抬步→落座，0.9s）→ `Sit` 循环
-  （坐姿 + 1s 呼吸关键帧），下车 `Stand`（坐姿→前倾→起身→迈步，0.9s）→ `Idle`，
-  由 `AnimationFinished` 切换；`coop_sitview.txt` 提供驾驶室看向乘客席的验证镜头；
+  生成**手工关键帧**上车链 `DoorOpen`（够门把手→拉开，0.9s）→ `Board`
+  （站姿→抬步→落座，0.9s）→ `Sit` 循环（坐姿 + 1s 呼吸关键帧），下车链
+  `Stand`（坐姿→前倾→起身→迈步，0.9s）→ `DoorClose`（够把手→推合，0.9s）→
+  `Idle`，由 `AnimationFinished` 切换；`coop_sitview.txt` 提供驾驶室看向乘客席的
+  验证镜头，`coop_animdemo.txt` 可预览 `dooropen` / `doorclose`；
   `game_world` 按 4 条/块分块，避免家具列表超过 RPC 字符串上限；合作建造用
   `place`/`removeAt` + `fits`/`canAfford` 在服务器校验；每 3s + `on_server_stop`
   写 `saves/layout.json`（含 `coop` 扩展），启动时恢复；同名断线重连回收槽位。
