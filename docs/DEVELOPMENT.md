@@ -749,8 +749,10 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   `--scene`/`--seed`**。
 - **房车 4 人合作示例**（`projects/rv`）：`garage.json` 主世界 + `lc_coop.lua`；
   服务器权威房车/需求/家具/物资箱，客户端 `game_cmd` 上行 + `game_state`/`game_world`/
-  `game_crates` 下行；每 3s + `on_server_stop` 写 `saves/layout.json`（含 `coop` 扩展），
-  启动时恢复；同名断线重连回收槽位。已验证 2/3/4 个客户端、保存重启和重连。
+  `game_crates` 下行；`game_world` 按 4 条/块分块，避免家具列表超过 RPC 字符串上限；
+  合作建造用 `place`/`removeAt` + `fits`/`canAfford` 在服务器校验；每 3s + `on_server_stop`
+  写 `saves/layout.json`（含 `coop` 扩展），启动时恢复；同名断线重连回收槽位。
+  已验证 2/3/4 个客户端、合作放置/拆除、保存重启和重连。
 
 ---
 

@@ -22,6 +22,15 @@ local PLAYER_SPEED = 3.2
 local RV_SPEED = 7.0
 local WORLD_LIMIT = 380.0
 
+-- Co-op build palette (1-9 in build mode). Keep the list small so the whole
+-- set fits on the HUD; the server validates against the full CATALOG.
+local COOP_BUILD_ITEMS = {
+  "storage", "heater", "tv", "med_cabinet", "gun_rack",
+  "sink", "bed_single", "coffee", "solar",
+}
+local CAT_BY_ID = {}
+for _, cat in ipairs(CATALOG) do CAT_BY_ID[cat.id] = cat end
+
 local coop = {
   active = false, role = nil, isServer = false,
   slots = {}, proxies = {}, visuals = {},
@@ -41,6 +50,10 @@ local coop = {
   autoT = 0, autoDrive = false, autoDriveDone = false,
   actionsDemo = false, actionsDone = false, clampDemo = false,
   saveT = 0, saveDirty = false, loadedSave = false,
+  buildMode = false, buildIndex = 1, buildCx = 0, buildCz = 0,
+  buildLayer = "floor", buildRot = 0, buildGhostValid = nil,
+  buildDemo = false, buildDemoT = 0, buildDemoStage = 0,
+  buildUi = false, buildUiDone = false,
   toast = "", toastT = 0, logT = 0,
 }
 
@@ -239,6 +252,87 @@ local function furnMark(id)
   return "✓"
 end
 
+local function coopBuildCat()
+  local id = COOP_BUILD_ITEMS[coop.buildIndex]
+  return id and CAT_BY_ID[id] or nil
+end
+
+local function setCoopBuildMode(on)
+  coop.buildMode = on
+  if on then
+    ensureHelpers()
+    coop.buildIndex = 1
+    coop.buildCx = 0
+    coop.buildCz = 0
+    coop.buildLayer = "floor"
+    coop.buildRot = 0
+    coop.buildGhostValid = nil
+    coop.toast = "建造模式：1-9 选家具，Tab 地板/车顶，J/L/I/K 移动，R 旋转，E 放置，X 拆除，B 退出"
+    coop.toastT = 5.0
+  else
+    if ghostEnt ~= nil then SetVisible(ghostEnt, false) end
+    coop.toast = "退出建造模式"
+    coop.toastT = 1.5
+  end
+end
+
+local function coopBuildUpdate()
+  if ActionPressed("b") then
+    setCoopBuildMode(false)
+    return
+  end
+  if ActionPressed("tab") then
+    coop.buildLayer = (coop.buildLayer == "roof") and "floor" or "roof"
+  end
+  if ActionPressed("r") then
+    coop.buildRot = (coop.buildRot + 1) % 2
+  end
+  if ActionPressed("j") then coop.buildCx = math.max(0, coop.buildCx - 1) end
+  if ActionPressed("l") then coop.buildCx = math.min(GW - 1, coop.buildCx + 1) end
+  if ActionPressed("i") then coop.buildCz = math.max(0, coop.buildCz - 1) end
+  if ActionPressed("k") then coop.buildCz = math.min(GH - 1, coop.buildCz + 1) end
+  for i = 1, #COOP_BUILD_ITEMS do
+    if ActionPressed(tostring(i)) then coop.buildIndex = i end
+  end
+
+  local cat = coopBuildCat()
+  local cx, cz, rot = coop.buildCx, coop.buildCz, coop.buildRot
+  local valid = false
+  if cat ~= nil then
+    if cat.layer ~= coop.buildLayer then
+      valid = false
+    else
+      valid = fits(cat, cx, cz, rot) and canAfford(cat.cost or {})
+    end
+    if coop.buildGhostValid ~= valid then
+      coop.buildGhostValid = valid
+      setGhostColor(valid)
+    end
+    if ghostEnt ~= nil then
+      local w, h = footprint(cat, rot)
+      local baseY = (cat.layer == "roof") and ROOF_Y or FLOOR_Y
+      local ox = ORIGIN_X + cx * CELL + w * CELL * 0.5
+      local oz = ORIGIN_Z + cz * CELL + h * CELL * 0.5
+      local wx, wz = rotOf(ox, oz)
+      SetVisible(ghostEnt, true)
+      SetPosition(ghostEnt, { x = wx, y = baseY + 0.05, z = wz })
+      SetRotationY(ghostEnt, rv.yaw + ((rot % 2 == 1) and math.pi * 0.5 or 0))
+      SetScale(ghostEnt, w * CELL - 0.04, 0.06, h * CELL - 0.04)
+    end
+  end
+
+  if ActionPressed("e") and cat ~= nil and GetVar("netConnected") == 1 then
+    Rpc("game_cmd", { type = "place", item = cat.id, cx = cx, cz = cz,
+                      rot = rot, layer = cat.layer })
+    coop.toast = string.format("请求放置 %s (%d,%d)", cat.name, cx, cz)
+    coop.toastT = 2.0
+  elseif ActionPressed("x") and GetVar("netConnected") == 1 then
+    Rpc("game_cmd", { type = "remove", cx = cx, cz = cz, layer = coop.buildLayer })
+    coop.toast = string.format("请求拆除 (%d,%d)", cx, cz)
+    coop.toastT = 2.0
+  end
+end
+
 local function findSlot(clientId)
   for i = 1, MAX_SLOTS do
     if coop.slots[i].client == clientId then return coop.slots[i], i end
@@ -259,11 +353,22 @@ end
 -- ---------------------------------------------------------------------------
 
 local function pushWorld()
-  Rpc("game_world", {
-    seq = coop.seq,
-    worldSeq = coop.worldSeq,
-    furniture = buildFurnitureList(),
-  })
+  local all = buildFurnitureList()
+  local chunkSize = 4
+  local total = math.max(1, math.ceil(#all / chunkSize))
+  for part = 1, total do
+    local chunk = {}
+    local first = (part - 1) * chunkSize + 1
+    local last = math.min(#all, part * chunkSize)
+    for i = first, last do chunk[#chunk + 1] = all[i] end
+    Rpc("game_world", {
+      seq = coop.seq,
+      worldSeq = coop.worldSeq,
+      part = part,
+      total = total,
+      furniture = chunk,
+    })
+  end
   Rpc("game_crates", {
     seq = coop.seq,
     worldSeq = coop.worldSeq,
@@ -299,14 +404,14 @@ local function pushState()
     fuel = fuel, water = water, day = day, clock = clock,
     weather = coop.weather, lights = coop.lights and 1 or 0,
     materials = materials, inv = invList, furn = furnOn,
-    crates = #crates, worldSeq = coop.worldSeq,
+    crates = #crates, furnCount = #sortedInstances(), worldSeq = coop.worldSeq,
     event = coop.toast, eventId = coop.eventId or 0,
   })
 end
 
 local function serverDebugLog()
   print(string.format(
-    "[coop-main-server] seq=%d rv=(%.2f,%.2f,yaw=%.2f speed=%.2f) p1=(%.2f,%.2f) p2=(%.2f,%.2f) p3=(%.2f,%.2f) p4=(%.2f,%.2f) joined=%d/%d fuel=%.1f water=%.1f metal=%d crates=%d meal=%d waterItem=%d stove=%d fridge=%d bed=%d",
+    "[coop-main-server] seq=%d rv=(%.2f,%.2f,yaw=%.2f speed=%.2f) p1=(%.2f,%.2f) p2=(%.2f,%.2f) p3=(%.2f,%.2f) p4=(%.2f,%.2f) joined=%d/%d fuel=%.1f water=%.1f metal=%d crates=%d meal=%d waterItem=%d stove=%d fridge=%d bed=%d furn=%d",
     coop.seq, rv.x, rv.z, rv.yaw, rv.speed,
     coop.slots[1].x, coop.slots[1].z, coop.slots[2].x, coop.slots[2].z,
     coop.slots[3].x, coop.slots[3].z, coop.slots[4].x, coop.slots[4].z,
@@ -315,7 +420,7 @@ local function serverDebugLog()
     MAX_SLOTS, fuel, water, materials.metal or 0, #crates,
     inv.meal or 0, inv.water or 0,
     furnState("stove") and 1 or 0, furnState("fridge") and 1 or 0,
-    furnState("bed") and 1 or 0))
+    furnState("bed") and 1 or 0, #sortedInstances()))
 end
 
 local function serverHandleCommand(clientId, a)
@@ -327,6 +432,57 @@ local function serverHandleCommand(clientId, a)
     s.s = clamp(tonumber(a.s) or 0, -1, 1)
     local yaw = tonumber(a.yaw)
     if yaw ~= nil and yaw == yaw and math.abs(yaw) < 1000 then s.yaw = yaw end
+  elseif t == "place" then
+    local cat = CAT_BY_ID[tostring(a.item or "")]
+    local cx = math.floor(tonumber(a.cx) or -1)
+    local cz = math.floor(tonumber(a.cz) or -1)
+    local rot = math.floor(tonumber(a.rot) or 0)
+    local layer = tostring(a.layer or "")
+    local who = s.name or ("P" .. tostring(s.slotIndex or 0))
+    if cat == nil then
+      setToast("放置失败：未知家具")
+      return
+    end
+    if cat.layer ~= layer then
+      setToast("放置失败：地板/车顶不匹配")
+      return
+    end
+    if not fits(cat, cx, cz, rot) then
+      setToast("放置失败：位置冲突或越界")
+      return
+    end
+    if not canAfford(cat.cost or {}) then
+      setToast("放置失败：材料不足 " .. costText(cat.cost or {}))
+      return
+    end
+    local prevLayer = curLayer
+    curLayer = cat.layer
+    local ok = place(cat, cx, cz, rot, false)
+    curLayer = prevLayer
+    if ok then
+      recomputeStats()
+      coop.worldSeq = coop.worldSeq + 1
+      coop.saveDirty = true
+      setToast(string.format("%s 放置了 %s (%d,%d)", who, cat.name, cx, cz))
+      pushWorld()
+      pushState()
+    else
+      setToast("放置失败：服务器拒绝")
+    end
+  elseif t == "remove" then
+    local cx = math.floor(tonumber(a.cx) or -1)
+    local cz = math.floor(tonumber(a.cz) or -1)
+    local who = s.name or ("P" .. tostring(s.slotIndex or 0))
+    if removeAt(cx, cz) then
+      recomputeStats()
+      coop.worldSeq = coop.worldSeq + 1
+      coop.saveDirty = true
+      setToast(string.format("%s 拆除了 (%d,%d)", who, cx, cz))
+      pushWorld()
+      pushState()
+    else
+      setToast("拆除失败：这里没有家具")
+    end
   elseif t == "drive" then
     s.driving = not s.driving
     if s.driving then
@@ -550,7 +706,7 @@ end
 local function clientLog(s)
   local p = s.players or {}
   print(string.format(
-    "[coop-main-client] seq=%d name=%s slot=%d id=%.0f rv=(%.2f,%.2f,yaw=%.2f) p1=(%.2f,%.2f) p2=(%.2f,%.2f) p3=(%.2f,%.2f) p4=(%.2f,%.2f) fuel=%.1f water=%.1f metal=%d crates=%d meal=%d waterItem=%d stove=%d fridge=%d bed=%d hunger=%.1f",
+    "[coop-main-client] seq=%d name=%s slot=%d id=%.0f rv=(%.2f,%.2f,yaw=%.2f) p1=(%.2f,%.2f) p2=(%.2f,%.2f) p3=(%.2f,%.2f) p4=(%.2f,%.2f) fuel=%.1f water=%.1f metal=%d crates=%d meal=%d waterItem=%d stove=%d fridge=%d bed=%d hunger=%.1f furn=%d",
     s.seq, tostring(GetVar("playerName")), coop.mySlot, coop.myClientId or 0,
     s.rv.x, s.rv.z, s.rv.yaw,
     (p[1] and p[1].x) or 0, (p[1] and p[1].z) or 0,
@@ -562,7 +718,7 @@ local function clientLog(s)
     (s.furn and s.furn[1] and s.furn[1].on) or 0,
     (s.furn and s.furn[2] and s.furn[2].on) or 0,
     (s.furn and s.furn[3] and s.furn[3].on) or 0,
-    (s.needs and s.needs.hunger) or 0))
+    (s.needs and s.needs.hunger) or 0, s.furnCount or 0))
 end
 
 local function applyState(s)
@@ -667,8 +823,31 @@ local function clientUpdate(dt)
       if type(w) == "table" and w.furniture ~= nil then
         local seq = tonumber(w.worldSeq) or 0
         if seq ~= coop.worldSeqApplied then
-          coop.worldSeqApplied = seq
-          applyFurnitureList(w.furniture)
+          local part = math.max(1, math.floor(tonumber(w.part) or 1))
+          local total = math.max(1, math.floor(tonumber(w.total) or 1))
+          if total <= 1 then
+            coop.worldSeqApplied = seq
+            coop.worldParts = nil
+            applyFurnitureList(w.furniture)
+          else
+            if coop.worldParts == nil or coop.worldParts.seq ~= seq then
+              coop.worldParts = { seq = seq, total = total, parts = {} }
+            end
+            coop.worldParts.parts[part] = w.furniture
+            local complete = true
+            for i = 1, total do
+              if coop.worldParts.parts[i] == nil then complete = false break end
+            end
+            if complete then
+              local all = {}
+              for i = 1, total do
+                for _, e in ipairs(coop.worldParts.parts[i]) do all[#all + 1] = e end
+              end
+              coop.worldSeqApplied = seq
+              coop.worldParts = nil
+              applyFurnitureList(all)
+            end
+          end
         end
       end
     elseif cmd.name == "game_crates" then
@@ -697,7 +876,21 @@ local function clientUpdate(dt)
     driving = (p.d == 1) or (p.a == 1)
   end
 
-  if coop.haveSelf and not driving then
+  if not coop.buildMode and ActionPressed("b") then
+    setCoopBuildMode(true)
+  end
+  if coop.buildUi and not coop.buildUiDone and coop.haveSelf then
+    coop.buildUiDone = true
+    setCoopBuildMode(true)
+    coop.buildLayer = "roof"
+    coop.buildIndex = 9
+  end
+  if coop.buildMode then
+    f, s = 0, 0
+    coopBuildUpdate()
+  end
+
+  if coop.haveSelf and not driving and not coop.buildMode then
     local fx, fz = math.sin(coop.lookYaw), math.cos(coop.lookYaw)
     local rx, rz = math.cos(coop.lookYaw), -math.sin(coop.lookYaw)
     coop.localPos.x = coop.localPos.x + (fx * f + rx * s) * PLAYER_SPEED * dt
@@ -723,26 +916,48 @@ local function clientUpdate(dt)
     Rpc("game_cmd", { type = "input", f = f, s = s, yaw = coop.lookYaw })
   end
 
-  if ActionPressed("f") then Rpc("game_cmd", { type = "drive" }) end
-  if ActionPressed("l") then Rpc("game_cmd", { type = "lights" }) end
-  if ActionPressed("g") then Rpc("game_cmd", { type = "toggle_stove" }) end
-  if ActionPressed("1") then Rpc("game_cmd", { type = "eat" }) end
-  if ActionPressed("2") then Rpc("game_cmd", { type = "drink" }) end
-  if ActionPressed("3") then Rpc("game_cmd", { type = "sleep" }) end
-  if ActionPressed("e") then
-    local best, bestD = nil, 999
-    local p = coop.state and coop.state.players and coop.state.players[coop.mySlot]
-    local px, pz = coop.localPos.x, coop.localPos.z
-    if p ~= nil then px, pz = p.x or px, p.z or pz end
-    for i, c in ipairs(coop.crateList) do
-      local d = math.sqrt((c.x - px) ^ 2 + (c.z - pz) ^ 2)
-      if d < bestD then best, bestD = i, d end
+  if not coop.buildMode then
+    if ActionPressed("f") then Rpc("game_cmd", { type = "drive" }) end
+    if ActionPressed("l") then Rpc("game_cmd", { type = "lights" }) end
+    if ActionPressed("g") then Rpc("game_cmd", { type = "toggle_stove" }) end
+    if ActionPressed("1") then Rpc("game_cmd", { type = "eat" }) end
+    if ActionPressed("2") then Rpc("game_cmd", { type = "drink" }) end
+    if ActionPressed("3") then Rpc("game_cmd", { type = "sleep" }) end
+    if ActionPressed("e") then
+      local best, bestD = nil, 999
+      local p = coop.state and coop.state.players and coop.state.players[coop.mySlot]
+      local px, pz = coop.localPos.x, coop.localPos.z
+      if p ~= nil then px, pz = p.x or px, p.z or pz end
+      for i, c in ipairs(coop.crateList) do
+        local d = math.sqrt((c.x - px) ^ 2 + (c.z - pz) ^ 2)
+        if d < bestD then best, bestD = i, d end
+      end
+      if best ~= nil and bestD <= 5.5 then
+        Rpc("game_cmd", { type = "search", index = best })
+      else
+        coop.toast = "附近没有物资箱（走近再按 E）"
+        coop.toastT = 2.0
+      end
     end
-    if best ~= nil and bestD <= 5.5 then
-      Rpc("game_cmd", { type = "search", index = best })
-    else
-      coop.toast = "附近没有物资箱（走近再按 E）"
-      coop.toastT = 2.0
+  end
+
+  -- Automated co-op build proof: the first client places a roof solar panel,
+  -- then a storage box, then removes the storage box. Both clients receive the
+  -- resulting game_world broadcasts.
+  if coop.buildDemo and coop.haveSelf and coop.mySlot == 1
+     and GetVar("netConnected") == 1 then
+    coop.buildDemoT = coop.buildDemoT + dt
+    if coop.buildDemoStage == 0 and coop.buildDemoT >= 5.0 then
+      coop.buildDemoStage = 1
+      Rpc("game_cmd", { type = "place", item = "solar", cx = 0, cz = 0, rot = 0,
+                        layer = "roof" })
+    elseif coop.buildDemoStage == 1 and coop.buildDemoT >= 6.0 then
+      coop.buildDemoStage = 2
+      Rpc("game_cmd", { type = "place", item = "storage", cx = 0, cz = 0, rot = 0,
+                        layer = "floor" })
+    elseif coop.buildDemoStage == 2 and coop.buildDemoT >= 8.0 then
+      coop.buildDemoStage = 3
+      Rpc("game_cmd", { type = "remove", cx = 0, cz = 0, layer = "floor" })
     end
   end
 
@@ -910,6 +1125,9 @@ function coopInitWorld(role)
     end
     coop.localPos.x, coop.localPos.z = rotOf(COOP_SPAWN[1].lx, COOP_SPAWN[1].lz)
     coop.lookYaw = rv.yaw
+    coop.clampDemo = readFlag("coop_clamp.txt")
+    coop.buildDemo = readFlag("coop_build.txt")
+    coop.buildUi = readFlag("coop_buildmode.txt")
     SetVar("cameraMouseLock", 1)
     applyLights()
     print(string.format("[coop-main] client init proxies=%d/%d/%d/%d",
@@ -952,8 +1170,8 @@ function coopDrawHud()
   DrawText(string.format("材料 金属%d 电子%d 布料%d 木材%d",
            materials.metal or 0, materials.electronics or 0,
            materials.cloth or 0, materials.wood or 0), 26, 110, 12, 0.80, 0.82, 0.76, 1)
-  DrawText(string.format("物资箱 %d   热饭 %d   净水 %d",
-           #crates, coop.invMeal or 0, coop.invWater or 0),
+  DrawText(string.format("物资箱 %d   家具 %d 件   热饭 %d   净水 %d",
+           #crates, #sortedInstances(), coop.invMeal or 0, coop.invWater or 0),
            26, 128, 12, 0.80, 0.82, 0.76, 1)
 
   drawBar(26, 152, 200, "生命", (needs.health or 0) / 100, 0.85, 0.30, 0.30)
@@ -985,6 +1203,31 @@ function coopDrawHud()
 
   DrawText(string.format("网络 %s", (GetVar("netConnected") == 1) and "已连接" or "未连接"),
            vw - 170, 22, 12, 0.72, 0.78, 0.76, 1)
+
+  if coop.buildMode then
+    local cat = coopBuildCat()
+    local bx, by, bw, bh = 14, vh - 258, 640, 144
+    DrawRect(bx, by, bw, bh, 0.035, 0.045, 0.055, 0.92)
+    DrawRectOutline(bx, by, bw, bh, 0.62, 0.58, 0.42, 0.95)
+    DrawText("建造模式", bx + 14, by + 10, 16, 0.98, 0.90, 0.68, 1)
+    DrawText("[1]储物箱 [2]电暖器 [3]娱乐柜 [4]药柜 [5]武器架",
+             bx + 14, by + 38, 12, 0.90, 0.90, 0.84, 1)
+    DrawText("[6]水槽 [7]单人床 [8]咖啡机 [9]太阳能板",
+             bx + 14, by + 56, 12, 0.90, 0.90, 0.84, 1)
+    local name = cat and cat.name or "?"
+    local cost = cat and costText(cat.cost or {}) or ""
+    DrawText(string.format("选中 %s   光标 (%d,%d) %s   旋转 %d°   材料 %s",
+             name, coop.buildCx, coop.buildCz,
+             (coop.buildLayer == "roof") and "车顶" or "地板",
+             (coop.buildRot % 2) * 90, cost),
+             bx + 14, by + 78, 12, 0.92, 0.94, 0.88, 1)
+    DrawText("J/L 左右  I/K 前后  Tab 层  R 旋转  E 放置  X 拆除  B 退出",
+             bx + 14, by + 98, 12, 0.76, 0.78, 0.72, 1)
+    DrawText("材料 木" .. (materials.wood or 0) .. " 金" .. (materials.metal or 0) ..
+             " 电" .. (materials.electronics or 0) .. " 布" .. (materials.cloth or 0),
+             bx + 14, by + 118, 12, 0.76, 0.76, 0.70, 1)
+  end
+
   if coop.toastT > 0 and coop.toast ~= "" then
     local tw = math.min(620, 18 + #coop.toast * 14)
     DrawRect((vw - tw) * 0.5, vh - 92, tw, 34, 0.06, 0.07, 0.08, 0.9)
