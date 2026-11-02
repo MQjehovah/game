@@ -172,17 +172,21 @@
   `rv_door.gltf` 网格（后缘铰链），按 `doorAngle` 真实旋转。车体右侧已切出真实门洞
   （`z=-3.54..-2.76, y=0.25..1.86`），右侧内墙板同步分成上/后/前三块；打开车门
   即可透过开口看到内饰和坐在门口的乘客。角色播放**手工关键帧**上车链：
-  `DoorOpen`（站姿→够门把手→拉开，5 个关键帧，0.9s）→ `Board`（站姿→抬步→落座，
-  5 个关键帧，0.9s）→ `Sit` 循环（坐姿 + 1s 呼吸关键帧）；下车链：
+  `DoorOpen`（站姿→够门把手→拉开，5 个关键帧，0.9s）→ `Step`（抬脚踩踏板，
+  4 个关键帧，0.7s）→ `Board`（站姿→抬步→落座，5 个关键帧，0.9s）→
+  `Sit` 循环（坐姿 + 1s 呼吸关键帧）；下车链：
   `Stand`（坐姿→前倾→起身→迈步，5 个关键帧，0.9s）→ `DoorClose`（够把手→推合，
-  5 个关键帧，0.9s）→ `Idle`。门板与 `door` 状态同步摆动。
+  5 个关键帧，0.9s）→ `Idle`。搜刮物资箱时服务器广播 `carry`，远端角色播放
+  `Carry`（抱箱循环，1.2s）后回到 `Idle`。门板与 `door` 状态同步摆动。
   `coop_board.txt` 验证 5s 上车、9s 下车，两端同一 `seq` 都是 `in1=1 door=1`
   再回到 `in1=0 door=0`；日志 `player 1 reaches for the door handle (DoorOpen ok=true)` /
-  `player 1 boards (Board -> Sit)` / `player 1 sits down (Sit loop)` /
-  `player 1 exits (Stand -> DoorClose -> Idle)` /
+  `player 1 steps up into the RV (Step ok=true)` / `player 1 boards (Board -> Sit)` /
+  `player 1 sits down (Sit loop)` / `player 1 exits (Stand -> DoorClose -> Idle)` /
   `player 1 pushes the door shut (DoorClose ok=true)` /
-  `player 1 stands up (Idle loop)`；`coop_sitview.txt` 从驾驶室拍坐姿，
-  `coop_animdemo.txt` 可单独预览 `dooropen` / `doorclose`。
+  `player 1 stands up (Idle loop)`；搜刮日志
+  `player 1 carries a crate (Carry loop)` / `player 1 finishes carrying (Idle loop)`。
+  `coop_sitview.txt` 从驾驶室拍坐姿，`coop_animdemo.txt` 可预览
+  `dooropen` / `doorclose` / `step` / `carry`，`coop_carryview.txt` 跟随搜刮角色。
 - **位姿快照**：两侧按相同顺序 `Spawn("player")` … `Spawn("player4")`；4 个代理都带
   `CTransformBind`。客户端 glTF 士兵可视实体每帧跟随代理，房车仍使用主世界 glTF 模型。
 - **每客户端实体所有权**：`EntityKey(entity)` + `netControlKey` GameVar；服务器把每个
@@ -272,7 +276,7 @@
 
 1. **多人合作**：已并入 `garage.json` 主世界，支持 2–4 人、共享房车/需求/家具/物资箱，
    权威状态会写入 `saves/layout.json` 并支持同名断线重连；真实门洞 + 独立车门 +
-   手工关键帧 `DoorOpen`/`Board`/`Stand`/`DoorClose`（各 0.9s）+ `Sit` 循环已具备，
+   手工关键帧 `DoorOpen`/`Step`/`Board`/`Stand`/`DoorClose`/`Carry` + `Sit` 循环已具备，
    但还没有存档版本迁移/冲突合并，槽位身份基于 `--name`（无账号鉴权），
    合作建造仍是网格模式（还不是单机的无网格自由摆放），也还没有每名玩家的独立物品所有权。
 2. **家具自由摆放**：已改为第一人称无网格自由放置 + AABB/车内边界校验。

@@ -61,6 +61,7 @@ local coop = {
   animPhase = {},
   visualAnim = {},
   boardDemo = false, boardDemoT = 0, boardDemoStage = 0,
+  carrySlot = 0, carryT = 0, carryView = false,
   toast = "", toastT = 0, logT = 0,
 }
 
@@ -438,6 +439,7 @@ local function pushState()
     materials = materials, inv = invList, furn = furnOn,
     crates = #crates, furnCount = #sortedInstances(), worldSeq = coop.worldSeq,
     door = anyInside and 1 or 0,
+    carry = coop.carrySlot or 0,
     event = coop.toast, eventId = coop.eventId or 0,
   })
 end
@@ -625,6 +627,8 @@ local function serverHandleCommand(clientId, a)
     searchCrate(idx)
     bankStopBag(1.0)
     coop.worldSeq = coop.worldSeq + 1
+    coop.carrySlot = s.slotIndex or 0
+    coop.carryT = 1.2
     setToast("搜到一个物资箱（材料/物品已进共享背包）")
   elseif t == "toggle_stove" then
     local inst = findInstanceByCat("stove")
@@ -711,6 +715,14 @@ local function serverUpdate(dt)
   drainCommands()
   coop.autoT = coop.autoT + dt
 
+  if coop.carryT > 0 then
+    coop.carryT = coop.carryT - dt
+    if coop.carryT <= 0 then
+      coop.carryT = 0
+      coop.carrySlot = 0
+    end
+  end
+
   if coop.autoDrive and not coop.autoDriveDone and coop.autoT >= 2.0 and coop.slots[1].joined then
     coop.autoDriveDone = true
     local drv = coop.slots[1]
@@ -729,6 +741,8 @@ local function serverUpdate(dt)
       searchCrate(1)
       bankStopBag(1.0)
       coop.worldSeq = coop.worldSeq + 1
+      coop.carrySlot = 1
+      coop.carryT = 1.2
       setToast("自动搜刮：物资箱已进入共享背包")
     end
     local inst = findInstanceByCat("stove")
@@ -1235,7 +1249,16 @@ local function clientUpdate(dt)
           py = p.y or 0
         end
         local phase = coop.animPhase[i]
-        if phase == nil then
+        local carrying = (coop.state and coop.state.carry == i) and not pInside
+        if carrying and phase == "idle" then
+          coop.animPhase[i] = "carry"
+          PlayAnimation(v, "Carry", true, 0.15, 1.0)
+          print(string.format("[coop-anim] player %d carries a crate (Carry loop)", i))
+        elseif (not carrying) and phase == "carry" then
+          coop.animPhase[i] = "idle"
+          PlayAnimation(v, "Idle", true, 0.15, 1.0)
+          print(string.format("[coop-anim] player %d finishes carrying (Idle loop)", i))
+        elseif phase == nil then
           coop.animPhase[i] = pInside and "sit" or "idle"
           PlayAnimation(v, pInside and "Sit" or "Idle", true, 0.0, 1.0)
         elseif pInside and (phase == "idle" or phase == "stand" or
@@ -1247,12 +1270,18 @@ local function clientUpdate(dt)
             "[coop-anim] player %d reaches for the door handle (DoorOpen ok=%s)",
             i, tostring(ok)))
         elseif pInside and phase == "dooropen" and AnimationFinished(v) then
+          coop.animPhase[i] = "stepup"
+          local ok = PlayAnimation(v, "Step", false, 0.1, 1.0)
+          print(string.format(
+            "[coop-anim] player %d steps up into the RV (Step ok=%s)",
+            i, tostring(ok)))
+        elseif pInside and phase == "stepup" and AnimationFinished(v) then
           coop.animPhase[i] = "board"
           local ok = PlayAnimation(v, "Board", false, 0.1, 1.0)
           print(string.format("[coop-anim] player %d boards (Board -> Sit, ok=%s)",
                 i, tostring(ok)))
         elseif (not pInside) and (phase == "sit" or phase == "board" or
-                                  phase == "dooropen") then
+                                  phase == "dooropen" or phase == "stepup") then
           coop.animPhase[i] = "stand"
           PlayAnimation(v, "Stand", false, 0.1, 1.0)
           print(string.format(
@@ -1288,7 +1317,16 @@ local function clientUpdate(dt)
   else
     px, pz, pyaw = COOP_SPAWN[1].lx, COOP_SPAWN[1].lz, 0
   end
-  if coop.animDemoEnt ~= nil then
+  if coop.carryView then
+    -- Test-only camera following slot 1 so the wired Carry clip is visible.
+    local p1 = coop.state and coop.state.players and coop.state.players[1]
+    local fx, fz = p1 and (p1.x or 0) or 0, p1 and (p1.z or 0) or 0
+    SetVar("cameraMouseLock", 1)
+    SetVar("cameraFocus", { x = fx, y = 1.05, z = fz })
+    SetVar("cameraYaw", 0.85)
+    SetVar("cameraPitch", 0.05)
+    SetVar("cameraDist", 3.6)
+  elseif coop.animDemoEnt ~= nil then
     local p = GetPosition(coop.animDemoEnt)
     SetVar("cameraMouseLock", 1)
     SetVar("cameraFocus", { x = p and p.x or 0, y = 1.0, z = p and p.z or 0 })
@@ -1524,6 +1562,8 @@ function coopInitWorld(role)
       elseif clip == "stand" then clipName = "Stand"
       elseif clip == "dooropen" then clipName = "DoorOpen"
       elseif clip == "doorclose" then clipName = "DoorClose"
+      elseif clip == "step" then clipName = "Step"
+      elseif clip == "carry" then clipName = "Carry"
       end
       if clipName ~= nil then
         local sx, sz = rotOf(4.0, -1.0)
@@ -1548,6 +1588,7 @@ function coopInitWorld(role)
     coop.sitView = readFlag("coop_sitview.txt")
     coop.poiView = readFlag("coop_poiview.txt")
     coop.poiExt = readFlag("coop_poiext.txt")
+    coop.carryView = readFlag("coop_carryview.txt")
     if readFlag("coop_gas.txt") then
       coop.poiNode = "gasstop"
     elseif readFlag("coop_ruin.txt") then

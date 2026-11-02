@@ -142,9 +142,11 @@
 - `coop_buildmode.txt`：客户端启动后直接进入建造模式（UI/截图验证）。
 - `coop_board.txt`：槽位 1 在 5s 上车、9s 下车，用于验证进出状态同步。
 - `coop_sitdemo.txt`：在房车旁生成一个播放 `Sit` 骨骼片段的预览角色。
-- `coop_animdemo.txt`：内容 `sit` / `board` / `stand` / `dooropen` / `doorclose`，
-  生成一个循环播放对应片段的预览角色（近距离固定镜头），用于检查手工关键帧姿态。
+- `coop_animdemo.txt`：内容 `sit` / `board` / `stand` / `dooropen` / `doorclose` /
+  `step` / `carry`，生成一个循环播放对应片段的预览角色（近距离固定镜头），
+  用于检查手工关键帧姿态。
 - `coop_sitview.txt`：从房车驾驶室看向乘客席的固定镜头，用于双人验证坐姿。
+- `coop_carryview.txt`：槽位 2 的固定镜头跟随槽位 1，用于验证搜刮时的 `Carry` 片段。
 - `coop_doorview.txt`：槽位 2 使用车外固定镜头，便于检查真实门洞、车门开合和门口坐姿乘客。
 - `coop_ruin.txt`：合作测试传送到废宅商店门口，两名玩家 3–5s 进门、5–8s 在店内、
   8–10s 出门，用于验证可进入建筑与共享物资箱。
@@ -193,9 +195,11 @@ POI 墙体碰撞/门洞通行等。
   驾驶席。服务器记录每名玩家的 `inside/seat` 并广播；客户端在车内切第一人称、隐藏
   自己的角色，车外恢复第三人称。车体右侧已切出真实门洞（车身壳体 + 右侧内墙板
   同步开口），独立 `rv_door.gltf` 网格按后缘铰链开合。角色播放**手工关键帧**
-  上车链：`DoorOpen`（够门把手→拉开，0.9s）→ `Board`（站姿→抬步→落座，0.9s）→
-  `Sit` 循环；下车链：`Stand`（坐姿→起身→迈步，0.9s）→ `DoorClose`（再够把手→推合，
-  0.9s）→ `Idle`。门板本身由 `in1..in4/door` 状态驱动同步摆动。
+  上车链：`DoorOpen`（够门把手→拉开，0.9s）→ `Step`（抬脚踩上车踏板，0.7s）→
+  `Board`（站姿→抬步→落座，0.9s）→ `Sit` 循环；下车链：`Stand`（坐姿→起身→迈步，
+  0.9s）→ `DoorClose`（再够把手→推合，0.9s）→ `Idle`。搜刮物资箱时服务器广播
+  `carry` 槽位，远端角色播放 `Carry`（抱箱循环，1.2s）后回到 `Idle`。
+  门板本身由 `in1..in4/door` 状态驱动同步摆动。
 - **上行指令**：客户端 `Rpc("game_cmd", {...})`；服务器 `game_cmd` 处理器按
   `clientId` 路由到槽位，Lua 用 `NetCommand()` 消费并做距离/字段校验。
 - **下行状态**：`game_state` 10Hz 广播位姿/需求/背包/家具开关；`game_world` 在家具
@@ -236,14 +240,17 @@ POI 墙体碰撞/门洞通行等。
   `rv_board_pose.png` / `rv_board_pose2.png` 显示 `Board` 的伸手/落座关键帧，
   `rv_stand_pose.png` 显示 `Stand` 的起身关键帧，
   `rv_dooropen_pose.png` / `rv_doorclose_pose.png` 显示 `DoorOpen` / `DoorClose`
-  够门把手的关键帧。上下车过渡日志：
+  够门把手的关键帧，`rv_step_pose.png` 显示 `Step` 抬脚上车踏板，
+  `rv_carry_pose.png` / `rv_carry_flow.png` 显示 `Carry` 抱箱姿态。
+  上下车过渡日志：
   上车 `player 1 reaches for the door handle (DoorOpen ok=true)` →
+  `player 1 steps up into the RV (Step ok=true)` →
   `player 1 boards (Board -> Sit)` → `player 1 sits down (Sit loop)`；
   下车 `player 1 exits (Stand -> DoorClose -> Idle)` →
   `player 1 pushes the door shut (DoorClose ok=true)` →
-  `player 1 stands up (Idle loop)`。每条过渡 0.9s（约 56 帧），由
-  `AnimationFinished` 触发切换，门板同步摆动；
-  `rv_authboard_sitview.png` 为双人合作时从驾驶室看向乘客席的坐姿截图。
+  `player 1 stands up (Idle loop)`。搜刮日志：`player 1 carries a crate (Carry loop)` →
+  `player 1 finishes carrying (Idle loop)`。各过渡由 `AnimationFinished` 触发切换，
+  门板同步摆动；`rv_authboard_sitview.png` 为双人合作时从驾驶室看向乘客席的坐姿截图。
 - **门洞切割验证**：`tools/gen_rv_door_opening.py` 删除车身右侧两块整墙三角形，
   补上顶条/后条/前条（开口 `z=-3.54..-2.76, y=0.25..1.86`），并裁掉右侧裙边与
   右侧内墙板对应段；`rv_body.gltf` 的 body primitive 仍为 8 个（车门已独立），
@@ -259,7 +266,7 @@ POI 墙体碰撞/门洞通行等。
 - 合作建造已支持网格放置/拆除（服务器校验边界/重叠/材料）；还不是单机的无网格自由摆放，
   也没有每名玩家的独立家具所有权/权限。家具仍没有物理碰撞。
 - 玩家进出房车已支持第一/第三人称切换、角色显隐、真实门洞、独立车门网格铰链开合，
-  以及手工关键帧 `DoorOpen`/`Board`/`Stand`/`DoorClose` 0.9s 过渡 +
+  以及手工关键帧 `DoorOpen`/`Step`/`Board`/`Stand`/`DoorClose`/`Carry` 过渡 +
   `Sit`/`Idle` 循环；门洞是矩形切面，
   切口边缘还没有门框/密封条细节，远端车内角色仍可能被门板/座椅家具部分遮挡。
 - 所有 POI 类型（商店/加油站/仓库/农场/商场/湖边营地/诊所）都已映射到可进入的

@@ -9,6 +9,8 @@ offsets), this script defines explicit key poses per clip:
   Stand     - seated -> lean -> rise -> step out -> stance (0.9s)
   DoorOpen  - stance -> reach handle -> grip -> pull open -> stance (0.9s)
   DoorClose - stance -> reach handle -> grip -> push shut -> stance (0.9s)
+  Step      - stance -> lift foot -> plant on step -> stance (0.7s)
+  Carry     - box-carry loop with a subtle walk bob (1.2s)
 
 Rotations are authored as local corrections over the Mixamo bind pose; the
 relaxed arm stance is baked in as constants so no Idle data is reused. The
@@ -280,6 +282,49 @@ DOOR_PUSH.update({
     "mixamorig:LeftArm": q_axis((1, 0, 0), 0.20),
 })
 
+# --- Step: lift a foot onto the RV step then plant it (0.7s, one-shot) ---
+STEP_LIFT = dict(STANCE)
+STEP_LIFT.update({
+    UP_R: q_axis((1, 0, 0), -0.95),
+    LO_R: q_axis((1, 0, 0), 1.10),
+    FOOT_R: q_axis((1, 0, 0), -0.35),
+    SPINE: q_axis((1, 0, 0), 0.10),
+    SPINE1: q_axis((1, 0, 0), 0.10),
+    "mixamorig:LeftArm": q_axis((1, 0, 0), 0.18),
+    "mixamorig:RightArm": q_axis((1, 0, 0), -0.22),
+})
+STEP_LIFT_DROP = -10.0
+
+STEP_PLANT = dict(leg_corrs(-0.45, 0.70, -0.25))
+STEP_PLANT.update({
+    SPINE: q_axis((1, 0, 0), 0.18),
+    SPINE1: q_axis((1, 0, 0), 0.18),
+    "mixamorig:LeftArm": q_axis((1, 0, 0), 0.12),
+    "mixamorig:RightArm": q_axis((1, 0, 0), -0.12),
+})
+STEP_PLANT_DROP = -16.0
+
+# --- Carry: both arms hold a box in front, with a subtle walk bob ---
+CARRY = dict(STANCE)
+CARRY.update({
+    SPINE: q_axis((1, 0, 0), 0.14),
+    SPINE1: q_axis((1, 0, 0), 0.12),
+    NECK: q_axis((1, 0, 0), 0.04),
+    HEAD: q_axis((1, 0, 0), 0.06),
+    "mixamorig:LeftArm": q_axis((1, 0, 0), -1.25),
+    "mixamorig:RightArm": q_axis((1, 0, 0), -1.25),
+    "mixamorig:LeftForeArm": q_axis((1, 0, 0), -1.00),
+    "mixamorig:RightForeArm": q_axis((1, 0, 0), 1.00),
+    "mixamorig:LeftHand": q_axis((1, 0, 0), 0.20),
+    "mixamorig:RightHand": q_axis((1, 0, 0), -0.20),
+})
+CARRY_DROP = -12.0
+CARRY_BOB = dict(CARRY)
+CARRY_BOB.update({
+    SPINE1: q_mul(CARRY[SPINE1], q_axis((1, 0, 0), 0.03)),
+    HEAD: q_mul(CARRY[HEAD], q_axis((1, 0, 0), -0.03)),
+})
+
 
 def build_clip(js, binary, joints, bind_rot, bind_trans, name, keys):
     """keys: [(time, rotation-corrections dict, hip_drop)]."""
@@ -320,7 +365,8 @@ def main():
     js, binary = read_glb_bytes(load_base())
     js["animations"] = [a for a in js.get("animations", [])
                         if a.get("name") not in ("Sit", "Board", "Stand",
-                                                 "DoorOpen", "DoorClose")]
+                                                 "DoorOpen", "DoorClose",
+                                                 "Step", "Carry")]
     joints = list(js["skins"][0]["joints"])
     bind_rot = {}
     bind_trans = {}
@@ -363,6 +409,17 @@ def main():
         (0.36, DOOR_GRIP, 0.0),
         (0.62, DOOR_PUSH, 0.0),
         (0.90, STANCE, 0.0),
+    ])
+    binary = build_clip(js, binary, joints, bind_rot, bind_trans, "Step", [
+        (0.00, STANCE, 0.0),
+        (0.22, STEP_LIFT, STEP_LIFT_DROP),
+        (0.45, STEP_PLANT, STEP_PLANT_DROP),
+        (0.70, STANCE, 0.0),
+    ])
+    binary = build_clip(js, binary, joints, bind_rot, bind_trans, "Carry", [
+        (0.0, CARRY, CARRY_DROP),
+        (0.6, CARRY_BOB, CARRY_DROP),
+        (1.2, CARRY, CARRY_DROP),
     ])
 
     js["buffers"][0]["byteLength"] = len(binary)
