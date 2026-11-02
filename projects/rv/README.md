@@ -105,7 +105,7 @@
 - `coop_buildmode.txt`：客户端启动后直接进入建造模式（UI/截图验证）。
 - `coop_board.txt`：槽位 1 在 5s 上车、9s 下车，用于验证进出状态同步。
 - `coop_sitdemo.txt`：在房车旁生成一个播放 `Sit` 骨骼片段的预览角色。
-- `coop_doorview.txt`：槽位 2 使用侧面固定镜头，便于检查真实车门网格开合。
+- `coop_doorview.txt`：槽位 2 使用车外固定镜头，便于检查真实门洞、车门开合和门口坐姿乘客。
 - `start_mode.txt`：`inside` / `inside_night` / `night` / `place` / `place_night` /
   `drive` / `map` / `look_back` / `look_left` / `look_right` / `look_down` / `look_up`。
 
@@ -136,14 +136,9 @@
   `B` 合作建造、`E` 搜附近物资箱/上下车、`1` 吃饭、`2` 喝水、`3` 睡觉。
 - **进出房车**：走到车门旁按 `E` 上车（乘客席）；车内按 `E` 下车；按 `F` 直接坐上
   驾驶席。服务器记录每名玩家的 `inside/seat` 并广播；客户端在车内切第一人称、隐藏
-  自己的角色，车外恢复第三人称。车门是独立的 `rv_door.gltf` 网格，按真实后缘铰链
-  平滑开合；乘客角色播放 `Soldier.glb` 的 `Sit` 骨骼片段。
-- **合作建造/拆除**：`B` 进入网格建造模式；`1-9` 选家具、`Tab` 地板/车顶、
-  `J/L/I/K` 移动光标、`R` 旋转、`E` 放置、`X` 拆除。客户端只发
-  `game_cmd {type="place"/"remove", ...}`；服务器用 `fits` / `canAfford` /
-  `place` / `removeAt` 校验边界、重叠和材料，成功后广播分块的 `game_world`。
-- **服务器权威**：房车位姿/速度/燃油、四名玩家位姿、五项需求、水箱/存粮、
-  材料与共享背包、家具布局/开关、车内灯、游戏时间、物资箱列表。
+  自己的角色，车外恢复第三人称。车体右侧已切出真实门洞（车身壳体 + 右侧内墙板
+  同步开口），独立 `rv_door.gltf` 网格按后缘铰链开合。角色播放
+  `Board`（Idle→Sit 0.6s）→ `Sit` 循环，下车播放 `Stand`（Sit→Idle 0.6s）→ `Idle`。
 - **上行指令**：客户端 `Rpc("game_cmd", {...})`；服务器 `game_cmd` 处理器按
   `clientId` 路由到槽位，Lua 用 `NetCommand()` 消费并做距离/字段校验。
 - **下行状态**：`game_state` 10Hz 广播位姿/需求/背包/家具开关；`game_world` 在家具
@@ -176,13 +171,18 @@
   `furniture rebuilt (10)` / `(11)` / `(10)`，截图 HUD 显示“家具 10 件”。
 - **进出房车验证**：`coop_board.txt` 让槽位 1 在 5s 上车、9s 下车；服务器日志
   `alice 上车（乘客席）`、`in1=1 door=1`，随后 `alice 下车`、`in1=0 door=0`；
-  两端同一 `seq` 都显示一致的 `in1/door`。截图：`rv_coop_inside2.png`（车内第一人称）、
-  `rv_coop_door_open2.png`（车外看到车门开、P1 `[车内]`）、`rv_coop_exit.png`
-  （下车后恢复第三人称和角色可见）。
+  两端同一 `seq` 都显示一致的 `in1/door`。截图：`rv_final_interior3.png`
+  （车内第一人称透过门洞看到外部）、`rv_final_seat_visible5.png`
+  （车外透过门洞看到坐在门口的乘客）。
 - **车门/坐姿资产验证**：`rv_door_real_side.png` 显示独立车门网格绕铰链打开；
-  `rv_sit_demo2.png` 显示 `Sit` 骨骼坐姿预览；远端客户端日志
-  `[coop-anim] player 1 plays Sit (true)`。`assets/models/rv/rv_body.gltf` 已移除
-  原 door primitive，车门由 `rv_door.gltf`/`rv_door.bin` + `rv_door` prefab 提供。
+  `rv_sit_demo2.png` 显示 `Sit` 骨骼坐姿预览。上下车过渡日志：
+  `player 1 boards (Board -> Sit)` → `player 1 sits down (Sit loop)`，
+  下车 `player 1 exits (Stand -> Idle)` → `player 1 stands up (Idle loop)`，
+  每条过渡 0.6s（约 37 帧），由 `AnimationFinished` 触发切换。
+- **门洞切割验证**：`tools/gen_rv_door_opening.py` 删除车身右侧两块整墙三角形，
+  补上顶条/后条/前条（开口 `z=-3.54..-2.76, y=0.25..1.86`），并裁掉右侧裙边与
+  右侧内墙板对应段；`rv_body.gltf` 的 body primitive 仍为 8 个（车门已独立），
+  开口之外的车身完整，打开车门即可看到内饰。
 - **验证**：客户端日志按服务器 `seq` 每 2 秒打印；同一 `seq` 的房车坐标、4 名玩家坐标、
   燃油/水/材料/物资箱/家具开关/饥饿完全一致。持久化/重连已用
   “保存 → 重启服务器 → 同名客户端加入” 和 “断开 → 同名重连” 两条链路验证。
@@ -193,9 +193,9 @@
   槽位身份基于 `--name`（局域网轻量身份，无账号鉴权）。
 - 合作建造已支持网格放置/拆除（服务器校验边界/重叠/材料）；还不是单机的无网格自由摆放，
   也没有每名玩家的独立家具所有权/权限。家具仍没有物理碰撞。
-- 玩家进出房车已支持第一/第三人称切换、角色显隐、独立车门网格铰链开合和
-  Soldier.glb 的 `Sit` 骨骼片段；车身本体仍是单块外壳，门洞没有做布尔切割，
-  远端车内角色可能被车身遮挡。
+- 玩家进出房车已支持第一/第三人称切换、角色显隐、真实门洞、独立车门网格铰链开合，
+  以及 `Board`/`Stand` 0.6s 过渡 + `Sit`/`Idle` 骨骼循环；门洞是矩形切面，
+  切口边缘还没有门框/密封条细节，远端车内角色仍可能被门板/座椅家具部分遮挡。
 - 地点建筑仍是简单立方体拼的废弃小屋，缺少真正的室内空间/门/窗。
 - 房车模型是脚本生成的低多边形 glTF，不是手工建模的高精度资产。
 - 车辆零件是整体状态，不是可拆装的独立部件。

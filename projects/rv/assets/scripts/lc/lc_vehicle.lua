@@ -26,7 +26,10 @@ end
 local INTERIOR = {
   -- 内墙板
   { pre = "rv_panel_light", lx = -0.99, ly = 1.13, lz = 0.0, sx = 0.02, sy = 2.16, sz = 7.86 },
-  { pre = "rv_panel_light", lx =  0.99, ly = 1.13, lz = 0.0, sx = 0.02, sy = 2.16, sz = 7.86 },
+  -- 右侧内墙在车门处留出真实开口（上/后/前三块），否则打开车门只能看到内墙板
+  { pre = "rv_panel_light", lx =  0.99, ly = 2.035, lz = 0.0, sx = 0.02, sy = 0.35, sz = 7.86 },
+  { pre = "rv_panel_light", lx =  0.99, ly = 0.955, lz = -3.735, sx = 0.02, sy = 1.81, sz = 0.39 },
+  { pre = "rv_panel_light", lx =  0.99, ly = 0.955, lz = 0.585, sx = 0.02, sy = 1.81, sz = 6.69 },
   { pre = "rv_panel_light", lx =  0.0,  ly = 1.13, lz = -3.92, sx = 2.24, sy = 2.16, sz = 0.04 },
   -- 驾驶台下半部（上半部留空当挡风玻璃）
   { pre = "rv_panel_dark",  lx =  0.0,  ly = 0.52, lz = 3.94, sx = 2.24, sy = 1.02, sz = 0.06 },

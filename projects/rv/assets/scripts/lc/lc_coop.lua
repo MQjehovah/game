@@ -56,6 +56,7 @@ local coop = {
   buildUi = false, buildUiDone = false,
   sitDemo = false, doorView = false,
   doorAngle = 0, doorTarget = 0, animT = 0,
+  animPhase = {},
   visualAnim = {},
   boardDemo = false, boardDemoT = 0, boardDemoStage = 0,
   toast = "", toastT = 0, logT = 0,
@@ -98,7 +99,7 @@ end
 
 local function seatLocal(seat)
   if seat == "driver" then return 0.0, 3.15 end
-  return 0.5, -2.75 -- passenger sits on the rear bed next to the door
+  return 1.00, -3.15 -- passenger sits at the doorway bay, lit and visible through the opening
 end
 
 local function seatWorld(seat)
@@ -1108,6 +1109,10 @@ local function clientUpdate(dt)
         local px, pz, py
         if i == coop.mySlot and coop.haveSelf and not pInside then
           px, pz, py = coop.localPos.x, coop.localPos.z, coop.lookYaw
+        elseif pInside and p ~= nil then
+          -- Use the authoritative seat position: the replicated proxy can lag
+          -- behind the board teleport and would draw the passenger outside.
+          px, pz, py = p.x or 0, p.z or 0, p.y or 0
         else
           local proxy = coop.proxies[i]
           local pos = proxy ~= nil and GetPosition(proxy) or nil
@@ -1115,17 +1120,34 @@ local function clientUpdate(dt)
           pz = pos and pos.z or (p.z or 0)
           py = p.y or 0
         end
-        local animName = pInside and "Sit" or "Idle"
-        if coop.visualAnim[i] ~= animName then
-          coop.visualAnim[i] = animName
-          local ok = PlayAnimation(v, animName, true, 0.2, 1.0)
-          if pInside then
-            print(string.format("[coop-anim] player %d plays Sit (%s)", i, tostring(ok)))
-          end
+        local phase = coop.animPhase[i]
+        if phase == nil then
+          coop.animPhase[i] = pInside and "sit" or "idle"
+          PlayAnimation(v, pInside and "Sit" or "Idle", true, 0.0, 1.0)
+        elseif pInside and (phase == "idle" or phase == "stand") then
+          coop.animPhase[i] = "board"
+          local ok = PlayAnimation(v, "Board", false, 0.1, 1.0)
+          print(string.format("[coop-anim] player %d boards (Board -> Sit, ok=%s)",
+                i, tostring(ok)))
+        elseif (not pInside) and (phase == "sit" or phase == "board") then
+          coop.animPhase[i] = "stand"
+          PlayAnimation(v, "Stand", false, 0.1, 1.0)
+          print(string.format("[coop-anim] player %d exits (Stand -> Idle)", i))
+        elseif phase == "board" and AnimationFinished(v) then
+          coop.animPhase[i] = "sit"
+          PlayAnimation(v, "Sit", true, 0.1, 1.0)
+          print(string.format("[coop-anim] player %d sits down (Sit loop)", i))
+        elseif phase == "stand" and AnimationFinished(v) then
+          coop.animPhase[i] = "idle"
+          PlayAnimation(v, "Idle", true, 0.1, 1.0)
+          print(string.format("[coop-anim] player %d stands up (Idle loop)", i))
         end
         SetPosition(v, { x = px, y = 0, z = pz })
         SetScale(v, 1.0, 1.0, 1.0)
-        SetRotationY(v, py + math.pi)
+        -- Seated passengers face out of the side door so the opening shows the
+        -- torso/legs; standing players keep their walk direction.
+        local face = pInside and (rv.yaw - math.pi * 0.5) or py
+        SetRotationY(v, face + math.pi)
       end
     end
   end
@@ -1137,12 +1159,13 @@ local function clientUpdate(dt)
     px, pz, pyaw = COOP_SPAWN[1].lx, COOP_SPAWN[1].lz, 0
   end
   if coop.doorView and coop.mySlot == 2 then
-    -- Test-only side camera for inspecting the real door mesh / seat pose.
+    -- Test-only three-quarter rear camera for inspecting the real door mesh,
+    -- the cut opening and the seated passenger.
     SetVar("cameraMouseLock", 1)
-    SetVar("cameraFocus", { x = rv.x, y = 1.25, z = rv.z - 3.2 })
-    SetVar("cameraYaw", math.pi * 0.5)
-    SetVar("cameraPitch", 0.10)
-    SetVar("cameraDist", 6.0)
+    SetVar("cameraFocus", { x = 0.9, y = 1.15, z = rv.z - 2.95 })
+    SetVar("cameraYaw", 0.90)
+    SetVar("cameraPitch", 0.04)
+    SetVar("cameraDist", 4.5)
   elseif inside then
     -- First-person interior view: eye at the seat, shell hidden above.
     local fx, fz = math.sin(pyaw), math.cos(pyaw)
