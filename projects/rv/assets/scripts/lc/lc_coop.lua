@@ -54,6 +54,8 @@ local coop = {
   buildLayer = "floor", buildRot = 0, buildGhostValid = nil,
   buildDemo = false, buildDemoT = 0, buildDemoStage = 0,
   buildUi = false, buildUiDone = false,
+  doorEnt = nil, doorAngle = 0, doorTarget = 0, animT = 0,
+  boardDemo = false, boardDemoT = 0, boardDemoStage = 0,
   toast = "", toastT = 0, logT = 0,
 }
 
@@ -90,6 +92,20 @@ end
 local function furnState(id)
   local inst = findInstanceByCat(id)
   return inst ~= nil and (inst.on ~= false)
+end
+
+local function seatLocal(seat)
+  if seat == "driver" then return 0.0, 3.15 end
+  return 0.5, -2.75 -- passenger sits on the rear bed next to the door
+end
+
+local function seatWorld(seat)
+  local lx, lz = seatLocal(seat)
+  return rotOf(lx, lz)
+end
+
+local function doorWorld()
+  return rotOf(1.23, -3.15)
 end
 
 local function setToast(text)
@@ -387,16 +403,19 @@ end
 local function pushState()
   coop.seq = coop.seq + 1
   local players = {}
-  local moving = math.abs(coop.rv.speed or 0) > 0.2
+  local anyInside = false
   for i = 1, MAX_SLOTS do
-    if coop.slots[i].joined and coop.slots[i].driving then moving = true end
+    local s = coop.slots[i]
+    if s.joined and s.inside then anyInside = true end
   end
   for i = 1, MAX_SLOTS do
     local s = coop.slots[i]
     players[i] = {
-      s = i, c = s.client, x = s.x, z = s.z, y = s.yaw,
-      j = s.joined and 1 or 0, d = s.driving and 1 or 0,
-      a = (moving and s.joined) and 1 or 0, k = s.key,
+      c = s.client, x = s.x, z = s.z, y = s.yaw,
+      j = s.joined and 1 or 0,
+      ins = s.inside and 1 or 0,
+      st = (s.seat == "driver" and 2) or (s.seat == "passenger" and 1) or 0,
+      k = s.key,
     }
   end
   local invList = {}
@@ -413,13 +432,18 @@ local function pushState()
     weather = coop.weather, lights = coop.lights and 1 or 0,
     materials = materials, inv = invList, furn = furnOn,
     crates = #crates, furnCount = #sortedInstances(), worldSeq = coop.worldSeq,
+    door = anyInside and 1 or 0,
     event = coop.toast, eventId = coop.eventId or 0,
   })
 end
 
 local function serverDebugLog()
+  local door = 0
+  for i = 1, MAX_SLOTS do
+    if coop.slots[i].joined and coop.slots[i].inside then door = 1 end
+  end
   print(string.format(
-    "[coop-main-server] seq=%d rv=(%.2f,%.2f,yaw=%.2f speed=%.2f) p1=(%.2f,%.2f) p2=(%.2f,%.2f) p3=(%.2f,%.2f) p4=(%.2f,%.2f) joined=%d/%d fuel=%.1f water=%.1f metal=%d crates=%d meal=%d waterItem=%d stove=%d fridge=%d bed=%d furn=%d",
+    "[coop-main-server] seq=%d rv=(%.2f,%.2f,yaw=%.2f speed=%.2f) p1=(%.2f,%.2f) p2=(%.2f,%.2f) p3=(%.2f,%.2f) p4=(%.2f,%.2f) joined=%d/%d fuel=%.1f water=%.1f metal=%d crates=%d meal=%d waterItem=%d stove=%d fridge=%d bed=%d furn=%d in1=%d in2=%d in3=%d in4=%d door=%d",
     coop.seq, rv.x, rv.z, rv.yaw, rv.speed,
     coop.slots[1].x, coop.slots[1].z, coop.slots[2].x, coop.slots[2].z,
     coop.slots[3].x, coop.slots[3].z, coop.slots[4].x, coop.slots[4].z,
@@ -428,7 +452,9 @@ local function serverDebugLog()
     MAX_SLOTS, fuel, water, materials.metal or 0, #crates,
     inv.meal or 0, inv.water or 0,
     furnState("stove") and 1 or 0, furnState("fridge") and 1 or 0,
-    furnState("bed") and 1 or 0, #sortedInstances()))
+    furnState("bed") and 1 or 0, #sortedInstances(),
+    coop.slots[1].inside and 1 or 0, coop.slots[2].inside and 1 or 0,
+    coop.slots[3].inside and 1 or 0, coop.slots[4].inside and 1 or 0, door))
 end
 
 local function serverHandleCommand(clientId, a)
@@ -440,6 +466,33 @@ local function serverHandleCommand(clientId, a)
     s.s = clamp(tonumber(a.s) or 0, -1, 1)
     local yaw = tonumber(a.yaw)
     if yaw ~= nil and yaw == yaw and math.abs(yaw) < 1000 then s.yaw = yaw end
+  elseif t == "board" then
+    if s.inside then return end
+    local dx, dz = doorWorld()
+    local d = math.sqrt((s.x - dx) ^ 2 + (s.z - dz) ^ 2)
+    if d > 5.5 and not coop.boardDemo then
+      setToast("走到车门旁再上车")
+      return
+    end
+    s.inside = true
+    s.seat = "passenger"
+    s.driving = false
+    s.f, s.s = 0, 0
+    local sx, sz = seatWorld("passenger")
+    s.x, s.z = sx, sz
+    setToast(string.format("%s 上车（乘客席）", s.name or ("P" .. tostring(s.slotIndex or 0))))
+    pushState()
+  elseif t == "exit" then
+    if not s.inside then return end
+    s.inside = false
+    s.seat = nil
+    s.driving = false
+    s.f, s.s = 0, 0
+    local ex, ez = rotOf(2.2, -2.6)
+    s.x, s.z = ex, ez
+    s.yaw = rv.yaw
+    setToast(string.format("%s 下车", s.name or ("P" .. tostring(s.slotIndex or 0))))
+    pushState()
   elseif t == "place" then
     local cat = CAT_BY_ID[tostring(a.item or "")]
     local cx = math.floor(tonumber(a.cx) or -1)
@@ -497,10 +550,21 @@ local function serverHandleCommand(clientId, a)
       for i = 1, MAX_SLOTS do
         if coop.slots[i] ~= s then coop.slots[i].driving = false end
       end
-      setToast(string.format("P%d 坐上了驾驶席", s.slotIndex or 0))
+      s.inside = true
+      s.seat = "driver"
+      s.f, s.s = 0, 0
+      local sx, sz = seatWorld("driver")
+      s.x, s.z = sx, sz
+      setToast(string.format("%s 坐上驾驶席", s.name or ("P" .. tostring(s.slotIndex or 0))))
     else
-      setToast("驾驶员离开了驾驶席")
+      if s.inside then
+        s.seat = "passenger"
+        local sx, sz = seatWorld("passenger")
+        s.x, s.z = sx, sz
+      end
+      setToast(string.format("%s 离开驾驶席", s.name or ("P" .. tostring(s.slotIndex or 0))))
     end
+    pushState()
   elseif t == "lights" then
     coop.lights = not coop.lights
     setToast(coop.lights and "车内灯已打开" or "车内灯已关闭")
@@ -587,7 +651,13 @@ local function serverUpdate(dt)
 
   if coop.autoDrive and not coop.autoDriveDone and coop.autoT >= 2.0 and coop.slots[1].joined then
     coop.autoDriveDone = true
-    coop.slots[1].driving = true
+    local drv = coop.slots[1]
+    drv.driving = true
+    drv.inside = true
+    drv.seat = "driver"
+    drv.f, drv.s = 0, 0
+    local sx, sz = seatWorld("driver")
+    drv.x, drv.z = sx, sz
     setToast("P1 坐上了驾驶席")
   end
   if coop.actionsDemo and not coop.actionsDone and coop.autoT >= 6.0
@@ -628,13 +698,14 @@ local function serverUpdate(dt)
       PhysicsSetPosition(rvBody, { x = rv.x, y = 0.9, z = rv.z })
       PhysicsSetVelocity(rvBody, { x = 0, y = 0, z = 0 })
     end
-    -- Everyone aboard rides with the RV.
+    -- Only players who actually boarded ride with the RV; outside players are
+    -- left where they stood (they can walk after the RV stops).
     for i = 1, MAX_SLOTS do
       local s = coop.slots[i]
-      if s.joined then
-        local offset = (s == driver) and 1.1 or (-1.4 - (i - 1) * 0.35)
-        s.x = rv.x + math.sin(rv.yaw) * offset
-        s.z = rv.z + math.cos(rv.yaw) * offset
+      if s.joined and s.inside then
+        local lx, lz = seatLocal(s.seat or "passenger")
+        local wx, wz = rotOf(lx, lz)
+        s.x, s.z = wx, wz
         s.yaw = rv.yaw
       end
     end
@@ -643,7 +714,7 @@ local function serverUpdate(dt)
     coop.rv.speed = 0
     for i = 1, MAX_SLOTS do
       local s = coop.slots[i]
-      if s.joined then
+      if s.joined and not s.inside then
         local fx, fz = math.sin(s.yaw), math.cos(s.yaw)
         local rx, rz = math.cos(s.yaw), -math.sin(s.yaw)
         s.x = s.x + (fx * s.f + rx * s.s) * PLAYER_SPEED * dt
@@ -714,7 +785,7 @@ end
 local function clientLog(s)
   local p = s.players or {}
   print(string.format(
-    "[coop-main-client] seq=%d name=%s slot=%d id=%.0f rv=(%.2f,%.2f,yaw=%.2f) p1=(%.2f,%.2f) p2=(%.2f,%.2f) p3=(%.2f,%.2f) p4=(%.2f,%.2f) fuel=%.1f water=%.1f metal=%d crates=%d meal=%d waterItem=%d stove=%d fridge=%d bed=%d hunger=%.1f furn=%d",
+    "[coop-main-client] seq=%d name=%s slot=%d id=%.0f rv=(%.2f,%.2f,yaw=%.2f) p1=(%.2f,%.2f) p2=(%.2f,%.2f) p3=(%.2f,%.2f) p4=(%.2f,%.2f) fuel=%.1f water=%.1f metal=%d crates=%d meal=%d waterItem=%d stove=%d fridge=%d bed=%d hunger=%.1f furn=%d in1=%d in2=%d in3=%d in4=%d door=%d",
     s.seq, tostring(GetVar("playerName")), coop.mySlot, coop.myClientId or 0,
     s.rv.x, s.rv.z, s.rv.yaw,
     (p[1] and p[1].x) or 0, (p[1] and p[1].z) or 0,
@@ -726,7 +797,9 @@ local function clientLog(s)
     (s.furn and s.furn[1] and s.furn[1].on) or 0,
     (s.furn and s.furn[2] and s.furn[2].on) or 0,
     (s.furn and s.furn[3] and s.furn[3].on) or 0,
-    (s.needs and s.needs.hunger) or 0, s.furnCount or 0))
+    (s.needs and s.needs.hunger) or 0, s.furnCount or 0,
+    (p[1] and p[1].ins) or 0, (p[2] and p[2].ins) or 0,
+    (p[3] and p[3].ins) or 0, (p[4] and p[4].ins) or 0, s.door or 0))
 end
 
 local function applyState(s)
@@ -772,11 +845,14 @@ local function applyState(s)
         st.x = p.x or st.x
         st.z = p.z or st.z
         st.yaw = p.y or st.yaw
-        st.driving = (p.d == 1)
+        st.driving = (p.st == 2)
+        st.inside = (p.ins == 1)
+        st.seat = (p.st == 2) and "driver" or ((p.st == 1) and "passenger" or nil)
         st.key = p.k or st.key
       end
     end
   end
+  coop.doorTarget = (s.door == 1) and (math.pi * 0.5) or 0
 
   if type(s.players) == "table" and coop.myClientId ~= nil then
     for i, p in ipairs(s.players) do
@@ -879,9 +955,12 @@ local function clientUpdate(dt)
   local f = clamp(InputAxis("forward"), -1, 1)
   local s = clamp(InputAxis("strafe"), -1, 1)
   local driving = false
+  local inside = false
+  local me = nil
   if coop.state and coop.state.players and coop.state.players[coop.mySlot] then
-    local p = coop.state.players[coop.mySlot]
-    driving = (p.d == 1) or (p.a == 1)
+    me = coop.state.players[coop.mySlot]
+    driving = (me.st == 2)
+    inside = (me.ins == 1)
   end
 
   if not coop.buildMode and ActionPressed("b") then
@@ -897,8 +976,11 @@ local function clientUpdate(dt)
     f, s = 0, 0
     coopBuildUpdate()
   end
+  if inside then
+    f, s = 0, 0
+  end
 
-  if coop.haveSelf and not driving and not coop.buildMode then
+  if coop.haveSelf and not driving and not coop.buildMode and not inside then
     local fx, fz = math.sin(coop.lookYaw), math.cos(coop.lookYaw)
     local rx, rz = math.cos(coop.lookYaw), -math.sin(coop.lookYaw)
     coop.localPos.x = coop.localPos.x + (fx * f + rx * s) * PLAYER_SPEED * dt
@@ -932,19 +1014,29 @@ local function clientUpdate(dt)
     if ActionPressed("2") then Rpc("game_cmd", { type = "drink" }) end
     if ActionPressed("3") then Rpc("game_cmd", { type = "sleep" }) end
     if ActionPressed("e") then
-      local best, bestD = nil, 999
-      local p = coop.state and coop.state.players and coop.state.players[coop.mySlot]
-      local px, pz = coop.localPos.x, coop.localPos.z
-      if p ~= nil then px, pz = p.x or px, p.z or pz end
-      for i, c in ipairs(coop.crateList) do
-        local d = math.sqrt((c.x - px) ^ 2 + (c.z - pz) ^ 2)
-        if d < bestD then best, bestD = i, d end
-      end
-      if best ~= nil and bestD <= 5.5 then
-        Rpc("game_cmd", { type = "search", index = best })
+      if inside then
+        Rpc("game_cmd", { type = "exit" })
       else
-        coop.toast = "附近没有物资箱（走近再按 E）"
-        coop.toastT = 2.0
+        local dx, dz = doorWorld()
+        local dd = math.sqrt((coop.localPos.x - dx) ^ 2 + (coop.localPos.z - dz) ^ 2)
+        if dd <= 3.5 then
+          Rpc("game_cmd", { type = "board" })
+        else
+          local best, bestD = nil, 999
+          local p = coop.state and coop.state.players and coop.state.players[coop.mySlot]
+          local px, pz = coop.localPos.x, coop.localPos.z
+          if p ~= nil then px, pz = p.x or px, p.z or pz end
+          for i, c in ipairs(coop.crateList) do
+            local d = math.sqrt((c.x - px) ^ 2 + (c.z - pz) ^ 2)
+            if d < bestD then best, bestD = i, d end
+          end
+          if best ~= nil and bestD <= 5.5 then
+            Rpc("game_cmd", { type = "search", index = best })
+          else
+            coop.toast = "附近没有车门/物资箱（走近再按 E）"
+            coop.toastT = 2.0
+          end
+        end
       end
     end
   end
@@ -969,6 +1061,19 @@ local function clientUpdate(dt)
     end
   end
 
+  -- Automated boarding proof: the first client boards at 5s and exits at 9s.
+  if coop.boardDemo and coop.haveSelf and coop.mySlot == 1
+     and GetVar("netConnected") == 1 then
+    coop.boardDemoT = coop.boardDemoT + dt
+    if coop.boardDemoStage == 0 and coop.boardDemoT >= 5.0 then
+      coop.boardDemoStage = 1
+      Rpc("game_cmd", { type = "board" })
+    elseif coop.boardDemoStage == 1 and coop.boardDemoT >= 9.0 then
+      coop.boardDemoStage = 2
+      Rpc("game_cmd", { type = "exit" })
+    end
+  end
+
   -- Smoothly follow the authoritative RV pose, then move the main-world model.
   rv.x = rv.x + (coop.rv.x - rv.x) * math.min(1, dt * 12)
   rv.z = rv.z + (coop.rv.z - rv.z) * math.min(1, dt * 12)
@@ -976,20 +1081,38 @@ local function clientUpdate(dt)
   rv.speed = coop.rv.speed or 0
   fuel, water, day, clock = coop.fuel, coop.water, coop.day, coop.clock
   applyRvTransform()
+  -- Inside the RV: hide the exterior shell so the first-person view sees the
+  -- interior (the glTF body is one mesh, including the door).
+  if rvShell ~= nil then SetVisible(rvShell, not inside) end
   applyLights()
   updateDayNight(0)
   recomputeStats()
 
-  -- Avatars: own = local prediction, remote = replicated proxy.
+  coop.animT = coop.animT + dt
+  -- Door open/close animation (client-side panel hinged at the rear edge).
+  local targetAngle = (coop.state and coop.state.door == 1) and (math.pi * 0.5) or 0
+  coop.doorAngle = coop.doorAngle + (targetAngle - coop.doorAngle) * math.min(1, dt * 6)
+  if coop.doorEnt ~= nil then
+    local hingeX, hingeZ = 1.23, -3.54
+    local ox = math.sin(coop.doorAngle) * 0.39
+    local oz = math.cos(coop.doorAngle) * 0.39
+    local wx, wz = rotOf(hingeX + ox, hingeZ + oz)
+    SetPosition(coop.doorEnt, { x = wx, y = 1.05, z = wz })
+    SetRotationY(coop.doorEnt, rv.yaw + coop.doorAngle)
+  end
+
+  -- Avatars: own = local prediction / first-person, remote = replicated proxy.
   for i = 1, MAX_SLOTS do
     local v = coop.visuals[i]
     if v ~= nil then
       local p = coop.state and coop.state.players and coop.state.players[i]
       local joined = p ~= nil and p.j == 1
-      SetVisible(v, joined)
-      if joined then
+      local pInside = p ~= nil and p.ins == 1
+      local show = joined and not (pInside and i == coop.mySlot)
+      SetVisible(v, show)
+      if show then
         local px, pz, py
-        if i == coop.mySlot and coop.haveSelf then
+        if i == coop.mySlot and coop.haveSelf and not pInside then
           px, pz, py = coop.localPos.x, coop.localPos.z, coop.lookYaw
         else
           local proxy = coop.proxies[i]
@@ -998,7 +1121,16 @@ local function clientUpdate(dt)
           pz = pos and pos.z or (p.z or 0)
           py = p.y or 0
         end
-        SetPosition(v, { x = px, y = 0, z = pz })
+        if pInside then
+          -- Seat posture: lower/compress the standing avatar and add a slow
+          -- breathing bob. A full skeletal sit clip is future work.
+          local bob = math.sin(coop.animT * 2.2 + i) * 0.012
+          SetPosition(v, { x = px, y = 0.08 + bob, z = pz })
+          SetScale(v, 1.0, 0.82, 1.0)
+        else
+          SetPosition(v, { x = px, y = 0, z = pz })
+          SetScale(v, 1.0, 1.0, 1.0)
+        end
         SetRotationY(v, py + math.pi)
       end
     end
@@ -1010,9 +1142,16 @@ local function clientUpdate(dt)
   else
     px, pz, pyaw = COOP_SPAWN[1].lx, COOP_SPAWN[1].lz, 0
   end
-  if driving then
-    -- Chase view behind the moving RV, outside the shell (the third-person
-    -- avatar camera would sit inside the interior while everyone is aboard).
+  if inside then
+    -- First-person interior view: eye at the seat, shell hidden above.
+    local fx, fz = math.sin(pyaw), math.cos(pyaw)
+    SetVar("cameraMouseLock", 1)
+    SetVar("cameraFocus", { x = px + fx * 2.0, y = 1.55, z = pz + fz * 2.0 })
+    SetVar("cameraYaw", pyaw + math.pi)
+    SetVar("cameraPitch", -coop.lookPitch)
+    SetVar("cameraDist", 2.0)
+  elseif driving then
+    -- Chase view behind the moving RV (kept for outside observers/tests).
     local fx, fz = math.sin(rv.yaw), math.cos(rv.yaw)
     SetVar("cameraMouseLock", 1)
     SetVar("cameraFocus", { x = rv.x + fx * 1.5, y = 1.5, z = rv.z + fz * 1.5 })
@@ -1059,6 +1198,7 @@ function coopInitWorld(role)
       client = 0, joined = false, slotIndex = i,
       key = (ent ~= nil) and EntityKey(ent) or 0,
       x = wx, z = wz, yaw = rv.yaw, f = 0, s = 0, driving = false,
+      inside = false, seat = nil,
     }
   end
 
@@ -1115,8 +1255,10 @@ function coopInitWorld(role)
     end
     coop.worldSeq = 1
     coop.worldT = 0.99
+    coop.clampDemo = readFlag("coop_clamp.txt")
     coop.autoDrive = readFlag("coop_drive.txt")
     coop.actionsDemo = readFlag("coop_actions.txt")
+    coop.boardDemo = readFlag("coop_board.txt")
     coop.clampDemo = readFlag("coop_clamp.txt")
     print(string.format("[coop-main] server init proxies=%d/%d/%d/%d crates=%d furniture=%d",
           coop.slots[1].key, coop.slots[2].key, coop.slots[3].key, coop.slots[4].key,
@@ -1131,11 +1273,22 @@ function coopInitWorld(role)
       end
       coop.visuals[i] = v
     end
+    -- Animated side door overlay (the glTF body is one mesh, so the door is a
+    -- separate client-side panel hinged at the rear edge of the opening).
+    coop.doorEnt = SpawnPrefab("rv_panel_dark", { x = 0, y = 1.05, z = 0 })
+    if coop.doorEnt ~= nil then
+      SetScale(coop.doorEnt, 0.05, 1.62, 0.78)
+      SetRotationY(coop.doorEnt, rv.yaw)
+    end
+    coop.doorAngle = 0
+    coop.doorTarget = 0
+    coop.animT = 0
     coop.localPos.x, coop.localPos.z = rotOf(COOP_SPAWN[1].lx, COOP_SPAWN[1].lz)
     coop.lookYaw = rv.yaw
     coop.clampDemo = readFlag("coop_clamp.txt")
     coop.buildDemo = readFlag("coop_build.txt")
     coop.buildUi = readFlag("coop_buildmode.txt")
+    coop.boardDemo = readFlag("coop_board.txt")
     SetVar("cameraMouseLock", 1)
     applyLights()
     print(string.format("[coop-main] client init proxies=%d/%d/%d/%d",
@@ -1172,8 +1325,9 @@ function coopDrawHud()
 
   DrawText(string.format("房车  X %.1f  Z %.1f  朝向 %.0f°  速度 %.1f", rv.x, rv.z,
            math.deg(rv.yaw), rv.speed or 0), 26, 72, 12, 0.86, 0.88, 0.82, 1)
-  DrawText(string.format("燃油 %.0f%%   水 %.1fL   时间 第%d天 %02d:%02d   灯 %s",
-           fuel, water, day, math.floor(clock / 60) % 24, math.floor(clock % 60),
+  DrawText(string.format("燃油 %.0f%%   水 %.1fL   车门 %s   时间 第%d天 %02d:%02d   灯 %s",
+           fuel, water, (coop.state and coop.state.door == 1) and "开" or "关",
+           day, math.floor(clock / 60) % 24, math.floor(clock % 60),
            coop.lights and "开" or "关"), 26, 91, 12, 0.80, 0.82, 0.76, 1)
   DrawText(string.format("材料 金属%d 电子%d 布料%d 木材%d",
            materials.metal or 0, materials.electronics or 0,
@@ -1198,9 +1352,11 @@ function coopDrawHud()
     local s = coop.slots[i]
     local text
     if s.joined then
+      local tag = ""
+      if s.seat == "driver" then tag = " [驾驶]"
+      elseif s.inside then tag = " [车内]" end
       text = string.format("P%d 客户端%.0f (%.1f, %.1f)%s%s", i, s.client or 0, s.x, s.z,
-                           (i == coop.mySlot) and " ←你" or "",
-                           s.driving and " [驾驶]" or "")
+                           (i == coop.mySlot) and " ←你" or "", tag)
     else
       text = string.format("P%d 等待加入", i)
     end
@@ -1234,6 +1390,24 @@ function coopDrawHud()
     DrawText("材料 木" .. (materials.wood or 0) .. " 金" .. (materials.metal or 0) ..
              " 电" .. (materials.electronics or 0) .. " 布" .. (materials.cloth or 0),
              bx + 14, by + 118, 12, 0.76, 0.76, 0.70, 1)
+  end
+
+  if not coop.buildMode then
+    local me = coop.state and coop.state.players and coop.state.players[coop.mySlot]
+    local inside = me ~= nil and me.ins == 1
+    local dx, dz = doorWorld()
+    local dd = math.sqrt((coop.localPos.x - dx) ^ 2 + (coop.localPos.z - dz) ^ 2)
+    local hint = nil
+    if inside then hint = "E 下车"
+    elseif dd <= 3.5 then hint = "E 上车（乘客席）"
+    elseif #coop.crateList > 0 then hint = "E 搜物资箱"
+    end
+    if hint ~= nil then
+      local tw = 18 + #hint * 14
+      DrawRect((vw - tw) * 0.5, vh - 128, tw, 28, 0.05, 0.06, 0.07, 0.82)
+      DrawRectOutline((vw - tw) * 0.5, vh - 128, tw, 28, 0.55, 0.52, 0.42, 0.9)
+      DrawText(hint, (vw - tw) * 0.5 + 10, vh - 121, 13, 0.96, 0.90, 0.72, 1)
+    end
   end
 
   if coop.toastT > 0 and coop.toast ~= "" then
