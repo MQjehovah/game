@@ -1,6 +1,37 @@
 -- lc_hud.lua
 -- HUD：第一人称生存面板 / 交互提示 / 驾驶仪表 / 改装热栏 / 世界地图
 
+-- 引擎的 DrawText 居中/右对齐按字形宽度测量，中文（UTF-8 多字节）会偏左/被裁。
+-- 这里自己做 UTF-8 宽度估算，统一走左对齐绘制。
+local function utf8Width(s, size)
+  local w, i = 0, 1
+  while i <= #s do
+    local b = string.byte(s, i)
+    local n = (b < 0x80) and 1 or (b < 0xE0) and 2 or (b < 0xF0) and 3 or 4
+    local cp = b
+    if n == 2 then
+      cp = ((b & 0x1F) << 6) | (string.byte(s, i + 1) & 0x3F)
+    elseif n == 3 then
+      cp = ((b & 0x0F) << 12) | ((string.byte(s, i + 1) & 0x3F) << 6)
+           | (string.byte(s, i + 2) & 0x3F)
+    elseif n == 4 then
+      cp = ((b & 0x07) << 18) | ((string.byte(s, i + 1) & 0x3F) << 12)
+           | ((string.byte(s, i + 2) & 0x3F) << 6) | (string.byte(s, i + 3) & 0x3F)
+    end
+    w = w + ((cp >= 0x2E80) and size * 0.62 or size * 0.52)
+    i = i + n
+  end
+  return w
+end
+
+function drawTextCentered(text, cx, y, size, r, g, b, a)
+  DrawText(text, cx - utf8Width(text, size) * 0.5, y, size, r, g, b, a, false)
+end
+
+function drawTextRight(text, rx, y, size, r, g, b, a)
+  DrawText(text, rx - utf8Width(text, size), y, size, r, g, b, a, false)
+end
+
 function hotbarHit(mx, my)
   local vp = GetViewportSize()
   local vw = (vp and vp.w) or 1280
@@ -41,7 +72,7 @@ function drawBanner(text, y, size)
   local bw = math.min(760, vw - 40)
   DrawRect(math.floor(vw * 0.5 - bw * 0.5), y - 6, bw, size + 14,
            0.03, 0.04, 0.05, 0.74)
-  DrawText(text, math.floor(vw * 0.5), y, size, 0.98, 0.94, 0.82, 1, true)
+  drawTextCentered(text, math.floor(vw * 0.5), y, size, 0.98, 0.94, 0.82, 1)
 end
 
 function drawNeedsPanel(x, y, w)
@@ -127,7 +158,7 @@ function drawInventoryStrip(x, y)
     end
   end
   if #parts == 0 then parts[1] = "背包空空" end
-  DrawText(table.concat(parts, "   "), x, y, 13, 0.86, 0.84, 0.76, 0.95, true)
+  drawTextCentered(table.concat(parts, "   "), x, y, 13, 0.86, 0.84, 0.76, 0.95)
 end
 
 function drawInteractionPrompt(vw, vh)
@@ -138,13 +169,13 @@ function drawInteractionPrompt(vw, vh)
   DrawRect(vw * 0.5 - 230, y - 8, 460, 46, 0.03, 0.04, 0.05, 0.84)
   DrawRectOutline(vw * 0.5 - 230, y - 8, 460, 46,
                   enabled and 0.85 or 0.45, enabled and 0.70 or 0.45, 0.38, 0.95)
-  DrawText(label, math.floor(vw * 0.5), y, 17,
-           enabled and 0.98 or 0.62, enabled and 0.92 or 0.62,
-           enabled and 0.70 or 0.60, 1, true)
+  drawTextCentered(label, math.floor(vw * 0.5), y, 17,
+                   enabled and 0.98 or 0.62, enabled and 0.92 or 0.62,
+                   enabled and 0.70 or 0.60, 1)
   if nearAction.detail and nearAction.detail ~= "" then
-    DrawText(nearAction.detail, math.floor(vw * 0.5), y + 22, 13,
-             enabled and 0.84 or 0.62, enabled and 0.82 or 0.62,
-             enabled and 0.72 or 0.58, 1, true)
+    drawTextCentered(nearAction.detail, math.floor(vw * 0.5), y + 22, 13,
+                     enabled and 0.84 or 0.62, enabled and 0.82 or 0.62,
+                     enabled and 0.72 or 0.58, 1)
   end
   -- 世界空间小标记
   if (nearAction.kind == "station" or nearAction.kind == "fish") and nearAction.x then
@@ -159,15 +190,16 @@ end
 
 function drawThreatBadge(vw)
   if #horde == 0 then return end
-  DrawText(string.format("⚠ 附近感染者 %d", #horde),
-           vw - 14, 210, 14, 1, 0.55, 0.4, 1, true, true)
-  DrawText("左键 射击", vw - 14, 230, 13, 0.9, 0.7, 0.55, 1, true, true)
+  drawTextRight(string.format("⚠ 附近感染者 %d", #horde),
+                vw - 14, 210, 14, 1, 0.55, 0.4, 1)
+  drawTextRight("左键 射击", vw - 14, 230, 13, 0.9, 0.7, 0.55, 1)
 end
 
 function drawFpHud()
   local vp = GetViewportSize()
   local vw = (vp and vp.w) or 1280
   local vh = (vp and vp.h) or 720
+
 
   drawNeedsPanel(10, vh - 186, 220)
   drawRvStatus(vw - 230, 10, 220)
@@ -189,7 +221,7 @@ function drawFpHud()
   }
   DrawRect(vw - 292, 252, 282, 92, 0.03, 0.04, 0.05, 0.45)
   for i, h in ipairs(hints) do
-    DrawText(h, vw - 14, 260 + (i - 1) * 19, 12, 0.86, 0.84, 0.78, 0.95, true, true)
+    drawTextRight(h, vw - 14, 260 + (i - 1) * 19, 12, 0.86, 0.84, 0.78, 0.95)
   end
 
   if fishingT > 0 then
@@ -197,8 +229,8 @@ function drawFpHud()
     local bx = math.floor(vw * 0.5 - 150)
     DrawRect(bx, vh - 250, 300, 42, 0.04, 0.05, 0.06, 0.8)
     DrawRectOutline(bx, vh - 250, 300, 42, 0.55, 0.72, 0.82, 0.9)
-    DrawText(string.format("钓鱼中… %.1f 秒", fishingT), math.floor(vw * 0.5),
-             vh - 244, 15, 0.85, 0.92, 0.95, 1, true)
+    drawTextCentered(string.format("钓鱼中… %.1f 秒", fishingT), math.floor(vw * 0.5),
+                     vh - 244, 15, 0.85, 0.92, 0.95, 1)
     DrawRect(bx + 16, vh - 222, 268, 5, 0.12, 0.14, 0.16, 0.9)
     DrawRect(bx + 16, vh - 222, 268 * math.max(0, math.min(1, frac)), 5,
              0.35, 0.72, 0.85, 1)
@@ -270,11 +302,11 @@ function drawPlaceHud()
            placeValid and 0.55 or 0.28, 1)
 
   drawCrosshair(vw, vh, false)
-  DrawText("[左键] 放置    [右键/X] 拆除    [R] 旋转 15°    [滚轮/1-0] 换家具    [Tab] 地板/车顶    [B/E] 退出",
-           math.floor(vw * 0.5), vh - 196, 13, 0.92, 0.88, 0.74, 1, true)
+  drawTextCentered("[左键] 放置    [右键/X] 拆除    [R] 旋转 15°    [滚轮/1-0] 换家具    [Tab] 地板/车顶    [B/E] 退出",
+                   math.floor(vw * 0.5), vh - 196, 13, 0.92, 0.88, 0.74, 1)
   if hover and hover.inst then
-    DrawText("准星： " .. hover.inst.cat.name .. "（右键拆除）",
-             math.floor(vw * 0.5), vh - 176, 13, 1, 0.65, 0.45, 1, true)
+    drawTextCentered("准星： " .. hover.inst.cat.name .. "（右键拆除）",
+                     math.floor(vw * 0.5), vh - 176, 13, 1, 0.65, 0.45, 1)
   end
 
   -- 底部家具选择栏（与热栏同布局）
@@ -303,7 +335,7 @@ function drawPlaceHud()
     if isRoof then tag = tag .. " 顶" end
     DrawText(tag, x + 22, y + 23, 12, 0.65, 0.65, 0.62, 1)
     if hover and hover.uiSlot == i then
-      DrawText(c.desc, x + slotW * 0.5, y - 18, 13, 0.95, 0.9, 0.75, 1, true)
+      drawTextCentered(c.desc, x + slotW * 0.5, y - 18, 13, 0.95, 0.9, 0.75, 1)
     end
   end
 
@@ -378,7 +410,7 @@ function drawBuildHud()
     if isRoof then tag = tag .. " 顶" end
     DrawText(tag, x + 22, y + 23, 12, 0.65, 0.65, 0.62, 1)
     if hover and hover.uiSlot == i then
-      DrawText(cat.desc, x + slotW * 0.5, y - 18, 13, 0.95, 0.9, 0.75, 1, true)
+      drawTextCentered(cat.desc, x + slotW * 0.5, y - 18, 13, 0.95, 0.9, 0.75, 1)
     end
   end
 
@@ -388,7 +420,7 @@ function drawBuildHud()
     "B 退出改装   T 上路   M 地图   F5/F9 存/读",
   }
   for i, h in ipairs(hints) do
-    DrawText(h, vw - 14, 14 + (i - 1) * 20, 14, 0.85, 0.84, 0.80, 0.9, true, true)
+    drawTextRight(h, vw - 14, 14 + (i - 1) * 20, 14, 0.85, 0.84, 0.80, 0.9)
   end
 
   local mw, mh2 = 150, 118
@@ -409,19 +441,17 @@ function drawBuildHud()
     DrawText(tostring(mv[2]), mx0 + mw - 14, yy, 14, 0.95, 0.92, 0.82, 1, true)
   end
 
-  DrawText(curLayer == "roof" and "【车顶层】" or "【地板层】",
-           math.floor(vw * 0.5), 14, 16, 0.55, 0.85, 0.98, 1, true)
+  drawTextCentered(curLayer == "roof" and "【车顶层】" or "【地板层】",
+                   math.floor(vw * 0.5), 14, 16, 0.55, 0.85, 0.98, 1)
 
   if hover and hover.inst then
     local c = hover.inst.cat
-    DrawText(c.name .. "  ·  " .. (c.desc or "") .. "  ·  " .. costText(c.cost or {}),
-             math.floor(vw * 0.5), vh - rowsN * (slotH + gap) - 40,
-             14, 0.95, 0.90, 0.78, 1, true)
+    drawTextCentered(c.name .. "  ·  " .. (c.desc or "") .. "  ·  " .. costText(c.cost or {}),
+                     math.floor(vw * 0.5), vh - rowsN * (slotH + gap) - 40,
+                     14, 0.95, 0.90, 0.78, 1)
   end
 
-  if toast.t > 0 then
-    DrawText(toast.text, math.floor(vw * 0.5), 120, 16, 0.98, 0.93, 0.75, 1, true)
-  end
+  if toast.t > 0 then drawBanner(toast.text, 120, 16) end
 end
 
 function drawDriveHud()
@@ -471,7 +501,7 @@ function drawDriveHud()
     "C " .. (driveView == "cab" and "追逐视角" or "驾驶席视角") .. "   M 世界地图",
   }
   for i, h in ipairs(hints) do
-    DrawText(h, vw - 260, vh - 74 + (i - 1) * 19, 12, 0.80, 0.79, 0.74, 0.9, true)
+    drawTextRight(h, vw - 14, vh - 74 + (i - 1) * 19, 12, 0.80, 0.79, 0.74, 0.9)
   end
 
   local top = string.format("第 %d 天  %s  ·  %s", day, timeString(), weatherName())
@@ -525,8 +555,8 @@ function drawNightOverlay()
   local vh = (vp and vp.h) or 720
   DrawRect(0, 0, vw, vh, 0.02, 0.04, 0.10, 0.46 * a)
   if isNight() then
-    DrawText("夜深了 — 回车里睡觉，或放慢车速", math.floor(vw * 0.5), vh - 34,
-             13, 0.72, 0.78, 0.95, 0.85 * a, true)
+    drawTextCentered("夜深了 — 回车里睡觉，或放慢车速", math.floor(vw * 0.5), vh - 34,
+                     13, 0.72, 0.78, 0.95, 0.85 * a)
   end
 end
 
@@ -541,7 +571,7 @@ function drawMapHud()
   DrawRect(px, py, pw, ph, 0.07, 0.08, 0.09, 0.93)
   DrawRectOutline(px, py, pw, ph, 0.55, 0.52, 0.42, 0.95)
   DrawText("公路地图", px + 16, py + 10, 16, 0.95, 0.88, 0.7, 1)
-  DrawText("M 关闭", px + pw - 16, py + 13, 13, 0.6, 0.6, 0.55, 1, true)
+  drawTextRight("M 关闭", px + pw - 16, py + 13, 13, 0.6, 0.6, 0.55, 1)
 
   -- 动态边界：包含所有节点与房车
   local wx0, wx1, wz0, wz1 = rv.x, rv.x, rv.z, rv.z
@@ -572,9 +602,9 @@ function drawMapHud()
     local danger = nd.danger or 0
     DrawCircle(mx2, my2, cur and 7 or 5, cur and 2 or 1.5,
                0.45 + danger * 0.17, 0.85 - danger * 0.18, 0.32, 1, true)
-    DrawText(nd.name .. (danger > 0 and string.rep("!", danger) or ""),
-             mx2, my2 - 20, 12, cur and 1 or 0.82,
-             cur and 0.9 or 0.78, cur and 0.6 or 0.68, 1, true)
+    drawTextCentered(nd.name .. (danger > 0 and string.rep("!", danger) or ""),
+                     mx2, my2 - 20, 12, cur and 1 or 0.82,
+                     cur and 0.9 or 0.78, cur and 0.6 or 0.68, 1)
   end
   local rx, ry = mapXY(rv.x, rv.z)
   DrawLine(rx, ry, rx + math.sin(rv.yaw) * 20, ry + math.cos(rv.yaw) * 20,

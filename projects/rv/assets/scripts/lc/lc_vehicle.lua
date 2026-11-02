@@ -19,9 +19,9 @@ end
 -- 这里补一层朝内的墙板 + 车窗外饰，第一人称才有像样的车舱。
 local INTERIOR = {
   -- 内墙板
-  { pre = "rv_panel_light", lx = -0.99, ly = 1.13, lz = 0.0,  sx = 0.04, sy = 2.16, sz = 7.86 },
-  { pre = "rv_panel_light", lx =  0.99, ly = 1.13, lz = 0.0,  sx = 0.04, sy = 2.16, sz = 7.86 },
-  { pre = "rv_panel_light", lx =  0.0,  ly = 1.13, lz = -3.97, sx = 2.24, sy = 2.16, sz = 0.04 },
+  { pre = "rv_panel_light", lx = -0.94, ly = 1.13, lz = 0.0,  sx = 0.04, sy = 2.16, sz = 7.86 },
+  { pre = "rv_panel_light", lx =  0.94, ly = 1.13, lz = 0.0,  sx = 0.04, sy = 2.16, sz = 7.86 },
+  { pre = "rv_panel_light", lx =  0.0,  ly = 1.13, lz = -3.92, sx = 2.24, sy = 2.16, sz = 0.04 },
   -- 驾驶台下半部（上半部留空当挡风玻璃）
   { pre = "rv_panel_dark",  lx =  0.0,  ly = 0.52, lz = 3.94, sx = 2.24, sy = 1.02, sz = 0.06 },
   -- 驾驶台顶沿 + A 柱（驾驶席视角的取景框）
@@ -29,15 +29,13 @@ local INTERIOR = {
   { pre = "rv_panel_dark",  lx = -1.06, ly = 1.55, lz = 4.18, sx = 0.10, sy = 1.12, sz = 0.10 },
   { pre = "rv_panel_dark",  lx =  1.06, ly = 1.55, lz = 4.18, sx = 0.10, sy = 1.12, sz = 0.10 },
   -- 地板上的深色地毯
-  { pre = "rv_panel_dark",  lx =  0.0,  ly = 0.045, lz = -1.0, sx = 1.45, sy = 0.012, sz = 2.1 },
-  -- 外侧车窗 / 侧门 / 后窗（打破灰色大盒子）
-  { pre = "rv_panel_window", lx = -1.315, ly = 1.46, lz = 0.2, sx = 0.02, sy = 0.56, sz = 4.9 },
-  { pre = "rv_panel_window", lx =  1.315, ly = 1.46, lz = 0.2, sx = 0.02, sy = 0.56, sz = 4.9 },
-  { pre = "rv_panel_window", lx =  1.315, ly = 1.02, lz = -1.7, sx = 0.02, sy = 1.72, sz = 0.86 },
-  { pre = "rv_panel_window", lx =  0.0,  ly = 1.52, lz = -4.315, sx = 1.5, sy = 0.5, sz = 0.02 },
-  -- 车内暖光灯（点光源）
+  { pre = "rv_panel_dark",  lx =  0.0,  ly = 0.058, lz = -1.0, sx = 1.45, sy = 0.012, sz = 2.1 },
+  -- 外侧车窗 / 后窗（避开墙面，避免与墙体 z-fighting）
+  { pre = "rv_panel_window", lx = -1.335, ly = 1.46, lz = 0.2, sx = 0.02, sy = 0.56, sz = 4.9 },
+  { pre = "rv_panel_window", lx =  1.335, ly = 1.46, lz = 0.2, sx = 0.02, sy = 0.56, sz = 4.9 },
+  { pre = "rv_panel_window", lx =  0.0,  ly = 1.52, lz = -4.335, sx = 1.5, sy = 0.5, sz = 0.02 },
   -- 车顶内饰板（挡天空，配合暖光做出车舱感）
-  { pre = "rv_panel_light", lx = 0.0, ly = 2.14, lz = 0.0, sx = 2.24, sy = 0.04, sz = 7.86 },
+  { pre = "rv_panel_light", lx = 0.0, ly = 2.12, lz = 0.0, sx = 2.24, sy = 0.04, sz = 7.86 },
   -- 驾驶室顶（保留挡风玻璃上方的开口）
   { pre = "rv_panel_light", lx = 0.0, ly = 2.14, lz = 4.75, sx = 2.24, sy = 0.04, sz = 1.9 },
   { pre = "rv_lamp", lx = 0.0, ly = 2.02, lz = -1.6, sx = 0.16, sy = 0.05, sz = 0.16 },

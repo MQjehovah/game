@@ -3,9 +3,9 @@
     "transform": { "pos": [0, 0, 0], "rot": [0, 0, 0, 1], "scale": [1, 1, 1] },
     "mesh": {
       "meshKey": "cube",
-      "colorHex": "#2A3540",
-      "roughness": 0.22,
-      "metallic": 0.45,
+      "colorHex": "#22303A",
+      "roughness": 0.55,
+      "metallic": 0.05,
       "castShadow": false,
       "receiveShadow": false
     }

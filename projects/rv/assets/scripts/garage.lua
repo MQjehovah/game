@@ -367,6 +367,10 @@ function on_start()
      or startMode == "place" or startMode == "place_night" then
     px, pz, pyaw = -0.5, -2.6, 0
   end
+  if startMode == "side" or startMode == "side_night" then
+    px, pz, pyaw = 6.2, 0.0, -math.pi * 0.5
+  end
+  if startMode == "side_night" then clock = 22 * 60 end
   if startMode == "night" or startMode == "inside_night"
      or startMode == "place_night" then
     clock = 22 * 60
