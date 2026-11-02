@@ -228,6 +228,9 @@
   `lc_scenery.spawnPoiWindows()` 按 POI 类型（商店/加油站/仓库/商场/湖边木屋/诊所）
   生成对应尺寸的两扇前窗面板，`breakPoiWindowsAt()` 在玩家进入或攻击时把面板替换为
   16 块重力下落的碎片，`updatePoiWindows()` 负责弹跳与回收。
+- `assets/models/rv/rv_products.png`（`tools/gen_rv_product_atlas.py`）：4×4 商品包装
+  图集（品牌条/标签文字/色带/条码）；`tools/rv_atlas.py` 提供 UV 映射，商店/加油站/
+  商场的商品墙与货架使用 `*_product` 材质 + 图集 UV，商品显示为包装盒而不是纯色块。
 - `assets/models/rv/rv_warehouse.gltf` + `rv_warehouse.bin`（`tools/gen_rv_warehouse.py`）：
   3.6m 高棚、宽装卸门 + 月台（黄色警示线/防撞柱/升降台板）、两扇可破碎前橱窗、
   顶部高窗、两侧与后墙
@@ -288,7 +291,8 @@
 2. **家具自由摆放**：已改为第一人称无网格自由放置 + AABB/车内边界校验。
 3. **美术**：房车外壳/车内仍是程序化低多边形 glTF + Kenney 家具，缺少高精度车内软装、
    材质；商店/加油站/仓库/商场/湖边木屋/诊所前窗已支持透明玻璃与碎片飞散，但碎片是
-   简单刚体而非逐块断裂模拟，商品仍是低多边形色块，角色动画也仍是手工关键帧。
+   简单刚体而非逐块断裂模拟；商店/加油站/商场的商品已使用包装图集，其余 POI 的商品
+   仍是纯色块，角色动画也仍是手工关键帧。
 4. **世界**：已有世界固定公路网 + 15 个地点；废宅/商店 → `rv_store.gltf`、
    废弃加油站 → `rv_gasstation.gltf`、物流仓库 → `rv_warehouse.gltf`、
    旧农场 → `rv_barn.gltf`、购物中心 → `rv_mall.gltf`、湖边营地 →

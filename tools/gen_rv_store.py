@@ -15,6 +15,8 @@ import json
 import struct
 from pathlib import Path
 
+from rv_atlas import atlas_extras, product_material, tile_uvs
+
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "projects/rv/assets/models/rv"
 PREFAB = ROOT / "projects/rv/assets/prefabs/rv_store.json"
@@ -22,12 +24,12 @@ PREFAB = ROOT / "projects/rv/assets/prefabs/rv_store.json"
 
 class MeshBuilder:
     def __init__(self):
-        self.groups = {}  # material -> (positions, normals, indices)
+        self.groups = {}  # material -> (positions, normals, indices, uvs)
 
     def _group(self, mat):
-        return self.groups.setdefault(mat, ([], [], []))
+        return self.groups.setdefault(mat, ([], [], [], []))
 
-    def box(self, mat, cx, cy, cz, sx, sy, sz):
+    def box(self, mat, cx, cy, cz, sx, sy, sz, uv=None):
         hx, hy, hz = sx * 0.5, sy * 0.5, sz * 0.5
         x0, x1 = cx - hx, cx + hx
         y0, y1 = cy - hy, cy + hy
@@ -40,7 +42,9 @@ class MeshBuilder:
             ((0, 1, 0), [(x0, y1, z1), (x1, y1, z1), (x1, y1, z0), (x0, y1, z0)]),
             ((0, -1, 0), [(x0, y0, z0), (x1, y0, z0), (x1, y0, z1), (x0, y0, z1)]),
         ]
-        positions, normals, indices = self._group(mat)
+        positions, normals, indices, uvs = self._group(mat)
+        if uv is not None:
+            uvs.extend(uv)
         for n, quad in faces:
             base = len(positions)
             for q in quad:
@@ -53,7 +57,7 @@ class MeshBuilder:
 def main():
     b = MeshBuilder()
     (CREAM, DARK, ROOF, FLOOR, RED, STEEL, GLASS, WHITE,
-     WARM, GREEN, BLUE, YELLOW, WOOD) = range(1, 14)
+     WARM, GREEN, BLUE, YELLOW, WOOD, PRODUCT) = range(1, 15)
 
     # Hidden material-0 primitive (the importer's first primitive uses the
     # default material; keep that slot invisible).
@@ -84,10 +88,12 @@ def main():
         # The pane itself is a separate breakable entity (rv_window_glass).
         # Window display: a lit shelf with a few products behind the glass.
         b.box(DARK, cx, 1.05, 2.30, 1.70, 0.06, 0.42)
-        b.box(WARM, cx - 0.55, 1.22, 2.30, 0.22, 0.28, 0.22)
-        b.box(GREEN, cx - 0.18, 1.20, 2.30, 0.22, 0.24, 0.22)
-        b.box(BLUE, cx + 0.20, 1.22, 2.30, 0.22, 0.28, 0.22)
-        b.box(YELLOW, cx + 0.55, 1.18, 2.30, 0.22, 0.20, 0.22)
+        for k, (dx, wy, wh) in enumerate(((-0.55, 1.22, 0.28),
+                                          (-0.18, 1.20, 0.24),
+                                          (0.20, 1.22, 0.28),
+                                          (0.55, 1.18, 0.20))):
+            b.box(PRODUCT, cx + dx, wy, 2.30, 0.22, wh, 0.22,
+                  uv=tile_uvs((k + (0 if bay < 0 else 4)) % 16))
     b.box(CREAM, 0, 2.30, 2.52, 1.60, 0.40, 0.16)
 
     # Door frame + header + sign/awning.
@@ -118,13 +124,12 @@ def main():
         sy = 0.30 + k * 0.50
         b.box(CREAM, -1.50, sy, -2.06, 2.55, 0.05, 0.38)
         b.box(STEEL, -1.50, sy + 0.04, -1.86, 2.57, 0.04, 0.04)
-    colors = (WARM, GREEN, BLUE, YELLOW, WHITE, RED)
     for row in range(3):
         sy = 0.30 + row * 0.50 + 0.17
         for i in range(9):
             px = -2.55 + i * 0.26
-            c = colors[(i + row) % len(colors)]
-            b.box(c, px, sy, -2.02, 0.16, 0.24, 0.20)
+            b.box(PRODUCT, px, sy, -2.02, 0.16, 0.24, 0.20,
+                  uv=tile_uvs((i * 2 + row * 5) % 16))
     # Price-tag strip along the top shelf.
     b.box(WHITE, -1.50, 2.10, -2.06, 2.40, 0.10, 0.02)
 
@@ -152,10 +157,14 @@ def main():
         b.box(STEEL, ex, 0.50, 0.10, 0.06, 1.00, 0.76)
     for i in range(6):
         px = -1.20 + i * 0.26
-        b.box(colors[i % len(colors)], px, 0.66, -0.18, 0.16, 0.20, 0.16)
-        b.box(colors[(i + 3) % len(colors)], px, 0.66, 0.38, 0.16, 0.20, 0.16)
-        b.box(colors[(i + 1) % len(colors)], px, 1.11, -0.18, 0.16, 0.20, 0.16)
-        b.box(colors[(i + 4) % len(colors)], px, 1.11, 0.38, 0.16, 0.20, 0.16)
+        b.box(PRODUCT, px, 0.66, -0.18, 0.16, 0.20, 0.16,
+              uv=tile_uvs((i * 3 + 1) % 16))
+        b.box(PRODUCT, px, 0.66, 0.38, 0.16, 0.20, 0.16,
+              uv=tile_uvs((i * 3 + 4) % 16))
+        b.box(PRODUCT, px, 1.11, -0.18, 0.16, 0.20, 0.16,
+              uv=tile_uvs((i * 3 + 7) % 16))
+        b.box(PRODUCT, px, 1.11, 0.38, 0.16, 0.20, 0.16,
+              uv=tile_uvs((i * 3 + 10) % 16))
 
     # Hanging price sign over the counter + wall clock.
     b.box(DARK, 1.50, 2.16, -0.20, 1.10, 0.30, 0.04)
@@ -217,23 +226,28 @@ def main():
         {"name": "store_wood",
          "pbrMetallicRoughness": {"baseColorFactor": [0.40, 0.28, 0.16, 1],
                                   "metallicFactor": 0.0, "roughnessFactor": 0.9}},
+        product_material("store_product"),
     ]
 
     buffer = b""
     buffer_views = []
     accessors = []
     primitives = []
-    for mat_index, (positions, normals, indices) in sorted(b.groups.items()):
+    for mat_index, (positions, normals, indices, uvs) in sorted(b.groups.items()):
         pos_bytes = b"".join(struct.pack("<3f", *p) for p in positions)
         nrm_bytes = b"".join(struct.pack("<3f", *n) for n in normals)
         idx_bytes = b"".join(struct.pack("<I", i) for i in indices)
-        for raw in (pos_bytes, nrm_bytes, idx_bytes):
+        raw_chunks = [pos_bytes, nrm_bytes, idx_bytes]
+        has_uv = len(uvs) == len(positions) and len(uvs) > 0
+        if has_uv:
+            raw_chunks.append(b"".join(struct.pack("<2f", *t) for t in uvs))
+        for raw in raw_chunks:
             pad = (4 - len(raw) % 4) % 4
             blob = raw + b"\0" * pad
             buffer_views.append({"buffer": 0, "byteOffset": len(buffer),
                                  "byteLength": len(blob)})
             buffer += blob
-        vb = len(buffer_views) - 3
+        vb = len(buffer_views) - len(raw_chunks)
         mn = [min(p[i] for p in positions) for i in range(3)]
         mx = [max(p[i] for p in positions) for i in range(3)]
         accessors.extend([
@@ -245,7 +259,12 @@ def main():
              "type": "SCALAR"},
         ])
         ai = len(accessors) - 3
-        primitives.append({"attributes": {"POSITION": ai, "NORMAL": ai + 1},
+        attrs = {"POSITION": ai, "NORMAL": ai + 1}
+        if has_uv:
+            accessors.append({"bufferView": vb + 3, "componentType": 5126,
+                              "count": len(uvs), "type": "VEC2"})
+            attrs["TEXCOORD_0"] = len(accessors) - 1
+        primitives.append({"attributes": attrs,
                            "indices": ai + 2, "material": mat_index})
 
     gltf = {
@@ -259,6 +278,7 @@ def main():
         "bufferViews": buffer_views,
         "accessors": accessors,
     }
+    gltf.update(atlas_extras())
     (OUT / "rv_store.bin").write_bytes(buffer)
     (OUT / "rv_store.gltf").write_text(json.dumps(gltf, separators=(",", ":")),
                                       encoding="utf-8")

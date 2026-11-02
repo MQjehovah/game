@@ -789,6 +789,10 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   `breakPoiWindowsAt()` 在玩家进入或攻击时替换为 16 块碎片，
   `updatePoiWindows()` 做重力/弹跳/回收；双端日志
   `[glass] broke windows at ruin/clinic/... (enter)`，`coop_glassview.txt` 提供门窗特写镜头。
+- **商品包装图集**（`projects/rv`）：`tools/gen_rv_product_atlas.py` 生成
+  `assets/models/rv/rv_products.png`（4×4 包装格），`tools/rv_atlas.py` 提供
+  `tile_uvs()` / `product_material()` / `atlas_extras()`；商店/加油站/商场的商品盒
+  使用 `*_product` 材质 + TEXCOORD_0，商品墙显示品牌条/标签/条码而不是纯色块。
 
 ---
 
