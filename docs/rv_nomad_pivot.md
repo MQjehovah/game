@@ -165,14 +165,23 @@
   代理的 key 放进 `game_state`，客户端认领自己的 key，4 名玩家都能本地预测 + 服务器纠正。
 - **同场景复制优化**：合作脚本设置 `netReplicateStatic=0`。主世界有数百个静态实体，
   客户端本来已加载同一场景；不逐个走可靠通道 Spawn，避免 Welcome/状态包被挤出窗口。
-- **加入时序**：`on_player_join` 移到 `MsgWelcome` 之后触发，避免状态/实体 Spawn
-  先于 Welcome 占满可靠通道。
+- **加入时序**：`on_player_join` 在 `MsgWelcome` 之后触发；服务器在 LoginOk 后提前
+  Welcome 并完成槽位分配，客户端的 Join 包延迟时也不会卡在“已登录未入局”。
+- **持久化**：服务器每 3s + `Shutdown` 时调用 `saveLayout()` 写 `saves/layout.json`；
+  标准字段保存房车/需求/背包/家具，`coop` 扩展保存物资箱、车内灯、槽位名字与最后位置。
+  启动时 `coopInitWorld` 读取存档并恢复，日志 `[coop-main] loaded save ...`。
+- **断线重连**：`on_player_leave(clientId, name)` 只标记槽位离线并保留名字/位置；
+  同名客户端重连时 `on_player_join` 回收原槽位/`EntityKey`，并重发
+  `game_state`/`game_world`/`game_crates`。日志示例：
+  `player_join client=2 slot=1 ... (reconnect, old client=1)`。
 - **共享搜刮/家具**：服务器 `searchCrate()` + `bankStopBag()` 后广播 `crates/materials`；
   两端 HUD/日志显示相同剩余物资箱与材料。`coop_actions.txt` 可自动搜箱并切换灶台，
-  `coop_world` 重新下发后客户端日志出现 `furniture synced (9)` / `crates synced (5)`。
+  `game_world` 重新下发后客户端日志出现 `furniture synced (9)` / `crates synced (5)`。
 - **验证**：双方日志按服务器 `seq` 每 2s 输出同一行；同一 `seq` 的房车坐标、4 名玩家
   坐标、燃油/水/材料/物资箱/家具开关/饥饿完全一致。已用 2、3、4 个客户端分别验证
   （4 客户端时服务器日志 `joined=4/4`，四个客户端都 `smoke assertions passed`）。
+  持久化/重连另行验证：保存后重启服务器能恢复 `rv/crates/stove/fuel`，同名客户端
+  重连回收 `slot=1` 并收到 `crates synced (5)`。
 
 ## 房车 glTF 模型
 
@@ -184,9 +193,10 @@
 
 ## 与 Nomad Drive 的差距
 
-1. **多人合作**：已并入 `garage.json` 主世界，支持 2–4 人、共享房车/需求/家具/物资箱；
-   但合作状态还是内存态（重启/重连回到初始布局），客户端暂不能摆放/拆除家具，
-   也还没有玩家各自的物品所有权和进出房车可见性切换。
+1. **多人合作**：已并入 `garage.json` 主世界，支持 2–4 人、共享房车/需求/家具/物资箱，
+   权威状态会写入 `saves/layout.json` 并支持同名断线重连；但还没有存档版本迁移/冲突合并，
+   槽位身份基于 `--name`（无账号鉴权），客户端暂不能摆放/拆除家具，也还没有玩家各自的
+   物品所有权和进出房车可见性切换。
 2. **家具自由摆放**：已改为第一人称无网格自由放置 + AABB/车内边界校验。
 3. **美术**：房车外壳/车内仍是程序化低多边形 glTF + Kenney 家具，缺少高精度车内软装、
    材质、角色动画。
@@ -197,7 +207,7 @@
 
 ## 下一步建议
 
-- P1：合作状态持久化 + 断线重连（把服务器布局/需求/物资写入 `saves/layout.json`）。
+- P1：合作存档版本迁移/冲突合并 + 账号级槽位身份（替换当前 `--name` 轻量身份）。
 - P1：合作建造/摆放（客户端上报放置/拆除，服务器校验并广播 `game_world`），
   以及每名玩家的独立物品/家具所有权。
 - P1：角色/家具动画（开门、坐下、做饭、上车），驾驶时区分座位/乘客。

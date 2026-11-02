@@ -542,6 +542,7 @@ void PlayerApp::OnUpdate(float dt) {
         // step LOCAL prediction with the same input, then reconcile the
         // controlled entity against the latest server snapshot.
         PumpNetwork();
+        if (loggedIn_ && !welcomed_ && !joinSent_) SendJoin();
         if (!cfg_.spectate) SendInputPacket();
         runtime_.Tick(dt);
         if (!cfg_.spectate) {
@@ -826,13 +827,17 @@ void PlayerApp::TryReconnect(uint64_t nowMs) {
 // gated behind the login.
 void PlayerApp::SendJoin() {
     if (joinSent_) return;
-    joinSent_ = true;
     net::MsgJoin join{cfg_.playerName, net::kProtocolVersion};
     core::Status st =
         clientChan_.Send(static_cast<uint8_t>(net::MsgType::Join), client::EncodeBody(join));
     if (!st.Ok()) {
+        // Transient window pressure: retry on a later frame. Do NOT latch
+        // joinSent_, or a single deferred send would leave the client
+        // permanently un-welcomed.
         NEON_LOG_ERROR("client: join send failed: %s", st.Error().c_str());
+        return;
     }
+    joinSent_ = true;
 }
 
 void PlayerApp::OnClientMessage(const net::DecodedMessage& msg) {
@@ -1015,6 +1020,7 @@ void PlayerApp::PumpNetwork() {
 }
 
 void PlayerApp::SendInputPacket() {
+    if (!welcomed_) return; // never queue input before Join/Welcome
     if (connectedLost_ || clientChan_.TimedOut()) return;
     // Derive MsgInput from the same input the local prediction reads
     // (bitmask + axes match the server's NetInput mapping).

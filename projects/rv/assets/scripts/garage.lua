@@ -117,6 +117,10 @@ function saveLayout()
     inventory = inv, water = water,
     day = day, clock = clock, modules = rows, pois = generatedPois,
   }
+  if coopRole == "server" and coopSaveExtra ~= nil then
+    local extra = coopSaveExtra()
+    if extra ~= nil then data.coop = extra end
+  end
   local ok = WriteText("saves/layout.json", jsonEncode(data))
   local where = "saves/layout.json"
   if not ok then

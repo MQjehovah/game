@@ -40,6 +40,7 @@ local coop = {
   crateSeqApplied = -1, worldSeqApplied = -1,
   autoT = 0, autoDrive = false, autoDriveDone = false,
   actionsDemo = false, actionsDone = false, clampDemo = false,
+  saveT = 0, saveDirty = false, loadedSave = false,
   toast = "", toastT = 0, logT = 0,
 }
 
@@ -129,6 +130,25 @@ local function buildCrateList()
   local out = {}
   for i, c in ipairs(crates) do out[i] = { x = c.x, z = c.z } end
   return out
+end
+
+-- Called from garage.lua saveLayout() when the authoritative server saves.
+-- The standard fields (RV/needs/inventory/modules) are already in the save;
+-- this adds the co-op-only state: loot crates, lights and player slots.
+function coopSaveExtra()
+  if not (coop.active and coop.isServer) then return nil end
+  local slotsOut = {}
+  for i, s in ipairs(coop.slots) do
+    if s.name ~= nil and s.name ~= "" then
+      slotsOut[i] = { name = s.name, x = s.x, z = s.z, yaw = s.yaw }
+    end
+  end
+  return {
+    version = 1,
+    lights = coop.lights and 1 or 0,
+    crates = buildCrateList(),
+    slots = slotsOut,
+  }
 end
 
 local function rebuildFurniture(list)
@@ -386,6 +406,17 @@ local function drainCommands()
   end
 end
 
+local function coopSave()
+  if not (coop.active and coop.isServer) then return end
+  local ok = saveLayout()
+  if ok then
+    print(string.format("[coop-main-server] saved state rv=(%.2f,%.2f) crates=%d slots=%d",
+          rv.x, rv.z, #crates, #coop.slots))
+  else
+    print("[coop-main-server] save failed")
+  end
+end
+
 local function serverUpdate(dt)
   drainCommands()
   coop.autoT = coop.autoT + dt
@@ -502,6 +533,13 @@ local function serverUpdate(dt)
   if coop.logT >= 2.0 then
     coop.logT = 0
     serverDebugLog()
+  end
+
+  coop.saveT = coop.saveT + dt
+  if coop.saveT >= 3.0 then
+    coop.saveT = 0
+    coop.saveDirty = false
+    coopSave()
   end
 end
 
@@ -802,8 +840,56 @@ function coopInitWorld(role)
   end
 
   if coop.isServer then
-    copyGlobals()
-    spawnCrates()
+    local text = ReadText("saves/layout.json")
+    if text == nil or text == "" then text = ReadText("layout.json") end
+    local data = nil
+    if text ~= nil and text ~= "" then data = jsonDecode(text) end
+    if type(data) == "table" and type(data.modules) == "table" then
+      loadLayout() -- standard RV/needs/inventory/furniture/POIs
+      if type(data.coop) == "table" then
+        coop.lights = not (data.coop.lights == 0 or data.coop.lights == false)
+        if type(data.coop.slots) == "table" then
+          for i, row in ipairs(data.coop.slots) do
+            local s = coop.slots[i]
+            if s ~= nil and row.name ~= nil then
+              s.name = tostring(row.name)
+              s.x = tonumber(row.x) or s.x
+              s.z = tonumber(row.z) or s.z
+              s.yaw = tonumber(row.yaw) or s.yaw
+            end
+          end
+        end
+        if type(data.coop.crates) == "table" then
+          rebuildCrates(data.coop.crates)
+        else
+          spawnCrates()
+        end
+      else
+        spawnCrates()
+      end
+      copyGlobals()
+      for i = 1, MAX_SLOTS do
+        local s = coop.slots[i]
+        if coop.proxies[i] ~= nil then
+          SetPosition(coop.proxies[i], { x = s.x, y = 0, z = s.z })
+          SetRotationY(coop.proxies[i], s.yaw)
+        end
+      end
+      rv.x, rv.z, rv.yaw = coop.rv.x, coop.rv.z, coop.rv.yaw
+      applyRvTransform()
+      if rvBody ~= nil then
+        PhysicsSetPosition(rvBody, { x = rv.x, y = 0.9, z = rv.z })
+        PhysicsSetVelocity(rvBody, { x = 0, y = 0, z = 0 })
+      end
+      applyLights()
+      coop.loadedSave = true
+      print(string.format("[coop-main] loaded save rv=(%.2f,%.2f) crates=%d slots=%d fuel=%.1f water=%.1f",
+            rv.x, rv.z, #crates, #coop.slots, fuel, water))
+    else
+      copyGlobals()
+      spawnCrates()
+      print("[coop-main] no co-op save; fresh world")
+    end
     coop.worldSeq = 1
     coop.worldT = 0.99
     coop.autoDrive = readFlag("coop_drive.txt")
@@ -907,22 +993,75 @@ function coopDrawHud()
   end
 end
 
-function on_player_join(clientId)
+function on_player_join(clientId, name)
   if not coop.active or not coop.isServer then return end
+  name = (type(name) == "string") and name or ""
   local slot = nil
-  for i = 1, MAX_SLOTS do
-    if not coop.slots[i].joined then slot = coop.slots[i] break end
+  local reclaimed = false
+  if name ~= "" then
+    for i = 1, MAX_SLOTS do
+      if coop.slots[i].name == name then
+        slot = coop.slots[i]
+        reclaimed = true
+        break
+      end
+    end
   end
-  if slot == nil then return end
+  if slot == nil then
+    for i = 1, MAX_SLOTS do
+      local s = coop.slots[i]
+      if not s.joined and (s.name == nil or s.name == "") then slot = s break end
+    end
+  end
+  if slot == nil then
+    for i = 1, MAX_SLOTS do
+      if not coop.slots[i].joined then slot = coop.slots[i] break end
+    end
+  end
+  if slot == nil then
+    print(string.format("[coop-main-server] join client=%.0f refused (all 4 slots busy)", clientId))
+    return
+  end
+  local oldClient = slot.client
+  if name ~= "" then slot.name = name end
   slot.joined = true
   slot.client = clientId
+  slot.driving = false
+  slot.f, slot.s = 0, 0
   if coop.proxies[slot.slotIndex] ~= nil then
     BindPlayerToClient(coop.proxies[slot.slotIndex], clientId)
   end
-  print(string.format("[coop-main-server] player_join client=%.0f slot=%d key=%.0f",
-        clientId, slot.slotIndex, slot.key))
+  print(string.format("[coop-main-server] player_join client=%.0f slot=%d key=%.0f name='%s'%s",
+        clientId, slot.slotIndex, slot.key, slot.name or "",
+        reclaimed and string.format(" (reconnect, old client=%.0f)", oldClient) or ""))
   coop.worldSeq = coop.worldSeq + 1
   coop.worldT = 0.99
   pushState()
   pushWorld()
+  coop.saveDirty = true
+end
+
+function on_player_leave(clientId)
+  if not coop.active or not coop.isServer then return end
+  for i = 1, MAX_SLOTS do
+    local s = coop.slots[i]
+    if s.client == clientId then
+      s.joined = false
+      s.client = 0
+      s.driving = false
+      s.f, s.s = 0, 0
+      print(string.format("[coop-main-server] player_leave client=%.0f slot=%d name='%s' (slot kept for reconnect)",
+            clientId, s.slotIndex, s.name or ""))
+      pushState()
+      coop.saveDirty = true
+      return
+    end
+  end
+end
+
+function on_server_stop()
+  if coop.active and coop.isServer then
+    coopSave()
+    print("[coop-main-server] final save on shutdown")
+  end
 end

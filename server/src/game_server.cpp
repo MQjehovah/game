@@ -381,7 +381,8 @@ void GameServer::HandleJoin(const net::NetAddress& addr, const net::MsgJoin& joi
             if (match_->runtime.HasScriptFunction("on_player_join")) {
                 match_->runtime.CallScriptFunction(
                     "on_player_join",
-                    {script::Value::Num(static_cast<double>(it->second.clientId))});
+                    {script::Value::Num(static_cast<double>(it->second.clientId)),
+                     script::Value::Str(it->second.name)});
             }
             match_->runtime.DispatchPluginEvent(
                 "player_join", {script::Value::Num(static_cast<double>(it->second.clientId))});
@@ -439,6 +440,24 @@ void GameServer::HandleLogin(const net::NetAddress& addr, const net::MsgLogin& l
     // Idempotent: a re-login re-asserts the session (same account id).
     SendLoginOk(c);
     SendCharList(c);
+    // Also complete the game handshake here: the client may send its Join
+    // immediately after LoginOk, but on a slow/dense client that packet can be
+    // delayed behind the reliable window. Welcoming on Login (idempotent with
+    // HandleJoin) makes slot assignment and the first state burst independent
+    // of that race.
+    SendWelcome(c);
+    Match* loginMatch = MatchForClient(c);
+    if (loginMatch != nullptr && !c.joinedGame) {
+        c.joinedGame = true;
+        if (loginMatch->runtime.HasScriptFunction("on_player_join")) {
+            loginMatch->runtime.CallScriptFunction(
+                "on_player_join",
+                {script::Value::Num(static_cast<double>(c.clientId)),
+                 script::Value::Str(c.name)});
+        }
+        loginMatch->runtime.DispatchPluginEvent(
+            "player_join", {script::Value::Num(static_cast<double>(c.clientId))});
+    }
 }
 
 // Creates the Client for a joining address (channel wiring, id assignment,
@@ -1360,6 +1379,8 @@ void GameServer::RemoveClient(const net::NetAddress& addr) {
     // reaching it).
     it->second.room.clear();
     const uint64_t id = it->second.clientId;
+    const std::string leaveName = it->second.name;
+    Match* leaveMatch = MatchForClient(it->second);
     if (it->second.accountId != 0) accountToClient_.erase(it->second.accountId);
     clients_.erase(it);
     // Multi-player: drop every entity this client owned in ANY match.
@@ -1373,6 +1394,15 @@ void GameServer::RemoveClient(const net::NetAddress& addr) {
     };
     if (match_) dropOwned(*match_);
     for (auto& kv : roomMatches_) dropOwned(*kv.second);
+    if (leaveMatch != nullptr) {
+        if (leaveMatch->runtime.HasScriptFunction("on_player_leave")) {
+            leaveMatch->runtime.CallScriptFunction(
+                "on_player_leave",
+                {script::Value::Num(static_cast<double>(id)), script::Value::Str(leaveName)});
+        }
+        leaveMatch->runtime.DispatchPluginEvent(
+            "player_leave", {script::Value::Num(static_cast<double>(id))});
+    }
     NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Info,
                  "server: client %llu disconnected (%u remaining)",
                  static_cast<unsigned long long>(id), ClientCount());
@@ -1387,6 +1417,9 @@ void GameServer::Shutdown() {
     if (!running_) return;
     NEON_LOG_CAT(core::LogCategory::Net, core::LogLevel::Info,
                  "server: shutting down after tick %u (%u clients)", match_->tick, ClientCount());
+    if (match_ && match_->runtime.HasScriptFunction("on_server_stop")) {
+        match_->runtime.CallScriptFunction("on_server_stop", {});
+    }
     running_ = false;
     clients_.clear();
     match_->runtime.Stop();

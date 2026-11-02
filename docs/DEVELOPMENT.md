@@ -727,8 +727,11 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
 - **启动期网络角色**：`GameRuntimeConfig::netRole` 在 `on_start` 之前写入 GameVar
   `netRole`（server/client/spectate），场景脚本可以直接选择权威初始化或客户端初始化，
   不必等第一帧。
-- **加入时序**：`SendWelcome` 先于 `on_player_join`；脚本的首批状态/实体 Spawn 排在
-  Welcome 之后，避免主世界密集实体把 Welcome 挤到可靠窗口后面。
+- **加入时序**：`SendWelcome` 先于 `on_player_join`；服务器在 LoginOk 后提前完成
+  Welcome + 槽位分配（`on_player_join(clientId, name)`），Join 包延迟时也不会卡住。
+  客户端在 Welcome 之前不发送输入包，`SendJoin` 失败会重试。
+- **离开/重连**：`RemoveClient` 调用 `on_player_leave(clientId, name)`；脚本保留槽位名字/
+  最后位置，同名客户端重连时回收原槽位和 `EntityKey`，并重发状态/世界/物资箱。
 - **同场景静态复制开关**：脚本可设 `SetVar("netReplicateStatic", 0)`；服务器跳过
   `SceneTransform` 静态实体的可靠 Spawn，只复制脚本 `CTransformBind` 代理。客户端
   已加载同一场景时这是必要的（房车主世界有数百个静态实体）。
@@ -746,7 +749,8 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   `--scene`/`--seed`**。
 - **房车 4 人合作示例**（`projects/rv`）：`garage.json` 主世界 + `lc_coop.lua`；
   服务器权威房车/需求/家具/物资箱，客户端 `game_cmd` 上行 + `game_state`/`game_world`/
-  `game_crates` 下行；已验证 2/3/4 个客户端。
+  `game_crates` 下行；每 3s + `on_server_stop` 写 `saves/layout.json`（含 `coop` 扩展），
+  启动时恢复；同名断线重连回收槽位。已验证 2/3/4 个客户端、保存重启和重连。
 
 ---
 
