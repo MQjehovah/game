@@ -220,9 +220,20 @@ function spawnRuinFor(nd)
   local cx, cz = nd.x + 6.5, nd.z + 6.5
   local nm = nd.name or ""
   local isStore = (nd.id == "ruin") or (nm:find("废宅") ~= nil)
-  if nd.id == "ruin" then
-    print(string.format("[poi] spawn store shell node=(%.1f,%.1f) center=(%.1f,%.1f)",
-          nd.x, nd.z, cx, cz))
+  local isGas = (nd.id == "gasstop") or (nm:find("加油站") ~= nil)
+  if nd.id == "ruin" or nd.id == "gasstop" then
+    print(string.format("[poi] spawn shell node=%s center=(%.1f,%.1f)",
+          nd.id, cx, cz))
+  end
+  if isGas then
+    -- 可进入加油站：glTF 商店（门洞/窗户/货架/柜台）+ 四柱雨棚 + 两台加油机
+    local gas = SpawnPrefab("rv_gasstation", { x = cx, y = 0, z = cz })
+    if gas ~= nil then SetRotationY(gas, 0) end
+    for _, lx in ipairs({ -1.50, 1.40 }) do
+      local lamp = SpawnPrefab("rv_lamp", { x = cx + lx, y = 2.42, z = cz })
+      if lamp ~= nil then SetScale(lamp, 1.3, 1.3, 1.3) end
+    end
+    return
   end
   if isStore then
     -- 真实可进入建筑：独立 glTF（实心墙体/门洞/屋檐/招牌/柜台/货架）
@@ -283,18 +294,7 @@ function spawnRuinFor(nd)
     SetRotationY(leaf, -1.92)
   end
 
-  if nm:find("加油站") or nd.id == "gasstop" then
-    -- 加油站雨棚 + 油泵
-    local gx, gz = nd.x + 2.2, nd.z + 5.0
-    for _, ox in ipairs({ -2.4, 2.4 }) do
-      for _, oz in ipairs({ -1.6, 1.6 }) do
-        cube("rv_panel_dark", gx + ox, 1.55, gz + oz, 0.16, 3.1, 0.16)
-      end
-    end
-    cube("rv_panel_dark", gx, 3.18, gz, 5.4, 0.16, 3.8)
-    cube("rv_light_red", gx - 1.2, 0.62, gz + 0.9, 0.34, 1.1, 0.42)
-    cube("rv_light_red", gx + 1.2, 0.62, gz + 0.9, 0.34, 1.1, 0.42)
-  elseif nm:find("仓库") then
+  if nm:find("仓库") then
     -- 大仓库
     local wx, wz = nd.x - 6.0, nd.z + 6.5
     cube("rv_panel_dark", wx, 1.75, wz, 8.0, 3.5, 6.0)

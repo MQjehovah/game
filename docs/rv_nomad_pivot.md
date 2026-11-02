@@ -201,24 +201,26 @@
   持久化/重连另行验证：保存后重启服务器能恢复 `rv/crates/stove/fuel`，同名客户端
   重连回收 `slot=1` 并收到 `crates synced (5)`。
 
-## 可进入的废宅商店
+## 可进入的废宅商店与加油站
 
-- `assets/models/rv/rv_store.gltf` + `rv_store.bin`（`tools/gen_rv_store.py` 生成）：
-  实心墙体（内外两面都可见）、1.6m 门洞、门框/雨棚/红招牌、店内货架、柜台、地毯，
-  另有 2 个 `rv_lamp` 真实点光源。
-- `lc_scenery.spawnRuinFor()` 对 `ruin` 和所有“废宅/商店”地点直接生成该 glTF，
-  不再使用缩放立方体拼装。
+- `assets/models/rv/rv_gasstation.gltf` + `rv_gasstation.bin`（`tools/gen_rv_gasstation.py`）：
+  同一套实心墙体/门洞商店（玻璃窗、柜台、货架、咖啡机）+ 四柱雨棚 + 两台加油机；
+  `gasstop` 和所有“加油站”地点生成该 glTF。
+- `lc_scenery.spawnRuinFor()` 对 `ruin`/`gasstop` 和所有“废宅/加油站”地点直接生成
+  对应 glTF，不再使用缩放立方体拼装。
 - `collidePoiWalls()`（`lc_util.lua`）在**服务器和客户端预测**同时生效：侧/后墙
   与门洞两侧的前墙会挡住玩家，只有门洞可穿过。
-- 店内 6 个物资箱固定落在货架/柜台旁；`E` 走近即可搜刮（共享搜刮状态和其他
-  合作物资一致）。
-- 验证钩子：`coop_ruin.txt` 把房车与两名玩家放到商店门口，3–5s 进门、5–8s 店内、
-  8–10s 出门；`coop_poiview.txt` 提供店内固定镜头，`start_mode.txt=poi` 提供
-  单机门口出生点。
+- 废宅商店与加油站店内的 6 个物资箱固定落在货架/柜台旁；`E` 走近即可搜刮
+  （共享搜刮状态和其他合作物资一致）。
+- 验证钩子：`coop_ruin.txt` / `coop_gas.txt` 把房车与两名玩家放到对应店门口，
+  3–5s 进门、5–8s 店内、8–10s 出门；`coop_poiview.txt` 店内镜头，
+  `coop_poiext.txt` 店外全景；`start_mode.txt=poi/gas` 提供单机门口出生点。
 - 双端验证日志：服务器 `P1/P2 entered ruin store (44.5,36.0)`、`shop=2`，
-  再 `exited`、`shop=0`；两端同一 `seq` 的 `shop=2` 和玩家坐标一致。
-  截图 `rv_store_alice.png` / `rv_store_bob.png`（店内货架/柜台/物资箱/两名玩家）、
-  `rv_store_exit_bob.png` / `rv_store_exit_alice.png`（出门后从店门看到货架）。
+  再 `exited`、`shop=0`；加油站为 `entered gasstop (6.5,69.0)`，两端同一 `seq`
+  的 `shop=2` 和玩家坐标一致。截图 `rv_store_alice.png` / `rv_store_bob.png`、
+  `rv_gas_alice.png` / `rv_gas_bob.png`（店内）、`rv_gas_exterior.png`
+  （商店 + 雨棚/油泵全景）、`rv_store_exit_*.png` / `rv_gas_exit_*.png`
+  （出门后从店门看到货架）。
 
 ## 房车 glTF 模型
 
@@ -238,9 +240,9 @@
 2. **家具自由摆放**：已改为第一人称无网格自由放置 + AABB/车内边界校验。
 3. **美术**：房车外壳/车内仍是程序化低多边形 glTF + Kenney 家具，缺少高精度车内软装、
    材质、角色动画。
-4. **世界**：已有世界固定公路网 + 12 个地点；废宅/商店已换成可进入的 `rv_store.gltf`
-   （实心墙体、门洞、门框/雨棚/招牌、店内货架/柜台/吊灯、店内物资箱和墙体碰撞），
-   其余地点仍是立方体拼的原型。
+4. **世界**：已有世界固定公路网 + 12 个地点；废宅/商店换成 `rv_store.gltf`，
+   废弃加油站换成 `rv_gasstation.gltf`（商店 + 雨棚/油泵），两者都可进入，
+   含店内货架/柜台/物资箱和墙体碰撞；仓库/农场/商场仍是立方体拼的原型。
 5. **玩法**：钓鱼、天气、昼夜、零件磨损/升级、灶台菜单、背包、合作均已具备；
    还缺更深的搜刮/建造/驾驶成长。
 

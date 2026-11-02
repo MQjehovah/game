@@ -54,7 +54,7 @@ local coop = {
   buildLayer = "floor", buildRot = 0, buildGhostValid = nil,
   buildDemo = false, buildDemoT = 0, buildDemoStage = 0,
   buildUi = false, buildUiDone = false,
-  poiDemo = false, poiView = false, poiIn = {}, poiT = 0,
+  poiDemo = false, poiView = false, poiExt = false, poiNode = nil, poiIn = {}, poiT = 0,
   sitDemo = false, doorView = false,
   doorAngle = 0, doorTarget = 0, animT = 0,
   animPhase = {},
@@ -447,7 +447,7 @@ local function serverDebugLog()
     if coop.slots[i].joined and coop.slots[i].inside then door = 1 end
   end
   local shop = 0
-  local shopNd = nodeById("ruin")
+  local shopNd = nodeById(coop.poiNode or "ruin")
   if shopNd ~= nil then
     local scx, scz = poiCenter(shopNd)
     for i = 1, MAX_SLOTS do
@@ -667,7 +667,7 @@ end
 -- Scripted verification walk for coop_ruin.txt: 3-5s enter through the front
 -- door, 5-8s stand inside the store, 8-10s leave.
 local function poiDemoPose(slotIndex, t)
-  local nd = nodeById("ruin")
+  local nd = nodeById(coop.poiNode or "ruin")
   if nd == nil then return nil end
   local cx, cz = poiCenter(nd)
   local lane = cx
@@ -693,7 +693,7 @@ end
 
 local function poiInsideCount()
   local n = 0
-  local nd = nodeById("ruin")
+  local nd = nodeById(coop.poiNode or "ruin")
   if nd == nil then return 0 end
   local cx, cz = poiCenter(nd)
   for i = 1, MAX_SLOTS do
@@ -812,7 +812,7 @@ local function serverUpdate(dt)
   end
 
   do
-    local nd = nodeById("ruin")
+    local nd = nodeById(coop.poiNode or "ruin")
     if nd ~= nil then
       local cx, cz = poiCenter(nd)
       for i = 1, MAX_SLOTS do
@@ -822,8 +822,9 @@ local function serverUpdate(dt)
         if inside ~= (coop.poiIn[i] == true) then
           coop.poiIn[i] = inside
           if s.joined then
-            print(string.format("[coop-poi] P%d %s ruin store (%.1f,%.1f)",
-                  i, inside and "entered" or "exited", s.x, s.z))
+            print(string.format("[coop-poi] P%d %s %s (%.1f,%.1f)",
+                  i, inside and "entered" or "exited", coop.poiNode or "poi",
+                  s.x, s.z))
           end
         end
       end
@@ -885,7 +886,7 @@ end
 local function clientLog(s)
   local p = s.players or {}
   local shop = 0
-  local shopNd = nodeById("ruin")
+  local shopNd = nodeById(coop.poiNode or "ruin")
   if shopNd ~= nil then
     local scx, scz = poiCenter(shopNd)
     for i = 1, MAX_SLOTS do
@@ -1270,8 +1271,18 @@ local function clientUpdate(dt)
   else
     px, pz, pyaw = COOP_SPAWN[1].lx, COOP_SPAWN[1].lz, 0
   end
-  if coop.poiView then
-    local nd = nodeById("ruin")
+  if coop.poiExt then
+    -- Test-only exterior overview: shop + forecourt/canopy from the road side.
+    local nd = nodeById(coop.poiNode or "ruin")
+    local cx, cz = rv.x, rv.z
+    if nd ~= nil then cx, cz = poiCenter(nd) end
+    SetVar("cameraMouseLock", 1)
+    SetVar("cameraFocus", { x = cx - 2.0, y = 1.4, z = cz })
+    SetVar("cameraYaw", 0.30)
+    SetVar("cameraPitch", 0.28)
+    SetVar("cameraDist", 15.0)
+  elseif coop.poiView then
+    local nd = nodeById(coop.poiNode or "ruin")
     local cx, cz = rv.x, rv.z
     if nd ~= nil then cx, cz = poiCenter(nd) end
     SetVar("cameraMouseLock", 1)
@@ -1404,15 +1415,20 @@ function coopInitWorld(role)
     coop.autoDrive = readFlag("coop_drive.txt")
     coop.actionsDemo = readFlag("coop_actions.txt")
     coop.boardDemo = readFlag("coop_board.txt")
-    coop.poiDemo = readFlag("coop_ruin.txt")
+    coop.poiDemo = readFlag("coop_ruin.txt") or readFlag("coop_gas.txt")
+    if readFlag("coop_gas.txt") then
+      coop.poiNode = "gasstop"
+    elseif readFlag("coop_ruin.txt") then
+      coop.poiNode = "ruin"
+    end
     if coop.poiDemo then
-      local nd = nodeById("ruin")
+      local nd = nodeById(coop.poiNode or "ruin")
       if nd ~= nil then
         local cx, cz = poiCenter(nd)
-        atNode, curNode = "ruin", "ruin"
+        atNode, curNode = nd.id, nd.id
         rv.x, rv.z, rv.yaw = nd.x, nd.z, 0
         coop.rv = { x = nd.x, z = nd.z, yaw = 0, speed = 0 }
-        spawnCrates() -- re-roll loot inside the store
+        spawnCrates() -- re-roll loot inside the shop
         for i = 1, MAX_SLOTS do
           local s = coop.slots[i]
           if i <= 2 then
@@ -1425,8 +1441,8 @@ function coopInitWorld(role)
         end
         applyRvTransform()
         print(string.format(
-          "[coop-poi] demo at ruin store center=(%.1f,%.1f) crates=%d p1=(%.1f,%.1f) p2=(%.1f,%.1f)",
-          cx, cz, #crates, coop.slots[1].x, coop.slots[1].z,
+          "[coop-poi] demo at %s center=(%.1f,%.1f) crates=%d p1=(%.1f,%.1f) p2=(%.1f,%.1f)",
+          nd.id, cx, cz, #crates, coop.slots[1].x, coop.slots[1].z,
           coop.slots[2].x, coop.slots[2].z))
       end
     end
@@ -1464,6 +1480,12 @@ function coopInitWorld(role)
     coop.sitDemo = readFlag("coop_sitdemo.txt")
     coop.doorView = readFlag("coop_doorview.txt")
     coop.poiView = readFlag("coop_poiview.txt")
+    coop.poiExt = readFlag("coop_poiext.txt")
+    if readFlag("coop_gas.txt") then
+      coop.poiNode = "gasstop"
+    elseif readFlag("coop_ruin.txt") then
+      coop.poiNode = "ruin"
+    end
     -- Prefab shell cubes are spawned before networking starts; re-assert their
     -- transforms once so the co-op client's draw list uses the authored pose.
     if poiShellParts ~= nil then
