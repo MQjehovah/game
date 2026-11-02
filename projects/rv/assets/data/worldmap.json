@@ -10,8 +10,30 @@
       "links": [
         "gasstop",
         "ruin",
-        "farm"
+        "farm",
+        "lakecamp"
       ]
+    },
+    {
+      "id": "lakecamp",
+      "name": "湖边营地",
+      "mx": 0.20,
+      "my": 0.55,
+      "danger": 0,
+      "desc": "湖边的废弃木屋与码头",
+      "links": [
+        "camp"
+      ],
+      "loot": {
+        "wood": [
+          2,
+          4
+        ],
+        "cloth": [
+          1,
+          3
+        ]
+      }
     },
     {
       "id": "farm",

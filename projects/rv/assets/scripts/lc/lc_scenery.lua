@@ -211,6 +211,8 @@ function spawnPonds()
   if #ponds > 0 then return end
   -- 放在营地左后方：避开开局去废宅/加油站的直线路径，避免房车开进水里
   spawnPond(-18, -12)
+  local lake = nodeById("lakecamp")
+  if lake ~= nil then spawnPond(lake.x - 8, lake.z - 7) end
 end
 
 -- 简易路边建筑：一个带门洞/窗的废弃小屋（纯装饰，原型级）
@@ -225,10 +227,21 @@ function spawnRuinFor(nd)
                       (nm:find("物流") ~= nil)
   local isFarm = (nd.id == "farm") or (nm:find("农场") ~= nil)
   local isMall = (nd.id == "mall") or (nm:find("商场") ~= nil)
+  local isCabin = (nd.id == "lakecamp") or (nm:find("营地") ~= nil)
   if nd.id == "ruin" or nd.id == "gasstop" or nd.id == "depot" or
-     nd.id == "farm" or nd.id == "mall" then
+     nd.id == "farm" or nd.id == "mall" or nd.id == "lakecamp" then
     print(string.format("[poi] spawn shell node=%s center=(%.1f,%.1f)",
           nd.id, cx, cz))
+  end
+  if isCabin then
+    -- 可进入的湖边/林地木屋：门廊 + 壁炉 + 床 + 桌椅 + 厨房 + 货架
+    local cabin = SpawnPrefab("rv_cabin", { x = cx, y = 0, z = cz })
+    if cabin ~= nil then SetRotationY(cabin, 0) end
+    for _, lp in ipairs({ { -1.20, -0.60 }, { 1.20, 0.80 } }) do
+      local lamp = SpawnPrefab("rv_lamp", { x = cx + lp[1], y = 2.15, z = cz + lp[2] })
+      if lamp ~= nil then SetScale(lamp, 1.3, 1.3, 1.3) end
+    end
+    return
   end
   if isMall then
     -- 可进入购物中心：玻璃店面/红蓝招牌 + 收银台/货架/服装架/模特/外摆

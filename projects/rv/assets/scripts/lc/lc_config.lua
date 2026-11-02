@@ -142,6 +142,8 @@ NODES = {
   { id = "depot",   name = "物流仓库",   x = 154, z = -58 },
   { id = "farm",    name = "旧农场",     x = -64, z = 44, danger = 1,
     loot = { wood = { 2, 5 }, cloth = { 1, 3 } }, links = { "camp" } },
+  { id = "lakecamp", name = "湖边营地",   x = -52, z = 30, danger = 0, pond = true,
+    loot = { wood = { 2, 4 }, cloth = { 1, 3 } }, links = { "camp" } },
 }
 MAT_NAMES = { metal="金属片", electronics="电子件", cloth="布料", wood="木材" }
 materials = { metal=12, electronics=8, cloth=6, wood=10 }

@@ -226,6 +226,21 @@ function runSelfTest()
      string.format("%d/%d interior", mallInside, #crates))
   despawnCrates()
 
+  -- 湖边营地：木屋内也有物资箱
+  atNode = "lakecamp"
+  spawnCrates()
+  local lake = nodeById("lakecamp")
+  local lx, lz = poiCenter(lake)
+  local lakeInside = 0
+  for _, c in ipairs(crates) do
+    if math.abs(c.x - lx) < POI_HALF_X and math.abs(c.z - lz) < POI_HALF_Z then
+      lakeInside = lakeInside + 1
+    end
+  end
+  ok(r, "crates inside lake cabin", lakeInside >= 4,
+     string.format("%d/%d interior", lakeInside, #crates))
+  despawnCrates()
+
   -- POI 墙体碰撞：侧墙挡住，门洞可以通过
   do
     local cx, cz = poiCenter(ruin)
