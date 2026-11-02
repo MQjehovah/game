@@ -26,6 +26,13 @@ function runSelfTest()
   ok(r, "cook at stove", itemCount("meal") == meal0 + 1 and water < water0,
      string.format("meal %d->%d water %.1f->%.1f", meal0, itemCount("meal"), water0, water))
 
+  -- 灶台配方：鱼汤
+  addItem("fish", 1)
+  local soup0 = itemCount("fishsoup")
+  cookRecipe("fishsoup")
+  ok(r, "cook fish soup", itemCount("fishsoup") == soup0 + 1,
+     string.format("soup %d->%d fish=%d", soup0, itemCount("fishsoup"), itemCount("fish")))
+
   -- 喝水
   local thirst0 = needs.thirst
   needs.thirst = 50

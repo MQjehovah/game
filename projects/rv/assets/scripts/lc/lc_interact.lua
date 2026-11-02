@@ -102,6 +102,8 @@ function doInteract()
     if nearAction.enabled == false then
       toast.text = nearAction.detail or "现在不能用"
       toast.t = 2.2
+    elseif nearAction.inst.cat.use == "stove" then
+      stationUI = { kind = "stove", inst = nearAction.inst }
     else
       useStation(nearAction.inst)
     end

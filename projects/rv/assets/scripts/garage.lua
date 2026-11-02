@@ -14,7 +14,8 @@ function setBuildMode(on)
     SetVar("cameraMouseLock", 1)
     placeRot = 0
     selected = 8
-    fishingT = 0  -- 默认选储物箱（1x1，车内最容易放下）
+    fishingT = 0
+    stationUI = nil  -- 默认选储物箱（1x1，车内最容易放下）
     toast.text = "自由摆放 — 准星对准地面，左键放置 / 右键拆除 / R 旋转"
     toast.t = 4.0
   else
@@ -69,6 +70,7 @@ function setPhase(m)
     toast.t = 4.5
   else  -- driving
     if buildMode then setBuildMode(false) end
+    stationUI = nil
     fishingT = 0
     if atNode then
       g_bankKeep = 1.0
@@ -360,7 +362,8 @@ function on_start()
     px, pz = -1.8, -7.5
   end
   if startMode == "inside" or startMode == "inside_night"
-     or startMode == "place" or startMode == "place_night" then
+     or startMode == "place" or startMode == "place_night"
+     or startMode == "stove" then
     px, pz, pyaw = -0.5, -2.6, 0
   end
   if startMode == "side" or startMode == "side_night" then
@@ -386,7 +389,9 @@ function on_start()
   local selftestFlag = ReadText("selftest_on.txt")
   if selftestFlag and selftestFlag ~= "" then runSelfTest() end
 
-  if startMode == "build" or startMode == "place" or startMode == "place_night" then
+  if startMode == "stove" then
+    stationUI = { kind = "stove", inst = hasModule("stove") }
+  elseif startMode == "build" or startMode == "place" or startMode == "place_night" then
     setBuildMode(true)
   elseif startMode == "map" then
     trySpawnPoi()
@@ -643,6 +648,16 @@ function on_update(ent, dt)
     return
   end
 
+  -- 灶台菜单打开时暂停移动/交互，只处理配方按键
+  if stationUI then
+    if ActionPressed("e") then stationUI = nil end
+    for i, r in ipairs(RECIPES) do
+      if ActionPressed(tostring(i)) then cookRecipe(r.id) end
+    end
+    updateCamera(dt)
+    return
+  end
+
   -- 第一人称：移动 / 交互 / 射击 / 钓鱼
   updatePlayer(dt)
   updateFishing(dt)
@@ -696,5 +711,6 @@ function on_render()
   else
     drawFpHud()
   end
+  if stationUI then drawStationMenu() end
   if mapOpen then drawMapHud() end
 end

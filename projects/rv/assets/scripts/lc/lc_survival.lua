@@ -363,6 +363,35 @@ function workbenchTarget()
   return best
 end
 
+-- 灶台配方是否可做
+function recipeAvailable(r)
+  if not powerOk() then return false, "没有电力" end
+  if water < (r.water or 0) then return false, "水箱没水" end
+  for id, n in pairs(r.cost or {}) do
+    if not hasItem(id, n) then return false, "缺少" .. itemName(id) end
+  end
+  return true, ""
+end
+
+function cookRecipe(id)
+  local r = nil
+  for _, rec in ipairs(RECIPES) do if rec.id == id then r = rec end end
+  if r == nil then return false end
+  local ok, why = recipeAvailable(r)
+  if not ok then
+    toast.text = "做不了：" .. why
+    toast.t = 2.2
+    return false
+  end
+  for iid, n in pairs(r.cost or {}) do takeItem(iid, n) end
+  useWater(r.water or 0)
+  addItem(r.out, 1)
+  if PlaySfx then PlaySfx("cook") end
+  toast.text = "做好 " .. r.name .. "（背包 +1）"
+  toast.t = 2.4
+  return true
+end
+
 -- 当前家具能做什么（HUD/交互提示共用）
 function stationPrompt(inst)
   if inst == nil or inst.cat == nil then return nil end
@@ -372,12 +401,12 @@ function stationPrompt(inst)
   if use == "bed" then
     return "睡觉", "到第二天 07:00，恢复体力", true
   elseif use == "stove" then
-    local ok = hasItem("rawfood", 1) and water >= SURVIVAL.cookWater and powerOk()
-    local detail = "生食材 x1 + 水 0.5L"
-    if not powerOk() then detail = "需要电力" end
-    return "做饭", detail, ok
+    return "打开灶台", "1 热饭  2 鱼汤  3 大餐", true
   elseif use == "fridge" then
+    if hasItem("feast", 1) then return "吃大餐", "饥饿 -65 生命 +10", true end
+    if hasItem("fishsoup", 1) then return "喝鱼汤", "饥饿 -35 口渴 -20", true end
     if hasItem("meal", 1) then return "吃热饭", "饥饿 -42", true end
+    if hasItem("fish", 1) then return "吃烤鱼", "饥饿 -30 生命 +5", true end
     if hasItem("canned", 1) then return "吃罐头", "饥饿 -22", true end
     if hasItem("rawfood", 1) then return "吃生食材", "饥饿 -8，会掉血", true end
     return "找吃的", "冰箱空了", false
@@ -437,21 +466,12 @@ function useStation(inst)
   if use == "bed" then
     sleepInBed()
   elseif use == "stove" then
-    if not powerOk() then
-      toast.text = "没有电力 — 装太阳能板或启动发电机"
-    elseif not hasItem("rawfood", 1) then
-      toast.text = "没有生食材 — 搜刮物资箱，或种菜收获"
-    elseif not useWater(SURVIVAL.cookWater) then
-      toast.text = "水箱没水了"
-    else
-      takeItem("rawfood", 1)
-      addItem("meal", 1)
-      if PlaySfx then PlaySfx("cook") end
-      toast.text = "做好一份热饭（背包 +1）"
-    end
-    toast.t = 2.6
+    cookRecipe("meal")
   elseif use == "fridge" then
-    if hasItem("meal", 1) then useItem("meal")
+    if hasItem("feast", 1) then useItem("feast")
+    elseif hasItem("fishsoup", 1) then useItem("fishsoup")
+    elseif hasItem("meal", 1) then useItem("meal")
+    elseif hasItem("fish", 1) then useItem("fish")
     elseif hasItem("canned", 1) then useItem("canned")
     elseif hasItem("rawfood", 1) then useItem("rawfood")
     else toast.text = "冰箱空了"; toast.t = 2.0 end

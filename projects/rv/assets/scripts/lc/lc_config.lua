@@ -69,8 +69,17 @@ ITEMS = {
   seed     = { name = "种子",   kind = "seed",  desc = "种进种植箱" },
   repairkit= { name = "修理包", kind = "repair", amount = 35, desc = "修车 +35" },
   fish     = { name = "烤鱼",   kind = "food",  hunger = 30, health = 5, desc = "饥饿 -30 生命 +5" },
+  fishsoup = { name = "鱼汤",   kind = "food",  hunger = 35, thirst = 20, health = 3, desc = "饥饿 -35 口渴 -20" },
+  feast    = { name = "大餐",   kind = "food",  hunger = 65, health = 10, desc = "饥饿 -65 生命 +10" },
 }
-ITEM_ORDER = { "water", "canned", "rawfood", "meal", "coffee", "brew", "fish", "seed", "repairkit" }
+ITEM_ORDER = { "water", "canned", "rawfood", "meal", "fishsoup", "feast", "coffee", "brew", "fish", "seed", "repairkit" }
+
+-- 灶台配方
+RECIPES = {
+  { id = "meal",     name = "热饭", cost = { rawfood = 1 },               water = 0.5, out = "meal",     desc = "饥饿 -42  生命 +6" },
+  { id = "fishsoup", name = "鱼汤", cost = { fish = 1 },                  water = 1.0, out = "fishsoup", desc = "饥饿 -35  口渴 -20" },
+  { id = "feast",    name = "大餐", cost = { rawfood = 2, meal = 1 },     water = 0.5, out = "feast",    desc = "饥饿 -65  生命 +10" },
+}
 
 -- 物资箱里的非材料掉落（权重）
 LOOT_ITEMS = {
