@@ -234,6 +234,38 @@ function spawnRuinFor(nd)
   -- 窗与门框
   cube("rv_panel_window", cx - 3.0, 1.55, cz + 0.3, 0.04, 0.7, 1.4)
   cube("rv_panel_window", cx + 3.0, 1.55, cz + 0.3, 0.04, 0.7, 1.4)
+
+  local nm = nd.name or ""
+  if nm:find("加油站") or nd.id == "gasstop" then
+    -- 加油站雨棚 + 油泵
+    local gx, gz = nd.x + 2.2, nd.z + 5.0
+    for _, ox in ipairs({ -2.4, 2.4 }) do
+      for _, oz in ipairs({ -1.6, 1.6 }) do
+        cube("rv_panel_dark", gx + ox, 1.55, gz + oz, 0.16, 3.1, 0.16)
+      end
+    end
+    cube("rv_panel_dark", gx, 3.18, gz, 5.4, 0.16, 3.8)
+    cube("rv_light_red", gx - 1.2, 0.62, gz + 0.9, 0.34, 1.1, 0.42)
+    cube("rv_light_red", gx + 1.2, 0.62, gz + 0.9, 0.34, 1.1, 0.42)
+  elseif nm:find("仓库") then
+    -- 大仓库
+    local wx, wz = nd.x - 6.0, nd.z + 6.5
+    cube("rv_panel_dark", wx, 1.75, wz, 8.0, 3.5, 6.0)
+    cube("rv_panel_dark", wx, 3.6, wz, 8.4, 0.2, 6.4)
+    cube("rv_panel_window", wx, 1.6, wz + 3.05, 2.4, 2.6, 0.06)
+  elseif nm:find("农场") then
+    -- 红顶谷仓
+    local bx, bz = nd.x - 5.0, nd.z + 6.5
+    cube("rv_panel_light", bx, 1.5, bz, 6.0, 3.0, 4.6)
+    cube("rv_light_red", bx, 3.15, bz, 6.4, 0.3, 5.0)
+    cube("rv_panel_dark", bx, 1.0, bz + 2.35, 1.8, 2.0, 0.08)
+  elseif nm:find("商场") then
+    -- 更大的废弃商铺
+    local mx, mz = nd.x - 6.0, nd.z + 6.5
+    cube("rv_panel_light", mx, 2.0, mz, 8.0, 4.0, 6.0)
+    cube("rv_panel_dark", mx, 4.1, mz, 8.3, 0.2, 6.3)
+    cube("rv_panel_window", mx, 2.4, mz + 3.05, 3.2, 1.6, 0.06)
+  end
 end
 
 -- 节点标记柱
