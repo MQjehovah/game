@@ -373,6 +373,34 @@ function recipeAvailable(r)
   return true, ""
 end
 
+function repairPart(id)
+  local value = partValue(id)
+  if value >= VEH.partMax then
+    toast.text = "已经修好了"
+    toast.t = 1.8
+    return false
+  end
+  if hasItem("repairkit", 1) then
+    takeItem("repairkit", 1)
+    setPartValue(id, value + ITEMS.repairkit.amount)
+    if PlaySfx then PlaySfx("repair") end
+    toast.text = "修理包修好 " .. id .. " — " .. string.format("%.0f%%", partValue(id))
+  else
+    local cost = partRepairCost(id)
+    if not canAfford(cost) then
+      toast.text = "材料不足：" .. costText(cost)
+      toast.t = 2.0
+      return false
+    end
+    payCost(cost)
+    setPartValue(id, value + VEH.repairAmt)
+    if PlaySfx then PlaySfx("repair") end
+    toast.text = "修好 " .. id .. " — " .. string.format("%.0f%%", partValue(id))
+  end
+  toast.t = 2.4
+  return true
+end
+
 function cookRecipe(id)
   local r = nil
   for _, rec in ipairs(RECIPES) do if rec.id == id then r = rec end end
@@ -423,16 +451,7 @@ function stationPrompt(inst)
   elseif use == "bathroom" then
     return "洗漱", "水 3L，卫生 +45", water >= SURVIVAL.bathWater
   elseif use == "workbench" then
-    local target = workbenchTarget()
-    if target.value >= VEH.partMax then return "检修", "全部正常", false end
-    if hasItem("repairkit", 1) then
-      return "修理" .. target.name, string.format("修理包 x1（%s %.0f%%）",
-             target.name, target.value), true
-    end
-    local cost = partRepairCost(target.id)
-    return "修理" .. target.name,
-           string.format("%s %.0f%% — %s", target.name, target.value, costText(cost)),
-           canAfford(cost)
+    return "打开工作台", "1 车体  2 引擎  3 轮胎  4 电瓶", true
   elseif use == "storage" then
     return "查看物资", "随身库存", true
   elseif use == "med" then

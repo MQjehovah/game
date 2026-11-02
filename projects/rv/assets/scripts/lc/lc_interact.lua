@@ -104,6 +104,8 @@ function doInteract()
       toast.t = 2.2
     elseif nearAction.inst.cat.use == "stove" then
       stationUI = { kind = "stove", inst = nearAction.inst }
+    elseif nearAction.inst.cat.use == "workbench" then
+      stationUI = { kind = "workbench", inst = nearAction.inst }
     else
       useStation(nearAction.inst)
     end

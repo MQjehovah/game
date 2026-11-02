@@ -549,36 +549,65 @@ end
 
 -- 灶台配方菜单
 function drawStationMenu()
-  if stationUI == nil or stationUI.kind ~= "stove" then return end
+  if stationUI == nil then return end
   local vp = GetViewportSize()
   local vw = (vp and vp.w) or 1280
   local vh = (vp and vp.h) or 720
-  local pw, ph = 500, 300
+  local isStove = (stationUI.kind == "stove")
+  local rows = isStove and #RECIPES or #REPAIR_PARTS
+  local pw = 540
+  local ph = 108 + rows * 58
   local px = math.floor((vw - pw) * 0.5)
   local py = math.floor((vh - ph) * 0.5)
   DrawRect(px, py, pw, ph, 0.04, 0.05, 0.06, 0.92)
   DrawRectOutline(px, py, pw, ph, 0.55, 0.52, 0.42, 0.95)
-  drawTextCentered("灶台 · 做饭", vw * 0.5, py + 14, 20, 0.98, 0.90, 0.68, 1)
-  DrawText(string.format("水 %.1fL   电 %s", water, powerOk() and "正常" or "不足"),
-           px + 20, py + 48, 13, 0.78, 0.78, 0.72, 1)
-  local yy = py + 78
-  for i, r in ipairs(RECIPES) do
-    local ok, why = recipeAvailable(r)
-    local cost = {}
-    for id, n in pairs(r.cost or {}) do cost[#cost + 1] = itemName(id) .. "x" .. n end
-    cost[#cost + 1] = string.format("水%.1fL", r.water or 0)
-    DrawRect(px + 16, yy - 4, pw - 32, 52, ok and 0.10 or 0.12,
-             ok and 0.12 or 0.08, ok and 0.09 or 0.08, 0.7)
-    DrawText("[" .. i .. "]", px + 26, yy, 16, ok and 0.95 or 0.5, ok and 0.85 or 0.5, 0.55, 1)
-    DrawText(r.name, px + 66, yy, 16, ok and 0.96 or 0.6, ok and 0.92 or 0.6, 0.82, 1)
-    DrawText(r.desc, px + 66, yy + 21, 12, 0.78, 0.76, 0.70, 1)
-    drawTextRight(table.concat(cost, "  ") .. (ok and "" or ("  ✗ " .. why)),
-                  px + pw - 24, yy + 8, 12, ok and 0.85 or 1,
-                  ok and 0.82 or 0.35, ok and 0.72 or 0.28)
-    yy = yy + 60
+  drawTextCentered(isStove and "灶台 · 做饭" or "工作台 · 维修",
+                   vw * 0.5, py + 14, 20, 0.98, 0.90, 0.68, 1)
+  if isStove then
+    DrawText(string.format("水 %.1fL   电 %s", water, powerOk() and "正常" or "不足"),
+             px + 20, py + 48, 13, 0.78, 0.78, 0.72, 1)
+  else
+    DrawText("选择要维修的部件（修理包优先）", px + 20, py + 48, 13, 0.78, 0.78, 0.72, 1)
   end
-  drawTextCentered("按 1/2/3 制作    E 关闭", vw * 0.5, py + ph - 32, 13,
-                   0.75, 0.75, 0.68, 1)
+  local yy = py + 78
+  if isStove then
+    for i, r in ipairs(RECIPES) do
+      local ok, why = recipeAvailable(r)
+      local cost = {}
+      for id, n in pairs(r.cost or {}) do cost[#cost + 1] = itemName(id) .. "x" .. n end
+      cost[#cost + 1] = string.format("水%.1fL", r.water or 0)
+      DrawRect(px + 16, yy - 4, pw - 32, 52, ok and 0.10 or 0.12,
+               ok and 0.12 or 0.08, ok and 0.09 or 0.08, 0.7)
+      DrawText("[" .. i .. "]", px + 26, yy, 16, ok and 0.95 or 0.5, ok and 0.85 or 0.5, 0.55, 1)
+      DrawText(r.name, px + 66, yy, 16, ok and 0.96 or 0.6, ok and 0.92 or 0.6, 0.82, 1)
+      DrawText(r.desc, px + 66, yy + 21, 12, 0.78, 0.76, 0.70, 1)
+      drawTextRight(table.concat(cost, "  ") .. (ok and "" or ("  ✗ " .. why)),
+                    px + pw - 24, yy + 8, 12, ok and 0.85 or 1,
+                    ok and 0.82 or 0.35, ok and 0.72 or 0.28)
+      yy = yy + 58
+    end
+    drawTextCentered("按 1/2/3 制作    E 关闭", vw * 0.5, py + ph - 30, 13, 0.75, 0.75, 0.68, 1)
+  else
+    for i, part in ipairs(REPAIR_PARTS) do
+      local value = partValue(part.id)
+      local full = value >= VEH.partMax
+      local kit = hasItem("repairkit", 1)
+      local cost = partRepairCost(part.id)
+      local ok = not full and (kit or canAfford(cost))
+      local costStr = kit and "修理包x1" or costText(cost)
+      DrawRect(px + 16, yy - 4, pw - 32, 52, ok and 0.10 or 0.12,
+               ok and 0.12 or 0.08, ok and 0.09 or 0.08, 0.7)
+      DrawText("[" .. i .. "]", px + 26, yy, 16, ok and 0.95 or 0.5, ok and 0.85 or 0.5, 0.55, 1)
+      DrawText(part.name, px + 66, yy, 16, ok and 0.96 or 0.6, ok and 0.92 or 0.6, 0.82, 1)
+      DrawText(string.format("%.0f%%", value), px + 66, yy + 21, 12,
+               value < 40 and 1 or 0.8, value < 40 and 0.35 or 0.8, 0.35, 1)
+      drawTextRight(full and "正常" or costStr, px + pw - 24, yy + 8, 12,
+                    full and 0.55 or (ok and 0.85 or 1), full and 0.9 or (ok and 0.82 or 0.35),
+                    full and 0.55 or (ok and 0.72 or 0.28))
+      yy = yy + 58
+    end
+    drawTextCentered("按 1/2/3/4 维修    E 关闭", vw * 0.5, py + ph - 30, 13, 0.75, 0.75, 0.68, 1)
+  end
 end
 
 function drawNightOverlay()

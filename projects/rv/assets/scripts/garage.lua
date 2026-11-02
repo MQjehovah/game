@@ -363,7 +363,7 @@ function on_start()
   end
   if startMode == "inside" or startMode == "inside_night"
      or startMode == "place" or startMode == "place_night"
-     or startMode == "stove" then
+     or startMode == "stove" or startMode == "bench" then
     px, pz, pyaw = -0.5, -2.6, 0
   end
   if startMode == "side" or startMode == "side_night" then
@@ -391,6 +391,8 @@ function on_start()
 
   if startMode == "stove" then
     stationUI = { kind = "stove", inst = hasModule("stove") }
+  elseif startMode == "bench" then
+    stationUI = { kind = "workbench", inst = hasModule("workbench") }
   elseif startMode == "build" or startMode == "place" or startMode == "place_night" then
     setBuildMode(true)
   elseif startMode == "map" then
@@ -651,8 +653,14 @@ function on_update(ent, dt)
   -- 灶台菜单打开时暂停移动/交互，只处理配方按键
   if stationUI then
     if ActionPressed("e") then stationUI = nil end
-    for i, r in ipairs(RECIPES) do
-      if ActionPressed(tostring(i)) then cookRecipe(r.id) end
+    if stationUI.kind == "stove" then
+      for i, r in ipairs(RECIPES) do
+        if ActionPressed(tostring(i)) then cookRecipe(r.id) end
+      end
+    elseif stationUI.kind == "workbench" then
+      for i, part in ipairs(REPAIR_PARTS) do
+        if ActionPressed(tostring(i)) then repairPart(part.id) end
+      end
     end
     updateCamera(dt)
     return

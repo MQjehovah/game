@@ -77,6 +77,12 @@ function runSelfTest()
   if bench then useStation(bench) end
   ok(r, "repair at workbench", dur > 50, string.format("dur 50->%.0f", dur))
 
+  -- 工作台菜单：单独修引擎
+  parts.engine = 40
+  repairPart("engine")
+  ok(r, "repair engine part", parts.engine > 40,
+     string.format("engine 40->%.0f", parts.engine))
+
   -- 低强度威胁
   local h0 = #horde
   spawnAmbientZombie()

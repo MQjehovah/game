@@ -74,6 +74,14 @@ ITEMS = {
 }
 ITEM_ORDER = { "water", "canned", "rawfood", "meal", "fishsoup", "feast", "coffee", "brew", "fish", "seed", "repairkit" }
 
+-- 工作台可维修的车体/零件
+REPAIR_PARTS = {
+  { id = "body",    name = "车体" },
+  { id = "engine",  name = "引擎" },
+  { id = "tires",   name = "轮胎" },
+  { id = "battery", name = "电瓶" },
+}
+
 -- 灶台配方
 RECIPES = {
   { id = "meal",     name = "热饭", cost = { rawfood = 1 },               water = 0.5, out = "meal",     desc = "饥饿 -42  生命 +6" },
