@@ -228,10 +228,23 @@ function spawnRuinFor(nd)
   local isFarm = (nd.id == "farm") or (nm:find("农场") ~= nil)
   local isMall = (nd.id == "mall") or (nm:find("商场") ~= nil)
   local isCabin = (nd.id == "lakecamp") or (nm:find("营地") ~= nil)
+  local isClinic = (nd.id == "clinic") or (nm:find("诊所") ~= nil) or
+                   (nm:find("医院") ~= nil)
   if nd.id == "ruin" or nd.id == "gasstop" or nd.id == "depot" or
-     nd.id == "farm" or nd.id == "mall" or nd.id == "lakecamp" then
+     nd.id == "farm" or nd.id == "mall" or nd.id == "lakecamp" or
+     nd.id == "clinic" then
     print(string.format("[poi] spawn shell node=%s center=(%.1f,%.1f)",
           nd.id, cx, cz))
+  end
+  if isClinic then
+    -- 可进入的路边诊所：玻璃门 + 红十字 + 接待台/候诊椅/诊床/药柜/窗帘
+    local clinic = SpawnPrefab("rv_clinic", { x = cx, y = 0, z = cz })
+    if clinic ~= nil then SetRotationY(clinic, 0) end
+    for _, lp in ipairs({ { -1.35, -0.80 }, { 1.35, 1.00 } }) do
+      local lamp = SpawnPrefab("rv_lamp", { x = cx + lp[1], y = 2.35, z = cz + lp[2] })
+      if lamp ~= nil then SetScale(lamp, 1.4, 1.4, 1.4) end
+    end
+    return
   end
   if isCabin then
     -- 可进入的湖边/林地木屋：门廊 + 壁炉 + 床 + 桌椅 + 厨房 + 货架

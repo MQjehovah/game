@@ -202,7 +202,7 @@
   持久化/重连另行验证：保存后重启服务器能恢复 `rv/crates/stove/fuel`，同名客户端
   重连回收 `slot=1` 并收到 `crates synced (5)`。
 
-## 可进入的废宅商店、加油站、仓库、农场、购物中心与湖边木屋
+## 可进入的废宅商店、加油站、仓库、农场、购物中心、湖边木屋与诊所
 
 - `assets/models/rv/rv_gasstation.gltf` + `rv_gasstation.bin`（`tools/gen_rv_gasstation.py`）：
   同一套实心墙体/门洞商店（玻璃窗、柜台、货架、咖啡机）+ 四柱雨棚 + 两台加油机；
@@ -220,21 +220,26 @@
   原木墙、山墙屋顶、带柱门廊、壁炉/烟囱、床/蓝被、餐桌椅、厨房柜台、货架、
   地毯、柴堆/木桶/鱼箱/灯柱；`lakecamp` 和所有“营地”地点生成该 glTF，
   旁边生成水塘。
-- `lc_scenery.spawnRuinFor()` 对 `ruin`/`gasstop`/`depot`/`farm`/`mall`/`lakecamp`
-  和对应名称的地点直接生成对应 glTF，不再使用缩放立方体拼装。
+- `assets/models/rv/rv_clinic.gltf` + `rv_clinic.bin`（`tools/gen_rv_clinic.py`）：
+  白/青色外墙、平屋顶、玻璃双开门 + 红十字、接待台、候诊椅、诊床、药柜、隐私窗帘、
+  门外长椅/花箱/轮椅推车；`clinic` 和所有“诊所/医院”地点生成该 glTF。
+- `lc_scenery.spawnRuinFor()` 对 `ruin`/`gasstop`/`depot`/`farm`/`mall`/`lakecamp`/
+  `clinic` 和对应名称的地点直接生成对应 glTF，不再使用缩放立方体拼装。
 - `collidePoiWalls()`（`lc_util.lua`）在**服务器和客户端预测**同时生效：侧/后墙
   与门洞两侧的前墙会挡住玩家，只有门洞可穿过。
-- 商店/加油站/仓库/农场店内的 6 个物资箱固定落在货架/柜台/托盘/畜栏旁；`E` 走近
+- 各处店内的 6 个物资箱固定落在货架/柜台/托盘/畜栏/药柜旁；`E` 走近
   即可搜刮（共享搜刮状态和其他合作物资一致）。
 - 验证钩子：`coop_ruin.txt` / `coop_gas.txt` / `coop_depot.txt` / `coop_farm.txt` /
-  `coop_mall.txt` / `coop_lake.txt` 把房车与两名玩家放到对应店门口，3–5s 进门、
-  5–8s 店内、8–10s 出门；`coop_poiview.txt` 店内镜头，`coop_poiext.txt` 店外全景；
-  `start_mode.txt=poi/gas/warehouse/farm/mall/lake` 提供单机出生点。
-- 双端验证日志：`entered ruin/gasstop/depot/farm/mall/lakecamp`、`shop=2` →
+  `coop_mall.txt` / `coop_lake.txt` / `coop_clinic.txt` 把房车与两名玩家放到对应
+  店门口，3–5s 进门、5–8s 店内、8–10s 出门；`coop_poiview.txt` 店内镜头，
+  `coop_poiext.txt` 店外全景；`start_mode.txt=poi/gas/warehouse/farm/mall/lake/clinic`
+  提供单机出生点。
+- 双端验证日志：`entered ruin/gasstop/depot/farm/mall/lakecamp/clinic`、`shop=2` →
   `exited`、`shop=0`；远端客户端同一 `seq` 的 `shop` 和玩家坐标一致。
   截图：`rv_store_*` / `rv_gas_*` / `rv_wh_*` / `rv_final_farm_*` / `rv_mall_*` /
-  `rv_lake_*`（店内）、`rv_final_gas_exterior.png`、`rv_wh_exterior.png`、
-  `rv_final_farm_exterior.png`、`rv_mall_exterior.png`、`rv_lake_exterior.png`。
+  `rv_lake_*` / `rv_clinic_*`（店内）、`rv_final_gas_exterior.png`、
+  `rv_wh_exterior.png`、`rv_final_farm_exterior.png`、`rv_mall_exterior.png`、
+  `rv_lake_exterior.png`、`rv_clinic_exterior.png`。
 
 ## 房车 glTF 模型
 
@@ -254,11 +259,11 @@
 2. **家具自由摆放**：已改为第一人称无网格自由放置 + AABB/车内边界校验。
 3. **美术**：房车外壳/车内仍是程序化低多边形 glTF + Kenney 家具，缺少高精度车内软装、
    材质、角色动画。
-4. **世界**：已有世界固定公路网 + 14 个地点；废宅/商店 → `rv_store.gltf`、
+4. **世界**：已有世界固定公路网 + 15 个地点；废宅/商店 → `rv_store.gltf`、
    废弃加油站 → `rv_gasstation.gltf`、物流仓库 → `rv_warehouse.gltf`、
    旧农场 → `rv_barn.gltf`、购物中心 → `rv_mall.gltf`、湖边营地 →
-   `rv_cabin.gltf` 均可进入，含店内物资箱和墙体碰撞；未匹配名称的程序化地点
-   仍会回退到简易棚屋。
+   `rv_cabin.gltf`、路边诊所 → `rv_clinic.gltf` 均可进入，含店内物资箱和墙体碰撞；
+   未匹配名称的程序化地点仍会回退到简易棚屋。
 5. **玩法**：钓鱼、天气、昼夜、零件磨损/升级、灶台菜单、背包、合作均已具备；
    还缺更深的搜刮/建造/驾驶成长。
 

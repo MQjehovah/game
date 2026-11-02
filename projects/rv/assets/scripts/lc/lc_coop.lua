@@ -1432,7 +1432,8 @@ function coopInitWorld(role)
     coop.boardDemo = readFlag("coop_board.txt")
     coop.poiDemo = readFlag("coop_ruin.txt") or readFlag("coop_gas.txt") or
                     readFlag("coop_depot.txt") or readFlag("coop_farm.txt") or
-                    readFlag("coop_mall.txt") or readFlag("coop_lake.txt")
+                    readFlag("coop_mall.txt") or readFlag("coop_lake.txt") or
+                    readFlag("coop_clinic.txt")
     if readFlag("coop_gas.txt") then
       coop.poiNode = "gasstop"
     elseif readFlag("coop_ruin.txt") then
@@ -1445,6 +1446,8 @@ function coopInitWorld(role)
       coop.poiNode = "mall"
     elseif readFlag("coop_lake.txt") then
       coop.poiNode = "lakecamp"
+    elseif readFlag("coop_clinic.txt") then
+      coop.poiNode = "clinic"
     end
     if coop.poiDemo then
       local nd = nodeById(coop.poiNode or "ruin")
@@ -1534,6 +1537,8 @@ function coopInitWorld(role)
       coop.poiNode = "mall"
     elseif readFlag("coop_lake.txt") then
       coop.poiNode = "lakecamp"
+    elseif readFlag("coop_clinic.txt") then
+      coop.poiNode = "clinic"
     end
     -- Prefab shell cubes are spawned before networking starts; re-assert their
     -- transforms once so the co-op client's draw list uses the authored pose.

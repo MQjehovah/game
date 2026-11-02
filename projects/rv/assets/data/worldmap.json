@@ -11,8 +11,30 @@
         "gasstop",
         "ruin",
         "farm",
-        "lakecamp"
+        "lakecamp",
+        "clinic"
       ]
+    },
+    {
+      "id": "clinic",
+      "name": "路边诊所",
+      "mx": 0.16,
+      "my": 0.78,
+      "danger": 2,
+      "desc": "废弃诊所，药柜尚有余药",
+      "links": [
+        "camp"
+      ],
+      "loot": {
+        "cloth": [
+          2,
+          4
+        ],
+        "electronics": [
+          1,
+          2
+        ]
+      }
     },
     {
       "id": "lakecamp",

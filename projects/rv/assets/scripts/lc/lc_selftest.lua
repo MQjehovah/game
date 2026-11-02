@@ -123,10 +123,12 @@ function runSelfTest()
   end
   ok(r, "free placement", freeOk, "no grid snap")
 
-  -- 程序化地点
+  -- 程序化地点（已到 15 个上限时 trySpawnPoi 应保持不变）
   local n0 = #NODES
   trySpawnPoi()
-  ok(r, "procedural POI", #NODES == n0 + 1,
+  local grew = (#NODES == n0 + 1)
+  local atCap = (n0 >= 15) and (#NODES == n0)
+  ok(r, "procedural POI", grew or atCap,
      string.format("nodes %d->%d", n0, #NODES))
 
   -- 昼夜
@@ -239,6 +241,21 @@ function runSelfTest()
   end
   ok(r, "crates inside lake cabin", lakeInside >= 4,
      string.format("%d/%d interior", lakeInside, #crates))
+  despawnCrates()
+
+  -- 路边诊所：药柜/诊床旁也有物资箱
+  atNode = "clinic"
+  spawnCrates()
+  local clinic = nodeById("clinic")
+  local clx, clz = poiCenter(clinic)
+  local clinicInside = 0
+  for _, c in ipairs(crates) do
+    if math.abs(c.x - clx) < POI_HALF_X and math.abs(c.z - clz) < POI_HALF_Z then
+      clinicInside = clinicInside + 1
+    end
+  end
+  ok(r, "crates inside clinic", clinicInside >= 4,
+     string.format("%d/%d interior", clinicInside, #crates))
   despawnCrates()
 
   -- POI 墙体碰撞：侧墙挡住，门洞可以通过
