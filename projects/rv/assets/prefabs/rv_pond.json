@@ -1,0 +1,25 @@
+{
+  "components": {
+    "transform": {
+      "pos": [0, 0, 0],
+      "rot": [0, 0, 0, 1],
+      "scale": [11, 0.04, 11]
+    },
+    "mesh": {
+      "meshKey": "cube",
+      "material": {
+        "colorHex": "#3A6B8A",
+        "metallic": 0.15,
+        "roughness": 0.12,
+        "ao": 1,
+        "emissiveIntensity": 1,
+        "water": true,
+        "waterDeepColorHex": "#1D3B50",
+        "waterShallowColorHex": "#5E93A8",
+        "waterWaveStrength": 0.5
+      },
+      "castShadow": false,
+      "receiveShadow": true
+    }
+  }
+}

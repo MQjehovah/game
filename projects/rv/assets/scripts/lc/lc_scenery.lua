@@ -26,6 +26,10 @@ function placeScenery(p, fx, fz, fMin, fMax)
         local ddx, ddz = wx - nd.x, wz - nd.z
         if ddx * ddx + ddz * ddz < 121 then blocked = true break end  -- 节点 11m
       end
+      for _, p in ipairs(ponds) do
+        local ddx, ddz = wx - p.x, wz - p.z
+        if ddx * ddx + ddz * ddz < 144 then blocked = true break end  -- 水塘 12m
+      end
       if not blocked then
         local s = sceneryScale(p.kind)
         local y = 0
@@ -86,17 +90,117 @@ function recycleScenery(fx, fz)
   end
 end
 
+-- 水塘（钓鱼点）
+function spawnPond(x, z)
+  local ent = SpawnPrefab("rv_pond", { x = x, y = 0.02, z = z })
+  if ent ~= nil then
+    ponds[#ponds + 1] = { ent = ent, x = x, z = z }
+  end
+end
+
+function spawnPonds()
+  if #ponds > 0 then return end
+  spawnPond(14, 10)
+end
+
+-- 简易路边建筑：一个带门洞/窗的废弃小屋（纯装饰，原型级）
+function spawnRuinFor(nd)
+  if nd.ruinSpawned then return end
+  nd.ruinSpawned = true
+  local cx, cz = nd.x + 6.5, nd.z + 6.5
+  local function cube(pre, x, y, z, sx, sy, sz)
+    local e = SpawnPrefab(pre, { x = x, y = y, z = z })
+    if e ~= nil then SetScale(e, sx, sy, sz) end
+  end
+  -- 地板 / 后墙 / 两侧墙 / 屋顶
+  cube("rv_panel_dark",  cx, 0.03, cz, 6.2, 0.06, 5.2)
+  cube("rv_panel_light", cx, 1.25, cz - 2.55, 6.2, 2.5, 0.16)
+  cube("rv_panel_light", cx - 3.05, 1.25, cz, 0.16, 2.5, 5.2)
+  cube("rv_panel_light", cx + 3.05, 1.25, cz, 0.16, 2.5, 5.2)
+  cube("rv_panel_dark",  cx, 2.55, cz, 6.4, 0.16, 5.4)
+  -- 前墙两段（中间留门洞）
+  cube("rv_panel_light", cx - 1.9, 1.25, cz + 2.55, 2.3, 2.5, 0.16)
+  cube("rv_panel_light", cx + 1.9, 1.25, cz + 2.55, 2.3, 2.5, 0.16)
+  -- 窗与门框
+  cube("rv_panel_window", cx - 3.0, 1.55, cz + 0.3, 0.04, 0.7, 1.4)
+  cube("rv_panel_window", cx + 3.0, 1.55, cz + 0.3, 0.04, 0.7, 1.4)
+end
+
+-- 节点标记柱
+function spawnMarkerFor(nd)
+  if nd.id == "camp" then return end
+  local ent = SpawnPrefab("rv_marker", { x = nd.x, y = 1.6, z = nd.z })
+  if ent ~= nil then
+    SetScale(ent, 0.16, 3.2, 0.16)
+    PhysicsAddBox({ x = nd.x, y = 1.6, z = nd.z },
+                  { x = 0.09, y = 1.6, z = 0.09 }, false, {})
+  end
+end
+
+-- 程序化公路地点：向前方推进一段里程后生成
+local poiSeq = 0
+function trySpawnPoi()
+  if #NODES >= 15 then return end
+  for _ = 1, 13 do
+    local a = rv.yaw + (math.random() * 2 - 1) * 0.9
+    local dist = 110 + math.random() * 70
+    local x = rv.x + math.sin(a) * dist
+    local z = rv.z + math.cos(a) * dist
+    local ok = true
+    for _, nd in ipairs(NODES) do
+      local dx, dz = x - nd.x, z - nd.z
+      if dx * dx + dz * dz < 45 * 45 then ok = false break end
+    end
+    if ok then
+      repeat poiSeq = poiSeq + 1 until nodeById("poi_" .. poiSeq) == nil
+      local kind = POI_KINDS[math.random(1, #POI_KINDS)]
+      local nearest, bestD = NODES[1], 1e18
+      for _, nd in ipairs(NODES) do
+        local dx, dz = x - nd.x, z - nd.z
+        local d2 = dx * dx + dz * dz
+        if d2 < bestD then nearest, bestD = nd, d2 end
+      end
+      local nd = {
+        id = "poi_" .. poiSeq,
+        name = kind.name .. " #" .. poiSeq,
+        x = x, z = z,
+        danger = kind.danger,
+        loot = kind.loot,
+        links = { nearest.id },
+        generated = true,
+      }
+      NODES[#NODES + 1] = nd
+      generatedPois[#generatedPois + 1] = {
+        id = nd.id, name = nd.name, x = nd.x, z = nd.z,
+        danger = nd.danger, loot = nd.loot, links = nd.links,
+      }
+      spawnMarkerFor(nd)
+      spawnRuinFor(nd)
+      if kind.pond then spawnPond(x - 7, z + 7) end
+      -- 地点周围的残骸/碎石（纯装饰，不挡路）
+      for k = 1, 2 do
+        local ox = (math.random() * 2 - 1) * 5
+        local oz = (math.random() * 2 - 1) * 5
+        local prop = SpawnPrefab(k == 1 and "rv_wreck" or "rv_rock",
+                                 { x = x + ox, y = 0.2, z = z + oz })
+        if prop ~= nil then
+          local s = 0.6 + math.random() * 0.5
+          SetScale(prop, s, s, s)
+          SetRotationY(prop, math.random() * math.pi * 2)
+        end
+      end
+      toast.text = "前方发现地点：" .. nd.name
+      toast.t = 4.0
+      return
+    end
+  end
+end
+
 -- 节点标记柱 + 营地篝火 + 加油站油桶
 function spawnMarkers()
   for _, nd in ipairs(NODES) do
-    if nd.id ~= "camp" then
-      local ent = SpawnPrefab("rv_marker", { x = nd.x, y = 1.6, z = nd.z })
-      if ent ~= nil then
-        SetScale(ent, 0.16, 3.2, 0.16)
-        PhysicsAddBox({ x = nd.x, y = 1.6, z = nd.z },
-                      { x = 0.09, y = 1.6, z = 0.09 }, false, {})
-      end
-    end
+    spawnMarkerFor(nd)
+    if nd.id ~= "camp" then spawnRuinFor(nd) end
   end
   local fire = SpawnPrefab("rv_campfire", { x = 1.8, y = 0.12, z = 2.0 })
   if fire ~= nil then SetScale(fire, 0.9, 0.9, 0.9) end

@@ -62,6 +62,11 @@ function updateDrive(dt)
   -- 超载/车况：极速与加速打折
   local ratio = stats.weight / WEIGHT_MAX
   local maxSp, acc = DRIVE.maxSpeed, DRIVE.accel
+  -- 零件磨损：引擎影响极速/加速，轮胎影响转向
+  local engF = 0.60 + 0.40 * (parts.engine or 100) / 100
+  local tireF = 0.60 + 0.40 * (parts.tires or 100) / 100
+  maxSp = maxSp * engF
+  acc = acc * (0.70 + 0.30 * (parts.engine or 100) / 100)
   if ratio > 1.0 then
     local over = math.min(1.0, ratio - 1.0)
     maxSp = maxSp * (1.0 - over * 0.45)
@@ -76,6 +81,7 @@ function updateDrive(dt)
     if rv.speed > VEH.limpSpeed then rv.speed = VEH.limpSpeed end
   end
   maxSp = maxSp * (0.5 + 0.5 * dur / VEH.durMax)
+  if isRainy and isRainy() then maxSp = maxSp * 0.82 end  -- 雨天/雾天减速
   if fuel <= VEH.tank * 0.2 and not fuelWarned then
     fuelWarned = true
     toast.text = "油量低！加油站加满 / 路边捡燃油桶"
@@ -101,7 +107,7 @@ function updateDrive(dt)
   local sf = math.min(1.0, math.abs(rv.speed) / 3.0)
   if sf > 0.01 and steer ~= 0 then
     local dir = (rv.speed < -0.05) and -1 or 1
-    rv.yaw = rv.yaw + steer * DRIVE.steerRate * sf * dt * dir
+    rv.yaw = rv.yaw + steer * DRIVE.steerRate * tireF * sf * dt * dir
   end
 
   local fx, fz = math.sin(rv.yaw), math.cos(rv.yaw)
@@ -120,6 +126,21 @@ function updateDrive(dt)
   end
   recycleScenery(fx, fz)
   updateDriveWorld(dt)
+
+  -- 零件磨损（按行驶里程）
+  local meters = math.abs(rv.speed) * dt
+  if meters > 0 then
+    parts.engine = math.max(0, parts.engine - VEH.partWear.engine * meters)
+    parts.tires = math.max(0, parts.tires - VEH.partWear.tires * meters)
+    parts.battery = math.max(0, parts.battery - VEH.partWear.battery * meters)
+  end
+
+  -- 程序化公路地点：每约 130m 在前方生成一个新地点
+  poiDistAcc = poiDistAcc + math.abs(rv.speed) * dt
+  if poiDistAcc > 130 then
+    poiDistAcc = 0
+    trySpawnPoi()
+  end
 
   if math.abs(rv.speed) > 2.5 then
     dustAcc = dustAcc + dt * (6.0 + math.abs(rv.speed) * 1.6)

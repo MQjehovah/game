@@ -9,7 +9,7 @@
     { "id": 2, "type": "flow/branch", "var": "fuel_pct", "op": "<", "value": "$fuel_warn_pct" },
     { "id": 3, "type": "game/toast", "text": "⚠ 燃油不足！找加油站或捡油桶", "duration": 3.0 },
     { "id": 4, "type": "flow/branch", "var": "dur_pct", "op": "<", "value": "$dur_warn_pct" },
-    { "id": 5, "type": "game/toast", "text": "⚠ 车体耐久低！避免撞击丧尸", "duration": 3.0 }
+    { "id": 5, "type": "game/toast", "text": "⚠ 车体耐久低！撞击会掉耐久，到工作台修车", "duration": 3.0 }
   ],
   "links": [
     { "from": 1, "out": "exec", "to": 2, "in": "exec" },

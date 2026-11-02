@@ -1,48 +1,70 @@
 -- lc_camera.lua
--- 相机导演：驻车机位/追逐/驾驶席/主角越肩
+-- 相机导演：第一人称（驻车/驾驶席）、追逐视角、改装俯视
+
+-- 引擎 FPS 相机约定：cameraFocus = 眼睛 + 视线 * dist，
+-- cameraYaw/Pitch 用引擎的 -Z 前向约定，cameraDist = 2。
+function setFpsCamera(ex, ey, ez, yaw, pitch)
+  local cp = math.cos(pitch)
+  local fx, fy, fz = math.sin(yaw) * cp, math.sin(pitch), math.cos(yaw) * cp
+  SetVar("cameraMouseLock", 1)
+  SetVar("cameraFocus", { x = ex + fx * 2.0, y = ey + fy * 2.0, z = ez + fz * 2.0 })
+  SetVar("cameraYaw", yaw + math.pi)
+  SetVar("cameraPitch", -pitch)
+  SetVar("cameraDist", 2.0)
+end
+
+function setTopDownCamera()
+  SetVar("cameraMouseLock", 0)
+  local tx, ty, tz = rv.x, 11.5, rv.z - 9.2
+  if camSmooth == nil then camSmooth = { x = tx, y = ty, z = tz } end
+  SetPosition(camEnt, { x = tx, y = ty, z = tz })
+  local dx, dy, dz = rv.x - tx, 0 - ty, rv.z - tz
+  local len = math.sqrt(dx * dx + dy * dy + dz * dz)
+  if len > 1e-4 then SetLook(camEnt, dx / len, dy / len, dz / len) end
+end
 
 function updateCamera(dt)
   if camEnt == nil then return end
-  local tx, ty, tz, lookx, looky, lookz
-  if onFoot and player.active then
-    local fx, fz = math.sin(player.yaw), math.cos(player.yaw)
-    tx = player.x - fx * 3.6
-    ty = 2.0
-    tz = player.z - fz * 3.6
-    -- 看向人物前方地平线（不是人物本人）：人物落在画面下沿，视野朝前
-    lookx = player.x + fx * 6.0
-    looky = 1.2
-    lookz = player.z + fz * 6.0
-  elseif phase == "driving" and driveView == "cab" then
-    local fx, fz = math.sin(rv.yaw), math.cos(rv.yaw)
-    local cx2, cz2 = rotOf(0.45, 1.4)
-    tx, ty, tz = cx2, 1.55, cz2
-    lookx, looky, lookz = rv.x + fx * 12, 1.1, rv.z + fz * 12
-  elseif phase == "driving" then
-    local fx, fz = math.sin(rv.yaw), math.cos(rv.yaw)
-    local cp, sp = math.cos(DRIVE.camPitch), math.sin(DRIVE.camPitch)
-    tx = rv.x - fx * DRIVE.camDist * cp
-    ty = 1.4 + sp * DRIVE.camDist
-    tz = rv.z - fz * DRIVE.camDist * cp
-    lookx, looky, lookz = rv.x + fx * 2.5, 0.9, rv.z + fz * 2.5
-  else
-    tx, ty, tz = rv.x, 11.5, rv.z - 9.2
-    lookx, looky, lookz = rv.x, 0.0, rv.z
+
+  -- 没有第一人称主角时退回俯视（例如脚本异常/驾驶转场）
+  if phase == "parked" and not (onFoot and player.active) then
+    setTopDownCamera()
+    return
   end
-  if camSmooth == nil then camSmooth = { x = tx, y = ty, z = tz } end
-  local k = 1 - math.exp(-5.0 * dt)
-  camSmooth.x = camSmooth.x + (tx - camSmooth.x) * k
-  camSmooth.y = camSmooth.y + (ty - camSmooth.y) * k
-  camSmooth.z = camSmooth.z + (tz - camSmooth.z) * k
-  local sx, sy, sz = camSmooth.x, camSmooth.y, camSmooth.z
-  if phase == "driving" and driveView == "chase" then
-    local amp = math.min(0.05, math.abs(rv.speed) * 0.005)
-    sx = sx + (math.random() - 0.5) * amp
-    sy = sy + (math.random() - 0.5) * amp
+
+  -- 驾驶席 / 追逐
+  if phase == "driving" then
+    if driveView == "chase" then
+      SetVar("cameraMouseLock", 0)
+      local fx, fz = math.sin(rv.yaw), math.cos(rv.yaw)
+      local cp, sp = math.cos(DRIVE.camPitch), math.sin(DRIVE.camPitch)
+      local tx = rv.x - fx * DRIVE.camDist * cp
+      local ty = 1.4 + sp * DRIVE.camDist
+      local tz = rv.z - fz * DRIVE.camDist * cp
+      SetPosition(camEnt, { x = tx, y = ty, z = tz })
+      local dx, dy, dz = rv.x + fx * 2.5 - tx, 0.9 - ty, rv.z + fz * 2.5 - tz
+      local len = math.sqrt(dx * dx + dy * dy + dz * dz)
+      if len > 1e-4 then SetLook(camEnt, dx / len, dy / len, dz / len) end
+      return
+    end
+    -- 驾驶席第一人称：鼠标可以左右张望（限制 ±90°）
+    driveLookYaw = driveLookYaw or 0
+    driveLookPitch = driveLookPitch or 0
+    local rawX, rawY = InputMouseX(), InputMouseY()
+    local dxm = (math.abs(rawX) > 110) and 0 or math.max(-70, math.min(70, rawX))
+    local dym = (math.abs(rawY) > 110) and 0 or math.max(-70, math.min(70, rawY))
+    driveLookYaw = math.max(-1.5, math.min(1.5,
+      driveLookYaw - dxm * SENSITIVITY))
+    driveLookPitch = math.max(-0.9, math.min(0.9,
+      driveLookPitch - dym * SENSITIVITY))
+    -- 驾驶席在挡风玻璃后方（车头局部 z≈4.0），不要放到生活区中间，
+    -- 否则车顶太阳能/行李架的背面会挡住半个屏幕。
+    local ex, ez = rotOf(0.0, 3.15)
+    setFpsCamera(ex, 1.58, ez, rv.yaw + driveLookYaw, driveLookPitch)
+    return
   end
-  if recoilT > 0 then sy = sy + recoilT * 0.3 end  -- 射击后坐力（轻微上抬）
-  SetPosition(camEnt, { x = sx, y = sy, z = sz })
-  local dx, dy, dz = lookx - sx, looky - sy, lookz - sz
-  local len = math.sqrt(dx * dx + dy * dy + dz * dz)
-  if len > 1e-4 then SetLook(camEnt, dx / len, dy / len, dz / len) end
+
+  -- 驻车第一人称
+  local ex, ey, ez = playerEye()
+  setFpsCamera(ex, ey, ez, player.yaw, player.pitch + (recoilT or 0) * 0.25)
 end

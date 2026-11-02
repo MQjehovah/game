@@ -21,6 +21,9 @@ neon_log.txt
 smoke_tone_fx.wav
 smoke_bad_audio.bin
 projects/*/save.json
+projects/*/saves/*.json
+projects/*/layout.json
+projects/*/selftest_result.txt
 neon_editor_config.json
 # Every tree under projects/ is an Engine sample/test project shipped with the
 # engine and is first-class source: fully versioned (scenes, scripts, prefabs,

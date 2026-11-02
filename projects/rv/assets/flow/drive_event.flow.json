@@ -5,9 +5,9 @@
     { "type": "signal", "name": "drive_event", "node": 1 }
   ],
   "nodes": [
-    { "id": 1, "type": "flow/random", "chance": 0.44 },
-    { "id": 2, "type": "game/drive-horde", "count": 5 },
-    { "id": 3, "type": "game/toast", "text": "尸群横穿！绕开它们——撞上掉车体耐久", "duration": 3.5 },
+    { "id": 1, "type": "flow/random", "chance": 0.18 },
+    { "id": 2, "type": "game/drive-horde", "count": 2 },
+    { "id": 3, "type": "game/toast", "text": "零散感染者横穿公路——撞上会掉车体耐久", "duration": 3.5 },
     { "id": 4, "type": "flow/random", "chance": 0.6 },
     { "id": 5, "type": "game/drive-supply" },
     { "id": 6, "type": "game/toast", "text": "发现路边补给！开过去拾取", "duration": 3.5 },

@@ -8,7 +8,7 @@
   ],
   "nodes": [
     { "id": 1,  "type": "game/crates" },
-    { "id": 2,  "type": "game/toast",  "text": "停靠搜索物资（左键搜箱）", "duration": 2.5 },
+    { "id": 2,  "type": "game/toast",  "text": "停靠搜索物资（靠近物资箱按 E）", "duration": 2.5 },
     { "id": 4,  "type": "game/evac" },
     { "id": 5,  "type": "flow/call",   "graph": "raid_wave", "signal": "raid_start" },
     { "id": 6,  "type": "game/bank",   "keep": 1.0 },

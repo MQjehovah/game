@@ -1,5 +1,9 @@
 # Last Caravan（末路房车）— 设计文档 v0.1
 
+> **2026-11-03 方向改造**：工程已转为 Nomad Drive 式第一人称房车生存
+> （Nomad Caravan）。本文件保留 v0.1 网格沙盒的历史设计；现行实现与
+> 操作见 `docs/rv_nomad_pivot.md` 与 `projects/rv/README.md`。
+
 末世题材房车改装游戏。工作名 Last Caravan，工程目录 `projects/rv`。
 
 ## 一句话

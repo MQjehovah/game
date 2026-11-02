@@ -1,7 +1,7 @@
 {
   "startScene": "assets/scenes/garage.json",
-  "window": { "w": 1280, "h": 720, "title": "Last Caravan - 末路房车（车库沙盒）" },
-  "title": "Last Caravan",
+  "window": { "w": 1280, "h": 720, "title": "Nomad Caravan - 房车生存" },
+  "title": "Nomad Caravan",
   "editor": { "mode": "3d" },
-  "export": { "platform": "windows", "description": "Last Caravan - RV sandbox" }
+  "export": { "platform": "windows", "description": "Nomad Caravan - first-person RV survival" }
 }

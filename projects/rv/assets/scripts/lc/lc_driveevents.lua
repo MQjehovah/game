@@ -1,5 +1,5 @@
 -- lc_driveevents.lua
--- 途中随机事件：尸群横穿/路边补给/燃油桶
+-- 途中随机事件：零散感染者横穿/路边补给/燃油桶
 
 function pickEvent()
   local total = 0
@@ -23,7 +23,7 @@ end
 function spawnDriveHorde(n)
   local base = 25 + math.random() * 10
   local lat0 = (math.random() * 2 - 1) * 8
-  for _ = 1, (n or 5) do
+  for _ = 1, math.min(3, n or 2) do
     local ent = SpawnPrefab("rv_zombie", { x = 0, y = -50, z = 0 })
     if ent ~= nil then
       local wx, wz = rotOf(lat0 + (math.random() * 2 - 1) * 3,
@@ -68,6 +68,11 @@ function collectDriveProp(p)
       local n = 1 + math.random(0, 2)
       materials[m] = (materials[m] or 0) + n
       got[#got + 1] = MAT_NAMES[m] .. "+" .. n
+    end
+    if math.random() < 0.5 then
+      local id = LOOT_ITEMS[math.random(1, #LOOT_ITEMS)].id
+      addItem(id, 1)
+      got[#got + 1] = itemName(id) .. "+1"
     end
     SpawnFloatText(p.x, 1.0, p.z, table.concat(got, " "),
                    false, 1.2, 1.0, 0.85, 0.4)

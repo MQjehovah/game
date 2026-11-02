@@ -28,7 +28,9 @@ function computeReachability()
   end
   unreachableNames = {}
   for _, inst in pairs(instances) do
-    if inst.cat.layer == "roof" then
+    if inst.free then
+      inst.reachable = true
+    elseif inst.cat.layer == "roof" then
       inst.reachable = true
     else
       local cells = cellsOf(inst.cat, inst.cx, inst.cz, inst.rot)
@@ -99,8 +101,9 @@ function place(cat, cx, cz, r, free)
       occ[cellIndex(cx + dx, cz + dz)] = id
     end
   end
-  instances[id] = { cat = cat, ent = ent, cx = cx, cz = cz, rot = r, layer = cat.layer,
-                    lx = ox, ly = ly, lz = oz, lrot = lrot }
+  instances[id] = { id = id, cat = cat, ent = ent, cx = cx, cz = cz, rot = r,
+                    layer = cat.layer, lx = ox, ly = ly, lz = oz, lrot = lrot }
+  lastPlacedInst = instances[id]
   computeReachability()
   return true
 end
@@ -146,13 +149,97 @@ function removeAt(cx, cz)
   return true
 end
 
+-- ===========================================================================
+-- 自由摆放（第一人称，无网格）
+-- ===========================================================================
+function spawnModuleFree(cat, lx, lz, rotY)
+  local ent = SpawnPrefab("rv_" .. cat.id, { x = 0, y = 0, z = 0 })
+  if ent == nil then return nil end
+  local baseY = (cat.layer == "roof") and ROOF_Y or FLOOR_Y
+  local ly = cat.modelScale and (baseY + 0.01) or (baseY + cat.mh * 0.5 + 0.005)
+  local wx, wz = rotOf(lx, lz)
+  SetPosition(ent, { x = wx, y = ly, z = wz })
+  SetRotationY(ent, rv.yaw + rotY)
+  local sx, sy, sz
+  if cat.modelScale then
+    sx, sy, sz = cat.modelScale, cat.modelScale, cat.modelScale
+  else
+    sx, sy, sz = cat.w * CELL - 0.03, cat.mh, cat.h * CELL - 0.03
+  end
+  SetScale(ent, sx, sy, sz)
+  Tween(ent, 2, { x = sx * 0.7, y = sy * 0.7, z = sz * 0.7 },
+              { x = sx, y = sy, z = sz }, 0.16, 1)
+  return ent, ly
+end
+
+function placeFree(cat, lx, lz, rotY, free)
+  if cat.layer ~= curLayer then return false, "layer" end
+  if not freeFits(cat, lx, lz, rotY) then return false, "overlap" end
+  if not free and not canAfford(cat.cost or {}) then return false, "cost" end
+  local ent, ly = spawnModuleFree(cat, lx, lz, rotY)
+  if ent == nil then return false, "spawn" end
+  if not free then payCost(cat.cost or {}) end
+  local id = nextId
+  nextId = nextId + 1
+  instances[id] = { id = id, cat = cat, ent = ent, free = true, layer = cat.layer,
+                    lx = lx, lz = lz, ly = ly, lrot = rotY }
+  lastPlacedInst = instances[id]
+  if PlaySfx then PlaySfx("click") end
+  computeReachability()
+  recomputeStats()
+  return true
+end
+
+function removeInstance(inst)
+  if inst == nil then return false end
+  if not inst.free then
+    local w, h = footprint(inst.cat, inst.rot)
+    for dz = 0, h - 1 do
+      for dx = 0, w - 1 do
+        occupancy[cellIndex(inst.cx + dx, inst.cz + dz)] = nil
+      end
+    end
+  end
+  Despawn(inst.ent)
+  for id, cand in pairs(instances) do
+    if cand == inst then instances[id] = nil break end
+  end
+  refundCost(inst.cat.cost or {})
+  if PlaySfx then PlaySfx("click") end
+  computeReachability()
+  recomputeStats()
+  return true
+end
+
+-- 准星指向的家具（自由摆放拆除用）
+function findAimedInstance(maxDist)
+  local fx, fz = math.sin(player.yaw), math.cos(player.yaw)
+  local best, bestScore = nil, -1
+  for _, inst in pairs(instances) do
+    local wx, wz = rotOf(inst.lx, inst.lz)
+    local dx, dz = wx - player.x, wz - player.z
+    local d = math.sqrt(dx * dx + dz * dz)
+    if d < (maxDist or 4.5) then
+      local dot = (dx * fx + dz * fz) / math.max(d, 0.001)
+      local score = dot - d * 0.05
+      if dot > 0.40 and score > bestScore then
+        best, bestScore = inst, score
+      end
+    end
+  end
+  return best
+end
+
 function recomputeStats()
   local s = { powerGen = 0, powerDraw = 0, battery = 0, waterStore = 0, waterDraw = 0,
               weight = 0, comfort = 0, count = 0, storage = 0 }
   for _, inst in pairs(instances) do
     local c = inst.cat
-    s.powerGen   = s.powerGen   + (c.powerGen   or 0)
-    s.powerDraw  = s.powerDraw  + (c.powerDraw  or 0)
+    local active = inst.on ~= false
+    if active then
+      s.powerGen   = s.powerGen   + (c.powerGen   or 0)
+      s.powerDraw  = s.powerDraw  + (c.powerDraw  or 0)
+    end
     s.battery    = s.battery    + (c.battery    or 0)
     s.waterStore = s.waterStore + (c.waterStore or 0)
     s.waterDraw  = s.waterDraw  + (c.waterDraw  or 0)

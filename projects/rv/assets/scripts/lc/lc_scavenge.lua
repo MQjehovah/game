@@ -1,5 +1,5 @@
 -- lc_scavenge.lua
--- 停靠搜刮：物资箱/战利品 Roll/搜获袋/收工入库
+-- 停靠搜刮：物资箱/材料与物品 Roll/搜获袋/收工入库
 
 function nodeLootRoll(nd)
   local out = {}
@@ -12,6 +12,29 @@ function nodeLootRoll(nd)
     end
   end
   if not next(out) then out.cloth = 1 end
+  return out
+end
+
+function rollLootItems(nd)
+  local out = {}
+  local rolls = 1 + ((math.random() < 0.35) and 1 or 0)
+  for _ = 1, rolls do
+    local total = 0
+    for _, e in ipairs(LOOT_ITEMS) do total = total + e.w end
+    local r = math.random() * total
+    for _, e in ipairs(LOOT_ITEMS) do
+      r = r - e.w
+      if r <= 0 then
+        local n = e.min + math.random(0, math.max(0, e.max - e.min))
+        out[e.id] = (out[e.id] or 0) + n
+        break
+      end
+    end
+  end
+  -- 危险地点更可能出修理包
+  if (nd.danger or 0) >= 2 and math.random() < 0.18 then
+    out.repairkit = (out.repairkit or 0) + 1
+  end
   return out
 end
 
@@ -54,20 +77,26 @@ function searchCrate(idx)
   if c == nil then return end
   local nd = nodeById(atNode or curNode) or { loot = {}, danger = 0 }
   local loot = nodeLootRoll(nd)
+  local items = rollLootItems(nd)
   local parts = {}
   for mat, n in pairs(loot) do
     stopBag[mat] = (stopBag[mat] or 0) + n
     parts[#parts + 1] = MAT_NAMES[mat] .. "+" .. n
   end
+  for id, n in pairs(items) do
+    addItem(id, n)
+    parts[#parts + 1] = itemName(id) .. "+" .. n
+  end
   SpawnFloatText(c.x, 0.9, c.z, table.concat(parts, "  "),
-                 false, 1.2, 1.0, 0.85, 0.4)
+                 false, 1.4, 1.0, 0.85, 0.4)
+  if PlaySfx then PlaySfx("pickup") end
   Despawn(c.ent)
   table.remove(crates, idx)
-  -- 威胁累积/触发全部在 stop_cycle 图（searchThreat/threatMax 图变量可热调）
-  if evacT < 0 then
-    LC.flow.setvar("stop_cycle", "danger", nd.danger or 0)
-    LC.flow.emit("crate_searched")
-  end
+
+  -- 低强度威胁：夜里或危险地点，小概率惊动 1 只感染者
+  local night = isNight() and 1 or 0
+  local chance = 0.06 + (nd.danger or 0) * 0.05 + night * 0.12
+  if math.random() < chance then spawnAmbientZombie() end
 end
 
 function bankStopBag(keepRatio)
@@ -84,8 +113,7 @@ function bankStopBag(keepRatio)
 end
 
 function endScavenge(keepRatio)
-  -- 收工全流程交给 stop_cycle 图（入库/清场/天数/提示），keep 折扣随行
-  g_bankKeep = keepRatio
+  g_bankKeep = keepRatio or 1.0
   LC.flow.emit("raid_end")
   LC.flow.call("stop_cycle", "leave")
 end

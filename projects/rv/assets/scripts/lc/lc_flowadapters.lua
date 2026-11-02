@@ -62,7 +62,7 @@ end)
 
 -- === 难度注入 =============================================================
 LC.flow.register("game/difficulty", function(node, g)
-  -- 按天数缩放夜袭参数（公式在图上，注入到 RAID 表）
+  -- 按天数缩放低强度感染者参数（公式在图上，注入到 RAID 表）
   local hpBase = LC.flow.evalVal(g, node.hpBase) or RAID.hpBase
   local speed = LC.flow.evalVal(g, node.speed) or RAID.speed
   local spawnEvery = LC.flow.evalVal(g, node.spawnEvery) or RAID.spawnEvery

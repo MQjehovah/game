@@ -1,5 +1,5 @@
 -- lc_flowgame.lua — 房车玩法节点包：把游戏操作注册进流程图
--- （lc_flow 是与游戏解耦的运行时；本文件把夜袭/搜刮/车辆等节点接进去）
+-- （lc_flow 是与游戏解耦的运行时；本文件把搜刮/低强度威胁/车辆等节点接进去）
 LC = LC or {}
 LC.flow = LC.flow or {}
 
@@ -10,7 +10,7 @@ LC.flow.register("game/toast", function(node, g)
 end)
 
 LC.flow.register("game/horde", function(node, g)
-  -- 夜袭尸群：绕房车环刷 count 只
+  -- 低强度感染者：绕房车环刷 count 只（受 RAID.aliveMax 上限约束）
   for _ = 1, (node.count or 3) do spawnZombie() end
   return "exec"
 end)
@@ -52,7 +52,7 @@ end)
 -- ---------------------------------------------------------------------------
 LC.flow.describe("game/toast", "提示文字", "玩法", { "exec" },
                  { { "text", "s" }, { "duration", "n" } })
-LC.flow.describe("game/horde", "尸群刷新", "玩法", { "exec" }, { { "count", "n" } })
+LC.flow.describe("game/horde", "感染者刷新", "玩法", { "exec" }, { { "count", "n" } })
 LC.flow.describe("game/loot", "搜刮材料", "玩法", { "exec" },
                  { { "mat", "s" }, { "min", "n" }, { "max", "n" } })
 LC.flow.describe("game/fuel", "油量增减", "玩法", { "exec" }, { { "amount", "n" } })
@@ -61,7 +61,7 @@ LC.flow.describe("game/animparam", "动画参数", "玩法", { "exec" },
                  { { "target", "s" }, { "param", "s" }, { "value", "n" } })
 
 -- ---------------------------------------------------------------------------
--- 停靠远征循环节点（停靠→搜刮→威胁→夜袭→撤离→入库，全部可上流程图）
+-- 停靠远征循环节点（停靠→搜刮→入库，流程图仍可热调）
 -- ---------------------------------------------------------------------------
 LC.flow.register("game/crates", function(node)
   spawnCrates()  -- 物资箱生成（数量/散布仍由 STOP 配置驱动）
@@ -83,15 +83,14 @@ LC.flow.register("game/bank", function(node)
 end)
 
 LC.flow.register("game/day", function(node, g)
-  day = day + (node.amount or 1)
+  -- 离开停靠点推进 2 小时；跨过午夜时由时钟自然推进天数
+  advanceGameMinutes(120)
   atNode = nil
-  -- 广播天数推进信号（difficulty_scaling 图接收并重算参数）
-  LC.flow.emit("day_advanced")
   return "exec"
 end)
 
 LC.flow.register("game/evac", function(node)
-  if evacT < 0 then evacT = STOP.evacTime end
+  -- 低强度威胁版本：不再强制撤离，保留节点兼容旧图
   return "exec"
 end)
 
@@ -99,7 +98,7 @@ LC.flow.describe("game/crates", "生成物资箱", "玩法", { "exec" }, {})
 LC.flow.describe("game/clear", "清场", "玩法", { "exec" }, {})
 LC.flow.describe("game/bank", "搜获入库", "玩法", { "exec" }, { { "keep", "n" } })
 LC.flow.describe("game/day", "推进天数", "玩法", { "exec" }, { { "amount", "n" } })
-LC.flow.describe("game/evac", "开始撤离", "玩法", { "exec" }, {})
+LC.flow.describe("game/evac", "撤离（低强度威胁版已停用）", "玩法", { "exec" }, {})
 
 
 -- ---------------------------------------------------------------------------
@@ -120,7 +119,7 @@ LC.flow.register("game/drive-fuel", function(node)
   return "exec"
 end)
 
-LC.flow.describe("game/drive-horde", "途中尸群", "玩法", { "exec" }, { { "count", "n" } })
+LC.flow.describe("game/drive-horde", "途中感染者", "玩法", { "exec" }, { { "count", "n" } })
 LC.flow.describe("game/drive-supply", "路边补给", "玩法", { "exec" }, {})
 LC.flow.describe("game/drive-fuel", "路边油桶", "玩法", { "exec" }, {})
 
