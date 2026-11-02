@@ -214,15 +214,20 @@
 ## 可进入的废宅商店、加油站、仓库、农场、购物中心、湖边木屋与诊所
 
 - `assets/models/rv/rv_store.gltf` + `rv_store.bin`（`tools/gen_rv_store.py`）：
-  实心墙体、1.6m 门洞、门框/雨棚/红招牌、两扇破裂橱窗（窗内展示商品）；店内
+  实心墙体、1.6m 门洞、门框/雨棚/红招牌、两扇透明可破碎橱窗（窗内展示商品）；店内
   四层商品墙（成排彩色货盒 + 价签）、中央双层货架、玻璃门冷柜、果蔬木箱、
   带屏幕/键盘/小票的收银机、挂式价牌、壁钟、购物篮堆、地毯和物资箱；
   `ruin` 和所有“废宅/商店”地点生成该 glTF。
 - `assets/models/rv/rv_gasstation.gltf` + `rv_gasstation.bin`（`tools/gen_rv_gasstation.py`）：
-  实心墙体、1.6m 门洞、两扇破裂橱窗；店内四层商品墙（成排彩色货盒 + 价签）、
+  实心墙体、1.6m 门洞、两扇透明可破碎橱窗；店内四层商品墙（成排彩色货盒 + 价签）、
   中央双层零食货架、玻璃门冷柜、咖啡机 + 杯堆 + 调料架、带屏幕/键盘/小票的收银机、
   挂式价牌、壁钟、购物篮堆；四柱雨棚 + 两台加油机；`gasstop` 和所有“加油站”地点
   生成该 glTF。
+- `assets/models/rv/rv_window_glass.gltf` / `rv_window_shard.gltf`
+  （`tools/gen_rv_windows.py`）：半透明 BLEND 玻璃面板 + 玻璃碎片；
+  `lc_scenery.spawnPoiWindows()` 为商店/加油站生成两扇面板，
+  `breakPoiWindowsAt()` 在玩家进入或攻击时把面板替换为 16 块重力下落的碎片，
+  `updatePoiWindows()` 负责弹跳与回收。
 - `assets/models/rv/rv_warehouse.gltf` + `rv_warehouse.bin`（`tools/gen_rv_warehouse.py`）：
   3.6m 高棚、宽装卸门 + 月台（黄色警示线/防撞柱/升降台板）、顶部高窗、两侧与后墙
   钢制货架、黄底白字货架标识、标签托盘堆（胶带封箱）、叉车、发货台（显示器/标签
@@ -281,7 +286,8 @@
    合作建造仍是网格模式（还不是单机的无网格自由摆放），也还没有每名玩家的独立物品所有权。
 2. **家具自由摆放**：已改为第一人称无网格自由放置 + AABB/车内边界校验。
 3. **美术**：房车外壳/车内仍是程序化低多边形 glTF + Kenney 家具，缺少高精度车内软装、
-   材质、角色动画。
+   材质；商店/加油站橱窗已支持透明玻璃与碎片飞散，但碎片是简单刚体而非逐块断裂模拟，
+   商品仍是低多边形色块，角色动画也仍是手工关键帧。
 4. **世界**：已有世界固定公路网 + 15 个地点；废宅/商店 → `rv_store.gltf`、
    废弃加油站 → `rv_gasstation.gltf`、物流仓库 → `rv_warehouse.gltf`、
    旧农场 → `rv_barn.gltf`、购物中心 → `rv_mall.gltf`、湖边营地 →

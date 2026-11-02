@@ -76,9 +76,7 @@ def main():
         b.box(TRIM, cx - 0.85, 1.45, 2.55, 0.08, 1.10, 0.22)
         b.box(TRIM, cx + 0.85, 1.45, 2.55, 0.08, 1.10, 0.22)
         b.box(STEEL, cx, 0.92, 2.62, 1.80, 0.05, 0.10)
-        for k in range(3):
-            sx = cx - 0.60 + k * 0.60
-            b.box(GLASS, sx, 1.50 + (k % 2) * 0.10, 2.52, 0.30, 0.70, 0.02)
+        # The pane itself is a separate breakable entity (rv_window_glass).
         # Window display: a lit shelf with a few products behind the glass.
         b.box(TRIM, cx, 1.05, 2.30, 1.70, 0.06, 0.42)
         b.box(WARM, cx - 0.55, 1.22, 2.30, 0.22, 0.28, 0.22)

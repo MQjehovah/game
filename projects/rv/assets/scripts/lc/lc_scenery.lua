@@ -215,6 +215,101 @@ function spawnPonds()
   if lake ~= nil then spawnPond(lake.x - 8, lake.z - 7) end
 end
 
+-- ---------------------------------------------------------------------------
+-- Breakable display windows (transparent pane + shatter burst)
+-- ---------------------------------------------------------------------------
+poiGlass = {}
+poiShards = {}
+
+-- Store/gas stations share the same front-window openings: local x +-1.95,
+-- y 0.9..2.0, z=2.52. Spawn one transparent pane per opening.
+function spawnPoiWindows(nd)
+  if poiGlass[nd.id] ~= nil then return end
+  local cx, cz = nd.x + 6.5, nd.z + 6.5
+  local panes = {}
+  for _, lx in ipairs({ -1.95, 1.95 }) do
+    local e = SpawnPrefab("rv_window_glass",
+                          { x = cx + lx, y = 1.45, z = cz + 2.52 })
+    if e ~= nil then
+      SetScale(e, 1.70, 1.10, 1.0)
+      panes[#panes + 1] = e
+    end
+  end
+  poiGlass[nd.id] = { panes = panes, broken = false, x = cx, z = cz }
+  print(string.format("[glass] intact panes at %s = %d", nd.id, #panes))
+end
+
+-- One-shot break: remove the intact panes and spawn a short-lived shard burst.
+function breakPoiWindows(nd, reason)
+  if nd == nil then return false end
+  local g = poiGlass[nd.id]
+  if g == nil or g.broken then return false end
+  g.broken = true
+  for _, e in ipairs(g.panes) do Despawn(e) end
+  g.panes = {}
+  for i = 1, 16 do
+    local side = (i % 2 == 0) and 1.95 or -1.95
+    local sx = g.x + side + (math.random() - 0.5) * 1.40
+    local sy = 1.35 + (math.random() - 0.5) * 0.90
+    local sz = g.z + 2.60
+    local e = SpawnPrefab("rv_window_shard", { x = sx, y = sy, z = sz })
+    if e ~= nil then
+      local s = 0.18 + math.random() * 0.26
+      SetScale(e, s, s, s)
+      -- Keep the flat face toward the street so the shards read at a glance.
+      SetRotationY(e, (math.random() - 0.5) * 0.6)
+      poiShards[#poiShards + 1] = {
+        ent = e, x = sx, y = sy, z = sz,
+        vx = (math.random() - 0.5) * 3.2,
+        vy = 1.8 + math.random() * 2.6,
+        vz = -1.0 - math.random() * 2.0,
+        life = 2.0 + math.random() * 0.8,
+        spin = (math.random() - 0.5) * 1.2,
+      }
+    end
+  end
+  print(string.format("[glass] broke windows at %s (%s)", nd.id, reason or "enter"))
+  return true
+end
+
+-- Break every intact POI window whose footprint contains (x, z).
+function breakPoiWindowsAt(x, z, reason)
+  local n = 0
+  for _, nd in ipairs(NODES) do
+    local g = poiGlass[nd.id]
+    if g ~= nil and not g.broken then
+      if math.abs(x - g.x) < POI_HALF_X and math.abs(z - g.z) < POI_HALF_Z then
+        if breakPoiWindows(nd, reason) then n = n + 1 end
+      end
+    end
+  end
+  return n
+end
+
+-- Gravity + floor bounce for the shard burst; despawn after the lifetime.
+function updatePoiWindows(dt)
+  for i = #poiShards, 1, -1 do
+    local s = poiShards[i]
+    s.life = s.life - dt
+    s.vy = s.vy - 9.8 * dt
+    s.x = s.x + s.vx * dt
+    s.y = s.y + s.vy * dt
+    s.z = s.z + s.vz * dt
+    if s.y < 0.08 then
+      s.y = 0.08
+      s.vy = -s.vy * 0.3
+      s.vx = s.vx * 0.6
+      s.vz = s.vz * 0.6
+    end
+    SetPosition(s.ent, { x = s.x, y = s.y, z = s.z })
+    SetRotationY(s.ent, (s.spin or 0) * s.life)
+    if s.life <= 0 then
+      Despawn(s.ent)
+      table.remove(poiShards, i)
+    end
+  end
+end
+
 -- 简易路边建筑：一个带门洞/窗的废弃小屋（纯装饰，原型级）
 function spawnRuinFor(nd)
   if nd.ruinSpawned then return end
@@ -296,6 +391,7 @@ function spawnRuinFor(nd)
       local lamp = SpawnPrefab("rv_lamp", { x = cx + lx, y = 2.42, z = cz })
       if lamp ~= nil then SetScale(lamp, 1.3, 1.3, 1.3) end
     end
+    spawnPoiWindows(nd)
     return
   end
   if isStore then
@@ -311,6 +407,7 @@ function spawnRuinFor(nd)
       SetScale(box, 0.7, 0.7, 0.7)
       SetRotationY(box, 0.45)
     end
+    spawnPoiWindows(nd)
     return
   end
 

@@ -682,6 +682,7 @@ end
 function on_update(ent, dt)
   if coopRole ~= nil then
     coopUpdate(dt)
+    if updatePoiWindows then updatePoiWindows(dt) end
     return
   end
   if toast.t > 0 then toast.t = toast.t - dt end
@@ -768,6 +769,7 @@ function on_update(ent, dt)
 
   -- 第一人称：移动 / 交互 / 射击 / 钓鱼
   updatePlayer(dt)
+  if updatePoiWindows then updatePoiWindows(dt) end
   updateFishing(dt)
   updateInteraction()
   if ActionPressed("e") then doInteract() end
@@ -779,8 +781,12 @@ function on_update(ent, dt)
     if #horde > 0 and fireT <= 0 then
       fireT = RAID.fireCd
       shootAt(cx, cy)
-    elseif nearAction and nearAction.kind == "crate" then
-      doInteract()
+    else
+      -- Attacking inside a POI shatters its display windows.
+      if breakPoiWindowsAt then breakPoiWindowsAt(player.x, player.z, "attack") end
+      if nearAction and nearAction.kind == "crate" then
+        doInteract()
+      end
     end
   elseif InputMouseDown(0) and #horde > 0 and fireT <= 0 then
     fireT = RAID.fireCd

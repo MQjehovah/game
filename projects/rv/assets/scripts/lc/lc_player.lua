@@ -140,6 +140,7 @@ function updatePlayer(dt)
   local nz = player.z + mz * sp * dt
   nx, nz = collidePoiWalls(player.x, player.z, nx, nz)
   player.x, player.z = nx, nz
+  if breakPoiWindowsAt then breakPoiWindowsAt(player.x, player.z, "enter") end
   clampPlayerInsideRv()
   -- 脚步声
   if len > 0 then

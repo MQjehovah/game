@@ -61,7 +61,7 @@ local coop = {
   animPhase = {},
   visualAnim = {},
   boardDemo = false, boardDemoT = 0, boardDemoStage = 0,
-  carrySlot = 0, carryT = 0, carryView = false,
+  carrySlot = 0, carryT = 0, carryView = false, glassView = false,
   toast = "", toastT = 0, logT = 0,
 }
 
@@ -1076,6 +1076,18 @@ local function clientUpdate(dt)
     end
   end
 
+  -- Shatter display windows when any replicated player steps inside a POI.
+  if breakPoiWindowsAt and coop.state and coop.state.players then
+    for i = 1, MAX_SLOTS do
+      local p = coop.state.players[i]
+      if p ~= nil and p.j == 1 then
+        if breakPoiWindowsAt(p.x or 0, p.z or 0, "enter") > 0 then
+          print(string.format("[coop-glass] player %d broke the POI windows", i))
+        end
+      end
+    end
+  end
+
   local mx, my = InputMouseX(), InputMouseY()
   coop.lookYaw = coop.lookYaw - mx * 0.0025
   coop.lookPitch = clamp(coop.lookPitch - my * 0.0025, -0.95, 0.65)
@@ -1317,7 +1329,17 @@ local function clientUpdate(dt)
   else
     px, pz, pyaw = COOP_SPAWN[1].lx, COOP_SPAWN[1].lz, 0
   end
-  if coop.carryView then
+  if coop.glassView then
+    -- Test-only close-up of the active POI's front windows.
+    local nd = nodeById(coop.poiNode or "ruin")
+    local cx, cz = rv.x, rv.z
+    if nd ~= nil then cx, cz = poiCenter(nd) end
+    SetVar("cameraMouseLock", 1)
+    SetVar("cameraFocus", { x = cx, y = 1.45, z = cz + 2.3 })
+    SetVar("cameraYaw", 0.12)
+    SetVar("cameraPitch", 0.10)
+    SetVar("cameraDist", 5.0)
+  elseif coop.carryView then
     -- Test-only camera following slot 1 so the wired Carry clip is visible.
     local p1 = coop.state and coop.state.players and coop.state.players[1]
     local fx, fz = p1 and (p1.x or 0) or 0, p1 and (p1.z or 0) or 0
@@ -1589,6 +1611,7 @@ function coopInitWorld(role)
     coop.poiView = readFlag("coop_poiview.txt")
     coop.poiExt = readFlag("coop_poiext.txt")
     coop.carryView = readFlag("coop_carryview.txt")
+    coop.glassView = readFlag("coop_glassview.txt")
     if readFlag("coop_gas.txt") then
       coop.poiNode = "gasstop"
     elseif readFlag("coop_ruin.txt") then

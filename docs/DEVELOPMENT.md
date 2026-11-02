@@ -768,8 +768,8 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   `tools/gen_rv_store.py` / `gen_rv_gasstation.py` / `gen_rv_warehouse.py` /
   `gen_rv_barn.py` / `gen_rv_mall.py` / `gen_rv_cabin.py` / `gen_rv_clinic.py` 生成
   实心墙体、门洞、门框/雨棚/招牌、货架/柜台/托盘/畜栏/商品/壁炉/药柜的
-  `rv_store.gltf`（破裂橱窗 + 成排商品墙 + 收银机 + 冷柜 + 果蔬箱 + 挂式价牌）、
-  `rv_gasstation.gltf`（破裂橱窗 + 成排商品墙 + 收银机 + 冷柜 + 咖啡台 + 四柱雨棚 +
+  `rv_store.gltf`（透明可破碎橱窗 + 成排商品墙 + 收银机 + 冷柜 + 果蔬箱 + 挂式价牌）、
+  `rv_gasstation.gltf`（透明可破碎橱窗 + 成排商品墙 + 收银机 + 冷柜 + 咖啡台 + 四柱雨棚 +
   两台油泵）、`rv_warehouse.gltf`
   （宽装卸门/月台 + 钢制货架 + 标签托盘 + 叉车 + 发货台）、`rv_barn.gltf`（红谷仓 +
   畜栏/干草槽/马具墙/奶桶/工作台）、
@@ -783,6 +783,11 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   提供店内/店外镜头；服务器日志 `P1/P2 entered ...`、`shop=2` → `exited`、`shop=0`，
   两端 `smoke assertions passed`。客户端 smoke 的“controlled moved”判定改为
   XZ 水平距离，脚本化演示向任意方向传送也能通过。
+- **可破碎橱窗**（`projects/rv`）：`tools/gen_rv_windows.py` 生成 `rv_window_glass`
+  （半透明 BLEND 面板）与 `rv_window_shard`；商店/加油站由
+  `lc_scenery.spawnPoiWindows()` 生成两扇玻璃，`breakPoiWindowsAt()` 在玩家进入或
+  攻击时替换为 16 块碎片，`updatePoiWindows()` 做重力/弹跳/回收；双端日志
+  `[glass] broke windows at ruin (enter)`，`coop_glassview.txt` 提供门窗特写镜头。
 
 ---
 
