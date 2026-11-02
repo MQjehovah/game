@@ -39,7 +39,8 @@ needs = { health = 100, hunger = 85, thirst = 90, energy = 90, hygiene = 80 }
 inv = {}
 water = 80                    -- 净水箱当前水量（L）
 nearAction = nil              -- 当前可交互物（物资箱/家具/房车）
-stationUI = nil               -- 打开的家具菜单（灶台）
+stationUI = nil               -- 打开的家具菜单（灶台/工作台）
+invOpen = false               -- 背包面板
 useAnimT = 0
 hurtT = 0                     -- 受伤红屏
 lastWarn = {}                 -- 需求低警告去重

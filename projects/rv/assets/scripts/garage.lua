@@ -390,7 +390,9 @@ function on_start()
   local selftestFlag = ReadText("selftest_on.txt")
   if selftestFlag and selftestFlag ~= "" then runSelfTest() end
 
-  if startMode == "stove" then
+  if startMode == "inv" then
+    invOpen = true
+  elseif startMode == "stove" then
     stationUI = { kind = "stove", inst = hasModule("stove") }
   elseif startMode == "bench" then
     stationUI = { kind = "workbench", inst = hasModule("workbench") }
@@ -596,6 +598,7 @@ function on_update(ent, dt)
   if toast.t > 0 then toast.t = toast.t - dt end
   ensureHelpers()
   if ActionPressed("m") then mapOpen = not mapOpen end
+  if ActionPressed("i") then invOpen = not invOpen end
   if hitMarkT > 0 then hitMarkT = hitMarkT - dt end
   if recoilT > 0 then recoilT = recoilT - dt end
   if fireT > 0 then fireT = fireT - dt end
@@ -647,6 +650,13 @@ function on_update(ent, dt)
   if buildMode then
     updatePlayer(dt)
     updateFreePlacement()
+    updateCamera(dt)
+    return
+  end
+
+  if invOpen then
+    if ActionPressed("e") then invOpen = false end
+    handleQuickItem()
     updateCamera(dt)
     return
   end
@@ -720,6 +730,7 @@ function on_render()
   else
     drawFpHud()
   end
+  if invOpen then drawInventoryPanel() end
   if stationUI then drawStationMenu() end
   if mapOpen then drawMapHud() end
 end

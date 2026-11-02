@@ -252,7 +252,8 @@ end
 function handleQuickItem()
   local map = { ["1"] = "water", ["2"] = "canned", ["3"] = "meal",
                 ["4"] = "brew", ["5"] = "rawfood", ["6"] = "coffee",
-                ["7"] = "seed", ["8"] = "repairkit", ["9"] = "fish" }
+                ["7"] = "seed", ["8"] = "repairkit", ["9"] = "fish",
+                ["0"] = "fishsoup" }
   for key, id in pairs(map) do
     if ActionPressed(key) then
       if id == "repairkit" then
@@ -545,6 +546,46 @@ function drawScavengeOverlay()
                1, 0.75, 0.35, 1, true)
     end
   end
+end
+
+-- 背包面板
+function drawInventoryPanel()
+  local vp = GetViewportSize()
+  local vw = (vp and vp.w) or 1280
+  local vh = (vp and vp.h) or 720
+  local rows = {}
+  for _, id in ipairs(ITEM_ORDER) do
+    if (inv[id] or 0) > 0 then rows[#rows + 1] = id end
+  end
+  local pw = 540
+  local ph = 104 + math.max(1, #rows) * 44 + 34
+  local px = math.floor((vw - pw) * 0.5)
+  local py = math.floor((vh - ph) * 0.5)
+  DrawRect(px, py, pw, ph, 0.04, 0.05, 0.06, 0.92)
+  DrawRectOutline(px, py, pw, ph, 0.55, 0.52, 0.42, 0.95)
+  drawTextCentered("背包 · 随身物资", vw * 0.5, py + 14, 20, 0.98, 0.90, 0.68, 1)
+  DrawText("按数字快速使用；种子/咖啡豆/修理包要去对应家具", px + 20, py + 46, 12,
+           0.72, 0.72, 0.66, 1)
+  local yy = py + 72
+  local key = { water="1", canned="2", meal="3", brew="4", rawfood="5",
+                coffee="6", seed="7", repairkit="8", fish="9", fishsoup="0" }
+  if #rows == 0 then
+    DrawText("背包空空如也", px + 24, yy + 6, 15, 0.65, 0.65, 0.6, 1)
+  end
+  for _, id in ipairs(rows) do
+    local it = ITEMS[id]
+    DrawRect(px + 16, yy - 4, pw - 32, 38, 0.08, 0.09, 0.10, 0.7)
+    DrawText((key[id] and ("[" .. key[id] .. "] ") or "    ") .. it.name,
+             px + 26, yy + 2, 15, 0.95, 0.92, 0.84, 1)
+    DrawText(it.desc or "", px + 150, yy + 4, 12, 0.72, 0.72, 0.66, 1)
+    drawTextRight("x" .. (inv[id] or 0), px + pw - 26, yy + 2, 15, 0.98, 0.9, 0.68, 1)
+    yy = yy + 44
+  end
+  DrawText(string.format("材料  金属%d  电子%d  布料%d  木材%d",
+           materials.metal or 0, materials.electronics or 0,
+           materials.cloth or 0, materials.wood or 0),
+           px + 20, py + ph - 32, 12, 0.72, 0.72, 0.66, 1)
+  drawTextRight("I / E 关闭", px + pw - 20, py + ph - 32, 12, 0.72, 0.72, 0.66, 1)
 end
 
 -- 灶台配方菜单
