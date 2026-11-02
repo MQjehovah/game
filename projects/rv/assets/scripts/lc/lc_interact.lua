@@ -86,6 +86,20 @@ function updateInteraction()
     end
   end
 
+  if campfire then
+    local dx, dz = campfire.x - player.x, campfire.z - player.z
+    local d = math.sqrt(dx * dx + dz * dz)
+    if d < 3.4 then
+      local dot = forwardDot(dx, dz, d)
+      if dot > 0.05 then
+        nearAction = { kind = "campfire", verb = "篝火烤鱼",
+                       detail = "E 烤熟生鱼（生鱼x1）",
+                       x = campfire.x, z = campfire.z }
+        return
+      end
+    end
+  end
+
   if nearRv() then
     nearAction = { kind = "rv", verb = "驾驶房车", detail = "W 油门 / 空格停车 / B 改装",
                    x = rv.x, z = rv.z }
@@ -113,6 +127,9 @@ function doInteract()
     return true
   elseif nearAction.kind == "fish" then
     startFishing()
+    return true
+  elseif nearAction.kind == "campfire" then
+    cookAtCampfire()
     return true
   elseif nearAction.kind == "rv" then
     setPhase("driving")

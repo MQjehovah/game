@@ -68,11 +68,12 @@ ITEMS = {
   brew     = { name = "热咖啡", kind = "drink", thirst = 10, energy = 30, health = 2, desc = "体力 +30" },
   seed     = { name = "种子",   kind = "seed",  desc = "种进种植箱" },
   repairkit= { name = "修理包", kind = "repair", amount = 35, desc = "修车 +35" },
+  rawfish  = { name = "生鱼",   kind = "food",  hunger = 8,  health = -2, desc = "需要篝火烤熟" },
   fish     = { name = "烤鱼",   kind = "food",  hunger = 30, health = 5, desc = "饥饿 -30 生命 +5" },
   fishsoup = { name = "鱼汤",   kind = "food",  hunger = 35, thirst = 20, health = 3, desc = "饥饿 -35 口渴 -20" },
   feast    = { name = "大餐",   kind = "food",  hunger = 65, health = 10, desc = "饥饿 -65 生命 +10" },
 }
-ITEM_ORDER = { "water", "canned", "rawfood", "meal", "fishsoup", "feast", "coffee", "brew", "fish", "seed", "repairkit" }
+ITEM_ORDER = { "water", "canned", "rawfood", "meal", "fishsoup", "feast", "coffee", "brew", "rawfish", "fish", "seed", "repairkit" }
 
 -- 工作台可维修的车体/零件
 REPAIR_PARTS = {

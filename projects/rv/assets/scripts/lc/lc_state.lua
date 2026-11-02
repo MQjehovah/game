@@ -58,6 +58,7 @@ fireT, turretT, killCount, raidT = 0, 0, 0, 0
 ambientT = 0
 fishingT, fishingTotal = 0, 0
 ponds = {}
+campfire = nil
 weather, weatherT, weatherNext = "clear", 0, 15
 
 -- 途中事件

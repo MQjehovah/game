@@ -178,7 +178,8 @@ function drawInteractionPrompt(vw, vh)
                      enabled and 0.72 or 0.58, 1)
   end
   -- 世界空间小标记
-  if (nearAction.kind == "station" or nearAction.kind == "fish") and nearAction.x then
+  if (nearAction.kind == "station" or nearAction.kind == "fish"
+      or nearAction.kind == "campfire") and nearAction.x then
     local sp = WorldToScreen(nearAction.x, 1.0, nearAction.z)
     if sp then
       local col = enabled and 0.92 or 0.45

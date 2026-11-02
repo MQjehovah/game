@@ -314,6 +314,7 @@ function spawnMarkers()
   end
   local fire = SpawnPrefab("rv_campfire", { x = 1.8, y = 0.12, z = 2.0 })
   if fire ~= nil then SetScale(fire, 0.9, 0.9, 0.9) end
+  campfire = { x = 1.8, z = 2.0 }
   local gas = nodeById("gasstop")
   if gas then
     for _, off in ipairs({ {2.0, 1.0}, {2.6, -0.4}, {1.2, -0.6} }) do

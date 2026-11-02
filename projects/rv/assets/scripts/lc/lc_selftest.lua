@@ -65,12 +65,16 @@ function runSelfTest()
   ok(r, "plant grow+harvest", planted and itemCount("rawfood") >= raw0 + 2,
      string.format("seed %d->%d rawfood %d->%d", seed0, itemCount("seed"), raw0, itemCount("rawfood")))
 
-  -- 钓鱼
-  local fish0 = itemCount("fish")
+  -- 钓鱼 -> 生鱼 -> 篝火烤鱼
+  local raw0 = itemCount("rawfish")
   startFishing()
   finishFishing(true)
-  ok(r, "fishing", itemCount("fish") > fish0,
-     string.format("fish %d->%d", fish0, itemCount("fish")))
+  local fished = itemCount("rawfish") > raw0
+  local fish0 = itemCount("fish")
+  cookAtCampfire()
+  ok(r, "fishing + campfire", fished and itemCount("fish") > fish0,
+     string.format("raw %d->%d fish %d->%d", raw0, itemCount("rawfish"),
+                   fish0, itemCount("fish")))
 
   -- 修车
   dur = 50

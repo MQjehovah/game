@@ -260,13 +260,26 @@ function finishFishing(force)
   fishingT = 0
   if success then
     local n = 1 + ((math.random() < 0.30) and 1 or 0)
-    addItem("fish", n)
-    toast.text = string.format("钓到鱼！烤鱼 x%d（背包里按 9 吃）", n)
+    addItem("rawfish", n)
+    toast.text = string.format("钓到生鱼 x%d — 回营地篝火烤熟", n)
   else
     toast.text = "鱼跑了……再试一次"
   end
   toast.t = 3.2
   if PlaySfx then PlaySfx("fish") end
+end
+
+function cookAtCampfire()
+  if takeItem("rawfish", 1) then
+    addItem("fish", 1)
+    if PlaySfx then PlaySfx("cook") end
+    toast.text = "篝火烤好一条鱼（烤鱼 +1）"
+    toast.t = 2.4
+    return true
+  end
+  toast.text = "没有生鱼 — 去水塘钓鱼"
+  toast.t = 2.2
+  return false
 end
 
 function updateFishing(dt)
