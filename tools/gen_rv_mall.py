@@ -49,7 +49,7 @@ class MeshBuilder:
 def main():
     b = MeshBuilder()
     (WALL, TRIM, ROOF, FLOOR, GLASS, RED, BLUE, STEEL,
-     WARM, COOL, CLOTH, WHITE, DARK) = range(1, 14)
+     WARM, COOL, CLOTH, WHITE, DARK, GREEN, YELLOW) = range(1, 16)
     H = 4.0
 
     # Hidden material-0 primitive (the importer's first primitive uses the
@@ -88,40 +88,109 @@ def main():
         b.box(TRIM, ox, 4.56, oz, 0.90, 0.06, 0.62)
 
     # --- Interior shop fit-out ---
-    # Checkout counters.
+    # Checkout counter (right) with register, card reader, receipt roll, bags.
     b.box(TRIM, 1.60, 0.45, -1.10, 2.20, 0.90, 0.70)
     b.box(WHITE, 1.60, 0.93, -1.10, 2.28, 0.06, 0.78)
+    b.box(STEEL, 1.60, 0.10, -1.10, 2.12, 0.16, 0.62)
+    b.box(STEEL, 2.05, 1.12, -1.10, 0.46, 0.34, 0.40)
+    b.box(DARK, 2.05, 1.15, -0.88, 0.36, 0.20, 0.03)
+    b.box(BLUE, 2.05, 1.15, -0.86, 0.28, 0.12, 0.02)
+    b.box(YELLOW, 2.05, 1.10, -0.86, 0.30, 0.08, 0.02)
+    b.box(STEEL, 2.05, 1.40, -1.12, 0.10, 0.24, 0.10)
+    b.box(DARK, 2.05, 1.54, -1.10, 0.42, 0.26, 0.04)
+    b.box(GREEN, 2.05, 1.54, -1.07, 0.34, 0.16, 0.02)
+    b.box(STEEL, 1.45, 1.02, -0.90, 0.16, 0.12, 0.10)
+    b.box(GREEN, 1.45, 1.10, -0.93, 0.05, 0.04, 0.02)
+    b.box(WHITE, 1.10, 1.05, -1.10, 0.34, 0.20, 0.16)
+    b.box(CLOTH, 1.10, 1.16, -1.10, 0.28, 0.03, 0.14)
+    b.box(TRIM, 1.60, 0.95, -0.55, 1.60, 0.05, 0.30)
+    # Second counter (left) as a folded-clothing display.
     b.box(TRIM, -1.65, 0.45, 0.50, 1.80, 0.90, 0.70)
     b.box(WHITE, -1.65, 0.93, 0.50, 1.88, 0.06, 0.78)
-    # Back-wall shelving with products.
+    for i, cx in enumerate((-2.15, -1.65, -1.15)):
+        b.box((CLOTH, BLUE, GREEN)[i], cx, 1.02, 0.50, 0.40, 0.14, 0.50)
+        b.box(WHITE, cx, 1.10, 0.50, 0.34, 0.03, 0.20)
+    b.box(DARK, -1.65, 1.30, 0.25, 0.50, 0.30, 0.04)
+
+    # Back-wall shelving with four product rows + price strip.
     b.box(STEEL, 0, 1.10, -2.30, 4.20, 2.20, 0.18)
-    for shelf_y in (0.45, 1.10, 1.75):
+    for shelf_y in (0.40, 0.90, 1.40, 1.90):
         b.box(WHITE, 0, shelf_y, -2.16, 4.00, 0.05, 0.34)
-    cols = (WARM, COOL, CLOTH, BLUE, RED, WHITE)
-    for i in range(10):
-        px = -1.75 + (i % 5) * 0.88
-        py = 0.56 + (i // 5) * 0.65
-        b.box(cols[i % len(cols)], px, py, -2.08, 0.34, 0.30, 0.20)
-    # Center display tables + products.
-    for tx, tz in ((-0.35, -0.30), (1.75, 0.85)):
-        b.box(WHITE, tx, 0.38, tz, 1.30, 0.10, 0.85)
-        for lx in (-0.42, 0.0, 0.42):
-            b.box(STEEL, tx + lx, 0.19, tz, 0.06, 0.38, 0.06)
-        b.box(WARM, tx - 0.32, 0.53, tz, 0.28, 0.20, 0.28)
-        b.box(COOL, tx + 0.34, 0.53, tz, 0.30, 0.22, 0.30)
-    # Clothing rack along the left wall.
-    for rz in (-1.40, 0.40):
+        b.box(STEEL, 0, shelf_y + 0.04, -1.98, 4.02, 0.03, 0.03)
+    cols = (WARM, COOL, CLOTH, BLUE, RED, WHITE, GREEN, YELLOW)
+    for row in range(3):
+        sy = 0.40 + row * 0.50 + 0.16
+        for i in range(11):
+            px = -1.80 + i * 0.36
+            c = cols[(i + row) % len(cols)]
+            b.box(c, px, sy, -2.06, 0.26, 0.26, 0.20)
+    b.box(WHITE, 0, 2.14, -2.16, 3.90, 0.10, 0.02)   # price strip
+
+    # Central display table with folded clothes + accessories.
+    b.box(WHITE, -0.35, 0.38, -0.30, 1.30, 0.10, 0.85)
+    for lx in (-0.42, 0.0, 0.42):
+        b.box(STEEL, -0.35 + lx, 0.19, -0.30, 0.06, 0.38, 0.06)
+    for i, tx in enumerate((-0.72, -0.35, 0.02)):
+        b.box((CLOTH, BLUE, WARM)[i], tx, 0.50, -0.45, 0.30, 0.14, 0.40)
+        b.box(WHITE, tx, 0.58, -0.45, 0.24, 0.02, 0.16)
+    b.box(COOL, 0.02, 0.50, -0.05, 0.26, 0.20, 0.26)
+
+    # Accessories table (right).
+    b.box(WHITE, 1.75, 0.38, 0.85, 1.30, 0.10, 0.85)
+    for lx in (-0.42, 0.0, 0.42):
+        b.box(STEEL, 1.75 + lx, 0.19, 0.85, 0.06, 0.38, 0.06)
+    b.box(WARM, 1.43, 0.50, 0.85, 0.28, 0.16, 0.30)
+    b.box(COOL, 1.75, 0.50, 0.85, 0.30, 0.18, 0.30)
+    b.box(RED, 2.07, 0.50, 0.85, 0.26, 0.14, 0.26)
+    b.box(DARK, 1.75, 0.62, 1.10, 0.55, 0.20, 0.04)
+
+    # Clothing rack along the left wall with hangers + SALE tag.
+    for rz in (-1.40, -0.20):
         b.box(STEEL, -2.55, 0.90, rz, 0.06, 1.80, 0.06)
-    b.box(STEEL, -2.55, 1.80, -0.50, 0.06, 0.06, 2.20)
-    for i in range(5):
-        b.box((CLOTH if i % 2 == 0 else BLUE), -2.55, 1.30, -1.30 + i * 0.40,
-              0.08, 0.80, 0.30)
-    # Mannequins near the storefront.
-    for mx in (-2.15, 2.15):
-        b.box(DARK, mx, 0.95, 1.90, 0.30, 0.90, 0.24)
+    b.box(STEEL, -2.55, 1.80, -0.80, 0.06, 0.06, 1.40)
+    for i in range(6):
+        gz = -1.32 + i * 0.20
+        b.box((CLOTH if i % 2 == 0 else BLUE), -2.55, 1.30, gz, 0.08, 0.80, 0.16)
+        b.box(STEEL, -2.55, 1.76, gz, 0.02, 0.10, 0.02)
+    b.box(RED, -2.55, 1.98, -0.30, 0.04, 0.20, 0.50)
+    b.box(WHITE, -2.53, 1.98, -0.30, 0.01, 0.10, 0.36)
+
+    # Round clothing rack near the right wall.
+    b.box(STEEL, 2.35, 0.10, 0.45, 0.40, 0.06, 0.40)
+    b.box(STEEL, 2.35, 0.85, 0.45, 0.06, 1.60, 0.06)
+    for k in range(4):
+        ang = k * math.pi * 0.5
+        b.box(STEEL, 2.35 + math.cos(ang) * 0.28, 1.62,
+              0.45 + math.sin(ang) * 0.28, 0.06, 0.06, 0.06)
+    for k in range(4):
+        ang = k * math.pi * 0.5 + math.pi * 0.25
+        b.box((CLOTH, BLUE, GREEN, RED)[k], 2.35 + math.cos(ang) * 0.28,
+              1.32, 0.45 + math.sin(ang) * 0.28, 0.12, 0.60, 0.12)
+
+    # Mannequins near the storefront, now wearing coloured tops.
+    for k, mx in enumerate((-2.15, 2.15)):
+        top = (CLOTH, BLUE)[k]
+        b.box(top, mx, 1.10, 1.90, 0.34, 0.60, 0.28)
+        b.box(DARK, mx, 0.62, 1.90, 0.28, 0.40, 0.24)
         b.box(WHITE, mx, 1.55, 1.90, 0.22, 0.24, 0.20)
         b.box(DARK, mx, 0.35, 1.90, 0.12, 0.40, 0.12)
         b.box(WHITE, mx, 0.12, 1.90, 0.45, 0.06, 0.45)
+
+    # Signage: mall directory on the left wall, SALE sign, entrance wayfinding.
+    b.box(BLUE, -2.90, 2.80, -0.80, 0.04, 1.00, 1.60)
+    b.box(WHITE, -2.87, 2.90, -0.80, 0.02, 0.10, 1.30)
+    for i in range(4):
+        b.box(WHITE, -2.87, 2.72 - i * 0.14, -1.10 + (i % 2) * 0.40,
+              0.02, 0.05, 0.55)
+    b.box(RED, 0, 2.60, -1.10, 1.20, 0.36, 0.05)
+    b.box(WHITE, 0, 2.60, -1.07, 0.90, 0.16, 0.02)
+    b.box(BLUE, 0, 3.00, 2.40, 1.60, 0.30, 0.04)
+    b.box(WHITE, 0, 3.00, 2.37, 1.30, 0.12, 0.02)
+    # Freestanding SALE board near the entrance.
+    b.box(RED, -1.20, 0.80, 1.80, 0.70, 1.10, 0.06)
+    b.box(WHITE, -1.20, 0.90, 1.77, 0.50, 0.28, 0.02)
+    b.box(WHITE, -1.20, 0.55, 1.77, 0.50, 0.16, 0.02)
+    b.box(STEEL, -1.20, 0.10, 1.80, 0.60, 0.10, 0.10)
     # Entrance mat.
     b.box(DARK, 0, 0.075, 2.05, 1.70, 0.02, 0.95)
 
@@ -180,6 +249,12 @@ def main():
         {"name": "mall_dark",
          "pbrMetallicRoughness": {"baseColorFactor": [0.09, 0.09, 0.10, 1],
                                   "metallicFactor": 0.05, "roughnessFactor": 0.85}},
+        {"name": "mall_green",
+         "pbrMetallicRoughness": {"baseColorFactor": [0.18, 0.44, 0.20, 1],
+                                  "metallicFactor": 0.03, "roughnessFactor": 0.65}},
+        {"name": "mall_yellow",
+         "pbrMetallicRoughness": {"baseColorFactor": [0.80, 0.66, 0.14, 1],
+                                  "metallicFactor": 0.03, "roughnessFactor": 0.6}},
     ]
 
     buffer = b""
