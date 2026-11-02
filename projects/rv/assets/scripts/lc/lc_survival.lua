@@ -380,11 +380,13 @@ function repairPart(id)
     toast.t = 1.8
     return false
   end
+  local partName = id
+  for _, p in ipairs(REPAIR_PARTS) do if p.id == id then partName = p.name end end
   if hasItem("repairkit", 1) then
     takeItem("repairkit", 1)
     setPartValue(id, value + ITEMS.repairkit.amount)
     if PlaySfx then PlaySfx("repair") end
-    toast.text = "修理包修好 " .. id .. " — " .. string.format("%.0f%%", partValue(id))
+    toast.text = "修理包修好 " .. partName .. " — " .. string.format("%.0f%%", partValue(id))
   else
     local cost = partRepairCost(id)
     if not canAfford(cost) then
@@ -395,7 +397,7 @@ function repairPart(id)
     payCost(cost)
     setPartValue(id, value + VEH.repairAmt)
     if PlaySfx then PlaySfx("repair") end
-    toast.text = "修好 " .. id .. " — " .. string.format("%.0f%%", partValue(id))
+    toast.text = "修好 " .. partName .. " — " .. string.format("%.0f%%", partValue(id))
   end
   toast.t = 2.4
   return true
