@@ -224,9 +224,22 @@ function spawnRuinFor(nd)
   local isWarehouse = (nd.id == "depot") or (nm:find("仓库") ~= nil) or
                       (nm:find("物流") ~= nil)
   local isFarm = (nd.id == "farm") or (nm:find("农场") ~= nil)
-  if nd.id == "ruin" or nd.id == "gasstop" or nd.id == "depot" or nd.id == "farm" then
+  local isMall = (nd.id == "mall") or (nm:find("商场") ~= nil)
+  if nd.id == "ruin" or nd.id == "gasstop" or nd.id == "depot" or
+     nd.id == "farm" or nd.id == "mall" then
     print(string.format("[poi] spawn shell node=%s center=(%.1f,%.1f)",
           nd.id, cx, cz))
+  end
+  if isMall then
+    -- 可进入购物中心：玻璃店面/红蓝招牌 + 收银台/货架/服装架/模特/外摆
+    local mall = SpawnPrefab("rv_mall", { x = cx, y = 0, z = cz })
+    if mall ~= nil then SetRotationY(mall, 0) end
+    for _, lp in ipairs({ { -1.40, -1.20 }, { 1.40, -1.20 },
+                          { -1.40, 1.20 }, { 1.40, 1.20 } }) do
+      local lamp = SpawnPrefab("rv_lamp", { x = cx + lp[1], y = 2.85, z = cz + lp[2] })
+      if lamp ~= nil then SetScale(lamp, 1.6, 1.6, 1.6) end
+    end
+    return
   end
   if isFarm then
     -- 可进入旧农场：红谷仓/滑动门/干草阁楼 + 畜栏/干草/饲料槽/货架
@@ -318,13 +331,7 @@ function spawnRuinFor(nd)
     SetRotationY(leaf, -1.92)
   end
 
-  if nm:find("商场") then
-    -- 更大的废弃商铺
-    local mx, mz = nd.x - 6.0, nd.z + 6.5
-    cube("rv_panel_light", mx, 2.0, mz, 8.0, 4.0, 6.0)
-    cube("rv_panel_dark", mx, 4.1, mz, 8.3, 0.2, 6.3)
-    cube("rv_panel_window", mx, 2.4, mz + 3.05, 3.2, 1.6, 0.06)
-  end
+  -- 其余地点保留原来的立方体拼装（商场已改为可进入 glTF）
 end
 
 -- 节点标记柱

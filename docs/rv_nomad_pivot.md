@@ -201,7 +201,7 @@
   持久化/重连另行验证：保存后重启服务器能恢复 `rv/crates/stove/fuel`，同名客户端
   重连回收 `slot=1` 并收到 `crates synced (5)`。
 
-## 可进入的废宅商店、加油站、仓库与农场
+## 可进入的废宅商店、加油站、仓库、农场与购物中心
 
 - `assets/models/rv/rv_gasstation.gltf` + `rv_gasstation.bin`（`tools/gen_rv_gasstation.py`）：
   同一套实心墙体/门洞商店（玻璃窗、柜台、货架、咖啡机）+ 四柱雨棚 + 两台加油机；
@@ -212,21 +212,24 @@
 - `assets/models/rv/rv_barn.gltf` + `rv_barn.bin`（`tools/gen_rv_barn.py`）：
   红谷仓 + 山墙屋顶、滑动门/干草阁楼、白灰内衬、畜栏、干草/饲料槽/工作台/货架、
   门外干草堆/水槽/木栅栏；`farm` 和所有“农场”地点生成该 glTF。
-- `lc_scenery.spawnRuinFor()` 对 `ruin`/`gasstop`/`depot`/`farm` 和对应名称的地点
-  直接生成对应 glTF，不再使用缩放立方体拼装。
+- `assets/models/rv/rv_mall.gltf` + `rv_mall.bin`（`tools/gen_rv_mall.py`）：
+  4m 高玻璃店面、红蓝招牌、收银台、商品货架、中庭展示台、服装架、橱窗模特、
+  屋顶空调、门外花箱/长椅/购物车；`mall` 和所有“商场”地点生成该 glTF。
+- `lc_scenery.spawnRuinFor()` 对 `ruin`/`gasstop`/`depot`/`farm`/`mall` 和对应名称的
+  地点直接生成对应 glTF，不再使用缩放立方体拼装。
 - `collidePoiWalls()`（`lc_util.lua`）在**服务器和客户端预测**同时生效：侧/后墙
   与门洞两侧的前墙会挡住玩家，只有门洞可穿过。
 - 商店/加油站/仓库/农场店内的 6 个物资箱固定落在货架/柜台/托盘/畜栏旁；`E` 走近
   即可搜刮（共享搜刮状态和其他合作物资一致）。
-- 验证钩子：`coop_ruin.txt` / `coop_gas.txt` / `coop_depot.txt` / `coop_farm.txt`
-  把房车与两名玩家放到对应店门口，3–5s 进门、5–8s 店内、8–10s 出门；
+- 验证钩子：`coop_ruin.txt` / `coop_gas.txt` / `coop_depot.txt` / `coop_farm.txt` /
+  `coop_mall.txt` 把房车与两名玩家放到对应店门口，3–5s 进门、5–8s 店内、8–10s 出门；
   `coop_poiview.txt` 店内镜头，`coop_poiext.txt` 店外全景；
-  `start_mode.txt=poi/gas/warehouse/farm` 提供单机出生点。
-- 双端验证日志：`entered ruin/gasstop/depot/farm`、`shop=2` → `exited`、`shop=0`；
+  `start_mode.txt=poi/gas/warehouse/farm/mall` 提供单机出生点。
+- 双端验证日志：`entered ruin/gasstop/depot/farm/mall`、`shop=2` → `exited`、`shop=0`；
   远端客户端同一 `seq` 的 `shop` 和玩家坐标一致。
-  截图：`rv_store_*` / `rv_gas_*` / `rv_wh_*` / `rv_final_farm_*`（店内）、
-  `rv_final_gas_exterior.png`、`rv_wh_exterior.png`、`rv_final_farm_exterior.png`
-  （商店/雨棚/月台/红谷仓）。
+  截图：`rv_store_*` / `rv_gas_*` / `rv_wh_*` / `rv_final_farm_*` / `rv_mall_*`
+  （店内）、`rv_final_gas_exterior.png`、`rv_wh_exterior.png`、
+  `rv_final_farm_exterior.png`、`rv_mall_exterior.png`。
 
 ## 房车 glTF 模型
 
@@ -248,7 +251,8 @@
    材质、角色动画。
 4. **世界**：已有世界固定公路网 + 13 个地点；废宅/商店 → `rv_store.gltf`、
    废弃加油站 → `rv_gasstation.gltf`、物流仓库 → `rv_warehouse.gltf`、
-   旧农场 → `rv_barn.gltf` 均可进入，含店内物资箱和墙体碰撞；商场仍是立方体原型。
+   旧农场 → `rv_barn.gltf`、购物中心 → `rv_mall.gltf` 均可进入，含店内物资箱
+   和墙体碰撞；程序化生成的临时营地/湖边营地仍是简易立方体棚屋。
 5. **玩法**：钓鱼、天气、昼夜、零件磨损/升级、灶台菜单、背包、合作均已具备；
    还缺更深的搜刮/建造/驾驶成长。
 
