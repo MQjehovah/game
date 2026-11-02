@@ -321,11 +321,19 @@ local function coopBuildUpdate()
     end
   end
 
-  if ActionPressed("e") and cat ~= nil and GetVar("netConnected") == 1 then
-    Rpc("game_cmd", { type = "place", item = cat.id, cx = cx, cz = cz,
-                      rot = rot, layer = cat.layer })
-    coop.toast = string.format("请求放置 %s (%d,%d)", cat.name, cx, cz)
-    coop.toastT = 2.0
+  if ActionPressed("e") then
+    if cat == nil then
+      coop.toast = "没有选中家具"
+      coop.toastT = 2.0
+    elseif not valid then
+      coop.toast = "当前位置/层/材料不合法，先调整光标或按 Tab 切层"
+      coop.toastT = 2.4
+    elseif GetVar("netConnected") == 1 then
+      Rpc("game_cmd", { type = "place", item = cat.id, cx = cx, cz = cz,
+                        rot = rot, layer = coop.buildLayer })
+      coop.toast = string.format("请求放置 %s (%d,%d)", cat.name, cx, cz)
+      coop.toastT = 2.0
+    end
   elseif ActionPressed("x") and GetVar("netConnected") == 1 then
     Rpc("game_cmd", { type = "remove", cx = cx, cz = cz, layer = coop.buildLayer })
     coop.toast = string.format("请求拆除 (%d,%d)", cx, cz)
