@@ -384,6 +384,8 @@ assetMgr_.SetTextureBakeDir(".neon/imported");
     rcfg.input = &clientInput_;
     rcfg.font2d = cjkFont_.Valid() ? cjkFont_ : pixelFont_;
     rcfg.rngSeed = cfg_.rngSeed;
+    if (!cfg_.connectHost.empty() && cfg_.connectPort != 0)
+        rcfg.netRole = cfg_.spectate ? "spectate" : "client";
     // Packaged audio: the editor play mode wires these hooks for editor
     // testing; the standalone player must do the same or every PlaySfx /
     // PlayMusic / PlaySfx3D cue in a shipped game is silently dropped.
@@ -903,7 +905,8 @@ void PlayerApp::HandleRpc(const net::MsgRpc& rpc) {
     // them via NetCommand()).
     if (rpc.name == "moba_state" || rpc.name == "moba_hud" || rpc.name == "room.joined" ||
         rpc.name == "room.list" || rpc.name == "room.left" || rpc.name == "lobby" ||
-        rpc.name == "match.start" || rpc.name == "game_state" || rpc.name == "game_event") {
+        rpc.name == "match.start" || rpc.name == "game_state" || rpc.name == "game_event" ||
+        rpc.name == "game_world" || rpc.name == "game_crates") {
         runtime_.PushNetCommand(0, rpc.name, rpc.argsJson);
         return;
     }

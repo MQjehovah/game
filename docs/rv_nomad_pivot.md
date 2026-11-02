@@ -144,29 +144,35 @@
 - **车内破面**：内墙板从 ±0.99 内缩到 ±0.94，车窗外移到 ±1.335 并改哑光深色，
   删除与长车窗重叠的侧门板；修复墙板 z-fighting 和不同视角反光变色。
 
-## 网络合作（最小纵切）
+## 网络合作（主世界 2–4 人）
 
-`assets/scenes/coop_test.json` + `assets/scripts/coop/coop_test.lua` 是独立的两 人合作
-测试纵切，验证“两名客户端看到同一辆服务器权威房车”。
+`garage.json` + `assets/scripts/lc/lc_coop.lua` 已把服务器权威合作并入主世界：
+同一辆房车、同一组需求/家具/搜刮物资，最多 4 个玩家槽位。
+`coop_test.json` 仍作为更轻量的 2 人协议调试场景保留。
 
-- **服务器权威状态**：房车 `x/z/yaw/speed/fuel`、两名玩家位姿、五项需求、水箱/存粮、
-  家具模块、车内灯、游戏时间、事件文本。
+- **服务器权威状态**：房车 `x/z/yaw/speed/fuel`、4 名玩家位姿、五项需求、水箱/存粮、
+  材料与共享背包、家具布局/开关、车内灯、游戏时间、物资箱列表。
+- **启动角色**：引擎在 `on_start` 之前把 `netRole` 写入 GameVar（server/client/spectate）；
+  `garage.lua` 据此走合作初始化，跳过单机存档、第一人称出生和单机 HUD。
 - **上行指令**：客户端 `Rpc("game_cmd", {...})`；服务器 `game_cmd` 处理器把
   `clientId + args` 放进 runtime 的 NetCommand 队列，Lua 用 `NetCommand()` 按客户端
-  路由到槽位（第一个加入 = 槽位 1，第二个 = 槽位 2）。
-- **下行状态**：服务器每 0.1s `Rpc("game_state", {...})` 广播完整状态（约 570B）；
-  `player.cpp` 把 `game_state` 放进客户端 NetCommand 队列，Lua 直接 `Json.Parse`。
-- **位姿快照**：两侧按相同顺序 `Spawn("player")`、`Spawn("player2")`、`Spawn("rv")`，
-  三个代理都带 `CTransformBind`。服务器快照复制到客户端，客户端 glTF 可视实体
-  （`rv_body` / `rv_player`）每帧跟随代理。
-- **每客户端实体所有权**：新增 `EntityKey(entity)` 绑定 + `netControlKey` GameVar；
-  服务器把每个代理的 key 放进 `game_state`，客户端认领自己的 key，之后
-  `ReconcileControlled` 只纠正自己的角色（而不是永远纠正第一个 CTransformBind）。
-- **协议上限**：`kMaxStringBytes` 从 256 提到 1024，让 RPC JSON 状态包能通过
-  可靠通道（帧上限仍约 1.2KB）。
-- **验证**：双方日志按服务器 `seq` 每 2s 输出同一行状态；同一 `seq` 的
-  `rv=(...)`、`p1/p2`、`fuel/water/meals/hunger`、`stove/fridge/bed` 完全一致。
-  另可用 `coop_drive.txt` 触发自动驾驶，验证房车移动时两端仍同步。
+  路由到槽位（第 1–4 个加入 → 槽位 1–4）。
+- **下行状态**：`game_state` 10Hz 广播位姿/需求/背包/家具开关；`game_world` 在家具
+  变化时发送完整布局；`game_crates` 发送物资箱位置。三者都进入客户端 NetCommand 队列。
+- **位姿快照**：两侧按相同顺序 `Spawn("player")` … `Spawn("player4")`；4 个代理都带
+  `CTransformBind`。客户端 glTF 士兵可视实体每帧跟随代理，房车仍使用主世界 glTF 模型。
+- **每客户端实体所有权**：`EntityKey(entity)` + `netControlKey` GameVar；服务器把每个
+  代理的 key 放进 `game_state`，客户端认领自己的 key，4 名玩家都能本地预测 + 服务器纠正。
+- **同场景复制优化**：合作脚本设置 `netReplicateStatic=0`。主世界有数百个静态实体，
+  客户端本来已加载同一场景；不逐个走可靠通道 Spawn，避免 Welcome/状态包被挤出窗口。
+- **加入时序**：`on_player_join` 移到 `MsgWelcome` 之后触发，避免状态/实体 Spawn
+  先于 Welcome 占满可靠通道。
+- **共享搜刮/家具**：服务器 `searchCrate()` + `bankStopBag()` 后广播 `crates/materials`；
+  两端 HUD/日志显示相同剩余物资箱与材料。`coop_actions.txt` 可自动搜箱并切换灶台，
+  `coop_world` 重新下发后客户端日志出现 `furniture synced (9)` / `crates synced (5)`。
+- **验证**：双方日志按服务器 `seq` 每 2s 输出同一行；同一 `seq` 的房车坐标、4 名玩家
+  坐标、燃油/水/材料/物资箱/家具开关/饥饿完全一致。已用 2、3、4 个客户端分别验证
+  （4 客户端时服务器日志 `joined=4/4`，四个客户端都 `smoke assertions passed`）。
 
 ## 房车 glTF 模型
 
@@ -178,8 +184,9 @@
 
 ## 与 Nomad Drive 的差距
 
-1. **多人合作**：已有 2 人服务器权威测试纵切（共享房车/需求/家具/燃油），但还没并入
-   主世界存档，也还没有 3–4 人、玩家各自独立的家具/物品、进出房车可见性切换。
+1. **多人合作**：已并入 `garage.json` 主世界，支持 2–4 人、共享房车/需求/家具/物资箱；
+   但合作状态还是内存态（重启/重连回到初始布局），客户端暂不能摆放/拆除家具，
+   也还没有玩家各自的物品所有权和进出房车可见性切换。
 2. **家具自由摆放**：已改为第一人称无网格自由放置 + AABB/车内边界校验。
 3. **美术**：房车外壳/车内仍是程序化低多边形 glTF + Kenney 家具，缺少高精度车内软装、
    材质、角色动画。
@@ -190,9 +197,10 @@
 
 ## 下一步建议
 
-- P1：把 co-op 状态机并入主世界（`garage.lua`），同步家具/需求/房车/搜刮袋，
-  支持 2–4 人和断线重连。
-- P1：角色/家具动画（开门、坐下、做饭、上车），让第一人称合作更有“人”的存在感。
+- P1：合作状态持久化 + 断线重连（把服务器布局/需求/物资写入 `saves/layout.json`）。
+- P1：合作建造/摆放（客户端上报放置/拆除，服务器校验并广播 `game_world`），
+  以及每名玩家的独立物品/家具所有权。
+- P1：角色/家具动画（开门、坐下、做饭、上车），驾驶时区分座位/乘客。
 - P2：POI 建筑内部（可进入的便利店/加油站/农舍），替换立方体拼装。
 - P2：更高精度的房车模型与车内材质/灯光。
 - P3：更多 NPC 事件、道路随机事件、长途旅行目标。

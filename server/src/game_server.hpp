@@ -186,6 +186,7 @@ private:
         net::MsgInput lastInput;
         NetInput input; // per-client input state fed by THIS client's MsgInput
         bool hasInput = false;
+        bool joinedGame = false; // on_player_join fired once (after Welcome)
         // AOI: the entity ids replicated to this client's last snapshot.
         // Spawn/despawn diffs are computed against this set, so each client
         // gets exactly the entities it has not seen yet / has lost.

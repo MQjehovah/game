@@ -156,6 +156,9 @@ void HashValue(uint64_t& h, const script::Value& v) {
 uint64_t GameVarsHash(const script::GameVars& vars) {
     uint64_t h = 14695981039346656037ULL; // FNV-1a offset basis
     vars.ForEach([&](const std::string& key, const script::Value& v) {
+        // Host metadata, not simulation state: the authoritative server is
+        // "server" while the local prediction is "client"/empty.
+        if (key == "netRole") return;
         h = Fnv1aBytes(h, key.data(), key.size());
         HashValue(h, v);
     });

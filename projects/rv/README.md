@@ -98,51 +98,62 @@
 
 - `selftest_on.txt`：启动时跑完整系统自检，结果写到 `selftest_result.txt`。
 - `autopilot_on.txt`：自动上路、靠站、搜箱、收工。
-- `coop_drive.txt`：在合作测试场景里让玩家 2 秒后自动坐上驾驶席，用于验证房车移动时两端同步。
+- `coop_clamp.txt`：合作测试时把玩家限制在房车前方（便于截图/稳定复现）。
+- `coop_drive.txt`：合作测试时玩家 1 在 2 秒后自动坐上驾驶席。
+- `coop_actions.txt`：合作测试时 6 秒后自动搜一个物资箱并切换灶台状态。
 - `start_mode.txt`：`inside` / `inside_night` / `night` / `place` / `place_night` /
   `drive` / `map` / `look_back` / `look_left` / `look_right` / `look_down` / `look_up`。
 
 自检覆盖 19 项：生存、做饭/鱼汤、咖啡、钓鱼、修车/升级引擎、自由摆放、昼夜灯光、天气、地点物资箱等。
 
-## 网络合作（2 人测试场景）
+## 网络合作（主世界 2–4 人）
 
-最小可玩的服务器权威合作纵切：两名玩家共享同一辆房车、同一组需求/家具状态。
+服务器权威的合作模式已并入 `garage.json` 主世界：同一辆房车、同一组需求/家具/搜刮物资，
+支持 4 个玩家槽位。`coop_test.json` 仍保留为更轻量的 2 人协议调试场景。
 
 ```powershell
-# 终端 1：权威服务器（注意用 build-msvc 下的服务器）
+# 终端 1：权威服务器（主世界）
 .\build-msvc\Release\neon_server.exe `
-  --scene projects\rv\assets\scenes\coop_test.json --scripts projects\rv --port 26030
+  --scene projects\rv\assets\scenes\garage.json --scripts projects\rv --port 26050
 
-# 终端 2：玩家 1（先加入 → 槽位 1，负责第一辆车的 1 号代理实体）
-.\build\neon_game.exe --connect 127.0.0.1:26030 `
-  --scene projects\rv\assets\scenes\coop_test.json --scripts projects\rv --name alice
+# 终端 2：玩家 1（先加入 → 槽位 1）
+.\build\neon_game.exe --connect 127.0.0.1:26050 `
+  --scene projects\rv\assets\scenes\garage.json --scripts projects\rv --name alice
 
 # 终端 3：玩家 2（后加入 → 槽位 2）
-.\build\neon_game.exe --connect 127.0.0.1:26030 `
-  --scene projects\rv\assets\scenes\coop_test.json --scripts projects\rv --name bob
+.\build\neon_game.exe --connect 127.0.0.1:26050 `
+  --scene projects\rv\assets\scenes\garage.json --scripts projects\rv --name bob
+
+# 终端 4/5：玩家 3/4（槽位 3/4，可选）
 ```
 
-- 操作：`WASD` 移动、鼠标视角、`F` 上/下驾驶席、`L` 车内灯、`E` 灶台做饭、
-  `1` 吃饭、`2` 喝水、`3` 睡觉。
-- **服务器权威**：房车位姿/速度/燃油、两名玩家的位姿、生命/饥饿/口渴/体力/卫生、
-  水箱/存粮、家具模块、车内灯、游戏时间都由服务器模拟并广播。
-- **客户端输入**：客户端以 `Rpc("game_cmd", {...})` 发送移动/交互；服务器脚本用
-  `NetCommand()` 按 `clientId` 路由到对应槽位。客户端不直接改房车状态。
-- **位姿复制**：服务器为房车和两名玩家各生成一个 `CTransformBind` 代理实体；
-  客户端按相同顺序生成同名代理，引擎快照自动复制位姿。客户端再让 glTF 房车 /
-  士兵可视实体跟随代理，得到平滑的远程位姿。
-- **每客户端所有权**：服务器广播每个代理的 `EntityKey`；客户端通过 `netControlKey`
-  GameVar 认领自己的实体，因此两个客户端都能对自己的角色做本地预测 + 服务器纠正，
-  不再只有“第一个 CTransformBind”能控制。
-- **验证**：客户端日志按服务器状态序号 `seq` 每 2 秒打印一行；两端同一 `seq`
-  的房车坐标、玩家坐标、燃油、存水、存粮、饥饿、家具状态完全一致。
+- 操作：`WASD` 移动、鼠标视角、`F` 上/下驾驶席、`L` 车内灯、`G` 灶台开关、
+  `E` 搜附近物资箱、`1` 吃饭、`2` 喝水、`3` 睡觉。
+- **服务器权威**：房车位姿/速度/燃油、四名玩家位姿、五项需求、水箱/存粮、
+  材料与共享背包、家具布局/开关、车内灯、游戏时间、物资箱列表。
+- **上行指令**：客户端 `Rpc("game_cmd", {...})`；服务器 `game_cmd` 处理器按
+  `clientId` 路由到槽位，Lua 用 `NetCommand()` 消费并做距离/字段校验。
+- **下行状态**：`game_state` 10Hz 广播位姿/需求/背包/家具开关；`game_world` 在
+  家具变化时发送完整布局；`game_crates` 发送物资箱位置。三者都进入客户端脚本队列。
+- **位姿复制**：服务器生成 4 个 `CTransformBind` 玩家代理；客户端按相同顺序生成同名
+  代理，引擎快照复制位姿，客户端 glTF 士兵可视实体跟随代理。
+- **每客户端所有权**：服务器把每个代理的 `EntityKey` 随状态下发；客户端用
+  `netControlKey` 认领自己的实体，四名玩家都能本地预测 + 服务器纠正。
+- **同场景优化**：合作脚本设置 `netReplicateStatic=0`，不再把主世界数百个静态实体
+  逐个走可靠通道 Spawn；客户端本来就加载了同一场景，只复制 4 个玩家代理。
+- **加入时序**：`on_player_join` 在 `MsgWelcome` 之后触发，避免主世界的初始状态/实体
+  Spawn 把 Welcome 挤到可靠窗口后面。
+- **共享搜刮**：服务器 `searchCrate()` + `bankStopBag()` 后广播 `crates`/`materials`；
+  两端 HUD/日志显示相同的剩余物资箱与材料。`coop_actions.txt` 可自动验证这条链路。
+- **验证**：客户端日志按服务器 `seq` 每 2 秒打印；同一 `seq` 的房车坐标、4 名玩家坐标、
+  燃油/水/材料/物资箱/家具开关/饥饿完全一致。
 
 ## 已知差距（后续）
 
-- 网络合作目前是独立测试场景（2 人、共享需求/家具/房车），还没有并入主世界存档、
-  3–4 人、家具单独所有权、玩家进出房车的可见性切换。
+- 合作状态目前是内存态：服务器重启/重连会回到主世界初始布局，尚未写入 `saves/layout.json`。
+- 合作中家具由服务器布局统一同步，客户端暂不能摆放/拆除家具；家具还没有物理碰撞。
+- 玩家进出房车的可见性/座椅动画还没做，驾驶时所有在线玩家随车移动。
 - 地点建筑仍是简单立方体拼的废弃小屋，缺少真正的室内空间/门/窗。
 - 房车模型是脚本生成的低多边形 glTF，不是手工建模的高精度资产。
-- 家具可以自由旋转但还没有物理碰撞（玩家能穿过家具）。
 - 车辆零件是整体状态，不是可拆装的独立部件。
 - 音效是程序合成的占位音，缺少更丰富的环境声/音乐。

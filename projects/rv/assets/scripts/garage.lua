@@ -287,9 +287,16 @@ function ensureHelpers()
 end
 
 function on_start()
+  local nr = GetVar("netRole")
+  if nr == "server" or nr == "client" or nr == "spectate" then
+    coopRole = nr
+  else
+    coopRole = nil
+  end
   local saveText = ReadText("saves/layout.json")
   if not saveText or saveText == "" then saveText = ReadText("layout.json") end
   local hasSave = saveText ~= nil and saveText ~= ""
+  if coopRole ~= nil then hasSave = false end
   camEnt = FindNamedEntity("Main Camera")
   groundEnt = FindNamedEntity("Ground")
   collectRvParts()
@@ -368,6 +375,11 @@ function on_start()
                          { mass = math.max(800, 1200 + stats.weight * 0.8),
                            friction = 0.4, restitution = 0.05 })
 
+  if coopRole ~= nil then
+    coopInitWorld(coopRole)
+  end
+
+  if coopRole == nil then
   -- 第一人称出生：车右后侧，面朝房车（Nomad Drive 式开场）
   local px, pz, pyaw = 2.2, -8.0, dirYaw(-2.2, 8.0)
   if startMode == "look_back" then
@@ -420,6 +432,7 @@ function on_start()
     toast.text = string.format("第 %d 天 %s — E 交互 / B 改装 / T 驾驶 / M 地图",
                                day, timeString())
     toast.t = 5.0
+  end
   end
 end
 
@@ -607,6 +620,10 @@ function updateFreePlacement()
 end
 
 function on_update(ent, dt)
+  if coopRole ~= nil then
+    coopUpdate(dt)
+    return
+  end
   if toast.t > 0 then toast.t = toast.t - dt end
   ensureHelpers()
   if ActionPressed("m") then mapOpen = not mapOpen end
@@ -733,6 +750,10 @@ end
 
 -- 2D HUD 必须在 on_render 里画：draw2d 上下文只在渲染期接线
 function on_render()
+  if coopRole ~= nil then
+    if coopRole ~= "server" then coopDrawHud() end
+    return
+  end
   drawWeatherOverlay()
   drawNightOverlay()
   if phase == "driving" then

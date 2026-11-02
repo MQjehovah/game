@@ -106,6 +106,11 @@ struct GameRuntimeConfig {
     // shared_ptr keeps the config copyable (ChangeScene restarts reuse it).
     std::shared_ptr<ui::IUiSystem> uiSystem;
     uint64_t rngSeed = 20260821u;           // fixed: playtest RNG is reproducible
+    // Network role exposed to scripts before on_start: "server" / "client" /
+    // "spectate". Empty for a local single-player run. Hosts set this from
+    // their connection mode so scene scripts can choose authoritative vs
+    // client-side initialization without waiting for the first update.
+    std::string netRole;
     bool headless = false;                  // skip draw-list build; pure simulation
     // Physics backend: "custom" (deterministic custom sphere/AABB solver) or
     // "jolt" (Jolt rigid bodies; compiled when NEON_ENABLE_JOLT). The packaged

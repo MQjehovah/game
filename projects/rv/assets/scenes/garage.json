@@ -94,6 +94,10 @@
             },
             {
               "backend": "lua",
+              "path": "assets/scripts/lc/lc_coop.lua"
+            },
+            {
+              "backend": "lua",
               "path": "assets/scripts/garage.lua"
             }
           ]

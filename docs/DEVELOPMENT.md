@@ -721,18 +721,32 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
 - **通用玩法 RPC 通道**：客户端 `Rpc("game_cmd", args)` → 服务器注册的 `game_cmd`
   处理器把 `{clientId, argsJson}` 放进该 match 的 runtime 队列；权威脚本用
   `NetCommand()` 取出并做字段校验。服务器脚本 `Rpc("game_state", args)` 广播给
-  match 内所有客户端，客户端 `HandleRpc` 把 `game_state`/`game_event` 放进同一队列。
+  match 内所有客户端，客户端 `HandleRpc` 把 `game_state`/`game_event`/`game_world`/
+  `game_crates` 放进同一队列。`game_world`/`game_crates` 用于低频大块状态
+  （家具布局/物资箱位置），避免 10Hz 状态包超限。
+- **启动期网络角色**：`GameRuntimeConfig::netRole` 在 `on_start` 之前写入 GameVar
+  `netRole`（server/client/spectate），场景脚本可以直接选择权威初始化或客户端初始化，
+  不必等第一帧。
+- **加入时序**：`SendWelcome` 先于 `on_player_join`；脚本的首批状态/实体 Spawn 排在
+  Welcome 之后，避免主世界密集实体把 Welcome 挤到可靠窗口后面。
+- **同场景静态复制开关**：脚本可设 `SetVar("netReplicateStatic", 0)`；服务器跳过
+  `SceneTransform` 静态实体的可靠 Spawn，只复制脚本 `CTransformBind` 代理。客户端
+  已加载同一场景时这是必要的（房车主世界有数百个静态实体）。
 - **每客户端实体所有权**：`EntityKey(entity)` 返回快照同款稳定 key；服务器把 key
   随状态下发，客户端通过 GameVar `netControlKey` 认领自己的 `CTransformBind` 实体，
-  `ReconcileControlled` 只纠正该实体（房车合作项目由此支持两个客户端各自预测）。
+  `ReconcileControlled` 只纠正该实体（房车合作项目由此支持 4 个客户端各自预测）。
 - **RPC 字符串上限**：`kMaxStringBytes` 1024，容得下约 1KB 的 JSON 状态包；
   可靠通道的 `maxFrameBytes` 仍把单个 UDP 帧限制在 ~1.2KB。
 - **客户端同步**（`client::ClientSync`）：快照环形缓冲 + 相邻插值（yaw 最短弧，渲染时钟
   落后 6 tick ≈100ms）+ 本地预测（同场景同 seed 跑本地 `GameRuntime`）+
   **快照对齐回滚**（分歧超阈值即纠正）；1Hz Ping 心跳。
 - **确定性验收**（`tests/test_determinism.cpp`）：同一脚本输入流在服务器/客户端逐位一致 +
-  状态哈希相等。LAN demo：一 `neon_server` + 两 `neon_game --connect`（首个登录 = 输入
-  控制器，其余观察者）；需**相同 `--scene`/`--seed`**。
+  状态哈希相等（`netRole` 属于主机元数据，不参与哈希）。LAN demo：一 `neon_server` +
+  两 `neon_game --connect`（首个登录 = 输入控制器，其余观察者）；需**相同
+  `--scene`/`--seed`**。
+- **房车 4 人合作示例**（`projects/rv`）：`garage.json` 主世界 + `lc_coop.lua`；
+  服务器权威房车/需求/家具/物资箱，客户端 `game_cmd` 上行 + `game_state`/`game_world`/
+  `game_crates` 下行；已验证 2/3/4 个客户端。
 
 ---
 

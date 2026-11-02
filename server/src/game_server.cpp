@@ -180,6 +180,7 @@ bool GameServer::InitMatch(Match& m, const std::string& sceneJson, bool packMode
     rcfg.assetBaseDir = packMode ? std::string() : cfg_.assetBaseDir;
     if (packMode) rcfg.fileSystem = m.packVfs.get();
     rcfg.rngSeed = cfg_.rngSeed;
+    rcfg.netRole = "server";
     rcfg.input = &m.controllerInput;
     rcfg.physicsBackend = cfg_.physicsBackend;
     core::Status st = m.runtime.Start(sceneJson, rcfg);
@@ -373,6 +374,18 @@ void GameServer::HandleJoin(const net::NetAddress& addr, const net::MsgJoin& joi
     if (it != clients_.end()) {
         it->second.lastSeenMs = nowMs_;
         SendWelcome(it->second); // idempotent: re-joins get a fresh welcome
+        // Multi-player (v2): announce ownership AFTER the welcome so a dense
+        // scene's first state/spawn burst cannot hide the welcome frame.
+        if (!it->second.joinedGame) {
+            it->second.joinedGame = true;
+            if (match_->runtime.HasScriptFunction("on_player_join")) {
+                match_->runtime.CallScriptFunction(
+                    "on_player_join",
+                    {script::Value::Num(static_cast<double>(it->second.clientId))});
+            }
+            match_->runtime.DispatchPluginEvent(
+                "player_join", {script::Value::Num(static_cast<double>(it->second.clientId))});
+        }
     }
 }
 
@@ -484,16 +497,9 @@ void GameServer::AdmitClient(const net::NetAddress& addr, const std::string& nam
                      static_cast<unsigned long long>(client.clientId));
     }
 
-    // Multi-player (v2): a scene that defines on_player_join(clientId) spawns
-    // and binds a player for this client right here (the script calls
-    // BindPlayerToClient inside the handler).
-    if (match_->runtime.HasScriptFunction("on_player_join")) {
-        match_->runtime.CallScriptFunction(
-            "on_player_join", {script::Value::Num(static_cast<double>(client.clientId))});
-    }
-    // Runtime plugins receive the same join event (Plugin.On("player_join")).
-    match_->runtime.DispatchPluginEvent(
-        "player_join", {script::Value::Num(static_cast<double>(client.clientId))});
+    // Multi-player (v2) ownership is announced after Welcome in HandleJoin, so
+    // the script's first gameplay RPCs cannot queue ahead of the welcome frame
+    // on a dense scene.
 }
 
 void GameServer::HandleInput(const net::NetAddress& addr, const net::MsgInput& input) {
@@ -1046,7 +1052,16 @@ void GameServer::BroadcastSnapshot(Match& m) {
         it.kind = kind.empty() ? "box" : kind;
         items.push_back(std::move(it));
     };
+    // Same-scene multiplayer can opt out of replicating static scene entities:
+    // the client already loaded the identical scene, so re-sending hundreds of
+    // spawn messages would clog the reliable channel. Script-spawned
+    // CTransformBind proxies still replicate below.
+    bool replicateStatic = true;
     {
+        const script::Value v = m.runtime.GameVars().Get("netReplicateStatic");
+        if (v.type == script::Value::Type::Number && v.number == 0.0) replicateStatic = false;
+    }
+    if (replicateStatic) {
         auto view = world.ViewAll<scene::SceneTransform>();
         for (size_t i = 0; i < view.Size(); ++i) {
             ecs::Entity e = world.EntityAt<scene::SceneTransform>(i);
@@ -1104,6 +1119,7 @@ void GameServer::BroadcastSnapshot(Match& m) {
     for (auto& kv : clients_) {
         Client& c = kv.second;
         if (c.chan.TimedOut()) continue;
+        if (!c.joinedGame) continue; // no spawn burst before MsgWelcome
         if (MatchForClient(c) != &m) continue; // this client belongs to another match
 
         // Per-client AOI focus: the client's OWN bound player when it has one

@@ -930,6 +930,9 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     plugins_.Load(cfg_.scriptBaseDir, [this](const std::string& p) { return ReadScript(p); },
                   &scriptCtx_, cfg_.rngSeed ? cfg_.rngSeed : 1u);
 
+    if (!cfg_.netRole.empty())
+        scriptCtx_.gameVars.Set("netRole", script::Value::Str(cfg_.netRole));
+
     AttachScripts();
     btRuntime_.AttachAll(world_, scriptCtx_, {hosts_.lua.get(), hosts_.js.get()});
     // Draw subsystem (Task 16): inject the cfg_-derived asset/path state (fresh
