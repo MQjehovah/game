@@ -758,17 +758,18 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   写 `saves/layout.json`（含 `coop` 扩展），启动时恢复；同名断线重连回收槽位。
   已验证 2/3/4 个客户端、合作放置/拆除、进出过渡、保存重启和重连；门洞/车门/
   坐姿资产可用 `coop_board.txt` + `coop_doorview.txt` 复现。
-- **可进入 POI 商店/加油站/仓库**（`projects/rv`）：`tools/gen_rv_store.py` /
-  `gen_rv_gasstation.py` / `gen_rv_warehouse.py` 生成实心墙体、门洞、门框/雨棚/招牌、
-  货架/柜台/托盘的 `rv_store.gltf`、`rv_gasstation.gltf`（四柱雨棚 + 两台油泵）和
-  `rv_warehouse.gltf`（宽装卸门/月台 + 高棚 + 钢制货架）；对应地点直接生成 glTF，
-  店内 6 个物资箱由 `spawnCrates()` 放在店内。`collidePoiWalls()` 在服务器与客户端
-  预测同时阻挡侧/后墙，只允许从门洞进出。`coop_ruin.txt` / `coop_gas.txt` /
-  `coop_depot.txt` 把两名玩家放到对应店门口并自动 3–5s 进门、8–10s 出门，
-  `coop_poiview.txt` / `coop_poiext.txt` 提供店内/店外镜头；服务器日志
-  `P1/P2 entered ...`、`shop=2` → `exited`、`shop=0`，两端 `smoke assertions passed`。
-  客户端 smoke 的“controlled moved”判定改为 XZ 水平距离，脚本化演示向任意方向
-  传送也能通过。
+- **可进入 POI 商店/加油站/仓库/农场**（`projects/rv`）：`tools/gen_rv_store.py` /
+  `gen_rv_gasstation.py` / `gen_rv_warehouse.py` / `gen_rv_barn.py` 生成实心墙体、
+  门洞、门框/雨棚/招牌、货架/柜台/托盘/畜栏的 `rv_store.gltf`、
+  `rv_gasstation.gltf`（四柱雨棚 + 两台油泵）、`rv_warehouse.gltf`（宽装卸门/月台 +
+  高棚 + 钢制货架）和 `rv_barn.gltf`（红谷仓 + 山墙屋顶 + 滑动门/畜栏/干草）；
+  对应地点直接生成 glTF，店内 6 个物资箱由 `spawnCrates()` 放在店内。
+  `collidePoiWalls()` 在服务器与客户端预测同时阻挡侧/后墙，只允许从门洞进出。
+  `coop_ruin.txt` / `coop_gas.txt` / `coop_depot.txt` / `coop_farm.txt` 把两名玩家
+  放到对应店门口并自动 3–5s 进门、8–10s 出门，`coop_poiview.txt` /
+  `coop_poiext.txt` 提供店内/店外镜头；服务器日志 `P1/P2 entered ...`、`shop=2` →
+  `exited`、`shop=0`，两端 `smoke assertions passed`。客户端 smoke 的
+  “controlled moved”判定改为 XZ 水平距离，脚本化演示向任意方向传送也能通过。
 
 ---
 

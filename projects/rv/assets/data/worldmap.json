@@ -9,8 +9,30 @@
       "desc": "房车驻地",
       "links": [
         "gasstop",
-        "ruin"
+        "ruin",
+        "farm"
       ]
+    },
+    {
+      "id": "farm",
+      "name": "旧农场",
+      "mx": 0.12,
+      "my": 0.50,
+      "danger": 1,
+      "desc": "谷仓、畜栏与干草堆",
+      "links": [
+        "camp"
+      ],
+      "loot": {
+        "wood": [
+          2,
+          5
+        ],
+        "cloth": [
+          1,
+          3
+        ]
+      }
     },
     {
       "id": "gasstop",
