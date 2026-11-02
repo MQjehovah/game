@@ -9,6 +9,7 @@ function initSurvival()
   day = 1
   water = 80
   parts = { engine = 100, tires = 100, battery = 100 }
+  upgrades = { engine = 0, tires = 0 }
   lastWarn = {}
   hurtT = 0
 end
@@ -386,10 +387,36 @@ function recipeAvailable(r)
   return true, ""
 end
 
+function partUpgradeCost(id)
+  local lv = upgrades[id] or 0
+  if id == "engine" then
+    return { metal = 4 + lv * 2, electronics = 3 + lv }
+  elseif id == "tires" then
+    return { metal = 3 + lv, cloth = 2 + lv }
+  end
+  return nil
+end
+
 function repairPart(id)
   local value = partValue(id)
   if value >= VEH.partMax then
-    toast.text = "已经修好了"
+    local lv = upgrades[id]
+    if lv ~= nil and lv < 3 then
+      local cost = partUpgradeCost(id)
+      if not canAfford(cost) then
+        toast.text = "升级材料不足：" .. costText(cost)
+        toast.t = 2.2
+        return false
+      end
+      payCost(cost)
+      upgrades[id] = lv + 1
+      if PlaySfx then PlaySfx("repair") end
+      toast.text = string.format("%s 升级到 Lv%d", id == "engine" and "引擎" or "轮胎",
+                                 upgrades[id])
+      toast.t = 2.6
+      return true
+    end
+    toast.text = lv ~= nil and "已经满级" or "已经修好了"
     toast.t = 1.8
     return false
   end

@@ -81,11 +81,16 @@ function runSelfTest()
   if bench then useStation(bench) end
   ok(r, "repair at workbench", dur > 50, string.format("dur 50->%.0f", dur))
 
-  -- 工作台菜单：单独修引擎
+  -- 工作台菜单：单独修引擎 + 引擎升级
   parts.engine = 40
   repairPart("engine")
-  ok(r, "repair engine part", parts.engine > 40,
-     string.format("engine 40->%.0f", parts.engine))
+  local repaired = parts.engine > 40
+  parts.engine = 100
+  materials.metal = 20; materials.electronics = 10
+  local lv0 = upgrades.engine
+  repairPart("engine")
+  ok(r, "repair/upgrade engine", repaired and upgrades.engine == lv0 + 1,
+     string.format("engine 40->100 lv %d->%d", lv0, upgrades.engine))
 
   -- 低强度威胁
   local h0 = #horde

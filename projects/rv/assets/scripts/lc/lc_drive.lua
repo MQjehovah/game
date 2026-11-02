@@ -64,7 +64,9 @@ function updateDrive(dt)
   local maxSp, acc = DRIVE.maxSpeed, DRIVE.accel
   -- 零件磨损：引擎影响极速/加速，轮胎影响转向
   local engF = 0.60 + 0.40 * (parts.engine or 100) / 100
+                       + (upgrades and upgrades.engine or 0) * 0.04
   local tireF = 0.60 + 0.40 * (parts.tires or 100) / 100
+                        + (upgrades and upgrades.tires or 0) * 0.04
   maxSp = maxSp * engF
   acc = acc * (0.70 + 0.30 * (parts.engine or 100) / 100)
   -- 引擎濒临报废：只能龟速，必须先修

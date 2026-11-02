@@ -111,7 +111,7 @@ function saveLayout()
   local data = {
     cell = CELL, gw = GW, gh = GH, materials = materials,
     rv = { x = rv.x, z = rv.z, yaw = rv.yaw, node = atNode or curNode },
-    vehicle = { fuel = fuel, dur = dur, parts = parts },
+    vehicle = { fuel = fuel, dur = dur, parts = parts, upgrades = upgrades },
     survival = { health = needs.health, hunger = needs.hunger, thirst = needs.thirst,
                  energy = needs.energy, hygiene = needs.hygiene },
     inventory = inv, water = water,
@@ -219,6 +219,13 @@ function loadLayout()
       for k, v in pairs(data.vehicle.parts) do
         if parts[k] ~= nil then
           parts[k] = math.max(0, math.min(VEH.partMax, tonumber(v) or 100))
+        end
+      end
+    end
+    if type(data.vehicle.upgrades) == "table" then
+      for k, v in pairs(data.vehicle.upgrades) do
+        if upgrades[k] ~= nil then
+          upgrades[k] = math.max(0, math.min(3, tonumber(v) or 0))
         end
       end
     end

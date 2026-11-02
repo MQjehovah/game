@@ -633,19 +633,36 @@ function drawStationMenu()
     for i, part in ipairs(REPAIR_PARTS) do
       local value = partValue(part.id)
       local full = value >= VEH.partMax
+      local lv = upgrades and upgrades[part.id]
+      local canUp = full and lv ~= nil and lv < 3
       local kit = hasItem("repairkit", 1)
       local cost = partRepairCost(part.id)
-      local ok = not full and (kit or canAfford(cost))
+      local ok = (not full) and (kit or canAfford(cost))
       local costStr = kit and "修理包x1" or costText(cost)
+      if canUp then
+        local ucost = partUpgradeCost(part.id)
+        costStr = costText(ucost)
+        ok = canAfford(ucost)
+      end
       DrawRect(px + 16, yy - 4, pw - 32, 52, ok and 0.10 or 0.12,
                ok and 0.12 or 0.08, ok and 0.09 or 0.08, 0.7)
       DrawText("[" .. i .. "]", px + 26, yy, 16, ok and 0.95 or 0.5, ok and 0.85 or 0.5, 0.55, 1)
       DrawText(part.name, px + 66, yy, 16, ok and 0.96 or 0.6, ok and 0.92 or 0.6, 0.82, 1)
-      DrawText(string.format("%.0f%%", value), px + 66, yy + 21, 12,
+      local status = string.format("%.0f%%", value)
+      if full and lv ~= nil then status = "Lv" .. lv end
+      DrawText(status, px + 66, yy + 21, 12,
                value < 40 and 1 or 0.8, value < 40 and 0.35 or 0.8, 0.35, 1)
-      drawTextRight(full and "正常" or costStr, px + pw - 24, yy + 8, 12,
-                    full and 0.55 or (ok and 0.85 or 1), full and 0.9 or (ok and 0.82 or 0.35),
-                    full and 0.55 or (ok and 0.72 or 0.28))
+      local rightText = "正常"
+      if canUp then
+        rightText = "升级 Lv" .. lv .. "->" .. (lv + 1) .. "  " .. costStr
+      elseif full and lv ~= nil then
+        rightText = "满级 Lv3"
+      elseif not full then
+        rightText = costStr
+      end
+      drawTextRight(rightText, px + pw - 24, yy + 8, 12,
+                    (ok or full) and 0.85 or 1, (ok or full) and 0.82 or 0.35,
+                    (ok or full) and 0.72 or 0.28)
       yy = yy + 58
     end
     drawTextCentered("按 1/2/3/4 维修    E 关闭", vw * 0.5, py + ph - 30, 13, 0.75, 0.75, 0.68, 1)
