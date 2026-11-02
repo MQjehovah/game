@@ -37,9 +37,9 @@ local INTERIOR = {
   -- 地板上的深色地毯
   { pre = "rv_panel_dark",  lx =  0.0,  ly = 0.058, lz = -1.0, sx = 1.45, sy = 0.012, sz = 2.1 },
   -- 车顶内饰板（挡天空，配合暖光做出车舱感）
-  { pre = "rv_panel_light", lx = 0.0, ly = 2.12, lz = 0.0, sx = 2.24, sy = 0.04, sz = 7.86 },
+  { pre = "rv_panel_light", lx = 0.0, ly = 2.12, lz = 0.0, sx = 2.24, sy = 0.04, sz = 7.86, hideInCab = true },
   -- 驾驶室顶（保留挡风玻璃上方的开口）
-  { pre = "rv_panel_light", lx = 0.0, ly = 2.14, lz = 4.75, sx = 2.24, sy = 0.04, sz = 1.9 },
+  { pre = "rv_panel_light", lx = 0.0, ly = 2.14, lz = 4.75, sx = 2.24, sy = 0.04, sz = 1.9, hideInCab = true },
   { pre = "rv_lamp", lx = 0.0, ly = 2.02, lz = -1.6, sx = 0.16, sy = 0.05, sz = 0.16 },
   { pre = "rv_lamp", lx = 0.0, ly = 2.02, lz = 1.7,  sx = 0.16, sy = 0.05, sz = 0.16 },
 }
@@ -58,7 +58,7 @@ function spawnInterior()
       SetScale(ent, d.sx, d.sy, d.sz)
       rvInterior[#rvInterior + 1] = {
         ent = ent, lx = d.lx, ly = d.ly, lz = d.lz,
-        sx = d.sx, sy = d.sy, sz = d.sz,
+        sx = d.sx, sy = d.sy, sz = d.sz, hideInCab = d.hideInCab,
       }
     end
   end
@@ -83,10 +83,12 @@ function applyRvTransform()
                         and not isPlayerInsideRv())
   end
   if rvInterior then
+    local hideCab = (phase == "driving" and driveView == "cab")
     for _, p in ipairs(rvInterior) do
       local wx, wz = rotOf(p.lx, p.lz)
       SetPosition(p.ent, { x = wx, y = p.ly, z = wz })
       SetRotationY(p.ent, rv.yaw)
+      if p.hideInCab then SetVisible(p.ent, not hideCab) end
     end
   end
   for _, inst in pairs(instances) do

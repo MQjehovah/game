@@ -324,6 +324,7 @@ function on_start()
   ensureHelpers()
   initSurvival()
   initWeather()
+  initDayNight()
 
   -- 初始示例布局：车尾卧室 + 灶台/水槽/冰箱 + 车顶太阳能
   place(CATALOG[2], 2, 0, 0, true)   -- 单人床（右侧，留出 1m 走道）
@@ -593,6 +594,7 @@ function on_update(ent, dt)
   LC.flow.tick(dt)
   updateSurvival(dt)
   updateWeather(dt)
+  updateDayNight(dt)
 
   if ActionPressed("f5") then saveLayout() end
   if ActionPressed("f9") then loadLayout() end

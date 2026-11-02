@@ -120,6 +120,28 @@ function runSelfTest()
   setWeather("clear")
   ok(r, "weather", rainOn and not isRainy())
 
+  -- 真实昼夜光照
+  clock = 22 * 60; lastSunClock = -999; updateDayNight(0)
+  local nightInt = EntityComponentField(sunEnt, "light", "intensity")
+  clock = 12 * 60; lastSunClock = -999; updateDayNight(0)
+  local dayInt = EntityComponentField(sunEnt, "light", "intensity")
+  ok(r, "day/night sun light", nightInt and dayInt and dayInt > nightInt,
+     string.format("night=%.2f day=%.2f", tonumber(nightInt) or -1, tonumber(dayInt) or -1))
+
+  -- 地点物资箱刷在小屋周围
+  atNode = "ruin"
+  spawnCrates()
+  local ruin = nodeById("ruin")
+  local nearRuin = 0
+  for _, c in ipairs(crates) do
+    local dx, dz = c.x - (ruin.x + 6.5), c.z - (ruin.z + 6.5)
+    if dx * dx + dz * dz < 25 then nearRuin = nearRuin + 1 end
+  end
+  ok(r, "crates at POI ruin", nearRuin >= 4,
+     string.format("%d/%d near ruin", nearRuin, #crates))
+  despawnCrates()
+  atNode = nil
+
   -- 存读档
   local saved = saveLayout()
   ok(r, "save layout", saved ~= false, "saves/layout.json")

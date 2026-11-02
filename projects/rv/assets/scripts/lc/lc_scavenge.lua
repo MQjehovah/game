@@ -45,14 +45,23 @@ end
 
 function spawnCrates()
   despawnCrates()
+  local nd = atNode and nodeById(atNode) or nil
+  local baseX, baseZ = rv.x, rv.z
+  local rMin, rMax = 4.0, 9.0
+  -- 非营地：物资箱刷在废弃小屋周围，鼓励下车走进地点搜刮
+  if nd and atNode ~= "camp" then
+    baseX, baseZ = nd.x + 6.5, nd.z + 6.5
+    rMin, rMax = 1.4, 3.2
+  end
   for i = 1, STOP.crates do
     local ent = SpawnPrefab("rv_loot_crate", { x = 0, y = -50, z = 0 })
     if ent ~= nil then
       local cx, cz
-      for _ = 1, 12 do
+      for _ = 1, 14 do
         local a = math.random() * math.pi * 2
-        local r = 4.0 + math.random() * 5.0
-        local wx, wz = rotOf(math.sin(a) * r, math.cos(a) * r)
+        local r = rMin + math.random() * (rMax - rMin)
+        local wx = baseX + math.sin(a) * r
+        local wz = baseZ + math.cos(a) * r
         local rdx, rdz = wx - rv.x, wz - rv.z
         if rdx * rdx + rdz * rdz >= 9 then
           local ok = true
@@ -63,7 +72,7 @@ function spawnCrates()
           if ok then cx, cz = wx, wz break end
         end
       end
-      if cx == nil then cx, cz = rotOf(3.6, -2.0 + 1.4 * (i - 1)) end
+      if cx == nil then cx, cz = baseX + 1.2, baseZ + 1.2 end
       SetPosition(ent, { x = cx, y = 0.28, z = cz })
       SetScale(ent, 0.55, 0.55, 0.55)
       SetRotationY(ent, math.random() * math.pi * 2)

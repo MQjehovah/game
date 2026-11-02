@@ -13,6 +13,45 @@ function initSurvival()
   hurtT = 0
 end
 
+-- 真实昼夜光照：直接改场景 Sun 的方向光强度/颜色
+function initDayNight()
+  sunEnt = FindNamedEntity("Sun")
+  lastSunClock = -999
+end
+
+function updateDayNight(dt)
+  if sunEnt == nil then return end
+  if math.abs(clock - lastSunClock) < 1.0 then return end
+  lastSunClock = clock
+  local h = clock / 60
+  local f = 1.0
+  if h < 5 or h >= 21 then
+    f = 0.04
+  elseif h < 7 then
+    f = (h - 5) / 2
+  elseif h >= 18 then
+    f = 1.0 - (h - 18) / 3
+  end
+  f = math.max(0.04, math.min(1, f))
+  local r, g, b
+  if f < 0.28 then
+    r, g, b = 0.42, 0.52, 0.78
+  elseif f < 0.72 then
+    local t = (f - 0.28) / 0.44
+    r = 0.42 + (1.0 - 0.42) * t
+    g = 0.52 + (0.62 - 0.52) * t
+    b = 0.78 + (0.35 - 0.78) * t
+  else
+    local t = (f - 0.72) / 0.28
+    r = 1.0
+    g = 0.62 + (0.96 - 0.62) * t
+    b = 0.35 + (0.88 - 0.35) * t
+  end
+  SetEntityComponentField(sunEnt, "light", "intensity", 0.06 + 1.74 * f)
+  SetEntityComponentField(sunEnt, "light", "color", { r, g, b, 1 })
+  SetEntityComponentField(sunEnt, "light", "ambientStrength", 0.12 + 0.43 * f)
+end
+
 function isNight()
   return clock < SURVIVAL.nightEnd or clock >= SURVIVAL.nightStart
 end
