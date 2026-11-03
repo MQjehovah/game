@@ -3790,23 +3790,28 @@ function runSelfTest()
        string.format("drive=%s rain=%s clear=%s radio=%s", dn, rn, wn, radioN))
   end
 
-  -- 两个电台：1=radio、2=radio2
+  -- 三个电台：1=radio、2=radio2、3=radio3（天气/短波台）
   do
     local a = desiredMusic("parked", "clear", true, 1)
     local b = desiredMusic("parked", "clear", true, 2)
-    ok(r, "radio stations", a == "radio" and b == "radio2",
-       string.format("station1=%s station2=%s", tostring(a), tostring(b)))
+    local c = desiredMusic("parked", "clear", true, 3)
+    ok(r, "radio stations",
+       a == "radio" and b == "radio2" and c == "radio3",
+       string.format("station1=%s station2=%s station3=%s",
+                     tostring(a), tostring(b), tostring(c)))
   end
 
-  -- 驾驶时车载电台：开启后用 radio/radio2 取代引擎声
+  -- 驾驶时车载电台：开启后用 radio/radio2/radio3 取代引擎声
   do
     local engine = desiredMusic("driving", "clear", false, 1, false)
     local radio1 = desiredMusic("driving", "clear", false, 1, true)
     local radio2 = desiredMusic("driving", "clear", false, 2, true)
+    local radio3 = desiredMusic("driving", "clear", false, 3, true)
     ok(r, "car radio",
-       engine == "engine" and radio1 == "radio" and radio2 == "radio2",
-       string.format("engine=%s r1=%s r2=%s", tostring(engine),
-                     tostring(radio1), tostring(radio2)))
+       engine == "engine" and radio1 == "radio" and radio2 == "radio2" and
+       radio3 == "radio3",
+       string.format("engine=%s r1=%s r2=%s r3=%s", tostring(engine),
+                     tostring(radio1), tostring(radio2), tostring(radio3)))
   end
 
   -- 收音机广播：开启后按游戏分钟触发，关闭不触发
