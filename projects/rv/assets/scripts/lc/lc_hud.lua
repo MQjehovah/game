@@ -799,6 +799,10 @@ function drawDriveHud()
   local top = string.format("第 %d 天  %s  ·  %s%s", day, timeString(), weatherName(),
                             (weatherHoursLeft and weatherHoursLeft() > 0) and
                             string.format("（%.1fh）", weatherHoursLeft()) or "")
+  if surfaceInfo ~= nil and surfaceLabel ~= nil then
+    local sname = surfaceInfo(rv.x, rv.z)
+    top = top .. "   · 路面 " .. surfaceLabel(sname)
+  end
   if weatherNextId ~= nil and WEATHER_NAMES ~= nil and
      WEATHER_NAMES[weatherNextId] ~= nil then
     top = top .. "  →  " .. WEATHER_NAMES[weatherNextId]

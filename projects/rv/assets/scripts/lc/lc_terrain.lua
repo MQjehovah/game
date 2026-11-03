@@ -439,6 +439,13 @@ function surfaceGrip(x, z)
   return def.mu
 end
 
+-- 路面类型中文名（驾驶 HUD 提示用）
+function surfaceLabel(name)
+  local map = { asphalt = "沥青", concrete = "水泥", gravel = "碎石",
+                dirt = "泥土", grass = "草地", mud = "泥泞" }
+  return map[name] or "未知"
+end
+
 -- Tire temperature (deg C) modifies grip: cold tires are a bit slippery, the
 -- 45-95 C window is optimal, overheating greases them. Wear also costs grip.
 function tireMuScale(temp, wear)

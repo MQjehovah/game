@@ -695,6 +695,14 @@ function runSelfTest()
       end
       ok(r, "rv surface table", count >= 5,
          string.format("distinctMu=%d", count))
+      ok(r, "surface labels",
+         surfaceLabel("asphalt") == "沥青" and
+         surfaceLabel("grass") == "草地" and
+         surfaceLabel("mud") == "泥泞" and
+         surfaceLabel("???") == "未知",
+         string.format("asphalt=%s grass=%s mud=%s",
+                       surfaceLabel("asphalt"), surfaceLabel("grass"),
+                       surfaceLabel("mud")))
     end
     if tireForceCurve ~= nil then
       local peak = tireForceCurve(0.9, 3000, 0.12, 0.12, 0.75)
