@@ -1657,6 +1657,45 @@ function huntRabbitAtScreen(cx, cy)
   return huntRabbit(best)
 end
 
+-- 猎鹿：准星对准 26m 内的农场鹿，获得 2 份野味
+function huntAmbientDeer(index)
+  local d = ambientDeer and ambientDeer[index] or nil
+  if d == nil or d.ent == nil then return false end
+  local p = GetPosition(d.ent)
+  local wx = p and p.x or d.ax
+  local wz = p and p.z or d.az
+  Despawn(d.ent)
+  table.remove(ambientDeer, index)
+  addItem("rawfood", 2)
+  if PlaySfx then PlaySfx("shot") end
+  SpawnFloatText(wx, 1.2, wz, "鹿肉 +2", false, 1.2, 0.98, 0.86, 0.4)
+  toast.text = "猎到一只鹿 → 野味 +2"
+  toast.t = 2.6
+  return true
+end
+
+function huntDeerAtScreen(cx, cy)
+  if #(ambientDeer or {}) == 0 or WorldToScreen == nil then return false end
+  local best, bestD = nil, 1e9
+  for i, d in ipairs(ambientDeer) do
+    if d.ent ~= nil then
+      local p = GetPosition(d.ent)
+      if p ~= nil then
+        local dx, dz = p.x - rv.x, p.z - rv.z
+        if dx * dx + dz * dz < 26 * 26 then
+          local sp = WorldToScreen(p.x, (p.y or 0) + 0.5, p.z)
+          if sp ~= nil then
+            local dist = (sp.x - cx) ^ 2 + (sp.y - cy) ^ 2
+            if dist < 34 * 34 and dist < bestD then best, bestD = i, dist end
+          end
+        end
+      end
+    end
+  end
+  if best == nil then return false end
+  return huntAmbientDeer(best)
+end
+
 function updateRabbits(dt)
   if #rabbits == 0 then return end
   local active = rabbitsActive()

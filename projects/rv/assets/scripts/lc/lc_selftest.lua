@@ -3333,6 +3333,20 @@ function runSelfTest()
                      before, after))
   end
 
+  -- 猎鹿：消耗一只农场鹿，获得 2 份野味
+  do
+    if spawnAmbientDeer ~= nil then spawnAmbientDeer() end
+    local n = #(ambientDeer or {})
+    local kf = inv.rawfood or 0
+    local hunted = huntAmbientDeer(1)
+    local got = (inv.rawfood or 0) == kf + 2
+    local gone = #(ambientDeer or {}) == n - 1
+    if spawnAmbientDeer ~= nil then spawnAmbientDeer() end
+    ok(r, "hunt deer", n >= 2 and hunted and got and gone,
+       string.format("deer=%d->%d hunted=%s rawfood=%d", n, n - 1,
+                     tostring(hunted), (inv.rawfood or 0) - kf))
+  end
+
   -- 蝴蝶：白天活动，夜晚与雨天隐藏
   do
     local sc, sw = clock, weather

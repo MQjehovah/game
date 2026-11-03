@@ -1780,6 +1780,8 @@ function on_update(ent, dt)
       shootAt(cx, cy)
     elseif huntRabbitAtScreen ~= nil and huntRabbitAtScreen(cx, cy) then
       -- 打猎成功：huntRabbit 内部已播放枪声/结算
+    elseif huntDeerAtScreen ~= nil and huntDeerAtScreen(cx, cy) then
+      -- 打猎成功：huntAmbientDeer 内部已播放枪声/结算
     else
       -- Attacking inside a POI shatters its display windows.
       if breakPoiWindowsAt then breakPoiWindowsAt(player.x, player.z, "attack") end
