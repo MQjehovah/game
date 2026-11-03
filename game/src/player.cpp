@@ -401,7 +401,12 @@ assetMgr_.SetTextureBakeDir(".neon/imported");
         };
         rcfg.playMusic = [this](const std::string& name, float vol) {
             const neon::audio::SoundFx& fx = ResolveSfx(name);
-            if (!fx.samples.empty()) audio_->PlayMusic(fx, vol);
+            if (fx.samples.empty()) return;
+            // Music is a continuous bed (wind/engine/rain), so always loop it.
+            // SFX stay one-shot; only the music bus gets loop = true.
+            neon::audio::SoundFx looped = fx;
+            looped.loop = true;
+            audio_->PlayMusic(looped, vol);
         };
         rcfg.playSfx3D = [this](const std::string& name, const math::Vec3& pos) {
             const neon::audio::SoundFx& fx = ResolveSfx(name);
