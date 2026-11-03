@@ -701,6 +701,26 @@ function rollFish()
   return pick.name, size, pick
 end
 
+function despawnFishingBobber()
+  if fishingBobber ~= nil then Despawn(fishingBobber) end
+  fishingBobber, fishingBobberBase = nil, nil
+end
+
+function spawnFishingBobber()
+  despawnFishingBobber()
+  if player == nil then return end
+  local fx, fz = math.sin(player.yaw or 0), math.cos(player.yaw or 0)
+  local x, z = player.x + fx * 2.4, player.z + fz * 2.4
+  local y = ((terrainHeight and terrainHeight(x, z)) or 0) + 0.10
+  local e = SpawnPrefab("rv_bobber", { x = x, y = y, z = z })
+  if e ~= nil then
+    SetScale(e, 0.11, 0.14, 0.11)
+    fishingBobber = e
+    fishingBobberBase = { x = x, y = y, z = z }
+    fishingBobberT = 0
+  end
+end
+
 function startFishing()
   if fishingT > 0 then return end
   fishingTotal = 5 + math.random() * 4
@@ -708,6 +728,7 @@ function startFishing()
   fishingBite, fishingBiteT = false, 0
   fishingBait = false
   fishingDock = (nearDock ~= nil) and nearDock(player.x, player.z) or false
+  spawnFishingBobber()
   if takeItem("bait", 1) then
     fishingBait = true
     toast.text = fishingDock and "在栈桥上抛竿（鱼饵）— 别走开"
@@ -796,6 +817,7 @@ function fishingSplash(strength)
 end
 
 function finishFishing(force)
+  if despawnFishingBobber ~= nil then despawnFishingBobber() end
   local usedBait = fishingBait == true
   local onDock = fishingDock == true
   fishingBait = false
@@ -862,10 +884,18 @@ function cookAtCampfire()
 end
 
 function updateFishing(dt)
+  -- 浮漂在水面上下浮动
+  if fishingBobber ~= nil and fishingBobberBase ~= nil then
+    fishingBobberT = (fishingBobberT or 0) + dt
+    local b = fishingBobberBase
+    SetPosition(fishingBobber, { x = b.x,
+      y = b.y + math.sin(fishingBobberT * 3.0) * 0.03, z = b.z })
+  end
   -- 咬钩窗口：1.2s 内按 E 可稳定上钩；错过则按原概率结算
   if fishingBite then
     if ActionDown("w") or ActionDown("a") or ActionDown("s") or ActionDown("d") then
       fishingBite, fishingBiteT = false, 0
+      if despawnFishingBobber ~= nil then despawnFishingBobber() end
       toast.text = "你走动了，鱼跑了"
       toast.t = 2.2
       return
@@ -880,6 +910,7 @@ function updateFishing(dt)
   if fishingT <= 0 then return end
   if ActionDown("w") or ActionDown("a") or ActionDown("s") or ActionDown("d") then
     fishingT = 0
+    if despawnFishingBobber ~= nil then despawnFishingBobber() end
     toast.text = "收线了——钓鱼时别走动"
     toast.t = 2.0
     return
@@ -888,6 +919,7 @@ function updateFishing(dt)
   if fishingT <= 0 then
     fishingBite = true
     fishingBiteT = 1.2
+    if despawnFishingBobber ~= nil then despawnFishingBobber() end
     if fishingSplash ~= nil then fishingSplash(0.5) end
     local fx, fz = math.sin(player.yaw or 0), math.cos(player.yaw or 0)
     SpawnFloatText(player.x + fx * 2.4, 0.9, player.z + fz * 2.4,

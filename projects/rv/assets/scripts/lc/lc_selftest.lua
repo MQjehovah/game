@@ -1625,6 +1625,25 @@ function runSelfTest()
                      biteTNow or 0, tostring(splashed)))
   end
 
+  -- 浮漂：抛竿生成、收线/咬钩清理
+  do
+    local keepT, keepB, keepBT = fishingT, fishingBite, fishingBiteT
+    local keepBait = inv.bait
+    local kt, kv = toast.text, toast.t
+    inv.bait = nil
+    fishingT, fishingBite, fishingBiteT = 0, false, 0
+    startFishing()
+    local spawned = fishingBobber ~= nil
+    despawnFishingBobber()
+    local cleared = fishingBobber == nil
+    fishingT, fishingBite, fishingBiteT = keepT, keepB, keepBT
+    inv.bait = keepBait
+    toast.text, toast.t = kt, kv
+    ok(r, "fishing bobber", spawned and cleared,
+       string.format("spawned=%s cleared=%s", tostring(spawned),
+                     tostring(cleared)))
+  end
+
   -- 各鱼种最大尺寸/条数记录
   do
     local keepR, keepC = fishRecords, fishCounts
