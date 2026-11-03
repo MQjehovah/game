@@ -1827,6 +1827,24 @@ function runSelfTest()
        string.format("peak=%.0f cooled=%.0f", peak, engineTemp))
   end
 
+  -- 货运信誉：每 5 单 +2%，上限 +30%
+  do
+    local jd = jobDelivered
+    jobDelivered = 0
+    local r0 = jobReputation()
+    jobDelivered = 10
+    local r10 = jobReputation()
+    jobDelivered = 30
+    local r30 = jobReputation()
+    jobDelivered = 400
+    local rMax = jobReputation()
+    jobDelivered = jd
+    ok(r, "job reputation",
+       math.abs(r0 - 1.0) < 1e-6 and math.abs(r10 - 1.04) < 1e-6 and
+       math.abs(r30 - 1.12) < 1e-6 and math.abs(rMax - 1.30) < 1e-6,
+       string.format("0=%.2f 10=%.2f 30=%.2f max=%.2f", r0, r10, r30, rMax))
+  end
+
   -- 睡醒晨报：包含天数/货运单数/今日目标/油量
   do
     local sd, sc = day, clock

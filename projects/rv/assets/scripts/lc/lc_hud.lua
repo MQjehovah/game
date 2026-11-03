@@ -1196,6 +1196,12 @@ function drawJobPanel()
            px + 20, py + 60, 12,
            bonusAvail and 0.95 or 0.64, bonusAvail and 0.82 or 0.66,
            bonusAvail and 0.45 or 0.62, 1)
+  if jobReputation ~= nil then
+    local rep = jobReputation()
+    drawTextRight(string.format("信誉 x%.2f（已完成 %d 单）", rep,
+                                jobDelivered or 0),
+                  px + pw - 20, py + 60, 12, 0.80, 0.78, 0.62, 1)
+  end
 
   if job ~= nil then
     local dist = jobRemaining()

@@ -325,7 +325,7 @@ end
 function jobComplete()
   if job == nil then return false end
   local cond = math.max(0, math.min(1, job.condition or 1.0))
-  local scale = 0.55 + 0.45 * cond
+  local scale = (0.55 + 0.45 * cond) * jobReputation()
   -- 每天第一单：结算 +25%（把跨天/睡觉和货运循环串起来）
   local firstOfDay = jobDailyBonusAvailable()
   if firstOfDay then
@@ -401,6 +401,12 @@ function spawnJobBoard()
     SetRotationY(flag, rot)
   end
   jobBoard = { x = bx, z = bz }
+end
+
+-- 货运信誉：完成单数越多，基础报酬越高（每 5 单 +2%，上限 +30%）
+function jobReputation()
+  local n = jobDelivered or 0
+  return 1.0 + math.min(0.30, math.floor(n / 5) * 0.02)
 end
 
 -- 今日首单加成是否还能领（每天一次）
