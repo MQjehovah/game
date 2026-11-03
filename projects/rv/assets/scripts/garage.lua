@@ -1458,6 +1458,10 @@ function on_update(ent, dt)
       toast.t = 2.2
     end
   end
+  if not buildMode and ActionPressed("r") and nearRv() and
+     fieldRepair ~= nil then
+    fieldRepair()
+  end
 
   if buildMode then
     updatePlayer(dt)

@@ -176,6 +176,24 @@ function runSelfTest()
                      gotMetal, gotCloth, k0, gotKits))
   end
 
+  -- 现场维修：消耗修理包修复最差部件；无包/满状态失败
+  do
+    local sb, se, st, sbat = dur, parts.engine, parts.tires, parts.battery
+    local k0 = inv.repairkit or 0
+    inv.repairkit = 1
+    dur, parts.engine, parts.tires, parts.battery = 100, 40, 100, 100
+    local fixed = fieldRepair()
+    local engineUp = (parts.engine or 0) == 75
+    local consumed = (inv.repairkit or 0) == 0
+    local again = fieldRepair()
+    local noKit = (again == false)
+    inv.repairkit = k0 > 0 and k0 or nil
+    dur, parts.engine, parts.tires, parts.battery = sb, se, st, sbat
+    ok(r, "field repair", fixed and engineUp and consumed and noKit,
+       string.format("fixed=%s engine=%d kitLeft=%d", tostring(fixed),
+                     parts.engine or 0, inv.repairkit or 0))
+  end
+
   -- 游荡威胁（离开营地安全区才能刷）
   do
     local h0 = #horde

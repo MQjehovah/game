@@ -814,6 +814,40 @@ function setPartValue(id, v)
   if id == "body" then dur = v else parts[id] = v end
 end
 
+-- 现场维修：靠近房车按 R，消耗 1 个修理包修复最差的部件（野外应急）
+function fieldRepair()
+  if not hasItem("repairkit", 1) then
+    toast.text = "没有修理包——在工作台用 金属2+布料1 制作"
+    toast.t = 2.8
+    return false
+  end
+  local target, val = nil, 101
+  for _, p in ipairs(REPAIR_PARTS or {}) do
+    local v = partValue(p.id)
+    if v < val then target, val = p.id, v end
+  end
+  if target == nil or val >= 99.5 then
+    toast.text = "车况良好，不需要现场维修"
+    toast.t = 2.0
+    return false
+  end
+  takeItem("repairkit", 1)
+  setPartValue(target, val + (ITEMS.repairkit and ITEMS.repairkit.amount or 35))
+  if target == "tires" then
+    if resetTirePressure ~= nil then resetTirePressure() end
+    if clearBlowout ~= nil then clearBlowout() end
+  end
+  if PlaySfx then PlaySfx("repair") end
+  local name = target
+  for _, p in ipairs(REPAIR_PARTS or {}) do
+    if p.id == target then name = p.name end
+  end
+  toast.text = string.format("现场维修 %s → %.0f%%（消耗修理包）", name,
+                             partValue(target))
+  toast.t = 3.0
+  return true
+end
+
 function partRepairCost(id)
   if id == "engine" then return { metal = 2, electronics = 1 } end
   if id == "tires" then return { metal = 1, cloth = 1 } end

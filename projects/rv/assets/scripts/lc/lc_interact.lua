@@ -163,7 +163,15 @@ function updateInteraction()
                      detail = string.format("E 使用燃油罐（%.0f / %d L）", fuel, fuelMax()),
                      x = rv.x, z = rv.z }
     else
-      nearAction = { kind = "rv", verb = "驾驶房车", detail = "W 油门 / 空格停车 / B 改装",
+      local hurt = false
+      for _, p in ipairs(REPAIR_PARTS or {}) do
+        if partValue(p.id) < 99.5 then hurt = true break end
+      end
+      local hint = "W 油门 / 空格停车 / B 改装"
+      if hurt and hasItem("repairkit", 1) then
+        hint = hint .. " / R 现场维修"
+      end
+      nearAction = { kind = "rv", verb = "驾驶房车", detail = hint,
                      x = rv.x, z = rv.z }
     end
   end
