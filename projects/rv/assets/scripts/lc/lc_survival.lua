@@ -304,17 +304,27 @@ function startFishing()
   if fishingT > 0 then return end
   fishingTotal = 5 + math.random() * 4
   fishingT = fishingTotal
-  toast.text = "抛竿了——等鱼上钩（别走开）"
+  fishingBait = false
+  if takeItem("bait", 1) then
+    fishingBait = true
+    toast.text = "抛竿（用鱼饵）— 别走动，等咬钩"
+  else
+    toast.text = "抛竿了——等鱼上钩（别走开）"
+  end
   toast.t = 2.2
 end
 
 function finishFishing(force)
-  local success = force or math.random() < 0.78
+  local usedBait = fishingBait == true
+  fishingBait = false
+  local success = force or usedBait or math.random() < 0.78
   fishingT = 0
   if success then
     local name, size, sp = rollFish()
+    if usedBait then size = math.min(sp.max, size + 10) end
     local n = 1 + ((math.random() < 0.30) and 1 or 0)
     if size >= 55 then n = n + 1 end
+    if usedBait then n = n + 1 end
     addItem("rawfish", n)
     fishCaught = (fishCaught or 0) + n
     local record = false
@@ -322,7 +332,8 @@ function finishFishing(force)
       bestFish = size
       record = true
     end
-    toast.text = string.format("钓到 %s %.0fcm x%d%s", name, size, n,
+    toast.text = string.format("钓到 %s %.0fcm x%d%s%s", name, size, n,
+                               usedBait and "（鱼饵）" or "",
                                record and "  新纪录!" or "")
   else
     toast.text = "鱼跑了……再试一次"

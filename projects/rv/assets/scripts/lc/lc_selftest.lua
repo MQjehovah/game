@@ -1452,6 +1452,21 @@ function runSelfTest()
        string.format("after1000m=%.2f reset=%.2f", p1, reset and 2.4 or 0))
   end
 
+  -- 鱼饵：消耗 1 个，必上钩且多给一条
+  do
+    addItem("bait", 1)
+    local bait0 = inv.bait or 0
+    local raw0 = itemCount("rawfish")
+    startFishing()
+    local used = fishingBait == true
+    finishFishing()
+    local caught = itemCount("rawfish") > raw0
+    local consumed = (inv.bait or 0) == bait0 - 1
+    ok(r, "fishing bait", used and caught and consumed,
+       string.format("bait %d->%d raw %d->%d", bait0, inv.bait or 0,
+                     raw0, itemCount("rawfish")))
+  end
+
   -- 存读档：行程/探索/货运单数 + 天气
   do
     tripDistance, tripFuel, jobDelivered = 3210, 88, 7
