@@ -101,8 +101,8 @@ function updateInteraction()
     if d < 4.8 then
       local dot = forwardDot(dx, dz, d)
       if dot > 0.12 then
-        nearAction = { kind = "fish", verb = "钓鱼", detail = "E 抛竿（约 5-9 秒）",
-                       x = p.x, z = p.z }
+        nearAction = { kind = "fish", verb = "钓鱼",
+                       detail = "E 抛竿（5-9 秒） / Q 取浑水", x = p.x, z = p.z }
         return
       end
     end

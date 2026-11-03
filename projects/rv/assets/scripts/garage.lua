@@ -1407,6 +1407,13 @@ function on_update(ent, dt)
   updateFishing(dt)
   updateInteraction()
   if ActionPressed("e") then doInteract() end
+  -- 水塘取浑水（Q）：需要到篝火煮沸才能补水
+  if nearAction ~= nil and nearAction.kind == "fish" and ActionPressed("q") then
+    addItem("dirtywater", 2)
+    if PlaySfx then PlaySfx("drink") end
+    toast.text = "取了 2 份浑浊水 — 到篝火按 E 煮沸"
+    toast.t = 2.8
+  end
 
   local vp = GetViewportSize()
   local cx = (vp and vp.w or 1280) * 0.5

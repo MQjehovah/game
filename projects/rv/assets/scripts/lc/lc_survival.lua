@@ -261,9 +261,15 @@ function powerAvailable(net, charge)
   return (charge or 0) > 0.01
 end
 
+-- 辅助用电：车内灯 / 夜间大灯（kW）
+function auxPowerDraw(interiorOn, headlightsOn)
+  return (interiorOn and 0.04 or 0) + (headlightsOn and 0.12 or 0)
+end
+
 -- 每帧推进电池（游戏时间：1 现实秒 = timeScale 游戏分钟）
 function updatePower(dt)
-  local net = (stats.powerGen or 0) - (stats.powerDraw or 0)
+  local aux = auxPowerDraw(interiorLightsOn, (#rvHeadlights or 0) > 0)
+  local net = (stats.powerGen or 0) - (stats.powerDraw or 0) - aux
   local hours = (dt or 0) * SURVIVAL.timeScale / 60
   batteryCharge = batteryStep(batteryCharge or 0, net, hours, batteryCapacity())
 end
@@ -552,7 +558,15 @@ function cookAtCampfire()
     toast.t = 2.4
     return true
   end
-  toast.text = "没有生鱼 — 去水塘钓鱼"
+  -- 没有生鱼就煮浑水：1 份浑水 -> +15L 净水
+  if takeItem("dirtywater", 1) then
+    addWater(15)
+    if PlaySfx then PlaySfx("cook") end
+    toast.text = "煮沸一份浑水 — 水箱 +15L"
+    toast.t = 2.4
+    return true
+  end
+  toast.text = "没有生鱼/浑水 — 去水塘钓/取水"
   toast.t = 2.2
   return false
 end

@@ -1860,6 +1860,35 @@ function runSelfTest()
                      rOk, rTire, rPress, tostring(cleared)))
   end
 
+  -- 辅助用电：车内灯/大灯耗电
+  do
+    local a0 = auxPowerDraw(false, false)
+    local ai = auxPowerDraw(true, false)
+    local ah = auxPowerDraw(false, true)
+    local aboth = auxPowerDraw(true, true)
+    local drained = batteryStep(1.0, -(aboth + 0.2), 1.0, 5)
+    ok(r, "aux power draw",
+       a0 == 0 and ai > 0 and ah > ai and aboth > ah and drained < 1.0,
+       string.format("off=%.2f light=%.2f head=%.2f both=%.2f left=%.2f",
+                     a0, ai, ah, aboth, drained))
+  end
+
+  -- 浑浊水：水塘取水，篝火煮沸补水
+  do
+    local keepWater = water
+    water = 40
+    addItem("dirtywater", 1)
+    local n0 = inv.dirtywater or 0
+    local boiled = cookAtCampfire()
+    local gained = water - 40
+    local consumed = (inv.dirtywater or 0) == n0 - 1
+    water = keepWater
+    ok(r, "dirty water purification",
+       boiled and gained == 15 and consumed,
+       string.format("water 40->%d dirty %d->%d", 40 + gained, n0,
+                     inv.dirtywater or 0))
+  end
+
   -- 睡醒晨报：包含天数/货运单数/今日目标/油量
   do
     local sd, sc = day, clock
