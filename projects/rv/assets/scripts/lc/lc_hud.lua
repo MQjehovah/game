@@ -1570,8 +1570,9 @@ function drawJobPanel()
                     hot and 0.62 or 0.36, hot and 0.56 or 0.34, 0.30, 0.9)
     DrawText(string.format("[%d]", i), px + 26, yy + 15, 16,
              hot and 0.98 or 0.5, hot and 0.86 or 0.5, hot and 0.52 or 0.48, 1)
-    DrawText(string.format("%s%s%s%s  ·  %s x%d  ·  %.0fkg",
+    DrawText(string.format("%s%s%s%s%s  ·  %s x%d  ·  %.0fkg",
              (o.urgent and "[急] " or ""), (o.fragile and "[易碎] " or ""),
+             (o.perishable and "[易腐] " or ""),
              (o.stops and "[2站] " or ""), o.destName, o.cargo, o.crates, o.weight),
              px + 64, yy + 7, 14, 0.94, 0.92, 0.84, 1)
     local payText = jobPayText(o.pay or {})

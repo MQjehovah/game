@@ -137,6 +137,11 @@ function jobRefreshOffers(preferId)
     if fragile then
       pay.metal = math.max(1, math.floor(pay.metal * 1.25 + 0.5))
     end
+    -- 约 15% 是易腐货（与易碎互斥）：货况随行驶时间下降，报酬 ×1.15
+    local perishable = (not fragile) and (math.random() < 0.15)
+    if perishable then
+      pay.metal = math.max(1, math.floor(pay.metal * 1.15 + 0.5))
+    end
     -- 约 25% 是双站路线：两个卸货点，报酬更高
     local stops = nil
     if math.random() < 0.25 then
@@ -169,6 +174,7 @@ function jobRefreshOffers(preferId)
       fuel = fuelPay,
       urgent = urgent,
       fragile = fragile,
+      perishable = perishable,
       stops = stops,
       stopIndex = 1,
       deadlineAbs = urgent and (jobNowAbs() + 300 + dist * 0.8) or nil,
@@ -310,7 +316,8 @@ function jobAccept(idx)
     weight = offer.weight, distance = offer.distance,
     pay = offer.pay, fuel = offer.fuel, stage = "carry", condition = 1.0,
     urgent = offer.urgent, deadlineAbs = offer.deadlineAbs,
-    fragile = offer.fragile, stops = offer.stops, stopIndex = offer.stopIndex or 1,
+    fragile = offer.fragile, perishable = offer.perishable,
+    stops = offer.stops, stopIndex = offer.stopIndex or 1,
   }
   jobUI = false
   jobOffers = {}
@@ -519,6 +526,15 @@ function updateJobs(dt)
       if not job.rainWarned and job.condition < 0.85 then
         job.rainWarned = true
         toast.text = "雨水正在打湿易碎货——尽快送达，或先找地方避雨"
+        toast.t = 3.4
+      end
+    end
+    -- 易腐货：行驶时货况随时间缓慢下降，逼玩家规划路线
+    if job.perishable and phase == "driving" then
+      job.condition = math.max(0, (job.condition or 1) - 0.002 * (dt or 0))
+      if not job.rotWarned and job.condition < 0.80 then
+        job.rotWarned = true
+        toast.text = "易腐货开始变质——尽快送达"
         toast.t = 3.4
       end
     end

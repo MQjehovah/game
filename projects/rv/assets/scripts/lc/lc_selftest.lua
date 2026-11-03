@@ -1222,6 +1222,29 @@ function runSelfTest()
        string.format("tarp=%d condition=%.3f", k0 + 1, dry))
   end
 
+  -- 易腐货：行驶时货况随时间下降
+  do
+    local sw, sp = weather, phase
+    jobRefreshOffers("gasstop")
+    jobAccept(1)
+    job.stops, job.stopIndex = nil, 1
+    job.fragile = false
+    job.perishable = true
+    job.condition = 1.0
+    atNode = nil
+    weather, phase = "clear", "driving"
+    updateJobs(10)
+    local rot = job.condition or 1
+    job.perishable = false
+    job.condition = 1.0
+    updateJobs(10)
+    local fresh = job.condition or 1
+    weather, phase = sw, sp
+    jobAbandon()
+    ok(r, "perishable cargo", rot < 1.0 and rot > 0.9 and fresh == 1.0,
+       string.format("rot=%.3f fresh=%.3f", rot, fresh))
+  end
+
   -- 易碎货：撞击掉货况翻倍（0.10 vs 0.05 per m/s）
   do
     jobRefreshOffers("gasstop")
