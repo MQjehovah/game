@@ -2569,6 +2569,29 @@ function runSelfTest()
     dailyGoal = keep
   end
 
+  -- 采集每日目标：采浆果/补给会推进 forage 进度
+  do
+    local keep = dailyGoal
+    local b = berryBushes and berryBushes[1] or nil
+    local kb = inv.berry or 0
+    dailyGoal = { id = "forage", name = "采集测试", target = 4, progress = 0,
+                  done = false, reward = { metal = 1, fuel = 5 } }
+    if b ~= nil then
+      b.ready = true
+      gatherBerries(1)
+      b.ready = true
+      gatherBerries(1)
+    end
+    local gotProgress = dailyGoal.progress or -1
+    local gotDone = dailyGoal.done == true
+    local progressed = gotProgress == 4 and gotDone
+    inv.berry = kb > 0 and kb or nil
+    dailyGoal = keep
+    ok(r, "forage daily goal", b ~= nil and progressed,
+       string.format("progress=%d done=%s", gotProgress,
+                     tostring(gotDone)))
+  end
+
   -- 雨天积水：下雨生成、雨停清除、车开远后重新铺设
   do
     local sw = weather

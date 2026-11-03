@@ -1161,6 +1161,7 @@ function gatherBerries(index)
   b.ready, b.t = false, 12.0
   for _, be in ipairs(b.berries or {}) do SetVisible(be, false) end
   addItem("berry", 2)
+  if addDailyProgress ~= nil then addDailyProgress("forage", 2) end
   if PlaySfx then PlaySfx("pickup") end
   toast.text = "采到野浆果 x2（约 12 秒后再生）"
   toast.t = 2.6
@@ -1190,6 +1191,7 @@ function lootRoadCache(index)
   if PlaySfx then PlaySfx("pickup") end
   toast.text = "路边补给箱：" .. table.concat(got, " ")
   toast.t = 3.2
+  if addDailyProgress ~= nil then addDailyProgress("forage", 2) end
   return true
 end
 
