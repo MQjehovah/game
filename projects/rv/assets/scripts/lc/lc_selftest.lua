@@ -3170,6 +3170,30 @@ function runSelfTest()
                      tostring(okAll)))
   end
 
+  -- 加油站自动售货机：1 金属换一份食物/水
+  do
+    local keepVm = vendingMachine
+    vendingMachine = vendingMachine or { x = 0, z = 0 }
+    local km = materials.metal or 0
+    local kc, kw, kco = inv.canned or 0, inv.water or 0, inv.coffee or 0
+    materials.metal = 0
+    local poor = buyVendingSnack()
+    materials.metal = 1
+    local okBuy = buyVendingSnack()
+    local spent = (materials.metal or 0) == 0
+    local gained = (inv.canned or 0) + (inv.water or 0) + (inv.coffee or 0) >
+                   kc + kw + kco
+    materials.metal = km
+    inv.canned = kc > 0 and kc or nil
+    inv.water = kw > 0 and kw or nil
+    inv.coffee = kco > 0 and kco or nil
+    vendingMachine = keepVm
+    ok(r, "vending machine",
+       poor == false and okBuy and spent and gained,
+       string.format("poor=%s buy=%s spent=%s", tostring(poor),
+                     tostring(okBuy), tostring(spent)))
+  end
+
   -- 路边抛锚车：生成后可搜刮一次，搜完消失
   do
     if despawnStrandedCar ~= nil then despawnStrandedCar() end

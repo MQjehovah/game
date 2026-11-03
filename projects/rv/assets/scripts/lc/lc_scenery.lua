@@ -2171,6 +2171,20 @@ function nearestReadyCache(x, z, maxDist)
   return best
 end
 
+-- 加油站自动售货机：靠近按 E 花 1 金属买食物/水
+function spawnVendingMachine()
+  local nd = nodeById("gasstop")
+  if nd == nil then return false end
+  local x, z = nd.x + 2.8, nd.z + 2.2
+  local y = (terrainHeight and terrainHeight(x, z)) or 0
+  local e = SpawnPrefab("rv_fridge", { x = x, y = y + 0.55, z = z })
+  if e == nil then return false end
+  SetScale(e, 0.55, 0.85, 0.45)
+  SetRotationY(e, 0.3)
+  vendingMachine = { x = x, z = z, ent = e }
+  return true
+end
+
 -- 路边抛锚车：偶发的可搜刮事件
 function spawnStrandedCar()
   if strandedCar ~= nil then return false end

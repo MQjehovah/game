@@ -202,6 +202,21 @@ function updateInteraction()
     end
   end
 
+  -- 加油站自动售货机
+  if vendingMachine ~= nil then
+    local dx, dz = vendingMachine.x - player.x, vendingMachine.z - player.z
+    local d = math.sqrt(dx * dx + dz * dz)
+    if d < 3.0 then
+      local dot = forwardDot(dx, dz, d)
+      if dot > 0.05 then
+        nearAction = { kind = "vending", verb = "自动售货机",
+                       detail = "E 买一份食物/水（1 金属）",
+                       x = vendingMachine.x, z = vendingMachine.z }
+        return
+      end
+    end
+  end
+
   -- 农场风车水泵
   if windmill ~= nil then
     local dx, dz = windmill.x - player.x, windmill.z - player.z
@@ -321,6 +336,10 @@ function doInteract()
     return true
   elseif nearAction.kind == "note" then
     readLoreNote(nearAction.index)
+    updateInteraction()
+    return true
+  elseif nearAction.kind == "vending" then
+    buyVendingSnack()
     updateInteraction()
     return true
   elseif nearAction.kind == "windmill" then

@@ -1406,6 +1406,24 @@ function lootRoadCache(index)
   return true
 end
 
+-- 加油站自动售货机：花 1 金属买一份食物/水
+function buyVendingSnack()
+  if vendingMachine == nil then return false end
+  if (materials.metal or 0) < 1 then
+    toast.text = "自动售货机需要 1 金属"
+    toast.t = 2.2
+    return false
+  end
+  materials.metal = (materials.metal or 0) - 1
+  local pool = { "canned", "water", "coffee" }
+  local id = pool[math.random(1, #pool)]
+  addItem(id, 1)
+  if PlaySfx then PlaySfx("pickup") end
+  toast.text = "自动售货机：" .. itemName(id) .. " x1（-1 金属）"
+  toast.t = 2.8
+  return true
+end
+
 -- 搜刮路边抛锚车：金属 + 可能燃油罐/燃料/修理包，一次性事件
 function lootStrandedCar()
   if strandedCar == nil or strandedCar.looted then return false end

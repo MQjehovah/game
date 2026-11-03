@@ -598,6 +598,7 @@ function on_start()
   if spawnBerryBushes ~= nil then spawnBerryBushes() end
   if spawnRoadCaches ~= nil then spawnRoadCaches() end
   if spawnLoreNotes ~= nil then spawnLoreNotes() end
+  if spawnVendingMachine ~= nil then spawnVendingMachine() end
   if spawnJobBoard ~= nil then spawnJobBoard() end
   do  -- 验证钩子
     local flag = ReadText("autopilot_on.txt")

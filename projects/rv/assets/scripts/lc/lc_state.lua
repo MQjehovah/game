@@ -77,6 +77,7 @@ helpOpen = false              -- 操作说明面板是否打开
 dailyGoal = nil               -- 每日目标 {id,name,target,progress,done,reward,day}
 roadMarkers = {}              -- 公路轮廓桩（反光桩）
 strandedCar = nil             -- 路边抛锚车事件 {x,z,body,lamp,looted}
+vendingMachine = nil          -- 加油站自动售货机 {x,z,ent}
 rvHeadlights = {}             -- 夜间前大灯（聚光灯，随车身旋转）
 rvTaillights = {}             -- 刹车/倒车尾灯
 rvReverselights = {}          -- 倒车白灯
