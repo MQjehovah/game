@@ -1745,6 +1745,49 @@ function updateAmbientDeer(dt)
   end
 end
 
+-- 水塘上的野鸭：白天缓慢游动，夜间隐藏
+function ducksActive()
+  return not (isNight ~= nil and isNight())
+end
+
+function spawnPondDucks()
+  for _, d in ipairs(pondDucks or {}) do Despawn(d.ent) end
+  pondDucks = {}
+  local p = ponds and ponds[1] or nil
+  if p == nil then return end
+  for i = 1, 3 do
+    local e = SpawnPrefab("rv_bird", { x = p.x, y = 0.1, z = p.z })
+    if e ~= nil then
+      SetScale(e, 0.55, 0.40, 0.75)
+      pondDucks[#pondDucks + 1] = {
+        ent = e, cx = p.x, cz = p.z,
+        angle = math.random() * math.pi * 2,
+        radius = 1.6 + (i - 1) * 0.9,
+        speed = 0.10 + math.random() * 0.08,
+        phase = math.random() * math.pi * 2,
+      }
+    end
+  end
+end
+
+function updatePondDucks(dt)
+  if #(pondDucks or {}) == 0 then return end
+  local active = ducksActive()
+  pondDucksT = (pondDucksT or 0) + (dt or 0)
+  for _, d in ipairs(pondDucks) do
+    SetVisible(d.ent, active)
+    if active then
+      d.angle = d.angle + d.speed * dt
+      local x = d.cx + math.cos(d.angle) * d.radius
+      local z = d.cz + math.sin(d.angle) * d.radius
+      local gy = (terrainHeight and terrainHeight(x, z)) or 0
+      local bob = math.sin(pondDucksT * 1.8 + d.phase) * 0.03
+      SetPosition(d.ent, { x = x, y = gy + 0.09 + bob, z = z })
+      SetRotationY(d.ent, -d.angle)
+    end
+  end
+end
+
 -- 鸣笛惊走农场附近的鹿群：隐藏一段时间后回到原地
 function scareAmbientDeer(x, z, radius)
   local r2 = (radius or 24) * (radius or 24)

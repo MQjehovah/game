@@ -3173,6 +3173,20 @@ function runSelfTest()
                      tostring(day), tostring(night)))
   end
 
+  -- 水塘野鸭：白天游动、夜间隐藏
+  do
+    local sc = clock
+    clock = 12 * 60
+    local day = ducksActive()
+    clock = 22 * 60
+    local night = ducksActive()
+    clock = sc
+    ok(r, "pond ducks",
+       #(pondDucks or {}) >= 3 and day == true and night == false,
+       string.format("ducks=%d day=%s night=%s", #(pondDucks or {}),
+                     tostring(day), tostring(night)))
+  end
+
   -- 鸣笛惊走农场鹿群：设置 fleeT，并随时间消退
   do
     if spawnAmbientDeer ~= nil then spawnAmbientDeer() end
