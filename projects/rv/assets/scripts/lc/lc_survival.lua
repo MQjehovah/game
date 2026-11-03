@@ -509,13 +509,21 @@ function hygieneEnergyFactor(h)
   return 0.6 + 0.4 * v
 end
 
+-- 车内舒适度对睡眠恢复的加成（最多 +15%）
+function comfortSleepBonus(comfort)
+  return math.min(0.15, math.max(0, (comfort or 0) / 300))
+end
+
 function sleepInBed()
   -- 07:00 之前睡 = 当天早上；之后睡 = 第二天早上
   if clock >= 7 * 60 then day = day + 1 end
   clock = 7 * 60
   nightDriveMin = 0
   local atCamp = (atNode == "camp")
-  local factor = hygieneEnergyFactor(needs.hygiene) + (atCamp and 0.10 or 0)
+  local comfort = (stats ~= nil and stats.comfort) or 0
+  local factor = hygieneEnergyFactor(needs.hygiene) +
+                 (atCamp and 0.10 or 0) + comfortSleepBonus(comfort)
+  factor = math.min(1.0, factor)
   needs.energy = math.min(100, needs.energy + (100 - needs.energy) * factor)
   needs.hunger = math.max(0, needs.hunger - 20)
   needs.thirst = math.max(0, needs.thirst - 32)

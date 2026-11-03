@@ -2916,6 +2916,16 @@ function runSelfTest()
        string.format("health=%.0f camp=%s", gotHealth, tostring(campOk)))
   end
 
+  -- 舒适度提高睡眠恢复，最多 +15%
+  do
+    local a = comfortSleepBonus(0)
+    local b = comfortSleepBonus(30)
+    local c = comfortSleepBonus(500)
+    ok(r, "comfort sleep bonus", a == 0 and math.abs(b - 0.10) < 1e-6 and
+       math.abs(c - 0.15) < 1e-6,
+       string.format("0=%.2f 30=%.2f max=%.2f", a, b, c))
+  end
+
   -- 猎兔：消耗一只兔子换 1 份野味
   do
     local raw0 = itemCount("rawfood")
