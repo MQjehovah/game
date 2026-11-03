@@ -1117,10 +1117,17 @@ function runSelfTest()
     rv.speed = 1.0
     updateTaillights()
     local offLit = rv.brakeLit
+    rv.speed = -1.0
+    updateTaillights()
+    local revLit = rv.reverseLit == true and rv.brakeLit == true
     rv.speed = savedSpeed
-    ok(r, "rv brake lights", onLit == true and offLit == false and #rvTaillights == 2,
-       string.format("lamps=%d on=%s off=%s", #rvTaillights,
-                     tostring(onLit), tostring(offLit)))
+    updateTaillights()
+    ok(r, "rv brake lights",
+       onLit == true and offLit == false and revLit and
+       #rvTaillights == 2 and #rvReverselights == 2,
+       string.format("lamps=%d/%d on=%s off=%s rev=%s", #rvTaillights,
+                     #rvReverselights, tostring(onLit), tostring(offLit),
+                     tostring(revLit)))
   end
 
   -- 首次抵达奖励：每个地点只发一次

@@ -66,6 +66,7 @@ dailyGoal = nil               -- 每日目标 {id,name,target,progress,done,rewa
 roadMarkers = {}              -- 公路轮廓桩（反光桩）
 rvHeadlights = {}             -- 夜间前大灯（聚光灯，随车身旋转）
 rvTaillights = {}             -- 刹车/倒车尾灯
+rvReverselights = {}          -- 倒车白灯
 campProps = {}                -- 营地陈设（遮阳棚/木桌/物资箱/营地灯）
 roadWires = {}                -- 电线杆之间的电线
 roadShoulders = {}            -- 主路两侧的土肩

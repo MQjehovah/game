@@ -253,12 +253,29 @@ function spawnRvTaillights()
     end
   end
   rv.brakeLit = false
+  -- 倒车白灯：在红色尾灯内侧
+  for _, t in ipairs({ { -0.46, 0.62, -4.03 }, { 0.46, 0.62, -4.03 } }) do
+    local e = SpawnPrefab("rv_reverselight", { x = rv.x, y = -60, z = rv.z })
+    if e ~= nil then
+      SetScale(e, 0.16, 0.13, 0.05)
+      local part = { ent = e, name = "reverselight", lx = t[1], ly = t[2], lz = t[3] }
+      rvParts[#rvParts + 1] = part
+      rvReverselights[#rvReverselights + 1] = e
+      setTilted(e, part.lx, part.ly, part.lz, 0)
+      SetVisible(e, false)
+    end
+  end
+  rv.reverseLit = false
 end
 
 function updateTaillights()
   if #rvTaillights == 0 then return end
-  local braking = (rv.brakeTest == true) or (rv.braking == true) or
-                  ((rv.speed or 0) < -0.05)
+  local reversing = (rv.speed or 0) < -0.05
+  local braking = (rv.brakeTest == true) or (rv.braking == true) or reversing
+  if reversing ~= rv.reverseLit then
+    rv.reverseLit = reversing
+    for _, e in ipairs(rvReverselights) do SetVisible(e, reversing) end
+  end
   if braking == rv.brakeLit then return end
   rv.brakeLit = braking
   for _, e in ipairs(rvTaillights) do SetVisible(e, braking) end
