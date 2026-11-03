@@ -13,7 +13,10 @@
   "jambChamfer": 0.03,
   "glassThickness": 0.03,
   "windowPanes": 14,
-  "gasketStrips": 28,
+  "windowCurvature": 0.012,
+  "curvedGlassPanels": 168,
+  "glassEdgeStrips": 98,
+  "gasketStrips": 98,
   "wallArchReveals": 32,
   "wallHoles": 12,
   "wallCurve": 0.05,
@@ -22,7 +25,7 @@
   "wheelWellSegments": 16,
   "wheelWellArcs": 4,
   "roofShoulderStrips": 3,
-  "verts": 15384,
-  "tris": 7344,
+  "verts": 15832,
+  "tris": 7568,
   "prims": 10
 }

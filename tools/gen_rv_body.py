@@ -141,6 +141,9 @@ WALL_CURVE = 0.05
 WALL_T = 0.08
 JAMB_CHAMFER = 0.03
 GLASS_T = 0.03
+GLASS_CURVE = 0.012
+GLASS_COLS = 4
+GLASS_ROWS = 3
 
 
 def wall_x(sign, y):
@@ -268,31 +271,81 @@ def side_wall(m, sign, openings, windows):
                    (0.0, (ny0 + ny1) * 0.5, ((cz - z0) + (cz - z1)) * 0.5 / ARCH_R))
             reveals = reveals + 1
 
-    # Windows: double pane (two glass sheets + a dark edge strip sealing the
-    # cavity) and a rubber gasket ring around the outside of the frame.
+    # Windows: curved double pane (4x3 subdivided, two glass sheets), a dark
+    # edge strip sealing the cavity and a segmented rubber gasket ring.
     panes = 0
     gaskets = 0
+    glass_quads = 0
+    edge_strips = 0
     for (z0, z1, y0, y1) in windows:
         cy = (y0 + y1) * 0.5
         cz = (z0 + z1) * 0.5
         w, h = z1 - z0, y1 - y0
-        # outer + inner pane
-        m.box(GLASS, sign * 1.145, cy, cz, 0.014, h, w)
-        m.box(GLASS, sign * 1.117, cy, cz, 0.012, h - 0.05, w - 0.05)
+        zs = [z0 + w * i / GLASS_COLS for i in range(GLASS_COLS + 1)]
+        ys = [y0 + h * j / GLASS_ROWS for j in range(GLASS_ROWS + 1)]
+
+        def gx(base, amount, z, y):
+            dz = (z - cz) / max(1e-6, w * 0.5)
+            dy = (y - cy) / max(1e-6, h * 0.5)
+            prof = max(0.0, 1.0 - dy * dy) * max(0.0, 1.0 - dz * dz)
+            return sign * (base + amount * prof)
+
+        def gp(base, amount, z, y):
+            return (gx(base, amount, z, y), y, z)
+
+        # outer and inner curved sheets (both windings for alpha-blended glass)
+        for j in range(GLASS_ROWS):
+            for i in range(GLASS_COLS):
+                a = gp(1.145, GLASS_CURVE, zs[i], ys[j])
+                b = gp(1.145, GLASS_CURVE, zs[i + 1], ys[j])
+                c = gp(1.145, GLASS_CURVE, zs[i + 1], ys[j + 1])
+                d = gp(1.145, GLASS_CURVE, zs[i], ys[j + 1])
+                m.poly(GLASS, [a, b, c, d], (sign, 0.0, 0.0))
+                m.poly(GLASS, [d, c, b, a], (-sign, 0.0, 0.0))
+                a = gp(1.117, GLASS_CURVE * 0.85, zs[i], ys[j])
+                b = gp(1.117, GLASS_CURVE * 0.85, zs[i + 1], ys[j])
+                c = gp(1.117, GLASS_CURVE * 0.85, zs[i + 1], ys[j + 1])
+                d = gp(1.117, GLASS_CURVE * 0.85, zs[i], ys[j + 1])
+                m.poly(GLASS, [a, b, c, d], (sign, 0.0, 0.0))
+                m.poly(GLASS, [d, c, b, a], (-sign, 0.0, 0.0))
+                glass_quads = glass_quads + 2
         panes = panes + 2
-        # edge strip between the panes (sealed cavity)
-        ex = sign * 1.131
-        m.box(TRIM, ex, y0 + 0.012, cz, 0.030, 0.024, w)
-        m.box(TRIM, ex, y1 - 0.012, cz, 0.030, 0.024, w)
-        m.box(TRIM, ex, cy, z0 + 0.012, 0.030, h, 0.024)
-        m.box(TRIM, ex, cy, z1 - 0.012, 0.030, h, 0.024)
-        # rubber gasket around the opening on the outer skin
-        gx = sign * 1.163
-        m.box(TRIM, gx, y0 - 0.022, cz, 0.020, 0.028, w + 0.06)
-        m.box(TRIM, gx, y1 + 0.022, cz, 0.020, 0.028, w + 0.06)
-        m.box(TRIM, gx, cy, z0 - 0.022, 0.020, h + 0.06, 0.028)
-        m.box(TRIM, gx, cy, z1 + 0.022, 0.020, h + 0.06, 0.028)
-        gaskets = gaskets + 4
+
+        # edge strip between the sheets, following the curved border
+        for i in range(GLASS_COLS):
+            for (yy, nn) in ((y0, 1.0), (y1, -1.0)):
+                oa = gp(1.145, GLASS_CURVE, zs[i], yy)
+                ob = gp(1.145, GLASS_CURVE, zs[i + 1], yy)
+                ia = gp(1.117, GLASS_CURVE * 0.85, zs[i], yy)
+                ib = gp(1.117, GLASS_CURVE * 0.85, zs[i + 1], yy)
+                m.poly(TRIM, [oa, ob, ib, ia], (0.0, nn, 0.0))
+                edge_strips = edge_strips + 1
+        for j in range(GLASS_ROWS):
+            for (zz, nn) in ((z0, 1.0), (z1, -1.0)):
+                oa = gp(1.145, GLASS_CURVE, zz, ys[j])
+                ob = gp(1.145, GLASS_CURVE, zz, ys[j + 1])
+                ia = gp(1.117, GLASS_CURVE * 0.85, zz, ys[j])
+                ib = gp(1.117, GLASS_CURVE * 0.85, zz, ys[j + 1])
+                m.poly(TRIM, [oa, ia, ib, ob], (0.0, 0.0, nn))
+                edge_strips = edge_strips + 1
+
+        # rubber gasket ring just outside the opening (segmented, follows curve)
+        for i in range(GLASS_COLS):
+            for (yy, nn, off) in ((y0, 1.0, -0.028), (y1, -1.0, 0.028)):
+                a = gp(1.168, GLASS_CURVE * 0.7, zs[i], yy)
+                b = gp(1.168, GLASS_CURVE * 0.7, zs[i + 1], yy)
+                c = gp(1.168, GLASS_CURVE * 0.7, zs[i + 1], yy + off)
+                d = gp(1.168, GLASS_CURVE * 0.7, zs[i], yy + off)
+                m.poly(TRIM, [a, b, c, d], (0.0, nn, 0.0))
+                gaskets = gaskets + 1
+        for j in range(GLASS_ROWS):
+            for (zz, nn, off) in ((z0, 1.0, -0.028), (z1, -1.0, 0.028)):
+                a = gp(1.168, GLASS_CURVE * 0.7, zz, ys[j])
+                b = gp(1.168, GLASS_CURVE * 0.7, zz, ys[j + 1])
+                c = gp(1.168, GLASS_CURVE * 0.7, zz + off, ys[j + 1])
+                d = gp(1.168, GLASS_CURVE * 0.7, zz + off, ys[j])
+                m.poly(TRIM, [a, b, c, d], (0.0, 0.0, nn))
+                gaskets = gaskets + 1
         fx = sign * 1.195
         m.box(TRIM, fx, y0, (z0 + z1) * 0.5, 0.05, 0.06, z1 - z0 + 0.10)
         m.box(TRIM, fx, y1, (z0 + z1) * 0.5, 0.05, 0.06, z1 - z0 + 0.10)
@@ -301,7 +354,8 @@ def side_wall(m, sign, openings, windows):
         m.box(TRIM, fx, (y0 + y1) * 0.5, (z0 + z1) * 0.5,
               0.04, 0.035, z1 - z0)  # centre mullion
     return { "quads": quads, "inner": inner, "jambs": jambs, "reveals": reveals,
-             "panes": panes, "gaskets": gaskets }
+             "panes": panes, "gaskets": gaskets,
+             "glassQuads": glass_quads, "edgeStrips": edge_strips }
 
 
 def wheel(m, sign, cz):
@@ -527,7 +581,7 @@ def main():
     win = [(-2.25, -0.35, 0.98, 1.72), (0.25, 2.15, 0.98, 1.72),
            (3.75, 4.70, 1.05, 1.80)]
     wall = {"quads": 0, "inner": 0, "jambs": 0, "reveals": 0,
-            "panes": 0, "gaskets": 0}
+            "panes": 0, "gaskets": 0, "glassQuads": 0, "edgeStrips": 0}
     for part in (
             side_wall(m, 1, [(-3.54, -2.76, 0.24, 1.86)], win),
             side_wall(m, -1, [],
@@ -753,6 +807,9 @@ def main():
         "jambChamfer": JAMB_CHAMFER,
         "glassThickness": GLASS_T,
         "windowPanes": wall["panes"],
+        "windowCurvature": GLASS_CURVE,
+        "curvedGlassPanels": wall["glassQuads"],
+        "glassEdgeStrips": wall["edgeStrips"],
         "gasketStrips": wall["gaskets"],
         "wallArchReveals": wall["reveals"],
         "wallHoles": 12,
@@ -773,6 +830,7 @@ def main():
           "wallQuads", wall_quads,
           "jambs", wall["jambs"], "reveals", wall["reveals"],
           "panes", wall["panes"], "gaskets", wall["gaskets"],
+          "glassQuads", wall["glassQuads"], "edgeStrips", wall["edgeStrips"],
           "curvedPanels", curved_panels, "fasciaChamfers", fascia_chamfers)
 
 
