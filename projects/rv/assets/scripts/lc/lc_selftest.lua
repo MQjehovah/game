@@ -1620,6 +1620,23 @@ function runSelfTest()
     dailyGoal = keep
   end
 
+  -- 雨天积水：下雨生成、雨停清除
+  do
+    local sw = weather
+    weather = "clear"
+    updatePuddles(0)
+    local dry = #puddles
+    weather = "rain"
+    updatePuddles(0)
+    local wet = #puddles
+    weather = "clear"
+    updatePuddles(0)
+    local after = #puddles
+    weather = sw
+    ok(r, "rain puddles", dry == 0 and wet >= 4 and after == 0,
+       string.format("dry=%d wet=%d after=%d", dry, wet, after))
+  end
+
   -- 存读档：行程/探索/货运单数 + 天气
   do
     tripDistance, tripFuel, jobDelivered = 3210, 88, 7

@@ -78,6 +78,7 @@ poiSignsLit = nil
 campfireLight = nil           -- 营火暖光（只保留 light 组件）
 campfireFlames = {}           -- 营火可见火苗
 birds = {}                    -- 白天绕营地/房车飞行的鸟群
+puddles = {}                  -- 雨天积水
 campfireLightT = 0
 visitedPois = {}              -- 已首次抵达的地点（探索奖励去重）
 visitedCount = 0

@@ -1329,6 +1329,35 @@ function updateBirds(dt)
   end
 end
 
+-- 雨天积水：在房车周围随机铺几块反光水洼，雨停自动清除
+function spawnPuddles()
+  for _, p in ipairs(puddles) do Despawn(p.ent) end
+  puddles = {}
+  for i = 1, 7 do
+    local a = math.random() * math.pi * 2
+    local r = 4 + math.random() * 15
+    local x = rv.x + math.sin(a) * r
+    local z = rv.z + math.cos(a) * r
+    local e = SpawnPrefab("rv_puddle", {
+      x = x, y = ((terrainHeight and terrainHeight(x, z)) or 0) + 0.06, z = z })
+    if e ~= nil then
+      local s = 1.1 + math.random() * 1.5
+      SetScale(e, s, 0.012, s * (0.7 + math.random() * 0.5))
+      SetRotationY(e, math.random() * math.pi * 2)
+      puddles[#puddles + 1] = { ent = e, x = x, z = z }
+    end
+  end
+end
+
+function updatePuddles(dt)
+  if weather == "rain" then
+    if #puddles == 0 then spawnPuddles() end
+  elseif #puddles > 0 then
+    for _, p in ipairs(puddles) do Despawn(p.ent) end
+    puddles = {}
+  end
+end
+
 -- 营火暖光的轻微跳动：没有灯光强度 API，用位置抖动 + 高度起伏模拟火光
 function updateCampfireLight(dt)
   if campfireLight == nil or campfire == nil then return end

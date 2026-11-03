@@ -1207,6 +1207,7 @@ function on_update(ent, dt)
   if updateTaillights ~= nil then updateTaillights() end
   if updateCampfireLight ~= nil then updateCampfireLight(dt) end
   if updateBirds ~= nil then updateBirds(dt) end
+  if updatePuddles ~= nil then updatePuddles(dt) end
   if updatePoiSigns ~= nil then updatePoiSigns() end
   if updateRvSmoke ~= nil then updateRvSmoke(dt) end
   if rv.shakeT ~= nil and rv.shakeT > 0 then
