@@ -1050,6 +1050,49 @@ function spawnWaterTower(x, z)
   return tower
 end
 
+-- 仓库旁的无线电塔：三角支架 + 横撑 + 顶端红色信标（夜间闪烁）
+function spawnRadioMast(x, z)
+  local gy = (terrainHeight and terrainHeight(x, z)) or 0
+  local mast = { x = x, z = z, parts = {}, beacon = nil, t = 0, lit = false }
+  local legs = { { -0.9, -0.5 }, { 0.9, -0.5 }, { 0.0, 0.95 } }
+  for _, off in ipairs(legs) do
+    local e = SpawnPrefab("rv_powerpole", { x = x + off[1], y = gy + 7.0,
+                                            z = z + off[2] })
+    if e ~= nil then
+      SetScale(e, 0.14, 14.0, 0.14)
+      mast.parts[#mast.parts + 1] = e
+    end
+  end
+  for _, h in ipairs({ 4.0, 8.0, 12.0 }) do
+    local bar = SpawnPrefab("rv_panel_dark", { x = x, y = gy + h, z = z })
+    if bar ~= nil then
+      SetScale(bar, 1.9, 0.08, 0.08)
+      SetRotationY(bar, h * 0.7)
+      mast.parts[#mast.parts + 1] = bar
+    end
+  end
+  local beacon = SpawnPrefab("rv_taillight", { x = x, y = gy + 14.2, z = z })
+  if beacon ~= nil then
+    SetScale(beacon, 0.34, 0.34, 0.34)
+    SetVisible(beacon, false)
+    mast.beacon = beacon
+    mast.parts[#mast.parts + 1] = beacon
+  end
+  radioMast = mast
+  return mast
+end
+
+function updateRadioMast(dt)
+  if radioMast == nil or radioMast.beacon == nil then return end
+  radioMast.t = (radioMast.t or 0) + (dt or 0)
+  local night = (isNight ~= nil) and isNight() or false
+  local lit = night and ((radioMast.t % 1.6) < 0.55)
+  if lit ~= radioMast.lit then
+    radioMast.lit = lit
+    SetVisible(radioMast.beacon, lit)
+  end
+end
+
 function spawnRuinFor(nd)
   if nd.ruinSpawned then return end
   nd.ruinSpawned = true
@@ -1167,6 +1210,7 @@ function spawnRuinFor(nd)
     end
     spawnPoiWindows(nd)
     spawnPoiDoor(nd)
+    if spawnRadioMast ~= nil then spawnRadioMast(cx - 9.0, cz - 7.0) end
     return
   end
   if isGas then

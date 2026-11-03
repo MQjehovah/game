@@ -76,6 +76,7 @@ roadDebris = {}               -- 主路两侧的废弃车/石块
 roadDebrisColliders = 0       -- 已添加的静态碰撞盒数量
 hayBales = {}                 -- 农场谷仓外的干草捆
 docks = {}                    -- 钓鱼水塘的木栈桥
+radioMast = nil               -- 仓库旁的无线电塔 {parts, beacon, t}
 waterTowers = {}              -- 小镇水塔地标
 windmill = nil                -- 农场风车 {x,y,z,angle,blades}
 poiSigns = {}                 -- POI 门头招牌

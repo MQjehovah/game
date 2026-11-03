@@ -2271,6 +2271,7 @@ function coopUpdate(dt)
   if updatePuddles ~= nil then updatePuddles(dt) end
   if updateWindmill ~= nil then updateWindmill(dt) end
   if updatePoiSigns ~= nil then updatePoiSigns() end
+  if updateRadioMast ~= nil then updateRadioMast(dt) end
   if updateRvSmoke ~= nil then updateRvSmoke(dt) end
   -- 合作客户端：夜间步行时根据本地位置/视角维护手电
   if not coop.isServer and coop.localPos ~= nil and

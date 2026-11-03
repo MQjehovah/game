@@ -2205,6 +2205,24 @@ function runSelfTest()
                      tostring(far), tostring(flagged), tostring(cleared)))
   end
 
+  -- 仓库无线电塔：支架+信标，夜间闪烁、白天熄灭
+  do
+    local m = radioMast
+    local parts = (m ~= nil) and #(m.parts or {}) or 0
+    local sc = clock
+    clock = 22 * 60
+    if m ~= nil then m.t, m.lit = 0, false end
+    updateRadioMast(0.1)
+    local night = (m ~= nil) and (m.beacon ~= nil) and (m.lit == true)
+    clock = 12 * 60
+    updateRadioMast(0.1)
+    local dayOff = (m ~= nil) and (m.lit == false)
+    clock = sc
+    ok(r, "radio mast", parts >= 6 and night and dayOff,
+       string.format("parts=%d night=%s dayOff=%s", parts,
+                     tostring(night), tostring(dayOff)))
+  end
+
   -- 睡醒晨报：包含天数/货运单数/今日目标/油量
   do
     local sd, sc = day, clock

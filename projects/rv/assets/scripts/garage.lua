@@ -873,6 +873,15 @@ function on_start()
       px, pz, pyaw = cx, cz + 4.2, math.pi
     end
   end
+  if startMode == "mastview" then
+    -- Test-only: radio mast beside the warehouse, at night.
+    local nd = nodeById("depot")
+    if nd ~= nil then
+      local cx, cz = poiCenter(nd)
+      px, pz = cx - 13.0, cz + 13.0
+      pyaw = dirYaw(4.0, -20.0)
+    end
+  end
   if startMode == "farm" or startMode == "windmillview" then
     -- 旧农场谷仓门口
     local nd = nodeById("farm")
@@ -927,7 +936,7 @@ function on_start()
   if startMode == "side_night" then clock = 22 * 60 end
   if startMode == "night" or startMode == "inside_night" or startMode == "inside_dark"
      or startMode == "place_night" or startMode == "night_drive"
-     or startMode == "poinight" then
+     or startMode == "poinight" or startMode == "mastview" then
     clock = 22 * 60
   end
   ambientTrack = nil  -- 由 updateAmbientMusic 按驾驶/天气切换
@@ -946,6 +955,7 @@ function on_start()
   elseif startMode == "poinight" then player.pitch = 0.14
   elseif startMode == "windmillview" then player.pitch = 0.28
   elseif startMode == "townview" then player.pitch = 0.20
+  elseif startMode == "mastview" then player.pitch = 0.30
   end
   SetVar("cameraMouseLock", 1)
   updateInteraction()
@@ -1282,6 +1292,7 @@ function on_update(ent, dt)
   if updateAmbientMusic ~= nil then updateAmbientMusic() end
   if updateWindmill ~= nil then updateWindmill(dt) end
   if updatePoiSigns ~= nil then updatePoiSigns() end
+  if updateRadioMast ~= nil then updateRadioMast(dt) end
   if updateRvSmoke ~= nil then updateRvSmoke(dt) end
   if rv.shakeT ~= nil and rv.shakeT > 0 then
     rv.shakeT = math.max(0, rv.shakeT - dt)
