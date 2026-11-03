@@ -922,6 +922,15 @@ function togglePondTrapAt(px, pz)
     payCost(POND_TRAP_COST)
     pondTrap = { x = px or 0, z = pz or 0, t = POND_TRAP_MINUTES,
                  ready = false }
+    -- 在岸边放一个可见的小鱼笼实体
+    local ex, ez = (px or 0) + 2.0, (pz or 0) + 2.0
+    local ey = (terrainHeight and terrainHeight(ex, ez)) or 0
+    local ent = SpawnPrefab("rv_cargo_crate", { x = ex, y = ey + 0.16, z = ez })
+    if ent ~= nil then
+      SetScale(ent, 0.35, 0.22, 0.35)
+      SetRotationY(ent, 0.4)
+      pondTrap.ent = ent
+    end
     if PlaySfx then PlaySfx("pickup") end
     toast.text = "放好鱼笼——约 60 游戏分钟后回来收"
     toast.t = 3.0
@@ -932,6 +941,7 @@ function togglePondTrapAt(px, pz)
     toast.t = 2.4
     return false
   end
+  if pondTrap.ent ~= nil then Despawn(pondTrap.ent) end
   pondTrap = nil
   addItem("rawfish", 2)
   if PlaySfx then PlaySfx("pickup") end

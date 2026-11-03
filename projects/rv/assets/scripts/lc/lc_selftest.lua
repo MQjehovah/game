@@ -2182,6 +2182,7 @@ function runSelfTest()
     local placed = togglePondTrapAt(-52, 30)
     local setting = pondTrap ~= nil and pondTrap.ready == false and
                     math.abs((pondTrap.t or 0) - POND_TRAP_MINUTES) < 1e-6
+    local visible = pondTrap ~= nil and pondTrap.ent ~= nil
     updatePondTrap(POND_TRAP_MINUTES + 1)
     local ready = pondTrap ~= nil and pondTrap.ready == true
     local collected = togglePondTrapAt(-52, 30)
@@ -2194,11 +2195,11 @@ function runSelfTest()
     inv.rawfish = kr > 0 and kr or nil
     toast.text, toast.t = kt, kv
     ok(r, "pond trap",
-       placed and setting and ready and collected and gained and cleared and
-       poor == false,
-       string.format("place=%s set=%s ready=%s got=%s poor=%s",
-                     tostring(placed), tostring(setting), tostring(ready),
-                     tostring(gained), tostring(poor)))
+       placed and setting and visible and ready and collected and gained and
+       cleared and poor == false,
+       string.format("place=%s set=%s visible=%s ready=%s got=%s poor=%s",
+                     tostring(placed), tostring(setting), tostring(visible),
+                     tostring(ready), tostring(gained), tostring(poor)))
   end
 
   -- 各鱼种最大尺寸/条数记录
