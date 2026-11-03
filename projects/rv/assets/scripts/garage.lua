@@ -420,14 +420,8 @@ function on_start()
   rv.mass = math.max(800, 1200 + stats.weight * 0.8)
   rv.yawInertia = rv.mass * (2.4 * 2.4 + 8.6 * 8.6) / 12
   local chassisDesc = { mass = rv.mass,
-                        friction = 0.15, restitution = 0.05 }
-  if coopRole ~= "server" then
-    -- Cylinder wheel bodies overlap the box footprint; keep them in their own
-    -- collision group. The co-op server keeps the conservative slider/box
-    -- setup and the default groups.
-    chassisDesc.layer = 4
-    chassisDesc.mask = 0xFFFFFFFD
-  end
+                        friction = 0.15, restitution = 0.05,
+                        layer = 4, mask = 0xFD }
   rvBody = PhysicsAddBox({ x = rv.x, y = 0.9, z = rv.z },
                          { x = 1.2, y = 0.9, z = 4.3 }, true, chassisDesc)
 

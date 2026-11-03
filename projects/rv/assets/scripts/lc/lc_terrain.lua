@@ -285,11 +285,10 @@ function spawnRvWheelBodies()
   rv.wheelBodies = {}
   rv.wheelSpinI = {}
   local gy = rv.groundY or 0
-  -- Single-player and clients use cylindrical tires with a rolling 6DOF joint;
-  -- the co-op server keeps the conservative box/soft-slider setup (the 6DOF
-  -- spring was unstable at the server tick on long full-throttle runs).
-  local rolling = coopRole ~= "server" and PhysicsAddCylinder ~= nil and
-                  PhysicsAddWheelJoint ~= nil
+  -- All hosts use cylindrical tires with a rolling 6DOF joint. The chassis is
+  -- kept in its own collision group (see garage.lua) because the tire bodies
+  -- overlap the box footprint.
+  local rolling = PhysicsAddCylinder ~= nil and PhysicsAddWheelJoint ~= nil
   local axx, axy, axz = rvOffset(1, 0, 0)
   local upx, upy, upz = rvOffset(0, 1, 0)
   for i, w in ipairs(WHEELS) do

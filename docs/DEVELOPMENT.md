@@ -809,15 +809,16 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   （`rv.groundY`、`applyRvTransform`、追逐/驾驶席/俯视相机）、植被摆放
   （草/花/灌木/树/岩石按地形抬高）、公路（5m 分段按坡度抬升、10° 限幅）
   以及合作模式（服务器采样、`game_state` 的 `gy`/`rv.gy`、代理与客户端预测）
-  共同使用。悬挂、轮胎抓地与转向由 Jolt 多体物理求解：单机与客户端为四个车轮
-  创建**圆柱轮胎刚体**（`PhysicsAddCylinder`，半径 0.40、宽 0.24，300kg、
-  无重力），用 **6DOF 车轮关节** `PhysicsAddWheelJoint` 连接到车体
-  （沿车体上方向软限位弹簧 8Hz/1.0，绕车轴自由旋转，其余平移/旋转锁定）；
+  共同使用。悬挂、轮胎抓地与转向由 Jolt 多体物理求解：单机、合作服务器与
+  客户端都为四个车轮创建**圆柱轮胎刚体**（`PhysicsAddCylinder`，半径 0.40、
+  宽 0.24，300kg、无重力），用 **6DOF 车轮关节** `PhysicsAddWheelJoint`
+  连接到车体（沿车体上方向软限位弹簧 8Hz/1.0，绕车轴自由旋转，
+  其余平移/旋转锁定）；车体放在独立碰撞组（`layer=4, mask=0xFD`），
+  避免与重叠的轮胎代理互相挤压。
   每个车轮用 `terrainHeight` 采样并施加弹簧/阻尼冲量
   （k=90000 N/m、c=11000 N·s/m、力限幅 12kN），车体通过四个约束被支撑。
   车轮按接触速度用 `PhysicsSetAngularVelocity` 绕车轴滚动，
   圆柱轴线用 `PhysicsSetRotationEuler` 对齐；`rv.wheelSpinI` 同步视觉滚动。
-  合作服务器为稳定性保留方形轮胎 + 软限位滑轨关节（同样的悬挂/抓地模型）。
   轮胎侧向冲量
   （`tireGripImpulse`，μ 由 `surfaceGrip()` 给出沥青 0.95/土坡 0.72/草地 0.60）
   与滑移率牵引（`slipTraction()`，后轮驱动、四轮制动）直接作用在车轮刚体上。
@@ -830,10 +831,13 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   `PhysicsAddSliderJoint` / `PhysicsAddWheelJoint` / `PhysicsAddCylinder` /
   `PhysicsSetAngularVelocity` / `PhysicsSetRotationEuler` / `PhysicsActivate`
   （`physics.hpp`/`physics.cpp`/`jolt_world.*`/`bindings.cpp`）。
-  合作服务器运行同一套四轮刚体物理（方形代理 + 软限位滑轨，保守稳定），
+  合作服务器运行同一套四轮圆柱刚体物理（同样的 6DOF 车轮关节），
   把车体 `gy/pitch/roll/yaw` 写入 `game_state`；客户端也建本地车轮刚体
   （圆柱 + 6DOF），用服务器姿态 + 本地地形运行
   `updateWheelPrediction()`，只预测悬挂行程/滚动。
+  注意：碰撞 `mask` 要走 8 位组掩码（`0xFD`）；写 `0xFFFFFFFD` 会在
+  Lua→uint32 转换时溢出成 `0x80000000`，掩码被截断为 0，车体与轮胎
+  与地面完全失去碰撞（实测会整体下沉）。
   没有物理后端时回退到 `updateRvSuspension()` 的四点平面拟合与
   脚本偏航（±0.35rad 限幅、10Hz 平滑）。
   **四个车轮是独立实体**（`rv_wheel.gltf`，`tools/gen_rv_wheel.py`；
@@ -852,9 +856,9 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   `rv wheel steer` / `rv physics suspension binding` /
   `rv tire grip binding` / `rv tire grip model` / `rv surface grip` /
   `rv ackermann steering` / `rv slip traction` / `rv wheel body binding` /
-  `rv wheel bodies` / `rv wheel prediction` / `rv wheel rolling` /
-  `rv attitude roundtrip` / `rv yaw attitude roundtrip`，
-  总计 **49/49 PASS**。
+  `rv wheel bodies` / `rv wheel cylinder rolling` / `rv wheel prediction` /
+  `rv wheel rolling` / `rv attitude roundtrip` / `rv yaw attitude roundtrip`，
+  总计 **50/50 PASS**。
   角色动画由 `tools/gen_rv_anim_clips.py`
   生成**手工关键帧**上车链 `DoorOpen`（够门把手→拉开，0.9s）→ `Step`（抬脚踩踏板，
   0.7s）→ `Board`（站姿→抬步→落座，0.9s）→ `Sit` 循环（坐姿 + 1s 呼吸关键帧），

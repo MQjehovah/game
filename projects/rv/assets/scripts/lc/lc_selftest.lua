@@ -300,6 +300,9 @@ function runSelfTest()
       ok(r, "rv wheel bodies", #rv.wheelBodies == 4 and
          rv.wheelBodies[1].body ~= nil and rv.wheelBodies[4].body ~= nil,
          string.format("bodies=%d", #rv.wheelBodies))
+      ok(r, "rv wheel cylinder rolling",
+         rv.wheelBodies[1].rolling == true and rv.wheelBodies[4].rolling == true,
+         string.format("rolling=%s", tostring(rv.wheelBodies[1].rolling)))
     end
     if updateWheelPrediction ~= nil and rv.wheelBodies ~= nil then
       updateWheelPrediction(1 / 60)
