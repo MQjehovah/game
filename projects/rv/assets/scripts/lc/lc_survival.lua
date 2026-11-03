@@ -444,6 +444,8 @@ function useItem(id)
   local warmMin = nil
   if id == "brew" then
     nightDriveMin = math.max(0, (nightDriveMin or 0) - 60)
+    warmMin = 20
+    warmthMin = math.max(warmthMin or 0, warmMin)
   end
   -- 热食/热汤：雪天获得一段时间的保暖
   if id == "fishsoup" or id == "meal" or id == "feast" then

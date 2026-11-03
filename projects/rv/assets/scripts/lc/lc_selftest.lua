@@ -3911,6 +3911,21 @@ function runSelfTest()
        string.format("none=%s shown=%s", tostring(none), shown))
   end
 
+  -- 热咖啡也能提供保暖
+  do
+    local keepWarmth = warmthMin
+    local kb = inv.brew or 0
+    warmthMin = 0
+    inv.brew = 1
+    local okBrew = useItem("brew")
+    local warm = (warmthMin or 0) >= 20
+    inv.brew = kb > 0 and kb or nil
+    warmthMin = keepWarmth
+    ok(r, "warm coffee", okBrew and warm,
+       string.format("brew=%s warmth=%.0f", tostring(okBrew),
+                     warmthMin or 0))
+  end
+
   -- 夜间驾驶疲劳：短途无、长途有、上限封顶
   do
     local a = nightFatigueExtra(60)
