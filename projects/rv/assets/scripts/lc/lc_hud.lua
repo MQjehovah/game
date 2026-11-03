@@ -803,6 +803,10 @@ function drawDriveHud()
     local sname = surfaceInfo(rv.x, rv.z)
     top = top .. "   · 路面 " .. surfaceLabel(sname)
   end
+  if tractionStatusText ~= nil then
+    local traction = tractionStatusText()
+    if traction ~= nil then top = top .. "   · " .. traction end
+  end
   if weatherNextId ~= nil and WEATHER_NAMES ~= nil and
      WEATHER_NAMES[weatherNextId] ~= nil then
     top = top .. "  →  " .. WEATHER_NAMES[weatherNextId]

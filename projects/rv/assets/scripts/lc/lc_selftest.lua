@@ -3746,6 +3746,27 @@ function runSelfTest()
                      bare, chained, wetBare, wetChained, tostring(kept)))
   end
 
+  -- 雨雪抓地提示：显示抓地系数与防滑链，晴天不发提示
+  do
+    local sw = weather
+    local n0 = inv.chains or 0
+    weather = "rain"
+    inv.chains = nil
+    local wet = tractionStatusText() or ""
+    inv.chains = 1
+    local chained = tractionStatusText() or ""
+    inv.chains = n0 > 0 and n0 or nil
+    weather = "clear"
+    local dry = tractionStatusText()
+    weather = sw
+    ok(r, "traction hint",
+       wet:find("抓地", 1, true) ~= nil and
+       wet:find("防滑链", 1, true) == nil and
+       chained:find("防滑链", 1, true) ~= nil and dry == nil,
+       string.format("wet=%s chained=%s dry=%s", wet, chained,
+                     tostring(dry)))
+  end
+
   -- 雪天寒冷：没开取暖器时体力消耗更快
   do
     local a = coldEnergyExtra("snow", false)

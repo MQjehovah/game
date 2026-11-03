@@ -114,6 +114,14 @@ function weatherGripScale()
   return base
 end
 
+-- 雨雪抓地提示：显示当前抓地系数与是否装备防滑链（路况良好时返回 nil）
+function tractionStatusText()
+  local grip = weatherGripScale()
+  if grip >= 0.99 then return nil end
+  local chained = hasItem ~= nil and hasItem("chains", 1)
+  return string.format("抓地 %.2f%s", grip, chained and " · 防滑链" or "")
+end
+
 -- 夜间萤火虫发射率（/s）：深夜且非雨雪；自检/调参用
 function fireflyRate()
   if weather == "rain" or weather == "snow" then return 0 end
