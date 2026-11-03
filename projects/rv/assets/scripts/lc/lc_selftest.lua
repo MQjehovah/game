@@ -1791,6 +1791,35 @@ function runSelfTest()
                      tostring(daytime), iv, tostring(played)))
   end
 
+  -- 白天鸟鸣：晴天白天会叫，雨雪/夜晚安静
+  do
+    local sc, sw = clock, weather
+    clock = 12 * 60
+    weather = "clear"
+    local clearDay = dayBirdsActive()
+    weather = "rain"
+    local rainy = dayBirdsActive()
+    weather = "snow"
+    local snowy = dayBirdsActive()
+    weather = "clear"
+    clock = 23 * 60
+    local night = dayBirdsActive()
+    local iv = birdChirpInterval()
+    local keepT, keepP = birdChirpT, birdChirpPlays
+    clock, weather = 12 * 60, "clear"
+    birdChirpT, birdChirpPlays = 0, 0
+    updateDayBirds(0.1)
+    local played = (birdChirpPlays or 0) == 1
+    birdChirpT, birdChirpPlays = keepT, keepP
+    weather, clock = sw, sc
+    ok(r, "day birds",
+       clearDay and not rainy and not snowy and not night and
+       iv >= 4.0 and iv <= 9.0 and played,
+       string.format("clear=%s rain=%s snow=%s night=%s iv=%.1f played=%s",
+                     tostring(clearDay), tostring(rainy), tostring(snowy),
+                     tostring(night), iv, tostring(played)))
+  end
+
   -- 主路土肩：沥青边缘与草地的过渡
   do
     local n = #roadShoulders

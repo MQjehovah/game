@@ -1851,6 +1851,29 @@ function updateNightCrickets(dt)
   if PlaySfx then PlaySfx("cricket") end
 end
 
+-- 白天鸟鸣：晴天/阴天的白天随机鸟叫，雨雪与夜晚安静
+function dayBirdsActive()
+  if isNight ~= nil and isNight() then return false end
+  if weather == "rain" or weather == "snow" then return false end
+  return true
+end
+
+function birdChirpInterval()
+  return 4.0 + math.random() * 5.0
+end
+
+function updateDayBirds(dt)
+  if not dayBirdsActive() then
+    birdChirpT = 0
+    return
+  end
+  birdChirpT = (birdChirpT or 0) - (dt or 0)
+  if birdChirpT > 0 then return end
+  birdChirpT = birdChirpInterval()
+  birdChirpPlays = (birdChirpPlays or 0) + 1
+  if PlaySfx then PlaySfx("birds") end
+end
+
 -- 营地附近的浆果丛：采摘后约 12 秒再生
 function spawnBerryBushes()
   for _, b in ipairs(berryBushes) do Despawn(b.ent) end
