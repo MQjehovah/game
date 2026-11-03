@@ -1427,6 +1427,7 @@ function on_update(ent, dt)
       if ActionPressed("5") and upgradeCargo ~= nil then upgradeCargo() end
       if ActionPressed("6") and upgradeRod ~= nil then upgradeRod() end
       if ActionPressed("7") and craftRepairKit ~= nil then craftRepairKit() end
+      if ActionPressed("8") and craftTarp ~= nil then craftTarp() end
     end
     updateCamera(dt)
     return

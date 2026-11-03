@@ -1088,6 +1088,27 @@ function runSelfTest()
        string.format("condition=%.3f", wet))
   end
 
+  -- 防雨篷布：带在身上时易碎货不再被雨水打湿
+  do
+    local sw, sp = weather, phase
+    local k0 = inv.tarp or 0
+    inv.tarp = (inv.tarp or 0) + 1
+    jobRefreshOffers("gasstop")
+    jobAccept(1)
+    job.stops, job.stopIndex = nil, 1
+    job.fragile = true
+    job.condition = 1.0
+    atNode = nil
+    weather, phase = "rain", "driving"
+    updateJobs(10)
+    local dry = job.condition or 0
+    weather, phase = sw, sp
+    jobAbandon()
+    inv.tarp = k0 > 0 and k0 or nil
+    ok(r, "tarp protects cargo", dry >= 0.999,
+       string.format("tarp=%d condition=%.3f", k0 + 1, dry))
+  end
+
   -- 易碎货：撞击掉货况翻倍（0.10 vs 0.05 per m/s）
   do
     jobRefreshOffers("gasstop")

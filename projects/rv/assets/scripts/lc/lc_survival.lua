@@ -530,6 +530,22 @@ function upgradeRod()
   return true
 end
 
+-- 工作台制作防雨篷布：金属 2 + 布料 3
+function craftTarp()
+  local cost = { metal = 2, cloth = 3 }
+  if not canAfford(cost) then
+    toast.text = "材料不足：" .. costText(cost)
+    toast.t = 2.2
+    return false
+  end
+  payCost(cost)
+  addItem("tarp", 1)
+  if PlaySfx then PlaySfx("repair") end
+  toast.text = "制作防雨篷布 x1（金属 -2 布料 -3）— 易碎货不再怕雨"
+  toast.t = 3.0
+  return true
+end
+
 -- 工作台制作修理包：金属 2 + 布料 1
 function craftRepairKit()
   local cost = { metal = 2, cloth = 1 }

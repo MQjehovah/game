@@ -489,8 +489,9 @@ function updateJobs(dt)
       jobExpire()
       return
     end
-    -- 雨天行驶：易碎货缓慢受潮掉货况
-    if job.fragile and weather == "rain" and phase == "driving" then
+    -- 雨天行驶：易碎货缓慢受潮掉货况（带防雨篷布则免疫）
+    if job.fragile and weather == "rain" and phase == "driving" and
+       not (hasItem and hasItem("tarp", 1)) then
       job.condition = math.max(0, (job.condition or 1) - 0.006 * (dt or 0))
       if not job.rainWarned and job.condition < 0.85 then
         job.rainWarned = true
