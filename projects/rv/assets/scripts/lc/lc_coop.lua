@@ -835,9 +835,14 @@ local function serverUpdate(dt)
     local jd = jobRemaining()
     if jd <= JOBS.deliverRadius then
       local destName = nodeName(job.destId)
-      jobComplete()
-      print(string.format("[coop-job] delivered dest=%s jobs=%d weight=%.0fkg",
-            destName, jobDelivered, stats.weight))
+      local done = (jobArrive ~= nil) and jobArrive() or true
+      if done then
+        print(string.format("[coop-job] delivered dest=%s jobs=%d weight=%.0fkg",
+              destName, jobDelivered, stats.weight))
+      else
+        print(string.format("[coop-job] stop advanced next=%s",
+              tostring(job and job.destId)))
+      end
       pushState()
       coop.saveDirty = true
     end

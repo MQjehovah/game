@@ -125,6 +125,25 @@ function jobRefreshOffers(preferId)
     if fragile then
       pay.metal = math.max(1, math.floor(pay.metal * 1.25 + 0.5))
     end
+    -- 约 25% 是双站路线：两个卸货点，报酬更高
+    local stops = nil
+    if math.random() < 0.25 then
+      local second = nil
+      for _ = 1, 8 do
+        local cand = NODES[math.random(1, #NODES)]
+        if cand ~= nil and cand.id ~= nd.id and cand.id ~= "camp" then
+          second = cand
+          break
+        end
+      end
+      if second ~= nil then
+        stops = { { id = nd.id, name = nd.name },
+                  { id = second.id, name = second.name } }
+        pay.metal = pay.metal + 2
+        pay.wood = pay.wood + 1
+        fuelPay = fuelPay + 4
+      end
+    end
     return {
       destId = nd.id,
       destName = nd.name,
@@ -138,6 +157,8 @@ function jobRefreshOffers(preferId)
       fuel = fuelPay,
       urgent = urgent,
       fragile = fragile,
+      stops = stops,
+      stopIndex = 1,
       deadlineAbs = urgent and (jobNowAbs() + 300 + dist * 0.8) or nil,
       stage = "offer",
     }
@@ -217,7 +238,7 @@ function jobAccept(idx)
     weight = offer.weight, distance = offer.distance,
     pay = offer.pay, fuel = offer.fuel, stage = "carry", condition = 1.0,
     urgent = offer.urgent, deadlineAbs = offer.deadlineAbs,
-    fragile = offer.fragile,
+    fragile = offer.fragile, stops = offer.stops, stopIndex = offer.stopIndex or 1,
   }
   jobUI = false
   jobOffers = {}
@@ -357,6 +378,27 @@ function jobExpire()
   toast.t = 4.0
 end
 
+-- 到达当前卸货点：多站合同推进到下一站，最后一站才结算
+function jobArrive()
+  if job == nil then return false end
+  local stops = job.stops
+  if stops ~= nil and (job.stopIndex or 1) < #stops then
+    job.stopIndex = (job.stopIndex or 1) + 1
+    local s = stops[job.stopIndex]
+    job.destId, job.destName = s.id, s.name
+    SpawnFloatText(rv.x, 1.8, rv.z,
+                   string.format("第 %d/%d 站已送达", job.stopIndex - 1, #stops),
+                   false, 1.4, 1.0, 0.88, 0.4)
+    toast.text = string.format("第 %d/%d 站已送达，继续前往 %s",
+                               job.stopIndex - 1, #stops, s.name)
+    toast.t = 4.0
+    if PlaySfx then PlaySfx("pickup") end
+    return false
+  end
+  jobComplete()
+  return true
+end
+
 function updateJobs(dt)
   if job ~= nil then
     -- 限时急单：超过截止时间直接作废
@@ -365,9 +407,9 @@ function updateJobs(dt)
       return
     end
     jobPlaceCargo()
-    -- 停在目的地（setPhase 已把 atNode 设成节点 id）即结算
+    -- 停在目的地（setPhase 已把 atNode 设成节点 id）即结算/推进下一站
     if job.stage == "carry" and phase == "parked" and atNode == job.destId then
-      jobComplete()
+      if job.stops ~= nil then jobArrive() else jobComplete() end
     end
   end
 end

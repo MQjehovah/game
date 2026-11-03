@@ -937,6 +937,7 @@ function runSelfTest()
   local payOk = next(jobOffers[1] and jobOffers[1].pay or {}) ~= nil
   local usedOffer = jobOffers[1]
   local accepted = jobAccept(1)
+  if job ~= nil then job.stops = nil; job.stopIndex = 1 end
   local weightWithCargo = stats.weight
   ok(r, "job accept loads cargo",
      offerOk and payOk and accepted and job ~= nil and
@@ -988,6 +989,8 @@ function runSelfTest()
   -- 货损：撞击掉货况，结算按货况打折（0.55 + 0.45*货况）
   jobRefreshOffers("gasstop")
   jobAccept(1)
+  job.stops = nil
+  job.stopIndex = 1
   local fullMetal = job and job.pay and job.pay.metal or 0
   jobApplyImpact(8)
   local cond = job and job.condition or 1
@@ -998,6 +1001,29 @@ function runSelfTest()
   ok(r, "job cargo damage",
      job == nil and cond < 0.7 and gained >= 1 and gained < fullMetal,
      string.format("cond=%.2f metal=%d/%d", cond, gained, fullMetal))
+
+  -- 双站路线：第一站推进、第二站结算
+  do
+    jobRefreshOffers("gasstop")
+    jobAccept(1)
+    local a = nodeById("gasstop")
+    local b = nodeById("ruin")
+    job.stops = { { id = a.id, name = a.name }, { id = b.id, name = b.name } }
+    job.stopIndex = 1
+    job.destId, job.destName = a.id, a.name
+    job.pay = { metal = 5, wood = 2 }
+    job.condition = 1.0
+    atNode, phase = a.id, "parked"
+    updateJobs(1 / 60)
+    local advanced = job ~= nil and (job.stopIndex or 0) == 2 and job.destId == b.id
+    local m0 = materials.metal or 0
+    atNode = b.id
+    updateJobs(1 / 60)
+    local completed = job == nil and (materials.metal or 0) > m0
+    ok(r, "two-stop delivery", advanced and completed,
+       string.format("advanced=%s completed=%s", tostring(advanced),
+                     tostring(completed)))
+  end
 
   -- 易碎货：撞击掉货况翻倍（0.10 vs 0.05 per m/s）
   do
