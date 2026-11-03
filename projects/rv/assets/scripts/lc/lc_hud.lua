@@ -299,6 +299,15 @@ function drawFpHud()
                        0.62, 0.86, 0.98, 0.95)
     end
   end
+
+  -- 篝火燃料：低燃料/熄灭时在屏幕底部提示添柴
+  if campfireHintText ~= nil then
+    local fireHint = campfireHintText()
+    if fireHint ~= nil then
+      drawTextCentered(fireHint, math.floor(vw * 0.5), vh - 108, 12,
+                       1.0, 0.72, 0.42, 0.95)
+    end
+  end
 end
 
 -- 快速使用物品：1 水瓶 / 2 罐头 / 3 热饭 / 4 热咖啡 / 5 生食材

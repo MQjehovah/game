@@ -1678,6 +1678,36 @@ function runSelfTest()
                      materials.wood or 0, tostring(noWood)))
   end
 
+  -- 篝火燃料 HUD 提示：熄灭/将尽时给文案，充足/远离时不给
+  do
+    local keepOn, keepFuel = campfireOn, campfireFuelMin
+    local sx, sz, sb, sf = rv.x, rv.z, buildMode, onFoot
+    local sp, sa = player.x, player.active
+    rv.x, rv.z = campfire and campfire.x or 1.8,
+                 campfire and campfire.z or 2.0
+    onFoot, buildMode = false, false
+    campfireOn, campfireFuelMin = false, 0
+    local outHint = campfireHintText() or ""
+    campfireOn, campfireFuelMin = true, 60
+    local lowHint = campfireHintText() or ""
+    campfireOn, campfireFuelMin = true, 800
+    local fullHint = campfireHintText()
+    campfireOn, campfireFuelMin = true, 60
+    rv.x, rv.z = (campfire and campfire.x or 1.8) + 40,
+                  campfire and campfire.z or 2.0
+    local farHint = campfireHintText()
+    campfireOn, campfireFuelMin = keepOn, keepFuel
+    rv.x, rv.z, buildMode, onFoot = sx, sz, sb, sf
+    player.x, player.active = sp, sa
+    ok(r, "campfire hint",
+       outHint:find("熄灭", 1, true) ~= nil and
+       lowHint:find("将尽", 1, true) ~= nil and
+       fullHint == nil and farHint == nil,
+       string.format("out=%s low=%s full=%s far=%s",
+                     tostring(outHint ~= ""), tostring(lowHint ~= ""),
+                     tostring(fullHint ~= nil), tostring(farHint ~= nil)))
+  end
+
   -- 联机篝火状态同步：客机按服务器标志点燃/熄灭
   do
     local keep = campfireOn

@@ -2002,6 +2002,25 @@ function addCampfireWood()
   return true
 end
 
+-- 篝火燃料提示：靠近营地火堆时，低燃料/熄灭给一条 HUD 提示
+function campfireHintText()
+  if campfire == nil then return nil end
+  local lx, lz = rv.x, rv.z
+  if onFoot and player ~= nil and player.active then
+    lx, lz = player.x, player.z
+  end
+  local dx, dz = campfire.x - lx, campfire.z - lz
+  if dx * dx + dz * dz > 8 * 8 then return nil end
+  if not campfireOn then
+    return "篝火已熄灭——按 G 添柴（木材 x1）"
+  end
+  if (campfireFuelMin or 0) < 120 then
+    return string.format("篝火燃料将尽（约 %.0f 游戏分钟）——按 G 添柴",
+                         campfireFuelMin or 0)
+  end
+  return nil
+end
+
 -- 营火暖光的轻微跳动：没有灯光强度 API，用位置抖动 + 高度起伏模拟火光
 function updateCampfireLight(dt)
   if SURVIVAL ~= nil then
