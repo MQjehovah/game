@@ -513,10 +513,19 @@ function coolantHeatScale(v)
   return 1.0 + math.min(0.5, (30 - c) / 30 * 0.5)
 end
 
+-- 环境温度对引擎散热的影响：雪天最凉、雨天次之
+function weatherEngineHeatScale(weatherValue)
+  if weatherValue == "snow" then return 0.85 end
+  if weatherValue == "rain" then return 0.93 end
+  if weatherValue == "fog" then return 0.97 end
+  return 1.0
+end
+
 function engineHeatRate(speed, loadRatio)
   local v = math.min(1, math.abs(speed or 0) / DRIVE.maxSpeed)
   local load = 1 + math.max(0, (loadRatio or 1) - 1.0) * 0.8
-  local heat = (VEH.tempHeat or 5.5) * v * v * load * coolantHeatScale(coolant)
+  local heat = (VEH.tempHeat or 5.5) * v * v * load * coolantHeatScale(coolant) *
+               weatherEngineHeatScale(weather)
   local cool = (VEH.tempCool or 1.0) + 0.30 * v
   return heat - cool
 end

@@ -482,8 +482,10 @@
   松油门滑行或停车散热；冷车（水温 <60°C）动力逐步受限、20°C 时 ×0.85，
   油耗也最高 +12%（`engineColdPowerScale` / `engineColdFuelScale`），
   HUD 水温标蓝并显示 `冷车`；起步别急着飙；停车后引擎也会自然降温
-  （`updateEngineTemp` 在驻车阶段继续调用）；自检 `engine temperature` /
-  `parked engine cool` / `cold engine power` / `cold engine fuel`。
+  （`updateEngineTemp` 在驻车阶段继续调用）；雨/雪/雾天环境温度低，
+  引擎升温更慢（`weatherEngineHeatScale`，雪天 ×0.85）；自检
+  `engine temperature` / `parked engine cool` / `weather engine heat` /
+  `cold engine power` / `cold engine fuel`。
 - **机油保养**：机油寿命随里程下降（约 1%/100m），低于 20% 时动力 ×0.88、
   油耗最高 +8%（`engineOilPowerScale` / `engineOilFuelScale`），
   低于 15% 还继续行驶会加速发动机磨损（`oilEngineWearRate`），
@@ -952,7 +954,7 @@
   `cachemap`（地图上的补给箱标记）/ `notemap`（地图上的笔记标记）/
   `smoketest`（车体 25%、引擎 15% 冒烟）。
 
-自检覆盖 345 项：生存、做饭/鱼汤、咖啡、钓鱼、修车/升级引擎、自由摆放、昼夜灯光、天气、
+自检覆盖 346 项：生存、做饭/鱼汤、咖啡、钓鱼、修车/升级引擎、自由摆放、昼夜灯光、天气、
 高度场剖面/草丘/扩展高度场/地形分块 LOD/道路压平/地面跟随/坡面倾斜/车内倾斜/四轮接地/分轮行程/车轮实体/前轮转向/物理悬挂绑定/姿态回读/轮胎抓地绑定/轮胎抓地模型/偏航姿态回读/路面材质表/路面摩擦/阿克曼转向/转向助力/自动回正/滑移牵引/滑移率/滑移曲线/联合滑移/Pacejka/胎压/载荷敏感/胎温/四轮独立胎温/4 条胎面带/横向传导/逐顶点风摆/Voronoi 碎窗/玻璃种子广播/车轮刚体绑定/车轮刚体/圆柱滚动车轮/客户端车轮预测/姿态外推回正/车轮滚动、废宅商店/加油站/物流仓库/旧农场/购物中心/湖边木屋/路边诊所店内物资箱（6/6）、
 POI 墙体碰撞/门洞通行、营地货运板/接单载重/到点结算/放弃卸货/货损打折、
 货运目标指定/世界标记/地图目标圈、公路反光轮廓桩、营地陈设（遮阳棚/木桌/营地灯）、
@@ -1187,7 +1189,7 @@ POI 墙体碰撞/门洞通行、营地货运板/接单载重/到点结算/放弃
   `rv wheel rolling`（wx=2.00）、
   `rv attitude roundtrip`（pitch=0.15 roll=-0.22）与
   `rv yaw attitude roundtrip`（yaw=0.80 pitch=0.15 roll=-0.22），
-  单机自检 **345/345 PASS**。
+  单机自检 **346/346 PASS**。
   **逐顶点风摆验证**（`start_mode=hills`，相隔 1 秒两帧截图）：
   植被区域（880×370 = 325,600 px 裁剪）变化 **2.28%**（7412 px，
   阈值 |ΣRGB|>12），差异图 `rv_wind_diff.png` 正好落在草叶/花茎上；

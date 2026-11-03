@@ -4027,6 +4027,18 @@ function runSelfTest()
        string.format("peak=%.0f cooled=%.0f", peak, engineTemp))
   end
 
+  -- 天气影响引擎散热：雪天/雨天/雾天升温更慢
+  do
+    local snow = weatherEngineHeatScale("snow")
+    local rain = weatherEngineHeatScale("rain")
+    local fog = weatherEngineHeatScale("fog")
+    local clear = weatherEngineHeatScale("clear")
+    ok(r, "weather engine heat",
+       snow < rain and rain < fog and fog < clear and clear == 1.0,
+       string.format("snow=%.2f rain=%.2f fog=%.2f clear=%.2f",
+                     snow, rain, fog, clear))
+  end
+
   -- 停车冷却：车速 0 时调用 updateEngineTemp 会逐步降温并解除过热
   do
     local keepTemp, keepSpeed, keepHot = engineTemp, rv.speed, rv.engineHot
