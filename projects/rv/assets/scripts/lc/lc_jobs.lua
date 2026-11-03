@@ -411,10 +411,17 @@ function jobAbandon()
   return true
 end
 
+-- 完好送达奖励：货况 ≥95% 时 +5%，奖励稳妥驾驶
+function cargoPristineBonus(cond)
+  return ((cond or 1.0) >= 0.95) and 1.05 or 1.0
+end
+
 function jobComplete()
   if job == nil then return false end
   local cond = math.max(0, math.min(1, job.condition or 1.0))
   local scale = (0.55 + 0.45 * cond) * jobReputation() * jobStreakBonus()
+  local pristineBonus = cargoPristineBonus(cond) > 1.0
+  scale = scale * cargoPristineBonus(cond)
   -- 夜间送达 +10%：夜跑视线差，但报酬更高
   local nightBonus = (isNight ~= nil and isNight())
   if nightBonus then scale = scale * 1.10 end
@@ -482,8 +489,8 @@ function jobComplete()
     ok = true, cargo = name, crates = crates, cond = cond,
     got = table.concat(got, " "), fuel = fuelGot, jobs = jobDelivered,
     bonus = firstOfDay, night = nightBonus, rain = rainBonus,
-    snow = snowBonus, eco = ecoBonus, streak = jobStreak,
-    item = bonusItem, t = 3.6,
+    snow = snowBonus, eco = ecoBonus, pristine = pristineBonus,
+    streak = jobStreak, item = bonusItem, t = 3.6,
   }
   SpawnFloatText(rv.x, 1.8, rv.z,
                  "送达 " .. name .. " x" .. crates, false, 1.6, 1.0, 0.86, 0.4)

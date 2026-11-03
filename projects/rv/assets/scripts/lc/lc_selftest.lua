@@ -1280,7 +1280,7 @@ function runSelfTest()
     local nightGain = deliverAt(22)
     local dayGain = deliverAt(12)
     day, clock, lastJobDay, jobDelivered = sd, sc, slast, jd
-    ok(r, "night delivery bonus", nightGain == 11 and dayGain == 10,
+    ok(r, "night delivery bonus", nightGain == 12 and dayGain == 11,
        string.format("night=%d day=%d", nightGain, dayGain))
   end
 
@@ -1295,7 +1295,7 @@ function runSelfTest()
       jobRefreshOffers("gasstop")
       jobAccept(1)
       job.stops, job.stopIndex = nil, 1
-      job.pay = { metal = 10 }
+      job.pay = { metal = 100 }
       job.condition = 1.0
       local m0 = materials.metal or 0
       jobComplete()
@@ -1305,7 +1305,7 @@ function runSelfTest()
     local rainGain = deliverWith("rain")
     weather, clock, day, lastJobDay = sw, sc, sd, slast
     jobDelivered, jobStreak = jd, js
-    ok(r, "rain delivery bonus", rainGain == 11 and clearGain == 10,
+    ok(r, "rain delivery bonus", rainGain == 113 and clearGain == 105,
        string.format("clear=%d rain=%d", clearGain, rainGain))
   end
 
@@ -1330,7 +1330,7 @@ function runSelfTest()
     local snowGain = deliverWith("snow")
     weather, clock, day, lastJobDay = sw, sc, sd, slast
     jobDelivered, jobStreak = jd, js
-    ok(r, "snow delivery bonus", snowGain == 22 and clearGain == 20,
+    ok(r, "snow delivery bonus", snowGain == 24 and clearGain == 21,
        string.format("clear=%d snow=%d", clearGain, snowGain))
   end
 
@@ -1352,6 +1352,18 @@ function runSelfTest()
        night:find("夜间", 1, true) ~= nil and none == "",
        string.format("rain=%s snow=%s night=%s none=%s",
                      rain, snow, night, none))
+  end
+
+  -- 完好送达奖励：货况 ≥95% 时 +5%
+  do
+    local full = cargoPristineBonus(1.0)
+    local edge = cargoPristineBonus(0.95)
+    local damaged = cargoPristineBonus(0.90)
+    ok(r, "cargo pristine bonus",
+       math.abs(full - 1.05) < 1e-6 and math.abs(edge - 1.05) < 1e-6 and
+       math.abs(damaged - 1.0) < 1e-6,
+       string.format("1.0=%.2f 0.95=%.2f 0.90=%.2f",
+                     full, edge, damaged))
   end
 
   -- 省油驾驶奖励：本单油耗 ≤1.4L/100m 时报酬 +5%
@@ -1389,7 +1401,7 @@ function runSelfTest()
     jobDelivered, jobStreak = jd, js
     tripDistance, tripFuel = std, stf
     ok(r, "eco driving bonus",
-       normal == 20 and eco == 21 and normalEco == false and ecoGot == true and
+       normal == 21 and eco == 22 and normalEco == false and ecoGot == true and
        ecoGoal,
        string.format("normal=%d eco=%d flags=%s/%s goal=%s", normal, eco,
                      tostring(normalEco), tostring(ecoGot), tostring(ecoGoal)))
@@ -2782,7 +2794,7 @@ function runSelfTest()
     jobDelivered = jd
     milestones = mk
     dailyGoal = dk
-    ok(r, "daily first job bonus", firstGain == 6 and secondGain == 5,
+    ok(r, "daily first job bonus", firstGain == 7 and secondGain == 5,
        string.format("first=%d second=%d", firstGain, secondGain))
   end
 
