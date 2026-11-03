@@ -1308,6 +1308,18 @@ function runSelfTest()
        string.format("condition=%.3f", wet))
   end
 
+  -- 急转弯甩货：横向加速度超阈值才掉货况，易碎货更敏感
+  do
+    local calm = cornerCargoLoss(0.3, false, 1.0)
+    local hard = cornerCargoLoss(1.2, false, 1.0)
+    local fragile = cornerCargoLoss(1.2, true, 1.0)
+    local capped = cornerCargoLoss(20.0, true, 1.0)
+    ok(r, "corner cargo loss",
+       calm == 0 and hard > 0 and fragile > hard and capped <= 0.30,
+       string.format("calm=%.3f hard=%.3f fragile=%.3f cap=%.3f",
+                     calm, hard, fragile, capped))
+  end
+
   -- 防雨篷布：带在身上时易碎货不再被雨水打湿
   do
     local sw, sp = weather, phase

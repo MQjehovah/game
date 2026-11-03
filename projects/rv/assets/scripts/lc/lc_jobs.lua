@@ -558,6 +558,15 @@ function jobArrive()
   return true
 end
 
+-- 急转弯甩货：横向加速度超过阈值时按秒扣货况，易碎货更低阈值/更大损失
+function cornerCargoLoss(latG, fragile, dt)
+  if latG == nil then return 0 end
+  local threshold = fragile and 0.40 or 0.55
+  if latG <= threshold then return 0 end
+  local mult = fragile and 0.22 or 0.14
+  return math.min(0.30, (latG - threshold) * mult * (dt or 0))
+end
+
 function updateJobs(dt)
   if job ~= nil then
     -- 限时急单：超过截止时间直接作废
@@ -583,6 +592,28 @@ function updateJobs(dt)
         toast.text = "易腐货开始变质——尽快送达"
         toast.t = 3.4
       end
+    end
+    -- 急转弯甩货：用横向加速度判断，猛打方向会损伤货况
+    if phase == "driving" and (dt or 0) > 0 then
+      local prevYaw = rv.jobYawPrev
+      rv.jobYawPrev = rv.yaw
+      if prevYaw ~= nil then
+        local dyaw = rv.yaw - prevYaw
+        while dyaw > math.pi do dyaw = dyaw - 2 * math.pi end
+        while dyaw < -math.pi do dyaw = dyaw + 2 * math.pi end
+        local latG = math.abs(dyaw / dt) * math.abs(rv.speed or 0) / 9.81
+        local loss = cornerCargoLoss(latG, job.fragile, dt)
+        if loss > 0 then
+          job.condition = math.max(0, (job.condition or 1) - loss)
+          if not job.tossWarned and job.condition < 0.85 then
+            job.tossWarned = true
+            toast.text = "急转弯甩动了货物——稳住方向，货况在下降"
+            toast.t = 3.4
+          end
+        end
+      end
+    else
+      rv.jobYawPrev = rv.yaw
     end
     jobPlaceCargo()
     -- 停在目的地（setPhase 已把 atNode 设成节点 id）即结算/推进下一站
