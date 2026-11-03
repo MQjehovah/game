@@ -1424,6 +1424,14 @@ function runSelfTest()
        string.format("day=%.1fkW night=%.1fkW", day, night))
   end
 
+  -- 手刹：比脚刹更强
+  do
+    local foot = brakeRate(1.0)
+    local hand = handbrakeRate(1.0)
+    ok(r, "handbrake rate", hand > foot and foot > 0,
+       string.format("foot=%.1f hand=%.1f m/s²", foot, hand))
+  end
+
   -- 存读档：行程/探索/货运单数 + 天气
   do
     tripDistance, tripFuel, jobDelivered = 3210, 88, 7

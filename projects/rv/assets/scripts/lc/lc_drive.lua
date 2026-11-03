@@ -51,6 +51,11 @@ function brakeRate(loadRatio)
   return DRIVE.brake / (1.0 + over * 0.60)
 end
 
+-- 手刹：比脚刹更强的减速度（载重同样衰减）
+function handbrakeRate(loadRatio)
+  return brakeRate(loadRatio) * 1.55
+end
+
 -- 引擎音量随车速变化（总线增益，叠加在 PlayMusic 的基础音量上）
 function engineAudioGain(speed)
   local v = math.min(1, math.abs(speed or 0) / DRIVE.maxSpeed)
@@ -217,7 +222,12 @@ function updateDrive(dt)
     fuelWarned = false
   end
 
-  if throttle > 0 then
+  -- 手刹（驾驶时按住 Shift）：强减速 + 刹车灯亮
+  local handbrake = ActionDown("shift")
+  if handbrake and rv.speed > 0.05 then
+    rv.braking = true
+    rv.speed = math.max(0.0, rv.speed - handbrakeRate(ratio) * dt)
+  elseif throttle > 0 then
     rv.braking = false
     rv.speed = math.min(maxSp, rv.speed + acc * dt)
   elseif throttle < 0 then

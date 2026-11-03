@@ -549,7 +549,7 @@ function drawDriveHud()
   if job ~= nil then drawJobTracker(vw) end
 
   local hints = {
-    "W 油门   S 刹车/倒车   A/D 转向",
+    "W 油门   S 刹车/倒车   A/D 转向   Shift 手刹",
     "鼠标 张望   空格 停车",
     "C " .. (driveView == "cab" and "追逐视角" or "驾驶席视角") .. "   M 世界地图",
   }
