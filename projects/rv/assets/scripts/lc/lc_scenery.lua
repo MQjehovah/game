@@ -1475,7 +1475,23 @@ function birdsActive()
   return not (isNight ~= nil and isNight())
 end
 
+-- 野生动物群不跟车移动：停车且离锚点 >45m 时迁到新区域
+function wildlifeAnchorStep()
+  if wildlifeAnchor == nil then
+    wildlifeAnchor = { x = rv.x, z = rv.z }
+  end
+  if math.abs(rv.speed or 0) >= 0.5 then return false end
+  local dx, dz = rv.x - wildlifeAnchor.x, rv.z - wildlifeAnchor.z
+  if dx * dx + dz * dz <= 45 * 45 then return false end
+  wildlifeAnchor.x, wildlifeAnchor.z = rv.x, rv.z
+  if spawnBirds ~= nil then spawnBirds() end
+  if spawnRabbits ~= nil then spawnRabbits() end
+  if spawnButterflies ~= nil then spawnButterflies() end
+  return true
+end
+
 function spawnBirds()
+  for _, b in ipairs(birds) do Despawn(b.ent) end
   birds = {}
   for i = 1, 7 do
     local e = SpawnPrefab("rv_bird", { x = 0, y = -60, z = 0 })
@@ -1497,14 +1513,17 @@ end
 function updateBirds(dt)
   if #birds == 0 then return end
   local active = birdsActive()
+  local ax, az = (wildlifeAnchor and wildlifeAnchor.x) or rv.x,
+                 (wildlifeAnchor and wildlifeAnchor.z) or rv.z
+  local gy = (terrainHeight and terrainHeight(ax, az)) or (rv.groundY or 0)
   birdsT = (birdsT or 0) + dt
   for _, b in ipairs(birds) do
     SetVisible(b.ent, active)
     if active then
       b.angle = b.angle + b.speed * dt
-      local x = rv.x + math.cos(b.angle) * b.radius
-      local z = rv.z + math.sin(b.angle) * b.radius
-      local y = (rv.groundY or 0) + b.height +
+      local x = ax + math.cos(b.angle) * b.radius
+      local z = az + math.sin(b.angle) * b.radius
+      local y = gy + b.height +
                 math.sin(b.angle * 3 + b.phase) * 0.5
       SetPosition(b.ent, { x = x, y = y, z = z })
       SetRotationY(b.ent, -b.angle + math.pi * 0.5)
@@ -1627,8 +1646,10 @@ function updateRabbits(dt)
     SetVisible(r.ent, active)
     if active then
       r.angle = r.angle + r.speed * dt
-      local x = rv.x + math.cos(r.angle) * r.radius
-      local z = rv.z + math.sin(r.angle) * r.radius
+      local ax = (wildlifeAnchor and wildlifeAnchor.x) or rv.x
+      local az = (wildlifeAnchor and wildlifeAnchor.z) or rv.z
+      local x = ax + math.cos(r.angle) * r.radius
+      local z = az + math.sin(r.angle) * r.radius
       local gy = (terrainHeight and terrainHeight(x, z)) or 0
       local hop = math.abs(math.sin(rabbitsT * 5 + r.phase)) * 0.16
       SetPosition(r.ent, { x = x, y = gy + 0.12 + hop, z = z })
@@ -1675,8 +1696,10 @@ function updateButterflies(dt)
     if active then
       b.angle = b.angle + b.speed * dt
       local t = butterfliesT * 1.7 + b.phase
-      local x = rv.x + math.cos(b.angle) * b.radius + math.sin(t) * 0.55
-      local z = rv.z + math.sin(b.angle) * b.radius + math.cos(t * 0.8) * 0.55
+      local ax = (wildlifeAnchor and wildlifeAnchor.x) or rv.x
+      local az = (wildlifeAnchor and wildlifeAnchor.z) or rv.z
+      local x = ax + math.cos(b.angle) * b.radius + math.sin(t) * 0.55
+      local z = az + math.sin(b.angle) * b.radius + math.cos(t * 0.8) * 0.55
       local gy = (terrainHeight and terrainHeight(x, z)) or 0
       local y = gy + b.bob + math.sin(t * 2.1) * 0.22
       local flap = 0.35 + 0.65 * math.abs(math.sin(butterfliesT * 16 + b.phase))

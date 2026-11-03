@@ -1974,6 +1974,26 @@ function runSelfTest()
                      tostring(dayOn), tostring(nightOff), tostring(rainOff)))
   end
 
+  -- 野生动物锚点：行驶中不跟随，停车远离后迁移
+  do
+    local keepA = wildlifeAnchor
+    local sx, sz, ss = rv.x, rv.z, rv.speed
+    wildlifeAnchor = { x = 0, z = 0 }
+    rv.x, rv.z, rv.speed = 100, 100, 6
+    local movedDriving = wildlifeAnchorStep()
+    rv.speed = 0
+    local movedParked = wildlifeAnchorStep()
+    local anchored = math.abs(wildlifeAnchor.x - 100) < 0.01 and
+                     math.abs(wildlifeAnchor.z - 100) < 0.01
+    rv.x, rv.z, rv.speed = sx, sz, ss
+    wildlifeAnchor = keepA
+    ok(r, "wildlife anchor",
+       movedDriving == false and movedParked == true and anchored,
+       string.format("driving=%s parked=%s at=(%.0f,%.0f)",
+                     tostring(movedDriving), tostring(movedParked),
+                     wildlifeAnchor.x or 0, wildlifeAnchor.z or 0))
+  end
+
   -- 路面障碍：生成实体+静态碰撞，绕过/超时后清理干净
   do
     local before = #driveProps

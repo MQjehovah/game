@@ -92,6 +92,7 @@ campfireFlames = {}           -- 营火可见火苗
 birds = {}                    -- 白天绕营地/房车飞行的鸟群
 rabbits = {}                  -- 白天在草甸上蹦跳的野兔
 butterflies = {}              -- 白天在花丛/草甸飞舞的蝴蝶
+wildlifeAnchor = { x = 0, z = 0 }  -- 野生动物群所在区域（不跟车移动）
 puddles = {}                  -- 雨天积水
 campfireLightT = 0
 fireCrackleT = 0               -- 篝火噼啪声计时
