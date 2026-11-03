@@ -1727,17 +1727,38 @@ function updateAmbientDeer(dt)
   local active = deerActive()
   ambientDeerT = (ambientDeerT or 0) + (dt or 0)
   for _, d in ipairs(ambientDeer) do
-    SetVisible(d.ent, active)
-    if active then
-      d.angle = d.angle + d.speed * dt
-      local x = d.ax + math.cos(d.angle) * d.radius
-      local z = d.az + math.sin(d.angle) * d.radius
-      local gy = (terrainHeight and terrainHeight(x, z)) or 0
-      local bob = math.abs(math.sin(ambientDeerT * 2.2 + d.phase)) * 0.06
-      SetPosition(d.ent, { x = x, y = gy + 0.55 + bob, z = z })
-      SetRotationY(d.ent, -d.angle + math.pi * 0.5)
+    if (d.fleeT or 0) > 0 then
+      d.fleeT = math.max(0, d.fleeT - (dt or 0))
+      SetVisible(d.ent, false)
+    else
+      SetVisible(d.ent, active)
+      if active then
+        d.angle = d.angle + d.speed * dt
+        local x = d.ax + math.cos(d.angle) * d.radius
+        local z = d.az + math.sin(d.angle) * d.radius
+        local gy = (terrainHeight and terrainHeight(x, z)) or 0
+        local bob = math.abs(math.sin(ambientDeerT * 2.2 + d.phase)) * 0.06
+        SetPosition(d.ent, { x = x, y = gy + 0.55 + bob, z = z })
+        SetRotationY(d.ent, -d.angle + math.pi * 0.5)
+      end
     end
   end
+end
+
+-- 鸣笛惊走农场附近的鹿群：隐藏一段时间后回到原地
+function scareAmbientDeer(x, z, radius)
+  local r2 = (radius or 24) * (radius or 24)
+  local n = 0
+  for _, d in ipairs(ambientDeer or {}) do
+    local wx = d.ax + math.cos(d.angle) * d.radius
+    local wz = d.az + math.sin(d.angle) * d.radius
+    local dx, dz = wx - (x or 0), wz - (z or 0)
+    if dx * dx + dz * dz <= r2 then
+      d.fleeT = 20
+      n = n + 1
+    end
+  end
+  return n
 end
 
 -- 鸣笛惊走附近的鸟和野兔（返回惊走的数量，供喇叭使用）

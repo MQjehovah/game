@@ -3173,6 +3173,24 @@ function runSelfTest()
                      tostring(day), tostring(night)))
   end
 
+  -- 鸣笛惊走农场鹿群：设置 fleeT，并随时间消退
+  do
+    if spawnAmbientDeer ~= nil then spawnAmbientDeer() end
+    local n = #(ambientDeer or {})
+    local scared = scareAmbientDeer(0, 0, 500)
+    local anyFlee = false
+    for _, d in ipairs(ambientDeer or {}) do
+      if (d.fleeT or 0) > 0 then anyFlee = true end
+    end
+    local before = (ambientDeer[1] and ambientDeer[1].fleeT) or 0
+    updateAmbientDeer(1)
+    local after = (ambientDeer[1] and ambientDeer[1].fleeT) or 0
+    ok(r, "scare farm deer",
+       n >= 2 and scared == n and anyFlee and after < before,
+       string.format("deer=%d scared=%d flee=%.1f->%.1f", n, scared,
+                     before, after))
+  end
+
   -- 蝴蝶：白天活动，夜晚与雨天隐藏
   do
     local sc, sw = clock, weather
