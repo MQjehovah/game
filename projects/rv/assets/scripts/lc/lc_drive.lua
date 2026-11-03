@@ -49,6 +49,13 @@ function engineOilPowerScale()
   return 0.75 + 0.25 * math.max(0, o) / 20
 end
 
+-- 机油严重不足（<15%）时继续行驶会加速发动机磨损（%/s）
+function oilEngineWearRate(oilValue)
+  local o = oilValue or 100
+  if o >= 15 then return 0 end
+  return (15 - o) * 0.0015
+end
+
 -- 换机油费用：按缺失比例每 25% 收 1 金属（至少 1）
 function oilChangeCost()
   local miss = 100 - (oilLife or 100)
@@ -901,6 +908,18 @@ function updateDrive(dt)
     toast.t = 3.4
   elseif (oilLife or 100) > 40 then
     rv.oilWarned = false
+  end
+  -- 机油严重不足还继续跑：发动机额外磨损
+  local oilWear = oilEngineWearRate(oilLife)
+  if oilWear > 0 and math.abs(rv.speed or 0) > 1.0 then
+    parts.engine = math.max(0, (parts.engine or 100) - oilWear * dt)
+    if not rv.oilWearWarned then
+      rv.oilWearWarned = true
+      toast.text = "机油见底还在跑——发动机正在加速磨损！"
+      toast.t = 3.4
+    end
+  elseif (oilLife or 100) > 20 then
+    rv.oilWearWarned = false
   end
 
   -- 刹车热衰减：连续重刹累积热量，松开后缓慢冷却

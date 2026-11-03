@@ -1796,6 +1796,18 @@ function runSelfTest()
        string.format("100=%.3f 20=%.3f 0=%.3f", full, mid, low))
   end
 
+  -- 机油严重不足时继续行驶会加速发动机磨损
+  do
+    local none = oilEngineWearRate(100)
+    local okOil = oilEngineWearRate(20)
+    local low = oilEngineWearRate(10)
+    local empty = oilEngineWearRate(0)
+    ok(r, "oil engine wear",
+       none == 0 and okOil == 0 and low > 0 and empty > low,
+       string.format("100=%.4f 20=%.4f 10=%.4f 0=%.4f",
+                     none, okOil, low, empty))
+  end
+
   -- 加油站充气：低胎压收 1 金属并充回 2.4bar、清除爆胎
   do
     local keep = rv.tirePressureCold
