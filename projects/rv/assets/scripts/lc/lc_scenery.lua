@@ -1851,6 +1851,47 @@ function updateNightCrickets(dt)
   if PlaySfx then PlaySfx("cricket") end
 end
 
+-- 营地附近的浆果丛：采摘后约 12 秒再生
+function spawnBerryBushes()
+  for _, b in ipairs(berryBushes) do Despawn(b.ent) end
+  berryBushes = {}
+  for i, p in ipairs({ { -8.0, 5.0 }, { -3.5, 8.5 }, { 7.5, 6.0 },
+                       { 5.8, -6.5 } }) do
+    local x, z = p[1], p[2]
+    local y = (terrainHeight and terrainHeight(x, z)) or 0
+    local e = SpawnPrefab("rv_bush", { x = x, y = y + 0.32, z = z })
+    if e ~= nil then
+      SetScale(e, 1.15, 1.30, 1.15)
+      SetRotationY(e, i * 0.9)
+      local berries = {}
+      for k = 1, 3 do
+        local be = SpawnPrefab("rv_flower_red", {
+          x = x + math.sin(k * 2.1) * 0.32,
+          y = y + 0.72 + (k % 2) * 0.16,
+          z = z + math.cos(k * 2.1) * 0.32 })
+        if be ~= nil then
+          SetScale(be, 0.20, 0.20, 0.20)
+          berries[#berries + 1] = be
+        end
+      end
+      berryBushes[#berryBushes + 1] = {
+        ent = e, berries = berries, x = x, z = z, ready = true, t = 0 }
+    end
+  end
+end
+
+function updateBerryBushes(dt)
+  for _, b in ipairs(berryBushes) do
+    if not b.ready then
+      b.t = (b.t or 0) - (dt or 0)
+      if b.t <= 0 then
+        b.ready = true
+        for _, be in ipairs(b.berries or {}) do SetVisible(be, true) end
+      end
+    end
+  end
+end
+
 function updateCampfireAudio(dt)
   if campfire == nil then return end
   if not campfireOn then return end

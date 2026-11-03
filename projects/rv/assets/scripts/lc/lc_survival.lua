@@ -1038,6 +1038,19 @@ function finishFishing(force)
   if PlaySfx then PlaySfx("fish") end
 end
 
+-- 采摘浆果：2 份野浆果，约 12 秒后再生
+function gatherBerries(index)
+  local b = berryBushes and berryBushes[index] or nil
+  if b == nil or not b.ready then return false end
+  b.ready, b.t = false, 12.0
+  for _, be in ipairs(b.berries or {}) do SetVisible(be, false) end
+  addItem("berry", 2)
+  if PlaySfx then PlaySfx("pickup") end
+  toast.text = "采到野浆果 x2（约 12 秒后再生）"
+  toast.t = 2.6
+  return true
+end
+
 function cookAtCampfire()
   if campfireOn == false then
     toast.text = "篝火熄灭了——按 G 添柴后再做饭"

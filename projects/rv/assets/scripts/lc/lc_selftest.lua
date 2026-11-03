@@ -2327,6 +2327,30 @@ function runSelfTest()
     ok(r, "farm crops", n >= 20, string.format("crops=%d", n))
   end
 
+  -- 浆果丛：采摘消耗并进入再生，成熟后可再次采集
+  do
+    local b = berryBushes and berryBushes[1] or nil
+    local kb, kt = inv.berry or 0, toast.text
+    local ktt = toast.t
+    local okAll = false
+    if b ~= nil then
+      b.ready, b.t = true, 0
+      local got = gatherBerries(1)
+      local gained = (inv.berry or 0) == kb + 2
+      local wentReady = b.ready == false
+      local again = gatherBerries(1)
+      b.t = 0.1
+      updateBerryBushes(0.2)
+      local regrew = b.ready == true
+      okAll = got and gained and wentReady and again == false and regrew
+    end
+    inv.berry = kb > 0 and kb or nil
+    toast.text, toast.t = kt, ktt
+    ok(r, "berry bushes", #(berryBushes or {}) >= 3 and okAll,
+       string.format("bushes=%d ok=%s", #(berryBushes or {}),
+                     tostring(okAll)))
+  end
+
   -- 每日目标池：包含做饭/维修
   do
     local ids = {}

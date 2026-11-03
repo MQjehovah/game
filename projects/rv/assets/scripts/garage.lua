@@ -553,6 +553,7 @@ function on_start()
   if spawnBirds ~= nil then spawnBirds() end
   if spawnRabbits ~= nil then spawnRabbits() end
   if spawnButterflies ~= nil then spawnButterflies() end
+  if spawnBerryBushes ~= nil then spawnBerryBushes() end
   if spawnJobBoard ~= nil then spawnJobBoard() end
   do  -- 验证钩子
     local flag = ReadText("autopilot_on.txt")
@@ -1401,6 +1402,7 @@ function on_update(ent, dt)
   if updateBirds ~= nil then updateBirds(dt) end
   if updateRabbits ~= nil then updateRabbits(dt) end
   if updateButterflies ~= nil then updateButterflies(dt) end
+  if updateBerryBushes ~= nil then updateBerryBushes(dt) end
   if updatePuddles ~= nil then updatePuddles(dt) end
   if updateSnowPatches ~= nil then updateSnowPatches(dt) end
   if updateAmbientMusic ~= nil then updateAmbientMusic() end

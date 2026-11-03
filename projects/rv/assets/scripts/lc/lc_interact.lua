@@ -135,6 +135,23 @@ function updateInteraction()
     end
   end
 
+  -- 附近成熟的浆果丛
+  for i, b in ipairs(berryBushes or {}) do
+    if b.ready then
+      local dx, dz = b.x - player.x, b.z - player.z
+      local d = math.sqrt(dx * dx + dz * dz)
+      if d < 2.8 then
+        local dot = forwardDot(dx, dz, d)
+        if dot > 0.05 then
+          nearAction = { kind = "berry", index = i, verb = "采摘野浆果",
+                         detail = "E 采集 x2（约 12 秒后再生）",
+                         x = b.x, z = b.z }
+          return
+        end
+      end
+    end
+  end
+
   if campRadio ~= nil then
     local dx, dz = campRadio.x - player.x, campRadio.z - player.z
     local d = math.sqrt(dx * dx + dz * dz)
@@ -223,6 +240,10 @@ function doInteract()
     return true
   elseif nearAction.kind == "campfire" then
     cookAtCampfire()
+    return true
+  elseif nearAction.kind == "berry" then
+    gatherBerries(nearAction.index)
+    updateInteraction()
     return true
   elseif nearAction.kind == "radio" then
     if not radioOn then

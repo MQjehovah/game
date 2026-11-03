@@ -68,6 +68,7 @@ ITEMS = {
   water    = { name = "瓶装水", kind = "drink", thirst = 28, desc = "口渴 -28" },
   canned   = { name = "罐头",   kind = "food",  hunger = 22, health = 1, desc = "饥饿 -22" },
   rawfood  = { name = "生食材", kind = "food",  hunger = 8, health = -2, desc = "可直接吃，但会掉血" },
+  berry    = { name = "野浆果", kind = "food",  hunger = 12, thirst = 4, health = 1, desc = "营地附近可采摘" },
   meal     = { name = "热饭",   kind = "food",  hunger = 42, health = 6, desc = "饥饿 -42 生命 +6" },
   coffee   = { name = "咖啡豆", kind = "brew",  desc = "咖啡机原料" },
   brew     = { name = "热咖啡", kind = "drink", thirst = 10, energy = 30, health = 2, desc = "体力 +30" },
@@ -83,7 +84,7 @@ ITEMS = {
   fishsoup = { name = "鱼汤",   kind = "food",  hunger = 35, thirst = 20, health = 3, desc = "饥饿 -35 口渴 -20" },
   feast    = { name = "大餐",   kind = "food",  hunger = 65, health = 10, desc = "饥饿 -65 生命 +10" },
 }
-ITEM_ORDER = { "water", "canned", "rawfood", "meal", "fishsoup", "feast", "coffee", "brew", "rawfish", "fish", "seed", "bait", "repairkit", "dirtywater", "tarp", "chains" }
+ITEM_ORDER = { "water", "canned", "rawfood", "berry", "meal", "fishsoup", "feast", "coffee", "brew", "rawfish", "fish", "seed", "bait", "repairkit", "dirtywater", "tarp", "chains" }
 
 -- 钓鱼鱼种（权重 / 尺寸 cm）：越稀有越大，用来做纪录与风味
 FISH_SPECIES = {
