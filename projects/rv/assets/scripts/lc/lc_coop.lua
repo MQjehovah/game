@@ -764,6 +764,22 @@ local function serverHandleCommand(clientId, a)
     print(string.format("[coop-berry] ok=%s bush=%s berries=%d",
                         tostring(okBerry), tostring(idx), inv.berry or 0))
     pushState()
+  elseif t == "pond_trap" then
+    local px, pz = s.x or rv.x, s.z or rv.z
+    local pond = nil
+    for _, p in ipairs(ponds or {}) do
+      local dx, dz = p.x - px, p.z - pz
+      if dx * dx + dz * dz < 4.8 * 4.8 then pond = p break end
+    end
+    local okTrap = false
+    if pond ~= nil and togglePondTrapAt ~= nil then
+      okTrap = togglePondTrapAt(pond.x, pond.z)
+      if okTrap then coop.worldSeq = coop.worldSeq + 1 end
+    end
+    print(string.format("[coop-pond] ok=%s trap=%s rawfish=%d",
+                        tostring(okTrap), tostring(pondTrap ~= nil),
+                        inv.rawfish or 0))
+    pushState()
   elseif t == "repair" then
     local before = (parts and parts.engine) or 100
     local okRep = false
@@ -1191,6 +1207,23 @@ local function serverUpdate(dt)
     if b ~= nil and gatherBerries ~= nil then okBerry = gatherBerries(1) end
     print(string.format("[coop-berry] demo ok=%s berries=%d",
                         tostring(okBerry), inv.berry or 0))
+    pushState()
+  end
+
+  -- Test-only co-op pond trap: stand by the pond, give materials, place it.
+  if coop.pondDemo and not coop.pondDemoDone and coop.autoT >= 3.0 then
+    coop.pondDemoDone = true
+    local p = ponds and ponds[1] or nil
+    if p ~= nil then rv.x, rv.z = p.x, p.z end
+    materials.metal = (materials.metal or 0) + 3
+    materials.wood = (materials.wood or 0) + 2
+    local okTrap = false
+    if p ~= nil and togglePondTrapAt ~= nil then
+      okTrap = togglePondTrapAt(p.x, p.z)
+    end
+    print(string.format("[coop-pond] demo ok=%s trap=%s rawfish=%d",
+                        tostring(okTrap), tostring(pondTrap ~= nil),
+                        inv.rawfish or 0))
     pushState()
   end
 
@@ -1976,6 +2009,7 @@ local function clientUpdate(dt)
     if ActionPressed("p") then Rpc("game_cmd", { type = "ping" }) end
     if ActionPressed("t") then Rpc("game_cmd", { type = "firewood" }) end
     if ActionPressed("v") then Rpc("game_cmd", { type = "berry" }) end
+    if ActionPressed("z") then Rpc("game_cmd", { type = "pond_trap" }) end
     if coop.highDemo and not coop.highDemoDone then
       coop.highDemoT = (coop.highDemoT or 0) + dt
       if coop.highDemoT >= 3.0 and GetVar("netConnected") == 1 then
@@ -2435,6 +2469,7 @@ function coopInitWorld(role)
     coop.pingDemo = readFlag("coop_ping.txt")
     coop.fireDemo = readFlag("coop_fire.txt")
     coop.berryDemo = readFlag("coop_berry.txt")
+    coop.pondDemo = readFlag("coop_pond.txt")
     local doorTest = ReadText("coop_doortest.txt")
     if doorTest ~= nil and doorTest ~= "" then
       local v = string.lower((doorTest:gsub("%s+", "")))
@@ -2553,6 +2588,7 @@ function coopInitWorld(role)
     coop.pingDemo = readFlag("coop_ping.txt")
     coop.fireDemo = readFlag("coop_fire.txt")
     coop.berryDemo = readFlag("coop_berry.txt")
+    coop.pondDemo = readFlag("coop_pond.txt")
     coop.buildUi = readFlag("coop_buildmode.txt")
     coop.boardDemo = readFlag("coop_board.txt")
     coop.sitDemo = readFlag("coop_sitdemo.txt")

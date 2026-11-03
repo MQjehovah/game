@@ -727,6 +727,8 @@
   `[coop-fire] demo ok=true wood=38 fuel=1182 on=true`，验证联机添柴。
 - `coop_berry.txt`：服务端 3s 站到浆果丛旁采集，日志
   `[coop-berry] demo ok=true berries=2`，验证联机采浆果。
+- `coop_pond.txt`：服务端 3s 站到湖边放鱼笼，日志
+  `[coop-pond] demo ok=true trap=true`，验证联机放置鱼笼。
 - `coop_walk.txt`：客户端按住前进，便于网络 smoke 看到受控角色位移。
 - `coop_sitdemo.txt`：在房车旁生成一个播放 `Sit` 骨骼片段的预览角色。
 - `coop_animdemo.txt`：内容 `sit` / `board` / `stand` / `dooropen` / `doorclose` /
