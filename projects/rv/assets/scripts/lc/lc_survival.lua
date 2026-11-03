@@ -189,6 +189,29 @@ function checkMilestones(kind, value)
   end
 end
 
+-- 下一个未领取的里程碑（用于地图长线目标提示）
+function nextMilestone(kind, value)
+  local list = MILESTONES and MILESTONES[kind]
+  if list == nil then return nil end
+  for _, m in ipairs(list) do
+    if (value or 0) < m.n then return m end
+  end
+  return nil
+end
+
+function milestoneHint()
+  local parts = {}
+  local e = nextMilestone("explore", visitedCount or 0)
+  if e ~= nil then
+    parts[#parts + 1] = string.format("探索 %d/%d", visitedCount or 0, e.n)
+  end
+  local j = nextMilestone("jobs", jobDelivered or 0)
+  if j ~= nil then
+    parts[#parts + 1] = string.format("货运 %d/%d", jobDelivered or 0, j.n)
+  end
+  return table.concat(parts, "   ")
+end
+
 -- 生食材腐败速度：通电冰箱显著延缓
 function rawFoodAging(gm, fridgePowered)
   local mul = fridgePowered and (1 / (SURVIVAL.fridgeSpoilMul or 3)) or 1

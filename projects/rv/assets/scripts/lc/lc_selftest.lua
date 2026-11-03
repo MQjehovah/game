@@ -1775,6 +1775,16 @@ function runSelfTest()
        string.format("day=%.2f night=%.2f", day, night))
   end
 
+  -- 下一里程碑提示：探索/货运都给出下一个阈值
+  do
+    local sv, sj = visitedCount, jobDelivered
+    visitedCount, jobDelivered = 2, 3
+    local hint = milestoneHint()
+    local okHint = hint:find("3", 1, true) ~= nil and hint:find("5", 1, true) ~= nil
+    visitedCount, jobDelivered = sv, sj
+    ok(r, "milestone hint", okHint, hint)
+  end
+
   -- 睡醒晨报：包含天数/货运单数/今日目标/油量
   do
     local sd, sc = day, clock

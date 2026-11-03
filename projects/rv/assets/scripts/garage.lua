@@ -1451,7 +1451,12 @@ end
 -- 2D HUD 必须在 on_render 里画：draw2d 上下文只在渲染期接线
 function on_render()
   if coopRole ~= nil then
-    if coopRole ~= "server" then coopDrawHud() end
+    if coopRole ~= "server" then
+      -- 客户端也要有雨幕/闪电/夜幕/星空，否则联机夜晚和雨天会明显“少一层”
+      drawWeatherOverlay()
+      drawNightOverlay()
+      coopDrawHud()
+    end
     return
   end
   drawWeatherOverlay()

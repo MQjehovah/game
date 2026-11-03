@@ -1017,6 +1017,13 @@ function drawMapHud()
     drawTextCentered(fishingRecordText(), px + pw * 0.5, py + ph - 42, 12,
                      0.72, 0.76, 0.68, 1)
   end
+  if milestoneHint ~= nil then
+    local hint = milestoneHint()
+    if hint ~= nil and hint ~= "" then
+      drawTextCentered("下一里程碑  " .. hint, px + pw * 0.5, py + ph - 60, 12,
+                       0.78, 0.74, 0.58, 1)
+    end
+  end
   if jobHistory ~= nil and #jobHistory > 0 then
     DrawText("最近货运", px + 20, py + ph - 96, 12, 0.82, 0.78, 0.62, 1)
     local shown = math.min(3, #jobHistory)
