@@ -380,7 +380,8 @@ function drawBuildHud()
   local s = stats
   local netPower = s.powerGen - s.powerDraw
   drawStatBar(10 + pad, rowY, innerW, "电力",
-    string.format("%+.2f kW%s", netPower, s.battery > 0 and string.format(" (+%.0fkWh)", s.battery) or ""),
+    string.format("%+.2f kW · 电 %.1f/%.1f kWh", netPower,
+                  batteryCharge or 0, batteryCapacity or 0),
     s.powerDraw > 0 and math.min(1, s.powerDraw / math.max(s.powerGen, 0.001)) or 0,
     netPower < 0)
   rowY = rowY + 34

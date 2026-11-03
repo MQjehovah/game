@@ -1500,6 +1500,22 @@ function runSelfTest()
        string.format("N=%.0f W=%.0f S=%.0f", n, w, s))
   end
 
+  -- 电池充放电模型
+  do
+    local full = batteryStep(0, 2, 0.5, 5)
+    local empty = batteryStep(1, -3, 0.5, 5)
+    local clamp = batteryStep(4.9, 2, 1, 5)
+    local okGen = powerAvailable(1, 0)
+    local noGen = powerAvailable(-1, 0)
+    local stored = powerAvailable(-1, 1)
+    ok(r, "battery charge model",
+       math.abs(full - 1) < 1e-6 and empty == 0 and
+       math.abs(clamp - 5) < 1e-6 and okGen and not noGen and stored,
+       string.format("full=%.1f empty=%.1f clamp=%.1f gen=%s noGen=%s stored=%s",
+                     full, empty, clamp, tostring(okGen),
+                     tostring(noGen), tostring(stored)))
+  end
+
   -- 存读档：行程/探索/货运单数 + 天气
   do
     tripDistance, tripFuel, jobDelivered = 3210, 88, 7

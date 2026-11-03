@@ -1213,6 +1213,7 @@ function on_update(ent, dt)
   LC.flow.setvar("turret_combat", "turret_active", hasModule("turret") and 1 or 0)
   LC.flow.tick(dt)
   updateSurvival(dt)
+  if updatePower ~= nil then updatePower(dt) end
   updateWeather(dt)
   updateDayNight(dt)
 

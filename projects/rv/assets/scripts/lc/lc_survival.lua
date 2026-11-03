@@ -147,8 +147,32 @@ function itemName(id)
 end
 
 function powerOk()
-  local gen = (stats.powerGen or 0) - (stats.powerDraw or 0)
-  return gen >= -0.001 or (stats.battery or 0) > 0
+  local net = (stats.powerGen or 0) - (stats.powerDraw or 0)
+  return powerAvailable(net, batteryCharge or 0)
+end
+
+-- 电池容量：基础 + 电池模块
+function batteryCapacity()
+  return (VEH.baseBattery or 0) + (stats.battery or 0)
+end
+
+-- 电池一阶充放电：net(kW) × hours(h)，夹在 [0, cap]
+function batteryStep(charge, net, hours, cap)
+  return math.max(0, math.min(cap or 0,
+                              (charge or 0) + (net or 0) * (hours or 0)))
+end
+
+-- 电力是否可用：发电≥负载直接可用，否则看电池余量
+function powerAvailable(net, charge)
+  if (net or 0) >= -0.001 then return true end
+  return (charge or 0) > 0.01
+end
+
+-- 每帧推进电池（游戏时间：1 现实秒 = timeScale 游戏分钟）
+function updatePower(dt)
+  local net = (stats.powerGen or 0) - (stats.powerDraw or 0)
+  local hours = (dt or 0) * SURVIVAL.timeScale / 60
+  batteryCharge = batteryStep(batteryCharge or 0, net, hours, batteryCapacity())
 end
 
 function useWater(amount)
