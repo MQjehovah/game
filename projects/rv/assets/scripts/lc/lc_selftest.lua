@@ -3213,6 +3213,19 @@ function runSelfTest()
        string.format("peak=%.0f cooled=%.0f", peak, engineTemp))
   end
 
+  -- 冷车动力：20°C 时受限，60°C 起满动力
+  do
+    local cold = engineColdPowerScale(20)
+    local mid = engineColdPowerScale(40)
+    local warm = engineColdPowerScale(60)
+    local hot = engineColdPowerScale(120)
+    ok(r, "cold engine power",
+       math.abs(cold - 0.85) < 1e-6 and mid > cold and
+       math.abs(warm - 1.0) < 1e-6 and hot == 1.0,
+       string.format("20=%.2f 40=%.2f 60=%.2f 120=%.2f",
+                     cold, mid, warm, hot))
+  end
+
   -- 货运信誉：每 5 单 +2%，上限 +30%
   do
     local jd = jobDelivered

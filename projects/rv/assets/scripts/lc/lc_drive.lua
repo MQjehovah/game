@@ -104,6 +104,14 @@ function engineOilFuelScale(o)
   return 1.0 + math.min(0.08, (40 - v) * 0.002)
 end
 
+-- 冷车动力衰减：水温低于 60°C 时动力逐渐受限（20°C 时 ×0.85）
+function engineColdPowerScale(tempValue)
+  local t = tempValue or 60
+  if t >= 60 then return 1.0 end
+  if t <= 20 then return 0.85 end
+  return 0.85 + 0.15 * (t - 20) / 40
+end
+
 -- 非铺装路面滚动阻力更大：草地/泥土/泥泞更费油
 function surfaceFuelScale(name)
   if name == "mud" then return 1.25 end
@@ -550,6 +558,10 @@ function updateDrive(dt)
   local chainF = chainsSpeedScale(surfName)
   maxSp = maxSp * chainF
   acc = acc * chainF
+  -- 冷车动力受限：水温上来前别急着飙
+  local coldF = engineColdPowerScale(engineTemp)
+  maxSp = maxSp * coldF
+  acc = acc * (0.80 + 0.20 * coldF)
   -- 引擎濒临报废：只能龟速，必须先修
   if (parts.engine or 100) < 10 then
     maxSp = math.min(maxSp, 1.6)
