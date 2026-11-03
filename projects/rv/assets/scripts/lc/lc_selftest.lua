@@ -1604,6 +1604,18 @@ function runSelfTest()
                      road, gravel, grass, mud))
   end
 
+  -- 坡度油耗：上坡更费、下坡更省，且有上下限
+  do
+    local up = slopeFuelScale(0.15)
+    local flat = slopeFuelScale(0)
+    local down = slopeFuelScale(-0.15)
+    local steep = slopeFuelScale(2.0)
+    ok(r, "slope fuel scale",
+       up > flat and flat > down and down >= 0.65 and steep <= 1.60,
+       string.format("up=%.2f flat=%.2f down=%.2f steep=%.2f",
+                     up, flat, down, steep))
+  end
+
   -- 车内灯开关：Despawn 真正熄灯，再开时重新生成
   do
     setInteriorLights(false)

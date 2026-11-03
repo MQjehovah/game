@@ -112,6 +112,13 @@ function engineColdPowerScale(tempValue)
   return 0.85 + 0.15 * (t - 20) / 40
 end
 
+-- 坡度油耗：上坡更费油、下坡更省（grade 为高度差/水平距离）
+function slopeFuelScale(grade)
+  local g = grade or 0
+  if g > 0 then return 1.0 + math.min(0.60, g * 2.0) end
+  return math.max(0.65, 1.0 + g * 1.2)
+end
+
 -- 冷车油耗：暖机前燃烧效率差，20°C 时多耗 12%
 function engineColdFuelScale(tempValue)
   local t = tempValue or 60
@@ -700,6 +707,15 @@ function updateDrive(dt)
   if fuel > 0 then
     local before = fuel
     local rate = fuelBurnRate(rv.speed or 0, ratio, throttle)
+    -- 坡度油耗：按车头/车尾高度差估算坡度
+    local grade = 0
+    if terrainHeight ~= nil then
+      local gfx, gfz = math.sin(rv.yaw), math.cos(rv.yaw)
+      local hf = terrainHeight(rv.x + gfx * 2.0, rv.z + gfz * 2.0) or 0
+      local hb = terrainHeight(rv.x - gfx * 2.0, rv.z - gfz * 2.0) or 0
+      grade = (hf - hb) / 4.0
+    end
+    rate = rate * slopeFuelScale(grade)
     fuel = math.max(0, fuel - rate * dt)
     tripFuel = (tripFuel or 0) + (before - fuel)
   end
