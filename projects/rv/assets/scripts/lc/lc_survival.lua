@@ -652,6 +652,11 @@ function warmthStatusText()
   return string.format("暖和 %.0f 分钟", warmthMin)
 end
 
+-- 篝火边休息会持续取暖（至少 20 分钟保暖）
+function campfireWarmthMinutes(current)
+  return math.max(current or 0, 20)
+end
+
 -- 长线收尾：修好无线电塔后，去废弃小镇恢复信号中继
 RELAY_REWARD = { metal = 10, electronics = 5, fuel = 30 }
 
@@ -732,10 +737,11 @@ function updateSurvival(dt)
   elseif nightDriveMin < 90 then
     lastWarn.fatigue = false
   end
-  -- 夜里坐在营地篝火旁：缓慢回体力
+  -- 夜里坐在营地篝火旁：缓慢回体力，并持续取暖
   if campfireRestAvailable ~= nil and campfireRestAvailable() then
     needs.energy = math.min(100, needs.energy +
       (SURVIVAL.campfireRest or 0.10) * gm)
+    warmthMin = campfireWarmthMinutes(warmthMin)
   end
 
   if needs.hunger <= 0 or needs.thirst <= 0 then

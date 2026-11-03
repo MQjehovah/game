@@ -3408,6 +3408,14 @@ function runSelfTest()
        string.format("night=%s day=%s", tostring(night), tostring(day)))
   end
 
+  -- 篝火边休息会持续取暖
+  do
+    local a = campfireWarmthMinutes(0)
+    local b = campfireWarmthMinutes(35)
+    ok(r, "campfire warmth", a == 20 and b == 35,
+       string.format("0->%.0f 35->%.0f", a, b))
+  end
+
   -- 环境音乐：驾驶=引擎、雨天步行=雨声、营地收音机=radio、其它=风声
   do
     local dn, dv = desiredMusic("driving", "rain", true)
