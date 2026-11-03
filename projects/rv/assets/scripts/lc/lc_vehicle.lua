@@ -382,6 +382,37 @@ function updateRvSmoke(dt)
 end
 
 -- ===========================================================================
+-- 过热白汽：水温超过 105°C 时从引擎舱冒出白色蒸汽（自检/调参用）。
+-- ===========================================================================
+function engineSteamRate(tempValue)
+  local t = tempValue or 20
+  if t <= 105 then return 0 end
+  return math.min(10, 3 + (t - 105) * 0.5)
+end
+
+function updateEngineSteam(dt)
+  local rate = engineSteamRate(engineTemp)
+  if rate <= 0 then rv.steamAcc = 0 return end
+  rv.steamAcc = (rv.steamAcc or 0) + (dt or 0) * rate
+  while rv.steamAcc >= 1 do
+    rv.steamAcc = rv.steamAcc - 1
+    local wx, wz = rotOf(0, 3.2)
+    EmitParticles({
+      pos = { x = wx + (math.random() - 0.5) * 0.45,
+              y = (rv.groundY or 0) + 1.30 + math.random() * 0.2,
+              z = wz + (math.random() - 0.5) * 0.45 },
+      count = 2, speedMin = 0.3, speedMax = 0.9,
+      vel = { x = 0, y = 1.5, z = 0 },
+      lifeMin = 1.0, lifeMax = 2.0,
+      sizeStart = 0.35, sizeEnd = 1.6,
+      color = { r = 0.92, g = 0.94, b = 0.96, a = 0.40 },
+      colorEnd = { r = 0.92, g = 0.94, b = 0.96, a = 0.0 },
+      additive = false, gravity = -0.15,
+    })
+  end
+end
+
+-- ===========================================================================
 -- 尾气：行驶/冷车/车况差时从车尾排出淡灰烟（自检/调参用）。
 -- ===========================================================================
 function rvExhaustRate(speed, tempValue, durValue)

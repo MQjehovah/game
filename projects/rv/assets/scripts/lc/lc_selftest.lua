@@ -2249,6 +2249,18 @@ function runSelfTest()
                      idle, moving, cold, damaged))
   end
 
+  -- 过热白汽：水温超过 105°C 才冒汽，越高越浓
+  do
+    local cool = engineSteamRate(90)
+    local warm = engineSteamRate(110)
+    local hot = engineSteamRate(125)
+    local capped = engineSteamRate(200)
+    ok(r, "engine steam",
+       cool == 0 and warm > 0 and hot > warm and capped <= 10,
+       string.format("90=%.1f 110=%.1f 125=%.1f cap=%.1f",
+                     cool, warm, hot, capped))
+  end
+
   -- 引擎音量随车速：怠速 0.60 → 全速 1.15
   do
     local g0 = engineAudioGain(0)
