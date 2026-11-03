@@ -104,6 +104,7 @@ puddles = {}                  -- 雨天积水
 snowPatches = {}              -- 雪天地面雪斑
 snowCenter = nil              -- 雪斑铺设中心（房车开远后重铺）
 berryBushes = {}              -- 营地附近可采摘的浆果丛 {ent,x,z,ready,t}
+roadCaches = {}               -- 主路旁的补给箱 {ent,x,z,ready,t}
 campfireLightT = 0
 cricketT = 0                   -- 夜间蟋蟀鸣叫计时
 cricketPlays = 0               -- 已播放次数（自检用）

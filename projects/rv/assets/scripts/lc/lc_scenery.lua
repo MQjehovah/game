@@ -1969,6 +1969,47 @@ function nearestReadyBush(x, z, maxDist)
   return best
 end
 
+-- 主路旁的补给箱：搜刮后约 180 游戏分钟再生
+function spawnRoadCaches()
+  for _, c in ipairs(roadCaches) do Despawn(c.ent) end
+  roadCaches = {}
+  for i, p in ipairs({ { 5.6, 24.0 }, { -5.6, 42.0 } }) do
+    local x, z = p[1], p[2]
+    local y = (terrainHeight and terrainHeight(x, z)) or 0
+    local e = SpawnPrefab("rv_loot_crate", { x = x, y = y + 0.28, z = z })
+    if e ~= nil then
+      SetScale(e, 0.62, 0.52, 0.62)
+      SetRotationY(e, i * 0.8)
+      roadCaches[#roadCaches + 1] = {
+        ent = e, x = x, z = z, ready = true, t = 0 }
+    end
+  end
+end
+
+function updateRoadCaches(dt)
+  for _, c in ipairs(roadCaches) do
+    if not c.ready then
+      c.t = (c.t or 0) - (dt or 0)
+      if c.t <= 0 then
+        c.ready = true
+        SetVisible(c.ent, true)
+      end
+    end
+  end
+end
+
+function nearestReadyCache(x, z, maxDist)
+  local best, bestD = nil, maxDist or 2.9
+  for i, c in ipairs(roadCaches or {}) do
+    if c.ready then
+      local dx, dz = c.x - (x or 0), c.z - (z or 0)
+      local d = math.sqrt(dx * dx + dz * dz)
+      if d < bestD then best, bestD = i, d end
+    end
+  end
+  return best
+end
+
 function updateCampfireAudio(dt)
   if campfire == nil then return end
   if not campfireOn then return end

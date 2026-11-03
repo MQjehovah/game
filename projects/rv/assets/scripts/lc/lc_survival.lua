@@ -1144,6 +1144,32 @@ function gatherBerries(index)
   return true
 end
 
+-- 搜刮路边补给箱：少量金属/布料，概率出修理包/燃油罐；约 180 游戏分钟后再生
+function lootRoadCache(index)
+  local c = roadCaches and roadCaches[index] or nil
+  if c == nil or not c.ready then return false end
+  c.ready, c.t = false, 180.0
+  SetVisible(c.ent, false)
+  local got = {}
+  local metal = 2 + math.random(0, 2)
+  materials.metal = (materials.metal or 0) + metal
+  got[#got + 1] = "金属+" .. metal
+  local cloth = 1 + math.random(0, 1)
+  materials.cloth = (materials.cloth or 0) + cloth
+  got[#got + 1] = "布料+" .. cloth
+  if math.random() < 0.25 then
+    addItem("repairkit", 1)
+    got[#got + 1] = "修理包+1"
+  elseif math.random() < 0.20 then
+    addItem("fuelcan", 1)
+    got[#got + 1] = "燃油罐+1"
+  end
+  if PlaySfx then PlaySfx("pickup") end
+  toast.text = "路边补给箱：" .. table.concat(got, " ")
+  toast.t = 3.2
+  return true
+end
+
 function cookAtCampfire()
   if campfireOn == false then
     toast.text = "篝火熄灭了——按 G 添柴后再做饭"

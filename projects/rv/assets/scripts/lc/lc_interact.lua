@@ -153,6 +153,23 @@ function updateInteraction()
     end
   end
 
+  -- 路边补给箱
+  for i, c in ipairs(roadCaches or {}) do
+    if c.ready then
+      local dx, dz = c.x - player.x, c.z - player.z
+      local d = math.sqrt(dx * dx + dz * dz)
+      if d < 2.9 then
+        local dot = forwardDot(dx, dz, d)
+        if dot > 0.05 then
+          nearAction = { kind = "cache", index = i, verb = "搜刮补给箱",
+                         detail = "E 搜刮（金属/布料，约 180 分钟再生）",
+                         x = c.x, z = c.z }
+          return
+        end
+      end
+    end
+  end
+
   if campRadio ~= nil then
     local dx, dz = campRadio.x - player.x, campRadio.z - player.z
     local d = math.sqrt(dx * dx + dz * dz)
@@ -244,6 +261,10 @@ function doInteract()
     return true
   elseif nearAction.kind == "berry" then
     gatherBerries(nearAction.index)
+    updateInteraction()
+    return true
+  elseif nearAction.kind == "cache" then
+    lootRoadCache(nearAction.index)
     updateInteraction()
     return true
   elseif nearAction.kind == "radio" then

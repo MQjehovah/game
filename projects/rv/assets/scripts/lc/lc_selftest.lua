@@ -2639,6 +2639,30 @@ function runSelfTest()
        string.format("found=%s", tostring(okNear)))
   end
 
+  -- 路边补给箱：搜刮得到材料并进入再生，超时后恢复
+  do
+    local c = roadCaches and roadCaches[1] or nil
+    local sm, sc = materials.metal or 0, materials.cloth or 0
+    local kt, kv = toast.text, toast.t
+    local okAll = false
+    if c ~= nil then
+      c.ready, c.t = true, 0
+      local got = lootRoadCache(1)
+      local gained = (materials.metal or 0) > sm and
+                     (materials.cloth or 0) > sc
+      local wentReady = c.ready == false
+      local again = lootRoadCache(1)
+      c.t = 0.1
+      updateRoadCaches(0.2)
+      local regrew = c.ready == true
+      okAll = got and gained and wentReady and again == false and regrew
+    end
+    toast.text, toast.t = kt, kv
+    ok(r, "road caches", #(roadCaches or {}) >= 2 and okAll,
+       string.format("caches=%d ok=%s", #(roadCaches or {}),
+                     tostring(okAll)))
+  end
+
   -- 每日目标池：包含做饭/维修
   do
     local ids = {}
