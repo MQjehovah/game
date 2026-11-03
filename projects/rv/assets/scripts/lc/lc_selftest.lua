@@ -945,6 +945,17 @@ function runSelfTest()
   ok(r, "job cargo damage",
      job == nil and cond < 0.7 and gained >= 1 and gained < fullMetal,
      string.format("cond=%.2f metal=%d/%d", cond, gained, fullMetal))
+
+  -- 限时急单：超时作废，不结算报酬
+  jobRefreshOffers("gasstop")
+  jobAccept(1)
+  job.urgent = true
+  job.deadlineAbs = jobNowAbs() - 1
+  local metalExpire0 = materials.metal or 0
+  updateJobs(1 / 60)
+  ok(r, "job urgent expiry",
+     job == nil and (materials.metal or 0) == metalExpire0,
+     string.format("job=%s metal=%d", tostring(job), materials.metal or 0))
   atNode = nil
 
   -- 公路轮廓桩：沿路肩生成、避开营地/建筑

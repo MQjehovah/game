@@ -69,6 +69,11 @@ function jobSpawnCargo()
   jobPlaceCargo()
 end
 
+-- 绝对游戏分钟（跨天不会回绕），限时合同用
+function jobNowAbs()
+  return (day or 1) * 1440 + (clock or 0)
+end
+
 -- 板上合同：优先挑 45m 外的节点，距离越远报酬/载重越高；不足则用最近的补。
 function jobRefreshOffers(preferId)
   local pool, near = {}, {}
@@ -97,6 +102,12 @@ function jobRefreshOffers(preferId)
     }
     if (nd.danger or 0) >= 2 then pay.electronics = 1 end
     local fuelPay = JOBS.fuelBase + math.floor(dist / 100) * JOBS.fuelPer100m
+    -- 约 30% 是限时急单：报酬 ×1.4，但必须在截止前送到
+    local urgent = math.random() < 0.30
+    if urgent then
+      pay.metal = math.max(1, math.floor(pay.metal * 1.4 + 0.5))
+      pay.wood = math.max(1, math.floor(pay.wood * 1.4 + 0.5))
+    end
     return {
       destId = nd.id,
       destName = nd.name,
@@ -108,6 +119,8 @@ function jobRefreshOffers(preferId)
       distance = dist,
       pay = pay,
       fuel = fuelPay,
+      urgent = urgent,
+      deadlineAbs = urgent and (jobNowAbs() + 300 + dist * 0.8) or nil,
       stage = "offer",
     }
   end
@@ -166,6 +179,7 @@ function jobAccept(idx)
     cargo = offer.cargo, cargoId = offer.cargoId, crates = offer.crates,
     weight = offer.weight, distance = offer.distance,
     pay = offer.pay, fuel = offer.fuel, stage = "carry", condition = 1.0,
+    urgent = offer.urgent, deadlineAbs = offer.deadlineAbs,
   }
   jobUI = false
   jobOffers = {}
@@ -268,8 +282,25 @@ function spawnJobBoard()
   jobBoard = { x = bx, z = bz }
 end
 
+-- 限时急单超时：货物退回、没有报酬
+function jobExpire()
+  if job == nil then return end
+  local name = job.cargo
+  jobDespawnCargo()
+  job = nil
+  jobOffers = {}
+  recomputeStats()
+  toast.text = "合同超时：" .. (name or "货物") .. " 已退回，没有报酬"
+  toast.t = 4.0
+end
+
 function updateJobs(dt)
   if job ~= nil then
+    -- 限时急单：超过截止时间直接作废
+    if job.deadlineAbs ~= nil and jobNowAbs() > job.deadlineAbs then
+      jobExpire()
+      return
+    end
     jobPlaceCargo()
     -- 停在目的地（setPhase 已把 atNode 设成节点 id）即结算
     if job.stage == "carry" and phase == "parked" and atNode == job.destId then

@@ -614,7 +614,7 @@ function on_start()
     px, pz = 7.4, 7.6
     pyaw = dirYaw(-7.4, -3.4)
   end
-  if startMode == "jobmarker" then
+  if startMode == "jobmarker" or startMode == "urgentjob" then
     -- Test-only: stand at camp looking north at the gas-stop contract target.
     px, pz = 4.6, -10.5
     pyaw = dirYaw(-4.6, 70.5)
@@ -828,6 +828,11 @@ function on_start()
   elseif startMode == "jobmarker" then
     jobRefreshOffers("gasstop")
     jobAccept(1)
+  elseif startMode == "urgentjob" then
+    jobRefreshOffers("gasstop")
+    jobAccept(1)
+    job.urgent = true
+    job.deadlineAbs = jobNowAbs() + 420
   elseif startMode == "jobmap" then
     jobRefreshOffers("gasstop")
     jobAccept(1)
