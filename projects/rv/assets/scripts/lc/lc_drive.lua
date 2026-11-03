@@ -510,6 +510,9 @@ function honk()
   if scareAmbientDeer ~= nil then
     scaredSmall = scaredSmall + scareAmbientDeer(rv.x, rv.z, 24)
   end
+  if scarePondDucks ~= nil then
+    scaredSmall = scaredSmall + scarePondDucks(rv.x, rv.z, 24)
+  end
   rv.honkScaredSmall = scaredSmall
   if scared > 0 or scaredWild > 0 or scaredSmall > 0 then
     local parts = {}

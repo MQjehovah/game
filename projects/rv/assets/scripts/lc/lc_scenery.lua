@@ -1775,17 +1775,38 @@ function updatePondDucks(dt)
   local active = ducksActive()
   pondDucksT = (pondDucksT or 0) + (dt or 0)
   for _, d in ipairs(pondDucks) do
-    SetVisible(d.ent, active)
-    if active then
-      d.angle = d.angle + d.speed * dt
-      local x = d.cx + math.cos(d.angle) * d.radius
-      local z = d.cz + math.sin(d.angle) * d.radius
-      local gy = (terrainHeight and terrainHeight(x, z)) or 0
-      local bob = math.sin(pondDucksT * 1.8 + d.phase) * 0.03
-      SetPosition(d.ent, { x = x, y = gy + 0.09 + bob, z = z })
-      SetRotationY(d.ent, -d.angle)
+    if (d.fleeT or 0) > 0 then
+      d.fleeT = math.max(0, d.fleeT - (dt or 0))
+      SetVisible(d.ent, false)
+    else
+      SetVisible(d.ent, active)
+      if active then
+        d.angle = d.angle + d.speed * dt
+        local x = d.cx + math.cos(d.angle) * d.radius
+        local z = d.cz + math.sin(d.angle) * d.radius
+        local gy = (terrainHeight and terrainHeight(x, z)) or 0
+        local bob = math.sin(pondDucksT * 1.8 + d.phase) * 0.03
+        SetPosition(d.ent, { x = x, y = gy + 0.09 + bob, z = z })
+        SetRotationY(d.ent, -d.angle)
+      end
     end
   end
+end
+
+-- 鸣笛惊走水塘野鸭
+function scarePondDucks(x, z, radius)
+  local r2 = (radius or 24) * (radius or 24)
+  local n = 0
+  for _, d in ipairs(pondDucks or {}) do
+    local wx = d.cx + math.cos(d.angle) * d.radius
+    local wz = d.cz + math.sin(d.angle) * d.radius
+    local dx, dz = wx - (x or 0), wz - (z or 0)
+    if dx * dx + dz * dz <= r2 then
+      d.fleeT = 20
+      n = n + 1
+    end
+  end
+  return n
 end
 
 -- 鸣笛惊走农场附近的鹿群：隐藏一段时间后回到原地

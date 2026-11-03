@@ -3213,6 +3213,20 @@ function runSelfTest()
                      tostring(day), tostring(night)))
   end
 
+  -- 鸣笛惊走水塘野鸭：设置 fleeT，并随时间消退
+  do
+    if spawnPondDucks ~= nil then spawnPondDucks() end
+    local n = #(pondDucks or {})
+    local scared = scarePondDucks(0, 0, 1000)
+    local before = (pondDucks[1] and pondDucks[1].fleeT) or 0
+    updatePondDucks(1)
+    local after = (pondDucks[1] and pondDucks[1].fleeT) or 0
+    ok(r, "scare pond ducks",
+       n >= 3 and scared == n and before > 0 and after < before,
+       string.format("ducks=%d scared=%d flee=%.1f->%.1f", n, scared,
+                     before, after))
+  end
+
   -- 鸣笛惊走农场鹿群：设置 fleeT，并随时间消退
   do
     if spawnAmbientDeer ~= nil then spawnAmbientDeer() end
