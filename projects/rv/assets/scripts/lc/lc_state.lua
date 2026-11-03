@@ -56,6 +56,7 @@ generatedPois = {}
 job = nil                     -- 当前合同 {destId, cargo, crates, weight, pay, fuel}
 jobOffers = {}                -- 板上可接的合同
 jobDelivered = 0              -- 已完成的货运单数
+jobStreak = 0                 -- 连续送达单数（超时/放弃清零）
 jobBoard = nil                -- 营地货运板世界坐标
 jobCargoEnts = {}             -- 车顶货物可视化
 jobUI = false                 -- 货运板菜单是否打开

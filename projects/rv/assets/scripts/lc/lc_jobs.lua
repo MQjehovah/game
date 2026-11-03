@@ -345,6 +345,7 @@ function jobAbandon()
   jobDespawnCargo()
   job = nil
   jobOffers = {}
+  jobStreak = 0  -- 主动放弃也算断掉连续送达
   recomputeStats()
   toast.text = "已卸货，合同作废"
   toast.t = 2.6
@@ -355,7 +356,7 @@ end
 function jobComplete()
   if job == nil then return false end
   local cond = math.max(0, math.min(1, job.condition or 1.0))
-  local scale = (0.55 + 0.45 * cond) * jobReputation()
+  local scale = (0.55 + 0.45 * cond) * jobReputation() * jobStreakBonus()
   -- 夜间送达 +10%：夜跑视线差，但报酬更高
   local nightBonus = (isNight ~= nil and isNight())
   if nightBonus then scale = scale * 1.10 end
@@ -384,6 +385,7 @@ function jobComplete()
   local destName = job.destName or ""
   jobUnloadFx(crates)
   jobDelivered = jobDelivered + 1
+  jobStreak = (jobStreak or 0) + 1
   if addDailyProgress ~= nil then addDailyProgress("jobs", 1) end
   if checkMilestones ~= nil then checkMilestones("jobs", jobDelivered) end
   jobHistory[#jobHistory + 1] = string.format("%s → %s（%.0f%%）",
@@ -396,7 +398,7 @@ function jobComplete()
   jobResult = {
     ok = true, cargo = name, crates = crates, cond = cond,
     got = table.concat(got, " "), fuel = fuelGot, jobs = jobDelivered,
-    bonus = firstOfDay, night = nightBonus, t = 3.6,
+    bonus = firstOfDay, night = nightBonus, streak = jobStreak, t = 3.6,
   }
   SpawnFloatText(rv.x, 1.8, rv.z,
                  "送达 " .. name .. " x" .. crates, false, 1.6, 1.0, 0.86, 0.4)
@@ -443,6 +445,13 @@ function jobReputation()
   return 1.0 + math.min(0.30, math.floor(n / 5) * 0.02)
 end
 
+-- 连续送达：从第 3 单起每单 +2%，上限 +10%；超时/放弃清零
+function jobStreakBonus()
+  local s = jobStreak or 0
+  if s < 3 then return 1.0 end
+  return 1.0 + math.min(0.10, (s - 2) * 0.02)
+end
+
 -- 今日首单加成是否还能领（每天一次）
 function jobDailyBonusAvailable()
   return (day or 1) ~= (lastJobDay or 0)
@@ -455,6 +464,7 @@ function jobExpire()
   jobDespawnCargo()
   job = nil
   jobOffers = {}
+  jobStreak = 0  -- 超时断掉连续送达
   recomputeStats()
   jobResult = { ok = false, cargo = name, t = 3.6 }
   toast.text = "合同超时：" .. (name or "货物") .. " 已退回，没有报酬"

@@ -164,6 +164,7 @@ function saveLayout()
       fishCounts = fishCounts,
       fishCaught = fishCaught or 0,
       lastJobDay = lastJobDay or 0,
+      jobStreak = jobStreak or 0,
       battery = batteryCharge or 0,
       rawAge = rawFoodAge or 0,
       milestones = milestones,
@@ -349,6 +350,7 @@ function loadLayout()
       end
     end
     lastJobDay = math.floor(tonumber(data.progress.lastJobDay) or lastJobDay)
+    jobStreak = math.floor(tonumber(data.progress.jobStreak) or jobStreak or 0)
     batteryCharge = tonumber(data.progress.battery) or batteryCharge
     rawFoodAge = tonumber(data.progress.rawAge) or rawFoodAge
     if rawFoodAge ~= nil then

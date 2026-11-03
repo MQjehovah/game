@@ -2085,6 +2085,24 @@ function runSelfTest()
        string.format("0=%.2f 10=%.2f 30=%.2f max=%.2f", r0, r10, r30, rMax))
   end
 
+  -- 连续送达：第 3 单起 +2%，上限 +10%；清零后回到 1.0
+  do
+    local keep = jobStreak
+    jobStreak = 0
+    local s0 = jobStreakBonus()
+    jobStreak = 3
+    local s3 = jobStreakBonus()
+    jobStreak = 50
+    local sMax = jobStreakBonus()
+    jobStreak = 0
+    local reset = jobStreakBonus()
+    jobStreak = keep
+    ok(r, "job streak bonus",
+       math.abs(s0 - 1.0) < 1e-6 and math.abs(s3 - 1.02) < 1e-6 and
+       math.abs(sMax - 1.10) < 1e-6 and math.abs(reset - 1.0) < 1e-6,
+       string.format("0=%.2f 3=%.2f max=%.2f reset=%.2f", s0, s3, sMax, reset))
+  end
+
   -- 爆胎风险：磨平/低压才有风险，修理后清除爆胎状态
   do
     local rOk = blowoutRisk(100, 2.4)
