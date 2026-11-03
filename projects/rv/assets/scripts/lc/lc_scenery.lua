@@ -1228,6 +1228,25 @@ function spawnRuinFor(nd)
         hayBales[#hayBales + 1] = e
       end
     end
+    -- 农田稻草人（立柱 + 横杆 + 布身 + 草头 + 帽子）
+    do
+      local scX, scZ = cx - 6.2, cz - 4.5
+      local scY = (terrainHeight and terrainHeight(scX, scZ)) or 0
+      local function scProp(pre, x, y, z, sx, sy, sz, rot)
+        local e = SpawnPrefab(pre, { x = x, y = y, z = z })
+        if e ~= nil then
+          SetScale(e, sx, sy, sz)
+          if rot ~= nil then SetRotationY(e, rot) end
+          farmScarecrow[#farmScarecrow + 1] = e
+        end
+        return e
+      end
+      scProp("rv_camp_wood", scX, scY + 0.90, scZ, 0.12, 1.80, 0.12)
+      scProp("rv_camp_wood", scX, scY + 1.35, scZ, 1.35, 0.10, 0.10)
+      scProp("rv_panel_light", scX, scY + 1.05, scZ, 0.55, 0.75, 0.30, 0.2)
+      scProp("rv_rock", scX, scY + 1.55, scZ, 0.28, 0.30, 0.28)
+      scProp("rv_panel_dark", scX, scY + 1.74, scZ, 0.55, 0.06, 0.55, 0.3)
+    end
     -- 农场风车（低多边形地标，叶片持续旋转）
     local wx, wz = cx + 8.5, cz - 5.5
     local wy = (terrainHeight and terrainHeight(wx, wz)) or 0

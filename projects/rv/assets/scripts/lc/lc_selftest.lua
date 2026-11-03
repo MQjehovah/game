@@ -2200,6 +2200,12 @@ function runSelfTest()
        string.format("blades=%d angle %.2f->%.2f", blades, a0, a1))
   end
 
+  -- 农场稻草人：5 件低多边形组合
+  do
+    local n = #farmScarecrow
+    ok(r, "farm scarecrow", n >= 5, string.format("parts=%d", n))
+  end
+
   -- 每日目标池：包含做饭/维修
   do
     local ids = {}

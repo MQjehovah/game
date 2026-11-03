@@ -82,6 +82,7 @@ roadShoulders = {}            -- 主路两侧的土肩
 roadDebris = {}               -- 主路两侧的废弃车/石块
 roadDebrisColliders = 0       -- 已添加的静态碰撞盒数量
 hayBales = {}                 -- 农场谷仓外的干草捆
+farmScarecrow = {}            -- 农场稻草人（低多边形）
 docks = {}                    -- 钓鱼水塘的木栈桥
 radioMast = nil               -- 仓库旁的无线电塔 {parts, beacon, t}
 radioMastFixed = false        -- 无线电塔是否已修好（长线目标）
