@@ -68,11 +68,15 @@ function windshieldDropCount()
   return 0
 end
 
--- 路面抓地折减：雨天湿滑、雪天更滑（雾天路面不一定湿）
+-- 路面抓地折减：雨天湿滑、雪天更滑；带防滑链时雨雪抓地提高
 function weatherGripScale()
-  if weather == "rain" then return 0.82 end
-  if weather == "snow" then return 0.78 end
-  return 1.0
+  local base = 1.0
+  if weather == "rain" then base = 0.82
+  elseif weather == "snow" then base = 0.78 end
+  if base < 1.0 and hasItem ~= nil and hasItem("chains", 1) then
+    base = math.min(0.95, base + 0.14)
+  end
+  return base
 end
 
 -- 夜间萤火虫发射率（/s）：深夜且非雨雪；自检/调参用

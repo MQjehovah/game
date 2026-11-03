@@ -409,7 +409,13 @@ end
 -- 直接吃/喝背包里的东西
 function useItem(id)
   local it = ITEMS[id]
-  if it == nil or not takeItem(id, 1) then return false end
+  if it == nil then return false end
+  if it.kind == "gear" then
+    toast.text = it.name .. "：已自动生效（雨雪天提高抓地）"
+    toast.t = 2.2
+    return false
+  end
+  if not takeItem(id, 1) then return false end
   needs.hunger = math.min(100, needs.hunger + (it.hunger or 0))
   needs.thirst = math.min(100, needs.thirst + (it.thirst or 0))
   needs.energy = math.min(100, needs.energy + (it.energy or 0))

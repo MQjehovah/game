@@ -77,11 +77,12 @@ ITEMS = {
   rawfish  = { name = "生鱼",   kind = "food",  hunger = 8,  health = -2, desc = "需要篝火烤熟" },
   dirtywater = { name = "浑浊水", kind = "dirty", desc = "在篝火煮沸后饮用" },
   tarp     = { name = "防雨篷布", kind = "tarp", desc = "带在身上可保护易碎货不受雨水" },
+  chains   = { name = "防滑链", kind = "gear", desc = "带在身上：雨雪天提高抓地" },
   fish     = { name = "烤鱼",   kind = "food",  hunger = 30, health = 5, desc = "饥饿 -30 生命 +5" },
   fishsoup = { name = "鱼汤",   kind = "food",  hunger = 35, thirst = 20, health = 3, desc = "饥饿 -35 口渴 -20" },
   feast    = { name = "大餐",   kind = "food",  hunger = 65, health = 10, desc = "饥饿 -65 生命 +10" },
 }
-ITEM_ORDER = { "water", "canned", "rawfood", "meal", "fishsoup", "feast", "coffee", "brew", "rawfish", "fish", "seed", "bait", "repairkit", "dirtywater", "tarp" }
+ITEM_ORDER = { "water", "canned", "rawfood", "meal", "fishsoup", "feast", "coffee", "brew", "rawfish", "fish", "seed", "bait", "repairkit", "dirtywater", "tarp", "chains" }
 
 -- 钓鱼鱼种（权重 / 尺寸 cm）：越稀有越大，用来做纪录与风味
 FISH_SPECIES = {
@@ -197,6 +198,8 @@ TRADES = {
     cost = { electronics = 2 }, give = { item = "fuelcan", n = 1 } },
   { id = "metal_fuel",  name = "金属 x4 → 燃料 +12L",
     cost = { metal = 4 }, give = { fuel = 12 } },
+  { id = "metal_chains", name = "金属 x4 → 防滑链 x1",
+    cost = { metal = 4 }, give = { item = "chains", n = 1 } },
 }
 
 -- 每日目标（随天数刷新；完成给少量燃料/材料）

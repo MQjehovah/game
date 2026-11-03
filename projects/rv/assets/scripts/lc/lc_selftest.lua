@@ -2830,6 +2830,30 @@ function runSelfTest()
                      tostring(WEATHER_NAMES.snow), grip, wind))
   end
 
+  -- 防滑链：雨雪天提高抓地，且不会被 useItem 消耗
+  do
+    local sw = weather
+    local n0 = inv.chains or 0
+    local kt, kv = toast.text, toast.t
+    inv.chains = nil
+    weather = "snow"
+    local bare = weatherGripScale()
+    weather = "rain"
+    local wetBare = weatherGripScale()
+    inv.chains = 1
+    weather = "snow"
+    local chained = weatherGripScale()
+    weather = "rain"
+    local wetChained = weatherGripScale()
+    local kept = (useItem("chains") == false) and (inv.chains or 0) == 1
+    inv.chains = n0 > 0 and n0 or nil
+    weather = sw
+    toast.text, toast.t = kt, kv
+    ok(r, "snow chains", chained > bare and wetChained > wetBare and kept,
+       string.format("snow %.2f->%.2f rain %.2f->%.2f kept=%s",
+                     bare, chained, wetBare, wetChained, tostring(kept)))
+  end
+
   -- 睡醒晨报：包含天数/货运单数/今日目标/油量
   do
     local sd, sc = day, clock

@@ -1545,6 +1545,7 @@ function on_update(ent, dt)
     if ActionPressed("4") and doTrade ~= nil then doTrade(1) end
     if ActionPressed("5") and doTrade ~= nil then doTrade(2) end
     if ActionPressed("6") and doTrade ~= nil then doTrade(3) end
+    if ActionPressed("7") and doTrade ~= nil then doTrade(4) end
     updateCamera(dt)
     return
   end
