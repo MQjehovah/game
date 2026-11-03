@@ -173,6 +173,7 @@ function saveLayout(silent)
       relayDone = relayDone and true or false,
       campfireFuel = campfireFuelMin or 0,
       campfireOn = campfireOn and true or false,
+      fishCollectionDone = fishCollectionDone and true or false,
       journal = journal,
       daily = dailyGoal and {
         id = dailyGoal.id, name = dailyGoal.name, target = dailyGoal.target,
@@ -385,6 +386,7 @@ function loadLayout()
       for _, f in ipairs(campfireFlames or {}) do SetVisible(f.ent, campfireOn) end
       if campfireLight ~= nil then SetVisible(campfireLight, campfireOn) end
     end
+    fishCollectionDone = data.progress.fishCollectionDone == true
     if type(data.progress.journal) == "table" then
       journal = {}
       for _, e in ipairs(data.progress.journal) do

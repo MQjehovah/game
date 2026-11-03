@@ -3051,6 +3051,32 @@ function runSelfTest()
                      li and li.count or 0))
   end
 
+  -- 集齐全部鱼种：一次性奖励，且不会重复领取
+  do
+    local keepC, keepDone = fishCounts, fishCollectionDone
+    local sm, se = materials.metal or 0, materials.electronics or 0
+    local kb, keepSave = inv.bait or 0, autoSave
+    local kt, kv = toast.text, toast.t
+    autoSave = nil
+    fishCounts, fishCollectionDone = {}, false
+    for _, sp in ipairs(FISH_SPECIES) do fishCounts[sp.name] = 1 end
+    materials.metal, materials.electronics = 0, 0
+    inv.bait = nil
+    local first = checkFishCollection()
+    local rewarded = (materials.metal or 0) == 8 and
+                     (materials.electronics or 0) == 3 and
+                     (inv.bait or 0) == 3
+    local again = checkFishCollection()
+    fishCounts, fishCollectionDone = keepC, keepDone
+    materials.metal, materials.electronics = sm, se
+    inv.bait = kb > 0 and kb or nil
+    autoSave = keepSave
+    toast.text, toast.t = kt, kv
+    ok(r, "fish collection reward", first and rewarded and again == false,
+       string.format("first=%s reward=%s again=%s", tostring(first),
+                     tostring(rewarded), tostring(again)))
+  end
+
   -- 地点特色掉落：数据完整，且物品都在 ITEMS 里
   do
     local function has(id, item)

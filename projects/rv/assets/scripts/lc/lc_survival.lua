@@ -922,6 +922,29 @@ function fishBookRows()
 end
 
 -- 记录一次渔获：各鱼种最大尺寸 + 总纪录 + 累计条数
+-- 集齐全部鱼种的一次性奖励
+function checkFishCollection()
+  if fishCollectionDone then return false end
+  local total = #(FISH_SPECIES or {})
+  if total <= 0 then return false end
+  local found = 0
+  for _, sp in ipairs(FISH_SPECIES) do
+    if (fishCounts[sp.name] or 0) > 0 then found = found + 1 end
+  end
+  if found < total then return false end
+  fishCollectionDone = true
+  materials.metal = (materials.metal or 0) + 8
+  materials.electronics = (materials.electronics or 0) + 3
+  addItem("bait", 3)
+  toast.text = "鱼类图鉴集齐！奖励 金属+8 电子件+3 鱼饵+3"
+  toast.t = 5.0
+  if addJournal ~= nil then
+    addJournal("集齐全部鱼种（金属+8 电子件+3 鱼饵+3）", "goal")
+  end
+  if autoSave ~= nil then autoSave() end
+  return true
+end
+
 function recordFish(name, size, n)
   n = n or 1
   fishCounts[name] = (fishCounts[name] or 0) + n
@@ -946,6 +969,7 @@ function recordFish(name, size, n)
       addJournal(string.format("钓鱼新纪录：%s %.0fcm", name, size), "fish")
     end
   end
+  if checkFishCollection ~= nil then checkFishCollection() end
   return speciesRecord, overall
 end
 
