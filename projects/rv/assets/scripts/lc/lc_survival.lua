@@ -1666,8 +1666,19 @@ end
 
 -- 现场维修：靠近房车按 R，消耗 1 个修理包修复最差的部件（野外应急）
 function fieldRepair()
+  -- 爆胎时优先换备胎：不需要修理包
+  if rv.blowout and hasItem("sparetire", 1) then
+    takeItem("sparetire", 1)
+    if resetTirePressure ~= nil then resetTirePressure() end
+    if clearBlowout ~= nil then clearBlowout() end
+    if PlaySfx then PlaySfx("repair") end
+    toast.text = "换上备胎——爆胎已处理（备胎 -1）"
+    toast.t = 3.2
+    if addJournal ~= nil then addJournal("换上备胎，爆胎已处理", "note") end
+    return true
+  end
   if not hasItem("repairkit", 1) then
-    toast.text = "没有修理包——在工作台用 金属2+布料1 制作"
+    toast.text = "没有修理包——可在工作台制作，或找备胎按 R"
     toast.t = 2.8
     return false
   end

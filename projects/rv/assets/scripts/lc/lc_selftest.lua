@@ -248,6 +248,26 @@ function runSelfTest()
                      parts.engine or 0, inv.repairkit or 0))
   end
 
+  -- 备胎：爆胎时按 R 直接换上，不消耗修理包
+  do
+    local keepBlow = rv.blowout
+    local kp = rv.tirePressureCold
+    local ks, kk = inv.sparetire or 0, inv.repairkit
+    rv.blowout = true
+    inv.sparetire = 1
+    inv.repairkit = nil
+    local fixed = fieldRepair()
+    local cleared = rv.blowout == false
+    local used = (inv.sparetire or 0) == 0
+    rv.blowout = keepBlow
+    rv.tirePressureCold = kp
+    inv.sparetire = ks > 0 and ks or nil
+    inv.repairkit = kk
+    ok(r, "spare tire", fixed and cleared and used,
+       string.format("fixed=%s cleared=%s left=%d", tostring(fixed),
+                     tostring(cleared), inv.sparetire or 0))
+  end
+
   -- 维修最差部件（联机工作台命令复用）
   do
     local sb, se, st, sbat = dur, parts.engine, parts.tires, parts.battery
