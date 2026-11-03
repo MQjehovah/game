@@ -1290,6 +1290,41 @@ function runSelfTest()
                      rain, snow, night, none))
   end
 
+  -- 省油驾驶奖励：本单油耗 ≤1.4L/100m 时报酬 +5%
+  do
+    local sw, sd, sc, slast = weather, day, clock, lastJobDay
+    local jd, js = jobDelivered, jobStreak
+    local std, stf = tripDistance, tripFuel
+    local function deliverWithEco(eco)
+      weather, day, clock, lastJobDay = "clear", 9, 12 * 60, 9
+      jobDelivered, jobStreak = 0, 0
+      jobRefreshOffers("gasstop")
+      jobAccept(1)
+      job.stops, job.stopIndex = nil, 1
+      job.pay = { metal = 20 }
+      job.condition = 1.0
+      if eco then
+        job.startTripDist = (tripDistance or 0) - 200
+        job.startTripFuel = (tripFuel or 0) - 2.0
+      else
+        job.startTripDist = tripDistance or 0
+        job.startTripFuel = tripFuel or 0
+      end
+      local m0 = materials.metal or 0
+      jobComplete()
+      return (materials.metal or 0) - m0, jobResult.eco == true
+    end
+    local normal, normalEco = deliverWithEco(false)
+    local eco, ecoGot = deliverWithEco(true)
+    weather, day, clock, lastJobDay = sw, sd, sc, slast
+    jobDelivered, jobStreak = jd, js
+    tripDistance, tripFuel = std, stf
+    ok(r, "eco driving bonus",
+       normal == 20 and eco == 21 and normalEco == false and ecoGot == true,
+       string.format("normal=%d eco=%d flags=%s/%s", normal, eco,
+                     tostring(normalEco), tostring(ecoGot)))
+  end
+
   -- 雨天行驶：易碎货缓慢受潮掉货况
   do
     local sw, sp = weather, phase
