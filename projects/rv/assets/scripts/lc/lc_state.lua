@@ -138,6 +138,7 @@ fishingBobberBase = nil       -- 浮漂落点 {x,y,z}
 rawFoodAge = 0                 -- 生食材累计腐败进度（游戏分钟）
 engineTemp = 20               -- 引擎水温（°C）
 rawSpoilWarned = false
+nightDriveMin = 0             -- 连续夜间驾驶累计（游戏分钟）
 ponds = {}
 campfire = nil
 weather, weatherT, weatherNext = "clear", 0, 15

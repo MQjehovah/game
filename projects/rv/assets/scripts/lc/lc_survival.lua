@@ -420,6 +420,9 @@ function useItem(id)
   needs.thirst = math.min(100, needs.thirst + (it.thirst or 0))
   needs.energy = math.min(100, needs.energy + (it.energy or 0))
   needs.health = math.max(0, math.min(100, needs.health + (it.health or 0)))
+  if id == "brew" then
+    nightDriveMin = math.max(0, (nightDriveMin or 0) - 60)
+  end
   if PlaySfx then PlaySfx(it.kind == "drink" and "drink" or "pickup") end
   local parts = {}
   if it.hunger then parts[#parts + 1] = string.format("饥饿 %+.0f", it.hunger) end
@@ -488,6 +491,7 @@ function sleepInBed()
   -- 07:00 之前睡 = 当天早上；之后睡 = 第二天早上
   if clock >= 7 * 60 then day = day + 1 end
   clock = 7 * 60
+  nightDriveMin = 0
   local atCamp = (atNode == "camp")
   local factor = hygieneEnergyFactor(needs.hygiene) + (atCamp and 0.10 or 0)
   needs.energy = math.min(100, needs.energy + (100 - needs.energy) * factor)
@@ -558,6 +562,13 @@ function updateRadioBroadcast(gm)
   return true
 end
 
+-- 夜间驾驶疲劳：连续开夜车超过 120 游戏分钟后体力消耗加快
+function nightFatigueExtra(minutes)
+  local m = minutes or 0
+  if m <= 120 then return 0 end
+  return math.min(0.020, (m - 120) * 0.0002)
+end
+
 -- 雪天寒冷：没开取暖器时体力消耗更快
 function coldEnergyExtra(weatherValue, heaterOn)
   if weatherValue == "snow" and not heaterOn then
@@ -615,9 +626,17 @@ function updateSurvival(dt)
   needs.hygiene = math.max(0, needs.hygiene - SURVIVAL.hygieneRate * gm)
   local sprinting = onFoot and not buildMode and ActionDown("w") and ActionDown("shift")
   local coldExtra = coldEnergyExtra(weather, (stats and stats.heaterOn) or false)
+  local nightDriving = phase == "driving" and (isNight ~= nil and isNight()) and
+                       math.abs(rv.speed or 0) > 1.0
+  if nightDriving then
+    nightDriveMin = (nightDriveMin or 0) + gm
+  elseif phase ~= "driving" then
+    nightDriveMin = math.max(0, (nightDriveMin or 0) - gm * 0.5)
+  end
+  local fatigue = nightFatigueExtra(nightDriveMin)
   needs.energy = math.max(0, needs.energy -
     (SURVIVAL.energyRate + (sprinting and SURVIVAL.sprintExtra or 0) +
-     coldExtra) * gm)
+     coldExtra + fatigue) * gm)
   if weather == "snow" and coldExtra > 0 and needs.energy < 30 and
      not lastWarn.cold then
     lastWarn.cold = true
@@ -625,6 +644,13 @@ function updateSurvival(dt)
     toast.t = 3.4
   elseif not (weather == "snow" and coldExtra > 0) then
     lastWarn.cold = false
+  end
+  if nightDriveMin > 120 and not lastWarn.fatigue then
+    lastWarn.fatigue = true
+    toast.text = "开夜车有点累了——停车睡一觉，或喝杯热咖啡提神"
+    toast.t = 3.6
+  elseif nightDriveMin < 90 then
+    lastWarn.fatigue = false
   end
   -- 夜里坐在营地篝火旁：缓慢回体力
   if campfireRestAvailable ~= nil and campfireRestAvailable() then

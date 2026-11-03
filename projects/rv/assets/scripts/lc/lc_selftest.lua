@@ -2973,6 +2973,16 @@ function runSelfTest()
        string.format("snow=%.3f heater=%.3f clear=%.3f", a, b, c))
   end
 
+  -- 夜间驾驶疲劳：短途无、长途有、上限封顶
+  do
+    local a = nightFatigueExtra(60)
+    local b = nightFatigueExtra(120)
+    local c = nightFatigueExtra(180)
+    local d = nightFatigueExtra(1000)
+    ok(r, "night fatigue", a == 0 and b == 0 and c > 0 and d <= 0.02,
+       string.format("60=%.3f 120=%.3f 180=%.3f max=%.3f", a, b, c, d))
+  end
+
   -- 睡醒晨报：包含天数/货运单数/今日目标/油量
   do
     local sd, sc = day, clock
