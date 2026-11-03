@@ -1524,6 +1524,9 @@ function on_update(ent, dt)
      fieldRepair ~= nil then
     fieldRepair()
   end
+  if not buildMode and ActionPressed("g") and addCampfireWood ~= nil then
+    addCampfireWood()
+  end
 
   if buildMode then
     updatePlayer(dt)

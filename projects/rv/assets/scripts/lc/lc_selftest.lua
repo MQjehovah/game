@@ -1620,6 +1620,34 @@ function runSelfTest()
        string.format("rate=%.0f/s emitted=%d", rate, got))
   end
 
+  -- 篝火燃料：烧尽熄灭，添柴重新点燃并消耗木材
+  do
+    local keepOn, keepFuel = campfireOn, campfireFuelMin
+    local keepWood = materials.wood or 0
+    local sx, sz, sb = rv.x, rv.z, buildMode
+    local sf, sp, sa = onFoot, player.x, player.active
+    rv.x, rv.z = campfire and campfire.x or 1.8,
+                 campfire and campfire.z or 2.0
+    onFoot, buildMode = false, false
+    campfireOn, campfireFuelMin = true, 1
+    materials.wood = 1
+    updateCampfireFuel(2)
+    local burnedOut = campfireOn == false and campfireFuelMin == 0
+    local okWood = addCampfireWood()
+    local relit = campfireOn == true and (campfireFuelMin or 0) >= 479
+    local spent = (materials.wood or 0) == 0
+    local noWood = addCampfireWood()
+    campfireOn, campfireFuelMin = keepOn, keepFuel
+    materials.wood = keepWood
+    rv.x, rv.z, buildMode = sx, sz, sb
+    onFoot, player.x, player.active = sf, sp, sa
+    ok(r, "campfire fuel",
+       burnedOut and okWood and relit and spent and noWood == false,
+       string.format("out=%s relit=%s wood=%d noWood=%s",
+                     tostring(burnedOut), tostring(relit),
+                     materials.wood or 0, tostring(noWood)))
+  end
+
   -- 主路土肩：沥青边缘与草地的过渡
   do
     local n = #roadShoulders

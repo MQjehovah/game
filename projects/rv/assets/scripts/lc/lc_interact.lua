@@ -120,8 +120,15 @@ function updateInteraction()
     if d < 3.4 then
       local dot = forwardDot(dx, dz, d)
       if dot > 0.05 then
-        nearAction = { kind = "campfire", verb = "篝火烤鱼",
-                       detail = "E 烤熟生鱼（生鱼x1）",
+        local verb, detail = "篝火烤鱼", "E 烤熟生鱼（生鱼x1）"
+        if campfireOn == false then
+          verb = "篝火已熄灭"
+          detail = string.format("G 添柴（木材 %d）", materials.wood or 0)
+        elseif (campfireFuelMin or 0) < 120 then
+          detail = string.format("E 烤鱼 / 煮水 · 燃料将尽，G 添柴（木材 %d）",
+                                 materials.wood or 0)
+        end
+        nearAction = { kind = "campfire", verb = verb, detail = detail,
                        x = campfire.x, z = campfire.z }
         return
       end

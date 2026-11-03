@@ -497,6 +497,7 @@ end
 function campfireRestAvailable()
   if campfire == nil or not onFoot or not player.active or buildMode then return false end
   if atNode ~= "camp" then return false end
+  if campfireOn == false then return false end
   if not (isNight ~= nil and isNight()) then return false end
   local dx, dz = player.x - campfire.x, player.z - campfire.z
   return dx * dx + dz * dz < 3.4 * 3.4
@@ -1014,6 +1015,11 @@ function finishFishing(force)
 end
 
 function cookAtCampfire()
+  if campfireOn == false then
+    toast.text = "篝火熄灭了——按 G 添柴后再做饭"
+    toast.t = 2.6
+    return false
+  end
   if takeItem("rawfish", 1) then
     addItem("fish", 1)
     if PlaySfx then PlaySfx("cook") end

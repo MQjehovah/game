@@ -1812,6 +1812,7 @@ end
 
 function updateCampfireAudio(dt)
   if campfire == nil then return end
+  if not campfireOn then return end
   local lx, lz = rv.x, rv.z
   if onFoot and player ~= nil and player.active then
     lx, lz = player.x, player.z
@@ -1833,7 +1834,7 @@ end
 
 -- 营火炊烟：持续上升的灰白烟柱，远处也能看见营地
 function campfireSmokeRate()
-  return (campfire ~= nil) and 4 or 0
+  return (campfire ~= nil and campfireOn) and 4 or 0
 end
 
 function updateCampfireSmoke(dt)
@@ -1858,9 +1859,65 @@ function updateCampfireSmoke(dt)
   end
 end
 
+-- 营火燃料：燃烧时按游戏分钟消耗；烧尽后火苗/暖光熄灭
+function updateCampfireFuel(gm)
+  if campfire == nil or not campfireOn then return end
+  campfireFuelMin = math.max(0, (campfireFuelMin or 0) - (gm or 0))
+  if campfireFuelMin <= 0 then
+    campfireFuelMin = 0
+    campfireOn = false
+    for _, f in ipairs(campfireFlames or {}) do SetVisible(f.ent, false) end
+    if campfireLight ~= nil then SetVisible(campfireLight, false) end
+    toast.text = "篝火烧尽了——靠近按 G 添柴"
+    toast.t = 3.2
+    if addJournal ~= nil then addJournal("营火熄灭了", "note") end
+  end
+end
+
+-- 添柴：消耗 1 木材，补充 8 游戏小时燃料并重新点燃
+function addCampfireWood()
+  if campfire == nil then return false end
+  local lx, lz = rv.x, rv.z
+  if onFoot and player ~= nil and player.active then
+    lx, lz = player.x, player.z
+  end
+  local dx, dz = campfire.x - lx, campfire.z - lz
+  if dx * dx + dz * dz > 3.6 * 3.6 then
+    toast.text = "走到篝火旁才能添柴"
+    toast.t = 2.0
+    return false
+  end
+  if (materials.wood or 0) < 1 then
+    toast.text = "没有木柴了——搜刮营地/农场可获得"
+    toast.t = 2.4
+    return false
+  end
+  materials.wood = materials.wood - 1
+  campfireFuelMin = math.min(campfireWoodMax or 2160,
+                             (campfireFuelMin or 0) + 480)
+  if not campfireOn then
+    campfireOn = true
+    for _, f in ipairs(campfireFlames or {}) do SetVisible(f.ent, true) end
+    if campfireLight ~= nil then SetVisible(campfireLight, true) end
+  end
+  if PlaySfx then PlaySfx("pickup") end
+  toast.text = string.format("添了一根木柴（燃料约 %.0f 游戏分钟）",
+                             campfireFuelMin)
+  toast.t = 2.6
+  return true
+end
+
 -- 营火暖光的轻微跳动：没有灯光强度 API，用位置抖动 + 高度起伏模拟火光
 function updateCampfireLight(dt)
+  if SURVIVAL ~= nil then
+    updateCampfireFuel((dt or 0) * (SURVIVAL.timeScale or 1))
+  end
   if campfireLight == nil or campfire == nil then return end
+  if not campfireOn then
+    SetVisible(campfireLight, false)
+    return
+  end
+  SetVisible(campfireLight, true)
   campfireLightT = (campfireLightT or 0) + dt
   local j = math.sin(campfireLightT * 11.0) * 0.09 +
             math.sin(campfireLightT * 17.3) * 0.05
