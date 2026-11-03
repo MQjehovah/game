@@ -547,6 +547,7 @@ local function pushState()
     job = jobOut,
     jobsDone = jobDelivered,
     goal = goalOut,
+    relay = relayDone and 2 or ((radioMastFixed and 1) or 0),
   })
 end
 
@@ -1598,6 +1599,9 @@ local function applyState(s)
   if s.high ~= nil then
     coop.high = (s.high == 1 or s.high == true)
   end
+  if s.relay ~= nil then
+    coop.relay = tonumber(s.relay) or 0
+  end
   if s.high ~= nil then
     local hb = (s.high == 1 or s.high == true)
     if hb ~= highBeam then
@@ -2636,6 +2640,12 @@ function coopDrawHud()
              vw - 390, 60, 12,
              coop.goalDone and 0.60 or 0.94,
              coop.goalDone and 0.86 or 0.82, 0.52, 1)
+  end
+  if (coop.relay or 0) == 1 then
+    DrawText("信号中继：废弃小镇（停靠完成）", vw - 390, 80, 12,
+             0.86, 0.74, 0.42, 1)
+  elseif (coop.relay or 0) == 2 then
+    DrawText("信号中继已恢复", vw - 390, 80, 12, 0.60, 0.86, 0.60, 1)
   end
 
   if coop.buildMode then
