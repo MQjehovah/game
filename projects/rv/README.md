@@ -563,6 +563,9 @@
   验证 `SetVisible` 改 `Despawn` 后灯真正熄灭（lamps 0↔2）。
 - `coop_horn.txt`：服务端 3s 在房车旁生成 1 只感染者并按喇叭，日志
   `[coop-horn] scared=1 horde=0`，验证联机喇叭由服务端权威吓退。
+- `coop_highbeam.txt`：客户端 3s 发送远光灯切换，服务端日志
+  `[coop-high] server toggle high=true lamps=N`，客户端日志
+  `[coop-high] client sent`，验证远光状态通过 `game_state.high` 同步。
 - `coop_walk.txt`：客户端按住前进，便于网络 smoke 看到受控角色位移。
 - `coop_sitdemo.txt`：在房车旁生成一个播放 `Sit` 骨骼片段的预览角色。
 - `coop_animdemo.txt`：内容 `sit` / `board` / `stand` / `dooropen` / `doorclose` /

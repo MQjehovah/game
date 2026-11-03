@@ -522,6 +522,7 @@ local function pushState()
     day = day,
     clock = math.floor((clock or 0) * 10 + 0.5) / 10,
     weather = coop.weather, lights = coop.lights and 1 or 0,
+    high = highBeam and 1 or 0,
     battery = math.floor((batteryCharge or 0) * 100 + 0.5) / 100,
     materials = materials, inv = invList, furn = furnOn,
     crates = #crates, furnCount = #sortedInstances(), worldSeq = coop.worldSeq,
@@ -715,6 +716,11 @@ local function serverHandleCommand(clientId, a)
     end
   elseif t == "horn" then
     honk()
+    pushState()
+  elseif t == "highbeam" then
+    if toggleHighBeam ~= nil then toggleHighBeam() end
+    print(string.format("[coop-high] server toggle high=%s lamps=%d",
+                        tostring(highBeam), #rvHeadlights))
     pushState()
   elseif t == "eat" then
     local id = chooseFood()
@@ -1335,7 +1341,7 @@ local function clientLog(s)
     end
   end
   print(string.format(
-    "[coop-main-client] seq=%d name=%s slot=%d id=%.0f rv=(%.2f,%.2f,yaw=%.2f) p1=(%.2f,%.2f) p2=(%.2f,%.2f) p3=(%.2f,%.2f) p4=(%.2f,%.2f) fuel=%.1f water=%.1f metal=%d crates=%d meal=%d waterItem=%d stove=%d fridge=%d bed=%d hunger=%.1f furn=%d in1=%d in2=%d in3=%d in4=%d door=%d shop=%d rollup=%s barndoor=%s glass=%s job=%s batt=%.2f goal=%s",
+    "[coop-main-client] seq=%d name=%s slot=%d id=%.0f rv=(%.2f,%.2f,yaw=%.2f) p1=(%.2f,%.2f) p2=(%.2f,%.2f) p3=(%.2f,%.2f) p4=(%.2f,%.2f) fuel=%.1f water=%.1f metal=%d crates=%d meal=%d waterItem=%d stove=%d fridge=%d bed=%d hunger=%.1f furn=%d in1=%d in2=%d in3=%d in4=%d door=%d shop=%d rollup=%s barndoor=%s glass=%s job=%s batt=%.2f goal=%s high=%s",
     s.seq, tostring(GetVar("playerName")), coop.mySlot, coop.myClientId or 0,
     s.rv.x, s.rv.z, s.rv.yaw,
     (p[1] and p[1].x) or 0, (p[1] and p[1].z) or 0,
@@ -1351,7 +1357,8 @@ local function clientLog(s)
     (p[1] and p[1].ins) or 0, (p[2] and p[2].ins) or 0,
     (p[3] and p[3].ins) or 0, (p[4] and p[4].ins) or 0, s.door or 0, shop,
     tostring(s.rollup or 0), tostring(s.barndoor or 0), tostring(s.glass or "-"),
-    tostring(s.job or "-"), batteryCharge or 0, tostring(s.goal or "-")))
+    tostring(s.job or "-"), batteryCharge or 0, tostring(s.goal or "-"),
+    tostring(coop.high)))
 end
 
 -- Apply one authoritative RV pose (from game_state or the compact game_pose
@@ -1399,6 +1406,20 @@ local function applyState(s)
   coop.day = tonumber(s.day) or coop.day
   coop.clock = tonumber(s.clock) or coop.clock
   coop.lights = (s.lights == 1 or s.lights == true)
+  if s.high ~= nil then
+    coop.high = (s.high == 1 or s.high == true)
+  end
+  if s.high ~= nil then
+    local hb = (s.high == 1 or s.high == true)
+    if hb ~= highBeam then
+      highBeam = hb
+      -- 已点亮的车灯按新 prefab 重建；没开灯则等下次夜间驾驶
+      if #rvHeadlights > 0 and setRvHeadlights ~= nil then
+        setRvHeadlights(false)
+        setRvHeadlights(true)
+      end
+    end
+  end
   if s.battery ~= nil then
     batteryCharge = tonumber(s.battery) or batteryCharge
   end
@@ -1669,6 +1690,15 @@ local function clientUpdate(dt)
     if ActionPressed("3") then Rpc("game_cmd", { type = "sleep" }) end
     if ActionPressed("0") then Rpc("game_cmd", { type = "job_abandon" }) end
     if ActionPressed("x") then Rpc("game_cmd", { type = "horn" }) end
+    if ActionPressed("h") then Rpc("game_cmd", { type = "highbeam" }) end
+    if coop.highDemo and not coop.highDemoDone then
+      coop.highDemoT = (coop.highDemoT or 0) + dt
+      if coop.highDemoT >= 3.0 and GetVar("netConnected") == 1 then
+        coop.highDemoDone = true
+        Rpc("game_cmd", { type = "highbeam" })
+        print("[coop-high] client sent")
+      end
+    end
     if ActionPressed("e") then
       if inside then
         Rpc("game_cmd", { type = "exit" })
@@ -2217,6 +2247,7 @@ function coopInitWorld(role)
     coop.buildDemo = readFlag("coop_build.txt")
     coop.walkDemo = readFlag("coop_walk.txt")
     coop.hornDemo = readFlag("coop_horn.txt")
+    coop.highDemo = readFlag("coop_highbeam.txt")
     coop.buildUi = readFlag("coop_buildmode.txt")
     coop.boardDemo = readFlag("coop_board.txt")
     coop.sitDemo = readFlag("coop_sitdemo.txt")
