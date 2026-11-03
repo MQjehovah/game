@@ -121,6 +121,23 @@ local WHEELS = {
   { lx =  1.26, lz = -2.92 },  -- rear right
 }
 
+-- Shared wheel visuals: steering from yaw rate (works for manual driving,
+-- autopilot and co-op without an extra state field) and roll from speed.
+function updateWheelMotion(dt)
+  local prevYaw = rv.prevYaw or rv.yaw
+  local dyaw = rv.yaw - prevYaw
+  rv.prevYaw = rv.yaw
+  local rate = dyaw / math.max(dt or 0.016, 0.016)
+  local targetSteer = math.max(-0.55, math.min(0.55, rate * 0.35))
+  local ks = math.min(1, (dt or 0.016) * 6)
+  rv.steerVis = (rv.steerVis or 0) + (targetSteer - (rv.steerVis or 0)) * ks
+  rv.wheelSpin = (rv.wheelSpin or 0) -
+                 (rv.speed or 0) * (dt or 0.016) / 0.40
+  if rv.wheelSpin > math.pi * 2 or rv.wheelSpin < -math.pi * 2 then
+    rv.wheelSpin = rv.wheelSpin % (math.pi * 2)
+  end
+end
+
 -- Per-wheel suspension + body attitude. Each contact samples terrainHeight at
 -- its own (x,z) and follows the surface through a critically damped spring, so
 -- the body settles onto the wheel plane instead of the centre point: on a
@@ -192,20 +209,8 @@ function updateRvSuspension(dt)
     s.travel[i] = hs[i] - (h0 + plane)
   end
 
-  -- Visual steering from the yaw rate (works for manual driving, autopilot
-  -- and co-op without an extra state field) and wheel roll from speed.
-  local prevYaw = rv.prevYaw or rv.yaw
-  local dyaw = rv.yaw - prevYaw
-  rv.prevYaw = rv.yaw
-  local rate = dyaw / math.max(dt or 0.016, 0.016)
-  local targetSteer = math.max(-0.55, math.min(0.55, rate * 0.35))
-  local ks = math.min(1, (dt or 0.016) * 6)
-  rv.steerVis = (rv.steerVis or 0) + (targetSteer - (rv.steerVis or 0)) * ks
-  rv.wheelSpin = (rv.wheelSpin or 0) -
-                 (rv.speed or 0) * (dt or 0.016) / 0.40
-  if rv.wheelSpin > math.pi * 2 or rv.wheelSpin < -math.pi * 2 then
-    rv.wheelSpin = rv.wheelSpin % (math.pi * 2)
-  end
+  -- Visual steering from the yaw rate and wheel roll from speed.
+  updateWheelMotion(dt)
 
   local kk = math.min(1, (dt or 0.016) * 10)
   local tp = math.max(-0.35, math.min(0.35, -math.atan(b)))
@@ -214,4 +219,88 @@ function updateRvSuspension(dt)
   rv.roll = (rv.roll or 0) + (tr - (rv.roll or 0)) * kk
   rv.groundY = (rv.groundY or 0) + (h0 - (rv.groundY or 0)) * kk
   return h0
+end
+
+-- Split a body quaternion (yaw * pitch * roll) into pitch/roll, given the
+-- scripted yaw. Exposed so the self-test can round-trip it.
+function rvPitchRollFromQuat(q, yaw)
+  local cy, sy = math.cos(yaw * 0.5), math.sin(yaw * 0.5)
+  local w = cy * q.w + sy * q.y
+  local x = cy * q.x - sy * q.z
+  local z = cy * q.z + sy * q.x
+  if w < 0 then w, x, z = -w, -x, -z end
+  return 2 * math.atan(x, w), 2 * math.atan(z, w)
+end
+
+-- Physical suspension: the Jolt body is held up by four spring/damper impulses
+-- applied at the wheel contacts. Ride height, pitch and roll therefore come out
+-- of the solver (the visual wheels are then snapped to their sampled ground so
+-- they never float). Horizontal motion and heading stay scripted: the drive
+-- code sets the horizontal velocity and re-applies the yaw each frame.
+local SUSP_K = 90000.0      -- N/m per wheel
+local SUSP_C = 11000.0      -- N*s/m per wheel (slightly overdamped)
+local SUSP_MAX_F = 150000.0
+local SUSP_R = 0.40
+
+function updateRvPhysics(dt)
+  if rvBody == nil or PhysicsApplyImpulse == nil or PhysicsGetPosition == nil
+     or PhysicsGetRotation == nil then
+    return false
+  end
+  local p = PhysicsGetPosition(rvBody)
+  local q = PhysicsGetRotation(rvBody)
+  if p == nil or q == nil then return false end
+
+  local pitch, roll = rvPitchRollFromQuat(q, rv.yaw)
+  rv.x, rv.z = p.x, p.z
+  rv.groundY = p.y - 0.9
+  rv.pitch = math.max(-0.5, math.min(0.5, pitch))
+  rv.roll = math.max(-0.5, math.min(0.5, roll))
+
+  local cp, sp = math.cos(rv.pitch), math.sin(rv.pitch)
+  local cr, sr = math.cos(rv.roll), math.sin(rv.roll)
+  local cyw, syw = math.cos(rv.yaw), math.sin(rv.yaw)
+  local step = math.min(dt or 0.016, 0.033)
+  local s = rv.susp
+  if s == nil then
+    s = { h = {}, v = {} }
+    rv.susp = s
+  end
+  s.plane = s.plane or {}
+  s.travel = s.travel or {}
+
+  for i, w in ipairs(WHEELS) do
+    -- Offset from the box centre: the collider centre is 0.9 above the visual
+    -- origin and the wheel centres sit at 0.38.
+    local lx, ly, lz = w.lx, 0.38 - 0.9, w.lz
+    local x1 = lx * cr - ly * sr
+    local y1 = lx * sr + ly * cr
+    local y2 = y1 * cp - lz * sp
+    local z2 = y1 * sp + lz * cp
+    local ox = x1 * cyw + z2 * syw
+    local oz = -x1 * syw + z2 * cyw
+    local wx, wy, wz = p.x + ox, p.y + y2, p.z + oz
+
+    local ground = terrainHeight(wx, wz)
+    local compression = ground - (wy - SUSP_R)
+    local vy = 0
+    if PhysicsGetPointVelocity ~= nil then
+      local vp = PhysicsGetPointVelocity(rvBody, { x = wx, y = wy, z = wz })
+      if vp ~= nil then vy = vp.y end
+    end
+    local force = SUSP_K * compression - SUSP_C * vy
+    if force > SUSP_MAX_F then force = SUSP_MAX_F end
+    if force < -SUSP_MAX_F then force = -SUSP_MAX_F end
+    PhysicsApplyImpulse(rvBody, { x = 0, y = force * step, z = 0 },
+                        { x = wx, y = wy, z = wz })
+
+    -- Visual wheel sits on its own contact (the body plane is the solver's
+    -- job); store it relative to the body origin for applyRvTransform.
+    s.plane[i] = ground - (p.y - 0.9)
+    s.travel[i] = 0
+    s.h[i] = ground
+  end
+
+  updateWheelMotion(dt)
+  return true
 end

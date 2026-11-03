@@ -698,6 +698,21 @@ math::Vec3 JoltWorld::GetVelocity(BodyId body) const {
     return bid == JPH::BodyID() ? math::Vec3{} : FromJolt(impl_->Bodies().GetLinearVelocity(bid));
 }
 
+math::Vec3 JoltWorld::GetPointVelocity(BodyId body, const math::Vec3& point) const {
+    if (!impl_) return {};
+    const JPH::BodyID bid = impl_->Find(body);
+    if (bid == JPH::BodyID()) return {};
+    return FromJolt(impl_->Bodies().GetPointVelocity(bid, ToRVec3(point)));
+}
+
+void JoltWorld::ApplyImpulse(BodyId body, const math::Vec3& impulse,
+                             const math::Vec3& point) {
+    if (!impl_) return;
+    const JPH::BodyID bid = impl_->Find(body);
+    if (bid == JPH::BodyID()) return;
+    impl_->Bodies().AddImpulse(bid, ToJolt(impulse), ToRVec3(point));
+}
+
 void JoltWorld::SetMass(BodyId body, float mass) {
     if (!impl_ || mass <= 0.0f) return;
     const JPH::BodyID bid = impl_->Find(body);

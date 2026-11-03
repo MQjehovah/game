@@ -274,6 +274,15 @@ math::Vec3 World::GetVelocity(BodyId body) const {
     return b ? b->velocity : math::Vec3{};
 }
 
+// The deterministic custom world is linear only: point velocities ignore
+// rotation and impulses are not simulated. The Jolt backend overrides both.
+math::Vec3 World::GetPointVelocity(BodyId body, const math::Vec3&) const {
+    const Body* b = Find(body);
+    return b ? b->velocity : math::Vec3{};
+}
+
+void World::ApplyImpulse(BodyId, const math::Vec3&, const math::Vec3&) {}
+
 void World::SetMass(BodyId body, float mass) {
     Body* b = Find(body);
     if (!b) return;

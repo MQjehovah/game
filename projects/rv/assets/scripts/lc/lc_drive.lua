@@ -17,7 +17,7 @@ local function qMul(a, b)
   }
 end
 
-local function rvQuat()
+function rvQuat()
   local qy = qAxis(0, 1, 0, rv.yaw)
   local qx = qAxis(1, 0, 0, rv.pitch or 0)
   local qz = qAxis(0, 0, 1, rv.roll or 0)
@@ -168,17 +168,28 @@ function updateDrive(dt)
     rv.z = rv.z + fz * rv.speed * dt
   end
 
-  -- Follow the embankment height (sampled from the same profile as the mesh).
+  -- Follow the terrain. With a live physics body the four contact springs
+  -- hold the body up and the solver produces height/pitch/roll; otherwise fall
+  -- back to the kinematic plane fit (old binaries, co-op server, tests).
   if terrainHeight ~= nil then
-    if updateRvSuspension ~= nil then
-      updateRvSuspension(dt)
-    else
-      rv.groundY = terrainFollow(rv.groundY or 0, rv.x, rv.z, dt, 10)
-      if updateRvTilt ~= nil then updateRvTilt(dt) end
+    local physical = false
+    if rvBody ~= nil and updateRvPhysics ~= nil then
+      physical = updateRvPhysics(dt)
     end
-    if rvBody then
-      PhysicsSetPosition(rvBody, { x = rv.x, y = 0.9 + rv.groundY, z = rv.z })
+    if physical then
+      -- Keep the scripted heading while preserving the solver's attitude.
       PhysicsSetRotation(rvBody, rvQuat())
+    else
+      if updateRvSuspension ~= nil then
+        updateRvSuspension(dt)
+      else
+        rv.groundY = terrainFollow(rv.groundY or 0, rv.x, rv.z, dt, 10)
+        if updateRvTilt ~= nil then updateRvTilt(dt) end
+      end
+      if rvBody then
+        PhysicsSetPosition(rvBody, { x = rv.x, y = 0.9 + rv.groundY, z = rv.z })
+        PhysicsSetRotation(rvBody, rvQuat())
+      end
     end
   end
 

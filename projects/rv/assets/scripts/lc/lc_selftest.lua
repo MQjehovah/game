@@ -282,6 +282,24 @@ function runSelfTest()
       rv.pitch, rv.roll, rv.groundY = kp, kr, kg
       rv.susp = ks
     end
+    -- Physical suspension bridge + attitude round-trip through Jolt.
+    if PhysicsApplyImpulse ~= nil and PhysicsGetPointVelocity ~= nil then
+      ok(r, "rv physics suspension binding", true,
+         "PhysicsApplyImpulse + PhysicsGetPointVelocity")
+    end
+    if rvBody ~= nil and PhysicsGetRotation ~= nil and rvQuat ~= nil
+       and rvPitchRollFromQuat ~= nil then
+      local kp, kr, ky = rv.pitch, rv.roll, rv.yaw
+      rv.pitch, rv.roll, rv.yaw = 0.15, -0.22, 0.8
+      PhysicsSetRotation(rvBody, rvQuat())
+      local q = PhysicsGetRotation(rvBody)
+      local p2, r2 = rvPitchRollFromQuat(q, rv.yaw)
+      ok(r, "rv attitude roundtrip",
+         math.abs(p2 - 0.15) < 0.02 and math.abs(r2 + 0.22) < 0.02,
+         string.format("pitch=%.2f roll=%.2f", p2, r2))
+      rv.pitch, rv.roll, rv.yaw = kp, kr, ky
+      PhysicsSetRotation(rvBody, rvQuat())
+    end
   end
 
   -- 地点物资箱刷在建筑内部，玩家需要从正门进入

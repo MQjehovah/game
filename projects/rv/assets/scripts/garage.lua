@@ -212,8 +212,11 @@ function loadLayout()
     atNode = nil  -- 读档回到纯建造/驻车状态
     applyRvTransform()
     if rvBody then
-      PhysicsSetPosition(rvBody, { x = rv.x, y = 0.9, z = rv.z })
+      local gy = (terrainHeight and terrainHeight(rv.x, rv.z)) or 0
+      PhysicsSetPosition(rvBody, { x = rv.x, y = 0.9 + gy, z = rv.z })
       PhysicsSetVelocity(rvBody, { x = 0, y = 0, z = 0 })
+      if rvQuat ~= nil then PhysicsSetRotation(rvBody, rvQuat()) end
+      rv.susp = nil
     end
   end
   if type(data.vehicle) == "table" then
@@ -866,8 +869,16 @@ function on_update(ent, dt)
   end
 
   -- Parked: settle the body onto its four wheel contacts so a stop on a knoll
-  -- or a slope keeps the wheels grounded.
-  if updateRvSuspension ~= nil and rvShell ~= nil then
+  -- or a slope keeps the wheels grounded. Prefer the physical spring/damper
+  -- path (height/pitch/roll from Jolt), fall back to the plane fit.
+  if rvBody ~= nil and updateRvPhysics ~= nil and updateRvPhysics(dt) then
+    local v = PhysicsGetVelocity(rvBody)
+    if v ~= nil then
+      PhysicsSetVelocity(rvBody, { x = 0, y = v.y, z = 0 })
+    end
+    PhysicsSetRotation(rvBody, rvQuat())
+    applyRvTransform()
+  elseif updateRvSuspension ~= nil and rvShell ~= nil then
     updateRvSuspension(dt)
     applyRvTransform()
   end

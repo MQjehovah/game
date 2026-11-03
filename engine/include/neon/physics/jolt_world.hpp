@@ -67,6 +67,9 @@ public:
     math::Quat GetRotation(BodyId body) const override;
     void SetVelocity(BodyId body, const math::Vec3& vel) override;
     math::Vec3 GetVelocity(BodyId body) const override;
+    math::Vec3 GetPointVelocity(BodyId body, const math::Vec3& point) const override;
+    void ApplyImpulse(BodyId body, const math::Vec3& impulse,
+                      const math::Vec3& point) override;
     void SetMass(BodyId body, float mass) override;
     void SetRestitution(BodyId body, float restitution) override;
     void SetFriction(BodyId body, float friction) override;

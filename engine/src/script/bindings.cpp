@@ -1879,6 +1879,31 @@ Value NativePhysicsGetVelocity(IScriptHost& host, void* user) {
     return id == 0 ? Value::Nil() : Vec3ToValue(ctx->physics->GetVelocity({id}));
 }
 
+// PhysicsGetPointVelocity(body, point): velocity of a world-space point on a
+// rotating rigid body (used to damp each wheel contact).
+Value NativePhysicsGetPointVelocity(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->physics) return Value::Nil();
+    const uint32_t id = SafeU32FromNumber(NumberArg(host, 0, 0.0));
+    if (id == 0) return Value::Nil();
+    const math::Vec3 point = Vec3FromValue(host.GetArg(1), math::Vec3{});
+    return Vec3ToValue(ctx->physics->GetPointVelocity({id}, point));
+}
+
+// PhysicsApplyImpulse(body, impulse, point): world impulse at a world point.
+// The RV suspension applies one per wheel so the solver produces the ride
+// height, pitch and roll.
+Value NativePhysicsApplyImpulse(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->physics) return Value::Nil();
+    const uint32_t id = SafeU32FromNumber(NumberArg(host, 0, 0.0));
+    if (id == 0) return Value::Nil();
+    const math::Vec3 impulse = Vec3FromValue(host.GetArg(1), math::Vec3{});
+    const math::Vec3 point = Vec3FromValue(host.GetArg(2), math::Vec3{});
+    ctx->physics->ApplyImpulse({id}, impulse, point);
+    return Value::Nil();
+}
+
 Value NativePhysicsSetPosition(IScriptHost& host, void* user) {
     auto* ctx = static_cast<ScriptContext*>(user);
     if (!ctx || !ctx->physics) return Value::Nil();
@@ -2415,6 +2440,8 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("PhysicsRemove", &NativePhysicsRemove, &ctx);
     host.Register("PhysicsSetVelocity", &NativePhysicsSetVelocity, &ctx);
     host.Register("PhysicsGetVelocity", &NativePhysicsGetVelocity, &ctx);
+    host.Register("PhysicsGetPointVelocity", &NativePhysicsGetPointVelocity, &ctx);
+    host.Register("PhysicsApplyImpulse", &NativePhysicsApplyImpulse, &ctx);
     host.Register("PhysicsSetPosition", &NativePhysicsSetPosition, &ctx);
     host.Register("PhysicsGetPosition", &NativePhysicsGetPosition, &ctx);
     host.Register("PhysicsSetRotation", &NativePhysicsSetRotation, &ctx);

@@ -102,6 +102,14 @@ public:
     virtual math::Quat GetRotation(BodyId body) const;
     virtual void SetVelocity(BodyId body, const math::Vec3& vel);
     virtual math::Vec3 GetVelocity(BodyId body) const;
+    // Velocity of a world-space point on a (possibly rotating) body. Used by
+    // the vehicle suspension to damp each wheel contact independently.
+    virtual math::Vec3 GetPointVelocity(BodyId body, const math::Vec3& point) const;
+    // Applies an impulse at a world-space point: the spring/damper suspension
+    // of the RV calls this once per wheel so height/pitch/roll come from the
+    // solver. Default implementation is a no-op (deterministic custom world).
+    virtual void ApplyImpulse(BodyId body, const math::Vec3& impulse,
+                              const math::Vec3& point);
     virtual void SetMass(BodyId body, float mass);
     virtual void SetRestitution(BodyId body, float restitution);
     virtual void SetFriction(BodyId body, float friction);
