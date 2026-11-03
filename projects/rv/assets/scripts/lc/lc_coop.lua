@@ -750,6 +750,19 @@ local function serverHandleCommand(clientId, a)
                         tostring(okWood), materials.wood or 0,
                         campfireFuelMin or 0, tostring(campfireOn)))
     pushState()
+  elseif t == "berry" then
+    local idx = nil
+    if nearestReadyBush ~= nil then
+      idx = nearestReadyBush(s.x or rv.x, s.z or rv.z, 2.8)
+    end
+    local okBerry = false
+    if idx ~= nil and gatherBerries ~= nil then
+      okBerry = gatherBerries(idx)
+      if okBerry then coop.worldSeq = coop.worldSeq + 1 end
+    end
+    print(string.format("[coop-berry] ok=%s bush=%s berries=%d",
+                        tostring(okBerry), tostring(idx), inv.berry or 0))
+    pushState()
   elseif t == "repair" then
     local before = (parts and parts.engine) or 100
     local okRep = false
@@ -1162,6 +1175,21 @@ local function serverUpdate(dt)
                         tostring(okWood), materials.wood or 0,
                         campfireFuelMin or 0, tostring(campfireOn)))
     if okWood then setToast("添了一根木柴（篝火燃料 +480）") end
+    pushState()
+  end
+
+  -- Test-only co-op berry: stand next to the first ready bush and pick it.
+  if coop.berryDemo and not coop.berryDemoDone and coop.autoT >= 3.0 then
+    coop.berryDemoDone = true
+    local b = berryBushes and berryBushes[1] or nil
+    if b ~= nil then
+      rv.x, rv.z = b.x, b.z
+      b.ready = true
+    end
+    local okBerry = false
+    if b ~= nil and gatherBerries ~= nil then okBerry = gatherBerries(1) end
+    print(string.format("[coop-berry] demo ok=%s berries=%d",
+                        tostring(okBerry), inv.berry or 0))
     pushState()
   end
 
@@ -1943,6 +1971,7 @@ local function clientUpdate(dt)
     if ActionPressed("n") then Rpc("game_cmd", { type = "mast_repair" }) end
     if ActionPressed("p") then Rpc("game_cmd", { type = "ping" }) end
     if ActionPressed("t") then Rpc("game_cmd", { type = "firewood" }) end
+    if ActionPressed("v") then Rpc("game_cmd", { type = "berry" }) end
     if coop.highDemo and not coop.highDemoDone then
       coop.highDemoT = (coop.highDemoT or 0) + dt
       if coop.highDemoT >= 3.0 and GetVar("netConnected") == 1 then
@@ -2401,6 +2430,7 @@ function coopInitWorld(role)
     coop.relayDemo = readFlag("coop_relay.txt")
     coop.pingDemo = readFlag("coop_ping.txt")
     coop.fireDemo = readFlag("coop_fire.txt")
+    coop.berryDemo = readFlag("coop_berry.txt")
     local doorTest = ReadText("coop_doortest.txt")
     if doorTest ~= nil and doorTest ~= "" then
       local v = string.lower((doorTest:gsub("%s+", "")))
@@ -2518,6 +2548,7 @@ function coopInitWorld(role)
     coop.relayDemo = readFlag("coop_relay.txt")
     coop.pingDemo = readFlag("coop_ping.txt")
     coop.fireDemo = readFlag("coop_fire.txt")
+    coop.berryDemo = readFlag("coop_berry.txt")
     coop.buildUi = readFlag("coop_buildmode.txt")
     coop.boardDemo = readFlag("coop_board.txt")
     coop.sitDemo = readFlag("coop_sitdemo.txt")

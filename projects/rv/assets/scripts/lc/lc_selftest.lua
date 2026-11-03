@@ -2432,6 +2432,20 @@ function runSelfTest()
                      tostring(okAll)))
   end
 
+  -- 按位置找最近成熟浆果丛（联机服务器用）
+  do
+    local b = berryBushes and berryBushes[1] or nil
+    local okNear = false
+    if b ~= nil then
+      b.ready = true
+      local near = nearestReadyBush(b.x, b.z, 2.8)
+      local far = nearestReadyBush(b.x + 40, b.z, 2.8)
+      okNear = near ~= nil and far == nil
+    end
+    ok(r, "nearest berry bush", okNear,
+       string.format("found=%s", tostring(okNear)))
+  end
+
   -- 每日目标池：包含做饭/维修
   do
     local ids = {}

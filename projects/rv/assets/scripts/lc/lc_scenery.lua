@@ -1902,6 +1902,19 @@ function updateBerryBushes(dt)
   end
 end
 
+-- 最近的成熟浆果丛（联机服务器按玩家位置判定用）
+function nearestReadyBush(x, z, maxDist)
+  local best, bestD = nil, maxDist or 2.8
+  for i, b in ipairs(berryBushes or {}) do
+    if b.ready then
+      local dx, dz = b.x - (x or 0), b.z - (z or 0)
+      local d = math.sqrt(dx * dx + dz * dz)
+      if d < bestD then best, bestD = i, d end
+    end
+  end
+  return best
+end
+
 function updateCampfireAudio(dt)
   if campfire == nil then return end
   if not campfireOn then return end
