@@ -397,6 +397,11 @@ function on_start()
   if startMode == "side" or startMode == "side_night" then
     px, pz, pyaw = 6.2, 0.0, -math.pi * 0.5
   end
+  if startMode == "rvfront" then
+    -- Test-only front three-quarter view of the RV.
+    px, pz = 2.6, 9.2
+    pyaw = dirYaw(-2.6, -9.2)
+  end
   if startMode == "poi" then
     -- 路边商店门口：用于检查可进入建筑（门洞/内衬/战利品）
     local nd = nodeById("ruin")
