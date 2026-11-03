@@ -1197,6 +1197,15 @@ function runSelfTest()
        string.format("100=%d 30=%d 10=%d engine=%d", r100, r30, r10, rEng))
   end
 
+  -- 引擎音量随车速：怠速 0.60 → 全速 1.15
+  do
+    local g0 = engineAudioGain(0)
+    local gHalf = engineAudioGain(DRIVE.maxSpeed * 0.5)
+    local gMax = engineAudioGain(DRIVE.maxSpeed)
+    ok(r, "rv engine audio", g0 < gHalf and gHalf < gMax and g0 >= 0.5,
+       string.format("idle=%.2f half=%.2f max=%.2f", g0, gHalf, gMax))
+  end
+
   -- 存读档：行程/探索/货运单数
   do
     tripDistance, tripFuel, jobDelivered = 3210, 88, 7

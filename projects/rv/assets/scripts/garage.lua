@@ -72,6 +72,7 @@ function setPhase(m)
     setPlayerVisible(false)
     SetVar("cameraMouseLock", 1)
     if PlayMusic then PlayMusic("wind", 0.10) end
+    if SetBusVolume ~= nil then SetBusVolume(2, 1.0) end
     applyRvTransform()
     updateInteraction()
     toast.t = 4.5
@@ -91,6 +92,9 @@ function setPhase(m)
     driveLookYaw, driveLookPitch = 0, 0
     SetVar("cameraMouseLock", 1)
     if PlayMusic then PlayMusic("engine", 0.22) end
+    if SetBusVolume ~= nil and engineAudioGain ~= nil then
+      SetBusVolume(2, engineAudioGain(0))
+    end
     toast.text = "上路！W 油门  S 刹车  A/D 转向  空格 停车  C 视角"
     toast.t = 4.5
   end

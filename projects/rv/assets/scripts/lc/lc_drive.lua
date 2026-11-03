@@ -45,6 +45,12 @@ function tripL100()
   return (tripFuel or 0) / tripDistance * 100
 end
 
+-- 引擎音量随车速变化（总线增益，叠加在 PlayMusic 的基础音量上）
+function engineAudioGain(speed)
+  local v = math.min(1, math.abs(speed or 0) / DRIVE.maxSpeed)
+  return 0.60 + 0.55 * v
+end
+
 -- 简易自动挡：按车速升挡，挡内把车速映射到转速区间（HUD 用）。
 function rvGearInfo(speed)
   local v = math.abs(speed or 0)
@@ -281,6 +287,15 @@ function updateDrive(dt)
   end
   recycleScenery(fx, fz)
   updateDriveWorld(dt)
+
+  -- 引擎音量随车速：每 0.2s 更新一次总线增益，避免每帧设置
+  rv.audioT = (rv.audioT or 0) + dt
+  if rv.audioT >= 0.2 then
+    rv.audioT = 0
+    if SetBusVolume ~= nil and engineAudioGain ~= nil then
+      SetBusVolume(2, engineAudioGain(rv.speed))
+    end
+  end
 
   -- 零件磨损（按行驶里程）
   local meters = math.abs(rv.speed) * dt
