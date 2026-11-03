@@ -576,9 +576,9 @@
   熄火时不能烤鱼/煮水/篝火边休息；每次烹饪还会消耗 10 游戏分钟燃料
   （`COOK_FUEL_MIN`，燃料耗尽自动熄火）；靠近时低燃料/熄灭会在
   屏幕底部提示添柴（`campfireHintText`）；篝火旁的**柴堆**每 60 游戏分钟
-  可按 `E` 取 1 个木材（`gatherCampWoodpile`）；自检 `campfire fuel` /
-  `campfire hint` / `campfire wood at position` / `campfire weather` /
-  `campfire cook fuel` / `camp woodpile`。
+  可按 `E` 取 1 个木材（`gatherCampWoodpile`；联机客机按 `E` 由服务端补给）；
+  自检 `campfire fuel` / `campfire hint` / `campfire wood at position` /
+  `campfire weather` / `campfire cook fuel` / `camp woodpile`。
   联机时燃料由服务器推进，
   客机按 `game_state.fire` / `fireFuel` 同步点燃状态与剩余燃料
   （`setCampfireLit` / `setCampfireFuel`），客机按 `T` 也可添柴（服务端权威），
@@ -869,6 +869,8 @@
   `[coop-vending] demo ok=true metal=212`，验证联机售货机。
 - `coop_chains.txt`：服务端 3s 切换防滑链，日志
   `[coop-chains] demo on=false`，验证联机防滑链由服务端权威切换。
+- `coop_wood.txt`：服务端 3s 站到营地柴堆旁取木材，日志
+  `[coop-wood] demo ok=true wood=40 cd=60`，验证联机柴堆补给。
 - `coop_walk.txt`：客户端按住前进，便于网络 smoke 看到受控角色位移。
 - `coop_sitdemo.txt`：在房车旁生成一个播放 `Sit` 骨骼片段的预览角色。
 - `coop_animdemo.txt`：内容 `sit` / `board` / `stand` / `dooropen` / `doorclose` /

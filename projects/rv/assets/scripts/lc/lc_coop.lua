@@ -813,6 +813,13 @@ local function serverHandleCommand(clientId, a)
     print(string.format("[coop-vending] ok=%s metal=%d", tostring(okBuy),
                         materials.metal or 0))
     if okBuy then pushState() end
+  elseif t == "woodpile" then
+    local okWood = false
+    if gatherCampWoodpile ~= nil then okWood = gatherCampWoodpile() end
+    print(string.format("[coop-wood] ok=%s wood=%d cd=%.0f",
+                        tostring(okWood), materials.wood or 0,
+                        campWoodMin or 0))
+    if okWood then pushState() end
   elseif t == "read_note" then
     local idx = tonumber(a.index) or 0
     local n = loreNotes and loreNotes[idx] or nil
@@ -1360,6 +1367,19 @@ local function serverUpdate(dt)
     chainsOn = true
     chainsOn = not (chainsOn ~= false)
     print(string.format("[coop-chains] demo on=%s", tostring(chainsOn)))
+    pushState()
+  end
+
+  -- Test-only co-op camp woodpile: stand by it and take a log.
+  if coop.woodDemo and not coop.woodDemoDone and coop.autoT >= 3.0 then
+    coop.woodDemoDone = true
+    rv.x, rv.z = 0.9, 2.9
+    campWoodMin = 0
+    local okWood = false
+    if gatherCampWoodpile ~= nil then okWood = gatherCampWoodpile() end
+    print(string.format("[coop-wood] demo ok=%s wood=%d cd=%.0f",
+                        tostring(okWood), materials.wood or 0,
+                        campWoodMin or 0))
     pushState()
   end
 
@@ -2238,6 +2258,8 @@ local function clientUpdate(dt)
             math.sqrt((windmill.x - px) ^ 2 + (windmill.z - pz) ^ 2) <= 3.8
           local nearVending = vendingMachine ~= nil and
             math.sqrt((vendingMachine.x - px) ^ 2 + (vendingMachine.z - pz) ^ 2) <= 3.0
+          local nearWoodpile =
+            math.sqrt((0.9 - px) ^ 2 + (2.9 - pz) ^ 2) <= 2.3
           local noteIdx = nil
           if nearestLoreNote ~= nil then
             noteIdx = nearestLoreNote(px, pz, 2.4)
@@ -2246,6 +2268,8 @@ local function clientUpdate(dt)
             Rpc("game_cmd", { type = "search", index = best })
           elseif noteIdx ~= nil then
             Rpc("game_cmd", { type = "read_note", index = noteIdx })
+          elseif nearWoodpile then
+            Rpc("game_cmd", { type = "woodpile" })
           elseif nearVending then
             Rpc("game_cmd", { type = "vending" })
           elseif nearWindmill then
@@ -2688,6 +2712,7 @@ function coopInitWorld(role)
     coop.noteDemo = readFlag("coop_note.txt")
     coop.vendingDemo = readFlag("coop_vending.txt")
     coop.chainsDemo = readFlag("coop_chains.txt")
+    coop.woodDemo = readFlag("coop_wood.txt")
     local doorTest = ReadText("coop_doortest.txt")
     if doorTest ~= nil and doorTest ~= "" then
       local v = string.lower((doorTest:gsub("%s+", "")))
@@ -2813,6 +2838,7 @@ function coopInitWorld(role)
     coop.noteDemo = readFlag("coop_note.txt")
     coop.vendingDemo = readFlag("coop_vending.txt")
     coop.chainsDemo = readFlag("coop_chains.txt")
+    coop.woodDemo = readFlag("coop_wood.txt")
     coop.buildUi = readFlag("coop_buildmode.txt")
     coop.boardDemo = readFlag("coop_board.txt")
     coop.sitDemo = readFlag("coop_sitdemo.txt")
