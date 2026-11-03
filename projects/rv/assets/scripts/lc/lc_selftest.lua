@@ -3877,6 +3877,18 @@ function runSelfTest()
                      tostring(again), tostring(hasFuel)))
   end
 
+  -- 极低油量供油不稳：2% 以上满动力，越低越弱
+  do
+    local full = fuelStarvationScale(0.10)
+    local edge = fuelStarvationScale(0.02)
+    local low = fuelStarvationScale(0.01)
+    local none = fuelStarvationScale(0)
+    ok(r, "fuel starvation",
+       full == 1.0 and edge == 1.0 and low < 1.0 and low > 0.5 and none == 0,
+       string.format("10%%=%.2f 2%%=%.2f 1%%=%.2f 0=%.2f",
+                     full, edge, low, none))
+  end
+
   -- 营地板以物易物：布料→金属、电子件→燃油罐、金属→燃料
   do
     local sMetal = materials.metal or 0

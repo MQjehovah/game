@@ -750,6 +750,14 @@ function lowFuelBeepInterval(fuelRatio)
   return 0
 end
 
+-- 极低油量（<2%）时供油不稳，动力下降
+function fuelStarvationScale(fuelRatio)
+  local f = fuelRatio or 1
+  if f <= 0 then return 0 end
+  if f >= 0.02 then return 1.0 end
+  return 0.6 + 0.4 * (f / 0.02)
+end
+
 -- 没油提示：油量归零且尚未提示过时给出文案
 function fuelEmptyWarn(fuelValue, warned)
   if (fuelValue or 0) > 0 then return nil end
@@ -956,6 +964,12 @@ function updateDrive(dt)
     end
   elseif fuel > fuelMax() * 0.1 then
     rv.fuelEmptyWarned = false
+  end
+  -- 极低油量：供油不稳，动力下降（油表最后 2%）
+  local starve = fuelStarvationScale((fuel or 0) / fuelMax())
+  if starve < 1.0 then
+    maxSp = maxSp * starve
+    acc = acc * (0.7 + 0.3 * starve)
   end
   maxSp = maxSp * (0.5 + 0.5 * dur / VEH.durMax)
   if isRainy and isRainy() then maxSp = maxSp * 0.82 end  -- 雨天/雾天减速
