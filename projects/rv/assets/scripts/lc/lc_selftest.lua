@@ -1900,6 +1900,24 @@ function runSelfTest()
                      tostring(day), tostring(night)))
   end
 
+  -- 蝴蝶：白天活动，夜晚与雨天隐藏
+  do
+    local sc, sw = clock, weather
+    weather = "clear"
+    clock = 12 * 60
+    local dayOn = butterfliesActive()
+    clock = 22 * 60
+    local nightOff = butterfliesActive()
+    clock = 12 * 60
+    weather = "rain"
+    local rainOff = butterfliesActive()
+    clock, weather = sc, sw
+    ok(r, "butterflies day cycle",
+       #butterflies >= 6 and dayOn and not nightOff and not rainOff,
+       string.format("n=%d day=%s night=%s rain=%s", #butterflies,
+                     tostring(dayOn), tostring(nightOff), tostring(rainOff)))
+  end
+
   -- 路面障碍：生成实体+静态碰撞，绕过/超时后清理干净
   do
     local before = #driveProps

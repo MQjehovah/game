@@ -1636,6 +1636,60 @@ function updateRabbits(dt)
   end
 end
 
+-- 白天蝴蝶：在草甸/花丛附近成对翅膀飞舞，夜间或雨天隐藏
+function butterfliesActive()
+  if weather == "rain" then return false end
+  return not (isNight ~= nil and isNight())
+end
+
+function spawnButterflies()
+  for _, b in ipairs(butterflies) do
+    if b.l ~= nil then Despawn(b.l) end
+    if b.r ~= nil then Despawn(b.r) end
+  end
+  butterflies = {}
+  for i = 1, 6 do
+    local l = SpawnPrefab("rv_butterfly", { x = 0, y = -60, z = 0 })
+    local r = SpawnPrefab("rv_butterfly", { x = 0, y = -60, z = 0 })
+    if l ~= nil and r ~= nil then
+      butterflies[#butterflies + 1] = {
+        l = l, r = r,
+        angle = math.random() * math.pi * 2,
+        radius = 3 + math.random() * 8,
+        speed = 0.25 + math.random() * 0.35,
+        phase = math.random() * math.pi * 2,
+        bob = 0.7 + math.random() * 0.8,
+      }
+    end
+  end
+end
+
+function updateButterflies(dt)
+  if #butterflies == 0 then return end
+  local active = butterfliesActive()
+  butterfliesT = (butterfliesT or 0) + dt
+  for _, b in ipairs(butterflies) do
+    SetVisible(b.l, active)
+    SetVisible(b.r, active)
+    if active then
+      b.angle = b.angle + b.speed * dt
+      local t = butterfliesT * 1.7 + b.phase
+      local x = rv.x + math.cos(b.angle) * b.radius + math.sin(t) * 0.55
+      local z = rv.z + math.sin(b.angle) * b.radius + math.cos(t * 0.8) * 0.55
+      local gy = (terrainHeight and terrainHeight(x, z)) or 0
+      local y = gy + b.bob + math.sin(t * 2.1) * 0.22
+      local flap = 0.35 + 0.65 * math.abs(math.sin(butterfliesT * 16 + b.phase))
+      local ox, oz = math.cos(b.angle) * 0.055, -math.sin(b.angle) * 0.055
+      SetPosition(b.l, { x = x - ox, y = y, z = z - oz })
+      SetPosition(b.r, { x = x + ox, y = y, z = z + oz })
+      SetRotationY(b.l, -b.angle)
+      SetRotationY(b.r, -b.angle)
+      SetScale(b.l, 0.11 * flap, 0.02, 0.14)
+      SetScale(b.r, 0.11 * flap, 0.02, 0.14)
+    end
+  end
+end
+
 -- 农场风车：4 片叶片绕轮毂旋转
 function updateWindmill(dt)
   if windmill == nil or #(windmill.blades or {}) == 0 then return end
