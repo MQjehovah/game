@@ -96,6 +96,12 @@ function drawNeedsPanel(x, y, w)
   yy = yy + 30
   drawStatBar(x + 10, yy, inner, "卫生", string.format("%.0f", n.hygiene or 0),
               (n.hygiene or 0) / 100, (n.hygiene or 0) < 20)
+  if warmthStatusText ~= nil then
+    local w = warmthStatusText()
+    if w ~= nil then
+      DrawText(w, x + 10, y + 180, 11, 0.98, 0.74, 0.42, 1)
+    end
+  end
 end
 
 function drawCrosshair(vw, vh, threat)

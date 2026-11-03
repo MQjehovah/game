@@ -644,6 +644,12 @@ function coldEnergyExtra(weatherValue, heaterOn, warmth)
   return 0
 end
 
+-- 保暖状态文案（HUD 用）：无保暖返回 nil
+function warmthStatusText()
+  if (warmthMin or 0) <= 0 then return nil end
+  return string.format("暖和 %.0f 分钟", warmthMin)
+end
+
 -- 长线收尾：修好无线电塔后，去废弃小镇恢复信号中继
 RELAY_REWARD = { metal = 10, electronics = 5, fuel = 30 }
 

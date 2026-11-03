@@ -3897,6 +3897,20 @@ function runSelfTest()
        string.format("warm=%.3f cold=%.3f woke=%s", a, b, tostring(woke)))
   end
 
+  -- 保暖状态文案：有保暖时显示剩余分钟，没有时不显示
+  do
+    local keep = warmthMin
+    warmthMin = 0
+    local none = warmthStatusText()
+    warmthMin = 25
+    local shown = warmthStatusText() or ""
+    warmthMin = keep
+    ok(r, "warmth status",
+       none == nil and shown:find("暖和", 1, true) ~= nil and
+       shown:find("25", 1, true) ~= nil,
+       string.format("none=%s shown=%s", tostring(none), shown))
+  end
+
   -- 夜间驾驶疲劳：短途无、长途有、上限封顶
   do
     local a = nightFatigueExtra(60)
