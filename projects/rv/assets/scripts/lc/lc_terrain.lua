@@ -463,6 +463,13 @@ function tireMuScale(temp, wear)
   return warm * wearScale
 end
 
+-- 胎压对抓地的影响：2.3bar 以上满抓地，偏低时接地面积不足、抓地下降
+function tirePressureGripScale(p)
+  local v = p or 2.4
+  if v >= 2.3 then return 1.0 end
+  return math.max(0.85, 0.85 + (v - 1.6) * 0.25)
+end
+
 -- Per-wheel thermal step. Heat comes from that wheel's slip power
 -- (slip speed * normal load) plus a small rolling term; airflow at speed
 -- convects it back toward ambient. Clamped to 150 C. Exposed for the
@@ -973,7 +980,9 @@ function updateRvPhysics(dt)
                           { x = wx, y = wy, z = wz })
       nForce = math.max(0, SUSP_K * compression)
       local surfName, surfDef = surfaceInfo(wx, wz)
-      mu = surfDef.mu * tireMuScale(rv.tireTemps[i], rv.tireWear[i]) * (weatherGripScale and weatherGripScale() or 1.0)
+      mu = surfDef.mu * tireMuScale(rv.tireTemps[i], rv.tireWear[i]) *
+           tirePressureGripScale((rv.tirePressureCold or {})[i]) *
+           (weatherGripScale and weatherGripScale() or 1.0)
       rv.__surfDef = surfDef
       surfLast = surfName
       s.plane[i] = ground - (p.y - 0.9)
@@ -1000,7 +1009,9 @@ function updateRvPhysics(dt)
                           { x = wx, y = wy, z = wz })
       nForce = math.max(0, SUSP_K * compression)
       local surfName, surfDef = surfaceInfo(wx, wz)
-      mu = surfDef.mu * tireMuScale(rv.tireTemps[i], rv.tireWear[i]) * (weatherGripScale and weatherGripScale() or 1.0)
+      mu = surfDef.mu * tireMuScale(rv.tireTemps[i], rv.tireWear[i]) *
+           tirePressureGripScale((rv.tirePressureCold or {})[i]) *
+           (weatherGripScale and weatherGripScale() or 1.0)
       rv.__surfDef = surfDef
       surfLast = surfName
       s.plane[i] = ground - (p.y - 0.9)

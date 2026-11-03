@@ -1591,6 +1591,19 @@ function runSelfTest()
                      tostring(tirePressureLow(2.4))))
   end
 
+  -- 胎压影响抓地：2.3bar 以上满抓地，偏低逐渐下降且有下限
+  do
+    local low = tirePressureGripScale(1.6)
+    local mid = tirePressureGripScale(1.8)
+    local okp = tirePressureGripScale(2.0)
+    local full = tirePressureGripScale(2.4)
+    ok(r, "tire pressure grip",
+       math.abs(low - 0.85) < 1e-6 and mid > low and okp > mid and
+       full == 1.0,
+       string.format("1.6=%.2f 1.8=%.2f 2.0=%.2f 2.4=%.2f",
+                     low, mid, okp, full))
+  end
+
   -- 机油寿命：低于 20% 动力下降；加油站按缺失比例收金属更换
   do
     local keepOil = oilLife
