@@ -2769,6 +2769,7 @@ function coopUpdate(dt)
   if updateRoadCaches ~= nil then updateRoadCaches(dt) end
   if updatePuddles ~= nil then updatePuddles(dt) end
   if updatePuddleSplash ~= nil then updatePuddleSplash(dt) end
+  if updateWheelDust ~= nil then updateWheelDust(dt) end
   if updateSnowPatches ~= nil then updateSnowPatches(dt) end
   if updateWindmill ~= nil then updateWindmill(dt) end
   if updatePoiSigns ~= nil then updatePoiSigns() end
