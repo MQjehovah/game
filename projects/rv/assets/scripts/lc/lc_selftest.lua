@@ -1672,6 +1672,25 @@ function runSelfTest()
                      tostring(day), tostring(night)))
   end
 
+  -- 路面障碍：生成实体+静态碰撞，绕过/超时后清理干净
+  do
+    local before = #driveProps
+    spawnDriveRoadblock()
+    local grp = driveProps[#driveProps]
+    local spawned = #driveProps == before + 1 and grp ~= nil and
+                    grp.kind == "roadblock" and #(grp.parts or {}) >= 2 and
+                    #(grp.bodyIds or {}) >= 2
+    local parts = grp and #(grp.parts or {}) or 0
+    local ids = grp and #(grp.bodyIds or {}) or 0
+    if grp then
+      despawnDriveRoadblock(grp)
+      table.remove(driveProps, #driveProps)
+    end
+    ok(r, "drive roadblock", spawned and #(grp and grp.parts or {}) == 0 and
+       #(grp and grp.bodyIds or {}) == 0,
+       string.format("parts=%d colliders=%d props=%d", parts, ids, #driveProps))
+  end
+
   -- 睡醒晨报：包含天数/货运单数/今日目标/油量
   do
     local sd, sc = day, clock

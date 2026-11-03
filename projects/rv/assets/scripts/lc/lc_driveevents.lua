@@ -48,6 +48,49 @@ function spawnDriveProp(kind)
   end
 end
 
+-- 路面障碍：倒木/落石/废弃车堵住半幅路，必须打方向绕过；撞上掉耐久。
+-- 静态碰撞盒记在 bodyIds 里，通过后一起移除，避免留下看不见的墙。
+function spawnDriveRoadblock()
+  local base = 24 + math.random() * 10
+  local side = (math.random() < 0.5) and -1 or 1
+  local group = { kind = "roadblock", x = 0, z = 0, bodyIds = {},
+                  parts = {}, life = 45 }
+  local layout = {
+    { pre = "rv_wreck", lx = side * 3.4, lz = base,        sx = 1.0, sy = 0.9, sz = 1.0 },
+    { pre = "rv_rock",  lx = side * 2.4, lz = base + 1.4,  sx = 1.2, sy = 1.0, sz = 1.2 },
+    { pre = "rv_rock",  lx = side * 1.3, lz = base + 2.6,  sx = 0.9, sy = 0.8, sz = 0.9 },
+  }
+  for i, d in ipairs(layout) do
+    local wx, wz = rotOf(d.lx, d.lz)
+    local e = SpawnPrefab(d.pre, { x = wx, y = -50, z = wz })
+    if e ~= nil then
+      local gy = (terrainHeight and terrainHeight(wx, wz)) or 0
+      SetPosition(e, { x = wx, y = gy + 0.55 * d.sy, z = wz })
+      SetScale(e, d.sx, d.sy, d.sz)
+      SetRotationY(e, math.random() * math.pi * 2)
+      group.parts[#group.parts + 1] = e
+      if PhysicsAddBox ~= nil then
+        local id = PhysicsAddBox(
+          { x = wx, y = gy + 0.55 * d.sy, z = wz },
+          { x = 0.55 * d.sx, y = 0.55 * d.sy, z = 0.55 * d.sz }, false, {})
+        if id ~= nil then group.bodyIds[#group.bodyIds + 1] = id end
+      end
+      if i == 1 then group.x, group.z = wx, wz end
+    end
+  end
+  driveProps[#driveProps + 1] = group
+  toast.text = "前方路面被堵——打方向绕过去"
+  toast.t = 3.5
+end
+
+function despawnDriveRoadblock(p)
+  for _, e in ipairs(p.parts or {}) do Despawn(e) end
+  for _, id in ipairs(p.bodyIds or {}) do
+    if PhysicsRemove ~= nil then PhysicsRemove(id) end
+  end
+  p.parts, p.bodyIds = {}, {}
+end
+
 function triggerEvent()
   -- 事件选择/权重/提示全部在 drive_event.flow.json（可视化可热调）
   LC.flow.emit("drive_event")
@@ -93,7 +136,13 @@ function updateDriveWorld(dt)
     local dx, dz = p.x - rv.x, p.z - rv.z
     local d2 = dx * dx + dz * dz
     local fwd = dx * fx + dz * fz
-    if d2 < 9 then
+    if p.kind == "roadblock" then
+      p.life = (p.life or 45) - dt
+      if fwd < -24 or p.life <= 0 or d2 > 90 * 90 then
+        despawnDriveRoadblock(p)
+        table.remove(driveProps, i)
+      end
+    elseif d2 < 9 then
       collectDriveProp(p)
       table.remove(driveProps, i)
     elseif fwd < -30 then

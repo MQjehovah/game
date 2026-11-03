@@ -119,6 +119,11 @@ LC.flow.register("game/drive-fuel", function(node)
   return "exec"
 end)
 
+LC.flow.register("game/drive-roadblock", function(node)
+  spawnDriveRoadblock()
+  return "exec"
+end)
+
 LC.flow.describe("game/drive-horde", "途中感染者", "玩法", { "exec" }, { { "count", "n" } })
 LC.flow.describe("game/drive-supply", "路边补给", "玩法", { "exec" }, {})
 LC.flow.describe("game/drive-fuel", "路边油桶", "玩法", { "exec" }, {})

@@ -1007,6 +1007,10 @@ function on_start()
   elseif startMode == "morning" then
     clock = 21 * 60
     sleepInBed()
+  elseif startMode == "roadblock" then
+    setPhase("driving")
+    driveView = "chase"
+    spawnDriveRoadblock()
   elseif startMode == "jobaway" then
     jobRefreshOffers("gasstop")
     jobAccept(1)
