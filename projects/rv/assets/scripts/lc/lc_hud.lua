@@ -744,7 +744,16 @@ function drawMorningReport()
              px + 22, py + 94, 13,
              ok and 0.58 or 0.95, ok and 0.85 or 0.82, ok and 0.58 or 0.50, a)
   end
-  DrawText("W 上车出发 / E 下车活动 / M 看地图", px + 22, py + 126, 12,
+  local extra = {}
+  if morningReport.notes ~= nil then extra[#extra + 1] = morningReport.notes end
+  if morningReport.oil ~= nil then
+    extra[#extra + 1] = string.format("机油 %.0f%%", morningReport.oil)
+  end
+  if #extra > 0 then
+    DrawText(table.concat(extra, "   "), px + 22, py + 116, 12,
+             0.72, 0.78, 0.70, a)
+  end
+  DrawText("W 上车出发 / E 下车活动 / M 看地图", px + 22, py + 140, 12,
            0.68, 0.70, 0.64, a)
 end
 

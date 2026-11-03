@@ -4735,14 +4735,16 @@ function runSelfTest()
     local rep = morningReport
     local okRep = rep ~= nil and (rep.day or 0) >= 1 and rep.jobs ~= nil and
                   rep.fuel ~= nil and (rep.t or 0) > 0 and
-                  (rep.forecast == nil or WEATHER_NAMES[rep.forecast] ~= nil)
+                  (rep.forecast == nil or WEATHER_NAMES[rep.forecast] ~= nil) and
+                  rep.oil ~= nil and rep.notes ~= nil
     day, clock = sd, sc
     needs.energy, needs.hunger, needs.thirst, needs.hygiene = se, sh, st, sg
     morningReport = nil
     ok(r, "morning report", okRep,
-       rep and string.format("day=%d jobs=%d goal=%s fuel=%.0f",
+       rep and string.format("day=%d jobs=%d goal=%s fuel=%.0f oil=%.0f notes=%s",
                              rep.day or 0, rep.jobs or 0,
-                             tostring(rep.goal), rep.fuel or 0) or "missing")
+                             tostring(rep.goal), rep.fuel or 0,
+                             rep.oil or 0, tostring(rep.notes)) or "missing")
   end
 
   -- 存读档：行程/探索/货运单数 + 天气
