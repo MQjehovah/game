@@ -9,9 +9,10 @@ function initSurvival()
   day = 1
   water = 80
   parts = { engine = 100, tires = 100, battery = 100 }
-  upgrades = { engine = 0, tires = 0 }
+  upgrades = { engine = 0, tires = 0, cargo = 0, rod = 0 }
   lastWarn = {}
   hurtT = 0
+  if dailyGoal == nil and rollDailyGoal ~= nil then rollDailyGoal() end
 end
 
 -- 真实昼夜光照：直接改场景 Sun 的方向光强度/颜色
@@ -115,8 +116,9 @@ function advanceGameMinutes(mins)
     clock = clock - 1440
     day = day + 1
   end
-  if day ~= before and LC and LC.flow then
-    LC.flow.emit("day_advanced")
+  if day ~= before then
+    if rollDailyGoal ~= nil then rollDailyGoal() end
+    if LC and LC.flow then LC.flow.emit("day_advanced") end
   end
 end
 
@@ -126,6 +128,36 @@ function addItem(id, n)
   if id == "rawfood" or id == "rawfish" then
     rawFoodAge = 0
     rawSpoilWarned = false
+  end
+end
+
+-- 每日目标：随天数刷新，完成给燃料/材料
+function rollDailyGoal()
+  local g = DAILY_GOALS[math.random(1, #DAILY_GOALS)]
+  if g == nil then return end
+  dailyGoal = { id = g.id, name = g.name, target = g.target, progress = 0,
+                done = false, reward = g.reward, day = day }
+end
+
+function addDailyProgress(kind, amount)
+  if dailyGoal == nil or dailyGoal.done or dailyGoal.id ~= kind then return end
+  dailyGoal.progress = (dailyGoal.progress or 0) + (amount or 1)
+  if dailyGoal.progress >= dailyGoal.target then
+    dailyGoal.done = true
+    local got = {}
+    for k, v in pairs(dailyGoal.reward or {}) do
+      if k == "fuel" then
+        fuel = math.min(VEH.tank, fuel + v)
+        got[#got + 1] = "燃料+" .. v .. "L"
+      else
+        materials[k] = (materials[k] or 0) + v
+        got[#got + 1] = (MAT_NAMES[k] or k) .. "+" .. v
+      end
+    end
+    toast.text = "今日目标完成：" .. dailyGoal.name ..
+                 (next(got) ~= nil and (" · " .. table.concat(got, " ")) or "")
+    toast.t = 4.5
+    if PlaySfx then PlaySfx("pickup") end
   end
 end
 
@@ -415,6 +447,7 @@ function finishFishing(force)
     if usedBait then n = n + 1 end
     addItem("rawfish", n)
     fishCaught = (fishCaught or 0) + n
+    if addDailyProgress ~= nil then addDailyProgress("fish", n) end
     local record = false
     if size > (bestFish or 0) then
       bestFish = size

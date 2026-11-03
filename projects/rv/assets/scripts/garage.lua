@@ -145,6 +145,11 @@ function saveLayout()
       lastJobDay = lastJobDay or 0,
       battery = batteryCharge or 0,
       rawAge = rawFoodAge or 0,
+      daily = dailyGoal and {
+        id = dailyGoal.id, name = dailyGoal.name, target = dailyGoal.target,
+        progress = dailyGoal.progress, done = dailyGoal.done,
+        day = dailyGoal.day, reward = dailyGoal.reward,
+      } or nil,
     }
   end
   if coopRole == "server" and coopSaveExtra ~= nil then
@@ -298,6 +303,16 @@ function loadLayout()
     rawFoodAge = tonumber(data.progress.rawAge) or rawFoodAge
     if rawFoodAge ~= nil then
       rawSpoilWarned = rawFoodAge > (SURVIVAL.rawSpoilMinutes or 2880) * 0.75
+    end
+    if type(data.progress.daily) == "table" then
+      local d = data.progress.daily
+      dailyGoal = {
+        id = d.id, name = d.name, target = tonumber(d.target) or 1,
+        progress = tonumber(d.progress) or 0, done = d.done == true,
+        day = tonumber(d.day) or day, reward = d.reward or {},
+      }
+    elseif dailyGoal == nil and rollDailyGoal ~= nil then
+      rollDailyGoal()
     end
     if type(data.progress.visited) == "table" then
       visitedPois = {}

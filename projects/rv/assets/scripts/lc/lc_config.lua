@@ -137,6 +137,14 @@ STOP = {
   crates = 6, threatMax = 3, evacTime = 15, searchThreat = 1,
   keepRatio = 1.0, pickRadius = 30,
 }
+-- 每日目标（随天数刷新；完成给少量燃料/材料）
+DAILY_GOALS = {
+  { id = "jobs",     name = "完成 2 单货运",       target = 2,   reward = { metal = 2, fuel = 8 } },
+  { id = "fish",     name = "钓 3 条鱼",           target = 3,   reward = { cloth = 2, fuel = 6 } },
+  { id = "explore",  name = "首次抵达 1 个新地点", target = 1,   reward = { electronics = 1, fuel = 10 } },
+  { id = "distance", name = "行驶 500m",           target = 500, reward = { metal = 1, fuel = 8 } },
+}
+
 -- 顺路货运合同：营地板子接单 -> 开到目标 POI -> 结算材料/燃料。
 -- 货物重量计入 stats.weight，直接压加速度/极速/油耗（Nomad Drive 的
 -- “顺路载货”循环：不新增地图，只把已有节点变成可跑的目标）。

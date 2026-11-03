@@ -318,6 +318,7 @@ function updateDrive(dt)
   local meters = math.abs(rv.speed) * dt
   if meters > 0 then
     tripDistance = (tripDistance or 0) + meters
+    if addDailyProgress ~= nil then addDailyProgress("distance", meters) end
     if rv.tirePressureCold ~= nil then
       for i = 1, 4 do
         rv.tirePressureCold[i] = pressureAfterMeters(rv.tirePressureCold[i], meters)

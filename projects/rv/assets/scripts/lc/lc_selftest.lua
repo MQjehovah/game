@@ -918,6 +918,8 @@ function runSelfTest()
   atNode = nil
 
   -- ======================= 顺路货运合同 =======================
+  local dailyKeep = dailyGoal
+  dailyGoal = nil  -- 货运测试期间关闭每日目标奖励，避免污染收益断言
   -- 货运板：营地生成一块可交互的牌子
   jobBoard = nil
   spawnJobBoard()
@@ -1566,6 +1568,23 @@ function runSelfTest()
     ok(r, "raw food spoilage", noFridge > fridge and fridge > 0 and spoiled,
        string.format("aging %.0f vs %.1f spoiled=%s", noFridge, fridge,
                      tostring(spoiled)))
+  end
+
+  -- 每日目标：进度与完成奖励
+  do
+    dailyGoal = dailyKeep
+    local keep = dailyGoal
+    dailyGoal = { id = "jobs", name = "测试目标", target = 2, progress = 0,
+                  done = false, reward = { metal = 2, fuel = 5 } }
+    local m0 = materials.metal or 0
+    addDailyProgress("jobs", 1)
+    local p1 = dailyGoal.progress
+    addDailyProgress("jobs", 1)
+    local done = dailyGoal.done
+    ok(r, "daily goal", p1 == 1 and done and (materials.metal or 0) >= m0 + 2,
+       string.format("progress=%d done=%s metal=%d", p1, tostring(done),
+                     materials.metal or 0))
+    dailyGoal = keep
   end
 
   -- 存读档：行程/探索/货运单数 + 天气

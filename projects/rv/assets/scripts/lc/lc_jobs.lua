@@ -287,6 +287,7 @@ function jobComplete()
   local name, crates = job.cargo, job.crates
   local destName = job.destName or ""
   jobDelivered = jobDelivered + 1
+  if addDailyProgress ~= nil then addDailyProgress("jobs", 1) end
   jobHistory[#jobHistory + 1] = string.format("%s → %s（%.0f%%）",
                                               name, destName, cond * 100)
   if #jobHistory > 5 then table.remove(jobHistory, 1) end

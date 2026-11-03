@@ -909,6 +909,16 @@ function drawMapHud()
                0.72, 0.76, 0.70, 1)
     end
   end
+  if dailyGoal ~= nil then
+    local p = math.min(dailyGoal.progress or 0, dailyGoal.target or 1)
+    DrawText(string.format("今日目标：%s  %d/%d%s", dailyGoal.name or "",
+             p, dailyGoal.target or 0,
+             dailyGoal.done and "  ✓" or ""),
+             px + 20, py + ph - 114, 12,
+             dailyGoal.done and 0.55 or 0.92,
+             dailyGoal.done and 0.85 or 0.82,
+             dailyGoal.done and 0.55 or 0.55, 1)
+  end
 end
 
 -- ===========================================================================
