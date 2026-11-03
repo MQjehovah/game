@@ -779,13 +779,11 @@ function drawDriveHud()
 
   if toast.t > 0 then drawBanner(toast.text, 120, 16) end
 
-  -- 低油量：提示最近加油站的距离（金属加油）
-  if (fuel or 0) / fuelMax() < 0.2 and nearestFuelStop ~= nil then
-    local st = nearestFuelStop(rv.x, rv.z)
-    if st ~= nil then
-      drawTextCentered(string.format("油量低 — 最近加油站：%s %.0fm（金属加油）",
-                                     st.name, st.dist),
-                       vw * 0.5, 52, 13, 1.0, 0.72, 0.38, 0.95)
+  -- 低油量：续航 + 最近加油站距离；金属不足时提示营地免费补给
+  if (fuel or 0) / fuelMax() < 0.2 and lowFuelHintText ~= nil then
+    local hint = lowFuelHintText()
+    if hint ~= nil then
+      drawTextCentered(hint, vw * 0.5, 52, 13, 1.0, 0.72, 0.38, 0.95)
     end
   end
 end

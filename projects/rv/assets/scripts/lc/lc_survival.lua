@@ -407,6 +407,26 @@ function nearestFuelStop(x, z)
   return { id = nd.id, name = nd.name, dist = math.sqrt(dx * dx + dz * dz) }
 end
 
+-- 低油量提示文案：续航 + 最近加油站距离/所需金属，金属不足时指向营地
+function lowFuelHintText()
+  local st = nearestFuelStop(rv.x, rv.z)
+  if st == nil then return nil end
+  local km = ((rangeEstimateM and rangeEstimateM()) or 0) / 1000
+  local need = fuelMax() - (fuel or 0)
+  local cost = math.max(1, math.ceil(need / 15))
+  local tail = ""
+  if (materials.metal or 0) < cost then
+    local camp = (nodeById ~= nil) and nodeById("camp") or nil
+    local campD = 0
+    if camp ~= nil then
+      campD = math.sqrt((camp.x - (rv.x or 0)) ^ 2 + (camp.z - (rv.z or 0)) ^ 2)
+    end
+    tail = string.format("；金属不足 %d，营地 %.0fm 免费补给", cost, campD)
+  end
+  return string.format("油量低（续航约 %.1fkm）— 最近加油站：%s %.0fm%s",
+                       km, st.name, st.dist, tail)
+end
+
 -- 直接吃/喝背包里的东西
 function useItem(id)
   local it = ITEMS[id]

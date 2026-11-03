@@ -2383,6 +2383,22 @@ function runSelfTest()
                      near and near.dist or -1, far and far.dist or -1))
   end
 
+  -- 低油量提示文案：续航 + 加油站；金属不足时提示营地
+  do
+    local sf, sm, sx, sz = fuel, materials.metal or 0, rv.x, rv.z
+    rv.x, rv.z = 0, 20
+    fuel, materials.metal = 8, 0
+    local poor = lowFuelHintText() or ""
+    materials.metal = 99
+    local rich = lowFuelHintText() or ""
+    fuel, materials.metal, rv.x, rv.z = sf, sm, sx, sz
+    ok(r, "low fuel hint",
+       poor:find("续航", 1, true) ~= nil and
+       poor:find("金属不足", 1, true) ~= nil and
+       rich:find("金属不足", 1, true) == nil,
+       string.format("poor=%s rich=%s", poor, rich))
+  end
+
   -- 营地板以物易物：布料→金属、电子件→燃油罐、金属→燃料
   do
     local sMetal = materials.metal or 0
