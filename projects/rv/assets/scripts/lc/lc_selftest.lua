@@ -1337,6 +1337,32 @@ function runSelfTest()
        string.format("clear=%d snow=%d", clearGain, snowGain))
   end
 
+  -- 雾天送达 +6%（用 100 金属的单对比，避免取整吃掉差异）
+  do
+    local sw, sc, sd, slast = weather, clock, day, lastJobDay
+    local jd, js = jobDelivered, jobStreak
+    local function deliverWith(weatherId)
+      weather = weatherId
+      day, clock, lastJobDay = 9, 12 * 60, 9
+      jobDelivered, jobStreak = 0, 0
+      jobRefreshOffers("gasstop")
+      jobAccept(1)
+      job.urgent, job.deadlineAbs, job.acceptedAbs = false, nil, nil
+      job.stops, job.stopIndex = nil, 1
+      job.pay = { metal = 100 }
+      job.condition = 1.0
+      local m0 = materials.metal or 0
+      jobComplete()
+      return (materials.metal or 0) - m0
+    end
+    local clearGain = deliverWith("clear")
+    local fogGain = deliverWith("fog")
+    weather, clock, day, lastJobDay = sw, sc, sd, slast
+    jobDelivered, jobStreak = jd, js
+    ok(r, "fog delivery bonus", fogGain == 111 and clearGain == 105,
+       string.format("clear=%d fog=%d", clearGain, fogGain))
+  end
+
   -- 送达环境加成标签：雨/雪/夜间分别出现在追踪提示里
   do
     local sw, sc = weather, clock
@@ -3176,7 +3202,10 @@ function runSelfTest()
   end
 
   -- 鱼饵：消耗 1 个，必上钩且多给一条
+  -- （临时屏蔽大鱼奖励，避免它额外补鱼饵干扰计数）
   do
+    local keepBig = bigFishRewardDone
+    bigFishRewardDone = true
     addItem("bait", 1)
     local bait0 = inv.bait or 0
     local raw0 = itemCount("rawfish")
@@ -3185,9 +3214,12 @@ function runSelfTest()
     finishFishing()
     local caught = itemCount("rawfish") > raw0
     local consumed = (inv.bait or 0) == bait0 - 1
+    local gotBait = inv.bait or 0
+    local gotRaw = itemCount("rawfish")
+    bigFishRewardDone = keepBig
     ok(r, "fishing bait", used and caught and consumed,
-       string.format("bait %d->%d raw %d->%d", bait0, inv.bait or 0,
-                     raw0, itemCount("rawfish")))
+       string.format("bait %d->%d raw %d->%d", bait0, gotBait,
+                     raw0, gotRaw))
   end
 
   -- 罗盘航向：+yaw = 左转 = 西

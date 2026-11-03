@@ -442,6 +442,9 @@ function jobComplete()
   -- 雪天送达 +12%：结冰路面风险更高
   local snowBonus = (weather == "snow")
   if snowBonus then scale = scale * 1.12 end
+  -- 雾天送达 +6%：能见度差
+  local fogBonus = (weather == "fog")
+  if fogBonus then scale = scale * 1.06 end
   -- 急单提前送达 +10%：剩余时间 ≥ 一半
   local earlyBonus = job.urgent and
     (urgentEarlyBonus(job.acceptedAbs, job.deadlineAbs, jobNowAbs()) > 1.0)
@@ -504,8 +507,9 @@ function jobComplete()
     ok = true, cargo = name, crates = crates, cond = cond,
     got = table.concat(got, " "), fuel = fuelGot, jobs = jobDelivered,
     bonus = firstOfDay, night = nightBonus, rain = rainBonus,
-    snow = snowBonus, eco = ecoBonus, pristine = pristineBonus,
-    early = earlyBonus, streak = jobStreak, item = bonusItem, t = 3.6,
+    snow = snowBonus, fog = fogBonus, eco = ecoBonus,
+    pristine = pristineBonus, early = earlyBonus, streak = jobStreak,
+    item = bonusItem, t = 3.6,
   }
   SpawnFloatText(rv.x, 1.8, rv.z,
                  "送达 " .. name .. " x" .. crates, false, 1.6, 1.0, 0.86, 0.4)
@@ -582,6 +586,8 @@ function jobDeliveryBonusTags()
     tags[#tags + 1] = "雨天+8%"
   elseif weather == "snow" then
     tags[#tags + 1] = "雪天+12%"
+  elseif weather == "fog" then
+    tags[#tags + 1] = "雾天+6%"
   end
   return table.concat(tags, " · ")
 end
