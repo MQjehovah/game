@@ -128,7 +128,8 @@ function weatherGripScale()
   local base = 1.0
   if weather == "rain" then base = 0.82
   elseif weather == "snow" then base = 0.78 end
-  if base < 1.0 and hasItem ~= nil and hasItem("chains", 1) then
+  if base < 1.0 and hasItem ~= nil and hasItem("chains", 1) and
+     chainsOn ~= false then
     base = math.min(0.95, base + 0.14)
   end
   return base
@@ -138,8 +139,15 @@ end
 function tractionStatusText()
   local grip = weatherGripScale()
   if grip >= 0.99 then return nil end
-  local chained = hasItem ~= nil and hasItem("chains", 1)
-  return string.format("抓地 %.2f%s", grip, chained and " · 防滑链" or "")
+  local chained = hasItem ~= nil and hasItem("chains", 1) and
+                  chainsOn ~= false
+  local tag = ""
+  if chained then
+    tag = " · 防滑链"
+  elseif hasItem ~= nil and hasItem("chains", 1) then
+    tag = " · 链条已取下"
+  end
+  return string.format("抓地 %.2f%s", grip, tag)
 end
 
 -- 夜间萤火虫发射率（/s）：深夜且非雨雪；自检/调参用

@@ -173,6 +173,7 @@ fishingBobberBase = nil       -- 浮漂落点 {x,y,z}
 rawFoodAge = 0                 -- 生食材累计腐败进度（游戏分钟）
 engineTemp = 20               -- 引擎水温（°C）
 brakeHeat = 0                 -- 刹车热衰减累积（0–1）
+chainsOn = true               -- 防滑链是否装上（步行按 C 取下/装上）
 oilLife = 100                 -- 机油寿命（%，随里程下降）
 rawSpoilWarned = false
 nightDriveMin = 0             -- 连续夜间驾驶累计（游戏分钟）

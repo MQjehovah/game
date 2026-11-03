@@ -1664,6 +1664,15 @@ function on_update(ent, dt)
   if not buildMode and ActionPressed("g") and addCampfireWood ~= nil then
     addCampfireWood()
   end
+  -- 步行时按 C 取下/装上防滑链（避免干路车速惩罚）
+  if not buildMode and onFoot and ActionPressed("c") and
+     hasItem ~= nil and hasItem("chains", 1) then
+    chainsOn = not (chainsOn ~= false)
+    toast.text = chainsOn and "已装上防滑链（雨雪抓地提高）"
+                          or "已取下防滑链（干路车速恢复）"
+    toast.t = 2.6
+    if PlaySfx then PlaySfx("click") end
+  end
 
   if buildMode then
     updatePlayer(dt)

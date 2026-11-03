@@ -4550,6 +4550,23 @@ function runSelfTest()
        string.format("dry=%.2f grass=%.2f none=%.2f", dry, grass, none))
   end
 
+  -- 防滑链可取下：取下后雨雪抓地不再加成、干路不再减速
+  do
+    local keepChains, keepOn = inv.chains, chainsOn
+    local keepWeather = weather
+    inv.chains, chainsOn, weather = 1, true, "rain"
+    local onGrip = weatherGripScale()
+    local onSpeed = chainsSpeedScale("asphalt")
+    chainsOn = false
+    local offGrip = weatherGripScale()
+    local offSpeed = chainsSpeedScale("asphalt")
+    inv.chains, chainsOn, weather = keepChains, keepOn, keepWeather
+    ok(r, "chains toggle",
+       onGrip > offGrip and onSpeed < 1.0 and offSpeed == 1.0,
+       string.format("grip %.2f->%.2f speed %.2f->%.2f",
+                     onGrip, offGrip, onSpeed, offSpeed))
+  end
+
   -- 雪天寒冷：没开取暖器时体力消耗更快
   do
     local a = coldEnergyExtra("snow", false)

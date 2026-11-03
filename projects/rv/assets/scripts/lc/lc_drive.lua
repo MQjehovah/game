@@ -151,7 +151,7 @@ end
 
 -- 防滑链在干燥铺装路上略拖慢车速（雪链抓地的权衡）
 function chainsSpeedScale(surface)
-  if hasItem ~= nil and hasItem("chains", 1) and
+  if hasItem ~= nil and hasItem("chains", 1) and chainsOn ~= false and
      (surface == "asphalt" or surface == "concrete") then
     return 0.95
   end
