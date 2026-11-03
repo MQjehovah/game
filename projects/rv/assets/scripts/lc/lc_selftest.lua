@@ -1855,6 +1855,26 @@ function runSelfTest()
                      tostring(rewarded), tostring(card), tostring(again)))
   end
 
+  -- 中继后每日救援补给：当天只发一次
+  do
+    local keepRelay, keepDay = relayDone, relaySupplyDay
+    local km, ke, kf = materials.metal or 0, materials.electronics or 0,
+                       fuel or 0
+    local kt, kv = toast.text, toast.t
+    relayDone, relaySupplyDay = true, 0
+    materials.metal, materials.electronics, fuel = 0, 0, 0
+    local first = grantRelaySupply()
+    local rewarded = (materials.metal or 0) == 3 and
+                     (materials.electronics or 0) == 1 and (fuel or 0) >= 9
+    local again = grantRelaySupply()
+    relayDone, relaySupplyDay = keepRelay, keepDay
+    materials.metal, materials.electronics, fuel = km, ke, kf
+    toast.text, toast.t = kt, kv
+    ok(r, "relay daily supply", first and rewarded and again == false,
+       string.format("first=%s reward=%s again=%s", tostring(first),
+                     tostring(rewarded), tostring(again)))
+  end
+
   -- 公路电线：相邻电线杆之间两条
   do
     local n = #roadWires

@@ -195,6 +195,7 @@ function saveLayout(silent)
       windmillUpgraded = windmillUpgraded and true or false,
       radioMastFixed = radioMastFixed and true or false,
       relayDone = relayDone and true or false,
+      relaySupplyDay = relaySupplyDay or 0,
       campfireFuel = campfireFuelMin or 0,
       campfireOn = campfireOn and true or false,
       fishCollectionDone = fishCollectionDone and true or false,
@@ -408,6 +409,7 @@ function loadLayout()
     end
     radioMastFixed = data.progress.radioMastFixed == true
     relayDone = data.progress.relayDone == true
+    relaySupplyDay = tonumber(data.progress.relaySupplyDay) or 0
     if data.progress.campfireFuel ~= nil then
       campfireFuelMin = math.max(0, tonumber(data.progress.campfireFuel) or 0)
     end

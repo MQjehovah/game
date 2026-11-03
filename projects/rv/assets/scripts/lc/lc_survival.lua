@@ -118,6 +118,7 @@ function advanceGameMinutes(mins)
   end
   if day ~= before then
     if rollDailyGoal ~= nil then rollDailyGoal() end
+    if grantRelaySupply ~= nil then grantRelaySupply() end
     if LC and LC.flow then LC.flow.emit("day_advanced") end
   end
 end
@@ -829,6 +830,25 @@ function updateRelay()
     return completeSignalRelay()
   end
   return false
+end
+
+-- 恢复中继后的每日救援补给（每天一次）
+function grantRelaySupply()
+  if not relayDone then return false end
+  if (relaySupplyDay or 0) == (day or 0) then return false end
+  relaySupplyDay = day or 1
+  materials.metal = (materials.metal or 0) + 3
+  materials.electronics = (materials.electronics or 0) + 1
+  local before = fuel or 0
+  fuel = math.min(fuelMax(), before + 10)
+  local gained = (fuel or 0) - before
+  toast.text = string.format(
+    "救援补给已送达营地：金属+3 电子件+1 燃料+%.0fL", gained)
+  toast.t = 5.0
+  if addJournal ~= nil then
+    addJournal("收到救援队的每日补给", "goal")
+  end
+  return true
 end
 
 -- 时间/需求主循环
