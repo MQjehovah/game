@@ -1430,6 +1430,22 @@ function spawnCampProps()
     local lx, lz = 0.45 + i * 0.18, 2.85 + (i % 2) * 0.14
     prop("rv_camp_wood", lx, gy(lx, lz) + 0.10, lz, 0.55, 0.13, 0.15, i * 0.5)
   end
+  -- 晾衣绳：两根木柱 + 一条细线
+  local p1x, p1z = 3.3, 7.0
+  local p2x, p2z = 5.9, 7.0
+  prop("rv_camp_wood", p1x, gy(p1x, p1z) + 0.95, p1z, 0.10, 1.90, 0.10)
+  prop("rv_camp_wood", p2x, gy(p2x, p2z) + 0.95, p2z, 0.10, 1.90, 0.10)
+  local line = SpawnPrefab("rv_wire", {
+    x = (p1x + p2x) * 0.5, y = gy(p1x, p1z) + 1.82, z = (p1z + p2z) * 0.5 })
+  if line ~= nil then
+    SetScale(line, 0.02, 0.02, 2.6)
+    SetRotationY(line, math.pi * 0.5)
+    campProps[#campProps + 1] = { ent = line, x = p1x, z = p1z }
+  end
+  -- 水桶与木箱堆
+  prop("rv_furn_water_tank", 6.5, gy(6.5, 6.6) + 0.35, 6.6, 0.8, 0.6, 0.8)
+  prop("rv_loot_crate", 2.6, gy(2.6, 3.6) + 0.28, 3.6, 0.55, 0.55, 0.55, 0.3)
+  prop("rv_loot_crate", 2.6, gy(2.6, 3.6) + 0.80, 3.6, 0.45, 0.45, 0.45, 0.9)
   -- 物资箱 / 油桶
   prop("rv_loot_crate", 6.5, gy(6.5, 2.4) + 0.30, 2.4, 0.60, 0.60, 0.60, 0.40)
   prop("rv_loot_crate", 6.9, gy(6.9, 3.2) + 0.24, 3.2, 0.48, 0.48, 0.48, 1.10)
