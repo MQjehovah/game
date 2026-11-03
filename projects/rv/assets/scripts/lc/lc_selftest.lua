@@ -1137,6 +1137,12 @@ function runSelfTest()
   ok(r, "campfire glow", campfireLight ~= nil and campfire ~= nil,
      campfire and string.format("fire=(%.1f,%.1f)", campfire.x, campfire.z) or "missing")
 
+  -- 主路土肩：沥青边缘与草地的过渡
+  do
+    local n = #roadShoulders
+    ok(r, "main road shoulders", n >= 30, string.format("shoulders=%d", n))
+  end
+
   -- 存读档
   local saved = saveLayout()
   ok(r, "save layout", saved ~= false, "saves/layout.json")

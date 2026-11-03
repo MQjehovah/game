@@ -309,6 +309,42 @@ function spawnRoadsidePoles()
   spawnPolesAlong(0, 60, 0, 220, -1)
 end
 
+-- 主路两侧的窄土肩：沥青边缘不再直接切到草地，远处看有碎石/泥过渡。
+function spawnRoadShoulders(ax, az, bx, bz)
+  local dx, dz = bx - ax, bz - az
+  local len = math.sqrt(dx * dx + dz * dz)
+  if len < 20 then return end
+  local ux, uz = dx / len, dz / len
+  local rx, rz = uz, -ux
+  local yaw = dirYaw(dx, dz)
+  for d = 5, len - 5, 10 do
+    for _, side in ipairs({ -1, 1 }) do
+      local x = ax + ux * d + rx * 4.35 * side
+      local z = az + uz * d + rz * 4.35 * side
+      -- 营地与地点建筑附近不铺，避免土带穿过地板/门廊
+      local clear = (x * x + z * z) >= 12 * 12
+      if clear then
+        for _, nd in ipairs(NODES) do
+          local ndx, ndz = nd.x - x, nd.z - z
+          if ndx * ndx + ndz * ndz < 6.0 * 6.0 then clear = false break end
+          local cx, cz = poiCenter(nd)
+          local cdx, cdz = cx - x, cz - z
+          if cdx * cdx + cdz * cdz < 7.5 * 7.5 then clear = false break end
+        end
+      end
+      if clear then
+        local gy = (terrainHeight and terrainHeight(x, z)) or 0
+        local e = SpawnPrefab("rv_road_shoulder", { x = x, y = gy + 0.055, z = z })
+        if e ~= nil then
+          SetScale(e, 1.40, 0.020, 10.30)
+          SetRotationY(e, yaw)
+          roadShoulders[#roadShoulders + 1] = e
+        end
+      end
+    end
+  end
+end
+
 -- 公路轮廓桩：沿路肩每 18m 一根奶油色反光桩，白天给道路节奏、
 -- 夜里靠自发光勾出弯道，纯装饰不参与碰撞。
 function spawnRoadMarkers()
@@ -362,6 +398,7 @@ function spawnRoadNetwork()
   roadSegments, roadDashes = {}, {}
   -- 营地南侧主路（出生点在营地里，需要身后也有路）
   spawnRoadBetween(0, -220, 0, 0)
+  spawnRoadShoulders(0, -220, 0, 0)
   for _, nd in ipairs(NODES) do
     for _, lid in ipairs(nd.links or {}) do
       local o = nodeById(lid)
@@ -370,6 +407,7 @@ function spawnRoadNetwork()
   end
   -- 加油站向北延伸的主干道
   spawnRoadBetween(0, 60, 0, 220)
+  spawnRoadShoulders(0, 60, 0, 220)
 end
 
 -- 水塘（钓鱼点）

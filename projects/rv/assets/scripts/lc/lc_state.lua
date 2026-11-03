@@ -65,6 +65,7 @@ rvHeadlights = {}             -- 夜间前大灯（聚光灯，随车身旋转�
 rvTaillights = {}             -- 刹车/倒车尾灯
 campProps = {}                -- 营地陈设（遮阳棚/木桌/物资箱/营地灯）
 roadWires = {}                -- 电线杆之间的电线
+roadShoulders = {}            -- 主路两侧的土肩
 campfireLight = nil           -- 营火暖光（只保留 light 组件）
 campfireLightT = 0
 visitedPois = {}              -- 已首次抵达的地点（探索奖励去重）
