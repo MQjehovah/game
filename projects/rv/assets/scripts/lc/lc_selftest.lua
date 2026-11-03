@@ -2691,6 +2691,17 @@ function runSelfTest()
        string.format("empty=%.1f loaded=%.1f m/s²", empty, loaded))
   end
 
+  -- 刹车热衰减：热量越高制动力越低，最低 70%
+  do
+    local cold = brakeRate(1.0, 0)
+    local half = brakeRate(1.0, 0.5)
+    local hot = brakeRate(1.0, 1.0)
+    ok(r, "brake fade",
+       hot < half and half < cold and
+       math.abs(brakeFadeScale(1) - 0.70) < 1e-6,
+       string.format("cold=%.1f half=%.1f hot=%.1f", cold, half, hot))
+  end
+
   -- 载重增加轮胎磨损（超载最高 ×2.2）
   do
     local empty = tireWearScale(1.0)

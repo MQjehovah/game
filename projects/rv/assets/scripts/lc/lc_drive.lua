@@ -180,14 +180,20 @@ function tireWearScale(loadRatio)
 end
 
 -- 刹车减速度：载重越重越刹不住（超载额外衰减）
-function brakeRate(loadRatio)
+-- 刹车热衰减：连续重刹后制动力最低降到 70%
+function brakeFadeScale(heat)
+  local h = math.max(0, math.min(1, heat or 0))
+  return 1.0 - 0.30 * h
+end
+
+function brakeRate(loadRatio, heat)
   local over = math.max(0, (loadRatio or 1) - 1.0)
-  return DRIVE.brake / (1.0 + over * 0.60)
+  return DRIVE.brake / (1.0 + over * 0.60) * brakeFadeScale(heat)
 end
 
 -- 手刹：比脚刹更强的减速度（载重同样衰减）
-function handbrakeRate(loadRatio)
-  return brakeRate(loadRatio) * 1.55
+function handbrakeRate(loadRatio, heat)
+  return brakeRate(loadRatio, heat) * 1.55
 end
 
 -- 车轮扬尘/胎烟发射率（/s）与颜色种类：硬路面不扬尘，草地/土路/泥地明显，
@@ -732,18 +738,34 @@ function updateDrive(dt)
     rv.oilWarned = false
   end
 
+  -- 刹车热衰减：连续重刹累积热量，松开后缓慢冷却
+  local brakingHard = (ActionDown("shift") or ActionDown("s")) and
+                      math.abs(rv.speed or 0) > 2.5
+  if brakingHard then
+    brakeHeat = math.min(1, (brakeHeat or 0) + dt * 0.12)
+  else
+    brakeHeat = math.max(0, (brakeHeat or 0) - dt * 0.05)
+  end
+  if (brakeHeat or 0) > 0.7 and not rv.brakeWarned then
+    rv.brakeWarned = true
+    toast.text = "刹车过热——松一松刹车，用低挡/滑行降温"
+    toast.t = 3.4
+  elseif (brakeHeat or 0) < 0.4 then
+    rv.brakeWarned = false
+  end
+
   -- 手刹（驾驶时按住 Shift）：强减速 + 刹车灯亮
   local handbrake = ActionDown("shift")
   if handbrake and rv.speed > 0.05 then
     rv.braking = true
-    rv.speed = math.max(0.0, rv.speed - handbrakeRate(ratio) * dt)
+    rv.speed = math.max(0.0, rv.speed - handbrakeRate(ratio, brakeHeat) * dt)
   elseif throttle > 0 then
     rv.braking = false
     rv.speed = math.min(maxSp, rv.speed + acc * dt)
   elseif throttle < 0 then
     rv.braking = true
     if rv.speed > 0.05 then
-      rv.speed = math.max(0.0, rv.speed - brakeRate(ratio) * dt)
+      rv.speed = math.max(0.0, rv.speed - brakeRate(ratio, brakeHeat) * dt)
     else
       rv.speed = math.max(-DRIVE.reverseMax, rv.speed - acc * 0.6 * dt)
     end
