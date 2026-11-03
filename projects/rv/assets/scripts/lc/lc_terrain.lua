@@ -394,6 +394,15 @@ SURFACES = {
 
 -- Which material is under (x,z)? Road slab -> asphalt, its shoulder -> gravel,
 -- embankment dirt -> dirt, pond rim -> mud, POI pad -> concrete, else grass.
+-- 胎压随里程缓慢下降 / 工作台充气回标准值
+function pressureAfterMeters(p, meters)
+  return math.max(1.2, (p or 2.4) - (VEH.pressureWear or 0.00002) * (meters or 0))
+end
+
+function resetTirePressure()
+  rv.tirePressureCold = { 2.4, 2.4, 2.4, 2.4 }
+end
+
 function surfaceInfo(x, z)
   if distToRoadSq ~= nil then
     local d2 = distToRoadSq(x, z)

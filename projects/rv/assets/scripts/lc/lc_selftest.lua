@@ -1438,6 +1438,20 @@ function runSelfTest()
     ok(r, "farm hay bales", n >= 3, string.format("bales=%d", n))
   end
 
+  -- 胎压随里程下降，修轮胎充回 2.4bar
+  do
+    local keep = {}
+    for i = 1, 4 do keep[i] = (rv.tirePressureCold or {})[i] end
+    local p1 = pressureAfterMeters(2.4, 1000)
+    rv.tirePressureCold = { 1.8, 1.8, 1.8, 1.8 }
+    resetTirePressure()
+    local reset = math.abs((rv.tirePressureCold or {})[1] - 2.4) < 1e-6
+    rv.tirePressureCold = keep
+    ok(r, "tire pressure maintenance",
+       p1 < 2.4 and p1 > 2.3 and reset,
+       string.format("after1000m=%.2f reset=%.2f", p1, reset and 2.4 or 0))
+  end
+
   -- 存读档：行程/探索/货运单数 + 天气
   do
     tripDistance, tripFuel, jobDelivered = 3210, 88, 7

@@ -318,6 +318,11 @@ function updateDrive(dt)
   local meters = math.abs(rv.speed) * dt
   if meters > 0 then
     tripDistance = (tripDistance or 0) + meters
+    if rv.tirePressureCold ~= nil then
+      for i = 1, 4 do
+        rv.tirePressureCold[i] = pressureAfterMeters(rv.tirePressureCold[i], meters)
+      end
+    end
     parts.engine = math.max(0, parts.engine - VEH.partWear.engine * meters)
     parts.tires = math.max(0, parts.tires - VEH.partWear.tires * meters)
     parts.battery = math.max(0, parts.battery - VEH.partWear.battery * meters)

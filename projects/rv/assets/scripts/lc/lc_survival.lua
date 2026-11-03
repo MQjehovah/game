@@ -471,9 +471,11 @@ function repairPart(id)
       end
       payCost(cost)
       upgrades[id] = lv + 1
+      if id == "tires" and resetTirePressure ~= nil then resetTirePressure() end
       if PlaySfx then PlaySfx("repair") end
       toast.text = string.format("%s 升级到 Lv%d", id == "engine" and "引擎" or "轮胎",
-                                 upgrades[id])
+                                 upgrades[id]) ..
+                   (id == "tires" and "（胎压 2.4bar）" or "")
       toast.t = 2.6
       return true
     end
@@ -486,8 +488,10 @@ function repairPart(id)
   if hasItem("repairkit", 1) then
     takeItem("repairkit", 1)
     setPartValue(id, value + ITEMS.repairkit.amount)
+    if id == "tires" and resetTirePressure ~= nil then resetTirePressure() end
     if PlaySfx then PlaySfx("repair") end
-    toast.text = "修理包修好 " .. partName .. " — " .. string.format("%.0f%%", partValue(id))
+    toast.text = "修理包修好 " .. partName .. " — " .. string.format("%.0f%%", partValue(id)) ..
+                 (id == "tires" and "（胎压 2.4bar）" or "")
   else
     local cost = partRepairCost(id)
     if not canAfford(cost) then
@@ -497,8 +501,10 @@ function repairPart(id)
     end
     payCost(cost)
     setPartValue(id, value + VEH.repairAmt)
+    if id == "tires" and resetTirePressure ~= nil then resetTirePressure() end
     if PlaySfx then PlaySfx("repair") end
-    toast.text = "修好 " .. partName .. " — " .. string.format("%.0f%%", partValue(id))
+    toast.text = "修好 " .. partName .. " — " .. string.format("%.0f%%", partValue(id)) ..
+                 (id == "tires" and "（胎压 2.4bar）" or "")
   end
   toast.t = 2.4
   return true

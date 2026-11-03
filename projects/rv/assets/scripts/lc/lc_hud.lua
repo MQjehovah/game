@@ -528,11 +528,16 @@ function drawDriveHud()
   if rv.tireTemps ~= nil then
     local t = rv.tireTemps
     local hottest = math.max(t[1] or 22, t[2] or 22, t[3] or 22, t[4] or 22)
+    local pAvg = 2.4
+    if rv.tirePressureCold ~= nil then
+      local sum = 0
+      for i = 1, 4 do sum = sum + (rv.tirePressureCold[i] or 2.4) end
+      pAvg = sum / 4
+    end
     local tr, tg, tb = 0.74, 0.74, 0.70
     if hottest > 110 then tr, tg, tb = 0.95, 0.45, 0.30
     elseif hottest > 85 then tr, tg, tb = 0.95, 0.78, 0.35 end
-    DrawText(string.format("胎温 %.0f/%.0f/%.0f/%.0f°C",
-             t[1] or 22, t[2] or 22, t[3] or 22, t[4] or 22),
+    DrawText(string.format("胎温 %.0f°C · 胎压 %.1fbar", hottest, pAvg),
              px + 14, py + 158, 11, tr, tg, tb, 1)
   end
   -- 行程电脑：累计里程 + 百公里油耗（车速/载重曲线的直观反馈）
