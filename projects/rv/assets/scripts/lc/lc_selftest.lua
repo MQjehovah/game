@@ -1237,6 +1237,31 @@ function runSelfTest()
        string.format("clear=%d rain=%d", clearGain, rainGain))
   end
 
+  -- 雪天送达 +12%（用 20 金属的单对比：22 vs 20）
+  do
+    local sw, sc, sd, slast = weather, clock, day, lastJobDay
+    local jd, js = jobDelivered, jobStreak
+    local function deliverWith(weatherId)
+      weather = weatherId
+      day, clock, lastJobDay = 9, 12 * 60, 9
+      jobDelivered, jobStreak = 0, 0
+      jobRefreshOffers("gasstop")
+      jobAccept(1)
+      job.stops, job.stopIndex = nil, 1
+      job.pay = { metal = 20 }
+      job.condition = 1.0
+      local m0 = materials.metal or 0
+      jobComplete()
+      return (materials.metal or 0) - m0
+    end
+    local clearGain = deliverWith("clear")
+    local snowGain = deliverWith("snow")
+    weather, clock, day, lastJobDay = sw, sc, sd, slast
+    jobDelivered, jobStreak = jd, js
+    ok(r, "snow delivery bonus", snowGain == 22 and clearGain == 20,
+       string.format("clear=%d snow=%d", clearGain, snowGain))
+  end
+
   -- 雨天行驶：易碎货缓慢受潮掉货况
   do
     local sw, sp = weather, phase
