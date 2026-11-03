@@ -630,6 +630,11 @@ function jobArrive()
   return true
 end
 
+-- 易腐货行驶时的变质速度：通电冰箱可减半
+function perishableDecayRate(fridgePowered)
+  return fridgePowered and 0.001 or 0.002
+end
+
 -- 急转弯甩货：横向加速度超过阈值时按秒扣货况，易碎货更低阈值/更大损失
 function cornerCargoLoss(latG, fragile, dt)
   if latG == nil then return 0 end
@@ -656,12 +661,17 @@ function updateJobs(dt)
         toast.t = 3.4
       end
     end
-    -- 易腐货：行驶时货况随时间缓慢下降，逼玩家规划路线
+    -- 易腐货：行驶时货况随时间缓慢下降，逼玩家规划路线；
+    -- 通电冰箱可当冷柜，变质速度减半
     if job.perishable and phase == "driving" then
-      job.condition = math.max(0, (job.condition or 1) - 0.002 * (dt or 0))
+      local fridgeOn = (hasModule ~= nil and hasModule("fridge") ~= nil) and
+                       (powerOk == nil or powerOk())
+      local rate = perishableDecayRate(fridgeOn)
+      job.condition = math.max(0, (job.condition or 1) - rate * (dt or 0))
       if not job.rotWarned and job.condition < 0.80 then
         job.rotWarned = true
-        toast.text = "易腐货开始变质——尽快送达"
+        toast.text = fridgeOn and "易腐货有冰箱保鲜——但仍要尽快送达"
+                                or "易腐货开始变质——尽快送达"
         toast.t = 3.4
       end
     end

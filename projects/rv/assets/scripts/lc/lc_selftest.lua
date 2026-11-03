@@ -1500,6 +1500,16 @@ function runSelfTest()
        string.format("rot=%.3f fresh=%.3f", rot, fresh))
   end
 
+  -- 通电冰箱延缓易腐货变质：速度减半
+  do
+    local cold = perishableDecayRate(true)
+    local warm = perishableDecayRate(false)
+    ok(r, "perishable cold storage",
+       cold > 0 and cold < warm and math.abs(cold - 0.001) < 1e-9 and
+       math.abs(warm - 0.002) < 1e-9,
+       string.format("cold=%.4f warm=%.4f", cold, warm))
+  end
+
   -- 易碎货：撞击掉货况翻倍（0.10 vs 0.05 per m/s）
   do
     jobRefreshOffers("gasstop")
