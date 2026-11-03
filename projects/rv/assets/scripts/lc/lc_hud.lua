@@ -691,7 +691,7 @@ function drawDriveHud()
   local ratio = stats.weight / weightMax()
   local over = ratio > 1.0
 
-  local pw, ph = 210, 202
+  local pw, ph = 210, 216
   local px, py = 10, vh - ph - 10
   DrawRect(px, py, pw, ph, 0.08, 0.09, 0.10, 0.72)
   DrawRectOutline(px, py, pw, ph, 0.55, 0.52, 0.42, 0.9)
@@ -771,6 +771,16 @@ function drawDriveHud()
     DrawText(string.format("行程 %.0fm · 续航 %.1fkm", tripDistance or 0, rangeKm),
              px + 14, py + 186, 11, 0.68, 0.70, 0.64, 1)
   end
+  -- 机油寿命：低于 40% 变黄、低于 20% 变红并已提示
+  local oil = oilLife or 100
+  local orr, og, ob = 0.74, 0.80, 0.72
+  if oil < 20 then
+    orr, og, ob = 1.0, 0.45, 0.30
+  elseif oil < 40 then
+    orr, og, ob = 0.95, 0.78, 0.35
+  end
+  DrawText(string.format("机油 %.0f%%", oil),
+           px + 14, py + 200, 11, orr, og, ob, 1)
 
   drawNeedsPanel(vw - 230, 10, 220)
   drawCompass(vw)

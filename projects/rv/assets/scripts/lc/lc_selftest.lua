@@ -1479,6 +1479,29 @@ function runSelfTest()
                      tostring(tirePressureLow(2.4))))
   end
 
+  -- 机油寿命：低于 20% 动力下降；加油站按缺失比例收金属更换
+  do
+    local keepOil = oilLife
+    local sm = materials.metal or 0
+    oilLife = 100
+    local fullScale = engineOilPowerScale()
+    local fullCost = oilChangeCost()
+    oilLife = 10
+    local lowScale = engineOilPowerScale()
+    local lowCost = oilChangeCost()
+    materials.metal = 10
+    local okOil, cost = serviceOilAtGasstop()
+    local refilled = oilLife == 100 and
+                     (materials.metal or 0) == 10 - lowCost
+    oilLife = keepOil
+    materials.metal = sm
+    ok(r, "engine oil service",
+       fullScale == 1.0 and lowScale < 1.0 and fullCost == 0 and
+       lowCost > 0 and okOil and refilled and cost == lowCost,
+       string.format("full=%.2f low=%.2f cost=%d refilled=%s",
+                     fullScale, lowScale, lowCost, tostring(refilled)))
+  end
+
   -- 续航估算：无实测时用 1.6L/100m 基准，有实测按实测油耗
   do
     local sf, sd, sfu = fuel, tripDistance, tripFuel

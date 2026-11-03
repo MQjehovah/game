@@ -157,6 +157,7 @@ fishingBobberT = 0            -- 浮漂上下浮动计时
 fishingBobberBase = nil       -- 浮漂落点 {x,y,z}
 rawFoodAge = 0                 -- 生食材累计腐败进度（游戏分钟）
 engineTemp = 20               -- 引擎水温（°C）
+oilLife = 100                 -- 机油寿命（%，随里程下降）
 rawSpoilWarned = false
 nightDriveMin = 0             -- 连续夜间驾驶累计（游戏分钟）
 ponds = {}

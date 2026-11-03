@@ -42,6 +42,33 @@ function avgTirePressure()
   return s / 4
 end
 
+-- 机油寿命低于 20% 时动力下降（最低 75%），到加油站可更换
+function engineOilPowerScale()
+  local o = oilLife or 100
+  if o >= 20 then return 1.0 end
+  return 0.75 + 0.25 * math.max(0, o) / 20
+end
+
+-- 换机油费用：按缺失比例每 25% 收 1 金属（至少 1）
+function oilChangeCost()
+  local miss = 100 - (oilLife or 100)
+  if miss <= 0.5 then return 0 end
+  return math.max(1, math.ceil(miss / 25))
+end
+
+-- 在加油站更换机油；返回 ok, cost, note
+function serviceOilAtGasstop()
+  local cost = oilChangeCost()
+  if cost <= 0 then return true, 0, "机油已满" end
+  if (materials.metal or 0) < cost then
+    return false, cost, string.format("换机油需要 %d 金属", cost)
+  end
+  materials.metal = (materials.metal or 0) - cost
+  oilLife = 100
+  if PlaySfx then PlaySfx("repair") end
+  return true, cost, string.format("更换机油（%d 金属）", cost)
+end
+
 function fuelBurnRate(speed, loadRatio, throttle)
   local v = math.min(1, math.abs(speed or 0) / DRIVE.maxSpeed)
   local ratio = loadRatio or 1
@@ -424,6 +451,10 @@ function updateDrive(dt)
                         + (upgrades and upgrades.tires or 0) * 0.04
   maxSp = maxSp * engF
   acc = acc * (0.70 + 0.30 * (parts.engine or 100) / 100)
+  -- 机油寿命低时动力下降
+  local oilF = engineOilPowerScale()
+  maxSp = maxSp * oilF
+  acc = acc * oilF
   -- 引擎濒临报废：只能龟速，必须先修
   if (parts.engine or 100) < 10 then
     maxSp = math.min(maxSp, 1.6)
@@ -495,6 +526,14 @@ function updateDrive(dt)
     toast.t = 3.4
   elseif minP > 2.15 then
     rv.pressureWarned = false
+  end
+  -- 机油偏低：提示到加油站更换
+  if (oilLife or 100) < 20 and not rv.oilWarned then
+    rv.oilWarned = true
+    toast.text = "机油快用完了——动力下降，到加油站换机油"
+    toast.t = 3.4
+  elseif (oilLife or 100) > 40 then
+    rv.oilWarned = false
   end
 
   -- 手刹（驾驶时按住 Shift）：强减速 + 刹车灯亮
@@ -602,6 +641,7 @@ function updateDrive(dt)
     end
     parts.engine = math.max(0, parts.engine - VEH.partWear.engine * meters)
     parts.tires = math.max(0, parts.tires - VEH.partWear.tires * meters)
+    oilLife = math.max(0, (oilLife or 100) - meters * 0.01)
     parts.battery = math.max(0, parts.battery - VEH.partWear.battery * meters)
   end
 

@@ -58,6 +58,14 @@ function setPhase(m)
           else
             toast.text = toast.text .. " · ⛽ 金属不足，未加油"
           end
+          if atNode == "gasstop" and serviceOilAtGasstop ~= nil then
+            local oilOk, oilCost, oilNote = serviceOilAtGasstop()
+            if oilOk then
+              toast.text = toast.text .. " · 🛢 " .. (oilNote or "机油已满")
+            elseif oilCost ~= nil and oilCost > 0 then
+              toast.text = toast.text .. " · 🛢 " .. (oilNote or "机油未更换")
+            end
+          end
         end
         -- 首次抵达的一次性补给（每个地点只发一次）
         local visitText = firstVisitBonus ~= nil and firstVisitBonus(nd) or nil
@@ -138,6 +146,7 @@ function saveLayout(silent)
     rv = { x = rv.x, z = rv.z, yaw = rv.yaw, node = atNode or curNode },
     vehicle = { fuel = fuel, dur = dur, parts = parts, upgrades = upgrades,
                 temp = engineTemp or 20,
+                oil = oilLife or 100,
                 pressures = rv.tirePressureCold,
                 blowout = rv.blowout and 1 or 0 },
     survival = { health = needs.health, hunger = needs.hunger, thirst = needs.thirst,
@@ -320,6 +329,9 @@ function loadLayout()
       end
     end
     rv.blowout = (tonumber(data.vehicle.blowout) or 0) ~= 0
+    if data.vehicle.oil ~= nil then
+      oilLife = math.max(0, math.min(100, tonumber(data.vehicle.oil) or 100))
+    end
   end
   if type(data.survival) == "table" then
     needs.health = tonumber(data.survival.health) or needs.health
