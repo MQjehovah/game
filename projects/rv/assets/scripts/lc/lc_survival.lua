@@ -704,6 +704,12 @@ function restedStatusText()
   return string.format("精神不错 %.0f 分钟", restedMin)
 end
 
+-- 统一设置睡饱分钟（联机客机按服务器值同步）
+function setRested(v)
+  if v == nil then return end
+  restedMin = math.max(0, tonumber(v) or 0)
+end
+
 -- 篝火边休息会持续取暖（至少 20 分钟保暖）
 function campfireWarmthMinutes(current)
   return math.max(current or 0, 20)

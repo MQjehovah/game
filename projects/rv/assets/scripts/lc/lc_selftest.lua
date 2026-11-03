@@ -4244,6 +4244,18 @@ function runSelfTest()
        string.format("set=%s clamp=%s", tostring(set), tostring(clamped)))
   end
 
+  -- 睡饱状态同步：按服务器值设置并夹紧到 0
+  do
+    local keep = restedMin
+    setRested(120)
+    local set = math.abs((restedMin or 0) - 120) < 1e-6
+    setRested(-5)
+    local clamped = (restedMin or -1) == 0
+    restedMin = keep
+    ok(r, "rested sync", set and clamped,
+       string.format("set=%s clamp=%s", tostring(set), tostring(clamped)))
+  end
+
   -- 夜间驾驶疲劳：短途无、长途有、上限封顶
   do
     local a = nightFatigueExtra(60)
