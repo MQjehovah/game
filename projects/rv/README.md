@@ -669,6 +669,9 @@
 - `coop_relay.txt`：服务端 3s 设置修塔状态并停到废弃小镇，日志
   `[coop-relay] demo ok=true jobs=7 km=3.2`，客户端收到
   `[coop-main-event] 信号中继已恢复`，验证联机收尾。
+- `coop_ping.txt`：服务端 3s 广播一次位置标记，日志
+  `[coop-ping] demo ok=true pos=(0,0)`，客户端收到
+  `[coop-main-event] P1 标记了位置`，验证联机沟通。
 - `coop_walk.txt`：客户端按住前进，便于网络 smoke 看到受控角色位移。
 - `coop_sitdemo.txt`：在房车旁生成一个播放 `Sit` 骨骼片段的预览角色。
 - `coop_animdemo.txt`：内容 `sit` / `board` / `stand` / `dooropen` / `doorclose` /
@@ -760,7 +763,8 @@ POI 墙体碰撞/门洞通行、营地货运板/接单载重/到点结算/放弃
 - 操作：`WASD` 移动、鼠标视角、`F` 上/下驾驶席、`L` 车内灯、`G` 灶台开关、
   `B` 合作建造、`E` 搜附近物资箱/上下车、`1` 吃饭、`2` 喝水、`3` 睡觉；
   驾驶时 `H` 远光灯、`X` 喇叭（吓跑 26m 内感染者与附近鹿，0.8s 冷却）、
-  `R` 现场维修、`Q` 燃油罐加注、`K` 维修最差部件、`C` 灶台做热饭、`N` 修无线电塔。
+  `R` 现场维修、`Q` 燃油罐加注、`K` 维修最差部件、`C` 灶台做热饭、`N` 修无线电塔、
+  `P` 标记位置。
 - **车内灯真正熄灭**：`rv_lamp` 自带点光，仅 `SetVisible` 会留下光源；联机
   服务端/客户端统一调用 `setInteriorLights()`（Despawn/重生），
   `coop_lights.txt` 日志 `[coop-lights] server toggle on=false lamps=0` →

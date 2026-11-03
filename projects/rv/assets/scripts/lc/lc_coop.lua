@@ -772,6 +772,15 @@ local function serverHandleCommand(clientId, a)
                         tostring(radioMastFixed),
                         (materials and materials.metal) or 0))
     pushState()
+  elseif t == "ping" then
+    local idx = 0
+    for i = 1, MAX_SLOTS do
+      if coop.slots[i].client == clientId then idx = i break end
+    end
+    local px, pz = s.x or rv.x, s.z or rv.z
+    setToast(string.format("P%d 标记了位置 (%.0f, %.0f)", idx, px, pz))
+    print(string.format("[coop-ping] slot=%d pos=(%.0f,%.0f)", idx, px, pz))
+    pushState()
   elseif t == "eat" then
     local id = chooseFood()
     if id ~= nil and useItem(id) then
@@ -1114,6 +1123,14 @@ local function serverUpdate(dt)
                         tostring(okRelay), jobDelivered or 0,
                         (tripDistance or 0) / 1000))
     if okRelay then setToast("信号中继已恢复——联系上了外界！") end
+    pushState()
+  end
+
+  -- Test-only co-op ping: broadcast a location callout to clients.
+  if coop.pingDemo and not coop.pingDemoDone and coop.autoT >= 3.0 then
+    coop.pingDemoDone = true
+    setToast(string.format("P1 标记了位置 (%.0f, %.0f)", rv.x, rv.z))
+    print(string.format("[coop-ping] demo ok=true pos=(%.0f,%.0f)", rv.x, rv.z))
     pushState()
   end
 
@@ -1889,6 +1906,7 @@ local function clientUpdate(dt)
     if ActionPressed("k") then Rpc("game_cmd", { type = "workbench_repair" }) end
     if ActionPressed("c") then Rpc("game_cmd", { type = "cook" }) end
     if ActionPressed("n") then Rpc("game_cmd", { type = "mast_repair" }) end
+    if ActionPressed("p") then Rpc("game_cmd", { type = "ping" }) end
     if coop.highDemo and not coop.highDemoDone then
       coop.highDemoT = (coop.highDemoT or 0) + dt
       if coop.highDemoT >= 3.0 and GetVar("netConnected") == 1 then
@@ -2345,6 +2363,7 @@ function coopInitWorld(role)
     coop.cookMealDemo = readFlag("coop_cookmeal.txt")
     coop.mastDemo = readFlag("coop_mast.txt")
     coop.relayDemo = readFlag("coop_relay.txt")
+    coop.pingDemo = readFlag("coop_ping.txt")
     local doorTest = ReadText("coop_doortest.txt")
     if doorTest ~= nil and doorTest ~= "" then
       local v = string.lower((doorTest:gsub("%s+", "")))
@@ -2460,6 +2479,7 @@ function coopInitWorld(role)
     coop.cookMealDemo = readFlag("coop_cookmeal.txt")
     coop.mastDemo = readFlag("coop_mast.txt")
     coop.relayDemo = readFlag("coop_relay.txt")
+    coop.pingDemo = readFlag("coop_ping.txt")
     coop.buildUi = readFlag("coop_buildmode.txt")
     coop.boardDemo = readFlag("coop_board.txt")
     coop.sitDemo = readFlag("coop_sitdemo.txt")
