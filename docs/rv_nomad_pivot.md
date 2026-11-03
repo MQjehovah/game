@@ -110,7 +110,8 @@
   “实例世界位置 + 顶点自身 x/z” 相位弯曲顶点（`h * 0.18 * sway`，根部不动），
   多 primitive 的 glTF 会把该标志传给每个 sub-material；`updateMeadowWind()`
   只推进风时钟。土坡顶部另种 90 株草花灌木。实测车顶追逐视角约 **91 FPS**；
-  `start_mode=hills` 相隔 1 秒两帧的植被区域像素变化 **2.33%**（7572 px）。
+  `start_mode=hills` 相隔 1 秒两帧的植被区域（880×370）像素变化
+  **2.28%**（7412 px），整帧 18,505 px。
 - `tools/gen_rv_terrain.py` 生成营地级高度场：**288×288m、73×73、4m 网格**，
   同时写出 `assets/data/rv_terrain.json`（约 30KB，供 Lua 采样）与
   `rv_terrain.gltf`（14k 顶点可见网格），两者同源。高度场保留路旁土坡，
