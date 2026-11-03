@@ -2107,6 +2107,18 @@ function runSelfTest()
        string.format("100=%d 30=%d 10=%d engine=%d", r100, r30, r10, rEng))
   end
 
+  -- 尾气：行驶比怠速多，冷车/车况差更浓
+  do
+    local idle = rvExhaustRate(0, 80, 100)
+    local moving = rvExhaustRate(5, 80, 100)
+    local cold = rvExhaustRate(5, 25, 100)
+    local damaged = rvExhaustRate(5, 80, 30)
+    ok(r, "rv exhaust",
+       idle > 0 and moving > idle and cold > moving and damaged > moving,
+       string.format("idle=%d moving=%d cold=%d damaged=%d",
+                     idle, moving, cold, damaged))
+  end
+
   -- 引擎音量随车速：怠速 0.60 → 全速 1.15
   do
     local g0 = engineAudioGain(0)

@@ -1455,6 +1455,7 @@ function on_update(ent, dt)
   if updatePoiSigns ~= nil then updatePoiSigns() end
   if updateRadioMast ~= nil then updateRadioMast(dt) end
   if updateRvSmoke ~= nil then updateRvSmoke(dt) end
+  if updateRvExhaust ~= nil then updateRvExhaust(dt) end
   if rv.shakeT ~= nil and rv.shakeT > 0 then
     rv.shakeT = math.max(0, rv.shakeT - dt)
   end

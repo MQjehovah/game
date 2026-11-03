@@ -379,6 +379,39 @@ function updateRvSmoke(dt)
 end
 
 -- ===========================================================================
+-- 尾气：行驶/冷车/车况差时从车尾排出淡灰烟（自检/调参用）。
+-- ===========================================================================
+function rvExhaustRate(speed, tempValue, durValue)
+  local v = math.abs(speed or 0)
+  local rate = (v > 0.5) and 3 or 1
+  if (tempValue or 20) < 40 then rate = rate + 1 end
+  if (durValue or 100) < 40 then rate = rate + 2 end
+  return rate
+end
+
+function updateRvExhaust(dt)
+  local rate = rvExhaustRate(rv.speed or 0, engineTemp, dur)
+  if rate <= 0 then rvExhaustAcc = 0 return end
+  rvExhaustAcc = (rvExhaustAcc or 0) + dt * rate
+  while rvExhaustAcc >= 1 do
+    rvExhaustAcc = rvExhaustAcc - 1
+    local wx, wz = rotOf(0, -3.9)
+    EmitParticles({
+      pos = { x = wx + (math.random() - 0.5) * 0.25,
+              y = (rv.groundY or 0) + 0.55,
+              z = wz + (math.random() - 0.5) * 0.25 },
+      count = 1, speedMin = 0.15, speedMax = 0.4,
+      vel = { x = 0, y = 0.5, z = 0 },
+      lifeMin = 0.9, lifeMax = 1.8,
+      sizeStart = 0.18, sizeEnd = 0.75,
+      color = { r = 0.55, g = 0.55, b = 0.56, a = 0.22 },
+      colorEnd = { r = 0.65, g = 0.65, b = 0.66, a = 0.0 },
+      additive = false, gravity = -0.05,
+    })
+  end
+end
+
+-- ===========================================================================
 -- 撞击反馈：车头尘屑 + 少量火花，并给相机一个短促抖动（rv.shakeT）
 -- ===========================================================================
 function rvImpactFeedback(drop)
