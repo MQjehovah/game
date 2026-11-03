@@ -530,6 +530,7 @@ function sleepInBed()
   if clock >= 7 * 60 then day = day + 1 end
   clock = 7 * 60
   nightDriveMin = 0
+  restedMin = 240
   local atCamp = (atNode == "camp")
   local comfort = (stats ~= nil and stats.comfort) or 0
   local factor = hygieneEnergyFactor(needs.hygiene) +
@@ -615,11 +616,14 @@ function updateRadioBroadcast(gm)
   return true
 end
 
--- 夜间驾驶疲劳：连续开夜车超过 120 游戏分钟后体力消耗加快
-function nightFatigueExtra(minutes)
+-- 夜间驾驶疲劳：连续开夜车超过 120 游戏分钟后体力消耗加快；
+-- 睡饱（rested）时疲劳积累减半
+function nightFatigueExtra(minutes, rested)
   local m = minutes or 0
   if m <= 120 then return 0 end
-  return math.min(0.020, (m - 120) * 0.0002)
+  local extra = math.min(0.020, (m - 120) * 0.0002)
+  if (rested or 0) > 0 then extra = extra * 0.5 end
+  return extra
 end
 
 -- 疲劳视觉强度（0–1）：连续夜驾越久越明显，用于屏幕边缘暗角
@@ -656,6 +660,12 @@ end
 function setWarmth(v)
   if v == nil then return end
   warmthMin = math.max(0, tonumber(v) or 0)
+end
+
+-- 睡饱状态文案（HUD 用）：无加成返回 nil
+function restedStatusText()
+  if (restedMin or 0) <= 0 then return nil end
+  return string.format("精神不错 %.0f 分钟", restedMin)
 end
 
 -- 篝火边休息会持续取暖（至少 20 分钟保暖）
@@ -710,6 +720,9 @@ function updateSurvival(dt)
   if (warmthMin or 0) > 0 then
     warmthMin = math.max(0, warmthMin - gm)
   end
+  if (restedMin or 0) > 0 then
+    restedMin = math.max(0, restedMin - gm)
+  end
 
   needs.hunger = math.max(0, needs.hunger - SURVIVAL.hungerRate * gm)
   needs.thirst = math.max(0, needs.thirst - SURVIVAL.thirstRate * gm)
@@ -724,7 +737,7 @@ function updateSurvival(dt)
   elseif phase ~= "driving" then
     nightDriveMin = math.max(0, (nightDriveMin or 0) - gm * 0.5)
   end
-  local fatigue = nightFatigueExtra(nightDriveMin)
+  local fatigue = nightFatigueExtra(nightDriveMin, restedMin)
   needs.energy = math.max(0, needs.energy -
     (SURVIVAL.energyRate + (sprinting and SURVIVAL.sprintExtra or 0) +
      coldExtra + fatigue) * gm)

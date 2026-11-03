@@ -77,8 +77,8 @@ end
 
 function drawNeedsPanel(x, y, w)
   local n = needs or {}
-  DrawRect(x, y, w, 174, 0.06, 0.07, 0.08, 0.72)
-  DrawRectOutline(x, y, w, 174, 0.46, 0.50, 0.42, 0.85)
+  DrawRect(x, y, w, 196, 0.06, 0.07, 0.08, 0.72)
+  DrawRectOutline(x, y, w, 196, 0.46, 0.50, 0.42, 0.85)
   DrawText("状态", x + 10, y + 6, 14, 0.90, 0.84, 0.62, 1)
   local yy = y + 26
   local inner = w - 20
@@ -100,6 +100,12 @@ function drawNeedsPanel(x, y, w)
     local w = warmthStatusText()
     if w ~= nil then
       DrawText(w, x + 10, y + 180, 11, 0.98, 0.74, 0.42, 1)
+    end
+  end
+  if restedStatusText ~= nil then
+    local r = restedStatusText()
+    if r ~= nil then
+      DrawText(r, x + 10, y + 196, 11, 0.62, 0.86, 0.78, 1)
     end
   end
 end

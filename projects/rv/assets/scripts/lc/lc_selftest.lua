@@ -4030,6 +4030,24 @@ function runSelfTest()
        string.format("60=%.3f 120=%.3f 180=%.3f max=%.3f", a, b, c, d))
   end
 
+  -- 睡饱状态：疲劳积累减半，睡觉会刷新 restedMin
+  do
+    local tired = nightFatigueExtra(300, 0)
+    local rested = nightFatigueExtra(300, 100)
+    local sd, sc = day, clock
+    local keepRested = restedMin
+    restedMin = 0
+    sleepInBed()
+    local woke = (restedMin or 0) >= 240
+    day, clock = sd, sc
+    restedMin = keepRested
+    morningReport = nil
+    ok(r, "rested bonus",
+       rested > 0 and rested < tired and woke,
+       string.format("tired=%.4f rested=%.4f woke=%s",
+                     tired, rested, tostring(woke)))
+  end
+
   -- 疲劳视觉强度：120 分钟内为 0，之后递增并封顶 1.0
   do
     local a = fatigueAlpha(60)
