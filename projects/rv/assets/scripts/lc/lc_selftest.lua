@@ -2864,6 +2864,22 @@ function runSelfTest()
                      tostring(gotDone)))
   end
 
+  -- 今日目标 HUD 文案：进度与完成状态
+  do
+    local keep = dailyGoal
+    dailyGoal = { id = "fish", name = "钓 3 条鱼", target = 3, progress = 1,
+                  done = false }
+    local running = dailyGoalHudText() or ""
+    dailyGoal.done = true
+    local finished = dailyGoalHudText() or ""
+    dailyGoal = keep
+    ok(r, "daily goal hud text",
+       running:find("钓 3 条鱼", 1, true) ~= nil and
+       running:find("1/3", 1, true) ~= nil and
+       finished:find("✓", 1, true) ~= nil,
+       string.format("running=%s finished=%s", running, finished))
+  end
+
   -- 雨天积水：下雨生成、雨停清除、车开远后重新铺设
   do
     local sw = weather

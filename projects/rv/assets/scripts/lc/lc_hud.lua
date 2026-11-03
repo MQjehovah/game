@@ -596,11 +596,29 @@ function drawCompass(vw)
   end
 end
 
+-- 今日目标短文案（HUD 用）
+function dailyGoalHudText()
+  if dailyGoal == nil then return nil end
+  local name = dailyGoal.name or "今日目标"
+  if dailyGoal.done then
+    return string.format("今日目标 ✓ %s", name)
+  end
+  return string.format("今日目标 %s %d/%d", name,
+                       math.floor(dailyGoal.progress or 0),
+                       dailyGoal.target or 0)
+end
+
 -- 右下角小地图：附近地点、未知 POI、货运目标与 RV 朝向（北在上）
 function drawMinimap(vw, vh)
   local size = 150
   local mx = vw - size - 16
   local my = vh - size - 96
+  if dailyGoalHudText ~= nil then
+    local g = dailyGoalHudText()
+    if g ~= nil then
+      drawTextRight(g, vw - 16, my - 18, 11, 0.78, 0.80, 0.64, 0.9)
+    end
+  end
   DrawRect(mx, my, size, size, 0.04, 0.05, 0.06, 0.60)
   DrawRectOutline(mx, my, size, size, 0.45, 0.44, 0.36, 0.8)
   local cx, cy = mx + size * 0.5, my + size * 0.5
