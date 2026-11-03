@@ -37,6 +37,13 @@ function rollWeather()
   return "clear"
 end
 
+-- 夜间萤火虫发射率（/s）：深夜且非雨天；自检/调参用
+function fireflyRate()
+  if weather == "rain" then return 0 end
+  if nightAmount == nil or nightAmount() < 0.6 then return 0 end
+  return 6
+end
+
 -- 闪电：雨天每隔一段时间触发一次全屏闪光（thunder 由 HUD 层绘制）
 function triggerLightning()
   lightningT = 0.50
@@ -122,6 +129,36 @@ function updateWeather(dt)
           color = { r = 0.76, g = 0.79, b = 0.84, a = 0.07 },
           colorEnd = { r = 0.76, g = 0.79, b = 0.84, a = 0.0 },
           additive = false, gravity = 0,
+        })
+      end
+    end
+  end
+  -- 夜间萤火虫：营地/草甸周围的暖绿微光（加法混合）
+  local ffRate = fireflyRate()
+  if ffRate > 0 then
+    local fx, fz, fy
+    if onFoot and player.active then
+      fx, fz, fy = player.x, player.z, 0.4
+    elseif phase == "driving" then
+      fx, fz = rv.x, rv.z
+      fy = (rv.groundY or 0) + 0.5
+    end
+    if fx ~= nil then
+      ffAcc = (ffAcc or 0) + dt * ffRate
+      while ffAcc >= 1 do
+        ffAcc = ffAcc - 1
+        local a = math.random() * math.pi * 2
+        local r = 3 + math.random() * 10
+        EmitParticles({
+          pos = { x = fx + math.sin(a) * r, y = fy + 0.3 + math.random() * 1.2,
+                  z = fz + math.cos(a) * r },
+          count = 1, speedMin = 0.05, speedMax = 0.25,
+          vel = { x = 0.1, y = 0.05, z = 0.08 },
+          lifeMin = 2.0, lifeMax = 4.0,
+          sizeStart = 0.045, sizeEnd = 0.012,
+          color = { r = 0.85, g = 0.95, b = 0.45, a = 0.75 },
+          colorEnd = { r = 0.75, g = 0.85, b = 0.38, a = 0.0 },
+          additive = true, gravity = 0,
         })
       end
     end

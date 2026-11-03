@@ -1251,6 +1251,20 @@ function runSelfTest()
        string.format("low=%d high=%d back=%d", low, high, back))
   end
 
+  -- 萤火虫：深夜非雨天有，白天/雨天没有
+  do
+    local sw, sc = weather, clock
+    weather, clock = "clear", 22 * 60
+    local night = fireflyRate()
+    clock = 12 * 60
+    local day = fireflyRate()
+    weather, clock = "rain", 22 * 60
+    local rain = fireflyRate()
+    weather, clock = sw, sc
+    ok(r, "rv fireflies", night == 6 and day == 0 and rain == 0,
+       string.format("night=%d day=%d rain=%d", night, day, rain))
+  end
+
   -- 存读档：行程/探索/货运单数
   do
     tripDistance, tripFuel, jobDelivered = 3210, 88, 7
