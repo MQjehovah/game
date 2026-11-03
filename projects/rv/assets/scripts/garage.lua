@@ -378,6 +378,10 @@ function on_start()
     if sm and sm ~= "" then
       startMode = string.lower((sm:gsub("%s+", "")))
     end
+    if startMode == "glassbreak" and breakPoiWindows ~= nil then
+      local gnd = nodeById and nodeById("ruin")
+      if gnd ~= nil then breakPoiWindows(gnd, "test") end
+    end
     -- Test-only: start in the outside chase camera (autopilot screenshots).
     if startMode == "chase" or startMode == "tiretest" or
        startMode == "northdrive" then
@@ -614,6 +618,16 @@ function on_start()
     -- Test-only: stand on the dirt slope (camera/eye follow terrain height).
     px, pz = 13.0, 8.0
     pyaw = -math.pi * 0.5
+  end
+  if startMode == "glassview" or startMode == "glassbreak" then
+    -- Test-only: stand in front of the ruin shop window (glassbreak also
+    -- shatters it at start for the before/after fracture comparison).
+    local nd = nodeById and nodeById("ruin")
+    if nd ~= nil then
+      local cx, cz = poiCenter(nd)
+      px, pz = cx, cz + 5.4
+      pyaw = math.pi
+    end
   end
   if startMode == "hills" then
     -- Test-only: look across the rolling meadow knolls south-west of camp.

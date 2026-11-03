@@ -518,6 +518,32 @@ function runSelfTest()
          string.format("front=%.0fC rear=%.0fC fWear=%.1f rWear=%.1f",
                        front, rear, frontW, rearW))
     end
+    if glassVoronoiCells ~= nil and glassVoronoiStats ~= nil then
+      -- Impact-stress Voronoi: the cells must tile the pane, be denser near
+      -- the impact, and rebuild identically from the same server seed.
+      local cells, iu, iv = glassVoronoiCells(981231)
+      local n, total, nearAvg, farAvg, nearN, farN =
+        glassVoronoiStats(cells, iu, iv)
+      local cells2, iu2, iv2 = glassVoronoiCells(981231)
+      local n2, total2 = glassVoronoiStats(cells2, iu2, iv2)
+      local same = n == n2 and math.abs(total - total2) < 1e-9 and
+                   #cells > 0 and #cells2 > 0 and
+                   math.abs(cells[1].cu - cells2[1].cu) < 1e-9 and
+                   math.abs(cells[1].cv - cells2[1].cv) < 1e-9
+      ok(r, "glass voronoi cells",
+         n >= 12 and total > 0.90 and total < 1.05 and
+         nearN >= 3 and farN >= 3 and nearAvg < farAvg and same,
+         string.format("cells=%d area=%.3f near=%.4f far=%.4f n=%d/%d",
+                       n, total, nearAvg, farAvg, nearN, farN))
+      local tokId, tokSeed, tokCount = glassParseToken(glassToken("ruin", 981231, n))
+      local oldId, oldSeed, oldCount = glassParseToken("gasstop:42")
+      ok(r, "glass seed token",
+         tokId == "ruin" and tokSeed == 981231 and tokCount == n and
+         oldId == "gasstop" and oldSeed == 42 and oldCount == 0,
+         string.format("%s:%d:%d legacy=%s:%d:%d",
+                       tostring(tokId), tokSeed, tokCount,
+                       tostring(oldId), oldSeed, oldCount))
+    end
     if ackermannAngles ~= nil then
       local l, rr = ackermannAngles(0.5, 5.84, 2.52)
       local l2, r2 = ackermannAngles(-0.5, 5.84, 2.52)

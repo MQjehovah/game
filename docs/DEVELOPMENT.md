@@ -741,7 +741,7 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
 - **RPC 字符串上限**：`kMaxStringBytes` 1024，容得下约 1KB 的 JSON 状态包；
   可靠通道的 `maxFrameBytes` 仍把单个 UDP 帧限制在 ~1.2KB。`projects/rv` 的
   `game_state` 因此把玩家坐标/朝向量化到 3 位小数、需求/油水/时钟量化到 1 位小数，
-  给 `glass=<id>:<seed>` 留出余量——否则破碎后的状态包会超过 1KB 被截断，
+  给 `glass=<id>:<seed>:<count>` 留出余量——否则破碎后的状态包会超过 1KB 被截断，
   客户端 `Json.Parse` 失败后不再应用任何状态（表现为日志停在破碎前一帧）。
 - **客户端同步**（`client::ClientSync`）：快照环形缓冲 + 相邻插值（yaw 最短弧，渲染时钟
   落后 6 tick ≈100ms）+ 本地预测（同场景同 seed 跑本地 `GameRuntime`）+
@@ -899,6 +899,7 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   `terrain ground follow` / `terrain heightfield` / `terrain knoll` /
   `terrain extended grid` / `terrain flat corridor` / `rv terrain lod` /
   `rv terrain lod sse` / `rv terrain lod stream` /
+  `glass voronoi cells` / `glass seed token` /
   `rv slope tilt` /
   `rv tilted interior` /
   `rv four wheel contact` / `rv wheel articulation` / `rv wheel entities` /
@@ -913,7 +914,7 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   `rv pose prediction` / `rv vegetation wind` / `rv wheel rolling` /
   `rv attitude roundtrip` /
   `rv yaw attitude roundtrip`，
-  总计 **63/63 PASS**。
+  总计 **65/65 PASS**。
   角色动画由 `tools/gen_rv_anim_clips.py`
   生成**手工关键帧**上车链 `DoorOpen`（够门把手→拉开，0.9s）→ `Step`（抬脚踩踏板，
   0.7s）→ `Board`（站姿→抬步→落座，0.9s）→ `Sit` 循环（坐姿 + 1s 呼吸关键帧），
@@ -946,20 +947,23 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   提供店内/店外镜头；服务器日志 `P1/P2 entered ...`、`shop=2` → `exited`、`shop=0`，
   两端 `smoke assertions passed`。客户端 smoke 的“controlled moved”判定改为
   XZ 水平距离，脚本化演示向任意方向传送也能通过。
-- **可破碎橱窗**（`projects/rv`）：`tools/gen_rv_windows.py` 生成 `rv_window_glass`
-  （半透明 BLEND 面板），`tools/gen_rv_glass_frags.py` 生成 `rv_glass_frag1..12`
-  （12 种不规则薄棱柱，形状取自随机点云凸包）；`lc_scenery.spawnPoiWindows()` 按 POI
-  类型为商店/加油站/仓库/商场/湖边木屋/诊所生成两扇前窗玻璃，`breakPoiWindowsAt()` 在
-  玩家进入或攻击时做**应力驱动的径向裂纹扩展**：`crackCells()` 按 seed 选冲击点，
-  从该点生长 4–6 条逐环游走（每环角度抖动）的径向裂纹，内环按 seed 分裂出分支，
-  面板被切成 4 个同心环带内的楔形碎片；`clipGlassRect()` 做窗口矩形裁剪；
-  `stress = 1 / (1 + 3.2·dist)` 同时决定碎片初速与自旋（近冲击点小而密、飞得快），
-  再从 12 种网格池中选网格、按单元包围盒缩放并沿径向旋转；`updatePoiWindows()` 施加
-  向外 + 重力速度、落地弹跳后让碎片永久留在地面；服务器选 seed 并把
-  `glass=<id>:<seed>` 写入 `game_state`（变化时立即 `pushState()`），客户端用
-  `applyPoiGlassState()` 按同一 seed 重建相同裂纹网络；日志
-  `[glass] broke windows at ruin/... (enter, N stress shards, M cracks, seed=N)` 与
-  `... (server, N stress shards, M cracks, seed=N)`，`coop_glassview.txt` 提供特写镜头。
+- **可破碎橱窗（冲击应力 Voronoi）**（`projects/rv`）：`tools/gen_rv_windows.py`
+  生成 `rv_window_glass`（半透明 BLEND 面板），`tools/gen_rv_glass_frags.py`
+  生成 `rv_glass_frag1..12`（12 种不规则薄棱柱，形状取自随机点云凸包）；
+  `lc_scenery.spawnPoiWindows()` 按 POI 类型生成两扇前窗玻璃，
+  `breakPoiWindowsAt()` 在玩家进入或攻击时做 **Voronoi 断裂**：
+  `glassVoronoiCells(seed)` 在冲击点附近撒 7–9 个高应力种子点、再加 8–11 个均匀点，
+  用相邻点的垂直平分线（`clipGlassHalf()`）裁剪窗面矩形，得到每个种子的 Voronoi
+  单元；单元面积和恰为 1.000，冲击附近更小（实测 near 0.042 / far 0.058），
+  每个单元按最长边定向、按包围盒缩放并注入
+  `stress = 1/(1+3.2·dist)` 决定初速/自旋；`updatePoiWindows()` 施加向外 + 重力
+  速度、落地弹跳后让碎片永久留在地面。服务器选 seed 并把
+  `glass=<id>:<seed>:<count>` 写入 `game_state`（变化时立即 `pushState()`），
+  客户端用 `applyPoiGlassState()` 按同一 seed 重建相同单元集合并校验 count
+  （一致打印 `rebuild ok`，否则 `rebuild MISMATCH`）；日志
+  `[glass] broke windows at ruin/... (enter, N voronoi shards, E edges, seed=N)`。
+  `start_mode=glassview` / `glassbreak` 提供单机前后对比镜头，
+  `coop_glassview.txt` 提供合作特写镜头。
 - **商品包装图集**（`projects/rv`）：`tools/gen_rv_product_atlas.py` 生成
   `assets/models/rv/rv_products.png`（4×4 包装格），`tools/rv_atlas.py` 提供
   `tile_uvs()` / `product_material()` / `atlas_extras()`；商店/加油站/商场/仓库/
