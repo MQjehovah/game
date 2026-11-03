@@ -1523,6 +1523,10 @@ local function clientUpdate(dt)
       -- Top row of the glass-front medicine cabinet (best lit).
       fx, fy, fz = cx - 1.40, 1.98, cz - 2.10
       yaw, dist = 0.05, 1.9
+    elseif kind == "lakecamp" then
+      -- Shelves and stacked supply crates on the left wall.
+      fx, fy, fz = cx - 2.45, 1.05, cz + 1.45
+      yaw, dist = 1.32, 2.4
     end
     SetVar("cameraMouseLock", 1)
     SetVar("cameraFocus", { x = fx, y = fy, z = fz })
