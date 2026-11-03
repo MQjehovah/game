@@ -557,7 +557,7 @@ POI 墙体碰撞/门洞通行等。
   `rv terrain lod stream`（load=190 unload=210）、
   `glass voronoi cells`（cells=19 area=1.000 near=0.0420 far=0.0575 n=6/13）、
   `glass seed token`（ruin:981231:19 legacy=gasstop:42:0）、
-  `rv sculpted geometry`（wall=393/393 t=0.08 jambs=32 reveals=32 holes=12 curve=0.05 bodyV=13384 lathe=28 sinkV=2048）、
+  `rv sculpted geometry`（wall=393/393 t=0.08 jambs=64(chamfer 0.03) panes=14 gaskets=28 reveals=32 bodyV=15024 lathe=28 sinkV=2048）、
   `rv wheel body binding`（`PhysicsAddWheelJoint` + `PhysicsAddCylinder` +
   `PhysicsActivate`）、
   `rv wheel bodies`（bodies=4）、
@@ -713,16 +713,20 @@ POI 墙体碰撞/门洞通行等。
   以所有车窗/车门边缘和每段轮拱圆周的 8 个采样点作为 z/y 切割线，
   逐格按“格心是否落在洞口/轮拱圆内”剔除，生成 **393 个外侧 + 393 个内侧墙面四边形、
   12 个真实洞口**（每侧 1 门 + 3 窗 + 2 轮拱）；
-  内外两层间距 **0.08m**，每个矩形洞口有 **4 条门/窗洞侧壁（jamb）**（共 32 条），
-  两个轮拱各有 8 段弧形 reveal（共 32 段），洞口因此有真实厚度；
+  内外两层间距 **0.08m**，每个矩形洞口有 **8 条倒角侧壁**：
+  外皮先以 45° 倒角（0.03m）收到洞口，再直下到内皮（共 64 条），
+  两个轮拱各有 8 段弧形 reveal（共 32 段），洞口因此有真实厚度与倒角；
+  车窗是**双层玻璃**（x=1.145 外片 + x=1.117 内片，共 14 片），
+  两片之间用深色边条密封，洞口外再围一圈橡胶密封条（28 条）；
   墙面带 0.05m 的上下收分（`x = ±(1.18 − 0.05·((y−Y0)/(Y1−Y0) − 0.55)²)`），
-  玻璃（x=1.145）落在墙体厚度内、窗框（x=1.195）在洞口外侧，仍保持对齐。
+  玻璃落在墙体厚度内、窗框（x=1.195）在洞口外侧，仍保持对齐。
   **轮拱改为沿圆周扫掠的连续圆角唇边**（每侧每轮 16 段、共 4 条），
   内侧有半圆轮腔挡板；车顶与侧墙之间改为
   **3 段 loft 圆角肩线**（1.18/2.02 → 1.16/2.07 → 1.11/2.115 → 1.08/2.14），
   不再是单条 45° 倒角。`tools/gen_rv_body.py` 写出
-  `assets/data/rv_body_stats.json`（wall=393/393、thickness=0.08、jambs=32、
-  reveals=32、holes=12、curve=0.05、arch=16/4、roof=3、13,384 顶点）。
+  `assets/data/rv_body_stats.json`（wall=393/393、thickness=0.08、jambs=64、
+  jambChamfer=0.03、glassThickness=0.03、windowPanes=14、gaskets=28、
+  reveals=32、holes=12、curve=0.05、arch=16/4、roof=3、15,024 顶点）。
   20 类可摆放家具仍由 `tools/gen_rv_furniture.py` 生成多部件 glTF；
   **水槽盆体改为旋成曲面**：`tools/rv_geom.lathe()` 将 12 点 U 形剖面绕 Y 轴
   旋成 28 段的椭圆不锈钢盆（含内壁/盆底/外壁/盆沿），台面改用四块围板留出开口，
@@ -733,9 +737,9 @@ POI 墙体碰撞/门洞通行等。
   2 张自发光贴图，共 38 张，每个 primitive 带平面投影 UV 并接入
   法线/粗糙度/金属度/AO/自发光；截图 `rv_sculpt_side.png`（轮拱/肩线）与
   `rv_sculpt_sink.png`（旋成盆体）可见曲面轮廓，`rv_wall_side2.png` 为带厚度
-  开洞的侧墙/车窗近景，`rv_wall_interior.png` 为车内视角（内层墙板完整、
-  洞口无穿帮）。
-  但侧墙的洞口侧壁是直棱直角的简单条带（没有倒角/密封胶条），
+  开洞的侧墙/车窗近景，`rv_glass_close.png` 为车窗双层玻璃+密封条近景，
+  `rv_wall_interior.png` 为车内视角（内层墙板完整、洞口无穿帮）。
+  但车窗仍是平面玻璃片（双层+边条，但没有曲率/折射），
   前/后围与车顶附件仍是盒体，家具只有水槽用了旋成曲面；
   没有曲面细分/视差贴图；
 - 地形已有 288×288m（73×73、4m 网格，JSON 约 30KB）的营地级高度场与土坡，

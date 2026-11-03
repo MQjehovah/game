@@ -139,6 +139,8 @@ def arch_well(m, sign, cz, seg=ARCH_LIP_SEGMENTS):
 
 WALL_CURVE = 0.05
 WALL_T = 0.08
+JAMB_CHAMFER = 0.03
+GLASS_T = 0.03
 
 
 def wall_x(sign, y):
@@ -211,8 +213,10 @@ def side_wall(m, sign, openings, windows):
             quads = quads + 1
             inner = inner + 1
 
-    # Jambs: four reveal strips per rectangular opening.
+    # Chamfered reveals: each opening edge is two strips -- a 45-degree
+    # chamfer from the outer skin and a straight reveal down to the inner skin.
     jambs = 0
+    c = JAMB_CHAMFER
     for (z0, z1, y0, y1) in holes:
         y0c = max(y0, Y0)
         y1c = min(y1, Y1)
@@ -220,17 +224,28 @@ def side_wall(m, sign, openings, windows):
             continue
         xo0, xo1 = wall_x(sign, y0c), wall_x(sign, y1c)
         xi0, xi1 = wall_xi(sign, y0c), wall_xi(sign, y1c)
-        # bottom / top (normal into the opening)
+        xc0, xc1 = xo0 - sign * c, xo1 - sign * c
+        # bottom edge: chamfer up, then reveal down to the inner skin
         m.poly(TRIM, [(xo0, y0c, z0), (xo0, y0c, z1),
+                      (xc0, y0c + c, z1), (xc0, y0c + c, z0)], (0.0, 1.0, 0.0))
+        m.poly(TRIM, [(xc0, y0c + c, z0), (xc0, y0c + c, z1),
                       (xi0, y0c, z1), (xi0, y0c, z0)], (0.0, 1.0, 0.0))
-        m.poly(TRIM, [(xo1, y1c, z0), (xi1, y1c, z0),
-                      (xi1, y1c, z1), (xo1, y1c, z1)], (0.0, -1.0, 0.0))
-        # left / right (normal along z)
-        m.poly(TRIM, [(xo0, y0c, z0), (xi0, y0c, z0),
-                      (xi1, y1c, z0), (xo1, y1c, z0)], (0.0, 0.0, 1.0))
+        # top edge
+        m.poly(TRIM, [(xo1, y1c, z0), (xc1, y1c - c, z0),
+                      (xc1, y1c - c, z1), (xo1, y1c, z1)], (0.0, -1.0, 0.0))
+        m.poly(TRIM, [(xc1, y1c - c, z0), (xi1, y1c, z0),
+                      (xi1, y1c, z1), (xc1, y1c - c, z1)], (0.0, -1.0, 0.0))
+        # left edge (z0)
+        m.poly(TRIM, [(xo0, y0c, z0), (xc0, y0c + c, z0),
+                      (xc1, y1c - c, z0), (xo1, y1c, z0)], (0.0, 0.0, 1.0))
+        m.poly(TRIM, [(xc0, y0c + c, z0), (xi0, y0c, z0),
+                      (xi1, y1c, z0), (xc1, y1c - c, z0)], (0.0, 0.0, 1.0))
+        # right edge (z1)
         m.poly(TRIM, [(xo0, y0c, z1), (xo1, y1c, z1),
+                      (xc1, y1c - c, z1), (xc0, y0c + c, z1)], (0.0, 0.0, -1.0))
+        m.poly(TRIM, [(xc0, y0c + c, z1), (xc1, y1c - c, z1),
                       (xi1, y1c, z1), (xi0, y0c, z1)], (0.0, 0.0, -1.0))
-        jambs = jambs + 4
+        jambs = jambs + 8
 
     # Wheel-arch reveals: connect the outer and inner skins along the arc.
     reveals = 0
@@ -253,10 +268,31 @@ def side_wall(m, sign, openings, windows):
                    (0.0, (ny0 + ny1) * 0.5, ((cz - z0) + (cz - z1)) * 0.5 / ARCH_R))
             reveals = reveals + 1
 
-    # Windows: recessed tinted glass + protruding frame ring.
+    # Windows: double pane (two glass sheets + a dark edge strip sealing the
+    # cavity) and a rubber gasket ring around the outside of the frame.
+    panes = 0
+    gaskets = 0
     for (z0, z1, y0, y1) in windows:
-        m.box(GLASS, sign * 1.145, (y0 + y1) * 0.5, (z0 + z1) * 0.5,
-              0.03, y1 - y0, z1 - z0)
+        cy = (y0 + y1) * 0.5
+        cz = (z0 + z1) * 0.5
+        w, h = z1 - z0, y1 - y0
+        # outer + inner pane
+        m.box(GLASS, sign * 1.145, cy, cz, 0.014, h, w)
+        m.box(GLASS, sign * 1.117, cy, cz, 0.012, h - 0.05, w - 0.05)
+        panes = panes + 2
+        # edge strip between the panes (sealed cavity)
+        ex = sign * 1.131
+        m.box(TRIM, ex, y0 + 0.012, cz, 0.030, 0.024, w)
+        m.box(TRIM, ex, y1 - 0.012, cz, 0.030, 0.024, w)
+        m.box(TRIM, ex, cy, z0 + 0.012, 0.030, h, 0.024)
+        m.box(TRIM, ex, cy, z1 - 0.012, 0.030, h, 0.024)
+        # rubber gasket around the opening on the outer skin
+        gx = sign * 1.163
+        m.box(TRIM, gx, y0 - 0.022, cz, 0.020, 0.028, w + 0.06)
+        m.box(TRIM, gx, y1 + 0.022, cz, 0.020, 0.028, w + 0.06)
+        m.box(TRIM, gx, cy, z0 - 0.022, 0.020, h + 0.06, 0.028)
+        m.box(TRIM, gx, cy, z1 + 0.022, 0.020, h + 0.06, 0.028)
+        gaskets = gaskets + 4
         fx = sign * 1.195
         m.box(TRIM, fx, y0, (z0 + z1) * 0.5, 0.05, 0.06, z1 - z0 + 0.10)
         m.box(TRIM, fx, y1, (z0 + z1) * 0.5, 0.05, 0.06, z1 - z0 + 0.10)
@@ -264,7 +300,8 @@ def side_wall(m, sign, openings, windows):
         m.box(TRIM, fx, (y0 + y1) * 0.5, z1, 0.05, y1 - y0 + 0.10, 0.06)
         m.box(TRIM, fx, (y0 + y1) * 0.5, (z0 + z1) * 0.5,
               0.04, 0.035, z1 - z0)  # centre mullion
-    return { "quads": quads, "inner": inner, "jambs": jambs, "reveals": reveals }
+    return { "quads": quads, "inner": inner, "jambs": jambs, "reveals": reveals,
+             "panes": panes, "gaskets": gaskets }
 
 
 def wheel(m, sign, cz):
@@ -358,7 +395,8 @@ def main():
     # ---- Side walls: door opening preserved on +X ----
     win = [(-2.25, -0.35, 0.98, 1.72), (0.25, 2.15, 0.98, 1.72),
            (3.75, 4.70, 1.05, 1.80)]
-    wall = {"quads": 0, "inner": 0, "jambs": 0, "reveals": 0}
+    wall = {"quads": 0, "inner": 0, "jambs": 0, "reveals": 0,
+            "panes": 0, "gaskets": 0}
     for part in (
             side_wall(m, 1, [(-3.54, -2.76, 0.24, 1.86)], win),
             side_wall(m, -1, [],
@@ -574,6 +612,10 @@ def main():
         "wallInnerQuads": wall["inner"],
         "wallThickness": WALL_T,
         "wallJambs": wall["jambs"],
+        "jambChamfer": JAMB_CHAMFER,
+        "glassThickness": GLASS_T,
+        "windowPanes": wall["panes"],
+        "gasketStrips": wall["gaskets"],
         "wallArchReveals": wall["reveals"],
         "wallHoles": 12,
         "wallCurve": WALL_CURVE,
@@ -591,7 +633,8 @@ def main():
           "archSegments", ARCH_LIP_SEGMENTS,
           "roofStrips", len(ROOF_SHOULDER) - 1,
           "wallQuads", wall_quads,
-          "jambs", wall["jambs"], "reveals", wall["reveals"])
+          "jambs", wall["jambs"], "reveals", wall["reveals"],
+          "panes", wall["panes"], "gaskets", wall["gaskets"])
 
 
 if __name__ == "__main__":

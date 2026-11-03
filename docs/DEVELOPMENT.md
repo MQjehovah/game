@@ -758,10 +758,13 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   **侧墙为一整块带厚度的 loft 曲面并以多边形开洞**——z/y 切割线取所有车窗/车门边缘与
   每段轮拱圆周 8 个采样点，逐格按格心是否落在洞口/轮拱圆内剔除，
   得到 393 个外侧 + 393 个内侧墙面四边形、12 个真实洞口（每侧 1 门 + 3 窗 + 2 轮拱）；
-  内外层间距 **0.08m**，每个矩形洞口 4 条 jamb 侧壁（共 32 条），
-  每个轮拱 8 段弧形 reveal（共 32 段），洞口有真实厚度；
+  内外层间距 **0.08m**，每个矩形洞口做成 **8 条倒角侧壁**：
+  外皮先 45° 倒角 0.03m 收进洞口、再直下到内皮（共 64 条），
+  每个轮拱 8 段弧形 reveal（共 32 段），洞口有真实厚度与倒角；
   墙面按 `x = ±(1.18 − 0.05·((y−Y0)/(Y1−Y0) − 0.55)²)` 收分；
-  玻璃（x=1.145）位于墙体厚度内、窗框（x=1.195）在洞口外侧，保持对齐。
+  车窗是**双层玻璃**（外片 x=1.145、内片 x=1.117，共 14 片），
+  中间用深色边条密封，洞口外再围一圈橡胶密封条（28 条）；
+  窗框（x=1.195）在洞口外侧，保持对齐。
   另有**沿圆周扫掠的连续圆角轮拱唇边**（每轮 16 段、共 4 条）+ 半圆轮腔挡板、
   **3 段 loft 圆角肩线**（1.18/2.02 → 1.16/2.07 →
   1.11/2.115 → 1.08/2.14）、前后保险杠/防擦条、车顶行李架/空调/爬梯/遮阳篷盒、
@@ -770,9 +773,10 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   所有盒体经 `tools/rv_geom.bevel_box()` 倒角：6 个内缩面 + 12 条 45° 棱边条 +
   8 个角三角（薄片/小件自动回退为普通盒）。生成器同时写出
   `assets/data/rv_body_stats.json`（wallQuads=393、wallInnerQuads=393、
-  wallThickness=0.08、wallJambs=32、wallArchReveals=32、wallHoles=12、
+  wallThickness=0.08、wallJambs=64、jambChamfer=0.03、glassThickness=0.03、
+  windowPanes=14、gasketStrips=28、wallArchReveals=32、wallHoles=12、
   wallCurve=0.05、archLipSegments=16、archArcs=4、roofShoulderStrips=3、
-  13,384 顶点 / 6,336 三角）。
+  15,024 顶点 / 7,156 三角）。
   `tools/gen_rv_furniture.py` 生成全部 20 类可摆放家具 `rv_furn_bed_single/bed_double/
   stove/fridge/sink/workbench/storage/tv/bathroom/med_cabinet/gun_rack/heater/
   water_tank/battery/generator/turret/solar/roof_vent/coffee/plant`（多部件：

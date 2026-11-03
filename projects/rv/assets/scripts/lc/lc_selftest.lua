@@ -218,21 +218,26 @@ function runSelfTest()
          (bodyStats.wallQuads or 0) >= 300 and
          (bodyStats.wallInnerQuads or 0) == (bodyStats.wallQuads or -1) and
          (bodyStats.wallThickness or 0) >= 0.05 and
-         (bodyStats.wallJambs or 0) >= 24 and
+         (bodyStats.wallJambs or 0) >= 56 and
+         (bodyStats.jambChamfer or 0) >= 0.02 and
+         (bodyStats.glassThickness or 0) >= 0.02 and
+         (bodyStats.windowPanes or 0) >= 14 and
+         (bodyStats.gasketStrips or 0) >= 24 and
          (bodyStats.wallArchReveals or 0) >= 16 and
          (bodyStats.wallHoles or 0) == 12 and
          (bodyStats.wallCurve or 0) > 0.01 and
          (bodyStats.verts or 0) > 10000 and
          type(sink) == "table" and (sink.latheSegments or 0) >= 24 and
          (sink.verts or 0) > 1500,
-         string.format("wall=%d/%d t=%.2f jambs=%d reveals=%d holes=%d curve=%.2f bodyV=%d lathe=%d sinkV=%d",
+         string.format("wall=%d/%d t=%.2f jambs=%d(chamfer %.2f) panes=%d gaskets=%d reveals=%d bodyV=%d lathe=%d sinkV=%d",
                        bodyStats and (bodyStats.wallQuads or 0) or 0,
                        bodyStats and (bodyStats.wallInnerQuads or 0) or 0,
                        bodyStats and (bodyStats.wallThickness or 0) or 0,
                        bodyStats and (bodyStats.wallJambs or 0) or 0,
+                       bodyStats and (bodyStats.jambChamfer or 0) or 0,
+                       bodyStats and (bodyStats.windowPanes or 0) or 0,
+                       bodyStats and (bodyStats.gasketStrips or 0) or 0,
                        bodyStats and (bodyStats.wallArchReveals or 0) or 0,
-                       bodyStats and (bodyStats.wallHoles or 0) or 0,
-                       bodyStats and (bodyStats.wallCurve or 0) or 0,
                        bodyStats and (bodyStats.verts or 0) or 0,
                        sink and (sink.latheSegments or 0) or 0,
                        sink and (sink.verts or 0) or 0))

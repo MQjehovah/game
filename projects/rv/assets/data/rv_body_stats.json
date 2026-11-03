@@ -2,7 +2,11 @@
   "wallQuads": 393,
   "wallInnerQuads": 393,
   "wallThickness": 0.08,
-  "wallJambs": 32,
+  "wallJambs": 64,
+  "jambChamfer": 0.03,
+  "glassThickness": 0.03,
+  "windowPanes": 14,
+  "gasketStrips": 28,
   "wallArchReveals": 32,
   "wallHoles": 12,
   "wallCurve": 0.05,
@@ -11,7 +15,7 @@
   "wheelWellSegments": 16,
   "wheelWellArcs": 4,
   "roofShoulderStrips": 3,
-  "verts": 13384,
-  "tris": 6336,
+  "verts": 15024,
+  "tris": 7156,
   "prims": 10
 }
