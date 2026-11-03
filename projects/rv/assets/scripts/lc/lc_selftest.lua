@@ -1763,6 +1763,18 @@ function runSelfTest()
        string.format("metal %d->%d repeat=%s", m0, m1, tostring(repeat_ok)))
   end
 
+  -- 夜空星星：白天无、深夜可见
+  do
+    local sc = clock
+    clock = 12 * 60
+    local day = starAlpha()
+    clock = 22 * 60
+    local night = starAlpha()
+    clock = sc
+    ok(r, "night sky stars", day == 0 and night > 0.5,
+       string.format("day=%.2f night=%.2f", day, night))
+  end
+
   -- 睡醒晨报：包含天数/货运单数/今日目标/油量
   do
     local sd, sc = day, clock

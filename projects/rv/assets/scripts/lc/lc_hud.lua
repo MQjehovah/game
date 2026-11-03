@@ -890,6 +890,35 @@ function drawStationMenu()
   end
 end
 
+-- 夜空星星透明度：只有深夜才明显（纯函数，自检用）
+function starAlpha()
+  local a = (nightAmount and nightAmount()) or 0
+  if a <= 0.55 then return 0 end
+  return math.min(1, (a - 0.55) / 0.45) * 0.9
+end
+
+-- 夜空：确定性星点 + 月亮（画在夜幕之后，避免被蓝色遮罩压掉）
+function drawNightSky(vw, vh)
+  local sa = starAlpha()
+  if sa <= 0.01 then return end
+  local t = ((weatherT or 0) * 0.6)
+  for i = 1, 90 do
+    local h1 = math.abs(math.sin(i * 12.9898) * 43758.5453) % 1
+    local h2 = math.abs(math.sin(i * 78.233) * 12543.123) % 1
+    local x = h1 * vw
+    local y = h2 * vh * 0.46
+    local tw = 0.55 + 0.45 * math.abs(math.sin(t + i * 1.7))
+    local r = (i % 11 == 0) and 2.0 or 1.0
+    DrawCircle(x, y, r, 1, 0.90, 0.93, 1.0, sa * tw * 0.8, true)
+  end
+  -- 月亮：柔光 + 圆盘
+  local mx, my = vw * 0.76, vh * 0.16
+  DrawCircle(mx, my, 34, 1, 0.55, 0.62, 0.80, sa * 0.10, true)
+  DrawCircle(mx, my, 20, 1, 0.72, 0.78, 0.92, sa * 0.16, true)
+  DrawCircle(mx, my, 12, 2, 0.94, 0.95, 0.88, sa * 0.85, true)
+  DrawCircle(mx + 4, my - 3, 10, 1, 0.02, 0.04, 0.10, sa * 0.35, true)
+end
+
 function drawNightOverlay()
   local a = nightAmount()
   if a <= 0.01 then return end
@@ -897,6 +926,7 @@ function drawNightOverlay()
   local vw = (vp and vp.w) or 1280
   local vh = (vp and vp.h) or 720
   DrawRect(0, 0, vw, vh, 0.02, 0.04, 0.10, 0.46 * a)
+  drawNightSky(vw, vh)
   if isNight() then
     drawTextCentered("夜深了 — 回车里睡觉，或放慢车速", math.floor(vw * 0.5), vh - 34,
                      13, 0.72, 0.78, 0.95, 0.85 * a)
