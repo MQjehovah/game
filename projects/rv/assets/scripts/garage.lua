@@ -1620,6 +1620,11 @@ function on_update(ent, dt)
     return
   end
 
+  -- 停车时引擎自然冷却（不在驾驶分支里，水温也会慢慢降下来）
+  if updateEngineTemp ~= nil then
+    updateEngineTemp(dt, stats.weight / weightMax())
+  end
+
   -- Parked: settle the body onto its four wheel contacts so a stop on a knoll
   -- or a slope keeps the wheels grounded. Prefer the physical spring/damper
   -- path (height/pitch/roll from Jolt), fall back to the plane fit.

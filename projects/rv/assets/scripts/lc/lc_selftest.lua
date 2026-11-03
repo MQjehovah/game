@@ -3757,6 +3757,20 @@ function runSelfTest()
        string.format("peak=%.0f cooled=%.0f", peak, engineTemp))
   end
 
+  -- 停车冷却：车速 0 时调用 updateEngineTemp 会逐步降温并解除过热
+  do
+    local keepTemp, keepSpeed, keepHot = engineTemp, rv.speed, rv.engineHot
+    engineTemp, rv.speed, rv.engineHot = 120, 0, true
+    for _ = 1, 600 do
+      updateEngineTemp(0.1, 1.0)
+    end
+    local cooled = engineTemp < 120 and rv.engineHot == false
+    local gotTemp, gotHot = engineTemp, rv.engineHot
+    engineTemp, rv.speed, rv.engineHot = keepTemp, keepSpeed, keepHot
+    ok(r, "parked engine cool", cooled,
+       string.format("temp=%.0f hot=%s", gotTemp, tostring(gotHot)))
+  end
+
   -- 冷车动力：20°C 时受限，60°C 起满动力
   do
     local cold = engineColdPowerScale(20)
