@@ -45,6 +45,23 @@ function tripL100()
   return (tripFuel or 0) / tripDistance * 100
 end
 
+-- 简易自动挡：按车速升挡，挡内把车速映射到转速区间（HUD 用）。
+function rvGearInfo(speed)
+  local v = math.abs(speed or 0)
+  local up = VEH.gearUp or {}
+  local g = 1
+  for i = 1, #up do
+    if v >= up[i] then g = i + 1 end
+  end
+  local lo = (g == 1) and 0 or up[g - 1]
+  local hi = up[g] or DRIVE.maxSpeed
+  local t = 0
+  if hi > lo then t = math.max(0, math.min(1, (v - lo) / (hi - lo))) end
+  local rpm = (VEH.gearRpmMin or 850) +
+              ((VEH.gearRpmMax or 2600) - (VEH.gearRpmMin or 850)) * t
+  return g, rpm
+end
+
 function updateDrive(dt)
   local throttle = (ActionDown("w") and 1 or 0) - (ActionDown("s") and 1 or 0)
   -- Positive yaw turns toward -X, which is screen-right when facing +Z, so

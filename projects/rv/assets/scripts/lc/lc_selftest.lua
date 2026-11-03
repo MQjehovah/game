@@ -1100,6 +1100,19 @@ function runSelfTest()
     ok(r, "roadside power wires", n >= 20, string.format("wires=%d", n))
   end
 
+  -- 自动挡：车速升挡 + 挡内转速映射
+  do
+    local g1 = rvGearInfo(0.5)
+    local g2 = rvGearInfo(2.5)
+    local g3 = rvGearInfo(4.0)
+    local g4, rpm4 = rvGearInfo(6.2)
+    local g5 = rvGearInfo(8.0)
+    ok(r, "rv gearbox",
+       g1 == 1 and g2 == 2 and g3 == 3 and g4 == 4 and g5 == 5 and
+       rpm4 >= VEH.gearRpmMin and rpm4 <= VEH.gearRpmMax,
+       string.format("gears=%d/%d/%d/%d/%d rpm4=%.0f", g1, g2, g3, g4, g5, rpm4))
+  end
+
   -- 存读档
   local saved = saveLayout()
   ok(r, "save layout", saved ~= false, "saves/layout.json")

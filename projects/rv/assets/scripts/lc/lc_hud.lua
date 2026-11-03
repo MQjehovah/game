@@ -485,11 +485,21 @@ function drawDriveHud()
   local px, py = 10, vh - ph - 10
   DrawRect(px, py, pw, ph, 0.08, 0.09, 0.10, 0.72)
   DrawRectOutline(px, py, pw, ph, 0.55, 0.52, 0.42, 0.9)
-  local gear = (rv.speed > 0.05) and "D" or ((rv.speed < -0.05) and "R" or "N")
+  local gear, rpm = 1, VEH.gearRpmMin or 850
+  if rvGearInfo ~= nil then gear, rpm = rvGearInfo(rv.speed or 0) end
+  local gearText
+  if (rv.speed or 0) < -0.05 then
+    gearText = "R"
+  elseif math.abs(rv.speed or 0) < 0.05 then
+    gearText = "N"
+  else
+    gearText = tostring(gear)
+  end
   DrawText(string.format("%d", kmh), px + 14, py + 10, 34,
            over and 1.0 or 0.95, over and 0.5 or 0.92, over and 0.35 or 0.78, 1)
   DrawText("km/h", px + 84, py + 26, 15, 0.7, 0.68, 0.62, 1)
-  DrawText("挡位 " .. gear, px + 140, py + 26, 15, 0.6, 0.85, 0.95, 1)
+  DrawText("挡位 " .. gearText, px + 140, py + 26, 15, 0.6, 0.85, 0.95, 1)
+  DrawText(string.format("%.0f rpm", rpm), px + 140, py + 44, 11, 0.55, 0.75, 0.82, 1)
   local fLow = fuel / VEH.tank < 0.2
   DrawText(string.format("燃料 %.0f / %d L%s", fuel, VEH.tank,
            fuel <= 0 and "  没油了! 龟速" or (fLow and "  油量低!" or "")),

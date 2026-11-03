@@ -109,6 +109,8 @@ DRIVE = {
 -- 车辆：燃油 / 车体耐久
 VEH = {
   tank = 60, burn = 0.12, idleBurn = 0.010, limpSpeed = 1.5,
+  gearUp = { 1.8, 3.4, 5.2, 7.0 },   -- 自动挡升挡车速（m/s，共 5 挡）
+  gearRpmMin = 850, gearRpmMax = 2600,
   durMax = 100, impactK = 1.5, repairAmt = 25,
   partMax = 100,
   partWear = { engine = 0.030, tires = 0.050, battery = 0.006 },  -- 每米磨损
