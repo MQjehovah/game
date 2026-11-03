@@ -138,6 +138,10 @@ function updateWheelMotion(dt)
   end
   local ks = math.min(1, (dt or 0.016) * 8)
   rv.steerVis = (rv.steerVis or 0) + (targetSteer - (rv.steerVis or 0)) * ks
+  if rv.steerCmd == nil then
+    -- Kinematic/co-op path: no Ackermann, both front wheels share the angle.
+    rv.steerLeft, rv.steerRight = rv.steerVis, rv.steerVis
+  end
   rv.wheelSpin = (rv.wheelSpin or 0) -
                  (rv.speed or 0) * (dt or 0.016) / 0.40
   if rv.wheelSpin > math.pi * 2 or rv.wheelSpin < -math.pi * 2 then
@@ -259,6 +263,7 @@ local SUSP_K = 90000.0      -- N/m per wheel
 local SUSP_C = 11000.0      -- N*s/m per wheel (slightly overdamped)
 local SUSP_MAX_F = 150000.0
 local SUSP_R = 0.40
+local SUSP_REST = 0.04      -- free length: floats the box so springs carry the load
 
 -- Friction impulse for one contact: proportional to the lateral slip, capped
 -- by the friction circle mu * normalForce * dt. Exposed for the self-test.
@@ -269,6 +274,41 @@ function tireGripImpulse(latV, normalForce, mass, dt, mu)
   if imp > cap then imp = cap end
   if imp < -cap then imp = -cap end
   return imp
+end
+
+-- Surface-dependent friction coefficient. Asphalt (within the road slab) is
+-- grippier than the dirt embankment, which is grippier than open meadow.
+function surfaceGrip(x, z)
+  if distToRoadSq ~= nil and distToRoadSq(x, z) < 12.0 then
+    return 0.95                       -- asphalt
+  end
+  if x > 4.0 and x < 16.0 and z > -25.0 and z < 47.0 and
+     (terrainHeight(x, z) or 0) > 0.12 then
+    return 0.72                       -- packed dirt on the embankment
+  end
+  return 0.60                         -- grass / meadow
+end
+
+-- Longitudinal tire force from a slip ratio (saturating, so it peaks at the
+-- friction limit). Exposed for the self-test.
+function slipTraction(mu, normalForce, slip)
+  local s = math.max(-1.0, math.min(1.0, (slip or 0) * 6.0))
+  return (mu or 0.9) * math.max(0, normalForce or 0) * s
+end
+
+-- Ackermann steering: the inner front wheel turns tighter than the outer one.
+-- Returns the signed left/right wheel angles for a positive-left steer angle.
+function ackermannAngles(steer, wheelbase, track)
+  local s = steer or 0
+  if math.abs(s) < 1e-4 then return 0, 0 end
+  local L = wheelbase or WHEELBASE
+  local half = (track or WHEEL_TRACK) * 0.5
+  local r = L / math.tan(math.abs(s))
+  if r <= half + 0.01 then r = half + 0.01 end
+  local inner = math.atan(L / (r - half))
+  local outer = math.atan(L / (r + half))
+  if s > 0 then return inner, outer end
+  return -outer, -inner
 end
 
 function updateRvPhysics(dt)
@@ -292,6 +332,10 @@ function updateRvPhysics(dt)
   local cyw, syw = math.cos(rv.yaw), math.sin(rv.yaw)
   local step = math.min(dt or 0.016, 0.033)
   local mass = rv.mass or 1200
+  local steerL, steerR = ackermannAngles(rv.steerVis or 0, WHEELBASE, WHEEL_TRACK)
+  rv.steerLeft, rv.steerRight = steerL, steerR
+  local fwdX, fwdZ = math.sin(rv.yaw), math.cos(rv.yaw)
+  local targetSpeed = rv.speed or 0
   local s = rv.susp
   if s == nil then
     s = { h = {}, v = {} }
@@ -327,7 +371,7 @@ function updateRvPhysics(dt)
     local wx, wy, wz = p.x + ox, p.y + y2, p.z + oz
 
     local ground = terrainHeight(wx, wz)
-    local compression = ground - (wy - SUSP_R)
+    local compression = ground + SUSP_REST - (wy - SUSP_R)
     local vp = nil
     if PhysicsGetPointVelocity ~= nil then
       vp = PhysicsGetPointVelocity(rvBody, { x = wx, y = wy, z = wz })
@@ -341,19 +385,42 @@ function updateRvPhysics(dt)
                         { x = wx, y = wy, z = wz })
 
     -- Lateral tire grip: damp the contact's sideways velocity, capped by the
-    -- friction circle of the normal load. Front wheels use the steered axis so
-    -- cornering generates the sideways force that makes the RV track.
-    local steer = w.front and (rv.steerVis or 0) or 0
+    -- friction circle of the normal load. Front wheels use their Ackermann
+    -- angle so cornering generates the sideways force that makes the RV track.
+    local steer = 0
+    if w.front then
+      steer = (i == 1) and steerL or steerR
+    end
     local wyaw = rv.yaw + steer
     local lrx, lrz = -math.cos(wyaw), math.sin(wyaw)
     local latV = vp and (vp.x * lrx + vp.z * lrz) or
                  (vx * lrx + vz * lrz)
     local nForce = math.max(0, SUSP_K * compression)
-    local grip = tireGripImpulse(latV, nForce, mass / 4, step, 0.9)
+    local mu = surfaceGrip(wx, wz)
+    local grip = tireGripImpulse(latV, nForce, mass / 4, step, mu)
     if math.abs(grip) > 0.001 then
       PhysicsApplyImpulse(rvBody,
                           { x = lrx * grip, y = 0, z = lrz * grip },
                           { x = wx, y = wy, z = wz })
+    end
+
+    -- Longitudinal slip-ratio traction at each contact (rear-wheel drive;
+    -- front wheels contribute under braking). The force saturates at mu*N,
+    -- so surface grip and load transfer change acceleration and braking.
+    local vLong = vp and (vp.x * fwdX + vp.z * fwdZ) or
+                  (vx * fwdX + vz * fwdZ)
+    local slip = (targetSpeed - vLong) /
+                 math.max(2.0, math.abs(targetSpeed))
+    local braking = math.abs(targetSpeed) < math.abs(vLong) - 0.05
+    local factor = 1.0
+    if w.front then factor = braking and 0.55 or 0.0 end
+    if factor > 0 then
+      local impL = slipTraction(mu, nForce, slip) * factor * step
+      if math.abs(impL) > 0.001 then
+        PhysicsApplyImpulse(rvBody,
+                            { x = fwdX * impL, y = 0, z = fwdZ * impL },
+                            { x = wx, y = wy, z = wz })
+      end
     end
 
     -- Visual wheel sits on its own contact (the body plane is the solver's
@@ -361,21 +428,6 @@ function updateRvPhysics(dt)
     s.plane[i] = ground - (p.y - 0.9)
     s.travel[i] = 0
     s.h[i] = ground
-  end
-
-  -- Longitudinal traction: instead of teleporting the velocity, push the body
-  -- towards the commanded speed with an impulse capped by tire friction, so
-  -- acceleration and braking are physical while the heading stays scripted.
-  local fx, fz = math.sin(rv.yaw), math.cos(rv.yaw)
-  local vf = vx * fx + vz * fz
-  local dv = (rv.speed or 0) - vf
-  if math.abs(dv) > 0.01 then
-    local imp = dv * mass * math.min(1, step * 20.0)
-    local cap = 0.9 * mass * 9.81 * step
-    if imp > cap then imp = cap end
-    if imp < -cap then imp = -cap end
-    PhysicsApplyImpulse(rvBody, { x = fx * imp, y = 0, z = fz * imp },
-                        { x = p.x, y = p.y, z = p.z })
   end
 
   updateWheelMotion(dt)

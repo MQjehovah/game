@@ -302,6 +302,36 @@ function runSelfTest()
          string.format("grip=%.1f capped=%.1f empty=%.1f",
                        grip, capped, empty))
     end
+    if surfaceGrip ~= nil then
+      local muRoad = surfaceGrip(0, -20)
+      local muGrass = surfaceGrip(-20, -10)
+      local muDirt = surfaceGrip(10, 0)
+      ok(r, "rv surface grip",
+         math.abs(muRoad - 0.95) < 0.01 and
+         math.abs(muDirt - 0.72) < 0.01 and
+         math.abs(muGrass - 0.60) < 0.01 and
+         muRoad > muDirt and muDirt > muGrass,
+         string.format("road=%.2f dirt=%.2f grass=%.2f",
+                       muRoad, muDirt, muGrass))
+    end
+    if ackermannAngles ~= nil then
+      local l, rr = ackermannAngles(0.5, 5.84, 2.52)
+      local l2, r2 = ackermannAngles(-0.5, 5.84, 2.52)
+      ok(r, "rv ackermann steering",
+         l > rr and rr > 0.1 and (l - rr) > 0.05 and
+         math.abs(l2 + rr) < 1e-6 and math.abs(r2 + l) < 1e-6 and
+         math.abs(r2) > math.abs(l2) and r2 < -0.1,
+         string.format("L/R=%.2f/%.2f mirror=%.2f/%.2f", l, rr, l2, r2))
+    end
+    if slipTraction ~= nil then
+      local fwd = slipTraction(0.6, 3000, 0.5)
+      local brake = slipTraction(0.6, 3000, -0.1)
+      local empty = slipTraction(0.6, 0, 0.5)
+      ok(r, "rv slip traction",
+         math.abs(fwd - 0.6 * 3000) < 1 and brake < 0 and
+         math.abs(empty) < 0.001,
+         string.format("fwd=%.0f brake=%.0f empty=%.0f", fwd, brake, empty))
+    end
     if rvBody ~= nil and PhysicsGetRotation ~= nil and rvQuat ~= nil
        and rvPitchRollFromQuat ~= nil then
       local kp, kr, ky = rv.pitch, rv.roll, rv.yaw

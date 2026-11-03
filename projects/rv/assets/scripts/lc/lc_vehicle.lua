@@ -168,7 +168,11 @@ function applyRvTransform()
       local ly = WHEEL_CENTER_Y + plane + travel
       local ox, oy, oz = rvOffset(w.lx, ly, w.lz)
       SetPosition(w.ent, { x = rv.x + ox, y = gy + oy, z = rv.z + oz })
-      local steer = w.front and (rv.steerVis or 0) or 0
+      local steer = 0
+      if w.front then
+        steer = (i == 1) and (rv.steerLeft or rv.steerVis or 0)
+                          or (rv.steerRight or rv.steerVis or 0)
+      end
       local pitch = (rv.pitch or 0) + spin
       if SetRotationEuler ~= nil then
         SetRotationEuler(w.ent, pitch, rv.roll or 0, rv.yaw + steer)

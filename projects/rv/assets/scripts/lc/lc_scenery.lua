@@ -22,7 +22,7 @@ end
 
 local roadPaths = {}
 
-local function distToRoadSq(x, z)
+function distToRoadSq(x, z)
   local best = 1e18
   for _, s in ipairs(roadPaths) do
     local dx, dz = s.bx - s.ax, s.bz - s.az
