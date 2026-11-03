@@ -1160,6 +1160,21 @@ function runSelfTest()
                      tostring(on), tostring(offDisabled), tostring(offDay)))
   end
 
+  -- 雾天/深夜的地面薄雾发射率
+  do
+    local sw, sc = weather, clock
+    weather = "fog"
+    local fogRate = fogWispRate()
+    weather = "clear"
+    clock = 12 * 60
+    local dayRate = fogWispRate()
+    clock = 22 * 60
+    local nightRate = fogWispRate()
+    weather, clock = sw, sc
+    ok(r, "rv fog wisps", fogRate == 6 and dayRate == 0 and nightRate == 2,
+       string.format("fog=%d day=%d night=%d", fogRate, dayRate, nightRate))
+  end
+
   -- 存读档：行程/探索/货运单数
   do
     tripDistance, tripFuel, jobDelivered = 3210, 88, 7

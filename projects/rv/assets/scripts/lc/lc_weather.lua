@@ -37,6 +37,13 @@ function rollWeather()
   return "clear"
 end
 
+-- 地面薄雾发射率（/s）：雾天最浓，深夜也有少量；自检/调参用
+function fogWispRate()
+  if weather == "fog" then return 6 end
+  if nightAmount ~= nil and nightAmount() > 0.65 then return 2 end
+  return 0
+end
+
 function updateWeather(dt)
   weatherT = weatherT + dt * SURVIVAL.timeScale
   if weatherT >= weatherNext then
@@ -70,6 +77,37 @@ function updateWeather(dt)
           sizeStart = 0.035, sizeEnd = 0.02,
           color = { r = 0.62, g = 0.74, b = 0.88, a = 0.55 },
           colorEnd = { r = 0.62, g = 0.74, b = 0.88, a = 0.0 },
+          additive = false, gravity = 0,
+        })
+      end
+    end
+  end
+
+  -- 地面薄雾：雾天/深夜在玩家或房车周围缓慢漂移，低透明度大颗粒
+  local fogRate = fogWispRate()
+  if fogRate > 0 then
+    local fx, fz, fy
+    if onFoot and player.active then
+      fx, fz, fy = player.x, player.z, 0.25
+    elseif phase == "driving" then
+      fx, fz = rv.x, rv.z
+      fy = (rv.groundY or 0) + 0.25
+    end
+    if fx ~= nil then
+      fogAcc = (fogAcc or 0) + dt * fogRate
+      while fogAcc >= 1 do
+        fogAcc = fogAcc - 1
+        local a = math.random() * math.pi * 2
+        local r = 4 + math.random() * 16
+        EmitParticles({
+          pos = { x = fx + math.sin(a) * r, y = fy + 0.2 + math.random() * 1.5,
+                  z = fz + math.cos(a) * r },
+          count = 1, speedMin = 0, speedMax = 0,
+          vel = { x = 0.25, y = 0.06, z = 0.15 },
+          lifeMin = 3.5, lifeMax = 7.0,
+          sizeStart = 2.0, sizeEnd = 4.5,
+          color = { r = 0.76, g = 0.79, b = 0.84, a = 0.07 },
+          colorEnd = { r = 0.76, g = 0.79, b = 0.84, a = 0.0 },
           additive = false, gravity = 0,
         })
       end

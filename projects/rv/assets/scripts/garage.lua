@@ -880,6 +880,10 @@ function on_start()
     setWeather("rain")
     setPhase("driving")
     driveView = "chase"
+  elseif startMode == "fogdrive" then
+    setWeather("fog")
+    setPhase("driving")
+    driveView = "chase"
   elseif startMode == "inside_dark" then
     setInteriorLights(false)
   elseif startMode == "tripview" then
