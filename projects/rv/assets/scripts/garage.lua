@@ -1110,6 +1110,10 @@ function on_start()
   elseif startMode == "sunset" then
     clock = 18 * 60 + 20
     setPhase("parked")
+  elseif startMode == "snow" then
+    setWeather("snow")
+    clock = 10 * 60
+    setPhase("parked")
   elseif startMode == "raincab" then
     setWeather("rain")
     setPhase("driving")

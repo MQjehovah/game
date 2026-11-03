@@ -1047,6 +1047,8 @@ function drawDaySky()
   local vis = day
   if weather == "rain" or weather == "fog" then
     vis = vis * 0.12
+  elseif weather == "snow" then
+    vis = vis * 0.25
   elseif weather == "cloudy" then
     vis = vis * 0.45
   end

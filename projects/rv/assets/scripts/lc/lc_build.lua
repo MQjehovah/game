@@ -243,6 +243,7 @@ function recomputeStats()
         if weather ~= nil then
           if weather == "rain" then gen = gen * 0.25
           elseif weather == "fog" then gen = gen * 0.5
+          elseif weather == "snow" then gen = gen * 0.3
           elseif weather == "cloudy" then gen = gen * 0.7 end
         end
       end

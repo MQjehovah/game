@@ -2387,7 +2387,8 @@ function runSelfTest()
   -- 天气预报：下一段天气可预测，并按时切换
   do
     local sw, st2, sn, sf = weather, weatherT, weatherNext, weatherNextId
-    local valid = { clear = true, cloudy = true, rain = true, fog = true }
+    local valid = { clear = true, cloudy = true, rain = true, fog = true,
+                    snow = true }
     setWeather("clear")
     local f1 = weatherNextId
     weatherNextId = "rain"
@@ -2749,6 +2750,20 @@ function runSelfTest()
     ok(r, "sunset tint", noon == 0 and dusk > 0.9 and dawn > 0.9 and night == 0,
        string.format("noon=%.2f dusk=%.2f dawn=%.2f night=%.2f",
                      noon, dusk, dawn, night))
+  end
+
+  -- 雪天：天气名、抓地折减与挡风玻璃逻辑
+  do
+    local sw = weather
+    weather = "snow"
+    local grip = weatherGripScale()
+    local wind = windshieldDropCount()
+    weather = sw
+    ok(r, "snow weather",
+       WEATHER_NAMES.snow ~= nil and math.abs(grip - 0.78) < 1e-6 and
+       wind == 0,
+       string.format("name=%s grip=%.2f windshield=%d",
+                     tostring(WEATHER_NAMES.snow), grip, wind))
   end
 
   -- 睡醒晨报：包含天数/货运单数/今日目标/油量

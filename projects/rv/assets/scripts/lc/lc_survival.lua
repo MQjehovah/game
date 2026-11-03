@@ -726,6 +726,8 @@ function fishingConditionBonus()
   if weather == "rain" then
     chance = chance + 0.08
     size = size + 3
+  elseif weather == "snow" then
+    chance = chance - 0.05
   end
   if (h >= 5 and h < 7) or (h >= 17 and h < 19) then
     chance = chance + 0.06

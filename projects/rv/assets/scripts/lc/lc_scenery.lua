@@ -1660,7 +1660,7 @@ end
 
 -- 白天蝴蝶：在草甸/花丛附近成对翅膀飞舞，夜间或雨天隐藏
 function butterfliesActive()
-  if weather == "rain" then return false end
+  if weather == "rain" or weather == "snow" then return false end
   return not (isNight ~= nil and isNight())
 end
 

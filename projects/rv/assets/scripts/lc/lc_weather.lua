@@ -1,12 +1,13 @@
 -- lc_weather.lua
--- 天气：晴 / 阴 / 雨 / 雾，随游戏时间缓慢变化
+-- 天气：晴 / 阴 / 雨 / 雾 / 雪，随游戏时间缓慢变化
 
-WEATHER_NAMES = { clear = "晴", cloudy = "阴", rain = "雨", fog = "雾" }
+WEATHER_NAMES = { clear = "晴", cloudy = "阴", rain = "雨", fog = "雾", snow = "雪" }
 WEATHER_WEIGHTS = {
-  { id = "clear",  w = 46 },
-  { id = "cloudy", w = 26 },
-  { id = "rain",   w = 18 },
-  { id = "fog",    w = 10 },
+  { id = "clear",  w = 44 },
+  { id = "cloudy", w = 24 },
+  { id = "rain",   w = 16 },
+  { id = "fog",    w = 9 },
+  { id = "snow",   w = 7 },
 }
 
 -- 天气持续时间（游戏分钟）：1.5–3 游戏小时，约 30–60 现实秒；
@@ -67,15 +68,16 @@ function windshieldDropCount()
   return 0
 end
 
--- 雨天路面抓地折减（只对下雨生效；雾天路面不一定湿）
+-- 路面抓地折减：雨天湿滑、雪天更滑（雾天路面不一定湿）
 function weatherGripScale()
   if weather == "rain" then return 0.82 end
+  if weather == "snow" then return 0.78 end
   return 1.0
 end
 
--- 夜间萤火虫发射率（/s）：深夜且非雨天；自检/调参用
+-- 夜间萤火虫发射率（/s）：深夜且非雨雪；自检/调参用
 function fireflyRate()
-  if weather == "rain" then return 0 end
+  if weather == "rain" or weather == "snow" then return 0 end
   if nightAmount == nil or nightAmount() < 0.6 then return 0 end
   return 6
 end
@@ -221,7 +223,7 @@ function weatherHoursLeft()
 end
 
 function isRainy()
-  return weather == "rain" or weather == "fog"
+  return weather == "rain" or weather == "fog" or weather == "snow"
 end
 
 function drawWeatherOverlay()
@@ -249,6 +251,16 @@ function drawWeatherOverlay()
       local y = (i * 89 + math.floor(weatherT * 55)) % vh
       DrawCircle(x, y, 2 + (i % 3), 1, 0.72, 0.80, 0.90, 0.18, false)
       DrawLine(x, y, x + 1, y + 5 + (i % 4), 1, 0.72, 0.80, 0.90, 0.12)
+    end
+  elseif weather == "snow" then
+    DrawRect(0, 0, vw, vh, 0.55, 0.60, 0.68, 0.12)
+    -- 雪花：白色小点缓慢飘落，带轻微横向摆动
+    for i = 1, 56 do
+      local x = (i * 131 + math.floor(weatherT * 11) +
+                 math.floor(math.sin(weatherT * 0.7 + i) * 14)) % vw
+      local y = (i * 67 + math.floor(weatherT * 90)) % vh
+      local r = 1 + (i % 3) * 0.5
+      DrawCircle(x, y, r, 1, 0.92, 0.95, 1.0, 0.55, true)
     end
   elseif weather == "fog" then
     DrawRect(0, 0, vw, vh, 0.72, 0.75, 0.79, 0.24)
