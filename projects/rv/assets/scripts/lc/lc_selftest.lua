@@ -67,6 +67,17 @@ function runSelfTest()
   ok(r, "plant grow+harvest", planted and itemCount("rawfood") >= raw0 + 2,
      string.format("seed %d->%d rawfood %d->%d", seed0, itemCount("seed"), raw0, itemCount("rawfood")))
 
+  -- 天气影响作物生长：雨天 1.25x、雪天 0.5x
+  do
+    local rain = plantGrowthScale("rain")
+    local snow = plantGrowthScale("snow")
+    local clear = plantGrowthScale("clear")
+    ok(r, "weather plant growth",
+       math.abs(rain - 1.25) < 1e-6 and math.abs(snow - 0.50) < 1e-6 and
+       math.abs(clear - 1.0) < 1e-6,
+       string.format("rain=%.2f snow=%.2f clear=%.2f", rain, snow, clear))
+  end
+
   -- 钓鱼 -> 生鱼 -> 篝火烤鱼
   local raw0 = itemCount("rawfish")
   startFishing()

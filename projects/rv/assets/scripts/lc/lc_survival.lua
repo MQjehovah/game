@@ -1167,11 +1167,19 @@ function updateFishing(dt)
   end
 end
 
+-- 天气对作物生长的影响：雨天相当于浇水，雪天低温生长变慢
+function plantGrowthScale(weatherValue)
+  if weatherValue == "rain" then return 1.25 end
+  if weatherValue == "snow" then return 0.50 end
+  return 1.0
+end
+
 function updatePlants(dt)
   local gm = dt * SURVIVAL.timeScale
+  local scale = plantGrowthScale(weather)
   for _, inst in pairs(instances) do
     if inst.cat.use == "plant" and inst.plant and not inst.plant.ready then
-      inst.plant.growth = inst.plant.growth + gm
+      inst.plant.growth = inst.plant.growth + gm * scale
       if inst.plant.growth >= SURVIVAL.plantMinutes then
         inst.plant.ready = true
       end
