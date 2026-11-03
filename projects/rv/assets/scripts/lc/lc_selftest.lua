@@ -1379,6 +1379,26 @@ function runSelfTest()
                      tostring(knownAfter), tostring(baseKnown)))
   end
 
+  -- 修好无线电塔后地图全解锁（不改变已探索地点集合）
+  do
+    local gen = nil
+    for _, nd in ipairs(NODES) do
+      if nd.generated and gen == nil then gen = nd end
+    end
+    local keepFixed = radioMastFixed
+    local keepVisited = gen and visitedPois[gen.id] or nil
+    if gen ~= nil then visitedPois[gen.id] = nil end
+    radioMastFixed = false
+    local hidden = gen ~= nil and not mapNodeKnown(gen)
+    radioMastFixed = true
+    local revealed = gen ~= nil and mapNodeKnown(gen)
+    radioMastFixed = keepFixed
+    if gen ~= nil then visitedPois[gen.id] = keepVisited end
+    ok(r, "mast reveals map", hidden and revealed,
+       string.format("gen=%s hidden=%s revealed=%s",
+                     gen and gen.id or "?", tostring(hidden), tostring(revealed)))
+  end
+
   -- 公路电线：相邻电线杆之间两条
   do
     local n = #roadWires

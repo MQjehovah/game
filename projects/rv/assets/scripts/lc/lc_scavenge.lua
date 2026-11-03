@@ -183,6 +183,8 @@ end
 function mapNodeKnown(nd)
   if nd == nil then return false end
   if not nd.generated then return true end
+  -- 修好无线电塔后，信号覆盖全图：所有地点标记解锁（但不计入已探索）
+  if radioMastFixed then return true end
   return visitedPois[nd.id] == true
 end
 
