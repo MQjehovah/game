@@ -1150,6 +1150,13 @@ function spawnMarkers()
   local fire = SpawnPrefab("rv_campfire", { x = 1.8, y = 0.12, z = 2.0 })
   if fire ~= nil then SetScale(fire, 0.9, 0.9, 0.9) end
   campfire = { x = 1.8, z = 2.0 }
+  -- 营火暖光：隐藏灯罩网格，只留点光；每帧轻微跳动模拟火光
+  local glow = SpawnPrefab("rv_lamp", { x = 1.8, y = 0.95, z = 2.0 })
+  if glow ~= nil then
+    SetScale(glow, 0.40, 0.20, 0.40)
+    SetVisible(glow, false)
+    campfireLight = glow
+  end
   local gas = nodeById("gasstop")
   if gas then
     for _, off in ipairs({ {2.0, 1.0}, {2.6, -0.4}, {1.2, -0.6} }) do
@@ -1158,6 +1165,18 @@ function spawnMarkers()
       if ent ~= nil then SetScale(ent, 0.5, 0.7, 0.5) end
     end
   end
+end
+
+-- 营火暖光的轻微跳动：没有灯光强度 API，用位置抖动 + 高度起伏模拟火光
+function updateCampfireLight(dt)
+  if campfireLight == nil or campfire == nil then return end
+  campfireLightT = (campfireLightT or 0) + dt
+  local j = math.sin(campfireLightT * 11.0) * 0.09 +
+            math.sin(campfireLightT * 17.3) * 0.05
+  SetPosition(campfireLight, {
+    x = campfire.x + j,
+    y = 0.95 + math.abs(j) * 0.45,
+    z = campfire.z + j * 0.7 })
 end
 
 -- 营地陈设：遮阳棚 + 木桌凳 + 物资箱 + 暖光营地灯，让出生点像一个

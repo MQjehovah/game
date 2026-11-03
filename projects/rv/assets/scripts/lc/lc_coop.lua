@@ -2173,6 +2173,7 @@ function coopUpdate(dt)
     updateVehicleLights(driving)
   end
   if updateTaillights ~= nil then updateTaillights() end
+  if updateCampfireLight ~= nil then updateCampfireLight(dt) end
 end
 
 local function drawBar(x, y, w, label, frac, r, g, b)

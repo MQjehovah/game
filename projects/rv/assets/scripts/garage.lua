@@ -629,6 +629,11 @@ function on_start()
     px, pz = 6.6, -8.2
     pyaw = dirYaw(-6.6, 8.2)
   end
+  if startMode == "campnight" then
+    -- Test-only: the camp at night with the campfire glow and awning lamp.
+    px, pz = 8.2, -1.5
+    pyaw = dirYaw(-3.7, 6.5)
+  end
   if startMode == "furnview" then
     -- Test-only interior view down the furniture wall.
     px, pz = -0.72, 1.30
@@ -861,6 +866,8 @@ function on_start()
   elseif startMode == "flashlight_off" then
     clock = 22 * 60
     flashlightOn = false
+  elseif startMode == "campnight" then
+    clock = 22 * 60
   elseif startMode == "drive" or startMode == "night_drive" or autoPilot or rv.steerDemo then
     setPhase("driving")
   elseif startMode == "utilroof" then
@@ -1063,6 +1070,7 @@ function on_update(ent, dt)
   if updateJobs ~= nil then updateJobs(dt) end
   if updateVehicleLights ~= nil then updateVehicleLights() end
   if updateTaillights ~= nil then updateTaillights() end
+  if updateCampfireLight ~= nil then updateCampfireLight(dt) end
   if coopRole ~= nil then
     coopUpdate(dt)
     if updatePoiWindows then updatePoiWindows(dt) end

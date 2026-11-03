@@ -1128,6 +1128,10 @@ function runSelfTest()
        string.format("night=%s day=%s", tostring(on), tostring(off)))
   end
 
+  -- 营火暖光：隐藏网格但保留点光
+  ok(r, "campfire glow", campfireLight ~= nil and campfire ~= nil,
+     campfire and string.format("fire=(%.1f,%.1f)", campfire.x, campfire.z) or "missing")
+
   -- 存读档
   local saved = saveLayout()
   ok(r, "save layout", saved ~= false, "saves/layout.json")
