@@ -172,6 +172,19 @@ SCENERY = {
   { pre = "rv_rock_big",   n = 6,  kind = "rock" },
   { pre = "rv_rock_block", n = 10, kind = "rock" },
   { pre = "rv_cactus",     n = 8,  kind = "cactus" },
-  { pre = "rv_scrub_a",    n = 34, kind = "scrub" },
-  { pre = "rv_scrub_b",    n = 26, kind = "scrub" },
+  { pre = "rv_scrub_a",    n = 90, kind = "scrub" },
+  { pre = "rv_scrub_b",    n = 70, kind = "scrub" },
+}
+
+-- Dense stylised meadow layered on top of the coarse scenery: grass tufts,
+-- wildflowers and bushes follow the reference art direction.
+MEADOW = {
+  { pre = "rv_grass_tuft",    n = 700, kind = "grass" },
+  { pre = "rv_grass_tuft_b",  n = 520, kind = "grass" },
+  { pre = "rv_fern",          n = 150, kind = "grass" },
+  { pre = "rv_flower_white",  n = 80,  kind = "flower" },
+  { pre = "rv_flower_blue",   n = 90,  kind = "flower" },
+  { pre = "rv_flower_yellow", n = 80,  kind = "flower" },
+  { pre = "rv_flower_red",    n = 60,  kind = "flower" },
+  { pre = "rv_bush",          n = 55,  kind = "bush" },
 }

@@ -204,12 +204,13 @@
         "mesh": {
           "castShadow": false,
           "material": {
+            "albedoTex": "assets/models/rv/rv_ground_meadow.png",
             "ao": 1,
-            "colorHex": "#7E7458",
+            "colorHex": "#FFFFFF",
             "emissiveIntensity": 1,
             "metallic": 0,
-            "roughness": 0.949999988079071,
-            "uvRepeat": 30
+            "roughness": 0.9,
+            "uvRepeat": 160
           },
           "meshKey": "cube"
         },

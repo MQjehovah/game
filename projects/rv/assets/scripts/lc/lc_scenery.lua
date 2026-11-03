@@ -8,6 +8,12 @@ function sceneryScale(kind)
     return 0.8 + math.random() * 0.9
   elseif kind == "tree" then
     return 0.9 + math.random() * 0.9
+  elseif kind == "grass" then
+    return 1.2 + math.random() * 1.0
+  elseif kind == "flower" then
+    return 1.2 + math.random() * 0.7
+  elseif kind == "bush" then
+    return 0.8 + math.random() * 0.8
   end
   return 1
 end
@@ -33,24 +39,39 @@ local function distToRoadSq(x, z)
 end
 
 function placeScenery(p, fx, fz, fMin, fMax)
+  local meadow = p.meadow == true
   for _ = 1, 6 do
     local f = fMin + math.random() * (fMax - fMin)
-    local lat = (math.random() * 2 - 1) * 44
+    local lat = (math.random() * 2 - 1) * (meadow and 26 or 44)
     if math.abs(lat) >= 6 or fMin < 0 then
       local wx = rv.x + fx * f - fz * lat
       local wz = rv.z + fz * f + fx * lat
       local blocked = false
       local rdx, rdz = wx - rv.x, wz - rv.z
-      if rdx * rdx + rdz * rdz < 100 then blocked = true end  -- 房车 10m 内
+      local rvR2 = meadow and 9 or 100          -- keep grass off the RV hull
+      if rdx * rdx + rdz * rdz < rvR2 then blocked = true end
       for _, nd in ipairs(NODES) do
         local ddx, ddz = wx - nd.x, wz - nd.z
-        if ddx * ddx + ddz * ddz < 121 then blocked = true break end  -- 节点 11m
+        if ddx * ddx + ddz * ddz < (meadow and 49 or 121) then
+          blocked = true break
+        end
+        -- Meadow plants must also stay out of the POI footprint.
+        if meadow then
+          local pcx, pcz = nd.x + 6.5, nd.z + 6.5
+          if math.abs(wx - pcx) < 6.2 and math.abs(wz - pcz) < 5.6 then
+            blocked = true break
+          end
+        end
       end
-      for _, p in ipairs(ponds) do
-        local ddx, ddz = wx - p.x, wz - p.z
-        if ddx * ddx + ddz * ddz < 144 then blocked = true break end  -- 水塘 12m
+      for _, pond in ipairs(ponds) do
+        local ddx, ddz = wx - pond.x, wz - pond.z
+        if ddx * ddx + ddz * ddz < (meadow and 64 or 144) then
+          blocked = true break
+        end
       end
-      if not blocked and distToRoadSq(wx, wz) < 36 then blocked = true end  -- 公路 6m
+      if not blocked and distToRoadSq(wx, wz) < (meadow and 6.25 or 36) then
+        blocked = true
+      end
       if not blocked then
         local s = sceneryScale(p.kind)
         local y = 0
@@ -98,6 +119,16 @@ function spawnScenery()
       end
     end
   end
+  for _, t in ipairs(MEADOW or {}) do
+    for _ = 1, t.n do
+      local ent = SpawnPrefab(t.pre, { x = 0, y = -50, z = 0 })
+      if ent ~= nil then
+        local p = { ent = ent, kind = t.kind, x = 0, z = 0, meadow = true }
+        placeScenery(p, 0, 1, -26, 34)
+        scenery[#scenery + 1] = p
+      end
+    end
+  end
 end
 
 function recycleScenery(fx, fz)
@@ -106,7 +137,11 @@ function recycleScenery(fx, fz)
     local f = dx * fx + dz * fz
     local lat = dx * (-fz) + dz * fx
     if f < -40 or f > 95 or math.abs(lat) > 55 then
-      placeScenery(p, fx, fz, 25, 75)
+      if p.meadow then
+        placeScenery(p, fx, fz, 15, 38)
+      else
+        placeScenery(p, fx, fz, 25, 75)
+      end
     end
   end
 end

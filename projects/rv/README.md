@@ -170,6 +170,13 @@
 - 车内保留独立内饰板/仪表台/暖光点光源；驾驶席视角隐藏外壳，追逐视角显示完整车体。
 - 公路改为 20 段 10m 深灰立方体 + 独立黄色虚线几何体：抬高路面并加 polygon offset，
   避免远距离 z-fighting 导致的整条路发白；不再依赖贴图/深度投影。
+- **画风：低多边形草甸**：`tools/gen_rv_ground.py` 生成可平铺的
+  `rv_ground_meadow.png`（草绿基底 + 深浅草丛条纹 + 泥土斑块 + 小花点），
+  场景 `Ground` 改为 `albedoTex` + `uvRepeat 160`，从沙地变为草地；
+  `tools/gen_rv_vegetation.py` 生成 `rv_grass_tuft` / `rv_grass_tuft_b` / `rv_fern` /
+  `rv_flower_white/blue/yellow/red` / `rv_bush`，`lc_config.MEADOW` 在营地与公路
+  两侧撒下约 1800 株草/花/灌木（避开路面、水塘与 POI 占地），
+  并按 RV 位置回收复用，形成参考图那种茂密、饱和、带彩色野花的草甸。
 - 新增做饭、倒水、咖啡、修理、拾取、钓鱼、受伤、枪声、脚步等音效。
 - 驻车/荒野有低频风声循环，上路切换到引擎低频循环。
 - HUD 中文文本改为手动 UTF-8 宽度居中/右对齐，避免非 1280 宽窗口下偏左/被裁。
@@ -365,6 +372,14 @@ POI 墙体碰撞/门洞通行等。
   `rv_bevel_side.png` 显示车窗框与轮拱的倒角（轮拱改 20 段圆弧 + 双层轮唇）；
   `rv_bevel_front.png` 显示保险杠/格栅/车顶盖的倒角。
   门洞（`z=-3.54..-2.76, y=0.24..1.86`）、座椅坐标与物理碰撞盒未变。
+- **草甸画风验证**：`Ground` 材质带 `albedoTex=assets/models/rv/rv_ground_meadow.png`
+  （512×512，`uvRepeat=160`），启动日志可见该纹理加载；`MEADOW` 约 1800 株植被
+  （草 1370、花 310、灌木 55）沿公路与营地分布，单株 grass/flower 关闭投影以省开销。
+  截图：`rv_meadow_back5.png`（回望公路：两侧密集草丛、灌木、彩色野花点）、
+  `rv_meadow_drive2.png`（车顶追逐视角：草地 + 草甸 + 灌木一直铺到远处，HUD 约 172 FPS）、
+  `rv_meadow_spawn2.png` / `rv_meadow_front2.png`（营地与车头）。
+  对照参考图，地面由原来的沙土色变为饱和草绿，并出现高矮草丛、灌木团与蓝/黄/白/红
+  野花，形成低多边形草甸风格。
 - **可破碎橱窗验证**：`rv_window_glass.gltf` 使用 BLEND 材质，商店/加油站/仓库/商场/
   湖边木屋/诊所橱窗初始为半透明蓝色面板（`rv_glass_intact_close.png` 中窗内商品呈蓝色调，
   `rv_clinic_glass_intact.png` 为诊所橱窗）；玩家进门后服务器打印
