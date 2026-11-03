@@ -89,6 +89,44 @@ function parseVehicleCondition(str)
            battery = out[4], temp = out[5] }
 end
 
+-- 车辆保养面板数据：每一项返回 {label, value, ok}
+function maintenanceRows()
+  local rows = {}
+  local function row(label, value, ok)
+    rows[#rows + 1] = { label = label, value = value, ok = ok }
+  end
+  local d = dur or 100
+  row("车体", string.format("%.0f%%", d), d >= 40)
+  local e = (parts and parts.engine) or 100
+  row("引擎", string.format("%.0f%%", e), e >= 25)
+  local t = (parts and parts.tires) or 100
+  row("轮胎", string.format("%.0f%%", t), t >= 18)
+  local b = (parts and parts.battery) or 100
+  row("电瓶", string.format("%.0f%%", b), b >= 20)
+  local o = oilLife or 100
+  row("机油", string.format("%.0f%%", o), o >= 20)
+  local c = coolant or 100
+  row("冷却液", string.format("%.0f%%", c), c >= 20)
+  local temp = engineTemp or 20
+  row("水温", string.format("%.0f°C", temp), temp < (VEH.tempOverheat or 110))
+  row("刹车", string.format("%.0f%% 热", (brakeHeat or 0) * 100),
+      (brakeHeat or 0) < 0.7)
+  return rows
+end
+
+-- 每轮胎压/胎温（保养面板用）
+function wheelConditionRows()
+  local rows = {}
+  for i = 1, 4 do
+    rows[i] = {
+      pressure = (rv.tirePressureCold or {})[i] or 2.4,
+      temp = (rv.tireTemps or {})[i] or 22,
+      wear = (rv.tireWear or {})[i] or ((parts and parts.tires) or 100),
+    }
+  end
+  return rows
+end
+
 -- 在加油站更换机油；返回 ok, cost, note
 function serviceOilAtGasstop()
   local cost = oilChangeCost()

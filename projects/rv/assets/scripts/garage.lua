@@ -1248,6 +1248,9 @@ function on_start()
     if n ~= nil then rv.x, rv.z = n.x, n.z end
     mapOpen = true
     setPhase("parked")
+  elseif startMode == "maintview" then
+    maintOpen = true
+    setPhase("parked")
   elseif startMode == "raincab" then
     setWeather("rain")
     setPhase("driving")
@@ -1555,6 +1558,7 @@ function on_update(ent, dt)
   ensureHelpers()
   if ActionPressed("m") then mapOpen = not mapOpen end
   if ActionPressed("i") then invOpen = not invOpen end
+  if ActionPressed("o") then maintOpen = not maintOpen end
   if ActionPressed("j") then journalOpen = not journalOpen; fishBookOpen = false; helpOpen = false end
   if ActionPressed("k") then fishBookOpen = not fishBookOpen; journalOpen = false; helpOpen = false end
   if ActionPressed("p") then helpOpen = not helpOpen; journalOpen = false; fishBookOpen = false end
@@ -1846,6 +1850,7 @@ function on_render()
       drawNightOverlay()
       if drawFatigueVignette ~= nil then drawFatigueVignette() end
       coopDrawHud()
+      if drawMaintenancePanel ~= nil then drawMaintenancePanel() end
       if drawAutoSaveHint ~= nil then drawAutoSaveHint() end
     end
     return
@@ -1872,5 +1877,6 @@ function on_render()
   if journalOpen then drawJournal() end
   if fishBookOpen then drawFishBook() end
   if helpOpen then drawHelp() end
+  if drawMaintenancePanel ~= nil then drawMaintenancePanel() end
   if drawAutoSaveHint ~= nil then drawAutoSaveHint() end
 end

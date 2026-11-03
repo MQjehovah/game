@@ -1515,6 +1515,7 @@ local HELP_SECTIONS = {
       "J          旅行日志",
       "K          鱼类图鉴",
       "I          背包",
+      "O          车辆保养",
       "P / E      开关本说明",
     } },
   { title = "工作台", lines = {
@@ -1927,5 +1928,61 @@ function drawJobPanel()
   end
   DrawText("1-3 接单   0 放弃   4-9 以物易物   R 刷新(1金属)   E 关闭",
            px + 20, py + ph - 26, 11, 0.70, 0.72, 0.66, 1)
+end
+
+-- 车辆保养面板（O）：各子系统状态 + 四轮胎压/胎温 + 服务费用提示
+function drawMaintenancePanel()
+  if not maintOpen then return end
+  local vp = GetViewportSize()
+  local vw = (vp and vp.w) or 1280
+  local vh = (vp and vp.h) or 720
+  local rows = maintenanceRows and maintenanceRows() or {}
+  local pw, ph = 460, 108 + #rows * 24 + 96
+  local px = math.floor((vw - pw) * 0.5)
+  local py = math.floor((vh - ph) * 0.5)
+  DrawRect(px, py, pw, ph, 0.04, 0.05, 0.06, 0.94)
+  DrawRectOutline(px, py, pw, ph, 0.55, 0.52, 0.42, 0.95)
+  drawTextCentered("车辆保养", vw * 0.5, py + 12, 20, 0.98, 0.90, 0.68, 1)
+  DrawText("O 关闭", px + pw - 76, py + 16, 12, 0.68, 0.70, 0.64, 1)
+  local yy = py + 46
+  for i = 1, #rows, 2 do
+    local a = rows[i]
+    local b = rows[i + 1]
+    local function cell(r, x)
+      if r == nil then return end
+      DrawText(r.label, x, yy, 13, 0.74, 0.76, 0.70, 1)
+      DrawText(r.value, x + 62, yy, 13,
+               r.ok and 0.78 or 1.0, r.ok and 0.92 or 0.45,
+               r.ok and 0.74 or 0.32, 1)
+    end
+    cell(a, px + 22)
+    cell(b, px + 236)
+    yy = yy + 24
+  end
+  -- 四轮
+  local wheels = wheelConditionRows and wheelConditionRows() or {}
+  local names = { "左前", "右前", "左后", "右后" }
+  yy = yy + 6
+  DrawText("轮胎  压 / 温 / 磨损", px + 22, yy, 12, 0.90, 0.84, 0.66, 1)
+  yy = yy + 20
+  for i = 1, 4 do
+    local w = wheels[i] or {}
+    local bad = (w.pressure or 2.4) < 1.95
+    DrawText(string.format("%s  %.1fbar  %.0f°C  %.0f%%",
+             names[i] or ("轮" .. i), w.pressure or 2.4, w.temp or 22,
+             w.wear or 100),
+             px + 30 + ((i - 1) % 2) * 210, yy + math.floor((i - 1) / 2) * 20,
+             12, bad and 1.0 or 0.78, bad and 0.45 or 0.86,
+             bad and 0.32 or 0.74, 1)
+  end
+  yy = yy + 52
+  local tips = {}
+  if (oilLife or 100) < 40 then tips[#tips + 1] = "机油" end
+  if (coolant or 100) < 40 then tips[#tips + 1] = "冷却液" end
+  if (parts and parts.tires or 100) < 40 then tips[#tips + 1] = "轮胎" end
+  local tip = (#tips > 0)
+    and ("建议到加油站/工作台处理：" .. table.concat(tips, "、"))
+    or "各系统状态良好，继续上路"
+  DrawText(tip, px + 22, yy, 12, 0.80, 0.86, 0.72, 1)
 end
 

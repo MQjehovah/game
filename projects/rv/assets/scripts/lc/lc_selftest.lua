@@ -1887,6 +1887,33 @@ function runSelfTest()
        string.format("token=%s", tostring(token)))
   end
 
+  -- 保养面板数据：8 项、良好时全部 ok、低值时标红、四轮数据
+  do
+    local kd, ke, kt = dur, parts.engine, parts.tires
+    local kb, ko, kc = parts.battery, oilLife, coolant
+    local ktemp, kheat = engineTemp, brakeHeat
+    dur, parts.engine, parts.tires, parts.battery = 100, 100, 100, 100
+    oilLife, coolant, engineTemp, brakeHeat = 100, 100, 20, 0
+    local rows = maintenanceRows()
+    local allOk = #rows == 8
+    for _, r in ipairs(rows) do
+      if not r.ok then allOk = false end
+    end
+    dur, oilLife, coolant = 10, 5, 5
+    local flagged = false
+    for _, r in ipairs(maintenanceRows()) do
+      if not r.ok then flagged = true end
+    end
+    local wheels = wheelConditionRows()
+    dur, parts.engine, parts.tires = kd, ke, kt
+    parts.battery, oilLife, coolant = kb, ko, kc
+    engineTemp, brakeHeat = ktemp, kheat
+    ok(r, "maintenance panel",
+       allOk and flagged and #wheels == 4 and wheels[1].pressure ~= nil,
+       string.format("rows=%d ok=%s flagged=%s wheels=%d",
+                     #rows, tostring(allOk), tostring(flagged), #wheels))
+  end
+
   -- 续航估算：无实测时用 1.6L/100m 基准，有实测按实测油耗
   do
     local sf, sd, sfu = fuel, tripDistance, tripFuel
