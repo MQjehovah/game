@@ -335,6 +335,76 @@ def wheel(m, sign, cz):
         m.quad(HUB, (xs, 0.38, cz), p0, p1, (xs, 0.38, cz), (sign, 0, 0))
 
 
+FRONT_Z = 5.54
+FRONT_BULGE = 0.10
+
+
+def front_fascia(m):
+    """Lofted curved front cab panel: a 4x6 grid whose z follows a rounded
+    nose (edges and top/bottom tuck back), with chamfered joints to the side
+    skins and the cowl. Returns (panels, chamfers)."""
+    ycuts = [Y0, 0.45, 0.70, 0.95, 1.12]
+    xcuts = [-1.18, -0.80, -0.42, 0.0, 0.42, 0.80, 1.18]
+
+    def zf(x, y):
+        tx = (x / 1.18) ** 2
+        ty = min(1.0, ((y - 0.70) / 0.45) ** 2)
+        return FRONT_Z - FRONT_BULGE * tx - 0.04 * ty
+
+    panels = 0
+    for j in range(len(ycuts) - 1):
+        y0, y1 = ycuts[j], ycuts[j + 1]
+        for i in range(len(xcuts) - 1):
+            x0, x1 = xcuts[i], xcuts[i + 1]
+            m.quad(BODY, (x0, y0, zf(x0, y0)), (x1, y0, zf(x1, y0)),
+                   (x1, y1, zf(x1, y1)), (x0, y1, zf(x0, y1)))
+            panels = panels + 1
+
+    # chamfered side joints into the side skins (two strips per side per row
+    # at the top, and a corner panel closing the front/side gap)
+    chamfers = 0
+    for sx in (-1, 1):
+        for j in range(len(ycuts) - 1):
+            y0, y1 = ycuts[j], ycuts[j + 1]
+            za, zb = zf(sx * 1.18, y0), zf(sx * 1.18, y1)
+            m.quad(BODY, (sx * 1.18, y0, za), (sx * 1.185, y0, za - 0.02),
+                   (sx * 1.185, y1, zb - 0.02), (sx * 1.18, y1, zb))
+            m.quad(BODY, (sx * 1.18, y0, za), (sx * 1.10, y0, ZF),
+                   (sx * 1.10, y1, ZF), (sx * 1.18, y1, zb))
+            chamfers = chamfers + 2
+    # top chamfer strip toward the cowl
+    ytop = ycuts[-1]
+    for i in range(len(xcuts) - 1):
+        x0, x1 = xcuts[i], xcuts[i + 1]
+        m.quad(BODY, (x0, ytop, zf(x0, ytop)), (x1, ytop, zf(x1, ytop)),
+               (x1, 1.16, zf(x1, ytop) - 0.02), (x0, 1.16, zf(x0, ytop) - 0.02))
+        chamfers = chamfers + 1
+    return panels, chamfers
+
+
+def curved_windshield(m):
+    """Windshield as a faceted curved sheet instead of one flat quad."""
+    xs = [-1.06, -0.72, -0.36, 0.0, 0.36, 0.72, 1.06]
+
+    def zb(x):
+        return FRONT_Z - 0.10 * (x / 1.06) ** 2
+
+    def zt(x):
+        return 4.92 - 0.05 * (x / 1.06) ** 2
+
+    quads = 0
+    for i in range(len(xs) - 1):
+        x0, x1 = xs[i], xs[i + 1]
+        m.poly(GLASS, [(x0, 1.14, zb(x0)), (x1, 1.14, zb(x1)),
+                       (x1, 2.04, zt(x1)), (x0, 2.04, zt(x0))],
+               (0.0, 0.30, 0.95))
+        m.poly(GLASS, [(x1, 1.14, zb(x1)), (x0, 1.14, zb(x0)),
+                       (x0, 2.04, zt(x0)), (x1, 2.04, zt(x1))],
+               (0.0, -0.30, -0.95))
+        quads = quads + 1
+    return quads
+
+
 def main():
     m = Mesh()
     # Hidden material-0 primitive.
@@ -351,12 +421,10 @@ def main():
     m.box(TRIM, 0.68, 1.45, ZB - 0.045, 0.07, 0.71, 0.04)
     m.box(TRIM, 0, 1.45, ZB - 0.03, 0.06, 0.55, 0.02)
 
-    # Front cab: solid lower panel + sloped windshield + grille/bumper.
-    m.box(BODY, 0, 0.70, 5.50, 2.36, 0.90, 0.12)
-    m.quad(GLASS, (-1.06, 1.14, 5.54), (1.06, 1.14, 5.54),
-           (1.06, 2.04, 4.92), (-1.06, 2.04, 4.92), (0.0, 0.30, 0.95))
-    m.quad(GLASS, (1.06, 1.14, 5.54), (-1.06, 1.14, 5.54),
-           (-1.06, 2.04, 4.92), (1.06, 2.04, 4.92), (0.0, -0.30, -0.95))
+    # Front cab: lofted curved fascia + faceted curved windshield.
+    fascia_panels, fascia_chamfers = front_fascia(m)
+    windshield_panels = curved_windshield(m)
+    curved_panels = fascia_panels + windshield_panels
     # windshield frame: bottom/top rails + A pillars
     m.box(TRIM, 0, 1.13, 5.55, 2.20, 0.06, 0.06)
     m.box(TRIM, 0, 2.04, 4.93, 2.20, 0.06, 0.06)
@@ -608,6 +676,9 @@ def main():
     tris = sum(len(v[2]) // 3 for v in m.groups.values())
     STATS.parent.mkdir(parents=True, exist_ok=True)
     STATS.write_text(json.dumps({
+        "curvedPanels": curved_panels,
+        "fasciaChamfers": fascia_chamfers,
+        "fasciaCurve": FRONT_BULGE,
         "wallQuads": wall_quads,
         "wallInnerQuads": wall["inner"],
         "wallThickness": WALL_T,
@@ -634,7 +705,8 @@ def main():
           "roofStrips", len(ROOF_SHOULDER) - 1,
           "wallQuads", wall_quads,
           "jambs", wall["jambs"], "reveals", wall["reveals"],
-          "panes", wall["panes"], "gaskets", wall["gaskets"])
+          "panes", wall["panes"], "gaskets", wall["gaskets"],
+          "curvedPanels", curved_panels, "fasciaChamfers", fascia_chamfers)
 
 
 if __name__ == "__main__":
