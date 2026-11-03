@@ -179,12 +179,15 @@ SCENERY = {
 -- Dense stylised meadow layered on top of the coarse scenery: grass tufts,
 -- wildflowers and bushes follow the reference art direction.
 MEADOW = {
-  { pre = "rv_grass_tuft",    n = 700, kind = "grass" },
-  { pre = "rv_grass_tuft_b",  n = 520, kind = "grass" },
-  { pre = "rv_fern",          n = 150, kind = "grass" },
-  { pre = "rv_flower_white",  n = 80,  kind = "flower" },
-  { pre = "rv_flower_blue",   n = 90,  kind = "flower" },
-  { pre = "rv_flower_yellow", n = 80,  kind = "flower" },
-  { pre = "rv_flower_red",    n = 60,  kind = "flower" },
-  { pre = "rv_bush",          n = 55,  kind = "bush" },
+  { pre = "rv_meadow_a",      n = 20,  kind = "patch" },
+  { pre = "rv_meadow_b",      n = 20,  kind = "patch" },
+  { pre = "rv_meadow_c",      n = 20,  kind = "patch" },
+  { pre = "rv_grass_tuft",    n = 55,  kind = "grass" },
+  { pre = "rv_grass_tuft_b",  n = 45,  kind = "grass" },
+  { pre = "rv_fern",          n = 20,  kind = "grass" },
+  { pre = "rv_flower_white",  n = 10,  kind = "flower" },
+  { pre = "rv_flower_blue",   n = 12,  kind = "flower" },
+  { pre = "rv_flower_yellow", n = 10,  kind = "flower" },
+  { pre = "rv_flower_red",    n = 8,   kind = "flower" },
+  { pre = "rv_bush",          n = 34,  kind = "bush" },
 }

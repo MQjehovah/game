@@ -788,15 +788,17 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   `metallicRoughnessTexture`、`occlusionTexture`，`light`/`tail` 材质再加
   `emissiveTexture`。启动日志可见 38 条
   `loaded texture 'assets/models/rv/rv_tex_*.png'`（含 `_n` / `_orm`）。
-- **草甸画风**（`projects/rv`）：`tools/gen_rv_ground.py` 生成可平铺的
-  `rv_ground_meadow.png`（草绿基底 + 深浅草丛条纹 + 泥土斑块 + 小花点），
-  场景 `Ground` 改用 `albedoTex` + `uvRepeat=160`；
-  `tools/gen_rv_vegetation.py` 生成 `rv_grass_tuft` / `rv_grass_tuft_b` /
-  `rv_fern`（多片弯曲草叶）、`rv_flower_white/blue/yellow/red`（三朵一簇）与
-  `rv_bush`（多球灌木）。`lc_config.MEADOW` 在营地/公路两侧撒下约 1800 株，
-  按 RV 位置回收；生成时避开路面 2.5m、水塘、POI 占地与 RV 车体，
-  草/花 prefab 关闭投影以控制开销（追逐视角实测约 170 FPS）。
-  世界由此从沙地变为参考图方向的饱和低多边形草甸。
+- **草甸画风与地形**（`projects/rv`）：`tools/gen_rv_ground.py` 生成可平铺的
+  `rv_ground_meadow.png`（草绿基底 + 深浅草丛条纹 + 泥土斑块 + 小花点）与
+  `rv_dirt.png`，场景 `Ground` 改用 `albedoTex` + `uvRepeat=160`；
+  `tools/gen_rv_embankment.py` 生成 `rv_embankment.gltf`（主路右侧泥土斜坡 +
+  草地顶部，高度沿 z 起伏、两端收口）；
+  `tools/gen_rv_vegetation.py` 生成 `rv_meadow_a/b/c`（6×6m 拼块，每块 18 簇草 +
+  2 丛花）、`rv_grass_tuft` / `rv_grass_tuft_b` / `rv_fern`、`rv_flower_*`、
+  `rv_bush`。`lc_config.MEADOW` 用 60 个拼块 + 约 130 株近景草花 + 34 丛灌木
+  （约 570 实体）铺满营地/公路两侧，按 RV 位置回收；生成时避开路面、水塘、
+  POI、土坡与 RV。`updateMeadowWind()` 以 20Hz、分 4 批让草/花绕根部轻摆；
+  土坡顶部另种 90 株。实测追逐视角约 **91 FPS**。
   角色动画由 `tools/gen_rv_anim_clips.py`
   生成**手工关键帧**上车链 `DoorOpen`（够门把手→拉开，0.9s）→ `Step`（抬脚踩踏板，
   0.7s）→ `Board`（站姿→抬步→落座，0.9s）→ `Sit` 循环（坐姿 + 1s 呼吸关键帧），

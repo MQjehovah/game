@@ -87,6 +87,32 @@ def main():
     img.save(OUT, "PNG")
     print("wrote", OUT, img.size)
 
+    # Dirt map for the roadside embankment.
+    dirt = Image.new("RGB", (S, S))
+    dp = dirt.load()
+    for y in range(S):
+        for x in range(S):
+            v = 0.5 + 0.2 * math.sin(x * 0.03) * math.cos(y * 0.024)
+            n = rng.randint(-10, 10)
+            dp[x, y] = (max(0, min(255, int(92 + 30 * v) + n)),
+                        max(0, min(255, int(72 + 22 * v) + n)),
+                        max(0, min(255, int(50 + 15 * v) + n)))
+    dd = ImageDraw.Draw(dirt)
+    for _ in range(900):
+        x, y = rng.randrange(S), rng.randrange(S)
+        r = rng.randint(1, 3)
+        shade = rng.randint(70, 130)
+        dd.ellipse([x - r, y - r, x + r, y + r],
+                   fill=(shade, shade - 16, shade - 34))
+    for _ in range(60):
+        x, y = rng.randrange(S), rng.randrange(S)
+        r = rng.randint(2, 6)
+        dd.ellipse([x - r, y - r * 0.7, x + r, y + r * 0.7],
+                   fill=(86, 76, 62))
+    dirt = dirt.filter(ImageFilter.GaussianBlur(0.5))
+    dirt.save(OUT.parent / "rv_dirt.png", "PNG")
+    print("wrote", OUT.parent / "rv_dirt.png", dirt.size)
+
 
 if __name__ == "__main__":
     main()

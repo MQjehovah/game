@@ -908,6 +908,7 @@ local function serverUpdate(dt)
   if driver ~= nil then
     local target = driver.f * RV_SPEED
     rv.speed = rv.speed + (target - rv.speed) * math.min(1, dt * 2.5)
+    -- Positive strafe = D; decreasing yaw turns screen-right, matching lc_drive.
     rv.yaw = rv.yaw - driver.s * dt * 1.1
     rv.x = rv.x + math.sin(rv.yaw) * rv.speed * dt
     rv.z = rv.z + math.cos(rv.yaw) * rv.speed * dt
@@ -938,7 +939,8 @@ local function serverUpdate(dt)
       local s = coop.slots[i]
       if s.joined and not s.inside then
         local fx, fz = math.sin(s.yaw), math.cos(s.yaw)
-        local rx, rz = math.cos(s.yaw), -math.sin(s.yaw)
+        -- Right vector = forward x up = (-cos yaw, 0, sin yaw).
+        local rx, rz = -math.cos(s.yaw), math.sin(s.yaw)
         local nx = s.x + (fx * s.f + rx * s.s) * PLAYER_SPEED * dt
         local nz = s.z + (fz * s.f + rz * s.s) * PLAYER_SPEED * dt
         nx, nz = collidePoiWalls(s.x, s.z, nx, nz)
@@ -1309,7 +1311,8 @@ local function clientUpdate(dt)
 
   if coop.haveSelf and not driving and not coop.buildMode and not inside then
     local fx, fz = math.sin(coop.lookYaw), math.cos(coop.lookYaw)
-    local rx, rz = math.cos(coop.lookYaw), -math.sin(coop.lookYaw)
+    -- Right vector = forward x up = (-cos yaw, 0, sin yaw): D strafes right.
+    local rx, rz = -math.cos(coop.lookYaw), math.sin(coop.lookYaw)
     local nx = coop.localPos.x + (fx * f + rx * s) * PLAYER_SPEED * dt
     local nz = coop.localPos.z + (fz * f + rz * s) * PLAYER_SPEED * dt
     nx, nz = collidePoiWalls(coop.localPos.x, coop.localPos.z, nx, nz)

@@ -131,7 +131,8 @@ function updatePlayer(dt)
   local iz = (ActionDown("w") and 1 or 0) - (ActionDown("s") and 1 or 0)
   local sprint = ActionDown("shift") and true or false
   local fx, fz = math.sin(player.yaw), math.cos(player.yaw)
-  local rx, rz = math.cos(player.yaw), -math.sin(player.yaw)
+  -- Right vector = forward x up = (-cos yaw, 0, sin yaw): D strafes right.
+  local rx, rz = -math.cos(player.yaw), math.sin(player.yaw)
   local mx, mz = fx * iz + rx * ix, fz * iz + rz * ix
   local len = math.sqrt(mx * mx + mz * mz)
   if len > 0.001 then mx, mz = mx / len, mz / len end

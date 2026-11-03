@@ -339,6 +339,10 @@ function on_start()
   LC.flow.load("assets/flow/difficulty_scaling.flow.json")
   spawnPonds()
   spawnScenery()
+  spawnHillPlants()
+  -- Fixed roadside embankment (dirt slope + grassy crest) beside the main road.
+  local emb = SpawnPrefab("rv_embankment", { x = 0, y = 0, z = 0 })
+  if emb ~= nil then SetRotationY(emb, 0) end
   spawnMarkers()
   do  -- 验证钩子
     local flag = ReadText("autopilot_on.txt")
@@ -462,6 +466,11 @@ function on_start()
     -- Test-only close-up of the RV body side (rib/panel normal map).
     px, pz = 3.40, 0.00
     pyaw = -math.pi * 0.5
+  end
+  if startMode == "embankment" then
+    -- Test-only view of the roadside dirt embankment from the road.
+    px, pz = 1.50, 6.00
+    pyaw = math.pi * 0.5
   end
   if startMode == "poi" then
     -- 路边商店门口：用于检查可进入建筑（门洞/内衬/战利品）
@@ -758,6 +767,7 @@ function on_update(ent, dt)
     if updatePoiWindows then updatePoiWindows(dt) end
     if updatePoiDoors then updatePoiDoors(dt) end
     if updatePoiSlidingDoors then updatePoiSlidingDoors(dt) end
+    if updateMeadowWind then updateMeadowWind(dt) end
     return
   end
   if toast.t > 0 then toast.t = toast.t - dt end
@@ -849,6 +859,7 @@ function on_update(ent, dt)
   if updatePoiDoors then updatePoiDoors(dt) end
   if updatePoiBarnDoorProximity then updatePoiBarnDoorProximity(player.x, player.z) end
   if updatePoiSlidingDoors then updatePoiSlidingDoors(dt) end
+  if updateMeadowWind then updateMeadowWind(dt) end
   updateFishing(dt)
   updateInteraction()
   if ActionPressed("e") then doInteract() end

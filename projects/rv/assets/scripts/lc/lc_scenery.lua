@@ -14,6 +14,8 @@ function sceneryScale(kind)
     return 1.2 + math.random() * 0.7
   elseif kind == "bush" then
     return 0.8 + math.random() * 0.8
+  elseif kind == "patch" then
+    return 0.9 + math.random() * 0.5
   end
   return 1
 end
@@ -40,6 +42,7 @@ end
 
 function placeScenery(p, fx, fz, fMin, fMax)
   local meadow = p.meadow == true
+  local big = p.kind == "patch"
   for _ = 1, 6 do
     local f = fMin + math.random() * (fMax - fMin)
     local lat = (math.random() * 2 - 1) * (meadow and 26 or 44)
@@ -48,7 +51,7 @@ function placeScenery(p, fx, fz, fMin, fMax)
       local wz = rv.z + fz * f + fx * lat
       local blocked = false
       local rdx, rdz = wx - rv.x, wz - rv.z
-      local rvR2 = meadow and 9 or 100          -- keep grass off the RV hull
+      local rvR2 = big and 20 or (meadow and 9 or 100)
       if rdx * rdx + rdz * rdz < rvR2 then blocked = true end
       for _, nd in ipairs(NODES) do
         local ddx, ddz = wx - nd.x, wz - nd.z
@@ -69,7 +72,13 @@ function placeScenery(p, fx, fz, fMin, fMax)
           blocked = true break
         end
       end
-      if not blocked and distToRoadSq(wx, wz) < (meadow and 6.25 or 36) then
+      if not blocked and distToRoadSq(wx, wz) <
+         (big and 30 or (meadow and 6.25 or 36)) then
+        blocked = true
+      end
+      -- Keep the roadside embankment clear of scattered plants (its own crest
+      -- plants are placed by spawnHillPlants so they sit on the slope).
+      if not blocked and meadow and wx > 4.2 and wx < 39 and wz > -26 and wz < 48 then
         blocked = true
       end
       if not blocked then
@@ -83,7 +92,10 @@ function placeScenery(p, fx, fz, fMin, fMax)
           if p.kind == "rock" then y = s * 0.55 end
         end
         SetPosition(p.ent, { x = wx, y = y, z = wz })
-        SetRotationY(p.ent, math.random() * math.pi * 2)
+        local yaw = math.random() * math.pi * 2
+        SetRotationY(p.ent, yaw)
+        p.baseYaw = yaw
+        if p.phase == nil then p.phase = math.random() * math.pi * 2 end
         p.x, p.z = wx, wz
         -- 树/岩石 = 静态碰撞体（越野障碍），回收 = 传送刚体
         if p.kind == "tree" or p.kind == "rock" then
@@ -133,14 +145,105 @@ end
 
 function recycleScenery(fx, fz)
   for _, p in ipairs(scenery) do
-    local dx, dz = p.x - rv.x, p.z - rv.z
-    local f = dx * fx + dz * fz
-    local lat = dx * (-fz) + dz * fx
-    if f < -40 or f > 95 or math.abs(lat) > 55 then
-      if p.meadow then
-        placeScenery(p, fx, fz, 15, 38)
-      else
-        placeScenery(p, fx, fz, 25, 75)
+    if not p.fixed then
+      local dx, dz = p.x - rv.x, p.z - rv.z
+      local f = dx * fx + dz * fz
+      local lat = dx * (-fz) + dz * fx
+      if f < -40 or f > 95 or math.abs(lat) > 55 then
+        if p.meadow then
+          placeScenery(p, fx, fz, 15, 38)
+        else
+          placeScenery(p, fx, fz, 25, 75)
+        end
+      end
+    end
+  end
+end
+
+-- Plants anchored on the embankment crest (they must not be recycled away).
+local hillSpawned = false
+
+local HX = { 5.0, 8.0, 11.5, 15.0, 19.0, 23.5, 28.0, 33.0, 38.0 }
+local HY = { 0.0, 0.70, 1.90, 3.00, 3.50, 3.55, 3.00, 1.50, 0.0 }
+
+local function hillBase(x)
+  for i = 1, #HX - 1 do
+    if x >= HX[i] and x <= HX[i + 1] then
+      local t = (x - HX[i]) / (HX[i + 1] - HX[i])
+      return HY[i] + (HY[i + 1] - HY[i]) * t
+    end
+  end
+  return 0.0
+end
+
+local function hillHeight(x, z)
+  local y = hillBase(x) + 0.28 * math.sin(z * 0.23 + x * 0.35) +
+            0.12 * math.sin(z * 0.61)
+  local taper = math.min(1.0,
+                         math.max(0.0, (z + 24.0) / 6.0),
+                         math.max(0.0, (46.0 - z) / 6.0))
+  return y * taper
+end
+
+function spawnHillPlants()
+  if hillSpawned then return end
+  hillSpawned = true
+  local kinds = {
+    { "rv_grass_tuft", 34 }, { "rv_grass_tuft_b", 26 },
+    { "rv_flower_white", 6 }, { "rv_flower_blue", 7 },
+    { "rv_flower_yellow", 6 }, { "rv_bush", 7 },
+  }
+  for _, k in ipairs(kinds) do
+    for _ = 1, k[2] do
+      local x = 16.0 + math.random() * 7.0
+      local z = -18.0 + math.random() * 58.0
+      local y = hillHeight(x, z)
+      local ent = SpawnPrefab(k[1], { x = x, y = y, z = z })
+      if ent ~= nil then
+        local s = 0.9 + math.random() * 0.7
+        SetScale(ent, s, s, s)
+        local yaw = math.random() * math.pi * 2
+        SetRotationY(ent, yaw)
+        scenery[#scenery + 1] = {
+          ent = ent, kind = (k[1] == "rv_bush") and "bush" or "grass",
+          x = x, z = z, meadow = true, fixed = true,
+          baseYaw = yaw, phase = math.random() * math.pi * 2,
+        }
+      end
+    end
+  end
+  print(string.format("[meadow] hill plants spawned (%d)", #scenery))
+end
+
+-- Gentle wind: rotate grass/flower clumps around their base. Blades are
+-- authored with a common lean direction, so yaw sway reads as leaning.
+-- Updates run at 20 Hz and walk one of four buckets per tick, keeping the
+-- per-frame SetRotationY count low with ~2000 plants.
+local windT = 0.0
+local windAcc = 0.0
+local windBucket = 0
+local WIND_BUCKETS = 4
+function updateMeadowWind(dt)
+  windT = windT + dt
+  windAcc = windAcc + dt
+  if windAcc < 0.05 then return end
+  windAcc = 0
+  windBucket = (windBucket % WIND_BUCKETS) + 1
+  local cx, cz = rv.x, rv.z
+  if player ~= nil and player.active and player.x ~= nil then
+    cx, cz = player.x, player.z
+  end
+  local limit = 42 * 42
+  local n = #scenery
+  for i = windBucket, n, WIND_BUCKETS do
+    local p = scenery[i]
+    if p.meadow and p.baseYaw then
+      local dx, dz = p.x - cx, p.z - cz
+      if dx * dx + dz * dz < limit then
+        local amp = (p.kind == "grass") and 0.20 or 0.10
+        local s = math.sin(windT * 1.25 + p.phase) +
+                  0.35 * math.sin(windT * 2.7 + p.phase * 2.1)
+        SetRotationY(p.ent, p.baseYaw + s * amp)
       end
     end
   end

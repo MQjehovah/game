@@ -3,6 +3,8 @@
 
 function updateDrive(dt)
   local throttle = (ActionDown("w") and 1 or 0) - (ActionDown("s") and 1 or 0)
+  -- Positive yaw turns toward -X, which is screen-right when facing +Z, so
+  -- D must subtract: A = +1 turns left, D = -1 turns right.
   local steer = (ActionDown("a") and 1 or 0) - (ActionDown("d") and 1 or 0)
   if autoPilot then
     driveT = driveT + dt

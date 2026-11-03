@@ -122,45 +122,60 @@ def hidden(m):
     m.box(DEFAULT, 0, -0.6, 0, 0.02, 0.02, 0.02)
 
 
-def grass_tuft(m, count, hmin, hmax, mat):
+def grass_tuft(m, count, hmin, hmax, mat, ox=0.0, oz=0.0):
+    # Blades lean in a common direction so yaw sway reads as wind, not spin.
+    base = rng.uniform(0, math.pi * 2)
     for _ in range(count):
-        yaw = rng.uniform(0, math.pi * 2)
-        m.blade(mat, rng.uniform(-0.05, 0.05), 0, rng.uniform(-0.05, 0.05),
-                yaw, rng.uniform(hmin, hmax), rng.uniform(0.05, 0.14),
+        yaw = base + rng.uniform(-1.0, 1.0)
+        m.blade(mat, ox + rng.uniform(-0.05, 0.05), 0,
+                oz + rng.uniform(-0.05, 0.05),
+                yaw, rng.uniform(hmin, hmax), rng.uniform(0.07, 0.16),
                 rng.uniform(0.012, 0.024))
 
 
-def flower(m, petal):
+def flower(m, petal, ox=0.0, oz=0.0):
     # Three blooms per model so a single scattered entity reads as a patch.
     for _ in range(3):
-        ox = rng.uniform(-0.06, 0.06)
-        oz = rng.uniform(-0.06, 0.06)
+        bx = ox + rng.uniform(-0.06, 0.06)
+        bz = oz + rng.uniform(-0.06, 0.06)
         h = rng.uniform(0.20, 0.34)
-        m.box(STEM, ox, h * 0.5, oz, 0.008, h, 0.008)
+        m.box(STEM, bx, h * 0.5, bz, 0.008, h, 0.008)
         for a in (0.6, 3.4):
             lx, lz = math.cos(a) * 0.03, math.sin(a) * 0.03
-            m.poly(LEAF, [(ox, h * 0.28, oz),
-                          (ox + lx, h * 0.34, oz + lz),
-                          (ox, h * 0.46, oz)])
+            m.poly(LEAF, [(bx, h * 0.28, bz),
+                          (bx + lx, h * 0.34, bz + lz),
+                          (bx, h * 0.46, bz)])
         n = 6
         r0, r1 = 0.014, 0.06
         for i in range(n):
             a = math.pi * 2 * i / n
             a2 = a + 0.5
             m.poly(petal, [
-                (ox + math.cos(a) * r0, h, oz + math.sin(a) * r0),
-                (ox + math.cos(a2) * r1, h + 0.008, oz + math.sin(a2) * r1),
-                (ox + math.cos(a + 0.6) * r0, h, oz + math.sin(a + 0.6) * r0),
+                (bx + math.cos(a) * r0, h, bz + math.sin(a) * r0),
+                (bx + math.cos(a2) * r1, h + 0.008, bz + math.sin(a2) * r1),
+                (bx + math.cos(a + 0.6) * r0, h, bz + math.sin(a + 0.6) * r0),
             ])
-        m.sphere(FLOWER_CENTER, ox, h + 0.01, oz, 0.02, seg=6, rings=2)
+        m.sphere(FLOWER_CENTER, bx, h + 0.01, bz, 0.02, seg=6, rings=2)
 
 
-def bush(m):
-    m.sphere(BUSH, 0, 0.34, 0, 0.34, seg=8, rings=4)
-    m.sphere(BUSH, 0.20, 0.24, 0.08, 0.24, seg=8, rings=4)
-    m.sphere(BUSH, -0.16, 0.22, -0.10, 0.22, seg=8, rings=4)
-    m.sphere(BUSH_LIGHT, -0.04, 0.50, 0.02, 0.22, seg=8, rings=4)
-    m.sphere(BUSH_LIGHT, 0.16, 0.40, -0.08, 0.16, seg=8, rings=3)
+def bush(m, ox=0.0, oz=0.0):
+    m.sphere(BUSH, ox, 0.34, oz, 0.34, seg=8, rings=4)
+    m.sphere(BUSH, ox + 0.20, 0.24, oz + 0.08, 0.24, seg=8, rings=4)
+    m.sphere(BUSH, ox - 0.16, 0.22, oz - 0.10, 0.22, seg=8, rings=4)
+    m.sphere(BUSH_LIGHT, ox - 0.04, 0.50, oz + 0.02, 0.22, seg=8, rings=4)
+    m.sphere(BUSH_LIGHT, ox + 0.16, 0.40, oz - 0.08, 0.16, seg=8, rings=3)
+
+
+def meadow_patch(m, petal):
+    """A 6x6 m tile of grass tufts + two flower clusters as one mesh."""
+    for _ in range(18):
+        ox = rng.uniform(-2.7, 2.7)
+        oz = rng.uniform(-2.7, 2.7)
+        grass_tuft(m, rng.randint(4, 8), 0.18, 0.42, GRASS, ox, oz)
+    for _ in range(2):
+        ox = rng.uniform(-2.3, 2.3)
+        oz = rng.uniform(-2.3, 2.3)
+        flower(m, petal, ox, oz)
 
 
 MODELS = {
@@ -172,6 +187,9 @@ MODELS = {
     "rv_flower_yellow": ("RV_FlowerYellow", lambda m: flower(m, PETAL_YELLOW)),
     "rv_flower_red": ("RV_FlowerRed", lambda m: flower(m, PETAL_RED)),
     "rv_bush": ("RV_Bush", bush),
+    "rv_meadow_a": ("RV_MeadowA", lambda m: meadow_patch(m, PETAL_WHITE)),
+    "rv_meadow_b": ("RV_MeadowB", lambda m: meadow_patch(m, PETAL_BLUE)),
+    "rv_meadow_c": ("RV_MeadowC", lambda m: meadow_patch(m, PETAL_YELLOW)),
 }
 
 
