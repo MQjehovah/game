@@ -75,6 +75,24 @@ function serviceOilAtGasstop()
   return true, cost, string.format("更换机油（%d 金属）", cost)
 end
 
+-- 加油站补充冷却液：低于 90% 时收 1 金属，补满
+function coolantServiceCost()
+  if (coolant or 100) >= 90 then return 0 end
+  return 1
+end
+
+function serviceCoolantAtGasstop()
+  local cost = coolantServiceCost()
+  if cost <= 0 then return true, 0, "冷却液正常" end
+  if (materials.metal or 0) < cost then
+    return false, cost, "补充冷却液需要 1 金属"
+  end
+  materials.metal = (materials.metal or 0) - cost
+  coolant = 100
+  if PlaySfx then PlaySfx("repair") end
+  return true, cost, "冷却液已补满（1 金属）"
+end
+
 -- 加油站充气：最低胎压低于 2.3bar 时收 1 金属，充回 2.4bar 并清除爆胎
 function tireAirCost()
   local t = rv and rv.tirePressureCold
@@ -379,10 +397,17 @@ function updateReverseBeep(dt)
 end
 
 -- 引擎水温：高速/重载升温，低速/怠速散热；过热时限制最高车速并缓慢磨损引擎
+-- 冷却液越低，升温越快（最低时热度 ×1.5）
+function coolantHeatScale(v)
+  local c = v or 100
+  if c >= 30 then return 1.0 end
+  return 1.0 + math.min(0.5, (30 - c) / 30 * 0.5)
+end
+
 function engineHeatRate(speed, loadRatio)
   local v = math.min(1, math.abs(speed or 0) / DRIVE.maxSpeed)
   local load = 1 + math.max(0, (loadRatio or 1) - 1.0) * 0.8
-  local heat = (VEH.tempHeat or 5.5) * v * v * load
+  local heat = (VEH.tempHeat or 5.5) * v * v * load * coolantHeatScale(coolant)
   local cool = (VEH.tempCool or 1.0) + 0.30 * v
   return heat - cool
 end
@@ -990,6 +1015,9 @@ function updateDrive(dt)
     parts.tires = math.max(0, parts.tires -
       VEH.partWear.tires * meters * tireWearScale(ratio))
     oilLife = math.max(0, (oilLife or 100) - meters * 0.01)
+    -- 冷却液缓慢消耗；过热时额外泄漏
+    coolant = math.max(0, (coolant or 100) - meters * 0.002 -
+                          (rv.engineHot and dt * 0.4 or 0))
     parts.battery = math.max(0, parts.battery - VEH.partWear.battery * meters)
   end
 

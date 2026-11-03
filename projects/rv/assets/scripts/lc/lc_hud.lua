@@ -875,7 +875,7 @@ function drawDriveHud()
     DrawText(string.format("行程 %.0fm · 续航 %.1fkm", tripDistance or 0, rangeKm),
              px + 14, py + 186, 11, 0.68, 0.70, 0.64, 1)
   end
-  -- 机油寿命：低于 40% 变黄、低于 20% 变红并已提示
+  -- 机油/冷却液：过低分别变黄/红
   local oil = oilLife or 100
   local orr, og, ob = 0.74, 0.80, 0.72
   if oil < 20 then
@@ -883,8 +883,17 @@ function drawDriveHud()
   elseif oil < 40 then
     orr, og, ob = 0.95, 0.78, 0.35
   end
+  local cool = coolant or 100
+  local cr, cg, cb = 0.74, 0.80, 0.72
+  if cool < 20 then
+    cr, cg, cb = 1.0, 0.45, 0.30
+  elseif cool < 40 then
+    cr, cg, cb = 0.95, 0.78, 0.35
+  end
   DrawText(string.format("机油 %.0f%%", oil),
            px + 14, py + 200, 11, orr, og, ob, 1)
+  DrawText(string.format("冷却液 %.0f%%", cool),
+           px + 92, py + 200, 11, cr, cg, cb, 1)
 
   drawNeedsPanel(vw - 230, 10, 220)
   drawCompass(vw)

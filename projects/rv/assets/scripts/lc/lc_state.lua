@@ -182,6 +182,7 @@ engineTemp = 20               -- 引擎水温（°C）
 brakeHeat = 0                 -- 刹车热衰减累积（0–1）
 chainsOn = true               -- 防滑链是否装上（步行按 C 取下/装上）
 oilLife = 100                 -- 机油寿命（%，随里程下降）
+coolant = 100                 -- 冷却液（%），过低易过热
 rawSpoilWarned = false
 nightDriveMin = 0             -- 连续夜间驾驶累计（游戏分钟）
 warmthMin = 0                 -- 热食保暖剩余（游戏分钟，抵消雪天寒冷）

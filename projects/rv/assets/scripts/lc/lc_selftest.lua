@@ -1755,6 +1755,27 @@ function runSelfTest()
                      fullScale, lowScale, lowCost, tostring(refilled)))
   end
 
+  -- 冷却液：过低时升温更快，加油站 1 金属补满
+  do
+    local keepCool, keepMetal = coolant, materials.metal or 0
+    coolant = 100
+    local full = coolantHeatScale(coolant)
+    local low = coolantHeatScale(10)
+    local cheap = coolantServiceCost()
+    coolant = 50
+    local need = coolantServiceCost()
+    materials.metal = 5
+    local okCool = serviceCoolantAtGasstop()
+    local refilled = (coolant or 0) == 100 and
+                     (materials.metal or 0) == 4
+    coolant, materials.metal = keepCool, keepMetal
+    ok(r, "coolant service",
+       full == 1.0 and low > 1.0 and low <= 1.5 and cheap == 0 and
+       need == 1 and okCool and refilled,
+       string.format("full=%.2f low=%.2f need=%d refilled=%s",
+                     full, low, need, tostring(refilled)))
+  end
+
   -- 机油劣化增加油耗（最高 +8%）
   do
     local full = engineOilFuelScale(100)
