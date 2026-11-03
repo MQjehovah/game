@@ -1784,7 +1784,7 @@ function drawJobResult()
     DrawRect(px + 20, py + 92, pw - 40, 5, 0.14, 0.15, 0.14, 0.9 * a)
     DrawRect(px + 20, py + 92, (pw - 40) * cond, 5,
              cond < 0.5 and 0.9 or 0.72, cond < 0.5 and 0.3 or 0.62, 0.28, a)
-    DrawText(string.format("报酬 %s%s%s%s%s%s%s%s%s%s", jobResult.got or "",
+    DrawText(string.format("报酬 %s%s%s%s%s%s%s%s%s%s%s", jobResult.got or "",
              (jobResult.fuel or 0) > 0 and
                string.format("   燃料+%dL", jobResult.fuel) or "",
              jobResult.item ~= nil and
@@ -1795,6 +1795,7 @@ function drawJobResult()
              jobResult.snow and "   （雪天 +12%）" or "",
              jobResult.eco and "   （省油 +5%）" or "",
              jobResult.pristine and "   （完好 +5%）" or "",
+             jobResult.early and "   （急单提前 +10%）" or "",
              (jobResult.streak or 0) >= 3 and
                string.format("   （连送 %d 单）", jobResult.streak) or ""),
              px + 20, py + 106, 13, 0.88, 0.86, 0.72, a)

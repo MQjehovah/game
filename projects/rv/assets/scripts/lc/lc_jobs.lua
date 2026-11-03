@@ -343,6 +343,7 @@ function jobAccept(idx)
     weight = offer.weight, distance = offer.distance,
     pay = offer.pay, fuel = offer.fuel, stage = "carry", condition = 1.0,
     urgent = offer.urgent, deadlineAbs = offer.deadlineAbs,
+    acceptedAbs = jobNowAbs(),
     fragile = offer.fragile, perishable = offer.perishable,
     livestock = offer.livestock,
     bonusItem = offer.bonusItem,
@@ -416,6 +417,16 @@ function cargoPristineBonus(cond)
   return ((cond or 1.0) >= 0.95) and 1.05 or 1.0
 end
 
+-- 急单提前送达：在剩余时间 ≥ 一半时交单，额外 +10%
+function urgentEarlyBonus(acceptedAbs, deadlineAbs, nowAbs)
+  if acceptedAbs == nil or deadlineAbs == nil then return 1.0 end
+  local window = deadlineAbs - acceptedAbs
+  if window <= 0 then return 1.0 end
+  local left = deadlineAbs - (nowAbs or 0)
+  if left >= window * 0.5 then return 1.10 end
+  return 1.0
+end
+
 function jobComplete()
   if job == nil then return false end
   local cond = math.max(0, math.min(1, job.condition or 1.0))
@@ -431,6 +442,10 @@ function jobComplete()
   -- 雪天送达 +12%：结冰路面风险更高
   local snowBonus = (weather == "snow")
   if snowBonus then scale = scale * 1.12 end
+  -- 急单提前送达 +10%：剩余时间 ≥ 一半
+  local earlyBonus = job.urgent and
+    (urgentEarlyBonus(job.acceptedAbs, job.deadlineAbs, jobNowAbs()) > 1.0)
+  if earlyBonus then scale = scale * 1.10 end
   -- 省油驾驶 +5%：本单平均油耗不高于 1.4L/100m（约 14L/100km）
   local ecoBonus = false
   if job.startTripDist ~= nil then
@@ -490,7 +505,7 @@ function jobComplete()
     got = table.concat(got, " "), fuel = fuelGot, jobs = jobDelivered,
     bonus = firstOfDay, night = nightBonus, rain = rainBonus,
     snow = snowBonus, eco = ecoBonus, pristine = pristineBonus,
-    streak = jobStreak, item = bonusItem, t = 3.6,
+    early = earlyBonus, streak = jobStreak, item = bonusItem, t = 3.6,
   }
   SpawnFloatText(rv.x, 1.8, rv.z,
                  "送达 " .. name .. " x" .. crates, false, 1.6, 1.0, 0.86, 0.4)

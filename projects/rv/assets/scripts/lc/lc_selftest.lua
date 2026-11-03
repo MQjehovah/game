@@ -1270,6 +1270,7 @@ function runSelfTest()
       jobDelivered = 0
       jobRefreshOffers("gasstop")
       jobAccept(1)
+      job.urgent, job.deadlineAbs, job.acceptedAbs = false, nil, nil
       job.stops, job.stopIndex = nil, 1
       job.pay = { metal = 10 }
       job.condition = 1.0
@@ -1294,6 +1295,7 @@ function runSelfTest()
       jobDelivered, jobStreak = 0, 0
       jobRefreshOffers("gasstop")
       jobAccept(1)
+      job.urgent, job.deadlineAbs, job.acceptedAbs = false, nil, nil
       job.stops, job.stopIndex = nil, 1
       job.pay = { metal = 100 }
       job.condition = 1.0
@@ -1319,6 +1321,7 @@ function runSelfTest()
       jobDelivered, jobStreak = 0, 0
       jobRefreshOffers("gasstop")
       jobAccept(1)
+      job.urgent, job.deadlineAbs, job.acceptedAbs = false, nil, nil
       job.stops, job.stopIndex = nil, 1
       job.pay = { metal = 20 }
       job.condition = 1.0
@@ -1366,6 +1369,19 @@ function runSelfTest()
                      full, edge, damaged))
   end
 
+  -- 急单提前送达奖励：剩余 ≥ 一半 +10%
+  do
+    local early = urgentEarlyBonus(0, 100, 10)
+    local edge = urgentEarlyBonus(0, 100, 50)
+    local late = urgentEarlyBonus(0, 100, 80)
+    local none = urgentEarlyBonus(nil, nil, 10)
+    ok(r, "urgent early bonus",
+       math.abs(early - 1.10) < 1e-6 and math.abs(edge - 1.10) < 1e-6 and
+       math.abs(late - 1.0) < 1e-6 and math.abs(none - 1.0) < 1e-6,
+       string.format("early=%.2f edge=%.2f late=%.2f none=%.2f",
+                     early, edge, late, none))
+  end
+
   -- 省油驾驶奖励：本单油耗 ≤1.4L/100m 时报酬 +5%
   do
     local sw, sd, sc, slast = weather, day, clock, lastJobDay
@@ -1376,6 +1392,7 @@ function runSelfTest()
       jobDelivered, jobStreak = 0, 0
       jobRefreshOffers("gasstop")
       jobAccept(1)
+      job.urgent, job.deadlineAbs, job.acceptedAbs = false, nil, nil
       job.stops, job.stopIndex = nil, 1
       job.pay = { metal = 20 }
       job.condition = 1.0
@@ -2858,6 +2875,7 @@ function runSelfTest()
     day, lastJobDay = 9, 0
     jobRefreshOffers("depot")
     jobAccept(1)
+    job.urgent, job.deadlineAbs, job.acceptedAbs = false, nil, nil
     job.pay = { metal = 5, wood = 2 }
     job.condition = 1.0
     local m0 = materials.metal or 0
@@ -2865,6 +2883,7 @@ function runSelfTest()
     local firstGain = (materials.metal or 0) - m0
     jobRefreshOffers("depot")
     jobAccept(1)
+    job.urgent, job.deadlineAbs, job.acceptedAbs = false, nil, nil
     job.pay = { metal = 5, wood = 2 }
     job.condition = 1.0
     local m1 = materials.metal or 0
