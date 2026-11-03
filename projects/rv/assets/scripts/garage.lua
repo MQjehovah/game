@@ -947,6 +947,16 @@ function on_start()
     jobRefreshOffers("gasstop")
     jobAccept(1)
     mapOpen = true
+  elseif startMode == "routemap" then
+    jobRefreshOffers("gasstop")
+    jobAccept(1)
+    local a, b = nodeById("gasstop"), nodeById("ruin")
+    if job ~= nil and a ~= nil and b ~= nil then
+      job.stops = { { id = a.id, name = a.name }, { id = b.id, name = b.name } }
+      job.stopIndex = 1
+      job.destId, job.destName = a.id, a.name
+    end
+    mapOpen = true
   elseif startMode == "brakeview" then
     rv.brakeTest = true
   elseif startMode == "raindrive" then

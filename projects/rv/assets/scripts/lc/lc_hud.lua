@@ -883,13 +883,23 @@ function drawMapHud()
   DrawLine(rx, ry, rx + math.sin(rv.yaw) * 20, ry + math.cos(rv.yaw) * 20,
            2, 0.98, 0.85, 0.4, 1)
   DrawCircle(rx, ry, 4, 2, 0.98, 0.85, 0.4, 1, true)
-  -- 当前货运合同：地图上用金色圆环标出目的地
+  -- 当前货运合同：地图上标出当前站（高亮）与双站的另一站
   if job ~= nil then
-    local jn = nodeById(job.destId)
-    if jn then
-      local jx, jy = mapXY(jn.x, jn.z)
-      DrawCircle(jx, jy, 12, 2, 1.0, 0.80, 0.28, 1, false)
-      drawTextCentered("货运目标", jx, jy + 13, 12, 1.0, 0.88, 0.50, 1)
+    local stops = job.stops or { { id = job.destId, name = job.destName } }
+    local cur = job.stopIndex or 1
+    for i, s in ipairs(stops) do
+      local nd2 = nodeById(s.id)
+      if nd2 then
+        local jx, jy = mapXY(nd2.x, nd2.z)
+        local active = (i == cur)
+        DrawCircle(jx, jy, active and 12 or 9, 2,
+                   1.0, active and 0.80 or 0.58, active and 0.28 or 0.30,
+                   active and 1.0 or 0.65, false)
+        drawTextCentered(#stops > 1 and tostring(i) or "货运目标",
+                         jx, jy + 13, 12,
+                         active and 1.0 or 0.70, active and 0.88 or 0.68,
+                         0.50, 1)
+      end
     end
   end
   DrawText("● 房车    ● 地点（越红越危险）  ? 未探索    — 公路", px + 16, py + ph - 24,
