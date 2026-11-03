@@ -477,6 +477,51 @@ function drawBuildHud()
   if toast.t > 0 then drawBanner(toast.text, 120, 16) end
 end
 
+-- 驾驶罗盘：顶部一条 ±60° 的刻度带，标 N/E/S/W 与货运目标方位
+function drawCompass(vw)
+  local heading = compassHeading(rv.yaw + (driveLookYaw or 0))
+  local cw, ch = 340, 24
+  local cx = vw * 0.5
+  local cy = 150
+  DrawRect(cx - cw * 0.5, cy, cw, ch, 0.05, 0.06, 0.07, 0.55)
+  DrawRectOutline(cx - cw * 0.5, cy, cw, ch, 0.45, 0.44, 0.36, 0.7)
+  local half = cw * 0.5
+  local first = math.floor((heading - 60) / 10) * 10
+  for deg = first, heading + 60, 10 do
+    local diff = deg - heading
+    local x = cx + diff / 60 * half
+    if x >= cx - half and x <= cx + half then
+      local major = (deg % 90 == 0)
+      DrawLine(x, cy + 2, x, cy + (major and 13 or 8), 1,
+               0.85, 0.85, 0.78, major and 0.9 or 0.5)
+    end
+  end
+  local pts = { { 0, "N" }, { 45, "NE" }, { 90, "E" }, { 135, "SE" },
+                { 180, "S" }, { 225, "SW" }, { 270, "W" }, { 315, "NW" } }
+  for _, p in ipairs(pts) do
+    local diff = p[1] - heading
+    while diff > 180 do diff = diff - 360 end
+    while diff < -180 do diff = diff + 360 end
+    if math.abs(diff) <= 60 then
+      local x = cx + diff / 60 * half
+      local col = (p[2] == "N" and 1.0) or 0.86
+      drawTextCentered(p[2], x, cy + 2, 11, col,
+                       p[2] == "N" and 0.72 or 0.86,
+                       p[2] == "N" and 0.35 or 0.78, 1)
+    end
+  end
+  -- 货运目标方位：金色三角
+  if job ~= nil then
+    local delta = jobBearingDelta(rv.x, rv.z, rv.yaw + (driveLookYaw or 0))
+    local deg = -math.deg(delta)
+    if math.abs(deg) <= 60 then
+      local x = cx + deg / 60 * half
+      DrawLine(x - 5, cy + ch - 2, x, cy + ch - 8, 2, 1.0, 0.82, 0.32, 1)
+      DrawLine(x + 5, cy + ch - 2, x, cy + ch - 8, 2, 1.0, 0.82, 0.32, 1)
+    end
+  end
+end
+
 function drawDriveHud()
   local vp = GetViewportSize()
   local vw = (vp and vp.w) or 1280
@@ -551,6 +596,7 @@ function drawDriveHud()
   end
 
   drawNeedsPanel(vw - 230, 10, 220)
+  drawCompass(vw)
   if job ~= nil then drawJobTracker(vw) end
 
   local hints = {

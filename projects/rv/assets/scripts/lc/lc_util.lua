@@ -211,6 +211,14 @@ function nodeName(id)
   return nd and nd.name or "荒野"
 end
 
+-- 罗盘：+Z 为北、+X 为东；A 左转（+yaw）朝西，所以航向取 -deg(yaw)
+function compassHeading(yaw)
+  local d = -math.deg(yaw or 0)
+  d = d % 360
+  if d < 0 then d = d + 360 end
+  return d
+end
+
 -- 载重上限：基础 WEIGHT_MAX + 货架升级（每级 +300kg）
 function weightMax()
   return WEIGHT_MAX + ((upgrades and upgrades.cargo) or 0) * (VEH.cargoPerLevel or 300)

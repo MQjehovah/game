@@ -1483,6 +1483,16 @@ function runSelfTest()
                      raw0, itemCount("rawfish")))
   end
 
+  -- 罗盘航向：+yaw = 左转 = 西
+  do
+    local n = compassHeading(0)
+    local w = compassHeading(math.pi * 0.5)
+    local s = compassHeading(math.pi)
+    ok(r, "compass heading",
+       math.abs(n) < 1e-6 and math.abs(w - 270) < 1e-6 and math.abs(s - 180) < 1e-6,
+       string.format("N=%.0f W=%.0f S=%.0f", n, w, s))
+  end
+
   -- 存读档：行程/探索/货运单数 + 天气
   do
     tripDistance, tripFuel, jobDelivered = 3210, 88, 7
