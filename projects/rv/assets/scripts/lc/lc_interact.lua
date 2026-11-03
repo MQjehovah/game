@@ -123,8 +123,14 @@ function updateInteraction()
   end
 
   if nearRv() then
-    nearAction = { kind = "rv", verb = "驾驶房车", detail = "W 油门 / 空格停车 / B 改装",
-                   x = rv.x, z = rv.z }
+    if hasItem("fuelcan", 1) and (fuel or 0) < VEH.tank - 0.5 then
+      nearAction = { kind = "refuel", verb = "加注燃油",
+                     detail = string.format("E 使用燃油罐（%.0f / %d L）", fuel, VEH.tank),
+                     x = rv.x, z = rv.z }
+    else
+      nearAction = { kind = "rv", verb = "驾驶房车", detail = "W 油门 / 空格停车 / B 改装",
+                     x = rv.x, z = rv.z }
+    end
   end
 end
 
@@ -155,6 +161,10 @@ function doInteract()
     return true
   elseif nearAction.kind == "campfire" then
     cookAtCampfire()
+    return true
+  elseif nearAction.kind == "refuel" then
+    useFuelCan()
+    updateInteraction()
     return true
   elseif nearAction.kind == "rv" then
     setPhase("driving")

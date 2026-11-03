@@ -71,6 +71,7 @@ ITEMS = {
   seed     = { name = "种子", kind = "seed",  desc = "种进种植箱" },
   bait     = { name = "鱼饵", kind = "bait",  desc = "钓鱼时自动消耗：必上钩" },
   repairkit= { name = "修理包", kind = "repair", amount = 35, desc = "修车 +35" },
+  fuelcan  = { name = "燃油罐", kind = "fuel",  amount = 10, desc = "靠近房车按 E 加注 10L" },
   rawfish  = { name = "生鱼",   kind = "food",  hunger = 8,  health = -2, desc = "需要篝火烤熟" },
   fish     = { name = "烤鱼",   kind = "food",  hunger = 30, health = 5, desc = "饥饿 -30 生命 +5" },
   fishsoup = { name = "鱼汤",   kind = "food",  hunger = 35, thirst = 20, health = 3, desc = "饥饿 -35 口渴 -20" },
@@ -110,6 +111,7 @@ LOOT_ITEMS = {
   { id = "seed",      w = 12, min = 1, max = 1 },
   { id = "bait",      w = 10, min = 1, max = 2 },
   { id = "repairkit", w = 7,  min = 1, max = 1 },
+  { id = "fuelcan",   w = 9,  min = 1, max = 1 },
   { id = "meal",      w = 4,  min = 1, max = 1 },
 }
 

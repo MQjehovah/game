@@ -227,6 +227,25 @@ function addWater(amount)
   water = math.max(0, math.min(SURVIVAL.waterMax, water + amount))
 end
 
+-- 燃油罐：靠近房车按 E 加注（10L，受油箱上限约束）
+function useFuelCan()
+  local it = ITEMS.fuelcan
+  if it == nil or not takeItem("fuelcan", 1) then return false end
+  local before = fuel or 0
+  fuel = math.min(VEH.tank, before + (it.amount or 10))
+  local got = fuel - before
+  if got <= 0.01 then
+    addItem("fuelcan", 1)  -- 油箱已满，不浪费
+    toast.text = "油箱已经满了"
+    toast.t = 2.0
+    return false
+  end
+  if PlaySfx then PlaySfx("pickup") end
+  toast.text = string.format("加注 %0.0fL 燃料（%.0f / %d L）", got, fuel, VEH.tank)
+  toast.t = 2.4
+  return true
+end
+
 -- 直接吃/喝背包里的东西
 function useItem(id)
   local it = ITEMS[id]

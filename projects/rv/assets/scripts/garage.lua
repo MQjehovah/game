@@ -1011,6 +1011,11 @@ function on_start()
     setPhase("driving")
     driveView = "chase"
     spawnDriveRoadblock()
+  elseif startMode == "dustview" then
+    rv.x, rv.z, rv.yaw = 10.0, 25.0, 0.4
+    rv.speed = 7.0
+    setPhase("driving")
+    driveView = "chase"
   elseif startMode == "jobaway" then
     jobRefreshOffers("gasstop")
     jobAccept(1)
@@ -1290,6 +1295,7 @@ function on_update(ent, dt)
       setPhase("parked")
     end
     updateDrive(dt)
+    if updateWheelDust ~= nil then updateWheelDust(dt) end
     updateCamera(dt)
     return
   end

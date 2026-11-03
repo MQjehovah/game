@@ -1691,6 +1691,35 @@ function runSelfTest()
        string.format("parts=%d colliders=%d props=%d", parts, ids, #driveProps))
   end
 
+  -- 车轮扬尘/胎烟：土路有、沥青无、手刹变胎烟
+  do
+    local dirt, dirtKind = wheelDustRate("dirt", 8, false)
+    local asphalt = wheelDustRate("asphalt", 8, false)
+    local smoke, smokeKind = wheelDustRate("asphalt", 8, true)
+    local slow = wheelDustRate("dirt", 1.0, false)
+    ok(r, "wheel dust",
+       dirt > 0 and dirtKind == "dirt" and asphalt == 0 and
+       smoke > dirt and smokeKind == "smoke" and slow == 0,
+       string.format("dirt=%d asphalt=%d smoke=%d slow=%d", dirt, asphalt,
+                     smoke, slow))
+  end
+
+  -- 燃油罐：靠近房车加注，消耗 1 个、油量增加
+  do
+    local sf = fuel
+    addItem("fuelcan", 1)
+    fuel = math.max(0, VEH.tank - 6)
+    local before = fuel
+    local n0 = inv.fuelcan or 0
+    local okUse = useFuelCan()
+    local after = fuel
+    local consumed = (inv.fuelcan or 0) == n0 - 1
+    fuel = sf
+    ok(r, "fuel can refuel", okUse and after > before and consumed,
+       string.format("fuel %.0f->%.0f cans %d->%d", before, after, n0,
+                     inv.fuelcan or 0))
+  end
+
   -- 睡醒晨报：包含天数/货运单数/今日目标/油量
   do
     local sd, sc = day, clock

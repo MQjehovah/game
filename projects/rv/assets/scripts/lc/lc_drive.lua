@@ -56,6 +56,53 @@ function handbrakeRate(loadRatio)
   return brakeRate(loadRatio) * 1.55
 end
 
+-- 车轮扬尘/胎烟发射率（/s）与颜色种类：硬路面不扬尘，草地/土路/泥地明显，
+-- 手刹高速时改成灰色胎烟。纯函数，便于自检。
+function wheelDustRate(surface, speed, handbrake)
+  local v = math.abs(speed or 0)
+  if handbrake and v > 2.5 then return 26, "smoke" end
+  if v < 2.5 then return 0, surface end
+  local k = math.min(1, v / 9)
+  if surface == "dirt" then return math.floor(18 * k + 0.5), "dirt" end
+  if surface == "mud" then return math.floor(22 * k + 0.5), "mud" end
+  if surface == "gravel" then return math.floor(14 * k + 0.5), "gravel" end
+  if surface == "grass" then return math.floor(10 * k + 0.5), "grass" end
+  return 0, surface
+end
+
+function updateWheelDust(dt)
+  if phase ~= "driving" then rv.dustAcc = 0 return end
+  local surfName = "grass"
+  if surfaceInfo ~= nil then surfName = surfaceInfo(rv.x, rv.z) end
+  local hb = ActionDown("shift") and math.abs(rv.speed or 0) > 2.5
+  local rate, kind = wheelDustRate(surfName, rv.speed, hb)
+  if rate <= 0 then rv.dustAcc = 0 return end
+  rv.dustAcc = (rv.dustAcc or 0) + dt * rate
+  local col = {
+    dirt    = { 0.55, 0.44, 0.30 },
+    mud     = { 0.32, 0.25, 0.18 },
+    gravel  = { 0.58, 0.56, 0.50 },
+    grass   = { 0.45, 0.48, 0.30 },
+    smoke   = { 0.55, 0.55, 0.56 },
+  }
+  local c = col[kind] or col.grass
+  while rv.dustAcc >= 1 do
+    rv.dustAcc = rv.dustAcc - 1
+    local side = (math.random() < 0.5) and -1.26 or 1.26
+    local wx, wz = rotOf(side, -2.92)
+    EmitParticles({
+      pos = { x = wx, y = (rv.groundY or 0) + 0.16, z = wz },
+      count = 1, speedMin = 0.15, speedMax = 0.55,
+      vel = { x = 0, y = 0.55, z = 0 },
+      lifeMin = 0.45, lifeMax = 0.95,
+      sizeStart = 0.28, sizeEnd = 1.35,
+      color = { r = c[1], g = c[2], b = c[3], a = (kind == "smoke") and 0.42 or 0.30 },
+      colorEnd = { r = c[1], g = c[2], b = c[3], a = 0.0 },
+      additive = false, gravity = -0.15,
+    })
+  end
+end
+
 -- 引擎音量随车速变化（总线增益，叠加在 PlayMusic 的基础音量上）
 function engineAudioGain(speed)
   local v = math.min(1, math.abs(speed or 0) / DRIVE.maxSpeed)
