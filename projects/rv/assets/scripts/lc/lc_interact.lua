@@ -137,6 +137,26 @@ function updateInteraction()
     end
   end
 
+  if radioMast ~= nil then
+    local dx, dz = radioMast.x - player.x, radioMast.z - player.z
+    local d = math.sqrt(dx * dx + dz * dz)
+    if d < 4.5 then
+      local dot = forwardDot(dx, dz, d)
+      if dot > 0.05 then
+        if radioMastFixed then
+          nearAction = { kind = "mast", verb = "无线电塔 · 已修好",
+                         detail = "E 检查信号", x = radioMast.x, z = radioMast.z }
+        else
+          nearAction = { kind = "mast", verb = "修无线电塔",
+                         detail = string.format("E 消耗 金属6 电子件3（现有 %d/%d）",
+                           materials.metal or 0, materials.electronics or 0),
+                         x = radioMast.x, z = radioMast.z }
+        end
+        return
+      end
+    end
+  end
+
   if nearRv() then
     if hasItem("fuelcan", 1) and (fuel or 0) < fuelMax() - 0.5 then
       nearAction = { kind = "refuel", verb = "加注燃油",
@@ -183,6 +203,10 @@ function doInteract()
                           or "营地收音机关闭"
     toast.t = 2.4
     if PlaySfx then PlaySfx("click") end
+    updateInteraction()
+    return true
+  elseif nearAction.kind == "mast" then
+    if repairRadioMast ~= nil then repairRadioMast() end
     updateInteraction()
     return true
   elseif nearAction.kind == "refuel" then

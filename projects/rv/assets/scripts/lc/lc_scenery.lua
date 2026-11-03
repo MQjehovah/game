@@ -1085,12 +1085,48 @@ end
 function updateRadioMast(dt)
   if radioMast == nil or radioMast.beacon == nil then return end
   radioMast.t = (radioMast.t or 0) + (dt or 0)
-  local night = (isNight ~= nil) and isNight() or false
-  local lit = night and ((radioMast.t % 1.6) < 0.55)
+  local lit
+  if radioMastFixed then
+    lit = true  -- 修好后红灯常亮，远距离也能定位仓库
+  else
+    local night = (isNight ~= nil) and isNight() or false
+    lit = night and ((radioMast.t % 1.6) < 0.55)
+  end
   if lit ~= radioMast.lit then
     radioMast.lit = lit
     SetVisible(radioMast.beacon, lit)
   end
+end
+
+-- 长线目标：用金属/电子件修好无线电塔
+RADIO_MAST_COST = { metal = 6, electronics = 3 }
+
+function repairRadioMast()
+  if radioMast == nil then
+    toast.text = "附近没有可修的无线电塔"
+    toast.t = 2.0
+    return false
+  end
+  if radioMastFixed then
+    toast.text = "无线电塔已经修好了"
+    toast.t = 2.0
+    return false
+  end
+  if not canAfford(RADIO_MAST_COST) then
+    toast.text = "修塔材料不足：" .. costText(RADIO_MAST_COST)
+    toast.t = 2.8
+    return false
+  end
+  payCost(RADIO_MAST_COST)
+  radioMastFixed = true
+  if radioMast.beacon ~= nil then
+    SetVisible(radioMast.beacon, true)
+    radioMast.lit = true
+  end
+  if PlaySfx then PlaySfx("repair") end
+  toast.text = "无线电塔修好了——顶端红灯常亮，仓库成为荒野里的信标"
+  toast.t = 5.0
+  return true
 end
 
 function spawnRuinFor(nd)

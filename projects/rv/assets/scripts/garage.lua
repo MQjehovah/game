@@ -168,6 +168,7 @@ function saveLayout()
       battery = batteryCharge or 0,
       rawAge = rawFoodAge or 0,
       milestones = milestones,
+      radioMastFixed = radioMastFixed and true or false,
       daily = dailyGoal and {
         id = dailyGoal.id, name = dailyGoal.name, target = dailyGoal.target,
         progress = dailyGoal.progress, done = dailyGoal.done,
@@ -362,6 +363,7 @@ function loadLayout()
         if type(k) == "string" and v == true then milestones[k] = true end
       end
     end
+    radioMastFixed = data.progress.radioMastFixed == true
     if type(data.progress.daily) == "table" then
       local d = data.progress.daily
       dailyGoal = {

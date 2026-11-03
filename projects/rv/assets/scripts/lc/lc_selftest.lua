@@ -2346,6 +2346,28 @@ function runSelfTest()
                      tostring(night), tostring(dayOff)))
   end
 
+  -- 长线目标：无线电塔修理（材料不足失败、足够则扣材料并常亮）
+  do
+    local sm = materials.metal or 0
+    local se = materials.electronics or 0
+    local keepFixed = radioMastFixed
+    radioMastFixed = false
+    materials.metal, materials.electronics = 2, 0
+    local poor = repairRadioMast()
+    local poorKept = radioMastFixed == false
+    materials.metal, materials.electronics = 10, 5
+    local okFix = repairRadioMast()
+    local paid = (materials.metal or 0) == 4 and (materials.electronics or 0) == 2
+    local fixed = radioMastFixed == true
+    radioMastFixed = keepFixed
+    materials.metal, materials.electronics = sm, se
+    ok(r, "radio mast repair", (poor == false) and poorKept and okFix and
+       paid and fixed,
+       string.format("poor=%s paid=%s fixed=%s metal=%d elec=%d",
+                     tostring(poor), tostring(paid), tostring(fixed),
+                     materials.metal or 0, materials.electronics or 0))
+  end
+
   -- 天气/时段影响钓鱼：雨天更好、深夜更难
   do
     local sw, sc = weather, clock
