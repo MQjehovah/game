@@ -68,6 +68,7 @@ milestones = {}               -- 已领取的长期里程碑（key = "explore:3"
 journal = {}                  -- 旅行日志（最近事件，最多 30 条）
 journalOpen = false           -- 旅行日志面板是否打开
 fishBookOpen = false          -- 鱼类图鉴面板是否打开
+helpOpen = false              -- 操作说明面板是否打开
 dailyGoal = nil               -- 每日目标 {id,name,target,progress,done,reward,day}
 roadMarkers = {}              -- 公路轮廓桩（反光桩）
 rvHeadlights = {}             -- 夜间前大灯（聚光灯，随车身旋转）

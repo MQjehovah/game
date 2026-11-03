@@ -1113,6 +1113,70 @@ function drawFishBook()
            px + 22, py + ph - 28, 12, 0.82, 0.76, 0.54, 1)
 end
 
+-- 操作说明（P）：驾驶/步行/工作台按键与生存提示
+local HELP_SECTIONS = {
+  { title = "驾驶", lines = {
+      "W / S      油门 / 刹车",
+      "A / D      左转 / 右转",
+      "空格       停车",
+      "Shift      手刹",
+      "C          切换驾驶席/追逐视角",
+      "H          远光灯",
+      "X          喇叭（吓退附近感染者）",
+    } },
+  { title = "步行 / 营地", lines = {
+      "WASD       移动，鼠标张望",
+      "E          交互（上车/搜箱/篝火/货运板/收音机）",
+      "T          回到房车旁上路",
+      "B          合作改装/建造",
+      "R          现场维修（消耗修理包）",
+      "F / L      手电 / 车内灯",
+      "Q          水塘取浑浊水",
+      "1 / 2 / 3  吃 / 喝 / 睡觉",
+      "0          放弃当前货运合同",
+    } },
+  { title = "界面", lines = {
+      "M          世界地图",
+      "J          旅行日志",
+      "K          鱼类图鉴",
+      "I          背包",
+      "P / E      开关本说明",
+    } },
+  { title = "工作台", lines = {
+      "1-4        维修 车体/引擎/轮胎/电瓶",
+      "5 / 6      升级货架 / 鱼竿",
+      "7 / 8      制作修理包 / 防雨篷布",
+      "9 / 0      升级水箱 / 油箱",
+    } },
+}
+
+function drawHelp()
+  if not helpOpen then return end
+  local vp = GetViewportSize()
+  local vw = (vp and vp.w) or 1280
+  local vh = (vp and vp.h) or 720
+  local pw, ph = 860, 500
+  local px = math.floor((vw - pw) * 0.5)
+  local py = math.floor((vh - ph) * 0.5)
+  DrawRect(px, py, pw, ph, 0.04, 0.05, 0.06, 0.95)
+  DrawRectOutline(px, py, pw, ph, 0.55, 0.52, 0.42, 0.95)
+  drawTextCentered("操作说明", vw * 0.5, py + 12, 20, 0.98, 0.90, 0.68, 1)
+  DrawText("P / E 关闭", px + pw - 100, py + 16, 12, 0.68, 0.70, 0.64, 1)
+  local colW = (pw - 48) * 0.5
+  for i, sec in ipairs(HELP_SECTIONS) do
+    local col = (i - 1) % 2
+    local row = math.floor((i - 1) / 2)
+    local x = px + 24 + col * (colW + 24)
+    local y = py + 52 + row * 210
+    DrawText(sec.title, x, y, 15, 0.96, 0.84, 0.56, 1)
+    for j, line in ipairs(sec.lines) do
+      DrawText(line, x + 6, y + 28 + (j - 1) * 22, 12, 0.80, 0.82, 0.76, 1)
+    end
+  end
+  drawTextCentered("提示：营地油/水免费；加油站加油消耗金属；夜间/雨天送达有额外报酬",
+                   vw * 0.5, py + ph - 30, 12, 0.82, 0.76, 0.54, 1)
+end
+
 function drawMapHud()
   local vp = GetViewportSize()
   local vw = (vp and vp.w) or 1280

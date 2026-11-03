@@ -1031,6 +1031,8 @@ function on_start()
     fishCounts = { ["鲫鱼"] = 9, ["鲤鱼"] = 4, ["鲶鱼"] = 1 }
     bestFish, bestFishName, fishCaught = 62, "鲶鱼", 14
     fishBookOpen = true
+  elseif startMode == "help" then
+    helpOpen = true
   elseif startMode == "jobdrive" then
     jobRefreshOffers()
     jobAccept(1)
@@ -1374,10 +1376,12 @@ function on_update(ent, dt)
   ensureHelpers()
   if ActionPressed("m") then mapOpen = not mapOpen end
   if ActionPressed("i") then invOpen = not invOpen end
-  if ActionPressed("j") then journalOpen = not journalOpen; fishBookOpen = false end
-  if ActionPressed("k") then fishBookOpen = not fishBookOpen; journalOpen = false end
+  if ActionPressed("j") then journalOpen = not journalOpen; fishBookOpen = false; helpOpen = false end
+  if ActionPressed("k") then fishBookOpen = not fishBookOpen; journalOpen = false; helpOpen = false end
+  if ActionPressed("p") then helpOpen = not helpOpen; journalOpen = false; fishBookOpen = false end
   if journalOpen and ActionPressed("e") then journalOpen = false end
   if fishBookOpen and ActionPressed("e") then fishBookOpen = false end
+  if helpOpen and ActionPressed("e") then helpOpen = false end
   if ActionPressed("l") and setInteriorLights ~= nil then
     setInteriorLights(not interiorLightsOn)
     toast.text = interiorLightsOn and "车内灯已打开" or "车内灯已关闭"
@@ -1611,4 +1615,5 @@ function on_render()
   if mapOpen then drawMapHud() end
   if journalOpen then drawJournal() end
   if fishBookOpen then drawFishBook() end
+  if helpOpen then drawHelp() end
 end
