@@ -72,6 +72,7 @@ local CARGO_PREFAB = {
   parts = "rv_panel_dark",   -- 深灰机械件
   elec = "rv_cargo_elec",    -- 蓝色电子件
   grain = "rv_cargo_crate",  -- 木色粮袋
+  livestock = "rv_cargo_crate", -- 活畜：木栏箱
 }
 
 function jobCargoPrefab(cargoId)
@@ -147,6 +148,13 @@ function jobRefreshOffers(preferId)
     if perishable then
       pay.metal = math.max(1, math.floor(pay.metal * 1.15 + 0.5))
     end
+    -- 约 10% 是活畜：怕颠簸，撞击/急转弯掉货况更多，报酬 ×1.30
+    local livestock = (not fragile) and (not perishable) and
+                      (math.random() < 0.10)
+    if livestock then
+      cargo = { id = "livestock", name = "活畜", kg = 52, mat = "wood" }
+      pay.metal = math.max(1, math.floor(pay.metal * 1.30 + 0.5))
+    end
     -- 约 25% 是双站路线：两个卸货点，报酬更高
     local stops = nil
     if math.random() < 0.25 then
@@ -186,6 +194,7 @@ function jobRefreshOffers(preferId)
       urgent = urgent,
       fragile = fragile,
       perishable = perishable,
+      livestock = livestock,
       bonusItem = bonusItem,
       stops = stops,
       stopIndex = 1,
@@ -329,6 +338,7 @@ function jobAccept(idx)
     pay = offer.pay, fuel = offer.fuel, stage = "carry", condition = 1.0,
     urgent = offer.urgent, deadlineAbs = offer.deadlineAbs,
     fragile = offer.fragile, perishable = offer.perishable,
+    livestock = offer.livestock,
     bonusItem = offer.bonusItem,
     startTripDist = tripDistance or 0,
     startTripFuel = tripFuel or 0,
@@ -350,7 +360,9 @@ end
 function jobApplyImpact(drop)
   if job == nil then return end
   local before = job.condition or 1.0
-  local mult = job.fragile and 0.10 or 0.05
+  local mult = 0.05
+  if job.fragile then mult = 0.10
+  elseif job.livestock then mult = 0.12 end
   job.condition = math.max(0, before - math.min(0.5, (drop or 0) * mult))
   if before >= 0.5 and job.condition < 0.5 then
     toast.text = job.fragile and "易碎货物受损过半！报酬会大幅打折"
@@ -610,7 +622,7 @@ function updateJobs(dt)
     end
     -- 急转弯甩货：用横向加速度（updateDrive 已算好 rv.latG）判断
     if phase == "driving" and (dt or 0) > 0 then
-      local loss = cornerCargoLoss(rv.latG, job.fragile, dt)
+      local loss = cornerCargoLoss(rv.latG, job.fragile or job.livestock, dt)
       if loss > 0 then
         job.condition = math.max(0, (job.condition or 1) - loss)
         if not job.tossWarned and job.condition < 0.85 then

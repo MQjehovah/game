@@ -1452,6 +1452,21 @@ function runSelfTest()
        string.format("fragile=%.2f normal=%.2f", fragileDrop, normalDrop))
   end
 
+  -- 活畜：撞击掉货况比普通货更多（0.12 vs 0.05 per m/s）
+  do
+    jobRefreshOffers("gasstop")
+    jobAccept(1)
+    job.livestock = true
+    job.fragile = false
+    local c0 = job.condition
+    jobApplyImpact(2.0)
+    local liveDrop = c0 - job.condition
+    jobAbandon()
+    ok(r, "livestock cargo damage",
+       math.abs(liveDrop - 0.24) < 1e-6,
+       string.format("livestock=%.2f", liveDrop))
+  end
+
   -- 限时急单：超时作废，不结算报酬
   jobRefreshOffers("gasstop")
   jobAccept(1)

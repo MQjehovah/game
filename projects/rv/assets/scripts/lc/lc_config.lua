@@ -244,6 +244,7 @@ JOBS = {
     { id = "parts", name = "机械件", kg = 46, mat = "metal" },
     { id = "elec",  name = "电子件", kg = 28, mat = "electronics" },
     { id = "grain", name = "粮袋",   kg = 40, mat = "wood" },
+    { id = "livestock", name = "活畜", kg = 52, mat = "wood" },
   },
 }
 
