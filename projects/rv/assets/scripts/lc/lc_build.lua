@@ -259,6 +259,9 @@ function recomputeStats()
     s.weight     = s.weight     + (c.weight     or 0)
     s.storage    = s.storage    + (c.storage    or 0)
     s.comfort    = s.comfort    + ((c.comfort or 0) * (inst.reachable == false and 0 or 1))
+    if c.id == "heater" and inst.on ~= false and inst.reachable ~= false then
+      s.heaterOn = true
+    end
     s.count      = s.count + 1
   end
   -- 顺路货运：货物重量直接压到整备质量上（超载 -> 加速/极速下降、油耗上升）
@@ -267,6 +270,12 @@ function recomputeStats()
   s.comfort = comfortWithPower(s.comfort, s.powerComfort,
                                (s.powerGen or 0) - (s.powerDraw or 0),
                                batteryCharge or 0)
+  -- 没电时取暖器不工作，雪天寒冷惩罚照常生效
+  if s.heaterOn and powerAvailable ~= nil and
+     not powerAvailable((s.powerGen or 0) - (s.powerDraw or 0),
+                        batteryCharge or 0) then
+    s.heaterOn = false
+  end
   stats = s
 end
 

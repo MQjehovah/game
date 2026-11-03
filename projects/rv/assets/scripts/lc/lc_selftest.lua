@@ -2854,6 +2854,15 @@ function runSelfTest()
                      bare, chained, wetBare, wetChained, tostring(kept)))
   end
 
+  -- 雪天寒冷：没开取暖器时体力消耗更快
+  do
+    local a = coldEnergyExtra("snow", false)
+    local b = coldEnergyExtra("snow", true)
+    local c = coldEnergyExtra("clear", false)
+    ok(r, "snow cold", a > 0 and b == 0 and c == 0,
+       string.format("snow=%.3f heater=%.3f clear=%.3f", a, b, c))
+  end
+
   -- 睡醒晨报：包含天数/货运单数/今日目标/油量
   do
     local sd, sc = day, clock

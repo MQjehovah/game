@@ -538,6 +538,14 @@ function updateRadioBroadcast(gm)
   return true
 end
 
+-- 雪天寒冷：没开取暖器时体力消耗更快
+function coldEnergyExtra(weatherValue, heaterOn)
+  if weatherValue == "snow" and not heaterOn then
+    return SURVIVAL.coldExtra or 0.020
+  end
+  return 0
+end
+
 -- 时间/需求主循环
 function updateSurvival(dt)
   if hurtT > 0 then hurtT = math.max(0, hurtT - dt) end
@@ -550,8 +558,18 @@ function updateSurvival(dt)
   needs.thirst = math.max(0, needs.thirst - SURVIVAL.thirstRate * gm)
   needs.hygiene = math.max(0, needs.hygiene - SURVIVAL.hygieneRate * gm)
   local sprinting = onFoot and not buildMode and ActionDown("w") and ActionDown("shift")
+  local coldExtra = coldEnergyExtra(weather, (stats and stats.heaterOn) or false)
   needs.energy = math.max(0, needs.energy -
-    (SURVIVAL.energyRate + (sprinting and SURVIVAL.sprintExtra or 0)) * gm)
+    (SURVIVAL.energyRate + (sprinting and SURVIVAL.sprintExtra or 0) +
+     coldExtra) * gm)
+  if weather == "snow" and coldExtra > 0 and needs.energy < 30 and
+     not lastWarn.cold then
+    lastWarn.cold = true
+    toast.text = "下雪了，车里很冷——打开取暖器或回营地休息"
+    toast.t = 3.4
+  elseif not (weather == "snow" and coldExtra > 0) then
+    lastWarn.cold = false
+  end
   -- 夜里坐在营地篝火旁：缓慢回体力
   if campfireRestAvailable ~= nil and campfireRestAvailable() then
     needs.energy = math.min(100, needs.energy +
