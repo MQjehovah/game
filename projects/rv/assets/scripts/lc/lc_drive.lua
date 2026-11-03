@@ -111,6 +111,12 @@ function rangeEstimateM()
   return (fuel or 0) / per100m * 100
 end
 
+-- 载重越大，轮胎磨损越快（超载额外惩罚，最高 ×2.2）
+function tireWearScale(loadRatio)
+  local over = math.max(0, (loadRatio or 1) - 1.0)
+  return 1.0 + math.min(1.2, over * 0.8)
+end
+
 -- 刹车减速度：载重越重越刹不住（超载额外衰减）
 function brakeRate(loadRatio)
   local over = math.max(0, (loadRatio or 1) - 1.0)
@@ -654,7 +660,8 @@ function updateDrive(dt)
       end
     end
     parts.engine = math.max(0, parts.engine - VEH.partWear.engine * meters)
-    parts.tires = math.max(0, parts.tires - VEH.partWear.tires * meters)
+    parts.tires = math.max(0, parts.tires -
+      VEH.partWear.tires * meters * tireWearScale(ratio))
     oilLife = math.max(0, (oilLife or 100) - meters * 0.01)
     parts.battery = math.max(0, parts.battery - VEH.partWear.battery * meters)
   end

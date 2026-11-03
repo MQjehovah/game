@@ -2364,6 +2364,16 @@ function runSelfTest()
        string.format("empty=%.1f loaded=%.1f m/s²", empty, loaded))
   end
 
+  -- 载重增加轮胎磨损（超载最高 ×2.2）
+  do
+    local empty = tireWearScale(1.0)
+    local loaded = tireWearScale(1.4)
+    local over = tireWearScale(3.0)
+    ok(r, "load tire wear",
+       empty == 1.0 and loaded > empty and over >= loaded and over <= 2.2,
+       string.format("empty=%.2f loaded=%.2f over=%.2f", empty, loaded, over))
+  end
+
   -- 太阳能：夜间不出力、白天满发
   do
     local sc, sw = clock, weather
