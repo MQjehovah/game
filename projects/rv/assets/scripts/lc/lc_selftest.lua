@@ -1537,6 +1537,30 @@ function runSelfTest()
        string.format("100=%.3f 20=%.3f 0=%.3f", full, mid, low))
   end
 
+  -- 加油站充气：低胎压收 1 金属并充回 2.4bar、清除爆胎
+  do
+    local keep = rv.tirePressureCold
+    local keepBlow = rv.blowout
+    local sm = materials.metal or 0
+    resetTirePressure()
+    local normalCost = tireAirCost()
+    rv.tirePressureCold = { 1.8, 1.8, 1.8, 1.8 }
+    rv.blowout = true
+    local lowCost = tireAirCost()
+    materials.metal = 5
+    local okAir, cost = serviceTiresAtGasstop()
+    local full = rv.tirePressureCold[1] == 2.4 and rv.blowout == false
+    local charged = (materials.metal or 0) == 5 - lowCost
+    rv.tirePressureCold = keep
+    rv.blowout = keepBlow
+    materials.metal = sm
+    ok(r, "tire air service",
+       normalCost == 0 and lowCost == 1 and okAir and full and
+       charged and cost == lowCost,
+       string.format("normal=%d low=%d full=%s charged=%s",
+                     normalCost, lowCost, tostring(full), tostring(charged)))
+  end
+
   -- 联机机油同步：按服务器值设置并夹紧到 0–100
   do
     local keep = oilLife

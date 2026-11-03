@@ -75,6 +75,28 @@ function serviceOilAtGasstop()
   return true, cost, string.format("更换机油（%d 金属）", cost)
 end
 
+-- 加油站充气：最低胎压低于 2.3bar 时收 1 金属，充回 2.4bar 并清除爆胎
+function tireAirCost()
+  local t = rv and rv.tirePressureCold
+  if t == nil then return 0 end
+  local minP = 2.4
+  for i = 1, 4 do minP = math.min(minP, t[i] or 2.4) end
+  if minP >= 2.3 then return 0 end
+  return 1
+end
+
+function serviceTiresAtGasstop()
+  local cost = tireAirCost()
+  if cost <= 0 then return true, 0, "胎压正常" end
+  if (materials.metal or 0) < cost then
+    return false, cost, "充气需要 1 金属"
+  end
+  materials.metal = (materials.metal or 0) - cost
+  if resetTirePressure ~= nil then resetTirePressure() end
+  if clearBlowout ~= nil then clearBlowout() end
+  return true, cost, "轮胎充气至 2.4bar（1 金属）"
+end
+
 -- 机油劣化对油耗的影响：低于 40% 时油耗略升（最高 +8%）
 function engineOilFuelScale(o)
   local v = o or 100
