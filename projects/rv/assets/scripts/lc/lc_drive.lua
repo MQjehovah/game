@@ -199,6 +199,39 @@ function updateBlowout(dt)
   end
 end
 
+-- 房车喇叭：短促双音，吓跑附近感染者（不造成伤害）
+function honk()
+  if (rv.honkCd or 0) > 0 then return false end
+  rv.honkCd = 0.8
+  rv.honks = (rv.honks or 0) + 1
+  if PlaySfx then PlaySfx("horn") end
+  SpawnFloatText(rv.x, 2.9, rv.z, "叭——", false, 0.9, 1.0, 0.90, 0.5)
+  local scared = 0
+  if horde ~= nil then
+    for i = #horde, 1, -1 do
+      local z = horde[i]
+      local dx, dz = z.x - rv.x, z.z - rv.z
+      if dx * dx + dz * dz < 26 * 26 then
+        EmitParticles({ pos = { x = z.x, y = 1.0, z = z.z }, count = 8,
+                        speedMin = 1.0, speedMax = 2.5, lifeMin = 0.25, lifeMax = 0.5,
+                        sizeStart = 0.16, sizeEnd = 0.05,
+                        color = { r = 0.5, g = 0.5, b = 0.45, a = 0.8 },
+                        colorEnd = { r = 0.5, g = 0.5, b = 0.45, a = 0.0 },
+                        additive = false })
+        Despawn(z.ent)
+        table.remove(horde, i)
+        scared = scared + 1
+      end
+    end
+  end
+  rv.honkScared = scared
+  if scared > 0 then
+    toast.text = string.format("喇叭吓跑了 %d 只感染者", scared)
+    toast.t = 2.2
+  end
+  return true
+end
+
 function updateDrive(dt)
   local throttle = (ActionDown("w") and 1 or 0) - (ActionDown("s") and 1 or 0)
   -- Positive yaw turns toward -X, which is screen-right when facing +Z, so

@@ -1845,6 +1845,26 @@ function runSelfTest()
        string.format("rawfood %d->%d", raw0, itemCount("rawfood")))
   end
 
+  -- 房车喇叭：吓跑附近感染者，且有冷却
+  do
+    local keepCd, keepHonks = rv.honkCd, rv.honks
+    rv.honkCd, rv.honks = 0, 0
+    local ent = SpawnPrefab("rv_zombie", { x = rv.x + 4, y = 0.8, z = rv.z })
+    local target = nil
+    if ent ~= nil then
+      target = { ent = ent, x = rv.x + 4, z = rv.z, speed = 1.5,
+                 phase = 0, atkT = 0, life = 20 }
+      horde[#horde + 1] = target
+    end
+    local first = honk()
+    local scared = rv.honkScared or 0
+    local second = honk()
+    local cooldown = second == false
+    rv.honkCd, rv.honks = keepCd, keepHonks
+    ok(r, "rv horn", first and scared >= 1 and cooldown,
+       string.format("scared=%d cooldown=%s", scared, tostring(cooldown)))
+  end
+
   -- 引擎水温：全油门升温、怠速降温、过热限速
   do
     local keepTemp = engineTemp

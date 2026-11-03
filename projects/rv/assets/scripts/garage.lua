@@ -1270,6 +1270,9 @@ function on_update(ent, dt)
   if rv.shakeT ~= nil and rv.shakeT > 0 then
     rv.shakeT = math.max(0, rv.shakeT - dt)
   end
+  if rv.honkCd ~= nil and rv.honkCd > 0 then
+    rv.honkCd = math.max(0, rv.honkCd - dt)
+  end
   if jobResult ~= nil then
     jobResult.t = jobResult.t - dt
     if jobResult.t <= 0 then jobResult = nil end
@@ -1330,6 +1333,7 @@ function on_update(ent, dt)
     if ActionPressed("space") then
       setPhase("parked")
     end
+    if ActionPressed("x") and honk ~= nil then honk() end
     updateDrive(dt)
     if updateWheelDust ~= nil then updateWheelDust(dt) end
     updateCamera(dt)
