@@ -2859,7 +2859,7 @@ function coopDrawHud()
     end
     DrawText(text, 26, 302 + (i - 1) * 17, 12, 0.80, 0.82, 0.76, 1)
   end
-  DrawText("WASD 移动  L 车灯  F 驾驶  E 搜箱  1 吃  2 喝  3 睡  G 灶台  R 维修  Q 加油  K 工台  C 做饭  N 修塔",
+  DrawText("WASD 移动  L 车灯  F 驾驶  E 搜箱  1 吃  2 喝  3 睡  G 灶台  R 维修  Q 加油  K 工台  C 做饭  N 修塔  T 添柴  V 采果  Z 鱼笼",
            26, 378, 11, 0.66, 0.68, 0.64, 1)
 
   DrawText(string.format("网络 %s", (GetVar("netConnected") == 1) and "已连接" or "未连接"),
