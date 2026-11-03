@@ -143,6 +143,8 @@ function saveLayout()
       bestFish = bestFish or 0,
       fishCaught = fishCaught or 0,
       lastJobDay = lastJobDay or 0,
+      battery = batteryCharge or 0,
+      rawAge = rawFoodAge or 0,
     }
   end
   if coopRole == "server" and coopSaveExtra ~= nil then
@@ -292,6 +294,11 @@ function loadLayout()
     bestFish = tonumber(data.progress.bestFish) or bestFish
     fishCaught = math.floor(tonumber(data.progress.fishCaught) or fishCaught)
     lastJobDay = math.floor(tonumber(data.progress.lastJobDay) or lastJobDay)
+    batteryCharge = tonumber(data.progress.battery) or batteryCharge
+    rawFoodAge = tonumber(data.progress.rawAge) or rawFoodAge
+    if rawFoodAge ~= nil then
+      rawSpoilWarned = rawFoodAge > (SURVIVAL.rawSpoilMinutes or 2880) * 0.75
+    end
     if type(data.progress.visited) == "table" then
       visitedPois = {}
       visitedCount = 0
