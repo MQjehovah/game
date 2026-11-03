@@ -1021,9 +1021,16 @@ function togglePondTrapAt(px, pz)
   end
   if pondTrap.ent ~= nil then Despawn(pondTrap.ent) end
   pondTrap = nil
-  addItem("rawfish", 2)
+  -- 放 1 个鱼饵可多收 1 条鱼
+  local extra = 0
+  if hasItem ~= nil and hasItem("bait", 1) then
+    takeItem("bait", 1)
+    extra = 1
+  end
+  addItem("rawfish", 2 + extra)
   if PlaySfx then PlaySfx("pickup") end
-  toast.text = "收鱼笼：生鱼 x2"
+  toast.text = string.format("收鱼笼：生鱼 x%d%s", 2 + extra,
+                             extra > 0 and "（用掉 1 鱼饵）" or "")
   toast.t = 2.6
   return true
 end

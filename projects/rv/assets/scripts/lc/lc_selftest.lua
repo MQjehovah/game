@@ -2420,13 +2420,14 @@ function runSelfTest()
                      tostring(cleared)))
   end
 
-  -- 湖边鱼笼：放置消耗材料，计时后收取生鱼
+  -- 湖边鱼笼：放置消耗材料，计时后收取生鱼（不放鱼饵）
   do
     local keepTrap = pondTrap
     local sm, sw = materials.metal or 0, materials.wood or 0
-    local kr = inv.rawfish or 0
+    local kr, kb = inv.rawfish or 0, inv.bait or 0
     local kt, kv = toast.text, toast.t
     pondTrap = nil
+    inv.bait = nil
     materials.metal, materials.wood = 5, 3
     local placed = togglePondTrapAt(-52, 30)
     local setting = pondTrap ~= nil and pondTrap.ready == false and
@@ -2442,6 +2443,7 @@ function runSelfTest()
     pondTrap = keepTrap
     materials.metal, materials.wood = sm, sw
     inv.rawfish = kr > 0 and kr or nil
+    inv.bait = kb > 0 and kb or nil
     toast.text, toast.t = kt, kv
     ok(r, "pond trap",
        placed and setting and visible and ready and collected and gained and
@@ -2449,6 +2451,27 @@ function runSelfTest()
        string.format("place=%s set=%s visible=%s ready=%s got=%s poor=%s",
                      tostring(placed), tostring(setting), tostring(visible),
                      tostring(ready), tostring(gained), tostring(poor)))
+  end
+
+  -- 鱼笼放鱼饵：多收 1 条鱼并消耗 1 个鱼饵
+  do
+    local keepTrap = pondTrap
+    local kr, kb = inv.rawfish or 0, inv.bait or 0
+    local kt, kv = toast.text, toast.t
+    pondTrap = { x = -52, z = 30, t = 0, ready = true }
+    inv.bait = 1
+    local collected = togglePondTrapAt(-52, 30)
+    local gainedN = (inv.rawfish or 0) - kr
+    local gained = gainedN == 3
+    local spent = (inv.bait or 0) == 0
+    pondTrap = keepTrap
+    inv.rawfish = kr > 0 and kr or nil
+    inv.bait = kb > 0 and kb or nil
+    toast.text, toast.t = kt, kv
+    ok(r, "trap bait bonus",
+       collected and gained and spent,
+       string.format("got=%s rawfish=%d bait=%d", tostring(collected),
+                     gainedN, inv.bait or 0))
   end
 
   -- 各鱼种最大尺寸/条数记录
