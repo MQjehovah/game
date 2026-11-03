@@ -1486,6 +1486,7 @@ function on_update(ent, dt)
   if updateNightCrickets ~= nil then updateNightCrickets(dt) end
   if updateDayBirds ~= nil then updateDayBirds(dt) end
   if updateNightHowls ~= nil then updateNightHowls(dt) end
+  if updateNightOwls ~= nil then updateNightOwls(dt) end
   if updateCampfireSmoke ~= nil then updateCampfireSmoke(dt) end
   if updateCampfireEmbers ~= nil then updateCampfireEmbers(dt) end
   if wildlifeAnchorStep ~= nil then wildlifeAnchorStep() end

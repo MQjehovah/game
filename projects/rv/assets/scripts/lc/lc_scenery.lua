@@ -2105,6 +2105,28 @@ function updateNightHowls(dt)
   if PlaySfx then PlaySfx("howl") end
 end
 
+-- 夜间猫头鹰：晴朗夜晚偶尔传来两声低鸣
+function owlsActive()
+  if not (isNight ~= nil and isNight()) then return false end
+  return weather ~= "rain" and weather ~= "snow"
+end
+
+function owlInterval()
+  return 35 + math.random() * 40
+end
+
+function updateNightOwls(dt)
+  if not owlsActive() then
+    owlT = 0
+    return
+  end
+  owlT = (owlT or 0) - (dt or 0)
+  if owlT > 0 then return end
+  owlT = owlInterval()
+  owlPlays = (owlPlays or 0) + 1
+  if PlaySfx then PlaySfx("owl") end
+end
+
 -- 营地附近的浆果丛：采摘后约 12 秒再生
 function spawnBerryBushes()
   for _, b in ipairs(berryBushes) do Despawn(b.ent) end

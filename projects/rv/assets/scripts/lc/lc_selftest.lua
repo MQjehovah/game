@@ -2339,6 +2339,34 @@ function runSelfTest()
                      tostring(rainy), iv, tostring(played)))
   end
 
+  -- 夜间猫头鹰：晴朗夜晚会叫，白天/雨雪安静
+  do
+    local sc, sw = clock, weather
+    clock, weather = 23 * 60, "clear"
+    local clearNight = owlsActive()
+    weather = "rain"
+    local rainy = owlsActive()
+    weather = "snow"
+    local snowy = owlsActive()
+    weather = "clear"
+    clock = 12 * 60
+    local daytime = owlsActive()
+    local iv = owlInterval()
+    local keepT, keepP = owlT, owlPlays
+    clock, weather = 23 * 60, "clear"
+    owlT, owlPlays = 0, 0
+    updateNightOwls(0.1)
+    local played = (owlPlays or 0) == 1
+    owlT, owlPlays = keepT, keepP
+    weather, clock = sw, sc
+    ok(r, "night owls",
+       clearNight and not rainy and not snowy and not daytime and
+       iv >= 35 and iv <= 75 and played,
+       string.format("clear=%s rain=%s snow=%s day=%s iv=%.1f played=%s",
+                     tostring(clearNight), tostring(rainy), tostring(snowy),
+                     tostring(daytime), iv, tostring(played)))
+  end
+
   -- 主路土肩：沥青边缘与草地的过渡
   do
     local n = #roadShoulders
