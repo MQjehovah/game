@@ -334,15 +334,48 @@ function addWater(amount)
   water = math.max(0, math.min(waterMax(), water + amount))
 end
 
--- 农场风车水泵：每 60 游戏分钟可接 30L 水
+-- 农场风车水泵：基础每 60 游戏分钟可接 30L 水；升级后冷却 30 分钟
 WINDMILL_WATER_MINUTES = 60
+WINDMILL_UPGRADE_MINUTES = 30
 WINDMILL_WATER_AMOUNT = 30
+WINDMILL_UPGRADE_COST = { metal = 3, wood = 2 }
+
+function windmillWaterReadyMinutes()
+  return windmillUpgraded and WINDMILL_UPGRADE_MINUTES or WINDMILL_WATER_MINUTES
+end
 
 function windmillWaterText()
   if (windmillWaterMin or 0) > 0 then
     return string.format("风车水泵冷却中（约 %.0f 分钟）", windmillWaterMin)
   end
-  return string.format("E 接水 +%dL（风车水泵）", WINDMILL_WATER_AMOUNT)
+  if windmillUpgraded then
+    return string.format("E 接水 +%dL（升级水泵 30 分钟）", WINDMILL_WATER_AMOUNT)
+  end
+  return string.format("E 接水 +%dL · R 升级水泵（金属3 木材2）",
+                       WINDMILL_WATER_AMOUNT)
+end
+
+-- 升级风车水泵：消耗金属 3 + 木材 2，冷却 60→30 分钟
+function upgradeWindmill()
+  if windmill == nil then return false end
+  if windmillUpgraded then
+    toast.text = "风车水泵已经升级过了"
+    toast.t = 2.0
+    return false
+  end
+  if not canAfford(WINDMILL_UPGRADE_COST) then
+    toast.text = "升级风车需要：" .. costText(WINDMILL_UPGRADE_COST)
+    toast.t = 2.8
+    return false
+  end
+  payCost(WINDMILL_UPGRADE_COST)
+  windmillUpgraded = true
+  toast.text = "风车水泵升级完成——接水冷却缩短到 30 游戏分钟"
+  toast.t = 3.6
+  if PlaySfx then PlaySfx("repair") end
+  if addJournal ~= nil then addJournal("升级了农场风车水泵", "goal") end
+  if autoSave ~= nil then autoSave() end
+  return true
 end
 
 function collectWindmillWater()
@@ -355,7 +388,7 @@ function collectWindmillWater()
   local before = water or 0
   addWater(WINDMILL_WATER_AMOUNT)
   local got = (water or 0) - before
-  windmillWaterMin = WINDMILL_WATER_MINUTES
+  windmillWaterMin = windmillWaterReadyMinutes()
   if got <= 0.01 then
     toast.text = "水箱已经满了"
     toast.t = 2.0

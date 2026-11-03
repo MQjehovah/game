@@ -192,6 +192,7 @@ function saveLayout(silent)
       milestones = milestones,
       notes = notesList,
       loreDone = loreRewardDone and true or false,
+      windmillUpgraded = windmillUpgraded and true or false,
       radioMastFixed = radioMastFixed and true or false,
       relayDone = relayDone and true or false,
       campfireFuel = campfireFuelMin or 0,
@@ -424,6 +425,7 @@ function loadLayout()
       end
     end
     loreRewardDone = data.progress.loreDone == true
+    windmillUpgraded = data.progress.windmillUpgraded == true
     if refreshLoreNotes ~= nil then refreshLoreNotes() end
     if type(data.progress.journal) == "table" then
       journal = {}
@@ -1660,6 +1662,14 @@ function on_update(ent, dt)
   if not buildMode and ActionPressed("r") and nearRv() and
      fieldRepair ~= nil then
     fieldRepair()
+  end
+  -- 风车旁按 R 升级水泵（与房车维修互不冲突）
+  if not buildMode and ActionPressed("r") and windmill ~= nil and
+     onFoot and upgradeWindmill ~= nil then
+    local wdx, wdz = windmill.x - player.x, windmill.z - player.z
+    if wdx * wdx + wdz * wdz <= 3.8 * 3.8 then
+      upgradeWindmill()
+    end
   end
   if not buildMode and ActionPressed("g") and addCampfireWood ~= nil then
     addCampfireWood()

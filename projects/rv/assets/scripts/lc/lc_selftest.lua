@@ -3072,6 +3072,30 @@ function runSelfTest()
     end
   end
 
+  -- 风车水泵升级：消耗材料，冷却从 60 分钟缩短到 30 分钟
+  do
+    local keepUp = windmillUpgraded
+    local keepCd = windmillWaterMin
+    local keepM, keepW = materials.metal or 0, materials.wood or 0
+    local keepSave = autoSave
+    autoSave = nil
+    windmillUpgraded = false
+    materials.metal, materials.wood = 2, 1
+    local poor = upgradeWindmill()
+    materials.metal, materials.wood = 3, 2
+    local okUp = upgradeWindmill()
+    local spent = (materials.metal or 0) == 0 and (materials.wood or 0) == 0
+    local again = upgradeWindmill()
+    local cd = windmillWaterReadyMinutes()
+    windmillUpgraded, windmillWaterMin = keepUp, keepCd
+    materials.metal, materials.wood = keepM, keepW
+    autoSave = keepSave
+    ok(r, "windmill upgrade",
+       poor == false and okUp and spent and again == false and cd == 30,
+       string.format("poor=%s up=%s cd=%.0f", tostring(poor),
+                     tostring(okUp), cd))
+  end
+
   -- 农场稻草人：5 件低多边形组合
   do
     local n = #farmScarecrow
