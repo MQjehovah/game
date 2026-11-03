@@ -2736,6 +2736,20 @@ function runSelfTest()
                      tostring(day), tostring(night)))
   end
 
+  -- 农场鹿群：白天可见、夜间隐藏
+  do
+    local sc = clock
+    clock = 12 * 60
+    local day = deerActive()
+    clock = 22 * 60
+    local night = deerActive()
+    clock = sc
+    ok(r, "farm deer", #(ambientDeer or {}) >= 2 and day == true and
+       night == false,
+       string.format("deer=%d day=%s night=%s", #(ambientDeer or {}),
+                     tostring(day), tostring(night)))
+  end
+
   -- 蝴蝶：白天活动，夜晚与雨天隐藏
   do
     local sc, sw = clock, weather

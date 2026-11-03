@@ -574,6 +574,7 @@ function on_start()
   if spawnCampProps ~= nil then spawnCampProps() end
   if spawnBirds ~= nil then spawnBirds() end
   if spawnRabbits ~= nil then spawnRabbits() end
+  if spawnAmbientDeer ~= nil then spawnAmbientDeer() end
   if spawnButterflies ~= nil then spawnButterflies() end
   if spawnBerryBushes ~= nil then spawnBerryBushes() end
   if spawnRoadCaches ~= nil then spawnRoadCaches() end
@@ -1431,6 +1432,7 @@ function on_update(ent, dt)
   if wildlifeAnchorStep ~= nil then wildlifeAnchorStep() end
   if updateBirds ~= nil then updateBirds(dt) end
   if updateRabbits ~= nil then updateRabbits(dt) end
+  if updateAmbientDeer ~= nil then updateAmbientDeer(dt) end
   if updateButterflies ~= nil then updateButterflies(dt) end
   if updateBerryBushes ~= nil then updateBerryBushes(dt) end
   if updateRoadCaches ~= nil then updateRoadCaches(dt) end

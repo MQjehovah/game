@@ -100,6 +100,8 @@ birds = {}                    -- 白天绕营地/房车飞行的鸟群
 rabbits = {}                  -- 白天在草甸上蹦跳的野兔
 butterflies = {}              -- 白天在花丛/草甸飞舞的蝴蝶
 wildlifeAnchor = { x = 0, z = 0 }  -- 野生动物群所在区域（不跟车移动）
+ambientDeer = {}              -- 农场附近白天活动的鹿群
+ambientDeerT = 0              -- 鹿群动画计时
 puddles = {}                  -- 雨天积水
 snowPatches = {}              -- 雪天地面雪斑
 snowCenter = nil              -- 雪斑铺设中心（房车开远后重铺）

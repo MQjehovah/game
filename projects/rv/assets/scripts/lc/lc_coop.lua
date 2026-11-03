@@ -2758,6 +2758,7 @@ function coopUpdate(dt)
   if wildlifeAnchorStep ~= nil then wildlifeAnchorStep() end
   if updateBirds ~= nil then updateBirds(dt) end
   if updateRabbits ~= nil then updateRabbits(dt) end
+  if updateAmbientDeer ~= nil then updateAmbientDeer(dt) end
   if updateButterflies ~= nil then updateButterflies(dt) end
   if updateBerryBushes ~= nil then updateBerryBushes(dt) end
   if updateRoadCaches ~= nil then updateRoadCaches(dt) end

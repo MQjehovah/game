@@ -1695,6 +1695,51 @@ function updateRabbits(dt)
   end
 end
 
+-- 农场附近的白天鹿群：在谷仓周围缓慢游走，夜间隐藏（放大的兔子模型）
+function deerActive()
+  return not (isNight ~= nil and isNight())
+end
+
+function spawnAmbientDeer()
+  for _, d in ipairs(ambientDeer) do Despawn(d.ent) end
+  ambientDeer = {}
+  local nd = (nodeById ~= nil) and nodeById("farm") or nil
+  if nd == nil then return end
+  for i = 1, 2 do
+    local e = SpawnPrefab("rv_rabbit", { x = 0, y = -60, z = 0 })
+    if e ~= nil then
+      SetScale(e, 1.10, 0.85, 1.45)
+      ambientDeer[#ambientDeer + 1] = {
+        ent = e,
+        ax = nd.x + (i == 1 and -9.0 or 10.0),
+        az = nd.z + (i == 1 and 8.0 or -7.0),
+        angle = math.random() * math.pi * 2,
+        radius = 3.5 + math.random() * 3.0,
+        speed = 0.08 + math.random() * 0.10,
+        phase = math.random() * math.pi * 2,
+      }
+    end
+  end
+end
+
+function updateAmbientDeer(dt)
+  if #ambientDeer == 0 then return end
+  local active = deerActive()
+  ambientDeerT = (ambientDeerT or 0) + (dt or 0)
+  for _, d in ipairs(ambientDeer) do
+    SetVisible(d.ent, active)
+    if active then
+      d.angle = d.angle + d.speed * dt
+      local x = d.ax + math.cos(d.angle) * d.radius
+      local z = d.az + math.sin(d.angle) * d.radius
+      local gy = (terrainHeight and terrainHeight(x, z)) or 0
+      local bob = math.abs(math.sin(ambientDeerT * 2.2 + d.phase)) * 0.06
+      SetPosition(d.ent, { x = x, y = gy + 0.55 + bob, z = z })
+      SetRotationY(d.ent, -d.angle + math.pi * 0.5)
+    end
+  end
+end
+
 -- 白天蝴蝶：在草甸/花丛附近成对翅膀飞舞，夜间或雨天隐藏
 function butterfliesActive()
   if weather == "rain" or weather == "snow" then return false end
