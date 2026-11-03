@@ -1356,6 +1356,20 @@ function runSelfTest()
        string.format("used=%s avail=%s", tostring(used), tostring(avail)))
   end
 
+  -- 钓鱼纪录文本（地图右下）
+  do
+    local sb, sf = bestFish, fishCaught
+    bestFish, fishCaught = 63, 12
+    local rich = fishingRecordText()
+    bestFish, fishCaught = 0, 0
+    local empty = fishingRecordText()
+    bestFish, fishCaught = sb, sf
+    ok(r, "fishing record text",
+       rich:find("63", 1, true) ~= nil and rich:find("12", 1, true) ~= nil and
+       empty:find("暂无", 1, true) ~= nil,
+       rich .. " | " .. empty)
+  end
+
   -- 存读档：行程/探索/货运单数 + 天气
   do
     tripDistance, tripFuel, jobDelivered = 3210, 88, 7

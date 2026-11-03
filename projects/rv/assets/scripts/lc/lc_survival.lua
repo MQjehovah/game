@@ -270,6 +270,12 @@ function updateSurvival(dt)
 end
 
 -- 钓鱼：水塘边按 E 抛竿，等待 5-9 秒
+-- 地图/UI 用的钓鱼纪录文本
+function fishingRecordText()
+  if (fishCaught or 0) <= 0 then return "钓鱼纪录：暂无" end
+  return string.format("钓鱼纪录 %.0fcm · %d 条", bestFish or 0, fishCaught or 0)
+end
+
 -- 钓鱼：按权重抽鱼种，并在该鱼种的尺寸区间内取一个尺寸
 function rollFish()
   local total = 0

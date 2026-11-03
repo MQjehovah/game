@@ -805,6 +805,10 @@ function drawMapHud()
            12, 0.7, 0.7, 0.65, 1)
   DrawText(string.format("已探索 %d / %d 个地点", visitedCount or 0, #NODES),
            px + pw - 16, py + ph - 24, 12, 0.7, 0.7, 0.65, 1, true)
+  if fishingRecordText ~= nil then
+    drawTextCentered(fishingRecordText(), px + pw * 0.5, py + ph - 42, 12,
+                     0.72, 0.76, 0.68, 1)
+  end
 end
 
 -- ===========================================================================
