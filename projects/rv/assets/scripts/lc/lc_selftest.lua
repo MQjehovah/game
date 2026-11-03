@@ -1012,6 +1012,18 @@ function runSelfTest()
                      metal0, metal1, metal2, cloth0, cloth1))
   end
 
+  -- 燃油曲线：低速巡航比全速省油，载重再加成，怠速有基线
+  do
+    local rIdle = fuelBurnRate(0.0, 1.0, 0)
+    local rLow  = fuelBurnRate(2.0, 1.0, 1)
+    local rHigh = fuelBurnRate(DRIVE.maxSpeed, 1.0, 1)
+    local rLoad = fuelBurnRate(DRIVE.maxSpeed, 1.3, 1)
+    ok(r, "rv fuel burn curve",
+       rIdle > 0 and rIdle < rLow and rLow < rHigh and rHigh < rLoad,
+       string.format("idle=%.3f low=%.3f high=%.3f loaded=%.3f L/s",
+                     rIdle, rLow, rHigh, rLoad))
+  end
+
   -- 存读档
   local saved = saveLayout()
   ok(r, "save layout", saved ~= false, "saves/layout.json")

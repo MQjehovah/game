@@ -24,6 +24,21 @@ function rvQuat()
   return qMul(qMul(qy, qx), qz)
 end
 
+-- 燃油消耗速率（L/s）：怠速基线 + 车速 + 载重。导出让自检能验证曲线。
+function fuelBurnRate(speed, loadRatio, throttle)
+  local v = math.min(1, math.abs(speed or 0) / DRIVE.maxSpeed)
+  local ratio = loadRatio or 1
+  local load = 1 + math.max(0, ratio - 1) * 0.60 +
+               math.max(0, math.min(ratio, 1) - 0.75) * 0.20
+  local idle = VEH.idleBurn or 0.010
+  if (throttle or 0) > 0 then
+    return idle + VEH.burn * (0.30 + 0.70 * v) * load
+  elseif (throttle or 0) < 0 then
+    return idle * 0.6
+  end
+  return idle
+end
+
 function updateDrive(dt)
   local throttle = (ActionDown("w") and 1 or 0) - (ActionDown("s") and 1 or 0)
   -- Positive yaw turns toward -X, which is screen-right when facing +Z, so
@@ -143,9 +158,11 @@ function updateDrive(dt)
     maxSp = maxSp * (1.0 - over * 0.45)
     acc = acc * (1.0 - over * 0.5)
   end
-  -- 燃油：踩油门燃烧（超载更费油）；没油 = 龟速挪窝
-  if throttle > 0 and fuel > 0 then
-    fuel = math.max(0, fuel - VEH.burn * (ratio > 1.0 and 1.5 or 1) * dt)
+  -- 燃油：怠速基线 + 车速/载重相关。踩油门越快越费油，载重再叠一层；
+  -- 低速巡航比全速省油（每分钟的油量表变化能看出来）。没油 = 龟速挪窝。
+  if fuel > 0 then
+    local rate = fuelBurnRate(rv.speed or 0, ratio, throttle)
+    fuel = math.max(0, fuel - rate * dt)
   end
   if fuel <= 0 then
     maxSp = math.min(maxSp, VEH.limpSpeed)
