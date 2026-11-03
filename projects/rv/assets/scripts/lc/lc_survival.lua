@@ -1505,14 +1505,30 @@ function lootStrandedCar()
   return true
 end
 
+-- 每次篝火烹饪消耗的燃料（游戏分钟）
+COOK_FUEL_MIN = 10
+
+local function spendCookFuel()
+  campfireFuelMin = math.max(0, (campfireFuelMin or 0) - COOK_FUEL_MIN)
+  if campfireFuelMin <= 0 and setCampfireLit ~= nil then
+    setCampfireLit(false)
+  end
+end
+
 function cookAtCampfire()
   if campfireOn == false then
     toast.text = "篝火熄灭了——按 G 添柴后再做饭"
     toast.t = 2.6
     return false
   end
+  if (campfireFuelMin or 0) <= 0 then
+    toast.text = "篝火没有燃料了——按 G 添柴"
+    toast.t = 2.6
+    return false
+  end
   if takeItem("rawfish", 1) then
     addItem("fish", 1)
+    spendCookFuel()
     if PlaySfx then PlaySfx("cook") end
     if addDailyProgress ~= nil then addDailyProgress("cook", 1) end
     toast.text = "篝火烤好一条鱼（烤鱼 +1）"
@@ -1522,6 +1538,7 @@ function cookAtCampfire()
   -- 其次煮浑水：1 份浑水 -> +15L 净水
   if takeItem("dirtywater", 1) then
     addWater(15)
+    spendCookFuel()
     if PlaySfx then PlaySfx("cook") end
     toast.text = "煮沸一份浑水 — 水箱 +15L"
     toast.t = 2.4
@@ -1531,6 +1548,7 @@ function cookAtCampfire()
   if takeItem("rawfood", 1) then
     if (inv.berry or 0) >= 2 and takeItem("berry", 2) then
       addItem("stew", 1)
+      spendCookFuel()
       if PlaySfx then PlaySfx("cook") end
       if addDailyProgress ~= nil then addDailyProgress("cook", 1) end
       toast.text = "篝火炖好一锅浆果炖肉（+1）"
@@ -1538,6 +1556,7 @@ function cookAtCampfire()
       return true
     end
     addItem("meal", 1)
+    spendCookFuel()
     if PlaySfx then PlaySfx("cook") end
     if addDailyProgress ~= nil then addDailyProgress("cook", 1) end
     toast.text = "篝火烤好一份野味（热饭 +1）"

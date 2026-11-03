@@ -2228,6 +2228,26 @@ function runSelfTest()
                      inv.stew or 0, inv.rawfood or 0, inv.berry or 0))
   end
 
+  -- 篝火烹饪消耗燃料：每次 10 游戏分钟
+  do
+    local keepOn, keepFuel = campfireOn, campfireFuelMin
+    local kr = inv.rawfish or 0
+    local keepGoal = dailyGoal
+    local kt, kv = toast.text, toast.t
+    setCampfireLit(true)
+    campfireFuelMin, dailyGoal = 500, nil
+    inv.rawfish = 1
+    local cooked = cookAtCampfire()
+    local gotFuel = campfireFuelMin or 0
+    local spent = math.abs(gotFuel - 490) < 1e-6
+    inv.rawfish = kr > 0 and kr or nil
+    campfireOn, campfireFuelMin = keepOn, keepFuel
+    dailyGoal = keepGoal
+    toast.text, toast.t = kt, kv
+    ok(r, "campfire cook fuel", cooked and spent,
+       string.format("cooked=%s fuel=%.0f", tostring(cooked), gotFuel))
+  end
+
   -- 夜间蟋蟀：晴天夜晚会鸣叫，雨雪/白天安静
   do
     local sc, sw = clock, weather
