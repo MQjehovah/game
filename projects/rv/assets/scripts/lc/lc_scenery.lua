@@ -1410,6 +1410,7 @@ function rabbitsActive()
 end
 
 function spawnRabbits()
+  for _, r in ipairs(rabbits) do Despawn(r.ent) end
   rabbits = {}
   for i = 1, 5 do
     local e = SpawnPrefab("rv_rabbit", { x = 0, y = -60, z = 0 })
@@ -1424,12 +1425,73 @@ function spawnRabbits()
       }
     end
   end
+  rabbitRespawnT = 12
+end
+
+-- 猎取一只兔子：消耗 1 份野味（生食材）
+function huntRabbit(index)
+  local r = rabbits[index]
+  if r == nil then return false end
+  local wx, wz = rv.x, rv.z
+  if r.ent ~= nil then
+    local p = GetPosition(r.ent)
+    if p ~= nil then wx, wz = p.x, p.z end
+    Despawn(r.ent)
+  end
+  table.remove(rabbits, index)
+  addItem("rawfood", 1)
+  if PlaySfx then PlaySfx("shot") end
+  SpawnFloatText(wx, 1.2, wz, "野味 +1", false, 1.2, 0.98, 0.86, 0.4)
+  toast.text = "猎到一只野兔 — 回篝火烤熟"
+  toast.t = 2.4
+  return true
+end
+
+-- 准星命中检测：屏幕上离准星最近、且 22m 内的兔子
+function huntRabbitAtScreen(cx, cy)
+  if #rabbits == 0 or WorldToScreen == nil then return false end
+  local best, bestD = nil, 1e9
+  for i, r in ipairs(rabbits) do
+    if r.ent ~= nil then
+      local p = GetPosition(r.ent)
+      if p ~= nil then
+        local dx, dz = p.x - rv.x, p.z - rv.z
+        if dx * dx + dz * dz < 22 * 22 then
+          local sp = WorldToScreen(p.x, (p.y or 0) + 0.25, p.z)
+          if sp ~= nil then
+            local d = (sp.x - cx) ^ 2 + (sp.y - cy) ^ 2
+            if d < 30 * 30 and d < bestD then best, bestD = i, d end
+          end
+        end
+      end
+    end
+  end
+  if best == nil then return false end
+  return huntRabbit(best)
 end
 
 function updateRabbits(dt)
   if #rabbits == 0 then return end
   local active = rabbitsActive()
   rabbitsT = (rabbitsT or 0) + dt
+  -- 猎杀后慢慢补回种群（最多 5 只）
+  if #rabbits < 5 then
+    rabbitRespawnT = (rabbitRespawnT or 12) - dt
+    if rabbitRespawnT <= 0 then
+      rabbitRespawnT = 12
+      local e = SpawnPrefab("rv_rabbit", { x = 0, y = -60, z = 0 })
+      if e ~= nil then
+        SetScale(e, 0.26, 0.22, 0.34)
+        rabbits[#rabbits + 1] = {
+          ent = e,
+          angle = math.random() * math.pi * 2,
+          radius = 8 + math.random() * 9,
+          speed = 0.12 + math.random() * 0.15,
+          phase = math.random() * math.pi * 2,
+        }
+      end
+    end
+  end
   for _, r in ipairs(rabbits) do
     SetVisible(r.ent, active)
     if active then

@@ -2063,6 +2063,18 @@ function runSelfTest()
        string.format("health=%.0f camp=%s", gotHealth, tostring(campOk)))
   end
 
+  -- 猎兔：消耗一只兔子换 1 份野味
+  do
+    local raw0 = itemCount("rawfood")
+    local n0 = #rabbits
+    local okHunt = (n0 > 0) and huntRabbit(1)
+    local gained = itemCount("rawfood") == raw0 + 1 and #rabbits == n0 - 1
+    spawnRabbits()
+    ok(r, "rabbit hunting", okHunt and gained and #rabbits >= 4,
+       string.format("rawfood %d->%d rabbits %d->%d", raw0,
+                     itemCount("rawfood"), n0, #rabbits))
+  end
+
   -- 睡醒晨报：包含天数/货运单数/今日目标/油量
   do
     local sd, sc = day, clock
