@@ -6,6 +6,7 @@
 
 #include "neon/core/json.hpp"
 #include "neon/core/localization.hpp"
+#include "neon/scene/scene_file.hpp"
 
 namespace neon::script {
 namespace {
@@ -1523,6 +1524,45 @@ Value NativeSetEntityComponentField(IScriptHost& host, void* user) {
     return Value::Nil();
 }
 
+// SetEnvironmentField(field, value): writes one field of the scene's
+// SceneEnvironment component (sky gradient / fog / ambient). Scripts drive the
+// day-night sky through this without having to know which entity owns the
+// component (the runtime creates it from the scene's top-level `environment`).
+Value NativeSetEnvironmentField(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->world) return Value::Nil();
+    const std::string field = StringArg(host, 0);
+    const Value v = host.GetArg(1);
+    auto readColor = [](const Value& val, gfx::Color& out) {
+        if (val.type != Value::Type::Table) return false;
+        for (const auto& kv : val.table->fields) {
+            if (kv.second.type != Value::Type::Number) continue;
+            const float n = static_cast<float>(kv.second.number);
+            if (kv.first == "r") out.r = n;
+            else if (kv.first == "g") out.g = n;
+            else if (kv.first == "b") out.b = n;
+            else if (kv.first == "a") out.a = n;
+        }
+        return true;
+    };
+    const bool isNumber = (v.type == Value::Type::Number);
+    const float num = isNumber ? static_cast<float>(v.number) : 0.0f;
+    bool found = false;
+    ctx->world->ViewAll<scene::SceneEnvironment>().ForEach(
+        [&](ecs::Entity, scene::SceneEnvironment& env) {
+            found = true;
+            if (field == "skyTop") readColor(v, env.skyTop);
+            else if (field == "skyHorizon") readColor(v, env.skyHorizon);
+            else if (field == "fogColor") readColor(v, env.fogColor);
+            else if (field == "ambientColor") readColor(v, env.ambientColor);
+            else if (field == "ambientStrength" && isNumber) env.ambientStrength = num;
+            else if (field == "fogNear" && isNumber) env.fogNear = num;
+            else if (field == "fogFar" && isNumber) env.fogFar = num;
+            else if (field == "exposure" && isNumber) env.exposure = num;
+        });
+    return Value::Bool(found);
+}
+
 // SetVisible(entity, true|false): hides/shows an entity in the runtime's
 // render pass (dead mobs, spawn markers, toggled props). Works on any entity
 // with a mesh; the world state itself is untouched.
@@ -2657,6 +2697,7 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("SetEntityComponent", &NativeSetEntityComponent, &ctx);
     host.Register("EntityComponentField", &NativeEntityComponentField, &ctx);
     host.Register("SetEntityComponentField", &NativeSetEntityComponentField, &ctx);
+    host.Register("SetEnvironmentField", &NativeSetEnvironmentField, &ctx);
     host.Register("SetVisible", &NativeSetVisible, &ctx);
     host.Register("SetEntityHighlight", &NativeSetEntityHighlight, &ctx);
     host.Register("ChangeScene", &NativeChangeScene, &ctx);

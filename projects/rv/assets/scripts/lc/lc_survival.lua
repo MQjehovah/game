@@ -18,6 +18,7 @@ end
 function initDayNight()
   sunEnt = FindNamedEntity("Sun")
   lastSunClock = -999
+  lastSkyBucket = nil
 end
 
 function updateDayNight(dt)
@@ -51,6 +52,27 @@ function updateDayNight(dt)
   SetEntityComponentField(sunEnt, "light", "intensity", 0.06 + 1.74 * f)
   SetEntityComponentField(sunEnt, "light", "color", { r, g, b, 1 })
   SetEntityComponentField(sunEnt, "light", "ambientStrength", 0.12 + 0.43 * f)
+
+  -- 夜空/雾色也跟随昼夜：只调太阳强度会让 22:00 仍像傍晚，车灯没有存在感。
+  -- 量化到每 10 游戏分钟一次，避免 IBL 每帧重建（天空变化会触发环境贴图重算）。
+  local skyBucket = math.floor(clock / 10)
+  if SetEnvironmentField ~= nil and skyBucket ~= lastSkyBucket then
+    lastSkyBucket = skyBucket
+    local t = math.max(0, math.min(1, (f - 0.04) / 0.96))
+    local warm = math.sin(t * math.pi) * (1.0 - t)
+    local function mix(a, b) return a + (b - a) * t end
+    SetEnvironmentField("skyTop", {
+      r = mix(0.015, 0.28), g = mix(0.025, 0.38), b = mix(0.060, 0.58), a = 1 })
+    SetEnvironmentField("skyHorizon", {
+      r = mix(0.060, 0.55) + warm * 0.34,
+      g = mix(0.090, 0.65) + warm * 0.17,
+      b = mix(0.180, 0.80) + warm * 0.05, a = 1 })
+    SetEnvironmentField("fogColor", {
+      r = mix(0.040, 0.45), g = mix(0.060, 0.55), b = mix(0.110, 0.70), a = 1 })
+    SetEnvironmentField("ambientColor", {
+      r = mix(0.10, 0.52), g = mix(0.13, 0.55), b = mix(0.22, 0.62), a = 1 })
+    SetEnvironmentField("ambientStrength", 0.16 + 0.42 * f)
+  end
 end
 
 function isNight()

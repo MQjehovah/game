@@ -956,6 +956,15 @@ function runSelfTest()
        string.format("night=%d day=%d parts=%d", onCount, offCount, #rvParts))
   end
 
+  -- 夜空/雾色：新引擎绑定把昼夜曲线写进 SceneEnvironment
+  do
+    local okApi = SetEnvironmentField ~= nil
+    local applied = okApi and SetEnvironmentField("skyTop", { r = 0.02, g = 0.03, b = 0.07, a = 1 })
+    local applied2 = okApi and SetEnvironmentField("ambientStrength", 0.16) == true
+    ok(r, "rv night sky environment", applied == true and applied2,
+       "SetEnvironmentField skyTop/ambientStrength")
+  end
+
   -- 存读档
   local saved = saveLayout()
   ok(r, "save layout", saved ~= false, "saves/layout.json")
