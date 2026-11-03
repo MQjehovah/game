@@ -1004,6 +1004,9 @@ function on_start()
     jobAccept(1)
     job.condition = 0.72
     jobComplete()
+  elseif startMode == "morning" then
+    clock = 21 * 60
+    sleepInBed()
   elseif startMode == "jobaway" then
     jobRefreshOffers("gasstop")
     jobAccept(1)
@@ -1226,6 +1229,10 @@ function on_update(ent, dt)
     jobResult.t = jobResult.t - dt
     if jobResult.t <= 0 then jobResult = nil end
   end
+  if morningReport ~= nil then
+    morningReport.t = morningReport.t - dt
+    if morningReport.t <= 0 then morningReport = nil end
+  end
   if coopRole ~= nil then
     coopUpdate(dt)
     if updatePoiWindows then updatePoiWindows(dt) end
@@ -1440,5 +1447,6 @@ function on_render()
   if stationUI then drawStationMenu() end
   if jobUI then drawJobPanel() end
   if jobResult then drawJobResult() end
+  if morningReport then drawMorningReport() end
   if mapOpen then drawMapHud() end
 end

@@ -294,6 +294,16 @@ function sleepInBed()
   needs.hygiene = math.max(0, needs.hygiene - 10)
   needs.health = math.min(100, needs.health + 8)
   if LC and LC.flow then LC.flow.emit("day_advanced") end
+  morningReport = {
+    day = day,
+    jobs = jobDelivered or 0,
+    goal = dailyGoal and dailyGoal.name or nil,
+    goalDone = dailyGoal and dailyGoal.done or false,
+    goalProgress = dailyGoal and dailyGoal.progress or 0,
+    goalTarget = dailyGoal and dailyGoal.target or 0,
+    fuel = fuel or 0,
+    t = 5.0,
+  }
   toast.text = string.format("睡到第 %d 天 07:00 — 体力恢复", day)
   toast.t = 3.5
 end

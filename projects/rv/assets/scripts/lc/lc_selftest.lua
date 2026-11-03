@@ -1672,6 +1672,24 @@ function runSelfTest()
                      tostring(day), tostring(night)))
   end
 
+  -- 睡醒晨报：包含天数/货运单数/今日目标/油量
+  do
+    local sd, sc = day, clock
+    local se, sh, st, sg = needs.energy, needs.hunger, needs.thirst, needs.hygiene
+    morningReport = nil
+    sleepInBed()
+    local rep = morningReport
+    local okRep = rep ~= nil and (rep.day or 0) >= 1 and rep.jobs ~= nil and
+                  rep.fuel ~= nil and (rep.t or 0) > 0
+    day, clock = sd, sc
+    needs.energy, needs.hunger, needs.thirst, needs.hygiene = se, sh, st, sg
+    morningReport = nil
+    ok(r, "morning report", okRep,
+       rep and string.format("day=%d jobs=%d goal=%s fuel=%.0f",
+                             rep.day or 0, rep.jobs or 0,
+                             tostring(rep.goal), rep.fuel or 0) or "missing")
+  end
+
   -- 存读档：行程/探索/货运单数 + 天气
   do
     tripDistance, tripFuel, jobDelivered = 3210, 88, 7

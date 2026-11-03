@@ -567,6 +567,38 @@ function drawMinimap(vw, vh)
   drawTextCentered("N", cx, my + 3, 10, 0.72, 0.74, 0.68, 0.9)
 end
 
+-- 睡醒晨报：天数、累计货运、今日目标进度、当前油量
+function drawMorningReport()
+  if morningReport == nil then return end
+  local vp = GetViewportSize()
+  local vw = (vp and vp.w) or 1280
+  local vh = (vp and vp.h) or 720
+  local pw, ph = 440, 170
+  local px = math.floor((vw - pw) * 0.5)
+  local py = math.floor(vh * 0.24)
+  local a = math.min(1, (morningReport.t or 0) * 1.6)
+  DrawRect(px, py, pw, ph, 0.05, 0.055, 0.065, 0.94 * a)
+  DrawRectOutline(px, py, pw, ph, 0.62, 0.56, 0.38, a)
+  drawTextCentered(string.format("第 %d 天 · 清晨", morningReport.day or 1),
+                   vw * 0.5, py + 12, 22, 0.98, 0.90, 0.66, a)
+  DrawText(string.format("天气 %s   油量 %.0f / %d L",
+           (weatherName and weatherName()) or "晴",
+           morningReport.fuel or 0, VEH.tank),
+           px + 22, py + 48, 13, 0.82, 0.84, 0.78, a)
+  DrawText(string.format("累计完成货运 %d 单", morningReport.jobs or 0),
+           px + 22, py + 70, 13, 0.82, 0.84, 0.78, a)
+  if morningReport.goal ~= nil then
+    local ok = morningReport.goalDone
+    DrawText(string.format("今日目标：%s  %d/%d%s", morningReport.goal,
+             math.min(morningReport.goalProgress or 0, morningReport.goalTarget or 0),
+             morningReport.goalTarget or 0, ok and "  ✓" or ""),
+             px + 22, py + 94, 13,
+             ok and 0.58 or 0.95, ok and 0.85 or 0.82, ok and 0.58 or 0.50, a)
+  end
+  DrawText("W 上车出发 / E 下车活动 / M 看地图", px + 22, py + 126, 12,
+           0.68, 0.70, 0.64, a)
+end
+
 function drawDriveHud()
   local vp = GetViewportSize()
   local vw = (vp and vp.w) or 1280

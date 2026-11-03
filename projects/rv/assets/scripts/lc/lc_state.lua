@@ -60,6 +60,7 @@ jobBoard = nil                -- 营地货运板世界坐标
 jobCargoEnts = {}             -- 车顶货物可视化
 jobUI = false                 -- 货运板菜单是否打开
 jobResult = nil               -- 交付/失败结算卡（3.5s）
+morningReport = nil           -- 睡醒晨报（天数/货运/今日目标/油量）
 lastJobDay = 0                -- 最近一次完成货运的日期（每日首单加成）
 jobHistory = {}               -- 最近完成的货运（最多 5 条，地图展示）
 dailyGoal = nil               -- 每日目标 {id,name,target,progress,done,reward,day}
