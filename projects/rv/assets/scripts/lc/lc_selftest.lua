@@ -1803,6 +1803,19 @@ function runSelfTest()
        string.format("rate=%.0f/s emitted=%d", rate, got))
   end
 
+  -- 篝火火星：燃烧时持续升起
+  do
+    local keepT, keepC = emberT, emberCount
+    emberT, emberCount = 0, 0
+    local rate = campfireEmberRate()
+    updateCampfireEmbers(0.6)
+    local emitted = (emberCount or 0) >= 2
+    local got = emberCount or 0
+    emberT, emberCount = keepT, keepC
+    ok(r, "campfire embers", rate > 0 and emitted,
+       string.format("rate=%.0f/s emitted=%d", rate, got))
+  end
+
   -- 篝火燃料：烧尽熄灭，添柴重新点燃并消耗木材
   do
     local keepOn, keepFuel = campfireOn, campfireFuelMin

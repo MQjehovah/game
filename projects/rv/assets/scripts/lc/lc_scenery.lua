@@ -2135,6 +2135,33 @@ function updateCampfireSmoke(dt)
   end
 end
 
+-- 篝火火星：燃烧时持续升起橙色小火星（与炊烟/火光呼应）
+function campfireEmberRate()
+  return (campfire ~= nil and campfireOn) and 6 or 0
+end
+
+function updateCampfireEmbers(dt)
+  local rate = campfireEmberRate()
+  if rate <= 0 then emberT = 0 return end
+  emberT = (emberT or 0) + (dt or 0) * rate
+  while emberT >= 1 do
+    emberT = emberT - 1
+    emberCount = (emberCount or 0) + 1
+    EmitParticles({
+      pos = { x = campfire.x + (math.random() * 2 - 1) * 0.28,
+              y = (campfire.y or 0) + 0.55,
+              z = campfire.z + (math.random() * 2 - 1) * 0.28 },
+      count = 1, speedMin = 0.2, speedMax = 0.6,
+      vel = { x = 0.05, y = 0.9, z = 0.02 },
+      lifeMin = 0.8, lifeMax = 1.6,
+      sizeStart = 0.05, sizeEnd = 0.01,
+      color = { r = 1.0, g = 0.58, b = 0.18, a = 0.9 },
+      colorEnd = { r = 1.0, g = 0.30, b = 0.05, a = 0.0 },
+      additive = true, gravity = -0.05,
+    })
+  end
+end
+
 -- 统一设置篝火剩余燃料（联机客机按服务器值同步）
 function setCampfireFuel(v)
   campfireFuelMin = math.max(0, tonumber(v) or 0)
