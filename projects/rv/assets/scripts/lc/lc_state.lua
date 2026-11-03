@@ -63,6 +63,7 @@ roadMarkers = {}              -- 公路轮廓桩（反光桩）
 rvHeadlights = {}             -- 夜间前大灯（聚光灯，随车身旋转）
 rvTaillights = {}             -- 刹车/倒车尾灯
 campProps = {}                -- 营地陈设（遮阳棚/木桌/物资箱/营地灯）
+roadWires = {}                -- 电线杆之间的电线
 visitedPois = {}              -- 已首次抵达的地点（探索奖励去重）
 visitedCount = 0
 interiorLightsOn = true       -- 车内灯开关（L）

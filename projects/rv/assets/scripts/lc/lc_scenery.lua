@@ -266,7 +266,7 @@ function spawnRoadBetween(ax, az, bx, bz)
   end
 end
 
--- 公路电线杆（纯装饰，强化公路感）
+-- 公路电线杆 + 电线（纯装饰，强化公路感）
 function spawnPolesAlong(ax, az, bx, bz, side)
   local dx, dz = bx - ax, bz - az
   local len = math.sqrt(dx * dx + dz * dz)
@@ -274,6 +274,7 @@ function spawnPolesAlong(ax, az, bx, bz, side)
   local ux, uz = dx / len, dz / len
   local rx, rz = uz * (side or 1), -ux * (side or 1)
   local yaw = dirYaw(dx, dz)
+  local lastX, lastZ
   for d = 12, len - 8, 28 do
     local x = ax + ux * d + rx * 6.2
     local z = az + uz * d + rz * 6.2
@@ -284,6 +285,22 @@ function spawnPolesAlong(ax, az, bx, bz, side)
       SetScale(arm, 1.5, 0.10, 0.10)
       SetRotationY(arm, yaw)
     end
+    -- 相邻两根杆之间拉两条电线（沿横担两端，略低于杆顶）
+    if lastX ~= nil then
+      local wdx, wdz = x - lastX, z - lastZ
+      local wlen = math.sqrt(wdx * wdx + wdz * wdz)
+      local wmx, wmz = (x + lastX) * 0.5, (z + lastZ) * 0.5
+      for _, off in ipairs({ -0.55, 0.55 }) do
+        local wire = SpawnPrefab("rv_wire", {
+          x = wmx + rx * off, y = 5.86, z = wmz + rz * off })
+        if wire ~= nil then
+          SetScale(wire, 0.035, 0.035, wlen)
+          SetRotationY(wire, yaw)
+          roadWires[#roadWires + 1] = wire
+        end
+      end
+    end
+    lastX, lastZ = x, z
   end
 end
 

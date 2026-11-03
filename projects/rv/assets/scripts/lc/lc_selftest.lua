@@ -1094,6 +1094,12 @@ function runSelfTest()
                      tostring(knownAfter), tostring(baseKnown)))
   end
 
+  -- 公路电线：相邻电线杆之间两条
+  do
+    local n = #roadWires
+    ok(r, "roadside power wires", n >= 20, string.format("wires=%d", n))
+  end
+
   -- 存读档
   local saved = saveLayout()
   ok(r, "save layout", saved ~= false, "saves/layout.json")
