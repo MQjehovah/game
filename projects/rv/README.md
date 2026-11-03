@@ -560,7 +560,8 @@
   自检 `farm hay bales`。
 - **农场风车**：谷仓东侧立一座低多边形风车（7m 塔身 + 4 片 2.8m 叶片），
   叶片以 0.55 rad/s 持续旋转；走近按 `E` 可用风车水泵接 **30L** 水，
-  每 60 游戏分钟一次；截图 `start_mode=windmillview`，
+  每 60 游戏分钟一次；联机时客机走近按 `E` 同样由服务端接水；
+  截图 `start_mode=windmillview`，
   自检 `farm windmill` / `windmill water`。
 - **农场稻草人**：谷仓外农田里立一个低多边形稻草人（立柱/横杆/布身/草头/帽子，
   共 5 件）；自检 `farm scarecrow`。
@@ -802,6 +803,8 @@
   `[coop-pond] demo ok=true trap=true`，验证联机放置鱼笼。
 - `coop_cache.txt`：服务端 3s 站到路边补给箱旁搜刮，日志
   `[coop-cache] demo ok=true metal=164 cloth=28`，验证联机补给箱。
+- `coop_water.txt`：服务端 3s 站到风车旁接水，日志
+  `[coop-water] demo ok=true water=107.7 cd=60`，验证联机风车水泵。
 - `coop_walk.txt`：客户端按住前进，便于网络 smoke 看到受控角色位移。
 - `coop_sitdemo.txt`：在房车旁生成一个播放 `Sit` 骨骼片段的预览角色。
 - `coop_animdemo.txt`：内容 `sit` / `board` / `stand` / `dooropen` / `doorclose` /

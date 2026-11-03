@@ -782,6 +782,14 @@ local function serverHandleCommand(clientId, a)
                         tostring(okTrap), tostring(pondTrap ~= nil),
                         inv.rawfish or 0))
     pushState()
+  elseif t == "windmill_water" then
+    local okWater = false
+    if collectWindmillWater ~= nil then okWater = collectWindmillWater() end
+    print(string.format("[coop-water] ok=%s water=%.1f cd=%.0f",
+                        tostring(okWater), water or 0,
+                        windmillWaterMin or 0))
+    if okWater then setToast("风车水泵接了一些水") end
+    pushState()
   elseif t == "repair" then
     local before = (parts and parts.engine) or 100
     local okRep = false
@@ -1265,6 +1273,18 @@ local function serverUpdate(dt)
     print(string.format("[coop-pond] demo ok=%s trap=%s rawfish=%d",
                         tostring(okTrap), tostring(pondTrap ~= nil),
                         inv.rawfish or 0))
+    pushState()
+  end
+
+  -- Test-only co-op windmill water: stand by the windmill and fill water.
+  if coop.waterDemo and not coop.waterDemoDone and coop.autoT >= 3.0 then
+    coop.waterDemoDone = true
+    if windmill ~= nil then rv.x, rv.z = windmill.x, windmill.z end
+    windmillWaterMin = 0
+    local okWater = false
+    if collectWindmillWater ~= nil then okWater = collectWindmillWater() end
+    print(string.format("[coop-water] demo ok=%s water=%.1f cd=%.0f",
+                        tostring(okWater), water or 0, windmillWaterMin or 0))
     pushState()
   end
 
@@ -2126,8 +2146,12 @@ local function clientUpdate(dt)
             local d = math.sqrt((c.x - px) ^ 2 + (c.z - pz) ^ 2)
             if d < bestD then best, bestD = i, d end
           end
+          local nearWindmill = windmill ~= nil and
+            math.sqrt((windmill.x - px) ^ 2 + (windmill.z - pz) ^ 2) <= 3.8
           if best ~= nil and bestD <= 5.5 then
             Rpc("game_cmd", { type = "search", index = best })
+          elseif nearWindmill then
+            Rpc("game_cmd", { type = "windmill_water" })
           elseif nearestReadyCache ~= nil and
                  nearestReadyCache(px, pz, 2.9) ~= nil then
             Rpc("game_cmd", { type = "search", index = 0 })
@@ -2562,6 +2586,7 @@ function coopInitWorld(role)
     coop.berryDemo = readFlag("coop_berry.txt")
     coop.pondDemo = readFlag("coop_pond.txt")
     coop.cacheDemo = readFlag("coop_cache.txt")
+    coop.waterDemo = readFlag("coop_water.txt")
     local doorTest = ReadText("coop_doortest.txt")
     if doorTest ~= nil and doorTest ~= "" then
       local v = string.lower((doorTest:gsub("%s+", "")))
@@ -2683,6 +2708,7 @@ function coopInitWorld(role)
     coop.berryDemo = readFlag("coop_berry.txt")
     coop.pondDemo = readFlag("coop_pond.txt")
     coop.cacheDemo = readFlag("coop_cache.txt")
+    coop.waterDemo = readFlag("coop_water.txt")
     coop.buildUi = readFlag("coop_buildmode.txt")
     coop.boardDemo = readFlag("coop_board.txt")
     coop.sitDemo = readFlag("coop_sitdemo.txt")
