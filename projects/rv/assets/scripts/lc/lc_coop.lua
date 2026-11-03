@@ -486,6 +486,10 @@ local function pushState()
                   yaw = q3(coop.rv.yaw), speed = q3(coop.rv.speed),
                   gy = q3(coop.rv.groundY or 0),
                   p = q3(coop.rv.pitch or 0), r = q3(coop.rv.roll or 0) }
+  local jobOut = "-"
+  if job ~= nil then
+    jobOut = string.format("%s:%d", job.destId, job.crates or 1)
+  end
   Rpc("game_state", {
     seq = coop.seq, rv = rvOut, players = players, needs = needsOut,
     fuel = math.floor((fuel or 0) * 10 + 0.5) / 10,
@@ -500,6 +504,8 @@ local function pushState()
     rollup = coop.rollup and 1 or 0,
     barndoor = coop.barnDoor and 1 or 0,
     glass = glass,
+    job = jobOut,
+    jobsDone = jobDelivered,
   })
 end
 
@@ -660,6 +666,26 @@ local function serverHandleCommand(clientId, a)
   elseif t == "lights" then
     coop.lights = not coop.lights
     setToast(coop.lights and "车内灯已打开" or "车内灯已关闭")
+  elseif t == "job" then
+    -- 走到营地货运板按 E：接第一张顺路合同（服务端权威）
+    if job ~= nil then
+      setToast("已载货：送到 " .. nodeName(job.destId))
+    else
+      jobRefreshOffers()
+      if #jobOffers > 0 then
+        jobAccept(1)
+        coop.saveDirty = true
+        pushState()
+      else
+        setToast("这一带暂时没有可接的合同")
+      end
+    end
+  elseif t == "job_abandon" then
+    if job ~= nil then
+      jobAbandon()
+      coop.saveDirty = true
+      pushState()
+    end
   elseif t == "eat" then
     local id = chooseFood()
     if id ~= nil and useItem(id) then
@@ -793,6 +819,19 @@ local function serverUpdate(dt)
   drainCommands()
   coop.autoT = coop.autoT + dt
 
+  -- 顺路货运：服务器权威地判定到点（不限驾驶席，任何人在车上开到了就算送达）
+  if job ~= nil and job.stage == "carry" then
+    local jd = jobRemaining()
+    if jd <= JOBS.deliverRadius then
+      local destName = nodeName(job.destId)
+      jobComplete()
+      print(string.format("[coop-job] delivered dest=%s jobs=%d weight=%.0fkg",
+            destName, jobDelivered, stats.weight))
+      pushState()
+      coop.saveDirty = true
+    end
+  end
+
   -- Test-only door collision demo: stand outside the depot doorway, walk into
   -- the closed shutter, then open it and keep walking.
   if coop.doorDemo then
@@ -840,6 +879,34 @@ local function serverUpdate(dt)
     if ok then
       setToast("合作演示：灶台做好一份热饭")
       pushState()
+    end
+  end
+
+  -- Test-only co-op freight board: accept the first contract server-side and
+  -- broadcast it, so clients can prove the job state crosses the network.
+  if coop.jobDemo and not coop.jobDemoDone and coop.autoT >= 3.0 then
+    coop.jobDemoDone = true
+    jobRefreshOffers()
+    local ok = (#jobOffers > 0) and jobAccept(1)
+    print(string.format("[coop-job] accept=%s dest=%s cargo=%s x%d weight=%.0fkg total=%.0fkg",
+          tostring(ok), tostring(job and job.destId), tostring(job and job.cargo),
+          job and job.crates or 0, job and job.weight or 0, stats.weight))
+    if ok then pushState() end
+  end
+  -- Then drive the authoritative RV to the drop-off so the arrival check and
+  -- the material payout are exercised over the network.
+  if coop.jobDemo and coop.jobDemoDone and not coop.jobDemoDelivered
+     and coop.autoT >= 8.0 and job ~= nil then
+    coop.jobDemoDelivered = true
+    local nd = nodeById(job.destId)
+    if nd ~= nil then
+      rv.x, rv.z = nd.x, nd.z
+      rv.speed = 0
+      coop.rv.x, coop.rv.z, coop.rv.speed = nd.x, nd.z, 0
+      coop.autoDrive = false
+      coop.autoDriveDone = true
+      applyRvTransform()
+      print(string.format("[coop-job] demo teleport to %s (%.1f,%.1f)", nd.id, nd.x, nd.z))
     end
   end
 
@@ -1180,7 +1247,7 @@ local function clientLog(s)
     end
   end
   print(string.format(
-    "[coop-main-client] seq=%d name=%s slot=%d id=%.0f rv=(%.2f,%.2f,yaw=%.2f) p1=(%.2f,%.2f) p2=(%.2f,%.2f) p3=(%.2f,%.2f) p4=(%.2f,%.2f) fuel=%.1f water=%.1f metal=%d crates=%d meal=%d waterItem=%d stove=%d fridge=%d bed=%d hunger=%.1f furn=%d in1=%d in2=%d in3=%d in4=%d door=%d shop=%d rollup=%s barndoor=%s glass=%s",
+    "[coop-main-client] seq=%d name=%s slot=%d id=%.0f rv=(%.2f,%.2f,yaw=%.2f) p1=(%.2f,%.2f) p2=(%.2f,%.2f) p3=(%.2f,%.2f) p4=(%.2f,%.2f) fuel=%.1f water=%.1f metal=%d crates=%d meal=%d waterItem=%d stove=%d fridge=%d bed=%d hunger=%.1f furn=%d in1=%d in2=%d in3=%d in4=%d door=%d shop=%d rollup=%s barndoor=%s glass=%s job=%s",
     s.seq, tostring(GetVar("playerName")), coop.mySlot, coop.myClientId or 0,
     s.rv.x, s.rv.z, s.rv.yaw,
     (p[1] and p[1].x) or 0, (p[1] and p[1].z) or 0,
@@ -1195,7 +1262,8 @@ local function clientLog(s)
     (s.needs and s.needs.hunger) or 0, s.furnCount or 0,
     (p[1] and p[1].ins) or 0, (p[2] and p[2].ins) or 0,
     (p[3] and p[3].ins) or 0, (p[4] and p[4].ins) or 0, s.door or 0, shop,
-    tostring(s.rollup or 0), tostring(s.barndoor or 0), tostring(s.glass or "-")))
+    tostring(s.rollup or 0), tostring(s.barndoor or 0), tostring(s.glass or "-"),
+    tostring(s.job or "-")))
 end
 
 -- Apply one authoritative RV pose (from game_state or the compact game_pose
@@ -1262,6 +1330,15 @@ local function applyState(s)
     coop.weather = s.weather
     setWeather(coop.weather)
   end
+  -- 货运合同：destId:crates 或 "-"（客户端的 HUD 用节点名+距离显示）
+  if s.job ~= nil then
+    local jd, jc = tostring(s.job):match("^([^:]+):(%d+)$")
+    coop.jobDest, coop.jobCrates = jd, tonumber(jc) or 0
+    if jd == nil or jd == "" or jd == "-" then
+      coop.jobDest, coop.jobCrates = nil, 0
+    end
+  end
+  coop.jobsDone = tonumber(s.jobsDone) or coop.jobsDone
 
   if type(s.players) == "table" then
     for i, p in ipairs(s.players) do
@@ -1470,6 +1547,7 @@ local function clientUpdate(dt)
     -- Test hook: the coop_drive demo holds the throttle from the client so the
     -- server's physical wheel-body path is exercised.
     if coop.autoDrive then f = 1 end
+    if coop.walkDemo then f = 1 end
     Rpc("game_cmd", { type = "input", f = f, s = s, yaw = coop.lookYaw })
   end
 
@@ -1480,13 +1558,18 @@ local function clientUpdate(dt)
     if ActionPressed("1") then Rpc("game_cmd", { type = "eat" }) end
     if ActionPressed("2") then Rpc("game_cmd", { type = "drink" }) end
     if ActionPressed("3") then Rpc("game_cmd", { type = "sleep" }) end
+    if ActionPressed("0") then Rpc("game_cmd", { type = "job_abandon" }) end
     if ActionPressed("e") then
       if inside then
         Rpc("game_cmd", { type = "exit" })
       else
+        local bx, bz = jobBoard and jobBoard.x or 1e9, jobBoard and jobBoard.z or 1e9
+        local bd = math.sqrt((coop.localPos.x - bx) ^ 2 + (coop.localPos.z - bz) ^ 2)
         local dx, dz = doorWorld()
         local dd = math.sqrt((coop.localPos.x - dx) ^ 2 + (coop.localPos.z - dz) ^ 2)
-        if dd <= 3.5 then
+        if bd <= JOBS.boardRadius then
+          Rpc("game_cmd", { type = "job" })
+        elseif dd <= 3.5 then
           Rpc("game_cmd", { type = "board" })
         else
           local best, bestD = nil, 999
@@ -1914,6 +1997,7 @@ function coopInitWorld(role)
     coop.actionsDemo = readFlag("coop_actions.txt")
     coop.cookDemo = readFlag("coop_cook.txt")
     coop.boardDemo = readFlag("coop_board.txt")
+    coop.jobDemo = readFlag("coop_job.txt")
     local doorTest = ReadText("coop_doortest.txt")
     if doorTest ~= nil and doorTest ~= "" then
       local v = string.lower((doorTest:gsub("%s+", "")))
@@ -2019,6 +2103,7 @@ function coopInitWorld(role)
     coop.lookYaw = rv.yaw
     coop.clampDemo = readFlag("coop_clamp.txt")
     coop.buildDemo = readFlag("coop_build.txt")
+    coop.walkDemo = readFlag("coop_walk.txt")
     coop.buildUi = readFlag("coop_buildmode.txt")
     coop.boardDemo = readFlag("coop_board.txt")
     coop.sitDemo = readFlag("coop_sitdemo.txt")
@@ -2145,6 +2230,16 @@ function coopDrawHud()
 
   DrawText(string.format("网络 %s", (GetVar("netConnected") == 1) and "已连接" or "未连接"),
            vw - 170, 22, 12, 0.72, 0.78, 0.76, 1)
+  if coop.jobDest ~= nil then
+    local jnd = nodeById(coop.jobDest)
+    local jd = jnd and math.sqrt((jnd.x - rv.x) ^ 2 + (jnd.z - rv.z) ^ 2) or 0
+    DrawText(string.format("货运 %s x%d → %s  %.0fm  （0 放弃）",
+             "货物", coop.jobCrates or 0, jnd and jnd.name or coop.jobDest, jd),
+             vw - 390, 40, 12, 0.96, 0.86, 0.52, 1)
+  elseif (coop.jobsDone or 0) > 0 then
+    DrawText(string.format("已完成货运 %d 单", coop.jobsDone),
+             vw - 390, 40, 12, 0.78, 0.82, 0.72, 1)
+  end
 
   if coop.buildMode then
     local cat = coopBuildCat()

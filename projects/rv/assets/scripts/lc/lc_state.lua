@@ -52,6 +52,14 @@ sleepT = 0
 poiDistAcc = 0                -- 程序化地点生成里程
 generatedPois = {}
 
+-- 顺路货运合同（营地接单 / 到点结算）
+job = nil                     -- 当前合同 {destId, cargo, crates, weight, pay, fuel}
+jobOffers = {}                -- 板上可接的合同
+jobDelivered = 0              -- 已完成的货运单数
+jobBoard = nil                -- 营地货运板世界坐标
+jobCargoEnts = {}             -- 车顶货物可视化
+jobUI = false                 -- 货运板菜单是否打开
+
 -- 搜刮 / 低强度威胁
 stopBag, stopThreat, evacT = {}, 0, -1
 stopItems = {}

@@ -371,6 +371,7 @@ function on_start()
   end
   if updateTerrainLod ~= nil then updateTerrainLod(0, true) end
   spawnMarkers()
+  if spawnJobBoard ~= nil then spawnJobBoard() end
   do  -- 验证钩子
     local flag = ReadText("autopilot_on.txt")
     autoPilot = (flag ~= nil and flag ~= "")
@@ -588,6 +589,11 @@ function on_start()
     px, pz = 2.8, -9.0
     pyaw = dirYaw(-2.8, 5.4)
   end
+  if startMode == "jobview" then
+    -- Test-only: stand at the camp contract board.
+    px, pz = 4.0, -5.8
+    pyaw = dirYaw(2.6, 2.8)
+  end
   if startMode == "furnview" then
     -- Test-only interior view down the furniture wall.
     px, pz = -0.72, 1.30
@@ -772,6 +778,14 @@ function on_start()
     trySpawnPoi()
     trySpawnPoi()
     mapOpen = true
+  elseif startMode == "jobview" then
+    jobRefreshOffers()
+    jobUI = true
+  elseif startMode == "jobdrive" then
+    jobRefreshOffers()
+    jobAccept(1)
+    setPhase("driving")
+    driveView = "chase"
   elseif startMode == "drive" or startMode == "night_drive" or autoPilot or rv.steerDemo then
     setPhase("driving")
   elseif startMode == "utilroof" then
@@ -971,6 +985,7 @@ end
 
 function on_update(ent, dt)
   if updateTerrainLod ~= nil then updateTerrainLod(dt) end
+  if updateJobs ~= nil then updateJobs(dt) end
   if coopRole ~= nil then
     coopUpdate(dt)
     if updatePoiWindows then updatePoiWindows(dt) end
@@ -1088,6 +1103,17 @@ function on_update(ent, dt)
     return
   end
 
+  -- 货运板菜单：1-3 接单 / 0 放弃当前合同 / E 关闭
+  if jobUI then
+    if ActionPressed("e") then jobUI = false end
+    for i = 1, #jobOffers do
+      if ActionPressed(tostring(i)) then jobAccept(i) end
+    end
+    if ActionPressed("0") then jobAbandon() end
+    updateCamera(dt)
+    return
+  end
+
   -- 第一人称：移动 / 交互 / 射击 / 钓鱼
   updatePlayer(dt)
   if updatePoiWindows then updatePoiWindows(dt) end
@@ -1157,5 +1183,6 @@ function on_render()
   end
   if invOpen then drawInventoryPanel() end
   if stationUI then drawStationMenu() end
+  if jobUI then drawJobPanel() end
   if mapOpen then drawMapHud() end
 end

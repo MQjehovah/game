@@ -876,6 +876,60 @@ function runSelfTest()
   end
   atNode = nil
 
+  -- ======================= 顺路货运合同 =======================
+  -- 货运板：营地生成一块可交互的牌子
+  jobBoard = nil
+  spawnJobBoard()
+  ok(r, "job board at camp", jobBoard ~= nil,
+     jobBoard and string.format("board=(%.1f,%.1f)", jobBoard.x, jobBoard.z) or "missing")
+
+  -- 接单：货重进入 stats.weight，目的地为 45m 外的节点
+  local cargo0 = jobCargoWeight()
+  jobRefreshOffers()
+  local offerOk = #jobOffers > 0 and jobOffers[1].distance >= JOBS.minDistance and
+                  jobOffers[1].crates >= 1 and (jobOffers[1].weight or 0) > 0
+  local payOk = next(jobOffers[1] and jobOffers[1].pay or {}) ~= nil
+  local usedOffer = jobOffers[1]
+  local accepted = jobAccept(1)
+  local weightWithCargo = stats.weight
+  ok(r, "job accept loads cargo",
+     offerOk and payOk and accepted and job ~= nil and
+     weightWithCargo >= (job.weight or 0) and jobCargoWeight() > cargo0 and
+     #jobCargoEnts > 0,
+     string.format("offers=%d dest=%s cargo=%s x%d %.0fkg total=%.0fkg",
+                   #jobOffers + 1, usedOffer and usedOffer.destId or "?",
+                   usedOffer and usedOffer.cargo or "?",
+                   usedOffer and usedOffer.crates or 0,
+                   job and job.weight or 0, weightWithCargo))
+
+  -- 到达目的地：停靠 -> 自动结算材料/燃料 -> 货重卸下
+  local dest = job and job.destId
+  local matsBefore, fuelBefore, doneBefore = {}, fuel, jobDelivered
+  for k, v in pairs(materials) do matsBefore[k] = v end
+  atNode = dest
+  phase = "parked"
+  updateJobs(1 / 60)
+  local paidOut = false
+  for k, v in pairs(job and job.pay or usedOffer.pay or {}) do
+    if (materials[k] or 0) > (matsBefore[k] or 0) then paidOut = true end
+  end
+  ok(r, "job delivered at destination",
+     job == nil and paidOut and jobDelivered == doneBefore + 1 and
+     stats.weight < weightWithCargo and #jobCargoEnts == 0 and fuel >= fuelBefore,
+     string.format("dest=%s delivered=%d->%d weight=%.0f->%.0f fuel=%.0f->%.0f",
+                   tostring(dest), doneBefore, jobDelivered, weightWithCargo,
+                   stats.weight, fuelBefore, fuel))
+
+  -- 放弃合同：卸货、重量还原
+  jobRefreshOffers()
+  jobAccept(1)
+  local carried = stats.weight
+  jobAbandon()
+  ok(r, "job abandon unloads cargo",
+     job == nil and stats.weight < carried and #jobCargoEnts == 0,
+     string.format("weight %.0f->%.0f", carried, stats.weight))
+  atNode = nil
+
   -- 存读档
   local saved = saveLayout()
   ok(r, "save layout", saved ~= false, "saves/layout.json")

@@ -254,5 +254,7 @@ function recomputeStats()
     s.comfort    = s.comfort    + ((c.comfort or 0) * (inst.reachable == false and 0 or 1))
     s.count      = s.count + 1
   end
+  -- 顺路货运：货物重量直接压到整备质量上（超载 -> 加速/极速下降、油耗上升）
+  if jobCargoWeight ~= nil then s.weight = s.weight + (jobCargoWeight() or 0) end
   stats = s
 end

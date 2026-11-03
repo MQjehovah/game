@@ -74,6 +74,10 @@
             },
             {
               "backend": "lua",
+              "path": "assets/scripts/lc/lc_jobs.lua"
+            },
+            {
+              "backend": "lua",
               "path": "assets/scripts/lc/lc_raid.lua"
             },
             {

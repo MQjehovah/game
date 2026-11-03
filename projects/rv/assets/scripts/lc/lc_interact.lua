@@ -73,6 +73,28 @@ function updateInteraction()
     end
   end
 
+  -- 营地货运板：接顺路合同（不占家具格）
+  if jobBoard ~= nil then
+    local dx, dz = jobBoard.x - player.x, jobBoard.z - player.z
+    local d = math.sqrt(dx * dx + dz * dz)
+    if d < JOBS.boardRadius then
+      local dot = forwardDot(dx, dz, d)
+      if dot > 0.05 then
+        local detail
+        if job ~= nil then
+          detail = "当前：" .. job.cargo .. " → " .. nodeName(job.destId) .. "（按 0 放弃）"
+        elseif jobDelivered > 0 then
+          detail = "已完成 " .. jobDelivered .. " 单"
+        else
+          detail = "顺路载货换材料/燃料"
+        end
+        nearAction = { kind = "jobboard", verb = "货运板 · 接单",
+                       detail = detail, x = jobBoard.x, z = jobBoard.z }
+        return
+      end
+    end
+  end
+
   for _, p in ipairs(ponds) do
     local dx, dz = p.x - player.x, p.z - player.z
     local d = math.sqrt(dx * dx + dz * dz)
@@ -127,6 +149,9 @@ function doInteract()
     return true
   elseif nearAction.kind == "fish" then
     startFishing()
+    return true
+  elseif nearAction.kind == "jobboard" then
+    jobOpenBoard()
     return true
   elseif nearAction.kind == "campfire" then
     cookAtCampfire()

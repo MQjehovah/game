@@ -120,6 +120,25 @@ STOP = {
   crates = 6, threatMax = 3, evacTime = 15, searchThreat = 1,
   keepRatio = 1.0, pickRadius = 30,
 }
+-- 顺路货运合同：营地板子接单 -> 开到目标 POI -> 结算材料/燃料。
+-- 货物重量计入 stats.weight，直接压加速度/极速/油耗（Nomad Drive 的
+-- “顺路载货”循环：不新增地图，只把已有节点变成可跑的目标）。
+JOBS = {
+  offers = 3,
+  minDistance = 45,
+  boardRadius = 3.4,
+  deliverRadius = 14,
+  maxCargo = 4,
+  fuelBase = 6,
+  fuelPer100m = 5,
+  cargo = {
+    { id = "med",   name = "医疗箱", kg = 34, mat = "cloth" },
+    { id = "parts", name = "机械件", kg = 46, mat = "metal" },
+    { id = "elec",  name = "电子件", kg = 28, mat = "electronics" },
+    { id = "grain", name = "粮袋",   kg = 40, mat = "wood" },
+  },
+}
+
 -- 低强度威胁：夜里/危险地点才偶发 1-3 只，不强制撤离
 RAID = {
   spawnEvery = 4.0, aliveMax = 3, speed = 1.15, hpBase = 2,

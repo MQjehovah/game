@@ -229,6 +229,7 @@ function drawFpHud()
   drawCrosshair(vw, vh, #horde > 0)
   drawInteractionPrompt(vw, vh)
   drawInventoryStrip(math.floor(vw * 0.5), vh - 156)
+  if job ~= nil then drawJobTracker(vw) end
 
   local hints = {
     "WASD 移动   Shift 疾跑   E 交互",
@@ -522,6 +523,7 @@ function drawDriveHud()
   end
 
   drawNeedsPanel(vw - 230, 10, 220)
+  if job ~= nil then drawJobTracker(vw) end
 
   local hints = {
     "W 油门   S 刹车/倒车   A/D 转向",
@@ -763,3 +765,77 @@ function drawMapHud()
   DrawText(string.format("已发现 %d 个地点", #NODES), px + pw - 16, py + ph - 24,
            12, 0.7, 0.7, 0.65, 1, true)
 end
+
+-- ===========================================================================
+-- 顺路货运合同 HUD
+-- ===========================================================================
+
+-- 驾车/步行时顶部紧凑追踪条：货物、目的地、剩余距离、报酬
+function drawJobTracker(vw)
+  if job == nil then return end
+  local dist, nd = jobRemaining()
+  local done = job.distance and job.distance > 1
+                and math.max(0, 1 - dist / job.distance) or 0
+  local bw = 430
+  local bx = math.floor((vw - bw) * 0.5)
+  DrawRect(bx, 44, bw, 50, 0.05, 0.06, 0.07, 0.78)
+  DrawRectOutline(bx, 44, bw, 50, 0.72, 0.62, 0.38, 0.95)
+  DrawText(string.format("货运  %s x%d  →  %s", job.cargo, job.crates,
+           job.destName or (nd and nd.name) or "?"), bx + 12, 50, 13,
+           0.96, 0.90, 0.72, 1)
+  local payText = jobPayText(job.pay or {})
+  if (job.fuel or 0) > 0 then
+    payText = payText .. (payText ~= "" and "  " or "") .. "燃料+" .. job.fuel .. "L"
+  end
+  DrawText(string.format("%.0fm  ·  %s", dist, payText), bx + 12, 68, 12,
+           0.80, 0.84, 0.78, 1)
+  DrawRect(bx + 12, 84, bw - 24, 3, 0.14, 0.15, 0.14, 0.9)
+  DrawRect(bx + 12, 84, (bw - 24) * done, 3, 0.78, 0.66, 0.32, 1)
+end
+
+-- 营地货运板菜单：列 3 张合同，1-3 接单，0 放弃当前，E 关闭
+function drawJobPanel()
+  local vp = GetViewportSize()
+  local vw = (vp and vp.w) or 1280
+  local vh = (vp and vp.h) or 720
+  local rows = math.max(1, #jobOffers)
+  local pw, ph = 620, 158 + rows * 62 + 30
+  local px = math.floor((vw - pw) * 0.5)
+  local py = math.floor((vh - ph) * 0.5)
+  DrawRect(px, py, pw, ph, 0.04, 0.05, 0.06, 0.93)
+  DrawRectOutline(px, py, pw, ph, 0.55, 0.52, 0.42, 0.95)
+  drawTextCentered("货运板 · 顺路合同", vw * 0.5, py + 12, 20, 0.98, 0.90, 0.68, 1)
+  DrawText("把货送到指定地点即可结算；载重会拉低加速与极速，也增加油耗",
+           px + 20, py + 44, 12, 0.74, 0.74, 0.68, 1)
+
+  if job ~= nil then
+    local dist = jobRemaining()
+    DrawRect(px + 16, py + 66, pw - 32, 34, 0.10, 0.09, 0.05, 0.9)
+    DrawText(string.format("当前：%s x%d → %s（%.0fm）  按 0 放弃",
+             job.cargo, job.crates, nodeName(job.destId), dist),
+             px + 26, py + 74, 13, 1, 0.86, 0.52, 1)
+  elseif #jobOffers == 0 then
+    DrawText("这一带暂时没有可接的合同，跑远一点再回来看",
+             px + 24, py + 78, 14, 0.68, 0.68, 0.62, 1)
+  end
+
+  local yy = py + (job ~= nil and 112 or 70)
+  for i, o in ipairs(jobOffers) do
+    local hot = job == nil
+    DrawRect(px + 16, yy, pw - 32, 54, hot and 0.09 or 0.06, 0.09, 0.10, 0.85)
+    DrawRectOutline(px + 16, yy, pw - 32, 54,
+                    hot and 0.62 or 0.36, hot and 0.56 or 0.34, 0.30, 0.9)
+    DrawText(string.format("[%d]", i), px + 26, yy + 15, 16,
+             hot and 0.98 or 0.5, hot and 0.86 or 0.5, hot and 0.52 or 0.48, 1)
+    DrawText(string.format("%s  ·  %s x%d  ·  %.0fkg", o.destName, o.cargo,
+             o.crates, o.weight), px + 64, yy + 7, 14, 0.94, 0.92, 0.84, 1)
+    local payText = jobPayText(o.pay or {})
+    DrawText(string.format("距离 %.0fm   报酬 %s   燃料+%dL%s", o.distance, payText,
+             o.fuel or 0, (o.danger or 0) >= 2 and "   危险" or ""),
+             px + 64, yy + 28, 12, 0.78, 0.82, 0.76, 1)
+    yy = yy + 62
+  end
+  DrawText("1-3 接单   0 放弃当前合同   E 关闭", px + 20, py + ph - 26, 12,
+           0.70, 0.72, 0.66, 1)
+end
+
