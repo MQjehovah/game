@@ -119,7 +119,7 @@ function updateAmbientMusic()
   end
 end
 
-function saveLayout()
+function saveLayout(silent)
   local rows = {}
   for _, inst in pairs(instances) do
     if inst.free then
@@ -188,9 +188,16 @@ function saveLayout()
     ok = WriteText("layout.json", jsonEncode(data))
     where = "layout.json"
   end
-  toast.text = ok and ("已保存 (" .. where .. ")") or "保存失败"
-  toast.t = 2.5
+  if not silent then
+    toast.text = ok and ("已保存 (" .. where .. ")") or "保存失败"
+    toast.t = 2.5
+  end
   return ok
+end
+
+-- 关键事件后静默自动存档（不覆盖当前提示）
+function autoSave()
+  return saveLayout(true)
 end
 
 function clearAll()

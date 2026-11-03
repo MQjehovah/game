@@ -416,6 +416,7 @@ function jobComplete()
   toast.t = 4.5
   if PlaySfx then PlaySfx("pickup") end
   if LC.flow.emit ~= nil then LC.flow.emit("job_done") end
+  if autoSave ~= nil then autoSave() end
   return true
 end
 
@@ -480,6 +481,7 @@ function jobExpire()
   end
   toast.text = "合同超时：" .. (name or "货物") .. " 已退回，没有报酬"
   toast.t = 4.0
+  if autoSave ~= nil then autoSave() end
 end
 
 -- 到达当前卸货点：多站合同推进到下一站，最后一站才结算

@@ -2611,6 +2611,17 @@ function runSelfTest()
                      tostring(poor), tostring(stayed)))
   end
 
+  -- 自动存档：静默保存，不覆盖当前提示
+  do
+    local kt, kv = toast.text, toast.t
+    toast.text, toast.t = "测试提示", 2.0
+    local okSave = autoSave()
+    local quiet = toast.text == "测试提示" and math.abs((toast.t or 0) - 2.0) < 1e-6
+    toast.text, toast.t = kt, kv
+    ok(r, "auto save", okSave == true and quiet,
+       string.format("ok=%s quiet=%s", tostring(okSave), tostring(quiet)))
+  end
+
   -- 睡醒晨报：包含天数/货运单数/今日目标/油量
   do
     local sd, sc = day, clock

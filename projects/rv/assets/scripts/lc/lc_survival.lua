@@ -394,6 +394,7 @@ function callTow()
   if addJournal ~= nil then
     addJournal("呼叫拖车回到营地（-4 金属）", "fail")
   end
+  if autoSave ~= nil then autoSave() end
   return true
 end
 
@@ -503,6 +504,7 @@ function sleepInBed()
   }
   toast.text = string.format("睡到第 %d 天 07:00 — 体力恢复", day)
   toast.t = 3.5
+  if autoSave ~= nil then autoSave() end
 end
 
 -- 收音机广播：开启后按游戏分钟间隔播报路况/天气提示
