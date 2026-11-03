@@ -928,6 +928,7 @@ function updateDrive(dt)
     while dyaw > math.pi do dyaw = dyaw - 2 * math.pi end
     while dyaw < -math.pi do dyaw = dyaw + 2 * math.pi end
     rv.latG = math.abs(dyaw / dt) * math.abs(rv.speed or 0) / 9.81
+    rv.latGSet = true
     rv.squealCd = math.max(0, (rv.squealCd or 0) - dt)
     if rv.squealCd <= 0 and tireSquealActive(rv.latG, rv.speed) then
       rv.squealCd = 0.7

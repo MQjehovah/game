@@ -377,6 +377,23 @@ function jobApplyImpact(drop)
   end
 end
 
+-- 刷新货运合同：花 1 金属重新抽三张（给玩家更多选择）
+function jobReroll()
+  if jobOffers == nil or #jobOffers == 0 then return false end
+  local cost = 1
+  if (materials.metal or 0) < cost then
+    toast.text = "刷新合同需要 1 金属"
+    toast.t = 2.2
+    return false
+  end
+  materials.metal = (materials.metal or 0) - cost
+  jobRefreshOffers()
+  toast.text = "已刷新货运合同（-1 金属）"
+  toast.t = 2.4
+  if PlaySfx then PlaySfx("pickup") end
+  return true
+end
+
 function jobAbandon()
   if job == nil then
     jobUI = false
@@ -628,7 +645,13 @@ function updateJobs(dt)
     end
     -- 急转弯甩货：用横向加速度（updateDrive 已算好 rv.latG）判断
     if phase == "driving" and (dt or 0) > 0 then
-      local loss = cornerCargoLoss(rv.latG, job.fragile or job.livestock, dt)
+      -- 只使用本帧 updateDrive 算出的横向 G，避免旧值造成误判
+      local latG = nil
+      if rv.latGSet then
+        latG = rv.latG
+        rv.latGSet = false
+      end
+      local loss = cornerCargoLoss(latG, job.fragile or job.livestock, dt)
       if loss > 0 then
         job.condition = math.max(0, (job.condition or 1) - loss)
         if not job.tossWarned and job.condition < 0.85 then

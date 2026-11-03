@@ -1169,6 +1169,24 @@ function runSelfTest()
        string.format("repairkit %d->%d shown=%s", k0,
                      k0 + (gained and 1 or 0), tostring(shown)))
   end
+
+  -- 刷新合同：有金属才刷新，消耗 1 金属并重新抽 3 张
+  do
+    local km = materials.metal or 0
+    jobRefreshOffers("gasstop")
+    local before = #jobOffers
+    materials.metal = 1
+    local okReroll = jobReroll()
+    local spent = (materials.metal or 0) == 0
+    local again = false
+    if okReroll then again = jobReroll() end
+    local poor = (materials.metal or 0) == 0 and again == false
+    materials.metal = km
+    ok(r, "job reroll",
+       okReroll and spent and poor and #jobOffers > 0,
+       string.format("offers=%d spent=%s poor=%s", #jobOffers,
+                     tostring(spent), tostring(poor)))
+  end
   ok(r, "job history",
      jobHistory ~= nil and #jobHistory >= 1 and
      tostring(jobHistory[#jobHistory]):find("→", 1, true) ~= nil,
@@ -1396,6 +1414,8 @@ function runSelfTest()
     jobAccept(1)
     job.stops, job.stopIndex = nil, 1
     job.fragile = true
+    job.perishable = false
+    job.livestock = false
     job.condition = 1.0
     atNode = nil
     weather, phase = "rain", "driving"

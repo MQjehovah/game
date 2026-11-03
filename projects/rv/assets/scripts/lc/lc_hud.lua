@@ -1915,7 +1915,7 @@ function drawJobPanel()
       yy = yy + 30
     end
   end
-  DrawText("1-3 接单   0 放弃   4-9 以物易物   E 关闭", px + 20,
-           py + ph - 26, 12, 0.70, 0.72, 0.66, 1)
+  DrawText("1-3 接单   0 放弃   4-9 以物易物   R 刷新(1金属)   E 关闭",
+           px + 20, py + ph - 26, 11, 0.70, 0.72, 0.66, 1)
 end
 
