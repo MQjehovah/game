@@ -225,8 +225,9 @@ function updateDriveWorld(dt)
                       color = { r = 0.42, g = 0.20, b = 0.12, a = 0.9 },
                       colorEnd = { r = 0.42, g = 0.20, b = 0.12, a = 0.0 },
                       additive = false })
-      SpawnFloatText(d.x, 1.2, d.z, "撞到野生动物 车体 -5",
-                     false, 1.4, 1, 0.4, 0.3)
+      SpawnFloatText(d.x, 1.2, d.z, "撞到野生动物 车体 -5  野味 +1",
+                     false, 1.6, 1, 0.4, 0.3)
+      if addItem ~= nil then addItem("rawfood", 1) end
       Despawn(d.ent)
       table.remove(driveDeer, i)
     elseif d.life <= 0 or dist > 60 then

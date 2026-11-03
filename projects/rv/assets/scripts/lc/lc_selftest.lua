@@ -1811,6 +1811,30 @@ function runSelfTest()
                      tostring(moved), #driveDeer))
   end
 
+  -- 撞到野生动物掉落野味
+  do
+    local raw0 = itemCount("rawfood")
+    spawnDriveDeer(1)
+    local d = driveDeer[#driveDeer]
+    local hit = false
+    if d ~= nil then
+      d.x, d.z = rv.x, rv.z
+      local keepSpeed = rv.speed
+      rv.speed = 5.0
+      updateDriveWorld(0.016)
+      rv.speed = keepSpeed
+      hit = itemCount("rawfood") == raw0 + 1
+      for i = #driveDeer, 1, -1 do
+        if driveDeer[i] == d then
+          despawnDriveDeer(d)
+          table.remove(driveDeer, i)
+        end
+      end
+    end
+    ok(r, "deer roadkill", hit,
+       string.format("rawfood %d->%d", raw0, itemCount("rawfood")))
+  end
+
   -- 引擎水温：全油门升温、怠速降温、过热限速
   do
     local keepTemp = engineTemp
