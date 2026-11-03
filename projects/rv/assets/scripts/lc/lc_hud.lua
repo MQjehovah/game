@@ -710,6 +710,10 @@ function drawDriveHud()
   DrawText("km/h", px + 84, py + 26, 15, 0.7, 0.68, 0.62, 1)
   DrawText("挡位 " .. gearText, px + 140, py + 26, 15, 0.6, 0.85, 0.95, 1)
   DrawText(string.format("%.0f rpm", rpm), px + 140, py + 44, 11, 0.55, 0.75, 0.82, 1)
+  if carRadio then
+    DrawText(string.format("车载电台 %d（R）", radioStation or 1),
+             px + 140, py + 6, 10, 0.52, 0.86, 0.96, 1)
+  end
   local fLow = fuel / fuelMax() < 0.2
   DrawText(string.format("燃料 %.0f / %d L%s", fuel, fuelMax(),
            fuel <= 0 and "  没油了! 龟速" or (fLow and "  油量低!" or "")),

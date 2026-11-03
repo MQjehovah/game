@@ -107,7 +107,7 @@ end
 -- 环境音乐：按驾驶/天气切换 wind / engine / rain，只在轨道变化时重播
 function updateAmbientMusic()
   if PlayMusic == nil or desiredMusic == nil then return end
-  local name, vol = desiredMusic(phase, weather, radioOn, radioStation)
+  local name, vol = desiredMusic(phase, weather, radioOn, radioStation, carRadio)
   if ambientTrack == name then return end
   ambientTrack = name
   PlayMusic(name, vol or 0.12)
@@ -1500,6 +1500,14 @@ function on_update(ent, dt)
     end
     if ActionPressed("x") and honk ~= nil then honk() end
     if ActionPressed("y") and callTow ~= nil then callTow() end
+    if ActionPressed("r") then
+      carRadio = not carRadio
+      toast.text = carRadio
+        and string.format("车载电台 %d 已打开（R 关闭）", radioStation or 1)
+        or "车载电台关闭"
+      toast.t = 2.4
+      if PlaySfx then PlaySfx("click") end
+    end
     updateDrive(dt)
     if updateGearShiftFx ~= nil then updateGearShiftFx() end
     if updateReverseBeep ~= nil then updateReverseBeep(dt) end

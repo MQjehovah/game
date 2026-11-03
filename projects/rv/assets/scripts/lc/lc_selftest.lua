@@ -3077,6 +3077,17 @@ function runSelfTest()
        string.format("station1=%s station2=%s", tostring(a), tostring(b)))
   end
 
+  -- 驾驶时车载电台：开启后用 radio/radio2 取代引擎声
+  do
+    local engine = desiredMusic("driving", "clear", false, 1, false)
+    local radio1 = desiredMusic("driving", "clear", false, 1, true)
+    local radio2 = desiredMusic("driving", "clear", false, 2, true)
+    ok(r, "car radio",
+       engine == "engine" and radio1 == "radio" and radio2 == "radio2",
+       string.format("engine=%s r1=%s r2=%s", tostring(engine),
+                     tostring(radio1), tostring(radio2)))
+  end
+
   -- 收音机广播：开启后按游戏分钟触发，关闭不触发
   do
     local keepOn, keepT, keepNext = radioOn, radioBroadcastT, radioBroadcastNext

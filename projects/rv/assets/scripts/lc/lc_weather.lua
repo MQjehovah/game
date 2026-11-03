@@ -16,9 +16,14 @@ function weatherDuration()
   return 90 + math.random() * 90
 end
 
--- 环境音乐：开车=引擎、雨天步行=雨声、营地收音机=radio、其它=风声
-function desiredMusic(phaseValue, weatherValue, radioIsOn, station)
-  if phaseValue == "driving" then return "engine", 0.22 end
+-- 环境音乐：开车=引擎（可切换车载电台）、雨天步行=雨声、营地收音机=radio、其它=风声
+function desiredMusic(phaseValue, weatherValue, radioIsOn, station, carRadio)
+  if phaseValue == "driving" then
+    if carRadio then
+      return ((station or 1) == 2) and "radio2" or "radio", 0.12
+    end
+    return "engine", 0.22
+  end
   if radioIsOn then
     return ((station or 1) == 2) and "radio2" or "radio", 0.12
   end
