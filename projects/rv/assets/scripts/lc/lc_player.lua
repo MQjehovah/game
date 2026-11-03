@@ -116,6 +116,13 @@ function isPlayerInsideRv()
   return math.abs(lx) < 1.05 and lz > -3.95 and lz < 3.75
 end
 
+-- 天气对步行速度的影响：雪地/雨天略慢
+function walkSpeedScale(weatherValue)
+  if weatherValue == "snow" then return 0.85 end
+  if weatherValue == "rain" then return 0.95 end
+  return 1.0
+end
+
 function updatePlayer(dt)
   if not onFoot or player.ent == nil then return end
 
@@ -137,7 +144,8 @@ function updatePlayer(dt)
   local mx, mz = fx * iz + rx * ix, fz * iz + rz * ix
   local len = math.sqrt(mx * mx + mz * mz)
   if len > 0.001 then mx, mz = mx / len, mz / len end
-  local sp = (sprint and 4.3 or 2.7) * ((needs.energy or 100) < 20 and 0.7 or 1)
+  local sp = (sprint and 4.3 or 2.7) * ((needs.energy or 100) < 20 and 0.7 or 1) *
+             walkSpeedScale(weather)
   local nx = player.x + mx * sp * dt
   local nz = player.z + mz * sp * dt
   nx, nz = collidePoiWalls(player.x, player.z, nx, nz)

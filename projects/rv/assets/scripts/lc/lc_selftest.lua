@@ -4481,6 +4481,16 @@ function runSelfTest()
                      tostring(chained), tostring(rain)))
   end
 
+  -- 天气影响步行速度：雪地最慢、雨天略慢、晴天正常
+  do
+    local snow = walkSpeedScale("snow")
+    local rain = walkSpeedScale("rain")
+    local clear = walkSpeedScale("clear")
+    ok(r, "walk weather speed",
+       snow < rain and rain < clear and math.abs(clear - 1.0) < 1e-6,
+       string.format("snow=%.2f rain=%.2f clear=%.2f", snow, rain, clear))
+  end
+
   -- 防滑链：雨雪天提高抓地，且不会被 useItem 消耗
   do
     local sw = weather

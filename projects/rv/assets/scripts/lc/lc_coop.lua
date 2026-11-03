@@ -1561,8 +1561,8 @@ local function serverUpdate(dt)
         local fx, fz = math.sin(s.yaw), math.cos(s.yaw)
         -- Right vector = forward x up = (-cos yaw, 0, sin yaw).
         local rx, rz = -math.cos(s.yaw), math.sin(s.yaw)
-        local nx = s.x + (fx * s.f + rx * s.s) * PLAYER_SPEED * dt
-        local nz = s.z + (fz * s.f + rz * s.s) * PLAYER_SPEED * dt
+        local nx = s.x + (fx * s.f + rx * s.s) * PLAYER_SPEED * (walkSpeedScale and walkSpeedScale(weather) or 1) * dt
+        local nz = s.z + (fz * s.f + rz * s.s) * PLAYER_SPEED * (walkSpeedScale and walkSpeedScale(weather) or 1) * dt
         nx, nz = collidePoiWalls(s.x, s.z, nx, nz)
         s.x, s.z = nx, nz
         if coop.clampDemo then
@@ -2113,8 +2113,8 @@ local function clientUpdate(dt)
     local fx, fz = math.sin(coop.lookYaw), math.cos(coop.lookYaw)
     -- Right vector = forward x up = (-cos yaw, 0, sin yaw): D strafes right.
     local rx, rz = -math.cos(coop.lookYaw), math.sin(coop.lookYaw)
-    local nx = coop.localPos.x + (fx * f + rx * s) * PLAYER_SPEED * dt
-    local nz = coop.localPos.z + (fz * f + rz * s) * PLAYER_SPEED * dt
+    local nx = coop.localPos.x + (fx * f + rx * s) * PLAYER_SPEED * (walkSpeedScale and walkSpeedScale(weather) or 1) * dt
+    local nz = coop.localPos.z + (fz * f + rz * s) * PLAYER_SPEED * (walkSpeedScale and walkSpeedScale(weather) or 1) * dt
     nx, nz = collidePoiWalls(coop.localPos.x, coop.localPos.z, nx, nz)
     coop.localPos.x, coop.localPos.z = nx, nz
     if coop.clampDemo then
