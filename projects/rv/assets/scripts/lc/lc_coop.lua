@@ -735,6 +735,14 @@ local function serverHandleCommand(clientId, a)
     print(string.format("[coop-high] server toggle high=%s lamps=%d",
                         tostring(highBeam), #rvHeadlights))
     pushState()
+  elseif t == "repair" then
+    local before = (parts and parts.engine) or 100
+    local okRep = false
+    if fieldRepair ~= nil then okRep = fieldRepair() end
+    print(string.format("[coop-repair] ok=%s engine=%.0f->%.0f kits=%d",
+                        tostring(okRep), before,
+                        (parts and parts.engine) or 0, inv.repairkit or 0))
+    pushState()
   elseif t == "eat" then
     local id = chooseFood()
     if id ~= nil and useItem(id) then
@@ -982,6 +990,19 @@ local function serverUpdate(dt)
     coop.refuelDemoDone = true
     fuel, rv.x, rv.z = 20, 0, 0
     print("[coop-refuel] set fuel=20 at camp")
+  end
+
+  -- Test-only co-op repair: damage the engine, give a kit, repair server-side.
+  if coop.repairDemo and not coop.repairDemoDone and coop.autoT >= 3.0 then
+    coop.repairDemoDone = true
+    if parts ~= nil then parts.engine = 40 end
+    inv.repairkit = (inv.repairkit or 0) + 1
+    local okRep = false
+    if fieldRepair ~= nil then okRep = fieldRepair() end
+    print(string.format("[coop-repair] demo ok=%s engine=%.0f kits=%d",
+                        tostring(okRep), (parts and parts.engine) or 0,
+                        inv.repairkit or 0))
+    pushState()
   end
 
   -- Test-only co-op freight board: accept the first contract server-side and
@@ -1732,6 +1753,7 @@ local function clientUpdate(dt)
     if ActionPressed("0") then Rpc("game_cmd", { type = "job_abandon" }) end
     if ActionPressed("x") then Rpc("game_cmd", { type = "horn" }) end
     if ActionPressed("h") then Rpc("game_cmd", { type = "highbeam" }) end
+    if ActionPressed("r") then Rpc("game_cmd", { type = "repair" }) end
     if coop.highDemo and not coop.highDemoDone then
       coop.highDemoT = (coop.highDemoT or 0) + dt
       if coop.highDemoT >= 3.0 and GetVar("netConnected") == 1 then
@@ -2182,6 +2204,7 @@ function coopInitWorld(role)
     coop.lightsDemo = readFlag("coop_lights.txt")
     coop.hornDemo = readFlag("coop_horn.txt")
     coop.refuelDemo = readFlag("coop_refuel.txt")
+    coop.repairDemo = readFlag("coop_repair.txt")
     local doorTest = ReadText("coop_doortest.txt")
     if doorTest ~= nil and doorTest ~= "" then
       local v = string.lower((doorTest:gsub("%s+", "")))
@@ -2291,6 +2314,7 @@ function coopInitWorld(role)
     coop.hornDemo = readFlag("coop_horn.txt")
     coop.highDemo = readFlag("coop_highbeam.txt")
     coop.refuelDemo = readFlag("coop_refuel.txt")
+    coop.repairDemo = readFlag("coop_repair.txt")
     coop.buildUi = readFlag("coop_buildmode.txt")
     coop.boardDemo = readFlag("coop_board.txt")
     coop.sitDemo = readFlag("coop_sitdemo.txt")

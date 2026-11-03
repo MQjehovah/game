@@ -627,6 +627,8 @@
 - `coop_refuel.txt`：服务端 3s 把油量降到 20L 并停在营地，日志
   `[coop-refuel] node=camp fuel=60.0 water=120.0 metal=97 cost=0`，
   验证联机也走单机同一套到站补给（营地免费、加油站扣金属）。
+- `coop_repair.txt`：服务端 3s 把引擎打到 40%、给 1 个修理包并现场维修，日志
+  `[coop-repair] demo ok=true engine=75 kits=0`，验证联机 R 键维修由服务端权威结算。
 - `coop_walk.txt`：客户端按住前进，便于网络 smoke 看到受控角色位移。
 - `coop_sitdemo.txt`：在房车旁生成一个播放 `Sit` 骨骼片段的预览角色。
 - `coop_animdemo.txt`：内容 `sit` / `board` / `stand` / `dooropen` / `doorclose` /
