@@ -458,6 +458,14 @@ local function jobToken()
                        math.floor((job.condition or 1) * 100), flags)
 end
 
+-- 每日目标广播串：id:progress:target:done
+local function goalToken()
+  if dailyGoal == nil then return "-" end
+  return string.format("%s:%d:%d:%d", tostring(dailyGoal.id or "?"),
+                       dailyGoal.progress or 0, dailyGoal.target or 0,
+                       dailyGoal.done and 1 or 0)
+end
+
 local function pushState()
   coop.seq = coop.seq + 1
   local players = {}
@@ -506,6 +514,7 @@ local function pushState()
                   gy = q3(coop.rv.groundY or 0),
                   p = q3(coop.rv.pitch or 0), r = q3(coop.rv.roll or 0) }
   local jobOut = jobToken()
+  local goalOut = goalToken()
   Rpc("game_state", {
     seq = coop.seq, rv = rvOut, players = players, needs = needsOut,
     fuel = math.floor((fuel or 0) * 10 + 0.5) / 10,
@@ -523,6 +532,7 @@ local function pushState()
     glass = glass,
     job = jobOut,
     jobsDone = jobDelivered,
+    goal = goalOut,
   })
 end
 
@@ -555,7 +565,7 @@ local function serverDebugLog()
     end
   end
   print(string.format(
-    "[coop-main-server] seq=%d rv=(%.2f,%.2f,yaw=%.2f speed=%.2f p=%.2f r=%.2f gy=%.2f) p1=(%.2f,%.2f) p2=(%.2f,%.2f) p3=(%.2f,%.2f) p4=(%.2f,%.2f) joined=%d/%d fuel=%.1f water=%.1f metal=%d crates=%d meal=%d waterItem=%d stove=%d fridge=%d bed=%d furn=%d in1=%d in2=%d in3=%d in4=%d door=%d shop=%d rollup=%d barndoor=%d glass=%s job=%s",
+    "[coop-main-server] seq=%d rv=(%.2f,%.2f,yaw=%.2f speed=%.2f p=%.2f r=%.2f gy=%.2f) p1=(%.2f,%.2f) p2=(%.2f,%.2f) p3=(%.2f,%.2f) p4=(%.2f,%.2f) joined=%d/%d fuel=%.1f water=%.1f metal=%d crates=%d meal=%d waterItem=%d stove=%d fridge=%d bed=%d furn=%d in1=%d in2=%d in3=%d in4=%d door=%d shop=%d rollup=%d barndoor=%d glass=%s job=%s goal=%s",
     coop.seq, rv.x, rv.z, rv.yaw, rv.speed,
     rv.pitch or 0, rv.roll or 0, rv.groundY or 0,
     coop.slots[1].x, coop.slots[1].z, coop.slots[2].x, coop.slots[2].z,
@@ -569,7 +579,7 @@ local function serverDebugLog()
     coop.slots[1].inside and 1 or 0, coop.slots[2].inside and 1 or 0,
     coop.slots[3].inside and 1 or 0, coop.slots[4].inside and 1 or 0, door, shop,
     coop.rollup and 1 or 0, coop.barnDoor and 1 or 0,
-    (poiGlassBrokenList and poiGlassBrokenList()) or "-", jobToken()))
+    (poiGlassBrokenList and poiGlassBrokenList()) or "-", jobToken(), goalToken()))
 end
 
 local function serverHandleCommand(clientId, a)
@@ -1293,7 +1303,7 @@ local function clientLog(s)
     end
   end
   print(string.format(
-    "[coop-main-client] seq=%d name=%s slot=%d id=%.0f rv=(%.2f,%.2f,yaw=%.2f) p1=(%.2f,%.2f) p2=(%.2f,%.2f) p3=(%.2f,%.2f) p4=(%.2f,%.2f) fuel=%.1f water=%.1f metal=%d crates=%d meal=%d waterItem=%d stove=%d fridge=%d bed=%d hunger=%.1f furn=%d in1=%d in2=%d in3=%d in4=%d door=%d shop=%d rollup=%s barndoor=%s glass=%s job=%s batt=%.2f",
+    "[coop-main-client] seq=%d name=%s slot=%d id=%.0f rv=(%.2f,%.2f,yaw=%.2f) p1=(%.2f,%.2f) p2=(%.2f,%.2f) p3=(%.2f,%.2f) p4=(%.2f,%.2f) fuel=%.1f water=%.1f metal=%d crates=%d meal=%d waterItem=%d stove=%d fridge=%d bed=%d hunger=%.1f furn=%d in1=%d in2=%d in3=%d in4=%d door=%d shop=%d rollup=%s barndoor=%s glass=%s job=%s batt=%.2f goal=%s",
     s.seq, tostring(GetVar("playerName")), coop.mySlot, coop.myClientId or 0,
     s.rv.x, s.rv.z, s.rv.yaw,
     (p[1] and p[1].x) or 0, (p[1] and p[1].z) or 0,
@@ -1309,7 +1319,7 @@ local function clientLog(s)
     (p[1] and p[1].ins) or 0, (p[2] and p[2].ins) or 0,
     (p[3] and p[3].ins) or 0, (p[4] and p[4].ins) or 0, s.door or 0, shop,
     tostring(s.rollup or 0), tostring(s.barndoor or 0), tostring(s.glass or "-"),
-    tostring(s.job or "-"), batteryCharge or 0))
+    tostring(s.job or "-"), batteryCharge or 0, tostring(s.goal or "-")))
 end
 
 -- Apply one authoritative RV pose (from game_state or the compact game_pose
@@ -1394,6 +1404,18 @@ local function applyState(s)
     end
   end
   coop.jobsDone = tonumber(s.jobsDone) or coop.jobsDone
+  if s.goal ~= nil then
+    local parts = {}
+    for p in string.gmatch(tostring(s.goal), "([^:]+)") do parts[#parts + 1] = p end
+    if parts[1] == nil or parts[1] == "" or parts[1] == "-" then
+      coop.goalName, coop.goalProgress, coop.goalTarget, coop.goalDone = nil, 0, 0, false
+    else
+      coop.goalName = parts[1]
+      coop.goalProgress = tonumber(parts[2]) or 0
+      coop.goalTarget = tonumber(parts[3]) or 0
+      coop.goalDone = (tonumber(parts[4]) or 0) ~= 0
+    end
+  end
 
   if type(s.players) == "table" then
     for i, p in ipairs(s.players) do
@@ -2326,6 +2348,14 @@ function coopDrawHud()
   elseif (coop.jobsDone or 0) > 0 then
     DrawText(string.format("已完成货运 %d 单", coop.jobsDone),
              vw - 390, 40, 12, 0.78, 0.82, 0.72, 1)
+  end
+  if coop.goalName ~= nil then
+    DrawText(string.format("今日目标 %s  %d/%d%s", coop.goalName,
+             math.min(coop.goalProgress or 0, coop.goalTarget or 0),
+             coop.goalTarget or 0, coop.goalDone and "  ✓" or ""),
+             vw - 390, 60, 12,
+             coop.goalDone and 0.60 or 0.94,
+             coop.goalDone and 0.86 or 0.82, 0.52, 1)
   end
 
   if coop.buildMode then
