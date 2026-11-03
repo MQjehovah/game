@@ -1914,6 +1914,47 @@ function runSelfTest()
                      expectedClean, needs.energy, f100, f0))
   end
 
+  -- 存档：水温/胎压/爆胎状态
+  do
+    local keepTemp = engineTemp
+    local keepPressures = rv.tirePressureCold
+    local keepBlow = rv.blowout
+    engineTemp, rv.blowout = 87, true
+    rv.tirePressureCold = { 2.1, 2.0, 1.9, 1.8 }
+    saveLayout()
+    engineTemp, rv.blowout = 20, false
+    rv.tirePressureCold = { 2.4, 2.4, 2.4, 2.4 }
+    loadLayout()
+    local gotTemp = engineTemp or 0
+    local gotBlow = rv.blowout
+    local gotP4 = (rv.tirePressureCold or {})[4] or 0
+    local okSave = math.abs(gotTemp - 87) < 1e-6 and gotBlow == true and
+                   math.abs(gotP4 - 1.8) < 1e-6
+    engineTemp, rv.blowout = keepTemp, keepBlow
+    rv.tirePressureCold = keepPressures
+    ok(r, "save vehicle condition", okSave,
+       string.format("temp=%.0f blow=%s p4=%.1f", gotTemp,
+                     tostring(gotBlow), gotP4))
+  end
+
+  -- 天气预报：下一段天气可预测，并按时切换
+  do
+    local sw, st2, sn, sf = weather, weatherT, weatherNext, weatherNextId
+    local valid = { clear = true, cloudy = true, rain = true, fog = true }
+    setWeather("clear")
+    local f1 = weatherNextId
+    weatherNextId = "rain"
+    weatherT = weatherNext + 1
+    updateWeather(0)
+    local switched = weather == "rain"
+    local f2 = weatherNextId
+    weather, weatherT, weatherNext, weatherNextId = sw, st2, sn, sf
+    ok(r, "weather forecast",
+       valid[f1] == true and switched and valid[f2] == true,
+       string.format("forecast1=%s switched=%s forecast2=%s",
+                     tostring(f1), tostring(switched), tostring(f2)))
+  end
+
   -- 睡醒晨报：包含天数/货运单数/今日目标/油量
   do
     local sd, sc = day, clock

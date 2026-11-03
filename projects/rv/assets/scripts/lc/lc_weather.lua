@@ -19,12 +19,14 @@ function initWeather()
   weather = "clear"
   weatherT = 0
   weatherNext = weatherDuration()
+  weatherNextId = rollWeather()
 end
 
 function setWeather(id)
   weather = id or "clear"
   weatherT = 0
   weatherNext = weatherDuration()
+  weatherNextId = rollWeather()
   if recomputeStats then recomputeStats() end  -- 太阳能随天气变化
   if toast and WEATHER_NAMES[weather] then
     toast.text = "天气：" .. WEATHER_NAMES[weather]
@@ -87,8 +89,11 @@ function updateWeather(dt)
     if lightningNext <= 0 then triggerLightning() end
   end
   if weatherT >= weatherNext then
-    local nextWeather = rollWeather()
-    if nextWeather ~= weather then setWeather(nextWeather) else weatherT = 0 end
+    local nextWeather = weatherNextId or rollWeather()
+    if nextWeather ~= weather then setWeather(nextWeather) else
+      weatherT = 0
+      weatherNextId = rollWeather()
+    end
   end
   -- 3D 雨丝（屏幕雨线之外，让雨真正落在世界里）：步行围绕玩家，
   -- 驾驶时围绕房车，追逐视角也能看到雨幕。

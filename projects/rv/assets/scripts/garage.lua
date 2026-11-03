@@ -121,12 +121,16 @@ function saveLayout()
   local data = {
     cell = CELL, gw = GW, gh = GH, materials = materials,
     rv = { x = rv.x, z = rv.z, yaw = rv.yaw, node = atNode or curNode },
-    vehicle = { fuel = fuel, dur = dur, parts = parts, upgrades = upgrades },
+    vehicle = { fuel = fuel, dur = dur, parts = parts, upgrades = upgrades,
+                temp = engineTemp or 20,
+                pressures = rv.tirePressureCold,
+                blowout = rv.blowout and 1 or 0 },
     survival = { health = needs.health, hunger = needs.hunger, thirst = needs.thirst,
                  energy = needs.energy, hygiene = needs.hygiene },
     inventory = inv, water = water,
     day = day, clock = clock, modules = rows, pois = generatedPois,
-    weather = { id = weather, t = weatherT, next = weatherNext },
+    weather = { id = weather, t = weatherT, next = weatherNext,
+                forecast = weatherNextId },
     lights = { interior = interiorLightsOn and 1 or 0,
                high = highBeam and 1 or 0 },
   }
@@ -273,6 +277,16 @@ function loadLayout()
         end
       end
     end
+    engineTemp = math.max(20, math.min(VEH.tempMax or 125,
+                       tonumber(data.vehicle.temp) or engineTemp or 20))
+    if type(data.vehicle.pressures) == "table" then
+      rv.tirePressureCold = rv.tirePressureCold or { 2.4, 2.4, 2.4, 2.4 }
+      for i = 1, 4 do
+        rv.tirePressureCold[i] = math.max(1.2, math.min(2.8,
+          tonumber(data.vehicle.pressures[i]) or 2.4))
+      end
+    end
+    rv.blowout = (tonumber(data.vehicle.blowout) or 0) ~= 0
   end
   if type(data.survival) == "table" then
     needs.health = tonumber(data.survival.health) or needs.health
@@ -291,6 +305,11 @@ function loadLayout()
     weatherT = tonumber(data.weather.t) or 0
     weatherNext = tonumber(data.weather.next) or
                   (weatherDuration and weatherDuration() or 120)
+    if data.weather.forecast ~= nil then
+      weatherNextId = tostring(data.weather.forecast)
+    elseif rollWeather ~= nil then
+      weatherNextId = rollWeather()
+    end
     if recomputeStats then recomputeStats() end
   end
   if type(data.progress) == "table" then
