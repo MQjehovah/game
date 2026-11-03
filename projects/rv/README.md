@@ -648,6 +648,9 @@
   `[coop-cook] demo ok=true stove=true meal=2`，验证联机共享做饭。
 - `coop_mast.txt`：服务端 3s 把房车移到无线电塔旁、给材料并按 N 修塔，日志
   `[coop-mast] demo ok=true fixed=true`，验证联机也能修复信标/解锁地图。
+- `coop_relay.txt`：服务端 3s 设置修塔状态并停到废弃小镇，日志
+  `[coop-relay] demo ok=true jobs=7 km=3.2`，客户端收到
+  `[coop-main-event] 信号中继已恢复`，验证联机收尾。
 - `coop_walk.txt`：客户端按住前进，便于网络 smoke 看到受控角色位移。
 - `coop_sitdemo.txt`：在房车旁生成一个播放 `Sit` 骨骼片段的预览角色。
 - `coop_animdemo.txt`：内容 `sit` / `board` / `stand` / `dooropen` / `doorclose` /

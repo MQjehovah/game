@@ -1100,6 +1100,22 @@ local function serverUpdate(dt)
     pushState()
   end
 
+  -- Test-only co-op relay finale: repair state + park at town, complete relay.
+  if coop.relayDemo and not coop.relayDemoDone and coop.autoT >= 3.0 then
+    coop.relayDemoDone = true
+    radioMastFixed, relayDone, relayCard = true, false, nil
+    local nd = nodeById("town")
+    if nd ~= nil then rv.x, rv.z = nd.x, nd.z end
+    materials.metal = (materials.metal or 0) + 20
+    local okRelay = false
+    if completeSignalRelay ~= nil then okRelay = completeSignalRelay() end
+    print(string.format("[coop-relay] demo ok=%s jobs=%d km=%.1f",
+                        tostring(okRelay), jobDelivered or 0,
+                        (tripDistance or 0) / 1000))
+    if okRelay then setToast("信号中继已恢复——联系上了外界！") end
+    pushState()
+  end
+
   -- Test-only co-op freight board: accept the first contract server-side and
   -- broadcast it, so clients can prove the job state crosses the network.
   if coop.jobDemo and not coop.jobDemoDone and coop.autoT >= 3.0 then
@@ -1350,6 +1366,22 @@ local function serverUpdate(dt)
           "[coop-refuel] node=%s fuel=%.1f water=%.1f metal=%d cost=%d",
           stationId, fuel, water, materials.metal or 0, cost or 0))
         coop.saveDirty = true
+        pushState()
+      end
+    end
+  end
+
+  -- 合作服务器：修好无线电塔并停稳在废弃小镇时完成信号中继
+  if radioMastFixed and not relayDone and math.abs(rv.speed or 0) < 0.4 then
+    local nd = nodeById("town")
+    if nd ~= nil then
+      local dx, dz = rv.x - nd.x, rv.z - nd.z
+      if dx * dx + dz * dz < 10 * 10 and completeSignalRelay ~= nil then
+        local okRelay = completeSignalRelay()
+        print(string.format("[coop-relay] ok=%s jobs=%d km=%.1f",
+                            tostring(okRelay), jobDelivered or 0,
+                            (tripDistance or 0) / 1000))
+        if okRelay then setToast("信号中继已恢复——联系上了外界！") end
         pushState()
       end
     end
@@ -2308,6 +2340,7 @@ function coopInitWorld(role)
     coop.workbenchDemo = readFlag("coop_workbench.txt")
     coop.cookMealDemo = readFlag("coop_cookmeal.txt")
     coop.mastDemo = readFlag("coop_mast.txt")
+    coop.relayDemo = readFlag("coop_relay.txt")
     local doorTest = ReadText("coop_doortest.txt")
     if doorTest ~= nil and doorTest ~= "" then
       local v = string.lower((doorTest:gsub("%s+", "")))
@@ -2422,6 +2455,7 @@ function coopInitWorld(role)
     coop.workbenchDemo = readFlag("coop_workbench.txt")
     coop.cookMealDemo = readFlag("coop_cookmeal.txt")
     coop.mastDemo = readFlag("coop_mast.txt")
+    coop.relayDemo = readFlag("coop_relay.txt")
     coop.buildUi = readFlag("coop_buildmode.txt")
     coop.boardDemo = readFlag("coop_board.txt")
     coop.sitDemo = readFlag("coop_sitdemo.txt")
