@@ -102,7 +102,7 @@ end
 -- 环境音乐：按驾驶/天气切换 wind / engine / rain，只在轨道变化时重播
 function updateAmbientMusic()
   if PlayMusic == nil or desiredMusic == nil then return end
-  local name, vol = desiredMusic(phase, weather)
+  local name, vol = desiredMusic(phase, weather, radioOn)
   if ambientTrack == name then return end
   ambientTrack = name
   PlayMusic(name, vol or 0.12)

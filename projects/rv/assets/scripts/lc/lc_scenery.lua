@@ -1675,6 +1675,10 @@ function spawnCampProps()
   end
   prop("rv_camp_wood", tx, ty + 0.44, tz - 0.92, 1.70, 0.07, 0.28)
   prop("rv_camp_wood", tx, ty + 0.44, tz + 0.92, 1.70, 0.07, 0.28)
+  -- 桌上的营地收音机（可开关）
+  campRadio = { x = tx, z = tz, y = ty + 0.90 }
+  prop("rv_panel_dark", tx, ty + 0.90, tz, 0.34, 0.18, 0.16, 0.2)
+  prop("rv_taillight", tx + 0.11, ty + 0.94, tz + 0.09, 0.05, 0.05, 0.02, 0.2)
   -- 两把面向桌子的木椅（座面 + 靠背 + 四条腿）
   for _, c in ipairs({ { 3.55, 5.0, math.pi * 0.5 },
                        { 5.45, 5.0, -math.pi * 0.5 } }) do

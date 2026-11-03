@@ -2170,14 +2170,15 @@ function runSelfTest()
        string.format("night=%s day=%s", tostring(night), tostring(day)))
   end
 
-  -- 环境音乐：驾驶=引擎、雨天步行=雨声、其它=风声
+  -- 环境音乐：驾驶=引擎、雨天步行=雨声、营地收音机=radio、其它=风声
   do
-    local dn, dv = desiredMusic("driving", "rain")
-    local rn, rv2 = desiredMusic("parked", "rain")
-    local wn, wv = desiredMusic("parked", "clear")
+    local dn, dv = desiredMusic("driving", "rain", true)
+    local rn, rv2 = desiredMusic("parked", "rain", false)
+    local wn, wv = desiredMusic("parked", "clear", false)
+    local radioN, radioV = desiredMusic("parked", "clear", true)
     ok(r, "ambient music", dn == "engine" and rn == "rain" and wn == "wind" and
-       dv > 0 and rv2 > 0 and wv > 0,
-       string.format("drive=%s rain=%s clear=%s", dn, rn, wn))
+       radioN == "radio" and dv > 0 and rv2 > 0 and wv > 0 and radioV > 0,
+       string.format("drive=%s rain=%s clear=%s radio=%s", dn, rn, wn, radioN))
   end
 
   -- 钓鱼水塘木栈桥

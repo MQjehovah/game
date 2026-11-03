@@ -122,6 +122,21 @@ function updateInteraction()
     end
   end
 
+  if campRadio ~= nil then
+    local dx, dz = campRadio.x - player.x, campRadio.z - player.z
+    local d = math.sqrt(dx * dx + dz * dz)
+    if d < 3.0 then
+      local dot = forwardDot(dx, dz, d)
+      if dot > 0.05 then
+        nearAction = { kind = "radio",
+                       verb = radioOn and "营地收音机 · 关" or "营地收音机 · 开",
+                       detail = "E 切换音乐（只影响驻车/步行）",
+                       x = campRadio.x, z = campRadio.z }
+        return
+      end
+    end
+  end
+
   if nearRv() then
     if hasItem("fuelcan", 1) and (fuel or 0) < VEH.tank - 0.5 then
       nearAction = { kind = "refuel", verb = "加注燃油",
@@ -161,6 +176,14 @@ function doInteract()
     return true
   elseif nearAction.kind == "campfire" then
     cookAtCampfire()
+    return true
+  elseif nearAction.kind == "radio" then
+    radioOn = not radioOn
+    toast.text = radioOn and "营地收音机打开——驻车/步行时播放"
+                          or "营地收音机关闭"
+    toast.t = 2.4
+    if PlaySfx then PlaySfx("click") end
+    updateInteraction()
     return true
   elseif nearAction.kind == "refuel" then
     useFuelCan()
