@@ -307,6 +307,39 @@ function addWater(amount)
   water = math.max(0, math.min(waterMax(), water + amount))
 end
 
+-- 农场风车水泵：每 60 游戏分钟可接 30L 水
+WINDMILL_WATER_MINUTES = 60
+WINDMILL_WATER_AMOUNT = 30
+
+function windmillWaterText()
+  if (windmillWaterMin or 0) > 0 then
+    return string.format("风车水泵冷却中（约 %.0f 分钟）", windmillWaterMin)
+  end
+  return string.format("E 接水 +%dL（风车水泵）", WINDMILL_WATER_AMOUNT)
+end
+
+function collectWindmillWater()
+  if windmill == nil then return false end
+  if (windmillWaterMin or 0) > 0 then
+    toast.text = string.format("风车水泵还在抽水（约 %.0f 分钟）", windmillWaterMin)
+    toast.t = 2.4
+    return false
+  end
+  local before = water or 0
+  addWater(WINDMILL_WATER_AMOUNT)
+  local got = (water or 0) - before
+  windmillWaterMin = WINDMILL_WATER_MINUTES
+  if got <= 0.01 then
+    toast.text = "水箱已经满了"
+    toast.t = 2.0
+    return false
+  end
+  if PlaySfx then PlaySfx("drink") end
+  toast.text = string.format("风车水泵接了 %.0fL 水", got)
+  toast.t = 2.6
+  return true
+end
+
 -- 燃油罐：靠近房车按 E 加注（10L，受油箱上限约束）
 function useFuelCan()
   local it = ITEMS.fuelcan
@@ -725,6 +758,9 @@ function updateSurvival(dt)
   end
   if (restedMin or 0) > 0 then
     restedMin = math.max(0, restedMin - gm)
+  end
+  if (windmillWaterMin or 0) > 0 then
+    windmillWaterMin = math.max(0, windmillWaterMin - gm)
   end
 
   needs.hunger = math.max(0, needs.hunger - SURVIVAL.hungerRate * gm)

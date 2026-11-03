@@ -170,6 +170,22 @@ function updateInteraction()
     end
   end
 
+  -- 农场风车水泵
+  if windmill ~= nil then
+    local dx, dz = windmill.x - player.x, windmill.z - player.z
+    local d = math.sqrt(dx * dx + dz * dz)
+    if d < 3.8 then
+      local dot = forwardDot(dx, dz, d)
+      if dot > 0.05 then
+        nearAction = { kind = "windmill", verb = "风车水泵",
+                       detail = (windmillWaterText and windmillWaterText()) or
+                                "E 接水",
+                       x = windmill.x, z = windmill.z }
+        return
+      end
+    end
+  end
+
   if campRadio ~= nil then
     local dx, dz = campRadio.x - player.x, campRadio.z - player.z
     local d = math.sqrt(dx * dx + dz * dz)
@@ -265,6 +281,10 @@ function doInteract()
     return true
   elseif nearAction.kind == "cache" then
     lootRoadCache(nearAction.index)
+    updateInteraction()
+    return true
+  elseif nearAction.kind == "windmill" then
+    collectWindmillWater()
     updateInteraction()
     return true
   elseif nearAction.kind == "radio" then

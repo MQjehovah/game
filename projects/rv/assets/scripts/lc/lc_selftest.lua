@@ -2904,6 +2904,23 @@ function runSelfTest()
        string.format("blades=%d angle %.2f->%.2f", blades, a0, a1))
   end
 
+  -- 风车水泵：接水 +30L，进入 60 游戏分钟冷却
+  do
+    if windmill ~= nil then
+      local w0, cd0 = water, windmillWaterMin
+      water, windmillWaterMin = 0, 0
+      local okWater = collectWindmillWater()
+      local got = (water or 0) >= 29
+      local cooling = (windmillWaterMin or 0) >= 59
+      local again = collectWindmillWater()
+      water, windmillWaterMin = w0, cd0
+      ok(r, "windmill water",
+         okWater and got and cooling and again == false,
+         string.format("got=%s cooling=%s again=%s", tostring(got),
+                       tostring(cooling), tostring(again)))
+    end
+  end
+
   -- 农场稻草人：5 件低多边形组合
   do
     local n = #farmScarecrow
