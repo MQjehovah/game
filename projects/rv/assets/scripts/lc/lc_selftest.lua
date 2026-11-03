@@ -1422,6 +1422,17 @@ function runSelfTest()
        string.format("2.4=%.2f 1.6=%.2f 2.8=%.2f", base, low, high))
   end
 
+  -- 胎压偏低预警阈值（1.95bar 以下）
+  do
+    ok(r, "tire pressure warning",
+       tirePressureLow(1.8) and not tirePressureLow(2.4) and
+       not tirePressureLow(2.0),
+       string.format("1.8=%s 2.0=%s 2.4=%s",
+                     tostring(tirePressureLow(1.8)),
+                     tostring(tirePressureLow(2.0)),
+                     tostring(tirePressureLow(2.4))))
+  end
+
   -- 地图探索迷雾：未去过的程序化地点在地图上只显示“?”
   do
     local gen = nil

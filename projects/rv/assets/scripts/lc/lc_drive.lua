@@ -311,6 +311,11 @@ function fuelMax()
   return VEH.tank + (upgrades.fuel or 0) * (VEH.fuelPerLevel or 10)
 end
 
+-- 胎压偏低判定（预测爆胎风险前的预警阈值）
+function tirePressureLow(p)
+  return (p or 2.4) < 1.95
+end
+
 function updateDrive(dt)
   local throttle = (ActionDown("w") and 1 or 0) - (ActionDown("s") and 1 or 0)
   -- Positive yaw turns toward -X, which is screen-right when facing +Z, so
@@ -464,6 +469,18 @@ function updateDrive(dt)
     toast.t = 3.5
   elseif fuel > fuelMax() * 0.5 then
     fuelWarned = false
+  end
+  -- 胎压偏低：提前提示充气，避免直接爆胎
+  local minP = 2.4
+  for i = 1, 4 do
+    minP = math.min(minP, (rv.tirePressureCold or {})[i] or 2.4)
+  end
+  if tirePressureLow(minP) and not rv.pressureWarned then
+    rv.pressureWarned = true
+    toast.text = "胎压偏低——到工作台修轮胎充回 2.4bar"
+    toast.t = 3.4
+  elseif minP > 2.15 then
+    rv.pressureWarned = false
   end
 
   -- 手刹（驾驶时按住 Shift）：强减速 + 刹车灯亮
