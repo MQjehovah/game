@@ -1616,6 +1616,20 @@ function runSelfTest()
                      up, flat, down, steep))
   end
 
+  -- 坡度车速/加速：上坡慢、下坡略快
+  do
+    local up = slopeSpeedScale(0.15)
+    local flat = slopeSpeedScale(0)
+    local down = slopeSpeedScale(-0.15)
+    local upAcc = slopeAccelScale(0.15)
+    local flatAcc = slopeAccelScale(0)
+    ok(r, "slope speed scale",
+       up < flat and down > flat and up >= 0.70 and down <= 1.15 and
+       upAcc < flatAcc,
+       string.format("up=%.2f flat=%.2f down=%.2f acc=%.2f/%.2f",
+                     up, flat, down, upAcc, flatAcc))
+  end
+
   -- 车内灯开关：Despawn 真正熄灯，再开时重新生成
   do
     setInteriorLights(false)

@@ -119,6 +119,19 @@ function slopeFuelScale(grade)
   return math.max(0.65, 1.0 + g * 1.2)
 end
 
+-- 坡度车速：上坡最高车速下降、下坡略升；加速也受影响
+function slopeSpeedScale(grade)
+  local g = grade or 0
+  if g > 0 then return 1.0 - math.min(0.30, g * 1.5) end
+  return 1.0 + math.min(0.12, -g * 0.8)
+end
+
+function slopeAccelScale(grade)
+  local g = grade or 0
+  if g > 0 then return 1.0 - math.min(0.40, g * 1.6) end
+  return 1.0 + math.min(0.15, -g * 1.0)
+end
+
 -- 冷车油耗：暖机前燃烧效率差，20°C 时多耗 12%
 function engineColdFuelScale(tempValue)
   local t = tempValue or 60
@@ -671,6 +684,16 @@ function updateDrive(dt)
   local chainF = chainsSpeedScale(surfName)
   maxSp = maxSp * chainF
   acc = acc * chainF
+  -- 坡度：上坡降速降加速，下坡略升
+  local grade = 0
+  if terrainHeight ~= nil then
+    local gfx, gfz = math.sin(rv.yaw), math.cos(rv.yaw)
+    local hf = terrainHeight(rv.x + gfx * 2.0, rv.z + gfz * 2.0) or 0
+    local hb = terrainHeight(rv.x - gfx * 2.0, rv.z - gfz * 2.0) or 0
+    grade = (hf - hb) / 4.0
+  end
+  maxSp = maxSp * slopeSpeedScale(grade)
+  acc = acc * slopeAccelScale(grade)
   -- 冷车动力受限：水温上来前别急着飙
   local coldF = engineColdPowerScale(engineTemp)
   maxSp = maxSp * coldF
@@ -707,14 +730,6 @@ function updateDrive(dt)
   if fuel > 0 then
     local before = fuel
     local rate = fuelBurnRate(rv.speed or 0, ratio, throttle)
-    -- 坡度油耗：按车头/车尾高度差估算坡度
-    local grade = 0
-    if terrainHeight ~= nil then
-      local gfx, gfz = math.sin(rv.yaw), math.cos(rv.yaw)
-      local hf = terrainHeight(rv.x + gfx * 2.0, rv.z + gfz * 2.0) or 0
-      local hb = terrainHeight(rv.x - gfx * 2.0, rv.z - gfz * 2.0) or 0
-      grade = (hf - hb) / 4.0
-    end
     rate = rate * slopeFuelScale(grade)
     fuel = math.max(0, fuel - rate * dt)
     tripFuel = (tripFuel or 0) + (before - fuel)
