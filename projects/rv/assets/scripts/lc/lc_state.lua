@@ -106,6 +106,7 @@ fireT, turretT, killCount, raidT = 0, 0, 0, 0
 ambientT = 0
 fishingT, fishingTotal = 0, 0
 fishingBait = false
+fishingDock = false           -- 本次抛竿是否在栈桥上
 rawFoodAge = 0                 -- 生食材累计腐败进度（游戏分钟）
 engineTemp = 20               -- 引擎水温（°C）
 rawSpoilWarned = false

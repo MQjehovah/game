@@ -2167,6 +2167,23 @@ function runSelfTest()
        string.format("docks=%d parts=%d", n, parts))
   end
 
+  -- 栈桥钓鱼：站桥上标记加成，结束后复位
+  do
+    local d = docks[1]
+    local at = (d ~= nil) and nearDock(d.x, d.z + 4) or false
+    local far = (d == nil) or (not nearDock(d.x + 500, d.z + 500))
+    local px, pz = player.x, player.z
+    if d ~= nil then player.x, player.z = d.x, d.z + 4 end
+    startFishing()
+    local flagged = fishingDock == true
+    finishFishing(true)
+    local cleared = fishingDock == false
+    player.x, player.z = px, pz
+    ok(r, "dock fishing", at and far and flagged and cleared,
+       string.format("at=%s far=%s flagged=%s cleared=%s", tostring(at),
+                     tostring(far), tostring(flagged), tostring(cleared)))
+  end
+
   -- 睡醒晨报：包含天数/货运单数/今日目标/油量
   do
     local sd, sc = day, clock

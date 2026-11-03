@@ -565,24 +565,31 @@ function startFishing()
   fishingTotal = 5 + math.random() * 4
   fishingT = fishingTotal
   fishingBait = false
+  fishingDock = (nearDock ~= nil) and nearDock(player.x, player.z) or false
   if takeItem("bait", 1) then
     fishingBait = true
-    toast.text = "抛竿（用鱼饵）— 别走动，等咬钩"
+    toast.text = fishingDock and "在栈桥上抛竿（鱼饵）— 别走开"
+                              or "抛竿（用鱼饵）— 别走动，等咬钩"
   else
-    toast.text = "抛竿了——等鱼上钩（别走开）"
+    toast.text = fishingDock and "在栈桥上抛竿 — 视野好，更容易上钩"
+                              or "抛竿了——等鱼上钩（别走开）"
   end
   toast.t = 2.2
 end
 
 function finishFishing(force)
   local usedBait = fishingBait == true
+  local onDock = fishingDock == true
   fishingBait = false
-  local chance = 0.78 + (rodCatchBonus and rodCatchBonus() or 0)
+  fishingDock = false
+  local chance = 0.78 + (rodCatchBonus and rodCatchBonus() or 0) +
+                 (onDock and 0.10 or 0)
   local success = force or usedBait or math.random() < chance
   fishingT = 0
   if success then
     local name, size, sp = rollFish()
-    local bonus = (rodSizeBonus and rodSizeBonus() or 0) + (usedBait and 10 or 0)
+    local bonus = (rodSizeBonus and rodSizeBonus() or 0) +
+                  (usedBait and 10 or 0) + (onDock and 4 or 0)
     if bonus > 0 then size = math.min(sp.max, size + bonus) end
     local n = 1 + ((math.random() < 0.30) and 1 or 0)
     if size >= 55 then n = n + 1 end
@@ -595,8 +602,9 @@ function finishFishing(force)
       bestFish = size
       record = true
     end
-    toast.text = string.format("钓到 %s %.0fcm x%d%s%s", name, size, n,
+    toast.text = string.format("钓到 %s %.0fcm x%d%s%s%s", name, size, n,
                                usedBait and "（鱼饵）" or "",
+                               onDock and "（栈桥）" or "",
                                record and "  新纪录!" or "")
   else
     toast.text = "鱼跑了……再试一次"

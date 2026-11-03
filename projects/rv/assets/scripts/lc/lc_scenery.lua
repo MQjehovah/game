@@ -482,6 +482,16 @@ function spawnDock(x, z)
   return dock
 end
 
+-- 判断某个点是否站在栈桥桥板上（供钓鱼加成使用）
+function nearDock(x, z)
+  for _, d in ipairs(docks) do
+    if math.abs(x - d.x) <= 1.0 and z >= d.z + 2.2 and z <= d.z + 7.0 then
+      return true
+    end
+  end
+  return false
+end
+
 function spawnPond(x, z)
   local ent = SpawnPrefab("rv_pond", { x = x, y = 0.02, z = z })
   if ent ~= nil then
