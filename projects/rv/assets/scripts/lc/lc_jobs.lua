@@ -265,6 +265,24 @@ function jobLoadFx()
                  false, 1.4, 1.0, 0.88, 0.4)
 end
 
+function jobUnloadFx(crates)
+  if coopRole ~= nil then return end
+  rv.unloadFxT = 0.6
+  local wx, wz = rotOf(0.4, 0.4)
+  EmitParticles({
+    pos = { x = wx, y = (rv.groundY or 0) + 2.45, z = wz },
+    count = 14, speedMin = 0.5, speedMax = 1.8,
+    vel = { x = 0, y = 0.55, z = 0 },
+    lifeMin = 0.4, lifeMax = 0.95,
+    sizeStart = 0.20, sizeEnd = 0.8,
+    color = { r = 0.66, g = 0.60, b = 0.48, a = 0.55 },
+    colorEnd = { r = 0.66, g = 0.60, b = 0.48, a = 0.0 },
+    additive = false, gravity = 0.5,
+  })
+  SpawnFloatText(wx, 2.95, wz, "卸货 " .. (crates or 1) .. " 箱",
+                 false, 1.4, 0.95, 0.88, 0.42)
+end
+
 function jobAccept(idx)
   local offer = jobOffers[idx]
   if offer == nil then return false end
@@ -349,6 +367,7 @@ function jobComplete()
   end
   local name, crates = job.cargo, job.crates
   local destName = job.destName or ""
+  jobUnloadFx(crates)
   jobDelivered = jobDelivered + 1
   if addDailyProgress ~= nil then addDailyProgress("jobs", 1) end
   if checkMilestones ~= nil then checkMilestones("jobs", jobDelivered) end

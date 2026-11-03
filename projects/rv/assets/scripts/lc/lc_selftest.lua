@@ -965,10 +965,11 @@ function runSelfTest()
   end
   ok(r, "job delivered at destination",
      job == nil and paidOut and jobDelivered == doneBefore + 1 and
-     stats.weight < weightWithCargo and #jobCargoEnts == 0 and fuel >= fuelBefore,
-     string.format("dest=%s delivered=%d->%d weight=%.0f->%.0f fuel=%.0f->%.0f",
+     stats.weight < weightWithCargo and #jobCargoEnts == 0 and fuel >= fuelBefore and
+     (rv.unloadFxT or 0) > 0,
+     string.format("dest=%s delivered=%d->%d weight=%.0f->%.0f fuel=%.0f->%.0f fx=%.1f",
                    tostring(dest), doneBefore, jobDelivered, weightWithCargo,
-                   stats.weight, fuelBefore, fuel))
+                   stats.weight, fuelBefore, fuel, rv.unloadFxT or 0))
   ok(r, "job result card",
      jobResult ~= nil and jobResult.ok == true and (jobResult.crates or 0) > 0,
      jobResult and string.format("cargo=%s cond=%.2f jobs=%d",
