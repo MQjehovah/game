@@ -836,12 +836,17 @@ function on_start()
       px, pz, pyaw = cx, cz + 4.2, math.pi
     end
   end
-  if startMode == "farm" then
+  if startMode == "farm" or startMode == "windmillview" then
     -- 旧农场谷仓门口
     local nd = nodeById("farm")
     if nd ~= nil then
       local cx, cz = poiCenter(nd)
-      px, pz, pyaw = cx, cz + 3.6, math.pi
+      if startMode == "windmillview" then
+        px, pz = cx + 20.0, cz + 10.0
+        pyaw = dirYaw(-11.5, -15.5)
+      else
+        px, pz, pyaw = cx, cz + 3.6, math.pi
+      end
     end
   end
   if startMode == "mall" then
@@ -888,6 +893,7 @@ function on_start()
   elseif startMode == "texclose" then player.pitch = -0.28
   elseif startMode == "texbody" then player.pitch = 0.05
   elseif startMode == "poinight" then player.pitch = 0.14
+  elseif startMode == "windmillview" then player.pitch = 0.28
   end
   SetVar("cameraMouseLock", 1)
   updateInteraction()
@@ -1208,6 +1214,7 @@ function on_update(ent, dt)
   if updateCampfireLight ~= nil then updateCampfireLight(dt) end
   if updateBirds ~= nil then updateBirds(dt) end
   if updatePuddles ~= nil then updatePuddles(dt) end
+  if updateWindmill ~= nil then updateWindmill(dt) end
   if updatePoiSigns ~= nil then updatePoiSigns() end
   if updateRvSmoke ~= nil then updateRvSmoke(dt) end
   if rv.shakeT ~= nil and rv.shakeT > 0 then

@@ -2233,6 +2233,7 @@ function coopUpdate(dt)
   if updateCampfireLight ~= nil then updateCampfireLight(dt) end
   if updateBirds ~= nil then updateBirds(dt) end
   if updatePuddles ~= nil then updatePuddles(dt) end
+  if updateWindmill ~= nil then updateWindmill(dt) end
   if updatePoiSigns ~= nil then updatePoiSigns() end
   if updateRvSmoke ~= nil then updateRvSmoke(dt) end
   -- 合作客户端：夜间步行时根据本地位置/视角维护手电

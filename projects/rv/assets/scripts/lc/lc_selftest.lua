@@ -1637,6 +1637,16 @@ function runSelfTest()
        string.format("dry=%d wet=%d after=%d", dry, wet, after))
   end
 
+  -- 农场风车：4 片叶片且会旋转
+  do
+    local blades = windmill and #(windmill.blades or {}) or 0
+    local a0 = windmill and (windmill.angle or 0) or 0
+    updateWindmill(1.0)
+    local a1 = windmill and (windmill.angle or 0) or 0
+    ok(r, "farm windmill", blades == 4 and a1 > a0,
+       string.format("blades=%d angle %.2f->%.2f", blades, a0, a1))
+  end
+
   -- 存读档：行程/探索/货运单数 + 天气
   do
     tripDistance, tripFuel, jobDelivered = 3210, 88, 7

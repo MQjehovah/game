@@ -1064,6 +1064,21 @@ function spawnRuinFor(nd)
         hayBales[#hayBales + 1] = e
       end
     end
+    -- 农场风车（低多边形地标，叶片持续旋转）
+    local wx, wz = cx + 8.5, cz - 5.5
+    local wy = (terrainHeight and terrainHeight(wx, wz)) or 0
+    local tower = SpawnPrefab("rv_camp_wood", { x = wx, y = wy + 3.5, z = wz })
+    if tower ~= nil then SetScale(tower, 0.55, 7.0, 0.55) end
+    local hub = SpawnPrefab("rv_camp_wood", { x = wx, y = wy + 7.0, z = wz })
+    if hub ~= nil then SetScale(hub, 0.34, 0.34, 0.34) end
+    windmill = { x = wx, y = wy + 7.0, z = wz + 0.35, angle = 0, blades = {} }
+    for i = 1, 4 do
+      local b = SpawnPrefab("rv_panel_light", { x = wx, y = wy + 7.0, z = wz + 0.35 })
+      if b ~= nil then
+        SetScale(b, 0.28, 2.80, 0.08)
+        windmill.blades[#windmill.blades + 1] = b
+      end
+    end
     return
   end
   if isWarehouse then
@@ -1345,6 +1360,23 @@ function spawnPuddles()
       SetScale(e, s, 0.012, s * (0.7 + math.random() * 0.5))
       SetRotationY(e, math.random() * math.pi * 2)
       puddles[#puddles + 1] = { ent = e, x = x, z = z }
+    end
+  end
+end
+
+-- 农场风车：4 片叶片绕轮毂旋转
+function updateWindmill(dt)
+  if windmill == nil or #(windmill.blades or {}) == 0 then return end
+  windmill.angle = (windmill.angle or 0) + (dt or 0) * 0.55
+  for i, b in ipairs(windmill.blades) do
+    local a = windmill.angle + (i - 1) * math.pi * 0.5
+    SetPosition(b, { x = windmill.x + math.sin(a) * 1.45,
+                     y = windmill.y + math.cos(a) * 1.45,
+                     z = windmill.z })
+    if SetRotationEuler ~= nil then
+      SetRotationEuler(b, 0, 0, -a)
+    else
+      SetRotationY(b, -a)
     end
   end
 end
