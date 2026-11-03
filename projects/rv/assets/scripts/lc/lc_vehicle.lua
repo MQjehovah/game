@@ -328,16 +328,19 @@ function toggleHighBeam()
   toast.t = 2.0
 end
 
+-- 是否需要大灯：夜间，或雾天/雨天行驶（能见度差）
+function needHeadlights(driving, night, weatherValue)
+  if not driving then return false end
+  if night then return true end
+  return weatherValue == "fog" or weatherValue == "rain"
+end
+
 -- driving: 单机用 phase，联机由调用方传入“是否有人在开/车在动”
 function updateVehicleLights(driving)
-  local want = false
-  if isNight ~= nil and isNight() then
-    if driving == nil then
-      want = (phase == "driving")
-    else
-      want = driving and true or false
-    end
-  end
+  local isDriving = driving
+  if isDriving == nil then isDriving = (phase == "driving") end
+  local night = (isNight ~= nil and isNight())
+  local want = needHeadlights(isDriving, night, weather)
   if rv.forceHeadlights then want = true end
   setRvHeadlights(want)
 end

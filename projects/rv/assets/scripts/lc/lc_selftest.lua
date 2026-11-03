@@ -1471,17 +1471,32 @@ function runSelfTest()
 
   -- 夜间前大灯：夜里开车生成两盏聚光灯，白天/驻车移除
   do
-    local savedClock, savedPhase = clock, phase
+    local savedClock, savedPhase, savedWeather = clock, phase, weather
     phase = "driving"
+    weather = "clear"
     clock = 22 * 60
     updateVehicleLights()
     local onCount = #rvHeadlights
     clock = 12 * 60
     updateVehicleLights()
     local offCount = #rvHeadlights
-    clock, phase = savedClock, savedPhase
+    clock, phase, weather = savedClock, savedPhase, savedWeather
     ok(r, "rv night headlights", onCount == 2 and offCount == 0,
        string.format("night=%d day=%d parts=%d", onCount, offCount, #rvParts))
+  end
+
+  -- 雾天/雨天行驶也自动开灯
+  do
+    local dark = needHeadlights(true, true, "clear")
+    local fog = needHeadlights(true, false, "fog")
+    local rain = needHeadlights(true, false, "rain")
+    local clear = needHeadlights(true, false, "clear")
+    local parked = needHeadlights(false, true, "clear")
+    ok(r, "headlights in weather",
+       dark and fog and rain and not clear and not parked,
+       string.format("night=%s fog=%s rain=%s clear=%s parked=%s",
+                     tostring(dark), tostring(fog), tostring(rain),
+                     tostring(clear), tostring(parked)))
   end
 
   -- 夜空/雾色：新引擎绑定把昼夜曲线写进 SceneEnvironment
