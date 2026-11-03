@@ -1070,6 +1070,46 @@ function drawJournal()
            px + 22, py + ph - 26, 12, 0.64, 0.66, 0.60, 1)
 end
 
+-- 鱼类图鉴（K）：各鱼种纪录、条数与尺寸区间
+function drawFishBook()
+  if not fishBookOpen then return end
+  local vp = GetViewportSize()
+  local vw = (vp and vp.w) or 1280
+  local vh = (vp and vp.h) or 720
+  local rows = (fishBookRows and fishBookRows()) or {}
+  local pw, ph = 600, 300
+  local px = math.floor((vw - pw) * 0.5)
+  local py = math.floor((vh - ph) * 0.5)
+  DrawRect(px, py, pw, ph, 0.04, 0.05, 0.06, 0.94)
+  DrawRectOutline(px, py, pw, ph, 0.55, 0.52, 0.42, 0.95)
+  drawTextCentered("鱼类图鉴", vw * 0.5, py + 12, 20, 0.98, 0.90, 0.68, 1)
+  local found = 0
+  for _, r in ipairs(rows) do
+    if (r.count or 0) > 0 then found = found + 1 end
+  end
+  DrawText(string.format("已记录 %d / %d 种   累计 %d 条", found, #rows,
+                         fishCaught or 0),
+           px + 22, py + 46, 13, 0.78, 0.82, 0.74, 1)
+  DrawText("K / E 关闭", px + pw - 96, py + 18, 12, 0.68, 0.70, 0.64, 1)
+  local yy = py + 82
+  for _, r in ipairs(rows) do
+    local caught = (r.count or 0) > 0
+    local col = caught and 0.90 or 0.52
+    DrawRect(px + 18, yy - 4, pw - 36, 34, caught and 0.08 or 0.10, 0.09, 0.08, 0.7)
+    DrawText(r.name, px + 30, yy, 15, col, col, caught and 0.82 or col, 1)
+    DrawText(string.format("纪录 %s", caught and
+             string.format("%.0fcm", r.record) or "—"),
+             px + 180, yy + 2, 13, col, col, caught and 0.72 or col, 1)
+    DrawText(string.format("%d 条", r.count or 0),
+             px + 330, yy + 2, 13, col, col, caught and 0.72 or col, 1)
+    DrawText(string.format("尺寸 %.0f–%.0fcm", r.min or 0, r.max or 0),
+             px + 410, yy + 2, 12, 0.66, 0.68, 0.62, 1)
+    yy = yy + 38
+  end
+  DrawText(string.format("总纪录：%s %.0fcm", bestFishName or "—", bestFish or 0),
+           px + 22, py + ph - 28, 12, 0.82, 0.76, 0.54, 1)
+end
+
 function drawMapHud()
   local vp = GetViewportSize()
   local vw = (vp and vp.w) or 1280

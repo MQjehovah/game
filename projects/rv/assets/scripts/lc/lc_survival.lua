@@ -679,6 +679,20 @@ function fishingConditionBonus()
   return chance, size
 end
 
+-- 鱼类图鉴数据：每种鱼的纪录尺寸/累计条数/尺寸区间
+function fishBookRows()
+  local rows = {}
+  for _, sp in ipairs(FISH_SPECIES or {}) do
+    rows[#rows + 1] = {
+      name = sp.name,
+      record = (fishRecords and fishRecords[sp.name]) or 0,
+      count = (fishCounts and fishCounts[sp.name]) or 0,
+      min = sp.min, max = sp.max,
+    }
+  end
+  return rows
+end
+
 -- 记录一次渔获：各鱼种最大尺寸 + 总纪录 + 累计条数
 function recordFish(name, size, n)
   n = n or 1

@@ -1025,6 +1025,11 @@ function on_start()
     addJournal("里程碑：货运 10 · 电子件+2 燃料+20L", "goal")
     addJournal("合同超时：粮袋", "fail")
     journalOpen = true
+  elseif startMode == "fishbook" then
+    fishRecords = { ["鲫鱼"] = 26, ["鲤鱼"] = 48, ["鲶鱼"] = 62 }
+    fishCounts = { ["鲫鱼"] = 9, ["鲤鱼"] = 4, ["鲶鱼"] = 1 }
+    bestFish, bestFishName, fishCaught = 62, "鲶鱼", 14
+    fishBookOpen = true
   elseif startMode == "jobdrive" then
     jobRefreshOffers()
     jobAccept(1)
@@ -1367,8 +1372,10 @@ function on_update(ent, dt)
   ensureHelpers()
   if ActionPressed("m") then mapOpen = not mapOpen end
   if ActionPressed("i") then invOpen = not invOpen end
-  if ActionPressed("j") then journalOpen = not journalOpen end
+  if ActionPressed("j") then journalOpen = not journalOpen; fishBookOpen = false end
+  if ActionPressed("k") then fishBookOpen = not fishBookOpen; journalOpen = false end
   if journalOpen and ActionPressed("e") then journalOpen = false end
+  if fishBookOpen and ActionPressed("e") then fishBookOpen = false end
   if ActionPressed("l") and setInteriorLights ~= nil then
     setInteriorLights(not interiorLightsOn)
     toast.text = interiorLightsOn and "车内灯已打开" or "车内灯已关闭"
@@ -1601,4 +1608,5 @@ function on_render()
   if morningReport then drawMorningReport() end
   if mapOpen then drawMapHud() end
   if journalOpen then drawJournal() end
+  if fishBookOpen then drawFishBook() end
 end

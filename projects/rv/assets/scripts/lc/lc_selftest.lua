@@ -2485,6 +2485,27 @@ function runSelfTest()
                      #journal))
   end
 
+  -- 鱼类图鉴：行数与纪录/条数读取
+  do
+    local keepR, keepC = fishRecords, fishCounts
+    fishRecords = { ["鲫鱼"] = 22 }
+    fishCounts = { ["鲫鱼"] = 5 }
+    local rows = fishBookRows()
+    local ji, li = nil, nil
+    for _, r in ipairs(rows) do
+      if r.name == "鲫鱼" then ji = r end
+      if r.name == "鲤鱼" then li = r end
+    end
+    local okBook = #rows == #FISH_SPECIES and ji ~= nil and
+                   ji.record == 22 and ji.count == 5 and
+                   li ~= nil and li.count == 0
+    fishRecords, fishCounts = keepR, keepC
+    ok(r, "fish encyclopedia", okBook,
+       string.format("rows=%d 鲫鱼=%.0f/%.0f 鲤鱼count=%d",
+                     #rows, ji and ji.record or 0, ji and ji.count or 0,
+                     li and li.count or 0))
+  end
+
   -- 睡醒晨报：包含天数/货运单数/今日目标/油量
   do
     local sd, sc = day, clock
