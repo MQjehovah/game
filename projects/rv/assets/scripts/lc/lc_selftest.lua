@@ -2663,6 +2663,20 @@ function runSelfTest()
                      tostring(okAll)))
   end
 
+  -- 按位置找最近可取补给箱（联机服务器用）
+  do
+    local c = roadCaches and roadCaches[1] or nil
+    local okNear = false
+    if c ~= nil then
+      c.ready = true
+      local near = nearestReadyCache(c.x, c.z, 2.9)
+      local far = nearestReadyCache(c.x + 40, c.z, 2.9)
+      okNear = near ~= nil and far == nil
+    end
+    ok(r, "nearest road cache", okNear,
+       string.format("found=%s", tostring(okNear)))
+  end
+
   -- 每日目标池：包含做饭/维修
   do
     local ids = {}

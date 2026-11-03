@@ -857,6 +857,22 @@ local function serverHandleCommand(clientId, a)
     local idx = tonumber(a.index) or 0
     local c = crates[idx]
     if c == nil then
+      -- 附近有路边补给箱时，按 E 直接搜刮
+      local ci = nil
+      if nearestReadyCache ~= nil then
+        ci = nearestReadyCache(s.x or rv.x, s.z or rv.z, 2.9)
+      end
+      if ci ~= nil and lootRoadCache ~= nil then
+        local okCache = lootRoadCache(ci)
+        if okCache then
+          coop.worldSeq = coop.worldSeq + 1
+          setToast("搜到一个路边补给箱")
+        end
+        print(string.format("[coop-cache] ok=%s idx=%d metal=%d",
+                            tostring(okCache), ci, materials.metal or 0))
+        pushState()
+        return
+      end
       setToast("物资箱已经不在了")
       return
     end
@@ -1225,6 +1241,22 @@ local function serverUpdate(dt)
     print(string.format("[coop-pond] demo ok=%s trap=%s rawfish=%d",
                         tostring(okTrap), tostring(pondTrap ~= nil),
                         inv.rawfish or 0))
+    pushState()
+  end
+
+  -- Test-only co-op roadside cache: stand by the first cache and loot it.
+  if coop.cacheDemo and not coop.cacheDemoDone and coop.autoT >= 3.0 then
+    coop.cacheDemoDone = true
+    local c = roadCaches and roadCaches[1] or nil
+    if c ~= nil then
+      rv.x, rv.z = c.x, c.z
+      c.ready = true
+    end
+    local okCache = false
+    if c ~= nil and lootRoadCache ~= nil then okCache = lootRoadCache(1) end
+    print(string.format("[coop-cache] demo ok=%s metal=%d cloth=%d",
+                        tostring(okCache), materials.metal or 0,
+                        materials.cloth or 0))
     pushState()
   end
 
@@ -2045,6 +2077,9 @@ local function clientUpdate(dt)
           end
           if best ~= nil and bestD <= 5.5 then
             Rpc("game_cmd", { type = "search", index = best })
+          elseif nearestReadyCache ~= nil and
+                 nearestReadyCache(px, pz, 2.9) ~= nil then
+            Rpc("game_cmd", { type = "search", index = 0 })
           else
             coop.toast = "附近没有车门/物资箱（走近再按 E）"
             coop.toastT = 2.0
@@ -2474,6 +2509,7 @@ function coopInitWorld(role)
     coop.fireDemo = readFlag("coop_fire.txt")
     coop.berryDemo = readFlag("coop_berry.txt")
     coop.pondDemo = readFlag("coop_pond.txt")
+    coop.cacheDemo = readFlag("coop_cache.txt")
     local doorTest = ReadText("coop_doortest.txt")
     if doorTest ~= nil and doorTest ~= "" then
       local v = string.lower((doorTest:gsub("%s+", "")))
@@ -2593,6 +2629,7 @@ function coopInitWorld(role)
     coop.fireDemo = readFlag("coop_fire.txt")
     coop.berryDemo = readFlag("coop_berry.txt")
     coop.pondDemo = readFlag("coop_pond.txt")
+    coop.cacheDemo = readFlag("coop_cache.txt")
     coop.buildUi = readFlag("coop_buildmode.txt")
     coop.boardDemo = readFlag("coop_board.txt")
     coop.sitDemo = readFlag("coop_sitdemo.txt")
