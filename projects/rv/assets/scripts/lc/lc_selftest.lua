@@ -4609,6 +4609,23 @@ function runSelfTest()
                      tostring(weatherLine), newInterval))
   end
 
+  -- 收音机按进度播报：无进度返回 nil，有中继时提到中继
+  do
+    local kRelay, kJobs = relayDone, jobDelivered
+    local kFish, kVis = fishCaught, visitedCount
+    local kAll = allUpgradesDone
+    relayDone, jobDelivered, fishCaught, visitedCount = false, 0, 0, 0
+    allUpgradesDone = false
+    local none = radioProgressLine(0.5)
+    relayDone = true
+    local relay = radioProgressLine(0)
+    relayDone, jobDelivered, fishCaught, visitedCount = kRelay, kJobs, kFish, kVis
+    allUpgradesDone = kAll
+    ok(r, "radio progress line",
+       none == nil and relay ~= nil and relay:find("中继", 1, true) ~= nil,
+       string.format("none=%s relay=%s", tostring(none), tostring(relay)))
+  end
+
   -- 修塔后收音机切换为“信号恢复”广播池
   do
     local keep = radioMastFixed

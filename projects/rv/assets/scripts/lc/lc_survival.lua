@@ -719,6 +719,31 @@ function radioWeatherWarning()
   return nil
 end
 
+-- 收音机按玩家进度播报不同内容（无进度时返回 nil）
+function radioProgressLine(roll)
+  local lines = {}
+  if relayDone then
+    lines[#lines + 1] = "收音机：救援队说东边的公路已经清理，感谢你恢复信号中继。"
+  end
+  if (jobDelivered or 0) >= 10 then
+    lines[#lines + 1] = string.format(
+      "收音机：货运站都在传你跑完了 %d 单，路上小心。", jobDelivered)
+  end
+  if (fishCaught or 0) >= 10 then
+    lines[#lines + 1] = string.format(
+      "收音机：湖边有人夸你钓了 %d 条鱼，说鱼汤很香。", fishCaught)
+  end
+  if (visitedCount or 0) >= 5 then
+    lines[#lines + 1] = "收音机：地图上大半地点都被你跑遍了，注意休息。"
+  end
+  if allUpgradesDone then
+    lines[#lines + 1] = "收音机：听说有人把整辆房车都升级满了，真是下了血本。"
+  end
+  if #lines == 0 then return nil end
+  local r = roll or math.random()
+  return lines[math.floor(r * #lines) + 1]
+end
+
 -- 信号强度：修好无线电塔前，广播有概率夹杂杂音
 function radioSignalLossChance()
   if radioMastFixed or relayDone then return 0 end
@@ -733,6 +758,7 @@ function updateRadioBroadcast(gm)
   radioBroadcastNext = 90 + math.random() * 60
   local list = radioBroadcastPool()
   local warn = radioWeatherWarning()
+  local progressLine = radioProgressLine and radioProgressLine() or nil
   local line
   if math.random() < (radioSignalLossChance and radioSignalLossChance() or 0) then
     line = "收音机：（沙沙……）信号很弱，听不清。修好无线电塔也许能好点。"
@@ -744,6 +770,8 @@ function updateRadioBroadcast(gm)
     local hrs = (weatherHoursLeft and weatherHoursLeft()) or 0
     line = string.format("天气台：现在%s，稍后转%s（约 %.1f 小时后）。",
                          nowName, nextName, hrs)
+  elseif progressLine ~= nil and math.random() < 0.35 then
+    line = progressLine
   elseif warn ~= nil and math.random() < 0.5 then
     line = warn
   elseif #list > 0 then
