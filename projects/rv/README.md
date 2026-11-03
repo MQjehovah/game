@@ -61,7 +61,8 @@
 - **油/水补给**：在营地停靠免费补满油/水；在废弃加油站加油按油量缺口收金属
   （每 15L 1 金属，至少 1），金属不足则不加油并提示，水箱仍免费补满；
   低胎压时停靠还会花 1 金属把轮胎充回 2.4bar 并清除爆胎；
-  加油站旁有一台**自动售货机**，走近按 `E` 花 1 金属买一份食物/水（`buyVendingSnack`）；
+  加油站旁有一台**自动售货机**，走近按 `E` 花 1 金属买一份食物/水
+  （`buyVendingSnack`）；联机时客机按 `E` 由服务端购买；
   自检 `gas station refuel cost` / `tire air service` / `vending machine`。
 - **浑浊水净化**：水塘边按 `Q` 取 2 份浑浊水，回营地篝火按 `E` 煮沸
   （生鱼优先烤鱼，其次煮水，最后把生食材烤成热饭），1 份浑水换 **+15L** 净水；
@@ -851,6 +852,8 @@
   `[coop-water] demo ok=true water=107.7 cd=60`，验证联机风车水泵。
 - `coop_note.txt`：服务端 3s 站到路牌笔记旁阅读，日志
   `[coop-note] demo ok=true mask=100000`，验证联机笔记读取与同步。
+- `coop_vending.txt`：服务端 3s 站到加油站售货机旁购买，日志
+  `[coop-vending] demo ok=true metal=212`，验证联机售货机。
 - `coop_walk.txt`：客户端按住前进，便于网络 smoke 看到受控角色位移。
 - `coop_sitdemo.txt`：在房车旁生成一个播放 `Sit` 骨骼片段的预览角色。
 - `coop_animdemo.txt`：内容 `sit` / `board` / `stand` / `dooropen` / `doorclose` /
