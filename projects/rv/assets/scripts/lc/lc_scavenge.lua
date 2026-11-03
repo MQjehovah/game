@@ -15,6 +15,30 @@ function nodeLootRoll(nd)
   return out
 end
 
+-- 地点特色掉落：让每个 POI 的搜刮结果有辨识度（只放 ITEMS 里的物品）
+local POI_LOOT_BONUS = {
+  clinic   = { { id = "repairkit", chance = 0.45, n = 1 },
+               { id = "canned",    chance = 0.30, n = 1 } },
+  farm     = { { id = "seed",     chance = 0.55, n = 1 },
+               { id = "rawfood",  chance = 0.40, n = 1 } },
+  gasstop  = { { id = "fuelcan",  chance = 0.40, n = 1 },
+               { id = "water",    chance = 0.30, n = 1 } },
+  ruin     = { { id = "canned",   chance = 0.40, n = 1 },
+               { id = "coffee",   chance = 0.20, n = 1 } },
+  lakecamp = { { id = "bait",     chance = 0.50, n = 2 },
+               { id = "rawfish",  chance = 0.25, n = 1 } },
+  depot    = { { id = "repairkit", chance = 0.30, n = 1 },
+               { id = "fuelcan",  chance = 0.25, n = 1 } },
+  mall     = { { id = "canned",   chance = 0.35, n = 1 },
+               { id = "water",    chance = 0.35, n = 1 } },
+  town     = { { id = "water",    chance = 0.40, n = 1 },
+               { id = "seed",     chance = 0.30, n = 1 } },
+}
+
+function poiLootBonus(id)
+  return POI_LOOT_BONUS[id] or {}
+end
+
 function rollLootItems(nd)
   local out = {}
   local rolls = 1 + ((math.random() < 0.35) and 1 or 0)
@@ -34,6 +58,12 @@ function rollLootItems(nd)
   -- 危险地点更可能出修理包
   if (nd.danger or 0) >= 2 and math.random() < 0.18 then
     out.repairkit = (out.repairkit or 0) + 1
+  end
+  -- 地点特色物品
+  for _, b in ipairs(poiLootBonus(nd.id)) do
+    if math.random() < (b.chance or 0) then
+      out[b.id] = (out[b.id] or 0) + (b.n or 1)
+    end
   end
   return out
 end

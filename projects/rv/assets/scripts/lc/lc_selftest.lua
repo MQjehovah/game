@@ -2550,6 +2550,30 @@ function runSelfTest()
                      li and li.count or 0))
   end
 
+  -- 地点特色掉落：数据完整，且物品都在 ITEMS 里
+  do
+    local function has(id, item)
+      for _, b in ipairs(poiLootBonus(id)) do
+        if b.id == item then return true end
+      end
+      return false
+    end
+    local allItems = true
+    for _, id in ipairs({ "clinic", "farm", "gasstop", "ruin", "lakecamp",
+                          "depot", "mall", "town" }) do
+      for _, b in ipairs(poiLootBonus(id)) do
+        if ITEMS[b.id] == nil then allItems = false end
+      end
+    end
+    ok(r, "poi loot variety",
+       has("farm", "seed") and has("gasstop", "fuelcan") and
+       has("clinic", "repairkit") and allItems,
+       string.format("allItems=%s farmSeed=%s gasCan=%s clinicKit=%s",
+                     tostring(allItems), tostring(has("farm", "seed")),
+                     tostring(has("gasstop", "fuelcan")),
+                     tostring(has("clinic", "repairkit"))))
+  end
+
   -- 睡醒晨报：包含天数/货运单数/今日目标/油量
   do
     local sd, sc = day, clock
