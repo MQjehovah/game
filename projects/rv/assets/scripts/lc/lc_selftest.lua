@@ -142,13 +142,30 @@ function runSelfTest()
                      gotMetal, gotCloth, k0, gotKits))
   end
 
-  -- 低强度威胁
-  local h0 = #horde
-  spawnAmbientZombie()
-  local spawned = #horde == h0 + 1
-  if spawned then killZombie(#horde) end
-  ok(r, "ambient threat spawn/kill", spawned and #horde == h0,
-     string.format("horde %d->%d", h0, #horde))
+  -- 游荡威胁（离开营地安全区才能刷）
+  do
+    local h0 = #horde
+    local sx, sz = rv.x, rv.z
+    rv.x, rv.z = 150, 150
+    spawnAmbientZombie()
+    local spawned = #horde == h0 + 1
+    if spawned then killZombie(#horde) end
+    rv.x, rv.z = sx, sz
+    ok(r, "ambient threat spawn/kill", spawned and #horde == h0,
+       string.format("horde %d->%d", h0, #horde))
+  end
+
+  -- 营地安全区：营地内不刷游荡感染者
+  do
+    local h0 = #horde
+    local sx, sz, sa = rv.x, rv.z, atNode
+    rv.x, rv.z, atNode = 0, 0, "camp"
+    local z = spawnAmbientZombie()
+    local blocked = (z == nil) and #horde == h0
+    rv.x, rv.z, atNode = sx, sz, sa
+    ok(r, "camp safe zone", blocked,
+       string.format("spawned=%s horde=%d", tostring(z ~= nil), #horde))
+  end
 
   -- 交互检测：站到灶台前应识别到"做饭"
   if stove then

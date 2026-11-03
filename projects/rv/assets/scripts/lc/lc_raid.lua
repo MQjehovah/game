@@ -7,6 +7,9 @@ function despawnHorde()
 end
 
 function spawnAmbientZombie()
+  -- 营地是安全区：不再随机刷游荡感染者（袭击事件仍由 raid 流程单独触发）
+  if atNode == "camp" then return nil end
+  if math.sqrt(rv.x * rv.x + rv.z * rv.z) < 40.0 then return nil end
   if #horde >= RAID.aliveMax then return nil end
   local ent = SpawnPrefab("rv_zombie", { x = 0, y = -50, z = 0 })
   if ent == nil then return nil end
