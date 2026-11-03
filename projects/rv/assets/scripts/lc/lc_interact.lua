@@ -170,6 +170,21 @@ function updateInteraction()
     end
   end
 
+  -- 路边搭车客
+  if hitchhiker ~= nil then
+    local dx, dz = hitchhiker.x - player.x, hitchhiker.z - player.z
+    local d = math.sqrt(dx * dx + dz * dz)
+    if d < 3.4 then
+      local dot = forwardDot(dx, dz, d)
+      if dot > 0.05 then
+        nearAction = { kind = "hitchhiker", verb = "路边搭车客",
+                       detail = "E 给他 5L 燃料，换回补给",
+                       x = hitchhiker.x, z = hitchhiker.z }
+        return
+      end
+    end
+  end
+
   -- 路边抛锚车
   if strandedCar ~= nil and not strandedCar.looted then
     local dx, dz = strandedCar.x - player.x, strandedCar.z - player.z
@@ -349,6 +364,10 @@ function doInteract()
     return true
   elseif nearAction.kind == "stranded" then
     lootStrandedCar()
+    updateInteraction()
+    return true
+  elseif nearAction.kind == "hitchhiker" then
+    helpHitchhiker()
     updateInteraction()
     return true
   elseif nearAction.kind == "note" then

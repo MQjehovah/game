@@ -3550,6 +3550,33 @@ function runSelfTest()
                      tostring(cleared)))
   end
 
+  -- 路边搭车客：燃料不足不触发；给 5L 燃料后换回金属并消失
+  do
+    if despawnHitchhiker ~= nil then despawnHitchhiker() end
+    local sf, sm, se = fuel or 0, materials.metal or 0,
+                       materials.electronics or 0
+    local kc, kr = inv.canned, inv.repairkit
+    local kt, kv = toast.text, toast.t
+    hitchhiker = { x = 0, z = 0 }
+    fuel = 3
+    local poor = helpHitchhiker()
+    fuel = 20
+    materials.metal = 0
+    local helped = helpHitchhiker()
+    local spent = math.abs((fuel or 0) - 15) < 1e-6
+    local gotMetal = (materials.metal or 0) >= 3
+    local cleared = hitchhiker == nil
+    fuel, materials.metal, materials.electronics = sf, sm, se
+    inv.canned, inv.repairkit = kc, kr
+    toast.text, toast.t = kt, kv
+    if despawnHitchhiker ~= nil then despawnHitchhiker() end
+    ok(r, "hitchhiker",
+       poor == false and helped and spent and gotMetal and cleared,
+       string.format("poor=%s helped=%s spent=%s metal=%d cleared=%s",
+                     tostring(poor), tostring(helped), tostring(spent),
+                     (materials.metal or 0) - sm, tostring(cleared)))
+  end
+
   -- 按位置找最近可取补给箱（联机服务器用）
   do
     local c = roadCaches and roadCaches[1] or nil

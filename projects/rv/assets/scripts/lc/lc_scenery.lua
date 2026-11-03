@@ -2256,6 +2256,27 @@ function spawnVendingMachine()
   return true
 end
 
+-- 路边搭车客：白天偶发，停车可给 5L 燃料换回补给
+function spawnHitchhiker()
+  if hitchhiker ~= nil then return false end
+  local side = (math.random() < 0.5) and -1 or 1
+  local wx, wz = rotOf(side * 6.2, 30)
+  local gy = (terrainHeight and terrainHeight(wx, wz)) or 0
+  local e = SpawnPrefab("rv_player", { x = wx, y = gy, z = wz })
+  if e == nil then return false end
+  SetRotationY(e, (rv.yaw or 0) + math.pi)
+  hitchhiker = { x = wx, z = wz, ent = e }
+  toast.text = "路边有人招手搭车——停车靠近按 E"
+  toast.t = 3.6
+  return true
+end
+
+function despawnHitchhiker()
+  if hitchhiker == nil then return end
+  if hitchhiker.ent ~= nil then Despawn(hitchhiker.ent) end
+  hitchhiker = nil
+end
+
 -- 路边抛锚车：偶发的可搜刮事件
 function spawnStrandedCar()
   if strandedCar ~= nil then return false end

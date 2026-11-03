@@ -988,6 +988,23 @@ function updateDrive(dt)
       end
     end
   end
+  -- 路边搭车客：白天偶发；开远后清理
+  if coopRole == nil and hitchhiker ~= nil then
+    local hdx, hdz = hitchhiker.x - rv.x, hitchhiker.z - rv.z
+    if hdx * hdx + hdz * hdz > 90 * 90 then
+      if despawnHitchhiker ~= nil then despawnHitchhiker() end
+    end
+  end
+  if coopRole == nil and hitchhiker == nil and weather ~= "snow" and
+     not (isNight ~= nil and isNight()) then
+    rv.hitchT = (rv.hitchT or 0) + dt
+    if rv.hitchT > 200 then
+      rv.hitchT = 0
+      if math.random() < 0.30 and spawnHitchhiker ~= nil then
+        spawnHitchhiker()
+      end
+    end
+  end
   if fuel <= fuelMax() * 0.2 and not fuelWarned then
     fuelWarned = true
     toast.text = "油量低！加油站加满 / 路边捡燃油桶"

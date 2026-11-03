@@ -1551,6 +1551,38 @@ function lootStrandedCar()
   return true
 end
 
+-- 帮助路边搭车客：给 5L 燃料，换回金属与一件随机补给
+function helpHitchhiker()
+  if hitchhiker == nil then return false end
+  if (fuel or 0) < 5 then
+    toast.text = "搭车客需要 5L 燃料才能继续赶路"
+    toast.t = 3.0
+    return false
+  end
+  fuel = math.max(0, (fuel or 0) - 5)
+  local got = {}
+  local metal = 3 + math.random(0, 2)
+  materials.metal = (materials.metal or 0) + metal
+  got[#got + 1] = "金属+" .. metal
+  local r = math.random()
+  if r < 0.4 then
+    materials.electronics = (materials.electronics or 0) + 1
+    got[#got + 1] = "电子件+1"
+  elseif r < 0.7 then
+    addItem("canned", 1)
+    got[#got + 1] = "罐头+1"
+  else
+    addItem("repairkit", 1)
+    got[#got + 1] = "修理包+1"
+  end
+  if PlaySfx then PlaySfx("pickup") end
+  toast.text = "搭车客道谢：" .. table.concat(got, " ")
+  toast.t = 3.4
+  if addJournal ~= nil then addJournal("帮助路边搭车客（燃料-5L）", "explore") end
+  if despawnHitchhiker ~= nil then despawnHitchhiker() end
+  return true
+end
+
 -- 每次篝火烹饪消耗的燃料（游戏分钟）
 COOK_FUEL_MIN = 10
 
