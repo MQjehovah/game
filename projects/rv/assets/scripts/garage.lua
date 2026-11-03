@@ -1123,6 +1123,9 @@ function on_update(ent, dt)
   if updateTaillights ~= nil then updateTaillights() end
   if updateCampfireLight ~= nil then updateCampfireLight(dt) end
   if updateRvSmoke ~= nil then updateRvSmoke(dt) end
+  if rv.shakeT ~= nil and rv.shakeT > 0 then
+    rv.shakeT = math.max(0, rv.shakeT - dt)
+  end
   if jobResult ~= nil then
     jobResult.t = jobResult.t - dt
     if jobResult.t <= 0 then jobResult = nil end

@@ -144,6 +144,7 @@ function updateDrive(dt)
           dur = math.max(0, dur - math.min(8, drop * VEH.impactK))
           rv.speed = proj
           if jobApplyImpact ~= nil then jobApplyImpact(drop) end
+          if rvImpactFeedback ~= nil then rvImpactFeedback(drop) end
         end
       end
       rv.lastProj = proj

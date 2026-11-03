@@ -348,6 +348,38 @@ function updateRvSmoke(dt)
     })
   end
 end
+
+-- ===========================================================================
+-- 撞击反馈：车头尘屑 + 少量火花，并给相机一个短促抖动（rv.shakeT）
+-- ===========================================================================
+function rvImpactFeedback(drop)
+  rv.shakeT = math.min(0.50, 0.12 + (drop or 0) * 0.035)
+  local wx, wz = rotOf(0, 3.58)
+  local gy = rv.groundY or 0
+  EmitParticles({
+    pos = { x = wx, y = gy + 0.95, z = wz },
+    count = 10, speedMin = 0.7, speedMax = 2.4,
+    vel = { x = 0, y = 1.1, z = 0 },
+    lifeMin = 0.45, lifeMax = 1.0,
+    sizeStart = 0.16, sizeEnd = 0.85,
+    color = { r = 0.62, g = 0.57, b = 0.47, a = 0.55 },
+    colorEnd = { r = 0.62, g = 0.57, b = 0.47, a = 0.0 },
+    additive = false, gravity = 0.8,
+  })
+  EmitParticles({
+    pos = { x = wx, y = gy + 0.85, z = wz },
+    count = 6, speedMin = 1.5, speedMax = 4.0,
+    vel = { x = 0, y = 1.8, z = 0 },
+    lifeMin = 0.16, lifeMax = 0.34,
+    sizeStart = 0.07, sizeEnd = 0.02,
+    color = { r = 1.0, g = 0.72, b = 0.30, a = 0.9 },
+    colorEnd = { r = 1.0, g = 0.55, b = 0.15, a = 0.0 },
+    additive = true, gravity = 1.2,
+  })
+end
+
+-- ===========================================================================
+-- 夜间步行手电：一盏跟随视角的聚光灯，让夜里下车探索/搜刮看得见。
 -- 白天或回到车内自动移除，不占聚光槽。
 -- ===========================================================================
 function setFlashlight(on)

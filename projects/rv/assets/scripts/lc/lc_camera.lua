@@ -4,6 +4,15 @@
 -- 引擎 FPS 相机约定：cameraFocus = 眼睛 + 视线 * dist，
 -- cameraYaw/Pitch 用引擎的 -Z 前向约定，cameraDist = 2。
 function setFpsCamera(ex, ey, ez, yaw, pitch)
+  -- 撞击抖动：驾驶时叠加短促的位置/角度扰动
+  local sh = rv.shakeT or 0
+  if sh > 0 and phase == "driving" then
+    ex = ex + (math.random() - 0.5) * sh * 0.80
+    ey = ey + (math.random() - 0.5) * sh * 0.60
+    ez = ez + (math.random() - 0.5) * sh * 0.80
+    yaw = yaw + (math.random() - 0.5) * sh * 0.12
+    pitch = pitch + (math.random() - 0.5) * sh * 0.10
+  end
   local cp = math.cos(pitch)
   local fx, fy, fz = math.sin(yaw) * cp, math.sin(pitch), math.cos(yaw) * cp
   SetVar("cameraMouseLock", 1)

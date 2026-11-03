@@ -1206,6 +1206,16 @@ function runSelfTest()
        string.format("idle=%.2f half=%.2f max=%.2f", g0, gHalf, gMax))
   end
 
+  -- 撞击反馈：短促抖动（0.12–0.50s）
+  do
+    local keep = rv.shakeT
+    rvImpactFeedback(3.0)
+    local s = rv.shakeT or 0
+    rv.shakeT = keep
+    ok(r, "rv impact shake", s > 0.1 and s <= 0.50,
+       string.format("shakeT=%.2f", s))
+  end
+
   -- 存读档：行程/探索/货运单数
   do
     tripDistance, tripFuel, jobDelivered = 3210, 88, 7
