@@ -55,6 +55,12 @@ function setPhase(m)
           fuelWarned = false
           toast.text = toast.text .. " · ⛽ 油/水已补满"
         end
+        -- 首次抵达的一次性补给（每个地点只发一次）
+        local visitText = firstVisitBonus ~= nil and firstVisitBonus(nd) or nil
+        if visitText ~= nil then
+          toast.text = toast.text .. " · " .. visitText
+          if PlaySfx then PlaySfx("pickup") end
+        end
       else
         atNode = nil
         toast.text = "荒野停车 — E 交互 / B 改装 / T 继续上路"

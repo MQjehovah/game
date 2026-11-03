@@ -771,8 +771,8 @@ function drawMapHud()
   end
   DrawText("● 房车    ● 地点（越红越危险）    — 公路", px + 16, py + ph - 24,
            12, 0.7, 0.7, 0.65, 1)
-  DrawText(string.format("已发现 %d 个地点", #NODES), px + pw - 16, py + ph - 24,
-           12, 0.7, 0.7, 0.65, 1, true)
+  DrawText(string.format("已探索 %d / %d 个地点", visitedCount or 0, #NODES),
+           px + pw - 16, py + ph - 24, 12, 0.7, 0.7, 0.65, 1, true)
 end
 
 -- ===========================================================================

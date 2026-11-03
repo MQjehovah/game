@@ -147,3 +147,21 @@ function endScavenge(keepRatio)
   LC.flow.emit("raid_end")
   LC.flow.call("stop_cycle", "leave")
 end
+
+-- 首次抵达某个地点的一次性补给：鼓励把地图跑开，而不是只刷营地/加油站。
+-- 返回提示文本；重复抵达返回 nil。
+function firstVisitBonus(nd)
+  if nd == nil or nd.id == "camp" then return nil end
+  if visitedPois[nd.id] then return nil end
+  visitedPois[nd.id] = true
+  visitedCount = (visitedCount or 0) + 1
+  local danger = nd.danger or 0
+  local metal = 1 + danger
+  local cloth = 1
+  materials.metal = (materials.metal or 0) + metal
+  materials.cloth = (materials.cloth or 0) + cloth
+  local fuelGot = math.min(VEH.tank - fuel, 4 + danger * 2)
+  if fuelGot > 0 then fuel = fuel + fuelGot end
+  return string.format("首次抵达 · 补给 金属片+%d 布料+%d 燃料+%dL",
+                       metal, cloth, math.floor(fuelGot + 0.5))
+end

@@ -998,6 +998,20 @@ function runSelfTest()
                      tostring(onLit), tostring(offLit)))
   end
 
+  -- 首次抵达奖励：每个地点只发一次
+  do
+    local nd = nodeById("clinic")
+    local metal0, cloth0 = materials.metal or 0, materials.cloth or 0
+    local t1 = firstVisitBonus(nd)
+    local metal1, cloth1 = materials.metal or 0, materials.cloth or 0
+    local t2 = firstVisitBonus(nd)
+    local metal2 = materials.metal or 0
+    ok(r, "poi first-visit bonus",
+       t1 ~= nil and t2 == nil and metal1 > metal0 and cloth1 > cloth0 and metal2 == metal1,
+       string.format("metal %d->%d->%d cloth %d->%d",
+                     metal0, metal1, metal2, cloth0, cloth1))
+  end
+
   -- 存读档
   local saved = saveLayout()
   ok(r, "save layout", saved ~= false, "saves/layout.json")
