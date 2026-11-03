@@ -3770,6 +3770,18 @@ function runSelfTest()
                      rOk, rTire, rPress, tostring(cleared)))
   end
 
+  -- 高速爆胎风险：低速基准、高速上升且有上限
+  do
+    local slow = speedBlowoutScale(0)
+    local mid = speedBlowoutScale(7)
+    local fast = speedBlowoutScale(9)
+    local cap = speedBlowoutScale(100)
+    ok(r, "speed blowout risk",
+       slow == 1.0 and mid > 1.0 and fast > mid and cap <= 2.2,
+       string.format("0=%.2f 7=%.2f 9=%.2f cap=%.2f",
+                     slow, mid, fast, cap))
+  end
+
   -- 辅助用电：车内灯/大灯耗电
   do
     local a0 = auxPowerDraw(false, false)

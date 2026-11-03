@@ -418,6 +418,13 @@ function blowoutRisk(tires, pressure)
   return math.min(0.05, risk)
 end
 
+-- 车速对爆胎风险的影响：>5 m/s 起风险上升，最高 ×2.2
+function speedBlowoutScale(speed)
+  local v = math.abs(speed or 0)
+  if v <= 5 then return 1.0 end
+  return math.min(2.2, 1.0 + (v - 5) * 0.4)
+end
+
 function clearBlowout()
   rv.blowout = false
   rv.blowoutWarned = false
@@ -429,7 +436,8 @@ function updateBlowout(dt)
   for i = 1, 4 do
     pMin = math.min(pMin, (rv.tirePressureCold or {})[i] or 2.4)
   end
-  local risk = blowoutRisk(parts and parts.tires or 100, pMin)
+  local risk = blowoutRisk(parts and parts.tires or 100, pMin) *
+               speedBlowoutScale(rv.speed)
   if risk > 0 and math.random() < risk * (dt or 0) then
     rv.blowout = true
     if not rv.blowoutWarned then
