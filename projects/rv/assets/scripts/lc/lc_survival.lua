@@ -311,6 +311,34 @@ function useFuelCan()
   return true
 end
 
+-- 到站补给：营地免费加满；加油站按油量缺口收金属（每 15L 1 金属，至少 1）
+-- 返回 ok, cost, note；金属不足时不加油、不扣材料。
+function refuelAtNode(id)
+  local need = fuelMax() - (fuel or 0)
+  if id == "camp" then
+    fuel = fuelMax()
+    fuelWarned = false
+    return true, 0, need > 0.5 and string.format("营地免费补给 +%.0fL", need) or "油箱已满"
+  end
+  if id ~= "gasstop" then return false, 0, nil end
+  if need <= 0.5 then
+    fuelWarned = false
+    return true, 0, "油箱已满"
+  end
+  local cost = math.max(1, math.ceil(need / 15))
+  if (materials.metal or 0) < cost then
+    toast.text = string.format("加油需要 %d 金属（现有 %d）— 去搜刮或到营地免费加",
+                               cost, materials.metal or 0)
+    toast.t = 3.0
+    return false, cost, "金属不足"
+  end
+  materials.metal = (materials.metal or 0) - cost
+  fuel = fuelMax()
+  fuelWarned = false
+  if PlaySfx then PlaySfx("pickup") end
+  return true, cost, string.format("加油 %dL 花费 %d 金属", math.floor(need + 0.5), cost)
+end
+
 -- 直接吃/喝背包里的东西
 function useItem(id)
   local it = ITEMS[id]

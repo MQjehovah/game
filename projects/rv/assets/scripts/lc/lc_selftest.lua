@@ -1902,6 +1902,32 @@ function runSelfTest()
                      inv.fuelcan or 0))
   end
 
+  -- 到站加油：营地免费、加油站按缺口扣金属、金属不足不加油
+  do
+    local sf, sm = fuel, materials.metal or 0
+    -- 营地：即使金属为 0 也免费加满
+    materials.metal = 0
+    fuel = 10
+    local campOk = refuelAtNode("camp")
+    local campFull = math.abs(fuel - fuelMax()) < 1e-6
+    -- 加油站：金属不足（缺口 50L -> 4 金属）不加油
+    fuel = fuelMax() - 50
+    local okPoor = refuelAtNode("gasstop")
+    local poorKept = math.abs(fuel - (fuelMax() - 50)) < 1e-6
+    -- 加油站：金属充足时扣 4 金属并加满
+    materials.metal = 10
+    local okRich, cost = refuelAtNode("gasstop")
+    local richFull = math.abs(fuel - fuelMax()) < 1e-6
+    local charged = (materials.metal or 0) == 6 and cost == 4
+    fuel, materials.metal = sf, sm
+    ok(r, "gas station refuel cost",
+       campOk and campFull and (okPoor == false) and poorKept and
+       okRich and richFull and charged,
+       string.format("camp=%s free=%s poor=%s kept=%s rich=%s cost=%d",
+                     tostring(campOk), tostring(campFull), tostring(okPoor),
+                     tostring(poorKept), tostring(richFull), cost or 0))
+  end
+
   -- 营地板以物易物：布料→金属、电子件→燃油罐、金属→燃料
   do
     local sMetal = materials.metal or 0

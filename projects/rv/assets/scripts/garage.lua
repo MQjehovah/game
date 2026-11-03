@@ -50,10 +50,14 @@ function setPhase(m)
                      .. (stars ~= "" and ("（危险 " .. stars .. "）") or "")
                      .. " — E 搜物资箱"
         if atNode == "gasstop" or atNode == "camp" then
-          fuel = fuelMax()
           water = waterMax()
-          fuelWarned = false
-          toast.text = toast.text .. " · ⛽ 油/水已补满"
+          local filled, cost, note = true, 0, nil
+          if refuelAtNode ~= nil then filled, cost, note = refuelAtNode(atNode) end
+          if filled then
+            toast.text = toast.text .. " · ⛽ " .. (note or "油/水已补满")
+          else
+            toast.text = toast.text .. " · ⛽ 金属不足，未加油"
+          end
         end
         -- 首次抵达的一次性补给（每个地点只发一次）
         local visitText = firstVisitBonus ~= nil and firstVisitBonus(nd) or nil
