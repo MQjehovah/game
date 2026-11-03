@@ -3237,6 +3237,22 @@ function runSelfTest()
                      tostring(fog ~= nil), tostring(clear ~= nil)))
   end
 
+  -- 信号强度：修塔前有杂音概率，修塔/中继后为 0
+  do
+    local keepFixed, keepRelay = radioMastFixed, relayDone
+    radioMastFixed, relayDone = false, false
+    local before = radioSignalLossChance()
+    radioMastFixed = true
+    local fixed = radioSignalLossChance()
+    radioMastFixed, relayDone = false, true
+    local relay = radioSignalLossChance()
+    radioMastFixed, relayDone = keepFixed, keepRelay
+    ok(r, "radio signal loss",
+       before > 0 and fixed == 0 and relay == 0,
+       string.format("before=%.2f fixed=%.2f relay=%.2f",
+                     before, fixed, relay))
+  end
+
   -- 钓鱼水塘木栈桥
   do
     local n = #docks

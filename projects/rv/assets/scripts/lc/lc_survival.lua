@@ -574,6 +574,12 @@ function radioWeatherWarning()
   return nil
 end
 
+-- 信号强度：修好无线电塔前，广播有概率夹杂杂音
+function radioSignalLossChance()
+  if radioMastFixed or relayDone then return 0 end
+  return 0.35
+end
+
 function updateRadioBroadcast(gm)
   if not radioOn then return false end
   radioBroadcastT = (radioBroadcastT or 0) + (gm or 0)
@@ -583,7 +589,9 @@ function updateRadioBroadcast(gm)
   local list = radioBroadcastPool()
   local warn = radioWeatherWarning()
   local line
-  if warn ~= nil and math.random() < 0.5 then
+  if math.random() < (radioSignalLossChance and radioSignalLossChance() or 0) then
+    line = "收音机：（沙沙……）信号很弱，听不清。修好无线电塔也许能好点。"
+  elseif warn ~= nil and math.random() < 0.5 then
     line = warn
   elseif #list > 0 then
     line = list[math.random(#list)]
