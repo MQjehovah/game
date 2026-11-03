@@ -548,6 +548,7 @@ local function pushState()
     jobsDone = jobDelivered,
     goal = goalOut,
     relay = relayDone and 2 or ((radioMastFixed and 1) or 0),
+    fire = campfireOn and 1 or 0,
   })
 end
 
@@ -1618,6 +1619,10 @@ local function applyState(s)
   end
   if s.relay ~= nil then
     coop.relay = tonumber(s.relay) or 0
+  end
+  if s.fire ~= nil and setCampfireLit ~= nil then
+    local lit = (s.fire == 1 or s.fire == true)
+    if lit ~= campfireOn then setCampfireLit(lit) end
   end
   if s.high ~= nil then
     local hb = (s.high == 1 or s.high == true)

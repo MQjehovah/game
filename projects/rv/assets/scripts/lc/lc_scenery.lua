@@ -1859,15 +1859,22 @@ function updateCampfireSmoke(dt)
   end
 end
 
+-- 统一设置篝火点燃/熄灭（单机、服务器与客机同步共用）
+function setCampfireLit(on)
+  campfireOn = on and true or false
+  for _, f in ipairs(campfireFlames or {}) do SetVisible(f.ent, campfireOn) end
+  if campfireLight ~= nil then SetVisible(campfireLight, campfireOn) end
+end
+
 -- 营火燃料：燃烧时按游戏分钟消耗；烧尽后火苗/暖光熄灭
 function updateCampfireFuel(gm)
   if campfire == nil or not campfireOn then return end
+  -- 联机客机的燃料由服务器权威推进，本地不消耗
+  if coopRole == "client" then return end
   campfireFuelMin = math.max(0, (campfireFuelMin or 0) - (gm or 0))
   if campfireFuelMin <= 0 then
     campfireFuelMin = 0
-    campfireOn = false
-    for _, f in ipairs(campfireFlames or {}) do SetVisible(f.ent, false) end
-    if campfireLight ~= nil then SetVisible(campfireLight, false) end
+    setCampfireLit(false)
     toast.text = "篝火烧尽了——靠近按 G 添柴"
     toast.t = 3.2
     if addJournal ~= nil then addJournal("营火熄灭了", "note") end
@@ -1895,11 +1902,7 @@ function addCampfireWood()
   materials.wood = materials.wood - 1
   campfireFuelMin = math.min(campfireWoodMax or 2160,
                              (campfireFuelMin or 0) + 480)
-  if not campfireOn then
-    campfireOn = true
-    for _, f in ipairs(campfireFlames or {}) do SetVisible(f.ent, true) end
-    if campfireLight ~= nil then SetVisible(campfireLight, true) end
-  end
+  if not campfireOn then setCampfireLit(true) end
   if PlaySfx then PlaySfx("pickup") end
   toast.text = string.format("添了一根木柴（燃料约 %.0f 游戏分钟）",
                              campfireFuelMin)

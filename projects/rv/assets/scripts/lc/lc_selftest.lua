@@ -1648,6 +1648,18 @@ function runSelfTest()
                      materials.wood or 0, tostring(noWood)))
   end
 
+  -- 联机篝火状态同步：客机按服务器标志点燃/熄灭
+  do
+    local keep = campfireOn
+    setCampfireLit(false)
+    local off = campfireOn == false
+    setCampfireLit(true)
+    local on = campfireOn == true
+    setCampfireLit(keep)
+    ok(r, "campfire sync", off and on,
+       string.format("off=%s on=%s", tostring(off), tostring(on)))
+  end
+
   -- 主路土肩：沥青边缘与草地的过渡
   do
     local n = #roadShoulders
