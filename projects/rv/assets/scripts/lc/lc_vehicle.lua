@@ -303,3 +303,45 @@ function updateVehicleLights(driving)
   if rv.forceHeadlights then want = true end
   setRvHeadlights(want)
 end
+
+-- ===========================================================================
+-- 夜间步行手电：一盏跟随视角的聚光灯，让夜里下车探索/搜刮看得见。
+-- 白天或回到车内自动移除，不占聚光槽。
+-- ===========================================================================
+function setFlashlight(on)
+  if on then
+    if flashlightEnt ~= nil then return end
+    local e = SpawnPrefab("rv_flashlight", { x = 0, y = -60, z = 0 })
+    if e ~= nil then
+      SetScale(e, 0.10, 0.10, 0.06)
+      -- 光源离眼睛太近，网格会糊住整个视野；只保留 light 组件。
+      SetVisible(e, false)
+      flashlightEnt = e
+    end
+  else
+    if flashlightEnt ~= nil then Despawn(flashlightEnt) end
+    flashlightEnt = nil
+  end
+end
+
+function updateFlashlight()
+  local want = flashlightOn and onFoot and player.active and
+               (isNight ~= nil and isNight())
+  if not want then
+    if flashlightEnt ~= nil then setFlashlight(false) end
+    return
+  end
+  setFlashlight(true)
+  if flashlightEnt ~= nil then
+    local fx, fz = math.sin(player.yaw), math.cos(player.yaw)
+    SetPosition(flashlightEnt, {
+      x = player.x + fx * 0.35,
+      y = (player.groundY or 0) + 1.55,
+      z = player.z + fz * 0.35 })
+    if SetRotationEuler ~= nil then
+      SetRotationEuler(flashlightEnt, player.pitch or 0, 0, player.yaw)
+    else
+      SetRotationY(flashlightEnt, player.yaw)
+    end
+  end
+end

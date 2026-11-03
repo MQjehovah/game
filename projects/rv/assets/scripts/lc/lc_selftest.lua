@@ -1113,6 +1113,21 @@ function runSelfTest()
        string.format("gears=%d/%d/%d/%d/%d rpm4=%.0f", g1, g2, g3, g4, g5, rpm4))
   end
 
+  -- 夜间步行手电：夜里生成、白天移除
+  do
+    local sc, sfOn, sfFoot = clock, flashlightOn, onFoot
+    clock = 22 * 60
+    flashlightOn, onFoot = true, true
+    updateFlashlight()
+    local on = flashlightEnt ~= nil
+    clock = 12 * 60
+    updateFlashlight()
+    local off = flashlightEnt == nil
+    clock, flashlightOn, onFoot = sc, sfOn, sfFoot
+    ok(r, "rv flashlight", on and off,
+       string.format("night=%s day=%s", tostring(on), tostring(off)))
+  end
+
   -- 存读档
   local saved = saveLayout()
   ok(r, "save layout", saved ~= false, "saves/layout.json")

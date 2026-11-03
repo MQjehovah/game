@@ -233,7 +233,7 @@ function drawFpHud()
 
   local hints = {
     "WASD 移动   Shift 疾跑   E 交互",
-    "B 改装模式   T 驾驶   M 世界地图",
+    "B 改装模式   T 驾驶   M 世界地图   F 手电",
     "1-0 快速使用物品（水/罐头/热饭/咖啡）",
     "F5 保存   F9 读取",
   }

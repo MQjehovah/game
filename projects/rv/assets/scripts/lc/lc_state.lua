@@ -67,6 +67,8 @@ roadWires = {}                -- 电线杆之间的电线
 visitedPois = {}              -- 已首次抵达的地点（探索奖励去重）
 visitedCount = 0
 interiorLightsOn = true       -- 车内灯开关（L）
+flashlightOn = true           -- 手电筒开关（F）
+flashlightEnt = nil           -- 手电筒聚光灯实体
 tripDistance, tripFuel = 0, 0 -- 行程统计：米 / 升
 
 -- 搜刮 / 低强度威胁

@@ -624,6 +624,11 @@ function on_start()
     px, pz = 8.2, -1.5
     pyaw = dirYaw(-3.7, 6.5)
   end
+  if startMode == "flashlight" or startMode == "flashlight_off" then
+    -- Test-only: night walk toward the RV side; the beam should light the body.
+    px, pz = 6.6, -8.2
+    pyaw = dirYaw(-6.6, 8.2)
+  end
   if startMode == "furnview" then
     -- Test-only interior view down the furniture wall.
     px, pz = -0.72, 1.30
@@ -850,6 +855,12 @@ function on_start()
     rv.speed = 6.4
     setPhase("driving")
     driveView = "chase"
+  elseif startMode == "flashlight" then
+    clock = 22 * 60
+    flashlightOn = true
+  elseif startMode == "flashlight_off" then
+    clock = 22 * 60
+    flashlightOn = false
   elseif startMode == "drive" or startMode == "night_drive" or autoPilot or rv.steerDemo then
     setPhase("driving")
   elseif startMode == "utilroof" then
@@ -1069,6 +1080,12 @@ function on_update(ent, dt)
     toast.text = interiorLightsOn and "车内灯已打开" or "车内灯已关闭"
     toast.t = 2.0
   end
+  if ActionPressed("f") then
+    flashlightOn = not flashlightOn
+    toast.text = flashlightOn and "手电已打开（F 关闭）" or "手电已关闭（F 打开）"
+    toast.t = 2.0
+  end
+  if updateFlashlight ~= nil then updateFlashlight() end
   if hitMarkT > 0 then hitMarkT = hitMarkT - dt end
   if recoilT > 0 then recoilT = recoilT - dt end
   if fireT > 0 then fireT = fireT - dt end
