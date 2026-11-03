@@ -792,12 +792,12 @@ function on_start()
       px, pz, pyaw = cx, cz + 3.6, math.pi
     end
   end
-  if startMode == "gas" then
+  if startMode == "gas" or startMode == "poinight" then
     -- 加油站商店门口
     local nd = nodeById("gasstop")
     if nd ~= nil then
       local cx, cz = poiCenter(nd)
-      px, pz, pyaw = cx, cz + 3.6, math.pi
+      px, pz, pyaw = cx, cz + (startMode == "poinight" and 9.0 or 3.6), math.pi
     end
   end
   if startMode == "warehouse" then
@@ -842,7 +842,8 @@ function on_start()
   end
   if startMode == "side_night" then clock = 22 * 60 end
   if startMode == "night" or startMode == "inside_night" or startMode == "inside_dark"
-     or startMode == "place_night" or startMode == "night_drive" then
+     or startMode == "place_night" or startMode == "night_drive"
+     or startMode == "poinight" then
     clock = 22 * 60
   end
   if PlayMusic then PlayMusic("wind", 0.10) end
@@ -858,6 +859,7 @@ function on_start()
   elseif startMode == "sinkview" then player.pitch = -0.35
   elseif startMode == "texclose" then player.pitch = -0.28
   elseif startMode == "texbody" then player.pitch = 0.05
+  elseif startMode == "poinight" then player.pitch = 0.14
   end
   SetVar("cameraMouseLock", 1)
   updateInteraction()
@@ -1161,6 +1163,7 @@ function on_update(ent, dt)
   if updateVehicleLights ~= nil then updateVehicleLights() end
   if updateTaillights ~= nil then updateTaillights() end
   if updateCampfireLight ~= nil then updateCampfireLight(dt) end
+  if updatePoiSigns ~= nil then updatePoiSigns() end
   if updateRvSmoke ~= nil then updateRvSmoke(dt) end
   if rv.shakeT ~= nil and rv.shakeT > 0 then
     rv.shakeT = math.max(0, rv.shakeT - dt)

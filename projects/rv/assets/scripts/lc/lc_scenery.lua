@@ -972,6 +972,14 @@ function spawnRuinFor(nd)
   if nd.ruinSpawned then return end
   nd.ruinSpawned = true
   local cx, cz = nd.x + 6.5, nd.z + 6.5
+  -- 门头招牌：夜里发光，白天熄灭，远处也能认出建筑
+  local sign = SpawnPrefab("rv_poi_sign", { x = cx, y = 2.45,
+                                           z = cz + POI_HALF_Z + 0.38 })
+  if sign ~= nil then
+    SetScale(sign, 2.00, 0.30, 0.06)
+    poiSigns[#poiSigns + 1] = sign
+    SetVisible(sign, false)
+  end
   local nm = nd.name or ""
   local isStore = (nd.id == "ruin") or (nm:find("废宅") ~= nil)
   local isGas = (nd.id == "gasstop") or (nm:find("加油站") ~= nil)
@@ -1236,6 +1244,14 @@ function spawnMarkers()
       if ent ~= nil then SetScale(ent, 0.5, 0.7, 0.5) end
     end
   end
+end
+
+-- 门头招牌夜间点亮（白天隐藏）
+function updatePoiSigns()
+  local lit = (isNight ~= nil) and isNight() or false
+  if poiSignsLit == lit then return end
+  poiSignsLit = lit
+  for _, e in ipairs(poiSigns) do SetVisible(e, lit) end
 end
 
 -- 营火暖光的轻微跳动：没有灯光强度 API，用位置抖动 + 高度起伏模拟火光

@@ -1370,6 +1370,22 @@ function runSelfTest()
        rich .. " | " .. empty)
   end
 
+  -- POI 门头招牌：夜里点亮
+  do
+    local count = #poiSigns
+    local sc = clock
+    clock = 22 * 60
+    updatePoiSigns()
+    local night = poiSignsLit
+    clock = 12 * 60
+    updatePoiSigns()
+    local day = poiSignsLit
+    clock = sc
+    ok(r, "poi night signs", count >= 6 and night == true and day == false,
+       string.format("signs=%d night=%s day=%s", count,
+                     tostring(night), tostring(day)))
+  end
+
   -- 存读档：行程/探索/货运单数 + 天气
   do
     tripDistance, tripFuel, jobDelivered = 3210, 88, 7
