@@ -1408,6 +1408,22 @@ function runSelfTest()
        string.format("empty=%.1f loaded=%.1f m/s²", empty, loaded))
   end
 
+  -- 太阳能：夜间不出力、白天满发
+  do
+    local sc, sw = clock, weather
+    weather = "clear"
+    clock = 22 * 60
+    recomputeStats()
+    local night = stats.powerGen or 0
+    clock = 12 * 60
+    recomputeStats()
+    local day = stats.powerGen or 0
+    clock, weather = sc, sw
+    if recomputeStats ~= nil then recomputeStats() end
+    ok(r, "solar night output", day > 0 and night == 0,
+       string.format("day=%.1fkW night=%.1fkW", day, night))
+  end
+
   -- 存读档：行程/探索/货运单数 + 天气
   do
     tripDistance, tripFuel, jobDelivered = 3210, 88, 7

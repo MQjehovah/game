@@ -238,10 +238,13 @@ function recomputeStats()
     local active = inst.on ~= false
     if active then
       local gen = c.powerGen or 0
-      if c.id == "solar" and weather ~= nil then
-        if weather == "rain" then gen = gen * 0.25
-        elseif weather == "fog" then gen = gen * 0.5
-        elseif weather == "cloudy" then gen = gen * 0.7 end
+      if c.id == "solar" then
+        if solarFactor ~= nil then gen = gen * solarFactor() end
+        if weather ~= nil then
+          if weather == "rain" then gen = gen * 0.25
+          elseif weather == "fog" then gen = gen * 0.5
+          elseif weather == "cloudy" then gen = gen * 0.7 end
+        end
       end
       s.powerGen   = s.powerGen   + gen
       s.powerDraw  = s.powerDraw  + (c.powerDraw  or 0)

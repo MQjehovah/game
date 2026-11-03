@@ -21,6 +21,15 @@ function initDayNight()
   lastSkyBucket = nil
 end
 
+-- 太阳能出力系数：夜间 0，日出/日落线性过渡，白天 1
+function solarFactor()
+  local h = (clock or 0) / 60
+  if h < 5 or h >= 21 then return 0 end
+  if h < 7 then return (h - 5) / 2 end
+  if h > 18 then return 1 - (h - 18) / 3 end
+  return 1
+end
+
 function updateDayNight(dt)
   if sunEnt == nil then return end
   if math.abs(clock - lastSunClock) < 1.0 then return end
@@ -72,6 +81,7 @@ function updateDayNight(dt)
     SetEnvironmentField("ambientColor", {
       r = mix(0.10, 0.52), g = mix(0.13, 0.55), b = mix(0.22, 0.62), a = 1 })
     SetEnvironmentField("ambientStrength", 0.16 + 0.42 * f)
+    if recomputeStats ~= nil then recomputeStats() end  -- 太阳能随昼夜变化
   end
 end
 
