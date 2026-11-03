@@ -755,15 +755,20 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   `game_state`/`game_world`/`game_crates` 下行；进出房车用 `board`/`exit` 命令，
   状态 `in/st/door` 驱动第一/第三人称、角色显隐；车体右侧切出真实门洞，独立
   `rv_door.gltf` 门网格绕后缘铰链旋转；`tools/gen_rv_body.py` 生成高精度车体：
-  倒角车顶/门槛、内凹侧窗 + 窗框、**沿圆周扫掠的连续圆角轮拱唇边**（每轮 16 段、
-  共 4 条）+ 半圆轮腔挡板、**3 段 loft 圆角肩线**（1.18/2.02 → 1.16/2.07 →
+  **侧墙为一整块 loft 曲面并以多边形开洞**——z/y 切割线取所有车窗/车门边缘与
+  每段轮拱圆周 8 个采样点，逐格按格心是否落在洞口/轮拱圆内剔除，
+  得到 393 个墙面四边形、12 个真实洞口（每侧 1 门 + 3 窗 + 2 轮拱），
+  墙面按 `x = ±(1.18 − 0.05·((y−Y0)/(Y1−Y0) − 0.55)²)` 收分并输出 ±两侧法线；
+  玻璃（x=1.145）与窗框（x=1.195）仍对齐洞口。
+  另有**沿圆周扫掠的连续圆角轮拱唇边**（每轮 16 段、共 4 条）+ 半圆轮腔挡板、
+  **3 段 loft 圆角肩线**（1.18/2.02 → 1.16/2.07 →
   1.11/2.115 → 1.08/2.14）、前后保险杠/防擦条、车顶行李架/空调/爬梯/遮阳篷盒、
   后视镜/灯组/格栅/排气管，以及多段式仪表台、方向盘、驾驶席和两侧吊柜 +
   驾驶室顶架；门洞（`z=-3.54..-2.76, y=0.24..1.86`）、座椅坐标与物理碰撞盒保持不变。
   所有盒体经 `tools/rv_geom.bevel_box()` 倒角：6 个内缩面 + 12 条 45° 棱边条 +
   8 个角三角（薄片/小件自动回退为普通盒）。生成器同时写出
-  `assets/data/rv_body_stats.json`（archLipSegments=16、archArcs=4、
-  roofShoulderStrips=3、17,088 顶点 / 7,976 三角）。
+  `assets/data/rv_body_stats.json`（wallQuads=393、wallHoles=12、wallCurve=0.05、
+  archLipSegments=16、archArcs=4、roofShoulderStrips=3、13,128 顶点 / 6,208 三角）。
   `tools/gen_rv_furniture.py` 生成全部 20 类可摆放家具 `rv_furn_bed_single/bed_double/
   stove/fridge/sink/workbench/storage/tv/bathroom/med_cabinet/gun_rack/heater/
   water_tank/battery/generator/turret/solar/roof_vent/coffee/plant`（多部件：

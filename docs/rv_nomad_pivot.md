@@ -284,12 +284,15 @@
   `player 1 carries a crate (Carry loop)` / `player 1 finishes carrying (Idle loop)`。
   `coop_sitview.txt` 从驾驶室拍坐姿，`coop_animdemo.txt` 可预览
   `dooropen` / `doorclose` / `step` / `carry`，`coop_carryview.txt` 跟随搜刮角色。
-- **房车车体/内饰**：`tools/gen_rv_body.py` 生成倒角车身、内凹车窗 + 窗框、
+- **房车车体/内饰**：`tools/gen_rv_body.py` 生成**单块 loft 侧墙并按多边形开洞**
+  （393 个墙面四边形、12 个真实洞口，含门/窗/轮拱；墙面 0.05m 收分、
+  正反两面法线，玻璃与窗框仍对齐洞口）、
   **沿圆周扫掠的圆角轮拱唇边**（每轮 16 段，共 4 条）与半圆轮腔挡板、
   **3 段 loft 车顶肩线**、前后保险杠/防擦条、行李架/空调/爬梯/遮阳篷、
   后视镜/灯组/格栅，以及多段式仪表台、方向盘、驾驶席与两侧吊柜；
   门洞/座椅坐标/物理碰撞保持不变。统计写入
-  `assets/data/rv_body_stats.json`（arch=16/4、roof=3、17,088 顶点）。
+  `assets/data/rv_body_stats.json`（wall=393、holes=12、curve=0.05、
+  arch=16/4、roof=3、13,128 顶点）。
 - **倒角几何**：`tools/rv_geom.bevel_box()` 把每个盒体拆成
   6 个内缩面 + 12 条 45° 棱边条 + 8 个角三角（小件/薄片自动回退为普通盒），
   `gen_rv_body.py` 与 `gen_rv_furniture.py` 的 `box()` 默认使用它，
@@ -448,8 +451,8 @@
    多部件模型，每个盒体经 `tools/rv_geom.bevel_box()` 倒角，并接入 12 种表面 ×
    （底色 + 法线 + ORM 贴图）+ 2 张自发光贴图
    （木纹/拉丝金属/织物/橡胶/车身瓦楞/太阳能栅格），每个 primitive 有平面投影 UV；
-   车体已有扫掠轮拱唇边与 loft 肩线、水槽有旋成盆体，
-   但绝大多数几何仍是“倒角盒体/棱柱”组合（窗洞靠拼盒而非布尔），
+   车体已有单块开洞 loft 侧墙、扫掠轮拱唇边与 loft 肩线，水槽有旋成盆体，
+   但侧墙是零厚度网格（洞口无窗台厚度/翻边），前后围与多数附件仍是倒角盒体，
    法线图只是平面凸起近似，没有曲面细分/视差贴图；世界画风已转为低多边形草甸 + 起伏草丘/土坡，
    玩家/房车/合作代理按营地级高度场跟随坡面高度，
    房车单机、合作服务器与客户端都有四个圆柱轮胎刚体，

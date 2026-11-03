@@ -215,10 +215,16 @@ function runSelfTest()
          (bodyStats.archLipSegments or 0) >= 12 and
          (bodyStats.archArcs or 0) == 4 and
          (bodyStats.roofShoulderStrips or 0) >= 3 and
-         (bodyStats.verts or 0) > 15000 and
+         (bodyStats.wallQuads or 0) >= 300 and
+         (bodyStats.wallHoles or 0) == 12 and
+         (bodyStats.wallCurve or 0) > 0.01 and
+         (bodyStats.verts or 0) > 10000 and
          type(sink) == "table" and (sink.latheSegments or 0) >= 24 and
          (sink.verts or 0) > 1500,
-         string.format("arch=%d/%d roof=%d bodyV=%d lathe=%d sinkV=%d",
+         string.format("wall=%d holes=%d curve=%.2f arch=%d/%d roof=%d bodyV=%d lathe=%d sinkV=%d",
+                       bodyStats and (bodyStats.wallQuads or 0) or 0,
+                       bodyStats and (bodyStats.wallHoles or 0) or 0,
+                       bodyStats and (bodyStats.wallCurve or 0) or 0,
                        bodyStats and (bodyStats.archLipSegments or 0) or 0,
                        bodyStats and (bodyStats.archArcs or 0) or 0,
                        bodyStats and (bodyStats.roofShoulderStrips or 0) or 0,

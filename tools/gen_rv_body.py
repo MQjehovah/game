@@ -137,65 +137,71 @@ def arch_well(m, sign, cz, seg=ARCH_LIP_SEGMENTS):
         m.poly(TRIM, [center, p0, p1], (sign, 0.0, 0.0))
 
 
+WALL_CURVE = 0.05
+
+
+def wall_x(sign, y):
+    """Lofted skin: the side panel bows out near mid-height and tucks in at the
+    sill/roof (a single curved surface instead of a stacked box wall)."""
+    t = (y - Y0) / max(1e-6, (Y1 - Y0))
+    return sign * (X - WALL_CURVE * (t - 0.55) ** 2)
+
+
 def side_wall(m, sign, openings, windows):
-    """Build one side wall (+1 right / -1 left) around rectangular openings."""
-    outer = sign * X
-    inner = sign * XI
+    """One lofted wall grid with real polygonal openings.
 
-    def wall_box(z0, z1, y0, y1):
-        m.box(BODY, sign * (X + XI) * 0.5, (y0 + y1) * 0.5, (z0 + z1) * 0.5,
-              X - XI, y1 - y0, z1 - z0)
-
-    def spandrel(z0, z1, y0, y1):
-        # Segmented filler above a wheel arch (stairstep + dark lip).
-        arch = None
-        for cz in WHEEL_Z:
-            if z1 > cz - ARCH_R and z0 < cz + ARCH_R:
-                arch = cz
-        if arch is None:
-            wall_box(z0, z1, y0, y1)
-            return
-        lo = max(z0, arch - ARCH_R)
-        hi = min(z1, arch + ARCH_R)
-        if lo > z0 + 1e-4:
-            wall_box(z0, lo, y0, y1)
-        if hi < z1 - 1e-4:
-            wall_box(hi, z1, y0, y1)
-        seg = 20
-        for i in range(seg):
-            za = lo + (hi - lo) * i / seg
-            zb = lo + (hi - lo) * (i + 1) / seg
-            zc = min(arch + ARCH_R, max(arch - ARCH_R, (za + zb) * 0.5))
-            dy = math.sqrt(max(0.0, ARCH_R * ARCH_R - (zc - arch) ** 2))
-            yb = 0.38 + dy
-            if yb < y1:
-                wall_box(za, zb, yb, y1)
-
-    cuts = [(z, 0) for z in [ZB]] + [(z, 1) for z in [ZF]]
-    rects = []
-    for (z0, z1, y0, y1) in list(openings) + list(windows):
-        rects.append((z0, z1, y0, y1))
-        cuts.extend([(z0, 0), (z1, 0)])
-    cuts.sort()
-
-    for i in range(len(cuts) - 1):
-        za = cuts[i][0]
-        zb = cuts[i + 1][0]
-        if zb - za < 1e-4:
+    The z/y cut lines are placed exactly on every window/door edge and on 8
+    samples of each wheel-arch circle; cells whose centre falls inside a hole
+    are culled, so the panel has actual cut-outs rather than a stack of boxes.
+    Both windings are emitted so the wall is visible from inside and outside.
+    """
+    holes = list(openings) + list(windows)
+    zcuts = {ZB, ZF}
+    ycuts = {Y0, Y1}
+    for (z0, z1, y0, y1) in holes:
+        zcuts.update((z0, z1))
+        ycuts.update((y0, y1))
+    for cz in WHEEL_Z:
+        zcuts.update((cz - ARCH_R, cz + ARCH_R))
+        ycuts.update((0.38, 0.38 + ARCH_R))
+        for k in range(1, 8):
+            a = math.pi * k / 8
+            zcuts.add(cz + math.cos(a) * ARCH_R)
+            ycuts.add(0.38 + math.sin(a) * ARCH_R)
+    zs = sorted(zcuts)
+    ys = sorted(ycuts)
+    quads = 0
+    for i in range(len(ys) - 1):
+        y0, y1 = ys[i], ys[i + 1]
+        if y1 - y0 < 1e-4:
             continue
-        op = None
-        for (z0, z1, y0, y1) in rects:
-            if za >= z0 - 1e-4 and zb <= z1 + 1e-4:
-                op = (y0, y1)
-        if op is None:
-            spandrel(za, zb, Y0, 0.98)
-            wall_box(za, zb, 0.98, Y1)
-        else:
-            y0, y1 = op
-            if y0 > Y0 + 1e-3:
-                spandrel(za, zb, Y0, y0)
-            if y1 < Y1 - 1e-3:
-                wall_box(za, zb, y1, Y1)
+        yc = (y0 + y1) * 0.5
+        for j in range(len(zs) - 1):
+            z0, z1 = zs[j], zs[j + 1]
+            if z1 - z0 < 1e-4:
+                continue
+            zc = (z0 + z1) * 0.5
+            skip = False
+            for (hz0, hz1, hy0, hy1) in holes:
+                if zc > hz0 and zc < hz1 and yc > hy0 and yc < hy1:
+                    skip = True
+                    break
+            if not skip:
+                for cz in WHEEL_Z:
+                    dz, dy = zc - cz, yc - 0.38
+                    if dz * dz + dy * dy < (ARCH_R - 0.005) ** 2:
+                        skip = True
+                        break
+            if skip:
+                continue
+            x0, x1 = wall_x(sign, y0), wall_x(sign, y1)
+            p0 = (x0, y0, z0)
+            p1 = (x0, y0, z1)
+            p2 = (x1, y1, z1)
+            p3 = (x1, y1, z0)
+            m.poly(BODY, [p0, p1, p2, p3], (sign, 0.0, 0.0))
+            m.poly(BODY, [p3, p2, p1, p0], (-sign, 0.0, 0.0))
+            quads = quads + 1
 
     # Windows: recessed tinted glass + protruding frame ring.
     for (z0, z1, y0, y1) in windows:
@@ -208,6 +214,7 @@ def side_wall(m, sign, openings, windows):
         m.box(TRIM, fx, (y0 + y1) * 0.5, z1, 0.05, y1 - y0 + 0.10, 0.06)
         m.box(TRIM, fx, (y0 + y1) * 0.5, (z0 + z1) * 0.5,
               0.04, 0.035, z1 - z0)  # centre mullion
+    return quads
 
 
 def wheel(m, sign, cz):
@@ -301,9 +308,11 @@ def main():
     # ---- Side walls: door opening preserved on +X ----
     win = [(-2.25, -0.35, 0.98, 1.72), (0.25, 2.15, 0.98, 1.72),
            (3.75, 4.70, 1.05, 1.80)]
-    side_wall(m, 1, [(-3.54, -2.76, 0.24, 1.86)], win)
-    side_wall(m, -1, [], [(-2.25, -0.35, 0.98, 1.72), (0.25, 2.15, 0.98, 1.72),
-                          (-3.55, -2.60, 0.98, 1.72), (3.75, 4.70, 1.05, 1.80)])
+    wall_quads = 0
+    wall_quads += side_wall(m, 1, [(-3.54, -2.76, 0.24, 1.86)], win)
+    wall_quads += side_wall(m, -1, [],
+                            [(-2.25, -0.35, 0.98, 1.72), (0.25, 2.15, 0.98, 1.72),
+                             (-3.55, -2.60, 0.98, 1.72), (3.75, 4.70, 1.05, 1.80)])
     for sign in (-1, 1):
         for cz in WHEEL_Z:
             arch_lip(m, sign, cz)
@@ -507,6 +516,9 @@ def main():
     tris = sum(len(v[2]) // 3 for v in m.groups.values())
     STATS.parent.mkdir(parents=True, exist_ok=True)
     STATS.write_text(json.dumps({
+        "wallQuads": wall_quads,
+        "wallHoles": 12,
+        "wallCurve": WALL_CURVE,
         "archLipSegments": ARCH_LIP_SEGMENTS,
         "archArcs": 4,
         "wheelWellSegments": ARCH_LIP_SEGMENTS,
@@ -519,7 +531,8 @@ def main():
     print("rv_body bytes", len(buffer), "prims", len(prims),
           "verts", verts, "tris", tris,
           "archSegments", ARCH_LIP_SEGMENTS,
-          "roofStrips", len(ROOF_SHOULDER) - 1)
+          "roofStrips", len(ROOF_SHOULDER) - 1,
+          "wallQuads", wall_quads)
 
 
 if __name__ == "__main__":

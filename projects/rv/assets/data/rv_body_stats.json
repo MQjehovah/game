@@ -1,10 +1,13 @@
 {
+  "wallQuads": 393,
+  "wallHoles": 12,
+  "wallCurve": 0.05,
   "archLipSegments": 16,
   "archArcs": 4,
   "wheelWellSegments": 16,
   "wheelWellArcs": 4,
   "roofShoulderStrips": 3,
-  "verts": 17088,
-  "tris": 7976,
+  "verts": 13128,
+  "tris": 6208,
   "prims": 10
 }
