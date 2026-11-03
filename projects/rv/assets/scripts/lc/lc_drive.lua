@@ -104,14 +104,28 @@ function engineOilFuelScale(o)
   return 1.0 + math.min(0.08, (40 - v) * 0.002)
 end
 
+-- 非铺装路面滚动阻力更大：草地/泥土/泥泞更费油
+function surfaceFuelScale(name)
+  if name == "mud" then return 1.25 end
+  if name == "grass" then return 1.15 end
+  if name == "dirt" then return 1.10 end
+  if name == "gravel" then return 1.05 end
+  return 1.0
+end
+
 function fuelBurnRate(speed, loadRatio, throttle)
   local v = math.min(1, math.abs(speed or 0) / DRIVE.maxSpeed)
   local ratio = loadRatio or 1
   local load = 1 + math.max(0, ratio - 1) * 0.60 +
                math.max(0, math.min(ratio, 1) - 0.75) * 0.20
   local idle = VEH.idleBurn or 0.010
+  local surfName = "asphalt"
+  if surfaceInfo ~= nil then
+    surfName = surfaceInfo(rv.x or 0, rv.z or 0)
+  end
   local eff = tirePressureFuelScale(avgTirePressure()) *
-              engineOilFuelScale(oilLife)
+              engineOilFuelScale(oilLife) *
+              surfaceFuelScale(surfName)
   if (throttle or 0) > 0 then
     return (idle + VEH.burn * (0.30 + 0.70 * v) * load) * eff
   elseif (throttle or 0) < 0 then

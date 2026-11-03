@@ -1463,6 +1463,18 @@ function runSelfTest()
                      rIdle, rLow, rHigh, rLoad))
   end
 
+  -- 非铺装路面更费油：草地/泥土/泥泞依次升高
+  do
+    local road = surfaceFuelScale("asphalt")
+    local gravel = surfaceFuelScale("gravel")
+    local grass = surfaceFuelScale("grass")
+    local mud = surfaceFuelScale("mud")
+    ok(r, "surface fuel scale",
+       road == 1.0 and gravel > road and grass > gravel and mud > grass,
+       string.format("road=%.2f gravel=%.2f grass=%.2f mud=%.2f",
+                     road, gravel, grass, mud))
+  end
+
   -- 车内灯开关：Despawn 真正熄灯，再开时重新生成
   do
     setInteriorLights(false)
