@@ -523,6 +523,50 @@ function drawCompass(vw)
   end
 end
 
+-- 右下角小地图：附近地点、未知 POI、货运目标与 RV 朝向（北在上）
+function drawMinimap(vw, vh)
+  local size = 150
+  local mx = vw - size - 16
+  local my = vh - size - 96
+  DrawRect(mx, my, size, size, 0.04, 0.05, 0.06, 0.60)
+  DrawRectOutline(mx, my, size, size, 0.45, 0.44, 0.36, 0.8)
+  local cx, cy = mx + size * 0.5, my + size * 0.5
+  local range = 140
+  local scale = (size * 0.5 - 10) / range
+  for _, nd in ipairs(NODES) do
+    local dx, dz = nd.x - rv.x, nd.z - rv.z
+    if dx * dx + dz * dz <= range * range then
+      local px2, py2 = cx + dx * scale, cy - dz * scale
+      local danger = nd.danger or 0
+      if mapNodeKnown == nil or mapNodeKnown(nd) then
+        DrawCircle(px2, py2, 3, 1.5, 0.45 + danger * 0.17,
+                   0.85 - danger * 0.18, 0.32, 1, true)
+      else
+        DrawCircle(px2, py2, 2.5, 1, 0.55, 0.57, 0.55, 0.9, false)
+      end
+    end
+  end
+  if job ~= nil then
+    local nd = nodeById(job.destId)
+    if nd ~= nil then
+      local dx, dz = nd.x - rv.x, nd.z - rv.z
+      local d = math.sqrt(dx * dx + dz * dz)
+      local px2, py2
+      if d <= range then
+        px2, py2 = cx + dx * scale, cy - dz * scale
+      else
+        px2 = cx + dx / d * (size * 0.5 - 10)
+        py2 = cy - dz / d * (size * 0.5 - 10)
+      end
+      DrawCircle(px2, py2, 6, 1.5, 1.0, 0.80, 0.30, 1, false)
+    end
+  end
+  DrawLine(cx, cy, cx + math.sin(rv.yaw) * 10,
+           cy - math.cos(rv.yaw) * 10, 2, 1.0, 0.85, 0.35, 1)
+  DrawCircle(cx, cy, 3, 2, 1.0, 0.85, 0.35, 1, true)
+  drawTextCentered("N", cx, my + 3, 10, 0.72, 0.74, 0.68, 0.9)
+end
+
 function drawDriveHud()
   local vp = GetViewportSize()
   local vw = (vp and vp.w) or 1280
@@ -598,6 +642,7 @@ function drawDriveHud()
 
   drawNeedsPanel(vw - 230, 10, 220)
   drawCompass(vw)
+  drawMinimap(vw, vh)
   if job ~= nil then drawJobTracker(vw) end
 
   local hints = {
