@@ -1400,6 +1400,14 @@ function runSelfTest()
        string.format("cab=%d chase=%d clear=%d", cab, chase, clear))
   end
 
+  -- 载重影响刹车：越重越刹不住
+  do
+    local empty = brakeRate(1.0)
+    local loaded = brakeRate(1.4)
+    ok(r, "loaded braking", empty > loaded and loaded > 0,
+       string.format("empty=%.1f loaded=%.1f m/s²", empty, loaded))
+  end
+
   -- 存读档：行程/探索/货运单数 + 天气
   do
     tripDistance, tripFuel, jobDelivered = 3210, 88, 7

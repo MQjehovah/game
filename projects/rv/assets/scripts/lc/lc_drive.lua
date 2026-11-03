@@ -45,6 +45,12 @@ function tripL100()
   return (tripFuel or 0) / tripDistance * 100
 end
 
+-- 刹车减速度：载重越重越刹不住（超载额外衰减）
+function brakeRate(loadRatio)
+  local over = math.max(0, (loadRatio or 1) - 1.0)
+  return DRIVE.brake / (1.0 + over * 0.60)
+end
+
 -- 引擎音量随车速变化（总线增益，叠加在 PlayMusic 的基础音量上）
 function engineAudioGain(speed)
   local v = math.min(1, math.abs(speed or 0) / DRIVE.maxSpeed)
@@ -217,7 +223,7 @@ function updateDrive(dt)
   elseif throttle < 0 then
     rv.braking = true
     if rv.speed > 0.05 then
-      rv.speed = math.max(0.0, rv.speed - DRIVE.brake * dt)
+      rv.speed = math.max(0.0, rv.speed - brakeRate(ratio) * dt)
     else
       rv.speed = math.max(-DRIVE.reverseMax, rv.speed - acc * 0.6 * dt)
     end
