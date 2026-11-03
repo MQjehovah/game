@@ -1052,7 +1052,7 @@ function cookAtCampfire()
     toast.t = 2.4
     return true
   end
-  -- 没有生鱼就煮浑水：1 份浑水 -> +15L 净水
+  -- 其次煮浑水：1 份浑水 -> +15L 净水
   if takeItem("dirtywater", 1) then
     addWater(15)
     if PlaySfx then PlaySfx("cook") end
@@ -1060,7 +1060,16 @@ function cookAtCampfire()
     toast.t = 2.4
     return true
   end
-  toast.text = "没有生鱼/浑水 — 去水塘钓/取水"
+  -- 没有生鱼/浑水时，把生食材烤成热饭
+  if takeItem("rawfood", 1) then
+    addItem("meal", 1)
+    if PlaySfx then PlaySfx("cook") end
+    if addDailyProgress ~= nil then addDailyProgress("cook", 1) end
+    toast.text = "篝火烤好一份野味（热饭 +1）"
+    toast.t = 2.4
+    return true
+  end
+  toast.text = "没有生鱼/浑水/生食材 — 去水塘钓/取水或搜刮食物"
   toast.t = 2.2
   return false
 end

@@ -1660,6 +1660,27 @@ function runSelfTest()
        string.format("off=%s on=%s", tostring(off), tostring(on)))
   end
 
+  -- 篝火也能把生食材烤成热饭
+  do
+    local keepOn = campfireOn
+    local kr, kf, km, kd = inv.rawfish, inv.rawfood, inv.meal,
+                           inv.dirtywater
+    local keepGoal = dailyGoal
+    setCampfireLit(true)
+    inv.rawfish, inv.rawfood, inv.dirtywater = nil, 1, nil
+    inv.meal = 0
+    dailyGoal = nil
+    local cooked = cookAtCampfire()
+    local gotMeal = (inv.meal or 0) == 1
+    local usedFood = (inv.rawfood or 0) == 0
+    inv.rawfish, inv.rawfood, inv.meal, inv.dirtywater = kr, kf, km, kd
+    dailyGoal = keepGoal
+    setCampfireLit(keepOn)
+    ok(r, "campfire roasts food", cooked and gotMeal and usedFood,
+       string.format("cooked=%s meal=%d rawfood=%d", tostring(cooked),
+                     inv.meal or 0, inv.rawfood or 0))
+  end
+
   -- 主路土肩：沥青边缘与草地的过渡
   do
     local n = #roadShoulders
