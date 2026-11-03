@@ -212,6 +212,15 @@ function drawThreatBadge(vw)
   drawTextRight("左键 射击", vw - 14, 230, 13, 0.9, 0.7, 0.55, 1)
 end
 
+-- 步行时房车方位角差（用于屏幕边缘箭头）
+function rvBearingDelta(px, pz, viewYaw)
+  local b = dirYaw(rv.x - (px or 0), rv.z - (pz or 0))
+  local d = b - (viewYaw or 0)
+  while d > math.pi do d = d - 2 * math.pi end
+  while d < -math.pi do d = d + 2 * math.pi end
+  return d
+end
+
 function drawFpHud()
   local vp = GetViewportSize()
   local vw = (vp and vp.w) or 1280
@@ -271,6 +280,24 @@ function drawFpHud()
     DrawRect(0, vh - 12, vw, 12, 0.8, 0.05, 0.02, a)
     DrawRect(0, 0, 12, vh, 0.8, 0.05, 0.02, a)
     DrawRect(vw - 12, 0, 12, vh, 0.8, 0.05, 0.02, a)
+  end
+
+  -- 走远后：屏幕边缘箭头指向房车，避免在荒野迷路
+  if onFoot and player ~= nil and player.active then
+    local dx, dz = rv.x - player.x, rv.z - player.z
+    local dist = math.sqrt(dx * dx + dz * dz)
+    if dist > 12 then
+      local delta = rvBearingDelta(player.x, player.z, player.yaw)
+      local ax2, ay2 = -math.sin(delta), -math.cos(delta)
+      local cx, cy = vw * 0.5, vh * 0.5
+      local ex, ey = cx + ax2 * 190, cy + ay2 * 145
+      DrawLine(ex - ax2 * 12 - ay2 * 9, ey - ay2 * 12 + ax2 * 9, ex, ey,
+               3, 0.55, 0.82, 0.96, 0.92)
+      DrawLine(ex - ax2 * 12 + ay2 * 9, ey - ay2 * 12 - ax2 * 9, ex, ey,
+               3, 0.55, 0.82, 0.96, 0.92)
+      drawTextCentered(string.format("房车 %.0fm", dist), ex, ey + 14, 12,
+                       0.62, 0.86, 0.98, 0.95)
+    end
   end
 end
 

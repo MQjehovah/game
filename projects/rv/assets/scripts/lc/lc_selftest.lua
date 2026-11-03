@@ -2056,6 +2056,18 @@ function runSelfTest()
        string.format("N=%.0f W=%.0f S=%.0f", n, w, s))
   end
 
+  -- 步行房车箭头：正前方 delta≈0，转身 90° 后 delta≈-π/2
+  do
+    local sx, sz = rv.x, rv.z
+    rv.x, rv.z = 0, 0
+    local ahead = rvBearingDelta(0, -10, 0)
+    local turned = rvBearingDelta(0, -10, math.pi * 0.5)
+    rv.x, rv.z = sx, sz
+    ok(r, "rv bearing hint",
+       math.abs(ahead) < 1e-6 and math.abs(turned + math.pi * 0.5) < 1e-6,
+       string.format("ahead=%.2f turned=%.2f", ahead, turned))
+  end
+
   -- 电池充放电模型
   do
     local full = batteryStep(0, 2, 0.5, 5)
