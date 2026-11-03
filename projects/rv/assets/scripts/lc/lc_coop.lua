@@ -743,6 +743,13 @@ local function serverHandleCommand(clientId, a)
                         tostring(okRep), before,
                         (parts and parts.engine) or 0, inv.repairkit or 0))
     pushState()
+  elseif t == "refuel_can" then
+    local before = fuel or 0
+    local okFuel = false
+    if useFuelCan ~= nil then okFuel = useFuelCan() end
+    print(string.format("[coop-fuel] ok=%s fuel=%.1f->%.1f cans=%d",
+                        tostring(okFuel), before, fuel or 0, inv.fuelcan or 0))
+    pushState()
   elseif t == "eat" then
     local id = chooseFood()
     if id ~= nil and useItem(id) then
@@ -1002,6 +1009,18 @@ local function serverUpdate(dt)
     print(string.format("[coop-repair] demo ok=%s engine=%.0f kits=%d",
                         tostring(okRep), (parts and parts.engine) or 0,
                         inv.repairkit or 0))
+    pushState()
+  end
+
+  -- Test-only co-op fuel can: lower fuel, give a can, refuel server-side.
+  if coop.fuelDemo and not coop.fuelDemoDone and coop.autoT >= 3.0 then
+    coop.fuelDemoDone = true
+    fuel = 20
+    inv.fuelcan = (inv.fuelcan or 0) + 1
+    local okFuel = false
+    if useFuelCan ~= nil then okFuel = useFuelCan() end
+    print(string.format("[coop-fuel] demo ok=%s fuel=%.1f cans=%d",
+                        tostring(okFuel), fuel or 0, inv.fuelcan or 0))
     pushState()
   end
 
@@ -1754,6 +1773,7 @@ local function clientUpdate(dt)
     if ActionPressed("x") then Rpc("game_cmd", { type = "horn" }) end
     if ActionPressed("h") then Rpc("game_cmd", { type = "highbeam" }) end
     if ActionPressed("r") then Rpc("game_cmd", { type = "repair" }) end
+    if ActionPressed("q") then Rpc("game_cmd", { type = "refuel_can" }) end
     if coop.highDemo and not coop.highDemoDone then
       coop.highDemoT = (coop.highDemoT or 0) + dt
       if coop.highDemoT >= 3.0 and GetVar("netConnected") == 1 then
@@ -2205,6 +2225,7 @@ function coopInitWorld(role)
     coop.hornDemo = readFlag("coop_horn.txt")
     coop.refuelDemo = readFlag("coop_refuel.txt")
     coop.repairDemo = readFlag("coop_repair.txt")
+    coop.fuelDemo = readFlag("coop_fuel.txt")
     local doorTest = ReadText("coop_doortest.txt")
     if doorTest ~= nil and doorTest ~= "" then
       local v = string.lower((doorTest:gsub("%s+", "")))
@@ -2315,6 +2336,7 @@ function coopInitWorld(role)
     coop.highDemo = readFlag("coop_highbeam.txt")
     coop.refuelDemo = readFlag("coop_refuel.txt")
     coop.repairDemo = readFlag("coop_repair.txt")
+    coop.fuelDemo = readFlag("coop_fuel.txt")
     coop.buildUi = readFlag("coop_buildmode.txt")
     coop.boardDemo = readFlag("coop_board.txt")
     coop.sitDemo = readFlag("coop_sitdemo.txt")
