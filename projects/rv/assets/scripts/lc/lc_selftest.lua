@@ -52,6 +52,7 @@ function runSelfTest()
 
   -- 睡觉：第二天 07:00
   local day0 = day
+  needs.hygiene = 100  -- 干净时睡眠回满体力
   if bed then useStation(bed) end
   ok(r, "sleep in bed", needs.energy >= 99 and day == day0 + 1 and math.floor(clock) == 420,
      string.format("day %d->%d clock=%s", day0, day, timeString()))
@@ -1887,6 +1888,30 @@ function runSelfTest()
        boiled and gained == 15 and consumed,
        string.format("water 40->%d dirty %d->%d", 40 + gained, n0,
                      inv.dirtywater or 0))
+  end
+
+  -- 卫生：干净睡得好、脏了恢复差
+  do
+    local f100 = hygieneEnergyFactor(100)
+    local f0 = hygieneEnergyFactor(0)
+    local keep = needs.energy
+    local keepH = needs.hygiene
+    local sd, sc = day, clock
+    local sh, st2, shp = needs.hunger, needs.thirst, needs.health
+    needs.energy, needs.hygiene = 20, 100
+    local expectedClean = 20 + (100 - 20) * 1.0
+    sleepInBed()
+    local clean = math.abs(needs.energy - expectedClean) < 1e-6
+    needs.energy, needs.hygiene = 20, 0
+    sleepInBed()
+    local dirty = needs.energy < expectedClean
+    needs.energy, needs.hygiene = keep, keepH
+    day, clock = sd, sc
+    needs.hunger, needs.thirst, needs.health = sh, st2, shp
+    morningReport = nil
+    ok(r, "hygiene effect", f100 > f0 and clean and dirty,
+       string.format("clean=%.0f dirty=%.0f factor %.2f->%.2f",
+                     expectedClean, needs.energy, f100, f0))
   end
 
   -- 睡醒晨报：包含天数/货运单数/今日目标/油量

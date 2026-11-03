@@ -360,11 +360,18 @@ function faintPlayer()
   toast.t = 4.0
 end
 
+-- 卫生对睡眠恢复的影响：干净时 100%，脏到 0 只剩 60%
+function hygieneEnergyFactor(h)
+  local v = math.max(0, math.min(100, h or 0)) / 100
+  return 0.6 + 0.4 * v
+end
+
 function sleepInBed()
   -- 07:00 之前睡 = 当天早上；之后睡 = 第二天早上
   if clock >= 7 * 60 then day = day + 1 end
   clock = 7 * 60
-  needs.energy = 100
+  local factor = hygieneEnergyFactor(needs.hygiene)
+  needs.energy = math.min(100, needs.energy + (100 - needs.energy) * factor)
   needs.hunger = math.max(0, needs.hunger - 20)
   needs.thirst = math.max(0, needs.thirst - 32)
   needs.hygiene = math.max(0, needs.hygiene - 10)
@@ -403,6 +410,10 @@ function updateSurvival(dt)
   elseif needs.hunger > 45 and needs.thirst > 45 then
     needs.health = math.min(100, needs.health + SURVIVAL.healthRegen * gm)
   end
+  -- 卫生太差：轻微掉血，睡醒恢复也变差
+  if needs.hygiene < 15 then
+    needs.health = math.max(0, needs.health - SURVIVAL.healthDrain * 0.35 * gm)
+  end
 
   if needs.health <= 0 then faintPlayer() end
 
@@ -422,6 +433,11 @@ function updateSurvival(dt)
     toast.text = "体力见底 — 到床上睡一觉"
     toast.t = 3.2
   elseif needs.energy > 45 then lastWarn.energy = false end
+  if needs.hygiene < 20 and not lastWarn.hygiene then
+    lastWarn.hygiene = true
+    toast.text = "身上太脏 — 到卫生间洗漱（卫生差会睡不好）"
+    toast.t = 3.4
+  elseif needs.hygiene > 40 then lastWarn.hygiene = false end
 
   -- 雨天接水
   if weather == "rain" and water < SURVIVAL.waterMax then
