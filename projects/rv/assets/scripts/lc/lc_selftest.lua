@@ -1432,6 +1432,12 @@ function runSelfTest()
        string.format("foot=%.1f hand=%.1f m/s²", foot, hand))
   end
 
+  -- 农场谷仓外干草捆
+  do
+    local n = #hayBales
+    ok(r, "farm hay bales", n >= 3, string.format("bales=%d", n))
+  end
+
   -- 存读档：行程/探索/货运单数 + 天气
   do
     tripDistance, tripFuel, jobDelivered = 3210, 88, 7

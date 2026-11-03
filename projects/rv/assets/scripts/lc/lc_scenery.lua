@@ -1044,6 +1044,19 @@ function spawnRuinFor(nd)
       if lamp ~= nil then SetScale(lamp, 2.0, 2.0, 2.0) end
     end
     spawnPoiSlidingDoor(nd)
+    -- 谷仓外的干草捆（避开正门与侧墙）
+    for i, off in ipairs({ { -4.3, 1.4 }, { -4.3, 2.8 }, { 4.4, 1.6 },
+                           { 4.2, -1.2 }, { -3.9, -2.9 } }) do
+      local hx, hz = cx + off[1], cz + off[2]
+      local e = SpawnPrefab("rv_hay_bale", {
+        x = hx, y = ((terrainHeight and terrainHeight(hx, hz)) or 0) + 0.40,
+        z = hz })
+      if e ~= nil then
+        SetScale(e, 1.25, 0.80, 0.85)
+        SetRotationY(e, i * 0.7 + 0.2)
+        hayBales[#hayBales + 1] = e
+      end
+    end
     return
   end
   if isWarehouse then
