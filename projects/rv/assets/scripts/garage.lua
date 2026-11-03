@@ -1107,6 +1107,9 @@ function on_start()
     clock = 10 * 60
     rainbowT = 10
     setPhase("parked")
+  elseif startMode == "sunset" then
+    clock = 18 * 60 + 20
+    setPhase("parked")
   elseif startMode == "raincab" then
     setWeather("rain")
     setPhase("driving")

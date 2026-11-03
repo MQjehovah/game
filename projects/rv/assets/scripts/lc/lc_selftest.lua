@@ -2678,6 +2678,17 @@ function runSelfTest()
        string.format("day=%s night=%s", tostring(dayOn), tostring(nightOff)))
   end
 
+  -- 日出/日落暖色：正午无、傍晚与清晨最强
+  do
+    local noon = skyWarmth(12 * 60)
+    local dusk = skyWarmth(18 * 60)
+    local dawn = skyWarmth(6 * 60 + 30)
+    local night = skyWarmth(23 * 60)
+    ok(r, "sunset tint", noon == 0 and dusk > 0.9 and dawn > 0.9 and night == 0,
+       string.format("noon=%.2f dusk=%.2f dawn=%.2f night=%.2f",
+                     noon, dusk, dawn, night))
+  end
+
   -- 睡醒晨报：包含天数/货运单数/今日目标/油量
   do
     local sd, sc = day, clock

@@ -1025,6 +1025,18 @@ function sunArc(clockMin)
 end
 
 -- 白天天空：太阳光晕 + 缓慢飘动的云（画在天气层之下、场景之上）
+-- 日出/日落暖色强度（0–1）：清晨 5–8 点、傍晚 16–20 点最强
+function skyWarmth(clockMin)
+  local hour = (clockMin or 720) / 60
+  local warm = 0
+  if hour >= 5 and hour < 8 then
+    warm = 1 - math.abs(hour - 6.5) / 1.5
+  elseif hour >= 16 and hour < 20 then
+    warm = 1 - math.abs(hour - 18) / 2
+  end
+  return math.max(0, math.min(1, warm))
+end
+
 function drawDaySky()
   local vp = GetViewportSize()
   local vw = (vp and vp.w) or 1280
@@ -1041,17 +1053,30 @@ function drawDaySky()
   if vis <= 0.02 then return end
   local fx, fy = sunArc(clock or 720)
   local sx, sy = vw * fx, vh * fy
-  DrawCircle(sx, sy, 54, 1, 1.0, 0.92, 0.66, 0.10 * vis, true)
-  DrawCircle(sx, sy, 30, 1, 1.0, 0.90, 0.60, 0.16 * vis, true)
-  DrawCircle(sx, sy, 15, 2, 1.0, 0.96, 0.80, 0.92 * vis, true)
+  -- 日出/日落：太阳和云染成暖橙色，并加一层地平线辉光
+  local warm = skyWarmth(clock or 720)
+  local sr = 1.0
+  local sg = 0.96 - 0.34 * warm
+  local sb = 0.80 - 0.45 * warm
+  DrawCircle(sx, sy, 54, 1, sr, sg, sb, 0.10 * vis, true)
+  DrawCircle(sx, sy, 30, 1, sr, sg, sb, 0.16 * vis, true)
+  DrawCircle(sx, sy, 15, 2, 1.0, 0.96 - 0.20 * warm, 0.80 - 0.35 * warm,
+             0.92 * vis, true)
+  if warm > 0.05 then
+    DrawCircle(sx, vh * 0.46, vh * 0.40, 1, 1.0, 0.58, 0.34,
+               0.07 * warm * vis, true)
+  end
+  local cr = 0.94 + 0.06 * warm
+  local cg = 0.96 - 0.10 * warm
+  local cb = 0.98 - 0.20 * warm
   local drift = ((weatherT or 0) * 6.0) % (vw + 300)
   for i = 1, 4 do
     local cx = (i * 331 + drift) % (vw + 260) - 130
     local cy = vh * (0.10 + 0.05 * i) + math.sin(i * 1.7) * 12
     local al = (0.10 + 0.02 * (i % 2)) * vis
-    DrawCircle(cx, cy, 42, 1, 0.94, 0.96, 0.98, al, true)
-    DrawCircle(cx + 38, cy + 6, 30, 1, 0.94, 0.96, 0.98, al * 0.9, true)
-    DrawCircle(cx - 34, cy + 8, 26, 1, 0.94, 0.96, 0.98, al * 0.8, true)
+    DrawCircle(cx, cy, 42, 1, cr, cg, cb, al, true)
+    DrawCircle(cx + 38, cy + 6, 30, 1, cr, cg, cb, al * 0.9, true)
+    DrawCircle(cx - 34, cy + 8, 26, 1, cr, cg, cb, al * 0.8, true)
   end
 end
 
