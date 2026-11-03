@@ -174,6 +174,31 @@ World::JointId World::AddSliderJoint(BodyId a, BodyId b, const math::Vec3& world
     return {};
 }
 
+World::JointId World::AddWheelJoint(BodyId a, BodyId b, const math::Vec3& worldAnchor,
+                                    const math::Vec3& axle, const math::Vec3& up,
+                                    float springHz, float damping) {
+    (void)a;
+    (void)b;
+    (void)worldAnchor;
+    (void)axle;
+    (void)up;
+    (void)springHz;
+    (void)damping;
+    return {};
+}
+
+World::BodyId World::AddCylinder(uint64_t owner, const math::Vec3& center, float halfHeight,
+                                 float radius, bool dynamic, const RigidBodyDesc& desc) {
+    (void)halfHeight;
+    // The deterministic world only supports spheres/boxes; approximate the
+    // cylinder with a sphere of the same radius (Jolt provides the real shape).
+    return AddSphere(owner, center, radius, dynamic, desc);
+}
+
+void World::SetAngularVelocity(BodyId, const math::Vec3&) {}
+
+void World::SetBodyEuler(BodyId, float, float, float) {}
+
 void World::Activate(BodyId) {
     // The deterministic world has no sleep state.
 }

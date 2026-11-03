@@ -271,37 +271,64 @@ local SUSP_REST = 0.06      -- free length: floats the box so springs carry the 
 -- Per-wheel rigid bodies: a small dynamic box per wheel, attached to the
 -- chassis by a slider joint with soft limits (spring mount, ~8 Hz). The terrain
 -- spring acts on the wheel body and the chassis is supported through the joint;
--- tire forces also act on the wheel bodies. Single-player only.
-local WHEEL_BODY_HALF = { x = 0.04, y = 0.20, z = 0.20 }
+-- tires also act on the wheel bodies. Present on single-player, server and
+-- clients (clients use them for local suspension prediction).
 local WHEEL_BODY_MASS = 300
 local WHEEL_BODY_OUT = 1.0
 local WHEEL_BODY_MAX_F = 12000.0
 local WHEEL_SPRING_HZ = 8.0
+local WHEEL_BODY_HALF = { x = 0.04, y = 0.20, z = 0.20 }
 
 function spawnRvWheelBodies()
-  if rvBody == nil or PhysicsAddBox == nil or PhysicsAddSliderJoint == nil then
-    return false
-  end
+  if rvBody == nil then return false end
   if rv.wheelBodies ~= nil then return true end
   rv.wheelBodies = {}
   rv.wheelSpinI = {}
   local gy = rv.groundY or 0
+  -- Single-player and clients use cylindrical tires with a rolling 6DOF joint;
+  -- the co-op server keeps the conservative box/soft-slider setup (the 6DOF
+  -- spring was unstable at the server tick on long full-throttle runs).
+  local rolling = coopRole ~= "server" and PhysicsAddCylinder ~= nil and
+                  PhysicsAddWheelJoint ~= nil
+  local axx, axy, axz = rvOffset(1, 0, 0)
+  local upx, upy, upz = rvOffset(0, 1, 0)
   for i, w in ipairs(WHEELS) do
     local bx = w.lx * WHEEL_BODY_OUT
     local ox, oy, oz = rvOffset(bx, 0.38, w.lz)
     local wx = rv.x + ox
     local wy = gy + oy
     local wz = rv.z + oz
-    local body = PhysicsAddBox({ x = wx, y = wy, z = wz },
-                               WHEEL_BODY_HALF, true,
-                               { mass = WHEEL_BODY_MASS, friction = 0.9,
-                                 restitution = 0.0, gravityScale = 0.0 })
-    if body ~= nil then
-      local joint = PhysicsAddSliderJoint(rvBody, body,
-                                          { x = wx, y = wy, z = wz },
-                                          { x = 0, y = 1, z = 0 },
-                                          0, 0, WHEEL_SPRING_HZ, 1.0)
-      rv.wheelBodies[i] = { body = body, joint = joint }
+    if rolling then
+      local body = PhysicsAddCylinder({ x = wx, y = wy, z = wz },
+                                      0.12, 0.40, true,
+                                      { mass = WHEEL_BODY_MASS, friction = 0.9,
+                                        restitution = 0.0, gravityScale = 0.0,
+                                        layer = 2, mask = 0xFFFFFFFF })
+      if body ~= nil then
+        if PhysicsSetRotationEuler ~= nil then
+          PhysicsSetRotationEuler(body, rv.pitch or 0,
+                                  (rv.roll or 0) + math.pi * 0.5, rv.yaw)
+        end
+        local joint = PhysicsAddWheelJoint(rvBody, body,
+                                           { x = wx, y = wy, z = wz },
+                                           { x = axx, y = axy, z = axz },
+                                           { x = upx, y = upy, z = upz },
+                                           WHEEL_SPRING_HZ, 1.0)
+        rv.wheelBodies[i] = { body = body, joint = joint, rolling = true }
+      end
+    else
+      local body = PhysicsAddBox({ x = wx, y = wy, z = wz },
+                                 WHEEL_BODY_HALF, true,
+                                 { mass = WHEEL_BODY_MASS, friction = 0.9,
+                                   restitution = 0.0, gravityScale = 0.0,
+                                   layer = 2, mask = 0xFFFFFFFF })
+      if body ~= nil then
+        local joint = PhysicsAddSliderJoint(rvBody, body,
+                                            { x = wx, y = wy, z = wz },
+                                            { x = 0, y = 1, z = 0 },
+                                            0, 0, WHEEL_SPRING_HZ, 1.0)
+        rv.wheelBodies[i] = { body = body, joint = joint, rolling = false }
+      end
     end
   end
   if rv.wheelBodies[1] == nil then
@@ -395,6 +422,14 @@ function updateWheelPrediction(dt)
         local vLong = 0
         if bv ~= nil then
           vLong = bv.x * math.sin(rv.yaw) + bv.z * math.cos(rv.yaw)
+        end
+        -- Predict the rolling spin from the replicated RV speed.
+        local axx, axy, axz = rvOffset(1, 0, 0)
+        local omega = -(rv.speed or 0) / 0.40
+        if wb.rolling and PhysicsSetAngularVelocity ~= nil then
+          PhysicsSetAngularVelocity(wb.body,
+                                    { x = axx * omega, y = axy * omega,
+                                      z = axz * omega })
         end
         rv.wheelSpinI = rv.wheelSpinI or {}
         rv.wheelSpinI[i] = ((rv.wheelSpinI[i] or 0) -
@@ -543,6 +578,15 @@ function updateRvPhysics(dt)
     end
 
     if useBodies then
+      -- Rolling degree of freedom: spin the wheel body around the chassis axle.
+      local rb = rv.wheelBodies[i]
+      local axx, axy, axz = rvOffset(1, 0, 0)
+      local omega = -(vLong or 0) / 0.40
+      if rb ~= nil and rb.rolling and PhysicsSetAngularVelocity ~= nil then
+        PhysicsSetAngularVelocity(rb.body,
+                                  { x = axx * omega, y = axy * omega,
+                                    z = axz * omega })
+      end
       rv.wheelSpinI = rv.wheelSpinI or {}
       rv.wheelSpinI[i] = ((rv.wheelSpinI[i] or 0) -
                           vLong * step / 0.40) % (math.pi * 2)

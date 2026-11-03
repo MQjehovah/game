@@ -291,9 +291,10 @@ function runSelfTest()
       ok(r, "rv tire grip binding", true,
          "PhysicsGetAngularVelocity + PhysicsAddAngularImpulse")
     end
-    if PhysicsAddSliderJoint ~= nil and PhysicsActivate ~= nil then
+    if PhysicsAddWheelJoint ~= nil and PhysicsAddCylinder ~= nil and
+       PhysicsActivate ~= nil then
       ok(r, "rv wheel body binding", true,
-         "PhysicsAddSliderJoint + PhysicsActivate")
+         "PhysicsAddWheelJoint + PhysicsAddCylinder + PhysicsActivate")
     end
     if rv.wheelBodies ~= nil then
       ok(r, "rv wheel bodies", #rv.wheelBodies == 4 and
@@ -308,6 +309,14 @@ function runSelfTest()
         if bp == nil or bp.y ~= bp.y then okW = false end
       end
       ok(r, "rv wheel prediction", okW, "local suspension step ok")
+    end
+    if PhysicsSetAngularVelocity ~= nil and PhysicsGetAngularVelocity ~= nil
+       and rv.wheelBodies ~= nil and rv.wheelBodies[1] ~= nil then
+      PhysicsSetAngularVelocity(rv.wheelBodies[1].body, { x = 2.0, y = 0, z = 0 })
+      local wv = PhysicsGetAngularVelocity(rv.wheelBodies[1].body)
+      ok(r, "rv wheel rolling",
+         wv ~= nil and math.abs(wv.x - 2.0) < 0.2,
+         string.format("wx=%.2f", wv and wv.x or -1))
     end
     if tireGripImpulse ~= nil then
       local dt = 1 / 60

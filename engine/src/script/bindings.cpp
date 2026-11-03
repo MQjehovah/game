@@ -1730,8 +1730,7 @@ Value NativePhysicsAddSphere(IScriptHost& host, void* user) {
     return Value::Num(static_cast<double>(id.id));
 }
 
-Value NativePhysicsAddBox(IScriptHost& host, void* user) {
-    auto* ctx = static_cast<ScriptContext*>(user);
+Value NativePhysicsAddBox(IScriptHost& host, void* user) {    auto* ctx = static_cast<ScriptContext*>(user);
     if (!ctx || !ctx->physics) return Value::Nil();
     const math::Vec3 center = Vec3FromValue(host.GetArg(0), math::Vec3{});
     const math::Vec3 half = Vec3FromValue(host.GetArg(1), math::Vec3{0.5f, 0.5f, 0.5f});
@@ -1740,6 +1739,57 @@ Value NativePhysicsAddBox(IScriptHost& host, void* user) {
     const physics::World::BodyId id =
         ctx->physics->AddBox(OwnerFromDesc(host, 3), center, half, dynamic, desc);
     return Value::Num(static_cast<double>(id.id));
+}
+
+Value NativePhysicsAddCylinder(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->physics) return Value::Nil();
+    const math::Vec3 center = Vec3FromValue(host.GetArg(0), math::Vec3{});
+    const float halfHeight = NumberArg(host, 1, 0.12f);
+    const float radius = NumberArg(host, 2, 0.4f);
+    const bool dynamic = BoolArg(host, 3, true);
+    const physics::RigidBodyDesc desc = RigidBodyDescFromValue(host, 4);
+    const physics::World::BodyId id = ctx->physics->AddCylinder(
+        OwnerFromDesc(host, 4), center, halfHeight, radius, dynamic, desc);
+    return Value::Num(static_cast<double>(id.id));
+}
+
+Value NativePhysicsSetAngularVelocity(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->physics) return Value::Nil();
+    const uint32_t id = SafeU32FromNumber(NumberArg(host, 0, 0.0));
+    if (id != 0) {
+        ctx->physics->SetAngularVelocity({id},
+            Vec3FromValue(host.GetArg(1), math::Vec3{}));
+    }
+    return Value::Nil();
+}
+
+Value NativePhysicsSetRotationEuler(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->physics) return Value::Nil();
+    const uint32_t id = SafeU32FromNumber(NumberArg(host, 0, 0.0));
+    if (id != 0) {
+        ctx->physics->SetBodyEuler({id},
+            static_cast<float>(NumberArg(host, 1, 0.0)),
+            static_cast<float>(NumberArg(host, 2, 0.0)),
+            static_cast<float>(NumberArg(host, 3, 0.0)));
+    }
+    return Value::Nil();
+}
+
+Value NativePhysicsAddWheelJoint(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->physics) return Value::Nil();
+    const uint32_t a = SafeU32FromNumber(NumberArg(host, 0, 0.0));
+    const uint32_t b = SafeU32FromNumber(NumberArg(host, 1, 0.0));
+    const math::Vec3 anchor = Vec3FromValue(host.GetArg(2), math::Vec3{});
+    const math::Vec3 axle = Vec3FromValue(host.GetArg(3), math::Vec3{1, 0, 0});
+    const math::Vec3 up = Vec3FromValue(host.GetArg(4), math::Vec3{0, 1, 0});
+    const float hz = NumberArg(host, 5, 8.0f);
+    const float damping = NumberArg(host, 6, 1.0f);
+    return Value::Num(static_cast<double>(
+        ctx->physics->AddWheelJoint({a}, {b}, anchor, axle, up, hz, damping).id));
 }
 
 Value NativePhysicsAddTriggerSphere(IScriptHost& host, void* user) {
@@ -2465,6 +2515,10 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("Raycast", &NativeRaycast, &ctx);
     host.Register("PhysicsAddSphere", &NativePhysicsAddSphere, &ctx);
     host.Register("PhysicsAddBox", &NativePhysicsAddBox, &ctx);
+    host.Register("PhysicsAddCylinder", &NativePhysicsAddCylinder, &ctx);
+    host.Register("PhysicsSetAngularVelocity", &NativePhysicsSetAngularVelocity, &ctx);
+    host.Register("PhysicsSetRotationEuler", &NativePhysicsSetRotationEuler, &ctx);
+    host.Register("PhysicsAddWheelJoint", &NativePhysicsAddWheelJoint, &ctx);
     host.Register("PhysicsAddTriggerSphere", &NativePhysicsAddTriggerSphere, &ctx);
     host.Register("PhysicsAddTriggerBox", &NativePhysicsAddTriggerBox, &ctx);
     host.Register("PhysicsTriggers", &NativePhysicsTriggers, &ctx);

@@ -915,7 +915,11 @@ local function serverUpdate(dt)
   end
 
   if driver ~= nil then
-    if coop.autoDrive then driver.f = 1 end
+    if coop.autoDrive then
+      -- Hold the throttle only until the RV nears the gas stop; driving into
+      -- the POI at full speed would flip it and is not the point of the test.
+      driver.f = (rv.z < 40) and 1 or 0
+    end
     local target = driver.f * RV_SPEED
     rv.speed = rv.speed + (target - rv.speed) * math.min(1, dt * 2.5)
     -- D (driver.s = +1) steers right, so the front-wheel angle is negative.

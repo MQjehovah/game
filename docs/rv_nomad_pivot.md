@@ -115,10 +115,15 @@
   `terrainHeight(x,z)` / `terrainFollow()` / `terrainSlope(x,z)`；步行时角色眼高、
   模型与枪械、驾驶时 `rv.groundY` + 外壳/内饰/家具/相机全部跟随地形高度。
   公路段按高度抬升并按坡度倾斜（5m 分段、10° 限幅），新 POI 会避开坡面。
-  悬挂、轮胎抓地与转向由 Jolt 多体物理求解：单机为四个车轮创建独立刚体，
-  用软限位滑轨关节（`PhysicsAddSliderJoint(..., 8Hz, 1.0)`）连接到车体，
+  悬挂、轮胎抓地与转向由 Jolt 多体物理求解：单机与客户端为四个车轮创建
+  **圆柱轮胎刚体**（`PhysicsAddCylinder`，半径 0.40、宽 0.24，300kg、无重力），
+  用 **6DOF 车轮关节**（`PhysicsAddWheelJoint`：沿车体上方向软限位弹簧
+  8Hz/1.0 阻尼，绕车轴自由旋转，其余平移/旋转锁定）连接到车体。
   每个车轮用 `terrainHeight` 采样并施加弹簧/阻尼冲量
-  （k=90000 N/m、c=11000 N·s/m、力限幅 12kN），车体通过四个滑轨被支撑。
+  （k=90000 N/m、c=11000 N·s/m、力限幅 12kN），车体通过四个约束被支撑。
+  车轮拥有滚动自由度：按接触速度用 `PhysicsSetAngularVelocity` 绕车轴旋转，
+  圆柱轴线用 `PhysicsSetRotationEuler` 对齐；`rv.wheelSpinI` 同步视觉滚动。
+  合作服务器为稳定性保留方形轮胎 + 软限位滑轨关节（同样的悬挂/抓地模型）。
   轮胎侧向冲量（`tireGripImpulse`）与滑移率牵引（`slipTraction`）直接作用于
   车轮刚体；`surfaceGrip()` 给出沥青 0.95 / 土坡 0.72 / 草地 0.60；
   纵向在后轮牵引、四轮制动。A/D 只给前轮转角（±0.5rad），
@@ -128,7 +133,8 @@
   因此高度、加速、刹车、转向、侧滑都来自求解器。
   引擎新增 `PhysicsApplyImpulse` / `PhysicsGetPointVelocity` /
   `PhysicsGetAngularVelocity` / `PhysicsAddAngularImpulse` /
-  `PhysicsAddSliderJoint` / `PhysicsActivate`。
+  `PhysicsAddSliderJoint` / `PhysicsAddWheelJoint` / `PhysicsAddCylinder` /
+  `PhysicsSetAngularVelocity` / `PhysicsSetRotationEuler` / `PhysicsActivate`。
   合作服务器运行同一套四轮刚体物理；客户端也建立本地车轮刚体，
   用服务器广播的 `gy/pitch/roll/yaw` + 本地地形运行 `updateWheelPrediction()`，
   只预测悬挂行程/滚动（车体姿态保持权威）。
@@ -397,11 +403,12 @@
    但几何仍是“倒角盒体/棱柱”组合，法线图只是平面凸起近似，
    没有曲面细分/视差贴图；世界画风已转为低多边形草甸 + 起伏草丘/土坡，
    玩家/房车/合作代理按营地级高度场跟随坡面高度，
-   房车已有四个独立车轮刚体，通过软限位滑轨弹簧支撑车体；
+   房车单机/客户端已有四个圆柱轮胎刚体，用 6DOF 车轮关节支撑车体并绕车轴滚动；
    高度/俯仰/侧倾/侧滑/偏航来自求解器，前轮有阿克曼夹角，
    路面摩擦区分沥青/土坡/草地，纵向使用滑移率曲线；
-   但车轮刚体是方形代理（无轮胎碰撞形状/独立滚动约束），
-   没有轮胎温度/磨损模型，合作客户端只本地预测悬挂行程（位置/姿态仍由服务器广播）；
+   合作服务器为稳定性仍用方形代理 + 软限位滑轨（同一套悬挂/抓地模型），
+   两种形态都没有轮胎花纹/变形模型，没有轮胎温度/磨损模型，
+   合作客户端只本地预测悬挂行程（位置/姿态仍由服务器广播）；
    高度场只覆盖营地周边 144×144m，范围外仍是平地；
    商店/加油站/仓库/商场/湖边木屋/诊所前窗已支持透明玻璃，破碎时从 seed 冲击点
    生长径向 + 分支裂纹，按应力衰减决定碎片大小/数量/速度（每扇约 20–30 块），

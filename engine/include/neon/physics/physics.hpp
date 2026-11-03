@@ -47,6 +47,11 @@ public:
                              const RigidBodyDesc& desc = {});
     virtual BodyId AddBox(uint64_t owner, const math::Vec3& center, const math::Vec3& halfExtents,
                           bool dynamic, const RigidBodyDesc& desc = {});
+    // Cylinder body (axis along Y by default; rotate the body to align it with
+    // a wheel axle). Used by the RV tire proxies.
+    virtual BodyId AddCylinder(uint64_t owner, const math::Vec3& center, float halfHeight,
+                               float radius, bool dynamic,
+                               const RigidBodyDesc& desc = {});
     // Convenience: absolute AABB box (min/max), static by default.
     virtual BodyId AddBox(uint64_t owner, const math::AABB& box, bool dynamic = false,
                           const RigidBodyDesc& desc = {});
@@ -93,6 +98,11 @@ public:
                                    const math::Vec3& worldAxis, float minLimit,
                                    float maxLimit, float springHz = 0.0f,
                                    float damping = 0.7f);
+    // Wheel suspension: soft translation along `up`, free rotation about
+    // `axle`, all other translation/rotation locked (6DOF constraint).
+    virtual JointId AddWheelJoint(BodyId a, BodyId b, const math::Vec3& worldAnchor,
+                                  const math::Vec3& axle, const math::Vec3& up,
+                                  float springHz, float damping);
     virtual void RemoveJoint(JointId joint);
     virtual size_t JointCount() const;
     // Removes every joint referencing `body` (also done implicitly by Remove).
@@ -116,6 +126,11 @@ public:
     // scripted vehicle heading while tire friction acts at the contacts.
     virtual math::Vec3 GetAngularVelocity(BodyId body) const;
     virtual void AddAngularImpulse(BodyId body, const math::Vec3& impulse);
+    // Directly sets the angular velocity (used to roll the wheel bodies).
+    virtual void SetAngularVelocity(BodyId body, const math::Vec3& velocity);
+    // Sets a body rotation from yaw/pitch/roll (R = Ry * Rx * Rz), matching
+    // SetRotationEuler on the script side.
+    virtual void SetBodyEuler(BodyId body, float pitch, float roll, float yaw);
     // Applies an impulse at a world-space point: the spring/damper suspension
     // of the RV calls this once per wheel so height/pitch/roll come from the
     // solver. Default implementation is a no-op (deterministic custom world).

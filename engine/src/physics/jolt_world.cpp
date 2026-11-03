@@ -15,6 +15,7 @@
 #include <Jolt/Physics/Constraints/DistanceConstraint.h>
 #include <Jolt/Physics/Constraints/FixedConstraint.h>
 #include <Jolt/Physics/Constraints/HingeConstraint.h>
+#include <Jolt/Physics/Constraints/SixDOFConstraint.h>
 #include <Jolt/Physics/Constraints/SliderConstraint.h>
 #include <Jolt/Physics/Constraints/TwoBodyConstraint.h>
 #include <Jolt/Physics/Collision/BroadPhase/BroadPhaseLayerInterfaceMask.h>
@@ -27,6 +28,7 @@
 #include <Jolt/Physics/Collision/CollisionCollectorImpl.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
 #include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
+#include <Jolt/Physics/Collision/Shape/CylinderShape.h>
 #include <Jolt/Physics/Collision/ShapeFilter.h>
 #include <Jolt/Physics/Collision/Shape/SphereShape.h>
 #include <Jolt/Physics/PhysicsSystem.h>
@@ -383,6 +385,43 @@ World::BodyId JoltWorld::AddBox(uint64_t owner, const math::AABB& box, bool dyna
     return AddBox(owner, box.Center(), box.Extents(), dynamic, desc);
 }
 
+World::BodyId JoltWorld::AddCylinder(uint64_t owner, const math::Vec3& center,
+                                     float halfHeight, float radius, bool dynamic,
+                                     const RigidBodyDesc& desc) {
+    if (!impl_ || halfHeight <= 0.0f || radius <= 0.0f) return {};
+    JPH::Ref<JPH::CylinderShape> shape = new JPH::CylinderShape(halfHeight, radius);
+    JPH::BodyCreationSettings settings(
+        shape, ToRVec3(center), JPH::Quat::sIdentity(), ToMotionType(dynamic),
+        JPH::ObjectLayerPairFilterMask::sGetObjectLayer(desc.layer & kMaxLayerMask,
+                                                        desc.mask & kMaxLayerMask));
+    settings.mRestitution = desc.restitution;
+    settings.mFriction = desc.friction;
+    settings.mLinearDamping = desc.linearDamping;
+    settings.mGravityFactor = desc.gravityScale;
+    if (dynamic && desc.continuous) settings.mMotionQuality = JPH::EMotionQuality::LinearCast;
+    const float volume = 3.14159265358979323846f * radius * radius * (2.0f * halfHeight);
+    if (dynamic && desc.mass > 0.0f) {
+        settings.mOverrideMassProperties = JPH::EOverrideMassProperties::CalculateInertia;
+        settings.mMassPropertiesOverride.mMass = desc.mass;
+    } else if (dynamic) {
+        settings.mOverrideMassProperties = JPH::EOverrideMassProperties::CalculateInertia;
+        settings.mMassPropertiesOverride.mMass = volume;
+    }
+    JPH::BodyID bid = impl_->Bodies().CreateAndAddBody(settings, JPH::EActivation::Activate);
+    if (bid == JPH::BodyID()) return {};
+    impl_->Bodies().SetUserData(bid, owner);
+    const BodyId id{impl_->nextId++};
+    impl_->broadphaseDirty = true;
+    impl_->idMap[id.id] = bid;
+    impl_->enabled[id.id] = true;
+    // Debug/raycast bounds only; the real collision shape is the Jolt cylinder.
+    impl_->shapes[id.id] = ShapeKind::Box;
+    impl_->halfExtents[id.id] = {radius, halfHeight, radius};
+    impl_->owners[id.id] = owner;
+    ++impl_->bodyCount;
+    return id;
+}
+
 World::BodyId JoltWorld::AddCharacter(uint64_t owner, const math::Vec3& pos, float radius,
                                       float halfHeight, const RigidBodyDesc& desc) {
     if (!impl_ || radius <= 0.0f || halfHeight <= 0.0f) return {};
@@ -581,6 +620,48 @@ void JoltWorld::Activate(BodyId body) {
     if (bid != JPH::BodyID()) impl_->Bodies().ActivateBody(bid);
 }
 
+World::JointId JoltWorld::AddWheelJoint(BodyId a, BodyId b, const math::Vec3& worldAnchor,
+                                        const math::Vec3& axle, const math::Vec3& up,
+                                        float springHz, float damping) {
+    if (!impl_) return {};
+    const JPH::BodyID ba = impl_->Find(a);
+    const JPH::BodyID bb = impl_->Find(b);
+    if (ba == JPH::BodyID() || bb == JPH::BodyID() || ba == bb) return {};
+    JPH::BodyLockWrite la(impl_->physics.GetBodyLockInterface(), ba);
+    JPH::BodyLockWrite lb(impl_->physics.GetBodyLockInterface(), bb);
+    if (!la.Succeeded() || !lb.Succeeded()) return {};
+    JPH::SixDOFConstraintSettings s;
+    s.mSpace = JPH::EConstraintSpace::WorldSpace;
+    s.mPosition1 = ToRVec3(worldAnchor);
+    s.mPosition2 = ToRVec3(worldAnchor);
+    JPH::Vec3 ax = ToJolt(axle);
+    if (ax.LengthSq() < 1e-8f) ax = JPH::Vec3::sAxisX();
+    ax = ax.Normalized();
+    JPH::Vec3 upv = ToJolt(up);
+    upv -= ax * ax.Dot(upv);
+    if (upv.LengthSq() < 1e-8f) {
+        const JPH::Vec3 ref =
+            std::fabs(ax.GetY()) < 0.9f ? JPH::Vec3::sAxisY() : JPH::Vec3::sAxisX();
+        upv = ax.Cross(ref);
+    }
+    upv = upv.Normalized();
+    s.mAxisX1 = s.mAxisX2 = ax;
+    s.mAxisY1 = s.mAxisY2 = upv;
+    s.MakeFixedAxis(JPH::SixDOFConstraintSettings::TranslationX);
+    s.SetLimitedAxis(JPH::SixDOFConstraintSettings::TranslationY, 0.0f, 0.0f);
+    s.mLimitsSpringSettings[JPH::SixDOFConstraintSettings::TranslationY] =
+        JPH::SpringSettings(JPH::ESpringMode::FrequencyAndDamping, springHz, damping);
+    s.MakeFixedAxis(JPH::SixDOFConstraintSettings::TranslationZ);
+    s.MakeFreeAxis(JPH::SixDOFConstraintSettings::RotationX);
+    s.MakeFixedAxis(JPH::SixDOFConstraintSettings::RotationY);
+    s.MakeFixedAxis(JPH::SixDOFConstraintSettings::RotationZ);
+    JPH::Ref<JPH::Constraint> c = s.Create(la.GetBody(), lb.GetBody());
+    impl_->physics.AddConstraint(c.GetPtr());
+    const JointId id{impl_->nextJointId++};
+    impl_->constraints[id.id] = c;
+    return id;
+}
+
 void JoltWorld::RemoveJoint(JointId joint) {
     if (!impl_) return;
     auto it = impl_->constraints.find(joint.id);
@@ -767,6 +848,19 @@ void JoltWorld::AddAngularImpulse(BodyId body, const math::Vec3& impulse) {
     const JPH::BodyID bid = impl_->Find(body);
     if (bid == JPH::BodyID()) return;
     impl_->Bodies().AddAngularImpulse(bid, ToJolt(impulse));
+}
+
+void JoltWorld::SetAngularVelocity(BodyId body, const math::Vec3& velocity) {
+    if (!impl_) return;
+    const JPH::BodyID bid = impl_->Find(body);
+    if (bid != JPH::BodyID()) impl_->Bodies().SetAngularVelocity(bid, ToJolt(velocity));
+}
+
+void JoltWorld::SetBodyEuler(BodyId body, float pitch, float roll, float yaw) {
+    const math::Quat q = math::Quat::FromAxisAngle({0, 1, 0}, yaw) *
+                         math::Quat::FromAxisAngle({1, 0, 0}, pitch) *
+                         math::Quat::FromAxisAngle({0, 0, 1}, roll);
+    SetRotation(body, q);
 }
 
 void JoltWorld::ApplyImpulse(BodyId body, const math::Vec3& impulse,

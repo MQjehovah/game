@@ -37,6 +37,8 @@ public:
                      const RigidBodyDesc& desc = {}) override;
     BodyId AddBox(uint64_t owner, const math::Vec3& center, const math::Vec3& halfExtents,
                   bool dynamic, const RigidBodyDesc& desc = {}) override;
+    BodyId AddCylinder(uint64_t owner, const math::Vec3& center, float halfHeight,
+                       float radius, bool dynamic, const RigidBodyDesc& desc = {}) override;
     BodyId AddBox(uint64_t owner, const math::AABB& box, bool dynamic = false,
                   const RigidBodyDesc& desc = {}) override;
     BodyId AddCharacter(uint64_t owner, const math::Vec3& pos, float radius, float halfHeight,
@@ -60,6 +62,9 @@ public:
     JointId AddSliderJoint(BodyId a, BodyId b, const math::Vec3& worldAnchor,
                            const math::Vec3& worldAxis, float minLimit,
                            float maxLimit, float springHz, float damping) override;
+    JointId AddWheelJoint(BodyId a, BodyId b, const math::Vec3& worldAnchor,
+                          const math::Vec3& axle, const math::Vec3& up,
+                          float springHz, float damping) override;
     void RemoveJoint(JointId joint) override;
     void RemoveJointsOn(BodyId body) override;
     size_t JointCount() const override;
@@ -73,6 +78,8 @@ public:
     math::Vec3 GetPointVelocity(BodyId body, const math::Vec3& point) const override;
     math::Vec3 GetAngularVelocity(BodyId body) const override;
     void AddAngularImpulse(BodyId body, const math::Vec3& impulse) override;
+    void SetAngularVelocity(BodyId body, const math::Vec3& velocity) override;
+    void SetBodyEuler(BodyId body, float pitch, float roll, float yaw) override;
     void ApplyImpulse(BodyId body, const math::Vec3& impulse,
                       const math::Vec3& point) override;
     void SetMass(BodyId body, float mass) override;
