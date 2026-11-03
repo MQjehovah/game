@@ -156,12 +156,12 @@ function runSelfTest()
   -- follow helper converges on the sampled height (player/RV ground following).
   if terrainHeight ~= nil and terrainFollow ~= nil then
     local hFlat = terrainHeight(0, 0)
-    local hMid = terrainHeight(12, 10)
-    local hTop = terrainHeight(19, 10)
+    local hMid = terrainHeight(16, -2)
+    local hTop = terrainHeight(22, -2)
     ok(r, "terrain height profile",
        hFlat < 0.01 and hMid > 1.0 and hTop > hMid,
        string.format("flat=%.2f mid=%.2f top=%.2f", hFlat, hMid, hTop))
-    local followed = terrainFollow(0, 19, 10, 1.0, 10)
+    local followed = terrainFollow(0, 22, -2, 1.0, 10)
     ok(r, "terrain ground follow",
        math.abs(followed - hTop) < 0.001,
        string.format("follow=%.2f top=%.2f", followed, hTop))
@@ -170,29 +170,43 @@ function runSelfTest()
     if terrainFieldInfo ~= nil then
       local fi = terrainFieldInfo()
       ok(r, "terrain heightfield",
-         fi ~= nil and fi.nx >= 33 and fi.nz >= 33,
+         fi ~= nil and fi.nx >= 73 and fi.nz >= 73,
          fi and string.format("%dx%d step=%.0f", fi.nx, fi.nz, fi.step)
             or "analytic fallback")
       local knoll = terrainHeight(-26, -20)
       ok(r, "terrain knoll",
          knoll > 1.5,
          string.format("knoll=%.2f", knoll))
+      local west = terrainHeight(-95, 15)
+      local east = terrainHeight(112, 24)
+      local north = terrainHeight(28, 105)
+      local south = terrainHeight(72, -116)
+      local northEast = terrainHeight(96, 86)
+      local outside = terrainHeight(150, 0)
+      ok(r, "terrain extended grid",
+         west > 2.0 and east > 2.0 and north > 2.0 and south > 1.5 and
+         northEast > 1.5 and outside == 0.0,
+         string.format("west=%.2f east=%.2f north=%.2f south=%.2f ne=%.2f out=%.2f",
+                       west, east, north, south, northEast, outside))
       local flatOk = terrainHeight(0, 0) < 0.1 and
                      terrainHeight(0, 60) < 0.1 and
                      terrainHeight(38, 27) < 0.1 and
                      terrainHeight(24, -40) < 0.1 and
                      terrainHeight(12, -20) < 0.1 and
-                     terrainHeight(72, 0) < 0.1
+                     terrainHeight(72, 0) < 0.1 and
+                     terrainHeight(106, -66) < 0.1 and
+                     terrainHeight(137, -2) < 0.1
       ok(r, "terrain flat corridor", flatOk,
-         string.format("camp=%.2f gas=%.2f ruin=%.2f clinic=%.2f road=%.2f edge=%.2f",
+         string.format("camp=%.2f gas=%.2f ruin=%.2f clinic=%.2f road=%.2f edge=%.2f mall=%.2f town=%.2f",
                        terrainHeight(0, 0), terrainHeight(0, 60),
                        terrainHeight(38, 27), terrainHeight(24, -40),
-                       terrainHeight(12, -20), terrainHeight(72, 0)))
+                       terrainHeight(12, -20), terrainHeight(72, 0),
+                       terrainHeight(106, -66), terrainHeight(137, -2)))
     end
     if updateRvTilt ~= nil then
       local kx, kz, ky = rv.x, rv.z, rv.yaw
       local kp, kr = rv.pitch, rv.roll
-      rv.x, rv.z, rv.yaw = 13.0, 10.0, 0.0
+      rv.x, rv.z, rv.yaw = 16.0, -2.0, 0.0
       rv.pitch, rv.roll = 0.0, 0.0
       updateRvTilt(1.0)
       ok(r, "rv slope tilt",

@@ -473,6 +473,23 @@ function on_start()
     end
   end
 
+  if startMode == "rvfar" then
+    -- Test-only: the RV on the west highland of the extended 288 m terrain.
+    rv.x, rv.z, rv.yaw = -95.0, 15.0, 0.7
+    rv.groundY = terrainHeight and terrainHeight(rv.x, rv.z) or 0
+    rv.susp = nil
+    if updateRvSuspension ~= nil then
+      updateRvSuspension(1.0)
+    elseif updateRvTilt ~= nil then
+      updateRvTilt(1.0)
+    end
+    applyRvTransform()
+    if rvBody ~= nil then
+      PhysicsSetPosition(rvBody, { x = rv.x, y = 0.9 + rv.groundY, z = rv.z })
+      if rvQuat ~= nil then PhysicsSetRotation(rvBody, rvQuat()) end
+    end
+  end
+
   if startMode == "tiretest" then
     -- Test-only: start on flat open meadow (grass) so the tire model can be
     -- compared against the asphalt run.
@@ -567,6 +584,16 @@ function on_start()
     -- Test-only: on the south-west knoll, looking back at the camp/RV.
     px, pz = -26.0, -20.0
     pyaw = dirYaw(26.0, 20.0)
+  end
+  if startMode == "farhills" then
+    -- Test-only: on the extended terrain (north meadow), looking south to camp.
+    px, pz = 28.0, 96.0
+    pyaw = dirYaw(-28.0, -96.0)
+  end
+  if startMode == "rvfar" then
+    -- Test-only: three-quarter view of the RV on the west highland.
+    px, pz = -8.0, -8.0
+    pyaw = dirYaw(8.0, 8.0)
   end
   if startMode == "rvslope" then
     -- Test-only: the RV is parked on the embankment (see rvBody block).

@@ -801,9 +801,11 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   POI、土坡与 RV。`updateMeadowWind()` 以 20Hz、分 4 批让草/花绕根部轻摆；
   土坡顶部另种 90 株。实测追逐视角约 **91 FPS**。
 - **营地级高度场 / 四轮接地**（`projects/rv`）：`tools/gen_rv_terrain.py` 用一个
-  高度函数同时生成 `assets/data/rv_terrain.json`（144×144m、4m 网格）和
-  可见网格 `rv_terrain.gltf`，保留路旁土坡并在营地西/南侧加草丘；
-  营地、水塘、固定公路走廊与 POI 占地压平，范围外为平地。
+  高度函数同时生成 `assets/data/rv_terrain.json`（**288×288m、73×73、4m 网格**，
+  约 30KB）和可见网格 `rv_terrain.gltf`（14k 顶点）；保留路旁土坡，
+  并在营地四周加 16 处草丘/高地；营地、水塘、
+  **worldmap 全部固定公路连接**与 POI 占地压平，范围外为平地。
+  `spawnPonds()` 改为只播种一次，随机 POI 水塘不再挤掉固定水塘。
   `lc_terrain.lua` 双线性采样 JSON，提供 `terrainHeight` / `terrainFollow` /
   `terrainSlope`；步行（`player.groundY`、眼高、模型与枪械）、驾驶
   （`rv.groundY`、`applyRvTransform`、追逐/驾驶席/俯视相机）、植被摆放
@@ -872,7 +874,8 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   地板高度，镜头随车厢一起倾斜。新生成 POI 会拒绝落在坡面上，
   避免平底建筑悬空。自检新增 `terrain height profile` /
   `terrain ground follow` / `terrain heightfield` / `terrain knoll` /
-  `terrain flat corridor` / `rv slope tilt` / `rv tilted interior` /
+  `terrain extended grid` / `terrain flat corridor` / `rv slope tilt` /
+  `rv tilted interior` /
   `rv four wheel contact` / `rv wheel articulation` / `rv wheel entities` /
   `rv wheel steer` / `rv physics suspension binding` /
   `rv tire grip binding` / `rv tire grip model` / `rv surface grip` /
@@ -883,7 +886,7 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   `rv wheel bodies` / `rv wheel cylinder rolling` / `rv wheel prediction` /
   `rv pose prediction` / `rv wheel rolling` / `rv attitude roundtrip` /
   `rv yaw attitude roundtrip`，
-  总计 **57/57 PASS**。
+  总计 **58/58 PASS**。
   角色动画由 `tools/gen_rv_anim_clips.py`
   生成**手工关键帧**上车链 `DoorOpen`（够门把手→拉开，0.9s）→ `Step`（抬脚踩踏板，
   0.7s）→ `Board`（站姿→抬步→落座，0.9s）→ `Sit` 循环（坐姿 + 1s 呼吸关键帧），

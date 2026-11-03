@@ -184,10 +184,13 @@
   `updateMeadowWind()` 让草/花以 20Hz、分 4 批绕根部轻摆（草叶统一倾斜方向，
   偏航摆动看起来像随风倒伏）；土坡顶部另种 90 株草花灌木。
 - **营地级高度场 + 四轮接地 / 车身俯仰侧倾**：`tools/gen_rv_terrain.py` 生成
-  144×144m 的通用高度场（4m 网格），同时写出
-  `assets/data/rv_terrain.json` 和可见网格 `rv_terrain.gltf`，两者出自同一
-  高度函数：保留原土坡截面，并在营地西/南侧加起伏草丘；营地、水塘、
-  固定公路走廊与 POI 占地全部压平，因此道路和建筑仍然水平。
+  **288×288m** 的通用高度场（73×73、4m 网格，JSON 约 30KB、网格 14k 顶点），
+  同时写出 `assets/data/rv_terrain.json` 和可见网格 `rv_terrain.gltf`，两者出自同一
+  高度函数：保留原土坡截面，并在营地四周加 16 处草丘/高地
+  （西高地、东岭、北草甸、东南丘等）。
+  营地、水塘、**worldmap 全部固定公路连接**与所有 POI 占地都压平，
+  因此道路和建筑仍然水平；`spawnPonds()` 改为只播种一次，
+  POI 自带的水塘不会再把营地/湖边固定水塘挤掉。
   `lc_terrain.lua` 对 JSON 做双线性采样，`terrainHeight(x,z)` 给出任意点
   高度、`terrainSlope(x,z)` 给出梯度；公路段按高度抬升并按坡度倾斜
   （5m 分段、坡度限幅 10°，像切进坡里的土路），新生成的地点会拒绝落在
@@ -325,8 +328,8 @@
   `farm`（旧农场谷仓）/ `mall`（购物中心店门口）/ `lake`（湖边木屋）/
   `clinic`（路边诊所）。
 
-自检覆盖 57 项：生存、做饭/鱼汤、咖啡、钓鱼、修车/升级引擎、自由摆放、昼夜灯光、天气、
-高度场剖面/草丘/道路压平/地面跟随/坡面倾斜/车内倾斜/四轮接地/分轮行程/车轮实体/前轮转向/物理悬挂绑定/姿态回读/轮胎抓地绑定/轮胎抓地模型/偏航姿态回读/路面材质表/路面摩擦/阿克曼转向/转向助力/自动回正/滑移牵引/滑移率/滑移曲线/胎温磨损/车轮刚体绑定/车轮刚体/圆柱滚动车轮/客户端车轮预测/姿态外推回正/车轮滚动、废宅商店/加油站/物流仓库/旧农场/购物中心/湖边木屋/路边诊所店内物资箱（6/6）、
+自检覆盖 58 项：生存、做饭/鱼汤、咖啡、钓鱼、修车/升级引擎、自由摆放、昼夜灯光、天气、
+高度场剖面/草丘/扩展高度场/道路压平/地面跟随/坡面倾斜/车内倾斜/四轮接地/分轮行程/车轮实体/前轮转向/物理悬挂绑定/姿态回读/轮胎抓地绑定/轮胎抓地模型/偏航姿态回读/路面材质表/路面摩擦/阿克曼转向/转向助力/自动回正/滑移牵引/滑移率/滑移曲线/胎温磨损/车轮刚体绑定/车轮刚体/圆柱滚动车轮/客户端车轮预测/姿态外推回正/车轮滚动、废宅商店/加油站/物流仓库/旧农场/购物中心/湖边木屋/路边诊所店内物资箱（6/6）、
 POI 墙体碰撞/门洞通行等。
 
 ## 网络合作（主世界 2–4 人）
@@ -469,14 +472,17 @@ POI 墙体碰撞/门洞通行等。
   `rv_patch_right.png`（草甸与池塘）。
   对照参考图，地面由原来的沙土色变为饱和草绿，并出现高矮草丛、灌木团、
   蓝/黄/白/红野花与沿路土坡，形成低多边形草甸风格。
-- **营地高度场 / 四轮接地验证**：`assets/data/rv_terrain.json`（37×37，4m 网格，
-  144×144m）与 `rv_terrain.gltf` 由 `tools/gen_rv_terrain.py` 同源生成，
+- **营地高度场 / 四轮接地验证**：`assets/data/rv_terrain.json`（**73×73，4m 网格，
+  288×288m**，约 30KB）与 `rv_terrain.gltf`（14k 顶点）由
+  `tools/gen_rv_terrain.py` 同源生成，
   `lc_terrain.terrainHeight()` 双线性采样。自检新增
-  `terrain height profile`（flat=0.00 mid=2.10 top=3.55）、
-  `terrain ground follow`（follow=3.55 top=3.55）、
-  `terrain heightfield`（37×37 step=4）、`terrain knoll`（knoll=2.09）、
-  `terrain flat corridor`（camp/gas/ruin/clinic/road/edge 均 ≤0.06）、
-  `rv slope tilt`（pitch=-0.12 roll=0.32）、
+  `terrain height profile`（flat=0.00 mid=2.86 top=3.62）、
+  `terrain ground follow`（follow=3.62 top=3.62）、
+  `terrain heightfield`（73×73 step=4）、`terrain knoll`（knoll=2.09）、
+  `terrain extended grid`（west=2.75 east=2.69 north=2.47 south=2.01
+  ne=1.87 out=0.00）、
+  `terrain flat corridor`（camp/gas/ruin/clinic/road/edge/mall/town 均 ≤0.01）、
+  `rv slope tilt`（pitch=-0.05 roll=0.31）、
   `rv tilted interior`（nose=-0.60 right=0.60）、
   `rv four wheel contact`（gy=0.77 h0=0.77 clearance=0.00
   pitch=-0.17 roll=0.22 spread=2.76）、
@@ -506,11 +512,12 @@ POI 墙体碰撞/门洞通行等。
   `rv wheel rolling`（wx=2.00）、
   `rv attitude roundtrip`（pitch=0.15 roll=-0.22）与
   `rv yaw attitude roundtrip`（yaw=0.80 pitch=0.15 roll=-0.22），
-  单机自检 **57/57 PASS**。
-  截图 `rv_asphalt_tire2.png`：沥青路 32 km/h，车轮近乎纯滚动；
-  `rv_grass_tire5.png`：同一油门在草甸（水塘边）行驶，明显打滑、加速更慢；
-  `rv_steer_demo.png`：转向扫掠演示（打左 → 松开回正 → 打右 → 松开回正）；
-  `rv_pred_final2.png`：双客户端驾驶，客户端用 20Hz 姿态流预测车体；
+  单机自检 **58/58 PASS**。
+  截图 `rv_farhills.png`：从北草甸（28,96）向南望，288m 高度场里的新丘陵、
+  营地与 POI 都在同一地形上；`rv_far_rv.png`：房车停在西高地（-95,15），
+  车轮与车身随坡度接地；`rv_asphalt_tire2.png`：沥青路 32 km/h；
+  `rv_grass_tire5.png`：草甸（水塘边）行驶，明显打滑、加速更慢；
+  `rv_steer_demo.png`：转向扫掠演示；`rv_pred_final2.png`：双客户端预测；
   `rv_friction_slope.png`：土坡驻车；`rv_steer_coop.png`：双客户端旁观。
   **合作预测日志**（`coop_pred_log.txt`，`coop_drive` 双客户端）：
   248 次姿态更新，`age` 均值 **0.033s / p90 0.07s**，
@@ -621,8 +628,8 @@ POI 墙体碰撞/门洞通行等。
   2 张自发光贴图，共 38 张，每个 primitive 带平面投影 UV 并接入
   法线/粗糙度/金属度/AO/自发光；但几何仍是“倒角盒体/棱柱”组合，
   没有曲面细分、视差贴图或手工建模的高精度资产。
-- 地形已有 144×144m 的营地级高度场（4m 网格，文件仅约 7.5KB）与土坡，
-  但超出该范围仍是平地，网格分辨率也较粗（4m 面片）；
+- 地形已有 288×288m（73×73、4m 网格，JSON 约 30KB）的营地级高度场与土坡，
+  但超出该范围仍是平地，网格分辨率也较粗（4m 面片），且没有 LOD/流式加载；
   悬挂、轮胎抓地与转向都已是物理的：单机、合作服务器与客户端四个车轮都是
   独立的**圆柱轮胎刚体**（半径 0.40、宽 0.24），用 6DOF 车轮关节连接到车体
   （沿上方向软限位弹簧 8Hz/1.0，绕车轴自由旋转，其余锁定），

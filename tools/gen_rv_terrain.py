@@ -32,8 +32,8 @@ OUT = ROOT / "projects/rv/assets/models/rv"
 DATA = ROOT / "projects/rv/assets/data"
 PREFAB = ROOT / "projects/rv/assets/prefabs/rv_terrain.json"
 
-# Grid covering the camp and the roadside.
-X0, X1, Z0, Z1 = -72.0, 72.0, -72.0, 72.0
+# Grid covering the camp, the roadside and the surrounding 288 x 288 m.
+X0, X1, Z0, Z1 = -144.0, 144.0, -144.0, 144.0
 STEP = 4.0
 NX = int(round((X1 - X0) / STEP)) + 1
 NZ = int(round((Z1 - Z0) / STEP)) + 1
@@ -44,13 +44,21 @@ EY = [0.0, 0.70, 1.90, 3.00, 3.50, 3.55, 3.00, 1.50, 0.0]
 EZ0, EZ1 = -24.0, 46.0
 DIRT_X0, DIRT_X1 = 4.0, 15.5
 
-# Fixed road links (camp + the links declared in lc_config.NODES).
+# Fixed road links (every link declared in worldmap.json, so the whole fixed
+# network is graded flat inside the 288 m grid).
 ROADS = [
     (0.0, -220.0, 0.0, 0.0),    # main road south of camp
     (0.0, 60.0, 0.0, 220.0),    # main road north of the gas stop
     (0.0, 0.0, -64.0, 44.0),    # camp -> farm
     (0.0, 0.0, -52.0, 30.0),    # camp -> lake camp
     (0.0, 0.0, 24.0, -40.0),    # camp -> clinic
+    (0.0, 0.0, 38.0, 27.0),     # camp -> ruin
+    (0.0, 0.0, 0.0, 60.0),      # camp -> gas stop
+    (0.0, 60.0, 38.0, 27.0),    # gas stop -> ruin
+    (0.0, 60.0, 100.0, -73.0),  # gas stop -> mall
+    (38.0, 27.0, 131.0, -8.0),  # ruin -> town
+    (100.0, -73.0, 131.0, -8.0),# mall -> town
+    (131.0, -8.0, 154.0, -58.0),# town -> depot
 ]
 
 # Fixed POI building centres (node + (6.5, 6.5) in lc_util.poiCenter).
@@ -110,6 +118,17 @@ def knolls(x, z):
     h += bump(x, z, 2.0, -40.0, 20.0, 14.0, 2.20)     # south of camp
     h += bump(x, z, -10.0, -55.0, 22.0, 16.0, 1.60)   # far south meadow
     h += bump(x, z, 12.0, -28.0, 12.0, 10.0, 1.10)    # rise behind the pond
+    # Extended 288 x 288 m ring: rolling highlands beyond the old 144 m grid.
+    h += bump(x, z, -95.0, 15.0, 26.0, 30.0, 2.80)    # west highlands
+    h += bump(x, z, -108.0, -72.0, 24.0, 24.0, 2.20)  # south-west ridge
+    h += bump(x, z, -52.0, -98.0, 28.0, 24.0, 2.60)   # far south meadow
+    h += bump(x, z, 28.0, 105.0, 30.0, 26.0, 2.40)    # north meadow
+    h += bump(x, z, 96.0, 86.0, 26.0, 22.0, 2.00)     # north-east knoll
+    h += bump(x, z, 112.0, 24.0, 22.0, 26.0, 2.60)    # east ridge
+    h += bump(x, z, 72.0, -116.0, 28.0, 22.0, 2.10)   # south-east knoll
+    h += bump(x, z, -126.0, -12.0, 18.0, 26.0, 1.80)  # far west shoulder
+    h += bump(x, z, 55.0, -55.0, 20.0, 16.0, 1.20)    # low rise before the mall
+    h += bump(x, z, -80.0, 95.0, 24.0, 20.0, 1.70)    # north-west shoulder
     h += 0.30 * math.sin(x * 0.21 + 1.1) * math.cos(z * 0.17)
     return max(0.0, h)
 

@@ -347,8 +347,11 @@ function spawnPond(x, z)
   end
 end
 
+local pondsSeeded = false
+
 function spawnPonds()
-  if #ponds > 0 then return end
+  if pondsSeeded then return end
+  pondsSeeded = true
   -- 放在营地左后方：避开开局去废宅/加油站的直线路径，避免房车开进水里
   spawnPond(-18, -12)
   local lake = nodeById("lakecamp")
