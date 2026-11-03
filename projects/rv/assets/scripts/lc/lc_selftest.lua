@@ -3878,6 +3878,22 @@ function runSelfTest()
                      slow, mid, fast, cap))
   end
 
+  -- 爆胎音效：触发一次爆胎会播放 bang 并计数
+  do
+    local keepBlow, keepBangs = rv.blowout, rv.blowoutBangs
+    rv.blowout, rv.blowoutBangs = false, 0
+    local first = triggerBlowout()
+    local again = triggerBlowout()
+    local banged = (rv.blowoutBangs or 0) == 1
+    local blown = rv.blowout == true
+    local gotBangs = rv.blowoutBangs or 0
+    rv.blowout, rv.blowoutBangs = keepBlow, keepBangs
+    ok(r, "blowout bang",
+       first and again == false and banged and blown,
+       string.format("first=%s again=%s bangs=%d", tostring(first),
+                     tostring(again), gotBangs))
+  end
+
   -- 辅助用电：车内灯/大灯耗电
   do
     local a0 = auxPowerDraw(false, false)

@@ -430,6 +430,30 @@ function clearBlowout()
   rv.blowoutWarned = false
 end
 
+-- 真正触发爆胎（音效/提示/尘屑），便于测试与其它系统复用
+function triggerBlowout()
+  if rv.blowout then return false end
+  rv.blowout = true
+  rv.blowoutBangs = (rv.blowoutBangs or 0) + 1
+  if not rv.blowoutWarned then
+    rv.blowoutWarned = true
+    toast.text = "爆胎了！靠边停车，到工作台修轮胎（修理包或材料）"
+    toast.t = 5.0
+  end
+  if PlaySfx then PlaySfx("bang") end
+  EmitParticles({
+    pos = { x = rv.x, y = (rv.groundY or 0) + 0.4, z = rv.z },
+    count = 18, speedMin = 0.8, speedMax = 2.6,
+    vel = { x = 0, y = 0.8, z = 0 },
+    lifeMin = 0.4, lifeMax = 0.9,
+    sizeStart = 0.18, sizeEnd = 0.9,
+    color = { r = 0.30, g = 0.30, b = 0.31, a = 0.55 },
+    colorEnd = { r = 0.30, g = 0.30, b = 0.31, a = 0.0 },
+    additive = false, gravity = 0.3,
+  })
+  return true
+end
+
 function updateBlowout(dt)
   if rv.blowout then return end
   local pMin = 2.4
@@ -439,23 +463,7 @@ function updateBlowout(dt)
   local risk = blowoutRisk(parts and parts.tires or 100, pMin) *
                speedBlowoutScale(rv.speed)
   if risk > 0 and math.random() < risk * (dt or 0) then
-    rv.blowout = true
-    if not rv.blowoutWarned then
-      rv.blowoutWarned = true
-      toast.text = "爆胎了！靠边停车，到工作台修轮胎（修理包或材料）"
-      toast.t = 5.0
-    end
-    if PlaySfx then PlaySfx("hurt") end
-    EmitParticles({
-      pos = { x = rv.x, y = (rv.groundY or 0) + 0.4, z = rv.z },
-      count = 18, speedMin = 0.8, speedMax = 2.6,
-      vel = { x = 0, y = 0.8, z = 0 },
-      lifeMin = 0.4, lifeMax = 0.9,
-      sizeStart = 0.18, sizeEnd = 0.9,
-      color = { r = 0.30, g = 0.30, b = 0.31, a = 0.55 },
-      colorEnd = { r = 0.30, g = 0.30, b = 0.31, a = 0.0 },
-      additive = false, gravity = 0.3,
-    })
+    triggerBlowout()
   end
 end
 
