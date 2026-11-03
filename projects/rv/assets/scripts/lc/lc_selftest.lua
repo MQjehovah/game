@@ -1143,6 +1143,23 @@ function runSelfTest()
     ok(r, "main road shoulders", n >= 30, string.format("shoulders=%d", n))
   end
 
+  -- 合作客户端手电：由 coop 位置/视角驱动，夜间且未上车时点亮
+  do
+    local sc = clock
+    clock = 22 * 60
+    updateCoopFlashlight(4.0, 4.0, 0, 0.5, 0.1, true)
+    local on = flashlightEnt ~= nil
+    updateCoopFlashlight(4.0, 4.0, 0, 0.5, 0.1, false)
+    local offDisabled = flashlightEnt == nil
+    clock = 12 * 60
+    updateCoopFlashlight(4.0, 4.0, 0, 0.5, 0.1, true)
+    local offDay = flashlightEnt == nil
+    clock = sc
+    ok(r, "rv coop flashlight", on and offDisabled and offDay,
+       string.format("on=%s offDisabled=%s offDay=%s",
+                     tostring(on), tostring(offDisabled), tostring(offDay)))
+  end
+
   -- 存读档：行程/探索/货运单数
   do
     tripDistance, tripFuel, jobDelivered = 3210, 88, 7

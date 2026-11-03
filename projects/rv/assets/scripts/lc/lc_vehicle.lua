@@ -354,3 +354,24 @@ function updateFlashlight()
     end
   end
 end
+
+-- 合作客户端的本地手电：位置/视角来自 coop.localPos + lookYaw/lookPitch，
+-- 只在夜间且不在车内/驾驶时点亮。
+function updateCoopFlashlight(x, z, gy, yaw, pitch, enabled)
+  local want = enabled and (isNight ~= nil and isNight())
+  if not want then
+    if flashlightEnt ~= nil then setFlashlight(false) end
+    return
+  end
+  setFlashlight(true)
+  if flashlightEnt ~= nil then
+    local fx, fz = math.sin(yaw or 0), math.cos(yaw or 0)
+    SetPosition(flashlightEnt, {
+      x = x + fx * 0.35, y = (gy or 0) + 1.55, z = z + fz * 0.35 })
+    if SetRotationEuler ~= nil then
+      SetRotationEuler(flashlightEnt, pitch or 0, 0, yaw or 0)
+    else
+      SetRotationY(flashlightEnt, yaw or 0)
+    end
+  end
+end

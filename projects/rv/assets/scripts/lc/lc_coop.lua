@@ -2210,6 +2210,15 @@ function coopUpdate(dt)
   end
   if updateTaillights ~= nil then updateTaillights() end
   if updateCampfireLight ~= nil then updateCampfireLight(dt) end
+  -- 合作客户端：夜间步行时根据本地位置/视角维护手电
+  if not coop.isServer and coop.localPos ~= nil and
+     updateCoopFlashlight ~= nil then
+    local s = coop.slots[coop.mySlot]
+    local inside = s ~= nil and s.inside
+    local driving = s ~= nil and s.driving
+    updateCoopFlashlight(coop.localPos.x, coop.localPos.z, coop.localGroundY,
+                         coop.lookYaw, coop.lookPitch, not inside and not driving)
+  end
 end
 
 local function drawBar(x, y, w, label, frac, r, g, b)
