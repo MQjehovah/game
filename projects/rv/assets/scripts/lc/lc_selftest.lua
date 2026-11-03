@@ -2102,6 +2102,19 @@ function runSelfTest()
                      tostring(snowFast), maxv))
   end
 
+  -- 左右胎压不均：向低压侧轻微跑偏，且有上限
+  do
+    local even = tirePullSteer({ 2.4, 2.4, 2.4, 2.4 })
+    local leftLow = tirePullSteer({ 1.6, 2.4, 1.6, 2.4 })
+    local rightLow = tirePullSteer({ 2.4, 1.6, 2.4, 1.6 })
+    local capped = tirePullSteer({ 0.5, 5.0, 0.5, 5.0 })
+    ok(r, "tire pull steer",
+       even == 0 and leftLow > 0 and rightLow < 0 and
+       math.abs(capped) <= 0.06,
+       string.format("even=%.3f left=%.3f right=%.3f cap=%.3f",
+                     even, leftLow, rightLow, capped))
+  end
+
   -- 定速巡航油门：低于目标给油，接近/超过目标松油
   do
     local below = cruiseThrottle(3.0, 6.0)

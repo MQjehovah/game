@@ -711,6 +711,17 @@ function tireSquealActive(latG, speed)
   return (latG or 0) > 0.55 and math.abs(speed or 0) > 4.0
 end
 
+-- 左右胎压不均导致轻微跑偏：低压侧滚动阻力更大，车会向低压侧偏
+function tirePullSteer(pressures)
+  if pressures == nil then return 0 end
+  local fl, fr = pressures[1] or 2.4, pressures[2] or 2.4
+  local rl, rr = pressures[3] or 2.4, pressures[4] or 2.4
+  local left = (fl + rl) * 0.5
+  local right = (fr + rr) * 0.5
+  local delta = left - right
+  return math.max(-0.06, math.min(0.06, -delta * 0.03))
+end
+
 -- 雨雪天侧风：车速够快时才有明显阵风
 function windActive(weatherValue, speed)
   if weatherValue ~= "rain" and weatherValue ~= "snow" then return false end
@@ -816,6 +827,8 @@ function updateDrive(dt)
     -- 雨雪天侧风阵风：需要轻微反打方向
     rv.windT = (rv.windT or 0) + (dt or 0)
     steer = steer + windSteerAmount(weather, rv.speed, rv.windT)
+    -- 左右胎压不均：向低压侧轻微跑偏
+    steer = steer + tirePullSteer(rv.tirePressureCold)
     steer = math.max(-1, math.min(1, steer))
   end
 

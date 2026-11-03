@@ -322,9 +322,10 @@
   胎压不足还会让油耗上升（`tirePressureFuelScale`，1.6bar 时 ×1.20）、
   抓地下降（`tirePressureGripScale`，1.6bar 时 μ ×0.85）；
   低于 1.95bar 时会提前提示充气（`tirePressureLow`）；
+  左右胎压不均会让车向低压侧轻微跑偏（`tirePullSteer`，最大 ±0.06）；
   到工作台修轮胎会充回 2.4bar；HUD 显示 `胎温 x°C · 胎压 x.xbar`，
   自检 `tire pressure maintenance` / `tire pressure fuel` /
-  `tire pressure warning` / `tire pressure grip`。
+  `tire pressure warning` / `tire pressure grip` / `tire pull steer`。
   **爆胎**：轮胎 <18% 或胎压 <1.8bar 时有持续风险（`blowoutRisk`），
   车速 >5m/s 后风险再上升，最高 ×2.2（`speedBlowoutScale`）；
   胎温 >100°C 后风险也上升，最高 ×3（`tireTempBlowoutScale`）；
@@ -955,7 +956,7 @@
   `cachemap`（地图上的补给箱标记）/ `notemap`（地图上的笔记标记）/
   `smoketest`（车体 25%、引擎 15% 冒烟）。
 
-自检覆盖 348 项：生存、做饭/鱼汤、咖啡、钓鱼、修车/升级引擎、自由摆放、昼夜灯光、天气、
+自检覆盖 349 项：生存、做饭/鱼汤、咖啡、钓鱼、修车/升级引擎、自由摆放、昼夜灯光、天气、
 高度场剖面/草丘/扩展高度场/地形分块 LOD/道路压平/地面跟随/坡面倾斜/车内倾斜/四轮接地/分轮行程/车轮实体/前轮转向/物理悬挂绑定/姿态回读/轮胎抓地绑定/轮胎抓地模型/偏航姿态回读/路面材质表/路面摩擦/阿克曼转向/转向助力/自动回正/滑移牵引/滑移率/滑移曲线/联合滑移/Pacejka/胎压/载荷敏感/胎温/四轮独立胎温/4 条胎面带/横向传导/逐顶点风摆/Voronoi 碎窗/玻璃种子广播/车轮刚体绑定/车轮刚体/圆柱滚动车轮/客户端车轮预测/姿态外推回正/车轮滚动、废宅商店/加油站/物流仓库/旧农场/购物中心/湖边木屋/路边诊所店内物资箱（6/6）、
 POI 墙体碰撞/门洞通行、营地货运板/接单载重/到点结算/放弃卸货/货损打折、
 货运目标指定/世界标记/地图目标圈、公路反光轮廓桩、营地陈设（遮阳棚/木桌/营地灯）、
@@ -1190,7 +1191,7 @@ POI 墙体碰撞/门洞通行、营地货运板/接单载重/到点结算/放弃
   `rv wheel rolling`（wx=2.00）、
   `rv attitude roundtrip`（pitch=0.15 roll=-0.22）与
   `rv yaw attitude roundtrip`（yaw=0.80 pitch=0.15 roll=-0.22），
-  单机自检 **348/348 PASS**。
+  单机自检 **349/349 PASS**。
   **逐顶点风摆验证**（`start_mode=hills`，相隔 1 秒两帧截图）：
   植被区域（880×370 = 325,600 px 裁剪）变化 **2.28%**（7412 px，
   阈值 |ΣRGB|>12），差异图 `rv_wind_diff.png` 正好落在草叶/花茎上；
