@@ -1253,6 +1253,10 @@ function on_start()
   elseif startMode == "maintview" then
     maintOpen = true
     setPhase("parked")
+  elseif startMode == "lowfuelview" then
+    fuel = fuelMax() * 0.12
+    setPhase("driving")
+    driveView = "chase"
   elseif startMode == "raincab" then
     setWeather("rain")
     setPhase("driving")

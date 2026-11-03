@@ -594,6 +594,25 @@ function drawCompass(vw)
       DrawLine(x + 5, cy + ch - 2, x, cy + ch - 8, 2, 1.0, 0.82, 0.32, 1)
     end
   end
+  -- 低油量：青色小三角标出最近的加油站
+  if lowFuelCompassActive ~= nil and
+     lowFuelCompassActive((fuel or 0) / fuelMax()) and
+     nearestFuelStop ~= nil then
+    local st = nearestFuelStop(rv.x, rv.z)
+    local nd = (st ~= nil and nodeById ~= nil) and nodeById(st.id) or nil
+    if nd ~= nil then
+      local b = dirYaw(nd.x - rv.x, nd.z - rv.z)
+      local d = b - (rv.yaw + (driveLookYaw or 0))
+      while d > math.pi do d = d - 2 * math.pi end
+      while d < -math.pi do d = d + 2 * math.pi end
+      local deg = -math.deg(d)
+      if math.abs(deg) <= 60 then
+        local x = cx + deg / 60 * half
+        DrawLine(x - 4, cy + 2, x, cy + 7, 2, 0.45, 0.90, 0.95, 1)
+        DrawLine(x + 4, cy + 2, x, cy + 7, 2, 0.45, 0.90, 0.95, 1)
+      end
+    end
+  end
 end
 
 -- 今日目标短文案（HUD 用）

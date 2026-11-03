@@ -3888,6 +3888,17 @@ function runSelfTest()
                      tostring(again), tostring(hasFuel)))
   end
 
+  -- 低油量罗盘标记：低于 20% 才显示加油站方向
+  do
+    local low = lowFuelCompassActive(0.1)
+    local edge = lowFuelCompassActive(0.2)
+    local full = lowFuelCompassActive(0.6)
+    ok(r, "low fuel compass",
+       low == true and edge == false and full == false,
+       string.format("low=%s edge=%s full=%s", tostring(low),
+                     tostring(edge), tostring(full)))
+  end
+
   -- 极低油量供油不稳：2% 以上满动力，越低越弱
   do
     local full = fuelStarvationScale(0.10)

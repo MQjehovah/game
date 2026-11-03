@@ -525,6 +525,11 @@ function nearestFuelStop(x, z)
   return { id = nd.id, name = nd.name, dist = math.sqrt(dx * dx + dz * dz) }
 end
 
+-- 低油量时罗盘是否标出最近加油站
+function lowFuelCompassActive(fuelRatio)
+  return (fuelRatio or 1) < 0.2
+end
+
 -- 低油量提示文案：续航 + 最近加油站距离/所需金属，金属不足时指向营地
 function lowFuelHintText()
   local st = nearestFuelStop(rv.x, rv.z)

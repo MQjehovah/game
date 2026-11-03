@@ -1,1 +1,1 @@
-maintview
+lowfuelview
