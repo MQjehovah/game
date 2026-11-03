@@ -646,6 +646,11 @@ function on_start()
     px, pz = 4.6, -10.5
     pyaw = dirYaw(-4.6, 70.5)
   end
+  if startMode == "jobaway" then
+    -- Test-only: face away from the gas-stop target so the edge arrow shows.
+    px, pz = 4.6, -10.5
+    pyaw = dirYaw(4.6, -70.5)
+  end
   if startMode == "campview" then
     -- Test-only: look from the east side into the camp props (awning/table/lamp).
     px, pz = 8.2, -1.5
@@ -904,6 +909,9 @@ function on_start()
     jobAccept(1)
     job.condition = 0.72
     jobComplete()
+  elseif startMode == "jobaway" then
+    jobRefreshOffers("gasstop")
+    jobAccept(1)
   elseif startMode == "drive" or startMode == "night_drive" or autoPilot or rv.steerDemo then
     setPhase("driving")
   elseif startMode == "utilroof" then

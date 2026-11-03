@@ -28,6 +28,18 @@ function jobRemaining()
   return jobDistToNode(nd), nd
 end
 
+-- 当前合同相对视角的方位差（-π..π）：>0 在左、<0 在右（用于屏幕外箭头）
+function jobBearingDelta(px, pz, viewYaw)
+  if job == nil then return 0 end
+  local nd = nodeById(job.destId)
+  if nd == nil then return 0 end
+  local b = dirYaw(nd.x - px, nd.z - pz)
+  local d = b - (viewYaw or 0)
+  while d > math.pi do d = d - 2 * math.pi end
+  while d < -math.pi do d = d + 2 * math.pi end
+  return d
+end
+
 -- 把车顶货物摆到房车坐标系里（跟随俯仰/侧倾/偏航）
 function jobPlaceCargo()
   if #jobCargoEnts == 0 then return end

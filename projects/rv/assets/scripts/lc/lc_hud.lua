@@ -888,14 +888,35 @@ function drawJobWaypoint(vw)
   local vp = GetViewportSize()
   local vh = (vp and vp.h) or 720
   local sp = WorldToScreen(nd.x, 3.4, nd.z)
-  if sp == nil then return end
-  if sp.x < 34 or sp.x > vw - 34 or sp.y < 104 or sp.y > vh - 90 then return end
   local dist = jobRemaining()
-  DrawLine(sp.x, sp.y - 10, sp.x, sp.y - 24, 2, 1.0, 0.82, 0.32, 0.9)
-  DrawCircle(sp.x, sp.y, 9, 2, 1.0, 0.82, 0.32, 1, false)
-  DrawCircle(sp.x, sp.y, 4, 2, 1.0, 0.82, 0.32, 1, true)
-  drawTextCentered(string.format("货运目标 · %s · %.0fm", nd.name or "", dist),
-                   sp.x, sp.y - 42, 13, 1.0, 0.90, 0.55, 1)
+  local onScreen = sp ~= nil and sp.x >= 34 and sp.x <= vw - 34 and
+                   sp.y >= 104 and sp.y <= vh - 90
+  if onScreen then
+    DrawLine(sp.x, sp.y - 10, sp.x, sp.y - 24, 2, 1.0, 0.82, 0.32, 0.9)
+    DrawCircle(sp.x, sp.y, 9, 2, 1.0, 0.82, 0.32, 1, false)
+    DrawCircle(sp.x, sp.y, 4, 2, 1.0, 0.82, 0.32, 1, true)
+    drawTextCentered(string.format("货运目标 · %s · %.0fm", nd.name or "", dist),
+                     sp.x, sp.y - 42, 13, 1.0, 0.90, 0.55, 1)
+    return
+  end
+  -- 目标在视野外：屏幕中上方给一个指向箭头 + 距离
+  local px, pz, viewYaw
+  if phase == "driving" then
+    px, pz = rv.x, rv.z
+    viewYaw = rv.yaw + (driveLookYaw or 0)
+  else
+    px, pz, viewYaw = player.x, player.z, player.yaw
+  end
+  local delta = jobBearingDelta(px, pz, viewYaw)
+  local dx, dy = -math.sin(delta), -math.cos(delta)
+  local cx, cy = vw * 0.5, vh * 0.5
+  local ax, ay = cx + dx * 150, cy + dy * 110
+  DrawLine(ax - dx * 12 - dy * 9, ay - dy * 12 + dx * 9, ax, ay,
+           3, 1.0, 0.82, 0.32, 0.95)
+  DrawLine(ax - dx * 12 + dy * 9, ay - dy * 12 - dx * 9, ax, ay,
+           3, 1.0, 0.82, 0.32, 0.95)
+  drawTextCentered(string.format("%s  %.0fm", nd.name or "货运目标", dist),
+                   ax, ay + 14, 12, 1.0, 0.88, 0.52, 0.95)
 end
 
 -- 营地货运板菜单：列 3 张合同，1-3 接单，0 放弃当前，E 关闭

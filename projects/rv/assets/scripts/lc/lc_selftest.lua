@@ -1175,6 +1175,18 @@ function runSelfTest()
        string.format("fog=%d day=%d night=%d", fogRate, dayRate, nightRate))
   end
 
+  -- 目标方位差：用于屏幕外箭头
+  do
+    local keep = job
+    job = { destId = "gasstop" }
+    local ahead = jobBearingDelta(0, 0, 0)
+    local behind = jobBearingDelta(0, 0, math.pi)
+    job = keep
+    ok(r, "job bearing arrow",
+       math.abs(ahead) < 1e-6 and math.abs(math.abs(behind) - math.pi) < 1e-6,
+       string.format("ahead=%.3f behind=%.3f", ahead, behind))
+  end
+
   -- 存读档：行程/探索/货运单数
   do
     tripDistance, tripFuel, jobDelivered = 3210, 88, 7
