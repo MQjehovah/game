@@ -800,7 +800,7 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   （约 570 实体）铺满营地/公路两侧，按 RV 位置回收；生成时避开路面、水塘、
   POI、土坡与 RV。`updateMeadowWind()` 以 20Hz、分 4 批让草/花绕根部轻摆；
   土坡顶部另种 90 株。实测追逐视角约 **91 FPS**。
-- **营地级高度场 / 坡面倾斜**（`projects/rv`）：`tools/gen_rv_terrain.py` 用一个
+- **营地级高度场 / 四轮接地**（`projects/rv`）：`tools/gen_rv_terrain.py` 用一个
   高度函数同时生成 `assets/data/rv_terrain.json`（144×144m、4m 网格）和
   可见网格 `rv_terrain.gltf`，保留路旁土坡并在营地西/南侧加草丘；
   营地、水塘、固定公路走廊与 POI 占地压平，范围外为平地。
@@ -809,16 +809,20 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   （`rv.groundY`、`applyRvTransform`、追逐/驾驶席/俯视相机）、植被摆放
   （草/花/灌木/树/岩石按地形抬高）、公路（5m 分段按坡度抬升、10° 限幅）
   以及合作模式（服务器采样、`game_state` 的 `gy`/`rv.gy`、代理与客户端预测）
-  共同使用。`terrainSlope(x,z)` + `updateRvTilt()` 由梯度算出 `rv.pitch/rv.roll`
-  （±0.35rad 限幅、8Hz 阻尼）；`applyRvTransform()` 用 `rvOffset()` 对部件偏移做
+  共同使用。`updateRvSuspension()` 在四个车轮接地点（±1.26m 轮距、
+  ±2.92m 轴距）分别采样 `terrainHeight`，每个接地点用近临界阻尼弹簧跟随
+  地面（刚度 110、阻尼 0.85、行程 ±0.30m），再由四点拟合车身平面得到
+  `rv.groundY` 与 `rv.pitch/rv.roll`（±0.35rad 限幅、10Hz 平滑）；
+  刚性车身只能三点着地，因此把平面抬到最深接地点以上，避免车轮穿模。
+  `applyRvTransform()` 用 `rvOffset()` 对部件偏移做
   roll→pitch→yaw 三维旋转，并通过**引擎新增的 `SetRotationEuler`**
   （`bindings.cpp` / `game_runtime.cpp` / `bindings.hpp`）设置朝向，
   物理刚体使用同样的四元数；车内第一人称站立高度由 `rvFloorOffset()` 取倾斜
   地板高度，镜头随车厢一起倾斜。新生成 POI 会拒绝落在坡面上，
   避免平底建筑悬空。自检新增 `terrain height profile` /
   `terrain ground follow` / `terrain heightfield` / `terrain knoll` /
-  `terrain flat corridor` / `rv slope tilt` / `rv tilted interior`，
-  总计 **33/33 PASS**。
+  `terrain flat corridor` / `rv slope tilt` / `rv tilted interior` /
+  `rv four wheel contact`，总计 **34/34 PASS**。
   角色动画由 `tools/gen_rv_anim_clips.py`
   生成**手工关键帧**上车链 `DoorOpen`（够门把手→拉开，0.9s）→ `Step`（抬脚踩踏板，
   0.7s）→ `Board`（站姿→抬步→落座，0.9s）→ `Sit` 循环（坐姿 + 1s 呼吸关键帧），

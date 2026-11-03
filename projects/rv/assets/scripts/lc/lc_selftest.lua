@@ -212,6 +212,55 @@ function runSelfTest()
       rv.x, rv.z, rv.yaw = kx, kz, ky
       rv.pitch, rv.roll = kp, kr
     end
+    -- Four wheel contacts: the body height and attitude must come from the
+    -- four sampled contact heights, not from the single centre gradient.
+    if updateRvSuspension ~= nil then
+      local kx, kz, ky = rv.x, rv.z, rv.yaw
+      local kp, kr, kg, ks = rv.pitch, rv.roll, rv.groundY, rv.susp
+      local yaw = 0.6
+      rv.x, rv.z, rv.yaw = 13.0, 10.0, yaw
+      rv.pitch, rv.roll, rv.groundY = 0.0, 0.0, 0.0
+      rv.susp = nil
+      updateRvSuspension(1.0)
+      local c, s = math.cos(yaw), math.sin(yaw)
+      local function wheelH(lx, lz)
+        return terrainHeight(rv.x + lx * c + lz * s,
+                             rv.z - lx * s + lz * c)
+      end
+      local fl, fr = wheelH(-1.26, 2.92), wheelH(1.26, 2.92)
+      local rl, rr = wheelH(-1.26, -2.92), wheelH(1.26, -2.92)
+      local hs = { fl, fr, rl, rr }
+      local lx = { -1.26, 1.26, -1.26, 1.26 }
+      local lz = { 2.92, 2.92, -2.92, -2.92 }
+      local avg = (fl + fr + rl + rr) / 4
+      local b = ((fl + fr) / 2 - (rl + rr) / 2) / 5.84
+      local a = ((fr + rr) / 2 - (fl + rl) / 2) / 2.52
+      local maxPen = 0
+      for i = 1, 4 do
+        local pen = hs[i] - (avg + a * lx[i] + b * lz[i])
+        if pen > maxPen then maxPen = pen end
+      end
+      if maxPen > 0.25 then maxPen = 0.25 end
+      local h0 = avg + maxPen
+      local maxClear = -1e9
+      for i = 1, 4 do
+        local clear = hs[i] - (h0 + a * lx[i] + b * lz[i])
+        if clear > maxClear then maxClear = clear end
+      end
+      local spread = math.abs(fl - rl) + math.abs(fr - rr) +
+                     math.abs(fl - fr)
+      ok(r, "rv four wheel contact",
+         math.abs(rv.groundY - h0) < 0.02 and
+         math.abs(rv.pitch + math.atan(b)) < 0.02 and
+         math.abs(rv.roll - math.atan(a)) < 0.02 and
+         maxClear < 0.02 and
+         spread > 0.05,
+         string.format("gy=%.2f h0=%.2f clearance=%.2f pitch=%.2f roll=%.2f spread=%.2f",
+                       rv.groundY, h0, maxClear, rv.pitch, rv.roll, spread))
+      rv.x, rv.z, rv.yaw = kx, kz, ky
+      rv.pitch, rv.roll, rv.groundY = kp, kr, kg
+      rv.susp = ks
+    end
   end
 
   -- 地点物资箱刷在建筑内部，玩家需要从正门进入

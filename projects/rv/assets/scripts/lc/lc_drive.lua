@@ -170,8 +170,12 @@ function updateDrive(dt)
 
   -- Follow the embankment height (sampled from the same profile as the mesh).
   if terrainHeight ~= nil then
-    rv.groundY = terrainFollow(rv.groundY or 0, rv.x, rv.z, dt, 10)
-    if updateRvTilt ~= nil then updateRvTilt(dt) end
+    if updateRvSuspension ~= nil then
+      updateRvSuspension(dt)
+    else
+      rv.groundY = terrainFollow(rv.groundY or 0, rv.x, rv.z, dt, 10)
+      if updateRvTilt ~= nil then updateRvTilt(dt) end
+    end
     if rvBody then
       PhysicsSetPosition(rvBody, { x = rv.x, y = 0.9 + rv.groundY, z = rv.z })
       PhysicsSetRotation(rvBody, rvQuat())

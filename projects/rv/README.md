@@ -183,7 +183,7 @@
   POI 与土坡），并按 RV 位置回收复用。
   `updateMeadowWind()` 让草/花以 20Hz、分 4 批绕根部轻摆（草叶统一倾斜方向，
   偏航摆动看起来像随风倒伏）；土坡顶部另种 90 株草花灌木。
-- **营地级高度场 + 房车俯仰/侧倾**：`tools/gen_rv_terrain.py` 生成
+- **营地级高度场 + 四轮接地 / 车身俯仰侧倾**：`tools/gen_rv_terrain.py` 生成
   144×144m 的通用高度场（4m 网格），同时写出
   `assets/data/rv_terrain.json` 和可见网格 `rv_terrain.gltf`，两者出自同一
   高度函数：保留原土坡截面，并在营地西/南侧加起伏草丘；营地、水塘、
@@ -192,9 +192,14 @@
   高度、`terrainSlope(x,z)` 给出梯度；公路段按高度抬升并按坡度倾斜
   （5m 分段、坡度限幅 10°，像切进坡里的土路），新生成的地点会拒绝落在
   坡面上。步行时 `player.groundY`、眼高、角色模型与枪械都跟随地形；
-  驾驶时 `rv.groundY` 平滑跟随，`updateRvTilt()` 由梯度算出
-  `rv.pitch/rv.roll`（限幅 ±0.35rad，8Hz 阻尼），`applyRvTransform()` 用
-  `rvOffset()` 对每个部件的局部偏移做 roll→pitch→yaw 三维旋转并用
+  驾驶/驻车时 `updateRvSuspension()` 在四个车轮接地点
+  （±1.26m 轮距、±2.92m 轴距）分别采样 `terrainHeight`，每个接地点用
+  近临界阻尼弹簧跟随地面（刚度 110、阻尼 0.85、行程限幅 ±0.30m），
+  再由四点拟合车身平面得到 `rv.groundY` 与 `rv.pitch/rv.roll`
+  （限幅 ±0.35rad、10Hz 平滑）。刚性车身在扭曲地面上只能三点着地，
+  因此把拟合平面抬高到最深的接地点以上，宁可让对角车轮轻微下垂也不让
+  车轮插进土里。`applyRvTransform()` 用 `rvOffset()` 对每个部件的局部偏移做
+  roll→pitch→yaw 三维旋转并用
   **引擎新增的 `SetRotationEuler(entity,pitch,roll,yaw)`** 设置朝向，
   外壳/车门/内饰/家具/网格与物理刚体一起倾斜，房车不再插进坡体。
   车内第一人称站立高度由 `rvFloorOffset()` 取倾斜地板高度，镜头随车厢一起
@@ -264,8 +269,8 @@
   `farm`（旧农场谷仓）/ `mall`（购物中心店门口）/ `lake`（湖边木屋）/
   `clinic`（路边诊所）。
 
-自检覆盖 33 项：生存、做饭/鱼汤、咖啡、钓鱼、修车/升级引擎、自由摆放、昼夜灯光、天气、
-高度场剖面/草丘/道路压平/地面跟随/坡面倾斜/车内倾斜、废宅商店/加油站/物流仓库/旧农场/购物中心/湖边木屋/路边诊所店内物资箱（6/6）、
+自检覆盖 34 项：生存、做饭/鱼汤、咖啡、钓鱼、修车/升级引擎、自由摆放、昼夜灯光、天气、
+高度场剖面/草丘/道路压平/地面跟随/坡面倾斜/车内倾斜/四轮接地、废宅商店/加油站/物流仓库/旧农场/购物中心/湖边木屋/路边诊所店内物资箱（6/6）、
 POI 墙体碰撞/门洞通行等。
 
 ## 网络合作（主世界 2–4 人）
@@ -408,20 +413,22 @@ POI 墙体碰撞/门洞通行等。
   `rv_patch_right.png`（草甸与池塘）。
   对照参考图，地面由原来的沙土色变为饱和草绿，并出现高矮草丛、灌木团、
   蓝/黄/白/红野花与沿路土坡，形成低多边形草甸风格。
-- **营地高度场 / 坡面倾斜验证**：`assets/data/rv_terrain.json`（37×37，4m 网格，
+- **营地高度场 / 四轮接地验证**：`assets/data/rv_terrain.json`（37×37，4m 网格，
   144×144m）与 `rv_terrain.gltf` 由 `tools/gen_rv_terrain.py` 同源生成，
   `lc_terrain.terrainHeight()` 双线性采样。自检新增
   `terrain height profile`（flat=0.00 mid=2.10 top=3.55）、
   `terrain ground follow`（follow=3.55 top=3.55）、
   `terrain heightfield`（37×37 step=4）、`terrain knoll`（knoll=2.09）、
   `terrain flat corridor`（camp/gas/ruin/clinic/road/edge 均 ≤0.06）、
-  `rv slope tilt`（pitch=-0.12 roll=0.32）与
-  `rv tilted interior`（nose=-0.60 right=0.60），单机自检 **33/33 PASS**。
-  截图 `rv_hilltop.png`：站在营地西南草丘回望，起伏草甸、水塘、房车与土坡；
-  `rv_hills.png`：从丘间看营地与远处建筑；`rv_lookback_hf.png`：营地视角，
-  右侧是新增草丘、左侧是公路与房车；`rv_slope_rv_hf.png`：房车停在土坡上，
-  `rv.groundY≈2.0` 且车身随坡侧倾；`rv_drive_road6.png`：自动驾驶途中，
-  公路贴着坡面而不是悬空（HUD 约 100 FPS）。
+  `rv slope tilt`（pitch=-0.12 roll=0.32）、
+  `rv tilted interior`（nose=-0.60 right=0.60）与
+  `rv four wheel contact`（gy=2.34 h0=2.34 clearance=0.00
+  pitch=-0.28 roll=0.25 spread=4.01），单机自检 **34/34 PASS**。
+  截图 `rv_rvhill.png`：房车停在草丘上，四轮接地点拟合出的车身随坡抬起；
+  `rv_4wheel2.png`：土坡斜停时车轮不再半埋（最深接地点被抬到地面以上，
+  对角车轮轻微下垂）；`rv_hilltop.png`：站在营地西南草丘回望，起伏草甸、
+  水塘、房车与土坡；`rv_lookback_hf.png`：营地视角；`rv_susp_drive.png`：
+  自动驾驶停靠时车身贴合坡面（HUD 约 100 FPS）。
   合作模式 `game_state` 带每位玩家 `gy` 与房车 `rv.gy`，两端用同一高度场
   算出相同 `pitch/roll`。
 - **可破碎橱窗验证**：`rv_window_glass.gltf` 使用 BLEND 材质，商店/加油站/仓库/商场/
@@ -510,7 +517,9 @@ POI 墙体碰撞/门洞通行等。
   没有曲面细分、视差贴图或手工建模的高精度资产。
 - 地形已有 144×144m 的营地级高度场（4m 网格，文件仅约 7.5KB）与土坡，
   但超出该范围仍是平地，网格分辨率也较粗（4m 面片）；
-  房车按中心点采样坡度做俯仰/侧倾，没有四轮独立悬挂/分轮接地；
+  房车已按四个车轮接地点采样高度并用弹簧阻尼贴合坡面，
+  但四个车轮仍烘焙在同一个车身网格里，无法逐轮独立上下运动/转向，
+  刚性车身在扭曲地面上也只能三点着地（第四轮轻微下垂）；
   植被风摆是整体偏航而非逐叶片顶点动画。
 - 车辆零件是整体状态，不是可拆装的独立部件。
 - 音效是程序合成的占位音，缺少更丰富的环境声/音乐。

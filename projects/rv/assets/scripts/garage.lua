@@ -420,7 +420,27 @@ function on_start()
     -- following and pitch/roll tilt are visible in a screenshot.
     rv.x, rv.z = 13.0, 10.0
     rv.groundY = terrainHeight and terrainHeight(rv.x, rv.z) or 0
-    if updateRvTilt ~= nil then updateRvTilt(1.0) end
+    rv.susp = nil
+    if updateRvSuspension ~= nil then
+      updateRvSuspension(1.0)
+    elseif updateRvTilt ~= nil then
+      updateRvTilt(1.0)
+    end
+    applyRvTransform()
+    if rvBody ~= nil then
+      PhysicsSetPosition(rvBody, { x = rv.x, y = 0.9 + rv.groundY, z = rv.z })
+    end
+  end
+  if startMode == "rvhill" then
+    -- Test-only: the RV on a rounded meadow knoll (four wheel contacts).
+    rv.x, rv.z, rv.yaw = -26.0, -20.0, 0.7
+    rv.groundY = terrainHeight and terrainHeight(rv.x, rv.z) or 0
+    rv.susp = nil
+    if updateRvSuspension ~= nil then
+      updateRvSuspension(1.0)
+    elseif updateRvTilt ~= nil then
+      updateRvTilt(1.0)
+    end
     applyRvTransform()
     if rvBody ~= nil then
       PhysicsSetPosition(rvBody, { x = rv.x, y = 0.9 + rv.groundY, z = rv.z })
@@ -504,6 +524,11 @@ function on_start()
     -- Test-only: the RV is parked on the embankment (see rvBody block).
     px, pz = -7.0, -5.0
     pyaw = dirYaw(7.0, 5.0)
+  end
+  if startMode == "rvhill" then
+    -- Test-only: three-quarter view of the RV resting on the meadow knoll.
+    px, pz = 7.5, 7.5
+    pyaw = dirYaw(-7.5, -7.5)
   end
   if startMode == "rvslope_in" then
     -- Test-only: first-person view from inside the RV on the slope; the eye
@@ -837,6 +862,13 @@ function on_update(ent, dt)
     updateDrive(dt)
     updateCamera(dt)
     return
+  end
+
+  -- Parked: settle the body onto its four wheel contacts so a stop on a knoll
+  -- or a slope keeps the wheels grounded.
+  if updateRvSuspension ~= nil and rvShell ~= nil then
+    updateRvSuspension(dt)
+    applyRvTransform()
   end
 
   -- ======================= 驻车：改装 / 第一人称 =======================

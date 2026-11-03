@@ -109,3 +109,84 @@ function updateRvTilt(dt)
   rv.pitch = (rv.pitch or 0) + (tp - (rv.pitch or 0)) * k
   rv.roll = (rv.roll or 0) + (tr - (rv.roll or 0)) * k
 end
+
+-- Four wheel contact points in RV-local space; matches tools/gen_rv_body.py
+-- (wheel centres +-1.26 m from the centreline, axles at +-2.92 m).
+local WHEEL_TRACK = 2.52
+local WHEELBASE = 5.84
+local WHEELS = {
+  { lx = -1.26, lz =  2.92 },  -- front left
+  { lx =  1.26, lz =  2.92 },  -- front right
+  { lx = -1.26, lz = -2.92 },  -- rear left
+  { lx =  1.26, lz = -2.92 },  -- rear right
+}
+
+-- Per-wheel suspension + body attitude. Each contact samples terrainHeight at
+-- its own (x,z) and follows the surface through a critically damped spring, so
+-- the body settles onto the wheel plane instead of the centre point: on a
+-- crest the front axle lifts first, in a dip the rear drops, and the wheels no
+-- longer hover over / sink into the slope.
+function updateRvSuspension(dt)
+  local s = rv.susp
+  if s == nil then
+    s = { h = {}, v = {}, init = false }
+    rv.susp = s
+  end
+  local cy, sy = math.cos(rv.yaw), math.sin(rv.yaw)
+  local step = math.min(dt or 0.016, 0.033)
+  local k = 110.0                      -- spring stiffness
+  local c = 2.0 * math.sqrt(k) * 0.85  -- damping (near critical)
+  local hs = {}
+  local sum = 0
+
+  for i, w in ipairs(WHEELS) do
+    local wx = rv.x + w.lx * cy + w.lz * sy
+    local wz = rv.z - w.lx * sy + w.lz * cy
+    local target = terrainHeight(wx, wz)
+    local cur = s.h[i] or target
+    local vel = s.v[i] or 0
+    if s.init then
+      local acc = (target - cur) * k - vel * c
+      vel = vel + acc * step
+      cur = cur + vel * step
+      -- Keep the visual wheel within a sane travel of the surface.
+      if cur < target - 0.30 then cur, vel = target - 0.30, 0 end
+      if cur > target + 0.30 then cur, vel = target + 0.30, 0 end
+    else
+      cur, vel = target, 0
+    end
+    s.h[i], s.v[i] = cur, vel
+    hs[i] = cur
+    sum = sum + cur
+  end
+  s.init = true
+
+  local h0 = sum / 4.0
+  local front = (hs[1] + hs[2]) * 0.5
+  local rear = (hs[3] + hs[4]) * 0.5
+  local plusX = (hs[2] + hs[4]) * 0.5
+  local minusX = (hs[1] + hs[3]) * 0.5
+  local b = (front - rear) / WHEELBASE   -- dh/dlz
+  local a = (plusX - minusX) / WHEEL_TRACK -- dh/dlx
+
+  -- A rigid body can only rest on three of the four contacts when the surface
+  -- is twisted. Lift the least-squares plane by the deepest penetration so no
+  -- wheel sinks into the dirt; the opposite wheel then droops a little, which
+  -- reads like suspension travel instead of clipping.
+  local maxPen = 0
+  for i, w in ipairs(WHEELS) do
+    local pred = h0 + a * w.lx + b * w.lz
+    local pen = hs[i] - pred
+    if pen > maxPen then maxPen = pen end
+  end
+  if maxPen > 0.25 then maxPen = 0.25 end
+  h0 = h0 + maxPen
+
+  local kk = math.min(1, (dt or 0.016) * 10)
+  local tp = math.max(-0.35, math.min(0.35, -math.atan(b)))
+  local tr = math.max(-0.35, math.min(0.35, math.atan(a)))
+  rv.pitch = (rv.pitch or 0) + (tp - (rv.pitch or 0)) * kk
+  rv.roll = (rv.roll or 0) + (tr - (rv.roll or 0)) * kk
+  rv.groundY = (rv.groundY or 0) + (h0 - (rv.groundY or 0)) * kk
+  return h0
+end
