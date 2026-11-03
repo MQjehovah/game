@@ -1722,6 +1722,36 @@ function updatePuddles(dt)
   end
 end
 
+-- 篝火噼啪声：靠近火堆时每隔 2.2–3.6s 播一次 3D 音效
+function campfireCrackleInterval()
+  return 2.2 + math.random() * 1.4
+end
+
+function campfireAudible(dist)
+  return (dist or 1e9) < 14
+end
+
+function updateCampfireAudio(dt)
+  if campfire == nil then return end
+  local lx, lz = rv.x, rv.z
+  if onFoot and player ~= nil and player.active then
+    lx, lz = player.x, player.z
+  end
+  local dx, dz = campfire.x - lx, campfire.z - lz
+  local dist = math.sqrt(dx * dx + dz * dz)
+  if not campfireAudible(dist) then return end
+  fireCrackleT = (fireCrackleT or 0) - (dt or 0)
+  if fireCrackleT > 0 then return end
+  fireCrackleT = campfireCrackleInterval()
+  fireCracklePlays = (fireCracklePlays or 0) + 1
+  if PlaySfx3D ~= nil then
+    PlaySfx3D("fire", { x = campfire.x, y = (campfire.y or 0) + 0.5,
+                        z = campfire.z })
+  elseif PlaySfx ~= nil then
+    PlaySfx("fire")
+  end
+end
+
 -- 营火暖光的轻微跳动：没有灯光强度 API，用位置抖动 + 高度起伏模拟火光
 function updateCampfireLight(dt)
   if campfireLight == nil or campfire == nil then return end

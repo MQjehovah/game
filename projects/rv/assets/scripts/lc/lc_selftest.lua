@@ -1419,6 +1419,26 @@ function runSelfTest()
      campfire and string.format("fire=(%.1f,%.1f) flames=%d",
                                 campfire.x, campfire.z, #campfireFlames) or "missing")
 
+  -- 篝火音效：近处可听、远处静音，靠近时会计时播放
+  do
+    local near = campfireAudible(4)
+    local far = campfireAudible(30)
+    local iv = campfireCrackleInterval()
+    local px, pz, sa = player.x, player.z, onFoot
+    local keepT, keepPlays = fireCrackleT, fireCracklePlays
+    onFoot = true
+    if campfire ~= nil then player.x, player.z = campfire.x, campfire.z end
+    fireCrackleT = 0
+    local p0 = fireCracklePlays or 0
+    updateCampfireAudio(0.1)
+    local played = (fireCracklePlays or 0) == p0 + 1
+    player.x, player.z, onFoot = px, pz, sa
+    fireCrackleT, fireCracklePlays = keepT, keepPlays
+    ok(r, "campfire audio", near and not far and iv >= 2.2 and iv <= 3.6 and played,
+       string.format("near=%s far=%s interval=%.2f played=%s",
+                     tostring(near), tostring(far), iv, tostring(played)))
+  end
+
   -- 主路土肩：沥青边缘与草地的过渡
   do
     local n = #roadShoulders

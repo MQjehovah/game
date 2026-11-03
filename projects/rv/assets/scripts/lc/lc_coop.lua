@@ -2362,6 +2362,7 @@ function coopUpdate(dt)
   end
   if updateTaillights ~= nil then updateTaillights() end
   if updateCampfireLight ~= nil then updateCampfireLight(dt) end
+  if updateCampfireAudio ~= nil then updateCampfireAudio(dt) end
   if updateBirds ~= nil then updateBirds(dt) end
   if updateRabbits ~= nil then updateRabbits(dt) end
   if updateButterflies ~= nil then updateButterflies(dt) end
