@@ -606,6 +606,11 @@ function on_start()
     px, pz = 7.4, 7.6
     pyaw = dirYaw(-7.4, -3.4)
   end
+  if startMode == "jobmarker" then
+    -- Test-only: stand at camp looking north at the gas-stop contract target.
+    px, pz = 4.6, -10.5
+    pyaw = dirYaw(-4.6, 70.5)
+  end
   if startMode == "furnview" then
     -- Test-only interior view down the furniture wall.
     px, pz = -0.72, 1.30
@@ -807,6 +812,13 @@ function on_start()
     rv.forceHeadlights = true
   elseif startMode == "nightoff" then
     clock = 22 * 60
+  elseif startMode == "jobmarker" then
+    jobRefreshOffers("gasstop")
+    jobAccept(1)
+  elseif startMode == "jobmap" then
+    jobRefreshOffers("gasstop")
+    jobAccept(1)
+    mapOpen = true
   elseif startMode == "drive" or startMode == "night_drive" or autoPilot or rv.steerDemo then
     setPhase("driving")
   elseif startMode == "utilroof" then

@@ -760,6 +760,15 @@ function drawMapHud()
   DrawLine(rx, ry, rx + math.sin(rv.yaw) * 20, ry + math.cos(rv.yaw) * 20,
            2, 0.98, 0.85, 0.4, 1)
   DrawCircle(rx, ry, 4, 2, 0.98, 0.85, 0.4, 1, true)
+  -- 当前货运合同：地图上用金色圆环标出目的地
+  if job ~= nil then
+    local jn = nodeById(job.destId)
+    if jn then
+      local jx, jy = mapXY(jn.x, jn.z)
+      DrawCircle(jx, jy, 12, 2, 1.0, 0.80, 0.28, 1, false)
+      drawTextCentered("货运目标", jx, jy + 13, 12, 1.0, 0.88, 0.50, 1)
+    end
+  end
   DrawText("● 房车    ● 地点（越红越危险）    — 公路", px + 16, py + ph - 24,
            12, 0.7, 0.7, 0.65, 1)
   DrawText(string.format("已发现 %d 个地点", #NODES), px + pw - 16, py + ph - 24,
@@ -791,6 +800,26 @@ function drawJobTracker(vw)
            0.80, 0.84, 0.78, 1)
   DrawRect(bx + 12, 84, bw - 24, 3, 0.14, 0.15, 0.14, 0.9)
   DrawRect(bx + 12, 84, (bw - 24) * done, 3, 0.78, 0.66, 0.32, 1)
+  drawJobWaypoint(vw)
+end
+
+-- 世界空间目标标记：目的地进入视野时在它头顶画金色菱形 + 距离，
+-- 让玩家不用一直盯着顶部追踪条也能找到路。
+function drawJobWaypoint(vw)
+  if job == nil then return end
+  local nd = nodeById(job.destId)
+  if nd == nil then return end
+  local vp = GetViewportSize()
+  local vh = (vp and vp.h) or 720
+  local sp = WorldToScreen(nd.x, 3.4, nd.z)
+  if sp == nil then return end
+  if sp.x < 34 or sp.x > vw - 34 or sp.y < 104 or sp.y > vh - 90 then return end
+  local dist = jobRemaining()
+  DrawLine(sp.x, sp.y - 10, sp.x, sp.y - 24, 2, 1.0, 0.82, 0.32, 0.9)
+  DrawCircle(sp.x, sp.y, 9, 2, 1.0, 0.82, 0.32, 1, false)
+  DrawCircle(sp.x, sp.y, 4, 2, 1.0, 0.82, 0.32, 1, true)
+  drawTextCentered(string.format("货运目标 · %s · %.0fm", nd.name or "", dist),
+                   sp.x, sp.y - 42, 13, 1.0, 0.90, 0.55, 1)
 end
 
 -- 营地货运板菜单：列 3 张合同，1-3 接单，0 放弃当前，E 关闭

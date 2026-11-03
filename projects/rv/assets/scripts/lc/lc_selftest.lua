@@ -885,7 +885,10 @@ function runSelfTest()
 
   -- 接单：货重进入 stats.weight，目的地为 45m 外的节点
   local cargo0 = jobCargoWeight()
-  jobRefreshOffers()
+  jobRefreshOffers("gasstop")
+  local preferOk = #jobOffers > 0 and jobOffers[1].destId == "gasstop"
+  ok(r, "job board target offer", preferOk,
+     preferOk and jobOffers[1].destName or "no offer")
   local offerOk = #jobOffers > 0 and jobOffers[1].distance >= JOBS.minDistance and
                   jobOffers[1].crates >= 1 and (jobOffers[1].weight or 0) > 0
   local payOk = next(jobOffers[1] and jobOffers[1].pay or {}) ~= nil

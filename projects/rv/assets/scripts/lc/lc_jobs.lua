@@ -70,7 +70,7 @@ function jobSpawnCargo()
 end
 
 -- 板上合同：优先挑 45m 外的节点，距离越远报酬/载重越高；不足则用最近的补。
-function jobRefreshOffers()
+function jobRefreshOffers(preferId)
   local pool, near = {}, {}
   for _, nd in ipairs(NODES) do
     if nd.id ~= "camp" then
@@ -84,7 +84,37 @@ function jobRefreshOffers()
   end
   jobOffers = {}
   local used = {}
+  -- 测试/导航用：可指定第一张合同的目的地（营地板上仍随机补足其余）
+  local prefer = preferId and nodeById(preferId) or nil
   local want = math.min(JOBS.offers, #pool + #near)
+  local function makeOffer(nd)
+    local cargo = JOBS.cargo[math.random(1, #JOBS.cargo)]
+    local dist = math.sqrt(nd.x * nd.x + nd.z * nd.z)
+    local crates = math.min(JOBS.maxCargo, 2 + math.floor(dist / 120))
+    local pay = {
+      metal = 2 + math.floor(dist / 45),
+      wood  = 1 + math.floor(dist / 90),
+    }
+    if (nd.danger or 0) >= 2 then pay.electronics = 1 end
+    local fuelPay = JOBS.fuelBase + math.floor(dist / 100) * JOBS.fuelPer100m
+    return {
+      destId = nd.id,
+      destName = nd.name,
+      danger = nd.danger or 0,
+      cargo = cargo.name,
+      cargoId = cargo.id,
+      crates = crates,
+      weight = crates * cargo.kg,
+      distance = dist,
+      pay = pay,
+      fuel = fuelPay,
+      stage = "offer",
+    }
+  end
+  if prefer ~= nil then
+    used[prefer.id] = true
+    jobOffers[#jobOffers + 1] = makeOffer(prefer)
+  end
   for i = 1, want do
     local src = (#pool > 0) and pool or near
     local nd = src[math.random(1, #src)]
@@ -95,29 +125,7 @@ function jobRefreshOffers()
     end
     if nd ~= nil and not used[nd.id] then
       used[nd.id] = true
-      local cargo = JOBS.cargo[math.random(1, #JOBS.cargo)]
-      local dist = math.sqrt(nd.x * nd.x + nd.z * nd.z)
-      local crates = math.min(JOBS.maxCargo,
-                              2 + math.floor(dist / 120))
-      local pay = {
-        metal = 2 + math.floor(dist / 45),
-        wood  = 1 + math.floor(dist / 90),
-      }
-      if (nd.danger or 0) >= 2 then pay.electronics = 1 end
-      local fuelPay = JOBS.fuelBase + math.floor(dist / 100) * JOBS.fuelPer100m
-      jobOffers[#jobOffers + 1] = {
-        destId = nd.id,
-        destName = nd.name,
-        danger = nd.danger or 0,
-        cargo = cargo.name,
-        cargoId = cargo.id,
-        crates = crates,
-        weight = crates * cargo.kg,
-        distance = dist,
-        pay = pay,
-        fuel = fuelPay,
-        stage = "offer",
-      }
+      jobOffers[#jobOffers + 1] = makeOffer(nd)
     end
     -- 抽到的地点从池里移除，保证合同不重复
     for k = #pool, 1, -1 do
