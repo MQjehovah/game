@@ -652,6 +652,12 @@ function warmthStatusText()
   return string.format("暖和 %.0f 分钟", warmthMin)
 end
 
+-- 统一设置保暖分钟（联机客机按服务器值同步）
+function setWarmth(v)
+  if v == nil then return end
+  warmthMin = math.max(0, tonumber(v) or 0)
+end
+
 -- 篝火边休息会持续取暖（至少 20 分钟保暖）
 function campfireWarmthMinutes(current)
   return math.max(current or 0, 20)

@@ -3934,6 +3934,18 @@ function runSelfTest()
                      warmthMin or 0))
   end
 
+  -- 联机保暖同步：按服务器值设置并夹紧到 0
+  do
+    local keep = warmthMin
+    setWarmth(35)
+    local set = math.abs((warmthMin or 0) - 35) < 1e-6
+    setWarmth(-5)
+    local clamped = (warmthMin or -1) == 0
+    warmthMin = keep
+    ok(r, "warmth sync", set and clamped,
+       string.format("set=%s clamp=%s", tostring(set), tostring(clamped)))
+  end
+
   -- 夜间驾驶疲劳：短途无、长途有、上限封顶
   do
     local a = nightFatigueExtra(60)

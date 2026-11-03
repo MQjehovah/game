@@ -551,6 +551,7 @@ local function pushState()
     fire = campfireOn and 1 or 0,
     fireFuel = math.floor(campfireFuelMin or 0),
     oil = math.floor(oilLife or 100),
+    warm = math.floor(warmthMin or 0),
   })
 end
 
@@ -1801,6 +1802,9 @@ local function applyState(s)
   end
   if s.oil ~= nil and setOilLife ~= nil then
     setOilLife(s.oil)
+  end
+  if s.warm ~= nil and setWarmth ~= nil then
+    setWarmth(s.warm)
   end
   if s.high ~= nil then
     local hb = (s.high == 1 or s.high == true)
