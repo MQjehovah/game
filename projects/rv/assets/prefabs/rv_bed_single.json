@@ -19,7 +19,7 @@
       ]
     },
     "mesh": {
-      "meshKey": "gltf:assets/models/furniture/bedSingle.glb",
+      "meshKey": "gltf:assets/models/rv/rv_furn_bed_single.gltf",
       "castShadow": true,
       "receiveShadow": true
     }

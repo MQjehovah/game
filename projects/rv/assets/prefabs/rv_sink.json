@@ -19,7 +19,7 @@
       ]
     },
     "mesh": {
-      "meshKey": "gltf:assets/models/furniture/kitchenSink.glb",
+      "meshKey": "gltf:assets/models/rv/rv_furn_sink.gltf",
       "castShadow": true,
       "receiveShadow": true
     }

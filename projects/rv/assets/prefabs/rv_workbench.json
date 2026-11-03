@@ -19,7 +19,7 @@
       ]
     },
     "mesh": {
-      "meshKey": "gltf:assets/models/furniture/desk.glb",
+      "meshKey": "gltf:assets/models/rv/rv_furn_workbench.gltf",
       "castShadow": true,
       "receiveShadow": true
     }

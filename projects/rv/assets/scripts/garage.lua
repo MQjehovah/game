@@ -402,6 +402,11 @@ function on_start()
     px, pz = 2.6, 9.2
     pyaw = dirYaw(-2.6, -9.2)
   end
+  if startMode == "furnview" then
+    -- Test-only interior view down the furniture wall.
+    px, pz = -0.72, 1.30
+    pyaw = math.pi
+  end
   if startMode == "poi" then
     -- 路边商店门口：用于检查可进入建筑（门洞/内衬/战利品）
     local nd = nodeById("ruin")

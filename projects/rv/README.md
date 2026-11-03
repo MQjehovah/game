@@ -136,6 +136,11 @@
   前后轮拱 + 轮拱内衬、前后保险杠、侧防擦条、车顶行李架/空调/爬梯/遮阳篷盒、
   后视镜、灯组、格栅、排气管；车内新增多段式仪表台、方向盘、驾驶席（座垫/靠背/
   侧翼/头枕/滑轨）与两侧吊柜（柜门 + 把手）+ 驾驶室顶架。门洞/座椅/碰撞保持不变。
+- 可摆放家具中的单人/双人床、灶台、冰箱、水槽、工作台、储物箱改由
+  `tools/gen_rv_furniture.py` 生成多部件 glTF：木框床架/床垫/被子/枕头、灶台
+  烤箱门/玻璃窗/旋钮/双灶头、冰箱双门/把手/散热格栅、水槽柜/台面/内嵌水盆/龙头、
+  工作台桌面/腿/抽屉/挂板工具/台钳/工具箱、木箱板条/金属包角/箱盖/提手/标签；
+  预制体名与 `use` 交互钩子保持不变。
 - 车内保留独立内饰板/仪表台/暖光点光源；驾驶席视角隐藏外壳，追逐视角显示完整车体。
 - 公路改为 20 段 10m 深灰立方体 + 独立黄色虚线几何体：抬高路面并加 polygon offset，
   避免远距离 z-fighting 导致的整条路发白；不再依赖贴图/深度投影。
@@ -162,6 +167,8 @@
 - `coop_clamp.txt`：合作测试时把玩家限制在房车前方（便于截图/稳定复现）。
 - `coop_drive.txt`：合作测试时玩家 1 在 2 秒后自动坐上驾驶席。
 - `coop_actions.txt`：合作测试时 6 秒后自动搜一个物资箱并切换灶台状态。
+- `coop_cook.txt`：合作测试时 2 秒后给一份生食材并调用灶台 `cookRecipe`，
+  日志 `[coop-cook] stove meal 0->1 ok=true`，用于验证新灶台模型的交互钩子。
 - `coop_build.txt`：合作测试时槽位 1 自动放置太阳能板/储物箱并拆除储物箱。
 - `coop_buildmode.txt`：客户端启动后直接进入建造模式（UI/截图验证）。
 - `coop_board.txt`：槽位 1 在 5s 上车、9s 下车，用于验证进出状态同步。
@@ -190,6 +197,7 @@
 - `coop_poiext.txt`：店外全景固定镜头（商店 + 雨棚/油泵/装卸月台/谷仓等）。
 - `start_mode.txt`：`inside` / `inside_night` / `night` / `place` / `place_night` /
   `drive` / `map` / `look_back` / `look_left` / `look_right` / `look_down` / `look_up` /
+  `furnview`（车内家具墙）/ `rvfront`（房车正面）/ `side`（房车侧面）/
   `poi`（废宅商店门口）/ `gas`（加油站门口）/ `warehouse`（仓库月台）/
   `farm`（旧农场谷仓）/ `mall`（购物中心店门口）/ `lake`（湖边木屋）/
   `clinic`（路边诊所）。
@@ -291,6 +299,12 @@ POI 墙体碰撞/门洞通行等。
   `rv_hi_front2.png`（前视：挡风玻璃/格栅/大灯/前保险杠）、
   `rv_hi_interior2.png`（车内：吊柜/柜门把手/驾驶室顶架/仪表台/方向盘/驾驶席）、
   `rv_hi_board.png`（车门打开、乘客坐在门口）。
+- **家具替换验证**：`tools/gen_rv_furniture.py` 生成 `rv_furn_bed_single/bed_double/
+  stove/fridge/sink/workbench/storage` 七个多部件模型，`rv_bed_*`/`rv_stove` 等预制体
+  改为引用它们（尺寸/层/`use` 不变）。单机 `start_mode=furnview` 截图
+  `rv_furn_view.png` 可见床（木框/蓝被/枕头）、水槽（台面/水盆/龙头）、灶台（烤箱门/
+  玻璃/旋钮/灶头）；`coop_cook.txt` 双客户端跑 `[coop-cook] stove meal 0->1 ok=true`；
+  自检的 `cook at stove` / `drink at sink` / `repair at workbench` 仍通过。
 - **可破碎橱窗验证**：`rv_window_glass.gltf` 使用 BLEND 材质，商店/加油站/仓库/商场/
   湖边木屋/诊所橱窗初始为半透明蓝色面板（`rv_glass_intact_close.png` 中窗内商品呈蓝色调，
   `rv_clinic_glass_intact.png` 为诊所橱窗）；玩家进门后服务器打印
@@ -364,7 +378,8 @@ POI 墙体碰撞/门洞通行等。
   物流仓库卷帘门与谷仓滑动门均可开合，且关闭时会阻挡玩家通行（服务器权威 + 客户端预测一致）；
   商店/加油站/商场/仓库/农场/诊所/湖边木屋的主要商品与补给箱已使用包装图集。
 - 房车车体已由 `tools/gen_rv_body.py` 升级为倒角车身、内凹车窗、轮拱、保险杠/
-  防擦条、车顶设备与多段式内饰；但仍是脚本化低多边形资产（不是手工建模的高精度
-  模型，缺少真实曲面/贴图细节），车内家具仍使用 Kenney 低模。
+  防擦条、车顶设备与多段式内饰；单人/双人床、灶台、冰箱、水槽、工作台、储物箱
+  也改由 `tools/gen_rv_furniture.py` 生成多部件 glTF（木纹/金属/玻璃/织物材质）；
+  但整体仍是脚本化低模，缺少真实曲面/贴图细节；电视/卫浴等其余家具仍使用 Kenney 资产。
 - 车辆零件是整体状态，不是可拆装的独立部件。
 - 音效是程序合成的占位音，缺少更丰富的环境声/音乐。

@@ -57,6 +57,7 @@ local coop = {
   poiDemo = false, poiView = false, poiExt = false, poiNode = nil, poiIn = {}, poiT = 0,
   doorDemo = false, doorT = 0, doorNode = nil,
   doorClosedLogged = false, doorOpenLogged = false, doorCrossed = false,
+  cookDemo = false, cookDone = false,
   sitDemo = false, doorView = false, sitView = false,
   animDemo = nil, animDemoEnt = nil,
   doorAngle = 0, doorTarget = 0, animT = 0,
@@ -764,6 +765,21 @@ local function serverUpdate(dt)
     if coop.carryT <= 0 then
       coop.carryT = 0
       coop.carrySlot = 0
+    end
+  end
+
+  -- Test-only co-op crafting check: use the authored stove model through the
+  -- same cookRecipe hook the player interaction uses.
+  if coop.cookDemo and not coop.cookDone and coop.autoT >= 2.0 then
+    coop.cookDone = true
+    addItem("rawfood", 1)
+    local before = inv.meal or 0
+    local ok = cookRecipe("meal")
+    print(string.format("[coop-cook] stove meal %d->%d ok=%s",
+          before, inv.meal or 0, tostring(ok)))
+    if ok then
+      setToast("合作演示：灶台做好一份热饭")
+      pushState()
     end
   end
 
@@ -1689,6 +1705,7 @@ function coopInitWorld(role)
     coop.clampDemo = readFlag("coop_clamp.txt")
     coop.autoDrive = readFlag("coop_drive.txt")
     coop.actionsDemo = readFlag("coop_actions.txt")
+    coop.cookDemo = readFlag("coop_cook.txt")
     coop.boardDemo = readFlag("coop_board.txt")
     local doorTest = ReadText("coop_doortest.txt")
     if doorTest ~= nil and doorTest ~= "" then
