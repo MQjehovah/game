@@ -91,6 +91,7 @@ interiorLightsOn = true       -- 车内灯开关（L）
 highBeam = false             -- 远光灯（H）
 flashlightOn = true           -- 手电筒开关（F）
 flashlightEnt = nil           -- 手电筒聚光灯实体
+ambientTrack = nil            -- 当前环境音乐（wind/engine/rain）
 tripDistance, tripFuel = 0, 0 -- 行程统计：米 / 升
 batteryCharge = 0             -- 电池当前电量 kWh
 bestFish, fishCaught = 0, 0   -- 钓鱼纪录：最大尺寸 cm / 累计条数

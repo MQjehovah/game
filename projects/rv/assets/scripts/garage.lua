@@ -71,8 +71,6 @@ function setPhase(m)
     if not onFoot then spawnPlayer() end
     setPlayerVisible(false)
     SetVar("cameraMouseLock", 1)
-    if PlayMusic then PlayMusic("wind", 0.10) end
-    if SetBusVolume ~= nil then SetBusVolume(2, 1.0) end
     applyRvTransform()
     updateInteraction()
     toast.t = 4.5
@@ -91,10 +89,6 @@ function setPhase(m)
     driveView = "cab"
     driveLookYaw, driveLookPitch = 0, 0
     SetVar("cameraMouseLock", 1)
-    if PlayMusic then PlayMusic("engine", 0.22) end
-    if SetBusVolume ~= nil and engineAudioGain ~= nil then
-      SetBusVolume(2, engineAudioGain(0))
-    end
     toast.text = "上路！W 油门  S 刹车  A/D 转向  空格 停车  C 视角"
     toast.t = 4.5
   end
@@ -103,6 +97,22 @@ function setPhase(m)
   hover = nil
   if gridFloorEnt ~= nil then SetVisible(gridFloorEnt, false) end
   if gridRoofEnt ~= nil then SetVisible(gridRoofEnt, false) end
+end
+
+-- 环境音乐：按驾驶/天气切换 wind / engine / rain，只在轨道变化时重播
+function updateAmbientMusic()
+  if PlayMusic == nil or desiredMusic == nil then return end
+  local name, vol = desiredMusic(phase, weather)
+  if ambientTrack == name then return end
+  ambientTrack = name
+  PlayMusic(name, vol or 0.12)
+  if SetBusVolume ~= nil then
+    if name == "engine" and engineAudioGain ~= nil then
+      SetBusVolume(2, engineAudioGain(rv.speed or 0))
+    else
+      SetBusVolume(2, 1.0)
+    end
+  end
 end
 
 function saveLayout()
@@ -915,7 +925,7 @@ function on_start()
      or startMode == "poinight" then
     clock = 22 * 60
   end
-  if PlayMusic then PlayMusic("wind", 0.10) end
+  ambientTrack = nil  -- 由 updateAmbientMusic 按驾驶/天气切换
   local sx, sz = rotOf(px, pz)
   spawnPlayerAt(sx, sz, rv.yaw + pyaw)
   player.pitch = -0.05
@@ -1264,6 +1274,7 @@ function on_update(ent, dt)
   if updateBirds ~= nil then updateBirds(dt) end
   if updateRabbits ~= nil then updateRabbits(dt) end
   if updatePuddles ~= nil then updatePuddles(dt) end
+  if updateAmbientMusic ~= nil then updateAmbientMusic() end
   if updateWindmill ~= nil then updateWindmill(dt) end
   if updatePoiSigns ~= nil then updatePoiSigns() end
   if updateRvSmoke ~= nil then updateRvSmoke(dt) end

@@ -15,6 +15,13 @@ function weatherDuration()
   return 90 + math.random() * 90
 end
 
+-- 环境音乐：开车=引擎、雨天步行=雨声、其它=风声（返回 name, volume）
+function desiredMusic(phaseValue, weatherValue)
+  if phaseValue == "driving" then return "engine", 0.22 end
+  if weatherValue == "rain" then return "rain", 0.14 end
+  return "wind", 0.10
+end
+
 function initWeather()
   weather = "clear"
   weatherT = 0

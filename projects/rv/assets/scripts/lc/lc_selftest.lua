@@ -2108,6 +2108,16 @@ function runSelfTest()
        string.format("night=%s day=%s", tostring(night), tostring(day)))
   end
 
+  -- 环境音乐：驾驶=引擎、雨天步行=雨声、其它=风声
+  do
+    local dn, dv = desiredMusic("driving", "rain")
+    local rn, rv2 = desiredMusic("parked", "rain")
+    local wn, wv = desiredMusic("parked", "clear")
+    ok(r, "ambient music", dn == "engine" and rn == "rain" and wn == "wind" and
+       dv > 0 and rv2 > 0 and wv > 0,
+       string.format("drive=%s rain=%s clear=%s", dn, rn, wn))
+  end
+
   -- 睡醒晨报：包含天数/货运单数/今日目标/油量
   do
     local sd, sc = day, clock
