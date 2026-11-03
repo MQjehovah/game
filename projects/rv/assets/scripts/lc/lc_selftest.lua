@@ -2364,6 +2364,28 @@ function runSelfTest()
        string.format("drive=%s rain=%s clear=%s radio=%s", dn, rn, wn, radioN))
   end
 
+  -- 收音机广播：开启后按游戏分钟触发，关闭不触发
+  do
+    local keepOn, keepT, keepNext = radioOn, radioBroadcastT, radioBroadcastNext
+    local keepToast, keepTT = toast.text, toast.t
+    local keepJournal = journal
+    journal = {}
+    radioOn = false
+    radioBroadcastT = 999
+    local off = updateRadioBroadcast(10)
+    radioOn = true
+    radioBroadcastT, radioBroadcastNext = 0, 0.1
+    local on = updateRadioBroadcast(1)
+    local logged = #journal == 1 and journal[1].kind == "radio"
+    local reset = (radioBroadcastT or -1) == 0 and (radioBroadcastNext or 0) > 0
+    radioOn, radioBroadcastT, radioBroadcastNext = keepOn, keepT, keepNext
+    toast.text, toast.t = keepToast, keepTT
+    journal = keepJournal
+    ok(r, "radio broadcast", off == false and on == true and logged and reset,
+       string.format("off=%s on=%s logged=%s reset=%s", tostring(off),
+                     tostring(on), tostring(logged), tostring(reset)))
+  end
+
   -- 钓鱼水塘木栈桥
   do
     local n = #docks

@@ -460,12 +460,29 @@ function sleepInBed()
   toast.t = 3.5
 end
 
+-- 收音机广播：开启后按游戏分钟间隔播报路况/天气提示
+function updateRadioBroadcast(gm)
+  if not radioOn then return false end
+  radioBroadcastT = (radioBroadcastT or 0) + (gm or 0)
+  if radioBroadcastT < (radioBroadcastNext or 120) then return false end
+  radioBroadcastT = 0
+  radioBroadcastNext = 90 + math.random() * 60
+  local list = RADIO_BROADCASTS or {}
+  if #list == 0 then return false end
+  local line = list[math.random(#list)]
+  toast.text = line
+  toast.t = 5.0
+  if addJournal ~= nil then addJournal(line, "radio") end
+  return true
+end
+
 -- 时间/需求主循环
 function updateSurvival(dt)
   if hurtT > 0 then hurtT = math.max(0, hurtT - dt) end
 
   local gm = dt * SURVIVAL.timeScale
   advanceGameMinutes(gm)
+  if updateRadioBroadcast ~= nil then updateRadioBroadcast(gm) end
 
   needs.hunger = math.max(0, needs.hunger - SURVIVAL.hungerRate * gm)
   needs.thirst = math.max(0, needs.thirst - SURVIVAL.thirstRate * gm)
