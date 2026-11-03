@@ -244,7 +244,7 @@ function jobComplete()
   local cond = math.max(0, math.min(1, job.condition or 1.0))
   local scale = 0.55 + 0.45 * cond
   -- 每天第一单：结算 +25%（把跨天/睡觉和货运循环串起来）
-  local firstOfDay = (day or 1) ~= (lastJobDay or 0)
+  local firstOfDay = jobDailyBonusAvailable()
   if firstOfDay then
     scale = scale * 1.25
     lastJobDay = day or 1
@@ -312,6 +312,11 @@ function spawnJobBoard()
     SetRotationY(flag, rot)
   end
   jobBoard = { x = bx, z = bz }
+end
+
+-- 今日首单加成是否还能领（每天一次）
+function jobDailyBonusAvailable()
+  return (day or 1) ~= (lastJobDay or 0)
 end
 
 -- 限时急单超时：货物退回、没有报酬

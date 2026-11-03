@@ -941,6 +941,11 @@ function drawJobPanel()
   drawTextCentered("货运板 · 顺路合同", vw * 0.5, py + 12, 20, 0.98, 0.90, 0.68, 1)
   DrawText("把货送到指定地点即可结算；载重会拉低加速与极速，也增加油耗",
            px + 20, py + 44, 12, 0.74, 0.74, 0.68, 1)
+  local bonusAvail = (jobDailyBonusAvailable == nil) or jobDailyBonusAvailable()
+  DrawText(bonusAvail and "今日首单 +25% 待领取" or "今日首单加成已用",
+           px + 20, py + 60, 12,
+           bonusAvail and 0.95 or 0.64, bonusAvail and 0.82 or 0.66,
+           bonusAvail and 0.45 or 0.62, 1)
 
   if job ~= nil then
     local dist = jobRemaining()

@@ -1344,6 +1344,18 @@ function runSelfTest()
        string.format("first=%d second=%d", firstGain, secondGain))
   end
 
+  -- 今日首单状态（板上提示）
+  do
+    local sd, sl = day, lastJobDay
+    day, lastJobDay = 5, 5
+    local used = jobDailyBonusAvailable()
+    lastJobDay = 4
+    local avail = jobDailyBonusAvailable()
+    day, lastJobDay = sd, sl
+    ok(r, "daily bonus status", used == false and avail == true,
+       string.format("used=%s avail=%s", tostring(used), tostring(avail)))
+  end
+
   -- 存读档：行程/探索/货运单数 + 天气
   do
     tripDistance, tripFuel, jobDelivered = 3210, 88, 7
