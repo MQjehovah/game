@@ -2954,6 +2954,18 @@ function runSelfTest()
        string.format("empty=%.2f loaded=%.2f over=%.2f", empty, loaded, over))
   end
 
+  -- 粗糙路面加速轮胎磨损
+  do
+    local road = surfaceTireWearScale("asphalt")
+    local gravel = surfaceTireWearScale("gravel")
+    local dirt = surfaceTireWearScale("dirt")
+    local mud = surfaceTireWearScale("mud")
+    ok(r, "surface tire wear",
+       road == 1.0 and gravel > road and dirt > road and mud > gravel,
+       string.format("road=%.2f gravel=%.2f dirt=%.2f mud=%.2f",
+                     road, gravel, dirt, mud))
+  end
+
   -- 太阳能：夜间不出力、白天满发
   do
     local sc, sw = clock, weather

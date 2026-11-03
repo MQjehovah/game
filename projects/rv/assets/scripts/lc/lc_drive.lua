@@ -253,6 +253,15 @@ function tireWearScale(loadRatio)
   return 1.0 + math.min(1.2, over * 0.8)
 end
 
+-- 路面越粗糙，轮胎磨损越快
+function surfaceTireWearScale(name)
+  if name == "mud" then return 1.35 end
+  if name == "gravel" then return 1.25 end
+  if name == "dirt" then return 1.15 end
+  if name == "grass" then return 1.10 end
+  return 1.0
+end
+
 -- 刹车减速度：载重越重越刹不住（超载额外衰减）
 -- 刹车热衰减：连续重刹后制动力最低降到 70%
 function brakeFadeScale(heat)
@@ -1073,7 +1082,8 @@ function updateDrive(dt)
     end
     parts.engine = math.max(0, parts.engine - VEH.partWear.engine * meters)
     parts.tires = math.max(0, parts.tires -
-      VEH.partWear.tires * meters * tireWearScale(ratio))
+      VEH.partWear.tires * meters * tireWearScale(ratio) *
+      surfaceTireWearScale(surfName))
     oilLife = math.max(0, (oilLife or 100) - meters * 0.01)
     -- 冷却液缓慢消耗；过热时额外泄漏
     coolant = math.max(0, (coolant or 100) - meters * 0.002 -
