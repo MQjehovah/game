@@ -507,6 +507,7 @@ local function pushState()
     day = day,
     clock = math.floor((clock or 0) * 10 + 0.5) / 10,
     weather = coop.weather, lights = coop.lights and 1 or 0,
+    battery = math.floor((batteryCharge or 0) * 100 + 0.5) / 100,
     materials = materials, inv = invList, furn = furnOn,
     crates = #crates, furnCount = #sortedInstances(), worldSeq = coop.worldSeq,
     door = anyInside and 1 or 0,
@@ -1281,7 +1282,7 @@ local function clientLog(s)
     end
   end
   print(string.format(
-    "[coop-main-client] seq=%d name=%s slot=%d id=%.0f rv=(%.2f,%.2f,yaw=%.2f) p1=(%.2f,%.2f) p2=(%.2f,%.2f) p3=(%.2f,%.2f) p4=(%.2f,%.2f) fuel=%.1f water=%.1f metal=%d crates=%d meal=%d waterItem=%d stove=%d fridge=%d bed=%d hunger=%.1f furn=%d in1=%d in2=%d in3=%d in4=%d door=%d shop=%d rollup=%s barndoor=%s glass=%s job=%s",
+    "[coop-main-client] seq=%d name=%s slot=%d id=%.0f rv=(%.2f,%.2f,yaw=%.2f) p1=(%.2f,%.2f) p2=(%.2f,%.2f) p3=(%.2f,%.2f) p4=(%.2f,%.2f) fuel=%.1f water=%.1f metal=%d crates=%d meal=%d waterItem=%d stove=%d fridge=%d bed=%d hunger=%.1f furn=%d in1=%d in2=%d in3=%d in4=%d door=%d shop=%d rollup=%s barndoor=%s glass=%s job=%s batt=%.2f",
     s.seq, tostring(GetVar("playerName")), coop.mySlot, coop.myClientId or 0,
     s.rv.x, s.rv.z, s.rv.yaw,
     (p[1] and p[1].x) or 0, (p[1] and p[1].z) or 0,
@@ -1297,7 +1298,7 @@ local function clientLog(s)
     (p[1] and p[1].ins) or 0, (p[2] and p[2].ins) or 0,
     (p[3] and p[3].ins) or 0, (p[4] and p[4].ins) or 0, s.door or 0, shop,
     tostring(s.rollup or 0), tostring(s.barndoor or 0), tostring(s.glass or "-"),
-    tostring(s.job or "-")))
+    tostring(s.job or "-"), batteryCharge or 0))
 end
 
 -- Apply one authoritative RV pose (from game_state or the compact game_pose
@@ -1345,6 +1346,9 @@ local function applyState(s)
   coop.day = tonumber(s.day) or coop.day
   coop.clock = tonumber(s.clock) or coop.clock
   coop.lights = (s.lights == 1 or s.lights == true)
+  if s.battery ~= nil then
+    batteryCharge = tonumber(s.battery) or batteryCharge
+  end
   if type(s.materials) == "table" then
     for k, v in pairs(s.materials) do materials[k] = tonumber(v) or 0 end
   end
