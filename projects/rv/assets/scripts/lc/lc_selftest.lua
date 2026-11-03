@@ -1491,6 +1491,20 @@ function runSelfTest()
        string.format("gears=%d/%d/%d/%d/%d rpm4=%.0f", g1, g2, g3, g4, g5, rpm4))
   end
 
+  -- 自动换挡反馈：挡位变化时计数一次
+  do
+    local keepGear, keepSpeed = rv.lastGear, rv.speed
+    local keepShifts = rv.gearShifts
+    rv.lastGear, rv.speed, rv.gearShifts = 1, 2.0, 0
+    local shift = updateGearShiftFx()
+    local counted = (rv.gearShifts or 0) == 1
+    local again = updateGearShiftFx()
+    rv.lastGear, rv.speed, rv.gearShifts = keepGear, keepSpeed, keepShifts
+    ok(r, "gear shift fx", shift == true and counted and again == false,
+       string.format("shift=%s counted=%s again=%s", tostring(shift),
+                     tostring(counted), tostring(again)))
+  end
+
   -- 夜间步行手电：夜里生成、白天移除
   do
     local sc, sfOn, sfFoot = clock, flashlightOn, onFoot

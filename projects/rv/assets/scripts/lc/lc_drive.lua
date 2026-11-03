@@ -144,6 +144,19 @@ function rvGearInfo(speed)
   return g, rpm
 end
 
+-- 自动换挡时的轻微“咔哒”声（只在行驶中换挡时触发）
+function updateGearShiftFx()
+  local g = rvGearInfo(rv.speed or 0)
+  local shifted = rv.lastGear ~= nil and g ~= rv.lastGear and
+                  math.abs(rv.speed or 0) > 0.4
+  if shifted then
+    if PlaySfx then PlaySfx("click") end
+    rv.gearShifts = (rv.gearShifts or 0) + 1
+  end
+  rv.lastGear = g
+  return shifted
+end
+
 -- 引擎水温：高速/重载升温，低速/怠速散热；过热时限制最高车速并缓慢磨损引擎
 function engineHeatRate(speed, loadRatio)
   local v = math.min(1, math.abs(speed or 0) / DRIVE.maxSpeed)
