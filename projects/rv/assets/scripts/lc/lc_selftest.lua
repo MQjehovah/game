@@ -3183,6 +3183,20 @@ function runSelfTest()
        string.format("60=%.2f 150=%.2f 300=%.2f max=%.2f", a, b, c, d))
   end
 
+  -- 疲劳方向游移：短途无、长途有且幅度受限
+  do
+    local a = nightSteerWander(60, 1.0)
+    local b = nightSteerWander(300, 1.0)
+    local maxv = 0
+    for i = 0, 40 do
+      local v = math.abs(nightSteerWander(300, i * 0.25))
+      if v > maxv then maxv = v end
+    end
+    ok(r, "fatigue steer wander",
+       a == 0 and b ~= 0 and maxv > 0 and maxv <= 0.03,
+       string.format("short=%.3f long=%.3f max=%.3f", a, b, maxv))
+  end
+
   -- 睡醒晨报：包含天数/货运单数/今日目标/油量
   do
     local sd, sc = day, clock

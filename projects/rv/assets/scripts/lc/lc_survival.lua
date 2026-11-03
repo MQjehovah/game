@@ -601,6 +601,15 @@ function fatigueAlpha(minutes)
   return math.min(1.0, (m - 120) / 180)
 end
 
+-- 夜间疲劳导致的轻微方向游移（叠加在玩家转向输入上）
+function nightSteerWander(minutes, t)
+  local a = fatigueAlpha(minutes)
+  if a <= 0 then return 0 end
+  local s = (math.sin((t or 0) * 1.7) * 0.016 +
+             math.sin((t or 0) * 0.53) * 0.009) * a
+  return math.max(-0.03, math.min(0.03, s))
+end
+
 -- 雪天寒冷：没开取暖器时体力消耗更快
 function coldEnergyExtra(weatherValue, heaterOn)
   if weatherValue == "snow" and not heaterOn then

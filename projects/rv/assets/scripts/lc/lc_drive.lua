@@ -378,6 +378,13 @@ function updateDrive(dt)
     end
   end
 
+  -- 夜间疲劳：长时间夜驾后方向会轻微游移（自动巡航/测试钩子不受影响）
+  if not autoPilot and not rv.steerDemo and nightSteerWander ~= nil then
+    rv.wanderT = (rv.wanderT or 0) + (dt or 0)
+    steer = steer + nightSteerWander(nightDriveMin or 0, rv.wanderT)
+    steer = math.max(-1, math.min(1, steer))
+  end
+
   -- 读回上一物理步；意图速度被物理骤降 = 撞击 -> 掉耐久（冷却防研磨连扣）
   local bodyVy = 0
   if rvBody then
