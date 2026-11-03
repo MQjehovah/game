@@ -1433,6 +1433,19 @@ function runSelfTest()
                      tostring(tirePressureLow(2.4))))
   end
 
+  -- 续航估算：无实测时用 1.6L/100m 基准，有实测按实测油耗
+  do
+    local sf, sd, sfu = fuel, tripDistance, tripFuel
+    fuel, tripDistance, tripFuel = 60, 0, 0
+    local base = rangeEstimateM()
+    fuel, tripDistance, tripFuel = 60, 1000, 30
+    local measured = rangeEstimateM()
+    fuel, tripDistance, tripFuel = sf, sd, sfu
+    ok(r, "range estimate",
+       math.abs(base - 3750) < 1 and math.abs(measured - 2000) < 1,
+       string.format("base=%.0fm measured=%.0fm", base, measured))
+  end
+
   -- 地图探索迷雾：未去过的程序化地点在地图上只显示“?”
   do
     local gen = nil

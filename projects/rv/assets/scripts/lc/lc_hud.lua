@@ -736,13 +736,15 @@ function drawDriveHud()
   if hot then tr2, tg2, tb2 = 0.98, 0.40, 0.30 end
   DrawText(string.format("水温 %.0f°C%s", et, hot and "  过热!" or ""),
            px + 14, py + 172, 11, tr2, tg2, tb2, 1)
-  -- 行程电脑：累计里程 + 百公里油耗（车速/载重曲线的直观反馈）
+  -- 行程电脑：累计里程 + 百公里油耗 + 剩余续航（车速/载重曲线的直观反馈）
   local l100 = tripL100 and tripL100() or 0
+  local rangeKm = (rangeEstimateM and rangeEstimateM() or 0) / 1000
   if (tripDistance or 0) >= 20 then
-    DrawText(string.format("行程 %.1fkm · %.1fL/100km", tripDistance / 1000, l100),
+    DrawText(string.format("行程 %.1fkm · %.1fL/100km · 续航 %.1fkm",
+             tripDistance / 1000, l100, rangeKm),
              px + 14, py + 186, 11, 0.74, 0.80, 0.72, 1)
   else
-    DrawText(string.format("行程 %.0fm · 油耗 —", tripDistance or 0),
+    DrawText(string.format("行程 %.0fm · 续航 %.1fkm", tripDistance or 0, rangeKm),
              px + 14, py + 186, 11, 0.68, 0.70, 0.64, 1)
   end
 

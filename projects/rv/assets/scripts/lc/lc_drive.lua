@@ -63,6 +63,13 @@ function tripL100()
   return (tripFuel or 0) / tripDistance * 100
 end
 
+-- 剩余续航里程（米）：有实测油耗就按实测，否则用 1.6L/100m 的基准
+function rangeEstimateM()
+  local per100m = tripL100()
+  if per100m < 0.2 then per100m = 1.6 end
+  return (fuel or 0) / per100m * 100
+end
+
 -- 刹车减速度：载重越重越刹不住（超载额外衰减）
 function brakeRate(loadRatio)
   local over = math.max(0, (loadRatio or 1) - 1.0)
