@@ -1185,9 +1185,11 @@ function runSelfTest()
        string.format("night=%s day=%s", tostring(on), tostring(off)))
   end
 
-  -- 营火暖光：隐藏网格但保留点光
-  ok(r, "campfire glow", campfireLight ~= nil and campfire ~= nil,
-     campfire and string.format("fire=(%.1f,%.1f)", campfire.x, campfire.z) or "missing")
+  -- 营火暖光 + 可见火苗
+  ok(r, "campfire glow", campfireLight ~= nil and campfire ~= nil and
+     #campfireFlames >= 2,
+     campfire and string.format("fire=(%.1f,%.1f) flames=%d",
+                                campfire.x, campfire.z, #campfireFlames) or "missing")
 
   -- 主路土肩：沥青边缘与草地的过渡
   do

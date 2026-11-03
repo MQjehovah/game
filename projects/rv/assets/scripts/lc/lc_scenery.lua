@@ -1249,6 +1249,17 @@ function spawnMarkers()
     SetVisible(glow, false)
     campfireLight = glow
   end
+  -- 三层火苗（橙 + 黄），由 updateCampfireLight 抖动缩放
+  for i, f in ipairs({ { 1.8, 0.42, 2.0, 0.34, 0.50, 0.34 },
+                       { 1.8, 0.62, 2.0, 0.24, 0.38, 0.24 },
+                       { 1.8, 0.78, 2.0, 0.14, 0.24, 0.14 } }) do
+    local e = SpawnPrefab("rv_flame", { x = f[1], y = f[2], z = f[3] })
+    if e ~= nil then
+      SetScale(e, f[4], f[5], f[6])
+      campfireFlames[#campfireFlames + 1] = {
+        ent = e, x = f[1], y = f[2], z = f[3], sx = f[4], sy = f[5], sz = f[6] }
+    end
+  end
   local gas = nodeById("gasstop")
   if gas then
     for _, off in ipairs({ {2.0, 1.0}, {2.6, -0.4}, {1.2, -0.6} }) do
@@ -1277,6 +1288,14 @@ function updateCampfireLight(dt)
     x = campfire.x + j,
     y = 0.95 + math.abs(j) * 0.45,
     z = campfire.z + j * 0.7 })
+  -- 火苗抖动：缩放 + 轻微横向摆动
+  for i, f in ipairs(campfireFlames or {}) do
+    local s = 0.82 + 0.20 * math.sin(campfireLightT * (9.0 + i * 2.7) + i)
+    local sway = math.sin(campfireLightT * (6.0 + i * 1.9) + i * 1.7) * 0.06
+    SetScale(f.ent, f.sx * s, f.sy * (0.85 + 0.25 * s), f.sz * s)
+    SetPosition(f.ent, { x = f.x + sway, y = f.y + math.abs(sway) * 0.6,
+                         z = f.z + j * 0.3 })
+  end
 end
 
 -- 营地陈设：遮阳棚 + 木桌凳 + 物资箱 + 暖光营地灯，让出生点像一个

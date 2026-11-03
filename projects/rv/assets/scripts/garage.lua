@@ -688,10 +688,15 @@ function on_start()
     px, pz = 6.6, -8.2
     pyaw = dirYaw(-6.6, 8.2)
   end
-  if startMode == "campnight" then
+  if startMode == "campnight" or startMode == "fireview" then
     -- Test-only: the camp at night with the campfire glow and awning lamp.
-    px, pz = 8.2, -1.5
-    pyaw = dirYaw(-3.7, 6.5)
+    if startMode == "fireview" then
+      px, pz = 0.2, 4.3
+      pyaw = dirYaw(1.6, -2.3)
+    else
+      px, pz = 8.2, -1.5
+      pyaw = dirYaw(-3.7, 6.5)
+    end
   end
   if startMode == "furnview" then
     -- Test-only interior view down the furniture wall.
@@ -951,8 +956,9 @@ function on_start()
   elseif startMode == "flashlight_off" then
     clock = 22 * 60
     flashlightOn = false
-  elseif startMode == "campnight" then
+  elseif startMode == "campnight" or startMode == "fireview" then
     clock = 22 * 60
+    if startMode == "fireview" then player.pitch = -0.12 end
   elseif startMode == "jobresult" then
     jobRefreshOffers("gasstop")
     jobAccept(1)

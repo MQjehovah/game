@@ -73,6 +73,7 @@ hayBales = {}                 -- 农场谷仓外的干草捆
 poiSigns = {}                 -- POI 门头招牌
 poiSignsLit = nil
 campfireLight = nil           -- 营火暖光（只保留 light 组件）
+campfireFlames = {}           -- 营火可见火苗
 campfireLightT = 0
 visitedPois = {}              -- 已首次抵达的地点（探索奖励去重）
 visitedCount = 0
