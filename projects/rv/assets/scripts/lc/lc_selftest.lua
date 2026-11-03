@@ -332,17 +332,49 @@ function runSelfTest()
          string.format("grip=%.1f capped=%.1f empty=%.1f",
                        grip, capped, empty))
     end
-    if surfaceGrip ~= nil then
+    if surfaceInfo ~= nil then
       local muRoad = surfaceGrip(0, -20)
-      local muGrass = surfaceGrip(-20, -10)
-      local muDirt = surfaceGrip(10, 0)
+      local muGrass = surfaceGrip(-20, -28)
+      local muDirt = surfaceGrip(14, 20)
+      local muGravel = surfaceGrip(5, 120)
+      local muMud = surfaceGrip(-18, -12)
+      local roads, grass = surfaceInfo(0, -20), surfaceInfo(-20, -28)
       ok(r, "rv surface grip",
-         math.abs(muRoad - 0.95) < 0.01 and
+         math.abs(muRoad - 0.98) < 0.01 and
          math.abs(muDirt - 0.72) < 0.01 and
          math.abs(muGrass - 0.60) < 0.01 and
-         muRoad > muDirt and muDirt > muGrass,
-         string.format("road=%.2f dirt=%.2f grass=%.2f",
-                       muRoad, muDirt, muGrass))
+         math.abs(muGravel - 0.80) < 0.01 and
+         math.abs(muMud - 0.42) < 0.01 and
+         roads == "asphalt" and grass == "grass",
+         string.format("road=%.2f gravel=%.2f dirt=%.2f grass=%.2f mud=%.2f",
+                       muRoad, muGravel, muDirt, muGrass, muMud))
+      local seen, count = {}, 0
+      for _, d in pairs(SURFACES) do
+        if not seen[d.mu] then seen[d.mu] = true count = count + 1 end
+      end
+      ok(r, "rv surface table", count >= 5,
+         string.format("distinctMu=%d", count))
+    end
+    if tireForceCurve ~= nil then
+      local peak = tireForceCurve(0.9, 3000, 0.12, 0.12, 0.75)
+      local high = tireForceCurve(0.9, 3000, 0.60, 0.12, 0.75)
+      local zero = tireForceCurve(0.9, 3000, 0.0, 0.12, 0.75)
+      local back = tireForceCurve(0.9, 3000, -0.12, 0.12, 0.75)
+      ok(r, "rv tire force curve",
+         math.abs(peak - 0.9 * 3000) < 1 and high < peak and high > 0.5 * peak and
+         math.abs(zero) < 0.001 and math.abs(back + peak) < 1,
+         string.format("peak=%.0f slide=%.0f zero=%.1f back=%.0f",
+                       peak, high, zero, back))
+    end
+    if tireMuScale ~= nil then
+      local cold = tireMuScale(20, 100)
+      local warm = tireMuScale(70, 100)
+      local hot = tireMuScale(130, 100)
+      local worn = tireMuScale(70, 10)
+      ok(r, "rv tire temperature",
+         cold < warm and hot < warm and warm > 0.99 and worn < warm,
+         string.format("cold=%.2f warm=%.2f hot=%.2f worn=%.2f",
+                       cold, warm, hot, worn))
     end
     if ackermannAngles ~= nil then
       local l, rr = ackermannAngles(0.5, 5.84, 2.52)

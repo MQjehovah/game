@@ -825,9 +825,13 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   并施加在**接地点**而非轮心，同一冲量既推进车体、又给车轮反向力矩，
   所以起步会打滑（`slip≈0.12`）、随后收敛到 `slip≈0.01` 的纯滚动，
   刹车会抱死；`rv.wheelSpinI` 由车轮角速度积分。
-  轮胎侧向冲量
-  （`tireGripImpulse`，μ 由 `surfaceGrip()` 给出沥青 0.95/土坡 0.72/草地 0.60）
-  与滑移率牵引（`slipTraction()`，后轮驱动、四轮制动）直接作用在车轮刚体上。
+  轮胎侧向冲量（`tireGripImpulse`）与纵向力（`tireForceCurve`，在
+  `|slip|=peak` 达 μ·N、之后回落到 `sat·μ·N`）直接作用在车轮刚体上。
+  `SURFACES` 定义 6 种路面材质：沥青 0.98、混凝土 0.92、碎石 0.80、
+  土坡 0.72、草地 0.60、泥地 0.42；`surfaceInfo(x,z)` 按道路板/路肩/土坡/
+  水塘/POI 铺装/草甸分区。`tireMuScale()` 让冷胎（<45°C）与过热（>95°C）
+  降 μ，`parts.tires` 磨损也降 μ；温度由车速与滑移加热、向环境冷却，
+  HUD 显示 `胎温 xx°C`，`tire_log.txt` 可打开逐秒对比日志。
   A/D 只给前轮转角（±0.5rad），`ackermannAngles()` 产生内外轮夹角（0.55/0.45rad），
   偏航由前后轮横向力矩积分得到（5% 角速度阻尼），每帧用
   `rvYawPitchRollFromQuat()` 从车体四元数读回 yaw/pitch/roll，
@@ -861,11 +865,12 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   `rv four wheel contact` / `rv wheel articulation` / `rv wheel entities` /
   `rv wheel steer` / `rv physics suspension binding` /
   `rv tire grip binding` / `rv tire grip model` / `rv surface grip` /
-  `rv ackermann steering` / `rv slip traction` / `rv wheel slip ratio` /
+  `rv surface table` / `rv ackermann steering` / `rv slip traction` /
+  `rv wheel slip ratio` / `rv tire force curve` / `rv tire temperature` /
   `rv wheel body binding` /
   `rv wheel bodies` / `rv wheel cylinder rolling` / `rv wheel prediction` /
   `rv wheel rolling` / `rv attitude roundtrip` / `rv yaw attitude roundtrip`，
-  总计 **51/51 PASS**。
+  总计 **54/54 PASS**。
   角色动画由 `tools/gen_rv_anim_clips.py`
   生成**手工关键帧**上车链 `DoorOpen`（够门把手→拉开，0.9s）→ `Step`（抬脚踩踏板，
   0.7s）→ `Board`（站姿→抬步→落座，0.9s）→ `Sit` 循环（坐姿 + 1s 呼吸关键帧），

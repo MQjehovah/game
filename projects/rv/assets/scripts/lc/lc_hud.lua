@@ -148,6 +148,13 @@ function drawRvStatus(x, y, w)
            (parts and parts.engine) or 100, (parts and parts.tires) or 100,
            (parts and parts.battery) or 100),
            x + 10, yy, 11, 0.74, 0.74, 0.70, 1)
+  if rv.tireTemp ~= nil then
+    local t = rv.tireTemp
+    local tr, tg, tb = 0.74, 0.74, 0.70
+    if t > 110 then tr, tg, tb = 0.95, 0.45, 0.30
+    elseif t > 85 then tr, tg, tb = 0.95, 0.78, 0.35 end
+    DrawText(string.format("胎温 %.0f°C", t), x + 10, yy + 17, 11, tr, tg, tb, 1)
+  end
 end
 
 function drawInventoryStrip(x, y)

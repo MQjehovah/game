@@ -371,24 +371,97 @@ function tireGripImpulse(latV, normalForce, mass, dt, mu)
   return imp
 end
 
--- Surface-dependent friction coefficient. Asphalt (within the road slab) is
--- grippier than the dirt embankment, which is grippier than open meadow.
-function surfaceGrip(x, z)
-  if distToRoadSq ~= nil and distToRoadSq(x, z) < 12.0 then
-    return 0.95                       -- asphalt
+-- Surface materials: grip multiplier, slip curve shape (peak at `peak`, then
+-- settles to `sat` of the peak), and how fast the tire heats / wears on it.
+-- More than the old three-value table; lookup is by world feature (road slab,
+-- shoulder, embankment dirt, pond mud, POI pad, meadow).
+SURFACES = {
+  asphalt  = { mu = 0.98, peak = 0.12, sat = 0.78, heat = 0.9, wear = 0.8 },
+  concrete = { mu = 0.92, peak = 0.13, sat = 0.76, heat = 0.9, wear = 0.9 },
+  gravel   = { mu = 0.80, peak = 0.18, sat = 0.68, heat = 1.1, wear = 1.3 },
+  dirt     = { mu = 0.72, peak = 0.22, sat = 0.64, heat = 1.2, wear = 1.6 },
+  grass    = { mu = 0.60, peak = 0.26, sat = 0.60, heat = 1.3, wear = 2.0 },
+  mud      = { mu = 0.42, peak = 0.32, sat = 0.52, heat = 1.0, wear = 2.4 },
+}
+
+-- Which material is under (x,z)? Road slab -> asphalt, its shoulder -> gravel,
+-- embankment dirt -> dirt, pond rim -> mud, POI pad -> concrete, else grass.
+function surfaceInfo(x, z)
+  if distToRoadSq ~= nil then
+    local d2 = distToRoadSq(x, z)
+    if d2 < 12.0 then return "asphalt", SURFACES.asphalt end
+    if d2 < 30.0 then return "gravel", SURFACES.gravel end
   end
   if x > 4.0 and x < 16.0 and z > -25.0 and z < 47.0 and
      (terrainHeight(x, z) or 0) > 0.12 then
-    return 0.72                       -- packed dirt on the embankment
+    return "dirt", SURFACES.dirt
   end
-  return 0.60                         -- grass / meadow
+  if ponds ~= nil then
+    for _, p in ipairs(ponds) do
+      local dx, dz = x - p.x, z - p.z
+      if dx * dx + dz * dz < 30.0 then return "mud", SURFACES.mud end
+    end
+  end
+  if NODES ~= nil and poiCenter ~= nil then
+    for _, nd in ipairs(NODES) do
+      if nd.id ~= "camp" then
+        local cx, cz = poiCenter(nd)
+        if cx ~= nil and math.abs(x - cx) < POI_HALF_X + 2.2 and
+           math.abs(z - cz) < POI_HALF_Z + 2.2 then
+          return "concrete", SURFACES.concrete
+        end
+      end
+    end
+  end
+  return "grass", SURFACES.grass
+end
+
+-- Backwards-compatible scalar lookup used by older call sites/tests.
+function surfaceGrip(x, z)
+  local _, def = surfaceInfo(x, z)
+  return def.mu
+end
+
+-- Tire temperature (deg C) modifies grip: cold tires are a bit slippery, the
+-- 45-95 C window is optimal, overheating greases them. Wear also costs grip.
+function tireMuScale(temp, wear)
+  local t = temp or 22
+  local warm
+  if t < 45 then
+    warm = 0.84 + 0.16 * math.max(0, (t - 10) / 35)
+  elseif t <= 95 then
+    warm = 1.0
+  else
+    warm = math.max(0.68, 1.0 - (t - 95) * 0.0045)
+  end
+  local w = math.max(0, math.min(100, wear or 100))
+  local wearScale = 0.80 + 0.20 * (w / 100)
+  return warm * wearScale
 end
 
 -- Longitudinal tire force from a slip ratio (saturating, so it peaks at the
--- friction limit). Exposed for the self-test.
+-- friction limit). Exposed for the self-test and kept for older callers.
 function slipTraction(mu, normalForce, slip)
   local s = math.max(-1.0, math.min(1.0, (slip or 0) * 6.0))
   return (mu or 0.9) * math.max(0, normalForce or 0) * s
+end
+
+-- Slip-ratio curve with a peak and a sliding plateau: force rises to
+-- mu*N at |slip| = peak, then falls to sat*mu*N at large slip. Exposed for
+-- the self-test.
+function tireForceCurve(mu, normalForce, slip, peak, sat)
+  local p = math.max(0.02, peak or 0.14)
+  local s = math.max(0.2, math.min(1.0, sat or 0.75))
+  local a = math.abs(slip or 0)
+  local shape
+  if a <= p then
+    shape = a / p
+  else
+    local over = math.min(1.0, (a - p) / (p * 5.0))
+    shape = 1.0 - (1.0 - s) * over
+  end
+  if slip ~= nil and slip < 0 then shape = -shape end
+  return (mu or 0.9) * math.max(0, normalForce or 0) * shape
 end
 
 -- Slip ratio from the wheel's own angular velocity: 0 when the tire rolls
@@ -507,6 +580,8 @@ function updateRvPhysics(dt)
   end
 
   local useBodies = rv.wheelBodies ~= nil and rv.wheelBodies[1] ~= nil
+  local heatPower, slipSum, slipSpeedSum, slipCount = 0, 0, 0, 0
+  local muLast, surfLast = 0.9, "grass"
   if useBodies and PhysicsActivate ~= nil then
     PhysicsActivate(rvBody)
     for i = 1, #rv.wheelBodies do
@@ -539,7 +614,10 @@ function updateRvPhysics(dt)
       PhysicsApplyImpulse(wb.body, { x = 0, y = force * step, z = 0 },
                           { x = wx, y = wy, z = wz })
       nForce = math.max(0, SUSP_K * compression)
-      mu = surfaceGrip(wx, wz)
+      local surfName, surfDef = surfaceInfo(wx, wz)
+      mu = surfDef.mu * tireMuScale(rv.tireTemp, parts and parts.tires)
+      rv.__surfDef = surfDef
+      surfLast = surfName
       s.plane[i] = ground - (p.y - 0.9)
       s.travel[i] = 0
       s.h[i] = ground
@@ -563,7 +641,10 @@ function updateRvPhysics(dt)
       PhysicsApplyImpulse(rvBody, { x = 0, y = force * step, z = 0 },
                           { x = wx, y = wy, z = wz })
       nForce = math.max(0, SUSP_K * compression)
-      mu = surfaceGrip(wx, wz)
+      local surfName, surfDef = surfaceInfo(wx, wz)
+      mu = surfDef.mu * tireMuScale(rv.tireTemp, parts and parts.tires)
+      rv.__surfDef = surfDef
+      surfLast = surfName
       s.plane[i] = ground - (p.y - 0.9)
       s.travel[i] = 0
       s.h[i] = ground
@@ -631,10 +712,20 @@ function updateRvPhysics(dt)
              math.max(2.0, math.abs(targetSpeed))
     end
 
+    local surfDef = rv.__surfDef or SURFACES.grass
+    if not w.front then
+      heatPower = heatPower + math.abs(slip) * nForce * math.abs(vLong)
+      slipSum = slipSum + math.abs(slip)
+      slipSpeedSum = slipSpeedSum + math.abs(slip) * math.abs(vLong)
+      slipCount = slipCount + 1
+    end
+    muLast = mu
+
     local factor = 1.0
     if w.front then factor = braking and 0.55 or 0.0 end
     if factor > 0 then
-      local impL = slipTraction(mu, nForce, slip) * factor * step
+      local impL = tireForceCurve(mu, nForce, slip, surfDef.peak,
+                                  surfDef.sat) * factor * step
       if math.abs(impL) > 0.001 then
         PhysicsApplyImpulse(targetBody,
                             { x = fwdX * impL, y = 0, z = fwdZ * impL },
@@ -646,6 +737,36 @@ function updateRvPhysics(dt)
       rv.wheelSpinI = rv.wheelSpinI or {}
       rv.wheelSpinI[i] = ((rv.wheelSpinI[i] or 0) + omega * step)
                           % (math.pi * 2)
+    end
+  end
+
+  -- Tire temperature and wear: speed warms the carcass, slip adds heat and
+  -- extra wear. Clients keep the server's parts.tires and temperature.
+  local slipAvg = slipSum / math.max(1, slipCount)
+  if useBodies and coopRole ~= "client" then
+    local surfDef = SURFACES[surfLast] or SURFACES.grass
+    local target = 22 + math.min(60, math.abs(targetSpeed) * 4.5) +
+                   math.min(60, slipAvg * 400.0)
+    rv.tireTemp = (rv.tireTemp or 22) + (target - (rv.tireTemp or 22)) *
+                  math.min(1, step * 0.25)
+    if parts ~= nil and parts.tires ~= nil then
+      local slipSpeed = slipSpeedSum / math.max(1, slipCount)
+      local extra = slipSpeed * step * 0.03 * surfDef.wear
+      parts.tires = math.max(0, parts.tires - extra)
+    end
+  end
+
+  if rv.tireLog then
+    rv.__logN = (rv.__logN or 0) + 1
+    if rv.__logN % 30 == 1 then
+      local wb3 = rv.wheelBodies and rv.wheelBodies[3]
+      local wv3 = wb3 and PhysicsGetAngularVelocity and PhysicsGetAngularVelocity(wb3.body) or nil
+      local axx3, axy3, axz3 = rvOffset(1, 0, 0)
+      local om3 = wv3 and (wv3.x*axx3 + wv3.y*axy3 + wv3.z*axz3) or 0
+      local vf3 = vx * fwdX + vz * fwdZ
+      print(string.format("[tire] surf=%s mu=%.2f temp=%.0f tires=%.1f cmd=%.1f vf=%.1f omega=%.1f slip=%.2f",
+        surfLast, muLast, rv.tireTemp or 22,
+        (parts and parts.tires) or -1, targetSpeed, vf3, om3, slipAvg))
     end
   end
 

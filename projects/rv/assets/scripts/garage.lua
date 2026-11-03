@@ -358,7 +358,12 @@ function on_start()
       startMode = string.lower((sm:gsub("%s+", "")))
     end
     -- Test-only: start in the outside chase camera (autopilot screenshots).
-    if startMode == "chase" then driveView = "chase" end
+    if startMode == "chase" or startMode == "tiretest" then
+      driveView = "chase"
+    end
+    -- Test-only: print surface/grip/temperature while driving.
+    local tl = ReadText("tire_log.txt")
+    rv.tireLog = (tl ~= nil and tl ~= "")
   end
   ensureHelpers()
   initSurvival()
@@ -445,6 +450,24 @@ function on_start()
   if startMode == "rvhill" then
     -- Test-only: the RV on a rounded meadow knoll (four wheel contacts).
     rv.x, rv.z, rv.yaw = -26.0, -20.0, 0.7
+    rv.groundY = terrainHeight and terrainHeight(rv.x, rv.z) or 0
+    rv.susp = nil
+    if updateRvSuspension ~= nil then
+      updateRvSuspension(1.0)
+    elseif updateRvTilt ~= nil then
+      updateRvTilt(1.0)
+    end
+    applyRvTransform()
+    if rvBody ~= nil then
+      PhysicsSetPosition(rvBody, { x = rv.x, y = 0.9 + rv.groundY, z = rv.z })
+      if rvQuat ~= nil then PhysicsSetRotation(rvBody, rvQuat()) end
+    end
+  end
+
+  if startMode == "tiretest" then
+    -- Test-only: start on flat open meadow (grass) so the tire model can be
+    -- compared against the asphalt run.
+    rv.x, rv.z, rv.yaw = -8.0, -18.0, 0.0
     rv.groundY = terrainHeight and terrainHeight(rv.x, rv.z) or 0
     rv.susp = nil
     if updateRvSuspension ~= nil then
@@ -870,7 +893,9 @@ function on_update(ent, dt)
   -- ======================= 行驶 =======================
   if phase == "driving" then
     -- Test-only: keep the outside chase camera for autopilot screenshots.
-    if startMode == "chase" then driveView = "chase" end
+    if startMode == "chase" or startMode == "tiretest" then
+      driveView = "chase"
+    end
     if ActionPressed("c") then
       driveView = (driveView == "cab") and "chase" or "cab"
     end
