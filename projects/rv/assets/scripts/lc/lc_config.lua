@@ -69,6 +69,7 @@ ITEMS = {
   canned   = { name = "罐头",   kind = "food",  hunger = 22, health = 1, desc = "饥饿 -22" },
   rawfood  = { name = "生食材", kind = "food",  hunger = 8, health = -2, desc = "可直接吃，但会掉血" },
   berry    = { name = "野浆果", kind = "food",  hunger = 12, thirst = 4, health = 1, desc = "营地附近可采摘" },
+  jam      = { name = "浆果酱", kind = "food",  hunger = 20, thirst = 6, health = 3, desc = "饥饿 -20 口渴 -6" },
   meal     = { name = "热饭",   kind = "food",  hunger = 42, health = 6, desc = "饥饿 -42 生命 +6" },
   coffee   = { name = "咖啡豆", kind = "brew",  desc = "咖啡机原料" },
   brew     = { name = "热咖啡", kind = "drink", thirst = 10, energy = 30, health = 2, desc = "体力 +30" },
@@ -84,7 +85,7 @@ ITEMS = {
   fishsoup = { name = "鱼汤",   kind = "food",  hunger = 35, thirst = 20, health = 3, desc = "饥饿 -35 口渴 -20" },
   feast    = { name = "大餐",   kind = "food",  hunger = 65, health = 10, desc = "饥饿 -65 生命 +10" },
 }
-ITEM_ORDER = { "water", "canned", "rawfood", "berry", "meal", "fishsoup", "feast", "coffee", "brew", "rawfish", "fish", "seed", "bait", "repairkit", "dirtywater", "tarp", "chains" }
+ITEM_ORDER = { "water", "canned", "rawfood", "berry", "jam", "meal", "fishsoup", "feast", "coffee", "brew", "rawfish", "fish", "seed", "bait", "repairkit", "dirtywater", "tarp", "chains" }
 
 -- 钓鱼鱼种（权重 / 尺寸 cm）：越稀有越大，用来做纪录与风味
 FISH_SPECIES = {
@@ -109,6 +110,7 @@ RECIPES = {
   { id = "meal",     name = "热饭", cost = { rawfood = 1 },               water = 0.5, out = "meal",     desc = "饥饿 -42  生命 +6" },
   { id = "fishsoup", name = "鱼汤", cost = { fish = 1 },                  water = 1.0, out = "fishsoup", desc = "饥饿 -35  口渴 -20" },
   { id = "feast",    name = "大餐", cost = { rawfood = 2, meal = 1 },     water = 0.5, out = "feast",    desc = "饥饿 -65  生命 +10" },
+  { id = "jam",      name = "浆果酱", cost = { berry = 3 },               water = 0.3, out = "jam",      desc = "饥饿 -20  口渴 -6  生命 +3" },
 }
 
 -- 营地收音机开启后的周期性广播（路况/天气/生存提示 + 氛围）

@@ -34,6 +34,22 @@ function runSelfTest()
   ok(r, "cook fish soup", itemCount("fishsoup") == soup0 + 1,
      string.format("soup %d->%d fish=%d", soup0, itemCount("fishsoup"), itemCount("fish")))
 
+  -- 灶台配方：浆果酱（野浆果 x3 + 水）
+  do
+    local j0, b0 = itemCount("jam"), itemCount("berry")
+    local w0 = water
+    addItem("berry", 3)
+    water = math.max(water, 5)
+    local okJam = cookRecipe("jam")
+    local done = itemCount("jam") == j0 + 1 and
+                 itemCount("berry") == b0 and water < w0 + 5
+    water = w0
+    if b0 == 0 then inv.berry = nil end
+    ok(r, "cook berry jam", okJam and done,
+       string.format("jam %d->%d berry=%d", j0, itemCount("jam"),
+                     itemCount("berry")))
+  end
+
   -- 喝水
   local thirst0 = needs.thirst
   needs.thirst = 50
