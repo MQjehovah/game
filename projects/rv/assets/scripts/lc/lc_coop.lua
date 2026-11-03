@@ -713,6 +713,9 @@ local function serverHandleCommand(clientId, a)
       coop.saveDirty = true
       pushState()
     end
+  elseif t == "horn" then
+    honk()
+    pushState()
   elseif t == "eat" then
     local id = chooseFood()
     if id ~= nil and useItem(id) then
@@ -936,6 +939,22 @@ local function serverUpdate(dt)
                           tostring(coop.lights), lampCount()))
       pushState()
     end
+  end
+
+  -- Test-only co-op horn: spawn one infected near the RV, honk, and log how
+  -- many were scared server-side (proves the server-authoritative effect).
+  if coop.hornDemo and not coop.hornDemoDone and coop.autoT >= 3.0 then
+    coop.hornDemoDone = true
+    local ent = SpawnPrefab("rv_zombie", { x = rv.x + 5, y = 0.8, z = rv.z })
+    if ent ~= nil then
+      horde[#horde + 1] = { ent = ent, x = rv.x + 5, z = rv.z, speed = 1.5,
+                            phase = 0, atkT = 0, life = 20 }
+    end
+    rv.honkCd = 0
+    honk()
+    print(string.format("[coop-horn] scared=%d horde=%d", rv.honkScared or 0,
+                        #horde))
+    pushState()
   end
 
   -- Test-only co-op freight board: accept the first contract server-side and
@@ -1649,6 +1668,7 @@ local function clientUpdate(dt)
     if ActionPressed("2") then Rpc("game_cmd", { type = "drink" }) end
     if ActionPressed("3") then Rpc("game_cmd", { type = "sleep" }) end
     if ActionPressed("0") then Rpc("game_cmd", { type = "job_abandon" }) end
+    if ActionPressed("x") then Rpc("game_cmd", { type = "horn" }) end
     if ActionPressed("e") then
       if inside then
         Rpc("game_cmd", { type = "exit" })
@@ -2089,6 +2109,7 @@ function coopInitWorld(role)
     coop.boardDemo = readFlag("coop_board.txt")
     coop.jobDemo = readFlag("coop_job.txt")
     coop.lightsDemo = readFlag("coop_lights.txt")
+    coop.hornDemo = readFlag("coop_horn.txt")
     local doorTest = ReadText("coop_doortest.txt")
     if doorTest ~= nil and doorTest ~= "" then
       local v = string.lower((doorTest:gsub("%s+", "")))
@@ -2195,6 +2216,7 @@ function coopInitWorld(role)
     coop.clampDemo = readFlag("coop_clamp.txt")
     coop.buildDemo = readFlag("coop_build.txt")
     coop.walkDemo = readFlag("coop_walk.txt")
+    coop.hornDemo = readFlag("coop_horn.txt")
     coop.buildUi = readFlag("coop_buildmode.txt")
     coop.boardDemo = readFlag("coop_board.txt")
     coop.sitDemo = readFlag("coop_sitdemo.txt")

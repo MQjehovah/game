@@ -559,6 +559,8 @@
 - `coop_lights.txt`：服务端 5s/9s 切换车内灯，日志
   `[coop-lights] server toggle on=... lamps=N` 与客户端 `client apply ... lamps=N`，
   验证 `SetVisible` 改 `Despawn` 后灯真正熄灭（lamps 0↔2）。
+- `coop_horn.txt`：服务端 3s 在房车旁生成 1 只感染者并按喇叭，日志
+  `[coop-horn] scared=1 horde=0`，验证联机喇叭由服务端权威吓退。
 - `coop_walk.txt`：客户端按住前进，便于网络 smoke 看到受控角色位移。
 - `coop_sitdemo.txt`：在房车旁生成一个播放 `Sit` 骨骼片段的预览角色。
 - `coop_animdemo.txt`：内容 `sit` / `board` / `stand` / `dooropen` / `doorclose` /
