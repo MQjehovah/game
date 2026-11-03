@@ -19,6 +19,8 @@ import math
 import struct
 from pathlib import Path
 
+from rv_surfaces import face_uvs, surface_extras, surface_material
+
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "projects/rv/assets/models/rv"
 PREFAB = ROOT / "projects/rv/assets/prefabs/rv_body.json"
@@ -42,7 +44,7 @@ class Mesh:
         self.groups = {}
 
     def _group(self, mat):
-        return self.groups.setdefault(mat, ([], [], []))
+        return self.groups.setdefault(mat, ([], [], [], []))
 
     def box(self, mat, cx, cy, cz, sx, sy, sz):
         hx, hy, hz = sx * 0.5, sy * 0.5, sz * 0.5
@@ -76,11 +78,12 @@ class Mesh:
                  u[0] * v[1] - u[1] * v[0])
             if g[0] * normal[0] + g[1] * normal[1] + g[2] * normal[2] < 0:
                 b, d = d, b
-        pos, nrm, idx = self._group(mat)
+        pos, nrm, idx, uvs = self._group(mat)
         base = len(pos)
         for p in (a, b, c, d):
             pos.append(p)
             nrm.append(normal)
+        uvs.extend(face_uvs((a, b, c, d), normal))
         idx.extend([base, base + 1, base + 2, base, base + 2, base + 3])
 
     def disc(self, mat, cx, cy, cz, r, seg, axis=1, sign=1.0):
@@ -399,22 +402,27 @@ def main():
          "pbrMetallicRoughness": {"baseColorFactor": [0.30, 0.33, 0.38, 1],
                                   "metallicFactor": 0.0, "roughnessFactor": 0.95}},
     ]
+    for mat, tex in zip(materials, (
+            None, "body", "roof", "metal_dark", "glass", "rubber", "metal",
+            "plastic", "plastic", "body", "wood_light", "fabric")):
+        surface_material(mat, tex)
 
     buffer = b""
     views = []
     accessors = []
     prims = []
-    for mat_index, (positions, normals, indices) in sorted(m.groups.items()):
+    for mat_index, (positions, normals, indices, uvs) in sorted(m.groups.items()):
         for raw in (
                 b"".join(struct.pack("<3f", *p) for p in positions),
                 b"".join(struct.pack("<3f", *n) for n in normals),
-                b"".join(struct.pack("<I", i) for i in indices)):
+                b"".join(struct.pack("<I", i) for i in indices),
+                b"".join(struct.pack("<2f", *t) for t in uvs)):
             pad = (4 - len(raw) % 4) % 4
             blob = raw + b"\0" * pad
             views.append({"buffer": 0, "byteOffset": len(buffer),
                           "byteLength": len(blob)})
             buffer += blob
-        vb = len(views) - 3
+        vb = len(views) - 4
         mn = [min(p[i] for p in positions) for i in range(3)]
         mx = [max(p[i] for p in positions) for i in range(3)]
         accessors.extend([
@@ -424,9 +432,12 @@ def main():
              "type": "VEC3"},
             {"bufferView": vb + 2, "componentType": 5125, "count": len(indices),
              "type": "SCALAR"},
+            {"bufferView": vb + 3, "componentType": 5126, "count": len(uvs),
+             "type": "VEC2"},
         ])
-        ai = len(accessors) - 3
-        prims.append({"attributes": {"POSITION": ai, "NORMAL": ai + 1},
+        ai = len(accessors) - 4
+        prims.append({"attributes": {"POSITION": ai, "NORMAL": ai + 1,
+                                     "TEXCOORD_0": ai + 3},
                       "indices": ai + 2, "material": mat_index})
 
     gltf = {
@@ -440,6 +451,7 @@ def main():
         "bufferViews": views,
         "accessors": accessors,
     }
+    gltf.update(surface_extras())
     (OUT / "rv_body.bin").write_bytes(buffer)
     (OUT / "rv_body.gltf").write_text(
         json.dumps(gltf, separators=(",", ":")), encoding="utf-8")

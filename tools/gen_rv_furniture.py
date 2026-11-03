@@ -19,6 +19,8 @@ import math
 import struct
 from pathlib import Path
 
+from rv_surfaces import face_uvs, surface_extras, surface_material
+
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "projects/rv/assets/models/rv"
 PREFABS = ROOT / "projects/rv/assets/prefabs"
@@ -27,19 +29,20 @@ PREFABS = ROOT / "projects/rv/assets/prefabs"
 (DEFAULT, WOOD, WOOD2, METAL, DARK, WHITE, FABRIC, BLUE, RED, GLASS,
  GREY, GREEN) = range(12)
 
+# name, base colour, metallic, roughness, detail-map
 MATS = [
-    ("furn_default", [0.5, 0.5, 0.5], 0.0, 0.9),
-    ("furn_wood", [0.46, 0.31, 0.17], 0.02, 0.8),
-    ("furn_wood2", [0.30, 0.19, 0.10], 0.02, 0.85),
-    ("furn_metal", [0.55, 0.57, 0.60], 0.65, 0.35),
-    ("furn_dark", [0.12, 0.13, 0.15], 0.25, 0.5),
-    ("furn_white", [0.87, 0.87, 0.84], 0.05, 0.55),
-    ("furn_fabric", [0.72, 0.70, 0.64], 0.0, 0.95),
-    ("furn_blue", [0.20, 0.34, 0.52], 0.0, 0.9),
-    ("furn_red", [0.55, 0.16, 0.13], 0.02, 0.75),
-    ("furn_glass", [0.08, 0.10, 0.12], 0.5, 0.15),
-    ("furn_grey", [0.42, 0.44, 0.46], 0.15, 0.6),
-    ("furn_green", [0.18, 0.44, 0.20], 0.02, 0.7),
+    ("furn_default", [0.5, 0.5, 0.5], 0.0, 0.9, None),
+    ("furn_wood", [0.46, 0.31, 0.17], 0.02, 0.8, "wood_light"),
+    ("furn_wood2", [0.30, 0.19, 0.10], 0.02, 0.85, "wood_dark"),
+    ("furn_metal", [0.55, 0.57, 0.60], 0.65, 0.35, "metal"),
+    ("furn_dark", [0.12, 0.13, 0.15], 0.25, 0.5, "metal_dark"),
+    ("furn_white", [0.87, 0.87, 0.84], 0.05, 0.55, "plastic"),
+    ("furn_fabric", [0.72, 0.70, 0.64], 0.0, 0.95, "fabric"),
+    ("furn_blue", [0.20, 0.34, 0.52], 0.0, 0.9, "fabric"),
+    ("furn_red", [0.55, 0.16, 0.13], 0.02, 0.75, "plastic"),
+    ("furn_glass", [0.08, 0.10, 0.12], 0.5, 0.15, "glass"),
+    ("furn_grey", [0.42, 0.44, 0.46], 0.15, 0.6, "metal"),
+    ("furn_green", [0.18, 0.44, 0.20], 0.02, 0.7, "leaf"),
 ]
 
 
@@ -48,7 +51,7 @@ class Mesh:
         self.groups = {}
 
     def _group(self, mat):
-        return self.groups.setdefault(mat, ([], [], []))
+        return self.groups.setdefault(mat, ([], [], [], []))
 
     def box(self, mat, cx, cy, cz, sx, sy, sz):
         hx, hy, hz = sx * 0.5, sy * 0.5, sz * 0.5
@@ -63,12 +66,13 @@ class Mesh:
             ((0, 1, 0), [(x0, y1, z1), (x1, y1, z1), (x1, y1, z0), (x0, y1, z0)]),
             ((0, -1, 0), [(x0, y0, z0), (x1, y0, z0), (x1, y0, z1), (x0, y0, z1)]),
         ]
-        positions, normals, indices = self._group(mat)
+        positions, normals, indices, uvs = self._group(mat)
         for n, quad in faces:
             base = len(positions)
             for q in quad:
                 positions.append(q)
                 normals.append(n)
+            uvs.extend(face_uvs(quad, n))
             indices.extend([base, base + 1, base + 2, base, base + 2, base + 3])
 
     def ring(self, mat, cx, cy, cz, r0, r1, seg=12):
@@ -80,11 +84,12 @@ class Mesh:
                  (cx + math.cos(a0) * r1, cy, cz + math.sin(a0) * r1),
                  (cx + math.cos(a1) * r1, cy, cz + math.sin(a1) * r1),
                  (cx + math.cos(a1) * r0, cy, cz + math.sin(a1) * r0)]
-            pos, nrm, idx = self._group(mat)
+            pos, nrm, idx, uvs = self._group(mat)
             base = len(pos)
             for q in p:
                 pos.append(q)
                 nrm.append((0.0, 1.0, 0.0))
+            uvs.extend(face_uvs(p, (0.0, 1.0, 0.0)))
             idx.extend([base, base + 1, base + 2, base, base + 2, base + 3])
 
 
@@ -474,17 +479,18 @@ def write_model(key, node, build):
     views = []
     accessors = []
     prims = []
-    for mat_index, (positions, normals, indices) in sorted(m.groups.items()):
+    for mat_index, (positions, normals, indices, uvs) in sorted(m.groups.items()):
         for raw in (
                 b"".join(struct.pack("<3f", *p) for p in positions),
                 b"".join(struct.pack("<3f", *n) for n in normals),
-                b"".join(struct.pack("<I", i) for i in indices)):
+                b"".join(struct.pack("<I", i) for i in indices),
+                b"".join(struct.pack("<2f", *t) for t in uvs)):
             pad = (4 - len(raw) % 4) % 4
             blob = raw + b"\0" * pad
             views.append({"buffer": 0, "byteOffset": len(buffer),
                           "byteLength": len(blob)})
             buffer += blob
-        vb = len(views) - 3
+        vb = len(views) - 4
         mn = [min(p[i] for p in positions) for i in range(3)]
         mx = [max(p[i] for p in positions) for i in range(3)]
         accessors.extend([
@@ -494,19 +500,24 @@ def write_model(key, node, build):
              "type": "VEC3"},
             {"bufferView": vb + 2, "componentType": 5125, "count": len(indices),
              "type": "SCALAR"},
+            {"bufferView": vb + 3, "componentType": 5126, "count": len(uvs),
+             "type": "VEC2"},
         ])
-        ai = len(accessors) - 3
-        prims.append({"attributes": {"POSITION": ai, "NORMAL": ai + 1},
+        ai = len(accessors) - 4
+        prims.append({"attributes": {"POSITION": ai, "NORMAL": ai + 1,
+                                     "TEXCOORD_0": ai + 3},
                       "indices": ai + 2, "material": mat_index})
 
     materials = []
-    for name, color, metal, rough in MATS:
-        materials.append({
+    for name, color, metal, rough, tex in MATS:
+        mat = {
             "name": name.replace("furn_", "furn_%s_" % key.split("_")[-1]),
             "pbrMetallicRoughness": {
                 "baseColorFactor": [color[0], color[1], color[2], 1],
                 "metallicFactor": metal, "roughnessFactor": rough},
-        })
+        }
+        surface_material(mat, tex)
+        materials.append(mat)
     # material 0 must stay the importer default; restore its neutral grey
     materials[0]["name"] = "furn_default"
 
@@ -521,6 +532,7 @@ def write_model(key, node, build):
         "bufferViews": views,
         "accessors": accessors,
     }
+    gltf.update(surface_extras())
     (OUT / (key + ".bin")).write_bytes(buffer)
     (OUT / (key + ".gltf")).write_text(
         json.dumps(gltf, separators=(",", ":")), encoding="utf-8")
