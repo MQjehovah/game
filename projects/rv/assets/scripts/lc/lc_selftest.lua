@@ -1720,6 +1720,18 @@ function runSelfTest()
                      tostring(counted), tostring(again)))
   end
 
+  -- 定速巡航油门：低于目标给油，接近/超过目标松油
+  do
+    local below = cruiseThrottle(3.0, 6.0)
+    local near = cruiseThrottle(5.9, 6.0)
+    local over = cruiseThrottle(7.0, 6.0)
+    local off = cruiseThrottle(3.0, 0)
+    ok(r, "cruise throttle",
+       below == 1 and near == 0 and over == 0 and off == 0,
+       string.format("below=%d near=%d over=%d off=%d",
+                     below, near, over, off))
+  end
+
   -- 启动引擎：打火音效计数
   do
     local keep = rv.engineStarts

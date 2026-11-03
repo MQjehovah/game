@@ -422,11 +422,26 @@ function tirePressureLow(p)
   return (p or 2.4) < 1.95
 end
 
+-- 定速巡航油门：低于目标给油，接近/超过目标松油
+function cruiseThrottle(speed, target)
+  if target == nil or target <= 0 then return 0 end
+  if (speed or 0) < target - 0.25 then return 1 end
+  return 0
+end
+
 function updateDrive(dt)
   local throttle = (ActionDown("w") and 1 or 0) - (ActionDown("s") and 1 or 0)
   -- Positive yaw turns toward -X, which is screen-right when facing +Z, so
   -- D must subtract: A = +1 turns left, D = -1 turns right.
   local steer = (ActionDown("a") and 1 or 0) - (ActionDown("d") and 1 or 0)
+  -- 定速巡航：手动油门/刹车/手刹会自动退出
+  if cruiseOn then
+    if ActionDown("w") or ActionDown("s") or ActionDown("shift") then
+      cruiseOn, cruiseSpeed = false, 0
+    else
+      throttle = cruiseThrottle(rv.speed or 0, cruiseSpeed)
+    end
+  end
   if rv.steerDemo then
     -- Test hook: drive forward and sweep the wheel left / release / right /
     -- release so the assist + self-centering show up in the steering log.

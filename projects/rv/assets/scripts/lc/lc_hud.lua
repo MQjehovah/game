@@ -848,6 +848,10 @@ function drawDriveHud()
     local traction = tractionStatusText()
     if traction ~= nil then top = top .. "   · " .. traction end
   end
+  if cruiseOn then
+    top = top .. string.format("   · 定速 %.0f km/h",
+                               (cruiseSpeed or 0) * 3.6)
+  end
   if weatherNextId ~= nil and WEATHER_NAMES ~= nil and
      WEATHER_NAMES[weatherNextId] ~= nil then
     top = top .. "  →  " .. WEATHER_NAMES[weatherNextId]

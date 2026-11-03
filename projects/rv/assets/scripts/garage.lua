@@ -1090,6 +1090,10 @@ function on_start()
     jobAccept(1)
     setPhase("driving")
     driveView = "chase"
+  elseif startMode == "cruiseview" then
+    setPhase("driving")
+    driveView = "chase"
+    cruiseOn, cruiseSpeed = true, 6.0
   elseif startMode == "nighthead" then
     clock = 22 * 60
     setPhase("driving")
@@ -1539,10 +1543,25 @@ function on_update(ent, dt)
       driveView = (driveView == "cab") and "chase" or "cab"
     end
     if ActionPressed("space") then
+      cruiseOn, cruiseSpeed = false, 0
       setPhase("parked")
     end
     if ActionPressed("x") and honk ~= nil then honk() end
     if ActionPressed("y") and callTow ~= nil then callTow() end
+    if ActionPressed("v") then
+      if cruiseOn then
+        cruiseOn, cruiseSpeed = false, 0
+        toast.text = "定速巡航关闭"
+      elseif math.abs(rv.speed or 0) > 2.0 then
+        cruiseOn, cruiseSpeed = true, math.abs(rv.speed or 0)
+        toast.text = string.format("定速巡航 %.0f km/h（V 取消，刹车自动退出）",
+                                   cruiseSpeed * 3.6)
+      else
+        toast.text = "车速太低，无法开启定速巡航"
+      end
+      toast.t = 2.4
+      if PlaySfx then PlaySfx("click") end
+    end
     if ActionPressed("r") then
       carRadio = not carRadio
       toast.text = carRadio
