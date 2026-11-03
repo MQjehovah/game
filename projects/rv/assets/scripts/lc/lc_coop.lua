@@ -812,6 +812,14 @@ local function serverHandleCommand(clientId, a)
       recomputeStats()
       setToast(inst.on and "灶台已打开" or "灶台已关闭")
     end
+  elseif t == "cook" then
+    local stoveOn = furnState("stove")
+    local okCook = false
+    if stoveOn and cookRecipe ~= nil then okCook = cookRecipe("meal") end
+    print(string.format("[coop-cook] ok=%s stove=%s meal=%d water=%.0f",
+                        tostring(okCook), tostring(stoveOn),
+                        inv.meal or 0, water or 0))
+    pushState()
   end
 end
 
@@ -1045,6 +1053,22 @@ local function serverUpdate(dt)
     print(string.format("[coop-shop] demo ok=%s engine=%.0f metal=%d",
                         tostring(okFix), (parts and parts.engine) or 0,
                         (materials and materials.metal) or 0))
+    pushState()
+  end
+
+  -- Test-only co-op cooking: turn the stove on, give food/water, cook a meal.
+  if coop.cookMealDemo and not coop.cookMealDemoDone and coop.autoT >= 3.0 then
+    coop.cookMealDemoDone = true
+    local inst = findInstanceByCat("stove")
+    if inst ~= nil then inst.on = true end
+    if recomputeStats ~= nil then recomputeStats() end
+    addItem("rawfood", 1)
+    water = math.max(water or 0, 20)
+    local okCook = false
+    if cookRecipe ~= nil then okCook = cookRecipe("meal") end
+    print(string.format("[coop-cook] demo ok=%s stove=%s meal=%d water=%.0f",
+                        tostring(okCook), tostring(furnState("stove")),
+                        inv.meal or 0, water or 0))
     pushState()
   end
 
@@ -1799,6 +1823,7 @@ local function clientUpdate(dt)
     if ActionPressed("r") then Rpc("game_cmd", { type = "repair" }) end
     if ActionPressed("q") then Rpc("game_cmd", { type = "refuel_can" }) end
     if ActionPressed("k") then Rpc("game_cmd", { type = "workbench_repair" }) end
+    if ActionPressed("c") then Rpc("game_cmd", { type = "cook" }) end
     if coop.highDemo and not coop.highDemoDone then
       coop.highDemoT = (coop.highDemoT or 0) + dt
       if coop.highDemoT >= 3.0 and GetVar("netConnected") == 1 then
@@ -2252,6 +2277,7 @@ function coopInitWorld(role)
     coop.repairDemo = readFlag("coop_repair.txt")
     coop.fuelDemo = readFlag("coop_fuel.txt")
     coop.workbenchDemo = readFlag("coop_workbench.txt")
+    coop.cookMealDemo = readFlag("coop_cookmeal.txt")
     local doorTest = ReadText("coop_doortest.txt")
     if doorTest ~= nil and doorTest ~= "" then
       local v = string.lower((doorTest:gsub("%s+", "")))
@@ -2364,6 +2390,7 @@ function coopInitWorld(role)
     coop.repairDemo = readFlag("coop_repair.txt")
     coop.fuelDemo = readFlag("coop_fuel.txt")
     coop.workbenchDemo = readFlag("coop_workbench.txt")
+    coop.cookMealDemo = readFlag("coop_cookmeal.txt")
     coop.buildUi = readFlag("coop_buildmode.txt")
     coop.boardDemo = readFlag("coop_board.txt")
     coop.sitDemo = readFlag("coop_sitdemo.txt")

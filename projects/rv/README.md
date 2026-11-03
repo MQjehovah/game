@@ -635,6 +635,8 @@
   `[coop-fuel] demo ok=true fuel=30.0 cans=0`，验证联机用燃油罐补给。
 - `coop_workbench.txt`：服务端 3s 把引擎打到 40%、给材料并按 K 维修最差部件，日志
   `[coop-shop] demo ok=true engine=65`，验证联机工作台维修。
+- `coop_cookmeal.txt`：服务端 3s 打开灶台、给生食材并按 C 做热饭，日志
+  `[coop-cook] demo ok=true stove=true meal=2`，验证联机共享做饭。
 - `coop_walk.txt`：客户端按住前进，便于网络 smoke 看到受控角色位移。
 - `coop_sitdemo.txt`：在房车旁生成一个播放 `Sit` 骨骼片段的预览角色。
 - `coop_animdemo.txt`：内容 `sit` / `board` / `stand` / `dooropen` / `doorclose` /
@@ -726,7 +728,7 @@ POI 墙体碰撞/门洞通行、营地货运板/接单载重/到点结算/放弃
 - 操作：`WASD` 移动、鼠标视角、`F` 上/下驾驶席、`L` 车内灯、`G` 灶台开关、
   `B` 合作建造、`E` 搜附近物资箱/上下车、`1` 吃饭、`2` 喝水、`3` 睡觉；
   驾驶时 `H` 远光灯、`X` 喇叭（吓跑 26m 内感染者与附近鹿，0.8s 冷却）、
-  `R` 现场维修、`Q` 燃油罐加注、`K` 维修最差部件。
+  `R` 现场维修、`Q` 燃油罐加注、`K` 维修最差部件、`C` 灶台做热饭。
 - **车内灯真正熄灭**：`rv_lamp` 自带点光，仅 `SetVisible` 会留下光源；联机
   服务端/客户端统一调用 `setInteriorLights()`（Despawn/重生），
   `coop_lights.txt` 日志 `[coop-lights] server toggle on=false lamps=0` →
