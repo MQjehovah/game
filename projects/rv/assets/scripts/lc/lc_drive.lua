@@ -195,12 +195,25 @@ function wheelDustRate(surface, speed, handbrake)
   return 0, surface
 end
 
+-- 雪天行驶时车轮卷起雪雾（覆盖原本的路面尘土）
+function snowSprayKind(weatherValue, speed)
+  if weatherValue == "snow" and math.abs(speed or 0) > 2.5 then
+    return "snow"
+  end
+  return nil
+end
+
 function updateWheelDust(dt)
   if phase ~= "driving" then rv.dustAcc = 0 return end
   local surfName = "grass"
   if surfaceInfo ~= nil then surfName = surfaceInfo(rv.x, rv.z) end
   local hb = ActionDown("shift") and math.abs(rv.speed or 0) > 2.5
   local rate, kind = wheelDustRate(surfName, rv.speed, hb)
+  local spray = snowSprayKind(weather, rv.speed)
+  if spray == "snow" then
+    local k = math.min(1, math.abs(rv.speed or 0) / 9)
+    rate, kind = math.floor(16 * k + 0.5), "snow"
+  end
   if rate <= 0 then rv.dustAcc = 0 return end
   rv.dustAcc = (rv.dustAcc or 0) + dt * rate
   local col = {
@@ -209,6 +222,7 @@ function updateWheelDust(dt)
     gravel  = { 0.58, 0.56, 0.50 },
     grass   = { 0.45, 0.48, 0.30 },
     smoke   = { 0.55, 0.55, 0.56 },
+    snow    = { 0.94, 0.95, 0.99 },
   }
   local c = col[kind] or col.grass
   while rv.dustAcc >= 1 do

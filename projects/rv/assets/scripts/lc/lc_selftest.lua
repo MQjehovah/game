@@ -2960,6 +2960,17 @@ function runSelfTest()
                      smoke, slow))
   end
 
+  -- 雪天雪雾：行驶时触发，慢速/晴天不触发
+  do
+    local fast = snowSprayKind("snow", 6.0)
+    local slow = snowSprayKind("snow", 1.0)
+    local clear = snowSprayKind("clear", 6.0)
+    ok(r, "snow spray",
+       fast == "snow" and slow == nil and clear == nil,
+       string.format("fast=%s slow=%s clear=%s", tostring(fast),
+                     tostring(slow), tostring(clear)))
+  end
+
   -- 燃油罐：靠近房车加注，消耗 1 个、油量增加
   do
     local sf = fuel
