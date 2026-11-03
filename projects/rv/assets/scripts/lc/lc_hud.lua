@@ -614,6 +614,24 @@ function drawMinimap(vw, vh)
       DrawCircle(px2, py2, 6, 1.5, 1.0, 0.80, 0.30, 1, false)
     end
   end
+  -- 鱼笼位置：成熟时青色高亮，未成熟灰色
+  if pondTrap ~= nil then
+    local dx, dz = pondTrap.x - rv.x, pondTrap.z - rv.z
+    local d = math.sqrt(dx * dx + dz * dz)
+    local px2, py2
+    if d <= range then
+      px2, py2 = cx + dx * scale, cy - dz * scale
+    elseif d > 0.01 then
+      px2 = cx + dx / d * (size * 0.5 - 10)
+      py2 = cy - dz / d * (size * 0.5 - 10)
+    end
+    if px2 ~= nil then
+      local ready = pondTrap.ready == true
+      DrawCircle(px2, py2, ready and 4.5 or 3, 1.5,
+                 ready and 0.45 or 0.62, ready and 0.95 or 0.62,
+                 ready and 0.82 or 0.62, 1, ready)
+    end
+  end
   DrawLine(cx, cy, cx + math.sin(rv.yaw) * 10,
            cy - math.cos(rv.yaw) * 10, 2, 1.0, 0.85, 0.35, 1)
   DrawCircle(cx, cy, 3, 2, 1.0, 0.85, 0.35, 1, true)
@@ -1507,6 +1525,18 @@ function drawMapHud()
                          0.50, 1)
       end
     end
+  end
+  -- 鱼笼位置：成熟时青色高亮
+  if pondTrap ~= nil then
+    local tx, ty = mapXY(pondTrap.x, pondTrap.z)
+    local ready = pondTrap.ready == true
+    DrawCircle(tx, ty, ready and 7 or 5, 1.5,
+               ready and 0.42 or 0.60, ready and 0.95 or 0.60,
+               ready and 0.80 or 0.60, 1, ready)
+    drawTextCentered(ready and "鱼笼（可收）" or "鱼笼",
+                     tx, ty + 13, 11,
+                     ready and 0.55 or 0.66, ready and 0.92 or 0.66,
+                     ready and 0.78 or 0.66, 1)
   end
   DrawText("● 房车    ● 地点（越红越危险）  ? 未探索    — 公路    ◎ 货运目标",
            px + 16, py + ph - 24, 12, 0.7, 0.7, 0.65, 1)

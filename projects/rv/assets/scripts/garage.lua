@@ -1178,6 +1178,17 @@ function on_start()
     newGameHintT = 12
     clock = 8 * 60
     setPhase("parked")
+  elseif startMode == "trapmap" then
+    local p = ponds and ponds[1] or nil
+    local lc = nodeById("lakecamp")
+    if p ~= nil then
+      pondTrap = { x = p.x, z = p.z, t = 0, ready = true }
+    elseif lc ~= nil then
+      pondTrap = { x = lc.x, z = lc.z, t = 0, ready = true }
+    end
+    if lc ~= nil then rv.x, rv.z = lc.x, lc.z end
+    mapOpen = true
+    setPhase("parked")
   elseif startMode == "raincab" then
     setWeather("rain")
     setPhase("driving")
