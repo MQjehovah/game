@@ -1321,17 +1321,42 @@ function runSelfTest()
        string.format("rain=%.2f clear=%.2f fog=%.2f", wet, dry, fog))
   end
 
+  -- 每日首单：同一天第一单 +25%，第二单恢复
+  do
+    local sd, sLast = day, lastJobDay
+    day, lastJobDay = 9, 0
+    jobRefreshOffers("depot")
+    jobAccept(1)
+    job.pay = { metal = 5, wood = 2 }
+    job.condition = 1.0
+    local m0 = materials.metal or 0
+    jobComplete()
+    local firstGain = (materials.metal or 0) - m0
+    jobRefreshOffers("depot")
+    jobAccept(1)
+    job.pay = { metal = 5, wood = 2 }
+    job.condition = 1.0
+    local m1 = materials.metal or 0
+    jobComplete()
+    local secondGain = (materials.metal or 0) - m1
+    day, lastJobDay = sd, sLast
+    ok(r, "daily first job bonus", firstGain == 6 and secondGain == 5,
+       string.format("first=%d second=%d", firstGain, secondGain))
+  end
+
   -- 存读档：行程/探索/货运单数 + 天气
   do
     tripDistance, tripFuel, jobDelivered = 3210, 88, 7
     visitedPois["ruin"] = true
     bestFish, fishCaught = 63, 12
+    lastJobDay = 11
     weather, weatherT, weatherNext = "rain", 7, 120
     local saved0 = saveLayout()
     tripDistance, tripFuel, jobDelivered = 0, 0, 0
     visitedPois = {}
     visitedCount = 0
     bestFish, fishCaught = 0, 0
+    lastJobDay = 0
     weather, weatherT, weatherNext = "clear", 0, 90
     loadLayout()
     ok(r, "save progress stats",
@@ -1339,11 +1364,12 @@ function runSelfTest()
        math.abs((tripFuel or 0) - 88) < 1 and jobDelivered == 7 and
        visitedPois["ruin"] == true and weather == "rain" and
        math.abs((weatherNext or 0) - 120) < 1 and
-       math.abs((bestFish or 0) - 63) < 1 and fishCaught == 12,
-       string.format("trip=%.0f jobs=%d ruin=%s weather=%s fish=%.0f/%d",
+       math.abs((bestFish or 0) - 63) < 1 and fishCaught == 12 and
+       lastJobDay == 11,
+       string.format("trip=%.0f jobs=%d ruin=%s weather=%s fish=%.0f/%d day=%d",
                      tripDistance or 0, jobDelivered,
                      tostring(visitedPois["ruin"]), tostring(weather),
-                     bestFish or 0, fishCaught or 0))
+                     bestFish or 0, fishCaught or 0, lastJobDay or 0))
   end
 
   -- 存读档

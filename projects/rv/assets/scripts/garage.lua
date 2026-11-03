@@ -140,6 +140,7 @@ function saveLayout()
       visited = visitedList,
       bestFish = bestFish or 0,
       fishCaught = fishCaught or 0,
+      lastJobDay = lastJobDay or 0,
     }
   end
   if coopRole == "server" and coopSaveExtra ~= nil then
@@ -283,6 +284,7 @@ function loadLayout()
     jobDelivered = math.floor(tonumber(data.progress.jobs) or jobDelivered)
     bestFish = tonumber(data.progress.bestFish) or bestFish
     fishCaught = math.floor(tonumber(data.progress.fishCaught) or fishCaught)
+    lastJobDay = math.floor(tonumber(data.progress.lastJobDay) or lastJobDay)
     if type(data.progress.visited) == "table" then
       visitedPois = {}
       visitedCount = 0
