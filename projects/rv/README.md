@@ -402,6 +402,9 @@
 - `coop_job.txt`：服务端 3s 自动接第一张顺路货运合同并广播，8s 传送到目的地，
   日志 `[coop-job] accept=...` / `[coop-job] delivered ...`，验证服务端权威结算+
   客户端 `game_state.job` 同步。
+- `coop_lights.txt`：服务端 5s/9s 切换车内灯，日志
+  `[coop-lights] server toggle on=... lamps=N` 与客户端 `client apply ... lamps=N`，
+  验证 `SetVisible` 改 `Despawn` 后灯真正熄灭（lamps 0↔2）。
 - `coop_walk.txt`：客户端按住前进，便于网络 smoke 看到受控角色位移。
 - `coop_sitdemo.txt`：在房车旁生成一个播放 `Sit` 骨骼片段的预览角色。
 - `coop_animdemo.txt`：内容 `sit` / `board` / `stand` / `dooropen` / `doorclose` /
@@ -476,6 +479,10 @@ POI 墙体碰撞/门洞通行、营地货运板/接单载重/到点结算/放弃
 
 - 操作：`WASD` 移动、鼠标视角、`F` 上/下驾驶席、`L` 车内灯、`G` 灶台开关、
   `B` 合作建造、`E` 搜附近物资箱/上下车、`1` 吃饭、`2` 喝水、`3` 睡觉。
+- **车内灯真正熄灭**：`rv_lamp` 自带点光，仅 `SetVisible` 会留下光源；联机
+  服务端/客户端统一调用 `setInteriorLights()`（Despawn/重生），
+  `coop_lights.txt` 日志 `[coop-lights] server toggle on=false lamps=0` →
+  `on=true lamps=2`，两端一致。
 - **进出房车**：走到车门旁按 `E` 上车（乘客席）；车内按 `E` 下车；按 `F` 直接坐上
   驾驶席。服务器记录每名玩家的 `inside/seat` 并广播；客户端在车内切第一人称、隐藏
   自己的角色，车外恢复第三人称。车体右侧已切出真实门洞（车身壳体 + 右侧内墙板

@@ -114,6 +114,15 @@ function setInteriorLights(on)
   interiorLightsOn = on and true or false
 end
 
+-- 当前点亮的车内灯数量（联机日志/自检用）
+function interiorLampCount()
+  local n = 0
+  for _, p in ipairs(rvInterior or {}) do
+    if p.pre == "rv_lamp" and p.ent ~= nil then n = n + 1 end
+  end
+  return n
+end
+
 -- 公路贴花：跟随房车，按里程滚动虚线（Nomad Drive 的公路感）
 -- 公路现在是世界固定的，由 spawnRoadNetwork() 一次性生成，不再每帧跟随车头。
 

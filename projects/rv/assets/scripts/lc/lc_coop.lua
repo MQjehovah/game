@@ -297,7 +297,17 @@ local function setLampVisible(on)
 end
 
 local function applyLights()
-  setLampVisible(coop.lights)
+  -- SetVisible 只隐藏灯罩网格，rv_lamp 的点光仍会亮；走单机的
+  -- setInteriorLights（Despawn/重生）才能真正开关车内灯。
+  if setInteriorLights ~= nil then
+    setInteriorLights(coop.lights and true or false)
+  else
+    setLampVisible(coop.lights)
+  end
+  if coop.lightsDemo and interiorLampCount ~= nil then
+    print(string.format("[coop-lights] client apply on=%s lamps=%d",
+                        tostring(coop.lights), interiorLampCount()))
+  end
 end
 
 local function furnMark(id)
@@ -878,6 +888,30 @@ local function serverUpdate(dt)
           before, inv.meal or 0, tostring(ok)))
     if ok then
       setToast("合作演示：灶台做好一份热饭")
+      pushState()
+    end
+  end
+
+  -- Test-only interior light toggle: flip lights at 5s and 9s and log the real
+  -- lamp count so the SetVisible-vs-Despawn fix is verifiable over the network.
+  if coop.lightsDemo then
+    coop.lightsDemoT = (coop.lightsDemoT or 0) + dt
+    local function lampCount()
+      return (interiorLampCount ~= nil) and interiorLampCount() or -1
+    end
+    if not coop.lightsDemoDone and coop.lightsDemoT >= 5.0 then
+      coop.lightsDemoDone = true
+      coop.lights = not coop.lights
+      applyLights()
+      print(string.format("[coop-lights] server toggle on=%s lamps=%d",
+                          tostring(coop.lights), lampCount()))
+      pushState()
+    elseif coop.lightsDemoDone and not coop.lightsDemoDone2 and coop.lightsDemoT >= 9.0 then
+      coop.lightsDemoDone2 = true
+      coop.lights = not coop.lights
+      applyLights()
+      print(string.format("[coop-lights] server toggle on=%s lamps=%d",
+                          tostring(coop.lights), lampCount()))
       pushState()
     end
   end
@@ -1998,6 +2032,7 @@ function coopInitWorld(role)
     coop.cookDemo = readFlag("coop_cook.txt")
     coop.boardDemo = readFlag("coop_board.txt")
     coop.jobDemo = readFlag("coop_job.txt")
+    coop.lightsDemo = readFlag("coop_lights.txt")
     local doorTest = ReadText("coop_doortest.txt")
     if doorTest ~= nil and doorTest ~= "" then
       local v = string.lower((doorTest:gsub("%s+", "")))
@@ -2107,6 +2142,7 @@ function coopInitWorld(role)
     coop.buildUi = readFlag("coop_buildmode.txt")
     coop.boardDemo = readFlag("coop_board.txt")
     coop.sitDemo = readFlag("coop_sitdemo.txt")
+    coop.lightsDemo = readFlag("coop_lights.txt")
     coop.doorView = readFlag("coop_doorview.txt")
     coop.sitView = readFlag("coop_sitview.txt")
     coop.poiView = readFlag("coop_poiview.txt")
