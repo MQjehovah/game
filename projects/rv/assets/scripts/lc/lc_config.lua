@@ -218,6 +218,22 @@ TRADES = {
     cost = { metal = 3 }, give = { item = "repairkit", n = 1 } },
 }
 
+-- 路牌笔记：散落在各地点的可阅读纸条，集齐有一次性奖励
+LORE_NOTES = {
+  { id = "note_ruin", node = "ruin", title = "废宅便条",
+    text = "“如果你看到这张纸，说明你也在这条路上。别在夜里开远光——会引来不该来的东西。”" },
+  { id = "note_town", node = "town", title = "小镇公告",
+    text = "“信号中继修好后，往东的公路就能联系上救援队。水塔下面还有一箱罐头。”" },
+  { id = "note_clinic", node = "clinic", title = "诊所记录",
+    text = "“伤员太多，药不够了。有人提到湖边营地有干净的鱼，能换点补给。”" },
+  { id = "note_depot", node = "depot", title = "仓库清单",
+    text = "“第三排货架：防滑链、机油、燃油罐。冬天来之前一定要把防滑链装上。”" },
+  { id = "note_farm", node = "farm", title = "农场留言",
+    text = "“风车的水泵还能用，接满一次够喝两天。别把庄稼地压了。”" },
+  { id = "note_lake", node = "lakecamp", title = "湖边日记",
+    text = "“雨天鱼口最好。鱼笼里放点饵，第二天能多收一条。”" },
+}
+
 -- 每日目标（随天数刷新；完成给少量燃料/材料）
 DAILY_GOALS = {
   { id = "jobs",     name = "完成 2 单货运",       target = 2,   reward = { metal = 2, fuel = 8 } },

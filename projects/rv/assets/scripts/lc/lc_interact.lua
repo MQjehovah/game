@@ -170,6 +170,23 @@ function updateInteraction()
     end
   end
 
+  -- 未读的路牌笔记
+  for i, n in ipairs(loreNotes or {}) do
+    if not notesFound[n.id] then
+      local dx, dz = n.x - player.x, n.z - player.z
+      local d = math.sqrt(dx * dx + dz * dz)
+      if d < 2.4 then
+        local dot = forwardDot(dx, dz, d)
+        if dot > 0.05 then
+          nearAction = { kind = "note", index = i, verb = "阅读笔记",
+                         detail = "E 读《" .. (n.title or "笔记") .. "》",
+                         x = n.x, z = n.z }
+          return
+        end
+      end
+    end
+  end
+
   -- 农场风车水泵
   if windmill ~= nil then
     local dx, dz = windmill.x - player.x, windmill.z - player.z
@@ -281,6 +298,10 @@ function doInteract()
     return true
   elseif nearAction.kind == "cache" then
     lootRoadCache(nearAction.index)
+    updateInteraction()
+    return true
+  elseif nearAction.kind == "note" then
+    readLoreNote(nearAction.index)
     updateInteraction()
     return true
   elseif nearAction.kind == "windmill" then

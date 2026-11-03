@@ -4080,6 +4080,42 @@ function runSelfTest()
                      tostring(rewarded), tostring(again)))
   end
 
+  -- 路牌笔记：阅读写入日志，集齐全部后一次性奖励，且不能重复读
+  do
+    local keepFound, keepDone = notesFound, loreRewardDone
+    local keepJournal = journal
+    local sm, se, sf = materials.metal or 0, materials.electronics or 0,
+                       fuel or 0
+    local kt, kv = toast.text, toast.t
+    local keepSave = autoSave
+    autoSave = nil
+    notesFound, loreRewardDone = {}, false
+    journal = {}
+    materials.metal, materials.electronics = 0, 0
+    fuel = 0
+    local total = #(LORE_NOTES or {})
+    local read = 0
+    for i = 1, #(loreNotes or {}) do
+      if readLoreNote(i) then read = read + 1 end
+    end
+    local rewarded = (materials.metal or 0) == 8 and
+                     (materials.electronics or 0) == 2 and (fuel or 0) >= 14
+    local logged = #journal >= total
+    local again = #(loreNotes or {}) > 0 and readLoreNote(1)
+    notesFound, loreRewardDone = keepFound, keepDone
+    journal = keepJournal
+    materials.metal, materials.electronics = sm, se
+    fuel = sf
+    autoSave = keepSave
+    toast.text, toast.t = kt, kv
+    if refreshLoreNotes ~= nil then refreshLoreNotes() end
+    ok(r, "lore notes",
+       total >= 6 and read == total and rewarded and logged and again == false,
+       string.format("notes=%d read=%d reward=%s logged=%s again=%s",
+                     total, read, tostring(rewarded), tostring(logged),
+                     tostring(again)))
+  end
+
   -- 地点特色掉落：数据完整，且物品都在 ITEMS 里
   do
     local function has(id, item)

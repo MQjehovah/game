@@ -1124,6 +1124,46 @@ function checkExplorationMilestone()
   return true
 end
 
+-- 读取路牌笔记：写入旅行日志，集齐全部后给一次性奖励
+function readLoreNote(index)
+  local n = loreNotes and loreNotes[index] or nil
+  if n == nil or notesFound[n.id] then return false end
+  notesFound[n.id] = true
+  if n.ent ~= nil then SetVisible(n.ent, false) end
+  local def = nil
+  for _, d in ipairs(LORE_NOTES or {}) do
+    if d.id == n.id then def = d end
+  end
+  if def ~= nil and addJournal ~= nil then
+    addJournal(string.format("读笔记《%s》：%s", def.title, def.text), "note")
+  end
+  local found, total = 0, #(LORE_NOTES or {})
+  for _, d in ipairs(LORE_NOTES or {}) do
+    if notesFound[d.id] then found = found + 1 end
+  end
+  toast.text = string.format("读完《%s》（%d/%d）",
+                             def and def.title or "笔记", found, total)
+  toast.t = 4.0
+  if PlaySfx then PlaySfx("pickup") end
+  if found >= total and not loreRewardDone then
+    loreRewardDone = true
+    materials.metal = (materials.metal or 0) + 8
+    materials.electronics = (materials.electronics or 0) + 2
+    local before = fuel or 0
+    fuel = math.min(fuelMax(), before + 15)
+    local fuelGain = (fuel or 0) - before
+    if addJournal ~= nil then
+      addJournal(string.format(
+        "集齐所有路牌笔记（金属+8 电子件+2 燃料+%.0fL）", fuelGain), "goal")
+    end
+    toast.text = string.format(
+      "集齐所有路牌笔记！奖励 金属+8 电子件+2 燃料+%.0fL", fuelGain)
+    toast.t = 5.0
+    if autoSave ~= nil then autoSave() end
+  end
+  return true
+end
+
 function checkFishCollection()
   if fishCollectionDone then return false end
   local total = #(FISH_SPECIES or {})

@@ -2086,6 +2086,49 @@ function nearestReadyCache(x, z, maxDist)
   return best
 end
 
+-- 路牌笔记：在各地 POI 附近放一张可阅读的纸片（已读的隐藏）
+function spawnLoreNotes()
+  for _, n in ipairs(loreNotes or {}) do Despawn(n.ent) end
+  loreNotes = {}
+  for i, def in ipairs(LORE_NOTES or {}) do
+    local nd = nodeById(def.node)
+    if nd ~= nil then
+      local x = nd.x + 1.4 + (i % 2) * 0.9
+      local z = nd.z + 1.1 - (i % 3) * 0.6
+      local y = (terrainHeight and terrainHeight(x, z)) or 0
+      local e = SpawnPrefab("rv_cargo_med", { x = x, y = y + 0.05, z = z })
+      if e ~= nil then
+        SetScale(e, 0.24, 0.03, 0.32)
+        SetRotationY(e, i * 0.6)
+        loreNotes[#loreNotes + 1] = {
+          ent = e, x = x, z = z, id = def.id, title = def.title }
+      end
+    end
+  end
+  if refreshLoreNotes ~= nil then refreshLoreNotes() end
+end
+
+function refreshLoreNotes()
+  for _, n in ipairs(loreNotes or {}) do
+    if n.ent ~= nil then
+      SetVisible(n.ent, not notesFound[n.id])
+    end
+  end
+end
+
+-- 按位置找最近的未读笔记（联机/交互共用）
+function nearestLoreNote(x, z, maxDist)
+  local best, bestD = nil, maxDist or 2.4
+  for i, n in ipairs(loreNotes or {}) do
+    if not notesFound[n.id] then
+      local dx, dz = n.x - (x or 0), n.z - (z or 0)
+      local d = math.sqrt(dx * dx + dz * dz)
+      if d < bestD then best, bestD = i, d end
+    end
+  end
+  return best
+end
+
 function updateCampfireAudio(dt)
   if campfire == nil then return end
   if not campfireOn then return end

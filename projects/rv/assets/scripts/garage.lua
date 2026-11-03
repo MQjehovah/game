@@ -171,6 +171,10 @@ function saveLayout(silent)
     for id, seen in pairs(visitedPois) do
       if seen then visitedList[#visitedList + 1] = id end
     end
+    local notesList = {}
+    for id, seen in pairs(notesFound) do
+      if seen then notesList[#notesList + 1] = id end
+    end
     data.progress = {
       tripDistance = tripDistance or 0,
       tripFuel = tripFuel or 0,
@@ -186,6 +190,8 @@ function saveLayout(silent)
       battery = batteryCharge or 0,
       rawAge = rawFoodAge or 0,
       milestones = milestones,
+      notes = notesList,
+      loreDone = loreRewardDone and true or false,
       radioMastFixed = radioMastFixed and true or false,
       relayDone = relayDone and true or false,
       campfireFuel = campfireFuelMin or 0,
@@ -411,6 +417,14 @@ function loadLayout()
     end
     fishCollectionDone = data.progress.fishCollectionDone == true
     exploreAllDone = data.progress.exploreAllDone == true
+    notesFound = {}
+    if type(data.progress.notes) == "table" then
+      for _, id in ipairs(data.progress.notes) do
+        if type(id) == "string" then notesFound[id] = true end
+      end
+    end
+    loreRewardDone = data.progress.loreDone == true
+    if refreshLoreNotes ~= nil then refreshLoreNotes() end
     if type(data.progress.journal) == "table" then
       journal = {}
       for _, e in ipairs(data.progress.journal) do
@@ -580,6 +594,7 @@ function on_start()
   if spawnButterflies ~= nil then spawnButterflies() end
   if spawnBerryBushes ~= nil then spawnBerryBushes() end
   if spawnRoadCaches ~= nil then spawnRoadCaches() end
+  if spawnLoreNotes ~= nil then spawnLoreNotes() end
   if spawnJobBoard ~= nil then spawnJobBoard() end
   do  -- 验证钩子
     local flag = ReadText("autopilot_on.txt")
