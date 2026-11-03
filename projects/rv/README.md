@@ -917,6 +917,8 @@
   `[coop-wood] demo ok=true wood=40 cd=60`，验证联机柴堆补给。
 - `coop_veh.txt`：服务端 3s 写入车况并广播，日志
   `[coop-veh] demo token=72:60:55:80:95:0:...`，验证联机车况/四轮数据同步。
+- `coop_maint.txt`：客户端 3s 按 O 打开保养面板，日志
+  `[coop-maint] client open=true rows=8`，验证联机客机也能看车况。
 - `coop_walk.txt`：客户端按住前进，便于网络 smoke 看到受控角色位移。
 - `coop_sitdemo.txt`：在房车旁生成一个播放 `Sit` 骨骼片段的预览角色。
 - `coop_animdemo.txt`：内容 `sit` / `board` / `stand` / `dooropen` / `doorclose` /
@@ -1070,6 +1072,7 @@ POI 墙体碰撞/门洞通行、营地货运板/接单载重/到点结算/放弃
   客机 HUD 显示 `车况 车体x% 引擎x% 轮胎x% 电瓶x% 水温x°C`，
   并把刹车热与四轮胎压/胎温/磨损同步给客机（保养面板数据一致）；
   服务器日志 `[coop-veh] demo token=72:60:55:80:95:0:...`，
+  客机按 `O` 也能打开保养面板（用同步来的车况数据），
   自检 `vehicle condition sync`。
 - **联机天气/夜幕对齐**：合作客户端现在也会绘制雨幕、闪电、夜幕与星空
   （之前只有单机 `on_render` 画），联机夜雨不再少一层氛围；合作 smoke 通过。

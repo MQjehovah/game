@@ -2276,12 +2276,23 @@ local function clientUpdate(dt)
     if ActionPressed("v") then Rpc("game_cmd", { type = "berry" }) end
     if ActionPressed("z") then Rpc("game_cmd", { type = "pond_trap" }) end
     if ActionPressed("j") then Rpc("game_cmd", { type = "toggle_chains" }) end
+    if ActionPressed("o") then maintOpen = not maintOpen end
     if coop.highDemo and not coop.highDemoDone then
       coop.highDemoT = (coop.highDemoT or 0) + dt
       if coop.highDemoT >= 3.0 and GetVar("netConnected") == 1 then
         coop.highDemoDone = true
         Rpc("game_cmd", { type = "highbeam" })
         print("[coop-high] client sent")
+      end
+    end
+    if coop.maintDemo and not coop.maintDemoDone then
+      coop.maintDemoT = (coop.maintDemoT or 0) + dt
+      if coop.maintDemoT >= 3.0 then
+        coop.maintDemoDone = true
+        maintOpen = true
+        print(string.format("[coop-maint] client open=%s rows=%d",
+                            tostring(maintOpen),
+                            #(maintenanceRows and maintenanceRows() or {})))
       end
     end
     if ActionPressed("e") then
@@ -2873,6 +2884,7 @@ function coopInitWorld(role)
     coop.walkDemo = readFlag("coop_walk.txt")
     coop.hornDemo = readFlag("coop_horn.txt")
     coop.highDemo = readFlag("coop_highbeam.txt")
+    coop.maintDemo = readFlag("coop_maint.txt")
     coop.refuelDemo = readFlag("coop_refuel.txt")
     coop.serviceDemo = readFlag("coop_service.txt")
     coop.repairDemo = readFlag("coop_repair.txt")

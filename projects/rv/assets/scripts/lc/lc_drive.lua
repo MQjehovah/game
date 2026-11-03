@@ -121,19 +121,22 @@ function maintenanceRows()
   local function row(label, value, ok)
     rows[#rows + 1] = { label = label, value = value, ok = ok }
   end
-  local d = dur or 100
+  -- 联机客机用服务器同步来的车况，避免显示本地默认值
+  local veh = nil
+  if coopRole == "client" and coop ~= nil then veh = coop.veh end
+  local d = (veh and veh.dur) or dur or 100
   row("车体", string.format("%.0f%%", d), d >= 40)
-  local e = (parts and parts.engine) or 100
+  local e = (veh and veh.engine) or (parts and parts.engine) or 100
   row("引擎", string.format("%.0f%%", e), e >= 25)
-  local t = (parts and parts.tires) or 100
+  local t = (veh and veh.tires) or (parts and parts.tires) or 100
   row("轮胎", string.format("%.0f%%", t), t >= 18)
-  local b = (parts and parts.battery) or 100
+  local b = (veh and veh.battery) or (parts and parts.battery) or 100
   row("电瓶", string.format("%.0f%%", b), b >= 20)
   local o = oilLife or 100
   row("机油", string.format("%.0f%%", o), o >= 20)
   local c = coolant or 100
   row("冷却液", string.format("%.0f%%", c), c >= 20)
-  local temp = engineTemp or 20
+  local temp = (veh and veh.temp) or engineTemp or 20
   row("水温", string.format("%.0f°C", temp), temp < (VEH.tempOverheat or 110))
   row("刹车", string.format("%.0f%% 热", (brakeHeat or 0) * 100),
       (brakeHeat or 0) < 0.7)
