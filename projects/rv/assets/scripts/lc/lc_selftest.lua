@@ -1708,6 +1708,27 @@ function runSelfTest()
                      tostring(fullHint ~= nil), tostring(farHint ~= nil)))
   end
 
+  -- 位置版添柴（联机服务器用）：远处失败、近处成功并点燃
+  do
+    local keepOn, keepFuel = campfireOn, campfireFuelMin
+    local kw = materials.wood or 0
+    local cx = campfire and campfire.x or 1.8
+    local cz = campfire and campfire.z or 2.0
+    materials.wood = 1
+    campfireOn, campfireFuelMin = false, 0
+    local farOk = campfireAddWoodAt(cx + 50, cz)
+    local nearOk = campfireAddWoodAt(cx, cz)
+    local relit = campfireOn == true and (campfireFuelMin or 0) >= 479
+    local spent = (materials.wood or 0) == 0
+    campfireOn, campfireFuelMin = keepOn, keepFuel
+    materials.wood = kw
+    ok(r, "campfire wood at position",
+       farOk == false and nearOk and relit and spent,
+       string.format("far=%s near=%s relit=%s wood=%d",
+                     tostring(farOk), tostring(nearOk), tostring(relit),
+                     materials.wood or 0))
+  end
+
   -- 联机篝火状态同步：客机按服务器标志点燃/熄灭
   do
     local keep = campfireOn

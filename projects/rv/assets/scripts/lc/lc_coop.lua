@@ -737,6 +737,19 @@ local function serverHandleCommand(clientId, a)
     print(string.format("[coop-high] server toggle high=%s lamps=%d",
                         tostring(highBeam), #rvHeadlights))
     pushState()
+  elseif t == "firewood" then
+    local okWood = false
+    if campfireAddWoodAt ~= nil then
+      okWood = campfireAddWoodAt(s.x or rv.x, s.z or rv.z)
+    end
+    if okWood then
+      coop.worldSeq = coop.worldSeq + 1
+      setToast("添了一根木柴（篝火燃料 +480）")
+    end
+    print(string.format("[coop-fire] ok=%s wood=%d fuel=%.0f on=%s",
+                        tostring(okWood), materials.wood or 0,
+                        campfireFuelMin or 0, tostring(campfireOn)))
+    pushState()
   elseif t == "repair" then
     local before = (parts and parts.engine) or 100
     local okRep = false
@@ -1132,6 +1145,23 @@ local function serverUpdate(dt)
     coop.pingDemoDone = true
     setToast(string.format("P1 标记了位置 (%.0f, %.0f)", rv.x, rv.z))
     print(string.format("[coop-ping] demo ok=true pos=(%.0f,%.0f)", rv.x, rv.z))
+    pushState()
+  end
+
+  -- Test-only co-op campfire: move to the fire, give wood, add a log.
+  if coop.fireDemo and not coop.fireDemoDone and coop.autoT >= 3.0 then
+    coop.fireDemoDone = true
+    rv.x, rv.z = campfire and campfire.x or 1.8,
+                 campfire and campfire.z or 2.0
+    materials.wood = (materials.wood or 0) + 1
+    local okWood = false
+    if campfireAddWoodAt ~= nil then
+      okWood = campfireAddWoodAt(rv.x, rv.z)
+    end
+    print(string.format("[coop-fire] demo ok=%s wood=%d fuel=%.0f on=%s",
+                        tostring(okWood), materials.wood or 0,
+                        campfireFuelMin or 0, tostring(campfireOn)))
+    if okWood then setToast("添了一根木柴（篝火燃料 +480）") end
     pushState()
   end
 
@@ -1912,6 +1942,7 @@ local function clientUpdate(dt)
     if ActionPressed("c") then Rpc("game_cmd", { type = "cook" }) end
     if ActionPressed("n") then Rpc("game_cmd", { type = "mast_repair" }) end
     if ActionPressed("p") then Rpc("game_cmd", { type = "ping" }) end
+    if ActionPressed("t") then Rpc("game_cmd", { type = "firewood" }) end
     if coop.highDemo and not coop.highDemoDone then
       coop.highDemoT = (coop.highDemoT or 0) + dt
       if coop.highDemoT >= 3.0 and GetVar("netConnected") == 1 then
@@ -2369,6 +2400,7 @@ function coopInitWorld(role)
     coop.mastDemo = readFlag("coop_mast.txt")
     coop.relayDemo = readFlag("coop_relay.txt")
     coop.pingDemo = readFlag("coop_ping.txt")
+    coop.fireDemo = readFlag("coop_fire.txt")
     local doorTest = ReadText("coop_doortest.txt")
     if doorTest ~= nil and doorTest ~= "" then
       local v = string.lower((doorTest:gsub("%s+", "")))
@@ -2485,6 +2517,7 @@ function coopInitWorld(role)
     coop.mastDemo = readFlag("coop_mast.txt")
     coop.relayDemo = readFlag("coop_relay.txt")
     coop.pingDemo = readFlag("coop_ping.txt")
+    coop.fireDemo = readFlag("coop_fire.txt")
     coop.buildUi = readFlag("coop_buildmode.txt")
     coop.boardDemo = readFlag("coop_board.txt")
     coop.sitDemo = readFlag("coop_sitdemo.txt")

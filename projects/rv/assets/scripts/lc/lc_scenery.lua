@@ -1973,6 +1973,19 @@ function updateCampfireFuel(gm)
   end
 end
 
+-- 在指定位置尝试添柴：消耗 1 木材、补充 8 游戏小时燃料并重新点燃（不负责提示）
+function campfireAddWoodAt(px, pz)
+  if campfire == nil then return false end
+  local dx, dz = campfire.x - (px or 0), campfire.z - (pz or 0)
+  if dx * dx + dz * dz > 3.6 * 3.6 then return false end
+  if (materials.wood or 0) < 1 then return false end
+  materials.wood = materials.wood - 1
+  campfireFuelMin = math.min(campfireWoodMax or 2160,
+                             (campfireFuelMin or 0) + 480)
+  if not campfireOn then setCampfireLit(true) end
+  return true
+end
+
 -- 添柴：消耗 1 木材，补充 8 游戏小时燃料并重新点燃
 function addCampfireWood()
   if campfire == nil then return false end
@@ -1991,10 +2004,7 @@ function addCampfireWood()
     toast.t = 2.4
     return false
   end
-  materials.wood = materials.wood - 1
-  campfireFuelMin = math.min(campfireWoodMax or 2160,
-                             (campfireFuelMin or 0) + 480)
-  if not campfireOn then setCampfireLit(true) end
+  if not campfireAddWoodAt(lx, lz) then return false end
   if PlaySfx then PlaySfx("pickup") end
   toast.text = string.format("添了一根木柴（燃料约 %.0f 游戏分钟）",
                              campfireFuelMin)
