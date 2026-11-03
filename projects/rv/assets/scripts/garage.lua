@@ -155,6 +155,9 @@ function saveLayout()
       jobs = jobDelivered or 0,
       visited = visitedList,
       bestFish = bestFish or 0,
+      bestFishName = bestFishName,
+      fishRecords = fishRecords,
+      fishCounts = fishCounts,
       fishCaught = fishCaught or 0,
       lastJobDay = lastJobDay or 0,
       battery = batteryCharge or 0,
@@ -328,6 +331,19 @@ function loadLayout()
     jobDelivered = math.floor(tonumber(data.progress.jobs) or jobDelivered)
     bestFish = tonumber(data.progress.bestFish) or bestFish
     fishCaught = math.floor(tonumber(data.progress.fishCaught) or fishCaught)
+    bestFishName = data.progress.bestFishName or bestFishName
+    if type(data.progress.fishRecords) == "table" then
+      fishRecords = {}
+      for k, v in pairs(data.progress.fishRecords) do
+        if type(k) == "string" then fishRecords[k] = tonumber(v) or 0 end
+      end
+    end
+    if type(data.progress.fishCounts) == "table" then
+      fishCounts = {}
+      for k, v in pairs(data.progress.fishCounts) do
+        if type(k) == "string" then fishCounts[k] = tonumber(v) or 0 end
+      end
+    end
     lastJobDay = math.floor(tonumber(data.progress.lastJobDay) or lastJobDay)
     batteryCharge = tonumber(data.progress.battery) or batteryCharge
     rawFoodAge = tonumber(data.progress.rawAge) or rawFoodAge

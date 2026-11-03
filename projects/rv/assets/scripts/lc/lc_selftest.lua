@@ -1498,6 +1498,33 @@ function runSelfTest()
        string.format("%s %.0fcm best=%.0f", tostring(name), size, bestFish or 0))
   end
 
+  -- 各鱼种最大尺寸/条数记录
+  do
+    local keepR, keepC = fishRecords, fishCounts
+    local keepB, keepN, keepK = bestFish, bestFishName, fishCaught
+    local keepGoal = dailyGoal
+    dailyGoal = nil
+    fishRecords, fishCounts = {}, {}
+    bestFish, bestFishName, fishCaught = 0, nil, 0
+    recordFish("鲫鱼", 20, 1)
+    local second = recordFish("鲫鱼", 25, 1)
+    local third = recordFish("鲤鱼", 30, 1)
+    local okRec = second == true and third == true and
+                  fishRecords["鲫鱼"] == 25 and fishRecords["鲤鱼"] == 30 and
+                  fishCounts["鲫鱼"] == 2 and bestFish == 30 and
+                  bestFishName == "鲤鱼" and fishCaught == 3
+    local gotJi = fishRecords["鲫鱼"] or 0
+    local gotLi = fishRecords["鲤鱼"] or 0
+    local gotBest = bestFish or 0
+    local gotName = bestFishName
+    fishRecords, fishCounts = keepR, keepC
+    bestFish, bestFishName, fishCaught = keepB, keepN, keepK
+    dailyGoal = keepGoal
+    ok(r, "fish species records", okRec,
+       string.format("鲫鱼=%.0f 鲤鱼=%.0f best=%s %.0f",
+                     gotJi, gotLi, tostring(gotName), gotBest))
+  end
+
   -- 雨天路面抓地折减（与极速惩罚叠加）
   do
     local sw = weather

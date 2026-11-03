@@ -99,6 +99,9 @@ campRadio = nil               -- 营地收音机世界坐标
 tripDistance, tripFuel = 0, 0 -- 行程统计：米 / 升
 batteryCharge = 0             -- 电池当前电量 kWh
 bestFish, fishCaught = 0, 0   -- 钓鱼纪录：最大尺寸 cm / 累计条数
+bestFishName = nil            -- 最大纪录对应的鱼种
+fishRecords = {}              -- 各鱼种最大尺寸 cm
+fishCounts = {}               -- 各鱼种累计条数
 
 -- 搜刮 / 低强度威胁
 stopBag, stopThreat, evacT = {}, 0, -1

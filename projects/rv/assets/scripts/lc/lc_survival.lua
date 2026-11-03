@@ -495,7 +495,9 @@ end
 -- 地图/UI 用的钓鱼纪录文本
 function fishingRecordText()
   if (fishCaught or 0) <= 0 then return "钓鱼纪录：暂无" end
-  return string.format("钓鱼纪录 %.0fcm · %d 条", bestFish or 0, fishCaught or 0)
+  local who = bestFishName and (bestFishName .. " ") or ""
+  return string.format("钓鱼纪录 %s%.0fcm · %d 条", who, bestFish or 0,
+                       fishCaught or 0)
 end
 
 -- 鱼竿升级：每级上钩率 +7%、鱼尺寸 +4cm
@@ -610,6 +612,26 @@ function fishingConditionBonus()
   return chance, size
 end
 
+-- 记录一次渔获：各鱼种最大尺寸 + 总纪录 + 累计条数
+function recordFish(name, size, n)
+  n = n or 1
+  fishCounts[name] = (fishCounts[name] or 0) + n
+  local speciesRecord = false
+  if size > (fishRecords[name] or 0) then
+    fishRecords[name] = size
+    speciesRecord = true
+  end
+  local overall = false
+  if size > (bestFish or 0) then
+    bestFish = size
+    bestFishName = name
+    overall = true
+  end
+  fishCaught = (fishCaught or 0) + n
+  if addDailyProgress ~= nil then addDailyProgress("fish", n) end
+  return speciesRecord, overall
+end
+
 function finishFishing(force)
   local usedBait = fishingBait == true
   local onDock = fishingDock == true
@@ -633,12 +655,13 @@ function finishFishing(force)
     if size >= 55 then n = n + 1 end
     if usedBait then n = n + 1 end
     addItem("rawfish", n)
-    fishCaught = (fishCaught or 0) + n
-    if addDailyProgress ~= nil then addDailyProgress("fish", n) end
-    local record = false
-    if size > (bestFish or 0) then
-      bestFish = size
-      record = true
+    local speciesRecord, record = false, false
+    if recordFish ~= nil then
+      speciesRecord, record = recordFish(name, size, n)
+    else
+      fishCaught = (fishCaught or 0) + n
+      if addDailyProgress ~= nil then addDailyProgress("fish", n) end
+      if size > (bestFish or 0) then bestFish = size; record = true end
     end
     toast.text = string.format("钓到 %s %.0fcm x%d%s%s%s", name, size, n,
                                usedBait and "（鱼饵）" or "",
