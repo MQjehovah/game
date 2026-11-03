@@ -28,11 +28,29 @@ uniform mat4 uModel;
 uniform mat4 uNormalMat;
 uniform mat4 uViewMatrix;
 uniform vec3 uCamPos;
+uniform float uWindSway; // per-vertex vegetation sway (0 = static)
+uniform float uTime;     // scene clock for the wind phase
 out vec3 vWorldPos;
 out vec3 vNormal;
 out vec2 vUV;
 out vec4 vColor;
 out float vViewZ;
+out float vWind;
+
+// Bend a vegetation vertex around its base. Local height (y) sets the
+// amplitude (tips move, roots stay planted); the phase comes from the
+// instance's world position plus the vertex's own local x/z, so two blades in
+// the same tuft sway at slightly different phases.
+vec3 windOffset(vec3 p, mat4 model, float sway) {
+    float h = clamp(p.y, 0.0, 4.0);
+    float phase = model[3].x * 0.61 + model[3].z * 0.37;
+    float w1 = sin(uTime * 1.7 + phase + p.x * 1.9 + p.z * 1.1);
+    float w2 = sin(uTime * 2.6 + phase * 1.7 + p.z * 1.6);
+    float amp = h * 0.18 * sway;
+    return vec3((w1 * 0.7 + w2 * 0.3) * amp, 0.0,
+                (w1 * 0.2 + w2 * 0.8) * amp);
+}
+
 void main() {
 #ifdef SKINNED
     mat4 skin = mat4(0.0);
@@ -42,6 +60,7 @@ void main() {
     }
     vec4 p = skin * vec4(aPos, 1.0);
     vec4 n = skin * vec4(aNormal, 0.0);
+    if (uWindSway > 0.0) p.xyz += windOffset(aPos, uModel, uWindSway);
     vWorldPos = (uModel * p).xyz;
     vNormal = (uNormalMat * n).xyz;
     vUV = aUV * uTiling;
@@ -49,12 +68,16 @@ void main() {
     vViewZ = (uViewMatrix * vec4(vWorldPos, 1.0)).z;
     gl_Position = uMVP * p;
 #else
-    vWorldPos = (uModel * vec4(aPos, 1.0)).xyz;
+    vec3 local = aPos;
+    if (uWindSway > 0.0) local += windOffset(aPos, uModel, uWindSway);
+    
+    vWorldPos = (uModel * vec4(local, 1.0)).xyz;
     vNormal = (uNormalMat * vec4(aNormal, 0.0)).xyz;
     vUV = aUV * uTiling;
     vColor = aColor;
+    vWind = uWindSway;
     vViewZ = (uViewMatrix * vec4(vWorldPos, 1.0)).z;
-    gl_Position = uMVP * vec4(aPos, 1.0);
+    gl_Position = uMVP * vec4(local, 1.0);
 #endif
 }
 )";
@@ -66,6 +89,7 @@ in vec3 vNormal;
 in vec2 vUV;
 in vec4 vColor;
 in float vViewZ;
+in float vWind;
 out vec4 FragColor;
 uniform sampler2D uAlbedo;
 uniform sampler2D uMR;
@@ -485,8 +509,15 @@ void main() {
     // G4 terrain splatmap: layer a realistic grass texture, dirt color and rock
     // color by the vertex splat weights (vColor.r = grass, .g = dirt, .b = rock).
     vec3 grassAlbedo = uHasGrassTex ? texture(uGrassTex, vUV).rgb : vec3(1.0);
+    // World-space strata/grit break up the flat procedural rock colour on
+    // vertical cliff faces (the splat shader has no rock texture layer).
+    float strata = 0.5 + 0.5 * sin(vWorldPos.y * 5.2 +
+                                   sin(vWorldPos.z * 0.8) * 2.1);
+    float grit = 0.5 + 0.5 * sin(vWorldPos.x * 17.0 + vWorldPos.z * 11.0 +
+                                 vWorldPos.y * 3.3);
+    vec3 rockTint = uRockColor.rgb * (0.62 + 0.22 * strata + 0.16 * grit);
     vec3 albedoSplat = grassAlbedo * vColor.r + uDirtColor.rgb * vColor.g +
-                       uRockColor.rgb * vColor.b;
+                       rockTint * vColor.b;
     vec4 albedo = vec4(albedoSplat, 1.0);
     albedo *= uTint;
 #else
@@ -842,18 +873,32 @@ layout(location = 4) in mat4 aInstance;
 uniform mat4 uMVP;
 uniform mat4 uViewMatrix;
 uniform vec3 uCamPos;
+uniform float uWindSway;
+uniform float uTime;
 out vec3 vWorldPos;
 out vec3 vNormal;
 out vec2 vUV;
 out vec4 vColor;
 out float vViewZ;
+vec3 windOffset(vec3 p, mat4 model, float sway) {
+    float h = clamp(p.y, 0.0, 4.0);
+    float phase = model[3].x * 0.61 + model[3].z * 0.37;
+    float w1 = sin(uTime * 1.7 + phase + p.x * 1.9 + p.z * 1.1);
+    float w2 = sin(uTime * 2.6 + phase * 1.7 + p.z * 1.6);
+    float amp = h * 0.18 * sway;
+    return vec3((w1 * 0.7 + w2 * 0.3) * amp, 0.0,
+                (w1 * 0.2 + w2 * 0.8) * amp);
+}
 void main() {
-    vWorldPos = (aInstance * vec4(aPos, 1.0)).xyz;
+    vec3 local = aPos;
+    if (uWindSway > 0.0) local += windOffset(aPos, aInstance, uWindSway);
+    
+    vWorldPos = (aInstance * vec4(local, 1.0)).xyz;
     vNormal = mat3(aInstance) * aNormal;
     vUV = aUV;
     vColor = aColor;
     vViewZ = (uViewMatrix * vec4(vWorldPos, 1.0)).z;
-    gl_Position = uMVP * aInstance * vec4(aPos, 1.0);
+    gl_Position = uMVP * aInstance * vec4(local, 1.0);
 }
 )";
 

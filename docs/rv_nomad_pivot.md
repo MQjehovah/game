@@ -105,8 +105,12 @@
   `rv_bush`（多球灌木）。
 - `lc_config.MEADOW` 用 60 个拼块 + 约 130 株近景草花 + 34 丛灌木铺满营地与
   公路两侧，按 RV 位置回收复用；生成时避开路面、水塘、POI 占地、土坡与 RV 车体。
-- `updateMeadowWind()` 以 20Hz、分 4 批让草/花绕根部轻摆（草叶统一倾斜方向），
-  土坡顶部另种 90 株草花灌木。实测车顶追逐视角约 **91 FPS**。
+- 植被风摆为**逐顶点**：prefab 的 `mesh.windSway`（草/花/草甸 1.0、灌木 0.5）
+  被解析进 `Material.windSway`，`lit` / `lit_instanced` 顶点着色器按局部高度与
+  “实例世界位置 + 顶点自身 x/z” 相位弯曲顶点（`h * 0.18 * sway`，根部不动），
+  多 primitive 的 glTF 会把该标志传给每个 sub-material；`updateMeadowWind()`
+  只推进风时钟。土坡顶部另种 90 株草花灌木。实测车顶追逐视角约 **91 FPS**；
+  `start_mode=hills` 相隔 1 秒两帧的植被区域像素变化 **2.33%**（7572 px）。
 - `tools/gen_rv_terrain.py` 生成营地级高度场：**288×288m、73×73、4m 网格**，
   同时写出 `assets/data/rv_terrain.json`（约 30KB，供 Lua 采样）与
   `rv_terrain.gltf`（14k 顶点可见网格），两者同源。高度场保留路旁土坡，

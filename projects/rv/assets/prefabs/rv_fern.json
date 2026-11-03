@@ -21,7 +21,8 @@
     "mesh": {
       "meshKey": "gltf:assets/models/rv/rv_fern.gltf",
       "castShadow": true,
-      "receiveShadow": true
+      "receiveShadow": true,
+      "windSway": 1.0
     }
   }
 }

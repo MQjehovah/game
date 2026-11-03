@@ -194,38 +194,13 @@ function spawnHillPlants()
   print(string.format("[meadow] hill plants spawned (%d)", #scenery))
 end
 
--- Gentle wind: rotate grass/flower clumps around their base. Blades are
--- authored with a common lean direction, so yaw sway reads as leaning.
--- Updates run at 20 Hz and walk one of four buckets per tick, keeping the
--- per-frame SetRotationY count low with ~2000 plants.
+-- Vegetation wind is now per-vertex: the prefabs carry `windSway` and the
+-- engine's lit vertex shader bends each blade around its base (height-scaled
+-- amplitude, per-vertex phase). The old 20 Hz whole-entity yaw is gone; this
+-- keeps the clock advancing for anything that still reads windT.
 local windT = 0.0
-local windAcc = 0.0
-local windBucket = 0
-local WIND_BUCKETS = 4
 function updateMeadowWind(dt)
   windT = windT + dt
-  windAcc = windAcc + dt
-  if windAcc < 0.05 then return end
-  windAcc = 0
-  windBucket = (windBucket % WIND_BUCKETS) + 1
-  local cx, cz = rv.x, rv.z
-  if player ~= nil and player.active and player.x ~= nil then
-    cx, cz = player.x, player.z
-  end
-  local limit = 42 * 42
-  local n = #scenery
-  for i = windBucket, n, WIND_BUCKETS do
-    local p = scenery[i]
-    if p.meadow and p.baseYaw then
-      local dx, dz = p.x - cx, p.z - cz
-      if dx * dx + dz * dz < limit then
-        local amp = (p.kind == "grass") and 0.20 or 0.10
-        local s = math.sin(windT * 1.25 + p.phase) +
-                  0.35 * math.sin(windT * 2.7 + p.phase * 2.1)
-        SetRotationY(p.ent, p.baseYaw + s * amp)
-      end
-    end
-  end
 end
 
 -- ===========================================================================

@@ -194,6 +194,9 @@ MODELS = {
 
 
 def write_model(key, node, build):
+    # Per-vertex wind sway amplitude read by the engine's lit vertex shader.
+    # Bushes are woody and sway less; meadow patches/grass/flowers move fully.
+    wind = 0.5 if key == "rv_bush" else 1.0
     m = Mesh()
     hidden(m)
     build(m)
@@ -257,7 +260,8 @@ def write_model(key, node, build):
         "components": {
             "transform": {"pos": [0, 0, 0], "rot": [0, 0, 0, 1], "scale": [1, 1, 1]},
             "mesh": {"meshKey": "gltf:assets/models/rv/" + key + ".gltf",
-                     "castShadow": True, "receiveShadow": True},
+                     "castShadow": True, "receiveShadow": True,
+                     "windSway": wind},
         },
     }, indent=2) + "\n", encoding="utf-8")
     print(key, "bytes", len(buffer), "prims", len(prims),

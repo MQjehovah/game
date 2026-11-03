@@ -1,9 +1,10 @@
-// C1: DrawSystem（Task 16）：GameRuntime 绘制子系统的独立实现。BuildDrawList /
-// SyncDrawKeys / ResolveOrSkip / ResolveDrawItem / ResolveMeshKey / VegetationMesh /
-// DrawVegetation 从原 game_runtime_draw.cpp 迁入；整个 Draw 方法体从
-// game_runtime.cpp 迁入。纯机械拆分：方法体逐行保留，仅把
-// world_/cfg_/FullAssetPath/animations_/hud_/sceneTree_/scriptCtx_/hosts_/
-// hiddenEntities_/uiScale_/uiOffset_/postFx 等 GameRuntime 状态换成参数/注入。
+// C1: DrawSystem (Task 16): the draw subsystem of GameRuntime.
+// BuildDrawList / SyncDrawKeys / ResolveOrSkip / ResolveDrawItem /
+// ResolveMeshKey / VegetationMesh / DrawVegetation were migrated from
+// game_runtime_draw.cpp; the whole Draw() body comes from game_runtime.cpp.
+// Pure mechanical split: original bodies kept line by line, only GameRuntime
+// state (world_/cfg_/FullAssetPath/animations_/hud_/sceneTree_/scriptCtx_/
+// hosts_/hiddenEntities_/uiScale_/uiOffset_/postFx) became injected params.
 #include "neon/scene/systems/draw_system.hpp"
 
 #include <algorithm>
@@ -284,6 +285,7 @@ void DrawSystem::Build(ecs::World& world, AnimationSystem& anims) {
         item.mat.metallic = m->metallic;
         item.mat.roughness = m->roughness;
         item.mat.uvRepeat = m->uvRepeat;
+        item.mat.windSway = m->windSway;
         item.mat.polygonOffset = m->polygonOffset;
         item.mat.aoStrength = m->ao;
         item.mat.emissiveIntensity = m->emissiveIntensity;
@@ -550,6 +552,15 @@ void DrawSystem::ResolveDrawItem(DrawItem& item, gfx::Renderer& renderer, ecs::W
                         .Handle();
                 item.mat.uvRepeat = std::max(sm->uvRepeat, 1.0f);
             }
+            if (!sm->normalTex.empty()) {
+                assets::TextureLoadOptions opts;
+                opts.wrap = gfx::Wrap::Repeat;
+                item.mat.normalMap =
+                    content_.assets
+                        ->LoadTexture(content_.fullAssetPath(sm->normalTex), opts)
+                        .Handle();
+                item.mat.normalScale = sm->normalScale;
+            }
             if (!sm->dirtColorHex.empty())
                 item.mat.dirtColor = ParseColorHex(sm->dirtColorHex);
             if (!sm->rockColorHex.empty())
@@ -563,7 +574,7 @@ void DrawSystem::ResolveDrawItem(DrawItem& item, gfx::Renderer& renderer, ecs::W
     // G6-2: async mesh streaming. When enabled, file-backed meshes (obj:/gltf:)
     // are loaded off the main thread and the item resolves from the cache the
     // frame it is ready (Draw retries via asyncPending). Until then the item is
-    // skipped �?no per-draw hitch.
+    // skipped ??no per-draw hitch.
     if (content_.asyncMeshLoad && content_.assets &&
         (key.compare(0, 4, "obj:") == 0 || key.compare(0, 5, "gltf:") == 0)) {
         const bool isObj = key.compare(0, 4, "obj:") == 0;
@@ -596,9 +607,84 @@ void DrawSystem::ResolveDrawItem(DrawItem& item, gfx::Renderer& renderer, ecs::W
         return;
     }
     item.mesh = mesh;
+    if (key == "broadleaf" || key == "blossom") item.mat.doubleSided = true;
+    if ((key == "pine" || key == "broadleaf" || key == "blossom") && content_.assets) {
+        const char* tex = key == "pine"      ? "assets/textures/pine_card.png"
+                          : key == "blossom" ? "assets/textures/blossom_card.png"
+                                             : "assets/textures/broadleaf_card.png";
+        assets::TextureLoadOptions opts;
+        opts.mipmaps = false;
+        item.mat.albedo =
+            content_.assets->LoadTexture(content_.fullAssetPath(tex), opts).Handle();
+        item.mat.alphaTest = true;
+        item.mat.alphaCutoff = 0.50f;
+        item.mat.doubleSided = true;
+        item.mat.castShadow = false;
+        item.mat.tint = gfx::Color{1.25f, 1.25f, 1.25f, 1.0f};
+    }
+    if ((key == "leaf_canopy" || key == "blossom_canopy") && content_.assets) {
+        const bool pink = key == "blossom_canopy";
+        assets::TextureLoadOptions opts;
+        opts.mipmaps = false;
+        item.mat.albedo = content_.assets
+                              ->LoadTexture(content_.fullAssetPath(
+                                  pink ? "assets/textures/leaf_cluster_pink.png"
+                                       : "assets/textures/leaf_cluster.png"), opts)
+                              .Handle();
+        item.mat.alphaTest = true;
+        item.mat.alphaCutoff = 0.30f;
+        item.mat.doubleSided = true;
+        item.mat.castShadow = false;
+        item.mat.tint = pink ? gfx::Color{1.18f, 1.05f, 1.08f, 1.0f}
+                             : gfx::Color{1.25f, 1.32f, 1.02f, 1.0f};
+    }
+    if (key == "cliff_face" && content_.assets) {
+        assets::TextureLoadOptions opts;
+        opts.wrap = gfx::Wrap::Repeat;
+        item.mat.albedo =
+            content_.assets
+                ->LoadTexture(content_.fullAssetPath("assets/textures/rock_face/rock_face.jpg"), opts)
+                .Handle();
+        item.mat.normalMap =
+            content_.assets
+                ->LoadTexture(content_.fullAssetPath("assets/textures/rock_face/rock_face_nor.jpg"), opts)
+                .Handle();
+        item.mat.normalScale = 0.9f;
+        item.mat.roughness = 0.95f;
+        item.mat.doubleSided = true;
+        item.mat.tint = gfx::Color{0.84f, 0.85f, 0.82f, 1.0f};
+    }
+    if ((key == "cloud_sea" || key == "cloud_wall") && content_.assets) {
+        assets::TextureLoadOptions opts;
+        opts.wrap = gfx::Wrap::Repeat;
+        item.mat.albedo =
+            content_.assets
+                ->LoadTexture(content_.fullAssetPath("assets/textures/cloud_sea_rl.png"), opts)
+                .Handle();
+        item.mat.lit = false;
+        item.mat.transparent = true;
+        item.mat.doubleSided = true;
+        item.mat.castShadow = false;
+        item.mat.uvRepeat = key == "cloud_wall" ? 3.0f : 6.0f;
+        item.mat.tint = key == "cloud_wall"
+                            ? gfx::Color{0.70f, 0.79f, 0.90f, 1.0f}
+                            : gfx::Color{0.90f, 0.95f, 1.0f, 1.0f};
+    }
+    if ((key == "cloud_bank" || key == "cloud_far") && content_.assets) {
+        item.mat.albedo = content_.assets
+                              ->LoadTexture(content_.fullAssetPath("assets/textures/cloud_puff.png"))
+                              .Handle();
+        item.mat.lit = false;
+        item.mat.transparent = true;
+        item.mat.doubleSided = true;
+        item.mat.castShadow = false;
+        item.mat.tint = key == "cloud_far"
+                            ? gfx::Color{0.58f, 0.70f, 0.87f, 1.0f}
+                            : gfx::Color{0.86f, 0.91f, 0.99f, 1.0f};
+    }
 
-    // 多 mesh glTF 场景（C15 延伸）：`gltf:` 实体的第 2+ 个 mesh 节点（自带
-    // 累积变换 + 材质）作为子项存储，Draw 时整体渲染（Sponza 类建筑场景）。
+    // ??mesh glTF ?????15 ??????`gltf:` ?????? 2+ ??mesh ????????
+    // ?????? + ???????????????Draw ?????????Sponza ???????????
     if (!mesh.Skinned() && key.compare(0, 5, "gltf:") == 0 && content_.assets) {
         assets::GltfAsset g = content_.assets->LoadGLTF(content_.fullAssetPath(key.substr(5)));
         const SceneMesh* layerCfg = world.Get<SceneMesh>(item.ent);
@@ -635,9 +721,9 @@ void DrawSystem::ResolveDrawItem(DrawItem& item, gfx::Renderer& renderer, ecs::W
                              key.c_str(), g.nodes.size() - 1, item.gltfSubNodes.size(),
                              chunked);
         }
-        // 多 mesh 场景合并 AABB（主 mesh + 全部子节点的世界包围盒），供视锥
-        // 剔除使用。单个 nodes[0] 的 bounds 只覆盖场景一角，用它剔除会把
-        // 面向场景中心的相机错误剔除（Sponza draws=1 的根因）。
+        // ??mesh ?????? AABB??? mesh + ????????????????????????
+        // ???????????nodes[0] ??bounds ?????????????????????
+        // ?????????????????????Sponza draws=1 ????????
         item.hasGltfBounds = false;
         if (mesh.Valid()) {
             item.gltfBounds = mesh.Bounds();
@@ -694,7 +780,7 @@ void DrawSystem::ResolveDrawItem(DrawItem& item, gfx::Renderer& renderer, ecs::W
 
     // LOD chain: level 0 is the base mesh; each entry resolves into a lower-
     // detail level at its distance. A level that fails to load is logged and
-    // dropped �?the chain degrades to the levels that resolved.
+    // dropped ??the chain degrades to the levels that resolved.
     if (!item.lod.empty()) {
         item.chain.levels.push_back(item.mesh);
         for (const LodEntry& e : item.lod) {
@@ -767,10 +853,34 @@ gfx::Mesh DrawSystem::ResolveMeshKey(gfx::Renderer& renderer, const std::string&
         mesh = gfx::MakeCultivatorMesh(renderer);
     } else if (key == "pine") {
         mesh = gfx::MakePineMesh(renderer);
+    } else if (key == "broadleaf") {
+        mesh = gfx::MakeBroadleafMesh(renderer);
+    } else if (key == "blossom") {
+        mesh = gfx::MakeBlossomMesh(renderer);
+    } else if (key == "cliff_face") {
+        mesh = gfx::MakeCliffFaceMesh(renderer);
+    } else if (key == "blossom_tree") {
+        mesh = gfx::MakeStylizedTreeMesh(renderer, "blossom_tree", true);
+    } else if (key == "pine_tree") {
+        mesh = gfx::MakeStylizedTreeMesh(renderer, "pine_tree", false);
+    } else if (key == "leaf_canopy" || key == "blossom_canopy") {
+        mesh = gfx::MakeLeafCanopyMesh(renderer);
+    } else if (key == "cloud_sea") {
+        mesh = gfx::MakeCloudPlaneMesh(renderer);
+    } else if (key == "cloud_bank" || key == "cloud_far") {
+        mesh = gfx::Mesh::CreateQuad(renderer, 1.0f, 1.0f, key);
+    } else if (key == "mountain_ridge") {
+        mesh = gfx::MakeMountainRidgeMesh(renderer);
     } else if (key == "rock_pillar") {
         mesh = gfx::MakeRockPillarMesh(renderer);
     } else if (key == "stone_lantern") {
         mesh = gfx::MakeStoneLanternMesh(renderer);
+    } else if (key == "fern") {
+        mesh = gfx::MakeFernMesh(renderer);
+    } else if (key == "red_shrub") {
+        mesh = gfx::MakeRedShrubMesh(renderer);
+    } else if (key == "stone_path") {
+        mesh = gfx::MakeStonePathMesh(renderer);
     } else if (key == "wolf") {
         mesh = gfx::MakeWolfMesh(renderer);
     } else if (key.compare(0, 4, "npc:") == 0) {
@@ -781,7 +891,7 @@ gfx::Mesh DrawSystem::ResolveMeshKey(gfx::Renderer& renderer, const std::string&
     } else if (key == "npc") {
         mesh = gfx::MakeNPCMesh(renderer, {0.5f, 0.5f, 0.6f, 1.0f});
     } else if (key == "rock") {
-        mesh = gfx::Mesh::CreateSphere(renderer, 0.8f, 10, 7, "rock");
+        mesh = gfx::MakeBoulderMesh(renderer);
     } else if (key == "water") {
         mesh = gfx::Mesh::CreatePlane(renderer, 20.0f, 20.0f, 8, 8, "water");
     } else if (key == "road") {
@@ -831,6 +941,9 @@ void DrawSystem::DrawVegetation(gfx::Renderer& renderer, const gfx::Camera& came
             f->impostorDistance = std::max(terr->vegImpostorDistance, 1.0f);
             f->mat = gfx::Material::Lit({}, gfx::Color::White, 8.0f);
             f->mat.doubleSided = true;
+            // Terrain-scattered plants sway per vertex (the lit instanced
+            // shader bends each blade by local height + instance phase).
+            f->mat.windSway = 1.0f;
             f->impostorMat = gfx::Material::Lit({}, gfx::Color::White, 8.0f);
             f->impostorMat.doubleSided = true;
             // Grass alpha cards: bind the tuft texture and enable the lit
@@ -918,7 +1031,7 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
     // A/RenderStack: a scene can carry one scene-level RenderStack component that
     // overrides the FX toggles + bloom/tonemap/exposure/color-grade. This is the
     // runtime application point that was missing (SetBloomParams etc. existed but
-    // nothing fed them) — now the data-driven stack actually drives the renderer.
+    // nothing fed them) ??now the data-driven stack actually drives the renderer.
     const RenderStack* sceneStack = nullptr;
     {
         const RenderStack* stack = nullptr;
@@ -967,7 +1080,7 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
     // Script-driven FPS game camera: while the "cameraMouseLock" GameVar is
     // truthy, the script owns the rendered view through cameraFocus (placed at
     // eye + viewDir * cameraDist by the controller) plus cameraYaw/cameraPitch/
-    // cameraDist �?the same GameVars the host orbit cameras publish. This
+    // cameraDist ??the same GameVars the host orbit cameras publish. This
     // overrides any scene Camera3D entity, so the runtime renders through the
     // player's eye in both the standalone player and the editor playtest.
     const script::Value fpsLock = scriptCtx.gameVars.Get("cameraMouseLock");
@@ -1062,14 +1175,14 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
             [&](ecs::Entity, const scene::SceneEnvironment& e) {
                 if (!environment) environment = &e;
             });
-        // 自定义氛围（useAtmosphere）：showcase 场景在 scene JSON 里用
-        // skyTop/skyHorizon 渐变 + fogColor/fogNear/fogFar 表达整场色调
-        // （黄昏/沙漠/雪地/极光夜）。未开时保持默认白天天空 + 灰蓝雾。
-        // 写实天空贴图（SceneLight.skyTexture）：非空时 DrawSky 用 HDRI
-        // 当全屏背景，且 IBL 优先从照片 CPU 采样真实天顶/地平色喂 SetSky
-        // （物体受光跟随照片天空，而非手填色/默认渐变——HDRI 之前只当背景、
-        //  光照仍偏蓝，是"贴图感/假"的最大来源）。无 skyTexture 时才用
-        // useAtmosphere 手动渐变。
+        // ?????????useAtmosphere???showcase ?????scene JSON ???
+        // skyTop/skyHorizon ??? + fogColor/fogNear/fogFar ?????????
+        // ????????/???/?????????????????????????+ ???????
+        // ???????????ceneLight.skyTexture????????DrawSky ??HDRI
+        // ???????????IBL ????????CPU ?????????/?????? SetSky
+        // ????????????????????????????????????DRI ???????????
+        //  ?????????????????????????????? skyTexture ?????
+        // useAtmosphere ????????
         if (content_.assets) {
             const std::string skyPath =
                 environment && !environment->skyTexture.empty()
@@ -1107,7 +1220,7 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
                 renderer.SetSky({0.28f, 0.38f, 0.58f, 1.0f}, {0.55f, 0.65f, 0.8f, 1.0f});
             }
         }
-        // 曝光：scene 显式设置时覆盖宿主默认（夜晚 >1 提亮，黄昏微调）。
+        // ?????cene ????????????????????? >1 ??????????????
         // Precedence mirrors the editor (ApplySceneEnvironment runs BEFORE the
         // RenderStack block there, so the stack wins): a scene carrying a
         // RenderStack is authoritative for exposure and the atmosphere's value
@@ -1256,8 +1369,8 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
                     // Plate tracks the RENDERED mesh, which for a skinned rig
                     // can sit off the entity pivot (the wolf's bones place the
                     // body away from its origin). Compute the world AABB with
-                    // the same transform chain Draw() uses �?model *
-                    // part.localTransform * bone matrix �?and center the bar on
+                    // the same transform chain Draw() uses ??model *
+                    // part.localTransform * bone matrix ??and center the bar on
                     // it, just above the top.
                     math::AABB wb;
                     bool have = false;
@@ -1679,10 +1792,10 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
             renderer.DrawMesh(SelectLodMesh(item.mesh, item.chain, worldPos, cam.position),
                               item.mat, model, prevModelPtr);
         }
-        // 多 mesh glTF 场景的子节点（第 2+ mesh，自带累积变换 + 材质）。
-        // 逐节点视锥剔除：一张多节点 glTF（如 181 节点的召唤师峡谷地图）是
-        // 单个 DrawItem，只按整体 AABB 剔除会让每个节点每帧（以及每个阴影
-        // 级联）都进绘制列表。这里按节点世界 AABB 单独裁剪，只提交可见块。
+        // ??mesh glTF ???????????? 2+ mesh???????????+ ???????
+        // ???????????????????? glTF??? 181 ??????????????????
+        // ??? DrawItem????????AABB ??????????????????????????
+        // ?????????????????????????? AABB ???????????????????
         for (const assets::GltfMeshNode& sub : item.gltfSubNodes) {
             if (!sub.mesh.Valid()) continue;
             const math::Mat4 subModel = model * sub.transform;
@@ -1692,8 +1805,18 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
             // transform so a moving multi-node glTF gets motion vectors too.
             const math::Mat4 prevSubModel =
                 prevModelPtr ? (*prevModelPtr * sub.transform) : math::Mat4::Identity();
-            renderer.DrawMesh(sub.mesh, sub.material, subModel,
-                               prevModelPtr ? &prevSubModel : nullptr);
+            // glTF sub-nodes carry the asset's own material; propagate the
+            // scene-side wind flag so multi-primitive vegetation (grass tufts,
+            // meadow patches) bends per vertex like single-primitive meshes.
+            if (item.mat.windSway > 0.0f) {
+                gfx::Material subMat = sub.material;
+                subMat.windSway = item.mat.windSway;
+                renderer.DrawMesh(sub.mesh, subMat, subModel,
+                                  prevModelPtr ? &prevSubModel : nullptr);
+            } else {
+                renderer.DrawMesh(sub.mesh, sub.material, subModel,
+                                  prevModelPtr ? &prevSubModel : nullptr);
+            }
         }
     }
     flushBatches();
@@ -1768,7 +1891,7 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
             }
         }
         scriptCtx.draw2d = nullptr;
-        // G5-4-4: the on_render canvas is HUD �?the host flushes it AFTER the
+        // G5-4-4: the on_render canvas is HUD ??the host flushes it AFTER the
         // scene is composited (FlushCanvas), so its colors stay exactly as
         // authored instead of being tone-mapped/bloomed with the 3D scene.
         // ScriptCanvas::Flush is called from FlushCanvas (post-EndScene).
@@ -1879,3 +2002,12 @@ void DrawSystem::Reset() {
 }
 
 } // namespace neon::scene
+
+
+
+
+
+
+
+
+

@@ -181,8 +181,13 @@
   `rv_flower_white/blue/yellow/red` / `rv_bush`；`lc_config.MEADOW` 用 60 个
   拼块 + 约 130 株近景草花 + 34 丛灌木铺满营地与公路两侧（避免路面、水塘、
   POI 与土坡），并按 RV 位置回收复用。
-  `updateMeadowWind()` 让草/花以 20Hz、分 4 批绕根部轻摆（草叶统一倾斜方向，
-  偏航摆动看起来像随风倒伏）；土坡顶部另种 90 株草花灌木。
+  **植被风摆是逐顶点的**：植被 prefab 的 `mesh.windSway`（草/花/草甸 1.0、
+  灌木 0.5）由场景解析进 `Material.windSway`，引擎 `lit` 与 `lit_instanced`
+  顶点着色器按局部高度（`h * 0.18 * sway`，根部不动）和“实例世界位置 + 顶点
+  自身 x/z”的相位弯曲顶点，所以同一丛里的每片叶子相位都略有差异；
+  多 primitive 的 glTF 植被会把该标志传给每个 sub-material。
+  `updateMeadowWind()` 只推进风时钟，不再对整株做 yaw 旋转。
+  土坡顶部另种 90 株草花灌木。
 - **营地级高度场 + 四轮接地 / 车身俯仰侧倾**：`tools/gen_rv_terrain.py` 生成
   **288×288m** 的通用高度场（73×73、4m 网格，JSON 约 30KB、网格 14k 顶点），
   同时写出 `assets/data/rv_terrain.json` 和可见网格 `rv_terrain.gltf`，两者出自同一
@@ -509,10 +514,15 @@ POI 墙体碰撞/门洞通行等。
   `rv wheel cylinder rolling`（rolling=true）、
   `rv wheel prediction`（local suspension step ok）、
   `rv pose prediction`（x=1.00 z=0.50 yaw=0.62 wrap=0.12）、
+  `rv vegetation wind`（per-vertex windSway on 7 prefabs）、
   `rv wheel rolling`（wx=2.00）、
   `rv attitude roundtrip`（pitch=0.15 roll=-0.22）与
   `rv yaw attitude roundtrip`（yaw=0.80 pitch=0.15 roll=-0.22），
-  单机自检 **58/58 PASS**。
+  单机自检 **59/59 PASS**。
+  **逐顶点风摆验证**（`start_mode=hills`，相隔 1 秒两帧截图）：
+  植被区域（1280×720 的 880×370 裁剪）像素变化 **2.33%**（7572/281600，
+  阈值 |ΣRGB|>12），差异图 `rv_wind_diff.png` 正好落在草叶/花茎上；
+  整帧变化 18724 px（mean 2.11）。旧的整体 yaw 版本在同样对比下几乎为 0。
   截图 `rv_farhills.png`：从北草甸（28,96）向南望，288m 高度场里的新丘陵、
   营地与 POI 都在同一地形上；`rv_far_rv.png`：房车停在西高地（-95,15），
   车轮与车身随坡度接地；`rv_asphalt_tire2.png`：沥青路 32 km/h；
@@ -645,6 +655,7 @@ POI 墙体碰撞/门洞通行等。
   （不做完整物理回滚/预测，速度突变时需等下一帧对账），
   网络抖动大时仍会出现 >2m 的一次吸附；
   无物理后端时仍回退到脚本偏航/平面拟合；
-  植被风摆是整体偏航而非逐叶片顶点动画。
+  植被风摆已是逐顶点，但只是两段正弦近似（没有阵风/风向湍流/叶片碰撞），
+  billboard 远景 impostor 仍是静态卡片。
 - 车辆零件是整体状态，不是可拆装的独立部件。
 - 音效是程序合成的占位音，缺少更丰富的环境声/音乐。

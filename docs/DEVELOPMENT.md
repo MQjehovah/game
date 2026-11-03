@@ -798,7 +798,12 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   2 丛花）、`rv_grass_tuft` / `rv_grass_tuft_b` / `rv_fern`、`rv_flower_*`、
   `rv_bush`。`lc_config.MEADOW` 用 60 个拼块 + 约 130 株近景草花 + 34 丛灌木
   （约 570 实体）铺满营地/公路两侧，按 RV 位置回收；生成时避开路面、水塘、
-  POI、土坡与 RV。`updateMeadowWind()` 以 20Hz、分 4 批让草/花绕根部轻摆；
+  POI、土坡与 RV。植被风摆改为**逐顶点**：`tools/gen_rv_vegetation.py`
+  给每个 prefab 的 `mesh.windSway`（草/花/草甸 1.0、灌木 0.5）写值，
+  场景把它解析进 `Material.windSway`，引擎 `lit` / `lit_instanced` 顶点着色器
+  按局部高度与“实例世界位置 + 顶点 x/z”相位弯曲顶点（`h * 0.18 * sway`，
+  根部不动），多 primitive 的 glTF 会把该标志传给每个 sub-material；
+  `updateMeadowWind()` 只推进时钟，不再整株 yaw。
   土坡顶部另种 90 株。实测追逐视角约 **91 FPS**。
 - **营地级高度场 / 四轮接地**（`projects/rv`）：`tools/gen_rv_terrain.py` 用一个
   高度函数同时生成 `assets/data/rv_terrain.json`（**288×288m、73×73、4m 网格**，
@@ -884,9 +889,10 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   `rv wheel slip ratio` / `rv tire force curve` / `rv tire temperature` /
   `rv wheel body binding` /
   `rv wheel bodies` / `rv wheel cylinder rolling` / `rv wheel prediction` /
-  `rv pose prediction` / `rv wheel rolling` / `rv attitude roundtrip` /
+  `rv pose prediction` / `rv vegetation wind` / `rv wheel rolling` /
+  `rv attitude roundtrip` /
   `rv yaw attitude roundtrip`，
-  总计 **58/58 PASS**。
+  总计 **59/59 PASS**。
   角色动画由 `tools/gen_rv_anim_clips.py`
   生成**手工关键帧**上车链 `DoorOpen`（够门把手→拉开，0.9s）→ `Step`（抬脚踩踏板，
   0.7s）→ `Board`（站姿→抬步→落座，0.9s）→ `Sit` 循环（坐姿 + 1s 呼吸关键帧），

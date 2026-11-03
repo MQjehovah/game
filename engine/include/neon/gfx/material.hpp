@@ -29,6 +29,11 @@ struct Material {
     float roughness = 0.8f;
     // UV repeat multiplier applied to the material's base UVs (1 = no tiling).
     float uvRepeat = 1.0f;
+    // Per-vertex wind sway amplitude (0 = static). The lit vertex shader bends
+    // the mesh around its base, using local height and a per-vertex world-space
+    // phase, so every blade in a tuft moves independently instead of the whole
+    // entity yawing. Set from the mesh component's `windSway`.
+    float windSway = 0.0f;
     // Scalar strength multipliers applied in the lit shader: occlusion scales
     // the ambient contribution (0 = ignore the AO map, 1 = full occlusion),
     // emissive scales the emissive texture contribution.

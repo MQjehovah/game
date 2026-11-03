@@ -310,6 +310,10 @@ struct SceneMesh {
     // repeat). For a large ground plane set this to the world-size so a small
     // texture tiles instead of stretching across the whole surface.
     float uvRepeat = 1.0f;
+    // Per-vertex wind sway amplitude for vegetation (0 = static). The lit
+    // vertex shader displaces vertices by local height with a phase derived
+    // from each vertex's world position, giving per-blade motion.
+    float windSway = 0.0f;
     // Slope-scaled depth bias for coplanar layered content (decals painted on
     // floors, a water sheet laid over a riverbed): 0 = off, 1 = the classic
     // "lift a coplanar overlay" amount. Resolves the layering deterministically

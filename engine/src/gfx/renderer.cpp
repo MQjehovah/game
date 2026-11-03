@@ -1403,6 +1403,8 @@ void Renderer::ApplyMaterial(const Material& material, const math::Mat4& mvp,
 
     backend_->SetUniformMat4("uMVP", mvp);
     backend_->SetUniformVec2("uTiling", {material.uvRepeat, material.uvRepeat});
+    // Per-vertex vegetation wind (lit shader bends the mesh; 0 = static).
+    backend_->SetUniformFloat("uWindSway", material.windSway);
     backend_->BindTexture(0, material.albedo.Valid() ? material.albedo : white_);
     backend_->SetUniformInt("uAlbedo", 0);
     // G4 terrain splatmap: bind the grass texture + dirt/rock colors when the

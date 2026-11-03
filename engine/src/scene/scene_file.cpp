@@ -635,7 +635,7 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                                     {"meshKey", "lod", "material", "metallic", "roughness", "colorHex",
                                      "albedoTex", "mrTex", "aoTex", "emissiveTex",
                                      "normalTex", "normalScale",
-                                     "ao", "emissiveIntensity", "uvRepeat",
+                                     "ao", "emissiveIntensity", "uvRepeat", "windSway",
                                      "dirtColorHex", "rockColorHex", "castShadow",
                                      "receiveShadow", "tintRgb", "polygonOffset",
                                      "clearcoat", "clearcoatRoughness",
@@ -752,6 +752,8 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                              return false;
                          if (const core::Json* ur = mat->Get("uvRepeat"))
                               m.uvRepeat = static_cast<float>(ur->GetNumber(1.0f));
+                         if (const core::Json* ws = mat->Get("windSway"))
+                              m.windSway = static_cast<float>(ws->GetNumber(0.0f));
                          if (const core::Json* po = mat->Get("polygonOffset"))
                               m.polygonOffset = static_cast<float>(po->GetNumber(0.0f));
                          if (const core::Json* cc = mat->Get("clearcoat"))
@@ -817,6 +819,8 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                          return false;
                       if (const core::Json* ur = data.Get("uvRepeat"))
                           m.uvRepeat = static_cast<float>(ur->GetNumber(1.0f));
+                       if (const core::Json* ws = data.Get("windSway"))
+                           m.windSway = static_cast<float>(ws->GetNumber(0.0f));
                       if (const core::Json* po = data.Get("polygonOffset"))
                           m.polygonOffset = static_cast<float>(po->GetNumber(0.0f));
                       if (const core::Json* cc = data.Get("clearcoat"))

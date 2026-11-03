@@ -391,6 +391,19 @@ function runSelfTest()
          string.format("peak=%.0f slide=%.0f zero=%.1f back=%.0f",
                        peak, high, zero, back))
     end
+    if ReadText ~= nil then
+      local veg = { "rv_grass_tuft", "rv_grass_tuft_b", "rv_fern",
+                    "rv_flower_white", "rv_bush", "rv_meadow_a", "rv_meadow_c" }
+      local okWind = true
+      for _, name in ipairs(veg) do
+        local txt = ReadText("assets/prefabs/" .. name .. ".json")
+        if txt == nil or not string.find(txt, "\"windSway\"", 1, true) then
+          okWind = false
+        end
+      end
+      ok(r, "rv vegetation wind", okWind,
+         string.format("per-vertex windSway on %d prefabs", #veg))
+    end
     if tireMuScale ~= nil then
       local cold = tireMuScale(20, 100)
       local warm = tireMuScale(70, 100)
