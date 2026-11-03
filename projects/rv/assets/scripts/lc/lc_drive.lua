@@ -112,6 +112,14 @@ function engineColdPowerScale(tempValue)
   return 0.85 + 0.15 * (t - 20) / 40
 end
 
+-- 冷车油耗：暖机前燃烧效率差，20°C 时多耗 12%
+function engineColdFuelScale(tempValue)
+  local t = tempValue or 60
+  if t >= 60 then return 1.0 end
+  if t <= 20 then return 1.12 end
+  return 1.12 - 0.12 * (t - 20) / 40
+end
+
 -- 非铺装路面滚动阻力更大：草地/泥土/泥泞更费油
 function surfaceFuelScale(name)
   if name == "mud" then return 1.25 end
@@ -142,7 +150,8 @@ function fuelBurnRate(speed, loadRatio, throttle)
   end
   local eff = tirePressureFuelScale(avgTirePressure()) *
               engineOilFuelScale(oilLife) *
-              surfaceFuelScale(surfName)
+              surfaceFuelScale(surfName) *
+              engineColdFuelScale(engineTemp)
   if (throttle or 0) > 0 then
     return (idle + VEH.burn * (0.30 + 0.70 * v) * load) * eff
   elseif (throttle or 0) < 0 then

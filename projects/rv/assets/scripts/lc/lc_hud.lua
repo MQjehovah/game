@@ -799,13 +799,16 @@ function drawDriveHud()
              rv.blowout and "  爆胎!" or ""),
              px + 14, py + 158, 11, tr, tg, tb, 1)
   end
-  -- 水温：过热变红，提示松油门散热
+  -- 水温：过热变红提示散热；冷车标蓝提示动力/油耗受限
   local et = engineTemp or 20
   local hot = et >= (VEH.tempOverheat or 110)
+  local cold = et < 45
   local tr2, tg2, tb2 = 0.74, 0.82, 0.86
+  if cold then tr2, tg2, tb2 = 0.55, 0.78, 0.95 end
   if et > (VEH.tempOverheat or 110) - 18 then tr2, tg2, tb2 = 0.95, 0.78, 0.35 end
   if hot then tr2, tg2, tb2 = 0.98, 0.40, 0.30 end
-  DrawText(string.format("水温 %.0f°C%s", et, hot and "  过热!" or ""),
+  DrawText(string.format("水温 %.0f°C%s%s", et, cold and "  冷车" or "",
+           hot and "  过热!" or ""),
            px + 14, py + 172, 11, tr2, tg2, tb2, 1)
   -- 行程电脑：累计里程 + 百公里油耗 + 剩余续航（车速/载重曲线的直观反馈）
   local l100 = tripL100 and tripL100() or 0

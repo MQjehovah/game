@@ -3260,6 +3260,17 @@ function runSelfTest()
                      cold, mid, warm, hot))
   end
 
+  -- 冷车油耗：20°C 时多耗 12%，60°C 起恢复
+  do
+    local cold = engineColdFuelScale(20)
+    local mid = engineColdFuelScale(40)
+    local warm = engineColdFuelScale(60)
+    ok(r, "cold engine fuel",
+       math.abs(cold - 1.12) < 1e-6 and mid < cold and mid > 1.0 and
+       math.abs(warm - 1.0) < 1e-6,
+       string.format("20=%.2f 40=%.2f 60=%.2f", cold, mid, warm))
+  end
+
   -- 货运信誉：每 5 单 +2%，上限 +30%
   do
     local jd = jobDelivered
