@@ -241,9 +241,9 @@ function drawFpHud()
 
   local hints = {
     "WASD 移动   Shift 疾跑   E 交互",
-    "B 改装模式   T 驾驶   M 世界地图   F 手电",
-    "1-0 快速使用物品（水/罐头/热饭/咖啡）",
-    "F5 保存   F9 读取",
+    "B 改装   T 驾驶   M 地图   P 说明",
+    "J 旅行日志   K 鱼类图鉴",
+    "1-0 快速使用物品   F5/F9 存/读",
   }
   DrawRect(vw - 292, 252, 282, 92, 0.03, 0.04, 0.05, 0.45)
   for i, h in ipairs(hints) do
@@ -698,7 +698,7 @@ function drawDriveHud()
   local hints = {
     "W 油门   S 刹车/倒车   A/D 转向   Shift 手刹",
     "鼠标 张望   空格 停车",
-    "C " .. (driveView == "cab" and "追逐视角" or "驾驶席视角") .. "   M 世界地图",
+    "C " .. (driveView == "cab" and "追逐视角" or "驾驶席视角") .. "   M 世界地图   P 说明",
   }
   for i, h in ipairs(hints) do
     drawTextRight(h, vw - 14, vh - 74 + (i - 1) * 19, 12, 0.80, 0.79, 0.74, 0.9)
