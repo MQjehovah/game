@@ -843,8 +843,44 @@ function drawJobTracker(vw)
   drawJobWaypoint(vw)
 end
 
--- 世界空间目标标记：目的地进入视野时在它头顶画金色菱形 + 距离，
--- 让玩家不用一直盯着顶部追踪条也能找到路。
+-- 交付/失败结算卡：屏幕中上方的短时面板
+function drawJobResult()
+  if jobResult == nil then return end
+  local vp = GetViewportSize()
+  local vw = (vp and vp.w) or 1280
+  local vh = (vp and vp.h) or 720
+  local ok = jobResult.ok == true
+  local pw, ph = 430, 148
+  local px = math.floor((vw - pw) * 0.5)
+  local py = math.floor(vh * 0.30)
+  local a = math.min(1, (jobResult.t or 0) * 2)
+  DrawRect(px, py, pw, ph, 0.05, 0.06, 0.07, 0.92 * a)
+  DrawRectOutline(px, py, pw, ph,
+                  ok and 0.72 or 0.85, ok and 0.62 or 0.32, 0.30, a)
+  drawTextCentered(ok and "货运完成" or "合同超时", vw * 0.5, py + 12, 22,
+                   ok and 0.98 or 1.0, ok and 0.90 or 0.48, ok and 0.62 or 0.40, a)
+  DrawText(string.format("%s x%d", jobResult.cargo or "货物", jobResult.crates or 0),
+           px + 20, py + 48, 15, 0.90, 0.90, 0.84, a)
+  if ok then
+    local cond = math.max(0, math.min(1, jobResult.cond or 1))
+    DrawText(string.format("货况 %.0f%%", cond * 100), px + 20, py + 72, 13,
+             cond < 0.5 and 0.95 or 0.80, cond < 0.5 and 0.42 or 0.82,
+             cond < 0.5 and 0.34 or 0.74, a)
+    DrawRect(px + 20, py + 92, pw - 40, 5, 0.14, 0.15, 0.14, 0.9 * a)
+    DrawRect(px + 20, py + 92, (pw - 40) * cond, 5,
+             cond < 0.5 and 0.9 or 0.72, cond < 0.5 and 0.3 or 0.62, 0.28, a)
+    DrawText(string.format("报酬 %s%s", jobResult.got or "",
+             (jobResult.fuel or 0) > 0 and
+               string.format("   燃料+%dL", jobResult.fuel) or ""),
+             px + 20, py + 106, 13, 0.88, 0.86, 0.72, a)
+    drawTextCentered(string.format("累计完成 %d 单", jobResult.jobs or 0),
+                     vw * 0.5, py + 128, 12, 0.72, 0.76, 0.70, a)
+  else
+    DrawText("货物已退回，报酬取消", px + 20, py + 74, 14, 0.86, 0.70, 0.60, a)
+    DrawText("下次注意合同上的限时提示", px + 20, py + 100, 12, 0.70, 0.72, 0.66, a)
+  end
+end
+
 function drawJobWaypoint(vw)
   if job == nil then return end
   local nd = nodeById(job.destId)

@@ -922,6 +922,11 @@ function runSelfTest()
      string.format("dest=%s delivered=%d->%d weight=%.0f->%.0f fuel=%.0f->%.0f",
                    tostring(dest), doneBefore, jobDelivered, weightWithCargo,
                    stats.weight, fuelBefore, fuel))
+  ok(r, "job result card",
+     jobResult ~= nil and jobResult.ok == true and (jobResult.crates or 0) > 0,
+     jobResult and string.format("cargo=%s cond=%.2f jobs=%d",
+                                 tostring(jobResult.cargo), jobResult.cond or 0,
+                                 jobResult.jobs or 0) or "missing")
 
   -- 放弃合同：卸货、重量还原
   jobRefreshOffers()

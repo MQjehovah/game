@@ -868,6 +868,11 @@ function on_start()
     flashlightOn = false
   elseif startMode == "campnight" then
     clock = 22 * 60
+  elseif startMode == "jobresult" then
+    jobRefreshOffers("gasstop")
+    jobAccept(1)
+    job.condition = 0.72
+    jobComplete()
   elseif startMode == "drive" or startMode == "night_drive" or autoPilot or rv.steerDemo then
     setPhase("driving")
   elseif startMode == "utilroof" then
@@ -1071,6 +1076,10 @@ function on_update(ent, dt)
   if updateVehicleLights ~= nil then updateVehicleLights() end
   if updateTaillights ~= nil then updateTaillights() end
   if updateCampfireLight ~= nil then updateCampfireLight(dt) end
+  if jobResult ~= nil then
+    jobResult.t = jobResult.t - dt
+    if jobResult.t <= 0 then jobResult = nil end
+  end
   if coopRole ~= nil then
     coopUpdate(dt)
     if updatePoiWindows then updatePoiWindows(dt) end
@@ -1280,5 +1289,6 @@ function on_render()
   if invOpen then drawInventoryPanel() end
   if stationUI then drawStationMenu() end
   if jobUI then drawJobPanel() end
+  if jobResult then drawJobResult() end
   if mapOpen then drawMapHud() end
 end

@@ -59,6 +59,7 @@ jobDelivered = 0              -- 已完成的货运单数
 jobBoard = nil                -- 营地货运板世界坐标
 jobCargoEnts = {}             -- 车顶货物可视化
 jobUI = false                 -- 货运板菜单是否打开
+jobResult = nil               -- 交付/失败结算卡（3.5s）
 roadMarkers = {}              -- 公路轮廓桩（反光桩）
 rvHeadlights = {}             -- 夜间前大灯（聚光灯，随车身旋转）
 rvTaillights = {}             -- 刹车/倒车尾灯

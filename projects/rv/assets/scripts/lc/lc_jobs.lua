@@ -243,6 +243,11 @@ function jobComplete()
   job = nil
   jobOffers = {}
   recomputeStats()
+  jobResult = {
+    ok = true, cargo = name, crates = crates, cond = cond,
+    got = table.concat(got, " "), fuel = fuelGot, jobs = jobDelivered,
+    t = 3.6,
+  }
   SpawnFloatText(rv.x, 1.8, rv.z,
                  "送达 " .. name .. " x" .. crates, false, 1.6, 1.0, 0.86, 0.4)
   toast.text = string.format("货运完成（货况 %.0f%%）：%s%s", cond * 100,
@@ -290,6 +295,7 @@ function jobExpire()
   job = nil
   jobOffers = {}
   recomputeStats()
+  jobResult = { ok = false, cargo = name, t = 3.6 }
   toast.text = "合同超时：" .. (name or "货物") .. " 已退回，没有报酬"
   toast.t = 4.0
 end
