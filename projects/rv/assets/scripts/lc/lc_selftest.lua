@@ -1927,6 +1927,32 @@ function runSelfTest()
                      tostring(recycled), after))
   end
 
+  -- 雪地斑块：下雪生成、雪停清除、开远重铺
+  do
+    local sw = weather
+    weather = "clear"
+    updateSnowPatches(0)
+    local dry = #snowPatches
+    weather = "snow"
+    updateSnowPatches(0)
+    local snowy = #snowPatches
+    local recycled = false
+    if snowy > 0 then
+      snowCenter = { x = rv.x + 80, z = rv.z + 80 }
+      updateSnowPatches(0)
+      recycled = snowCenter ~= nil and
+                 math.abs((snowCenter.x or 0) - rv.x) < 0.01
+    end
+    weather = "clear"
+    updateSnowPatches(0)
+    local after = #snowPatches
+    weather = sw
+    ok(r, "snow patches",
+       dry == 0 and snowy >= 6 and recycled and after == 0,
+       string.format("dry=%d snow=%d recycled=%s after=%d", dry, snowy,
+                     tostring(recycled), after))
+  end
+
   -- 农场风车：4 片叶片且会旋转
   do
     local blades = windmill and #(windmill.blades or {}) or 0

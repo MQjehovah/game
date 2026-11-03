@@ -94,6 +94,8 @@ rabbits = {}                  -- 白天在草甸上蹦跳的野兔
 butterflies = {}              -- 白天在花丛/草甸飞舞的蝴蝶
 wildlifeAnchor = { x = 0, z = 0 }  -- 野生动物群所在区域（不跟车移动）
 puddles = {}                  -- 雨天积水
+snowPatches = {}              -- 雪天地面雪斑
+snowCenter = nil              -- 雪斑铺设中心（房车开远后重铺）
 campfireLightT = 0
 fireCrackleT = 0               -- 篝火噼啪声计时
 fireCracklePlays = 0           -- 已播放次数（自检用）

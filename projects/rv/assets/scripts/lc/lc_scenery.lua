@@ -1746,6 +1746,42 @@ function updatePuddles(dt)
   end
 end
 
+-- 雪天地面斑块：房车周围铺一层浅白色积雪，雪停自动清除，开远重铺
+function spawnSnowPatches()
+  for _, p in ipairs(snowPatches) do Despawn(p.ent) end
+  snowPatches = {}
+  snowCenter = { x = rv.x, z = rv.z }
+  for i = 1, 10 do
+    local a = math.random() * math.pi * 2
+    local r = 3 + math.random() * 16
+    local x = rv.x + math.sin(a) * r
+    local z = rv.z + math.cos(a) * r
+    local e = SpawnPrefab("rv_snow_patch", {
+      x = x, y = ((terrainHeight and terrainHeight(x, z)) or 0) + 0.045, z = z })
+    if e ~= nil then
+      local s = 1.4 + math.random() * 2.4
+      SetScale(e, s, 0.014, s * (0.7 + math.random() * 0.6))
+      SetRotationY(e, math.random() * math.pi * 2)
+      snowPatches[#snowPatches + 1] = { ent = e, x = x, z = z }
+    end
+  end
+end
+
+function updateSnowPatches(dt)
+  if weather == "snow" then
+    if #snowPatches == 0 then
+      spawnSnowPatches()
+    elseif snowCenter ~= nil then
+      local dx, dz = rv.x - (snowCenter.x or rv.x), rv.z - (snowCenter.z or rv.z)
+      if dx * dx + dz * dz > 32 * 32 then spawnSnowPatches() end
+    end
+  elseif #snowPatches > 0 then
+    for _, p in ipairs(snowPatches) do Despawn(p.ent) end
+    snowPatches = {}
+    snowCenter = nil
+  end
+end
+
 -- 篝火噼啪声：靠近火堆时每隔 2.2–3.6s 播一次 3D 音效
 function campfireCrackleInterval()
   return 2.2 + math.random() * 1.4

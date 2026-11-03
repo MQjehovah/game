@@ -1366,6 +1366,7 @@ function on_update(ent, dt)
   if updateRabbits ~= nil then updateRabbits(dt) end
   if updateButterflies ~= nil then updateButterflies(dt) end
   if updatePuddles ~= nil then updatePuddles(dt) end
+  if updateSnowPatches ~= nil then updateSnowPatches(dt) end
   if updateAmbientMusic ~= nil then updateAmbientMusic() end
   if updateWindmill ~= nil then updateWindmill(dt) end
   if updatePoiSigns ~= nil then updatePoiSigns() end
