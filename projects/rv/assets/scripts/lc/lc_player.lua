@@ -7,6 +7,7 @@ PLAYER_RADIUS = 0.28
 function spawnPlayerAt(x, z, yaw)
   if player.active then return end
   player.x, player.z, player.yaw = x, z, yaw or 0
+  player.groundY = terrainHeight and terrainHeight(x, z) or 0
   player.pitch = 0
   player.ent = SpawnPrefab("rv_player", { x = x, y = 0, z = z })
   player.active = (player.ent ~= nil)
@@ -59,7 +60,7 @@ function updatePlayerGun()
   local rx, rz = -fz * 0.28, fx * 0.28      -- 右手侧偏移
   local lower = (player.anim == "Idle") and 0.16 or 0
   local bx, bz = player.x + fx * 0.18 + rx, player.z + fz * 0.18 + rz
-  local y = 1.32 - lower
+  local y = 1.32 - lower + (player.groundY or 0)
   SetPosition(player.gunBody, { x = bx, y = y, z = bz })
   SetRotationY(player.gunBody, player.yaw)
   SetScale(player.gunBody, 0.06, 0.09, 0.42)
@@ -74,7 +75,7 @@ end
 function playerMuzzle()
   if onFoot and player.active then
     local fx, fz = math.sin(player.yaw), math.cos(player.yaw)
-    return player.x + fx * 0.5, 1.28, player.z + fz * 0.5
+    return player.x + fx * 0.5, 1.28 + (player.groundY or 0), player.z + fz * 0.5
   end
   local turret = hasModule("turret")
   if turret then
@@ -91,7 +92,7 @@ function playerForward()
 end
 
 function playerEye()
-  return player.x, EYE_H, player.z
+  return player.x, EYE_H + (player.groundY or 0), player.z
 end
 
 function clampPlayerInsideRv()
@@ -143,6 +144,15 @@ function updatePlayer(dt)
   player.x, player.z = nx, nz
   if breakPoiWindowsAt then breakPoiWindowsAt(player.x, player.z, "enter") end
   clampPlayerInsideRv()
+  -- Follow the ground: on the embankment the eye/camera rises with the slope;
+  -- inside the RV the floor (and therefore the player) follows the RV.
+  if terrainHeight ~= nil then
+    if isPlayerInsideRv() then
+      player.groundY = rv.groundY or 0
+    else
+      player.groundY = terrainFollow(player.groundY or 0, player.x, player.z, dt, 14)
+    end
+  end
   -- 脚步声
   if len > 0 then
     player.stepT = (player.stepT or 0) - dt
@@ -154,7 +164,7 @@ function updatePlayer(dt)
     player.stepT = 0
   end
 
-  SetPosition(player.ent, { x = player.x, y = 0, z = player.z })
+  SetPosition(player.ent, { x = player.x, y = player.groundY or 0, z = player.z })
   -- 模型网格在 rot 0 朝 -Z，yaw 约定前进 = (sin,cos)，加 π 对齐视觉朝向
   SetRotationY(player.ent, player.yaw + math.pi)
   -- 动画：数据驱动状态机（assets/anim/soldier_asm.json）

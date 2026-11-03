@@ -61,6 +61,7 @@ local coop = {
   sitDemo = false, doorView = false, sitView = false,
   animDemo = nil, animDemoEnt = nil,
   doorAngle = 0, doorTarget = 0, animT = 0,
+  localGroundY = 0,
   animPhase = {},
   visualAnim = {},
   boardDemo = false, boardDemoT = 0, boardDemoStage = 0,
@@ -145,6 +146,7 @@ end
 local function applySharedGlobals()
   rv.x, rv.z, rv.yaw = coop.rv.x, coop.rv.z, coop.rv.yaw
   rv.speed = coop.rv.speed or 0
+  rv.groundY = coop.rv.groundY or 0
   fuel, water, day, clock = coop.fuel, coop.water, coop.day, coop.clock
   needs = coop.needs
   materials = coop.materials
@@ -427,6 +429,7 @@ local function pushState()
     local s = coop.slots[i]
     players[i] = {
       c = s.client, x = q3(s.x), z = q3(s.z), y = q3(s.yaw),
+      gy = q3(s.gy or 0),
       j = s.joined and 1 or 0,
       ins = s.inside and 1 or 0,
       st = (s.seat == "driver" and 2) or (s.seat == "passenger" and 1) or 0,
@@ -454,7 +457,8 @@ local function pushState()
     if gb ~= nil and gb ~= "" then glass = gb end
   end
   local rvOut = { x = q3(coop.rv.x), z = q3(coop.rv.z),
-                  yaw = q3(coop.rv.yaw), speed = q3(coop.rv.speed) }
+                  yaw = q3(coop.rv.yaw), speed = q3(coop.rv.speed),
+                  gy = q3(coop.rv.groundY or 0) }
   Rpc("game_state", {
     seq = coop.seq, rv = rvOut, players = players, needs = needsOut,
     fuel = math.floor((fuel or 0) * 10 + 0.5) / 10,
@@ -916,9 +920,13 @@ local function serverUpdate(dt)
     rv.z = clamp(rv.z, -WORLD_LIMIT, WORLD_LIMIT)
     coop.rv.x, coop.rv.z, coop.rv.yaw, coop.rv.speed = rv.x, rv.z, rv.yaw, rv.speed
     fuel = math.max(0, fuel - math.abs(rv.speed) * dt * 0.03)
+    if terrainHeight ~= nil then
+      rv.groundY = terrainFollow(rv.groundY or 0, rv.x, rv.z, dt, 10)
+      coop.rv.groundY = rv.groundY
+    end
     applyRvTransform()
     if rvBody ~= nil then
-      PhysicsSetPosition(rvBody, { x = rv.x, y = 0.9, z = rv.z })
+      PhysicsSetPosition(rvBody, { x = rv.x, y = 0.9 + (rv.groundY or 0), z = rv.z })
       PhysicsSetVelocity(rvBody, { x = 0, y = 0, z = 0 })
     end
     -- Only players who actually boarded ride with the RV; outside players are
@@ -951,6 +959,9 @@ local function serverUpdate(dt)
         else
           s.x = clamp(s.x, -WORLD_LIMIT, WORLD_LIMIT)
           s.z = clamp(s.z, -WORLD_LIMIT, WORLD_LIMIT)
+        end
+        if terrainHeight ~= nil then
+          s.gy = terrainHeight(s.x, s.z)
         end
       end
     end
@@ -1011,7 +1022,7 @@ local function serverUpdate(dt)
     local s = coop.slots[i]
     local ent = coop.proxies[i]
     if ent ~= nil then
-      SetPosition(ent, { x = s.x, y = 0, z = s.z })
+      SetPosition(ent, { x = s.x, y = s.gy or 0, z = s.z })
       SetRotationY(ent, s.yaw)
     end
     s.slotIndex = i
@@ -1120,6 +1131,7 @@ local function applyState(s)
     coop.rv.z = tonumber(s.rv.z) or coop.rv.z
     coop.rv.yaw = tonumber(s.rv.yaw) or coop.rv.yaw
     coop.rv.speed = tonumber(s.rv.speed) or 0
+    coop.rv.groundY = tonumber(s.rv.gy) or coop.rv.groundY or 0
   end
   coop.fuel = tonumber(s.fuel) or coop.fuel
   coop.water = tonumber(s.water) or coop.water
@@ -1155,6 +1167,7 @@ local function applyState(s)
         st.x = p.x or st.x
         st.z = p.z or st.z
         st.yaw = p.y or st.yaw
+        st.gy = tonumber(p.gy) or st.gy or 0
         st.driving = (p.st == 2)
         st.inside = (p.ins == 1)
         st.seat = (p.st == 2) and "driver" or ((p.st == 1) and "passenger" or nil)
@@ -1325,9 +1338,14 @@ local function clientUpdate(dt)
       coop.localPos.z = clamp(coop.localPos.z, -WORLD_LIMIT, WORLD_LIMIT)
     end
     coop.localPos.yaw = coop.lookYaw
+    if terrainHeight ~= nil then
+      coop.localGroundY = terrainFollow(coop.localGroundY or 0,
+                                        coop.localPos.x, coop.localPos.z, dt, 14)
+    end
     local ent = coop.proxies[coop.mySlot]
     if ent ~= nil then
-      SetPosition(ent, { x = coop.localPos.x, y = 0, z = coop.localPos.z })
+      SetPosition(ent, { x = coop.localPos.x, y = coop.localGroundY or 0,
+                         z = coop.localPos.z })
       SetRotationY(ent, coop.lookYaw)
     end
   end
@@ -1414,6 +1432,7 @@ local function clientUpdate(dt)
   rv.z = rv.z + (coop.rv.z - rv.z) * math.min(1, dt * 12)
   rv.yaw = coop.rv.yaw
   rv.speed = coop.rv.speed or 0
+  rv.groundY = coop.rv.groundY or 0
   fuel, water, day, clock = coop.fuel, coop.water, coop.day, coop.clock
   applyRvTransform()
   -- Inside the RV: hide the exterior shell so the first-person view sees the
@@ -1503,7 +1522,7 @@ local function clientUpdate(dt)
           PlayAnimation(v, "Idle", true, 0.1, 1.0)
           print(string.format("[coop-anim] player %d stands up (Idle loop)", i))
         end
-        SetPosition(v, { x = px, y = 0, z = pz })
+        SetPosition(v, { x = px, y = (p and p.gy) or 0, z = pz })
         SetScale(v, 1.0, 1.0, 1.0)
         -- Seated passengers face out of the side door so the opening shows the
         -- torso/legs; standing players keep their walk direction.
@@ -1620,7 +1639,8 @@ local function clientUpdate(dt)
     -- Chase view behind the moving RV (kept for outside observers/tests).
     local fx, fz = math.sin(rv.yaw), math.cos(rv.yaw)
     SetVar("cameraMouseLock", 1)
-    SetVar("cameraFocus", { x = rv.x + fx * 1.5, y = 1.5, z = rv.z + fz * 1.5 })
+    SetVar("cameraFocus", { x = rv.x + fx * 1.5, y = 1.5 + (rv.groundY or 0),
+                            z = rv.z + fz * 1.5 })
     SetVar("cameraYaw", rv.yaw + math.pi)
     SetVar("cameraPitch", 0.32)
     SetVar("cameraDist", 16.0)
@@ -1628,7 +1648,8 @@ local function clientUpdate(dt)
     local fx, fz = math.sin(pyaw), math.cos(pyaw)
     local rx, rz = math.cos(pyaw), -math.sin(pyaw)
     SetVar("cameraMouseLock", 1)
-    SetVar("cameraFocus", { x = px + fx * 5.0 + rx * 0.5, y = 1.55,
+    SetVar("cameraFocus", { x = px + fx * 5.0 + rx * 0.5,
+                            y = 1.55 + (coop.localGroundY or 0),
                             z = pz + fz * 5.0 + rz * 0.5 })
     SetVar("cameraYaw", pyaw + math.pi)
     SetVar("cameraPitch", -coop.lookPitch)
@@ -1700,14 +1721,15 @@ function coopInitWorld(role)
       for i = 1, MAX_SLOTS do
         local s = coop.slots[i]
         if coop.proxies[i] ~= nil then
-          SetPosition(coop.proxies[i], { x = s.x, y = 0, z = s.z })
+          SetPosition(coop.proxies[i], { x = s.x, y = s.gy or 0, z = s.z })
           SetRotationY(coop.proxies[i], s.yaw)
         end
       end
       rv.x, rv.z, rv.yaw = coop.rv.x, coop.rv.z, coop.rv.yaw
+      if terrainHeight ~= nil then rv.groundY = terrainHeight(rv.x, rv.z) end
       applyRvTransform()
       if rvBody ~= nil then
-        PhysicsSetPosition(rvBody, { x = rv.x, y = 0.9, z = rv.z })
+        PhysicsSetPosition(rvBody, { x = rv.x, y = 0.9 + (rv.groundY or 0), z = rv.z })
         PhysicsSetVelocity(rvBody, { x = 0, y = 0, z = 0 })
       end
       applyLights()
@@ -1766,7 +1788,7 @@ function coopInitWorld(role)
             s.x, s.z, s.yaw = cx, cz + 5.6 + (i - 1) * 1.1, math.pi
           end
           if coop.proxies[i] ~= nil then
-            SetPosition(coop.proxies[i], { x = s.x, y = 0, z = s.z })
+            SetPosition(coop.proxies[i], { x = s.x, y = s.gy or 0, z = s.z })
             SetRotationY(coop.proxies[i], s.yaw)
           end
         end

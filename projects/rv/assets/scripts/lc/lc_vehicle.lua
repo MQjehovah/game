@@ -75,15 +75,16 @@ end
 -- 公路现在是世界固定的，由 spawnRoadNetwork() 一次性生成，不再每帧跟随车头。
 
 function applyRvTransform()
+  local gy = rv.groundY or 0
   if rvParts then
     for _, p in ipairs(rvParts) do
       local wx, wz = rotOf(p.lx, p.lz)
-      SetPosition(p.ent, { x = wx, y = p.ly, z = wz })
+      SetPosition(p.ent, { x = wx, y = p.ly + gy, z = wz })
       SetRotationY(p.ent, rv.yaw)
     end
   end
   if rvShell then
-    SetPosition(rvShell, { x = rv.x, y = 0, z = rv.z })
+    SetPosition(rvShell, { x = rv.x, y = gy, z = rv.z })
     SetRotationY(rvShell, rv.yaw)
     -- 驾驶席视角或人在车内时隐藏外壳：避免镜头钻进车窗/墙板
     SetVisible(rvShell, not (phase == "driving" and driveView == "cab")
@@ -91,29 +92,29 @@ function applyRvTransform()
   end
   if rvDoor ~= nil then
     local dx, dz = rotOf(1.205, -3.54)
-    SetPosition(rvDoor, { x = dx, y = 0, z = dz })
+    SetPosition(rvDoor, { x = dx, y = gy, z = dz })
     SetRotationY(rvDoor, rv.yaw + (rvDoorAngle or 0))
   end
   if rvInterior then
     local hideCab = (phase == "driving" and driveView == "cab")
     for _, p in ipairs(rvInterior) do
       local wx, wz = rotOf(p.lx, p.lz)
-      SetPosition(p.ent, { x = wx, y = p.ly, z = wz })
+      SetPosition(p.ent, { x = wx, y = p.ly + gy, z = wz })
       SetRotationY(p.ent, rv.yaw)
       if p.hideInCab then SetVisible(p.ent, not hideCab) end
     end
   end
   for _, inst in pairs(instances) do
     local wx, wz = rotOf(inst.lx, inst.lz)
-    SetPosition(inst.ent, { x = wx, y = inst.ly, z = wz })
+    SetPosition(inst.ent, { x = wx, y = inst.ly + gy, z = wz })
     SetRotationY(inst.ent, rv.yaw + (inst.lrot or 0))
   end
   if gridFloorEnt ~= nil then
-    SetPosition(gridFloorEnt, { x = rv.x, y = FLOOR_Y, z = rv.z })
+    SetPosition(gridFloorEnt, { x = rv.x, y = FLOOR_Y + gy, z = rv.z })
     SetRotationY(gridFloorEnt, rv.yaw)
   end
   if gridRoofEnt ~= nil then
-    SetPosition(gridRoofEnt, { x = rv.x, y = ROOF_Y, z = rv.z })
+    SetPosition(gridRoofEnt, { x = rv.x, y = ROOF_Y + gy, z = rv.z })
     SetRotationY(gridRoofEnt, rv.yaw)
   end
 end

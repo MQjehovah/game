@@ -15,10 +15,11 @@ end
 
 function setTopDownCamera()
   SetVar("cameraMouseLock", 0)
-  local tx, ty, tz = rv.x, 11.5, rv.z - 9.2
+  local gy = rv.groundY or 0
+  local tx, ty, tz = rv.x, 11.5 + gy, rv.z - 9.2
   if camSmooth == nil then camSmooth = { x = tx, y = ty, z = tz } end
   SetPosition(camEnt, { x = tx, y = ty, z = tz })
-  local dx, dy, dz = rv.x - tx, 0 - ty, rv.z - tz
+  local dx, dy, dz = rv.x - tx, gy - ty, rv.z - tz
   local len = math.sqrt(dx * dx + dy * dy + dz * dz)
   if len > 1e-4 then SetLook(camEnt, dx / len, dy / len, dz / len) end
 end
@@ -36,13 +37,14 @@ function updateCamera(dt)
   if phase == "driving" then
     if driveView == "chase" then
       SetVar("cameraMouseLock", 0)
+      local gy = rv.groundY or 0
       local fx, fz = math.sin(rv.yaw), math.cos(rv.yaw)
       local cp, sp = math.cos(DRIVE.camPitch), math.sin(DRIVE.camPitch)
       local tx = rv.x - fx * DRIVE.camDist * cp
-      local ty = 1.4 + sp * DRIVE.camDist
+      local ty = 1.4 + sp * DRIVE.camDist + gy
       local tz = rv.z - fz * DRIVE.camDist * cp
       SetPosition(camEnt, { x = tx, y = ty, z = tz })
-      local dx, dy, dz = rv.x + fx * 2.5 - tx, 0.9 - ty, rv.z + fz * 2.5 - tz
+      local dx, dy, dz = rv.x + fx * 2.5 - tx, 0.9 + gy - ty, rv.z + fz * 2.5 - tz
       local len = math.sqrt(dx * dx + dy * dy + dz * dz)
       if len > 1e-4 then SetLook(camEnt, dx / len, dy / len, dz / len) end
       return
@@ -60,7 +62,7 @@ function updateCamera(dt)
     -- 驾驶席在挡风玻璃后方（车头局部 z≈4.0），不要放到生活区中间，
     -- 否则车顶太阳能/行李架的背面会挡住半个屏幕。
     local ex, ez = rotOf(0.0, 3.15)
-    setFpsCamera(ex, 1.58, ez, rv.yaw + driveLookYaw, driveLookPitch)
+    setFpsCamera(ex, 1.58 + (rv.groundY or 0), ez, rv.yaw + driveLookYaw, driveLookPitch)
     return
   end
 

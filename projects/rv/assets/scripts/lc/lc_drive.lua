@@ -146,6 +146,14 @@ function updateDrive(dt)
     rv.z = rv.z + fz * rv.speed * dt
   end
 
+  -- Follow the embankment height (sampled from the same profile as the mesh).
+  if terrainHeight ~= nil then
+    rv.groundY = terrainFollow(rv.groundY or 0, rv.x, rv.z, dt, 10)
+    if rvBody then
+      PhysicsSetPosition(rvBody, { x = rv.x, y = 0.9 + rv.groundY, z = rv.z })
+    end
+  end
+
   applyRvTransform()
   if groundEnt ~= nil then
     SetPosition(groundEnt, { x = rv.x, y = -0.05, z = rv.z })

@@ -414,6 +414,17 @@ function on_start()
                          { mass = math.max(800, 1200 + stats.weight * 0.8),
                            friction = 0.4, restitution = 0.05 })
 
+  if startMode == "rvslope" then
+    -- Test-only: park the RV on the embankment so the height following is
+    -- visible in a screenshot (wheels sit on the slope, not inside it).
+    rv.x, rv.z = 19.0, 10.0
+    rv.groundY = terrainHeight and terrainHeight(rv.x, rv.z) or 0
+    applyRvTransform()
+    if rvBody ~= nil then
+      PhysicsSetPosition(rvBody, { x = rv.x, y = 0.9 + rv.groundY, z = rv.z })
+    end
+  end
+
   if coopRole ~= nil then
     coopInitWorld(coopRole)
   end
@@ -471,6 +482,16 @@ function on_start()
     -- Test-only view of the roadside dirt embankment from the road.
     px, pz = 1.50, 6.00
     pyaw = math.pi * 0.5
+  end
+  if startMode == "slope" then
+    -- Test-only: stand on the dirt slope (camera/eye follow terrain height).
+    px, pz = 13.0, 8.0
+    pyaw = -math.pi * 0.5
+  end
+  if startMode == "rvslope" then
+    -- Test-only: the RV is parked on the embankment (see rvBody block).
+    px, pz = -9.0, -5.0
+    pyaw = dirYaw(9.0, 5.0)
   end
   if startMode == "poi" then
     -- 路边商店门口：用于检查可进入建筑（门洞/内衬/战利品）

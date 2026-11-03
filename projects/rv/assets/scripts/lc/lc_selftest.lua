@@ -152,6 +152,21 @@ function runSelfTest()
   ok(r, "day/night sun light", nightInt and dayInt and dayInt > nightInt,
      string.format("night=%.2f day=%.2f", tonumber(nightInt) or -1, tonumber(dayInt) or -1))
 
+  -- Terrain relief: the embankment profile rises away from the road and the
+  -- follow helper converges on the sampled height (player/RV ground following).
+  if terrainHeight ~= nil and terrainFollow ~= nil then
+    local hFlat = terrainHeight(0, 0)
+    local hMid = terrainHeight(12, 10)
+    local hTop = terrainHeight(19, 10)
+    ok(r, "terrain height profile",
+       hFlat < 0.01 and hMid > 1.0 and hTop > hMid,
+       string.format("flat=%.2f mid=%.2f top=%.2f", hFlat, hMid, hTop))
+    local followed = terrainFollow(0, 19, 10, 1.0, 10)
+    ok(r, "terrain ground follow",
+       math.abs(followed - hTop) < 0.001,
+       string.format("follow=%.2f top=%.2f", followed, hTop))
+  end
+
   -- 地点物资箱刷在建筑内部，玩家需要从正门进入
   atNode = "ruin"
   spawnCrates()
