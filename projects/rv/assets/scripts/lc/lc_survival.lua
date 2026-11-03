@@ -1302,8 +1302,16 @@ function cookAtCampfire()
     toast.t = 2.4
     return true
   end
-  -- 没有生鱼/浑水时，把生食材烤成热饭
+  -- 没有生鱼/浑水时，把生食材烤成热饭；有野浆果则炖成浆果炖肉
   if takeItem("rawfood", 1) then
+    if (inv.berry or 0) >= 2 and takeItem("berry", 2) then
+      addItem("stew", 1)
+      if PlaySfx then PlaySfx("cook") end
+      if addDailyProgress ~= nil then addDailyProgress("cook", 1) end
+      toast.text = "篝火炖好一锅浆果炖肉（+1）"
+      toast.t = 2.4
+      return true
+    end
     addItem("meal", 1)
     if PlaySfx then PlaySfx("cook") end
     if addDailyProgress ~= nil then addDailyProgress("cook", 1) end

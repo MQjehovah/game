@@ -2120,6 +2120,28 @@ function runSelfTest()
                      inv.meal or 0, inv.rawfood or 0))
   end
 
+  -- 篝火有野浆果时优先炖成浆果炖肉
+  do
+    local keepOn = campfireOn
+    local kr, kf, ks, kb = inv.rawfish, inv.rawfood, inv.stew, inv.berry
+    local kd = inv.dirtywater
+    local keepGoal = dailyGoal
+    setCampfireLit(true)
+    inv.rawfish, inv.rawfood, inv.dirtywater = nil, 1, nil
+    inv.berry, inv.stew = 2, 0
+    dailyGoal = nil
+    local cooked = cookAtCampfire()
+    local gotStew = (inv.stew or 0) == 1
+    local used = (inv.rawfood or 0) == 0 and (inv.berry or 0) == 0
+    inv.rawfish, inv.rawfood, inv.stew = kr, kf, ks
+    inv.berry, inv.dirtywater = kb, kd
+    dailyGoal = keepGoal
+    setCampfireLit(keepOn)
+    ok(r, "campfire stew", cooked and gotStew and used,
+       string.format("cooked=%s stew=%d rawfood=%d berry=%d", tostring(cooked),
+                     inv.stew or 0, inv.rawfood or 0, inv.berry or 0))
+  end
+
   -- 夜间蟋蟀：晴天夜晚会鸣叫，雨雪/白天安静
   do
     local sc, sw = clock, weather
