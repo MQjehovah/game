@@ -98,6 +98,11 @@ function jobNowAbs()
   return (day or 1) * 1440 + (clock or 0)
 end
 
+-- 货运预计往返油耗（L）：按距离粗估，方便在货运板上权衡
+function jobFuelEstimate(distance)
+  return (distance or 0) * 2.0 * 0.016
+end
+
 -- 板上合同：优先挑 45m 外的节点，距离越远报酬/载重越高；不足则用最近的补。
 function jobRefreshOffers(preferId)
   local pool, near = {}, {}

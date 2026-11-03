@@ -1606,8 +1606,10 @@ function drawJobPanel()
              (o.stops and "[2站] " or ""), o.destName, o.cargo, o.crates, o.weight),
              px + 64, yy + 7, 14, 0.94, 0.92, 0.84, 1)
     local payText = jobPayText(o.pay or {})
-    DrawText(string.format("距离 %.0fm   报酬 %s   燃料+%dL%s%s", o.distance, payText,
-             o.fuel or 0, (o.danger or 0) >= 2 and "   危险" or "",
+    local fuelEst = (jobFuelEstimate ~= nil) and jobFuelEstimate(o.distance) or 0
+    DrawText(string.format("距离 %.0fm   报酬 %s   燃料+%dL   往返约耗 %.1fL%s%s",
+             o.distance, payText, o.fuel or 0, fuelEst,
+             (o.danger or 0) >= 2 and "   危险" or "",
              o.urgent and "   限时" or ""),
              px + 64, yy + 28, 12, 0.78, 0.82, 0.76, 1)
     yy = yy + 62

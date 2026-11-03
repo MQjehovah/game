@@ -1081,6 +1081,14 @@ function runSelfTest()
      jobResult and string.format("cargo=%s cond=%.2f jobs=%d",
                                  tostring(jobResult.cargo), jobResult.cond or 0,
                                  jobResult.jobs or 0) or "missing")
+  -- 货运往返油耗估算：随距离增加
+  do
+    local a = jobFuelEstimate(50)
+    local b = jobFuelEstimate(200)
+    ok(r, "job fuel estimate", a > 0 and b > a and
+       math.abs(a - 1.6) < 1e-6 and math.abs(b - 6.4) < 1e-6,
+       string.format("50m=%.1fL 200m=%.1fL", a, b))
+  end
   ok(r, "job history",
      jobHistory ~= nil and #jobHistory >= 1 and
      tostring(jobHistory[#jobHistory]):find("→", 1, true) ~= nil,
